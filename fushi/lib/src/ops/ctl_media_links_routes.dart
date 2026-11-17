@@ -273,24 +273,38 @@ List<CtlRoute> buildMediaLinksCtlRoutes(OpContext context) {
       final bool ai =
           isAiModuleEnabled(app().moduleVisibility) &&
           resolveMediaLinkAiProvider(app().prefsRepo) != null;
-      final Set<String> before = <String>{
+      final Map<String, MediaLinkRow> before = <String, MediaLinkRow>{
         for (final MediaLinkRow r in await db().mediaLinksForEndpoint(
           self.kind,
           self.key,
           includeRemoved: true,
         ))
-          _rowKey(r),
+          _rowKey(r): r,
       };
       final int added = await infer();
-      final List<Map<String, Object?>> fresh = <Map<String, Object?>>[
-        for (final MediaLinkView v in await loadMediaLinkViews(db(), self))
-          if (!before.contains(_rowKey(v.row))) mediaLinkViewJson(v),
-      ];
+      final List<Map<String, Object?>> fresh = <Map<String, Object?>>[];
+      // AI 把本来就在的建议升成了生效：不是新行，但同样是这一轮的写入，撤销要退回
+      // 那条建议（带上升级前的行）。
+      final List<Map<String, Object?>> upgraded = <Map<String, Object?>>[];
+      for (final MediaLinkView v in await loadMediaLinkViews(db(), self)) {
+        final MediaLinkRow? prior = before[_rowKey(v.row)];
+        if (prior == null) {
+          fresh.add(mediaLinkViewJson(v));
+        } else if (prior.deletedAt == null &&
+            mediaLinkConfirmerOf(prior) == null &&
+            mediaLinkConfirmerOf(v.row) == MediaLinkConfirmer.ai) {
+          upgraded.add(<String, Object?>{
+            ...mediaLinkViewJson(v),
+            'previous': prior.toJson(),
+          });
+        }
+      }
       return <String, Object?>{
         'endpoint': mediaLinkEndpointWire(self),
         'added': added,
         'ai': ai,
         'suggestions': fresh,
+        if (upgraded.isNotEmpty) 'upgraded': upgraded,
       };
     }),
     CtlRoute.get(kPeopleCtlRoot, (CtlCall call) async {

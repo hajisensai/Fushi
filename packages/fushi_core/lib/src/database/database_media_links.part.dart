@@ -363,38 +363,51 @@ mixin _FushiDbMediaLinks on _$FushiDatabase {
     });
   }
 
-  /// [applyAiMediaLink] 的撤销：把一条 AI 生效的连接退回写入前的状态。
-  /// [previous] 为 null（之前没有这一行）→ 删掉这一行，**不留**否决墓碑（撤销不是
-  /// 否决，下次推断仍可再提）；否则按 [previous] 恢复（建议），`updatedAt` 取当前行
-  /// 的 +1——刚好压过各端同一份 AI 生效，又不越过任何更晚的用户动作。
+  /// [applyAiMediaLink] 的撤销：把一条 AI 生效的连接退回写入前的状态。撤销是一次
+  /// 用户动作，时钟取 `max(now, 当前行 updatedAt + 1)`——必须压过已经同步 / 备份
+  /// 出去的同一份 AI 生效（AI 生效不推进时钟，那些副本的 `updatedAt` 都等于当前行）。
+  ///
+  /// - [previous] 为 null（之前没有这一行）→ **写墓碑，不删行**：这一行可能已同步到
+  ///   对端或进了备份，物理删除后下一轮 LWW 合并会把它原样插回来（`updatedAt` 是
+  ///   [kMediaLinkAiBaseClock]，本机已没有行可比）。墓碑同时就是「用户撤销过 AI 的这条
+  ///   连接」：推断不再对这一对提议或生效（[mediaLinkPairExists] /
+  ///   [enforceMediaLinkVetoes]），与「AI 对同一对（合集, 成员）最多移出一次」同一原则，
+  ///   避免下一轮自动运行把刚撤销的又做回来；
+  /// - 否则按 [previous] 恢复（升级前的建议）。
   ///
   /// 这一行已被用户确认 / 否决（或已不在）时不覆盖，返回 false（调用方报
   /// 「已被后续修改覆盖」，与 [discardMediaLinkSuggestion] 同一语义）。
-  Future<bool> revertAiMediaLink(MediaLinkId id, {MediaLinkRow? previous}) =>
-      transaction(() async {
-        final MediaLinkRow? row = await mediaLinkById(id);
-        if (row == null ||
-            row.deletedAt != null ||
-            mediaLinkConfirmerOf(row) != MediaLinkConfirmer.ai) {
-          return false;
-        }
-        if (previous == null) {
-          await (delete(mediaLinks)..where((t) => _mediaLinkIdIs(t, id))).go();
-          return true;
-        }
-        await (update(mediaLinks)..where((t) => _mediaLinkIdIs(t, id))).write(
-          _confirmerColumns(mediaLinkConfirmerOf(previous)).copyWith(
-            role: Value<String?>(previous.role),
-            episodeRange: Value<String?>(previous.episodeRange),
-            source: Value<String>(previous.source),
-            confidence: Value<double?>(previous.confidence),
-            reason: Value<String?>(previous.reason),
-            deletedAt: Value<int?>(previous.deletedAt),
-            updatedAt: Value<int>(row.updatedAt + 1),
-          ),
-        );
-        return true;
-      });
+  Future<bool> revertAiMediaLink(
+    MediaLinkId id, {
+    MediaLinkRow? previous,
+    int? at,
+  }) => transaction(() async {
+    final MediaLinkRow? row = await mediaLinkById(id);
+    if (row == null ||
+        row.deletedAt != null ||
+        mediaLinkConfirmerOf(row) != MediaLinkConfirmer.ai) {
+      return false;
+    }
+    final int now = at ?? DateTime.now().millisecondsSinceEpoch;
+    final int stamp = now > row.updatedAt ? now : row.updatedAt + 1;
+    await (update(mediaLinks)..where((t) => _mediaLinkIdIs(t, id))).write(
+      previous == null
+          ? MediaLinksCompanion(
+              deletedAt: Value<int?>(stamp),
+              updatedAt: Value<int>(stamp),
+            )
+          : _confirmerColumns(mediaLinkConfirmerOf(previous)).copyWith(
+              role: Value<String?>(previous.role),
+              episodeRange: Value<String?>(previous.episodeRange),
+              source: Value<String>(previous.source),
+              confidence: Value<double?>(previous.confidence),
+              reason: Value<String?>(previous.reason),
+              deletedAt: Value<int?>(previous.deletedAt),
+              updatedAt: Value<int>(stamp),
+            ),
+    );
+    return true;
+  });
 
   /// 用户确认一条建议或一条 AI 生效的连接（升为 `user`）。行不存在 / 已是墓碑返回
   /// false（被别处否决的不复活）。

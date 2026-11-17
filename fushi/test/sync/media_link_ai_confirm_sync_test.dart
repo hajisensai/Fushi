@@ -223,6 +223,52 @@ void main() {
       expect(row.confirmedBy, MediaLinkConfirmer.ai, reason: '缺字段 = 未知，不是清空');
       expect(row.updatedAt, 99);
     });
+
+    test('A 上 AI 生效 → 同步 → A 撤销 → 再同步：两端都不再生效，推断也不再连这一对', () async {
+      final FushiDatabase host = memDb();
+      final FushiDatabase a = memDb();
+      final FushiDatabase b = memDb();
+      final MediaLinkAiWrite w = (await a.applyAiMediaLink(
+        relation: MediaLinkRelation.adaptation,
+        from: bookEp(1),
+        to: episodeEp(1),
+        source: MediaLinkSource.ai,
+        confidence: 0.95,
+      ))!;
+      await exchange(a, host);
+      await exchange(b, host);
+      expect((await rowOf(b, 1))!.confirmedBy, MediaLinkConfirmer.ai);
+
+      expect(await a.revertAiMediaLink(w.id, previous: w.previous), isTrue);
+      for (int i = 0; i < 2; i++) {
+        await exchange(a, host);
+        await exchange(b, host);
+      }
+      for (final FushiDatabase d in <FushiDatabase>[a, b, host]) {
+        final MediaLinkRow row = (await rowOf(d, 1))!;
+        expect(
+          mediaLinkStateOf(row),
+          MediaLinkState.removed,
+          reason: '撤销不得被对端的 AI 生效副本拉回来',
+        );
+        await aiApply(d, 1);
+        expect(
+          mediaLinkStateOf((await rowOf(d, 1))!),
+          MediaLinkState.removed,
+          reason: '推断不再对这一对生效',
+        );
+        expect(
+          await d.applyAiMediaLink(
+            relation: MediaLinkRelation.sameWork,
+            from: bookEp(1),
+            to: episodeEp(1),
+            source: MediaLinkSource.ai,
+          ),
+          isNull,
+          reason: '换个关系也不再自动连',
+        );
+      }
+    });
   });
 
   group('多端随机性质（3 台设备 + host）', () {
@@ -309,7 +355,21 @@ void main() {
                 final MediaLinkAiWrite w = aiWrites[di].removeAt(
                   random.nextInt(aiWrites[di].length),
                 );
-                await d.revertAiMediaLink(w.id, previous: w.previous);
+                // 撤销是用户动作：盖这一刻的时钟。之前没有这一行的写墓碑（= 否决
+                // 这一对），之前是建议的退回建议。
+                final int at = next();
+                if (await d.revertAiMediaLink(
+                  w.id,
+                  previous: w.previous,
+                  at: at,
+                )) {
+                  // 撤销的是那次写入的一对，不是这一步随机抽到的 p。
+                  final int wp = int.parse(w.id.fromKey.substring(1));
+                  (userEvents[wp] ??= <({int at, String kind})>[]).add((
+                    at: at,
+                    kind: w.previous == null ? 'revertFresh' : 'revertUpgrade',
+                  ));
+                }
               }
             default:
               await exchange(d, host);
@@ -361,6 +421,33 @@ void main() {
                   r!.deletedAt,
                   isNotNull,
                   reason: '最后的用户动作是否决：AI 不得复活（pair ${e.key}）',
+                );
+              case 'revertFresh':
+                expect(r, isNotNull, reason: '撤销写墓碑，不删行（pair ${e.key}）');
+                expect(
+                  r!.deletedAt,
+                  isNotNull,
+                  reason: '最后的用户动作是撤销 AI 新建：收敛后仍是撤销状态（pair ${e.key}）',
+                );
+                expect(
+                  await d.applyAiMediaLink(
+                    relation: MediaLinkRelation.adaptation,
+                    from: bookEp(e.key),
+                    to: episodeEp(e.key),
+                    source: MediaLinkSource.ai,
+                  ),
+                  isNull,
+                  reason: '撤销过的一对，推断不再生效（pair ${e.key}）',
+                );
+              case 'revertUpgrade':
+                // 退回建议之后 AI 仍可再次升级（那是撤销之后的新结论），但不得变成
+                // 墓碑或用户确认。
+                expect(r, isNotNull);
+                expect(r!.deletedAt, isNull, reason: 'pair ${e.key}');
+                expect(
+                  mediaLinkConfirmerOf(r),
+                  isNot(MediaLinkConfirmer.user),
+                  reason: 'pair ${e.key}',
                 );
             }
           }

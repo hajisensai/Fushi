@@ -194,15 +194,31 @@ void main() {
       );
     });
 
-    test('撤销：之前没有 → 删行且不留墓碑；之前是建议 → 退回建议、时钟 +1', () async {
+    test('撤销：之前没有 → 写墓碑（不删行，这一对不再自动连）；之前是建议 → 退回建议', () async {
       final MediaLinkAiWrite fresh = (await applyAi())!;
       expect(
-        await db.revertAiMediaLink(fresh.id, previous: fresh.previous),
+        await db.revertAiMediaLink(fresh.id, previous: fresh.previous, at: 40),
         isTrue,
       );
-      expect(await db.allMediaLinks(), isEmpty, reason: '撤销不是否决');
-      expect(await applyAi(), isNotNull, reason: '下次推断仍可以再提');
-      expect(await db.revertAiMediaLink(id), isTrue);
+      final MediaLinkRow tomb = (await db.mediaLinkById(id))!;
+      expect(
+        mediaLinkStateOf(tomb),
+        MediaLinkState.removed,
+        reason: '物理删除会被已同步出去的副本经 LWW 拉回来',
+      );
+      expect(tomb.updatedAt, 40, reason: 'max(now, 基线 + 1)');
+      expect(await applyAi(), isNull, reason: '撤销 = 否决这一对，AI 不再生效');
+      expect(
+        await db.proposeMediaLink(
+          relation: MediaLinkRelation.sameWork,
+          from: book,
+          to: anime,
+          source: MediaLinkSource.ai,
+        ),
+        isFalse,
+        reason: '也不再换个关系提议',
+      );
+      await db.delete(db.mediaLinks).go();
 
       await db.proposeMediaLink(
         relation: MediaLinkRelation.adaptation,
@@ -214,14 +230,17 @@ void main() {
         at: 30,
       );
       final MediaLinkAiWrite up = (await applyAi())!;
-      expect(await db.revertAiMediaLink(up.id, previous: up.previous), isTrue);
+      expect(
+        await db.revertAiMediaLink(up.id, previous: up.previous, at: 0),
+        isTrue,
+      );
       final MediaLinkRow row = (await db.mediaLinkById(id))!;
       expect(mediaLinkStateOf(row), MediaLinkState.suggested);
       expect(row.confirmedBy, isNull);
       expect(row.source, MediaLinkSource.mal);
       expect(row.confidence, 0.45);
       expect(row.reason, 'mal');
-      expect(row.updatedAt, 31, reason: '压过各端同一份 AI 生效（时钟 30）');
+      expect(row.updatedAt, 31, reason: '至少压过各端同一份 AI 生效（时钟 30）');
     });
 
     test('撤销：之后被用户确认 / 否决过 → 报已被覆盖，不动', () async {

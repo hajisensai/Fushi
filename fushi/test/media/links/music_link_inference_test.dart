@@ -465,7 +465,15 @@ void main() {
       expect(ost.source, kMediaLinkTitleMatchSource);
 
       expect(await revertMusicLinkBatch(db, r), 2);
-      expect(await db.allMediaLinks(), isEmpty);
+      // 建议直接删；生效的那条写墓碑（不删行：已同步出去的副本会被 LWW 拉回来），
+      // 这一对之后也不再自动连。
+      final List<MediaLinkRow> left = await db.allMediaLinks();
+      expect(left.map(mediaLinkIdOf), <MediaLinkId>[applied.id]);
+      expect(mediaLinkStateOf(left.single), MediaLinkState.removed);
+      final MusicLinkBatchResult again = await runMusicMediaLinkBatchInference(
+        db: db,
+      );
+      expect(again.applied, isEmpty, reason: '撤销过的一对不再自动生效');
     });
 
     test('否决过的一对不再提议；用户确认过的连接不改', () async {
