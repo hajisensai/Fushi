@@ -81,7 +81,7 @@ use super::super::refresh::{TALLY_KEY, Tally};
 use super::super::schema::sql;
 use super::super::truth::Truth;
 use super::{profile_of, ref_of, with_profile};
-use crate::anki_import_rules::derived_log_hlc;
+use crate::anki_import_rules::{anki_source_hlc, derived_log_hlc};
 use crate::gen4::translate::native_body4;
 use crate::registers::{self, StoredEdit};
 use crate::store::caches::NoteInfo;
@@ -266,10 +266,15 @@ impl<'t, 'c> Session<'t, 'c> {
             Body::Edit(e) => Some((e.kind, e.entity.text(), e.key.clone(), e.value.clone())),
             _ => None,
         };
+        // 派生排序键要用到写下后那条操作的 HLC（外来日志的上界，[derived_log_hlc]），先留下派生要的字段。
         let log = match &body {
             Body::Log(l) if self.log_hlcs.is_some() => Some((
                 l.id.text(),
-                derived_log_hlc(&l.origin, &l.kind, l.anki_id, l.at, &l.extra),
+                l.origin.clone(),
+                l.kind.clone(),
+                l.anki_id,
+                l.at,
+                l.extra.clone(),
             )),
             _ => None,
         };
@@ -288,10 +293,11 @@ impl<'t, 'c> Session<'t, 'c> {
                 self.at,
             ]));
         }
-        if let Some((log_id, derived)) = log {
+        if let Some((log_id, origin, kind, anki_id, at, extra)) = log {
             // 与 `read` 的 `logs` 行里的 `hlc` 同口径（`cache.rs` `log_body` / `log_at`）：Anki 来源与回导的外来原生日志是由
-            // 来源数据派生的 HLC，其余原生日志是它那条操作的 HLC（文件头「只写协议 4 原生能收的形」），后者刚写下、按主键点读。
-            let text = match derived {
+            // 来源数据派生的 HLC，其余原生日志是它那条操作的 HLC（文件头「只写协议 4 原生能收的形」）。操作刚写下、按主键点读；
+            // Anki 来源的派生不看操作，省掉这次读。
+            let text = match anki_source_hlc(&origin, &kind, anki_id, at) {
                 Some(text) => text,
                 None => {
                     let hlc = self
@@ -301,7 +307,9 @@ impl<'t, 'c> Session<'t, 'c> {
                         .ok_or_else(|| {
                             format!("gen4 write: log {log_id} is not readable after append")
                         })?;
-                    format!("{}:{}:{}", hlc.wall, hlc.logical, id.device.text())
+                    derived_log_hlc(&origin, &kind, anki_id, at, &extra, hlc.wall).unwrap_or_else(
+                        || format!("{}:{}:{}", hlc.wall, hlc.logical, id.device.text()),
+                    )
                 }
             };
             if let Some(out) = self.log_hlcs.as_mut() {

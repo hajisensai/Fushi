@@ -420,14 +420,15 @@ fn ref_of(text: &str) -> Ref {
     Ref::of(&Key::of(text))
 }
 
-fn log_body(l: Log4) -> LogBody {
+/// [op_wall]：载着这条日志的操作 HLC 的物理时刻（外来日志派生排序键的上界，[derived_log_hlc]）。
+fn log_body(l: Log4, op_wall: i64) -> LogBody {
     // 承袭的日志带作者给的旧 HLC；原生日志没有，排序键回落到操作自己的 HLC（[Index::log_at]）——Anki 来源与回导的外来
     // 原生日志除外：它们的 HLC 由来源数据派生（铁律 C，`crate::anki_import_rules` [derived_log_hlc]）。协议 3 的卡片历史
     // 规则（`crate::history`）靠它把同一条 revlog 落在血统里几张卡上的副本归成一个事件、把更早的 Anki / 外来复习排在
     // 更晚的原生复习之前。
     let legacy_hlc = match l.hlc {
         Some(h) => Some(h.text()),
-        None => derived_log_hlc(&l.origin, &l.kind, l.anki_id, l.at, &l.extra),
+        None => derived_log_hlc(&l.origin, &l.kind, l.anki_id, l.at, &l.extra, op_wall),
     };
     LogBody {
         id: l.id,
@@ -919,7 +920,7 @@ impl<'t, 'c> Index<'t, 'c> {
         let seed_card = Ref::of(&l.card).text();
         let device = e.id.device;
         // 投影行里的 profile 只是协议 3 的分区列，读侧不用；集合内取常量。
-        let row = log_json("", &log_body(l), || {
+        let row = log_json("", &log_body(l, wall), || {
             format!("{wall}:{logical}:{}", device.text())
         });
         // 日志 ID、卡、笔记、`revokes` 归一（文件头「别名」第 3 条）：重放与统计读的是规范 ID。

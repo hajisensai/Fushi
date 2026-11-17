@@ -43,19 +43,22 @@ pub const FOREIGN_LOG_KEY: &str = "foreignLog";
 /// - 外来原生日志（带 [FOREIGN_LOG_KEY] = true，第五波，交接「第五波 导入与写接口」节）：`{at}:0:fushi`。它是别的设备 /
 ///   别的 profile 写的复习，回导时作者 HLC 不进新代的操作（设计 §3.4），按导入那一刻的操作 HLC 排会让更早的复习排到本机
 ///   更晚的复习之后、改掉当前排程。发生时刻是来源数据，每台设备、每次导入算出来一样；计数器 0、写入者固定
-///   [FOREIGN_WRITER]（不取 `origin` 原文：它是任意文本，带 `:` 就拼不成 HLC），同一毫秒的两条按日志 ID 定序。作者本来就
-///   能写任意 `at`，信任面没有扩大。
+///   [FOREIGN_WRITER]（不取 `origin` 原文：它是任意文本，带 `:` 就拼不成 HLC），同一毫秒的两条按日志 ID 定序。
+///   **上界**：`at` 来自导入文件，不可信。真正回导的外来日志一定发生在载着它的那条操作之前，所以只有 `at <= op_wall`
+///   （那条操作 HLC 的物理时刻，真相里的数据、每台设备读到的一样）才派生；`at` 晚于操作的不派生、回落到操作 HLC——否则
+///   一条发生时刻在未来的伪造日志会排在此后本机所有复习之后，把排程钉死在它的结果上（第五波复核）。
 pub fn derived_log_hlc(
     origin: &str,
     kind: &str,
     anki_id: Option<i64>,
     at: i64,
     extra: &str,
+    op_wall: i64,
 ) -> Option<String> {
     if origin == ANKI_WRITER {
         return anki_source_hlc(origin, kind, anki_id, at);
     }
-    is_foreign_log(extra).then(|| format!("{at}:0:{FOREIGN_WRITER}"))
+    (at <= op_wall && is_foreign_log(extra)).then(|| format!("{at}:0:{FOREIGN_WRITER}"))
 }
 
 /// 外来原生日志派生 HLC 的写入者。
@@ -107,7 +110,7 @@ mod tests {
     fn a_marked_foreign_log_sorts_by_when_it_happened() {
         let at = 1_700_000_000_123;
         let marked = r#"{"foreignLog":true,"sc":{"x":1}}"#;
-        let got = derived_log_hlc("fushi", "review", None, at, marked).unwrap();
+        let got = derived_log_hlc("fushi", "review", None, at, marked, at + 5).unwrap();
         assert_eq!(got, format!("{at}:0:fushi"));
         assert_eq!(
             crate::history::parse_hlc(&got).map(|(p, c, w)| (p, c, w.to_owned())),
@@ -115,7 +118,7 @@ mod tests {
         );
         // 来源文本带 `:` 也拼得出合法 HLC（写入者固定）。
         assert_eq!(
-            derived_log_hlc("od:d", "review", None, at, marked).as_deref(),
+            derived_log_hlc("od:d", "review", None, at, marked, at + 5).as_deref(),
             Some(got.as_str())
         );
         for extra in [
@@ -125,14 +128,35 @@ mod tests {
             r#"{"note":"foreignLog"}"#,
         ] {
             assert_eq!(
-                derived_log_hlc("fushi", "review", None, at, extra),
+                derived_log_hlc("fushi", "review", None, at, extra, at + 5),
                 None,
                 "{extra}"
             );
         }
         assert_eq!(
-            derived_log_hlc("anki", "review", Some(at), at + 5, marked),
+            derived_log_hlc("anki", "review", Some(at), at + 5, marked, at + 5),
             anki_source_hlc("anki", "review", Some(at), at + 5)
+        );
+    }
+
+    /// 发生时刻晚于载着它的操作的外来日志不派生（回落到操作 HLC）：`at` 来自导入文件，未来时刻不能把它排到此后本机的
+    /// 复习之后。恰好等于操作时刻的照样派生。
+    #[test]
+    fn a_foreign_log_from_after_its_op_does_not_derive() {
+        let at = 1_700_000_000_123;
+        let marked = r#"{"foreignLog":true}"#;
+        assert_eq!(
+            derived_log_hlc("fushi", "review", None, at, marked, at - 1),
+            None
+        );
+        assert_eq!(
+            derived_log_hlc("fushi", "review", None, at, marked, at),
+            Some(format!("{at}:0:fushi"))
+        );
+        // Anki 来源不受这条约束（另有 futureCards 守卫，派生规则照 [anki_source_hlc]）。
+        assert_eq!(
+            derived_log_hlc("anki", "review", Some(at), at, marked, at - 1),
+            anki_source_hlc("anki", "review", Some(at), at)
         );
     }
 }

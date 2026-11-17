@@ -1769,8 +1769,9 @@ fn a_foreign_native_review_older_than_a_local_one_does_not_reschedule_the_card()
     assert_eq!(w.cards_last_at("r3"), 1);
 }
 
-/// 同一份导出包回导两次（第二次的作者 / 导入时刻都不同）：卡片行、日志投影逐行不变——外来原生日志的排序键只取决于
-/// 日志内容，与哪台设备、哪一刻写的那条操作无关。改前第二次导入的那条操作 HLC 更晚，同 ID 的日志按它重排。
+/// 同一份导出包回导两次（第二次的导入时刻不同）：卡片行、日志投影逐行不变。这条是防回归用例、不是「修前红」的：同 ID
+/// 日志类的代表取操作号最小的那份（`cache.rs` `log_class_rep`），第二次导入的副本本来就当不了代表，去掉派生它照样绿
+/// （第五波复核变异实测）。它钉住的是「重复导入不换代表、不重排」这条现状。
 #[test]
 fn importing_the_same_foreign_logs_twice_changes_nothing() {
     let lib = library();
@@ -1812,6 +1813,44 @@ fn importing_the_same_foreign_logs_twice_changes_nothing() {
     assert_eq!(cards(&w), rows);
     assert_eq!(w.log_hlcs(&c21), logs);
     assert_eq!(w.cards_last_at("f3"), 1);
+}
+
+/// 发生时刻在未来的外来日志（`at` 晚于载着它的导入操作；导入文件不可信，伪造的 fushi-ext 能写任意 `at`）不派生排序键、
+/// 回落到导入操作的 HLC：此后本机的原生复习仍排在它之后、决定排程。改前它派生成 `{at}:0:fushi`，本机此后一切复习都排在
+/// 它前面，排程钉死在它的结果上（第五波复核）。
+#[test]
+fn a_foreign_log_from_the_future_does_not_pin_the_schedule() {
+    let lib = library();
+    let w = W::new(&lib);
+    let c21 = card(N2, "t1");
+    let future = T1 + 1000 * DAY;
+    let gv = writes::import_drafts(
+        &w.t(),
+        w.p.col,
+        &W::req(T1, json!({"logHlcs": true})),
+        &[foreign_item("f9", &c21, N2, future, 1, 9)],
+    )
+    .unwrap();
+    let derived = format!("{future}:0:fushi");
+    assert!(
+        w.log_hlcs(&c21).iter().all(|(_, h)| *h != derived),
+        "{:?}",
+        w.log_hlcs(&c21)
+    );
+    if let Some(replied) = gv.get("logHlcs").and_then(Value::as_array) {
+        assert!(
+            replied.iter().all(|l| l[2] != json!(derived)),
+            "{replied:?}"
+        );
+    }
+    let mut native = foreign_item("n9", &c21, N2, T1 + DAY, 3, 11);
+    native["e"]["x"]
+        .as_object_mut()
+        .unwrap()
+        .remove("foreignLog");
+    writes::apply(&w.t(), w.p.col, &W::req(T1 + DAY, json!({})), &[native]).unwrap();
+    assert_eq!(w.cards_last_at("n9"), 1);
+    assert_eq!(w.cards_last_at("f9"), 0);
 }
 
 // ---------------------------------------------------------------------- 写回包带修改行（K3，交接 §26 T1 (c)）
