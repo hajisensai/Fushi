@@ -338,22 +338,6 @@ fn note_new_peer_inherits_only_under_the_same_key() {
             Some((TRUST_PENDING, T1 + 9))
         );
         assert_eq!(t.peer(col, &id(0xb1))?.unwrap().name, None);
-        // 本机已有它的日志（承袭日志先于公钥到）：不追溯。
-        let me = t.self_identity(col)?.unwrap().device;
-        let mine = peer(0xc1, None);
-        t.set_peer(
-            col,
-            &Peer {
-                device: me,
-                ..mine.clone()
-            },
-        )
-        .ok();
-        assert_eq!(
-            t.note_new_peer(col, &me, &mine.public, None, T1 + 9)?,
-            FirstSeen::KnownLog
-        );
-        assert_eq!(t.trust_entry(col, &me)?, None);
         Ok(())
     });
 }
@@ -417,7 +401,9 @@ fn an_old_root_author_first_seen_by_a_nonempty_library_waits() {
 // ---------------------------------------------------------------------- 换代迁移端到端
 
 /// 一份协议 3 小库（`dryrun::tests::library`），关掉内核只留目录。回 (目录, 旧设备, 签名钥匙种子)。
-fn legacy_library(tag: &str) -> (crate::store::sync2::tests::tempdir::Dir, Id, [u8; 32]) {
+pub(super) fn legacy_library(
+    tag: &str,
+) -> (crate::store::sync2::tests::tempdir::Dir, Id, [u8; 32]) {
     let crate::store::sync2::tests::Device { core, _dir } =
         crate::store::gen4::dryrun::tests::library(tag);
     core.close();
@@ -440,7 +426,7 @@ fn legacy_conn(dir: &std::path::Path) -> rusqlite::Connection {
 }
 
 /// 跑一次真迁移（新身份 [new]），断言提交。
-fn migrate_to(dir: &std::path::Path, new: Id) {
+pub(super) fn migrate_to(dir: &std::path::Path, new: Id) {
     use crate::store::gen4::dryrun::Stop;
     use crate::store::gen4::migrate::{Options, Outcome, run};
     let caches = std::collections::BTreeMap::from([(

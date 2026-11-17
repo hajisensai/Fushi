@@ -798,6 +798,21 @@ impl<'c> Truth<'c> {
         self.binding_where("collection", &collection.0.as_slice())
     }
 
+    /// 位置目录名是 [dir] 的本机 profile（按 uid 排）。一个集合只绑一个 profile，但目录名不唯一（并入后两个本机
+    /// 集合可能指向同一个目录），所以回列表。`collections` 一台设备只有几行，全表扫（不加索引、不升 SCHEMA）。
+    pub fn profiles_of_dir(&self, dir: &str) -> Result<Vec<String>, String> {
+        let mut st = self
+            .conn
+            .prepare_cached(
+                "SELECT profile_uid FROM collections WHERE dir = ?1 ORDER BY profile_uid",
+            )
+            .map_err(sql)?;
+        let rows = st
+            .query_map([dir], |r| r.get::<_, String>(0))
+            .map_err(sql)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(sql)
+    }
+
     /// 把 profile 绑到一个集合上，返回本机集合号。同一个 profile 再绑同一个集合是幂等的；一个 profile 只能绑一个集合，
     /// 一个集合只能绑一个 profile（设计 §5.1：同机两个 profile 不能绑定同一个集合）。改绑定是身份接线（G9）的事。
     pub fn bind(&self, profile: &str, collection: &Id, dir: &str) -> Result<i64, String> {

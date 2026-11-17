@@ -593,7 +593,7 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
       );
       final List<SrsNoteTypeView> views = _parse(
         'noteTypeViews',
-        () => SrsRemoteWire.noteTypesFrom(profileUid, wire),
+        () => SrsRemoteWire.noteTypesFrom(_rootIds, wire),
       );
       final Map<String, String> tags = <String, String>{
         for (final SrsEntityView v in wire) v.id: v.tag,

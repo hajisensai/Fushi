@@ -617,7 +617,8 @@ class HeadlessHost {
           ..aiRelaySettings = (() => ServerAiSettings(() => config.ai))
           // 复习库：远程复习按客户端点名的 profile 走；已配对设备写进来的复习数据叫醒对应那份同步。
           ..srsRemoteStoreProvider = (() => srs.remoteStore)
-          ..onClientWrite = srs.onClientWrite
+          ..onClientWrite = ((String path) =>
+              unawaited(srs.onClientWrite(path)))
           ..onClientUpload = _onClientUpload;
     try {
       await server.start();

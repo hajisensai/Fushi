@@ -2778,3 +2778,282 @@ Dart（本 worktree 编的 release DLL）：`srs_stats_vectors` 2/2、`srs_stats
   维持登记）。
 - 重切件里空洞之前的操作只由重切者担保（见「转发里的副本」节的更正与残余风险）：根治要空洞带被挖掉操作的信封与载荷哈希、
   清除前存下这两样，需要 SCHEMA 号，归同步安全 owner。
+
+## 34. 第四波 G10-4 host 目录与信任（2026-11-17，分支 `pr/srs-gen4-g10-4-host-directory`，基于 `pr/srs-gen4-switch` 9ad57c71096）
+
+收口 §10「没做」的 `profile_of_dir`、§23「没做」第 3、4 条、§24「已知」的 `server_backup` 与「每 profile 一个库目录」。
+Rust `SCHEMA` 没升（没加表 / 索引，分到的 40025 没用）；ABI 不变（多一条 JSON 命令）。
+
+### 规划与现状不符处（以代码为准）
+
+- 规划 §2.2 只写了「G10-4 host 目录与信任 ← G9-5、G8-7」，没有条目细则；设计稿 §8 G10 行写的「服务端设备信任（#3294）接到
+  新表」只成立一半：admin `GET/POST /api/admin/srs/devices[/trust]` → `srsSetDeviceTrust` → 内核 `trust`（新代
+  `cmd/writes_local.rs`，S1 已接线）、派生层按信任扣删除（`weigh.rs` `distrusted`）都在，但**没有任何写者会把设备记成待确认**：
+  协议 3 的「首次信任」（`store/sync2/trust.rs` `note_new_device`，BUG-4306）没移进新代，gen4 `plan` 记下新对端公钥时不判信任，
+  所以所有设备一律可信、服务端直接应用陌生设备的删除。`admin_srs_device_trust_test.dart` 里 3 条在 `pr/srs-gen4-switch` 上本来就是红的
+  （删除没被扣住），就是这个缺口。本块补上（见「实现」最后一条）。
+- §10 写「`collections.dir` 没有索引，需要时加索引（升 schema）」：一台设备的 `collections` 只有几行，`profile_of_dir` 全表扫，
+  **不加索引、不升 SCHEMA**。
+- 「host 目录」在 app 侧没有按目录名找 profile 的读法：`srs_app_runtime.dart` 的 `_onHostClientWrite` 只叫醒本机目录的整轮同步，
+  补充名按设备记；按目录名当 uid 读的只有无头服务端（`server_srs.dart` 的 `onClientWrite` / `onClientUpload`，以及
+  `_reconcile` 取名字 / 笔记数），本块改的就是这三处。
+
+### 实现
+
+- **内核 `profile_of_dir`**（`cmd/identity.rs`，不针对单个 profile 的读，`dispatch.rs` 全局臂）：请求 `{dir}`，回
+  `{profiles: [uid…]}`——当前**绑定**的位置目录名等于 `dir` 的本机 profile（`Truth::profiles_of_dir`，按 uid 排）。`dir` 来自对端
+  写入的路径，不可信：缺、不是字符串、空、`.` / `..`、含 `/` `\`、超过 255 字节（`DIR_MAX`）一律报错（`profile_of_dir: bad dir` /
+  `dir must be a string` / `missing dir`），不回空表，调用方据此区分「坏路径」与「没人绑这个目录」。位置目录名的判据与
+  `joined4` 同一份（`gen4/location.rs` `dir_name_ok` 改成 `pub(crate)`）。
+- **engine**（`srs_host_directory.dart`）：`srsHostPathProfile` 改名 `srsHostPathDir`（它取的一直是目录名，不是 uid；空段 / `.` / `..`
+  回 null）；新 `srsHostProfilesOfDir(core, dir)`（后台 isolate 发 `profile_of_dir`，回包形状不对抛 `FormatException`）。
+- **服务端**（`server_srs.dart`）：
+  - `onClientWrite` 按绑定反查（`_servedProfilesOfDir`：库目录开着才查；内核拒绝坏目录名记诊断日志、当作不属于任何 profile；
+    只叫醒在提供中的 profile）。改成返回 `Future<List<String>>`（排了同步的 uid，测试用），`headless_host.dart` 包一层 `unawaited`。
+  - `onClientUpload`（补充名）：同样按绑定反查，只给落在提供中的 profile 绑定目录里的段补；补充名按设备记（内核 `device_hint`
+    不分集合），去重键从 `uid/device` 改成 `device`。
+  - `_reconcile` 的名字 / 笔记数：库开着按 `srsLocationDir`（`identity` 的 `dir`）取同步目录里的说明；库没开时仍按配置里的 uid——
+    D32：管理员勾的就是同步目录名，第一次 `identity` 绑的也是它。
+- **整机备份与迁移互斥**（§24「已知」第 2 条）：迁移进行中库没开、`srs4.db` 不存在，提交点又会改名出 `srs4.db` 并原位封存
+  `srs.db`——中途拷出来的包可能只有封存的旧库、没有新库。`ServerSrs.holdForBackup()`：迁移在跑回 null（admin
+  `POST /api/admin/backups` 回 409 `srs_migration_running`）；否则给一个占位（`ServerSrsBackupHold`，`release` 只生效一次），持有期间
+  `_beginMigration` 不开始、记「推迟」，管理员手动开始回 409 `srs_backup_running`；最后一个占位放开时有推迟就重新套用配置一次。
+  `server_backup.dart` 另把换代过程文件（`srs4.db-migrating`、`srs4.db-creating`、`srs.db-gen4-prepare` 及其 `-wal/-shm/-journal`）
+  排除出包：只在迁移中或被杀后存在，还原回来也只是要清的垃圾。复习关着（没有 `ServerSrs`）不占位。
+- **远程复习客户端内置笔记类型**（§23「没做」第 3 条）：`SrsRemoteWire.noteTypesFrom` 的参数从 profile uid 改成主机信封里的
+  `SrsRemoteRootIds`，内置类型的代码默认值（字段 / 模板 ID）由 `ids.lapis` / `ids.fushi` 派生（新 `srsBuiltinNoteTypeIn(nt, spec)`，
+  `srsBuiltinNoteType(uid, spec)` 改为转调它）。信封没带某种内置类型的 ID 时报线格式错，不退回按 uid 派生。G9-7 之后
+  `SrsKernelIds(uid)` 的内置 ID 与 uid 无关，所以这是口径收口（客户端不再拿主机 uid 派生任何 ID），不是行为修复。
+- **首次信任**（内核 `cmd/sync.rs`）：`plan` 里 `Truth::set_peer` 回 `PeerPut::Inserted`（第一次见到这台设备的公钥）时调新
+  `note_new_peer`：本机集合已有用户数据（新 `reads::collection_has_user_data`，与 `has_user_data` 读同一判据，内置默认牌组 / 笔记类型
+  按规范 ID 不算）就设 `TRUST_PENDING`；库还空（全新设备第一次同步、服务端刚开始提供）直接可信。`Updated` / `Same` 不动信任，
+  冒名（`KeyMismatch`）照旧报错跳过。迁移带来的（`carry.rs`）、导入随备份记的（`import.rs`）不经这里。没加表，`SCHEMA` 不变。
+  （复核后改：身份承接、旧根设备也过首次信任、判空算等待缓冲，见下「复核修复」。）
+
+### 每 profile 一个库目录（评估，本块不做）
+
+§24 提出「多 profile 逐个迁、单个失败不影响其余」要每 profile 一个库目录。评估结论：**不改布局，保留一个 `<support>` 一份
+`srs4.db`**。理由：
+
+1. 迁移是「一份协议 3 `srs.db` → 一份新代库」整目录一次提交（对拍、封存、提交点都按文件）。按 profile 拆要内核新增「只迁旧库里
+   某几个 profile 到另一个目录」的能力，封存语义也要改（一份旧库被拆成几次迁，什么时候封？封了之后没迁的 profile 怎么办），
+   这是 G7-2 级别的改动，不是服务端布局能单独做的。
+2. 唯一会拦下整个目录的 profile 级原因是 `mergeHalfDone`（半截并入），G9-5 已经让迁移带过去、由 `profile_merge_commit` 收尾
+   （§20「半截并入」），剩下的拦截原因（空间、锁、对拍）本来就是整库的。隔离的收益很小。
+3. 代价面大：整机备份格式（v2 刚定，G11-4）、还原、`snapshotFn`、`profile_of_dir`（要遍历 N 个库）、AnkiConnect / 制卡按 profile
+   取库、app 侧 `SrsStorage` 单例都要改，而且是又一次存储布局换代。
+如果以后真的需要，先做内核「按 profile 子集迁移 + 分库」，服务端布局随后。
+
+### 测试
+
+- Rust `cmd/identity_tests.rs` 2 条（经 C ABI）：`profile_of_dir_follows_the_binding_not_the_uid`（没绑过的目录空表；认领到
+  `zz-remote` 的 R 只在那个目录下、不在 R 的 uid 下；大小写不同不算同一个目录；`collection_join` 改绑后跟着新目录走；Secondary
+  只读也能查）、`profile_of_dir_refuses_untrusted_dir_names`（缺 / 非字符串 4 种 / 空 / `.` / `..` / `a/b` / `a\b` / `../uid` / 256 字节
+  一律报错，255 字节可用）。
+- engine `srs_v4_layout_names_test.dart` 新 1 条：空段、`.`、`..`、别的命名空间不是任何目录。
+- 服务端 `server_srs_test.dart`：原「已配对设备写进来的文件只叫醒对应那份 profile」改成 await 回值；新 1 条「写入按绑定的位置目录
+  找 profile」（两份 profile 各叫醒自己；kJa `collection_join` 到 `0000-home` 后那个目录叫醒 kJa、kJa 的 uid 目录不再算它；补充名
+  只落绑定目录里的段；超长目录名（内核拒绝）、空段、`..`、`.`、别的命名空间不叫醒；管理员不再提供的 profile 不叫醒）。
+- 服务端 `server_srs_migration_test.dart` 新 1 条：备份占位期间自动判定与手动开始都不迁移（`srs_backup_running`）、放开后接着迁、
+  重复放开只算一次、迁移中拿不到占位、没有推迟就不因放开重跑。
+- 服务端 `admin_srs_device_trust_test.dart`「参数与拒绝原因」补：不是设备 ID 的串（`../uid`、500 字符）点名 profile 回 404
+  `device_unknown`，空白回 400。
+- engine `srs_remote_store_test.dart`「线格式还原的视图与主机上读到的相同」改用主机根 ID：经线格式还原的内置 Lapis 与主机
+  `noteTypes()` 里的逐字段相同；对调两种内置类型的根 ID 后物化出的不同（证明默认值来自给的 ID）。
+- Rust 首次信任：`sync_tests.rs` 新 `first_sight_of_a_device_is_pending_only_when_the_library_has_data`（空库见到的设备可信；有数据的库见到
+  的设备待确认，`trust` 后可信、再同步不回待确认；第三台新设备照样待确认）。改了口径的两条旧测试补显式确认：
+  `sync_relay_tests.rs` `a_device_on_two_locations_relays_between_them`（b 先断言 c 待确认再 `trust`，否则不转发 c 的段）、
+  `sync_complete_tests.rs` `old_root_takeover_reaches_migrated_and_new_devices_alike`（b 有数据，先确认 a 再收 a 上传的承袭段）。
+- 服务端 `admin_srs_device_trust_test.dart` 原有 3 条（待确认设备的删除被扣住 / 确认后放行 / 拒绝）在基线上红，首次信任补上后转绿。
+- 变异实测（去掉修复 → 红，复原 → 绿）：`note_new_peer` 调用换成空臂 → 首次信任、中继、旧根接手 3 条红；
+  `profile_of_dir` 去掉目录名校验 → `profile_of_dir_refuses_untrusted_dir_names` 红；`onClientWrite` 改回「目录名当 uid」→
+  「写入按绑定的位置目录找 profile」红；`_beginMigration` 去掉占位判断 → 「整机备份与迁移互斥」红；`_builtinOf` 改回
+  `srsBuiltinNoteType(uid, spec)` → 「线格式还原的视图与主机上读到的相同」红。复原后 cargo 定向 5 条、服务端 3 个文件 28 条、
+  engine 2 个文件 35 条全绿。
+
+### 没做 / 交给谁
+
+- admin `POST /api/admin/backups` 的 409 `srs_migration_running` 只有 `ServerSrs` 层的测试（占位语义），没有经 AdminBackups +
+  真 HeadlessHost 的端到端测试（要让真 HeadlessHost 停在迁移中，没有现成接缝）。
+- 离线 `fushi_server backup create`（serve 不在跑）不经 `ServerSrs`，不占位；那时没有本进程迁移，别的进程迁移被数据目录锁挡住。
+- 同步目录的 profile 列表（`srsListRemoteProfiles`，WebUI 勾选列表）仍只读 `v3/devices/*/profile.json`；规划 §1.1 G-6 定的
+  `v4/devices/<dev>/profile.json` 现在没有写者（`srsPublishProfileInfo` 仍写 `v3/devices`），读者跟着写者一起改，归 G9-5 续
+  （§21「没做」的关联流程改走 `v4/meta.json`）。新代全新集合在 WebUI 里因此只显示目录名、没有名字与笔记数估计。
+- D32「服务端保留副本 14 天自动删 + ctl 提前删」仍没做（§24 已记，要内核删保留副本的全局命令）。
+
+### 复核修复（2026-11-17，同分支）
+
+- **首次信任按签名钥匙承接身份**（blocker）。原实现只按设备 ID 判「第一次见到」，而迁移强制换新设备 ID、钥匙沿用（`dryrun.rs`
+  `new_self`、`carry.rs`），`rotate` 同样换 ID 沿用钥匙：每个多设备用户升级后，自家设备在有数据的对端上全部变成待确认，无头服务端
+  上所有客户端也都待确认，删除被扣、承袭段被 Deferred、中继不转发。现 `note_new_peer(t, col, device, public, prev, seen_at)`：
+  1. 钥匙是本机自己的（本机旧身份、协议 3 时期的本机）→ 可信；
+  2. 钥匙与已在册的别的设备相同（新 `Truth::peers_with_key`，`peers` 按集合扫，几行）→ 沿用前身的信任：head 自报的 `prev` 在这些
+     设备里就取它的，否则取其中最不受信的（只往待确认偏）；
+  3. 否则按原判据（库有数据 → 待确认）。
+  **定案**：只认钥匙、不单凭自报的 `prev` 承接——`prev` 是对端随便写的字段，钥匙要签名才有（`Head4::decode` / 协议 3
+  `Head::decode` 都验签）；同钥匙就是同一台设备，不必再核 `prev` 的链。复核建议里的「或 prev 的链已核对过」这一支没做：钥匙不同时
+  核 `prev.chain` 只能证明对端知道旧链值（链值写在公开的 head 上），证明不了身份。
+- **旧根上的协议 3 设备也过首次信任**（major）。`oldroot_ingest` 原来对 `set_peer` 的 `Inserted` 不判信任，`Receiver::legacy` 又不看
+  信任，任何能写同步位置的人在 `v3/devices/<新ID>/` 放自签 head + 段，它的删除 / 清除就按可信执行，比协议 3 还宽。原注释「旧根设备
+  按上传者信任收（D20）」不成立：D20 管的是新代设备上传的 `hrt-` 承袭段，`oldroot_ingest` 是本机直接读 v3 段。现 `Inserted` 时同样调
+  `note_new_peer`（`prev` 为空、`since` 取 v3 head 的 `at_ms`）；迁移带来的 v3 设备回 `Same` 不受影响，本机自己的协议 3 旧身份按
+  钥匙认成本机。
+- **判空算上等待缓冲**（minor，推测缺口）：`has_user_data` 新增 `has_buffered`，集合内各设备主键区间在 `op_wait` / `op_pending` 有行就算
+  「有」（协议 3 BUG-4478 同类：已收下、未投递的也是要应用的数据）。同一判据也被 `SrsDbStore.hasUserData`（profile 关联）用，
+  只往「有」偏，不会丢数据。
+- **`since` 改用 head 的写出时刻**（minor）：与协议 3 `note_new_device` 的 `seen_at` 同口径（同步页「首次出现」）。值来自对端，只用于显示。
+- **越界说明**（nit）：规划 §2.3 把 `packages/fushi_server/lib/src/backup/server_backup.dart` 划给 G11-4 独改。本块为「迁移进行中
+  备份要拒绝或等待」改了它一处（把换代过程文件 `srs4.db-migrating` / `srs4.db-creating` / `srs.db-gen4-prepare` 及其 `-wal/-shm/-journal`
+  排除出包，文件名与 `files.rs` 的 `GEN4_TEMP` / `GEN4_CREATING` / `PREPARE_COPY` 已核对一致），因为任务书把这件事交给了 G10-4、
+  而只靠 `ServerSrs` 占位挡不住「被杀后残留的过程文件被打进包」。**G11-4 合并时注意这处冲突**，保留排除表即可。
+- 复核说两条旧测试补的显式 `trust` 「盖住了回归」：核过，`a_device_on_two_locations_relays_between_them` 的 c、
+  `old_root_takeover_reaches_migrated_and_new_devices_alike` 的 a 都是全新安装、与对端不同钥匙的另一台设备，在有数据的库上待确认是
+  正确口径，显式确认保留；真正被盖住的「迁移 / 换身份后的自家设备」由下面新测试覆盖。
+
+测试（Rust，经 C ABI）：
+
+- `sync_tests.rs` `a_new_identity_on_the_same_key_inherits_trust`：a 连续三次 `rotate`，b 上新 ID 依次沿用前身的待确认 / 拒绝 /
+  受信（最后一次同钥匙旧身份里有待确认与拒绝的，按自报 `prev` 取受信的）；陌生钥匙自报 `prev` 指向受信设备仍待确认，`since` 是给的
+  写出时刻。
+- `sync_tests.rs` `two_migrated_devices_keep_trusting_each_other`：两台协议 3 设备互信后各自真迁移（`gen4_migrate_run`，新 ID），在新根
+  上互相同步：彼此仍可信、写入互相收到。辅助 `dispatch_tests.rs` 抽出 `migrate_legacy`（`migrated_prepared` 改为调它）。
+- `sync_complete_tests.rs` `an_unknown_old_root_device_is_pending_on_a_library_with_data`：有数据的库捡到陌生 OLD（含一条清除）→
+  待确认、`heldPurges` = 1，确认后可信；全新库捡同一个旧根 → 可信。辅助 `old_root` 抽出 `old_root_ops`（自带操作）。
+- `receive.rs` `ops_still_waiting_count_as_user_data`：只有等待缓冲里的操作时 `collection_has_user_data` 为真。
+- 变异实测：承接去掉（`same_key` 恒空）→ 前两条红；`oldroot_ingest` 的 `note_new_peer` 换空臂 → 旧根那条红；去掉 `has_buffered` →
+  等待缓冲那条红；`plan` 传 `now` 代替 `h.at_ms` → `first_sight_of_a_device_is_pending_only_when_the_library_has_data`（补了
+  `since` = 对端写 head 的时刻的断言）红；复原后工作区干净、相关 8 条全绿，`cargo test --profile quick --lib -j 4` 全量 1320 过。
+
+### 第二次复核修复（第三轮，2026-11-18，同分支；提交 `dffeeae986`、`6251f850e9` 与本节同提交的测试 / 文档）
+
+上面「复核修复」第 1 条（钥匙承接：本机钥匙可信、`peers_with_key`、同钥匙取最不受信）与第 3 条（`has_buffered`）的**实现已被替换**，
+以本节为准。
+
+- **首次信任并入 K2 的单一实现**。K2（`pr/srs-gen4-k2-trust-purge`）同时在改首见信任，为不两边各写一份，删掉 G10-4 自己的
+  `cmd/sync.rs` `note_new_peer`、`Truth::peers_with_key`、`reads::collection_has_user_data` / `has_buffered` 及重复测试，改用 K2 的
+  `truth/trust.rs` `Truth::note_new_peer` / `library_fresh`（判定顺序：本机已有它的日志 → 不追溯；`prev` + 同一把钥匙 → 原样承接；
+  库空 → 首次信任；否则待确认）。口径差异：同钥匙但不带 `prev`（或 `prev` 指向别的钥匙的设备）**不承接**、当新设备判。定案理由：
+  迁移与 `rotate` 写的新 head 都带 `prev`，诚实路径都能承接；不带 `prev` 的同钥匙新身份最多拿到「待确认」，不会比换一把新钥匙
+  更宽（对方随时能换钥匙），所以原先「同钥匙取最不受信」那支没有安全价值，不保留。
+- **承袭段只替本机信任的作者上传**（复核 major）。D20 收承袭段只看上传者信不信，段里各作者在收方没有信任行（= 可信），收方之后
+  在旧根上见到这位作者也按「本机已有它的日志」不追溯——所以首次信任只挡住了读旧根的那一台。现 `inherit.rs` 新
+  `vouches_for(t, col, dev)`：作者在本机有待确认 / 已拒绝的信任行时，`Uploader::open` 不替它切段、`cmd/sync_oldroot.rs`
+  `heritage_logs`（承袭对账指纹）也不含它；本机确认之后指纹变、下一轮照常补传。别的设备拿不到它就自己捡旧根、自己读它的 head、
+  自己做首次信任，待确认作者的清除在那边同样扣住。选这一支（复核建议 a）而不是让收方对承袭来的作者也做首次信任（建议 b）：b 要
+  承袭段带作者公钥或先从旧根学 head，且会把**受信上传者已担保**的作者也回溯扣住（下一条 minor 的口径问题）。
+  **残余**：本机改成不信任之前已经传上去的承袭段收不回（同新代原生段：信任是各设备本机的事）。
+- **混合版本家庭不再把自家未升级设备记成待确认**（复核 minor 2）。经受信上传者承袭来的作者在收方已有日志，之后在旧根上第一次见到
+  它的 head 走 `trust.rs` 第 1 条（`KnownLog`），不记待确认、清除不扣，与上传者 a 上的结果一致。
+  **与协议 3 口径仍有的差异（不修，记在这里）**：一台协议 3 设备 OLD 如果**没有任何已升级设备担保过**（例如它是迁移之后才加入
+  旧根的新设备、在库里有数据的已升级设备上本来就是待确认），全新设备 c 第一轮先收新根（库里就有了 a 的内容）、再捡旧根，OLD 在 c
+  上也是待确认；协议 3 的全新设备第一轮会信任所有设备。这里与 a 上的状态一致、不丢数据、只多一次确认。要完全对齐协议 3 需要
+  「本轮开始时库是空的」这种按轮记的判据，而旧根两条命令目前还没有 Dart 调用方（同步轮 2b 步未接线），等接线时由同步轮持有者
+  决定要不要加。
+- **身份承接边界补测试**（复核 minor 3）。复核变异的两支（本机钥匙恒可信、同钥匙取最不受信）随 K2 合一已不存在，按现口径补：
+  - 本机迁移前的协议 3 旧身份在旧根上再见到：迁移已把它记进 `peers`（同钥匙），登记不是「第一次见到」，不判待确认。
+  - 与在册设备同钥匙、不带 `prev` / `prev` 指向另一把钥匙的受信设备：不承接，库非空即待确认（前身已拒绝 / 待确认也不能换 ID 洗白，
+    前身可信也不凭钥匙自动承接）。
+
+**归 K2 文件的改动（由合流统一）**：
+
+- `truth/trust.rs`：`library_fresh` 的空洞表多查 `op_wait`（等待缓冲里已收下的原生操作算内容）；文件头第 1 条补一句「前提是承袭段只带
+  上传者自己信任的作者（`vouches_for`）」。其余与 K2 当前头（`003b61429f`）逐字节相同。
+- `cmd/sync_trust_tests.rs`：`legacy_library` / `migrate_to` 改成 `pub(super)`（本块新测试复用），其余不动。
+- `cmd/sync.rs`、`receive.rs`：本分支是 K2 较早版本的逐字节副本；K2 之后加了重切中继件（`FRX4`）等，**合流时取 K2 的**。
+- `inherit.rs`（`vouches_for`、`Uploader::open`）与 `cmd/sync_oldroot.rs`（`heritage_logs`）归本块。
+
+测试（Rust，经 C ABI 或真相层）：
+
+- `cmd/sync_heritage_trust_tests.rs`（本块新文件）：
+  - `a_purge_held_on_the_uploader_stays_held_on_other_devices`（拒绝路径）：a 上待确认的 OLD 不经承袭段上传，c 收不到它的任何操作，
+    c 捡旧根自己判待确认、清除同样扣住；a 确认后下一轮补传。
+  - `an_old_device_vouched_for_through_heritage_is_not_pending_later`：经受信 a 承袭来的 OLD 之后在旧根上写新段（含清除），c 不记待确认、
+    清除不扣。
+  - `the_own_protocol3_identity_seen_on_the_old_root_is_not_pending`、`a_same_key_identity_without_a_matching_prev_is_judged_as_new`：上面 minor 3。
+- `inherit_tests.rs` `an_author_this_device_does_not_trust_is_not_uploaded`：`Uploader` 本身不替待确认的作者切段（不靠同步轮指纹）。
+- 两条旧根接手测试改为先确认 OLD 再上传（`sync_complete_tests.rs`）。
+
+变异实测（改完跑、看红、`git restore` 复原）：
+
+- `vouches_for` 去掉信任条件 → `store::gen4` 596 条里 4 条红（上面拒绝路径、`an_author_this_device_does_not_trust_is_not_uploaded`、
+  `heritage_segments_count_toward_the_ingest_budget`、`old_root_takeover_reaches_migrated_and_new_devices_alike`），exit 101。
+- `note_new_peer` 去掉「本机已有它的日志」 → `an_old_device_vouched_for_through_heritage_is_not_pending_later` 与 K2 的
+  `note_new_peer_inherits_only_under_the_same_key` 红。
+- 承接不核公钥（只要 `prev` 在册就承接） → `a_same_key_identity_without_a_matching_prev_is_judged_as_new` 与 K2 那条红。
+- 本机旧身份：迁移有两处各自把它记进 `peers`（`carry.rs` 搬 `sync2_devices`、`create_self` 的 `own_peer(prev)`），单去一处测试仍绿
+  （冗余，符合预期），两处一起去掉 → `the_own_protocol3_identity_seen_on_the_old_root_is_not_pending` 红。
+- 复原后 `cargo fmt --check` exit 0；`cargo test --profile quick --lib -j 4 store::gen4` exit 0，596 passed、0 failed、7 ignored。
+
+### 第三次复核修复（第四轮，2026-11-18，同分支；提交 `af6f224fb0`、`dd0f2a229c` 与本节同提交的文档）
+
+上一节「混合版本家庭」一条的实现（`truth/trust.rs` 第 1 条「本机已有它的日志 → `KnownLog` 不追溯」）**已删**，以本节为准。
+
+- **复核 major：经承袭段认识的旧作者可被换钥匙冒充**。`KnownLog` 只看「本机有没有它的日志」，不看它的公钥有没有受信方担保。
+  承袭段原先不带作者公钥，收方 c 经承袭段收下 OLD 的日志后 `peers` 里没有 OLD 的钥匙；攻击者在旧根上拿另一把钥匙写 OLD 的
+  head 与清除，`set_peer` 回 `Inserted`、走 `KnownLog` 判可信，冒充者签的段按它自报的钥匙验签通过，清除照执行（复核探针实测：
+  c 上 applied=6、name=evil、没有 heldPurges）。新根 `plan` 收冒充 OLD 的 v4 head 同一条路，冒充者成了 c 上受信、认识钥匙的设备后
+  还能当承袭段上传者过 D20。定案（复核建议的做法一 + 做法二都做）：
+  - **承袭段头带作者公钥**（`gen4/heritage.rs`）：flags bit1 = 带 `author_key[32]`（紧跟 `uploader` 之后，在签名覆盖的头里）。
+    上传者打段时带本机 `peers` 里记着的这位作者的公钥（`inherit.rs` `pack`；协议 3 里没有公钥的设备行不带）。不带时字节与原
+    黄金向量完全相同（旧格式不变，`VERSION` 仍是 1）；`segment.rs` 新 `read_magic_flags` 让各格式声明自己认得的 flags 位，`FSG4`
+    仍只认 bit0。**格式改动**：设计稿 §3.1 的段头布局没同步改，待设计稿持有者补一行（本块只改交接本节，不动设计稿）。
+  - **收方登记、对不上整段拒**（`receive.rs` `vouched_author_key`）：承袭段验签、整段合规之后，本机还没记过作者公钥就按段头
+    登记（不写信任行：上传者受信，它担保的作者可信，D20）；记着另一把 = 新拒绝 `Reject::AuthorKeyMismatch(设备)`，整段不落、
+    不登记。`Uploader::see` 同口径（这样的段不算位置上有、本机照传）。登记之后旧根上 OLD 的 head 不再进 `oldroot_scan` 的
+    `heads`（公钥已知），冒充者签的段按真公钥验签不过；新根上冒充的 head 在 `set_peer` 就是 `KeyMismatch`。
+  - **首次信任删掉「本机已有日志」放行**（`truth/trust.rs`，归 K2 的文件）：公钥第一次登记一律按「`prev` + 同钥匙承接 → 库空首次
+    信任 → 待确认」判。到这里还「已有日志」的只剩段头没带公钥的作者（上传者也不知道），它的公钥没有任何受信方担保，不能先到
+    先得地变成可信。库里有它的日志就不是空库 → 待确认；`oldroot_ingest` 已按 `FirstSeen::wrote` 让派生层重判，它已落下的删除与
+    清除随之扣住（与重建一致），用户确认后放行。**与协议 3 的差异**：协议 3 `trust_head` 给「有设备行、没公钥」补公钥时不判
+    待确认；这里有意收紧——只多一次确认，不丢东西，已执行的清除不受影响。
+  - **`plan` 拒绝冒用协议 3 作者 ID 的新根 head**（`cmd/sync.rs`）：本机有这台设备的日志、却从没记过它的公钥，只能是段头没带
+    公钥的承袭作者；换代迁移给每台设备换新 ID，协议 4 的 head 不会用协议 3 的设备 ID，所以按冒名报错、不登记。这样 `plan`
+    写下的待确认设备在本机仍一条操作都没有，`plan` 继续不动派生层。
+  - 顺带效果：c 经承袭段学到 OLD 的公钥后，OLD 自己迁移出来的新身份（head 带 `prev = OLD`、同一把钥匙）在 c 上走「换身份继承」
+    可信——上一轮复核 minor「混合版本家庭」那条因此由公钥承接解决，不再依赖 `KnownLog`。这一支没有单独的端到端测试（要两台
+    协议 3 库各自迁移再互相同步，装置较重），靠 `note_new_peer_inherits_only_under_the_same_key`（K2）与本节的公钥登记测试组合覆盖。
+  - **残余**：开发期别的构建已经传上位置、段头不带公钥的承袭段，收方照旧不登记公钥（该作者之后的 head 会判待确认）；gen4 没发布，
+    不做迁移。上传者自己先被冒充者抢先登记了错误公钥的（它会把冒充者判待确认、不替它传），不在本条范围。
+- **复核 minor：待确认作者不替传后「位置上原生操作依赖的承袭操作一定在位置上」被有意打破**。定案：`inherit.rs` 文件头写明旧根
+  退役的前提——所有设备都捡完旧根，或每台设备上都没有待确认 / 已拒绝的承袭作者（确认了的下一轮补传）；在此之前不能清空、删除
+  旧根。`cmd/sync_oldroot.rs` `heritage_plan` 回包（`skip` 与否都带）新增 `unvouched: [设备…]` = 本机有内容、因作者不受信而不替传
+  的承袭日志，同步页据此提示用户先确认或拒绝。旧根命令目前仍没有 Dart 调用方，提示文案与接线交给同步轮持有者（G8-7 / G9-5）。
+
+**归 K2 文件的改动（由合流统一）**：`truth/trust.rs` 删 `FirstSeen::KnownLog` 与第 1 条、文件头判定顺序重写；
+`cmd/sync_trust_tests.rs` `note_new_peer_inherits_only_under_the_same_key` 末尾「本机已有它的日志 → KnownLog」一段删掉（拿本机身份
+自己调 `note_new_peer` 的人造场景，新口径下没有意义，覆盖改由下面的端到端测试承担）；`cmd/sync.rs` `plan` 加上面的拒绝；
+`receive.rs` 加 `vouched_author_key` 与 `Reject::AuthorKeyMismatch`。K2 若另改了这几处，合流时按本节语义合并，**不要**把 `KnownLog`
+带回来。
+
+测试（Rust）：
+
+- `gen4/heritage.rs` `author_key_round_trips_under_the_signature`：带公钥的段头读回相同、改公钥一个字节验签失败、不认识的 flags 位仍按损坏。
+- `receive.rs` `heritage_author_keys_are_registered_and_must_agree`：段头公钥登记、不写信任行；之后换钥匙的 `set_peer` 是
+  `KeyMismatch`；另一上传者担保另一把 → `AuthorKeyMismatch`、一条不落；同一把或不带照收；增量 == 重建。
+- `inherit_tests.rs` `coverage_vouching_another_author_key_does_not_count`：位置上担保另一把的段不算有、本机照传；本机打的段头带
+  本机记着的作者公钥；同一把照常算。
+- `cmd/sync_heritage_trust_tests.rs`（经 C ABI）：
+  - `an_impostor_cannot_take_over_an_author_known_through_heritage`（复核 major 的原场景，拒绝路径）：c 经 a 的承袭段认识 OLD 后，
+    攻击者用 0xee 冒充 OLD 换掉旧根 head、写 4..=6（最后一条彻底清除）：c 与 a 上都一条不落（`BadSignature`）、名字不变、没有
+    trust 行与 heldPurges，`applied` 仍是 3。
+  - `a_heritage_author_without_a_vouched_key_is_judged_when_its_head_first_arrives`：段头不带公钥时，新根上冒用 OLD ID 的 head 被
+    `plan` 按冒名拒、不登记；旧根上的冒充 head 第一次登记 OLD 的公钥 → 待确认，清除扣住（heldPurges=1）。
+  - `a_purge_held_on_the_uploader_stays_held_on_other_devices` 补断言：a 上 `heritage_plan` 的 `unvouched` 列出待确认的 OLD，确认后为空。
+  - `an_old_device_vouched_for_through_heritage_is_not_pending_later` 改断言：c 已从段头认识 OLD 的公钥，`oldroot_scan` 不再读它的
+    head（`heads` 为空），新段照收、可信、清除不扣。
+- `sync_complete_tests.rs`：`old_root_with` 拆出 `old_root_signed`（指定签名钥匙与名字），原调用不变。
+
+变异实测（改完跑、看红、复原；复原后 `git status` 干净）：
+
+| 变异 | 结果 |
+|---|---|
+| M1 `pack` 段头不带作者公钥 | 定向 44 条里 3 条红（impostor、vouched…not_pending_later、without_a_vouched_key），`inherit` 模块另 1 条红（coverage_vouching…） |
+| M2 收段不登记作者公钥 | 3 条红（含 `heritage_author_keys_are_registered_and_must_agree`、impostor） |
+| M3 收段公钥对不上也收 | `heritage_author_keys_are_registered_and_must_agree` 红 |
+| M4 恢复「已有日志 → 放行」 | `a_heritage_author_without_a_vouched_key_is_judged_when_its_head_first_arrives` 红 |
+| M5 `plan` 不拒冒用协议 3 ID 的 head | 同上一条红 |
+| M6 `unvouched` 恒空 | `a_purge_held_on_the_uploader_stays_held_on_other_devices` 红 |
+| M7 `Uploader::see` 不核作者公钥 | `coverage_vouching_another_author_key_does_not_count` 红 |
+| M8 读段头不认 bit1 / M9 写段头不写公钥字节 | `author_key_round_trips_under_the_signature` 红 |
+
+全部 exit 101；复原后 `cargo fmt --check` exit 0，`cargo test --profile quick --lib -j 4` 全量 exit 0：1335 passed、0 failed、39 ignored（都是已有的 ignore）。

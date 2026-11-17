@@ -23,6 +23,7 @@ fn heritage_header() -> HeritageHeader {
         source: collection_of(DIR),
         device: id(0x0d),
         uploader: id(0xa1),
+        author_key: None,
         t_version: 1,
         first: 1,
         last: 4321,

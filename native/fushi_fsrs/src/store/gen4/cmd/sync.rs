@@ -787,6 +787,17 @@ pub fn plan(t: &Truth<'_>, col: i64, req: &Value, heads: &[Vec<u8>]) -> Result<V
         ext.insert(SEEN_AT_KEY.into(), Value::from(h.at_ms));
         ext.insert(SEEN_ACK_KEY.into(), Value::from(ack_fp(&h.ack)));
         ext.insert(SEEN_DIGEST_KEY.into(), Value::from(h.digest.clone()));
+        // 本机已有它的日志、却从没记过它的公钥：只能是承袭日志的作者（协议 3 设备，原生日志收段前必先有公钥），段头
+        // 没带它的公钥（`receive.rs` `vouched_author_key`）。换代迁移给每台设备换新 ID，协议 4 的 head 不会用协议 3 的
+        // 设备 ID；拿它的 ID 写新根 head 的只能是冒充者，不登记（否则冒充者成了本机认识钥匙的设备，还能当承袭段上传者
+        // 过 D20）。这样 `plan` 登记的新设备在本机一条操作都没有，写下待确认也不必让派生层重判（`plan` 不动派生层）。
+        if t.device_key(col, &h.device)?.is_none() && t.last_of(col, &h.device)? > 0 {
+            errors.push(format!(
+                "head of {}: claims a protocol 3 device whose log is here without its key (impostor)",
+                h.device
+            ));
+            continue;
+        }
         let peer = Peer {
             device: h.device,
             public: h.public,
@@ -804,8 +815,8 @@ pub fn plan(t: &Truth<'_>, col: i64, req: &Value, heads: &[Vec<u8>]) -> Result<V
                 continue;
             }
             // 第一次见到它（含只经转发见到的）：首见信任判定（`truth/trust.rs`：换身份继承 / 首次信任 / 待确认）。
-            // 只给本机还没有它任何操作的设备写信任行（原生段要用这里记下的公钥验；已有承袭日志的不追溯），派生层不必
-            // 重判（`plan` 是本机状态写命令，不动派生层）；之后收段时派生层按这里写下的状态判它的删除与清除。
+            // 只给本机还没有它任何操作的设备写信任行（原生段要用这里记下的公钥验；已有日志而没公钥的上面已拒），派生层
+            // 不必重判（`plan` 是本机状态写命令，不动派生层）；之后收段时派生层按这里写下的状态判它的删除与清除。
             PeerPut::Inserted => {
                 t.note_new_peer(col, &h.device, &h.public, h.prev.as_ref(), h.at_ms)?;
             }

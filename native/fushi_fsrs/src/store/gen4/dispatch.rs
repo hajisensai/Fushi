@@ -127,6 +127,8 @@ pub fn wiring(op: &str) -> Option<Wiring> {
         | "divergence" => Wired,
         // 彻底清除的字节层收尾状态（`scrub.rs`；新代才有，协议 3 没有字节层收尾）
         "scrub_state" => Wired,
+        // 互联 host 按位置目录名找 profile（G10-4，`cmd/identity.rs` `profile_of_dir`；不针对单个 profile）
+        "profile_of_dir" => Wired,
         // profile 数据（G9-5，`cmd/profile_data.rs`）：清除、无主扫描、链接记的集合、迁移带过来的半截并入的收尾。
         "profile_uids"
         | "orphan_sweep_done"
@@ -383,6 +385,7 @@ fn run(
         }
         // profile 数据（G9-5，`cmd/profile_data.rs`）：不针对单个 profile 的几条。
         "profile_uids" => return c.read(cmd::profile_data::profile_uids),
+        "profile_of_dir" => return c.read(|t| cmd::identity::profile_of_dir(t, req)),
         // 只删本机状态行与写完成标记：不碰真相与派生层，不推进写入代数。
         "orphan_sweep_done" => {
             return c.write_local(|t| cmd::profile_data::orphan_sweep_done(t, req));

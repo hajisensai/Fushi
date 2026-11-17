@@ -14,17 +14,25 @@
 //!
 //! # 判定顺序（[Truth::note_new_peer]）
 //!
-//! 1. **本机已有它的日志**（承袭日志先于它的公钥到了：协议 3 时代没登记公钥、承袭段由别的设备代传）：它的历史已经
-//!    是本机库的一部分、它的删除早已按可信生效，不追溯扣住（协议 3 `trust_head` 给「有设备行、没公钥」补公钥时
-//!    同样不判待确认）。所以写下信任行（待确认或继承来的）的设备在本机一条已落库的操作都没有，派生层不必为它重判（调用方仍按
-//!    [FirstSeen::wrote] 告诉派生层，兜底）。
-//! 2. **换身份继承**：新 head 带 `prev`，且 `peers` 里 `prev.device` 已登记的公钥与新 head 的公钥**逐字节相同**（同一把
+//! 只在一台设备的公钥**第一次**登记进本机时判（[PeerPut::Inserted]）。公钥一经登记就先到先得，之后换钥匙的 head 是
+//! [PeerPut::KeyMismatch]、按冒名不认，不再到这里。所以「这台设备可信」只能来自下面几条之一，或来自受信方的担保——
+//! 承袭段头带上传者记着的作者公钥（`heritage.rs` `author_key`，`receive.rs` 收段时登记、不判信任：上传者受信，D20），
+//! 它的 head 之后再来就是已认识的设备，根本不进这里。
+//!
+//! 本机已有它的日志、公钥却是第一次登记的（承袭段头没带公钥：上传者也不知道，协议 3 里没有公钥的设备行），**不**因为
+//! 「已有日志」就当可信：公钥没有任何受信方担保，谁先拿一把钥匙写它的 head 谁就成了它（G10-4 第四轮复核 major：
+//! 冒充者在旧根上换钥匙写 head 与清除，收方按「本机已有它的日志」放行、清除照执行）。照下面 1–3 条判，库里有它的日志
+//! 就不是空库，结论是待确认；调用方按 [FirstSeen::wrote] 告诉派生层重判，它已落下的删除与清除随之扣住（与重建一致），
+//! 用户确认后放行——只多一次确认，不丢东西；清除已经执行过的不受影响。与协议 3 `trust_head` 给「有设备行、没公钥」
+//! 补公钥时不判待确认的口径不同，是有意收紧。
+//!
+//! 1. **换身份继承**：新 head 带 `prev`，且 `peers` 里 `prev.device` 已登记的公钥与新 head 的公钥**逐字节相同**（同一把
 //!    签名钥匙：换代迁移、`rotate`、复制目录后的分叉换身份都沿用钥匙，`truth/own.rs` 文件头）——把旧身份的信任状态
 //!    （含 `since`）原样带到新身份上，新身份没自报名字时把旧名字也带上。不重新弹确认：换代迁移给每台设备换新身份
 //!    （设计 §5 第 4 步），漏了这一步，升级后所有老设备会整批变成待确认。**必须核公钥**：只凭 `prev` 指向谁就继承，
 //!    任何人写一份 `prev` 指向可信设备的 head 就能冒充它。公钥不同 = 不继承，按下面的规则当新设备判。
-//! 3. **本机库还是空的**（[Truth::library_fresh]）：首次信任。新装的设备第一次同步时谁都不认识，库里也没有可丢的东西。
-//! 4. 否则：**待确认**（[TRUST_PENDING]，`since` = 它那份 head 的写出时刻）。它的普通操作照常生效，删除与彻底清除照收
+//! 2. **本机库还是空的**（[Truth::library_fresh]）：首次信任。新装的设备第一次同步时谁都不认识，库里也没有可丢的东西。
+//! 3. 否则：**待确认**（[TRUST_PENDING]，`since` = 它那份 head 的写出时刻）。它的普通操作照常生效，删除与彻底清除照收
 //!    进日志但扣住（`weigh.rs` 不受信作者），用户确认后整批放行。
 //!
 //! 同一轮里先把所有 head 登记完再收段（`plan` 在前、`ingest` 在后；`oldroot_ingest` 先登记 head 再收段）：全新设备
@@ -41,8 +49,6 @@ use crate::gen4::op::{KIND_CHECKPOINT, KIND_ENTITY};
 pub enum FirstSeen {
     /// 换身份：从 `from` 原样继承了信任状态 `state`（None = 可信）。
     Inherited { from: Id, state: Option<i64> },
-    /// 本机已有它的日志：不追溯，按可信。
-    KnownLog,
     /// 本机库还是空的：首次信任。
     Fresh,
     /// 记成待确认。
@@ -66,7 +72,7 @@ const NOT_CONTENT: [u16; 3] = [KIND_SALTS, KIND_JOIN, KIND_CHECKPOINT];
 impl Truth<'_> {
     /// 集合 [col] 里还没有用户自己的东西：真相里除了内置种子（`data` 带 `builtin` 的实体创建：默认牌组、内置笔记类型，
     /// Dart 开库就写，`SrsDbStore.ensureBuiltins`）与 [NOT_CONTENT] 以外一条操作都没有，也没有空洞、副本记录、待投递的
-    /// 承袭槽（它们都说明这里有过内容）。原生日志与承袭日志一样看。
+    /// 承袭槽、还在等待缓冲里的原生操作（它们都说明这里有过内容；后者已收下、只是前面缺着，G10-4）。原生日志与承袭日志一样看。
     ///
     /// 直接查真相、不读派生投影：真相先于派生落库，判定不受投影是否收好影响（协议 3 BUG-4478 是读投影读到了空库）。
     /// 协议 3 的口径（`store/sync2/trust.rs` `library_fresh`：没有复习日志、没有修改记录、身份记录全是内置的）在这里
@@ -84,7 +90,7 @@ impl Truth<'_> {
         );
         for d in self.devices(col)? {
             let (lo, hi) = k_range(d.dev);
-            for table in ["op_voids", "op_alias", "op_pending"] {
+            for table in ["op_voids", "op_alias", "op_pending", "op_wait"] {
                 let any: bool = self
                     .conn
                     .prepare_cached(&format!(
@@ -139,9 +145,6 @@ impl Truth<'_> {
         seen_at: i64,
     ) -> Result<FirstSeen, String> {
         self.write(|| {
-            if self.last_of(col, device)? > 0 {
-                return Ok(FirstSeen::KnownLog);
-            }
             if let Some(p) = prev.filter(|p| p.device != *device) {
                 if self.device_key(col, &p.device)?.as_ref() == Some(public) {
                     let entry = self.trust_entry(col, &p.device)?;

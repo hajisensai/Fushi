@@ -17,6 +17,7 @@
 ///                                   `code` / 原因、报告路径、处置说明 `advice`）+ 各份 profile 的状态；
 /// - `POST /api/admin/srs/migration/start`   开始 / 重新开始迁移（后台跑，202 后看状态）；在跑 / 不需要 / 别的进程在迁
 ///                                   → 409 `srs_migration_running` / `srs_migration_not_needed` / `srs_migrating_elsewhere`；
+///                                   整机备份正在拷库目录 → 409 `srs_backup_running`（备份完再开始）；
 /// - `POST /api/admin/srs/migration/cancel`  叫停（提交点之前）；没在跑 / 过了提交点 → 409。
 ///
 /// 复习库在升级 / 升级受阻时，按 profile 取库的端点回 503 `srs_upgrading` / `srs_upgrade_blocked`（server_srs.dart

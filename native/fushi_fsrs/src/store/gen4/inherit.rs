@@ -4,6 +4,24 @@
 //! 由同步轮保证：这样位置上任何原生操作依赖的承袭操作一定也在位置上；[UploadPlan::blocked] 非空时这一点做不到，
 //! 同步轮要把它报出来。
 //!
+//! # 只替本机信任的作者上传（G10-4，D20 的另一半）
+//!
+//! 收承袭段的设备只看上传者信不信（D20，`receive.rs`），段里各作者的操作按上传者担保收下、在收方没有信任行（=
+//! 可信）；段头还带上传者记着的作者公钥（`author_key`），收方据此登记，之后旧根上这位作者的 head 是「已认识的设备」，
+//! 换了钥匙的冒充者公钥对不上（G10-4 第四轮，`truth/trust.rs` 文件头）。
+//! 所以上传者只能担保**自己信任的**作者：承袭日志的作者在本机是待确认 / 已拒绝（[vouches_for] 为假）的，这一轮整条
+//! 不传、也不算进对账（[Uploader::open]、`cmd/sync_oldroot.rs` 的指纹），否则这位作者在本机被扣住的删除与彻底清除
+//! 会经承袭段在别的设备上照常执行，首次信任只挡住了读旧根的那一台。本机确认它之后指纹变了，下一轮照常补传。
+//!
+//! 没传的作者别的设备照样拿得到：它的段还在旧根上，收方捡旧根时（位置上没有承袭段覆盖它）自己读它的 head、自己做
+//! 首次信任。本机原生操作依赖这位作者的操作时，收方先把本机的操作放在等待缓冲里，捡完旧根就接上。已经传上去之后
+//! 本机才改成不信任的，位置上那份收不回（同新代原生段：信任是各设备本机的事）。
+//!
+//! 所以文件头第一段「位置上任何原生操作依赖的承袭操作一定也在位置上」对待确认作者**有意不成立**：那部分只在旧根上。
+//! 旧根因此不能先于下面任一条退役（清空、删除、不再可读）：所有设备都捡完了旧根，或者每台设备上都没有待确认 /
+//! 已拒绝的承袭作者（确认了的下一轮会补传）。`cmd/sync_oldroot.rs` `heritage_plan` 的回包 `unvouched` 列出本机因作者
+//! 不受信而不替传的承袭日志，同步页据此提示用户先处理这些设备。
+//!
 //! # 位置上「有」是什么意思
 //!
 //! 位置上的一个承袭段只有在下面都成立时才算进位置的现状（[Uploader::see] 答 [Seen::Counted]），否则它覆盖的区间一律按
@@ -49,7 +67,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::receive::{Defer, Reject};
-use super::truth::{DEV_HERITAGE, Truth};
+use super::truth::{DEV_HERITAGE, DevInfo, Truth};
 use crate::gen4::heritage::{
     HeritageHeader, HeritageMeta, HeritageSlot, SlotBody, SlotStream, fingerprint,
     open_heritage_verified, pack_heritage, peek_heritage_header,
@@ -63,6 +81,12 @@ use crate::sync2::vv::OpId;
 
 /// 一个承袭段最多切这么多个槽（设计 §2.6 的实测口径：每段 2 万个，样本库 71 段）。只在切点上切，所以是目标不是硬上限。
 pub const UPLOAD_MAX_SLOTS: u64 = 20_000;
+
+/// 本机能不能替承袭日志 [d] 的作者上传（模块文件头「只替本机信任的作者上传」）：是有内容的承袭日志，且作者在本机
+/// 可信（没有待确认 / 已拒绝的信任行）。[Uploader::open] 与承袭对账的指纹（`cmd/sync_oldroot.rs`）用同一个判据。
+pub fn vouches_for(t: &Truth<'_>, col: i64, d: &DevInfo) -> Result<bool, String> {
+    Ok(d.kind == Some(DEV_HERITAGE) && d.last > 0 && t.trust_of(col, &d.id)?.is_none())
+}
 
 /// 同一个操作号、同一个链指纹的槽的先后（设计 §3.2：完整 < 空洞 < 副本记录）。位置上留靠后的一份。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -270,17 +294,17 @@ impl<'t, 'c> Uploader<'t, 'c> {
             .map(|j| j.from)
             .collect();
         collections.insert(binding.collection);
-        let logs = t
-            .devices(col)?
-            .into_iter()
-            .filter(|d| d.kind == Some(DEV_HERITAGE) && d.last > 0)
-            .map(|d| {
-                let src = d
-                    .src
-                    .ok_or_else(|| format!("gen4 inherit: heritage log {} has no source", d.id))?;
-                Ok((d.id, Log { src, last: d.last }))
-            })
-            .collect::<Result<BTreeMap<Id, Log>, String>>()?;
+        // 只替本机信任的作者上传（文件头）：作者待确认 / 已拒绝的承袭日志不进这一轮。
+        let mut logs: BTreeMap<Id, Log> = BTreeMap::new();
+        for d in t.devices(col)? {
+            if !vouches_for(t, col, &d)? {
+                continue;
+            }
+            let src = d
+                .src
+                .ok_or_else(|| format!("gen4 inherit: heritage log {} has no source", d.id))?;
+            logs.insert(d.id, Log { src, last: d.last });
+        }
         Ok(Uploader {
             t,
             col,
@@ -372,6 +396,16 @@ impl<'t, 'c> Uploader<'t, 'c> {
             return Ok(Seen::Rejected(Reject::Corrupt(
                 "header changed under the signature".into(),
             )));
+        }
+        // 段头担保的作者公钥与本机记的不同（`receive.rs` 同样整段不收）：不能替本机补过这一段。
+        if let Some(k) = header.author_key {
+            if self
+                .t
+                .device_key(self.col, &header.device)?
+                .is_some_and(|cur| cur != k)
+            {
+                return Ok(Seen::Rejected(Reject::AuthorKeyMismatch(header.device)));
+            }
         }
         // 第一遍：整段合规才算（流走到头才验得出覆盖区间与末槽）。
         let stream: SlotStream<'_> = match open.slots() {
@@ -478,6 +512,7 @@ impl<'t, 'c> Uploader<'t, 'c> {
             source,
             device,
             uploader: self.me,
+            author_key: None,
             t_version: 0,
             first,
             last,
@@ -649,6 +684,7 @@ impl<'t, 'c> Uploader<'t, 'c> {
             source: spec.source,
             device: spec.device,
             uploader: self.me,
+            author_key: self.t.device_key(self.col, &spec.device)?,
             t_version: tv.ok_or("gen4 inherit: empty segment")?,
             prev_chain: spec.prev_chain,
             last_chain: spec.last_chain,

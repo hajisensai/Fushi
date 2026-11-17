@@ -325,6 +325,36 @@ void main() {
     );
   });
 
+  test('整机备份与迁移互斥：迁移中不给占位；占位期间不开始迁移，放开后接着迁（G10-4）', () async {
+    // 启动之前就拿着占位：启动判定要迁移，但推迟。
+    final ServerSrsBackupHold? hold = srs.holdForBackup();
+    expect(hold, isNotNull);
+    await srs.start();
+    await srs.applyConfig();
+    expect(fake.runs, isEmpty, reason: '备份占位期间自动判定不开始迁移');
+    expect(srs.migrationRunning, isFalse);
+    expect(await srs.startMigration(), 'srs_backup_running');
+    expect(fake.runs, isEmpty, reason: '管理员手动开始同样要等备份完');
+
+    // 放开（重复放开只算一次）：重新判定，迁移开始。
+    hold!.release();
+    hold.release();
+    await runs(1);
+    expect(srs.migrationRunning, isTrue);
+    expect(srs.holdForBackup(), isNull, reason: '迁移在跑：备份拿不到占位');
+
+    fake.finish(
+      const SrsGen4MigrationOutcome(verdict: SrsGen4MigrationVerdict.cancelled),
+      after: SrsGenState.needsMigration,
+    );
+    await settle();
+    final ServerSrsBackupHold? again = srs.holdForBackup();
+    expect(again, isNotNull, reason: '迁移停了，备份可以开始');
+    again!.release();
+    await srs.applyConfig();
+    expect(fake.runs, hasLength(1), reason: '没有推迟的迁移就不因放开占位重跑');
+  });
+
   test('启动时目录已是失败类状态：管理员可见、不迁移、不删文件', () async {
     final File legacy = File(SrsStorage.legacyPathIn(support.path))
       ..writeAsStringSync('stand-in for a protocol 3 library');

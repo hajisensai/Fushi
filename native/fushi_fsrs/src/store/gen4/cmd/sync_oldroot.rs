@@ -39,7 +39,7 @@ use super::media_sync::{hex32, unhex32};
 use super::sync::{bump_revision, collections_of, meta_get, meta_set, settled_json};
 use crate::gen4::location::{V4File, parse_v4_path};
 use crate::store::gen4::ingest::Settle;
-use crate::store::gen4::inherit::{Seen, Uploader};
+use crate::store::gen4::inherit::{Seen, Uploader, vouches_for};
 use crate::store::gen4::oldroot::OldRootSettle;
 use crate::store::gen4::receive::{Received, Receiver, Taken};
 use crate::store::gen4::schema::{k_range, sql};
@@ -240,9 +240,9 @@ pub fn oldroot_ingest(
     let mut rx = Receiver::open(t, col, Settle::Incremental)?.with_budget(max_items);
     let mut rest = 0usize;
     if trust_moved {
-        // 写了信任行：收尾时把扣住的删除与清除重判（写下待确认的作者在本机还没有日志，`truth/trust.rs` 文件头第 1 条，
-        // 这里是兜底，保证增量 == 重建）。在这个不变量下它不改变结果，所以没有测试能证伪它（复核变异：删掉这一行
-        // 相关测试全绿）；留着是为了不变量哪天被打破时派生层不悄悄偏离重建。
+        // 写了信任行：收尾时把扣住的删除与清除重判，保证增量 == 重建。写下待确认的作者通常在本机还没有日志；本机已有
+        // 它的承袭日志、公钥却是第一次登记的（承袭段头没带公钥，`truth/trust.rs` 文件头）也判待确认，它已落下的删除与
+        // 清除要在这里随之扣住。
         rx.trust_changed();
     }
     for (path, b) in paths.iter().zip(&blobs[nheads..]) {
@@ -296,13 +296,28 @@ pub(crate) fn hrt_key(col: i64, progress: &str) -> String {
     format!("gen4_hrt/{col}/{progress}")
 }
 
-/// 本机的承袭日志：(下标, 设备)。
+/// 本机这一轮要对账的承袭日志：(下标, 设备, 末尾)。只含本机能替作者上传的（`inherit.rs` [vouches_for]：作者在本机
+/// 可信）——作者的信任一变，指纹跟着变，确认之后的下一轮照常补传。
 fn heritage_logs(t: &Truth<'_>, col: i64) -> Result<Vec<(i64, Id, u64)>, String> {
-    Ok(t.devices(col)?
-        .into_iter()
-        .filter(|d| d.kind == Some(DEV_HERITAGE) && d.last > 0)
-        .map(|d| (d.dev, d.id, d.last))
-        .collect())
+    let mut out = Vec::new();
+    for d in t.devices(col)? {
+        if vouches_for(t, col, &d)? {
+            out.push((d.dev, d.id, d.last));
+        }
+    }
+    Ok(out)
+}
+
+/// 本机有内容、但作者不受信而不替传的承袭日志（[heritage_plan] 的 `unvouched`），设备 ID 文本、按 ID 排序。
+fn unvouched_logs(t: &Truth<'_>, col: i64) -> Result<Vec<String>, String> {
+    let mut out = Vec::new();
+    for d in t.devices(col)? {
+        if d.kind == Some(DEV_HERITAGE) && d.last > 0 && !vouches_for(t, col, &d)? {
+            out.push(d.id.text());
+        }
+    }
+    out.sort();
+    Ok(out)
 }
 
 /// 位置上的承袭段（`listing: {设备: [文件名…]}` 里 `hrt-` 开头、名字认得的），路径相对 `v4/`，连同它的旧设备。
@@ -371,27 +386,30 @@ fn heritage_fp(
 
 /// `heritage_plan {progress, listing}`（读）：本机没有承袭日志、或指纹与上次传完时记下的相同 → `{skip: true}`；否则
 /// `{skip: false, read: [路径…]}` = 位置上旧设备是本机某条承袭日志的承袭段（相对 `v4/`，交 [heritage_outbox]）。
+/// 两种回包都带 `unvouched: [设备…]`：本机有内容、但因作者在本机待确认 / 已拒绝而**不替传**的承袭日志（`inherit.rs`
+/// 文件头）。非空 = 别的设备只能从旧根拿这些作者，旧根还不能退役，同步页要提示用户先确认或拒绝它们。
 pub fn heritage_plan(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String> {
     let progress = str_req(req, "progress")?;
+    let unvouched = unvouched_logs(t, col)?;
     let logs: BTreeSet<Id> = heritage_logs(t, col)?
         .into_iter()
         .map(|(_, id, _)| id)
         .collect();
     if logs.is_empty() {
-        return Ok(json!({"skip": true}));
+        return Ok(json!({"skip": true, "unvouched": unvouched}));
     }
     let all = heritage_paths(req);
     let paths: Vec<String> = all.iter().map(|(p, _)| p.clone()).collect();
     let fp = heritage_fp(t, col, progress, &paths)?;
     if meta_get(t, &hrt_key(col, progress))?.as_deref() == Some(fp.as_str()) {
-        return Ok(json!({"skip": true}));
+        return Ok(json!({"skip": true, "unvouched": unvouched}));
     }
     let read: Vec<String> = all
         .into_iter()
         .filter(|(_, old)| logs.contains(old))
         .map(|(p, _)| p)
         .collect();
-    Ok(json!({"skip": false, "read": read}))
+    Ok(json!({"skip": false, "read": read, "unvouched": unvouched}))
 }
 
 /// `heritage_outbox {paths, key?}`，字节块与 `paths` 一一对应（读快照）：位置上这些承袭段交 [Uploader::see]，按

@@ -279,6 +279,17 @@ fn old_root(loc: &mut Loc, n: u64, cuts: &[(u64, u64)]) {
 
 /// [old_root]，操作由调用方给（设备 OLD 的 seq 1..=n，`ops[i].id.seq == i + 1`）。
 pub(super) fn old_root_with(loc: &mut Loc, ops: &[crate::sync2::op::Op], cuts: &[(u64, u64)]) {
+    old_root_signed(loc, ops, cuts, &old_key(), "old phone");
+}
+
+/// [old_root_with]，段与 head 由 [signer] 签、head 自报名字 [name]（冒充 OLD 的测试用）。
+pub(super) fn old_root_signed(
+    loc: &mut Loc,
+    ops: &[crate::sync2::op::Op],
+    cuts: &[(u64, u64)],
+    signer: &DeviceKey,
+    name: &str,
+) {
     let dev = id(OLD);
     let n = ops.len() as u64;
     let mut chain = CHAIN_ZERO;
@@ -300,7 +311,7 @@ pub(super) fn old_root_with(loc: &mut Loc, ops: &[crate::sync2::op::Op], cuts: &
             collection_of(P),
             &ops[a as usize - 1..b as usize],
             prev,
-            &old_key(),
+            signer,
             None,
         )
         .unwrap();
@@ -316,19 +327,19 @@ pub(super) fn old_root_with(loc: &mut Loc, ops: &[crate::sync2::op::Op], cuts: &
         min_reader: 3,
         collection: collection_of(P),
         device: dev,
-        public: old_key().public(),
+        public: signer.public(),
         seq: n,
         chain: chains[n as usize - 1],
         segments,
         ack: Vv::new(),
         digest: String::new(),
         at_ms: T1,
-        name: "old phone".into(),
+        name: name.into(),
         ext: None,
     };
     loc.insert(
         format!("v3/devices/{}/{}", dev.text(), head.file_name()),
-        head.encode(&old_key()),
+        head.encode(signer),
     );
     loc.entry("v3/meta.json".into()).or_insert_with(|| {
         json!({"collection": collection_of(P).text(), "v": 3, "minReader": 3})
@@ -458,7 +469,7 @@ fn take_old_root_sliced(
 }
 
 /// 承袭上传（Dart：`heritage_plan` → 读 → `heritage_outbox` → 写 → `heritage_ack`）。回写上的文件数。
-fn upload_heritage(d: &Dev, loc: &mut Loc, now: i64) -> usize {
+pub(super) fn upload_heritage(d: &Dev, loc: &mut Loc, now: i64) -> usize {
     let (plan, _) = cmd(
         d.h,
         "heritage_plan",
@@ -526,6 +537,17 @@ fn old_root_takeover_reaches_migrated_and_new_devices_alike() {
     assert_eq!(ing["recorded"], json!(true), "{ing}");
     assert_eq!(ing["errors"], json!([]), "{ing}");
     assert_eq!(ing["landed"], json!(12), "{ing}");
+    // a 库非空，第一次见到的 OLD 是待确认；承袭段只替本机信任的作者传（`inherit.rs`，G10-4），所以确认之后才传。
+    assert_eq!(status_row(&a, &id(OLD).text())["trust"], json!("pending"));
+    assert_eq!(up, 0, "a does not vouch for OLD before confirming it");
+    cmd(
+        a.h,
+        "trust",
+        T1 + 11,
+        json!({"device": id(OLD).text(), "trust": true}),
+        &[],
+    );
+    let up = upload_heritage(&a, &mut loc, T1 + 11);
     assert!(up > 0, "a uploads the heritage it took");
     // 旧根清单没变：不再读；承袭：不再对账。
     let (scan, again) = take_old_root(&a, &loc, T1 + 12);
@@ -647,8 +669,16 @@ fn heritage_segments_count_toward_the_ingest_budget() {
     let mut loc = Loc::new();
     old_root(&mut loc, 12, &[(1, 5), (6, 12)]);
     a.write(T1 + 1, N1, "鯨");
-    let (_, up) = takeover_round(&a, &mut loc, T1 + 10);
-    assert!(up > 0);
+    takeover_round(&a, &mut loc, T1 + 10);
+    // a 库非空，OLD 待确认：确认之后才替它承袭上传（`inherit.rs`，G10-4）。
+    cmd(
+        a.h,
+        "trust",
+        T1 + 11,
+        json!({"device": id(OLD).text(), "trust": true}),
+        &[],
+    );
+    assert!(upload_heritage(&a, &mut loc, T1 + 11) > 0);
     // c 只认位置、读 head（认得 a 的公钥），不收。
     let locs: Vec<String> = loc
         .keys()
@@ -711,7 +741,7 @@ fn heritage_segments_count_toward_the_ingest_budget() {
     assert_eq!(d_old_len(&c), 12);
 }
 
-fn d_old_len(d: &Dev) -> u64 {
+pub(super) fn d_old_len(d: &Dev) -> u64 {
     let st = g4(d.h, "status", T1, json!({}));
     st["devices"]
         .as_array()

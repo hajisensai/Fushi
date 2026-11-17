@@ -558,6 +558,20 @@ class ServerSrsProfile {
   };
 }
 
+/// 整机备份期间的占位（[ServerSrs.holdForBackup]）：持有时迁移不开始。[release] 只生效一次。
+final class ServerSrsBackupHold {
+  ServerSrsBackupHold._(this._onRelease);
+
+  final void Function() _onRelease;
+  bool _released = false;
+
+  void release() {
+    if (_released) return;
+    _released = true;
+    _onRelease();
+  }
+}
+
 /// 加密握手没过的原因（[srsLocationHandshake]）：v1 一律当「位置加密了，不提供」。
 const Set<String> kServerSrsCryptoErrors = <String>{
   kSrsSync2NeedsKey,
@@ -657,6 +671,30 @@ class ServerSrs {
 
   /// 本进程正在迁移（备份等要整目录一致的操作据此避开）。
   bool get migrationRunning => _migration != null;
+
+  /// 持有中的备份占位（[holdForBackup]）个数；大于 0 时不开始迁移。
+  int _backupHolds = 0;
+
+  /// 备份占位期间有迁移该开始（自动判定或管理员手动）：放开最后一个占位时重新判定一次。
+  bool _migrationDeferred = false;
+
+  /// 整机备份要复习库目录前后一致（`server_backup.dart`：开着的库走连接快照、没开时原样拷 `srs.db`）。迁移在跑时
+  /// 库没开、`srs4.db` 还不存在，提交点又会改名出 `srs4.db` 并原位封存 `srs.db`——这时拷出来的包可能只有封存了的旧库、
+  /// 没有新库（还原后复习数据读不到），所以拒绝（返回 null，调用方回 409 `srs_migration_running`）；否则给一个占位，
+  /// 持有期间迁移不开始（自动判定推迟到放开之后；管理员手动开始回 `srs_backup_running`），用完必须
+  /// [ServerSrsBackupHold.release]。
+  ServerSrsBackupHold? holdForBackup() {
+    if (_migration != null) return null;
+    _backupHolds++;
+    return ServerSrsBackupHold._(_releaseBackup);
+  }
+
+  void _releaseBackup() {
+    _backupHolds--;
+    if (_backupHolds > 0 || !_migrationDeferred) return;
+    _migrationDeferred = false;
+    if (!_stopped) unawaited(applyConfig());
+  }
 
   /// 代际原因让复习不可用时对复习请求的回答；库开着（或复习关着）= null。
   ServerSrsUpgradeRefusal? get upgradeRefusal =>
@@ -875,7 +913,7 @@ class ServerSrs {
         uid,
         this,
       );
-      final SrsRemoteProfile? info = found[uid];
+      final SrsRemoteProfile? info = await _infoOf(prof, found);
       if (info != null) {
         prof.name = info.names.isEmpty ? '' : info.names.first;
         // 库开着时数以库为准（每轮同步后重数），设备报的旧数不覆盖它。
@@ -909,6 +947,23 @@ class ServerSrs {
       }
       // 第一轮跑完才知道位置是不是加密的；跑完之前不对外提供（不拿一份没收过数据的空库应答）。
       unawaited(prof.syncNow());
+    }
+  }
+
+  /// [prof] 在同步目录里的说明（名字、笔记数估计）：库开着时按它**绑定**的位置目录取（内核 `identity` 的 `dir`；并入 /
+  /// 认领之后不等于 uid）；库还没开时按配置里的 uid 取——D32：管理员勾选的就是同步目录名，第一次打开（`identity`）
+  /// 绑定的目录也正是它。读不到绑定只记日志、不填（名字只是显示用）。
+  Future<SrsRemoteProfile?> _infoOf(
+    ServerSrsProfile prof,
+    Map<String, SrsRemoteProfile> found,
+  ) async {
+    final SrsDbStore? s = prof._store;
+    if (s == null) return found[prof.uid];
+    try {
+      return found[await srsLocationDir(s)];
+    } catch (e, stack) {
+      engineLog.log('ServerSrs.hostDir', e, stack);
+      return null;
     }
   }
 
@@ -1078,6 +1133,11 @@ class ServerSrs {
   /// 后台开始一次迁移（已在跑时无操作）。结论落在 [generation]；跑完重新套用配置（提交了就开库、各份同步）。
   void _beginMigration() {
     if (_migration != null) return;
+    if (_backupHolds > 0) {
+      // 备份在拷库目录：放开占位之后重新判定（[_releaseBackup]），不在备份中途改名出新库、封存旧库。
+      _migrationDeferred = true;
+      return;
+    }
     _retryDue = false;
     _migrationRetry?.cancel();
     _migrationRetry = null;
@@ -1239,7 +1299,8 @@ class ServerSrs {
   }
 
   /// 管理员开始（或在失败 / 取消之后重新开始）迁移。返回拒绝原因（null = 已在后台开始，进度看 [generation]）：
-  /// `srs_stopped` / `srs_migration_running` / `srs_migrating_elsewhere` / `srs_migration_not_needed`。
+  /// `srs_stopped` / `srs_migration_running` / `srs_migrating_elsewhere` / `srs_migration_not_needed` /
+  /// `srs_backup_running`（整机备份持有占位，[holdForBackup]）。
   Future<String?> startMigration() {
     final Completer<String?> answer = Completer<String?>();
     unawaited(
@@ -1258,6 +1319,7 @@ class ServerSrs {
     if (_stopped) return 'srs_stopped';
     if (_migration != null) return 'srs_migration_running';
     if (_storage != null) return 'srs_migration_not_needed';
+    if (_backupHolds > 0) return 'srs_backup_running';
     final SrsGenState state;
     try {
       state = _migrationBackend.status(support.path).state;
@@ -1336,29 +1398,63 @@ class ServerSrs {
     }
   }
 
-  /// 已配对设备往本机同步目录写了文件（`FushiSyncServer.onClientWrite`）：是某份提供中的 profile 的复习数据就
-  /// 去抖后同步那一份。
-  void onClientWrite(String relativePath) {
-    final String? uid = srsHostPathProfile(relativePath);
-    if (uid == null) return;
-    _profiles[uid]?.scheduleSync();
+  /// 已配对设备往本机同步目录写了文件（`FushiSyncServer.onClientWrite`）：落在某份提供中的 profile **绑定**的位置
+  /// 目录里就去抖后同步那一份。返回排了同步的 profile（测试用；调用方不必等）。
+  ///
+  /// 目录名不是 uid（D32 只规定「配置里的 uid 取自同步目录名」，并入 / 认领后绑定的目录会变，设计 §5.1）：一律经内核
+  /// 按绑定反查（[srsHostProfilesOfDir]）。
+  Future<List<String>> onClientWrite(String relativePath) async {
+    final String? dir = srsHostPathDir(relativePath);
+    if (dir == null) return const <String>[];
+    final List<String> served = await _servedProfilesOfDir(dir);
+    for (final String uid in served) {
+      _profiles[uid]?.scheduleSync();
+    }
+    return served;
   }
 
-  /// 已配对设备直接写了某台设备自己的段：用对端名给它补名字（老版本没有自报名字时同步页显示它）。
+  /// 绑定在位置目录 [dir] 上、而且在提供中的 profile（库目录开着才查得到）。[dir] 来自对端写入的路径：内核拒绝坏
+  /// 目录名时记诊断日志、当作不属于任何 profile（不抛给写入方——那次写入本身已经成功落盘）。
+  Future<List<String>> _servedProfilesOfDir(String dir) async {
+    final SrsStorage? storage = _storage;
+    if (storage == null || storage.isClosed) return const <String>[];
+    final List<String> bound;
+    try {
+      bound = await srsHostProfilesOfDir(storage.core, dir);
+    } on SrsCoreException catch (e) {
+      engineLog.logDiagnostic('ServerSrs.hostDir', 'refused $dir: $e');
+      return const <String>[];
+    } catch (e, stack) {
+      // 库目录正被关 / 后台 isolate 起不来：这次写入只是没叫醒同步，兜底定时器那一轮照样会同步；记日志带原栈。
+      engineLog.log('ServerSrs.hostDir', e, stack);
+      return const <String>[];
+    }
+    return <String>[
+      for (final String uid in bound)
+        if (_profiles.containsKey(uid)) uid,
+    ];
+  }
+
+  /// 已配对设备直接写了某台设备自己的段：用对端名给它补名字（老版本没有自报名字时同步页显示它）。补充名按设备记、
+  /// 不分集合（内核 `device_hint`），键只按设备；只给落在提供中的 profile 绑定目录里的段补，别的目录不碰库。
   final Map<String, String> _hinted = <String, String>{};
 
   Future<void> onClientUpload(String relativePath, String? peerName) async {
     if (peerName == null || peerName.isEmpty) return;
     final String? device = srsHostUploadedSegmentDevice(relativePath);
-    final String? uid = srsHostPathProfile(relativePath);
-    if (device == null || uid == null) return;
-    final String key = '$uid/$device';
-    if (_hinted[key] == peerName) return;
-    _hinted[key] = peerName;
+    final String? dir = srsHostPathDir(relativePath);
+    if (device == null || dir == null) return;
+    if (_hinted[device] == peerName) return;
+    final List<String> served = await _servedProfilesOfDir(dir);
+    final SrsDbStore? store = served.isEmpty
+        ? null
+        : _profiles[served.first]?._store;
+    if (store == null) return;
+    _hinted[device] = peerName;
     try {
-      await _profiles[uid]?._store?.sync2DeviceHint(device, peerName);
+      await store.sync2DeviceHint(device, peerName);
     } catch (e, stack) {
-      _hinted.remove(key);
+      _hinted.remove(device);
       engineLog.log('ServerSrs.deviceHint', e, stack);
     }
   }

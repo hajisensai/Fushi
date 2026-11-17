@@ -268,6 +268,27 @@ void main() {
       }),
       (404, 'device_unknown'),
     );
+    // 设备 ID 来自管理员 / 对端，不可信：不是设备 ID 的串（路径、超长、空白）点名 profile 也只回不认识或坏正文，
+    // 不进内核写信任（G10-4）。
+    for (final String bogus in <String>['../$kJa', 'x' * 500]) {
+      expect(
+        await trust(<String, Object?>{
+          'device': bogus,
+          'trust': true,
+          'profile': kJa,
+        }),
+        (404, 'device_unknown'),
+        reason: bogus,
+      );
+    }
+    expect(
+      (await trust(<String, Object?>{
+        'device': '   ',
+        'trust': true,
+        'profile': kJa,
+      })).$1,
+      400,
+    );
     expect(
       await trust(<String, Object?>{
         'device': self,
