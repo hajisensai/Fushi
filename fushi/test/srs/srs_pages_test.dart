@@ -2688,6 +2688,91 @@ void main() {
       await _unmount(tester);
     });
 
+    testWidgets('牌组设置页：没保存的编辑在「让子牌组都继承这里」重读之后还在，按返回照样问', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      final String deckId = store.defaultDeckId;
+      final String kid = (await tester.runAsync(() async {
+        final String kid = await store.createDeck('Kid', parentId: deckId);
+        await store.editField(
+          SrsEntityKind.deck,
+          kid,
+          SrsFieldKeys.deckParamsMode,
+          'own',
+        );
+        return kid;
+      }))!;
+      final String original = (await tester.runAsync(
+        store.deckTree,
+      ))![deckId]!.name;
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        page: const SizedBox.shrink(),
+      );
+      unawaited(
+        tester
+            .state<NavigatorState>(find.byType(Navigator).first)
+            .push(
+              MaterialPageRoute<void>(
+                builder: (_) => SrsDeckSettingsPage(deckId: deckId),
+              ),
+            ),
+      );
+      await _settle(tester);
+      final Finder page = find.byType(SrsDeckSettingsPage);
+      expect(page, findsOneWidget);
+
+      final Finder nameField = find.descendant(
+        of: find.byKey(const ValueKey<String>('srs-settings-name')),
+        matching: find.byType(EditableText),
+      );
+      await tester.ensureVisible(nameField);
+      await tester.enterText(nameField, 'Renamed');
+      await tester.pump();
+
+      final Finder button = find.byKey(
+        const ValueKey<String>('srs-settings-children-inherit'),
+      );
+      await tester.ensureVisible(button);
+      await tester.tap(button);
+      await _settle(tester);
+      final String label = t.srs_settings_children_inherit(n: 1);
+      await srsUntilWritten(
+        tester,
+        () => tester.tap(
+          find.byWidgetPredicate(
+            (Widget w) => w is FushiDialogAction && w.label == label,
+          ),
+        ),
+      );
+      final SrsDeckTree tree = (await tester.runAsync(store.deckTree))!;
+      expect(tree[kid]!.ownParams, isFalse);
+      expect(button, findsNothing, reason: '重读了：没有单独设置的后代，按钮收起');
+      expect(
+        tester.widget<EditableText>(nameField).controller.text,
+        'Renamed',
+        reason: '重读不盖掉没保存的编辑',
+      );
+      expect(tree[deckId]!.name, original, reason: '没保存，不落库');
+
+      await tester.binding.handlePopRoute();
+      await _settle(tester);
+      expect(
+        find.byKey(const ValueKey<String>('srs-settings-unsaved-dialog')),
+        findsOneWidget,
+        reason: '编辑还没保存，按返回仍要问',
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs-settings-unsaved-discard')),
+      );
+      await _settle(tester);
+      expect(page, findsNothing);
+      await _unmount(tester);
+    });
+
     testWidgets('牌组设置页：RWKV 排队设置（每天最少复习数 / 同日重复间隔）写进牌组，子牌组随继承', (
       WidgetTester tester,
     ) async {
