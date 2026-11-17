@@ -33,10 +33,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4139 条。点号进各自文件。
+> 共 4142 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4786](bugs/BUG-4786-feedback-dev-save-file-macos.md) | ✅ | ✅ | 处理台另存样本文件在 macOS 上必定失败 |
+| [BUG-4785](bugs/BUG-4785-feedback-pending-file-missing-name.md) | ✅ | ✅ | 待传样本文件缺原文件名旁注时用假名上传、被服务端拒收后丢掉 |
+| [BUG-4784](bugs/BUG-4784-feedback-video-upload-after-files.md) | ✅ | ✅ | 反馈视频排在样本文件后上传，共用每 IP 每天额度被 429 挤掉 |
 | [BUG-4783](bugs/BUG-4783-video-fingerprint-inflight-dedupe.md) | ✅ | ✅ | host 端视频指纹没有在途去重：同一文件并发请求各自整文件算一遍 SHA-256 |
 | [BUG-4782](bugs/BUG-4782-remote-fingerprint-unavailable-404-bypass.md) | ✅ | ✅ | 新 host 算指纹失败也回 404，client 当成老 host 直接放行，绕过字节核验 |
 | [BUG-4781](bugs/BUG-4781-subtitle-panel-effects-toggle-clipped.md) | ✅ | ✅ | 经典版式字幕列表收藏档里「显示特效字幕」开关被挤出可视区，窄面板要横向拖才看得到 |
