@@ -15,6 +15,7 @@ use serde_json::{Value, json};
 use super::tests::{N1, N2, N3, N4, Norm, Pair, T0, card, decode, library, library_pair, note};
 use super::writes::{self, Session, write};
 use super::{writes_intent, writes_local, writes_restore};
+use crate::gen4_ids::rules::{self, CANONICAL};
 use crate::store::gen4::derive::Ref;
 use crate::store::gen4::derive::tests::{assert_rebuild_is_identity, dump};
 use crate::store::gen4::truth::{TRUST_PENDING, Truth};
@@ -355,6 +356,69 @@ fn import_drafts_matches_protocol_3() {
     )
     .unwrap_err();
     assert!(e.contains("chg"), "{e}");
+}
+
+/// C8：`.apkg` 导入按 Dart 的顺序发草稿（笔记身份 → 字段 → 标签 → 卡片修改）。`apply_in` 在身份记录与标签项处收尾，
+/// 于是一条笔记的卡片修改总与下一条笔记的身份记录落进同一次收尾、而不与它自己的笔记同批。别名表不能因此每条笔记
+/// 整表重算一次（那是 O(库大小)，整次导入 O(n²)）：建笔记类型那一批之后，每批整表重算 0 次，与库里已有多少笔记无关。
+#[test]
+fn importing_in_the_dart_order_never_recomputes_the_whole_alias_table() {
+    let lib = library();
+    let w = W::new(&lib);
+    let anki_nt: i64 = 1_700_000_000_777;
+    let nt = rules::note_type(CANONICAL, anki_nt);
+    let fld = rules::field(&nt, 0);
+    let tpl = rules::template(&nt, 0);
+    let first = vec![
+        json!({"e": {"t": "entity", "x": {"id": nt.text(), "p": P, "k": "notetype",
+            "d": {"createdAt": 1, "ankiNum": anki_nt, "ntKind": "standard"}}}, "note": null}),
+        draft(
+            "notetype",
+            &nt.text(),
+            &format!("fieldDef/{}", fld.text()),
+            json!({"name": "Front", "ord": 0, "ankiNum": 0}),
+        ),
+        draft(
+            "notetype",
+            &nt.text(),
+            &format!("tmplDef/{}", tpl.text()),
+            json!({"name": "Card 1", "ord": 0, "ankiNum": 0, "front": "{{Front}}"}),
+        ),
+    ];
+    writes::import_drafts(&w.t(), w.p.col, &W::req(T1, json!({})), &first).unwrap();
+    let mut n: i64 = 0;
+    for batch in 0..4 {
+        let mut items = Vec::new();
+        for _ in 0..15 {
+            n += 1;
+            let guid = format!("c8-{n}");
+            let x = rules::note(CANONICAL, &guid);
+            let xc = rules::card(&x, &tpl, 0).text();
+            let x = x.text();
+            items.push(
+                json!({"e": {"t": "entity", "x": {"id": x, "p": P, "k": "note",
+                "d": {"createdAt": n, "guid": guid, "noteTypeId": nt.text()}}}, "note": null}),
+            );
+            items.push(draft(
+                "note",
+                &x,
+                &format!("f/{}", fld.text()),
+                json!(format!("語{n}")),
+            ));
+            items.push(draft("note", &x, "tags", json!(["c8"])));
+            items.push(draft("card", &xc, "deck", json!(LANG)));
+            items.push(draft("card", &xc, "suspended", json!(true)));
+        }
+        let v =
+            writes::import_drafts(&w.t(), w.p.col, &W::req(T1 + batch, json!({})), &items).unwrap();
+        assert_eq!(
+            v["settled"]["aliasRebuilds"],
+            json!(0),
+            "batch {batch}: {}",
+            v["settled"]
+        );
+    }
+    assert_rebuild_is_identity(&w.t(), w.p.col);
 }
 
 /// `purge` 与 `checkpoint`：状态相同；清除的实体进 `purged`。
