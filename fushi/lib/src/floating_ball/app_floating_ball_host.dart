@@ -319,16 +319,18 @@ class DesktopSystemBallActionTarget {
   Future<bool> localModelReady(SystemOcrPlatform Function() localModel) =>
       localModel().isAvailable();
 
-  /// 本设备是否已同意把截屏发给 Google Lens（[GoogleLensDisclosureScene.desktopScreens]）。
-  Future<bool> hasLensConsent() =>
-      hasGoogleLensDisclosure(scene: GoogleLensDisclosureScene.desktopScreens);
+  /// 本设备是否已同意把截屏发给 Google Lens。[scene] 是桌面冻结层
+  /// （[GoogleLensDisclosureScene.desktopScreens]）或 Android 悬浮球
+  /// （[GoogleLensDisclosureScene.mobileScreens]），两者共用一份同意记录。
+  Future<bool> hasLensConsent({required GoogleLensDisclosureScene scene}) =>
+      hasGoogleLensDisclosure(scene: scene);
 
-  /// 弹截屏上传 Google Lens 的同意框（在主窗里）。
-  Future<bool> askLensConsent(BuildContext context) =>
-      ensureGoogleLensDisclosure(
-        context,
-        scene: GoogleLensDisclosureScene.desktopScreens,
-      );
+  /// 弹截屏上传 Google Lens 的同意框（在主窗里）；[scene] 决定文案（桌面说显示器、
+  /// 手机说屏幕）。
+  Future<bool> askLensConsent(
+    BuildContext context, {
+    required GoogleLensDisclosureScene scene,
+  }) => ensureGoogleLensDisclosure(context, scene: scene);
 
   Future<void> bringMainWindowToFront() =>
       DesktopLookupService.instance.bringMainWindowToFront();
@@ -1041,7 +1043,9 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     final ScreenOcrEngine engineKind = await _resolveScreenOcrEngine(target);
     if (!mounted) return;
     if (engineKind == ScreenOcrEngine.googleLens &&
-        !await target.hasLensConsent()) {
+        !await target.hasLensConsent(
+          scene: GoogleLensDisclosureScene.desktopScreens,
+        )) {
       await _askScreenOcrLensConsent(target);
       return;
     }
@@ -1176,8 +1180,18 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     final DesktopSystemBallActionTarget target = desktopSystemBallActionTarget;
     final ScreenOcrEngine engine = await _resolveScreenOcrEngine(target);
     if (engine == ScreenOcrEngine.googleLens &&
-        !await target.hasLensConsent()) {
-      if (mounted) unawaited(target.askLensConsent(context));
+        !await target.hasLensConsent(
+          scene: GoogleLensDisclosureScene.mobileScreens,
+        )) {
+      // 手机上没有「显示器」：同意框用手机文案，同意记录与桌面共用。
+      if (mounted) {
+        unawaited(
+          target.askLensConsent(
+            context,
+            scene: GoogleLensDisclosureScene.mobileScreens,
+          ),
+        );
+      }
       return <String, Object?>{
         'message': t.floating_ball_ocr_lens_consent_needed,
         'openApp': true,
@@ -1258,7 +1272,10 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
   ) async {
     await target.bringMainWindowToFront();
     if (!mounted) return;
-    await target.askLensConsent(context);
+    await target.askLensConsent(
+      context,
+      scene: GoogleLensDisclosureScene.desktopScreens,
+    );
   }
 
   /// 截屏识字的本机 OCR（[LocalScreenOcr]）。用户换了本机模型时服务实例跟着换
