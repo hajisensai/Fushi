@@ -84,8 +84,9 @@ class _CastSubstitutionsPageState extends State<CastSubstitutionsPage> {
     });
     try {
       final List<CastTextSubstitution> saved = await widget.save(next);
-      if (mounted)
+      if (mounted) {
         setState(() => _table = List<CastTextSubstitution>.of(saved));
+      }
     } catch (e, stack) {
       ErrorLogService.instance.log('CastSubstitutions.save', e, stack);
       FushiToast.show(msg: t.audiobook_studio_failure_internal);
