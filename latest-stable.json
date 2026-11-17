@@ -31,11 +31,11 @@
     {
       "name": "fushi-3.3.0-macos-arm64.zip",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.3.0/fushi-3.3.0-macos-arm64.zip",
-      "releaseSequence": 24434,
+      "releaseSequence": 24436,
       "tag": "v3.3.0",
       "version": "3.3.0",
-      "size": 269196770,
-      "sha256": "e3ebc9135e9604eb88dce67beb788a6c35b0ee48c4b85fc3ecf90c32efedc403"
+      "size": 269198054,
+      "sha256": "a913df26de989de9b68c55813662492c29df9157cd5c85826e871562bf59db6b"
     },
     {
       "name": "fushi-3.3.0-windows-setup.exe",

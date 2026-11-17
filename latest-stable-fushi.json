@@ -28,29 +28,29 @@
     {
       "name": "fushi-3.3.0-ios.ipa",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.3.0/fushi-3.3.0-ios.ipa",
-      "releaseSequence": 24434,
+      "releaseSequence": 24436,
       "tag": "v3.3.0",
       "version": "3.3.0",
-      "size": 99258426,
-      "sha256": "eb26faa7cb490f611c86a7634e374aa619848b13fedd574373714a6be406160e"
+      "size": 99255773,
+      "sha256": "75339e888c7a5dd68367c588f886738a863295cfb8b1770d33ac520eb2277534"
     },
     {
       "name": "fushi-3.3.0-macos-arm64.dmg",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.3.0/fushi-3.3.0-macos-arm64.dmg",
-      "releaseSequence": 24434,
+      "releaseSequence": 24436,
       "tag": "v3.3.0",
       "version": "3.3.0",
-      "size": 283585212,
-      "sha256": "6dbfb7e956e6868e67bd1a3b0403cb75b7f49defc2c6cbe4156aa28f099eb700"
+      "size": 283604767,
+      "sha256": "36a16e79c6fade82fa41c363385bef7c453f301101bf1733eca0de2f051270a5"
     },
     {
       "name": "fushi-3.3.0-macos-arm64.zip",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.3.0/fushi-3.3.0-macos-arm64.zip",
-      "releaseSequence": 24434,
+      "releaseSequence": 24436,
       "tag": "v3.3.0",
       "version": "3.3.0",
-      "size": 269196770,
-      "sha256": "e3ebc9135e9604eb88dce67beb788a6c35b0ee48c4b85fc3ecf90c32efedc403"
+      "size": 269198054,
+      "sha256": "a913df26de989de9b68c55813662492c29df9157cd5c85826e871562bf59db6b"
     },
     {
       "name": "fushi-3.3.0-windows-setup.exe",
