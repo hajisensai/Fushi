@@ -3,6 +3,7 @@ import 'package:fushi/src/media/audiobook/tts/studio/tts_series_run.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_unvoiced_backfill.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
 import 'package:fushi_engine/tts/cast/cast_line_voicing.dart';
+import 'package:fushi_engine/tts/cast/cast_text_substitution.dart';
 import 'package:fushi_engine/tts/cast/cast_voice_assignment.dart';
 import 'package:fushi_engine/tts/cast/series_cast.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
@@ -29,6 +30,47 @@ TtsCastLine _line(String speaker, {String? voice, String? say}) => TtsCastLine(
 );
 
 void main() {
+  group('ttsPlanWithSubstitutions', () {
+    test('显示文字与念法都过表；行键不变；空表原样返回', () {
+      final TtsBookPlan plan = TtsBookPlan(<TtsPlanSentence>[
+        _s(0, 0, 'セーラー服の子'),
+        TtsPlanSentence(
+          section: 0,
+          href: 'c0.xhtml',
+          text: '服を着た',
+          spokenText: '服を着た',
+          matchStart: 10,
+          matchEnd: 14,
+          studyStart: 10,
+          studyEnd: 14,
+          endsParagraph: true,
+        ),
+      ]);
+      expect(
+        identical(
+          ttsPlanWithSubstitutions(plan, const <CastTextSubstitution>[]),
+          plan,
+        ),
+        isTrue,
+      );
+      final TtsBookPlan out = ttsPlanWithSubstitutions(
+        plan,
+        const <CastTextSubstitution>[
+          CastTextSubstitution(source: 'セーラー服', replacement: '制服'),
+          CastTextSubstitution(source: '服', replacement: 'ふく'),
+          CastTextSubstitution(source: '子', replacement: 'こ', enabled: false),
+        ],
+      );
+      // 长的优先，一次扫描不重复替换；停用的不生效。
+      expect(out.sentences[0].text, '制服の子');
+      expect(out.sentences[0].spokenText, '制服の子。');
+      expect(out.sentences[1].text, 'ふくを着た');
+      expect(out.sentences[1].spokenText, 'ふくを着た');
+      expect(out.sentences[1].matchStart, 10);
+      expect(out.sentences[1].endsParagraph, isTrue);
+    });
+  });
+
   group('setTtsCastVoice', () {
     test('series scope writes the profile and clears the book override', () {
       final TtsCast cast = TtsCast(voices: <String, String>{'アリス': 'book'});

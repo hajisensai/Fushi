@@ -11,6 +11,7 @@ import 'package:fushi_engine/tts/local/irodori_voice_pack_provider.dart';
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:path/path.dart' as p;
+import 'package:fushi_engine/tts/tts_direction.dart';
 import 'package:test/test.dart';
 
 import 'tts_test_helpers.dart';
@@ -310,6 +311,44 @@ void main() {
         ),
         isNull,
       );
+    });
+
+    test('演出参数：种子与给定时长都收，改写请求；挂 LoRA 的声音标 adapter', () {
+      final TtsVoicePreset plain = irodoriVoicePackPreset(
+        _pack(adapter: null, seed: 3),
+        _pack().groups.first,
+      );
+      final TtsVoicePreset lora = irodoriVoicePackPreset(
+        _pack(),
+        _pack().groups.first,
+      );
+      final TtsDirectionSupport s = irodoriPackDirectionSupport(plain);
+      expect(s.seed, isTrue);
+      expect(s.duration, isTrue);
+      expect(s.adapter, isFalse);
+      expect(irodoriPackDirectionSupport(lora).adapter, isTrue);
+
+      final IrodoriBatchItem base = irodoriBatchItemFromPreset(
+        plain,
+        id: 'x',
+        text: 'うん',
+        outputPath: '/o/x.wav',
+      )!;
+      final IrodoriBatchItem directed = irodoriDirectedItem(
+        base,
+        const TtsDirection(seed: 42, durationSeconds: 0.7),
+      );
+      expect(directed.seed, 42);
+      expect(directed.seconds, 0.7);
+      expect(directed.refs, base.refs);
+      expect(directed.outputPath, base.outputPath);
+      // 没给时长：保留请求自带的短句规则结果；没给种子：保留包的种子。
+      final IrodoriBatchItem seedOnly = irodoriDirectedItem(
+        base,
+        const TtsDirection(seed: 9),
+      );
+      expect(seedOnly.seconds, base.seconds);
+      expect(irodoriDirectedItem(base, TtsDirection.none).seed, 3);
     });
 
     test('缓存键：换参考音频 / 编辑过（revision）会变，换组名标签不影响音色以外的东西', () {

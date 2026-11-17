@@ -180,6 +180,23 @@ enum MangaAudioImportResult {
   ocrMismatch,
 }
 
+/// 清单是不是这一卷当前 OCR 的成品：页数不符 → [MangaAudioImportResult.pageMismatch]；
+/// 清单记了 OCR 签名而与本卷当前签名（与标注 / 生成同一种：引擎签名优先，mokuro 导入
+/// 的卷按块内容算）不符 → [MangaAudioImportResult.ocrMismatch]；对得上返回 null。
+MangaAudioImportResult? mangaManifestVolumeMismatch(
+  MangaRenderManifest manifest,
+  MokuroPayload payload,
+) {
+  if (payload.images.length != manifest.pageCount) {
+    return MangaAudioImportResult.pageMismatch;
+  }
+  final String? recorded = manifest.engineSignature;
+  if (recorded != null && recorded != mangaPayloadOcrSignature(payload)) {
+    return MangaAudioImportResult.ocrMismatch;
+  }
+  return null;
+}
+
 /// 漫画卡「导入漫画有声」：校验清单（结构、页数与本卷一致、音频都在）后登记。
 /// 生成端（制作台）直接调 [registerMangaAudio]，不走这里。
 Future<MangaAudioImportResult> importMangaAudioManifest(
@@ -196,17 +213,11 @@ Future<MangaAudioImportResult> importMangaAudioManifest(
     final File mangaJson = File(p.join(row.extractDir, row.epubPath));
     if (await mangaJson.exists()) {
       try {
-        final MokuroPayload payload = parseMangaJson(
-          await mangaJson.readAsString(),
+        final MangaAudioImportResult? mismatch = mangaManifestVolumeMismatch(
+          manifest,
+          parseMangaJson(await mangaJson.readAsString()),
         );
-        if (payload.images.length != manifest.pageCount) {
-          return MangaAudioImportResult.pageMismatch;
-        }
-        // 与标注 / 生成同一种签名（mokuro 导入的卷没有引擎签名时按块内容算）。
-        final String? recorded = manifest.engineSignature;
-        if (recorded != null && recorded != mangaPayloadOcrSignature(payload)) {
-          return MangaAudioImportResult.ocrMismatch;
-        }
+        if (mismatch != null) return mismatch;
       } on Object {
         // 读不出本卷的 manga.json：不拿它否决导入，播放时阅读器还会再核一次页数。
       }

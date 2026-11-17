@@ -8,6 +8,9 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/tts/manga_audio/manga_audio_validate.dart'
+    show mangaPayloadOcrSignature;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session_launcher.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_library.dart';
@@ -450,6 +453,72 @@ void main() {
           lineId: 'nope',
         ),
         isFalse,
+      );
+    });
+
+    test('导入核对本卷 OCR：页数 / 签名不符拒绝；mokuro 卷按块内容签名', () {
+      final MangaRenderManifest manifest = _manifest();
+      MokuroPayload payload(String text, {String? engine}) => MokuroPayload(
+        ocr: engine == null
+            ? null
+            : MangaOcrMetadata(
+                engine: 'e',
+                engineSignature: engine,
+                schemaVersion: 1,
+              ),
+        images: <MokuroImage>[
+          for (int i = 0; i < manifest.pageCount; i++)
+            MokuroImage(
+              url: 'p$i.jpg',
+              size: const MokuroSize(100, 100),
+              blocks: <MokuroBlock>[
+                MokuroBlock(
+                  rectangle: const MokuroRect.fromLTRB(0, 0, 10, 10),
+                  isVertical: true,
+                  fontSize: 12,
+                  zIndex: 0,
+                  lines: <String>['$text$i'],
+                ),
+              ],
+            ),
+        ],
+      );
+      // 没记签名的旧清单：只核页数。
+      final MangaRenderManifest unsigned = MangaRenderManifest(
+        pageCount: manifest.pageCount,
+        lines: manifest.lines,
+        pages: manifest.pages,
+      );
+      expect(mangaManifestVolumeMismatch(unsigned, payload('a')), isNull);
+      expect(
+        mangaManifestVolumeMismatch(
+          unsigned,
+          const MokuroPayload(images: <MokuroImage>[]),
+        ),
+        MangaAudioImportResult.pageMismatch,
+      );
+      // mokuro 卷（无引擎签名）：内容签名一致才收，内容变了拒绝。
+      MangaRenderManifest signed(String sig) => MangaRenderManifest(
+        pageCount: manifest.pageCount,
+        lines: manifest.lines,
+        pages: manifest.pages,
+        engineSignature: sig,
+      );
+      final String content = mangaPayloadOcrSignature(payload('a'));
+      expect(content, startsWith('content:'));
+      expect(mangaManifestVolumeMismatch(signed(content), payload('a')), isNull);
+      expect(
+        mangaManifestVolumeMismatch(signed(content), payload('b')),
+        MangaAudioImportResult.ocrMismatch,
+      );
+      // 有引擎签名：按引擎签名比。
+      expect(
+        mangaManifestVolumeMismatch(signed('eng-1'), payload('x', engine: 'eng-1')),
+        isNull,
+      );
+      expect(
+        mangaManifestVolumeMismatch(signed('eng-1'), payload('x', engine: 'eng-2')),
+        MangaAudioImportResult.ocrMismatch,
       );
     });
 

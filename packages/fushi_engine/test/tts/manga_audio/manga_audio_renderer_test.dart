@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/tts/cast/cast_line_voicing.dart';
+import 'package:fushi_engine/tts/cast/cast_text_substitution.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render_plan.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_renderer.dart';
@@ -173,7 +174,7 @@ void main() {
         'novel-1',
       );
       expect(first.items[0].source, isA<MangaRenderClip>());
-      expect(first.items[0].voiceTag, 'audiobook:1:100-900');
+      expect(first.items[0].voiceTag, 'audiobook:novel-1#1:100-900');
       expect(first.items[0].assignedVoice, isNull);
       expect(first.items[1].source, isA<MangaRenderSynth>());
 
@@ -384,6 +385,56 @@ void main() {
       expect(backend.synthCalls, isEmpty);
       expect(out.manifest.lines.single.durationMs, 1500);
       expect(out.manifest.lines.single.voice, 'audiobook:novel#0:0-1500');
+    });
+
+    test('系列用词替换表：改念的文字与清单文本；手填念法不替换；改表后受影响的句子重做', () async {
+      MangaAudioScript scriptWith(List<CastTextSubstitution> table) =>
+          MangaAudioScript(
+            lines: <MangaScriptLine>[
+              _line(0, <int>[0]),
+              _line(0, <int>[1], say: '元気？'),
+              _line(2, <int>[0]),
+            ],
+          )..substitutions = table;
+      const CastTextSubstitution rule = CastTextSubstitution(
+        source: '元気',
+        replacement: 'げんき',
+      );
+      const CastTextSubstitution morning = CastTextSubstitution(
+        source: 'おはよう',
+        replacement: 'お早う',
+      );
+      final CastVoicingLedger ledger = CastVoicingLedger();
+      final MangaRenderOutcome first = await run(
+        scriptWith(const <CastTextSubstitution>[rule, morning]),
+        ledger,
+      );
+      // OCR 文字过表；用户手填的「元気？」原样念。
+      expect(first.manifest.lines[0].text, 'お早う。');
+      expect(first.manifest.lines[1].text, '元気？');
+      expect(backend.synthCalls, <String>[
+        'reading|0|お早う。',
+        'reading|0|元気？',
+        'reading|0|またね',
+      ]);
+
+      // 停用一条：只有文字变了的那句重做，其余沿用。
+      backend.synthCalls.clear();
+      final MangaRenderOutcome second = await run(
+        scriptWith(const <CastTextSubstitution>[
+          rule,
+          CastTextSubstitution(
+            source: 'おはよう',
+            replacement: 'お早う',
+            enabled: false,
+          ),
+        ]),
+        ledger,
+        previous: first.manifest,
+      );
+      expect(second.reused, 2);
+      expect(backend.synthCalls, <String>['reading|0|おはよう。']);
+      expect(second.manifest.lines[0].text, 'おはよう。');
     });
 
     test('取消原样抛出，不写清单', () async {
