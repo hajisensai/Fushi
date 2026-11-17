@@ -19,6 +19,9 @@
 ///   账本（`tts_render_unvoiced.dart`），任务结果带上句数，之后在制作台补回。整个
 ///   引擎不可用（连续失败熔断）才让任务失败。
 /// - 系列：选角表叠在系列声音指派上解析（`tts_series_cast.dart`）。
+/// - 演出稿（设计 §8）：每句按选角表的种子合成（单句写下的 → 作品默认；只对声明支持
+///   种子的引擎生效，缓存键只含生效的字段）；跑过选角标注的章按「转场基础值 + 一拍」
+///   插句间停顿（`tts_cast_timing.dart`，与漫画共用转场判定）。
 /// - 入库时每章的清单也存进持久目录（`<stem>.tts-chapter.json`）：之后的新任务里键序
 ///   没变的章直接沿用已入库的成品，只重编受影响的章（补回、换某个角色的声音时）。
 /// - 工作目录保留到入库成功，成功后删除；失败 / 取消的任务目录归队列管（被同一本书
@@ -56,6 +59,7 @@ import 'package:fushi_engine/tts/render/tts_cast.dart';
 import 'package:fushi_engine/tts/render/tts_pause.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
+import 'package:fushi_engine/tts/tts_direction.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_retry.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
@@ -168,15 +172,81 @@ class AppTtsRenderRunner implements TtsRenderRunner {
     }
     cancel.throwIfCancelled();
 
+    // 引擎实例先建：每句实际下发的演出参数（种子）取决于引擎声明的能力，缓存键要
+    // 跟着它算。
+    final Map<String, TtsProvider> providers = <String, TtsProvider>{};
+    try {
+      voices.forEach((String presetId, TtsRenderVoice voice) {
+        providers[presetId] = voice.descriptor.create(voice.preset, tts.host);
+      });
+      return await _runWithProviders(
+        job: job,
+        loaded: loaded,
+        plan: plan,
+        chapters: chapters,
+        cast: cast,
+        ledger: ledger,
+        voicingStore: voicingStore,
+        presetOf: presetOf,
+        voices: voices,
+        unavailable: unavailable,
+        providers: providers,
+        tts: tts,
+        onProgress: onProgress,
+        cancel: cancel,
+      );
+    } finally {
+      await _disposeProviders(providers);
+    }
+  }
+
+  /// 释放并清空引擎实例（可重复调用：合成完就释放，不占着本地引擎跑校对 / 入库）。
+  Future<void> _disposeProviders(Map<String, TtsProvider> providers) async {
+    final List<TtsProvider> all = providers.values.toList();
+    providers.clear();
+    for (final TtsProvider provider in all) {
+      await provider.dispose();
+    }
+  }
+
+  /// 引擎实例建好之后的整段流程（调用方兜底释放 [providers]；合成一结束这里就先
+  /// 释放）。
+  Future<({bool verified, List<TtsRenderFlag> flags})> _runWithProviders({
+    required TtsRenderJob job,
+    required ({EpubBookRow row, EpubBook book}) loaded,
+    required TtsBookPlan plan,
+    required List<TtsRenderChapter> chapters,
+    required TtsCast cast,
+    required CastVoicingLedger ledger,
+    required CastVoicingStore voicingStore,
+    required Map<int, String> presetOf,
+    required Map<String, TtsRenderVoice> voices,
+    required Map<String, TtsRenderFailure> unavailable,
+    required Map<String, TtsProvider> providers,
+    required TtsServices tts,
+    required TtsRenderProgress onProgress,
+    required TtsRenderCancelToken cancel,
+  }) async {
     String textOf(int planIndex) =>
         ttsSentenceSpokenText(cast, plan.sentences[planIndex]);
+    // 这句实际下发的演出参数：种子按选角表（单句 → 作品默认），只留引擎支持的字段。
+    TtsDirection directionOf(int planIndex) {
+      final TtsProvider? provider = providers[presetOf[planIndex]!];
+      if (provider == null) return TtsDirection.none;
+      final TtsPlanSentence s = plan.sentences[planIndex];
+      return effectiveTtsDirection(
+        ttsDirectionSupportOf(provider),
+        TtsDirection(seed: cast.seedFor(s.section, s.matchStart)),
+      );
+    }
+
     String keyOf(int planIndex) {
       final String presetId = presetOf[planIndex]!;
-      return TtsAudioCache.keyFor(
-        voices[presetId]?.identity ??
+      return TtsAudioCache.keyFor(<String, Object?>{
+        ...voices[presetId]?.identity ??
             <String, Object?>{'unavailable': presetId},
-        textOf(planIndex),
-      );
+        ...directionOf(planIndex).cacheIdentity,
+      }, textOf(planIndex));
     }
 
     final Directory persistDir = await AudiobookStorage.ensurePersistDir(
@@ -199,50 +269,43 @@ class AppTtsRenderRunner implements TtsRenderRunner {
         await _ffmpegHasLoudnorm(resolveFfmpegBackend());
     job.loudnessSkipped = job.normalizeLoudness && !loudnorm;
 
-    final Map<String, TtsProvider> providers = <String, TtsProvider>{};
     final ({
       List<List<AudioCue>> cues,
       List<int> fileDurationsMs,
       List<TtsUnvoicedLine> unvoiced,
     })
-    rendered;
-    try {
-      voices.forEach((String presetId, TtsRenderVoice voice) {
-        providers[presetId] = voice.descriptor.create(voice.preset, tts.host);
-      });
-      rendered = await _renderChapters(
-        job: job,
-        plan: plan,
-        chapters: chapters,
-        keyOf: keyOf,
-        textOf: textOf,
-        presetIdOf: (int planIndex) => presetOf[planIndex]!,
-        unavailableOf: (int planIndex) => unavailable[presetOf[planIndex]],
-        persistDir: persistDir,
-        voiceOf: (int planIndex) {
-          final String presetId = presetOf[planIndex]!;
-          if (!voices.containsKey(presetId)) return null;
-          return (
-            provider: providers[presetId]!,
-            maxConcurrency: ttsEffectiveConcurrency(
-              voices[presetId]!.descriptor,
-              voices[presetId]!.preset,
-            ),
-            group: presetId,
-          );
-        },
-        cache: cache,
-        workDir: workDir,
-        loudnorm: loudnorm,
-        onProgress: onProgress,
-        cancel: cancel,
-        ttsCancel: ttsCancel,
-      );
-    } finally {
-      for (final TtsProvider provider in providers.values) {
-        await provider.dispose();
-      }
-    }
+    rendered = await _renderChapters(
+      job: job,
+      plan: plan,
+      cast: cast,
+      chapters: chapters,
+      keyOf: keyOf,
+      textOf: textOf,
+      directionOf: directionOf,
+      presetIdOf: (int planIndex) => presetOf[planIndex]!,
+      unavailableOf: (int planIndex) => unavailable[presetOf[planIndex]],
+      persistDir: persistDir,
+      voiceOf: (int planIndex) {
+        final String presetId = presetOf[planIndex]!;
+        if (!voices.containsKey(presetId)) return null;
+        return (
+          provider: providers[presetId]!,
+          maxConcurrency: ttsEffectiveConcurrency(
+            voices[presetId]!.descriptor,
+            voices[presetId]!.preset,
+          ),
+          group: presetId,
+        );
+      },
+      cache: cache,
+      workDir: workDir,
+      loudnorm: loudnorm,
+      onProgress: onProgress,
+      cancel: cancel,
+      ttsCancel: ttsCancel,
+    );
+    // 合成结束：本地引擎（Irodori 等）别占着显存 / 进程跑后面的语音识别校对。
+    await _disposeProviders(providers);
     final List<List<AudioCue>> chapterCues = rendered.cues;
 
     final ({bool verified, List<TtsRenderFlag> flags}) check = await _verify(
@@ -337,9 +400,11 @@ class AppTtsRenderRunner implements TtsRenderRunner {
   _renderChapters({
     required TtsRenderJob job,
     required TtsBookPlan plan,
+    required TtsCast cast,
     required List<TtsRenderChapter> chapters,
     required String Function(int planIndex) keyOf,
     required String Function(int planIndex) textOf,
+    required TtsDirection Function(int planIndex) directionOf,
     required String Function(int planIndex) presetIdOf,
     required TtsRenderFailure? Function(int planIndex) unavailableOf,
     required _SentenceVoice? Function(int planIndex) voiceOf,
@@ -370,6 +435,18 @@ class AppTtsRenderRunner implements TtsRenderRunner {
         for (final int i in chapter.planIndices) keyOf(i),
       ];
       final String outputPath = p.join(workDir.path, '${chapter.stem}.m4a');
+      final List<int> gaps = ttsChapterGapsMs(
+        sentences: plan.sentences,
+        chapter: chapter,
+        preset: pause,
+        cast: cast,
+      );
+      // 旧 sidecar 没记停顿：它编码时插的是只按预设算的那一份。
+      final List<int> legacyGaps = ttsChapterGapsMs(
+        sentences: plan.sentences,
+        chapter: chapter,
+        preset: pause,
+      );
       bool reusable(TtsChapterManifest? m) =>
           m != null &&
           m.matches(
@@ -377,6 +454,8 @@ class AppTtsRenderRunner implements TtsRenderRunner {
             keys,
             pausePreset: pause.name,
             loudnorm: loudnorm,
+            gapsMs: gaps,
+            legacyGapsMs: legacyGaps,
           );
       TtsChapterManifest? manifest = await readTtsChapterManifest(
         workDir,
@@ -394,11 +473,6 @@ class AppTtsRenderRunner implements TtsRenderRunner {
           manifest = persisted;
         }
       }
-      final List<int> gaps = ttsChapterGapsMs(
-        sentences: plan.sentences,
-        chapter: chapter,
-        preset: pause,
-      );
       final List<int> durations;
       if (manifest != null && reusable(manifest)) {
         durations = manifest.durationsMs;
@@ -419,6 +493,7 @@ class AppTtsRenderRunner implements TtsRenderRunner {
             chapter: chapter,
             keys: keys,
             textOf: textOf,
+            directionOf: directionOf,
             cache: cache,
             voiceOf: voiceOf,
             unavailableOf: unavailableOf,
@@ -545,6 +620,7 @@ class AppTtsRenderRunner implements TtsRenderRunner {
               durationsMs: durations,
               pausePreset: pause.name,
               loudnorm: loudnorm,
+              gapsMs: gaps,
             ).encode(),
             flush: true,
           );
@@ -584,6 +660,7 @@ class AppTtsRenderRunner implements TtsRenderRunner {
     required TtsRenderChapter chapter,
     required List<String> keys,
     required String Function(int planIndex) textOf,
+    required TtsDirection Function(int planIndex) directionOf,
     required TtsAudioCache cache,
     required _SentenceVoice? Function(int planIndex) voiceOf,
     required TtsRenderFailure? Function(int planIndex) unavailableOf,
@@ -593,8 +670,15 @@ class AppTtsRenderRunner implements TtsRenderRunner {
     required TtsCancelToken ttsCancel,
     required void Function(int count) onSentencesDone,
   }) async {
-    final LinkedHashMap<String, ({String text, _SentenceVoice voice})> byKey =
-        LinkedHashMap<String, ({String text, _SentenceVoice voice})>();
+    final LinkedHashMap<
+      String,
+      ({String text, _SentenceVoice voice, TtsDirection direction})
+    >
+    byKey =
+        LinkedHashMap<
+          String,
+          ({String text, _SentenceVoice voice, TtsDirection direction})
+        >();
     final Map<String, int> occurrences = <String, int>{};
     final Map<String, Object> failures = <String, Object>{};
     for (int k = 0; k < keys.length; k++) {
@@ -605,7 +689,14 @@ class AppTtsRenderRunner implements TtsRenderRunner {
         failures[keys[k]] = unavailableOf(planIndex)!;
         continue;
       }
-      byKey.putIfAbsent(keys[k], () => (text: textOf(planIndex), voice: voice));
+      byKey.putIfAbsent(
+        keys[k],
+        () => (
+          text: textOf(planIndex),
+          voice: voice,
+          direction: directionOf(planIndex),
+        ),
+      );
     }
     // 声音解析不到的句子不进合成池，直接算处理完（占位）。
     for (final String key in failures.keys) {
@@ -613,7 +704,10 @@ class AppTtsRenderRunner implements TtsRenderRunner {
     }
     // 按声音分组（同一份预设 = 同一个引擎实例 = 同一个并发上限）。
     final Map<String, List<String>> keysByVoice = <String, List<String>>{};
-    byKey.forEach((String key, ({String text, _SentenceVoice voice}) item) {
+    byKey.forEach((
+      String key,
+      ({String text, _SentenceVoice voice, TtsDirection direction}) item,
+    ) {
       keysByVoice.putIfAbsent(item.voice.group, () => <String>[]).add(key);
     });
     final Map<String, TtsCachedAudio> results = <String, TtsCachedAudio>{};
@@ -637,10 +731,12 @@ class AppTtsRenderRunner implements TtsRenderRunner {
             results[key] = await ttsWithRetry(
               () => cache.obtain(
                 key,
-                (String outputPath) => voice.provider.synthesize(
+                (String outputPath) => synthesizeWithDirection(
+                  voice.provider,
                   byKey[key]!.text,
                   outputPath: outputPath,
                   cancel: chapterCancel,
+                  direction: byKey[key]!.direction,
                 ),
               ),
               cancel: chapterCancel,

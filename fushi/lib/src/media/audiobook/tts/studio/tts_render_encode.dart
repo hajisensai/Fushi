@@ -12,6 +12,8 @@ import 'dart:typed_data';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
+import 'package:fushi_engine/tts/render/tts_cast.dart';
+import 'package:fushi_engine/tts/render/tts_cast_timing.dart';
 import 'package:fushi_engine/tts/render/tts_pause.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
 import 'package:path/path.dart' as p;
@@ -97,23 +99,29 @@ String buildTtsConcatList(List<({String path, int durationMs})> entries) {
 }
 
 /// 一章各处的停顿（毫秒），长度 = 句数 + 1：`[0]` 章首、`[k]`（1 ≤ k < n）第 k-1
-/// 句之后、`[n]` 章尾。句间停顿按计划的段落 / 场景边界取 [TtsPausePreset.afterSentence]。
+/// 句之后、`[n]` 章尾。
+///
+/// 这章跑过选角标注（[TtsCast.directsSection]）时按演出稿算：转场基础值 + 一拍，
+/// 段落 / 场景停顿取预设（[ttsCastChapterGapsMs]，与漫画共用转场判定）；否则（或没给
+/// [cast]）句间停顿只按计划的段落 / 场景边界取 [TtsPausePreset.afterSentence]。
 List<int> ttsChapterGapsMs({
   required List<TtsPlanSentence> sentences,
   required TtsRenderChapter chapter,
   required TtsPausePreset preset,
-}) {
-  final int n = chapter.planIndices.length;
-  return <int>[
-    preset.chapterLeadMs,
-    for (int k = 0; k + 1 < n; k++)
-      preset.afterSentence(
-        endsParagraph: sentences[chapter.planIndices[k]].endsParagraph,
-        sceneBreakAfter: sentences[chapter.planIndices[k]].sceneBreakAfter,
+  TtsCast? cast,
+}) => ttsCastChapterGapsMs(
+  sentences: <TtsTimedSentence>[
+    for (final int i in chapter.planIndices)
+      (
+        endsParagraph: sentences[i].endsParagraph,
+        sceneBreakAfter: sentences[i].sceneBreakAfter,
+        line: cast
+            ?.lines[ttsLineKey(sentences[i].section, sentences[i].matchStart)],
       ),
-    preset.chapterTailMs,
-  ];
-}
+  ],
+  preset: preset,
+  directed: cast?.directsSection(chapter.section) ?? false,
+);
 
 /// 一章成品的总时长：句音频 + 全部停顿。
 int ttsChapterFileDurationMs(List<int> durationsMs, List<int> gapsMs) {
@@ -277,9 +285,11 @@ List<AudioCue> ttsCuesOnSingleTimeline(
   ];
 }
 
-/// 已编码一章的 sidecar：按序的缓存键 + 每句时长 + 停顿预设 + 是否做了响度归一化。
-/// 全部一致才算同一章（续跑跳过重编码与重合成——缓存里的逐句音频这时可能早被
-/// 淘汰了，时长只能从这里取）；换停顿预设 / 响度开关都会重编码。
+/// 已编码一章的 sidecar：按序的缓存键 + 每句时长 + 停顿预设 + 实际插的停顿 + 是否
+/// 做了响度归一化。全部一致才算同一章（续跑跳过重编码与重合成——缓存里的逐句音频
+/// 这时可能早被淘汰了，时长只能从这里取）；换停顿预设 / 响度开关、或演出稿改了
+/// 停顿（类型 / 一拍 / 说话人）都会重编码——cue 时间轴按本次算的停顿累加，成品里的
+/// 静音必须是同一份。
 class TtsChapterManifest {
   const TtsChapterManifest({
     required this.section,
@@ -287,6 +297,7 @@ class TtsChapterManifest {
     required this.durationsMs,
     required this.pausePreset,
     required this.loudnorm,
+    this.gapsMs,
   });
 
   static const int _version = 2;
@@ -299,11 +310,19 @@ class TtsChapterManifest {
   final String pausePreset;
   final bool loudnorm;
 
+  /// 编码时实际插的停顿（[ttsChapterGapsMs]）；null = 旧 sidecar（那时停顿只由
+  /// 预设决定）。
+  final List<int>? gapsMs;
+
+  /// [gapsMs] 是这次要插的停顿；[legacyGapsMs] 是只按预设算的停顿，用来认旧 sidecar
+  /// （它没记停顿，编码时插的就是这一份）。
   bool matches(
     int section,
     List<String> keys, {
     required String pausePreset,
     required bool loudnorm,
+    required List<int> gapsMs,
+    List<int>? legacyGapsMs,
   }) {
     if (section != this.section ||
         keys.length != this.keys.length ||
@@ -313,6 +332,11 @@ class TtsChapterManifest {
     }
     for (int i = 0; i < keys.length; i++) {
       if (keys[i] != this.keys[i]) return false;
+    }
+    final List<int>? recorded = this.gapsMs ?? legacyGapsMs;
+    if (recorded == null || recorded.length != gapsMs.length) return false;
+    for (int i = 0; i < gapsMs.length; i++) {
+      if (recorded[i] != gapsMs[i]) return false;
     }
     return true;
   }
@@ -324,6 +348,7 @@ class TtsChapterManifest {
     'durationsMs': durationsMs,
     'pause': pausePreset,
     'loudnorm': loudnorm,
+    if (gapsMs != null) 'gaps': gapsMs,
   });
 
   /// 解析失败 / 版本不符 / 长度不一致返回 null（调用方当作没编码过）。
@@ -356,12 +381,23 @@ class TtsChapterManifest {
     ];
     if (k.length != keys.length || d.length != durations.length) return null;
     if (k.length != d.length) return null;
+    final Object? gaps = json['gaps'];
+    List<int>? g;
+    if (gaps != null) {
+      if (gaps is! List) return null;
+      g = <int>[
+        for (final Object? e in gaps)
+          if (e is int && e >= 0) e,
+      ];
+      if (g.length != gaps.length || g.length != k.length + 1) return null;
+    }
     return TtsChapterManifest(
       section: section,
       keys: k,
       durationsMs: d,
       pausePreset: pause,
       loudnorm: loudnorm,
+      gapsMs: g,
     );
   }
 }
