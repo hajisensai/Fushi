@@ -33,10 +33,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4146 条。点号进各自文件。
+> 共 4150 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4794](bugs/BUG-4794-source-scan-leftovers-after-kill-and-book-abort.md) | ✅ | ✅ | 来源扫描被杀后留下临时来源行与临时目录；一本坏书中断整批书导入且不删临时目录 |
+| [BUG-4793](bugs/BUG-4793-manga-source-index-lost-when-scan-killed.md) | ✅ | ✅ | 漫画来源索引只在扫描结束时落盘，中途被杀后同名卷再导一份 Vol 1 (3) |
+| [BUG-4792](bugs/BUG-4792-source-scan-junk-entries-and-unreadable-subdir.md) | ✅ | ✅ | 来源扫描把 ._ 资源叉 / 回收站文件当媒体入库，一个读不了的子目录让整次扫描失败 |
+| [BUG-4791](bugs/BUG-4791-video-move-detection-rebinds-unrelated-file.md) | ✅ | ✅ | 视频「搬家」判定只凭同名 + 旧文件不在，删旧剧再放进同名新文件会把旧行错绑到新文件 |
 | [BUG-4790](bugs/BUG-4790-screen-ocr-dart-recognition-no-cancel.md) | 🚧 | 🚧 | Android 截屏识字交给 Dart 识别期间没有取消出口，识别慢时悬浮球一直藏着 |
 | [BUG-4789](bugs/BUG-4789-screen-ocr-engine-destroyed-orphan-dart-reply.md) | ✅ | ✅ | 截屏识字等 Dart 回话时主引擎被销毁，挂起的回话永远不来，流程锁不解、悬浮球一直藏着 |
 | [BUG-4788](bugs/BUG-4788-screen-ocr-lens-consent-desktop-wording-on-android.md) | ✅ | ✅ | Android 截屏识字的 Google Lens 同意框照搬桌面文案，手机上写着「整块显示器」 |
@@ -1439,7 +1443,7 @@
 | [BUG-2982](bugs/BUG-2982-style-redesign-contracts.md) | ✅ | ✅ | 漫画章节列表以下载状态作身份导致重复 sibling key |
 | [BUG-2981](bugs/BUG-2981-settings-search-local-width.md) | ✅ | ✅ | 设置搜索回车使用全窗宽度导致窄内容区无法打开结果 |
 | [BUG-2980](bugs/BUG-2980-scroll-away-first-drag.md) | ✅ | ✅ | 悬浮页头从顶部连续拖动越过阈值仍不收起 |
-| [BUG-2979](bugs/BUG-2979-video-moved-file-duplicate-row.md) | ✅ | 🚧 | 视频文件搬家后重扫来源再建一行致分集重复 |
+| [BUG-2979](bugs/BUG-2979-video-moved-file-duplicate-row.md) | ✅ | ✅ | 视频文件搬家后重扫来源再建一行致分集重复 |
 | [BUG-2978](bugs/BUG-2978-collection-episode-local-remote-duplicate.md) | ✅ | ✅ | 视频作品详情页同一集本地与远端成员各出一张卡 |
 | [BUG-2977](bugs/BUG-2977-floating-title-capsule-clipped.md) | ✅ | ✅ | M3E 浮动页头标题胶囊下半截被裁、返回圆底部被切 |
 | [BUG-2976](bugs/BUG-2976-home-tab-switch-jank.md) | ✅ | ✅ | 切到视频首页与回到 app 首页卡顿 |
