@@ -358,14 +358,16 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
     String? v4Collection;
     String? v3Collection;
     final List<SrsJoinHint> hints = <SrsJoinHint>[];
-    Future<void> readInfo(String writer, String folder) async {
+
+    /// 读写入者 [writer] 在 [folder] 里的说明文件；有（读得出）返回 true。
+    Future<bool> readInfo(String writer, String folder) async {
       final (Map<String, Object?>?, int?) read = await _readInfo(
         store,
         folder,
         tempDir,
       );
       final Map<String, Object?>? info = read.$1;
-      if (info == null) return;
+      if (info == null) return false;
       final int? at = read.$2;
       if (at != null && (updatedAt == null || at > updatedAt!)) updatedAt = at;
       final Object? name = info['name'];
@@ -384,6 +386,7 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
       if (into is String && into.isNotEmpty && into != p.name) {
         mergingInto[writer] = into;
       }
+      return true;
     }
 
     for (final AssetEntry w in await store.listChildren(p.id)) {
@@ -392,9 +395,21 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
         if (hint != null) hints.add(hint);
         continue;
       }
-      // 新代集合根 `v4/`（G8-7）不是写入者目录；它下面的设备只有 head、没有 `profile.json`。它的 `meta.json` 给出集合标识。
+      // 新代集合根 `v4/`（G8-7）不是写入者目录：它的 `meta.json` 给出集合标识；`devices/<设备>/profile.json`（规划 G-6，
+      // [srsPublishProfileInfo]）是新代设备的说明文件。只有发布了说明文件的设备算写入者（与协议 3 时代新代设备把说明
+      // 文件写在旧根 `v3/devices/` 下时同一批设备、同一个名字 [srsV2WriterName]）；只有 head 的设备目录不算。
       if (w.name == kSrs4Root) {
         v4Collection = await _readCollection(store, w.id, tempDir);
+        for (final AssetEntry d in await store.listChildren(w.id)) {
+          if (!d.isFolder || d.name != 'devices') continue;
+          for (final AssetEntry dev in await store.listChildren(d.id)) {
+            if (!dev.isFolder) continue;
+            final String name = srsV2WriterName(dev.name);
+            if (await readInfo(name, dev.id) && !writers.contains(name)) {
+              writers.add(name);
+            }
+          }
+        }
         continue;
       }
       if (w.name == kSrsSync2Folder) {
@@ -556,7 +571,10 @@ Future<(Map<String, Object?>?, int?)> _readJsonAsset(
   }
 }
 
-/// 在本机的同步 v2 设备目录（`fushi-srs/<uid>/v3/devices/<设备>/`）里写（覆盖）profile 说明文件。
+/// 在本机的新代设备目录（`fushi-srs/<目录>/v4/devices/<设备>/`，规划 G-6、内核 `gen4/location.rs` 的布局）里写（覆盖）
+/// profile 说明文件。以前写在旧根 `v3/devices/` 下：新代全新集合（只有 `v4/` 根）在列表（WebUI 勾选列表、关联候选）里
+/// 因此对不上（第五波 G9 身份收尾，交接 §34「没做」）。[srsListRemoteProfiles] 两处都读（协议 3 的设备仍写旧根）。
+/// 内容里的笔记数由调用方向内核要（[SrsDbStore.userNoteCount]，`entity_count`），Dart 不存镜像。
 ///
 /// [mergingInto]：本设备已经选定把这个 profile 并入哪个 uid、并入还没做完（srs.db 里的并入标记还在，
 /// [srsPendingProfileMerges]）。别的设备据此不再把这个 profile 当成候选（[SrsRemoteProfile.mergingInto]）。
@@ -579,8 +597,8 @@ Future<void> srsPublishProfileInfo(
     ns,
     dir ?? srsLocationDirOf(profileUid),
   );
-  final String v2 = await store.ensureFolder(profile, kSrsSync2Folder);
-  final String devices = await store.ensureFolder(v2, 'devices');
+  final String v4 = await store.ensureFolder(profile, kSrs4Root);
+  final String devices = await store.ensureFolder(v4, 'devices');
   final String writer = await store.ensureFolder(devices, writerId);
   // 允许同名多文件的后端（Google Drive）先删旧的再写，避免读到旧的那份。
   final AssetEntry? old = await store.findAsset(writer, kSrsProfileInfoName);
@@ -622,7 +640,9 @@ Future<void> srsPublishProfileInfo(
 /// 绝不当成旧格式的写入者目录。只删本机新代身份的设备目录 `v4/devices/<[v4Device]>`，**根本身永远留着**（连同
 /// profile 目录）：`meta.json` 是这个集合在位置上的身份，别的设备可能已经按它换绑（`collection_adopt` 结论 `bound`）、
 /// 只是还没发布自己的设备目录——只剩本机目录就删根，它下一轮就看不到这个集合了。[v4Device] 不给 = 本机在这个集合里
-/// 没有新代身份：`v4/` 一个字节不碰。[dir] 给了就按它找目录（新代：集合的位置目录名），否则按 [profileUid] 向内核要。
+/// 没有新代身份、或旧集合里还有别的设备要从本机设备目录收段（`joined` 改绑）：设备目录留着，只删本机的说明文件
+/// `v4/devices/<[v2Device]>/profile.json`（[srsPublishProfileInfo] 写在那里；不删的话别的设备一直把旧目录当候选）。
+/// [dir] 给了就按它找目录（新代：集合的位置目录名），否则按 [profileUid] 向内核要。
 /// 目录里的并入提示（[kSrsJoinHintPrefix]）与别的文件一样算「别人的东西」，有它就不删目录。
 Future<void> srsRemoveOwnProfileFolder(
   SyncAssetStore store, {
@@ -642,7 +662,7 @@ Future<void> srsRemoveOwnProfileFolder(
   bool foreign = false;
   for (final AssetEntry e in await store.listChildren(profile.id)) {
     if (e.isFolder && e.name == kSrs4Root) {
-      if (v4Device != null) await _removeOwnV4Device(store, e, v4Device);
+      await _removeOwnV4Device(store, e, v4Device, infoOf: v2Device);
       foreign = true;
     } else if (e.isFolder && srsWriterOfDevice(e.name, deviceId)) {
       await store.deleteAsset(e.id, isFolder: true);
@@ -656,18 +676,27 @@ Future<void> srsRemoveOwnProfileFolder(
   if (!foreign) await store.deleteAsset(profile.id, isFolder: true);
 }
 
-/// 删掉新代集合根 [v4] 里本机新代身份 [v4Device] 的设备目录 `devices/<v4Device>`；根与别的一切不动（见
-/// [srsRemoveOwnProfileFolder]）。
+/// 删掉新代集合根 [v4] 里本机新代身份 [v4Device] 的设备目录 `devices/<v4Device>`；[v4Device] 不给时只删设备
+/// [infoOf] 目录里的说明文件。根与别的一切不动（见 [srsRemoveOwnProfileFolder]）。
 Future<void> _removeOwnV4Device(
   SyncAssetStore store,
   AssetEntry v4,
-  String v4Device,
-) async {
+  String? v4Device, {
+  String? infoOf,
+}) async {
+  if (v4Device == null && infoOf == null) return;
   for (final AssetEntry e in await store.listChildren(v4.id)) {
     if (!e.isFolder || e.name != 'devices') continue;
     for (final AssetEntry d in await store.listChildren(e.id)) {
-      if (d.isFolder && d.name == v4Device) {
+      if (!d.isFolder) continue;
+      if (d.name == v4Device) {
         await store.deleteAsset(d.id, isFolder: true);
+      } else if (d.name == infoOf) {
+        final AssetEntry? info = await store.findAsset(
+          d.id,
+          kSrsProfileInfoName,
+        );
+        if (info != null) await store.deleteAsset(info.id);
       }
     }
   }
