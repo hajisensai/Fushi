@@ -2163,6 +2163,22 @@ pub(crate) mod tests {
                     );
                     assert_eq!(ix.alias_how(&xc)?, None);
                 }
+                // 笔记类型添了一个模板：定义变了，整表重算；缓存层随之物化新模板的卡，提示跟着定义走——已有笔记在新
+                // 模板下的卡，只有卡片修改也证得出。
+                let s = put(
+                    &mut ix,
+                    &[edit(
+                        EntKind::NoteType,
+                        w.nt,
+                        &format!("tmplDef/{}", rules::template(&w.nt, 1).text()),
+                        json!({"ankiNum": 1, "name": "Card 2"}),
+                    )],
+                );
+                assert_eq!(s.aliases_rebuilt, 1);
+                let x0 = rules::note(CANONICAL, "guid-c8-0");
+                let x0c2 = rules::card(&x0, &rules::template(&c_nt, 1), 0);
+                let s = put(&mut ix, &[edit(EntKind::Card, x0c2, "due", json!(9))]);
+                assert_eq!((s.aliases_proven, s.aliases_rebuilt, s.aliases), (1, 0, 0));
                 // 父笔记哪里都没有：证不出，整表重算，卡是「出现过、验不上」的候选行。
                 let y = rules::note(CANONICAL, "guid-c8-nowhere");
                 let yc = rules::card(&y, &c_tmpl, 0);
