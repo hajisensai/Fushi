@@ -114,9 +114,21 @@ void main() {
     // 「立即可得」必须与 read 同一判据（在途请求也要挂反馈），不能用 peek 模拟。
     expect(router, contains('cache.wouldReadImmediately('));
     expect(router, isNot(contains('cache.peek<')));
+    // 取消由 decideCardSourceVideoAction 判成 cancelled、调用方直接 return；等完
+    // 回来 navigator 已卸载同样放弃。
     expect(
       router,
-      contains('(lookup.cancelled || !navigator.mounted)) return;'),
+      contains(
+        'if (lookup?.cancelled ?? false) return CardSourceVideoAction.cancelled;',
+      ),
+    );
+    expect(
+      router,
+      contains('if (lookup != null && !navigator.mounted) return;'),
+    );
+    expect(
+      router,
+      contains('case CardSourceVideoAction.cancelled:\n        return;'),
     );
   });
 }

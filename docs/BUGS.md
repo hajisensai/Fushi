@@ -39,6 +39,14 @@
 |---|:--:|:--:|---|
 | [BUG-4795](bugs/BUG-4795-media-server-launch-double-timeout.md) | ✅ | ✅ | 媒体服务器从库行起播：服务器不可达时条目详情连等两轮超时才进失败页，可达时同一份详情串行取三次 |
 | [BUG-4794](bugs/BUG-4794-interconnect-video-push-missing-file-noise.md) | ✅ | ✅ | 互联视频同步：host 已有的视频本地文件不在时每轮都报一条 local file missing |
+> 共 4153 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4797](bugs/BUG-4797-feedback-files-share-video-ip-quota.md) | 🚧 | 🚧 | 样本文件与录屏共用每 IP 每天 200 MiB 额度，满额样本文件仍会被 429 挤掉 |
+| [BUG-4796](bugs/BUG-4796-disc-back-double-press-repeat-topmenu.md) | ✅ | ✅ | 原盘正片快速连按两次返回会重复发 topMenu，第二次失败会整盘退出 |
+| [BUG-4795](bugs/BUG-4795-disc-back-to-menu-transient-error-exits.md) | ✅ | ✅ | 原盘正片按返回回盘菜单时，任何暂时性错误都会让整个原盘会话退出 |
+| [BUG-4794](bugs/BUG-4794-subtitle-panel-favorites-filter-width-wasted.md) | 🚧 | 🚧 | 经典版式字幕列表收藏档的筛选分段被截到剩余宽度一半，收藏计数用不满的宽度空着 |
 | [BUG-4793](bugs/BUG-4793-server-admin-update-config-mutates-before-save.md) | ✅ | ✅ | 服务端 AdminContext.updateConfig 写盘前就换了内存配置：config.yaml 写失败时内存与文件分家，BUG-4763 的档位回滚也因此不触发 |
 | [BUG-4792](bugs/BUG-4792-cross-app-audio-consent-destroy-busy.md) | ✅ | ✅ | 跨应用语音授权页被系统以非 finishing 方式销毁后，start 永远挂着，之后每次开启都回 busy |
 | [BUG-4791](bugs/BUG-4791-cross-app-audio-provider-rpc-main-thread.md) | ✅ | ✅ | 应用外查词取跨应用语音快照时，跨进程 RPC 与约 2.9MB 写盘压在查词窗平台主线程上 |
