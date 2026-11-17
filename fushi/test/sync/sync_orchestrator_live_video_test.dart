@@ -280,7 +280,7 @@ void main() {
     );
   });
 
-  test('一轮里没向 host 推任何东西：host 视频清单只取一次；推过则重取', () async {
+  test('一轮里没向 host 推任何东西：host 视频清单只取一次；推过或清单超龄则重取', () async {
     final FushiDatabase localDb = _memDb();
     addTearDown(localDb.close);
 
@@ -316,5 +316,18 @@ void main() {
     expect(second.videosExported, 0);
     expect(second.errors, isEmpty, reason: second.errors.join('\n'));
     expect(backend.listVideoCalls, 1);
+
+    // 第三轮同样无事可推，但文件阶段拖得久（盘在唤醒）、那份清单已经超龄：
+    // 进度的三方判定要 host 当下的断点，重取。
+    backend.listVideoCalls = 0;
+    final SyncOrchestrator stale = _orchestrator(
+      db: localDb,
+      backend: backend,
+      tmp: work,
+    )..hostVideoListReuseMaxAge = const Duration(microseconds: -1);
+    final SyncRunReport third = await stale.run();
+    expect(third.videosExported, 0);
+    expect(third.errors, isEmpty, reason: third.errors.join('\n'));
+    expect(backend.listVideoCalls, 2);
   });
 }

@@ -1127,7 +1127,7 @@ class SyncOrchestrator {
     //
     // 互联（InterconnectSyncBackend）有声书包走 live 端点；
     // 云后端仍走原暂存路径（不变）。
-    List<RemoteVideoInfo>? hostVideosAfterFilePush;
+    _HostVideoListSnapshot? hostVideosAfterFilePush;
     if (isInterconnect) {
       if (syncAudioBookFiles) await _syncAudiobooksLive(report, b);
       // 互联视频文件 live push（client→host）：单文件本地视频经 host 上传端点注册进
@@ -1161,8 +1161,9 @@ class SyncOrchestrator {
       // 书进度已在书内容之后跑过（见上）。视频 / 有声书断点只对 host 也有的条目
       // 同步，留在各自文件上传之后：本轮刚推上去的那一项这一轮就能对上。
       _emitPhaseStart(SyncPhase.readingData);
-      // 文件阶段没向 host 推任何东西时，它取的那份 host 清单仍然是现状，不再取
-      // 第二遍；推过就重取（见 [_syncVideosLive] 的返回值约定）。
+      // 文件阶段没向 host 推任何东西、且那份 host 清单还新（没超过
+      // [hostVideoListReuseMaxAge]）时不再取第二遍；推过或放久了就重取（见
+      // [_syncVideosLive] 的返回值约定）。
       await _syncVideoProgressLive(
         report,
         b,
@@ -1294,6 +1295,11 @@ class SyncOrchestrator {
   /// 整轮超过这么久才把分阶段耗时写进诊断日志（快的同步每分钟都可能跑一次，
   /// 不该刷屏；慢到用户会来反馈的那种一定留下记录）。
   static const Duration slowRunDiagnosticThreshold = Duration(seconds: 30);
+
+  /// 互联视频：文件阶段取的 host 清单最多带到进度阶段多久，见
+  /// [kHostVideoListReuseMaxAge]。测试改它来走「清单放久了」那一支。
+  @visibleForTesting
+  Duration hostVideoListReuseMaxAge = kHostVideoListReuseMaxAge;
 
   /// 测试入口：直接调用 [_syncPortableSettings]（「同步设置」阶段）。
   @visibleForTesting

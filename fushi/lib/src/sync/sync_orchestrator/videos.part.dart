@@ -1,5 +1,23 @@
 part of '../sync_orchestrator.dart';
 
+/// 文件阶段取的 host 视频清单最多带到进度阶段多久。
+///
+/// 进度阶段拿 host 断点与本机断点、基线做三方判定，host 那一侧必须是「刚取的」：
+/// 文件阶段要读墓碑、逐个视频查文件 / 列目录，盘在休眠（NAS / 移动硬盘）时会拖
+/// 上数秒到数十秒，这期间 host 上的断点可能已经变了。超过这个年龄就重取。
+const Duration kHostVideoListReuseMaxAge = Duration(seconds: 2);
+
+/// [SyncOrchestrator._syncVideosLive] 交给进度阶段的 host 视频清单，带着它的年龄
+/// （从发出清单请求那一刻起算）。
+class _HostVideoListSnapshot {
+  _HostVideoListSnapshot(this.videos, this._age);
+
+  final List<RemoteVideoInfo> videos;
+  final Stopwatch _age;
+
+  Duration get age => _age.elapsed;
+}
+
 /// 视频域互联 live 进度 / 上传 / 字幕同步的私有实现（B2 按域拆出）。
 /// 公开入口 [SyncOrchestrator.syncVideoAssets] 留在本体；方法逐字搬自 SyncOrchestrator。
 extension _SyncOrchestratorVideos on SyncOrchestrator {
@@ -42,12 +60,14 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
   /// 三方判定（BUG-3367）、冲突上报与逐条错误处理见共享模板 [_syncPositionsLive]。
   ///
   /// [hostVideos]：同一轮里 [_syncVideosLive] 刚取过、且之后没向 host 推过任何东西
-  /// 的那份 host 清单；给了就不再取第二遍。本轮推过视频时调用方传 null——进度
-  /// 排在上传之后，就是为了让刚推上去的那一项这一轮能对上，那需要上传之后的清单。
+  /// 的那份 host 清单；给了、且还没超过 [SyncOrchestrator.hostVideoListReuseMaxAge]
+  /// 就不再取第二遍，超了照常重取（三方判定要的是 host 当下的断点）。本轮推过
+  /// 视频时调用方传 null——进度排在上传之后，就是为了让刚推上去的那一项这一轮能
+  /// 对上，那需要上传之后的清单。
   Future<void> _syncVideoProgressLive(
     SyncRunReport report,
     InterconnectSyncBackend backend, {
-    List<RemoteVideoInfo>? hostVideos,
+    _HostVideoListSnapshot? hostVideos,
   }) async {
     // 基底①：本地 VideoBooks 行（uid → lastPositionMs，向后兼容书架视频）。
     final Map<String, int> rowPositionByUid = <String, int>{};
@@ -67,8 +87,11 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
     // host 视频清单（条目已带 positionMs / positionUpdatedAtMs，省去逐视频 GET），
     // 只对两端都有的视频同步；本地独有视频（host 无）无 host 真相可同步，跳过。
     final Map<String, RemoteVideoInfo> hostById = <String, RemoteVideoInfo>{};
-    for (final RemoteVideoInfo info
-        in hostVideos ?? await backend.listRemoteVideos()) {
+    final List<RemoteVideoInfo> hostList =
+        hostVideos != null && hostVideos.age <= hostVideoListReuseMaxAge
+        ? hostVideos.videos
+        : await backend.listRemoteVideos();
+    for (final RemoteVideoInfo info in hostList) {
       hostById[info.id] = info;
     }
     if (hostById.isEmpty) return;
@@ -339,14 +362,16 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
   /// 仅当 client syncVideoFiles 开且 isInterconnect 时由 [run] 调用。进度走
   /// [SyncPhase.videos]，逐项错误进 report.errors 不中断，[report.videosExported] 计上传数。
   ///
-  /// 返回本轮取到的 host 清单，**仅当这一轮没有任何东西要推**（视频、字幕都没有）；
-  /// 否则返回 null。随后的 [_syncVideoProgressLive] 据此决定复用还是重取：推过
-  /// 之后 host 清单已经变了，不能拿上传前那份去对进度。
-  Future<List<RemoteVideoInfo>?> _syncVideosLive(
+  /// 返回本轮取到的 host 清单（带年龄），**仅当这一轮没有任何东西要推**（视频、
+  /// 字幕都没有）；否则返回 null。随后的 [_syncVideoProgressLive] 据此决定复用还是
+  /// 重取：推过之后 host 清单已经变了，不能拿上传前那份去对进度；没推过但本阶段
+  /// 拖得久（盘在唤醒）的，也由年龄上限挡掉。
+  Future<_HostVideoListSnapshot?> _syncVideosLive(
     SyncRunReport report,
     InterconnectSyncBackend backend,
   ) async {
     // host 既有视频（uid → 清单条目；sizeBytes null=host 无法 stat）。
+    final Stopwatch hostVideosAge = Stopwatch()..start();
     final List<RemoteVideoInfo> hostVideos = await backend.listRemoteVideos();
     final Map<String, RemoteVideoInfo> hostByUid = <String, RemoteVideoInfo>{
       for (final RemoteVideoInfo info in hostVideos) info.id: info,
@@ -468,7 +493,9 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
       }
       index++;
     }
-    return toPush.isEmpty ? hostVideos : null;
+    return toPush.isEmpty
+        ? _HostVideoListSnapshot(hostVideos, hostVideosAge)
+        : null;
   }
 
   /// 把 [row] 视频的全部本地 sidecar 字幕推给 host（BUG-964）。
