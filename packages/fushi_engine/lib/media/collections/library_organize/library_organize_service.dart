@@ -105,8 +105,11 @@ class LibraryOrganizeService {
     Set<String>? onlyEntryKeys,
     void Function(int done, int total)? onProgress,
     bool Function()? isCancelled,
+    bool rulesOnly = false,
   }) async {
-    final AiProviderConfig? useProvider = provider;
+    // [rulesOnly]：只跑不花钱的规则那一步（AI 库管家碰到单趟请求上限时用），结论
+    // 与没指派提供商相同（[LibraryOrganizeStatus.noProvider]），错误短码 `rules_only`。
+    final AiProviderConfig? useProvider = rulesOnly ? null : provider;
     final int runId = await db
         .into(db.libraryOrganizeRuns)
         .insert(
@@ -151,7 +154,7 @@ class LibraryOrganizeService {
       // ② AI。
       if (useProvider == null) {
         status = LibraryOrganizeStatus.noProvider;
-        error = 'provider_not_configured';
+        error = rulesOnly ? 'rules_only' : 'provider_not_configured';
       } else {
         facts = await _facts(domain, onlyEntryKeys);
         final List<List<String>> plan = chunkOrganizeEntries(facts.entries);
