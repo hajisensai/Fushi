@@ -94,6 +94,21 @@ const int kSrsLocationJsonMaxBytes = 64 * 1024;
 String srsTombstoneDevice(String dir) =>
     uuidV5(srsNamespace, 'fushi-srs/tombstone/4/$dir');
 
+/// 内核 `collection_info` 回包的 `joins`（`{op, from, dir, salts, trusted}` 的列表）里受信作者写的那些 `Join`：
+/// 被并入的集合标识 `from` 与它的位置目录名 `dir`（没有为 null）。内核 `AlreadyJoined`（`identity.rs` `ix.joined`）也只认
+/// 受信的：未受信设备同步进来的一条 `Join` 不能让本机把那个集合从候选里藏掉、也不据它放并入提示——内核仍认为那是
+/// 另一个集合。形状不对的条目跳过。
+List<({String from, String? dir})> srsTrustedJoins(Object? joins) =>
+    <({String from, String? dir})>[
+      if (joins is List)
+        for (final Object? j in joins)
+          if (j is Map && j['trusted'] == true && j['from'] is String)
+            (
+              from: j['from']! as String,
+              dir: j['dir'] is String ? j['dir']! as String : null,
+            ),
+    ];
+
 /// 一个并入提示：别的设备的集合 [collection]（位置目录名 [dir]）已经把这个集合并了进去。
 class SrsJoinHint {
   const SrsJoinHint({required this.collection, required this.dir});
@@ -1017,17 +1032,9 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     final Map<String, Object?> info = (await store.sync2Command(
       <String, Object?>{'op': 'collection_info'},
     )).map;
-    // 只认受信作者写的 `Join`：内核 `AlreadyJoined`（`identity.rs` `ix.joined`）也只认它们。未受信设备同步进来的一条
-    // `Join` 不能让本机把对应集合从候选里藏掉——内核仍认为那是另一个集合。
-    final List<({String from, String? dir})> joins =
-        <({String from, String? dir})>[
-          for (final Object? j in (info['joins'] as List<Object?>?) ?? const [])
-            if (j is Map && j['trusted'] == true && j['from'] is String)
-              (
-                from: j['from']! as String,
-                dir: j['dir'] is String ? j['dir']! as String : null,
-              ),
-        ];
+    final List<({String from, String? dir})> joins = srsTrustedJoins(
+      info['joins'],
+    );
     return (
       collection: info['collection']! as String,
       dir: info['dir']! as String,

@@ -116,6 +116,24 @@ void main() {
   });
   tearDown(() => root.deleteSync(recursive: true));
 
+  // 复核：判定里「已经并进本机的集合」只认受信作者写的 Join，与内核 `AlreadyJoined` 同口径。
+  test('已并入的集合只认受信的 Join（未受信的、形状不对的跳过）', () {
+    expect(
+      srsTrustedJoins(<Object?>[
+        <String, Object?>{'from': 'c-ok', 'dir': 'd-ok', 'trusted': true},
+        <String, Object?>{'from': 'c-untrusted', 'dir': 'd', 'trusted': false},
+        <String, Object?>{'from': 'c-nodir', 'trusted': true},
+        <String, Object?>{'dir': 'd', 'trusted': true},
+        'junk',
+      ]),
+      <({String from, String? dir})>[
+        (from: 'c-ok', dir: 'd-ok'),
+        (from: 'c-nodir', dir: null),
+      ],
+    );
+    expect(srsTrustedJoins(null), isEmpty);
+  });
+
   test('复现：不关联时两台设备 uid 不同，同步各自成功但卡片不互通', () async {
     final _Device host = await _Device.open('host');
     final _Device phone = await _Device.open('phone');
