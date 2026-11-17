@@ -33,16 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4121 条。点号进各自文件。
+> 共 4124 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4765](bugs/BUG-4765-srs-deck-settings-reload-drops-edits.md) | ✅ | ✅ | 牌组设置页点「立即优化 / 恢复默认参数 / 子牌组继承」后重读，静默盖掉没保存的编辑、按返回也不再拦 |
-| [BUG-4764](bugs/BUG-4764-srs-limit-unit-legacy-count-stale-after-log-sync.md) | ✅ | ✅ | 存量单位提醒计数按内容指纹缓存，只同步进来旧复习日志时不刷新 |
-> 共 4122 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4768](bugs/BUG-4768-srs-deck-settings-reload-drops-edits.md) | ✅ | ✅ | 牌组设置页点「立即优化 / 恢复默认参数 / 子牌组继承」后重读，静默盖掉没保存的编辑、按返回也不再拦 |
+| [BUG-4767](bugs/BUG-4767-srs-limit-unit-legacy-count-stale-after-log-sync.md) | ✅ | ✅ | 存量单位提醒计数按内容指纹缓存，只同步进来旧复习日志时不刷新 |
 | [BUG-4766](bugs/BUG-4766-frame-cover-preview-concurrent-ffmpeg.md) | ✅ | ✅ | 挑帧封面弹窗连点微调会并发起多个 ffmpeg 抽帧 |
 | [BUG-4765](bugs/BUG-4765-lyrics-zlib-bomb-unbounded.md) | ✅ | ✅ | KRC / 加密 QRC 解压没有明文上限，构造的歌词文件或插件结果能把内存撑爆导致闪退 |
 | [BUG-4764](bugs/BUG-4764-qrc-kana-ideograph-count-mismatch.md) | ✅ | ✅ | QRC 注音轨汉字计数口径和来源不一致（〇 〆 等），整首歌的注音全部丢失 |
