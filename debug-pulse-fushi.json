@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-17T09:47:34Z",
+ "generatedAt": "2026-11-17T09:52:15Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "dfc7d39e77de2de022876fcdff278014d51589b6",
-  "seq": 28612
+  "sha": "2f433c850726caa373f976a59972515d52fba1f6",
+  "seq": 28616
  },
  "builds": [
   {
@@ -34,7 +34,7 @@
      "url": "https://github.com/hajisensai/Fushi/actions/runs/44052530947"
     },
     "ios": {
-     "state": "building",
+     "state": "built",
      "url": "https://github.com/hajisensai/Fushi/actions/runs/44052530947"
     }
    }
@@ -175,9 +175,10 @@
   }
  ],
  "pending": {
-  "headSha": "dfc7d39e77de2de022876fcdff278014d51589b6",
-  "headSeq": 28612,
+  "headSha": "2f433c850726caa373f976a59972515d52fba1f6",
+  "headSeq": 28616,
   "prs": [
+   3686,
    3683,
    3680
   ],
@@ -186,19 +187,19 @@
   "platforms": {
    "android": {
     "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44057853262"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44059060709"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44057853485"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44059060594"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44057853485"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44059060594"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44057853485"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44059060594"
    }
   }
  },
@@ -417,6 +418,15 @@
    "mergedAt": "2026-11-17T09:41:17Z",
    "additions": 19,
    "deletions": 3,
+   "labels": []
+  },
+  "3686": {
+   "number": 3686,
+   "title": "fix(android): 跨应用语音 provider RPC 后台化后补回异常回 error + 接线守卫",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-17T09:49:09Z",
+   "additions": 98,
+   "deletions": 2,
    "labels": []
   }
  }
