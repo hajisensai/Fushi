@@ -153,4 +153,25 @@ void main() {
     expect(retiming, contains('_episodeLoadSeq == loadSeq'));
     expect('if (!isCurrent()) return;'.allMatches(retiming), hasLength(3));
   });
+
+  // 蓝光原盘会话也走完整管线：入口按原盘 VM 的可抽取性判（纯函数
+  // canRunLocalVideoSubtitlePipeline），不再按「是不是原盘」一刀切；抽不了时说明原因。
+  test('Blu-ray disc titles reach the full pipeline by extractability', () {
+    final String gate = source
+        .split('bool get _canRunSubtitlePipeline =>')[1]
+        .split('bool _subtitleStudioAvailable(')[0];
+    expect(gate, contains('canRunLocalVideoSubtitlePipeline('));
+    expect(gate, contains('controller?.discMiningAvailable'));
+    expect(gate, contains('!_discLearningBlocked'));
+    expect(gate, isNot(contains('_discBookUid')));
+
+    final String router = source
+        .split('Future<void> _openSubtitleGeneration(')[1]
+        .split('Future<void> _generateSubtitleWithSpeechModel(')[0];
+    expect(
+      router.indexOf('_discExtractionAllowed(controller)'),
+      lessThan(router.indexOf('if (!_canRunSubtitlePipeline)')),
+    );
+    expect(router.indexOf('_discExtractionAllowed(controller)'), isNonNegative);
+  });
 }

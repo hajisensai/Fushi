@@ -3198,16 +3198,22 @@ extension _VideoSubtitle on _VideoFushiPageState {
   bool get _canTranscribeVideoSpeech =>
       _canResolveSubtitleTimingAudio && isAsrSupported;
 
-  /// 生成字幕管线（ASR + 可选专名表 AI 校对，字幕写在视频旁 `<视频名>.<语言>.srt`）：
-  /// 本机视频在本机跑；互联远端视频在放视频的那台 host 上跑（host 任务
-  /// `video_subtitle`，老 host 面板里说明不支持），取回 SRT 当本机外挂字幕加载。其它
-  /// 远端 / 流（YouTube、媒体服务器）没有能跑任务的 host；蓝光走盘结构、没有单个
-  /// 视频文件——这些只剩本机转录。
+  /// 生成字幕管线（ASR + 可选专名表 AI 校对，字幕写在视频旁 `<视频名>.<语言>.srt`；
+  /// 原盘写进 app 自有目录，见 `videoSubtitleDiscExportDir`）：本机读得到媒体的视频在
+  /// 本机跑——含蓝光原盘会话（当前 title 的 `.mpls` 由 ffmpeg 按播放列表读），判据只看
+  /// 原盘 VM 给的可抽取性（[canRunLocalVideoSubtitlePipeline]）；互联远端视频在放视频的
+  /// 那台 host 上跑（host 任务 `video_subtitle`，老 host 面板里说明不支持），取回 SRT
+  /// 当本机外挂字幕加载。
   bool get _canRunSubtitlePipeline =>
-      (_currentVideoPath != null &&
-          !_isRemote &&
-          _discBookUid == null &&
-          isAsrSupported) ||
+      canRunLocalVideoSubtitlePipeline(
+        videoPath: _currentVideoPath,
+        isRemote: _isRemote,
+        asrSupported: isAsrSupported,
+        discSession: _controller?.isBlurayNavigationSession ?? false,
+        discExtractionAvailable:
+            (_controller?.discMiningAvailable ?? false) &&
+            !_discLearningBlocked,
+      ) ||
       (_isRemote && _remoteHostVideoTarget() != null);
 
   /// 字幕工作台里至少有一项能用：能生成（有音轨 / 能跑管线）、能对内嵌轨（本机文件）、
@@ -3275,9 +3281,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// 「生成字幕」嵌进工作台工具栏的选项面板（[VideoSubtitleStudioActions.generatePanel]）：
   /// 与 [_openJapaneseSubtitlePipeline] / [_openRemoteJapaneseSubtitlePipeline] 同一个
   /// 面板、同一套参数，只是不另起弹层——本机视频嵌本机管线面板，互联远端视频（含 host
-  /// 播放列表的任意一集）嵌 host 管线面板。管线认不到这一集时返回 null（蓝光、非互联
-  /// 的远端流）：这些只有本机转录一条路，工作台退回「生成字幕」那一行按钮走
-  /// [_openSubtitleGeneration]，转录弹层盖在工作台上。
+  /// 播放列表的任意一集，以及可抽取的蓝光原盘 title）嵌 host / 本机管线面板。管线认不到
+  /// 这一集时返回 null（非互联的远端流、原盘当前 title 不可抽取）：工作台退回「生成
+  /// 字幕」那一行按钮走 [_openSubtitleGeneration]，由它说明原因或走本机转录。
   Future<WidgetBuilder?> _subtitleStudioGeneratePanel(
     VideoPlayerController controller,
   ) async {
@@ -3514,6 +3520,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// 转录弹层（原「语音识别生成字幕」，可选转录完自动 AI 校对）。只有一条路能走时
   /// 直接走那条，不多弹一层。
   Future<void> _openSubtitleGeneration(VideoPlayerController controller) async {
+    // 原盘会话里当前 title 抽不了（AACS 没密钥 / 多角度 / 片段缺失 / 菜单在前台）时
+    // 两条路都读不到音轨：直接说明原因，不静默无反应。
+    if (!_discExtractionAllowed(controller)) return;
     final bool canTranscribe = _canTranscribeVideoSpeech;
     if (!_canRunSubtitlePipeline) {
       if (canTranscribe) await _generateSubtitleWithSpeechModel(controller);
