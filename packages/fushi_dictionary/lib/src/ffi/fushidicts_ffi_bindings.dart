@@ -198,6 +198,18 @@ typedef _DestroyDart = void Function(Pointer<Void> handle);
 typedef _AddDictNative =
     Void Function(Pointer<Void> handle, Pointer<Utf8> path);
 typedef _AddDictDart = void Function(Pointer<Void> handle, Pointer<Utf8> path);
+typedef _AddTermDictWithLanguageNative =
+    Void Function(
+      Pointer<Void> handle,
+      Pointer<Utf8> path,
+      Pointer<Utf8> language,
+    );
+typedef _AddTermDictWithLanguageDart =
+    void Function(
+      Pointer<Void> handle,
+      Pointer<Utf8> path,
+      Pointer<Utf8> language,
+    );
 
 typedef _PrepareUnionFilterNative =
     Void Function(Pointer<Void> handle, Pointer<Utf8> cacheDir, Int32 wait);
@@ -382,6 +394,11 @@ class FushidictsFfiBindings {
     addTermDict = _lib.lookupFunction<_AddDictNative, _AddDictDart>(
       'fushidicts_add_term_dict',
     );
+    addTermDictWithLanguage = _lib
+        .lookupFunction<
+          _AddTermDictWithLanguageNative,
+          _AddTermDictWithLanguageDart
+        >('fushidicts_add_term_dict_with_language');
     addFreqDict = _lib.lookupFunction<_AddDictNative, _AddDictDart>(
       'fushidicts_add_freq_dict',
     );
@@ -557,6 +574,10 @@ class FushidictsFfiBindings {
   /// 还一个 [retain] 借来的引用；最后一个归还时销毁句柄（解除文件映射）。
   late final _DestroyDart release;
   late final _AddDictDart addTermDict;
+
+  /// 同 [addTermDict]，另带这本词典词头的语言（BCP-47）。标了语言的词典只接受本语言
+  /// 变形表还原出来的词形，见 native `DictionaryQuery::add_term_dict`。
+  late final _AddTermDictWithLanguageDart addTermDictWithLanguage;
   late final _AddDictDart addFreqDict;
   late final _AddDictDart addPitchDict;
   late final _AddDictDart addKanjiDict;

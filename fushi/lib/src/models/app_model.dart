@@ -3882,6 +3882,7 @@ class AppModel
           hidden: states[i].hidden,
           metadata: states[i].metadata,
           order: d.order,
+          languageOverride: d.languageOverride,
         ),
       );
     }
@@ -3889,6 +3890,7 @@ class AppModel
     // 类型自愈每本、隐藏/折叠/语言开关），就地重建会把总代价推成 O(N²)。真正的
     // 装载推迟到下次要用引擎时，批量写入期间的 N 次排期塌成 1 次装载。
     final b = bucketDictPaths(entries);
+    final Map<String, String> termLanguages = termDictLanguagesOf(entries);
     dictRepo.noteEngineTermDictionaries(<String>[
       for (final String p in b.term) path.basename(p),
     ]);
@@ -3897,8 +3899,10 @@ class AppModel
       freqPaths: b.freq,
       pitchPaths: b.pitch,
       kanjiPaths: b.kanji,
+      termLanguages: termLanguages,
     );
     _lastScheduledDictBuckets = b;
+    _lastScheduledTermLanguages = termLanguages;
   }
 
   /// 最近一次排期给引擎的分桶结果（两条装载路径排期时都记下）。
@@ -3915,7 +3919,12 @@ class AppModel
   })?
   _lastScheduledDictBuckets;
 
-  /// [b] 与 [_lastScheduledDictBuckets] 逐桶相同（同序同路径）。
+  /// 最近一次排期时随 term 桶交给引擎的词典语言（[termDictLanguagesOf]）。语言是装载
+  /// 时的属性，变了就得重装，所以与分桶一起比较。
+  Map<String, String> _lastScheduledTermLanguages = const <String, String>{};
+
+  /// [b] 与 [_lastScheduledDictBuckets] 逐桶相同（同序同路径），且 term 词典的语言
+  /// [termLanguages] 也没变。
   bool _sameAsLastScheduledDictBuckets(
     ({
       List<String> term,
@@ -3924,13 +3933,15 @@ class AppModel
       List<String> kanji,
     })
     b,
+    Map<String, String> termLanguages,
   ) {
     final last = _lastScheduledDictBuckets;
     return last != null &&
         _samePaths(last.term, b.term) &&
         _samePaths(last.freq, b.freq) &&
         _samePaths(last.pitch, b.pitch) &&
-        _samePaths(last.kanji, b.kanji);
+        _samePaths(last.kanji, b.kanji) &&
+        mapEquals(_lastScheduledTermLanguages, termLanguages);
   }
 
   static bool _samePaths(List<String> a, List<String> b) {
@@ -4207,10 +4218,14 @@ class AppModel
           hidden: states[i].hidden,
           metadata: states[i].metadata,
           order: dictList[i].order,
+          languageOverride: dictList[i].languageOverride,
         ),
     ];
     final b = bucketDictPaths(entries);
-    if (onlyIfChanged && _sameAsLastScheduledDictBuckets(b)) return false;
+    final Map<String, String> termLanguages = termDictLanguagesOf(entries);
+    if (onlyIfChanged && _sameAsLastScheduledDictBuckets(b, termLanguages)) {
+      return false;
+    }
     dictRepo.noteEngineTermDictionaries(<String>[
       for (final String p in b.term) path.basename(p),
     ]);
@@ -4219,8 +4234,10 @@ class AppModel
       freqPaths: b.freq,
       pitchPaths: b.pitch,
       kanjiPaths: b.kanji,
+      termLanguages: termLanguages,
     );
     _lastScheduledDictBuckets = b;
+    _lastScheduledTermLanguages = termLanguages;
     return true;
   }
 

@@ -177,6 +177,22 @@ add_test(NAME en_inflection_lookup_test
                  "${FUSHI_ROOT}/../../fushi/assets/transforms/en.json"
                  "${FUSHI_ROOT}/../../fushi/assets/transforms/en_irregular.json")
 
+# 反馈 WIZUEQx1fY：标了语言的词典只接受本语言变形表的还原链（Our 不再被阿尔巴尼亚语
+# -ur 还原成 O），排序里变形链长先于预处理步数（My 不再排出 M 在 my 前面）。真变形表。
+add_executable(dictionary_language_gate_lookup_test
+    "${CMAKE_CURRENT_SOURCE_DIR}/dictionary_language_gate_lookup_test.cpp")
+target_link_libraries(dictionary_language_gate_lookup_test PRIVATE fushidicts)
+target_include_directories(dictionary_language_gate_lookup_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+if(MSVC)
+  target_compile_options(dictionary_language_gate_lookup_test PRIVATE /utf-8 /Zc:__cplusplus /permissive-)
+endif()
+add_test(NAME dictionary_language_gate_lookup_test
+         COMMAND dictionary_language_gate_lookup_test
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/en.json"
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/en_irregular.json"
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/sq.json"
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/la.json")
+
 # BUG-3212：关西方言「うた → った」不得跨词吞掉「ため / たび」的「た」（真 ja.json）。
 add_executable(ja_kansai_ta_boundary_test
     "${CMAKE_CURRENT_SOURCE_DIR}/ja_kansai_ta_boundary_test.cpp")
