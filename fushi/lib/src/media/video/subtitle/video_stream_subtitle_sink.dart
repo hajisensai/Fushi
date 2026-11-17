@@ -71,8 +71,11 @@ class VideoStreamSubtitleSink implements AppSubtitleOutputSink {
     if (output == null) return const <String>[];
     final Future<void> Function(String subtitlePath)? remember = this.remember;
     if (remember != null) await remember(output);
-    if (stagedAudio.contains(episode.videoPath)) {
-      final File audio = File(episode.videoPath);
+    // 删的是本 sink 自己拉下来的整集音频副本（[stagedAudio] 里登记的那一份），不是
+    // 库路径：按登记表取出这份副本再删。
+    final String? staged = stagedAudio.lookup(episode.videoPath);
+    if (staged != null) {
+      final File audio = File(staged);
       if (await audio.exists()) await audio.delete();
     }
     // 没有库条目 / 曲目身份可报（选择记在按集的 prefs 里）。
