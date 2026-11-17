@@ -87,9 +87,12 @@
 | [BUG-4798](bugs/BUG-4798-video-mine-queue-exit-retries-failed.md) | ✅ | ✅ | 看完再制卡：每次退出播放页都把写入失败的暂存卡再写一遍，写完的行永不出表 |
 | [BUG-4798](bugs/BUG-4798-scrape-sweep-plan-failure-swallowed.md) | ✅ | ✅ | 后台补刮计划失败被吞成空清单：待确认提醒条凭空消失且无日志 |
 > 共 4155 条。点号进各自文件。
+> 共 4157 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4801](bugs/BUG-4801-ocr-atomic-write-fixed-tmp-name-concurrent-writers.md) | ✅ | ✅ | 漫画 OCR 逐页缓存的原子写用固定名 .tmp，并发写同一页时互相覆盖 |
+| [BUG-4800](bugs/BUG-4800-manga-ocr-cancel-frees-slot-before-isolate-exit.md) | ✅ | ✅ | 漫画 OCR 取消 / 暂停后 isolate 还没退出就释放并发名额，新旧任务同时占模型内存 |
 | [BUG-4799](bugs/BUG-4799-manga-ocr-reopen-recovery-misses-system-ocr-cache.md) | ✅ | ✅ | 重开书恢复增量 OCR 结果时漏掉系统 OCR 的逐页缓存 |
 | [BUG-4798](bugs/BUG-4798-manga-ocr-lens-fill-missing-adopts-other-engine-pages.md) | ✅ | ✅ | Lens 只补缺页时把别的引擎写的整卷产物收作自己的结果，系统 OCR 取消还会写出半卷占位产物 |
 | [BUG-4797](bugs/BUG-4797-feedback-files-share-video-ip-quota.md) | 🚧 | 🚧 | 样本文件与录屏共用每 IP 每天 200 MiB 额度，满额样本文件仍会被 429 挤掉 |

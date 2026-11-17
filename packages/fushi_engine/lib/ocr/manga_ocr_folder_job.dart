@@ -273,7 +273,8 @@ class MangaOcrFilePageCache implements OcrPageCache {
     }
     try {
       final Map<String, dynamic> json =
-          jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+          jsonDecode(await readAtomicallyWrittenTextFile(file))
+              as Map<String, dynamic>;
       final FileStat stat = await pageFiles[pageIndex].stat();
       if (json['source_path'] != pageNames[pageIndex] ||
           json['source_size'] != stat.size ||

@@ -80,4 +80,20 @@ void main() {
       expect(source, isNot(contains(".tmp'")), reason: path);
     }
   });
+
+  // Windows 上读者把缓存文件打开着的那一刻，写者的 rename 会「拒绝访问」
+  // （BUG-4801）；与原子写配套的读 helper 和替换互斥。行为测试在引擎包的
+  // atomic_text_file_concurrent_test.dart，这里只钉 Lens 逐页缓存接上了它。
+  test('Lens 逐页缓存的读走与原子写配套的读 helper', () {
+    final String source = _source(
+      'lib/src/media/manga/ocr/google_lens_ocr_service.dart',
+    );
+    final int readStart = source.indexOf('Future<MokuroImage?> read(');
+    final int readEnd = source.indexOf('Future<void> write(', readStart);
+    expect(readStart, greaterThanOrEqualTo(0));
+    expect(readEnd, greaterThan(readStart));
+    final String readBody = source.substring(readStart, readEnd);
+    expect(readBody, contains('readAtomicallyWrittenTextFile(file)'));
+    expect(readBody, isNot(contains('.readAsString(')));
+  });
 }
