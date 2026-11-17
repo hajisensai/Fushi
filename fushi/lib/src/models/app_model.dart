@@ -11513,6 +11513,7 @@ class AppModel
         // 灌全书 cue：后台听书无 reader 喂 cue，否则悬浮窗推空串（TODO-354 根因②）。
         cues: req.cues,
         remote: req.remote,
+        companion: req.companion,
       );
       if (controller == null) return BackgroundListenResult.loadFailed;
     } catch (e, stack) {

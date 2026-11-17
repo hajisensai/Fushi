@@ -13,8 +13,9 @@
 /// - **中断判定**：`playToEnd` 返回 false 有三种来源——外部播放打断（查词发音等）、
 ///   本控制器自己 stop、切句 / 跳页。本控制器每次自己打断前先递增
 ///   [_playGeneration]；返回 false 时只有代数没变才算外部打断（转 [paused]，不前进）。
-/// - **自己翻页 vs 用户翻页**：[MangaReadAloudHost.show] 前记下 [_expectedPage]；
-///   页变化回调里落在同一 spread 的忽略，否则重新定位到新页第一句。
+/// - **自己翻页 vs 用户翻页**：显示与翻页判定走共用的 [MangaSentenceFollower]
+///   （成品音频播放也用它）：页变化回调里落在目标页同一 spread 的忽略，否则重新定位到
+///   新页第一句。
 /// - **全局播放器只在自己持有时才 stop**：`DesktopAudioPlayback.stop` 是全局的，
 ///   没在播自己的句子时不去掐别人的发音。
 library;
@@ -33,6 +34,7 @@ import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart'
     show readerVisibleForLifecycleState;
 import 'package:fushi/src/media/manga/reader/manga_read_aloud_plan.dart';
+import 'package:fushi/src/media/manga/reader/manga_sentence_follow.dart';
 
 enum MangaReadAloudState {
   /// 没在朗读（未开始 / 已停止）。
@@ -129,8 +131,9 @@ abstract interface class MangaReadAloudHost {
   /// 是常态）。拿不到时返回 [MangaPageTextUnavailable]，不抛。
   Future<MangaPageTextResult> ensurePageText(int pageIndex);
 
-  /// 高亮第 [pageIndex] 页的句子分组 [group]；不在当前屏时先翻过去。
-  Future<void> show(int pageIndex, int group);
+  /// 高亮第 [pageIndex] 页的 OCR 块 [blocks]（一句可以跨几个块，全部框住；空列表 =
+  /// 只翻到该页、清高亮）；不在当前屏时先翻过去。
+  Future<void> show(int pageIndex, List<int> blocks);
 
   Future<void> clearHighlight();
 
@@ -180,6 +183,7 @@ class MangaReadAloudController extends ChangeNotifier {
     required double Function() readSpeed,
     required Future<void> Function(double speed) writeSpeed,
   }) : _host = host,
+       _follower = MangaSentenceFollower(host),
        _rig = rig,
        _pronunciation = pronunciation,
        _playToEnd = playToEnd,
@@ -188,6 +192,7 @@ class MangaReadAloudController extends ChangeNotifier {
        _writeSpeed = writeSpeed;
 
   final MangaReadAloudHost _host;
+  final MangaSentenceFollower _follower;
   MangaReadAloudVoiceRig _rig;
   final List<TtsPronunciationRule> _pronunciation;
   final MangaReadAloudPlayToEnd _playToEnd;
@@ -210,9 +215,6 @@ class MangaReadAloudController extends ChangeNotifier {
 
   /// 本控制器自己发起的打断（stop / 切句 / 跳页 / 暂停）每次 +1。
   int _playGeneration = 0;
-
-  /// [MangaReadAloudHost.show] 前记下的目标页：这一 spread 内的页变化是自己翻的。
-  int? _expectedPage;
 
   /// 全局播放器此刻在播本控制器的句子。
   bool _ownsPlayback = false;
@@ -350,7 +352,7 @@ class MangaReadAloudController extends ChangeNotifier {
     _interrupt();
     _dropPlans(keep: const <int>{});
     _texts.clear();
-    _expectedPage = null;
+    _follower.reset();
     _problem = null;
     _finish = null;
     unawaited(_host.clearHighlight());
@@ -360,14 +362,13 @@ class MangaReadAloudController extends ChangeNotifier {
   /// 阅读器页变化（自己翻的和用户翻的都会来）。
   void onPageChanged(int page) {
     if (!isActive) return;
-    final int? expected = _expectedPage;
-    if (expected != null && _host.isSameSpread(page, expected)) return;
+    if (_follower.isOwnPageChange(page)) return;
     final bool wasRunning = _running;
     _interrupt();
     _page = page.clamp(0, math.max(0, _host.pageCount - 1));
     _index = 0;
     _backward = false;
-    _expectedPage = _page;
+    _follower.acceptPage(_page);
     unawaited(_host.clearHighlight());
     if (wasRunning) {
       _launch();
@@ -394,6 +395,7 @@ class MangaReadAloudController extends ChangeNotifier {
   /// 只有正在播自己的句子时才停全局播放器。
   void _interrupt() {
     _playGeneration++;
+    _follower.interrupt();
     if (_ownsPlayback) {
       _ownsPlayback = false;
       unawaited(_stopPlayback());
@@ -450,8 +452,7 @@ class MangaReadAloudController extends ChangeNotifier {
       // 翻到新页就预取下一页：气泡往往只有一两句，等读到页尾再识别就来不及。
       unawaited(_prefetch(_page + 1, generation));
       final MangaReadAloudUtterance utterance = plan.utterances[_index];
-      _expectedPage = utterance.pageIndex;
-      await _host.show(utterance.pageIndex, utterance.group);
+      await _follower.show(utterance.pageIndex, utterance.blocks);
       if (!_alive(generation)) return;
       _host.markStudyActivity();
       final _SpeakOutcome outcome = await _speak(plan, _index, generation);
@@ -470,7 +471,7 @@ class MangaReadAloudController extends ChangeNotifier {
   }
 
   void _finishChapter() {
-    _expectedPage = null;
+    _follower.reset();
     _finish = _spokeAny
         ? MangaReadAloudFinish.chapterEnd
         : MangaReadAloudFinish.noText;

@@ -82,6 +82,14 @@ import 'package:fushi/src/media/manga/reader/manga_reader_auto_ocr.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_stream_ocr.dart';
 import 'package:fushi/src/media/manga/reader/manga_read_aloud_bar.dart';
 import 'package:fushi/src/media/manga/reader/manga_read_aloud_controller.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_library.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_playback_driver.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_session.dart';
+import 'package:fushi/src/media/audiobook/audiobook_controller.dart'
+    show readerVisibleForLifecycleState;
+import 'package:fushi/src/media/audiobook/audiobook_session.dart';
+import 'package:fushi/src/media/audiobook/audiobook_session_launcher.dart'
+    show AudiobookSessionStartRequest;
 import 'package:fushi/src/media/manga/reader/manga_page_sentences.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_voice_quick_switch.dart';
@@ -312,6 +320,12 @@ enum MangaReaderInputAction {
   /// 当前页书签加 / 删（快捷键 [ShortcutAction.mangaToggleBookmark]，反馈
   /// FhspOXxPl_）。与书签面板「当前页」那一行同一执行体 `_toggleBookmarkHere`。
   toggleBookmark,
+
+  /// 朗读 / 漫画有声的播放暂停、上一句、下一句（快捷键
+  /// [ShortcutAction.mangaAudioPlayPause] 等，只开键盘通道）。
+  readAloudPlayPause,
+  readAloudPrevious,
+  readAloudNext,
 }
 
 /// 一次键盘平移移动的视口比例。按比例而非像素，1080p 与 4K 手感一致。
@@ -742,6 +756,16 @@ class MangaFushiPage extends BaseSourcePage {
     if (action == ShortcutAction.mangaToggleBookmark) {
       return MangaReaderInputAction.toggleBookmark;
     }
+    // 朗读 / 漫画有声的播放控制同理：不翻页、不动视野，任何模式下都执行。
+    final MangaReaderInputAction? readAloud = switch (action) {
+      ShortcutAction.mangaAudioPlayPause =>
+        MangaReaderInputAction.readAloudPlayPause,
+      ShortcutAction.mangaAudioPreviousLine =>
+        MangaReaderInputAction.readAloudPrevious,
+      ShortcutAction.mangaAudioNextLine => MangaReaderInputAction.readAloudNext,
+      _ => null,
+    };
+    if (readAloud != null) return readAloud;
     // 平移排在两道翻页门控**之前**：它动的是当前页的视野、不是 spread，所以
     // 「webtoon 让位原生滚动」与「弹窗可见让位」都不适用——webtoon 的上下平移本身
     // 就是滚文档，弹窗开着时也该能挪画面去看被挡住的部分。
@@ -860,6 +884,9 @@ class MangaFushiPage extends BaseSourcePage {
     ShortcutAction.mangaOpenStatistics,
     ShortcutAction.mangaToggleStudyClock,
     ShortcutAction.mangaToggleBookmark,
+    ShortcutAction.mangaAudioPlayPause,
+    ShortcutAction.mangaAudioPreviousLine,
+    ShortcutAction.mangaAudioNextLine,
   ];
 
   /// [commandKeyActions] 当前键盘绑定的桥 token（[InputBinding.bridgeToken]）。
@@ -2676,6 +2703,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // 首屏页成为当前单元：开书直接停在恢复位置时不会再有 _recordProgress，
     // 翻走时才入账（存档页不预置，续读也计一次）。
     _noteVisiblePages();
+    // 本卷的漫画有声正在后台播（退出阅读器继续听、再回来）：接回当宿主。
+    _readAloud.attachActiveAudio();
     // 换章 = 同一个 WebView 换正文。首次打开由 onWebViewCreated 装首窗；换章时
     // WebView 一直挂在树上、那条回调不会再来，必须在这里按新 payload 重装窗口
     // 文档——否则屏上留着旧章文档，只有页码 / OCR 层跟着变成新章（跨章后「只有
@@ -4311,6 +4340,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // 同样直接返回。
     if (action == MangaReaderInputAction.toggleBookmark) {
       unawaited(_toggleBookmarkHere(_bookmarkOnScreen()));
+      return;
+    }
+    if (action == MangaReaderInputAction.readAloudPlayPause ||
+        action == MangaReaderInputAction.readAloudPrevious ||
+        action == MangaReaderInputAction.readAloudNext) {
+      _readAloud.onShortcut(action);
       return;
     }
     final DateTime now = DateTime.now();
@@ -7305,6 +7340,29 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                                 ),
                               ),
                             ),
+                      ),
+                    ),
+                  // 漫画有声（成品音频）播放条：同上，不受 chrome 显隐门控。
+                  if (_readAloud.audio
+                      case final MangaAudioPlaybackDriver audio)
+                    Positioned(
+                      left: kMangaChromeEdgeInset,
+                      right: kMangaChromeEdgeInset,
+                      bottom:
+                          MediaQuery.paddingOf(context).bottom +
+                          (_chromeVisible && _chromeActionsEnabled
+                              ? kMangaChromeBottomBarHeight
+                              : kMangaChromeBottomGap),
+                      child: MangaChromeReveal(
+                        fromTop: false,
+                        visible: true,
+                        child: Center(
+                          child: MangaAudioPlaybackBar(
+                            key: ValueKey<MangaAudioPlaybackDriver>(audio),
+                            driver: audio,
+                            onStop: _readAloud.stopAudio,
+                          ),
+                        ),
                       ),
                     ),
                   // 隐藏界面时角落常驻页码：全出血阅读下唯一的进度可见性。

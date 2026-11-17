@@ -64,6 +64,7 @@ String mangaOcrBoxesHtml(MokuroImage page) {
     buffer.write(
       '<p class="ocr-box" '
       'data-ocr-orientation="$orientation" '
+      'data-manga-block="$blockIndex" '
       'data-manga-sentence="'
       '${_escapeAttr(sentenceAssignments[blockIndex].sentence)}" '
       'data-manga-sentence-group="'
@@ -2201,8 +2202,10 @@ String _mangaGestureJs({
     // 换掉的文字层里可能正好有朗读中的那句：按记下的状态重新挂高亮。
     window.__mangaApplySpeaking(false);
   };
-  // 漫画朗读高亮：{page, group} 记在 window.__mangaSpeaking，文字层被替换 / 懒挂
-  // 之后由 __mangaApplySpeaking 重新应用（组号与 data-manga-sentence-group 同源）。
+  // 漫画朗读高亮：{page, blocks} 记在 window.__mangaSpeaking，文字层被替换 / 懒挂
+  // 之后由 __mangaApplySpeaking 重新应用。一句可以跨几个块（一个气泡被 OCR 切成
+  // 两块、同一句分在相邻字幕栏），按块下标（data-manga-block，与 page.blocks 同下标）
+  // 全部框住——现场朗读给的是句子分组里的块，成品音频给的是演出稿的块列表。
   window.__mangaSpeaking = window.__mangaSpeaking || null;
   window.__mangaApplySpeaking = function(scroll){
     var lit = document.querySelectorAll('.ocr-box.manga-speaking');
@@ -2211,17 +2214,22 @@ String _mangaGestureJs({
     if (!s) return;
     var page = document.querySelector('.manga-page[data-page="'+s.page+'"]');
     if (!page) return;
-    var boxes = page.querySelectorAll(
-        '.ocr-box[data-manga-sentence-group="'+s.group+'"]');
+    var boxes = [];
+    for (var b = 0; b < s.blocks.length; b++) {
+      var box = page.querySelector(
+          '.ocr-box[data-manga-block="'+s.blocks[b]+'"]');
+      if (box) boxes.push(box);
+    }
     for (var j = 0; j < boxes.length; j++) boxes[j].classList.add('manga-speaking');
     // 条漫是一整条长图：读到的句子不在视口里就滚到刚好露出它。
     if (scroll && IS_WEBTOON && boxes.length && boxes[0].scrollIntoView) {
       boxes[0].scrollIntoView({block: 'nearest'});
     }
   };
-  // group < 0 = 清除高亮。
-  window.__mangaSetSpeaking = function(page, group){
-    window.__mangaSpeaking = group < 0 ? null : {page: page, group: group};
+  // blocks 为空 / 非数组 = 清除高亮。
+  window.__mangaSetSpeaking = function(page, blocks){
+    window.__mangaSpeaking = (Array.isArray(blocks) && blocks.length)
+        ? {page: page, blocks: blocks} : null;
     window.__mangaApplySpeaking(true);
   };
   document.addEventListener('pointermove', function(e){

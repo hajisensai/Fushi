@@ -3,9 +3,13 @@ import 'dart:io';
 
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/media/audiobook/remote/audiobook_remote_playback.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_library.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_session.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart'
+    show kMangaAlignmentFormat;
 
 /// 从 bookKey 解析出启动 [AudiobookSession] 所需的全部材料（音频文件 / 初值 / persist
 /// 回调 / 书元数据），供 reader 页与书架长按入口共用，消除「解析音频文件 + 装 persist」
@@ -110,6 +114,23 @@ class AudiobookSessionLauncher {
     List<File> audioFiles,
     String bookKey,
   ) async {
+    // 漫画有声成品：播放列表要按清单时间表插入静音、进度口径要换算，与阅读器起播
+    // 同一条路径（manga_audio_session.dart）。清单读不出来就当没有可播放的有声书。
+    if (audiobook.alignmentFormat == kMangaAlignmentFormat) {
+      final MangaAudioRegistration? manga = await loadMangaAudio(_db, bookKey);
+      if (manga == null) return null;
+      final (String title, String? author, String? coverPath, BookFormat _) =
+          await _bookMeta(bookKey);
+      return resolveMangaAudioSessionRequest(
+        _db,
+        registration: manga,
+        title:
+            ReaderFushiSource.instance.overrideTitleForBookKey(bookKey) ??
+            title,
+        author: author,
+        coverPath: coverPath,
+      );
+    }
     final AudiobookRepository repo = AudiobookRepository(_db);
     final SessionPrefs prefs = await _readPrefs(repo, bookKey);
     final SessionPersistCallbacks persist = _persistFor(repo, bookKey);
@@ -346,6 +367,7 @@ class AudiobookSessionStartRequest {
     required this.persist,
     this.cues = const <AudioCue>[],
     this.remote,
+    this.companion,
   });
 
   final SessionBookInfo info;
@@ -356,6 +378,10 @@ class AudiobookSessionStartRequest {
   /// 非空 = 远端（流式）书：[audioFiles] 是占位文件，播放与制卡取音频走它。起会话时
   /// 原样传给 `AudiobookSession.start(remote:)`。
   final AudiobookRemotePlayback? remote;
+
+  /// 随会话同生共死的伴随对象工厂（漫画有声的句序驱动）。起会话时原样传给
+  /// `AudiobookSession.start(companion:)`。
+  final AudiobookSessionCompanionFactory? companion;
 
   bool get isSrtBookSource => info.isSrtBookSource;
 

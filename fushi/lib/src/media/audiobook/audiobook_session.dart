@@ -156,6 +156,12 @@ class AudiobookSession extends ChangeNotifier {
   /// 当前会话持有的控制器（null = 无会话）。reader / play bar / 查词只读引用。
   AudiobookPlayerController? get controller => _controller;
 
+  AudiobookSessionCompanion? _companion;
+
+  /// 随会话同生共死的伴随对象（起会话时由调用方的工厂造出，会话停止时释放）。漫画有声
+  /// 用它持有句序驱动：阅读器离开后（后台纯听）仍要按时间表跳过页停留。
+  AudiobookSessionCompanion? get companion => _companion;
+
   SessionBookInfo? _book;
 
   /// 当前会话的书元数据（null = 无会话）。供首页迷你条 / 通知 / 悬浮窗读取。
@@ -207,6 +213,7 @@ class AudiobookSession extends ChangeNotifier {
     List<AudioSource>? audioSources,
     AudiobookRemotePlayback? remote,
     Future<void> Function()? onReleased,
+    AudiobookSessionCompanionFactory? companion,
   }) {
     return _enqueueLifecycle<AudiobookPlayerController?>(
       () => _startInternal(
@@ -218,6 +225,7 @@ class AudiobookSession extends ChangeNotifier {
         audioSources: audioSources,
         remote: remote,
         onReleased: onReleased,
+        companion: companion,
       ),
     );
   }
@@ -231,6 +239,7 @@ class AudiobookSession extends ChangeNotifier {
     List<AudioSource>? audioSources,
     AudiobookRemotePlayback? remote,
     Future<void> Function()? onReleased,
+    AudiobookSessionCompanionFactory? companion,
   }) async {
     // 远端书：流式音源与句子回放 / 制卡的取音频都由 [remote] 提供；它的释放串在
     // 调用方的释放回调前面，会话结束（含加载失败）时一并收束。
@@ -244,10 +253,13 @@ class AudiobookSession extends ChangeNotifier {
     final AudiobookPlayerController? existing = _controller;
     // 同书复用只对录音有声书成立：同一本 EPUB 的录音有声书与 TTS 朗读是两种会话，
     // 互相顶替、或重新开始朗读时都必须重新加载。
+    // 播放端自排 cue 的会话（[SessionBookInfo.cueLayoutId]）只在布局完全相同时复用：
+    // 漫画有声补回一句 / 换了节奏，播放列表与 cue 都变了，必须重新加载。
     if (existing != null &&
         _book?.bookKey == info.bookKey &&
         !(_book?.isTtsSource ?? false) &&
-        !info.isTtsSource) {
+        !info.isTtsSource &&
+        _book?.cueLayoutId == info.cueLayoutId) {
       // 同书复用：刷新元数据（封面/标题可能更新过）后直接返回。
       _book = info;
       _rewirePersist(existing, persist);
@@ -299,6 +311,7 @@ class AudiobookSession extends ChangeNotifier {
     _controller = controller;
     _book = info;
     _onReleased = onReleased;
+    _companion = companion?.call(controller);
     _watchStoredCues();
 
     // 远端书：后台接上进度同步（开会话 / 续播 / 定期写回）。不 await——开书不能等
@@ -441,6 +454,9 @@ class AudiobookSession extends ChangeNotifier {
     _retireStudyClock();
     _storedCuesSub?.cancel();
     _storedCuesSub = null;
+    final AudiobookSessionCompanion? companion = _companion;
+    _companion = null;
+    companion?.dispose();
     _reader = null;
     _controller = null;
     _book = null;
@@ -539,8 +555,8 @@ class AudiobookSession extends ChangeNotifier {
     final FushiDatabase? db = _databaseGetter();
     if (db == null) return;
     // TTS 朗读的 cue 不在库里：库里那份是同一本书的录音有声书（或为空），不能拿来
-    // 覆盖朗读会话的时间轴。
-    if (_book?.isTtsSource ?? false) return;
+    // 覆盖朗读会话的时间轴。播放端自排 cue 的会话（漫画有声）同理：库里是另一种编码。
+    if ((_book?.isTtsSource ?? false) || _book?.cueLayoutId != null) return;
     _storedCuesSub = db
         .tableUpdates(TableUpdateQuery.onTable(db.audioCues))
         .listen((_) => unawaited(_adoptStoredCues(db)));
@@ -586,7 +602,7 @@ class AudiobookSession extends ChangeNotifier {
   ) async {
     final FushiDatabase? db = _databaseGetter();
     if (db == null || book == null || book.bookKey.isEmpty) return;
-    if (book.isTtsSource) return;
+    if (book.isTtsSource || book.cueLayoutId != null) return;
     final List<AudioCue> stored = await _storedCuesFor(db, book);
     await controller.reencodeStoppedPositionForCues(stored);
   }
@@ -801,6 +817,7 @@ class AudiobookSession extends ChangeNotifier {
     });
     _skipNextSub = _controlStreams.skipNextStream.listen((_) {
       final int s = skipActionSeconds();
+      if (s == 0 && (_companion?.skipLine(1) ?? false)) return;
       if (s == 0) {
         controller.skipToNextCue();
       } else {
@@ -809,6 +826,7 @@ class AudiobookSession extends ChangeNotifier {
     });
     _skipPrevSub = _controlStreams.skipPreviousStream.listen((_) {
       final int s = skipActionSeconds();
+      if (s == 0 && (_companion?.skipLine(-1) ?? false)) return;
       if (s == 0) {
         controller.skipToPrevCue();
       } else {
@@ -1017,6 +1035,8 @@ class AudiobookSession extends ChangeNotifier {
     _skipNextSub?.cancel();
     _skipPrevSub?.cancel();
     _floatingLyricSub?.cancel();
+    _companion?.dispose();
+    _companion = null;
     if (controller != null) {
       controller.removeListener(_onControllerChanged);
       controller.dispose();
@@ -1030,6 +1050,18 @@ class AudiobookSession extends ChangeNotifier {
     super.dispose();
   }
 }
+
+/// 随会话同生共死的伴随对象，见 [AudiobookSession.companion]。
+abstract interface class AudiobookSessionCompanion {
+  /// 媒体通知 / 耳机的「上一句 / 下一句」（[delta] = -1 / 1）：伴随对象接管时返回
+  /// true（漫画有声的播放列表里夹着静音条目，按 cue 跳会跳进静音）。
+  bool skipLine(int delta);
+
+  void dispose();
+}
+
+typedef AudiobookSessionCompanionFactory =
+    AudiobookSessionCompanion Function(AudiobookPlayerController controller);
 
 /// reader 页向会话暴露的 WebView 侧接口。会话在 cue 变化 / 跨章 / 边界跳句时回调它，
 /// 由 reader 自己操作 WebView（高亮 / 章节导航），从而保留全部既有 reader 行为。
@@ -1070,6 +1102,7 @@ class SessionBookInfo {
     this.coverPath,
     this.statsMediaKey,
     this.format = BookFormat.epub,
+    this.cueLayoutId,
   });
 
   final String bookKey;
@@ -1107,6 +1140,11 @@ class SessionBookInfo {
 
   /// 统计身份，见 [statsMediaKey]。
   String get studyMediaKey => statsMediaKey ?? bookKey;
+
+  /// 非 null = 会话的音频列表与 cue 是播放端在内存里排的（漫画有声把页停留 / 句间
+  /// 停顿的静音条目排进播放列表），不是库里那份：库里的 cue 是另一种编码，绝不能采纳
+  /// 进这个会话；同书复用也只在布局身份相同时成立。
+  final String? cueLayoutId;
 
   /// 正文书的格式（EPUB / PDF）：后台听书时钟按它记 `study_segments.format`，与
   /// 阅读器那只时钟同一口径（PDF 有声书不能记成 EPUB）。默认 EPUB（TTS 朗读、
