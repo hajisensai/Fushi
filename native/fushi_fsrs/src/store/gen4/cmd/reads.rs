@@ -223,6 +223,27 @@ struct Reads<'t, 'c> {
     profile: String,
 }
 
+/// 集合 [col] 里有没有用户自己的数据：`has_user_data` 同一口径，内置实体取内核自己的规范 ID（默认牌组、各内置笔记
+/// 类型，`gen4_ids/builtins.rs`；带盐的存量成员由 `has_user_data` 按集合的盐归过来）。设备信任「首次信任」的判据
+/// （`cmd/sync.rs` `note_new_peer`，协议 3 `trust.rs` `library_fresh` 的对应物）用；在调用方的事务里读，不另开快照。
+pub(crate) fn collection_has_user_data(t: &Truth<'_>, col: i64) -> Result<bool, String> {
+    use crate::gen4_ids::builtins::BUILTIN_NOTE_TYPES;
+    use crate::gen4_ids::rules;
+    let mut builtins = vec![rules::builtin_default_deck(rules::CANONICAL).text()];
+    for b in BUILTIN_NOTE_TYPES {
+        builtins.push(
+            rules::note_type(rules::CANONICAL, rules::builtin_note_type_anki_num(b.key)).text(),
+        );
+    }
+    Reads {
+        t,
+        col,
+        ix: Index::new(t, col),
+        profile: profile_of(t, col)?,
+    }
+    .has_user_data(&json!({ "builtins": builtins }))
+}
+
 /// `read`：集合 [col] 的一条只读查询（请求的 `q` 是查询名，参数与结果同协议 3 `store/reads.rs`）。在一个读快照里
 /// （[snapshot]）。
 pub fn run(t: &Truth<'_>, col: i64, req: &Value, files: &mut Files) -> Result<Value, String> {

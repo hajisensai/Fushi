@@ -17,6 +17,7 @@ use super::sync_tests::{Dev, Loc, Opts, cmd, listing, names_of, round, status_ro
 use super::tests::{N1, N2};
 use crate::gen4::op::tests::id;
 use crate::store::gen4::files::GEN4_FILE;
+use crate::store::gen4::truth::TRUST_PENDING;
 use crate::store::sync2::collection_of;
 use crate::store::sync2::tests::{P, tempdir};
 use crate::sync2::id::Id;
@@ -451,6 +452,18 @@ fn old_root_takeover_reaches_migrated_and_new_devices_alike() {
     assert_eq!(scan["changed"], json!(false), "{scan}");
     assert!(again.is_none());
     assert_eq!(upload_heritage(&a, &mut loc, T1 + 12), 0);
+
+    // b 库里已有数据，第一次见到 a 时把它记成待确认（首次信任）；a 传的承袭段按上传者的信任收（D20），所以 b 先确认 a。
+    round(&b, &mut loc, "loc", T1 + 19, Opts::default());
+    assert_eq!(b.trust_state(&a.device()), Some(TRUST_PENDING));
+    cmd(
+        b.h,
+        "trust",
+        T1 + 19,
+        json!({"device": a.device(), "trust": true}),
+        &[],
+    );
+    assert_eq!(b.trust_state(&a.device()), None);
 
     let (ing, up) = takeover_round(&b, &mut loc, T1 + 20);
     assert_eq!(ing.expect("b scans")["recorded"], json!(true));

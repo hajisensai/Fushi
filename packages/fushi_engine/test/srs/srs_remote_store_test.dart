@@ -295,18 +295,34 @@ void main() {
       roots,
       <SrsEntityView>[typeView],
     ).single;
-    // 换一份根 ID（两种内置类型对调）：默认值跟着给的 ID 走，与主机的对不上——证明客户端用的是信封里的那一份。
+    // 内置 Lapis：按信封根 ID 物化出的与主机本机的同一份；两种内置类型的根 ID 对调后对不上——默认值取的是给的那一份。
+    String shape(SrsNoteTypeView t) => <String>[
+      for (final SrsFieldDef f in t.fields) '${f.id}:${f.name}',
+      for (final SrsTemplateDef d in t.templates) '${d.id}${d.front}${d.back}',
+    ].join('|');
+    final SrsEntityView lapisView = SrsRemoteWire.viewsFrom(
+      await _call(service, 'noteTypeViews', <String, Object?>{
+        'ids': <String>[store.lapisNoteTypeId],
+      }),
+    ).single;
+    final SrsNoteTypeView hostLapis = (await store.noteTypes()).firstWhere(
+      (SrsNoteTypeView t) => t.id == store.lapisNoteTypeId,
+    );
+    expect(
+      shape(
+        SrsRemoteWire.noteTypesFrom(roots, <SrsEntityView>[lapisView]).single,
+      ),
+      shape(hostLapis),
+    );
     final SrsNoteTypeView swapped = SrsRemoteWire.noteTypesFrom(
       (
         defaultDeck: roots.defaultDeck,
         lapis: roots.fushiCard,
         fushiCard: roots.lapis,
       ),
-      <SrsEntityView>[typeView],
+      <SrsEntityView>[lapisView],
     ).single;
-    expect(<String>[
-      for (final SrsFieldDef f in swapped.fields) f.id,
-    ], isNot(<String>[for (final SrsFieldDef f in host.noteType.fields) f.id]));
+    expect(shape(swapped), isNot(shape(hostLapis)));
     expect(type.name, host.noteType.name);
     expect(type.css, host.noteType.css);
     expect(type.builtinKey, host.noteType.builtinKey);

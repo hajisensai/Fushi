@@ -30,7 +30,7 @@ use crate::store::gen4::derive::tests::{assert_rebuild_is_identity, dump};
 use crate::store::gen4::files::{GEN4_FILE, OpenMode};
 use crate::store::gen4::kernel::{G4Core, REMOVED, UNWIRED};
 use crate::store::gen4::sync_state::{RETIRED_RECORD_UNREADABLE, RETIRED_SQL};
-use crate::store::gen4::truth::Truth;
+use crate::store::gen4::truth::{TRUST_PENDING, Truth};
 use crate::store::sync2::collection_of;
 use crate::store::sync2::tests::{P, edit, tempdir};
 use crate::sync2::id::Id;
@@ -179,6 +179,12 @@ impl Dev {
         };
         self.h = open(&self.dir.0, 0).unwrap();
         out
+    }
+
+    /// 本机对 [device] 的信任状态（`trust` 表：可信 = None，`TRUST_PENDING` / `TRUST_REJECTED`）。
+    pub(super) fn trust_state(&mut self, device: &str) -> Option<i64> {
+        let dev = Id::parse(device).unwrap();
+        self.direct(|t, col| t.trust_of(col, &dev))
     }
 
     /// 派生层：增量维护的与整个重建的逐行相同（[assert_rebuild_is_identity]），回语义摘要（head 的 `digest`，跨设备
@@ -434,6 +440,50 @@ pub(super) fn sync_all(devs: &[&Dev], loc: &mut Loc, now: i64, o: Opts<'_>) {
 }
 
 // ---------------------------------------------------------------------- 两台设备
+
+/// 首次信任（G10-4，`sync::note_new_peer`）：库里还没有用户数据时第一次见到的设备直接可信；库里已有数据时第一次见到
+/// 的设备记成待确认（它的删除由派生层扣住），本机 `trust` 之后可信，之后的同步轮（对端公钥已在册）不再把它打回待确认。
+#[test]
+fn first_sight_of_a_device_is_pending_only_when_the_library_has_data() {
+    let mut a = Dev::new("g87fsa");
+    let mut b = Dev::new("g87fsb");
+    a.write(T1 + 1, N1, "鯨");
+    let mut loc = Loc::new();
+    let o = Opts::default();
+    // a 先发（还没见过 b），b 全新、第一次见到 a，a 再见到 b。
+    round(&a, &mut loc, "loc", T1 + 10, o);
+    round(&b, &mut loc, "loc", T1 + 11, o);
+    round(&a, &mut loc, "loc", T1 + 12, o);
+    assert_eq!(
+        b.trust_state(&a.device()),
+        None,
+        "a fresh library trusts the first device it meets"
+    );
+    assert_eq!(
+        a.trust_state(&b.device()),
+        Some(TRUST_PENDING),
+        "a library with data holds a device it has never seen"
+    );
+    let (v, _) = cmd(
+        a.h,
+        "trust",
+        T1 + 13,
+        json!({"device": b.device(), "trust": true}),
+        &[],
+    );
+    assert_eq!(v["trusted"], json!(true), "{v}");
+    assert_eq!(a.trust_state(&b.device()), None);
+    // 已在册的对端：再同步不回待确认。
+    b.write(T1 + 14, N2, "猫");
+    sync_all(&[&a, &b], &mut loc, T1 + 20, o);
+    assert_eq!(a.trust_state(&b.device()), None);
+    assert_eq!(a.field(N2), Some(json!("猫")));
+    // 全新的第三台设备见到已有数据的 a：a 仍按「第一次见到」记待确认。
+    let c = Dev::new("g87fsc");
+    round(&c, &mut loc, "loc", T1 + 30, o);
+    round(&a, &mut loc, "loc", T1 + 31, o);
+    assert_eq!(a.trust_state(&c.device()), Some(TRUST_PENDING));
+}
 
 /// 两台全新设备经同一个文件夹位置互相同步：各写各的 → 两轮之后都看得到对方写的；派生层逐行相同、增量 == 重建。第二轮
 /// 什么都没变时（带 `skipUnchangedMs`）不重写 head；位置上只留每台设备最新两代 head。

@@ -17,6 +17,7 @@ use super::sync_relay::{
 use super::sync_tests::{Dev, Loc, Opts, cmd, heads, listing, round, sync_all};
 use super::tests::{N1, N2, N3, N4};
 use crate::store::gen4::files::GEN4_FILE;
+use crate::store::gen4::truth::TRUST_PENDING;
 use crate::store::sync2::tests::{DAY, edit};
 
 const KEY2: &str = "2222222222222222222222222222222222222222222222222222222222222222";
@@ -97,6 +98,16 @@ fn a_device_on_two_locations_relays_between_them() {
     round(&c, &mut l2, "L2", T1 + 3, sealed);
     round(&b, &mut l1, "L1", T1 + 4, plain);
     round(&b, &mut l2, "L2", T1 + 4, sealed);
+    // b 收 a 的段之后库里有了用户数据，在 L2 上第一次见到的 c 是待确认（首次信任，`cmd/sync.rs` `note_new_peer`）；
+    // 只转发受信作者的段，用户确认之后才转发 c。
+    assert_eq!(b.trust_state(&c.device()), Some(TRUST_PENDING));
+    cmd(
+        b.h,
+        "trust",
+        T1 + 4,
+        json!({"device": c.device(), "trust": true}),
+        &[],
+    );
     b.write(T1 + 5, N3, "犬");
     round(&b, &mut l1, "L1", T1 + 6, plain);
     round(&b, &mut l2, "L2", T1 + 6, sealed);

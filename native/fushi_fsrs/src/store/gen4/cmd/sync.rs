@@ -59,7 +59,7 @@ use crate::store::gen4::receive::{Received, Receiver, Taken};
 use crate::store::gen4::refresh::{TALLY_KEY, Tally};
 use crate::store::gen4::schema::{k_range, k_seq, sql};
 use crate::store::gen4::sync_state::LocHead;
-use crate::store::gen4::truth::{NativeStep, Peer, PeerPut, SelfId, Truth};
+use crate::store::gen4::truth::{NativeStep, Peer, PeerPut, SelfId, TRUST_PENDING, Truth};
 use crate::sync2::id::Id;
 use crate::sync2::keys::CollectionKey;
 use crate::sync2::segment::{
@@ -693,6 +693,22 @@ pub(crate) const LOC_STATE_SQL: &str =
 
 // ---------------------------------------------------------------------- 2. 读 head、定要拉的段
 
+/// 第一次见到 [device]（[plan] 里 `Truth::set_peer` 刚记下它的公钥）：本机集合里已经有用户自己的数据就记成**待确认**
+/// （设备信任的「首次信任」，协议 3 `store/sync2/trust.rs` `note_new_device`、BUG-4306；设计 §4.2「设备信任纯本机（首次
+/// 信任 + 待确认）」不变的机制）。待确认设备的删除与彻底清除照常进真相层，由派生层按信任扣住（`weigh.rs`
+/// `distrusted`），本机确认（`trust`）后放行。库里还没有用户数据（全新设备第一次同步、服务端刚开始提供）时认识的设备
+/// 直接可信：没有可丢的东西，扣住只会把整个库的删除都拦下。
+///
+/// 位置上的 head 谁都能写，所以「第一次见到」只在这里判：迁移带来的（`carry.rs`）、导入时随备份记的（`import.rs`）
+/// 公钥不经这里，沿用各自的口径。旧根上的协议 3 设备（`sync_oldroot.rs`）同样不经这里：它们的承袭段按上传者的信任收
+/// （D20），上传者就是在这里被判定的那台设备。
+pub(crate) fn note_new_peer(t: &Truth<'_>, col: i64, device: &Id, now: i64) -> Result<(), String> {
+    if super::reads::collection_has_user_data(t, col)? {
+        t.set_trust(col, device, Some(TRUST_PENDING), now)?;
+    }
+    Ok(())
+}
+
 /// `plan {profile, location, loc?, now, listing?}`，字节块 = 位置上各设备代号最大的 head。回包
 /// `{fetch: [{device, own, files}], needsUpgrade, minReader?, sealed, finishPending, errors}`。
 ///
@@ -794,12 +810,16 @@ pub fn plan(t: &Truth<'_>, col: i64, req: &Value, heads: &[Vec<u8>]) -> Result<V
             head_gen: i64::try_from(h.gen).ok(),
             first_seen: Some(now),
         };
-        if t.set_peer(col, &peer)? == PeerPut::KeyMismatch {
-            errors.push(format!(
-                "head of {}: signed by another key than the one on record (impostor)",
-                h.device
-            ));
-            continue;
+        match t.set_peer(col, &peer)? {
+            PeerPut::KeyMismatch => {
+                errors.push(format!(
+                    "head of {}: signed by another key than the one on record (impostor)",
+                    h.device
+                ));
+                continue;
+            }
+            PeerPut::Inserted => note_new_peer(t, col, &h.device, now)?,
+            PeerPut::Updated | PeerPut::Same => {}
         }
         // 转发用：记下这台设备最新的 head（只进不退）。
         super::sync_relay::note_head(t, col, &h, bytes)?;
