@@ -574,7 +574,7 @@ mod tests {
     }
 
     thread_local! {
-        static TRACED:std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+        static TRACED: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
     }
 
     fn record_sql(ev: rusqlite::trace::TraceEvent<'_>) {
