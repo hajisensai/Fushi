@@ -308,8 +308,13 @@ OcrTensor _output(Map<String, OcrTensor> outputs, String name) {
 }
 
 /// 模型输出 → 阅读序的字（页面坐标）。框乘 ([scaleX], [scaleY]) 换回裁图像素，
-/// 再加裁图在页面上的左上角 ([originX], [originY])。字表外的 id 抛 [StateError]
-/// （字表与模型不配套）。
+/// 夹进裁图（[cropWidth] × [cropHeight]），再加裁图在页面上的左上角
+/// ([originX], [originY])。字表外的 id 抛 [StateError]（字表与模型不配套）。
+///
+/// 为什么要夹：模型看到的是补齐到整格的画布，裁图只占左上角，框解码又不设边界，
+/// 字框可以伸进填充区或小于 0。不夹的话换回页面后字框落在块外（贴着页边的块甚至
+/// 落到页面外），行框是字框的外接矩形，跟着一起越界。字本身不删：读出的文本不改，
+/// 整个落在填充区的框收成裁图边上的零面积框。
 List<CharspotChar> decodeCharspotOutputs(
   Map<String, OcrTensor> outputs, {
   required List<String> vocab,
@@ -317,6 +322,8 @@ List<CharspotChar> decodeCharspotOutputs(
   required double scaleY,
   required double originX,
   required double originY,
+  required int cropWidth,
+  required int cropHeight,
 }) {
   final List<double> boxes = _tensorDoubles(_output(outputs, 'boxes'));
   final List<double> scores = _tensorDoubles(_output(outputs, 'scores'));
@@ -340,18 +347,20 @@ List<CharspotChar> decodeCharspotOutputs(
         'charspot id $id outside the ${vocab.length}-entry vocabulary',
       );
     }
-    final double x0 = boxes[k * 4];
-    final double y0 = boxes[k * 4 + 1];
-    final double x1 = boxes[k * 4 + 2];
-    final double y1 = boxes[k * 4 + 3];
+    final OcrRect inCrop = OcrRect(
+      left: boxes[k * 4] * scaleX,
+      top: boxes[k * 4 + 1] * scaleY,
+      right: boxes[k * 4 + 2] * scaleX,
+      bottom: boxes[k * 4 + 3] * scaleY,
+    ).clamp(cropWidth.toDouble(), cropHeight.toDouble());
     chars.add(
       CharspotChar(
         text: vocab[id],
         rect: OcrRect(
-          left: originX + x0 * scaleX,
-          top: originY + y0 * scaleY,
-          right: originX + x1 * scaleX,
-          bottom: originY + y1 * scaleY,
+          left: originX + inCrop.left,
+          top: originY + inCrop.top,
+          right: originX + inCrop.right,
+          bottom: originY + inCrop.bottom,
         ),
         score: scores[k],
       ),
@@ -522,6 +531,8 @@ class CharspotOcrRecognizer
       scaleY: input.scaleYFor(crop.height),
       originX: originX.toDouble(),
       originY: originY.toDouble(),
+      cropWidth: crop.width,
+      cropHeight: crop.height,
     );
   }
 

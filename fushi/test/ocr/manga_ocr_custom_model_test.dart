@@ -3,7 +3,6 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
-import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/ocr/manga_ocr_custom_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
@@ -13,6 +12,7 @@ import 'package:fushi_engine/ocr/ocr_host_bindings.dart';
 import 'package:fushi_engine/ocr/ocr_inference.dart';
 import 'package:fushi_engine/ocr/ppocr_line_recognizer.dart';
 import 'package:path/path.dart' as p;
+import 'package:test/test.dart';
 
 const String _yamlDict = '''
 PostProcess:
@@ -478,6 +478,101 @@ void main() {
       expect(status.hasAnyFiles, isFalse);
     });
 
+    test('both renames failing keeps the previous model', () async {
+      installBuiltInDetectors();
+      final MangaOcrCustomModelInfo first = await store.importModel(
+        modelPath: model.path,
+        dictPath: yamlDict.path,
+      );
+      final List<int> firstBytes = File(
+        p.join(slot.path, kCustomMangaOcrRecFileName),
+      ).readAsBytesSync();
+      // The slot can be set aside, but nothing can be renamed onto it: the
+      // new folder does not go in and the old one does not go back.
+      final MangaOcrCustomModelStore stuck = MangaOcrCustomModelStore(
+        slotDirProvider: () async => slot,
+        probe: probe.call,
+        renameDirectory: (Directory from, String toPath) async {
+          if (toPath == slot.path) {
+            throw FileSystemException('rename refused', toPath);
+          }
+          await from.rename(toPath);
+        },
+      );
+      final File other = File(p.join(root.path, 'other_rec.onnx'))
+        ..writeAsBytesSync(<int>[7, 7, 7, 7]);
+      probe.classes = 6;
+      MangaOcrCustomModelImportException? failure;
+      try {
+        await stuck.importModel(modelPath: other.path, dictPath: textDict.path);
+      } on MangaOcrCustomModelImportException catch (error) {
+        failure = error;
+      }
+      expect(failure?.error, MangaOcrCustomModelImportError.storageFailed);
+      expect(slot.existsSync(), isFalse, reason: 'set aside, not put back');
+
+      // Every reader puts it back: the service first, then the store.
+      expect((await serviceFor().modelStatus()).allReady, isTrue);
+      expect((await store.readInfo())?.toJson(), first.toJson());
+      expect(
+        File(p.join(slot.path, kCustomMangaOcrRecFileName)).readAsBytesSync(),
+        firstBytes,
+      );
+      expect(
+        slot.parent.listSync().map((FileSystemEntity e) => p.basename(e.path)),
+        unorderedEquals(<String>['custom', kMangaCtcModelDirName]),
+      );
+    });
+
+    test(
+      'an import after a stuck replace does not sweep the old model',
+      () async {
+        final MangaOcrCustomModelInfo first = await store.importModel(
+          modelPath: model.path,
+          dictPath: yamlDict.path,
+        );
+        // As left by a replace that died between its two renames.
+        slot.renameSync(p.join(slot.parent.path, 'custom.old-456'));
+        probe.classes = 99;
+        await expectLater(
+          store.importModel(modelPath: model.path, dictPath: textDict.path),
+          throwsA(isA<MangaOcrCustomModelImportException>()),
+        );
+        expect((await store.readInfo())?.toJson(), first.toJson());
+        expect(
+          slot.parent.listSync().map(
+            (FileSystemEntity e) => p.basename(e.path),
+          ),
+          <String>['custom'],
+        );
+      },
+    );
+
+    test(
+      'the newest retired model wins; a slot in place is left alone',
+      () async {
+        final MangaOcrCustomModelInfo first = await store.importModel(
+          modelPath: model.path,
+          dictPath: yamlDict.path,
+        );
+        slot.renameSync(p.join(slot.parent.path, 'custom.old-100'));
+        final File other = File(p.join(root.path, 'other_rec.onnx'))
+          ..writeAsBytesSync(<int>[7, 7, 7, 7]);
+        probe.classes = 6;
+        // The first model is restored and then replaced by the second.
+        final MangaOcrCustomModelInfo second = await store.importModel(
+          modelPath: other.path,
+          dictPath: textDict.path,
+        );
+        expect(second.modelSha256, isNot(first.modelSha256));
+        slot.renameSync(p.join(slot.parent.path, 'custom.old-200'));
+        Directory(p.join(slot.parent.path, 'custom.old-150')).createSync();
+        expect(await restoreRetiredCustomMangaOcrSlot(slot), isTrue);
+        expect((await store.readInfo())?.modelSha256, second.modelSha256);
+        expect(await restoreRetiredCustomMangaOcrSlot(slot), isFalse);
+      },
+    );
+
     test('leftovers of an interrupted import are swept', () async {
       final Directory stale = Directory(
         p.join(slot.parent.path, 'custom.import-123'),
@@ -587,6 +682,49 @@ void main() {
         expect(runner.requests.single.engineSignature, endsWith('_noruby'));
       },
     );
+
+    test('paths and cache signature come from one read of the slot', () async {
+      installBuiltInDetectors();
+      final MangaOcrCustomModelInfo first = await store.importModel(
+        modelPath: model.path,
+        dictPath: yamlDict.path,
+      );
+      final File other = File(p.join(root.path, 'other_rec.onnx'))
+        ..writeAsBytesSync(<int>[7, 7, 7, 7]);
+      // The model is replaced right after the run resolved its folder: a
+      // second look at the slot would see the other model.
+      int resolved = 0;
+      final _RecordingPageRunner runner = _RecordingPageRunner();
+      final MangaOcrServiceImpl service = MangaOcrServiceImpl(
+        localModel: MangaOcrLocalModel.custom,
+        modelsDirProvider: () async {
+          if (resolved++ == 1) {
+            probe.classes = 6;
+            await store.importModel(
+              modelPath: other.path,
+              dictPath: textDict.path,
+            );
+          }
+          return slot;
+        },
+        pageSessionRunner: runner,
+        platformSupport: () => true,
+      );
+      final MangaOcrPageSession session = await service.openPageSession(
+        imageDirPath: root.path,
+      );
+      await session.close();
+      expect(resolved, 1, reason: 'the slot folder is resolved once per run');
+      final MangaOcrPageSessionRequest request = runner.requests.single;
+      expect(
+        request.modelPaths.ppRecDictPath,
+        p.join(slot.path, kCustomMangaOcrDictYamlFileName),
+      );
+      expect(
+        request.engineSignature,
+        contains(first.modelSha256.substring(0, 12)),
+      );
+    });
   });
 
   group('cache signature', () {

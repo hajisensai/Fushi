@@ -237,6 +237,8 @@ void main() {
             scaleY: 3,
             originX: 100,
             originY: 50,
+            cropWidth: 1000,
+            cropHeight: 1000,
           );
           expect(chars.map((CharspotChar c) => c.text), <String>['!?', 'い']);
           expect(chars.first.rect.left, 100);
@@ -250,6 +252,43 @@ void main() {
       );
     }
 
+    test('boxes are clamped to the crop', () {
+      // The model works on the padded grid canvas: a box may reach into the
+      // padding (or below zero), which is outside the crop on the page.
+      final List<CharspotChar> chars = decodeCharspotOutputs(
+        _outputs(
+          <List<double>>[
+            <double>[-4, -2, 10, 10],
+            <double>[40, 90, 70, 130],
+            <double>[60, 120, 80, 140],
+          ],
+          <int>[1, 1, 1],
+          <int>[0, 1, 2],
+        ),
+        vocab: _vocab,
+        scaleX: 2,
+        scaleY: 1,
+        originX: 100,
+        originY: 50,
+        cropWidth: 100,
+        cropHeight: 100,
+      );
+      expect(chars, hasLength(3), reason: 'the reading is not edited');
+      for (final CharspotChar c in chars) {
+        expect(c.rect.left, inInclusiveRange(100, 200));
+        expect(c.rect.right, inInclusiveRange(100, 200));
+        expect(c.rect.top, inInclusiveRange(50, 150));
+        expect(c.rect.bottom, inInclusiveRange(50, 150));
+      }
+      expect(chars[0].rect.left, 100);
+      expect(chars[0].rect.top, 50);
+      expect(chars[1].rect.right, 200);
+      expect(chars[1].rect.bottom, 150);
+      // Entirely in the padding: collapses onto the crop edge.
+      expect(chars[2].rect.width, 0);
+      expect(chars[2].rect.height, 0);
+    });
+
     test('zero characters decode to an empty list', () {
       expect(
         decodeCharspotOutputs(
@@ -259,6 +298,8 @@ void main() {
           scaleY: 1,
           originX: 0,
           originY: 0,
+          cropWidth: 1000,
+          cropHeight: 1000,
         ),
         isEmpty,
       );
@@ -279,6 +320,8 @@ void main() {
           scaleY: 1,
           originX: 0,
           originY: 0,
+          cropWidth: 1000,
+          cropHeight: 1000,
         ),
         throwsStateError,
       );

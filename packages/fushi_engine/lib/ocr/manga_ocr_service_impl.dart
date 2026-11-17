@@ -1511,8 +1511,10 @@ class MangaOcrServiceImpl
   ///
   /// 只 stat 清单里那几个文件，不遍历目录：跑 OCR 的热路径只需要这个答案，占用
   /// 统计（[modelStatus]）才递归遍历整个模型目录。自定义槽多读一个小 JSON。
-  Future<MangaOcrModelGeneration?> _installedGeneration() async {
-    final Directory dir = await _modelsDirProvider();
+  Future<MangaOcrModelGeneration?> _installedGeneration() async =>
+      _installedGenerationIn(await _modelsDirProvider());
+
+  Future<MangaOcrModelGeneration?> _installedGenerationIn(Directory dir) async {
     final MangaOcrModelGeneration? current = await _currentIn(dir);
     if (current == null) return null;
     return installedMangaOcrGeneration(
@@ -1589,11 +1591,11 @@ class MangaOcrServiceImpl
     return freed;
   }
 
-  Future<MangaOcrModelPaths> _resolveModelPaths(
+  MangaOcrModelPaths _resolveModelPaths(
+    Directory dir,
     MangaOcrModelGeneration generation, {
     required bool ignoreFurigana,
-  }) async {
-    final Directory dir = await _modelsDirProvider();
+  }) {
     String pathOf(MangaOcrModelRole role, String suffix) {
       final MangaOcrModelFile model = generation.manifest.firstWhere(
         (MangaOcrModelFile m) => m.role == role && m.fileName.endsWith(suffix),
@@ -1642,12 +1644,21 @@ class MangaOcrServiceImpl
     }
   }
 
-  /// 跑本地 OCR 前的共同闸门：平台支持 + 模型齐全，返回各模型文件的绝对路径。
+  /// 跑本地 OCR 前的共同闸门：平台支持 + 模型齐全，返回各模型文件的绝对路径与这次
+  /// 识别的页缓存签名。
   ///
-  /// [ignoreFurigana] 由调用方在开跑时**只读一次**，同一个值同时交给模型路径与
-  /// [_pageEngineSignature]：两处各读一次的话，中间隔着 await，用户恰好切换开关就会
-  /// 「按裁注音识别、写进不带 `_noruby` 的缓存目录」，两种结果串目录。
-  Future<MangaOcrModelPaths> _checkedModelPaths({
+  /// 路径与签名从**同一次**「磁盘上装的是哪一代」的读取派生：模型目录只解析一次、
+  /// 自定义槽的 `custom_model.json` 只读一次。两者各读一次的话，中间隔着 await，
+  /// 用户恰好在这时换了自定义模型，就会「按旧模型的字典路径识别、写进新模型签名的
+  /// 缓存目录」（或反过来），两个模型的结果串目录。
+  ///
+  /// [ignoreFurigana] 同理由调用方在开跑时**只读一次**，同一个值同时进路径与签名：
+  /// 否则用户恰好切换开关就会「按裁注音识别、写进不带 `_noruby` 的缓存目录」。
+  ///
+  /// 残余窗口：这里返回之后、会话 isolate 打开权重之前换模型，isolate 读到的是新
+  /// 文件而签名是旧的。导入用整目录改名替换，窗口只有建会话那一下；要彻底消除得让
+  /// 槽目录按内容寻址，不在本次范围。
+  Future<({MangaOcrModelPaths paths, String signature})> _checkedRun({
     required bool ignoreFurigana,
   }) async {
     if (!isSupportedPlatform) {
@@ -1655,34 +1666,55 @@ class MangaOcrServiceImpl
         'manga OCR is not supported on ${Platform.operatingSystem}',
       );
     }
+    final Directory dir = await _modelsDirProvider();
     // 只问「齐不齐」，不量「占多少」：占用统计要递归遍历整个模型目录，
     // 那是设置页展示的开销，没有理由压在每次开跑 OCR 的路径上。
-    final MangaOcrModelGeneration? generation = await _installedGeneration();
+    final MangaOcrModelGeneration? generation = await _installedGenerationIn(
+      dir,
+    );
     if (generation == null) {
       throw StateError('manga OCR models are not downloaded');
     }
-    return _resolveModelPaths(generation, ignoreFurigana: ignoreFurigana);
+    return (
+      paths: _resolveModelPaths(
+        dir,
+        generation,
+        ignoreFurigana: ignoreFurigana,
+      ),
+      signature: await _engineSignatureIn(
+        dir,
+        generation,
+        ignoreFurigana: ignoreFurigana,
+      ),
+    );
   }
 
-  /// 页级缓存签名的**唯一**来源：按本服务的模型目录与清单解析已安装模型指纹
-  /// （BUG-1173）。[resolvePageCacheDirPath] 与 [openPageSession] 都经这里，
-  /// 会话 isolate 直接用传进去的签名，不再按 detectorPath 重算——注入自定义
-  /// 模型目录时读写缓存也不会分叉到两个目录。
+  /// [generation] 在 [dir] 里的页缓存签名：基线签名接已安装文件的内容指纹
+  /// （BUG-1173），再接识别选项后缀。
+  Future<String> _engineSignatureIn(
+    Directory dir,
+    MangaOcrModelGeneration generation, {
+    required bool ignoreFurigana,
+  }) async => mangaOcrEngineSignatureFor(
+    await model_fp.resolveLocalMangaOcrEngineSignature(
+      dir,
+      manifest: generation.manifest,
+      baseSignature: generation.cacheSignature,
+    ),
+    ignoreFurigana: ignoreFurigana,
+  );
+
+  /// 只读缓存路径用的页缓存签名（[resolvePageCacheDirPath]）：模型没装齐时也要给出
+  /// 「装齐后会用的」那个目录。开跑识别不走这里，走 [_checkedRun]——会话 isolate
+  /// 直接用传进去的签名，不再按 detectorPath 重算，注入自定义模型目录时读写缓存也
+  /// 不会分叉到两个目录。
   Future<String> _pageEngineSignature({required bool ignoreFurigana}) async {
-    // 与 [_checkedModelPaths] 同一个判据：上一代在替当前一代读时，缓存也记在上一代
-    // 的签名下，下齐当前一代后那些页会按新签名重认，两代结果不混。
+    final Directory dir = await _modelsDirProvider();
+    // 与 [_checkedRun] 同一个判据：上一代在替当前一代读时，缓存也记在上一代的签名
+    // 下，下齐当前一代后那些页会按新签名重认，两代结果不混。
     final MangaOcrModelGeneration generation =
-        await _installedGeneration() ??
-        await _currentIn(await _modelsDirProvider()) ??
-        _current;
-    return mangaOcrEngineSignatureFor(
-      await model_fp.resolveLocalMangaOcrEngineSignature(
-        await _modelsDirProvider(),
-        manifest: generation.manifest,
-        baseSignature: generation.cacheSignature,
-      ),
-      ignoreFurigana: ignoreFurigana,
-    );
+        await _installedGenerationIn(dir) ?? await _currentIn(dir) ?? _current;
+    return _engineSignatureIn(dir, generation, ignoreFurigana: ignoreFurigana);
   }
 
   static String _pageCacheDirPath(String imageDirPath, String signature) =>
@@ -1707,18 +1739,13 @@ class MangaOcrServiceImpl
     void Function(MangaOcrAcceleration acceleration)? onAcceleration,
     bool textImagesOnly = false,
   }) async {
-    final bool ignoreFurigana = _ignoreFurigana();
-    final MangaOcrModelPaths modelPaths = await _checkedModelPaths(
-      ignoreFurigana: ignoreFurigana,
-    );
-    final String signature = await _pageEngineSignature(
-      ignoreFurigana: ignoreFurigana,
-    );
+    final ({MangaOcrModelPaths paths, String signature}) run =
+        await _checkedRun(ignoreFurigana: _ignoreFurigana());
     return _pageSessionRunner.open(
       MangaOcrPageSessionRequest(
         imageDirPath: imageDirPath,
-        modelPaths: modelPaths,
-        engineSignature: signature,
+        modelPaths: run.paths,
+        engineSignature: run.signature,
         textImagesOnly: textImagesOnly,
       ),
       onAcceleration: onAcceleration,
@@ -1743,13 +1770,10 @@ class MangaOcrServiceImpl
     controller.onListen = () {
       unawaited(() async {
         try {
-          final bool ignoreFurigana = _ignoreFurigana();
-          final MangaOcrModelPaths modelPaths = await _checkedModelPaths(
-            ignoreFurigana: ignoreFurigana,
-          );
-          final String engineSignature = await _pageEngineSignature(
-            ignoreFurigana: ignoreFurigana,
-          );
+          final ({MangaOcrModelPaths paths, String signature}) run =
+              await _checkedRun(ignoreFurigana: _ignoreFurigana());
+          final MangaOcrModelPaths modelPaths = run.paths;
+          final String engineSignature = run.signature;
           if (cancelled) {
             // 订阅在模型检查期间已被取消：任务根本不启动。
             return;

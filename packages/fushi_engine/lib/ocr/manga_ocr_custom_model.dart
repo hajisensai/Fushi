@@ -189,10 +189,13 @@ class MangaOcrCustomModelInfo {
 /// metadata is unreadable (treated as empty: the user re-imports).
 ///
 /// One small file read; it does not check the recogniser or the dictionary
-/// (status does that by stat, like the built-ins).
+/// (status does that by stat, like the built-ins). A model that a failed or
+/// interrupted replace left set aside is put back first
+/// ([restoreRetiredCustomMangaOcrSlot]), so every reader sees it again.
 Future<MangaOcrCustomModelInfo?> readCustomMangaOcrModelInfo(
   Directory slotDir,
 ) async {
+  await restoreRetiredCustomMangaOcrSlot(slotDir);
   final File file = File(p.join(slotDir.path, kCustomMangaOcrInfoFileName));
   try {
     final FileStat stat = await file.stat();
@@ -211,6 +214,63 @@ Future<MangaOcrCustomModelInfo?> readCustomMangaOcrModelInfo(
     engineLog.log('readCustomMangaOcrModelInfo', error, stack);
     return null;
   }
+}
+
+/// Slots whose replace is between its two renames in this isolate. While a
+/// slot is listed, its missing folder is the replace in progress, not an
+/// interrupted one, and [restoreRetiredCustomMangaOcrSlot] leaves it alone.
+final Set<String> _swappingSlots = <String>{};
+
+/// Stamp of a retired folder name (`custom.old-<stamp>`); 0 when unreadable.
+int _retiredStamp(String name) =>
+    int.tryParse(name.substring(_kRetiredPrefix.length)) ?? 0;
+
+/// The folders a replace set aside next to [slot], newest first.
+Future<List<Directory>> _retiredSlots(Directory slot) async {
+  final Directory root = slot.parent;
+  if (!await root.exists()) return const <Directory>[];
+  final List<Directory> retired = <Directory>[
+    await for (final FileSystemEntity entity in root.list())
+      if (entity is Directory &&
+          p.basename(entity.path).startsWith(_kRetiredPrefix))
+        entity,
+  ];
+  retired.sort(
+    (Directory a, Directory b) => _retiredStamp(
+      p.basename(b.path),
+    ).compareTo(_retiredStamp(p.basename(a.path))),
+  );
+  return retired;
+}
+
+bool _holdsModel(Directory dir) =>
+    File(p.join(dir.path, kCustomMangaOcrInfoFileName)).existsSync();
+
+/// Puts back the model a replace set aside when the replace never finished.
+///
+/// A replace renames the slot to `custom.old-<stamp>` and then renames the new
+/// folder in. If the second rename fails and the rename back fails too (or the
+/// process dies in between), the only copy of the user's model sits in the
+/// retired folder and the slot is gone. Such a folder is the live model, not a
+/// leftover: when [slot] does not exist, the newest retired folder that holds
+/// a model is renamed back. Returns whether a model was restored.
+///
+/// Does nothing while a replace of [slot] is running in this isolate, and
+/// nothing when the slot exists (the common case: one `stat`).
+Future<bool> restoreRetiredCustomMangaOcrSlot(Directory slot) async {
+  if (_swappingSlots.contains(slot.path)) return false;
+  try {
+    if (await slot.exists()) return false;
+    for (final Directory retired in await _retiredSlots(slot)) {
+      if (!_holdsModel(retired)) continue;
+      await retired.rename(slot.path);
+      return true;
+    }
+  } on FileSystemException catch (error, stack) {
+    // Still set aside; the next read tries again.
+    engineLog.log('restoreRetiredCustomMangaOcrSlot', error, stack);
+  }
+  return false;
 }
 
 /// The generation that runs for an imported model: the slot's shared detector
@@ -459,14 +519,23 @@ class MangaOcrCustomModelStore implements MangaOcrCustomModelSlot {
     Future<Directory> Function()? slotDirProvider,
     MangaOcrCustomModelProbe? probe,
     DateTime Function()? clock,
+    Future<void> Function(Directory from, String toPath)? renameDirectory,
   }) : _slotDirProvider =
            slotDirProvider ?? MangaOcrLocalModel.custom.modelsDirectory,
        _probe = probe ?? probeCustomMangaOcrRecognizer,
-       _clock = clock ?? DateTime.now;
+       _clock = clock ?? DateTime.now,
+       _rename = renameDirectory ?? _renameDirectory;
 
   final Future<Directory> Function() _slotDirProvider;
   final MangaOcrCustomModelProbe _probe;
   final DateTime Function() _clock;
+
+  /// Directory rename (tests inject one that fails).
+  final Future<void> Function(Directory from, String toPath) _rename;
+
+  static Future<void> _renameDirectory(Directory from, String toPath) async {
+    await from.rename(toPath);
+  }
 
   /// Built-in model folders the shared detector files can be copied from.
   static const List<String> _detectorSourceDirNames = <String>[
@@ -514,7 +583,10 @@ class MangaOcrCustomModelStore implements MangaOcrCustomModelSlot {
 
     final Directory slot = await _slotDirProvider();
     final Directory root = slot.parent;
-    await _removeLeftovers(root);
+    // A model an earlier replace left set aside goes back first: the sweep
+    // below must never see the only copy of it as a leftover.
+    await restoreRetiredCustomMangaOcrSlot(slot);
+    await _removeLeftovers(slot);
     final String stamp = '${_clock().microsecondsSinceEpoch}';
     final Directory staging = Directory(
       p.join(root.path, '$_kStagingPrefix$stamp'),
@@ -725,33 +797,68 @@ class MangaOcrCustomModelStore implements MangaOcrCustomModelSlot {
 
   /// Replaces [slot] with [staging]: the old slot is renamed aside first and
   /// put back if the new one cannot be moved in.
-  static Future<void> _swapIn(
+  ///
+  /// When putting it back fails as well, the old model stays in its retired
+  /// folder and the import fails with
+  /// [MangaOcrCustomModelImportError.storageFailed]; the next read or import
+  /// restores it ([restoreRetiredCustomMangaOcrSlot]). It is never deleted
+  /// while the slot is missing ([_removeLeftovers]).
+  Future<void> _swapIn(
     Directory staging,
     Directory slot,
     Directory root,
     String stamp,
   ) async {
-    Directory? retired;
-    if (await slot.exists()) {
-      retired = await slot.rename(p.join(root.path, '$_kRetiredPrefix$stamp'));
-    }
+    _swappingSlots.add(slot.path);
     try {
-      await staging.rename(slot.path);
-    } on FileSystemException {
-      if (retired != null) await retired.rename(slot.path);
-      rethrow;
+      Directory? retired;
+      if (await slot.exists()) {
+        final String retiredPath = p.join(root.path, '$_kRetiredPrefix$stamp');
+        await _rename(slot, retiredPath);
+        retired = Directory(retiredPath);
+      }
+      try {
+        await _rename(staging, slot.path);
+      } on FileSystemException catch (swapError) {
+        if (retired != null) {
+          try {
+            await _rename(retired, slot.path);
+          } on FileSystemException catch (restoreError, stack) {
+            engineLog.log(
+              'MangaOcrCustomModelStore.swapIn.restore',
+              restoreError,
+              stack,
+            );
+            throw MangaOcrCustomModelImportException(
+              MangaOcrCustomModelImportError.storageFailed,
+              detail:
+                  '$swapError; the previous model is kept in '
+                  '${p.basename(retired.path)}: $restoreError',
+            );
+          }
+        }
+        rethrow;
+      }
+      if (retired != null) await _deleteQuietly(retired);
+    } finally {
+      _swappingSlots.remove(slot.path);
     }
-    if (retired != null) await _deleteQuietly(retired);
   }
 
-  static Future<void> _removeLeftovers(Directory root) async {
+  /// Removes what earlier imports left next to [slot]: staging folders always;
+  /// retired folders only when they cannot be the live model (the slot exists,
+  /// or the folder holds no model).
+  static Future<void> _removeLeftovers(Directory slot) async {
+    final Directory root = slot.parent;
     if (!await root.exists()) return;
     try {
+      final bool slotExists = await slot.exists();
       await for (final FileSystemEntity entity in root.list()) {
+        if (entity is! Directory) continue;
         final String name = p.basename(entity.path);
-        if (entity is Directory &&
-            (name.startsWith(_kStagingPrefix) ||
-                name.startsWith(_kRetiredPrefix))) {
+        if (name.startsWith(_kStagingPrefix) ||
+            (name.startsWith(_kRetiredPrefix) &&
+                (slotExists || !_holdsModel(entity)))) {
           await _deleteQuietly(entity);
         }
       }
