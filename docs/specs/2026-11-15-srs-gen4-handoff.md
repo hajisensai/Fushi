@@ -2397,3 +2397,77 @@ Rust `SCHEMA` 没升（没加表 / 索引，分到的 40025 没用）；ABI 不�
 - 本机旧身份：迁移有两处各自把它记进 `peers`（`carry.rs` 搬 `sync2_devices`、`create_self` 的 `own_peer(prev)`），单去一处测试仍绿
   （冗余，符合预期），两处一起去掉 → `the_own_protocol3_identity_seen_on_the_old_root_is_not_pending` 红。
 - 复原后 `cargo fmt --check` exit 0；`cargo test --profile quick --lib -j 4 store::gen4` exit 0，596 passed、0 failed、7 ignored。
+
+### 第三次复核修复（第四轮，2026-11-18，同分支；提交 `af6f224fb0`、`dd0f2a229c` 与本节同提交的文档）
+
+上一节「混合版本家庭」一条的实现（`truth/trust.rs` 第 1 条「本机已有它的日志 → `KnownLog` 不追溯」）**已删**，以本节为准。
+
+- **复核 major：经承袭段认识的旧作者可被换钥匙冒充**。`KnownLog` 只看「本机有没有它的日志」，不看它的公钥有没有受信方担保。
+  承袭段原先不带作者公钥，收方 c 经承袭段收下 OLD 的日志后 `peers` 里没有 OLD 的钥匙；攻击者在旧根上拿另一把钥匙写 OLD 的
+  head 与清除，`set_peer` 回 `Inserted`、走 `KnownLog` 判可信，冒充者签的段按它自报的钥匙验签通过，清除照执行（复核探针实测：
+  c 上 applied=6、name=evil、没有 heldPurges）。新根 `plan` 收冒充 OLD 的 v4 head 同一条路，冒充者成了 c 上受信、认识钥匙的设备后
+  还能当承袭段上传者过 D20。定案（复核建议的做法一 + 做法二都做）：
+  - **承袭段头带作者公钥**（`gen4/heritage.rs`）：flags bit1 = 带 `author_key[32]`（紧跟 `uploader` 之后，在签名覆盖的头里）。
+    上传者打段时带本机 `peers` 里记着的这位作者的公钥（`inherit.rs` `pack`；协议 3 里没有公钥的设备行不带）。不带时字节与原
+    黄金向量完全相同（旧格式不变，`VERSION` 仍是 1）；`segment.rs` 新 `read_magic_flags` 让各格式声明自己认得的 flags 位，`FSG4`
+    仍只认 bit0。**格式改动**：设计稿 §3.1 的段头布局没同步改，待设计稿持有者补一行（本块只改交接本节，不动设计稿）。
+  - **收方登记、对不上整段拒**（`receive.rs` `vouched_author_key`）：承袭段验签、整段合规之后，本机还没记过作者公钥就按段头
+    登记（不写信任行：上传者受信，它担保的作者可信，D20）；记着另一把 = 新拒绝 `Reject::AuthorKeyMismatch(设备)`，整段不落、
+    不登记。`Uploader::see` 同口径（这样的段不算位置上有、本机照传）。登记之后旧根上 OLD 的 head 不再进 `oldroot_scan` 的
+    `heads`（公钥已知），冒充者签的段按真公钥验签不过；新根上冒充的 head 在 `set_peer` 就是 `KeyMismatch`。
+  - **首次信任删掉「本机已有日志」放行**（`truth/trust.rs`，归 K2 的文件）：公钥第一次登记一律按「`prev` + 同钥匙承接 → 库空首次
+    信任 → 待确认」判。到这里还「已有日志」的只剩段头没带公钥的作者（上传者也不知道），它的公钥没有任何受信方担保，不能先到
+    先得地变成可信。库里有它的日志就不是空库 → 待确认；`oldroot_ingest` 已按 `FirstSeen::wrote` 让派生层重判，它已落下的删除与
+    清除随之扣住（与重建一致），用户确认后放行。**与协议 3 的差异**：协议 3 `trust_head` 给「有设备行、没公钥」补公钥时不判
+    待确认；这里有意收紧——只多一次确认，不丢东西，已执行的清除不受影响。
+  - **`plan` 拒绝冒用协议 3 作者 ID 的新根 head**（`cmd/sync.rs`）：本机有这台设备的日志、却从没记过它的公钥，只能是段头没带
+    公钥的承袭作者；换代迁移给每台设备换新 ID，协议 4 的 head 不会用协议 3 的设备 ID，所以按冒名报错、不登记。这样 `plan`
+    写下的待确认设备在本机仍一条操作都没有，`plan` 继续不动派生层。
+  - 顺带效果：c 经承袭段学到 OLD 的公钥后，OLD 自己迁移出来的新身份（head 带 `prev = OLD`、同一把钥匙）在 c 上走「换身份继承」
+    可信——上一轮复核 minor「混合版本家庭」那条因此由公钥承接解决，不再依赖 `KnownLog`。这一支没有单独的端到端测试（要两台
+    协议 3 库各自迁移再互相同步，装置较重），靠 `note_new_peer_inherits_only_under_the_same_key`（K2）与本节的公钥登记测试组合覆盖。
+  - **残余**：开发期别的构建已经传上位置、段头不带公钥的承袭段，收方照旧不登记公钥（该作者之后的 head 会判待确认）；gen4 没发布，
+    不做迁移。上传者自己先被冒充者抢先登记了错误公钥的（它会把冒充者判待确认、不替它传），不在本条范围。
+- **复核 minor：待确认作者不替传后「位置上原生操作依赖的承袭操作一定在位置上」被有意打破**。定案：`inherit.rs` 文件头写明旧根
+  退役的前提——所有设备都捡完旧根，或每台设备上都没有待确认 / 已拒绝的承袭作者（确认了的下一轮补传）；在此之前不能清空、删除
+  旧根。`cmd/sync_oldroot.rs` `heritage_plan` 回包（`skip` 与否都带）新增 `unvouched: [设备…]` = 本机有内容、因作者不受信而不替传
+  的承袭日志，同步页据此提示用户先确认或拒绝。旧根命令目前仍没有 Dart 调用方，提示文案与接线交给同步轮持有者（G8-7 / G9-5）。
+
+**归 K2 文件的改动（由合流统一）**：`truth/trust.rs` 删 `FirstSeen::KnownLog` 与第 1 条、文件头判定顺序重写；
+`cmd/sync_trust_tests.rs` `note_new_peer_inherits_only_under_the_same_key` 末尾「本机已有它的日志 → KnownLog」一段删掉（拿本机身份
+自己调 `note_new_peer` 的人造场景，新口径下没有意义，覆盖改由下面的端到端测试承担）；`cmd/sync.rs` `plan` 加上面的拒绝；
+`receive.rs` 加 `vouched_author_key` 与 `Reject::AuthorKeyMismatch`。K2 若另改了这几处，合流时按本节语义合并，**不要**把 `KnownLog`
+带回来。
+
+测试（Rust）：
+
+- `gen4/heritage.rs` `author_key_round_trips_under_the_signature`：带公钥的段头读回相同、改公钥一个字节验签失败、不认识的 flags 位仍按损坏。
+- `receive.rs` `heritage_author_keys_are_registered_and_must_agree`：段头公钥登记、不写信任行；之后换钥匙的 `set_peer` 是
+  `KeyMismatch`；另一上传者担保另一把 → `AuthorKeyMismatch`、一条不落；同一把或不带照收；增量 == 重建。
+- `inherit_tests.rs` `coverage_vouching_another_author_key_does_not_count`：位置上担保另一把的段不算有、本机照传；本机打的段头带
+  本机记着的作者公钥；同一把照常算。
+- `cmd/sync_heritage_trust_tests.rs`（经 C ABI）：
+  - `an_impostor_cannot_take_over_an_author_known_through_heritage`（复核 major 的原场景，拒绝路径）：c 经 a 的承袭段认识 OLD 后，
+    攻击者用 0xee 冒充 OLD 换掉旧根 head、写 4..=6（最后一条彻底清除）：c 与 a 上都一条不落（`BadSignature`）、名字不变、没有
+    trust 行与 heldPurges，`applied` 仍是 3。
+  - `a_heritage_author_without_a_vouched_key_is_judged_when_its_head_first_arrives`：段头不带公钥时，新根上冒用 OLD ID 的 head 被
+    `plan` 按冒名拒、不登记；旧根上的冒充 head 第一次登记 OLD 的公钥 → 待确认，清除扣住（heldPurges=1）。
+  - `a_purge_held_on_the_uploader_stays_held_on_other_devices` 补断言：a 上 `heritage_plan` 的 `unvouched` 列出待确认的 OLD，确认后为空。
+  - `an_old_device_vouched_for_through_heritage_is_not_pending_later` 改断言：c 已从段头认识 OLD 的公钥，`oldroot_scan` 不再读它的
+    head（`heads` 为空），新段照收、可信、清除不扣。
+- `sync_complete_tests.rs`：`old_root_with` 拆出 `old_root_signed`（指定签名钥匙与名字），原调用不变。
+
+变异实测（改完跑、看红、复原；复原后 `git status` 干净）：
+
+| 变异 | 结果 |
+|---|---|
+| M1 `pack` 段头不带作者公钥 | 定向 44 条里 3 条红（impostor、vouched…not_pending_later、without_a_vouched_key），`inherit` 模块另 1 条红（coverage_vouching…） |
+| M2 收段不登记作者公钥 | 3 条红（含 `heritage_author_keys_are_registered_and_must_agree`、impostor） |
+| M3 收段公钥对不上也收 | `heritage_author_keys_are_registered_and_must_agree` 红 |
+| M4 恢复「已有日志 → 放行」 | `a_heritage_author_without_a_vouched_key_is_judged_when_its_head_first_arrives` 红 |
+| M5 `plan` 不拒冒用协议 3 ID 的 head | 同上一条红 |
+| M6 `unvouched` 恒空 | `a_purge_held_on_the_uploader_stays_held_on_other_devices` 红 |
+| M7 `Uploader::see` 不核作者公钥 | `coverage_vouching_another_author_key_does_not_count` 红 |
+| M8 读段头不认 bit1 / M9 写段头不写公钥字节 | `author_key_round_trips_under_the_signature` 红 |
+
+全部 exit 101；复原后 `cargo fmt --check` exit 0，`cargo test --profile quick --lib -j 4` 全量 exit 0：1335 passed、0 failed、39 ignored（都是已有的 ignore）。
