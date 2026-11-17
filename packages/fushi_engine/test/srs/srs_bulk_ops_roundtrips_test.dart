@@ -189,24 +189,11 @@ void main() {
     );
   });
 
-  test('缓存刷新找后继卡：查询走前身链接的部分覆盖索引，不全表扫描修改记录表', () async {
-    // 每次缓存刷新（每次评分、每次改卡）都要找「哪些卡继承了这张卡的历史」。修前按无索引的
-    // field_key 扫整张修改记录表：语句数不变，但每次的扫描量随表长线性增长。
+  test('缓存刷新找后继卡：单次改卡 / 评分的语句数是常数', () async {
+    // 每次缓存刷新（每次评分、每次改卡）都要找「哪些卡继承了这张卡的历史」。协议 3 这里还用 EXPLAIN 钉住按
+    // `srs_field_edits` 的部分覆盖索引找；新代没有这张表（继承关系在内核的血统索引里，native/fushi_fsrs/src/store/
+    // gen4/inherit.rs），那段查询计划断言删了，语句数是常数照旧钉住。
     final BulkFixture f = await BulkFixture.open(notes: 20);
-    // EXPLAIN 不是只读执行器放行的查询（只认 SELECT / WITH / VALUES）：走测试专用的原始通道。
-    final String plan = f.store.core
-        .debugSelectRaw(
-          'EXPLAIN QUERY PLAN SELECT entity_id, field_key '
-          'FROM srs_field_edits WHERE $kSrsHistoryFromCondition '
-          "AND +entity_kind = 'card'",
-        )
-        .map((Map<String, Object?> r) => r['detail']! as String)
-        .join(' / ');
-    expect(
-      plan,
-      contains('COVERING INDEX idx_srs_field_edits_history_from'),
-      reason: plan,
-    );
     // 部分索引的条件与 fushi_srs 的前缀一致（fushi_core 不依赖 fushi_srs，另写了一次）。
     const String prefix = SrsFieldKeys.cardHistoryFromPrefix;
     expect(
