@@ -172,7 +172,13 @@ pub fn dispatch(
         None => Err(format!("unknown sync2 op {op}")),
         Some(Wiring::Unwired(owner)) => Err(unwired(op, owner)),
         Some(Wiring::Removed(why)) => Err(removed(op, why)),
-        Some(Wiring::Wired) => run(c, op, req, blobs, files),
+        Some(Wiring::Wired) => {
+            let out = run(c, op, req, blobs, files);
+            // 审计版的库：这条命令跑过的语句里有没有拿 UUID 文本当 ID 的（`id_audit.rs`）；有就报错，不交回包。
+            #[cfg(feature = "id_audit")]
+            super::id_audit::take(None)?;
+            out
+        }
     }
 }
 

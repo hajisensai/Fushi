@@ -1,5 +1,7 @@
-// 持久化 SRS 实体 ID 归一（G9-6）对真内核：新代的规范 ID 不带盐，Dart 按 profile uid 加盐算出的 ID（内置实体、
-// `createDeck` 返回的派生 ID……）只是别名类成员，牌组树等读命令回的都是规范 ID。
+// 持久化 SRS 实体 ID 归一（G9-6）对真内核：新代的规范 ID 不带盐；协议 3 按 profile uid 加盐算出的 ID（存量偏好里
+// 存的内置实体、牌组、笔记类型 ID）只是别名类成员，牌组树等读命令回的都是规范 ID。G9-7 起 Dart 向内核要的 ID
+// （[SrsKernelIds]、`createDeck` 等的返回值）本身就是规范 ID，成员 ID 在这里按存量公式 [_salted] 现算，并由
+// [_seedLegacy] 把那几个带盐实体作为存量写进库（别名层只归一库里出现过的成员：迁移来的库里偏好指向的实体都在）。
 //
 // - 内置实体：开库后 [SrsDbStore.defaultDeckId] 等是规范 ID（在牌组树里查得到）；再跑 `ensureBuiltins` 不重发。
 // - 偏好位置（制卡牌组 / 笔记类型 / 字段映射，经 srsMiningDestinationIdSites）：成员 ID → 规范 ID；归一不到的保留；
@@ -31,6 +33,60 @@ import 'support/srs_test_storage.dart';
 
 const String _uid = '0193a1b2-0000-7000-8000-0000000000a1';
 const String _otherUid = '0193a1b2-0000-7000-8000-0000000000b2';
+
+/// 协议 3 的存量规则：`<uid>/<名字>` 的 v5（G9-7 之前 `SrsKernelIds(uid)` 答的就是它）。
+String _salted(String name) => uuidV5(srsNamespace, '$_uid/$name');
+
+/// 迁移来的存量：协议 3 按 [_uid] 加盐写下的内置实体（[builtins]）、牌组（[decks]，名字）、笔记类型（[noteTypes]，
+/// ankiNum）。`identity` 写了 `Salts{_uid}`，别名层把它们归到同一个规范 ID。
+Future<void> _seedLegacy(
+  SrsDbStore s, {
+  bool builtins = false,
+  List<String> decks = const <String>[],
+  List<int> noteTypes = const <int>[],
+}) => s.writeEdits(
+  <SrsEditSpec>[
+    for (final String name in decks)
+      SrsEditSpec(
+        SrsEntityKind.deck,
+        _salted('deck/$name'),
+        SrsFieldKeys.name,
+        name,
+      ),
+  ],
+  records: <SrsEntityRecord>[
+    if (builtins)
+      for (final SrsEntityRecord r in srsBuiltinEntities(_uid))
+        SrsEntityRecord(
+          id: _salted(
+            r.kind == SrsEntityKind.deck
+                ? 'builtin-deck/default'
+                : 'notetype/${r.payload['ankiNum']}',
+          ),
+          profileUid: _uid,
+          kind: r.kind,
+          payload: r.payload,
+        ),
+    for (final String name in decks)
+      SrsEntityRecord(
+        id: _salted('deck/$name'),
+        profileUid: _uid,
+        kind: SrsEntityKind.deck,
+        payload: const <String, Object?>{'createdAt': 0},
+      ),
+    for (final int n in noteTypes)
+      SrsEntityRecord(
+        id: _salted('notetype/$n'),
+        profileUid: _uid,
+        kind: SrsEntityKind.noteType,
+        payload: <String, Object?>{
+          'ankiNum': n,
+          'ntKind': SrsNoteTypeKind.standard,
+          'createdAt': 0,
+        },
+      ),
+  ],
+);
 
 /// 新库里给 [_uid] 建绑定与本机身份（`identity`，G9-4），再开副本。
 Future<(SrsStorage, SrsDbStore)> _open() async {
@@ -76,17 +132,28 @@ final class _Prefs {
 void main() {
   test('内置实体：开库后是规范 ID，牌组树里查得到；再跑 ensureBuiltins 不重发', () async {
     final (_, SrsDbStore s) = await _open();
-    final SrsKernelIds derived = SrsKernelIds(_uid);
+    final SrsKernelIds ids = SrsKernelIds(_uid);
     expect(
-      s.defaultDeckId,
-      isNot(derived.defaultDeck),
-      reason: '规范 ID 不带盐，与派生值不同',
+      <String>[s.defaultDeckId, s.lapisNoteTypeId, s.fushiCardNoteTypeId],
+      <String>[
+        ids.defaultDeck,
+        ids.builtinNoteType(kSrsBuiltinLapisKey),
+        ids.builtinNoteType(kSrsBuiltinFushiCardKey),
+      ],
+      reason: '内核答的就是规范 ID',
     );
+    final String saltedDefault = _salted('builtin-deck/default');
+    expect(saltedDefault, isNot(s.defaultDeckId), reason: '规范 ID 不带盐');
+    await _seedLegacy(s, builtins: true);
     expect(
       await s.canonicalIds(<String>[
-        derived.defaultDeck,
-        derived.builtinNoteType(kSrsBuiltinLapisKey),
-        derived.builtinNoteType(kSrsBuiltinFushiCardKey),
+        saltedDefault,
+        _salted(
+          'notetype/${SrsIds.builtinNoteTypeAnkiNum(kSrsBuiltinLapisKey)}',
+        ),
+        _salted(
+          'notetype/${SrsIds.builtinNoteTypeAnkiNum(kSrsBuiltinFushiCardKey)}',
+        ),
       ]),
       <String>[s.defaultDeckId, s.lapisNoteTypeId, s.fushiCardNoteTypeId],
     );
@@ -100,19 +167,25 @@ void main() {
 
   test('偏好位置：成员 ID → 规范 ID；归一不到的保留；实体出现后再跑重归一', () async {
     final (_, SrsDbStore s) = await _open();
-    final String member = await s.createDeck('Mining');
+    final String canonDeck = await s.createDeck('Mining');
     final SrsDeckTree tree = await s.deckTree();
-    final String canonDeck = tree.decks
-        .firstWhere((SrsDeckView d) => tree.fullName(d.id) == 'Mining')
-        .id;
-    expect(member, isNot(canonDeck), reason: 'createDeck 回的是派生（带盐）ID');
-    final String lapisMember = SrsKernelIds(
-      _uid,
-    ).builtinNoteType(kSrsBuiltinLapisKey);
+    expect(
+      tree.decks
+          .firstWhere((SrsDeckView d) => tree.fullName(d.id) == 'Mining')
+          .id,
+      canonDeck,
+      reason: 'createDeck 回的是规范 ID',
+    );
+    final String member = _salted('deck/Mining');
+    expect(member, isNot(canonDeck));
+    await _seedLegacy(s, builtins: true, decks: <String>['Mining']);
+    final String lapisMember = _salted(
+      'notetype/${SrsIds.builtinNoteTypeAnkiNum(kSrsBuiltinLapisKey)}',
+    );
     final String fieldId = (await s.noteType(
       s.lapisNoteTypeId,
     ))!.fields.first.id;
-    final String later = SrsKernelIds(_uid).deck('Later');
+    final String later = _salted('deck/Later');
     final _Prefs prefs = _Prefs()
       ..value = SrsMiningDestination(
         deckId: member,
@@ -137,8 +210,8 @@ void main() {
       later: <String, String>{'f': 'x'},
     });
 
-    // 别名类变了（实体出现）：同一个入口再跑一次，把它也换成规范 ID。
-    await s.createDeck('Later');
+    // 别名类变了（带盐的存量实体后来才进库，如旧设备的操作）：同一个入口再跑一次，把它也换成规范 ID。
+    await _seedLegacy(s, decks: <String>['Later']);
     final SrsDeckTree t2 = await s.deckTree();
     final String laterCanon = t2.decks
         .firstWhere((SrsDeckView d) => t2.fullName(d.id) == 'Later')
@@ -168,10 +241,12 @@ void main() {
 
   test('读时归一：resolveSrsMiningDestination 拿成员 ID 不误判已删除；真删了照旧回落默认', () async {
     final (_, SrsDbStore s) = await _open();
-    final String member = await s.createDeck('Mining');
-    final String typeMember = SrsKernelIds(
-      _uid,
-    ).builtinNoteType(kSrsBuiltinLapisKey);
+    await s.createDeck('Mining');
+    await _seedLegacy(s, builtins: true, decks: <String>['Mining']);
+    final String member = _salted('deck/Mining');
+    final String typeMember = _salted(
+      'notetype/${SrsIds.builtinNoteTypeAnkiNum(kSrsBuiltinLapisKey)}',
+    );
     final SrsResolvedMiningDestination r = await resolveSrsMiningDestination(
       s,
       SrsMiningDestination(
@@ -191,7 +266,7 @@ void main() {
 
     final SrsResolvedMiningDestination gone = await resolveSrsMiningDestination(
       s,
-      SrsMiningDestination(deckId: SrsKernelIds(_uid).deck('Never')),
+      SrsMiningDestination(deckId: _salted('deck/Never')),
     );
     expect(gone.deckFellBack, isTrue);
     expect(gone.deckId, s.defaultDeckId);
@@ -199,9 +274,10 @@ void main() {
 
   test('批量上限：内核一次最多 4096 条，统一入口分批', () async {
     final (_, SrsDbStore s) = await _open();
+    await _seedLegacy(s, builtins: true);
     final List<String> ids = <String>[
       for (int i = 0; i <= kSrsCanonicalIdsBatchMax; i++) 'plain-$i',
-      SrsKernelIds(_uid).defaultDeck,
+      _salted('builtin-deck/default'),
     ];
     await expectLater(s.canonicalIds(ids), throwsA(anything));
     final List<int> sizes = <int>[];
@@ -213,32 +289,31 @@ void main() {
     });
     expect(sizes, <int>[kSrsCanonicalIdsBatchMax, 2]);
     expect(m['plain-0'], 'plain-0');
-    expect(m[SrsKernelIds(_uid).defaultDeck], s.defaultDeckId);
+    expect(m[_salted('builtin-deck/default')], s.defaultDeckId);
   });
 
   test('覆写 / 取字段 / 按类型列映射：新建的 SrsMiner 按规范 ID 查字段映射（偏好里是成员 ID 键）', () async {
     final (_, SrsDbStore s) = await _open();
-    final String typeMember = await s.createStockNoteType(
+    final String typeId = await s.createStockNoteType(
       SrsStockNoteType.basic,
       'Vocab',
     );
-    // 按成员 ID 读视图在集成分支上会崩（`_prefetchEdits` 按请求 ID 取内核按规范 ID 回的键，交接 G9-6 节「没做」），
-    // 这里只拿规范 ID 去读；被测的是偏好里的成员 ID 键。
-    final String typeId = (await s.canonicalIds(<String>[typeMember])).single;
-    expect(typeId, isNot(typeMember), reason: '新建回的是派生（带盐）ID');
     final SrsNoteTypeView type = (await s.noteType(typeId))!;
+    expect(type.id, typeId, reason: '新建回的是规范 ID');
+    // 被测的是偏好里的成员 ID 键：协议 3 按 uid 加盐的那个 ID。
+    final String typeMember = _salted('notetype/${type.ankiNum}');
+    await _seedLegacy(s, noteTypes: <int>[type.ankiNum]);
+    expect(await s.canonicalIds(<String>[typeMember]), <String>[typeId]);
     final String front = type.fields
         .firstWhere((SrsFieldDef f) => f.name == 'Front')
         .id;
     final String back = type.fields
         .firstWhere((SrsFieldDef f) => f.name == 'Back')
         .id;
-    final String noteId = (await s.canonicalIds(<String>[
-      await s.createNote(
-        noteTypeId: type.id,
-        fieldsById: <String, String>{front: 'old front', back: 'old back'},
-      ),
-    ])).single;
+    final String noteId = await s.createNote(
+      noteTypeId: type.id,
+      fieldsById: <String, String>{front: 'old front', back: 'old back'},
+    );
     final Directory tmp = Directory.systemTemp.createTempSync('g96_miner_');
     addTearDown(() {
       try {

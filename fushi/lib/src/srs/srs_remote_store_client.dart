@@ -1135,18 +1135,23 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
     }, SrsEditUndoResult.fromJson);
   }
 
+  /// [onRecords]：远程协议的 `writeEdits` 只回修改记录、不回落下的规范 ID（远程的 ID 对回归 G10-2），这里报请求里的
+  /// 身份记录 ID（与 [canonicalIds] 同一处理）。本机入口请求的 ID 来自 [SrsKernelIds]，本来就是规范 ID。
   @override
   Future<List<SrsFieldEdit>> writeEdits(
     List<SrsEditSpec> specs, {
     List<SrsEntityRecord> records = const <SrsEntityRecord>[],
-  }) {
+    void Function(List<String> landed)? onRecords,
+  }) async {
     for (final SrsEditSpec s in specs) {
       if (s.kind == SrsEntityKind.card) _bases.remove(s.entityId);
     }
-    return _write('writeEdits', <String, Object?>{
+    final List<SrsFieldEdit> out = await _write('writeEdits', <String, Object?>{
       'specs': SrsRemoteWire.editSpecs(specs),
       'records': <Object?>[for (final SrsEntityRecord r in records) r.toJson()],
     }, SrsRemoteWire.editsFrom);
+    onRecords?.call(<String>[for (final SrsEntityRecord r in records) r.id]);
+    return out;
   }
 }
 

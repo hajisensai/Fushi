@@ -1234,12 +1234,31 @@ class SrsDbStore implements SrsSync2Host {
   @visibleForTesting
   int debugKeyPrefixRowsRead = 0;
 
-  /// 修改记录原文 + 服务器时刻按实体 ID 分组（`read` 的 `edits`，参数见 store/reads.rs `edits`）。没有记录的 ID
-  /// 不出现。
+  /// 修改记录原文 + 服务器时刻按**请求里的**实体 ID 分组（`read` 的 `edits`，参数见 store/reads.rs `edits`）。没有
+  /// 记录的 ID 不出现。
+  ///
+  /// 内核的行按规范 ID 出（一个别名类一份）；请求里是别名成员的 ID 时，回包的 `canon` 表给出它的规范 ID
+  /// （native/fushi_fsrs/src/store/gen4/cmd/reads.rs `single_echo`），这里按它把行对回请求 ID（[srsRowsByRequest]）——
+  /// 调用方按自己给的 ID 预建槽、按自己给的 ID 取（[_prefetchEdits] 等），不另发 `canonical_ids`。
+  ///
+  /// [keyCanon] 给了：请求的 `keys`（调用方接下来要取值的字段键）里归一后不同的「请求键 → 规范键」（回包 `keyCanon`）
+  /// 记进去（[_currentValues]）。
   Future<Map<String, List<SrsEditItem>>> _editItemsById(
-    Map<String, Object?> query,
-  ) async {
-    final SrsColumns c = await _readTable('edits', query);
+    Map<String, Object?> query, {
+    Map<String, String>? keyCanon,
+  }) async {
+    final SrsReadResult res = await _read('edits', query);
+    if (keyCanon != null) {
+      final Object? echoed = res.json['keyCanon'];
+      if (echoed is Map) {
+        for (final MapEntry<Object?, Object?> e in echoed.entries) {
+          if (e.key case final String k) {
+            if (e.value case final String c) keyCanon[k] = c;
+          }
+        }
+      }
+    }
+    final SrsColumns c = res.table;
     final SrsStringColumn e = c.strings('e');
     final SrsStringColumn j = c.strings('j');
     final SrsIntColumn st = c.ints('st');
@@ -1249,7 +1268,7 @@ class SrsDbStore implements SrsSync2Host {
         SrsEditItem.stored(j.bytes(i), st.at(i)),
       );
     }
-    return byId;
+    return srsRowsByRequest(byId, query['ids'], res.json);
   }
 
   Future<SrsEntityEdits> _entityEdits(SrsEntityKind kind, String id) async =>
@@ -1353,6 +1372,9 @@ class SrsDbStore implements SrsSync2Host {
   ///
   /// [logNotes]：日志卡片 → 笔记（调用方已知时给，省一次读卡片行）；[study]：落库、刷新缓存后在同一次命令里排队
   /// （store/study.rs），结果交给 [onStudy]。
+  ///
+  /// [onEntities]：这批身份记录落下的规范实体 ID，按草稿下标（[srsEntityWritesByInput]，内核回包 `entityWrites`）。
+  /// 建实体的入口返回的是它，不是请求里的 ID（请求 ID 是别名成员时两者不同）。
   Future<List<SrsFieldEdit>> _emit(
     List<SrsEventDraft> drafts, {
     bool receive = false,
@@ -1361,6 +1383,7 @@ class SrsDbStore implements SrsSync2Host {
     Map<String, String> logNotes = const <String, String>{},
     Map<String, Object?>? study,
     void Function(Map<String, Object?> study)? onStudy,
+    void Function(List<String?> entities)? onEntities,
   }) async {
     assert(
       identical(Zone.current[_writeZoneKey], this),
@@ -1368,18 +1391,21 @@ class SrsDbStore implements SrsSync2Host {
     );
     // 在 [undoable] 里：落库前读下这批要改的键的改前值，落库后记下内核分配的 dot（srs_edit_undo.dart）。
     final _SrsUndoRecorder? recorder = _undoRecorder;
-    final List<(SrsEntityKind, String, String, Object?)> recorded =
+    // 第 i 条草稿点名的 (种类, 实体, 字段键, 值)：回包 `edits` 按输入下标（= 草稿下标）认领（[_SrsUndoRecorder.noteWritten]）。
+    final Map<int, (SrsEntityKind, String, String, Object?)> byInput =
         recorder == null
-        ? const <(SrsEntityKind, String, String, Object?)>[]
-        : <(SrsEntityKind, String, String, Object?)>[
-            for (final SrsEventDraft d in drafts)
+        ? const <int, (SrsEntityKind, String, String, Object?)>{}
+        : <int, (SrsEntityKind, String, String, Object?)>{
+            for (final (int i, SrsEventDraft d) in drafts.indexed)
               if (d is SrsEditDraft)
-                (d.kind, d.entityId, d.key, d.value)
+                i: (d.kind, d.entityId, d.key, d.value)
               else if (d case SrsReadyDraft(
                 event: SrsEditEvent(:final SrsFieldEdit edit),
               ))
-                (edit.entityKind, edit.entityId, edit.fieldKey, edit.value),
-          ];
+                i: (edit.entityKind, edit.entityId, edit.fieldKey, edit.value),
+          };
+    final Iterable<(SrsEntityKind, String, String, Object?)> recorded =
+        byInput.values;
     if (recorded.isNotEmpty) {
       await recorder!.noteBefore(<(SrsEntityKind, String, String)>[
         for (final (SrsEntityKind k, String id, String f, Object? _)
@@ -1413,7 +1439,14 @@ class SrsDbStore implements SrsSync2Host {
       );
     });
     if (recorded.isNotEmpty) {
-      recorder!.noteWritten(written);
+      recorder!.noteWritten(
+        written,
+        byInput: <int, (SrsEntityKind, String, String)>{
+          for (final MapEntry<int, (SrsEntityKind, String, String, Object?)> e
+              in byInput.entries)
+            e.key: (e.value.$1, e.value.$2, e.value.$3),
+        },
+      );
       // 整列表标签展开成了 OR-Set 的标签操作（内核不报 dot）：按差量撤，只记改后的列表。
       for (final (SrsEntityKind k, String id, String f, Object? v)
           in recorded) {
@@ -1421,6 +1454,9 @@ class SrsDbStore implements SrsSync2Host {
           recorder.noteTags(id, v);
         }
       }
+    }
+    if (onEntities != null && !identical(applied, _Applied.stale)) {
+      onEntities(srsEntityWritesByInput(drafts.length, applied.reply));
     }
     if (!stamps || identical(applied, _Applied.stale)) {
       return const <SrsFieldEdit>[];
@@ -2342,29 +2378,29 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 内置默认牌组与内置笔记类型（Lapis、Fushi 卡片；确定性 ID，每台设备都生成同一份；没改过的内置定义不写修改记录）。
   ///
-  /// 「在不在」按规范 ID 比：内置实体的 ID 由 Dart 按 profile uid 加盐算（[srsBuiltinEntities]），库里存的、读命令回的
-  /// 是集合里的规范 ID（盐不同，迁移 / 全新集合都是这样），所以先经 `canonical_ids` 归一，再和 `entities` 读回的比——
-  /// 直接拿加盐 ID 比，每次开库都会把三个内置实体当成缺的再写一遍。
+  /// 内置实体的 ID 是规范 ID（[srsBuiltinEntities] 向内核要，不带盐，G9-7），与 `entities` 读回的直接比：全新库里
+  /// 就是它；迁移来的库里协议 3 按 uid 加盐的内置实体被派生层归到同一个规范 ID，读回的也是它，所以不会另建一份。
   Future<void> ensureBuiltins() => runExclusive(() async {
     final List<SrsEntityRecord> builtins = srsBuiltinEntities(profileUid);
-    final List<String> canonical = await canonicalIds(<String>[
-      for (final SrsEntityRecord r in builtins) r.id,
-    ]);
     final Set<String> present = (await _entityIdsWhere(
       ids: <String>[for (final SrsEntityRecord r in builtins) r.id],
     )).toSet();
     final List<SrsEventDraft> missing = <SrsEventDraft>[
-      for (int i = 0; i < builtins.length; i++)
-        if (!present.contains(canonical[i]))
-          SrsReadyDraft(SrsEntityEvent(builtins[i])),
+      for (final SrsEntityRecord r in builtins)
+        if (!present.contains(r.id)) SrsReadyDraft(SrsEntityEvent(r)),
     ];
     if (missing.isNotEmpty) await _emit(missing);
   });
+
+  /// [canonicalIds] 发过几次 `canonical_ids`（测试用：读路径按回包的 `canon` / `keyCanon` 对，不另发这条命令）。
+  @visibleForTesting
+  int debugCanonicalIdsCalls = 0;
 
   /// 一批 ID 的规范 ID（内核 `canonical_ids`，只读、一个读快照，逐项对应）。一次最多 `kSrsCanonicalIdsBatchMax`
   /// 条，多了由调用方分批（srs_canonical_ids.dart 的 `srsCanonicalIdMap`）；归一不到的 ID 原样返回。
   Future<List<String>> canonicalIds(List<String> ids) async {
     if (ids.isEmpty) return const <String>[];
+    debugCanonicalIdsCalls++;
     final Map<String, Object?> r = await _sync2(<String, Object?>{
       'op': 'canonical_ids',
       'ids': ids,
@@ -2378,21 +2414,16 @@ class SrsDbStore implements SrsSync2Host {
     return out;
   }
 
-  /// 读根上的内置实体 ID（默认牌组、两个内置笔记类型）的规范 ID：开库最后一步（内置实体建好之后）与绑定变化之后
-  /// （[_sync2Raw]）各读一次。Dart 按 uid 加盐算的 ID 与集合里的规范 ID 不同（盐不同）；调用方拿这几个 ID 和读命令
-  /// 回的 ID 比（牌组树里找默认牌组、笔记类型列表里找 Lapis……），所以必须是规范的那一份。
+  /// 根上的内置实体 ID（默认牌组、两个内置笔记类型）：开库最后一步与绑定变化之后（[_sync2Raw]）各取一次。内核按
+  /// 规范规则答（[SrsKernelIds]，一次 FFI、不碰库，G9-7），就是读命令回的 ID；调用方拿它和读回的比（牌组树里找默认
+  /// 牌组、笔记类型列表里找 Lapis……）。规范 ID 是不带盐的常量，补盐 / 并入不改变它。
   Future<void> _loadRootIds() async {
-    final SrsKernelIds ids = kernelIds;
-    final List<String> canonical = await canonicalIds(<String>[
-      ids.defaultDeck,
-      ids.builtinNoteType(kSrsBuiltinLapisKey),
-      ids.builtinNoteType(kSrsBuiltinFushiCardKey),
-    ]);
-    _rootIds = (
-      defaultDeck: canonical[0],
-      lapis: canonical[1],
-      fushiCard: canonical[2],
-    );
+    final List<String> ids = kernelIds.ask(<List<Object?>>[
+      const <Object?>['default_deck'],
+      const <Object?>['builtin_notetype', kSrsBuiltinLapisKey],
+      const <Object?>['builtin_notetype', kSrsBuiltinFushiCardKey],
+    ]).cast<String>();
+    _rootIds = (defaultDeck: ids[0], lapis: ids[1], fushiCard: ids[2]);
   }
 
   /// 根上 ID 的规范形（[_loadRootIds]）；打开完成之后恒非空。
@@ -2402,8 +2433,7 @@ class SrsDbStore implements SrsSync2Host {
       _rootIds ??
       (throw StateError('SrsDbStore: root ids are read when the store opens'));
 
-  /// 本 profile 的根上 ID 的请求形（向内核要，见 [SrsKernelIds]；按 uid 加盐，内核收到时归一）。绑定变了
-  /// （[onBindingChanged]）作废重取。
+  /// 本 profile 的根上 ID（向内核要，见 [SrsKernelIds]；规范 ID，不带盐）。绑定变了（[onBindingChanged]）作废重取。
   SrsKernelIds get kernelIds => _kernelIds ??= SrsKernelIds(profileUid);
   SrsKernelIds? _kernelIds;
 
@@ -2636,14 +2666,18 @@ class SrsDbStore implements SrsSync2Host {
   }
 
   /// 一组实体各自的修改记录（[_entityEdits] 的成批版本：按 ID 分块预读，每块两三次往返）。
+  ///
+  /// [keys] / [keyCanon]：见 [_editItemsById]（只对嵌着 ID 的键有意义）。
   Future<Map<String, SrsEntityEdits>> _entityEditsMany(
     SrsEntityKind kind,
-    Iterable<String> ids,
-  ) async {
+    Iterable<String> ids, {
+    List<String>? keys,
+    Map<String, String>? keyCanon,
+  }) async {
     final Map<String, SrsEntityEdits> out = <String, SrsEntityEdits>{};
     for (final List<String> chunk in _chunks(ids.toSet())) {
       final _RefreshPrefetch pre = _RefreshPrefetch();
-      await _prefetchEdits(pre, kind, chunk);
+      await _prefetchEdits(pre, kind, chunk, keys: keys, keyCanon: keyCanon);
       // 整块一次 FFI 调用（字段寄存器内核）。
       final List<SrsEntityEdits> edits = srsEntityEditsOf(<List<SrsEditItem>>[
         for (final String id in chunk) pre.edits['${kind.wire}/$id']!,
@@ -2680,6 +2714,8 @@ class SrsDbStore implements SrsSync2Host {
     ).firstOrNull;
   }
 
+  /// 一组实体的身份记录，按**请求里的** ID 记进预读（不存在 = null）。行按规范 ID 出，请求里的别名成员经回包的
+  /// `canon` 表对回去（同 [_editItemsById]）。
   Future<void> _prefetchEntities(
     _RefreshPrefetch pre,
     Iterable<String> ids,
@@ -2688,28 +2724,41 @@ class SrsDbStore implements SrsSync2Host {
       for (final String id in chunk) {
         pre.entities[id] = null;
       }
-      for (final _EntityRow r in _entityRowsOf(
-        await _readTable('entities', <String, Object?>{'ids': chunk}),
-      )) {
-        pre.entities[r.id] = r;
-      }
+      final SrsReadResult res = await _read('entities', <String, Object?>{
+        'ids': chunk,
+      });
+      final Map<String, _EntityRow> byId = <String, _EntityRow>{
+        for (final _EntityRow r in _entityRowsOf(res.table)) r.id: r,
+      };
+      pre.entities.addAll(srsRowsByRequest(byId, chunk, res.json));
     }
   }
 
   /// 一组实体的全部修改记录**原文**（canonical JSON 的 UTF-8 字节）+ 这些记录的服务器时刻（同一条
   /// 语句 LEFT JOIN 出来）：物化整块交给字段寄存器内核，修改记录不在 Dart 侧解析。
+  ///
+  /// [keys] / [keyCanon]：见 [_editItemsById]（键只问一次：第一块带上）。
   Future<void> _prefetchEdits(
     _RefreshPrefetch pre,
     SrsEntityKind kind,
-    Iterable<String> ids,
-  ) async {
+    Iterable<String> ids, {
+    List<String>? keys,
+    Map<String, String>? keyCanon,
+  }) async {
+    bool keysAsked = keys == null || keys.isEmpty;
     for (final List<String> chunk in _chunks(ids)) {
       for (final String id in chunk) {
         pre.edits['${kind.wire}/$id'] = <SrsEditItem>[];
       }
       final Map<String, List<SrsEditItem>> byId = await _editItemsById(
-        <String, Object?>{'kind': kind.wire, 'ids': chunk},
+        <String, Object?>{
+          'kind': kind.wire,
+          'ids': chunk,
+          if (!keysAsked) 'keys': keys,
+        },
+        keyCanon: keysAsked ? null : keyCanon,
       );
+      keysAsked = true;
       for (final MapEntry<String, List<SrsEditItem>> e in byId.entries) {
         pre.edits['${kind.wire}/${e.key}']!.addAll(e.value);
       }
@@ -3241,6 +3290,7 @@ class SrsDbStore implements SrsSync2Host {
   Future<List<SrsFieldEdit>> writeEdits(
     List<SrsEditSpec> specs, {
     List<SrsEntityRecord> records = const <SrsEntityRecord>[],
+    void Function(List<String> landed)? onRecords,
   }) => runExclusive(() async {
     final List<SrsEventDraft> drafts = <SrsEventDraft>[
       for (final SrsEntityRecord r in records) SrsReadyDraft(SrsEntityEvent(r)),
@@ -3254,8 +3304,24 @@ class SrsDbStore implements SrsSync2Host {
         ),
     ];
     if (drafts.isEmpty) return const <SrsFieldEdit>[];
-    return _emit(drafts, stamps: true);
+    return _emit(
+      drafts,
+      stamps: true,
+      onEntities: onRecords == null
+          ? null
+          : (List<String?> e) => onRecords(<String>[
+              for (int i = 0; i < records.length; i++) _landedEntity(e, i),
+            ]),
+    );
   });
+
+  /// [srsEntityWritesByInput] 的第 [at] 项：身份记录草稿必定落一条（已有的实体也照样追加），缺了是内核与 Dart 对不上。
+  static String _landedEntity(List<String?> entities, int at) =>
+      entities[at] ??
+      (throw StateError(
+        'srs: the `apply` reply has no entityWrites item for input $at '
+        '(the native core and Dart do not match)',
+      ));
 
   /// 一次结构性改动（更改笔记类型、删除重复模板、旧 Lapis 迁移）：还原点 [checkpoint] + 一批修改记录 [specs]
   /// （no-op 规则同 [writeEdits]，同样由内核在这一笔里判）+ 可选的移牌组 [moveNotes]，内核 `change` **一条命令、一笔**
@@ -3523,8 +3589,10 @@ class SrsDbStore implements SrsSync2Host {
     final String trimmed = name.trim();
     final String id = await deckIdForNew(name, parentId: parentId);
     final SrsEntityEdits current = await _entityEdits(SrsEntityKind.deck, id);
+    // 返回内核落下的规范 ID（回包 `entityWrites`；身份记录是第一条草稿）。
+    String landed = id;
     // 身份记录与名字 / 父牌组记录同一个事务落库（以前分两次事务、两次缓存刷新）。
-    await _emit(<SrsEventDraft>[
+    final List<SrsEventDraft> drafts = <SrsEventDraft>[
       SrsReadyDraft(
         SrsEntityEvent(
           SrsEntityRecord(
@@ -3544,8 +3612,12 @@ class SrsDbStore implements SrsSync2Host {
         if (current[SrsFieldKeys.deckRwkvQueue] == null)
           SrsFieldKeys.deckRwkvQueue: SrsRwkvQueueSettings.forNewDeck.toValue(),
       }, current: current),
-    ]);
-    return id;
+    ];
+    await _emit(
+      drafts,
+      onEntities: (List<String?> e) => landed = _landedEntity(e, 0),
+    );
+    return landed;
   });
 
   /// 按「父::子」全名找或建牌组（AnkiConnect createDeck / 导入用）。
@@ -3751,9 +3823,12 @@ class SrsDbStore implements SrsSync2Host {
   }) => runExclusive(() async {
     final String g = guid ?? newNoteGuid();
     final String id = kernelIds.note(g);
+    String landed = id;
     // 身份记录与字段修改记录同一个事务、同一次缓存刷新（以前分两次落库，笔记先以空字段生成一遍卡）。这条笔记
-    // 已经在（同一个 guid 再建）时值没变的键不再写：内核在落库的那一笔里判，不预读它的修改记录。
+    // 已经在（同一个 guid 再建）时值没变的键不再写：内核在落库的那一笔里判，不预读它的修改记录。返回内核落下的
+    // 规范 ID（回包 `entityWrites`，身份记录是第一条草稿）。
     await _emit(
+      onEntities: (List<String?> e) => landed = _landedEntity(e, 0),
       newNoteDrafts(
         noteTypeId: noteTypeId,
         fieldsById: fieldsById,
@@ -3766,7 +3841,7 @@ class SrsDbStore implements SrsSync2Host {
         ifChanged: true,
       ),
     );
-    return id;
+    return landed;
   });
 
   /// 新笔记的全部事件草稿（身份记录 + 字段 / 标签 / 来源 / 牌组修改记录），**不落库、不占序号**：
@@ -4071,31 +4146,44 @@ class SrsDbStore implements SrsSync2Host {
     final Map<String, SrsNoteView?> noteViews = noteIds.isEmpty
         ? const <String, SrsNoteView?>{}
         : await notes(noteIds);
-    // 修改记录寄存器按类型分组成批读（键为 `<kind>/<id>`）。
+    // 修改记录寄存器按类型分组成批读（键为 `<kind>/<id>`）。键里嵌着 ID 的（`f/<字段>` 等）一并交给同一次读：视图与
+    // 寄存器按规范键出（内核 `Index::canonical_key`），键里是别名类的非规范成员（调用方传进持久化的带盐旧 ID）时按请求
+    // 键取不到，回包 `keyCanon` 给出它的规范键（[_editItemsById]）——不另发 `canonical_ids`。
     final Map<SrsEntityKind, Set<String>> byKind =
         <SrsEntityKind, Set<String>>{};
-    for (final (SrsEntityKind k, String id, String _) in keys) {
+    final Map<SrsEntityKind, Set<String>> idKeysByKind =
+        <SrsEntityKind, Set<String>>{};
+    for (final (SrsEntityKind k, String id, String key) in keys) {
       (byKind[k] ??= <String>{}).add(id);
+      if (srsKeyEmbeddedId(key) != null) {
+        (idKeysByKind[k] ??= <String>{}).add(key);
+      }
     }
     final Map<String, SrsEntityEdits> registers = <String, SrsEntityEdits>{};
+    final Map<SrsEntityKind, Map<String, String>> keyCanon =
+        <SrsEntityKind, Map<String, String>>{};
     for (final MapEntry<SrsEntityKind, Set<String>> k in byKind.entries) {
+      final Set<String>? idKeys = idKeysByKind[k.key];
       for (final MapEntry<String, SrsEntityEdits> e in (await _entityEditsMany(
         k.key,
         k.value,
+        keys: idKeys?.toList(),
+        keyCanon: idKeys == null
+            ? null
+            : (keyCanon[k.key] = <String, String>{}),
       )).entries) {
         registers['${k.key.wire}/${e.key}'] = e.value;
       }
     }
     final String fieldPrefix = SrsFieldKeys.noteField('');
-    final Map<String, Object?> out = <String, Object?>{};
-    for (final (SrsEntityKind kind, String id, String key) in keys) {
+    Object? valueOf(SrsEntityKind kind, String id, String key) {
       final SrsCardCacheRow? card = kind == SrsEntityKind.card
           ? cards[id]
           : null;
       final SrsNoteView? note = kind == SrsEntityKind.note
           ? noteViews[id]
           : null;
-      out['${kind.wire}/$id/$key'] = switch (key) {
+      return switch (key) {
         SrsFieldKeys.suspended when card != null => card.suspended,
         SrsFieldKeys.buriedUntilDay when card != null => card.buriedUntilDay,
         SrsFieldKeys.flag when card != null => card.flag,
@@ -4108,7 +4196,11 @@ class SrsDbStore implements SrsSync2Host {
         _ => registers['${kind.wire}/$id']?.value(key),
       };
     }
-    return out;
+
+    return <String, Object?>{
+      for (final (SrsEntityKind kind, String id, String key) in keys)
+        '${kind.wire}/$id/$key': valueOf(kind, id, keyCanon[kind]?[key] ?? key),
+    };
   }
 
   /// 一组卡片的缓存行（不存在的 ID 跳过）。
@@ -6270,12 +6362,28 @@ class _SrsUndoRecorder {
     }
   }
 
-  /// 落库之后：内核报告的 `edits`（`[种类, 实体, 字段键, 设备, 序号, 值]`，store/sync2/mod.rs `note_written_edit`）。
-  void noteWritten(List<Object?> edits) {
+  /// 落库之后：内核报告的 `edits`（`[种类, 规范实体, 规范字段键, 设备, 序号, 值, 输入下标]`，
+  /// native/fushi_fsrs/src/store/gen4/cmd/writes.rs 文件头「回包」）。
+  ///
+  /// [byInput]：第 i 条输入点名的 (种类, 实体, 字段键)（请求形，[noteBefore] 按它记的改前值）。回包里带输入下标的项
+  /// 按它认领：草稿点名别名类的非规范成员时，回包里的实体 / 键是规范形，按 (种类, 实体, 字段键) 对不上 `_before`，
+  /// 这一项的 dot 就记不下（撤销退回无 dot 的比较）。没有输入下标的项（意图命令自己拼的、调用方没给 [byInput]）
+  /// 仍按回包里的 (种类, 实体, 字段键) 对。
+  void noteWritten(
+    List<Object?> edits, {
+    Map<int, (SrsEntityKind, String, String)> byInput =
+        const <int, (SrsEntityKind, String, String)>{},
+  }) {
     for (final Object? raw in edits) {
       if (raw is! List || raw.length < 6) continue;
-      final SrsEntityKind? kind = SrsEntityKind.tryParse(raw[0] as String?);
-      final Object? id = raw[1], key = raw[2], w = raw[3], s = raw[4];
+      final Object? at = raw.length > 6 ? raw[6] : null;
+      final Object? w = raw[3], s = raw[4];
+      final (SrsEntityKind, String, String)? named = at is int
+          ? byInput[at]
+          : null;
+      final SrsEntityKind? kind =
+          named?.$1 ?? SrsEntityKind.tryParse(raw[0] as String?);
+      final Object? id = named?.$2 ?? raw[1], key = named?.$3 ?? raw[2];
       if (kind == null || id is! String || key is! String) continue;
       final String k = _key(kind, id, key);
       if (!_before.containsKey(k)) continue;
@@ -6327,6 +6435,64 @@ class _SrsUndoRecorder {
   }
 
   SrsEditUndo result() => SrsEditUndo(_items.values.toList());
+}
+
+/// 修改键里嵌的实体 ID（`f/<字段>`、`fieldDef/<…>`、`fieldDesc/<…>`、`tmplDef/<…>`、`historyFrom/<卡>`）：返回
+/// (前缀, ID)；不是这几种、或后面不是规范形状的 UUID 文本 = null。与内核 `Index::canonical_key` 归一的是同一组键
+/// （native/fushi_fsrs/src/store/gen4/alias.rs）。
+@visibleForTesting
+(String, String)? srsKeyEmbeddedId(String key) {
+  final RegExpMatch? m = _srsKeyWithId.firstMatch(key);
+  return m == null ? null : (m.group(1)!, m.group(2)!);
+}
+
+final RegExp _srsKeyWithId = RegExp(
+  r'^(f/|fieldDef/|fieldDesc/|tmplDef/|historyFrom/)'
+  r'([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$',
+);
+
+/// 按实体出行的读（`entities` / `edits`）把行对回请求里的 ID（G9-7）：[byCanonical] 按规范 ID 分组，[reply] 的 `canon`
+/// 是请求里别名成员的 ID → 规范 ID（native/fushi_fsrs/src/store/gen4/cmd/reads.rs `single_echo`，只列不同的）。
+/// [ids] 不是列表（请求没带 `ids`）或 `canon` 表为空时原样返回（此时行的键就是请求里的 ID）；否则按请求 ID 一一对回，
+/// 读不到的不出现。
+@visibleForTesting
+Map<String, T> srsRowsByRequest<T>(
+  Map<String, T> byCanonical,
+  Object? ids,
+  Map<String, Object?> reply,
+) {
+  final Object? canon = reply['canon'];
+  if (ids is! List || canon is! Map || canon.isEmpty) return byCanonical;
+  final Map<String, T> out = <String, T>{};
+  for (final Object? id in ids) {
+    if (id is! String) continue;
+    final Object? c = canon[id];
+    final T? v = byCanonical[c is String ? c : id];
+    if (v != null) out[id] = v;
+  }
+  return out;
+}
+
+/// `apply` 回包的 `entityWrites`（`[输入下标, 种类, 规范实体 ID]`，native/fushi_fsrs/src/store/gen4/cmd/writes.rs 文件头
+/// 「回包」）按输入下标认领：返回长 [inputs] 的列表，第 i 项是第 i 条输入（身份记录）落下的规范实体 ID，不是身份
+/// 记录 = null。一条输入认领两次、下标越界 = 内核与 Dart 对不上，报错。
+@visibleForTesting
+List<String?> srsEntityWritesByInput(int inputs, Map<String, Object?> reply) {
+  final List<String?> out = List<String?>.filled(inputs, null);
+  for (final Object? raw
+      in (reply['entityWrites'] as List?) ?? const <Object?>[]) {
+    final List<Object?> e = (raw! as List).cast<Object?>();
+    final Object? at = e[0];
+    if (at == null) continue;
+    if (at is! int || at < 0 || at >= inputs || out[at] != null) {
+      throw StateError(
+        'srs: the `apply` reply claims entity input $at twice or out of range '
+        '(the native core and Dart do not match)',
+      );
+    }
+    out[at] = e[2]! as String;
+  }
+  return out;
 }
 
 /// `apply` 一类命令的一条输入写下的东西（[srsWrittenByInput]）：修改记录（[tags] = false，`(writer, seq)` 是它的 dot）

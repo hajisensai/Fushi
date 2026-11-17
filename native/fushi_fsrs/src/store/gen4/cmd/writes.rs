@@ -43,7 +43,10 @@
 //!     差量撤标签（Dart `noteTags`）。
 //!   - `logHlcs`（只在 `apply` 的请求带 `logHlcs: true` 时）：每条写下的日志 `[输入下标, 规范日志 ID, HLC]`，HLC 与
 //!     `read` 的 `logs` 行里的 `hlc` 同形。导入成批的日志不要它（回包会随日志数线性涨）。
-//!   - `stamps: true` 仍然拒绝（要的是旧版时钟的戳）；替代形状就是上面三项。
+//!   - `entityWrites`（G9-7）：每条落下的身份记录 `[输入下标, 种类, 规范实体 ID]`（输入下标规则同 `edits`）。调用方
+//!     按请求 ID 建实体（Dart `createDeck` / `createNote` / 内置实体），返回给上层的是这里的规范 ID，不拿请求 ID 当
+//!     结果：请求 ID 是别名类的成员时（迁移来的库里持久化的旧 ID、带盐的旧算法），两者不同。
+//!   - `stamps: true` 仍然拒绝（要的是旧版时钟的戳）；替代形状就是上面几项。
 //!   - 回包里还有一项 `refreshTally`（`refresh.rs` [TALLY_KEY]）：这条命令落下的变化类别，分发器提交之后取走、推进进程内
 //!     刷新计数，**不交给 Dart**。
 //!
@@ -109,6 +112,8 @@ pub struct Session<'t, 'c> {
     tag_writes: Vec<Value>,
     /// 请求带 `logHlcs: true` 时（[apply]）：写下的每条日志 `[输入下标, 规范日志 ID, HLC]`。None = 不报。
     log_hlcs: Option<Vec<Value>>,
+    /// 落下的身份记录，每条 `[输入下标, 种类, 规范实体 ID]`（文件头「回包」`entityWrites`）。
+    entity_writes: Vec<Value>,
 }
 
 /// 一条写命令（见文件头「一条命令一个事务」）：[f] 在 [Session] 里做命令本体，返回命令自己的回包（JSON 对象）；
@@ -154,6 +159,7 @@ impl<'t, 'c> Session<'t, 'c> {
             tally: Tally::default(),
             tag_writes: Vec::new(),
             log_hlcs: None,
+            entity_writes: Vec::new(),
         })
     }
 
@@ -210,6 +216,8 @@ impl<'t, 'c> Session<'t, 'c> {
         match &body {
             Body::Entity { kind, id, .. } => {
                 self.changed.insert(note(*kind, id));
+                self.entity_writes
+                    .push(json!([self.at, kind.wire(), id.text()]));
             }
             Body::Edit(e) => {
                 self.changed.insert(note(e.kind, &e.entity));
@@ -294,6 +302,10 @@ impl<'t, 'c> Session<'t, 'c> {
         m.insert(
             "tagWrites".into(),
             Value::Array(std::mem::take(&mut self.tag_writes)),
+        );
+        m.insert(
+            "entityWrites".into(),
+            Value::Array(std::mem::take(&mut self.entity_writes)),
         );
         if let Some(logs) = self.log_hlcs.take() {
             m.insert("logHlcs".into(), Value::Array(logs));

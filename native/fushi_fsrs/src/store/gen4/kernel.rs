@@ -110,8 +110,11 @@ impl Readers {
     }
 
     fn open_one(&self) -> Result<Connection, String> {
-        let c = files::open_secondary(&self.path)?;
+        #[cfg_attr(not(feature = "id_audit"), allow(unused_mut))]
+        let mut c = files::open_secondary(&self.path)?;
         c.busy_timeout(schema::BUSY_TIMEOUT).map_err(sql)?;
+        #[cfg(feature = "id_audit")]
+        super::id_audit::install(&mut c);
         Ok(c)
     }
 
@@ -245,7 +248,11 @@ pub struct G4Core {
 impl G4Core {
     /// 打开 [dir] 里的新代库（`files::open_gen4` 的打开模式；没迁移 / 迁移中 / 旁边有没迁移的旧库照它报）。
     pub fn open(dir: &Path, mode: OpenMode) -> Result<G4Core, OpenError> {
-        let opened = files::open_gen4(dir, mode)?;
+        #[cfg_attr(not(feature = "id_audit"), allow(unused_mut))]
+        let mut opened = files::open_gen4(dir, mode)?;
+        // 审计版的库（`id_audit`）：每条连接都装语句审计（`id_audit.rs`），读连接在 [Readers::open_one] 里装。
+        #[cfg(feature = "id_audit")]
+        super::id_audit::install(&mut opened.conn);
         let path = dir.join(files::GEN4_FILE);
         let readers = Readers {
             path: path.clone(),
@@ -419,6 +426,9 @@ impl G4Core {
             ));
         }
         self.writes.fetch_add(1, Ordering::SeqCst);
+        // 审计版：这条语句与它写下的东西（不是 SELECT 时扫 ID 列）有没有拿 UUID 文本当 ID（`id_audit.rs`）。
+        #[cfg(feature = "id_audit")]
+        super::id_audit::take((!select).then_some(&*w))?;
         out
     }
 
@@ -442,6 +452,8 @@ impl G4Core {
             Ok(())
         })?;
         self.writes.fetch_add(1, Ordering::SeqCst);
+        #[cfg(feature = "id_audit")]
+        super::id_audit::take(Some(&*w))?;
         Ok(())
     }
 
