@@ -33,18 +33,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4122 条。点号进各自文件。
+> 共 4140 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4769](bugs/BUG-4769-screen-ocr-dart-recognition-no-cancel.md) | 🚧 | 🚧 | Android 截屏识字交给 Dart 识别期间没有取消出口，识别慢时悬浮球一直藏着 |
-| [BUG-4768](bugs/BUG-4768-screen-ocr-engine-destroyed-orphan-dart-reply.md) | ✅ | ✅ | 截屏识字等 Dart 回话时主引擎被销毁，挂起的回话永远不来，流程锁不解、悬浮球一直藏着 |
-| [BUG-4767](bugs/BUG-4767-screen-ocr-lens-consent-desktop-wording-on-android.md) | ✅ | ✅ | Android 截屏识字的 Google Lens 同意框照搬桌面文案，手机上写着「整块显示器」 |
-| [BUG-4766](bugs/BUG-4766-screen-ocr-card-frame-deleted-before-mining.md) | ✅ | ✅ | 截屏识字：查词窗打开后又截了一次屏，Android 定格帧文件被清掉，这张卡静默不带图 |
-> 共 4136 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4784](bugs/BUG-4784-screen-ocr-dart-recognition-no-cancel.md) | 🚧 | 🚧 | Android 截屏识字交给 Dart 识别期间没有取消出口，识别慢时悬浮球一直藏着 |
+| [BUG-4783](bugs/BUG-4783-screen-ocr-engine-destroyed-orphan-dart-reply.md) | ✅ | ✅ | 截屏识字等 Dart 回话时主引擎被销毁，挂起的回话永远不来，流程锁不解、悬浮球一直藏着 |
+| [BUG-4782](bugs/BUG-4782-screen-ocr-lens-consent-desktop-wording-on-android.md) | ✅ | ✅ | Android 截屏识字的 Google Lens 同意框照搬桌面文案，手机上写着「整块显示器」 |
+| [BUG-4781](bugs/BUG-4781-screen-ocr-card-frame-deleted-before-mining.md) | ✅ | ✅ | 截屏识字：查词窗打开后又截了一次屏，Android 定格帧文件被清掉，这张卡静默不带图 |
 | [BUG-4780](bugs/BUG-4780-srs-text-import-progress-stop-empty-decks.md) | ✅ | ✅ | 文本导入纯更新时进度一直是 0、点不了停止；叫停后牌组列新建的牌组留成空牌组 |
 | [BUG-4779](bugs/BUG-4779-srs-browse-source-sort-episode-split.md) | ✅ | ✅ | 复习卡浏览按出处列排序时同一部番的笔记被别作同名集拆散，与出处视图的集顺序不一致 |
 | [BUG-4778](bugs/BUG-4778-srs-text-import-batch-failure-leaves-new-decks.md) | 🚧 | 🚧 | 文本导入某一批落库抛异常时这一批刚建的牌组留成空牌组 |
