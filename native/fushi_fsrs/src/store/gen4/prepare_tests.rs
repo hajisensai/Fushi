@@ -565,6 +565,31 @@ fn a_damaged_page_is_caught_before_completion() {
     assert!(!dir.0.join(GEN4_TEMP).exists());
 }
 
+/// schema 标记与表对不上（开发版留下的库：标 13，却没有 v12 的 `sync2_replay_pending`，交接 §26「另记两处观察」）：
+/// 升级阶梯从 13 往上不会补那张表，协议 3 的 `replay_pending` 只会报「no such table」。补完前按文件坏了拦下
+/// （`corrupt`，带缺的表名），不是把协议 3 的报错当内部错误返回；原件逐字节不变、副本删掉。
+#[test]
+fn a_library_missing_tables_its_schema_claims_is_refused_as_corrupt() {
+    let dir = unsynced_dir("k1-missing-table", &|_| {});
+    {
+        let c = raw(&dir.0);
+        c.execute_batch(
+            "DROP TABLE sync2_replay_pending; UPDATE srs_meta SET value = '13' WHERE key = 'schema';",
+        )
+        .unwrap();
+    }
+    let before = legacy_bytes(&dir.0);
+    let out = migrate_with(&dir.0, &caches(), &Stop::new());
+    let migrate::Outcome::Blocked { code, reason } = &out else {
+        panic!("{out:?}")
+    };
+    assert_eq!(*code, BlockCode::Corrupt, "{reason}");
+    assert!(reason.contains("sync2_replay_pending"), "{reason}");
+    assert_eq!(legacy_bytes(&dir.0), before);
+    assert!(!copy_left(&dir.0));
+    assert!(!dir.0.join(GEN4_TEMP).exists());
+}
+
 /// 原件是写它的那个协议 3 版本能照常打开的库：逐字节就是迁移前的样子（[before]），没有新代库。
 fn assert_original_untouched(dir: &Path, before: &[u8]) {
     assert_eq!(legacy_bytes(dir), before, "the original was written");

@@ -147,6 +147,27 @@ fn key_id(key: &[u8]) -> Option<Id> {
     <[u8; 16]>::try_from(key.get(1..17)?).ok().map(Id)
 }
 
+/// 修改键里嵌的 ID（`f/<字段>`、`fieldDef/<…>`、`tmplDef/<…>`、`historyFrom/<…>`、`fieldDesc/<…>`）换成 [text] 给的，
+/// 别的键原样。[Index::canonical_key] 用它归一，`class.rs` 的 `legacy_config_for` 用它换回带盐 ID——「哪些键嵌着 ID」
+/// 只写在这里。`fieldDesc/` 不在紧凑键的前缀表里（`gen4::name`，那张表是存储编码、冻结），按文本认：后面是规范形状的
+/// UUID 才换。
+pub(super) fn key_ids_by(
+    key: &str,
+    text: &dyn Fn(&str) -> Result<String, String>,
+) -> Result<String, String> {
+    if let Some(rest) = key.strip_prefix(FIELD_DESC) {
+        if strict_id(rest).is_none() {
+            return Ok(key.to_owned());
+        }
+        return Ok(format!("{FIELD_DESC}{}", text(rest)?));
+    }
+    let bytes = key_bytes(key);
+    let (Some(id), true) = (key_id(&bytes), bytes.first() != Some(&0)) else {
+        return Ok(key.to_owned());
+    };
+    Ok(format!("{}{}", &key[..key.len() - 36], text(&id.text())?))
+}
+
 /// 同一个日志（规范卡 + 规范日志 ID）的一份：操作里写的原值，与它在哪条操作里。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LogCopy {
@@ -1303,6 +1324,12 @@ impl Index<'_, '_> {
     // ------------------------------------------------------------ 读
 
     /// 规范 ID。不是 UUID 的引用、表里没有的 ID 就是它自己。
+    ///
+    /// 只查表、不按内置规则回退：这里问的是**实体**（作为实体在操作里出现过的 ID 都在表里），别名类的成员
+    /// （[Index::members]、缓存层 `anki_members`）也只从表里来——要是这里按规则把表外的 ID 归到别处，[Index::members]
+    /// 就会给出一个不含它自己的类。只**嵌在**键 / 值 / 配置里、从不作为实体出现的内置 ID（带盐的内置字段、模板）由
+    /// [Index::canonical_embedded] 在查表之后再按规则认；键、值、整份 JSON、宿主缓存配置的归一全部经它（`class.rs`），
+    /// 对同一个 ID 只有这一个结论。
     pub fn canonical(&self, r: &Ref) -> Result<Ref, String> {
         let Ref::Uuid(b) = r else {
             return Ok(r.clone());
@@ -1350,19 +1377,7 @@ impl Index<'_, '_> {
     /// `fieldDesc/<…>`）把那个 ID 换成规范 ID。`fieldDesc/` 不在紧凑键的前缀表里（`gen4::name`，那张表是存储编码、
     /// 冻结），按文本认：后面是规范形状的 UUID 才换。
     pub fn canonical_key(&self, key: &str) -> Result<String, String> {
-        if let Some(rest) = key.strip_prefix(FIELD_DESC) {
-            let Some(id) = strict_id(rest) else {
-                return Ok(key.to_owned());
-            };
-            let canon = self.canonical_embedded(&id)?;
-            return Ok(format!("{FIELD_DESC}{}", canon.text()));
-        }
-        let bytes = key_bytes(key);
-        let (Some(id), true) = (key_id(&bytes), bytes.first() != Some(&0)) else {
-            return Ok(key.to_owned());
-        };
-        let canon = self.canonical_embedded(&id)?;
-        Ok(format!("{}{}", &key[..key.len() - 36], canon.text()))
+        key_ids_by(key, &|s| self.canonical_text(s))
     }
 
     /// 写入者的规范名字（归回最初的写入者的 `merged-…`；其余是它自己）。用它的人要把一条旧修改里的三处一起换：

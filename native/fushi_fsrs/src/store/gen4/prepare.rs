@@ -58,6 +58,9 @@
 //! - 旧库里有 profile 没给缓存配置（`dedup` / `replay_pending` 要刷新协议 3 的缓存行，迁移也要）：Dart 按
 //!   `gen4_migrate_profiles`（[crate::store::gen4::legacy::all_profiles]）逐个给。
 //! - 拷副本之前 `PRAGMA quick_check` 不过（文件坏了）：不在坏文件上补。
+//! - 副本升级到这一版的 schema 之后，缺这一版协议 3 该有的表（[missing_tables]：schema 标记与表对不上，例如开发版
+//!   留下的库标了 13 却没有 v12 的 `sync2_replay_pending`）：协议 3 的命令在这种库上只会报「no such table」，补不了、
+//!   重试也不会变，按文件坏了拦下（[BlockCode::Corrupt]），不当成内部错误返回。
 //!
 //! 协议 1 的主库（`srs_entities` 在 app 主库里，D21）不在这里：那是另一个文件，G7-6 处理。
 
@@ -152,6 +155,37 @@ fn damage(path: &Path) -> Result<Option<String>, String> {
     }
 }
 
+/// 副本（已升级到 [SCHEMA_VERSION]）缺的协议 3 表：与同一版升级阶梯在空库上建出来的表逐个比（表的清单只有阶梯一处）。
+/// 都在 = `None`。
+fn missing_tables(copy: &Path) -> Result<Option<String>, String> {
+    let err = |e: String| format!("gen4 prepare: check the protocol 3 tables: {e}");
+    let tables = |c: &Connection| -> Result<std::collections::BTreeSet<String>, String> {
+        let mut stmt = c
+            .prepare("SELECT name FROM main.sqlite_schema WHERE type = 'table'")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| r.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<_, _>>().map_err(|e| e.to_string())
+    };
+    let mut fresh = Connection::open_in_memory().map_err(|e| err(e.to_string()))?;
+    crate::store::schema::migrate(&mut fresh).map_err(err)?;
+    let want = tables(&fresh).map_err(err)?;
+    let c = Connection::open_with_flags(
+        copy,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(|e| err(e.to_string()))?;
+    let have = tables(&c).map_err(err)?;
+    let missing: Vec<&str> = want.difference(&have).map(String::as_str).collect();
+    Ok((!missing.is_empty()).then(|| {
+        format!(
+            "srs.db claims schema {SCHEMA_VERSION} after the upgrade but lacks table(s) {}",
+            missing.join(", ")
+        )
+    }))
+}
+
 /// 在线备份一次拷的页数（两次之间看一次叫停）。
 const COPY_PAGES: i32 = 4096;
 
@@ -218,6 +252,11 @@ pub(crate) fn complete(
             return Err(format!("gen4 prepare: open the protocol 3 library: {e}"));
         }
     };
+    if let Some(why) = missing_tables(&copy)? {
+        core.close();
+        drop(core);
+        return Ok(Err(blocked(BlockCode::Corrupt, why)));
+    }
     let out = finish_profiles(&core, plan, opts);
     // 关库：WAL 并回副本主文件（最后一条连接负责），随后的读快照看到的就是补完的全部。
     core.close();

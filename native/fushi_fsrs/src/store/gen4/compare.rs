@@ -3,6 +3,8 @@
 //!
 //! 协议 3 一侧的缓存行由调用方给（[against_protocol_3] 的 `old_caches`）：测试装置在可写连接的 SAVEPOINT 里先做完
 //! 协议 3 自己欠着的收尾再重建、整个回滚；干跑在只读连接上用影子临时表重建（`dryrun.rs`），不写旧库一个字节。
+//! 交给它的缓存配置是协议 3 口径的：宿主只给一份规范 ID 的配置（`derive_cfg`），内核按 profile 的 uid 派生出带盐的那份
+//! （`class.rs` [legacy_config_for]），宿主不拼盐。
 //!
 //! # 按规范 ID 比（设计 §6.1 第 6 步、§5.3，G9-2）
 //!
@@ -21,7 +23,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use rusqlite::{Connection, ToSql, params};
 
 use super::cache::CFG_KEY;
-use super::class::{ClassDiff, ClassDiffs, builtin_rule_canon};
+use super::class::{ClassDiff, ClassDiffs, builtin_rule_canon, legacy_config_for};
 use super::derive::{Index, R_LIVE, Ref, body_of};
 use super::schema::sql;
 use super::truth::Truth;
@@ -715,7 +717,19 @@ pub(crate) fn cache_pairs(
     let Some(cfg) = t.derive_cfg(col, CFG_KEY)? else {
         return Ok(CacheBaseline::NotConfigured);
     };
-    let old = match old_caches(src, profile, &cfg) {
+    // 宿主交给新代的是规范 ID 的配置；冻结的协议 3 重建要的是这个 profile 带盐的那份（`class.rs` [legacy_config_for]）。
+    // 换不出来（配置不是 JSON）与解析配置失败同一类：搭环境失败，照报成差异。
+    let legacy = match legacy_config_for(profile, &cfg) {
+        Ok(v) => v,
+        Err(e) => {
+            push_pair(
+                diff,
+                ("caches", BTreeSet::from([e.clone()]), BTreeSet::new()),
+            );
+            return Ok(CacheBaseline::Unavailable(e));
+        }
+    };
+    let old = match old_caches(src, profile, &legacy) {
         Ok(v) => v,
         // 协议 3 那边没有行可比（新代那边身份记录不成形的实体没有行、其余照常，单元测试钉）：缓存层没比成，交给调用方
         // 记成基准缺失。
@@ -917,7 +931,8 @@ pub(crate) fn cache_pairs(
 /// 一类对拍：(类别, 旧库一侧, 新库一侧)。
 pub(crate) type Pair = (&'static str, BTreeSet<String>, BTreeSet<String>);
 
-/// 协议 3 一侧的缓存行从哪来：(旧库连接, profile, 新代的缓存配置 JSON) → (笔记, 卡, 统计)。
+/// 协议 3 一侧的缓存行从哪来：(旧库连接, profile, 协议 3 口径的缓存配置 JSON) → (笔记, 卡, 统计)。配置是新代那份经
+/// `class.rs` [legacy_config_for] 换回这个 profile 带盐内置 ID 的（[cache_pairs]）。
 pub(crate) type OldCaches<'a> =
     dyn FnMut(&Connection, &str, &str) -> Result<CacheRows, OldCachesError> + 'a;
 

@@ -762,6 +762,7 @@ fn probe_finish_floor() {
         let input: Vec<Row<'_>> = rows
             .iter()
             .map(|(_, s, _, json, code, arg)| Row {
+                seed_card: None,
                 json,
                 server_time: *s,
                 intent: match code {

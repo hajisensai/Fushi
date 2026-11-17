@@ -200,6 +200,7 @@ pub(crate) fn sched_local_on(
         let input: Vec<Row<'_>> = rows
             .iter()
             .map(|(_, j, s, i, _)| Row {
+                seed_card: None,
                 json: j,
                 server_time: *s,
                 intent: i.clone(),

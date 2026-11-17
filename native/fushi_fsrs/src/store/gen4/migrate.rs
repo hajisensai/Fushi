@@ -239,8 +239,9 @@ pub const BLOCKED_BUSY: &str = "busy: the protocol 3 library is being written";
 
 /// 迁移的参数。
 pub struct Options<'a> {
-    /// 每个 profile 的缓存配置（`CacheConfig` 的 JSON 文本，与 app 交给旧内核的同一份）。**每个 profile 都要有**：没有它
-    /// 新代缓存层建不出内置笔记类型的行（前提里拦下）。
+    /// 每个 profile 的缓存配置（`CacheConfig` 的 JSON 文本，与 app 交给新代内核的同一份：规范 ID、不带盐，Dart
+    /// `srsCacheConfigFor`）。**每个 profile 都要有**：没有它新代缓存层建不出内置笔记类型的行（前提里拦下）。对拍时
+    /// 冻结的协议 3 重建要的带盐那份由内核按 profile uid 派生（`class.rs` `legacy_config_for`），调用方不拼盐。
     pub caches: &'a BTreeMap<String, String>,
     /// 灌入每批条数（[DEFAULT_BATCH]）。
     pub batch: u64,

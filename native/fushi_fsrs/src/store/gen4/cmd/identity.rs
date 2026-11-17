@@ -44,7 +44,8 @@
 //!   `{op: {device, seq}, from, dir, salts, trusted}`（[Index::joins]）。
 //! - `collection_join` / `collection_salts_add` / `collection_adopt` → `{outcome, …}`（[outcome_json]）+ 有事件时的
 //!   `bindingChanged`。
-//! - `canonical_ids {ids}` → `{ids}`：逐个换成规范 ID，顺序与条数照请求（不去重：调用方按下标对回）。每个 ID 一次
+//! - `canonical_ids {ids}` → `{ids}`：逐个换成规范 ID（与键 / 值 / 缓存配置同口径：别名表查不到的带盐内置字段 /
+//!   模板也按规则归一），顺序与条数照请求（不去重：调用方按下标对回）。每个 ID 一次
 //!   带索引的单点查询（`alias.rs`），都在同一个读快照里：一次最多 [LOOKUP_MAX] 条，超了明确报错、调用方分批（整库
 //!   ID 一次塞进来会长时间占着一个读连接）。`key_evidence` 同一个上限。
 //! - `key_evidence {items: [{kind, entity}]}` → `{evidence: [n…]}`。**不归一**：这是拿另一台设备 `divergence` 列出的
@@ -63,7 +64,7 @@ use std::collections::BTreeSet;
 use serde_json::{Value, json};
 
 use super::{hex, ref_of, snapshot};
-use crate::store::gen4::derive::{Index, Settled};
+use crate::store::gen4::derive::{Index, Ref, Settled};
 use crate::store::gen4::identity::{
     AdoptOutcome, BindingChanged, Foreign, JoinRow, JoinWritten, adopt_foreign,
 };
@@ -344,7 +345,11 @@ pub(super) fn lookup_cap(n: usize, op: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// `canonical_ids {ids}`：逐个归一（规范 ID；不是 UUID 的、别名表里没有的原样）。一个读快照。
+/// `canonical_ids {ids}`：逐个归一（规范 ID；不是 UUID 的、别名表里没有又不是内置实体存量 ID 的原样）。一个读快照。
+///
+/// 归一走 [Index::canonical_embedded]（先查别名表、查不到再按当前盐集合的内置规则认），与笔记视图里的键 / 值 / 宿主
+/// 缓存配置同一个结论：调用方发来的 ID 可能是偏好里存的带盐内置字段 / 模板 ID（只嵌在 `f/<字段>` 键里、从不作为
+/// 实体出现，别名表里没有），只查表会原样返回、与视图里的规范字段 ID 对不上。
 pub fn canonical_ids(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String> {
     let ids = req
         .get("ids")
@@ -356,7 +361,11 @@ pub fn canonical_ids(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, Stri
         let mut out = Vec::with_capacity(ids.len());
         for x in ids {
             let s = x.as_str().ok_or("canonical_ids: ids must be strings")?;
-            out.push(ix.canonical(&ref_of(s))?.text());
+            let canon = match ref_of(s) {
+                Ref::Uuid(b) => ix.canonical_embedded(&Id(b))?,
+                other => other,
+            };
+            out.push(canon.text());
         }
         Ok(json!({"ids": out}))
     })

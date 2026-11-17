@@ -1099,6 +1099,209 @@ fn every_protocol_3_card_number_resolves_after_migration() {
     );
 }
 
+/// 交接 §26 C1：几乎每个真实用户的库都有「没改过的内置笔记类型」的笔记——笔记类型、字段、模板、默认牌组全是按
+/// profile uid 加盐的存量 ID，字段 ID 只嵌在笔记的 `f/<字段>` 键里，卡从没出现在操作里，评分日志带作答时的配置快照
+/// （`sc`，迁移后会重放）。迁移只拿到宿主的**规范**缓存配置（Dart `srsCacheConfigFor`，不带盐），对拍时协议 3 那份由
+/// 内核派生：迁移判 committed、对拍与规范化都没有差异；迁移后每条笔记字段不空、每张卡不隐藏，到期日、间隔逐张与协议 3
+/// 当时算的相同（fuzz 种子是作答时的带盐卡，不是规范卡）。另有两条从没复习、没改过的笔记（卡从没出现在任何操作里，
+/// 内置模板只嵌在宿主配置里）：协议 3 给每张卡发的 AnkiConnect 数字 id 迁移后都按号反查得到对应的规范卡。
+#[test]
+fn a_salted_library_of_untouched_builtin_note_types_migrates_unchanged() {
+    use crate::gen4_ids::rules::{self, CANONICAL};
+    use crate::store::gen4::cmd::columns::anki_resolve;
+    use crate::store::gen4::derive::Ref;
+    use crate::store::gen4::truth::Truth;
+    use crate::store::sync2::config::default_deck_id;
+    use crate::store::sync2::tests::{DAY, deck_entity, edit, review};
+    use crate::sync2::id::Key;
+
+    let lapis = rules::builtin_note_type_anki_num("lapis");
+    let field_n = rules::builtin_field_anki_num("lapis", "Expression");
+    let tmpl_n = rules::builtin_template_anki_num("lapis", "Card 1");
+    let cfg_for = |salt: Option<&str>| -> String {
+        let nt = rules::note_type(salt, lapis);
+        let f = rules::field(&nt, field_n).text();
+        let tpl = rules::template(&nt, tmpl_n).text();
+        json!({
+            "defaultDeck": rules::builtin_default_deck(salt).text(),
+            "builtins": {"lapis": {"b": {
+                "name": "Lapis", "css": "", "termFieldId": f,
+                "fields": [{"id": f, "name": "Expression", "ord": 0}],
+                "templates": [{"id": tpl, "name": "Card 1", "ord": 0,
+                               "front": "{{Expression}}", "back": "{{FrontSide}}"}],
+            }, "reading": null}},
+        })
+        .to_string()
+    };
+    let (s_nt, c_nt) = (
+        rules::note_type(Some(P), lapis),
+        rules::note_type(CANONICAL, lapis),
+    );
+    let (s_field, s_tmpl, c_tmpl) = (
+        rules::field(&s_nt, field_n),
+        rules::template(&s_nt, tmpl_n),
+        rules::template(&c_nt, tmpl_n),
+    );
+    assert_eq!(
+        default_deck_id(P),
+        rules::builtin_default_deck(Some(P)).text()
+    );
+    let words = ["猫", "犬", "鳥", "魚", "馬", "牛", "羊", "猿"];
+    // 从没复习过的两条（卡不进任何操作）。
+    let quiet = ["鹿", "熊"];
+
+    let d = Device::new("k1-builtin");
+    d.core.sync2_identity(P, T0).unwrap();
+    while d.core.sync2_migrate(P, T0, None).unwrap()["done"] != json!(true) {}
+    let mut events = vec![
+        deck_entity(&default_deck_id(P)),
+        json!({"t": "entity", "x": {"id": s_nt.text(), "p": P, "k": "notetype",
+               "d": {"createdAt": 1, "ntKind": "standard", "builtin": "lapis", "ankiNum": lapis}}}),
+    ];
+    // (带盐卡, 规范卡, 带盐笔记)
+    let mut cards: Vec<(String, Id, String)> = Vec::new();
+    for (i, w) in words.iter().chain(&quiet).enumerate() {
+        let guid = format!("k1-guid-{i}");
+        let note = rules::note(Some(P), &guid);
+        events.push(
+            json!({"t": "entity", "x": {"id": note.text(), "p": P, "k": "note",
+                           "d": {"createdAt": 1, "guid": guid, "noteTypeId": s_nt.text()}}}),
+        );
+        events.push(edit(
+            "note",
+            &note.text(),
+            &format!("f/{}", s_field.text()),
+            json!(w),
+        ));
+        cards.push((
+            rules::card(&note, &s_tmpl, 0).text(),
+            rules::card(&rules::note(CANONICAL, &guid), &c_tmpl, 0),
+            note.text(),
+        ));
+    }
+    d.apply(T0, events);
+    // 评分日志与 app 写的同形：ID 是 UUIDv7、记上它的笔记（`Device::apply` 给的是占位笔记）。别名证据只收 UUID 形
+    // 的日志（`alias.rs` `alias_evidence`），日志上的卡才算观察到、才认得出它是哪张规范卡。
+    for (k, at) in [0, DAY, 3 * DAY, 8 * DAY, 20 * DAY].into_iter().enumerate() {
+        let rtype = if k == 0 { "learn" } else { "review" };
+        let logs: Vec<Value> = cards[..words.len()]
+            .iter()
+            .enumerate()
+            .map(|(i, (c, _, n))| {
+                let id = format!("0193a1b2-0000-7000-8000-{:012x}", 0xc100 + 16 * k + i);
+                json!({"e": review(&id, c, T0 + at, 3, rtype), "note": n})
+            })
+            .collect();
+        d.core
+            .sync2_apply_local(P, T0 + at, &Value::Array(logs).to_string())
+            .unwrap();
+    }
+    // 协议 3 的缓存按带盐的那份配置建（真实用户的库就是这样）。
+    let salted = cfg_for(Some(P));
+    let parsed =
+        crate::store::caches::CacheConfig::parse(&serde_json::from_str(&salted).unwrap()).unwrap();
+    let w = d.core.writer().unwrap();
+    crate::store::sync2::in_savepoint(&w, |c| crate::store::caches::rebuild(c, P, &parsed))
+        .unwrap();
+    drop(w);
+    let Device { core, _dir: dir } = d;
+    core.close();
+    drop(core);
+    // 协议 3 算的：带盐卡 → (到期日, 间隔, 隐藏)。
+    let old: BTreeMap<String, (Option<i64>, Option<i64>, i64)> = {
+        let c = raw(&dir.0);
+        let mut stmt = c
+            .prepare(
+                "SELECT srs_idt(id), due_day, scheduled_days, hidden FROM srs_cards_cache \
+                 WHERE profile_uid = srs_id(?1)",
+            )
+            .unwrap();
+        stmt.query_map([P], |r| Ok((r.get(0)?, (r.get(1)?, r.get(2)?, r.get(3)?))))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    };
+    assert_eq!(old.len(), words.len() + quiet.len(), "{old:?}");
+    // 协议 3 发的数字 id：带盐卡 → 号。
+    let old_nums: Vec<(String, i64)> = {
+        let c = raw(&dir.0);
+        let mut stmt = c
+            .prepare(
+                "SELECT srs_idt(id), anki_id FROM srs_cards_cache WHERE profile_uid = srs_id(?1) ORDER BY 1",
+            )
+            .unwrap();
+        stmt.query_map([P], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    };
+    assert_eq!(old_nums.len(), old.len());
+    assert!(
+        old.values().all(|v| v.2 == 0),
+        "protocol 3 shows every card: {old:?}"
+    );
+    assert!(
+        old.values().any(|v| v.1.is_some_and(|ivl| ivl >= 3)),
+        "the history must reach fuzzed intervals: {old:?}"
+    );
+
+    let canonical = BTreeMap::from([(P.to_owned(), cfg_for(CANONICAL))]);
+    let out = migrate_with(&dir.0, &canonical, &Stop::new(), &mut Vec::new());
+    let Outcome::Committed { report } = &out else {
+        panic!("{out:?}")
+    };
+    let p = &report["profiles"][0];
+    assert_eq!(p["verdict"], "pass", "{p:#}");
+    assert_eq!(p["parity"], json!([]), "{p:#}");
+    assert_eq!(p["canonical"], json!([]), "{p:#}");
+
+    let opened = open_gen4(&dir.0, OpenMode::Primary).unwrap();
+    let mut sorts: Vec<String> = opened
+        .conn
+        .prepare("SELECT sort_field FROM notes")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    sorts.sort();
+    let mut want: Vec<String> = words
+        .iter()
+        .chain(&quiet)
+        .map(|w| (*w).to_owned())
+        .collect();
+    want.sort();
+    assert_eq!(sorts, want, "every note keeps its field");
+    for (salted_card, canon, _) in &cards {
+        let got: (Option<i64>, Option<i64>, i64) = opened
+            .conn
+            .query_row(
+                "SELECT due_day, scheduled_days, hidden FROM cards WHERE id = ?1",
+                rusqlite::params![Ref::of(&Key::Uuid(*canon))],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap_or_else(|e| panic!("card {} has no row: {e}", canon.text()));
+        assert_eq!(
+            got,
+            old[salted_card],
+            "card {salted_card} → {}",
+            canon.text()
+        );
+    }
+    let t = Truth::new(&opened.conn);
+    let col = t.binding_of(P).unwrap().unwrap().col;
+    let req = json!({"cards": old_nums.iter().map(|(_, n)| *n).collect::<Vec<_>>()});
+    let got = anki_resolve(&t, col, &req).unwrap();
+    for ((salted_card, num), got) in old_nums.iter().zip(got["cards"].as_array().unwrap()) {
+        let want = &cards.iter().find(|c| &c.0 == salted_card).unwrap().1;
+        assert_eq!(
+            got,
+            &json!(want.text()),
+            "protocol 3 card {salted_card} (#{num}) resolves to its canonical card"
+        );
+    }
+}
+
 /// 空间核对（G9-5 修 G7-2b 复核遗留）：上一次留下的迁移临时文件与补完副本（连同 WAL）算可用空间；补完之后的第二次核对
 /// 时补完副本在用（之后的阶段还要读它），不算。
 #[test]

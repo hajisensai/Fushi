@@ -151,8 +151,9 @@ impl Stop {
 
 /// 干跑的参数。
 pub struct Options<'a> {
-    /// 每个 profile 的缓存配置（`CacheConfig` 的 JSON 文本：默认牌组、内置笔记类型的代码默认值），与 app 交给旧内核的是
-    /// 同一份。没给的 profile 只有默认牌组（内置类型的笔记行会对不上，差异照报）。
+    /// 每个 profile 的缓存配置（`CacheConfig` 的 JSON 文本：默认牌组、内置笔记类型的代码默认值），与 app 交给新代内核的
+    /// 是同一份（规范 ID）；协议 3 一侧的重建用内核按 profile uid 派生的带盐那份（`compare.rs` `cache_pairs`）。没给的
+    /// profile 只有默认牌组（内置类型的笔记行会对不上，差异照报）。
     pub caches: &'a BTreeMap<String, String>,
     /// 灌入每批条数。
     pub batch: u64,
@@ -963,6 +964,7 @@ const CACHE_TABLES: [&str; 4] = [
 
 /// 冻结的旧代码（`store::caches::rebuild`）对旧库全量重建出来的缓存行，旧库一个字节不写：在连接的 `temp` 库里按
 /// `main` 的定义建同名的空表与索引——不带库名的表名先找 `temp`，旧代码的读写都落在这几张临时表上——重建、读行、删表。
+/// [cfg] 已是协议 3 口径（带盐的内置 ID，`compare.rs` `cache_pairs` 经 `class.rs` `legacy_config_for` 换好的）。
 fn old_caches(src: &Connection, profile: &str, cfg: &str) -> Result<CacheRows, OldCachesError> {
     old_caches_with(
         src,

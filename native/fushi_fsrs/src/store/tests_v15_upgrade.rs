@@ -198,6 +198,31 @@ fn upgrades_row_for_row(ver: &str) {
         crate::store::schema::SCHEMA_VERSION.to_string()
     );
 
+    // 升级上来的库有全新库的每一张表（`schema::migrate` 文档的不变量；gen4 prepare 的 `missing_tables` 拿全新库的表
+    // 当基准，阶梯里哪一步只在全新库上建表，所有升级上来的用户都会被判 corrupt、迁不过去）。
+    let mut fresh = rusqlite::Connection::open_in_memory().unwrap();
+    crate::store::schema::migrate(&mut fresh).unwrap();
+    let mut stmt = fresh
+        .prepare("SELECT name FROM sqlite_schema WHERE type = 'table'")
+        .unwrap();
+    let want: Vec<String> = stmt
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    drop(stmt);
+    let have: std::collections::BTreeSet<String> = a
+        .rows("SELECT name FROM sqlite_schema WHERE type = 'table'")
+        .into_iter()
+        .skip(1)
+        .map(|r| r[0].clone())
+        .collect();
+    let missing: Vec<&String> = want.iter().filter(|t| !have.contains(*t)).collect();
+    assert!(
+        missing.is_empty(),
+        "{ver} upgraded lacks fresh tables {missing:?}"
+    );
+
     // ID 已编码：每张表的 UUID 都成了 16 字节 BLOB，非 UUID 的旧 ID 还是文本。
     let blobs: i64 = a.rows("SELECT COUNT(*) FROM srs_review_logs WHERE typeof(id) = 'blob'")[1][0]
         .parse()

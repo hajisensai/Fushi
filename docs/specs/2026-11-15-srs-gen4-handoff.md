@@ -2500,3 +2500,118 @@ SCHEMA 不动（40021）。
   `test/srs/sync2/` 另一个 `v3_client/`。
 - `COUNT(*)` 统计等待项仍随剩余项数线性（只数不解）；要做到常数得另存计数器，等实测证明是瓶颈再说。
 - 协议 1 位置的只读转译（D21 原文）仍没做，见第 3 条。
+
+## 32. 第四波 K1 换代迁移对拍（C1）与缓存层脏标记（C5）（2026-11-17，分支 `pr/srs-gen4-k1-migrate-parity`，基于 `pr/srs-gen4-switch`）
+
+§26 的 C1 不是夹具问题，是内核里叠在一起的几处缺陷：任何带「没改过的内置 Lapis / Fushi 卡片」笔记的真实用户库换代迁移
+都会因对拍判 aborted。本段把它们按根因修掉，并修了 C5。SCHEMA 不变（40021），没加表 / 索引。
+
+### C1 修了什么
+
+1. **协议 3 那份缓存配置由内核派生**（`store/gen4/class.rs` `legacy_config_for`）。宿主（Dart `srsCacheConfigFor`）G9-7 起
+   只给规范 ID 的配置；冻结的协议 3 重建要的是按 profile uid 加盐的那份。`legacy_config_for(uid, cfg)` 用
+   `builtin_rule_canon(&[uid])` 的反向表把配置里的默认牌组、内置笔记类型的字段 / 模板 ID、模板文本里的字段引用、词条 /
+   读音字段换回带盐 ID；本来就带盐的输入、不是内置实体的 ID 原样。`compare.rs` `cache_pairs` 交给协议 3 重建（干跑的
+   `old_caches`、测试装置的 `protocol_3_caches` 都经它）的改用这份；配置不是 JSON 时与「解析配置失败」同类，记成
+   `caches` 差异。`migrate.rs` / `dryrun.rs` 的 `caches` 文档同步。Dart 照旧只传 `srsCacheConfigFor`，不在 Dart 拼盐。
+2. **嵌入 ID 归一只有一个来源**（定案：走「`canonical_embedded`」这条，不让 `Index::canonical` 按规则回退）。这一处
+   develop 上 `abc04c5fa3` 已经做了大半（键 / 值 / 整份 JSON / 配置都经 `canonical_embedded`：先查别名表、查不到再按当前
+   盐集合的内置规则），本段把剩下的两套遍历合成一套：`canonical_key` 改走 `alias.rs` `key_ids_by` + `canonical_text`，
+   值 / 整份 JSON / 配置 / 模板文本的遍历提成 `class.rs` 的自由函数（`value_ids_by` / `json_ids_by` / `config_ids_by` /
+   `template_ids_by`），归一与 `legacy_config_for` 共用。`Index::canonical`（实体口径）**保持只查表**：别名类的成员
+   （`members` / `aliases_of` / 缓存层 `anki_members`）只来自表，若 `canonical()` 按规则把表外 ID 归到别处，`members()`
+   会给出不含它自己的类；只嵌在键 / 配置里、从不作为实体出现的内置字段 / 模板由 `canonical_embedded` 认。键 / 值 /
+   JSON / 配置 / 对外命令 `canonical_ids` 五路结论一致由 `an_embedded_builtin_field_has_one_canonical_id_everywhere`
+   钉住；实体口径（`canonical()` / `members()`）对表外 ID 有意不同，见下文「复核修复」1。
+3. **重放的 fuzz 种子按作答时日志记的原值卡**：`sync2/replay.rs` `Row` 加 `seed_card: Option<&str>`（`None` = 取 JSON 的
+   `card`，协议 3 调用方全部传 `None`）。新代 `LogIn` 带 `seed_card`（`log_at` 里取日志操作体的原值卡），缓存重建
+   （`lineage`）、评分预览（`cmd/preview.rs`）、`sched` 写命令（`cmd/writes_intent.rs`）三处重放都传它（`group_rows` 回
+   `GroupRow` 四元组）。以前种子是归一后的规范卡，带盐存量日志迁移后 fuzz 换了，违反 `replay.rs`「迁移不改任何一张卡的
+   到期日」。
+4. **prepare 缺表判 blocked**（`prepare.rs` `missing_tables`）：副本升级到这一版 schema 后，与同一份升级阶梯在空库上建出的
+   表逐个比，缺表（schema 标记与表不符，如开发版标 13 却没有 v12 的 `sync2_replay_pending`）判 `blocked(corrupt)`、原因带
+   缺的表名。不新增 wire code：Dart 已把 `corrupt` 归为 `damaged`（重试不会变、原样保留、带日志联系支持），正是这类库该有
+   的处理。没有按「no such table」错误文本猜。
+
+### C5 修了什么
+
+`cache.rs` `Dirt::register`：笔记类型的寄存器只在键影响缓存行时记脏（移植协议 3 `note_type_key_affects_caches`：名字、
+CSS、`fieldDesc/` 不进笔记 / 卡行；键按紧凑编码 `read_edit_key` 解回文本）。`settle` 的 `registers`、`judge` 的状态变化
+都走它。`weigh_rest` 原来把 `touched` 整个并进脏集合，笔记类型由此绕过了键过滤：改成 `Dirt::touched`，笔记类型不从
+`touched` 记脏——它的来源只有写入 / 重判（已按键判）、身份记录（`dirt.ids`）与 `Purge`（`derive.rs` 落 `Purge` 时直接记）。
+`refresh_caches` 不改。
+
+### 委托描述与代码不符
+
+- 定因报告说 `canonical_config` 里有「单独的规则回退」、`canonical_key` 只查表：switch 头上（含 develop 的 `abc04c5fa3`）
+  已经统一经 `canonical_embedded`，报告是在不含这个提交的本地合并上做的。②本段只做了收尾（遍历合一、文档、测试）。
+- 定因报告的 Rust 迁移测试设想「评分日志 ID 随便取」：别名证据只收 UUID 形的日志 ID（`alias.rs` `alias_evidence`
+  `typeof(id) = 'blob'`），日志 ID 不是 UUID 时日志上的卡不算观察到、带盐卡认不出规范卡。真实日志 ID 都是 UUIDv7，
+  新测试照真实形状写；这本身不是缺陷。
+
+### 测试
+
+Rust（`cargo test --profile quick --lib -j 4`）：新增 6 条——`migrate_tests` `a_salted_library_of_untouched_builtin_note_types_migrates_unchanged`
+（带盐、未改过的内置 Lapis，8 条笔记各 5 次带 `sc` 的评分；只传规范配置迁移 → committed、`parity` / `canonical` 为空、
+笔记字段不空、卡不隐藏、到期日与间隔逐张等于协议 3 当时算的）、`replay` `the_fuzz_seed_is_the_card_the_log_was_answered_on`、
+`class` `the_protocol_3_config_is_derived_from_the_canonical_one` / `an_embedded_builtin_field_has_one_canonical_id_everywhere`、
+`cache` `note_type_keys_outside_the_rows_do_not_recompute_its_notes`（名字 / CSS / 字段说明 0 条，词条字段 / 模板 1 条，
+每步增量 = 重建）、`prepare_tests` `a_library_missing_tables_its_schema_claims_is_refused_as_corrupt`（对拍装置 `KNOWN`
+登记了这一条：库被有意弄缺表，协议 3 收尾在副本关库时没有基准）。变异实测：去掉 `legacy_config_for` / 去掉
+`seed_card`（缓存层）/ 去掉键过滤 / 去掉缺表判定 / 去掉嵌入 ID 的规则回退 / `replay.rs` 不用 `seed_card`，各自让对应
+用例变红，还原后工作区干净。
+
+Dart（本 worktree 编的 release DLL）：`srs_stats_vectors` 2/2、`srs_stats_report_parity` 2/2、
+`srs_write_path_read_amplification` 8/8（含 C5 那条）、`fushi_srs` `srs_gen4_migration_test` + `srs_core_test` 27/27。
+统计两份的测试侧改动：期望值是按冻结库的带盐 ID 记的，新代给规范 ID，比对前经内核 `canonical_ids` 换 ID
+（`test/srs/support/srs_migrated_ids.dart`），假 RWKV 打分器按旧 ID 算；报告对拍的浮点按相对 1e-12 比（卡 ID 变了，
+内核按卡 ID 序累加的均值 / 合计只差最后一位，实测 4.159955977448237 对 …238、0.81 对 0.8100000000000002），其余逐值。
+到期 / 间隔 / 稳定度 / 难度逐值相同，即迁移没改任何调度。
+
+### 没做 / 交给谁
+
+- **(c) 写回包补 `edits`、去掉命令后的回读**：归 K3，本段没碰。
+- `srs_ankiconnect_vectors_test`：复核修复里已转绿（见下文「复核修复」2），这里不再是遗留。
+- **`srs_p6_vectors_test`（没做，步骤留给下一段）**：develop（`origin/develop`，协议 3 仍在）上还能 `SrsCore.open('<dir>/srs.db')`
+  + `debugExecBatchRaw` 灌协议 3 表。步骤：① 在 develop 的独立 worktree 里给 `srs_p6_vectors_test` 的 `setUpAll` 加
+  `SRS_P6_VECTORS_WRITE=1` 分支：灌完 1200 份历史后 `core.snapshotInto(snap, stripDeviceLocal: false)`，gzip 存成
+  `test/srs/fixtures/p6_vectors.db.gz`（与 `srs_stats_vectors` 当初同一种造法）；② 把这份 `.db.gz` 带到本线，测试改走
+  `openMigratedTestSrs`（迁移时每个 `p$i` 各一份 `srsCacheConfigFor`），再按 profile 开 `SrsDbStore` 调新代的读命令；
+  ③ 先确认两点再动手：profile `p$i` / 卡 `v$i` 不是 UUID，迁移与新代读命令对文本 ID 的处理（`Key::Text`）要验；1200 个
+  profile 各一个集合，迁移耗时要量。服务器时刻（`srs_event_local`）经迁移承袭（G7-2 `server_time`），向量里的 `server`
+  照比。
+
+### 复核修复（2026-11-18，同分支）
+
+复核（verify:K1）的三条逐条处理，各配测试并做变异实测：
+
+1. **对外命令 `canonical_ids` 与键 / 配置口径不一致**（minor）：`cmd/identity.rs` `canonical_ids` 改走
+   `Index::canonical_embedded`（先查别名表、查不到按当前盐集合的内置规则认），偏好里存的带盐内置字段 / 模板 ID 发进来换成
+   笔记视图里的规范字段 ID，与键 / 值 / JSON / 缓存配置同一个结论（`a984d35bed`）。`Index::canonical` / `members` 仍只查表
+   （定案不变：别名类成员只来自表，否则 `members()` 会给出不含自己的类）——实体口径对「只嵌在键里、从不作为实体出现」的
+   内置字段 / 模板 ID 原样返回是有意的，对外只经 `canonical_ids`，Dart 不直接拿实体口径归一嵌入 ID，所以不另加 Dart 守卫。
+   测试：`class.rs` `an_embedded_builtin_field_has_one_canonical_id_everywhere` 加 `canonical_ids` 断言。变异：改回
+   `ix.canonical` → 该用例在 `canonical_ids` 断言处变红。
+2. **`srs_ankiconnect_vectors` 仍红**（minor）：根因有两层。
+   - 内核：协议 3 给从没复习、没改过的内置笔记的卡也发了数字 id（带盐笔记 × 带盐内置模板），内置模板从不作为实体出现、
+     别名表里没有它的带盐 ID，`anki_members` 配不出那张卡的旧号，旧号反查落空。`class.rs` 新增
+     `builtin_template_members`：内置模板的成员由所属笔记类型的成员按 `rules::template` 算回，`cache.rs` `member_numbers`
+     并进模板成员（`dd2cf77eaf`）。测试：`migrate_tests` `a_salted_library_of_untouched_builtin_note_types_migrates_unchanged`
+     加两条从没复习的笔记，协议 3 每张卡的数字 id 迁移后经 `anki_resolve` 都反查到对应规范卡。变异：
+     `builtin_template_members` 返回空 → 该用例在「protocol 3 card … resolves to its canonical card」变红。
+   - 测试：冻结向量是旧实现按带盐 ID 的号记的。G9-7 起对外数字 id 是规范 ID 的号（`hash53("anki-id/<规范 ID>")`），内置
+     实体换号。测试先把向量里出现的旧笔记 / 卡号经 `noteIdsForAnkiNumericIds` / `cardIdsForAnkiNumericIds`（即走产品的
+     旧号反查路径）换成规范 ID 再算新号，反查不到直接失败（= 迁移丢了实体）；牌组 / 笔记类型按名字对号；请求里用到的号按
+     冻结向量里记的那批旧号换算（不取「新列表的第 n 个」，顺序本身也在比对之列），期望值与请求键里的旧号统一换成新号后
+     逐项比，其余值（字段、到期、间隔、顺序）一个不放宽。另断言冻结向量点名的已删笔记换号后就是库里那条已删笔记。
+     变异：换号表置空 → 测试变红；还原后 1/1 绿。
+   - **外部客户端看到换号的定案（所有者授权自定）：接受**。理由：旧号经 `anki_members` 仍能反查（AnkiConnect 按号点名的
+     入口经内核 `anki_resolve` / `anki_notes_info`（`cmd/columns.rs`，缓存行查不到时查 `anki_members`），旧号照常命中），只是查询结果吐新号；新号是规范 ID 的号，
+     多设备 / 多盐下同一实体只有一个号，比保留带盐旧号（各设备各一套）更稳。不丢卡片与复习记录。
+3. **prepare 缺表检查拿全新库当基准的误拦风险**（nit）：`schema.rs` `migrate` 文档写明不变量「从任何版本升级上来的库与全新库
+   的表集合相同」，`tests_v15_upgrade.rs` 的 v8 / v15 冻结夹具升级用例加表集合比对（`a984d35bed`）。变异：在
+   `current < 1` 分支多建一张表 → v8 / v15 两条用例报 `upgraded lacks fresh tables ["srs_k1_fresh_only"]` 变红。
+
+验证：`native/fushi_fsrs` `cargo fmt --check` 退出 0；`cargo test --profile quick --lib -j 4` 退出 0，1319 passed / 0 failed /
+39 ignored。`packages/fushi_engine` `dart test` 定向跑 `srs_ankiconnect_vectors_test` + `srs_stats_report_parity_test` +
+`srs_stats_vectors_test` + `srs_write_path_read_amplification_test`（本 worktree 编的 DLL）退出 0，13 条全过。

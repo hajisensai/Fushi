@@ -509,6 +509,8 @@ impl<'t, 'c> Index<'t, 'c> {
                     .map_err(sql)?;
                 }
                 if !bulk {
+                    // 笔记类型碰过的不经 `touched` 记脏（`cache.rs` [Dirt::touched]），清除在这里直接记。
+                    self.dirt.entity(*kind as i64, &ent);
                     self.touched.insert((*kind as i64, ent));
                     self.purge_changed = true;
                 }
@@ -850,7 +852,7 @@ impl<'t, 'c> Index<'t, 'c> {
         let conn = self.t.conn();
         for (&(k, have), &want) in rows.iter().zip(&want) {
             if have != want {
-                self.dirt.entity(r.ekind, &r.ent);
+                self.dirt.register(r)?;
                 conn.prepare_cached(
                     "UPDATE reg_ix SET state = ?6 WHERE col = ?1 AND ekind = ?2 AND ent = ?3 AND key = ?4 AND k = ?5",
                 )
@@ -1208,7 +1210,7 @@ impl<'t, 'c> Index<'t, 'c> {
         out.aliases_rebuilt = u64::from(rebuilt);
         self.weigh_rest(false, trust, &mut out)?;
         let mut regs = std::mem::take(&mut self.regs);
-        self.dirt.registers(&regs);
+        self.dirt.registers(&regs)?;
         self.dirt.ids.extend(self.ents.iter().cloned());
         if out.closures > 0 || std::mem::take(&mut self.shrunk) {
             self.dirt.closure = true;
