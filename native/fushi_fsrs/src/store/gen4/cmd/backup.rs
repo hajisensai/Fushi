@@ -59,6 +59,9 @@ use crate::store::sync2::collection_of;
 /// 备好的副本在自己的 `srs_meta` 里记的标记（值 = [prepared_marker]）：同一个副本第二次来不再重做。
 pub const PREPARED_KEY: &str = "gen4_backup_prepared";
 
+/// 落库时集合的本机秘密已不是备副本时用的那个（[land]）：整条命令什么都没留，重发即按新的秘密重备。
+pub const LOCAL_IDENTITY_MOVED: &str = "gen4 legacy backup import: the local identity of this profile changed while the copy was being prepared; nothing was written, send the request again";
+
 /// `events` 来源一次 `apply` 的项数。
 pub const APPLY_BATCH: usize = 1000;
 
@@ -566,6 +569,7 @@ pub fn land(
     src: &Connection,
     anchor: Option<&Value>,
     pending: Option<&PendingSelf>,
+    secret: Option<&[u8; 32]>,
     col_of: &dyn Fn(&Truth<'_>) -> Result<i64, String>,
 ) -> Result<Emitting, String> {
     let now = req
@@ -637,6 +641,14 @@ pub fn land(
     let (adopted, changed) = collection_adopt_with(t, profile, &sub, pending)?;
     if adopted["outcome"] == json!("needsConfirm") {
         return Ok((needs_confirm("join"), None));
+    }
+    // 副本身份是按 [secret] 派生的（[seed_scratch_identity]）；落进来的集合此刻的本机秘密必须就是它。分发器在读快照里定
+    // 秘密、在写锁之外备副本，其间 profile 可能被别的命令绑定并建了身份（打开 profile 的 `identity`、并发的认领）：那时
+    // 照落会让之后第一次合并同一份输入以另一个合成设备再落一遍。在这一笔写事务里核对，对不上整条命令失败（什么都不留），
+    // 调用方重发即按新的本机秘密重备副本。
+    let actual = t.self_identity(col_of(t)?)?.map(|s| s.sk);
+    if actual.as_ref() != secret {
+        return Err(LOCAL_IDENTITY_MOVED.to_owned());
     }
     let wrote = !matches!(adopted["outcome"].as_str(), Some("same" | "alreadyJoined"));
     let got = import_backup(src, &p.profile, t, col_of(t)?)?;

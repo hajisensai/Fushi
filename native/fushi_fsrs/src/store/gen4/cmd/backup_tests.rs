@@ -568,6 +568,53 @@ fn the_first_merge_after_landing_into_an_unbound_profile_changes_nothing() {
     ffsrs_store_close(h);
 }
 
+/// 读快照定好本机秘密（profile 没绑定 → 预先生成的身份）、备好副本之后，落库之前 profile 被别的命令绑定并建了本机身份
+/// （打开 profile 的 `identity`）：落库那一笔核对出本机秘密已经不是备副本用的那个，整条命令失败、什么都不留
+/// （`LOCAL_IDENTITY_MOVED`）。重发按新的秘密重备、落下；之后换新副本目录再读同一份输入全是已有的槽。没有这道核对时副本
+/// 身份按预先生成的秘密派生、实际本机秘密却是并发建的那个，第三次读入会以另一个合成设备再落一遍。
+#[test]
+fn a_local_identity_created_while_the_copy_is_prepared_fails_the_landing() {
+    let m = migrated();
+    let legacy = m.d._dir.0.join("srs.db");
+    let work = tempdir::new("g9idmv");
+    let jsonl = work.0.join("events.jsonl");
+    std::fs::write(&jsonl, v1_events(&legacy)).unwrap();
+    let dir = tempdir::new("g9idmvto");
+    let core = G4Core::open(&dir.0, OpenMode::Primary).unwrap();
+    let req = |scratch: &Path, now: i64| {
+        let mut r = legacy_req(
+            &jsonl,
+            "events",
+            scratch,
+            json!({"confirmed": true, "now": now}),
+        );
+        r["profile"] = json!(P);
+        r
+    };
+    let s1 = tempdir::new("g9idmvs1");
+    let e = crate::store::gen4::dispatch::legacy_backup_import(&core, P, &req(&s1.0, T1), &|c| {
+        c.write(|t| super::identity::identity_ensure(t, P, T1))
+            .map(|_| ())
+    })
+    .unwrap_err();
+    assert_eq!(e, super::backup::LOCAL_IDENTITY_MOVED);
+    let none = |_: &G4Core| Ok(());
+    let landed =
+        crate::store::gen4::dispatch::legacy_backup_import(&core, P, &req(&s1.0, T1), &none)
+            .unwrap();
+    assert_ne!(landed["unchanged"], json!(true), "{landed}");
+    let s2 = tempdir::new("g9idmvs2");
+    let again = crate::store::gen4::dispatch::legacy_backup_import(
+        &core,
+        P,
+        &req(&s2.0, T1 + 86_400_000),
+        &none,
+    )
+    .unwrap();
+    assert_eq!(again["applied"], json!(0), "{again}");
+    assert_eq!(again["unchanged"], json!(true), "{again}");
+}
+
 // ---------------------------------------------------------------------- 身份确认 / 预检 / 不可信输入
 
 /// [src] 的一份拷贝，拷完在它上面跑 [edit]（注册了 ID 编码函数的连接）。
