@@ -20,9 +20,9 @@
 //! - 每次确认转发（[relay_ack]）与读到 head（`plan` 调 [prune]）之后，删掉**每个**位置都已有的段：那个位置上作者的
 //!   head 已覆盖到段尾、head 引用了它，或本机已转发过去。
 //!
-//! 已知边界（交接说明 G8-7b 一节）：本机在同步着 ≥ 2 个位置之前就收过的段没有原文可转发（协议 3 会让 `plan` 为转发补拉，
-//! 新代不补）——这台设备的 head 在目标位置缺的段本机凑不齐时整台跳过（回包 `incomplete`），作者自己或别的持有原文的设备
-//! 转发；作者之后的新段照常转发。
+//! 本机在同步着 ≥ 2 个位置之前就收过的段当时没留原文：`plan` 读到作者 head 时把「本机早有、没留原文、别的位置缺」的
+//! 段再要一次（[wanted_for_relay]），收段时按本机已有跳过、只留原文，下一轮就能转发。转发时缺的段本机还凑不齐原文的
+//! 作者这一轮整台跳过（回包 `incomplete`），不发半截。
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -398,6 +398,44 @@ fn split(path: &str) -> Option<(Id, String)> {
     let d = Id::parse(it.next()?)?;
     let name = it.next()?;
     (!name.is_empty() && !name.contains('/')).then(|| (d, name.to_owned()))
+}
+
+/// `plan` 调：head [h]（读自位置 [loc]）引用的、本机日志里早就有（区间末尾 ≤ [last]）、却没留原文而别的位置缺的段
+/// 名。本机先前只同步着一个位置时收的段不留原文；有了第二个位置之后要转发它们，就让这一轮再拉一次——收段时按本机已有
+/// 跳过（不落库），只经 [keep] 留下原文（协议 3 `plan` 的「只为转发而拉」同一口径）。本机只同步着一个位置、作者不可
+/// 转发时为空。
+pub(crate) fn wanted_for_relay(
+    t: &Truth<'_>,
+    col: i64,
+    loc: &str,
+    h: &Head4,
+    last: u64,
+) -> Result<Vec<String>, String> {
+    if location_count(t, col)? < 2 || !relayable(t, col, &h.device)? {
+        return Ok(Vec::new());
+    }
+    let mut others: Vec<(u64, BTreeSet<String>)> = Vec::new();
+    for l in locations(t, col)? {
+        if l == loc {
+            continue;
+        }
+        let sent = sent_names(t, col, &l, &h.device)?;
+        others.push(present_at(t, col, &l, &h.device, &sent)?);
+    }
+    let mut out = Vec::new();
+    for (a, b, tag) in &h.segs {
+        if *b > last {
+            continue;
+        }
+        let name = segment_file_name(*a, *b, tag);
+        let lacking = others
+            .iter()
+            .any(|(seq, names)| *seq < *b && !names.contains(&name));
+        if lacking && piece_of(t, col, &h.device, (*a, *b, tag))?.is_none() {
+            out.push(name);
+        }
+    }
+    Ok(out)
 }
 
 /// 删掉作者 [device] 的、每个位置都已有的可转发段：那个位置上作者的 head 覆盖到了段尾或引用了它，或本机已转发过去。

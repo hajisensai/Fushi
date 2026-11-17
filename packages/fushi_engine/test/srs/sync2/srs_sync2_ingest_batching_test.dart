@@ -2,6 +2,7 @@
 // 段按压缩后体积切、单段可到 4 MiB，按段数分批会让一批大到几百 MB 再整批跨 FFI；按实际字节切批则一批的内存
 // 有上界，进度按批推进、中途收手只丢在途那一批。
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
@@ -510,6 +511,40 @@ void main() {
       );
       expect(host.steps, <String>['begin', 'batch', 'end']);
     });
+
+    test(
+      '收段让路：一批在内核里按 kSrsSync2IngestSliceItems 切成多个事务，每片各进一次写锁；结果与对端一致',
+      () async {
+        final SrsDbStore a = await device('A');
+        final SrsDbStore b = await device('B');
+        // 远超一片的操作数（每条笔记有笔记、卡片等多条操作）。
+        for (int i = 0; i < SrsDbStore.kSrsSync2IngestSliceItems; i++) {
+          await addNote(a, '語$i');
+        }
+        final SrsMemoryLocationStore loc = SrsMemoryLocationStore();
+        Future<SrsSync2Report> round(SrsDbStore s) => srsSync2Round(
+          host: s,
+          location: loc,
+          locationId: 'loc',
+          nowMs: () => DateTime.now().millisecondsSinceEpoch,
+        );
+        expect((await round(a)).error, isNull);
+        int slices = 0;
+        b.debugOnIngestSlice = () => slices++;
+        final SrsSync2Report rb = await round(b);
+        b.debugOnIngestSlice = null;
+        expect(rb.error, isNull);
+        // 收段的事务数 = 切片数 + 收尾一次；一批段（只有一个段）至少切成两片。
+        expect(slices, greaterThanOrEqualTo(3), reason: 'ingest sliced');
+        expect(rb.applied, greaterThan(SrsDbStore.kSrsSync2IngestSliceItems));
+        expect((await b.sync2Status())['pending'], 0);
+        expect((await round(a)).error, isNull);
+        expect(
+          (await a.sync2Digest())['digest'],
+          (await b.sync2Digest())['digest'],
+        );
+      },
+    );
   });
 
   // 发件分批 + 水位续传（反馈 XDV7Mzc2gw / kB2ltk0u9F / U37Aku3oeL）：上传中途断掉，下一轮从已确认的水位接着发，
@@ -555,6 +590,8 @@ void main() {
         locationId: 'loc',
         nowMs: () => DateTime.now().millisecondsSinceEpoch,
         outboxBudgetBytes: 1, // 每批一段
+        // 新代按位置从水位起重切（不沿用别的位置的段）：段切小，三条笔记切出多段。
+        outboxSegmentBytes: 1,
       );
       await expectLater(round(), throwsA(isA<StateError>()));
       final List<String> firstRoundSegs = loc.segmentPuts.toList();
@@ -680,6 +717,18 @@ class _ScriptedHost implements SrsSync2Host {
       'collection': 'c1',
       'device': 'SELF',
     }, <(String, Uint8List)>[]),
+    // 新代的位置根（内核 `location_root`，G8-7）：新根 meta 由内核算出、交给 Dart 写（[writeMeta] 靠它立 meta）。
+    'location_root' => SrsSync2Result(
+      const <String, Object?>{
+        'state': 'ok',
+        'loc': 'LOC1',
+        'media': 'v4',
+        'ensure': <Object?>[],
+      },
+      <(String, Uint8List)>[
+        ('v4/meta.json', Uint8List.fromList(utf8.encode('{"fmt":"m4"}'))),
+      ],
+    ),
     'plan' => SrsSync2Result(<String, Object?>{
       'fetch': <Object?>[
         <String, Object?>{'device': 'SELF', 'files': own, 'own': true},

@@ -249,6 +249,8 @@ void main() {
         'head',
         'obsolete',
         'media_manifest_build',
+        'relay_outbox',
+        'relay_ack',
       ],
     );
     // 根：新根 meta / loc 标记进 v4，围栏进 v3；墓碑已在，不覆盖。
@@ -650,11 +652,96 @@ void main() {
       'mf-a',
     );
     final List<String> ops = host.ops();
-    expect(ops.last, 'media_manifest_published');
+    // 本机清单发完才轮到转发（一轮的最后一步）。
+    expect(
+      ops.indexOf('media_manifest_published'),
+      lessThan(ops.indexOf('relay_outbox')),
+    );
+    expect(ops.last, 'relay_ack');
     expect(
       ops.indexOf('media_manifest_ingest'),
       lessThan(ops.indexOf('outbox')),
     );
+  });
+
+  test('转发：一批写完再确认、要下一批；被取代的旧件删掉后报回 deleted；归档位置不删也报回', () async {
+    for (final bool archive in <bool>[false, true]) {
+      v4.files['meta.json'] = _b('{"fmt":"m4"}');
+      v4.files['devices/dev-x/rhd-000000000001-old.json'] = _b('old rhd');
+      final Map<String, List<SrsSync2Result>> replies = happy()
+        ..['relay_outbox'] = <SrsSync2Result>[
+          _r(
+            <String, Object?>{
+              'files': <String>[
+                'devices/dev-x/rly-000000000001-000000000002-aa.bin',
+              ],
+              'more': true,
+            },
+            <(String, Uint8List)>[
+              (
+                'devices/dev-x/rly-000000000001-000000000002-aa.bin',
+                _b('piece'),
+              ),
+            ],
+          ),
+          _r(
+            <String, Object?>{
+              'files': <String>['devices/dev-x/rhd-000000000002-aa.json'],
+              'more': false,
+            },
+            <(String, Uint8List)>[
+              ('devices/dev-x/rhd-000000000002-aa.json', _b('new rhd')),
+            ],
+          ),
+        ]
+        ..['relay_ack'] = <SrsSync2Result>[
+          _r(<String, Object?>{'delete': <String>[]}),
+          _r(<String, Object?>{
+            'delete': <String>['devices/dev-x/rhd-000000000001-old.json'],
+          }),
+          _r(<String, Object?>{'delete': <String>[]}),
+        ];
+      final _FakeHost host = _FakeHost(replies);
+      final SrsSync2Report r = await srsSync2Round(
+        host: host,
+        location: v4,
+        oldRoot: v3,
+        locationId: 'L',
+        nowMs: () => 1000,
+        archive: archive,
+      );
+      expect(r.error, isNull);
+      expect(r.relayed, 2);
+      expect(
+        utf8.decode(
+          v4.files['devices/dev-x/rly-000000000001-000000000002-aa.bin']!,
+        ),
+        'piece',
+      );
+      final List<Map<String, Object?>> acks = <Map<String, Object?>>[
+        for (final Map<String, Object?> q in host.requests)
+          if (q['op'] == 'relay_ack') q,
+      ];
+      expect(acks, hasLength(3));
+      expect(acks[0]['paths'], <String>[
+        'devices/dev-x/rly-000000000001-000000000002-aa.bin',
+      ]);
+      expect(acks[1]['paths'], <String>[
+        'devices/dev-x/rhd-000000000002-aa.json',
+      ]);
+      expect(acks[2]['deleted'], <String>[
+        'devices/dev-x/rhd-000000000001-old.json',
+      ]);
+      expect(
+        acks.every((Map<String, Object?> q) => q['location'] == 'L'),
+        isTrue,
+      );
+      expect(
+        v4.files.containsKey('devices/dev-x/rhd-000000000001-old.json'),
+        archive,
+        reason: 'an archive location keeps the superseded relay head',
+      );
+    }
   });
 
   test('旧身份目录：obsolete 报的 former 逐个交 obsolete_former，给的路径照删', () async {

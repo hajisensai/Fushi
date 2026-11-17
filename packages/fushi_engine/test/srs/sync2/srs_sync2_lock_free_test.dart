@@ -77,6 +77,8 @@ void main() {
       'heritage_plan',
       'heritage_outbox',
       'media_manifests',
+      // 转发件按目标位置的钥匙重新封装（G8-7b，内核读快照）。
+      'relay_outbox',
     });
     for (final String op in <String>[
       'identity',
@@ -84,11 +86,13 @@ void main() {
       'outbox',
       'outbox_ack',
       'head',
-      // 位置上该删什么由内核定（transport.rs `sync2_obsolete`），它往待删表登记旧 head：写命令。
+      // 位置上该删什么由内核定（新代 `cmd/sync.rs` `obsolete` 只读，但它的结论要和发件水位同一时刻）。
       'obsolete',
-      'obsolete_ack',
-      // 旧身份目录的清理（former.rs `sync2_obsolete_former`）记观察时刻：写命令。
       'obsolete_former',
+      // 转发记账（`relay_out` 与可转发段的清理）：写命令。
+      'relay_ack',
+      // 收段（切片事务）：写命令。
+      'ingest',
       'ingest_begin',
       'oldroot_ingest',
       'heritage_ack',

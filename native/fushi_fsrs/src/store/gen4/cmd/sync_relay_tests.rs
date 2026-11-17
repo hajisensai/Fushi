@@ -170,6 +170,46 @@ fn an_author_reaching_the_location_itself_ends_the_relay() {
     assert!(relay(&b, &mut l2, "L2", None, T1 + 6).is_empty());
 }
 
+/// 后来才连上第二个位置：b 先只连 L1、早就收了 a 的段（当时只有一个位置，不留原文）；之后连上 L2（c 在那里）。b 在
+/// L1 的下一轮 `plan` 把 a 那些「本机早有、没留原文、L2 缺」的段再要一次（收段按已有跳过、只留原文），随后转发到 L2，
+/// c 收齐 a 写的；转发完 b 不再留原文。
+#[test]
+fn a_second_location_added_later_still_gets_the_relay() {
+    let a = Dev::new("g87la");
+    let mut b = Dev::new("g87lb");
+    let c = Dev::new("g87lc");
+    let (mut l1, mut l2) = (Loc::new(), Loc::new());
+    let o = Opts::default();
+    a.write(T1 + 1, N1, "鯨");
+    round(&a, &mut l1, "L1", T1 + 2, o);
+    round(&b, &mut l1, "L1", T1 + 3, o);
+    assert_eq!(b.field(N1), Some(json!("鯨")));
+    assert_eq!(relay_segs(&mut b), 0, "one location: nothing kept");
+    round(&b, &mut l2, "L2", T1 + 4, o);
+    // 这一轮 L1 的 plan 为转发补拉 a 的段。
+    let r = round(&b, &mut l1, "L1", T1 + 5, o);
+    let da = a.device();
+    assert!(
+        r.plan["fetch"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|f| f["device"] == json!(da)),
+        "{}",
+        r.plan
+    );
+    assert_eq!(relay_segs(&mut b), 1);
+    assert!(!relay(&b, &mut l2, "L2", None, T1 + 6).is_empty());
+    for _ in 0..2 {
+        round(&c, &mut l2, "L2", T1 + 7, o);
+    }
+    assert_eq!(c.field(N1), Some(json!("鯨")));
+    // b 这一轮在 L2 收到 c 的段（L1 缺）会留原文；转发到 L1 之后两边都齐，原文一份不剩。
+    round(&b, &mut l2, "L2", T1 + 8, o);
+    relay(&b, &mut l1, "L1", None, T1 + 9);
+    assert_eq!(relay_segs(&mut b), 0);
+}
+
 /// 只连一个位置的设备不留原文、不转发。
 #[test]
 fn a_single_location_device_keeps_nothing_to_relay() {

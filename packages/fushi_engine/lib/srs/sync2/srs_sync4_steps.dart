@@ -309,6 +309,64 @@ Future<void> srsSync4MediaManifestsOut({
   );
 }
 
+/// 转发（内核 `cmd/sync_relay.rs`，G8-7b）：本机同步着多个位置时，把收到过、而这个位置缺的别的设备的段（中继件
+/// `rly-`，按本位置的钥匙封装）与段都到位之后的 head（`rhd-`）写上去。一批写完 `relay_ack` 再要下一批（head 要等它
+/// 引用的段确认写上才给）；最后删掉被新转发取代的旧件（归档位置不删）并报回内核。写失败的这一轮停下，下一轮从内核
+/// 记账接着来；删失败的留在内核的待删清单里，下一轮再删。
+Future<void> srsSync4Relay({
+  required SrsSync2Host host,
+  required SrsLocationStore location,
+  required String locationId,
+  required String? keyHex,
+  required bool archive,
+  required SrsSync2Report report,
+  bool Function()? shouldStop,
+}) async {
+  List<String> delete = const <String>[];
+  while (true) {
+    final SrsSync2Result out = await host.sync2Command(<String, Object?>{
+      'op': 'relay_outbox',
+      'location': locationId,
+      'key': keyHex,
+    });
+    await srsRunPooled(out.files, kSrsSync2Concurrency, (
+      (String, Uint8List) f,
+    ) async {
+      await location.put(f.$1, f.$2);
+      report.relayed++;
+    });
+    final Map<String, Object?> ack = (await host.sync2Command(<String, Object?>{
+      'op': 'relay_ack',
+      'location': locationId,
+      'paths': <String>[for (final (String, Uint8List) f in out.files) f.$1],
+    })).map;
+    delete = _strings(ack['delete']);
+    if (out.map['more'] != true || out.files.isEmpty) break;
+    if (shouldStop?.call() ?? false) return;
+  }
+  if (delete.isEmpty) return;
+  final List<String> deleted = <String>[];
+  if (archive) {
+    // 归档位置只写不删：按策略跳过，同样报回去（内核不再列它们）。
+    deleted.addAll(delete);
+  } else {
+    await srsRunPooled(delete, kSrsSync2Concurrency, (String p) async {
+      try {
+        await location.delete(p);
+        deleted.add(p);
+      } on Object catch (e) {
+        report.errors.add('relay delete $p: $e');
+      }
+    });
+  }
+  if (deleted.isEmpty) return;
+  await host.sync2Command(<String, Object?>{
+    'op': 'relay_ack',
+    'location': locationId,
+    'deleted': deleted,
+  });
+}
+
 /// 本机旧身份（`obsolete` 回包的 [former]）目录里的旧 head（内核 `obsolete_former`：只删比最新 head 旧两代以上的，
 /// 段一个不删）。删不掉的记进 [SrsSync2Report.formerSweepErrors]，下一轮再删。
 Future<void> srsSync4SweepFormer({

@@ -1783,11 +1783,11 @@ class SrsDbStore implements SrsSync2Host {
   ///   （媒体文件到文件的流式封 / 解，只读写调用方给的路径）。
   /// - 只走读连接（WAL 快照，只见已提交的行）：`status` / `media_known` / `conflicts` / `checkpoints` / `history`；
   ///   `media_hash`（本机媒体文件的 sha256，首次对账要把几万个文件各读一遍；结论交给进写锁的 `media_scan`）。
-  /// - `digest`：读连接上读触发器增量维护的 4096 个摘要桶求根（已提交快照，不再全库扫描），只在末尾往写连接
-  ///   记一行摘要缓存（`srs_meta`）；恰好落进另一笔写事务而那笔回滚，丢的只是这行缓存，下一轮按间隔重算。
+  /// - `digest`：新代读快照上算语义摘要（内核 `Index::digest`，派生层 `dg_ix` 增量维护；没有协议 3 的摘要桶与
+  ///   `digest_buckets`），不写库。
   /// - 同步一轮里只读快照的几步（内核 `gen4/cmd/sync_oldroot.rs` / `media_sync.rs`）：`oldroot_scan`（旧根清单与已收的
   ///   比对）、`heritage_plan` / `heritage_outbox`（承袭对账与打包，读快照上做，迁移后第一轮可能要打几百个段）、
-  ///   `media_manifests`（位置上还没收的清单）。
+  ///   `media_manifests`（位置上还没收的清单）、`relay_outbox`（转发件按目标位置的钥匙重新封装，读快照上做）。
   @visibleForTesting
   static const Set<String> kSrsSync2LockFreeOps = <String>{
     'derive_key',
@@ -1806,6 +1806,7 @@ class SrsDbStore implements SrsSync2Host {
     'heritage_plan',
     'heritage_outbox',
     'media_manifests',
+    'relay_outbox',
   };
 
   /// 开一段收段：先登记（之后来的 [rwkvReplayBytes] 排到它结束），再等在途的回放跑完——收段的投递与整 profile 的
@@ -1842,19 +1843,75 @@ class SrsDbStore implements SrsSync2Host {
   /// 期间调高写连接的自动 checkpoint 阈值（[bulkWrites]）。协议 3 的「先预处理、再按片投递、有写入排队就收片」
   /// （`ingest_prepare` / `ingest_commit` / `ingest_yield`）在新代没有对应物：一批的事务只做这一批，字节预算由
   /// [srsSync2Round] 的切批（[kSrsSync2IngestBudgetBytes]）限住。
+  ///
+  /// 收段让路（G8-7b）：一批在内核里按 [kSrsSync2IngestSliceItems] 项新工作切成多个事务（`ingest` 的 `maxItems`，
+  /// 回包 `rest` = 交完了的段数），每个事务各进一次写锁——两个事务之间排着的作答先写，复习不被一大批收段卡住。中途
+  /// 停下的那一段下一个事务原样再交，已落的部分内核按本机已有跳过。各片的计数合成一份回包。
   @override
   Future<Map<String, Object?>> sync2IngestBatch(
     List<Uint8List> segments, {
     String? keyHex,
   }) async {
-    late Map<String, Object?> r;
+    final Map<String, Object?> merged = <String, Object?>{};
     await bulkWrites(() async {
-      r = await _sync2IngestStep(<String, Object?>{
-        'op': 'ingest',
-        'key': keyHex,
-      }, segments);
+      List<Uint8List> rest = segments;
+      while (true) {
+        final Map<String, Object?> r = await _sync2IngestStep(<String, Object?>{
+          'op': 'ingest',
+          'key': keyHex,
+          'maxItems': kSrsSync2IngestSliceItems,
+        }, rest);
+        _mergeIngestSlice(merged, r);
+        final int done = (r['rest'] as int?) ?? rest.length;
+        if (done >= rest.length) break;
+        if (done == 0 && ((r['landed'] as int?) ?? 0) == 0) {
+          // 内核每片至少落一项或交完一段；两样都没有 = 契约坏了，不原地打转。
+          throw StateError('sync2 ingest slice made no progress: $r');
+        }
+        rest = rest.sublist(done);
+      }
     });
-    return r;
+    return merged;
+  }
+
+  /// 收段每个事务最多做的新工作（落进日志 / 新进等待缓冲的项）。取值：内核测试
+  /// `ingest_slices_a_large_batch_into_budgeted_transactions` 在桌面机上量过（quick profile，200 项一片最慢约 0.5 s，
+  /// 其中大半是每片重新解开同一个段的开销），手机按慢 3～5 倍估，256 项让一次作答最多等 1～2 s。
+  static const int kSrsSync2IngestSliceItems = 256;
+
+  /// 把一片收段的回包并进 [merged]：计数相加、错误与分叉设备拼接、`fork` 取或、末态（`pending` / `waiting` 与本机
+  /// 修订号）取最后一片的。
+  static void _mergeIngestSlice(
+    Map<String, Object?> merged,
+    Map<String, Object?> r,
+  ) {
+    const List<String> sums = <String>[
+      'segments',
+      'landed',
+      'delivered',
+      'applied',
+      'deferred',
+      'rejected',
+      'diverged',
+      'conflicts',
+      'voided',
+      'kept',
+    ];
+    for (final MapEntry<String, Object?> e in r.entries) {
+      if (sums.contains(e.key)) {
+        merged[e.key] =
+            ((merged[e.key] as int?) ?? 0) + ((e.value as int?) ?? 0);
+      } else if (e.key == 'errors' || e.key == 'forked') {
+        merged[e.key] = <Object?>[
+          ...((merged[e.key] as List?) ?? const <Object?>[]),
+          ...((e.value as List?) ?? const <Object?>[]),
+        ];
+      } else if (e.key == 'fork') {
+        merged['fork'] = merged['fork'] == true || e.value == true;
+      } else {
+        merged[e.key] = e.value;
+      }
+    }
   }
 
   /// 测试钩子：收一批拿到写锁、调内核之前调用。

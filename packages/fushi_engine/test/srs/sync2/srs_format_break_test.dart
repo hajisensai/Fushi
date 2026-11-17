@@ -557,6 +557,8 @@ void main() {
     }
     await runNew(loc, a);
     await runNew(loc, b);
+    // b 自己的操作（开库时的内置实体）要回到 a，两边才在同一个版本向量上。
+    await runNew(loc, a);
     expect(
       (await a.sync2Digest())['digest'],
       (await b.sync2Digest())['digest'],

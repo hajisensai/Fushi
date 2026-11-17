@@ -89,7 +89,10 @@ void main() {
     expect(aFiles.where((String k) => k.contains('/seg-')), isEmpty);
     final Uint8List envelope =
         cloud.files[aFiles.firstWhere((String k) => k.contains('/rly-'))]!;
-    expect(String.fromCharCodes(envelope.sublist(0, 4)), 'FSRL');
+    // 新代中继件（内核 `gen4/relay.rs`）：作者签过的段原样搬运；被转发的 head 用 `rhd-` 前缀，不冒充作者自写的 head。
+    expect(String.fromCharCodes(envelope.sublist(0, 4)), 'FRL4');
+    expect(aFiles.where((String k) => k.contains('/rhd-')), isNotEmpty);
+    expect(aFiles.where((String k) => k.contains('/head-')), isEmpty);
   });
 
   test('段文件名与转发件名一一对应', () {

@@ -833,6 +833,14 @@ pub fn plan(t: &Truth<'_>, col: i64, req: &Value, heads: &[Vec<u8>]) -> Result<V
                     .insert(device_path(&h.device, &segment_file_name(*a, *b, tag)));
             }
         }
+        // 早就收过、当时没留原文、而别的位置缺的段：只为转发再拉一次（收段时按本机已有跳过，只留原文）。
+        for name in super::sync_relay::wanted_for_relay(t, col, location, &h, last)? {
+            fetch
+                .entry(h.device)
+                .or_insert((false, BTreeSet::new()))
+                .1
+                .insert(device_path(&h.device, &name));
+        }
     }
     // 承袭段：按文件名判区间。
     if let Some(listing) = req.get("listing").and_then(Value::as_object) {
