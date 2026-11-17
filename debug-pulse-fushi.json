@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-17T00:05:25Z",
+ "generatedAt": "2026-11-17T00:05:55Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "131f1ec7d6a495a6a9e62c9c259e82ace568b140",
@@ -12,8 +12,8 @@
    "version": "3.3.0",
    "sha": "131f1ec7d6a495a6a9e62c9c259e82ace568b140",
    "unknown": false,
-   "publishedAt": "2026-11-17T00:05:15Z",
-   "testflight": false,
+   "publishedAt": "2026-11-17T00:05:42Z",
+   "testflight": true,
    "baseSeq": 28294,
    "prs": [
     3623,
@@ -50,16 +50,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43961563002"
+     "state": "ok"
     },
     "macos": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43961563002"
+     "state": "ok"
     },
     "ios": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43961563002"
+     "state": "ok"
     }
    }
   },
@@ -242,54 +239,22 @@
    "unknown": false,
    "publishedAt": "2026-11-16T16:37:12Z",
    "testflight": false,
-   "baseSeq": 27714,
-   "prs": [
-    3484,
-    3470,
-    3472,
-    3482,
-    3486
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "none"
-    },
-    "macos": {
-     "state": "none"
-    },
-    "ios": {
-     "state": "none"
-    }
-   }
-  },
-  {
-   "seq": 27714,
-   "version": "3.3.0",
-   "sha": "58daf7332a7c316e10cf2e3e8d1dc5920d0d67a7",
-   "unknown": false,
-   "publishedAt": "2026-11-16T13:38:17Z",
-   "testflight": true,
    "baseSeq": null,
    "prs": [],
    "direct": [],
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "none"
+     "state": "ok"
     },
     "windows": {
-     "state": "ok"
+     "state": "none"
     },
     "macos": {
-     "state": "ok"
+     "state": "none"
     },
     "ios": {
-     "state": "ok"
+     "state": "none"
     }
    }
   }
@@ -321,24 +286,6 @@
    "mergedAt": "2026-11-16T11:56:16Z",
    "additions": 69,
    "deletions": 2,
-   "labels": []
-  },
-  "3470": {
-   "number": 3470,
-   "title": "fix(manga): 右键图片动作与设为封面按右键落点页取图 (BUG-4695)",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-16T11:02:22Z",
-   "additions": 154,
-   "deletions": 31,
-   "labels": []
-  },
-  "3472": {
-   "number": 3472,
-   "title": "新手引导功能方格加入音乐模块",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-16T10:55:17Z",
-   "additions": 83,
-   "deletions": 4,
    "labels": []
   },
   "3473": {
@@ -384,33 +331,6 @@
    "mergedAt": "2026-11-16T11:56:31Z",
    "additions": 276,
    "deletions": 3,
-   "labels": []
-  },
-  "3482": {
-   "number": 3482,
-   "title": "fix(library): 页头排序菜单从触发控件（按钮或 ⋯）下沿弹出 (BUG-4695)",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-16T10:54:17Z",
-   "additions": 449,
-   "deletions": 73,
-   "labels": []
-  },
-  "3484": {
-   "number": 3484,
-   "title": "fix(reader): 有声书鼠标「跳转到点击句」后收回键盘焦点 (BUG-4695)",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-16T11:16:50Z",
-   "additions": 78,
-   "deletions": 4,
-   "labels": []
-  },
-  "3486": {
-   "number": 3486,
-   "title": "fix(web-video): DOM 字幕点词制卡锚点取被点的那句，不再静默出无画面无音频的卡",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-16T10:41:26Z",
-   "additions": 158,
-   "deletions": 9,
    "labels": []
   },
   "3488": {
