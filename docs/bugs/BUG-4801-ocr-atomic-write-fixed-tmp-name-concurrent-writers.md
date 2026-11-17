@@ -18,11 +18,18 @@
   - `packages/fushi_engine/test/utils/atomic_text_file_test.dart`「BUG-4801」组 3 条（各平台都跑）：
     同 isolate 与跨 isolate 取到的临时名互不相同且在目标同目录；确定性交错（一个写者写到一半时
     另一个整个写完，各自落下完整内容）；写入失败不留临时文件。源码守卫补一条：helper 里不得再
-    出现 `${target.path}.tmp` 固定名。
+    出现 `${target.path}.tmp` 固定名。另一条（提交 `7c3e8af6646`）：rename 失败后临时文件也
+    删不掉时，抛出去的仍是 rename 的错误——原先清理的 `deleteSync` 没有保护，会顶掉原错误。
+  - `packages/fushi_engine/test/utils/atomic_text_file_concurrent_windows_test.dart` 1 条
+    （`@TestOn('windows')`，提交 `7c3e8af6646`）：12 个写者并发写同一目标，落败的写者只以
+    `FileSystemException` 收场，目标是其中一份完整内容，不留临时文件——钉的是下面那条平台限制
+    的边界，不是把它消掉。
   - `packages/fushi_engine/test/utils/atomic_text_file_concurrent_test.dart` 3 条真并发压测
     （`@TestOn('!windows')`）：同 isolate 并发写同一目标、两个 isolate 并发写、两个
     `MangaOcrFilePageCache` 并发写同一页后读回完整结果。
 - **备注**：
+  - **真机复测未做，待补**：Windows 桌面并发 ≥2 时整卷识别与阅读器页级识别撞同一页，实际撞不撞
+    得上下面这条限制，没在设备上验过。
   - **Windows 上没完全消掉**：两个写者在同一瞬间 rename 到同一个目标时，`MoveFileEx` 会让其中
     一个以「拒绝访问」（errno 5）失败——本机实测同 isolate 12 个并发写者必现。这是平台限制，
     不是临时名的问题：目标仍是另一个写者的完整内容，失败的那个写者照常抛错（整卷任务会以失败

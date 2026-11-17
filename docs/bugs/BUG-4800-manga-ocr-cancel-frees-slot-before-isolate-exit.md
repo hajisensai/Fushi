@@ -42,18 +42,29 @@
     `cancel` 立即返回但名额等退出才让给下一本；暂停后立刻继续，重建的任务等旧执行器退出才开跑；
     不占名额直接 `start` 的任务同理；`cancelAll` 不等退出；自然结束立即算停下；执行器收尾抛错
     名额照样归还。
-  - `fushi/test/ocr/manga_ocr_cancel_waits_exit_test.dart`（3 条）：`ocrFolder` 取消订阅的
-    Future 等 `job.result`；任务没起时立即完成；端到端一条把真链路接起来（注册表 →
-    `mangaOcrLocalEvents` → `MangaOcrServiceImpl.ocrFolder`），不发任何进度事件：取消请求没有当场
-    传到任务、或中间任何一层丢掉取消 Future 都变红。
+  - `fushi/test/ocr/manga_ocr_cancel_waits_exit_test.dart`（4 条）：`ocrFolder` 取消订阅的
+    Future 等 `job.result`；任务没起时立即完成；真起整卷 isolate 的一条（isolate 同步卡 1.5 秒
+    模拟正在推理，取消订阅的 Future 在它收尾前不完成，提交 `7c3e8af6646`）；端到端一条把真链路
+    接起来（注册表 → `mangaOcrLocalEvents` → `MangaOcrServiceImpl.ocrFolder`），不发任何进度
+    事件：取消请求没有当场传到任务、或中间任何一层丢掉取消 Future 都变红。
+  - `fushi/test/sync/manga_ocr_host_cancel_waits_exit_test.dart`（1 条，提交 `7c3e8af6646`）：
+    互联主机 `cancelAndCleanup` 等执行体停下之后才删页图、才放行串行队列里的下一个任务。
 - **备注**：
-  - 真机待验（Android / iOS，本地模型）：整卷识别中点暂停后立刻点继续、以及取消后立刻对另一本
-    点识别，量 ① 取消到旧 isolate 退出的时间（`manga_ocr_volume_job` isolate 消失）② 这段时间
-    的内存峰值（应只有一套模型）。尾巴多长此前没有实测数据。
-  - 副作用（有意）：所有 await `ocrFolder` 订阅取消的调用方现在都等到 isolate 退出，包括互联主机
-    `fushi_manga_ocr_host.dart` 的 `cancelAndCleanup` / `disposeAll`（它的串行队列原先有同一个
-    问题：补完成信号时旧 isolate 还活着）与 `fushi_server` 的 `ocr` 命令。客户端的 DELETE 因此
-    最多多等一页的识别时间。
+  - **真机复测未做，待补**（Android / iOS，本地模型）：整卷识别中点暂停后立刻点继续、以及取消后
+    立刻对另一本点识别，量 ① 取消到旧 isolate 退出的时间（`manga_ocr_volume_job` isolate 消失）
+    ② 这段时间的内存峰值（应只有一套模型）。尾巴多长此前没有实测数据；「暂停立即有反应」「被
+    打断的那一页只识别一次」也只有自动化测试，没在设备上看过。
+  - 副作用：所有 await `ocrFolder` 订阅取消的调用方现在都等到 isolate 退出，包括互联主机
+    `fushi_manga_ocr_host.dart` 的 `cancelAndCleanup` / `disposeAll` 与 `fushi_server` 的 `ocr`
+    命令。`cancelAndCleanup` 等是对的（它的串行队列原先有同一个问题：补完成信号时旧 isolate 还
+    活着；页图也不该在旧 isolate 还在读时删），客户端的 DELETE 因此最多多等一页的识别时间。
+  - **遗留（没修）**：`disposeAll`（`packages/fushi_engine/lib/sync/fushi_manga_ocr_host.dart:195`）
+    不该等——`FushiSyncServer.stop()`（`fushi_sync_server.dart:1178`）顺序 await 它，其后才
+    dispose 屏幕 OCR / 主机任务 / 助手。主机代跑整卷 OCR 时关互联，`stop()` 现在要等 isolate 跑完
+    当前页（原先立即返回），原生推理卡死时 `stop()` 不完成；它还在 `for … in _jobs.values` 里
+    await，等待期间别的路径改 `_jobs` 会抛 `ConcurrentModificationError`。修法是先对任务快照发出
+    全部取消、补完成信号、清表，不 await 取消的 Future。没在本条里改：那个文件登记在另一个在途
+    分支（`pr/manga-ocr-host-io`，PR #3696）名下，等它合入后单独修。
   - 没动：Lens / 系统 OCR / 外部 mokuro / 配对主机的事件流也是 `async*` + `await for`，取消同样
     要等到下一个事件才生效（Lens 一页一次 HTTP、系统 OCR 一页一次平台调用，晚的是「当前这一页
     之后才停」；外部 mokuro 的 kill 要等它下一行输出）。它们不占模型内存，不在本条范围，另记。
