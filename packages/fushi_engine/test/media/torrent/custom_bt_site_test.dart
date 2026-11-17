@@ -516,6 +516,118 @@ void main() {
         reason: '规则没有动画分类',
       );
     });
+
+    test('重定向逐跳手动跟：跳到别的域不带 Cookie，站点子域照带，降级明文拒绝', () async {
+      final BtSiteParserRule rule = BtSiteParserRule.fromJson(<String, Object?>{
+        'fushiBtSiteParser': 1,
+        'search': '/search?q={query}',
+        'rows': 'div.item',
+        'fields': <String, Object?>{
+          'title': 'h3',
+          'magnet': "a[href^='magnet:']@href",
+        },
+      });
+      final List<http.BaseRequest> seen = <http.BaseRequest>[];
+      final CustomBtSiteClient client = CustomBtSiteClient(
+        baseUrl: Uri.parse('https://site.example'),
+        rule: rule,
+        cookie: 'sid=1',
+        client: MockClient((http.Request request) async {
+          seen.add(request);
+          final Uri url = request.url;
+          if (url.host == 'site.example' && url.path == '/search') {
+            return http.Response(
+              '',
+              302,
+              headers: <String, String>{
+                'location': 'https://dl.site.example/mirror?q=Show',
+              },
+            );
+          }
+          if (url.host == 'dl.site.example' && url.path == '/mirror') {
+            return http.Response(
+              '',
+              301,
+              headers: <String, String>{'location': 'https://cdn.other/s'},
+            );
+          }
+          if (url.host == 'cdn.other') {
+            return http.Response(
+              '<div class="item"><h3>Show</h3>'
+              '<a href="magnet:?xt=urn:btih:$_hash&dn=Show">m</a></div>',
+              200,
+            );
+          }
+          if (url.path == '/t.torrent') {
+            return http.Response(
+              '',
+              302,
+              headers: <String, String>{
+                'location': 'http://site.example/t.torrent',
+              },
+            );
+          }
+          return http.Response('not found', 404);
+        }),
+      );
+
+      final List<CustomBtSiteTorrent> rows = await client.search('Show');
+      expect(rows.single.infoHash, _hash);
+      expect(seen.map((http.BaseRequest r) => r.url.toString()), <String>[
+        'https://site.example/search?q=Show',
+        'https://dl.site.example/mirror?q=Show',
+        'https://cdn.other/s',
+      ]);
+      expect(
+        seen.every((http.BaseRequest r) => !r.followRedirects),
+        isTrue,
+        reason: '重定向不交给底层 HTTP 实现自动跟',
+      );
+      expect(seen[0].headers['Cookie'], 'sid=1');
+      expect(seen[1].headers['Cookie'], 'sid=1', reason: '站点子域照带');
+      expect(
+        seen[2].headers.containsKey('Cookie'),
+        isFalse,
+        reason: '跳到别的域拿不到登录态',
+      );
+
+      seen.clear();
+      await expectLater(
+        client.downloadTorrent(Uri.parse('https://site.example/t.torrent')),
+        throwsA(isA<ExternalProviderFailure>()),
+        reason: '重定向到明文 HTTP 同样被安全闸门拒绝',
+      );
+      expect(seen, hasLength(1));
+    });
+
+    test('重定向成环：超过上限报错而不是无限跟', () async {
+      int calls = 0;
+      final CustomBtSiteClient client = CustomBtSiteClient(
+        baseUrl: Uri.parse('https://site.example'),
+        rule: BtSiteParserRule.fromJson(<String, Object?>{
+          'fushiBtSiteParser': 1,
+          'search': '/search?q={query}',
+          'rows': 'div.item',
+          'fields': <String, Object?>{
+            'title': 'h3',
+            'magnet': "a[href^='magnet:']@href",
+          },
+        }),
+        client: MockClient((http.Request request) async {
+          calls++;
+          return http.Response(
+            '',
+            302,
+            headers: <String, String>{'location': request.url.toString()},
+          );
+        }),
+      );
+      await expectLater(
+        client.search('x'),
+        throwsA(isA<http.ClientException>()),
+      );
+      expect(calls, CustomBtSiteClient.maxRedirects + 1);
+    });
   });
 
   test('配置：custom 必须带规则，别的格式不能带；Cookie 不能换行', () {
@@ -537,5 +649,36 @@ void main() {
       throwsArgumentError,
     );
     expect(() => _forumSite0(cookie: 'a=1\r\nX-Evil: 1'), throwsArgumentError);
+  });
+
+  test('copyWith：custom 改成别的格式时丢掉规则；custom 内保留 / 替换规则', () {
+    final BtSiteConfig custom = _forumSite0();
+    final BtSiteConfig nyaa = custom.copyWith(
+      format: BtSiteFormat.nyaa,
+      cookie: '',
+    );
+    expect(nyaa.format, BtSiteFormat.nyaa);
+    expect(nyaa.parser, isNull, reason: '规则只属于 custom，改格式不能沿用');
+
+    expect(custom.copyWith(enabled: false).parser, same(custom.parser));
+    final BtSiteParserRule replaced = BtSiteParserRule.fromJson(
+      <String, Object?>{..._forumRule, 'name': 'Other'},
+    );
+    expect(custom.copyWith(parser: replaced).parser, same(replaced));
+
+    expect(
+      nyaa.copyWith(format: BtSiteFormat.custom, parser: replaced).parser,
+      same(replaced),
+    );
+    expect(
+      () => nyaa.copyWith(format: BtSiteFormat.custom),
+      throwsArgumentError,
+      reason: '改回 custom 必须给规则',
+    );
+    expect(
+      () => nyaa.copyWith(parser: replaced),
+      throwsArgumentError,
+      reason: '非 custom 显式给规则仍交构造器拒绝',
+    );
   });
 }

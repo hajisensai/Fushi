@@ -234,9 +234,20 @@ class BtSiteConfig {
     nyaaCategories: nyaaCategories ?? this.nyaaCategories,
     enabled: enabled ?? this.enabled,
     allowInsecureHttp: allowInsecureHttp ?? this.allowInsecureHttp,
-    parser: parser ?? this.parser,
+    parser: _copiedParser(format ?? this.format, parser),
     cookie: cookie ?? this.cookie,
   );
+
+  /// 解析规则跟格式绑定（只有 custom 有）：结果格式不是 custom 时不沿用旧规则
+  /// （否则 custom 站点改格式必撞构造器的规则校验）；显式传了规则则原样交给构造器
+  /// 校验。custom 站点不能没有规则，所以「清空规则」唯一合法的路径就是改格式。
+  BtSiteParserRule? _copiedParser(
+    BtSiteFormat resultFormat,
+    BtSiteParserRule? parser,
+  ) {
+    if (parser != null) return parser;
+    return resultFormat == BtSiteFormat.custom ? this.parser : null;
+  }
 
   Map<String, Object?> toJson() => <String, Object?>{
     'id': id,
