@@ -237,7 +237,14 @@ pub fn run(t: &Truth<'_>, col: i64, req: &Value, files: &mut Files) -> Result<Va
             "entities" => single_echo(files, r.entities(req)?),
             "entity_count" => json!({"n": r.entity_count(req)?}),
             "has_user_data" => json!({"any": r.has_user_data(req)?}),
-            "edits" => single_echo(files, r.edits(req)?),
+            "edits" => {
+                let (table, canon, key_canon) = r.edits(req)?;
+                let mut v = single_echo(files, (table, canon));
+                if !key_canon.is_empty() {
+                    v["keyCanon"] = Value::Object(key_canon);
+                }
+                v
+            }
             "successors" => single(files, r.successors()?),
             "conflict_edits" => single(files, r.conflict_edits(req)?),
             "style_candidates" => single(files, r.style_candidates(req)?),
@@ -567,8 +574,33 @@ impl<'t, 'c> Reads<'t, 'c> {
     /// （[Index::canonical_key]）再比：以一个完整 ID 结尾的前缀（`historyFrom/<卡>`、`f/<字段>`）换成规范 ID，请求给别名
     /// 成员的形也命中；不含 ID 的前缀（`notDup/`、`f/`）不变。停在 ID 中间的前缀（半截 UUID）无从归一，只按规范键的
     /// 文本比——调用方（`noteFieldKeyPrefixValues` 的 `notDup/`）没有这种用法。
-    fn edits(&mut self, req: &Value) -> Result<(Vec<u8>, serde_json::Map<String, Value>), String> {
+    ///
+    /// `keys`（可选，G9-7）：调用方接下来要按哪些字段键取值（Dart `_currentValues` 记撤销的改前值）。回包 `keyCanon` 给
+    /// 其中归一后不同的那些「请求键 → 规范键」（键里嵌着别名类的非规范成员，如持久化的带盐字段 ID），与 `canon` 同一
+    /// 口径、只列不同的；调用方按它换成规范键取，不再为键另发 `canonical_ids`。
+    #[allow(clippy::type_complexity)]
+    fn edits(
+        &mut self,
+        req: &Value,
+    ) -> Result<
+        (
+            Vec<u8>,
+            serde_json::Map<String, Value>,
+            serde_json::Map<String, Value>,
+        ),
+        String,
+    > {
         let kind = need_kind(req, "kind")?;
+        let mut key_canon = serde_json::Map::new();
+        if let Some(keys) = req.get("keys").filter(|v| !v.is_null()) {
+            for k in keys.as_array().ok_or("read edits: keys must be an array")? {
+                let k = k.as_str().ok_or("read edits: keys must be strings")?;
+                let c = self.ix.canonical_key(k)?;
+                if c != k {
+                    key_canon.insert(k.to_owned(), Value::String(c));
+                }
+            }
+        }
         let (mut ids, canon) = canon_ids_echo(&self.ix, need_list(req, "ids")?)?;
         ids.sort_by(|a, b| sql_order(a).cmp(&sql_order(b)));
         let key = match opt_str(req, "key") {
@@ -591,7 +623,7 @@ impl<'t, 'c> Reads<'t, 'c> {
                 out.push(vec![Cell::S(c.text()), Cell::S(j), Cell::OptI(st)])?;
             }
         }
-        Ok((out.encode(), canon))
+        Ok((out.encode(), canon, key_canon))
     }
 
     /// `successors`：全部「前身卡 → 后继卡」链接（`entity_id` 规范后继卡, `field_key` = `historyFrom/<规范前身卡>`），

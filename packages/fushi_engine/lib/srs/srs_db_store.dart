@@ -21,7 +21,6 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:meta/meta.dart' show visibleForTesting;
 
 import 'package:fushi_engine/srs/srs_builtin.dart';
-import 'package:fushi_engine/srs/srs_canonical_ids.dart';
 import 'package:fushi_engine/srs/srs_collection_binding.dart';
 import 'package:fushi_engine/srs/srs_core_workers.dart';
 import 'package:fushi_engine/srs/srs_edit_undo.dart';
@@ -1241,10 +1240,24 @@ class SrsDbStore implements SrsSync2Host {
   /// 内核的行按规范 ID 出（一个别名类一份）；请求里是别名成员的 ID 时，回包的 `canon` 表给出它的规范 ID
   /// （native/fushi_fsrs/src/store/gen4/cmd/reads.rs `single_echo`），这里按它把行对回请求 ID（[srsRowsByRequest]）——
   /// 调用方按自己给的 ID 预建槽、按自己给的 ID 取（[_prefetchEdits] 等），不另发 `canonical_ids`。
+  ///
+  /// [keyCanon] 给了：请求的 `keys`（调用方接下来要取值的字段键）里归一后不同的「请求键 → 规范键」（回包 `keyCanon`）
+  /// 记进去（[_currentValues]）。
   Future<Map<String, List<SrsEditItem>>> _editItemsById(
-    Map<String, Object?> query,
-  ) async {
+    Map<String, Object?> query, {
+    Map<String, String>? keyCanon,
+  }) async {
     final SrsReadResult res = await _read('edits', query);
+    if (keyCanon != null) {
+      final Object? echoed = res.json['keyCanon'];
+      if (echoed is Map) {
+        for (final MapEntry<Object?, Object?> e in echoed.entries) {
+          if (e.key case final String k) {
+            if (e.value case final String c) keyCanon[k] = c;
+          }
+        }
+      }
+    }
     final SrsColumns c = res.table;
     final SrsStringColumn e = c.strings('e');
     final SrsStringColumn j = c.strings('j');
@@ -2379,10 +2392,15 @@ class SrsDbStore implements SrsSync2Host {
     if (missing.isNotEmpty) await _emit(missing);
   });
 
+  /// [canonicalIds] 发过几次 `canonical_ids`（测试用：读路径按回包的 `canon` / `keyCanon` 对，不另发这条命令）。
+  @visibleForTesting
+  int debugCanonicalIdsCalls = 0;
+
   /// 一批 ID 的规范 ID（内核 `canonical_ids`，只读、一个读快照，逐项对应）。一次最多 `kSrsCanonicalIdsBatchMax`
   /// 条，多了由调用方分批（srs_canonical_ids.dart 的 `srsCanonicalIdMap`）；归一不到的 ID 原样返回。
   Future<List<String>> canonicalIds(List<String> ids) async {
     if (ids.isEmpty) return const <String>[];
+    debugCanonicalIdsCalls++;
     final Map<String, Object?> r = await _sync2(<String, Object?>{
       'op': 'canonical_ids',
       'ids': ids,
@@ -2648,14 +2666,18 @@ class SrsDbStore implements SrsSync2Host {
   }
 
   /// 一组实体各自的修改记录（[_entityEdits] 的成批版本：按 ID 分块预读，每块两三次往返）。
+  ///
+  /// [keys] / [keyCanon]：见 [_editItemsById]（只对嵌着 ID 的键有意义）。
   Future<Map<String, SrsEntityEdits>> _entityEditsMany(
     SrsEntityKind kind,
-    Iterable<String> ids,
-  ) async {
+    Iterable<String> ids, {
+    List<String>? keys,
+    Map<String, String>? keyCanon,
+  }) async {
     final Map<String, SrsEntityEdits> out = <String, SrsEntityEdits>{};
     for (final List<String> chunk in _chunks(ids.toSet())) {
       final _RefreshPrefetch pre = _RefreshPrefetch();
-      await _prefetchEdits(pre, kind, chunk);
+      await _prefetchEdits(pre, kind, chunk, keys: keys, keyCanon: keyCanon);
       // 整块一次 FFI 调用（字段寄存器内核）。
       final List<SrsEntityEdits> edits = srsEntityEditsOf(<List<SrsEditItem>>[
         for (final String id in chunk) pre.edits['${kind.wire}/$id']!,
@@ -2714,18 +2736,29 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 一组实体的全部修改记录**原文**（canonical JSON 的 UTF-8 字节）+ 这些记录的服务器时刻（同一条
   /// 语句 LEFT JOIN 出来）：物化整块交给字段寄存器内核，修改记录不在 Dart 侧解析。
+  ///
+  /// [keys] / [keyCanon]：见 [_editItemsById]（键只问一次：第一块带上）。
   Future<void> _prefetchEdits(
     _RefreshPrefetch pre,
     SrsEntityKind kind,
-    Iterable<String> ids,
-  ) async {
+    Iterable<String> ids, {
+    List<String>? keys,
+    Map<String, String>? keyCanon,
+  }) async {
+    bool keysAsked = keys == null || keys.isEmpty;
     for (final List<String> chunk in _chunks(ids)) {
       for (final String id in chunk) {
         pre.edits['${kind.wire}/$id'] = <SrsEditItem>[];
       }
       final Map<String, List<SrsEditItem>> byId = await _editItemsById(
-        <String, Object?>{'kind': kind.wire, 'ids': chunk},
+        <String, Object?>{
+          'kind': kind.wire,
+          'ids': chunk,
+          if (!keysAsked) 'keys': keys,
+        },
+        keyCanon: keysAsked ? null : keyCanon,
       );
+      keysAsked = true;
       for (final MapEntry<String, List<SrsEditItem>> e in byId.entries) {
         pre.edits['${kind.wire}/${e.key}']!.addAll(e.value);
       }
@@ -4113,17 +4146,31 @@ class SrsDbStore implements SrsSync2Host {
     final Map<String, SrsNoteView?> noteViews = noteIds.isEmpty
         ? const <String, SrsNoteView?>{}
         : await notes(noteIds);
-    // 修改记录寄存器按类型分组成批读（键为 `<kind>/<id>`）。
+    // 修改记录寄存器按类型分组成批读（键为 `<kind>/<id>`）。键里嵌着 ID 的（`f/<字段>` 等）一并交给同一次读：视图与
+    // 寄存器按规范键出（内核 `Index::canonical_key`），键里是别名类的非规范成员（调用方传进持久化的带盐旧 ID）时按请求
+    // 键取不到，回包 `keyCanon` 给出它的规范键（[_editItemsById]）——不另发 `canonical_ids`。
     final Map<SrsEntityKind, Set<String>> byKind =
         <SrsEntityKind, Set<String>>{};
-    for (final (SrsEntityKind k, String id, String _) in keys) {
+    final Map<SrsEntityKind, Set<String>> idKeysByKind =
+        <SrsEntityKind, Set<String>>{};
+    for (final (SrsEntityKind k, String id, String key) in keys) {
       (byKind[k] ??= <String>{}).add(id);
+      if (srsKeyEmbeddedId(key) != null) {
+        (idKeysByKind[k] ??= <String>{}).add(key);
+      }
     }
     final Map<String, SrsEntityEdits> registers = <String, SrsEntityEdits>{};
+    final Map<SrsEntityKind, Map<String, String>> keyCanon =
+        <SrsEntityKind, Map<String, String>>{};
     for (final MapEntry<SrsEntityKind, Set<String>> k in byKind.entries) {
+      final Set<String>? idKeys = idKeysByKind[k.key];
       for (final MapEntry<String, SrsEntityEdits> e in (await _entityEditsMany(
         k.key,
         k.value,
+        keys: idKeys?.toList(),
+        keyCanon: idKeys == null
+            ? null
+            : (keyCanon[k.key] = <String, String>{}),
       )).entries) {
         registers['${k.key.wire}/${e.key}'] = e.value;
       }
@@ -4150,36 +4197,10 @@ class SrsDbStore implements SrsSync2Host {
       };
     }
 
-    final Map<String, Object?> out = <String, Object?>{};
-    // 键里嵌着 ID 的（`f/<字段>` 等）：视图与寄存器按规范键出（内核 `Index::canonical_key`），键里是别名类的
-    // 非规范成员（调用方传进持久化的带盐旧 ID）时按请求键取不到。只对取不到值的这种键整批问一次内核，换成规范键
-    // 再取；取得到的不多问（成员键取不到 = 它不是规范形，规范键也取不到 = 本来就没有值）。
-    final List<(SrsEntityKind, String, String, String, String)> unresolved =
-        <(SrsEntityKind, String, String, String, String)>[];
-    for (final (SrsEntityKind kind, String id, String key) in keys) {
-      final Object? v = valueOf(kind, id, key);
-      out['${kind.wire}/$id/$key'] = v;
-      if (v != null && v != '') continue;
-      final (String, String)? split = srsKeyEmbeddedId(key);
-      if (split != null) unresolved.add((kind, id, key, split.$1, split.$2));
-    }
-    if (unresolved.isEmpty) return out;
-    final Map<String, String> canon = await srsCanonicalIdMap(<String>[
-      for (final (_, _, _, _, String embedded) in unresolved) embedded,
-    ], canonicalIds);
-    for (final (
-          SrsEntityKind kind,
-          String id,
-          String key,
-          String prefix,
-          String embedded,
-        )
-        in unresolved) {
-      final String? c = canon[embedded];
-      if (c == null || c == embedded) continue;
-      out['${kind.wire}/$id/$key'] = valueOf(kind, id, '$prefix$c');
-    }
-    return out;
+    return <String, Object?>{
+      for (final (SrsEntityKind kind, String id, String key) in keys)
+        '${kind.wire}/$id/$key': valueOf(kind, id, keyCanon[kind]?[key] ?? key),
+    };
   }
 
   /// 一组卡片的缓存行（不存在的 ID 跳过）。

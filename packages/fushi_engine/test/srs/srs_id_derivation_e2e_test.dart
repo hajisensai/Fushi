@@ -132,6 +132,25 @@ void main() {
     expect(r.reverted, 1);
     expect(r.kept, isEmpty);
     expect((await store.note(note))?.field(expression), '鯨');
+
+    // 给空字段写值（补音频 / 例句的常见形）：改前值按同一次 `edits` 读的回包取，不为键里嵌的字段 ID 另发
+    // `canonical_ids`（全新库里键本来就是规范形）。
+    final String other = (await store.noteType(store.lapisNoteTypeId))!.fields
+        .map((SrsFieldDef f) => f.id)
+        .firstWhere((String f) => f != expression);
+    final int calls = store.debugCanonicalIdsCalls;
+    final SrsEditUndo fill = await change(
+      store,
+      SrsEntityKind.note,
+      note,
+      SrsFieldKeys.noteField(other),
+      'filled',
+    );
+    expect(store.debugCanonicalIdsCalls, calls, reason: 'no canonical_ids');
+    expectDot(fill);
+    expect((await store.note(note))?.field(other), 'filled');
+    expect((await store.revertEdits(fill)).reverted, 1);
+    expect((await store.note(note))?.field(other), anyOf(isNull, isEmpty));
   });
 
   test('迁移形的库（存量 ID 带盐）：按带盐 ID 读写、建同名牌组 / 同 guid 笔记落在同一个类、撤销带 dot', () async {
@@ -272,6 +291,8 @@ void main() {
     );
     expectDot(deckUndo);
     expect((await store.deckTree())[deck]?.name, 'Renamed');
+    // 键里嵌着带盐字段 ID：改前值按 `edits` 读回包的 `keyCanon` 换成规范键取（不另发 `canonical_ids`），撤得回 '狼'。
+    final int calls = store.debugCanonicalIdsCalls;
     final SrsEditUndo noteUndo = await change(
       store,
       SrsEntityKind.note,
@@ -280,6 +301,7 @@ void main() {
       '狐',
     );
     expectDot(noteUndo);
+    expect(store.debugCanonicalIdsCalls, calls, reason: 'no canonical_ids');
     expect((await store.note(note))?.field(expression), '狐');
 
     expect((await store.revertEdits(noteUndo)).reverted, 1);

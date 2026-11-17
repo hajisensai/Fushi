@@ -206,7 +206,7 @@ fn migrated_with(conflict: bool) -> Migrated {
 }
 
 /// [migrated_with]；迁移之前先在协议 3 库上跑 [prep]（补复习、媒体引用之类的场景数据）。
-fn migrated_prepared(conflict: bool, prep: &dyn Fn(&Device)) -> Migrated {
+pub(super) fn migrated_prepared(conflict: bool, prep: &dyn Fn(&Device)) -> Migrated {
     let (d, b, mut bucket) = library_pair();
     prep(&d);
     if conflict {
