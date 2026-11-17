@@ -37,6 +37,12 @@
 //!
 //! 同一轮里先把所有 head 登记完再收段（`plan` 在前、`ingest` 在后；`oldroot_ingest` 先登记 head 再收段）：全新设备
 //! 第一轮同时见到几台设备时它们都还算首次信任，与协议 3 相同。
+//!
+//! 「这一轮」按轮记（第五波，混合版本家庭）：一轮里旧根接手（`oldroot_ingest`）排在收新根之后，全新设备收完新根库就
+//! 非空了，旧根上用户自己还没升级的协议 3 设备若照「此刻库非空」判，全成了待确认。所以 `plan`（每轮开头、收段之前）按
+//! 位置记下「这一轮开始时库是不是空的」（`cmd/sync.rs` `round_fresh_key`），`oldroot_ingest` 第一次见到、且本机还
+//! 没有它任何日志的协议 3 作者按这一轮开头的结论判（[Truth::note_new_peer_in_round]）——与协议 3 一轮之内同时见到
+//! 的设备都算首次信任同一口径。本机已有它的日志、公钥却第一次登记的，照旧按此刻判（不放宽 G10-4 的收紧）。
 
 use rusqlite::params;
 use serde_json::Value;
@@ -144,6 +150,20 @@ impl Truth<'_> {
         prev: Option<&PrevIdentity>,
         seen_at: i64,
     ) -> Result<FirstSeen, String> {
+        self.note_new_peer_in_round(col, device, public, prev, seen_at, false)
+    }
+
+    /// [Truth::note_new_peer]，[round_fresh] = 这一轮开始时本机库还是空的（模块文件头「这一轮」按轮记）：为真时库此刻
+    /// 非空也按首次信任判。调用方只对本机还没有它任何日志的设备传真。
+    pub fn note_new_peer_in_round(
+        &self,
+        col: i64,
+        device: &Id,
+        public: &[u8; 32],
+        prev: Option<&PrevIdentity>,
+        seen_at: i64,
+        round_fresh: bool,
+    ) -> Result<FirstSeen, String> {
         self.write(|| {
             if let Some(p) = prev.filter(|p| p.device != *device) {
                 if self.device_key(col, &p.device)?.as_ref() == Some(public) {
@@ -167,7 +187,7 @@ impl Truth<'_> {
                     });
                 }
             }
-            if self.library_fresh(col)? {
+            if round_fresh || self.library_fresh(col)? {
                 return Ok(FirstSeen::Fresh);
             }
             self.set_trust(col, device, Some(TRUST_PENDING), seen_at)?;

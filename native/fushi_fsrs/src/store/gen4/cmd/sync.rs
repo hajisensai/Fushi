@@ -138,6 +138,11 @@ fn me_of(t: &Truth<'_>, col: i64) -> Result<SelfId, String> {
     })
 }
 
+/// 「这一轮开始时库是空的」（`plan` 每轮按位置写 `1` / `0`，`oldroot_ingest` 读；`truth/trust.rs` 文件头）。
+pub(crate) fn round_fresh_key(col: i64, location: &str) -> String {
+    format!("gen4_round_fresh/{col}/{location}")
+}
+
 pub(crate) fn meta_get(t: &Truth<'_>, key: &str) -> Result<Option<String>, String> {
     t.conn()
         .prepare_cached("SELECT value FROM srs_meta WHERE key = ?1")
@@ -733,6 +738,13 @@ pub fn plan(t: &Truth<'_>, col: i64, req: &Value, heads: &[Vec<u8>]) -> Result<V
     let location = str_req(req, "location")?;
     let now = now_of(req)?;
     let loc = req.get("loc").and_then(Value::as_str);
+    // 这一轮开始时（收任何段之前）库是不是空的：同一轮稍后的旧根接手按它判首次信任（`truth/trust.rs` 文件头）。
+    let fresh = t.library_fresh(col)?;
+    meta_set(
+        t,
+        &round_fresh_key(col, location),
+        if fresh { "1" } else { "0" },
+    )?;
     let me = me_of(t, col)?;
     let (collections, _, _) = collections_of(t, col)?;
     let retired = t.retired(col)?;

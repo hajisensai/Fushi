@@ -36,7 +36,9 @@ use serde_json::{Value, json};
 
 use super::Files;
 use super::media_sync::{hex32, unhex32};
-use super::sync::{bump_revision, collections_of, meta_get, meta_set, settled_json};
+use super::sync::{
+    bump_revision, collections_of, meta_get, meta_set, round_fresh_key, settled_json,
+};
 use crate::gen4::location::{V4File, parse_v4_path};
 use crate::store::gen4::ingest::Settle;
 use crate::store::gen4::inherit::{Seen, Uploader, vouches_for};
@@ -197,6 +199,8 @@ pub fn oldroot_ingest(
     let source = collection_of(&dir);
     let mut errors: Vec<String> = Vec::new();
     let mut trust_moved = false;
+    // 这一轮开始时库是空的（`plan` 记的）：本轮第一次见到、本机还没有它日志的协议 3 作者照首次信任（混合版本家庭）。
+    let round_fresh = meta_get(t, &round_fresh_key(col, location))?.as_deref() == Some("1");
     for b in &blobs[..nheads] {
         let h = match Head3::decode(b) {
             Ok(h) => h,
@@ -222,11 +226,12 @@ pub fn oldroot_ingest(
                 "v3 head of {}: signed by another key than the one on record (impostor)",
                 h.device
             )),
-            // 第一次见到这个旧作者：首见信任判定（`truth/trust.rs`；协议 3 head 没有 `prev`）。库非空 = 待确认，这一批
-            // 随后落进来的它的删除与清除扣住。
+            // 第一次见到这个旧作者：首见信任判定（`truth/trust.rs`；协议 3 head 没有 `prev`）。这一轮开始时库就非空 =
+            // 待确认，这一批随后落进来的它的删除与清除扣住；本机已有它的日志（段头没带公钥）照此刻判。
             PeerPut::Inserted => {
+                let fresh_round = round_fresh && t.last_of(col, &h.device)? == 0;
                 trust_moved |= t
-                    .note_new_peer(col, &h.device, &h.public, None, h.at_ms)?
+                    .note_new_peer_in_round(col, &h.device, &h.public, None, h.at_ms, fresh_round)?
                     .wrote();
             }
             PeerPut::Updated | PeerPut::Same => {}
