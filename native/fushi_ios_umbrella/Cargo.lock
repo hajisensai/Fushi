@@ -1212,6 +1212,7 @@ dependencies = [
  "brotli-decompressor",
  "cbc",
  "crc32fast",
+ "encoding_rs",
  "fushi_asr_cue_post",
  "image",
  "jpeg-encoder",
