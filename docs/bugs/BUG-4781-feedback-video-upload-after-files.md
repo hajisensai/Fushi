@@ -1,4 +1,4 @@
-## BUG-4778 · 反馈视频排在样本文件后上传，共用每 IP 每天额度被 429 挤掉
+## BUG-4781 · 反馈视频排在样本文件后上传，共用每 IP 每天额度被 429 挤掉
 - **报告**：2026-11-17（PR #3565 遗留项核实：样本文件和录屏视频共用每 IP 每天 200 MiB 的额度，客户端又先传文件后传视频）
 - **真实性**：✅ 真 bug。根因：
   - 服务端 `services/leaderboard/src/feedback.js:151` `videoBytesPerIpDay = 200 MiB`，`:772-797` 视频（v0）与样本文件（f0..f2）计同一个 `feedback:video:ip:<ip>` 额度，超了 429。`packages/fushi_engine/lib/feedback/feedback_models.dart` 允许 3 个文件、每个 100 MB，三个满额文件就超过当天额度。
