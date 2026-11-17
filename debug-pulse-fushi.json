@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-17T07:04:06Z",
+ "generatedAt": "2026-11-17T07:04:32Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "8d58da51da95979f54a169017f01628f65396e4c",
@@ -14,21 +14,9 @@
    "unknown": false,
    "publishedAt": "2026-11-17T07:03:55Z",
    "testflight": true,
-   "baseSeq": 28460,
+   "baseSeq": 28546,
    "prs": [
-    3646,
-    3653,
-    3651,
-    3654,
-    3655,
-    3648,
-    3658,
-    3652,
-    3647,
-    3645,
-    3643,
-    3642,
-    3639
+    3646
    ],
    "direct": [],
    "truncated": false,
@@ -46,6 +34,48 @@
     },
     "ios": {
      "state": "ok"
+    }
+   }
+  },
+  {
+   "seq": 28546,
+   "version": "3.3.0",
+   "sha": "0721b32b18f94eb4316bc916311e352be81bed9f",
+   "unknown": false,
+   "publishedAt": "2026-11-17T07:04:23Z",
+   "testflight": false,
+   "baseSeq": 28460,
+   "prs": [
+    3653,
+    3651,
+    3654,
+    3655,
+    3648,
+    3658,
+    3652,
+    3647,
+    3645,
+    3643,
+    3642,
+    3639
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44027087635"
+    },
+    "macos": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44027087635"
+    },
+    "ios": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44027087635"
     }
    }
   },
@@ -86,35 +116,6 @@
    "unknown": false,
    "publishedAt": "2026-11-17T04:48:40Z",
    "testflight": true,
-   "baseSeq": 28442,
-   "prs": [
-    3634,
-    3633
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 28442,
-   "version": "3.3.0",
-   "sha": "f650a4771313007ea9893c2c552dc2ab29764d3c",
-   "unknown": false,
-   "publishedAt": "2026-11-17T03:58:01Z",
-   "testflight": false,
    "baseSeq": null,
    "prs": [],
    "direct": [],
@@ -124,16 +125,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44008978831"
+     "state": "ok"
     },
     "macos": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44008978831"
+     "state": "ok"
     },
     "ios": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44008978831"
+     "state": "ok"
     }
    }
   }
@@ -170,24 +168,6 @@
   }
  },
  "prs": {
-  "3633": {
-   "number": 3633,
-   "title": "fix(srs): develop 上 fushi_engine 两条 SRS 红——gen4 嵌入 ID 归一补内置规则、预演测试跟上 open 签名、旧版 HLC 夹具重生成",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-17T03:27:03Z",
-   "additions": 134,
-   "deletions": 21,
-   "labels": []
-  },
-  "3634": {
-   "number": 3634,
-   "title": "test(reader): node 行为 harness 切入生产新增的 _noteEinkScroll / designatesCurrentSelection（develop 尖端 reader-js 两条红）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-17T03:31:02Z",
-   "additions": 19,
-   "deletions": 1,
-   "labels": []
-  },
   "3635": {
    "number": 3635,
    "title": "fix(licenses): 给 6 个只附 SPDX 文本的原生 crate 登记上游许可原文",
