@@ -12,6 +12,8 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/collections/collection_ai_order.dart'
     show scheduleAutomaticCollectionAiOrder;
+import 'package:fushi/src/media/library_curate/library_curate_auto.dart'
+    show libraryCurateAutoOwnsTriggers, scheduleAutomaticLibraryCurate;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/library_organize_history_page.dart';
@@ -250,7 +252,15 @@ final Set<CollectionShelfDomain> _autoInFlight = <CollectionShelfDomain>{};
 
 /// 库页加载 / 来源扫描后调：开了「导入后自动整理」、同意过、有提供商时，去抖后对
 /// [domain] 里**本机上次自动整理之后新入库**的条目跑一次。不阻塞调用方。
+///
+/// AI 库管家自动路径开着（`library_curate_auto`，默认开）时改由它接管：去抖后跑一
+/// 趟库管家（第一阶段就是这个整理，四个域一起），旧的自动整理不再单独跑，两套自动
+/// 任务不会对同一批新条目重复花钱。
 void scheduleAutomaticLibraryOrganize(CollectionShelfDomain domain) {
+  if (libraryCurateAutoOwnsTriggers()) {
+    scheduleAutomaticLibraryCurate();
+    return;
+  }
   final LibraryOrganizeAutoHost? host = _autoHost;
   if (!_autoEnabled(host)) return;
   _debounce[domain]?.cancel();
@@ -262,6 +272,7 @@ void scheduleAutomaticLibraryOrganize(CollectionShelfDomain domain) {
 
 bool _autoEnabled(LibraryOrganizeAutoHost? host) =>
     host != null &&
+    !libraryCurateAutoOwnsTriggers() &&
     host.prefs.libraryOrganizeAuto &&
     host.prefs.libraryOrganizeConsented &&
     resolveLibraryOrganizeAiProvider(host.prefs) != null;

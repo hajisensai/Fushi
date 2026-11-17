@@ -1796,6 +1796,23 @@ List<OpDescription> _describeOrganizeOps(OpDescribeKit kit) => <OpDescription>[
         required: true,
         enumValues: <String>['books', 'manga', 'video', 'games'],
       ),
+      OpParam.string(
+        'trigger',
+        description:
+            'manual (default; medium-confidence moves apply) or auto (only '
+            'high-confidence changes, as the background library curator).',
+        enumValues: <String>['manual', 'auto'],
+      ),
+      OpParam.stringList(
+        'entryKeys',
+        description:
+            'Only organize these member entries (default: the whole page).',
+      ),
+      OpParam.boolean(
+        'rulesOnly',
+        description:
+            'Only the free rule-based grouping; sends nothing to the LLM.',
+      ),
       OpParam.userGate(
         'yes',
         description: 'User agreed to send library metadata to the AI provider.',

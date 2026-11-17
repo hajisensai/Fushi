@@ -43,12 +43,21 @@ List<CtlRoute> buildLibraryOrganizeCtlRoutesFor({
         throw const CtlFailure.rejected('数据已迁移到新版，旧版处于只读状态');
       }
       final PreferencesRepository p = prefs();
-      if (resolveLibraryOrganizeAiProvider(p) == null) {
+      // AI 库管家（spec 2026-11-18 §3）经这条路由跑 ①②：`rulesOnly` = 只跑不花钱
+      // 的规则那一步（没指派提供商 / 碰到单趟请求上限），不发 AI 请求，也就不需要
+      // 「会发送什么」的同意；`trigger=auto` = 自动路径门槛（只落高置信）；
+      // `entryKeys` = 只看这些条目（增量水位之后的新条目）。
+      final bool rulesOnly = call.optBool('rulesOnly') == true;
+      final OrganizeTrigger trigger = call.optString('trigger') == 'auto'
+          ? OrganizeTrigger.auto
+          : OrganizeTrigger.manual;
+      final List<String> entryKeys = call.stringList('entryKeys');
+      if (!rulesOnly && resolveLibraryOrganizeAiProvider(p) == null) {
         throw const CtlFailure.rejected(
           '没有给「AI 整理库」指派提供商（或 AI 模块已关闭）：先在 设置 › 模型 › LLM 里指派',
         );
       }
-      if (!p.libraryOrganizeConsented) {
+      if (!rulesOnly && !p.libraryOrganizeConsented) {
         if (call.optBool('yes') != true) {
           throw const CtlFailure.rejected(
             '会把标题、作者或品牌、年份和视频文件夹名发给 AI 提供商（可能计费）；'
@@ -64,10 +73,15 @@ List<CtlRoute> buildLibraryOrganizeCtlRoutesFor({
             settings: p,
             nameLanguage: nameLanguage(),
             videoTagPrefix: t.library_organize_series_tag_prefix,
+            allowedRejectedKeys: () => p.libraryOrganizeAllowedKeys,
           );
       final LibraryOrganizeResult r = await service.run(
         domain,
-        trigger: OrganizeTrigger.manual,
+        trigger: trigger,
+        onlyEntryKeys: call.body.containsKey('entryKeys')
+            ? entryKeys.toSet()
+            : null,
+        rulesOnly: rulesOnly,
       );
       return <String, Object?>{
         'status': r.status.name,

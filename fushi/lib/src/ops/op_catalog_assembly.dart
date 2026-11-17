@@ -15,6 +15,7 @@ import 'package:fushi/src/ops/op_descriptions_dictionary.dart';
 import 'package:fushi/src/ops/op_descriptions_downloads.dart';
 import 'package:fushi/src/ops/op_descriptions_games.dart';
 import 'package:fushi/src/ops/op_descriptions_library.dart';
+import 'package:fushi/src/ops/op_descriptions_library_curate.dart';
 import 'package:fushi/src/ops/op_descriptions_online.dart';
 import 'package:fushi/src/ops/op_descriptions_settings.dart';
 import 'package:fushi/src/ops/op_descriptions_settings_more.dart';
@@ -30,6 +31,7 @@ List<OpDescription> buildAppOpDescriptions(OpDescribeKit kit) =>
       ...describeDownloadOps(kit),
       ...describeVideoOps(kit),
       ...describeLibraryOps(kit),
+      ...describeLibraryCurateOps(kit),
       ...describeGameOps(kit),
       ...describeDictionaryOps(kit),
       ...describeDataOps(kit),
