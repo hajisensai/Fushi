@@ -200,10 +200,71 @@ void main() {
     await addNote(ja, '飲む');
     expect((await phoneSync(ja)).error, isNull);
     final Future<String> changed = srs.changes.stream.first;
-    srs.onClientWrite('fushi-data/fushi-srs/$kJa/v3/devices/x/seg-1.bin');
-    srs.onClientWrite('fushi-data/books/whatever.epub');
+    expect(
+      await srs.onClientWrite(
+        'fushi-data/fushi-srs/$kJa/v4/devices/x/seg-1.bin',
+      ),
+      <String>[kJa],
+    );
+    expect(await srs.onClientWrite('fushi-data/books/whatever.epub'), isEmpty);
     expect(await changed.timeout(const Duration(seconds: 20)), kJa);
     expect(await expressions(srs.storeFor(kJa)!), <String>['飲む']);
+  });
+
+  test('写入按绑定的位置目录找 profile：目录名不当 uid，坏路径与没提供的 profile 不叫醒（G10-4）', () async {
+    config = const ServerSrsConfig(profiles: <String>[kJa, kZh]);
+    await srs.start();
+    await srs.syncNow();
+    final SrsDbStore ja = srs.storeFor(kJa)!;
+    const String ns = 'fushi-data/fushi-srs';
+    expect(await srs.onClientWrite('$ns/$kJa/v4/meta.json'), <String>[kJa]);
+    expect(await srs.onClientWrite('$ns/$kZh/v4/meta.json'), <String>[kZh]);
+
+    // kJa 并入位置目录 `0000-home` 上的集合：之后那个目录的写入叫醒它，它原来的 uid 目录不再算它的。
+    final Map<String, Object?> joined =
+        (await ja.sync2Command(<String, Object?>{
+          'op': 'collection_join',
+          'into': '0193a1b2-0000-7000-8000-0000000000aa',
+          'dir': '0000-home',
+          'now': ja.now().$1,
+        })).map;
+    expect(joined['outcome'], 'joined', reason: '$joined');
+    expect(await srs.onClientWrite('$ns/0000-home/v4/meta.json'), <String>[
+      kJa,
+    ]);
+    expect(await srs.onClientWrite('$ns/$kJa/v4/meta.json'), isEmpty);
+
+    // 补充名同样按绑定的目录：落在 kJa 绑定目录里的段补上（再补同名 = 没变），没人绑的目录里的段不碰库。
+    Future<bool?> hinted(String device, String name) async =>
+        (await ja.sync2Command(<String, Object?>{
+              'op': 'device_hint',
+              'device': device,
+              'hint': name,
+            })).map['changed']
+            as bool?;
+    const String dev = '0194b0c1-3333-7444-8555-666677778888';
+    const String stranger = '0194b0c1-3333-7444-8555-666677779999';
+    const String seg = 'seg-000000000001-000000000002-c3c3c3c3.bin';
+    await srs.onClientUpload('$ns/0000-home/v4/devices/$dev/$seg', 'Pixel');
+    expect(await hinted(dev, 'Pixel'), isFalse);
+    await srs.onClientUpload('$ns/zz-nobody/v4/devices/$stranger/$seg', 'Evil');
+    expect(await hinted(stranger, 'Evil'), isTrue);
+
+    // 对端写的路径不可信：坏目录名（内核拒绝）、空段、`..`、别的命名空间一律不叫醒任何一份。
+    for (final String bad in <String>[
+      '$ns/${'a' * 300}/v4/meta.json',
+      '$ns//v4/meta.json',
+      '$ns/../$kJa/v4/meta.json',
+      '$ns/.',
+      'fushi-data/books/$kJa/v4/meta.json',
+    ]) {
+      expect(await srs.onClientWrite(bad), isEmpty, reason: bad);
+    }
+
+    // 绑定还在库里、但管理员不再提供的 profile 不叫醒。
+    config = const ServerSrsConfig(profiles: <String>[kJa]);
+    await srs.applyConfig();
+    expect(await srs.onClientWrite('$ns/$kZh/v4/meta.json'), isEmpty);
   });
 
   test('远程复习的「今天」按客户端带来的偏移算；不带时按服务端时区', () async {

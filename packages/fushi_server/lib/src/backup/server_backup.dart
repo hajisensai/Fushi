@@ -15,7 +15,8 @@
 /// ```
 ///
 /// 不进包：`tmp/`、`logs/`、`backups/`（备份自己）、数据目录锁文件、主库与新代复习库的
-/// `-wal` / `-shm` / `-journal`（快照已含）、旧复习库的 `-shm` / `-journal`。
+/// `-wal` / `-shm` / `-journal`（快照已含）、旧复习库的 `-shm` / `-journal`、换代迁移的过程文件（临时库、补完副本）。
+/// 复习库正在换代迁移时 admin API 不开始备份（`ServerSrs.holdForBackup`，G10-4）。
 ///
 /// **格式第 2 版**（G11-4）：复习库换成新代 `srs4.db`。旧版本（只认 v1）见到 v2 在动任何东西之前拒绝、提示升级；
 /// 这一版照样还原 v1 的包（包里只有协议 3 的 `srs.db`，下次启动按迁移处理）。`documents/`（书 / 封面 / 有声书 / 下载）
@@ -75,6 +76,15 @@ final Set<String> _liveDbFiles = <String>{
       '$db$suffix',
   '$kSrsDatabaseFileName-shm',
   '$kSrsDatabaseFileName-journal',
+  // 换代迁移的过程文件（native/fushi_fsrs/src/store/gen4/files.rs `GEN4_TEMP` / `GEN4_CREATING` / `PREPARE_COPY`）：
+  // 只在迁移进行中或被杀之后存在，下次迁移取锁后先清掉；拷进包里还原回来也只是要清的垃圾（G10-4）。
+  for (final String temp in <String>[
+    'srs4.db-migrating',
+    'srs4.db-creating',
+    'srs.db-gen4-prepare',
+  ])
+    for (final String suffix in <String>['', '-wal', '-shm', '-journal'])
+      '$temp$suffix',
 };
 
 /// 把复习库一致地快照到 [path]（必须不存在）。serve 在跑时由 `ServerSrs.snapshotInto` 走它那份打开的连接。

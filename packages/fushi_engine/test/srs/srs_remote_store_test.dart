@@ -285,10 +285,28 @@ void main() {
       }),
     ).single;
     expect(typeView.tag, ref['tag']);
+    // 内置类型的代码默认值按主机信封里的规范 ID 派生（G10-4），不按 uid。
+    final SrsRemoteRootIds roots = (
+      defaultDeck: store.defaultDeckId,
+      lapis: store.lapisNoteTypeId,
+      fushiCard: store.fushiCardNoteTypeId,
+    );
     final SrsNoteTypeView type = SrsRemoteWire.noteTypesFrom(
-      _uid,
+      roots,
       <SrsEntityView>[typeView],
     ).single;
+    // 换一份根 ID（两种内置类型对调）：默认值跟着给的 ID 走，与主机的对不上——证明客户端用的是信封里的那一份。
+    final SrsNoteTypeView swapped = SrsRemoteWire.noteTypesFrom(
+      (
+        defaultDeck: roots.defaultDeck,
+        lapis: roots.fushiCard,
+        fushiCard: roots.lapis,
+      ),
+      <SrsEntityView>[typeView],
+    ).single;
+    expect(<String>[
+      for (final SrsFieldDef f in swapped.fields) f.id,
+    ], isNot(<String>[for (final SrsFieldDef f in host.noteType.fields) f.id]));
     expect(type.name, host.noteType.name);
     expect(type.css, host.noteType.css);
     expect(type.builtinKey, host.noteType.builtinKey);

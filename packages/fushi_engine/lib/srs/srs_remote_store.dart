@@ -407,14 +407,16 @@ abstract final class SrsRemoteWire {
         : _J.guard('notes', () => srsMaterializeNotes(sources));
   }
 
-  /// 笔记类型视图按输入顺序物化（没有身份记录的跳过；结果与跳过后的输入逐项对应，按 ID 对回）。
+  /// 笔记类型视图按输入顺序物化（没有身份记录的跳过；结果与跳过后的输入逐项对应，按 ID 对回）。内置类型的代码默认值
+  /// （字段 / 模板 ID）由主机信封里的规范 ID [roots] 派生（G10-4）：客户端不按 uid 派生，并入 / 认领后主机 profile 的
+  /// uid 与集合无关，规范 ID 才是两端共同的那一份。
   static List<SrsNoteTypeView> noteTypesFrom(
-    String profileUid,
+    SrsRemoteRootIds roots,
     List<SrsEntityView> views,
-  ) => _noteTypesOf(profileUid, sourcesOf(views, 'noteTypes'));
+  ) => _noteTypesOf(roots, sourcesOf(views, 'noteTypes'));
 
   static List<SrsNoteTypeView> _noteTypesOf(
-    String profileUid,
+    SrsRemoteRootIds roots,
     List<SrsEntitySource> sources,
   ) => sources.isEmpty
       ? const <SrsNoteTypeView>[]
@@ -423,9 +425,22 @@ abstract final class SrsRemoteWire {
           () =>
               srsMaterializeNoteTypes(<(SrsEntitySource, SrsBuiltinNoteType?)>[
                 for (final SrsEntitySource s in sources)
-                  (s, srsBuiltinNoteTypeForKey(profileUid, _builtinKeyOf(s))),
+                  (s, _builtinOf(roots, _builtinKeyOf(s))),
               ]),
         );
+
+  /// 内置标识 [key] 在主机集合里的定义（不是内置 = null）。只认信封 `ids` 里有规范 ID 的两种内置类型；内核以后多出
+  /// 一种内置类型而信封没带它的 ID 时报线格式错，不退回按 uid 派生。
+  static SrsBuiltinNoteType? _builtinOf(SrsRemoteRootIds roots, String? key) {
+    final SrsBuiltinNoteTypeSpec? spec = srsBuiltinNoteTypeSpec(key);
+    if (spec == null) return null;
+    final String nt = switch (spec.key) {
+      kSrsBuiltinLapisKey => roots.lapis,
+      kSrsBuiltinFushiCardKey => roots.fushiCard,
+      _ => throw SrsRemoteWireError('ids.${spec.key}'),
+    };
+    return srsBuiltinNoteTypeIn(nt, spec);
+  }
 
   /// 笔记类型身份记录里的内置标识（`builtin`）；没有为 null。
   static String? _builtinKeyOf(SrsEntitySource s) {
