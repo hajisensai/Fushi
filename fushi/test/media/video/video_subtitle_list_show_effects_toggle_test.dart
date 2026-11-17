@@ -44,6 +44,7 @@ Widget _panel({
   required List<bool> persisted,
   VideoSubtitleListFilter initialFilter = VideoSubtitleListFilter.all,
   bool Function(AudioCue cue)? isCueFavorited,
+  double width = 520,
 }) {
   return MaterialApp(
     home: Scaffold(
@@ -64,7 +65,7 @@ Widget _panel({
             colorScheme: const ColorScheme.dark(),
             title: 'Subtitle list',
             emptyHint: 'empty',
-            width: 520,
+            width: width,
           ),
         ],
       ),
@@ -209,14 +210,57 @@ void main() {
       expect(find.text(t.video_favorite_count(count: 0)), findsOneWidget);
       expect(find.text(t.video_favorite_count(count: 1)), findsNothing);
 
-      // 打开开关后那句收藏回到列表，计数同步变 1。经典版式的开关在可横向拖动的筛选行里，
-      // 收藏档右侧多了导出钮与计数，窄面板下要先滚到可见。
-      await tester.ensureVisible(find.byKey(_toggleKey));
-      await tester.pump();
+      // 打开开关后那句收藏回到列表，计数同步变 1。开关必须不经滚动就能直接命中。
+      expect(find.byKey(_toggleKey).hitTestable(), findsOneWidget);
       await tester.tap(find.byKey(_toggleKey));
       await tester.pump();
       expect(_row(_effectLyric), findsOneWidget);
       expect(find.text(t.video_favorite_count(count: 1)), findsOneWidget);
+    });
+  }
+
+  // 经典版式收藏档：右侧多出导出钮与「收藏 N」计数。开关曾排在可横向拖动的筛选区里，
+  // 窄面板下被挤出视口、要横向拖才看得到。520 与最窄 240 面板都必须不经滚动直接命中，
+  // 且整颗按钮落在面板内。
+  for (final double width in <double>[520, 240]) {
+    testWidgets('classic favorites @${width.toInt()}: show-effects toggle is '
+        'directly visible without scrolling', (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(
+        AssParser.parseString(content: _ass, bookKey: 'video/1'),
+      );
+      final List<bool> persisted = <bool>[];
+      await tester.pumpWidget(
+        _panel(
+          layout: VideoSubtitleListLayout.classic,
+          controller: controller,
+          initialShowEffects: false,
+          persisted: persisted,
+          initialFilter: VideoSubtitleListFilter.favorites,
+          isCueFavorited: (AudioCue c) => c.text == '普通台词一',
+          width: width,
+        ),
+      );
+      await tester.pump();
+
+      final Finder toggle = find.byKey(_toggleKey);
+      expect(toggle.hitTestable(), findsOneWidget);
+      final Rect panelRect = tester.getRect(
+        find.byType(VideoSubtitleJumpPanel),
+      );
+      final Rect toggleRect = tester.getRect(toggle);
+      expect(
+        toggleRect.left >= panelRect.left &&
+            toggleRect.right <= panelRect.right,
+        isTrue,
+        reason: 'toggle $toggleRect must sit inside panel $panelRect',
+      );
+      await tester.tap(toggle);
+      await tester.pump();
+      expect(persisted, <bool>[true]);
     });
   }
 }

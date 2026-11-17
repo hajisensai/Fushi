@@ -239,7 +239,9 @@ class FakeAdvancedMiningHost {
     Uint8List? pageBytes,
     MangaCropSuggestions? suggestions = mangaSuggestions,
     bool downloadable = true,
+    AdvancedMiningCropSource source = AdvancedMiningCropSource.mangaPage,
   }) => AdvancedMiningMangaImageSection(
+    source: source,
     loadPage: () async => pageBytes,
     loadSuggestions: () async {
       suggestionLoads.add(suggestionLoads.length);
@@ -371,9 +373,14 @@ class FakeAdvancedMiningHost {
   AdvancedMiningCapabilities mangaPage({
     bool modelAvailable = true,
     Uint8List? pageBytes,
+    AdvancedMiningCropSource source = AdvancedMiningCropSource.mangaPage,
   }) => capabilities(
     deck: deck(),
     sentence: sentence(),
-    manga: manga(modelAvailable: modelAvailable, pageBytes: pageBytes),
+    manga: manga(
+      modelAvailable: modelAvailable,
+      pageBytes: pageBytes,
+      source: source,
+    ),
   );
 }

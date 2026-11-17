@@ -19,6 +19,7 @@ import 'package:fushi/src/lookup/overlay_bridge_handlers.dart'
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/ocr/google_lens_screen_ocr.dart';
 import 'package:fushi/src/ocr/local_screen_ocr.dart';
@@ -2105,6 +2106,10 @@ void main() {
             });
             expect(target.log, contains('askLensConsent'));
             expect(target.log, isNot(contains('recognize')));
+            // 手机上的同意框不说「整块显示器」。
+            expect(target.askedLensScenes, <GoogleLensDisclosureScene>[
+              GoogleLensDisclosureScene.mobileScreens,
+            ]);
           });
 
           testWidgets('BUG-4508：ML Kit 报不可用后的本机模型重试，模型也没就绪 → unavailable、不识别', (
@@ -2123,6 +2128,46 @@ void main() {
             );
             expect(reply, <String, Object?>{'unavailable': true});
             expect(target.recognizeEngines, isEmpty);
+          });
+
+          testWidgets('BUG-4508：ML Kit 报不可用后的本机模型重试，模型已就绪 → 交给本机模型识别、行回原生', (
+            WidgetTester tester,
+          ) async {
+            // 全局 / 截屏识字引擎都留默认：重试走的是原生点名的 localModel，不看设置。
+            target.modelReady = true;
+            target.onRecognize = (Uint8List bytes) async =>
+                const SystemOcrPageResult(
+                  lines: <SystemOcrTextLine>[
+                    SystemOcrTextLine(
+                      text: '猫',
+                      rect: Rect.fromLTRB(10, 20, 60, 70),
+                      isVertical: true,
+                    ),
+                  ],
+                  imageWidth: 720,
+                  imageHeight: 1600,
+                );
+            await pumpHost(tester);
+            final Object? reply = await askNative(
+              tester,
+              'recognizeScreenOcrFrame',
+              <String, Object?>{
+                'png': png,
+                'engine': 'localModel',
+                'fallback': true,
+              },
+            );
+            expect(target.recognizeEngines.single, isA<LocalScreenOcr>());
+            expect(reply, <String, Object?>{
+              'lines': <Object?>[
+                <String, Object?>{
+                  'text': '猫',
+                  'rect': <int>[10, 20, 60, 70],
+                  'vertical': true,
+                  'segments': <Object?>[],
+                },
+              ],
+            });
           });
 
           testWidgets('识别器报本机模型没下载（非重试）→ 回「请下载模型」文案', (
@@ -2153,6 +2198,9 @@ void main() {
           target.lensConsent = false;
           await startOcr(tester);
           expect(target.log, <String>['front', 'askLensConsent']);
+          expect(target.askedLensScenes, <GoogleLensDisclosureScene>[
+            GoogleLensDisclosureScene.desktopScreens,
+          ]);
           expect(called('startScreenOcrCapture'), isFalse);
           expect(target.recognizeEngines, isEmpty);
         });
@@ -2465,11 +2513,21 @@ class _RecordingActionTarget extends DesktopSystemBallActionTarget {
   bool lensConsent = true;
 
   @override
-  Future<bool> hasLensConsent() async => lensConsent;
+  Future<bool> hasLensConsent({
+    required GoogleLensDisclosureScene scene,
+  }) async => lensConsent;
+
+  /// 每次弹 Lens 同意框用的场景（文案）。
+  final List<GoogleLensDisclosureScene> askedLensScenes =
+      <GoogleLensDisclosureScene>[];
 
   @override
-  Future<bool> askLensConsent(BuildContext context) async {
+  Future<bool> askLensConsent(
+    BuildContext context, {
+    required GoogleLensDisclosureScene scene,
+  }) async {
     log.add('askLensConsent');
+    askedLensScenes.add(scene);
     return false;
   }
 
