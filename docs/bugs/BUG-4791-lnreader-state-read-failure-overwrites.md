@@ -5,7 +5,7 @@
   - `:589` `_readStorage` 同款：读不出来返回空，插件带着空存储装载，它第一次 `storage.set` 经 `:606` `persistStorage` 把盘上的登录态 / token 整份覆盖。
   - 坏 JSON 按空起是刻意设计（坏文件不该让整个小说源功能进不去），但原文件随后被静默覆盖，没有留底。
   - `:149` `initialise()` 是 `_initialising ??= _initialise()`：`_initialise` 一旦抛（例如迁移标记写盘失败），失败的 Future 被永久缓存，本次进程再也进不去。
-- **[x] ① 已修复** — `lnreader_manager.dart`：
+- **[x] ① 已修复**（`86b31437bce`）— `lnreader_manager.dart`：
   - `_readJsonObject`（`:235`，state 与插件存储共用）把三种结果分开：不存在 → 空；读不出来 → 抛；读出来但不是 JSON 对象 → 先改名成 `<原名>.corrupt-<时间戳>` 留底（`_quarantine` `:263`，留底失败同样抛）再按空起。
   - 新增 `_stateLoaded`：只有真读到盘上状态才置位；`_writeState` 未置位直接拒写。所有会写 `state.json` 的入口（加 / 改 / 删仓库、安装、卸载、启停、置顶、移动、重排）先过 `ensureReady()`（`:184`）——没读到真相就把那次读盘错误原样抛给调用方。
   - `initialise()`（`:166`）不再缓存失败：失败记进 `stateError`、写错误日志、`_initialising` 清回 null，下一次调用重读。它本身不抛（页面是 fire-and-forget 调的）。
