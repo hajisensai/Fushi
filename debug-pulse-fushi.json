@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-17T04:26:06Z",
+ "generatedAt": "2026-11-17T04:43:23Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "a509b5928ead51de0bc833161ad9f502fc76da07",
-  "seq": 28450
+  "sha": "2605363a0342846f5059b6d5d3e0ed9a7751c97c",
+  "seq": 28452
  },
  "builds": [
   {
@@ -124,7 +124,33 @@
    }
   }
  ],
- "pending": null,
+ "pending": {
+  "headSha": "2605363a0342846f5059b6d5d3e0ed9a7751c97c",
+  "headSeq": 28452,
+  "prs": [
+   3637
+  ],
+  "direct": [],
+  "truncated": false,
+  "platforms": {
+   "android": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44018624353"
+   },
+   "windows": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44018625016"
+   },
+   "macos": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44018625016"
+   },
+   "ios": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44018625016"
+   }
+  }
+ },
  "prs": {
   "3628": {
    "number": 3628,
@@ -168,6 +194,15 @@
    "author": "hajisensai",
    "mergedAt": "2026-11-17T03:31:02Z",
    "additions": 19,
+   "deletions": 1,
+   "labels": []
+  },
+  "3637": {
+   "number": 3637,
+   "title": "fix(settings): 墨水屏全刷方式图标换回闪电（FushiIcons 补 flash 语义名）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-17T04:38:52Z",
+   "additions": 13,
    "deletions": 1,
    "labels": []
   }
