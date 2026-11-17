@@ -19,8 +19,7 @@ import 'package:fushi/src/media/collections/collection_owned_subscriptions.dart'
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi/src/pages/base_module_tab_page.dart';
-import 'package:fushi/src/pages/implementations/home_page.dart'
-    show HomeTab, homeShellTabNotifier;
+import 'package:fushi/src/pages/implementations/home_page.dart' show HomeTab;
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/pages/implementations/collection_management_page.dart';
