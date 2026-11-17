@@ -592,8 +592,19 @@ fn an_old_client_writing_past_the_fence_is_still_taken_over() {
     let mut loc = Loc::new();
     old_root(&mut loc, 12, &[(1, 5), (6, 12)]);
     a.write(T1 + 1, N1, "鯨");
-    let (ing, _) = takeover_round(&a, &mut loc, T1 + 10);
+    let (ing, up) = takeover_round(&a, &mut loc, T1 + 10);
     assert_eq!(ing.expect("a scans")["recorded"], json!(true));
+    // a 库非空，第一次见到的 OLD 是待确认；承袭段只替本机信任的作者传（`inherit.rs`，G10-4），确认之后才传。
+    assert_eq!(status_row(&a, &id(OLD).text())["trust"], json!("pending"));
+    assert_eq!(up, 0, "a does not vouch for OLD before confirming it");
+    cmd(
+        a.h,
+        "trust",
+        T1 + 11,
+        json!({"device": id(OLD).text(), "trust": true}),
+        &[],
+    );
+    assert!(upload_heritage(&a, &mut loc, T1 + 11) > 0);
     sync_all(&[&a, &c], &mut loc, T1 + 20, Opts::default());
     assert_eq!(d_old_len(&c), 12);
 
