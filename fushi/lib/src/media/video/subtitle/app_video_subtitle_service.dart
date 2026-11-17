@@ -695,10 +695,12 @@ class AppVideoSubtitleService {
   // ── 目标解析 ────────────────────────────────────────────────────────────
 
   /// 一个视频条目（`video_books.book_uid`）：本体 + 播放列表各集。[videoPath] 非空
-  /// 时只取这一集（视频页的当前集）。
+  /// 时只取这一集（视频页的当前集），[audioTrack] 是播放器当前音轨
+  /// （[AppVideoSubtitleEpisode.audioTrack]）。
   Future<AppVideoSubtitleTarget> resolveBook(
     String bookUid, {
     String? videoPath,
+    int? audioTrack,
   }) async {
     final VideoBookRow? row = await database.getVideoBookByBookUid(bookUid);
     if (row == null) throw AppVideoSubtitleTargetNotFound('book $bookUid');
@@ -710,6 +712,7 @@ class AppVideoSubtitleService {
       episodes,
       unavailable,
       onlyPath: videoPath,
+      audioTrack: videoPath == null ? null : audioTrack,
       replaceSelection: videoPath != null,
     );
     // 播放页的当前路径可能是重定位后的（盘符换了 / 数据根搬了），与库里记的写法
@@ -727,6 +730,7 @@ class AppVideoSubtitleService {
           title: row.title,
           registersSubtitleSource: false,
           contentLanguage: row.language,
+          audioTrack: audioTrack,
         ),
       );
     }
@@ -756,9 +760,12 @@ class AppVideoSubtitleService {
   /// （[AppVideoSubtitleEpisode.bookUid] 为 null，[VideoBookSubtitleSink.register] 不写库），
   /// 由打开它的页面在任务结束时自己选中。不是本机路径 / 本机读不到时抛
   /// [AppVideoSubtitleTargetNotFound]。
+  ///
+  /// [audioTrack]：播放器当前音轨（[AppVideoSubtitleEpisode.audioTrack]）。
   Future<AppVideoSubtitleTarget> resolveFile(
     String videoPath, {
     required String title,
+    int? audioTrack,
   }) async {
     if (!isLocalVideoFilePath(videoPath) ||
         !await hasLocalMediaFile(videoPath)) {
@@ -776,6 +783,7 @@ class AppVideoSubtitleService {
           videoPath: videoPath,
           title: title,
           registersSubtitleSource: false,
+          audioTrack: audioTrack,
         ),
       ],
       key: 'file:$videoPath',
@@ -831,16 +839,22 @@ class AppVideoSubtitleService {
   }
 
   /// 播放页正在放的这一集：库里有这一行就按库解析（[resolveBook]），没有（直接打开的
-  /// 文件）就按文件解析（[resolveFile]）——两种都走完整管线。
+  /// 文件）就按文件解析（[resolveFile]）——两种都走完整管线。[audioTrack] 是播放器
+  /// 当前音轨：管线识别这条轨，与「仅本机转录」同口径。
   Future<AppVideoSubtitleTarget> resolvePlaying(
     String bookUid, {
     required String videoPath,
     required String title,
+    int? audioTrack,
   }) async {
     try {
-      return await resolveBook(bookUid, videoPath: videoPath);
+      return await resolveBook(
+        bookUid,
+        videoPath: videoPath,
+        audioTrack: audioTrack,
+      );
     } on AppVideoSubtitleTargetNotFound {
-      return resolveFile(videoPath, title: title);
+      return resolveFile(videoPath, title: title, audioTrack: audioTrack);
     }
   }
 
@@ -886,6 +900,7 @@ class AppVideoSubtitleService {
     List<AppVideoSubtitleEpisode> out,
     List<AppVideoSubtitleUnavailable> unavailable, {
     String? onlyPath,
+    int? audioTrack,
     bool replaceSelection = false,
   }) async {
     final List<String> candidates = _pipelineMediaCandidates(row);
@@ -936,6 +951,7 @@ class AppVideoSubtitleService {
           registersSubtitleSource: p.equals(path, row.videoPath) && !playlist,
           replacesSubtitleSelection: replaceSelection,
           contentLanguage: row.language,
+          audioTrack: audioTrack,
         ),
       );
     }
@@ -1465,6 +1481,13 @@ class AppVideoSubtitleService {
         language: language,
         ai: aiConfig,
         probeDurationMs: _probeDurationMs,
+        // 播放器当前音轨（[AppVideoSubtitleEpisode.audioTrack]）→ 识别的流序号。
+        resolveAudioStream: (String videoPath, int audioTrack) async =>
+            videoSubtitleAudioStreamForTrack(
+              await _probeAudioTracks(videoPath),
+              audioTrack,
+              language,
+            ),
         // 播放器里对照着的其它语言字幕（工作台交过来的）并进自动收集的证据。
         evidence: collected == null || job.options.pinnedEvidence.isEmpty
             ? collected
@@ -1483,6 +1506,12 @@ class AppVideoSubtitleService {
         wholeSeason: target.wholeSeason && !job.consistencyOnly,
         onProgress: job._onProgress,
         cancel: job._cancel,
+        // 从播放页发起的集识别播放器当前音轨；只重跑写法统一时沿用上次识别的轨。
+        audioTracks: <String, int>{
+          for (final AppVideoSubtitleEpisode e in target.episodes)
+            if (e.audioTrack case final int track) e.videoPath: track,
+        },
+        keepRecordedAudio: job.consistencyOnly,
       );
       job.result = result;
       for (final VideoSubtitleEpisodeResult r in result.episodes) {

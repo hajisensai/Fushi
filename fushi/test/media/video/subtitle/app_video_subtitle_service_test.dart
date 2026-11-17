@@ -17,6 +17,8 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_work_co
     show fallbackSubtitleWorkKey;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
+import 'package:fushi_engine/media/video/video_duration_probe.dart'
+    show AudioTrackFacts;
 import 'package:path/path.dart' as p;
 
 import '../../../helpers/fake_ai_text_completer.dart';
@@ -34,8 +36,10 @@ void main() {
 
   AppVideoSubtitleService buildService({
     Future<VideoSubtitleRecognizerChoice> Function()? resolve,
+    AppVideoSubtitleAudioTrackProbe? probeAudioTracks,
   }) => AppVideoSubtitleService(
     database: db,
+    probeAudioTracks: probeAudioTracks,
     settings: settings,
     glossaryStore: store,
     jobRegistry: registry,
@@ -550,6 +554,61 @@ void main() {
       expect(filesUnder(discRoot), before, reason: '盘结构里不能写字幕');
       expect((await db.getVideoBookByBookUid('bd'))!.subtitleSource, output);
       expect(job.registeredBookUids, <String>['bd']);
+    });
+
+    test('播放页发起：识别播放器当前音轨；批量与只重跑写法统一不换轨', () async {
+      final String ep = video('dual.mkv');
+      await addBook('dual', ep);
+      final List<String> probed = <String>[];
+      // 第 0 条英语（流 1）、第 1 条日语（流 2）：按日语挑的是流 2。
+      final AppVideoSubtitleService service = buildService(
+        probeAudioTracks: (String path) async {
+          probed.add(path);
+          return const <AudioTrackFacts>[
+            AudioTrackFacts(index: 1, language: 'eng'),
+            AudioTrackFacts(index: 2, language: 'jpn'),
+          ];
+        },
+      );
+      final AppVideoSubtitleTarget playing = await service.resolvePlaying(
+        'dual',
+        videoPath: ep,
+        title: 'dual',
+        audioTrack: 0,
+      );
+      expect(playing.episodes.single.audioTrack, 0);
+      final AppVideoSubtitleJob job = service.start(
+        playing,
+        const AppVideoSubtitleOptions(),
+      );
+      await job.done;
+      expect(
+        job.status,
+        AppVideoSubtitleJobStatus.succeeded,
+        reason: '${job.errorMessage}',
+      );
+      expect(recognizer.audioStreams, <int?>[1], reason: '正在听的是英语轨');
+      expect(probed, <String>[ep]);
+
+      // 没入库的文件同口径。
+      final String loose = video('loose_dual.mkv');
+      final AppVideoSubtitleTarget file = await service.resolvePlaying(
+        'missing',
+        videoPath: loose,
+        title: 'loose',
+        audioTrack: 0,
+      );
+      expect(file.episodes.single.audioTrack, 0);
+
+      // 批量（合集）：没有播放上下文，按语言挑（不换算、不探测）。
+      final AppVideoSubtitleTarget season = await service.resolveCollection(
+        await addCollection(<String>['dual']),
+      );
+      expect(season.episodes.single.audioTrack, isNull);
+      expect(
+        (await service.resolveBook('dual')).episodes.single.audioTrack,
+        isNull,
+      );
     });
 
     test('没入库的多角度 title 也按角度成员路径解析成一集', () async {

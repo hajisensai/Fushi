@@ -152,6 +152,27 @@ void main() {
     expect(retiming, contains('identical(_controller, controller)'));
     expect(retiming, contains('_episodeLoadSeq == loadSeq'));
     expect('if (!isCurrent()) return;'.allMatches(retiming), hasLength(3));
+
+    // 完整管线与「仅本机转录」同口径：两个入口（工作台内嵌面板、菜单里的管线面板）
+    // 都把播放器当前音轨交给目标解析，管线识别这条轨（批量 / 无播放上下文按语言挑）。
+    final String panel = source
+        .split('Future<WidgetBuilder?> _subtitleStudioGeneratePanel(')[1]
+        .split('Future<void> _openJapaneseSubtitlePipeline(')[0];
+    final String menu = source
+        .split('Future<void> _openJapaneseSubtitlePipeline(')[1]
+        .split(
+          'if (!context.mounted || _localPipelineMediaPath != videoPath)',
+        )[0];
+    for (final String entry in <String>[panel, menu]) {
+      expect(
+        entry,
+        matches(
+          RegExp(
+            r'resolvePlaying\([^;]*audioTrack: controller\.currentAudioStreamIndex',
+          ),
+        ),
+      );
+    }
   });
 
   // 蓝光原盘会话也走完整管线：入口按原盘 VM 的可抽取性判（纯函数

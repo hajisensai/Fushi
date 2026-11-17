@@ -3426,6 +3426,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
         _activeBookUid,
         videoPath: videoPath,
         title: _title ?? p.basenameWithoutExtension(videoPath),
+        // 识别正在听的那条轨（与「仅本机转录」同口径）。
+        audioTrack: controller.currentAudioStreamIndex,
       );
     } on AppVideoSubtitleTargetNotFound {
       return null;
@@ -3744,6 +3746,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
         _activeBookUid,
         videoPath: videoPath,
         title: _title ?? p.basenameWithoutExtension(videoPath),
+        // 识别正在听的那条轨（与「仅本机转录」同口径）。
+        audioTrack: controller.currentAudioStreamIndex,
       );
     } on AppVideoSubtitleTargetNotFound {
       // 管线认不到这一集（文件已不在本机）时本机转录照样能用：直接走那条。

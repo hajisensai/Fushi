@@ -28,7 +28,13 @@ class AppVideoSubtitleEpisode {
     this.registersSubtitleSource = true,
     this.replacesSubtitleSelection = false,
     this.contentLanguage,
+    this.audioTrack,
   });
+
+  /// 从播放页发起时播放器当前的音轨（0 起的音轨序号，ffmpeg `0:a:N`，即
+  /// `VideoPlayerController.currentAudioStreamIndex`）：管线识别这条轨，与「仅本机转录」
+  /// 同口径。null = 没有播放上下文（批量 / CLI）或跟随默认，按识别语言挑。
+  final int? audioTrack;
 
   /// 视频库条目（`video_books.book_uid`）；音乐目标为 null（曲目归属由
   /// [AppSubtitleOutputSink] 按 [videoPath] 自己记）。

@@ -37,6 +37,7 @@ class _Recognizer implements VideoSubtitleRecognizer {
     required Directory workDir,
     required VideoSubtitleRecognizeProgress onProgress,
     required SubtitleCancelToken cancel,
+    int? audioStreamIndex,
   }) async {
     calls++;
     onProgress(0.5, 'transcribing');

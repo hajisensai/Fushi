@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:test/test.dart';
@@ -23,6 +24,10 @@ class _FakeRecognizer implements VideoSubtitleRecognizer {
   final Map<String, List<SubtitleDraftCue>> drafts;
   final List<String> calls = <String>[];
 
+  /// 每次识别收到的音轨（全局流序号；null = 按语言挑）与工作目录。
+  final List<int?> streams = <int?>[];
+  final List<String> workDirs = <String>[];
+
   @override
   String get id => 'fake';
 
@@ -32,8 +37,11 @@ class _FakeRecognizer implements VideoSubtitleRecognizer {
     required Directory workDir,
     required VideoSubtitleRecognizeProgress onProgress,
     required SubtitleCancelToken cancel,
+    int? audioStreamIndex,
   }) async {
     calls.add(p.basename(videoPath));
+    streams.add(audioStreamIndex);
+    workDirs.add(workDir.path);
     onProgress(0.5, 'half');
     return drafts[p.basename(videoPath)]!;
   }
@@ -793,5 +801,83 @@ void main() {
       evidence: ev,
     ).run(videoPaths: <String>[video('ep01.mkv')], work: work);
     expect(ev.loads, 2);
+  });
+
+  test('播放器当前音轨：识别那条轨、按轨分识别目录；换轨作废下游，换回来续用', () async {
+    final _FakeRecognizer rec = _FakeRecognizer(drafts);
+    final List<(String, int)> asked = <(String, int)>[];
+    // 播放器第 N 条音轨 → 流 N + 10；第 0 条与按语言挑的同一条（null）。
+    VideoSubtitlePipeline withTracks() => VideoSubtitlePipeline(
+      recognizer: rec,
+      jobsRoot: jobs,
+      styleReference: null,
+      evidence: null,
+      probeDurationMs: duration,
+      resolveAudioStream: (String path, int track) async {
+        asked.add((p.basename(path), track));
+        return track == 0 ? null : track + 10;
+      },
+    );
+    final String ep = video('ep01.mkv');
+    final Directory job = withTracks().jobDirFor(ep);
+
+    // 批量 / 没有播放上下文：按语言挑，不换算，识别目录就是任务目录。
+    await withTracks().run(videoPaths: <String>[ep], work: work);
+    expect(asked, isEmpty);
+    expect(rec.streams, <int?>[null]);
+    expect(rec.workDirs.single, job.path);
+    final File finalCues = File(
+      p.join(job.path, VideoSubtitleJobFiles.finalCues),
+    );
+    expect(finalCues.existsSync(), isTrue);
+
+    // 从播放页发起、当前是第 2 条音轨：识别流 12，放进按轨的子目录。
+    await withTracks().run(
+      videoPaths: <String>[ep],
+      work: work,
+      audioTracks: <String, int>{ep: 2},
+    );
+    expect(asked, <(String, int)>[('ep01.mkv', 2)]);
+    expect(rec.streams, <int?>[null, 12]);
+    expect(rec.workDirs.last, videoSubtitleRecognizeDir(job, 12).path);
+    expect(
+      File(
+        p.join(
+          videoSubtitleRecognizeDir(job, 12).path,
+          VideoSubtitleJobFiles.drafts('fake'),
+        ),
+      ).existsSync(),
+      isTrue,
+    );
+    final Map<String, Object?> state =
+        jsonDecode(
+              File(
+                p.join(job.path, VideoSubtitleJobFiles.state),
+              ).readAsStringSync(),
+            )
+            as Map<String, Object?>;
+    expect(state['audioStream'], 12);
+
+    // 只重跑写法统一：沿用上次的轨，不换算、不重识别。
+    await withTracks().run(
+      videoPaths: <String>[ep],
+      work: work,
+      keepRecordedAudio: true,
+    );
+    expect(asked, hasLength(1));
+    expect(rec.calls, hasLength(2));
+
+    // 当前音轨就是按语言挑的那条：回到任务目录里的那份稿，不重识别。
+    await withTracks().run(
+      videoPaths: <String>[ep],
+      work: work,
+      audioTracks: <String, int>{ep: 0},
+    );
+    expect(rec.calls, hasLength(2), reason: '按语言挑的稿还在，换回来续用');
+    expect(finalCues.existsSync(), isTrue);
+    final String srt = File(
+      p.join(videos.path, 'ep01.ja.srt'),
+    ).readAsStringSync();
+    expect(srt, contains('結衣が来た'));
   });
 }
