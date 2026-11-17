@@ -34,7 +34,11 @@ import 'package:fushi_engine/srs/srs_backup_merge.dart' show srsAdoptProfileUid;
 import 'package:fushi_engine/srs/srs_collection_binding.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_profile_data.dart'
-    show SrsMetaSet, srsEditMetaSet, srsFinishProfileMerge;
+    show
+        SrsMetaSet,
+        SrsProfileMergeFinish,
+        srsEditMetaSet,
+        srsFinishProfileMerge;
 import 'package:fushi_engine/srs/srs_profile_merge.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart'
     show
@@ -817,27 +821,43 @@ class SrsDbProfileLinker implements SrsProfileLinker {
   /// 续做失败时**不往外抛**：标记留着、旧集合一行不少（收尾在内核一个事务里，出错整笔回滚），抛出去的话之后每一次
   /// [link] 都重跑、再抛，这台设备的整个复习同步就永久卡死。这一轮按 profiles 表当前的 uid 继续同步，经 [onError] 记下
   /// （同一个失败每个进程只记一次），下一轮照样重试。
+  ///
+  /// 手里的 [store] 还是旧 uid 的副本时，续做在它的最后一段独占区里跑、之后副本作废（[SrsDbStore.retire]，同
+  /// [_switchUid]）：已经读完现值、正等着发命令的写入先写完再续做；排在后面的、以后再来的一律明确失败。否则改完主库
+  /// uid 之后、收尾前后还有写入经旧副本落进旧 uid——收尾之后旧集合与它的本机状态行都删了，一条漏进来的写入会让旧 uid
+  /// 重新长出本机状态行（内核写本机状态行时没有行就新建）。作废了就不管成败都按 profiles 表当前的 uid 重开。
   Future<SrsDbStore?> _resumePendingMerges(SrsDbStore store) async {
     final int profileId = await activeProfileId();
     bool resumed = false;
+    bool retired = false;
     for (final SrsPendingProfileMerge m in await srsPendingProfileMerges(
       store.core,
     )) {
       if (m.profileId != profileId) continue;
+      final Directory? media = await mediaRoot?.call();
+      Future<SrsProfileMergeFinish> resume() => srsResumeProfileMerge(
+        db,
+        profileId: m.profileId,
+        oldUid: m.oldUid,
+        newUid: m.newUid,
+        mediaRoot: media,
+        commit: () => srsFinishProfileMerge(
+          store.core,
+          from: m.oldUid,
+          to: m.newUid,
+          nowMs: nowMs(),
+        ),
+      );
       try {
-        await srsResumeProfileMerge(
-          db,
-          profileId: m.profileId,
-          oldUid: m.oldUid,
-          newUid: m.newUid,
-          mediaRoot: await mediaRoot?.call(),
-          commit: () => srsFinishProfileMerge(
-            store.core,
-            from: m.oldUid,
-            to: m.newUid,
-            nowMs: nowMs(),
-          ),
-        );
+        if (store.profileUid == m.oldUid && store.isUsable) {
+          retired = true;
+          await store.retire(
+            resume,
+            reason: 'profile ${m.oldUid} is being merged into ${m.newUid}',
+          );
+        } else {
+          await resume();
+        }
       } catch (e, stack) {
         final String key =
             '${m.profileId}|${m.oldUid}->${m.newUid}|${e.runtimeType}: $e';
@@ -855,8 +875,10 @@ class SrsDbProfileLinker implements SrsProfileLinker {
       resumed = true;
     }
     // 收尾在改完主库 uid 之后失败，而手里的 store 还是旧 uid 的：按 profiles 表的新 uid 重开，否则这一轮会接着同步一个
-    // 本机已经不再指向的 profile。
-    if (!resumed && await db.profileUidOf(profileId) == store.profileUid) {
+    // 本机已经不再指向的 profile。旧副本已作废（[SrsDbStore.retire]）的同样要重开。
+    if (!resumed &&
+        !retired &&
+        await db.profileUidOf(profileId) == store.profileUid) {
       return null;
     }
     final SrsDbStore? reopened = await reopenStore();

@@ -1380,3 +1380,39 @@ G8 子规划文档在仓库里不存在（任务点名的「G8 子规划」找�
 - `ensureMigrated` 之后的「迁移前只拉不发」（`srs_sync_scheduler.dart` `_pullInto` / `pullBeforeMerge`、`srsSync2PullOnly`、
   linker 的 `pullBeforeMerge` 参数与 app 装配）没删：调度器是同批多个模块的热点文件，删上千行留给 integration owner 合流后
   单独一段做。`srs_pull_before_migrate_test.dart` 剩下的用例本来就 `skip`。
+
+### 第二轮复核修复（2026-11-17，同分支，针对 `f3f567d61c`）
+
+- **半截并入收尾方向固定，`to` 绝不改绑（复核 major）**：`profile_merge_commit` 以前借 `collection_adopt`，按 D27 比目录名
+  定方向、`to` 空就换绑、`to` 没绑定就直接绑到 `from` 的集合——`to` 的目录名比 `from` 大、`to` 在本机没绑定、`to` 是空集合
+  三种情形都会把 `to` 改绑到 `from` 的集合和目录，本机从此跟用户别的设备同步不到一起且不报错（原来两条端到端测试恰好都是
+  P < ORPHAN，只覆盖了不改绑的方向）。现在收尾单独走 `identity.rs` `absorb_foreign`：不按 D27、不换绑，一律在 `to` 的日志里
+  写 `Join{from: from 的集合}`，`to` 的集合标识与目录名不变；`to` 在本机还没有集合时先按打开 profile 的口径建
+  （`cmd/identity.rs` `identity_ensure`：`collection_of(to)`、目录名 `to`——协议 3 时代采用过 `to` 的设备迁移后都在这个集合）。
+  测试 `cmd/profile_data_tests.rs` `finishing_a_half_done_merge_keeps_a_larger_target` /
+  `…_binds_an_unbound_target_to_its_own_collection` / `…_keeps_an_empty_target`（`to` = Q > `from` = P；断言 `to` 的
+  `collection` / `dir` 不变、只有一条 from = P 集合的 `Join`、两边的修改都在、库里只剩一个集合）。变异实测：收尾换回
+  `adopt_foreign(.., confirmed)` 三条全红。**已知取舍**：`from` 的集合若曾被别的设备持有，那台设备之后遇到 `to` 仍按 D27 判，
+  看不到 `to` 日志里这条 `Join`；`from` 是本机被并入方的旧 uid，正常只有本机持有，不另做处理。
+- **空集合只在 D27 方向上换绑（复核 minor 4）**：以前「空集合可换绑」不看方向，两台都是空集合的设备互相确认会交叉换绑。
+  现在只有本机目录名**更大**（D27 本来就是本机改绑到对方）时才换绑；本机目录名更小时照 D27 吸收。结果与 D27 完全一致（都落在
+  目录名小的集合），只省掉那条 `Join`。新 profile 的目录名是它的 uid（UUIDv7，按时间递增），「新设备加入已有集合」的常见情形
+  仍换绑。测试 `identity.rs` `two_empty_collections_converge_whichever_initiates`；变异实测：去掉方向条件该测试红（A 也换绑到 B）。
+  `fushisrs_tests.rs` `alias_classes_survive_an_export_and_a_foreign_import` 的导出方目录名改成 `0-dir`（比导入方 Q 小），
+  仍断言 `bound`。
+- **孤儿 `meta.json`（复核 minor 4 后半）**：`disposable` 多一条——`loc_state` 有本集合的行（`location_root` 写过位置的根 /
+  `location_seal` 记过加密）就不算空集合。位置上的 `meta.json` 已经让别的设备看得见这个集合，内核不碰位置上的文件、删不掉它，
+  所以碰过位置的集合不丢，照 D27 并入。调度器先 `link` 后跑第一轮，新设备关联时通常还没立根，不影响换绑。测试
+  `a_collection_with_anything_beyond_its_own_salts_still_joins` 加 `rooted` 一项；变异实测：去掉这条子查询该项红。
+  `discard_statements_use_an_index` 照旧覆盖 `DISPOSABLE_SQL`（`loc_state` 主键打头是 `col`）。
+- **续做时旧 uid 的副本退役（复核 minor 3）**：`srs_profile_link.dart` `_resumePendingMerges` 手里的副本还是旧 uid 的时，
+  续做（改主库 uid → `profile_merge_commit` → 删旧媒体）在它的 `retire` 里跑：在途写入先写完，之后经它来的写入一律
+  `SrsStoreRetiredError`，不会落进已并走的旧 uid、让 `local_state/<旧 uid>` 重新长出来；作废了就不管成败都按 profiles 表
+  当前的 uid 重开。测试 `packages/fushi_engine/test/srs/srs_profile_merge_resume_test.dart`（真主库 + 真内核：旧副本
+  `isUsable` 为假、写入抛 `SrsStoreRetiredError`、新 uid 里查得到旧 uid 的笔记、标记与旧本机状态行都没了）；变异实测：
+  去掉 `retire` 该测试红。
+- **一个写事务里整份导出再导入（复核 nit 5）**：没改，理由写进 `cmd/profile_data.rs` 文件头——拆成多个事务会出现
+  「`from` 已丢、`to` 只导入了一部分」且无从续做的中间态；同一事务里分批要么边读 `from` 边往 `to` 导入（导入改 `to` 的派生层，
+  读游标跨着写不安全），要么落临时文件（多一份要清理的用户数据）。内存占用是压缩过的 `FSRS4EXP` 流（`export.rs` 边读边压），
+  半截并入只发生在协议 3 并入中断过的少数库上、一次性。
+- `packages/fushi_srs/test/store/srs_core_test.dart` 里仍断言 `profile_merge_mark` 是 `Unwired` 的那条归合流代理改，本分支没动。
