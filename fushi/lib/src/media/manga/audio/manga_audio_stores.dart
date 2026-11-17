@@ -2,7 +2,9 @@
 ///
 /// - 演出稿、标注失败账本与小说选角表同目录（`<db>/tts_cast/`），后缀不同互不覆盖；
 ///   未配音账本与小说共用 `ttsVoicingStoreFor`（同目录同格式）；
-/// - 成品在 `<db>/manga_audio/<sha1(bookKey)>/`（清单 + 每句一个文件）。
+/// - 成品在 `<db>/manga_audio/<sha1(bookKey)>/`（清单 + 每句一个文件）；
+/// - 广播剧 / 动画音轨的成品在 `<db>/manga_drama/<sha1(bookKey)>/`（清单 + 每段一个
+///   文件），与合成成品分开放：两者都能登记成这卷的有声成品，换来换去不互相清文件。
 library;
 
 import 'dart:io';
@@ -32,3 +34,11 @@ Directory mangaAudioRoot(AppModel appModel) =>
 /// 一卷的成品清单文件。
 File mangaRenderManifestFile(AppModel appModel, String bookKey) =>
     MangaRenderManifest.fileFor(mangaAudioRoot(appModel), bookKey);
+
+/// 广播剧 / 动画音轨成品根目录。
+Directory mangaDramaRoot(AppModel appModel) =>
+    Directory(p.join(appModel.databaseDirectory.path, 'manga_drama'));
+
+/// 一卷的广播剧成品清单文件。
+File mangaDramaManifestFile(AppModel appModel, String bookKey) =>
+    MangaRenderManifest.fileFor(mangaDramaRoot(appModel), bookKey);
