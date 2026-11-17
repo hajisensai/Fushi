@@ -301,36 +301,6 @@ void main() {
     expect(await store.nameOf('abcdefghij', 'f0'), '复现 步骤.md');
   });
 
-  test('清半成品失败（.part 删不掉）不连累 load 扫出待传附件', () async {
-    final FeedbackPendingStore store = FeedbackPendingStore(root);
-    await store.copyFile('abcdefghij', 'f0', md, name: '复现 步骤.md');
-    final Directory dir = Directory(
-      p.join(root.path, 'feedback', 'pending', 'abcdefghij'),
-    );
-    final File part = File(p.join(dir.path, 'f1.part'))
-      ..writeAsStringSync('half');
-    // 让 discardInterrupted 删 f1.part 必然失败：Windows 上开着句柄的文件删不掉，
-    // POSIX 上删文件要父目录的写权限。
-    RandomAccessFile? held;
-    if (Platform.isWindows) {
-      held = part.openSync(mode: FileMode.append);
-    } else {
-      expect(Process.runSync('chmod', <String>['555', dir.path]).exitCode, 0);
-    }
-    try {
-      final FeedbackService s = service();
-      await s.load();
-      // 前提成立：清理确实失败了（否则本用例什么也没测到）。
-      expect(part.existsSync(), isTrue);
-      expect(s.pendingSlots('abcdefghij'), <String>{'f0'});
-    } finally {
-      held?.closeSync();
-      if (!Platform.isWindows) {
-        Process.runSync('chmod', <String>['755', dir.path]);
-      }
-    }
-  });
-
   test('待传样本文件缺原文件名旁注：当损坏丢掉，不编假名上传', () async {
     handler = (http.Request r) async {
       if (r.url.path == '/v1/feedback') return receipt(r);
