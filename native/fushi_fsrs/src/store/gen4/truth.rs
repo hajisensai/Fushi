@@ -89,7 +89,10 @@ use crate::sync2::vv::{OpId, Vv};
 /// 本机身份（`self_`）与换身份（G8-6）。
 mod own;
 pub use own::Rotated;
+/// 首见设备的信任判定（BUG-4306）。
+mod trust;
 pub(crate) use own::{NativeStep, fork_key};
+pub use trust::FirstSeen;
 
 /// `devs.kind`：原生日志。
 pub const DEV_NATIVE: i64 = 0;

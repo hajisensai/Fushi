@@ -97,6 +97,16 @@ fn a_device_on_two_locations_relays_between_them() {
     round(&c, &mut l2, "L2", T1 + 3, sealed);
     round(&b, &mut l1, "L1", T1 + 4, plain);
     round(&b, &mut l2, "L2", T1 + 4, sealed);
+    // b 收下 a 的段之后库已非空，在 L2 第一次见到的 c 是待确认（`truth/trust.rs`）：只转发受信作者的段，用户确认之后
+    // 下一轮为转发再拉一次 c 的段（`wanted_for_relay`）。
+    let (v, _) = cmd(
+        b.h,
+        "trust",
+        T1 + 4,
+        json!({"device": c.device(), "trust": true}),
+        &[],
+    );
+    assert_eq!(v["trusted"], json!(true), "{v}");
     b.write(T1 + 5, N3, "犬");
     round(&b, &mut l1, "L1", T1 + 6, plain);
     round(&b, &mut l2, "L2", T1 + 6, sealed);

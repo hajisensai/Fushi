@@ -794,12 +794,21 @@ pub fn plan(t: &Truth<'_>, col: i64, req: &Value, heads: &[Vec<u8>]) -> Result<V
             head_gen: i64::try_from(h.gen).ok(),
             first_seen: Some(now),
         };
-        if t.set_peer(col, &peer)? == PeerPut::KeyMismatch {
-            errors.push(format!(
-                "head of {}: signed by another key than the one on record (impostor)",
-                h.device
-            ));
-            continue;
+        match t.set_peer(col, &peer)? {
+            PeerPut::KeyMismatch => {
+                errors.push(format!(
+                    "head of {}: signed by another key than the one on record (impostor)",
+                    h.device
+                ));
+                continue;
+            }
+            // 第一次见到它（含只经转发见到的）：首见信任判定（`truth/trust.rs`：换身份继承 / 首次信任 / 待确认）。
+            // 只给本机还没有它任何操作的设备写信任行（原生段要用这里记下的公钥验；已有承袭日志的不追溯），派生层不必
+            // 重判（`plan` 是本机状态写命令，不动派生层）；之后收段时派生层按这里写下的状态判它的删除与清除。
+            PeerPut::Inserted => {
+                t.note_new_peer(col, &h.device, &h.public, h.prev.as_ref(), h.at_ms)?;
+            }
+            PeerPut::Updated | PeerPut::Same => {}
         }
         // 转发用：记下这台设备最新的 head（只进不退）。
         super::sync_relay::note_head(t, col, &h, bytes)?;

@@ -109,6 +109,8 @@ mod sync_relay_tests;
 #[cfg(test)]
 mod sync_tests;
 #[cfg(test)]
+mod sync_trust_tests;
+#[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod tests_class;
