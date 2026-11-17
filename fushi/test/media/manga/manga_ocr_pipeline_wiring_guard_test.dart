@@ -8,7 +8,7 @@
 //   · fushi 侧两处落盘走共用的原子写 helper，不各自手写「先删再改名」。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 String _source(String path) => File(path).readAsStringSync();
 
