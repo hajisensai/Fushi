@@ -21,7 +21,7 @@ use serde_json::{Value, json};
 
 use super::dispatch_tests::{T1, cfg, g4, g4req, open};
 use super::sync::{LOC_HEAD_SEQ_SQL, LOC_STATE_SQL, VOIDS_SQL, sealed_at_location};
-use super::tests::{N1, N2, N3};
+use super::tests::{N1, N2, N3, card, note};
 use crate::gen4::head::Head4;
 use crate::gen4::location::{V4File, parse_v4_path};
 use crate::store::ffi::{SrsCoreHandle, ffsrs_store_close, ffsrs_store_sync2};
@@ -32,7 +32,7 @@ use crate::store::gen4::kernel::{G4Core, REMOVED, UNWIRED};
 use crate::store::gen4::sync_state::{RETIRED_RECORD_UNREADABLE, RETIRED_SQL};
 use crate::store::gen4::truth::Truth;
 use crate::store::sync2::collection_of;
-use crate::store::sync2::tests::{P, edit, tempdir};
+use crate::store::sync2::tests::{DAY, P, edit, tempdir};
 use crate::sync2::id::Id;
 use crate::sync2::keys::DeviceKey;
 use crate::sync2::vv::OpId;
@@ -434,6 +434,145 @@ pub(super) fn sync_all(devs: &[&Dev], loc: &mut Loc, now: i64, o: Opts<'_>) {
 }
 
 // ---------------------------------------------------------------------- 两台设备
+
+/// 发一条带输入项的写命令（`apply` / `import_drafts`）。
+fn write_items(d: &Dev, op: &str, now: i64, items: Vec<Value>) -> Value {
+    let blob = Value::Array(items).to_string().into_bytes();
+    cmd(d.h, op, now, json!({}), &[blob]).0
+}
+
+/// 两台设备各自把同一条 Anki revlog 导入到血统里的前身卡、后继卡（Dart 按新卡重算日志 ID，内容相同；K3，交接 §26
+/// C4）：同步之后两边派生层一致（增量 == 重建、语义摘要相同、卡片行逐行相同），这次复习在统计里只算一次——Anki 来源
+/// 日志的 HLC 由来源数据派生（`crate::anki_import_rules`），不随作者设备与导入时刻变，两份副本归成一个事件。改前按
+/// 操作 HLC 排：两份副本不成组，统计 2 行。
+#[test]
+fn an_anki_revlog_imported_on_two_devices_is_one_event() {
+    let mut a = Dev::new("k3a");
+    let mut b = Dev::new("k3b");
+    let (c1, c2) = (card(N1, "t1"), card(N1, "t2"));
+    let fdef = json!({"name": "Expression", "ord": 0});
+    let tdef = |name: &str, ord: i64| json!({"name": name, "ord": ord, "front": "{{Expression}}"});
+    let item = |e: Value| json!({"e": e, "note": N1});
+    write_items(
+        &a,
+        "apply",
+        T1,
+        vec![
+            item(
+                json!({"t": "entity", "x": {"id": "NT", "p": P, "k": "notetype", "d": {"createdAt": 1, "ntKind": "standard"}}}),
+            ),
+            item(edit("notetype", "NT", "fieldDef/fa", fdef)),
+            item(edit("notetype", "NT", "tmplDef/t1", tdef("A", 0))),
+            item(edit("notetype", "NT", "tmplDef/t2", tdef("B", 1))),
+            item(note(N1, "NT", 10)),
+            item(edit("note", N1, "f/fa", json!("猫"))),
+            item(edit("card", &c2, &format!("historyFrom/{c1}"), json!(true))),
+        ],
+    );
+    let mut loc = Loc::new();
+    let o = Opts::default();
+    sync_all(&[&a, &b], &mut loc, T1 + 10, o);
+    let rid = T1 - 5 * DAY;
+    let anki = |id: &str, card: &str| {
+        item(json!({"t": "log", "x": {
+            "id": id, "p": P, "card": card, "kind": "review", "rating": 3, "hlc": format!("{rid}:0:anki"),
+            "at": rid, "ts": "wall", "origin": "anki", "ankiId": rid, "rtype": "review", "dur": 5000,
+            "utcOff": 0, "rollover": 4, "alg": "anki",
+            "res": {"queue": "review", "ivl": 3, "step": 0, "reps": 1, "lapses": 0, "scheduler": "fushi", "dueDay": 1}
+        }}))
+    };
+    write_items(&a, "import_drafts", T1 + 20, vec![anki("k3-a", &c1)]);
+    write_items(&b, "import_drafts", T1 + 21, vec![anki("k3-b", &c2)]);
+    sync_all(&[&a, &b], &mut loc, T1 + 30, o);
+    let mut cards = Vec::new();
+    for d in [&mut a, &mut b] {
+        let (stats, rows) = d.direct(|t, col| {
+            let n: i64 = t
+                .conn()
+                .query_row(
+                    "SELECT COUNT(*) FROM stats WHERE col = ?1 AND at = ?2",
+                    [col, rid],
+                    |r| r.get(0),
+                )
+                .map_err(|e| e.to_string())?;
+            let mut stmt = t
+                .conn()
+                .prepare(
+                    "SELECT hex(id), hex(last_log_id), due_day, scheduled_days, reps, queue FROM cards \
+                     WHERE col = ?1 ORDER BY id",
+                )
+                .map_err(|e| e.to_string())?;
+            let rows: Vec<String> = stmt
+                .query_map([col], |r| {
+                    Ok(format!(
+                        "{:?} {:?} {:?} {:?} {:?} {:?}",
+                        r.get::<_, Option<String>>(0)?,
+                        r.get::<_, Option<String>>(1)?,
+                        r.get::<_, Option<i64>>(2)?,
+                        r.get::<_, Option<i64>>(3)?,
+                        r.get::<_, Option<i64>>(4)?,
+                        r.get::<_, Option<String>>(5)?,
+                    ))
+                })
+                .map_err(|e| e.to_string())?
+                .collect::<Result<_, _>>()
+                .map_err(|e| e.to_string())?;
+            Ok((n, rows))
+        });
+        assert_eq!(stats, 1, "the same Anki review counts once");
+        assert_eq!(rows.len(), 2, "{rows:?}");
+        cards.push(rows);
+    }
+    assert_eq!(cards[0], cards[1]);
+    assert_eq!(a.derived(), b.derived());
+}
+
+/// 缓存层推导口径修订号（`cache.rs` [CACHE_RULES]，K3）：库里记的不是当前值（这个口径之前建的新代开发库没有这一项）时，
+/// 宿主打开发的 `cache_config_set` 即使配置没变也整层重建一次、记下当前值；之后同一份配置什么都不做。
+#[test]
+fn a_cache_built_under_older_rules_is_rebuilt_once_on_open() {
+    use crate::store::gen4::cache::{CACHE_RULES, RULES_KEY};
+    let mut a = Dev::new("k3rules");
+    write_items(
+        &a,
+        "apply",
+        T1 + 1,
+        vec![
+            json!({"e": json!({"t": "entity", "x": {"id": "NT", "p": P, "k": "notetype", "d": {"createdAt": 1, "ntKind": "standard"}}}), "note": null}),
+            json!({"e": note(N1, "NT", 10), "note": null}),
+            json!({"e": edit("note", N1, "f/fa", json!("鯨")), "note": null}),
+        ],
+    );
+    let count = |t: &Truth<'_>, col: i64| -> Result<i64, String> {
+        t.conn()
+            .query_row("SELECT COUNT(*) FROM notes WHERE col = ?1", [col], |r| {
+                r.get(0)
+            })
+            .map_err(|e| e.to_string())
+    };
+    for stale in [None, Some("0")] {
+        let before = a.direct(|t, col| {
+            assert_eq!(t.derive_cfg(col, RULES_KEY)?, Some(CACHE_RULES.to_string()));
+            let n = count(t, col)?;
+            // 旧口径建的缓存层：这里清空缓存行当作「要换掉的旧行」，重建之后应当回来。
+            t.set_derive_cfg(col, RULES_KEY, stale)?;
+            t.conn()
+                .execute("DELETE FROM notes WHERE col = ?1", [col])
+                .map_err(|e| e.to_string())?;
+            Ok(n)
+        });
+        assert!(before > 0);
+        let v = g4(a.h, "cache_config_set", T1 + 2, json!({"caches": cfg()}));
+        assert_eq!(v["changed"], json!(true), "{v}");
+        let after = a.direct(|t, col| {
+            assert_eq!(t.derive_cfg(col, RULES_KEY)?, Some(CACHE_RULES.to_string()));
+            count(t, col)
+        });
+        assert_eq!(after, before);
+        let v = g4(a.h, "cache_config_set", T1 + 3, json!({"caches": cfg()}));
+        assert_eq!(v, json!({"changed": false}));
+    }
+}
 
 /// 两台全新设备经同一个文件夹位置互相同步：各写各的 → 两轮之后都看得到对方写的；派生层逐行相同、增量 == 重建。第二轮
 /// 什么都没变时（带 `skipUnchangedMs`）不重写 head；位置上只留每台设备最新两代 head。

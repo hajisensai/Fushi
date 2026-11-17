@@ -31,6 +31,7 @@
 // 每个 native crate 的入口文件都要有这一行（守卫 fushi/test/build/native_crate_worktree_fingerprint_guard_test.dart）。
 const _: Option<&str> = option_env!("FUSHI_WORKTREE_ROOT");
 
+pub mod anki_import_rules;
 pub mod boot_clock;
 pub mod calibration;
 pub mod card_cache;

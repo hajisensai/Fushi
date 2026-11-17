@@ -206,6 +206,7 @@ pub fn note_fields_if(
 pub fn change(t: &Truth<'_>, col: i64, req: &Value, items: &[Value]) -> Result<Value, String> {
     let now = now_of(req)?;
     write(t, col, |s| {
+        s.want_edit_rows(req);
         if let Some(cp) = req.get("checkpoint").filter(|cp| cp.is_object()) {
             let name = cp["name"]
                 .as_str()

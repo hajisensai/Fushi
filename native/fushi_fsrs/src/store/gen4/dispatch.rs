@@ -50,7 +50,7 @@
 use rusqlite::OptionalExtension;
 use serde_json::{Value, json};
 
-use super::cache::CFG_KEY;
+use super::cache::{CACHE_RULES, CFG_KEY, RULES_KEY};
 use super::cmd::{self, snapshot};
 use super::derive::{Index, Ref, Settled};
 use super::files::OpenMode;
@@ -838,15 +838,18 @@ fn run(
 
 /// `cache_config_set`：缓存配置（内置笔记类型的代码默认值、默认牌组：只有 Dart 知道）是派生层的输入，存在
 /// `derive_cfg`（与迁移写下的是同一个键）。值与库里的相同（按 JSON 值比，键序无关）就什么都不做；变了就写下并按
-/// `Settle::Rebuild` 整个重建派生层（缓存行按新配置重算），同一个事务。回包 `{changed, settled?}`。
+/// `Settle::Rebuild` 整个重建派生层（缓存行按新配置重算），同一个事务。配置没变、但缓存层不是按当前推导口径物化的
+/// （`derive_cfg` 的 [RULES_KEY] 不等于 [CACHE_RULES]，`cache.rs`）也整层重建一次。回包 `{changed, settled?}`：
+/// `changed` = 派生层重建过（宿主据它作废按刷新键记的缓存）。
 ///
-/// 协议 3 回 `{from, to, current, cache}`（缓存推导口径的版本升级与 Dart 缓存镜像的写入清单）：新代没有缓存推导口径版本
-/// （派生层是真相的纯函数，换口径 = 新的 schema / 重建），回包改了形状，G7-5 对应改。
+/// 协议 3 回 `{from, to, current, cache}`（缓存推导口径的版本升级与 Dart 缓存镜像的写入清单）：新代的推导口径版本只有
+/// 「当前 / 不是当前」两态（落后了就整层重建，派生层是真相的纯函数），回包改了形状，G7-5 对应改。
 fn cache_config_set(t: &Truth<'_>, col: i64, caches: &Value) -> Result<Value, String> {
     let old: Option<Value> = t
         .derive_cfg(col, CFG_KEY)?
         .and_then(|text| serde_json::from_str(&text).ok());
-    if old.as_ref() == Some(caches) {
+    let current_rules = t.derive_cfg(col, RULES_KEY)? == Some(CACHE_RULES.to_string());
+    if old.as_ref() == Some(caches) && current_rules {
         return Ok(json!({"changed": false}));
     }
     t.set_derive_cfg(col, CFG_KEY, Some(&crate::store::sync2::canonical(caches)))?;
