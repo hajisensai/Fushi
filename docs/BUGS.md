@@ -33,16 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4123 条。点号进各自文件。
+> 共 4124 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4768](bugs/BUG-4768-licenses-7zip-not-in-native-registry.md) | ✅ | ✅ | 随包的 7-Zip（7z.exe / 7z.dll，含 unRAR 派生代码）没进应用内原生许可清单 |
 | [BUG-4767](bugs/BUG-4767-shell-thumbs-host-job-window.md) | ✅ | ✅ | 缩略图宿主进程先启动后入内存 job、入 job 失败照跑，并发宿主无总内存上限 |
-| [BUG-4766](bugs/BUG-4766-licenses-7zip-not-in-native-registry.md) | ✅ | ✅ | 随包的 7-Zip（7z.exe / 7z.dll，含 unRAR 派生代码）没进应用内原生许可清单 |
-> 共 4122 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
 | [BUG-4766](bugs/BUG-4766-frame-cover-preview-concurrent-ffmpeg.md) | ✅ | ✅ | 挑帧封面弹窗连点微调会并发起多个 ffmpeg 抽帧 |
 | [BUG-4765](bugs/BUG-4765-lyrics-zlib-bomb-unbounded.md) | ✅ | ✅ | KRC / 加密 QRC 解压没有明文上限，构造的歌词文件或插件结果能把内存撑爆导致闪退 |
 | [BUG-4764](bugs/BUG-4764-qrc-kana-ideograph-count-mismatch.md) | ✅ | ✅ | QRC 注音轨汉字计数口径和来源不一致（〇 〆 等），整首歌的注音全部丢失 |

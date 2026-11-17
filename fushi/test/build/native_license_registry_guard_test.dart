@@ -137,7 +137,7 @@ void main() {
     }
   });
 
-  // BUG-4766：发布流程（release-desktop.yml → tools/bundle_7za.ps1）往 Windows 包里放的
+  // BUG-4768：发布流程（release-desktop.yml → tools/bundle_7za.ps1）往 Windows 包里放的
   // 7-Zip（7z.exe + 7z.dll，含 unRAR 派生代码）不是 pub 包带的，以前没进这份清单，开源许可页
   // 里看不到它。钉住：脚本钉的版本必须有一条对应的 prebuilt 条目，并带上安装包里的 License.txt。
   test('tools/bundle_7za.ps1 随包的 7-Zip 登记在 prebuilt 里且版本与脚本一致', () {
