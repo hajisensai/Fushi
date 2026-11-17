@@ -280,6 +280,66 @@ describe('/dev/decisions', () => {
     expect((await call(env, 'GET', '/dev/d/design-x/f/0', { now: NOW })).status).toBe(303);
   });
 
+  it('网页上传附件：multipart 收下写 R2、追加进 files、留言记一笔；校验格式 / 大小 / 数量 / 结单 / Origin', async () => {
+    const env = makeEnv();
+    env.DB.raw.exec(addSql([{ id: 'up1', title: '传图', ask: '看图' }], NOW - 10).sql);
+    const s = await devSession(env);
+    const up = async (files, { origin = BASE, accept = 'application/json', id = 'up1' } = {}) => {
+      const fd = new FormData();
+      for (const [name, text, type] of files) fd.append('file', new File([text], name, { type: type || 'application/octet-stream' }));
+      fd.append('back', 'all');
+      const req = new Response(fd);
+      return call(env, 'POST', `/dev/d/${id}/files`, {
+        headers: { Cookie: s.cookie, Origin: origin, 'Content-Type': req.headers.get('Content-Type'), Accept: accept },
+        body: new Uint8Array(await req.arrayBuffer()),
+        now: NOW,
+      });
+    };
+    const r = await up([['设计 A.html', '<p>A</p>', 'text/html'], ['image.png', 'png-bytes', 'image/png']]);
+    expect(r.status).toBe(200);
+    expect(r.data.item.html).toContain('<iframe src="/dev/d/up1/f/0"');
+    expect(r.data.item.html).toContain('开发者上传');
+    const files = JSON.parse(row(env, 'up1').files);
+    expect(files.map((f) => [f.name, f.by, f.bytes])).toEqual([['设计 A.html', 'dev', 8], ['image.png', 'dev', 9]]);
+    expect(files.every((f) => f.key.startsWith('decisions/up1/'))).toBe(true);
+    expect(new TextDecoder().decode(env.MEDIA.store.get(files[0].key).bytes)).toBe('<p>A</p>');
+    expect(env.DB.raw.prepare("SELECT body FROM decision_notes WHERE decision_id = 'up1'").get().body).toBe('上传了附件：设计 A.html、image.png');
+    const got = await call(env, 'GET', '/dev/d/up1/f/0', { headers: { Cookie: s.cookie }, now: NOW });
+    expect(got.data).toBe('<p>A</p>');
+    // 无脚本表单：303 回原栏。
+    const plain = await up([['b.md', '# b']], { accept: 'text/html' });
+    expect(plain.status).toBe(303);
+    expect(plain.res.headers.get('Location')).toBe('/dev/decisions?stage=all#d-up1');
+
+    expect((await up([['x.exe', 'x']])).data.error).toBe('bad_file_type');
+    expect((await up([])).data.error).toBe('no_file');
+    expect((await up([['a.png', 'x']], { origin: 'https://evil.example' })).status).toBe(403);
+    expect((await up([['a.png', 'x']], { id: 'nope' })).status).toBe(404);
+    const many = Array.from({ length: 8 }, (_, i) => [`${i}.txt`, 'x']);
+    expect((await up(many)).data.error).toBe('too_many_files');
+    expect(JSON.parse(row(env, 'up1').files)).toHaveLength(3);
+    env.DB.raw.exec(closeSql('up1', 'done', '做完了', NOW + 1));
+    expect((await up([['c.png', 'x']])).data.error).toBe('decision_closed');
+    // 结单的卡不再有上传表单。
+    expect((await page(env, s, 'all')).data).not.toContain('action="/dev/d/up1/files"');
+  });
+
+  it('网页上传：单个文件超过 10 MB 拒收', async () => {
+    const env = makeEnv();
+    env.DB.raw.exec(addSql([{ id: 'up2', title: '大', ask: '大' }], NOW - 10).sql);
+    const s = await devSession(env);
+    const fd = new FormData();
+    fd.append('file', new File([new Uint8Array(10 * 1024 * 1024 + 1)], 'big.png'));
+    const req = new Response(fd);
+    const r = await call(env, 'POST', '/dev/d/up2/files', {
+      headers: { Cookie: s.cookie, Origin: BASE, 'Content-Type': req.headers.get('Content-Type'), Accept: 'application/json' },
+      body: new Uint8Array(await req.arrayBuffer()),
+      now: NOW,
+    });
+    expect(r.data.error).toBe('file_too_large');
+    expect(env.MEDIA.store.size).toBe(0);
+  });
+
   it('页面一次渲染全部事项，非当前栏 hidden；放行本站脚本', async () => {
     const env = makeEnv();
     env.DB.raw.exec(addSql(ITEMS, NOW - 10).sql);
