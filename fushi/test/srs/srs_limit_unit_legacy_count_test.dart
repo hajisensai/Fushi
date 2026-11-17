@@ -2,6 +2,9 @@
 // 不必重扫；但它取决于改缺省之前的复习，一批只含旧复习日志的同步并进来时必须重算（内容指纹在这种合并下不变）。
 //
 // 两份内存库模拟两台设备（同一 profile、不同设备号），经 `.fushisrs` 操作包（sync2ExportOps / sync2ImportOps）合并。
+// 新代按文件导出 / 导入（G11-3）；第一次导入是另一个集合，用户确认后并入（[_ship]）。
+import 'dart:io';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
@@ -10,6 +13,18 @@ import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 
 import 'srs_test_support.dart';
+
+/// 把 [from] 的操作包导出成文件、确认后并进 [to]（新代的 `.fushisrs` 按文件走，G11-3）。
+Future<void> _ship(SrsDbStore from, SrsDbStore to) async {
+  final Directory tmp = Directory.systemTemp.createTempSync('srs_lu_');
+  try {
+    final String path = '${tmp.path}${Platform.pathSeparator}ops.bin';
+    await from.sync2ExportOps(path);
+    await to.sync2ImportOps(path: path, confirmed: true);
+  } finally {
+    tmp.deleteSync(recursive: true);
+  }
+}
 
 Future<int> _count(ProviderContainer container) async {
   container.read(srsRevisionProvider.notifier).state++;
@@ -39,7 +54,7 @@ void main() {
     );
     final String card = (await a.cardsOfNote(note)).single.id;
     // 先把笔记 / 卡片同步过去：B 有这张卡，但还没有任何复习。
-    await b.sync2ImportOps(await a.sync2ExportOps());
+    await _ship(a, b);
 
     final ProviderContainer container = ProviderContainer(
       overrides: <Override>[
@@ -53,7 +68,7 @@ void main() {
     clock.advance(const Duration(minutes: 1));
     await a.answer(card, 3);
     final String contentBefore = b.contentFingerprint;
-    await b.sync2ImportOps(await a.sync2ExportOps());
+    await _ship(a, b);
     expect(
       b.contentFingerprint,
       contentBefore,
