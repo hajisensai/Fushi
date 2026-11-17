@@ -6,6 +6,11 @@
 // 这一步交回的日志的 HLC。搬之后同一段脚本逐值对上 = 已落库的 HLC 的字节表示与推进规则没变。
 //
 // 重新生成（只在有意改变推进规则时；本步不允许）：`FUSHI_GEN_LEGACY_CLOCK=<输出路径> dart test <本文件>`。
+//
+// 唯一一次重生成（不改推进规则，改的是脚本的输入）：#3460 / #3551 让新建牌组多写一条 `deckLimitUnit` 修改记录
+// （`SrsDbStore.createDeck` 与 .apkg 导入新建牌组各一条），每条修改记录走一次时钟，于是「import bench」（新建两个牌组）
+// 计数器 +2、「createDeck」起后续四步各 +1，共 5 个 `hlc` 值变化，复习日志的 HLC 一个没变。核对方式：把这两处写入
+// 临时去掉，同一段脚本的输出与重生成前的夹具逐字节相同。
 import 'dart:convert';
 import 'dart:io';
 

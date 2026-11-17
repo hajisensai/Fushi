@@ -1332,8 +1332,10 @@ impl<'t, 'c> Index<'t, 'c> {
     ) -> Result<(), String> {
         // 归回的写入者表在这一趟里不变：按类拼行（`class.rs` [Index::class_lines]）每个实体都要它，读一次。
         self.pass_writers = Some(self.writer_aliases()?);
+        self.pass_rules_begin()?;
         let done = self.cache_pass_with(cfg, notes, cards, all, out);
         self.pass_writers = None;
+        self.pass_rules = None;
         done
     }
 
@@ -2662,6 +2664,69 @@ mod tests {
             })
             .unwrap();
             assert_one_canonical_note(t.conn(), &w);
+            assert_rebuild_is_identity(t, col);
+        });
+    }
+
+    /// 带盐的内置笔记类型（Lapis）：字段只在宿主缓存配置的代码默认定义里（没有 `fieldDef/` 修改），字段 ID 只嵌在笔记的
+    /// `f/<字段>` 键里、从不作为实体出现，别名表里没有它。配置按内置规则归一到规范字段 ID，键里的字段 ID 必须按同一份
+    /// 规则归一，笔记行才拿得到字段值（以前键只查别名表、保持带盐 ID，排序字段 / 词条全空，预演对拍报 notes / cards 不同）。
+    #[test]
+    fn salted_builtin_note_fields_reach_the_canonical_note_row() {
+        use crate::gen4_ids::rules;
+        with(|t, col| {
+            let num = rules::builtin_note_type_anki_num("lapis");
+            let nt = rules::note_type(Some(U1), num);
+            let f = rules::field(&nt, rules::builtin_field_anki_num("lapis", "Expression")).text();
+            let tpl =
+                rules::template(&nt, rules::builtin_template_anki_num("lapis", "Card 1")).text();
+            let note = rules::note(Some(U1), "g");
+            let cfg = json!({
+                "defaultDeck": id(DECK).text(),
+                "builtins": {"lapis": {"b": {
+                    "name": "Lapis", "css": "", "termFieldId": f,
+                    "fields": [{"id": f, "name": "Expression", "ord": 0}],
+                    "templates": [{"id": tpl, "name": "Card 1", "ord": 0, "front": "{{Expression}}", "back": ""}],
+                }, "reading": null}},
+            })
+            .to_string();
+            t.tx(|t| t.set_derive_cfg(col, CFG_KEY, Some(&cfg)))
+                .unwrap();
+            let steps = vec![
+                Body4::salts([U1]).unwrap(),
+                entity(
+                    EntKind::Deck,
+                    uuid(DECK),
+                    json!({"createdAt": 1, "builtin": "default"}),
+                ),
+                entity(
+                    EntKind::NoteType,
+                    Key::Uuid(nt),
+                    json!({"createdAt": 1, "ntKind": "standard", "builtin": "lapis", "ankiNum": num}),
+                ),
+                entity(
+                    EntKind::Note,
+                    Key::Uuid(note),
+                    json!({"createdAt": 1, "guid": "g", "noteTypeId": nt.text()}),
+                ),
+                set(
+                    EntKind::Note,
+                    Key::Uuid(note),
+                    &format!("f/{f}"),
+                    json!("猫"),
+                ),
+            ];
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                feed(t, &mut ix, col, 1, &steps);
+                ix.settle()?;
+                Ok(())
+            })
+            .unwrap();
+            assert_eq!(
+                rows(t.conn(), "SELECT id, sort_field FROM notes"),
+                strs(&[[rules::note(rules::CANONICAL, "g").text().as_str(), "猫"]])
+            );
             assert_rebuild_is_identity(t, col);
         });
     }
