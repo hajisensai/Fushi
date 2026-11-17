@@ -3319,7 +3319,8 @@ profile uid 不变」断言，不分 `bound` / `joined`。
   - 结果：`cargo build --profile quick --lib` 告警 7 条，**dead_code 0 条且没有任何 `allow(dead_code)` 压着**；余下 7 条是基线
     既有的 `unused`（`gen4/alias.rs` 的 `json`、`gen4/receive.rs` 的 `DeviceKey`、`ffi.rs` `ffsrs_store_exec` 非 `raw_sql` 构建的
     4 个未用变量与 1 条不可达语句），不归 G7-6。`src/gen4/translate.rs:160` 那一处 `cfg_attr(not(test), allow(dead_code))` 是
-    基线既有的，没动。
+    基线既有的，没动。`--features id_audit` 构建：读连接池门住后 `ids::audit::installed` 失去生产调用方，同样门进测试构建，
+    告警仍是 12 条（全是基线既有）；`--features raw_sql` 构建与 `--example gen4_dryrun` 照常编过。
 - **残留预演目录开库时也清**：`G4Core::open` 以 Primary 打开时幂等删 `gen4-rehearsal/`（`migrate.rs`
   `remove_leftover_rehearsal` 改 `pub(crate)`），覆盖「早期预发布版上已迁移完」与「迁移在拿锁之前就被挡住」的用户；Secondary
   不动（不是这个目录的写者）。删不掉不挡开库（只是一份过时副本，因它打不开库才是让用户出问题），下次 Primary 打开或迁移再删。

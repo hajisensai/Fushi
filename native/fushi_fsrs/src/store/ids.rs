@@ -334,6 +334,8 @@ pub(crate) mod audit {
         Err(format!("id audit: {}", hits.join("\n---\n")))
     }
 
+    /// 只给协议 3 读连接池的开连接函数用（`store/mod.rs` `open_pool_reader`），那个池换代后只在测试构建里编（G7-6）。
+    #[cfg(test)]
     pub(crate) fn installed(mut conn: rusqlite::Connection) -> rusqlite::Connection {
         install(&mut conn);
         conn
