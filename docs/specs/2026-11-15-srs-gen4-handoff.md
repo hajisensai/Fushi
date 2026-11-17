@@ -1333,3 +1333,23 @@ G8 子规划文档在仓库里不存在（任务点名的「G8 子规划」找�
 - ~~WebUI 没加迁移状态的显示与按钮~~：复核修复轮已补（见下「复核修复」）。
 - 没有协议 3 身份的原件对拍中止后，状态命令报 `needsMigration`（§11 已知），服务端每次启动会自动再迁一次，每次再中止并重写报告。
   不丢数据，只是每次启动多跑一遍；这一点继承自 G7-2b 的缺口。
+
+### 复核修复（2026-11-17）
+
+- 互联制卡（`remote_mining_host.dart`）：复习库升级中 / 升级受阻且这次本该落进复习（点名复习、默认落复习、或没接 Anki）时，回
+  类型化的 `error` + `errorCode` `srs_upgrading`（transient）/ `srs_upgrade_blocked`（permanent，附 `generation.advice`），
+  不再按 2026-11-08「点名的给不了就退回默认」悄悄落进 Anki、也不回 `notConfigured`；`miningTargets` 带 `reviewUnavailable`。
+  点名 Anki 且 Anki 可用的照常进 Anki。
+- `precondition` / `missingCacheConfig` / `noLibrary` 各自有处置说明；`precondition` 与未知 code 不再引导「再跑一次」。
+- 叫停：用现取的 `gen4_migrate_status` 进度判断能不能叫停（不用滞后一个轮询间隔的那份）；仍可能与提交点竞态，内核在提交点
+  之后不受理，以最终结论（cancelled / committed）为准，操作目录描述与日志写明。
+- `busy` / 别的进程在迁移：隔 `migrationRetryDelay` 挂一次性定时器自己再判定，不等 30 分钟兜底定时器。
+- 执行端接口 `SrsGen4MigrationBackend` / `SrsNativeGen4MigrationBackend` 下沉到 `packages/fushi_srs`
+  （`srs_gen4_migration.dart`），app 迁移控制器与服务端共用。
+- WebUI 复习页：新增「复习库换代」块（各状态文案、步骤进度、原因、报告路径、处置说明），「开始升级」/「叫停升级」按钮经确认
+  对话框才发，叫停只在 `cancellable` 时出现。
+- 端到端测试补核：迁移后主 profile 的两条复习日志（本机一条 + 协议 1 时代一条）都在；孤儿 profile（只在投影表里）的牌组与
+  它那条旧日志也迁过来、可读（这一条是纯测试补强，数据保全在 Rust 迁移里，不另做变异）。
+- 变异实测（`server_srs_migration_test.dart`，每条打变异后定向跑、红后还原）：`_upgradeRefusalFor` 恒 null → 制卡用例红；
+  去掉 `precondition` 分支 → 处置说明用例红；叫停不用现取进度 → 叫停用例红；`_armMigrationRetry` 直接返回 → busy 与别的
+  进程两条红；WebUI「开始升级」去掉确认 → WebUI 用例红。
