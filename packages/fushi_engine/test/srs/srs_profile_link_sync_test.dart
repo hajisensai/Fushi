@@ -84,14 +84,33 @@ class _Device {
   ))?.field(srsLapisFieldId(store.profileUid, 'Expression'));
 }
 
-/// 不经关联、直接对 [dir] 上 [store] 自己 uid 的集合根跑一轮同步 v2。
+/// 不经关联、直接对 [dir] 上 [store] 现在绑定的集合目录（内核 `identity` 的 `dir`）跑一轮同步 v2。
 Future<SrsSync2Report> _round(LocalDirectoryAssetStore dir, SrsDbStore store) =>
     srsSync2Round(
       host: store,
-      location: SrsAssetLocationStore(store: dir, profileUid: store.profileUid),
+      location: SrsAssetLocationStore(
+        store: dir,
+        profileUid: store.profileUid,
+        locationDir: store.sync2Dir,
+      ),
       locationId: 'interconnect:host',
       nowMs: () => store.now().$1,
     );
+
+/// [a] 与 [b] 绑在同一个集合、同一个位置目录上（新代的「关联上了」：profile uid 各是各的）。
+void _sameCollection(_Device a, _Device b) {
+  expect(a.store.sync2Collection, b.store.sync2Collection);
+  expect(a.store.sync2Dir, b.store.sync2Dir);
+}
+
+/// 位置上目录 [dirName] 里还列着哪些写入者（说明文件所在的设备目录）；目录不在为空。
+Future<List<String>> _writersIn(
+  LocalDirectoryAssetStore dir,
+  String dirName,
+) async => <String>[
+  for (final SrsRemoteProfile r in await srsListRemoteProfiles(dir))
+    if (r.uid == dirName) ...r.writers,
+];
 
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
@@ -117,7 +136,7 @@ void main() {
     expect(await phone.expressionOf(fromHost), isNull);
   });
 
-  test('没有笔记的一边（已同步发布过自己的目录）采用对方 uid 后双向互通，旧目录清掉', () async {
+  test('没有笔记的一边（已同步发布过自己的目录）认领对方集合后双向互通，旧目录里不再列着它', () async {
     final _Device host = await _Device.open('host');
     final _Device phone = await _Device.open('phone');
     final String phoneOldUid = phone.store.profileUid;
@@ -135,13 +154,13 @@ void main() {
       expect((await host.sync(dir)).error, isNull, reason: 'host $i');
       expect((await phone.sync(dir)).error, isNull, reason: 'phone $i');
     }
-    expect(phone.store.profileUid, host.store.profileUid);
-    expect(await phone.db.profileUidOf(phone.profileId), host.store.profileUid);
+    _sameCollection(phone, host);
+    expect(phone.store.profileUid, phoneOldUid, reason: '新代认领不改 profile uid');
+    expect(await phone.db.profileUidOf(phone.profileId), phoneOldUid);
     expect(await phone.expressionOf(fromHost), '雪');
-    expect(
-      Directory('${root.path}/$kSrsSync2Namespace/$phoneOldUid').existsSync(),
-      isFalse,
-    );
+    // 旧目录的 `v4/` 根（meta.json）永远留着（srsRemoveOwnProfileFolder），但本机的说明文件目录删了：别的设备不再
+    // 把它当成又一个候选。
+    expect(await _writersIn(dir, phoneOldUid), isEmpty);
 
     final String fromPhone = await phone.addNote('雨');
     for (int i = 0; i < 3; i++) {
@@ -149,13 +168,14 @@ void main() {
       expect((await host.sync(dir)).error, isNull);
     }
     expect(await host.expressionOf(fromPhone), '雨');
-    // host 有笔记、目录里已有别的设备：不会被反过来改 uid。
+    // host 有笔记、目录里已有别的设备：不会被反过来换集合。
     expect(await host.db.profileUidOf(host.profileId), host.store.profileUid);
+    expect(host.store.sync2Dir, host.store.profileUid);
     expect(host.unlinked, isEmpty);
     expect(phone.unlinked, isEmpty);
   });
 
-  test('两边都有用户笔记：不自动关联、不改任何一边的 uid，报告对方 profile 名', () async {
+  test('两边都有用户笔记：不自动关联、不换任何一边的集合，报告对方 profile 名', () async {
     final _Device a = await _Device.open('a');
     final _Device b = await _Device.open('b');
     await a.addNote('雪');
@@ -168,6 +188,8 @@ void main() {
     }
     expect(a.store.profileUid, aUid);
     expect(b.store.profileUid, bUid);
+    expect(a.store.sync2Dir, aUid);
+    expect(b.store.sync2Dir, bUid);
     expect(b.unlinked, contains('Default'));
   });
 
@@ -192,7 +214,7 @@ void main() {
   });
 
   // 反馈：电脑与 iPhone 各自随机生成 uid、都叫 Default、都有笔记，只弹一条「无法自动关联」toast 就没了下文。
-  test('两边都有笔记：用户在 B 上选 A 那份 → B 并入 A，两边看到全部笔记，B 的旧目录被清掉', () async {
+  test('两边都有笔记：用户在 B 上选 A 那份 → B 并入 A，两边看到全部笔记，B 的旧目录里不再列着它', () async {
     final _Device a = await _Device.open('a');
     final _Device b = await _Device.open('b');
     final String snow = await a.addNote('雪');
@@ -208,8 +230,14 @@ void main() {
     ]);
     expect(before.localHasNotes, isTrue);
 
-    b.store = (await b.linker.adopt(b.store, a.store.profileUid)).store;
-    expect(b.store.profileUid, a.store.profileUid);
+    b.store = (await b.linker.adopt(
+      b.store,
+      a.store.sync2Dir!,
+      within: dir,
+    )).store;
+    // B 的目录名大：按 D27 是 B 改绑到 A（写一条 Join），profile uid 不变。
+    _sameCollection(b, a);
+    expect(b.store.profileUid, bOldUid);
     for (int i = 0; i < 3; i++) {
       expect((await b.sync(dir)).error, isNull, reason: 'b $i');
       expect((await a.sync(dir)).error, isNull, reason: 'a $i');
@@ -224,9 +252,9 @@ void main() {
     };
     expect(aWords, containsAll(<String>['雪', '雨']), reason: 'B 的笔记并入后到了 A');
     expect(
-      Directory('${root.path}/$kSrsSync2Namespace/$bOldUid').existsSync(),
-      isFalse,
-      reason: 'B 的旧 uid 目录只有它自己写过：清掉，别的设备不再把它当候选',
+      await _writersIn(dir, bOldUid),
+      isEmpty,
+      reason: 'B 的旧目录只有它自己写过：说明文件目录清掉，别的设备不再把它当候选',
     );
     // 已经关联上：之后不再要选。
     expect((await a.linker.link(dir, a.store)).choose, isNull);
@@ -259,13 +287,79 @@ void main() {
     );
   });
 
-  test('两边都只有内置行：只有一边采用，最终同一个 uid', () async {
+  test('两边都只有内置行：只有目录名大的一边认领，最终同一个集合', () async {
     final _Device a = await _Device.open('a');
     final _Device b = await _Device.open('b');
+    final String aDir = a.store.sync2Dir!;
     for (int i = 0; i < 3; i++) {
       expect((await a.sync(dir)).error, isNull);
       expect((await b.sync(dir)).error, isNull);
     }
-    expect(a.store.profileUid, b.store.profileUid);
+    _sameCollection(a, b);
+    expect(a.store.sync2Dir, aDir, reason: 'a 先开、目录名小：它不动');
   });
+
+  // D27 吸收方向（G9-5 续）：本机目录名小、对方并进本机时，那条 Join 在本机集合的根里，对方集合的设备只读自己的根。
+  // 本机在对方目录里放并入提示，对方设备据此再问一次用户（D25）——即使它的集合里已有别的设备（「已关联」）。
+  test('A 吸收 B：B 的设备（已关联）经并入提示再确认一次，确认后三台收敛到 A', () async {
+    final _Device a = await _Device.open('a');
+    final _Device b = await _Device.open('b');
+    final _Device b2 = await _Device.open('b2');
+    final String snow = await a.addNote('雪');
+    final String rain = await b.addNote('雨');
+    // B 先单独同步；b2 是空设备、目录名比 b 大：自动认领 B 的集合，B 从此「已关联」。
+    expect((await b.sync(dir)).error, isNull);
+    expect((await b2.sync(dir)).error, isNull);
+    _sameCollection(b2, b);
+    expect((await b.sync(dir)).error, isNull);
+    final String fromB2 = await b2.addNote('霜');
+    expect((await b2.sync(dir)).error, isNull);
+    expect((await b.sync(dir)).error, isNull);
+    expect(await b.expressionOf(fromB2), '霜');
+
+    // A 有笔记、独自一个：B 是候选，用户在 A 上选它。A 的目录名小 → B 并进 A（A 的绑定不动）。
+    final String aDir = a.store.sync2Dir!;
+    final String bDir = b.store.sync2Dir!;
+    expect(aDir.compareTo(bDir), lessThan(0));
+    final SrsProfileLinkOutcome atA = await a.linker.link(dir, a.store);
+    expect(atA.choose?.map((SrsRemoteProfile c) => c.uid), <String>[bDir]);
+    await a.linker.adopt(a.store, bDir, within: dir);
+    expect(a.store.sync2Dir, aDir, reason: '吸收方向：A 不改绑');
+    expect(
+      (await a.linker.link(dir, a.store)).choose,
+      isNull,
+      reason: '已经并进 A 的集合不再算候选',
+    );
+    expect(
+      File(
+        '${root.path}/$kSrsSync2Namespace/$bDir/'
+        '$kSrsJoinHintPrefix${a.store.sync2Collection}.json',
+      ).existsSync(),
+      isTrue,
+      reason: 'B 的目录里放了并入提示',
+    );
+    expect((await a.sync(dir)).error, isNull);
+
+    // B 的设备：自己的集合里有别的设备（已关联），没有提示时只会保持；有提示就把 A 交给用户再确认一次。
+    for (final _Device d in <_Device>[b, b2]) {
+      final SrsProfileLinkOutcome o = await d.linker.link(dir, d.store);
+      expect(o.choose?.map((SrsRemoteProfile c) => c.uid), <String>[
+        aDir,
+      ], reason: '${d.deviceId}：提示指向的 A 交给用户确认');
+      d.store = (await d.linker.adopt(d.store, aDir, within: dir)).store;
+      _sameCollection(d, a);
+    }
+    for (int i = 0; i < 3; i++) {
+      for (final _Device d in <_Device>[b, b2, a]) {
+        expect((await d.sync(dir)).error, isNull, reason: '${d.deviceId} $i');
+      }
+    }
+    for (final _Device d in <_Device>[a, b, b2]) {
+      expect(await d.expressionOf(snow), '雪', reason: d.deviceId);
+      expect(await d.expressionOf(rain), '雨', reason: d.deviceId);
+      expect(await d.expressionOf(fromB2), '霜', reason: d.deviceId);
+      expect((await d.linker.link(dir, d.store)).choose, isNull);
+    }
+    // 三台设备、十几轮同步：默认 30 秒在满载的机器上不够。
+  }, timeout: const Timeout(Duration(minutes: 3)));
 }
