@@ -6,7 +6,7 @@
 // 这里钉住「键先于任何 await 取、保存只用传进来的键」这两条结构性质。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 String _memberSource(String source, String signature) {
   final int start = source.indexOf(signature);
