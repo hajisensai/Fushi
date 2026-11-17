@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4148 条。点号进各自文件。
+> 共 4149 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4794](bugs/BUG-4794-feedback-files-share-video-ip-quota.md) | 🚧 | 🚧 | 样本文件与录屏共用每 IP 每天 200 MiB 额度，满额样本文件仍会被 429 挤掉 |
 | [BUG-4792](bugs/BUG-4792-cross-app-audio-consent-destroy-busy.md) | ✅ | ✅ | 跨应用语音授权页被系统以非 finishing 方式销毁后，start 永远挂着，之后每次开启都回 busy |
 | [BUG-4791](bugs/BUG-4791-cross-app-audio-provider-rpc-main-thread.md) | ✅ | ✅ | 应用外查词取跨应用语音快照时，跨进程 RPC 与约 2.9MB 写盘压在查词窗平台主线程上 |
 | [BUG-4790](bugs/BUG-4790-screen-ocr-dart-recognition-no-cancel.md) | 🚧 | 🚧 | Android 截屏识字交给 Dart 识别期间没有取消出口，识别慢时悬浮球一直藏着 |
