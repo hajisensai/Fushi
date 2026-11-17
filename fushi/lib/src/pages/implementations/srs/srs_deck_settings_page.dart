@@ -143,9 +143,75 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
   String? _learnError;
   String? _relearnError;
 
-  /// 最近一次载入（进页面、优化 / 恢复参数 / 子牌组继承后重读）时表单的样子；当前
+  /// 库里的值填进表单时的样子（进页面、优化 / 恢复参数 / 子牌组继承后重读都会更新）；当前
   /// [_formSnapshot] 与它不同 = 有没保存的改动，按返回时拦下来问（[_onPopBlocked]）。
   List<Object?> _baseline = const <Object?>[];
+
+  /// 表单里所有会被保存的项，顺序即 [_formSnapshot] 的顺序。重读（[_load]）时按项比对：与上次基准相同的项
+  /// 换成库里的新值，用户改过的项原样放回。
+  late final List<_FormField> _fields = <_FormField>[
+    _textField(_name),
+    _textField(_newPerDay),
+    _textField(_reviewsPerDay),
+    _valueField<SrsLimitUnit>(
+      () => _limitUnit,
+      (SrsLimitUnit v) => _limitUnit = v,
+    ),
+    _textField(_learnSteps, steps: true),
+    _textField(_relearnSteps, steps: true),
+    _textField(_maxInterval),
+    _valueField<double>(() => _retention, (double v) => _retention = v),
+    _valueField<SrsAlgorithm>(
+      () => _algorithm,
+      (SrsAlgorithm v) => _algorithm = v,
+    ),
+    _valueField<bool>(() => _autoOptimize, (bool v) => _autoOptimize = v),
+    _valueField<bool>(() => _ownParams, (bool v) => _ownParams = v),
+    _valueField<bool>(() => _autoplayAudio, (bool v) => _autoplayAudio = v),
+    _valueField<bool>(
+      () => _replayQuestionAudio,
+      (bool v) => _replayQuestionAudio = v,
+    ),
+    _valueField<SrsNewCardOrder>(
+      () => _newCardOrder,
+      (SrsNewCardOrder v) => _newCardOrder = v,
+    ),
+    _valueField<SrsNewCardMix>(
+      () => _newCardMix,
+      (SrsNewCardMix v) => _newCardMix = v,
+    ),
+    _valueField<SrsReviewCardOrder>(
+      () => _reviewCardOrder,
+      (SrsReviewCardOrder v) => _reviewCardOrder = v,
+    ),
+    _textField(_rwkvMinReviews),
+    _textField(_rwkvRepeatReviews),
+    _textField(_rwkvRepeatSeconds),
+    _textField(_rwkvRefreshEvery),
+    _valueField<bool>(() => _rwkvIgnoreLimit, (bool v) => _rwkvIgnoreLimit = v),
+    _valueField<bool>(() => _newLoadAuto, (bool v) => _newLoadAuto = v),
+    _textField(_newLoadBudget),
+    _textField(_newLoadBoost),
+  ];
+
+  /// 输入框一项：数字框比较时去掉首尾空白；步长按解析后的规范写法比（「1,10」与「1 10」算同一个）。
+  static _FormField _textField(TextEditingController c, {bool steps = false}) {
+    Object? key() {
+      if (!steps) return c.text.trim();
+      final List<double>? parsed = parseSrsSteps(c.text);
+      return parsed == null ? c.text.trim() : _formatSteps(parsed);
+    }
+
+    return (
+      key: key,
+      raw: () => c.text,
+      restore: (Object? v) => c.text = v! as String,
+    );
+  }
+
+  /// 开关 / 选项 / 滑杆一项：值本身就是比较键。
+  static _FormField _valueField<T>(T Function() read, void Function(T) write) =>
+      (key: read, raw: read, restore: (Object? v) => write(v as T));
 
   List<TextEditingController> get _controllers => <TextEditingController>[
     _name,
@@ -186,41 +252,10 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
     super.dispose();
   }
 
-  /// 表单里所有会被保存的值。步长按解析后的规范写法比（「1,10」与「1 10」算同一个），
-  /// 数字框去掉首尾空白。
-  List<Object?> _formSnapshot() {
-    String steps(TextEditingController c) {
-      final List<double>? parsed = parseSrsSteps(c.text);
-      return parsed == null ? c.text.trim() : _formatSteps(parsed);
-    }
-
-    return <Object?>[
-      _name.text.trim(),
-      _newPerDay.text.trim(),
-      _reviewsPerDay.text.trim(),
-      _limitUnit,
-      steps(_learnSteps),
-      steps(_relearnSteps),
-      _maxInterval.text.trim(),
-      _retention,
-      _algorithm,
-      _autoOptimize,
-      _ownParams,
-      _autoplayAudio,
-      _replayQuestionAudio,
-      _newCardOrder,
-      _newCardMix,
-      _reviewCardOrder,
-      _rwkvMinReviews.text.trim(),
-      _rwkvRepeatReviews.text.trim(),
-      _rwkvRepeatSeconds.text.trim(),
-      _rwkvRefreshEvery.text.trim(),
-      _rwkvIgnoreLimit,
-      _newLoadAuto,
-      _newLoadBudget.text.trim(),
-      _newLoadBoost.text.trim(),
-    ];
-  }
+  /// 表单里所有会被保存的值（逐项的比较键，见 [_fields]）。
+  List<Object?> _formSnapshot() => <Object?>[
+    for (final _FormField f in _fields) f.key(),
+  ];
 
   /// 有没保存的改动（载入中 / 载入失败时没有表单，不算）。
   bool get _dirty =>
@@ -279,6 +314,17 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       };
       if (!mounted) return;
       setState(() {
+        // 重读（优化 / 恢复参数 / 子牌组继承之后）时表单可能已有没保存的改动：先记下哪些项改过、改成了什么，
+        // 填完库里的新值后放回去——这几个动作不改这些项，重读只是为了刷新参数组 / 归属 / 子树 / 冲突键，
+        // 不能把用户的编辑静默盖掉、再把基准一并重置（那样按返回也不再拦）。
+        final List<Object?> before = _baseline;
+        final bool keepEdits = _deck != null && before.length == _fields.length;
+        final List<Object?> edited = keepEdits
+            ? _formSnapshot()
+            : const <Object?>[];
+        final List<Object?> raws = keepEdits
+            ? <Object?>[for (final _FormField f in _fields) f.raw()]
+            : const <Object?>[];
         _store = store;
         _deck = deck;
         _owner = tree.paramsOwner(deck.id);
@@ -320,6 +366,11 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         _relearnSteps.text = _formatSteps(_baselineRelearn);
         _loading = false;
         _baseline = _formSnapshot();
+        if (keepEdits) {
+          for (int i = 0; i < _fields.length; i++) {
+            if (edited[i] != before[i]) _fields[i].restore(raws[i]);
+          }
+        }
       });
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsDeckSettingsPage.load', e, stack);
@@ -1546,6 +1597,14 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
 }
 
 /// 有改动时按返回的三个选择。
+/// 表单里的一项（见 [_SrsDeckSettingsPageState._fields]）：[key] 是比较「改没改」用的值，[raw] / [restore]
+/// 原样取出 / 放回用户的输入。
+typedef _FormField = ({
+  Object? Function() key,
+  Object? Function() raw,
+  void Function(Object? value) restore,
+});
+
 enum _UnsavedChoice { save, discard, cancel }
 
 /// 「设置未保存」对话框：保存（主按钮、默认焦点，Enter 即保存）/ 放弃更改 / 取消。点遮罩、Esc、
