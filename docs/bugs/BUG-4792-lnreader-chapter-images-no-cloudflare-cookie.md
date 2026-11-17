@@ -1,0 +1,15 @@
+## BUG-4792 · 小说在线源章节插图不带 Cloudflare 放行 cookie 与 Accept，过了验证的站点插图仍被拦，且丢图不留痕
+- **报告**：2026-11-17（用户：小说 / 漫画 / 视频优化清单 novel-11，代码复核「部分成立」，只修成立的范围）
+- **真实性**：✅ 真 bug（代码路径确认 + 单测复现，未在真实 Cloudflare 图床上复现）。根因（修前行号，基准 `8d58da51da9`）：
+  - `fushi/lib/src/media/novel/online/lnreader_book_download.dart:204` 章节插图的请求头是手拼的「插件 `imageHeaders` + `Referer: 章节页`」，UA 由 `_fetchImage` `:272` 补上；而封面 `:242` 走的是 `lnReaderImageHeaders`（`lnreader_fetch_bridge.dart:412`）。两者的实际差别是插图**不带 Cloudflare 放行 cookie**（`cloudflare.jar.cookiesFor`）也不带 `Accept`。用户在 app 里过了站点验证后，正文和封面能取，同站插图仍被挑战页拦下。
+  - `:251` `_fetchImage` 对非 200、超限、嗅探不出类型、任何异常都返回 null，`:217` 调用方把图片引用从正文摘掉，全程不留任何记录。在线阅读路径下这是永久的：`lnreader_online_book.dart` 把摘掉引用后的正文写盘，那一章不再是占位页、不会重取；整本下载则是丢图进了最终 EPUB。
+  - 顺带确认的同源问题：`_fetchImage` 把首跳算好的头原样用在每一跳重定向上，封面路径的放行 cookie 会被带到重定向后的别的主机。
+- **[x] ① 已修复** — `lnreader_book_download.dart`：
+  - 插图改走 `lnReaderImageHeaders`（`:217`），Referer 仍传章节页地址（防盗链按引用页判，不退成站点首页），插件头照旧按名字覆盖。
+  - `_fetchImage` 的参数从固定的 `headers` 改成 `headersFor(Uri)`，每一跳按当跳地址重算请求头——cookie 只发给它所属的主机。
+  - 每章丢了几张、第一张为什么丢（主机 + 原因，不含地址查询串）写进错误日志 `LnReaderBookDownload.imagesDropped`（`:236`）。「正文完整优先、单张失败只丢那一张」的取舍不变。
+- **[x] ② 已加自动化测试** — `fushi/test/media/novel/lnreader_book_download_test.dart` 的「BUG-4792 章节插图的请求头」组 3 条（真 `HttpServer` 收请求看头）：插图带放行 cookie / `Accept` / 浏览器 UA 且 Referer 是章节页；重定向到别的主机时 cookie 不跟过去；丢图写进错误日志（数量 + 原因）。
+- **备注**：
+  - 清单原文「插图只带插件头和 Referer」不准确（UA 一直有），受影响的是 Cloudflare / 需要 cookie 的图床，不是所有防盗链图床。
+  - 「在阅读器里提示丢图数量」是 UI 改变，未做；已经丢过图的章节不会自动重取（要重取得清掉那一章）。
+  - 待真机验证：找一个 Cloudflare 图床的源，过站点验证后在线读一章带插图的章节，确认插图出来。

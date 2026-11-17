@@ -33,10 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4146 条。点号进各自文件。
+> 共 4148 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4792](bugs/BUG-4792-lnreader-chapter-images-no-cloudflare-cookie.md) | ✅ | ✅ | 小说在线源章节插图不带 Cloudflare 放行 cookie 与 Accept，过了验证的站点插图仍被拦，且丢图不留痕 |
+| [BUG-4791](bugs/BUG-4791-lnreader-state-read-failure-overwrites.md) | ✅ | ✅ | LNReader 的 state.json / 插件存储读失败被当成空，下一次写盘把已装插件、仓库和登录态整份盖掉 |
 | [BUG-4790](bugs/BUG-4790-screen-ocr-dart-recognition-no-cancel.md) | 🚧 | 🚧 | Android 截屏识字交给 Dart 识别期间没有取消出口，识别慢时悬浮球一直藏着 |
 | [BUG-4789](bugs/BUG-4789-screen-ocr-engine-destroyed-orphan-dart-reply.md) | ✅ | ✅ | 截屏识字等 Dart 回话时主引擎被销毁，挂起的回话永远不来，流程锁不解、悬浮球一直藏着 |
 | [BUG-4788](bugs/BUG-4788-screen-ocr-lens-consent-desktop-wording-on-android.md) | ✅ | ✅ | Android 截屏识字的 Google Lens 同意框照搬桌面文案，手机上写着「整块显示器」 |

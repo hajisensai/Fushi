@@ -5,9 +5,14 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
 import 'package:fushi/src/media/novel/online/lnreader_book_download.dart';
+import 'package:fushi/src/media/novel/online/lnreader_cloudflare.dart';
+import 'package:fushi/src/media/novel/online/lnreader_epub_assembler.dart';
+import 'package:fushi/src/media/novel/online/lnreader_fetch_bridge.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 
@@ -32,13 +37,19 @@ void main() {
     late String imageBase;
     final List<String> requestedPaths = <String>[];
 
+    /// `<Host 头里的主机名><路径>` → 那次请求的头。
+    final Map<String, HttpHeaders> requestHeaders = <String, HttpHeaders>{};
+
     setUp(() async {
       requestedPaths.clear();
+      requestHeaders.clear();
       root = await Directory.systemTemp.createTemp('lnreader_download_');
       images = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       imageBase = 'http://127.0.0.1:${images.port}';
       images.listen((HttpRequest request) async {
         requestedPaths.add(request.uri.path);
+        requestHeaders['${request.headers.host}${request.uri.path}'] =
+            request.headers;
         if (request.uri.path == '/ok.png') {
           request.response.add(_png);
         } else if (request.uri.path == '/redirect.png') {
@@ -90,6 +101,7 @@ void main() {
 
     Future<(LnReaderManager, FakeLnReaderRuntime)> setUpManager({
       String? chapter2,
+      LnReaderCloudflare? cloudflare,
     }) async {
       final FakeLnReaderRuntime runtime = FakeLnReaderRuntime(
         novelResult: novel,
@@ -103,6 +115,7 @@ void main() {
         rootDirectory: root,
         runtime: runtime,
         httpClientFactory: HttpClient.new,
+        cloudflare: cloudflare,
       );
       await manager.initialise();
       // 装载只需要插件文件存在。
@@ -205,6 +218,116 @@ void main() {
         _entry(archive, 'OEBPS/chapter-2.xhtml'),
         isNot(contains('images/c2-0')),
       );
+    });
+
+    group('BUG-4792 章节插图的请求头', () {
+      /// 过了 Cloudflare 验证的图床：jar 里有只发给 127.0.0.1 的放行 cookie。
+      Future<LnReaderCloudflare> clearedCloudflare() async {
+        final LnReaderCloudflare cloudflare = LnReaderCloudflare(
+          MangaCookieJar(File('${root.path}/cookies.json')),
+        );
+        await cloudflare.jar.replaceForHost('127.0.0.1', const <MangaCookie>[
+          MangaCookie(
+            name: 'cf_clearance',
+            value: 'token',
+            domain: '127.0.0.1',
+            hostOnly: true,
+          ),
+        ]);
+        return cloudflare;
+      }
+
+      Future<LnReaderEpubChapter> fetchSecond(LnReaderManager manager) async {
+        final FushiDatabase db = FushiDatabase.forTesting(
+          NativeDatabase.memory(),
+        );
+        final LnReaderBookDownload download = LnReaderBookDownload(
+          manager: manager,
+          database: db,
+          httpClientFactory: HttpClient.new,
+          isBlockedHost: (String _) => false,
+          isBlockedAddress: (InternetAddress _) => false,
+        );
+        final HttpClient client = download.openClient();
+        try {
+          final LnReaderPluginInfo info = await manager.load(plugin);
+          return await download.fetchChapter(
+            client: client,
+            plugin: plugin,
+            info: info,
+            chapter: chapters[1],
+            imagePrefix: 'images/c2-',
+          );
+        } finally {
+          client.close(force: true);
+          await db.close();
+        }
+      }
+
+      test('与封面同一套头：放行 cookie、Accept、浏览器 UA；Referer 是章节页', () async {
+        final (
+          LnReaderManager manager,
+          FakeLnReaderRuntime _,
+        ) = await setUpManager(
+          chapter2: '<p>図<img src="$imageBase/ok.png"/></p>',
+          cloudflare: await clearedCloudflare(),
+        );
+        final LnReaderEpubChapter chapter = await fetchSecond(manager);
+        expect(chapter.images, hasLength(1));
+        final HttpHeaders headers = requestHeaders['127.0.0.1/ok.png']!;
+        expect(
+          headers.value(HttpHeaders.cookieHeader),
+          'cf_clearance=token',
+          reason: '修复前插图不带放行 cookie：过了验证的站点插图照样被拦。',
+        );
+        expect(headers.value(HttpHeaders.acceptHeader), contains('image/'));
+        expect(
+          headers.value(HttpHeaders.userAgentHeader),
+          LnReaderFetchBridge.defaultUserAgent,
+          reason: 'cf_clearance 绑定解题时的 UA。',
+        );
+        expect(
+          headers.value(HttpHeaders.refererHeader),
+          'https://example.com/2',
+          reason: 'Referer 是章节页地址，不退成站点首页。',
+        );
+      });
+
+      test('重定向到别的主机：上一跳的 cookie 不跟过去', () async {
+        final (
+          LnReaderManager manager,
+          FakeLnReaderRuntime _,
+        ) = await setUpManager(
+          chapter2: '<p>図<img src="$imageBase/redirect.png"/></p>',
+          cloudflare: await clearedCloudflare(),
+        );
+        final LnReaderEpubChapter chapter = await fetchSecond(manager);
+        expect(chapter.images, hasLength(1));
+        expect(
+          requestHeaders['127.0.0.1/redirect.png']!.value(
+            HttpHeaders.cookieHeader,
+          ),
+          'cf_clearance=token',
+        );
+        expect(
+          requestHeaders['localhost/ok.png']!.value(HttpHeaders.cookieHeader),
+          isNull,
+        );
+      });
+
+      test('丢图不再无痕：丢了几张、第一张为什么丢进错误日志', () async {
+        final (LnReaderManager manager, FakeLnReaderRuntime _) =
+            await setUpManager();
+        final LnReaderEpubChapter chapter = await fetchSecond(manager);
+        expect(chapter.images, hasLength(1));
+        expect(chapter.xhtmlBody, isNot(contains('images/c2-1.png')));
+        final ErrorLogEntry entry = ErrorLogService.instance.entries.lastWhere(
+          (ErrorLogEntry e) => e.source == 'LnReaderBookDownload.imagesDropped',
+        );
+        expect(entry.error, contains('test.plugin /2'));
+        expect(entry.error, contains('dropped 1 of 2 images'));
+        expect(entry.error, contains('127.0.0.1: HTTP 404'));
+      });
     });
 
     test('任一章失败整次中止并指出是哪一章（不静默跳章）', () async {
