@@ -44,6 +44,11 @@
 | [BUG-4838](bugs/BUG-4838-embedded-text-sub-extract-killed-on-slow-disk.md) | ✅ | ✅ | 视频文本内封字幕抽取按总时长强杀：慢盘上一直在读的 ffmpeg 被杀、再整轨重读一次，最后提示「图形或不支持的轨」 |
 | [BUG-4837](bugs/BUG-4837-concurrent-same-title-import-deletes-winner-dir.md) | ✅ | ✅ | 并发导入同名书，后一次把前一次的书目录换掉再删掉，留下指向空目录的行 |
 | [BUG-4836](bugs/BUG-4836-seamless-start-failure-claims-boundary-forever.md) | ✅ | ✅ | 无缝衔接启动失败后三条边界换章通道被永久认领，这一章里翻不到下一章 |
+> 共 4192 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4836](bugs/BUG-4836-linux-server-glibc-baseline.md) | ✅ | ✅ | Linux 服务端 CI 包原生库要 GLIBC_2.43，超出 README 声明的 glibc ≥ 2.35 |
 | [BUG-4835](bugs/BUG-4835-source-scan-leftovers-after-kill-and-book-abort.md) | ✅ | ✅ | 来源扫描被杀后留下临时来源行与临时目录；一本坏书中断整批书导入且不删临时目录 |
 | [BUG-4834](bugs/BUG-4834-web-mine-host-machine-playhead-persisted.md) | ✅ | ✅ | 制卡交接页把机器驱动的播放头写成本书续播点，并在开跑前后计观看 |
 | [BUG-4833](bugs/BUG-4833-manga-source-index-lost-when-scan-killed.md) | ✅ | ✅ | 漫画来源索引只在扫描结束时落盘，中途被杀后同名卷再导一份 Vol 1 (3) |
