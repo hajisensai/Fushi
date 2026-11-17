@@ -77,6 +77,7 @@
 |---|:--:|:--:|---|
 | [BUG-4799](bugs/BUG-4799-audiobook-position-stamp-not-atomic.md) | ✅ | ✅ | 有声书播放位置与时间戳分两次提交，中间可被同步的比较后写入插队 |
 | [BUG-4798](bugs/BUG-4798-audiobook-swap-deletes-old-before-copy.md) | ✅ | ✅ | 换音频 / 换字幕先删旧副本再拷新文件，拷贝中途失败后库里指着已删除的文件 |
+| [BUG-4798](bugs/BUG-4798-reader-cue-highlight-future-unhandled.md) | ✅ | ✅ | 阅读器 cue 变更回调里放飞的高亮 Future 不接错误，WebView 销毁中抛出的异常成为未处理的异步错误 |
 | [BUG-4797](bugs/BUG-4797-feedback-files-share-video-ip-quota.md) | 🚧 | 🚧 | 样本文件与录屏共用每 IP 每天 200 MiB 额度，满额样本文件仍会被 429 挤掉 |
 | [BUG-4796](bugs/BUG-4796-disc-back-double-press-repeat-topmenu.md) | ✅ | ✅ | 原盘正片快速连按两次返回会重复发 topMenu，第二次失败会整盘退出 |
 | [BUG-4795](bugs/BUG-4795-disc-back-to-menu-transient-error-exits.md) | ✅ | ✅ | 原盘正片按返回回盘菜单时，任何暂时性错误都会让整个原盘会话退出 |
