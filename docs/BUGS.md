@@ -40,6 +40,17 @@
 | [BUG-4766](bugs/BUG-4766-overwrite-snapshot-retention-stamp-failure.md) | ✅ | ✅ | 覆盖前快照钉修改时间失败会按旧库时间提前删快照 |
 | [BUG-4765](bugs/BUG-4765-overwrite-snapshot-preview-sync-probe-ui.md) | ✅ | ✅ | 覆盖前快照预览在 UI isolate 上同步检查书和视频文件 |
 | [BUG-4764](bugs/BUG-4764-merge-audiobook-pos-ignores-tombstone.md) | ✅ | ✅ | 合并与快照恢复的有声书进度不受墓碑与排除过滤 |
+> 共 4126 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4770](bugs/BUG-4770-music-album-track-row-no-touch-menu.md) | 🚧 | 🚧 | 专辑页本地曲目行在触屏上打不开曲目菜单（加入队列 / 加入歌单 / 从音乐库移除只有右键入口） |
+| [BUG-4769](bugs/BUG-4769-music-track-blocks-no-touch-menu.md) | 🚧 | 🚧 | 色块样式曲目格在触屏上打不开曲目菜单（多选 / 从歌单移除 / 加入队列等只有右键入口） |
+| [BUG-4768](bugs/BUG-4768-music-local-track-row-no-touch-menu.md) | ✅ | ✅ | 触屏上本地曲目行打不开菜单：歌曲 / 艺人 / 歌单页进不了多选、点不到「从这个歌单移除」 |
+| [BUG-4767](bugs/BUG-4767-music-stage-lyrics-blur-pref-stale.md) | ✅ | ✅ | MV / 卡拉 OK 舞台页歌词用 ref.read 读「模糊非当前行」，页面开着时改了偏好不刷新 |
+| [BUG-4766](bugs/BUG-4766-frame-cover-preview-concurrent-ffmpeg.md) | ✅ | ✅ | 挑帧封面弹窗连点微调会并发起多个 ffmpeg 抽帧 |
+| [BUG-4765](bugs/BUG-4765-lyrics-zlib-bomb-unbounded.md) | ✅ | ✅ | KRC / 加密 QRC 解压没有明文上限，构造的歌词文件或插件结果能把内存撑爆导致闪退 |
+| [BUG-4764](bugs/BUG-4764-qrc-kana-ideograph-count-mismatch.md) | ✅ | ✅ | QRC 注音轨汉字计数口径和来源不一致（〇 〆 等），整首歌的注音全部丢失 |
 | [BUG-4763](bugs/BUG-4763-server-srs-put-rwkv-not-atomic.md) | ✅ | ✅ | 服务端 admin PUT 同时改 RWKV 档位与别的复习配置时不原子：档位文件写不进去时报 500，但其它字段已经生效 |
 | [BUG-4762](bugs/BUG-4762-cover-meta-store-zone-hang.md) | ✅ | ✅ | CoverMetaStore 共享加载 / 写锁建在发起者 Zone 里，那个 Zone 停摆后同目录读写全部永久挂住 |
 | [BUG-4761](bugs/BUG-4761-cross-app-audio-stop-purge-race.md) | ✅ | ✅ | 跨应用语音缓存停止时清不干净：清扫后还能落下新快照，句子音频临时目录在进程被杀后留在缓存里 |

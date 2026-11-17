@@ -38,7 +38,8 @@ use model::*;
 /// 2：ASS 特效检测加了 `\org`、`\p1` 绘图与逐字定位（P3）。
 /// 3：翻译合并改为估计整体偏移 + 单调对齐，对不上的翻译挂靠原文行、不再成独立行。
 /// 4：加密 QRC（本地缓存 / 接口十六进制串）解密；QRC `[kana:]` 注音轨挂成音节 ruby。
-pub const PARSER_VERSION: u32 = 4;
+/// 5：QRC `[kana:]` 的汉字计数口径：补扩展 H / J（U+31350–3347F），`〇` `〆` 两种取舍都做完整对齐校验。
+pub const PARSER_VERSION: u32 = 5;
 
 /// 按格式提示（扩展名或格式名，大小写不敏感，可空）+ 内容嗅探解析。`duration_ms` 是曲长
 /// （补最后一行终点），未知传 None。
@@ -90,6 +91,22 @@ fn parse_qrc(text: &str, duration_ms: Option<i64>) -> Timeline {
     let body = text::normalize_newlines(&body);
     let flavor = syllabic::sniff(&body).unwrap_or(syllabic::Flavor::Qrc);
     syllabic::parse(&body, flavor, duration_ms)
+}
+
+/// 加密歌词（KRC / 加密 QRC）解出的明文上限。真实整首歌词（含 XML 包装、翻译、注音轨）
+/// 在几十到几百 KB；zlib 压缩比可到约 1000:1，不设上限时插件结果上限（8 MiB）级别的
+/// 输入就能解出 GB 级明文，OOM 是 abort、FFI 的 panic 守卫接不住。
+pub const MAX_INFLATED_BYTES: usize = 4 * 1024 * 1024;
+
+/// zlib 解压，输出超过 `limit` 字节或流损坏都返回 None（只读到 `limit + 1` 字节就停）。
+pub(crate) fn inflate_bounded(data: &[u8], limit: usize) -> Option<Vec<u8>> {
+    use std::io::Read;
+    let mut out = Vec::new();
+    flate2::read::ZlibDecoder::new(data)
+        .take(limit as u64 + 1)
+        .read_to_end(&mut out)
+        .ok()?;
+    (out.len() <= limit).then_some(out)
 }
 
 fn parse_ttml(text: &str, duration_ms: Option<i64>) -> Result<Timeline, String> {
