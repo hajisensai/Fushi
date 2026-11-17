@@ -14,11 +14,11 @@ import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 拍板 wb8RZZbn90「从视频画面选取封面」守卫：
 /// 1. 打开先读片长，按片长 10% 取第一张预览；
-/// 2. 拖动松手 / ±10 秒微调才取新预览，晚到的旧预览被丢弃；
+/// 2. 拖动松手 / ±10 秒微调才取新预览；取帧单飞，连点只取最后一次位置；
 /// 3. 「用这一帧」只在预览对上当前位置时可点，返回所选毫秒；
 /// 4. 读不到片长 / 取不到帧给失败态，确认键不可点；
 /// 5. 确认后按所选时刻截**原尺寸**帧交给 apply，结束删临时目录（IO 段纯 test 验）；
-/// 6. 单集菜单接上了这条入口，并经手选封面同一落盘口。
+/// 单集菜单入口与落盘接线的行为测试在 test/pages/home_video_page_menu_test.dart。
 
 /// 1x1 PNG：真能解码，避免 Image.memory 报解码错误。
 final Uint8List _png = base64Decode(
@@ -126,40 +126,81 @@ void main() {
     expect(await result(), 130000);
   });
 
-  testWidgets('stale preview is dropped; confirm waits for the latest one', (
+  testWidgets('one grab in flight; rapid seeks collapse to the last position', (
     WidgetTester tester,
   ) async {
+    // 连点 ±10 秒曾每次都新起一个 ffmpeg（N 路并发解码），旧结果回来后才丢。
+    // 现在单飞：在途期间的选择只记最后一次，中间值不发请求。
+    final List<int> requested = <int>[];
+    final Map<int, Completer<Uint8List?>> pending =
+        <int, Completer<Uint8List?>>{};
+    int inFlight = 0;
+    int maxInFlight = 0;
+    await pumpDialog(
+      tester,
+      loadDurationMs: () async => 600000,
+      grabPreview: (int ms, int seq) async {
+        requested.add(ms);
+        inFlight++;
+        if (inFlight > maxInFlight) maxInFlight = inFlight;
+        final Completer<Uint8List?> c = Completer<Uint8List?>();
+        pending[ms] = c;
+        try {
+          return await c.future;
+        } finally {
+          inFlight--;
+        }
+      },
+    );
+    expect(requested, <int>[60000]);
+
+    // 首张预览还在途时连点 5 次 −10 秒：一个新请求都不起。
+    for (int i = 0; i < 5; i++) {
+      await tester.tap(find.byIcon(FushiIcons.replay10));
+      await tester.pump();
+    }
+    expect(requested, <int>[60000]);
+    expect(find.text('0:10 / 10:00'), findsOneWidget);
+    expect(confirmEnabled(tester), isFalse);
+
+    // 在途的 60s 回来：结果作废，直接改取最后一次的 10s，中间 50/40/30/20s 全丢。
+    pending[60000]!.complete(_png);
+    await tester.pump();
+    expect(requested, <int>[60000, 10000]);
+    expect(confirmEnabled(tester), isFalse, reason: '过期的 60s 预览不能放行确认');
+
+    pending[10000]!.complete(_png);
+    await tester.pump();
+    expect(confirmEnabled(tester), isTrue);
+    expect(find.text('0:10 / 10:00'), findsOneWidget);
+    expect(maxInFlight, 1, reason: '同一时刻最多一个预览取帧在途');
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('seeking back to the in-flight position reuses its result', (
+    WidgetTester tester,
+  ) async {
+    final List<int> requested = <int>[];
     final Map<int, Completer<Uint8List?>> pending =
         <int, Completer<Uint8List?>>{};
     await pumpDialog(
       tester,
       loadDurationMs: () async => 600000,
       grabPreview: (int ms, int seq) {
+        requested.add(ms);
         final Completer<Uint8List?> c = Completer<Uint8List?>();
         pending[ms] = c;
         return c.future;
       },
     );
-    expect(pending.keys, <int>[60000]);
+    // 60s 在途时 −10 再 +10：最后一次选择就是在途的位置，不再重取。
+    await tester.tap(find.byIcon(FushiIcons.replay10));
+    await tester.pump();
+    await tester.tap(find.byIcon(FushiIcons.forward10));
+    await tester.pump();
     pending[60000]!.complete(_png);
     await tester.pump();
-    expect(confirmEnabled(tester), isTrue);
-
-    // 连点两次 −10 秒：50s 与 40s 两个请求在途。
-    await tester.tap(find.byIcon(FushiIcons.replay10));
-    await tester.pump();
-    await tester.tap(find.byIcon(FushiIcons.replay10));
-    await tester.pump();
-    expect(pending.keys, containsAll(<int>[50000, 40000]));
-    expect(confirmEnabled(tester), isFalse);
-
-    // 最新的 40s 先回来，旧的 50s 后到：后到的旧结果不能把位置 / 预览拽回去。
-    pending[40000]!.complete(_png);
-    await tester.pump();
-    expect(confirmEnabled(tester), isTrue);
-    pending[50000]!.complete(_png);
-    await tester.pump();
-    expect(find.text('0:40 / 10:00'), findsOneWidget);
+    expect(requested, <int>[60000]);
     expect(confirmEnabled(tester), isTrue);
     await tester.pumpAndSettle();
   });
@@ -351,29 +392,4 @@ void main() {
       },
     );
   });
-
-  test(
-    'single-video menu wires the frame picker into the manual cover path',
-    () {
-      final String src = File(
-        'lib/src/pages/implementations/home_video_page.dart',
-      ).readAsStringSync();
-      final int item = src.indexOf('label: t.video_cover_from_frame');
-      expect(item, isNonNegative, reason: '单集菜单必须有「从视频画面选取」');
-      final int pickCover = src.indexOf('label: t.srt_import_pick_cover');
-      expect(pickCover, isNonNegative);
-      expect(item, greaterThan(pickCover), reason: '紧跟「选择封面图片」，和设置封面放在一起');
-      final int fn = src.indexOf(
-        'Future<void> _pickFrameCover(VideoBookRow book)',
-      );
-      expect(fn, isNonNegative);
-      final String body = src.substring(fn, src.indexOf('\n  }\n', fn));
-      expect(body.contains('pickAndApplyVideoFrameCover('), isTrue);
-      expect(
-        body.contains('MediaCoverService.applyVideoCoverManual('),
-        isTrue,
-        reason: '必须走手选封面同一落盘口（记 manual 保护标记）',
-      );
-    },
-  );
 }

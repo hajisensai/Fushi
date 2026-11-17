@@ -1,0 +1,8 @@
+## BUG-4771 · 缩略图宿主进程先启动后入内存 job、入 job 失败照跑，并发宿主无总内存上限
+- **报告**：2026-11-17（用户：PR #3567 合入后的遗留项核实「缩略图宿主进程先启动、后加入内存 job，中间有一小段不受限；并发的多个宿主也没有总内存上限」）
+- **真实性**：✅ 真 bug（资源隔离缺口；极端输入下才可感知）。根因（修前行号，`native/fushi_shell_thumbs/src/win/host_client.rs`）：
+  - `:92` `let job = Job::new();` 是 `Option`，建不出来就静默继续；`:93-101` 先 `Command::spawn()`（宿主一启动就从命令行拿到路径、开始解析不可信文件），`:102-105` 之后才 `AssignProcessToJobObject`，结果用 `let _` 丢弃——中间这段宿主不受 1 GiB 上限（`:42`、`:59-62`）约束，Assign 失败则整个生命周期都不受限。std 的 `Command` 拿不到主线程句柄、`raw_attribute` 不稳定，所以原实现没法在创建时入 job。
+  - 每张缩略图一个 job、互不相干，explorer 并发请求多少张就同时跑多少个宿主，内存总量没有上限（N × 1 GiB）。
+- **[x] ① 已修复** — 宿主改由 `spawn_in_job` 用 `CreateProcessW` + `STARTUPINFOEXW` 创建：`PROC_THREAD_ATTRIBUTE_JOB_LIST` 让进程创建时就在 job 里（入 job 失败则 CreateProcessW 整体失败、进程不存在），`PROC_THREAD_ATTRIBUTE_HANDLE_LIST` 只让它继承 NUL 与 stdout 管道写端；`Job::new` 改返回 `Result`，建不出 job 直接报错不启动宿主。新增进程级计数信号量 `HOST_SLOTS`（`MAX_CONCURRENT_HOSTS = 4`），名额在宿主进程被收走后才归还，宿主内存总量因此 ≤ 4 GiB；超出的请求在同一个 15 s 时限内排队，不直接失败。命令行按 `CommandLineToArgvW` 规则组装（与 std 同规则）。Cargo.toml 加 `Win32_System_Pipes` feature。
+- **[x] ② 已加自动化测试** — `native/fushi_shell_thumbs/src/win/host_client.rs` tests：`spawned_process_is_in_the_job_and_pipes_stdout`（IsProcessInJob 为真、stdout 经管道读回、退出码 0）；`spawn_fails_instead_of_running_outside_the_job`（给一个不是 job 的句柄，创建必须失败且子进程从未运行——修前的「spawn 后忽略 Assign」会在这里成功跑起来）；`command_line_round_trips_through_command_line_to_argv`；`host_slots_bound_concurrency`。变异实测：去掉 JOB_LIST 属性，前两条变红（2 failed / 4 passed），复原后 6/6 绿。端到端仍由 `tests/com_end_to_end.rs` 经 COM 走完整宿主路径。
+- **备注**：真机（资源管理器里批量浏览大量书 / 漫画目录）未复测。`PROC_THREAD_ATTRIBUTE_JOB_LIST` 需要 Windows 10+，与 app 的最低 Windows 版本一致。
