@@ -808,7 +808,20 @@ extension _ReaderChrome on _ReaderFushiPageState {
     _applyLookupStateFromSelectionData(data);
     if (!extractNativeImages) return;
     // TODO-1127：与选区状态同批抽取选区里夹带的 EPUB 插图（供片段导出把图渲进卡片）。
-    _cachedSelectionImages = await _extractSelectionClipImages();
+    // 抽图要 eval + 读文件 + 降采样；这期间选区状态可能已被点词 / 关弹窗 / 另一次
+    // 选区换掉（它们都经 [_resetSelectionImages] 换令牌），那就不是这次选区的图了。
+    final Object owner = _selectionImagesOwner;
+    final List<({int normOffset, Uint8List bytes})> images =
+        await _extractSelectionClipImages();
+    if (!identical(owner, _selectionImagesOwner)) return;
+    _cachedSelectionImages = images;
+  }
+
+  /// 清空上一次选区抽出的插图，并作废还在途的抽图（见 [_selectionImagesOwner]）。
+  /// 凡是重写或清空选区状态的地方都调它：正文写点、歌词点词、关弹窗。
+  void _resetSelectionImages() {
+    _selectionImagesOwner = Object();
+    _cachedSelectionImages = const <({int normOffset, Uint8List bytes})>[];
   }
 
   /// [_fillLookupStateFromSelectionData] 的同步段，也是「选区 → 查词 / 导出状态」的
@@ -858,7 +871,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     _cachedSelectionSectionIndex = _lookupSectionIndex;
     // 插图只属于抽出它的那次原生选区：换了选区就清空，不泄漏给下一次查词 / 导出。
     // 原生选区路径随后由 [_fillLookupStateFromSelectionData] 重新抽取。
-    _cachedSelectionImages = const <({int normOffset, Uint8List bytes})>[];
+    _resetSelectionImages();
   }
 
   /// TODO-1366：移动端拖选菜单「导出片段」。拖选是 app 自绘选区（无原生选区），故从菜单

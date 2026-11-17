@@ -2182,29 +2182,42 @@ class MediaTrackingService {
     return null;
   }
 
-  Future<void> recordBookProgress({
+  /// Returns whether this progress is **settled**: at least one site's queue
+  /// holds it, and nothing is left that a later call with the same progress
+  /// could still do — no site is waiting for a link (a title search that
+  /// failed or found nothing is retried after [_autoMappingMissRetry]) and no
+  /// enqueue failed. `false` means "call again": a caller that de-duplicates
+  /// (the reader) must not count such a call as reported.
+  Future<bool> recordBookProgress({
     required String bookKey,
     required int completedChapterCount,
     required bool completed,
     bool bangumiAutoMapping = true,
   }) async {
-    if (!isOn) return;
-    if (await _isIgnored(TrackingMediaType.book, bookKey)) return;
+    if (!isOn) return false;
+    if (await _isIgnored(TrackingMediaType.book, bookKey)) return false;
+    final bool bangumiAutoMaps =
+        bangumiAutoMapping &&
+        (_bangumiAcceptsKind(TrackingKind.novel) ||
+            _bangumiAcceptsKind(TrackingKind.manga));
     final MediaTrackingMappingRow? bangumiMapping = !bangumiAutoMapping
         ? await _repository.findMapping(
             mediaType: TrackingMediaType.book,
             mediaKey: bookKey,
           )
-        : _bangumiAcceptsKind(TrackingKind.novel) ||
-              _bangumiAcceptsKind(TrackingKind.manga)
+        : bangumiAutoMaps
         ? await _ensureAutoBookMapping(bookKey)
         : null;
-    await _sendBookProgress(
+    final ({int queued, bool open}) sent = await _sendBookProgress(
       bookKey: bookKey,
       completedChapterCount: completedChapterCount,
       completed: completed,
       bangumiMapping: bangumiMapping,
     );
+    // Bangumi's title search ran (or sits in its miss window) without a link.
+    final bool bangumiLinkOpen =
+        bangumiAutoMaps && bangumiMapping == null && isConfigured;
+    final bool settled = sent.queued > 0 && !sent.open && !bangumiLinkOpen;
     // Linking can wait minutes for the search budget, and the reader awaits
     // this call on its exit path: it runs in the background, then sends to
     // the sites it linked.
@@ -2225,6 +2238,7 @@ class MediaTrackingService {
         })
         .whenComplete(() => _bookLinkRuns.remove(run));
     _bookLinkRuns.add(run);
+    return settled;
   }
 
   final Set<Future<void>> _bookLinkRuns = <Future<void>>{};
@@ -2239,7 +2253,12 @@ class MediaTrackingService {
 
   /// Queues the book's progress for every provider with a link
   /// ([onlyProviders] limits it to those).
-  Future<void> _sendBookProgress({
+  ///
+  /// `queued` counts the sites whose queue now holds this progress. `open` is
+  /// true when a later call could still do more: a site that links books by
+  /// itself has no link yet, Bangumi's chapter companion could not be built,
+  /// or an enqueue failed.
+  Future<({int queued, bool open})> _sendBookProgress({
     required String bookKey,
     required int completedChapterCount,
     required bool completed,
@@ -2247,6 +2266,8 @@ class MediaTrackingService {
     Set<String>? onlyProviders,
   }) async {
     BookTrackingSnapshot? snapshot;
+    int queued = 0;
+    bool open = false;
     for (final TrackingProvider provider in _registry.all) {
       if (onlyProviders != null && !onlyProviders.contains(provider.id)) {
         continue;
@@ -2260,7 +2281,17 @@ class MediaTrackingService {
               mediaKey: bookKey,
               provider: provider.id,
             );
-      if (mapping == null || !_acceptsMapping(provider, mapping)) continue;
+      if (mapping == null) {
+        // [_linkBook] may still link this site (now, or once its miss window
+        // has passed). Bangumi's own matching is judged by the caller.
+        if (!isBangumi &&
+            provider is TrackingBookLinker &&
+            _isActive(provider)) {
+          open = true;
+        }
+        continue;
+      }
+      if (!_acceptsMapping(provider, mapping)) continue;
       final TrackingProgressMode? progressMode = TrackingProgressMode.tryParse(
         mapping.progressMode,
       );
@@ -2299,23 +2330,34 @@ class MediaTrackingService {
               mediaKey: bookKey,
               provider: provider.id,
             );
-      await _enqueueAndSync(
+      if (await _enqueueAndSync(
         provider: provider,
         mediaType: TrackingMediaType.book,
         mediaKey: bookKey,
         localProgress: localProgress,
         completed: completed,
-      );
-      if (chapterMapping == null) continue;
-      await _enqueueAndSync(
+      )) {
+        queued++;
+      } else {
+        open = true;
+      }
+      if (chapterMapping == null) {
+        // Bangumi builds the companion from a site read, which can fail.
+        if (wantsChapterCompanion && isBangumi) open = true;
+        continue;
+      }
+      if (!await _enqueueAndSync(
         provider: provider,
         mediaType: TrackingMediaType.bookChapter,
         mediaKey: bookKey,
         localProgress: snapshot.chapterProgress!,
         // 章节伴随映射只负责 ep_status；整部作品是否读完由主卷映射判断。
         completed: false,
-      );
+      )) {
+        open = true;
+      }
     }
+    return (queued: queued, open: open);
   }
 
   /// Links [bookKey] on every active site that tracks its kind and has no
@@ -3376,7 +3418,10 @@ class MediaTrackingService {
     return mapping;
   }
 
-  Future<void> _enqueueAndSync({
+  /// Returns whether the site's queue holds this progress afterwards (queued
+  /// now, or already there); `false` when the item has no routable link or
+  /// the write failed.
+  Future<bool> _enqueueAndSync({
     required TrackingProvider provider,
     required TrackingMediaType mediaType,
     required String mediaKey,
@@ -3395,10 +3440,10 @@ class MediaTrackingService {
                   (previous.completed || !completed))
             : (previous.progress == localProgress &&
                   previous.completed == completed));
-    if (unchanged) return;
+    if (unchanged) return true;
     try {
       if (await _routableMapping(provider, mediaType, mediaKey) == null) {
-        return;
+        return false;
       }
       final bool mapped = await _repository.enqueueProgress(
         mediaType: mediaType,
@@ -3408,7 +3453,7 @@ class MediaTrackingService {
         monotonic: monotonic,
         provider: provider.id,
       );
-      if (!mapped) return;
+      if (!mapped) return false;
       _lastQueued[cacheKey] = (
         progress: localProgress,
         completed: monotonic
@@ -3416,8 +3461,10 @@ class MediaTrackingService {
             : completed,
       );
       _requestSync();
+      return true;
     } catch (error, stackTrace) {
       engineLog.log('MediaTrackingService.enqueue', error, stackTrace);
+      return false;
     }
   }
 

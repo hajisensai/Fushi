@@ -33,7 +33,6 @@ void main() {
     '_cachedSelectionRange',
     '_cachedSentenceRange',
     '_cachedSelectionSectionIndex',
-    '_cachedSelectionImages',
   ];
 
   bool assigns(String code, String field) => RegExp(
@@ -76,11 +75,45 @@ void main() {
     test('清空上一次选区抽出的插图', () {
       // 行为变化、方向是对的：原先点词路径不碰 _cachedSelectionImages，「原生选区抽过
       // 图 → 再点词」会把旧图带进这次查词的片段导出。
+      expect(code, contains('_resetSelectionImages();'));
+      final String reset = maskComments(
+        methodBody(chrome, 'void _resetSelectionImages() {'),
+      );
       expect(
-        compactCode(code),
+        compactCode(reset),
         contains(
           '_cachedSelectionImages=const<({intnormOffset,Uint8Listbytes})>[];',
         ),
+      );
+      // 同时作废在途的抽图：换令牌。
+      expect(reset, contains('_selectionImagesOwner = Object();'));
+    });
+
+    test('歌词点词、关弹窗同样清图并作废在途抽图', () {
+      final String handler = maskComments(
+        methodBody(
+          lookup,
+          'Future<void> _handleTextSelected(ReaderSelectionData data) async {',
+        ),
+      );
+      final int lyricsStart = handler.indexOf('if (_lyricsMode) {');
+      expect(lyricsStart, isNonNegative);
+      final int reset = handler.indexOf(
+        '_resetSelectionImages();',
+        lyricsStart,
+      );
+      expect(reset, isNonNegative, reason: '歌词分支不经正文写点，要自己清');
+      expect(
+        reset,
+        lessThan(handler.indexOf('await ', lyricsStart)),
+        reason: '在歌词分支第一个 await 之前清',
+      );
+      final String page = File(
+        'lib/src/pages/implementations/reader_fushi_page.dart',
+      ).readAsStringSync();
+      expect(
+        maskComments(methodBody(page, 'void clearDictionaryResult() {')),
+        contains('_resetSelectionImages();'),
       );
     });
   });
@@ -97,18 +130,31 @@ void main() {
       expect(apply, isNonNegative);
       final int firstAwait = code.indexOf('await ');
       expect(firstAwait, greaterThan(apply));
-      expect(
-        code,
-        contains(
-          '_cachedSelectionImages = await _extractSelectionClipImages();',
-        ),
-      );
       expect(code, contains('if (!extractNativeImages) return;'));
+    });
+
+    test('抽图结果只在选区状态仍是发起时那份才写回', () {
+      // 抽图期间点了另一个词 / 关了弹窗：那边刚清掉的图不得被旧选区的结果盖回。
+      final int owner = code.indexOf(
+        'final Object owner = _selectionImagesOwner;',
+      );
+      final int extract = code.indexOf('await _extractSelectionClipImages();');
+      final int guard = code.indexOf(
+        'if (!identical(owner, _selectionImagesOwner)) return;',
+      );
+      final int write = code.indexOf('_cachedSelectionImages = images;');
+      expect(owner, isNonNegative);
+      expect(
+        owner,
+        greaterThan(code.indexOf('_applyLookupStateFromSelectionData(data);')),
+      );
+      expect(extract, greaterThan(owner));
+      expect(guard, greaterThan(extract));
+      expect(write, greaterThan(guard));
     });
 
     test('自己不再各写一份选区字段', () {
       for (final String field in stateFields) {
-        if (field == '_cachedSelectionImages') continue;
         expect(assigns(code, field), isFalse, reason: '$field 只在写点里赋值');
       }
     });

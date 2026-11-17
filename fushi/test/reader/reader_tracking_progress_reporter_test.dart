@@ -8,8 +8,8 @@ import '../helpers/source_guard.dart';
 
 /// BUG-4791：阅读器关书（返回键）等着追踪上报。
 ///
-/// 上半是 [ReaderTrackingProgressReporter] 的真行为（不等、去重、失败后再报、
-/// 退出时可等完）；下半是接线守卫——规则接在 `_persistPosition` 上，且「读完」
+/// 上半是 [ReaderTrackingProgressReporter] 的真行为（不等、落定后去重、没落定 /
+/// 抛错后再报、退出时可等完）；下半是接线守卫——规则接在 `_persistPosition` 上，且「读完」
 /// 写库仍在被等待的那一段。
 void main() {
   group('ReaderTrackingProgressReporter', () {
@@ -24,7 +24,7 @@ void main() {
     });
 
     test('report 不等上报完成：send 还挂着就已经返回', () async {
-      final Completer<void> gate = Completer<void>();
+      final Completer<bool> gate = Completer<bool>();
       int started = 0;
       final bool reported = reporter.report(
         completedChapterCount: 3,
@@ -43,15 +43,17 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       expect(settled, isFalse, reason: '上报在途，whenSettled 不得提前完成');
 
-      gate.complete();
+      gate.complete(true);
       await reporter.whenSettled();
       expect(errors, isEmpty);
     });
 
-    test('完成章数与是否读完都没变：不再上报', () async {
+    test('已落定的进度：完成章数与是否读完都没变就不再上报', () async {
       final List<String> sent = <String>[];
-      Future<void> Function() sendOf(String tag) =>
-          () async => sent.add(tag);
+      ReaderTrackingProgressSend sendOf(String tag) => () async {
+        sent.add(tag);
+        return true;
+      };
 
       expect(
         reporter.report(
@@ -61,6 +63,7 @@ void main() {
         ),
         isTrue,
       );
+      await reporter.whenSettled();
       // 章内翻页：位置落库每页都来，这两个值不变。
       for (int i = 0; i < 5; i++) {
         expect(
@@ -76,10 +79,86 @@ void main() {
       expect(sent, <String>['a']);
     });
 
+    test('同一份进度还在途：不重复发起', () async {
+      final Completer<bool> gate = Completer<bool>();
+      int started = 0;
+      Future<bool> slow() {
+        started++;
+        return gate.future;
+      }
+
+      reporter.report(completedChapterCount: 3, completed: false, send: slow);
+      for (int i = 0; i < 3; i++) {
+        expect(
+          reporter.report(
+            completedChapterCount: 3,
+            completed: false,
+            send: slow,
+          ),
+          isFalse,
+          reason: '未映射的书搜索在途时每翻一页都来，不得叠出一串并发上报',
+        );
+      }
+      expect(started, 1);
+      gate.complete(true);
+      await reporter.whenSettled();
+    });
+
+    test('服务正常返回但没落定（没映射上 / 搜索失败被吞）：下次照常再报', () async {
+      // BUG-4791 审查发现：服务把搜索的网络错误吞成正常返回。把「没抛错」记成已报，
+      // 单章节的书本次阅读里就再也不报了。
+      final List<String> sent = <String>[];
+      ReaderTrackingProgressSend sendOf(String tag, {required bool settled}) =>
+          () async {
+            sent.add(tag);
+            return settled;
+          };
+
+      reporter.report(
+        completedChapterCount: 0,
+        completed: false,
+        send: sendOf('miss 1', settled: false),
+      );
+      await reporter.whenSettled();
+      expect(errors, isEmpty, reason: '没落定不是错误');
+
+      // 同一份进度，下一次位置落库：照常调服务。
+      expect(
+        reporter.report(
+          completedChapterCount: 0,
+          completed: false,
+          send: sendOf('miss 2', settled: false),
+        ),
+        isTrue,
+      );
+      await reporter.whenSettled();
+      expect(
+        reporter.report(
+          completedChapterCount: 0,
+          completed: false,
+          send: sendOf('linked', settled: true),
+        ),
+        isTrue,
+      );
+      await reporter.whenSettled();
+      // 落定之后才停。
+      expect(
+        reporter.report(
+          completedChapterCount: 0,
+          completed: false,
+          send: sendOf('dup', settled: true),
+        ),
+        isFalse,
+      );
+      expect(sent, <String>['miss 1', 'miss 2', 'linked']);
+    });
+
     test('完成章数变了、或只有「读完」变了，都要上报', () async {
       final List<String> sent = <String>[];
-      Future<void> Function() sendOf(String tag) =>
-          () async => sent.add(tag);
+      ReaderTrackingProgressSend sendOf(String tag) => () async {
+        sent.add(tag);
+        return true;
+      };
 
       reporter.report(
         completedChapterCount: 3,
@@ -108,9 +187,9 @@ void main() {
       expect(sent, <String>['3/false', '4/false', '4/true', '3/false again']);
     });
 
-    test('上报失败：记错误，同一份进度下次照常再报', () async {
+    test('上报抛错：记错误，同一份进度下次照常再报', () async {
       int calls = 0;
-      Future<void> failing() async {
+      Future<bool> failing() async {
         calls++;
         throw StateError('network');
       }
@@ -129,7 +208,10 @@ void main() {
       final bool again = reporter.report(
         completedChapterCount: 2,
         completed: false,
-        send: () async => calls++,
+        send: () async {
+          calls++;
+          return true;
+        },
       );
       expect(again, isTrue);
       await reporter.whenSettled();
@@ -147,8 +229,9 @@ void main() {
       expect(errors.single, isA<ArgumentError>());
     });
 
-    test('旧进度的失败不抹掉之后已发起的新进度', () async {
-      final Completer<void> first = Completer<void>();
+    test('旧进度没落定 / 抛错，不抹掉之后已发起的新进度', () async {
+      final Completer<bool> first = Completer<bool>();
+      final Completer<bool> second = Completer<bool>();
       final List<int> sent = <int>[];
       reporter.report(
         completedChapterCount: 1,
@@ -158,26 +241,38 @@ void main() {
       reporter.report(
         completedChapterCount: 2,
         completed: false,
-        send: () async => sent.add(2),
+        send: () => second.future,
+      );
+      reporter.report(
+        completedChapterCount: 3,
+        completed: false,
+        send: () async {
+          sent.add(3);
+          return true;
+        },
       );
       first.completeError(StateError('late failure'));
+      second.complete(false);
       await reporter.whenSettled();
       expect(errors, hasLength(1));
-      // 2 已经报出去了：再来一次 2 不重报。
+      // 3 已经落定：再来一次 3 不重报。
       expect(
         reporter.report(
-          completedChapterCount: 2,
+          completedChapterCount: 3,
           completed: false,
-          send: () async => sent.add(22),
+          send: () async {
+            sent.add(33);
+            return true;
+          },
         ),
         isFalse,
       );
-      expect(sent, <int>[2]);
+      expect(sent, <int>[3]);
     });
 
     test('whenSettled 等完所有在途上报，自己不抛', () async {
-      final Completer<void> a = Completer<void>();
-      final Completer<void> b = Completer<void>();
+      final Completer<bool> a = Completer<bool>();
+      final Completer<bool> b = Completer<bool>();
       reporter.report(
         completedChapterCount: 1,
         completed: false,
@@ -192,7 +287,7 @@ void main() {
       final Future<void> done = reporter.whenSettled().then(
         (_) => settled = true,
       );
-      a.complete();
+      a.complete(true);
       await Future<void>.delayed(Duration.zero);
       expect(settled, isFalse);
       b.completeError(StateError('x'));
@@ -294,6 +389,50 @@ void main() {
         expect(at, isNonNegative);
         expect(settled, greaterThan(at), reason: '慢网不得拖累本地落盘：$local');
       }
+    });
+
+    test('关书后在途上报仍有人等：dispose 交给退出汇合点的那一笔带着它', () {
+      final String deferred = maskComments(
+        methodBody(
+          navigation,
+          'Future<void> _flushPositionAndTrackingReport() async {',
+        ),
+      );
+      final int flush = deferred.indexOf('await _flushPosition();');
+      final int settled = deferred.indexOf(
+        'await _trackingProgressReporter.whenSettled();',
+      );
+      expect(flush, isNonNegative);
+      expect(
+        settled,
+        greaterThan(flush),
+        reason: '位置先落盘，再等上报：慢网不得拖累位置；且这次 flush 自己发起的上报也要等到',
+      );
+      // 页面自己登记的退出回调在 dispose 时注销；不经 defer 交出去，关书之后
+      // （读完最后一章 → 返回 → 立刻关 app）就没有任何退出路径等这次上报。
+      final String dispose = maskComments(methodBody(page, 'void dispose() {'));
+      expect(
+        dispose,
+        contains(
+          'ExitFlushRegistry.instance.defer(_flushPositionAndTrackingReport);',
+        ),
+      );
+    });
+
+    test('上报的落定与否取自服务返回值', () {
+      final String service = File(
+        '../packages/fushi_engine/lib/media/tracking/media_tracking_service.dart',
+      ).readAsStringSync();
+      expect(service, contains('Future<bool> recordBookProgress({'));
+      final String reporterSource = File(
+        'lib/src/reader/reader_tracking_progress_reporter.dart',
+      ).readAsStringSync();
+      expect(
+        reporterSource,
+        contains(
+          'typedef ReaderTrackingProgressSend = Future<bool> Function();',
+        ),
+      );
     });
 
     test('返回键那条链（_syncAndFlushPosition）不等上报', () {

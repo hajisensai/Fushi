@@ -345,6 +345,9 @@ extension _ReaderLookup on _ReaderFushiPageState {
       _cachedSentenceRange = null;
       _cachedSelectionSectionIndex = null;
       _lookupCue = null;
+      // 歌词点词不带插图：上一次正文原生选区抽出的图不属于这次查词，留着会被
+      // 片段导出渲进这张卡。
+      _resetSelectionImages();
       try {
         // TODO-678（BUG-005 同根因）：把歌词 cue context 的 evaluateJavascript 纳入
         // try —— 半销毁 WebView 上它抛 MissingPluginException，此前 eval 在 try 之外

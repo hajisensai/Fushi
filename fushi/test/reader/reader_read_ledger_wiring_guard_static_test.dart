@@ -439,7 +439,7 @@ void main() {
       expect(
         containsCodeLine(
           body,
-          'ExitFlushRegistry.instance.defer(_flushPosition);',
+          'ExitFlushRegistry.instance.defer(_flushPositionAndTrackingReport);',
         ),
         isTrue,
         reason: '退出那一刻的位置改为登记到退出汇合点，由退出路径统一 await',

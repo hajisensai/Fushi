@@ -1700,9 +1700,10 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     if (!appModel.isMediaTrackingOn) return;
     // BUG-4791：追踪上报不在位置落库的等待链上。它要查库，未映射的书还会内联一次
     // 站点搜索，耗时没有上界；而本方法被退出 flush 逐层 await（返回键等着它）。
-    // 「读完」写库在上面、仍被等待；这里只发起上报，同一份进度只报一次，失败记
-    // 日志后下次落库再报（见 [ReaderTrackingProgressReporter]）。服务是 app 级单例，
-    // 页面销毁不影响已发起的上报。
+    // 「读完」写库在上面、仍被等待；这里只发起上报，同一份进度落定后不再报；没落定
+    // （服务回 false：没映射上、搜索失败、入队失败）或抛错的，下次落库再报（见
+    // [ReaderTrackingProgressReporter]）。服务是 app 级单例，页面销毁不影响已发起的
+    // 上报。
     final int completedChapterCount = section + (progress >= 0.999 ? 1 : 0);
     _trackingProgressReporter.report(
       completedChapterCount: completedChapterCount,
@@ -1858,6 +1859,15 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     // BUG-4791：追踪上报不在位置落库的等待链上，但进程要走了——把刚发起的那次
     // 等完，否则这次阅读的进度要到下次开书才报得出去。放在本地写穿之后：慢网不
     // 拖累位置 / 统计 / 有声书位置落盘；整个回调仍受 ExitFlushRegistry 的超时约束。
+    await _trackingProgressReporter.whenSettled();
+  }
+
+  /// 页面销毁时交给 [ExitFlushRegistry.defer] 的那一笔：位置落库，再把在途的追踪
+  /// 上报等完（BUG-4791）。关书后页面自己的退出回调已注销，返回键也不等上报；
+  /// 没有这一段，「读完最后一章 → 返回 → 立刻关 app」时还在搜索映射的那次上报
+  /// 就没人等了，要到这本书下次打开才补。上报排在落库之后，慢网不拖累位置落盘。
+  Future<void> _flushPositionAndTrackingReport() async {
+    await _flushPosition();
     await _trackingProgressReporter.whenSettled();
   }
 
