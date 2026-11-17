@@ -531,4 +531,73 @@ void main() {
       expect(log, <String>['first:start', 'first:end', 'second']);
     });
   });
+
+  group('落位锁与清扫队列不依赖上一个调用方的 zone', () {
+    // widget 测试里每条用例一个 fake-async zone，用例结束后它不再跑微任务。排队若靠
+    // 「上一个调用留下的 Future」，下一条用例里的导入就永远等不到轮次（PR #3693 的
+    // CI：book_import_dialog_real_carrier_memo_test 第二次真实导入超时）。这里用一个
+    // 手动泵微任务的 zone 复现「上一个调用方的 zone 停转」。
+    test('前一个 zone 停转后，新的落位 / 清扫 / 首次清扫照常跑完', () async {
+      Directory(booksRoot).createSync(recursive: true);
+      final List<void Function()> parked = <void Function()>[];
+      final Zone stalling = Zone.current.fork(
+        specification: ZoneSpecification(
+          scheduleMicrotask:
+              (Zone self, ZoneDelegate parent, Zone zone, void Function() f) {
+                parked.add(() => zone.run(f));
+              },
+        ),
+      );
+
+      int finishedInStallingZone = 0;
+      stalling.run(() {
+        unawaited(
+          EpubStorage.withBookPlacementLock(() async {}).then((void _) {
+            finishedInStallingZone += 1;
+          }),
+        );
+        unawaited(
+          EpubStorage.sweepImportResidue(
+            booksRoot: booksRoot,
+            liveExtractDirs: const <String>[],
+          ).then((List<String> _) {
+            finishedInStallingZone += 1;
+          }),
+        );
+        unawaited(
+          EpubStorage.ensureImportResidueSwept(
+            () async => const <String>[],
+          ).then((void _) {
+            finishedInStallingZone += 1;
+          }),
+        );
+      });
+      while (parked.isNotEmpty) {
+        parked.removeAt(0)();
+      }
+      expect(finishedInStallingZone, 3, reason: '前置：三个调用都在那个 zone 里跑完了');
+      // 从这里起 `stalling` 不再泵微任务：之后排进 `parked` 的回调永远不会跑。
+
+      const Duration limit = Duration(seconds: 10);
+      bool placed = false;
+      await EpubStorage.withBookPlacementLock(() async {
+        placed = true;
+      }).timeout(limit);
+      expect(placed, isTrue);
+
+      writeFile(p.join('.tmp-1-0', 'x.txt'), 'stale');
+      expect(
+        await EpubStorage.sweepImportResidue(
+          booksRoot: booksRoot,
+          liveExtractDirs: const <String>[],
+        ).timeout(limit),
+        <String>['deleteStaging .tmp-1-0'],
+      );
+
+      // 同一个书库根的首次清扫已经在停转的 zone 里做过：这里直接返回，不再去等它。
+      await EpubStorage.ensureImportResidueSwept(
+        () async => const <String>[],
+      ).timeout(limit);
+    });
+  });
 }

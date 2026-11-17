@@ -79,7 +79,7 @@ class EpubStorage {
   /// （中间没有 await），带进程内单调序号，不会复用。
   static final Set<String> _ownStagingNames = <String>{};
 
-  static Future<void> _placementTail = Future<void>.value();
+  static final _SerialSection _placementSection = _SerialSection();
 
   /// 进程内的「书目录落位」互斥：`重取书库快照 → 判书名键 / 目录归属 → 挪目录 →
   /// 插行` 必须作为一个整体串行跑（BUG-4798 / BUG-4799）。
@@ -91,20 +91,15 @@ class EpubStorage {
   /// **不要把会等用户的东西放进 [body]**（`DuplicatePolicy.ask` 的同名弹窗）：锁要是
   /// 跨过一个没人点的对话框，后台扫描和同步下载就全卡在它后面。进程内静态锁就够——
   /// app 与 `fushi_server` 是两个进程、各自一个库与数据根。
-  static Future<T> withBookPlacementLock<T>(Future<T> Function() body) async {
-    final Future<void> previous = _placementTail;
-    final Completer<void> released = Completer<void>();
-    _placementTail = released.future;
-    await previous;
-    try {
-      return await body();
-    } finally {
-      released.complete();
-    }
-  }
+  static Future<T> withBookPlacementLock<T>(Future<T> Function() body) =>
+      _placementSection.run(body);
 
+  /// 正在跑的首次清扫（按书库根）。跑完就挪进 [_sweptRoots]、不再留着 Future：
+  /// 已完成的 Future 的回调派发在**创建它的 zone** 里，那个 zone 之后不再跑微任务时
+  /// （测试里上一条用例的 fake-async zone）再 await 它就永远等不到。
   static final Map<String, Future<void>> _residueSweeps =
       <String, Future<void>>{};
+  static final Set<String> _sweptRoots = <String>{};
 
   /// 每个进程（每个书库根）只跑一次的导入残留清扫（BUG-4800）。导入入口在建自己的
   /// 暂存目录之前 await 它；并发的导入等的是同一个 Future。本进程自己建的暂存目录
@@ -116,6 +111,7 @@ class EpubStorage {
     Future<Iterable<String>> Function() liveExtractDirs,
   ) async {
     final String base = await baseDirectory();
+    if (_sweptRoots.contains(base)) return;
     await (_residueSweeps[base] ??= _sweepLogged(base, liveExtractDirs));
   }
 
@@ -130,10 +126,13 @@ class EpubStorage {
       );
     } catch (e, stack) {
       engineLog.log('EpubStorage.sweepImportResidue', e, stack);
+    } finally {
+      _sweptRoots.add(base);
+      _residueSweeps.remove(base);
     }
   }
 
-  static Future<void> _sweepTail = Future<void>.value();
+  static final _SerialSection _sweepSection = _SerialSection();
 
   /// 清掉书库根 [booksRoot] 下崩溃 / 被杀的导入留下的东西，返回处置清单（测试与
   /// 排查用）。只看根下的直接子目录：
@@ -169,15 +168,7 @@ class EpubStorage {
       for (final String dir in liveExtractDirs)
         if (dir.isNotEmpty) p.canonicalize(dir),
     };
-    final Future<List<String>> run = _sweepTail.then(
-      (void _) => _sweepImportResidue(booksRoot, live),
-    );
-    // 队尾只管「上一趟结束了」；上一趟的错误由它自己的调用方拿到。
-    _sweepTail = run.then<void>(
-      (List<String> _) {},
-      onError: (Object _, StackTrace _) {},
-    );
-    return run;
+    return _sweepSection.run(() => _sweepImportResidue(booksRoot, live));
   }
 
   static Future<List<String>> _sweepImportResidue(
@@ -490,5 +481,33 @@ class EpubStorage {
     if (extractDir.isEmpty) return false;
     final Directory dir = Directory(extractDir);
     return dir.existsSync() && dir.listSync().isNotEmpty;
+  }
+}
+
+/// 进程内先到先得的串行区：[run] 的 body 一次只跑一个，按调用顺序排队。
+///
+/// 排队靠每个调用方**自己建的** [Completer]，不靠「上一个调用留下的 Future」。
+/// Dart 里给一个已完成的 Future 挂回调，派发用的是创建那个 Future 的 zone 的微任务
+/// 队列；把上一个调用的 Future 存进静态字段当队尾，后来的调用方就得指望一个与自己
+/// 无关的 zone 还在跑微任务——那个 zone 一旦停转（典型是 widget 测试里上一条用例的
+/// fake-async zone），后面所有调用永远等不到轮次。这里每个等待者等的是自己 zone 里
+/// 建的 Future，轮到它时的唤醒落在它自己的 zone 上。
+///
+/// body 总是在调用方让出一次之后才开始跑，不在 [run] 的调用栈里同步执行。
+class _SerialSection {
+  /// 队首是当前持有者，其后是按到达顺序排队的等待者。
+  final List<Completer<void>> _turns = <Completer<void>>[];
+
+  Future<T> run<T>(Future<T> Function() body) async {
+    final Completer<void> turn = Completer<void>();
+    _turns.add(turn);
+    if (_turns.length == 1) turn.complete();
+    await turn.future;
+    try {
+      return await body();
+    } finally {
+      _turns.removeAt(0);
+      if (_turns.isNotEmpty) _turns.first.complete();
+    }
   }
 }
