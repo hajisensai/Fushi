@@ -262,6 +262,45 @@ void main() {
     expect(row2.secondarySubtitleSource, isNull);
   });
 
+  // video-36k：循环判重的调用方读一次整表建查表，口径与 findByVideoPath 相同。
+  test('videoPathIndex matches findByVideoPath for every spelling, keeps the '
+      'first row for a path, and never matches the empty path', () async {
+    final db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final repo = VideoBookRepository(db);
+    Future<void> add(String uid, String path) => db.upsertVideoBook(
+      VideoBooksCompanion.insert(bookUid: uid, title: uid, videoPath: path),
+    );
+    // 旧库行存的是未归一路径（反斜杠 / 冗余段）。
+    await add('video/a', r'D:\Anime\Show\ep01.mkv');
+    await add('video/b', 'D:/Anime/Show/./ep02.mkv');
+    await add('video/a-dup', 'D:/Anime/Show/ep01.mkv');
+
+    final VideoPathIndex index = await repo.videoPathIndex();
+    for (final String query in <String>[
+      'D:/Anime/Show/ep01.mkv',
+      r'D:\Anime\Show\ep01.mkv',
+      'D:/Anime/Show/ep02.mkv',
+      r'D:\Anime\Show\ep02.mkv',
+      'D:/Anime/Show/ep03.mkv',
+      '',
+    ]) {
+      expect(
+        index.find(query)?.bookUid,
+        (await repo.findByVideoPath(query))?.bookUid,
+        reason: query,
+      );
+    }
+    expect(index.find('D:/Anime/Show/ep01.mkv')?.bookUid, 'video/a');
+    expect(index.find('D:/Anime/Show/ep03.mkv'), isNull);
+
+    // 快照之后新建的行由调用方补进去。
+    await add('video/c', 'D:/Anime/Show/ep03.mkv');
+    expect(index.find('D:/Anime/Show/ep03.mkv'), isNull);
+    index.add((await repo.getByBookUid('video/c'))!);
+    expect(index.find(r'D:\Anime\Show\ep03.mkv')?.bookUid, 'video/c');
+  });
+
   test('listAll returns all video books', () async {
     final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
