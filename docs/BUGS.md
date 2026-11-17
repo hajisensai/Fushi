@@ -33,10 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4149 条。点号进各自文件。
+> 共 4151 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4795](bugs/BUG-4795-media-server-launch-double-timeout.md) | ✅ | ✅ | 媒体服务器从库行起播：服务器不可达时条目详情连等两轮超时才进失败页，可达时同一份详情串行取三次 |
+| [BUG-4794](bugs/BUG-4794-interconnect-video-push-missing-file-noise.md) | ✅ | ✅ | 互联视频同步：host 已有的视频本地文件不在时每轮都报一条 local file missing |
 | [BUG-4793](bugs/BUG-4793-server-admin-update-config-mutates-before-save.md) | ✅ | ✅ | 服务端 AdminContext.updateConfig 写盘前就换了内存配置：config.yaml 写失败时内存与文件分家，BUG-4763 的档位回滚也因此不触发 |
 | [BUG-4792](bugs/BUG-4792-cross-app-audio-consent-destroy-busy.md) | ✅ | ✅ | 跨应用语音授权页被系统以非 finishing 方式销毁后，start 永远挂着，之后每次开启都回 busy |
 | [BUG-4791](bugs/BUG-4791-cross-app-audio-provider-rpc-main-thread.md) | ✅ | ✅ | 应用外查词取跨应用语音快照时，跨进程 RPC 与约 2.9MB 写盘压在查词窗平台主线程上 |
