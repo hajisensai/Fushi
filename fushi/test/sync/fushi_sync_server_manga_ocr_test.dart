@@ -7,6 +7,7 @@
 /// - 上传页名穿越拒绝；
 /// - 串行单并发队列（第二个 job 排队等第一个跑完）;
 /// - 取消清理：页图删除、`manga_ocr_out/` 断点缓存保留（同卷重传后续传）。
+/// - 逐页上传带源 mtime：重传同卷时真的命中逐页断点缓存（BUG-4791）。
 library;
 
 import 'dart:async';
@@ -18,11 +19,13 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart'
     show
+        MangaOcrFilePageCache,
         MangaOcrPageFile,
         enumerateMangaPages,
         kMangaOcrOutDirName,
         kMangaOcrOutputFileName;
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
+import 'package:fushi_engine/ocr/ocr_types.dart' show OcrBlock, OcrPageResult;
 import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 
@@ -638,6 +641,129 @@ void main() {
       expect(status['state'], 'done', reason: '取消后队列必须继续放行新任务');
     },
   );
+
+  // BUG-4791：逐页断点缓存按「页名 + 大小 + 修改时间」认页。取消删页图、重传是
+  // 新写，页图的修改时间若是 host 落盘那一刻，保留下来的缓存永远对不上。
+  test(
+    'page upload stamps the source mtime so the checkpoint cache hits after re-upload',
+    () async {
+      final Directory jobRoot = Directory(p.join(tmpRoot.path, 'jobs'));
+      final MangaOcrHostJobManager manager = MangaOcrHostJobManager(
+        service: _FakeOcrService(),
+        jobRoot: jobRoot,
+      );
+      final FushiSyncServer server = buildServer(
+        _FakeOcrService(),
+        manager: manager,
+      );
+      await server.start();
+      addTearDown(server.stop);
+
+      final int sourceMs = DateTime.utc(
+        2024,
+        3,
+        5,
+        12,
+        30,
+      ).millisecondsSinceEpoch;
+      String lastJobId = '';
+      Future<void> cancelLast() async {
+        final HttpClientResponse deleted = await _request(
+          server.port,
+          'DELETE',
+          '/api/ocr/job/$lastJobId',
+          token: 'tok',
+        );
+        expect(deleted.statusCode, 200);
+        await deleted.drain<void>();
+      }
+
+      Future<Directory> uploadFreshJob({int? mtime}) async {
+        final Map<String, dynamic> created = await _json(
+          await _request(
+            server.port,
+            'POST',
+            '/api/ocr/job',
+            token: 'tok',
+            jsonBody: <String, Object?>{'volumeTitle': '同卷'},
+          ),
+        );
+        final HttpClientResponse put = await _request(
+          server.port,
+          'PUT',
+          '/api/ocr/job/${created['jobId']}/page/0?name=p001.jpg'
+              '${mtime == null ? '' : '&mtime=$mtime'}',
+          token: 'tok',
+          bodyBytes: <int>[1, 2, 3],
+        );
+        expect(put.statusCode, 200);
+        await put.drain<void>();
+        lastJobId = created['jobId'] as String;
+        return manager.job(lastJobId)!.dir;
+      }
+
+      // 真的逐页缓存类（本地 OCR 与 host 共用），不是空文件占位。
+      MangaOcrFilePageCache cacheOf(Directory jobDir) => MangaOcrFilePageCache(
+        cacheDir: Directory(p.join(jobDir.path, kMangaOcrOutDirName, '_pages')),
+        pageNames: const <String>['p001.jpg'],
+        pageFiles: <File>[File(p.join(jobDir.path, 'p001.jpg'))],
+      );
+
+      final Directory jobDir = await uploadFreshJob(mtime: sourceMs);
+      expect(
+        File(
+          p.join(jobDir.path, 'p001.jpg'),
+        ).lastModifiedSync().millisecondsSinceEpoch,
+        sourceMs,
+      );
+      await cacheOf(jobDir).write(
+        'vol',
+        const OcrPageResult(
+          pageIndex: 0,
+          imageWidth: 100,
+          imageHeight: 200,
+          blocks: <OcrBlock>[],
+        ),
+      );
+
+      // 取消：页图删掉、缓存留着；重传同一页（同字节、同源 mtime）→ 命中。
+      await cancelLast();
+      expect(File(p.join(jobDir.path, 'p001.jpg')).existsSync(), isFalse);
+      final Directory again = await uploadFreshJob(mtime: sourceMs);
+      expect(p.canonicalize(again.path), p.canonicalize(jobDir.path));
+      final OcrPageResult? hit = await cacheOf(again).read('vol', 0);
+      expect(hit, isNotNull, reason: '同卷重传必须命中已识别页的缓存');
+      expect(hit!.imageWidth, 100);
+
+      // 源文件改过（mtime 不同）→ 不命中，照常重新识别。
+      await cancelLast();
+      final Directory changed = await uploadFreshJob(mtime: sourceMs + 1000);
+      expect(await cacheOf(changed).read('vol', 0), isNull);
+
+      // 老客户端不带 mtime：行为不变（页图是 host 落盘时间，不是源时间）。
+      await cancelLast();
+      final Directory legacy = await uploadFreshJob();
+      expect(
+        File(
+          p.join(legacy.path, 'p001.jpg'),
+        ).lastModifiedSync().millisecondsSinceEpoch,
+        isNot(sourceMs),
+      );
+    },
+  );
+
+  test('mtime query: non-integer / out-of-range values are ignored', () {
+    expect(parseMangaOcrSourceModified(null), isNull);
+    expect(parseMangaOcrSourceModified(''), isNull);
+    expect(parseMangaOcrSourceModified('abc'), isNull);
+    expect(parseMangaOcrSourceModified('0'), isNull);
+    expect(parseMangaOcrSourceModified('-5'), isNull);
+    expect(parseMangaOcrSourceModified('999999999999999999'), isNull);
+    expect(
+      parseMangaOcrSourceModified('1709641800000')!.millisecondsSinceEpoch,
+      1709641800000,
+    );
+  });
 
   test('expired jobs are pruned with their directories (TTL)', () async {
     DateTime now = DateTime(2026, 7, 24, 12);

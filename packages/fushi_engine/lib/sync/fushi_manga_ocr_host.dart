@@ -7,7 +7,9 @@
 /// 端点（全部走 FushiSyncServer 的既有 Basic 鉴权，无一豁免）：
 /// - `POST   /api/ocr/job`                       → `{jobId, pagesExpected}` 创建任务
 ///   （body 可带 `model` 点名 capabilities `mangaOcr.models` 里的某个模型）
-/// - `PUT    /api/ocr/job/<id>/page/<i>?name=..` → 逐页上传（body=图片字节）
+/// - `PUT    /api/ocr/job/<id>/page/<i>?name=..[&mtime=<epoch ms>]` → 逐页上传
+///   （body=图片字节；`mtime` 可选 = 源文件修改时间，host 落盘后把页图的修改时间
+///   设成它，逐页断点缓存按「页名 + 大小 + 修改时间」校验，同卷重传才对得上）
 /// - `POST   /api/ocr/job/<id>/start`            → 开始跑（串行单并发队列）
 /// - `GET    /api/ocr/job/<id>`                  → `{state, pagesDone, pagesTotal, ...}`
 /// - `GET    /api/ocr/job/<id>/result`           → manga.json 内容
@@ -254,10 +256,16 @@ class MangaOcrHostJobManager {
 
   /// 逐页上传：`name` 为相对路径（可含一层子目录），拒绝任何穿越/绝对路径写法。
   /// 返回 null = 成功；非 null = 拒绝原因（调用方转 400）。
+  ///
+  /// [sourceModified] 是对端源文件的修改时间：落盘后把页图的修改时间设成它。
+  /// 逐页断点缓存（`MangaOcrFilePageCache`）按「页名 + 大小 + 修改时间」认页，而
+  /// 取消会删页图、重传又是新写——不带回源时间，修改时间永远是 host 落盘那一刻，
+  /// 保留下来的缓存一页也命中不了（BUG-4791）。老客户端不带则保持落盘时间。
   Future<String?> uploadPage(
     MangaOcrHostJob job, {
     required String name,
     required List<int> bytes,
+    DateTime? sourceModified,
   }) async {
     if (job.state.isTerminal || job.state == MangaOcrHostJobState.running) {
       return 'bad_state';
@@ -267,6 +275,7 @@ class MangaOcrHostJobManager {
     final File dest = File(p.joinAll(<String>[job.dir.path, ...segments]));
     dest.parent.createSync(recursive: true);
     await dest.writeAsBytes(bytes, flush: true);
+    if (sourceModified != null) await dest.setLastModified(sourceModified);
     job.pagesUploaded += 1;
     job.state = MangaOcrHostJobState.uploading;
     job.touchedAt = _now();
@@ -486,6 +495,21 @@ const int kMangaOcrJobBodyMaxBytes = 64 * 1024;
 /// `PUT /api/ocr/job/<id>/page/<index>` 单页图片的上限（扫描页通常几 MB）。
 const int kMangaOcrPageBodyMaxBytes = 64 * 1024 * 1024;
 
+/// 逐页上传的可选 query：源文件修改时间（Unix 毫秒）。
+const String kMangaOcrSourceModifiedQuery = 'mtime';
+
+/// 解析 [kMangaOcrSourceModifiedQuery]：缺省、非整数或落在
+/// `(0, 9999-12-31]` 之外（文件系统存不下）一律当没带，返回 null。
+DateTime? parseMangaOcrSourceModified(String? raw) {
+  if (raw == null) return null;
+  final int? ms = int.tryParse(raw);
+  if (ms == null || ms <= 0 || ms > _kMangaOcrSourceModifiedMaxMs) return null;
+  return DateTime.fromMillisecondsSinceEpoch(ms);
+}
+
+/// 9999-12-31T23:59:59.999Z。
+const int _kMangaOcrSourceModifiedMaxMs = 253402300799999;
+
 /// `/api/ocr/*` 的 shelf 路由处理（由 [FushiSyncServer._handleRequest] 分发进来，
 /// 鉴权已在其 middleware 完成）。[reqPath] 是已解码、带前导 `/` 的路径。
 Future<shelf.Response> handleMangaOcrRequest(
@@ -593,6 +617,9 @@ Future<shelf.Response> handleMangaOcrRequest(
       job,
       name: name,
       bytes: bytes,
+      sourceModified: parseMangaOcrSourceModified(
+        request.url.queryParameters[kMangaOcrSourceModifiedQuery],
+      ),
     );
     if (refusal != null) return _ocrError(400, refusal);
     return _ocrJson(<String, Object?>{'ok': true, 'index': index});
