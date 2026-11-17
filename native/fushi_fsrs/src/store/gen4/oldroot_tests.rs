@@ -87,6 +87,9 @@ fn only_a_protocol1_root_is_refused() {
     let refused = check_root(&["v2"]).unwrap_err();
     assert_eq!(refused.code, ERR_PROTOCOL1_ROOT);
     assert!(refused.message.contains("not affected"));
+    // G8-7c：升级位置要在另一台仍是 3.x 的设备上做；本机库已封存，装回 3.x 打不开（交接 §第四波 G8-7c）。
+    assert!(refused.message.contains("another device still running 3.x"));
+    assert!(refused.message.contains("do not downgrade this device"));
     assert_eq!(
         check_root(&["v2", "media"]).unwrap_err().code,
         ERR_PROTOCOL1_ROOT

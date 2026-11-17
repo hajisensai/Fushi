@@ -44,8 +44,10 @@
 //! # 只有协议 1 旧根的位置（D21，所有者授权从简）
 //!
 //! 位置目录下只有 `v2/`（2026-10-30 断代之前的协议 1 旧根），没有 `v3/`、`v4/`：[check_root] 明确拒绝
-//! （[RootRefused]，错误码 [ERR_PROTOCOL1_ROOT]），同步轮停下、提示用户「这个同步位置的格式太旧，先用 3.x 版本同步一次
-//! 把它升级，或者换一个同步位置」。拒绝发生在碰位置、碰本机库之前：位置上一个字节不写（不建 `v4/`、不写 v3 meta——
+//! （[RootRefused]，错误码 [ERR_PROTOCOL1_ROOT]），同步轮停下、提示用户「这个同步位置的格式太旧，在另一台仍是 3.x 的
+//! 设备上同步一次把它升级，或者换一个同步位置；不要把本机装回 3.x」（G8-7c 核过，交接 §第四波 G8-7c：本机库已封存成
+//! `39999`，v3.3.0 打开时报「schema newer than this build」、整个卡片库不可用，什么也同步不了；Android 降级还得卸载、
+//! 清空本机数据。所以原先「先用 3.x 同步一次」只在另一台没升级的设备上成立）。拒绝发生在碰位置、碰本机库之前：位置上一个字节不写（不建 `v4/`、不写 v3 meta——
 //! 旧入口 `srs_location_migration.dart` 写 `minReader 3` 的 v3 meta，在协议 4 下等于拆掉围栏，所以那条路整个不走），
 //! 本机的卡片与复习记录也一条不动（它们在本机库里，跟这个位置有没有同步上无关）；用户升级位置之后下一轮照常同步。
 
@@ -113,7 +115,8 @@ pub fn check_root(top: &[&str]) -> Result<RootKind, RootRefused> {
             code: ERR_PROTOCOL1_ROOT,
             message:
                 "this sync location still uses the protocol 1 layout (v2/ only); sync it once \
-                      with a 3.x version to upgrade it, or use another location. Local cards and \
+                      on another device still running 3.x to upgrade it, or use another location \
+                      (do not downgrade this device: 3.x cannot open its upgraded database). Local cards and \
                       review history are not affected"
                     .to_owned(),
         }),
