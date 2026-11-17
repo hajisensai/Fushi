@@ -30,11 +30,19 @@ SeriesCastStore seriesCastStoreFor(AppModel appModel) => SeriesCastStore(
 );
 
 /// [bookKey] 所属的系列身份；null = 不属于任何系列。
-Future<String?> resolveSeriesKey(AppModel appModel, String bookKey) async {
-  final String? linked = await seriesCastStoreFor(appModel).linkOf(bookKey);
+Future<String?> resolveSeriesKey(AppModel appModel, String bookKey) =>
+    resolveSeriesKeyIn(appModel.database, seriesCastStoreFor(appModel), bookKey);
+
+/// [resolveSeriesKey] 的本体（只依赖数据库与档案存储，测试直接调）。
+Future<String?> resolveSeriesKeyIn(
+  FushiDatabase db,
+  SeriesCastStore store,
+  String bookKey,
+) async {
+  final String? linked = await store.linkOf(bookKey);
   if (linked == kSeriesKeyStandalone) return null;
   if (linked != null) return linked;
-  final int? collection = await _firstCollectionOf(appModel.database, bookKey);
+  final int? collection = await _firstCollectionOf(db, bookKey);
   return collection == null ? null : '$kSeriesKeyCollectionPrefix$collection';
 }
 

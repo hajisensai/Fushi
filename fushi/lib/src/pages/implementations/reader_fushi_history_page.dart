@@ -46,6 +46,7 @@ import 'package:fushi/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:fushi/src/media/audiobook/srt_book_missing_audio.dart';
 import 'package:fushi/src/media/audiobook/srt_book_reimport_dialog.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_page.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_studio_page.dart';
 import 'package:fushi/src/media/import/srt_book_attach_epub.dart';
 import 'package:fushi_engine/media/audiobook/srt_book_reimport.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
@@ -4044,6 +4045,15 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             Navigator.pop(context);
             unawaited(pickAndImportMangaAudio(appModel.database, bookKey));
           },
+        ),
+      // 漫画有声（演出稿 → 每句一段音频）：受漫画与听书两个模块门控。
+      if (isManga &&
+          modules.isEnabled(ModuleId.manga) &&
+          modules.isEnabled(ModuleId.listening))
+        DialogQuickAction(
+          label: t.manga_audio_studio_title,
+          icon: FushiIcons.voice,
+          onPressed: () => _openMangaAudioStudio(bookKey),
         ),
       if (canAttachAudiobook)
         DialogQuickAction(

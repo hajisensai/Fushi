@@ -32,6 +32,24 @@ String ttsRenderFailureText(String? code) {
       return t.audiobook_studio_failure_cache_busy;
     case 'verify_failed':
       return t.audiobook_studio_failure_verify_failed;
+    // 漫画有声（任务级与一句级失败码，见 `manga_audio_render_service.dart` /
+    // `manga_audio_renderer.dart`）。
+    case 'manga_script_empty':
+      return t.manga_audio_failure_script_empty;
+    case 'manga_script_stale':
+      return t.manga_audio_failure_script_stale;
+    case 'manga_no_pages':
+      return t.manga_audio_failure_no_pages;
+    case 'manga_not_rendered':
+      return t.manga_audio_failure_not_rendered;
+    case 'ffmpeg_missing':
+      return t.manga_audio_failure_ffmpeg_missing;
+    case 'empty_text':
+      return t.manga_audio_failure_empty_text;
+    case 'silent_output':
+      return t.manga_audio_failure_silent_output;
+    case 'clip_source_missing':
+      return t.manga_audio_failure_clip_missing;
   }
   if (code != null && code.startsWith('tts_')) {
     final String name = code.substring(4);
