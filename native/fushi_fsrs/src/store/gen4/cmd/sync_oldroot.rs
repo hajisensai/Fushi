@@ -5,11 +5,13 @@
 //! # 一轮里的两步
 //!
 //! 1. **捡旧根**（协议 3 根 `v3/` 上的段 → 本机承袭日志）：Dart 列旧根 `devices/` 下的全部文件（路径、大小、修改时刻）
-//!    交 [oldroot_scan]：清单指纹没变就什么都不读；变了给出本机还没有的段（与要读的协议 3 head：本机还不认得作者公钥
-//!    的那些设备，每台取代号最大的一份）。Dart 分批读、分批交 [oldroot_ingest]（一批一个写事务，`Receiver::legacy`：验签、
-//!    重算协议 3 的链、逐条转译落进承袭日志）；全部交完再 [oldroot_scan] 一次，剩下的（还收不了的、坏的）带 `settle`
-//!    交最后一批，内核在**同一个事务**里按 `Receiver::finish_oldroot` 记下这一轮核对过的指纹（`oldroot.rs` 文件头「指纹与
-//!    落库同一个事务」）。围栏由这一轮开头的 `location_root` 写好（`cmd/sync.rs`），所以 `fenced` 恒真。
+//!    交 [oldroot_scan]：清单指纹没变就什么都不读；变了给出这一轮的指纹 `fp` 与本机还没有的段（与要读的协议 3 head：
+//!    本机还不认得作者公钥的那些设备，每台取代号最大的一份）。Dart 按字节预算分批读，每批再按 `maxItems` 切成几个写
+//!    事务交 [oldroot_ingest]（`Receiver::legacy`：验签、重算协议 3 的链、逐条转译落进承袭日志；回包 `rest` = 交完了的
+//!    段数，剩下的下一个事务再交，两个事务之间放开写锁让作答插进来）。每个事务把这一批每段的结论记到 `fp` 名下（跨
+//!    事务累计）；全部交完再带 `settle` 与清单交一次（不带段），内核在那个事务里按清单重算待读列表、每段都在 `fp` 名下
+//!    有了结论才记下指纹（`oldroot.rs` 文件头「切片与累计」）。围栏由这一轮开头的 `location_root` 写好（`cmd/sync.rs`），
+//!    所以 `fenced` 恒真。
 //! 2. **承袭上传**（本机承袭日志里位置上缺的区间 → `v4/devices/<本机>/hrt-…`，D19）：[heritage_plan] 先按「位置上的
 //!    承袭段文件名 + 本机各承袭日志的末尾与已清除 / 副本条数」的指纹判这一轮要不要对账（上次传完之后两边都没变 =
 //!    不读）；要的话 Dart 读位置上与本机承袭日志相关的承袭段交 [heritage_outbox]（[Uploader::see] → [Uploader::plan] →
@@ -33,10 +35,12 @@ use rusqlite::{OptionalExtension, params};
 use serde_json::{Value, json};
 
 use super::Files;
+use super::media_sync::{hex32, unhex32};
 use super::sync::{bump_revision, collections_of, meta_get, meta_set, settled_json};
 use crate::gen4::location::{V4File, parse_v4_path};
 use crate::store::gen4::ingest::Settle;
 use crate::store::gen4::inherit::{Seen, Uploader};
+use crate::store::gen4::oldroot::OldRootSettle;
 use crate::store::gen4::receive::{Received, Receiver, Taken};
 use crate::store::gen4::schema::{k_range, sql};
 use crate::store::gen4::sync_state::OldRootEntry;
@@ -98,7 +102,8 @@ fn listing_of(req: &Value) -> Result<Vec<OldRootEntry>, String> {
 
 // ---------------------------------------------------------------------- 1. 捡旧根
 
-/// `oldroot_scan {location, listing}`（读）：回包 `{changed, fetch: [路径…], heads: [路径…], skipped}`，路径相对 `v3/`。
+/// `oldroot_scan {location, listing}`（读）：回包 `{changed, fp, fetch: [路径…], heads: [路径…], skipped}`，路径相对
+/// `v3/`；`fp` = 这一轮清单的指纹（十六进制），之后每个 [oldroot_ingest] 原样带上。
 /// `heads` = `fetch` 里出现的、本机还没记过公钥的作者各自代号最大的协议 3 head（[oldroot_ingest] 先从它们学公钥；
 /// 新加入、从没跑过协议 3 的设备只能这样认得旧设备）。
 pub fn oldroot_scan(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String> {
@@ -142,21 +147,24 @@ pub fn oldroot_scan(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, Strin
     }
     Ok(json!({
         "changed": scan.changed,
+        "fp": hex32(&scan.fp),
         "fetch": scan.fetch,
         "heads": best.values().map(|(_, p)| *p).collect::<Vec<_>>(),
         "skipped": scan.skipped,
     }))
 }
 
-/// `oldroot_ingest {location, listing?, paths, heads, settle?, now, key?}`，字节块 = 前 `heads` 个是协议 3 head，其后与
-/// `paths` 一一对应的旧根段（写事务）。
+/// `oldroot_ingest {location, fp, listing?, paths, heads, maxItems?, settle?, now, key?}`，字节块 = 前 `heads` 个是协议 3
+/// head，其后与 `paths` 一一对应的旧根段（写事务）。
 ///
 /// - head：自签名验过、集合是这个位置目录的协议 3 集合（或被它并入过的），公钥按先到先得记进 `peers`（与 `plan` 记新根
 ///   head 的公钥同口径；对不上 = 冒名，不记、报进 `errors`）。不记名字以外的东西（旧设备的进度不进新代的同步状态）。
-/// - 段：逐个 `Receiver::legacy`。
-/// - `settle`：这是这一轮最后一批，内核在同一个事务里、落库之前按旧根清单（`listing`）重算待读列表，与 `paths` 完全
-///   相同才经 `Receiver::finish_oldroot` 记下指纹（围栏已由这一轮的 `location_root` 写好）；不同（这一批之前有别的写入
-///   改了本机承袭日志、或 Dart 给的不是剩下的全部）就只收不记，下一轮再核对。
+/// - 段：逐个 `Receiver::legacy`，`maxItems`（收段让路，同 `ingest`）用完就不再开下一段（旧根段不在中途切），回包
+///   `rest` = 交完了的段数、`spent` = 这一片的新工作、`drainMore` = 收尾投递还没投完（不带段再交一次）。交完的每段的
+///   结论在同一个事务里记到 `fp`（[oldroot_scan] 回包的）名下。
+/// - `settle`：这一轮的段都交完了，内核按旧根清单（`listing`）重算待读列表，列表里每段都在 `fp` 名下有了结论（这一批
+///   或更早提交的批）才经 `Receiver::finish_oldroot` 记下指纹（围栏已由这一轮的 `location_root` 写好）；这一批没交完
+///   （`rest` 小于段数）或还要投递（`drainMore`）时这一次不记，Dart 接着带 `settle` 再交。
 ///
 /// 回包是这一批的计数（同 `ingest`）+ `recorded`（记下了指纹）+ 本机修订号。
 pub fn oldroot_ingest(
@@ -169,6 +177,12 @@ pub fn oldroot_ingest(
 ) -> Result<Value, String> {
     let location = str_req(req, "location")?;
     let now = now_of(req)?;
+    let fp = req
+        .get("fp")
+        .and_then(Value::as_str)
+        .and_then(unhex32)
+        .ok_or("oldroot: missing fp")?;
+    let max_items = req.get("maxItems").and_then(Value::as_u64);
     let paths = paths_of(req, "paths");
     let nheads = req.get("heads").and_then(Value::as_u64).unwrap_or(0) as usize;
     if blobs.len() != nheads + paths.len() {
@@ -209,23 +223,35 @@ pub fn oldroot_ingest(
             ));
         }
     }
-    // 收尾批：落库之前按同一份清单重算待读列表（`Receiver::finish_oldroot` 要求这一批正好是它）。
-    let scan = if req.get("settle") == Some(&Value::Bool(true)) {
-        Some(t.oldroot_scan(col, location, &dir, &listing_of(req)?)?)
+    let listing = if req.get("settle") == Some(&Value::Bool(true)) {
+        Some(listing_of(req)?)
     } else {
         None
     };
-    let mut rx = Receiver::open(t, col, Settle::Incremental)?;
+    let mut rx = Receiver::open(t, col, Settle::Incremental)?.with_budget(max_items);
+    let mut rest = 0usize;
     for (path, b) in paths.iter().zip(&blobs[nheads..]) {
+        if rx.exhausted() {
+            break;
+        }
         match rx.legacy(b, &dir, key)? {
             Taken::Landed { .. } => {}
             other => errors.push(format!("{path}: {other:?}")),
         }
+        rest += 1;
     }
-    let (r, recorded): (Received, bool) = match &scan {
-        Some(scan) if scan.fetch == paths => rx.finish_oldroot(location, scan, true, now)?,
-        _ => (rx.finish()?, false),
-    };
+    // 这一批没交完就不收尾（剩下的段 Dart 下一个事务再交）。
+    let settle = listing
+        .as_deref()
+        .filter(|_| rest == paths.len())
+        .map(|listing| OldRootSettle {
+            dir: &dir,
+            listing,
+            fenced: true,
+            at: now,
+        });
+    let (r, recorded): (Received, bool) =
+        rx.finish_oldroot(location, &fp, &paths[..rest], settle)?;
     let applied = r.landed + r.delivered;
     let mut out = json!({
         "segments": r.segments,
@@ -237,6 +263,9 @@ pub fn oldroot_ingest(
         "rejected": r.rejected,
         "conflicts": r.conflicts,
         "recorded": recorded,
+        "rest": rest,
+        "spent": r.spent,
+        "drainMore": r.drain_more,
         "errors": errors,
         "settled": settled_json(&r.settled),
         "voided": r.voided,

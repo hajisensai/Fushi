@@ -62,15 +62,15 @@
 //! 承袭段头 `encrypted` 为假）一律拒（[Reject::PlainOnSealed]，BUG-4299 的口径：加密位置上绝不收明文）；明文位置上读到
 //! 加密的件而本机没有密钥，[Defer::Undecryptable]。
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use rusqlite::params;
 
 use super::derive::{Index, Settled};
 use super::import::HERITAGE_MARK_EVERY;
 use super::ingest::{Settle, ingest_settle};
-use super::schema::{k_dev, k_seq, sql};
-use super::sync_state::{WaitRow, chain32, op_of_bytes};
+use super::schema::{k_range, k_seq, sql};
+use super::sync_state::{WaitKey, chain32};
 use super::truth::{DEV_HERITAGE, DEV_NATIVE, Put, Truth};
 use crate::gen4::heritage::{
     Fp, HeritageHeader, HeritageSlot, SlotBody, fingerprint, open_heritage_verified,
@@ -844,7 +844,7 @@ impl<'t, 'c> Receiver<'t, 'c> {
 
     /// 把等待缓冲里接得上的投完，再收派生层。消费这一批。
     pub fn finish(mut self) -> Result<Received, String> {
-        // 原生等待项的投递同样受预算约束（收段让路）：用完就停，剩下接得上的留给调用方下一个事务（`drain_more`）。
+        // 等待项的投递同样受预算约束（收段让路）：用完就停，剩下接得上的留给调用方下一个事务（`drain_more`）。
         // 停下时这一遍的分叉 / 两支报告可能不全，下一遍投完时再报。
         let last_pass = loop {
             let pass = self.drain_native()?;
@@ -858,8 +858,9 @@ impl<'t, 'c> Receiver<'t, 'c> {
         self.tally.spent = self.spent;
         self.tally.forked = last_pass.forked;
         self.tally.diverged_waiting = last_pass.diverged.into_iter().collect();
-        self.tally.waiting = self.t.waiting(self.col)?.len() as u64;
-        self.tally.pending = self.t.pending(self.col)?.len() as u64;
+        // 只数不读：每片收尾都报这两个数，不能每片把整个缓冲解一遍（等待 8000 项时那是近似平方的开销）。
+        self.tally.waiting = self.t.waiting_count(self.col)?;
+        self.tally.pending = self.t.pending_count(self.col)?;
         self.mark_due()?;
         self.tally.settled = ingest_settle(self.t, &mut self.idx, self.col, self.mode)?;
         // 收进来的清除（或它的目标）让派生层判成「已清除」的操作：同一个事务里在真相层落成空洞（设计 §3.2，
@@ -869,42 +870,38 @@ impl<'t, 'c> Receiver<'t, 'c> {
     }
 
     /// 投一遍原生等待缓冲：投出的项数、同一个 seq 两支都接在末尾的设备、与本机日志分叉的等待项。
+    ///
+    /// 有界读取：每台设备只按主键区间读到「本机末尾 + 1」为止（[Truth::waiting_between]，不取操作正文），投出一项、
+    /// 末尾前进了再读下一截；操作正文只为真要投的那一行点查（[Truth::waiting_op]）。所以一遍读到的行 = 这一遍投出的项
+    /// + 已在本机日志里的（重复的删掉、另一支的报出来）+ 末尾后面那一格，与缓冲里排在后面、还接不上的项数无关——
+    /// 等着 8000 项、每片只投几百项时，每片不再把整张 `op_wait` 连正文扫一遍（测试
+    /// `draining_a_large_waiting_buffer_reads_only_what_it_delivers`）。
     fn drain_native(&mut self) -> Result<DrainPass, String> {
-        type Row = WaitRow;
-        let rows: Vec<Row> = {
-            let mut stmt = self
-                .t
-                .conn()
-                .prepare_cached(
-                    "SELECT w.k, w.prev, w.chain, w.span, w.op FROM op_wait w JOIN devs d ON d.dev = w.k >> 40 \
-                     WHERE d.col = ?1 ORDER BY w.k, w.prev, w.chain",
-                )
-                .map_err(sql)?;
-            let rows = stmt
-                .query_map([self.col], |r| {
-                    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
-                })
-                .map_err(sql)?;
-            rows.collect::<rusqlite::Result<_>>().map_err(sql)?
-        };
-        let mut by_dev: BTreeMap<i64, Vec<Row>> = BTreeMap::new();
-        for r in rows {
-            by_dev.entry(k_dev(r.0)).or_default().push(r);
-        }
+        type Row = WaitKey;
         let mut pass = DrainPass::default();
-        for rows in by_dev.into_values() {
-            let device = self.t.id_of_key(rows[0].0)?.device;
+        for d in self.t.devices(self.col)? {
+            if self.drain_cut {
+                break;
+            }
+            // 等着的时候这台设备被一个承袭段认成了承袭日志：这些原生项永远落不下，丢掉（段还在位置上）。
+            if d.kind.is_some_and(|k| k != DEV_NATIVE) {
+                self.t.drop_waiting_of(d.dev)?;
+                continue;
+            }
+            let (lo, hi) = k_range(d.dev);
+            // 读到「末尾 + 1」那一格为止的主键上界。
+            let upto = |last: u64| lo.saturating_add(last as i64 + 1).min(hi);
+            let device = d.id;
+            let mut last = d.last;
+            let mut from = upto(last) + 1;
+            let mut rows: Vec<Row> = self.t.waiting_between(lo, upto(last))?;
+            if rows.is_empty() {
+                continue;
+            }
+            let mut tail = self.tail(&device, last)?;
             let mut stale: Vec<(i64, Vec<u8>, Vec<u8>)> = Vec::new();
             let key = |r: &Row| (r.0, r.1.clone(), r.2.clone());
             let span_end = |r: &Row| k_seq(r.0) + r.3 as u64 - 1;
-            // 等着的时候这台设备被一个承袭段认成了承袭日志：这些原生项永远落不下，丢掉（段还在位置上）。
-            if matches!(self.kind_of(&device)?, Some((k, _)) if k != DEV_NATIVE) {
-                stale.extend(rows.iter().map(key));
-                self.delete_waiting(&stale)?;
-                continue;
-            }
-            let mut last = self.t.last_of(self.col, &device)?;
-            let mut tail = self.tail(&device, last)?;
             // 整个已在本机日志里的：与本机同一支的（重复收到的、另一行投出后剩下的同一项）删；不同支的是身份分叉的
             // 证据，留在缓冲里报给 G8-6，不静默删。
             for r in &rows {
@@ -918,7 +915,20 @@ impl<'t, 'c> Receiver<'t, 'c> {
                 }
             }
             let mut i = 0;
-            while i < rows.len() {
+            loop {
+                if i == rows.len() {
+                    // 这一截看完了：末尾前进过就接着读到新的「末尾 + 1」（同一个主键的行总在同一截里）。
+                    let to = upto(last);
+                    if from > to {
+                        break;
+                    }
+                    rows = self.t.waiting_between(from, to)?;
+                    from = to + 1;
+                    i = 0;
+                    if rows.is_empty() {
+                        break;
+                    }
+                }
                 let seq = k_seq(rows[i].0);
                 let same: Vec<&Row> = rows[i..].iter().take_while(|r| r.0 == rows[i].0).collect();
                 i += same.len();
@@ -950,12 +960,12 @@ impl<'t, 'c> Receiver<'t, 'c> {
                     pass.forked.push(device);
                     break;
                 }
-                let Some(r) = fits.first().copied() else {
+                let Some(r) = fits.first().map(|r| (*r).clone()) else {
                     break;
                 };
                 let after = chain32(&r.2)?;
-                let item = match &r.4 {
-                    Some(b) => NativeItem::Op(op_of_bytes(b)?),
+                let item = match self.t.waiting_op(&r)? {
+                    Some(op) => NativeItem::Op(op),
                     None => NativeItem::Void {
                         count: r.3 as u64,
                         chain_after: after,
@@ -972,7 +982,7 @@ impl<'t, 'c> Receiver<'t, 'c> {
                     }
                     if chain_next4(&tail, op) != after {
                         // 前一环等于末尾、链值却对不上：缓冲里的这一行坏了，丢掉。
-                        stale.push(key(r));
+                        stale.push(key(&r));
                         break;
                     }
                 }
@@ -983,9 +993,9 @@ impl<'t, 'c> Receiver<'t, 'c> {
                 }
                 self.land(&device, seq, last, &item, &after)?;
                 self.spent += 1;
-                stale.push(key(r));
+                stale.push(key(&r));
                 pass.delivered += 1;
-                last = span_end(r);
+                last = span_end(&r);
                 tail = after;
             }
             self.delete_waiting(&stale)?;
@@ -995,7 +1005,7 @@ impl<'t, 'c> Receiver<'t, 'c> {
 
     /// 一个整个落在本机日志里的等待项与本机不是同一支：它的前一环、或它末尾的链值，与本机在同一处的不等（本机那里
     /// 在空洞内部、没有链值的那一头不比）。
-    fn waiting_diverges(&self, device: &Id, r: &WaitRow) -> Result<bool, String> {
+    fn waiting_diverges(&self, device: &Id, r: &WaitKey) -> Result<bool, String> {
         let seq = k_seq(r.0);
         let end = seq + r.3 as u64 - 1;
         let prev = chain32(&r.1)?;
@@ -1022,29 +1032,33 @@ impl<'t, 'c> Receiver<'t, 'c> {
         })
     }
 
-    /// 投一遍承袭待投递。
+    /// 投一遍承袭待投递。按承袭日志逐台点查「接在末尾的那一槽」（[Truth::pending_ready]），不把整张 `op_pending`
+    /// 解一遍；投出的槽同样计入预算（[Receiver::with_budget]），用完就停、报 [Received::drain_more]。
     fn drain_heritage(&mut self) -> Result<u64, String> {
-        let devices: BTreeSet<Id> = self
-            .t
-            .pending(self.col)?
-            .into_iter()
-            .map(|p| p.slot.id.device)
-            .collect();
         let mut delivered = 0u64;
-        for device in devices {
+        for d in self.t.devices(self.col)? {
+            if self.drain_cut {
+                break;
+            }
+            if d.kind.is_some_and(|k| k != DEV_HERITAGE) {
+                continue;
+            }
+            let device = d.id;
             while let Some(p) = self.t.pending_ready(self.col, &device)? {
                 if !self.slot_ready(&p.slot) {
                     break;
                 }
-                let src = self
-                    .kind_of(&device)?
-                    .and_then(|(_, src)| src)
-                    .ok_or_else(|| {
-                        format!("gen4 receive: pending slots of {device} have no source")
-                    })?;
+                if self.exhausted() {
+                    self.drain_cut = true;
+                    break;
+                }
+                let src = d.src.ok_or_else(|| {
+                    format!("gen4 receive: pending slots of {device} have no source")
+                })?;
                 if !self.put_next(&src, &p.slot, p.tv)? {
                     break;
                 }
+                self.spent += 1;
                 delivered += 1;
             }
         }

@@ -96,6 +96,10 @@ pub const DEV_NATIVE: i64 = 0;
 /// `devs.kind`：承袭日志。
 pub const DEV_HERITAGE: i64 = 1;
 
+/// 一台设备的待投递槽数（[Truth::pending_count]）：`op_pending` 主键区间上的计数。
+pub(crate) const PENDING_COUNT_SQL: &str =
+    "SELECT COUNT(*) FROM op_pending WHERE k BETWEEN ?1 AND ?2";
+
 /// `op_alias.flags` / `op_voids.flags`：这个槽现在的样子是本机自己应用 Purge / Dedup 推进出来的（不是收来的）。
 const A_LOCAL: i64 = 1;
 /// `op_alias.flags`：`stamp` 一列存的是旧戳的线格式规范字节（内部化后读不回原值时的退路）。
@@ -2801,6 +2805,23 @@ impl<'c> Truth<'c> {
     /// 待投递的槽（按操作号、链指纹升序）。
     pub fn pending(&self, col: i64) -> Result<Vec<Parked>, String> {
         self.parked(col, "op_pending", "p.prev_fp")
+    }
+
+    /// 待投递的槽数：按设备主键区间数（[PENDING_COUNT_SQL]），不读、不解槽。收段每片收尾都报它，不能每片把整张
+    /// `op_pending` 解一遍。
+    pub fn pending_count(&self, col: i64) -> Result<u64, String> {
+        let mut n = 0u64;
+        for d in self.devices(col)? {
+            let (lo, hi) = k_range(d.dev);
+            let c: i64 = self
+                .conn
+                .prepare_cached(PENDING_COUNT_SQL)
+                .map_err(sql)?
+                .query_row(params![lo, hi], |r| r.get(0))
+                .map_err(sql)?;
+            n += c as u64;
+        }
+        Ok(n)
     }
 
     /// 分叉的另一支（链指纹与本机日志里同号的槽不同的槽）。

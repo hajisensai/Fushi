@@ -136,6 +136,20 @@ pub struct Waiting {
 /// `op_wait` 的一行：(k, prev, chain, span, op)。
 pub(super) type WaitRow = (i64, Vec<u8>, Vec<u8>, i64, Option<Vec<u8>>);
 
+/// `op_wait` 一行里投递判断要的列：(k, prev, chain, span)（不含操作正文）。
+pub(super) type WaitKey = (i64, Vec<u8>, Vec<u8>, i64);
+
+/// 一台设备主键区间里的等待项（[Truth::waiting_between]）：主键 `(k, prev, chain)` 上的区间读，只取前四列。
+pub(crate) const WAIT_RANGE_SQL: &str =
+    "SELECT k, prev, chain, span FROM op_wait WHERE k BETWEEN ?1 AND ?2 ORDER BY k, prev, chain";
+
+/// 一个等待项的操作正文（[Truth::waiting_op]）：主键点查。
+pub(crate) const WAIT_OP_SQL: &str =
+    "SELECT op FROM op_wait WHERE k = ?1 AND prev = ?2 AND chain = ?3";
+
+/// 一台设备的等待项数（[Truth::waiting_count]）。
+pub(crate) const WAIT_COUNT_SQL: &str = "SELECT COUNT(*) FROM op_wait WHERE k BETWEEN ?1 AND ?2";
+
 fn u64_of(v: i64, what: &str) -> Result<u64, String> {
     u64::try_from(v).map_err(|_| format!("gen4 store: negative {what}"))
 }
@@ -506,6 +520,59 @@ impl<'c> Truth<'c> {
                 })
             })
             .collect()
+    }
+
+    /// 一台设备（下标 [dev]）在主键区间 `[from, upto]` 里的等待项，只取判断投不投要的列（不读操作正文），按主键升序。
+    /// 收段收尾投递（`receive.rs` `drain_native`）只读到「本机末尾 + 1」为止，所以一片的读取量跟这一片投出的项数走，
+    /// 不随整个缓冲变大（[WAIT_RANGE_SQL]）。
+    pub(super) fn waiting_between(&self, from: i64, upto: i64) -> Result<Vec<WaitKey>, String> {
+        let mut stmt = self.conn().prepare_cached(WAIT_RANGE_SQL).map_err(sql)?;
+        let rows = stmt
+            .query_map(params![from, upto], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+            })
+            .map_err(sql)?;
+        rows.collect::<rusqlite::Result<_>>().map_err(sql)
+    }
+
+    /// 等待项 [w] 的操作正文（空洞 = None）。行必须在。
+    pub(super) fn waiting_op(&self, w: &WaitKey) -> Result<Option<Op4>, String> {
+        let op: Option<Vec<u8>> = self
+            .conn()
+            .prepare_cached(WAIT_OP_SQL)
+            .map_err(sql)?
+            .query_row(params![w.0, &w.1, &w.2], |r| r.get(0))
+            .map_err(sql)?;
+        op.as_deref().map(op_of_bytes).transpose()
+    }
+
+    /// 集合 [col] 的原生等待项数（按设备主键区间数，不读、不解操作正文；[WAIT_COUNT_SQL]）。
+    pub fn waiting_count(&self, col: i64) -> Result<u64, String> {
+        let mut n = 0u64;
+        for d in self.devices(col)? {
+            let (lo, hi) = super::schema::k_range(d.dev);
+            let c: i64 = self
+                .conn()
+                .prepare_cached(WAIT_COUNT_SQL)
+                .map_err(sql)?
+                .query_row(params![lo, hi], |r| r.get(0))
+                .map_err(sql)?;
+            n += u64_of(c, "waiting count")?;
+        }
+        Ok(n)
+    }
+
+    /// 删掉一台设备（下标 [dev]）的全部等待项（它被认成了承袭日志，原生项永远落不下）。
+    pub(super) fn drop_waiting_of(&self, dev: i64) -> Result<(), String> {
+        let (lo, hi) = super::schema::k_range(dev);
+        self.write(|| {
+            self.conn()
+                .prepare_cached("DELETE FROM op_wait WHERE k BETWEEN ?1 AND ?2")
+                .map_err(sql)?
+                .execute(params![lo, hi])
+                .map_err(sql)
+                .map(|_| ())
+        })
     }
 
     // ------------------------------------------------------------ 停用的设备（G8-7）

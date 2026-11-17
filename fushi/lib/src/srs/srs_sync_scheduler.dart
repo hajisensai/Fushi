@@ -56,6 +56,7 @@ import 'package:fushi_engine/srs/sync2/srs_location_runner.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_pull_first.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
+import 'package:fushi_engine/srs/sync2/srs_sync4_steps.dart';
 import 'package:fushi_engine/srs/srs_media_sync.dart';
 import 'package:fushi_engine/srs/srs_profile_link.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
@@ -378,7 +379,7 @@ enum SrsSyncNotice {
   /// 升级到同步 v2 后首次同步还没确认（[kSrsSyncAwaitingConfirm]），复习数据暂不同步。
   awaitingConfirm,
 
-  /// 有同步位置只有协议 1 旧根 `v2/`（[kSrsLocationProtocol1Root]）：要先用 3.x 同步一次把它升级，或换一个位置。
+  /// 有同步位置只有协议 1 旧根 `v2/`（[kSrsLocationProtocol1Root]）：要在另一台装 3.3.0 的设备上同步一次把它升级（只有 3.3.0 会升级位置，3.0.x 与协议 1 预发布版不会），或换一个位置（本机库已封存，装回 3.x 打不开，交接 §第四波 G8-7c）。
   locationProtocol1,
 }
 
@@ -1746,6 +1747,26 @@ class SrsSyncScheduler {
       peersNotJoined: peersNotJoined,
     );
   }
+
+  /// 用户移除了同步位置 [locationId]（文件夹位置的「移除」；内核 `location_forget`，[srsSync4ForgetLocation]）：
+  /// 本机忘掉这个位置的同步状态、不再向它转发，位置上的文件与本机卡片不动；**忘掉之后**才调 [dropFromConfig] 把它从
+  /// 配置里去掉。两步一起排进 [_serially]：不与正在跑的一轮交错（那一轮可能正在往这个位置写 head），中间也插不进
+  /// 新的一轮（否则那一轮按还没去掉的配置又把状态行建回来）。卡片库没打开、或内核忘不掉，就抛给调用方（界面提示），
+  /// 配置不动——位置还在列表里，用户可以再移除一次；反过来先去掉配置再忘，失败时位置已经从界面上消失、内核状态却
+  /// 还在，用户再也没有入口清它，活跃窗口里还会继续为它保留转发原文（G8-7c 复核）。
+  Future<void> forgetLocation(
+    String locationId, {
+    required Future<void> Function() dropFromConfig,
+  }) => _serially(() async {
+    final SrsDbStore? store = await _readStore();
+    if (store == null || store.isWindingDown) {
+      throw StateError(
+        'srs forgetLocation: card library unavailable, location kept',
+      );
+    }
+    await srsSync4ForgetLocation(store, locationId);
+    await dropFromConfig();
+  });
 
   /// 跑用户加的文件夹存储位置（设计 §6.5：U 盘 / NAS / 被别的同步工具同步的目录）。文件夹此刻不在
   /// （U 盘没插）只记进 [folderErrors]，不算这轮「立即同步」失败——它是可选的冗余副本。

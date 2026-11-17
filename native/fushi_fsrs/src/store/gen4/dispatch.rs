@@ -136,6 +136,8 @@ pub fn wiring(op: &str) -> Option<Wiring> {
         "location_root" | "plan" | "ingest" | "ingest_finish" | "outbox" | "outbox_ack"
         | "head" | "obsolete" | "retire" | "rotate" | "location_sealed" | "location_seal"
         | "digest" => Wired,
+        // 移除位置（G8-7c，`cmd/sync.rs` `location_forget`；新代才有的命令）
+        "location_forget" => Wired,
         "ingest_yield" | "ingest_commit" | "ingest_batch" | "ingest_prepare" | "replay_pending" => {
             Removed(NO_CHANNEL)
         }
@@ -662,7 +664,11 @@ fn run(
             c.write_local(|t| cmd::sync::outbox(t, col_of(t, profile)?, req, key.as_ref(), files))?
         }
         "outbox_ack" => c.write_local(|t| cmd::sync::outbox_ack(t, col_of(t, profile)?, req))?,
-        "head" => c.write_local(|t| cmd::sync::head(t, col_of(t, profile)?, req, files))?,
+        // 先在读快照上判「这一轮什么都不用写」（内容没变、摘要记录没变、`last_ok` 够新），是就不开写事务。
+        "head" => match read_col(c, profile, |t, col| cmd::sync::head_unchanged(t, col, req))? {
+            Some(v) => v,
+            None => c.write_local(|t| cmd::sync::head(t, col_of(t, profile)?, req, files))?,
+        },
         "obsolete" => read_col(c, profile, |t, col| cmd::sync::obsolete(t, col, req))?,
         // 语义摘要（head 带的那一份，`Index::digest`）：两台设备同一版本向量下应当相同，测试与诊断拿它比收敛。
         "digest" => read_col(c, profile, |t, col| {
@@ -682,6 +688,9 @@ fn run(
         }
         "location_seal" => {
             c.write_local(|t| cmd::sync::location_seal(t, col_of(t, profile)?, req, blobs))?
+        }
+        "location_forget" => {
+            c.write_local(|t| cmd::sync::location_forget(t, col_of(t, profile)?, req))?
         }
         // ------------------------------------------------------------ 转发（cmd/sync_relay.rs）
         "relay_outbox" => {

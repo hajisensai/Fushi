@@ -30,6 +30,8 @@ import 'package:fushi_engine/srs/sync2/srs_location_migration.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_runner.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
+import 'package:fushi_engine/srs/sync2/srs_sync4_steps.dart'
+    show srsSync4ForgetLocation;
 import 'package:fushi_engine/sync/local_directory_asset_store.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:path/path.dart' as p;
@@ -2120,6 +2122,55 @@ void main() {
         )).map((Map<String, Object?> l) => l['location']),
         contains(loc.locationId),
       );
+    });
+
+    // G8-7c 复核：移除位置要先让内核忘掉、成功了才去掉配置；反过来失败时位置从界面消失、内核状态成了孤儿。
+    test('移除文件夹位置：内核先忘掉、再去掉配置；卡片库不可用时配置不动、报错', () async {
+      final Directory folder = Directory.systemTemp.createTempSync(
+        'fushi_srs_folder_forget_',
+      );
+      addTearDown(() => folder.deleteSync(recursive: true));
+      final SrsFolderLocation loc = SrsFolderLocation(
+        id: 'usb',
+        path: folder.path,
+      );
+      final SrsSyncScheduler s = scheduler(
+        channels: (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: const <Object>[]),
+        folderLocations: () async => <SrsFolderLocation>[loc],
+      );
+      addTearDown(s.dispose);
+      expect((await s.syncFolderLocations()).ran, 1);
+
+      // 去掉配置的那一刻，内核里这个位置已经没有任何状态（再忘一次删掉 0 行）。
+      final List<Object?> leftAtDrop = <Object?>[];
+      await s.forgetLocation(
+        loc.locationId,
+        dropFromConfig: () async => leftAtDrop.add(
+          (await srsSync4ForgetLocation(store, loc.locationId))['forgotten'],
+        ),
+      );
+      expect(leftAtDrop, <Object?>[0]);
+
+      // 卡片库没打开：不去掉配置、抛给界面（位置留在列表里，可以再移除一次）。
+      final SrsSyncScheduler closed = SrsSyncScheduler(
+        readStore: () async => null,
+        channels: (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: const <Object>[]),
+        directoryKeyOf: (SyncAssetStore b) async => 'k',
+        onDataChanged: () {},
+        onNotice: (SrsSyncNotice _) {},
+      );
+      addTearDown(closed.dispose);
+      int dropped = 0;
+      await expectLater(
+        closed.forgetLocation(
+          loc.locationId,
+          dropFromConfig: () async => dropped++,
+        ),
+        throwsStateError,
+      );
+      expect(dropped, 0);
     });
 
     test('文件夹不在（U 盘没插）：记进 folderErrors，不算立即同步失败；插回后清掉', () async {
