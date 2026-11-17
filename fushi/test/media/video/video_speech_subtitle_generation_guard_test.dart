@@ -165,14 +165,111 @@ void main() {
     expect(gate, contains('!_discLearningBlocked'));
     expect(gate, isNot(contains('_discBookUid')));
 
+    // 入口的原盘闸门换成 _discSubtitleAudioAllowed：远端原盘会话的 title 由 host 读盘
+    // （能在 host 上定位就放行），其余仍是制卡抽取同一道闸门 _discExtractionAllowed。
     final String router = source
         .split('Future<void> _openSubtitleGeneration(')[1]
         .split('Future<void> _generateSubtitleWithSpeechModel(')[0];
     expect(
-      router.indexOf('_discExtractionAllowed(controller)'),
+      router.indexOf('_discSubtitleAudioAllowed(controller)'),
       lessThan(router.indexOf('if (!_canRunSubtitlePipeline)')),
     );
-    expect(router.indexOf('_discExtractionAllowed(controller)'), isNonNegative);
+    expect(
+      router.indexOf('_discSubtitleAudioAllowed(controller)'),
+      isNonNegative,
+    );
+    final String discMenu = File(
+      'lib/src/pages/implementations/video_fushi/disc_menu.part.dart',
+    ).readAsStringSync();
+    final String audioGate = discMenu
+        .split('bool _discSubtitleAudioAllowed(')[1]
+        .split('bool get _discOwnsInput')[0];
+    expect(audioGate, contains('controller.isRemoteDiscSession'));
+    expect(audioGate, contains('_remoteDiscHostTitle() != null'));
+    expect(audioGate, contains('return _discExtractionAllowed(controller);'));
+  });
+
+  // 互联远端的蓝光原盘会话（本机没有文件，盘在 host 上）：当前 title 在 host 上定位（有行
+  // 用行，没有用同盘锚点 + discTitle），host 跑管线、产物随任务取回；工作台内嵌面板与菜单
+  // 入口都走它，结束按（盘, title）+ 同一次加载 + 同一 title 世代自动选中；本机转录 /
+  // 重定时 / 对轴的整集音源请 host 裁。
+  test('remote Blu-ray disc sessions run the pipeline on the host', () {
+    final String gate = source
+        .split('bool get _canRunSubtitlePipeline =>')[1]
+        .split('bool _subtitleStudioAvailable(')[0];
+    expect(gate, contains('_remoteDiscHostTitle() != null'));
+
+    final String locate = source
+        .split('RemoteDiscHostTitle? _remoteDiscHostTitle() {')[1]
+        .split('bool get _subtitleAppliesInMemory')[0];
+    expect(locate, contains('controller.isRemoteDiscSession'));
+    expect(locate, contains('_discLearningBlocked'));
+    expect(locate, contains('source.hostTitleFor(path)'));
+
+    final String router = source
+        .split('Future<void> _openSubtitleGeneration(')[1]
+        .split('Future<void> _generateSubtitleWithSpeechModel(')[0];
+    expect(router, contains('_openRemoteDiscSubtitlePipeline('));
+    expect(
+      router.indexOf('discTitle != null'),
+      lessThan(router.indexOf('_isRemote && _remoteHostVideoTarget() == null')),
+    );
+
+    final String studioPanel = source
+        .split('Future<WidgetBuilder?> _subtitleStudioGeneratePanel(')[1]
+        .split('Future<void> _openSubtitleStudio(')[0];
+    expect(studioPanel, contains('_remoteDiscSubtitleTarget('));
+    expect(
+      studioPanel,
+      contains(
+        '_applyRemoteDiscPipelineSubtitleWhenDone(controller, job, discTitle)',
+      ),
+    );
+    expect(
+      studioPanel.indexOf('_remoteDiscHostTitle()'),
+      lessThan(studioPanel.indexOf('if (_isRemote)')),
+    );
+
+    final String target = source
+        .split('RemoteVideoSubtitleTarget _remoteDiscSubtitleTarget(')[1]
+        .split('Future<void> _applyRemoteDiscPipelineSubtitleWhenDone(')[0];
+    expect(target, contains('discTitle: title.discTitle'));
+
+    final String done = source
+        .split('Future<void> _applyRemoteDiscPipelineSubtitleWhenDone(')[1]
+        .split('Future<void> _applyRemotePipelineSubtitleWhenDone(')[0];
+    expect(done, contains('_episodeLoadSeq != loadSeq'));
+    expect(done, contains('controller.discTitleGeneration != generation'));
+    expect(done, contains('_remoteDiscHostTitle() != title'));
+    expect(done, contains('matchesDiscTitle(title.videoId, title.discTitle)'));
+    expect(done, contains('_registerImportedSubtitleSource(path)'));
+    expect(done, contains('_applyRemoteSubtitle(controller, path)'));
+
+    // 整集音源：host 按（盘, title）裁当前音轨。
+    final String timing = source
+        .split('Future<_SubtitleTimingAudio?> _resolveSubtitleTimingAudio()')[1]
+        .split('Future<_SubtitleTimingAudio?> _cachedRemoteTimingAudio(')[0];
+    expect(timing, contains('widget.remoteDisc?.fetchTitleAudio'));
+    expect(timing, contains("'disc|\${discTitle.key}|"));
+    expect(
+      source.split('bool get _hasLocalOrHostTimingAudio =>')[1].split(';')[0],
+      contains('_remoteDiscHostTitle() != null'),
+    );
+
+    // 取回的字幕在远端原盘会话里只进内存（会话不写库）；Fushi 字幕接管原盘字幕选择。
+    final String apply = source
+        .split('Future<bool> _applyRemoteSubtitle(')[1]
+        .split('String _remoteEmbeddedSubtitleSource(')[0];
+    expect(apply, contains('controller.claimDiscTrackOwnership();'));
+    expect(
+      apply.indexOf('widget.remoteDisc != null'),
+      lessThan(apply.indexOf('_rememberRemoteSubtitleSource(')),
+    );
+    final String select = source
+        .split('Future<bool> _selectSubtitleSource(')[1]
+        .split('final String bookUid = _activeBookUid;')[0];
+    expect(select, contains('widget.remoteDisc != null'));
+    expect(select, contains('_applyRemoteSubtitle('));
   });
 
   // 非互联的在线流（在线视频源 / 粘贴的流与 YouTube / 音乐 MV / 媒体服务器 / 云盘流）也走
