@@ -226,6 +226,27 @@ void main() {
       expect(opened, <MediaLinkEndpoint>[WorkLinksSeed.vol1]);
     });
 
+    testWidgets('不是系列合集的视频合集：按合集端点本身算，点了给合集端点', (WidgetTester tester) async {
+      final WorkLinksSeed seed = (await tester.runAsync(
+        () => WorkLinksSeed.create(db),
+      ))!;
+      final List<MediaLinkEndpoint> opened = <MediaLinkEndpoint>[];
+      await tester.pumpWidget(
+        buildBadge(
+          WorkKindsBadgeOverlay.collection(
+            database: db,
+            collectionId: seed.animeId,
+            onPressed: opened.add,
+            child: cardBody,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.bySemanticsLabel('另有：小说 · 漫画'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey<String>('work-kinds-badge')));
+      expect(opened, <MediaLinkEndpoint>[seed.anime]);
+    });
+
     testWidgets('只有同种媒体 / 多选态 → 不出角标', (WidgetTester tester) async {
       await tester.runAsync(() async {
         await WorkLinksSeed.insertBook(db, 'a', 'A', uid: 'ua');

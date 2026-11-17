@@ -6,6 +6,8 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/links/work_graph_loader.dart'
+    show videoCollectionEndpoint;
 import 'package:material_ui/material_ui.dart';
 
 /// 库页卡片角标「另有：漫画 · 动画」（AI 库管家 spec §4.3）：卡片所在作品里还有
@@ -28,7 +30,7 @@ class WorkKindsBadgeOverlay extends StatefulWidget {
     super.key,
   }) : collectionId = null;
 
-  /// 系列合集卡（合集成员之外的种类才算「另有」）。
+  /// 合集卡（系列合集按合集成员之外的种类算「另有」）。
   const WorkKindsBadgeOverlay.collection({
     required this.database,
     required int this.collectionId,
@@ -89,13 +91,20 @@ class _WorkKindsBadgeOverlayState extends State<WorkKindsBadgeOverlay> {
   Widget build(BuildContext context) {
     final WorkGraphSnapshot? snapshot = widget.enabled ? _store.value : null;
     if (snapshot == null) return widget.child;
-    final MediaLinkEndpoint? self =
-        widget.endpoint ??
-        snapshot.seriesById(widget.collectionId!)?.openTarget;
-    if (self == null) return widget.child;
-    final List<WorkMediaGroup> groups = widget.endpoint != null
-        ? snapshot.otherGroupsFor(self)
-        : snapshot.otherGroupsForCollection(widget.collectionId!);
+    // 合集卡：系列合集按「合集成员之外的种类」算；不是系列合集的视频合集（用户
+    // 随手建的、直接连在作品图谱上的）按合集端点本身算；书 / 游戏的非系列合集
+    // 没有端点，不出角标。
+    final MediaLinkEndpoint? endpoint = widget.endpoint;
+    final WorkSeriesInfo? series = endpoint == null
+        ? snapshot.seriesById(widget.collectionId!)
+        : null;
+    final MediaLinkEndpoint self =
+        endpoint ??
+        series?.openTarget ??
+        videoCollectionEndpoint(widget.collectionId!);
+    final List<WorkMediaGroup> groups = series != null
+        ? snapshot.otherGroupsForCollection(series.id)
+        : snapshot.otherGroupsFor(self);
     if (groups.isEmpty) return widget.child;
     // 角标落在封面右上角：书架网格格子有内边距，色块布局为 0。
     final double inset = ShelfGridCellInset.of(context, 0) + 6;
