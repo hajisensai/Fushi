@@ -31,6 +31,7 @@
 //! | `dup_notetype_num` | 来源 ankiNum, 是否填空, 字段, 模板 | 「不合并笔记类型」另建那一份的 ankiNum（整数） |
 //! | `merge_fallback` | 目标 uid, 旧 ID | 旧并入的兜底 ID |
 //! | `merged_writer` | 目标 uid, 最初的写入者 | 旧并入改名写入者用的哈希 |
+//! | `tombstone_device` | 集合目录名 | 新代在旧根 `v3/devices/` 下立的墓碑 head 的「设备」（`gen4/location.rs` [crate::gen4::location::tombstone_device]；列位置上的写入者时跳过它） |
 //!
 //! 只有 `location_dir` 要 `profile`；其余不依赖 profile（请求里带了也不看；`merge_*` 的盐是显式给的目标 uid，只给旧
 //! 并入用）。
@@ -122,6 +123,9 @@ fn one(profile: Option<&str>, item: &Value) -> Result<Value, String> {
             arg_str(item, 1, kind)?,
             arg_str(item, 2, kind)?,
         )),
+        "tombstone_device" => id(crate::gen4::location::tombstone_device(arg_str(
+            item, 1, kind,
+        )?)),
         other => return Err(format!("ids: unknown kind `{other}`")),
     })
 }
@@ -223,6 +227,31 @@ mod tests {
         );
         let err = derive(&json!({ "items": [["location_dir"]] })).unwrap_err();
         assert!(err.contains("needs `profile`"), "{err}");
+    }
+
+    /// `tombstone_device`（第五波 G9 身份收尾）：Dart 列位置上的写入者时要跳过的墓碑设备由内核给，与立围栏写的同一个；
+    /// 值就是冻结的 `v5(NS, "fushi-srs/tombstone/4/<dir>")`（改造前 Dart `srsTombstoneDevice` 自己算的那个）。不要 profile。
+    #[test]
+    fn tombstone_device_is_the_fence_writers_device() {
+        use crate::sync2::id::Id;
+        let got = derive(
+            &json!({ "items": [["tombstone_device", "dir-a"], ["tombstone_device", "dir-b"]] }),
+        )
+        .unwrap();
+        let want = |dir: &str| {
+            Id::v5(
+                &Id::parse(crate::store::sync2::config::SRS_NAMESPACE).unwrap(),
+                &format!("fushi-srs/tombstone/4/{dir}"),
+            )
+            .text()
+        };
+        assert_eq!(got, json!([want("dir-a"), want("dir-b")]));
+        assert_eq!(
+            got[0],
+            json!(crate::gen4::location::tombstone_device("dir-a").text())
+        );
+        let err = derive(&json!({ "items": [["tombstone_device"]] })).unwrap_err();
+        assert!(err.contains("argument 1"), "{err}");
     }
 
     /// 向量由改造前的 Dart 公式（`hash53('notetype-dup/<n>/${srsCanonicalJson({cloze, fields, tmpls})}')`）的
