@@ -1494,6 +1494,29 @@ pub(crate) mod tests {
         }
     }
 
+    /// 协议 1 主库搬迁（`SrsCore::legacy_*`）只编进测试构建。它们是 `pub mod store` 上的 `pub fn`，rustc 从不报死代码，
+    /// 去掉门也不会有任何告警，只能按源码钉住：每个方法（连同文档注释）前面一行是 `#[cfg(test)]`。
+    #[test]
+    fn protocol_1_migration_methods_are_test_only() {
+        let src = include_str!("../mod.rs").replace("\r\n", "\n");
+        for name in [
+            "legacy_imported",
+            "legacy_begin",
+            "legacy_page",
+            "legacy_commit",
+            "legacy_abort",
+            "legacy_mark_none",
+        ] {
+            let at = src.find(&format!("\n    pub fn {name}(")).expect(name);
+            let gate = src[..at]
+                .lines()
+                .rev()
+                .map(str::trim)
+                .find(|l| !l.starts_with("///"));
+            assert_eq!(gate, Some("#[cfg(test)]"), "{name}");
+        }
+    }
+
     /// 生产构建里分发器只剩 [FROZEN_OPS]：按源码，三个分发函数里没被 `#[cfg(test)]` 门住的匹配臂（门住的臂 / 语句后面整块
     /// 都算门住）与 `if op == "…" {` 语句，命令名恰好是这 5 条。往分发器加命令或去掉某条臂的门就红。
     #[test]

@@ -3258,8 +3258,14 @@ profile uid 不变」断言，不分 `bound` / `joined`。
   `transport::{Held, Delivery, CommitBudget, IngestSession, IngestPhase, Outcome, PreparedSegment, PreparedIngest}`、
   `sync2::{Local, Group}`）里有字段 / 变体只在测试臂里读，按 `#[cfg_attr(not(test), allow(dead_code))]` 放过并在结构上注明；
   拆字段要动冻结内核的行为，不值。
-- `SrsCore::legacy_begin / page / commit / abort / mark_none / legacy_imported`（`store/mod.rs`）没删，经门控变成只在测试构建里：
-  它们是写连接恢复（BUG-4297 `legacy_open`）用例的一部分。
+- `SrsCore::legacy_begin / page / commit / abort / mark_none / legacy_imported`（`store/mod.rs`）没删，显式 `#[cfg(test)]`（连同只给
+  它们用的 `LEGACY_KEY` / `meta` / `set_meta` / `refresh_all` / `slim::insert_column`）：它们是写连接恢复（BUG-4297 `legacy_open`）
+  用例的一部分。注意：`pub fn` 在 `pub mod store` 上 rustc 从不报 dead_code，所以「生产构建里有没有」要看产物——这几个是在
+  quick staticlib 里 grep 符号才发现还在的，门住后 `SrsCore..legacy_begin` 等符号数 3 → 0。
+- **产物核对**（quick 构建的 `target/quick/fushi_fsrs.lib`，按符号名 grep）：门住的 `deck_delete_on` / `merge_notes_on` /
+  `sync2_retire` / `sync2_restore` / `sync2_import` / `sync2_append` / `SrsCore::legacy_*` 与 `ffsrs_store_legacy*` 均 0 处；冻结侧
+  `local_write_body` / `sync2_command` 在（对照）。协议 3 的 op 名字符串本身仍会出现（新代 `wiring` 表里有同名的 Removed 项、
+  gen4 实现与协议 3 同文的报错），不能拿字符串判。
 - `_kSync2CacheOps` 只删了已删的 op。新代里只有 `cache_config_set` 读请求里的 `caches`（`legacy_backup_import` 由调用方显式带），
   其余命令带着它只是多传，没收窄（行为面改动，不在本项范围）。
 - `exec_on` 只在测试与 `raw_sql` 构建编译（以前是基线唯一一条 dead_code）。

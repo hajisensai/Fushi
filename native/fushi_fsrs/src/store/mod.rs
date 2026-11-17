@@ -65,6 +65,7 @@ use rusqlite::types::Value;
 use rusqlite::types::ValueRef;
 use rusqlite::{Connection, OpenFlags};
 
+#[cfg(test)]
 const LEGACY_KEY: &str = "legacy_import";
 
 /// 已关闭的库上任何命令的错误文本（Dart 侧按它认「已关闭」）。
@@ -771,6 +772,7 @@ impl SrsCore {
         drop(writer);
     }
 
+    #[cfg(test)]
     fn meta(conn: &Connection, key: &str) -> Result<Option<String>, String> {
         match conn.query_row("SELECT value FROM srs_meta WHERE key = ?1", [key], |r| {
             r.get(0)
@@ -781,6 +783,7 @@ impl SrsCore {
         }
     }
 
+    #[cfg(test)]
     fn set_meta(conn: &Connection, key: &str, value: &str) -> Result<(), String> {
         conn.execute(
             "INSERT INTO srs_meta (key, value) VALUES (?1, ?2) \
@@ -792,13 +795,18 @@ impl SrsCore {
     }
 
     // ------------------------------------------------------------ 旧库搬迁（§3）
+    //
+    // 协议 1 主库的一次性搬迁（Dart 读旧表、这里写）。新代没有这条路（G7-6 删了 C 入口与 Dart 调用方，主库残留协议 1
+    // 表时 Dart 拒绝打开），这几个方法只编进测试构建：写连接 panic 恢复（BUG-4297 `legacy_open`）与旧库形态的用例还用它们。
 
+    #[cfg(test)]
     /// 旧主库里的 SRS 数据是否已搬进来（或确认没有要搬的）。
     pub fn legacy_imported(&self) -> Result<bool, String> {
         let w = self.writer()?;
         Ok(Self::meta(&w, LEGACY_KEY)?.is_some())
     }
 
+    #[cfg(test)]
     /// 开搬迁事务：清空 9 张表（未写标记的库里不该有东西；上一次搬到一半崩溃时 SQLite 已回滚）。
     pub fn legacy_begin(&self) -> Result<(), String> {
         let w = self.writer()?;
@@ -820,6 +828,7 @@ impl SrsCore {
         Ok(())
     }
 
+    #[cfg(test)]
     /// 写一页旧表行（列序 = [schema::TABLES] 里该表的列序）。
     pub fn legacy_page(&self, table: &str, page: &[u8]) -> Result<usize, String> {
         // 先取写锁再看 `legacy_open`：panic 后的恢复（[SrsCore::recover_writer]）在取锁时才跑，先看标志读到的是旧值。
@@ -868,6 +877,7 @@ impl SrsCore {
         Ok(rows.len())
     }
 
+    #[cfg(test)]
     /// 写标记并提交。
     pub fn legacy_commit(&self) -> Result<(), String> {
         // 先取写锁再看标志（同 [SrsCore::legacy_page]）。
@@ -889,6 +899,7 @@ impl SrsCore {
         result
     }
 
+    #[cfg(test)]
     pub fn legacy_abort(&self) -> Result<(), String> {
         // 先取写锁再看标志（同 [SrsCore::legacy_page]）：panic 恢复已回滚并结束搬迁时这里照常成功。
         let w = self.writer()?;
@@ -898,6 +909,7 @@ impl SrsCore {
         w.execute_batch("ROLLBACK").map_err(|e| e.to_string())
     }
 
+    #[cfg(test)]
     /// 主库里本来就没有 SRS 表（新装）：直接写标记。
     pub fn legacy_mark_none(&self) -> Result<(), String> {
         let w = self.writer()?;

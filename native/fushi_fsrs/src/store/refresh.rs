@@ -275,6 +275,7 @@ impl super::SrsCore {
     }
 
     /// 库级的整体变化（旧库搬迁提交）：每个 profile 的键都变。
+    #[cfg(test)]
     pub(crate) fn refresh_all(&self) {
         self.refresh().all += 1;
     }
