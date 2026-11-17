@@ -88,7 +88,13 @@ class VideoMineQueue {
       _store.pending(bookUid);
 
   /// 还留在列表里的张数（待写入 + 写入失败），角标用。只数不读行。
-  Future<int> openCount(String bookUid) => _store.openCount(bookUid);
+  ///
+  /// 播放页一打开就会问这个数，所以旧版本留下的完成行也在这里收一次
+  /// （[WebMineQueueStore.sweepLegacyDone]，每个库只做一遍）。
+  Future<int> openCount(String bookUid) async {
+    await _store.sweepLegacyDone();
+    return _store.openCount(bookUid);
+  }
 
   /// 写入失败的暂存卡（Anki 没开 / 重复 等），供列表展示与重试。
   Future<List<WebMineQueueRow>> failed(String bookUid) async {
@@ -118,7 +124,7 @@ class VideoMineQueue {
   /// [retryFailed] 决定之前写入失败的行要不要重新排进这一批，**由入口说了算**：
   /// - 用户在待制卡列表里点「全部写入」（或经 `video mine-send`）= 明说要重试，传 `true`；
   /// - 离开播放页时的自动写入传 `false`，只写还没试过的。失败行里有永久性的（重复卡、
-  ///   暂存媒体没了），自动重试只会每次退出都把它们再跑一遍、再报一次失败（BUG-4791）；
+  ///   暂存媒体没了），自动重试只会每次退出都把它们再跑一遍、再报一次失败（BUG-4798）；
   ///   它们留在列表里，等用户看到原因后自己重试或丢弃。
   ///
   /// 每张：用暂存的媒体组 context → [BaseAnkiRepository.mineEntry] → 成功记统计与制卡

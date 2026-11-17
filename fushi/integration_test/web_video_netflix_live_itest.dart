@@ -474,7 +474,7 @@ void main() {
       expect(cap.audio!.length, greaterThan(1000));
       // runner 的隔离 DB 跨次运行保留：只看本次入队的那一行（上次的 failed 行不再是
       // pending、不会被重放；caps 恰一次已在上面断言）。
-      // 写完的行直接出表（BUG-4791），所以「不在表里」= 写成了；还在就必须是 failed。
+      // 写完的行直接出表（BUG-4798），所以「不在表里」= 写成了；还在就必须是 failed。
       expect(
         rows
             .where((WebMineQueueRow r) => r.id == queuedId)

@@ -2,6 +2,7 @@ import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:test/test.dart';
 import 'package:fushi/src/mining/web_mine_queue_store.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 记下每条 SELECT 的 SQL：窄查询的测试断言它们不碰 `fields_json`。
@@ -85,7 +86,7 @@ void main() {
     rows = await store.pending('video/stream/a');
     expect(rows, isEmpty);
     final List<WebMineQueueRow> all = await db.select(db.webMineQueue).get();
-    // BUG-4791：写完的行直接出表（没有任何读取方），失败行留着等重试。
+    // BUG-4798：写完的行直接出表（没有任何读取方），失败行留着等重试。
     expect(all.where((WebMineQueueRow r) => r.id == a), isEmpty);
     final WebMineQueueRow failedRow = all.firstWhere(
       (WebMineQueueRow r) => r.id == b,
@@ -111,33 +112,81 @@ void main() {
     expect(await store.pendingCount('video/stream/a'), 1);
   });
 
-  test('BUG-4791：markDone 顺手带走旧版本留下的 done 行，不碰 pending / failed', () async {
+  /// 旧版本的完成只改状态、不删行：把 [ids] 改成那时留下的样子。
+  Future<void> markLegacyDone(List<int> ids) {
+    return (db.update(
+      db.webMineQueue,
+    )..where(($WebMineQueueTable t) => t.id.isIn(ids))).write(
+      const WebMineQueueCompanion(
+        status: Value<String>(WebMineQueueStatus.done),
+      ),
+    );
+  }
+
+  Future<List<int>> allIds() async => <int>[
+    for (final WebMineQueueRow r in await db.select(db.webMineQueue).get())
+      r.id,
+  ];
+
+  test('BUG-4798：deleteDone 只删旧版本留下的 done 行，不碰 pending / failed', () async {
     final int legacyA = await enqueue('video/stream/a', 1000);
     final int legacyB = await enqueue('video/stream/b', 2000);
     final int failed = await enqueue('video/stream/a', 3000);
     final int pending = await enqueue('video/stream/b', 4000);
-    final int current = await enqueue('video/stream/a', 5000);
-    // 旧版本的完成只改状态、不删行。
-    await (db.update(db.webMineQueue)
-          ..where(($WebMineQueueTable t) => t.id.isIn(<int>[legacyA, legacyB])))
-        .write(
-          const WebMineQueueCompanion(
-            status: Value<String>(WebMineQueueStatus.done),
-          ),
-        );
+    await markLegacyDone(<int>[legacyA, legacyB]);
     await store.markFailed(failed, 'duplicate');
+
+    expect(await store.deleteDone(), 2);
+
+    expect(await allIds(), unorderedEquals(<int>[failed, pending]));
+    expect(await store.deleteDone(), 0);
+  });
+
+  test('BUG-4798：markDone 只删自己那一行，不顺带扫全表', () async {
+    final int legacy = await enqueue('video/stream/a', 1000);
+    final int current = await enqueue('video/stream/a', 2000);
+    await markLegacyDone(<int>[legacy]);
 
     await store.markDone(current, noteId: 7);
 
-    final List<WebMineQueueRow> left = await db.select(db.webMineQueue).get();
-    expect(
-      left.map((WebMineQueueRow r) => r.id),
-      unorderedEquals(<int>[failed, pending]),
-    );
-    expect(
-      left.map((WebMineQueueRow r) => r.status),
-      isNot(contains(WebMineQueueStatus.done)),
-    );
+    expect(await allIds(), <int>[legacy]);
+  });
+
+  test('BUG-4798：存量 done 行在调度入口收掉，每个库只扫一遍，不必等下一张卡写成功', () async {
+    final int legacy = await enqueue('book-a', 1000);
+    final int pending = await enqueue('book-b', 2000);
+    await markLegacyDone(<int>[legacy]);
+
+    // 没有任何一张卡写成功，只是调度来问了一次。
+    expect(await store.pendingBookUids(), <String>['book-b']);
+    expect(await allIds(), <int>[pending]);
+
+    // 同一个库不再扫第二遍（另一个 store 实例也一样：调用方到处都是现建的）。
+    final int late = await enqueue('book-c', 3000);
+    await markLegacyDone(<int>[late]);
+    await WebMineQueueStore(db).pendingBookUids();
+    expect(await allIds(), unorderedEquals(<int>[pending, late]));
+  });
+
+  test('markDone 带 warning：行已出表，warning 记进诊断日志（带行 id 与 noteId）', () async {
+    List<String> logged() => <String>[
+      for (final ErrorLogEntry e in ErrorLogService.instance.diagnosticEntries)
+        if (e.source == 'web_mine_queue.markDone') e.error,
+    ];
+    final int before = logged().length;
+    final int quiet = await enqueue('video/stream/a', 1000);
+    final int noisy = await enqueue('video/stream/a', 2000);
+
+    await store.markDone(quiet, noteId: 1);
+    expect(logged(), hasLength(before), reason: '没有 warning 不记');
+
+    await store.markDone(noisy, noteId: 123, warning: 'loopback_empty');
+    final String entry = logged().last;
+    expect(logged(), hasLength(before + 1));
+    expect(entry, contains('row $noisy'));
+    expect(entry, contains('loopback_empty'));
+    expect(entry, contains('123'));
+    expect(await allIds(), isEmpty);
   });
 
   test('计数只数不读行：pendingCount / openCount 的 SELECT 不带 fields_json', () async {

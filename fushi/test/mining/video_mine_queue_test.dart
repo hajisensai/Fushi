@@ -167,7 +167,7 @@ void main() {
 
     expect(queue.bundleDir(a).existsSync(), isFalse);
     expect(queue.bundleDir(b).existsSync(), isTrue);
-    // BUG-4791：写完的行直接出表，表里只剩那张失败的。
+    // BUG-4798：写完的行直接出表，表里只剩那张失败的。
     expect(
       (await db.select(db.webMineQueue).get()).map((WebMineQueueRow r) => r.id),
       <int>[b],
@@ -203,7 +203,7 @@ void main() {
     expect(await queue.failed('remote/emby/1'), isEmpty);
   });
 
-  test('BUG-4791：退出播放页的自动写入只写待写入的，不重跑写入失败的', () async {
+  test('BUG-4798：退出播放页的自动写入只写待写入的，不重跑写入失败的', () async {
     final int dup = await stageOne('走る');
     // 第一次退出：重复卡写入失败，留在列表里。
     final VideoMineCommitSummary? first = await commitPendingVideoMines(
@@ -247,6 +247,42 @@ void main() {
     expect(kept.error, 'duplicate');
     expect(queue.bundleDir(dup).existsSync(), isTrue);
     expect(await queue.openCount('remote/emby/1'), 1);
+  });
+
+  test('退出写入排在另一次写入后面、轮到时已无事可做：返回 null，不报「成功 0、失败 0」', () async {
+    await stageOne('走る');
+    final _SlowRepo repo = _SlowRepo();
+    // 列表里的「全部写入」还在写，用户就退出了播放页：退出那一刻这张卡仍是待写入。
+    final Future<VideoMineCommitSummary> manual = queue.commitAll(
+      bookUid: 'remote/emby/1',
+      repo: repo,
+      retryFailed: true,
+    );
+    final Future<VideoMineCommitSummary?> onExit = commitPendingVideoMines(
+      queue: Future<VideoMineQueue>.value(queue),
+      bookUid: 'remote/emby/1',
+      repo: repo,
+      inFlight: const <Future<void>>[],
+    );
+    expect((await manual).succeeded, 1);
+    expect(await onExit, isNull);
+    expect(repo.expressions, <String>['走る']);
+  });
+
+  test('打开播放页问角标时收掉旧版本留下的 done 行', () async {
+    final int legacy = await stageOne('走る');
+    final int open = await stageOne('跳ぶ');
+    await (db.update(
+      db.webMineQueue,
+    )..where(($WebMineQueueTable t) => t.id.equals(legacy))).write(
+      const WebMineQueueCompanion(
+        status: Value<String>(WebMineQueueStatus.done),
+      ),
+    );
+
+    expect(await queue.openCount('remote/emby/1'), 1);
+    final List<WebMineQueueRow> left = await db.select(db.webMineQueue).get();
+    expect(left.map((WebMineQueueRow r) => r.id), <int>[open]);
   });
 
   test('退出写入先等在途的暂存任务收尾，再读待写入的行', () async {

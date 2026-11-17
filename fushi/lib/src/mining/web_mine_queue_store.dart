@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:drift/drift.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// `web_mine_queue`（schema v90）的读写：网页播放器观看时入队、重放时按书取待办、
@@ -59,7 +60,11 @@ class WebMineQueueStore {
   /// `href != ''` 排掉本地视频「看完再制卡」的暂存行（`VideoMineQueue.stage` 写空
   /// `href`）：它们共用这张表，但媒体早已备好、不靠重放，后台重放调度认领不了。
   /// 这条过滤只属于本查询——[pending] 是两边共用的，不能带上。
+  ///
+  /// 这是后台调度的入口（首页起来后就开始问），所以旧版本留下的完成行也在这里收一次
+  /// （[sweepLegacyDone]，每个库只做一遍）。
   Future<List<String>> pendingBookUids() async {
+    await sweepLegacyDone();
     final Expression<int> firstId = db.webMineQueue.id.min();
     final List<TypedResult> rows =
         await (db.selectOnly(db.webMineQueue)
@@ -102,18 +107,43 @@ class WebMineQueueStore {
   /// 一行写完了：直接出表。
   ///
   /// 完成行没有任何读取方（列表、角标、调度都只看 pending / failed），留着只会让
-  /// 每条都带整份 `fieldsJson` 的表无限长大。同一条语句顺手带走旧版本留下的 `done`
-  /// 行（那时完成只改状态不删行）——之后表里不再出现 `done`，这半句就是空操作。
+  /// 每条都带整份 `fieldsJson` 的表无限长大。
   ///
-  /// [noteId] / [warning] 不再落库（行已经不在了）；参数留着是因为网页档的调用方
-  /// 仍在传。
+  /// 行不在了，[warning]（网页档重放时「没录到音频」「片段合成失败退回封面」之类，卡
+  /// 照样建成但缺东西）就没有列可写，改记一条诊断日志，带上行 id 与 [noteId]：用户反馈
+  /// 「卡没声音」时凭它对得上是哪张卡、当时缺了什么。[noteId] 本身不必留——卡已在 Anki 里。
   Future<void> markDone(int id, {int? noteId, String? warning}) async {
-    await (db.delete(db.webMineQueue)..where(
-          ($WebMineQueueTable t) =>
-              t.id.equals(id) | t.status.equals(WebMineQueueStatus.done),
+    await remove(id);
+    if (warning != null && warning.isNotEmpty) {
+      ErrorLogService.instance.logDiagnostic(
+        'web_mine_queue.markDone',
+        'row $id mined with warnings: $warning (noteId: ${noteId ?? 'none'})',
+      );
+    }
+  }
+
+  /// 删掉旧版本留下的 `done` 行（那时完成只改状态、不删行），返回删了几行。只动
+  /// `done`：pending / failed 是用户还没处理完的东西。
+  Future<int> deleteDone() {
+    return (db.delete(db.webMineQueue)..where(
+          ($WebMineQueueTable t) => t.status.equals(WebMineQueueStatus.done),
         ))
         .go();
   }
+
+  /// [deleteDone] 的「每个库只做一遍」版本，挂在两条队列各自的入口上：网页档的后台
+  /// 调度（[pendingBookUids]）与本地视频播放页的角标（`VideoMineQueue.openCount`）。
+  /// 现在的代码不再产生 `done` 行，扫过一次之后表里就不会再有，不必每次都扫全表。
+  /// 删失败（库正在关）不记「已扫」，下次入口再来。
+  Future<void> sweepLegacyDone() async {
+    if (_legacyDoneSwept[db] ?? false) return;
+    await deleteDone();
+    _legacyDoneSwept[db] = true;
+  }
+
+  static final Expando<bool> _legacyDoneSwept = Expando<bool>(
+    'webMineQueueLegacyDoneSwept',
+  );
 
   Future<void> markFailed(int id, String error) {
     return (db.update(
