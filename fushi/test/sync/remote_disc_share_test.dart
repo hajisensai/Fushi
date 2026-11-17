@@ -513,7 +513,39 @@ void main() {
       expect(s.hostTitleFor(member(s, '00005.mpls'))!.readsAngle, isFalse);
     });
 
-    test('不在这张盘的身份根下 / DVD title / 没有蓝光行可当锚点 → null', () {
+    test('DVD title：锚在这条 title 自己的行（没有就锚在同盘 DVD 行），总带 discTitle', () {
+      final RemoteDiscMenuSource s = source(
+        titles: const <RemoteDiscShareTitle>[
+          RemoteDiscShareTitle(
+            id: 'host/d1',
+            path: 'VIDEO_TS/TITLE_01.dvdtitle',
+          ),
+          RemoteDiscShareTitle(
+            id: 'host/d3',
+            path: 'VIDEO_TS/TITLE_03.dvdtitle',
+          ),
+        ],
+      );
+      String dvd(String name) => p.join(s.identityRoot, 'VIDEO_TS', name);
+      final RemoteDiscHostTitle own = s.hostTitleFor(dvd('TITLE_03.dvdtitle'))!;
+      expect(own.videoId, 'host/d3');
+      expect(own.memberPath, 'VIDEO_TS/TITLE_03.dvdtitle');
+      expect(own.discTitle, 'VIDEO_TS/TITLE_03.dvdtitle');
+      expect(own.readsDvd, isTrue, reason: '老 host 判 DVD title 读不到，要它声明才发');
+      expect(own.readsAngle, isFalse);
+      final RemoteDiscHostTitle bonus = s.hostTitleFor(
+        dvd('TITLE_07.dvdtitle'),
+      )!;
+      expect(bonus.videoId, 'host/d1', reason: '库里没有行：同盘 DVD 行当锚点');
+      expect(bonus.discTitle, 'VIDEO_TS/TITLE_07.dvdtitle');
+      expect(bonus.key, isNot(own.key));
+      // 蓝光会话的 title 不会锚到 DVD 行上，反之亦然。
+      expect(s.hostTitleFor(member(s, '00001.mpls')), isNull);
+      expect(source().hostTitleFor(dvd('TITLE_01.dvdtitle')), isNull);
+      expect(source().hostTitleFor(member(s, '00001.mpls'))!.readsDvd, isFalse);
+    });
+
+    test('不在这张盘的身份根下 / DVD title 没有 DVD 行可当锚点 / 没有蓝光行可当锚点 → null', () {
       final RemoteDiscMenuSource s = source();
       expect(
         s.hostTitleFor(

@@ -7,6 +7,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:test/test.dart';
+import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
+    show dvdTitlePath;
 import 'package:fushi_engine/media/video/video_local_files.dart';
 import 'package:fushi_core/fushi_core.dart'
     show LocalFileDeleteReport, platformPathKey;
@@ -188,6 +190,43 @@ void main() {
           isNull,
           reason: bad,
         );
+      }
+      // DVD 行：按这一行的盘根重拼 `VIDEO_TS/TITLE_nn.dvdtitle`（文件夹与 .iso 形态都认）。
+      for (final String discRoot in <String>[
+        p.join(p.separator, 'discs', 'Show DVD'),
+        p.join(p.separator, 'discs', 'Show.iso'),
+      ]) {
+        final String dvdRow = dvdTitlePath(discRoot, 1);
+        expect(
+          videoBookDiscTitlePath(
+            videoPath: dvdRow,
+            discTitle: 'VIDEO_TS/TITLE_07.dvdtitle',
+          ),
+          dvdTitlePath(discRoot, 7),
+        );
+        expect(
+          videoBookDiscTitlePath(
+            videoPath: dvdRow,
+            discTitle: 'video_ts/TITLE_07.dvdtitle',
+          ),
+          dvdTitlePath(discRoot, 7),
+        );
+        for (final String bad in <String>[
+          'BDMV/PLAYLIST/00005.mpls',
+          'VIDEO_TS/TITLE_00.dvdtitle',
+          'VIDEO_TS/TITLE_100.dvdtitle',
+          'VIDEO_TS/TITLE_07.mpls',
+          'VIDEO_TS/../TITLE_07.dvdtitle',
+          'VIDEO_TS/sub/TITLE_07.dvdtitle',
+          'TITLE_07.dvdtitle',
+          'VIDEO_TS/C:TITLE_07.dvdtitle',
+        ]) {
+          expect(
+            videoBookDiscTitlePath(videoPath: dvdRow, discTitle: bad),
+            isNull,
+            reason: bad,
+          );
+        }
       }
       expect(
         videoBookDiscTitlePath(

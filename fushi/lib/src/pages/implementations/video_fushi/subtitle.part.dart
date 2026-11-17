@@ -1962,7 +1962,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// 远端原盘会话（盘在互联 host 上，本机没有文件）里当前 title 在 host 上的定位
   /// （[RemoteDiscMenuSource.hostTitleFor]：host 库里有这条 title 的行就是它，没有就用
   /// 同盘一行当锚点、带相对盘根的 title 路径）。不在远端原盘会话、title 还没就绪（盘菜单
-  /// 在前台 / 还没绑定）、或定位不到（DVD title、共享里没有蓝光行）时为 null。
+  /// 在前台 / 还没绑定）、或定位不到（共享里没有同类行可当锚点）时为 null。DVD title 也走
+  /// 这里：host 经 `dvdvideo` demuxer 按 title 读（[RemoteDiscHostTitle.readsDvd]）。
   RemoteDiscHostTitle? _remoteDiscHostTitle() {
     final RemoteDiscMenuSource? source = widget.remoteDisc;
     final VideoPlayerController? controller = _controller;
@@ -1973,13 +1974,15 @@ extension _VideoSubtitle on _VideoFushiPageState {
       return null;
     }
     final String? path = controller.selectedDiscPlaylistPath;
-    if (path == null || !isBlurayPlaylistPath(path)) return null;
+    if (path == null) return null;
+    final bool dvd = isDvdTitlePath(path);
+    if (!dvd && !isBlurayPlaylistPath(path)) return null;
     // 多角度 title 按正在播的角度交给 host（角度成员路径 `00001.a2.mpls`）；角度还没报
-    // 上来时与本机抽取同口径，不定位。
+    // 上来时与本机抽取同口径，不定位（DVD 只认默认角度，同本机）。
     final String? member = discExtractionPathForAngle(
       path,
       angle: controller.discNavigationState?.angle ?? -1,
-      dvd: false,
+      dvd: dvd,
     );
     return member == null ? null : source.hostTitleFor(member);
   }

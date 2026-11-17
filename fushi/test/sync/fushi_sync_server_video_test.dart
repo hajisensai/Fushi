@@ -566,6 +566,7 @@ void main() {
       expect(code, 200);
       expect(live[kVideoClipAudioDiscTitleCapability], isFalse);
       expect(live[kVideoClipAudioDiscTitleAngleCapability], isFalse);
+      expect(live[kVideoClipAudioDiscTitleDvdCapability], isFalse);
       expect(
         await get(
           base,
@@ -592,6 +593,7 @@ void main() {
         final (int _, Map<dynamic, dynamic> live) = await capabilities(at);
         expect(live[kVideoClipAudioDiscTitleCapability], isTrue);
         expect(live[kVideoClipAudioDiscTitleAngleCapability], isTrue);
+        expect(live[kVideoClipAudioDiscTitleDvdCapability], isTrue);
         expect(
           await get(
             at,

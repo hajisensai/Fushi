@@ -19,6 +19,8 @@ import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_angle.dart'
     show parseBlurayAnglePath;
+import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
+    show isDvdTitlePath;
 import 'package:fushi_engine/sync/interconnect_dav_tree_listing.dart';
 import 'package:fushi_engine/sync/pdf_sync_package.dart'
     show interconnectHostAcceptsPdfBooks;
@@ -3591,7 +3593,9 @@ class InterconnectSyncBackend extends SyncBackend
       }
       if (!await hostSupportsDiscTitleAudio() ||
           (parseBlurayAnglePath(discTitle) != null &&
-              !await hostSupportsDiscTitleAngleAudio())) {
+              !await hostSupportsDiscTitleAngleAudio()) ||
+          (isDvdTitlePath(discTitle) &&
+              !await hostSupportsDiscTitleDvdAudio())) {
         throw const RemoteDiscTitleAudioUnsupported();
       }
     }
@@ -3619,6 +3623,12 @@ class InterconnectSyncBackend extends SyncBackend
   /// 会话按盘 + title 裁音频）。与默认字幕上传共用同一份按 host 缓存的能力表。
   Future<bool> hostSupportsDiscTitleAudio() async =>
       (await _liveLibraryCapabilities())[kVideoClipAudioDiscTitleCapability] ==
+      true;
+
+  /// host 是否声明 `liveLibrary.videoClipAudioDiscTitleAngle`（`clipaudio?discTitle=` 认
+  /// 多角度 title 的角度成员路径，按会话里正在播的角度裁）。
+  Future<bool> hostSupportsDiscTitleDvdAudio() async =>
+      (await _liveLibraryCapabilities())[kVideoClipAudioDiscTitleDvdCapability] ==
       true;
 
   /// host 是否声明 `liveLibrary.videoClipAudioDiscTitleAngle`（`clipaudio?discTitle=` 认

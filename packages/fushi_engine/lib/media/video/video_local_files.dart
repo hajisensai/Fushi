@@ -26,6 +26,8 @@ import 'package:fushi_engine/media/media_extensions.dart' show kVideoExtensions;
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
     show blurayDiscRootForPlaylistPath, isBlurayPlaylistPath;
 import 'package:fushi_engine/media/video/dvd/dvd_disc.dart' show isDvdTitlePath;
+import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
+    show dvdDiscRootForTitlePath, dvdTitleNumberForPath, dvdTitlePath;
 import 'package:fushi_engine/media/video/m3u8_playlist.dart' show PlaylistEntry;
 import 'package:fushi_engine/sync/ttu_filename.dart' show sanitizeTtuFilename;
 import 'package:fushi_engine/media/video/video_sidecar.dart'
@@ -97,20 +99,26 @@ String? videoBookEpisodePath({
   return path.isEmpty ? null : path;
 }
 
-/// 纯函数：与视频行成员路径 [videoPath] 同一张蓝光盘上的另一条 title（[discTitle]，
-/// 相对盘根、`/` 分隔，形如 `BDMV/PLAYLIST/00005.mpls`）的成员路径。host 按（盘,
-/// title）定位库里没有行的原盘 title（菜单里的特典等）的唯一判据：远端原盘会话的
-/// 字幕任务 `discTitle` 与 `clipaudio?discTitle=` 共用。
+/// 纯函数：与视频行成员路径 [videoPath] 同一张原盘上的另一条 title（[discTitle]，
+/// 相对盘根、`/` 分隔）的成员路径。host 按（盘, title）定位远端原盘会话里的 title
+/// （菜单里的特典等库里没有行的、多角度 title 的某个角度、DVD title）的唯一判据：远端
+/// 原盘会话的字幕任务 `discTitle` 与 `clipaudio?discTitle=` 共用。
 ///
-/// 只认蓝光播放列表：恰好三段 `BDMV/PLAYLIST/<名>.mpls`（大小写不敏感），名字里
-/// 不许有路径分隔符、`..`；[videoPath] 不是蓝光成员（没有盘根）→ null。路径只由这
-/// 一行自己的盘根拼出，[discTitle] 走不出这张盘。只认蓝光：DVD title 在 host 库里
-/// 按 title 各成一行（`ensureDvdTitleInLibrary`），远端原盘会话的（盘, title）定位
-/// 目前只接蓝光的 `RemoteDiscMenuSource.hostTitleFor`。
+/// - 蓝光行：恰好三段 `BDMV/PLAYLIST/<名>.mpls`（大小写不敏感），名字里不许有路径
+///   分隔符、`..`；
+/// - DVD 行（[videoPath] 是 `VIDEO_TS/TITLE_nn.dvdtitle`）：恰好两段
+///   `VIDEO_TS/TITLE_nn.dvdtitle`，title 号 1～99，按 [dvdTitlePath] 在这一行的盘根上
+///   重拼（规整写法，读媒体经 `DvdFfmpegBackend` 按 title 读）；
+/// - [videoPath] 不是原盘成员（没有盘根）、两边格式不同 → null。
+///
+/// 路径只由这一行自己的盘根拼出，[discTitle] 走不出这张盘。
 String? videoBookDiscTitlePath({
   required String videoPath,
   required String discTitle,
 }) {
+  if (isDvdTitlePath(videoPath)) {
+    return _dvdDiscTitlePath(videoPath: videoPath, discTitle: discTitle);
+  }
   if (!isBlurayPlaylistPath(videoPath)) return null;
   final String? root = blurayDiscRootForPlaylistPath(videoPath);
   if (root == null) return null;
@@ -131,6 +139,21 @@ String? videoBookDiscTitlePath({
   final String path = p.join(root, parts[0], parts[1], name);
   final String? back = blurayDiscRootForPlaylistPath(path);
   return back != null && p.equals(back, root) ? path : null;
+}
+
+/// [videoBookDiscTitlePath] 的 DVD 分支。
+String? _dvdDiscTitlePath({
+  required String videoPath,
+  required String discTitle,
+}) {
+  final String? root = dvdDiscRootForTitlePath(videoPath);
+  if (root == null) return null;
+  final List<String> parts = discTitle.split('/');
+  if (parts.length != 2 || parts[0].toUpperCase() != 'VIDEO_TS') return null;
+  final String name = parts[1];
+  if (name.contains(r'\') || name.contains(':')) return null;
+  final int? number = dvdTitleNumberForPath(name);
+  return number == null ? null : dvdTitlePath(root, number);
 }
 
 /// 纯函数：这一行视频在本机拥有的原始文件候选（`videoPath` + 播放列表各集），只

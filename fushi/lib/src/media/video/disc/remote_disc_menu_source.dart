@@ -8,7 +8,8 @@ import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
     show isBlurayPlaylistPath;
 import 'package:fushi_engine/media/video/disc/disc_format.dart';
 import 'package:fushi_engine/media/video/disc/disc_share_manifest.dart';
-import 'package:fushi_engine/media/video/dvd/dvd_disc.dart' show dvdTitlePath;
+import 'package:fushi_engine/media/video/dvd/dvd_disc.dart'
+    show dvdTitlePath, isDvdTitlePath;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/sync/remote_disc_share.dart';
@@ -56,12 +57,19 @@ class RemoteDiscMenuSource {
   /// `discTitle`（= 角度成员路径），让 host 按该角度读（要 host 声明认角度路径，见
   /// [RemoteDiscHostTitle.readsAngle]）。
   ///
-  /// 不在这张盘的身份根下、不是蓝光播放列表（DVD title：DVD 的媒体要经原生 libdvdnav
-  /// 按 title 读，host 上的 ffmpeg 读不了，`hasLocalMediaFile` 对它恒假）、或共享里
-  /// 没有任何蓝光行可当锚点 → null。
+  /// DVD 会话的 title（[identityRoot] 下的 `VIDEO_TS/TITLE_nn.dvdtitle`）总带 `discTitle`
+  /// （= 成员路径），锚在这条 title 自己的行、没有就锚在盘上任一条 DVD 行：host 经
+  /// `dvdvideo` demuxer 按 title 读，要 host 声明认 DVD title 才发（见
+  /// [RemoteDiscHostTitle.readsDvd]）。
+  ///
+  /// 不在这张盘的身份根下、不是蓝光播放列表 / DVD title、或共享里没有任何同类行可当
+  /// 锚点 → null。
   RemoteDiscHostTitle? hostTitleFor(String sessionMemberPath) {
     final List<String> root = p.split(p.normalize(identityRoot));
     final List<String> parts = p.split(p.normalize(sessionMemberPath));
+    if (isDvdTitlePath(sessionMemberPath)) {
+      return _dvdHostTitleFor(root, parts);
+    }
     if (parts.length != root.length + 3) return null;
     for (int i = 0; i < root.length; i++) {
       if (parts[i] != root[i]) return null;
@@ -98,6 +106,33 @@ class RemoteDiscMenuSource {
       }
     }
     return null;
+  }
+
+  /// [hostTitleFor] 的 DVD 分支：[parts] 是 `<身份根>/VIDEO_TS/TITLE_nn.dvdtitle`。
+  RemoteDiscHostTitle? _dvdHostTitleFor(List<String> root, List<String> parts) {
+    if (parts.length != root.length + 2) return null;
+    for (int i = 0; i < root.length; i++) {
+      if (parts[i] != root[i]) return null;
+    }
+    final List<String> rel = parts.sublist(root.length);
+    if (rel[0].toUpperCase() != 'VIDEO_TS') return null;
+    final String memberPath = rel.join('/');
+    final String key = memberPath.toUpperCase();
+    final RemoteDiscShareTitle? own = share.titles
+        .where((RemoteDiscShareTitle t) => t.path.toUpperCase() == key)
+        .firstOrNull;
+    final RemoteDiscShareTitle? anchor =
+        own ??
+        share.titles
+            .where((RemoteDiscShareTitle t) => isDvdTitlePath(t.path))
+            .firstOrNull;
+    return anchor == null
+        ? null
+        : RemoteDiscHostTitle(
+            videoId: anchor.id,
+            memberPath: memberPath,
+            discTitle: memberPath,
+          );
   }
 
   bool get isDvd => manifest.format == DiscFormat.dvd;
@@ -169,6 +204,10 @@ class RemoteDiscHostTitle {
   /// （字幕任务 `acceptsDiscTitleAngle`、`liveLibrary.videoClipAudioDiscTitleAngle`）才发。
   bool get readsAngle =>
       discTitle != null && parseBlurayAnglePath(discTitle!) != null;
+
+  /// [discTitle] 是 DVD title（`VIDEO_TS/TITLE_nn.dvdtitle`）：host 要声明认 DVD title
+  /// （字幕任务 `acceptsDiscTitleDvd`、`liveLibrary.videoClipAudioDiscTitleDvd`）才发。
+  bool get readsDvd => discTitle != null && isDvdTitlePath(discTitle!);
 
   /// 同一张盘上各条 title 互不相同的稳定标识（任务键、落盘名用）。
   String get key => discTitle == null ? videoId : '$videoId@$discTitle';

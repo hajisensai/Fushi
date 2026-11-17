@@ -703,6 +703,51 @@ void main() {
       },
     );
 
+    test('DVD title：没声明 videoClipAudioDiscTitleDvd 不发，声明了才带', () async {
+      capabilities = <String, dynamic>{
+        'liveLibrary': <String, dynamic>{
+          kVideoClipAudioDiscTitleCapability: true,
+          kVideoClipAudioDiscTitleAngleCapability: true,
+        },
+      };
+      final InterconnectSyncBackend old = await _clientBackend(
+        base: base,
+        token: 'old-dvd-host-token',
+      );
+      final File dest = File(p.join(work.path, 'dvd.aac'));
+      await expectLater(
+        old.getRemoteVideoAudioClip(
+          'dvd/main',
+          dest,
+          startMs: 0,
+          endMs: 60000,
+          discTitle: 'VIDEO_TS/TITLE_02.dvdtitle',
+        ),
+        throwsA(isA<RemoteDiscTitleAudioUnsupported>()),
+      );
+      expect(clipQueries, isEmpty);
+
+      capabilities = <String, dynamic>{
+        'liveLibrary': <String, dynamic>{
+          kVideoClipAudioDiscTitleCapability: true,
+          kVideoClipAudioDiscTitleDvdCapability: true,
+        },
+      };
+      final InterconnectSyncBackend backend = await _clientBackend(
+        base: base,
+        token: 'dvd-host-token',
+      );
+      await backend.getRemoteVideoAudioClip(
+        'dvd/main',
+        dest,
+        startMs: 0,
+        endMs: 60000,
+        discTitle: 'VIDEO_TS/TITLE_02.dvdtitle',
+      );
+      expect(clipQueries.single['discTitle'], 'VIDEO_TS/TITLE_02.dvdtitle');
+      expect(dest.readAsBytesSync(), <int>[0xAA, 0xBB]);
+    });
+
     test(
       '多角度 title 的角度成员路径：没声明 videoClipAudioDiscTitleAngle 不发，声明了才带',
       () async {

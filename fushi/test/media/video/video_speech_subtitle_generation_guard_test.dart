@@ -267,6 +267,9 @@ void main() {
     expect(locate, contains('_discLearningBlocked'));
     // 多角度 title 按正在播的角度交给 host（角度成员路径）。
     expect(locate, contains('discExtractionPathForAngle('));
+    // DVD 会话的 title 也交给 host（dvdvideo 按 title 读），只认默认角度。
+    expect(locate, contains('final bool dvd = isDvdTitlePath(path);'));
+    expect(locate, contains('dvd: dvd,'));
     expect(locate, contains('source.hostTitleFor(member)'));
 
     final String router = source

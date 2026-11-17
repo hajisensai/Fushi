@@ -322,8 +322,8 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
   final Future<String?> Function(String videoId, {int episodeIndex})?
   resolveVideoPath;
 
-  /// (`videoId`, `discTitle`) → `videoId` 那一行所在蓝光盘上那条 title 的成员路径（
-  /// 不是蓝光行 / title 不合法 / 本机读不到 → null）；null = 不认 `discTitle`。
+  /// (`videoId`, `discTitle`) → `videoId` 那一行所在原盘（蓝光 / DVD）上那条 title 的
+  /// 成员路径（不是原盘行 / title 不合法 / 本机读不到 → null）；null = 不认 `discTitle`。
   final Future<String?> Function(String videoId, String discTitle)?
   resolveDiscTitlePath;
 
@@ -399,6 +399,11 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
       // `discTitle` 认多角度 title 的角度成员路径（`00001.a2.mpls`）：蓝光成员的存在性与
       // 抽取都经 `bluray_angle.dart` 按角度读。老 host 没有这个位，提交方不发角度路径。
       'acceptsDiscTitleAngle':
+          resolveVideoPath != null && resolveDiscTitlePath != null,
+      // `discTitle` 认 DVD title（`VIDEO_TS/TITLE_nn.dvdtitle`，`videoId` 是同一张 DVD 上
+      // 的行）：DVD title 经 `DvdFfmpegBackend` 按 title 读、`hasLocalMediaFile` 认它。老
+      // host 两样都不认（只会报找不到），提交方不发 DVD title。
+      'acceptsDiscTitleDvd':
           resolveVideoPath != null && resolveDiscTitlePath != null,
       'acceptsCollectionId': database != null,
       'proofreadAvailable': proofreadProvider() != null,

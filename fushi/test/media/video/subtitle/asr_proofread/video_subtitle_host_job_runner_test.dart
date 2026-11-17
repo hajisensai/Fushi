@@ -16,6 +16,8 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_h
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
+import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
+    show dvdTitlePath;
 import 'package:fushi_engine/media/video/video_local_files.dart'
     show videoBookDiscTitlePath;
 import 'package:fushi_engine/media/video/video_member_file.dart'
@@ -471,6 +473,57 @@ void main() {
     );
   });
 
+  test(
+    'DVD title（discTitle）：按 host 的装配定位到同一张 DVD 的 title，产物落 disc_out',
+    () async {
+      final Directory disc = Directory(p.join(tmp.path, 'lib', 'Show DVD'));
+      final Directory videoTs = Directory(p.join(disc.path, 'VIDEO_TS'))
+        ..createSync(recursive: true);
+      File(
+        p.join(videoTs.path, 'VIDEO_TS.IFO'),
+      ).writeAsBytesSync(<int>[1, 2, 3]);
+      final String main = dvdTitlePath(disc.path, 1);
+      final VideoSubtitleHostJobRunner r = runner(
+        resolveVideo: (String id, {int episodeIndex = 0}) async =>
+            id == 'd1' && await hasLocalMediaFile(main) ? main : null,
+        resolveDiscTitle: (String id, String title) async {
+          if (id != 'd1') return null;
+          final String? path = videoBookDiscTitlePath(
+            videoPath: main,
+            discTitle: title,
+          );
+          return path != null && await hasLocalMediaFile(path) ? path : null;
+        },
+      );
+      expect((await r.capability())['acceptsDiscTitleDvd'], isTrue);
+      final (HostJobContext ctx, _) = context(const <String, Object?>{
+        'proofread': false,
+        'videoId': 'd1',
+        'discTitle': 'VIDEO_TS/TITLE_02.dvdtitle',
+      });
+      r.validateParams(ctx.params);
+      final HostJobOutcome outcome = await r.run(ctx);
+      expect(outcome.outputs, contains('TITLE_02.ja.srt'));
+      expect(
+        File(
+          p.join(
+            videoSubtitleDiscExportDir(
+              Directory(p.join(tmp.path, 'pipeline')),
+              dvdTitlePath(disc.path, 2),
+            )!.path,
+            'TITLE_02.ja.srt',
+          ),
+        ).existsSync(),
+        isTrue,
+      );
+      expect(
+        videoTs.listSync().map((FileSystemEntity e) => p.basename(e.path)),
+        <String>['VIDEO_TS.IFO'],
+        reason: 'DVD title 是虚拟路径，盘结构里不能多出文件',
+      );
+    },
+  );
+
   test('播放列表第 N 集：集下标交给 resolveVideoPath，字幕写在那一集旁', () async {
     final Directory lib = Directory(p.join(tmp.path, 'lib', 'Show'))
       ..createSync(recursive: true);
@@ -724,6 +777,7 @@ void main() {
     // 没接 resolveDiscTitlePath 的 host 不认 discTitle（老 host 形状）。
     expect(cap['acceptsDiscTitle'], isFalse);
     expect(cap['acceptsDiscTitleAngle'], isFalse);
+    expect(cap['acceptsDiscTitleDvd'], isFalse);
     expect(
       (await runner(
         resolveVideo: (String _, {int episodeIndex = 0}) async => null,

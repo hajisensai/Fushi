@@ -3850,6 +3850,12 @@ const String kVideoClipAudioDiscTitleCapability = 'videoClipAudioDiscTitle';
 const String kVideoClipAudioDiscTitleAngleCapability =
     'videoClipAudioDiscTitleAngle';
 
+/// `/api/capabilities` 的 `liveLibrary` 里声明「`clipaudio?discTitle=` 认 DVD title
+/// （`VIDEO_TS/TITLE_nn.dvdtitle`，`<id>` 是同一张 DVD 上的行）、经 `dvdvideo` demuxer
+/// 按 title 裁」的能力位。老 host 无此字段 → client 不发 DVD title（老 host 判它读不到）。
+const String kVideoClipAudioDiscTitleDvdCapability =
+    'videoClipAudioDiscTitleDvd';
+
 /// host 端「按（盘, title）裁音频」的**可选**能力（远端原盘会话：盘在 host 上，会话里
 /// 正在看的 title 可能是库里没有行的特典 / 菜单 title）。与 [VideoClipExportHost] 同范式：
 /// server 用 `is` 探测，不实现 → `clipaudio?discTitle=` 404、能力位

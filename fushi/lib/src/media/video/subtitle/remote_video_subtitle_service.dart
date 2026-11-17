@@ -35,6 +35,8 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_angle.dart'
     show parseBlurayAnglePath;
+import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
+    show isDvdTitlePath;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_host_job_runner.dart'
     show kVideoSubtitleJobKind, kVideoSubtitleSummaryOutput;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart'
@@ -171,6 +173,13 @@ class RemoteVideoSubtitleTarget {
   bool get needsDiscTitleAngleSupport => episodes.any(
     (RemoteVideoSubtitleEpisode e) =>
         e.discTitle != null && parseBlurayAnglePath(e.discTitle!) != null,
+  );
+
+  /// 有没有按 DVD title（`VIDEO_TS/TITLE_nn.dvdtitle`）定位的原盘 title（要 host 声明
+  /// `acceptsDiscTitleDvd`）。
+  bool get needsDiscTitleDvdSupport => episodes.any(
+    (RemoteVideoSubtitleEpisode e) =>
+        e.discTitle != null && isDvdTitlePath(e.discTitle!),
   );
 }
 
@@ -326,6 +335,14 @@ bool hostAcceptsVideoSubtitleDiscTitleAngle(HostJobTarget target) {
   return entry is Map && entry['acceptsDiscTitleAngle'] == true;
 }
 
+/// host 的 `video_subtitle` 能力里有没有 `acceptsDiscTitleDvd`（`discTitle` 认 DVD title
+/// `VIDEO_TS/TITLE_nn.dvdtitle`，经 `dvdvideo` demuxer 按 title 读）。老 host 没有这个位：
+/// 它判 DVD title 读不到。
+bool hostAcceptsVideoSubtitleDiscTitleDvd(HostJobTarget target) {
+  final Object? entry = target.capability[kVideoSubtitleJobKind];
+  return entry is Map && entry['acceptsDiscTitleDvd'] == true;
+}
+
 /// host 报错的原话：HTTP 错误体是 `{"error": "..."}` 时取 `error`，否则原样。
 String remoteVideoSubtitleErrorText(Object error) {
   if (error is HostJobRemoteException) {
@@ -418,7 +435,9 @@ class RemoteVideoSubtitleService {
       if ((job.target.needsDiscTitleSupport &&
               !hostAcceptsVideoSubtitleDiscTitle(target)) ||
           (job.target.needsDiscTitleAngleSupport &&
-              !hostAcceptsVideoSubtitleDiscTitleAngle(target))) {
+              !hostAcceptsVideoSubtitleDiscTitleAngle(target)) ||
+          (job.target.needsDiscTitleDvdSupport &&
+              !hostAcceptsVideoSubtitleDiscTitleDvd(target))) {
         job._finish(RemoteVideoSubtitleJobStatus.discTitleUnsupported);
         return;
       }
