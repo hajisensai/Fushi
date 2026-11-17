@@ -1396,7 +1396,7 @@ window.__fushiInstallShell = function(C) {
       this._invalidateGeometryReanchor();
     }
     // 锚代际：每次替换 / 清除都 +1。延后执行的回调（分页 _alignRangeToPage 的下一帧复核）
-    // 凭它判断「我落页时的那个目标还是不是当前目标」，不是就不再写位置（BUG-4798）。
+    // 凭它判断「我落页时的那个目标还是不是当前目标」，不是就不再写位置（BUG-4808）。
     this.__imgAnchorGen = (this.__imgAnchorGen || 0) + 1;
     this.__imgReanchorProgress = null;
     this.__imgReanchorCharOffset = null;
@@ -3042,7 +3042,7 @@ $kReaderPageTurnJs
     if (context.pageSize <= 0) return false;
     var rect = this.getRect(range);
     var currentScroll = this.getPagePosition(context);
-    // BUG-4798：下面「落页后下一帧再落一次」的回调按**当时仍登记着的揭示目标**重算，不写
+    // BUG-4808：下面「落页后下一帧再落一次」的回调按**当时仍登记着的揭示目标**重算，不写
     // 这里捕获的像素值。锚代际在回调前变了（用户翻页 / 新的恢复或揭示替换了目标）= 位置已
     // 归别人所有，回调不动；没变则重量一次 range（迟到图片在这一帧里把目标顶到别的页时，
     // 跟到目标的新页而不是把视口拽回旧页）。
@@ -3414,7 +3414,7 @@ $kReaderPageTurnJs
   // 位置；再空等一帧不改变任何落点，只是让「内容就绪」晚 16ms、遮罩多留一帧。故删掉
   // 第二层，保留第一层的「等一帧再重设」防 reflow 语义。
   //
-  // BUG-4798：「重设」的是**语义锚**，不是 16ms 前读到的像素值。旧实现把入口捕获的
+  // BUG-4808：「重设」的是**语义锚**，不是 16ms 前读到的像素值。旧实现把入口捕获的
   // (context, pos) 原样写回：这 16ms 内若有迟到的图 load（reapplyImageLateAnchor 已按语义锚
   // 把视口挪到正确页）、或程序化揭示换了目标，回调就把旧像素位置盖回去，之后没有第二张图
   // load 就再没人纠正，随后的进度回传还会把错位置落库。现在回调按已登记的锚重算一次

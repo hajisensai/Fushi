@@ -70,7 +70,7 @@ void main() {
         expect(p.equals(p.dirname(path), dir.path), isTrue);
         expect(File(path).existsSync(), isTrue);
       }
-      // 转码器写的是暂存目录里的同名文件（BUG-4798：新文件全部就绪后才落到正式
+      // 转码器写的是暂存目录里的同名文件（BUG-4810：新文件全部就绪后才落到正式
       // 名字），所以这里比源路径与落点的文件名。
       expect(
         <(String, String)>[

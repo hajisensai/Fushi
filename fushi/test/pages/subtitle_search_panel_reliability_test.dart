@@ -26,7 +26,7 @@ import 'package:material_ui/material_ui.dart';
 /// 本集字幕面板的两组可靠性契约：
 /// - BUG-4799：搜索有代次——后提交的一轮赢，迟到的旧一轮不覆盖结果、不提前收转圈；
 ///   保存 key 抛错不会让搜索钮永久禁用。
-/// - BUG-4798：多选——全选 / 反选只作用于筛选后看得见的；重搜清勾选；部分失败不
+/// - BUG-4802：多选——全选 / 反选只作用于筛选后看得见的；重搜清勾选；部分失败不
 ///   自动关页，已落盘的逐条交给宿主、关页时带回；页面一关（路由被 pop）就不再落盘。
 class _Cand extends VideoSubtitleCandidate {
   _Cand(String name, {int? episode, String language = 'ja'})
@@ -343,7 +343,7 @@ void main() {
     });
   });
 
-  group('BUG-4798 多选', () {
+  group('BUG-4802 多选', () {
     List<VideoSubtitleCandidate> sources() => <VideoSubtitleCandidate>[
       for (int ep = 1; ep <= 3; ep++)
         _Cand('[SubsPlease] Show - 0$ep.ass', episode: ep),

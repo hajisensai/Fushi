@@ -133,7 +133,7 @@ Future<WebMineQueueRowsEnd> runWebMineQueueRows({
 
 /// 「本次空闲里已经放弃的东西」：到不了的视频、整本放弃的书。空闲自动制卡一轮结束后
 /// 调度器几秒就会再问一次能不能开跑，用户还没回来、待办还在，不记下来就会原样再撞
-/// （BUG-4800：到不了的视频每轮再等一个期限、再标一行失败，直到那一集的行全部失败；
+/// （BUG-4832：到不了的视频每轮再等一个期限、再标一行失败，直到那一集的行全部失败；
 /// 窗口宿主档每轮还是一次整页交接）。语义同 `WebMineBackgroundRunner` 的「本次空闲已试过」。
 ///
 /// 进程级（[instance]）、按书记：窗口宿主档的空闲交接每轮都换页面实例，按页记挡不住。
@@ -220,7 +220,7 @@ class WebMineIdleGiveUps {
 /// 抛出只记给 [onError]，后面的步骤照常执行。返回 [body] 是否正常跑完。本函数不向外抛。
 ///
 /// 调用方在它返回之后做整轮的收尾（交接页换回原档、后台制卡页关页、空闲调度器回到空闲
-/// 轮询）。BUG-4799：从前 [body] 一抛，收尾就被跳过。
+/// 轮询）。BUG-4829：从前 [body] 一抛，收尾就被跳过。
 Future<bool> runWebMineQueueRound({
   required Future<void> Function() body,
   required List<Future<void> Function()> cleanup,

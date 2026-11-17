@@ -40,7 +40,7 @@ List<String> workbenchPathsToApply({
     collectionPathForCurrent,
 ];
 
-/// 工作台关闭时「本集」作用域要带回播放页的字幕路径（BUG-4798）。
+/// 工作台关闭时「本集」作用域要带回播放页的字幕路径（BUG-4802）。
 ///
 /// [explicit] 是面板下载完成后主动关页带回的那批（用户最后一次显式选择，排前面）；
 /// [savedWhileOpen] 是多选下载期间逐条落盘、但没随关页带回的那些——部分失败后面板
@@ -245,7 +245,7 @@ class SubtitleWorkbenchPage extends StatefulWidget {
   onCollectionSubtitlePersisted;
 
   /// 「本集」多选下载每落盘一条就回调（见 [SubtitleSearchPanel.onSubtitleSaved]）。
-  /// [open] 用它收下「已落盘但面板没主动关页」的路径，关页时一并返回（BUG-4798）。
+  /// [open] 用它收下「已落盘但面板没主动关页」的路径，关页时一并返回（BUG-4802）。
   final void Function(String path)? onEpisodeSubtitleSaved;
 
   /// 推整页路由。返回「本集」作用域下载落盘的**全部**字幕绝对路径，按用户勾选

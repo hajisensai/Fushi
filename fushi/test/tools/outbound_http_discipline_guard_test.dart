@@ -22,7 +22,7 @@
 /// 自身**（[kOutboundAssemblyPoints]），要么在 [kBareOutboundRegistry] 里登记并写明**为什么
 /// 这条不该走代理**。清单只减不增。
 ///
-/// `package:http` 的**顶层便捷函数**（`http.get(` / `http.post(` …）同罪（BUG-4798）：
+/// `package:http` 的**顶层便捷函数**（`http.get(` / `http.post(` …）同罪（BUG-4805）：
 /// 它们每次调用内部现建一个默认 `IOClient`，与裸 `http.Client()` 是同一条不走代理的暗路，
 /// 只是没有构造表达式可抓——播放页的 HLS 画质探测就是这样从上面四个判据底下漏过去的。
 ///
@@ -345,7 +345,7 @@ void main() {
       );
     });
 
-    test('package:http 顶层便捷函数也算裸出站（BUG-4798）', () {
+    test('package:http 顶层便捷函数也算裸出站（BUG-4805）', () {
       for (final String verb in <String>[
         'get',
         'post',

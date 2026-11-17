@@ -501,7 +501,7 @@ void 0;
   /// `unawaited(AudiobookBridge.highlight(...).catchError(AudiobookBridge.logHighlightError))`。
   ///
   /// 播放器 cue 变更监听是同步回调，不能 await 高亮；而 WebView 正在销毁 / 换文档时
-  /// `evaluateJavascript` 会抛，不接住就是一条未处理的异步错误（BUG-4798）。高亮是
+  /// `evaluateJavascript` 会抛，不接住就是一条未处理的异步错误（BUG-4811）。高亮是
   /// 尽力而为的一次性视觉更新（下一次 cue 变更会重发），所以只记进
   /// [ErrorLogService]，不重试。
   static void logHighlightError(Object error, StackTrace stack) {

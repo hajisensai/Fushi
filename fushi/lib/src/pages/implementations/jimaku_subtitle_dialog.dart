@@ -15,7 +15,7 @@ export 'package:fushi/src/pages/implementations/subtitle_search_panel.dart';
 
 /// 「自动获取字幕」**对话框壳**：[FushiDialogFrame] 包一层 [SubtitleSearchPanel]，
 /// 下载成功 `pop` 回本地路径、取消 `pop` null。多选下载部分失败时面板留着显示原因
-/// （BUG-4798），此后点「取消」带回已落盘的第一条。
+/// （BUG-4802），此后点「取消」带回已落盘的第一条。
 ///
 /// 播放页/库页已改走全屏 `SubtitleWorkbenchPage`；本壳保留给仍以对话框形态调起的
 /// 调用方与既有 widget 测试（两栏布局 / 滚动 / 路径穿越 / registry 接线等）。

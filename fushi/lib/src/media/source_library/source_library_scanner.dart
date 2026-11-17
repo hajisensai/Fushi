@@ -2604,7 +2604,7 @@ class SourceLibraryScanner {
         continue;
       }
       // 卷目录里的 `._001.jpg` 资源叉、`@eaDir/001.jpg/SYNOPHOTO_THUMB_M.jpg` 缩略图
-      // 扩展名都对得上，不滤就成了这一卷的页（BUG-4799）。计划阶段滤过一遍，这里是
+      // 扩展名都对得上，不滤就成了这一卷的页（BUG-4831）。计划阶段滤过一遍，这里是
       // 另一次列目录。
       if (isSourceScanJunkPath(
         e.path,
@@ -3276,7 +3276,7 @@ final RegExp _numberedVideoDirectoryName = RegExp(
   r'[\s._-]*[0-9一二三四五六七八九十]+[\s._-]*(?:季|期|部|卷|巻)?$',
 );
 
-/// BUG-2979 / BUG-4798：[row] 是不是「被搬到 [newPath] 的那个文件」的旧行，证据有多强。
+/// BUG-2979 / BUG-4820：[row] 是不是「被搬到 [newPath] 的那个文件」的旧行，证据有多强。
 ///
 /// 前提（缺一个就是 [VideoMoveEvidence.none]）：同文件名（bookUid 同源派生，调用方已
 /// 按它取出 [row]）、路径不同、旧行是普通本地文件（不是流媒体 / 播放列表 / URL）、
@@ -3291,7 +3291,7 @@ final RegExp _numberedVideoDirectoryName = RegExp(
 /// - 给不出（没探过）→ 比目录尾段（[_matchedTrailingDirectories]）：连着对上至少两层
 ///   （或两边的目录整条都对上），且对上的名字不全是通用目录名 =
 ///   [VideoMoveEvidence.directoryChain]。只对上一层不算：`剧A/Season 01/01.mkv` 删掉
-///   后放进 `剧B/Season 01/01.mkv` 也是这个形状（BUG-4798）。没探过规格、目录名又
+///   后放进 `剧B/Season 01/01.mkv` 也是这个形状（BUG-4820）。没探过规格、目录名又
 ///   改了的真搬家因此认不出，回到另建 `X (2)`——宁可漏判，不把进度绑到别的剧上。
 ///
 /// 文件判据 async：扫描跑在 UI isolate，源库常是网络盘（rclone / SMB），同步 stat

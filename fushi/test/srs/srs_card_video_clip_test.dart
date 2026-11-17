@@ -523,9 +523,9 @@ void main() {
       expect(channel.playToEnd('missing.webm'), isNull);
     });
 
-    // BUG-4798：加载不了的文件（0 字节 / 认不出格式）在 media_kit 里 open 不抛、completed
+    // BUG-4812：加载不了的文件（0 字节 / 认不出格式）在 media_kit 里 open 不抛、completed
     // 不发，播放器只是回到空闲。以前抽象上没有这个出口：序列一直等、卡面是黑框。
-    testWidgets('BUG-4798 播放器判加载失败：序列以 false 结束、落「视频未同步」占位、释放播放器', (
+    testWidgets('BUG-4812 播放器判加载失败：序列以 false 结束、落「视频未同步」占位、释放播放器', (
       WidgetTester tester,
     ) async {
       await mount(tester);
@@ -554,7 +554,7 @@ void main() {
       expect(find.text(t.srs_card_media_missing_video), findsOne);
     });
 
-    testWidgets('BUG-4798 没起序列时判加载失败：同样落占位，之后的序列退回只播音频', (
+    testWidgets('BUG-4812 没起序列时判加载失败：同样落占位，之后的序列退回只播音频', (
       WidgetTester tester,
     ) async {
       await mount(tester);
@@ -573,7 +573,7 @@ void main() {
 
     // 判据不看「有没有拿到画面尺寸」：容器声明了尺寸、但没有一条轨能播的文件同样是
     // 加载失败（播放器回空闲），序列不能卡在它上面。
-    testWidgets('BUG-4798 已拿到画面尺寸后才判加载失败：同样结束序列并落占位', (
+    testWidgets('BUG-4812 已拿到画面尺寸后才判加载失败：同样结束序列并落占位', (
       WidgetTester tester,
     ) async {
       await mount(tester);

@@ -47,7 +47,7 @@ AudioCue _sentenceCue() => AudioCue()
   ..audioFileIndex = 0;
 
 void main() {
-  group('放飞的 AudiobookBridge.highlight 的错误出口（BUG-4798）', () {
+  group('放飞的 AudiobookBridge.highlight 的错误出口（BUG-4811）', () {
     test('接了 logHighlightError：抛错不成为未处理的异步错误，记进错误日志', () async {
       final List<Object> uncaught = <Object>[];
       final int before = ErrorLogService.instance.entries.length;
@@ -96,7 +96,7 @@ void main() {
     });
   });
 
-  group('reader 的 cue 变更回调（源码守卫，BUG-4798）', () {
+  group('reader 的 cue 变更回调（源码守卫，BUG-4811）', () {
     // `_onCueChanged` 是播放器监听的同步回调，页面私有、要真 InAppWebView 才能
     // 行为驱动；这里钉调用点：audiobook.part.dart 里每一处 highlight 调用要么被
     // await，要么紧跟 `.catchError(AudiobookBridge.logHighlightError)`。

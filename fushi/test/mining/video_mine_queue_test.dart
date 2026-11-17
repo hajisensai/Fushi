@@ -167,7 +167,7 @@ void main() {
 
     expect(queue.bundleDir(a).existsSync(), isFalse);
     expect(queue.bundleDir(b).existsSync(), isTrue);
-    // BUG-4798：写完的行直接出表，表里只剩那张失败的。
+    // BUG-4813：写完的行直接出表，表里只剩那张失败的。
     expect(
       (await db.select(db.webMineQueue).get()).map((WebMineQueueRow r) => r.id),
       <int>[b],
@@ -203,7 +203,7 @@ void main() {
     expect(await queue.failed('remote/emby/1'), isEmpty);
   });
 
-  test('BUG-4798：退出播放页的自动写入只写待写入的，不重跑写入失败的', () async {
+  test('BUG-4813：退出播放页的自动写入只写待写入的，不重跑写入失败的', () async {
     final int dup = await stageOne('走る');
     // 第一次退出：重复卡写入失败，留在列表里。
     final VideoMineCommitSummary? first = await commitPendingVideoMines(

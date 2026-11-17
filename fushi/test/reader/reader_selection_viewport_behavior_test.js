@@ -519,7 +519,7 @@ for (const writingMode of ['horizontal-tb', 'vertical-rl', 'vertical-lr']) {
         if (entry === 'fragment') assert.equal(f.reader.alignToFragmentTarget('target'), true);
         if (entry === 'range') assert.equal(f.reader._alignRangeToPage({}), true);
         if (entry === 'settle') {
-          // BUG-4798：settle 不再写回捕获的像素位置，而是在位置被动过时按已登记的语义锚
+          // BUG-4808：settle 不再写回捕获的像素位置，而是在位置被动过时按已登记的语义锚
           // 重设落点。这里登记章首锚（前一页），窗口内 reflow 把 scroll 挪走（直接写滚动
           // 容器，不经任何记账），定时器回调经 reapplyImageLateAnchor 真的换页。
           f.reader.registerImageLateAnchor({progress: 0});

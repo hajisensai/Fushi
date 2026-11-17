@@ -413,7 +413,7 @@ void main() {
       expect(box.value, isTrue);
     });
 
-    testWidgets('BUG-4798 已有勾选时点文件行只切换勾选，不下载', (WidgetTester tester) async {
+    testWidgets('BUG-4802 已有勾选时点文件行只切换勾选，不下载', (WidgetTester tester) async {
       final List<SubtitleVersionGroup> groups = buildSubtitleVersionGroups(
         _seasonPack(),
       );
@@ -443,7 +443,7 @@ void main() {
       expect(picked, isEmpty, reason: '多选态下点行不得触发下载');
     });
 
-    testWidgets('BUG-4798 已有勾选时点卡片只展开，不替用户挑一集下载', (WidgetTester tester) async {
+    testWidgets('BUG-4802 已有勾选时点卡片只展开，不替用户挑一集下载', (WidgetTester tester) async {
       final List<SubtitleVersionGroup> groups = buildSubtitleVersionGroups(
         _seasonPack(),
       );

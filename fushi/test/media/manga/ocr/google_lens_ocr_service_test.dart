@@ -84,7 +84,7 @@ void main() {
     expect(second.requests, 0);
   });
 
-  // BUG-4798：共用的 manga_ocr_out/manga.json 可能是别的引擎写的（系统 OCR /
+  // BUG-4815：共用的 manga_ocr_out/manga.json 可能是别的引擎写的（系统 OCR /
   // 本地模型）。「只补缺页」从那里收页会把别家的结果署成 google_lens。
   test('只补缺页不收别的引擎写的整卷产物：每页都由 Lens 自己识别', () async {
     final List<MangaOcrPageFile> pages = enumerateMangaPages(root);

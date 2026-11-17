@@ -698,7 +698,7 @@ void main() {
       final int beforeCancel = interrupted.requestSizes.length;
       expect(beforeCancel, greaterThan(0));
       expect(beforeCancel, lessThan(3), reason: '取消要真的止住后面的页');
-      // BUG-4798：取消不落整卷产物。半卷的 manga_ocr_out/manga.json 是一份「空页
+      // BUG-4815：取消不落整卷产物。半卷的 manga_ocr_out/manga.json 是一份「空页
       // 占位 + system_ocr 署名」的假整卷，后来的引擎会把它当成已有结果。
       final File output = File(
         p.join(dir.path, kMangaOcrOutDirName, kMangaOcrOutputFileName),

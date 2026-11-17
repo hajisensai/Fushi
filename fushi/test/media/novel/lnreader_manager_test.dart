@@ -475,7 +475,7 @@ void main() {
     expect(m.stores, isEmpty);
   });
 
-  group('BUG-4799 读失败不当空', () {
+  group('BUG-4830 读失败不当空', () {
     test('state.json 读不出来：不进「已加载」、改动被拒、盘上原样；能读了就恢复', () async {
       final File state = File('${root.path}/state.json');
       await state.writeAsString(_installedState);

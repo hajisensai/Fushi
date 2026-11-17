@@ -1,12 +1,12 @@
 // 来源扫描的正确性（nmv c08）：
 //
-//  BUG-4798 / BUG-2979 ②  视频「搬家」要正证据：规格缓存里的字节数，或连着对得上的
+//  BUG-4820 / BUG-2979 ②  视频「搬家」要正证据：规格缓存里的字节数，或连着对得上的
 //            目录尾段（光是 `Season 01` 这种通用目录名不算）。
-//  BUG-4799  系统 / 垃圾条目不入库；一个读不了的子目录不再让整次扫描失败。
-//  BUG-4801  远端书：一本失败不中断其余（连接断了才整轮结束）、临时目录必删；被杀
+//  BUG-4831  系统 / 垃圾条目不入库；一个读不了的子目录不再让整次扫描失败。
+//  BUG-4835  远端书：一本失败不中断其余（连接断了才整轮结束）、临时目录必删；被杀
 //            进程留下的临时来源行与临时目录能被认出并回收，活着的另一个实例的不动。
 //
-// 漫画来源索引逐卷落盘（BUG-4800）的测试在 source_library_scanner_test.dart 的
+// 漫画来源索引逐卷落盘（BUG-4833）的测试在 source_library_scanner_test.dart 的
 // 「SourceLibraryScanner.scan manga source」组里（要用那里的压缩包夹具）。
 
 import 'dart:async';
@@ -175,7 +175,7 @@ void main() {
     }
   });
 
-  group('视频搬家判定要正证据（BUG-4798 / BUG-2979 ②）', () {
+  group('视频搬家判定要正证据（BUG-4820 / BUG-2979 ②）', () {
     test('整个剧目录挪了位置：旧行改指新路径，进度保留，不再建 X (2)', () async {
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
@@ -451,7 +451,7 @@ void main() {
     });
   });
 
-  group('系统 / 垃圾条目与读不了的子目录（BUG-4799）', () {
+  group('系统 / 垃圾条目与读不了的子目录（BUG-4831）', () {
     test('isSourceScanJunkPath：只认 ._ 文件与系统目录，不一刀切隐藏名', () {
       bool junk(String rel, {bool dir = false}) =>
           isSourceScanJunkPath('/lib/$rel', scanRoot: '/lib', isDirectory: dir);
@@ -569,7 +569,7 @@ void main() {
     });
   });
 
-  group('远端书：单本失败隔离与临时目录（BUG-4801）', () {
+  group('远端书：单本失败隔离与临时目录（BUG-4835）', () {
     late Directory books;
 
     setUp(() {
@@ -618,7 +618,7 @@ void main() {
     });
   });
 
-  group('远端书：连接断了整轮结束（BUG-4801）', () {
+  group('远端书：连接断了整轮结束（BUG-4835）', () {
     setUp(() {
       EpubStorage.debugBaseDirectoryOverride = p.join(tmp.path, 'bookroot');
       Directory(p.join(tmp.path, 'bookroot')).createSync();
@@ -665,7 +665,7 @@ void main() {
     });
   });
 
-  group('被杀进程留下的残留（BUG-4801）', () {
+  group('被杀进程留下的残留（BUG-4835）', () {
     test('临时来源行带标记；清扫删掉陈旧的、留下正在跑的与普通来源', () async {
       final FushiDatabase db = _memDb();
       addTearDown(db.close);

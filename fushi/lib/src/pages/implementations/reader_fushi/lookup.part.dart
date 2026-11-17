@@ -427,7 +427,7 @@ extension _ReaderLookup on _ReaderFushiPageState {
     // 与选区操作条「从此句播放」/ 查词状态填充共用 [_cueForSelectionData]，三条路径对
     // 同一处选区永远认同一句。
     //
-    // BUG-4799：整组选区状态（句子、句偏移、cue、选区 / 句子范围、所属章号）在
+    // BUG-4824：整组选区状态（句子、句偏移、cue、选区 / 句子范围、所属章号）在
     // `await` 查词**之前**一次写齐，写点是与拖选菜单 / 原生选区共用的
     // [_applyLookupStateFromSelectionData]。原先范围与章号写在 await 之后：查词在飞时
     // 是「新句子 + 新 cue + 旧选区范围」，连点两个词时先点那次的尾段还会在后点那次

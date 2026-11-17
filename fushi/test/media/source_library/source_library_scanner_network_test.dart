@@ -973,7 +973,7 @@ void main() {
           '/remote/manga/Vol1/chapter/002.png': png('b.png', width: 30),
           '/remote/manga/Vol1/manga_ocr_out/ocr.png': png('c.png'),
           '/remote/manga/Vol1/notes.txt': png('d.png'),
-          // BUG-4799：macOS 资源叉与群晖缩略图目录，扩展名都是页图。
+          // BUG-4831：macOS 资源叉与群晖缩略图目录，扩展名都是页图。
           '/remote/manga/Vol1/._001.png': png('f.png'),
           '/remote/manga/Vol1/@eaDir/001.png/SYNOPHOTO_THUMB_M.png': png(
             'g.png',

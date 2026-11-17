@@ -28,7 +28,7 @@ enum VideoMiniSurface {
 /// 本地换集（含自动连播）是 `pushReplacement` 的新页，而上一集留下的小窗——桌面
 /// 无边框小窗或 Android 系统画中画——在换页期间一直没动：两边的「进 / 出」通知都
 /// 只在状态翻转时发，新页等不到任何事件，只能在起步那一刻读当前值。漏读就是新页
-/// 以 [VideoMiniSurface.none] 起步、在小窗里画出整套常规 chrome（BUG-4798 是
+/// 以 [VideoMiniSurface.none] 起步、在小窗里画出整套常规 chrome（BUG-4804 是
 /// Android 那一半）。
 ///
 /// [desktopMiniWindowClaimed]：桌面上本页是否接过了上一集的小窗所有权；

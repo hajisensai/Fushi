@@ -362,7 +362,7 @@ void main() {
       ((counts[1]! as Map<String, Object?>)['characters']! as num) > 50,
       isTrue,
     );
-    // BUG-4798：阅读器内存里那一章的字数也得换成正文的（进度 / 统计按它算），
+    // BUG-4809：阅读器内存里那一章的字数也得换成正文的（进度 / 统计按它算），
     // 不能停在开书时读到的占位页字数。预取落盘的第 3 章还没翻到，内存里仍是
     // 占位页的字数（翻到它、当前单元结算之后才换，免得清掉阅读中的账本）。
     final List<int>? liveCounts = ReaderFushiPage.debugChapterCharCounts

@@ -215,7 +215,7 @@ class SystemOcrMangaService implements SystemOcrMangaRunner {
       if (pageIndex == null) break;
       // 取消 = 抛出，不落整卷产物（与 Lens 同一语义）。已识别的页都在逐页缓存
       // 里，续跑从那里接；半卷的 `manga_ocr_out/manga.json` 只会让后来的引擎
-      // 看到一份「空页占位 + 本引擎署名」的假整卷（BUG-4798）。
+      // 看到一份「空页占位 + 本引擎署名」的假整卷（BUG-4815）。
       if (isCancelled()) throw const OcrCancelledException();
       final MangaOcrPageFile page = pages[pageIndex];
       MokuroImage? image;

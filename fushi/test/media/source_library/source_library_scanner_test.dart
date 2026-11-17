@@ -2846,7 +2846,7 @@ Attributes = A
       expect(await db.getAllEpubBooks(), hasLength(2));
     });
 
-    // BUG-4800：索引此前只在整轮扫描的 finally 里落盘。进程在扫描中途被杀（移动端
+    // BUG-4833：索引此前只在整轮扫描的 finally 里落盘。进程在扫描中途被杀（移动端
     // 切后台被回收、远端首扫被打断）索引就没了；下一轮 SeriesA 认领 `Vol 1`，SeriesB
     // 的同名卷被判成「被本来源另一个在场文件占着」，再导一份 `Vol 1 (3)`。
     test('索引逐卷落盘：扫到第三卷时进程被杀，重扫仍是两本、不出 Vol 1 (3)', () async {

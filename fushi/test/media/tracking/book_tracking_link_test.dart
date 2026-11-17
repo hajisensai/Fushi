@@ -638,7 +638,7 @@ void main() {
       expect(other.pushed, isEmpty);
     });
 
-    // BUG-4798：阅读器按这个返回值去重。关联在后台跑，发起它的那次调用还没有
+    // BUG-4807：阅读器按这个返回值去重。关联在后台跑，发起它的那次调用还没有
     // 任何站点入队；把那次当成「已报」，关联失败 / 未命中之后就没人再来问了。
     test('recordBookProgress settles once the site is linked and queued; a '
         'site whose kind is off does not keep it open', () async {

@@ -6,7 +6,7 @@ import 'package:fushi/src/reader/reader_tracking_progress_reporter.dart';
 
 import '../helpers/source_guard.dart';
 
-/// BUG-4798：阅读器关书（返回键）等着追踪上报。
+/// BUG-4807：阅读器关书（返回键）等着追踪上报。
 ///
 /// 上半是 [ReaderTrackingProgressReporter] 的真行为（不等、落定后去重、没落定 /
 /// 抛错后再报、退出时可等完）；下半是接线守卫——规则接在 `_persistPosition` 上，且「读完」
@@ -105,7 +105,7 @@ void main() {
     });
 
     test('服务正常返回但没落定（没映射上 / 搜索失败被吞）：下次照常再报', () async {
-      // BUG-4798 审查发现：服务把搜索的网络错误吞成正常返回。把「没抛错」记成已报，
+      // BUG-4807 审查发现：服务把搜索的网络错误吞成正常返回。把「没抛错」记成已报，
       // 单章节的书本次阅读里就再也不报了。
       final List<String> sent = <String>[];
       ReaderTrackingProgressSend sendOf(String tag, {required bool settled}) =>

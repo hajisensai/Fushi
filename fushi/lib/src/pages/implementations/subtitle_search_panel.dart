@@ -390,7 +390,7 @@ class SubtitleSearchPanel extends StatefulWidget {
   /// 单值契约表达不了这件事，所以这里收的是 List。
   final void Function(List<String> paths) onDownloaded;
 
-  /// 多选下载**每落盘一条**就回调一次（绝对路径），早于 [onDownloaded]（BUG-4798）。
+  /// 多选下载**每落盘一条**就回调一次（绝对路径），早于 [onDownloaded]（BUG-4802）。
   ///
   /// 宿主接了它，多选下载部分失败时面板就不再自动关页（[onDownloaded] 不调）：
   /// 失败原因留在面板里、失败的几条仍勾着可重试，已落盘的由宿主在页面关闭时一并
@@ -508,7 +508,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
   /// 面板所在的路由（对话框壳 / 全屏工作台页）。
   ModalRoute<Object?>? _route;
 
-  /// 面板所在的页面是否已经关了（BUG-4798）。
+  /// 面板所在的页面是否已经关了（BUG-4802）。
   ///
   /// 只看 [mounted] 不够：`Navigator.pop` 当下宿主的 push future 就完成了（宿主此刻
   /// 读走「已落盘路径」），而 State 要等退场转场（约 300 ms）跑完才 dispose。这段
@@ -714,7 +714,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
       _searched = false;
       _error = null;
       _candidates = const <JimakuCandidate>[];
-      // 勾选跟着结果走（BUG-4798）：上一轮的候选已经不在列表里，留着会让批量栏
+      // 勾选跟着结果走（BUG-4802）：上一轮的候选已经不在列表里，留着会让批量栏
       // 继续显示「已选 N」、点下载下的是看不见的文件。
       _selectedCandidates.clear();
       if (!sameSeriesQuery) {
@@ -1132,7 +1132,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
           failed++;
           continue;
         }
-        // 批量途中页面已关：没有人再登记这份字幕，不往盘上写（BUG-4798）。此前
+        // 批量途中页面已关：没有人再登记这份字幕，不往盘上写（BUG-4802）。此前
         // 已落盘的几条都经 onSubtitleSaved 交给了宿主。
         if (_pageClosed) return;
         final Directory dir = Directory(widget.saveDirectory);
@@ -1619,7 +1619,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
   /// 当前筛选下**看得见**的候选：先按语言（[_selectedLanguage]）、再按类型
   /// （[_selectedFormat]）、再做关键词二次筛选。三层各自独立、顺序不影响结果集。
   ///
-  /// 列表渲染与批量栏的全选 / 反选共用这一份（BUG-4798）：全选曾取全量
+  /// 列表渲染与批量栏的全选 / 反选共用这一份（BUG-4802）：全选曾取全量
   /// [_candidates]，筛到「日语 · ASS」后点全选会把所有语言、所有来源的文件一起
   /// 勾上——包括按次计配额的 OpenSubtitles。
   List<JimakuCandidate> _filteredCandidates() => filterByMediaSearch(

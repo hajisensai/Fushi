@@ -86,7 +86,7 @@ void main() {
     rows = await store.pending('video/stream/a');
     expect(rows, isEmpty);
     final List<WebMineQueueRow> all = await db.select(db.webMineQueue).get();
-    // BUG-4798：写完的行直接出表（没有任何读取方），失败行留着等重试。
+    // BUG-4813：写完的行直接出表（没有任何读取方），失败行留着等重试。
     expect(all.where((WebMineQueueRow r) => r.id == a), isEmpty);
     final WebMineQueueRow failedRow = all.firstWhere(
       (WebMineQueueRow r) => r.id == b,
@@ -128,7 +128,7 @@ void main() {
       r.id,
   ];
 
-  test('BUG-4798：deleteDone 只删旧版本留下的 done 行，不碰 pending / failed', () async {
+  test('BUG-4813：deleteDone 只删旧版本留下的 done 行，不碰 pending / failed', () async {
     final int legacyA = await enqueue('video/stream/a', 1000);
     final int legacyB = await enqueue('video/stream/b', 2000);
     final int failed = await enqueue('video/stream/a', 3000);
@@ -142,7 +142,7 @@ void main() {
     expect(await store.deleteDone(), 0);
   });
 
-  test('BUG-4798：markDone 只删自己那一行，不顺带扫全表', () async {
+  test('BUG-4813：markDone 只删自己那一行，不顺带扫全表', () async {
     final int legacy = await enqueue('video/stream/a', 1000);
     final int current = await enqueue('video/stream/a', 2000);
     await markLegacyDone(<int>[legacy]);
@@ -152,7 +152,7 @@ void main() {
     expect(await allIds(), <int>[legacy]);
   });
 
-  test('BUG-4798：存量 done 行在调度入口收掉，每个库只扫一遍，不必等下一张卡写成功', () async {
+  test('BUG-4813：存量 done 行在调度入口收掉，每个库只扫一遍，不必等下一张卡写成功', () async {
     final int legacy = await enqueue('book-a', 1000);
     final int pending = await enqueue('book-b', 2000);
     await markLegacyDone(<int>[legacy]);

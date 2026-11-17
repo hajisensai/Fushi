@@ -441,7 +441,7 @@ class AnkiVideoTemplateService {
   ///
   /// 逐文件读：一份读不出来 / 不是合法 JSON / 形状不对的备份（写到一半进程被杀、磁盘
   /// 满）只跳过并记一条日志，不让它挡住更早的有效备份——以前这里没有 try，一个坏文件
-  /// 就让之后每次应用 / 恢复都抛 `FormatException`，只能手动去删（BUG-4799）。
+  /// 就让之后每次应用 / 恢复都抛 `FormatException`，只能手动去删（BUG-4826）。
   Stream<Map<String, dynamic>> _backups(String target) async* {
     final Directory directory = await _directory();
     final String key = sha256.convert(utf8.encode(target)).toString();

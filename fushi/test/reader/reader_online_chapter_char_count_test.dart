@@ -10,7 +10,7 @@ import 'package:fushi/src/stats/read_unit_ledger.dart';
 import '../helpers/source_guard.dart';
 import '../pages/reader_fushi_page_source_corpus.dart';
 
-/// BUG-4798：在线小说书 / 网页小说书按需取回一章正文后，阅读器内存里那一章的
+/// BUG-4809：在线小说书 / 网页小说书按需取回一章正文后，阅读器内存里那一章的
 /// 字数必须从占位页的换成正文的——否则章内偏移被夹在占位文案长度以内（整章只
 /// 入账那几个字），进度也按占位页算。
 ///
@@ -65,7 +65,7 @@ void main() {
       expect(
         absolute(before, 1, 2100) - absolute(before, 1, 1500),
         0,
-        reason: '起止都被夹到章末，单元为空、不入账（BUG-4798 的漏计）',
+        reason: '起止都被夹到章末，单元为空、不入账（BUG-4809 的漏计）',
       );
 
       final List<int> after = charCountsWithLoadedOnlineChapter(

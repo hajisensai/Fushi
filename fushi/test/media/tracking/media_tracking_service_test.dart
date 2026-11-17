@@ -1091,7 +1091,7 @@ void main() {
     expect(api.searches, isNotEmpty, reason: '对照：公开书照常自动映射搜索');
   });
 
-  group('recordBookProgress 的返回值 = 这份进度是否落定（BUG-4798）', () {
+  group('recordBookProgress 的返回值 = 这份进度是否落定（BUG-4807）', () {
     Future<void> seedNovel() => db.insertEpubBook(
       EpubBooksCompanion.insert(
         bookKey: 'novel-key',

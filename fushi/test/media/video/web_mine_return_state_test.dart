@@ -154,7 +154,7 @@ void main() {
         'Future<String?> _mineQueuedRow(',
       );
       // 还原步骤是 [runWebMineQueueRound] 的 cleanup 列表（body 抛不抛都逐步执行，
-      // BUG-4799），不再是一个 finally 块。
+      // BUG-4829），不再是一个 finally 块。
       final int cleanupAt = run.indexOf('cleanup: <Future<void> Function()>[');
       expect(
         cleanupAt,
@@ -246,7 +246,7 @@ void main() {
     });
 
     test('background mining page never writes the resume position', () {
-      // 判据收成 [_playheadIsUsers]（BUG-4801）：队列重放期间与制卡宿主页
+      // 判据收成 [_playheadIsUsers]（BUG-4834）：队列重放期间与制卡宿主页
       // （后台制卡页 closeAfterMining 是其中一种）都不是用户的播放头。
       expect(
         page,

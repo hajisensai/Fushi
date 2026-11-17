@@ -280,7 +280,7 @@ class SrtBookRepository {
     final String? previousRoot = book.audioRoot;
     // 持久目录音频的唯一写入原语（同步成恰好这一组，幂等、不会先删掉自己的源）。
     // 写库是它的 commit：新文件落位之后、旧文件删除之前跑，抛错则磁盘原样撤回
-    // （BUG-4798）。行与播放进度同一个事务，不会落下「新音频 + 旧时间轴的进度」。
+    // （BUG-4810）。行与播放进度同一个事务，不会落下「新音频 + 旧时间轴的进度」。
     final List<String> persisted = await AudiobookStorage.syncAudioFiles(
       persistDir,
       pickedPaths,

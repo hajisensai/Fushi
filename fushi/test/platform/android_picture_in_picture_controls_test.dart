@@ -1,4 +1,4 @@
-// Android 系统画中画「窗口上的播放 / 暂停键」契约测试（gap-vidmisc-4 / BUG-4798）。
+// Android 系统画中画「窗口上的播放 / 暂停键」契约测试（gap-vidmisc-4 / BUG-4804）。
 //
 // 系统只画 app 经 RemoteAction 交给它的键；这里钉住 Dart 一侧的四件事：
 //   1. enter / update 把播放态与标题带给原生（图标跟播放态走）；
@@ -449,10 +449,10 @@ void main() {
     });
   });
 
-  // 这一条**不是** BUG-4798 的回归测试（撤掉修复它照样绿）：它钉的是修复所依赖的
+  // 这一条**不是** BUG-4804 的回归测试（撤掉修复它照样绿）：它钉的是修复所依赖的
   // 门面契约——事件流不补发当前值，所以页面起步时必须同步读 isActive。修复本身的
   // 行为测试是 video_controls_density_test.dart 的 videoInitialMiniSurface 那组。
-  group('门面契约（BUG-4798 的前提）', () {
+  group('门面契约（BUG-4804 的前提）', () {
     test('modeChanges 只在翻转时发事件，晚订阅者收不到当前值——只能靠 isActive 播种', () async {
       AndroidPictureInPicture.debugHandleModeChanged(true);
       await pumpEventQueue();

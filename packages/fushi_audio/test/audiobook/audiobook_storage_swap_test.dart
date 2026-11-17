@@ -8,7 +8,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
-/// BUG-4798：换音频是「拷新 → 写库 → 删旧」，任何一步失败都原样撤回。
+/// BUG-4810：换音频是「拷新 → 写库 → 删旧」，任何一步失败都原样撤回。
 ///
 /// 旧实现先把持久目录里不在新清单里的音频删光、再逐个拷新文件、最后才由调用方
 /// 写库：拷到一半失败（磁盘满 / 源盘掉线 / AIFF 转码失败）时旧音频已经没了，库里

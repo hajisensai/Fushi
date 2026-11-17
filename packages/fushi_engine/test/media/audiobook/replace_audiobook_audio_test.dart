@@ -110,7 +110,7 @@ void main() {
     expect(old.existsSync(), isFalse);
   });
 
-  // ── BUG-4798：拷新 → 写库 → 删旧，失败原样撤回 ─────────────────────────
+  // ── BUG-4810：拷新 → 写库 → 删旧，失败原样撤回 ─────────────────────────
 
   /// 持久目录的全貌（相对路径 → 内容）。
   Map<String, String> snapshot(Directory dir) => <String, String>{

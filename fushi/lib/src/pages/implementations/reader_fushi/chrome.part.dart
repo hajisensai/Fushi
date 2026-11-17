@@ -828,7 +828,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// **唯一写点**：一次写齐 currentSentence、句偏移、音频坐标选区、[_lookupCue]、
   /// 学习单位坐标的选区 / 句子范围与所属章号，并清空上一次选区抽出的插图。
   ///
-  /// 同步是契约（BUG-4799）：点词查词要在 `await` 词典查询**之前**调它，这一组字段
+  /// 同步是契约（BUG-4824）：点词查词要在 `await` 词典查询**之前**调它，这一组字段
   /// 才不会出现「新句子 + 新 cue + 旧选区范围」的混合态，连点两个词时先点的那次
   /// 也没有 await 之后的尾段可以盖掉后点的那次。往这里加 await 就把这个保证拆了。
   void _applyLookupStateFromSelectionData(ReaderSelectionData data) {

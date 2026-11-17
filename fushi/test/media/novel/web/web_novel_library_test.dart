@@ -277,7 +277,7 @@ void main() {
     expect(await loader.ensureLoaded(placeholder), isNull);
 
     row = (await db.getEpubBook(bookKey))!;
-    // 新字数交回调用方（阅读器据此换掉内存里那一章的字数，BUG-4798），与写进
+    // 新字数交回调用方（阅读器据此换掉内存里那一章的字数，BUG-4809），与写进
     // 书行的是同一个数，且不再是占位页的字数。
     final List<Object?> counts = jsonDecode(row.chaptersJson) as List<Object?>;
     expect(loaded?.characters, greaterThan(100));

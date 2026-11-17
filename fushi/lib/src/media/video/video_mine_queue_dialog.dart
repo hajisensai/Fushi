@@ -93,7 +93,7 @@ void commitStagedVideoMinesAfterExit({
 /// [commitStagedVideoMinesAfterExit] 的写入本体（不报 toast、不吞错，便于测试）：等
 /// [inFlight] 收尾后，把 [bookUid] **待写入**的暂存卡写进 Anki。这一趟一行都没写
 /// （没有待写入的行）返回 `null`——只剩写入失败的行时什么都不做，它们留在列表里等
-/// 用户手动重试（BUG-4798）。
+/// 用户手动重试（BUG-4813）。
 ///
 /// 「有没有待写入的行」只在 [VideoMineQueue.commitAll] 的串行链里面判（看它实际处理
 /// 了几行），不在排队之前先查一遍：排队期间另一次写入（列表里的「全部写入」、

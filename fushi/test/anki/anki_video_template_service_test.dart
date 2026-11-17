@@ -393,7 +393,7 @@ void main() {
     expect(repo.settings.fieldMappings['Picture'], '{card-image}');
   });
 
-  group('BUG-4799 坏备份不挡住有效备份', () {
+  group('BUG-4826 坏备份不挡住有效备份', () {
     /// 与服务写备份同一套命名：`sha256(target)-<微秒>.json`，取现有备份的前缀。
     Future<String> keyPrefix() async {
       final File existing = (await directory.list().toList())

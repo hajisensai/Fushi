@@ -222,7 +222,7 @@ Future<void> copyWebVideoLoginCookies({
 /// 反方向：可捕获档（内置档）页里的站点登录态抄回共享 cookie 罐（[MangaWebViewEnvironment]）。
 /// 用户也会在内置档页里登录；不抄回去的话浏览器与原生播放器页看同一个站点还是未登录
 /// （BUG-3801）。**只在内置档页关掉时调**：窗口宿主档就住在共享罐里，没东西可抄，抄可捕获档
-/// 反而会拿它开页时的旧值盖掉共享罐里的新值（BUG-4798：[WebVideoSession.dispose] 曾经也调）。
+/// 反而会拿它开页时的旧值盖掉共享罐里的新值（BUG-4818：[WebVideoSession.dispose] 曾经也调）。
 /// 非 Windows / 共享环境建不出来时什么都不做。
 Future<void> syncWebVideoLoginToBrowser(Uri uri) {
   final String host = uri.host.toLowerCase();
@@ -818,7 +818,7 @@ class WebVideoSession {
 
   void dispose() {
     // 不抄登录态：本会话的窗口宿主档就住在共享 cookie 罐里（与 app 内浏览器同一个罐），在这里
-    // 登录 / 退出登录浏览器当场可见。BUG-4798：从前这里把可捕获档罐（内置档）的 cookie 抄进
+    // 登录 / 退出登录浏览器当场可见。BUG-4818：从前这里把可捕获档罐（内置档）的 cookie 抄进
     // 共享罐，那是上一次开内置档页时的旧值，会盖掉共享罐里更新的会话。
     _disposed = true;
     browserPrefs?.removeListener(_onBrowserPrefsChanged);

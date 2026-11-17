@@ -26,7 +26,7 @@ import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
 /// 右侧 chevron 恒可手动展开。每行/每卡的下载动作都回 [onPickCandidate]。
 ///
 /// 多选态（已有勾选，见 [selectedIdentityKeys]）下不再有「点一下就下载」：点文件行
-/// 切换勾选，点卡片只展开 / 收起（BUG-4798）。
+/// 切换勾选，点卡片只展开 / 收起（BUG-4802）。
 class SubtitleVersionGroupList extends StatefulWidget {
   const SubtitleVersionGroupList({
     required this.groups,
@@ -71,7 +71,7 @@ class _SubtitleVersionGroupListState extends State<SubtitleVersionGroupList> {
   bool get _busy => widget.busyIdentityKey != null;
 
   /// 多选态：宿主支持多选且已经勾了至少一条。此时点行 / 点卡片都不得触发下载——
-  /// 宿主的下载回调会当场关页，手滑一下勾选就全丢了（BUG-4798）。
+  /// 宿主的下载回调会当场关页，手滑一下勾选就全丢了（BUG-4802）。
   bool get _multiSelecting =>
       widget.onToggleCandidate != null &&
       widget.selectedIdentityKeys.isNotEmpty;

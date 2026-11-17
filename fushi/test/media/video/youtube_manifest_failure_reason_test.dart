@@ -99,8 +99,8 @@ void main() {
     expect(e.toString(), contains('Connection timed out'));
   });
 
-  // BUG-4799：出口不通时五个 client 的结局必然相同，不该挨个等满。
-  group('BUG-4799 出口不通提前停', () {
+  // BUG-4822：出口不通时五个 client 的结局必然相同，不该挨个等满。
+  group('BUG-4822 出口不通提前停', () {
     test('连续两个 client 都死在连接层：停，不再请求后面的 client', () async {
       final List<String> playerClients = <String>[];
       final YoutubeManifestException e = await _failWith((

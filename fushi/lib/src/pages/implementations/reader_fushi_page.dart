@@ -1533,7 +1533,7 @@ List<int>? charCountsFromChaptersJson(
 /// 正文的 [characters]。不用换（字数未知 / 章号越界 / 数值没变）返回 null，调用方
 /// 据此不重置统计坐标系。
 ///
-/// BUG-4798：开书时读到的是占位页的字数，取章后新字数只写了库；内存里不换的
+/// BUG-4807：开书时读到的是占位页的字数，取章后新字数只写了库；内存里不换的
 /// 话，章内偏移被夹在占位文案长度以内，整章只入账那几个字，进度也按占位页算。
 @visibleForTesting
 List<int>? charCountsWithLoadedOnlineChapter(
@@ -1547,7 +1547,7 @@ List<int>? charCountsWithLoadedOnlineChapter(
   return List<int>.of(counts, growable: false)..[index] = characters;
 }
 
-/// 在线小说书取章后「什么时候把新字数换进内存」的账（BUG-4798）。
+/// 在线小说书取章后「什么时候把新字数换进内存」的账（BUG-4807）。
 ///
 /// 换表会平移这一章之后所有章的全书绝对偏移，必须伴随阅读账本 reset；而 reset
 /// 只能发生在当前单元已结算（`leave()` 之后）的时刻，否则会话内的并集被清掉，
@@ -1845,7 +1845,7 @@ class ReaderFushiPage extends BaseSourcePage {
   static String Function()? debugCaretSurface;
 
   /// Test hook：阅读器内存里的每章字数（进度 / 统计坐标系用的那一份）。集成测试
-  /// 据此确认在线小说书取章后内存字数跟着换成了正文的（BUG-4798）——书行里的
+  /// 据此确认在线小说书取章后内存字数跟着换成了正文的（BUG-4807）——书行里的
   /// 字数对了不代表内存里的也对。
   @visibleForTesting
   static List<int> Function()? debugChapterCharCounts;
@@ -2507,7 +2507,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   int _lastSavedSection = -1;
   double _lastSavedProgress = -1;
 
-  /// BUG-4798：追踪进度上报口。只发起、不让位置落库（返回键等的那条链）等它，
+  /// BUG-4807：追踪进度上报口。只发起、不让位置落库（返回键等的那条链）等它，
   /// 同一份「完成章数 + 是否读完」只报一次；判据与失败处理见类文档。
   final ReaderTrackingProgressReporter _trackingProgressReporter =
       ReaderTrackingProgressReporter(
@@ -3725,7 +3725,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   }
 
   /// 在线小说书 / 网页小说书：拦截层确认一章刚换成正文（[_ensureOnlineChapter]）
-  /// 之后，把这一章的字数从占位页的换成正文的（BUG-4798）。
+  /// 之后，把这一章的字数从占位页的换成正文的（BUG-4807）。
   ///
   /// 换表必须伴随 `_readLedger.reset()`，而 reset 只能发生在当前单元已结算的时刻
   /// （时机的完整说明见 [OnlineChapterCharCountAdoption]）。拦截层的请求不都是
@@ -3789,7 +3789,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
               return;
             }
             // 在线书：重算读到的可能还是占位页（取章晚于 isolate 读盘）。本会话
-            // 已换上正文字数的章不能被整表覆盖盖回去（BUG-4798）。
+            // 已换上正文字数的章不能被整表覆盖盖回去（BUG-4807）。
             final List<int> counts = _onlineCharCountAdoption.overlay(
               recomputed,
               includeDeferred: false,
@@ -4124,7 +4124,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     // 退出的 `onSourcePagePop` 仍然探针 + await，异常拆栈时 WebView 本就在拆，
     // 探不到实时锚是 [ExitFlushRegistry] 一贯认下的降级（至多丢最后一窗滚动）。
     // 学习段不用在这里再 flush：上面的 detach 已把它攒进同一个汇合点。
-    // 同一笔里接着把在途的追踪上报等完（BUG-4798，见 [_flushPositionAndTrackingReport]）。
+    // 同一笔里接着把在途的追踪上报等完（BUG-4807，见 [_flushPositionAndTrackingReport]）。
     ExitFlushRegistry.instance.defer(_flushPositionAndTrackingReport);
     // TODO-702：有声书退出即停（默认）/ 后台续播（可选）。
     // 两种情况都先 detachReader——卸下本 reader 的 WebView 侧回调（跨章/边界跳句

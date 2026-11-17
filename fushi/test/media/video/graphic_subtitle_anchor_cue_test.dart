@@ -277,7 +277,7 @@ void main() {
       expect(c.graphicSubtitleTimingCues.single.startMs, 1000);
     });
 
-    test('本地文件也把自己的取消交给 loader；换轨即放弃，拿不到结果不再要第二次（BUG-4798）', () async {
+    test('本地文件也把自己的取消交给 loader；换轨即放弃，拿不到结果不再要第二次（BUG-4803）', () async {
       final _FakeRegionLoader loader = _FakeRegionLoader();
       final VideoPlayerController c = VideoPlayerController()
         ..debugSetGraphicSubtitleActiveForTesting(

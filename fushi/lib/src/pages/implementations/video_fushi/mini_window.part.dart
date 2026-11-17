@@ -65,7 +65,7 @@ extension _VideoMiniWindow on _VideoFushiPageState {
           isDesktopPlatform && DesktopMiniWindowMode.claim(owner: this),
       // 移动端：[AndroidPictureInPicture.modeChanges] 只在翻转时发事件，PiP 里自动
       // 连播到下一集时系统窗口没动；不读这一次，新页就以 `none` 起步、在 PiP 小窗里
-      // 画出整套常规 chrome，直到用户退出 PiP 都收不到事件（BUG-4798）。必须排在
+      // 画出整套常规 chrome，直到用户退出 PiP 都收不到事件（BUG-4804）。必须排在
       // 下面的订阅之前。
       pictureInPictureActive:
           isMobilePlatform && AndroidPictureInPicture.isActive,

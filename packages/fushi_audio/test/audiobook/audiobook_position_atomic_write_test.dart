@@ -3,7 +3,7 @@ import 'package:fushi_audio/src/audiobook/audiobook_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:test/test.dart';
 
-/// BUG-4799：有声书播放位置与它的时间戳是一对，必须同一次提交。
+/// BUG-4825：有声书播放位置与它的时间戳是一对，必须同一次提交。
 ///
 /// 旧实现是「读位置 → 写位置 → 写时间戳」三次独立的库操作：同步侧的「比较后写入」
 /// （[FushiDatabase.runIfIntPrefUnchanged]）把这两个键当一对，能插进两次写之间；

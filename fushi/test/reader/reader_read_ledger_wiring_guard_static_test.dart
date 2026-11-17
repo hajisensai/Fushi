@@ -368,7 +368,7 @@ void main() {
       // 第二处：卡片来源回看会话（BUG-2503）是隔离回看、不计统计，用户点「继续阅读」
       // 转成正常阅读那一刻清掉回看期间的并集，从下一次采样重新起单元。
       // 第三处：在线小说书按需取回一章正文、那一章字数从占位页的换成正文的
-      // （BUG-4798，`_switchOnlineChapterCharCounts`；何时能走到它见
+      // （BUG-4807，`_switchOnlineChapterCharCounts`；何时能走到它见
       // `reader_online_chapter_char_count_test.dart`）。
       expect('_readLedger.reset('.allMatches(masked), hasLength(3));
       expect(

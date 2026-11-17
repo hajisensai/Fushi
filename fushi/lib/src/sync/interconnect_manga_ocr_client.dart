@@ -433,7 +433,7 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
           final MangaOcrPageFile page = pages[i];
           final Uint8List bytes = await page.file.readAsBytes();
           // 源文件修改时间随页带过去：host 的逐页断点缓存按「页名 + 大小 + 修改
-          // 时间」认页，取消后重传同卷靠它命中已识别的页（BUG-4798）。
+          // 时间」认页，取消后重传同卷靠它命中已识别的页（BUG-4817）。
           final DateTime modified = await page.file.lastModified();
           _expectJson(
             await _send(

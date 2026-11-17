@@ -4,7 +4,7 @@
   （BUG-2461，提交 `350b9f2b2ae`）：下文的根因行 `manga_ocr_auto_start.dart:191` 与
   `replaceMangaBlocksInRegion` 都不存在了，「区域替换造成同页混引擎」的入口没有了，不再修。
   它担心的那类后果换了入口后仍在的部分——「只补缺页」把别的引擎的页冒名收下——由
-  BUG-4798 处理。另：下文提的修法「把 `hasExistingMetadata` 透进去」本身不成立，该参数为
+  BUG-4815 处理。另：下文提的修法「把 `hasExistingMetadata` 透进去」本身不成立，该参数为
   true 时 `resolveMangaOcrEngine` 直接返回 null（表示不需要 OCR）。以下为当时的原始记录。
 - **真实性**：✅ 当时属实（功能移除前）。根因 `fushi/lib/src/media/manga/ocr/manga_ocr_auto_start.dart:191`
   —— `startMangaOcrWithPreferredEngine` 里 `resolveMangaOcrEngine(..., hasExistingMetadata: false)`

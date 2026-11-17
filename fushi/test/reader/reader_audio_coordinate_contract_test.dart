@@ -74,7 +74,7 @@ void main() {
       }
       // 查词 / 选区操作条的 cue 回退共用 chrome.part 的 [_cueForSelectionData]；
       // 偏移域在它的函数体里钉（见下）。tap 查词经共用写点
-      // `_applyLookupStateFromSelectionData` 取 cue（BUG-4799），不自己解析。
+      // `_applyLookupStateFromSelectionData` 取 cue（BUG-4824），不自己解析。
       expect(
         File('${directory}chrome.part.dart').readAsStringSync(),
         contains('_cueForSelectionData(data)'),

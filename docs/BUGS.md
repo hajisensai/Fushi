@@ -33,97 +33,48 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4154 条。点号进各自文件。
+> 共 4191 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4798](bugs/BUG-4798-desktop-legacy-encoding-subtitle-unreadable.md) | ✅ | ✅ | 桌面三端与无头服务端读 CP932 / GBK / Big5 / EUC-JP 字幕整份变成 U+FFFD |
-> 共 4155 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4799](bugs/BUG-4799-subtitle-search-reentrancy-stuck.md) | ✅ | ✅ | 本集字幕面板搜索可重入且无代次：迟到的旧一轮覆盖新结果；保存 key 抛错后搜索钮永久禁用；合集面板批量途中回车重搜清掉行状态 |
-| [BUG-4798](bugs/BUG-4798-subtitle-search-multiselect-contract.md) | ✅ | ✅ | 本集字幕面板多选：全选无视筛选、重搜不清勾选、多选态点行仍直接下载并关页、部分失败的原因与已落盘文件随关页丢失 |
-> 共 4155 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4799](bugs/BUG-4799-video-subtitle-edit-saved-under-new-source.md) | ✅ | ✅ | 字幕手改的存储键在输入框关闭后才取：编辑期间换了字幕源，改动存到新源名下 |
-| [BUG-4798](bugs/BUG-4798-graphic-sub-region-extract-cancel-first-caller-owned.md) | ✅ | ✅ | 图形字幕位图时间表抽取的取消权归第一个调用方：本地文件由控制器发起时取消不了，换集 / 退出后 ffmpeg 仍把整个文件读完 |
-| [BUG-4798](bugs/BUG-4798-android-pip-episode-switch-not-seeded.md) | ✅ | ✅ | Android 系统画中画里本地换集（含自动连播），新页不认领 PiP 状态：小窗里画出整套常规 chrome |
-> 共 4155 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4799](bugs/BUG-4799-youtube-egress-down-waits-full-client-chain.md) | ✅ | ✅ | YouTube 出口不通时要把 5 个 client 挨个等满（约 65 秒）才报错 |
-| [BUG-4798](bugs/BUG-4798-video-hls-quality-probe-bypasses-app-proxy.md) | ✅ | ✅ | HLS 画质探测用顶层 http.get，不走应用代理，需代理的网络下画质菜单静默消失 |
-> 共 4155 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4799](bugs/BUG-4799-media-server-launch-double-timeout.md) | ✅ | ✅ | 媒体服务器从库行起播：服务器不可达时条目详情连等两轮超时才进失败页，可达时同一份详情串行取三次 |
-| [BUG-4798](bugs/BUG-4798-interconnect-video-push-missing-file-noise.md) | ✅ | ✅ | 互联视频同步：host 已有的视频本地文件不在时每轮都报一条 local file missing |
-> 共 4155 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4799](bugs/BUG-4799-reader-tap-lookup-selection-state-after-await.md) | ✅ | ✅ | 点词查词的选区范围 / 章号写在 await 查词之后，查词在飞时是新旧混合态，连点两词会留下与弹窗不符的范围 |
-| [BUG-4798](bugs/BUG-4798-reader-exit-awaits-tracking-report.md) | ✅ | ✅ | 阅读器关书（返回键）等着追踪上报，未映射的书会等一次站点搜索 |
-| [BUG-4798](bugs/BUG-4798-paged-settle-pixel-writeback-clobbers-late-image-reanchor.md) | ✅ | ✅ | 分页恢复落点后的 16ms settle 与揭示后的下一帧重写把旧像素位置写回，盖掉期间的迟到图片重锚 / 用户翻页 |
-| [BUG-4798](bugs/BUG-4798-online-novel-chapter-char-count-stale.md) | 🚧 | ✅ | 在线小说书取章后内存字数不刷新，统计与进度按占位页算 |
-> 共 4155 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4799](bugs/BUG-4799-audiobook-position-stamp-not-atomic.md) | ✅ | ✅ | 有声书播放位置与时间戳分两次提交，中间可被同步的比较后写入插队 |
-| [BUG-4798](bugs/BUG-4798-audiobook-swap-deletes-old-before-copy.md) | ✅ | ✅ | 换音频 / 换字幕先删旧副本再拷新文件，拷贝中途失败后库里指着已删除的文件 |
-| [BUG-4798](bugs/BUG-4798-reader-cue-highlight-future-unhandled.md) | ✅ | ✅ | 阅读器 cue 变更回调里放飞的高亮 Future 不接错误，WebView 销毁中抛出的异常成为未处理的异步错误 |
-> 共 4155 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4799](bugs/BUG-4799-anki-video-template-corrupt-backup-blocks-apply-restore.md) | ✅ | ✅ | Anki 视频模板：备份目录里一个坏文件让应用 / 恢复全挂 |
-| [BUG-4798](bugs/BUG-4798-srs-card-video-clip-load-error-hangs-sequence.md) | ✅ | ✅ | SRS 卡面视频片段加载不了时不落占位，等它播完的复习音频序列永远不返回 |
-| [BUG-4798](bugs/BUG-4798-video-mine-queue-exit-retries-failed.md) | ✅ | ✅ | 看完再制卡：每次退出播放页都把写入失败的暂存卡再写一遍，写完的行永不出表 |
-| [BUG-4798](bugs/BUG-4798-scrape-sweep-plan-failure-swallowed.md) | ✅ | ✅ | 后台补刮计划失败被吞成空清单：待确认提醒条凭空消失且无日志 |
-> 共 4155 条。点号进各自文件。
-> 共 4157 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4835](bugs/BUG-4835-source-scan-leftovers-after-kill-and-book-abort.md) | ✅ | ✅ | 来源扫描被杀后留下临时来源行与临时目录；一本坏书中断整批书导入且不删临时目录 |
+| [BUG-4834](bugs/BUG-4834-web-mine-host-machine-playhead-persisted.md) | ✅ | ✅ | 制卡交接页把机器驱动的播放头写成本书续播点，并在开跑前后计观看 |
+| [BUG-4833](bugs/BUG-4833-manga-source-index-lost-when-scan-killed.md) | ✅ | ✅ | 漫画来源索引只在扫描结束时落盘，中途被杀后同名卷再导一份 Vol 1 (3) |
+| [BUG-4832](bugs/BUG-4832-web-mine-queue-yield-marked-navigate-timeout.md) | ✅ | ✅ | 空闲自动制卡正在换视频时用户回来，那一行被永久标成 navigate_timeout |
+| [BUG-4831](bugs/BUG-4831-source-scan-junk-entries-and-unreadable-subdir.md) | ✅ | ✅ | 来源扫描把 ._ 资源叉 / 回收站文件当媒体入库，一个读不了的子目录让整次扫描失败 |
+| [BUG-4830](bugs/BUG-4830-lnreader-state-read-failure-overwrites.md) | ✅ | ✅ | LNReader 的 state.json / 插件存储读失败被当成空，下一次写盘把已装插件、仓库和登录态整份盖掉 |
+| [BUG-4829](bugs/BUG-4829-web-mine-queue-round-throw-no-finish.md) | ✅ | ✅ | 网页视频制卡队列一轮中途抛异常时不收尾：交接页回不去、后台制卡页不关、调度器停在「在跑」 |
+| [BUG-4828](bugs/BUG-4828-kavita-page-image-whole-request-timeout.md) | ✅ | ✅ | Kavita 页图 / 封面用整请求超时且不中止，慢链路大页图必失败；同步路径吞掉的失败不留日志 |
+| [BUG-4827](bugs/BUG-4827-manga-ocr-reopen-recovery-misses-system-ocr-cache.md) | ✅ | ✅ | 重开书恢复增量 OCR 结果时漏掉系统 OCR 的逐页缓存 |
+| [BUG-4826](bugs/BUG-4826-anki-video-template-corrupt-backup-blocks-apply-restore.md) | ✅ | ✅ | Anki 视频模板：备份目录里一个坏文件让应用 / 恢复全挂 |
+| [BUG-4825](bugs/BUG-4825-audiobook-position-stamp-not-atomic.md) | ✅ | ✅ | 有声书播放位置与时间戳分两次提交，中间可被同步的比较后写入插队 |
+| [BUG-4824](bugs/BUG-4824-reader-tap-lookup-selection-state-after-await.md) | ✅ | ✅ | 点词查词的选区范围 / 章号写在 await 查词之后，查词在飞时是新旧混合态，连点两词会留下与弹窗不符的范围 |
+| [BUG-4823](bugs/BUG-4823-media-server-launch-double-timeout.md) | ✅ | ✅ | 媒体服务器从库行起播：服务器不可达时条目详情连等两轮超时才进失败页，可达时同一份详情串行取三次 |
+| [BUG-4822](bugs/BUG-4822-youtube-egress-down-waits-full-client-chain.md) | ✅ | ✅ | YouTube 出口不通时要把 5 个 client 挨个等满（约 65 秒）才报错 |
+| [BUG-4821](bugs/BUG-4821-video-subtitle-edit-saved-under-new-source.md) | ✅ | ✅ | 字幕手改的存储键在输入框关闭后才取：编辑期间换了字幕源，改动存到新源名下 |
+| [BUG-4820](bugs/BUG-4820-video-move-detection-rebinds-unrelated-file.md) | ✅ | ✅ | 视频「搬家」判定只凭同名 + 旧文件不在，删旧剧再放进同名新文件会把旧行错绑到新文件 |
+| [BUG-4819](bugs/BUG-4819-lnreader-chapter-images-no-cloudflare-cookie.md) | ✅ | ✅ | 小说在线源章节插图不带 Cloudflare 放行 cookie 与 Accept，过了验证的站点插图仍被拦，且丢图不留痕 |
+| [BUG-4818](bugs/BUG-4818-web-video-session-dispose-stale-cookie-copyback.md) | ✅ | ✅ | 关掉原生播放器网页档时，把内置档罐里的旧 cookie 整批盖回浏览器共享罐 |
+| [BUG-4817](bugs/BUG-4817-interconnect-ocr-resume-cache-never-hits.md) | ✅ | ✅ | 互联主机代跑 OCR：取消后重传同卷，保留的逐页断点缓存一页也命中不了 |
+| [BUG-4816](bugs/BUG-4816-manga-split-large-panel-rows-dead.md) | ✅ | ✅ | 分镜大格按行切是死代码：文字框上下排列时被切成竖条 |
+| [BUG-4815](bugs/BUG-4815-manga-ocr-lens-fill-missing-adopts-other-engine-pages.md) | ✅ | ✅ | Lens 只补缺页时把别的引擎写的整卷产物收作自己的结果，系统 OCR 取消还会写出半卷占位产物 |
+| [BUG-4814](bugs/BUG-4814-scrape-sweep-plan-failure-swallowed.md) | ✅ | ✅ | 后台补刮计划失败被吞成空清单：待确认提醒条凭空消失且无日志 |
+| [BUG-4813](bugs/BUG-4813-video-mine-queue-exit-retries-failed.md) | ✅ | ✅ | 看完再制卡：每次退出播放页都把写入失败的暂存卡再写一遍，写完的行永不出表 |
+| [BUG-4812](bugs/BUG-4812-srs-card-video-clip-load-error-hangs-sequence.md) | ✅ | ✅ | SRS 卡面视频片段加载不了时不落占位，等它播完的复习音频序列永远不返回 |
+| [BUG-4811](bugs/BUG-4811-reader-cue-highlight-future-unhandled.md) | ✅ | ✅ | 阅读器 cue 变更回调里放飞的高亮 Future 不接错误，WebView 销毁中抛出的异常成为未处理的异步错误 |
+| [BUG-4810](bugs/BUG-4810-audiobook-swap-deletes-old-before-copy.md) | ✅ | ✅ | 换音频 / 换字幕先删旧副本再拷新文件，拷贝中途失败后库里指着已删除的文件 |
+| [BUG-4809](bugs/BUG-4809-online-novel-chapter-char-count-stale.md) | 🚧 | ✅ | 在线小说书取章后内存字数不刷新，统计与进度按占位页算 |
+| [BUG-4808](bugs/BUG-4808-paged-settle-pixel-writeback-clobbers-late-image-reanchor.md) | ✅ | ✅ | 分页恢复落点后的 16ms settle 与揭示后的下一帧重写把旧像素位置写回，盖掉期间的迟到图片重锚 / 用户翻页 |
+| [BUG-4807](bugs/BUG-4807-reader-exit-awaits-tracking-report.md) | ✅ | ✅ | 阅读器关书（返回键）等着追踪上报，未映射的书会等一次站点搜索 |
+| [BUG-4806](bugs/BUG-4806-interconnect-video-push-missing-file-noise.md) | ✅ | ✅ | 互联视频同步：host 已有的视频本地文件不在时每轮都报一条 local file missing |
+| [BUG-4805](bugs/BUG-4805-video-hls-quality-probe-bypasses-app-proxy.md) | ✅ | ✅ | HLS 画质探测用顶层 http.get，不走应用代理，需代理的网络下画质菜单静默消失 |
+| [BUG-4804](bugs/BUG-4804-android-pip-episode-switch-not-seeded.md) | ✅ | ✅ | Android 系统画中画里本地换集（含自动连播），新页不认领 PiP 状态：小窗里画出整套常规 chrome |
+| [BUG-4803](bugs/BUG-4803-graphic-sub-region-extract-cancel-first-caller-owned.md) | ✅ | ✅ | 图形字幕位图时间表抽取的取消权归第一个调用方：本地文件由控制器发起时取消不了，换集 / 退出后 ffmpeg 仍把整个文件读完 |
+| [BUG-4802](bugs/BUG-4802-subtitle-search-multiselect-contract.md) | ✅ | ✅ | 本集字幕面板多选：全选无视筛选、重搜不清勾选、多选态点行仍直接下载并关页、部分失败的原因与已落盘文件随关页丢失 |
 | [BUG-4801](bugs/BUG-4801-ocr-atomic-write-fixed-tmp-name-concurrent-writers.md) | ✅ | ✅ | 漫画 OCR 逐页缓存的原子写用固定名 .tmp，并发写同一页时互相覆盖 |
 | [BUG-4800](bugs/BUG-4800-manga-ocr-cancel-frees-slot-before-isolate-exit.md) | ✅ | ✅ | 漫画 OCR 取消 / 暂停后 isolate 还没退出就释放并发名额，新旧任务同时占模型内存 |
-| [BUG-4799](bugs/BUG-4799-manga-ocr-reopen-recovery-misses-system-ocr-cache.md) | ✅ | ✅ | 重开书恢复增量 OCR 结果时漏掉系统 OCR 的逐页缓存 |
-| [BUG-4798](bugs/BUG-4798-manga-ocr-lens-fill-missing-adopts-other-engine-pages.md) | ✅ | ✅ | Lens 只补缺页时把别的引擎写的整卷产物收作自己的结果，系统 OCR 取消还会写出半卷占位产物 |
-> 共 4155 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4799](bugs/BUG-4799-kavita-page-image-whole-request-timeout.md) | ✅ | ✅ | Kavita 页图 / 封面用整请求超时且不中止，慢链路大页图必失败；同步路径吞掉的失败不留日志 |
-| [BUG-4798](bugs/BUG-4798-manga-split-large-panel-rows-dead.md) | ✅ | ✅ | 分镜大格按行切是死代码：文字框上下排列时被切成竖条 |
-| [BUG-4798](bugs/BUG-4798-interconnect-ocr-resume-cache-never-hits.md) | ✅ | ✅ | 互联主机代跑 OCR：取消后重传同卷，保留的逐页断点缓存一页也命中不了 |
-> 共 4157 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4801](bugs/BUG-4801-web-mine-host-machine-playhead-persisted.md) | ✅ | ✅ | 制卡交接页把机器驱动的播放头写成本书续播点，并在开跑前后计观看 |
-| [BUG-4800](bugs/BUG-4800-web-mine-queue-yield-marked-navigate-timeout.md) | ✅ | ✅ | 空闲自动制卡正在换视频时用户回来，那一行被永久标成 navigate_timeout |
-| [BUG-4799](bugs/BUG-4799-web-mine-queue-round-throw-no-finish.md) | ✅ | ✅ | 网页视频制卡队列一轮中途抛异常时不收尾：交接页回不去、后台制卡页不关、调度器停在「在跑」 |
-| [BUG-4798](bugs/BUG-4798-web-video-session-dispose-stale-cookie-copyback.md) | ✅ | ✅ | 关掉原生播放器网页档时，把内置档罐里的旧 cookie 整批盖回浏览器共享罐 |
-> 共 4155 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4799](bugs/BUG-4799-lnreader-state-read-failure-overwrites.md) | ✅ | ✅ | LNReader 的 state.json / 插件存储读失败被当成空，下一次写盘把已装插件、仓库和登录态整份盖掉 |
-| [BUG-4798](bugs/BUG-4798-lnreader-chapter-images-no-cloudflare-cookie.md) | ✅ | ✅ | 小说在线源章节插图不带 Cloudflare 放行 cookie 与 Accept，过了验证的站点插图仍被拦，且丢图不留痕 |
-> 共 4157 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4801](bugs/BUG-4801-source-scan-leftovers-after-kill-and-book-abort.md) | ✅ | ✅ | 来源扫描被杀后留下临时来源行与临时目录；一本坏书中断整批书导入且不删临时目录 |
-| [BUG-4800](bugs/BUG-4800-manga-source-index-lost-when-scan-killed.md) | ✅ | ✅ | 漫画来源索引只在扫描结束时落盘，中途被杀后同名卷再导一份 Vol 1 (3) |
-| [BUG-4799](bugs/BUG-4799-source-scan-junk-entries-and-unreadable-subdir.md) | ✅ | ✅ | 来源扫描把 ._ 资源叉 / 回收站文件当媒体入库，一个读不了的子目录让整次扫描失败 |
-| [BUG-4798](bugs/BUG-4798-video-move-detection-rebinds-unrelated-file.md) | ✅ | ✅ | 视频「搬家」判定只凭同名 + 旧文件不在，删旧剧再放进同名新文件会把旧行错绑到新文件 |
+| [BUG-4799](bugs/BUG-4799-subtitle-search-reentrancy-stuck.md) | ✅ | ✅ | 本集字幕面板搜索可重入且无代次：迟到的旧一轮覆盖新结果；保存 key 抛错后搜索钮永久禁用；合集面板批量途中回车重搜清掉行状态 |
+| [BUG-4798](bugs/BUG-4798-desktop-legacy-encoding-subtitle-unreadable.md) | ✅ | ✅ | 桌面三端与无头服务端读 CP932 / GBK / Big5 / EUC-JP 字幕整份变成 U+FFFD |
 | [BUG-4797](bugs/BUG-4797-feedback-files-share-video-ip-quota.md) | 🚧 | 🚧 | 样本文件与录屏共用每 IP 每天 200 MiB 额度，满额样本文件仍会被 429 挤掉 |
 | [BUG-4796](bugs/BUG-4796-disc-back-double-press-repeat-topmenu.md) | ✅ | ✅ | 原盘正片快速连按两次返回会重复发 topMenu，第二次失败会整盘退出 |
 | [BUG-4795](bugs/BUG-4795-disc-back-to-menu-transient-error-exits.md) | ✅ | ✅ | 原盘正片按返回回盘菜单时，任何暂时性错误都会让整个原盘会话退出 |

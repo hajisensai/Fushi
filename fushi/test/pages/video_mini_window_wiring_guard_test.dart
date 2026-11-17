@@ -62,7 +62,7 @@ void main() {
     // 起步值「该是什么」是纯函数 videoInitialMiniSurface 的事，行为测试在
     // test/media/video/video_controls_density_test.dart；这里只钉接线：页面确实把
     // 当前的 isActive 喂给它、把结果写进 _miniSurface，并且排在订阅之前。
-    test('BUG-4798：新页订阅 modeChanges 之前先用 isActive 播种', () {
+    test('BUG-4804：新页订阅 modeChanges 之前先用 isActive 播种', () {
       final String flat = methodBody(
         miniPart,
         'void _initMiniWindowSupport()',

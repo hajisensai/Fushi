@@ -398,7 +398,7 @@ void main() {
         greaterThan(0),
       );
       expect((counts[0]! as Map<String, Object?>)['characters'], 0);
-      // 新字数同时交回调用方（阅读器据此换掉内存里那一章的字数，BUG-4798），
+      // 新字数同时交回调用方（阅读器据此换掉内存里那一章的字数，BUG-4809），
       // 与写进书行的是同一个数。
       expect(
         results.first!.characters,

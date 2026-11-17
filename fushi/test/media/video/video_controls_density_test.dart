@@ -6,7 +6,7 @@ import 'package:fushi/src/media/video/video_controls_density.dart';
 /// 所以阈值与取舍在这里钉死一次即可，不必去 widget 树里翻。
 void main() {
   group('videoInitialMiniSurface：新挂载的视频页以哪个表面起步', () {
-    test('BUG-4798：已在系统画中画里 → 新页直接以 pictureInPicture 起步', () {
+    test('BUG-4804：已在系统画中画里 → 新页直接以 pictureInPicture 起步', () {
       // 本地换集是 pushReplacement 的新页；PiP 里自动连播到下一集时系统窗口没动，
       // 新页收不到「进入」事件，起步值错了就一直错到用户退出 PiP。
       final VideoMiniSurface surface = videoInitialMiniSurface(

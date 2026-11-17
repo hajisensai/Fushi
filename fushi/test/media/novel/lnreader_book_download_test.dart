@@ -234,7 +234,7 @@ void main() {
       );
     });
 
-    group('BUG-4798 章节插图的请求头', () {
+    group('BUG-4819 章节插图的请求头', () {
       /// 过了 Cloudflare 验证的图床：jar 里有只发给 127.0.0.1 的放行 cookie。
       Future<LnReaderCloudflare> clearedCloudflare() async {
         final LnReaderCloudflare cloudflare = LnReaderCloudflare(
