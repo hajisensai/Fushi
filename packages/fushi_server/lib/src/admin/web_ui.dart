@@ -1103,7 +1103,7 @@ $('#btn-anki-run').onclick = guard(async()=>{ await post('anki/run'); toast(T('�
 $('#btn-anki-retry').onclick = guard(async()=>{ const r = await post('anki/retry'); toast(T('已重试 {0} 张', r.retried)); loadAnki(); });
 
 // ── 复习 ──
-const SRS_STATE = {opening:T('打开中'), ready:T('可用'), encrypted:T('同步位置已加密（暂不支持）'), needs_upgrade:T('数据来自更新版本的 Fushi，请升级服务端'), failed:T('出错')};
+const SRS_STATE = {opening:T('打开中'), ready:T('可用'), encrypted:T('同步位置已加密（暂不支持）'), needs_upgrade:T('数据来自更新版本的 Fushi，请升级服务端'), failed:T('出错'), upgrading:T('复习库升级中'), upgrade_blocked:T('复习库升级没完成，需在服务端处理（ctl srs migration）')};
 let srsFormKey = null;
 // 待确认 / 已拒绝的设备（服务端开库后第一次同步过来的；删除与彻底清除在本机扣着，engine srs_devices.dart）。
 function renderSrsDevices(devs){

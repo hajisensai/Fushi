@@ -5,10 +5,12 @@
 // srs_protocol3_two_profiles_generator.rs.txt（贴进 native/fushi_fsrs/src/store/gen4/prepare_tests.rs 末尾跑）。
 import 'dart:io';
 
+import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_server/src/config/server_srs_config.dart';
 import 'package:fushi_server/src/server_srs.dart';
+import 'package:fushi_srs/fushi_srs.dart' show SrsReviewLog;
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
@@ -19,6 +21,9 @@ const String kMain = '0193a1b2-0000-7000-8000-00000000beef';
 
 /// 夹具里只在协议 3 投影表里的 profile（一副牌组、一条旧复习日志）。
 const String kOrphan = '0193a1b2-0000-7000-8000-00000000cafe';
+
+/// 孤儿 profile 那条旧复习日志所在的卡（生成器里 `legacy_log(..., ORPHAN, ..., "…c9", ...)`）。
+const String kOrphanLoggedCard = '0193a1b2-0000-7000-8000-0000000000c9';
 
 void main() {
   late Directory tmp;
@@ -116,6 +121,32 @@ void main() {
       deviceId: 'check',
     );
     expect(await main.userNoteCount(), 3);
+    // 复习记录：一条本机复习（r1）+ 一条协议 1 时代的旧日志，迁移后都还在。
+    final List<String> mainCards = <String>[
+      for (final SrsCardCacheRow c in await main.allCardRows()) c.id,
+    ];
+    final Map<String, List<SrsReviewLog>> mainLogs = await main.logsOfCards(
+      mainCards,
+    );
+    expect(
+      mainLogs.values.fold<int>(
+        0,
+        (int n, List<SrsReviewLog> l) => n + l.length,
+      ),
+      2,
+      reason: '$mainLogs',
+    );
+    // 只在投影表里的那份（孤儿 uid）：牌组与它那条旧日志也迁过来了。
+    final SrsDbStore orphan = await SrsDbStore.open(
+      core: storage.core,
+      profileUid: kOrphan,
+      deviceId: 'check',
+    );
+    expect((await orphan.deckTree()).decks, isNotEmpty);
+    final Map<String, List<SrsReviewLog>> orphanLogs = await orphan.logsOfCards(
+      <String>[kOrphanLoggedCard],
+    );
+    expect(orphanLogs[kOrphanLoggedCard], hasLength(1), reason: '$orphanLogs');
     await storage.close();
 
     // 重启：目录已是新代，直接开库、不迁移。

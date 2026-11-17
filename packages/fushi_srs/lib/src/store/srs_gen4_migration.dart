@@ -297,3 +297,45 @@ abstract final class SrsGen4Migration {
     return (r! as Map)['cancelled'] == true;
   }
 }
+
+/// 迁移命令的执行端：app 的迁移控制器（`fushi/lib/src/srs/srs_gen4_migration_controller.dart`）与服务端的无头状态机
+/// （`packages/fushi_server/lib/src/server_srs.dart`）共用这一份接口，测试换成假的。
+abstract interface class SrsGen4MigrationBackend {
+  SrsGen4MigrationStatus status(String dir);
+
+  /// 旧库里全部有数据的 profile（[SrsGen4Migration.legacyProfiles]，后台 isolate）。
+  Future<List<String>> legacyProfiles(String dir);
+
+  Future<SrsGen4MigrationOutcome> run(
+    String dir, {
+    required Map<String, Map<String, Object?>> caches,
+    required int nowMs,
+    required String runId,
+  });
+
+  bool cancel(String dir, {String? runId});
+}
+
+/// 真实的执行端：原生库的全局命令（[SrsGen4Migration]；`run` / `legacyProfiles` 在后台 isolate）。
+final class SrsNativeGen4MigrationBackend implements SrsGen4MigrationBackend {
+  const SrsNativeGen4MigrationBackend();
+
+  @override
+  SrsGen4MigrationStatus status(String dir) => SrsGen4Migration.status(dir);
+
+  @override
+  Future<List<String>> legacyProfiles(String dir) =>
+      SrsGen4Migration.legacyProfiles(dir);
+
+  @override
+  Future<SrsGen4MigrationOutcome> run(
+    String dir, {
+    required Map<String, Map<String, Object?>> caches,
+    required int nowMs,
+    required String runId,
+  }) => SrsGen4Migration.run(dir, caches: caches, nowMs: nowMs, runId: runId);
+
+  @override
+  bool cancel(String dir, {String? runId}) =>
+      SrsGen4Migration.cancel(dir, runId: runId);
+}

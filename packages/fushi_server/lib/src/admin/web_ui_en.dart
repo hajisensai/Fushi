@@ -362,6 +362,9 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '同步位置已加密（暂不支持）': 'Sync location is encrypted (not supported yet)',
   '数据来自更新版本的 Fushi，请升级服务端':
       'The data comes from a newer Fushi; update the server',
+  '复习库升级中': 'Upgrading the review library',
+  '复习库升级没完成，需在服务端处理（ctl srs migration）':
+      'The review library upgrade did not finish; handle it on the server (ctl srs migration)',
   '已开启': 'On',
   '未开启（没有勾选配置文件）': 'Off (no profile ticked)',
   '调度器': 'Scheduler',

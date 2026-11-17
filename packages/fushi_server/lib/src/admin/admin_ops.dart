@@ -1288,7 +1288,7 @@ Future<Object?> _srsSetDeck(AdminDispatch dispatch, String uid, String deck) =>
     'server.srs.migration.cancel',
     'POST',
     '$_kSrsPath/migration/cancel',
-    'Stop the running review library upgrade before its commit step (the data directory goes back to how it was). Refused once the commit step has started.',
+    'Stop the running review library upgrade before its commit step (the data directory goes back to how it was). Refused once the commit step has started. A request that races the commit step is ignored and the upgrade commits, so the final verdict in server.srs.migration (cancelled / committed) is what counts.',
   );
   irreversible(
     'server.model.pull',

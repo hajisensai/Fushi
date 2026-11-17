@@ -83,7 +83,8 @@ enum ServerSrsProfileState {
 /// 两次迁移进度轮询之间的间隔（`gen4_migrate_status` 只看文件与锁，很快）。
 const Duration kServerSrsMigrationPollInterval = Duration(seconds: 1);
 
-/// 「等一会再来」类结论（旧库正被写）之后，至少隔这么久才自动重试（实际在兜底定时器的下一轮）。
+/// 「等一会再来」类结论（旧库正被写 / 别的进程拿着换代锁）之后，隔这么久自动再判定一次（[ServerSrs] 单独挂一个一次性
+/// 定时器，不等 30 分钟的兜底定时器）。
 const Duration kServerSrsMigrationRetryDelay = Duration(minutes: 1);
 
 /// 服务端复习库目录（`<support>`）的代际状态。
@@ -243,9 +244,24 @@ final class ServerSrsGeneration {
       'mergeHalfDone' =>
         'A profile merge in srs.db is half done; finish it in the Fushi app version that started it, then '
             'run `ctl srs migration start`.',
+      // 交接说明 §9 / §11：前提补完之后核对仍不过 = 这一版升级不了，重跑只会得到同一个结论，不引导重试。
+      'precondition' =>
+        'This fushi_server version cannot upgrade this review library yet (see the reason). srs.db is untouched. '
+            'Running the upgrade again gives the same result: update fushi_server, or contact support with the '
+            'reason and the server log.',
+      'missingCacheConfig' =>
+        'The upgrade needs the settings of a profile that is in srs.db but was not handed to it (see the reason '
+            'for the profile). srs.db is untouched. Look in the server log for an error while listing the '
+            'profiles of srs.db: if there is one, fix it (disk / permissions) and run `ctl srs migration start`; '
+            'if there is none, update fushi_server or contact support with the server log.',
+      'noLibrary' =>
+        'srs.db was no longer in the data directory when the upgrade started (moved or removed meanwhile). '
+            'Nothing was changed. If it was moved by mistake, put it back before the next pass of the server '
+            '(otherwise the server starts a new, empty review library and the old file is then reported as '
+            'a library that was never upgraded).',
       _ =>
-        'The upgrade could not start (${code ?? 'unknown'}). srs.db is untouched; see the reason, then run '
-            '`ctl srs migration start` again.',
+        'The upgrade could not start (${code ?? 'unknown'}) and this server does not know that reason. '
+            'srs.db is untouched. Update fushi_server, or contact support with the reason and the server log.',
     },
     ServerSrsGenState.noSpace =>
       'Not enough free disk space to upgrade the review library'
@@ -299,47 +315,6 @@ final class ServerSrsGeneration {
     'autoRetry': autoRetry,
     'advice': advice,
   };
-}
-
-/// 迁移命令的执行端（测试换成假的）。
-abstract interface class ServerSrsMigrationBackend {
-  SrsGen4MigrationStatus status(String dir);
-
-  Future<List<String>> legacyProfiles(String dir);
-
-  Future<SrsGen4MigrationOutcome> run(
-    String dir, {
-    required Map<String, Map<String, Object?>> caches,
-    required int nowMs,
-    required String runId,
-  });
-
-  bool cancel(String dir, {String? runId});
-}
-
-/// 真实的执行端：原生库的全局命令（[SrsGen4Migration]；`run` / `legacyProfiles` 在后台 isolate）。
-final class ServerSrsNativeMigrationBackend
-    implements ServerSrsMigrationBackend {
-  const ServerSrsNativeMigrationBackend();
-
-  @override
-  SrsGen4MigrationStatus status(String dir) => SrsGen4Migration.status(dir);
-
-  @override
-  Future<List<String>> legacyProfiles(String dir) =>
-      SrsGen4Migration.legacyProfiles(dir);
-
-  @override
-  Future<SrsGen4MigrationOutcome> run(
-    String dir, {
-    required Map<String, Map<String, Object?>> caches,
-    required int nowMs,
-    required String runId,
-  }) => SrsGen4Migration.run(dir, caches: caches, nowMs: nowMs, runId: runId);
-
-  @override
-  bool cancel(String dir, {String? runId}) =>
-      SrsGen4Migration.cancel(dir, runId: runId);
 }
 
 /// 服务端提供的一份 profile。
@@ -601,8 +576,7 @@ class ServerSrs {
     void Function()? onPublished,
     HttpClient Function()? rwkvHttpClient,
     Future<SrsRwkvBackend> Function(File weights)? rwkvBackend,
-    ServerSrsMigrationBackend migration =
-        const ServerSrsNativeMigrationBackend(),
+    SrsGen4MigrationBackend migration = const SrsNativeGen4MigrationBackend(),
     this.migrationPollInterval = kServerSrsMigrationPollInterval,
     this.migrationRetryDelay = kServerSrsMigrationRetryDelay,
   }) : syncRoot = Directory(
@@ -636,7 +610,7 @@ class ServerSrs {
   final Future<SrsRwkvBackend> Function(File weights)? _rwkvBackend;
 
   /// 换代迁移的执行端（测试接缝；生产是原生库的全局命令）。
-  final ServerSrsMigrationBackend _migrationBackend;
+  final SrsGen4MigrationBackend _migrationBackend;
 
   /// 迁移进度轮询间隔。
   final Duration migrationPollInterval;
@@ -651,6 +625,10 @@ class ServerSrs {
   String? _migrationRunId;
   Timer? _migrationPoll;
   SrsGen4MigrationStep? _loggedStep;
+
+  /// 「等一会再来」之后的一次性再判定（[migrationRetryDelay] 后触发）；到点时置 [_retryDue]，那次判定不再看间隔。
+  Timer? _migrationRetry;
+  bool _retryDue = false;
 
   /// 库目录的代际状态（admin API `generation` 段、`ctl srs migration`）。
   ServerSrsGeneration get generation => _generation;
@@ -805,6 +783,8 @@ class ServerSrs {
     _stopped = true;
     _safety?.cancel();
     _safety = null;
+    _migrationRetry?.cancel();
+    _migrationRetry = null;
     // 迁移在跑：提交点之前叫停并等结论（目录回到迁移前的样子）；过了提交点就等它跑完（改名 / 封存不能被打断）。
     final Future<void>? migration = _migration;
     if (migration != null) {
@@ -966,8 +946,11 @@ class ServerSrs {
         final DateTime? finished = _generation.finishedAt;
         if (_generation.autoRetry &&
             (finished == null ||
+                _retryDue ||
                 DateTime.now().difference(finished) >= migrationRetryDelay)) {
           _beginMigration();
+        } else {
+          _armMigrationRetry();
         }
       case SrsGenState.migratingElsewhere:
         _setGeneration(
@@ -975,6 +958,8 @@ class ServerSrs {
             state: ServerSrsGenState.migratingElsewhere,
           ),
         );
+        // 别的进程迁完（或放弃）了要接着开库 / 迁移：隔一会再看，不等兜底定时器。
+        _armMigrationRetry();
       case SrsGenState.migrationFailed:
         // 本进程刚跑出的失败带着报告路径，别用状态命令的（不带路径）盖掉。
         if (_generation.state != ServerSrsGenState.migrationFailed) {
@@ -1026,9 +1011,28 @@ class ServerSrs {
     }
   }
 
+  /// 上一次结论是「等一会再来」（[ServerSrsGeneration.autoRetry]）且还没就绪时，[migrationRetryDelay] 之后再判定一次
+  /// （重新套用配置）。已挂着就不重挂；不该自动重跑的结论什么都不挂。
+  void _armMigrationRetry() {
+    if (_stopped || _migrationRetry != null) return;
+    if (!_generation.autoRetry ||
+        _generation.state == ServerSrsGenState.ready) {
+      return;
+    }
+    _migrationRetry = Timer(migrationRetryDelay, () {
+      _migrationRetry = null;
+      if (_stopped) return;
+      _retryDue = true;
+      unawaited(applyConfig());
+    });
+  }
+
   /// 后台开始一次迁移（已在跑时无操作）。结论落在 [generation]；跑完重新套用配置（提交了就开库、各份同步）。
   void _beginMigration() {
     if (_migration != null) return;
+    _retryDue = false;
+    _migrationRetry?.cancel();
+    _migrationRetry = null;
     final DateTime started = DateTime.now();
     final String runId = 'fushi-server-gen4-${started.microsecondsSinceEpoch}';
     _migrationRunId = runId;
@@ -1227,15 +1231,41 @@ class ServerSrs {
     return null;
   }
 
-  /// 管理员叫停正在跑的迁移（提交点之前有效）。返回拒绝原因（null = 已叫停，结论稍后落在 [generation]）：
+  /// 管理员叫停正在跑的迁移（提交点之前有效）。返回拒绝原因（null = 已请求叫停，结论稍后落在 [generation]）：
   /// `srs_migration_not_running` / `srs_migration_past_commit`。
+  ///
+  /// 判断用这一刻现取的进度（不用最多滞后一个轮询间隔的 [generation]）。现取与叫停之间迁移仍可能刚好跨过提交点：内核
+  /// 在提交点之后不受理叫停、迁移照常提交——所以「已请求」不等于「会停下」，以最终结论（[ServerSrsGeneration.verdict]）
+  /// 为准。
   String? cancelMigration() {
     if (_migration == null) return 'srs_migration_not_running';
-    final SrsGen4MigrationStep? step = _generation.step;
+    SrsGen4MigrationStep? step = _generation.step;
+    try {
+      final SrsGen4MigrationProgress? p = _migrationBackend
+          .status(support.path)
+          .running;
+      if (p != null) {
+        step = p.step;
+        if (_generation.state == ServerSrsGenState.migrating) {
+          _generation = _generation._progress(p);
+        }
+      }
+    } catch (e, stack) {
+      // 现取不到：退回轮询到的那份（内核在提交点之后照样不受理，结论兜底）。
+      engineLog.log('ServerSrs.migrate.status', e, stack);
+    }
     if (step != null && !step.cancellable) return 'srs_migration_past_commit';
-    _migrationBackend.cancel(support.path, runId: _migrationRunId);
+    final bool signalled = _migrationBackend.cancel(
+      support.path,
+      runId: _migrationRunId,
+    );
     if (!_generation.cancelRequested) _generation = _generation._cancelling();
-    engineLog.logDiagnostic('ServerSrs.migrate', 'cancel requested');
+    engineLog.logDiagnostic(
+      'ServerSrs.migrate',
+      signalled
+          ? 'cancel requested (the verdict tells whether it stopped before the commit step)'
+          : 'cancel registered for the run that has not reached the kernel yet',
+    );
     return null;
   }
 

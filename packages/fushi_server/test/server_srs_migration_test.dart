@@ -7,13 +7,19 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:fushi_anki/fushi_anki_core.dart'
+    show AnkiMiningContext, MineOutcome, MineResult;
 import 'package:fushi_cli/fushi_cli.dart' show CtlFailure;
+import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart'
+    show RemoteMineErrorKind, RemoteMineResult;
+import 'package:fushi_engine/sync/remote_mining_target.dart';
 import 'package:fushi_engine/srs/srs_ctl_routes.dart' show SrsCtlHost;
 import 'package:fushi_engine/srs/srs_remote_store.dart';
 import 'package:fushi_engine/srs/srs_remote_store_routes.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_server/src/admin/admin_srs_ctl.dart';
 import 'package:fushi_server/src/config/server_srs_config.dart';
+import 'package:fushi_server/src/remote_mining_host.dart';
 import 'package:fushi_server/src/server_srs.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:path/path.dart' as p;
@@ -28,7 +34,7 @@ const String kOrphan = '01928c3e-0000-7000-8000-00000000cafe';
 
 /// 假的迁移执行端：[state] 是状态命令报的代际状态，每次 [run] 挂一个等测试给结论的 Completer。[cancel] 与内核一样：
 /// 在跑的那次以 cancelled 收场；还没开始的（按 runId 先登记）一开始就收场。
-final class _FakeMigration implements ServerSrsMigrationBackend {
+final class _FakeMigration implements SrsGen4MigrationBackend {
   SrsGenState state = SrsGenState.needsMigration;
   SrsGen4MigrationProgress? running;
   List<String> legacy = <String>[kJa, kOrphan];
@@ -96,18 +102,22 @@ void main() {
   late ServerSrsConfig config;
   late ServerSrs srs;
 
-  ServerSrs make() => ServerSrs(
+  ServerSrs make({
+    Duration poll = const Duration(milliseconds: 5),
+    // 缺省不等重试间隔：「不自动重跑」靠的是结论本身，不是间隔。
+    Duration retry = Duration.zero,
+  }) => ServerSrs(
     rwkvHttpClient: noNetworkHttpClient,
     support: support,
-    syncData: Directory(p.join(tmp.path, 'interconnect'))..createSync(),
+    syncData: Directory(p.join(tmp.path, 'interconnect'))
+      ..createSync(recursive: true),
     deviceId: 'server-device',
     hostId: 'server-srs-migration-test',
     config: () => config,
     engine: () => null,
     migration: fake,
-    migrationPollInterval: const Duration(milliseconds: 5),
-    // 不等重试间隔：「不自动重跑」靠的是结论本身，不是间隔。
-    migrationRetryDelay: Duration.zero,
+    migrationPollInterval: poll,
+    migrationRetryDelay: retry,
   );
 
   setUp(() async {
@@ -483,6 +493,193 @@ void main() {
     expect(srs.generation.reason, contains('kernel boom'));
     await srs.applyConfig();
     expect(fake.runs, hasLength(1));
+  });
+
+  test('旧库正被写（busy）：隔重试间隔自己再试，不等兜底定时器', () async {
+    await srs.stop();
+    srs = make(retry: const Duration(milliseconds: 80));
+    await srs.start();
+    await runs(1);
+    fake.finish(
+      const SrsGen4MigrationOutcome(
+        verdict: SrsGen4MigrationVerdict.blocked,
+        code: 'busy',
+      ),
+      after: SrsGenState.needsMigration,
+    );
+    await settle();
+    // 刚跑完紧接着的判定：没过间隔，不重跑；期间仍是「升级中」。
+    expect(fake.runs, hasLength(1));
+    expect(srs.generation.code, 'busy');
+    expect(srs.upgradeRefusal, ServerSrsUpgradeRefusal.upgrading);
+    // 不调 applyConfig（兜底定时器 30 分钟，测试里不会到）：只靠重试定时器。
+    await runs(2);
+    expect(srs.generation.state, ServerSrsGenState.migrating);
+  });
+
+  test('别的进程拿着换代锁：隔重试间隔再看，它迁完就接着开库', () async {
+    await srs.stop();
+    fake = _FakeMigration()..state = SrsGenState.migratingElsewhere;
+    srs = make(retry: const Duration(milliseconds: 80));
+    await srs.start();
+    expect(srs.generation.state, ServerSrsGenState.migratingElsewhere);
+    // 别的进程迁完了：不调 applyConfig，重试定时器到点后自己开库。
+    fake.state = SrsGenState.ready;
+    await until(
+      () => srs.generation.state == ServerSrsGenState.ready,
+      'reopened after the other process finished',
+    );
+    expect(fake.runs, isEmpty);
+    expect(srs.upgradeRefusal, isNull);
+  });
+
+  test('叫停按现取的进度判断：轮询还停在提交点之前、内核已进提交步骤时拒绝', () async {
+    await srs.stop();
+    // 轮询间隔拉长：generation.step 停在开始时的样子（null），只有现取能看到已进提交步骤。
+    srs = make(poll: const Duration(hours: 1));
+    await srs.start();
+    await runs(1);
+    fake.running = (step: SrsGen4MigrationStep.commit, done: 0, total: 1);
+    expect(srs.generation.step, isNull, reason: '轮询还没跑过');
+    expect(srs.cancelMigration(), 'srs_migration_past_commit');
+    expect(fake.cancels, isEmpty, reason: '过了提交点不叫停内核');
+    expect(srs.generation.step, SrsGen4MigrationStep.commit);
+    // 提交点之前：照常叫停。
+    fake.running = (step: SrsGen4MigrationStep.parity, done: 0, total: 1);
+    expect(srs.cancelMigration(), isNull);
+    expect(fake.cancels, hasLength(1));
+  });
+
+  test('前提 / 缺缓存配置 / 没有库：各有准确的处置说明，前提与没有库不引导重跑', () {
+    String advice(String code) => ServerSrsGeneration(
+      state: ServerSrsGenState.blocked,
+      code: code,
+    ).advice;
+    final String unknown = advice('somethingNew');
+    final String precondition = advice('precondition');
+    final String missing = advice('missingCacheConfig');
+    final String noLibrary = advice('noLibrary');
+    expect(
+      <String>{precondition, missing, noLibrary, unknown},
+      hasLength(4),
+      reason: '三类各一条，不套通用说明',
+    );
+    expect(precondition, contains('cannot upgrade this review library yet'));
+    expect(precondition, contains('same result'));
+    expect(precondition, isNot(contains('`ctl srs migration start`')));
+    expect(missing, contains('listing the profiles'));
+    expect(noLibrary, contains('no longer in the data directory'));
+    expect(noLibrary, isNot(contains('`ctl srs migration start`')));
+    expect(unknown, isNot(contains('`ctl srs migration start`')));
+    for (final String code in <String>[
+      'precondition',
+      'missingCacheConfig',
+      'noLibrary',
+    ]) {
+      expect(
+        ServerSrsGeneration(
+          state: ServerSrsGenState.blocked,
+          code: code,
+        ).autoRetry,
+        isFalse,
+        reason: code,
+      );
+    }
+  });
+
+  group('互联制卡在复习库升级时', () {
+    late List<String> ankiMined;
+
+    ServerRemoteMiningService mining({bool anki = true}) =>
+        ServerRemoteMiningService(
+          srs: srs,
+          srsConfig: () => config,
+          mineCard: anki
+              ? (String raw, AnkiMiningContext context) async {
+                  ankiMined.add(raw);
+                  return MineOutcome.success();
+                }
+              : null,
+        );
+
+    Future<RemoteMineResult> mine(
+      ServerRemoteMiningService m, [
+      RemoteMiningTarget? target,
+    ]) async => (await m.mineEntryTo(
+      fields: const <String, String>{'expression': '猫'},
+      sentence: '猫がいる',
+      target: target,
+    )).result;
+
+    setUp(() => ankiMined = <String>[]);
+
+    test('点名复习 / 默认落复习 / 没有 Anki：回类型化的升级中，不落进 Anki、不回 notConfigured', () async {
+      await srs.start();
+      await runs(1);
+      expect(srs.upgradeRefusal, ServerSrsUpgradeRefusal.upgrading);
+
+      // 没配 Anki：以前退回 notConfigured，路由也当没接线。
+      final ServerRemoteMiningService noAnki = mining(anki: false);
+      expect(noAnki.miningAvailable, isTrue);
+      final RemoteMineResult r = await mine(noAnki);
+      expect(r.result, MineResult.error.name);
+      expect(r.errorCode, 'srs_upgrading');
+      expect(r.errorKind, RemoteMineErrorKind.transient);
+      expect(
+        await noAnki.isDuplicateIn(expression: '猫', reading: 'ねこ'),
+        isFalse,
+      );
+      final Map<String, Object?> targets = await noAnki.miningTargets();
+      expect(targets['reviewUnavailable'], 'srs_upgrading');
+      expect(targets['default'], isNull);
+
+      // 有 Anki：点名复习那份 profile 的不悄悄落进 Anki。
+      final ServerRemoteMiningService withAnki = mining();
+      final RemoteMineResult named = await mine(
+        withAnki,
+        const RemoteMiningTarget(kind: kRemoteMiningKindReview, profile: kJa),
+      );
+      expect(named.errorCode, 'srs_upgrading');
+      expect(ankiMined, isEmpty);
+
+      // 服务端默认是复习（配置 review）：不点名也一样。
+      config = ServerSrsConfig(
+        profiles: config.profiles,
+        miningTarget: ServerMiningTarget.review,
+      );
+      expect((await mine(withAnki)).errorCode, 'srs_upgrading');
+      expect(ankiMined, isEmpty);
+
+      // 点名 Anki、Anki 可用：照常进 Anki（复习库升级与它无关）。
+      final RemoteMineResult toAnki = await mine(
+        withAnki,
+        const RemoteMiningTarget(kind: kRemoteMiningKindAnki),
+      );
+      expect(toAnki.result, MineResult.success.name);
+      expect(ankiMined, hasLength(1));
+    });
+
+    test('升级受阻：回 srs_upgrade_blocked（permanent），附管理员处置说明', () async {
+      await srs.start();
+      await runs(1);
+      fake.finish(
+        const SrsGen4MigrationOutcome(
+          verdict: SrsGen4MigrationVerdict.blocked,
+          code: 'mergeHalfDone',
+        ),
+        after: SrsGenState.needsMigration,
+      );
+      await settle();
+      final RemoteMineResult r = await mine(
+        mining(),
+        const RemoteMiningTarget(kind: kRemoteMiningKindReview),
+      );
+      expect(r.result, MineResult.error.name);
+      expect(r.errorCode, 'srs_upgrade_blocked');
+      expect(r.errorKind, RemoteMineErrorKind.permanent);
+      expect(r.detail, srs.generation.advice);
+      expect(ankiMined, isEmpty);
+    });
   });
 
   test('复习关（没选 profile）：不判定、不迁移', () async {
