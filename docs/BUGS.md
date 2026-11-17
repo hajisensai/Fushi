@@ -86,6 +86,13 @@
 |---|:--:|:--:|---|
 | [BUG-4799](bugs/BUG-4799-vn-synthetic-book-cue-hit-null.md) | ✅ | ✅ | VN 模式下合成书（SRT / VTT / LRC）中键与「从此句播放」拿不到句子 |
 | [BUG-4798](bugs/BUG-4798-seamless-start-failure-claims-boundary-forever.md) | ✅ | ✅ | 无缝衔接启动失败后三条边界换章通道被永久认领，这一章里翻不到下一章 |
+> 共 4156 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4800](bugs/BUG-4800-epub-import-parse-failure-leaves-staging-dir.md) | ✅ | ✅ | EPUB 导入解析失败时书库根下的 .tmp-* 解压目录永久残留，崩溃留下的 .tmp-* / .bak-* 也没人清 |
+| [BUG-4799](bugs/BUG-4799-manga-import-book-dir-not-owned.md) | ✅ | ✅ | 漫画导入直接往书目录里写、失败回滚无条件删目录：会删掉同名并发导入或孤儿书的目录；暂存在系统临时目录 |
+| [BUG-4798](bugs/BUG-4798-concurrent-same-title-import-deletes-winner-dir.md) | ✅ | ✅ | 并发导入同名书，后一次把前一次的书目录换掉再删掉，留下指向空目录的行 |
 | [BUG-4797](bugs/BUG-4797-feedback-files-share-video-ip-quota.md) | 🚧 | 🚧 | 样本文件与录屏共用每 IP 每天 200 MiB 额度，满额样本文件仍会被 429 挤掉 |
 | [BUG-4796](bugs/BUG-4796-disc-back-double-press-repeat-topmenu.md) | ✅ | ✅ | 原盘正片快速连按两次返回会重复发 topMenu，第二次失败会整盘退出 |
 | [BUG-4795](bugs/BUG-4795-disc-back-to-menu-transient-error-exits.md) | ✅ | ✅ | 原盘正片按返回回盘菜单时，任何暂时性错误都会让整个原盘会话退出 |
