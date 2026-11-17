@@ -132,8 +132,12 @@ void main() {
       );
     });
 
-    test('脏源：三个 current-tracks 属性的比值订阅、轨道流、盘命令、轨道归属、复位', () {
+    test('脏源：track-list 与三个 current-tracks 属性的比值订阅、轨道流、盘命令、轨道归属、复位', () {
+      // `track-list` 不能少：字幕 / 音轨切到「无」时 `current-tracks/*` 变为不可用，
+      // 比值订阅不回调；media_kit 的轨道流按轨道 id 去重，选中状态变化也不发。真 libmpv
+      // 行为钉在 test/third_party/media_kit_observe_changes_test.dart。
       expect(kVideoDiscResolvedTrackProperties, <String>[
+        'track-list',
         'current-tracks/audio/id',
         'current-tracks/sub/id',
         'current-tracks/sub/codec',

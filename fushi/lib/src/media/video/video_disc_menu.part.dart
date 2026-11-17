@@ -2,8 +2,18 @@ part of 'video_player_controller.dart';
 
 /// mpv properties whose change means the resolved disc tracks must be re-read.
 /// None of them is notified on `MPV_EVENT_TICK`: they fire on a track switch
-/// (`MP_EVENT_TRACK_SWITCHED` / `MP_EVENT_TRACKS_CHANGED` → `current-tracks`).
+/// (`MP_EVENT_TRACK_SWITCHED` / `MP_EVENT_TRACKS_CHANGED` → `track-list`,
+/// `current-tracks`).
+///
+/// `track-list` is the one that reports a selection going to "none": its text
+/// form carries every track's `selected` flag and the property is always
+/// available. A `current-tracks/*` property becomes unavailable in that case,
+/// and a value-compared observer is not called for "became unavailable"
+/// (`test/third_party/media_kit_observe_changes_test.dart` pins both). The disc
+/// can drop its subtitle on its own (navigation program, popup menu), so no
+/// command of ours brackets that change either.
 const List<String> kVideoDiscResolvedTrackProperties = <String>[
+  'track-list',
   'current-tracks/audio/id',
   'current-tracks/sub/id',
   'current-tracks/sub/codec',
@@ -106,9 +116,9 @@ extension VideoDiscMenuController on VideoPlayerController {
         !_discNavigationOpened) {
       return;
     }
-    // media_kit re-emits `tracks` on every `track-list` change, which includes
-    // a selection change to "no track" (the value-compared observers below
-    // stay silent while a `current-tracks/*` property is unavailable).
+    // The set of tracks changed. This stream is `distinct` over the track
+    // ids, so a pure selection change never arrives here; those are covered by
+    // [kVideoDiscResolvedTrackProperties].
     _discTrackRefreshGate.markDirty();
     unawaited(_sampleDiscMenu(player, _loadToken));
     _notifyDiscMenuChanged();
