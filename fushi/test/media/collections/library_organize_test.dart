@@ -755,6 +755,76 @@ void main() {
       );
     });
 
+    test('移出走自动入口：不转所有权；撤销 = 加回并钉住，AI 再移也拒绝（v159）', () async {
+      final String a = await book('A1');
+      final String b = await book('B1');
+      final String c = await book('C1');
+      final int col = await db.createMediaCollection(
+        'AiCol',
+        origin: CollectionOrigin.ai,
+        organizeKey: 'k-ai',
+      );
+      for (final String k in <String>[a, b, c]) {
+        await db.addToCollectionRaw(
+          col,
+          MediaKind.epub.dbValue,
+          k,
+          userIntent: false,
+        );
+      }
+      OrganizeAction evict(String key) => OrganizeAction(
+        kind: OrganizeActionKind.evict,
+        source: 'ai',
+        confidence: AiOrganizeConfidence.high,
+        targetCollectionId: col,
+        entries: <OrganizeEntry>[
+          OrganizeEntry(
+            mediaType: MediaKind.epub.dbValue,
+            entryKey: key,
+            tombstoneKey: 'epub\u0000$key',
+            item: const AiOrganizeItem(title: 'x'),
+          ),
+        ],
+      );
+      Future<List<String>> members() async => <String>[
+        for (final MediaCollectionItemRow m in await db.getCollectionItems(col))
+          m.entryKey,
+      ];
+
+      await applyOrganizeActions(
+        db,
+        runId: 1,
+        actions: <OrganizeAction>[evict(a)],
+      );
+      expect(await members(), <String>[b, c]);
+      expect((await db.getMediaCollectionById(col))!.origin, 'ai');
+      final LibraryOrganizeChangeRow change =
+          (await db.select(db.libraryOrganizeChanges).get()).single;
+
+      expect(await undoLibraryOrganizeChanges(db, <int>[change.id]), 1);
+      final MediaCollectionItemRow back = (await db.getCollectionItems(
+        col,
+      )).firstWhere((MediaCollectionItemRow m) => m.entryKey == a);
+      expect(back.pinnedByUser, isTrue, reason: '撤销移出 = 用户否决这次移出');
+      expect(
+        (await db.getMediaCollectionById(col))!.origin,
+        'ai',
+        reason: '撤销不接手合集所有权',
+      );
+
+      await applyOrganizeActions(
+        db,
+        runId: 2,
+        actions: <OrganizeAction>[evict(a), evict(b)],
+      );
+      expect(await members(), containsAll(<String>[a, c]));
+      expect(await members(), isNot(contains(b)), reason: '没钉住的照常移出');
+      final List<LibraryOrganizeChangeRow> run2 = await (db.select(
+        db.libraryOrganizeChanges,
+      )..where((t) => t.runId.equals(2))).get();
+      expect(run2, hasLength(1), reason: '钉住的那条什么也没做，不记账');
+    });
+
     test('旧的「新建」记录落在同名已有整理器合集上：撤销不删它', () async {
       final String a = await book('A1');
       final String b = await book('B1');
