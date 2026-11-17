@@ -2220,17 +2220,19 @@ Rust `SCHEMA` 没升（没加表 / 索引，分到的 40024 没用）；ABI 不�
      `SrsCore.openInBackground` 失败即抛，`SrsStorageHost.acquire` 不缓存、不重建，墓碑库同样挡住「建一份空库」。所以
      **已迁移的设备装回 3.x：整个卡片库打不开，什么也同步不了，也不会往任何位置写东西**。Android 降级还得先卸载（清空本机
      数据，除非另有备份），iOS 商店版不能降级。原提示「先用 3.x 同步一次」对这台设备不成立，照做反而有丢数据的风险。
-   - 在**另一台还没升级的 3.x 设备**上同步一次是安全的：3.x 的 `srsPrepareLocation` 把 `v2/` 升成 `v3/`（`v2/` 立协议 1
+   - 在**另一台装 v3.3.0 的设备**上同步一次是安全的（复核更正：原文写「3.x」，只对 v3.3.0 成立，见本节「复核修复（第二轮）」
+     第 1 条）：v3.3.0 的 `srsPrepareLocation` 把 `v2/` 升成 `v3/`（`v2/` 立协议 1
      围栏），之后 4.x 的设备按存量协议 3 位置接手（旧根接手、`v3/meta.json` 改写成 `minReader 4` / `moved: v4` 的围栏）。
      4.x 拒绝协议 1 位置时一个字节不写（`check_root` 在碰位置之前），所以 3.x 那边看到的仍是纯协议 1 的位置，不会和新代分叉。
    - 位置已经被 4.x 立过围栏之后，3.x 读到 `v3/meta.json` 的 `minReader 4` 就 `needsUpgrade`、整轮不写（v3.3.0
      `srs_location_crypto.dart` 握手 + `srs_folder_location.dart` needsUpgrade 时连媒体也不碰）；云盘先删后传窗口里 3.x 重建
      `minReader 3` meta、或一轮进行中被立围栏的情况，新设备下一轮重立围栏、按变了的清单只读新多出的段并承袭上传
      （下面第 6 条的用例）。
-   - **定案**：i18n `srs_sync_location_protocol1_root` 改成「请在另一台仍是 3.x 版本的设备上用它同步一次把位置升级，或者换
-     一个同步位置。不要把本机装回 3.x：本机的卡片库已经升级，3.x 打不开；Android 降级还得先卸载，会清空本机数据。」
-     （`i18n_sync --remove` + `--add`：旧译文的意思错了，不能留；zh-HK 另用 `--set` 给繁体，其余 14 种语言先回落英文）；
-     内核 `check_root` 的英文消息与 `oldroot.rs` 文件头同步改。用例 `only_a_protocol1_root_is_refused` 钉住新消息。
+   - **定案**（第二轮复核后的最终文案，见「复核修复（第二轮）」第 1 条）：i18n `srs_sync_location_protocol1_root` 是「要升级
+     它，请在另一台装 Fushi 3.3.0 的设备上用它同步一次——只有 3.3.0 能升级它，3.0.x 和更早的预发布版做不到。也可以换一个
+     同步位置。不要把本机装回 3.x：本机的卡片库已经升级，3.x 打不开；Android 降级还得先卸载，会清空本机数据。」（第一轮
+     `i18n_sync --remove` + `--add` 清掉了意思错的旧译文；第二轮用 `--set` 改 17 份，其余 14 种语言仍回落英文）；内核
+     `check_root` 的英文消息与 `oldroot.rs` 文件头同步改。用例 `only_a_protocol1_root_is_refused` 钉住新消息。
    - **用户影响**：只在协议 1 位置上同步过、手上已没有 3.x 设备的用户，这个位置在 4.x 下没法升级，只能换位置（本机数据
      完好，新位置照常同步）；位置上只存在于协议 1 根里的别的设备的操作，要那台设备自己升级后才拿得到。这仍是 §22 定案
      第 2 条交所有者确认的那一项，没变。
@@ -2238,7 +2240,8 @@ Rust `SCHEMA` 没升（没加表 / 索引，分到的 40024 没用）；ABI 不�
    清旧根累计（`oldroot_forget_run`）、对 `relay_segs` 里每个作者跑一遍 `sync_relay::prune`（不再是转发目标的原文立刻
    丢掉）。回包 `{forgotten, relayDropped}`，幂等。**刻意保留**：本机 outbox 水位、承袭指纹、`media_*`（同一个目录再加回来
    不必重传，媒体绑定是真相层操作，与位置无关）。Dart：`srsSync4ForgetLocation(host, locationId)`（`srs_sync4_steps.dart`）
-   → `SrsSyncScheduler.forgetLocation`（进串行队列）→ 复习历史页「移除文件夹」在改偏好的同一个 `_run` 里调。**G10-4 的
+   → `SrsSyncScheduler.forgetLocation(locationId, dropFromConfig:)`（进串行队列；内核忘掉成功之后才在同一个串行步骤里去掉
+   配置，见「复核修复（第二轮）」第 3 条）→ 复习历史页「移除文件夹」。**G10-4 的
    host 目录接口**：互联 host 目录移除位置时同样调 `srsSync4ForgetLocation(store, locationId)` 即可，不用新命令。用例：
    Rust `a_removed_location_is_forgotten_and_no_longer_relayed_to`、Dart 真内核 `srs_sync4_folder_test`「移除位置」。
    变异：不删 `loc_state` / 不 prune → 红。
@@ -2263,10 +2266,71 @@ Rust `SCHEMA` 没升（没加表 / 索引，分到的 40024 没用）；ABI 不�
 
    远程复习的「新旧互拒四个方向」归 G10，不在同步模块，本分支没核。
 
+### 复核修复（第二轮，2026-11-17，同一分支）
+
+1. **协议 1 位置的提示点名 3.3.0**（复核 major）。按 tag 核过：正式版只有 v3.0.0、v3.0.1、v3.3.0。v3.0.x 的 `fushi/lib`
+   里没有 `kSrsSync2V1Folder` / `srsPrepareLocation`（`git grep` 0 处）——它们还没有 sync2，走 `packages/fushi_srs` 的旧事件
+   同步，根本不碰 `v2/`；会写 `v2/` 的协议 1 是 2026-10-30 断代之前的 sync2 预发布构建，它们只写 `v2/`；只有 v3.3.0
+   （`srs_sync_scheduler.dart` 的 `srsPrepareLocation` + `srs_location_migration.dart`）会把 `v2/` 升成 `v3/`。一个位置只剩
+   `v2/`，本身就说明从来没有 v3.3.0 设备在上面同步过，所以用户手上「仍是 3.x」的设备多半是 3.0.x 或预发布版，照第一轮的
+   提示做什么也不会发生。**最终定案**：提示、内核 `check_root` 消息、`oldroot.rs` 文件头一律写「在另一台装 Fushi 3.3.0
+   的设备上同步一次；3.0.x 和更早的预发布版做不到」。**对用户的影响**：要么另找一台设备装 v3.3.0（新装也行：v3.3.0 新库
+   同步这个位置时同样先 `srsPrepareLocation` 升级位置，再由 4.x 设备按存量协议 3 位置接手），要么换一个同步位置；本机卡片与
+   复习记录不受影响。协议 1 位置的只读转译（D21 原文）仍没做。
+2. **旧根收尾护栏补用例**（复核 minor，第一轮变异全部存活）：
+   - `slices_of_one_round_add_up_to_a_recorded_fingerprint` 加一步：收尾批交来的清单与这一轮指纹对不上 → 不记；
+   - 新 `a_settling_slice_that_must_drain_more_does_not_record`：收尾批预算 1、等待缓冲没投完（`drainMore`）→ 不记，不带段
+     的片投完那一片才记；
+   - 新 `forgetting_a_location_drops_its_accumulated_old_root_conclusions`：`location_forget` 后 `gen4_oldrun/<col>/<位置>`
+     前缀下 0 行。
+   - 变异实测（`store::gen4::oldroot` 8 条）：(a) `location_forget` 去掉 `oldroot_forget_run`、(c) `finish_oldroot` 去掉
+     `drain_more` 守卫、(g) 去掉 `scan.fp != *fp` 检查 → 各自对应用例红（exit 101，1 failed），还原后工作区干净。
+   - (b) `head_unchanged` 去掉 `self_digest` 比较：判为等价变异，不补用例——`skip_unchanged` 比的 tag 已含本机摘要与版本向量，
+     摘要变了 tag 必变、前一道就回 `None`。
+3. **移除位置不再留孤儿状态**（复核 minor）：原顺序是先改偏好删掉位置、再 `forgetLocation`；后者抛错或卡片库没打开时直接
+   `return`，位置已从界面消失、`loc_state` 还在，用户再无入口重试，活跃窗口里还为它留转发原文。改成
+   `SrsSyncScheduler.forgetLocation(locationId, dropFromConfig:)`：在同一个 `_serially` 步骤里先让内核忘掉、成功之后才调
+   `dropFromConfig` 去掉配置（中间插不进新的一轮把状态行建回来）；卡片库没打开 / 正在关闭就抛 `StateError`，配置不动。复习
+   历史页失败提示换成新 key `srs_timeline_location_remove_failed`（复核 nit：原来复用的「文件夹不可用」意思不对）。用例：
+   `fushi/test/srs/srs_sync_scheduler_test.dart`「移除文件夹位置：内核先忘掉、再去掉配置；卡片库不可用时配置不动、报错」。
+   未改：`forgetLocation` 排在串行队列里，一轮长同步没跑完之前界面会等（与写 head 不交错是刻意的）。主同步后端（云 /
+   WebDAV / 互联通道）断开或切换时要不要也忘掉位置：本分支没查清入口，归 G10-4（host 目录 / 通道位置的移除，接口就是
+   `srsSync4ForgetLocation`）。
+4. **规划 §6 / 设计稿 §6.3 同步类条件补全对照**（复核 minor）：
+
+   规划 §6 位置覆盖面里第一轮没列的两项：
+
+   | 条件 | 覆盖 |
+   |---|---|
+   | 互联 host 目录 | **缺**：没有经互联 host 目录跑新代位置的端到端用例（`srs_sync2_relay_test` 只覆盖经互联通道的转发，不是 host 目录本身的换代）。归 G10-4 |
+   | link 步骤（D3 残留：旧服务端收到 v4 `seg-` 仍写一行设备名补充） | **缺**：没有用例。归 G10（服务端 / 互联） |
+
+   设计稿 §6.3（规划 §6「§6.3 每一行一个测试」），逐行：
+
+   | §6.3 行 | 覆盖 |
+   |---|---|
+   | 两台先后升级，后一台离线期间还在旧版本上写 | `an_old_client_writing_past_the_fence_is_still_taken_over`、`old_root_takeover_reaches_migrated_and_new_devices_alike` |
+   | 两台同时升级（转译逐字节相同、新根 meta 相同、承袭段幂等） | 部分：`translation_is_total_deterministic_and_canonical`（proptest）、`meta4_is_a_frozen_pure_function`、`upload_fills_the_location_and_others_receive_it_identically`、`old_root_takeover_reaches_migrated_and_new_devices_alike`（B 看见 A 的承袭段不重传）。**缺**两台各自迁移同一份协议 3 库后比较本机转译结果与位置文件逐字节相同的端到端用例。归 G7（迁移）/ G8 |
+   | 有一台永远不升级 / 已经丢了 | `old_root_takeover_reaches_migrated_and_new_devices_alike`（OLD 只在旧根上的历史经承袭到达新设备 C） |
+   | 新装的新版本设备加入全是旧版本的位置 | 部分：`the_location_root_fences_protocol_3_and_refuses_what_it_cannot_read`（存量位置立围栏）、`a_new_collection_is_never_taken_for_an_existing_one`。**缺**「新装设备（无迁移来源）接触存量协议 3 位置」单独一条。归 G8 |
+   | 升级时旧根还在被旧版本写 | `an_old_client_writing_past_the_fence_is_still_taken_over`、`the_old_root_is_rescanned_only_when_its_listing_changes` |
+   | 升级中途断电 | `every_crash_point_resumes_to_the_same_library`（§6.1，G7）、`a_fence_interrupted_midway_is_completed_by_the_next_device` |
+   | 回退到旧版本 | 本机：`a_ready_library_is_migrated_sealed_and_opens`、`opening_after_a_lost_seal_finishes_it`（封存）；v3.3.0 拒开按源码核（第 3 条）。位置：围栏内容由 `fence3_is_a_function_of_dir_and_meta` 钉住；**缺**真跑协议 3 客户端（树里没有冻结的 v3 客户端）。归 G8 |
+   | 旧设备身份分叉过 | `a_different_fingerprint_is_a_fork_and_both_branches_are_kept`、`a_fork_is_never_swallowed` |
+   | 不信任 / 拒绝过另一台的 Purge | `a_device_that_purged_and_one_that_has_not_yet_converge`、`a_library_that_purged_does_not_take_content_away_from_one_that_has_not`、`coverage_by_an_untrusted_or_unknown_uploader_does_not_count` |
+   | 加密位置（kdf 原样抄、承袭段同钥匙密封） | `the_location_root_fences_protocol_3_and_refuses_what_it_cannot_read`（kdf 从旧根抄）、`check_meta4_compares_fields`、`an_encrypted_location_seals_segments_and_needs_the_key` |
+   | 只有协议 1 旧根 | 按 D21 偏离定案明确拒绝：`only_a_protocol1_root_is_refused`、`a_new_collection_is_never_taken_for_an_existing_one`、`srs_format_break_test` 第二组；只读转译**缺**（待所有者确认，§22 定案第 2 条） |
+   | 旧 `.fushisrs` / 旧备份 | 不属同步：G11（`v1_events_land_with_the_same_cards_and_logs` 等） |
+   | 同机多 profile | 不属同步：G7（`profiles_bind_to_their_own_collections_and_an_unbound_one_joins_first`、`server_srs_migration_e2e_test` 两 profile 夹具） |
+   | 服务端先升级，客户端还是旧版本 | 部分：`server_srs_migration_e2e_test`（启动自动迁移）、`srs_remote_generation_test`（V1 拒绝桩 426）。**缺**「经新服务端同步的旧客户端被围栏挡住」端到端。归 G10 |
+   | 客户端先升级，服务端还是旧版本 | **缺**：旧服务端读到围栏进入「需要升级」、复习服务停掉，没有用例（树里没有冻结的旧服务端）。归 G10 |
+   | 服务端一直不升级 | 同上，**缺**，归 G10 |
+
 ### 没做
 
 - 规划 §6 的 R0 真机实测（文件夹 / 互联 host / WebDAV × 新集合 / 存量集合 / 先删后传窗口 / 一轮中立围栏 / link 步骤）：
   只有上表的自动化覆盖。
+- 上面第 4 条表里标「缺」的各行（按标注归属）。
 - 协议 3 客户端碰新位置没有「真跑旧客户端」的用例（树里只冻结了协议 1 客户端）；要的话得把 v3.3.0 的位置握手冻结进
   `test/srs/sync2/` 另一个 `v3_client/`。
 - `COUNT(*)` 统计等待项仍随剩余项数线性（只数不解）；要做到常数得另存计数器，等实测证明是瓶颈再说。

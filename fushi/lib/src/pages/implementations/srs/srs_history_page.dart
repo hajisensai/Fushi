@@ -515,14 +515,20 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
     );
     if (!ok || !mounted) return;
     await _run('removeFolder', () async {
-      await ref.read(appProvider).setSrsFolderLocations(<SrsFolderLocation>[
-        for (final SrsFolderLocation x
-            in ref.read(appProvider).srsFolderLocations)
-          if (x.id != l.id) x,
-      ]);
-      // 内核忘掉这个位置的同步状态、不再向它转发（`location_forget`）；位置上的文件与本机卡片不动。
-      await ref.read(srsAppRuntimeProvider)?.sync.forgetLocation(l.locationId);
-    }, failure: t.srs_timeline_location_unavailable);
+      Future<void> drop() =>
+          ref.read(appProvider).setSrsFolderLocations(<SrsFolderLocation>[
+            for (final SrsFolderLocation x
+                in ref.read(appProvider).srsFolderLocations)
+              if (x.id != l.id) x,
+          ]);
+      // 内核先忘掉这个位置的同步状态、不再向它转发（`location_forget`），成功了才从配置里去掉；失败时位置留在列表里，
+      // 用户可以再移除一次。位置上的文件与本机卡片不动。
+      final SrsSyncScheduler? sync = ref.read(srsAppRuntimeProvider)?.sync;
+      if (sync == null) {
+        throw StateError('removeFolder: srs runtime unavailable');
+      }
+      await sync.forgetLocation(l.locationId, dropFromConfig: drop);
+    }, failure: t.srs_timeline_location_remove_failed);
   }
 
   /// 位置的加密状态（最近一轮同步看到的；还没同步过的位置按本机记的密钥推断）。
