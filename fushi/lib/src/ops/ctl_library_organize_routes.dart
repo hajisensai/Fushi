@@ -73,6 +73,7 @@ List<CtlRoute> buildLibraryOrganizeCtlRoutesFor({
         'status': r.status.name,
         'runId': r.runId,
         'changes': r.changes,
+        'proposals': r.proposals,
         'requests': r.requests,
         if (r.error != null) 'error': r.error,
       };
@@ -124,7 +125,52 @@ List<CtlRoute> buildLibraryOrganizeCtlRoutesFor({
         'undone': await undoLibraryOrganizeRun(database(), id),
       };
     }),
+    // 待确认的合集级建议（AI 库管家设计稿 §8：用户合集的合并 / 改名）。
+    CtlRoute.get('$kLibraryOrganizeCtlRoot/proposals', (CtlCall call) async {
+      return <String, Object?>{
+        'proposals': <Object?>[
+          for (final LibraryOrganizeProposalView p
+              in await loadLibraryOrganizeProposals(
+                database(),
+                pendingOnly: call.optBool('all') != true,
+              ))
+            p.toJson(),
+        ],
+      };
+    }),
+    CtlRoute.post(
+      '$kLibraryOrganizeCtlRoot/proposals/:id/accept',
+      (CtlCall call) => _resolveProposal(call, database, isReadonly, true),
+    ),
+    CtlRoute.post(
+      '$kLibraryOrganizeCtlRoot/proposals/:id/reject',
+      (CtlCall call) => _resolveProposal(call, database, isReadonly, false),
+    ),
   ];
+}
+
+Future<Map<String, Object?>> _resolveProposal(
+  CtlCall call,
+  FushiDatabase Function() database,
+  bool Function()? isReadonly,
+  bool accept,
+) async {
+  final int? id = int.tryParse(call.params['id'] ?? '');
+  if (id == null || id <= 0) {
+    throw const CtlFailure.badRequest('建议 id 必须是正整数');
+  }
+  if (isReadonly?.call() ?? false) {
+    throw const CtlFailure.rejected('数据已迁移到新版，旧版处于只读状态');
+  }
+  final OrganizeProposalState? state = await resolveLibraryOrganizeProposal(
+    database(),
+    id,
+    accept: accept,
+  );
+  if (state == null) {
+    throw const CtlFailure.notFound('没有这条待确认建议（或已处理过）');
+  }
+  return <String, Object?>{'id': id, 'state': state.name};
 }
 
 CollectionShelfDomain _domain(String raw) {

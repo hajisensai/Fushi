@@ -97,6 +97,27 @@ const List<CtlCommandGroup> libraryCommandGroups = <CtlCommandGroup>[
         render: _renderOrganizeUndo,
       ),
       CtlCommandSpec(
+        name: 'organize-proposals',
+        summary: '列出 AI 整理产出的待确认建议（合并 / 改名你自己的合集）',
+        configure: _configureOrganizeProposals,
+        build: _buildOrganizeProposals,
+        render: _renderOrganizeProposals,
+      ),
+      CtlCommandSpec(
+        name: 'organize-accept',
+        summary: '接受一条待确认建议：以你的身份合并 / 改名合集（不进整理撤销）',
+        usage: '<建议 id>',
+        build: _buildOrganizeAccept,
+        render: _renderOrganizeResolve,
+      ),
+      CtlCommandSpec(
+        name: 'organize-reject',
+        summary: '拒绝一条待确认建议（同样的建议以后不再提）',
+        usage: '<建议 id>',
+        build: _buildOrganizeReject,
+        render: _renderOrganizeResolve,
+      ),
+      CtlCommandSpec(
         name: 'source-add',
         summary: '把本机目录登记成来源库并扫描',
         usage: '<目录>',
@@ -476,7 +497,8 @@ String _renderOrganize(Object? data) {
   if (data is! Map) return '$data';
   final String error = data['error'] == null ? '' : '（${data['error']}）';
   return '整理记录 #${data['runId']} · ${data['status']}$error · '
-      '${data['changes']} 处改动 · ${data['requests']} 次请求';
+      '${data['changes']} 处改动 · ${data['requests']} 次请求'
+      '${(data['proposals'] as num? ?? 0) > 0 ? ' · ${data['proposals']} 条待确认建议（organize-proposals）' : ''}';
 }
 
 void _configureOrganizeHistory(ArgParser parser) {
@@ -526,6 +548,51 @@ CtlRequestSpec _buildOrganizeUndo(CtlCommandContext context) {
 
 String _renderOrganizeUndo(Object? data) =>
     data is Map ? '已撤销 ${data['undone']} 处' : '$data';
+
+void _configureOrganizeProposals(ArgParser parser) {
+  parser.addFlag('all', negatable: false, help: '连已接受 / 已拒绝 / 已失效的一起列');
+}
+
+CtlRequestSpec _buildOrganizeProposals(CtlCommandContext context) =>
+    CtlRequestSpec.get(
+      '$_organizeRoot/proposals',
+      query: <String, String>{if (context.flag('all')) 'all': 'true'},
+    );
+
+String _renderOrganizeProposals(Object? data) {
+  final Object? list = data is Map ? data['proposals'] : null;
+  if (list is! List || list.isEmpty) return '没有待确认的建议';
+  final StringBuffer out = StringBuffer();
+  for (final Object? p in list) {
+    if (p is! Map) continue;
+    final String what = p['kind'] == 'rename'
+        ? '改名「${p['collection']}」→「${p['newName']}」'
+        : '把 ${((p['sources'] as List?) ?? const <Object?>[]).map((Object? s) => '「$s」').join('、')} '
+              '并进「${p['collection']}」';
+    out.writeln(
+      '#${p['id']} ${p['state']} · $what · ${p['confidence']}'
+      '${p['reason'] == null ? '' : '（${p['reason']}）'}',
+    );
+  }
+  return out.toString().trimRight();
+}
+
+CtlRequestSpec _buildOrganizeResolve(CtlCommandContext context, String verb) {
+  final String raw = context.positional(0, '建议 id');
+  if (!RegExp(r'^[1-9]\d*$').hasMatch(raw)) {
+    throw CtlUsageError('建议 id 必须是正整数：$raw');
+  }
+  return CtlRequestSpec.post('$_organizeRoot/proposals/$raw/$verb');
+}
+
+CtlRequestSpec _buildOrganizeAccept(CtlCommandContext context) =>
+    _buildOrganizeResolve(context, 'accept');
+
+CtlRequestSpec _buildOrganizeReject(CtlCommandContext context) =>
+    _buildOrganizeResolve(context, 'reject');
+
+String _renderOrganizeResolve(Object? data) =>
+    data is Map ? '建议 #${data['id']}：${data['state']}' : '$data';
 
 CtlRequestSpec _buildScan(CtlCommandContext context) {
   final String? kind = context.option('kind');

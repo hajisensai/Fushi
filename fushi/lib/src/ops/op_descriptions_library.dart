@@ -1845,4 +1845,52 @@ List<OpDescription> _describeOrganizeOps(OpDescribeKit kit) => <OpDescription>[
       ),
     ],
   ),
+  const OpDescription(
+    id: 'library.organize.proposals',
+    method: 'GET',
+    pattern: '$_organize/proposals',
+    summary:
+        'AI-organize suggestions waiting for the user: merging or renaming '
+        "the user's own collections (never applied automatically).",
+    params: <OpParam>[
+      OpParam.boolean(
+        'all',
+        description: 'Also list accepted / rejected / stale suggestions.',
+      ),
+    ],
+  ),
+  const OpDescription(
+    id: 'library.organize.proposal.accept',
+    method: 'POST',
+    pattern: '$_organize/proposals/:id/accept',
+    summary:
+        'Apply one pending suggestion as the user (merge or rename the '
+        "user's collections). Not part of organize undo.",
+    risk: OpRisk.irreversible,
+    params: <OpParam>[
+      OpParam.string(
+        'id',
+        description: 'Suggestion id from library.organize.proposals.',
+        required: true,
+        inPath: true,
+      ),
+    ],
+  ),
+  const OpDescription(
+    id: 'library.organize.proposal.reject',
+    method: 'POST',
+    pattern: '$_organize/proposals/:id/reject',
+    summary:
+        'Reject one pending suggestion; the same suggestion is not offered '
+        'again.',
+    risk: OpRisk.irreversible,
+    params: <OpParam>[
+      OpParam.string(
+        'id',
+        description: 'Suggestion id from library.organize.proposals.',
+        required: true,
+        inPath: true,
+      ),
+    ],
+  ),
 ];
