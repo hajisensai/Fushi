@@ -1,4 +1,4 @@
-## BUG-4791 · 分页恢复落点后的 16ms settle 与揭示后的下一帧重写把旧像素位置写回，盖掉期间的迟到图片重锚 / 用户翻页
+## BUG-4797 · 分页恢复落点后的 16ms settle 与揭示后的下一帧重写把旧像素位置写回，盖掉期间的迟到图片重锚 / 用户翻页
 - **报告**：2026-11-17（用户：小说阅读器优化清单复核 gap-readerjs1-1 + gap-readerjs1-8 第一项——代码审查发现，非用户现场报告）
 - **真实性**：✅ 真 bug（代码路径确认 + Node 行为装置复现；未在真机复现，触发频率未知）。根因（修前行号，基准 upstream/develop @ 8d58da51da9）：
   - `fushi/lib/src/reader/reader_pagination_scripts.dart:3367` 分页 `_settleAndNotify(context, pos)`：三个恢复入口（`restoreProgress` `:3375`、`restoreToCharOffset` `:3391`、`jumpToFragment` `:3430`）落点后读出当前页位置 `pos` 交进来，16 ms 定时器里 `setPagePosition(context, pos)` 把**延后之前捕获的像素值**原样写回，不判断这期间位置有没有被正当改写。

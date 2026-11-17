@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4147 条。点号进各自文件。
+> 共 4153 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4791](bugs/BUG-4791-paged-settle-pixel-writeback-clobbers-late-image-reanchor.md) | ✅ | ✅ | 分页恢复落点后的 16ms settle 与揭示后的下一帧重写把旧像素位置写回，盖掉期间的迟到图片重锚 / 用户翻页 |
-> 共 4152 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4797](bugs/BUG-4797-paged-settle-pixel-writeback-clobbers-late-image-reanchor.md) | ✅ | ✅ | 分页恢复落点后的 16ms settle 与揭示后的下一帧重写把旧像素位置写回，盖掉期间的迟到图片重锚 / 用户翻页 |
 | [BUG-4796](bugs/BUG-4796-disc-back-double-press-repeat-topmenu.md) | ✅ | ✅ | 原盘正片快速连按两次返回会重复发 topMenu，第二次失败会整盘退出 |
 | [BUG-4795](bugs/BUG-4795-disc-back-to-menu-transient-error-exits.md) | ✅ | ✅ | 原盘正片按返回回盘菜单时，任何暂时性错误都会让整个原盘会话退出 |
 | [BUG-4794](bugs/BUG-4794-subtitle-panel-favorites-filter-width-wasted.md) | 🚧 | 🚧 | 经典版式字幕列表收藏档的筛选分段被截到剩余宽度一半，收藏计数用不满的宽度空着 |

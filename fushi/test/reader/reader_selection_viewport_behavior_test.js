@@ -519,7 +519,7 @@ for (const writingMode of ['horizontal-tb', 'vertical-rl', 'vertical-lr']) {
         if (entry === 'fragment') assert.equal(f.reader.alignToFragmentTarget('target'), true);
         if (entry === 'range') assert.equal(f.reader._alignRangeToPage({}), true);
         if (entry === 'settle') {
-          // BUG-4791：settle 不再写回捕获的像素位置，而是按已登记的语义锚重设落点。这里
+          // BUG-4797：settle 不再写回捕获的像素位置，而是按已登记的语义锚重设落点。这里
           // 登记章首锚（前一页），定时器回调经 reapplyImageLateAnchor 真的换页。
           f.reader.registerImageLateAnchor({progress: 0});
           f.reader._settleAndNotify(); preserved(f);
