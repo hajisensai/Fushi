@@ -248,6 +248,7 @@ fushi_server ctl <action> [args] --interconnect https://127.0.0.1:38765 --passwo
   srs config '<json>'                      其余配置（rolloverHour、miningTarget、miningDecks、ankiConnect…）
   srs devices [<uid>]                      还没信任的复习同步设备（扣着的删除 / 彻底清除）
   srs trust|reject <设备 ID> [<uid>]       信任（扣着的立即生效）/ 拒绝（继续扣着）一台设备
+  srs migration [status] | start | cancel  复习库换代（协议 3 → 新代）：状态与处置说明 / 开始或重跑 / 叫停
   profiles [ls] | share|rm <id>
   backup [ls] | create [--no-documents] | rm <name>
                                            整机备份（落 <data>/backups/；下载走
@@ -296,6 +297,7 @@ fushi_server ctl <action> [args] --interconnect https://127.0.0.1:38765 --passwo
   srs config '<json>'                      Other settings (rolloverHour, miningTarget, miningDecks, ankiConnect...)
   srs devices [<uid>]                      Review sync devices not trusted yet (their held deletes / purges)
   srs trust|reject <device id> [<uid>]     Trust (held changes apply now) / reject (keep holding) a device
+  srs migration [status] | start | cancel  Review library upgrade (protocol 3 -> current): state and advice / start or rerun / stop
   profiles [ls] | share|rm <id>
   backup [ls] | create [--no-documents] | rm <name>
                                            Whole-machine backup (stored in <data>/backups/; download via
@@ -1136,6 +1138,18 @@ _CtlRequest? _parseAction(
             query: arg(0) == null ? null : <String, String>{'profile': arg(0)!},
             render: _renderSrsDevices,
           );
+        case 'migration' when arg(0) == null || arg(0) == 'status':
+          return const _CtlRequest(
+            'GET',
+            '$_api/srs/migration',
+            render: _renderSrsMigration,
+          );
+        case 'migration' when arg(0) == 'start' || arg(0) == 'cancel':
+          return _CtlRequest(
+            'POST',
+            '$_api/srs/migration/${arg(0)}',
+            render: _renderSrsMigration,
+          );
         case 'trust' || 'reject' when arg(0) != null:
           return _CtlRequest(
             'POST',
@@ -1151,7 +1165,8 @@ _CtlRequest? _parseAction(
       return usage(
         'srs [status] | srs profiles | srs add|remove|default <uid> | srs off | '
         "srs sync [<uid>] | srs ankiconnect on|off | srs config '<json>' | "
-        'srs devices [<uid>] | srs trust|reject <device> [<uid>]',
+        'srs devices [<uid>] | srs trust|reject <device> [<uid>] | '
+        'srs migration [status|start|cancel]',
       );
 
     case 'profiles':
@@ -1329,6 +1344,39 @@ void _renderPairing(Object? response, StringSink out) {
     );
   }
   _listRenderer('peers')(response, out);
+}
+
+/// `srs migration [status|start|cancel]`：代际状态、步骤进度、上次结论与处置说明，再列各份 profile 的状态。
+void _renderSrsMigration(Object? response, StringSink out) {
+  final Object? g = response is Map ? response['generation'] : null;
+  if (g is! Map) return _renderGeneric(response, out);
+  out.writeln(
+    '${tr('状态', 'State')}: ${g['state']}'
+    '${g['code'] == null ? '' : ' (${g['code']})'}',
+  );
+  if (g['step'] != null) {
+    out.writeln(
+      '${tr('步骤', 'Step')}: ${g['step']} ${g['done']}/${g['total']}'
+      '${g['cancelRequested'] == true ? tr('（已请求叫停）', ' (cancel requested)') : ''}',
+    );
+  }
+  if (g['verdict'] != null) {
+    out.writeln(
+      '${tr('上次结论', 'Last verdict')}: ${g['verdict']}'
+      '${g['finishedAt'] == null ? '' : '  ${g['finishedAt']}'}',
+    );
+  }
+  if (g['reason'] != null) out.writeln('${tr('原因', 'Reason')}: ${g['reason']}');
+  if (g['reportPath'] != null) {
+    out.writeln('${tr('报告', 'Report')}: ${g['reportPath']}');
+  }
+  if (g['advice'] != null) out.writeln('${tr('处置', 'Advice')}: ${g['advice']}');
+  final Object? profiles = response is Map ? response['profiles'] : null;
+  if (profiles is List) {
+    for (final Object? p in profiles) {
+      if (p is Map) out.writeln('  ${p['uid']}  [${p['state']}]');
+    }
+  }
 }
 
 /// `srs devices` / `srs trust|reject`：每份 profile 一段，还没信任的设备一行一台。

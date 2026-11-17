@@ -549,6 +549,7 @@ table.rt,.rt tbody,.rt tr,.rt td{display:block;width:100%}
 <div class="card"><h2>Fushi 复习</h2>
 <p class="sup">本机替已配对设备保管 Fushi 复习的收藏：手机可以远程复习、制卡落到这里，Yomitan 可经下面的 AnkiConnect 往这里加卡。勾选要提供的配置文件（每门语言一份）；不勾选任何一份 = 关闭。同步位置开了端到端加密的配置文件暂不支持。</p>
 <div class="grid" id="srs-status"></div>
+<div id="srs-migration"></div>
 <div id="srs-profiles" style="margin-top:12px"></div>
 </div>
 <h3 class="sh">待确认的设备</h3>
@@ -1103,7 +1104,26 @@ $('#btn-anki-run').onclick = guard(async()=>{ await post('anki/run'); toast(T('�
 $('#btn-anki-retry').onclick = guard(async()=>{ const r = await post('anki/retry'); toast(T('已重试 {0} 张', r.retried)); loadAnki(); });
 
 // ── 复习 ──
-const SRS_STATE = {opening:T('打开中'), ready:T('可用'), encrypted:T('同步位置已加密（暂不支持）'), needs_upgrade:T('数据来自更新版本的 Fushi，请升级服务端'), failed:T('出错')};
+const SRS_STATE = {opening:T('打开中'), ready:T('可用'), encrypted:T('同步位置已加密（暂不支持）'), needs_upgrade:T('数据来自更新版本的 Fushi，请升级服务端'), failed:T('出错'), upgrading:T('复习库升级中'), upgrade_blocked:T('复习库升级没完成，需在服务端处理（ctl srs migration）')};
+// 复习库换代（协议 3 srs.db → 新代，server_srs.dart ServerSrsGeneration）：ready 不显示；其余显示状态、进度、处置说明。
+// 失败类状态不自动重跑，「开始升级」由管理员表态后才发（server.srs.migration.start）；提交点之前可叫停。
+const SRS_GEN_STATE = {migrating:T('升级中'), migrating_elsewhere:T('另一个进程在升级'), needs_migration:T('需要升级'), migration_failed:T('升级失败'), sealed_old_only:T('只剩封存的旧库'), legacy_beside_new:T('新库旁边还有没升级的旧库'), blocked:T('升级受阻'), no_space:T('磁盘空间不够'), error:T('出错')};
+const SRS_GEN_IDLE = ['ready','migrating','migrating_elsewhere'];
+function renderSrsMigration(g){
+  const box = $('#srs-migration');
+  if (!g || g.state==='ready') { box.innerHTML=''; return; }
+  const progress = g.step ? ` · ${g.step}${g.total ? ' '+g.done+'/'+g.total : ''}` : '';
+  const kv = [[T('复习库换代'), (SRS_GEN_STATE[g.state]||g.state) + progress + (g.cancelRequested ? T(' · 已请求叫停') : '')]];
+  if (g.code) kv.push([T('原因'), g.code + (g.reason ? T('：') + g.reason : '')]);
+  if (g.reportPath) kv.push([T('报告'), g.reportPath]);
+  const start = !SRS_GEN_IDLE.includes(g.state) ? `<button class="b" id="btn-srs-mig-start">${esc(T('开始升级'))}</button>` : '';
+  const cancel = g.cancellable ? `<button class="b danger" id="btn-srs-mig-cancel">${esc(T('叫停升级'))}</button>` : '';
+  box.innerHTML = `<div class="grid" style="margin-top:12px">${kvHtml(kv)}</div><p class="sup" data-srs-advice>${esc(g.advice||'')}</p>${start||cancel ? `<div class="actions">${start}${cancel}</div>` : ''}`;
+  const s = $('#btn-srs-mig-start');
+  if (s) s.onclick = guard(async()=>{ if(!await ask(T('开始升级复习库？升级期间远程复习与制卡暂停；旧的 srs.db 会封存保留，不删除任何文件。'))) return; await post('srs/migration/start'); toast(T('已开始升级')); loadSrs(); });
+  const c = $('#btn-srs-mig-cancel');
+  if (c) c.onclick = guard(async()=>{ if(!await ask(T('叫停复习库升级？提交步骤之前叫停会回到升级前的样子；刚好进入提交步骤时以最终结论为准。'), true)) return; await post('srs/migration/cancel'); toast(T('已请求叫停')); loadSrs(); });
+}
 let srsFormKey = null;
 // 待确认 / 已拒绝的设备（服务端开库后第一次同步过来的；删除与彻底清除在本机扣着，engine srs_devices.dart）。
 function renderSrsDevices(devs){
@@ -1133,6 +1153,7 @@ async function loadSrs(){
     ['AnkiConnect', ac.listening ? T('监听 {0}:{1}', ac.bind, ac.listeningPort) : (ac.enabled ? T('未监听') + (ac.lastError ? T('：') + ac.lastError : '') : T('关闭'))],
   ];
   $('#srs-status').innerHTML = kvHtml(kv);
+  renderSrsMigration(st.generation);
   renderSrsDevices(devs);
   const served = {}; (st.profiles||[]).forEach(p=>served[p.uid]=p);
   const list = found.profiles || [];

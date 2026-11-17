@@ -1717,3 +1717,110 @@ Dart：`srs_format_break_test`（保留并转绿）、`srs_sync4_round_test`（�
 - `fushi_server` 的 `migrating` 映射：服务端 profile 打开 / 迁移状态归 G10-3；本模块只在共用的 `SrsRemoteStoreService` 里接了。
 - `profile_of_dir` 没做；客户端 `noteTypesFrom` 里内置笔记类型的字段 ID 仍按 uid 派生（ID 口径模块）。
 - 主机目录与信任（G10-4）没碰。schema 号 40023 未使用（没加表 / 索引）。
+
+## G10-3 服务端无头迁移与代际状态机（2026-11-17，分支 `pr/srs-gen4-g10-3-server-migration`，基于 `pr/srs-gen4-switch`）
+
+纯 Dart（`packages/fushi_server`），Rust 未改，没用 schema 号，`server_backup.dart` 未碰。
+
+### 实现
+
+- `ServerSrs`（`server_srs.dart`）开库前先调 `gen4_migrate_status`：`needsMigration` 时不开库，直接在后台无头跑
+  `gen4_migrate_run`（`SrsGen4Migration.run`，后台 isolate；`start()` / 改配置不等它）。`migrationFailed` / `sealedOldOnly` /
+  `migratingElsewhere` 记成对应状态。状态是 `ready` 时才开库；开库再抛 `SrsStoreOpenBlocked` 的照同一张表处理，
+  其中 -6 对应 `legacyBesideNew`。
+- 代际状态 `ServerSrsGeneration`（`generation`）：`ready` / `migrating` / `migrating_elsewhere` / `needs_migration` /
+  `migration_failed` / `sealed_old_only` / `legacy_beside_new` / `blocked`（带内核 `BlockCode`）/ `no_space` / `error`。每个状态都带
+  步骤进度、上次结论、原因原文、报告路径、空间数，以及给管理员的处置说明 `advice`。结论到状态的映射：
+  - `committed` → `ready`，随后重新套用配置：开库、各份打开并同步；
+  - `aborted` → `migration_failed`（带报告路径；之后状态命令报的 `migrationFailed` 不覆盖它）；
+  - `cancelled` → `needs_migration`；
+  - `noSpace` → `no_space`；
+  - `blocked`：`migrating` → `migrating_elsewhere`，`sealedWithoutNew` → `sealed_old_only`，`legacyBesideNew` → 同名状态，其余 → `blocked`；
+  - 迁移命令抛异常 → `error`。
+- 自动重跑规则（`autoRetry`）：只有 `ready`、`migrating_elsewhere`、`blocked(busy)` 这几种「等一会再来」的状态会自动重跑，
+  并且距上次结论至少过了 `kServerSrsMigrationRetryDelay`（1 分钟）。实际重跑发生在兜底定时器（30 分钟）的下一轮判定，
+  不会在刚跑完时紧接着再跑。其余结论一律不自动重跑，也不删任何文件，等管理员处置。进程被杀后重启，`autoRetry` 在新
+  进程里是初始值，会自动续做：内核取锁后先清掉临时库与补完副本，然后从头开始。如果是提交点之后才被杀，Primary 开库时会
+  补封。
+- 缓存配置的来源是 `legacyProfiles`（内核列出的旧库 profile，含孤儿 uid）∪ 配置里提供的 profile ∪ 同步目录里看得到的
+  profile，每个 uid 用 `srsCacheConfigFor` 生成。多给的配置内核不用；列表读不到时只记日志，缺了哪个由内核拦下
+  （`missingCacheConfig`）。
+- 进度：每秒轮询一次 `gen4_migrate_status.running`，写进 `generation`，也就是 admin 状态与 ctl 看到的进度；步骤变化、开始、
+  结论、状态转换都写日志（`ServerSrs.migrate` / `ServerSrs.generation`）。
+- 不可用期间的请求（`upgradeRefusal`）不会 500，也不会挂起，一律回 503：
+  - 升级中（含 busy）：`srs_upgrading`；
+  - 其余失败类状态：`srs_upgrade_blocked`；
+  - 远程复习：选了 profile 时 `remoteStore` 照样给出，默认 profile 或点名的已提供 profile 回 `SrsRemoteStoreError.migrating` /
+    `migrationFailed`（G10-1 预留的两个码），没提供的 uid 仍回 `profile_changed`；
+  - admin ctl 的复习内容端点、设备信任端点、AI 操作的可用性：回 503 加上面两个 reason；
+  - AnkiConnect：503，正文说明是升级中还是要服务端处理。
+  各份 profile 的状态新增 `upgrading` / `upgrade_blocked`，`lastError` 填处置说明；迁完后回到 `opening`，第一轮同步跑完才对外提供。
+- 停服：提交点之前叫停并等结论；过了提交点就等迁移跑完。
+- admin API 新增三个端点：`GET /api/admin/srs/migration`（`generation` 加各份状态）、`POST …/migration/start`（202，或 409
+  `srs_migration_running` / `srs_migration_not_needed` / `srs_migrating_elsewhere` / `srs_stopped` / `srs_unavailable`）、
+  `POST …/migration/cancel`（409 `srs_migration_not_running` / `srs_migration_past_commit`）。`GET /api/admin/srs` 也带 `generation`。
+  ctl 新增 `srs migration [status|start|cancel]`。操作目录新增 `server.srs.migration`（只读）、`server.srs.migration.start` 与
+  `.cancel`（irreversible，要表态），描述与路由一起写在 `admin_ops.dart`。
+
+### 定案与任务书不符处
+
+- **迁移按目录做，不按 profile 做。** 服务端只有一个库目录 `<support>`，所有 profile 共用一份 `srs.db` / `srs4.db`，内核的
+  迁移也是整目录一次提交。任务书里「多 profile 目录逐个迁，单个失败不影响其余」在现在的结构里不成立：某个 profile 的问题
+  （例如 `mergeHalfDone`）会拦下整个目录，所有 profile 一起进 `upgrade_blocked`。要做到按 profile 隔离，得先把服务端改成每个
+  profile 一个库目录，那是存储布局层面的改动（会动备份布局与 G10-4 的 host 目录），不在本块。
+- 「缓存配置按 `status.profiles` 给」：G7-2b 已经把 `profiles` 从状态命令里拿掉，改由 `gen4_migrate_profiles` 提供（§11），
+  这里按后者取。
+
+### 测试
+
+- `test/server_srs_migration_test.dart`（9 条，用假执行端）：
+  - 启动即后台迁移，缓存配置是旧库 profile 并上配置里的；迁移中远程复习默认 / 点名都回 503 `migrating`、没提供的 uid 回
+    409，ctl 回 503 `srs_upgrading`；进度进 `generation`；迁移中改配置不另起一次；提交后开库、各份离开 upgrading；
+  - `mergeHalfDone` 可见且不重跑，管理员手动开始后再跑；对拍不过记报告路径，之后状态命令报的不覆盖它；
+  - 启动时目录已是 `migrationFailed` / `sealedOldOnly` / `migratingElsewhere`：不迁移、文件不动；别的进程迁完后下一轮自动接着迁；
+  - `legacyBesideNew` / `sealedWithoutNew` / `noSpace` 不重跑（重试间隔设成 0 也不重跑），`busy` 自动再试；
+  - 叫停：过了提交点拒绝，之前叫停后不重跑；停服时过了提交点等它跑完，没过提交点先叫停；
+  - 迁移命令报错记成 `error`；复习关时不判定。
+  变异实测：把 `autoRetry` 改成恒真，5 条变红。
+- `test/server_srs_migration_e2e_test.dart`（真原生库）：用协议 3 夹具 `fixtures/srs_protocol3_two_profiles.db.gz`（schema 29，
+  两个 profile，其中一个只在投影表里；生成器 `srs_protocol3_two_profiles_generator.rs.txt`，生成时临时贴进 `prepare_tests.rs`，
+  贴进去的那份已撤回）。场景：目录里先放上被杀进程留下的坏临时库与补完副本；启动后自动迁移，提交，副本被清掉，旧库原位封存；
+  另开句柄读主 profile，笔记 3 条都在；重启直接开新代库，不再迁移。日志里能看到真的走了 `precondition` → `commit` →
+  `committed`。
+- `ctl_commands_test`（`srs migration` 三个动作，用法错误回 64）、`admin_srs_ops_test`（三个新操作的风险分级）、
+  `admin_srs_test`（没有旧库时迁移端点回 ready / `not_needed` / `not_running`）。
+
+### 已知 / 交出去的
+
+- **服务端现有 SRS 测试仍红，归 G8-7b。** 服务端第一轮同步卡在 `SrsCoreUnwiredException: media_hash is not wired yet (G8-7b)`
+  （日志里 98 次，没有别的内核错误），profile 一直停在 `opening`、`storeFor` 为 null。红的有：
+  - `server_srs_test` 5 条、`admin_srs_ctl_test` 7 条、`admin_srs_device_trust_test` 3 条、`server_srs_mining_test` 5 条；
+  - `server_srs_rwkv_test` 3 条、`server_ankiconnect_test` 2 条、`admin_srs_test`「加 / 设默认 / 去掉 profile」1 条。
+  共 26 条（9 个文件 53 条执行）。这些和迁移无关，G8-7b 接上 `media_hash` 后应自然转绿，不加 skip。
+- `server_backup.dart`（G11-4）：迁移进行中复习库没开，`snapshotFn` 为 null，备份会自己离线打开 `srs.db`。G11-4 改服务端备份时
+  请看 `ServerSrs.migrationRunning`，迁移中拒绝或等待。本块按文件边界没碰这个文件。
+- D32 的「服务端保留副本在首次新代同步成功 14 天后自动删，并给 ctl 提前删除的入口」没做：需要第一轮新代同步先能跑通（G8-7b），
+  还需要内核提供删保留副本 / 写墓碑的全局命令，目前没有（`write_tombstone` 不经 C ABI）。交 G8-7b 之后的服务端后续或 G7-6。
+- ~~WebUI 没加迁移状态的显示与按钮~~：复核修复轮已补（见下「复核修复」）。
+- 没有协议 3 身份的原件对拍中止后，状态命令报 `needsMigration`（§11 已知），服务端每次启动会自动再迁一次，每次再中止并重写报告。
+  不丢数据，只是每次启动多跑一遍；这一点继承自 G7-2b 的缺口。
+
+### 复核修复（2026-11-17）
+
+- 互联制卡（`remote_mining_host.dart`）：复习库升级中 / 升级受阻且这次本该落进复习（点名复习、默认落复习、或没接 Anki）时，回
+  类型化的 `error` + `errorCode` `srs_upgrading`（transient）/ `srs_upgrade_blocked`（permanent，附 `generation.advice`），
+  不再按 2026-11-08「点名的给不了就退回默认」悄悄落进 Anki、也不回 `notConfigured`；`miningTargets` 带 `reviewUnavailable`。
+  点名 Anki 且 Anki 可用的照常进 Anki。
+- `precondition` / `missingCacheConfig` / `noLibrary` 各自有处置说明；`precondition` 与未知 code 不再引导「再跑一次」。
+- 叫停：用现取的 `gen4_migrate_status` 进度判断能不能叫停（不用滞后一个轮询间隔的那份）；仍可能与提交点竞态，内核在提交点
+  之后不受理，以最终结论（cancelled / committed）为准，操作目录描述与日志写明。
+- `busy` / 别的进程在迁移：隔 `migrationRetryDelay` 挂一次性定时器自己再判定，不等 30 分钟兜底定时器。
+- 执行端接口 `SrsGen4MigrationBackend` / `SrsNativeGen4MigrationBackend` 下沉到 `packages/fushi_srs`
+  （`srs_gen4_migration.dart`），app 迁移控制器与服务端共用。
+- WebUI 复习页：新增「复习库换代」块（各状态文案、步骤进度、原因、报告路径、处置说明），「开始升级」/「叫停升级」按钮经确认
+  对话框才发，叫停只在 `cancellable` 时出现。
+- 端到端测试补核：迁移后主 profile 的两条复习日志（本机一条 + 协议 1 时代一条）都在；孤儿 profile（只在投影表里）的牌组与
+  它那条旧日志也迁过来、可读（这一条是纯测试补强，数据保全在 Rust 迁移里，不另做变异）。
+- 变异实测（`server_srs_migration_test.dart`，每条打变异后定向跑、红后还原）：`_upgradeRefusalFor` 恒 null → 制卡用例红；
+  去掉 `precondition` 分支 → 处置说明用例红；叫停不用现取进度 → 叫停用例红；`_armMigrationRetry` 直接返回 → busy 与别的
+  进程两条红；WebUI「开始升级」去掉确认 → WebUI 用例红。

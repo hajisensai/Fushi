@@ -399,6 +399,23 @@ void main() {
       expect(await ctl(<String>['srs', 'reject']), 64);
     });
 
+    test('srs migration：状态 / 开始 / 叫停（G10-3）', () async {
+      await ctl(<String>['srs', 'migration']);
+      await ctl(<String>['srs', 'migration', 'status']);
+      await ctl(<String>['srs', 'migration', 'start']);
+      await ctl(<String>['srs', 'migration', 'cancel']);
+      expect(
+        admin.seen.map((_Seen s) => '${s.method} ${s.path}').toList(),
+        <String>[
+          'GET /api/admin/srs/migration',
+          'GET /api/admin/srs/migration',
+          'POST /api/admin/srs/migration/start',
+          'POST /api/admin/srs/migration/cancel',
+        ],
+      );
+      expect(await ctl(<String>['srs', 'migration', 'nope']), 64);
+    });
+
     test('未知动作 / 空动作 = 用法错误，不发请求', () async {
       expect(await ctl(<String>[]), 64);
       expect(await ctl(<String>['nope']), 64);
