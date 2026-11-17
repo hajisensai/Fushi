@@ -211,19 +211,21 @@ void main() {
     expect(f.counter.total, lessThan(40), reason: f.counter.summary());
   });
 
-  test('同步：应用对端事件：语句数不随事件数增长', () async {
-    Future<int> applyAt(int notes) async {
+  // 协议 3 这里量「成批应用对端已盖戳事件」；新代 `apply` 按设计拒绝它们，对端数据经集合并入进来（`.fushisrs` 导入 →
+  // 内核 `import` + `collection_adopt`），量的是同一件事：并进来的事件多了，执行器语句数不跟着涨。
+  test('同步：并入对端集合：语句数不随事件数增长', () async {
+    Future<int> joinAt(int notes) async {
       final BulkFixture src = await BulkFixture.open(notes: notes);
-      final List<SrsEvent> events = await src.store.exportAll();
       final BulkFixture dst = await BulkFixture.open(
         notes: 0,
         deviceId: 'other',
       );
       dst.counter.reset();
-      await dst.store.applyRemote(events, serverTimeMs: 1);
+      await joinCollectionFrom(dst.store, src.store);
+      expect(await dst.store.userNoteCount(), notes);
       return dst.counter.total;
     }
 
-    expectFlat('applyRemote', (await applyAt(40), await applyAt(160)));
+    expectFlat('joinCollection', (await joinAt(40), await joinAt(160)));
   });
 }

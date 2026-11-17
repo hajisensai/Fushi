@@ -10,6 +10,7 @@ import 'package:fushi_core/fushi_core.dart'
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_fushisrs.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
@@ -273,5 +274,26 @@ void expectSameState(
       }
     }
     expect(a.length, e.length, reason: '$label$table row count');
+  }
+}
+
+/// 把 [src] 整个集合经 `.fushisrs`（导出 → 导入，内核 `import` + 另一个集合时 `collection_adopt`，用户确认）并进
+/// [dst]：新代里对端的数据只经集合并入 / 收段进来（`apply` 拒绝外来已盖戳的事件，`gen4/cmd/writes.rs`）。
+Future<void> joinCollectionFrom(SrsDbStore dst, SrsDbStore src) async {
+  final Directory tmp = Directory.systemTemp.createTempSync('srs_join_');
+  try {
+    final File file = File('${tmp.path}${Platform.pathSeparator}peer.fushisrs');
+    await srsExportFushiSrs(src, file, withMedia: false);
+    await srsImportFushiSrs(
+      dst,
+      file,
+      confirmForeign: (SrsFushiSrsForeign _) async => true,
+    );
+  } finally {
+    try {
+      tmp.deleteSync(recursive: true);
+    } on FileSystemException {
+      // 句柄晚释放。
+    }
   }
 }

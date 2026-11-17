@@ -435,45 +435,48 @@ void main() {
   });
 
   group('同步', () {
-    /// 一组含批内重复、批内互相支配、同 ID 异内容的对端事件。
-    Future<List<SrsEvent>> trickyRemote() async {
+    // 协议 3 这里比「一批外来已盖戳事件成批应用 = 逐条应用」（批内重复、批内互相支配）。新代 `apply` 按设计拒绝外来
+    // 已盖戳的事件（对端数据只经集合并入 / 收段进来），同一个性质换到集合并入上：一次并入对端最终的集合，与分几次并入
+    // 它途中的样子（含重复并入同一份、后来的改名支配先前的）结果相同。
+    test('并入对端集合一次 = 分几次并入它的增量（含重复并入 / 支配）', () async {
       final BulkFixture src = await BulkFixture.open(
         notes: 12,
         deviceId: 'peer',
       );
-      final List<SrsEvent> base = await src.store.exportAll();
-      final LegacyEditWriter w = LegacyEditWriter('peer2#1');
-      final Hlc Function(int nowMs) tick = legacyTicker('peer2#1');
-      final String deck = await deckId(src.store, 'Lang');
-      SrsFieldEdit edit(String key, Object? value) => w.create(
-        profileUid: kBulkUid,
-        entityKind: SrsEntityKind.deck,
-        entityId: deck,
-        fieldKey: key,
-        value: value,
-        hlc: tick(kBulkNowMs),
-        timeSource: SrsTimeSource.wall,
-      );
-      final SrsFieldEdit a = edit(SrsFieldKeys.name, 'A');
-      final SrsFieldEdit b = edit(SrsFieldKeys.name, 'B'); // 支配 a
-      return <SrsEvent>[
-        ...base,
-        SrsEditEvent(b),
-        SrsEditEvent(a), // 被批内更早的 b 支配
-        SrsEditEvent(b), // 批内重复
-        base.first, // 重复的身份记录
-      ];
-    }
-
-    test('应用一批对端事件 = 逐条应用（含批内重复 / 支配）', () async {
-      final List<SrsEvent> events = await trickyRemote();
       final BulkFixture ref = await BulkFixture.open(notes: 0, deviceId: 'me');
       final BulkFixture bulk = await BulkFixture.open(notes: 0, deviceId: 'me');
-      for (final SrsEvent e in events) {
-        await ref.store.applyRemote(<SrsEvent>[e], serverTimeMs: 7);
-      }
-      await bulk.store.applyRemote(events, serverTimeMs: 7);
-      await expectSame(bulk, ref);
+      final String deck = await deckId(src.store, 'Lang');
+      await joinCollectionFrom(ref.store, src.store);
+      await src.store.editField(
+        SrsEntityKind.deck,
+        deck,
+        SrsFieldKeys.name,
+        'A',
+      );
+      await joinCollectionFrom(ref.store, src.store);
+      await src.store.editField(
+        SrsEntityKind.deck,
+        deck,
+        SrsFieldKeys.name,
+        'B', // 支配先前的 A
+      );
+      await joinCollectionFrom(ref.store, src.store);
+      await joinCollectionFrom(ref.store, src.store); // 重复并入同一份
+      await joinCollectionFrom(bulk.store, src.store);
+      expect(
+        (await bulk.store.deckTree()).decks.any(
+          (SrsDeckView d) => d.id == deck && d.name == 'B',
+        ),
+        isTrue,
+      );
+      // 每次 `.fushisrs` 导入先打一个还原点（`srsImportFushiSrs` → `sync2Checkpoint`，本机日志里一条操作）：ref 多导了
+      // 三次，本机日志长度（`ops` 那一行）按命令数本来就不同，其余逐维相同。
+      final Map<String, List<String>> got = await dumpSrsState(bulk.store)
+        ..remove('ops');
+      final Map<String, List<String>> want = await dumpSrsState(ref.store)
+        ..remove('ops');
+      expect(want['serverTimes'], isNotNull);
+      expectSameState(got, want);
     });
   });
 

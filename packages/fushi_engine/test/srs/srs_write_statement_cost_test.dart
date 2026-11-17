@@ -57,7 +57,6 @@ void main() {
     final List<String> notes = await s.noteIdsOfType(basic.id);
 
     final BulkFixture src = await BulkFixture.open(notes: 3, deviceId: 'src');
-    final List<SrsEvent> remote = await src.store.exportAll();
     final BulkFixture dst = await BulkFixture.open(notes: 0, deviceId: 'other');
 
     // 每种操作先预热一次（首次的懒加载不计），再量第二次。
@@ -83,9 +82,10 @@ void main() {
     await measure('import', () => s.sync2ImportOps(path: exported));
     await measure('sched', () => s.resetCard(cards.last));
     await measure('bulkWrites', () => s.bulkWrites(() async {}));
-    costs['applyRemote'] = await _cost(
+    // 对端数据：新代 `apply` 拒绝外来已盖戳的事件，经集合并入进来（`.fushisrs` 导入，内核 `import` + `collection_adopt`）。
+    costs['joinCollection'] = await _cost(
       dst.store,
-      () => dst.store.applyRemote(remote, serverTimeMs: 1),
+      () => joinCollectionFrom(dst.store, src.store),
     );
 
     for (final MapEntry<String, _Cost> e in costs.entries) {
@@ -95,7 +95,9 @@ void main() {
         'core=${e.value.core}',
       );
     }
-    // 改动前（见文件头）各多 BEGIN / COMMIT / 本机状态 upsert 3 条；applyRemote 剩下的 1 条是发命令前的 Drift 预读。
+    // 改动前（见文件头）各多 BEGIN / COMMIT / 本机状态 upsert 3 条。新代 `import` 之后重取一次身份（`identity`：包里
+    // 有本机身份的操作时内核先换身份，`SrsDbStore.sync2ImportOps`），所以内核命令 3 条。`joinCollection` 是整条
+    // `.fushisrs` 导入：预检 + 还原点 + `import` + `identity`（+ 落下之后的清除通知读）。
     // createNote 的那 1 条预读（这条笔记已有的修改记录）在第 14 步收掉：值没变的键由内核落库时筛
     // （srs_write_preread_cost_test.dart）。
     expect(costs, <String, _Cost>{
@@ -103,9 +105,9 @@ void main() {
       'answer': (statements: 0, core: 2),
       'checkpoint': (statements: 0, core: 1),
       'purge': (statements: 0, core: 1),
-      'import': (statements: 0, core: 2),
+      'import': (statements: 0, core: 3),
       'sched': (statements: 0, core: 1),
-      'applyRemote': (statements: 1, core: 1),
+      'joinCollection': (statements: 0, core: 5),
       'bulkWrites': (statements: 0, core: 2),
     });
   });
