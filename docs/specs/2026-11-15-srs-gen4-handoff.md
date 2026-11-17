@@ -2192,3 +2192,32 @@ Rust `SCHEMA` 没升（没加表 / 索引，分到的 40024 没用）；ABI 不�
   `backup_merge_engine.dart` 保留 develop 的 `excludedBookKeys`，不带回 G11-4 已删的 `localSrs` / `sourceSrs`。develop 改过的
   三份协议 3 测试 / 夹具（`srs_legacy_clock_conformance_test`、`legacy_clock_store_vectors.json`、`srs_gen4_rehearsal_test`）
   维持删除。
+
+## 第四波 K5 别名表增量（C8 `.apkg` 导入超线性，2026-11-17，分支 `pr/srs-gen4-k5-alias-incremental`，基于 `pr/srs-gen4-switch`）
+
+- **根因（§26 T1 节 C8 的疑点不对）**：不是 `cache.rs` 的整层重建，而是别名表的增量证明。Dart 导入按「笔记身份 → 字段 →
+  标签 → 卡片修改」发草稿，`cmd/writes.rs` `apply_in` 在身份记录处、`expand_tags` 在标签项处各收尾一次，于是一条笔记的
+  卡片修改总是和**下一条**笔记的身份记录落进同一次收尾，而不是和它自己的笔记同批。那次收尾里这张卡是新卡、没有日志带的
+  提示笔记，`alias_probe` 拼的小份证据 P 里没有它的父笔记，卡验不上（条件 b），退回整表重算——每条笔记一次，每次
+  O(库大小)，整次导入 O(n²)。日常路径同病：任何只碰一张从没出现过的卡的命令（改新卡牌组、暂停、新卡位置）都整表重算。
+- **修法（`gen4/alias.rs`）**：没带提示的新卡向缓存层要父笔记（`card_parent_hint`：`cards.note_id`），提示笔记连同它在
+  别名表里的整个类并进 P（`hint_class`，条件 c 要类全）。证明条件 a–d 一条没改，提示只添证据：缓存旧了、没配置缓存、
+  卡 ID 不是规范形，都只是证不出、退回整表重算，别名表的内容不依赖缓存，只有「走不走增量」依赖它。
+- **取舍：没建 `card_parent_ix` 反查表，schema 不升（仍 40021，40022 没用）**。委托里推荐的是别名层自建「卡 → 笔记」
+  派生表，代码里不成立：一条笔记有哪些卡要看填空序号，序号来自字段内容（`card_cache::cloze_ordinals`），别名层不读字段；
+  不读字段就只能按 `Limits::cloze_ords`（0～500）枚举，填空笔记每条每模板 501 行，存不下；读字段则要再给字段修改接一条
+  维护路径（字段修改对别名表是中性的，不进 `AliasDelta`，否则逐条维护与重建对拍不齐），等于第二份「笔记有哪些卡」的判定。
+  缓存层已经是那唯一一份（`cmd/writes.rs` `note_cards` 的注释同口径），所以直接拿它当提示源。
+- **辅修没做（`apply_in` / `expand_tags` 每条命令只收尾一次）**：主修之后每次收尾只做这一批的量，剩下的只是常数项。
+  辅修要改 `apply_in` 的读时序：`existed` 与标签展开（`expand_tags` 读别名类的现有标签）依赖收尾后的别名表，新笔记在批内
+  并入已有别名类时口径会变，需要单独论证和对拍协议 3，风险高于收益，留给以后。
+- **可观测**：`Settled` 加 `aliases_rebuilt`（这一次收尾整表重算了没有），写命令回包的 `settled` 加诊断键
+  `aliasRebuilds`（整条命令里整表重算的次数；Dart 不读这个块）。
+- **测试**：`alias.rs` `a_new_cards_own_edits_are_proven_from_the_cached_parent_note`（笔记与它的卡片修改分两次收尾、
+  模板定义变了之后新模板的卡、父笔记哪里都没有时照旧整表重算并成候选行，末尾 `assert_rebuild_is_identity`）；
+  `cmd/writes_tests.rs` `importing_in_the_dart_order_never_recomputes_the_whole_alias_table`（`import_drafts` 按 Dart 顺序
+  4 批各 15 条，每批 `aliasRebuilds == 0`，末尾重建等同）。变异：去掉缓存提示两条都红（第二条报每批 15 次 = 每条笔记一次）。
+- **实测**（临时探针，没提交：`import_drafts` 每批 70 条、每条两张卡，卡片修改 deck + newPosition，quick profile，机器负载
+  较高、数字有抖动）：修后 250 / 500 / 1000 / 2000 条 = 1.8 / 3.1 / 6.6 / 12.9 s，整表重算 0 次，2000 条时前 14 批与后 15 批
+  单批均值 474 / 411 ms（不随库变大）；去掉修复同一探针 = 2.8 / 5.1 / 16.9 / 92.2 s，整表重算次数 = 笔记数，单批从
+  1.3 s 涨到 3.5 s。
