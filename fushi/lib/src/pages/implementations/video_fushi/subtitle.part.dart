@@ -3238,7 +3238,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// （[_remoteDiscHostTitle]）。
   bool get _canRunSubtitlePipeline =>
       canRunLocalVideoSubtitlePipeline(
-        videoPath: _currentVideoPath,
+        videoPath: _localPipelineMediaPath,
         isRemote: _isRemote,
         asrSupported: isAsrSupported,
         discSession: _controller?.isBlurayNavigationSession ?? false,
@@ -3250,6 +3250,15 @@ extension _VideoSubtitle on _VideoFushiPageState {
       _remoteDiscHostTitle() != null ||
       _canRunStreamSubtitlePipeline ||
       _canRunWebSubtitlePipeline;
+
+  /// 本机管线（与它的参考画面）读媒体的路径（[localVideoSubtitlePipelineMediaPath]）：
+  /// 原盘会话是原盘 VM 给的抽取路径——多角度 title 带着正在播的角度
+  /// （`discExtractionPathForAngle`），抽不了时为 null；其余就是当前这一集的路径。
+  String? get _localPipelineMediaPath => localVideoSubtitlePipelineMediaPath(
+    currentVideoPath: _currentVideoPath,
+    discSession: _controller?.isBlurayNavigationSession ?? false,
+    discExtractionPath: _controller?.videoPath,
+  );
 
   /// 非互联的远端流（在线视频源、粘贴的流 / YouTube、音乐 MV、媒体服务器、云盘流）：
   /// 整集音频拉到本机（[appVideoStreamSubtitleAudioStager]）后在本机跑同一条管线
@@ -3270,7 +3279,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// 本机跑，画面从播放中的流里抽）。「参考画面」是与生成面板共用的偏好；发不出去的
   /// 原因现读（提供商指派 / 图片输入可能在面板开着时被改掉）。
   Future<VideoSubtitleStudioAiReference?> _subtitleStudioAiReference() async {
-    final String? videoPath = _currentVideoPath;
+    final String? videoPath = _localPipelineMediaPath;
     final bool stream = _canRunStreamSubtitlePipeline;
     final bool web = _canRunWebSubtitlePipeline;
     final WebVideoSession? webSession = _webSession;
@@ -3398,7 +3407,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
         onTranscribeInApp: inApp,
       );
     }
-    final String? videoPath = _currentVideoPath;
+    // 原盘多角度 title 是带当前角度的抽取路径（[_localPipelineMediaPath]）。
+    final String? videoPath = _localPipelineMediaPath;
     if (videoPath == null) return null;
     final AppVideoSubtitleService service = appVideoSubtitleService(appModel);
     final AppVideoSubtitleTarget target;
@@ -3715,7 +3725,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
     VideoPlayerController controller, {
     VideoSubtitleInAppTranscribe? onTranscribeInApp,
   }) async {
-    final String? videoPath = _currentVideoPath;
+    // 原盘多角度 title 是带当前角度的抽取路径（[_localPipelineMediaPath]）。
+    final String? videoPath = _localPipelineMediaPath;
     if (videoPath == null || _isRemote) return;
     final AppVideoSubtitleService service = appVideoSubtitleService(appModel);
     final AppVideoSubtitleTarget target;
@@ -3738,7 +3749,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       );
       return;
     }
-    if (!context.mounted || _currentVideoPath != videoPath) return;
+    if (!context.mounted || _localPipelineMediaPath != videoPath) return;
     await showVideoSubtitleGenerateSheet(
       context: context,
       service: service,
@@ -3927,6 +3938,11 @@ extension _VideoSubtitle on _VideoFushiPageState {
 
   /// 管线结束后：这一集导出了字幕且页面还停在这一集，就选中它（落库 + 加载 + 并入
   /// 字幕轨列表）；跳过了（同名字幕都已存在 / 判为歌曲……）就说明原因。
+  ///
+  /// [videoPath] 是管线读的媒体路径（原盘多角度 title 带角度，见
+  /// [_localPipelineMediaPath]），用来在结果里认出这一集；「还停在这一集」按它去掉角度
+  /// 后的这一集身份与页面的 [_currentVideoPath]（原盘是不带角度的 title）比——各角度
+  /// 共用 title 的时间轴，中途换了角度产物照样对得上。
   Future<void> _applyPipelineSubtitleWhenDone(
     VideoPlayerController controller,
     AppVideoSubtitleJob job,
@@ -3937,7 +3953,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     if (!mounted ||
         !identical(_controller, controller) ||
         _episodeLoadSeq != loadSeq ||
-        _currentVideoPath != videoPath ||
+        _currentVideoPath != blurayAngleBaseMemberPath(videoPath) ||
         job.status != AppVideoSubtitleJobStatus.succeeded) {
       return;
     }
@@ -4422,7 +4438,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
       // 画面。取不到本机字节的路径（远端 / 流）取帧那边自己跳过。
       proofreadHost: appAsrProofreadHost(
         appModel.prefsRepo,
-        framesVideoPath: _currentVideoPath,
+        // 原盘多角度 title 取正在播的角度的画面（[_localPipelineMediaPath]）。
+        framesVideoPath: _localPipelineMediaPath,
       ),
     );
   }

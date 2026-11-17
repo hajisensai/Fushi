@@ -8,6 +8,8 @@ import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart';
 import 'package:fushi/src/media/video/video_playback_remote.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_angle.dart'
+    show blurayAnglePath;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
@@ -500,6 +502,66 @@ void main() {
       // subtitleSource 把它列成候选。
       expect((await db.getVideoBookByBookUid('bd'))!.subtitleSource, expected);
       expect(job.registeredBookUids, <String>['bd']);
+    });
+
+    test('多角度 title：按当前角度的抽取路径跑，产物登记到不带角度的 title 行', () async {
+      final String mpls = blurayTitle('Multi Angle');
+      final String discRoot = p.join(tmp.path, 'discs', 'Multi Angle');
+      await addBook('bd', mpls, subtitleSource: 'embedded:3');
+      final List<String> before = filesUnder(discRoot);
+      final AppVideoSubtitleService service = buildService();
+      // 原盘会话正放第 2 个角度：播放页给的是角度成员路径（盘上没有这个文件）。
+      final String angle = blurayAnglePath(mpls, 1);
+      final AppVideoSubtitleTarget target = await service.resolvePlaying(
+        'bd',
+        videoPath: angle,
+        title: 'ignored',
+      );
+      expect(target.bookUid, 'bd');
+      expect(target.videoPaths, <String>[angle]);
+      expect(target.unavailable, isEmpty);
+      expect(target.episodes.single.registersSubtitleSource, isTrue);
+      expect(target.episodes.single.replacesSubtitleSelection, isTrue);
+
+      final AppVideoSubtitleJob job = service.start(
+        target,
+        const AppVideoSubtitleOptions(),
+      );
+      await job.done;
+
+      expect(
+        job.status,
+        AppVideoSubtitleJobStatus.succeeded,
+        reason: '${job.errorMessage}',
+      );
+      final VideoSubtitleEpisodeResult result = job.result!.episodes.single;
+      expect(result.videoPath, angle);
+      expect(result.exported, isTrue);
+      final String output = result.outputPath!;
+      expect(
+        p.isWithin(
+          p.join(jobs.path, 'disc_out', videoSubtitleJobId(angle)),
+          output,
+        ),
+        isTrue,
+        reason: output,
+      );
+      expect(File(output).existsSync(), isTrue);
+      expect(filesUnder(discRoot), before, reason: '盘结构里不能写字幕');
+      expect((await db.getVideoBookByBookUid('bd'))!.subtitleSource, output);
+      expect(job.registeredBookUids, <String>['bd']);
+    });
+
+    test('没入库的多角度 title 也按角度成员路径解析成一集', () async {
+      final String loose = blurayTitle('Loose Angle', '00800.mpls');
+      final String angle = blurayAnglePath(loose, 2);
+      final AppVideoSubtitleTarget file = await buildService().resolvePlaying(
+        'missing',
+        videoPath: angle,
+        title: '00800',
+      );
+      expect(file.videoPaths, <String>[angle]);
+      expect(file.work.title, 'Loose Angle');
     });
 
     test('开了 AI 校对却没指派提供商：拒绝，一个请求都不发', () async {

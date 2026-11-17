@@ -37,4 +37,34 @@ void main() {
       isFalse,
     );
   });
+
+  test('管线读媒体的路径：原盘会话读原盘 VM 的抽取路径（多角度带角度），其余读当前这一集', () {
+    const String title = r'D:\discs\Show\BDMV\PLAYLIST\00001.mpls';
+    const String angle = r'D:\discs\Show\BDMV\PLAYLIST\00001.a2.mpls';
+    expect(
+      localVideoSubtitlePipelineMediaPath(
+        currentVideoPath: title,
+        discSession: true,
+        discExtractionPath: angle,
+      ),
+      angle,
+    );
+    // 当前 title 抽不了（加密没密钥 / 角度还没报上来）：没有可读路径。
+    expect(
+      localVideoSubtitlePipelineMediaPath(
+        currentVideoPath: title,
+        discSession: true,
+        discExtractionPath: null,
+      ),
+      isNull,
+    );
+    expect(
+      localVideoSubtitlePipelineMediaPath(
+        currentVideoPath: r'D:\video\ep01.mkv',
+        discSession: false,
+        discExtractionPath: null,
+      ),
+      r'D:\video\ep01.mkv',
+    );
+  });
 }

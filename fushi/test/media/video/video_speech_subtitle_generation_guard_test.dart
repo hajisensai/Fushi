@@ -108,7 +108,7 @@ void main() {
     expect(remote, isNot(contains('episode > 0')));
     final String studioPanel = source
         .split('Future<WidgetBuilder?> _subtitleStudioGeneratePanel(')[1]
-        .split('final String? videoPath = _currentVideoPath;')[0];
+        .split('final String? videoPath = _localPipelineMediaPath;')[0];
     expect(studioPanel, contains('_remoteHostSubtitleTarget('));
     expect(studioPanel, contains('onTranscribeInApp: inApp'));
     expect(studioPanel, isNot(contains('episode > 0')));
@@ -161,6 +161,8 @@ void main() {
         .split('bool get _canRunSubtitlePipeline =>')[1]
         .split('bool _subtitleStudioAvailable(')[0];
     expect(gate, contains('canRunLocalVideoSubtitlePipeline('));
+    // 管线读的是原盘 VM 的抽取路径（多角度 title 带当前角度），不是 title 身份路径。
+    expect(gate, contains('videoPath: _localPipelineMediaPath,'));
     expect(gate, contains('controller?.discMiningAvailable'));
     expect(gate, contains('!_discLearningBlocked'));
     expect(gate, isNot(contains('_discBookUid')));
@@ -187,6 +189,44 @@ void main() {
     expect(audioGate, contains('controller.isRemoteDiscSession'));
     expect(audioGate, contains('_remoteDiscHostTitle() != null'));
     expect(audioGate, contains('return _discExtractionAllowed(controller);'));
+  });
+
+  // 多角度蓝光 title：原盘 VM 按正在播的角度给抽取路径（角度成员路径），工作台内嵌面板
+  // 与菜单入口都按它解析目标；任务结束按去掉角度后的 title 身份判「还停在这一集」。
+  test('multi-angle Blu-ray titles run the pipeline on the playing angle', () {
+    final String discVm = File(
+      'lib/src/media/video/video_disc_menu.part.dart',
+    ).readAsStringSync();
+    final String bind = discVm
+        .split('Future<void> bindDiscTitle(')[1]
+        .split('Future<String?> _checkDiscExtractionSource(')[0];
+    expect(bind, contains('discExtractionPathForAngle('));
+    expect(bind, contains('_checkDiscExtractionSource(extractionPath)'));
+    expect(bind, contains(': extractionPath;'));
+    expect(discVm, isNot(contains("angle != 0) return 'multi-angle-source'")));
+
+    final String studioPanel = source
+        .split('Future<WidgetBuilder?> _subtitleStudioGeneratePanel(')[1]
+        .split('Future<void> _openSubtitleStudio(')[0];
+    expect(
+      studioPanel,
+      contains('final String? videoPath = _localPipelineMediaPath;'),
+    );
+    final String sheet = source
+        .split('Future<void> _openJapaneseSubtitlePipeline(')[1]
+        .split('Future<void> _openRemoteJapaneseSubtitlePipeline(')[0];
+    expect(
+      sheet,
+      contains('final String? videoPath = _localPipelineMediaPath;'),
+    );
+    expect(sheet, contains('_localPipelineMediaPath != videoPath'));
+    final String done = source
+        .split('Future<void> _applyPipelineSubtitleWhenDone(')[1]
+        .split('({String key, String title')[0];
+    expect(
+      done,
+      contains('_currentVideoPath != blurayAngleBaseMemberPath(videoPath)'),
+    );
   });
 
   // 互联远端的蓝光原盘会话（本机没有文件，盘在 host 上）：当前 title 在 host 上定位（有行
@@ -295,7 +335,7 @@ void main() {
 
     final String studioPanel = source
         .split('Future<WidgetBuilder?> _subtitleStudioGeneratePanel(')[1]
-        .split('final String? videoPath = _currentVideoPath;')[0];
+        .split('final String? videoPath = _localPipelineMediaPath;')[0];
     expect(
       studioPanel,
       contains(
@@ -395,7 +435,7 @@ void main() {
 
     final String studioPanel = source
         .split('Future<WidgetBuilder?> _subtitleStudioGeneratePanel(')[1]
-        .split('final String? videoPath = _currentVideoPath;')[0];
+        .split('final String? videoPath = _localPipelineMediaPath;')[0];
     expect(
       studioPanel,
       contains('if (_webMode) return _webSubtitleStudioPanel(controller);'),

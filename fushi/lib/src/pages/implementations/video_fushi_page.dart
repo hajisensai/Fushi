@@ -2,6 +2,8 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
 import 'package:fushi_engine/media/video/video_member_file.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_angle.dart'
+    show blurayAngleBaseMemberPath;
 import 'package:fushi_engine/media/video/bluray/bluray_remote_title.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_library_title.dart';
 import 'package:fushi_engine/media/video/disc/disc_format.dart'
@@ -148,7 +150,7 @@ import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart'
         AppVideoSubtitleTargetNotFound,
         appVideoSubtitleService;
 import 'package:fushi/src/media/video/subtitle/video_subtitle_pipeline_gate.dart'
-    show canRunLocalVideoSubtitlePipeline;
+    show canRunLocalVideoSubtitlePipeline, localVideoSubtitlePipelineMediaPath;
 import 'package:fushi/src/media/video/subtitle/video_stream_subtitle_audio.dart'
     show
         VideoStreamSubtitleAudioCancelled,

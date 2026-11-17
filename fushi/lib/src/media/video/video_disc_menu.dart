@@ -1,5 +1,8 @@
 import 'dart:convert';
 
+import 'package:fushi_engine/media/video/bluray/bluray_angle.dart'
+    show blurayAnglePath, kBlurayMaxAngles;
+
 /// Which navigation library produced a `disc-navigation-state` snapshot.
 enum VideoDiscType { bluray, dvd }
 
@@ -379,6 +382,26 @@ class VideoDiscResolvedTracks {
   final String? audioId;
   final String? subtitleId;
   final String? subtitleCodec;
+}
+
+/// The path extraction (FFmpeg, mining, the subtitle pipeline) reads for the
+/// bound title [playlistPath] while the player shows camera angle [angle]
+/// (libbluray, zero-based; -1 = not yet reported).
+///
+/// Blu-ray: angle 0 is the title itself; angles 1-8 become the angle member
+/// path (`00001.a2.mpls`, see `bluray_angle.dart`) whose multi-angle PlayItems
+/// read that angle's clips on the title's IN/OUT axis — what libbluray plays.
+/// An unreported or out-of-range angle has no extraction path (null).
+///
+/// DVD titles have no angle-qualified member path yet: only angle 0 extracts.
+String? discExtractionPathForAngle(
+  String playlistPath, {
+  required int angle,
+  required bool dvd,
+}) {
+  if (dvd) return angle == 0 ? playlistPath : null;
+  if (angle < 0 || angle >= kBlurayMaxAngles) return null;
+  return blurayAnglePath(playlistPath, angle);
 }
 
 bool videoDiscTitleIdentityMatches(
