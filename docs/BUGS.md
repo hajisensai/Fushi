@@ -38,6 +38,14 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4794](bugs/BUG-4794-feedback-files-share-video-ip-quota.md) | 🚧 | 🚧 | 样本文件与录屏共用每 IP 每天 200 MiB 额度，满额样本文件仍会被 429 挤掉 |
+> 共 4152 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4796](bugs/BUG-4796-disc-back-double-press-repeat-topmenu.md) | ✅ | ✅ | 原盘正片快速连按两次返回会重复发 topMenu，第二次失败会整盘退出 |
+| [BUG-4795](bugs/BUG-4795-disc-back-to-menu-transient-error-exits.md) | ✅ | ✅ | 原盘正片按返回回盘菜单时，任何暂时性错误都会让整个原盘会话退出 |
+| [BUG-4794](bugs/BUG-4794-subtitle-panel-favorites-filter-width-wasted.md) | 🚧 | 🚧 | 经典版式字幕列表收藏档的筛选分段被截到剩余宽度一半，收藏计数用不满的宽度空着 |
+| [BUG-4793](bugs/BUG-4793-server-admin-update-config-mutates-before-save.md) | ✅ | ✅ | 服务端 AdminContext.updateConfig 写盘前就换了内存配置：config.yaml 写失败时内存与文件分家，BUG-4763 的档位回滚也因此不触发 |
 | [BUG-4792](bugs/BUG-4792-cross-app-audio-consent-destroy-busy.md) | ✅ | ✅ | 跨应用语音授权页被系统以非 finishing 方式销毁后，start 永远挂着，之后每次开启都回 busy |
 | [BUG-4791](bugs/BUG-4791-cross-app-audio-provider-rpc-main-thread.md) | ✅ | ✅ | 应用外查词取跨应用语音快照时，跨进程 RPC 与约 2.9MB 写盘压在查词窗平台主线程上 |
 | [BUG-4790](bugs/BUG-4790-screen-ocr-dart-recognition-no-cancel.md) | 🚧 | 🚧 | Android 截屏识字交给 Dart 识别期间没有取消出口，识别慢时悬浮球一直藏着 |

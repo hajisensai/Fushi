@@ -2883,6 +2883,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     onExit: () => unawaited(_exitDiscSession()),
   );
 
+  /// 正片阶段「返回」回盘菜单那一级的执行者：只有盘拒绝菜单调用才落到退出会话，
+  /// 回菜单请求在途时连按的返回直接吞掉（[_discSessionReturnToMenuOnBack]）。
+  final DiscMenuReturn _discMenuReturn = DiscMenuReturn(
+    isRefusal: isVideoDiscMenuCallRefusal,
+  );
+
   /// 原盘画面上同时按下的指针数：两指点击 = 呼出 / 收起控制栏（BD-J 盘拿不到按钮
   /// 几何，单指点击全交给盘）。
   int _discSurfacePointers = 0;
