@@ -55,11 +55,11 @@
     {
       "name": "fushi-3.3.0-windows-setup.exe",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.3.0/fushi-3.3.0-windows-setup.exe",
-      "releaseSequence": 24434,
+      "releaseSequence": 24436,
       "tag": "v3.3.0",
       "version": "3.3.0",
-      "size": 296154624,
-      "sha256": "734056b87f8ebae4fe92f96af5fd93c8840d341d19b269c2c17a3e3ab9c742d5"
+      "size": 296173744,
+      "sha256": "7fcf9d90c5845038d26c99145fcab6f6d4e306829365ac8dedab225ad32188ee"
     },
     {
       "name": "fushi-3.3.0-x86_64.apk",
