@@ -166,6 +166,7 @@ import 'package:fushi/src/reader/reader_exit_flush.dart';
 import 'package:fushi/src/reader/lyrics_position_jump.dart';
 import 'package:fushi/src/reader/reader_back_ladder.dart';
 import 'package:fushi/src/reader/reader_tap_zones.dart';
+import 'package:fushi/src/reader/reader_tracking_progress_reporter.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/srs/srs_sync_progress.dart' show srsSyncProgress;
 import 'package:fushi/src/reader/reader_located_range_script.dart';
@@ -2394,6 +2395,19 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   bool _replayingPageTurns = false;
   int _lastSavedSection = -1;
   double _lastSavedProgress = -1;
+
+  /// BUG-4798：追踪进度上报口。只发起、不让位置落库（返回键等的那条链）等它，
+  /// 同一份「完成章数 + 是否读完」只报一次；判据与失败处理见类文档。
+  final ReaderTrackingProgressReporter _trackingProgressReporter =
+      ReaderTrackingProgressReporter(
+        onError: (Object error, StackTrace stack) {
+          ErrorLogService.instance.log(
+            'ReaderFushi.recordBookProgress',
+            error,
+            stack,
+          );
+        },
+      );
   int _lastProgressSection = -1;
   double _lastProgressValue = 0;
 
@@ -3929,7 +3943,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     // 退出的 `onSourcePagePop` 仍然探针 + await，异常拆栈时 WebView 本就在拆，
     // 探不到实时锚是 [ExitFlushRegistry] 一贯认下的降级（至多丢最后一窗滚动）。
     // 学习段不用在这里再 flush：上面的 detach 已把它攒进同一个汇合点。
-    ExitFlushRegistry.instance.defer(_flushPosition);
+    // 同一笔里接着把在途的追踪上报等完（BUG-4798，见 [_flushPositionAndTrackingReport]）。
+    ExitFlushRegistry.instance.defer(_flushPositionAndTrackingReport);
     // TODO-702：有声书退出即停（默认）/ 后台续播（可选）。
     // 两种情况都先 detachReader——卸下本 reader 的 WebView 侧回调（跨章/边界跳句
     // 退化为安全无操作），不 dispose 控制器；上面的 [_syncAndFlushPosition] 已把
@@ -5111,6 +5126,11 @@ $liveConfigJs
   List<({int normOffset, Uint8List bytes})> _cachedSelectionImages =
       const <({int normOffset, Uint8List bytes})>[];
 
+  /// [_cachedSelectionImages] 属于哪一次选区。每次选区状态被重写或清空就换一个
+  /// （[_resetSelectionImages]）；抽图是异步的，抽完只有令牌还是发起时那个才写回，
+  /// 否则抽图期间的点词 / 关弹窗刚清掉的图会被旧选区的结果盖回来。
+  Object _selectionImagesOwner = Object();
+
   /// BUG-492 (TODO-1053 Bug A)。选区发生那一刻 [_lookupSectionIndex] 的快照。收藏 /
   /// 制卡写入的 `sectionIndex` 必须绑定到「选中该句时」渲染的真实章号，而不是写入时刻
   /// 再读裸 [_currentChapter]——有声书连续推进 / 跨章滚动会在选区与写入之间异步改写
@@ -5154,7 +5174,7 @@ $liveConfigJs
     _cachedMatchableSelectionRange = null;
     _cachedMatchableSentenceRange = null;
     _cachedSentenceOffset = null;
-    _cachedSelectionImages = const <({int normOffset, Uint8List bytes})>[];
+    _resetSelectionImages();
     _cachedSelectionSectionIndex = null;
     _currentSentenceIsFavorited = false;
     appModel.currentMediaSource?.clearCurrentCueSentence();
