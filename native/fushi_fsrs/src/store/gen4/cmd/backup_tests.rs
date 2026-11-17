@@ -6,6 +6,9 @@
 //! - 协议 3 整包备份里的 `srs.db`（`legacy_backup_import {source: "db"}`）：没确认什么都不写；确认后与直接迁移同一份库
 //!   逐行相同；再读一遍什么都不改；读进另一个集合要确认；坏文件明确报错、库一字不变；预检不写。
 //! - 只有 v1 事件的旧输入（`{source: "events"}`）：卡片、复习日志、笔记条数与直接迁移的相同；再读一遍不重复。
+//! - 身份确认闸门：同一个集合的旧备份带来新盐 / 本机没记过的设备公钥，不确认回 `needsConfirm`（`identity`）、什么都不写。
+//! - 预检核对副本备没备好：备完仍不满足前提（开着的新设备收段通道）时预检报错，不答 `ready`。
+//! - 不可信输入：输入文件只读不改；输入自带的「已备好」标记不让命令跳过备副本；`scratch` 有别的文件、与库目录相交一律拒绝。
 
 use std::path::Path;
 use std::ptr::null_mut;
@@ -15,13 +18,16 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use serde_json::{Value, json};
 
 use super::dispatch_tests::{T1, call, cfg, g4req, migrated, open};
-use super::fushisrs_tests::{col_in, derived, export_bytes, fresh, reader, self_device, try_g4};
+use super::fushisrs_tests::{
+    col_in, derived, export_bytes, fresh, peer_lines, reader, self_device, try_g4,
+};
 use super::tests::{N2, card};
 use crate::store::ffi::{SrsCoreHandle, ffsrs_store_close, ffsrs_store_snapshot};
 use crate::store::gen4::files::{GEN4_FILE, OpenMode};
 use crate::store::gen4::kernel::{G4Core, READ_ONLY, SNAPSHOT_NO_STRIP};
 use crate::store::gen4::schema::DERIVED_TABLES;
 use crate::store::sync2::tests::{P, edit, review, tempdir};
+use crate::sync2::id::Id;
 
 const Q: &str = "0193a1b2-0000-7000-8000-00000000cafe";
 
@@ -139,9 +145,10 @@ fn a_snapshot_refuses_and_leaves_nothing_behind() {
 
 // ---------------------------------------------------------------------- 协议 3 整包备份里的 srs.db
 
-fn legacy_req(path: &Path, source: &str, extra: Value) -> Value {
+fn legacy_req(path: &Path, source: &str, scratch: &Path, extra: Value) -> Value {
     let mut r = json!({
         "path": path.to_str().unwrap(), "source": source, "backupProfile": P, "caches": cfg(),
+        "scratch": scratch.to_str().unwrap(),
     });
     for (k, v) in extra.as_object().cloned().unwrap_or_default() {
         r[k.as_str()] = v;
@@ -185,6 +192,7 @@ fn a_protocol_3_backup_lands_exactly_like_the_migration() {
     let m = migrated();
     let work = tempdir::new("g114db");
     let snap = protocol_3_backup(&m, &work.0);
+    let sc = tempdir::new("g114dbsc");
     let mig_dev = self_device(m.h, P);
     let dir = tempdir::new("g114dbto");
     let h = open(&dir.0, 0).unwrap();
@@ -192,7 +200,7 @@ fn a_protocol_3_backup_lands_exactly_like_the_migration() {
         h,
         P,
         "legacy_backup_import",
-        legacy_req(&snap, "db", json!({})),
+        legacy_req(&snap, "db", &sc.0, json!({})),
     )
     .unwrap();
     assert_eq!(v["outcome"], json!("needsConfirm"), "{v}");
@@ -204,7 +212,12 @@ fn a_protocol_3_backup_lands_exactly_like_the_migration() {
         h,
         P,
         "legacy_backup_import",
-        legacy_req(&snap, "db", json!({"preflight": true, "confirmed": true})),
+        legacy_req(
+            &snap,
+            "db",
+            &sc.0,
+            json!({"preflight": true, "confirmed": true}),
+        ),
     )
     .unwrap();
     assert_eq!(pre["outcome"], json!("ready"), "{pre}");
@@ -214,7 +227,7 @@ fn a_protocol_3_backup_lands_exactly_like_the_migration() {
         h,
         P,
         "legacy_backup_import",
-        legacy_req(&snap, "db", json!({"confirmed": true})),
+        legacy_req(&snap, "db", &sc.0, json!({"confirmed": true})),
     )
     .unwrap();
     assert_eq!(got["outcome"], json!("bound"), "{got}");
@@ -230,7 +243,7 @@ fn a_protocol_3_backup_lands_exactly_like_the_migration() {
         h,
         P,
         "legacy_backup_import",
-        legacy_req(&snap, "db", json!({"confirmed": true})),
+        legacy_req(&snap, "db", &sc.0, json!({"confirmed": true})),
     )
     .unwrap();
     assert_eq!(again["unchanged"], json!(true), "{again}");
@@ -245,13 +258,14 @@ fn another_collection_needs_confirmation_and_bad_files_change_nothing() {
     let m = migrated();
     let work = tempdir::new("g114dbq");
     let snap = protocol_3_backup(&m, &work.0);
+    let sc = tempdir::new("g114dbqsc");
     let (_qdir, q) = fresh("g114dbqq", Q);
     let before = export_bytes(q, Q);
     let v = try_g4(
         q,
         Q,
         "legacy_backup_import",
-        legacy_req(&snap, "db", json!({})),
+        legacy_req(&snap, "db", &sc.0, json!({})),
     )
     .unwrap();
     assert_eq!(v["outcome"], json!("needsConfirm"), "{v}");
@@ -264,7 +278,7 @@ fn another_collection_needs_confirmation_and_bad_files_change_nothing() {
         q,
         Q,
         "legacy_backup_import",
-        legacy_req(&bad, "db", json!({"confirmed": true})),
+        legacy_req(&bad, "db", &sc.0, json!({"confirmed": true})),
     )
     .unwrap_err();
     assert!(!e.is_empty());
@@ -274,7 +288,7 @@ fn another_collection_needs_confirmation_and_bad_files_change_nothing() {
         q,
         Q,
         "legacy_backup_import",
-        legacy_req(&snap, "db", json!({"confirmed": true})),
+        legacy_req(&snap, "db", &sc.0, json!({"confirmed": true})),
     )
     .unwrap();
     assert_eq!(got["outcome"], json!("joined"), "{got}");
@@ -358,11 +372,7 @@ fn v1_events_land_with_the_same_cards_and_logs() {
     let scratch = tempdir::new("g114evs");
     let dir = tempdir::new("g114evto");
     let h = open(&dir.0, 0).unwrap();
-    let req = |extra: Value| {
-        let mut r = legacy_req(&jsonl, "events", extra);
-        r["scratch"] = json!(scratch.0.to_str().unwrap());
-        r
-    };
+    let req = |extra: Value| legacy_req(&jsonl, "events", &scratch.0, extra);
     let got = try_g4(
         h,
         P,
@@ -384,13 +394,11 @@ fn v1_events_land_with_the_same_cards_and_logs() {
     assert_eq!(again["unchanged"], json!(true), "{again}");
     assert_eq!(counts(&dir.0, P), counts(&m.dir.0, P));
 
-    // 坏行：换一个新副本目录（备好的副本会跳过重备），报行号，库不变。
+    // 坏行（同一个副本目录也行：标记带输入摘要，换了输入就整份重备）：报行号，库不变。
     let bad = work.0.join("bad.jsonl");
     std::fs::write(&bad, "{\"e\": {\"t\": \"entity\"}}\nnot json\n").unwrap();
-    let scratch2 = tempdir::new("g114evs2");
     let before = export_bytes(h, P);
-    let mut r = legacy_req(&bad, "events", json!({"confirmed": true}));
-    r["scratch"] = json!(scratch2.0.to_str().unwrap());
+    let r = legacy_req(&bad, "events", &scratch.0, json!({"confirmed": true}));
     let e = try_g4(h, P, "legacy_backup_import", r).unwrap_err();
     assert!(e.contains("line 2"), "{e}");
     assert_eq!(export_bytes(h, P), before);
@@ -441,8 +449,7 @@ fn v1_events_without_log_notes_take_them_from_the_derived_cards() {
         let scratch = tempdir::new("g114nns");
         let dir = tempdir::new("g114nnto");
         let h = open(&dir.0, 0).unwrap();
-        let mut r = legacy_req(jsonl, "events", json!({"confirmed": true}));
-        r["scratch"] = json!(scratch.0.to_str().unwrap());
+        let r = legacy_req(jsonl, "events", &scratch.0, json!({"confirmed": true}));
         let got = try_g4(h, P, "legacy_backup_import", r).unwrap();
         assert_eq!(got["outcome"], json!("bound"), "{got}");
         try_g4(h, P, "cache_config_set", json!({"caches": cfg()})).unwrap();
@@ -486,8 +493,12 @@ fn the_same_v1_events_from_a_fresh_scratch_change_nothing() {
     std::fs::write(&jsonl, v1_events(&legacy)).unwrap();
     let land = |h: *mut SrsCoreHandle, name: &str, now: i64| {
         let scratch = tempdir::new(name);
-        let mut r = legacy_req(&jsonl, "events", json!({"confirmed": true, "now": now}));
-        r["scratch"] = json!(scratch.0.to_str().unwrap());
+        let r = legacy_req(
+            &jsonl,
+            "events",
+            &scratch.0,
+            json!({"confirmed": true, "now": now}),
+        );
         try_g4(h, P, "legacy_backup_import", r).unwrap()
     };
     let (dir, h) = fresh("g114reto", P);
@@ -514,4 +525,265 @@ fn the_same_v1_events_from_a_fresh_scratch_change_nothing() {
     assert_ne!(devices(&other.0), devices(&dir.0));
     ffsrs_store_close(h2);
     ffsrs_store_close(h);
+}
+
+// ---------------------------------------------------------------------- 身份确认 / 预检 / 不可信输入
+
+/// [src] 的一份拷贝，拷完在它上面跑 [edit]（注册了 ID 编码函数的连接）。
+fn tampered(src: &Path, to: &Path, edit: impl FnOnce(&rusqlite::Connection)) -> std::path::PathBuf {
+    std::fs::copy(src, to).unwrap();
+    let c = rusqlite::Connection::open(to).unwrap();
+    crate::store::ids::register(&c).unwrap();
+    edit(&c);
+    drop(c);
+    to.to_path_buf()
+}
+
+/// 本机 profile 已经绑在这个集合上（迁移来的库，`collection_of(P)`）：同一个集合的旧备份
+///
+/// - 只带本机已知的盐与设备：不用确认；
+/// - 多一个退役的旧 uid（新盐）：不确认回 `needsConfirm`（`identity`）、`newSalts` 就是它，预检同样；导出流与 `peers`
+///   逐字节不变；确认后落库，盐记进绑定；
+/// - 多一台本机没记过公钥的设备：同上，`newPeers` 是它；确认后 `peers` 里有它。
+#[test]
+fn a_legacy_backup_bringing_a_new_identity_needs_confirmation() {
+    let m = migrated();
+    let work = tempdir::new("g114id");
+    let snap = protocol_3_backup(&m, &work.0);
+    let sc = tempdir::new("g114idsc");
+    let plain = try_g4(
+        m.h,
+        P,
+        "legacy_backup_import",
+        legacy_req(&snap, "db", &sc.0, json!({})),
+    )
+    .unwrap();
+    assert_ne!(plain["outcome"], json!("needsConfirm"), "{plain}");
+
+    const OLD: &str = "0193a1b2-0000-7000-8000-00000000dead";
+    let salted = tampered(&snap, &work.0.join("salted.db"), |c| {
+        c.execute(
+            "INSERT OR REPLACE INTO srs_meta (key, value) VALUES ('srs_retired_profile_uids', ?1)",
+            [json!([OLD]).to_string()],
+        )
+        .unwrap();
+    });
+    let device = Id([0x5au8; 16]);
+    let public = crate::sync2::keys::DeviceKey::from_seed(&[7u8; 32]).public();
+    let with_device = tampered(&snap, &work.0.join("device.db"), |c| {
+        c.execute(
+            "INSERT INTO sync2_devices (profile_uid, device, public, applied, chain) \
+             VALUES (srs_id(?1), ?2, ?3, 0, NULL)",
+            rusqlite::params![P, device.0.to_vec(), public.to_vec()],
+        )
+        .unwrap();
+    });
+    for (file, salts, peers) in [
+        (&salted, json!([OLD]), json!([])),
+        (&with_device, json!([]), json!([device.text()])),
+    ] {
+        let sc = tempdir::new("g114idsc2");
+        let before = (export_bytes(m.h, P), peer_lines(&m.dir.0, P));
+        for extra in [json!({"preflight": true}), json!({})] {
+            let v = try_g4(
+                m.h,
+                P,
+                "legacy_backup_import",
+                legacy_req(file, "db", &sc.0, extra),
+            )
+            .unwrap();
+            assert_eq!(v["outcome"], json!("needsConfirm"), "{v}");
+            assert_eq!(v["reason"], json!("identity"), "{v}");
+            assert_eq!(v["newSalts"], salts, "{v}");
+            assert_eq!(v["newPeers"], peers, "{v}");
+            assert!(v.get("bindingChanged").is_none());
+            assert_eq!((export_bytes(m.h, P), peer_lines(&m.dir.0, P)), before);
+        }
+        let got = try_g4(
+            m.h,
+            P,
+            "legacy_backup_import",
+            legacy_req(file, "db", &sc.0, json!({"confirmed": true})),
+        )
+        .unwrap();
+        assert_ne!(got["outcome"], json!("needsConfirm"), "{got}");
+    }
+    let info = try_g4(m.h, P, "collection_info", json!({})).unwrap();
+    assert!(
+        info["salts"].as_array().unwrap().contains(&json!(OLD)),
+        "{info}"
+    );
+    let hex: String = device.0.iter().map(|b| format!("{b:02X}")).collect();
+    assert!(
+        peer_lines(&m.dir.0, P).iter().any(|l| l.starts_with(&hex)),
+        "the confirmed device is a peer now"
+    );
+}
+
+/// 预检核对副本备没备好（与 [import_backup] 开头同一处）：副本按这份输入备好、标记有效（之后的调用跳过备副本），之后
+/// 副本又被改得不满足前提（这里开一条新设备收段通道）——预检报「没备好」，不先答 `ready`；真导入同样报错；库一字不变。
+#[test]
+fn preflight_reports_a_backup_library_that_is_not_ready() {
+    let m = migrated();
+    let work = tempdir::new("g114nr");
+    let snap = protocol_3_backup(&m, &work.0);
+    let (dir, h) = fresh("g114nrto", P);
+    let sc = tempdir::new("g114nrsc");
+    let pre = try_g4(
+        h,
+        P,
+        "legacy_backup_import",
+        legacy_req(
+            &snap,
+            "db",
+            &sc.0,
+            json!({"preflight": true, "confirmed": true}),
+        ),
+    )
+    .unwrap();
+    assert_eq!(pre["outcome"], json!("ready"), "{pre}");
+    {
+        let c =
+            rusqlite::Connection::open(sc.0.join(crate::store::gen4::files::LEGACY_FILE)).unwrap();
+        crate::store::ids::register(&c).unwrap();
+        c.execute(
+            "INSERT INTO sync2_boot (profile_uid, phase, next_rank, cursor) VALUES (srs_id(?1), 1, 0, 0)",
+            [P],
+        )
+        .unwrap();
+    }
+    let before = (export_bytes(h, P), all_derived(&dir.0));
+    for extra in [
+        json!({"preflight": true, "confirmed": true}),
+        json!({"preflight": true}),
+        json!({"confirmed": true}),
+    ] {
+        let e = try_g4(
+            h,
+            P,
+            "legacy_backup_import",
+            legacy_req(&snap, "db", &sc.0, extra.clone()),
+        )
+        .unwrap_err();
+        assert!(e.contains("not ready"), "{extra}: {e}");
+        assert!(e.contains("ingest channel"), "{extra}: {e}");
+        assert_eq!((export_bytes(h, P), all_derived(&dir.0)), before);
+    }
+    ffsrs_store_close(h);
+}
+
+/// 不可信的输入文件：
+///
+/// - 命令只读不改它（拷进 `scratch` 再备）：同一份文件隔天再导（新的 `scratch`、另一个 `now`）摘要相同、副本身份相同，
+///   什么都不改；同一份备份里的几个 profile 也就各自拿到同一个摘要。
+/// - 它自带的「已备好」标记（旧口径 = profile 名；新口径 = 写标记之前那份文件的摘要）都不让命令跳过备副本：这份文件的
+///   旧行标成还没迁移（`migrated_at` 为空），不备就过不了前提核对，跳过了就会报「没备好」。第一次拷进 `scratch` 之前不读
+///   标记；要防的是上一次拷完没备完就断了、`scratch` 里留着与输入逐字节相同的拷贝（带着它自带的标记）的情形。
+#[test]
+fn the_input_file_is_read_only_and_its_own_prepared_marker_is_ignored() {
+    let m = migrated();
+    let work = tempdir::new("g114ro");
+    let snap = protocol_3_backup(&m, &work.0);
+    let original = std::fs::read(&snap).unwrap();
+    let (dir, h) = fresh("g114roto", P);
+    let land = |file: &Path, now: i64| {
+        let sc = tempdir::new("g114rosc");
+        try_g4(
+            h,
+            P,
+            "legacy_backup_import",
+            legacy_req(file, "db", &sc.0, json!({"confirmed": true, "now": now})),
+        )
+    };
+    let first = land(&snap, T1).unwrap();
+    assert_eq!(first["unchanged"], json!(false), "{first}");
+    assert_eq!(
+        std::fs::read(&snap).unwrap(),
+        original,
+        "the input is untouched"
+    );
+    let before = (export_bytes(h, P), all_derived(&dir.0));
+    let again = land(&snap, T1 + 86_400_000).unwrap();
+    assert_eq!(again["unchanged"], json!(true), "{again}");
+    assert_eq!((export_bytes(h, P), all_derived(&dir.0)), before);
+    ffsrs_store_close(h);
+
+    let digest = *blake3::hash(&original).as_bytes();
+    let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
+    for (name, marker) in [
+        ("old.db", P.to_owned()),
+        ("new.db", format!("{P}:db:{hex}")),
+    ] {
+        let forged = tampered(&snap, &work.0.join(name), |c| {
+            c.execute(
+                "UPDATE sync2_self SET migrated_at = NULL WHERE profile_uid = srs_id(?1)",
+                [P],
+            )
+            .unwrap();
+            c.execute(
+                "INSERT OR REPLACE INTO srs_meta (key, value) VALUES (?1, ?2)",
+                rusqlite::params![super::backup::PREPARED_KEY, marker],
+            )
+            .unwrap();
+        });
+        let (_d, h) = fresh("g114rofg", P);
+        let sc = tempdir::new("g114rofs");
+        // 上一次在这个 scratch 里拷完、还没备完就断了：副本与输入逐字节相同，带着输入自带的标记。
+        std::fs::copy(&forged, sc.0.join(crate::store::gen4::files::LEGACY_FILE)).unwrap();
+        let got = try_g4(
+            h,
+            P,
+            "legacy_backup_import",
+            legacy_req(&forged, "db", &sc.0, json!({"confirmed": true})),
+        )
+        .unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert_ne!(got["outcome"], json!("needsConfirm"), "{name}: {got}");
+        assert_eq!(got["unchanged"], json!(false), "{name}: {got}");
+        ffsrs_store_close(h);
+    }
+}
+
+/// `scratch` 的核对：里面有别的文件（不删、不碰）、就是已打开的库目录、是库目录的上级——一律拒绝，库目录里的文件
+/// （新代库、封存的协议 3 库）一个字节不变。
+#[test]
+fn a_scratch_that_is_not_ours_is_refused() {
+    let m = migrated();
+    let work = tempdir::new("g114sc");
+    let snap = protocol_3_backup(&m, &work.0);
+    let files = |d: &Path| -> Vec<(String, Vec<u8>)> {
+        let mut v: Vec<(String, Vec<u8>)> = std::fs::read_dir(d)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| p.is_file() && !p.to_string_lossy().ends_with("-shm"))
+            .map(|p| (p.to_string_lossy().into_owned(), std::fs::read(&p).unwrap()))
+            .collect();
+        v.sort();
+        v
+    };
+    let lib_before = files(&m.dir.0);
+    let legacy = crate::store::gen4::files::LEGACY_FILE;
+    let busy = tempdir::new("g114scbusy");
+    std::fs::write(busy.0.join("keep.txt"), b"keep").unwrap();
+    std::fs::write(busy.0.join(legacy), b"old").unwrap();
+    let e = try_g4(
+        m.h,
+        P,
+        "legacy_backup_import",
+        legacy_req(&snap, "db", &busy.0, json!({"confirmed": true})),
+    )
+    .unwrap_err();
+    assert!(e.contains("not empty"), "{e}");
+    assert_eq!(std::fs::read(busy.0.join("keep.txt")).unwrap(), b"keep");
+    assert_eq!(std::fs::read(busy.0.join(legacy)).unwrap(), b"old");
+    for scratch in [m.dir.0.clone(), m.dir.0.parent().unwrap().to_path_buf()] {
+        let e = try_g4(
+            m.h,
+            P,
+            "legacy_backup_import",
+            legacy_req(&snap, "db", &scratch, json!({"confirmed": true})),
+        )
+        .unwrap_err();
+        assert!(e.contains("overlaps the open library"), "{e}");
+    }
+    assert_eq!(files(&m.dir.0), lib_before);
 }

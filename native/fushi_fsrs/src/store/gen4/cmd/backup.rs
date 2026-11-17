@@ -4,10 +4,14 @@
 //! 这里只管**换代之前**的三种形态，全部落到 G11-2 的旧备份读入 `import.rs` [import_backup]：
 //!
 //! - `source: "db"`：协议 3 整包备份 / 服务端备份里的 `srs.db` 快照（2026-10-23 起）。`path` = Dart 从 zip 里解出来的
-//!   **临时副本**（调用方的，命令会在原地改它）。
+//!   文件，命令**只读不改**：拷进 `scratch` 再在拷贝上备。
 //! - `source: "events"`：只有 v1 事件的旧输入——2026-10-23 之前的整包备份（SRS 表在主库条目里）、v2 同步之前的
 //!   `.fushisrs` 事件备份（清单魔数 `fushi-srs-backup`）。Dart 把事件按协议 3 `apply` 的「外来、已盖戳」输入项一行一个写进
-//!   JSONL 文件（`path`），命令在调用方给的空目录 `scratch` 里新建一份协议 3 库落进去。
+//!   JSONL 文件（`path`），命令在 `scratch` 里新建一份协议 3 库落进去。
+//!
+//! `scratch`（两种来源都要）：调用方给的临时目录，里面只能有本命令自己备的 `srs.db`（及 -wal / -shm / -journal），别的
+//! 文件一概拒绝；不得是已打开的新代库目录、也不得与它互相包含（命令会删 / 重建 `<scratch>/srs.db*`，那里可能是迁移后
+//! 封存的协议 3 库）。同一份备份里的几个 profile 各给一个 `scratch`，输入文件始终原样，每个 profile 的输入摘要都相同。
 //!
 //! # 备副本（冻结代码，写锁之外）
 //!
@@ -16,6 +20,8 @@
 //! `SrsCore::open`（schema 阶梯）→ `cache_config_set` → `migrate` 到 `done`（建副本自己的身份、旧行包成操作）→（事件来源）
 //! 分批 `apply` 外来已盖戳的事件 → `dedup` → `replay_pending`。全部在副本上做、在新代库的写锁之外做（协议 3 的阶梯与重放
 //! 可能很久），备好之后在副本的 `srs_meta` 记 [PREPARED_KEY]，同一个副本再来一次（预检之后的真导入）直接跳过。
+//! 标记的值 = profile + 输入文件的 BLAKE3 摘要 + 来源（[prepared_marker]）：输入是不可信的备份文件，自带一条标记也不能让
+//! 命令跳过备副本（文件里写进的标记要等于这份文件自身的摘要，做不到）；换了输入的旧副本也不会被误认。
 //!
 //! # 落库（一个写事务，分发器 `write_binding`）
 //!
@@ -50,7 +56,7 @@ use crate::store::gen4::refresh::{TALLY_KEY, Tally};
 use crate::store::gen4::truth::Truth;
 use crate::store::sync2::collection_of;
 
-/// 备好的副本在自己的 `srs_meta` 里记的标记（值 = 备的是哪个 profile）：同一个副本第二次来不再重做。
+/// 备好的副本在自己的 `srs_meta` 里记的标记（值 = [prepared_marker]）：同一个副本第二次来不再重做。
 pub const PREPARED_KEY: &str = "gen4_backup_prepared";
 
 /// `events` 来源一次 `apply` 的项数。
@@ -103,8 +109,14 @@ fn p3(core: &SrsCore, req: Value, blobs: Vec<Vec<u8>>) -> Result<Value, String> 
     })
 }
 
-/// 副本已经为 [profile] 备好了没有（[PREPARED_KEY]）。不是 SQLite 文件 / 没有 `srs_meta` = 没有。
-fn already_prepared(db: &Path, profile: &str) -> bool {
+/// 副本标记的值：备的是哪个 profile、从哪份输入（摘要）、哪种来源备出来的。
+fn prepared_marker(profile: &str, digest: &[u8; 32], kind: Kind) -> String {
+    let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
+    format!("{profile}:{}:{hex}", kind.wire())
+}
+
+/// 副本是不是按 [marker] 备好的（[PREPARED_KEY]）。不是 SQLite 文件 / 没有 `srs_meta` = 没有。
+fn already_prepared(db: &Path, marker: &str) -> bool {
     let Ok(c) = Connection::open_with_flags(
         db,
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
@@ -120,12 +132,56 @@ fn already_prepared(db: &Path, profile: &str) -> bool {
     .ok()
     .flatten()
     .as_deref()
-        == Some(profile)
+        == Some(marker)
+}
+
+/// `scratch` 的核对（模块文件头）：是目录、只有本命令备的协议 3 库文件、与已打开的新代库目录 [library] 不相交。
+fn checked_scratch(req: &Value, library: &Path) -> Result<PathBuf, String> {
+    let scratch = PathBuf::from(str_of(req, "scratch")?);
+    if !scratch.is_dir() {
+        return Err(format!(
+            "legacy_backup_import: scratch directory {} does not exist",
+            scratch.display()
+        ));
+    }
+    let canon = |p: &Path| {
+        std::fs::canonicalize(p)
+            .map_err(|e| format!("legacy_backup_import: resolve {}: {e}", p.display()))
+    };
+    let (s, lib) = (canon(&scratch)?, canon(library)?);
+    if s.starts_with(&lib) || lib.starts_with(&s) {
+        return Err(format!(
+            "legacy_backup_import: scratch directory {} overlaps the open library",
+            scratch.display()
+        ));
+    }
+    let legacy = crate::store::gen4::files::LEGACY_FILE;
+    let entries = std::fs::read_dir(&scratch)
+        .map_err(|e| format!("legacy_backup_import: read {}: {e}", scratch.display()))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("legacy_backup_import: read scratch: {e}"))?;
+        let name = entry.file_name();
+        let ours = name.to_str().is_some_and(|n| {
+            n == legacy
+                || ["-wal", "-shm", "-journal"]
+                    .iter()
+                    .any(|x| n == format!("{legacy}{x}"))
+        });
+        if !ours || !entry.path().is_file() {
+            return Err(format!(
+                "legacy_backup_import: scratch directory {} is not empty ({})",
+                scratch.display(),
+                name.to_string_lossy()
+            ));
+        }
+    }
+    Ok(scratch)
 }
 
 /// 备副本（模块文件头「备副本」）：在新代库的写锁之外跑。[secret] = 目标 profile 所在集合的本机签名钥匙种子（还没绑定 /
-/// 没有本机身份时为 `None`），用来给副本定一个可重现的身份（[seed_scratch_identity]）。
-pub fn prepare(req: &Value, secret: Option<&[u8; 32]>) -> Result<Prepared, String> {
+/// 没有本机身份时为 `None`），用来给副本定一个可重现的身份（[seed_scratch_identity]）。[library] = 已打开的新代库目录
+/// （`scratch` 不得与它相交）。
+pub fn prepare(req: &Value, secret: Option<&[u8; 32]>, library: &Path) -> Result<Prepared, String> {
     let kind = match str_of(req, "source")? {
         "db" => Kind::Db,
         "events" => Kind::Events,
@@ -148,28 +204,25 @@ pub fn prepare(req: &Value, secret: Option<&[u8; 32]>) -> Result<Prepared, Strin
             path.display()
         ));
     }
-    let db = match kind {
-        Kind::Db => path.clone(),
-        Kind::Events => {
-            let scratch = PathBuf::from(str_of(req, "scratch")?);
-            if !scratch.is_dir() {
-                return Err(format!(
-                    "legacy_backup_import: scratch directory {} does not exist",
-                    scratch.display()
-                ));
-            }
-            scratch.join(crate::store::gen4::files::LEGACY_FILE)
-        }
-    };
-    if already_prepared(&db, &profile) {
+    let scratch = checked_scratch(req, library)?;
+    let db = scratch.join(crate::store::gen4::files::LEGACY_FILE);
+    // 输入只读：摘要既是副本标记的一部分，也是副本身份的种子（同一份输入 → 同一个值，与导入几次、几个 profile 无关）。
+    let digest = content_digest(&path)?;
+    let marker = prepared_marker(&profile, &digest, kind);
+    if already_prepared(&db, &marker) {
         return Ok(Prepared { kind, db, profile });
     }
-    if kind == Kind::Events {
-        // 上一次备到一半的副本整份重来（它只是临时库）。
-        crate::store::seal::remove_sqlite_files(&db)?;
+    // 别的输入 / 备到一半的副本整份重来（它只是临时库）。
+    crate::store::seal::remove_sqlite_files(&db)?;
+    if kind == Kind::Db {
+        // 只拷主文件：zip 里只有快照主文件；输入旁边就算有 -wal 也不属于这份备份。
+        std::fs::copy(&path, &db).map_err(|e| {
+            format!(
+                "legacy_backup_import: copy {} into scratch: {e}",
+                path.display()
+            )
+        })?;
     }
-    // 输入的摘要在协议 3 代码碰它之前取（`db` 来源会被原地改）。
-    let digest = secret.map(|_| content_digest(&path)).transpose()?;
     // 副本里的「此刻」：事件来源取输入里最晚的时刻（[input_time]，不晚于请求的 `now`），包出的操作才与哪天导入无关。
     let now = match kind {
         Kind::Events => input_time(&path)?.map_or(now, |t| t.min(now)),
@@ -179,8 +232,8 @@ pub fn prepare(req: &Value, secret: Option<&[u8; 32]>) -> Result<Prepared, Strin
         format!("gen4 legacy backup import: open the protocol 3 library in the backup: {e}")
     })?;
     let out = (|| -> Result<(), String> {
-        if let (Some(secret), Some(digest)) = (secret, digest.as_ref()) {
-            seed_scratch_identity(&db, &profile, kind, secret, digest)?;
+        if let Some(secret) = secret {
+            seed_scratch_identity(&db, &profile, kind, secret, &digest)?;
         }
         let base = |op: &str| json!({"op": op, "profile": profile, "now": now, "caches": caches});
         p3(&core, base("cache_config_set"), Vec::new())?;
@@ -201,7 +254,7 @@ pub fn prepare(req: &Value, secret: Option<&[u8; 32]>) -> Result<Prepared, Strin
     let c = Connection::open(&db).map_err(|e| format!("gen4 legacy backup import: {e}"))?;
     c.execute(
         "INSERT OR REPLACE INTO srs_meta (key, value) VALUES (?1, ?2)",
-        rusqlite::params![PREPARED_KEY, profile],
+        rusqlite::params![PREPARED_KEY, marker],
     )
     .map_err(|e| format!("gen4 legacy backup import: {e}"))?;
     drop(c);

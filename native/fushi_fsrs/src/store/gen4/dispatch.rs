@@ -564,7 +564,7 @@ fn run(
                     None => Ok(None),
                 })
             })?;
-            let prepared = cmd::backup::prepare(req, secret.as_ref())?;
+            let prepared = cmd::backup::prepare(req, secret.as_ref(), c.dir())?;
             let src = super::dryrun::open_legacy(&prepared.db)?;
             let v = write_binding(c, |t| {
                 cmd::backup::land(t, profile, req, &prepared, &src, anchor.as_ref(), &|t| {

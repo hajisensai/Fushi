@@ -308,14 +308,17 @@ final class SrsBackupStreamFile extends SrsBackupSourceFile {
   final SrsBackupUnit unit;
 }
 
-/// 协议 3 的 `srs.db`（备份里解出来的**临时副本**，命令会原地改它）里 [backupProfile] 的数据。
+/// 协议 3 的 `srs.db`（备份里解出来的文件，内核只读不改）里 [backupProfile] 的数据。[scratch] 是给内核拷一份再备的空
+/// 目录：同一份 `srs.db` 里的每个 profile 各给一个（内核只认里面它自己备的库文件，别的文件一概拒绝）。
 final class SrsBackupLegacyDbFile extends SrsBackupSourceFile {
   const SrsBackupLegacyDbFile({
     required this.path,
+    required this.scratch,
     required this.backupProfile,
   });
 
   final String path;
+  final String scratch;
   final String backupProfile;
 }
 
@@ -369,13 +372,18 @@ Future<SrsBackupLanded> srsLandBackupUnit({
         'confirmed': confirmed,
         'preflight': preflight,
       },
-    SrsBackupLegacyDbFile(:final String path, :final String backupProfile) =>
+    SrsBackupLegacyDbFile(
+      :final String path,
+      :final String scratch,
+      :final String backupProfile,
+    ) =>
       <String, Object?>{
         'op': 'legacy_backup_import',
         'profile': targetUid,
         'now': nowMs,
         'source': 'db',
         'path': path,
+        'scratch': scratch,
         'backupProfile': backupProfile,
         'caches': srsCacheConfigFor(backupProfile),
         'confirmed': confirmed,

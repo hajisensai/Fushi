@@ -152,7 +152,8 @@ Future<_SrsRestoreUnits?> _prepareSrsRestoreUnits({
       );
     }
     if (p3File != null) {
-      // 协议 3 的 `srs.db`：解进自己的目录（内核在原地备它），profile 取「旧库里有数据的」∩「备份主库里的」。
+      // 协议 3 的 `srs.db`：解进自己的目录（内核只读它，每个 profile 各拷进自己的 scratch 再备），profile 取「旧库里
+      // 有数据的」∩「备份主库里的」。
       final Directory p3Dir = Directory(p.join(work.path, 'p3'));
       await p3Dir.create();
       final String p3Path = p.join(p3Dir.path, kSrsDatabaseFileName);
@@ -166,12 +167,20 @@ Future<_SrsRestoreUnits?> _prepareSrsRestoreUnits({
       final Set<String> withData = (await SrsGen4Migration.legacyProfiles(
         p3Dir.path,
       )).toSet();
+      int i = 0;
       for (final SrsBackupProfile bp in await _backupProfilesIn(mainPath)) {
         if (!withData.contains(bp.uid)) continue;
+        final Directory scratch = Directory(p.join(work.path, 'p3scratch$i'));
+        await scratch.create();
+        i++;
         out.units.add(
           SrsBackupLandUnit(
             profiles: <SrsBackupProfile>[bp],
-            file: SrsBackupLegacyDbFile(path: p3Path, backupProfile: bp.uid),
+            file: SrsBackupLegacyDbFile(
+              path: p3Path,
+              scratch: scratch.path,
+              backupProfile: bp.uid,
+            ),
           ),
         );
       }
