@@ -13,6 +13,7 @@ import 'package:fushi_engine/tts/cast/cast_line_kind.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
 import 'package:fushi_engine/tts/render/tts_pause.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
+import 'package:fushi_engine/tts/tts_direction.dart';
 import 'package:path/path.dart' as p;
 
 EpubBook _book(String body) => EpubBook(
@@ -1018,6 +1019,49 @@ void main() {
         isFalse,
         reason: '每次导出新建的临时目录没人删，整本 M4B 会在临时目录里越积越多',
       );
+    });
+  });
+
+  group('每句演出参数', () {
+    TtsPlanSentence at(int start) => TtsPlanSentence(
+      section: 1,
+      href: 'c.xhtml',
+      text: '$start',
+      spokenText: '$start',
+      matchStart: start,
+      matchEnd: start + 1,
+      studyStart: 0,
+      studyEnd: 0,
+      endsParagraph: false,
+      sceneBreakAfter: false,
+    );
+
+    test('种子：单句写下的优先，其次作品默认；只留引擎支持的字段', () {
+      final TtsCast cast = TtsCast(defaultSeed: 7)..setLineSeed(1, 10, 42);
+      const TtsDirectionSupport seeded = TtsDirectionSupport(seed: true);
+      final TtsDirection reseeded = ttsSentenceDirection(
+        support: seeded,
+        cast: cast,
+        sentence: at(10),
+      );
+      expect(reseeded.seed, 42);
+      expect(reseeded.cacheIdentity, <String, Object?>{'seed': 42});
+      expect(
+        ttsSentenceDirection(
+          support: seeded,
+          cast: cast,
+          sentence: at(20),
+        ).seed,
+        7,
+      );
+      // 不支持种子的引擎：演出参数整体为空，缓存键不因种子变化。
+      final TtsDirection plain = ttsSentenceDirection(
+        support: TtsDirectionSupport.none,
+        cast: cast,
+        sentence: at(10),
+      );
+      expect(plain.isEmpty, isTrue);
+      expect(plain.cacheIdentity, isEmpty);
     });
   });
 }

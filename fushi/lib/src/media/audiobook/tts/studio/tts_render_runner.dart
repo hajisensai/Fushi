@@ -233,10 +233,10 @@ class AppTtsRenderRunner implements TtsRenderRunner {
     TtsDirection directionOf(int planIndex) {
       final TtsProvider? provider = providers[presetOf[planIndex]!];
       if (provider == null) return TtsDirection.none;
-      final TtsPlanSentence s = plan.sentences[planIndex];
-      return effectiveTtsDirection(
-        ttsDirectionSupportOf(provider),
-        TtsDirection(seed: cast.seedFor(s.section, s.matchStart)),
+      return ttsSentenceDirection(
+        support: ttsDirectionSupportOf(provider),
+        cast: cast,
+        sentence: plan.sentences[planIndex],
       );
     }
 

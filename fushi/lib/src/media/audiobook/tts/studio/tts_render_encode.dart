@@ -16,6 +16,7 @@ import 'package:fushi_engine/tts/render/tts_cast.dart';
 import 'package:fushi_engine/tts/render/tts_cast_timing.dart';
 import 'package:fushi_engine/tts/render/tts_pause.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
+import 'package:fushi_engine/tts/tts_direction.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
@@ -97,6 +98,18 @@ String buildTtsConcatList(List<({String path, int durationMs})> entries) {
   }
   return buffer.toString();
 }
+
+/// 一句实际下发的演出参数：种子按选角表（单句重生成写下的 → 作品默认
+/// [TtsCast.defaultSeed]），再去掉引擎 [support] 不支持的字段（缓存键只含生效的
+/// 字段，见 [TtsDirection.cacheIdentity]）。
+TtsDirection ttsSentenceDirection({
+  required TtsDirectionSupport support,
+  required TtsCast cast,
+  required TtsPlanSentence sentence,
+}) => effectiveTtsDirection(
+  support,
+  TtsDirection(seed: cast.seedFor(sentence.section, sentence.matchStart)),
+);
 
 /// 一章各处的停顿（毫秒），长度 = 句数 + 1：`[0]` 章首、`[k]`（1 ≤ k < n）第 k-1
 /// 句之后、`[n]` 章尾。
