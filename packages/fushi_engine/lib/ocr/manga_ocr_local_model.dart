@@ -1,4 +1,4 @@
-/// Selectable local recognizers, of two kinds ([MangaOcrRecognizerSpec]):
+/// Selectable local recognizers, of three kinds ([MangaOcrRecognizerSpec]):
 ///
 /// - PaddleOCR-format CTC line recognizers read through the per-column
 ///   pipeline, differing only in their weights and dictionary: the manga-tuned
@@ -7,6 +7,9 @@
 ///   returns every character with its box and reading order
 ///   (`charspot_ocr_recognizer.dart`). Japanese only; weights are CC BY-NC-SA
 ///   4.0 and are downloaded by the user from Hugging Face, never bundled.
+/// - muscgab manga-ocr-nar-small: one model call per text block returns the
+///   whole text, without character boxes (`nar_ocr_recognizer.dart`). Japanese
+///   only; same licence and download terms as charspot.
 /// - One user-imported slot ([MangaOcrLocalModel.custom]): a PaddleOCR CTC
 ///   recogniser the user downloads and imports (`manga_ocr_custom_model.dart`).
 ///
@@ -50,6 +53,11 @@ enum MangaOcrLocalModel {
   /// 耗时，准确率略低。
   charspotNano('charspot_nano'),
 
+  /// muscgab manga-ocr-nar-small：整块一次前向出整段文本（非自回归，54M 参数），
+  /// 不给字框。准确率与 charspot-small 相当，体积约五倍、耗时约三倍（实测见
+  /// [kNarSmallGeneration]）。只认日文。
+  narSmall('nar_small'),
+
   /// User-imported slot: one PaddleOCR-format CTC recogniser (`.onnx` + its
   /// dictionary) the user downloaded and imported (`manga_ocr_custom_model.dart`).
   /// Its files are not known at compile time: [generation] is only the slot's
@@ -91,6 +99,7 @@ enum MangaOcrLocalModel {
     ppOcrV5Korean ||
     charspotSmall ||
     charspotNano ||
+    narSmall ||
     custom => true,
   };
 
@@ -111,6 +120,7 @@ enum MangaOcrLocalModel {
     ppOcrV5Korean => kPpOcrV5KoreanGeneration,
     charspotSmall => kCharspotSmallGeneration,
     charspotNano => kCharspotNanoGeneration,
+    narSmall => kNarSmallGeneration,
     custom => kCustomMangaOcrSlotGeneration,
   };
 
@@ -122,6 +132,7 @@ enum MangaOcrLocalModel {
     ppOcrV5Korean ||
     charspotSmall ||
     charspotNano ||
+    narSmall ||
     custom => null,
   };
 
@@ -140,6 +151,7 @@ enum MangaOcrLocalModel {
       ppOcrV5Korean => kPpOcrV5KoreanModelDirName,
       charspotSmall => kCharspotSmallModelDirName,
       charspotNano => kCharspotNanoModelDirName,
+      narSmall => kNarSmallModelDirName,
       custom => kCustomMangaOcrModelDirName,
     };
     return Directory(p.join(legacy.parent.path, sibling));
@@ -176,6 +188,16 @@ final class MangaOcrCharspotSpec extends MangaOcrRecognizerSpec {
 
   /// 16 px 格子的预算（small 256、nano 196）。
   final int cellBudget;
+
+  @override
+  bool get honoursIgnoreFurigana => false;
+}
+
+/// muscgab manga-ocr-nar-small：整块一次前向出整段文本（`nar_ocr_recognizer.dart`）。
+/// 模型是按「文字块 → 正文」端到端训练的，训练标注不含振假名，裁掉注音带这一步
+/// 没有对应的输入可裁（它不逐列读），所以「忽略振假名」对它没有额外作用。
+final class MangaOcrNarSpec extends MangaOcrRecognizerSpec {
+  const MangaOcrNarSpec();
 
   @override
   bool get honoursIgnoreFurigana => false;
@@ -781,4 +803,54 @@ const MangaOcrModelGeneration kCharspotNanoGeneration = MangaOcrModelGeneration(
   recFileName: kCharspotNanoRecFileName,
   recDictFileName: kCharspotNanoVocabFileName,
   recognizer: MangaOcrCharspotSpec(cellBudget: kCharspotNanoCellBudget),
+);
+
+/// muscgab manga-ocr-nar-small（HF `muscgab/manga-ocr-nar-small`，包版本 1.1.0）。
+/// 许可与下载方式同 charspot：权重 CC BY-NC-SA 4.0（非商用、署名、相同方式共享），
+/// 代码 Apache-2.0；本仓不打包、不转发权重，由用户从作者的 HF 仓库下载。
+///
+/// 清单：文字块检测器 + PP-OCRv6 small det（给整块文本配行几何，块太大或文本超过
+/// 65 字时切列 / 行）+ 权重 + 字表。权重钉了 revision 与 sha256（HF 的 LFS 指纹，
+/// 与本机下载后实算一致，2026-11-18）；字表与 charspot-nano 的 `vocab.json` 是同一
+/// 份内容（sha256 相同）。
+///
+/// 2026-11-17 实测（JMangaBench_Read 固定抽样 1,500 框，Python 参考实现，ORT CPU
+/// 4 线程，整框当一块文字图）：整块全对 92.00%、字错误率 1.09%、每块 88 ms、
+/// 213 MB；同一批上 charspot-small 是 93.07% / 1.06% / 27 ms / 44 MB，默认模型
+/// （Kellenok v0.3 逐列）87.43% / 3.27%。它不比 charspot-small 准，而且慢三倍、
+/// 大五倍、没有逐字框；列出来是给想用非自回归整块模型的用户一个选项，不是推荐档。
+const String kNarSmallRevision = '81ff4f3313263d1da349946a9dd20d14e0fb0e66';
+const String kNarSmallModelDirName = 'nar-small';
+const String kNarSmallRecFileName = 'nar_small.onnx';
+const String kNarSmallVocabFileName = 'nar_small_vocab.json';
+
+const MangaOcrModelGeneration kNarSmallGeneration = MangaOcrModelGeneration(
+  manifest: <MangaOcrModelFile>[
+    _kComicTextDetectorFile,
+    _kPpOcrSmallDetFile,
+    MangaOcrModelFile(
+      fileName: kNarSmallRecFileName,
+      url:
+          'https://huggingface.co/muscgab/manga-ocr-nar-small/'
+          'resolve/$kNarSmallRevision/onnx/mangaocr_nar_small_fp32.onnx',
+      expectedBytes: 213095336,
+      role: MangaOcrModelRole.recognizer,
+      sha256:
+          '5ee628dfd40c59c522022d87c31f8f903104198877b9ba4cf795603dc540dcf5',
+    ),
+    MangaOcrModelFile(
+      fileName: kNarSmallVocabFileName,
+      url:
+          'https://huggingface.co/muscgab/manga-ocr-nar-small/'
+          'resolve/$kNarSmallRevision/nar_vocabulary_6817.json',
+      expectedBytes: 48538,
+      role: MangaOcrModelRole.recognizer,
+      sha256:
+          '9f1059427b54216c869dbf1244157f86bef74b1a0061c46a6001402c6f0c1dbf',
+    ),
+  ],
+  cacheSignature: 'local-onnx-nar-small-v1.1.0-$kMangaOcrPipelineRevision',
+  recFileName: kNarSmallRecFileName,
+  recDictFileName: kNarSmallVocabFileName,
+  recognizer: MangaOcrNarSpec(),
 );

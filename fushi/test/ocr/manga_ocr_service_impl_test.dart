@@ -687,6 +687,60 @@ void main() {
     }
   });
 
+  test('nar_small：nar 路径、不带 PP rec、忽略振假名开关不生效', () async {
+    const MangaOcrLocalModel model = MangaOcrLocalModel.narSmall;
+    final List<MangaOcrModelFile> tiny = <MangaOcrModelFile>[
+      for (final MangaOcrModelFile file in model.manifest)
+        MangaOcrModelFile(
+          fileName: file.fileName,
+          url: 'http://unused.invalid/${file.fileName}',
+          expectedBytes: 1,
+          role: file.role,
+        ),
+    ];
+    for (final MangaOcrModelFile file in tiny) {
+      File(p.join(modelsDir.path, file.fileName)).writeAsBytesSync(<int>[7]);
+    }
+    final _FakePageSessionRunner pages = _FakePageSessionRunner();
+    final MangaOcrServiceImpl service = MangaOcrServiceImpl(
+      localModel: model,
+      modelsDirProvider: () async => modelsDir,
+      manifest: tiny,
+      jobRunner: _FakeRunner(),
+      pageSessionRunner: pages,
+      platformSupport: () => true,
+      // 开着也不生效：模型本来就不读振假名。
+      ignoreFurigana: () => true,
+    );
+    expect((await service.modelStatus()).allReady, isTrue);
+
+    await service.openPageSession(imageDirPath: 'D:/vol');
+    final MangaOcrModelPaths paths = pages.sessions.single.request.modelPaths;
+    final NarModelPaths nar = paths.nar!;
+    expect(nar.modelPath, p.join(modelsDir.path, kNarSmallRecFileName));
+    expect(nar.vocabPath, p.join(modelsDir.path, kNarSmallVocabFileName));
+    expect(paths.blockRecognizerPath, nar.modelPath);
+    expect(paths.charspot, isNull);
+    expect(paths.ctcRecPath, isEmpty);
+    expect(paths.ppRecPath, isEmpty);
+    expect(paths.ppDetPath, p.join(modelsDir.path, kPpOcrDetFileName));
+    expect(paths.ignoreFurigana, isFalse);
+    expect(
+      mangaOcrGenerationForRecFile(p.basename(paths.blockRecognizerPath)),
+      same(model.generation),
+    );
+    final String cache = await service.resolvePageCacheDirPath(
+      imageDirPath: 'D:/vol',
+    );
+    expect(p.basename(cache), startsWith('${model.cacheSignature}-'));
+    expect(p.basename(cache), isNot(endsWith('_noruby')));
+    expect(
+      pages.sessions.single.request.engineSignature,
+      p.basename(cache),
+      reason: 'the session writes where the reader looks',
+    );
+  });
+
   group('页级常驻会话', () {
     test('一个会话处理多页只建一次推理会话，close 后请求失败', () async {
       writeAllModels();

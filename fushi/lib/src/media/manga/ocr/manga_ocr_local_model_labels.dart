@@ -12,6 +12,7 @@ String localModelLabel(MangaOcrLocalModel model) => switch (model) {
   MangaOcrLocalModel.ppOcrV5Korean => t.manga_ocr_ppocrv5_korean_model,
   MangaOcrLocalModel.charspotSmall => t.manga_ocr_charspot_small_model,
   MangaOcrLocalModel.charspotNano => t.manga_ocr_charspot_nano_model,
+  MangaOcrLocalModel.narSmall => t.manga_ocr_nar_small_model,
   MangaOcrLocalModel.custom => t.manga_ocr_custom_model_label,
 };
 
@@ -22,6 +23,7 @@ String localModelDescription(MangaOcrLocalModel model) => switch (model) {
   MangaOcrLocalModel.ppOcrV5Korean => t.manga_ocr_ppocrv5_korean_desc,
   MangaOcrLocalModel.charspotSmall => t.manga_ocr_charspot_small_desc,
   MangaOcrLocalModel.charspotNano => t.manga_ocr_charspot_nano_desc,
+  MangaOcrLocalModel.narSmall => t.manga_ocr_nar_small_desc,
   MangaOcrLocalModel.custom => t.manga_ocr_custom_model_desc,
 };
 

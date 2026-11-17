@@ -129,8 +129,9 @@ CharspotGrid charspotGrid(int height, int width, {required int budget}) {
   );
 }
 
-/// Python 3 的 `round()`：恰好一半时取偶数（Dart 的 `round` 远离零取整）。
-int _roundHalfEven(double v) {
+/// Python 3 的 `round()`：恰好一半时取偶数（Dart 的 `round` 远离零取整）。上游几个
+/// 模型的前处理都用它算缩放后的宽高（`nar_ocr_recognizer.dart` 同用）。
+int pythonRound(double v) {
   final double f = v.floorToDouble();
   final double diff = v - f;
   if (diff > 0.5) return f.toInt() + 1;
@@ -186,11 +187,11 @@ CharspotInput charspotPreprocess(img.Image crop, {required int budget}) {
   final int gridHeight = grid.rows * kCharspotCell;
   final int rw = math.max(
     1,
-    math.min(gridWidth, _roundHalfEven(crop.width * grid.scale)),
+    math.min(gridWidth, pythonRound(crop.width * grid.scale)),
   );
   final int rh = math.max(
     1,
-    math.min(gridHeight, _roundHalfEven(crop.height * grid.scale)),
+    math.min(gridHeight, pythonRound(crop.height * grid.scale)),
   );
   final img.Image resized = resizeImageExact(
     crop,

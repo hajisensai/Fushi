@@ -544,6 +544,7 @@ class MangaOcrCustomModelStore implements MangaOcrCustomModelSlot {
     kPpOcrV5KoreanModelDirName,
     kCharspotSmallModelDirName,
     kCharspotNanoModelDirName,
+    kNarSmallModelDirName,
   ];
 
   @override

@@ -37,6 +37,7 @@ void main() {
       MangaOcrLocalModel.ppOcrV5Korean,
       MangaOcrLocalModel.charspotSmall,
       MangaOcrLocalModel.charspotNano,
+      MangaOcrLocalModel.narSmall,
       MangaOcrLocalModel.custom,
     ]);
   });
@@ -615,6 +616,109 @@ void main() {
         rec(MangaOcrLocalModel.ppOcrV5Korean).url,
         contains('PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx/'),
       );
+    });
+  });
+
+  group('muscgab manga-ocr-nar-small (nar_small)', () {
+    const MangaOcrLocalModel model = MangaOcrLocalModel.narSmall;
+
+    test('key, every platform, own directory', () async {
+      final EnginePaths previous = enginePaths;
+      final Directory root = Directory(
+        p.join(Directory.systemTemp.path, 'ocr-model-resolution-nar'),
+      );
+      enginePaths = FixedEnginePaths(
+        documents: root,
+        support: root,
+        temp: root,
+      );
+      addTearDown(() => enginePaths = previous);
+
+      expect(model.key, 'nar_small');
+      for (final String os in <String>[
+        'windows',
+        'android',
+        'ios',
+        'macos',
+        'linux',
+      ]) {
+        expect(
+          MangaOcrLocalModel.forPlatform(model.key, operatingSystem: os),
+          model,
+          reason: os,
+        );
+      }
+      expect(model.isUserImported, isFalse);
+      expect(MangaOcrLocalModel.builtInValues, contains(model));
+      expect(
+        (await model.modelsDirectory()).path,
+        p.join(root.path, 'ocr_models', 'nar-small'),
+      );
+    });
+
+    test('manifest: shared detectors + weights + vocab, no PP rec', () {
+      final MangaOcrModelGeneration generation = model.generation;
+      expect(
+        <String>[
+          for (final MangaOcrModelFile file in model.manifest) file.fileName,
+        ],
+        <String>[
+          'detector-v4-s_int8.onnx',
+          kPpOcrDetFileName,
+          'nar_small.onnx',
+          'nar_small_vocab.json',
+        ],
+      );
+      expect(generation.recFileName, 'nar_small.onnx');
+      expect(generation.recDictFileName, 'nar_small_vocab.json');
+      expect(generation.recognizer, isA<MangaOcrNarSpec>());
+      // 模型按「文字块 → 正文」训练，不读振假名：开关对它不起额外作用。
+      expect(generation.recognizer.honoursIgnoreFurigana, isFalse);
+      expect(model.supersededGeneration, isNull);
+      expect(
+        model.cacheSignature,
+        allOf(contains('nar-small'), endsWith(kMangaOcrPipelineRevision)),
+      );
+      expect(mangaOcrGenerationForRecFile('nar_small.onnx'), same(generation));
+      // 离线导入按字节数认文件：同一份清单里不能有两个文件一样大。
+      final List<int> sizes = <int>[
+        for (final MangaOcrModelFile file in model.manifest) file.expectedBytes,
+      ];
+      expect(sizes.toSet(), hasLength(sizes.length));
+    });
+
+    test('weights and vocab are pinned to a commit and a sha256', () {
+      const String base =
+          'https://huggingface.co/muscgab/manga-ocr-nar-small/resolve/'
+          '81ff4f3313263d1da349946a9dd20d14e0fb0e66';
+      final MangaOcrModelFile rec = model.manifest[2];
+      final MangaOcrModelFile vocab = model.manifest[3];
+      expect(rec.url, '$base/onnx/mangaocr_nar_small_fp32.onnx');
+      expect(vocab.url, '$base/nar_vocabulary_6817.json');
+      expect(rec.expectedBytes, 213095336);
+      expect(vocab.expectedBytes, 48538);
+      // 与上游 HF LFS 指纹逐字一致（下载后按它校验）。
+      expect(
+        rec.sha256,
+        '5ee628dfd40c59c522022d87c31f8f903104198877b9ba4cf795603dc540dcf5',
+      );
+      expect(
+        vocab.sha256,
+        '9f1059427b54216c869dbf1244157f86bef74b1a0061c46a6001402c6f0c1dbf',
+      );
+      for (final MangaOcrModelFile file in <MangaOcrModelFile>[rec, vocab]) {
+        expect(file.role, MangaOcrModelRole.recognizer);
+      }
+    });
+
+    test('README credits the model and states the non-commercial licence', () {
+      for (final String readme in <String>[
+        File('../README.md').readAsStringSync(),
+        File('../README.zh-CN.md').readAsStringSync(),
+      ]) {
+        expect(readme, contains('muscgab/manga-ocr-nar-small'));
+        expect(readme, contains('CC BY-NC-SA 4.0'));
+      }
     });
   });
 

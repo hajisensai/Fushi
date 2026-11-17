@@ -1307,14 +1307,22 @@ class _MangaOcrSettingsSectionState
 
   /// 「OCR 忽略振假名」开关（反馈 ZBJTgLuPIb）：只裁来源自带的注音，不生成读音。
   Widget _buildIgnoreFurigana() {
+    // 振假名本来就由模型去掉的识别器（charspot / nar）不受这个开关影响（服务端
+    // 同一个判据：`MangaOcrRecognizerSpec.honoursIgnoreFurigana`）。这时开关拨了也
+    // 没有任何效果，所以不留一个能拨的死开关：显示为开（注音确实不会读进正文）、
+    // 不可操作，并写明原因；用户存的偏好不动，换回逐列模型时照旧生效。
+    final bool applies =
+        _localModel.generation.recognizer.honoursIgnoreFurigana;
     return AdaptiveSettingsSwitchRow(
       key: const ValueKey<String>('manga_ocr_ignore_furigana'),
       title: t.manga_ocr_ignore_furigana,
-      subtitle: t.manga_ocr_ignore_furigana_desc,
+      subtitle: applies
+          ? t.manga_ocr_ignore_furigana_desc
+          : t.manga_ocr_ignore_furigana_model_skips_desc,
       icon: FushiIcons.ocr,
       showIcon: true,
-      value: _ignoreFurigana,
-      onChanged: widget.ignoreFuriganaSetter == null
+      value: applies ? _ignoreFurigana : true,
+      onChanged: widget.ignoreFuriganaSetter == null || !applies
           ? null
           : (bool value) async {
               setState(() => _ignoreFurigana = value);
