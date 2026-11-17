@@ -206,7 +206,20 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
   系统托管、上限随用随涨），单个 rustc 只占约 1.5 GB，大头是别的进程（一个与本仓无关的 Python 推理进程 46 GB、58 个
   claude 进程合计 26 GB）。第三次同样的命令在负载回落后两份库都编过了。处置：先看任务管理器「性能 → 内存 → 已提交」，
   离上限近就等其他重负载结束或调大页面文件再编；同样不加重试。
-- 旧分支 / 还没合到这份配置的 worktree：本机 `~/.cargo/config.toml` 里放同一段 `[profile.quick]` 即可（Windows 开发机已放）；
+- **改一行重编的时间花在哪**（2026-11-17，rustc 1.95，fushi_fsrs `cargo test --profile quick --lib --no-run`，
+  `RUSTC_WORKSPACE_WRAPPER` 给本 crate 加 `-Ztime-passes`，依赖不受影响；机器上同时有别的会话占满 CPU）：rustc 本体每次
+  15～17 秒，其中宏展开（`expand_crate`，整个 crate 每次重做、不走增量）3.3～4.4 秒、codegen 约 2.8 秒、写增量缓存
+  （`serialize_dep_graph`）1.7～2.6 秒、链接（`run_linker`）link.exe 2.0～3.0 秒 / rust-lld 0.9～2.0 秒，其余是类型检查等
+  查询。cargo 自身的空跑开销 0.4～0.5 秒。**端到端计时在这台机器上不可信**：同一操作在别的会话占满 CPU 时 14～50 秒乱跳，
+  比任何配置差异都大，比较配置要看 `-Ztime-passes` 的分项。
+  - **链接器不换**：rust-lld 每次省约 1 秒（约 6%），但链接器只能按 target 配，不能只给 `quick`——会连带改掉出包的
+    cdylib / staticlib 和 CI 的 Windows 构建，收益配不上这个风险。
+  - **Defender 实时扫描在本机是关的，但卡巴斯基（Kaspersky Internet Security 21.x，服务 `AVP21.26`）开着**，它的文件过滤
+    驱动对每次开文件都生效（增量缓存、`.rlib`、链接产物都在其中）。排除目录要在卡巴斯基界面里由机主手动加
+    （worktree 根、`~/.cargo`、`~/.rustup`、各 target 目录），命令行改不了；加了以后用上面的分项方法复测
+    `serialize_dep_graph` / `run_linker` 再下结论。
+- 旧分支 / 还没合到这份配置的 worktree：本机 `~/.cargo/config.toml` 里放同一段 `[profile.quick]` 即可（Windows 开发机
+  2026-11-17 补上——此前文档写「已放」，实际文件不存在，旧分支上 `--profile quick` 会直接报找不到 profile）；
   `[env]` 那一段只能跟仓库走（要按 worktree 解析路径），旧分支没有。
 
 ## 发布通道
