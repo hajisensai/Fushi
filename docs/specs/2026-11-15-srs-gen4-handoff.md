@@ -3220,3 +3220,52 @@ profile uid 不变」断言，不分 `bound` / `joined`。
 - **BUG-4626 新代并入场景已正式登记为 BUG-4836**（`docs/bugs/BUG-4836-srs-gen4-dangling-op-joins-into-other-collection.md`）：根因
   `file:line`（`gen4/cmd/writes.rs:31` / `:886` 写入口不设闸，`gen4/identity.rs:430` / `:572` 并入无条件并集）、两种修法与复现用例
   全文都在 bug 文件里，交 G9 身份 / 设计；本分支仍不改内核。
+
+## 36. 第五波 同步收尾（2026-11-18，分支 `pr/srs-gen4-w5-sync-tail`，基于 `pr/srs-gen4-switch` `3d78fe51d0`）
+
+输入：第五波只读审计 sched9 / plan6 / ledger（同步项）。逐条结论：
+
+- **R10 新根 `meta.json` 一时读不到不重写（真 bug，已修）**。根因：内核 `location_root`（`cmd/sync.rs`）在 `has4 == false` 时只看
+  `v3/meta.json` 在不在就按「旧集合，从 v3 重建 v4」走，先写 v4 再写围栏；v4 的 meta 只是这一轮读失败（云盘瞬时错误）而 v3 早已是
+  围栏、或 v4 下已有设备 / 加密媒体时，它会拿围栏（没有 `media`）重建出一份 meta 盖掉原来的（媒体根被改）。修法：Dart 把「v4 下已有
+  数据」（`devices/` 或 `media-e/` 有文件，与握手同一判据；不含 `media/`——测试与真实流程里媒体会先于 meta 上传）作为 `v4Data` 传给
+  内核；内核在 v4 meta 缺、而 v3 已是围栏或 `v4Data` 为真时拒绝，机读码 `srs_location_meta_unavailable`；Dart 在握手之前同样先判
+  一次，报 `kSrsSync2MetaUnavailable`，这一轮不写任何东西，下一轮 meta 读得到就照常。测试：`sync_tests.rs`
+  `an_unreadable_new_root_meta_behind_a_fence_is_not_rebuilt`、`srs_sync4_folder_test` 真内核用例。变异：内核判据改 `if false &&` →
+  Rust 用例红；Dart 与内核两道都去掉 → Dart 用例红（`Expected meta unavailable, Actual null`）。
+- **删协议 1 位置迁移的死结构**：`srs_location_migration.dart`（新代不再迁移协议 1 位置，只按 `kSrsLocationProtocol1Root` 拒绝）与它
+  在 `srs_folder_location.dart` / `srs_location_runner.dart` / 调度器里的接线（`kSrsV1MigrateActivity`、`v1MediaMigrations`、
+  `onV1Bound`、quiesce / settle 等迁移）、测试 `srs_v1_media_migration_stop_test.dart`；围栏编解码留在新文件 `srs_v1_fence.dart`
+  （新集合立围栏、判 v2 围栏仍要用）。随之死掉的 UI 管线一并删：`srsMigrationProgress`、`SrsSyncStage.migrating`、后台任务 /
+  同步横幅里的「旧文件迁移」一行与两条测试、i18n `srs_sync_progress_migrating` / `_count`（`i18n_sync --remove`）。
+- **调度器测试按新代布局改**：`srs_sync_scheduler_test` 9 条过期用例改成读 `v4/devices/<设备>/seg-` / `v4/meta.json` + v3 围栏；
+  R5 / R6 两条协议 1 媒体迁移用例改成拒绝路径（只有协议 1 旧根的位置：报 `kSrsLocationProtocol1Root`、提示一次、位置字节不动；关掉
+  的位置不报错、不跑）。
+- **K2 合流后的两条红是测试过期、不是回归**：`sync2 relay` 与 `media_sync`「记日志的位置」都撞上 K2 首见信任（库非空时第一次见到
+  的设备是待确认）+ 两道有意的信任闸——只替受信作者转发（`relayable`）、不收待确认 / 已拒绝设备的媒体清单（`gen4/media.rs`
+  `IngestError::Untrusted`，G8-3：「它说的在」可能是要别人别传）。测试改成先由用户确认对端（`sync2Trust`），与 K2 改 Rust 用例同口径。
+- **既有红逐条定因（均为测试过期）**：`bootstrap_channel_entry` ×3 测的是协议 3 收段通道（`sync2_boot*` 表），新代没有收段通道 →
+  只测通道机制的两条删掉，收敛断言移到新文件 `srs_sync4_new_device_convergence_test.dart`；`head_gap` 读 head 的段表键名新代是
+  `segs`；`media_presence` ×2 媒体事实按位置记，对账要带与同步一轮相同的 `locationId`，另一条再加确认对端；`style_dedup` 在 `ops`
+  的操作体上 `instr`，但够大的操作体按 zstd 存（`gen4/pack.rs`），改数 `exportAll` 的修改记录；`preread_cost` 973/958：清除会作废旧
+  操作，`status.ops` 数的是内容行，改按 `nextSeq - 1` 数写入条数。
+- **G10-4 残余 1：混合版本家庭按轮判首次信任（已修）**。`plan`（每轮开头、收段之前）按位置记 `gen4_round_fresh/<集合>/<位置>` =
+  这一轮开始时库是不是空的（`cmd/sync.rs` `round_fresh_key`）；`oldroot_ingest` 第一次见到、且本机还没有它任何日志的协议 3 作者按
+  这一轮开头的结论判（`truth/trust.rs` `note_new_peer_in_round`，文件头「这一轮」一段）。本机已有它日志、公钥第一次登记的照旧按此刻
+  判，不放宽 G10-4 的收紧。测试：`sync_heritage_trust_tests.rs` 两条（全新设备第一轮先收新根再捡旧根 → OLD 无信任行、清除不扣；后
+  续一轮才第一次见到 → 待确认、清除扣住）。变异：`fresh_round` 恒为 false → 第一条红（`sync_heritage_trust_tests.rs:431`）。
+  没用 SCHEMA 40022：标记放在已有的 meta 键值表里，不需要新表。
+- **G10-4 残余 2：`heritage_plan` 的 `unvouched` 接到同步页**。`srsSync4UploadHeritage` 把回包的 `unvouched`（`skip` 时也带）记进
+  `SrsSync2Report.heritageUnvouched`（没走到这一步为 null）；调度器 `heritageUnvouched`（`ValueListenable<Set<String>>`，通道 / 本机
+  目录 / 文件夹位置三条路径都更新，取最近一轮走到这一步的结论，null 不动）；「同步与历史」页状态卡在非空时加一行
+  `srs_sync_heritage_unvouched` / `_hint`（「有 N 台旧设备的数据等你确认该设备后才会继续上传」，指向下面的设备列表）。测试：
+  `srs_sync4_round_test`（skip 回包带 unvouched → 进报告；空表 → 空不是 null）、`srs_sync_scheduler_test`（有 → null 不动 → 空）。
+
+**更正 §34（G10-4）的两处说法**：「旧根两条命令目前还没有 Dart 调用方（同步轮 2b 步未接线）」与「旧根命令目前仍没有 Dart 调用方」
+不成立——G8-7b 已接线：`packages/fushi_engine/lib/srs/sync2/srs_sync2_round.dart` 一轮的「2b. 旧根接手」步调
+`srsSync4TakeOldRoot`（`srs_sync4_steps.dart`，内核 `oldroot_scan` / `oldroot_ingest`），承袭上传 `srsSync4UploadHeritage` 调
+`heritage_plan`。§34 里「等接线时由同步轮持有者决定」的两件事本节已做（上面残余 1 / 2）。
+
+**没做 / 留给后面的**：
+- `SrsDeferredProfileMerge` 仍有读者（`srs_history_page.dart` 的「并入暂缓」行），不是死代码，本节不动。
+- `docs/agent/subsystem-map.md` 里协议 2 断代那段仍提到 `srs_location_migration.dart`（历史描述），没改。
