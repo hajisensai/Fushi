@@ -313,7 +313,7 @@ class _LibraryRecoveryPageState extends State<LibraryRecoveryPage> {
             leading: const FushiIcon(FushiIcons.history),
             title: Text(
               t.storage_recovery_snapshot_info(
-                time: FushiTimeFormat.dateHourMinute(snapshot.modifiedAt),
+                time: FushiTimeFormat.dateHourMinute(snapshot.createdAt),
                 size: formatStorageBytes(snapshot.sizeBytes),
               ),
             ),

@@ -820,6 +820,8 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
                       tooltip: t.music_track_detail,
                       onTap: () => openMusicTrackDetail(c, track.trackUid),
                     ),
+                    // 触屏没有右键：行尾「⋯」打开与右键同一份菜单（多选 / 从歌单移除…）。
+                    menu.button(),
                     if (_onReorder != null) const MusicPlaylistDragHandle(),
                   ],
           ),
@@ -870,6 +872,7 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
                     tooltip: t.music_track_detail,
                     onTap: () => openMusicTrackDetail(c, track.trackUid),
                   ),
+                  menu.button(),
                   if (_onReorder != null) const MusicPlaylistDragHandle(),
                 ],
               ],

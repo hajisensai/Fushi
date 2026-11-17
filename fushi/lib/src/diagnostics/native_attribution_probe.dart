@@ -125,7 +125,8 @@ String? describeThreadCpuDelta(
 /// `ScreenOffCPUCheckKill over +25m used +45m`，反馈 Z9FwhY9377）要回答的是「这半小时里
 /// 谁吃了 45 分钟 CPU」，最后几个窗口里进程又可能已经闲下来。进程总数取 `/proc/self/stat`
 /// （含已退出线程），分组取仍活着的线程的累计——两者差额就是已退出线程吃掉的。
-/// [processTicks] 读不到时只列分组；分组也没有时返回 null。
+/// [processTicks] 读不到时总数退回活线程累计之和——不含已退出线程，只是下限，写成
+/// `cpuSum≥…s[…]`，别和真进程总数混读；分组也没有时返回 null。
 @visibleForTesting
 String? describeCumulativeCpu(
   int? processTicks,
@@ -138,8 +139,9 @@ String? describeCumulativeCpu(
     top,
   );
   if (g == null && processTicks == null) return null;
-  final int total = processTicks ?? g!.$1;
-  return 'cpuSum=${_ticksToSec(total)}s${g == null ? '' : '[${g.$2}]'}';
+  final String groups = g == null ? '' : '[${g.$2}]';
+  if (processTicks == null) return 'cpuSum≥${_ticksToSec(g!.$1)}s$groups';
+  return 'cpuSum=${_ticksToSec(processTicks)}s$groups';
 }
 
 /// `cpuSum=` 里列几个线程组。
