@@ -268,7 +268,9 @@ void main() {
     await tester.runAsync(() async {
       // 走和页面同一条建书路径，免得手搓描述符与生产格式漂移。
       await pumpDetail(tester);
-      await pumpUntil(tester, find.byKey(addKey));
+      // 「加入书架」在详情取回之前就在屏上（禁用）：等章节出来再点，否则点的是
+      // 禁用态。
+      await pumpUntil(tester, find.text('Chapter one'));
       await tester.tap(find.byKey(addKey));
       await pumpUntil(tester, find.byKey(removeKey));
       await tester.pumpWidget(const SizedBox.shrink());
@@ -320,7 +322,9 @@ void main() {
       bool newChapter = true,
     }) async {
       await pumpDetail(tester);
-      await pumpUntil(tester, find.byKey(addKey));
+      // 「加入书架」在详情取回之前就在屏上（禁用）：等章节出来再点，否则点的是
+      // 禁用态。
+      await pumpUntil(tester, find.text('Chapter one'));
       await tester.tap(find.byKey(addKey));
       await pumpUntil(tester, find.byKey(removeKey));
       await tester.pumpWidget(const SizedBox.shrink());
@@ -384,10 +388,12 @@ void main() {
 
     Object? replayKey(WidgetTester tester) => tester
         .widget<FushiEntranceScope>(
-          find.ancestor(
-            of: find.text('Chapter one'),
-            matching: find.byType(FushiEntranceScope),
-          ),
+          find
+              .ancestor(
+                of: find.text('Chapter one'),
+                matching: find.byType(FushiEntranceScope),
+              )
+              .first,
         )
         .replayKey;
 
