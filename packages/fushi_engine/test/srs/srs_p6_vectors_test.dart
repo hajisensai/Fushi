@@ -86,7 +86,7 @@ void main() {
   setUpAll(() {
     expect(FushiFsrs.instance, isNotNull, reason: 'fushi_fsrs 原生库缺失');
     dir = Directory.systemTemp.createTempSync('srs_p6_vectors_');
-    core = SrsCore.open('${dir.path}/srs.db')..legacyMarkNone();
+    core = SrsCore.open('${dir.path}/srs.db');
     // 第 i 份历史 = profile `p$i` 的卡 `v$i`（每份一个 profile：全量回放 / 统计按 profile 扫）。
     final List<(int, List<Object?>)> apps = <(int, List<Object?>)>[];
     for (int i = 0; i < vectors.length; i++) {

@@ -103,36 +103,29 @@ void main() {
     expect(secondary.debugQuery('SELECT 1 AS one').single['one'], 1);
   });
 
-  // 协议 1 旧主库的搬迁入口（`ffsrs_store_legacy_*`）在新代里还没接线：报类型化的「没接线」，不当成功；备份快照
-  // 已接新代（G11-4），但剥离本机状态的请求明确报错。
-  test('legacy import and snapshot are typed unwired errors on gen4', () {
-    final SrsCore core = SrsCore.open(dir.path);
-    addTearDown(core.close);
-    expect(
-      () => core.legacyImported,
-      throwsA(
-        isA<SrsCoreUnwiredException>().having(
-          (SrsCoreUnwiredException e) => e.op,
-          'op',
-          'ffsrs_store_legacy_state',
+  // 备份快照已接新代（G11-4），但剥离本机状态的请求明确报错。协议 1 旧主库的搬迁入口（`ffsrs_store_legacy_*`）
+  // 已随 G7-6 删掉（主库残留的协议 1 表由 `SrsStorage.open` 明确拒绝，见 srs_legacy_main_database_test.dart）。
+  test(
+    'a snapshot that strips device-local state is a clear error on gen4',
+    () {
+      final SrsCore core = SrsCore.open(dir.path);
+      addTearDown(core.close);
+      expect(
+        () => core.snapshotInto(
+          '${dir.path}${Platform.pathSeparator}snap.db',
+          stripDeviceLocal: true,
         ),
-      ),
-    );
-    expect(
-      () => core.snapshotInto(
-        '${dir.path}${Platform.pathSeparator}snap.db',
-        stripDeviceLocal: true,
-      ),
-      // G11-4 已把快照接到新代；只是不支持剥离本机状态（备份走按集合的导出流），报一般错误。
-      throwsA(
-        isA<SrsCoreException>().having(
-          (SrsCoreException e) => e.message,
-          'message',
-          contains('stripping device-local state is not supported'),
+        // G11-4 已把快照接到新代；只是不支持剥离本机状态（备份走按集合的导出流），报一般错误。
+        throwsA(
+          isA<SrsCoreException>().having(
+            (SrsCoreException e) => e.message,
+            'message',
+            contains('stripping device-local state is not supported'),
+          ),
         ),
-      ),
-    );
-  });
+      );
+    },
+  );
 
   // 刷新键是内核的进程内计数（`refresh_keys`，gen4/refresh.rs）：一次取回五个键，没有写入就不变，只写本机状态行的
   // 命令不推进；关库后为 null。

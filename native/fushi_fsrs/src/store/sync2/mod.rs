@@ -2238,7 +2238,7 @@ impl SrsCore {
     /// 指向别的 profile 实体的输入项不追加、不投影（[ownership]，在 [apply_local_on] 里判），下标在 `foreign` 里交回。
     ///
     /// 不带旧版时钟（[apply_local_on] 的 `legacy` 为 None）：内核自己的测试 / 基准用。宿主的 `apply` 命令走分发器
-    /// （store/ffi.rs `local_write`），那里必带。
+    /// （store/legacy3 `local_write`），那里必带。
     pub fn sync2_apply_local(
         &self,
         profile: &str,
@@ -2795,7 +2795,7 @@ pub(crate) fn parse_apply_input(input: &str) -> Result<Vec<Value>, String> {
     serde_json::from_str(input).map_err(|e| format!("bad apply input: {e}"))
 }
 
-/// `apply` 的旧版时钟部分（store/legacy_clock.rs；宿主的 `apply` 命令必带，见 store/ffi.rs `local_write_body`）。
+/// `apply` 的旧版时钟部分（store/legacy_clock.rs；宿主的 `apply` 命令必带，见 store/legacy3 `local_write_body`）。
 ///
 /// 输入项的 `clk` 是这一项对旧版时钟的指令（与以前 Dart `SrsDbStore` 发命令前在内存时钟上做的逐值相同）：
 /// - `"r"`：这一项带着来源给的 HLC（导入的日志 / 记录、并入的外来事件）——按收到对端事件的规则推进（先钳位，
@@ -2825,7 +2825,7 @@ fn clk_of(it: &Value) -> Result<Option<char>, String> {
 }
 
 /// [SrsCore::sync2_apply_local] 的本体：在调用方持着的写连接、调用方开的 SAVEPOINT 里做（不自己取锁），分发器把它与
-/// 缓存刷新、排队、本机状态行合进同一个 SAVEPOINT（store/ffi.rs `local_write`）。[legacy]：旧版时钟（见
+/// 缓存刷新、排队、本机状态行合进同一个 SAVEPOINT（store/legacy3 `local_write`）。[legacy]：旧版时钟（见
 /// [LegacyApply]）；None 时输入里不得有 `clk`。
 ///
 /// 归属核对在这里（ownership.rs）：所有经这个本体落库的命令——`apply`、`change`、`import_drafts`、`note_fields_if`、

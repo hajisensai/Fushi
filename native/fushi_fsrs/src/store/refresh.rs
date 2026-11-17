@@ -214,7 +214,7 @@ impl super::SrsCore {
     }
 
     /// 一条命令返回之后（它自己的写入已提交或已回滚）按请求与结果记刷新计数。分发器的统一出口（ffi.rs
-    /// `sync2_dispatch`）调；[projecting]：这条命令会改投影（ffi.rs `PROJECTING_OPS`）。
+    /// `sync2_dispatch`）调；[projecting]：这条命令会改投影（store/legacy3 `PROJECTING_OPS`）。
     ///
     /// - 成功、回包带 `localRevision`（内核在这条命令里写了本机状态行）：按 `marks` / `changed` 记（[Landed::of_reply]）；
     /// - `local_state` 带 `reload: true`：调用方要丢掉它按这些键记的一切（新开的副本对象、命令失败后的重读）；

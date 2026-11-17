@@ -4171,7 +4171,7 @@ mod budget_tests {
 }
 
 /// [SrsCore::sync2_ingest] 的写锁内一半：在调用方的写连接、调用方开的 SAVEPOINT 里投递预处理好的段（不自己取锁、不收
-/// 通道）。`retire` 用它在同一个 SAVEPOINT 里紧接着投一遍缓冲（store/ffi.rs `local_write`）。
+/// 通道）。`retire` 用它在同一个 SAVEPOINT 里紧接着投一遍缓冲（store/legacy3 `local_write`）。
 #[cfg(test)]
 pub(crate) fn ingest_on(
     c: &Connection,

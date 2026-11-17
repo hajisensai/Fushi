@@ -1,6 +1,6 @@
 //! 新代分发器（规划 §2.2 S1；逐条接线清单见交接说明「分发器命令对照表」与「S1 接线设计」）：`ffsrs_store_sync2` 的每一条
-//! JSON 命令到 `cmd/` 的新代实现。协议 3 的分发器（`store/ffi.rs` `sync2_dispatch`）原样留着给协议 3 的测试与对拍装置，
-//! 生产入口不再调它（G7-6 删）。
+//! JSON 命令到 `cmd/` 的新代实现。协议 3 的分发器（`store/legacy3`）只有 5 条冻结命令编进生产构建（换代迁移与整包备份读入用），
+//! 其余臂只编进测试构建、给协议 3 的测试与对拍装置（G7-6）；`ffsrs_store_sync2` 不经它。
 //!
 //! # 命令的三种去向（[wiring]）
 //!
@@ -213,6 +213,31 @@ pub fn dispatch(
 
 /// 标成接线却没有臂的命令报的错（[run] 的兜底；测试按它核对）。
 pub(crate) const NO_ARM: &str = "gen4 dispatch: marked wired but has no arm";
+
+/// 改投影的命令：Dart 只能在本副本的独占区里发、按顺序吸收回包（`SrsDbStore.kSrsSync2ProjectingOps` 与它同一组，
+/// 守卫 `srs_read_only_executor_guard_test.dart`）。= 走 [local_write] 的本机写命令，加上不经 `Session` 落真相、
+/// 回包同样改投影的 `import` 与同步一轮的 `ingest` / `ingest_finish` / `retire`。协议 3 的收段通道命令
+/// （`ingest_batch` / `ingest_commit` / `replay_pending`）新代没有（[Wiring::Removed]），不在这里。
+pub const PROJECTING_OPS: &[&str] = &[
+    "apply",
+    "import_drafts",
+    "change",
+    "note_fields_if",
+    "merge_notes",
+    "sched",
+    "deck_delete",
+    "retire",
+    "ingest",
+    "ingest_finish",
+    "import",
+    "resolve",
+    "trust",
+    "purge",
+    "checkpoint",
+    "restore",
+    "dedup",
+    "digest_heal",
+];
 
 fn str_of<'a>(req: &'a Value, k: &str) -> Result<&'a str, String> {
     req.get(k)
@@ -1138,4 +1163,46 @@ pub(crate) fn stats_cached(c: &G4Core) -> Option<u64> {
         .unwrap_or_else(|e| e.into_inner())
         .as_ref()
         .map(|e| e.writes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{PROJECTING_OPS, Wiring, wiring};
+
+    /// [PROJECTING_OPS] 里每条都接了线，且每条走 [super::local_write] 的命令都在里面（漏一条，Dart 就可能在独占区外
+    /// 发它、回包里的投影变化接不上）。
+    #[test]
+    fn projecting_ops_are_wired_and_cover_every_local_write() {
+        for op in PROJECTING_OPS {
+            assert_eq!(wiring(op), Some(Wiring::Wired), "{op}");
+        }
+        let src = include_str!("dispatch.rs").replace("\r\n", "\n");
+        let body = &src[src.find("\nfn run(").expect("run")..];
+        let body = &body[..body.find("\n}\n").expect("end of run")];
+        let mut arm: Vec<&str> = Vec::new();
+        let mut local: Vec<&str> = Vec::new();
+        for line in body.lines() {
+            let t = line.trim_start();
+            if line.starts_with("        \"") {
+                arm = t
+                    .split("=>")
+                    .next()
+                    .unwrap_or("")
+                    .split('|')
+                    .map(|x| x.trim().trim_matches('"'))
+                    .filter(|x| !x.is_empty())
+                    .collect();
+            }
+            if t.contains("local_write(c, profile, req,") {
+                local.extend(arm.iter().copied());
+            }
+        }
+        assert!(local.len() >= 14, "{local:?}");
+        for op in &local {
+            assert!(
+                PROJECTING_OPS.contains(op),
+                "{op} writes through local_write"
+            );
+        }
+    }
 }

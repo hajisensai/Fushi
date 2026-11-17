@@ -16,15 +16,17 @@ const String kSrsDatabaseFileName = 'srs.db';
 /// 新代库的文件名（native/fushi_fsrs/src/store/gen4/files.rs `GEN4_FILE`）。
 const String kSrsGen4DatabaseFileName = 'srs4.db';
 
-/// 主库 `fushi.db` 里还留着协议 1 的 SRS 表（`srs_entities` 等，从没搬进过 `srs.db`）：新代不认这些表（搬迁入口
-/// `ffsrs_store_legacy_*` 归 G7-6 / D21），存储不打开、给出明确状态。主库里的表一行没动，接上搬迁之后照常搬进来。
+/// 主库 `fushi.db` 里还留着协议 1 的 SRS 表（`srs_entities` 等，从没搬进过 `srs.db`）：新代不认这些表，也没有
+/// 搬迁入口（协议 3 的 `ffsrs_store_legacy_*` 与 Dart 的 `srsMigrateLegacyStore` 已随 G7-6 删掉），存储不打开、
+/// 给出明确状态（app 给升级提示：先用旧版本打开一次完成搬迁）。主库里的表一行不动。
 final class SrsLegacyMainDatabasePending implements Exception {
   const SrsLegacyMainDatabasePending();
 
   @override
   String toString() =>
       'SrsLegacyMainDatabasePending: fushi.db still holds protocol 1 SRS '
-      'tables that this version cannot import yet (G7-6 / D21)';
+      'tables that this version cannot import; open it once with an '
+      'older version to migrate them first';
 }
 
 /// 打开的 SRS 存储。

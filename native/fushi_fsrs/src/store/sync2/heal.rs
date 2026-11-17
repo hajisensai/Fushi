@@ -305,7 +305,7 @@ impl SrsCore {
 }
 
 /// [SrsCore::sync2_digest_heal] 的本体：在调用方的写连接、调用方开的 SAVEPOINT 里做（不自己取锁）。分发器把它与缓存
-/// 刷新、本机状态行合进同一个 SAVEPOINT（store/ffi.rs `local_write`）。
+/// 刷新、本机状态行合进同一个 SAVEPOINT（store/legacy3 `local_write`）。
 #[cfg(test)]
 pub(crate) fn digest_heal_on(c: &Connection, profile: &str, now: i64) -> Result<Value, String> {
     let mut replayed: BTreeSet<String> = BTreeSet::new();

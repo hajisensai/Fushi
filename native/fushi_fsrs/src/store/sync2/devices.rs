@@ -470,7 +470,7 @@ impl SrsCore {
 }
 
 /// [SrsCore::sync2_retire] 的本体：在调用方的写连接、调用方开的 SAVEPOINT 里改停用标记（不自己取锁；分发器接着在同一个
-/// SAVEPOINT 里投一遍缓冲，store/ffi.rs `local_write`）。
+/// SAVEPOINT 里投一遍缓冲，store/legacy3 `local_write`）。
 #[cfg(test)]
 pub(crate) fn retire_on(
     c: &Connection,

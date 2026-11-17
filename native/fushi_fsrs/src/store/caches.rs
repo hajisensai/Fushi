@@ -143,7 +143,7 @@ pub(crate) struct Written {
 }
 
 impl Written {
-    /// 并入同一笔里后一次刷新写过的（`change` 的移牌组段，store/ffi.rs `local_write`）：各自去重；后一次写了整行的卡
+    /// 并入同一笔里后一次刷新写过的（`change` 的移牌组段，store/legacy3 `local_write`）：各自去重；后一次写了整行的卡
     /// 不再算删掉的，后一次删掉的不再算写过的。
     #[cfg(test)]
     pub(crate) fn absorb(&mut self, later: Written) {

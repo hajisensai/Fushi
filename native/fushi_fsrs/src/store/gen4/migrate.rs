@@ -14,7 +14,7 @@
 //! 3. **前提补完**（[Step::Prepare]，G7-2b，`prepare.rs`）：旧库没满足的前提——从没同步过（`migrated_at` 为空、
 //!    旧行还在 `sync2_migrate_queue`）、只在投影表里的 profile（孤儿 uid）、去重作业、收段通道 / 待重放 / 待刷新缓存、
 //!    schema 比这一版的协议 3 旧（v3.3.0 正式版是 26）——先用**冻结的协议 3 代码**（`SrsCore::open` 的升级阶梯与
-//!    `store/ffi.rs` `sync2_dispatch` 的 `migrate` / `dedup` / `replay_pending`）做完。**在原件的副本上做**
+//!    `store/legacy3` `sync2_dispatch` 的 `migrate` / `dedup` / `replay_pending`）做完。**在原件的副本上做**
 //!    （`files::PREPARE_COPY`）：原件的写锁从这一步之前持到封存，原件在提交点之前一个字节不写，不论结局都还能被写它的
 //!    那个协议 3 版本打开；之后的读快照与阶段都开在副本上。什么都不用补的库不拷副本。补不了的（并入做到一半、缺缓存
 //!    配置、库比这一版新、文件坏了）拦下，[BlockCode] 给机器可读的原因。

@@ -1771,7 +1771,7 @@ class SrsDbStore implements SrsSync2Host {
     return _sync2Raw(request);
   }
 
-  /// [browseCommand] 接受的命令：与原生 `store/ffi.rs` 里分派到 `browse` 会话的那一组相同。
+  /// [browseCommand] 接受的命令：与内核 `store/gen4/dispatch.rs` 里分派到浏览会话的那一组相同。
   static const Set<String> kSrsBrowseOps = <String>{
     'browse_query',
     'browse_rows',
@@ -2360,7 +2360,7 @@ class SrsDbStore implements SrsSync2Host {
     _ => SrsCoreLane.bulk,
   };
 
-  /// 改投影的 v2 命令（与内核 native/fushi_fsrs/src/store/ffi.rs `PROJECTING_OPS` 同一组）：只能在本副本的独占区里发
+  /// 改投影的 v2 命令（与内核 native/fushi_fsrs/src/store/gen4/dispatch.rs `PROJECTING_OPS` 同一组）：只能在本副本的独占区里发
   /// （[_sync2Raw] 断言）：回包要按顺序接进本对象的内存（缓存变更日志、修订号）。
   ///
   /// 不在这里、也不排写锁却可能顺带写库的：`digest`（记一行摘要缓存）、`media_hash`、`plan_restore`（只读，但通道没做完时
@@ -2376,10 +2376,7 @@ class SrsDbStore implements SrsSync2Host {
     'deck_delete',
     'retire',
     'ingest',
-    'ingest_batch',
-    'ingest_commit',
     'ingest_finish',
-    'replay_pending',
     'import',
     'resolve',
     'trust',
@@ -2396,6 +2393,9 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 改投影 / 刷新缓存的 v2 命令：内核在同一次调用里刷新本机缓存行（native/fushi_fsrs/src/store/caches.rs），
   /// 要带上只有 Dart 知道的缓存配置（[_cacheConfig]）。
+  ///
+  /// 协议 3 收段通道与存储表示的命令（`ingest_batch` / `ingest_commit` / `replay_pending` / `edits_rewrite_repr` /
+  /// `backfill_dupe_norms`）新代没有（内核 `gen4/dispatch.rs` `wiring` 报 Removed），Dart 不再发，已从这里删去（G7-6）。
   static const Set<String> _kSync2CacheOps = <String>{
     'apply',
     'import_drafts',
@@ -2405,10 +2405,7 @@ class SrsDbStore implements SrsSync2Host {
     'sched',
     'deck_delete',
     'ingest',
-    'ingest_batch',
-    'ingest_commit',
     'ingest_finish',
-    'replay_pending',
     'import',
     'retire',
     'resolve',
@@ -2421,8 +2418,6 @@ class SrsDbStore implements SrsSync2Host {
     'refresh_caches',
     'rebuild_caches',
     'cache_config_set',
-    'edits_rewrite_repr',
-    'backfill_dupe_norms',
     'media_gc_collect',
     'media_live_refs',
   };
@@ -3498,7 +3493,7 @@ class SrsDbStore implements SrsSync2Host {
   });
 
   /// 一条本机写意图命令（内核自己读现值、自己判、自己写）：一个独占区、一条命令——命令本体、缓存刷新、本机状态行
-  /// 在内核的同一笔里（native/fushi_fsrs/src/store/ffi.rs `local_write`）。旧版 HLC 时钟每条写入走一步，用这一刻的
+  /// 在内核的同一笔里（native/fushi_fsrs/src/store/gen4/dispatch.rs `local_write`）。旧版 HLC 时钟每条写入走一步，用这一刻的
   /// 「此刻」。
   Future<Map<String, Object?>> _intentWrite(
     Map<String, Object?> request, {
@@ -5812,7 +5807,7 @@ class SrsDbStore implements SrsSync2Host {
   /// 一条本机写命令（[body] 发命令、把结果接进内存）；失败时从库里重读本机状态再抛出。
   ///
   /// 内核在命令的同一个 SAVEPOINT 里做完命令本体、缓存刷新、排队与本机状态行
-  /// （native/fushi_fsrs/src/store/ffi.rs `local_write`），要么全落、要么全不落。收段通道没做完时内核在命令之前先把它
+  /// （native/fushi_fsrs/src/store/gen4/dispatch.rs `local_write`），要么全落、要么全不落。收段通道没做完时内核在命令之前先把它
   /// 按片做完，每片提交时内核推进刷新键（[contentFingerprint] 等）。
   ///
   /// 命令失败不回滚内存：攒下的影响面要丢掉、修订号等从库里重读（与 [reloadLocal] 同一理由）。调用方已在独占区里。

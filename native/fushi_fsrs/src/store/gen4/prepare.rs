@@ -30,7 +30,7 @@
 //!
 //! - 旧库 schema 比这一版的协议 3 旧：`SrsCore::open` 的升级阶梯在副本上把它升上来（空间不够照协议 3 的空间守卫报
 //!   [Outcome::NoSpace]）。
-//! - 每个要补的 profile（[Plan::profiles]，升序），经协议 3 的分发器（`store/ffi.rs` `sync2_dispatch`，与旧 app 发的
+//! - 每个要补的 profile（[Plan::profiles]，升序），经协议 3 的分发器（`store/legacy3` `sync2_dispatch`，与旧 app 发的
 //!   是同一串命令，通道没做完时分发器自己先按片做完）依次：
 //!   1. `migrate`（每批 [Options::batch] 条）到 `done`：建本机身份（没有的话）、把还没有任何操作代表的旧行包成操作、
 //!      写 `migrated_at`。只在投影表里的孤儿 uid 也这样进操作日志，迁移时与别的 profile 一样迁过去；

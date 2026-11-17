@@ -332,7 +332,7 @@ impl crate::store::SrsCore {
 }
 
 /// [crate::store::SrsCore::sync2_trust] 的本体：在调用方持着的写连接、开好的 SAVEPOINT 里做（不自己取锁）。本机写命令
-/// 分发（store/ffi.rs `local_write_body`）把它与缓存刷新、本机状态行放进同一个 SAVEPOINT。
+/// 分发（store/legacy3 `local_write_body`）把它与缓存刷新、本机状态行放进同一个 SAVEPOINT。
 #[cfg(test)]
 pub(crate) fn trust_on(
     c: &Connection,

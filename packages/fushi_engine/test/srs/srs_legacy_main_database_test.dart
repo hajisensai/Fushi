@@ -1,18 +1,14 @@
 // 主库 `fushi.db` 里残留的协议 1 SRS 表（2026-10-23 之前的形态，docs/specs/2026-10-23-srs-rust-store.md §3）。
 //
-// 新代没有把这些表搬进 SRS 库的入口（协议 3 的搬迁命令 `ffsrs_store_legacy_*` / `srsMigrateLegacyStore` 不再接线，
-// 归 G7-6 / D21）。对用户最稳妥的行为由 [SrsStorage.open] 的 `legacy` 守卫给出：主库里还有协议 1 的表、而库目录里
+// 新代没有把这些表搬进 SRS 库的入口：协议 3 的搬迁命令（`ffsrs_store_legacy_*`）与 Dart 的 `srsMigrateLegacyStore`
+// 已随 G7-6 删掉。对用户最稳妥的行为由 [SrsStorage.open] 的 `legacy` 守卫给出：主库里还有协议 1 的表、而库目录里
 // 从没有过 SRS 库时**明确拒绝**（[SrsLegacyMainDatabasePending]，app 给升级提示页），不建空库把那些卡片藏起来，
 // 主库里的表一行不动。这里锁住这条守卫。
-//
-// 原来的「逐字节搬进 srs.db、删旧表 / 失败整批回滚 / 全新安装只写标记」三条测的是协议 3 的搬迁命令（`legacyImported`、
-// 协议 3 表上的 `debugQuery`），新代没有那段路径，已删；搬迁入口接回来时（G7-6 / D21）按新代重写。
 import 'dart:io';
 
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi_engine/srs/srs_legacy_store_migration.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:test/test.dart';
 
@@ -34,19 +30,6 @@ void main() {
       (await db.customSelect('SELECT COUNT(*) AS n FROM srs_entities').get())
           .single
           .read<int>('n');
-
-  test('column lists match the Drift tables exactly', () async {
-    for (final (String table, List<String> columns) in kSrsLegacyTables) {
-      final List<QueryRow> info = await db
-          .customSelect('PRAGMA table_info($table)')
-          .get();
-      expect(
-        <String>[for (final QueryRow r in info) r.read<String>('name')],
-        columns,
-        reason: table,
-      );
-    }
-  });
 
   test('主库还有协议 1 的 SRS 表、库目录是空的：明确拒绝打开，不建空库，旧表一行不动', () async {
     await db.customStatement(
@@ -72,7 +55,7 @@ void main() {
   });
 
   test('主库里没有协议 1 的表：照常打开（全新安装 / 旧版早已搬完删表）', () async {
-    for (final (String table, _) in kSrsLegacyTables) {
+    for (final String table in kLegacySrsTableDdl.keys) {
       await db.customStatement('DROP TABLE IF EXISTS $table');
     }
     final Directory dir = newTestSrsDir('srs_legacy_main_');

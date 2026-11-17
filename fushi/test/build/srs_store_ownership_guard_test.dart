@@ -35,8 +35,6 @@ const Map<String, String> _kAllowed = <String, String>{
   // 主库迁移阶梯：老库仍按当年的形状建出旧表（kLegacySrsTableDdl），供一次性搬迁。
   'packages/fushi_core/lib/src/database/database.dart': '迁移阶梯',
   'packages/fushi_core/lib/src/database/database_srs.part.dart': '老表 DDL / 索引',
-  // 一次性搬迁：从主库老表读出、经内核命令灌进 srs.db。
-  'packages/fushi_engine/lib/srs/srs_legacy_store_migration.dart': '一次性搬迁',
   // 备份合并的老形态来源（SRS 表在备份主库里，ATTACH 进来读）。
   'packages/fushi_engine/lib/srs/srs_backup_merge.dart': '老形态备份来源',
   // 通用备份里老形态（SRS 表还在主库 / 老备份主库条目里）的唯一处置点。
