@@ -3220,3 +3220,59 @@ profile uid 不变」断言，不分 `bound` / `joined`。
 - **BUG-4626 新代并入场景已正式登记为 BUG-4836**（`docs/bugs/BUG-4836-srs-gen4-dangling-op-joins-into-other-collection.md`）：根因
   `file:line`（`gen4/cmd/writes.rs:31` / `:886` 写入口不设闸，`gen4/identity.rs:430` / `:572` 并入无条件并集）、两种修法与复现用例
   全文都在 bug 文件里，交 G9 身份 / 设计；本分支仍不改内核。
+
+## 第五波 G9 身份收尾（2026-11-18，分支 `pr/srs-gen4-w5-identity-tail`，基于 `pr/srs-gen4-switch` `3d78fe51d0`）
+
+审计 G9 项（B1、B7、N7、N11、C11、X1）的六件事，内核 SCHEMA 40021 → 40023（本分支分到的号）。
+
+### 做了什么、取舍
+
+- **① 空集合判据（`962462eafa`）**：`gen4/discard.rs` 的 `disposable` 以前只认「只有 `Salts`」，app 里的全新设备开库就写了内置
+  种子（`SrsDbStore.ensureBuiltins`），关联已有集合一律 `joined` + `Join`。现在与 K2 首见信任共用**同一份**判据
+  `Truth::library_fresh`（`truth/trust.rs`，它顺带补查 `op_forks`），`disposable` 只在它之外再看「别的设备 / 对等方 / 位置游标 /
+  已发布 / 本机日志里有 `Join`」这几条廉价条件（`DISPOSABLE_SQL`）。只有内置种子与盐 = 空，D27 方向上换绑（`bound`）、不写 `Join`。
+  测试：内核 `cmd/profile_data_tests.rs` `a_profile_with_only_builtin_seeds_binds_without_a_join`；Dart 真内核端到端
+  `srs_profile_link_sync_test`「全新设备（开库已写内置种子、从没同步过）关联已有集合：bound，两边日志里都没有 Join」。
+- **② BUG-4836 写入口实体归属闸（`e7ad8988eb`）**：选「写入口设闸」而不是「并入时丢悬空操作」。新文件
+  `gen4/cmd/writes_owner.rs`，唯一判据 `Session::foreign`：一条本机操作指向的实体在库里别的集合有（`ent_ix.id` /
+  `alias_ix.canon` / `cards.id`）、本集合一点痕迹都没有（身份、别名类、卡片行、修改 / 日志 / 标签索引行、同一批要建的实体；
+  先不收尾查，没查到再收尾查一遍）时不写：`apply_in` 那一项 `landed: false` 并把下标放进回包 `foreign`，`purge` 跳过并回
+  `foreign`，`sched` 按「没有这张卡」跳过（撤销计入 `blocked`）。库里只有一个集合时一条查询就放行（`others` 缓存在 `Session`）。
+  - 并集收敛不受影响：闸只决定本机要不要写下一条操作；写下之后的传播 / 收段 / 导入 / 并入语义一个字没改，几台设备的状态仍只由
+    同一份操作集合决定。丢悬空操作的修法要给「并入时不存在」定跨设备一致的判据，还会误丢合法的先写后有。
+  - SCHEMA 40023：三个按 ID 跨集合查的部分索引 `ent_id ON ent_ix(id)`、`alias_canon_any ON alias_ix(canon) WHERE canon != id`、
+    `cards_id ON cards(id)`，都带 `col > 0`——只有归属闸的查询写这个条件，规划器不会拿它们替换既有查询的索引（不带条件时
+    `s1b_statements_use_their_keys` 被 `alias_canon_any` 抢走，加统计也压不住）。`PLANNER_STATS` 补了三行。
+  - 测试：`cmd/writes_owner_tests.rs`（三条，含两条执行计划断言）；engine `srs_profile_ownership_merge_test.dart`（bug 复现：A 写
+    B 的 ID 一条不落 → A 并进 B → B 不变）；`srs_profile_ownership_test.dart` 判据收紧为「A 为别人的 ID 多出的操作不多于不存在的 ID」、
+    `editFields` 别人的笔记回空、批量改卡别人的卡不落。bug 文件与 `docs/BUGS.md` 索引已更新为已修 / 已测。
+- **③ 覆盖恢复后第一次合并同一份旧输入多落一份（`e2f517c820`）**：根因是旧备份读入（`legacy_backup_import`）在 profile 还没
+  绑定时先用随机 scratch 身份落库、之后 `collection_adopt` 才生成本机身份，下一次合并同一份输入时 scratch 身份对不上。修法：
+  `cmd/identity.rs` 加 `PendingSelf`（先生成本机设备 ID 与种子），scratch 身份从它派生，`collection_adopt_with` 把它定为本机身份；
+  `cmd/backup.rs` 的 `prepared_marker` 把密钥指纹（blake3 derive-key）算进标记。测试 `cmd/backup_tests.rs`
+  `the_first_merge_after_landing_into_an_unbound_profile_changes_nothing`。
+- **④ 墓碑设备 ID 改向内核要（`cb1d756508`）**：`gen4_ids/derive.rs` 加 `tombstone_device` 一种（`gen4::location::tombstone_device`），
+  Dart `srsTombstoneDevices(dirs)` 一次批量走 `ids`，`srs_profile_link.dart` 不再拿命名空间自己 `uuidV5`。守卫
+  `srs_kernel_ids_guard_test` 转绿。
+- **⑤ `srs_db_store_test`「覆盖恢复备份后：换新化身…」改写成新代**：不再删协议 3 的本机表，改为整包导出
+  （`srsExportBackupStreams`）→ 空的新代库 → `srsLandBackupUnit(confirmed: true)`（`bound`）→ 按原 profile 打开，断言同一个集合。
+- **⑥ 新代全新集合在 WebUI / 关联列表里没有名字与笔记数**：`srsPublishProfileInfo` 改写到 `v4/devices/<设备>/profile.json`
+  （规划 G-6、内核 `gen4/location.rs` 的布局），`srsListRemoteProfiles` 在 `v4/` 根下读各设备的说明文件（只有发布了说明文件的设备
+  算写入者，名字仍是 `srsV2WriterName`），旧根 `v3/devices/` 照旧读（协议 3 设备）。笔记数仍由调用方向内核 `entity_count` 要
+  （`userNoteCount`），Dart 不存镜像。`srsRemoveOwnProfileFolder` 在没有新代设备目录可删时只删本机的说明文件。测试在
+  `srs_profile_link_test.dart`（两条新用例 + 路径断言改为 v4、旧根没有）。
+
+### 变异实测（各自单独改，跑完还原，工作区干净）
+
+- 内核：归属闸恒放行 → `writes_owner_tests` 红；不用 `PendingSelf` → `backup_tests` 新用例红；标记不含密钥指纹 → 红；
+  `disposable` 不看 `library_fresh` / 回到只认 `Salts` → `profile_data_tests` 新用例红。
+- Dart：读端不读 `v4/devices/*/profile.json` → 15 条红；清理不删说明文件 → 1 条红；发布写回旧根 → 1 条红。
+
+### 没做 / 留给后面
+
+- `fushi_server`（headless host）至今不发布 `profile.json`，WebUI 列表里 server 那一端的新代集合仍没有名字 / 笔记数；要接 host
+  钩子，见 `server-parity-gaps.md`，本分支没碰 server。
+- `PendingSelf` 只在 `legacy_backup_import` 遇到未绑定 profile 时生成；同一 profile 若同时有别的路径在建立本机身份（并发的
+  `collection_adopt`），以先提交的为准，scratch 身份可能对不上、下一次合并会再落一份。按现有单写者调度不会并发，未加测试，
+  未实测。
+- 闸之前已写下的悬空操作挡不住：新代还没发布、协议 3 有 `ownership.rs` 闸且 ID 带盐，迁移来的日志里没有这种存量。
