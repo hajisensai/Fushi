@@ -1,11 +1,12 @@
 // 来源扫描的正确性（nmv c08）：
 //
-//  BUG-4791 / BUG-2979 ②  视频「搬家」要正证据：规格缓存里的字节数，或路径尾段。
-//  BUG-4792  系统 / 垃圾条目不入库；一个读不了的子目录不再让整次扫描失败。
-//  BUG-4794  远端书：一本失败不中断其余、临时目录必删；被杀进程留下的临时来源行与
-//            临时目录能被认出并回收，活着的另一个实例的不动。
+//  BUG-4798 / BUG-2979 ②  视频「搬家」要正证据：规格缓存里的字节数，或连着对得上的
+//            目录尾段（光是 `Season 01` 这种通用目录名不算）。
+//  BUG-4799  系统 / 垃圾条目不入库；一个读不了的子目录不再让整次扫描失败。
+//  BUG-4801  远端书：一本失败不中断其余（连接断了才整轮结束）、临时目录必删；被杀
+//            进程留下的临时来源行与临时目录能被认出并回收，活着的另一个实例的不动。
 //
-// 漫画来源索引逐卷落盘（BUG-4793）的测试在 source_library_scanner_test.dart 的
+// 漫画来源索引逐卷落盘（BUG-4800）的测试在 source_library_scanner_test.dart 的
 // 「SourceLibraryScanner.scan manga source」组里（要用那里的压缩包夹具）。
 
 import 'dart:async';
@@ -97,11 +98,19 @@ class _UnreadableDirectory implements Directory {
 /// 远端书来源替身：清单给定，`copyToLocal` 把同名本地夹具拷进目标目录，并记下每次
 /// 用的目标目录；[failing] 里的路径下载即抛。
 class _RemoteBookFs implements SourceFileSystem {
-  _RemoteBookFs(this.fixtures, {this.failing = const <String>{}});
+  _RemoteBookFs(
+    this.fixtures, {
+    this.failing = const <String>{},
+    this.dropsConnectionOnFailure = false,
+  });
 
   /// 远端路径 → 本地夹具文件。
   final Map<String, String> fixtures;
   final Set<String> failing;
+
+  /// 第一次下载失败之后连列目录也报错：模拟连接断了（而不是某一本书坏了）。
+  final bool dropsConnectionOnFailure;
+  bool _connectionDown = false;
   final List<String> destDirs = <String>[];
 
   @override
@@ -111,15 +120,18 @@ class _RemoteBookFs implements SourceFileSystem {
   Future<List<SourceFileEntry>> listFiles(
     String dirPath, {
     bool recursive = false,
-  }) async => <SourceFileEntry>[
-    for (final String remote in fixtures.keys)
-      SourceFileEntry(
-        name: p.url.basename(remote),
-        path: remote,
-        isDirectory: false,
-        sizeBytes: 1,
-      ),
-  ];
+  }) async {
+    if (_connectionDown) throw const SocketException('connection closed');
+    return <SourceFileEntry>[
+      for (final String remote in fixtures.keys)
+        SourceFileEntry(
+          name: p.url.basename(remote),
+          path: remote,
+          isDirectory: false,
+          sizeBytes: 1,
+        ),
+    ];
+  }
 
   @override
   Future<List<String>> listSiblingNames(String filePath) async => <String>[
@@ -135,7 +147,8 @@ class _RemoteBookFs implements SourceFileSystem {
   @override
   Future<String> copyToLocal(String filePath, String destDir) async {
     destDirs.add(destDir);
-    if (failing.contains(filePath)) {
+    if (_connectionDown || failing.contains(filePath)) {
+      _connectionDown = dropsConnectionOnFailure;
       throw const SocketException('connection reset while downloading');
     }
     final String dest = p.join(destDir, p.url.basename(filePath));
@@ -162,7 +175,7 @@ void main() {
     }
   });
 
-  group('视频搬家判定要正证据（BUG-4791 / BUG-2979 ②）', () {
+  group('视频搬家判定要正证据（BUG-4798 / BUG-2979 ②）', () {
     test('整个剧目录挪了位置：旧行改指新路径，进度保留，不再建 X (2)', () async {
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
@@ -255,7 +268,7 @@ void main() {
     test('两部剧的同名集都在库，删掉其中一部：不把它并进另一部再删行', () async {
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
-      // 父目录名相同（`Season 01`）、再上一层不同：只够「改指」，不够合并删行。
+      // 父目录名相同（`Season 01`）、再上一层不同：不是搬家的证据。
       final String aFile = p.join(tmp.path, 'ShowA', 'Season 01', '01.mkv');
       final String bFile = p.join(tmp.path, 'ShowB', 'Season 01', '01.mkv');
       _video(aFile);
@@ -277,6 +290,63 @@ void main() {
         0,
         reason: 'A 的进度没有被并到 B 的同名集上',
       );
+    });
+
+    // 审查指出的口子：没探过规格时，光凭父目录名一致就改指。`剧/Season 01/` 是最常见
+    // 的布局，`Season 01` 区分不了两部剧。
+    test('删掉 A 剧再放进 B 剧，父目录都叫 Season 01：A 行不被改指到 B 的文件', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final String aFile = p.join(tmp.path, 'ShowA', 'Season 01', '01.mkv');
+      _video(aFile);
+      final SourceLibraryRow source = await _source(db, tmp.path);
+      await _scan(db, source);
+      await _setProgress(db, 'video/01', 6100);
+
+      Directory(p.join(tmp.path, 'ShowA')).deleteSync(recursive: true);
+      final String bFile = p.join(tmp.path, 'ShowB', 'Season 01', '01.mkv');
+      _video(bFile);
+      final SourceScanSummary summary = await _scan(db, source);
+
+      expect(summary.error, isNull);
+      final Map<String, VideoBookRow> rows = await _rowsByUid(db);
+      expect(rows.keys.toSet(), <String>{'video/01', 'video/01 (2)'});
+      expect(rows['video/01']!.videoPath, aFile, reason: 'A 行没被改指到 B 的文件');
+      expect(rows['video/01']!.lastPositionMs, 6100);
+      expect(rows['video/01 (2)']!.videoPath, bFile);
+      expect(rows['video/01 (2)']!.lastPositionMs, 0);
+    });
+
+    test('两层都对得上但全是通用目录名（Season 01/Extras）：同样不算搬家', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final String aFile = p.join(
+        tmp.path,
+        'ShowA',
+        'Season 01',
+        'Extras',
+        'NCOP.mkv',
+      );
+      _video(aFile);
+      final SourceLibraryRow source = await _source(db, tmp.path);
+      await _scan(db, source);
+      await _setProgress(db, 'video/NCOP', 1234);
+
+      Directory(p.join(tmp.path, 'ShowA')).deleteSync(recursive: true);
+      final String bFile = p.join(
+        tmp.path,
+        'ShowB',
+        'Season 01',
+        'Extras',
+        'NCOP.mkv',
+      );
+      _video(bFile);
+      await _scan(db, source);
+
+      final Map<String, VideoBookRow> rows = await _rowsByUid(db);
+      expect(rows.keys.toSet(), <String>{'video/NCOP', 'video/NCOP (2)'});
+      expect(rows['video/NCOP']!.videoPath, aFile);
+      expect(rows['video/NCOP']!.lastPositionMs, 1234);
     });
 
     test('修复前已建出 X (2) 的搬家残留：尾段两层都对得上才并回一行', () async {
@@ -316,45 +386,72 @@ void main() {
     test('videoRowMoveEvidence：旧盘不在线 / 旧文件还在都不算搬家', () async {
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
-      final String oldFile = p.join(tmp.path, 'a', 'S1', '01.mkv');
+      final String oldFile = p.join(tmp.path, 'Show', 'S1', '01.mkv');
       _video(oldFile);
       await _scan(db, await _source(db, tmp.path));
       final VideoBookRow row = (await _rowsByUid(db))['video/01']!;
       Future<int?> noSpec(String _) async => null;
+      Future<VideoMoveEvidence> evidenceFor(List<String> newSegments) =>
+          videoRowMoveEvidence(
+            row,
+            p.joinAll(<String>[tmp.path, ...newSegments]),
+            knownSizeOf: noSpec,
+          );
 
       expect(
-        await videoRowMoveEvidence(
-          row,
-          p.join(tmp.path, 'b', 'S1', '01.mkv'),
-          knownSizeOf: noSpec,
-        ),
+        await evidenceFor(<String>['b', 'Show', 'S1', '01.mkv']),
         VideoMoveEvidence.none,
         reason: '旧文件还在',
       );
       File(oldFile).deleteSync();
       expect(
-        await videoRowMoveEvidence(
-          row,
-          p.join(tmp.path, 'b', 'S1', '01.mkv'),
-          knownSizeOf: noSpec,
-        ),
-        VideoMoveEvidence.parentDirectory,
+        await evidenceFor(<String>['b', 'S1', '01.mkv']),
+        VideoMoveEvidence.none,
+        reason: '只对上一层，而且是通用的季目录名',
       );
       expect(
-        await videoRowMoveEvidence(
-          row,
-          p.join(tmp.path, 'b', 'a', 'S1', '01.mkv'),
-          knownSizeOf: noSpec,
-        ),
-        VideoMoveEvidence.parentChain,
+        await evidenceFor(<String>['b', 'Other', 'S1', '01.mkv']),
+        VideoMoveEvidence.none,
+        reason: '再上一层对不上',
       );
-      expect(VideoMoveEvidence.parentDirectory.allowsMerge, isFalse);
-      expect(VideoMoveEvidence.parentChain.allowsMerge, isTrue);
-      expect(VideoMoveEvidence.sameSize.allowsMerge, isTrue);
+      expect(
+        await evidenceFor(<String>['b', 'Show', 'S1', '01.mkv']),
+        VideoMoveEvidence.directoryChain,
+      );
+    });
+
+    test('isGenericVideoDirectoryName：季 / 分盘 / 特典目录是通用名，作品名不是', () {
+      for (final String name in <String>[
+        'Season 01',
+        'season1',
+        'S01',
+        's2',
+        '第2季',
+        '01',
+        'Disc 1',
+        'CD2',
+        'Vol.3',
+        'Specials',
+        'Extras',
+        'BDMV',
+        'STREAM',
+        '特典',
+      ]) {
+        expect(isGenericVideoDirectoryName(name), isTrue, reason: name);
+      }
+      for (final String name in <String>[
+        'ShowA',
+        'Show',
+        'Steins;Gate 0',
+        '[Group] Title S2 [1080p]',
+        'Season 01 Extras Collection',
+      ]) {
+        expect(isGenericVideoDirectoryName(name), isFalse, reason: name);
+      }
     });
   });
 
-  group('系统 / 垃圾条目与读不了的子目录（BUG-4792）', () {
+  group('系统 / 垃圾条目与读不了的子目录（BUG-4799）', () {
     test('isSourceScanJunkPath：只认 ._ 文件与系统目录，不一刀切隐藏名', () {
       bool junk(String rel, {bool dir = false}) =>
           isSourceScanJunkPath('/lib/$rel', scanRoot: '/lib', isDirectory: dir);
@@ -472,7 +569,7 @@ void main() {
     });
   });
 
-  group('远端书：单本失败隔离与临时目录（BUG-4794）', () {
+  group('远端书：单本失败隔离与临时目录（BUG-4801）', () {
     late Directory books;
 
     setUp(() {
@@ -521,7 +618,54 @@ void main() {
     });
   });
 
-  group('被杀进程留下的残留（BUG-4794）', () {
+  group('远端书：连接断了整轮结束（BUG-4801）', () {
+    setUp(() {
+      EpubStorage.debugBaseDirectoryOverride = p.join(tmp.path, 'bookroot');
+      Directory(p.join(tmp.path, 'bookroot')).createSync();
+      debugSourceScanTempRoot = Directory(p.join(tmp.path, 'scan_tmp'));
+    });
+    tearDown(() {
+      EpubStorage.debugBaseDirectoryOverride = null;
+    });
+
+    // 逐本隔离只该隔离「这一本坏」。连接断了还逐本试，剩下的每本书都要各自等一次
+    // 下载失败，期间来源锁一直占着。
+    test('第一本下载失败后来源根也列不出来：不再碰后面的书，临时目录已删', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final String fixture = p.join(tmp.path, 'fixture.epub');
+      File(fixture).writeAsBytesSync(<int>[1, 2, 3]);
+      final _RemoteBookFs fs = _RemoteBookFs(
+        <String, String>{
+          '/srv/books/a.epub': fixture,
+          '/srv/books/b.epub': fixture,
+          '/srv/books/c.epub': fixture,
+        },
+        failing: <String>{'/srv/books/a.epub'},
+        dropsConnectionOnFailure: true,
+      );
+      final SourceLibraryRow source = await _source(
+        db,
+        '/srv/books',
+        kind: 'book',
+      );
+
+      final SourceScanSummary summary = await SourceLibraryScanner(
+        db,
+        transcribeAudiobook: null,
+      ).scan(source, fs: fs);
+
+      expect(fs.destDirs, hasLength(1), reason: '连接断了：b / c 不再各自下载一次');
+      expect(Directory(fs.destDirs.single).existsSync(), isFalse);
+      expect(summary.error, contains('connection reset'));
+      expect(
+        (await db.getMediaSourceById(source.id))!.lastScanError,
+        contains('connection reset'),
+      );
+    });
+  });
+
+  group('被杀进程留下的残留（BUG-4801）', () {
     test('临时来源行带标记；清扫删掉陈旧的、留下正在跑的与普通来源', () async {
       final FushiDatabase db = _memDb();
       addTearDown(db.close);

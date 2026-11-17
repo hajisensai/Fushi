@@ -308,7 +308,8 @@ class ScanMangaArchiveItem {
 class _MangaVolumeTally {
   _MangaVolumeTally({this.checkpoint});
 
-  /// 每卷结束后调一次：把这一卷改动的来源索引落盘（[_MangaSourceIdentity.flush]）。
+  /// 每卷结束后调一次：把这一卷改动的来源索引落盘
+  /// （[_MangaSourceIdentity.checkpoint]）。
   /// 索引此前只在整轮扫描的 `finally` 里存一次，进程中途被杀（移动端切后台被回收、
   /// 远端首扫下几个小时被打断）就全丢：下一轮同名卷认不出自己，再导一份
   /// `Vol 1 (3)`，判过「不是漫画」的包也全部重新下载。
@@ -323,9 +324,7 @@ class _MangaVolumeTally {
   /// 失败。
   Future<void> attempt(String path, Future<bool> Function() body) async {
     try {
-      final bool volumeImported = await body();
-      await checkpoint?.call();
-      if (volumeImported) imported++;
+      if (await body()) imported++;
     } on DuplicateImportCancelledException catch (e) {
       debugPrint(
         'SourceLibraryScanner skip duplicate manga ${e.title} ($path)',
@@ -335,6 +334,21 @@ class _MangaVolumeTally {
       firstError ??= e;
       debugPrint(
         'SourceLibraryScanner manga import failed for $path: $e\n'
+        '$stack',
+      );
+    }
+    await _checkpoint(path);
+  }
+
+  /// 逐卷落盘索引。落盘失败不是这一卷的导入失败（卷的结局上面已经记完，书在库里）：
+  /// 改动还在内存索引里，下一卷的落盘与整轮收尾的那次保存会再写，收尾那次失败照常
+  /// 让整次扫描报错。
+  Future<void> _checkpoint(String path) async {
+    try {
+      await checkpoint?.call();
+    } catch (e, stack) {
+      debugPrint(
+        'SourceLibraryScanner manga index checkpoint failed after $path: $e\n'
         '$stack',
       );
     }
@@ -422,18 +436,24 @@ class _MangaSourceIdentity {
 
   void reject(String path) {
     index.reject(relOf(path), fingerprintOf(path));
-    _dirty = true;
+    _checkpointDue = true;
   }
 
-  /// 内存里的索引有没有还没落盘的改动。
-  bool _dirty = false;
+  /// 内存里的索引有没有**丢了就找不回来**的未落盘改动：新导入的卷（[record]）与
+  /// 「不是漫画」的结论（[reject]）。
+  ///
+  /// 认领（[policyFor] 把已在库的同名卷记回索引）不算：索引丢了，下一轮按同一条
+  /// 查询原样再认领一遍。索引是整份重写的一条 preferences，把认领也逐卷落盘的话，
+  /// 索引丢失后重扫一个几千卷、全部已在库的来源就是几千次整份重写；认领的改动随
+  /// 下一次落盘或整轮收尾的那次保存一起写。
+  bool _checkpointDue = false;
 
-  /// 索引有改动就落盘（一条 preferences 写入）；没改动是空操作，所以每卷调一次不贵——
-  /// 重扫一个全部已入库的来源一次都不写。
-  Future<void> flush() async {
-    if (!_dirty) return;
+  /// 有丢不起的改动就落盘（一条 preferences 写入）；没有是空操作——重扫一个全部
+  /// 已入库的来源一次都不写。
+  Future<void> checkpoint() async {
+    if (!_checkpointDue) return;
     await index.save(db);
-    _dirty = false;
+    _checkpointDue = false;
   }
 
   /// 卷 [path]（拟用标题 [title]）该用的重复处理策略；null = 不导入。
@@ -466,10 +486,7 @@ class _MangaSourceIdentity {
           proposedTitle: title,
           format: BookFormat.manga,
         );
-        if (uid != null) {
-          index.put(rel, uid);
-          _dirty = true;
-        }
+        if (uid != null) index.put(rel, uid);
         debugPrint(
           'SourceLibraryScanner manga already imported: $title ($path)',
         );
@@ -485,7 +502,7 @@ class _MangaSourceIdentity {
     final String? uid = await bookUidForKey(db, bookKey);
     if (uid == null) return;
     index.put(relOf(path), uid);
-    _dirty = true;
+    _checkpointDue = true;
   }
 }
 
@@ -1864,6 +1881,9 @@ class SourceLibraryScanner {
         );
       } catch (e, stack) {
         tally.fail(item.bookPath, e, stack);
+        // 「这一本坏」才逐本隔离；连接断了就整轮结束——否则剩下的每本书都要各自
+        // 等一次下载失败，期间来源锁一直占着。
+        if (!await _sourceStillReachable(fs, source.rootPath)) rethrow;
       }
     }
 
@@ -1899,10 +1919,27 @@ class SourceLibraryScanner {
           );
         } catch (e, stack) {
           tally.fail(bookPath, e, stack);
+          if (!await _sourceStillReachable(fs, source.rootPath)) rethrow;
         }
       }
     }
     return tally;
+  }
+
+  /// 一本书失败之后：来源本身还连得上吗？本地来源恒为 true；远端重新列一次来源根
+  /// （不递归，一次请求）——列得出来说明坏的是那本书，列不出来说明连接断了。
+  static Future<bool> _sourceStillReachable(
+    SourceFileSystem fs,
+    String rootPath,
+  ) async {
+    if (fs.isLocal) return true;
+    try {
+      await fs.listFiles(rootPath);
+      return true;
+    } catch (e) {
+      debugPrint('SourceLibraryScanner source unreachable ($rootPath): $e');
+      return false;
+    }
   }
 
   /// 删一个扫描临时目录（null / 已不在都算完成）。删不掉（文件被占着）不是这次导入
@@ -2045,10 +2082,10 @@ class SourceLibraryScanner {
       plan: plan,
       entries: entries,
     );
-    // 每卷结束即落盘索引；末尾的 finally 仍整份存一次（[load] 里的裁剪、合订本回收
-    // 对索引的改动不经逐卷记账）。
+    // 每卷结束即落盘索引；末尾的 finally 仍整份存一次（[load] 里的裁剪、认领、
+    // 合订本回收对索引的改动不经逐卷落盘）。
     final _MangaVolumeTally tally = _MangaVolumeTally(
-      checkpoint: identity.flush,
+      checkpoint: identity.checkpoint,
     );
     try {
       if (fs.isLocal) {
@@ -2566,6 +2603,16 @@ class SourceLibraryScanner {
       if (!extensions.contains(p.extension(e.name).toLowerCase())) {
         continue;
       }
+      // 卷目录里的 `._001.jpg` 资源叉、`@eaDir/001.jpg/SYNOPHOTO_THUMB_M.jpg` 缩略图
+      // 扩展名都对得上，不滤就成了这一卷的页（BUG-4799）。计划阶段滤过一遍，这里是
+      // 另一次列目录。
+      if (isSourceScanJunkPath(
+        e.path,
+        scanRoot: remoteDir,
+        isDirectory: false,
+      )) {
+        continue;
+      }
       final List<String> segs = e.path
           .substring(prefix.length)
           .split('/')
@@ -2698,9 +2745,8 @@ class SourceLibraryScanner {
             rowByPath[normalizedPath] = moved;
             continue;
           }
-          if (live.bookUid != moved.bookUid && evidence.allowsMerge) {
-            // 修复前已经建出了 `X (2)`：把旧行并进在世的那一行再删旧行。合并会
-            // 删行，证据要求比改指更严（[VideoMoveEvidence.allowsMerge]）。
+          if (live.bookUid != moved.bookUid) {
+            // 修复前已经建出了 `X (2)`：把旧行并进在世的那一行再删旧行。
             collectionItems ??= await _db.getAllCollectionItems();
             await _mergeMovedVideoDuplicate(
               stale: moved,
@@ -3159,27 +3205,78 @@ Future<void> applyBlurayDiscCollectionArtwork(
   }
 }
 
-/// 「[VideoBookRow] 的文件被搬到了新路径」的正证据，由弱到强。
+/// 「[VideoBookRow] 的文件被搬到了新路径」的正证据。
+///
+/// 改指（旧行指向新文件）与合并（旧行并进新行再删）用同一道门槛：改指错了同样是把
+/// A 剧的进度 / 字幕 cue / 标签绑到 B 剧的文件上，不比删行轻。
 enum VideoMoveEvidence {
   /// 没有证据：不是搬家（或判不出来），新文件按新文件入库、旧行不动。
   none,
 
-  /// 新旧文件的**父目录名**一致（`…/Season 03/x.mkv` ↔ `…/动漫/…/Season 03/x.mkv`）。
-  /// 够把旧行改指到新路径，不够合并删行：`剧A/Season 01/01.mkv` 与
-  /// `剧B/Season 01/01.mkv` 也长这样。
-  parentDirectory,
-
-  /// 父目录与再上一层目录名都一致（`剧/Season 03/x.mkv` 整棵挪了位置）。
-  parentChain,
+  /// 新旧路径的目录尾段连着对得上，而且对上的名字里至少有一个不是通用目录名
+  /// （[isGenericVideoDirectoryName]）：`剧/Season 03/x.mkv` 整棵挪了位置。只对上
+  /// `Season 01` 这种名字不算——`剧A/Season 01/01.mkv` 与 `剧B/Season 01/01.mkv`
+  /// 也长这样。
+  directoryChain,
 
   /// 旧路径在规格缓存里记过字节数，新文件大小与它相等。
-  sameSize;
-
-  /// 够不够把旧行并进新行再**删掉**旧行。
-  bool get allowsMerge => this == parentChain || this == sameSize;
+  sameSize,
 }
 
-/// BUG-2979 / BUG-4791：[row] 是不是「被搬到 [newPath] 的那个文件」的旧行，证据有多强。
+/// [name]（一层目录名）是不是哪部剧里都会出现的通用名：季目录（`Season 01` / `S1` /
+/// `第2季` / 纯数字）、分盘分卷（`Disc 1` / `CD2` / `Vol.3`）、特典与原盘结构目录。
+/// 这种名字对得上不说明是同一部作品。
+bool isGenericVideoDirectoryName(String name) {
+  final String n = name.trim().toLowerCase();
+  return _genericVideoDirectoryNames.contains(n) ||
+      _numberedVideoDirectoryName.hasMatch(n);
+}
+
+const Set<String> _genericVideoDirectoryNames = <String>{
+  'specials',
+  'special',
+  'sp',
+  'sps',
+  'extras',
+  'extra',
+  'bonus',
+  'featurettes',
+  'ova',
+  'ovas',
+  'oad',
+  'movie',
+  'movies',
+  'nc',
+  'ncop',
+  'nced',
+  'op',
+  'ed',
+  'pv',
+  'cm',
+  'menu',
+  'trailers',
+  'sample',
+  'samples',
+  'subs',
+  'subtitles',
+  'video',
+  'videos',
+  'bdmv',
+  'stream',
+  'video_ts',
+  '特典',
+  '映像特典',
+  '番外',
+  '正片',
+};
+
+/// `Season 01` / `S1` / `第2季` / `Disc 1` / `Vol.3` / `01` 一类「词 + 序号」目录名。
+final RegExp _numberedVideoDirectoryName = RegExp(
+  r'^(?:season|series|s|disc|disk|cd|dvd|bd|vol|volume|part|第)?'
+  r'[\s._-]*[0-9一二三四五六七八九十]+[\s._-]*(?:季|期|部|卷|巻)?$',
+);
+
+/// BUG-2979 / BUG-4798：[row] 是不是「被搬到 [newPath] 的那个文件」的旧行，证据有多强。
 ///
 /// 前提（缺一个就是 [VideoMoveEvidence.none]）：同文件名（bookUid 同源派生，调用方已
 /// 按它取出 [row]）、路径不同、旧行是普通本地文件（不是流媒体 / 播放列表 / URL）、
@@ -3191,8 +3288,11 @@ enum VideoMoveEvidence {
 ///
 /// - [knownSizeOf] 给得出旧路径的字节数（规格缓存里探过）→ 只看大小：相等 =
 ///   [VideoMoveEvidence.sameSize]，不等 = 不是同一个文件；
-/// - 给不出（没探过）→ 比路径尾段：父目录名一致 = [VideoMoveEvidence.parentDirectory]，
-///   再上一层也一致 = [VideoMoveEvidence.parentChain]。
+/// - 给不出（没探过）→ 比目录尾段（[_matchedTrailingDirectories]）：连着对上至少两层
+///   （或两边的目录整条都对上），且对上的名字不全是通用目录名 =
+///   [VideoMoveEvidence.directoryChain]。只对上一层不算：`剧A/Season 01/01.mkv` 删掉
+///   后放进 `剧B/Season 01/01.mkv` 也是这个形状（BUG-4798）。没探过规格、目录名又
+///   改了的真搬家因此认不出，回到另建 `X (2)`——宁可漏判，不把进度绑到别的剧上。
 ///
 /// 文件判据 async：扫描跑在 UI isolate，源库常是网络盘（rclone / SMB），同步 stat
 /// 冷目录要数秒、冻结界面与同 isolate 的互联 host（BUG-3756）。
@@ -3229,14 +3329,26 @@ Future<VideoMoveEvidence> videoRowMoveEvidence(
         ? VideoMoveEvidence.sameSize
         : VideoMoveEvidence.none;
   }
-  final List<String> oldDirs = _trailingDirectoryNames(oldPath);
-  final List<String> newDirs = _trailingDirectoryNames(newPath);
-  if (oldDirs.isEmpty || newDirs.isEmpty || oldDirs.first != newDirs.first) {
-    return VideoMoveEvidence.none;
+  final List<String> oldDirs = _directoryNames(oldPath);
+  final List<String> newDirs = _directoryNames(newPath);
+  final List<String> matched = _matchedTrailingDirectories(oldDirs, newDirs);
+  final bool wholeChain =
+      matched.isNotEmpty &&
+      matched.length == oldDirs.length &&
+      matched.length == newDirs.length;
+  if (matched.length < 2 && !wholeChain) return VideoMoveEvidence.none;
+  return matched.every(isGenericVideoDirectoryName)
+      ? VideoMoveEvidence.none
+      : VideoMoveEvidence.directoryChain;
+}
+
+/// [a] 与 [b]（[_directoryNames]，由近到远）从最近一层起连着相同的那一段。
+List<String> _matchedTrailingDirectories(List<String> a, List<String> b) {
+  final List<String> matched = <String>[];
+  for (int i = 0; i < a.length && i < b.length && a[i] == b[i]; i++) {
+    matched.add(a[i]);
   }
-  return oldDirs.length > 1 && newDirs.length > 1 && oldDirs[1] == newDirs[1]
-      ? VideoMoveEvidence.parentChain
-      : VideoMoveEvidence.parentDirectory;
+  return matched;
 }
 
 /// [path] 的字节数；读不到（刚被挪走、没权限）为 null。
@@ -3248,9 +3360,9 @@ Future<int?> _fileSizeOrNull(String path) async {
   }
 }
 
-/// [path] 所在的目录名，由近到远最多两层（小写；Windows 路径不分大小写）。盘符 /
-/// 根不算目录名：`D:\01.mkv` 没有可比的父目录。
-List<String> _trailingDirectoryNames(String path) {
+/// [path] 所在的各层目录名，由近到远（小写；Windows 路径不分大小写）。盘符不算
+/// 目录名：`D:\01.mkv` 没有可比的父目录。
+List<String> _directoryNames(String path) {
   final List<String> segments = path
       .split(RegExp(r'[\\/]'))
       .where((String s) => s.isNotEmpty)
@@ -3259,7 +3371,7 @@ List<String> _trailingDirectoryNames(String path) {
   segments.removeLast();
   if (segments.isNotEmpty && segments.first.endsWith(':')) segments.removeAt(0);
   return <String>[
-    for (final String name in segments.reversed.take(2)) name.toLowerCase(),
+    for (final String name in segments.reversed) name.toLowerCase(),
   ];
 }
 

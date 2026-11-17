@@ -33,18 +33,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4150 条。点号进各自文件。
+> 共 4157 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4794](bugs/BUG-4794-source-scan-leftovers-after-kill-and-book-abort.md) | ✅ | ✅ | 来源扫描被杀后留下临时来源行与临时目录；一本坏书中断整批书导入且不删临时目录 |
-| [BUG-4793](bugs/BUG-4793-manga-source-index-lost-when-scan-killed.md) | ✅ | ✅ | 漫画来源索引只在扫描结束时落盘，中途被杀后同名卷再导一份 Vol 1 (3) |
-| [BUG-4792](bugs/BUG-4792-source-scan-junk-entries-and-unreadable-subdir.md) | ✅ | ✅ | 来源扫描把 ._ 资源叉 / 回收站文件当媒体入库，一个读不了的子目录让整次扫描失败 |
-| [BUG-4791](bugs/BUG-4791-video-move-detection-rebinds-unrelated-file.md) | ✅ | ✅ | 视频「搬家」判定只凭同名 + 旧文件不在，删旧剧再放进同名新文件会把旧行错绑到新文件 |
-> 共 4153 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4801](bugs/BUG-4801-source-scan-leftovers-after-kill-and-book-abort.md) | ✅ | ✅ | 来源扫描被杀后留下临时来源行与临时目录；一本坏书中断整批书导入且不删临时目录 |
+| [BUG-4800](bugs/BUG-4800-manga-source-index-lost-when-scan-killed.md) | ✅ | ✅ | 漫画来源索引只在扫描结束时落盘，中途被杀后同名卷再导一份 Vol 1 (3) |
+| [BUG-4799](bugs/BUG-4799-source-scan-junk-entries-and-unreadable-subdir.md) | ✅ | ✅ | 来源扫描把 ._ 资源叉 / 回收站文件当媒体入库，一个读不了的子目录让整次扫描失败 |
+| [BUG-4798](bugs/BUG-4798-video-move-detection-rebinds-unrelated-file.md) | ✅ | ✅ | 视频「搬家」判定只凭同名 + 旧文件不在，删旧剧再放进同名新文件会把旧行错绑到新文件 |
 | [BUG-4797](bugs/BUG-4797-feedback-files-share-video-ip-quota.md) | 🚧 | 🚧 | 样本文件与录屏共用每 IP 每天 200 MiB 额度，满额样本文件仍会被 429 挤掉 |
 | [BUG-4796](bugs/BUG-4796-disc-back-double-press-repeat-topmenu.md) | ✅ | ✅ | 原盘正片快速连按两次返回会重复发 topMenu，第二次失败会整盘退出 |
 | [BUG-4795](bugs/BUG-4795-disc-back-to-menu-transient-error-exits.md) | ✅ | ✅ | 原盘正片按返回回盘菜单时，任何暂时性错误都会让整个原盘会话退出 |
