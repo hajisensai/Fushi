@@ -4406,6 +4406,8 @@
   "home_widget_empty": "لا توجد أدوات في الصفحة الرئيسية بعد",
   "home_widget_no_results": "لا توجد أدوات مطابقة",
   "home_widget_recent_empty": "لم تتم إضافة شيء مؤخرًا",
+  "home_widget_recent_episode_count": "$n episodes",
+  "home_widget_recent_volume_count": "$n volumes",
   "home_widget_remove": "إزالة الأداة",
   "home_widget_resize": "تغيير الحجم",
   "home_widget_restore_default": "استعادة الافتراضي",

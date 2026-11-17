@@ -4406,6 +4406,8 @@
   "home_widget_empty": "홈에 아직 위젯이 없습니다",
   "home_widget_no_results": "일치하는 위젯이 없습니다",
   "home_widget_recent_empty": "최근에 추가한 항목이 없습니다",
+  "home_widget_recent_episode_count": "$n episodes",
+  "home_widget_recent_volume_count": "$n volumes",
   "home_widget_remove": "위젯 제거",
   "home_widget_resize": "크기 변경",
   "home_widget_restore_default": "기본값으로 복원",

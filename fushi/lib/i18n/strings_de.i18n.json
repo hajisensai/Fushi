@@ -4406,6 +4406,8 @@
   "home_widget_empty": "Noch keine Widgets auf der Startseite",
   "home_widget_no_results": "Keine passenden Widgets",
   "home_widget_recent_empty": "Zuletzt nichts hinzugefügt",
+  "home_widget_recent_episode_count": "$n episodes",
+  "home_widget_recent_volume_count": "$n volumes",
   "home_widget_remove": "Widget entfernen",
   "home_widget_resize": "Größe ändern",
   "home_widget_restore_default": "Standard wiederherstellen",

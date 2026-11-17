@@ -4406,6 +4406,8 @@
   "home_widget_empty": "首页还没有小组件",
   "home_widget_no_results": "没有匹配的小组件",
   "home_widget_recent_empty": "最近没有新添加的内容",
+  "home_widget_recent_episode_count": "$n 集",
+  "home_widget_recent_volume_count": "$n 卷",
   "home_widget_remove": "移除小组件",
   "home_widget_resize": "调整尺寸",
   "home_widget_restore_default": "恢复默认",

@@ -4406,6 +4406,8 @@
   "home_widget_empty": "首頁還沒有小工具",
   "home_widget_no_results": "沒有符合的小工具",
   "home_widget_recent_empty": "最近沒有新加入的內容",
+  "home_widget_recent_episode_count": "$n episodes",
+  "home_widget_recent_volume_count": "$n volumes",
   "home_widget_remove": "移除小工具",
   "home_widget_resize": "調整尺寸",
   "home_widget_restore_default": "還原預設",

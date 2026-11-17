@@ -4406,6 +4406,8 @@
   "home_widget_empty": "Trang chủ chưa có tiện ích nào",
   "home_widget_no_results": "Không có tiện ích phù hợp",
   "home_widget_recent_empty": "Gần đây chưa thêm gì",
+  "home_widget_recent_episode_count": "$n episodes",
+  "home_widget_recent_volume_count": "$n volumes",
   "home_widget_remove": "Gỡ tiện ích",
   "home_widget_resize": "Đổi kích thước",
   "home_widget_restore_default": "Khôi phục mặc định",
