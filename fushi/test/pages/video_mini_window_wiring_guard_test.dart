@@ -58,6 +58,119 @@ void main() {
     );
   });
 
+  group('Android 系统画中画接线', () {
+    test('BUG-4794：新页订阅 modeChanges 之前先用 isActive 播种', () {
+      final String flat = methodBody(
+        miniPart,
+        'void _initMiniWindowSupport()',
+      ).replaceAll(RegExp(r'\s+'), '');
+      const String seed =
+          'if(AndroidPictureInPicture.isActive){'
+          '_miniSurface.value=VideoMiniSurface.pictureInPicture;}';
+      final int seedAt = flat.indexOf(seed);
+      final int listenAt = flat.indexOf(
+        'AndroidPictureInPicture.modeChanges.listen(',
+      );
+      expect(
+        seedAt,
+        isNonNegative,
+        reason:
+            '本地换集是 pushReplacement 的新页；PiP 里自动连播到下一集时 modeChanges '
+            '不会补发当前值，不播种新页就以 none 起步、在小窗里画出整套常规 chrome',
+      );
+      expect(listenAt, isNonNegative);
+      expect(seedAt, lessThan(listenAt), reason: '播种必须在订阅之前（同步、同一帧）');
+    });
+
+    test('进 PiP 时把播放 / 暂停键随参数交给系统', () {
+      final String flat = methodBody(
+        miniPart,
+        'Future<void> _enterVideoMiniWindow()',
+      ).replaceAll(RegExp(r'\s+'), '');
+      expect(
+        flat,
+        contains('controls:PictureInPictureControls('),
+        reason: '系统只画 app 交的 RemoteAction；不交，小窗上只有「展开 / 关闭」、暂停不了',
+      );
+    });
+
+    test('PiP 期间挂同步器：播放态 / 换集比例 → 窗口，窗口上的键 → 播放器', () {
+      final String center = methodBody(
+        miniPart,
+        'Widget _buildMiniWindowCenterControls(VideoPlayerController controller)',
+      );
+      expect(
+        center,
+        contains('_buildPictureInPicturePlaybackSync(controller)'),
+        reason: 'PiP 下 showCenterTransport 恒 false，同步器挂在这一支上',
+      );
+      final String sync = methodBody(
+        miniPart,
+        'Widget _buildPictureInPicturePlaybackSync('
+        'VideoPlayerController controller)',
+      );
+      final String flat = sync.replaceAll(RegExp(r'\s+'), '');
+      expect(
+        flat,
+        contains(
+          'if(_miniWindowSurface!=VideoMiniSurface.pictureInPicture)'
+          '{returnconstSizedBox.shrink();}',
+        ),
+        reason: '只在 PiP 表面挂载，常规播放零开销',
+      );
+      expect(
+        flat,
+        contains('aspectRatio:_knownVideoAspectRatio,'),
+        reason: '尺寸未知时必须给 null，而不是 16:9 兜底——否则每换一集窗口先跳一次',
+      );
+      expect(flat, contains('controller.playOrPause()'));
+    });
+
+    test('原生侧：动作键广播只在本包内、接收器不导出、PendingIntent 不可变', () {
+      final String java = maskComments(
+        File(
+          'android/app/src/main/java/app/fushi/reader/'
+          'PictureInPictureChannelHandler.java',
+        ).readAsStringSync(),
+      );
+      final String flat = java.replaceAll(RegExp(r'\s+'), '');
+      expect(
+        flat,
+        contains('ContextCompat.RECEIVER_NOT_EXPORTED'),
+        reason: 'Android 14 起动态接收器不声明导出性直接抛 SecurityException',
+      );
+      expect(
+        flat,
+        contains('PendingIntent.FLAG_IMMUTABLE'),
+        reason: 'Android 12 起 PendingIntent 必须声明可变性',
+      );
+      expect(
+        flat,
+        contains('.setPackage(activity.getPackageName())'),
+        reason: '不限定收件包，不导出的接收器收不到这条隐式广播',
+      );
+      expect(flat, contains('activity.unregisterReceiver(actionReceiver)'));
+      expect(flat, contains('activity.setPictureInPictureParams('));
+      // 跨语言契约：方法名 / 参数名 / 动作 wire 名两边逐字一致。
+      for (final String name in <String>[
+        '"update"',
+        '"onAction"',
+        '"playing"',
+        '"playPauseLabel"',
+        '"playPause"',
+      ]) {
+        expect(java, contains(name), reason: '与 Dart 门面的契约名 $name');
+      }
+      for (final String icon in <String>['ic_pip_play', 'ic_pip_pause']) {
+        expect(flat, contains('R.drawable.$icon'));
+        expect(
+          File('android/app/src/main/res/drawable/$icon.xml').existsSync(),
+          isTrue,
+        );
+      }
+    });
+  });
+
   group('小窗 chrome 只认显式唤出（用户 2026-09-22：常态只留字幕，别太乱）', () {
     const Map<String, String> builders = <String, String>{
       '顶部拖动带': 'Widget _buildMiniWindowTopChrome()',

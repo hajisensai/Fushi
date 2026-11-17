@@ -5,8 +5,10 @@ import 'package:flutter/widgets.dart';
 ///
 /// 三态互斥，**不是**布尔「是不是小窗」——两种小窗的 chrome 归属完全相反：
 /// 桌面小窗里 chrome 由本 app 画（系统只给一个无边框窗口），系统画中画里
-/// chrome 由**系统**画（Android 在 PiP 窗口上叠自己的播放控件），app 再画一套
-/// 就是两层按钮叠在一起。故 [pictureInPicture] 下本仓一律不画任何 chrome。
+/// chrome 由**系统**画在窗口上——但系统只画 app 经 `RemoteAction` 交给它的那几个键
+/// （见 `AndroidPictureInPicture` 库注释第 4 条），不交就只有「展开 / 关闭」。app 在
+/// 画面里再画一套就是两层按钮叠在一起。故 [pictureInPicture] 下本仓在画面里一律
+/// 不画任何 chrome，播放 / 暂停走系统窗口上的那个键。
 enum VideoMiniSurface {
   /// 常规窗口 / 常规全屏。
   none,
@@ -14,10 +16,10 @@ enum VideoMiniSurface {
   /// 桌面「小窗模式」：主窗被缩成无边框置顶小窗（见 DesktopMiniWindowMode）。
   desktopMiniWindow,
 
-  /// Android 系统画中画。系统自带播放控件，app 侧 chrome 必须全部让位。
+  /// Android 系统画中画。控件由系统画在窗口上，app 侧画面内的 chrome 必须全部让位。
   pictureInPicture;
 
-  /// 系统已经在画自己的控件 → 本仓一个像素的 chrome 都不许再画。
+  /// 控件归系统窗口画 → 本仓在画面里一个像素的 chrome 都不许再画。
   bool get systemOwnsChrome => this == VideoMiniSurface.pictureInPicture;
 }
 
