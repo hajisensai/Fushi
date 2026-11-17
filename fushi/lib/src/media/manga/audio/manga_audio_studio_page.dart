@@ -395,8 +395,7 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
     setState(() => _seriesRun = run);
     unawaited(
       run.done.then((_) async {
-        if (!mounted) return;
-        await _reload();
+        // 按系列跑离开制作台照跑；结果是全局提示，页面不在也要弹。
         FushiToast.show(
           msg:
               run.failures.any(
@@ -410,6 +409,7 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
                   failed: run.failures.length,
                 ),
         );
+        if (mounted) await _reload();
       }),
     );
   }

@@ -1,6 +1,10 @@
 /// 漫画有声演出稿：发起 AI 标注（本卷 / 整卷重标 / 按系列）、处理没标成的部分（重试 /
 /// 换一家提供商重试 / 手工标），逐页复核行（说话人、类型、一拍、顺序、手填念法）与
 /// 页停留。改动直接写进会话里的演出稿并立即落盘；用户改过的行与页指令重标时保留。
+///
+/// 标注本身在进程级任务表 [MangaAnnotateTasks] 里跑，本页只是观察者：打开时接上本卷
+/// 正在跑的任务显示进度，离开页面不停，只有点「停止」才停；跑完由任务表弹全局提示。
+/// 本卷有任务在跑时复核编辑锁住（任务用自己的会话落盘），跑完重读。
 library;
 
 import 'dart:async';
@@ -12,12 +16,15 @@ import 'package:fushi_engine/tts/manga_audio/manga_audio_annotate_ledger.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_annotate_runner.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
+import 'package:fushi_engine/tts/render/tts_render_queue.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/ai/ai_failure_text.dart';
 import 'package:fushi/src/ai/ai_manga_audio_assistant.dart';
+import 'package:fushi/src/media/audiobook/tts/studio/tts_series_run.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_annotate_flow.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_annotate_tasks.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/settings/glass_settings_renderer.dart'
     show GlassSettingsRenderer;
@@ -64,23 +71,74 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
   String? _loadError;
   List<EpubBookRow> _seriesVolumes = const <EpubBookRow>[];
   int _page = 0;
-  bool _running = false;
-  bool _cancelled = false;
-  String _progress = '';
+
+  /// 标注在进程级任务表里跑，本页只观察：离开页面不停，只有点「停止」才停。
+  late final MangaAnnotateTasks _tasks = mangaAnnotateTasksFor(_app);
+
+  /// 本卷正在跑的标注任务（单卷 / 重试 / 按系列跑到本卷）。
+  MangaAnnotateTask? _task;
+
+  /// 本系列正在跑的漫画按系列跑（不一定正跑到本卷）。
+  TtsSeriesRun? _seriesRun;
 
   AppModel get _app => widget.appModel;
+
+  /// 本卷有任务在跑：复核编辑全部锁住（任务用自己的会话落盘，避免互相覆盖）。
+  bool get _busy => _task != null;
 
   @override
   void initState() {
     super.initState();
+    _tasks.addListener(_syncTasks);
+    _syncTasks();
     unawaited(_load());
   }
 
   @override
   void dispose() {
-    // 离开页面即停止本次标注（已标的页已落盘，下次接着标）。
-    _cancelled = true;
+    // 只摘掉观察者；任务照跑（已标的页随时落盘，跑完弹全局提示）。
+    _tasks.removeListener(_syncTasks);
+    _task?.removeListener(_onTaskChanged);
+    _seriesRun?.removeListener(_onTaskChanged);
     super.dispose();
+  }
+
+  /// 任务表变了（有任务开始 / 结束）：接上本卷的任务与本系列的按系列跑。
+  void _syncTasks() {
+    final MangaAnnotateTask? task = _tasks.runningFor(widget.bookKey);
+    if (!identical(task, _task)) {
+      final bool ended = _task != null && task == null;
+      _task?.removeListener(_onTaskChanged);
+      task?.addListener(_onTaskChanged);
+      _task = task;
+      // 任务跑完：重读盘上的演出稿与账本。
+      if (ended) unawaited(_load());
+    }
+    final TtsSeriesRun? active = activeTtsSeriesRun;
+    final String? seriesKey = _session?.seriesKey;
+    final TtsSeriesRun? run =
+        active != null &&
+            active.running &&
+            active.kind == TtsRenderJobKind.manga &&
+            seriesKey != null &&
+            active.seriesKey == seriesKey
+        ? active
+        : null;
+    if (!identical(run, _seriesRun)) {
+      _seriesRun?.removeListener(_onTaskChanged);
+      run?.addListener(_onTaskChanged);
+      _seriesRun = run;
+    }
+    if (mounted) setState(() {});
+  }
+
+  void _onTaskChanged() {
+    final TtsSeriesRun? run = _seriesRun;
+    if (run != null && !run.running) {
+      run.removeListener(_onTaskChanged);
+      _seriesRun = null;
+    }
+    if (mounted) setState(() {});
   }
 
   Future<void> _load() async {
@@ -99,6 +157,7 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
         _loadError = null;
         _page = _initialPage(s);
       });
+      _syncTasks();
     } on MangaAudioAnnotateError catch (e) {
       if (mounted) setState(() => _loadError = e.code);
     }
@@ -148,62 +207,65 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
     return provider;
   }
 
-  void _onProgress(MangaAnnotatePhase phase, int done, int total) {
-    if (!mounted) return;
-    setState(() {
-      final String text = switch (phase) {
-        MangaAnnotatePhase.roster => t.manga_audio_progress_roster,
-        MangaAnnotatePhase.pages => t.manga_audio_progress_pages(
-          done: done,
-          total: total,
-        ),
-        MangaAnnotatePhase.review => t.manga_audio_progress_review(
-          done: done,
-          total: total,
-        ),
-      };
-      _progress = _volumeLabel.isEmpty ? text : '$_volumeLabel · $text';
-    });
+  /// 进度行文字：按系列跑时带「第几卷」。
+  String _progressText() {
+    final MangaAnnotateTask? task = _task;
+    final TtsSeriesRun? run = _seriesRun;
+    if (task == null) {
+      // 按系列跑正在标别的卷。
+      return run == null
+          ? ''
+          : t.audiobook_studio_series_run_progress(
+              done: run.index + 1,
+              total: run.books.length,
+              title: run.title,
+            );
+    }
+    final String volume = run == null
+        ? ''
+        : t.manga_audio_progress_volume(
+            done: run.index + 1,
+            total: run.books.length,
+          );
+    final String text = switch (task.phase) {
+      null => '',
+      MangaAnnotatePhase.roster => t.manga_audio_progress_roster,
+      MangaAnnotatePhase.pages => t.manga_audio_progress_pages(
+        done: task.progressDone,
+        total: task.progressTotal,
+      ),
+      MangaAnnotatePhase.review => t.manga_audio_progress_review(
+        done: task.progressDone,
+        total: task.progressTotal,
+      ),
+    };
+    if (volume.isEmpty) return text;
+    return text.isEmpty ? volume : '$volume · $text';
   }
 
-  /// 按系列跑时当前是第几卷（单卷为空）。
-  String _volumeLabel = '';
+  /// 「停止」：按系列跑整个停（连同本卷）；否则只停本卷任务。
+  void _stop() {
+    final TtsSeriesRun? run = _seriesRun;
+    if (run != null) {
+      run.cancel();
+    } else {
+      _tasks.cancel(widget.bookKey);
+    }
+    setState(() {});
+  }
 
-  Future<void> _run(Future<String> Function() body) async {
-    setState(() {
-      _running = true;
-      _cancelled = false;
-      _progress = '';
-    });
+  /// 把已确认的请求交给任务表；结果由任务表弹全局提示，本页只跟进度。
+  void _start(MangaAnnotateRequest request) {
     try {
-      final String done = await body();
-      _toast(done, severity: ToastSeverity.success);
-    } on MangaAnnotateAbort catch (e) {
-      _toast(
-        e.code == 'cancelled'
-            ? t.manga_audio_cancelled
-            : t.manga_audio_aborted(reason: aiFailureText(e.code)),
-        severity: e.code == 'cancelled'
-            ? ToastSeverity.neutral
-            : ToastSeverity.error,
-      );
-    } finally {
-      _volumeLabel = '';
-      if (mounted) {
-        setState(() => _running = false);
-        await _load();
-      }
+      _tasks.start(request);
+    } on MangaAnnotateBusy {
+      _toast(t.manga_audio_annotate_busy);
     }
   }
 
-  String _summaryText(MangaAnnotateRunSummary s) => t.manga_audio_done(
-    pages: s.annotatedPages.length,
-    failed: s.failedPages.length,
-  );
-
   Future<void> _annotate({required bool wholeVolume}) async {
     final MangaAudioAnnotateSession? s = _session;
-    if (s == null || _running) return;
+    if (s == null || _busy) return;
     final AiProviderConfig? provider = _provider();
     if (provider == null || !await ensureMangaAudioUploadConsent(context)) {
       return;
@@ -219,20 +281,23 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
         )) {
       return;
     }
-    await _run(() async {
-      final MangaAnnotateRunSummary summary = await s.annotate(
+    _start(
+      MangaAnnotateRequest.annotate(
+        bookKey: widget.bookKey,
         provider: provider,
         pages: pages,
         withRoster: withRoster,
-        isCancelled: () => _cancelled,
-        onProgress: _onProgress,
-      );
-      return _summaryText(summary);
-    });
+      ),
+    );
   }
 
+  /// 按系列跑（与制作台同一个 [TtsSeriesRun]，只标注）：逐卷只标还没标过的页，每卷
+  /// 经同一张任务表跑；离开页面不停。
   Future<void> _annotateSeries() async {
-    if (_running || _seriesVolumes.isEmpty) return;
+    final String? seriesKey = _session?.seriesKey;
+    if (_seriesRun != null || seriesKey == null || _seriesVolumes.isEmpty) {
+      return;
+    }
     final AiProviderConfig? provider = _provider();
     if (provider == null || !await ensureMangaAudioUploadConsent(context)) {
       return;
@@ -268,33 +333,30 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
         )) {
       return;
     }
-    await _run(() async {
-      final List<MangaSeriesVolumeResult> results = await annotateMangaSeries(
-        appModel: _app,
-        volumes: _seriesVolumes,
-        provider: provider,
-        isCancelled: () => _cancelled,
-        onVolume: (int i, int n) {
-          if (mounted) {
-            setState(
-              () => _progress = _volumeLabel = t.manga_audio_progress_volume(
-                done: i + 1,
-                total: n,
-              ),
-            );
-          }
-        },
-        onProgress: _onProgress,
-      );
-      return t.manga_audio_series_done(
-        volumes: results
-            .where((MangaSeriesVolumeResult r) => r.summary != null)
-            .length,
-        skipped: results
-            .where((MangaSeriesVolumeResult r) => r.skipped != null)
-            .length,
-      );
-    });
+    final TtsSeriesRun? active = activeTtsSeriesRun;
+    if (active != null && active.running) {
+      _toast(t.audiobook_studio_series_run_busy);
+      _syncTasks();
+      return;
+    }
+    final TtsSeriesRun run = TtsSeriesRun.start(
+      appModel: _app,
+      seriesKey: seriesKey,
+      books: <String>[
+        for (final EpubBookRow row in _seriesVolumes) row.bookKey,
+      ],
+      mode: TtsSeriesRunMode.annotate,
+      kind: TtsRenderJobKind.manga,
+      render: (
+        presetId: '',
+        verify: false,
+        pausePreset: 'standard',
+        normalizeLoudness: false,
+      ),
+    );
+    // 结果弹全局提示（页面在不在都弹）。
+    unawaited(run.done.then((_) => _announceSeriesRun(run)));
+    _syncTasks();
   }
 
   // ---------------------------------------------------------------------------
@@ -303,7 +365,7 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
 
   Future<void> _onFailure(MangaAnnotateFailure failure) async {
     final MangaAudioAnnotateSession? s = _session;
-    if (s == null || _running) return;
+    if (s == null || _busy) return;
     final AiProviderConfig? current = resolveMangaAudioProvider(_app);
     final List<AiProviderConfig> usable = mangaAudioUsableProviders(_app);
     final String? nextId = failure.nextRetryProvider(<String>[
@@ -341,7 +403,7 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
           ),
       ],
     );
-    if (action == null || !mounted) return;
+    if (action == null || !mounted || _busy) return;
     if (action == _FailureAction.hand) {
       s.handAnnotatePage(failure.page);
       setState(() => _page = failure.page);
@@ -354,15 +416,13 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
     if (provider == null || !await ensureMangaAudioUploadConsent(context)) {
       return;
     }
-    await _run(() async {
-      final MangaAnnotateRunSummary summary = await s.retry(
-        failure,
+    _start(
+      MangaAnnotateRequest.retry(
+        bookKey: widget.bookKey,
         provider: provider,
-        isCancelled: () => _cancelled,
-        onProgress: _onProgress,
-      );
-      return _summaryText(summary);
-    });
+        failure: failure,
+      ),
+    );
   }
 
   String _failureSubtitle(MangaAnnotateFailure f) {
@@ -664,16 +724,20 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
             ),
             subtitle: s.isStale ? t.manga_audio_stale : null,
           ),
-          if (_running)
+          if (_busy || _seriesRun != null)
             AdaptiveSettingsRow(
               key: const ValueKey<String>('manga-audio-progress'),
               icon: FushiIcons.stop,
               showIcon: true,
-              title: _progress.isEmpty ? '…' : _progress,
+              title: _progressText().isEmpty ? '…' : _progressText(),
               subtitle: t.stop,
-              onTap: () => setState(() => _cancelled = true),
-            )
-          else ...<Widget>[
+              onTap:
+                  (_task?.cancelRequested ?? false) ||
+                      (_seriesRun?.cancelled ?? false)
+                  ? null
+                  : _stop,
+            ),
+          if (!_busy) ...<Widget>[
             AdaptiveSettingsRow(
               key: const ValueKey<String>('manga-audio-annotate'),
               icon: FushiIcons.ai,
@@ -688,7 +752,7 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
               title: t.manga_audio_annotate_all_action,
               onTap: () => unawaited(_annotate(wholeVolume: true)),
             ),
-            if (_seriesVolumes.length > 1)
+            if (_seriesVolumes.length > 1 && _seriesRun == null)
               AdaptiveSettingsRow(
                 key: const ValueKey<String>('manga-audio-annotate-series'),
                 icon: FushiIcons.collections,
@@ -715,7 +779,7 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
                 title: mangaAnnotateFailureTitle(f),
                 subtitle: _failureSubtitle(f),
                 subtitleMaxLines: 3,
-                onTap: _running ? null : () => unawaited(_onFailure(f)),
+                onTap: _busy ? null : () => unawaited(_onFailure(f)),
               ),
           ],
         ),
@@ -736,7 +800,7 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
             subtitle: directive.holdMs == null
                 ? t.manga_audio_ms_default
                 : t.manga_audio_ms_value(ms: directive.holdMs!),
-            onTap: () => unawaited(_editDirective(hold: true)),
+            onTap: _busy ? null : () => unawaited(_editDirective(hold: true)),
           ),
           AdaptiveSettingsRow(
             key: const ValueKey<String>('manga-audio-page-lead'),
@@ -744,7 +808,7 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
             subtitle: directive.leadMs == null
                 ? t.manga_audio_ms_default
                 : t.manga_audio_ms_value(ms: directive.leadMs!),
-            onTap: () => unawaited(_editDirective(hold: false)),
+            onTap: _busy ? null : () => unawaited(_editDirective(hold: false)),
           ),
         ],
       ),
@@ -770,7 +834,7 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
           title: s.textOf(line).isEmpty ? '—' : s.textOf(line),
           titleMaxLines: 6,
           subtitle: _lineSubtitle(line),
-          onTap: _running ? null : () => unawaited(_editLine(line)),
+          onTap: _busy ? null : () => unawaited(_editLine(line)),
         ),
     ];
   }
@@ -830,6 +894,40 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
               ),
             );
           },
+    );
+  }
+}
+
+/// 页面发起的按系列标注结束时的全局提示（页面在不在都弹）。
+void _announceSeriesRun(TtsSeriesRun run) {
+  final List<TtsSeriesRunFailure> failures = run.failures;
+  final String? stop = failures
+      .map((TtsSeriesRunFailure f) => f.code)
+      .where(ttsSeriesRunStopsOn)
+      .firstOrNull;
+  if (stop == 'cancelled') {
+    FushiToast.show(msg: t.manga_audio_cancelled);
+  } else if (stop != null && stop.startsWith(kTtsSeriesRunAbortPrefix)) {
+    FushiToast.show(
+      msg: t.manga_audio_aborted(
+        reason: aiFailureText(stop.substring(kTtsSeriesRunAbortPrefix.length)),
+      ),
+      severity: ToastSeverity.error,
+    );
+  } else if (stop != null) {
+    FushiToast.show(
+      msg: mangaAudioErrorText(stop),
+      severity: ToastSeverity.error,
+    );
+  } else {
+    FushiToast.show(
+      msg: t.manga_audio_series_done(
+        volumes: run.annotated.length,
+        skipped: failures.length,
+      ),
+      severity: failures.isEmpty
+          ? ToastSeverity.success
+          : ToastSeverity.warning,
     );
   }
 }

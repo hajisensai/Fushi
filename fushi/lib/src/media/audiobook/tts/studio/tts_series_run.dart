@@ -4,6 +4,9 @@
 /// 三遍看图标注 [MangaAudioAnnotateSession]）、排哪种任务（[TtsRenderJobKind]）。
 ///
 /// 一次只跑一个（[activeTtsSeriesRun]），离开制作台不中断；制作台订阅它显示进度。
+/// 漫画每卷的标注经进程级任务表 [MangaAnnotateTasks] 跑（与复核页的单卷标注同一张表）：
+/// 同卷已有单卷标注在跑就等它跑完再标剩下的页，不并行标同一卷；复核页打开着也能看到
+/// 这一卷的进度。
 /// 标注时每本书的角色表学回系列（经 `SeriesCastStore.update` 串行写入），后面的书接着
 /// 用前面认出的人。某本标注失败就跳过它、不排它的生成；整体性失败（没配 AI、鉴权、
 /// 取消）停下整个运行。
@@ -12,11 +15,11 @@ library;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
-import 'package:fushi_engine/tts/manga_audio/manga_audio_annotate_runner.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/ai/ai_manga_audio_assistant.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_annotate_tasks.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_render_service.dart';
 
 import 'package:fushi/src/media/audiobook/tts/studio/tts_cast_annotator.dart';
@@ -121,14 +124,22 @@ class TtsSeriesRun extends ChangeNotifier {
   int annotateDone = 0;
   int annotateTotal = 0;
 
+  /// 标注成功的书（只标注 / 先标后排都记）。
+  final List<String> annotated = <String>[];
+
   /// 已排进制作队列的书。
   final List<String> queued = <String>[];
   final List<TtsSeriesRunFailure> failures = <TtsSeriesRunFailure>[];
 
   Future<void> get done => _future ?? Future<void>.value();
 
+  /// 漫画：正在标的那一卷（在 [MangaAnnotateTasks] 里）。
+  MangaAnnotateTask? _mangaTask;
+
   void cancel() {
     _cancelled = true;
+    final MangaAnnotateTask? task = _mangaTask;
+    if (task != null) mangaAnnotateTasksFor(appModel).cancel(task.bookKey);
     notifyListeners();
   }
 
@@ -169,6 +180,7 @@ class TtsSeriesRun extends ChangeNotifier {
             if (ttsSeriesRunStopsOn(code)) break;
             continue;
           }
+          annotated.add(bookKey);
         }
         if (mode.renders && !_cancelled) {
           final MangaAudioVolume? volume = await loadMangaAudioVolume(
@@ -199,42 +211,50 @@ class TtsSeriesRun extends ChangeNotifier {
     }
   }
 
-  /// 标注一卷；返回失败码，成功 null。
+  /// 标注一卷（只标还没标过的页）；返回失败码，成功 null。
   Future<String?> _annotateManga(
     String bookKey,
     AiProviderConfig provider,
   ) async {
-    try {
-      final MangaAudioAnnotateSession session =
-          await MangaAudioAnnotateSession.open(appModel, bookKey);
-      final MangaAnnotateRunSummary summary = await session.annotate(
-        provider: provider,
-        pages: session.pagesToAnnotate(),
-        // 已经标过角色表的卷（有已标页）不再重跑角色表那一遍。
-        withRoster: session.script.annotatedPages.isEmpty || session.isStale,
-        isCancelled: () => _cancelled,
-        onProgress: (MangaAnnotatePhase phase, int done, int total) {
-          annotateDone = done;
-          annotateTotal = total;
-          notifyListeners();
-        },
-      );
+    final MangaAnnotateTasks tasks = mangaAnnotateTasksFor(appModel);
+    // 这一卷已有单卷标注在跑：等它跑完再接着标剩下的页（不并行标同一卷）。
+    for (
+      MangaAnnotateTask? busy = tasks.runningFor(bookKey);
+      busy != null;
+      busy = tasks.runningFor(bookKey)
+    ) {
+      await busy.finished;
       if (_cancelled) return 'cancelled';
-      return summary.failedPages.isEmpty ? null : kTtsSeriesRunMangaIncomplete;
-    } on MangaAudioAnnotateError catch (e) {
-      return e.code;
-    } on MangaAnnotateAbort catch (e) {
-      return e.code == 'cancelled'
-          ? 'cancelled'
-          : '$kTtsSeriesRunAbortPrefix${e.code}';
-    } catch (e, stack) {
-      ErrorLogService.instance.log(
-        'TtsSeriesRun.annotateManga($bookKey)',
-        e,
-        stack,
-      );
-      return 'internal';
     }
+    final MangaAnnotateTask task = tasks.start(
+      MangaAnnotateRequest.annotate(bookKey: bookKey, provider: provider),
+      announce: false,
+    );
+    _mangaTask = task;
+    void onTask() {
+      annotateDone = task.progressDone;
+      annotateTotal = task.progressTotal;
+      notifyListeners();
+    }
+
+    task.addListener(onTask);
+    try {
+      await task.finished;
+    } finally {
+      task.removeListener(onTask);
+      _mangaTask = null;
+    }
+    return switch (task.status) {
+      MangaAnnotateTaskStatus.completed =>
+        (task.summary?.failedPages.isEmpty ?? true)
+            ? null
+            : kTtsSeriesRunMangaIncomplete,
+      MangaAnnotateTaskStatus.cancelled => 'cancelled',
+      MangaAnnotateTaskStatus.aborted =>
+        '$kTtsSeriesRunAbortPrefix${task.errorCode}',
+      MangaAnnotateTaskStatus.failed => task.errorCode ?? 'internal',
+      MangaAnnotateTaskStatus.running => 'internal',
+    };
   }
 
   Future<void> _runBooks() async {
@@ -264,6 +284,7 @@ class TtsSeriesRun extends ChangeNotifier {
             // 标注没做完的书不排制作：多声优会用残缺的选角表念。
             continue;
           }
+          annotated.add(bookKey);
         }
         if (mode.renders && !_cancelled) {
           await queue.enqueue(
