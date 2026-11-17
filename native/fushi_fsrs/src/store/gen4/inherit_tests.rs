@@ -188,6 +188,19 @@ fn their_seg(
     (a, b): (u64, u64),
     edit: impl Fn(HeritageSlot) -> HeritageSlot,
 ) -> (String, Vec<u8>) {
+    their_seg_by(t, col, (up, signer), chains, (a, b), edit, None)
+}
+
+/// [their_seg]，段头带作者公钥 [author]。
+fn their_seg_by(
+    t: &Truth<'_>,
+    col: i64,
+    (up, signer): (Id, &DeviceKey),
+    chains: &[Chain],
+    (a, b): (u64, u64),
+    edit: impl Fn(HeritageSlot) -> HeritageSlot,
+    author: Option<[u8; 32]>,
+) -> (String, Vec<u8>) {
     let slots: Vec<HeritageSlot> = log(t, col, &id(OLD))[a as usize - 1..b as usize]
         .iter()
         .map(|e| edit(e.slot().unwrap()))
@@ -197,7 +210,7 @@ fn their_seg(
         source: collection_of("dir"),
         device: id(OLD),
         uploader: up,
-        author_key: None,
+        author_key: author,
         t_version: T_VERSION,
         prev_chain: if a == 1 {
             CHAIN_ZERO
@@ -408,6 +421,33 @@ fn upload_fills_the_location_and_others_receive_it_identically() {
     );
     assert_eq!(plan, UploadPlan::default());
     let (_, plan, _) = plan_after(&t, col, UPLOAD_MAX_SLOTS, &[(&whole, &packed[0])], None);
+    assert_eq!(plan, UploadPlan::default());
+}
+
+/// 段头担保的作者公钥与本机记的不同（G10-4 第四轮）：不算位置上有、本机照传（收方 `receive.rs` 同样整段不收）；同一把
+/// 照常算。本机打的段头带本机记着的作者公钥。
+#[test]
+fn coverage_vouching_another_author_key_does_not_count() {
+    let (conn, col, chains) = mine_with(&[6, 10], 10);
+    let t = Truth::new(&conn);
+    let ka = key_of(A);
+    peer(&t, col, id(A), ka.public());
+    let evil = Some(key_of(0xee).public());
+    let (path, bytes) = their_seg_by(&t, col, (id(A), &ka), &chains, (1, 10), |s| s, evil);
+    let (seen, plan, packed) = plan_after(&t, col, UPLOAD_MAX_SLOTS, &[(&path, &bytes)], None);
+    assert_eq!(
+        seen,
+        vec![Seen::Rejected(Reject::AuthorKeyMismatch(id(OLD)))]
+    );
+    assert_eq!(ranges(&plan), vec![(1, 10, false)]);
+    assert_eq!(
+        peek_heritage_header(&packed[0]).unwrap().author_key,
+        Some(key_of(OLD).public())
+    );
+    let real = Some(key_of(OLD).public());
+    let (path, bytes) = their_seg_by(&t, col, (id(A), &ka), &chains, (1, 10), |s| s, real);
+    let (seen, plan, _) = plan_after(&t, col, UPLOAD_MAX_SLOTS, &[(&path, &bytes)], None);
+    assert_eq!(seen, vec![Seen::Counted { matched: 10 }]);
     assert_eq!(plan, UploadPlan::default());
 }
 
