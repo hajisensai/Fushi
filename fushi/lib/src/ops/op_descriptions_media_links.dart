@@ -159,7 +159,10 @@ List<OpDescription> describeMediaLinksOps(OpDescribeKit kit) {
       pattern: '$kMediaLinksCtlRoot/:endpoint/infer',
       summary:
           'Find related works for an item (shared external ids, MAL source '
-          'material, title match). Strong evidence and high-confidence LLM '
+          'material, title match; for a music album / track: the anime or '
+          'game it belongs to, from audio-fingerprint hits and album / track '
+          'titles naming the work plus OST / OP / ED keywords). Strong '
+          'evidence and high-confidence LLM '
           'verdicts are linked directly (confirmed_by=ai, undoable); the rest '
           'are stored as suggestions. Queries MAL / Wikidata; when an LLM is '
           'assigned to "media links" the candidates are also sent to that LLM '

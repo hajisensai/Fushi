@@ -92,6 +92,17 @@ abstract final class MediaLinkSource {
   /// AI 辅助裁决。按 AI 库管家设计稿 §5.2 的门槛：高置信直接生效
   /// （`confirmed_by = ai`，见 [MediaLinkConfirmer]），其余写成建议或丢弃。
   static const String ai = 'ai';
+
+  /// 声纹命中：`video_theme_song_spans` 里某曲目在某作品的集里被比对出来（AI 库管家
+  /// 设计稿 §4.4 第 3 条，最强证据，直接生效）。
+  static const String fingerprint = 'fingerprint';
+
+  /// VGMdb 刮削数据（专辑各语言名）里带作品名 + 关键词（§4.4 第 1 / 2 条，建议）。
+  static const String vgmdb = 'vgmdb';
+
+  /// MusicBrainz 刮削数据（release / release group 标题、release group 的
+  /// Soundtrack 类别）里带作品名（§4.4 第 1 / 2 条，建议）。
+  static const String musicbrainz = 'musicbrainz';
 }
 
 /// 谁让一条连接生效（`media_links.confirmed_by`，schema v159）。NULL = 建议。

@@ -253,6 +253,7 @@ class MediaLinkInferenceOutcome {
     required this.suggested,
     required this.discarded,
     this.appliedWrites = const <MediaLinkAiWrite>[],
+    this.suggestedIds = const <MediaLinkId>[],
   });
 
   /// 直接生效的条数（= [appliedWrites] 的长度）。
@@ -267,6 +268,10 @@ class MediaLinkInferenceOutcome {
   /// 生效连接的写入回执（id + 写入前的行），撤销用
   /// （`FushiDatabase.revertAiMediaLink`）。
   final List<MediaLinkAiWrite> appliedWrites;
+
+  /// 本轮新写入的建议行（= [suggested] 条）。建议只在这一对条目之间原本没有任何行时
+  /// 才写，撤销 = `FushiDatabase.discardMediaLinkSuggestion`。
+  final List<MediaLinkId> suggestedIds;
 
   /// 本轮新写入（生效 + 建议）的条数。
   int get written => applied + suggested;
@@ -351,6 +356,40 @@ bool mediaLinkFusesWorks(
   ({Object id, int size}) b,
 ) => a.id != b.id && a.size >= 2 && b.size >= 2;
 
+/// 是否是「音乐 → 作品」的候选（[MediaLinkRelation.themeSong] /
+/// [MediaLinkRelation.soundtrack] 的 from 一端是音乐）。
+bool isMusicMediaLinkCandidate(MediaLinkCandidate c) =>
+    c.from.endpoint.kind == MediaLinkKind.musicAlbum ||
+    c.from.endpoint.kind == MediaLinkKind.musicTrack;
+
+/// 不交 AI 裁决的候选：声纹命中是实测对齐出来的（AI 库管家设计稿 §4.4 第 3 条，
+/// 最强证据），AI 只看得到标题，没有资格推翻它，也不为它白花一次请求。
+bool mediaLinkSkipsJudge(MediaLinkCandidate c) =>
+    c.source == MediaLinkSource.fingerprint;
+
+/// 把 AI 结论约束到候选两端的种类允许的关系上（AI 只能判真假与置信度，不能给
+/// 端点种类配不上的关系）：
+/// - 音乐候选：关系只能是 [MediaLinkRelation.themeSong] /
+///   [MediaLinkRelation.soundtrack]（AI 给了别的就沿用候选的），方向固定音乐 → 作品；
+/// - 其余候选：AI 给了主题曲 / 原声 = 结论形状不对，当没裁决（null）。
+MediaLinkVerdict? fitMediaLinkVerdict(
+  MediaLinkCandidate c,
+  MediaLinkVerdict? v,
+) {
+  if (v == null || !v.related) return v;
+  final bool musicRelation =
+      v.relation == MediaLinkRelation.themeSong ||
+      v.relation == MediaLinkRelation.soundtrack;
+  if (!isMusicMediaLinkCandidate(c)) return musicRelation ? null : v;
+  return MediaLinkVerdict(
+    related: true,
+    relation: musicRelation ? v.relation : c.relation,
+    fromIsOriginal: true,
+    confidence: v.confidence,
+    reason: v.reason,
+  );
+}
+
 /// 把候选（可选经 AI 裁决）按 [mediaLinkDispositionOf] 的门槛落库：生效的写成
 /// `confirmed_by = ai`（`FushiDatabase.applyAiMediaLink`），建议走
 /// `FushiDatabase.proposeMediaLink`。同一对条目已有任何行（含否决墓碑、用户确认）的
@@ -391,13 +430,23 @@ Future<MediaLinkInferenceOutcome> applyMediaLinkCandidates({
       discarded: 0,
     );
   }
-  List<MediaLinkVerdict?> verdicts = List<MediaLinkVerdict?>.filled(
+  final List<MediaLinkVerdict?> verdicts = List<MediaLinkVerdict?>.filled(
     fresh.length,
     null,
   );
-  if (judge != null) {
-    final List<MediaLinkVerdict?> got = await judge.judge(fresh);
-    if (got.length == fresh.length) verdicts = got;
+  final List<int> toJudge = <int>[
+    for (int i = 0; i < fresh.length; i++)
+      if (!mediaLinkSkipsJudge(fresh[i])) i,
+  ];
+  if (judge != null && toJudge.isNotEmpty) {
+    final List<MediaLinkVerdict?> got = await judge.judge(<MediaLinkCandidate>[
+      for (final int i in toJudge) fresh[i],
+    ]);
+    if (got.length == toJudge.length) {
+      for (int k = 0; k < toJudge.length; k++) {
+        verdicts[toJudge[k]] = fitMediaLinkVerdict(fresh[toJudge[k]], got[k]);
+      }
+    }
   }
   // 本轮生效连接造成的分量合并（§5.4 第二条在同一轮里也要成立）。
   final Map<Object, Object> parent = <Object, Object>{};
@@ -419,7 +468,7 @@ Future<MediaLinkInferenceOutcome> applyMediaLinkCandidates({
   }
 
   final List<MediaLinkAiWrite> writes = <MediaLinkAiWrite>[];
-  int suggested = 0;
+  final List<MediaLinkId> suggestedIds = <MediaLinkId>[];
   int discarded = 0;
   for (int i = 0; i < fresh.length; i++) {
     final MediaLinkCandidate original = fresh[i];
@@ -485,12 +534,17 @@ Future<MediaLinkInferenceOutcome> applyMediaLinkCandidates({
       confidence: c.confidence,
       reason: c.reason,
     );
-    if (wrote) suggested++;
+    if (wrote) {
+      suggestedIds.add(
+        mediaLinkIdFor(c.relation, c.from.endpoint, c.to.endpoint),
+      );
+    }
   }
   return MediaLinkInferenceOutcome(
     applied: writes.length,
-    suggested: suggested,
+    suggested: suggestedIds.length,
     discarded: discarded,
     appliedWrites: List<MediaLinkAiWrite>.unmodifiable(writes),
+    suggestedIds: List<MediaLinkId>.unmodifiable(suggestedIds),
   );
 }

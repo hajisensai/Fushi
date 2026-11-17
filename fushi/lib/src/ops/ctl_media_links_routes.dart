@@ -23,7 +23,8 @@ import 'package:fushi/src/ops/op_context.dart';
 /// - 关联作品 = 详情页「关联作品」对话框背后的 [writeManualMediaLink]，候选 = 同一对话框
 ///   的 [loadMediaLinkCandidates]；移除关联 = 已确认卡片长按「移除关联」的 `removeMediaLink`；
 /// - 查找相关作品 = 同一按钮的 [mediaLinkInferCallback]（「作品图谱」AI 已指派时会发
-///   AI 请求，否则只跑确定性规则；MAL / Wikidata 查询照常联网）；
+///   AI 请求，否则只跑确定性规则；MAL / Wikidata 查询照常联网；音乐端点只用本机刮削
+///   数据与声纹缓存找所属动画 / 游戏）；
 /// - 人物 = 人物页的 [loadPersonGraph] / [loadPersonPage] / [decidePersonIdentity] /
 ///   [unmergePersonPair]。
 ///
@@ -267,7 +268,7 @@ List<CtlRoute> buildMediaLinksCtlRoutes(OpContext context) {
           (mediaLinkInferOverride?.call(context, self)) ??
           mediaLinkInferCallback(ref: context.ref, self: self);
       if (infer == null) {
-        throw const CtlFailure.rejected('音乐条目没有推断来源，不能查找相关作品');
+        throw const CtlFailure.rejected('这个条目没有推断来源，不能查找相关作品');
       }
       final bool ai =
           isAiModuleEnabled(app().moduleVisibility) &&
