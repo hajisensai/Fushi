@@ -143,16 +143,98 @@ void main() {
     expect(host.calls.last, ('video/series', 2));
   });
 
-  test('host 上没有该条目 / 文件已不在 → null（制卡不带链接，不中止）', () async {
+  test('BUG-4764：新 host 上没有该条目 / 文件已不在 → 担保不了（不是老 host 的 null）', () async {
     final InterconnectSyncBackend backend = await _buildBackend(
       base: base,
       token: token,
     );
-    expect(await backend.fetchRemoteVideoFingerprint('video/nope'), isNull);
+    await expectLater(
+      backend.fetchRemoteVideoFingerprint('video/nope'),
+      throwsA(
+        isA<RemoteVideoFingerprintUnavailable>().having(
+          (RemoteVideoFingerprintUnavailable e) => e.reason,
+          'reason',
+          kVideoFingerprintReasonNotFound,
+        ),
+      ),
+    );
     single.deleteSync();
+    await expectLater(
+      backend.fetchRemoteVideoFingerprint('video/夏目友人帳 第1話'),
+      throwsA(
+        isA<RemoteVideoFingerprintUnavailable>().having(
+          (RemoteVideoFingerprintUnavailable e) => e.reason,
+          'reason',
+          kVideoFingerprintReasonUnreadable,
+        ),
+      ),
+    );
+  });
+
+  test('BUG-4764：host 端担保不了时回 409 + reason，绝不回 404', () async {
+    final String missing =
+        '/api/library/videos/${Uri.encodeFull('video/nope')}/fingerprint';
+    final ({int status, String body}) notFound = await _rawRequest(
+      base,
+      missing,
+      token: token,
+    );
+    expect(notFound.status, kVideoFingerprintUnavailableStatus);
+    expect(notFound.status, isNot(404));
     expect(
-      await backend.fetchRemoteVideoFingerprint('video/夏目友人帳 第1話'),
-      isNull,
+      (jsonDecode(notFound.body) as Map<String, dynamic>)['reason'],
+      kVideoFingerprintReasonNotFound,
+    );
+    single.deleteSync();
+    final ({int status, String body}) unreadable = await _rawRequest(
+      base,
+      '/api/library/videos/${Uri.encodeFull('video/夏目友人帳 第1話')}/fingerprint',
+      token: token,
+    );
+    expect(unreadable.status, kVideoFingerprintUnavailableStatus);
+    expect(
+      (jsonDecode(unreadable.body) as Map<String, dynamic>)['reason'],
+      kVideoFingerprintReasonUnreadable,
+    );
+  });
+
+  test('老 host（没有 /fingerprint 端点、兜底 404）→ null，按 bookUid 放行', () async {
+    final HttpServer legacy = await HttpServer.bind(
+      InternetAddress.loopbackIPv4,
+      0,
+    );
+    addTearDown(() => legacy.close(force: true));
+    legacy.listen((HttpRequest request) async {
+      request.response.statusCode = 404;
+      await request.response.close();
+    });
+    final InterconnectSyncBackend backend = await _buildBackend(
+      base: 'http://127.0.0.1:${legacy.port}',
+      token: token,
+    );
+    expect(await backend.fetchRemoteVideoFingerprint('video/x'), isNull);
+  });
+
+  test('BUG-4764：host 回的指纹不是 64 位小写 hex → 担保不了，不当老 host', () async {
+    final HttpServer odd = await HttpServer.bind(
+      InternetAddress.loopbackIPv4,
+      0,
+    );
+    addTearDown(() => odd.close(force: true));
+    odd.listen((HttpRequest request) async {
+      request.response
+        ..statusCode = 200
+        ..headers.contentType = ContentType.json
+        ..write(jsonEncode(<String, String>{'fingerprint': 'ABC'}));
+      await request.response.close();
+    });
+    final InterconnectSyncBackend backend = await _buildBackend(
+      base: 'http://127.0.0.1:${odd.port}',
+      token: token,
+    );
+    await expectLater(
+      backend.fetchRemoteVideoFingerprint('video/x'),
+      throwsA(isA<RemoteVideoFingerprintUnavailable>()),
     );
   });
 

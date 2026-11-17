@@ -73,8 +73,10 @@ RemoteVideoInfo? findRemoteVideoForCardSource(
 
 /// 远端条目的字节核验（拍板台 IFCPPprIpT）：链接带指纹时，用 host 对同一个文件算的
 /// 指纹比对（与本地卡同口径，防 host 上同名 bookUid 换成了别的片子）。链接不带指纹
-/// （在线内容身份，BUG-3490）或 host 算不出（老 host 无该端点）时按 bookUid 身份放行，
-/// 与此前远端回跳一致。
+/// （在线内容身份，BUG-3490）或 host 不支持指纹（老 host 无该端点）时按 bookUid 身份
+/// 放行，与此前远端回跳一致。新 host 担保不了字节不会走到这里：
+/// [RemoteVideoFingerprintSource.fetchRemoteVideoFingerprint] 抛
+/// `RemoteVideoFingerprintUnavailable`，按取不到来源处理（BUG-4764）。
 bool cardSourceHostFingerprintAccepted({
   required String? linkFingerprint,
   required String? hostFingerprint,

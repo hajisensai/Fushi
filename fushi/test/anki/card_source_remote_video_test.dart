@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/anki/card_source_router.dart';
 import 'package:fushi/src/sync/remote_video_client.dart'
-    show RemoteVideoFingerprintSource;
+    show RemoteVideoFingerprintSource, RemoteVideoFingerprintUnavailable;
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo;
@@ -187,6 +187,16 @@ void main() {
       expect(host.calls, isEmpty);
     });
 
+    test('BUG-4764：新 host 担保不了字节时抛出、不当老 host 放行', () async {
+      await expectLater(
+        run(
+          link(CardSourceKind.video, 'uid-a'),
+          _FakeFingerprints.unavailable(),
+        ),
+        throwsA(isA<RemoteVideoFingerprintUnavailable>()),
+      );
+    });
+
     test('host 网络失败原样抛出（由调用方记日志按没有来源）', () async {
       await expectLater(
         run(link(CardSourceKind.video, 'uid-a'), _FakeFingerprints.failing()),
@@ -237,11 +247,19 @@ void main() {
 }
 
 class _FakeFingerprints implements RemoteVideoFingerprintSource {
-  _FakeFingerprints(this.fingerprint) : fail = false;
-  _FakeFingerprints.failing() : fingerprint = null, fail = true;
+  _FakeFingerprints(this.fingerprint) : fail = false, unverifiable = false;
+  _FakeFingerprints.failing()
+    : fingerprint = null,
+      fail = true,
+      unverifiable = false;
+  _FakeFingerprints.unavailable()
+    : fingerprint = null,
+      fail = false,
+      unverifiable = true;
 
   final String? fingerprint;
   final bool fail;
+  final bool unverifiable;
   final List<String> calls = <String>[];
 
   @override
@@ -251,6 +269,9 @@ class _FakeFingerprints implements RemoteVideoFingerprintSource {
   }) async {
     calls.add('$id#$episodeIndex');
     if (fail) throw const SocketException('host unreachable');
+    if (unverifiable) {
+      throw RemoteVideoFingerprintUnavailable(id, 'unreadable');
+    }
     return fingerprint;
   }
 }
