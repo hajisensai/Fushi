@@ -234,7 +234,9 @@ void main() {
       expect(p.basename(f.path), isNot(contains(':')));
       expect(p.basename(f.path), isNot(contains('/')));
       expect(
-        p.basename(videoStreamSubtitleAudioFileIn(root, key: a, title: '  ').path),
+        p.basename(
+          videoStreamSubtitleAudioFileIn(root, key: a, title: '  ').path,
+        ),
         'stream [$a].m4a',
       );
     });
@@ -293,7 +295,10 @@ void main() {
       expect(prepared, 1);
       expect(backend.calls.single.last, '${audio.path}.part');
       expect(staging.progress.value, 1);
-      expect((await stager.existing(key: 'k1', title: 'Ep 1'))?.path, audio.path);
+      expect(
+        (await stager.existing(key: 'k1', title: 'Ep 1'))?.path,
+        audio.path,
+      );
       expect(stager.inflight('k1'), isNull);
 
       final File again = await stager
@@ -390,7 +395,10 @@ void main() {
 
     test('观察式后端：进度 = 已处理时间 / 片长；取消强杀并删半截文件', () async {
       final _WatchedBackend watched = _WatchedBackend(
-        progress: const <Duration>[Duration(seconds: 15), Duration(seconds: 30)],
+        progress: const <Duration>[
+          Duration(seconds: 15),
+          Duration(seconds: 30),
+        ],
       )..hold = Completer<void>();
       final VideoStreamSubtitleAudioStager stager =
           VideoStreamSubtitleAudioStager(

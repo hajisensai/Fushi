@@ -174,4 +174,99 @@ void main() {
     );
     expect(router.indexOf('_discExtractionAllowed(controller)'), isNonNegative);
   });
+
+  // 非互联的在线流（在线视频源 / 粘贴的流与 YouTube / 音乐 MV / 媒体服务器 / 云盘流）也走
+  // 完整管线：整集音频拉到本机（拉前现取地址，有进度可取消），工作台内嵌面板与播放器
+  // 菜单两处入口都通，结束后按同一视频 / 同一次加载自动选中。
+  test('online streams reach the full pipeline from both entries', () {
+    final String gate = source
+        .split('bool get _canRunSubtitlePipeline =>')[1]
+        .split('bool _subtitleStudioAvailable(')[0];
+    expect(gate, contains('_canRunStreamSubtitlePipeline'));
+    expect(gate, contains('_streamWholeAudioAvailable && isAsrSupported'));
+
+    final String router = source
+        .split('Future<void> _openSubtitleGeneration(')[1]
+        .split('Future<void> _generateSubtitleWithSpeechModel(')[0];
+    expect(router, contains('_isRemote && _remoteHostVideoTarget() == null'));
+    expect(
+      router,
+      contains(
+        '_openStreamSubtitlePipeline(controller, onTranscribeInApp: inApp)',
+      ),
+    );
+
+    final String studioPanel = source
+        .split('Future<WidgetBuilder?> _subtitleStudioGeneratePanel(')[1]
+        .split('final String? videoPath = _currentVideoPath;')[0];
+    expect(
+      studioPanel,
+      contains(
+        'if (host == null) return _streamSubtitleStudioPanel(controller, inApp);',
+      ),
+    );
+
+    final String aiReference = source
+        .split(
+          'Future<VideoSubtitleStudioAiReference?> _subtitleStudioAiReference(',
+        )[1]
+        .split(
+          'Map<String, List<SubtitleEvidenceTrack>> _playerSubtitleEvidence(',
+        )[0];
+    expect(aiReference, contains('_canRunStreamSubtitlePipeline'));
+
+    final String prepare = source
+        .split(
+          'Future<VideoStreamSubtitleAudioInput> _prepareStreamWholeAudio(',
+        )[1]
+        .split('VideoStreamSubtitleAudioStaging? _startStreamWholeAudio()')[0];
+    // 拉前现取地址（短 TTL 签名链接），再按制卡同一判据走本机中继。
+    expect(prepare, contains('is RemoteVideoSubtitleAudioRefresh'));
+    expect(prepare, contains('.freshSubtitleAudio('));
+    expect(prepare, contains('videoMiningInputUsesPlaybackRelay('));
+    expect(prepare, contains('relayFfmpegRemoteInput('));
+
+    final String dialog = source
+        .split('Future<File?> _stageStreamWholeAudioWithDialog()')[1]
+        .split('Future<AppVideoSubtitleTarget?> _streamSubtitleTarget(')[0];
+    expect(dialog, contains('showFushiProgressDialog('));
+    expect(dialog, contains('onCancel: staging.cancel'));
+    expect(dialog, contains("'video.streamSubtitleAudio'"));
+
+    final String target = source
+        .split('Future<AppVideoSubtitleTarget?> _streamSubtitleTarget(')[1]
+        .split('Future<void> _openStreamSubtitlePipeline(')[0];
+    expect(target, contains('.resolveStream('));
+    expect(target, contains('workTitle: remoteVideoWorkTitle(info)'));
+    expect(target, contains('model.setRemoteSubtitleSource(subUid, subEp'));
+    expect(target, contains('videoStreamSubtitleFrameSource('));
+
+    final String done = source
+        .split('Future<void> _applyStreamPipelineSubtitleWhenDone(')[1]
+        .split('/// ASR 只接单音轨文件')[0];
+    expect(done, contains('_episodeLoadSeq != loadSeq'));
+    expect(done, contains('identical(_controller, controller)'));
+    expect(done, contains('_streamWholeAudioIdentity()?.key != streamKey'));
+    expect(done, contains('_registerImportedSubtitleSource(output)'));
+    expect(done, contains('_applyRemoteSubtitle(controller, output)'));
+    expect(done, contains('await _setDelayMs(0)'));
+
+    // 本机转录 / 重定时用整集副本；自动对轴与波形仍只从流里裁要看的那一段。
+    final String timing = source
+        .split('Future<_SubtitleTimingAudio?> _resolveSubtitleTimingAudio()')[1]
+        .split('String? get _streamAlignAudioSource')[0];
+    expect(timing, contains('_stageStreamWholeAudioWithDialog()'));
+    expect(
+      source,
+      contains(
+        'if (_hasLocalOrHostTimingAudio) return _resolveSubtitleTimingAudio();',
+      ),
+    );
+    expect(
+      source,
+      contains(
+        'subtitleAlignProbeLimitMs(fromStream: !_hasLocalOrHostTimingAudio)',
+      ),
+    );
+  });
 }
