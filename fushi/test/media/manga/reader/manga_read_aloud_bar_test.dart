@@ -2,7 +2,6 @@
 // 状态行按控制器状态 / 失败原因给出对应文案。
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show ChangeNotifier;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_playback_driver.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_playback_plan.dart';
