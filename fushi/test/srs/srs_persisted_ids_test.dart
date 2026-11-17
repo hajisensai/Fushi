@@ -129,19 +129,40 @@ void main() {
       addTearDown(main.close);
     });
 
-    test('统一入口：createDeck 回的派生 ID 写回成牌组树里的规范 ID，内置 ID 也是规范的', () async {
-      final String member = await store.createDeck('Mining');
+    test('统一入口：偏好里的带盐存量 ID 写回成牌组树里的规范 ID，内置 ID 也是规范的', () async {
+      // G9-7 起 createDeck 回的就是规范 ID；带盐成员是协议 3 迁移来的存量（`<uid>/deck/<名字>` 的 v5），作为存量写进库，
+      // `identity` 的 `Salts{uid}` 把它归到同一个类。
+      final String canonical = await store.createDeck('Mining');
+      final String member = uuidV5(
+        srsNamespace,
+        '$kSrsTestProfile/deck/Mining',
+      );
+      expect(member, isNot(canonical));
+      await store.writeEdits(
+        <SrsEditSpec>[
+          SrsEditSpec(SrsEntityKind.deck, member, SrsFieldKeys.name, 'Mining'),
+        ],
+        records: <SrsEntityRecord>[
+          SrsEntityRecord(
+            id: member,
+            profileUid: kSrsTestProfile,
+            kind: SrsEntityKind.deck,
+            payload: const <String, Object?>{'createdAt': 0},
+          ),
+        ],
+      );
       await prefs.setSrsMiningDeckId(member);
       expect(await srsNormalizeStoreIds(store: store, prefs: prefs), <String>[
         'srs_mining_deck_id',
       ]);
+      expect(prefs.srsMiningDeckId, canonical);
       final SrsDeckTree tree = await store.deckTree();
       expect(tree[prefs.srsMiningDeckId], isNotNull);
       expect(tree.fullName(prefs.srsMiningDeckId), 'Mining');
       expect(tree[store.defaultDeckId], isNotNull);
     });
 
-    test('补单词音频的笔记类型 / 字段 ID 按规范 ID 取（派生的对不上）', () async {
+    test('补单词音频的笔记类型 / 字段 ID 按规范 ID 取（G9-7 起按 profile 现算的就是它）', () async {
       final SrsWordAudioBackfillFields fields =
           await SrsWordAudioBackfillFields.ofStore(store);
       expect(fields.noteTypeId, store.fushiCardNoteTypeId);
@@ -160,9 +181,7 @@ void main() {
       );
       expect(
         fields.noteTypeId,
-        isNot(
-          SrsWordAudioBackfillFields.forProfile(kSrsTestProfile).noteTypeId,
-        ),
+        SrsWordAudioBackfillFields.forProfile(kSrsTestProfile).noteTypeId,
       );
     });
   });

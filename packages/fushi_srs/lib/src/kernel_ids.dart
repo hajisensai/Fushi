@@ -1,10 +1,12 @@
 /// 根上的 ID 与同步目录名一律向内核要（docs/specs/2026-11-11-srs-generation-break.md §5.1、§5.2、G5）。
 ///
 /// 规则表只在内核一处（native/fushi_fsrs/src/gen4_ids/rules.rs）；Dart 不再自己拼「`<uid>/note/<guid>`」这类带盐的
-/// 名字，也不再按 uid 拼同步目录（`fushi-srs/<uid>/`）。用哪个盐、目录叫什么由内核按 profile 决定
-/// （gen4_ids/derive.rs 的 `salt_of` / `location_dir_of`）：协议 4 切换（G7）之前仍是存量规则，答的值与改造前 Dart
-/// 算的逐字节相同；G7 起内核改查集合绑定（绑定在 srs.db 里，到时这个入口要连到 store），调用方都经这里问，
-/// 改动收在这一处。
+/// 名字，也不再按 uid 拼同步目录（`fushi-srs/<uid>/`）。
+///
+/// **根上的 ID 一律是规范 ID（不带盐，G9-7）**：设计 §5.2 新写入去盐，内核对任何 profile 都按规范规则答，答的就是
+/// 读命令回的规范 ID（全新库没有别的形；迁移来的库里协议 3 带盐的存量 ID 由派生层归到同一个规范 ID）。所以这里算出的
+/// 牌组 / 笔记 / 内置实体 ID 可以直接和读回的 ID 比。[profileUid] 只影响 [locationDir]（协议 3 时代的目录名；新代的同步
+/// 目录向绑定要，`identity` 回包的 `dir`）。写命令落下的实体以回包的 `entityWrites` 为准（`SrsDbStore` 建实体的入口）。
 ///
 /// 一批一次 FFI（[SrsKernelIds.ask]），同步调用（纯函数，不碰库），原生库是硬依赖：加载失败抛
 /// [SrsKernelIdsUnavailableError]，没有 Dart 回退。由父 ID 派生、不带盐的规则（字段、模板、卡、导入日志……）
@@ -31,7 +33,7 @@ typedef SrsDupPart = ({int? configId, String name});
 final class SrsKernelIds {
   SrsKernelIds(this.profileUid, {FushiFsrs? library}) : _library = library;
 
-  /// 问的是哪个 profile（内核据此决定盐与目录名；Dart 不拿它拼名字）。
+  /// 问的是哪个 profile（只决定协议 3 时代的目录名 [locationDir]；根上的 ID 与它无关）。
   final String profileUid;
 
   final FushiFsrs? _library;

@@ -1,5 +1,6 @@
 // SrsDbStore 的绑定代号与绑定变化后的重读（G7-5b 复核修复）：
-// - 重开不重复写三个内置实体（请求形 ≠ 规范形时按规范 ID 判在不在）；
+// - 重开不重复写三个内置实体（补盐换库之后也一样；内置 ID 是不带盐的规范 ID，G9-7。存量带盐内置实体的那一半在
+//   srs_id_derivation_e2e_test.dart）；
 // - RWKV 分数表的清空键在进程内换库（补盐）时也变、同一绑定重开不变；
 // - 辅助进程重新激活时按绑定代号（含盐）发现变化；
 // - 绑定变化后重读失败不吞掉已提交命令的回包，下一条命令之前补读；
@@ -65,23 +66,33 @@ void main() {
         'now': now,
       })).map;
 
-  test('重开不重复写内置实体：请求形与规范形不同时按规范 ID 判在不在', () async {
+  test('重开不重复写内置实体：补盐换库之后也只认已有的那一份', () async {
     final SrsStorage primary = await storage(SrsOpenMode.primary);
     final SrsDbStore first = await open(primary, kProfileA);
-    // 这条用例要的前提：Dart 发的内置 ID（请求形）不是库里的规范 ID。上游改了 ID 口径（`salt_of`）、两者相同之后，
-    // 这里会红——那时要换一种造法（先补盐 / 造别名）重建这个前提，而不是删掉这条。
-    expect(
-      first.kernelIds.defaultDeck,
-      isNot(first.defaultDeckId),
-      reason: 'precondition: request-form id differs from the canonical one',
-    );
+    // G9-7 起 Dart 向内核要的内置 ID 就是规范 ID（不带盐），读回来的也是它。
+    expect(first.kernelIds.defaultDeck, first.defaultDeckId);
+    final String afterFirst = await first.changeFingerprint();
     final SrsDbStore second = await open(primary, kProfileA);
-    final String afterSecond = await second.changeFingerprint();
+    expect(
+      await second.changeFingerprint(),
+      afterFirst,
+      reason: 'reopening writes nothing: the builtins are already there',
+    );
+    // 补盐（`bindingChanged`，别的盐算出的成员也归过来）：内置 ID 不变，重开照样不写。
+    expect((await addSalt(second))['outcome'], 'saltsAdded');
+    expect(second.defaultDeckId, first.defaultDeckId);
+    final String afterSalt = await second.changeFingerprint();
     final SrsDbStore third = await open(primary, kProfileA);
+    expect(third.defaultDeckId, first.defaultDeckId);
     expect(
       await third.changeFingerprint(),
-      afterSecond,
-      reason: 'reopening writes nothing: the builtins are already there',
+      afterSalt,
+      reason: 'reopening after a salt was added writes nothing either',
+    );
+    final SrsDeckTree tree = await third.deckTree();
+    expect(
+      tree.decks.where((SrsDeckView d) => d.id == third.defaultDeckId),
+      hasLength(1),
     );
   });
 

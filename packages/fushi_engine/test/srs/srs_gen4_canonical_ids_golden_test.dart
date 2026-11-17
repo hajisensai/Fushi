@@ -4,11 +4,13 @@
 // native/fushi_fsrs/src/gen4_ids/golden_ids.json 是 G3 时用当时 Dart 的 `SrsIds`（根上的规则那时还在 Dart）生成的；
 // G5 起根上的规则从 `SrsIds` 删了，Dart 经 FFI 向内核要（[SrsKernelIds]）。这里把同一批输入经 Dart 的入口再算一遍
 // （根上的走 `SrsKernelIds`，由父 ID 派生的仍走 `SrsIds`，内置笔记类型表走 srs_builtin.dart），与冻结文件逐值比对；
-// 内核的测试（native/fushi_fsrs/src/gen4_ids/tests.rs）对着同一个文件重算。G7 之前内核对 profile 答的是带盐值。
+// 内核的测试（native/fushi_fsrs/src/gen4_ids/tests.rs）对着同一个文件重算。
 //
-// - 带盐值：`SrsKernelIds(uid).*`（存量规则）。
-// - 规范值（不带盐）：`uuidV5(srsNamespace, <名字>)`，其中 <名字> 满足「带盐值 ==
-//   uuidV5(srsNamespace, '<uid>/<名字>')」——即规范名字恰好是存量名字去掉 `<uid>/` 前缀，由本测试逐条断言。
+// - 规范值（不带盐）：`uuidV5(srsNamespace, <名字>)`。G9-7 起内核对任何 profile 都答规范值（设计 §5.2 新写入去盐），
+//   本测试逐条断言 `SrsKernelIds(uid).*` == 规范值、与 uid 无关。
+// - 带盐值（存量规则，只给别名验算用）：`uuidV5(srsNamespace, '<uid>/<名字>')`——规范名字恰好是存量名字去掉 `<uid>/`
+//   前缀。Dart 生产代码里已经没有带盐的入口（G9-7 之前是 `SrsKernelIds(uid).*`），向量按这条公式在测试里算、与冻结
+//   文件比，冻结值一个字节没变。
 // - 旧并入的兜底 ID / 改名写入者的两条公式在 srs_profile_merge.dart 里是私有的（`_IdMap.fallbackAll`、
 //   `_mergedWriterNames`），这里按同一条公式重写；它们在真实库上的验算见内核探针 gen4_ids/probe.rs。
 //
@@ -140,28 +142,29 @@ const List<String> _oldIds = <String>[
   'Deck-Default',
 ];
 
+/// [asked] = Dart 经 `SrsKernelIds(uid)` 问到的值：一律是规范值、与 uid 无关（G9-7）。
 Map<String, Object?> _rooted(
   String rule,
   Map<String, Object?> args,
   String name,
-  String Function(String uid) salted,
+  String Function(String uid) asked,
 ) {
-  final Map<String, String> bySalt = <String, String>{
-    for (final String uid in _uids) uid: salted(uid),
-  };
+  final String canonical = uuidV5(srsNamespace, name);
   for (final String uid in _uids) {
     expect(
-      bySalt[uid],
-      uuidV5(srsNamespace, '$uid/$name'),
-      reason: '$rule $args: canonical name is not the salted name minus uid/',
+      asked(uid),
+      canonical,
+      reason: '$rule $args: the kernel must answer the canonical (unsalted) id',
     );
   }
   return <String, Object?>{
     'rule': rule,
     'args': args,
     'name': name,
-    'canonical': uuidV5(srsNamespace, name),
-    'salted': bySalt,
+    'canonical': canonical,
+    'salted': <String, String>{
+      for (final String uid in _uids) uid: uuidV5(srsNamespace, '$uid/$name'),
+    },
   };
 }
 
@@ -231,7 +234,7 @@ Map<String, Object?> _build() {
   );
   // 已删 Anki 卡由内置默认牌组派生：父取一个带盐的、一个规范的默认牌组。
   for (final String deck in <String>[
-    SrsKernelIds(_uids.first).defaultDeck,
+    uuidV5(srsNamespace, '${_uids.first}/builtin-deck/default'),
     uuidV5(srsNamespace, 'builtin-deck/default'),
   ]) {
     for (final int cid in _deletedCardIds) {
@@ -246,11 +249,11 @@ Map<String, Object?> _build() {
 
   // 由父 ID 派生的规则：父取一个带盐的、一个规范的笔记类型 / 笔记。
   final List<String> noteTypes = <String>[
-    SrsKernelIds(_uids[0]).noteType(1725626812943),
+    uuidV5(srsNamespace, '${_uids[0]}/notetype/1725626812943'),
     uuidV5(srsNamespace, 'notetype/1725626812943'),
   ];
   final List<String> notes = <String>[
-    SrsKernelIds(_uids[0]).note('i0.As71JXL'),
+    uuidV5(srsNamespace, '${_uids[0]}/note/i0.As71JXL'),
     uuidV5(srsNamespace, 'note/i0.As71JXL'),
   ];
   final List<String> templates = <String>[
@@ -385,17 +388,28 @@ Map<String, Object?> _build() {
     final String key = spec.key;
     final int num = SrsIds.builtinNoteTypeAnkiNum(key);
     final String canonical = uuidV5(srsNamespace, 'notetype/$num');
-    final Map<String, SrsBuiltinNoteType> bySalt = <String, SrsBuiltinNoteType>{
-      for (final String uid in _uids) uid: srsBuiltinNoteType(uid, spec),
+    // Dart 的内置表（srs_builtin.dart）对任何 profile 都给规范 ID（G9-7）；带盐的存量 ID 按存量公式在这里算。
+    final SrsBuiltinNoteType first = srsBuiltinNoteType(_uids[0], spec);
+    for (final String uid in _uids) {
+      expect(srsBuiltinNoteTypeId(uid, key), canonical, reason: key);
+      expect(
+        srsBuiltinNoteType(uid, spec).fields.map((SrsFieldDef f) => f.id),
+        <String>[
+          for (final SrsFieldDef f in first.fields)
+            SrsIds.field(canonical, f.ankiNum!),
+        ],
+        reason: key,
+      );
+    }
+    final Map<String, String> saltedNt = <String, String>{
+      for (final String uid in _uids)
+        uid: uuidV5(srsNamespace, '$uid/notetype/$num'),
     };
-    final SrsBuiltinNoteType first = bySalt[_uids[0]]!;
     builtins.add(<String, Object?>{
       'key': key,
       'ankiNum': num,
       'canonical': canonical,
-      'salted': <String, String>{
-        for (final String uid in _uids) uid: srsBuiltinNoteTypeId(uid, key),
-      },
+      'salted': saltedNt,
       'fields': <Map<String, Object?>>[
         for (int i = 0; i < first.fields.length; i++)
           <String, Object?>{
@@ -404,7 +418,8 @@ Map<String, Object?> _build() {
             'ankiNum': first.fields[i].ankiNum,
             'canonical': SrsIds.field(canonical, first.fields[i].ankiNum!),
             'salted': <String, String>{
-              for (final String uid in _uids) uid: bySalt[uid]!.fields[i].id,
+              for (final String uid in _uids)
+                uid: SrsIds.field(saltedNt[uid]!, first.fields[i].ankiNum!),
             },
           },
       ],
@@ -418,7 +433,11 @@ Map<String, Object?> _build() {
               first.templates[i].ankiNum!,
             ),
             'salted': <String, String>{
-              for (final String uid in _uids) uid: bySalt[uid]!.templates[i].id,
+              for (final String uid in _uids)
+                uid: SrsIds.template(
+                  saltedNt[uid]!,
+                  first.templates[i].ankiNum!,
+                ),
             },
           },
       ],
