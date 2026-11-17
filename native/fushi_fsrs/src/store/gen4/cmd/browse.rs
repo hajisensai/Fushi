@@ -11,7 +11,8 @@
 //! - 笔记 / 卡片行：缓存层的 `notes` / `cards`（列与协议 3 的缓存表相同，`cache.rs`；ID 列是 [Ref] 存储形，解回文本，
 //!   `browse::id_col`）。按 ID 点读走主键 `(col, id)`。
 //! - 字段原文、最后改动时刻、出处：每条笔记按类判定活着的修改行（`class.rs` [Index::class_lines]，缓存层物化笔记行的
-//!   同一份），交给协议 3 同一个 `registers::note_browse_values` / `note_browse_detail`。协议 3 按修改记录表一次顺序扫；
+//!   同一份），连同读命令同一份的合成 `tags` 行（`edit_rows`，最后一次改标签算进最后改动时刻），交给协议 3 同一个
+//!   `registers::note_browse_values` / `note_browse_detail`。协议 3 按修改记录表一次顺序扫；
 //!   这里每条笔记几次索引点读——全集合装字段（`edited:`、按修改时间排、全文检索第一次）比协议 3 慢一个常数，之后常驻、
 //!   随写入按笔记重读，与协议 3 同阶。
 //! - `rated:`：统计表 `stats`（有效复习投影，主键 `(col, at, log)` 按时刻聚簇，范围扫）。
@@ -61,6 +62,10 @@
 //! 没有写入时每条命令多一次 `cache_gen` 主键点读。有写入时：一次 `cache_log` 主键范围扫（代号 > 会话代号）+ 每条变了的
 //! 笔记一次 `cards_note` 点读 + 会话里卡的一遍线性扫（找这些笔记的旧卡，O(会话卡数)，十万张卡约 1 ms）+ 按 id 重读。
 //! 整份建会话：`notes` / `cards` 各一次顺序扫（同协议 3）。
+//!
+//! 取修改行（`edits_with`，`edited:`、按修改时间排序、全文检索首次都走它）每条笔记一次按类判定（[Index::class_lines]）；
+//! 要合成 `tags` 行时（不限键、或键里有 `tags`）再加每份成员一次 `tag_ix` / `reg_ix` 查询 + 每条标签操作一次日志点读
+//! + 一次按类求标签值（`cmd/mod.rs` `tags_line`）。只要字段键时不拼这一行，不付这份。
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -193,7 +198,7 @@ impl Source for G4<'_, '_> {
         // `cache_pass`），不让每条笔记各读一遍整张表。
         ix.pass_writers = Some(ix.writer_aliases()?);
         ix.pass_rules_begin()?;
-        let done = edits_with(&mut ix, notes, keys, sink);
+        let done = edits_with(self.t, &mut ix, notes, keys, sink);
         ix.pass_writers = None;
         ix.pass_rules = None;
         done
@@ -256,34 +261,31 @@ impl Source for G4<'_, '_> {
     }
 }
 
-/// [Source::edits] 的本体：[notes] 每条按类判定活着的修改行（[keys] 非空 = 只要这些字段的），交给 [sink]。
+/// [Source::edits] 的本体：[notes] 每条的修改行（[keys] 非空 = 只要这些键的），交给 [sink]。
+///
+/// 行与读命令同一份（[super::edit_rows]）：按类判定活着的修改行，笔记的 `tags` 是那一行合成行（`hlc` = 最后一条标签
+/// 操作，与协议 3 修改记录表 `srs_field_edits` 里的那一行同形）。新代的标签增删是 `tag_ix` 里的 OR-Set 操作，不进寄存器、
+/// 不在 [Index::class_lines] 里；只拿寄存器行时 `edited:` 与按修改时间排漏掉最后一次改标签。合成行的键不是 `f/` 开头，
+/// 不当字段原文（`registers::note_browse_values`）。
 fn edits_with(
+    t: &Truth<'_>,
     ix: &mut Index<'_, '_>,
     notes: &[String],
     keys: &[String],
     sink: &mut dyn FnMut(&str, &[StoredEdit<'_>]) -> Result<(), String>,
 ) -> Result<(), String> {
+    // 只要字段键时不拼合成 `tags` 行（文件头「代价」）。
+    let tags = keys.is_empty() || keys.iter().any(|k| k == "tags");
     for id in notes {
-        let (lines, _) = ix.class_lines(EntKind::Note, &ref_of(id))?;
-        let lines: Vec<&(String, Option<i64>)> = if keys.is_empty() {
-            lines.iter().collect()
-        } else {
-            lines
-                .iter()
-                .filter(|(j, _)| {
-                    serde_json::from_str::<Value>(j).ok().is_some_and(|v| {
-                        v.get("f")
-                            .and_then(Value::as_str)
-                            .is_some_and(|f| keys.iter().any(|k| k == f))
-                    })
-                })
-                .collect()
-        };
-        if lines.is_empty() {
+        let rows = super::edit_rows_with(t, ix, EntKind::Note, &ref_of(id), "", tags)?;
+        let stored: Vec<StoredEdit<'_>> = rows
+            .iter()
+            .filter(|(f, _, _)| keys.is_empty() || keys.iter().any(|k| k == f))
+            .map(|(_, j, s)| (j.as_str(), *s, None))
+            .collect();
+        if stored.is_empty() {
             continue;
         }
-        let stored: Vec<StoredEdit<'_>> =
-            lines.iter().map(|(j, s)| (j.as_str(), *s, None)).collect();
         sink(id, &stored)?;
     }
     Ok(())

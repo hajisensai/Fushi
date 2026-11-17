@@ -2269,3 +2269,62 @@ Rust `SCHEMA` 没升（没加表 / 索引，分到的 40024 没用）；ABI 不�
 - 性能注记：`editRows` 让读回修改行在写事务里做（`Session::finish` → `attach_rows` 对每个碰过的实体调一次 `edit_rows`）。
   apkg 导入的 `_mapInto` 也走 `_emit(stamps: true)`，所以大批导入的写锁持有时间会变长；总工作量与原来的 Dart 回读相同，
   命令后被并发写插队的窗口反而没了。暂不改；若量到导入时写锁过长，可以只对非导入调用发 `editRows`。
+
+## 第四波 内核 C6 / C7（2026-11-17，分支 `pr/srs-gen4-k4-undo-tags`，基于 `pr/srs-gen4-switch` `9ad57c7109`）
+
+§26 T1 节的 C6（连续两步倒序撤销第二步被拒）与 C7（只改标签不前移修改时间）。只改 Rust，不改 Dart、不加表 / 索引，
+SCHEMA 不动（40021）。
+
+### C6 根因与修法
+
+- 根因：新代 `cmd/center.rs` `check_item` 把投影行的 `ctx` 当因果事实，交给 `registers::undo_verdict` 问「唯一活着的那条
+  见没见过那次写入」。不带旧戳的写入的投影上下文由 `derive.rs` `edit_lines_as` 现拼，`by_dot.retain(emit)` 在拼 ctx 之前，
+  只记「别的要输出的行」的 dot——判寄存器支配够用（`class.rs` `class_lines` 文件注释说明这是有意的），但被支配、不输出的旧
+  写入（倒序撤到第二步时被问的那次写入）永远不在里面，于是必判不能撤。协议 3 的行 ctx 是写入者维护的完整 DVV，所以协议 3 能过。
+- 修法（技术取舍）：「见没见过」改由真相层回答，不改 `edit_lines_as` 的 ctx 口径（给每行塞完整闭包会撑大读命令与缓存行、
+  改掉对拍结果）。
+  - `registers::undo_verdict` 的判据由调用方注入（`sees: &mut dyn FnMut(&UndoLive, &UndoTarget)`），值相同才问；唯一活着、
+    值相同的规则仍只有内核这一份。协议 3（`store/sync2/undo_check.rs`）传按行 ctx 判的闭包（`UndoLive::ctx_contains`），行为不变。
+  - `derive.rs` `Index::write_sees(k, w, q, class)`：带旧戳的写入看旧戳上下文（按类时过 `Canon::dvv` 换名），不带的看依赖 +
+    自己之前的前缀与旧闭包（复用 `seen`，含别名类换名）。拼行与它共用新抽出的 `edit_write`。
+  - `class.rs` `Index::class_write_sees`：按活行的规范 dot 在这个类的寄存器里找回操作（同 dot 多条取操作号最小的代表，同
+    `edit_lines_as`），再问 `write_sees`。找不到 = false，只有笔记 `tags` 合成行这样（无因果过去，协议 3 那一行也是空 ctx）。
+  - 可撤范围没有超出协议 3 语义：仍要求唯一活着、值相同、因果见过；并发同值（两条活着）照旧不能撤。
+
+### C7 根因与修法
+
+- 根因（交接文档原先猜的 `tag_ix` / 收脏方向不对）：缓存 `notes.updated_at` 本来就并上了 `tag_time`；浏览的 `edited:` 与按修改
+  时间排都读 `Source::edits`，新代 `cmd/browse.rs` `edits_with` 只取 `class_lines`（寄存器行），新代的标签增删是 `tag_ix` 的
+  OR-Set 操作、不进寄存器，于是漏掉。
+- 修法：`edits_with` 改用读命令同一份 `cmd/mod.rs` `edit_rows`（寄存器活行 + 合成 `tags` 行，`hlc` = 最后一条标签操作，与协议 3
+  `srs_field_edits` 同形）；`keys` 过滤按 `edit_rows` 给的键做，只要字段键时不带 `tags` 行。`note_browse_values` 只把 `f/` 键当字段
+  原文，`tags` 行只进最后改动时刻（测试钉住）。
+
+### 测试与验证
+
+- 新增 Rust：`center_tests.rs` `undo_check_reverse_steps_on_native_writes`（`writes::apply` 本机写入：两步 / 三步倒序撤、跨键穿插、
+  撤完又改成别的值不能撤）、`undo_check_reverse_steps_across_an_alias_class`（双盐场景跨设备：任意成员号 / 规范号点名结果相同；
+  并发同值不能撤；`write_sees` 本身的真 / 假；传递见过能撤；再改走不能撤；重建恒等）；`undo_check_matches_protocol_3` 加 N2
+  「y1 → y2 → 写回 y1」倒序序列；`browse_tests.rs` `browse_edits_count_the_last_tag_op_as_a_modification`。
+- 变异实测：`check_item` 的闭包改回按行 ctx 判、`edits_with` 滤掉 `tags` 行 → 上面 4 条 Rust 用例全红（含对拍那条）；同一变异编
+  quick DLL，engine `srs_edit_undo_test`「连续两步倒序撤」与 `srs_browse_test` 两条（「排序 … 修改时间」「行数据与笔记视图一致」）
+  变红；还原后工作区干净。
+- `native/fushi_fsrs`：`cargo fmt --check` 0；`cargo test --profile quick --lib -j 4` 0，1316 过 / 0 败 / 39 忽略（忽略的是存量）。
+- 真内核（本 worktree `--profile quick --features raw_sql` 编的 `fushi_fsrs.dll`，`FUSHI_FSRS_LIB`）：engine
+  `srs_edit_undo_test` + `srs_browse_test` 24/24；app `srs_review_inline_edit_test` 2/2（`heavy.dart --here`）。
+
+### 复核修复（2026-11-17，同分支）
+
+- 「见没见过」接进裁决后没有用例能区分（把注入的闭包改成恒真，相关用例全过）：补 `center_tests.rs`
+  `undo_check_refuses_a_lone_same_value_write_that_never_saw_ours`——0xf1:1 写 V、0xf2:1 见过它写 W、0xf3:1 只见过 0xf2:1 写回 V，
+  唯一活着、值相同、没见过 0xf1:1 → 不能撤；0xf4:1 见过两者再写 V → 能撤。原生写入按因果顺序投递时造不出「见过 0xf2:1 却没见过
+  它见过的 0xf1:1」这种依赖，判据在新代是保险（防不可信的对端操作），用例直接喂操作。
+- `write_sees` 旧戳分支的按类换名（`Canon::dvv`）没被钉住：补 `class.rs` `class_write_sees_renames_a_heritage_context`
+  （(w1, 2) 的旧上下文写的是改名后的 `merged:1`，按类见过 (w1, 1)；(w1, 5) 没见过；类里没有的 dot = false）。撤销路径上被问的是不带
+  旧戳的原生写入，这条分支答 true 的情形罕见。
+- 浏览 `edits_with` 只要字段键时也拼合成 `tags` 行（每份成员一次 `tag_ix` / `reg_ix` 查询 + 每条标签操作一次读）：拆出
+  `cmd/mod.rs` `edit_rows_with(.., tags: bool)`，`edits_with` 在 `keys` 为空或含 `tags` 时才拼；`browse.rs` 文件头「代价」写明。
+  `browse_edits_count_the_last_tag_op_as_a_modification` 加「键里点名 `tags` 时带它」两条断言。
+- 变异实测（各自单独套上、跑 `undo_check browse_ class_` 过滤、再还原）：闭包恒真 → 新 center 用例红；旧戳分支不换名 → 新 class
+  用例红；`tags` 恒 false → C7 用例红；`tags` 只在 `keys` 为空时拼 → C7 用例（新断言）红。还原后工作区干净。
+- `cargo fmt --check` 0；`cargo test --profile quick --lib -j 4` 0，1318 过 / 0 败 / 39 忽略（存量）。没改 Dart，没重跑 engine / app 测试。
