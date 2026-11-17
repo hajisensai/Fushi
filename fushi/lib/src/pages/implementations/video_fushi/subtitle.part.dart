@@ -3935,7 +3935,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       title: id.title,
     );
     if (existing != null) return existing;
-    if (!mounted) return null;
+    if (!context.mounted) return null;
     final VideoStreamSubtitleAudioStaging? staging = _startStreamWholeAudio();
     if (staging == null) return null;
     final FushiProgressDialogHandle dialog = showFushiProgressDialog(
