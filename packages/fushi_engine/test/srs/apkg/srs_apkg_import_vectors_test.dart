@@ -258,7 +258,7 @@ Future<Map<String, Object?>> _dump(
               in logs[card]!..sort(
                 (SrsReviewLog a, SrsReviewLog b) => a.id.compareTo(b.id),
               ))
-            l.toJson(),
+            _withoutDevice(l.toJson()),
         ],
     },
     'decks': <Object?>[
@@ -401,4 +401,13 @@ Set<String> _collectionIndexes(Uint8List apkg) {
     }
   });
   return names;
+}
+
+/// 日志的 HLC 去掉写入者那一段：新代日志的 HLC 就是它那条操作的（native/fushi_fsrs/src/store/gen4/cmd/writes.rs
+/// 文件头），写入者是本库随机生成的设备 ID，两个库各不相同；时刻与计数照比。
+Map<String, Object?> _withoutDevice(Map<String, Object?> log) {
+  final Object? hlc = log['hlc'];
+  if (hlc is! String) return log;
+  final List<String> parts = hlc.split(':');
+  return <String, Object?>{...log, 'hlc': parts.take(2).join(':')};
 }

@@ -10,7 +10,6 @@ import 'dart:io';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
-import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000f1';
@@ -39,7 +38,8 @@ void main() {
 
   setUp(() {
     dir = Directory.systemTemp.createTempSync('srs_fp_instance_');
-    path = p.join(dir.path, 'srs.db');
+    // 新代 SrsCore.open 收库目录（目录里放代际锁与 srs4.db），同一目录重开落到同一个库。
+    path = dir.path;
   });
 
   tearDown(() {

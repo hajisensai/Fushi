@@ -1946,3 +1946,194 @@ Rust `SCHEMA` 没升（没加表 / 索引，分到的 40024 没用）；ABI 不�
   `profile_uids` 等仍是 `Unwired("G9-5")`）。归 G9-5：接线后在落库之后对 `unit.profiles` 其余已在本机的 profile 调关联命令。
 - 上一节「没做」前三条不变（覆盖还原后第一次合并同一份旧事件输入多落一份归 G9；`source: "db"` 的 v1 旧行按请求 `now` 包；
   旧二进制真机互拒归 R0 / G11-5）。
+
+## T1 旧测试按新代重写（2026-11-17，分支 `pr/srs-gen4-t1-tests-to-gen4`，基于 `pr/srs-gen4-switch`）
+
+只改测试与测试辅助，不改 Rust、不改别的模块的生产代码。四处 SRS 测试在真内核上跑（`FUSHI_FSRS_LIB` 指向
+`pr/srs-gen4-switch` + G9-7 `8cf0aaea77` 合起来编的 `fushi_fsrs.dll`：不带 G9-7 时引擎侧约 100 条先崩在 ID 口径的
+`Null check`，看不到后面的问题），每条红逐条分成 A（测试为协议 3 写的，本模块改写 / 删除）、B（本波别的模块在修，
+只记归属）、C（没人认领的新代缺陷）。
+
+### 开库辅助（`packages/fushi_engine/test/srs/support/srs_test_storage.dart`）
+
+- `newTestSrsDir` 建临时库目录（新代 `SrsCore.open` 收目录）；`openTestSrsIn(dir, mode:)` 开库；`bindTestProfile`
+  给只用 `SrsCore` 的测试补 `identity` + `cache_config_set`（与 `SrsDbStore.open` 同序）；`openMigratedTestSrs`
+  把协议 3 冻结夹具放成封存旧库 `srs.db`、跑一次换代迁移、断言提交再开新代库（用户升级走的同一条路）。
+- `support/srs_bulk_fixture.dart` 的 `dumpSrsState` 改成只经公开读命令：导出的身份记录 / 修改记录 / 日志 / 不认识的
+  事件（设备 ID 与本机日志 ID 归一）、`status` 的 `ops|nextSeq`、`listNotes` / `allCardRows` 两层派生行。
+- 落库形态只有表里看得到、没有公开读命令的（彻底清除抹掉操作体里的内容、样式去重后的字节数、每台设备 seq 连续、
+  派生行没被重算的记号、某 profile 名下的原始操作），改走测试专用原始通道查**新代**的表（`ops` 主键
+  `k = 设备下标 << 40 | seq`、派生表 `notes`，ID 列按 `lower(hex(id))` 比），注释写明为什么没有公开读命令可用。
+
+### 分类结果（真内核）
+
+| 范围 | 跑的 | 绿 | 红 | 跳过 |
+| --- | --- | --- | --- | --- |
+| `packages/fushi_engine/test/srs`（`-j 4` 整跑；之后又改 2 个文件，见下） | 976 | 761 | 191 | 24 |
+| `fushi/test/srs`（`flutter test test/srs`；之后改的 2 个文件另跑转绿 3 条，见下） | 1273 | 1223 | 37 | 13 |
+| `packages/fushi_srs/test` | 226 | 226 | 0 | 0 |
+| `packages/fushi_server/test` 的 8 个 SRS 文件 | 43 | 17 | 26 | 0 |
+
+整跑之后又改的：引擎 `srs_write_preread_cost` / `srs_bulk_ops_roundtrips` 与 `srs_bulk_ops_equivalence` 串行重跑
+17 绿 4 红（清除计数、后继卡两条由红转绿；剩下 4 条见 B）；app `srs_content_memo_providers` /
+`srs_extension_profile_mining` / `srs_review_inline_edit` / `srs_import_entry` 重跑 14 绿 1 红。整跑里的 7 条 30 s 超时
+（`srs_bulk_ops_equivalence` 3、`srs_bulk_ops_roundtrips` 1、`srs_optimizer` 1、`srs_ankiconnect_resident`「大库」、
+`srs_rwkv_service_close_download`）是 `-j 4` 下本机满载，前两个文件串行重跑不超时。
+
+跳过的只剩环境门控的基准 / 浏览器 / node 用例与 G9-5 要整份删的 `srs_pull_before_migrate_test`（8 条），
+本模块没有新增也没有留下按波次挂名的 skip（原来那批 `G7-5: protocol 3 cache revision ...` 的 skip 全部改写或删除）。
+
+**A（本模块改写 / 删除，改后在真内核上全绿，除表里注明归 B / C 的那几条）**
+
+| 文件 | 改法 | 改后 |
+| --- | --- | --- |
+| `srs_raw_sql_canary` / `srs_fingerprint_instance` | 开库目录 | 全绿 |
+| `srs_stats_test` | 统计投影走 `statProjection`；日志用 Anki 来源（本机来源的会被内核重排程） | 全绿 |
+| `srs_profile_ownership_test` | 别的 profile 的 ID 在新代里等于不存在的 ID：比 B 的导出与视图不变、A 的 `ops` 增量与「不存在的 ID」相同 | 78/78 |
+| `srs_bulk_ops_equivalence_test` | `dumpSrsState` 走公开读；删牌组按规范 ID 序 | 9/10（1 条 B G9-5） |
+| `apkg/srs_apkg_stream_roundtrip_test` | 同上；HLC 不比；重导不改修改记录 | 5/5 |
+| `srs_stat_projection_test` | 投影经统计读取看；参考实现取导出日志 + `server_times`；删 2 条 cacheRev 升级 | 全绿 |
+| `srs_local_state_kernel_test` | 经另开副本的修订号 / 指纹 / 校时看；回包键改 `changed`/`replayed`；删 4 条协议 3 行级用例 | 4/4 |
+| `srs_stats_columns` / `srs_media_refs` / `srs_pending_decision` / `srs_new_card_frequency_order` / `srs_new_card_position` | 「老库 cacheRev N 开库补齐」改成「派生列经原始通道改坏后整层重建复原」（`expectRebuildRestores`，复核修复见下） | 全绿 |
+| `srs_intent_commands` / `srs_ctl_routes` | 操作条数改 `status.ops` | 全绿 |
+| `srs_db_store_test` | 并发正文记录改数导出的修改记录 | 14/16（1 C、1 B G11-4） |
+| `srs_write_lock_order` / `srs_style_dedup` / `srs_write_path_read_amplification` | 查新代 `ops` / `notes`；`noteIdsOfType` 按规范 ID 序（派生表无 rowid） | 2/2；4/5（1 B G8-7b）；7/8（1 C） |
+| `srs_write_statement_cost_test` | 删 cacheRev 那一项；开库命令 3 → 4（多一条 `collection_info`） | 3/4（1 B G9-5） |
+| `srs_write_preread_cost_test` | 操作 / 修改记录条数、被清除实体数改查新代 `ops` / `purge_ix` | 1/3（2 B G9-7） |
+| `srs_bulk_ops_roundtrips_test` | 「找后继卡」删协议 3 的 EXPLAIN 计划断言（新代没有 `srs_field_edits`），语句数常数照钉 | 7/8（1 B G9-5） |
+| `sync2/srs_sync2_command_lock_test` | 派生表触发器挂 `notes`；发件箱检查改 `status.ops` | 1/1 |
+| `srs_purge_test` | 修改记录键改走导出；操作体查新代 `ops` | 4/6（2 C） |
+| `apkg/srs_apkg_import_vectors_test` | 日志 HLC 去掉写入者段（两个库的设备 ID 不同） | 全绿 |
+| `apkg/srs_apkg_import_test` | 取词按笔记类型第一个字段（新代字段表按 ID 出） | 53/54（1 C） |
+| `srs_stats_vectors` / `srs_stats_report_parity` / `ankiconnect/srs_ankiconnect_vectors` | 冻结协议 3 夹具改走 `openMigratedTestSrs`；统计夹具的 schema 标记 13 → 9（开发版缺 `sync2_replay_pending` 等表） | 红（C1） |
+| `fushi/test/srs/srs_content_memo_providers` / `srs_extension_profile_mining` | 查新代 `notes` / `ops` | 1/1；5/5 |
+| 删：`srs_legacy_clock_conformance_test.dart` + `fixtures/legacy_clock_store_vectors.json` | 协议 3 旧写入者时钟状态，新代不迁（设计 §2.4） | — |
+| 删：`srs_cache_vectors_test.dart` | 协议 3 四张原始表灌库 → 三张缓存表逐行比；新代没有这些表。派生层与协议 3 缓存的对拍在 Rust：换代迁移的 parity（`store::gen4::migrate::tests::a_ready_library_is_migrated_sealed_and_opens` 断言 `parity == []`）；Dart 侧「重建真按真相重算」由 `expectRebuildRestores` 那 7 个文件锁住（复核修复）。**更正**：上一版写「由各『增量 = 重建』用例覆盖」不成立——那些用例重建前后比同一份值，重建是空操作也绿（复核 M3）。夹具与生成脚本留着（Rust `card_cache.rs` / `caches.rs` 注释引用） | — |
+
+`srs_write_path_roundtrips`「批量落库与逐条落库同结果」「新建牌组语句数不随笔记数增长」：在 switch 上先崩在 ID 口径
+（`Null check`），带 G9-7 全绿——归 **B G9-7**，测试不用改。300 条导入 30 s 超时：**上一版定成「并发满载」是错的**，复核时量到是导入随库大小超线性变慢（C8，
+见下）；本模块其余超时（`srs_ankiconnect_resident`「大库」、`srs_rwkv_service_close_download`、
+`fushi/test/srs/srs_import_entry`）单跑都过或属同一负载现象，`srs_rwkv_service_test` 的 42 条是 `fushi_rwkv` 库没装上
+（本 worktree 的 setup 停在 IdAudit 失败，ENV）。
+
+**B（本波别的模块在修，只记归属）**
+
+- **G9-5**（并入 / 带戳事件 / collection join）：`srs_backup_merge`、`srs_bulk_ops_equivalence`（同步那条）、
+  `srs_bulk_ops_roundtrips`、`srs_profile_merge`、`srs_write_statement_cost`（第 1 条）——`apply: stamped items carry a
+  foreign identity`；`srs_collection_binding`、`srs_profile_adopt_user_data`、`srs_profile_link_sync`、
+  `srs_profile_purge_single`——`meta_set_edit` / `profile_merge_mark` / `profile_purge` 没接；`fushi/test/srs` 的
+  `srs_profile_cleanup`（8）、`srs_join_first`（2）、`srs_pull_before_migrate`（6 红 + 8 跳过，G9-5 分支整份删）。
+- **G8-7b**（同步）：`media_hash` 没接 / `missing location` / `location root refused`——`srs_media_presence`、
+  `srs_media_sync`、`srs_style_dedup`（同步那条）、`sync2/srs_folder_location`、`sync2/srs_format_break`、
+  `sync2/srs_location_crypto*`；`sync2/srs_sync2_bootstrap_channel_entry`（协议 3 收段通道表）、`srs_sync2_head_gap`、
+  `srs_sync2_ingest_batching`、`srs_sync2_relay`、`sync2/srs_duplicate_notes`；`fushi/test/srs/srs_sync_scheduler`（9）。
+- **G9-7**（ID 口径）：`srs_browse_vectors`（夹具里的卡 ID 是旧口径，要在 G9-7 上重新生成）、`srs_write_path_roundtrips`；
+  `srs_write_preread_cost` 2 条——带 G9-7 的 Dart 后 `editFields` / `editFieldsBatch` / `writeEdits` 发命令前各多一条读
+  （守卫的就是「发命令前不读现值」），`applyLapisBackfill` 读命令 8 → 9（`entities` 4 + `edits` 4 + `lapis_backfill` 1）；
+  switch 上这两条先崩在 ID 口径、量不到，只能在 G9-7 上判是有意改了口径（改期望）还是回归（疑为「改前值按规范键取」
+  多出来的预读）。
+- **G10-2**（远程）：`fushi/test/srs/srs_remote_store_parity_guard` 第 1 条（G9-7 交接已记）。
+- **G10-3**（服务端）：`packages/fushi_server/test` 的 SRS 红全部（26 条：服务端拿不到所服务 profile 的新代库，
+  `Null check` / `notConfigured` / 读不到笔记；远程复习那几条同时涉及 G10-2）。
+- **G11-4**（备份）：`srs_db_store_test`「覆盖恢复备份后：换新化身」（协议 3 删表模拟恢复，新代的恢复路径归 G11-4）。
+- ~~下一波：`srs_legacy_store_migration_test`~~ → 复核时改写（A），见下「复核修复」。
+
+**C（没人认领的新代缺陷，见 upstream_bugs）**
+
+1. **未定因，疑为夹具问题（复核更正：不要当成 G7-2 已证实的缺陷）**。冻结协议 3 夹具（`srs_stats_vectors.db.gz` / `srs_ankiconnect_vectors.db.gz`）换代迁移判 aborted：报告
+   `profileVerdict = fail`，parity 的 notes / cards / stats 有 onlyNew / onlyOld，`existingCachesVsRebuilt` 20 条笔记
+   不同；switch 与 G9-7 的 DLL 一样。根因没在本模块定位到（`native/fushi_fsrs/src/store/gen4/migrate.rs` / `parity.rs`）。
+   复核补证：同一个头上 Rust 的 `store::gen4::migrate::tests`（17 条，含 `a_ready_library_is_migrated_sealed_and_opens`：
+   用当前协议 3 代码造的库迁移后 `parity == []`）全过；而统计夹具出自「V12 的表并进来之前的开发版本」（协议 3
+   `schema.rs` V14 注释），`existingCachesVsRebuilt` 里旧缓存与协议 3 现行代码重算的卡 ID 整批不同（`09cef016…` 对
+   `0338b9d8…`），说明夹具里的数据 / 缓存是旧开发代码按另一套派生规则写的；ankiconnect 夹具没改标记同样 aborted，来源没核。
+   所以先当夹具问题：要么用真实协议 3 发布版造的库跑一次同样的迁移（过了就按那份重生成两份冻结夹具，不再手改 schema 标记），
+   要么由内核 owner 判 parity 对这类开发版数据该给什么结论。重生成要一个能写协议 3 库的生成器（Dart 侧已没有协议 3 开库入口，
+   只能在 Rust 侧做），本模块没做。3 个文件的向量用例因此仍红（已知红，归属：换代迁移 owner 定因后决定重生成或改判）。
+2. 新设备首次出现不判「待确认」（BUG-4276 回归）：协议 3 在 `store/sync2/trust.rs:70 note_new_device` 判库非空时首见的
+   设备为 pending、它的删除 / 清除扣住；新代生产代码里没有任何地方写 `TRUST_PENDING`（只有 `cmd/writes_local.rs:136`
+   用户手动改信任与测试），`receive.rs:537` 只读 `trust_of`。别的设备的删除直接生效。红：引擎 `srs_devices_test`（4）、
+   `srs_db_store_test`「删除与对端并发修改」，app `srs_device_trust_test`（4）、`srs_conflicts_held_delete_test`（2）。
+3. 彻底清除不抹本机操作日志里的内容：`Truth::advance_purge`（`store/gen4/truth.rs:2881`，完整内容 → 空洞）在生产代码里
+   没有调用方，`cmd/writes.rs:989 purge` 只追加 删除 + Purge 两条操作。清除后 `ops` 里带原文的修改记录原样留着（实测
+   seq 6、7 两条仍含 `secret-snow`，`op_voids` / `op_alias` 都是 0 行）。红：`srs_purge_test` 2 条。
+4. Anki 导入日志的 HLC 被内核重打，同一条 revlog 的副本不再归成一个事件：选取的事件身份（`history.rs:118-139`
+   `EventKey`）对 Anki 来源只靠「由 revlog id 派生的 HLC」把换卡导入的副本归一（文件头 :19、:154），新代落库丢掉日志
+   自带的 HLC、改用操作自己的（`cmd/writes.rs:23` / `:643`）。同一条 revlog 落到血统里两张卡（Lapis → Fushi 卡片后再
+   导入、旧版写出的副本）就被算两次（统计 / 排程）。红：`srs_apkg_anki_revlog_dedupe_test` 2 条、`srs_apkg_import_test`
+   「① 导入 …」（锚点 HLC 不再是 `srsImportAnchorHlc`）。
+5. 笔记类型改名 / 改 CSS / 改字段说明也把这一类的笔记整类重算（H5 读放大回归）：`store/gen4/cache.rs:495-510`
+   `refresh_caches` 只按实体收脏，不看改的是哪个键。红：`srs_write_path_read_amplification_test`「名字 / CSS / 字段说明
+   不重算 …」。只是多算，不出错结果。
+6. 连续两步倒序撤销，第二步被拒：先撤 two（写回 1），再撤 one 时 `undo_check` 判不能撤。协议 3 允许「现值是它写下的
+   值、且现值记录的因果覆盖它」（`registers.rs:1344`）；疑为新代 `cmd/center.rs:207 edit_rows` 给出的记录 ctx 只含直接
+   支配的 dot、不含传递的，`x.ctx.contains(one)` 不成立——未逐行证实。switch 上同样红（G9-7 交接已记）。红：
+   `srs_edit_undo_test`「连续两步倒序撤」；app `srs_review_inline_edit_test` 最后一步（复核时定位：前面那段是测试时序问题，
+   已修；剩下的就是第二次倒序撤销不落库）。
+7. 标签只改不动字段时 `updated_at` 不前移：浏览 `edited:1` 漏掉只改了标签的笔记、按修改时间排序错位。新代
+   `updated_at` = 活着写入的最大 HLC 物理时刻（`cache.rs:1401`，标签取 `tag_time` `:726`），疑为改标签那条操作没进
+   `tag_ix` 的 `state >= 0` 或没收脏——未逐行证实。红：`srs_browse_test` 2 条。
+
+另记两处观察（不单列缺陷）：夹具 schema 标记与表不符时（开发版库），换代迁移的 prepare 在协议 3 命令失败时整个返回
+错误而不是判 blocked（`store/gen4/prepare.rs` `finish_profiles`）；`apply` 收到已在库里的日志 ID 会再追加一条操作
+（`cmd/writes.rs` `apply_in`），协议 3 同样如此，不是回归。
+
+### 没做 / 交给谁
+
+- 上面 C1～C7 交内核 owner；C2、C3 涉及安全 / 隐私语义（别的设备的删除直接生效、清除后原文还在本机），建议排在前面。
+- B 类测试等对应模块合进 switch 后在 integration 上整批复跑；本模块没碰它们（`srs_profile_ownership_test` 避开了 G10-2
+  改的那几处）。
+- `srs_p6_vectors_test`（A，没改）：1200 份历史连同服务器时刻直接灌协议 3 的 `srs_review_logs` / `srs_event_local`。
+  新代只有承袭来的服务器时刻，能保住这组向量的路只有「建协议 3 旧库 → 换代迁移 → 新代读命令」，而 C1 下冻结的协议 3
+  数据迁移判 aborted，Dart 侧也已没有建协议 3 库的入口；C1 修好后按 `openMigratedTestSrs` 改写（要一个能生成协议 3
+  库的 Rust 夹具生成器）。现在红在 setUpAll（2 条）。
+- `srs_note_type_store.dart:135` `noteIdsOfType` 的注释还写「按落库顺序」，新代是规范 ID 序；不是本模块的生产代码，没改。
+
+### T1 复核修复（2026-11-17，同分支）
+
+验证环境：`pr/srs-gen4-t1-tests-to-gen4` 合 G9-7 `8cf0aaea77` 的本地验证分支（不推送），`--profile quick --features raw_sql`
+编的 `fushi_fsrs.dll`。
+
+- **整层重建用例测不出重建坏掉（复核 major）**：新增 `support/srs_test_storage.dart` 的 `expectRebuildRestores(store, table, damage)`
+  ——先记下派生表（`notes` / `cards` / `stats`）全部行，经测试原始通道执行一条改坏语句（确认表已变），再 `rebuildCaches`，
+  断言逐行复原。7 个文件改用它：`srs_media_refs`（`media_refs`）、`srs_pending_decision`（`pending_decision` 错标 1）、
+  `srs_stats_columns`（`source_kind` / `source_title`）、`srs_new_card_frequency_order`（`freq_rank`）、`srs_new_card_position`
+  （`new_position`）、`srs_db_store`「缓存可由事件完整重建」（卡行打回新卡）、`srs_stat_projection` 5 处（删光 `stats`），
+  另 `apkg/srs_apkg_anki_revlog_dedupe` 2 处（C4 红在重建之前，不影响判定）。变异实测 M3（`rebuildCaches` 里的
+  `_sync2({'op': 'rebuild_caches'})` 换成空操作）：这几个文件新红 10 条（`srs_db_store` 另 2 条是改前就红的 C2 / G11-4），
+  还原后全绿。上一版「由『增量 = 重建』覆盖」那句已更正（见 A 表 `srs_cache_vectors_test` 行）。
+- **`openTestSrsAt` 桩删掉（复核 minor）**：22 个调用方改按库目录开库（`openTestSrsIn(tmp.path)`；同一临时目录要几个库的用
+  `testSrsSubdir`）。真实数据基准（`srs_review_open_real_data_bench`、`srs_concurrent_reads_bench`、
+  `srs_deck_settings_open_bench`、`srs_browse_bench`、`ankiconnect/srs_ankiconnect_real_db_bench`、`srs_stats_load_bench`）
+  改走 `openRealDataTestSrs`：一律在副本上跑，源是新代库目录就拷文件，是协议 3 的 `srs.db` 就经换代迁移（与用户升级同一条路）；
+  `srs_answer_study_roundtrips` 的基准缓存改成库目录。这些基准环境门控、默认跳过，本轮只编译过、没带真库跑。
+- **`dumpSrsState` 加 `serverTimes`（复核 minor）**：`server_times` 读命令，日志 ID 按同一套序号归一后排序比。用到它的
+  「应用一批对端事件 = 逐条应用」目前红在 G9-5（`apply: stamped items carry a foreign identity`），这一维的变异实测要等 G9-5
+  合进来后补。
+- **BUG-4626 判据在新代放宽（复核 minor，待 G9-5 确认）**：协议 3 在追加前拒绝写别人 profile 的 ID（`ownership.rs` foreign，
+  A 一条操作都不多）；新代按「别人的 ID = 不存在的 ID」，允许 A 的集合里留下指向 B 的实体 ID 的悬空操作。同库两集合互不
+  影响时没有后果；但设计稿 2026-11-11 §2（ID 去掉 uid 盐、并入 = 操作并集）下，A 并入 B 之后这些悬空操作可能对 B 的同一
+  实体生效——推测，未实测（并入命令 `profile_merge_mark` 等还没接线）。G9-5 接线后要补「A 写 B 的 ID → 并入 → B 不被改」
+  的用例；不成立就要在写入口或并入时丢掉悬空操作。`srs_profile_ownership_test` 文件头已写明。
+- **后继卡查询的计划测试（复核 nit）**：新代缓存刷新找后继 / 前身在 `gen4/cache.rs` `load_links`（`reg_ix` 按
+  `(col, ekind, key)` / `(col, ekind, ent)`），由 Rust `store::gen4::schema::tests::lookups_with_a_key_never_walk_the_whole_collection`
+  逐条 EXPLAIN cache.rs 的语句常量钉住；`srs_bulk_ops_roundtrips_test` 注释已指过去。
+- **`srs_legacy_store_migration_test` 不再无主（复核 nit）**：协议 3 的搬迁命令（`srsMigrateLegacyStore` /
+  `legacyImported`）在新代没有生产调用方（G7-5 起 `SrsStorage.open(legacy:)` 只做守卫）。测试改成锁住这条守卫：主库还有
+  协议 1 的表、库目录空 → 抛 `SrsLegacyMainDatabasePending`、不建 `srs4.db`、旧表一行不动；没有旧表 → 照常开；目录里已有
+  `srs.db` / `srs4.db` → 不拦。列序对拍那条留着。删掉的三条（逐字节搬迁 / 失败回滚 / 全新安装只写标记）测的是协议 3
+  搬迁命令，搬迁入口接回来时（G7-6 / D21）按新代重写。变异实测：去掉 `SrsStorage.open` 里的 `throw` → 第 2 条变红。4/4 绿。
+- **C8（新发现，没人认领）：`.apkg` 导入随库大小超线性变慢**。`BulkFixture.open`（基准包导入）实测 250 / 500 / 1000 / 2000 条
+  笔记 = 4.6 / 10.0 / 32.9 / 124.5 s（串行、`-j 1`），时间几乎全在内核命令 `import_drafts`（`SrsOpLedger`：500 条 7 批共 9.5 s、
+  单批最长 2.1 s；1000 条 14 批共 34.7 s、单批最长 4.1 s）——每批的代价随库里已有笔记数线性涨，总量 O(n²)。这就是上一版
+  「300 条导入 30 s 超时」与 `srs_ankiconnect_resident`「大库」（2000 条，放宽超时后单跑 129 s 才过）超时的根因，不是并发满载。
+  疑点（未逐行证实）：`gen4/cache.rs:485` 一次写入变动的 ID 超过 `MOVES_IN_PLACE`（256）就整层重建；或 `:561` 起「脏的笔记
+  类型把这一类全部笔记重算」（与 C5 同一处）——导入每批都碰同一个笔记类型的话，每批都会重算已有的全部笔记。要内核 owner
+  在 `import_drafts` 上量一下每批走的是哪条路。
+- **app `srs_review_inline_edit_test` 定位（上一版 not_done）**：上一版记的「清除格式后撤销按钮两分钟没亮」其实是测试的时序
+  问题（A）：加粗那步只等修订号，修订号到了页面还在「写库 → 发修订号 → 重读」的忙态里（实测 bump 之后约 360 ms 才回到
+  可按），紧接着注入选区、点「清除」，键是禁用的，点击被吞，之后再也等不到写入。改成加粗后也等撤销键重新可按（与后面几步
+  同一个等法）。改后跑到最后一步：连续第二次撤销（倒序撤回原值）没有写命令落库（`SrsDbStore.revision` 停住）——就是 C6
+  （`undo_check` 拒第二步），现在由同一条用例实证，不再是推断。变异：去掉新加的 `until`，复现「srsRevisionProvider 停在 1」。
+  带 G9-7 的本地验证：1 绿 1 红（红 = C6）。
+- 仍没做：`srs_p6_vectors_test`（同上，卡在 C1 与「没有协议 3 库生成器」）。

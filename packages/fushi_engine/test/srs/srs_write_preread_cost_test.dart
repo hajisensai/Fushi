@@ -57,9 +57,11 @@ List<Object?> _signals(SrsDbStore s) => <Object?>[
   s.deckTreeKey,
   s.rwkvScoresKey,
   s.statsFingerprint,
-  s.core.debugSelectRaw('SELECT COUNT(*) AS n FROM sync2_ops').single['n'],
+  // 新代真相表 `ops` 的全部操作与其中的修改记录（种类 2 = Edit），走测试专用的原始通道（这个函数是同步的，
+  // `status` 是异步命令）。协议 3 数的是 `sync2_ops` 与 `srs_field_edits`。
+  s.core.debugSelectRaw('SELECT COUNT(*) AS n FROM ops').single['n'],
   s.core
-      .debugSelectRaw('SELECT COUNT(*) AS n FROM srs_field_edits')
+      .debugSelectRaw('SELECT COUNT(*) AS n FROM ops WHERE kind = 2')
       .single['n'],
 ];
 
@@ -312,9 +314,11 @@ void main() {
       return ids;
     }
 
+    // 被清除的实体数：新代清除索引 `purge_ix`（native/fushi_fsrs/src/store/gen4/schema.rs，一个实体一条或多条
+    // 清除操作），协议 3 是 `sync2_purged`。
     int purged() =>
         s.core
-                .debugSelectRaw('SELECT COUNT(*) AS n FROM sync2_purged')
+                .debugSelectRaw('SELECT COUNT(DISTINCT ent) AS n FROM purge_ix')
                 .single['n']!
             as int;
 

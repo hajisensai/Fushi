@@ -221,17 +221,14 @@ void main() {
       db.writeAsBytesSync(gzip.encode(File(snap).readAsBytesSync()));
       tmp.deleteSync(recursive: true);
     } else {
-      final Directory dir = Directory.systemTemp.createTempSync('srs_vec_');
-      addTearDown(() {
-        try {
-          dir.deleteSync(recursive: true);
-        } on FileSystemException {
-          // 句柄晚释放。
-        }
-      });
-      final String path = p.join(dir.path, 'srs.db');
-      File(path).writeAsBytesSync(gzip.decode(db.readAsBytesSync()));
-      final TestSrs srs = await openTestSrsAt(path);
+      // 冻结库是协议 3 的 srs.db：放进新库目录当封存旧库、走一遍换代迁移（用户升级的同一条路）再开新代库，
+      // 新代的读命令对同一组向量。这份库出自 V12 的表并进来之前的开发版本（协议 3 schema.rs V14 那段注释），标着
+      // schema 13 却缺 `sync2_replay_pending` 等表，迁移的补完步骤（协议 3 `replay_pending`）会报缺表；夹具里的
+      // schema 标记因此改成 9，让协议 3 开库把 V10 起的步骤（全都可重放）补一遍，数据一行没动。
+      final TestSrs srs = await openMigratedTestSrs(
+        gzip.decode(db.readAsBytesSync()),
+        prefix: 'srs_vec_',
+      );
       s = await SrsDbStore.open(
         core: srs.core,
         profileUid: kStatsVecProfile,

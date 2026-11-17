@@ -1,4 +1,4 @@
-import 'package:drift/drift.dart' show Variable, driftRuntimeOptions;
+import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -8,7 +8,6 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 import 'support/srs_test_storage.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
-import 'support/srs_raw_sql.dart';
 
 /// 协议测试用的确定性假引擎（真实数值见 packages/fushi_srs 的 FFI 测试）。
 class _FakeEngine implements FsrsEngine {
@@ -249,18 +248,16 @@ void main() {
     await b.setSuspended(cardId, false);
     await syncAll(<SrsDbStore>[a, b]);
 
-    final int concurrentContent =
-        (await a.core
-                .customSelect(
-                  'SELECT COUNT(*) AS c FROM (SELECT 1 FROM srs_field_edits '
-                  "WHERE entity_kind = 'note' AND field_key = ? "
-                  'GROUP BY entity_id HAVING COUNT(*) > 1)',
-                  variables: <Variable<Object>>[
-                    Variable<String>('f/$sentence'),
-                  ],
-                )
-                .getSingle())
-            .read<int>('c');
+    // 导出（`read events`）是投影后的修改记录：互不支配的并发记录都留着。
+    final Map<String, int> perNote = <String, int>{};
+    for (final SrsEvent e in await a.exportAll()) {
+      if (e case SrsEditEvent(:final SrsFieldEdit edit)
+          when edit.entityKind == SrsEntityKind.note &&
+              edit.fieldKey == 'f/$sentence') {
+        perNote[edit.entityId] = (perNote[edit.entityId] ?? 0) + 1;
+      }
+    }
+    final int concurrentContent = perNote.values.where((int n) => n > 1).length;
     expect(concurrentContent, notes.length, reason: '前提：每条笔记的正文都留着两条并发记录');
     expect(await a.notesPendingDecision(), isEmpty, reason: '值相同不待裁决');
 
@@ -447,7 +444,12 @@ void main() {
     final String cardId = (await a.cardsOfNote(noteId)).single.id;
     await a.answer(cardId, 4);
     final SrsCardCacheRow before = (await a.cardRow(cardId))!;
-    await a.rebuildCaches();
+    // 经原始通道把卡行打回新卡形态：重建必须按日志重放回来（只比重建前后同值测不出重建坏掉）。
+    await expectRebuildRestores(
+      a,
+      'cards',
+      "UPDATE cards SET queue = 'new', due_day = NULL, reps = 0, last_log_id = NULL",
+    );
     final SrsCardCacheRow after = (await a.cardRow(cardId))!;
     expect(after.queue, before.queue);
     expect(after.dueDay, before.dueDay);

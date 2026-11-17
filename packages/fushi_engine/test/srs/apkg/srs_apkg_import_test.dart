@@ -2684,7 +2684,12 @@ void main() {
         seen.add(id!);
         final SrsCardCacheRow c = (await s.cardRow(id))!;
         if (c.queue != SrsQueue.newCard.wire) continue;
-        final String word = (await s.note(c.noteId))!.fields.values.first;
+        // 词 = 笔记类型的第一个字段（按字段序）。不取 `fields.values.first`：新代的字段表按字段 ID 出，换过笔记类型
+        // （新类型的字段 ID 另派生）之后第一项不一定是第一个字段。
+        final SrsNoteView n = (await s.note(c.noteId))!;
+        final String word = n.field(
+          (await s.noteType(n.noteTypeId))!.fields.first.id,
+        );
         if (!out.contains(word)) out.add(word);
       }
       return out;

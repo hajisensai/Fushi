@@ -35,7 +35,7 @@ void main() {
           // 句柄晚释放。
         }
       });
-      final TestSrs srs = await openTestSrsAt('${tmp.path}/b.db');
+      final TestSrs srs = openTestSrsIn(tmp.path);
       const String uid = '01928c3e-0000-7000-8000-0000000be4c7';
       final SrsDbStore store = await SrsDbStore.open(
         core: srs.core,
