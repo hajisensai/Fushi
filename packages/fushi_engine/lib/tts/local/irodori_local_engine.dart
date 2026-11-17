@@ -352,16 +352,22 @@ class IrodoriLocalEngine extends EngineChangeNotifier {
     return _launch();
   }
 
+  /// worker 在加载、跑任务或有任务排队：这时服务端不能起。
+  bool get _batchWorkerHoldsGpu =>
+      batchWorker.isBusy || batchWorker.phase == IrodoriBatchPhase.starting;
+
   Future<bool> _launch() async {
     final IrodoriInstallLayout? found = layout;
     if (found == null) return false;
     // 显存只够放一个模型实例：与 [_batchLaunch]（拉 worker 前停服务端）对称，worker
     // 正在加载或跑任务时不抢（返回 false，不记成服务端失败）；空闲的 worker 先停掉。
-    if (batchWorker.isBusy || batchWorker.phase == IrodoriBatchPhase.starting) {
-      return false;
-    }
+    if (_batchWorkerHoldsGpu) return false;
     if (batchWorker.phase != IrodoriBatchPhase.stopped) {
       await batchWorker.stop();
+      // 等 worker 退出的这段时间里可能又来了批量任务、worker 重新拉起（它那边看到服务
+      // 端还停着，不会去停它）：再判一次，否则两边都会起来抢显存。之后到
+      // [IrodoriLocalServer.start] 同步置 starting 之间没有 await，不会再漏。
+      if (_batchWorkerHoldsGpu) return false;
     }
     return server.start(launchSpec(found));
   }

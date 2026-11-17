@@ -158,23 +158,48 @@ class _MangaVoice {
 }
 
 class AppMangaRenderBackend implements MangaRenderBackend {
+  /// 依赖都显式注入（app 侧由 [AppMangaRenderBackend.fromServices] 从 [TtsServices]
+  /// 取）：[descriptorOf] = 制作侧按引擎 id 查描述符，[host] = 建引擎实例的宿主，
+  /// [batchWorker] = 声音包批处理 worker。
   AppMangaRenderBackend({
+    required TtsProviderDescriptor? Function(String providerId) descriptorOf,
+    required TtsHost host,
+    required IrodoriBatchWorker batchWorker,
+    required TtsAudioCache cache,
+    required FfmpegBackend ffmpeg,
+    required void Function(String source, String summary) log,
+    required List<TtsVoicePreset> presets,
+    Map<String, List<String>> clipSources = const <String, List<String>>{},
+  }) : _descriptorOf = descriptorOf,
+       _host = host,
+       _cache = cache,
+       _ffmpeg = ffmpeg,
+       _log = log,
+       _presets = presets,
+       _batchWorker = batchWorker,
+       _clipSources = clipSources;
+
+  /// 用 app 的 TTS 单例装配（引擎注册表 + 声音包 + 本机 Irodori 的 worker）。
+  factory AppMangaRenderBackend.fromServices({
     required TtsServices tts,
     required TtsAudioCache cache,
     required FfmpegBackend ffmpeg,
     required void Function(String source, String summary) log,
     required List<TtsVoicePreset> presets,
-    IrodoriBatchWorker? batchWorker,
     Map<String, List<String>> clipSources = const <String, List<String>>{},
-  }) : _tts = tts,
-       _cache = cache,
-       _ffmpeg = ffmpeg,
-       _log = log,
-       _presets = presets,
-       _batchWorker = batchWorker ?? tts.localIrodori.batchWorker,
-       _clipSources = clipSources;
+  }) => AppMangaRenderBackend(
+    descriptorOf: tts.productionDescriptor,
+    host: tts.host,
+    batchWorker: tts.localIrodori.batchWorker,
+    cache: cache,
+    ffmpeg: ffmpeg,
+    log: log,
+    presets: presets,
+    clipSources: clipSources,
+  );
 
-  final TtsServices _tts;
+  final TtsProviderDescriptor? Function(String providerId) _descriptorOf;
+  final TtsHost _host;
   final TtsAudioCache _cache;
   final FfmpegBackend _ffmpeg;
   final void Function(String source, String summary) _log;
@@ -212,9 +237,7 @@ class AppMangaRenderBackend implements MangaRenderBackend {
       if (candidate.id == presetId) preset = candidate;
     }
     if (preset == null) throw const MangaLineFailure('voice_missing');
-    final TtsProviderDescriptor? descriptor = _tts.productionDescriptor(
-      preset.providerId,
-    );
+    final TtsProviderDescriptor? descriptor = _descriptorOf(preset.providerId);
     if (descriptor == null || !descriptor.isAvailable) {
       throw const MangaLineFailure('voice_unavailable');
     }
@@ -223,7 +246,7 @@ class AppMangaRenderBackend implements MangaRenderBackend {
     }
     return _MangaVoice(
       preset: preset,
-      provider: descriptor.create(preset, _tts.host),
+      provider: descriptor.create(preset, _host),
       identity: descriptor.audioIdentity(preset),
       gate: TtsRenderGate(ttsEffectiveConcurrency(descriptor, preset)),
     );

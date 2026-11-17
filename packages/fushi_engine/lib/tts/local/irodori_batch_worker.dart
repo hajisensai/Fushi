@@ -414,7 +414,16 @@ class IrodoriBatchWorker extends EngineChangeNotifier {
   _RunningJob? _job;
   Future<void> _queue = Future<void>.value();
 
-  bool get isBusy => _job != null;
+  /// 已经 [run] 进来、还没出结果的任务数（含排队的）。
+  int _pending = 0;
+
+  /// 进行中的 [stop]（等旧进程退出、释放显存）。新的 [start] 先等它，免得新旧两个
+  /// 进程同时占着显存。
+  Future<void>? _stopping;
+
+  /// 有任务在跑或在排队。排队的也算：它在 `await start()` 那一拍还没设 [_job]，
+  /// 这时要是被当成空闲停掉（服务端抢显存），这批句子就会白白记成 `worker_exited`。
+  bool get isBusy => _pending > 0;
 
   void _set(IrodoriBatchPhase next, [IrodoriBatchFailure? why]) {
     phase = next;
@@ -454,6 +463,8 @@ class IrodoriBatchWorker extends EngineChangeNotifier {
     loadingStage = null;
     device = null;
     _set(IrodoriBatchPhase.starting);
+    final Future<void>? stopping = _stopping;
+    if (stopping != null) await stopping;
     final IrodoriBatchLaunch? spec = await _launch();
     if (spec == null || !File(spec.executable).existsSync()) {
       finish(false, IrodoriBatchFailure.notInstalled);
@@ -556,8 +567,16 @@ class IrodoriBatchWorker extends EngineChangeNotifier {
   }) {
     final Completer<IrodoriBatchResult> result =
         Completer<IrodoriBatchResult>();
+    _pending++;
     _queue = _queue.then((_) async {
-      result.complete(await _run(job, onLine: onLine, cancel: cancel));
+      try {
+        result.complete(await _run(job, onLine: onLine, cancel: cancel));
+      } on Object catch (e, st) {
+        result.completeError(e, st);
+      } finally {
+        _pending--;
+        notifyListeners();
+      }
     });
     return result.future;
   }
@@ -626,6 +645,16 @@ class IrodoriBatchWorker extends EngineChangeNotifier {
     final Process? process = _process;
     _set(IrodoriBatchPhase.stopped);
     if (process == null) return;
+    final Future<void> stopping = _awaitExit(process);
+    _stopping = stopping;
+    try {
+      await stopping;
+    } finally {
+      if (identical(_stopping, stopping)) _stopping = null;
+    }
+  }
+
+  Future<void> _awaitExit(Process process) async {
     _send(process, kIrodoriShutdownRequest);
     try {
       await process.exitCode.timeout(stopTimeout);
