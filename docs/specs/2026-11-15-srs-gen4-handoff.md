@@ -3269,3 +3269,41 @@ profile uid 不变」断言，不分 `bound` / `joined`。
 **没做 / 留给后面的**：
 - `SrsDeferredProfileMerge` 仍有读者（`srs_history_page.dart` 的「并入暂缓」行），不是死代码，本节不动。
 - `docs/agent/subsystem-map.md` 里协议 2 断代那段仍提到 `srs_location_migration.dart`（历史描述），没改。
+
+### 复核修复（2026-11-18，同分支，针对 `297301f89a`）
+
+- **协议 1 迁移的内核死命令一并删掉**（上一轮只删了 Dart 半边）：`open_v1`（只给 v1 位置的按名字整份封装解密）与
+  `media_bind_unbound`（只给 v1 媒体迁移补绑定）在 Dart 已无调用方。删两代分发器的匹配臂与登记（`ffi.rs` 的
+  `CHANNEL_TRANSPARENT` / `crypto_command`、`gen4/dispatch.rs` 的分类表与分发）、实现（`sync2/media_seal.rs` `open_v1`、
+  `store/sync2/media.rs` `sync2_media_bind_unbound`、`gen4/cmd/media_sync.rs` `bind_unbound`）与测试（`tests_break.rs`、
+  `sync_complete_tests.rs` 各一条；`media_seal.rs` 那条改成只断言整份封装是坏对象）。`srs_media_sync_test`「BUG-3865」原来用
+  `media_bind_unbound` 造「别的设备绑定过」，改成真有一台设备传上去、同步过来。`oldroot.rs` 文件头说的是 v3.3.0 里的旧入口，注明
+  「本仓已删」。本文 §7.4 对照表、§8.2 与 §22（G8-7b）里列着这两条命令的行是当时的事实，不改别人的节，以本条为准。
+- **R10 的内核判据补上 loc 标记**：`location_root` 判「新根立过」的证据从「围栏 || `v4Data`」改成「围栏 || `v4Data` || 新根下有 loc
+  标记」——loc 标记总在新根 meta 之后写，内核自己从 `locs` 就看得到，不全靠 Dart 传来的 `v4Data`。Dart 闸同样把 loc 标记算进
+  `v4Data`（`srs_sync2_round.dart`，`loc/` 只列一次，传给内核的也是这一份）。
+- **新根整个被删、只剩围栏：不再永久报「暂时读不到」**。v4 下没有 meta、设备 / 媒体数据、loc 标记，而 v3 是围栏时，新根多半被用户 /
+  网盘整个删了（也可能是列目录一时为空），等下去不会自己好。仍然不重建（媒体根 / `kdf` 从围栏推不出来，按任务书「不重写」），但换
+  一个机读码：内核 `ERR_NEW_ROOT_MISSING` = Dart `kSrsLocationNewRootMissing` = `srs_location_new_root_missing`；新根下还列得到东西
+  时仍是 `srs_location_meta_unavailable`。界面：`srsSyncErrorReason` 与文件夹位置行给 `srs_sync_location_new_root_missing`，说明
+  恢复办法。**人工恢复**：确认网盘上 `fushi-srs/<集合目录>/v4/` 确实没了，删掉同目录下 `v3/meta.json`（围栏），再同步一次——这一轮
+  按新集合重建（新根 meta 的媒体根是 `v4`，围栏重新立起，本机的数据重新传上去；真内核用例实测）。代价：v4 上原有的段已经随目录
+  没了，只能由各设备从本机重新上传；还没上线的设备的新代数据要等它上线；协议 3 时代留在 `v3/media/` 的媒体不再被这个集合引用
+  （设备本机有的会重新传到 `v4/media/`）。**定案（所有者授权自定）：不做「确认后按新集合重建」的界面入口**——自动或一键重建都要替
+  用户断定「v4 真的没了、不是一时列不到」，判错就是 R10 本身；人工删围栏这一步把这个判断留给看得到网盘的人。
+- **承袭日志的提示只对待确认作者**：`unvouched` 包含待确认与已拒绝的作者（两者都不替传，都让旧根不能退役），但「等你确认」对用户
+  有意拒绝的设备是误导。内核 `heritage_plan` 另回 `pending`（`unvouched` 里信任状态是 `TRUST_PENDING` 的）；Dart
+  `SrsSync2Report.heritagePending`；调度器的 `ValueListenable` 改名 `heritagePending`，只装待确认的；页面经新 provider
+  `srsHeritagePendingProvider`（`srs_app_runtime.dart`，页面测试可注入）听它，行函数改名 `srsHeritagePendingRow`（key 与 i18n 不变）。
+
+测试：`sync_tests.rs` `an_unreadable_new_root_meta_behind_a_fence_is_not_rebuilt` 加两段（无围栏只有 loc 标记 → meta 不可用；只剩
+围栏 → `ERR_NEW_ROOT_MISSING`）；`sync_heritage_trust_tests.rs` 新增 `a_rejected_heritage_author_is_unvouched_but_not_pending`、原用例
+加 `pending` 断言；`srs_sync4_folder_test` 两条真内核用例（meta 与围栏都读不到、再藏掉设备目录只剩 loc 标记 → 不重建，放回照常；
+v4 整个删掉 → 新根不见了、不重建，删围栏后重建、媒体根 v4、重新上传）；`srs_sync4_round_test`（`pending` 进报告）；
+`srs_sync_scheduler_test`（改用 `heritagePending`）；`srs_history_page_test` 新增 widget 用例（集合空 → 无行；两台待确认 → 行与
+标题；清空 → 消失），MD3 / Apple 各一遍。变异：内核 `v4_listed` 去掉 `!locs.is_empty()` → `an_unreadable_new_root_meta…` 红
+（`sync_tests.rs:1012`，围栏 + loc 标记的那段变成 `new_root_missing`）；`pending` 不按信任状态筛 → `a_rejected_heritage_author…`
+红（`sync_heritage_trust_tests.rs:147`）；还原后工作区干净。
+
+另：全量 `cargo test --profile quick --lib` 一次里 `store::gen4::files::tests::a_fresh_install_appears_under_the_final_name_only_when_complete`
+红过一次（目录里多出 `SRS4.DB-SHM.tmp`），单跑 3/3 绿，本分支没碰 `files.rs`——高负载下的偶发，留给新代库文件层的所有者看。
