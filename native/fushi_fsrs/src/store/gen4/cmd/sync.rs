@@ -47,6 +47,7 @@ use crate::gen4::location::{
     device_path, fence3, loc_path, meta4, parse_v4_path, tombstone_head,
 };
 use crate::gen4::op::chain_next4;
+use crate::gen4::recut::{MAGIC as RECUT_MAGIC, peek_recut4};
 use crate::gen4::relay::{MAGIC as RELAY_MAGIC, open_any4, peek_relay4};
 use crate::gen4::segment::{MAGIC as NATIVE_MAGIC, NativeItem, pack_native, peek_native_header};
 use crate::gen4::{MIN_READER, PROTOCOL};
@@ -901,7 +902,8 @@ pub fn plan(t: &Truth<'_>, col: i64, req: &Value, heads: &[Vec<u8>]) -> Result<V
 
 // ---------------------------------------------------------------------- 3. 收段
 
-/// `ingest {profile, key?, maxItems?}`，字节块 = 这一批从位置上读到的段（原生段 `FSG4`、中继件 `FRL4`、承袭段 `FSH4`）。
+/// `ingest {profile, key?, maxItems?}`，字节块 = 这一批从位置上读到的段（原生段 `FSG4`、中继件 `FRL4`、重切中继件 `FRX4`、
+/// 承袭段 `FSH4`）。
 /// `maxItems`（收段让路）：这一个事务最多做多少项新工作（[Receiver::with_budget]）；用完就停，回包 `rest` = 交完了的段数、
 /// `spent` = 这一片做的新工作数（落库 + 新进等待缓冲 + 收尾投出的等待项；调用方判「这一片有没有进展」只认它，不拿
 /// `landed` 当代理——依赖方的段排在前面时，一片可能全停进等待缓冲、一项都不落）；`drainMore` = 收尾投递等待缓冲时预算
@@ -933,8 +935,11 @@ pub fn ingest(
             break;
         }
         let heritage = b.starts_with(HERITAGE_MAGIC);
+        let recut = b.starts_with(RECUT_MAGIC);
         let author = if heritage {
             peek_heritage_header(b).ok().map(|h| h.uploader)
+        } else if recut {
+            peek_recut4(b).ok().map(|p| p.header.device)
         } else if b.starts_with(RELAY_MAGIC) {
             peek_relay4(b).ok().map(|p| p.header.device)
         } else {
@@ -963,8 +968,9 @@ pub fn ingest(
             rest = i;
             break;
         }
-        // 本机当前身份的原生段：比链找分叉点（收过的部分与本机日志相同，接得上的已经接回来了）。
-        if !heritage && author == Some(me.device) {
+        // 本机当前身份的原生段：比链找分叉点（收过的部分与本机日志相同，接得上的已经接回来了）。别人重切的本机的段
+        // （`FRX4`）不是本机签的、空洞处没有链可比，不拿来找分叉点。
+        if !heritage && !recut && author == Some(me.device) {
             let items = open_any4(b, &public, key).and_then(|o| {
                 let header = o.header.clone();
                 let items = o.verify()?.collect::<Result<Vec<_>, _>>()?;
@@ -1482,10 +1488,12 @@ pub fn location_sealed(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, St
     Ok(sealed_answer(loc_state_row(t, col, location)?))
 }
 
-/// 段文件 / 中继件 / 承袭段对**它所在的位置**而言是不是密封的：三种协议 4 的件都是 `魔数[4] | 版本 | flags（bit0）` 开头。
+/// 段文件 / 中继件 / 重切中继件 / 承袭段对**它所在的位置**而言是不是密封的：四种协议 4 的件都是
+/// `魔数[4] | 版本 | flags（bit0）` 开头。
 pub fn sealed_at_location(prefix: &[u8]) -> bool {
     (prefix.starts_with(NATIVE_MAGIC)
         || prefix.starts_with(RELAY_MAGIC)
+        || prefix.starts_with(RECUT_MAGIC)
         || prefix.starts_with(HERITAGE_MAGIC))
         && prefix.get(5).is_some_and(|f| f & 1 != 0)
 }
@@ -1554,6 +1562,8 @@ pub(crate) mod unit {
         assert!(sealed_at_location(b"FSG4\x01\x01rest"));
         assert!(!sealed_at_location(b"FSG4\x01\x00rest"));
         assert!(sealed_at_location(b"FRL4\x01\x01"));
+        assert!(sealed_at_location(b"FRX4\x01\x01"));
+        assert!(!sealed_at_location(b"FRX4\x01\x00"));
         assert!(sealed_at_location(b"FSH4\x01\x01"));
         assert!(!sealed_at_location(b"FSG2\x01\x01"));
         assert!(!sealed_at_location(b"FSG4\x01"));

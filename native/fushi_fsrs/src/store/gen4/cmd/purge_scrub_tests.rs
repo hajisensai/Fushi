@@ -9,8 +9,9 @@ use serde_json::json;
 use super::dispatch_tests::{T1, open};
 use super::sync_relay_tests::{relay, relay_segs};
 use super::sync_tests::{Dev, Loc, Opts, cmd, round, sync_all};
-use super::tests::{N1, N2};
-use crate::gen4::relay::open_relay4_items;
+use super::tests::{N1, N2, N3};
+use crate::gen4::recut::{self, open_recut4_items, peek_recut4};
+use crate::gen4::relay::{open_relay4_items, peek_relay4};
 use crate::gen4::segment::NativeItem;
 use crate::store::ffi::ffsrs_store_close;
 use crate::store::gen4::files::GEN4_FILE;
@@ -78,12 +79,29 @@ fn a_purge_leaves_no_bytes_of_the_text_in_the_library_files() {
     }
 }
 
-/// [d] 的转发缓存里，作者 [author] 的件中载荷带着 [needle] 的操作条数（解开中继件逐项看，不靠库文件的字节——段体是
-/// zstd 压缩的，按字节扫不出来）。
-fn relay_ops_carrying(d: &mut Dev, author: &str, needle: &str) -> usize {
+/// 解开一份不封装的转发件：中继件 `FRL4`（作者签）或重切件 `FRX4`（重切者签）。签名者的公钥由 [key_of] 按设备给。
+/// 回 (重切者, 全部项)。
+fn piece_items(
+    bytes: &[u8],
+    key_of: &dyn Fn(&Id) -> [u8; 32],
+) -> (Option<Id>, Vec<NativeItem>) {
+    if bytes.starts_with(recut::MAGIC) {
+        let r = peek_recut4(bytes).unwrap().recutter;
+        let (_, items) = open_recut4_items(bytes, &key_of(&r), None).unwrap();
+        (Some(r), items)
+    } else {
+        let a = peek_relay4(bytes).unwrap().header.device;
+        let (_, items) = open_relay4_items(bytes, &key_of(&a), None).unwrap();
+        (None, items)
+    }
+}
+
+/// [d] 的转发缓存里，作者 [author] 的件：(份数, 其中重切件的份数, 载荷带着 [needle] 的操作条数)。逐项解开看，不靠库
+/// 文件的字节——段体是 zstd 压缩的，按字节扫不出来。
+fn kept_of(d: &mut Dev, author: &str, needle: &str) -> (usize, usize, usize) {
     let author = Id::parse(author).unwrap();
     d.direct(|t, col| {
-        let public = t.device_key(col, &author)?.ok_or("no key")?;
+        let me = t.self_identity(col)?.ok_or("no identity")?;
         let pieces: Vec<Vec<u8>> = {
             let mut stmt = t
                 .conn()
@@ -95,12 +113,20 @@ fn relay_ops_carrying(d: &mut Dev, author: &str, needle: &str) -> usize {
             rows.collect::<rusqlite::Result<_>>()
                 .map_err(|e| e.to_string())?
         };
-        let mut n = 0;
-        for p in pieces {
-            let (_, items) = open_relay4_items(&p, &public, None).map_err(|e| format!("{e:?}"))?;
+        let key_of = |d: &Id| {
+            if *d == me.device {
+                me.public()
+            } else {
+                t.device_key(col, d).unwrap().unwrap()
+            }
+        };
+        let (mut recuts, mut n) = (0, 0);
+        for p in &pieces {
+            let (r, items) = piece_items(p, &key_of);
+            recuts += usize::from(r.is_some());
             n += ops_carrying(&items, needle);
         }
-        Ok(n)
+        Ok((pieces.len(), recuts, n))
     })
 }
 
@@ -115,24 +141,34 @@ fn ops_carrying(items: &[NativeItem], needle: &str) -> usize {
         .count()
 }
 
-/// 作者 [author] 自己库里记着的本机公钥。
-fn public_of(author: &mut Dev) -> [u8; 32] {
-    let id = Id::parse(&author.device()).unwrap();
-    author.direct(|t, col| t.device_key(col, &id)?.ok_or_else(|| "no key".to_owned()))
+/// 设备 [d] 自己的 (设备, 公钥)。
+fn key_pair(d: &mut Dev) -> (Id, [u8; 32]) {
+    d.direct(|t, col| {
+        let me = t.self_identity(col)?.ok_or("no identity")?;
+        Ok((me.device, me.public()))
+    })
 }
 
-/// 明文位置 [loc] 上作者 [author]（公钥 [public]）的 `rly-` 转发件：(份数, 载荷带着 [needle] 的操作条数)。
-fn relayed_at(loc: &Loc, author: &str, public: &[u8; 32], needle: &str) -> (usize, usize) {
-    let (mut files, mut n) = (0, 0);
+/// 明文位置 [loc] 上作者 [author] 的 `rly-` 转发件：(份数, 重切者, 载荷带着 [needle] 的操作条数)。[keys] = 认得的
+/// 设备公钥。
+fn relayed_at(
+    loc: &Loc,
+    author: &str,
+    keys: &[(Id, [u8; 32])],
+    needle: &str,
+) -> (usize, Vec<Id>, usize) {
+    let key_of = |d: &Id| keys.iter().find(|(k, _)| k == d).unwrap().1;
+    let (mut files, mut by, mut n) = (0, Vec::new(), 0);
     for (k, bytes) in loc {
         if !(k.contains(author) && k.contains("/rly-")) {
             continue;
         }
         files += 1;
-        let (_, items) = open_relay4_items(bytes, public, None).unwrap();
+        let (r, items) = piece_items(bytes, &key_of);
+        by.extend(r);
         n += ops_carrying(&items, needle);
     }
-    (files, n)
+    (files, by, n)
 }
 
 /// 这一轮 plan 要拉的文件里有没有作者 [author] 的。
@@ -145,11 +181,24 @@ fn fetches_from(plan: &serde_json::Value, author: &str) -> bool {
         .any(|p| p.as_str().unwrap().contains(author))
 }
 
-/// 转发缓存（`cmd/sync_relay.rs`，交接 §26 C3 复核）：a 只连 L1、c 只连 L2、b 两个都连。b 收下 a 的段、留着原文准备
-/// 转发到 L2；a 清除之后 b 收到清除，同一个事务里留着的原文删掉；作者重切出带空洞的同名段之后 b 为转发再拉一次，转发到
-/// L2 的件里没有被清除的内容，c 照样收齐其余的。
+/// [d] 在 [loc] 上同步 [n] 轮，回最后一轮 ingest 的等待数（没有可收的段时为 0）。
+fn settle(d: &Dev, loc: &mut Loc, location: &str, now: i64, n: usize) -> u64 {
+    let mut pending = 0;
+    for _ in 0..n {
+        let r = round(d, loc, location, now, Opts::default());
+        pending = r
+            .ingest
+            .last()
+            .map_or(0, |v| v["pending"].as_u64().unwrap());
+    }
+    pending
+}
+
+/// 转发缓存（`cmd/sync_relay.rs`，交接 §26 C3 / §28）：a 只连 L1、c 只连 L2、b 两个都连。b 收下 a 的段、留着原文准备
+/// 转发到 L2；a 清除之后 b 收到清除，同一个事务里把留着的那份**原地重切**（换成 b 签的、带空洞的同名件），不等作者重切
+/// 就转发到 L2，c 照样收齐其余的。
 #[test]
-fn a_purge_drops_the_relay_copy_and_only_the_voided_segment_is_relayed_on() {
+fn a_purge_recuts_the_relay_copy_in_place_and_relays_the_recut() {
     let mut a = Dev::new("c3ra");
     let mut b = Dev::new("c3rb");
     let c = Dev::new("c3rc");
@@ -163,35 +212,37 @@ fn a_purge_drops_the_relay_copy_and_only_the_voided_segment_is_relayed_on() {
     round(&a, &mut l1, "L1", T1 + 2, plain);
     round(&b, &mut l1, "L1", T1 + 3, plain);
     let da = a.device();
-    assert_eq!(relay_ops_carrying(&mut b, &da, "secret-c3-relay"), 1);
+    assert_eq!(kept_of(&mut b, &da, "secret-c3-relay"), (1, 0, 1));
 
     purge(&a, T1 + 4, N1);
     round(&a, &mut l1, "L1", T1 + 5, plain);
     round(&b, &mut l1, "L1", T1 + 6, plain);
-    assert_eq!(relay_ops_carrying(&mut b, &da, "secret-c3-relay"), 0);
+    assert_eq!(
+        kept_of(&mut b, &da, "secret-c3-relay"),
+        (1, 1, 0),
+        "recut in place"
+    );
+    assert_eq!(kept_of(&mut b, &da, "keep-c3").2, 1);
     assert_eq!(bytes_carrying(&b.dir.0, "secret-c3-relay"), 0);
 
-    // 下一轮为转发再拉作者重切的同名段（带空洞），转发到 L2。
-    round(&b, &mut l1, "L1", T1 + 7, plain);
-    assert!(relay_ops_carrying(&mut b, &da, "keep-c3") > 0);
-    relay(&b, &mut l2, "L2", None, T1 + 8);
-    let public = public_of(&mut a);
-    let (files, carrying) = relayed_at(&l2, &da, &public, "secret-c3-relay");
+    relay(&b, &mut l2, "L2", None, T1 + 7);
+    let keys = [key_pair(&mut a), key_pair(&mut b)];
+    let (files, by, carrying) = relayed_at(&l2, &da, &keys, "secret-c3-relay");
     assert!(files > 0, "a's segments reach L2");
+    assert_eq!(by, vec![keys[1].0], "signed by b, the recutter");
     assert_eq!(carrying, 0);
-    for _ in 0..2 {
-        round(&c, &mut l2, "L2", T1 + 9, plain);
-    }
+    assert_eq!(settle(&c, &mut l2, "L2", T1 + 8, 2), 0);
     assert_eq!(c.field(N2), Some(json!("keep-c3")));
     assert_eq!(bytes_carrying(&c.dir.0, "secret-c3-relay"), 0);
 }
 
-/// 清除之前 b 已经把 a 的段转发到了 L2：b 收到清除时把 L2 上那份 `rly-` 改成待删，下一次转发确认就删掉；作者重切之后
-/// b 再把带空洞的同名段转发过去。L2 上从此没有被清除的内容，c 照样收齐其余的。
+/// 清除之前 b 已经把 a 的段转发到了 L2（之后留着的那份因为每个位置都有了被删掉）：b 收到清除时把 L2 上那份 `rly-`
+/// 改成待删，下一次转发从 b 自己的日志重切出同名件、把它覆盖掉（不等作者重切）；b 不再为转发去拉 a 的原文。L2 上从此
+/// 没有被清除的内容，c 照样收齐其余的。
 #[test]
-fn a_purge_takes_back_what_was_already_relayed_to_another_location() {
+fn a_purge_takes_back_what_was_already_relayed_and_rewrites_it_recut() {
     let mut a = Dev::new("c3ta");
-    let b = Dev::new("c3tb");
+    let mut b = Dev::new("c3tb");
     let c = Dev::new("c3tc");
     let (mut l1, mut l2) = (Loc::new(), Loc::new());
     let plain = Opts::default();
@@ -203,71 +254,131 @@ fn a_purge_takes_back_what_was_already_relayed_to_another_location() {
     round(&a, &mut l1, "L1", T1 + 2, plain);
     round(&b, &mut l1, "L1", T1 + 3, plain);
     relay(&b, &mut l2, "L2", None, T1 + 3);
-    let (da, public) = (a.device(), public_of(&mut a));
-    assert_eq!(relayed_at(&l2, &da, &public, "secret-c3-taken").1, 1);
+    let da = a.device();
+    let keys = [key_pair(&mut a), key_pair(&mut b)];
+    assert_eq!(relayed_at(&l2, &da, &keys, "secret-c3-taken").2, 1);
+    assert_eq!(relay_segs(&mut b), 0, "relayed everywhere, the copy is dropped");
 
     purge(&a, T1 + 4, N1);
     round(&a, &mut l1, "L1", T1 + 5, plain);
     round(&b, &mut l1, "L1", T1 + 6, plain);
     relay(&b, &mut l2, "L2", None, T1 + 6);
-    assert_eq!(relayed_at(&l2, &da, &public, "secret-c3-taken").1, 0);
+    let (files, by, carrying) = relayed_at(&l2, &da, &keys, "secret-c3-taken");
+    assert_eq!((files, carrying), (1, 0), "overwritten by the recut");
+    assert_eq!(by, vec![keys[1].0]);
+    let r = round(&b, &mut l1, "L1", T1 + 7, plain);
+    assert!(!fetches_from(&r.plan, &da), "no refetch: {}", r.plan);
+    assert_eq!(relay_segs(&mut b), 0);
 
-    round(&b, &mut l1, "L1", T1 + 7, plain);
-    relay(&b, &mut l2, "L2", None, T1 + 8);
-    let (files, carrying) = relayed_at(&l2, &da, &public, "secret-c3-taken");
-    assert!(files > 0, "a's re-cut segment is relayed again");
-    assert_eq!(carrying, 0);
-    for _ in 0..2 {
-        round(&c, &mut l2, "L2", T1 + 9, plain);
-    }
+    assert_eq!(settle(&c, &mut l2, "L2", T1 + 9, 2), 0);
     assert_eq!(c.field(N2), Some(json!("keep-c3")));
     assert_eq!(bytes_carrying(&c.dir.0, "secret-c3-taken"), 0);
 }
 
-/// 清除由 b 发起、作者 a 一直没回来重切：b 删掉留着的原文；为转发再拉回来的还是原文，不留，记下拒收；a 没写新 head
-/// 之前不再为它拉；这位作者的转发整台跳过（`incomplete`），L2 上没有它的件。
+/// 第三轮复核的 major：清除由**转发者** b 发起、作者 a 一直不回来。只连 L2 的 c 照样收到 a 没被清除的内容与 b 此后的
+/// 全部操作（b 的依赖点着 a 的 seq，拿不到 a 这一段就一条都投不了）；L2、c 的库里都没有被清除的原文。c1 在清除之前已经
+/// 收过原文（之后收到 b 的清除自己落空洞），c2 只在清除之后来（只见过重切件）。
 #[test]
-fn an_unrecut_segment_carrying_purged_text_is_refused_once_and_not_refetched() {
+fn a_purge_by_the_relay_does_not_cut_off_a_location_only_it_feeds() {
     let mut a = Dev::new("c3fa");
     let mut b = Dev::new("c3fb");
+    let c1 = Dev::new("c3fc1");
+    let c2 = Dev::new("c3fc2");
     let (mut l1, mut l2) = (Loc::new(), Loc::new());
     let plain = Opts::default();
     round(&b, &mut l1, "L1", T1, plain);
     round(&b, &mut l2, "L2", T1, plain);
-    a.write(T1 + 1, N1, "secret-c3-refuse");
+    round(&c1, &mut l2, "L2", T1, plain);
+    round(&c2, &mut l2, "L2", T1, plain);
+    a.write(T1 + 1, N1, "secret-c3-relay-purge");
     a.write(T1 + 1, N2, "keep-c3");
     round(&a, &mut l1, "L1", T1 + 2, plain);
     round(&b, &mut l1, "L1", T1 + 3, plain);
+    round(&b, &mut l2, "L2", T1 + 3, plain);
+    relay(&b, &mut l2, "L2", None, T1 + 3);
+    assert_eq!(settle(&c1, &mut l2, "L2", T1 + 4, 2), 0);
+    assert_eq!(c1.field(N1), Some(json!("secret-c3-relay-purge")));
     let da = a.device();
-    assert_eq!(relay_ops_carrying(&mut b, &da, "secret-c3-refuse"), 1);
 
-    purge(&b, T1 + 4, N1);
-    assert_eq!(relay_segs(&mut b), 0);
-    let r = round(&b, &mut l1, "L1", T1 + 5, plain);
-    assert!(
-        fetches_from(&r.plan, &da),
-        "fetched again for relay: {}",
-        r.plan
-    );
-    assert_eq!(relay_segs(&mut b), 0, "the refetched original is refused");
-    let r = round(&b, &mut l1, "L1", T1 + 6, plain);
-    assert!(!fetches_from(&r.plan, &da), "not refetched: {}", r.plan);
-
-    let (v, _) = cmd(
+    purge(&b, T1 + 5, N1);
+    b.write(T1 + 6, N3, "b-after-purge");
+    round(&b, &mut l1, "L1", T1 + 7, plain);
+    round(&b, &mut l2, "L2", T1 + 7, plain);
+    relay(&b, &mut l2, "L2", None, T1 + 7);
+    let (outbox, _) = cmd(
         b.h,
         "relay_outbox",
-        T1 + 7,
+        T1 + 8,
         json!({"location": "L2", "key": null}),
         &[],
     );
-    assert_eq!(v["incomplete"], json!([da]), "{v}");
-    relay(&b, &mut l2, "L2", None, T1 + 7);
-    let public = public_of(&mut a);
-    assert_eq!(relayed_at(&l2, &da, &public, "secret-c3-refuse"), (0, 0));
-    assert_eq!(bytes_carrying(&b.dir.0, "secret-c3-refuse"), 0);
+    assert_eq!(outbox["incomplete"], json!([]), "{outbox}");
+    let keys = [key_pair(&mut a), key_pair(&mut b)];
+    let (files, by, carrying) = relayed_at(&l2, &da, &keys, "secret-c3-relay-purge");
+    assert_eq!((files, carrying), (1, 0));
+    assert_eq!(by, vec![keys[1].0]);
+    assert_eq!(bytes_carrying(&b.dir.0, "secret-c3-relay-purge"), 0);
+    // 作者签的原文（L1 上 a 自己的段）再到 b 手里：收段照常（本机已有），转发缓存不留。
+    let originals: Vec<Vec<u8>> = l1
+        .iter()
+        .filter(|(k, _)| k.contains(&da) && k.contains("/seg-"))
+        .map(|(_, v)| v.clone())
+        .collect();
+    assert_eq!(originals.len(), 1);
+    let (v, _) = cmd(b.h, "ingest", T1 + 8, json!({}), &originals);
+    assert_eq!(v["segments"], json!(1), "{v}");
+    assert_eq!(
+        kept_of(&mut b, &da, "secret-c3-relay-purge"),
+        (0, 0, 0),
+        "not kept"
+    );
+
+    for c in [&c1, &c2] {
+        assert_eq!(settle(c, &mut l2, "L2", T1 + 9, 3), 0, "nothing left waiting");
+        assert_eq!(c.field(N2), Some(json!("keep-c3")));
+        assert_eq!(c.field(N3), Some(json!("b-after-purge")));
+        assert_eq!(c.field(N1), None);
+        assert_eq!(bytes_carrying(&c.dir.0, "secret-c3-relay-purge"), 0);
+    }
 }
 
-/// 新库：写连接开着 `secure_delete`，库上记着「从建库起就开着」。
+/// 一次清除跨过了作者的切点（a 的段 1..=1 与 2..=3，清除 N1 = seq 1、2）、而 b 已经没留这两段：b 的日志里两条空洞合成
+/// 一个区间，切点 1 处的链值靠合并时记下的记号还在，两段都能从日志重切；c 收齐 a 其余的与 b 之后的。
+#[test]
+fn a_purge_across_the_authors_cut_point_still_recuts_both_segments() {
+    let mut a = Dev::new("c3xa");
+    let mut b = Dev::new("c3xb");
+    let c = Dev::new("c3xc");
+    let (mut l1, mut l2) = (Loc::new(), Loc::new());
+    let plain = Opts::default();
+    round(&b, &mut l1, "L1", T1, plain);
+    round(&b, &mut l2, "L2", T1, plain);
+    round(&c, &mut l2, "L2", T1, plain);
+    a.write(T1 + 1, N1, "secret-c3-cut-one");
+    round(&a, &mut l1, "L1", T1 + 2, plain);
+    a.write(T1 + 3, N1, "secret-c3-cut-two");
+    a.write(T1 + 3, N2, "keep-c3");
+    round(&a, &mut l1, "L1", T1 + 4, plain);
+    round(&b, &mut l1, "L1", T1 + 5, plain);
+    relay(&b, &mut l2, "L2", None, T1 + 5);
+    assert_eq!(relay_segs(&mut b), 0);
+    let da = a.device();
+    let keys = [key_pair(&mut a), key_pair(&mut b)];
+    assert_eq!(relayed_at(&l2, &da, &keys, "secret-c3-cut").0, 2);
+
+    purge(&b, T1 + 6, N1);
+    b.write(T1 + 7, N3, "b-after-purge");
+    round(&b, &mut l2, "L2", T1 + 8, plain);
+    relay(&b, &mut l2, "L2", None, T1 + 8);
+    let (files, by, carrying) = relayed_at(&l2, &da, &keys, "secret-c3-cut");
+    assert_eq!((files, carrying), (2, 0));
+    assert_eq!(by, vec![keys[1].0, keys[1].0]);
+
+    assert_eq!(settle(&c, &mut l2, "L2", T1 + 9, 3), 0);
+    assert_eq!(c.field(N2), Some(json!("keep-c3")));
+    assert_eq!(c.field(N3), Some(json!("b-after-purge")));
+    assert_eq!(bytes_carrying(&c.dir.0, "secret-c3-cut"), 0);
+}
 
 /// 新库：写连接开着 `secure_delete`，库上记着「从建库起就开着」。
 #[test]

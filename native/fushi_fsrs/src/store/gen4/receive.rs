@@ -61,6 +61,13 @@
 //! [key] 是这一段所在位置的密钥（明文位置 = None）。加密位置上读到明文落盘的件（[OpenNative::stored_sealed] /
 //! 承袭段头 `encrypted` 为假）一律拒（[Reject::PlainOnSealed]，BUG-4299 的口径：加密位置上绝不收明文）；明文位置上读到
 //! 加密的件而本机没有密钥，[Defer::Undecryptable]。
+//!
+//! # 重切中继件
+//!
+//! `FRX4`（`gen4/recut.rs`）= 转发者把本机已彻底清除的操作换成空洞、用自己的钥匙签出的作者段（区间与首尾链值同原段）。
+//! 先要有作者的公钥（读过它的 head）与重切者的公钥，重切者必须是本机信任的设备（本机自己也算），否则
+//! [Defer::UnknownSigner] / [Defer::UntrustedUploader]；验过重切者签名之后与原生段同一套核对与落库（空洞落成空洞，
+//! 本机已有的完整操作不因此被清掉）。
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -77,6 +84,7 @@ use crate::gen4::heritage::{
     peek_heritage_header,
 };
 use crate::gen4::op::chain_next4;
+use crate::gen4::recut::{self, open_recut4, peek_recut4};
 use crate::gen4::relay::{self, open_any4, peek_relay4};
 use crate::gen4::segment::{NativeHeader, NativeItem, peek_native_header};
 use crate::gen4::translate::{T_VERSION, translate};
@@ -92,7 +100,7 @@ use crate::sync2::vv::{OpId, Vv};
 pub enum Defer {
     /// 本机没记过作者（承袭段：上传者）的公钥：先读它的 head。
     UnknownSigner(Id),
-    /// 承袭段的上传者还没被本机信任（D20）。
+    /// 承袭段的上传者 / 重切中继件（`FRX4`）的重切者还没被本机信任（D20）。
     UntrustedUploader(Id),
     /// 加密的件、本机没有（或拿错了）密钥。
     Undecryptable,
@@ -314,7 +322,7 @@ impl<'t, 'c> Receiver<'t, 'c> {
 
     // ------------------------------------------------------------ 原生段
 
-    /// 收一个原生段（`seg-…`，`FSG4`）或中继件（`rly-…`，`FRL4`）。[key] = 它所在位置的密钥。
+    /// 收一个原生段（`seg-…`，`FSG4`）、中继件（`rly-…`，`FRL4`）或重切中继件（`rly-…`，`FRX4`）。[key] = 它所在位置的密钥。
     pub fn native(&mut self, bytes: &[u8], key: Option<&CollectionKey>) -> Result<Taken, String> {
         self.cut = false;
         let taken = self.native_inner(bytes, key)?;
@@ -322,12 +330,14 @@ impl<'t, 'c> Receiver<'t, 'c> {
     }
 
     fn native_inner(&mut self, bytes: &[u8], key: Option<&CollectionKey>) -> Result<Taken, String> {
-        let peeked = if bytes.starts_with(relay::MAGIC) {
-            peek_relay4(bytes).map(|p| p.header)
+        let peeked = if bytes.starts_with(recut::MAGIC) {
+            peek_recut4(bytes).map(|p| (p.header, Some(p.recutter)))
+        } else if bytes.starts_with(relay::MAGIC) {
+            peek_relay4(bytes).map(|p| (p.header, None))
         } else {
-            peek_native_header(bytes)
+            peek_native_header(bytes).map(|h| (h, None))
         };
-        let header: NativeHeader = match peeked {
+        let (header, recutter): (NativeHeader, Option<Id>) = match peeked {
             Ok(h) => h,
             Err(e) => return Ok(reject_of(e)),
         };
@@ -341,7 +351,23 @@ impl<'t, 'c> Receiver<'t, 'c> {
         let Some(public) = self.public_of(&device)? else {
             return Ok(Taken::Deferred(Defer::UnknownSigner(device)));
         };
-        let open = match open_any4(bytes, &public, key) {
+        let opened = match recutter {
+            // 重切中继件（`gen4/recut.rs`）：段由重切者签名担保，只收本机信任的重切者签的（同承袭段的上传者，D20）。
+            // 作者的公钥照样要先有（读过它的 head，首见设备的信任判定已经走过）。
+            Some(r) => {
+                let Some(rp) = self.public_of(&r)? else {
+                    return Ok(Taken::Deferred(Defer::UnknownSigner(r)));
+                };
+                if !matches!(&self.me, Some((me, _)) if *me == r)
+                    && self.t.trust_of(self.col, &r)?.is_some()
+                {
+                    return Ok(Taken::Deferred(Defer::UntrustedUploader(r)));
+                }
+                open_recut4(bytes, &rp, key)
+            }
+            None => open_any4(bytes, &public, key),
+        };
+        let open = match opened {
             Ok(o) => o,
             Err(e) => return Ok(reject_of(e)),
         };
@@ -1065,6 +1091,7 @@ mod tests {
     use crate::gen4::op::Op4;
     use crate::gen4::op::tests::id;
     use crate::gen4::relay::wrap_relay4;
+    use crate::gen4::recut::{recut4, void_one};
     use crate::gen4::segment::pack_native;
     use crate::gen4::segment::tests::{chain_of, coll};
     use crate::store::gen4::derive::tests::{assert_rebuild_is_identity, dump, op};
@@ -1422,6 +1449,47 @@ mod tests {
     }
 
     /// 中继件与原段收法相同；转发到加密位置的件必须封装，明文转发到加密位置的拒。
+    /// 重切中继件（`gen4/recut.rs`）：重切者没记过公钥 = 等它的 head，待确认 = 等确认（这期间依赖作者的操作留在等待
+    /// 缓冲）；签名不是前缀里那个重切者的 = 坏件；受信之后照原生段落库，空洞落成空洞，等着的操作随即投递。
+    #[test]
+    fn recut_pieces_need_a_trusted_recutter_and_land_their_voids() {
+        const C: u8 = 0x23;
+        let conn = open_in_memory().unwrap();
+        let t = Truth::new(&conn);
+        let col = setup(&t);
+        let a: Vec<Op4> = (1..=3).map(|s| nop(A, s, &[])).collect();
+        let items = ops_items(&a);
+        let (header, _) =
+            pack_native(coll(), id(A), 1, &items, CHAIN_ZERO, &key_of(A), None).unwrap();
+        let voided = void_one(&items, 1, CHAIN_ZERO, 2).unwrap();
+        let cut = |signer: u8, named: u8| {
+            recut4(&header, &voided, &key_of(signer), id(named), None).unwrap()
+        };
+        // B 的操作依赖 A3：拿不到 A 这一段就投不了。
+        let b = seg_of(B, CHAIN_ZERO, &ops_items(&[nop(B, 1, &[(A, 3)])]), None);
+
+        let (got, _) = take(&t, col, Settle::Incremental, &[&cut(C, C)], None);
+        assert_eq!(got, vec![Taken::Deferred(Defer::UnknownSigner(id(C)))]);
+        t.tx(|t| t.set_trust(col, &id(B), Some(TRUST_PENDING), NOW))
+            .unwrap();
+        let (got, r) = take(&t, col, Settle::Incremental, &[&cut(B, B), &b], None);
+        assert_eq!(got[0], Taken::Deferred(Defer::UntrustedUploader(id(B))));
+        assert_eq!(r.waiting, 1);
+        assert_eq!(t.last_of(col, &id(A)).unwrap(), 0);
+
+        t.tx(|t| t.set_trust(col, &id(B), None, NOW)).unwrap();
+        let (got, _) = take(&t, col, Settle::Incremental, &[&cut(A, B)], None);
+        assert_eq!(got, vec![Taken::Rejected(Reject::BadSignature)]);
+        let (got, r) = take(&t, col, Settle::Incremental, &[&cut(B, B)], None);
+        assert_eq!(got, vec![landed(3, 0, 0)]);
+        assert_eq!((r.delivered, r.waiting), (1, 0));
+        let at = |s: u64| t.entry(col, &OpId { device: id(A), seq: s }).unwrap().unwrap();
+        assert!(at(1).is_whole() && at(3).is_whole());
+        assert!(!at(2).is_whole(), "the recut void lands as a void");
+        assert_eq!(t.last_of(col, &id(B)).unwrap(), 1);
+        assert_eq!(t.chain_at(col, &id(A), 3).unwrap(), header.last_chain);
+    }
+
     #[test]
     fn relay_pieces_land_like_the_segments_they_carry() {
         let conn = open_in_memory().unwrap();

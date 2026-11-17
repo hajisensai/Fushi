@@ -2312,6 +2312,11 @@ impl<'c> Truth<'c> {
     }
 
     /// 写一个空洞区间，并与两侧同样标志的相邻区间合并。
+    ///
+    /// 原生日志的区间只记区间末的链值；合并时被合进区间内部的那几处区间末链值（左邻的末尾、本区间的末尾）记成链值
+    /// 记号（`log_marks`），不随合并丢掉：清除只拿走内容，链值是公开的、算得出的事实，转发要按作者的切点重切段
+    /// （`sync_state.rs` [Truth::recut_from_log]，交接 §28），切点可能正落在一次跨段的清除里面。[Truth::chain_known]
+    /// 在空洞内部先查这些记号。承袭日志（`fps`）不记：那里的记号是切承袭段的切点。
     fn insert_void_run(
         &self,
         dev: i64,
@@ -2331,6 +2336,11 @@ impl<'c> Truth<'c> {
         if first > 1 {
             if let Some(left) = self.run_at_or_before(dev, first - 1)? {
                 if left.end() + 1 == first && mergeable(&left, &fps) {
+                    if fps.is_none() {
+                        if let Some(c) = &left.chain {
+                            self.put_mark(dev, left.end(), &chain_of(c)?)?;
+                        }
+                    }
                     self.delete_run(left.k)?;
                     k = left.k;
                     len += left.n;
@@ -2354,6 +2364,11 @@ impl<'c> Truth<'c> {
                 .map_err(sql)?;
             if let Some(right) = right {
                 if mergeable(&right, &fps) {
+                    if fps.is_none() {
+                        if let Some(c) = &chain {
+                            self.put_mark(dev, first + n - 1, &chain_of(c)?)?;
+                        }
+                    }
                     self.delete_run(right.k)?;
                     len += right.n;
                     fps = match (fps, right.fps) {
@@ -2966,8 +2981,8 @@ impl<'c> Truth<'c> {
                     self.insert_void_run(dev, target.seq, 1, None, Some(chain), A_LOCAL)?;
                 }
             }
-            // 转发（`cmd/sync_relay.rs`，G8-7b）手里这条内容的副本：本机缓存的作者段原文删掉、已转发到各位置的件改成
-            // 待删（`sync_state.rs` [Truth::relay_purged]），同一个事务。
+            // 转发（`cmd/sync_relay.rs`，G8-7b）手里这条内容的副本：本机缓存的作者段换成本机签的重切件、已转发到各位置
+            // 的件改成待删（由重切件同名重写或删掉；`sync_state.rs` [Truth::relay_purged]），同一个事务。
             self.relay_purged(col, &target.device, target.seq)?;
             // 字节层：原文还在空闲空间与 WAL 旧帧里，提交之后要收尾（`scrub.rs`）。同一个事务里记下欠着的收尾。
             super::scrub::mark_due(self.conn)?;
@@ -3084,7 +3099,20 @@ impl<'c> Truth<'c> {
         self.chain_at_dev(dev, seq)
     }
 
-    /// 原生日志在 [seq] 处可比的链值：[seq] 落在本机空洞区间内部（不是区间末）= None，那里没有链值；其余同
+    /// 链值记号正好记在 [seq] 上的那个。
+    fn mark_at(&self, dev: i64, seq: u64) -> Result<Option<Chain>, String> {
+        self.conn
+            .prepare_cached("SELECT chain FROM log_marks WHERE dev = ?1 AND seq = ?2")
+            .map_err(sql)?
+            .query_row(params![dev, seq as i64], |r| r.get::<_, Vec<u8>>(0))
+            .optional()
+            .map_err(sql)?
+            .map(|c| chain_of(&c))
+            .transpose()
+    }
+
+    /// 原生日志在 [seq] 处可比的链值：[seq] 落在本机空洞区间内部（不是区间末）、又没有合并时留下的记号 = None，那里
+    /// 没有链值；其余同
     /// [Truth::chain_at]（不在日志里、不是原生日志等照样报错，不当成「比不了」）。
     pub fn chain_known(&self, col: i64, device: &Id, seq: u64) -> Result<Option<Chain>, String> {
         if seq == 0 {
@@ -3096,7 +3124,8 @@ impl<'c> Truth<'c> {
         if self.dev_row(dev)?.kind == Some(DEV_NATIVE) && seq <= self.last(dev)? {
             if let Some(run) = self.run_at_or_before(dev, seq)? {
                 if run.end() > seq {
-                    return Ok(None);
+                    // 空洞内部：合并区间时记下的区间末链值（[Truth::insert_void_run]）还在就有。
+                    return self.mark_at(dev, seq);
                 }
             }
         }

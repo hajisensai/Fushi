@@ -20,12 +20,15 @@
 //! - 只存作者受信（`trust` 没有行）、不是本机（当前或旧身份）的原生段。
 //! - 每次确认转发（[relay_ack]）与读到 head（`plan` 调 [prune]）之后，删掉**每个**位置都已有的段：那个位置上作者的
 //!   head 已覆盖到段尾、head 引用了它，或本机已转发过去。
-//! - **彻底清除**（设计 §3.2「清除后原文不在本机」，交接 §26 C3）：本机把一条操作落成空洞时，覆盖它的转发件在同一个
-//!   事务里整份删掉（`Truth::advance_purge`；作者签过的段改不出空洞，只能整份删）。之后收到的段若在本机已清除的 seq
-//!   上还带着完整内容（作者还没重切），[keep] 不留，并记下拒收时作者 head 的代号（`gen4_rrefuse/…`）：作者写出更新
-//!   的 head 之前 [wanted_for_relay] 不再为它拉这一段。作者重切出的同名段带着空洞，照常留下、转发。这期间这位作者的
-//!   转发整台跳过（[relay_outbox] 的 `incomplete`），不发半截。
-//!   已经转发到别的位置上的 `rly-` 不在本机，本模块不处理（交接 §28）。
+//! - **彻底清除**（设计 §3.2「清除后原文不在本机」，交接 §26 C3 / §28）：作者签过的段改不出空洞，本机把一条别的设备的
+//!   操作落成空洞时，由本机**重切**（`gen4/recut.rs` 的 `FRX4`：同区间、同首尾链值、本机签名）代替原文转发——
+//!   - 缓存里覆盖它的那份在同一个事务里原地换成重切件（`Truth::relay_purged`）；已经转发到各位置上的同名 `rly-`
+//!     改成待删，[relay_outbox] 把它当缺的、用重切件同名重写（重写确认后回到在用，不再删）。
+//!   - 缓存里没有这一段（从没留、或已删）而别的位置缺它：[relay_outbox] 从本机日志重切（`Truth::recut_from_log`），
+//!     [wanted_for_relay] 不再为它去拉原文；收到的段若在本机已清除的 seq 上还带着完整内容，[keep] 不留。
+//!   这样只经本机拿数据的位置照样收得到这位作者其余的操作，进而收得到本机此后依赖它们的操作；被清除的内容不经本机
+//!   离开。读者只收本机信任的重切者签的件（`receive.rs`）。本机日志里两端的链值落在空洞区间内部（一次清除跨过了这段
+//!   的切点）时重切不出来，这一段退回「不转发」（`incomplete`），等作者自己重切（交接 §28）。
 //!
 //! 本机在同步着 ≥ 2 个位置之前就收过的段当时没留原文：`plan` 读到作者 head 时把「本机早有、没留原文、别的位置缺」的
 //! 段再要一次（[wanted_for_relay]），收段时按本机已有跳过、只留原文，下一轮就能转发。转发时缺的段本机还凑不齐原文的
@@ -41,8 +44,9 @@ use super::sync::{meta_get, meta_set};
 use super::sync_oldroot::former_identities;
 use crate::gen4::head::Head4;
 use crate::gen4::location::{V4File, device_path, parse_v4_path, relay_head_name};
+use crate::gen4::recut::{MAGIC as RECUT_MAGIC, open_recut4_items, peek_recut4, recut4, rewrap_recut4};
 use crate::gen4::relay::{open_relay4_items, peek_relay4, wrap_relay4};
-use crate::gen4::segment::NativeItem;
+use crate::gen4::segment::{NativeHeader, NativeItem};
 use crate::store::gen4::schema::sql;
 use crate::store::gen4::truth::Truth;
 use crate::sync2::id::Id;
@@ -63,6 +67,10 @@ pub(crate) const LOC_KEYS_SQL: &str =
 /// 存一份可转发的段（`relay_segs` 的唯一约束：同一作者同一区间同一链尾只存一份）。
 pub(crate) const RELAY_PUT_SQL: &str = "INSERT OR IGNORE INTO relay_segs (col, device, first, last, tag, piece) \
      VALUES (?1, ?2, ?3, ?4, ?5, ?6)";
+
+/// 同一段存着的是重切件（`FRX4`）时换成作者签的那份（唯一约束的自动索引，等值点查）。
+pub(crate) const RELAY_AUTHOR_OVER_RECUT_SQL: &str = "UPDATE relay_segs SET piece = ?6 \
+     WHERE col = ?1 AND device = ?2 AND first = ?3 AND last = ?4 AND tag = ?5 AND substr(piece, 1, 4) = X'46525834'";
 
 /// 取一份可转发的段（唯一约束的自动索引，等值点查）。
 pub(crate) const RELAY_GET_SQL: &str = "SELECT piece FROM relay_segs \
@@ -90,37 +98,8 @@ fn rhead_range(col: i64) -> (String, String) {
     (format!("gen4_rhead/{col}/"), format!("gen4_rhead/{col}0"))
 }
 
-/// `srs_meta` 键：作者 [device] 的段 [name] 因为带着本机已清除的内容被 [keep] 拒收过，值 = 拒收时记下的作者 head 代号。
-fn refused_key(col: i64, device: &Id, name: &str) -> String {
-    format!("gen4_rrefuse/{col}/{}/{name}", device.text())
-}
-
-fn meta_del(t: &Truth<'_>, key: &str) -> Result<(), String> {
-    t.write(|| {
-        t.conn()
-            .prepare_cached("DELETE FROM srs_meta WHERE key = ?1")
-            .map_err(sql)?
-            .execute([key])
-            .map_err(sql)?;
-        Ok(())
-    })
-}
-
-/// 这一段 [name] 被拒收过、而作者此后还没写出比那时更新的 head（[gen] = 眼下读到的作者 head 代号）：不必再拉。
-fn refused_since(
-    t: &Truth<'_>,
-    col: i64,
-    device: &Id,
-    name: &str,
-    gen: u64,
-) -> Result<bool, String> {
-    Ok(meta_get(t, &refused_key(col, device, name))?
-        .and_then(|v| v.parse::<u64>().ok())
-        .is_some_and(|at| gen <= at))
-}
-
-/// 不封装的中继件 [piece]（作者 [header]）在本机已清除（空洞）的 seq 上带着操作的完整内容。本机这段没有空洞 = 否，
-/// 不解段。
+/// 不封装的中继件 / 重切件 [piece]（作者 [header]，签名者公钥 [public]）在本机已清除（空洞）的 seq 上带着操作的完整
+/// 内容。本机这段没有空洞 = 否，不解段。
 fn carries_voided(
     t: &Truth<'_>,
     col: i64,
@@ -132,8 +111,12 @@ fn carries_voided(
     if voids.is_empty() {
         return Ok(false);
     }
-    let (_, items) = open_relay4_items(piece, public, None)
-        .map_err(|e| format!("relay: kept piece unreadable: {e:?}"))?;
+    let items = if piece.starts_with(RECUT_MAGIC) {
+        open_recut4_items(piece, public, None).map(|(_, items)| items)
+    } else {
+        open_relay4_items(piece, public, None).map(|(_, items)| items)
+    }
+    .map_err(|e| format!("relay: kept piece unreadable: {e:?}"))?;
     let mut seq = header.first;
     for item in &items {
         if matches!(item, NativeItem::Op(_)) && voids.iter().any(|(a, b)| (*a..=*b).contains(&seq))
@@ -222,8 +205,9 @@ pub(crate) fn note_head(t: &Truth<'_>, col: i64, h: &Head4, bytes: &[u8]) -> Res
     meta_set(t, &rhead_key(col, &h.device), text)
 }
 
-/// 收段时调：本机同步着 ≥ 2 个位置、作者可转发时，把这个已收下的原生段 / 中继件重新包成不封装的中继件存下。
-/// 返回是否存了新的一份。[key] = 它所在位置的钥匙。
+/// 收段时调：本机同步着 ≥ 2 个位置、作者可转发时，把这个已收下的原生段 / 中继件重新包成不封装的中继件（重切件照原样
+/// 去掉位置的封装）存下。返回是否存了新的一份。[key] = 它所在位置的钥匙。同一段已存着重切件、这回收到的是作者签的
+/// 那份（作者自己重切了）就换成作者签的：读者不必信任本机这个重切者。
 pub(crate) fn keep(
     t: &Truth<'_>,
     col: i64,
@@ -233,54 +217,60 @@ pub(crate) fn keep(
     if location_count(t, col)? < 2 {
         return Ok(false);
     }
-    let header = if bytes.starts_with(crate::gen4::relay::MAGIC) {
-        match peek_relay4(bytes) {
-            Ok(p) => p.header,
-            Err(_) => return Ok(false),
-        }
+    let recut = bytes.starts_with(RECUT_MAGIC);
+    let peeked = if recut {
+        peek_recut4(bytes).map(|p| (p.header, Some(p.recutter)))
+    } else if bytes.starts_with(crate::gen4::relay::MAGIC) {
+        peek_relay4(bytes).map(|p| (p.header, None))
     } else {
-        match crate::gen4::segment::peek_native_header(bytes) {
-            Ok(h) => h,
-            Err(_) => return Ok(false),
-        }
+        crate::gen4::segment::peek_native_header(bytes).map(|h| (h, None))
+    };
+    let Ok((header, recutter)) = peeked else {
+        return Ok(false);
     };
     if !relayable(t, col, &header.device)? {
         return Ok(false);
     }
-    let Some(public) = t.device_key(col, &header.device)? else {
+    let signer = recutter.unwrap_or(header.device);
+    let public = match t.self_identity(col)? {
+        Some(me) if me.device == signer => Some(me.public()),
+        _ => t.device_key(col, &signer)?,
+    };
+    let Some(public) = public else {
         return Ok(false);
     };
-    // 收段时已整段验过；这里再包一次（验签 + 链）只是 wrap 的约定，失败就不存（不影响收段本身）。
-    let Ok(piece) = wrap_relay4(bytes, &public, key, None) else {
+    // 收段时已整段验过；这里再包一次（验签 + 链）只是包的约定，失败就不存（不影响收段本身）。
+    let wrapped = if recut {
+        rewrap_recut4(bytes, &public, key, None)
+    } else {
+        wrap_relay4(bytes, &public, key, None)
+    };
+    let Ok(piece) = wrapped else {
         return Ok(false);
     };
-    let tag = chain_tag(&header.last_chain);
-    let name = segment_file_name(header.first, header.last, &tag);
-    // 本机已经清除了这段里的操作，而这一份还带着它们的完整内容（作者还没重切；`Truth::advance_purge` 删掉的那份又被
-    // 拉了回来）：不留。记下拒收时作者 head 的代号，作者写出更新的 head 之前 `wanted_for_relay` 不再为它拉这一段。
+    // 本机已经清除了这段里的操作，而这一份还带着它们的完整内容（作者 / 重切者清除之前的那份）：不留。缺它的位置由
+    // [relay_outbox] 从本机日志重切。
     if carries_voided(t, col, &header, &piece, &public)? {
-        let gen = stored_head(t, col, &header.device)?.map_or(0, |h| h.gen);
-        meta_set(
-            t,
-            &refused_key(col, &header.device, &name),
-            &gen.to_string(),
-        )?;
         return Ok(false);
     }
-    meta_del(t, &refused_key(col, &header.device, &name))?;
+    let tag = chain_tag(&header.last_chain);
+    let first = i64::try_from(header.first).map_err(|_| "relay: seq out of range")?;
+    let last = i64::try_from(header.last).map_err(|_| "relay: seq out of range")?;
     t.write(|| {
         let n = t
             .conn()
             .prepare_cached(RELAY_PUT_SQL)
             .map_err(sql)?
-            .execute(params![
-                col,
-                &header.device.0[..],
-                i64::try_from(header.first).map_err(|_| "relay: seq out of range")?,
-                i64::try_from(header.last).map_err(|_| "relay: seq out of range")?,
-                tag,
-                piece
-            ])
+            .execute(params![col, &header.device.0[..], first, last, tag, piece])
+            .map_err(sql)?;
+        if n > 0 || recut {
+            return Ok(n > 0);
+        }
+        let n = t
+            .conn()
+            .prepare_cached(RELAY_AUTHOR_OVER_RECUT_SQL)
+            .map_err(sql)?
+            .execute(params![col, &header.device.0[..], first, last, tag, piece])
             .map_err(sql)?;
         Ok(n > 0)
     })
@@ -378,6 +368,60 @@ fn stored_heads(t: &Truth<'_>, col: i64) -> Result<BTreeMap<Id, Head4>, String> 
         .collect())
 }
 
+/// [relay_outbox] 要发的一段。
+enum Part {
+    /// 转发缓存里存着的（不封装的中继件，或重切件）。
+    Kept(Vec<u8>),
+    /// 从本机日志重切出来、还没签的（`Truth::recut_from_log`）。
+    Cut((NativeHeader, Vec<NativeItem>)),
+}
+
+impl Part {
+    /// 预算按的大小（重切的按条目估：落盘前要压缩，取上界）。
+    fn len(&self) -> u64 {
+        match self {
+            Part::Kept(p) => p.len() as u64,
+            Part::Cut((_, items)) => items
+                .iter()
+                .map(|i| match i {
+                    NativeItem::Op(op) => op.payload.len() as u64 + 48,
+                    NativeItem::Void { .. } => 40,
+                })
+                .sum(),
+        }
+    }
+
+    /// 按目标位置的钥匙 [key] 包成位置上的文件字节。
+    fn wrap(
+        self,
+        t: &Truth<'_>,
+        col: i64,
+        device: &Id,
+        author: &[u8; 32],
+        key: Option<&CollectionKey>,
+    ) -> Result<Vec<u8>, String> {
+        let unreadable = |e| format!("relay: stored piece of {device} unreadable: {e:?}");
+        match self {
+            Part::Kept(p) if p.starts_with(RECUT_MAGIC) => {
+                let r = peek_recut4(&p).map_err(unreadable)?.recutter;
+                let public = match t.self_identity(col)? {
+                    Some(me) if me.device == r => Some(me.public()),
+                    _ => t.device_key(col, &r)?,
+                }
+                .ok_or_else(|| format!("relay: stored recut of {device} by unknown {r}"))?;
+                rewrap_recut4(&p, &public, None, key).map_err(unreadable)
+            }
+            Part::Kept(p) => wrap_relay4(&p, author, None, key).map_err(unreadable),
+            Part::Cut((header, items)) => {
+                let me = t
+                    .self_identity(col)?
+                    .ok_or("relay: no identity to sign a recut with")?;
+                recut4(&header, &items, &me.key(), me.device, key)
+            }
+        }
+    }
+}
+
 /// `relay_outbox {profile, location, key?, maxBytes?}`（读快照）：位置 [location] 缺的别的设备的段（装成中继件，按
 /// [key] 封装）与段都已到位的 head（`rhd-`），凑够 `maxBytes` 就停（一批至少一个文件）。文件在 [files]（路径相对
 /// `v4/`）。回包 `{files: [路径], more, incomplete: [设备]}`：`more` = 还有没给的（含段确认之后才能给的 head），Dart
@@ -410,17 +454,23 @@ pub fn relay_outbox(
         let sent = sent_names(t, col, loc, &device)?;
         let (have, present) = present_at(t, col, loc, &device, &sent)?;
         let rhd = relay_head_name(&h);
-        if have >= h.seq || sent.contains(&rhd) {
+        if have >= h.seq {
             continue;
         }
-        let mut parts: Vec<(String, Vec<u8>)> = Vec::new();
+        // 段逐个看（head 已经转发过也看）：本机清除时把转发过去的同名件改成了待删，它们要用重切件重写。
+        let mut parts: Vec<(String, Part)> = Vec::new();
         for (a, b, tag) in &h.segs {
             let name = segment_file_name(*a, *b, tag);
             if present.contains(&name) {
                 continue;
             }
-            match piece_of(t, col, &device, (*a, *b, tag))? {
-                Some(p) => parts.push((name, p)),
+            if let Some(p) = piece_of(t, col, &device, (*a, *b, tag))? {
+                parts.push((name, Part::Kept(p)));
+                continue;
+            }
+            // 本机没留这一段，但清除过其中的操作：从本机日志重切（原文不经本机离开，见文件头）。
+            match t.recut_from_log(col, &device, (*a, *b, tag))? {
+                Some(cut) => parts.push((name, Part::Cut(cut))),
                 None => {
                     incomplete.push(device.text());
                     continue 'devices;
@@ -428,6 +478,9 @@ pub fn relay_outbox(
             }
         }
         if parts.is_empty() {
+            if sent.contains(&rhd) {
+                continue;
+            }
             // 段都在了：给 head。
             let text = meta_get(t, &rhead_key(col, &device))?.unwrap_or_default();
             if !paths.is_empty() && total.saturating_add(text.len() as u64) > budget {
@@ -440,13 +493,12 @@ pub fn relay_outbox(
             paths.push(path);
             continue;
         }
-        for (name, piece) in parts {
-            if !paths.is_empty() && total.saturating_add(piece.len() as u64) > budget {
+        for (name, part) in parts {
+            if !paths.is_empty() && total.saturating_add(part.len()) > budget {
                 more = true;
                 break 'devices;
             }
-            let bytes = wrap_relay4(&piece, &h.public, None, key)
-                .map_err(|e| format!("relay: stored piece of {device} unreadable: {e:?}"))?;
+            let bytes = part.wrap(t, col, &device, &h.public, key)?;
             total += bytes.len() as u64;
             let path = device_path(&device, &relay_file_name(&name));
             files.push((path.clone(), bytes));
@@ -561,9 +613,10 @@ pub(crate) fn wanted_for_relay(
         let lacking = others
             .iter()
             .any(|(seq, names)| *seq < *b && !names.contains(&name));
+        // 本机清除过其中操作的段不为转发去拉原文：[relay_outbox] 从本机日志重切（拉回来的原文 [keep] 也不留）。
         if lacking
             && !has_piece(t, col, &h.device, (*a, *b, tag))?
-            && !refused_since(t, col, &h.device, &name, h.gen)?
+            && t.voids_within(col, &h.device, *a, *b)?.is_empty()
         {
             out.push(name);
         }
