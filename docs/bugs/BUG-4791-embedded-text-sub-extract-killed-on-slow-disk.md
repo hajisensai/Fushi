@@ -15,7 +15,8 @@
   - `fushi/test/media/video/video_subtitle_source_test.dart`「BUG-4791」组：卡死 → `emptyCues` + `extractionStalled`、整轨只抽一次、不等就绪重跑；共享抽取一个等待方取消不杀、全部撤走才杀、有不可取消等待方时不杀；`extractEmbeddedSubtitleTrackFiles` 成功 / 失败都只抽一次；原因映射。TODO-572 组 `emptyCues` 改为非瞬态。
   - `fushi/test/media/video/subtitle_cue_load_failure_test.dart`：卡住文案分流、自动加载提示走原因分流、挂载路径穷尽新原因、中英文文案存在。
   - `fushi/test/pages/video_embedded_text_extract_cancel_guard_test.dart`（新）：页面 / 控制器取消信号的接线守卫。
+  - `fushi/integration_test/video_embedded_text_subtitle_switch_itest.dart`（新，Windows 离屏真 app）：ffmpeg 生成 60 秒 mkv、内封 jpn / eng / chi 三条 subrip 轨（12 / 10 / 8 句、文本互异、无外挂）；书库打开 → 默认 jpn 轨自动出 cue 且逐句对上 → 经页面选字幕入口（`VideoPlayerRemoteControl.selectSubtitle`，与面板字幕行 onTap 同为 `_selectSubtitleSource`；字幕行在设置面板浮层里，离屏没有稳定的键位能把焦点送进去）切 eng、再切 chi，cue 逐句换成对应轨 → 两次切轨后抽取在途表为空、三个缓存文件 mtime 不变（不再起 ffmpeg）→ Escape 退出，页面卸载、遥控注销、无残留在途抽取。
 - **备注**：
-  - 真 app 复测**没做**：本机没有慢盘可复现原始失败（限速只能靠管道 / `-readrate`，前者进不了以文件路径为输入的抽取，后者会改变 ffmpeg 自身的读包节奏），离线 runner 上「开播 → 切内封文本轨 → cue 出现」也未跑；修复靠上面的单测 + 真 ffmpeg 抽取测试支撑，待在慢盘 / 网络盘上真机复测。
+  - 慢盘原始失败路径的真机复测**没做**：本机没有慢盘可复现原始失败（限速只能靠管道 / `-readrate`，前者进不了以文件路径为输入的抽取，后者会改变 ffmpeg 自身的读包节奏），修复靠上面的单测 + 真 ffmpeg 抽取测试支撑，待在慢盘 / 网络盘上真机复测。正常路径已在 Windows 离屏 runner 上用真 app 跑过上面的集成测试：runId `win-itest-20261117-171713-c8087dbb`，`+1: All tests passed!`、exit 0；默认 jpn 2.8 s 出 12 句，切 eng 987 ms / 切 chi 423 ms，缓存 mtime 不变。
   - 风险：PATH / `FUSHI_FFMPEG` 指向较老 ffmpeg（如 gyan 2025-06）时 `out_time_us` 只在字幕包处推进，单轨、长段无对白、读盘又极慢时可能被误判卡死（图形轨 BUG-3102 路径同样受影响）；随包统一 FFmpeg 不受影响。
   - 同类未改（不在本次范围）：`asr_proofread/subtitle_ass_style_reference_loader.dart`、`subtitle_evidence_loader.dart` 也是逐轨调 `extractEmbeddedSubtitleTrackFile`，抽取失败时同样会放大成多次全量读盘。
