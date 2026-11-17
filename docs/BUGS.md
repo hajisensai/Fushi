@@ -86,6 +86,12 @@
 | [BUG-4798](bugs/BUG-4798-srs-card-video-clip-load-error-hangs-sequence.md) | ✅ | ✅ | SRS 卡面视频片段加载不了时不落占位，等它播完的复习音频序列永远不返回 |
 | [BUG-4798](bugs/BUG-4798-video-mine-queue-exit-retries-failed.md) | ✅ | ✅ | 看完再制卡：每次退出播放页都把写入失败的暂存卡再写一遍，写完的行永不出表 |
 | [BUG-4798](bugs/BUG-4798-scrape-sweep-plan-failure-swallowed.md) | ✅ | ✅ | 后台补刮计划失败被吞成空清单：待确认提醒条凭空消失且无日志 |
+> 共 4155 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4799](bugs/BUG-4799-manga-ocr-reopen-recovery-misses-system-ocr-cache.md) | ✅ | ✅ | 重开书恢复增量 OCR 结果时漏掉系统 OCR 的逐页缓存 |
+| [BUG-4798](bugs/BUG-4798-manga-ocr-lens-fill-missing-adopts-other-engine-pages.md) | ✅ | ✅ | Lens 只补缺页时把别的引擎写的整卷产物收作自己的结果，系统 OCR 取消还会写出半卷占位产物 |
 | [BUG-4797](bugs/BUG-4797-feedback-files-share-video-ip-quota.md) | 🚧 | 🚧 | 样本文件与录屏共用每 IP 每天 200 MiB 额度，满额样本文件仍会被 429 挤掉 |
 | [BUG-4796](bugs/BUG-4796-disc-back-double-press-repeat-topmenu.md) | ✅ | ✅ | 原盘正片快速连按两次返回会重复发 topMenu，第二次失败会整盘退出 |
 | [BUG-4795](bugs/BUG-4795-disc-back-to-menu-transient-error-exits.md) | ✅ | ✅ | 原盘正片按返回回盘菜单时，任何暂时性错误都会让整个原盘会话退出 |
@@ -2509,8 +2515,8 @@
 | [BUG-1855](bugs/BUG-1855-home-continue-row-drops-collection-after-episode-complete.md) | ✅ | ✅ | 视频首页「继续观看」一集看完退出后合集消失，只有中途退出才在 |
 | [BUG-1854](bugs/BUG-1854-gal-mining-capture-includes-title-bar.md) | ✅ | ✅ | 制卡截图把游戏窗口标题栏截进去了，应裁到客户区 |
 | [BUG-1853](bugs/BUG-1853-gal-passthrough-glyph-holes-fall-through.md) | ✅ | ✅ | 穿透态点到文字笔画镂空处直接透给游戏，碰撞箱应为行矩形 |
-| [BUG-1852](bugs/BUG-1852-manga-region-rescan-lookup-action-removed.md) | 🚧 | 🚧 | 框选区域重识别移除了旧「框选查词」直通词典的入口 |
-| [BUG-1851](bugs/BUG-1851-manga-region-rescan-auto-engine-mix.md) | 🚧 | 🚧 | auto 引擎偏好下区域重识别可能与整卷用不同引擎，页内混引擎且 ocr 元数据仍写旧引擎 |
+| [BUG-1852](bugs/BUG-1852-manga-region-rescan-lookup-action-removed.md) | — | — | 框选区域重识别移除了旧「框选查词」直通词典的入口 |
+| [BUG-1851](bugs/BUG-1851-manga-region-rescan-auto-engine-mix.md) | — | — | auto 引擎偏好下区域重识别可能与整卷用不同引擎，页内混引擎且 ocr 元数据仍写旧引擎 |
 | [BUG-1850](bugs/BUG-1850-settings-destination-itest-vacuous-selected-row.md) | ✅ | ✅ | 集成测试用恒真的选中行谓词当设置分类打开判据 |
 | [BUG-1849](bugs/BUG-1849-jimaku-live-action-no-tmdb-key.md) | ✅ | ✅ | Jimaku 真人剧检索没有权威关联键：TMDB id 被解析器丢弃，只能靠标题模糊命中 |
 | [BUG-1848](bugs/BUG-1848-playlist-subtitle-restore-no-fallback.md) | ✅ | ✅ | 合集里下载的字幕退出再进就没了：恢复链只走一支、零兜底 |

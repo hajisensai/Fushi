@@ -30,6 +30,7 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math' as math;
 import 'package:path/path.dart' as p;
 
@@ -61,6 +62,15 @@ Future<T> runExclusiveOnMangaJson<T>(
     }
   });
 }
+
+/// 整份 manga.json 的解析下放后台 isolate（几 MB 的 JSON 在 UI isolate 上解析是
+/// 一次可见的卡顿）。顶层函数：闭包只捕获 [source]，恒可发送。
+Future<MokuroPayload> parseMangaJsonOffUi(String source) =>
+    Isolate.run<MokuroPayload>(() => parseMangaJson(source));
+
+/// [parseMangaJsonOffUi] 的 `.mokuro` 版（外部 mokuro CLI 的产物）。
+Future<MokuroPayload> parseMokuroOffUi(String source) =>
+    Isolate.run<MokuroPayload>(() => parseMokuro(source));
 
 /// 原子落盘：先写同目录 `.tmp` 再 rename 覆盖 [mangaJsonPath]。
 ///

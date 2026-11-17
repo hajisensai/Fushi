@@ -730,10 +730,11 @@ class MangaOcrJobRegistry {
     if (resultPath == null) {
       throw StateError('OCR finished without a result path');
     }
+    // 整卷产物几 MB：读进来以后的解析放后台 isolate，不占 UI isolate。
     final String source = await File(resultPath).readAsString();
     final MokuroPayload local = event.external
-        ? parseMokuro(source)
-        : parseMangaJson(source);
+        ? await parseMokuroOffUi(source)
+        : await parseMangaJsonOffUi(source);
     if (local.images.isEmpty) {
       throw StateError('OCR result has no pages');
     }
