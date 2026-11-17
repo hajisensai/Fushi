@@ -3132,17 +3132,27 @@ extension _VideoSubtitle on _VideoFushiPageState {
       (_embeddedSubtitleExtractCancels[videoPath] ??= Completer<void>()).future;
 
   /// 撤掉本页对内封文本字幕抽取的等待：[keepVideoPath] 的那份保留，其余全撤。
+  /// 还在排队、没开始的下一集预热随之撤掉（`prewarmEmbeddedSubtitleCache` 的
+  /// background 排队）。
   void _cancelEmbeddedSubtitleExtracts([String? keepVideoPath]) {
     final List<String> stale = <String>[
       for (final String path in _embeddedSubtitleExtractCancels.keys)
         if (path != keepVideoPath) path,
     ];
     for (final String path in stale) {
-      final Completer<void> cancel = _embeddedSubtitleExtractCancels.remove(
-        path,
-      )!;
-      if (!cancel.isCompleted) cancel.complete();
+      _cancelEmbeddedSubtitleExtractFor(path);
     }
+  }
+
+  void _cancelEmbeddedSubtitleExtractFor(String videoPath) {
+    final Completer<void>? cancel = _embeddedSubtitleExtractCancels.remove(
+      videoPath,
+    );
+    if (cancel != null && !cancel.isCompleted) cancel.complete();
+    // 被撤掉的若正是预热过（或排着队）的下一集，忘掉「已预热」记号：之后再回到它的
+    // 上一集时要重新预热，否则那一集换过去时字幕又得现读。
+    if (_lastPrewarmedEpisodePath == videoPath)
+      _lastPrewarmedEpisodePath = null;
   }
 
   /// 开始整轨转文字前的确认框：说明会用哪个识别引擎（漫画 OCR 设置里的引擎偏好 /

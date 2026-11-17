@@ -9,6 +9,7 @@ import 'package:fushi_engine/media/video/strm_file.dart'
     show lacksLocalMediaFile;
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
+import 'package:fushi_engine/platform/media_disk_identity.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:meta/meta.dart';
@@ -1197,6 +1198,23 @@ Future<DefaultEmbeddedSubtitleLoadResult> loadDefaultTextEmbeddedSubtitleCues({
   String langCode = 'ja',
   List<String> preferredLanguages = const <String>[],
   Future<void>? cancel,
+}) => _asForegroundDiskRead(
+  videoPath,
+  () => _loadDefaultTextEmbeddedSubtitleCues(
+    videoPath: videoPath,
+    bookUid: bookUid,
+    langCode: langCode,
+    preferredLanguages: preferredLanguages,
+    cancel: cancel,
+  ),
+);
+
+Future<DefaultEmbeddedSubtitleLoadResult> _loadDefaultTextEmbeddedSubtitleCues({
+  required String videoPath,
+  required String bookUid,
+  required String langCode,
+  required List<String> preferredLanguages,
+  required Future<void>? cancel,
 }) async {
   final SubtitleSourceListing listing =
       await listAllSubtitleSourcesWithDiagnostics(
@@ -1302,6 +1320,16 @@ Future<SubtitleCueLoadResult> _loadEmbeddedCues(
   String videoPath,
   String bookUid, {
   Future<void>? cancel,
+}) => _asForegroundDiskRead(
+  videoPath,
+  () => _loadEmbeddedCuesNow(source, videoPath, bookUid, cancel: cancel),
+);
+
+Future<SubtitleCueLoadResult> _loadEmbeddedCuesNow(
+  SubtitleSource source,
+  String videoPath,
+  String bookUid, {
+  required Future<void>? cancel,
 }) async {
   final SubtitleFormat? format = subtitleFormatForCodec(source.codec ?? '');
   if (format == null) {
@@ -1395,10 +1423,40 @@ Future<SubtitleCueLoadResult> _readAndParse(
 /// the existing fallback path and user-facing load failure message.
 ///
 /// [cancel]：播放页退出 / 换集时完成，撤掉本次预热对共享抽取的占用（见
-/// [_ensureAllEmbeddedSubtitlesExtracted]）。
+/// [_ensureAllEmbeddedSubtitlesExtracted]）；还在排队时完成 = 不再开始。
+///
+/// [background]：预热的不是正在看的这一集（下一集）。它只是为了换集时字幕瞬时出现，
+/// 不能和当前集的整片读盘抢同一块盘——两个顺序读同时压在一块机械盘 / 慢 USB 盘上，
+/// 磁头来回跳、两边都慢得多，当前集的字幕更晚出来、播放也跟着卡。所以后台预热先排队：
+/// 同一块盘（[mediaDiskIdentity]）上还有前台读盘（当前集的预热 / 自动加载 / 菜单切轨）
+/// 或别的已开始的后台预热时，等它们结束（或被取消）再开始。
 Future<void> prewarmEmbeddedSubtitleCache(
   String videoPath, {
   Future<void>? cancel,
+  bool background = false,
+}) async {
+  if (!background) {
+    return _asForegroundDiskRead(
+      videoPath,
+      () => _prewarmEmbeddedSubtitleCacheNow(videoPath, cancel: cancel),
+    );
+  }
+  final _EmbeddedDiskRead read = _EmbeddedDiskRead(
+    videoPath,
+    foreground: false,
+  );
+  _embeddedDiskReads.add(read);
+  try {
+    if (!await _awaitBackgroundDiskTurn(read, cancel)) return;
+    await _prewarmEmbeddedSubtitleCacheNow(videoPath, cancel: cancel);
+  } finally {
+    _releaseDiskRead(read);
+  }
+}
+
+Future<void> _prewarmEmbeddedSubtitleCacheNow(
+  String videoPath, {
+  required Future<void>? cancel,
 }) async {
   try {
     await _ensureAllEmbeddedSubtitlesExtracted(
@@ -1413,6 +1471,102 @@ Future<void> prewarmEmbeddedSubtitleCache(
     );
   }
 }
+
+/// 一次可能读整个容器的内封字幕操作（排队判据用，见 [prewarmEmbeddedSubtitleCache]）。
+class _EmbeddedDiskRead {
+  _EmbeddedDiskRead(this.videoPath, {required this.foreground})
+    : running = foreground;
+
+  final String videoPath;
+
+  /// 前台 = 正在看的这一集（预热 / 自动加载 / 菜单切轨）：从不排队，登记即算在读。
+  final bool foreground;
+
+  /// 后台预热轮到了、已经开始读。
+  bool running;
+
+  final Completer<void> released = Completer<void>();
+
+  /// 只在有后台预热要比较时才去问系统（大多数登记的前台读盘根本用不到）。
+  late final Future<Set<String>?> disk = mediaDiskIdentity(videoPath).then((
+    Set<String>? value,
+  ) {
+    diskResolved = true;
+    diskValue = value;
+    return value;
+  });
+  bool diskResolved = false;
+  Set<String>? diskValue;
+}
+
+final List<_EmbeddedDiskRead> _embeddedDiskReads = <_EmbeddedDiskRead>[];
+
+/// **同步**登记一次前台读盘再跑 [body]：调用方在第一个 await 之前就占住盘，后台预热
+/// 不会因为「当前集还在算缓存目录」的那几毫秒抢先开始。
+Future<T> _asForegroundDiskRead<T>(
+  String videoPath,
+  Future<T> Function() body,
+) async {
+  final _EmbeddedDiskRead read = _EmbeddedDiskRead(videoPath, foreground: true);
+  _embeddedDiskReads.add(read);
+  try {
+    return await body();
+  } finally {
+    _releaseDiskRead(read);
+  }
+}
+
+void _releaseDiskRead(_EmbeddedDiskRead read) {
+  _embeddedDiskReads.remove(read);
+  if (!read.released.isCompleted) read.released.complete();
+}
+
+/// 后台预热 [read] 等到同一块盘上没有别的前台读盘 / 已开始的后台预热为止；轮到时置
+/// [_EmbeddedDiskRead.running] 并返回 true，[cancel] 先完成返回 false。
+///
+/// 盘标识判不出时按可能同盘处理（[mayShareDisk]）。判定与置 running 在同一段同步代码
+/// 里完成，两条后台预热不会同时判到「没人在读」。
+Future<bool> _awaitBackgroundDiskTurn(
+  _EmbeddedDiskRead read,
+  Future<void>? cancel,
+) async {
+  bool cancelled = false;
+  final Future<void> cancelSignal = cancel == null
+      ? Completer<void>().future
+      : cancel.then((_) => cancelled = true);
+  while (true) {
+    if (cancelled) return false;
+    final Set<String>? mine = await Future.any(<Future<Set<String>?>>[
+      read.disk,
+      cancelSignal.then((_) => null),
+    ]);
+    if (cancelled) return false;
+    final List<_EmbeddedDiskRead> blockers = <_EmbeddedDiskRead>[
+      for (final _EmbeddedDiskRead other in _embeddedDiskReads)
+        if (!identical(other, read) &&
+            (other.foreground || other.running) &&
+            (!other.diskResolved || mayShareDisk(mine, other.diskValue)))
+          other,
+    ];
+    if (blockers.isEmpty) {
+      read.running = true;
+      return true;
+    }
+    // 盘标识还没解析出来的：等它解析完再判；同盘的：等它结束。
+    await Future.any(<Future<void>>[
+      for (final _EmbeddedDiskRead b in blockers)
+        b.diskResolved ? b.released.future : b.disk.then((_) {}),
+      cancelSignal,
+    ]);
+  }
+}
+
+/// 测试用：当前登记着的内封字幕读盘（前台 / 后台）里，后台预热已开始的视频路径。
+@visibleForTesting
+List<String> debugRunningBackgroundSubtitlePrewarms() => <String>[
+  for (final _EmbeddedDiskRead r in _embeddedDiskReads)
+    if (!r.foreground && r.running) r.videoPath,
+];
 
 /// [videoPath] 第 [streamIndex] 条内嵌文本轨的缓存文件；缓存没有就先整轨抽取一次。
 /// 抽不出 / 不是文本轨返回 null。要拿**多条**轨时用 [extractEmbeddedSubtitleTrackFiles]：
@@ -1432,7 +1586,10 @@ Future<File?> extractEmbeddedSubtitleTrackFile({
     ),
   );
   if (!await _isNonEmptyFile(cached)) {
-    await _ensureAllEmbeddedSubtitlesExtracted(videoPath, cacheDir);
+    await _asForegroundDiskRead(
+      videoPath,
+      () => _ensureAllEmbeddedSubtitlesExtracted(videoPath, cacheDir),
+    );
   }
   return await _isNonEmptyFile(cached) ? cached : null;
 }
@@ -1467,10 +1624,13 @@ Future<Map<int, File>> extractEmbeddedSubtitleTrackFiles({
     }
   }
   if (anyMissing) {
-    await _ensureAllEmbeddedSubtitlesExtracted(
+    await _asForegroundDiskRead(
       videoPath,
-      cacheDir,
-      cancel: cancel,
+      () => _ensureAllEmbeddedSubtitlesExtracted(
+        videoPath,
+        cacheDir,
+        cancel: cancel,
+      ),
     );
   }
   final Map<int, File> out = <int, File>{};

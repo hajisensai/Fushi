@@ -7033,10 +7033,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final String path = _episodes[cur + 1].path;
     if (path.isEmpty || path == _lastPrewarmedEpisodePath) return;
     _lastPrewarmedEpisodePath = path;
+    // 下一集的预热排在同一块盘上当前集的读盘之后（background）：两个整片顺序读同时压
+    // 一块慢盘，当前集的字幕更晚出来、播放也跟着卡。换集时还没开始的预热随取消信号撤掉。
     unawaited(
       prewarmEmbeddedSubtitleCache(
         path,
         cancel: _embeddedSubtitleExtractCancelFor(path),
+        background: true,
       ),
     );
   }

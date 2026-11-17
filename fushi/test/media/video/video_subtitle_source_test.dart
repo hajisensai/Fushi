@@ -521,7 +521,7 @@ hello async vtt
       expect(
         _functionBody(
           source,
-          'Future<SubtitleCueLoadResult> _loadEmbeddedCues',
+          'Future<SubtitleCueLoadResult> _loadEmbeddedCuesNow',
         ),
         contains('_readAndParse('),
       );

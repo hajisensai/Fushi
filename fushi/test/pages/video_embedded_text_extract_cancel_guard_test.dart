@@ -58,9 +58,14 @@ void main() {
     });
 
     test('撤销时完成 Completer 并从表里移除', () {
-      final String cancel = _bodyOf(
+      final String cancelAll = _bodyOf(
         subtitlePart,
         'void _cancelEmbeddedSubtitleExtracts(',
+      );
+      expect(cancelAll, contains('_cancelEmbeddedSubtitleExtractFor(path)'));
+      final String cancel = _bodyOf(
+        subtitlePart,
+        'void _cancelEmbeddedSubtitleExtractFor(',
       );
       expect(cancel, contains('cancel.complete()'));
       expect(cancel, contains('_embeddedSubtitleExtractCancels.remove('));
