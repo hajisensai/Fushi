@@ -43,7 +43,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fushi/src/ai/ai_manga_audio_assistant.dart'
     show resolveMangaAudioProvider;
 import 'package:fushi/src/media/audiobook/tts/cast/series_cast_resolver.dart'
-    show seriesCastStoreFor;
+    show resolveSeriesKey, seriesCastStoreFor;
 import 'package:fushi/src/media/audiobook/tts/irodori_voice_packs.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_series_cast.dart'
     show ttsVoicingStoreFor;
@@ -69,6 +69,9 @@ import 'package:fushi/src/ops/op_context.dart';
 /// 路由根：`/api/admin/tts/manga/:key/...`（CLI：`fushi_cli tts ...`）。
 const String kTtsMangaCtlRoot = '/api/admin/tts/manga';
 
+/// 可选的声音列表（声音指派、整卷生成的 voice 参数从这里取 id）。
+const String kTtsVoicesCtlPath = '/api/admin/tts/voices';
+
 /// 单句重生成撤销用的旧音频备份，每卷最多留这么多份（最旧的先删；删掉的那次撤销
 /// 报「旧音频备份已清理」）。
 const int kMangaRegenBackupLimit = 50;
@@ -91,7 +94,7 @@ class TtsCtlDeps {
     required this.provider,
     required this.hasUploadConsent,
     required this.recordUploadConsent,
-    required this.voiceIds,
+    required this.voices,
     required this.activeVoice,
     required this.regenerate,
     required this.stopPlayback,
@@ -105,13 +108,10 @@ class TtsCtlDeps {
     hasUploadConsent: hasMangaAudioUploadConsent,
     recordUploadConsent: () async => (await SharedPreferences.getInstance())
         .setInt(kMangaAudioUploadConsentKey, kMangaAudioUploadConsentVersion),
-    voiceIds: () => <String>[
-      for (final TtsVoicePreset preset in ttsProductionPresets(
-        TtsServices.of(context.appModel.prefsRepo),
-        context.appModel,
-      ))
-        preset.id,
-    ],
+    voices: () => ttsProductionPresets(
+      TtsServices.of(context.appModel.prefsRepo),
+      context.appModel,
+    ),
     activeVoice: () =>
         TtsServices.of(context.appModel.prefsRepo).store.activePreset()?.id,
     regenerate:
@@ -142,7 +142,11 @@ class TtsCtlDeps {
   final Future<void> Function() recordUploadConsent;
 
   /// 能选的声音（声音预设 + 声音包参考音频组，制作台同一份）。
-  final List<String> Function() voiceIds;
+  final List<TtsVoicePreset> Function() voices;
+
+  List<String> voiceIds() => <String>[
+    for (final TtsVoicePreset v in voices()) v.id,
+  ];
 
   /// 当前朗读声音（没有任务记录时整卷生成用它）。
   final String? Function() activeVoice;
@@ -216,6 +220,10 @@ Future<String> ttsMangaBookKey(TtsCtlDeps deps, String raw) async {
   }
   return row.bookKey;
 }
+
+/// 这一卷所属的系列（没有为 null）。
+Future<String?> ttsMangaSeriesKey(TtsCtlDeps deps, String bookKey) =>
+    resolveSeriesKey(deps.appModel, bookKey);
 
 String ttsMangaWireKey(String bookKey) =>
     LibraryCtlKey(LibraryCtlStore.book, bookKey).wire;
@@ -373,11 +381,10 @@ Map<String, Object?> ttsMangaScriptSummary(
 
 Map<String, String> _kindVoices(MangaAudioScript script, String name) =>
     <String, String>{
-      for (final MapEntry<CastLineKind, String> e
-          in <CastLineKind, String>{
-            ...?script.series?.byCharacterKind[name],
-            ...?script.voices.byCharacterKind[name],
-          }.entries)
+      for (final MapEntry<CastLineKind, String> e in <CastLineKind, String>{
+        ...?script.series?.byCharacterKind[name],
+        ...?script.voices.byCharacterKind[name],
+      }.entries)
         e.key.wire: e.value,
     };
 
@@ -440,6 +447,29 @@ List<Object?> ttsPageLinesJson(MangaAudioScript script, int page) => <Object?>[
   for (final MangaScriptLine l in script.linesOnPage(page)) l.toJson(),
 ];
 
+/// 某页的指纹（行的落盘 JSON）。
+String ttsPageRevision(MangaAudioScript script, int page) => sha1
+    .convert(utf8.encode(jsonEncode(ttsPageLinesJson(script, page))))
+    .toString();
+
+/// 改一句前的快照：这一句所在页的行。行不在 404。
+Future<Map<String, Object?>> captureMangaLineSnapshot(
+  TtsCtlDeps deps,
+  String bookKey,
+  String lineId,
+) async {
+  final MangaAudioScript script = await mangaAudioScriptStoreFor(
+    deps.appModel,
+  ).load(bookKey);
+  final MangaScriptLine? line = script.lineById(lineId);
+  if (line == null) throw CtlFailure.notFound('演出稿里没有这一句：$lineId');
+  return <String, Object?>{
+    'bookKey': bookKey,
+    'page': line.page,
+    'before': ttsPageLinesJson(script, line.page),
+  };
+}
+
 /// 把第 [page] 页的行整体换成 [lines]（页内顺序即朗读顺序），插在原来那一页的位置。
 void replaceMangaPageLines(
   MangaAudioScript script,
@@ -465,15 +495,15 @@ class TtsLineEdit {
   const TtsLineEdit({
     required this.page,
     required this.line,
-    required this.before,
-    required this.after,
+    required this.revision,
     this.addedCharacter,
   });
 
   final int page;
   final MangaScriptLine line;
-  final List<Object?> before;
-  final List<Object?> after;
+
+  /// 改完后这一页的指纹（[ttsPageRevision]）：撤销前比对，之后又被改过就不覆盖。
+  final String revision;
 
   /// 这次顺手加进本卷角色表的新角色（撤销时若没人再用就删掉）。
   final String? addedCharacter;
@@ -490,7 +520,6 @@ TtsLineEdit editMangaLine(
   final MangaScriptLine? old = script.lineById(lineId);
   if (old == null) throw CtlFailure.notFound('演出稿里没有这一句：$lineId');
   final int page = old.page;
-  final List<Object?> before = ttsPageLinesJson(script, page);
   MangaScriptLine next = old;
   bool changed = false;
   String? added;
@@ -607,8 +636,7 @@ TtsLineEdit editMangaLine(
   return TtsLineEdit(
     page: page,
     line: next,
-    before: before,
-    after: ttsPageLinesJson(script, page),
+    revision: ttsPageRevision(script, page),
     addedCharacter: added,
   );
 }
@@ -625,8 +653,7 @@ Future<OpUndoOutcome> revertMangaLineEdit(
   }
   final MangaAudioScriptStore store = mangaAudioScriptStoreFor(deps.appModel);
   final MangaAudioScript script = await store.load(bookKey);
-  if (jsonEncode(ttsPageLinesJson(script, page)) !=
-      jsonEncode(payload['after'])) {
+  if (ttsPageRevision(script, page) != payload['revision']) {
     return const OpUndoOutcome.superseded('这一页之后又被改过，没有覆盖');
   }
   replaceMangaPageLines(script, page, _linesFromJson(payload['before']));
@@ -644,25 +671,21 @@ class TtsCharacterEdit {
   const TtsCharacterEdit({
     required this.name,
     required this.renamedLines,
-    required this.before,
-    required this.after,
+    required this.revision,
     this.seriesKey,
-    this.seriesBefore,
-    this.seriesAfter,
+    this.seriesRevision,
   });
 
   /// 改完后的名字（改名时是新名字）。
   final String name;
   final int renamedLines;
 
-  /// 本卷演出稿落盘 JSON（改前）与改后的指纹。
-  final Map<String, Object?> before;
-  final String after;
+  /// 改完后本卷演出稿的指纹。
+  final String revision;
 
-  /// 写到系列档案时：系列、系列声音指派的前后 JSON。
+  /// 写到系列档案时：系列、改完后系列声音指派的指纹。
   final String? seriesKey;
-  final Map<String, Object?>? seriesBefore;
-  final Map<String, Object?>? seriesAfter;
+  final String? seriesRevision;
 }
 
 /// 改某角色：改名 / 合并（只改本卷：行、本卷角色表、本卷声音指派），以及声音指派
@@ -722,7 +745,6 @@ Future<TtsCharacterEdit> editMangaCharacter(
     if (renameRaw.isEmpty) throw const CtlFailure.badRequest('rename 不能为空');
   }
 
-  final Map<String, Object?> before = script.toJson();
   String current = name;
   int renamed = 0;
   if (renameRaw != null) {
@@ -772,33 +794,48 @@ Future<TtsCharacterEdit> editMangaCharacter(
     }
   }
 
-  Map<String, Object?>? seriesBefore;
-  Map<String, Object?>? seriesAfter;
+  String? seriesRevision;
   final String? seriesKey = volume.seriesKey;
   if (hasVoice && !seriesScope) assign(script.voices);
   if (hasVoice && seriesScope && seriesKey != null) {
     final SeriesCastProfile fresh = await seriesCastStoreFor(deps.appModel)
         .update(seriesKey, (SeriesCastProfile profile) {
-          seriesBefore = profile.voices.toJson();
           assign(profile.voices);
-          seriesAfter = profile.voices.toJson();
+          seriesRevision = ttsVoicesFingerprint(profile.voices);
         });
     volume.series = fresh;
     script.series = fresh.voices;
   }
-  await mangaAudioScriptStoreFor(
-    deps.appModel,
-  ).save(volume.bookKey, script);
+  await mangaAudioScriptStoreFor(deps.appModel).save(volume.bookKey, script);
   return TtsCharacterEdit(
     name: current,
     renamedLines: renamed,
-    before: before,
-    after: ttsScriptFingerprint(script),
+    revision: ttsScriptFingerprint(script),
     seriesKey: seriesScope ? seriesKey : null,
-    seriesBefore: seriesBefore,
-    seriesAfter: seriesAfter,
+    seriesRevision: seriesRevision,
   );
 }
+
+String ttsVoicesFingerprint(CastVoiceAssignment voices) =>
+    sha1.convert(utf8.encode(jsonEncode(voices.toJson()))).toString();
+
+/// 改某角色前的快照：本卷演出稿整份，以及（写系列时）系列的声音指派。
+Future<Map<String, Object?>> captureMangaCharacterSnapshot(
+  TtsCtlDeps deps,
+  String bookKey,
+  String? seriesKey,
+) async => <String, Object?>{
+  'bookKey': bookKey,
+  'before': (await mangaAudioScriptStoreFor(
+    deps.appModel,
+  ).load(bookKey)).toJson(),
+  if (seriesKey != null) ...<String, Object?>{
+    'seriesKey': seriesKey,
+    'seriesBefore': (await seriesCastStoreFor(
+      deps.appModel,
+    ).load(seriesKey)).voices.toJson(),
+  },
+};
 
 void _assignInPlace(CastVoiceAssignment target, CastVoiceAssignment source) {
   target
@@ -826,17 +863,17 @@ Future<OpUndoOutcome> revertMangaCharacterEdit(
   }
   final MangaAudioScriptStore store = mangaAudioScriptStoreFor(deps.appModel);
   final MangaAudioScript current = await store.load(bookKey);
-  if (ttsScriptFingerprint(current) != payload['after']) {
+  if (ttsScriptFingerprint(current) != payload['revision']) {
     return const OpUndoOutcome.superseded('演出稿之后又被改过，没有覆盖');
   }
   final Object? seriesKey = payload['seriesKey'];
-  if (seriesKey is String) {
+  final Object? seriesRevision = payload['seriesRevision'];
+  if (seriesKey is String && seriesRevision is String) {
     bool superseded = false;
     await seriesCastStoreFor(deps.appModel).update(seriesKey, (
       SeriesCastProfile profile,
     ) {
-      if (jsonEncode(profile.voices.toJson()) !=
-          jsonEncode(payload['seriesAfter'])) {
+      if (ttsVoicesFingerprint(profile.voices) != seriesRevision) {
         superseded = true;
         return;
       }
@@ -986,8 +1023,7 @@ Future<Map<String, Object?>> regenerateAndKeepMangaLine(
       'seed 应为 0..${MangaScriptLimits.maxSeed}',
     );
   }
-  final int useSeed =
-      seed ?? math.Random().nextInt(MangaScriptLimits.maxSeed);
+  final int useSeed = seed ?? math.Random().nextInt(MangaScriptLimits.maxSeed);
   final MangaRegenerateCandidate candidate;
   try {
     candidate = await deps.regenerate(
@@ -1027,7 +1063,9 @@ Future<Map<String, Object?>> regenerateAndKeepMangaLine(
   );
   if (!kept) {
     if (backup != null) {
-      await _deleteQuietly(File(p.join(_backupDir(appModel, bookKey).path, backup)));
+      await _deleteQuietly(
+        File(p.join(_backupDir(appModel, bookKey).path, backup)),
+      );
     }
     throw CtlFailure.notFound('这一句已不在成品清单里：$lineId');
   }

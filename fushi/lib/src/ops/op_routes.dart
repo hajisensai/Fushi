@@ -15,6 +15,7 @@ import 'package:fushi/src/ops/ctl_disc_routes.dart';
 import 'package:fushi/src/ops/ctl_media_links_routes.dart';
 import 'package:fushi/src/ops/ctl_book_metadata_routes.dart';
 import 'package:fushi/src/ops/ctl_srs_routes.dart';
+import 'package:fushi/src/ops/ctl_tts_routes.dart';
 import 'package:fushi/src/ops/ctl_music_routes.dart';
 import 'package:fushi/src/ops/ctl_data_routes.dart';
 import 'package:fushi/src/ops/ctl_feedback_routes.dart';
@@ -88,6 +89,7 @@ List<CtlRoute> buildDomainOpRoutes(OpContext context) => <CtlRoute>[
   ...buildGameCtlRoutes(context),
   ...buildMusicCtlRoutes(context),
   ...buildSrsCtlRoutes(context),
+  ...buildTtsCtlRoutes(context),
   ...buildBookMetadataCtlRoutes(context),
   ...buildMediaLinksCtlRoutes(context),
   ...buildDiscCtlRoutes(context),
