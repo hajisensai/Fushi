@@ -236,20 +236,14 @@ void main() {
     }
     writeMedia(mediaA, 'localonly.png', <int>[1, 1]);
     // 别的设备传上去并绑定了的：按绑定从内容目录下载。
-    loc.files[at(<int>[2, 2])] = Uint8List.fromList(<int>[2, 2]);
+    final Directory mediaB = mediaDir('b');
+    final SrsDbStore b = await device('b');
+    writeMedia(mediaB, 'remoteonly.png', <int>[2, 2]);
+    await addNote(b, '远', '<img src="remoteonly.png">');
+    expect((await media(b, loc, mediaB)).uploaded, 1);
     pictures.write('<img src="localonly.png"><img src="remoteonly.png">');
     await addNote(a, '多', pictures.toString());
-    await a.sync2Command(<String, Object?>{
-      'op': 'media_bind_unbound',
-      'items': <Map<String, Object?>>[
-        <String, Object?>{
-          'name': 'remoteonly.png',
-          'sha': sha(<int>[2, 2]),
-          'size': 2,
-        },
-      ],
-      'now': a.now().$1,
-    });
+    await srsSyncPeers(<SrsDbStore>[a, b], loc);
 
     final List<String> syncStats = <String>[];
     final SrsMediaSyncReport r = await IOOverrides.runZoned(

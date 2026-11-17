@@ -12,8 +12,8 @@
 //! 失败；换头（改块大小 / 前缀）→ AAD 不同，失败。即 STREAM 构造（Hoang–Reyhanitabar–Rogaway–Vizár 2015）。
 //!
 //! 存储位置上只有这一种格式（协议 2，2026-10-30 断代）。S-9 之前的整份格式（[CollectionKey::seal]：`24 字节 nonce |
-//! 整份密文 + tag`，AAD 是文件名）只出现在 v1 位置的按名字目录里，只有一次性迁移（Dart
-//! `srs_location_migration.dart`）经 [open_v1] 读它，读出的明文按内容哈希重新封成本格式；正常收发路径不认它。
+//! 整份密文 + tag`，AAD 是文件名）只出现在 v1 位置的按名字目录里；协议 4 拒绝只有协议 1 旧根的位置（`store/gen4/oldroot.rs`），
+//! 读它的一次性迁移连同 `open_v1` 命令已删，任何路径都不认它。
 
 use std::fs::File;
 use std::io::{self, Read, Write};
@@ -213,11 +213,6 @@ pub fn open_stream(
         return Err(OpenError::Corrupt);
     }
     open_chunked(key, &head, r, w, aad)
-}
-
-/// v1 位置上按名字存的整份封装（S-9 之前的 [CollectionKey::seal]）：只给一次性迁移用（见模块注释）。解不开为 None。
-pub fn open_v1(key: &CollectionKey, sealed: &[u8], aad: &[u8]) -> Option<Vec<u8>> {
-    key.open(sealed, aad)
 }
 
 /// 内存里封（小内容）。输出与 [seal_stream] 同格式。
@@ -440,19 +435,15 @@ mod tests {
         ));
     }
 
-    /// S-9 之前的整份封装（v1 位置的按名字目录）：正常解封路径不认（没有魔数 = 对象坏了），只有迁移用的 [open_v1]
-    /// 解得开，且 AAD（文件名）照样绑定。
+    /// S-9 之前的整份封装（v1 位置的按名字目录）：解封路径不认（没有魔数 = 对象坏了）。
     #[test]
-    fn v1_envelopes_open_only_through_the_migrator() {
+    fn v1_envelopes_are_corrupt_objects() {
         let plain = b"old media".repeat(1000);
         let v1 = key().seal(&plain, b"aad");
         assert_eq!(
             open_bytes(&key(), &v1, b"aad").unwrap_err(),
             OpenError::Corrupt
         );
-        assert_eq!(open_v1(&key(), &v1, b"aad").unwrap(), plain);
-        assert!(open_v1(&key(), &v1, b"other").is_none());
-        assert!(open_v1(&CollectionKey([8u8; 32]), &v1, b"aad").is_none());
     }
 
     #[test]

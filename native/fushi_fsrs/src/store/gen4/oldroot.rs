@@ -47,14 +47,14 @@
 //! （[RootRefused]，错误码 [ERR_PROTOCOL1_ROOT]），同步轮停下、提示用户「这个同步位置的格式太旧，在另一台装 3.3.0 的
 //! 设备上同步一次把它升级，或者换一个同步位置；不要把本机装回 3.x」（G8-7c 核过，交接 §第四波 G8-7c）：
 //! - 能把 `v2/` 升成 `v3/` 的只有 v3.3.0（协议 3 的最后一个 3.x 正式版：`kSrsSync2V1Folder = 'v2'` +
-//!   `srs_location_migration.dart`）。v3.0.0 / v3.0.1 还没有 sync2（走 `packages/fushi_srs` 的旧事件同步，不碰 `v2/`），
+//!   v3.3.0 里的 `srs_location_migration.dart`，本仓已删）。v3.0.0 / v3.0.1 还没有 sync2（走 `packages/fushi_srs` 的旧事件同步，不碰 `v2/`），
 //!   协议 1 预发布构建本身就只写 `v2/`——在它们上面同步一次什么也不会变。一个位置只剩 `v2/` 本身就说明从来没有
 //!   v3.3.0 设备在上面同步过，所以提示必须点名 3.3.0，不能笼统说「3.x」。
 //! - 本机库已封存成 `39999`，v3.3.0 打开时报「schema newer than this build」、整个卡片库不可用，什么也同步不了；
 //!   Android 降级还得卸载、清空本机数据。所以只能在**另一台**设备上装 3.3.0 做。
 //!
 //! 拒绝发生在碰位置、碰本机库之前：位置上一个字节不写（不建 `v4/`、不写 v3 meta——
-//! 旧入口 `srs_location_migration.dart` 写 `minReader 3` 的 v3 meta，在协议 4 下等于拆掉围栏，所以那条路整个不走），
+//! v3.3.0 的旧入口 `srs_location_migration.dart` 写 `minReader 3` 的 v3 meta，在协议 4 下等于拆掉围栏，所以那条路整个不走），
 //! 本机的卡片与复习记录也一条不动（它们在本机库里，跟这个位置有没有同步上无关）；用户升级位置之后下一轮照常同步。
 
 use std::collections::BTreeMap;
