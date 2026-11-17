@@ -50,10 +50,14 @@ typedef _Search =
       VideoSubtitleSearchRequest request,
     );
 
+typedef _Download =
+    Future<VideoSubtitleDownload> Function(VideoSubtitleCandidate candidate);
+
 class _FakeProvider implements VideoSubtitleProvider {
-  _FakeProvider(this.onSearch);
+  _FakeProvider(this.onSearch, {this.onDownload});
 
   final _Search onSearch;
+  final _Download? onDownload;
 
   @override
   String get id => 'fake';
@@ -69,7 +73,7 @@ class _FakeProvider implements VideoSubtitleProvider {
   ) => onSearch(request);
   @override
   Future<VideoSubtitleDownload> download(VideoSubtitleCandidate candidate) =>
-      throw UnimplementedError();
+      onDownload?.call(candidate) ?? (throw UnimplementedError());
 }
 
 void main() {
@@ -115,13 +119,16 @@ void main() {
     required MediaCollectionRow collection,
     required VideoBookRow member,
     required _Search onSearch,
+    _Download? onDownload,
     Future<http.Client> Function()? httpClientFactory,
     bool withProvider = true,
     ThemeData? theme,
   }) {
     final VideoSubtitleRegistry registry = VideoSubtitleRegistry(
       withProvider
-          ? <VideoSubtitleProvider>[_FakeProvider(onSearch)]
+          ? <VideoSubtitleProvider>[
+              _FakeProvider(onSearch, onDownload: onDownload),
+            ]
           : const <VideoSubtitleProvider>[],
     );
     return TranslationProvider(
@@ -363,6 +370,107 @@ void main() {
       find.byKey(const ValueKey<String>('subtitle-source-fake:Source')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('批量某集下载被拒：行副标题说出原因（key 被拒 + 状态码），不是一句「下载失败」', (
+    WidgetTester tester,
+  ) async {
+    // 默认 800×600 下成员列表在版本 / 设置区下面、还没被懒构建出来。
+    tester.view.physicalSize = const Size(1400, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final VideoBookRow member = await seedMember();
+    final MediaCollectionRow collection = await seedCollection(anilistId: 21);
+    await tester.pumpWidget(
+      wrap(
+        collection: collection,
+        member: member,
+        onSearch: (_) async =>
+            ProviderBatchResult<VideoSubtitleCandidate>.success(
+              <VideoSubtitleCandidate>[
+                _Cand('Show - 01.ja.srt', source: 'Source', episode: 1),
+              ],
+            ),
+        onDownload: (_) async => throw const ExternalProviderFailure(
+          providerId: 'fake',
+          operation: 'download',
+          kind: ExternalProviderFailureKind.unauthorized,
+          message: 'denied',
+          statusCode: 401,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(downloadButton());
+    await tester.pumpAndSettle();
+
+    final String reason = t.video_subtitle_error_with_code(
+      msg: t.video_subtitle_error_key_rejected(provider: 'fake'),
+      code: 401,
+    );
+    expect(
+      find.text(reason),
+      findsOneWidget,
+      reason: '401 / 429 / 文件下架在批量里曾经长得一样',
+    );
+    expect(find.text(t.video_jimaku_download_failed), findsNothing);
+  });
+
+  testWidgets('BUG-4795 批量途中在输入框回车不重搜：在跑的行状态与来源不被清掉', (
+    WidgetTester tester,
+  ) async {
+    final VideoBookRow member = await seedMember();
+    final MediaCollectionRow collection = await seedCollection(anilistId: 21);
+    int searches = 0;
+    final Completer<VideoSubtitleDownload> pendingDownload =
+        Completer<VideoSubtitleDownload>();
+    await tester.pumpWidget(
+      wrap(
+        collection: collection,
+        member: member,
+        onSearch: (_) async {
+          searches++;
+          return ProviderBatchResult<VideoSubtitleCandidate>.success(
+            <VideoSubtitleCandidate>[
+              _Cand('Show - 01.ja.srt', source: 'Source', episode: 1),
+            ],
+          );
+        },
+        onDownload: (_) => pendingDownload.future,
+      ),
+    );
+    await tester.pumpAndSettle();
+    final int searchesBefore = searches;
+    await tester.tap(downloadButton());
+    await tester.pump();
+    await tester.pump();
+
+    // 批量在跑（下载挂起）。与「查找字幕」按钮同一道闸：回车不得发起新一轮。
+    final TextField queryField = tester.widget<TextField>(
+      find.byWidgetPredicate(
+        (Widget w) => w is TextField && w.controller?.text == 'Show',
+      ),
+    );
+    queryField.onSubmitted!('Show');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(searches, searchesBefore, reason: '批量途中回车重搜会清掉行状态、换掉来源');
+    expect(
+      find.byKey(const ValueKey<String>('subtitle-source-fake:Source')),
+      findsOneWidget,
+    );
+
+    pendingDownload.completeError(
+      const ExternalProviderFailure(
+        providerId: 'fake',
+        operation: 'download',
+        kind: ExternalProviderFailureKind.unavailable,
+        message: 'down',
+        statusCode: 503,
+      ),
+    );
+    await tester.pumpAndSettle();
   });
 
   testWidgets('快速切系列时迟到旧响应不覆盖新来源，DB 也保留最新系列', (WidgetTester tester) async {

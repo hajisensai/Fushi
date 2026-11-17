@@ -473,6 +473,106 @@ void main() {
     );
     expect(results[0].status, SubtitleBatchStatus.failed);
     expect(results[1].status, SubtitleBatchStatus.done);
+    // 失败留的是异常对象，不只是 `'$e'` 字符串：面板要靠它分出 401 / 429 / 404。
+    expect(
+      results[0].error,
+      isA<ExternalProviderFailure>().having(
+        (ExternalProviderFailure f) => f.kind,
+        'kind',
+        ExternalProviderFailureKind.unavailable,
+      ),
+    );
+    expect(results[1].error, isNull);
+  });
+
+  test('onItemDone 抛错（调用方持久化失败）只算这一集失败：保留已落盘路径，后面的集照常处理', () async {
+    final _FakeProvider provider = _FakeProvider();
+    final List<int> finished = <int>[];
+    final List<SubtitleBatchItem> results = await runSubtitleBatch(
+      registry: VideoSubtitleRegistry(<VideoSubtitleProvider>[provider]),
+      candidates: <VideoSubtitleCandidate>[
+        for (int ep = 1; ep <= 3; ep++)
+          _Cand('Show - 0$ep.ja.srt', episode: ep),
+      ],
+      targets: <SubtitleBatchTarget>[
+        for (int ep = 1; ep <= 3; ep++) _target(ep - 1, 'Show - 0$ep'),
+      ],
+      saveDirectory: tmp.path,
+      onItemDone: (SubtitleBatchItem item) async {
+        finished.add(item.episode);
+        if (item.episode == 2) throw StateError('db write failed');
+      },
+    );
+    expect(finished, <int>[1, 2, 3], reason: '第 2 集持久化抛错不得中断第 3 集');
+    expect(
+      results.map((SubtitleBatchItem i) => i.status),
+      <SubtitleBatchStatus>[
+        SubtitleBatchStatus.done,
+        SubtitleBatchStatus.failed,
+        SubtitleBatchStatus.done,
+      ],
+    );
+    expect(results[1].error, isStateError);
+    expect(
+      File(results[1].subtitlePath!).existsSync(),
+      isTrue,
+      reason: '文件已落盘，路径要留着',
+    );
+  });
+
+  test('SubtitleVersionLanguageProbe：下载失败 / 空字节不进缓存，下次重探；判不出才是结论', () async {
+    final _Cand candidate = _Cand('[shincaps] Show - 01.ass', episode: 1);
+    int calls = 0;
+    final SubtitleVersionLanguageProbe probe = SubtitleVersionLanguageProbe(
+      download: (VideoSubtitleCandidate c) async {
+        calls++;
+        if (calls == 1) throw const SocketException('reset');
+        if (calls == 2) {
+          return VideoSubtitleDownload(
+            bytes: Uint8List(0),
+            fileName: c.fileName,
+            language: '',
+          );
+        }
+        return VideoSubtitleDownload(
+          bytes: Uint8List.fromList(
+            utf8.encode(
+              '1\n00:00:01,000 --> 00:00:02,000\n'
+              'サーカスは　みんなを幸せにするんだ\n',
+            ),
+          ),
+          fileName: c.fileName,
+          language: '',
+        );
+      },
+    );
+    expect(await probe.probe(candidate), isNull);
+    expect(await probe.probe(candidate), isNull);
+    expect(
+      await probe.probe(candidate),
+      SubtitleContentLanguage.japanese,
+      reason: '前两次是暂时性失败，不得被缓存成「判不出」',
+    );
+    expect(await probe.probe(candidate), SubtitleContentLanguage.japanese);
+    expect(calls, 3, reason: '判出来之后走缓存，不再下载');
+
+    // 下到了但判不出：是结论，缓存住不再重下。
+    int opaqueCalls = 0;
+    final SubtitleVersionLanguageProbe opaque = SubtitleVersionLanguageProbe(
+      download: (VideoSubtitleCandidate c) async {
+        opaqueCalls++;
+        return VideoSubtitleDownload(
+          bytes: Uint8List.fromList(
+            utf8.encode('1\n00:00:01,000 --> 00:00:02,000\n123\n'),
+          ),
+          fileName: c.fileName,
+          language: '',
+        );
+      },
+    );
+    expect(await opaque.probe(candidate), isNull);
+    expect(await opaque.probe(candidate), isNull);
+    expect(opaqueCalls, 1);
   });
 
   test('resolveSubtitleBatchEpisode：路径 → 标题 → sortIndex+1', () {

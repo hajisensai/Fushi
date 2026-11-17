@@ -86,8 +86,15 @@ class SubtitleBatchItem {
   /// 选中字幕的语言代码（`ja`/`zh`/...；来源没给且认不出为 null）。
   String? language;
 
-  /// 失败/无匹配时的简短原因（UI 副标题）。
+  /// 失败/无匹配时的简短原因（诊断用的英文短句，不直接给用户看）。
   String? message;
+
+  /// 失败/无匹配背后的**异常对象**（没有异常时为 null）。
+  ///
+  /// [message] 是 `'$e'` 字符串，分不出 401（key 过期）/ 429（限流）/ 404（文件
+  /// 下架）；面板要把它喂给 `describeSubtitleFailure` 才能说出用户能据以行动的原因，
+  /// 所以对象本身得留着。
+  Object? error;
 }
 
 /// 解析该集用于匹配的真实集号：优先从视频路径文件名 / 标题解析（`第N話` / `E01` /
@@ -180,6 +187,9 @@ class _ArchivePackSplitter {
       <String, Future<VideoSubtitleDownload?>>{};
   Object? _lastError;
 
+  /// 最近一次整季包下载失败的异常（没失败过为 null）。
+  Object? get lastError => _lastError;
+
   /// 本集没从任何包里拆出文件时的原因（没有包可试时为 null，交回单文件判据）。
   String? get failureReason {
     if (_lastError != null) return 'archive: $_lastError';
@@ -270,6 +280,9 @@ typedef SubtitleBatchItemCallback =
 /// 但判不出）。这些版本不再重探——「判不出」也是结论。
 ///
 /// 尽力而为：单集失败/无匹配不中断整批（记该集状态后继续）。返回全部集的结果。
+/// [onItemDone] 抛错（调用方的持久化失败）同样只算**这一集**失败：状态改记
+/// [SubtitleBatchStatus.failed]、异常留在 [SubtitleBatchItem.error]，已落盘的
+/// [SubtitleBatchItem.subtitlePath] 保留，后面的集照常处理。
 Future<List<SubtitleBatchItem>> runSubtitleBatch({
   required VideoSubtitleRegistry registry,
   required List<VideoSubtitleCandidate> candidates,
@@ -373,6 +386,7 @@ Future<List<SubtitleBatchItem>> runSubtitleBatch({
         // 「为什么没配上」对用户是三件不同的事（改来源 / 等字幕 / 无能为力），
         // 别全压成一句「无匹配」。
         item.message = packs.failureReason ?? match.failureReason;
+        item.error = packs.lastError;
       } else {
         final VideoSubtitleDownload fetched =
             fromPack ?? await fetchCandidate(best!);
@@ -400,11 +414,20 @@ Future<List<SubtitleBatchItem>> runSubtitleBatch({
           item.status = SubtitleBatchStatus.done;
         }
       }
-    } catch (e) {
+    } on Object catch (e) {
       item.status = SubtitleBatchStatus.failed;
       item.message = '$e';
+      item.error = e;
     }
-    if (onItemDone != null) await onItemDone(item);
+    if (onItemDone != null) {
+      try {
+        await onItemDone(item);
+      } on Object catch (e) {
+        item.status = SubtitleBatchStatus.failed;
+        item.message = '$e';
+        item.error = e;
+      }
+    }
     results.add(item);
   }
   return results;
