@@ -142,7 +142,7 @@ Future<AppMangaRenderBackend> _backendFor(
     final List<String>? paths = book?.audioPathsInCueOrder;
     if (paths != null) clipSources[key] = paths;
   }
-  return AppMangaRenderBackend(
+  return AppMangaRenderBackend.fromServices(
     tts: tts,
     cache: await tts.cache(),
     ffmpeg: resolveFfmpegBackend(),
