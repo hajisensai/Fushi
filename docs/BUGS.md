@@ -40,6 +40,9 @@
 | [BUG-4780](bugs/BUG-4780-feedback-dev-save-file-macos.md) | ✅ | ✅ | 处理台另存样本文件在 macOS 上必定失败 |
 | [BUG-4779](bugs/BUG-4779-feedback-pending-file-missing-name.md) | ✅ | ✅ | 待传样本文件缺原文件名旁注时用假名上传、被服务端拒收后丢掉 |
 | [BUG-4778](bugs/BUG-4778-feedback-video-upload-after-files.md) | ✅ | ✅ | 反馈视频排在样本文件后上传，共用每 IP 每天额度被 429 挤掉 |
+| [BUG-4780](bugs/BUG-4780-srs-text-import-progress-stop-empty-decks.md) | ✅ | ✅ | 文本导入纯更新时进度一直是 0、点不了停止；叫停后牌组列新建的牌组留成空牌组 |
+| [BUG-4779](bugs/BUG-4779-srs-browse-source-sort-episode-split.md) | ✅ | ✅ | 复习卡浏览按出处列排序时同一部番的笔记被别作同名集拆散，与出处视图的集顺序不一致 |
+| [BUG-4778](bugs/BUG-4778-srs-text-import-batch-failure-leaves-new-decks.md) | 🚧 | 🚧 | 文本导入某一批落库抛异常时这一批刚建的牌组留成空牌组 |
 | [BUG-4777](bugs/BUG-4777-overwrite-snapshot-retention-stamp-failure.md) | ✅ | ✅ | 覆盖前快照钉修改时间失败会按旧库时间提前删快照 |
 | [BUG-4776](bugs/BUG-4776-overwrite-snapshot-preview-sync-probe-ui.md) | ✅ | ✅ | 覆盖前快照预览在 UI isolate 上同步检查书和视频文件 |
 | [BUG-4775](bugs/BUG-4775-merge-audiobook-pos-ignores-tombstone.md) | ✅ | ✅ | 合并与快照恢复的有声书进度不受墓碑与排除过滤 |
