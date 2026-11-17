@@ -540,6 +540,55 @@ void main() {
     expect(File(SrsStorage.gen4PathIn(dbDir)).existsSync(), isFalse);
   });
 
+  test('本机还没迁移：合并只在备份真带复习数据时拒绝（先于改主库）；勾着「复习」但备份里没有复习数据照常合并', () async {
+    final e = await exportAll();
+    final String p3 = await _protocol3LibraryFrom(src, e);
+    final String noSrs = p.join(src.path, 'no_srs_data.zip');
+    await rewriteZip(
+      e.zip,
+      noSrs,
+      drop: (String n) => n.startsWith(kSrsBackupPrefix),
+    );
+    final String dbDir = p.join(dst.path, 'support');
+    Directory(dbDir).createSync(recursive: true);
+    final FushiDatabase db = FushiDatabase(dbDir);
+    await insertProfile(db, '日语');
+    await db.close();
+    File(p3).copySync(SrsStorage.legacyPathIn(dbDir));
+    final Map<String, List<int>> before = filesOf(dbDir);
+
+    await expectLater(
+      BackupRestoreService.mergeRestoreBackup(
+        dbDirectory: dbDir,
+        zipPath: e.zip,
+        srsConfirmed: true,
+      ),
+      throwsA(isA<SrsRestoreBlockedException>()),
+    );
+    // 代际状态探测（`SrsGen4Migration.status`）自己会留下协调锁与旧库的 -wal（不在本模块，原有行为）；除此之外没有
+    // 新文件（没有合并临时库、没有 pre-merge 快照、没有 srs4.db），原有文件逐字节不变。
+    expect(
+      filesOf(dbDir).keys.toSet().difference(before.keys.toSet()),
+      everyElement(isIn(<String>{'srs.db-wal', 'srs.gen.lock'})),
+    );
+    for (final MapEntry<String, List<int>> f in before.entries) {
+      expect(filesOf(dbDir)[f.key], orderedEquals(f.value), reason: f.key);
+    }
+
+    final List<SrsBackupMergeResult> r =
+        await BackupRestoreService.mergeRestoreBackup(
+          dbDirectory: dbDir,
+          zipPath: noSrs,
+          srsConfirmed: true,
+        );
+    expect(r, isEmpty);
+    expect(
+      File(SrsStorage.legacyPathIn(dbDir)).readAsBytesSync(),
+      orderedEquals(before[p.basename(SrsStorage.legacyPathIn(dbDir))]!),
+    );
+    expect(File(SrsStorage.gen4PathIn(dbDir)).existsSync(), isFalse);
+  });
+
   group('合并还原', () {
     test('没确认：另一个复习库的数据不落、不建「（备份）」profile；确认后落下，再合并一次什么都不变（幂等）', () async {
       final e = await exportAll();

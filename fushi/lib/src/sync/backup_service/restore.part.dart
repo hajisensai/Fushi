@@ -1702,7 +1702,8 @@ class BackupRestoreService {
       );
 
       final BackupMeta? meta = _readBackupMeta(archive);
-      // 复习：先确认本机复习库能接受合并（动任何文件之前）。清单坏 / 来自更新版本也在这里拒绝。
+      // 复习：清单坏 / 来自更新版本在动任何文件之前拒绝。本机复习库能不能接受合并要等知道备份里**真有**复习数据
+      // 之后才判（第 2b 步），与覆盖还原同一口径：只勾了「复习」、备份里却没有复习数据时不因本机没迁移而拒绝。
       final bool mayCarrySrs =
           wants(BackupCategory.srs) &&
           !(meta?.excludedCategories.contains(BackupCategory.srs.name) ??
@@ -1710,7 +1711,6 @@ class BackupRestoreService {
       if (mayCarrySrs) {
         final ArchiveFile? m = archive.findFile(kSrsBackupManifestEntry);
         if (m != null) SrsBackupManifest.parse(m.content as List<int>);
-        await _checkSrsLibraryRestorable(dbDirectory);
       }
 
       // 1) Extract the backup DB to a sibling temp file (NEVER overwrite the
@@ -1740,78 +1740,98 @@ class BackupRestoreService {
       await _safeDelete('$mergeSrcPath-wal');
       await _safeDelete('$mergeSrcPath-shm');
 
-      // 3) Snapshot the live DB for manual recovery + drop the crash-cleanup
-      //    sidecar BEFORE mutating the live DB.
-      final File currentDb = File(dbPath);
-      if (currentDb.existsSync()) {
-        await currentDb.copy(bakPath);
-      }
-      await sidecar.writeAsString(
-        jsonEncode(<String, dynamic>{
-          'mode': 'merge',
-          'mergeSrc': mergeSrcPath,
-        }),
-      );
-
-      // 4) Open the live DB, ATTACH the backup, run the whole row merge in one
-      //    transaction (rolled back on any failure -> DB unchanged).
-      final FushiDatabase db = FushiDatabase(dbDirectory);
+      // 2b) 复习：解出备份里的复习数据（新形态清单 / 协议 3 `srs.db` / 主库老表里有数据的 profile；都没有 = null，
+      //     不打开本机复习库），有才要求本机复习库能接受合并（[_checkSrsLibraryRestorable]）。都在快照 / 改主库之前：
+      //     失败时删掉刚解出的临时备份主库，本机什么都没动。
+      final _SrsRestoreUnits? srsUnits;
       try {
-        final String safeSrc = mergeSrcPath
-            .replaceAll(r'\', '/')
-            .replaceAll("'", "''");
-        await db.customStatement("ATTACH DATABASE '$safeSrc' AS mergesrc");
-        try {
-          // TODO-1261: only import video rows whose file travelled (or streaming
-          // URLs) so a backup never lands a dead "empty video" shell. The carried
-          // set is the exact video files packed by export (meta.videoFiles keys).
-          await BackupMergeEngine(
-            db,
-            carriedVideoSourcePaths:
-                meta?.videoFiles.keys.toSet() ?? const <String>{},
-            enabledCategoryNames: enabledCategoryNames,
-            adoptSourcePreferences: adoptSourcePreferences,
-            mergePortableSettings: mergePortableSettings,
-          ).merge();
-        } finally {
-          await db.customStatement('DETACH DATABASE mergesrc');
-        }
-        await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
-      } finally {
-        await db.close();
-      }
-
-      // 4b) 复习：主库提交之后逐份落进本机新代库（内核命令，各自一个写事务；幂等，中途失败重跑即收敛）。备份不带
-      //     复习数据时不打开本机复习库（复习从没用过的设备不凭空建库）。
-      List<SrsBackupMergeResult> srsResults = const <SrsBackupMergeResult>[];
-      if (mayCarrySrs) {
-        final _SrsRestoreUnits? srsUnits = await _prepareSrsRestoreUnits(
-          zipPath: zipPath,
-          archive: archive,
-          dbFile: dbFile,
-          meta: meta,
-          backupDbPath: mergeSrcPath,
-          onBytes: reportBytes,
-        );
+        srsUnits = mayCarrySrs
+            ? await _prepareSrsRestoreUnits(
+                zipPath: zipPath,
+                archive: archive,
+                dbFile: dbFile,
+                meta: meta,
+                backupDbPath: mergeSrcPath,
+                onBytes: reportBytes,
+              )
+            : null;
         if (srsUnits != null) {
           try {
-            final SrsCore core = await SrsCore.openInBackground(dbDirectory);
-            final FushiDatabase sdb = FushiDatabase(dbDirectory);
-            try {
-              srsResults = await mergeSrsIntoLocal(
-                db: sdb,
-                localSrs: core,
-                units: srsUnits.units,
-                confirmed: srsConfirmed,
-              );
-            } finally {
-              await sdb.close();
-              core.close();
-            }
-          } finally {
+            await _checkSrsLibraryRestorable(dbDirectory);
+          } on Object {
             await srsUnits.dispose();
+            rethrow;
           }
         }
+      } on Object {
+        await _safeDelete(mergeSrcPath);
+        await _safeDelete('$mergeSrcPath-wal');
+        await _safeDelete('$mergeSrcPath-shm');
+        rethrow;
+      }
+
+      List<SrsBackupMergeResult> srsResults = const <SrsBackupMergeResult>[];
+      try {
+        // 3) Snapshot the live DB for manual recovery + drop the crash-cleanup
+        //    sidecar BEFORE mutating the live DB.
+        final File currentDb = File(dbPath);
+        if (currentDb.existsSync()) {
+          await currentDb.copy(bakPath);
+        }
+        await sidecar.writeAsString(
+          jsonEncode(<String, dynamic>{
+            'mode': 'merge',
+            'mergeSrc': mergeSrcPath,
+          }),
+        );
+
+        // 4) Open the live DB, ATTACH the backup, run the whole row merge in one
+        //    transaction (rolled back on any failure -> DB unchanged).
+        final FushiDatabase db = FushiDatabase(dbDirectory);
+        try {
+          final String safeSrc = mergeSrcPath
+              .replaceAll(r'\', '/')
+              .replaceAll("'", "''");
+          await db.customStatement("ATTACH DATABASE '$safeSrc' AS mergesrc");
+          try {
+            // TODO-1261: only import video rows whose file travelled (or streaming
+            // URLs) so a backup never lands a dead "empty video" shell. The carried
+            // set is the exact video files packed by export (meta.videoFiles keys).
+            await BackupMergeEngine(
+              db,
+              carriedVideoSourcePaths:
+                  meta?.videoFiles.keys.toSet() ?? const <String>{},
+              enabledCategoryNames: enabledCategoryNames,
+              adoptSourcePreferences: adoptSourcePreferences,
+              mergePortableSettings: mergePortableSettings,
+            ).merge();
+          } finally {
+            await db.customStatement('DETACH DATABASE mergesrc');
+          }
+          await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+        } finally {
+          await db.close();
+        }
+
+        // 4b) 复习：主库提交之后逐份落进本机新代库（内核命令，各自一个写事务；幂等，中途失败重跑即收敛）。备份不带
+        //     复习数据时不打开本机复习库（复习从没用过的设备不凭空建库）。
+        if (srsUnits != null) {
+          final SrsCore core = await SrsCore.openInBackground(dbDirectory);
+          final FushiDatabase sdb = FushiDatabase(dbDirectory);
+          try {
+            srsResults = await mergeSrsIntoLocal(
+              db: sdb,
+              localSrs: core,
+              units: srsUnits.units,
+              confirmed: srsConfirmed,
+            );
+          } finally {
+            await sdb.close();
+            core.close();
+          }
+        }
+      } finally {
+        await srsUnits?.dispose();
       }
 
       // 5) Restore content trees COPY-IF-ABSENT (never delete/replace existing

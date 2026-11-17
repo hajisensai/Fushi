@@ -1682,6 +1682,7 @@
   "backup_import_settings_on_hint": "完全復元: フォント・外観・プロファイルをバックアップから復元します。",
   "backup_import_settings_toggle": "設定とプロファイルをインポート",
   "backup_import_success": "バックアップを復元しました。再起動中…",
+  "backup_import_success_srs_declined": "Backup restored, but review data for $count profile(s) was not merged because it needs your confirmation. Import this backup again and confirm to merge it. Restarting…",
   "backup_import_validating_hint": "バックアップファイルを確認・プレビューしています。しばらくお待ちください。",
   "backup_import_validating_title": "バックアップを読み込み中…",
   "backup_legacy_schema": "このバックアップは旧 Hibiki アプリまたは初期バージョン（データ構造 v75 未満）のもので、このバージョンではインポートできません。現在のデータは変更されていません。移行手順：Fushi v$version（完全なアップグレード経路を含むブリッジ版）をインストールしてこのバックアップをインポートし、その後最新バージョンに更新してください。Android では新しいバージョンの上に古いバージョンをインストールできないため、先に現在の Fushi をアンインストールしてから（現在のデータは削除されるので、残したいものは先にバックアップしてください）v$version をインストールしてください。ダウンロード：$url",

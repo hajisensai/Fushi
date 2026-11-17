@@ -1226,27 +1226,45 @@ Future<void> runBackupImportFlowForFile({
         choice.mode == BackupImportMode.merge &&
         await SyncRepository(appModel.database).isBackupMergeSettingsEnabled();
     await appModel.closeDatabase();
+    // 合并里没落的复习数据（要确认而没确认：用户在上面答了否，或预设 / 控制通道不替用户确认）：不能当作全部成功报，
+    // 完成提示里写明有几份没并入、要再导一次并确认。
+    int srsDeclined = 0;
     if (choice.mode == BackupImportMode.merge) {
       // TODO-888 merge: keep this device's library + settings, only ADD what
       // the backup carries (row-level upsert + copy-if-absent content trees).
       // Never overwrites/deletes existing data, so importSettings is moot.
-      await BackupRestoreService.mergeRestoreBackup(
-        dbDirectory: appModel.databaseDirectory.path,
-        zipPath: filePath,
-        // Per-category merge selection (merge mode now honours the dialog's
-        // toggles): an unticked category adds neither rows nor files.
-        categories: choice.categories,
-        dictionaryResourceDirectory: appModel.dictionaryResourceDirectory.path,
-        booksRootDirectory: booksRoot,
-        audiobooksRootDirectory: audiobooksRoot,
-        fontsRootDirectory: fontsRoot,
-        videosRootDirectory: videosRoot,
-        gameCoversRootDirectory: gameCoversRoot,
-        // TODO-1183: 后台解压 isolate 经 SendPort 回报字节 → 确定进度条。
-        onProgress: appModel.reportBackupImportProgress,
-        mergePortableSettings: mergeSettings,
-        srsConfirmed: srsConfirmed,
-      );
+      final List<SrsBackupMergeResult> srsResults =
+          await BackupRestoreService.mergeRestoreBackup(
+            dbDirectory: appModel.databaseDirectory.path,
+            zipPath: filePath,
+            // Per-category merge selection (merge mode now honours the dialog's
+            // toggles): an unticked category adds neither rows nor files.
+            categories: choice.categories,
+            dictionaryResourceDirectory:
+                appModel.dictionaryResourceDirectory.path,
+            booksRootDirectory: booksRoot,
+            audiobooksRootDirectory: audiobooksRoot,
+            fontsRootDirectory: fontsRoot,
+            videosRootDirectory: videosRoot,
+            gameCoversRootDirectory: gameCoversRoot,
+            // TODO-1183: 后台解压 isolate 经 SendPort 回报字节 → 确定进度条。
+            onProgress: appModel.reportBackupImportProgress,
+            mergePortableSettings: mergeSettings,
+            srsConfirmed: srsConfirmed,
+          );
+      srsDeclined = srsResults
+          .where(
+            (SrsBackupMergeResult r) =>
+                r.action == SrsBackupMergeAction.declined,
+          )
+          .length;
+      if (srsDeclined > 0) {
+        ErrorLogService.instance.log(
+          'backupImport.srsDeclined',
+          'merge left $srsDeclined review data unit(s) unmerged: they need '
+              'the user to confirm (preset=${preset != null})',
+        );
+      }
     } else {
       await BackupRestoreService.restoreBackup(
         dbDirectory: appModel.databaseDirectory.path,
@@ -1280,7 +1298,11 @@ Future<void> runBackupImportFlowForFile({
     } catch (e, s) {
       ErrorLogService.instance.log('backupImport.successReceipt', e, s);
     }
-    appModel.completeBackupImport(t.backup_import_success);
+    appModel.completeBackupImport(
+      srsDeclined > 0
+          ? t.backup_import_success_srs_declined(count: srsDeclined)
+          : t.backup_import_success,
+    );
     await Future<void>.delayed(const Duration(seconds: 1));
     // restartApp 成功会拉新进程并退出本进程；backupImportRestart 内部已吞掉重启失败并退回
     // 纯退出兜底，故此处不会把「重启失败」冒泡成 catch 里的 failBackupImport（避免把成功的

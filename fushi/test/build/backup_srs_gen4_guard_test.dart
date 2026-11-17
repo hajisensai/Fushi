@@ -69,4 +69,51 @@ void main() {
     ];
     expect(hits, isEmpty, reason: '封存的 srs.db 永不删、不换');
   });
+
+  /// [path] 里 `mergeRestoreBackup(` 调用（到配平的右括号为止）的源码，去掉整行注释。
+  List<String> mergeCalls(String path) {
+    final String src = codeLines(
+      path,
+    ).map(((int, String) l) => l.$2).join('\n');
+    final List<String> out = <String>[];
+    for (
+      int at = src.indexOf('mergeRestoreBackup(');
+      at >= 0;
+      at = src.indexOf('mergeRestoreBackup(', at + 1)
+    ) {
+      int depth = 0;
+      int i = at + 'mergeRestoreBackup'.length;
+      for (; i < src.length; i++) {
+        if (src[i] == '(') depth++;
+        if (src[i] == ')' && --depth == 0) break;
+      }
+      out.add(src.substring(at, i + 1));
+    }
+    return out;
+  }
+
+  test('合并还原的调用点不把没落的复习数据（declined）当成功吞掉', () {
+    // 同机换包名：用户就是要整份搬过来，替他确认（不确认的话内核对没绑定的 profile 回「要确认」，复习数据一份不落）。
+    final List<String> migration = mergeCalls(
+      'lib/src/pages/implementations/migration_import_page.dart',
+    );
+    expect(migration, isNotEmpty);
+    for (final String call in migration) {
+      expect(call, contains('srsConfirmed: true'), reason: call);
+    }
+    // 导入流程（含控制通道预设）：接住回包、数 declined、换完成提示。
+    const String flow = 'lib/src/sync/sync_settings_schema/backup.part.dart';
+    final List<String> calls = mergeCalls(flow);
+    expect(calls, hasLength(1));
+    final String src = codeLines(
+      flow,
+    ).map(((int, String) l) => l.$2).join('\n');
+    expect(
+      src,
+      contains('List<SrsBackupMergeResult> srsResults =\n'),
+      reason: '回包要接住',
+    );
+    expect(src, contains('SrsBackupMergeAction.declined'));
+    expect(src, contains('t.backup_import_success_srs_declined('));
+  });
 }

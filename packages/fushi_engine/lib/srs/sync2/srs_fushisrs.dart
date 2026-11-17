@@ -38,7 +38,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 
-import 'package:archive/archive_io.dart';
+import 'package:archive/archive_io.dart' hide ZLibDecoder;
 import 'package:crypto/crypto.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_media_sync.dart';
@@ -483,7 +483,7 @@ Future<_FushiSrsRead> _readFushiSrs(String path, String opsPath) async {
     }
     if (m is! Map) throw _invalid();
     if (m['magic'] == kSrsLegacyBackupMagic) {
-      return _readLegacy(zip, m.cast<String, Object?>(), opsPath);
+      return _readLegacy(decoder, zip, m.cast<String, Object?>(), opsPath);
     }
     final Object? v = m['v'];
     if (v is! int || v < 1) throw _invalid();
@@ -564,7 +564,11 @@ List<int> _legacyContent(ArchiveFile f, int max, String what) {
 /// `legacy_backup_import`（`source: "events"`）读的 JSONL 到 [jsonlPath]：每行 `{e, stamped: true, server?}`（事件原样，
 /// `server` 取 `server_times.json`）。日志不带笔记 ID：内核在临时协议 3 库里按派生出的卡片补（与协议 3 `applyRemote`
 /// 同口径）。不碰媒体目录。
+///
+/// `events.jsonl` 按块流式读（[_streamLegacyEvents]）：解压、算 SHA-256、按行解码一遍走完，峰值内存与正文大小无关；
+/// 摘要要等读完才知道，所以先写 JSONL、最后核对，不符时删掉写了一半的文件再抛。
 _LegacyEventsRead _readLegacy(
+  ZipDecoder decoder,
   Archive zip,
   Map<String, Object?> manifest,
   String jsonlPath,
@@ -581,16 +585,8 @@ _LegacyEventsRead _readLegacy(
   if (ev is! Map || ev['sha256'] is! String || ev['count'] is! int) {
     throw _corruptLegacy('manifest events');
   }
-  final ArchiveFile? eventsFile = zip.findFile('events.jsonl');
+  final ZipFile? eventsFile = _entry(decoder, 'events.jsonl');
   if (eventsFile == null) throw _corruptLegacy('events missing');
-  final List<int> body = _legacyContent(
-    eventsFile,
-    _kLegacyMaxEventsBytes,
-    'events',
-  );
-  if (sha256.convert(body).toString() != ev['sha256']) {
-    throw _corruptLegacy('events sha256 mismatch');
-  }
   final Map<String, int> serverTimes = <String, int>{};
   final ArchiveFile? st = zip.findFile('server_times.json');
   if (st != null) {
@@ -612,11 +608,13 @@ _LegacyEventsRead _readLegacy(
       }
     }
   }
-  final RandomAccessFile out = File(jsonlPath).openSync(mode: FileMode.write);
+  final File jsonl = File(jsonlPath);
+  final RandomAccessFile out = jsonl.openSync(mode: FileMode.write);
   int n = 0;
+  final String digest;
   try {
-    for (final String line in const LineSplitter().convert(utf8.decode(body))) {
-      if (line.isEmpty) continue;
+    digest = _streamLegacyEvents(eventsFile, (String line) {
+      if (line.isEmpty) return;
       final Object? e;
       try {
         e = jsonDecode(line);
@@ -634,13 +632,114 @@ _LegacyEventsRead _readLegacy(
       };
       out.writeStringSync('${jsonEncode(item)}\n');
       n++;
-    }
-  } finally {
-    // 后台 isolate 里同步写完、关文件，内核随后按文件读（旧格式只会越来越少，不为它做异步流水线）。
+    });
+  } on Object {
     out.closeSync();
+    jsonl.deleteSync();
+    rethrow;
   }
-  if (n != ev['count']) throw _corruptLegacy('event count mismatch');
+  // 后台 isolate 里同步写完、关文件，内核随后按文件读（旧格式只会越来越少，不为它做异步流水线）。
+  out.closeSync();
+  if (digest != ev['sha256'] || n != ev['count']) {
+    jsonl.deleteSync();
+    throw _corruptLegacy(
+      digest != ev['sha256']
+          ? 'events sha256 mismatch'
+          : 'event count mismatch',
+    );
+  }
   return _LegacyEventsRead(profileUid);
+}
+
+/// 旧事件备份 `events.jsonl` 条目的块大小（压缩后的读窗口）。
+const int _kLegacyEventsChunk = 1 << 16;
+
+/// 按块读 zip 条目 [f]（只认不加密的存放 / deflate）：解压后的字节一边算 SHA-256、一边按 UTF-8 解码切行交给 [onLine]，
+/// 回正文的 SHA-256（小写十六进制）。解压后超过 [_kLegacyMaxEventsBytes] 当坏包（声明的大小与实际都查：外部文件不可信）。
+String _streamLegacyEvents(ZipFile f, void Function(String line) onLine) {
+  final int? declared = f.uncompressedSize;
+  if (declared != null && declared > _kLegacyMaxEventsBytes) {
+    throw _corruptLegacy('events too large');
+  }
+  final InputStreamBase? raw = f.rawContent;
+  final bool stored = f.compressionMethod == ZipFile.zipCompressionStore;
+  if (raw == null ||
+      (f.flags & 0x1) != 0 ||
+      !(stored || f.compressionMethod == ZipFile.zipCompressionDeflate)) {
+    throw _corruptLegacy('events entry');
+  }
+  final _DigestCapture captured = _DigestCapture();
+  final ByteConversionSink hash = sha256.startChunkedConversion(captured);
+  final ByteConversionSink text = const Utf8Decoder().startChunkedConversion(
+    const LineSplitter().startChunkedConversion(_LineSink(onLine)),
+  );
+  final _EventBytesSink plain = _EventBytesSink(hash, text);
+  final Sink<List<int>> input = stored
+      ? plain
+      : ZLibDecoder(raw: true).startChunkedConversion(plain);
+  try {
+    while (!raw.isEOS) {
+      final int take = raw.length < _kLegacyEventsChunk
+          ? raw.length
+          : _kLegacyEventsChunk;
+      input.add(raw.readBytes(take).toUint8List());
+    }
+    input.close();
+  } on FormatException {
+    rethrow;
+  } on Object {
+    throw _corruptLegacy('events');
+  }
+  return captured.value!.toString();
+}
+
+/// 解压后的正文：计数（上限）、送进摘要与按行解码。
+final class _EventBytesSink implements Sink<List<int>> {
+  _EventBytesSink(this._hash, this._text);
+
+  final ByteConversionSink _hash;
+  final ByteConversionSink _text;
+  int _total = 0;
+
+  @override
+  void add(List<int> chunk) {
+    _total += chunk.length;
+    if (_total > _kLegacyMaxEventsBytes) {
+      throw _corruptLegacy('events too large');
+    }
+    _hash.add(chunk);
+    _text.add(chunk);
+  }
+
+  @override
+  void close() {
+    _hash.close();
+    _text.close();
+  }
+}
+
+/// 切好的每一行交给回调。
+final class _LineSink implements Sink<String> {
+  _LineSink(this._onLine);
+
+  final void Function(String line) _onLine;
+
+  @override
+  void add(String line) => _onLine(line);
+
+  @override
+  void close() {}
+}
+
+/// 接 [sha256] 分块计算的结果。
+final class _DigestCapture implements Sink<Digest> {
+  Digest? value;
+
+  @override
+  void add(Digest d) => value = d;
+
+  @override
+  void close() {}
 }
 
 /// 在后台 isolate 跑：旧事件备份的媒体（清单 `media: [{name, sha256}]`）补进 [mediaRootPath]（已有的不覆盖）：先取文件

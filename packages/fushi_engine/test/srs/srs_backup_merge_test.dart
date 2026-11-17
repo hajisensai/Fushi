@@ -6,6 +6,7 @@ import 'package:fushi_engine/srs/srs_backup_merge.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
+import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
@@ -46,10 +47,11 @@ void main() {
   }
 
   /// [uid] 在 [core] 里的笔记身份记录条数（内核读命令 `events`）。
-  Future<int> noteCount(SrsCore core, String uid) async => (await srsEventsOf(
-    core,
-    uid,
-  )).whereType<SrsEntityEvent>().where((SrsEntityEvent e) => e.record.kind == SrsEntityKind.note).length;
+  Future<int> noteCount(SrsCore core, String uid) async =>
+      (await srsEventsOf(core, uid))
+          .whereType<SrsEntityEvent>()
+          .where((SrsEntityEvent e) => e.record.kind == SrsEntityKind.note)
+          .length;
 
   /// 备份端导出 [profiles]，回可落地的单元。
   Future<List<SrsBackupLandUnit>> exportUnits(
@@ -229,6 +231,55 @@ void main() {
       expect(again.single.action, SrsBackupMergeAction.sameUid);
       expect(again.single.newEvents, 0);
       expect(created, hasLength(1));
+    });
+
+    test('同名、本机没数据但发布过批次（传到过位置）：不认领，建「（备份）」；本机 profile 的集合不动', () async {
+      final String uid = uuidV7();
+      await addNote(backupSrs.core, uid, '雪');
+      final List<SrsBackupLandUnit> units = await exportUnits(
+        <SrsBackupProfile>[SrsBackupProfile(uid: uid, name: '日语')],
+      );
+      final String localUid = uuidV7();
+      final SrsDbStore local = await SrsDbStore.open(
+        core: localSrs.core,
+        profileUid: localUid,
+        deviceId: 'dev',
+      );
+      final Directory usb = Directory(p.join(work.path, 'usb'))..createSync();
+      await srsSyncFolderLocation(
+        location: SrsFolderLocation(id: 'usb', path: usb.path),
+        store: local,
+      );
+      // 前提：本机 profile 没有用户数据，但已经往位置上传过批次。
+      expect(await srsProfileHasUserData(localSrs.core, localUid), isFalse);
+      final List<Object?> locations =
+          (await local.sync2Status())['locations']! as List<Object?>;
+      expect(
+        locations.any(
+          (Object? l) => l is Map && ((l['uploaded'] as int?) ?? 0) > 0,
+        ),
+        isTrue,
+        reason: '$locations',
+      );
+      final Object? before = localSrs.core.sync2(<String, Object?>{
+        'op': 'collection_info',
+        'profile': localUid,
+      }).map['collection'];
+      locals.add((id: 1, name: '日语', uid: localUid));
+
+      final List<SrsBackupMergeResult> r = await merge(units);
+      expect(r.single.action, SrsBackupMergeAction.createdProfile);
+      expect(r.single.profileUid, uid);
+      expect(created, <(String, String)>[('日语（备份）', uid)]);
+      expect(await noteCount(localSrs.core, uid), 1);
+      expect(await noteCount(localSrs.core, localUid), 0);
+      expect(
+        localSrs.core.sync2(<String, Object?>{
+          'op': 'collection_info',
+          'profile': localUid,
+        }).map['collection'],
+        before,
+      );
     });
   });
 }

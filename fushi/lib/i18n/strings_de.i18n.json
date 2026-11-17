@@ -1682,6 +1682,7 @@
   "backup_import_settings_on_hint": "Vollständige Wiederherstellung: Schriften, Darstellung und Profile stammen aus dem Backup.",
   "backup_import_settings_toggle": "Einstellungen & Profile importieren",
   "backup_import_success": "Backup wiederhergestellt. Neustart…",
+  "backup_import_success_srs_declined": "Backup restored, but review data for $count profile(s) was not merged because it needs your confirmation. Import this backup again and confirm to merge it. Restarting…",
   "backup_import_validating_hint": "Die Sicherungsdatei wird geprüft und in der Vorschau angezeigt. Dies kann einen Moment dauern.",
   "backup_import_validating_title": "Sicherung wird gelesen…",
   "backup_legacy_schema": "This backup comes from the old Hibiki app or an early version (data schema older than v75), which this version can no longer import. Your current data has not been changed. To migrate: install Fushi v$version (the bridge release that still contains the full upgrade path), import the backup there, then update to the current version. On Android an older version cannot be installed over a newer one: uninstall this Fushi first (this deletes its current data, so back up anything you want to keep), then install v$version. Download: $url",

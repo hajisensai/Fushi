@@ -1276,6 +1276,7 @@ Rust `SCHEMA` 没升（没加表 / 索引，分到的 40024 没用）；ABI 不�
 6. **本机复习库状态不对时整次拒绝**（`SrsRestoreBlockedException`，`backup_srs_restore_blocked`）：只看代际状态
    （`SrsGen4Migration.status`，**不开库**——开库会写文件头，失败时本机就不再逐字节原样）；没迁移 / 迁移中 / 只剩封存旧库 /
    上次迁移失败都拒，提示先完成升级或取消勾选「复习」。G7-5 的 `SrsRestoreUnavailableException` 整次拒绝删掉。
+   只在备份里**真有**复习数据（解出的待落库单元非空）时才判，覆盖 / 合并同一口径（复核修复 3）。
 7. **旧形态全部能进（D34）**，经新命令 `legacy_backup_import`（`cmd/backup.rs`）：
    - 协议 3 整包备份的 `srs.db` 条目：`source: "db"`；
    - 2026-10-23 之前 SRS 表在主库条目里的整包备份、v2 同步之前的 `.fushisrs` 事件备份（魔数 `fushi-srs-backup`）：Dart 写成
@@ -1330,3 +1331,40 @@ Rust `SCHEMA` 没升（没加表 / 索引，分到的 40024 没用）；ABI 不�
   `srs_profile_link_sync_test` / `srs_profile_purge_single_test` / `srs_profile_adopt_user_data_test`（断言协议 3 表 `sync2_ops`，
   归 T1 / G9-5）；`fushi/test/srs/srs_profile_cleanup_test.dart`（`profile_purge` 未接线，G9-5）；
   `srs_store_ownership_guard_test.dart`（`srs_storage.dart:112` 的表名，本分支没碰该文件）。
+
+### 复核修复（2026-11-17，同一分支）
+
+1. **身份确认闸门补测试**：`a_legacy_backup_bringing_a_new_identity_needs_confirmation`（经 C ABI）——本机 profile 已绑在
+   `collection_of(uid)` 上，旧 `srs.db` 多一个退役 uid（新盐）或多一台本机没记过公钥的设备：预检与真导入不确认都回
+   `needsConfirm` / `identity`，`newSalts` / `newPeers` 就是它，导出流与 `peers` 逐字节不变；确认后盐进绑定、设备进 `peers`。
+   变异实测：`if identity.is_some()` 改成 `if false && …` → 该条红。
+2. **预检「副本没备好」补测试**：`preflight_reports_a_backup_library_that_is_not_ready`——副本按这份输入备好（标记有效）之后
+   又被改得不满足前提（开一条新设备收段通道）：预检报 `not ready`，不先答 `ready`。变异实测：去掉 `if !blockers.is_empty()`
+   → 红。备副本本身不会留下这种状态（冻结代码的 `migrate` / `dedup` / `replay_pending` 收干净），所以只能从「备好之后被改」进。
+3. **合并还原只在备份真有复习数据时检查本机复习库**（`restore.part.dart` 第 2b 步）：先解出复习单元（新形态清单 / 协议 3
+   `srs.db` / 主库老表里有数据的 profile），非空才 `_checkSrsLibraryRestorable`，与覆盖还原（`srsUnits != null`）同一口径；
+   都在快照 / 改主库之前，失败删掉刚解出的临时备份主库。顺带：坏的操作流条目现在在改主库之前就拒，不再是主库合并提交之后才报。
+4. **declined 不再静默丢**：`migration_import_page.dart`（同机换包名）传 `srsConfirmed: true`；`backup.part.dart` 合并后数
+   `declined`，有就记错误日志、完成提示换成 `backup_import_success_srs_declined`（几份没并入、再导一次并确认），不报全部成功。
+5. **不可信输入加固**（`cmd/backup.rs`）：
+   - 两种来源都要 `scratch`；`db` 来源**只读不改输入**，拷进 `scratch` 再备。`scratch` 里只能有本命令备的 `srs.db*`（别的文件
+     拒绝、不删），不得与已打开的新代库目录相交（命令会删 / 重建 `<scratch>/srs.db*`，库目录里可能是封存的协议 3 库）。
+   - 「已备好」标记的值 = `profile:来源:输入文件 BLAKE3`：备份文件自带的标记要等于它自身的摘要，做不到，跳不过备副本；
+     换了输入的旧副本也不会被误认（以前只记 profile 名）。
+   - 同一份协议 3 `srs.db` 里的多个 profile：Dart 给每个 profile 一个 `scratch`，输入始终原样，每个 profile 的输入摘要都相同
+     （以前 `prepare(A)` 原地改文件，B 的摘要随 A 的准备结果变）。
+   测试 `the_input_file_is_read_only_and_its_own_prepared_marker_is_ignored`、`a_scratch_that_is_not_ours_is_refused`；变异实测：
+   标记退回只记 profile → 前者红；去掉相交核对 → 后者红；退回原地备 → 前者红。
+6. **「同名、本机没数据但发布过批次 → 新建（备份）」场景迁回**：`srs_backup_merge_test.dart` 补一条（经文件夹位置真跑一轮
+   同步让 `status.locations[].uploaded > 0`），断言不认领、建「（备份）」、本机 profile 的集合不动。
+7. **旧 `.fushisrs` 事件备份流式读**：`events.jsonl` 按 64 KiB 块读压缩正文 → `ZLibDecoder(raw)` → 同时喂 SHA-256 与
+   UTF-8 按行解码，峰值内存与正文大小无关；声明 / 实际解压大小都卡 1 GiB；加密条目拒收；摘要或条数不符删掉写了一半的 JSONL。
+
+### 复核修复后仍没做 / 交给谁
+
+- **G9-5 关联到同一集合的多个 profile，覆盖还原后只有第一个重新绑定**：备份按集合去重，`unit.profiles` 可能是 [A, B]；
+  `mergeSrsFromBackup` 只给匹配上的第一个认领集合。B 在暂存的空库里没有绑定，还原后 B 的复习页是空的（数据还在，经 A 看得到）。
+  `collection_adopt` 不能把第二个 profile 绑到已被绑定的集合（`already bound to profile`），要用 G9-5 的关联命令（本分支里
+  `profile_uids` 等仍是 `Unwired("G9-5")`）。归 G9-5：接线后在落库之后对 `unit.profiles` 其余已在本机的 profile 调关联命令。
+- 上一节「没做」前三条不变（覆盖还原后第一次合并同一份旧事件输入多落一份归 G9；`source: "db"` 的 v1 旧行按请求 `now` 包；
+  旧二进制真机互拒归 R0 / G11-5）。

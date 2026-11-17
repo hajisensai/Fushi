@@ -1682,6 +1682,7 @@
   "backup_import_settings_on_hint": "完整恢复：字体、外观、Profile 都来自备份。",
   "backup_import_settings_toggle": "导入设置与 Profile",
   "backup_import_success": "备份已恢复。正在重启…",
+  "backup_import_success_srs_declined": "备份已恢复，但有 $count 个档案的复习数据需要你确认才能合并，这次没有并入。再导入一次这份备份并确认即可。正在重启…",
   "backup_import_validating_hint": "正在校验并预览备份内容，请稍候。",
   "backup_import_validating_title": "正在读取备份…",
   "backup_legacy_schema": "此备份来自旧版 Hibiki 或早期版本（数据结构低于 v75），当前版本已无法直接导入。你当前的数据没有任何改动。迁移步骤：安装 Fushi v$version（仍带完整升级路径的桥接版本），在其中导入此备份，再更新到当前版本。Android 系统不允许在新版本上直接安装旧版本：需先卸载当前 Fushi（会删除它现有的数据，需要保留的请先备份），再安装 v$version。下载：$url",
