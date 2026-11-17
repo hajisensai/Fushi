@@ -143,7 +143,16 @@ void main() {
 
     faces.last.onEditSelection!(const SrsCardSelection('formal'));
     await tester.pump();
-    await srsUntilWritten(tester, () => tester.tap(bold));
+    // 修订号到了不代表这次写入的流程走完：页面写库 → 发修订号 → 重读，整段置忙（编辑键与撤销都不可按）。不等它
+    // 回到可按就注入下一个选区、点「清除」，这一下点在忙态上被吞掉（新代重读多花几百毫秒时稳定复现）。
+    await srsUntilWritten(
+      tester,
+      () => tester.tap(bold),
+      until: () => srsToolbarItemEnabled(
+        tester,
+        const ValueKey<String>('srs_review_undo'),
+      ),
+    );
     expect(await _definition(tester, store, noteId), 'a <b>formal</b> match');
     // 原地刷新：仍在答案面。
     expect(faces.last.showingAnswer, isTrue);
