@@ -289,9 +289,6 @@ Future<Map<int, int>> _renumber(
     String what,
   ) async {
     final List<String?> ids = await find(old);
-    print('DEBUG $what ${[for (int i = 0; i < old.length; i++) '${old[i]}=>${ids[i]}']}');
-    final List<Object?> nowAll = (await s.core.customSelect('SELECT anki_id, deleted_at FROM ${what}s').get()).map((SrsRawRow r) => '${r.read<int>('anki_id')}').toList();
-    print('DEBUG now $what $nowAll');
     for (int i = 0; i < old.length; i++) {
       final String? id = ids[i];
       if (id == null)
