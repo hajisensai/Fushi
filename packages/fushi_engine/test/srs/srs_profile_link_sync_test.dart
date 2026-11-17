@@ -16,6 +16,7 @@ import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_profile_link.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_runner.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_engine/sync/local_directory_asset_store.dart';
@@ -84,18 +85,10 @@ class _Device {
   ))?.field(srsLapisFieldId(store.profileUid, 'Expression'));
 }
 
-/// 不经关联、直接对 [dir] 上 [store] 现在绑定的集合目录（内核 `identity` 的 `dir`）跑一轮同步 v2。
+/// 不经关联、直接对 [dir] 上 [store] 现在绑定的集合目录（内核 `identity` 的 `dir`）跑一轮同步，与生产同一个入口
+/// （[srsRunLocationRound]：新根 `v4/`、旧根 `v3/` 的围栏与墓碑 head 都照生产写）。
 Future<SrsSync2Report> _round(LocalDirectoryAssetStore dir, SrsDbStore store) =>
-    srsSync2Round(
-      host: store,
-      location: SrsAssetLocationStore(
-        store: dir,
-        profileUid: store.profileUid,
-        locationDir: store.sync2Dir,
-      ),
-      locationId: 'interconnect:host',
-      nowMs: () => store.now().$1,
-    );
+    srsRunLocationRound(SrsLocationBackend(dir), store, 'interconnect:host');
 
 /// [a] 与 [b] 绑在同一个集合、同一个位置目录上（新代的「关联上了」：profile uid 各是各的）。
 void _sameCollection(_Device a, _Device b) {

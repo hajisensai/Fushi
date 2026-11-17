@@ -61,7 +61,7 @@ import 'package:fushi_engine/srs/sync2/srs_location_store.dart'
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart' show kSrs4Root;
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi_srs/fushi_srs.dart'
-    show SrsCore, SrsProfileUnboundException;
+    show SrsCore, SrsProfileUnboundException, srsNamespace, uuidV5;
 
 /// srs.db `srs_meta`：本设备改用别的 uid 之前用过的同步 v2 设备身份（JSON 数组）。换 uid 后本机在新集合里是新的
 /// v2 设备，旧集合的本机身份行也随并入删掉了——不记下来就认不出同步目录里那个旧 uid 目录是自己留下的孤儿。
@@ -87,6 +87,12 @@ const String kSrsJoinHintPrefix = 'joined-into-';
 
 /// 位置上读来的说明 / meta / 提示文件最多读多大（外来数据，不可信）：都是几十字节的 JSON。
 const int kSrsLocationJsonMaxBytes = 64 * 1024;
+
+/// 集合目录 [dir] 的旧根 `v3/devices/` 里墓碑 head 的「设备」（内核 `gen4/location.rs` `tombstone_device`：
+/// `v5(NS, "fushi-srs/tombstone/4/<dir>")`）。新代每轮立旧根围栏时一并写它，让协议 3 的旧版本读到「要升级」就停下；它不是
+/// 任何设备，[srsListRemoteProfiles] 不把它算成写入者——否则每个新代集合都像「已经有别的设备」，关联永远判成保持。
+String srsTombstoneDevice(String dir) =>
+    uuidV5(srsNamespace, 'fushi-srs/tombstone/4/$dir');
 
 /// 一个并入提示：别的设备的集合 [collection]（位置目录名 [dir]）已经把这个集合并了进去。
 class SrsJoinHint {
@@ -369,11 +375,12 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
       }
       if (w.name == kSrsSync2Folder || w.name == kSrsSync2V1Folder) {
         // 同步 v2：`v3/devices/<设备>/profile.json`（协议 2）；还没迁移的位置在 `v2/devices/` 下（协议 1，同一台
-        // 设备两边都有时只算一次）。
+        // 设备两边都有时只算一次）。新代立的墓碑 head 不是设备（[srsTombstoneDevice]）。
+        final String tombstone = srsTombstoneDevice(p.name);
         for (final AssetEntry d in await store.listChildren(w.id)) {
           if (!d.isFolder || d.name != 'devices') continue;
           for (final AssetEntry dev in await store.listChildren(d.id)) {
-            if (!dev.isFolder) continue;
+            if (!dev.isFolder || dev.name == tombstone) continue;
             final String name = srsV2WriterName(dev.name);
             if (!writers.contains(name)) writers.add(name);
             await readInfo(name, dev.id);

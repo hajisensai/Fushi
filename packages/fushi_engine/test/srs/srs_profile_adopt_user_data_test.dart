@@ -18,7 +18,7 @@ import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_profile_link.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
-import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_runner.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_engine/sync/local_directory_asset_store.dart';
 import 'package:fushi_srs/fushi_srs.dart' show SrsEntityKind, SrsFieldKeys;
@@ -70,15 +70,11 @@ class _Device {
     if (choose != null) {
       unlinked.addAll(choose.map((SrsRemoteProfile c) => c.uid));
     }
-    final SrsSync2Report r = await srsSync2Round(
-      host: store,
-      location: SrsAssetLocationStore(
-        store: dir,
-        profileUid: store.profileUid,
-        locationDir: store.sync2Dir,
-      ),
-      locationId: 'interconnect:host',
-      nowMs: () => store.now().$1,
+    // 与生产同一个入口：新根 `v4/`、旧根 `v3/` 的围栏与墓碑 head 都照生产写。
+    final SrsSync2Report r = await srsRunLocationRound(
+      SrsLocationBackend(dir),
+      store,
+      'interconnect:host',
     );
     expect(r.error, isNull, reason: '$deviceId sync');
     await linker.publish(dir, store, 'interconnect:host');
