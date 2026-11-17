@@ -343,7 +343,8 @@ test('eink page count follows actual root-axis motion only', () => {
   f.move(60); assert.equal(f.stats.einkPages, 0); cleared(f);
   f.move(120); assert.equal(f.stats.einkPages, 1);
   f.move(119); assert.equal(f.stats.einkPages, 1);
-  f.move(300); assert.equal(f.stats.einkPages, 2, 'one jump counts at most one page');
+  f.move(1000); assert.equal(f.stats.einkPages, 2, 'one multi-screen jump counts at most one page');
+  f.move(1050); assert.equal(f.stats.einkPages, 2, 'jump resets the accumulator');
 });
 for (const guard of ['dragAnchor', 'activeHandle']) test(`${guard}: motion during drag is protected, not replayed after release`, () => {
   const f = fixture(); f.beginDrag(guard);
