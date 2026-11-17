@@ -1,12 +1,46 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-17T20:15:19Z",
+ "generatedAt": "2026-11-17T20:55:26Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "2154ab7772f26c223b979acae1434dd52bb069ef",
   "seq": 28845
  },
  "builds": [
+  {
+   "seq": 28845,
+   "version": "3.3.0",
+   "sha": "2154ab7772f26c223b979acae1434dd52bb069ef",
+   "unknown": false,
+   "publishedAt": "2026-11-17T20:55:17Z",
+   "testflight": false,
+   "baseSeq": 28844,
+   "prs": [],
+   "direct": [
+    {
+     "sha": "2154ab7772f26c223b979acae1434dd52bb069ef",
+     "subject": "test(reader): 方法 × shell 总表登记 VN 专有的 refitScreensToCurrentViewport（#3710 与 #3712 交叉合并漏登记）"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44166954891"
+    },
+    "macos": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44166954891"
+    },
+    "ios": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44166954891"
+    }
+   }
+  },
   {
    "seq": 28844,
    "version": "3.3.0",
@@ -102,7 +136,7 @@
    "version": "3.3.0",
    "sha": "29ee33b204b2f2b22e339d10c932c90bd6e38a1d",
    "unknown": false,
-   "publishedAt": "2026-11-17T13:39:52Z",
+   "publishedAt": "2026-11-17T12:12:56Z",
    "testflight": true,
    "baseSeq": 28629,
    "prs": [
@@ -113,7 +147,8 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44064525926"
     },
     "windows": {
      "state": "ok"
@@ -127,36 +162,7 @@
    }
   }
  ],
- "pending": {
-  "headSha": "2154ab7772f26c223b979acae1434dd52bb069ef",
-  "headSeq": 28845,
-  "prs": [],
-  "direct": [
-   {
-    "sha": "2154ab7772f26c223b979acae1434dd52bb069ef",
-    "subject": "test(reader): 方法 × shell 总表登记 VN 专有的 refitScreensToCurrentViewport（#3710 与 #3712 交叉合并漏登记）"
-   }
-  ],
-  "truncated": false,
-  "platforms": {
-   "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44166954586"
-   },
-   "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44166954891"
-   },
-   "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44166954891"
-   },
-   "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44166954891"
-   }
-  }
- },
+ "pending": null,
  "prs": {
   "3692": {
    "number": 3692,
