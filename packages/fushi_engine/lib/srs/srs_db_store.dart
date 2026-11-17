@@ -947,7 +947,10 @@ class SrsDbStore implements SrsSync2Host {
     return runExclusive(() async {
       try {
         final Completer<void>? session = _ingestSession;
-        if (session != null) _endIngestSession(session);
+        if (session != null) {
+          _endIngestSession(session);
+          await _sync2Raw(const <String, Object?>{'op': 'ingest_end'});
+        }
         return await body();
       } finally {
         _unusable ??= SrsStoreRetiredError(
@@ -1732,6 +1735,14 @@ class SrsDbStore implements SrsSync2Host {
         const <(String, Uint8List)>[],
       );
     }
+    if (request['op'] == 'oldroot_ingest') {
+      // 旧根接手的一批（内核 `gen4/cmd/sync_oldroot.rs`）：和收段一样落真相、推进本机修订号，回包按收段的一步接进
+      // 本机缓存（[_sync2IngestStep]）。
+      return SrsSync2Result(
+        await _sync2IngestStep(request, blobs),
+        const <(String, Uint8List)>[],
+      );
+    }
     if (kSrsSync2LockFreeOps.contains(request['op'])) {
       return _sync2Raw(request, blobs: blobs);
     }
@@ -1774,7 +1785,9 @@ class SrsDbStore implements SrsSync2Host {
   ///   `media_hash`（本机媒体文件的 sha256，首次对账要把几万个文件各读一遍；结论交给进写锁的 `media_scan`）。
   /// - `digest`：读连接上读触发器增量维护的 4096 个摘要桶求根（已提交快照，不再全库扫描），只在末尾往写连接
   ///   记一行摘要缓存（`srs_meta`）；恰好落进另一笔写事务而那笔回滚，丢的只是这行缓存，下一轮按间隔重算。
-  /// - `digest_buckets`：同上读连接，列各摘要桶（摘要不一致时定位不一致的 ID 范围）。
+  /// - 同步一轮里只读快照的几步（内核 `gen4/cmd/sync_oldroot.rs` / `media_sync.rs`）：`oldroot_scan`（旧根清单与已收的
+  ///   比对）、`heritage_plan` / `heritage_outbox`（承袭对账与打包，读快照上做，迁移后第一轮可能要打几百个段）、
+  ///   `media_manifests`（位置上还没收的清单）。
   @visibleForTesting
   static const Set<String> kSrsSync2LockFreeOps = <String>{
     'derive_key',
@@ -1787,18 +1800,23 @@ class SrsDbStore implements SrsSync2Host {
     'checkpoints',
     'history',
     'digest',
-    'digest_buckets',
     'seal_file',
     'open_file',
+    'oldroot_scan',
+    'heritage_plan',
+    'heritage_outbox',
+    'media_manifests',
   };
 
-  /// 开一段收段（Dart 侧）：先登记（之后来的 [rwkvReplayBytes] 排到它结束），再等在途的回放跑完——收段的投递与整
-  /// profile 的 RWKV 回放不同时在内存里。新代内核没有收段会话：每批一个写事务，分叉点记在库里（`cmd/sync.rs`）。
+  /// 开一段收段：先登记（之后来的 [rwkvReplayBytes] 排到它结束），再等在途的回放跑完——收段的投递与整 profile 的
+  /// RWKV 回放不同时在内存里。内核同时开收段会话（`ingest_begin`，gen4 `refresh.rs` `rwkv_held`）：会话里每批收段
+  /// 不推进 RWKV 刷新键，[sync2IngestEnd] 时并成一次。每批仍是一个写事务，分叉点记在库里（`cmd/sync.rs`）。
   @override
   Future<void> sync2IngestBegin() async {
     final Completer<void> session = Completer<void>();
     await sync2IngestSettled();
     _ingestSession = session;
+    await _sync2Raw(const <String, Object?>{'op': 'ingest_begin'});
     final Completer<void>? replays = _rwkvReplaysIdle;
     if (replays != null) await replays.future;
   }
@@ -1811,11 +1829,13 @@ class SrsDbStore implements SrsSync2Host {
   @visibleForTesting
   bool get debugIngestChannel => false;
 
-  /// 结束 [sync2IngestBegin] 开的一段：等着的 RWKV 回放放行。
+  /// 结束 [sync2IngestBegin] 开的一段：等着的 RWKV 回放放行，内核攒着的 RWKV 推进放出一次（`ingest_end`）。
   @override
   Future<void> sync2IngestEnd() async {
     final Completer<void>? session = _ingestSession;
-    if (session != null) _endIngestSession(session);
+    if (session == null) return;
+    _endIngestSession(session);
+    await _sync2Raw(const <String, Object?>{'op': 'ingest_end'});
   }
 
   /// 收一批（内核 `ingest`，一个写事务：核对、按因果投递、派生层收尾；本机状态行的修订号在同一事务里推进）。收这一批

@@ -937,9 +937,9 @@ pub fn ingest(
         "fork": fork_at.is_some(),
         "errors": errors,
         "settled": settled_json(&r.settled),
-        "purged": r.purged,
+        "voided": r.voided,
     });
-    bump_revision(t, profile, applied + r.purged, &mut out)?;
+    bump_revision(t, profile, applied + r.voided, &mut out)?;
     Ok(out)
 }
 

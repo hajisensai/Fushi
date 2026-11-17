@@ -20,7 +20,10 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_migration.dart'
+    show kSrsV1MovedToKey, srsDecodeV1Fence, srsEncodeV1Fence;
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_sync4_steps.dart';
 import 'package:fushi_srs/fushi_srs.dart' show SrsSync2Result;
 
 /// 一轮同步要的内核接口（[SrsDbStore] 实现；测试可替身）。
@@ -199,6 +202,7 @@ Future<SrsSync2Report> srsSync2Round({
   required String locationId,
   required int Function() nowMs,
   SrsLocationStore? oldRoot,
+  SrsLocationStore? protocol1Root,
   int Function()? bootClockMs,
   SrsLocationKey? key,
   bool archive = false,
@@ -223,6 +227,7 @@ Future<SrsSync2Report> srsSync2Round({
     host: host,
     location: location,
     oldRoot: oldRoot,
+    protocol1Root: protocol1Root,
     locationId: locationId,
     nowMs: nowMs,
     key: key,
@@ -270,12 +275,49 @@ Future<SrsSync2Report> srsSync2Round({
             'now': nowMs(),
           })).map['device']!
           as String;
-  final List<String> present = listed['devices/$self'] ?? <String>[];
+  final List<String> present = List<String>.of(
+    listed['devices/$self'] ?? const <String>[],
+  );
 
-  // 3. 发件：先段、后 head，分批（一批全部写成后 `outbox_ack` 持久化水位，再取下一批）。媒体先于引用它的段。
+  // 2b. 旧根接手（G8-7b）：协议 3 旧根上的段收进本机承袭日志。
+  if (oldRoot != null) {
+    await srsSync4TakeOldRoot(
+      host: host,
+      oldRoot: oldRoot,
+      locationId: locationId,
+      keyHex: keyHex,
+      report: report,
+      nowMs: nowMs,
+      budgetBytes: ingestBudgetBytes,
+      shouldStop: shouldStop,
+      onStep: onStep,
+    );
+    if (shouldStop?.call() ?? false) return report..error = kSrsSync2Stopped;
+  }
+  // 2c. 别的设备的媒体清单：本机媒体对账（发件前那一步）据此知道位置上有什么。
+  await srsSync4MediaManifestsIn(
+    host: host,
+    location: location,
+    locationId: locationId,
+    listed: listed,
+    report: report,
+    nowMs: nowMs,
+  );
+
+  // 3. 发件：媒体 → 承袭段 → 本机原生段 → head，分批（一批全部写成后 `outbox_ack` 持久化水位，再取下一批）。媒体先于
+  // 引用它的段；承袭段先于本机原生段（D19：新设备先拿到旧历史）。
   onStep?.call('beforeUpload');
   if (beforeUpload != null) await beforeUpload(keyHex);
   onUploadStart?.call();
+  await srsSync4UploadHeritage(
+    host: host,
+    location: location,
+    progressId: progressId,
+    keyHex: keyHex,
+    listed: listed,
+    report: report,
+    onStep: onStep,
+  );
   bool audited = false;
   while (true) {
     final SrsSync2Result out = await host.sync2Command(<String, Object?>{
@@ -357,6 +399,23 @@ Future<SrsSync2Report> srsSync2Round({
     kSrsSync2Concurrency,
     location.delete,
   );
+  // 6. 本机旧身份目录里的旧 head；本机这一轮的媒体观察打成清单。
+  await srsSync4SweepFormer(
+    host: host,
+    location: location,
+    former: obsolete['former'],
+    listed: listed,
+    archive: archive,
+    report: report,
+  );
+  await srsSync4MediaManifestsOut(
+    host: host,
+    location: location,
+    locationId: locationId,
+    loc: loc,
+    self: self,
+    listed: listed,
+  );
   return report;
 }
 
@@ -394,9 +453,16 @@ Future<SrsLocationRoot?> srsSync4LocationRoot({
   required Object? collection,
   required SrsSync2Report report,
   SrsLocationKey? key,
+  SrsLocationStore? protocol1Root,
 }) async {
   final Uint8List? meta4 = await location.get('meta.json');
   final Uint8List? meta3 = await oldRoot?.get('meta.json');
+  // 只有协议 1 旧根 `v2/` 的位置：内核明确拒绝（D21），一个字节不写。新根、旧根都在时不用看它；`v2/` 上只有围栏
+  // （协议 2 的迁移或下面立的）不算协议 1 的集合。
+  final Uint8List? meta2 = meta4 == null && meta3 == null
+      ? await protocol1Root?.get('meta.json')
+      : null;
+  final bool has2 = meta2 != null && srsDecodeV1Fence(meta2) == null;
   final _SrsMetaView view = _SrsMetaView(location, meta4 ?? meta3);
   final SrsLocationHandshake hs = await srsLocationHandshake(
     view,
@@ -427,6 +493,7 @@ Future<SrsLocationRoot?> srsSync4LocationRoot({
       'now': nowMs(),
       'has4': meta4 != null,
       'has3': meta3 != null,
+      'has2': has2,
       'locs': <String>[
         for (final SrsLocationEntry e in await location.list('loc'))
           if (!e.isFolder) e.name,
@@ -441,7 +508,11 @@ Future<SrsLocationRoot?> srsSync4LocationRoot({
     return null;
   }
   if (state != kSrs4RootOk) {
-    report.error = '$kSrs4LocationRefused: ${root.map['error']}';
+    // 带机读码的拒绝（只有协议 1 旧根：`srs_location_protocol1_root`）把码放在前面，界面按它给升级提示。
+    final Object? code = root.map['code'];
+    report.error = code == null
+        ? '$kSrs4LocationRefused: ${root.map['error']}'
+        : '$kSrs4LocationRefused: $code: ${root.map['error']}';
     return null;
   }
   final Set<String> ensure = <String>{
@@ -456,6 +527,18 @@ Future<SrsLocationRoot?> srsSync4LocationRoot({
     final String rel = path.substring(path.indexOf('/') + 1);
     if (ensure.contains(path) && await target.exists(rel)) continue;
     await target.put(rel, bytes);
+  }
+  // 协议 1 的版本只看 `v2/`：那里没有 `meta.json` 时它会另起一个集合、和新版本各同步各的。新根与旧根围栏立住之后
+  // 在 `v2/` 立一份它解析不了的围栏，让它在握手就停下（字节固定，几台设备并发立的相同）。
+  if (protocol1Root != null && !await protocol1Root.exists('meta.json')) {
+    await protocol1Root.put(
+      'meta.json',
+      srsEncodeV1Fence(<String, Object?>{
+        'v': kSrsSync2Protocol,
+        'minReader': kSrsSync2MinReader,
+        kSrsV1MovedToKey: kSrs4Root,
+      }),
+    );
   }
   final String media = (root.map['media'] as String?) ?? kSrs4Root;
   report.mediaRoot = media;

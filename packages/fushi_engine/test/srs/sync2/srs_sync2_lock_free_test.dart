@@ -69,10 +69,14 @@ void main() {
       'checkpoints',
       'history',
       'digest',
-      // 读连接列摘要桶（审查 S-7）；媒体文件到文件的流式封 / 解，不碰库（审查 S-9）。
-      'digest_buckets',
+      // 媒体文件到文件的流式封 / 解，不碰库（审查 S-9）。新代没有摘要桶（`digest_buckets` 已删）。
       'seal_file',
       'open_file',
+      // 同步一轮里只读快照的几步（G8-7b：旧根清单比对、承袭对账与打包、位置上还没收的媒体清单）。
+      'oldroot_scan',
+      'heritage_plan',
+      'heritage_outbox',
+      'media_manifests',
     });
     for (final String op in <String>[
       'identity',
@@ -86,6 +90,11 @@ void main() {
       // 旧身份目录的清理（former.rs `sync2_obsolete_former`）记观察时刻：写命令。
       'obsolete_former',
       'ingest_begin',
+      'oldroot_ingest',
+      'heritage_ack',
+      'media_manifest_ingest',
+      'media_manifest_build',
+      'media_manifest_published',
       'media_record',
       'media_scan',
       'media_landed',

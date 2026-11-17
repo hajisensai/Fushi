@@ -564,7 +564,7 @@ fn the_purge_command_voids_published_ops_everywhere() {
     assert!(
         r.ingest
             .iter()
-            .any(|v| v["purged"].as_u64().unwrap_or(0) > 0),
+            .any(|v| v["voided"].as_u64().unwrap_or(0) > 0),
         "{:?}",
         r.ingest
     );

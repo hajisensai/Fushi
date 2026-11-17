@@ -239,9 +239,9 @@ pub fn oldroot_ingest(
         "recorded": recorded,
         "errors": errors,
         "settled": settled_json(&r.settled),
-        "purged": r.purged,
+        "voided": r.voided,
     });
-    bump_revision(t, profile, applied + r.purged, &mut out)?;
+    bump_revision(t, profile, applied + r.voided, &mut out)?;
     Ok(out)
 }
 

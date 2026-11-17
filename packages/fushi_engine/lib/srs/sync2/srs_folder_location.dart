@@ -126,9 +126,9 @@ class SrsFolderSyncReport {
 ///
 /// 位置的根一律先走内核 `location_root`（[srsSync4LocationRoot]，同步用途在 [srsSync2Round] 里）：新根 `v4/` 的
 /// meta 与 loc 标记、旧根 `v3/` 的围栏都由它写；判「新集合」只看 `v3/meta.json` 在不在，所以这一轮在它之前不往旧根
-/// 写任何东西。协议 1 旧根 `v2/` 的一次性迁移（[srsPrepareLocation]）与旧根媒体搬家按协议 3 的命令写 `v3/`，和云端
-/// 那条路径（srs_location_runner.dart）一样不再在这里跑（旧根接手归后续，交接说明 §11.4）；[migrationMemo] /
-/// [v1MediaMigrations] / [onV1Bound] 保留参数形状，暂不使用，[SrsFolderSyncReport.prepared] / `v1Media` 恒为 null。
+/// 写任何东西。旧根 `v3/` 上的段由一轮同步收进本机承袭日志（旧根接手，G8-7b）；只有协议 1 旧根 `v2/` 的位置内核
+/// 明确拒绝（D21），不再一次性迁移；旧根媒体搬家同样不跑。[migrationMemo] / [v1MediaMigrations] / [onV1Bound] 保留
+/// 参数形状，不使用，[SrsFolderSyncReport.prepared] / `v1Media` 恒为 null。
 /// 媒体按新根 meta 的 `media` 落在旧根（存量集合）或新根（新集合）。
 ///
 /// 进度 / 收手 / 诊断与云盘、互联那条路径（[srsSync2Round]）同一套：[onFetchProgress] / [onUploadStart] /
@@ -160,6 +160,10 @@ Future<SrsFolderSyncReport> srsSyncFolderLocation({
   final SrsLocationStore root4 = SrsDirectoryLocationStore(
     srsFolderNewRoot(location, dir),
   );
+  // 只看它的 `meta.json` 在不在：只有协议 1 旧根的位置内核明确拒绝（D21）。
+  final SrsLocationStore root1 = SrsDirectoryLocationStore(
+    srsFolderV1CollectionRoot(location, dir),
+  );
   // 媒体所在的根（新根 meta 的 `media`）。
   SrsLocationStore mediaAt(String? media) =>
       media == kSrsSync2Folder ? root : root4;
@@ -172,6 +176,7 @@ Future<SrsFolderSyncReport> srsSyncFolderLocation({
       host: store,
       location: root4,
       oldRoot: root,
+      protocol1Root: root1,
       locationId: location.locationId,
       nowMs: () => store.now().$1,
       key: key,
@@ -221,6 +226,7 @@ Future<SrsFolderSyncReport> srsSyncFolderLocation({
       host: store,
       location: root4,
       oldRoot: root,
+      protocol1Root: root1,
       locationId: location.locationId,
       nowMs: () => store.now().$1,
       key: key,

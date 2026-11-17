@@ -87,7 +87,7 @@ void main() {
     return SrsFolderLocation(id: 'usb', path: d.path, media: false);
   }
 
-  test('全新文件夹位置：新根 meta 的媒体在 v4、旧根有围栏与墓碑、v2 不碰；两台设备经它收敛', () async {
+  test('全新文件夹位置：新根 meta 的媒体在 v4、旧根有围栏与墓碑、v2 只立协议 1 的围栏；两台设备经它收敛', () async {
     final SrsFolderLocation loc = folder();
     final SrsDbStore a = await device('a');
     final SrsDbStore b = await device('b');
@@ -120,7 +120,19 @@ void main() {
           .any((File f) => p.basename(f.path).startsWith('head-')),
       isTrue,
     );
-    expect(srsFolderV1CollectionRoot(loc, dir).existsSync(), isFalse);
+    // 协议 1 的旧根 `v2/` 只有一份让协议 1 的版本在握手就停下的围栏（不是 JSON），别的什么都不写。
+    final Directory v2 = srsFolderV1CollectionRoot(loc, dir);
+    expect(
+      v2
+          .listSync(recursive: true)
+          .whereType<File>()
+          .map((File f) => p.basename(f.path)),
+      <String>['meta.json'],
+    );
+    expect(
+      () => jsonDecode(File(p.join(v2.path, 'meta.json')).readAsStringSync()),
+      throwsFormatException,
+    );
     // 收敛：两边各自应用了对方的全部操作，语义摘要（head 带的那一份）相同。按笔记读回来核对不了：
     // `SrsDbStore.note` 在新代库上读修改记录时崩（`_prefetchEdits` 的 Null check，读路径不归本模块，交接 §11.6）。
     Future<Map<String, Object?>> status(SrsDbStore s) async =>

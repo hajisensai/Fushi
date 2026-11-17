@@ -4,7 +4,9 @@
 /// 防扫盘混淆包一层），由调用方经 [SrsLocationBackend] 传进来；本机设备信息怎么取（型号 / 版本）也由调用方给。
 library;
 
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -63,13 +65,14 @@ Future<String> srsLocationDir(SrsDbStore store) async =>
         })).map['dir']!
         as String;
 
-/// 现有同步后端上的集合目录（`fushi-srs/<dir>/`）跑一轮复习同步：新根 `v4/` 收发，旧根 `v3/` 只读它的 `meta.json`
-/// 并改写成让协议 3 的版本停下的围栏（内核 `location_root`，G8-7）。[directoryKey] 就是这个位置的稳定身份（本机按它
-/// 记每个位置传到了哪）。[publishDeviceInfo] = 本机型号 / 版本 / 平台随这一轮的 head 发布。
+/// 现有同步后端上的集合目录（`fushi-srs/<dir>/`）跑一轮复习同步：新根 `v4/` 收发；旧根 `v3/` 的 `meta.json` 改写成让
+/// 协议 3 的版本停下的围栏（内核 `location_root`，G8-7），旧根上的段收进本机承袭日志（旧根接手，G8-7b）。
+/// [directoryKey] 就是这个位置的稳定身份（本机按它记每个位置传到了哪）。[publishDeviceInfo] = 本机型号 / 版本 / 平台
+/// 随这一轮的 head 发布。
 ///
-/// 协议 1 旧根 `v2/` 的一次性迁移（[srsPrepareLocation]）与 v1 媒体搬家不再在这里跑：它们按协议 3 的命令写新根，
-/// 新代的旧根接手（`oldroot.rs`）还没接线（交接说明「G8-7 同步一轮」未做项）。[v1MediaMigrations] / [onV1Bound]
-/// 保留参数形状，暂不使用。
+/// 只有协议 1 旧根 `v2/` 的位置内核明确拒绝（D21，`srs_location_protocol1_root`），不再一次性迁移
+/// （[srsPrepareLocation] 按协议 3 的命令写 `v3/`，会拆掉围栏）；v1 媒体搬家同样不跑。[v1MediaMigrations] /
+/// [onV1Bound] 保留参数形状，不使用。
 Future<SrsSync2Report> srsRunLocationRound(
   SrsLocationBackend backend,
   SrsDbStore store,
@@ -90,6 +93,7 @@ Future<SrsSync2Report> srsRunLocationRound(
     host: store,
     location: backend.location(dir, folder: kSrs4Root),
     oldRoot: backend.location(dir),
+    protocol1Root: backend.location(dir, folder: kSrsSync2V1Folder),
     locationId: directoryKey,
     nowMs: () => store.now().$1,
     bootClockMs: store.trustedClock.bootNowMs,
@@ -127,8 +131,8 @@ void srsLogV1MediaReport(SrsV1MediaReport report, String locationId) {
   report.cleanupErrors.clear();
 }
 
-/// 一轮媒体同步：见 srs_media_sync.dart。[uploadOnly] = 发段之前只传本机的媒体（[srsSyncMedia]）。媒体仍在旧根
-/// `v3/` 下（存量集合的新根 meta 记 `media: v3`）；新代的媒体命令归 G8-7b，接上之前这一步报未接线。
+/// 一轮媒体同步：见 srs_media_sync.dart。[uploadOnly] = 发段之前只传本机的媒体（[srsSyncMedia]）。媒体在哪个根由
+/// 新根 `v4/meta.json` 的 `media` 定（存量集合 `v3`、新集合 `v4`，内核 `location_root` 写定，[srsLocationMediaFolder]）。
 Future<SrsMediaSyncReport> srsRunLocationMedia(
   SrsLocationBackend backend,
   SrsDbStore store,
@@ -136,11 +140,33 @@ Future<SrsMediaSyncReport> srsRunLocationMedia(
   SrsMediaCipher? cipher,
   required String locationId,
   bool uploadOnly = false,
-}) async => srsSyncMedia(
-  cipher: cipher,
-  locationId: locationId,
-  uploadOnly: uploadOnly,
-  location: backend.location(await srsLocationDir(store)),
-  store: store,
-  mediaRoot: mediaRoot,
-);
+}) async {
+  final String dir = await srsLocationDir(store);
+  return srsSyncMedia(
+    cipher: cipher,
+    locationId: locationId,
+    uploadOnly: uploadOnly,
+    location: backend.location(
+      dir,
+      folder: await srsLocationMediaFolder(
+        backend.location(dir, folder: kSrs4Root),
+      ),
+    ),
+    store: store,
+    mediaRoot: mediaRoot,
+  );
+}
+
+/// 位置上媒体所在的根目录名：新根 [root4] 的 `meta.json` 的 `media`（只认 `v3` / `v4`）。新根 meta 只由一轮同步的
+/// `location_root` 写，媒体同步总在它之后跑；读不到或认不得就报错（不猜，猜错会把媒体写进被围栏的旧根或反过来）。
+Future<String> srsLocationMediaFolder(SrsLocationStore root4) async {
+  final Uint8List? meta = await root4.get('meta.json');
+  if (meta == null) {
+    throw StateError('srs media: the location has no v4/meta.json yet');
+  }
+  final Object? media = (jsonDecode(utf8.decode(meta)) as Map)['media'];
+  if (media != kSrsSync2Folder && media != kSrs4Root) {
+    throw StateError('srs media: unknown media root $media in v4/meta.json');
+  }
+  return media! as String;
+}
