@@ -77,7 +77,11 @@ class _Server {
   int chapterInfoCalls = 0;
   final List<http.Request> writes = <http.Request>[];
 
-  KavitaApi api() => KavitaApi(
+  /// 同一台服务器始终是同一个协议层实例（生产里由 `KavitaApiRegistry` 保证）。
+  KavitaApi api() => _api ??= _newApi();
+  KavitaApi? _api;
+
+  KavitaApi _newApi() => KavitaApi(
     serverUrl: 'https://kavita.example.com',
     apiKey: 'K',
     client: MockClient((http.Request r) async {
@@ -542,6 +546,11 @@ void main() {
   group('unreachable server is remembered (manga-d11)', () {
     setUp(() => ErrorLogService.instance.clear());
 
+    bool unreachable(
+      _Server server, {
+      Duration within = const Duration(seconds: 2),
+    }) => reachability.isUnreachable('srv', server.api(), within: within);
+
     List<ErrorLogEntry> pullDiagnostics() => ErrorLogService
         .instance
         .diagnosticEntries
@@ -558,7 +567,7 @@ void main() {
       );
       expect(first, isNotNull);
       expect(first!.adoptedPage, isNull);
-      expect(reachability.isUnreachable('srv'), isTrue);
+      expect(unreachable(server), isTrue);
       await first.close();
 
       // 第二次：预算给到 1 分钟，服务器照样挂着——等的话这条用例必超时。
@@ -587,15 +596,15 @@ void main() {
         );
         final KavitaMangaSyncSession? first = await attach(server);
         await first!.close();
-        expect(reachability.isUnreachable('srv'), isTrue);
+        expect(unreachable(server), isTrue);
 
-        // 服务器回来了：这次开章不等（不采用服务器进度），但探针清掉标记。
+        // 服务器回来了：这次开章不等（不采用服务器进度），但探针让标记失效。
         server.offline = false;
         final KavitaMangaSyncSession? second = await attach(server);
         expect(second!.adoptedPage, isNull);
         await second.close();
         await pumpEventQueue();
-        expect(reachability.isUnreachable('srv'), isFalse);
+        expect(unreachable(server), isFalse);
 
         final KavitaMangaSyncSession? third = await attach(server);
         expect(third!.adoptedPage, 6);
@@ -609,7 +618,7 @@ void main() {
       await (await attach(server))!.close();
       await (await attach(server))!.close();
       await pumpEventQueue();
-      expect(reachability.isUnreachable('srv'), isTrue);
+      expect(unreachable(server), isTrue);
       expect(
         pullDiagnostics(),
         hasLength(1),
@@ -627,7 +636,7 @@ void main() {
       final KavitaMangaSyncSession? session = await attach(server);
       expect(session, isNotNull);
       await session!.close();
-      expect(reachability.isUnreachable('srv'), isFalse);
+      expect(unreachable(server), isFalse);
       expect(pullDiagnostics(), isEmpty);
       final List<ErrorLogEntry> errors = ErrorLogService.instance.entries;
       expect(errors, hasLength(1));
@@ -635,8 +644,87 @@ void main() {
       expect(errors.single.error, contains('500'));
     });
 
+    test(
+      'any answer from the server ends the outage: the very next open syncs',
+      () async {
+        final _Server server = _Server(
+          pageNum: 6,
+          modifiedAt: _base,
+          offline: true,
+        );
+        await (await attach(server))!.close();
+        expect(unreachable(server), isTrue);
+
+        // 服务器回来后，开章之前先有别的请求成功了（作品页刷新、浏览、取页图
+        // 走的都是同一个协议层）：这一次开章就该完整对账，而不是再按离线放行。
+        server.offline = false;
+        await server.api().getChapterInfo(201);
+
+        final KavitaMangaSyncSession? next = await attach(server);
+        expect(next!.adoptedPage, 6);
+        expect(await localPage(), 6);
+        await next.close();
+      },
+    );
+
+    test('an answer slower than the pull budget does not end it', () async {
+      const Duration budget = Duration(milliseconds: 100);
+      final Completer<void> hang = Completer<void>();
+      final _Server server = _Server(pageNum: 6, modifiedAt: _base, hang: hang);
+      await (await attach(server, pullTimeout: budget))!.close();
+      expect(unreachable(server, within: budget), isTrue);
+
+      // 那次拉取过了预算才答上来：等了也用不上，继续不等。
+      await Future<void>.delayed(budget * 3);
+      hang.complete();
+      await pumpEventQueue();
+      expect(unreachable(server, within: budget), isTrue);
+
+      // 之后答得快了才算恢复。
+      server.hang = null;
+      await server.api().getProgress(201);
+      expect(unreachable(server, within: const Duration(seconds: 30)), isFalse);
+    });
+
+    test('a replaced api instance (connection settings changed) starts '
+        'fresh', () async {
+      final _Server old = _Server(offline: true);
+      await (await attach(old))!.close();
+      expect(unreachable(old), isTrue);
+      final _Server server = _Server(pageNum: 6, modifiedAt: _base);
+      final KavitaMangaSyncSession? session = await attach(server);
+      expect(session!.adoptedPage, 6);
+      await session.close();
+    });
+
+    for (final int status in <int>[502, 503, 504]) {
+      test('a gateway $status counts as unreachable: one diagnostic, no error '
+          'entries', () async {
+        final _Server server = _Server(progressStatus: status);
+        await (await attach(server))!.close();
+        await (await attach(server))!.close();
+        await (await attach(server))!.close();
+        await pumpEventQueue();
+        expect(unreachable(server), isTrue);
+        expect(pullDiagnostics(), hasLength(1));
+        expect(ErrorLogService.instance.entries, isEmpty);
+        expect(server.progressCalls, 3, reason: 'the probe still goes out');
+
+        // Kavita 起来了：探针答上话，再下一次开章恢复对账。
+        server
+          ..progressStatus = 200
+          ..pageNum = 6
+          ..modifiedAt = _base;
+        await (await attach(server))!.close();
+        await pumpEventQueue();
+        final KavitaMangaSyncSession? back = await attach(server);
+        expect(back!.adoptedPage, 6);
+        await back.close();
+      });
+    }
+
     test('the mark is per server', () async {
-      reachability.markUnreachable('other');
+      reachability.markUnreachable('other', _Server().api());
       final _Server server = _Server(pageNum: 6, modifiedAt: _base);
       final KavitaMangaSyncSession? session = await attach(server);
       expect(session!.adoptedPage, 6);

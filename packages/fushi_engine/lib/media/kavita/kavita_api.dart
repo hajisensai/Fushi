@@ -38,6 +38,12 @@ class KavitaApiException implements Exception {
   bool get isForbidden => statusCode == 403;
   bool get isNotFound => statusCode == 404;
 
+  /// 502 / 503 / 504：答话的是 Kavita 前面的反向代理 / 网关，Kavita 本体没答上来。
+  bool get isGatewayUnavailable => isGatewayUnavailableStatus(statusCode);
+
+  static bool isGatewayUnavailableStatus(int statusCode) =>
+      statusCode == 502 || statusCode == 503 || statusCode == 504;
+
   @override
   String toString() => 'KavitaApiException($statusCode, $path)';
 }
@@ -124,6 +130,24 @@ class KavitaApi {
 
   String? _token;
   Future<void>? _authInFlight;
+
+  int _answerCount = 0;
+  Duration? _lastAnswerLatency;
+
+  /// Kavita 本体答过话的次数：任何一个请求收到响应头就加一，状态码不限（401 / 404 /
+  /// 500 也是服务器在答），但网关的 502 / 503 / 504 不算（见
+  /// [KavitaApiException.isGatewayUnavailable]）。调用方拿它判断「上次记下服务器
+  /// 不可达之后，它有没有再答过话」。
+  int get answerCount => _answerCount;
+
+  /// 最近一次答话从发出请求到收到响应头用了多久；从没答过为 null。
+  Duration? get lastAnswerLatency => _lastAnswerLatency;
+
+  void _noteAnswer(int statusCode, Stopwatch sinceSent) {
+    if (KavitaApiException.isGatewayUnavailableStatus(statusCode)) return;
+    _answerCount++;
+    _lastAnswerLatency = sinceSent.elapsed;
+  }
 
   /// 归一化用户输入的服务器地址：折全角、补 scheme（缺省 http）、去尾斜杠。
   static String normalizeServerUrl(String raw) {
@@ -229,9 +253,11 @@ class KavitaApi {
         req.headers['Content-Type'] = 'application/json';
         req.body = jsonEncode(jsonBody);
       }
+      final Stopwatch sinceSent = Stopwatch()..start();
       final http.StreamedResponse streamed = await _client
           .send(req)
           .timeout(kRequestTimeout);
+      _noteAnswer(streamed.statusCode, sinceSent);
       final http.Response res = await http.Response.fromStream(
         streamed,
       ).timeout(kRequestTimeout);
@@ -394,8 +420,11 @@ class KavitaApi {
   /// 流式取一张图：超时按**停顿**算（等响应头、相邻两块之间各不超过
   /// [imageStallTimeout]），整体不设限——慢链路上的大页图只要还在走就不判失败。
   ///
-  /// 任何失败（停顿超时、非 2xx、连接中断）都经 [http.AbortableRequest] 真正中止
-  /// 底层请求 / 响应流：只让等待方放弃的 `Future.timeout` 会把连接留在后台继续传。
+  /// 失败时不把连接留在后台：只让等待方放弃的 `Future.timeout` 会让请求继续传完。
+  /// - 等响应头超时：经 [http.AbortableRequest] 中止请求；
+  /// - 正文停顿超时 / 连接中断：`await for` 退出即取消响应流的订阅，连接随之关闭；
+  /// - 非 2xx：先取消响应流再抛错。`IOClient` 在「已有响应、还没人 listen」时 abort
+  ///   只置标志、不碰底层响应，没人读也没人取消的错误体会把连接一直占着。
   /// [path] 只用于异常文本（不含查询串，URL 里有 apiKey）。
   Future<Uint8List> _fetchImageBytes(Uri url, String path) async {
     final Completer<void> abort = Completer<void>();
@@ -406,10 +435,13 @@ class KavitaApi {
         url,
         abortTrigger: abort.future,
       );
+      final Stopwatch sinceSent = Stopwatch()..start();
       final http.StreamedResponse response = await _client
           .send(request)
           .timeout(imageStallTimeout);
+      _noteAnswer(response.statusCode, sinceSent);
       if (response.statusCode < 200 || response.statusCode >= 300) {
+        await response.stream.listen(null).cancel();
         throw KavitaApiException(response.statusCode, path);
       }
       final BytesBuilder bytes = BytesBuilder(copy: false);
@@ -581,7 +613,12 @@ class KavitaApi {
         }),
       );
       req.headers['Authorization'] = 'Bearer $_token';
-      return await _client.send(req).timeout(kRequestTimeout);
+      final Stopwatch sinceSent = Stopwatch()..start();
+      final http.StreamedResponse response = await _client
+          .send(req)
+          .timeout(kRequestTimeout);
+      _noteAnswer(response.statusCode, sinceSent);
+      return response;
     } on http.ClientException catch (e) {
       throw KavitaTransportException(redactCredentialsInText(e.toString()));
     }

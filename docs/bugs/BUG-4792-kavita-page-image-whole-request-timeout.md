@@ -4,9 +4,10 @@
   - `packages/fushi_engine/lib/media/kavita/kavita_api.dart:363-389`（修前行号）`fetchPageBytes` / `fetchSeriesCoverBytes` 是 `_client.get(...).timeout(kRequestTimeout)`：20 秒含整个正文，慢链路上的大页图只要 20 秒内传不完就判失败，哪怕一直在走；`Future.timeout` 只让等待方放弃，底层请求继续在后台传完。同文件的章节下载早已按块算停顿超时（`downloadChapter`）。
   - `fushi/lib/src/media/kavita/kavita_manga_sync.dart:171-173,258-261,461-463,527-529`（修前行号）四处 `on Object` 把记账写失败、开章拉取失败、对账与标记对齐的库错误全部吞掉且不记日志，用户报「进度没同步」时没有任何记录可查。
 - **[x] ① 已修复** —
-  - `packages/fushi_engine/lib/media/kavita/kavita_api.dart:400` 新增 `_fetchImageBytes`：`http.AbortableRequest` + 流式读，等响应头、相邻两块之间各不超过 `kImageStallTimeout`（20 秒，`:112`），整体不设限；任何失败（停顿超时、非 2xx、连接中断）都触发 abort，真正中止底层请求 / 响应流。传输层失败改抛带类型的 `KavitaTransportException`（`:50`，文本形态不变、仍先脱敏），调用方可与「服务器答了非 2xx」区分。
-  - `fushi/lib/src/media/kavita/kavita_manga_sync.dart:78` 新增 `_logSyncError`（文本过 `redactCredentialsInText`），四处吞错点都记：记账写失败（`:215`）、对账（`:541`）、标记对齐（`:608`）每次记进错误日志；开章拉取失败（`:336`）按类型分——服务器答了错误状态 / 解析不了每次记，服务器不可达（常态）每次断开只记一条诊断，不逐章刷屏。
+  - `packages/fushi_engine/lib/media/kavita/kavita_api.dart:429` 新增 `_fetchImageBytes`：`http.AbortableRequest` + 流式读，等响应头、相邻两块之间各不超过 `kImageStallTimeout`（20 秒，`:118`），整体不设限。失败时不把连接留在后台：等响应头超时经 abort 中止请求；正文停顿超时 / 连接中断时 `await for` 退出即取消响应流；非 2xx 先取消响应流再抛错（`:444`）——`IOClient` 在「已有响应、还没人 listen」时 abort 只置标志、不碰底层响应，没人读也没人取消的错误体会把连接一直占着（审查发现的初版缺口）。传输层失败改抛带类型的 `KavitaTransportException`（`:56`，文本形态不变、仍先脱敏），调用方可与「服务器答了非 2xx」区分。
+  - `fushi/lib/src/media/kavita/kavita_manga_sync.dart:111` 新增 `_logSyncError`（文本过 `redactCredentialsInText`），四处吞错点都记：记账写失败（`:248`）、对账（`:563`）、标记对齐（`:630`）每次记进错误日志；开章拉取失败（`:358`）按类型分——Kavita 自己答了错误状态 / 解析不了每次记，服务器不可达（常态；含反向代理代答的 502 / 503 / 504，`isKavitaUnreachableError` `:52`）每次断开只记一条诊断，不逐章刷屏。
 - **[x] ② 已加自动化测试** —
-  - `packages/fushi_engine/test/media/kavita/kavita_api_test.dart` 新组 `page image / cover bytes` 6 条：跨块读全、整体耗时 4 倍于停顿预算但一直在走的正文成功（修前红）、正文卡住超时并中止请求、响应头卡住超时并中止请求、非 2xx 不带查询串、传输失败带类型且不含 apiKey。
-  - `fushi/test/media/kavita/kavita_manga_sync_test.dart` 组 `swallowed store failures are logged` 3 条（对账 / 标记对齐 / 记账写失败且凭据已脱敏）与组 `unreachable server is remembered` 里的日志断言（离线只记一条诊断、不进错误列表；HTTP 500 记进错误日志）。
+  - `packages/fushi_engine/test/media/kavita/kavita_api_test.dart` 组 `page image / cover bytes` 6 条（MockClient）：跨块读全、整体耗时 4 倍于停顿预算但一直在走的正文成功（修前红）、正文卡住超时并中止请求、响应头卡住超时并中止请求、非 2xx 不带查询串、传输失败带类型且不含 apiKey。
+  - 同文件组 `page image / cover bytes over a real socket` 4 条（真 `IOClient` + 回环裸 `ServerSocket`，断言服务器侧看到连接被关）：非 2xx 带错误体后连接被放掉（撤掉取消响应流那一行即等到超时变红）、响应头卡住超时后连接被关、正文卡住超时后连接被关、成功取完后连接留在池里。
+  - `fushi/test/media/kavita/kavita_manga_sync_test.dart` 组 `swallowed store failures are logged` 3 条（对账 / 标记对齐 / 记账写失败且凭据已脱敏）与组 `unreachable server is remembered` 里的日志断言（离线只记一条诊断、不进错误列表；HTTP 500 记进错误日志；502 / 503 / 504 连开三章只记一条诊断、不进错误列表）。
 - **备注**：阅读器里走 `Image.network` 直连页图 URL 的路径不经这两个方法，不在本条范围。真实慢链路 / 真 Kavita 服务器未复测。
