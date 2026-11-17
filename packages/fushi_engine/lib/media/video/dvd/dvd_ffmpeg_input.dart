@@ -1,3 +1,5 @@
+import 'package:fushi_engine/media/video/dvd/dvd_angle.dart'
+    show parseDvdTitleAnglePath;
 import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
     show dvdDiscRootForTitlePath, dvdTitleNumberForPath, isDvdTitlePath;
 import 'package:path/path.dart' as p;
@@ -47,7 +49,8 @@ class DvdTitleInput {
   /// Last chapter (PTT) to read, inclusive; null = to the title end.
   final int? chapterEnd;
 
-  /// Camera angle 1-9; null = the disc default (1).
+  /// Camera angle 1-9 (`dvdvideo` / libdvdnav numbering, i.e. the
+  /// `disc-navigation-state` angle index + 1); null = the disc default (1).
   final int? angle;
 
   static void _checkRange(String name, int value, int min, int max) {
@@ -115,14 +118,23 @@ String encodeDvdTitleInput(DvdTitleInput input) => Uri(
 /// nothing.
 DvdTitleInput? parseDvdTitleInput(String value) {
   // A library DVD title (`<disc>/VIDEO_TS/TITLE_nn.dvdtitle`, the
-  // `VideoBooks.videoPath` of a DVD member) names the whole title.
+  // `VideoBooks.videoPath` of a DVD member) names the whole title; its angle
+  // member path (`TITLE_nn.aK.dvdtitle`, dvd_angle.dart) reads camera angle K.
+  // `dvdvideo`'s `-angle` is 1-based like libdvdnav's (dvdvideodec.c: default
+  // 1, range 1-9, handed to dvdnav_angle_change), so angle index i reads
+  // `-angle i+1`; angle index 0 keeps the demuxer default.
   if (isDvdTitlePath(value)) {
     final String? disc = dvdDiscRootForTitlePath(value);
     final int? title = dvdTitleNumberForPath(value);
     if (disc == null || title == null) {
       throw FormatException('Malformed DVD title path: $value');
     }
-    return DvdTitleInput(disc: disc, title: title);
+    final int? angleIndex = parseDvdTitleAnglePath(value)?.angleIndex;
+    return DvdTitleInput(
+      disc: disc,
+      title: title,
+      angle: angleIndex == null ? null : angleIndex + 1,
+    );
   }
   if (!value.startsWith('$dvdTitleInputScheme:')) return null;
   final Uri uri = Uri.parse(value);

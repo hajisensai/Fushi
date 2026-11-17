@@ -25,6 +25,8 @@ import 'package:path/path.dart' as p;
 import 'package:fushi_engine/media/media_extensions.dart' show kVideoExtensions;
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
     show blurayDiscRootForPlaylistPath, isBlurayPlaylistPath;
+import 'package:fushi_engine/media/video/dvd/dvd_angle.dart'
+    show dvdTitleAnglePath, parseDvdTitleAnglePath;
 import 'package:fushi_engine/media/video/dvd/dvd_disc.dart' show isDvdTitlePath;
 import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
     show dvdDiscRootForTitlePath, dvdTitleNumberForPath, dvdTitlePath;
@@ -107,8 +109,9 @@ String? videoBookEpisodePath({
 /// - 蓝光行：恰好三段 `BDMV/PLAYLIST/<名>.mpls`（大小写不敏感），名字里不许有路径
 ///   分隔符、`..`；
 /// - DVD 行（[videoPath] 是 `VIDEO_TS/TITLE_nn.dvdtitle`）：恰好两段
-///   `VIDEO_TS/TITLE_nn.dvdtitle`，title 号 1～99，按 [dvdTitlePath] 在这一行的盘根上
-///   重拼（规整写法，读媒体经 `DvdFfmpegBackend` 按 title 读）；
+///   `VIDEO_TS/TITLE_nn.dvdtitle`（或角度成员路径 `VIDEO_TS/TITLE_nn.aK.dvdtitle`），
+///   title 号 1～99，按 [dvdTitlePath] 在这一行的盘根上重拼、保留角度（规整写法，读媒体
+///   经 `DvdFfmpegBackend` 按 title / 角度读）；
 /// - [videoPath] 不是原盘成员（没有盘根）、两边格式不同 → null。
 ///
 /// 路径只由这一行自己的盘根拼出，[discTitle] 走不出这张盘。
@@ -153,7 +156,11 @@ String? _dvdDiscTitlePath({
   final String name = parts[1];
   if (name.contains(r'\') || name.contains(':')) return null;
   final int? number = dvdTitleNumberForPath(name);
-  return number == null ? null : dvdTitlePath(root, number);
+  if (number == null) return null;
+  // 多角度 title 的角度成员路径（`TITLE_03.a2.dvdtitle`，`dvd_angle.dart`）保留角度：
+  // host 按会话里正在播的角度读。
+  final int angle = parseDvdTitleAnglePath(name)?.angleIndex ?? 0;
+  return dvdTitleAnglePath(dvdTitlePath(root, number), angle);
 }
 
 /// 纯函数：这一行视频在本机拥有的原始文件候选（`videoPath` + 播放列表各集），只

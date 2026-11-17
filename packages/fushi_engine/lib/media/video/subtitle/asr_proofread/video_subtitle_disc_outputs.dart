@@ -2,38 +2,33 @@
 /// （[videoSubtitleDiscExportDir]）的枚举与回收。
 ///
 /// 原盘的字幕不在盘旁（盘结构写不进 / 不该写），而在 app 自有的任务根里，按成员身份
-/// 分目录；多角度 title 每个角度是一个成员路径（`00001.a2.mpls`），各有一个目录。库里
+/// 分目录；多角度 title 每个角度是一个成员路径（蓝光 `00001.a2.mpls`、DVD
+/// `TITLE_03.a2.dvdtitle`），各有一个目录。库里
 /// 删掉这一行时它们就没人用了：删行的回收尾活经 [deleteVideoSubtitleDiscOutputs]
 /// 一并删掉，不然只会在存储页里越积越多。
 library;
 
 import 'dart:io';
 
-import 'package:fushi_engine/media/video/bluray/bluray_angle.dart'
-    show blurayAnglePath, kBlurayMaxAngles;
-import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
-    show isBlurayPlaylistPath;
+import 'package:fushi_engine/media/video/disc/disc_angle.dart'
+    show discAnglePath, discMaxAnglesFor;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart'
     show videoSubtitleDiscExportDir;
 import 'package:path/path.dart' as p;
 
-/// 成员路径 [memberPath] 在 [jobsRoot] 下可能有的全部 `disc_out` 目录：蓝光按全部
-/// 角度（0～[kBlurayMaxAngles] - 1）各一个，DVD 一个；不是原盘成员返回空表。纯函数，
-/// 不碰文件系统。
+/// 成员路径 [memberPath] 在 [jobsRoot] 下可能有的全部 `disc_out` 目录：蓝光与 DVD 都按
+/// 全部角度（0～[discMaxAnglesFor] - 1）各一个，角度 0 就是成员路径自己的那个；不是原盘
+/// 成员返回空表。纯函数，不碰文件系统。
 List<Directory> videoSubtitleDiscOutputDirs(
   Directory jobsRoot,
   String memberPath,
 ) {
-  if (isBlurayPlaylistPath(memberPath)) {
-    return <Directory>[
-      for (int angle = 0; angle < kBlurayMaxAngles; angle++)
-        ?videoSubtitleDiscExportDir(
-          jobsRoot,
-          blurayAnglePath(memberPath, angle),
-        ),
-    ];
-  }
-  return <Directory>[?videoSubtitleDiscExportDir(jobsRoot, memberPath)];
+  final int angles = discMaxAnglesFor(memberPath);
+  if (angles == 0) return const <Directory>[];
+  return <Directory>[
+    for (int angle = 0; angle < angles; angle++)
+      ?videoSubtitleDiscExportDir(jobsRoot, discAnglePath(memberPath, angle)),
+  ];
 }
 
 /// 删掉 [memberPaths] 的全部 `disc_out` 产物目录（[videoSubtitleDiscOutputDirs]），
