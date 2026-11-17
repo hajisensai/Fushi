@@ -2192,3 +2192,82 @@ Rust `SCHEMA` 没升（没加表 / 索引，分到的 40024 没用）；ABI 不�
   `backup_merge_engine.dart` 保留 develop 的 `excludedBookKeys`，不带回 G11-4 已删的 `localSrs` / `sourceSrs`。develop 改过的
   三份协议 3 测试 / 夹具（`srs_legacy_clock_conformance_test`、`legacy_clock_store_vectors.json`、`srs_gen4_rehearsal_test`）
   维持删除。
+
+## 第四波 G8-7c 同步收尾（2026-11-17，分支 `pr/srs-gen4-g8-7c-sync-tail`，基于 `pr/srs-gen4-switch`）
+
+接 §22 的遗留。schema 不升（仍是 `40021`）：新增的状态都放进已有的 `srs_meta` / `loc_state`，没有新表。
+
+1. **收尾投递与 `finish` 不再整表重扫 `op_wait`**（§22 第 7 条的「每片重扫」）：`drain_native` 按设备走
+   （`Truth::devices`），每台只按主键区间读到「下一个接得上的 seq」为止（`WAIT_RANGE_SQL`，`k BETWEEN key(dev, …)`），
+   只对真正投出的那一行取操作体（`WAIT_OP_SQL`）；非原生设备的残留整段删（`drop_waiting_of`）。承袭那一支同样按设备走、
+   投出一项记一次 `spent`，预算用完回 `drainMore`。`finish` 与 `status` 的「还剩几项」改用按设备区间的 `COUNT`
+   （`waiting_count` / `pending_count`），只数不解码。`COUNT` 本身仍随剩余项数线性，但不解码、不再在每片里乘上片数。
+   用例：`draining_a_large_waiting_buffer_reads_only_what_it_delivers`（300 与 1200 条等待项、预算 64、各投两片：VM 步数
+   45331 对 48915，断言 ≤ 1.3 倍且没有全表扫）、`wait_lookups_use_their_keys`（EXPLAIN）。Rust 测试的 `v_pending` 改成
+   只读连接直接数 `op_wait + op_pending`，不再先投递残留再数（以前的数法把「没投完」掩盖成 0）。变异：区间改全表读、
+   改回整表解码、承袭投递去掉预算、测试的收段循环忽略 `drainMore`（新 `v_pending` 才抓得到）→ 各自用例红。
+2. **`oldroot_ingest` 按 `maxItems` 切片，指纹跨事务累计**：每个写事务把这一批段的结论（落库 / 已有 / 坏段；要等的不算）
+   记到 `srs_meta` 的 `gen4_oldrun/<col>/<位置>\n<路径>`（值 = 这一轮清单指纹）下，与落库同事务提交；最后一次不带段、带
+   `settle` 与清单的收尾按清单重算待读列表，每一段都在同一指纹名下有结论、围栏也立好了才记指纹并清掉累计
+   （`Receiver::finish_oldroot`）。清单中途变了，累计不算，下一轮重来。`oldroot_scan` 回包加 `fp`；`oldroot_ingest`
+   必须带 `fp`，回包加 `rest` / `spent` / `drainMore`；Dart `srsSync4TakeOldRoot` 按 `kSrsSync4OldRootSliceItems = 256`
+   切片，一片既没交完段也没新工作就抛 `StateError`。用例：`slices_of_one_round_add_up_to_a_recorded_fingerprint`、
+   `old_root_takeover_is_sliced_and_still_records_its_fingerprint`（正序 / 倒序，`maxItems` 3）、Dart
+   `srs_sync4_round_test` 的切片与无进展两条。变异：累计查找失效、忽略 `maxItems` → 红。
+3. **协议 1 旧根的提示改了（偏离 D21 的那条定案的补充，§22 定案第 2 条）**。按 v3.3.0 源码核过：
+   - 本机库迁移后原地封存成 `SEALED_SCHEMA = 39999`（`seal.rs`）。v3.3.0 的 `schema::migrate` 在任何步骤之前比
+     `current > SCHEMA_VERSION`，报 `srs.db schema 39999 is newer than this build`；`SrsStorage.open` →
+     `SrsCore.openInBackground` 失败即抛，`SrsStorageHost.acquire` 不缓存、不重建，墓碑库同样挡住「建一份空库」。所以
+     **已迁移的设备装回 3.x：整个卡片库打不开，什么也同步不了，也不会往任何位置写东西**。Android 降级还得先卸载（清空本机
+     数据，除非另有备份），iOS 商店版不能降级。原提示「先用 3.x 同步一次」对这台设备不成立，照做反而有丢数据的风险。
+   - 在**另一台还没升级的 3.x 设备**上同步一次是安全的：3.x 的 `srsPrepareLocation` 把 `v2/` 升成 `v3/`（`v2/` 立协议 1
+     围栏），之后 4.x 的设备按存量协议 3 位置接手（旧根接手、`v3/meta.json` 改写成 `minReader 4` / `moved: v4` 的围栏）。
+     4.x 拒绝协议 1 位置时一个字节不写（`check_root` 在碰位置之前），所以 3.x 那边看到的仍是纯协议 1 的位置，不会和新代分叉。
+   - 位置已经被 4.x 立过围栏之后，3.x 读到 `v3/meta.json` 的 `minReader 4` 就 `needsUpgrade`、整轮不写（v3.3.0
+     `srs_location_crypto.dart` 握手 + `srs_folder_location.dart` needsUpgrade 时连媒体也不碰）；云盘先删后传窗口里 3.x 重建
+     `minReader 3` meta、或一轮进行中被立围栏的情况，新设备下一轮重立围栏、按变了的清单只读新多出的段并承袭上传
+     （下面第 6 条的用例）。
+   - **定案**：i18n `srs_sync_location_protocol1_root` 改成「请在另一台仍是 3.x 版本的设备上用它同步一次把位置升级，或者换
+     一个同步位置。不要把本机装回 3.x：本机的卡片库已经升级，3.x 打不开；Android 降级还得先卸载，会清空本机数据。」
+     （`i18n_sync --remove` + `--add`：旧译文的意思错了，不能留；zh-HK 另用 `--set` 给繁体，其余 14 种语言先回落英文）；
+     内核 `check_root` 的英文消息与 `oldroot.rs` 文件头同步改。用例 `only_a_protocol1_root_is_refused` 钉住新消息。
+   - **用户影响**：只在协议 1 位置上同步过、手上已没有 3.x 设备的用户，这个位置在 4.x 下没法升级，只能换位置（本机数据
+     完好，新位置照常同步）；位置上只存在于协议 1 根里的别的设备的操作，要那台设备自己升级后才拿得到。这仍是 §22 定案
+     第 2 条交所有者确认的那一项，没变。
+4. **`location_forget {location}`（移除位置）**：`write_local`。依次 `forget_location`（`loc_*` 等位置行）、删 `loc_state`、
+   清旧根累计（`oldroot_forget_run`）、对 `relay_segs` 里每个作者跑一遍 `sync_relay::prune`（不再是转发目标的原文立刻
+   丢掉）。回包 `{forgotten, relayDropped}`，幂等。**刻意保留**：本机 outbox 水位、承袭指纹、`media_*`（同一个目录再加回来
+   不必重传，媒体绑定是真相层操作，与位置无关）。Dart：`srsSync4ForgetLocation(host, locationId)`（`srs_sync4_steps.dart`）
+   → `SrsSyncScheduler.forgetLocation`（进串行队列）→ 复习历史页「移除文件夹」在改偏好的同一个 `_run` 里调。**G10-4 的
+   host 目录接口**：互联 host 目录移除位置时同样调 `srsSync4ForgetLocation(store, locationId)` 即可，不用新命令。用例：
+   Rust `a_removed_location_is_forgotten_and_no_longer_relayed_to`、Dart 真内核 `srs_sync4_folder_test`「移除位置」。
+   变异：不删 `loc_state` / 不 prune → 红。
+5. **小项**：
+   - `head` 在没变化时不开写事务：分发器先在读快照上跑 `head_unchanged`（带 `skipUnchangedMs`、本机摘要没变、`last_ok`
+     离现在不到一天 `LAST_OK_REFRESH_MS`），成立就直接回「不变」；否则照旧 `write_local(head)`。代价：`last_ok` 的精度
+     从「每轮」变成「最多晚一天」，对 30 天的转发窗口无影响。用例 `an_unchanged_head_commits_nothing`（只读连接看
+     `PRAGMA data_version` 不变）。
+   - `loc_state.last_ok` 的 schema 注释改成实际含义（最后一次成功一轮、最多晚一天、转发窗口用它；列名冻结）。
+   - Rust `v_pending` 不再先投递残留（见第 1 条）。
+6. **规划 §6 同步相关的合并条件逐条核**（只核自动化测试能覆盖的；R0 真机实测不在本分支）：
+   | 条件 | 覆盖 |
+   |---|---|
+   | 存量集合旧根接手 | `old_root_takeover_reaches_migrated_and_new_devices_alike`、切片用例、`a_new_collection_is_never_taken_for_an_existing_one` |
+   | 新集合 / 存量集合立围栏 | `the_location_root_fences_protocol_3_and_refuses_what_it_cannot_read`、`fences_are_put_back_when_missing_or_changed`、Dart `srs_sync4_folder_test` |
+   | 围栏写到一半 | `a_fence_interrupted_midway_is_completed_by_the_next_device` |
+   | meta 先删后传的窗口、一轮进行中被立围栏 | **本分支新增** `an_old_client_writing_past_the_fence_is_still_taken_over`（3.x 重建 `minReader 3` meta 又写完一轮：围栏重立、只读新段、新设备拿全；变异「记过指纹就不再比清单」→ 红） |
+   | 协议 1 旧客户端碰新位置 | `srs_format_break_test`（冻结的 v1 客户端真跑一轮，字节不变） |
+   | 新版本碰协议 1 位置 | `only_a_protocol1_root_is_refused`、`srs_format_break_test` 第二组 |
+   | 协议 3 客户端碰新位置 | 围栏内容（`minReader 4`、`moved`）由上面用例钉住；v3.3.0 的停下行为按源码核（第 3 条），树里没有冻结的协议 3 Dart 客户端，没法真跑 |
+   | 转发件新旧格式互拒 | `gen4/relay.rs` `protocol_3_and_protocol_4_relays_reject_each_other` |
+
+   远程复习的「新旧互拒四个方向」归 G10，不在同步模块，本分支没核。
+
+### 没做
+
+- 规划 §6 的 R0 真机实测（文件夹 / 互联 host / WebDAV × 新集合 / 存量集合 / 先删后传窗口 / 一轮中立围栏 / link 步骤）：
+  只有上表的自动化覆盖。
+- 协议 3 客户端碰新位置没有「真跑旧客户端」的用例（树里只冻结了协议 1 客户端）；要的话得把 v3.3.0 的位置握手冻结进
+  `test/srs/sync2/` 另一个 `v3_client/`。
+- `COUNT(*)` 统计等待项仍随剩余项数线性（只数不解）；要做到常数得另存计数器，等实测证明是瓶颈再说。
+- 协议 1 位置的只读转译（D21 原文）仍没做，见第 3 条。

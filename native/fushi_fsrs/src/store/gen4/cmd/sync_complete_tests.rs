@@ -540,6 +540,53 @@ fn old_root_takeover_reaches_migrated_and_new_devices_alike() {
     assert_eq!(da, dc);
 }
 
+/// 围栏挡不住的那两种（规划 §6「meta 先删后传的窗口」「一轮进行中被立围栏」，oldroot.rs「为什么每轮都要捡」）：
+/// 旧根接手、指纹记下之后，一台还在跑协议 3 的设备趁云盘先删后传的窗口重建了 `minReader 3` 的旧 meta，又把它那一轮
+/// 照常写完（旧根多了一段、head 换了）。升级过的设备下一轮：围栏重立（`moved: v4`）、只读新多出的那段、承袭上传；
+/// 只连新根的设备照样拿到这台旧设备的全部历史，各台派生层相同。（G8-7c 按规划 §6 补的端到端用例。）
+#[test]
+fn an_old_client_writing_past_the_fence_is_still_taken_over() {
+    let mut a = Dev::new("g87cfa");
+    let mut c = Dev::new("g87cfc");
+    let mut loc = Loc::new();
+    old_root(&mut loc, 12, &[(1, 5), (6, 12)]);
+    a.write(T1 + 1, N1, "鯨");
+    let (ing, _) = takeover_round(&a, &mut loc, T1 + 10);
+    assert_eq!(ing.expect("a scans")["recorded"], json!(true));
+    sync_all(&[&a, &c], &mut loc, T1 + 20, Opts::default());
+    assert_eq!(d_old_len(&c), 12);
+
+    // 协议 3 的设备：重建旧 meta（先删后传的窗口），再把这一轮写完（新段 13..15 与新 head）。
+    loc.insert(
+        "v3/meta.json".into(),
+        json!({"collection": collection_of(P).text(), "v": 3, "minReader": 3})
+            .to_string()
+            .into_bytes(),
+    );
+    old_root(&mut loc, 15, &[(1, 5), (6, 12), (13, 15)]);
+
+    let (ing, up) = takeover_round(&a, &mut loc, T1 + 30);
+    let ing = ing.expect("the old root changed, a reads it again");
+    assert_eq!(
+        ing["landed"],
+        json!(3),
+        "only the new segment is read: {ing}"
+    );
+    assert_eq!(ing["errors"], json!([]), "{ing}");
+    assert_eq!(ing["recorded"], json!(true), "{ing}");
+    assert!(up > 0, "a uploads the new heritage");
+    let fence: Value = serde_json::from_slice(&loc["v3/meta.json"]).unwrap();
+    assert_eq!(fence["moved"], json!("v4"), "fence put back: {fence}");
+    assert_eq!(fence["minReader"], json!(crate::gen4::MIN_READER));
+
+    sync_all(&[&a, &c], &mut loc, T1 + 40, Opts::default());
+    for d in [&a, &c] {
+        assert_eq!(d_old_len(d), 15, "every device holds OLD's whole log");
+        assert_eq!(d.field(N1), Some(json!("鯨")));
+    }
+    assert_eq!(a.derived(), c.derived());
+}
+
 /// 旧根接手按 `maxItems` 切片（G8-7c）：迁移后第一次捡旧根，几段旧根分在几个写事务里收（一段不在中途切），每个事务
 /// 把这一批的结论记到这一轮指纹名下；交完之后不带段的收尾那一次凭前面几批的结论记下指纹，下一轮清单不变不再读。
 /// 倒着交（后面的段先到、整段停进承袭待投递）时，前面那段到了之后的投递也按预算切成几个不带段的投递片。
