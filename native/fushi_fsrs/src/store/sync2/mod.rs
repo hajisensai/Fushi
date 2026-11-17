@@ -1740,6 +1740,7 @@ pub(crate) fn replay_cards(
         let input: Vec<Row<'_>> = rows
             .iter()
             .map(|(_, j, s, i, _)| Row {
+                seed_card: None,
                 json: j,
                 server_time: *s,
                 intent: i.clone(),
@@ -2643,6 +2644,7 @@ pub(crate) fn preview_on(
     let input: Vec<Row<'_>> = rows
         .iter()
         .map(|(_, j, s, i, _)| Row {
+            seed_card: None,
             json: j,
             server_time: *s,
             intent: i.clone(),

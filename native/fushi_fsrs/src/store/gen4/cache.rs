@@ -126,7 +126,9 @@ use crate::store::caches::{
     anki_duplicate_log_ids, card_row, note_row, sorted_ids, stat_groups,
 };
 use crate::store::schema::anki_numeric_id;
-use crate::store::sync2::{canonical, config, group_lineage, log_json, tails_with};
+use crate::store::sync2::{
+    canonical, config, group_lineage, log_json, note_type_key_affects_caches, tails_with,
+};
 use crate::sync2::codec::{Reader, Writer};
 use crate::sync2::id::{Id, Key};
 use crate::sync2::op::{EntKind, Intent, LogBody};
@@ -283,9 +285,35 @@ impl Dirt {
         self.entities.insert((ekind, ent.clone()));
     }
 
-    pub(super) fn registers(&mut self, regs: &BTreeSet<Reg>) {
+    /// 一个寄存器（写入落库、状态重判变了）要不要让缓存层重看它的实体：笔记类型只看影响缓存行的键（协议 3
+    /// `note_type_key_affects_caches` 同一条规则：名字、CSS、字段说明只在渲染 / 编辑时读，不进笔记 / 卡行），别的
+    /// 种类一律要。笔记类型脏了就要把这一类的全部笔记重算（[Index::refresh_caches]），所以这几个键不能记脏（H5 读放大）。
+    pub(super) fn register(&mut self, r: &Reg) -> Result<(), String> {
+        if r.ekind == EntKind::NoteType as i64 {
+            let key = read_edit_key(&mut Reader::new(&r.key))
+                .map_err(|e| format!("gen4 cache: register key: {e}"))?;
+            if !note_type_key_affects_caches(&key) {
+                return Ok(());
+            }
+        }
+        self.entity(r.ekind, &r.ent);
+        Ok(())
+    }
+
+    pub(super) fn registers(&mut self, regs: &BTreeSet<Reg>) -> Result<(), String> {
         for r in regs {
-            self.entity(r.ekind, &r.ent);
+            self.register(r)?;
+        }
+        Ok(())
+    }
+
+    /// 收尾时一批碰过的实体（`Index::touched`，扣住 / 清除按它重看）：笔记类型不从这里记脏——它被碰过只因为写入
+    /// （由 [Dirt::register] 按键判）、清除（`derive.rs` 落 `Purge` 时直接记）或重判（同 [Dirt::register]），各自已记。
+    pub(super) fn touched(&mut self, ents: &BTreeSet<(i64, Ref)>) {
+        for (ekind, ent) in ents {
+            if *ekind != EntKind::NoteType as i64 {
+                self.entity(*ekind, ent);
+            }
         }
     }
 }
@@ -310,7 +338,13 @@ pub(super) struct LogIn {
     pub(super) k: i64,
     /// 日志上记的笔记（原值，未归一；协议 3 `sync2_log_meta.note_id`）。用到的地方自己归一，缓存层的重放不付这份代价。
     pub(super) note: Option<Ref>,
+    /// 日志上记的卡（原值，未归一）：重放的 fuzz 种子（`sync2/replay.rs` [Row::seed_card]）。[json] 里的 `card` 已归一成
+    /// 规范卡；种子跟着换的话，带盐的存量日志迁移后到期日会变。
+    pub(super) seed_card: String,
 }
+
+/// 归属组的一行重放输入（[Index::group_rows]）：(投影行 JSON, server_time, 意图, fuzz 种子用的原值卡)。
+pub(super) type GroupRow = (String, Option<i64>, Intent, String);
 
 /// 统计去重要跨批看的东西（全量重建时一批一个或几个连通分量）。
 #[derive(Default)]
@@ -845,6 +879,7 @@ impl<'t, 'c> Index<'t, 'c> {
         };
         let (server_time, intent) = (l.server_time, l.intent.clone());
         let note = l.note.as_ref().map(Ref::of);
+        let seed_card = Ref::of(&l.card).text();
         let device = e.id.device;
         // 投影行里的 profile 只是协议 3 的分区列，读侧不用；集合内取常量。
         let row = log_json("", &log_body(l), || {
@@ -858,6 +893,7 @@ impl<'t, 'c> Index<'t, 'c> {
             intent,
             k,
             note,
+            seed_card,
         })
     }
 
@@ -1533,22 +1569,16 @@ impl<'t, 'c> Index<'t, 'c> {
     }
 
     /// 卡 [tail] 当链尾的归属组（链尾 + 广度优先的全部前身，`group_lineage`）的日志，按组里卡的顺序、各卡按
-    /// (发生时刻, 操作主键)：(投影行 JSON, server_time, 意图)，未经重放写回（重放的输入）。写命令 `sched`（G7-3b，
+    /// (发生时刻, 操作主键)：(投影行 JSON, server_time, 意图, fuzz 种子用的原值卡)，未经重放写回（重放的输入）。写命令 `sched`（G7-3b，
     /// `cmd/writes_intent.rs`）据它算这张卡此刻的头状态——协议 3 `store/sync2/mod.rs` `group_of` 的新代版。
-    pub(super) fn group_rows(
-        &mut self,
-        tail: &Ref,
-    ) -> Result<Vec<(String, Option<i64>, Intent)>, String> {
+    pub(super) fn group_rows(&mut self, tail: &Ref) -> Result<Vec<GroupRow>, String> {
         Ok(self.group(tail)?.0)
     }
 
     /// [group_rows] 连同归属组的笔记（规范 ID）：取链尾自己日志上记的（链尾的日志里最后一条记了笔记的），链尾没有就取
     /// 前身里第一条记了笔记的——协议 3 `group_of` 的同一条规则（换笔记类型不换笔记）。评分预览（`cmd/preview.rs`）用。
     #[allow(clippy::type_complexity)]
-    pub(super) fn group(
-        &mut self,
-        tail: &Ref,
-    ) -> Result<(Vec<(String, Option<i64>, Intent)>, Option<String>), String> {
+    pub(super) fn group(&mut self, tail: &Ref) -> Result<(Vec<GroupRow>, Option<String>), String> {
         let tail = self.canon(tail)?;
         let lineage = {
             let mut preds = |c: &str| -> Result<Vec<String>, String> {
@@ -1565,7 +1595,7 @@ impl<'t, 'c> Index<'t, 'c> {
                 if l.note.is_some() && (note.is_none() || *c == tail_text) {
                     note = l.note.clone();
                 }
-                out.push((l.json, l.server_time, l.intent));
+                out.push((l.json, l.server_time, l.intent, l.seed_card));
             }
         }
         let note = note.map(|n| self.canon(&n).map(|c| c.text())).transpose()?;
@@ -1619,6 +1649,7 @@ impl<'t, 'c> Index<'t, 'c> {
                         json: &l.json,
                         server_time: l.server_time,
                         intent: l.intent.clone(),
+                        seed_card: Some(&l.seed_card),
                     });
                 }
             }
@@ -2523,6 +2554,56 @@ mod tests {
             let did = t.tx(|t| Index::new(t, col).rebuild_caches()).unwrap();
             assert_eq!((did.cache_notes, did.cache_cards), (1, 2));
             assert_rebuild_is_identity(t, col);
+        });
+    }
+
+    /// 笔记类型的名字、CSS、字段说明不进笔记 / 卡行（协议 3 `note_type_key_affects_caches`）：改它们不把这一类的笔记
+    /// 重算（H5 读放大，交接 §26 C5）；改词条字段、模板照样重算这一类。每一步之后增量与重建相同。
+    #[test]
+    fn note_type_keys_outside_the_rows_do_not_recompute_its_notes() {
+        with(|t, col| {
+            put_cfg(t, col);
+            let (a, _) = script();
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                for s in &a {
+                    land(t, &mut ix, col, 0xa1, s);
+                }
+                ix.settle()?;
+                Ok(())
+            })
+            .unwrap();
+            let nt_key = |k: &str, b: u8| format!("{k}/{}", id(b).text());
+            let steps: [(String, Value, u64); 6] = [
+                ("name".to_owned(), json!("Renamed"), 0),
+                ("css".to_owned(), json!(".card {}"), 0),
+                (nt_key("fieldDesc", FA), json!("the word"), 0),
+                ("termField".to_owned(), json!(id(FA).text()), 1),
+                (
+                    nt_key("tmplDef", T1),
+                    json!({"name": "A2", "ord": 0, "front": "{{E}}!"}),
+                    1,
+                ),
+                ("name".to_owned(), json!("Again"), 0),
+            ];
+            for (i, (key, value, want)) in steps.iter().enumerate() {
+                let i = i as u64;
+                let did = t
+                    .tx(|t| {
+                        let mut ix = Index::new(t, col);
+                        let step: Step = (
+                            i + 1,
+                            900 + i as i64,
+                            vec![],
+                            set(EntKind::NoteType, uuid(NT), key, value.clone()),
+                        );
+                        land(t, &mut ix, col, 0xc3, &step);
+                        ix.settle()
+                    })
+                    .unwrap();
+                assert_eq!(did.cache_notes, *want, "{key}");
+                assert_rebuild_is_identity(t, col);
+            }
         });
     }
 

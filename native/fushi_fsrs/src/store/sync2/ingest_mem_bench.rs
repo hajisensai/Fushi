@@ -111,6 +111,7 @@ fn answers(
             let rows: Vec<Row<'_>> = texts
                 .iter()
                 .map(|t| Row {
+                    seed_card: None,
                     json: t,
                     server_time: None,
                     intent: Intent::Answer,

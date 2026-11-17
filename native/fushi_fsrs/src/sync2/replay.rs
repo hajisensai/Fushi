@@ -13,7 +13,8 @@
 //!   （设计 §4.6）；迁移也因此不改任何一张卡的到期日；
 //! - 记忆状态输入沿用 projection.rs 的规则（重置之后的有效评分、锚点 / SM-2 起点），输入里的结果用重放值；
 //! - 日界用每条日志自己记下的 UTC 偏移与翻日时刻（作者当时的口径；与设备当前时区无关，重放逐位确定）；
-//! - fuzz 种子 = (日志所属卡, reps)，与旧实现同一公式（不用 RNG）。
+//! - fuzz 种子 = (日志所属卡, reps)，与旧实现同一公式（不用 RNG）；所属卡是日志作答时记的那张（原值，
+//!   [Row::seed_card]），不随别名归一换成规范卡。
 //!
 //! 结果写回日志的投影行（srs_review_logs.json 的 `res`），所以统计、优化器、RWKV、撤销判定这些读侧
 //! 全部自动看到重放后的值，不需要各自改。
@@ -25,12 +26,16 @@ use super::sched::{self, Config, Queue, Sched};
 use crate::history::{Kind, Outcome, STATUS_CLAMPED, STATUS_EFFECTIVE, select};
 use crate::projection::{Day, EffLog, MemoryInput, memory_input};
 
-/// 重放的一行输入：日志投影行的 JSON、它的 S(e)、它的意图。
+/// 重放的一行输入：日志投影行的 JSON、它的 S(e)、它的意图，与 fuzz 种子用的卡。
 #[derive(Debug, Clone)]
 pub struct Row<'a> {
     pub json: &'a str,
     pub server_time: Option<i64>,
     pub intent: Intent,
+    /// fuzz 种子用的卡 ID：作答时这条日志记的那张卡（原值）。`None` = 取 [json] 里的 `card`（协议 3：投影行里就是原值）。
+    /// 新代的投影行已归一成规范卡（`store/gen4/cache.rs` `log_at`），带盐的存量日志在那里看到的是规范卡 ID；种子要是
+    /// 跟着换，迁移就会改掉卡的到期日（文件头「迁移也因此不改任何一张卡的到期日」），所以新代把原值卡放在这里。
+    pub seed_card: Option<&'a str>,
 }
 
 /// 重放结果：每行一个新 JSON（`None` = 与输入相同，不用写回）、重放后的卡片状态（`None` = 新卡）。
@@ -351,7 +356,10 @@ fn fold(rows: &[Row<'_>]) -> Result<Folded, String> {
             utc_offset_min: v.get("utcOff").and_then(Value::as_i64).unwrap_or(0),
             rollover_hour: v.get("rollover").and_then(Value::as_i64).unwrap_or(4),
         };
-        let card = v.get("card").and_then(Value::as_str).unwrap_or_default();
+        let card = match rows[i].seed_card {
+            Some(c) => c,
+            None => v.get("card").and_then(Value::as_str).unwrap_or_default(),
+        };
         let base = last.clone().unwrap_or_else(Sched::initial);
         let scheduler = owner.clone().unwrap_or_else(|| "fushi".into());
         let cur = if base.scheduler == scheduler {
@@ -501,6 +509,7 @@ pub(crate) mod tests {
             .iter()
             .zip(rows)
             .map(|(t, v)| Row {
+                seed_card: None,
                 json: t,
                 server_time: None,
                 intent: infer_intent(v),
@@ -548,6 +557,7 @@ pub(crate) mod tests {
         let input: Vec<Row<'_>> = texts
             .iter()
             .map(|t| Row {
+                seed_card: None,
                 json: t,
                 server_time: None,
                 intent: Intent::Answer,
@@ -562,6 +572,68 @@ pub(crate) mod tests {
         assert_eq!(s.reps, 6);
         assert_eq!(s.lapses, 1);
         assert_eq!(s.queue, Queue::Review);
+    }
+
+    /// fuzz 种子按作答时日志记的那张卡（[Row::seed_card]），不按投影行里归一过的卡：同一串评分挂在规范卡 `C` 上、
+    /// 种子给原值卡 `S`，重放出的每条结果与卡状态都和「日志就记在 `S` 上」（协议 3 当时算的）逐位相同。新代把带盐的
+    /// 存量日志归一成规范卡，种子要是跟着换，迁移就会改到期日（交接 §26 C1 第 ③ 处）。
+    #[test]
+    fn the_fuzz_seed_is_the_card_the_log_was_answered_on() {
+        let cfg = Config::default();
+        assert!(
+            cfg.fuzz,
+            "the default config must fuzz for this test to mean anything"
+        );
+        let t0 = 1_700_000_000_000i64;
+        let plan = [(0, 3), (DAY, 3), (4 * DAY, 3), (12 * DAY, 3), (35 * DAY, 3)];
+        let history = |card: &str| -> Vec<Value> {
+            let mut rows: Vec<Value> = Vec::new();
+            for (k, (dt, rating)) in plan.iter().enumerate() {
+                let rtype = if k == 0 { "learn" } else { "review" };
+                rows.push(review(&format!("l{k}"), card, "A", t0 + dt, *rating, rtype));
+            }
+            rows.iter()
+                .map(|r| {
+                    let mut r = r.clone();
+                    r[SNAPSHOT_KEY] = cfg.to_json();
+                    r
+                })
+                .collect()
+        };
+        let replay_of = |rows: &[Value], seed: Option<&str>| -> (Vec<Value>, Option<Sched>) {
+            let texts: Vec<String> = rows.iter().map(Value::to_string).collect();
+            let input: Vec<Row<'_>> = texts
+                .iter()
+                .zip(rows)
+                .map(|(t, v)| Row {
+                    json: t,
+                    server_time: None,
+                    intent: infer_intent(v),
+                    seed_card: seed,
+                })
+                .collect();
+            let r = replay(&input).unwrap();
+            let out = r
+                .rows
+                .iter()
+                .zip(&texts)
+                .map(|(n, t)| serde_json::from_str(n.as_deref().unwrap_or(t)).unwrap())
+                .collect();
+            (out, r.state)
+        };
+        let res =
+            |rows: &[Value]| -> Vec<Value> { rows.iter().map(|r| r["res"].clone()).collect() };
+        let (on_s, s_state) = replay_of(&history("S"), None);
+        let (on_c_seeded_s, c_state) = replay_of(&history("C"), Some("S"));
+        assert_eq!(res(&on_c_seeded_s), res(&on_s));
+        assert_eq!(c_state, s_state);
+        // 种子真的起作用：同一串评分按 `C` 自己当种子，结果不同（否则上面的相等说明不了什么）。
+        let (on_c, c_own) = replay_of(&history("C"), None);
+        assert_ne!(
+            (res(&on_c), c_own),
+            (res(&on_s), s_state),
+            "the two seeds must fuzz differently for this history"
+        );
     }
 
     /// 设计 §4.1 的例子：两台设备离线各复习同一张卡，合并后三次都算，结果与「同一台设备按时间顺序复习
@@ -625,6 +697,7 @@ pub(crate) mod tests {
             .iter()
             .zip(rows)
             .map(|(t, v)| Row {
+                seed_card: None,
                 json: t,
                 server_time: None,
                 intent: infer_intent(v),
