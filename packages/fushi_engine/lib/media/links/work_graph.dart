@@ -294,6 +294,26 @@ final class WorkGraph {
         (adaptationsByRoot[uf.find(indexOf[l.from]!)] ??= <_Link>[]).add(l);
       }
     }
+    // 原作判定的源头组：只按系列合集成员关系并（不含连接），组号取并查集根，
+    // 组内最小端点 = 编号最小者（nodes 已升序）。
+    final _UnionFind seriesUf = _UnionFind(nodes.length);
+    for (final WorkSeriesCollection c in series) {
+      final List<MediaLinkEndpoint> all = <MediaLinkEndpoint>[
+        ?c.endpoint,
+        ...c.members,
+      ];
+      final int head = indexOf[all.first]!;
+      for (int i = 1; i < all.length; i++) {
+        seriesUf.union(head, indexOf[all[i]]!);
+      }
+    }
+    final Map<int, int> groupMinIndex = <int, int>{};
+    for (int i = 0; i < nodes.length; i++) {
+      groupMinIndex.putIfAbsent(seriesUf.find(i), () => i);
+    }
+    int groupOf(MediaLinkEndpoint e) => seriesUf.find(indexOf[e]!);
+    MediaLinkEndpoint groupMin(int group) => nodes[groupMinIndex[group]!];
+
     final Map<int, List<WorkSeriesCollection>> seriesByRoot =
         <int, List<WorkSeriesCollection>>{};
     for (final WorkSeriesCollection c in series) {
@@ -312,7 +332,11 @@ final class WorkGraph {
       final Work work = Work._(
         identity: members.first,
         members: List<MediaLinkEndpoint>.unmodifiable(members),
-        original: _originalOf(adaptationsByRoot[root] ?? const <_Link>[]),
+        original: _originalOf(
+          adaptationsByRoot[root] ?? const <_Link>[],
+          groupOf,
+          groupMin,
+        ),
         representative: _representativeOf(members, inWork, externalIdEndpoints),
         seriesCollectionIds: List<int>.unmodifiable(
           <int>{for (final WorkSeriesCollection c in inWork) c.id}.toList()
@@ -484,39 +508,48 @@ List<_Link> _normalizeLinks(Iterable<WorkGraphLink> links) {
     ..sort((_Link a, _Link b) => compareWorkLinks(a.id, b.id));
 }
 
-/// 原作：已生效 `adaptation` 子图里入度为 0 的唯一端点；有环或源头不唯一返回 null。
-MediaLinkEndpoint? _originalOf(List<_Link> adaptations) {
-  if (adaptations.isEmpty) return null;
-  final Map<MediaLinkEndpoint, int> inDegree = <MediaLinkEndpoint, int>{};
-  final Map<MediaLinkEndpoint, List<MediaLinkEndpoint>> out =
-      <MediaLinkEndpoint, List<MediaLinkEndpoint>>{};
+/// 原作：已生效 `adaptation` 子图先按「源头组」收缩——同一个系列合集的成员（视频
+/// 合集含合集端点）是一组，不属于任何系列合集的端点各自一组（[groupOf] 给组号）；
+/// 收缩后组内的边丢掉，入度为 0 的组唯一时，原作 = 该组的最小端点（[groupMin]，
+/// 单端点组就是它自己）。没有边、源头组不唯一、或收缩图有环返回 null。
+///
+/// 这样「小说第 1、2 卷各连一条 adaptation 到动画」认出同一个源头（小说系列），
+/// 而不是判成多源。
+MediaLinkEndpoint? _originalOf(
+  List<_Link> adaptations,
+  int Function(MediaLinkEndpoint endpoint) groupOf,
+  MediaLinkEndpoint Function(int group) groupMin,
+) {
+  final Map<int, int> inDegree = <int, int>{};
+  final Map<int, Set<int>> out = <int, Set<int>>{};
   for (final _Link l in adaptations) {
-    inDegree.putIfAbsent(l.from, () => 0);
-    inDegree[l.to] = (inDegree[l.to] ?? 0) + 1;
-    (out[l.from] ??= <MediaLinkEndpoint>[]).add(l.to);
+    final int from = groupOf(l.from);
+    final int to = groupOf(l.to);
+    if (from == to) continue;
+    inDegree.putIfAbsent(from, () => 0);
+    inDegree.putIfAbsent(to, () => 0);
+    if ((out[from] ??= <int>{}).add(to)) inDegree[to] = inDegree[to]! + 1;
   }
-  final List<MediaLinkEndpoint> sources = <MediaLinkEndpoint>[
-    for (final MapEntry<MediaLinkEndpoint, int> e in inDegree.entries)
+  if (inDegree.isEmpty) return null;
+  final List<int> sources = <int>[
+    for (final MapEntry<int, int> e in inDegree.entries)
       if (e.value == 0) e.key,
   ];
   if (sources.length != 1) return null;
   // Kahn 拓扑排序：排不完说明有环（单源也可能带环，如 S→A→B→A）。
-  final Map<MediaLinkEndpoint, int> remaining = Map<MediaLinkEndpoint, int>.of(
-    inDegree,
-  );
-  final List<MediaLinkEndpoint> queue = <MediaLinkEndpoint>[sources.single];
+  final Map<int, int> remaining = Map<int, int>.of(inDegree);
+  final List<int> queue = <int>[sources.single];
   int visited = 0;
   while (queue.isNotEmpty) {
-    final MediaLinkEndpoint n = queue.removeLast();
+    final int n = queue.removeLast();
     visited++;
-    for (final MediaLinkEndpoint next
-        in out[n] ?? const <MediaLinkEndpoint>[]) {
+    for (final int next in out[n] ?? const <int>{}) {
       final int left = remaining[next]! - 1;
       remaining[next] = left;
       if (left == 0) queue.add(next);
     }
   }
-  return visited == inDegree.length ? sources.single : null;
+  return visited == inDegree.length ? groupMin(sources.single) : null;
 }
 
 /// 代表端点（spec §4.2 表「名字 / 封面」）：有外部 id 的视频合集端点（多个取最小）

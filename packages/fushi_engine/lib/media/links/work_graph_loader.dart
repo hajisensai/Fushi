@@ -88,6 +88,7 @@ Future<WorkGraph> loadWorkGraph(FushiDatabase db) async {
       sourceFolderPath: c.sourceFolderPath,
       origin: CollectionOrigin.parse(c.origin),
       organizeKey: c.organizeKey,
+      hasVideo: hasVideo,
       hasWorkIdentity:
           hasVideo &&
           externalIdEndpoints.contains(videoCollectionEndpoint(c.id)),
@@ -119,8 +120,11 @@ MediaLinkEndpoint videoCollectionEndpoint(int collectionId) =>
 
 /// 一个合集算不算作品图里的「系列合集」（成员之间成边）。
 ///
-/// - 只认 `playlist`；目录合集（[sourceFolderPath] 非空，或来源 `folder`）与主题型
-///   `collection` 不算（spec §4.2）。
+/// - 只认 `playlist`；主题型 `collection` 不算（spec §4.2）。
+/// - 目录合集（[sourceFolderPath] 非空，或来源 `folder`）：含视频成员（[hasVideo]）
+///   就算——视频库按目录建的合集本身就是一部作品的各集（所有者 2026-11-18 更正
+///   spec），照常产出视频合集端点；只含书 / 漫画 / 游戏的不算（那是磁盘目录，不一定
+///   是同一部作品）。
 /// - 来源 `rule` / `ai`：一律算（整理器按系列建的）。
 /// - 来源 `user`：存量合集全是 `user`（spec §8），用户随手建的阅读清单不能把不相干的
 ///   书连成一部作品，所以只在「像一个系列」时算：有整理分组键 [organizeKey]；或是带
@@ -133,18 +137,21 @@ bool isWorkSeriesCollection({
   required String? sourceFolderPath,
   required CollectionOrigin origin,
   required String? organizeKey,
+  required bool hasVideo,
   required bool hasWorkIdentity,
   required int memberCount,
   required Iterable<String> bookTitles,
 }) {
   if (collectionType != 'playlist') return false;
-  if (sourceFolderPath != null) return false;
+  if (sourceFolderPath != null || origin == CollectionOrigin.folder) {
+    return hasVideo;
+  }
   switch (origin) {
     case CollectionOrigin.rule:
     case CollectionOrigin.ai:
       return true;
     case CollectionOrigin.folder:
-      return false;
+      return hasVideo; // 上面已处理，这里只为穷尽。
     case CollectionOrigin.user:
       if (organizeKey != null && organizeKey.isNotEmpty) return true;
       if (hasWorkIdentity) return true;

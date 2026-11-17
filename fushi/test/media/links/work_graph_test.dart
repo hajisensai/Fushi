@@ -257,6 +257,74 @@ void main() {
         isNull,
         reason: '没有 adaptation 边',
       );
+      // 源头按系列合集归并：小说第 1、2 卷各连一条 adaptation 到动画 = 单源，
+      // 原作取该系列的最小端点（第 3 卷没连也一样在组里）。
+      final List<WorkGraphLink> volumes = <WorkGraphLink>[
+        link(book('n2'), MediaLinkRelation.adaptation, vc('1')),
+        link(book('n3'), MediaLinkRelation.adaptation, vc('1')),
+        link(vc('1'), MediaLinkRelation.adaptation, game('g1')),
+      ];
+      final WorkSeriesCollection novelSeries = WorkSeriesCollection(
+        id: 1,
+        members: <MediaLinkEndpoint>[book('n3'), book('n2'), book('n1')],
+      );
+      expect(
+        WorkGraph.build(
+          links: volumes,
+          seriesCollections: <WorkSeriesCollection>[novelSeries],
+        ).workOf(vc('1'))!.original,
+        book('n1'),
+      );
+      expect(
+        WorkGraph.build(links: volumes).workOf(vc('1'))!.original,
+        isNull,
+        reason: '不在同一系列合集里的两卷仍是两个源头',
+      );
+      expect(
+        WorkGraph.build(
+          links: <WorkGraphLink>[
+            ...volumes,
+            link(game('m1'), MediaLinkRelation.adaptation, vc('1')),
+          ],
+          seriesCollections: <WorkSeriesCollection>[
+            novelSeries,
+            WorkSeriesCollection(
+              id: 2,
+              members: <MediaLinkEndpoint>[game('m1'), game('m2')],
+            ),
+          ],
+        ).workOf(vc('1'))!.original,
+        isNull,
+        reason: '两个不同系列各是一个源头',
+      );
+      expect(
+        WorkGraph.build(
+          links: <WorkGraphLink>[
+            ...volumes,
+            link(game('g1'), MediaLinkRelation.adaptation, book('n1')),
+          ],
+          seriesCollections: <WorkSeriesCollection>[novelSeries],
+        ).workOf(vc('1'))!.original,
+        isNull,
+        reason: '归并后有环',
+      );
+      // 视频合集端点与它的集同组：集连出去的 adaptation 源头是整个合集。
+      expect(
+        WorkGraph.build(
+          links: <WorkGraphLink>[
+            link(ep('e1'), MediaLinkRelation.adaptation, game('g1')),
+            link(vc('1'), MediaLinkRelation.adaptation, game('g2')),
+          ],
+          seriesCollections: <WorkSeriesCollection>[
+            WorkSeriesCollection(
+              id: 3,
+              endpoint: vc('1'),
+              members: <MediaLinkEndpoint>[ep('e1'), ep('e2')],
+            ),
+          ],
+        ).workOf(game('g2'))!.original,
+        vc('1'),
+      );
       // 建议态的 adaptation 不参与判定。
       expect(
         originalOf(<WorkGraphLink>[
@@ -533,6 +601,7 @@ void main() {
           sourceFolderPath: null,
           origin: CollectionOrigin.user,
           organizeKey: null,
+          hasVideo: false,
           hasWorkIdentity: false,
           memberCount: 4,
           bookTitles: <String>['志乃と恋 1', '志乃と恋 2', 'A', 'B'],
@@ -544,14 +613,29 @@ void main() {
         isWorkSeriesCollection(
           collectionType: 'playlist',
           sourceFolderPath: '/videos/x',
-          origin: CollectionOrigin.rule,
-          organizeKey: 'k',
-          hasWorkIdentity: true,
+          origin: CollectionOrigin.folder,
+          organizeKey: null,
+          hasVideo: true,
+          hasWorkIdentity: false,
           memberCount: 2,
           bookTitles: const <String>[],
         ),
+        isTrue,
+        reason: '含视频的目录合集就是一部作品的各集，不要求外部 id',
+      );
+      expect(
+        isWorkSeriesCollection(
+          collectionType: 'playlist',
+          sourceFolderPath: '/books/x',
+          origin: CollectionOrigin.folder,
+          organizeKey: 'k',
+          hasVideo: false,
+          hasWorkIdentity: false,
+          memberCount: 2,
+          bookTitles: const <String>['志乃と恋 1', '志乃と恋 2'],
+        ),
         isFalse,
-        reason: '目录合集不算',
+        reason: '只含书的目录合集只是磁盘目录',
       );
     });
 
@@ -568,6 +652,26 @@ void main() {
       await (db.update(db.mediaCollections)
             ..where(($MediaCollectionsTable t) => t.id.equals(movie)))
           .write(const MediaCollectionsCompanion(anilistId: Value<int?>(42)));
+      // 目录视频合集：不要求外部 id，集经合集端点相连。
+      final int folderVideo = await playlist('[Sub] Folder Anime');
+      for (final String e in <String>['f1', 'f2']) {
+        await add(folderVideo, MediaKind.video, e);
+      }
+      // 只含书的目录合集：不成边。
+      final int folderBooks = await playlist('books dir');
+      for (final String t in <String>['目录书 甲', '目录书 乙']) {
+        await add(folderBooks, MediaKind.epub, await addBook(t));
+      }
+      for (final int id in <int>[folderVideo, folderBooks]) {
+        await (db.update(
+          db.mediaCollections,
+        )..where(($MediaCollectionsTable t) => t.id.equals(id))).write(
+          MediaCollectionsCompanion(
+            sourceFolderPath: Value<String?>('/lib/$id'),
+            origin: Value<String>(CollectionOrigin.folder.dbValue),
+          ),
+        );
+      }
       // 没有作品身份的用户视频合集：集之间不成边。
       final int loose = await playlist('あとで見る');
       for (final String e in <String>['x1', 'x2']) {
@@ -615,6 +719,12 @@ void main() {
         WorkRepresentativeReason.externalVideoCollection,
       );
       expect(g.workOf(ep('x1')), isNull);
+      expect(g.workOf(ep('f2'))!.members, <MediaLinkEndpoint>[
+        videoCollectionEndpoint(folderVideo),
+        ep('f1'),
+        ep('f2'),
+      ]);
+      expect(g.workOf(book('bk:目录书 甲')), isNull);
       expect(g.workOf(track('op'))!.members, <MediaLinkEndpoint>[track('op')]);
 
       final WorkNetwork net = g.networkOf(ep('ep3'), includeSuggested: true)!;
