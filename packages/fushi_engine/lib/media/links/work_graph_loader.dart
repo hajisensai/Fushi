@@ -4,10 +4,26 @@
 /// 全部是整表一次读、内存里 join，不逐合集 / 逐条查库（大库几万条目）。
 library;
 
-import 'package:drift/drift.dart' show QueryRow;
+import 'package:drift/drift.dart' show QueryRow, ResultSetImplementation;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/collections/book_series_key.dart';
 import 'package:fushi_engine/media/links/work_graph.dart';
+
+/// [loadWorkGraph] 读的全部表（含原生 SQL 里的）。作品图缓存按这些表的
+/// `tableUpdates` 失效：只写其中一张（新导入的书只写 `epub_books`、刮削只写
+/// `video_metadata_*`）也会改变图——系列合集判定、成员换算、外部 id 都靠它们。
+/// 改了 [loadWorkGraph] 的读取就同步改这里。
+List<ResultSetImplementation<dynamic, dynamic>> workGraphSourceTables(
+  FushiDatabase db,
+) => <ResultSetImplementation<dynamic, dynamic>>[
+  db.mediaLinks,
+  db.mediaCollections,
+  db.mediaCollectionItems,
+  db.epubBooks,
+  db.srtBooks,
+  db.videoMetadataWorks,
+  db.videoMetadataProviderIdentities,
+];
 
 /// 读库建作品图。
 ///

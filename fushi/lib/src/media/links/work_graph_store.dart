@@ -6,7 +6,8 @@
 /// 关系网页、库页卡片角标都从这里取同一张图，不各自全库重算：
 ///
 /// - 首个监听者挂上时读库建图（[loadWorkGraph] + 本文件补读的展示索引）；
-/// - 监听 `media_links` / `media_collections` / `media_collection_items` 的
+/// - 监听建图读到的全部表（[workGraphSourceTables]：`media_links`、合集与成员、
+///   `epub_books`、`srt_books`、刮削作品与外部身份；展示索引读的表是它的子集）的
 ///   `tableUpdates`，变更后去抖 [WorkGraphStore.debounce] 再整张重建（导入一批书
 ///   会连发几百次表变更，只重建一次）；重建进行中又来变更，结束后补建一次；
 /// - 没有监听者时不跑去抖计时器，只记「脏」，下一个监听者挂上时补建——页面都关了
@@ -19,8 +20,7 @@ library;
 
 import 'dart:async';
 
-import 'package:drift/drift.dart'
-    show QueryRow, ResultSetImplementation, TableUpdate, TableUpdateQuery;
+import 'package:drift/drift.dart' show QueryRow, TableUpdate, TableUpdateQuery;
 import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/links/work_graph.dart';
@@ -297,15 +297,7 @@ final class WorkGraphStore extends ChangeNotifier
     super.addListener(listener);
     _listenerCount++;
     _tableSub ??= _db
-        .tableUpdates(
-          TableUpdateQuery.onAllTables(
-            <ResultSetImplementation<dynamic, dynamic>>[
-              _db.mediaLinks,
-              _db.mediaCollections,
-              _db.mediaCollectionItems,
-            ],
-          ),
-        )
+        .tableUpdates(TableUpdateQuery.onAllTables(workGraphSourceTables(_db)))
         .listen((Set<TableUpdate> _) => _invalidate());
     if (_dirty) unawaited(_rebuild());
   }

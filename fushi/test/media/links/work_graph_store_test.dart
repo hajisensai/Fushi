@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:drift/drift.dart' show ResultSetImplementation;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/links/media_link_entries.dart';
@@ -8,6 +9,8 @@ import 'package:fushi/src/media/links/work_network_layout.dart';
 import 'package:fushi/src/media/links/work_plans.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/links/work_graph.dart';
+import 'package:fushi_engine/media/links/work_graph_loader.dart'
+    show workGraphSourceTables;
 
 import 'work_links_test_seed.dart';
 
@@ -73,6 +76,49 @@ void main() {
         after.graph.workOf(seed.anime),
       ),
       isTrue,
+    );
+  });
+
+  test('只写 epub_books（新导入的书）也让作品图失效重建', () async {
+    final WorkLinksSeed seed = await WorkLinksSeed.create(db);
+    // 成员行先在（书还没导入：uid 换算不出端点），再导入书本身——第二步只写
+    // epub_books。
+    await db.addToCollection(seed.novelSeriesId, MediaKind.epub, 'u-late');
+    final WorkGraphStore store = WorkGraphStore.of(db);
+    void keepAlive() {}
+    store.addListener(keepAlive);
+    addTearDown(() => store.removeListener(keepAlive));
+    final WorkGraphSnapshot first = await nextSnapshot(store);
+    const MediaLinkEndpoint late = (kind: MediaLinkKind.book, key: 'vol9');
+    expect(first.graph.workOf(late), isNull);
+
+    final Future<WorkGraphSnapshot> second = nextSnapshot(store);
+    await WorkLinksSeed.insertBook(db, 'vol9', '某小说 9', uid: 'u-late');
+    final WorkGraphSnapshot after = await second;
+    expect(
+      identical(after.graph.workOf(late), after.graph.workOf(seed.anime)),
+      isTrue,
+      reason: '新书经系列合集并进作品',
+    );
+    expect(after.seriesOf(late)?.id, seed.novelSeriesId);
+  });
+
+  test('缓存失效监听覆盖建图读到的全部表', () {
+    expect(
+      <String>{
+        for (final ResultSetImplementation<dynamic, dynamic> t
+            in workGraphSourceTables(db))
+          t.entityName,
+      },
+      <String>{
+        'media_links',
+        'media_collections',
+        'media_collection_items',
+        'epub_books',
+        'srt_books',
+        'video_metadata_works',
+        'video_metadata_provider_identities',
+      },
     );
   });
 
