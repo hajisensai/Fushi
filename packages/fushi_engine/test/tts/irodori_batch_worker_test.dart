@@ -12,6 +12,37 @@ import 'package:test/test.dart';
 
 import 'tts_test_helpers.dart';
 
+/// 按 worker 的方式起读线程（`Reader(detach_stdin())`），再起一个继承 stdin 的子进程。
+const String _stdinHarness = r'''
+import importlib.util, os, subprocess, sys, time
+spec = importlib.util.spec_from_file_location("w", sys.argv[1])
+w = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(w)
+reader = w.Reader(w.detach_stdin())
+reader.start()
+time.sleep(0.3)
+out = subprocess.run([sys.executable, "-c", "print('child')"],
+                     stdout=subprocess.PIPE, timeout=10).stdout
+print("child=" + out.decode().strip(), flush=True)
+print("req=" + str(reader.requests.get(timeout=10)), flush=True)
+os._exit(0)
+''';
+
+/// PATH 上能跑的 Python 3；找不到返回 null。
+Future<String?> _findPython() async {
+  for (final String exe in <String>['python3', 'python']) {
+    try {
+      final ProcessResult r = await Process.run(exe, <String>['--version']);
+      if (r.exitCode == 0 && '${r.stdout}${r.stderr}'.contains('Python 3')) {
+        return exe;
+      }
+    } on ProcessException {
+      continue;
+    }
+  }
+  return null;
+}
+
 /// 假 worker 进程：收到的每行请求交给 [onRequest]，它经 [emit] 回事件。
 class _FakeWorker implements Process {
   _FakeWorker(this.onRequest) {
@@ -297,6 +328,47 @@ void main() {
       expect(kIrodoriBatchWorkerScript, contains('lora_adapter='));
       expect(kIrodoriBatchWorkerScript, contains('seconds='));
       expect(kIrodoriBatchWorkerScript, isNot(contains("'''")));
+    });
+
+    // 回归：读请求的线程直接挂在真 stdin 上时，Windows 的同步管道读会让同一句柄上的
+    // 其它调用（加载自带 CRT 的原生 DLL、subprocess 复制 STD_INPUT_HANDLE）一起卡死，
+    // 真实 Irodori 上表现为永远停在 loading{stage: import}。这里不需要 torch：
+    // 读线程挂起后再起一个继承 stdin 的子进程，修复前子进程卡住、超时。
+    test('读请求线程挂起时，主线程仍能起子进程，请求照常读到', () async {
+      final String? python = await _findPython();
+      if (python == null) {
+        markTestSkipped('本机没有可用的 python');
+        return;
+      }
+      final Directory tmp = await Directory.systemTemp.createTemp(
+        'irodori_stdin_',
+      );
+      addTearDown(() => tmp.delete(recursive: true));
+      final String script = p.join(tmp.path, 'w.py');
+      await File(script).writeAsString(kIrodoriBatchWorkerScript);
+      final String harness = p.join(tmp.path, 'h.py');
+      await File(harness).writeAsString(_stdinHarness);
+      final Process proc = await Process.start(python, <String>[
+        '-I',
+        harness,
+        script,
+      ]);
+      final Future<String> out = proc.stdout.transform(utf8.decoder).join();
+      final Future<String> err = proc.stderr.transform(utf8.decoder).join();
+      await Future<void>.delayed(const Duration(seconds: 1));
+      proc.stdin.writeln('{"op":"synthesize","job":"j"}');
+      await proc.stdin.flush();
+      final int code = await proc.exitCode.timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          proc.kill();
+          return -1;
+        },
+      );
+      final String stdoutText = await out;
+      expect(code, 0, reason: '$stdoutText\n${await err}');
+      expect(stdoutText, contains('child=child'));
+      expect(stdoutText, contains("req={'op': 'synthesize', 'job': 'j'}"));
     });
   });
 
