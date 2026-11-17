@@ -19,6 +19,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/tts/cast/cast_text_substitution.dart';
 import 'package:fushi_engine/tts/cast/cast_voice_assignment.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
 
@@ -72,8 +73,10 @@ class SeriesCastProfile {
     CastVoiceAssignment? voices,
     this.defaultSeed,
     List<String>? members,
+    List<CastTextSubstitution>? substitutions,
     this.updatedAt = 0,
-  }) : roster = roster ?? <String, TtsCastCharacter>{},
+  }) : substitutions = substitutions ?? <CastTextSubstitution>[],
+       roster = roster ?? <String, TtsCastCharacter>{},
        voices = voices ?? CastVoiceAssignment(),
        members = members ?? <String>[];
 
@@ -96,10 +99,16 @@ class SeriesCastProfile {
   /// 关联到本系列的书（bookKey），按加入顺序；按系列跑标注 / 生成时就是这个顺序。
   final List<String> members;
 
+  /// 用户填的用词替换表（见 `cast_text_substitution.dart`），各卷生成时共用。
+  final List<CastTextSubstitution> substitutions;
+
   /// 最后修改时刻（毫秒）。
   int updatedAt;
 
-  bool get isEmpty => roster.isEmpty && voices.isEmpty;
+  bool get isEmpty => roster.isEmpty && voices.isEmpty && substitutions.isEmpty;
+
+  /// 生成时实际念的文字：按本系列替换表改写 [text]。
+  String spokenText(String text) => applyCastSubstitutions(text, substitutions);
 
   /// 记住一卷里标注出的角色。
   void learnRoster(Iterable<TtsCastCharacter> found) =>
@@ -133,6 +142,10 @@ class SeriesCastProfile {
     'voices': voices.toJson(),
     if (defaultSeed != null) 'seed': defaultSeed,
     'members': members,
+    if (substitutions.isNotEmpty)
+      'subs': <Object?>[
+        for (final CastTextSubstitution s in substitutions) s.toJson(),
+      ],
     'updated': updatedAt,
   };
 
@@ -143,7 +156,15 @@ class SeriesCastProfile {
     final Object? seed = raw['seed'];
     final Object? updated = raw['updated'];
     final Object? title = raw['title'];
+    final Object? subs = raw['subs'];
     return SeriesCastProfile(
+      substitutions: <CastTextSubstitution>[
+        if (subs is List)
+          for (final Object? s in subs)
+            if (CastTextSubstitution.fromJson(s)
+                case final CastTextSubstitution e)
+              e,
+      ],
       seriesKey: raw['key'] as String,
       title: title is String ? title : '',
       roster: <String, TtsCastCharacter>{
