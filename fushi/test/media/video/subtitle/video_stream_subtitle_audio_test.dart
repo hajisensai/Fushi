@@ -12,10 +12,10 @@ import 'package:path/path.dart' as p;
 /// 拉取（现取输入只调一次、已有副本复用、同一集在途合并、失败 / 取消不留半截文件、
 /// 进度按已处理时间 / 片长）。ffmpeg 是替身（按参数最后一项写出文件）。
 class _Backend implements FfmpegBackend {
-  _Backend({this.returnCode = 0, this.bytes = 1000, this.output = ''});
+  _Backend({this.returnCode = 0, this.output = ''});
 
   final int returnCode;
-  final int bytes;
+  final int bytes = 1000;
   final String output;
   final List<List<String>> calls = <List<String>>[];
   Completer<void>? gate;
@@ -24,9 +24,7 @@ class _Backend implements FfmpegBackend {
   Future<FfmpegRunResult> run(List<String> args, Duration timeout) async {
     calls.add(args);
     await gate?.future;
-    if (bytes > 0) {
-      File(args.last).writeAsBytesSync(List<int>.filled(bytes, 0));
-    }
+    File(args.last).writeAsBytesSync(List<int>.filled(bytes, 0));
     return FfmpegRunResult(returnCode: returnCode, output: output);
   }
 
