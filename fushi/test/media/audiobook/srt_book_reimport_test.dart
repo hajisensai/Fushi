@@ -418,7 +418,7 @@ void main() {
     expect((await repo.findByUid('srtbook_4'))!.srtPath, srt.path);
   });
 
-  // ── BUG-4791：换字幕是「拷新 → 重建正文 → 写库 → 删旧」 ─────────────────
+  // ── BUG-4798：换字幕是「拷新 → 重建正文 → 写库 → 删旧」 ─────────────────
 
   /// 先正常换一次字幕，让书的 srtPath 指向持久目录里的副本（首次导入后的常态）。
   Future<SrtBook> seedWithPersistedSubtitle({

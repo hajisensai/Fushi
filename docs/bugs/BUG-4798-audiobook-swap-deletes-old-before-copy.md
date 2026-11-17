@@ -1,4 +1,4 @@
-## BUG-4791 · 换音频 / 换字幕先删旧副本再拷新文件，拷贝中途失败后库里指着已删除的文件
+## BUG-4798 · 换音频 / 换字幕先删旧副本再拷新文件，拷贝中途失败后库里指着已删除的文件
 - **报告**：2026-11-17（优化计划 c13 复核项 gap-novelmisc-4，只读核实确认）
 - **真实性**：✅ 真 bug（需拷贝阶段出错才触发：磁盘满 / 源盘掉线 / AIFF 转码失败 / 旧文件被占用）。根因是顺序：
   - `packages/fushi_audio/lib/src/audiobook/audiobook_storage.dart:403`（修前）`syncAudioFiles` 先 `_pruneAudioFiles` 把持久目录里不在新清单里的音频删光，`:413-430` 才逐个拷新文件，库由各调用方在它返回之后才写。拷到一半抛错时旧音频已经没了，`audioPaths` 还指着它们；复制导入的书，目录里那份就是唯一副本。BUG-1678 只修了「源就在持久目录里」这一种，新源在目录外时照旧先删。`_pruneAudioFiles` 自己删到一半失败（Windows 上文件被占用）也是同样的半截状态。
@@ -12,8 +12,8 @@
   - `AudiobookStorage.persistFileWithProgress` 的普通拷贝从 `IOSink` 改成逐块 `await` 的 `RandomAccessFile.writeFrom`：`IOSink` 的写错误只走 `done`，落点打不开时 `flush` 不返回（macOS worker 上实测为两条未捕获的 `FileSystemException` 加 30 秒超时），调用方等不到异常就撤不回去。末尾不调 `RandomAccessFile.flush()`（它是 fsync，原来的 `IOSink.flush()` 不是）。
 - **[x] ② 已加自动化测试** —
   - `packages/fushi_audio/test/audiobook/audiobook_storage_swap_test.dart`：第二个文件拷贝失败后目录与调用前逐字节一致；源读不到时磁盘不动；同名替换保持原名；`commit` 运行时新文件已落位、旧文件未删；`commit` 抛错目录撤回；引用导入的旧副本在 `commit` 后才删；被杀进程的残留在下一次同步复位（原名空着 / 同名替换死在写库前 / 死在写库后三种）；写库成立前不落标记、更早的未提交批次一并作废；Windows 上旧文件被占时挪不走则整组撤回、残留删不掉不拦下一次同步（`testOn: windows`）；`SrtBookRepository.replaceAudio` 拷贝失败 / 写库失败两条；普通拷贝落点写不了时抛错而不是挂住。
-  - `packages/fushi_engine/test/media/audiobook/replace_audiobook_audio_test.dart`「BUG-4791」段：`replaceAudiobookAudio` 与 `alignAndPersistAudiobook` 拷贝中途失败后旧字幕 / 音频 / cue / 行原样；提交段第五步失败时前四步一起回滚、文件撤回；成功替换后目录恰好是新的一份。
-  - `fushi/test/media/audiobook/srt_book_reimport_test.dart`「BUG-4791」段：拷新字幕失败时旧副本还在且正文没动；正文重建失败 / 写库失败时新副本收走、cue 与 `srtPath` 原样；成功后只留新副本。
+  - `packages/fushi_engine/test/media/audiobook/replace_audiobook_audio_test.dart`「BUG-4798」段：`replaceAudiobookAudio` 与 `alignAndPersistAudiobook` 拷贝中途失败后旧字幕 / 音频 / cue / 行原样；提交段第五步失败时前四步一起回滚、文件撤回；成功替换后目录恰好是新的一份。
+  - `fushi/test/media/audiobook/srt_book_reimport_test.dart`「BUG-4798」段：拷新字幕失败时旧副本还在且正文没动；正文重建失败 / 写库失败时新副本收走、cue 与 `srtPath` 原样；成功后只留新副本。
 - **备注**：
   - **未修（需跟进）**：应用内「给已有 EPUB 书加 / 换音频」对话框 `fushi/lib/src/media/audiobook/audiobook_import_dialog.dart:928` 与 TTS 渲染 `fushi/lib/src/media/audiobook/tts/studio/tts_render_runner.dart:691` 仍不带 `commit`：它们得到了「拷贝失败不丢旧音频」，但同步返回时旧音频（含引用导入时的旧副本）已删，随后它们各自的多次独立写库任一步失败，库仍指着已删除的文件 / 落下半截行。修法是把写库段包成一个事务作为 `commit` 传入（时长探测放事务外）；两个文件不在本组范围，TTS runner 另有在途 PR（#3666 / #3669），未改。`packages/fushi_engine/lib/media/audiobook/standalone_subtitle_book.dart:159` 也不带 `commit`，但它是新建一本书、目录本来是空的，没有旧音频可丢。
   - 换字幕里「正文已重建、随后写库失败」仍没有回滚（正文的 `.bak` 回滚在 `rebuildExtractedInPlace` 内部，出了函数就没了）；触发条件只剩库写失败。

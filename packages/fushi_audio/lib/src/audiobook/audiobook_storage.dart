@@ -219,7 +219,7 @@ abstract final class AudiobookStorage {
 
     // 逐块 `await` 写：打不开落点 / 写到一半磁盘满都在这一句上直接抛给调用方。
     // `IOSink` 的写错误走的是 `done`，`add` 不报、`flush` 在落点打不开时不返回（macOS 实测）
-    // （BUG-4791：拷贝失败必须以异常收场，调用方才撤得回去）。
+    // （BUG-4798：拷贝失败必须以异常收场，调用方才撤得回去）。
     // 末尾不调 `RandomAccessFile.flush()`：它是 fsync / FlushFileBuffers，每个文件
     // 强制落盘一次；写错误已由每一块的 `await` 抛出，下面还有长度校验。
     RandomAccessFile? out;
@@ -399,7 +399,7 @@ abstract final class AudiobookStorage {
   /// 响」）。同步语义让「全换新 / 全沿用 / 混合」三种情况走同一条无分支路径，
   /// 且天然幂等——喂同一组进去是空操作。
   ///
-  /// 整组替换是**全有或全无**的（BUG-4791）。顺序固定为：
+  /// 整组替换是**全有或全无**的（BUG-4798）。顺序固定为：
   ///   1. 新文件先全部拷进 `<persistDir>/.incoming/`（旧文件原样不动）；
   ///   2. 被换下的旧音频挪进本次的回收批次 `<persistDir>/.retired/<n>/`（同卷
   ///      rename，不删）；

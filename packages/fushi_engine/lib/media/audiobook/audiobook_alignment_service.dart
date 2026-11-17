@@ -630,7 +630,7 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
 
   // 持久目录音频的唯一写入原语（同步成恰好这一组，幂等、不会先删掉自己的源）。
   // 写库是它的 commit：新音频落位之后、旧音频删除之前跑；拷贝或写库任何一步抛错，
-  // 磁盘原样撤回、库也没动（BUG-4791）。
+  // 磁盘原样撤回、库也没动（BUG-4798）。
   final List<String> persistedAudioPaths;
   try {
     persistedAudioPaths = await AudiobookStorage.syncAudioFiles(
@@ -789,7 +789,7 @@ Future<List<String>> replaceAudiobookAudio({
     return result.persistedAudioPaths;
   }
   final Directory persistDir = await AudiobookStorage.ensurePersistDir(bookKey);
-  // 写库是同步原语的 commit：两行一次提交，抛错则磁盘原样撤回（BUG-4791）。
+  // 写库是同步原语的 commit：两行一次提交，抛错则磁盘原样撤回（BUG-4798）。
   return AudiobookStorage.syncAudioFiles(
     persistDir,
     audioPaths,
