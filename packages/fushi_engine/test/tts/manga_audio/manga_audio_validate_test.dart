@@ -185,4 +185,51 @@ void main() {
       );
     });
   });
+
+  group('mangaOcrSignature', () {
+    test('engine signature wins', () {
+      expect(
+        mangaOcrSignature(
+          engineSignature: 'lens:ja',
+          pages: <List<MokuroBlock>>[],
+        ),
+        'lens:ja',
+      );
+    });
+
+    test('content signature is stable and changes with text or layout', () {
+      final List<List<MokuroBlock>> a = <List<MokuroBlock>>[
+        <MokuroBlock>[
+          _block(<String>['あ', 'い']),
+        ],
+        <MokuroBlock>[],
+      ];
+      final String sig = mangaOcrSignature(engineSignature: null, pages: a);
+      expect(sig, startsWith('content:'));
+      expect(mangaOcrSignature(engineSignature: '', pages: a), sig);
+      expect(
+        mangaOcrSignature(
+          engineSignature: null,
+          pages: <List<MokuroBlock>>[
+            <MokuroBlock>[
+              _block(<String>['あい']),
+            ],
+            <MokuroBlock>[],
+          ],
+        ),
+        isNot(sig),
+      );
+      expect(
+        mangaOcrSignature(
+          engineSignature: null,
+          pages: <List<MokuroBlock>>[
+            <MokuroBlock>[
+              _block(<String>['あ', 'い']),
+            ],
+          ],
+        ),
+        isNot(sig),
+      );
+    });
+  });
 }

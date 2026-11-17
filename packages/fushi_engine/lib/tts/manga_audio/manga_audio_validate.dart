@@ -6,6 +6,10 @@
 /// 供复核界面展示。
 library;
 
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
+
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
@@ -216,3 +220,36 @@ String resolveMangaLineText(
         else if (b >= 0 && b < pageBlocks.length)
           pageBlocks[b].lines.join(),
     ]);
+
+/// 演出稿记录的 OCR 签名：OCR 结果自带引擎签名（`MangaOcrMetadata.engineSignature`）
+/// 就用它；没有（mokuro 导入的卷）就按 OCR 内容算——每页的块数、块框坐标（取整到像素）
+/// 与文字的 sha1，加 `content:` 前缀。块下标只在 OCR 内容不变时才稳定，所以内容签名
+/// 一变（外部重跑 mokuro、换了文件）演出稿就判为需重新标注；从不因为「两边都没有引擎
+/// 签名」而当成没变。
+String mangaOcrSignature({
+  required String? engineSignature,
+  required List<List<MokuroBlock>> pages,
+}) {
+  if (engineSignature != null && engineSignature.isNotEmpty) {
+    return engineSignature;
+  }
+  final StringBuffer canon = StringBuffer();
+  for (int p = 0; p < pages.length; p++) {
+    canon.write('#$p:${pages[p].length}\n');
+    for (final MokuroBlock b in pages[p]) {
+      final MokuroRect r = b.rectangle;
+      canon
+        ..write(r.left.round())
+        ..write(',')
+        ..write(r.top.round())
+        ..write(',')
+        ..write(r.right.round())
+        ..write(',')
+        ..write(r.bottom.round())
+        ..write('|')
+        ..write(b.lines.join('\u0001'))
+        ..write('\n');
+    }
+  }
+  return 'content:${sha1.convert(utf8.encode(canon.toString()))}';
+}
