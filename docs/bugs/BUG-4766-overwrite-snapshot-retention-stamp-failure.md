@@ -1,4 +1,4 @@
-## BUG-4763 · 覆盖前快照钉修改时间失败会按旧库时间提前删快照
+## BUG-4766 · 覆盖前快照钉修改时间失败会按旧库时间提前删快照
 - **报告**：2026-11-17（用户：维护者，PR #3518 合入后只读核实的遗留缺陷）
 - **真实性**：✅ 真 bug。origin/develop `fushi/lib/src/sync/backup_service/restore.part.dart:1593-1612` 的 `_retainOverwriteSnapshot` 把「改名 bak → 快照」「`setLastModified(now)`」「写提示标记」放在同一个 `try`：改名成功后若钉时间抛 `FileSystemException`，catch 里的 `_safeDelete(bakPath)` 是空操作，快照保留旧主库的修改时刻，提示标记也没写；`pruneExpiredOverwriteSnapshot`（同文件 1617-1628）与 `OverwriteSnapshotPreview.expiresAt`（`fushi/lib/src/sync/backup_service.dart:167-168`）都按文件 mtime + 30 天算保留期，旧库 mtime 早于 30 天前时下次启动快照即被删，误覆盖本可找回的书库静默丢失（BUG-4701 要防的情形）。
 - **[x] ① 已修复** — 保留期起点改由独立记录 `fushi.db.overwrite-snapshot-created`（ISO-8601 UTC）决定，不再读快照文件 mtime（`restore.part.dart:1591` 起）；`_retainOverwriteSnapshot`（`restore.part.dart:1649`）先连同旧记录一起作废上一份快照，改名失败才删 bak，改名成功后写记录、写提示标记各自独立处理失败；`pruneExpiredOverwriteSnapshot`（`restore.part.dart:1689`）按记录判过期，无记录时从当次启动补记起点（只会延长、不会提前删），快照不在时清孤儿记录；预览字段 `modifiedAt` 改为 `createdAt`。提交 `9b2fdf543a`。
