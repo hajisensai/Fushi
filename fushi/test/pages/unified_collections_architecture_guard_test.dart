@@ -70,10 +70,17 @@ void main() {
     );
     // 自然键幂等 remap（不能按自增 id 直搬）。
     expect(mergeSrc.contains('collection_type'), isTrue);
+    // v159：成员冲突时只把 pinned_by_user 取或（不覆盖本机其余列），仍按复合主键去重。
     expect(
-      mergeSrc.contains('INSERT OR IGNORE INTO media_collection_items'),
+      mergeSrc.contains('INSERT INTO media_collection_items') &&
+          mergeSrc.contains(
+            'ON CONFLICT (collection_id, media_type, entry_key) DO UPDATE SET',
+          ) &&
+          mergeSrc.contains(
+            'pinned_by_user = MAX(pinned_by_user, excluded.pinned_by_user)',
+          ),
       isTrue,
-      reason: '成员按复合主键 INSERT OR IGNORE 去重',
+      reason: '成员按复合主键去重，冲突只把 pinned_by_user 取或',
     );
   });
 
