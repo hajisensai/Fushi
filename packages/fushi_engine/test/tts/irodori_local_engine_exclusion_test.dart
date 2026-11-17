@@ -359,6 +359,10 @@ void main() {
     test('停空闲 worker 的途中来了批量任务：服务端放弃启动，worker 等旧进程退出后再起', () async {
       expect(await engine.batchWorker.start(), isTrue);
       workerExitsOnShutdown = false; // 旧进程卸载模型要一会儿
+      // 服务端连 starting 都不该进：只靠 worker 侧回头取消一次启动，取决于两边
+      // continuation 的先后，换个次序就会两个进程一起起来。
+      final List<LocalServicePhase> serverPhases = <LocalServicePhase>[];
+      engine.server.addListener(() => serverPhases.add(engine.server.phase));
       final Future<bool> serverStart = engine.start();
       await _until(
         () => workers.single.requests.any(
@@ -379,6 +383,7 @@ void main() {
       expect(r.lines['a']!.ok, isTrue);
       expect(servers, isEmpty);
       expect(gpu.events, <String>['worker+', 'worker-', 'worker+']);
+      expect(serverPhases, isNot(contains(LocalServicePhase.starting)));
     });
   });
 
