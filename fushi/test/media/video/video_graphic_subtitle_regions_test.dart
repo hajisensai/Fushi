@@ -583,7 +583,7 @@ void main() {
       }
     }
 
-    test('A 发起、B 加入、A 取消：B 仍拿到结果，进程只起一次、没被杀（BUG-4794）', () async {
+    test('A 发起、B 加入、A 取消：B 仍拿到结果，进程只起一次、没被杀（BUG-4798）', () async {
       final Completer<void> cancelA = Completer<void>();
       final Completer<void> cancelB = Completer<void>();
       final Future<GraphicSubtitleRegionTrack?> a = loader.load(
@@ -612,7 +612,7 @@ void main() {
       expect(failures, isEmpty);
     });
 
-    test('A、B 都取消：进程被杀；之后来的调用方开新任务，不接被杀的那份（BUG-4794）', () async {
+    test('A、B 都取消：进程被杀；之后来的调用方开新任务，不接被杀的那份（BUG-4798）', () async {
       final Completer<void> cancelA = Completer<void>();
       final Completer<void> cancelB = Completer<void>();
       final Future<GraphicSubtitleRegionTrack?> a = loader.load(
