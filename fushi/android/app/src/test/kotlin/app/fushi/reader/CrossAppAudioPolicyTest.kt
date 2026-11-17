@@ -4,7 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/** 跨应用语音缓存通道的线程归属（BUG-4763）与授权页销毁结账（BUG-4764）。 */
+/** 跨应用语音缓存通道的线程归属（BUG-4791）与授权页销毁结账（BUG-4792）。 */
 class CrossAppAudioPolicyTest {
     @Test
     fun providerRpcMethodsRunOffMain() {

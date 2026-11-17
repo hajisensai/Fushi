@@ -44,7 +44,7 @@ final class CrossAppAudioChannel {
     private static final int AAC_BIT_RATE = 64_000;
 
     private static final ExecutorService ENCODER = Executors.newSingleThreadExecutor();
-    /** status / stop / snapshot 的跨进程 RPC（BUG-4763）；与编码分开，快照不排在编码后面。 */
+    /** status / stop / snapshot 的跨进程 RPC（BUG-4791）；与编码分开，快照不排在编码后面。 */
     private static final ExecutorService PROVIDER_IO = Executors.newSingleThreadExecutor();
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
 
@@ -67,7 +67,7 @@ final class CrossAppAudioChannel {
             final String method = call.method;
             if (CrossAppAudioPolicy.callsProviderOffMain(method)) {
                 // 跨进程 RPC（+ snapshot 在 Provider 端的同步写盘）不压在平台主线程上
-                // （BUG-4763）。单线程执行器保证 stop → status 这类先后顺序不乱。
+                // （BUG-4791）。单线程执行器保证 stop → status 这类先后顺序不乱。
                 final Integer backMs = call.argument("backMs");
                 PROVIDER_IO.execute(() -> {
                     final Object value = runProviderCall(app, method, backMs);
