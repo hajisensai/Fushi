@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-17T00:05:55Z",
+ "generatedAt": "2026-11-17T02:36:15Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "131f1ec7d6a495a6a9e62c9c259e82ace568b140",
-  "seq": 28434
+  "sha": "bd1b65b0f87e99e9688cc7377352206b3f9ce7f4",
+  "seq": 28436
  },
  "builds": [
   {
@@ -259,7 +259,33 @@
    }
   }
  ],
- "pending": null,
+ "pending": {
+  "headSha": "bd1b65b0f87e99e9688cc7377352206b3f9ce7f4",
+  "headSeq": 28436,
+  "prs": [
+   3628
+  ],
+  "direct": [],
+  "truncated": false,
+  "platforms": {
+   "android": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44003998317"
+   },
+   "windows": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44003998231"
+   },
+   "macos": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44003998231"
+   },
+   "ios": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44003998231"
+   }
+  }
+ },
  "prs": {
   "3461": {
    "number": 3461,
@@ -1258,6 +1284,15 @@
    "mergedAt": "2026-11-16T21:35:06Z",
    "additions": 23,
    "deletions": 20,
+   "labels": []
+  },
+  "3628": {
+   "number": 3628,
+   "title": "fix(guards): develop 尖端 native / 构建守卫 7 条红 + Rust format 红",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-17T02:34:30Z",
+   "additions": 55,
+   "deletions": 15,
    "labels": []
   }
  }
