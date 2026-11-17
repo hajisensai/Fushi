@@ -97,7 +97,7 @@ bool _isMangaImageFile(String path) =>
 /// 从 `.mokuro`（v0.2+）+ 同级图片导入一本漫画，落进 `EpubBooks` 表（`format='manga'`，
 /// 第三种「书」），复用整套书架 / 进度 / 删除管线，而非另建平行表。
 ///
-/// 落盘与 [EpubImporter] 同一套（BUG-4799）：页图与 `manga.json` 先备进书库根下本次
+/// 落盘与 [EpubImporter] 同一套（BUG-4840）：页图与 `manga.json` 先备进书库根下本次
 /// 导入独占的 `.tmp-*` 暂存目录，再在落位锁内「重取快照 → 挪进 `<bookKey>/` → 插行」。
 /// 书目录在落位之前不存在于别人看得见的名字下，失败回滚只删本次自己建的东西。
 ///
@@ -437,7 +437,7 @@ class MangaImporter {
   /// [srcDir] 是页图来源目录（.mokuro 或 manga.json 的同级目录），[payload] 的每页
   /// `url` 相对它解析。[proposedTitle] 已由各入口按各自规则派生。
   ///
-  /// 书目录**不是**边拷边建在 `<fushi_books>/<bookKey>/` 上的（BUG-4799 之前是）：
+  /// 书目录**不是**边拷边建在 `<fushi_books>/<bookKey>/` 上的（BUG-4840 之前是）：
   /// `EpubStorage.bookDirectory` 存在即复用，于是两次同名导入、或一次导入撞上崩溃
   /// 留下的同名孤儿目录，都在往同一个目录里混写；失败回滚又无条件整个删掉——删的可能
   /// 是赢家那本书，也可能是「找回书库」本可恢复的孤儿。现在的次序：

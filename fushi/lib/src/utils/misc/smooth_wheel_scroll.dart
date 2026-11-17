@@ -40,7 +40,7 @@ const Duration kDesktopWheelScrollDuration = Duration(milliseconds: 140);
 /// [physicalPixelsPerUnit]（每滚动单位对应的物理像素）后是整数的偏移；后者为 null
 /// 时原样返回。
 ///
-/// 起因（BUG-4802，视频系列墙滚轮卡顿）：Windows 一档 = 100 物理 px，但整体「界面
+/// 起因（BUG-4842，视频系列墙滚轮卡顿）：Windows 一档 = 100 物理 px，但整体「界面
 /// 大小」缩放是首启按窗口算出的任意小数（如 1.0051），一档实际移动 100.51 物理
 /// px——落点与上一次停稳的位置差个零头，屏上所有已烘焙的面（`BakedSurface`，
 /// Impeller 下手动的 raster cache）都贴不回原纹理，每一档都把整屏几十个封面面重新

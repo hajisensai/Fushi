@@ -82,7 +82,7 @@ class EpubStorage {
   static final _SerialSection _placementSection = _SerialSection();
 
   /// 进程内的「书目录落位」互斥：`重取书库快照 → 判书名键 / 目录归属 → 挪目录 →
-  /// 插行` 必须作为一个整体串行跑（BUG-4798 / BUG-4799）。
+  /// 插行` 必须作为一个整体串行跑（BUG-4837 / BUG-4840）。
   ///
   /// 判重与目录归属都建在 `getEpubBookMetas()` 的快照上；两次导入各拿一份、互相看不见
   /// 对方，就会都认定同一个目标目录「无主」，后到的把先到的目录换掉、插行撞主键、
@@ -101,7 +101,7 @@ class EpubStorage {
       <String, Future<void>>{};
   static final Set<String> _sweptRoots = <String>{};
 
-  /// 每个进程（每个书库根）只跑一次的导入残留清扫（BUG-4800）。导入入口在建自己的
+  /// 每个进程（每个书库根）只跑一次的导入残留清扫（BUG-4841）。导入入口在建自己的
   /// 暂存目录之前 await 它；并发的导入等的是同一个 Future。本进程自己建的暂存目录
   /// 清扫认得出、不碰（见 [sweepImportResidue]）。
   ///
@@ -305,7 +305,7 @@ class EpubStorage {
   /// 落到 `~n` 去；要保住孤儿，得在导入同名书之前先去「找回书库」登记。
   ///
   /// [liveExtractDirs] 必须是**持有 [withBookPlacementLock] 之后**重取的快照，否则
-  /// 「无主」的判断可能已经过期（BUG-4798）。
+  /// 「无主」的判断可能已经过期（BUG-4837）。
   ///
   /// TODO-1286: every staging -> destination move goes through [_moveDirInto],
   /// which falls back to a recursive copy+delete when the platform rejects

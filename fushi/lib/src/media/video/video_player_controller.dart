@@ -454,7 +454,7 @@ class VideoPlayerController extends ChangeNotifier
 
   /// 本次 [load] 自动抽内封**文本**字幕（[_loadEmbeddedSubtitleIfNeeded]）的取消信号：
   /// 换片（下一次 [load]）/ 释放媒体句柄 / 销毁时完成，撤掉本控制器对共享整轨抽取的
-  /// 占用——没有别的等待方时 ffmpeg 被强杀，不在后台把旧文件读完（BUG-4798）。
+  /// 占用——没有别的等待方时 ffmpeg 被强杀，不在后台把旧文件读完（BUG-4838）。
   Completer<void>? _embeddedTextExtractCancel;
 
   void _cancelEmbeddedTextExtract() {
@@ -3382,7 +3382,7 @@ class VideoPlayerController extends ChangeNotifier
       'Provide exactly one of videoFile or mediaUri.',
     );
     final int loadToken = ++_loadToken;
-    // 换片：上一片的内封文本字幕自动抽取作废（BUG-4798），本片另起一个取消信号。
+    // 换片：上一片的内封文本字幕自动抽取作废（BUG-4838），本片另起一个取消信号。
     _cancelEmbeddedTextExtract();
     _embeddedTextExtractCancel = Completer<void>();
     // BUG-3767：mpv 不把上一片的 `aid=no` 沿用到新文件，上一片的音频恢复状态作废。
@@ -4440,7 +4440,7 @@ class VideoPlayerController extends ChangeNotifier
   /// 等 libmpv 字幕轨真实就绪信号（说明容器字幕区已 demux 进页缓存、三方争用已消退）
   /// 后**重试一次**，与 BUG-313 章节首载「等就绪信号重读」同构。终态（无内封轨 /
   /// 无文本轨 / 文件缺失 / 已加载）不重试；选中轨抽取 / 解析失败（`emptyCues`）也不
-  /// 重试——整轨抽取按进度判活，失败已是真失败，重跑只会把整个容器再读一遍（BUG-4798）。
+  /// 重试——整轨抽取按进度判活，失败已是真失败，重跑只会把整个容器再读一遍（BUG-4838）。
   /// 抽取带 [_embeddedTextExtractCancel]，换片 / 销毁时撤销。
   Future<void> _loadEmbeddedSubtitleIfNeeded({
     required Player player,
@@ -4516,7 +4516,7 @@ class VideoPlayerController extends ChangeNotifier
           onResult?.call(result);
           return;
         case DefaultEmbeddedSubtitleLoadStatus.emptyCues:
-          // 按真实原因写（BUG-4798）：抽取卡住 / 抽取失败 / 读不出 / 解析不出各不相同，
+          // 按真实原因写（BUG-4838）：抽取卡住 / 抽取失败 / 读不出 / 解析不出各不相同，
           // 旧日志一律写「解析出 0 条 cue」，把读盘卡住误导成字幕轨本身是空的。
           debugPrint(
             '[video-embedded-sub] embedded track load failed: '

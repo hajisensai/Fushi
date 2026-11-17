@@ -40,7 +40,7 @@ void main() {
       'lib/src/media/source_library/source_library_scanner.dart',
     };
     // 判重 / 目录归属的书库快照交给共用编排去取的调用方 → 必须出现的委托调用。
-    // 漫画导入自 BUG-4799 起走 EpubImporter.placeUnderResolvedTitle（锁外定书名、
+    // 漫画导入自 BUG-4840 起走 EpubImporter.placeUnderResolvedTitle（锁外定书名、
     // 锁内重取快照），快照由 epub_importer.dart 取，那一侧仍受本组的瘦投影约束。
     const Map<String, String> delegatesLibrarySnapshot = <String, String>{
       '../packages/fushi_engine/lib/media/manga/manga_importer.dart':

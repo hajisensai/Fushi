@@ -1,4 +1,4 @@
-## BUG-4799 · VN 模式下合成书（SRT / VTT / LRC）中键与「从此句播放」拿不到句子
+## BUG-4839 · VN 模式下合成书（SRT / VTT / LRC）中键与「从此句播放」拿不到句子
 - **报告**：2026-11-17（用户：小说阅读器优化清单复核 gap-readerjs2-4，代码审读发现，无用户报告）
 - **真实性**：✅ 真 bug（真 Chrome 里用生产 VN shell 复现；未在真机复现）。根因：
   - `fushi/lib/src/reader/reader_visual_novel_scripts.dart:3572`（修前行号）VN 的 `cueIdAtDomPoint` 第二行 `if (!node || !cues || !cues.length) return null;`，只按 `sentenceAudioCues` 的章内区间找句、只回 `{type:'frag'}`；`:3564` 的 `cueIdAtPoint` 也没有 `[data-cue-id]` 分支。

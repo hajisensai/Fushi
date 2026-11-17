@@ -10,7 +10,7 @@
 // - 第二屏（换屏后克隆重建）上的字 → 那一屏的句子。
 // 点空白处与分页模式同样经 getCaretRange 的最近字符兜底（BUG-765），这里不另设判据。
 //
-// BUG-4799：合成书（SRT / VTT / LRC）的句子不进 sentenceAudioCues，身份在 [data-cue-id]
+// BUG-4839：合成书（SRT / VTT / LRC）的句子不进 sentenceAudioCues，身份在 [data-cue-id]
 // 上。BUG-3738 只补了 frag 这一半，合成书在 VN 下中键与「从此句播放」仍恒拿到 null。
 // 第二个页面不下发任何 cue，只在正文里带 [data-cue-id]，断言两个入口都回 `{type:'sid'}`。
 import fs from 'node:fs';

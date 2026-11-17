@@ -1,4 +1,4 @@
-// BUG-4798 正常路径回归：真 app、真 media_kit、真 ffmpeg 抽取内封文本字幕。
+// BUG-4838 正常路径回归：真 app、真 media_kit、真 ffmpeg 抽取内封文本字幕。
 //
 // 素材：ffmpeg 生成 60 秒 mkv，内封 3 条带语言标签的 subrip 文本轨（jpn / eng / chi），
 // 各轨文本互不相同、句数也不同（12 / 10 / 8），不带外挂字幕。流程：

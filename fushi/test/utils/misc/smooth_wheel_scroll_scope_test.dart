@@ -138,7 +138,7 @@ void main() {
     await tick(tester, -120);
     await tester.pumpAndSettle();
 
-    // 落点对齐物理像素格（BUG-4802）：与「当前视觉位置 − 一档」差不到半个物理像素。
+    // 落点对齐物理像素格（BUG-4842）：与「当前视觉位置 − 一档」差不到半个物理像素。
     final double dpr = tester.view.devicePixelRatio;
     expect(controller.offset, closeTo(mid - 120, 0.5 / dpr + 1e-9));
     final double px = controller.offset * dpr;
@@ -443,7 +443,7 @@ void main() {
     }
   });
 
-  test('wheel landing offsets snap to the physical pixel grid (BUG-4802)', () {
+  test('wheel landing offsets snap to the physical pixel grid (BUG-4842)', () {
     // 1.75 × 界面缩放 1.0051：一档 57.14 逻辑 px 原本落在 100.51 物理 px。
     const double k = 1.75 * 1.0051;
     final double snapped = snapScrollOffsetToDevicePixels(

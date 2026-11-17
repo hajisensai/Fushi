@@ -1,4 +1,4 @@
-## BUG-4799 · 漫画导入直接往书目录里写、失败回滚无条件删目录：会删掉同名并发导入或孤儿书的目录；暂存在系统临时目录
+## BUG-4840 · 漫画导入直接往书目录里写、失败回滚无条件删目录：会删掉同名并发导入或孤儿书的目录；暂存在系统临时目录
 - **报告**：2026-11-17（用户：小说 / 漫画 / 视频优化清单 manga-11 + gap-mangamisc-9，代码复核确认）
 - **真实性**：✅ 真 bug（代码路径确认 + 单测复现；并发频率未实测）。根因（行号按修复前的 upstream/develop @ 8d58da51da9）：
   - `packages/fushi_engine/lib/media/manga/manga_importer.dart:461-462`：`MangaStorage.bookDirectory(bookKey)` →`packages/fushi_engine/lib/epub/epub_storage.dart:44-52` 存在即复用。页图与 `manga.json` 直接往 `<fushi_books>/<bookKey>/` 里写（`copyMangaArtifacts`，`:226-274`）。

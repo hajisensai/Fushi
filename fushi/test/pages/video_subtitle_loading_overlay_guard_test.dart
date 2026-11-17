@@ -167,7 +167,7 @@ void main() {
       'final (String uid, int episodeIndex) = _watchStatsIdentity;',
       start,
     );
-    // BUG-4798：调用多了取消信号参数，按调用形状（不看换行）找。
+    // BUG-4838：调用多了取消信号参数，按调用形状（不看换行）找。
     final int prewarmAt = RegExp(
       r'unawaited\(\s*prewarmEmbeddedSubtitleCache\(\s*videoPath,',
     ).allMatches(src).firstWhere((Match m) => m.start > start).start;

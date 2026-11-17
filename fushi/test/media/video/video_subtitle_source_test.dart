@@ -1323,7 +1323,7 @@ At least one output file must be specified
       expect(result.status, DefaultEmbeddedSubtitleLoadStatus.emptyCues);
       expect(result.source?.streamIndex, 1);
       expect(result.cues, isEmpty);
-      // BUG-4798：失败原因随结果带出（ffmpeg 正常退出却没写出这条轨 = 抽取失败）。
+      // BUG-4838：失败原因随结果带出（ffmpeg 正常退出却没写出这条轨 = 抽取失败）。
       expect(result.cueFailure, SubtitleCueLoadFailure.extractionFailed);
     });
 
@@ -1417,7 +1417,7 @@ synthetic subtitle
     }, timeout: const Timeout(Duration(seconds: 60)));
   });
 
-  group('文本内封抽取：卡死不重跑、可取消、原因传到结果（BUG-4798）', () {
+  group('文本内封抽取：卡死不重跑、可取消、原因传到结果（BUG-4838）', () {
     late Directory tempDir;
 
     setUp(() {
@@ -1653,7 +1653,7 @@ synthetic subtitle
     }
 
     test('isTransientDefaultEmbeddedSubtitleLoad 只对枚举超时/失败为真'
-        '（空 cue 自 BUG-4798 起不再算瞬态）', () {
+        '（空 cue 自 BUG-4838 起不再算瞬态）', () {
       expect(
         isTransientDefaultEmbeddedSubtitleLoad(
           DefaultEmbeddedSubtitleLoadStatus.enumerationTimeout,
@@ -2243,7 +2243,7 @@ Future<String?> _runFfmpeg(String executable, List<String> args) async {
 
 enum _WatchedMode { succeed, stall, block }
 
-/// 支持观察式运行的假后端（BUG-4798）：`ffmpeg -i` 枚举走 [run]，列出三条 subrip 轨；
+/// 支持观察式运行的假后端（BUG-4838）：`ffmpeg -i` 枚举走 [run]，列出三条 subrip 轨；
 /// 整轨抽取走 [runWatched]：succeed 立即写出全部轨；stall 返回「卡死」（returnCode
 /// null + 卡死标记）；block 一直挂着，直到 [release]（写出、退出 0）或 watch.cancel
 /// （记 [killed]，返回取消标记）。

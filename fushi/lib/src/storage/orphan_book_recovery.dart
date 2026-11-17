@@ -183,7 +183,7 @@ class OrphanBookRecovery {
   /// 扫描书库根，列出可恢复 / 不可恢复的孤儿目录。点开头的目录（导入暂存
   /// `.tmp-*`、缓存）一律不列。
   ///
-  /// 列目录之前先收一遍导入残留（[EpubStorage.sweepImportResidue]，BUG-4800）：
+  /// 列目录之前先收一遍导入残留（[EpubStorage.sweepImportResidue]，BUG-4841）：
   /// `<书>.bak-<ts>` 不是点开头，不先处置就会被当成一本名叫「xxx.bak-123」的孤儿书
   /// 列出来；而替换到一半被杀时它是那本书唯一的副本——清扫把它改回原名，随后才能
   /// 以正确的 bookKey 列为可找回。本进程正在进行的导入的暂存目录清扫不碰。

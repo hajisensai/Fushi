@@ -138,7 +138,7 @@ void main() {
       );
     });
 
-    test('BUG-4798：读视频文件卡住有自己的文案，不再说成「图形或不支持的轨」', () {
+    test('BUG-4838：读视频文件卡住有自己的文案，不再说成「图形或不支持的轨」', () {
       final int start = src.indexOf('String _subtitleFailureMessage(');
       final int end = src.indexOf(_methodEnd, start);
       final String body = src.substring(start, end);
@@ -155,7 +155,7 @@ void main() {
       );
     });
 
-    test('BUG-4798：自动加载失败的提示也按原因分流（走 _subtitleFailureMessage）', () {
+    test('BUG-4838：自动加载失败的提示也按原因分流（走 _subtitleFailureMessage）', () {
       final String page = File(
         'lib/src/pages/implementations/video_fushi_page.dart',
       ).readAsStringSync();
@@ -169,7 +169,7 @@ void main() {
       expect(body, contains('_subtitleFailureMessage(cueFailure, label)'));
     });
 
-    test('BUG-4798：挂载路径的失败文案穷尽新增的两个原因', () {
+    test('BUG-4838：挂载路径的失败文案穷尽新增的两个原因', () {
       final String attach = File(
         'lib/src/media/video/video_subtitle_attach_messages.dart',
       ).readAsStringSync();
@@ -178,7 +178,7 @@ void main() {
     });
   });
 
-  test('BUG-4798：新文案中英文都存在且带 label 占位', () {
+  test('BUG-4838：新文案中英文都存在且带 label 占位', () {
     final Map<String, dynamic> en =
         jsonDecode(File('lib/i18n/strings.i18n.json').readAsStringSync())
             as Map<String, dynamic>;

@@ -1,4 +1,4 @@
-## BUG-4798 · 无缝衔接启动失败后三条边界换章通道被永久认领，这一章里翻不到下一章
+## BUG-4836 · 无缝衔接启动失败后三条边界换章通道被永久认领，这一章里翻不到下一章
 - **报告**：2026-11-17（用户：小说阅读器优化清单复核 gap-readerjs2-3，代码审读发现，无用户报告）
 - **真实性**：✅ 真 bug（真 Chrome 里用生产安装脚本复现；未在真机复现）。根因：
   - `fushi/lib/src/reader/reader_seamless_chapters_script.dart:446`（修前行号）`S.start` 置 `S._starting = true` 之后有 `await fetch(entry.url)`、`await resp.text()`、`await epubStylesOf(...)`，整段没有 try / finally，只有「找不到条目」「`!resp.ok`」两个分支复位。请求本身 reject（不是 404）、`DOMParser` / `absolutizeCssUrls` 抛异常时 `_starting` 留在 true、`started` 留在 false，还多一条未处理的 rejection。

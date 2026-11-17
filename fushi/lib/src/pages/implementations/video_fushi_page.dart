@@ -3425,7 +3425,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 对不上，疑似中途切换；本机不可复现，加此守卫兜底竞态）。
   int _episodeLoadSeq = 0;
 
-  /// 本页对内封文本字幕整轨抽取的取消信号，按视频路径分（BUG-4798）：当前集与预热中的
+  /// 本页对内封文本字幕整轨抽取的取消信号，按视频路径分（BUG-4838）：当前集与预热中的
   /// 下一集各一份。换了视频源时撤掉除新当前集以外的全部，退页时全撤；撤掉只是本页不再
   /// 等，共享抽取在没有别的等待方时才被强杀（`_ensureAllEmbeddedSubtitlesExtracted`）。
   final Map<String, Completer<void>> _embeddedSubtitleExtractCancels =
@@ -6449,7 +6449,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // isCurrent 丢弃），强杀它在途的抽轨 ffmpeg——否则它在后台把旧文件整个读完，
     // 进度卡与「一次只跑一轨」的闸门一直挂在新视频上。
     if (clipExportSourceChanged) _cancelGraphicSubtitleOcr();
-    // 同理撤掉旧视频的内封文本字幕抽取（BUG-4798）；新当前集（可能正是预热过的
+    // 同理撤掉旧视频的内封文本字幕抽取（BUG-4838）；新当前集（可能正是预热过的
     // 下一集）的那份保留。
     if (clipExportSourceChanged) _cancelEmbeddedSubtitleExtracts(videoPath);
     setState(() {
@@ -6987,7 +6987,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     }
     if (!result.shouldNotifyFailure) return;
     final String label = result.source?.label ?? t.video_menu_subtitle_track;
-    // 选中轨加载失败按真实原因给文案（BUG-4798：读盘卡住不再说成「图形或不支持的轨」）。
+    // 选中轨加载失败按真实原因给文案（BUG-4838：读盘卡住不再说成「图形或不支持的轨」）。
     final SubtitleCueLoadFailure? cueFailure = result.cueFailure;
     if (cueFailure == SubtitleCueLoadFailure.extractionCancelled) return;
     // 完整字幕没读出来，但播放器解码的字幕一直在显示：保留它（对用户最好——字幕没断、
@@ -7284,7 +7284,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _discBindingGeneration++;
     // 退页即停整轨转文字：强杀在途的抽轨 ffmpeg（否则它会在后台把整个文件读完）。
     _cancelGraphicSubtitleOcr();
-    // 内封文本字幕的整轨抽取同理（BUG-4798）。
+    // 内封文本字幕的整轨抽取同理（BUG-4838）。
     _cancelEmbeddedSubtitleExtracts();
     _graphicSubtitleOcrJob.dispose();
     _controller?.removeListener(_onDiscNavigationChanged);

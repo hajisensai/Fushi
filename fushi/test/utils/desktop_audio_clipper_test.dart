@@ -1083,7 +1083,7 @@ void main() {
         '-map',
         '0:s:3',
         '/c/sub_3.srt',
-        // BUG-4798：不落盘的伴随输出，让按进度判活的 out_time 跟着读盘位置连续推进。
+        // BUG-4838：不落盘的伴随输出，让按进度判活的 out_time 跟着读盘位置连续推进。
         '-map',
         '0:v:0?',
         '-map',
@@ -1359,7 +1359,7 @@ void main() {
     );
   });
 
-  group('extractEmbeddedSubtitlesViaFfmpeg 按进度判活（BUG-4798）', () {
+  group('extractEmbeddedSubtitlesViaFfmpeg 按进度判活（BUG-4838）', () {
     late Directory dir;
     late String video;
 
@@ -1977,7 +1977,7 @@ class _FakePoisonFfmpegBackend implements ffmpeg.FfmpegBackend {
       throw UnimplementedError('runProbe not used by subtitle extraction');
 }
 
-/// 可控的假 ffmpeg 进程（BUG-4798）：脚本往 stdout 写 `-progress` 行、决定何时退出；
+/// 可控的假 ffmpeg 进程（BUG-4838）：脚本往 stdout 写 `-progress` 行、决定何时退出；
 /// kill 记账并让进程以 -9 退出（与 `ffmpeg_watched_run_test` 的假件同构）。
 class _FakeFfmpegProcess implements Process {
   final StreamController<List<int>> _out = StreamController<List<int>>();

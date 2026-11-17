@@ -1215,7 +1215,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       // 都到不了这里；列出只为穷尽 switch。
       case SubtitleCueLoadFailure.extractionCancelled:
         return t.video_subtitle_load_failed(label: label);
-      // 轨没问题、是读视频文件卡住（BUG-4798）：不能说成「图形或不支持的轨」。
+      // 轨没问题、是读视频文件卡住（BUG-4838）：不能说成「图形或不支持的轨」。
       case SubtitleCueLoadFailure.extractionStalled:
         return t.video_subtitle_extract_stalled(label: label);
       case SubtitleCueLoadFailure.fileUnreadable:
@@ -3173,7 +3173,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     cancel.complete();
   }
 
-  /// [videoPath] 的内封文本字幕抽取取消信号（BUG-4798，见
+  /// [videoPath] 的内封文本字幕抽取取消信号（BUG-4838，见
   /// [_VideoFushiPageState._embeddedSubtitleExtractCancels]）。
   Future<void> _embeddedSubtitleExtractCancelFor(String videoPath) =>
       (_embeddedSubtitleExtractCancels[videoPath] ??= Completer<void>()).future;

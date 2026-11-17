@@ -33,10 +33,17 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4191 条。点号进各自文件。
+> 共 4198 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4842](bugs/BUG-4842-series-wall-wheel-scroll-rebake.md) | ✅ | ✅ | 视频系列墙滚轮滚动卡顿：每档滚轮把整屏封面面重新离屏烘焙 |
+| [BUG-4841](bugs/BUG-4841-epub-import-parse-failure-leaves-staging-dir.md) | ✅ | ✅ | EPUB 导入解析失败时书库根下的 .tmp-* 解压目录永久残留，崩溃留下的 .tmp-* / .bak-* 也没人清 |
+| [BUG-4840](bugs/BUG-4840-manga-import-book-dir-not-owned.md) | ✅ | ✅ | 漫画导入直接往书目录里写、失败回滚无条件删目录：会删掉同名并发导入或孤儿书的目录；暂存在系统临时目录 |
+| [BUG-4839](bugs/BUG-4839-vn-synthetic-book-cue-hit-null.md) | ✅ | ✅ | VN 模式下合成书（SRT / VTT / LRC）中键与「从此句播放」拿不到句子 |
+| [BUG-4838](bugs/BUG-4838-embedded-text-sub-extract-killed-on-slow-disk.md) | ✅ | ✅ | 视频文本内封字幕抽取按总时长强杀：慢盘上一直在读的 ffmpeg 被杀、再整轨重读一次，最后提示「图形或不支持的轨」 |
+| [BUG-4837](bugs/BUG-4837-concurrent-same-title-import-deletes-winner-dir.md) | ✅ | ✅ | 并发导入同名书，后一次把前一次的书目录换掉再删掉，留下指向空目录的行 |
+| [BUG-4836](bugs/BUG-4836-seamless-start-failure-claims-boundary-forever.md) | ✅ | ✅ | 无缝衔接启动失败后三条边界换章通道被永久认领，这一章里翻不到下一章 |
 | [BUG-4835](bugs/BUG-4835-source-scan-leftovers-after-kill-and-book-abort.md) | ✅ | ✅ | 来源扫描被杀后留下临时来源行与临时目录；一本坏书中断整批书导入且不删临时目录 |
 | [BUG-4834](bugs/BUG-4834-web-mine-host-machine-playhead-persisted.md) | ✅ | ✅ | 制卡交接页把机器驱动的播放头写成本书续播点，并在开跑前后计观看 |
 | [BUG-4833](bugs/BUG-4833-manga-source-index-lost-when-scan-killed.md) | ✅ | ✅ | 漫画来源索引只在扫描结束时落盘，中途被杀后同名卷再导一份 Vol 1 (3) |
@@ -75,29 +82,6 @@
 | [BUG-4800](bugs/BUG-4800-manga-ocr-cancel-frees-slot-before-isolate-exit.md) | ✅ | ✅ | 漫画 OCR 取消 / 暂停后 isolate 还没退出就释放并发名额，新旧任务同时占模型内存 |
 | [BUG-4799](bugs/BUG-4799-subtitle-search-reentrancy-stuck.md) | ✅ | ✅ | 本集字幕面板搜索可重入且无代次：迟到的旧一轮覆盖新结果；保存 key 抛错后搜索钮永久禁用；合集面板批量途中回车重搜清掉行状态 |
 | [BUG-4798](bugs/BUG-4798-desktop-legacy-encoding-subtitle-unreadable.md) | ✅ | ✅ | 桌面三端与无头服务端读 CP932 / GBK / Big5 / EUC-JP 字幕整份变成 U+FFFD |
-> 共 4154 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4802](bugs/BUG-4802-series-wall-wheel-scroll-rebake.md) | ✅ | ✅ | 视频系列墙滚轮滚动卡顿：每档滚轮把整屏封面面重新离屏烘焙 |
-> 共 4155 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4799](bugs/BUG-4799-vn-synthetic-book-cue-hit-null.md) | ✅ | ✅ | VN 模式下合成书（SRT / VTT / LRC）中键与「从此句播放」拿不到句子 |
-| [BUG-4798](bugs/BUG-4798-seamless-start-failure-claims-boundary-forever.md) | ✅ | ✅ | 无缝衔接启动失败后三条边界换章通道被永久认领，这一章里翻不到下一章 |
-> 共 4156 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4800](bugs/BUG-4800-epub-import-parse-failure-leaves-staging-dir.md) | ✅ | ✅ | EPUB 导入解析失败时书库根下的 .tmp-* 解压目录永久残留，崩溃留下的 .tmp-* / .bak-* 也没人清 |
-| [BUG-4799](bugs/BUG-4799-manga-import-book-dir-not-owned.md) | ✅ | ✅ | 漫画导入直接往书目录里写、失败回滚无条件删目录：会删掉同名并发导入或孤儿书的目录；暂存在系统临时目录 |
-| [BUG-4798](bugs/BUG-4798-concurrent-same-title-import-deletes-winner-dir.md) | ✅ | ✅ | 并发导入同名书，后一次把前一次的书目录换掉再删掉，留下指向空目录的行 |
-> 共 4154 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4798](bugs/BUG-4798-embedded-text-sub-extract-killed-on-slow-disk.md) | ✅ | ✅ | 视频文本内封字幕抽取按总时长强杀：慢盘上一直在读的 ffmpeg 被杀、再整轨重读一次，最后提示「图形或不支持的轨」 |
 | [BUG-4797](bugs/BUG-4797-feedback-files-share-video-ip-quota.md) | 🚧 | 🚧 | 样本文件与录屏共用每 IP 每天 200 MiB 额度，满额样本文件仍会被 429 挤掉 |
 | [BUG-4796](bugs/BUG-4796-disc-back-double-press-repeat-topmenu.md) | ✅ | ✅ | 原盘正片快速连按两次返回会重复发 topMenu，第二次失败会整盘退出 |
 | [BUG-4795](bugs/BUG-4795-disc-back-to-menu-transient-error-exits.md) | ✅ | ✅ | 原盘正片按返回回盘菜单时，任何暂时性错误都会让整个原盘会话退出 |
