@@ -17,7 +17,7 @@
 | 已有 | 位置 | 与本设计的关系 |
 |---|---|---|
 | 漫画 TTS 朗读（逐句高亮、自动翻页、单声音） | `fushi/lib/src/media/manga/reader/manga_read_aloud_controller.dart`、`manga_fushi/read_aloud.part.dart` | 宿主接口 `MangaReadAloudHost`（取页文字、高亮句组、翻页、喂学习时钟）直接复用 |
-| 选角表（每句归谁、角色配哪个声音、AI 标注） | `packages/fushi_engine/lib/tts/render/tts_cast.dart`、`AiFeature.audiobookCast` | 扩成演出稿；`TtsCastLine.emotion` 现在「只展示，合成不用」 |
+| 选角表（每句归谁、角色配哪个声音、AI 标注） | `packages/fushi_engine/lib/tts/render/tts_cast.dart`、`AiFeature.audiobookCast` | 角色表、来源、旁白 / 不明直接复用；漫画另建并列的 `MangaAudioScript`（见 §1）。`TtsCastLine.emotion` 现在「只展示，合成不用」 |
 | 制作台任务队列（串行、重启续跑、单句重生成、ASR 回听质检） | `tts/render/tts_render_queue.dart`、`media/audiobook/tts/studio/` | 漫画作为新的任务来源接入 |
 | 有声书存储与播放（进程级会话、后台、Live Activity、小组件） | `Audiobooks` / `AudioCues` 表、`AudiobookSession` | 漫画是 `EpubBooks` 行，按 `bookKey` 直接挂，不加新表 |
 | AI 图片输入 | `AiChatImage`（`packages/fushi_engine/lib/ai/ai_chat_client.dart`） | 标注器目前不传图，要接上 |
@@ -34,6 +34,7 @@
 | 看图判说话人 | 可行。10 页里 2 处单看画面定不下来，要结合前后文；没有标准答案可对，准确率未量化 |
 | OCR 给的块顺序 | **多数页不是阅读顺序**，必须由标注重排；OCR 错字 46 句里改 1 处；手写旁注与拟声词不读 |
 | 多种子自动挑选 | 收益很小：同一句不同种子**时长完全一样**，46 句里只有 7 句的回听字错率在种子间有差别；固定种子 0 时没有一句需要因读错而换 |
+| 整卷试跑（第 2 卷，150 页、467 条，`manga_vol2\`） | 合成 0 条失败，成品 30 分 38 秒；按「页码 + 块下标」给每条音频起稳定名，演出稿增删句子后只补合成新增的。不挂 LoRA 的声音（配角、叙述）在 20 字以内的短句上时长预测偏长，模型会把这句念两遍（首轮 49 条里 19 条，挂 LoRA 的声音 0 条）；对这类短句按主角实测语速直接给定时长后消失。ASR 回听对 5 字以内的句子不可靠，只能用来查长句 |
 | 回听字错率 | 平均 6.4%；偏高的 4 句都是 4–6 字短句，该长度下差一字即 25%，不能当「读错」的硬判据 |
 | 合成耗时 | 每条约 8 秒（RTX 级独显）；整卷 184 页按页数外推约 1.5–2 小时，未实测 |
 | 停顿 | 第一版每句只给 0.15–0.9 秒，听感是「连着的」；改成「转场基础值 + 逐句一拍」后最短 0.6 秒 |
@@ -45,9 +46,9 @@
 
 ### 1. 演出稿
 
-`TtsCast` 扩成漫画与小说共用的演出稿，仍是每本书一个 JSON、原子写、用户改过的行重标时不被 AI 覆盖。
+漫画的演出稿是与 `TtsCast` 并列的新类型 `MangaAudioScript`（`packages/fushi_engine/lib/tts/manga_audio/`），不往 `TtsCast` 里塞：`TtsCast.lines` 是按「章:偏移」做键的无序表，漫画的行锚在气泡块下标上、行的先后就是阅读顺序，只能是有序列表，硬并成一个类会让小说那边每处读取与合并都要分两种情况。角色表、来源（AI / 用户）、旁白 / 不明这几样复用 `TtsCast` 的定义。仍是每本书一个 JSON（`<sha1>.manga-script.json`，与小说的文件同目录互不覆盖）、原子写、用户改过的行重标时不被 AI 覆盖。小说要演出字段时在 `TtsCastLine` 上加同名字段。
 
-**逐句**（扩 `TtsCastLine`）：
+**逐句**（`MangaAudioScript` 的行；小说对应 `TtsCastLine`）：
 
 | 字段 | 内容 |
 |---|---|
