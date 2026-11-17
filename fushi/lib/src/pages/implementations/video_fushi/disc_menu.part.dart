@@ -230,27 +230,34 @@ extension _VideoDiscMenu on _VideoFushiPageState {
   /// 「返回」在正片阶段（窗口里）的一级：回到盘自己的菜单，而不是退出整个原盘会话
   /// ——正片是从盘菜单进来的，它的上一级就是盘菜单（拍板台 58EoAZOXVN）。盘不允许
   /// 调菜单（UO 屏蔽 / 没有顶层菜单）时没有这一级，返回 false 由调用方退出会话。
+  /// 回菜单请求在途时再按返回直接吞掉，不重复发 topMenu。
   bool _discSessionReturnToMenuOnBack() {
-    if (_discSessionBackRoute() != DiscSessionBackRoute.returnToMenu) {
-      return false;
-    }
-    unawaited(_returnToDiscMenu());
-    return true;
-  }
-
-  Future<void> _returnToDiscMenu() async {
     final VideoPlayerController? controller = _controller;
-    if (controller == null) return;
-    try {
-      await controller.discMenuKey(VideoDiscMenuKey.topMenu);
-    } catch (error, stack) {
+    if (controller == null) return false;
+    bool current() => mounted && identical(_controller, controller);
+    return _discMenuReturn.handleBack(
+      _discSessionBackRoute(),
+      send: () => controller.discMenuKey(VideoDiscMenuKey.topMenu),
       // 快照说允许、盘却拒了这次菜单调用：这张盘此刻没有菜单这一级可回，按层级
       // 表的下一级退出会话（与 [resolveDiscSessionBack] 的 menuCallAllowed=false 同义）。
-      ErrorLogService.instance.log('VideoDiscMenu.backToMenu', error, stack);
-      if (mounted && identical(_controller, controller)) {
-        await _exitDiscSession();
-      }
-    }
+      onRefused: () async {
+        ErrorLogService.instance.logDiagnostic(
+          'VideoDiscMenu.backToMenu',
+          'disc refused the top-menu call; leaving the session',
+        );
+        if (current()) await _exitDiscSession();
+      },
+      // 菜单还在初始化、会话此刻不可发、桥接 / mpv 出错：都不是盘的回答，留在正片。
+      onFailed: (Object error, StackTrace stack) {
+        ErrorLogService.instance.log('VideoDiscMenu.backToMenu', error, stack);
+        if (current()) {
+          _showOsd(
+            t.video_disc_navigation_failed,
+            severity: ToastSeverity.error,
+          );
+        }
+      },
+    );
   }
 
   /// Esc / 手柄 B 短按：先关页面浮层，再按控制栏状态呼出或退出。
