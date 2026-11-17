@@ -305,10 +305,20 @@ fn a_single_location_device_keeps_nothing_to_relay() {
     assert!(relay(&b, &mut l1, "L1", None, T1 + 4).is_empty());
 }
 
-/// 本机等待缓冲里的项数（`op_wait`）。
+/// 本机等待缓冲里的项数（`op_wait` 与承袭的 `op_pending`）。直接读库（只读连接），不经命令：经一条不限预算的
+/// `ingest` 读回包会顺手把还接得上的残留等待项投完，断言就测不出「切片收段漏投」了。
 fn v_pending(d: &Dev) -> i64 {
-    let (v, _) = cmd(d.h, "ingest", T1, json!({}), &[]);
-    v["pending"].as_i64().unwrap()
+    let c = Connection::open_with_flags(
+        d.dir.0.join(GEN4_FILE),
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .unwrap();
+    c.query_row(
+        "SELECT (SELECT COUNT(*) FROM op_wait) + (SELECT COUNT(*) FROM op_pending)",
+        [],
+        |r| r.get(0),
+    )
+    .unwrap()
 }
 
 fn note_id(i: usize) -> String {
@@ -550,6 +560,143 @@ fn ingest_drain_of_the_waiting_buffer_is_sliced_too() {
     }
     sync_all(&[&a, &b, &c], &mut loc, T1 + 9, Opts::default());
     assert_eq!(b.derived(), c.derived());
+}
+
+/// 等待缓冲里停着 b 的 [n] 条（都依赖 a 的），a 的段已经交完、只剩不带段的投递片时，量前 [slices] 个投递片（预算
+/// [budget]）各自实际执行的语句（虚拟机步数、全表扫描步数，按语句原文汇总；`browse_tests.rs` 的 [profile]）。
+/// 回包：每片的 (投出项数, 语句 → (步数, 全表扫描步数))。
+fn drain_cost(
+    tag: &str,
+    n: usize,
+    budget: u64,
+    slices: usize,
+) -> Vec<(u64, std::collections::BTreeMap<String, (i64, i64)>)> {
+    use super::browse_tests::profile;
+    use crate::store::sync2::tests::P;
+    let a = Dev::new(&format!("{tag}a"));
+    let b = Dev::new(&format!("{tag}b"));
+    let mut c = Dev::new(&format!("{tag}c"));
+    let mut loc = Loc::new();
+    write_many(&a, T1 + 1, n);
+    round(&a, &mut loc, "loc", T1 + 2, Opts::default());
+    round(&b, &mut loc, "loc", T1 + 3, Opts::default());
+    write_many_as(&b, T1 + 4, n, "b");
+    round(&b, &mut loc, "loc", T1 + 5, Opts::default());
+    let db = b.device();
+    let (of_b, others): (Vec<_>, Vec<_>) = fetch_of(&c, &loc, T1 + 6)
+        .into_iter()
+        .partition(|(d, _)| *d == db);
+    let (v, _) = cmd(c.h, "ingest", T1 + 7, json!({}), &of_b[0].1);
+    assert!(v["waiting"].as_u64().unwrap() >= n as u64, "{v}");
+    // a 的段按预算交完（交完的那一片收尾已经开始投 b 的）。
+    let mut pending: Vec<Vec<u8>> = others.into_iter().flat_map(|(_, f)| f).collect();
+    while !pending.is_empty() {
+        let (v, _) = cmd(c.h, "ingest", T1 + 8, json!({"maxItems": budget}), &pending);
+        let done = v["rest"].as_u64().unwrap() as usize;
+        assert!(done > 0 || v["spent"].as_u64().unwrap() > 0, "{v}");
+        pending.drain(..done);
+    }
+    let mut out = Vec::new();
+    for _ in 0..slices {
+        let (delivered, ran) = c.direct(|t, col| {
+            let mut reply = Value::Null;
+            let ran = profile(t, || {
+                reply = super::sync::ingest(t, col, P, &json!({"maxItems": budget}), &[], None)
+                    .unwrap();
+            });
+            assert_eq!(reply["drainMore"], json!(true), "{reply}");
+            Ok((reply["delivered"].as_u64().unwrap(), ran))
+        });
+        let mut by_sql: std::collections::BTreeMap<String, (i64, i64)> = Default::default();
+        for r in ran {
+            let e = by_sql.entry(r.sql).or_default();
+            e.0 += r.steps;
+            e.1 += r.fullscan;
+        }
+        out.push((delivered, by_sql));
+    }
+    out
+}
+
+/// 收尾投递等待缓冲按片做时，每片的读取量只跟这一片投出的项数走，不随缓冲里还排着的项数变大（G8-7b 遗留：以前
+/// 每片都在写事务里把整张 `op_wait` 连操作正文扫一遍、再把整个缓冲解一遍数个数，等 8000 项时合计 2.3 s、近似平方）。
+/// 停着 300 条与 1200 条时，前两个投递片各自的语句与步数：投递读的语句（[WAIT_RANGE_SQL] / [WAIT_OP_SQL]）步数相同量级、
+/// 不读整张表；整片没有一步全表扫描。计数（[WAIT_COUNT_SQL] / `PENDING_COUNT_SQL`）是主键区间上的计数，随缓冲线性，
+/// 但不读正文、不解码，单独核它走索引（`wait_lookups_use_their_keys`）。
+#[test]
+fn draining_a_large_waiting_buffer_reads_only_what_it_delivers() {
+    use crate::store::gen4::sync_state::{WAIT_COUNT_SQL, WAIT_OP_SQL, WAIT_RANGE_SQL};
+    use crate::store::gen4::truth::PENDING_COUNT_SQL;
+    const BUDGET: u64 = 64;
+    let small = drain_cost("g87ws", 300, BUDGET, 2);
+    let large = drain_cost("g87wl", 1200, BUDGET, 2);
+    let is_count = |q: &str| q == WAIT_COUNT_SQL || q == PENDING_COUNT_SQL;
+    for (s, l) in small.iter().zip(&large) {
+        assert_eq!(s.0, BUDGET, "a full drain slice");
+        assert_eq!(l.0, BUDGET, "a full drain slice");
+        for (q, cost) in s.1.iter().chain(&l.1) {
+            assert_eq!(cost.1, 0, "no full scans in a drain slice: {q}");
+        }
+        let work = |m: &std::collections::BTreeMap<String, (i64, i64)>| -> i64 {
+            m.iter()
+                .filter(|(q, _)| !is_count(q))
+                .map(|(_, c)| c.0)
+                .sum()
+        };
+        let read = |m: &std::collections::BTreeMap<String, (i64, i64)>| -> i64 {
+            [WAIT_RANGE_SQL, WAIT_OP_SQL]
+                .iter()
+                .map(|q| m.get(*q).map_or(0, |c| c.0))
+                .sum()
+        };
+        let (rs, rl) = (read(&s.1), read(&l.1));
+        assert!(rs > 0 && rl > 0, "the drain reads the waiting buffer");
+        assert!(
+            rl * 10 <= rs * 13,
+            "waiting-buffer reads grow with the buffer: {rs} steps at 300, {rl} at 1200"
+        );
+        let (ws, wl) = (work(&s.1), work(&l.1));
+        eprintln!("drain slice: {ws} steps at 300 waiting, {wl} at 1200");
+        assert!(
+            wl * 10 <= ws * 13,
+            "a drain slice's work grows with the buffer: {ws} steps at 300, {wl} at 1200"
+        );
+    }
+}
+
+/// 收尾投递与计数的语句按键找：等待缓冲的区间读 / 点查 / 计数、承袭待投递的计数都是主键上的 SEARCH。
+#[test]
+fn wait_lookups_use_their_keys() {
+    use crate::store::gen4::sync_state::{WAIT_COUNT_SQL, WAIT_OP_SQL, WAIT_RANGE_SQL};
+    use crate::store::gen4::truth::PENDING_COUNT_SQL;
+    let a = Dev::new("g87wq");
+    let c = Connection::open_with_flags(
+        a.dir.0.join(GEN4_FILE),
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .unwrap();
+    for (q, n) in [
+        (WAIT_RANGE_SQL, 2),
+        (WAIT_OP_SQL, 3),
+        (WAIT_COUNT_SQL, 2),
+        (PENDING_COUNT_SQL, 2),
+    ] {
+        let params: Vec<i64> = (0..n).map(|i| i + 1).collect();
+        let plan: Vec<String> = c
+            .prepare(&format!("EXPLAIN QUERY PLAN {q}"))
+            .unwrap()
+            .query_map(rusqlite::params_from_iter(params), |r| {
+                r.get::<_, String>(3)
+            })
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert!(
+            plan.iter().all(|p| p.starts_with("SEARCH"))
+                && !plan.iter().any(|p| p.contains("TEMP")),
+            "{q}: {plan:?}"
+        );
+    }
 }
 
 /// 转发的新语句按键找，不扫表。

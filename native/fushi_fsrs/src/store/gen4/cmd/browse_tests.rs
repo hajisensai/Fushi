@@ -931,8 +931,8 @@ fn a_read_inside_a_rolled_back_write_does_not_stick() {
 pub(super) struct Ran {
     pub(super) sql: String,
     expanded: String,
-    steps: i64,
-    fullscan: i64,
+    pub(super) steps: i64,
+    pub(super) fullscan: i64,
 }
 
 thread_local! {

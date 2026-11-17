@@ -272,7 +272,7 @@ pub fn status(t: &Truth<'_>, col: i64) -> Result<Value, String> {
                 ops += n;
             }
         }
-        let pending = t.waiting(col)?.len() as i64;
+        let pending = t.waiting_count(col)? as i64;
         // 位置：加密记忆与 head 里出现过的。
         let mut locs: std::collections::BTreeMap<String, (i64, i64, Option<i64>)> =
             std::collections::BTreeMap::new();
