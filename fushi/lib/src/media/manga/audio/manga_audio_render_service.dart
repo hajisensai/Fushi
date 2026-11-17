@@ -26,32 +26,15 @@ import 'package:fushi_engine/tts/render/tts_render_queue.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/audiobook/tts/cast/series_cast_resolver.dart';
+import 'package:fushi/src/media/audiobook/tts/studio/tts_series_cast.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_service.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_library.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_render_backend.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_stores.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
-
-/// 演出稿：`<db>/tts_cast/<sha1>.manga-script.json`。
-MangaAudioScriptStore mangaAudioScriptStoreFor(AppModel appModel) =>
-    MangaAudioScriptStore(_castDir(appModel));
-
-/// 未配音账本：`<db>/tts_cast/<sha1>.voicing.json`（漫画与小说共用一种格式）。
-CastVoicingStore castVoicingStoreFor(AppModel appModel) =>
-    CastVoicingStore(_castDir(appModel));
-
-Directory _castDir(AppModel appModel) =>
-    Directory(p.join(appModel.databaseDirectory.path, 'tts_cast'));
-
-/// 成品根目录。
-Directory mangaAudioRoot(AppModel appModel) =>
-    Directory(p.join(appModel.databaseDirectory.path, 'manga_audio'));
-
-/// 一卷的成品清单文件。
-File mangaRenderManifestFile(AppModel appModel, String bookKey) =>
-    MangaRenderManifest.fileFor(mangaAudioRoot(appModel), bookKey);
 
 /// 是不是能做漫画有声的本地漫画卷（在线作品的章目录不支持，与「未下载不识别」一致）。
 bool isLocalMangaVolume(EpubBookRow row) =>
@@ -145,13 +128,14 @@ Future<AppMangaRenderBackend> _backendFor(
   MangaAudioScript script,
 ) async {
   final TtsServices tts = TtsServices.of(appModel.prefsRepo);
-  List<String>? clipSources;
-  final String? audiobookKey = script.audiobookKey;
-  if (audiobookKey != null) {
-    final Audiobook? book = await AudiobookRepository(
-      appModel.database,
-    ).findByBookKey(audiobookKey);
-    clipSources = book?.audioPathsInCueOrder;
+  // 有声书片段：按 `MangaAudiobookClip.bookKey`（旧行回落第一本关联书）取那本书
+  // `audioFilesInCueOrder` 里的第 `fileIndex` 个文件（与匹配器写片段时同一坐标）。
+  final Map<String, List<String>> clipSources = <String, List<String>>{};
+  final AudiobookRepository repo = AudiobookRepository(appModel.database);
+  for (final String key in script.audiobookSources) {
+    final Audiobook? book = await repo.findByBookKey(key);
+    final List<String>? paths = book?.audioPathsInCueOrder;
+    if (paths != null) clipSources[key] = paths;
   }
   return AppMangaRenderBackend(
     tts: tts,
@@ -211,7 +195,7 @@ Future<({bool verified, List<TtsRenderFlag> flags})> runMangaRenderJob(
     job.bookKey,
     backend,
   );
-  final CastVoicingStore voicing = castVoicingStoreFor(appModel);
+  final CastVoicingStore voicing = ttsVoicingStoreFor(appModel);
   final CastVoicingLedger ledger = await voicing.load(job.bookKey);
   final MangaRenderManifest? previous = await MangaRenderManifest.load(
     renderer.manifestFile,
@@ -329,7 +313,7 @@ Future<bool> keepMangaCandidate(
     return false;
   }
   await appModel.audiobookSession.stopIfPlayingAny(<String>[volume.bookKey]);
-  final CastVoicingStore voicing = castVoicingStoreFor(appModel);
+  final CastVoicingStore voicing = ttsVoicingStoreFor(appModel);
   final CastVoicingLedger ledger = await voicing.load(volume.bookKey);
   final bool kept = await renderer.keepCandidate(
     script: volume.script,

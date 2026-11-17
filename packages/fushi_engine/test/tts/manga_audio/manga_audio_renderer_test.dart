@@ -147,7 +147,7 @@ void main() {
           planMangaRender(
             script: MangaAudioScript(
               sourcePolicy: policy,
-              audiobookKey: book,
+              audiobookSources: <String>[?book],
               lines: <MangaScriptLine>[
                 _line(0, <int>[0], audio: clip),
                 _line(0, <int>[1]),
@@ -353,7 +353,7 @@ void main() {
 
     test('有声书片段走剪辑；关联的有声书剪不出来时这句占位', () async {
       final MangaAudioScript script = MangaAudioScript(
-        audiobookKey: 'novel',
+        audiobookSources: <String>['novel'],
         lines: <MangaScriptLine>[
           _line(
             0,
@@ -370,7 +370,7 @@ void main() {
       expect(backend.clipCalls, 1);
       expect(backend.synthCalls, isEmpty);
       expect(out.manifest.lines.single.durationMs, 1500);
-      expect(out.manifest.lines.single.voice, 'audiobook:0:0-1500');
+      expect(out.manifest.lines.single.voice, 'audiobook:novel#0:0-1500');
     });
 
     test('取消原样抛出，不写清单', () async {

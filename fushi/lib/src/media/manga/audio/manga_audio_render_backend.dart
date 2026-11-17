@@ -128,7 +128,7 @@ class AppMangaRenderBackend implements MangaRenderBackend {
     required TtsAudioCache cache,
     required FfmpegBackend ffmpeg,
     required void Function(String source, String summary) log,
-    List<String>? clipSources,
+    Map<String, List<String>> clipSources = const <String, List<String>>{},
   }) : _tts = tts,
        _cache = cache,
        _ffmpeg = ffmpeg,
@@ -140,9 +140,9 @@ class AppMangaRenderBackend implements MangaRenderBackend {
   final FfmpegBackend _ffmpeg;
   final void Function(String source, String summary) _log;
 
-  /// 关联有声书的音频文件（绝对路径，`MangaAudiobookClip.fileIndex` 的含义）；null =
-  /// 没关联或已不在。
-  final List<String>? _clipSources;
+  /// 关联有声书 bookKey → 它的音频文件（绝对路径，按 `audioFilesInCueOrder`，即
+  /// `MangaAudiobookClip.fileIndex` 的坐标）；没有条目 = 没关联或已不在书库。
+  final Map<String, List<String>> _clipSources;
 
   final Map<String, Future<_MangaVoice>> _voices =
       <String, Future<_MangaVoice>>{};
@@ -267,7 +267,9 @@ class AppMangaRenderBackend implements MangaRenderBackend {
     required String outputPath,
     required TtsRenderCancelToken cancel,
   }) async {
-    final List<String>? sources = _clipSources;
+    final List<String>? sources = clip.bookKey == null
+        ? null
+        : _clipSources[clip.bookKey];
     if (sources == null ||
         clip.fileIndex >= sources.length ||
         !await File(sources[clip.fileIndex]).exists()) {

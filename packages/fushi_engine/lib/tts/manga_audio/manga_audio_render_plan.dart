@@ -59,7 +59,8 @@ String mangaCandidateFileName(String lineId, int seed) => '$lineId.s$seed.m4a';
 const String kMangaClipVoicePrefix = 'audiobook:';
 
 String mangaClipVoiceTag(MangaAudiobookClip clip) =>
-    '$kMangaClipVoicePrefix${clip.fileIndex}:${clip.startMs}-${clip.endMs}';
+    '$kMangaClipVoicePrefix${clip.bookKey ?? ''}#${clip.fileIndex}:'
+    '${clip.startMs}-${clip.endMs}';
 
 /// 一句的音源（计划层）。
 sealed class MangaRenderSource {
@@ -182,29 +183,37 @@ String mangaResolvedVoice(
   String defaultVoice,
 ) => script.voiceFor(line) ?? defaultVoice;
 
-/// 按 [line] 的音源与 [policy] 决定这句怎么出声；null = 不读。
+/// 这句怎么出声；null = 不读。出声方式只认 [MangaAudioScript.audioPlanFor]（用户亲手
+/// 定的音源 → 作品音源策略）；有声书片段在这里落成具体的书（旧行没有 `k` 时取第一本
+/// 关联书，见 [MangaAudioScript.clipBookKey]），生成端按 `bookKey` + `fileIndex` 取
+/// 那本书 `audioFilesInCueOrder` 里的文件。
 MangaRenderSource? mangaRenderSourceFor({
   required MangaAudioScript script,
   required MangaScriptLine line,
   required String text,
   required String defaultVoice,
 }) {
-  final MangaLineAudioSource audio = line.audio;
-  final bool hasClip =
-      audio is MangaAudiobookClip && script.audiobookKey != null;
-  switch (script.sourcePolicy) {
-    case MangaAudioSourcePolicy.audiobookFirst:
-      if (hasClip) return MangaRenderClip(audio);
-    case MangaAudioSourcePolicy.audiobookOnly:
-      return hasClip ? MangaRenderClip(audio) : null;
-    case MangaAudioSourcePolicy.synthOnly:
-      break;
+  switch (script.audioPlanFor(line)) {
+    case MangaLineAudioPlan.silent:
+      return null;
+    case MangaLineAudioPlan.audiobookClip:
+      final MangaAudiobookClip clip = line.audio as MangaAudiobookClip;
+      return MangaRenderClip(
+        MangaAudiobookClip(
+          bookKey: script.clipBookKey(clip),
+          fileIndex: clip.fileIndex,
+          startMs: clip.startMs,
+          endMs: clip.endMs,
+          byUser: clip.byUser,
+        ),
+      );
+    case MangaLineAudioPlan.synthesize:
+      return MangaRenderSynth(
+        voice: mangaResolvedVoice(script, line, defaultVoice),
+        seed: line.effectiveSeed(script.defaultSeed),
+        segments: splitMangaLineSegments(text),
+      );
   }
-  return MangaRenderSynth(
-    voice: mangaResolvedVoice(script, line, defaultVoice),
-    seed: line.effectiveSeed(script.defaultSeed),
-    segments: splitMangaLineSegments(text),
-  );
 }
 
 /// 整卷计划：「不读」类型的行不进计划；其余按音源策略分成合成 / 有声书片段 / 不读。

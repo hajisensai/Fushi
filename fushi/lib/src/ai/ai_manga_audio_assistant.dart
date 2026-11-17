@@ -33,6 +33,7 @@ import 'package:fushi_engine/tts/render/tts_cast.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/audiobook/tts/cast/series_cast_resolver.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_stores.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/models/app_model.dart';
 
@@ -41,16 +42,6 @@ const int _kAnnotateMaxTokens = 8192;
 
 /// 页图 JPEG 质量（缩到 [kMangaAnnotateImageMaxSide] 之后）。
 const int _kAnnotateJpegQuality = 85;
-
-/// 演出稿目录（与小说选角表同目录，文件后缀不同、互不覆盖）。
-Directory _castDir(AppModel appModel) =>
-    Directory(p.join(appModel.databaseDirectory.path, 'tts_cast'));
-
-MangaAudioScriptStore mangaAudioScriptStoreFor(AppModel appModel) =>
-    MangaAudioScriptStore(_castDir(appModel));
-
-MangaAnnotationLedgerStore mangaAnnotationLedgerStoreFor(AppModel appModel) =>
-    MangaAnnotationLedgerStore(_castDir(appModel));
 
 /// 标注没法开始（[code]：`no_ai_provider` / `not_found` / `online_unsupported` /
 /// `no_ocr` / `unreadable`）。

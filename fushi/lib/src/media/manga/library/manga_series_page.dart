@@ -16,6 +16,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/manga/audio/manga_audiobook_source_page.dart';
 import 'package:fushi/src/media/manga/download/manga_download_service.dart';
 import 'package:fushi/src/media/manga/download/online_manga_download_gate.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_studio_page.dart';
@@ -2841,7 +2842,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   }
 
   /// 「⋯」：在网站打开、刷新章节、新章自动下载（订阅中）、下载后自动识别、
-  /// 识别全部已下载、OCR 设置（在库）。
+  /// 识别全部已下载、OCR 设置（在库）；本地卷是管理本卷、有声书音源。
   List<MediaDetailMenuItem> _buildMoreItems() {
     if (_isLocal) {
       final Future<void> Function()? showShelfMenu = switch (widget.target) {
@@ -2872,6 +2873,16 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
             label: t.manga_series_manage_volume,
             enabled: !_busy,
             onSelected: () => unawaited(_openShelfMenu(showShelfMenu)),
+          ),
+        // 有声书音源（设计 §9）：只给本地卷——演出稿的页下标以整卷 `manga.json` 为
+        // 坐标，在线作品按章各一份，没有统一的页坐标。
+        if (_bookKey != null && _appModelOrNull != null)
+          MediaDetailMenuItem(
+            key: const ValueKey<String>('manga_series_audiobook_source'),
+            icon: FushiIcons.audiobook,
+            label: t.manga_audio_source_title,
+            enabled: !_busy,
+            onSelected: () => unawaited(_openAudiobookSource()),
           ),
       ];
     }
@@ -2952,6 +2963,17 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   Future<void> _openOcrSettings() async {
     await MangaOcrSettingsPage.push(context);
     if (mounted) setState(() {});
+  }
+
+  Future<void> _openAudiobookSource() async {
+    final String? bookKey = _bookKey;
+    final AppModel? appModel = _appModelOrNull;
+    if (bookKey == null || appModel == null) return;
+    await MangaAudiobookSourcePage.push(
+      context,
+      appModel: appModel,
+      bookKey: bookKey,
+    );
   }
 
   /// 「管理本卷」：开书架同一个菜单。页面不按「菜单关了」去重读——书架的动作

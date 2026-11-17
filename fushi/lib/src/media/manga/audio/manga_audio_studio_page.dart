@@ -21,10 +21,12 @@ import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/audiobook/tts/studio/tts_series_cast.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_service.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_text.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_render_service.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_stores.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/settings/glass_settings_renderer.dart'
     show GlassSettingsRenderer;
@@ -169,7 +171,7 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
     final MangaRenderManifest? manifest = await MangaRenderManifest.load(
       mangaRenderManifestFile(widget.appModel, widget.bookKey),
     );
-    final CastVoicingLedger ledger = await castVoicingStoreFor(
+    final CastVoicingLedger ledger = await ttsVoicingStoreFor(
       widget.appModel,
     ).load(widget.bookKey);
     if (!mounted) return;
