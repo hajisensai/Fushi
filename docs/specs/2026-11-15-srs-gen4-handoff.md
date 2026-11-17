@@ -2285,6 +2285,8 @@ Rust `SCHEMA` 没升（没加表 / 索引，分到的 40024 没用）；ABI 不�
     字节里扫不到原文；作者签的原文再到 b 手里，缓存不留）；
   - `a_purge_recuts_the_relay_copy_in_place_and_relays_the_recut`（缓存原地重切，转发到 L2 的是 b 签的件）；
   - `a_purge_across_the_authors_cut_point_still_recuts_both_segments`（切点埋在合并后的空洞里，两段都从日志重切出来）；
+  - `a_location_joined_after_the_purge_gets_a_recut_and_no_original_is_fetched`（b 收段时只连 L1、没留原文，清除之后才连上
+    L2：不为转发去拉原文，L2 拿到的是 b 从日志重切的件）；
   - `a_purge_by_the_author_takes_back_what_was_already_relayed`（作者发起：已转发的旧 `rly-` 删掉，转发作者自己重切的新段，
     不为转发去拉原文）；
   - `receive.rs` `recut_pieces_need_a_trusted_recutter_and_land_their_voids`、`gen4/recut.rs` 六条编解码 / 验签 / 拒写测试；
