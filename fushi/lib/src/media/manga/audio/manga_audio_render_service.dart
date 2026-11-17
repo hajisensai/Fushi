@@ -62,8 +62,8 @@ class MangaAudioVolume {
   final MangaAudioScript script;
   final String? seriesKey;
 
-  /// 系列档案（没有系列为 null）。
-  final SeriesCastProfile? series;
+  /// 系列档案（没有系列为 null）。写系列后换成存盘后的最新档案。
+  SeriesCastProfile? series;
 
   String get bookKey => row.bookKey;
 
@@ -479,14 +479,24 @@ Future<({int queued, int skipped})> enqueueMangaSeriesRender(
 
 /// 声音指派的改动写到哪：系列（默认，下一卷自动沿用）或只这一卷。没有系列时只能写
 /// 这一卷。
+///
+/// [edit] 是这次的改动：写系列时在最新的系列档案上重做一次（[SeriesCastStore.update]
+/// 串行读-改-写），本卷手里的旧拷贝随后换成存盘后的档案。
 Future<void> saveMangaVoiceAssignment(
   AppModel appModel,
   MangaAudioVolume volume, {
   required bool seriesLevel,
+  required void Function(CastVoiceAssignment target) edit,
 }) async {
   final SeriesCastProfile? series = volume.series;
-  if (seriesLevel && series != null) {
-    await seriesCastStoreFor(appModel).save(series);
+  final String? seriesKey = volume.seriesKey;
+  if (seriesLevel && series != null && seriesKey != null) {
+    final SeriesCastProfile fresh = await seriesCastStoreFor(
+      appModel,
+    ).update(seriesKey, (SeriesCastProfile p) => edit(p.voices));
+    if (fresh.title.isEmpty) fresh.title = series.title;
+    volume.series = fresh;
+    volume.script.series = fresh.voices;
   }
   await mangaAudioScriptStoreFor(appModel).save(volume.bookKey, volume.script);
 }

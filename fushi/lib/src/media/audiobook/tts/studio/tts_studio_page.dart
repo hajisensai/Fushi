@@ -493,11 +493,22 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
     }
   }
 
-  Future<void> _saveSeries() async {
+  /// 改系列档案：[edit] 已经改过本页的拷贝（界面即时反映），这里在最新的档案上再做
+  /// 一次（[SeriesCastStore.update] 串行读-改-写：按系列跑 / 漫画制作台 / AI 标注同时
+  /// 写入时谁也不覆盖谁），再换上存盘后的档案。
+  Future<void> _updateSeries(void Function(SeriesCastProfile series) edit) async {
     final SeriesCastProfile? series = _series;
     if (series == null) return;
     try {
-      await seriesCastStoreFor(widget.appModel).save(series);
+      final SeriesCastProfile fresh = await seriesCastStoreFor(
+        widget.appModel,
+      ).update(series.seriesKey, edit);
+      if (fresh.title.isEmpty) fresh.title = series.title;
+      if (!mounted || _series?.seriesKey != fresh.seriesKey) return;
+      setState(() {
+        _series = fresh;
+        _cast.series = fresh.voices;
+      });
     } catch (e, stack) {
       ErrorLogService.instance.log('TtsStudio.saveSeries', e, stack);
       FushiToast.show(msg: t.audiobook_studio_failure_internal);
@@ -656,7 +667,17 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
       );
     });
     await _saveCast();
-    if (seriesChanged) await _saveSeries();
+    if (seriesChanged) {
+      await _updateSeries(
+        (SeriesCastProfile fresh) => setTtsCastVoice(
+          cast: _cast,
+          series: fresh,
+          speaker: speaker,
+          presetId: picked.isEmpty ? null : picked,
+          scope: _voiceScope,
+        ),
+      );
+    }
   }
 
   Future<void> _renameSpeaker(String from) async {
@@ -679,7 +700,9 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
       ),
     );
     await _saveCast();
-    await _saveSeries();
+    await _updateSeries(
+      (SeriesCastProfile fresh) => fresh.renameCharacter(from, to),
+    );
   }
 
   // 系列：关联 / 重试候选 / 按系列跑。
@@ -763,7 +786,11 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
         ..addAll(next),
     );
     if (_series != null) {
-      await _saveSeries();
+      await _updateSeries(
+        (SeriesCastProfile fresh) => fresh.voices.retryVoices
+          ..clear()
+          ..addAll(next),
+      );
     } else {
       await _saveCast();
     }
@@ -1014,7 +1041,9 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
       ),
     );
     await _saveCast();
-    await _saveSeries();
+    await _updateSeries(
+      (SeriesCastProfile fresh) => fresh.renameCharacter(kTtsUnknown, target),
+    );
   }
 
   Future<void> _openCastLines({bool reviewOnly = false}) async {

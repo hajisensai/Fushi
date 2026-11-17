@@ -220,7 +220,21 @@ class MangaAudioAnnotateSession {
 
   /// 所属系列；null = 不属于任何系列（角色表只存在本卷）。
   final String? seriesKey;
-  final SeriesCastProfile? series;
+
+  /// 本会话手里的系列档案拷贝（界面与标注用）；每次存盘后换成最新档案。
+  SeriesCastProfile? series;
+
+  /// 自上次存盘以来对系列档案的改动：存盘时在最新档案上依次重做
+  /// （[SeriesCastStore.update]），不拿整份旧拷贝覆盖别处的写入。
+  final List<void Function(SeriesCastProfile)> _seriesEdits =
+      <void Function(SeriesCastProfile)>[];
+
+  void _editSeries(void Function(SeriesCastProfile) edit) {
+    final SeriesCastProfile? s = series;
+    if (s == null) return;
+    edit(s);
+    _seriesEdits.add(edit);
+  }
 
   String get bookKey => volume.bookKey;
 
@@ -275,7 +289,22 @@ class MangaAudioAnnotateSession {
 
   Future<void> _saveSeries() async {
     final SeriesCastProfile? s = series;
-    if (s != null) await seriesCastStoreFor(appModel).save(s);
+    final String? key = seriesKey;
+    if (s == null || key == null || _seriesEdits.isEmpty) return;
+    final List<void Function(SeriesCastProfile)> edits =
+        List<void Function(SeriesCastProfile)>.of(_seriesEdits);
+    _seriesEdits.clear();
+    final SeriesCastProfile fresh = await seriesCastStoreFor(appModel).update(
+      key,
+      (SeriesCastProfile p) {
+        for (final void Function(SeriesCastProfile) edit in edits) {
+          edit(p);
+        }
+      },
+    );
+    if (fresh.title.isEmpty) fresh.title = s.title;
+    series = fresh;
+    script.series = fresh.voices;
   }
 
   /// 本次要标的页（[only] 非空 = 只标这些；否则全卷，[skipAnnotated] 跳过已标的）。
@@ -376,7 +405,9 @@ class MangaAudioAnnotateSession {
       return await body(runner);
     } finally {
       client.close();
-      series?.learnRoster(runner.workingRoster.values);
+      final List<TtsCastCharacter> found = runner.workingRoster.values
+          .toList();
+      _editSeries((SeriesCastProfile p) => p.learnRoster(found));
       await save();
       await _saveSeries();
     }
@@ -427,14 +458,14 @@ class MangaAudioAnnotateSession {
       ]);
     }
     script.voices.renameCharacter(from, to);
-    series?.renameCharacter(from, to);
+    _editSeries((SeriesCastProfile p) => p.renameCharacter(from, to));
   }
 
   /// 给角色表加一个人（复核界面「新角色」）；同时记进系列。
   void addCharacter(String name) {
     final TtsCastCharacter c = TtsCastCharacter(name: name);
     mergeCastRoster(script.roster, <TtsCastCharacter>[c]);
-    series?.learnRoster(<TtsCastCharacter>[c]);
+    _editSeries((SeriesCastProfile p) => p.learnRoster(<TtsCastCharacter>[c]));
   }
 
   /// 存盘（演出稿 + 账本 + 系列档案）。复核界面每次改动后调用。

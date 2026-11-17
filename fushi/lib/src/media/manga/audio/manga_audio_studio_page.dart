@@ -205,11 +205,17 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
       ? volume.script.voices
       : volume.series!.voices;
 
-  Future<void> _saveAssignment(MangaAudioVolume volume) async {
+  /// [edit] 已经改过本地这张表（界面即时反映）；写系列时在最新的系列档案上再做一次
+  /// （串行的读-改-写，不拿本页的旧拷贝覆盖别处刚写的改动）。
+  Future<void> _saveAssignment(
+    MangaAudioVolume volume,
+    void Function(CastVoiceAssignment target) edit,
+  ) async {
     await saveMangaVoiceAssignment(
       widget.appModel,
       volume,
       seriesLevel: !_volumeOnly && volume.series != null,
+      edit: edit,
     );
     if (mounted) setState(() {});
   }
@@ -256,8 +262,10 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
     if (volume == null) return;
     final String? picked = await _pickVoice(title: title, selected: current);
     if (picked == null || !mounted) return;
-    apply(_target(volume), picked.isEmpty ? null : picked);
-    await _saveAssignment(volume);
+    final String? voice = picked.isEmpty ? null : picked;
+    void edit(CastVoiceAssignment target) => apply(target, voice);
+    edit(_target(volume));
+    await _saveAssignment(volume, edit);
   }
 
   Future<void> _editCharacterKind(String speaker) async {
@@ -300,10 +308,13 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
   Future<void> _toggleRetry(String presetId, bool on) async {
     final MangaAudioVolume? volume = _volume;
     if (volume == null) return;
-    final List<String> retry = _target(volume).retryVoices;
-    retry.remove(presetId);
-    if (on) retry.add(presetId);
-    await _saveAssignment(volume);
+    void edit(CastVoiceAssignment target) {
+      target.retryVoices.remove(presetId);
+      if (on) target.retryVoices.add(presetId);
+    }
+
+    edit(_target(volume));
+    await _saveAssignment(volume, edit);
   }
 
   String _title(MangaAudioVolume volume) =>

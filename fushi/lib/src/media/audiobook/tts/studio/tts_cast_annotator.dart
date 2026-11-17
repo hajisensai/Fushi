@@ -184,8 +184,13 @@ Future<TtsCast> annotateTtsCast({
   } finally {
     client.close();
     // 取消 / 失败时已抽到的角色也学回系列（角色表只增不减，并入幂等）。
-    if (learnTtsRosterIntoSeries(cast, series)) {
-      await seriesCastStoreFor(appModel).save(series!);
+    // 在最新的系列档案上学（串行读-改-写：同时开着的制作台改的声音不会被这份旧拷贝
+    // 覆盖）。
+    if (series != null && learnTtsRosterIntoSeries(cast, series)) {
+      await seriesCastStoreFor(appModel).update(
+        series.seriesKey,
+        (SeriesCastProfile fresh) => learnTtsRosterIntoSeries(cast, fresh),
+      );
     }
   }
   return cast;
