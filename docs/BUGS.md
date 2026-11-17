@@ -33,16 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4120 条。点号进各自文件。
+> 共 4121 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4765](bugs/BUG-4765-srs-deck-settings-reload-drops-edits.md) | ✅ | ✅ | 牌组设置页点「立即优化 / 恢复默认参数 / 子牌组继承」后重读，静默盖掉没保存的编辑、按返回也不再拦 |
 | [BUG-4764](bugs/BUG-4764-srs-limit-unit-legacy-count-stale-after-log-sync.md) | ✅ | ✅ | 存量单位提醒计数按内容指纹缓存，只同步进来旧复习日志时不刷新 |
-| [BUG-4763](bugs/BUG-4763-srs-deck-settings-reload-drops-edits.md) | ✅ | ✅ | 牌组设置页点「立即优化 / 恢复默认参数 / 子牌组继承」后重读，静默盖掉没保存的编辑、按返回也不再拦 |
-> 共 4119 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
 | [BUG-4763](bugs/BUG-4763-server-srs-put-rwkv-not-atomic.md) | ✅ | ✅ | 服务端 admin PUT 同时改 RWKV 档位与别的复习配置时不原子：档位文件写不进去时报 500，但其它字段已经生效 |
 | [BUG-4762](bugs/BUG-4762-cover-meta-store-zone-hang.md) | ✅ | ✅ | CoverMetaStore 共享加载 / 写锁建在发起者 Zone 里，那个 Zone 停摆后同目录读写全部永久挂住 |
 | [BUG-4761](bugs/BUG-4761-cross-app-audio-stop-purge-race.md) | ✅ | ✅ | 跨应用语音缓存停止时清不干净：清扫后还能落下新快照，句子音频临时目录在进程被杀后留在缓存里 |
