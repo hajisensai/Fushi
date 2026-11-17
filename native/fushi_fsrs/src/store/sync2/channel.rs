@@ -62,6 +62,7 @@ use super::transport::{CommitBudget, defer_cache_refresh, defer_replay};
 use super::{Touched, canonical, snapshots, sql};
 use crate::store::caches::Dirty;
 use crate::store::prof;
+#[cfg(test)]
 use crate::sync2::dvv::Dvv;
 use crate::sync2::hlc::Hlc;
 use crate::sync2::id::Id;
@@ -257,9 +258,8 @@ pub(crate) fn begin(
 // ---------------------------------------------------------------- 追加
 
 /// 一台设备的旧修改记录闭包（`sync2_legacy` 一行）在内存里的样子。
-// 冻结的协议 3 内核（store/legacy3）在生产构建里照常建这个结构；下面有的字段 / 变体只在测试构建才编的协议 3 路径里
-// 读 / 构造（G7-6）。
-#[cfg_attr(not(test), allow(dead_code))]
+// 换代后（G7-6）收段会话 / 逐条投递只在测试构建里编（协议 3 的对拍语料与迁移夹具），生产构建不构造它。
+#[cfg(test)]
 struct LegacyRow {
     upto: i64,
     d: Dvv,
@@ -267,15 +267,14 @@ struct LegacyRow {
 }
 
 /// 追加阶段的投递（transport.rs `Delivery` 持有，会话跨片复用）：依赖向量行号、旧修改记录闭包的缓存与下一个序号。
-// 冻结的协议 3 内核（store/legacy3）在生产构建里照常建这个结构；下面有的字段 / 变体只在测试构建才编的协议 3 路径里
-// 读 / 构造（G7-6）。
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg(test)]
 pub(crate) struct Append {
     next_rank: i64,
     deps: HashMap<Vec<u8>, i64>,
     legacy: BTreeMap<Id, LegacyRow>,
 }
 
+#[cfg(test)]
 impl Append {
     /// 这个 profile 的通道在追加阶段就载入，否则 None（按逐条投递）。
     #[cfg(test)]

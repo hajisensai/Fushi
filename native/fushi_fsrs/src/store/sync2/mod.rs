@@ -125,9 +125,6 @@ pub fn collection_of(profile: &str) -> Id {
 }
 
 /// 本机在某 profile 集合里的身份与写入状态。
-// 冻结的协议 3 内核（store/legacy3）在生产构建里照常建这个结构；下面有的字段 / 变体只在测试构建才编的协议 3 路径里
-// 读 / 构造（G7-6）。
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) struct Local {
     pub profile: String,
     pub collection: Id,
@@ -138,6 +135,8 @@ pub(crate) struct Local {
     pub clock: Clock,
     pub head_gen: u64,
     pub migrated: bool,
+    /// 设备显示名：只有协议 3 的 `sync2_identity` 回包读它，换代后那条命令只在测试构建里编（G7-6）。
+    #[cfg(test)]
     pub name: String,
 }
 
@@ -173,7 +172,7 @@ impl Local {
         )
         .optional()
         .map_err(sql)?
-        .map(|(c, d, k, n, ch, w, l, g, m, name)| {
+        .map(|(c, d, k, n, ch, w, l, g, m, _name)| {
             let device = id_of(d)?;
             let seed: [u8; 32] = k.try_into().map_err(|_| "bad key".to_string())?;
             let mut clock = Clock::new(device);
@@ -188,7 +187,8 @@ impl Local {
                 clock,
                 head_gen: g as u64,
                 migrated: m.is_some(),
-                name,
+                #[cfg(test)]
+                name: _name,
             })
         })
         .transpose()
@@ -208,6 +208,7 @@ impl Local {
             clock: Clock::new(device),
             head_gen: 0,
             migrated: false,
+            #[cfg(test)]
             name: String::new(),
         };
         conn.execute(
@@ -529,7 +530,7 @@ pub(crate) fn revoke_copies_of_revoked_events(c: &Connection, now: i64) -> Resul
         }
         let mut bodies: std::collections::BTreeMap<String, LogBody> = Default::default();
         for tail in &groups {
-            let Group { rows, .. } = group_of(c, tail, None)?;
+            let Group { rows, .. } = group_of(c, tail)?;
             let parsed: Vec<crate::history::Log<'_>> = rows
                 .iter()
                 .map(|(_, j, s, _, _)| crate::history::parse_full(j, *s).map(|p| p.0))
@@ -1671,15 +1672,14 @@ pub(crate) fn group_lineage(
 }
 
 /// 一个归属组（链尾 + 广度优先的全部前身）的日志行与链尾所属的笔记（日志上记的，没有则取调用方给的）。
-// 冻结的协议 3 内核（store/legacy3）在生产构建里照常建这个结构；下面有的字段 / 变体只在测试构建才编的协议 3 路径里
-// 读 / 构造（G7-6）。
-#[cfg_attr(not(test), allow(dead_code))]
+/// 笔记只有协议 3 的作答预览（[preview_on]）读，换代后它只在测试构建里编（G7-6）：生产构建不取。
 struct Group {
     rows: Vec<(String, String, Option<i64>, Intent, String)>,
+    #[cfg(test)]
     note: Option<String>,
 }
 
-fn group_of(conn: &Connection, tail: &str, note_hint: Option<&str>) -> Result<Group, String> {
+fn group_of(conn: &Connection, tail: &str) -> Result<Group, String> {
     let tail = &tail.to_owned();
     // 归属组：链尾 + 广度优先的全部前身。
     let lineage = group_lineage(tail, &mut |c| {
@@ -1689,6 +1689,7 @@ fn group_of(conn: &Connection, tail: &str, note_hint: Option<&str>) -> Result<Gr
         Ok(config::predecessors(&es))
     })?;
     let mut rows: Vec<(String, String, Option<i64>, Intent, String)> = Vec::new();
+    #[cfg(test)]
     let mut note: Option<String> = None;
     for c in &lineage {
         let mut stmt = conn
@@ -1705,10 +1706,13 @@ fn group_of(conn: &Connection, tail: &str, note_hint: Option<&str>) -> Result<Gr
             let st: Option<i64> = r.get(2).map_err(sql)?;
             let code: Option<i64> = r.get(3).map_err(sql)?;
             let arg: Option<i64> = r.get(4).map_err(sql)?;
-            let n: Option<String> = r.get(5).map_err(sql)?;
             // 笔记取链尾自己日志上记的；链尾还没有日志就取前身的（换笔记类型不换笔记）。
-            if n.is_some() && (note.is_none() || c == tail) {
-                note = n;
+            #[cfg(test)]
+            {
+                let n: Option<String> = r.get(5).map_err(sql)?;
+                if n.is_some() && (note.is_none() || c == tail) {
+                    note = n;
+                }
             }
             let intent = match code {
                 Some(k) => intent_of(k, arg),
@@ -1717,10 +1721,11 @@ fn group_of(conn: &Connection, tail: &str, note_hint: Option<&str>) -> Result<Gr
             rows.push((id, json, st, intent, c.clone()));
         }
     }
-    if note.is_none() {
-        note = note_hint.map(str::to_owned);
-    }
-    Ok(Group { rows, note })
+    Ok(Group {
+        rows,
+        #[cfg(test)]
+        note,
+    })
 }
 
 pub(crate) fn replay_cards(
@@ -1739,7 +1744,7 @@ pub(crate) fn replay_cards(
     }
     for tail in &groups {
         let p_group = crate::store::prof::span("replay.group");
-        let Group { rows, .. } = group_of(conn, tail, None)?;
+        let Group { rows, .. } = group_of(conn, tail)?;
         drop(p_group);
         if rows.is_empty() {
             continue;
@@ -2655,8 +2660,10 @@ pub(crate) fn preview_on(
             note: None,
         }
     } else {
-        group_of(c, card, note)?
+        group_of(c, card)?
     };
+    // 组里的日志都没记笔记：取调用方给的（或按缓存行补上的）。
+    let group_note = group_note.or_else(|| note.map(str::to_owned));
     let deck = if rows.is_empty() && note.is_none() {
         None
     } else {

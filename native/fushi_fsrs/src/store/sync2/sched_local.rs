@@ -212,7 +212,7 @@ pub(crate) fn sched_local_on(
         }
         let note = note_of(c, &card)?;
         // 每张卡在它自己的归属组上重放到此刻（同一批里先写的日志已投影，后面的项看得见）。
-        let Group { rows, .. } = group_of(c, &card, note.as_deref())?;
+        let Group { rows, .. } = group_of(c, &card)?;
         let input: Vec<Row<'_>> = rows
             .iter()
             .map(|(_, j, s, i, _)| Row {

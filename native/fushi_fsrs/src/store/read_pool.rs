@@ -17,6 +17,9 @@
 //!   返回时池子开过的连接一条不剩；之后取连接一律报「已关闭」。
 //! - 放回时连接还停在读事务里（借用方 panic 在 `BEGIN` 与 `ROLLBACK` 之间）就先结束它，结束不了就关掉不放回：池里
 //!   的空闲连接一律不在事务里（BUG-4297）。
+//! - 换代后（G7-6）协议 3 的只读命令与查询道只在测试构建里编（对拍语料 / 迁移夹具），生产构建的协议 3 内核只剩
+//!   迁移 / 备份恢复要的冻结命令、全走写连接：池本身只编进测试构建，生产构建不再为它多开两条用不到的常驻连接。
+//!   生产里还用的只有 [read_concurrency]（新代内核的读连接池上限取它）。
 //! - 两个池用同一套机制（store/mod.rs）：内核读命令一个（[super::SrsCore::reader]）、查询道的查询命令一个，上限都是
 //!   [read_concurrency]，互不占用。
 //! - 查询道那个池的每条查询命令自成一个读事务（[super::SrsCore::read_query]：`BEGIN` … `ROLLBACK`，不留跨调用的读
@@ -25,10 +28,14 @@
 
 #[cfg(test)]
 use std::ops::Deref;
+#[cfg(test)]
 use std::path::{Path, PathBuf};
+#[cfg(test)]
 use std::sync::{Arc, Condvar, Mutex};
+#[cfg(test)]
 use std::time::{Duration, Instant};
 
+#[cfg(test)]
 use rusqlite::Connection;
 
 #[cfg(test)]
@@ -51,6 +58,7 @@ pub const READERS_MAX: usize = 3;
 /// 空闲连接的保留时长：重开一条连接实测约 2 ms（冷文件缓存时连第一条点查约 26 ms），而留着一条空闲连接的代价是
 /// 至多 8 MB 页缓存加文件句柄。一分钟盖住一阵并发查询（打开设置页、一轮同步的对账读）之内的复用，不让一阵查询
 /// 反复开关；与 Dart 查询道 worker 的空闲回收（`kSrsQueryWorkerIdleTtl`）同长。
+#[cfg(test)]
 pub const IDLE_TTL: Duration = Duration::from_secs(60);
 
 /// [cores] 个逻辑核时的上限。
@@ -64,14 +72,14 @@ pub fn read_concurrency() -> usize {
 }
 
 /// 打开一条只读连接（配置好 PRAGMA / SQL 函数）。
+#[cfg(test)]
 pub(crate) type Opener = fn(&Path) -> Result<Connection, String>;
 
 /// 时钟（测试注入，不等真实时间）。
+#[cfg(test)]
 pub(crate) type Clock = Arc<dyn Fn() -> Instant + Send + Sync>;
 
-// 冻结的协议 3 内核（store/legacy3）在生产构建里照常建这个结构；下面有的字段 / 变体只在测试构建才编的协议 3 路径里
-// 读 / 构造（G7-6）。
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg(test)]
 pub(crate) struct ReadPool {
     path: PathBuf,
     cap: usize,
@@ -82,9 +90,7 @@ pub(crate) struct ReadPool {
     returned: Condvar,
 }
 
-// 冻结的协议 3 内核（store/legacy3）在生产构建里照常建这个结构；下面有的字段 / 变体只在测试构建才编的协议 3 路径里
-// 读 / 构造（G7-6）。
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg(test)]
 struct Idle {
     conn: Connection,
     /// 放回的时刻。
@@ -93,6 +99,7 @@ struct Idle {
     pinned: bool,
 }
 
+#[cfg(test)]
 struct State {
     /// 空闲连接，最近放回的在尾。
     idle: Vec<Idle>,
@@ -101,6 +108,7 @@ struct State {
     closed: bool,
 }
 
+#[cfg(test)]
 impl State {
     /// 摘下空闲超过 [ttl] 的非常驻连接（调用方在锁外关掉它们）。
     #[cfg(test)]
@@ -128,6 +136,7 @@ pub(crate) struct Pooled<'a> {
     pinned: bool,
 }
 
+#[cfg(test)]
 impl ReadPool {
     /// 建池并先开一条常驻连接（打开失败当场报错）。
     pub(crate) fn new(path: &Path, cap: usize, open: Opener) -> Result<Self, String> {

@@ -159,23 +159,29 @@ impl Landed {
 }
 
 /// 一个库（一次打开）的刷新状态。
-// 冻结的协议 3 内核（store/legacy3）在生产构建里照常建这个结构；下面有的字段 / 变体只在测试构建才编的协议 3 路径里
-// 读 / 构造（G7-6）。
-#[cfg_attr(not(test), allow(dead_code))]
+///
+/// 换代后（G7-6）读键的 `refresh_keys` 与库级作废 `refresh_all` 只在测试构建里编（协议 3 的读命令是对拍语料），
+/// 只被它们读的开库标识与库级计数也只在测试构建里有。
 pub(crate) struct Refresh {
     /// 这次打开库的随机标识。
+    #[cfg(test)]
     open: String,
     /// 不知道影响哪些 profile 的库级变化（旧库搬迁提交）：读的时候加进每个 profile 的计数。
+    #[cfg(test)]
     all: u64,
     by_profile: HashMap<String, Counters>,
 }
 
 impl Refresh {
     pub(crate) fn new() -> Self {
+        #[cfg(test)]
         let mut b = [0u8; 8];
+        #[cfg(test)]
         getrandom::fill(&mut b).expect("system random source");
         Refresh {
+            #[cfg(test)]
             open: b.iter().map(|x| format!("{x:02x}")).collect(),
+            #[cfg(test)]
             all: 0,
             by_profile: HashMap::new(),
         }

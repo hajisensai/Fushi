@@ -4,7 +4,9 @@
 //! 传输本身（列目录 / 读写文件）在 Dart（fushi_engine 的存储位置适配层），这里只吃字节、吐字节：
 //! 一轮同步个位数次 FFI（发件、写 head、看 head、收段）。
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::BTreeSet;
+#[cfg(test)]
+use std::collections::{BTreeMap, VecDeque};
 #[cfg(test)]
 use std::sync::Arc;
 
@@ -29,14 +31,17 @@ use super::{insert_op, observe_remote};
 use crate::store::SrsCore;
 #[cfg(test)]
 use crate::sync2::codec::{Reader, ZstdWindow};
+#[cfg(test)]
 use crate::sync2::hlc::Hlc;
 #[cfg(test)]
 use crate::sync2::hlc::MAX_AHEAD_MS;
+#[cfg(test)]
 use crate::sync2::id::Id;
 #[cfg(test)]
 use crate::sync2::keys::CollectionKey;
 #[cfg(test)]
 use crate::sync2::op::Body;
+#[cfg(test)]
 use crate::sync2::op::Op;
 #[cfg(test)]
 use crate::sync2::segment::CHAIN_ZERO;
@@ -44,9 +49,11 @@ use crate::sync2::segment::CHAIN_ZERO;
 use crate::sync2::segment::Head;
 #[cfg(test)]
 use crate::sync2::segment::chain_next;
+#[cfg(test)]
 use crate::sync2::segment::{self, Chain};
 #[cfg(test)]
 use crate::sync2::vv::OpId;
+#[cfg(test)]
 use crate::sync2::vv::Vv;
 
 #[cfg(test)]
@@ -766,9 +773,8 @@ fn plan(
 }
 
 /// 一条等着投递的远端操作：本轮刚收的（已解码），或在缓冲表里的（内存里只有链值，轮到它才从表里读出解码）。
-// 冻结的协议 3 内核（store/legacy3）在生产构建里照常建这个结构；下面有的字段 / 变体只在测试构建才编的协议 3 路径里
-// 读 / 构造（G7-6）。
-#[cfg_attr(not(test), allow(dead_code))]
+// 换代后（G7-6）收段会话 / 逐条投递只在测试构建里编（协议 3 的对拍语料与迁移夹具），生产构建不构造它。
+#[cfg(test)]
 struct Held {
     op: Option<Op>,
     chain: Chain,
@@ -782,6 +788,7 @@ fn held_bytes(op: &Op) -> usize {
     op.payload.len() + 24
 }
 
+#[cfg(test)]
 impl Held {
     #[cfg(test)]
     fn op(&mut self, c: &Connection, profile: &str, device: &Id, seq: u64) -> Result<&Op, String> {
@@ -859,9 +866,8 @@ pub(crate) const DELIVERY_WINDOW: usize = 3;
 /// 不变式：对每台设备，缓冲表里 seq ≤ `loaded[设备]`（缺省 = 全部）的行都在队列里；队列里 seq 更大的只会是本轮刚收、
 /// 还没写进缓冲表的（或已写进、留着正文免得再读的）。队首超出这条线之前先读下一窗，缓冲表里同一 (设备, seq) 的
 /// 以表里为准（与原先「缓冲表全读进来、INSERT OR IGNORE」相同）。
-// 冻结的协议 3 内核（store/legacy3）在生产构建里照常建这个结构；下面有的字段 / 变体只在测试构建才编的协议 3 路径里
-// 读 / 构造（G7-6）。
-#[cfg_attr(not(test), allow(dead_code))]
+// 换代后（G7-6）收段会话 / 逐条投递只在测试构建里编（协议 3 的对拍语料与迁移夹具），生产构建不构造它。
+#[cfg(test)]
 struct Delivery {
     vv: Vv,
     queues: BTreeMap<Id, BTreeMap<u64, Held>>,
@@ -895,6 +901,7 @@ pub(crate) fn bump_delivery_epoch() {
     DELIVERY_EPOCH.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 }
 
+#[cfg(test)]
 impl Delivery {
     /// 等着的操作条数（缓冲表 + 本轮刚收、还没写进去的）= 这一片收尾后缓冲表的行数（不再每片 COUNT(*)）。
     #[cfg(test)]
@@ -1303,9 +1310,6 @@ fn store_pending(
 /// 一片的锁内耗时（投递、投影、重放、缓存刷新、事务提交）都与片内操作数成正比。没人等锁时片长到时间上限，
 /// 提交次数少（片越短，同一批随机键索引页被反复写进 WAL 的次数越多）；有人排队就当场收片，排队者只等这一片
 /// 已投部分的收尾。
-// 冻结的协议 3 内核（store/legacy3）在生产构建里照常建这个结构；下面有的字段 / 变体只在测试构建才编的协议 3 路径里
-// 读 / 构造（G7-6）。
-#[cfg_attr(not(test), allow(dead_code))]
 pub struct CommitBudget<'a> {
     left: usize,
     deadline: Option<std::time::Instant>,
@@ -1314,7 +1318,9 @@ pub struct CommitBudget<'a> {
     floor: usize,
     /// 这一片被预算截停过（还有没处理完的）。
     stopped: bool,
-    /// 默认片长（[CommitBudget::slice]）：新设备的收段会话可以拉长它（[CommitBudget::stretch]）。
+    /// 默认片长（[CommitBudget::slice]）：新设备的收段会话可以拉长它（[CommitBudget::stretch]）。收段会话换代后只在
+    /// 测试构建里编（G7-6）。
+    #[cfg(test)]
     stretchable: bool,
 }
 
@@ -1392,6 +1398,7 @@ impl<'a> CommitBudget<'a> {
             yield_to: None,
             floor: 0,
             stopped: false,
+            #[cfg(test)]
             stretchable: false,
         }
     }
@@ -1399,6 +1406,7 @@ impl<'a> CommitBudget<'a> {
     /// 一片：最长 [COMMIT_SLICE]，[yield_to] 有人等（[YieldSignal::wanted]）就提前收。
     pub fn slice(yield_to: &'a YieldSignal) -> CommitBudget<'a> {
         CommitBudget {
+            #[cfg(test)]
             stretchable: true,
             ..CommitBudget::slice_within(yield_to, COMMIT_SLICE)
         }
@@ -1420,6 +1428,7 @@ impl<'a> CommitBudget<'a> {
             yield_to: Some(yield_to),
             floor: COMMIT_SLICE_MIN_OPS,
             stopped: false,
+            #[cfg(test)]
             stretchable: false,
         }
     }
@@ -1434,6 +1443,7 @@ impl<'a> CommitBudget<'a> {
             yield_to: None,
             floor: COMMIT_SLICE_MIN_OPS,
             stopped: false,
+            #[cfg(test)]
             stretchable: false,
         }
     }
@@ -1446,6 +1456,7 @@ impl<'a> CommitBudget<'a> {
             yield_to: None,
             floor: 0,
             stopped: false,
+            #[cfg(test)]
             stretchable: false,
         }
     }
@@ -1480,9 +1491,8 @@ impl<'a> CommitBudget<'a> {
 
 /// 分批收段会话（[SrsCore::sync2_ingest_begin]）：开会话时的本机身份、跨批累积的分叉点，以及锁外预处理好、
 /// 等投递的那一批（[SrsCore::sync2_ingest_prepare] 放进来，[SrsCore::sync2_ingest_commit] 一片一片投完才取走）。
-// 冻结的协议 3 内核（store/legacy3）在生产构建里照常建这个结构；下面有的字段 / 变体只在测试构建才编的协议 3 路径里
-// 读 / 构造（G7-6）。
-#[cfg_attr(not(test), allow(dead_code))]
+// 换代后（G7-6）收段会话 / 逐条投递只在测试构建里编（协议 3 的对拍语料与迁移夹具），生产构建不构造它。
+#[cfg(test)]
 pub(crate) struct IngestSession {
     profile: String,
     device: Id,
@@ -1496,6 +1506,7 @@ pub(crate) struct IngestSession {
     channel: bool,
 }
 
+#[cfg(test)]
 impl IngestSession {
     /// 这个会话收的是不是 [profile] 的段。
     #[cfg(test)]
@@ -1532,9 +1543,8 @@ fn studied_here(c: &Connection, profile: &str, device: &Id) -> Result<bool, Stri
 
 /// 分批收段的阶段（[SrsCore] `ingest`）。写连接放回时留不留页缓存由它推出（不是 [IngestPhase::Idle] 就留），
 /// 所以页缓存的寿命与会话（含会话里预处理好的段）一致；一律经 [SrsCore::set_ingest_phase] 转换。
-// 冻结的协议 3 内核（store/legacy3）在生产构建里照常建这个结构；下面有的字段 / 变体只在测试构建才编的协议 3 路径里
-// 读 / 构造（G7-6）。
-#[cfg_attr(not(test), allow(dead_code))]
+// 换代后（G7-6）收段会话 / 逐条投递只在测试构建里编（协议 3 的对拍语料与迁移夹具），生产构建没有收段阶段。
+#[cfg(test)]
 pub(crate) enum IngestPhase {
     /// 没有收段会话。
     Idle,
@@ -1545,6 +1555,7 @@ pub(crate) enum IngestPhase {
     Draining(String),
 }
 
+#[cfg(test)]
 impl IngestPhase {
     /// 开着的会话。
     #[cfg(test)]
@@ -1585,9 +1596,8 @@ const PREPARED_RAW_BUDGET: u64 = 2 * segment::SEGMENT_MAX_RAW_BYTES;
 const PREPARED_RAW_BUDGET: u64 = 4 * 1024;
 
 /// 一个段在锁外预处理的结论。
-// 冻结的协议 3 内核（store/legacy3）在生产构建里照常建这个结构；下面有的字段 / 变体只在测试构建才编的协议 3 路径里
-// 读 / 构造（G7-6）。
-#[cfg_attr(not(test), allow(dead_code))]
+// 换代后（G7-6）收段会话 / 逐条投递只在测试构建里编（协议 3 的对拍语料与迁移夹具），生产构建不构造它。
+#[cfg(test)]
 enum Outcome {
     /// 预处理时这台设备没有登记公钥。
     Unknown,
@@ -1604,9 +1614,8 @@ enum Outcome {
     Later,
 }
 
-// 冻结的协议 3 内核（store/legacy3）在生产构建里照常建这个结构；下面有的字段 / 变体只在测试构建才编的协议 3 路径里
-// 读 / 构造（G7-6）。
-#[cfg_attr(not(test), allow(dead_code))]
+// 换代后（G7-6）收段会话 / 逐条投递只在测试构建里编（协议 3 的对拍语料与迁移夹具），生产构建不构造它。
+#[cfg(test)]
 struct PreparedSegment {
     header: segment::SegmentHeader,
     /// 在 [PreparedIngest::segments] 里的下标。
@@ -1620,9 +1629,8 @@ struct PreparedSegment {
 
 /// 锁外预处理好的一批段（[prepare_ingest] → [PreparedIngest::verify] → 锁内 [deliver_prepared]）：解压、解密、
 /// 验签、重算链这些纯 CPU 的活都在这里做完，锁内只剩比链、因果投递、落库与重放。
-// 冻结的协议 3 内核（store/legacy3）在生产构建里照常建这个结构；下面有的字段 / 变体只在测试构建才编的协议 3 路径里
-// 读 / 构造（G7-6）。
-#[cfg_attr(not(test), allow(dead_code))]
+// 换代后（G7-6）收段会话 / 逐条投递只在测试构建里编（协议 3 的对拍语料与迁移夹具），生产构建不构造它。
+#[cfg(test)]
 pub(crate) struct PreparedIngest<'a> {
     profile: String,
     /// 预处理时的本机身份；锁内对不上（身份换过）就按当时的身份整批重做。
@@ -1740,6 +1748,7 @@ fn verify_segment(
     )
 }
 
+#[cfg(test)]
 impl PreparedIngest<'_> {
     /// 预处理的纯计算部分（不碰库、不持任何锁）：逐段验签、解密、解压、重算链。
     #[cfg(test)]
@@ -3097,6 +3106,7 @@ impl SrsCore {
     }
 
     /// 收尾的重放 / 缓存都收完了（分发器的最后一块）：[profile] 的收尾阶段转回 [IngestPhase::Idle]。其间开了新会话的不动。
+    #[cfg(test)]
     pub(crate) fn sync2_ingest_drained(&self, profile: &str) -> Result<(), String> {
         let mut phase = self.ingest_phase()?;
         if matches!(&*phase, IngestPhase::Draining(p) if p == profile) {

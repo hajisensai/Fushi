@@ -76,20 +76,21 @@ pub(crate) fn sync2_dispatch(
     out
 }
 
-// 只有测试构建才编的臂用到的参数 / 闭包 / 导入，在生产构建（只剩 [FROZEN_OPS]）里用不到。
-#[cfg_attr(not(test), allow(unused_variables, unused_imports, unused_mut))]
 fn sync2_dispatch_op(
     c: &SrsCore,
     req: &serde_json::Value,
     blobs: &mut Vec<Vec<u8>>,
     files: &mut Vec<(String, Vec<u8>)>,
 ) -> Result<serde_json::Value, String> {
-    use serde_json::{Value, json};
+    use serde_json::Value;
+    #[cfg(test)]
+    use serde_json::json;
     let s = |k: &str| {
         req.get(k)
             .and_then(Value::as_str)
             .ok_or_else(|| format!("sync2: missing {k}"))
     };
+    #[cfg(test)]
     let i = |k: &str| {
         req.get(k)
             .and_then(Value::as_i64)
@@ -342,8 +343,10 @@ fn sync2_dispatch_op(
         })?;
         if cache_more {
             v["more"] = Value::Bool(true);
-        } else if drain {
-            // 收尾收完：收尾阶段结束，这次放回写连接起照常还页缓存。
+        }
+        // 收尾收完：收尾阶段结束，这次放回写连接起照常还页缓存。收尾阶段只由测试构建里的收段会话进入（G7-6）。
+        #[cfg(test)]
+        if !cache_more && drain {
             c.sync2_ingest_drained(profile)?;
         }
         // 本机作答：落库、刷新缓存之后接着在同一条写连接上排队（下一张 + 牌组计数，store/study.rs），复习页一次
@@ -424,8 +427,6 @@ struct LocalPre {
 }
 
 /// [LOCAL_WRITE_OPS] 的执行（见那张表）。
-// 只有测试构建才编的臂用到的参数 / 闭包 / 导入，在生产构建（只剩 [FROZEN_OPS]）里用不到。
-#[cfg_attr(not(test), allow(unused_variables, unused_imports, unused_mut))]
 fn local_write(
     c: &SrsCore,
     op: &str,
@@ -434,6 +435,7 @@ fn local_write(
     blobs: &[Vec<u8>],
     cfg: &crate::store::caches::CacheConfig,
 ) -> Result<serde_json::Value, String> {
+    #[cfg(test)]
     use serde_json::Value;
     let mut pre = LocalPre::default();
     if op == "apply" || op == "import_drafts" || op == "change" || op == "note_fields_if" {
@@ -465,7 +467,7 @@ fn local_write(
             return Ok(serde_json::json!({"stale": true}));
         }
         let mut v = local_write_body(conn, op, profile, req, blobs, &mut pre)?;
-        let mut written = crate::store::caches::refresh(
+        let written = crate::store::caches::refresh(
             conn,
             profile,
             cfg,
@@ -473,6 +475,8 @@ fn local_write(
         )?;
         // `change` 的移牌组段（store/sync2/change.rs）：要看上面这次刷新生成的卡，所以排在它后面；写完再刷新一次，
         // 两段的结果并成一份（修订号、Dart 的变更日志都按合起来的算）。
+        #[cfg(test)]
+        let mut written = written;
         #[cfg(test)]
         if op == "change" && crate::store::sync2::change::wants_move(req) {
             let now = req
@@ -535,14 +539,13 @@ fn expect_last_holds(conn: &rusqlite::Connection, req: &serde_json::Value) -> Re
 }
 
 /// [LOCAL_WRITE_OPS] 的命令本体：在 [local_write] 持着的写连接、开好的 SAVEPOINT 里做（各 `*_on` 都不自己取锁）。
-// 只有测试构建才编的臂用到的参数 / 闭包 / 导入，在生产构建（只剩 [FROZEN_OPS]）里用不到。
-#[cfg_attr(not(test), allow(unused_variables, unused_imports, unused_mut))]
 fn local_write_body(
     conn: &rusqlite::Connection,
     op: &str,
     profile: &str,
     req: &serde_json::Value,
-    blobs: &[Vec<u8>],
+    // 只有测试构建才编的臂（G7-6）读它；生产构建的冻结命令用不到。
+    #[cfg_attr(not(test), allow(unused_variables))] blobs: &[Vec<u8>],
     pre: &mut LocalPre,
 ) -> Result<serde_json::Value, String> {
     use crate::store::sync2 as s2;
@@ -889,17 +892,20 @@ const PROJECTING_OPS: &[&str] = &[
     "digest_heal",
 ];
 
-// 只有测试构建才编的臂用到的参数 / 闭包 / 导入，在生产构建（只剩 [FROZEN_OPS]）里用不到。
-#[cfg_attr(not(test), allow(unused_variables, unused_imports, unused_mut))]
 fn sync2_command(
     c: &SrsCore,
     op: &str,
     profile: &str,
     req: &serde_json::Value,
-    blobs: &mut Vec<Vec<u8>>,
-    files: &mut Vec<(String, Vec<u8>)>,
+    // 只有测试构建才编的臂（G7-6）读它；生产构建的冻结命令用不到。
+    #[cfg_attr(not(test), allow(unused_variables))] blobs: &mut Vec<Vec<u8>>,
+    // 只有测试构建才编的臂（G7-6）读它；生产构建的冻结命令用不到。
+    #[cfg_attr(not(test), allow(unused_variables))] files: &mut Vec<(String, Vec<u8>)>,
 ) -> Result<serde_json::Value, String> {
-    use serde_json::{Value, json};
+    use serde_json::Value;
+    #[cfg(test)]
+    use serde_json::json;
+    #[cfg(test)]
     let s = |k: &str| {
         req.get(k)
             .and_then(Value::as_str)

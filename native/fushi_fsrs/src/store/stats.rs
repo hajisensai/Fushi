@@ -15,6 +15,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+#[cfg(test)]
 use std::sync::{Arc, Mutex};
 
 use rusqlite::Connection;
@@ -118,12 +119,13 @@ struct Rev {
 }
 
 /// 一份原料（某 profile、某一版数据）。
-// 冻结的协议 3 内核（store/legacy3）在生产构建里照常建这个结构；下面有的字段 / 变体只在测试构建才编的协议 3 路径里
-// 读 / 构造（G7-6）。
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) struct Snapshot {
+    // 缓存命中判据（[SrsCore::stats_snapshot]，协议 3 的原料缓存）：换代后只在测试构建里编（G7-6），新代每条命令现读。
+    #[cfg(test)]
     profile: String,
+    #[cfg(test)]
     key: String,
+    #[cfg(test)]
     gen: u64,
     cards: Vec<Card>,
     extra: Vec<String>,
@@ -173,7 +175,6 @@ impl Snapshot {
             "SELECT card_id, occurred_at, utc_offset_min, rating, kind, duration_ms, prev_due_day, maturity_delta \
              FROM srs_stat_reviews WHERE profile_uid = srs_id(?1) ORDER BY occurred_at",
             &profile,
-            profile,
         )
     }
 
@@ -185,7 +186,6 @@ impl Snapshot {
         cards: &str,
         reviews: &str,
         owner: &dyn rusqlite::ToSql,
-        profile: &str,
     ) -> Result<Snapshot, String> {
         let mut stmt = c.prepare_cached(cards).map_err(sql)?;
         let mut it = stmt.query([owner]).map_err(sql)?;
@@ -259,8 +259,11 @@ impl Snapshot {
             });
         }
         Ok(Snapshot {
-            profile: profile.to_owned(),
+            #[cfg(test)]
+            profile: String::new(),
+            #[cfg(test)]
             key: String::new(),
+            #[cfg(test)]
             gen: 0,
             cards,
             extra,
@@ -277,10 +280,9 @@ impl Snapshot {
 
 /// [SrsCore] 上的统计缓存：最近一份原料 + 写连接上「改过统计原料」的代数。
 #[derive(Default)]
-// 冻结的协议 3 内核（store/legacy3）在生产构建里照常建这个结构；下面有的字段 / 变体只在测试构建才编的协议 3 路径里
-// 读 / 构造（G7-6）。
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) struct StatsCache {
+    /// 原料缓存：只有协议 3 的统计读命令用，换代后只在测试构建里编（G7-6）；生产构建只剩写入代数。
+    #[cfg(test)]
     snapshot: Mutex<Option<Arc<Snapshot>>>,
     /// 写连接上的触发器（queue.rs `srs_study_touch`：卡片缓存 / 日志 / 笔记缓存 / 笔记修改记录）每记一次 +1，事务
     /// 结束（[StatsCache::settle]）时若期间记过再 +1：读原料前取代数，取到的与缓存上的不同就重读。
@@ -328,6 +330,7 @@ impl SrsCore {
             }
         }
         let mut snap = self.read_visible(|c| Snapshot::load(c, profile))?;
+        snap.profile = profile.to_owned();
         snap.key = key.to_owned();
         snap.gen = gen;
         let snap = Arc::new(snap);

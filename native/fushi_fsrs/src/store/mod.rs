@@ -86,8 +86,11 @@ pub struct SrsCore {
     /// 内核只读命令的只读连接池（[SrsCore::reader] / [SrsCore::read_visible]）：并发的读命令各借一条，一条全库长读
     /// 不挡复习排队（BUG-4298）。不与 [SrsCore::query_readers] 合用：Dart 查询道的 worker 数等于那个池的上限，几条
     /// 长读（同步冲突扫描）就能把它借满，复习排队若去那里等连接就又排在长读后面。
+    /// 两个池都只在测试构建里有（G7-6）：生产构建的协议 3 内核只跑冻结命令，全走写连接，不留用不到的常驻读连接。
+    #[cfg(test)]
     readers: read_pool::ReadPool,
     /// 查询道专用的只读连接池（[SrsCore::read_query]：Dart 发来的只读查询命令 `read` / `read_lib`，store/reads.rs）。
+    #[cfg(test)]
     query_readers: read_pool::ReadPool,
     writer: Mutex<Option<Connection>>,
     /// 旧库搬迁的事务开着（写连接上挂着一个 BEGIN）：别的写命令一律拒绝。写连接上唯一能跨调用留着的事务——
@@ -99,7 +102,8 @@ pub struct SrsCore {
     /// 先关内核读连接池（等借出的放回），所以不会漏掉一条正在开的。
     side_conns: Mutex<Vec<Weak<SideConnection>>>,
     /// 分批收段的阶段（[sync2::transport::IngestPhase]：没有 / 会话开着 / 收尾刷缓存中）。只经
-    /// [SrsCore::set_ingest_phase] 转换。
+    /// [SrsCore::set_ingest_phase] 转换。换代后收段会话只在测试构建里编（G7-6），生产构建没有这个阶段。
+    #[cfg(test)]
     ingest: Mutex<sync2::transport::IngestPhase>,
     /// 有写入在等写锁，正在投的收段那一片尽快收：等在内核写锁上的线程数（[SrsCore::writer] 记）+ Dart 侧排队置的
     /// 请求（[SrsCore::sync2_ingest_yield]）。
@@ -379,6 +383,7 @@ impl SrsCore {
 
 /// [read_pool::ReadPool]（内核读连接池与查询道的连接池）的开连接函数：只读打开、配置同读连接（mmap 按次要
 /// 连接，见 [MmapRole]）。
+#[cfg(test)]
 fn open_pool_reader(path: &Path) -> Result<Connection, String> {
     let conn = Connection::open_with_flags(
         path,
@@ -403,7 +408,8 @@ fn open_pool_reader(path: &Path) -> Result<Connection, String> {
 pub(crate) enum MmapRole {
     /// 写连接。
     Primary,
-    /// 读连接池、快照整理。
+    /// 读连接池、快照整理（换代后两者都只在测试构建里编，G7-6）。
+    #[cfg(test)]
     Secondary,
 }
 
@@ -414,11 +420,14 @@ pub(crate) const MMAP_BYTES: i64 = 268_435_456;
 pub(crate) fn mmap_size_for(role: MmapRole) -> i64 {
     match role {
         MmapRole::Primary => MMAP_BYTES,
+        #[cfg(test)]
         MmapRole::Secondary if cfg!(target_pointer_width = "32") => 0,
+        #[cfg(test)]
         MmapRole::Secondary => MMAP_BYTES,
     }
 }
 
+#[cfg(test)]
 fn configure(conn: &Connection) -> Result<(), String> {
     configure_as(conn, MmapRole::Secondary)
 }
@@ -496,17 +505,22 @@ impl SrsCore {
             .map_err(|e| e.to_string())?;
         let study_hub = Arc::new(queue::StudyHub::default());
         queue::StudyHub::install(&study_hub, &writer)?;
+        #[cfg(test)]
         let readers =
             read_pool::ReadPool::new(path, read_pool::read_concurrency(), open_pool_reader)?;
+        #[cfg(test)]
         let query_readers =
             read_pool::ReadPool::new(path, read_pool::read_concurrency(), open_pool_reader)?;
         Ok(Self {
             writer: Mutex::new(Some(writer)),
+            #[cfg(test)]
             readers,
+            #[cfg(test)]
             query_readers,
             legacy_open: AtomicBool::new(false),
             path: path.to_path_buf(),
             side_conns: Mutex::new(Vec::new()),
+            #[cfg(test)]
             ingest: Mutex::new(sync2::transport::IngestPhase::Idle),
             ingest_yield: sync2::transport::YieldSignal::default(),
             ingest_holds_cache: AtomicBool::new(false),
@@ -664,6 +678,7 @@ impl SrsCore {
 
     /// 收段阶段唯一的转换入口：把 [slot]（持着 `ingest` 锁拿到的）换成 [next]，同时写下写连接放回时看的镜像
     /// （`ingest_holds_cache`），返回旧阶段。
+    #[cfg(test)]
     pub(crate) fn set_ingest_phase(
         &self,
         slot: &mut sync2::transport::IngestPhase,
@@ -677,6 +692,7 @@ impl SrsCore {
     }
 
     /// 收段阶段的锁。
+    #[cfg(test)]
     pub(crate) fn ingest_phase(
         &self,
     ) -> Result<MutexGuard<'_, sync2::transport::IngestPhase>, String> {
@@ -761,8 +777,10 @@ impl SrsCore {
         gen4::parity::check_core(self);
         // 先关内核读连接池（等借出的放回）：此后登记旁路连接报已关闭，下面拿到的清单就是全部。
         // 下面各把锁被 panic 毒化过也照拿：连接随即丢掉，关闭时 SQLite 回滚连接上没结束的事务。
+        #[cfg(test)]
         self.readers.close();
         // 等在途的查询命令把连接放回（放回即关）。
+        #[cfg(test)]
         self.query_readers.close();
         let side = std::mem::take(&mut *self.side_conns.lock().unwrap_or_else(|e| e.into_inner()));
         for s in side.iter().filter_map(Weak::upgrade) {
@@ -1040,11 +1058,13 @@ impl SrsCore {
 
     /// 读命令的并发上限（查询道只读连接池的连接数上限，store/read_pool.rs `read_concurrency`）：Dart 侧
     /// 查询道的 worker 数取它（`ffsrs_store_read_concurrency`），两边不各写一份常量。
+    #[cfg(test)]
     pub fn read_concurrency(&self) -> usize {
         self.query_readers.cap()
     }
 
     /// 查询道的只读连接池眼下开着的连接数（空闲 + 借出），内存诊断用。
+    #[cfg(test)]
     pub fn pooled_readers(&self) -> usize {
         self.query_readers.live()
     }
