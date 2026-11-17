@@ -1281,7 +1281,7 @@ mod tests {
     use crate::store::gen4::derive::tests::{assert_rebuild_is_identity, dump, op};
     use crate::store::gen4::native::tests::{edit, ready};
     use crate::store::gen4::schema::open_in_memory;
-    use crate::store::gen4::truth::{Peer, PeerPut, TRUST_PENDING};
+    use crate::store::gen4::truth::{Peer, PeerPut, TRUST_PENDING, TRUST_REJECTED};
     use rusqlite::Connection;
 
     const A: u8 = 0x21;
@@ -1759,6 +1759,55 @@ mod tests {
         assert_eq!((stub.id(), stub.purge), (a[1].id, p.id));
         let v = t.author_version(col, &id(A), 1, 3).unwrap().unwrap();
         assert_eq!((v.header, v.sig, v.voids), (header, sig, vec![]));
+    }
+
+    /// 剔除项点名的 Purge 的作者本机不信任（待确认 / 已拒绝）：这条 Purge 本机不执行（weigh 判 S_DISTRUSTED），重切件
+    /// 就不能让读者把作者的原件落成空洞——整件延后（UntrustedUploader = Purge 的作者），A 的日志不前进、不记剔除记录；
+    /// 信任之后同一件照收。
+    #[test]
+    fn a_stub_naming_a_purge_by_an_untrusted_author_is_deferred_until_trusted() {
+        for state in [TRUST_PENDING, TRUST_REJECTED] {
+            let conn = open_in_memory().unwrap();
+            let t = Truth::new(&conn);
+            let col = setup(&t);
+            let a = vec![nop(A, 1, &[]), doomed(A, 2, &[]), nop(A, 3, &[])];
+            let (header, sig, all) = signed_by_author(&a, A);
+            let p = purge_op(B, 1, &[(A, 3)]);
+            let stubbed = recut::stub_one(&all, 1, 2, p.id).unwrap();
+            // 重切者是 A 自己（受信），排除「重切者不受信」这条路。
+            let piece = recut4(
+                &header,
+                &sig,
+                &stubbed,
+                &key_of(A).public(),
+                &key_of(A),
+                id(A),
+                None,
+            )
+            .unwrap();
+            // B 受信时收下它的 Purge（依赖 A3，进等待缓冲），之后改成不信任。
+            let b = seg_of(B, CHAIN_ZERO, &ops_items(std::slice::from_ref(&p)), None);
+            let (got, r) = take(&t, col, Settle::Incremental, &[&b], None);
+            assert_eq!(got, vec![landed(0, 0, 1)]);
+            assert_eq!(r.waiting, 1);
+            t.tx(|t| t.set_trust(col, &id(B), Some(state), NOW))
+                .unwrap();
+
+            let (got, _) = take(&t, col, Settle::Incremental, &[&piece], None);
+            assert_eq!(
+                got,
+                vec![Taken::Deferred(Defer::UntrustedUploader(id(B)))],
+                "trust state {state}"
+            );
+            assert_eq!(t.last_of(col, &id(A)).unwrap(), 0);
+            assert_eq!(t.stub_at(col, &id(A), 2).unwrap(), None);
+
+            t.tx(|t| t.set_trust(col, &id(B), None, NOW)).unwrap();
+            let (got, _) = take(&t, col, Settle::Incremental, &[&piece], None);
+            assert_eq!(got, vec![landed(3, 0, 0)]);
+            assert!(!at(&t, col, A, 2).is_whole());
+            assert_eq!(t.stub_at(col, &id(A), 2).unwrap().unwrap().purge, p.id);
+        }
     }
 
     /// 第五波根治（复核建议 (a)）：受信的重切者 B 换不了留下的操作、伪造不了作者没写到的 seq、挖不了没被清除的操作。
