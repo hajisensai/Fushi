@@ -71,6 +71,7 @@ void main() {
       'source',
       'confidence',
       'is_user_confirmed',
+      'confirmed_by',
       'reason',
       'created_at',
       'updated_at',
