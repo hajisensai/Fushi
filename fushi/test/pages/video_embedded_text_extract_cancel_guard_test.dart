@@ -3,7 +3,7 @@
 // （与图形字幕整轨抽取 `_cancelGraphicSubtitleOcr` / `_cancelGraphicTimingFetch` 同一机制）。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 String _bodyOf(String src, String signature) {
   final int start = src.indexOf(signature);
