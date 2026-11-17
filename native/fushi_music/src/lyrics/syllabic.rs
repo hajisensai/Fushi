@@ -11,8 +11,6 @@
 //! 右 = `v2`。KRC 的 `[language:base64]` 带翻译（type 1）与罗马音（type 0），按行序挂上。
 //! QRC 的 `[kana:…]` 假名注音轨（来源自带）挂成音节 ruby，见 [super::qrc::apply_kana]。
 
-use std::io::Read;
-
 use super::json::{self, Json};
 use super::markup::unescape;
 use super::model::*;
@@ -275,11 +273,7 @@ pub fn decrypt_krc(b: &[u8]) -> Option<Vec<u8>> {
         .enumerate()
         .map(|(i, &x)| x ^ KRC_KEY[i % 16])
         .collect();
-    let mut out = Vec::new();
-    flate2::read::ZlibDecoder::new(&xored[..])
-        .read_to_end(&mut out)
-        .ok()?;
-    Some(out)
+    super::inflate_bounded(&xored, super::MAX_INFLATED_BYTES)
 }
 
 /// 测试 / 往返用：把明文 KRC 加密成 `krc1` 文件。
@@ -336,6 +330,20 @@ mod tests {
         let enc = encrypt_krc("[1000,500]<0,500,0>a".as_bytes());
         assert!(is_encrypted_krc(&enc));
         assert_eq!(decrypt_krc(&enc).unwrap(), b"[1000,500]<0,500,0>a");
+    }
+
+    #[test]
+    fn krc_decompression_bomb_is_rejected() {
+        // 压缩后只有几 KB，解开超过明文上限：必须拒绝，而不是整份解进内存。
+        let bomb = encrypt_krc(&vec![b'a'; crate::lyrics::MAX_INFLATED_BYTES + 1]);
+        assert!(bomb.len() < 64 * 1024);
+        assert_eq!(decrypt_krc(&bomb), None);
+        assert!(crate::lyrics::parse(&bomb, "krc", None).is_err());
+        let at_limit = encrypt_krc(&vec![b'a'; crate::lyrics::MAX_INFLATED_BYTES]);
+        assert_eq!(
+            decrypt_krc(&at_limit).map(|v| v.len()),
+            Some(crate::lyrics::MAX_INFLATED_BYTES)
+        );
     }
 
     #[test]
