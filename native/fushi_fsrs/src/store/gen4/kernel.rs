@@ -242,7 +242,8 @@ pub struct G4Core {
     pub(super) refresh: Mutex<super::refresh::Refresh>,
     /// 保留副本 `srs.db` 在、但不是 SQLite 文件（`files::Opened::retained_copy_unreadable`）。
     pub retained_copy_unreadable: bool,
-    /// 欠着一次彻底清除的字节层收尾（`scrub.rs`）：打开时按库里的记录置位，写命令提交之后接着做。
+    /// 彻底清除的字节层收尾被读者挡住了（`scrub.rs`）：之后的写命令提交之后不等地再试。出错不置位（原因记在库里，
+    /// 下一次打开 / 下一次清除再试）。
     scrub_pending: AtomicBool,
     _live: Live,
 }
@@ -272,9 +273,14 @@ impl G4Core {
                 // 开一条读连接放进池里：读得了才算打开成功（也让诊断计数里有连接）。
                 let first = readers.open_one()?;
                 readers.lock().idle.push(first);
-                // 上次清除提交之后没来得及收尾（进程被杀、检查点被挡）：现在做（`scrub.rs`）。
+                // 上次清除提交之后没来得及收尾（进程被杀、检查点被挡、出过错）：现在做（`scrub.rs`）。被读者挡住 = 之后
+                // 的写命令不等地再试；出错 = 原因已由 `scrub` 记进库（`ERROR_KEY`，`status` 的 `scrub.error` 报给 UI），
+                // 不逐条写命令重试，下一次打开或下一次清除再试。打开本身不因收尾没做成而失败。
                 if super::scrub::due(&opened.conn)? {
-                    scrub_due = !super::scrub::scrub(&opened.conn).unwrap_or(false);
+                    scrub_due = matches!(
+                        super::scrub::scrub(&opened.conn, super::scrub::Wait::Yes),
+                        Ok(false)
+                    );
                 }
                 Some(opened.conn)
             }
@@ -383,11 +389,19 @@ impl G4Core {
             crate::store::sync2::test_panic::hit(crate::store::sync2::test_panic::BEFORE_RELEASE);
             Ok(v)
         })?;
-        // 提交了落空洞的写（或之前欠着）：字节层收尾（`scrub.rs`），在事务外、还拿着写锁。命令本身已经提交，收尾没做成
-        // 不改它的结果：「欠一次收尾」记在库里，下一条写命令、下一次打开接着做。
-        if t.take_voided() || self.scrub_pending.load(Ordering::SeqCst) {
-            let done = super::scrub::scrub(&w).unwrap_or(false);
-            self.scrub_pending.store(!done, Ordering::SeqCst);
+        // 提交了落空洞的写（或之前被读者挡住）：字节层收尾（`scrub.rs`「没做成怎么办」），在事务外、还拿着写锁。命令
+        // 本身已经提交，收尾没做成不改它的结果，「欠一次收尾」记在库里。刚落了空洞的按忙等等读者；之前被挡、这次顺手
+        // 再试的不等。被挡 = 之后的写命令再试；出错 = 原因已由 `scrub` 记进库（`status` 的 `scrub.error`），不逐条写命令
+        // 重试（每条都重做一次注定失败的整库整理），下一次打开或下一次清除再试。
+        let voided = t.take_voided();
+        if voided || self.scrub_pending.load(Ordering::SeqCst) {
+            let wait = if voided {
+                super::scrub::Wait::Yes
+            } else {
+                super::scrub::Wait::No
+            };
+            let blocked = matches!(super::scrub::scrub(&w, wait), Ok(false));
+            self.scrub_pending.store(blocked, Ordering::SeqCst);
         }
         Ok(v)
     }

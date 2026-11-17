@@ -276,6 +276,40 @@ fn a_library_without_the_mark_is_compacted_on_its_first_purge() {
     assert!(!meta_has(&a, DUE_KEY));
 }
 
+/// 收尾出错（整理时空间不够等）：原因记进库、经 `status` 的 `scrub` 报出来；之后的写命令不再逐条重试（不每条都重做
+/// 一次注定失败的整库整理）；下一次打开再试，做成了错误清掉、原文没了。
+#[test]
+fn a_failed_byte_level_pass_is_reported_and_not_retried_on_every_write() {
+    use crate::store::gen4::scrub::test_fail::{ATTEMPTS, FAIL};
+    let mut a = Dev::new("c3err");
+    a.write(T1, N1, "keep-c3");
+    a.write(T1, N2, "secret-c3-err");
+    ATTEMPTS.with(|c| c.set(0));
+    FAIL.with(|f| f.set(true));
+    purge(&a, T1 + 1, N2);
+    FAIL.with(|f| f.set(false));
+    assert_eq!(ATTEMPTS.with(|c| c.get()), 1);
+    let (st, _) = cmd(a.h, "status", T1 + 1, json!({}), &[]);
+    assert_eq!(st["scrub"]["due"], json!(true), "{st}");
+    assert!(
+        st["scrub"]["error"]
+            .as_str()
+            .is_some_and(|e| e.contains("injected")),
+        "{st}"
+    );
+    for i in 0..3 {
+        a.write(T1 + 2 + i, N1, &format!("keep-c3-{i}"));
+    }
+    assert_eq!(ATTEMPTS.with(|c| c.get()), 1, "not retried on every write");
+
+    ffsrs_store_close(a.h);
+    a.h = open(&a.dir.0, 0).unwrap();
+    assert_eq!(ATTEMPTS.with(|c| c.get()), 2, "retried on the next open");
+    let (st, _) = cmd(a.h, "status", T1 + 6, json!({}), &[]);
+    assert_eq!(st["scrub"], json!({"due": false, "error": null}), "{st}");
+    assert_eq!(bytes_carrying(&a.dir.0, "secret-c3-err"), 0);
+}
+
 /// 收尾欠着（进程在提交与收尾之间被杀）：库里记着，下一次打开就做。
 #[test]
 fn an_owed_byte_level_pass_runs_on_the_next_open() {

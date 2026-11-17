@@ -249,6 +249,8 @@ fn self_view(m: &Map<String, Value>, changed: bool) -> Value {
 /// - `locations`：位置的加密记忆（`loc_state`）与位置上的 head（`loc_heads`）里出现过的位置；`uploaded` /
 ///   `headGen` = 本机身份在那个位置上最新 head 的 seq / 代号（没有 = 0）；`lastOk` = 上次核对通过的时刻。
 /// - `unpublished` = 本机日志末尾 − 各位置 `uploaded` 的最小值（没有位置 = 末尾）。
+/// - `scrub`：彻底清除的字节层收尾（`scrub.rs`）。`due` = 有清除提交了、磁盘上的旧字节还没抹干净；`error` = 上一次
+///   收尾出错的原因（空间不够等；没有 = null），UI 据此提示用户「清除的内容在磁盘上还没抹干净」。
 pub fn status(t: &Truth<'_>, col: i64) -> Result<Value, String> {
     snapshot(t, |t| {
         let Some(me) = t.self_identity(col)? else {
@@ -446,6 +448,7 @@ pub fn status(t: &Truth<'_>, col: i64) -> Result<Value, String> {
             })
             .collect();
         let min_up = locs.values().map(|l| l.0).min().unwrap_or(0);
+        let (scrub_due, scrub_error) = crate::store::gen4::scrub::state(conn)?;
         let mut self_info = self_view(&info, false);
         if let Some(m) = self_info.as_object_mut() {
             m.remove("changed");
@@ -461,6 +464,7 @@ pub fn status(t: &Truth<'_>, col: i64) -> Result<Value, String> {
             "devices": devices,
             "selfInfo": self_info,
             "locations": locations,
+            "scrub": {"due": scrub_due, "error": scrub_error},
         }))
     })
 }

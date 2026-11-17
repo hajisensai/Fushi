@@ -18,9 +18,17 @@
 //!
 //! 取舍（存量库）：`VACUUM` 重写整个库，要约等于库大小的临时空间、期间占着写锁；每次清除都做代价太大，开库时做会让
 //! 每个存量库都在启动时卡一次。只在「第一次清除」时做一次：这时用户刚明确要求抹掉内容，承担一次整理是合理的，之后
-//! 全靠 `secure_delete`。整理失败（空间不够等）不回滚已提交的清除（表层已经清掉），「欠一次收尾」留着，之后每条写
-//! 命令与下一次打开接着做，做成为止。换代迁移建的库与全新安装都带标记，生产里需要整理的只有换代开发期间用集成分支
-//! 建的库。
+//! 全靠 `secure_delete`。换代迁移建的库与全新安装都带标记，生产里需要整理的只有换代开发期间用集成分支建的库。
+//!
+//! # 没做成怎么办
+//!
+//! 收尾在命令提交之后做，没做成不回滚已提交的清除（表层已经清掉）；「欠一次收尾」[DUE_KEY] 留着。两种没做成分开处理：
+//!
+//! - **检查点被读者挡住**（[scrub] 回 `Ok(false)`）：读者放手就能做成。内核在之后每条写命令提交后接着试，但**不等**
+//!   （[Wait::No]：忙等临时设成 0，被挡就立刻回来），不让复习作答因为一个读快照卡上 [super::schema::BUSY_TIMEOUT]。
+//! - **出错**（整理时空间不够、I/O 错误……，[scrub] 回 `Err`）：原因记进 [ERROR_KEY]（`status` 的 `scrub.error`，
+//!   UI 据此告诉用户「清除的内容在磁盘上还没抹干净」），内核不再逐条写命令重试——那样每条写命令都要重做一次注定失败的
+//!   整库整理——只在下一次打开、或下一次又有清除落成空洞时再试。做成了删掉 [ERROR_KEY]。
 
 use rusqlite::{Connection, OptionalExtension};
 
@@ -30,6 +38,8 @@ use super::schema::sql;
 pub(crate) const SECURE_KEY: &str = "gen4_secure_delete";
 /// `srs_meta` 键：有清除提交了、字节层收尾（[scrub]）还没做完。值 `1`。
 pub(crate) const DUE_KEY: &str = "gen4_scrub_due";
+/// `srs_meta` 键：上一次字节层收尾出错的原因（原文）。做成了删掉。
+pub(crate) const ERROR_KEY: &str = "gen4_scrub_error";
 
 fn has(conn: &Connection, key: &str) -> Result<bool, String> {
     Ok(conn
@@ -64,14 +74,74 @@ pub(crate) fn due(conn: &Connection) -> Result<bool, String> {
     has(conn, DUE_KEY)
 }
 
+/// 有没有欠着的字节层收尾，与上一次没做成的原因（[ERROR_KEY]）。`status` 用。
+pub(crate) fn state(conn: &Connection) -> Result<(bool, Option<String>), String> {
+    let error = conn
+        .prepare_cached("SELECT value FROM srs_meta WHERE key = ?1")
+        .map_err(sql)?
+        .query_row([ERROR_KEY], |r| r.get::<_, String>(0))
+        .optional()
+        .map_err(sql)?;
+    Ok((due(conn)?, error))
+}
+
+/// [scrub] 的检查点等不等读者。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Wait {
+    /// 按连接上的忙等（[super::schema::BUSY_TIMEOUT]）等：刚落了空洞、打开库时。
+    Yes,
+    /// 不等：被挡就回 `Ok(false)`。之前被挡、之后的写命令顺手再试时用。
+    No,
+}
+
 /// 字节层收尾（[conn] 是写连接、不在事务里）：没有标记的存量库先整库整理一次，再把 WAL 并回主库并截断，都成了才删
-/// 「欠一次收尾」。回包：做完了没有（`false` = 检查点被别的读者挡住，留到下一次）。没欠就什么都不做。
-pub(crate) fn scrub(conn: &Connection) -> Result<bool, String> {
+/// 「欠一次收尾」。回包：做完了没有（`false` = 检查点被别的读者挡住，留到下一次）。没欠就什么都不做。出错时原因记进
+/// [ERROR_KEY]（记不下也照样把原错误报回去），做成了删掉它。
+pub(crate) fn scrub(conn: &Connection, wait: Wait) -> Result<bool, String> {
     if !conn.is_autocommit() {
         return Err("gen4 scrub: must run outside a transaction".to_owned());
     }
     if !due(conn)? {
         return Ok(true);
+    }
+    let out = match wait {
+        Wait::Yes => attempt(conn),
+        Wait::No => {
+            conn.busy_timeout(std::time::Duration::ZERO).map_err(sql)?;
+            let out = attempt(conn);
+            conn.busy_timeout(super::schema::BUSY_TIMEOUT)
+                .map_err(sql)?;
+            out
+        }
+    };
+    if let Err(e) = &out {
+        // 记不下（库坏了、盘满）就只把原错误报回去：调用方照样知道没做成。
+        let _ = conn
+            .prepare_cached("INSERT OR REPLACE INTO srs_meta (key, value) VALUES (?1, ?2)")
+            .and_then(|mut s| s.execute([ERROR_KEY, e.as_str()]));
+    }
+    out
+}
+
+/// 测试注入：下一次 [attempt] 直接报错（模拟整理时空间不够）。按线程。
+#[cfg(test)]
+pub(crate) mod test_fail {
+    use std::cell::Cell;
+
+    thread_local! {
+        pub(crate) static FAIL: Cell<bool> = const { Cell::new(false) };
+        /// [super::attempt] 真正动手的次数。
+        pub(crate) static ATTEMPTS: Cell<u32> = const { Cell::new(0) };
+    }
+}
+
+fn attempt(conn: &Connection) -> Result<bool, String> {
+    #[cfg(test)]
+    {
+        test_fail::ATTEMPTS.with(|c| c.set(c.get() + 1));
+        if test_fail::FAIL.with(|f| f.get()) {
+            return Err("gen4 scrub: injected failure".to_owned());
+        }
     }
     if !has(conn, SECURE_KEY)? {
         conn.execute_batch("VACUUM").map_err(sql)?;
@@ -80,9 +150,9 @@ pub(crate) fn scrub(conn: &Connection) -> Result<bool, String> {
     if !checkpoint_truncate(conn)? {
         return Ok(false);
     }
-    conn.prepare_cached("DELETE FROM srs_meta WHERE key = ?1")
+    conn.prepare_cached("DELETE FROM srs_meta WHERE key IN (?1, ?2)")
         .map_err(sql)?
-        .execute([DUE_KEY])
+        .execute([DUE_KEY, ERROR_KEY])
         .map_err(sql)?;
     // 删标记那一笔又写了一帧（只有 `srs_meta` 那一页，不带内容）：再并一次，WAL 归零。
     checkpoint_truncate(conn)

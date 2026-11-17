@@ -196,7 +196,7 @@ fn a_device_seen_only_through_a_relayed_head_is_judged_too() {
 /// 可信（删除生效、不进待确认），c 的新身份照旧是已拒绝（`since` 原样），删除扣住。
 #[test]
 fn a_rotated_identity_inherits_the_trust_of_its_previous_one() {
-    let mut a = Dev::new("c2ia");
+    let a = Dev::new("c2ia");
     let mut b = Dev::new("c2ib");
     let mut c = Dev::new("c2ic");
     b.write(T1, N1, "鯨");

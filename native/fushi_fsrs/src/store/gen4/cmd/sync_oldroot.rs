@@ -227,7 +227,8 @@ pub fn oldroot_ingest(
     let mut rx = Receiver::open(t, col, Settle::Incremental)?;
     if trust_moved {
         // 写了信任行：收尾时把扣住的删除与清除重判（写下待确认的作者在本机还没有日志，`truth/trust.rs` 文件头第 1 条，
-        // 这里是兜底，保证增量 == 重建）。
+        // 这里是兜底，保证增量 == 重建）。在这个不变量下它不改变结果，所以没有测试能证伪它（复核变异：删掉这一行
+        // 相关测试全绿）；留着是为了不变量哪天被打破时派生层不悄悄偏离重建。
         rx.trust_changed();
     }
     for (path, b) in paths.iter().zip(&blobs[nheads..]) {

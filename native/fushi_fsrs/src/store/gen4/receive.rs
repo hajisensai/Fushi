@@ -842,13 +842,13 @@ impl<'t, 'c> Receiver<'t, 'c> {
         &self.legacy_taken
     }
 
-    /// 把等待缓冲里接得上的投完，再收派生层。消费这一批。
     /// 本机这一批改了某台设备的信任状态（`Truth::note_new_peer` 写了行）：收尾时把扣住的删除与清除重判
     /// （`weigh.rs` [Index::trust_changed]）。
     pub fn trust_changed(&mut self) {
         self.idx.trust_changed();
     }
 
+    /// 把等待缓冲里接得上的投完，再收派生层。消费这一批。
     pub fn finish(mut self) -> Result<Received, String> {
         // 原生等待项的投递同样受预算约束（收段让路）：用完就停，剩下接得上的留给调用方下一个事务（`drain_more`）。
         // 停下时这一遍的分叉 / 两支报告可能不全，下一遍投完时再报。
