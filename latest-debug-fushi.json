@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "3.3.0-debug.28558",
-  "tag": "v3.3.0-debug.28558+91a2fbd",
+  "version": "3.3.0-debug.28598",
+  "tag": "v3.3.0-debug.28598+4c34728",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 28558,
-  "notes": "Automated desktop debug-channel build from develop @ 91a2fbd. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 28598,
+  "notes": "Automated release-signed debug-channel build from develop @ 4c34728. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "fushi-3.3.0-debug.28460-macos-arm64.dmg",
@@ -26,15 +26,6 @@
       "sha256": "3859b69b3b0e1f9850adce1dca7ea63ed0f2262d0e9f0e456a4271631910dea1"
     },
     {
-      "name": "fushi-3.3.0-debug.28546-0721b32-debug.apk",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.28546-0721b32-debug.apk",
-      "releaseSequence": 28546,
-      "tag": "v3.3.0-debug.28546+0721b32",
-      "version": "3.3.0-debug.28546",
-      "size": 265382199,
-      "sha256": "86daee76ae5c2a1551736dc89be660dbef4378da263a6047a7caafebc1f24d9c"
-    },
-    {
       "name": "fushi-3.3.0-debug.28558-ios.ipa",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.28558-ios.ipa",
       "releaseSequence": 28558,
@@ -51,6 +42,15 @@
       "version": "3.3.0-debug.28558",
       "size": 299214576,
       "sha256": "62b5909b3b715eed344e2c6c20bcc79fdd9a3aa5339375f50b48873e7020aba9"
+    },
+    {
+      "name": "fushi-3.3.0-debug.28598-4c34728-debug.apk",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.28598-4c34728-debug.apk",
+      "releaseSequence": 28598,
+      "tag": "v3.3.0-debug.28598+4c34728",
+      "version": "3.3.0-debug.28598",
+      "size": 265382199,
+      "sha256": "81bf73143b3cad3ee2eeb0db2228a45048e12c972d9cc10dbb051b66e33c840b"
     }
   ]
 }
