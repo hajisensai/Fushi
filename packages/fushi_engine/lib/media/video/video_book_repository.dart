@@ -558,8 +558,8 @@ class VideoBookRepository {
     // 都不用问。只有同名文件确实存在的少数行才去问原路径，且走 async
     // [File.exists]，不在 UI isolate 上同步等网络盘。
     //
-    // 目录解析失败（无 path_provider 的测试宿主）退回逐行 stat，行为与从前一字
-    // 不差。
+    // 目录解析失败（无 path_provider 的测试宿主）退回逐行问文件系统，判定结果
+    // 与从前一致，只是改成 async。
     final _CoverDirSnapshot? snapshot = await _CoverDirSnapshot.take();
     Directory? coversDir = snapshot?.dir;
     final List<VideoBookRow> out = <VideoBookRow>[];
@@ -583,13 +583,15 @@ class VideoBookRepository {
           continue;
         }
       } else {
-        if (File(cover).existsSync()) {
+        // 没有目录快照可查，只能逐行问文件系统——也走 async，不在 UI isolate
+        // 上同步 stat。
+        if (await File(cover).exists()) {
           out.add(row);
           continue;
         }
         coversDir ??= await VideoStorage.coversDir();
         candidate = p.join(coversDir.path, p.basename(cover));
-        candidateExists = candidate != cover && File(candidate).existsSync();
+        candidateExists = candidate != cover && await File(candidate).exists();
       }
       if (candidateExists) {
         // 只有这一次指针回写需要与其他封面写入串行。锁内必须按 bookUid 重读当前
