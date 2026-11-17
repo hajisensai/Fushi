@@ -35,6 +35,8 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:fushi_compute/fushi_compute.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
+import 'package:fushi_engine/media/video/m3u8_playlist.dart'
+    show parseHlsAttributeList;
 import 'package:fushi_engine/utils/misc/resumable_downloader.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 
@@ -329,13 +331,6 @@ class HlsMediaPlaylist {
       segments.any((HlsSegment segment) => segment.initSection != null);
 }
 
-final RegExp _attributePattern = RegExp(r'([A-Z0-9-]+)=("[^"]*"|[^,]*)');
-
-Map<String, String> _attributes(String raw) => <String, String>{
-  for (final RegExpMatch match in _attributePattern.allMatches(raw))
-    match.group(1)!: match.group(2)!.replaceAll('"', ''),
-};
-
 /// 解析媒体播放列表（纯函数，便于测试）。[base] 是播放列表的最终 URL（相对地址
 /// 按它解析）。
 HlsMediaPlaylist parseHlsMediaPlaylist(String playlist, Uri base) {
@@ -351,7 +346,7 @@ HlsMediaPlaylist parseHlsMediaPlaylist(String playlist, Uri base) {
     } else if (line.startsWith('#EXT-X-BYTERANGE')) {
       throw const AnimeEpisodeDownloadUnsupported('HLS byte-range segments');
     } else if (line.startsWith('#EXT-X-KEY:')) {
-      final Map<String, String> attrs = _attributes(
+      final Map<String, String> attrs = parseHlsAttributeList(
         line.substring('#EXT-X-KEY:'.length),
       );
       final String method = attrs['METHOD'] ?? 'NONE';
@@ -366,7 +361,7 @@ HlsMediaPlaylist parseHlsMediaPlaylist(String playlist, Uri base) {
         throw AnimeEpisodeDownloadUnsupported('HLS encryption $method');
       }
     } else if (line.startsWith('#EXT-X-MAP:')) {
-      final Map<String, String> attrs = _attributes(
+      final Map<String, String> attrs = parseHlsAttributeList(
         line.substring('#EXT-X-MAP:'.length),
       );
       if (attrs.containsKey('BYTERANGE')) {
