@@ -1,0 +1,21 @@
+## BUG-4791 · 换音频 / 换字幕先删旧副本再拷新文件，拷贝中途失败后库里指着已删除的文件
+- **报告**：2026-11-17（优化计划 c13 复核项 gap-novelmisc-4，只读核实确认）
+- **真实性**：✅ 真 bug（需拷贝阶段出错才触发：磁盘满 / 源盘掉线 / AIFF 转码失败 / 旧文件被占用）。根因是顺序：
+  - `packages/fushi_audio/lib/src/audiobook/audiobook_storage.dart:403`（修前）`syncAudioFiles` 先 `_pruneAudioFiles` 把持久目录里不在新清单里的音频删光，`:413-430` 才逐个拷新文件，库由各调用方在它返回之后才写。拷到一半抛错时旧音频已经没了，`audioPaths` 还指着它们；复制导入的书，目录里那份就是唯一副本。BUG-1678 只修了「源就在持久目录里」这一种，新源在目录外时照旧先删。`_pruneAudioFiles` 自己删到一半失败（Windows 上文件被占用）也是同样的半截状态。
+  - `packages/fushi_engine/lib/media/audiobook/srt_book_reimport.dart:220`（修前）换字幕先 `deletePersistedSubtitleCopy` 删旧副本，`:225` 才拷新的，`:234-236` 写库；正文重建（`:206`）还排在最前，拷字幕失败时已是「正文新、cue 旧、旧字幕文件没了」。
+  - `packages/fushi_engine/lib/media/audiobook/audiobook_alignment_service.dart:663-684`（修前）提交段是 6 次独立写库，中途失败留下「新字幕路径 + 旧 cue」之类的半截行；`:770-779` 的只换音频同形（两行各写各的）。
+- **[x] ① 已修复** —
+  - `AudiobookStorage.syncAudioFiles` 改成全有或全无：新文件先拷进 `<persistDir>/.incoming/` → 被换下的旧音频 rename 进 `.retired/`（让出名字，不删）→ 新文件落到正式名字 → 跑新增的 `commit` 回调（调用方的写库）→ 删 `.retired/`。前四步任何一步抛错都原路撤回（新文件删掉、旧文件挪回原名）。同名替换因此保持原名，不再靠「先删」腾名字。`copy: false` 的旧副本同样在 `commit` 之后才删。上一次同步被杀进程留下的两个目录在下一次同步开头收拾。
+  - 三个写库的调用方把写库交给 `commit` 并包进一个事务：`alignAndPersistAudiobook`（6 次写一次提交，失败时连同本次新落的字幕副本一起收走）、`replaceAudiobookAudio`、`SrtBookRepository.replaceAudio`（行 + 播放进度归零）。
+  - `reimportSrtBook` 换字幕改为「拷新副本 → 重建正文 → 写库（cue + 行 + 绑定，一个事务）→ 删旧副本」；重建或写库失败时收走新副本。
+  - `AudiobookStorage.persistFileWithProgress` 的普通拷贝从 `IOSink` 改成逐块 `await` 的 `RandomAccessFile.writeFrom`：`IOSink` 的写错误只走 `done`，落点打不开时 `flush` 不返回（macOS worker 上实测为两条未捕获的 `FileSystemException` 加 30 秒超时），调用方等不到异常就撤不回去。
+- **[x] ② 已加自动化测试** —
+  - `packages/fushi_audio/test/audiobook/audiobook_storage_swap_test.dart`：第二个文件拷贝失败后目录与调用前逐字节一致；源读不到时磁盘不动；同名替换保持原名；`commit` 运行时新文件已落位、旧文件未删；`commit` 抛错目录撤回；引用导入的旧副本在 `commit` 后才删；被杀进程的残留在下一次同步复位；`SrtBookRepository.replaceAudio` 拷贝失败 / 写库失败两条；普通拷贝落点写不了时抛错而不是挂住。
+  - `packages/fushi_engine/test/media/audiobook/replace_audiobook_audio_test.dart`「BUG-4791」段：`replaceAudiobookAudio` 与 `alignAndPersistAudiobook` 拷贝中途失败后旧字幕 / 音频 / cue / 行原样；提交段第五步失败时前四步一起回滚、文件撤回；成功替换后目录恰好是新的一份。
+  - `fushi/test/media/audiobook/srt_book_reimport_test.dart`「BUG-4791」段：拷新字幕失败时旧副本还在且正文没动；正文重建失败 / 写库失败时新副本收走、cue 与 `srtPath` 原样；成功后只留新副本。
+- **备注**：
+  - 仍走不带 `commit` 的旧签名的调用点：`fushi/lib/src/media/audiobook/audiobook_import_dialog.dart:928`、`fushi/lib/src/media/audiobook/tts/studio/tts_render_runner.dart:691`、`packages/fushi_engine/lib/media/audiobook/standalone_subtitle_book.dart:159`。它们同样得到「拷贝失败不丢旧音频」，剩下的窗口是「同步返回之后、它们自己写库失败」（此时旧音频已删）；这三个文件不在本组范围，未改。
+  - 换字幕里「正文已重建、随后写库失败」仍没有回滚（正文的 `.bak` 回滚在 `rebuildExtractedInPlace` 内部，出了函数就没了）；触发条件只剩库写失败。
+  - 进程在「旧文件已挪进 `.retired/`」到「写库提交」之间被杀：库仍指着旧名字，文件在 `.retired/` 里，要等这本书下一次同步才挪回。窗口是几次 rename 加一次写库，旧实现的窗口是整段拷贝。
+  - 过渡期磁盘上同时有新旧两份音频，磁盘紧张时更容易失败（失败是安全的）。
+  - 待真机复测：真机换音频、换字幕各一次（含同名文件替换），确认播放与高亮正常。
