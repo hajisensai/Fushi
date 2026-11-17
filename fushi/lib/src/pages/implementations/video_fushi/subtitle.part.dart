@@ -3272,21 +3272,69 @@ extension _VideoSubtitle on _VideoFushiPageState {
         : <String, List<SubtitleEvidenceTrack>>{videoPath: tracks};
   }
 
-  /// 打开字幕工作台（[openVideoSubtitleStudioPage]）。参考区读的都是播放器的现值
-  /// （主 / 副字幕 cue、各自扣过调轴的等效位置、裸画面截图），面板开着时随播放实时
-  /// 刷新；工具全部复用本页既有路径，面板只负责分派。
-  Future<void> _openSubtitleStudio(VideoPlayerController controller) async {
-    final List<AudioCue> cues = controller.cues;
-    final SubtitleContentLanguage language = detectSubtitleContentLanguage(
-      <String>[
-        for (final AudioCue c in cues)
-          if (!c.isRenderOnly) c.text,
-      ].join('\n'),
+  /// 「生成字幕」嵌进工作台工具栏的选项面板（[VideoSubtitleStudioActions.generatePanel]）：
+  /// 与 [_openJapaneseSubtitlePipeline] 同一个面板、同一套参数，只是不另起弹层。只有
+  /// 本机管线认得到这一集时才有；认不到（不在库里 / 互联远端 / 只能本机转录）返回
+  /// null，工作台退回「生成字幕」那一行按钮走 [_openSubtitleGeneration]。
+  Future<WidgetBuilder?> _subtitleStudioGeneratePanel(
+    VideoPlayerController controller,
+  ) async {
+    final String? videoPath = _currentVideoPath;
+    if (videoPath == null || _isRemote || !_canRunSubtitlePipeline) return null;
+    final AppVideoSubtitleService service = appVideoSubtitleService(appModel);
+    final AppVideoSubtitleTarget target;
+    try {
+      target = await service.resolveBook(_activeBookUid, videoPath: videoPath);
+    } on AppVideoSubtitleTargetNotFound {
+      return null;
+    }
+    final VideoSubtitleInAppTranscribe? inApp = _canTranscribeVideoSpeech
+        ? ({required bool proofread}) => unawaited(
+            _generateSubtitleWithSpeechModel(
+              controller,
+              autoProofread: proofread,
+            ),
+          )
+        : null;
+    // 播放器里正对照着的其它语言字幕交给 AI 校对当参考：工作台盖着播放页期间换不了
+    // 副字幕，打开时取一次即可。
+    final Map<String, List<SubtitleEvidenceTrack>> pinnedEvidence =
+        _playerSubtitleEvidence(controller, videoPath);
+    return (BuildContext context) => VideoSubtitleGenerateSheet(
+      embedded: true,
+      service: service,
+      target: target,
+      prefs: PrefsRepoVideoSubtitleGeneratePrefs(appModel.prefsRepo),
+      openAiSettings: pushAiSettingsPage,
+      onJobStarted: (AppVideoSubtitleJob job) =>
+          unawaited(_applyPipelineSubtitleWhenDone(controller, job, videoPath)),
+      onTranscribeInApp: inApp,
+      pinnedEvidence: pinnedEvidence,
     );
+  }
+
+  /// 打开字幕工作台（[openVideoSubtitleStudioPage]）。参考区读的都是播放器的现值
+  /// （主 / 副字幕 cue、各自扣过调轴的等效位置、裸画面截图），页面开着时随播放实时
+  /// 刷新；工具全部复用本页既有路径，就地跑、进度与结果经 OSD 转给工作台显示。
+  Future<void> _openSubtitleStudio(VideoPlayerController controller) async {
+    // 主字幕语言随工具换轨变化（拆分 / 对轴另存的新档会被选中）：按 cue 列表身份缓存。
+    List<AudioCue> languageCues = controller.cues;
+    SubtitleContentLanguage detect(List<AudioCue> cues) =>
+        detectSubtitleContentLanguage(
+          <String>[
+            for (final AudioCue c in cues)
+              if (!c.isRenderOnly) c.text,
+          ].join('\n'),
+        );
+    SubtitleContentLanguage language = detect(languageCues);
     final bool canGenerate =
         _canTranscribeVideoSpeech || _canRunSubtitlePipeline;
     final VideoSubtitleStudioAiReference? aiReference =
         await _subtitleStudioAiReference();
+    if (!context.mounted || !identical(_controller, controller)) return;
+    final WidgetBuilder? generatePanel = await _subtitleStudioGeneratePanel(
+      controller,
+    );
     if (!context.mounted || !identical(_controller, controller)) return;
     await openVideoSubtitleStudioPage(
       context: context,
@@ -3302,21 +3350,40 @@ extension _VideoSubtitle on _VideoFushiPageState {
           controller.positionMs ?? 0,
           controller.effectiveSecondaryDelayMs,
         ),
-        primaryLanguage: language,
+        primaryLanguage: () {
+          final List<AudioCue> now = controller.cues;
+          if (!identical(now, languageCues)) {
+            languageCues = now;
+            language = detect(now);
+          }
+          return language;
+        },
         captureFrame: controller.screenshot,
         jumpToCue: (AudioCue cue) => unawaited(controller.skipToCue(cue)),
+        notice: () => switch (_osdNotifier.value) {
+          null => null,
+          final _VideoOsdMessage osd => VideoSubtitleStudioNotice(
+            message: osd.message,
+            severity: osd.severity,
+          ),
+        },
+        noticeListenable: _osdNotifier,
       ),
       aiReference: aiReference,
       actions: VideoSubtitleStudioActions(
         generate: canGenerate
             ? () => _openSubtitleGeneration(controller)
             : null,
-        splitBilingual: cues.isEmpty
+        generatePanel: generatePanel,
+        splitBilingual: controller.cues.isEmpty
             ? null
             : () => _extractJapaneseFromBilingualSubtitle(controller),
         retime: _canTranscribeVideoSpeech
             ? () => _retimeSubtitleWithSpeechModel(controller)
             : null,
+        // 重定时先起转录弹层：桌面端在 root navigator 上、盖得住工作台；移动端是本页
+        // 这层的底部 sheet，会被工作台挡住，所以移动端先关工作台再跑。
+        retimeInPlace: isDesktopPlatform,
         alignEmbedded: _currentVideoPath != null
             ? () => _alignSubtitleToEmbeddedTracks(controller)
             : null,

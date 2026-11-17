@@ -39,6 +39,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/toast_severity.dart';
 
 /// 参考区的数据源。全部是**读取函数**而不是快照：面板开着时视频照常播，
 /// [listenable]（播放位置推送）一响就按当前值重算对照表。
@@ -52,6 +53,8 @@ class VideoSubtitleStudioReference {
     required this.primaryLanguage,
     this.captureFrame,
     this.jumpToCue,
+    this.notice,
+    this.noticeListenable,
   });
 
   /// 播放位置变化的推送源（视频页给 `positionMsListenable`）。
@@ -67,14 +70,33 @@ class VideoSubtitleStudioReference {
   final int Function() primaryPositionMs;
   final int Function() secondaryPositionMs;
 
-  /// 主字幕正文语言（视频页开面板时检测一次）；决定「拆出日语」能不能点。
-  final SubtitleContentLanguage primaryLanguage;
+  /// 主字幕正文语言；决定「拆出日语」能不能点。读取函数：工具就地跑完会换主字幕
+  /// （拆分 / 对轴另存的新档被选中），语言跟着变。
+  final SubtitleContentLanguage Function() primaryLanguage;
+
+  /// 播放页当前的提示（OSD）。工具的进度与结果都走播放页的 OSD，工作台是整页、盖住了
+  /// 它，所以由这里转给工作台显示；null = 现在没有提示。
+  final VideoSubtitleStudioNotice? Function()? notice;
+
+  /// [notice] 变化的推送源。
+  final Listenable? noticeListenable;
 
   /// 截取当前画面（裸画面 JPEG）；null = 这种播放来源截不了，不显示画面开关。
   final Future<Uint8List?> Function()? captureFrame;
 
   /// 点对照表某句跳过去；null = 只读。
   final void Function(AudioCue cue)? jumpToCue;
+}
+
+/// 工具跑出来的一条提示（进度 / 结果 / 失败原因）。
+class VideoSubtitleStudioNotice {
+  const VideoSubtitleStudioNotice({
+    required this.message,
+    required this.severity,
+  });
+
+  final String message;
+  final ToastSeverity severity;
 }
 
 /// 画面现在发不到 AI 手里的原因（面板写在「参考画面」那一行下面）。
@@ -112,10 +134,22 @@ class VideoSubtitleStudioAiReference {
 class VideoSubtitleStudioActions {
   const VideoSubtitleStudioActions({
     this.generate,
+    this.generatePanel,
     this.splitBilingual,
     this.retime,
+    this.retimeInPlace = true,
     this.alignEmbedded,
   });
+
+  /// 「生成字幕」的选项面板，直接嵌在工具栏里（对象、语言、识别模型、分段方式、
+  /// AI 校对、任务进度、开始 / 取消 / 继续都在原地）。null = 这个视频走不了本机管线，
+  /// 退回 [generate] 那一行按钮。
+  final WidgetBuilder? generatePanel;
+
+  /// [retime] 能不能留在工作台里跑。它要先起转录弹层：桌面端弹层在 root navigator
+  /// 上、盖得住工作台；移动端是播放页那层的底部 sheet，会被工作台整页挡住，只能先关
+  /// 工作台。
+  final bool retimeInPlace;
 
   /// 生成字幕（原「生成字幕」入口：管线 / 本机转录分流）。
   final Future<void> Function()? generate;
@@ -322,6 +356,12 @@ class _VideoSubtitleStudioPageState extends State<VideoSubtitleStudioPage> {
 
   final ScrollController _tableScroll = ScrollController();
 
+  /// 正在就地跑的工具（[_toolRows] 的 key）；跑着时其它工具不能点。
+  String? _busyTool;
+
+  /// 播放页转过来的最后一条提示。OSD 自己两三秒就消失，工作台留着最后一条。
+  VideoSubtitleStudioNotice? _notice;
+
   /// 上一次跟随到的行（[videoSubtitleStudioAnchorIndex]）；换行才滚、才重截画面。
   int? _anchor;
 
@@ -336,6 +376,7 @@ class _VideoSubtitleStudioPageState extends State<VideoSubtitleStudioPage> {
   void initState() {
     super.initState();
     _ref.listenable.addListener(_onPosition);
+    _ref.noticeListenable?.addListener(_onNotice);
     if (_ref.captureFrame != null) unawaited(_capture());
     // 首帧排完版才有滚动范围：直接跳到当前句（不做动画，打开就在位置上）。
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -355,11 +396,19 @@ class _VideoSubtitleStudioPageState extends State<VideoSubtitleStudioPage> {
       oldWidget.reference.listenable.removeListener(_onPosition);
       _ref.listenable.addListener(_onPosition);
     }
+    if (!identical(
+      oldWidget.reference.noticeListenable,
+      _ref.noticeListenable,
+    )) {
+      oldWidget.reference.noticeListenable?.removeListener(_onNotice);
+      _ref.noticeListenable?.addListener(_onNotice);
+    }
   }
 
   @override
   void dispose() {
     _ref.listenable.removeListener(_onPosition);
+    _ref.noticeListenable?.removeListener(_onNotice);
     _tableScroll.dispose();
     super.dispose();
   }
@@ -483,32 +532,86 @@ class _VideoSubtitleStudioPageState extends State<VideoSubtitleStudioPage> {
     });
   }
 
-  /// 工具都会起自己的弹层 / OSD（OSD 画在播放页上）：先关工作台再跑，免得结果提示
-  /// 被整页盖住。
-  Future<void> _run(Future<void> Function() action) async {
-    await Navigator.of(context).maybePop();
-    await action();
+  void _onNotice() {
+    final VideoSubtitleStudioNotice? notice = _ref.notice?.call();
+    // 提示消失（null）不清：留着最后一条，结果不会一闪而过。
+    if (notice == null || !mounted) return;
+    setState(() => _notice = notice);
+  }
+
+  /// 跑一个工具。[inPlace]：留在工作台里跑——期间其它工具不能点，进度与结果由播放页
+  /// 的提示转过来显示（[VideoSubtitleStudioReference.notice]），跑完换了主字幕表格
+  /// 当场跟着变。不能就地跑的（自己要起一层会被工作台挡住的弹层）先关工作台再跑。
+  Future<void> _run(
+    String key,
+    Future<void> Function() action, {
+    required bool inPlace,
+  }) async {
+    if (_busyTool != null) return;
+    if (!inPlace) {
+      await Navigator.of(context).maybePop();
+      await action();
+      return;
+    }
+    setState(() {
+      _busyTool = key;
+      _notice = null;
+    });
+    try {
+      await action();
+    } finally {
+      if (mounted) setState(() => _busyTool = null);
+    }
   }
 
   bool get _bilingual =>
-      _ref.primaryLanguage == SubtitleContentLanguage.bilingualJaZh;
+      _ref.primaryLanguage() == SubtitleContentLanguage.bilingualJaZh;
 
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final VideoSubtitleStudioAiReference? ai = widget.aiReference;
-    final int toolsAt = ai == null ? 0 : 3;
+    final WidgetBuilder? generatePanel = widget.actions.generatePanel;
+    final int aiAt = generatePanel == null ? 0 : 2;
+    final int toolsAt = aiAt + (ai == null ? 0 : 3);
+    final VideoSubtitleStudioNotice? notice = _notice;
     final Widget tools = SingleChildScrollView(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
+          if (generatePanel != null) ...<Widget>[
+            _sectionTitle(0, t.video_subtitle_ai_generate_title),
+            FushiStaggeredEntrance(
+              index: 1,
+              child: KeyedSubtree(
+                key: const ValueKey<String>(
+                  'video-subtitle-studio-generate-panel',
+                ),
+                child: generatePanel(context),
+              ),
+            ),
+          ],
           if (ai != null) ...<Widget>[
-            _sectionTitle(0, t.video_subtitle_studio_ai_label),
-            ..._aiRows(context, ai, 1),
+            _sectionTitle(aiAt, t.video_subtitle_studio_ai_label),
+            // 生成面板嵌进来时「参考画面」开关在面板的 AI 校对那一项里，不摆两个。
+            ..._aiRows(
+              context,
+              ai,
+              aiAt + 1,
+              showFrames: generatePanel == null,
+            ),
           ],
           _sectionTitle(toolsAt, t.video_subtitle_studio_tools_label),
           ..._toolRows(context, toolsAt + 1),
+          if (_busyTool != null)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(4, 12, 4, 0),
+              child: FushiLinearProgressIndicator(
+                key: ValueKey<String>('video-subtitle-studio-busy'),
+              ),
+            ),
+          if (notice != null) _noticeRow(context, notice),
         ],
       ),
     );
@@ -567,6 +670,31 @@ class _VideoSubtitleStudioPageState extends State<VideoSubtitleStudioPage> {
     ),
   );
 
+  Widget _noticeRow(BuildContext context, VideoSubtitleStudioNotice notice) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final IconData? icon = toastSeverityPalette(notice.severity)?.icon;
+    // 图标形状区分四态（灰阶屏上颜色会塌）；颜色取主题色，深浅主题下都够对比。
+    final Color tint = switch (notice.severity) {
+      ToastSeverity.error => colors.error,
+      ToastSeverity.warning => colors.tertiary,
+      _ => colors.primary,
+    };
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 12, 4, 0),
+      child: Row(
+        key: const ValueKey<String>('video-subtitle-studio-notice'),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        spacing: 8,
+        children: <Widget>[
+          if (icon != null) FushiIcon(icon, size: 18, color: tint),
+          Expanded(
+            child: Text(notice.message, style: context.fushiType.bodyMedium),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _hint(String text, {Key? key}) =>
       Text(text, key: key, style: FushiDesignTokens.of(context).type.metadata);
 
@@ -604,7 +732,7 @@ class _VideoSubtitleStudioPageState extends State<VideoSubtitleStudioPage> {
               child: _hint(
                 t.video_subtitle_studio_track_language(
                   language: videoSubtitleStudioLanguageLabel(
-                    _ref.primaryLanguage,
+                    _ref.primaryLanguage(),
                   ),
                 ),
                 key: const ValueKey<String>('video-subtitle-studio-language'),
@@ -878,8 +1006,9 @@ class _VideoSubtitleStudioPageState extends State<VideoSubtitleStudioPage> {
   List<Widget> _aiRows(
     BuildContext context,
     VideoSubtitleStudioAiReference ai,
-    int firstIndex,
-  ) {
+    int firstIndex, {
+    required bool showFrames,
+  }) {
     final VideoSubtitleStudioFramesProblem? problem = ai.framesProblem();
     final bool framesOn = ai.framesEnabled();
     final String framesHint = switch (problem) {
@@ -895,42 +1024,43 @@ class _VideoSubtitleStudioPageState extends State<VideoSubtitleStudioPage> {
         problem == VideoSubtitleStudioFramesProblem.notLocalFile;
     final String? secondaryLanguage = _secondaryLanguageLabel();
     return <Widget>[
-      FushiStaggeredEntrance(
-        index: firstIndex,
-        child: FushiGroupedListItem(
-          index: 0,
-          count: 2,
-          child: FushiListTileControl(
-            key: const ValueKey<String>('video-subtitle-studio-ai-frames'),
-            leading: const FushiIcon(FushiIcons.image),
-            title: Text(t.video_subtitle_ai_frames_label),
-            subtitle: Text(
-              framesHint,
-              key: const ValueKey<String>(
-                'video-subtitle-studio-ai-frames-hint',
+      if (showFrames)
+        FushiStaggeredEntrance(
+          index: firstIndex,
+          child: FushiGroupedListItem(
+            index: 0,
+            count: 2,
+            child: FushiListTileControl(
+              key: const ValueKey<String>('video-subtitle-studio-ai-frames'),
+              leading: const FushiIcon(FushiIcons.image),
+              title: Text(t.video_subtitle_ai_frames_label),
+              subtitle: Text(
+                framesHint,
+                key: const ValueKey<String>(
+                  'video-subtitle-studio-ai-frames-hint',
+                ),
               ),
-            ),
-            enabled: !framesLocked,
-            trailing: KeyedSubtree(
-              key: const ValueKey<String>(
-                'video-subtitle-studio-ai-frames-switch',
-              ),
-              child: adaptiveSwitch(
-                context: context,
-                value: framesOn && !framesLocked,
-                onChanged: framesLocked
-                    ? null
-                    : (bool v) => unawaited(_setAiFrames(ai, v)),
+              enabled: !framesLocked,
+              trailing: KeyedSubtree(
+                key: const ValueKey<String>(
+                  'video-subtitle-studio-ai-frames-switch',
+                ),
+                child: adaptiveSwitch(
+                  context: context,
+                  value: framesOn && !framesLocked,
+                  onChanged: framesLocked
+                      ? null
+                      : (bool v) => unawaited(_setAiFrames(ai, v)),
+                ),
               ),
             ),
           ),
         ),
-      ),
       FushiStaggeredEntrance(
         index: firstIndex + 1,
         child: FushiGroupedListItem(
-          index: 1,
-          count: 2,
+          index: showFrames ? 1 : 0,
+          count: showFrames ? 2 : 1,
           child: FushiListTileControl(
             key: const ValueKey<String>('video-subtitle-studio-ai-subtitles'),
             leading: const FushiIcon(FushiIcons.language),
@@ -981,15 +1111,16 @@ class _VideoSubtitleStudioPageState extends State<VideoSubtitleStudioPage> {
             Future<void> Function()? action,
           })
         >[
-          (
-            key: 'generate',
-            icon: FushiIcons.subtitles,
-            title: t.video_subtitle_ai_generate_title,
-            hint: a.generate == null
-                ? t.video_subtitle_studio_needs_audio
-                : t.video_subtitle_generate_entry_hint,
-            action: a.generate,
-          ),
+          if (a.generatePanel == null)
+            (
+              key: 'generate',
+              icon: FushiIcons.subtitles,
+              title: t.video_subtitle_ai_generate_title,
+              hint: a.generate == null
+                  ? t.video_subtitle_studio_needs_audio
+                  : t.video_subtitle_generate_entry_hint,
+              action: a.generate,
+            ),
           (
             key: 'split',
             icon: FushiIcons.language,
@@ -1031,11 +1162,19 @@ class _VideoSubtitleStudioPageState extends State<VideoSubtitleStudioPage> {
                 leading: FushiIcon(tools[i].icon),
                 title: Text(tools[i].title),
                 subtitle: Text(tools[i].hint),
-                enabled: tools[i].action != null,
+                enabled: tools[i].action != null && _busyTool == null,
                 onTap: switch (tools[i].action) {
                   null => null,
                   final Future<void> Function() action => () => unawaited(
-                    _run(action),
+                    _run(
+                      tools[i].key,
+                      action,
+                      // 「生成字幕」那一行（没有嵌入面板时的退路）自己起面板，
+                      // 照旧先关工作台。
+                      inPlace:
+                          tools[i].key != 'generate' &&
+                          (tools[i].key != 'retime' || a.retimeInPlace),
+                    ),
                   ),
                 },
               ),

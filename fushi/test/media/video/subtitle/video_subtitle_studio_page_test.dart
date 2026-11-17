@@ -1,6 +1,9 @@
 // 反馈 E1pq561P2q：字幕工作台（生成 / 拆分双语 / 逐句对轴 / 参考面板）。
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_studio_page.dart';
+import 'package:fushi/src/utils/misc/toast_severity.dart';
 import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_content_language.dart';
@@ -181,6 +184,10 @@ void main() {
       bool withRetime = true,
       ValueNotifier<int>? position,
       VideoSubtitleStudioAiReference? ai,
+      bool retimeInPlace = true,
+      WidgetBuilder? generatePanel,
+      ValueNotifier<VideoSubtitleStudioNotice?>? notice,
+      Future<void> Function()? split,
     }) async {
       tester.view
         ..physicalSize = const Size(900, 1600)
@@ -209,16 +216,20 @@ void main() {
                       secondaryCues: () => sec,
                       primaryPositionMs: () => pos.value,
                       secondaryPositionMs: () => pos.value,
-                      primaryLanguage: language,
+                      primaryLanguage: () => language,
                       captureFrame: () async => null,
                       jumpToCue: (AudioCue c) => calls.add('jump ${c.text}'),
+                      notice: notice == null ? null : () => notice.value,
+                      noticeListenable: notice,
                     ),
                     actions: VideoSubtitleStudioActions(
                       generate: () async => calls.add('generate'),
-                      splitBilingual: () async => calls.add('split'),
+                      generatePanel: generatePanel,
+                      splitBilingual: split ?? () async => calls.add('split'),
                       retime: withRetime
                           ? () async => calls.add('retime')
                           : null,
+                      retimeInPlace: retimeInPlace,
                       alignEmbedded: () async => calls.add('align'),
                     ),
                     aiReference: ai,
@@ -507,8 +518,8 @@ void main() {
       expect(calls, <String>['jump 日本語4']);
     });
 
-    testWidgets('split is enabled only for bilingual subtitles and closes the '
-        'workbench before running', (WidgetTester tester) async {
+    testWidgets('split is enabled only for bilingual subtitles and runs with '
+        'the workbench still open', (WidgetTester tester) async {
       List<String> calls = await pump(
         tester,
         language: SubtitleContentLanguage.japanese,
@@ -525,7 +536,80 @@ void main() {
       await tester.tap(byKey('video-subtitle-studio-split'));
       await tester.pumpAndSettle();
       expect(calls, <String>['split']);
-      expect(byKey('video-subtitle-studio-split'), findsNothing);
+      expect(byKey('video-subtitle-studio-split'), findsOneWidget);
+    });
+
+    testWidgets('a running tool shows progress, blocks the other tools and '
+        'shows what the player reports', (WidgetTester tester) async {
+      final Completer<void> running = Completer<void>();
+      final ValueNotifier<VideoSubtitleStudioNotice?> notice =
+          ValueNotifier<VideoSubtitleStudioNotice?>(null);
+      final List<String> calls = await pump(
+        tester,
+        language: SubtitleContentLanguage.bilingualJaZh,
+        notice: notice,
+        split: () => running.future,
+      );
+      expect(byKey('video-subtitle-studio-busy'), findsNothing);
+      expect(byKey('video-subtitle-studio-notice'), findsNothing);
+
+      await tester.tap(byKey('video-subtitle-studio-split'));
+      await tester.pump();
+      expect(byKey('video-subtitle-studio-busy'), findsOneWidget);
+      // 跑着的时候别的工具点不动。
+      await tester.tap(byKey('video-subtitle-studio-align'));
+      await tester.pump();
+      expect(calls, isEmpty);
+
+      notice.value = const VideoSubtitleStudioNotice(
+        message: 'split into 5 lines',
+        severity: ToastSeverity.success,
+      );
+      await tester.pump();
+      expect(find.text('split into 5 lines'), findsOneWidget);
+      // 播放页的提示自己消失了，工作台仍留着最后一条。
+      notice.value = null;
+      running.complete();
+      await tester.pumpAndSettle();
+      expect(byKey('video-subtitle-studio-busy'), findsNothing);
+      expect(find.text('split into 5 lines'), findsOneWidget);
+
+      await tester.tap(byKey('video-subtitle-studio-align'));
+      await tester.pumpAndSettle();
+      expect(calls, <String>['align']);
+    });
+
+    testWidgets('retime closes the workbench first where its sheet would be '
+        'hidden behind the page', (WidgetTester tester) async {
+      final List<String> calls = await pump(
+        tester,
+        language: SubtitleContentLanguage.japanese,
+        retimeInPlace: false,
+      );
+      await tester.tap(byKey('video-subtitle-studio-retime'));
+      await tester.pumpAndSettle();
+      expect(calls, <String>['retime']);
+      expect(byKey('video-subtitle-studio-retime'), findsNothing);
+    });
+
+    testWidgets('an embedded generate panel replaces the generate row and the '
+        'duplicate frames switch', (WidgetTester tester) async {
+      await pump(
+        tester,
+        language: SubtitleContentLanguage.japanese,
+        generatePanel: (BuildContext context) => const Text('generate options'),
+        ai: VideoSubtitleStudioAiReference(
+          framesEnabled: () => false,
+          setFramesEnabled: (BuildContext context, bool value) async {},
+          framesProblem: () => null,
+        ),
+      );
+      expect(byKey('video-subtitle-studio-generate-panel'), findsOneWidget);
+      expect(find.text('generate options'), findsOneWidget);
+      expect(byKey('video-subtitle-studio-generate'), findsNothing);
+      expect(byKey('video-subtitle-studio-ai-frames'), findsNothing);
+      // 其它语言字幕那一行（说明哪些字幕会交给 AI）仍在。
+      expect(byKey('video-subtitle-studio-ai-subtitles'), findsOneWidget);
     });
 
     testWidgets('tools dispatch their actions; unavailable ones do nothing', (
@@ -542,6 +626,8 @@ void main() {
       await tester.tap(byKey('video-subtitle-studio-generate'));
       await tester.pumpAndSettle();
       expect(calls, <String>['generate']);
+      // 没有嵌入面板时「生成字幕」自己起面板：照旧先关工作台。
+      expect(byKey('video-subtitle-studio-generate'), findsNothing);
 
       calls = await pump(tester, language: SubtitleContentLanguage.japanese);
       await tester.tap(byKey('video-subtitle-studio-retime'));

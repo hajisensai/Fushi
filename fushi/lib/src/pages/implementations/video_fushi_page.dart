@@ -152,6 +152,7 @@ import 'package:fushi/src/media/video/subtitle/video_subtitle_studio_page.dart'
         VideoSubtitleStudioActions,
         VideoSubtitleStudioAiReference,
         VideoSubtitleStudioFramesProblem,
+        VideoSubtitleStudioNotice,
         VideoSubtitleStudioReference,
         openVideoSubtitleStudioPage,
         videoSubtitleStudioEvidenceTrack;
@@ -170,6 +171,7 @@ import 'package:fushi_engine/utils/misc/safe_file_name.dart'
 import 'package:fushi/src/media/video/subtitle/video_subtitle_generate_sheet.dart'
     show
         PrefsRepoVideoSubtitleGeneratePrefs,
+        VideoSubtitleGenerateSheet,
         VideoSubtitleInAppTranscribe,
         confirmVideoSubtitleAiFrames,
         showVideoSubtitleGenerateSheet,
