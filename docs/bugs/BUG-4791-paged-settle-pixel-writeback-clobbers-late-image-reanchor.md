@@ -5,7 +5,7 @@
   - `:3065` `_alignRangeToPage`：揭示落页后 `requestAnimationFrame` 再写一次捕获的 `targetScroll`（跟读淡入分支 `:3056` 同样拿旧值比较），没有代际判断。
   - 被盖掉的正当改写：未完成的图 `load` 时 `_sharedInitImages` 调 `reapplyImageLateAnchor()` 按语义锚把视口挪到正确页（`:2639-2652`、`:1431`）；用户翻页 `paginate`；程序化揭示替换目标。`setPagePosition` 只钳位后赋值（`:2921`）。图片在窗口内 load 后被写回旧页，之后没有别的图 load 就再没人纠正，随后的进度回传把错位置落库——正是迟到图片语义重锚（BUG-1140 第二轮 / BUG-2744）要消除的漂移，窗口缩到了 16 ms / 一帧。
   - 触发前提是「initialize 时还有未完成的图」或揭示后一帧内有翻页 / 图片 load。引擎在 `onLoadStop` 之后注入、正文图一律 eager，多数平台此时图已完成，所以实际触发概率给不出；连续 shell 的同名函数只通知不写位置，不受影响。
-- **[x] ① 已修复** — `fushi/lib/src/reader/reader_pagination_scripts.dart`：
+- **[x] ① 已修复**（提交 5e25717a479）— `fushi/lib/src/reader/reader_pagination_scripts.dart`：
   - 分页 `_settleAndNotify()` 不再接收 `(context, pos)`；定时器回调改为 `reapplyImageLateAnchor()`（按仍登记着的语义锚——字符 / progress / fragment / 揭示目标——重算落点，与图片 load 同一条路，对稳定排版幂等，保住「等一帧防 reflow 把 scroll 归零」的原意）→ `registerSnapScroll(此刻的真实位置)` → `notifyRestoreComplete()`。锚已被清（用户翻页 / 滚动意图）= 位置已归别人所有，回调不写位置。
   - `clearImageLateAnchor` 维护锚代际 `__imgAnchorGen`（每次替换 / 清除 +1）；`_alignRangeToPage` 的下一帧回调改走 `_realignRevealTarget(range, anchorGen, keepPageTurn)`：代际变了不动，没变则按 range **现在**的几何重新落页（跟读淡入分支仍只在位置不符时瞬时改写、不打断动画）。
   - 没有加延迟 / 重试；仍是一层 16 ms。
