@@ -52,37 +52,67 @@ class WebMineQueueStore {
         .get();
   }
 
-  /// 有待办的书，按各自最早一条待办的入队顺序（后台空闲自动制卡逐本跑）。
+  /// 有**网页档**待办的书，按各自最早一条待办的入队顺序（后台空闲自动制卡逐本跑）。
+  ///
+  /// 只取 `bookUid` 一列，在库里分组：调度每 30 秒问一次，整行读会把每条待办的
+  /// `fieldsJson`（整份 Anki 字段，含词典释义）一起搬进 UI isolate，再在 Dart 里丢掉。
+  /// `href != ''` 排掉本地视频「看完再制卡」的暂存行（`VideoMineQueue.stage` 写空
+  /// `href`）：它们共用这张表，但媒体早已备好、不靠重放，后台重放调度认领不了。
+  /// 这条过滤只属于本查询——[pending] 是两边共用的，不能带上。
   Future<List<String>> pendingBookUids() async {
-    final List<WebMineQueueRow> rows =
-        await (db.select(db.webMineQueue)
+    final Expression<int> firstId = db.webMineQueue.id.min();
+    final List<TypedResult> rows =
+        await (db.selectOnly(db.webMineQueue)
+              ..addColumns(<Expression<Object>>[db.webMineQueue.bookUid])
               ..where(
-                ($WebMineQueueTable t) =>
-                    t.status.equals(WebMineQueueStatus.pending),
+                db.webMineQueue.status.equals(WebMineQueueStatus.pending) &
+                    db.webMineQueue.href.equals('').not(),
               )
-              ..orderBy(<OrderingTerm Function($WebMineQueueTable)>[
-                ($WebMineQueueTable t) => OrderingTerm.asc(t.id),
-              ]))
+              ..groupBy(<Expression<Object>>[db.webMineQueue.bookUid])
+              ..orderBy(<OrderingTerm>[OrderingTerm.asc(firstId)]))
             .get();
-    return <String>{
-      for (final WebMineQueueRow row in rows) row.bookUid,
-    }.toList();
+    return <String>[
+      for (final TypedResult row in rows) row.read(db.webMineQueue.bookUid)!,
+    ];
   }
 
-  Future<int> pendingCount(String bookUid) async =>
-      (await pending(bookUid)).length;
+  /// [bookUid] 的待办条数。`COUNT(*)`，不读行（每次入队、每轮结束都要问一次）。
+  Future<int> pendingCount(String bookUid) =>
+      _count(bookUid, const <String>[WebMineQueueStatus.pending]);
 
-  Future<void> markDone(int id, {int? noteId, String? warning}) {
-    return (db.update(
-      db.webMineQueue,
-    )..where(($WebMineQueueTable t) => t.id.equals(id))).write(
-      WebMineQueueCompanion(
-        status: const Value<String>(WebMineQueueStatus.done),
-        noteId: Value<int?>(noteId),
-        error: Value<String?>(warning),
-        minedAt: Value<int?>(DateTime.now().millisecondsSinceEpoch),
-      ),
-    );
+  /// [bookUid] 还留在队列里的条数（待办 + 失败），角标用。
+  Future<int> openCount(String bookUid) => _count(bookUid, const <String>[
+    WebMineQueueStatus.pending,
+    WebMineQueueStatus.failed,
+  ]);
+
+  Future<int> _count(String bookUid, List<String> statuses) async {
+    final Expression<int> rows = countAll();
+    final TypedResult result =
+        await (db.selectOnly(db.webMineQueue)
+              ..addColumns(<Expression<Object>>[rows])
+              ..where(
+                db.webMineQueue.bookUid.equals(bookUid) &
+                    db.webMineQueue.status.isIn(statuses),
+              ))
+            .getSingle();
+    return result.read(rows) ?? 0;
+  }
+
+  /// 一行写完了：直接出表。
+  ///
+  /// 完成行没有任何读取方（列表、角标、调度都只看 pending / failed），留着只会让
+  /// 每条都带整份 `fieldsJson` 的表无限长大。同一条语句顺手带走旧版本留下的 `done`
+  /// 行（那时完成只改状态不删行）——之后表里不再出现 `done`，这半句就是空操作。
+  ///
+  /// [noteId] / [warning] 不再落库（行已经不在了）；参数留着是因为网页档的调用方
+  /// 仍在传。
+  Future<void> markDone(int id, {int? noteId, String? warning}) async {
+    await (db.delete(db.webMineQueue)..where(
+          ($WebMineQueueTable t) =>
+              t.id.equals(id) | t.status.equals(WebMineQueueStatus.done),
+        ))
+        .go();
   }
 
   Future<void> markFailed(int id, String error) {
@@ -115,16 +145,6 @@ class WebMineQueueStore {
   Future<int> remove(int id) => (db.delete(
     db.webMineQueue,
   )..where(($WebMineQueueTable t) => t.id.equals(id))).go();
-
-  /// 清掉已完成 / 失败的历史行。
-  Future<int> deleteFinished(String bookUid) {
-    return (db.delete(db.webMineQueue)..where(
-          ($WebMineQueueTable t) =>
-              t.bookUid.equals(bookUid) &
-              t.status.equals(WebMineQueueStatus.pending).not(),
-        ))
-        .go();
-  }
 }
 
 /// 行里冻结的 Anki 字段映射。
