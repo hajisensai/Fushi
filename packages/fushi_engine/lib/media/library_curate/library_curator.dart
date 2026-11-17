@@ -778,10 +778,7 @@ class LibraryCurator {
       final _Write w = await _write(
         ctx,
         LibraryCurateOps.linksInfer,
-        <String, Object?>{
-          'endpoints': batch,
-          'trigger': auto ? 'auto' : 'manual',
-        },
+        <String, Object?>{'items': batch, 'trigger': auto ? 'auto' : 'manual'},
       );
       if (w.unavailable || w.needsConfirmation) {
         incomplete = true;
@@ -1024,8 +1021,7 @@ class LibraryCurator {
       case LibraryCurateOps.videoWorkIdentify:
         if (args['id'] != null) yield 'scrape:${args['id']}';
       case LibraryCurateOps.linksInfer:
-        for (final Object? e
-            in (args['endpoints'] as List?) ?? const <Object?>[]) {
+        for (final Object? e in (args['items'] as List?) ?? const <Object?>[]) {
           yield 'links:$e';
         }
     }

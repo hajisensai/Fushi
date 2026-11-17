@@ -64,7 +64,6 @@ List<OpDescription> describeLibraryCurateOps(OpDescribeKit kit) {
           'skipped when none is assigned. Undo reverts every write of the run. '
           'Slow; check library.curate.estimate first for the request count.',
       risk: OpRisk.write,
-      longRunning: true,
       params: const <OpParam>[
         OpParam.boolean(
           'full',
@@ -179,7 +178,7 @@ List<OpDescription> describeLibraryCurateOps(OpDescribeKit kit) {
       risk: OpRisk.write,
       params: const <OpParam>[
         OpParam.stringList(
-          'endpoints',
+          'items',
           description: 'Items as <kind>:<key> (from links.candidates), max 50.',
           required: true,
         ),

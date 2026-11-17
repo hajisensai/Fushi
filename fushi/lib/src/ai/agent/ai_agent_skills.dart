@@ -10,6 +10,7 @@ List<AiAgentAppSkill> buildAiAgentSkills() => <AiAgentAppSkill>[
   ScrapeResolveSkill(),
   ExtensionFindSkill(),
   SrsConflictsResolveSkill(),
+  CurateLibrarySkill(),
 ];
 
 /// app 侧技能：声明它要用的操作；任一当前不可用（模块关、平台 / 合规不支持）时
@@ -725,6 +726,78 @@ class SrsConflictsResolveSkill extends AiAgentAppSkill {
         listed.data,
         'pendingNotes',
       ).length,
+    };
+  }
+}
+
+/// 「整理整个库」（AI 库管家设计稿 `docs/specs/2026-11-18-ai-library-curator-design.md`
+/// §3 / §9）：先估算这一趟大约要发多少次 AI 请求，再跑一趟库管家（合集归属 → 认
+/// 身份 → 作品关系 → 作品层）。步骤全由库管家的代码编排，模型只决定要不要跑、
+/// 全量还是增量；整趟作为一条操作记录落在本会话里，撤销它 = 整趟撤销。
+class CurateLibrarySkill extends AiAgentAppSkill {
+  @override
+  List<String> get requiredOps => const <String>[
+    'library.curate.estimate',
+    'library.curate.run',
+  ];
+
+  @override
+  AgentToolSpec get spec => const AgentToolSpec(
+    name: 'skill.curate_library',
+    description:
+        'Tidy the whole library in one go: organize collection membership, '
+        'identify unscraped video works, link related works across media '
+        '(novel / manga / anime / game / music) and refresh the work layer. '
+        'Only items added since the last run unless full=true. Use when the '
+        'user asks to organize / clean up / sort out the library. Undo '
+        'reverts the whole run.',
+    parameters: <String, Object?>{
+      'type': 'object',
+      'properties': <String, Object?>{
+        'full': <String, Object?>{
+          'type': 'boolean',
+          'description': 'Go through the whole library, not just new items.',
+        },
+      },
+    },
+    risk: AgentToolRisk.write,
+    undoable: true,
+    longRunning: true,
+  );
+
+  @override
+  Future<Object?> run(
+    AgentSkillContext context,
+    Map<String, Object?> args,
+  ) async {
+    final bool full = args['full'] == true;
+    final AgentToolResult estimate = await context.call(
+      'library.curate.estimate',
+      <String, Object?>{if (full) 'full': true},
+    );
+    if (estimate.isError) {
+      throw AgentSkillFailure(estimate.errorCode!, estimate.errorMessage);
+    }
+    if (context.cancelled) return <String, Object?>{'cancelled': true};
+    final AgentToolResult run = await context.call(
+      'library.curate.run',
+      <String, Object?>{if (full) 'full': true},
+    );
+    if (run.isError) {
+      throw AgentSkillFailure(run.errorCode!, run.errorMessage);
+    }
+    final Map<String, Object?> r = _map(run.data);
+    return <String, Object?>{
+      'estimate': estimate.data,
+      'runId': r['id'],
+      'status': r['status'],
+      'changes': r['changes'],
+      'pending': r['pending'],
+      'requests': r['requests'],
+      'stages': r['stages'],
+      'note':
+          'Items left for the user are listed by library.curate.pending; '
+          'undo this action to revert the whole run.',
     };
   }
 }

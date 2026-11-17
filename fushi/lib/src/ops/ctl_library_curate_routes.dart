@@ -176,10 +176,10 @@ List<CtlRoute> buildLibraryCurateCtlRoutesFor({
     // ④ 一批端点的关系推断（库管家内部步骤；撤销回执随结果返回）。
     CtlRoute.post('$kLibraryCurateCtlRoot/links/infer', (CtlCall call) async {
       requireWritable();
-      final List<String> raw = call.stringList('endpoints');
-      if (raw.isEmpty) throw const CtlFailure.badRequest('endpoints 缺失');
+      final List<String> raw = call.stringList('items');
+      if (raw.isEmpty) throw const CtlFailure.badRequest('items 缺失');
       if (raw.length > 50) {
-        throw const CtlFailure.badRequest('一次最多 50 个端点');
+        throw const CtlFailure.badRequest('一次最多 50 个条目');
       }
       final List<MediaLinkEndpoint> endpoints = <MediaLinkEndpoint>[
         for (final String e in raw) parseMediaLinkEndpoint(e),

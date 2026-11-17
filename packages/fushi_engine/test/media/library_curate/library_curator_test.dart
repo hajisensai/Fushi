@@ -285,13 +285,13 @@ void main() {
         LibraryCurateOps.linksInfer,
         (Map<String, Object?> a) async {
           final List<String> written = <String>[
-            for (final Object? e in a['endpoints']! as List)
+            for (final Object? e in a['items']! as List)
               if (library.links.add('$e~work')) '$e~work',
           ];
           return <String, Object?>{
             'applied': written.length,
             'suggested': 0,
-            'requests': (a['endpoints']! as List).length,
+            'requests': (a['items']! as List).length,
             'failed': <Object?>[],
             'writes': written,
           };
@@ -479,7 +479,7 @@ void main() {
     expect(first.requests, lessThanOrEqualTo(7));
     final List<Object?> firstEndpoints = <Object?>[
       for (final Map<String, Object?> a in toolbox.args)
-        if (a.containsKey('endpoints')) ...a['endpoints']! as List,
+        if (a.containsKey('items')) ...a['items']! as List,
     ];
     expect(firstEndpoints, <String>['book:a', 'book:b']);
     // 音乐那一步的 AI 也没额度：只跑声纹 / 本地标题。
@@ -490,7 +490,7 @@ void main() {
     await c.run(trigger: LibraryCurateTrigger.auto);
     final List<Object?> secondEndpoints = <Object?>[
       for (final Map<String, Object?> a in toolbox.args)
-        if (a.containsKey('endpoints')) ...a['endpoints']! as List,
+        if (a.containsKey('items')) ...a['items']! as List,
     ];
     expect(secondEndpoints, <String>['book:c', 'game:g']);
   });
