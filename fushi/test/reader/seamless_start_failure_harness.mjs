@@ -1,4 +1,4 @@
-// BUG-4791：无缝衔接模块启动失败后的行为，在真 Chrome 里跑生产安装脚本。
+// BUG-4798：无缝衔接模块启动失败后的行为，在真 Chrome 里跑生产安装脚本。
 // 由 seamless_start_failure_test.dart 执行，argv[2] = payload.json（kSeamlessChaptersInstallJs）。
 //
 // 修前：S.start 在 `_starting = true` 之后的任何一步 reject / 抛异常都不复位，

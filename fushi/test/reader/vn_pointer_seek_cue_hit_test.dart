@@ -23,7 +23,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// Chrome 里按字形坐标点，断言反查到所属句子（含逐字配对 ruby 的基字与注音、跟随
 /// 包裹之后、换屏之后）。
 ///
-/// BUG-4792：BUG-3738 只补了 Sasayaki cue（`{type:'frag'}`）这一半。合成书（SRT / VTT /
+/// BUG-4799：BUG-3738 只补了 Sasayaki cue（`{type:'frag'}`）这一半。合成书（SRT / VTT /
 /// LRC）的句子不进 `sentenceAudioCues`，身份在正文的 `[data-cue-id]` 上，VN 下中键与
 /// 长按选区的「从此句播放」仍恒拿到 null。跑手的第二个页面不下发任何 cue、只在正文里带
 /// `[data-cue-id]`，断言 `cueIdAtPoint` / `cueIdAtDomPoint` 都回 `{type:'sid'}`。

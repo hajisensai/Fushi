@@ -7,7 +7,7 @@ import 'dart:io';
 import 'package:fushi/src/reader/reader_seamless_chapters_script.dart';
 import 'package:test/test.dart';
 
-/// BUG-4791：连续模式章节无缝衔接启动失败后，这一章里翻不到下一章。
+/// BUG-4798：连续模式章节无缝衔接启动失败后，这一章里翻不到下一章。
 ///
 /// 根因：`S.start` 在 `_starting = true` 之后的章节 / 样式表请求 reject（或解析抛异常）
 /// 时不复位，`claimBoundaryTurn` 的「正在启动 → 这一侧归本模块」从此恒真，三条边界换章
