@@ -1226,6 +1226,39 @@ pub(crate) fn builtin_rule_canon(salts: &[String]) -> RuleCanon {
     out
 }
 
+/// 内置笔记类型的规范模板 [tpl]（所属笔记类型的规范 ID 是 [nt]）在 [nt] 的各成员 [nt_members] 下的存量模板 ID
+/// （`rules::template(成员, 模板号)`）；[nt] 不是内置笔记类型的规范 ID、[tpl] 不是它的内置模板 = 空。
+///
+/// 内置模板只嵌在宿主缓存配置的代码默认定义里、从不作为实体出现，别名表里没有它的带盐 ID（同带盐的内置字段，
+/// [Index::canonical_embedded]）。缓存层的数字 id 反查表（`cache.rs` `member_numbers`）要拿它配出协议 3 那张卡的 ID：
+/// 由笔记类型的成员（作为实体出现过、都在别名表里）按规则算，与盐集合无关，跟着笔记类型的别名类一起变。
+pub(crate) fn builtin_template_members(nt: &Ref, nt_members: &[Ref], tpl: &Ref) -> Vec<Ref> {
+    let Ref::Uuid(nt_b) = nt else {
+        return Vec::new();
+    };
+    let canon_nt = Id(*nt_b);
+    for b in BUILTIN_NOTE_TYPES {
+        if rules::note_type(rules::CANONICAL, rules::builtin_note_type_anki_num(b.key)) != canon_nt
+        {
+            continue;
+        }
+        for t in b.template_keys {
+            let n = rules::builtin_template_anki_num(b.key, t);
+            if Ref::Uuid(rules::template(&canon_nt, n).0) != *tpl {
+                continue;
+            }
+            return nt_members
+                .iter()
+                .filter_map(|m| match m {
+                    Ref::Uuid(b) => Some(Ref::Uuid(rules::template(&Id(*b), n).0)),
+                    Ref::Text(_) => None,
+                })
+                .collect();
+        }
+    }
+    Vec::new()
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;

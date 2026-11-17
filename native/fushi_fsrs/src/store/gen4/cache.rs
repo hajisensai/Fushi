@@ -23,7 +23,8 @@
 //!   一起重写，[Index::member_numbers]）。笔记的成员 = 别名类里出现过的成员；卡的成员 = 别名类里出现过的成员，
 //!   **加上从没在操作里出现过的带盐卡**：笔记的成员 × 模板的成员按卡的公式（`gen4_ids::rules::card`）算出来的 ID
 //!   ——协议 3 给从没复习、没改过的卡也发了号（缓存行的 `anki_id`），新代的别名表里没有那个带盐 ID（它只记操作里
-//!   出现过的 ID），号从这里来。每一边都取规范 ID 自己加出现过的成员：随机 ID 的笔记（规范 ID 就是它协议 3 的 ID）配
+//!   出现过的 ID），号从这里来。内置笔记类型的模板从不作为实体出现（只嵌在宿主配置里），它的成员由笔记类型的成员
+//!   按规则算（`class.rs` `builtin_template_members`）。每一边都取规范 ID 自己加出现过的成员：随机 ID 的笔记（规范 ID 就是它协议 3 的 ID）配
 //!   带盐的模板、带盐的笔记配内置模板时规范 ID 那一边就是旧号的来源，类里另有成员（随机 ID 笔记的旧并入兜底副本，
 //!   `gen4_ids::alias` 的 `root_fallbacks`）时也不能丢；规范 ID 是新代才有的那种（带盐的类）多出来的组合没有旧号，
 //!   不撞别人的号就无害（与多盐交叉组合是同一类取舍；规范卡自己那个组合不写，它的号在 `cards.anki_id`）。
@@ -113,6 +114,7 @@ use rusqlite::types::ValueRef;
 use rusqlite::{OptionalExtension, params};
 use serde_json::{Value, json};
 
+use super::class::builtin_template_members;
 use super::derive::{Index, R_LIVE, Ref, Reg, Settled, body_of};
 use super::schema::sql;
 use crate::gen4::heritage::SlotBody;
@@ -1282,11 +1284,12 @@ impl<'t, 'c> Index<'t, 'c> {
         Ok(caches::type_info_of(&payload, &stored, cfg).ok())
     }
 
-    /// 规范笔记 [n] 在 `anki_members` 里的行（文件头「表」）：先删旧的，再按它现在的别名类与应有的卡 [cards]
-    /// （(规范卡, 规范模板, cloze 序号)）写。[all] = 全量物化（表已空，不删）。
+    /// 规范笔记 [n]（规范笔记类型 [nt]）在 `anki_members` 里的行（文件头「表」）：先删旧的，再按它现在的别名类与应有的卡
+    /// [cards]（(规范卡, 规范模板, cloze 序号)）写。[all] = 全量物化（表已空，不删）。
     fn member_numbers(
         &self,
         n: &Ref,
+        nt: &Ref,
         cards: &[(Ref, Ref, i64)],
         all: bool,
         tmpl_members: &mut HashMap<Ref, Vec<Ref>>,
@@ -1330,7 +1333,15 @@ impl<'t, 'c> Index<'t, 'c> {
         let notes = side(&note_members, n);
         for (card, tpl, ord) in cards {
             if !tmpl_members.contains_key(tpl) {
-                let m = self.aliases_of(tpl)?;
+                let mut m = self.aliases_of(tpl)?;
+                // 内置模板从不作为实体出现、别名表里没有它的带盐 ID：由笔记类型的成员按规则算回来（协议 3 给从没复习过
+                // 的内置笔记的卡也发了号，那张卡的 ID 由带盐笔记 × 带盐模板配出）。
+                let nt_members = self.aliases_of(nt)?;
+                for x in builtin_template_members(nt, &nt_members, tpl) {
+                    if !m.contains(&x) {
+                        m.push(x);
+                    }
+                }
                 tmpl_members.insert(tpl.clone(), m);
             }
             let tpls = side(&tmpl_members[tpl], tpl);
@@ -1475,7 +1486,7 @@ impl<'t, 'c> Index<'t, 'c> {
                 .zip(&row.expected)
                 .map(|(c, (_, tpl, ord, _))| (c.clone(), ref_of(tpl), *ord))
                 .collect();
-            self.member_numbers(n, &shape, all, &mut tmpl_members)?;
+            self.member_numbers(n, &tref, &shape, all, &mut tmpl_members)?;
             for c in existing.iter().filter(|c| !expected.contains(c)) {
                 self.t
                     .conn()

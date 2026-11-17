@@ -1103,11 +1103,14 @@ fn every_protocol_3_card_number_resolves_after_migration() {
 /// profile uid 加盐的存量 ID，字段 ID 只嵌在笔记的 `f/<字段>` 键里，卡从没出现在操作里，评分日志带作答时的配置快照
 /// （`sc`，迁移后会重放）。迁移只拿到宿主的**规范**缓存配置（Dart `srsCacheConfigFor`，不带盐），对拍时协议 3 那份由
 /// 内核派生：迁移判 committed、对拍与规范化都没有差异；迁移后每条笔记字段不空、每张卡不隐藏，到期日、间隔逐张与协议 3
-/// 当时算的相同（fuzz 种子是作答时的带盐卡，不是规范卡）。
+/// 当时算的相同（fuzz 种子是作答时的带盐卡，不是规范卡）。另有两条从没复习、没改过的笔记（卡从没出现在任何操作里，
+/// 内置模板只嵌在宿主配置里）：协议 3 给每张卡发的 AnkiConnect 数字 id 迁移后都按号反查得到对应的规范卡。
 #[test]
 fn a_salted_library_of_untouched_builtin_note_types_migrates_unchanged() {
     use crate::gen4_ids::rules::{self, CANONICAL};
+    use crate::store::gen4::cmd::columns::anki_resolve;
     use crate::store::gen4::derive::Ref;
+    use crate::store::gen4::truth::Truth;
     use crate::store::sync2::config::default_deck_id;
     use crate::store::sync2::tests::{DAY, deck_entity, edit, review};
     use crate::sync2::id::Key;
@@ -1144,6 +1147,8 @@ fn a_salted_library_of_untouched_builtin_note_types_migrates_unchanged() {
         rules::builtin_default_deck(Some(P)).text()
     );
     let words = ["猫", "犬", "鳥", "魚", "馬", "牛", "羊", "猿"];
+    // 从没复习过的两条（卡不进任何操作）。
+    let quiet = ["鹿", "熊"];
 
     let d = Device::new("k1-builtin");
     d.core.sync2_identity(P, T0).unwrap();
@@ -1155,7 +1160,7 @@ fn a_salted_library_of_untouched_builtin_note_types_migrates_unchanged() {
     ];
     // (带盐卡, 规范卡, 带盐笔记)
     let mut cards: Vec<(String, Id, String)> = Vec::new();
-    for (i, w) in words.iter().enumerate() {
+    for (i, w) in words.iter().chain(&quiet).enumerate() {
         let guid = format!("k1-guid-{i}");
         let note = rules::note(Some(P), &guid);
         events.push(
@@ -1179,7 +1184,7 @@ fn a_salted_library_of_untouched_builtin_note_types_migrates_unchanged() {
     // 的日志（`alias.rs` `alias_evidence`），日志上的卡才算观察到、才认得出它是哪张规范卡。
     for (k, at) in [0, DAY, 3 * DAY, 8 * DAY, 20 * DAY].into_iter().enumerate() {
         let rtype = if k == 0 { "learn" } else { "review" };
-        let logs: Vec<Value> = cards
+        let logs: Vec<Value> = cards[..words.len()]
             .iter()
             .enumerate()
             .map(|(i, (c, _, n))| {
@@ -1216,7 +1221,21 @@ fn a_salted_library_of_untouched_builtin_note_types_migrates_unchanged() {
             .collect::<Result<_, _>>()
             .unwrap()
     };
-    assert_eq!(old.len(), words.len(), "{old:?}");
+    assert_eq!(old.len(), words.len() + quiet.len(), "{old:?}");
+    // 协议 3 发的数字 id：带盐卡 → 号。
+    let old_nums: Vec<(String, i64)> = {
+        let c = raw(&dir.0);
+        let mut stmt = c
+            .prepare(
+                "SELECT srs_idt(id), anki_id FROM srs_cards_cache WHERE profile_uid = srs_id(?1) ORDER BY 1",
+            )
+            .unwrap();
+        stmt.query_map([P], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    };
+    assert_eq!(old_nums.len(), old.len());
     assert!(
         old.values().all(|v| v.2 == 0),
         "protocol 3 shows every card: {old:?}"
@@ -1246,7 +1265,11 @@ fn a_salted_library_of_untouched_builtin_note_types_migrates_unchanged() {
         .collect::<Result<_, _>>()
         .unwrap();
     sorts.sort();
-    let mut want: Vec<String> = words.iter().map(|w| (*w).to_owned()).collect();
+    let mut want: Vec<String> = words
+        .iter()
+        .chain(&quiet)
+        .map(|w| (*w).to_owned())
+        .collect();
     want.sort();
     assert_eq!(sorts, want, "every note keeps its field");
     for (salted_card, canon, _) in &cards {
@@ -1263,6 +1286,18 @@ fn a_salted_library_of_untouched_builtin_note_types_migrates_unchanged() {
             old[salted_card],
             "card {salted_card} → {}",
             canon.text()
+        );
+    }
+    let t = Truth::new(&opened.conn);
+    let col = t.binding_of(P).unwrap().unwrap().col;
+    let req = json!({"cards": old_nums.iter().map(|(_, n)| *n).collect::<Vec<_>>()});
+    let got = anki_resolve(&t, col, &req).unwrap();
+    for ((salted_card, num), got) in old_nums.iter().zip(got["cards"].as_array().unwrap()) {
+        let want = &cards.iter().find(|c| &c.0 == salted_card).unwrap().1;
+        assert_eq!(
+            got,
+            &json!(want.text()),
+            "protocol 3 card {salted_card} (#{num}) resolves to its canonical card"
         );
     }
 }
