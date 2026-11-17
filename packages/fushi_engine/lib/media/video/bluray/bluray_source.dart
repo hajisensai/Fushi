@@ -32,6 +32,7 @@ import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/media/video/bluray/bluray_angle.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_clip_info.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_episode.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_playlist.dart';
@@ -110,8 +111,12 @@ Future<BluraySource?> resolveBluraySource(String playlistPath) async {
 /// 读不了、解析不出、或分集对不上（盘被换过 / 这条播放列表不再切集）时返回 null。
 Future<BlurayPlaylist?> readBlurayMemberPlaylist(String memberPath) async {
   if (!isBlurayPlaylistPath(memberPath)) return null;
-  final BlurayEpisodeRef? episode = parseBlurayEpisodePath(memberPath);
-  final String filePath = episode?.playlistPath ?? memberPath;
+  // 角度成员路径（`00001.a2.mpls`，见 `bluray_angle.dart`）先拆出角度，按不带角度的
+  // 成员读出播放列表，最后把多角度 PlayItem 换成该角度的片段。
+  final BlurayAngleRef? angle = parseBlurayAnglePath(memberPath);
+  final String member = angle?.memberPath ?? memberPath;
+  final BlurayEpisodeRef? episode = parseBlurayEpisodePath(member);
+  final String filePath = episode?.playlistPath ?? member;
   final Uint8List bytes;
   try {
     final File file = File(filePath);
@@ -124,8 +129,11 @@ Future<BlurayPlaylist?> readBlurayMemberPlaylist(String memberPath) async {
     bytes,
     id: p.basenameWithoutExtension(filePath),
   );
-  if (playlist == null || episode == null) return playlist;
-  return blurayEpisodeForPlayItem(playlist, episode.playItemNumber);
+  final BlurayPlaylist? selected = playlist == null || episode == null
+      ? playlist
+      : blurayEpisodeForPlayItem(playlist, episode.playItemNumber);
+  if (selected == null || angle == null) return selected;
+  return blurayPlaylistForAngle(selected, angle.angleIndex);
 }
 
 /// 读出播放列表用到的每个片段的时间零点。读不到的片段不进表。
