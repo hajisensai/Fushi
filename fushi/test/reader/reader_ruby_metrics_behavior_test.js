@@ -165,9 +165,9 @@ function run(opts) {
   const flush = () => { while (rafQueue.length) { frames++; rafQueue.shift()(); } };
   flush();
   if (opts.measured) opts.measured.push(...measured);
-  if (opts.then) {
+  if (opts.after) {
     const fire = (target) => observers.filter((o) => o.target === target).forEach((o) => o.cb([]));
-    opts.then({
+    opts.after({
       pull: () => props['--fushi-ruby-pull'],
       showRubies: (v) => { rubiesInBody = v; },
       clearPull: () => { delete props['--fushi-ruby-pull']; },
@@ -267,7 +267,7 @@ assert.deepStrictEqual(measured, ['平', '\u{20BB7}'], 'first non-blank code poi
 // must retry until one measurement succeeds, then stop costing anything.
 run({
   noRuby: true, wm: 'vertical-rl', fs: 42, rfs: 18.9, canvas: klee, rubies: [whole],
-  then(ctl) {
+  after(ctl) {
     assert.strictEqual(ctl.pull(), undefined, 'first VN screen has no furigana → nothing yet');
     ctl.bodyMutation();
     assert.strictEqual(ctl.pull(), undefined, 'still no furigana on the next screen');
@@ -296,7 +296,7 @@ run({
 // first measurement settles: later body mutations schedule nothing.
 run({
   snap: false, wm: 'vertical-rl', fs: 42, rfs: 18.9, canvas: klee, rubies: [whole],
-  then(ctl) {
+  after(ctl) {
     const frames = ctl.frames();
     const probes = ctl.probes();
     assert.strictEqual(ctl.snapReads(), 1, 'the marker is read once');
@@ -316,7 +316,7 @@ run({
 // "no marker" may just mean "not styled yet", so the script keeps waiting.
 run({
   snap: false, noStyleElement: true, wm: 'vertical-rl', fs: 42, rfs: 18.9, canvas: klee, rubies: [whole],
-  then(ctl) {
+  after(ctl) {
     const reads = ctl.snapReads();
     ctl.bodyMutation();
     assert.strictEqual(ctl.snapReads(), reads + 1, 'no reader stylesheet yet -> keep checking');
@@ -325,7 +325,7 @@ run({
 // With the marker, a pending page without furigana reads the marker once, not per mutation.
 run({
   noRuby: true, wm: 'vertical-rl', fs: 42, rfs: 18.9, canvas: klee, rubies: [whole],
-  then(ctl) {
+  after(ctl) {
     ctl.bodyMutation();
     ctl.bodyMutation();
     assert.strictEqual(ctl.snapReads(), 1, 'the marker reading is cached while pending');

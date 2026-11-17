@@ -39,30 +39,19 @@ void main() {
     await settings.setWritingMode('vertical-rl');
     final String css = ReaderContentStyles.css(settings: settings);
 
-    final Directory temp = Directory.systemTemp.createTempSync('vn-refit-');
-    try {
-      final File payload = File('${temp.path}/scripts.json')
-        ..writeAsStringSync(
-          jsonEncode(<String, String>{
-            'shell': ReaderVisualNovelScripts.vnShellScript(),
-            'selection': ReaderSelectionScripts.source(),
-            'units': '$kStudyUnitJs\n$kSentenceAudioOwnershipJs',
-            'css': css,
-          }),
-        );
-      final ProcessResult result = await Process.run(nodeExe, <String>[
-        harness,
-        payload.path,
-      ]);
-      if (result.exitCode == 77) {
-        markTestSkipped('Chrome unavailable: ${result.stdout}');
-        return;
-      }
-      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
-      expect(result.stdout, contains(passLine));
-    } finally {
-      temp.deleteSync(recursive: true);
+    final ({int exitCode, String stdout, String stderr}) result =
+        await _runNodeHarness(nodeExe, harness, <String, String>{
+          'shell': ReaderVisualNovelScripts.vnShellScript(),
+          'selection': ReaderSelectionScripts.source(),
+          'units': '$kStudyUnitJs\n$kSentenceAudioOwnershipJs',
+          'css': css,
+        });
+    if (result.exitCode == 77) {
+      markTestSkipped('Chrome unavailable: ${result.stdout}');
+      return;
     }
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    expect(result.stdout, contains(passLine));
   }
 
   test(
@@ -83,6 +72,25 @@ void main() {
       'PASS VN late image',
     ),
     timeout: const Timeout(Duration(seconds: 90)),
+  );
+}
+
+/// Runs a Node harness with [payload] piped as JSON on stdin (no file path
+/// crosses the process boundary) and returns its exit code, stdout and stderr.
+Future<({int exitCode, String stdout, String stderr})> _runNodeHarness(
+  String nodeExe,
+  String harness,
+  Map<String, String> payload,
+) async {
+  final Process process = await Process.start(nodeExe, <String>[harness]);
+  final Future<String> stdout = process.stdout.transform(utf8.decoder).join();
+  final Future<String> stderr = process.stderr.transform(utf8.decoder).join();
+  process.stdin.add(utf8.encode(jsonEncode(payload)));
+  await process.stdin.close();
+  return (
+    exitCode: await process.exitCode,
+    stdout: await stdout,
+    stderr: await stderr,
   );
 }
 

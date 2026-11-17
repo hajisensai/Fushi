@@ -1,6 +1,6 @@
 // VN 首屏不等图片：真 Chrome 里的行为跑手。
-// 由 vn_refit_late_image_test.dart 执行，argv[2] = payload.json（生产 VN shell + 选区脚本 +
-// 生产 VN CSS）。
+// 由 vn_refit_late_image_test.dart 执行，payload（生产 VN shell + 选区脚本 + 生产 VN CSS 的
+// JSON）经 stdin 送入。
 //
 // 修前：initialize 先等源章节每一张 <img> 的 load / error 才切屏，没有任何时限。一张迟迟
 // 不结束的图（这里的 never.png：服务器接了请求永不回应）让首屏一直不出——body 已被搬空，
@@ -14,17 +14,17 @@
 // - 归类没变、本来就是独立媒体的图（纯图片段、属性写明大尺寸）不触发任何重切：它所在的
 //   屏不可拆、不参与量屏，整章重量一遍改变不了任何一屏。
 // 图片由本文件起的回环服务器按需放行，页面里用 fetch('/release?name') 触发。
-import fs from 'node:fs';
 import http from 'node:http';
 import zlib from 'node:zlib';
 import assert from 'node:assert/strict';
 import { launchChromeDriver, resolveChrome } from '../../../tool/reader_pitch_headless/cdp_client.mjs';
+import { readPayload, vnShellConfig, vnShellPage } from './vn_shell_harness_support.mjs';
 
+const scripts = readPayload();
 if (!resolveChrome()) {
   console.log('Chrome unavailable');
   process.exit(77);
 }
-const scripts = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const W = 1200;
 const H = 800;
 
@@ -38,7 +38,7 @@ function png(size) {
   }
   const crc = (buf) => {
     let c = -1;
-    for (let i = 0; i < buf.length; i++) c = crcTable[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+    for (const byte of buf) c = crcTable[(c ^ byte) & 0xff] ^ (c >>> 8);
     return (c ^ -1) >>> 0;
   };
   const chunk = (type, data) => {
@@ -120,33 +120,10 @@ const body =
   '<p>' + img('never') + '</p>' +
   '<p>八段目の文章です。</p>' +
   '<p>九段目の途中に' + img('small') + '小さな絵が入ります。</p>';
-const config = {
-  vnRevealSpeed: 0,
-  vnScreenMode: 'block',
-  vnSentencesPerScreen: 1,
-  vnPreserveDialogue: false,
-  vnMergeCrossScreenSentenceAudioCues: false,
-  sentenceAudioCues: [],
-  initialProgress: 0,
-  initialFragment: null,
-  initialCharOffset: -1,
-  navigationGeneration: 1,
-  dartPageWidth: W,
-  dartPageHeight: H,
-  chromeTopInset: 0,
-  chromeBottomInset: 0,
-  blurImages: false,
-  revealedKeys: [],
-};
+const config = vnShellConfig({ dartPageWidth: W, dartPageHeight: H });
 // 页面先以空 body 加载完（挂住的图片会一直拖着 window load 事件），再由下面的脚本填正文、
 // 装 VN shell——与真实阅读器「正文在文档里、图片还在加载时 shell 启动」同一时序。
-const page = '<!doctype html><html><head><meta charset="utf-8">' +
-  '<style>' + scripts.css + '</style>' +
-  '<script>window.__fushiShells={};window.__handlerCalls=[];' +
-  'window.flutter_inappwebview={callHandler:function(name){window.__handlerCalls.push(name);return Promise.resolve(null);}};' +
-  scripts.units + '</script>' + scripts.shell +
-  '<script>' + scripts.selection + '</script>' +
-  '</head><body></body></html>';
+const page = vnShellPage(scripts, '');
 
 const driver = await launchChromeDriver();
 try {

@@ -1,6 +1,6 @@
 // VN 开关工具栏（setChromeInsets）不打断当前屏：真 Chrome 里的行为跑手。
-// 由 vn_refit_late_image_test.dart 执行，argv[2] = payload.json（生产 VN shell + 选区脚本 +
-// 生产 VN CSS）。
+// 由 vn_refit_late_image_test.dart 执行，payload（生产 VN shell + 选区脚本 + 生产 VN CSS 的
+// JSON）经 stdin 送入。
 //
 // 修前：VN 的 setChromeInsets 写完两个变量就无条件 refitScreensToCurrentViewport()，后者
 // 把整章每个可拆屏重量一遍、再 renderScreen(index, true)——清选区、清逐字显现并把整屏直接
@@ -12,48 +12,24 @@
 // - 值变了但当前屏的内容没变（短段落仍装得下，或只是前面的屏被拆多了、下标后移）→ 屏表
 //   重切，屏上 DOM 与逐字显现原样保留；
 // - 当前屏的内容真的变了（长段落在更矮的盒里要多拆）→ 重渲，仍从同一个字开始。
-import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { launchChromeDriver, resolveChrome } from '../../../tool/reader_pitch_headless/cdp_client.mjs';
+import { readPayload, vnShellConfig, vnShellPage } from './vn_shell_harness_support.mjs';
 
+const scripts = readPayload();
 if (!resolveChrome()) {
   console.log('Chrome unavailable');
   process.exit(77);
 }
-const scripts = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const W = 1200;
 const H = 800;
 const sentence = '彼の従兄が大きな弦楽器を抱えてステージ上に陣取り、監督生が持ち前の美しい声を上げた。';
 // 段 0 / 1 短（任何预留下都是一屏），段 2 很长（一屏装不下、随可用盒变化拆成不同的片），段 3 短。
 const body = '<p>一段目の短い文章です。</p><p>二段目の短い文章です。</p>' +
   '<p>' + sentence.repeat(60) + '</p><p>最後の短い段落です。</p>';
-const config = {
-  // 每秒 2 字：测试期间逐字显现不会自己跑完。
-  vnRevealSpeed: 2,
-  vnScreenMode: 'block',
-  vnSentencesPerScreen: 1,
-  vnPreserveDialogue: false,
-  vnMergeCrossScreenSentenceAudioCues: false,
-  sentenceAudioCues: [],
-  initialProgress: 0,
-  initialFragment: null,
-  initialCharOffset: -1,
-  navigationGeneration: 1,
-  dartPageWidth: W,
-  dartPageHeight: H,
-  chromeTopInset: 0,
-  chromeBottomInset: 0,
-  blurImages: false,
-  revealedKeys: [],
-};
-const page = '<!doctype html><html><head><meta charset="utf-8">' +
-  '<style>' + scripts.css + '</style>' +
-  '<script>window.__fushiShells={};' +
-  'window.flutter_inappwebview={callHandler:function(){return Promise.resolve(null);}};' +
-  scripts.units + '</script>' + scripts.shell +
-  '<script>' + scripts.selection +
-  ';window.__fushiShells.vn(' + JSON.stringify(config) + ');</script>' +
-  '</head><body>' + body + '</body></html>';
+// 每秒 2 字：测试期间逐字显现不会自己跑完。
+const config = vnShellConfig({ vnRevealSpeed: 2, dartPageWidth: W, dartPageHeight: H });
+const page = vnShellPage(scripts, body, 'window.__fushiShells.vn(' + JSON.stringify(config) + ')');
 
 const driver = await launchChromeDriver();
 try {

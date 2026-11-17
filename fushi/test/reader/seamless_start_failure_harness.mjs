@@ -1,5 +1,5 @@
 // BUG-4798：无缝衔接模块启动失败后的行为，在真 Chrome 里跑生产安装脚本。
-// 由 seamless_start_failure_test.dart 执行，argv[2] = payload.json（kSeamlessChaptersInstallJs）。
+// 由 seamless_start_failure_test.dart 执行，payload（kSeamlessChaptersInstallJs 的 JSON）经 stdin 送入。
 //
 // 修前：S.start 在 `_starting = true` 之后的任何一步 reject / 抛异常都不复位，
 // claimBoundaryTurn 的 `if (!S.started) return S._starting === true` 从此恒真，连续 shell 的
@@ -9,15 +9,15 @@
 //
 // 页面里 fetch 由替身接管（按 URL 决定成功 / 404 / reject / 挂起），DOMParser、shadow DOM、
 // 样式改写都是真浏览器的。引擎只给模块实际调用到的最小替身。
-import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { launchChromeDriver, resolveChrome } from '../../../tool/reader_pitch_headless/cdp_client.mjs';
+import { readPayload } from './vn_shell_harness_support.mjs';
 
+const scripts = readPayload();
 if (!resolveChrome()) {
   console.log('Chrome unavailable');
   process.exit(77);
 }
-const scripts = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const config = {
   seamlessChapters: true,
   seamlessChapterIndex: 0,
@@ -137,7 +137,7 @@ try {
   ], 'both head links are still recognised as this chapter\'s sheets ' + dump);
   assert.deepEqual(r.afterSheetFailure.mounted, [1], 'the neighbour chapter still mounts ' + dump);
   assert.equal(r.afterSheetFailure.mountFailed, false, 'one failed stylesheet must not fail the mount ' + dump);
-  assert.ok(String(r.afterSheetFailure.neighbourCss).indexOf('rgb(1,2,3)') >= 0,
+  assert.ok(String(r.afterSheetFailure.neighbourCss).includes('rgb(1,2,3)'),
     'the neighbour keeps the sheets that did load ' + dump);
   console.log('PASS seamless start failure');
 } finally {
