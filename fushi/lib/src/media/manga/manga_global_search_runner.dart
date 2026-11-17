@@ -56,7 +56,12 @@ class MangaSourceSearchRun {
   List<MihonManga> mihonItems = const <MihonManga>[];
 }
 
-/// 逐源扇出执行器（无 UI 依赖，宿主/运行时注入，可纯 fake 测试）。
+/// 逐源扇出执行器（宿主/运行时注入，可纯 fake 测试）。
+///
+/// 不是无 UI 依赖：Cloudflare 判型用的 `mihonCloudflareChallenge` 目前定义在
+/// widget 文件 `mihon_cloudflare_action.dart` 里，它要认的 `OnlineMangaUnavailable`
+/// 所在的 `online_manga_runtime_adapter.dart` 也 import 了登录页。要在无头环境复用
+/// 本类，得先把这两个类型 / 函数挪到无 UI 文件。
 class MangaGlobalSearchRunner {
   MangaGlobalSearchRunner({required MihonManager? mihonManager})
     : _mihonManager = mihonManager;

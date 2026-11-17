@@ -12,7 +12,6 @@ import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_extension_store_client.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
-import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
@@ -178,6 +177,57 @@ void main() {
     expect(manager.error, isNull, reason: '重跑成功后不留上一次的错误');
     expect(manager.available.single.packageName, 'org.example.rawkuma');
     expect(await Directory(p.join(rootPath, 'extensions')).exists(), isTrue);
+  });
+
+  test('第一次本地就绪回收上次进程的残留：预览标记与暂存 APK 被清掉', () async {
+    final Directory tmp = Directory(p.join(temp.path, 'tmp'));
+    await tmp.create(recursive: true);
+    final File marker = File(p.join(tmp.path, 'preview-pending'));
+    final File staged = File(p.join(tmp.path, 'extension-abc.apk.part'));
+    await marker.writeAsString('org.example.orphan');
+    await staged.writeAsBytes(<int>[1, 2, 3]);
+    final MihonManager manager = MihonManager(
+      database: database,
+      rootDirectory: temp,
+      runtime: _NoopRuntime(),
+      storeClient: _GatedStoreClient(),
+    );
+    addTearDown(manager.dispose);
+
+    await manager.ensureLocalReady();
+
+    expect(await marker.exists(), isFalse);
+    expect(await staged.exists(), isFalse);
+  });
+
+  test('本地段失败后的重跑不碰在途预览标记与正在落盘的暂存 APK', () async {
+    final String rootPath = p.join(temp.path, 'mihon');
+    await File(rootPath).writeAsString('not a directory');
+    final MihonManager manager = MihonManager(
+      database: database,
+      rootDirectory: Directory(rootPath),
+      runtime: _NoopRuntime(),
+      storeClient: _GatedStoreClient(),
+    );
+    addTearDown(manager.dispose);
+    await expectLater(manager.ensureLocalReady(), throwsA(isA<IOException>()));
+
+    // 运行期：目录修好了，用户开始预览 / 安装——标记与 .apk.part 是在途产物，
+    // 不是上次进程的残留。
+    await File(rootPath).delete();
+    final Directory tmp = Directory(p.join(rootPath, 'tmp'));
+    await tmp.create(recursive: true);
+    final File marker = File(p.join(tmp.path, 'preview-pending'));
+    final File staged = File(p.join(tmp.path, 'extension-abc.apk.part'));
+    await marker.writeAsString('org.example.previewing');
+    await staged.writeAsBytes(<int>[1, 2, 3]);
+    await seedStoreAndSource();
+
+    await manager.ensureLocalReady();
+
+    expect(manager.installed.single.packageName, _kPackage, reason: '重跑仍读库');
+    expect(await marker.readAsString(), 'org.example.previewing');
+    expect(await staged.exists(), isTrue);
   });
 }
 

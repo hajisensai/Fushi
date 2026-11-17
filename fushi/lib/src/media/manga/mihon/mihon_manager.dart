@@ -96,6 +96,7 @@ class MihonManager extends ChangeNotifier {
   bool _disposed = false;
   Future<void>? _initialising;
   Future<void>? _localReady;
+  bool _previousProcessResidueClaimed = false;
   Future<void>? _runtimeShutdown;
   ExitFlushCallback? _exitShutdown;
   final Set<String> _extensionActionPackages = <String>{};
@@ -143,8 +144,9 @@ class MihonManager extends ChangeNotifier {
     return future;
   }
 
-  /// 本地就绪段：建目录、读库（[stores] / [installed] / [sources]）、回收上次
-  /// 没走完的预览与暂存 APK。不发任何网络请求。失败同样不缓存。
+  /// 本地就绪段：建目录、读库（[stores] / [installed] / [sources]）；整个进程的
+  /// 第一次尝试还会回收上次进程没走完的预览与暂存 APK。不发任何网络请求。
+  /// 失败同样不缓存，但重跑只重做建目录 + 读库（见 [_prepareLocal]）。
   Future<void> ensureLocalReady() {
     final Future<void>? current = _localReady;
     if (current != null) return current;
@@ -158,12 +160,19 @@ class MihonManager extends ChangeNotifier {
   }
 
   Future<void> _prepareLocal() async {
+    // 「上次进程的残留」只在本进程第一次尝试时才认得出来：预览标记与
+    // `tmp/*.apk.part` 在运行期也会由在途的预览 / 安装写出，回收逻辑分不清两者。
+    // 所以名额在进门时就用掉——第一次尝试在读库之前就失败的话，残留留给下次
+    // 启动（与失败 Future 永久缓存时的行为一致），重跑绝不碰在途的预览 / 安装。
+    final bool firstAttempt = !_previousProcessResidueClaimed;
+    _previousProcessResidueClaimed = true;
     await rootDirectory.create(recursive: true);
     await Directory(
       p.join(rootDirectory.path, 'extensions'),
     ).create(recursive: true);
     await Directory(p.join(rootDirectory.path, 'tmp')).create(recursive: true);
     await reload();
+    if (!firstAttempt) return;
     // 必须在 reload 之后：判断孤儿要拿 installed 跟标记里的包名比对。
     await _recoverAbandonedPreview();
     await _clearStagedApks();

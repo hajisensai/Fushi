@@ -49,9 +49,14 @@ Future<Uint8List> readMihonSourceImageBytes(
 
 /// 从 sidecar 的本地图片代理取一张漫画页。
 ///
-/// 超时与封面同构（BUG-2450 第 4 点）：[headerTimeout] 内要等到响应头，之后按
-/// 「连续 [idleTimeout] 没有任何数据」计时。旧实现是从请求开始固定 45 秒的整请求
-/// 超时，慢速但一直在出数据的大图会被中途砍掉。取消仍靠调用方关掉 [client]。
+/// 超时形状与封面相同（BUG-2450 第 4 点）：[headerTimeout] 内要等到响应头，之后按
+/// 「连续 [idleTimeout] 没有任何数据」计时。取消仍靠调用方关掉 [client]。
+///
+/// **在现在的 sidecar 上这等于整请求上限 [headerTimeout]**：sidecar 把上游图片
+/// 整张读进内存后才回响应头（`MihonImageProxy.fetch` 的 `body.bytes()` +
+/// `ImageProxyHandler` 的定长响应），所以上游的慢全落在等响应头这一段，空闲计时
+/// 只管得到回环上那段内存拷贝。实际变化只是上限从旧的 45 秒放宽到 90 秒；
+/// 「慢速但一直在出数据的大图不被砍」要等 sidecar 改成流式回传才成立。
 Future<Uint8List> fetchMihonPageImageBytes(
   http.Client client,
   Uri url, {
