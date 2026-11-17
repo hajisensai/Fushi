@@ -127,6 +127,95 @@ DiscSessionBackRoute resolveDiscSessionBack({
       : DiscSessionBackRoute.showBar;
 }
 
+/// What one "back to the disc menu" attempt ended as.
+enum DiscMenuReturnOutcome {
+  /// The menu call went through.
+  returned,
+
+  /// The disc refused the menu call: there is no menu layer, leave the session.
+  refused,
+
+  /// The attempt failed for another reason (navigation still initializing, a
+  /// bridge / mpv error): stay on the title and tell the user once.
+  failed,
+}
+
+/// Executes the [DiscSessionBackRoute.returnToMenu] rung of the back ladder.
+///
+/// Owns two rules the page cannot express in [resolveDiscSessionBack]:
+/// - only a refusal from the disc ([isRefusal]) falls through to the next rung
+///   (leaving the session); any other failure keeps the user on the title;
+/// - while a menu call is in flight, further back presses are swallowed, so a
+///   quick double press sends the top menu once instead of racing a second
+///   call against the menu transition.
+class DiscMenuReturn {
+  DiscMenuReturn({required this.isRefusal});
+
+  /// Whether an error thrown by the menu call is the disc's own refusal.
+  final bool Function(Object error) isRefusal;
+
+  Future<DiscMenuReturnOutcome>? _pending;
+
+  /// A menu call started by [handleBack] has not completed yet.
+  bool get inFlight => _pending != null;
+
+  /// The in-flight attempt, for callers that need to await it.
+  Future<DiscMenuReturnOutcome>? get pending => _pending;
+
+  /// Handles a back press whose ladder rung is [route] (null: not a disc
+  /// session, or already leaving it). Returns whether the press is consumed.
+  ///
+  /// [send] issues the top-menu call; [onRefused] runs when the disc refuses
+  /// it, [onFailed] for any other failure.
+  bool handleBack(
+    DiscSessionBackRoute? route, {
+    required Future<void> Function() send,
+    required Future<void> Function() onRefused,
+    required void Function(Object error, StackTrace stack) onFailed,
+  }) {
+    // A session that is already leaving is never held back by a pending call.
+    if (route == null) return false;
+    if (_pending != null) return true;
+    if (route != DiscSessionBackRoute.returnToMenu) return false;
+    // Marked in flight before [send] runs, so a call that completes
+    // synchronously still clears the mark.
+    final Completer<DiscMenuReturnOutcome> attempt =
+        Completer<DiscMenuReturnOutcome>();
+    _pending = attempt.future;
+    unawaited(
+      _run(
+        send: send,
+        onRefused: onRefused,
+        onFailed: onFailed,
+      ).then(attempt.complete, onError: attempt.completeError),
+    );
+    return true;
+  }
+
+  Future<DiscMenuReturnOutcome> _run({
+    required Future<void> Function() send,
+    required Future<void> Function() onRefused,
+    required void Function(Object error, StackTrace stack) onFailed,
+  }) async {
+    try {
+      try {
+        await send();
+      } catch (error, stack) {
+        if (isRefusal(error)) {
+          _pending = null;
+          await onRefused();
+          return DiscMenuReturnOutcome.refused;
+        }
+        onFailed(error, stack);
+        return DiscMenuReturnOutcome.failed;
+      }
+      return DiscMenuReturnOutcome.returned;
+    } finally {
+      _pending = null;
+    }
+  }
+}
+
 /// Press-and-hold exit for Esc / gamepad B. A release before
 /// [kDiscExitHoldDuration] is a short press; reaching it fires [onExit]
 /// once and swallows the later release.
