@@ -13,6 +13,7 @@ import 'dart:io';
 import 'package:fushi_engine/tts/local/irodori_batch_worker.dart';
 import 'package:fushi_engine/tts/local/irodori_local_engine.dart';
 import 'package:fushi_engine/tts/local/irodori_voice_pack.dart';
+import 'package:fushi_engine/tts/tts_direction.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
@@ -113,6 +114,32 @@ IrodoriBatchItem? irodoriBatchItemFromPreset(
   );
 }
 
+/// 按演出参数改写一句请求：[direction] 给了种子 / 时长就用它的（时长为 null 时保留
+/// [item] 自带的短句规则结果），否则原样。
+IrodoriBatchItem irodoriDirectedItem(
+  IrodoriBatchItem item,
+  TtsDirection direction,
+) => IrodoriBatchItem(
+  id: item.id,
+  text: item.text,
+  refs: item.refs,
+  outputPath: item.outputPath,
+  adapterDir: item.adapterDir,
+  seconds: direction.durationSeconds ?? item.seconds,
+  seed: direction.seed ?? item.seed,
+  steps: item.steps,
+  cfgText: item.cfgText,
+  cfgSpeaker: item.cfgSpeaker,
+);
+
+/// 声音包虚拟预设能表达的演出字段：种子、给定时长都收；挂没挂 LoRA 看 adapter 参数。
+TtsDirectionSupport irodoriPackDirectionSupport(TtsVoicePreset preset) =>
+    TtsDirectionSupport(
+      seed: true,
+      duration: true,
+      adapter: preset.param(IrodoriPackParams.adapter).trim().isNotEmpty,
+    );
+
 /// 声音包引擎描述符（见库注释：不进注册表）。
 class IrodoriVoicePackTtsDescriptor extends TtsProviderDescriptor {
   const IrodoriVoicePackTtsDescriptor(this.engine);
@@ -170,7 +197,8 @@ class IrodoriVoicePackTtsDescriptor extends TtsProviderDescriptor {
       _IrodoriVoicePackProvider(engine.batchWorker, preset, capabilities);
 }
 
-class _IrodoriVoicePackProvider extends TtsProvider {
+class _IrodoriVoicePackProvider extends TtsProvider
+    implements TtsDirectedSynthesis {
   _IrodoriVoicePackProvider(this._worker, this._preset, this.capabilities);
 
   final IrodoriBatchWorker _worker;
@@ -179,6 +207,10 @@ class _IrodoriVoicePackProvider extends TtsProvider {
   @override
   final TtsCapabilities capabilities;
 
+  @override
+  TtsDirectionSupport get directionSupport =>
+      irodoriPackDirectionSupport(_preset);
+
   static int _seq = 0;
 
   @override
@@ -186,15 +218,31 @@ class _IrodoriVoicePackProvider extends TtsProvider {
     String text, {
     required String outputPath,
     required TtsCancelToken cancel,
+  }) => synthesizeDirected(
+    text,
+    outputPath: outputPath,
+    cancel: cancel,
+    direction: TtsDirection.none,
+  );
+
+  /// 单句也走 worker（一句一个任务）；种子 / 给定时长按 [direction] 改写请求。整卷
+  /// 批量合成由漫画生成端直接调 [IrodoriBatchWorker.run]（按参考音频组成批）。
+  @override
+  Future<TtsResult> synthesizeDirected(
+    String text, {
+    required String outputPath,
+    required TtsCancelToken cancel,
+    required TtsDirection direction,
   }) async {
-    final IrodoriBatchItem? item = irodoriBatchItemFromPreset(
+    final IrodoriBatchItem? base = irodoriBatchItemFromPreset(
       _preset,
       id: 'single',
       text: text,
       // worker 写 wav（按扩展名选格式）；调用方的路径可能是临时名，写完再搬过去。
       outputPath: '$outputPath.irodori.wav',
     );
-    if (item == null) throw const TtsFailure(TtsFailureCode.notConfigured);
+    if (base == null) throw const TtsFailure(TtsFailureCode.notConfigured);
+    final IrodoriBatchItem item = irodoriDirectedItem(base, direction);
     final IrodoriBatchResult r = await _worker.run(
       IrodoriBatchJob(id: 'single-${_seq++}', items: <IrodoriBatchItem>[item]),
       cancel: cancel,

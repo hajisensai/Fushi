@@ -7,7 +7,11 @@
 ///   在线引擎的临时失败走 [ttsWithRetry]；同一份预设同时在途的请求不超过它的并发上限；
 /// - 一句的各片段用 ffmpeg 拼成一个 m4a，同时裁掉首尾静音（停顿只由时间表给，设计
 ///   §7），统一 44.1 kHz 单声道 AAC；有声书片段按 cue 边界剪，不裁静音；
-/// - 占位静音直接写 PCM WAV（精确时长，不经 ffmpeg）。
+/// - 占位静音直接写 PCM WAV（精确时长，不经 ffmpeg）；
+/// - 声音包（`pack:<packId>/<group>`，Irodori v4-Large 批处理 worker）：整卷开跑前
+///   [prepare] 把这次要新出、缓存里没有的片段整批交给 worker（worker 按参考音频组
+///   排序、模型只加载一次），种子与短句定长随请求下发（`TtsDirectedSynthesis`）；
+///   批里失败的片段记下，逐句合成时抛一句级失败 → 占位 + 未配音账本。
 library;
 
 import 'dart:async';
@@ -15,6 +19,8 @@ import 'dart:io';
 
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
+import 'package:fushi_engine/tts/local/irodori_batch_worker.dart';
+import 'package:fushi_engine/tts/local/irodori_voice_pack_provider.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render_plan.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_renderer.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart';
@@ -25,6 +31,7 @@ import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_retry.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
+import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/audiobook/tts/studio/tts_render_encode.dart'
     show buildTtsSilenceWav, kTtsOutputSampleRate;
@@ -112,14 +119,43 @@ const Duration kMangaEncodeStallTimeout = Duration(seconds: 60);
 
 class _MangaVoice {
   const _MangaVoice({
+    required this.preset,
     required this.provider,
     required this.identity,
     required this.gate,
   });
 
+  final TtsVoicePreset preset;
   final TtsProvider provider;
   final Map<String, Object?> identity;
   final TtsRenderGate gate;
+
+  /// 声音包虚拟预设（走批处理 worker）。
+  bool get isVoicePack => preset.providerId == kIrodoriPackProviderId;
+
+  TtsDirectionSupport get support => ttsDirectionSupportOf(provider);
+
+  /// 一个片段实际下发的演出参数（只含引擎支持的字段）。短句定长只给不挂 LoRA 的
+  /// 声音（handoff：挂 LoRA 的时长预测可靠）。
+  TtsDirection directionFor(String segment, int seed) {
+    final TtsDirectionSupport s = support;
+    return effectiveTtsDirection(
+      s,
+      TtsDirection(
+        seed: seed,
+        durationSeconds: s.adapter
+            ? null
+            : mangaShortLineDurationSeconds(segment),
+      ),
+    );
+  }
+
+  /// 片段的缓存键（音色身份 + 生效的演出参数 + 文字）。
+  String cacheKey(String segment, TtsDirection direction) =>
+      TtsAudioCache.keyFor(<String, Object?>{
+        ...identity,
+        ...direction.cacheIdentity,
+      }, segment);
 }
 
 class AppMangaRenderBackend implements MangaRenderBackend {
@@ -128,17 +164,33 @@ class AppMangaRenderBackend implements MangaRenderBackend {
     required TtsAudioCache cache,
     required FfmpegBackend ffmpeg,
     required void Function(String source, String summary) log,
+    required List<TtsVoicePreset> presets,
+    IrodoriBatchWorker? batchWorker,
     Map<String, List<String>> clipSources = const <String, List<String>>{},
   }) : _tts = tts,
        _cache = cache,
        _ffmpeg = ffmpeg,
        _log = log,
+       _presets = presets,
+       _batchWorker = batchWorker ?? tts.localIrodori.batchWorker,
        _clipSources = clipSources;
 
   final TtsServices _tts;
   final TtsAudioCache _cache;
   final FfmpegBackend _ffmpeg;
   final void Function(String source, String summary) _log;
+
+  /// 制作侧可选的全部声音（`ttsProductionPresets`：声音预设 + 声音包虚拟预设）。
+  final List<TtsVoicePreset> _presets;
+  final IrodoriBatchWorker _batchWorker;
+
+  /// [prepare] 里批量合成失败的片段（缓存键 → 一句级失败）。
+  final Map<String, MangaLineFailure> _batchFailures =
+      <String, MangaLineFailure>{};
+
+  /// [prepare] 批量写进缓存、在 [dispose] 前一直 pin 住的键（免得被后续发布挤掉）。
+  final Set<String> _batchPinned = <String>{};
+  static int _batchSeq = 0;
 
   /// 关联有声书 bookKey → 它的音频文件（绝对路径，按 `audioFilesInCueOrder`，即
   /// `MangaAudiobookClip.fileIndex` 的坐标）；没有条目 = 没关联或已不在书库。
@@ -157,11 +209,13 @@ class AppMangaRenderBackend implements MangaRenderBackend {
 
   Future<_MangaVoice> _resolve(String presetId) async {
     TtsVoicePreset? preset;
-    for (final TtsVoicePreset candidate in _tts.store.loadPresets()) {
+    for (final TtsVoicePreset candidate in _presets) {
       if (candidate.id == presetId) preset = candidate;
     }
     if (preset == null) throw const MangaLineFailure('voice_missing');
-    final TtsProviderDescriptor? descriptor = _tts.registry[preset.providerId];
+    final TtsProviderDescriptor? descriptor = _tts.productionDescriptor(
+      preset.providerId,
+    );
     if (descriptor == null || !descriptor.isAvailable) {
       throw const MangaLineFailure('voice_unavailable');
     }
@@ -169,14 +223,115 @@ class AppMangaRenderBackend implements MangaRenderBackend {
       throw const MangaLineFailure('voice_incomplete');
     }
     return _MangaVoice(
+      preset: preset,
       provider: descriptor.create(preset, _tts.host),
       identity: descriptor.audioIdentity(preset),
       gate: TtsRenderGate(ttsEffectiveConcurrency(descriptor, preset)),
     );
   }
 
+  /// 声音包的句子整批交给 worker（见库注释）。其余引擎逐句合成，这里不管。
+  @override
+  Future<void> prepare({
+    required List<MangaRenderItem> items,
+    required TtsRenderCancelToken cancel,
+  }) async {
+    final Map<String, IrodoriBatchItem> batch = <String, IrodoriBatchItem>{};
+    final Directory scratch = Directory(
+      p.join(_cache.root.path, '.irodori_batch', 'm${_batchSeq++}'),
+    );
+    for (final MangaRenderItem item in items) {
+      if (item.source case MangaRenderSynth(
+        :final String voice,
+        :final int seed,
+        :final List<String> segments,
+      )) {
+        final _MangaVoice v;
+        try {
+          v = await _voice(voice);
+        } on MangaLineFailure {
+          continue; // 声音解析失败由逐句合成报成这一句的失败。
+        }
+        if (!v.isVoicePack) continue;
+        for (final String segment in segments) {
+          final TtsDirection direction = v.directionFor(segment, seed);
+          final String key = v.cacheKey(segment, direction);
+          if (batch.containsKey(key) || await _cache.lookup(key) != null) {
+            continue;
+          }
+          final IrodoriBatchItem? base = irodoriBatchItemFromPreset(
+            v.preset,
+            id: key,
+            text: segment,
+            outputPath: p.join(scratch.path, '$key.wav'),
+          );
+          if (base == null) continue; // 参数坏了：逐句合成报 notConfigured。
+          batch[key] = irodoriDirectedItem(base, direction);
+        }
+      }
+    }
+    if (batch.isEmpty) return;
+    await scratch.create(recursive: true);
+    final TtsCancelToken ttsCancel = TtsCancelToken();
+    cancel.onCancel(ttsCancel.cancel);
+    try {
+      final IrodoriBatchResult result = await _batchWorker.run(
+        IrodoriBatchJob(
+          id: p.basename(scratch.path),
+          items: batch.values.toList(),
+        ),
+        cancel: ttsCancel,
+      );
+      cancel.throwIfCancelled();
+      final IrodoriBatchFailure? failure = result.failure;
+      for (final String key in batch.keys) {
+        final IrodoriBatchLineResult? line = result.lines[key];
+        final String? out = line?.outputPath;
+        if (line != null && line.ok && out != null) {
+          try {
+            _cache.pin(key);
+            _batchPinned.add(key);
+            await _cache.obtain(key, (String target) async {
+              await File(out).rename(target);
+              return const TtsResult(format: TtsAudioFormat.wav);
+            });
+          } on TtsFailure catch (e) {
+            _batchFailures[key] = MangaLineFailure('tts_${e.code.name}');
+          }
+          continue;
+        }
+        // worker 起不来 / 中途退出：整批没出的片段都是这一句的失败（不悄悄漏掉）。
+        _batchFailures[key] = switch (failure) {
+          IrodoriBatchFailure.notInstalled => const MangaLineFailure(
+            'tts_notConfigured',
+            'notInstalled',
+          ),
+          final IrodoriBatchFailure f => MangaLineFailure(
+            'tts_serverError',
+            f.name,
+          ),
+          // 异常原文只进 worker 日志尾（可能带文本片段），账本只记错误码。
+          null => MangaLineFailure(
+            'tts_rejected',
+            line?.error == 'worker_exited' ? 'worker_exited' : null,
+          ),
+        };
+      }
+    } finally {
+      try {
+        if (await scratch.exists()) await scratch.delete(recursive: true);
+      } on FileSystemException catch (e) {
+        _log('MangaRender.batch', 'scratch cleanup failed: ${e.osError}');
+      }
+    }
+  }
+
   /// 释放引擎实例（任务结束时调用）。
   Future<void> dispose() async {
+    for (final String key in _batchPinned) {
+      _cache.unpin(key);
+    }
+    _batchPinned.clear();
     for (final Future<_MangaVoice> f in _voices.values) {
       try {
         await (await f).provider.dispose();
@@ -196,27 +351,17 @@ class AppMangaRenderBackend implements MangaRenderBackend {
     required TtsRenderCancelToken cancel,
   }) async {
     final _MangaVoice v = await _voice(voice);
-    final TtsDirectionSupport support = ttsDirectionSupportOf(v.provider);
     final TtsCancelToken ttsCancel = TtsCancelToken();
     cancel.onCancel(ttsCancel.cancel);
     final List<String> keys = <String>[];
     final List<String> paths = <String>[];
     try {
       for (final String segment in segments) {
-        final TtsDirection direction = effectiveTtsDirection(
-          support,
-          TtsDirection(
-            seed: seed,
-            // 短句定长只给不挂 LoRA 的声音（handoff：挂 LoRA 的时长预测可靠）。
-            durationSeconds: support.adapter
-                ? null
-                : mangaShortLineDurationSeconds(segment),
-          ),
-        );
-        final String key = TtsAudioCache.keyFor(<String, Object?>{
-          ...v.identity,
-          ...direction.cacheIdentity,
-        }, segment);
+        final TtsDirection direction = v.directionFor(segment, seed);
+        final String key = v.cacheKey(segment, direction);
+        // 整批合成里这段失败过：这一句直接记失败（走占位 + 账本），不再逐句重跑 worker。
+        final MangaLineFailure? batchFailure = _batchFailures[key];
+        if (batchFailure != null) throw batchFailure;
         // 先 pin 再合成：obtain 发布新文件时会顺手淘汰，未 pin 的前一片段可能被挤掉。
         _cache.pin(key);
         keys.add(key);

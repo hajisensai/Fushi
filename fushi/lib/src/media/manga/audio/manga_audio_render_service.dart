@@ -20,12 +20,14 @@ import 'package:fushi_engine/media/video/ffmpeg_backend.dart'
 import 'package:fushi_engine/tts/cast/cast_line_voicing.dart';
 import 'package:fushi_engine/tts/cast/series_cast.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
+import 'package:fushi_engine/tts/manga_audio/manga_audio_render_plan.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_renderer.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/audiobook/tts/cast/series_cast_resolver.dart';
+import 'package:fushi/src/media/audiobook/tts/irodori_voice_packs.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_series_cast.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_service.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
@@ -143,6 +145,8 @@ Future<AppMangaRenderBackend> _backendFor(
     ffmpeg: resolveFfmpegBackend(),
     log: (String source, String summary) =>
         ErrorLogService.instance.log(source, summary, StackTrace.current),
+    // 声音预设 + 声音包（`pack:<packId>/<group>`）：演出稿里两类声音 id 都可能出现。
+    presets: ttsProductionPresets(tts, appModel),
     clipSources: clipSources,
   );
 }
@@ -201,6 +205,8 @@ Future<({bool verified, List<TtsRenderFlag> flags})> runMangaRenderJob(
     renderer.manifestFile,
   );
   final MangaRenderManifest manifest;
+  // 补回时配上音的句子（只更新库里这几句；整卷生成为 null = 整份登记）。
+  List<String>? voicedLines;
   try {
     if (job.lineRequests.isEmpty) {
       final MangaRenderOutcome outcome = await renderer.render(
@@ -216,7 +222,7 @@ Future<({bool verified, List<TtsRenderFlag> flags})> runMangaRenderJob(
       manifest = outcome.manifest;
     } else {
       if (previous == null) throw const TtsRenderFailure('manga_not_rendered');
-      await renderer.backfill(
+      final Map<String, MangaBackfillStatus> statuses = await renderer.backfill(
         script: volume.script,
         pageBlocks: volume.pageBlocks,
         defaultVoice: job.presetId,
@@ -236,6 +242,10 @@ Future<({bool verified, List<TtsRenderFlag> flags})> runMangaRenderJob(
         cancel: cancel,
       );
       manifest = previous;
+      voicedLines = <String>[
+        for (final MapEntry<String, MangaBackfillStatus> e in statuses.entries)
+          if (e.value == MangaBackfillStatus.voiced) e.key,
+      ];
       // 补回成功的句子把声音 / 手填文字写回了演出稿那一行。
       await mangaAudioScriptStoreFor(appModel).save(job.bookKey, volume.script);
     }
@@ -245,12 +255,27 @@ Future<({bool verified, List<TtsRenderFlag> flags})> runMangaRenderJob(
     await backend.dispose();
   }
   onProgress(TtsRenderJobPhase.importing, 0, 1);
-  await registerMangaAudio(
-    appModel.database,
-    bookKey: job.bookKey,
-    manifestFile: renderer.manifestFile,
-    manifest: manifest,
-  );
+  // 入库后漫画卡 / 阅读器直接能播（不用手动导入）。补回只换配上音的那几句的 cue 与
+  // 音频路径（库与清单对不上时 updateMangaAudioLine 自己退回整份登记）。
+  final List<String>? updated = voicedLines;
+  if (updated == null) {
+    await registerMangaAudio(
+      appModel.database,
+      bookKey: job.bookKey,
+      manifestFile: renderer.manifestFile,
+      manifest: manifest,
+    );
+  } else {
+    for (final String lineId in updated) {
+      await updateMangaAudioLine(
+        appModel.database,
+        bookKey: job.bookKey,
+        manifestFile: renderer.manifestFile,
+        manifest: manifest,
+        lineId: lineId,
+      );
+    }
+  }
   onProgress(TtsRenderJobPhase.importing, 1, 1);
   return (verified: false, flags: const <TtsRenderFlag>[]);
 }
@@ -324,11 +349,13 @@ Future<bool> keepMangaCandidate(
   if (!kept) return false;
   await mangaAudioScriptStoreFor(appModel).save(volume.bookKey, volume.script);
   await voicing.save(volume.bookKey, ledger);
-  await registerMangaAudio(
+  // 单句换种子：只换库里这一句。
+  await updateMangaAudioLine(
     appModel.database,
     bookKey: volume.bookKey,
     manifestFile: manifestFile,
     manifest: manifest,
+    lineId: candidate.lineId,
   );
   return true;
 }
@@ -369,6 +396,12 @@ class _NoBackend implements MangaRenderBackend {
   @override
   Future<int> writeSilence({required int ms, required String outputPath}) =>
       throw UnsupportedError('no synthesis here');
+
+  @override
+  Future<void> prepare({
+    required List<MangaRenderItem> items,
+    required TtsRenderCancelToken cancel,
+  }) async {}
 }
 
 /// 系列里的卷，按阅读顺序：合集派生的系列先按合集内顺序，再补上显式关联进来的卷；

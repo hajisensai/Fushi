@@ -64,6 +64,16 @@ abstract interface class MangaRenderBackend {
 
   /// 写一段 [ms] 毫秒的静音。
   Future<int> writeSilence({required int ms, required String outputPath});
+
+  /// 整卷生成开跑前把这次要出的句子（不含原样沿用的）交给后端一次：能整批合成的
+  /// 引擎（Irodori 批处理 worker：按参考音频组成批、模型只加载一次）在这里先批量合成
+  /// 进缓存，之后逐句的 [synthesizeLine] 直接命中；批里失败的句子由 [synthesizeLine]
+  /// 抛一句级失败（走占位 + 未配音账本）。不支持批量的后端什么都不做。只有取消可以
+  /// 往外抛。
+  Future<void> prepare({
+    required List<MangaRenderItem> items,
+    required TtsRenderCancelToken cancel,
+  });
 }
 
 /// 整卷生成的结果。
@@ -229,6 +239,21 @@ class MangaAudioRenderer {
         }
       }
     }
+
+    // 先把要新出的句子整批交给后端（批处理引擎在这里一次合成完）。
+    final List<MangaRenderItem> pending = <MangaRenderItem>[];
+    for (final MangaRenderItem item in items) {
+      final MangaRenderedLine? old = before[item.lineId];
+      final bool reusable =
+          old != null &&
+          item.canReuse(old) &&
+          await File(_pathOf(old.file)).exists();
+      if (!reusable) pending.add(item);
+    }
+    if (pending.isNotEmpty) {
+      await backend.prepare(items: pending, cancel: cancel);
+    }
+    cancel.throwIfCancelled();
 
     final int workers = backend.parallelism.clamp(1, 8);
     await Future.wait(<Future<void>>[

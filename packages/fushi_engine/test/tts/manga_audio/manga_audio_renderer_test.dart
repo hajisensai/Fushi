@@ -53,6 +53,17 @@ class _FakeBackend implements MangaRenderBackend {
   final List<String> synthCalls = <String>[];
   int clipCalls = 0;
 
+  /// 每次 [prepare] 收到的行身份。
+  final List<List<String>> prepared = <List<String>>[];
+
+  @override
+  Future<void> prepare({
+    required List<MangaRenderItem> items,
+    required TtsRenderCancelToken cancel,
+  }) async {
+    prepared.add(<String>[for (final MangaRenderItem i in items) i.lineId]);
+  }
+
   @override
   int parallelism = 1;
 
@@ -340,6 +351,8 @@ void main() {
       );
       expect(second.reused, 1);
       expect(second.produced, 2);
+      // 整批交给后端的只有要新出的两句（沿用的 p0b0 不进批）。
+      expect(backend.prepared.last, <String>['p0b1', 'p2b0']);
       expect(backend.synthCalls, <String>['bad|5|元気？', 'reading|5|改']);
       expect(second.manifest.lines[0].speaker, 'C');
       expect(second.placeholders, isEmpty);

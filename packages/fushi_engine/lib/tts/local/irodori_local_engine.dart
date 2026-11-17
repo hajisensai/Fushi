@@ -355,6 +355,12 @@ class IrodoriLocalEngine extends EngineChangeNotifier {
   Future<bool> _launch() async {
     final IrodoriInstallLayout? found = layout;
     if (found == null) return false;
+    // 显存只够放一个模型实例：与 [_batchLaunch]（拉 worker 前停服务端）对称，worker
+    // 正在加载或跑任务时不抢（返回 false，不记成服务端失败）；空闲的 worker 先停掉。
+    if (batchWorker.isBusy || batchWorker.phase == IrodoriBatchPhase.starting) {
+      return false;
+    }
+    if (batchWorker.phase != IrodoriBatchPhase.stopped) await batchWorker.stop();
     return server.start(launchSpec(found));
   }
 

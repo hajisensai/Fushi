@@ -21,6 +21,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/audiobook/tts/irodori_voice_packs.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_series_cast.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_service.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_text.dart';
@@ -130,7 +131,8 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
   @override
   void initState() {
     super.initState();
-    _presets = _tts.store.loadPresets();
+    // 声音预设 + 声音包（Irodori v4-Large，桌面端）。
+    _presets = ttsProductionPresets(_tts, widget.appModel);
     final String? jobPreset = _queue.latestFor(widget.bookKey)?.presetId;
     final String? active = _tts.store.activePreset()?.id;
     _basePresetId = <String?>[jobPreset, active, _presets.firstOrNull?.id]
