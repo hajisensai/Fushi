@@ -67,13 +67,9 @@ void main() {
     // A 在改缺省之前评了分；这一批只多出这条复习日志。
     clock.advance(const Duration(minutes: 1));
     await a.answer(card, 3);
-    final String contentBefore = b.contentFingerprint;
+    // 协议 3 下只并入复习日志不推进内容指纹（这条用例原本钉的就是那条路径）；新代的 `.fushisrs` 导入整份重建派生层，
+    // 内容指纹会推进，那条前提不再成立——这里只钉结果：合并后计数重算、本机评分不重扫。
     await _ship(a, b);
-    expect(
-      b.contentFingerprint,
-      contentBefore,
-      reason: '前提：只并入复习日志不推进内容指纹（推进了就测不到这条路径）',
-    );
     expect(await b.limitUnitLegacyDecks(), <String>{b.defaultDeckId});
     expect(await _count(container), 1);
 

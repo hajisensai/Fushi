@@ -2137,3 +2137,22 @@ Rust `SCHEMA` 没升（没加表 / 索引，分到的 40024 没用）；ABI 不�
   （`undo_check` 拒第二步），现在由同一条用例实证，不再是推断。变异：去掉新加的 `until`，复现「srsRevisionProvider 停在 1」。
   带 G9-7 的本地验证：1 绿 1 红（红 = C6）。
 - 仍没做：`srs_p6_vectors_test`（同上，卡在 C1 与「没有协议 3 库生成器」）。
+
+## 27. W3 合流修复（2026-11-17，分支 `pr/srs-gen4-w3-merge` / `pr/srs-gen4-w3-merge-dev`，integration owner）
+
+第三波七块（G9-7、G9-5、G8-7b、G10-2、G10-3、G11-4、T1）按此顺序合进集成分支，再并入 develop。只修合流引入的冲突与断裂：
+
+- **分发器**：G8-7b 接上 `relay_outbox`、G9-5 把 `profile_merge_mark` 标成已删后，新代已没有未接线命令。`dispatch.rs`
+  文件头相应改写；`dispatch_tests.rs` 删掉未接线那一段循环（未接线臂由 `ffi.rs` 全量分类测试兜底）；`ffi.rs` 的分类断言
+  改成 `unwired == 0`。`Wiring::Unwired` 变体保留给以后的模块。
+- **测试期望随合流对齐**：`srs_core_test` 的 `profile_merge_mark` 改断言已删、快照剥离本机状态改断言一般错误（G11-4 已接
+  新代）；`backup_tests.rs`「另一个集合要确认」最后一步改断言 `bound`（G9-5「空集合可换绑」× G11-4：全新 profile 的集合是
+  空集合，确认后换绑而不是 Join）；`server_srs_migration_test` 的远程 hello 改走 V2 端点（G10-2 起 V1 一律 426）。
+- **主库 schemaVersion**：develop 已占 156–158（NSFW 标记 / 来源自动扫描 / 音乐隐藏），G11-4 的空迁移顺延到 **v159**，
+  全部 migration 测试的「当前版本」断言同步到 159（§25 第 11 条里的「155 → 156」现在是「158 → 159」）。
+- **develop 的新功能接到新代**：存量单位提醒（`srsLimitUnitLegacyDecks`）用的读查询 `reviewed_decks` 在新代读命令
+  （`cmd/reads.rs`）补上，语义同协议 3；`fushi/test/srs/srs_limit_unit_legacy_count_test.dart` 改按文件导出、确认后导入，并去掉「只并入复习日志不推进内容
+  指纹」那条前提断言（新代导入整份重建派生层，指纹会推进；用例只钉合并后重算、本机评分不重扫的结果）。
+  `backup_merge_engine.dart` 保留 develop 的 `excludedBookKeys`，不带回 G11-4 已删的 `localSrs` / `sourceSrs`。develop 改过的
+  三份协议 3 测试 / 夹具（`srs_legacy_clock_conformance_test`、`legacy_clock_store_vectors.json`、`srs_gen4_rehearsal_test`）
+  维持删除。
