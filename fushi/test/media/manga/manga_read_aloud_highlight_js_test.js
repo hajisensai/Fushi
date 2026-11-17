@@ -5,8 +5,9 @@
 // to highlight) before this file runs.
 //
 // Manga read-aloud highlights the sentence being read: __mangaSetSpeaking marks
-// only the boxes of that sentence group, survives the OCR layer being replaced
-// (__mangaReplaceOcr), and a negative group clears it.
+// only the listed block indices (a line may span blocks of different sentence
+// groups), survives the OCR layer being replaced (__mangaReplaceOcr), and an
+// empty list clears it.
 (function () {
   var failures = [];
   var passed = 0;
@@ -23,6 +24,7 @@
   }
 
   var group = window.__testGroup;
+  var blocks = window.__testBlocks;
   window.__mangaReplaceOcr(0, window.__testBoxes);
   var total = document.querySelectorAll('.manga-page[data-page="0"] .ocr-box').length;
   var target = groupBoxes(0, group).length;
@@ -31,7 +33,7 @@
       ' target=' + target);
   check(speaking().length === 0, 'nothing highlighted before reading');
 
-  window.__mangaSetSpeaking(0, group);
+  window.__mangaSetSpeaking(0, blocks);
   var lit = speaking();
   check(lit.length === target,
       'only the read sentence group is highlighted: ' + lit.length + ' vs ' + target);
@@ -49,12 +51,25 @@
       'highlight is re-applied after __mangaReplaceOcr: ' + speaking().length);
 
   // Page without an OCR layer in the window: no throw, nothing lit.
-  window.__mangaSetSpeaking(1, group);
+  window.__mangaSetSpeaking(1, blocks);
   check(speaking().length === 0, 'switching to a page without boxes clears page 0');
 
-  window.__mangaSetSpeaking(0, group);
-  window.__mangaSetSpeaking(0, -1);
-  check(speaking().length === 0, 'group -1 clears the highlight');
+  // A finished-audio line spanning two sentence groups: exactly those blocks.
+  var cross = window.__testCrossBlocks;
+  window.__mangaSetSpeaking(0, cross);
+  var crossLit = speaking();
+  check(crossLit.length === cross.length,
+      'cross-group line lights exactly its blocks: ' + crossLit.length);
+  var groupsLit = {};
+  for (var k = 0; k < crossLit.length; k++) {
+    groupsLit[crossLit[k].getAttribute('data-manga-sentence-group')] = true;
+  }
+  check(Object.keys(groupsLit).length === 2,
+      'cross-group line spans two sentence groups');
+
+  window.__mangaSetSpeaking(0, blocks);
+  window.__mangaSetSpeaking(0, []);
+  check(speaking().length === 0, 'empty block list clears the highlight');
   check(window.__mangaSpeaking === null, 'cleared state is null');
 
   var out = document.createElement('pre');

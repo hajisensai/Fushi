@@ -27,8 +27,8 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
 
   MangaReadAloudController? controller;
 
-  /// 正在高亮的句子（文字层重建后由 [_replaceSpreadOcr] 重新挂上）。
-  (int, int)? _speaking;
+  /// 正在高亮的句子（页, 块下标）（文字层重建后由 [_replaceSpreadOcr] 重新挂上）。
+  (int, List<int>)? _speaking;
   bool _starting = false;
 
   bool get active => controller?.isActive ?? false;
@@ -94,8 +94,8 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
   }
 
   @override
-  Future<void> show(int pageIndex, int group) async {
-    _speaking = (pageIndex, group);
+  Future<void> show(int pageIndex, List<int> blocks) async {
+    _speaking = blocks.isEmpty ? null : (pageIndex, blocks);
     if (!_s.mounted) return;
     if (!isSameSpread(pageIndex, _s._currentPage)) {
       await _s._jumpToPage(pageIndex + 1);
@@ -178,9 +178,9 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
   // ── 高亮 JS ──────────────────────────────────────────────────────────
 
   String _speakingJs() {
-    final (int, int)? speaking = _speaking;
+    final (int, List<int>)? speaking = _speaking;
     return 'window.__mangaSetSpeaking && window.__mangaSetSpeaking('
-        '${speaking?.$1 ?? -1}, ${speaking?.$2 ?? -1});';
+        '${speaking?.$1 ?? -1}, ${jsonEncode(speaking?.$2 ?? const <int>[])});';
   }
 
   /// 文字层重建（窗口重载 / 懒挂 OCR 框）之后重新挂高亮；没在朗读时为空。

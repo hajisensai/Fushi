@@ -119,7 +119,7 @@ class _Host implements MangaReadAloudHost {
   final Map<int, Completer<MangaPageTextResult>> gates =
       <int, Completer<MangaPageTextResult>>{};
   final List<int> ensureCalls = <int>[];
-  final List<(int, int)> shown = <(int, int)>[];
+  final List<(int, List<int>)> shown = <(int, List<int>)>[];
   int clears = 0;
   int activity = 0;
   int visible = 0;
@@ -146,8 +146,8 @@ class _Host implements MangaReadAloudHost {
   }
 
   @override
-  Future<void> show(int pageIndex, int group) async {
-    shown.add((pageIndex, group));
+  Future<void> show(int pageIndex, List<int> blocks) async {
+    shown.add((pageIndex, blocks));
     if (!isSameSpread(pageIndex, visible)) {
       visible = pageIndex - pageIndex % 2;
       onPageChanged?.call(visible);
@@ -281,7 +281,7 @@ void main() {
     await _waitFor(() => c.state == MangaReadAloudState.finished);
 
     expect(playedTexts(all), <String>['あ。', 'い。', 'う。']);
-    expect(host.shown.map(((int, int) s) => s.$1), <int>[0, 0, 2]);
+    expect(host.shown.map(((int, List<int>) s) => s.$1), <int>[0, 0, 2]);
     expect(player.played.map(((String, double) p) => p.$2), <double>[
       1.5,
       1.5,

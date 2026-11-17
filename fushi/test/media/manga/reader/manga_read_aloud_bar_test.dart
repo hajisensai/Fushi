@@ -26,7 +26,7 @@ class _PendingHost implements MangaReadAloudHost {
   @override
   Future<MangaPageTextResult> ensurePageText(int pageIndex) => text.future;
   @override
-  Future<void> show(int pageIndex, int group) async {}
+  Future<void> show(int pageIndex, List<int> blocks) async {}
   @override
   Future<void> clearHighlight() async {}
   @override
