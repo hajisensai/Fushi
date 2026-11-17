@@ -1,5 +1,8 @@
-// 内封字幕整轨抽取（PR #3679 的后续）：
-//  - 下一集预热（prewarmEmbeddedSubtitleCache background: true）不和同一块盘上当前集
+// 内封字幕整轨抽取的后续两项（PR #3679 的后续）：
+//  1. 抽取开始的回调（[loadSubtitleCueResult] / [loadDefaultTextEmbeddedSubtitleCues] 的
+//     onExtractionStarted）：只有缓存未命中、真要读整个容器时才回调——播放页据此先借
+//     播放器解码出字。
+//  2. 下一集预热（prewarmEmbeddedSubtitleCache background: true）不和同一块盘上当前集
 //     的读盘同时跑：等它结束 / 被取消再开始；还在排队时取消 = 不再开始。
 // 假 ffmpeg 后端按输入文件分别挂起，记录哪几个文件的抽取同时在跑。
 import 'dart:async';
@@ -158,6 +161,47 @@ void main() {
       expect(a, b);
       expect(mayShareDisk(a, b), isTrue);
     }, testOn: 'windows || linux || mac-os');
+  });
+
+  group('onExtractionStarted：只在真要读整个容器时回调', () {
+    test('缓存未命中回调一次；之后缓存命中不回调', () async {
+      final String path = video('ep1');
+      int calls = 0;
+      final Future<SubtitleCueLoadResult> first = loadSubtitleCueResult(
+        _jpn0,
+        path,
+        'video/ep1',
+        onExtractionStarted: () => calls++,
+      );
+      await backend.whenStarted(path);
+      expect(calls, 1, reason: '回调要在抽取开始之前到，播放页才能抽取期间先出字');
+      backend.release(path);
+      expect((await first).isFailure, isFalse);
+
+      final SubtitleCueLoadResult second = await loadSubtitleCueResult(
+        _jpn0,
+        path,
+        'video/ep1',
+        onExtractionStarted: () => calls++,
+      );
+      expect(second.isFailure, isFalse);
+      expect(calls, 1, reason: '缓存命中瞬时出结果，不必借播放器解码');
+    });
+
+    test('默认加载把挑中的源交给回调', () async {
+      final String path = video('auto');
+      SubtitleSource? chosen;
+      final Future<DefaultEmbeddedSubtitleLoadResult> load =
+          loadDefaultTextEmbeddedSubtitleCues(
+            videoPath: path,
+            bookUid: 'video/auto',
+            onExtractionStarted: (SubtitleSource s) => chosen = s,
+          );
+      await backend.whenStarted(path);
+      expect(chosen?.streamIndex, 0);
+      backend.release(path);
+      expect((await load).status, DefaultEmbeddedSubtitleLoadStatus.loaded);
+    });
   });
 
   group('下一集预热排在同一块盘上当前集的读盘之后', () {

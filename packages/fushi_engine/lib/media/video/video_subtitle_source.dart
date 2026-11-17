@@ -572,7 +572,8 @@ bool isTransientDefaultEmbeddedSubtitleLoad(
 /// decides whether to apply cues / notify, also gated on [isStillCurrent].
 ///
 /// [cancel] 交给默认加载（[loadDefaultTextEmbeddedSubtitleCues]）的整轨抽取：播放器
-/// 换片 / 销毁时完成（注入 [loadOnce] 的测试不经过它）。
+/// 换片 / 销毁时完成（注入 [loadOnce] 的测试不经过它）。[onExtractionStarted] 同样原样
+/// 交给默认加载。
 Future<DefaultEmbeddedSubtitleLoadResult>
 loadDefaultTextEmbeddedSubtitleCuesWithReadinessRetry({
   required String videoPath,
@@ -582,6 +583,7 @@ loadDefaultTextEmbeddedSubtitleCuesWithReadinessRetry({
   String langCode = 'ja',
   List<String> preferredLanguages = const <String>[],
   Future<void>? cancel,
+  void Function(SubtitleSource chosen)? onExtractionStarted,
   Future<DefaultEmbeddedSubtitleLoadResult> Function({
     required String videoPath,
     required String bookUid,
@@ -609,6 +611,7 @@ loadDefaultTextEmbeddedSubtitleCuesWithReadinessRetry({
         langCode: langCode,
         preferredLanguages: preferredLanguages,
         cancel: cancel,
+        onExtractionStarted: onExtractionStarted,
       );
 
   DefaultEmbeddedSubtitleLoadResult result = await load(
@@ -1177,14 +1180,25 @@ Future<List<AudioCue>> loadCuesForSource(
 }
 
 /// 同 [loadCuesForSource]，但**保留失败原因**（[SubtitleCueLoadFailure]）。不抛。
+///
+/// [onExtractionStarted]：内嵌轨缓存未命中、**真要去读整个容器**之前同步回调一次（缓存
+/// 命中 / 外挂源不回调）。播放页据此在抽取期间先让播放器解码这条轨即时出字（整轨抽取在
+/// 慢盘上要一分钟以上），抽完再换成完整 cue 列表。
 Future<SubtitleCueLoadResult> loadSubtitleCueResult(
   SubtitleSource source,
   String videoPath,
   String bookUid, {
   Future<void>? cancel,
+  void Function()? onExtractionStarted,
 }) async {
   if (source.isEmbedded) {
-    return _loadEmbeddedCues(source, videoPath, bookUid, cancel: cancel);
+    return _loadEmbeddedCues(
+      source,
+      videoPath,
+      bookUid,
+      cancel: cancel,
+      onExtractionStarted: onExtractionStarted,
+    );
   }
   return loadExternalSubtitleCueResult(source.externalPath!, bookUid);
 }
@@ -1192,12 +1206,16 @@ Future<SubtitleCueLoadResult> loadSubtitleCueResult(
 /// 自动挑一条能转文本的内封轨抽成 cue。[preferredLanguages]（用户的主字幕默认语言，
 /// 见 [parseSubtitleLanguagePreferences]）非空时按其顺序挑第一条命中的文本轨，都不命中
 /// 才回退「第一条文本轨」（反馈 Fz9HXThdSW）。
+///
+/// [onExtractionStarted]：挑中的轨缓存未命中、要整轨抽取时回调挑中的源（语义同
+/// [loadSubtitleCueResult]）。
 Future<DefaultEmbeddedSubtitleLoadResult> loadDefaultTextEmbeddedSubtitleCues({
   required String videoPath,
   required String bookUid,
   String langCode = 'ja',
   List<String> preferredLanguages = const <String>[],
   Future<void>? cancel,
+  void Function(SubtitleSource chosen)? onExtractionStarted,
 }) => _asForegroundDiskRead(
   videoPath,
   () => _loadDefaultTextEmbeddedSubtitleCues(
@@ -1206,6 +1224,7 @@ Future<DefaultEmbeddedSubtitleLoadResult> loadDefaultTextEmbeddedSubtitleCues({
     langCode: langCode,
     preferredLanguages: preferredLanguages,
     cancel: cancel,
+    onExtractionStarted: onExtractionStarted,
   ),
 );
 
@@ -1215,6 +1234,7 @@ Future<DefaultEmbeddedSubtitleLoadResult> _loadDefaultTextEmbeddedSubtitleCues({
   required String langCode,
   required List<String> preferredLanguages,
   required Future<void>? cancel,
+  required void Function(SubtitleSource chosen)? onExtractionStarted,
 }) async {
   final SubtitleSourceListing listing =
       await listAllSubtitleSourcesWithDiagnostics(
@@ -1278,6 +1298,9 @@ Future<DefaultEmbeddedSubtitleLoadResult> _loadDefaultTextEmbeddedSubtitleCues({
     videoPath,
     bookUid,
     cancel: cancel,
+    onExtractionStarted: onExtractionStarted == null
+        ? null
+        : () => onExtractionStarted(chosen),
   );
   if (loaded.isFailure) {
     return DefaultEmbeddedSubtitleLoadResult(
@@ -1320,9 +1343,16 @@ Future<SubtitleCueLoadResult> _loadEmbeddedCues(
   String videoPath,
   String bookUid, {
   Future<void>? cancel,
+  void Function()? onExtractionStarted,
 }) => _asForegroundDiskRead(
   videoPath,
-  () => _loadEmbeddedCuesNow(source, videoPath, bookUid, cancel: cancel),
+  () => _loadEmbeddedCuesNow(
+    source,
+    videoPath,
+    bookUid,
+    cancel: cancel,
+    onExtractionStarted: onExtractionStarted,
+  ),
 );
 
 Future<SubtitleCueLoadResult> _loadEmbeddedCuesNow(
@@ -1330,6 +1360,7 @@ Future<SubtitleCueLoadResult> _loadEmbeddedCuesNow(
   String videoPath,
   String bookUid, {
   required Future<void>? cancel,
+  required void Function()? onExtractionStarted,
 }) async {
   final SubtitleFormat? format = subtitleFormatForCodec(source.codec ?? '');
   if (format == null) {
@@ -1349,6 +1380,7 @@ Future<SubtitleCueLoadResult> _loadEmbeddedCuesNow(
 
   EmbeddedSubtitleExtractFailure? extractFailure;
   if (!await _isNonEmptyFile(cached)) {
+    onExtractionStarted?.call();
     extractFailure = await _ensureAllEmbeddedSubtitlesExtracted(
       videoPath,
       cacheDir,

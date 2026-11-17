@@ -4294,8 +4294,14 @@ extension _VideoSubtitle on _VideoFushiPageState {
     }
 
     // BUG-104: 内嵌字幕要从容器里 demux 抽取，大文件（如 27GB REMUX）首次可达
-    // ~20s。期间给一个不可关的加载遮罩，否则底栏菜单一关、画面字幕没变，用户会以为
-    // 「点了没反应、没切换过去」。抽取走单趟全轨缓存，同一视频后续切换瞬时命中。
+    // ~20s，慢盘 / 与播放抢盘时一分钟以上（反馈 ZTDA2WQJj4）。期间给一个加载状态，
+    // 否则底栏菜单一关、画面字幕没变，用户会以为「点了没反应、没切换过去」。抽取走单趟
+    // 全轨缓存，同一视频后续切换瞬时命中。
+    //
+    // 缓存未命中（真要整轨抽取）时先借播放器解码这条轨即时出字（可点、可查词，与远端
+    // 直出容器同一条回流），抽完把边播边累积的 cue 换成完整列表。
+    final String persisted = source.toPersistedValue();
+    Future<Object?>? bridge;
     _showSubtitleLoadingOverlay(origin: origin);
     final SubtitleCueLoadResult result;
     try {
@@ -4304,32 +4310,69 @@ extension _VideoSubtitle on _VideoFushiPageState {
         videoPath,
         bookUid,
         cancel: _embeddedSubtitleExtractCancelFor(videoPath),
+        onExtractionStarted: () {
+          if (!isCurrent()) return;
+          final int? streamIndex = source.streamIndex;
+          if (streamIndex == null) return;
+          bridge = controller.beginEmbeddedTextBridge(streamIndex).then((
+            Object? token,
+          ) {
+            if (token != null && isCurrent()) {
+              _rebuild(() => _currentSubtitleSource = persisted);
+              _showOsd(t.video_subtitle_full_load_live(label: source.label));
+            }
+            return token;
+          });
+        },
       );
     } finally {
       _hideSubtitleLoadingOverlay();
     }
+    final Object? bridgeToken = await bridge;
     if (!isCurrent()) return false;
-    // 抽取/解析后无任何 cue（图形字幕、ffmpeg 缺失、轨损坏、文件读不出等）：诚实告知
-    // 失败，**不切换、不持久化**——避免谎报「已切换」却空屏，也避免用一个坏内封轨覆盖
-    // 掉当前正常工作的字幕源（下次进来还是空）。文案按失败原因分流，见
-    // [_subtitleFailureMessage]（BUG-1490）。
+    // 桥装上过、但已被别的路径换掉了字幕：作废。
+    if (bridgeToken != null &&
+        !controller.isEmbeddedTextBridgeLive(bridgeToken)) {
+      return false;
+    }
     if (result.isFailure) {
+      final SubtitleCueLoadFailure failure = result.failure!;
+      if (bridgeToken != null) {
+        // 完整列表没读出来（卡死 / 失败），但播放器解码的字幕一直在显示：保留它——对
+        // 用户最好，字幕没断、照样可查词制卡，只是列表不会预先补全。不持久化：下次打开
+        // 仍按上次成功落库的选择来，并会再试读取。
+        if (failure != SubtitleCueLoadFailure.extractionCancelled) {
+          _showOsd(
+            t.video_subtitle_full_load_failed_live(label: source.label),
+            severity: ToastSeverity.warning,
+          );
+        }
+        return true;
+      }
+      // 抽取/解析后无任何 cue（图形字幕、ffmpeg 缺失、轨损坏、文件读不出等）：诚实告知
+      // 失败，**不切换、不持久化**——避免谎报「已切换」却空屏，也避免用一个坏内封轨覆盖
+      // 掉当前正常工作的字幕源（下次进来还是空）。文案按失败原因分流，见
+      // [_subtitleFailureMessage]（BUG-1490）。
       _showOsd(
-        _subtitleFailureMessage(result.failure!, source.label),
+        _subtitleFailureMessage(failure, source.label),
         severity: ToastSeverity.error,
       );
       return false;
     }
     final List<AudioCue> cues = result.cues;
-    controller.claimDiscTrackOwnership();
-    controller.setCues(cues);
-    // 选了文本字幕源就关掉 libmpv 画面字幕，避免与可点 overlay 双重渲染。
-    await controller.selectSubtitleTrack(SubtitleTrack.no());
+    if (bridgeToken != null) {
+      // 边播边累积的 cue 换成完整列表：同一帧内换装并按位置找回当前句，不闪、不重复。
+      controller.completeEmbeddedTextBridge(bridgeToken, cues);
+    } else {
+      controller.claimDiscTrackOwnership();
+      controller.setCues(cues);
+      // 选了文本字幕源就关掉 libmpv 画面字幕，避免与可点 overlay 双重渲染。
+      await controller.selectSubtitleTrack(SubtitleTrack.no());
+    }
 
     if (!isCurrent()) {
       return false;
     }
-    final String persisted = source.toPersistedValue();
     // BUG-081: 单视频把解析出的 cue 落库，重进时 `_loadSingle` 的 `loadCues`
     // 直接命中，无需用户再手动加载。cue 与字幕源指针**原子**写入（事务），避免
     // 半落库导致下次恢复内容与源标签不一致。播放列表各集有意不存 cue（每集外部

@@ -6334,6 +6334,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 覆盖。字幕源指针常在 setCues 之后才写，那次写入会再触发一次，序号只认最后一次。
       unawaited(_reloadSubtitleTextOverrides());
     };
+    controller.onEmbeddedSubtitleAutoLoadPending =
+        _handleEmbeddedSubtitleAutoLoadPending;
     // TODO-1213：进入「正在缓冲…」阶段——网络流 controller.load 内部连接 + 缓冲最久，
     // 页级 spinner 期间显阶段文案而非裸转圈。纯 UI 状态，不改 load 时序。
     _setLoadingPhase(_VideoLoadPhase.buffering);
@@ -6943,6 +6945,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (mounted) nav.pop();
   }
 
+  /// 自动加载挑中的内封文本轨要整轨抽取：把它标成当前字幕源——播放器此刻已解码这条轨
+  /// 顶着显示（见 [VideoPlayerController.beginEmbeddedTextBridge]）。
+  void _handleEmbeddedSubtitleAutoLoadPending(SubtitleSource source) {
+    if (!mounted) return;
+    _rebuild(() => _currentSubtitleSource = source.toPersistedValue());
+  }
+
   void _handleEmbeddedSubtitleAutoLoad(
     DefaultEmbeddedSubtitleLoadResult result,
   ) {
@@ -6968,6 +6977,20 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 选中轨加载失败按真实原因给文案（BUG-4798：读盘卡住不再说成「图形或不支持的轨」）。
     final SubtitleCueLoadFailure? cueFailure = result.cueFailure;
     if (cueFailure == SubtitleCueLoadFailure.extractionCancelled) return;
+    // 完整字幕没读出来，但播放器解码的字幕一直在显示：保留它（对用户最好——字幕没断、
+    // 照样可查词制卡），只说明列表不会补全。不是「加载失败」。
+    if (_controller?.isPlayerDecodedTextSubtitleActive ?? false) {
+      _showOsd(
+        t.video_subtitle_full_load_failed_live(label: label),
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    final String? pending = result.source?.toPersistedValue();
+    if (pending != null && _currentSubtitleSource == pending) {
+      // 读取期间标成了当前源、但播放器也没能解码它：撤回标记，菜单不谎报。
+      _rebuild(() => _currentSubtitleSource = null);
+    }
     _showOsd(
       cueFailure == null
           ? t.video_subtitle_load_failed(label: label)
