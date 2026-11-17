@@ -36,7 +36,11 @@
 //! - 本机日志里每条操作都是 `Salts`（种类 15），没有空洞、承袭槽、暂缓 / 分叉 / 等待中的条目；
 //! - `peers` 里除本机自己没有别的设备，`trust` 里没有任何记录；
 //! - 没发布过：`loc_heads` 没有本集合的行（`head` 写下的本机 head 就记在这里）、`relay_out` 没有、`srs_meta` 里没有
-//!   已传水位 `gen4_out/<col>/…`（`outbox_ack` 记的）。`location_root` 只写位置的 meta 与围栏（不含任何操作），不算发布。
+//!   已传水位 `gen4_out/<col>/…`（`outbox_ack` 记的）、**`loc_state` 没有**（G9-5 第二轮复核）——`location_root`
+//!   写过位置的根（`v4/meta.json`、loc 标记、旧根围栏）或 `location_seal` 记过加密，都会在 `loc_state` 留一行。那份
+//!   `meta.json` 已经让别的设备在位置上看得到这个集合，丢掉它就在位置上留下一个指向没人持有的集合的孤儿 `meta.json`，
+//!   而内核不碰位置上的文件、删不掉它：所以碰过位置就不再是空集合，照 D27 并入。同步调度先关联、后跑第一轮
+//!   （`srs_sync_scheduler.dart`：`link` 在 `_runRoundOn` 之前），新设备关联已有集合时通常还没立过根，照样能换绑。
 //!
 //! 只读、一个快照里判（调用方在写事务里调，判与删在同一个事务）。
 //!
@@ -227,9 +231,10 @@ pub(crate) const DISPOSABLE_SQL: [&str; 7] = [
     // 本机以外的公钥、任何信任记录。
     "SELECT EXISTS(SELECT 1 FROM peers WHERE col = ?1 AND device != ?2) \
      OR EXISTS(SELECT 1 FROM trust WHERE col = ?1)",
-    // 发布过 head / 转发过。
+    // 发布过 head / 转发过 / 立过位置的根或记过位置的加密（文件头「空集合」）。
     "SELECT EXISTS(SELECT 1 FROM loc_heads WHERE col = ?1) \
-     OR EXISTS(SELECT 1 FROM relay_out WHERE col = ?1)",
+     OR EXISTS(SELECT 1 FROM relay_out WHERE col = ?1) \
+     OR EXISTS(SELECT 1 FROM loc_state WHERE col = ?1)",
     // 已传水位（`outbox_ack`）：`gen4_out/<col>/` 开头的键（区间同 [META_DELETE_SQL]）。
     "SELECT EXISTS(SELECT 1 FROM srs_meta WHERE key >= ?6 AND key < substr(?6, 1, length(?6) - 1) || '0')",
     // 有没有本机身份（缺 = 不是「本机身份写的」，不算空）。
