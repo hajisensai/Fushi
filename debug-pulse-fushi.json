@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-17T05:57:46Z",
+ "generatedAt": "2026-11-17T06:24:35Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "598403fb703327e8c81dcc633c7379693d308b37",
-  "seq": 28572
+  "sha": "4c3472878350f3cb22d76aac04abfce8c981e529",
+  "seq": 28598
  },
  "builds": [
   {
@@ -127,9 +127,12 @@
   }
  ],
  "pending": {
-  "headSha": "598403fb703327e8c81dcc633c7379693d308b37",
-  "headSeq": 28572,
+  "headSha": "4c3472878350f3cb22d76aac04abfce8c981e529",
+  "headSeq": 28598,
   "prs": [
+   3659,
+   3661,
+   3660,
    3657,
    3646,
    3653,
@@ -150,19 +153,19 @@
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44027661798"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44029422542"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44027662086"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44029422830"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44027662086"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44029422830"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44027662086"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44029422830"
    }
   }
  },
@@ -354,6 +357,33 @@
    "mergedAt": "2026-11-17T05:37:12Z",
    "additions": 33,
    "deletions": 2,
+   "labels": []
+  },
+  "3659": {
+   "number": 3659,
+   "title": "fix(screen-ocr): 截屏识字遗留缺陷（卡图丢失、引擎销毁挂死、Lens 手机文案）与测试缺口",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-17T06:11:47Z",
+   "additions": 901,
+   "deletions": 77,
+   "labels": []
+  },
+  "3660": {
+   "number": 3660,
+   "title": "fix(feedback): 视频先传、样本文件待传原子落地、macOS 另存、wrangler 缺依赖提示",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-17T05:59:28Z",
+   "additions": 457,
+   "deletions": 37,
+   "labels": []
+  },
+  "3661": {
+   "number": 3661,
+   "title": "feat(leaderboard): 拍板台网页上传附件（拖放 / 粘贴截图 / 选文件）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-17T06:06:37Z",
+   "additions": 271,
+   "deletions": 7,
    "labels": []
   }
  }
