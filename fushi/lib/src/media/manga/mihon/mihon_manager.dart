@@ -95,6 +95,7 @@ class MihonManager extends ChangeNotifier {
   String? error;
   bool _disposed = false;
   Future<void>? _initialising;
+  Future<void>? _localReady;
   Future<void>? _runtimeShutdown;
   ExitFlushCallback? _exitShutdown;
   final Set<String> _extensionActionPackages = <String>{};
@@ -123,29 +124,57 @@ class MihonManager extends ChangeNotifier {
       ? runtime.dispose()
       : Future<void>.value();
 
+  /// 完整初始化：本地就绪（[ensureLocalReady]）+ 刷新扩展仓库目录。完成后
+  /// [available] 才可用（BUG-1340：冷启动要把目录拉回来），扩展页、更新探针、
+  /// ctl 路由等这一段。只需要已装扩展 / 来源的调用方（在线阅读）等
+  /// [ensureLocalReady] 就够，不必陪着等仓库索引与下载量的网络请求。
+  ///
+  /// 失败不缓存：本地 IO / DB 出错后下一次调用重跑，而不是整个进程里永远拿到
+  /// 同一个失败的 Future。
   Future<void> initialise() {
     final Future<void>? current = _initialising;
     if (current != null) return current;
-    final Future<void> future = _initialise();
+    late final Future<void> future;
+    future = _initialise().onError<Object>((Object error, StackTrace stack) {
+      if (identical(_initialising, future)) _initialising = null;
+      Error.throwWithStackTrace(error, stack);
+    });
     _initialising = future;
     return future;
   }
 
+  /// 本地就绪段：建目录、读库（[stores] / [installed] / [sources]）、回收上次
+  /// 没走完的预览与暂存 APK。不发任何网络请求。失败同样不缓存。
+  Future<void> ensureLocalReady() {
+    final Future<void>? current = _localReady;
+    if (current != null) return current;
+    late final Future<void> future;
+    future = _prepareLocal().onError<Object>((Object error, StackTrace stack) {
+      if (identical(_localReady, future)) _localReady = null;
+      Error.throwWithStackTrace(error, stack);
+    });
+    _localReady = future;
+    return future;
+  }
+
+  Future<void> _prepareLocal() async {
+    await rootDirectory.create(recursive: true);
+    await Directory(
+      p.join(rootDirectory.path, 'extensions'),
+    ).create(recursive: true);
+    await Directory(p.join(rootDirectory.path, 'tmp')).create(recursive: true);
+    await reload();
+    // 必须在 reload 之后：判断孤儿要拿 installed 跟标记里的包名比对。
+    await _recoverAbandonedPreview();
+    await _clearStagedApks();
+  }
+
   Future<void> _initialise() async {
     loading = true;
+    error = null;
     _notify();
     try {
-      await rootDirectory.create(recursive: true);
-      await Directory(
-        p.join(rootDirectory.path, 'extensions'),
-      ).create(recursive: true);
-      await Directory(
-        p.join(rootDirectory.path, 'tmp'),
-      ).create(recursive: true);
-      await reload();
-      // 必须在 reload 之后：判断孤儿要拿 installed 跟标记里的包名比对。
-      await _recoverAbandonedPreview();
-      await _clearStagedApks();
+      await ensureLocalReady();
       await _refreshStores();
     } catch (exception) {
       error = '$exception';
