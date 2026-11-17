@@ -733,6 +733,12 @@ pub fn plan(t: &Truth<'_>, col: i64, req: &Value, heads: &[Vec<u8>]) -> Result<V
         .map_or(0, |n| usize::try_from(n).unwrap_or(usize::MAX))
         .min(heads.len());
     let first_relayed = heads.len() - relayed;
+    // 本机旧身份（被转发来的 head 里有它们就跳过）：整轮取一次。
+    let formers = if relayed > 0 {
+        super::sync_oldroot::former_identities(t, col)?
+    } else {
+        BTreeSet::new()
+    };
     for (i, bytes) in heads.iter().enumerate() {
         let is_relayed = i >= first_relayed;
         let h = match Head4::decode(bytes) {
@@ -753,10 +759,7 @@ pub fn plan(t: &Truth<'_>, col: i64, req: &Value, heads: &[Vec<u8>]) -> Result<V
         if loc.is_some_and(|l| l == h.loc) && !h.seal.is_empty() {
             sealed = true;
         }
-        if is_relayed
-            && (h.device == me.device
-                || super::sync_oldroot::former_identities(t, col)?.contains(&h.device))
-        {
+        if is_relayed && (h.device == me.device || formers.contains(&h.device)) {
             continue;
         }
         if h.device == me.device {

@@ -61,6 +61,9 @@ pub(crate) const RELAY_PUT_SQL: &str = "INSERT OR IGNORE INTO relay_segs (col, d
 pub(crate) const RELAY_GET_SQL: &str = "SELECT piece FROM relay_segs \
      WHERE col = ?1 AND device = ?2 AND first = ?3 AND last = ?4 AND tag = ?5";
 
+/// 有没有存着这一份可转发段（只判存在，不读 `piece` 大字段；唯一约束的自动索引，等值点查）。
+pub(crate) const RELAY_HAS_SQL: &str = "SELECT 1 FROM relay_segs      WHERE col = ?1 AND device = ?2 AND first = ?3 AND last = ?4 AND tag = ?5 LIMIT 1";
+
 /// 一台作者存着的可转发段（唯一约束的自动索引，前缀区间）。
 pub(crate) const RELAY_LIST_SQL: &str =
     "SELECT id, first, last, tag FROM relay_segs WHERE col = ?1 AND device = ?2";
@@ -118,10 +121,20 @@ fn locations(t: &Truth<'_>, col: i64) -> Result<Vec<String>, String> {
 
 /// 这台设备的段 / head 可以由本机转发：不是本机（当前或旧身份）、受信。
 fn relayable(t: &Truth<'_>, col: i64, device: &Id) -> Result<bool, String> {
+    relayable_among(t, col, device, &former_identities(t, col)?)
+}
+
+/// [relayable]，旧身份由调用方取一次（逐台设备循环时不重复查）。
+fn relayable_among(
+    t: &Truth<'_>,
+    col: i64,
+    device: &Id,
+    formers: &BTreeSet<Id>,
+) -> Result<bool, String> {
     if t.self_identity(col)?.is_some_and(|s| s.device == *device) {
         return Ok(false);
     }
-    if former_identities(t, col)?.contains(device) {
+    if formers.contains(device) {
         return Ok(false);
     }
     Ok(t.trust_of(col, device)?.is_none())
@@ -219,11 +232,35 @@ fn present_at(
 }
 
 fn sent_names(t: &Truth<'_>, col: i64, loc: &str, device: &Id) -> Result<BTreeSet<String>, String> {
-    Ok(t.relay_out(col, loc)?
+    Ok(t.relay_out_of(col, loc, device)?
         .into_iter()
-        .filter(|r| r.device == *device && !r.gone)
+        .filter(|r| !r.gone)
         .map(|r| r.name)
         .collect())
+}
+
+fn has_piece(
+    t: &Truth<'_>,
+    col: i64,
+    device: &Id,
+    (first, last, tag): (u64, u64, &str),
+) -> Result<bool, String> {
+    t.conn()
+        .prepare_cached(RELAY_HAS_SQL)
+        .map_err(sql)?
+        .query_row(
+            params![
+                col,
+                &device.0[..],
+                i64::try_from(first).map_err(|_| "relay: seq out of range")?,
+                i64::try_from(last).map_err(|_| "relay: seq out of range")?,
+                tag
+            ],
+            |_| Ok(()),
+        )
+        .optional()
+        .map(|o| o.is_some())
+        .map_err(sql)
 }
 
 fn piece_of(
@@ -290,8 +327,9 @@ pub fn relay_outbox(
     if location_count(t, col)? < 2 {
         return Ok(json!({"files": paths, "more": false, "incomplete": incomplete}));
     }
+    let formers = former_identities(t, col)?;
     'devices: for (device, h) in stored_heads(t, col)? {
-        if !relayable(t, col, &device)? {
+        if !relayable_among(t, col, &device, &formers)? {
             continue;
         }
         let sent = sent_names(t, col, loc, &device)?;
@@ -387,8 +425,8 @@ pub fn relay_ack(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String> 
                     .iter()
                     .map(|s| relay_file_name(s))
                     .collect();
-                for r in t.relay_out(col, loc)? {
-                    if r.device == device && !r.gone && wanted.contains(&r.name) {
+                for r in t.relay_out_of(col, loc, &device)? {
+                    if !r.gone && wanted.contains(&r.name) {
                         t.relay_sent(col, loc, &device, &r.name, gen)?;
                     }
                 }
@@ -448,7 +486,7 @@ pub(crate) fn wanted_for_relay(
         let lacking = others
             .iter()
             .any(|(seq, names)| *seq < *b && !names.contains(&name));
-        if lacking && piece_of(t, col, &h.device, (*a, *b, tag))?.is_none() {
+        if lacking && !has_piece(t, col, &h.device, (*a, *b, tag))? {
             out.push(name);
         }
     }

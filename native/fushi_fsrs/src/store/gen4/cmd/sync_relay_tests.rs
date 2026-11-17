@@ -11,7 +11,9 @@ use rusqlite::{Connection, OpenFlags};
 use serde_json::{Value, json};
 
 use super::dispatch_tests::T1;
-use super::sync_relay::{LOC_KEYS_SQL, RELAY_GET_SQL, RELAY_LIST_SQL, RHEAD_RANGE_SQL};
+use super::sync_relay::{
+    LOC_KEYS_SQL, RELAY_GET_SQL, RELAY_HAS_SQL, RELAY_LIST_SQL, RHEAD_RANGE_SQL,
+};
 use super::sync_tests::{Dev, Loc, Opts, cmd, heads, listing, round, sync_all};
 use super::tests::{N1, N2, N3, N4};
 use crate::store::gen4::files::GEN4_FILE;
@@ -500,6 +502,8 @@ fn relay_lookups_use_their_keys() {
     for (q, n) in [
         (LOC_KEYS_SQL, 1),
         (RELAY_GET_SQL, 5),
+        (RELAY_HAS_SQL, 5),
+        (crate::store::gen4::sync_state::RELAY_OUT_OF_SQL, 3),
         (RELAY_LIST_SQL, 2),
         (RHEAD_RANGE_SQL, 2),
     ] {

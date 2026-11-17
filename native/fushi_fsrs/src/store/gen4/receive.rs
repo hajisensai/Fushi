@@ -199,7 +199,8 @@ pub struct Receiver<'t, 'c> {
     /// 这一批 [Receiver::legacy] 逐段的结论（按调用顺序）。旧根核对的收尾（`oldroot.rs` 的
     /// [Receiver::finish_oldroot]）拿它判断本轮清单是否全部有了结论，不让调用方另报一份。
     legacy_taken: Vec<Taken>,
-    /// 这一批最多做多少项新工作（落库 + 新进等待缓冲的原生项；[Receiver::with_budget]）。None = 不限。
+    /// 这一批最多做多少项新工作（落库 + 新进等待缓冲的原生项，与承袭段落库 / 待投的槽；[Receiver::with_budget]）。
+    /// None = 不限。
     budget: Option<u64>,
     /// 这一批已做的新工作。
     spent: u64,
@@ -658,6 +659,9 @@ impl<'t, 'c> Receiver<'t, 'c> {
             prev_fp = s.fp;
         }
         self.tally.landed += landed;
+        // 承袭段也计入收段让路的预算（[Receiver::with_budget]）：它在段的中途不停（承袭段不切），但用完预算之后这一批
+        // 不再开下一段，一个事务最多超出一个承袭段。
+        self.spent += landed + parked;
         Ok(Taken::Landed {
             landed,
             known,

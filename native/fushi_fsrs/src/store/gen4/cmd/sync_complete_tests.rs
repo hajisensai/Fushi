@@ -469,6 +469,80 @@ fn old_root_takeover_reaches_migrated_and_new_devices_alike() {
 }
 
 /// 设备上 OLD 的承袭日志末尾。
+/// 收段让路覆盖承袭段：承袭段在段中途不停，但它落的槽计入 `maxItems` 预算——预算用完之后这一片不再开下一段（下一段
+/// 留到下一个事务），回包 `spent` 报出这一片做的新工作。新设备 c 先认位置、读 head，再把承袭段与 a 的原生段放在同一
+/// 批里按预算 1 交。
+#[test]
+fn heritage_segments_count_toward_the_ingest_budget() {
+    let a = Dev::new("g87bha");
+    let c = Dev::new("g87bhc");
+    let mut loc = Loc::new();
+    old_root(&mut loc, 12, &[(1, 5), (6, 12)]);
+    a.write(T1 + 1, N1, "鯨");
+    let (_, up) = takeover_round(&a, &mut loc, T1 + 10);
+    assert!(up > 0);
+    // c 只认位置、读 head（认得 a 的公钥），不收。
+    let locs: Vec<String> = loc
+        .keys()
+        .filter_map(|k| k.strip_prefix("v4/loc/").map(str::to_owned))
+        .collect();
+    let mut root_blobs = Vec::new();
+    root_blobs.extend(loc.get("v4/meta.json").cloned());
+    root_blobs.extend(loc.get("v3/meta.json").cloned());
+    let (root, _) = cmd(
+        c.h,
+        "location_root",
+        T1 + 20,
+        json!({"location": "loc", "has4": true, "has3": loc.contains_key("v3/meta.json"), "locs": locs}),
+        &root_blobs,
+    );
+    let heads: Vec<Vec<u8>> = loc
+        .iter()
+        .filter(|(k, _)| k.starts_with("v4/devices/") && k.contains("/head-"))
+        .map(|(_, v)| v.clone())
+        .collect();
+    cmd(
+        c.h,
+        "plan",
+        T1 + 20,
+        json!({"location": "loc", "loc": root["loc"], "listing": listing(&loc)}),
+        &heads,
+    );
+    let pick = |part: &str| -> Vec<Vec<u8>> {
+        loc.iter()
+            .filter(|(k, _)| k.starts_with("v4/devices/") && k.contains(part))
+            .map(|(_, v)| v.clone())
+            .collect()
+    };
+    let hrt = pick("/hrt-");
+    let segs = pick("/seg-");
+    assert!(!hrt.is_empty() && !segs.is_empty());
+    let mut pending: Vec<Vec<u8>> = hrt.iter().chain(segs.iter()).cloned().collect();
+    let mut txs = 0;
+    loop {
+        let (v, _) = cmd(c.h, "ingest", T1 + 21, json!({"maxItems": 1}), &pending);
+        let n = v["rest"].as_u64().unwrap() as usize;
+        let spent = v["spent"].as_u64().unwrap();
+        if txs == 0 {
+            // 这一片落的承袭槽全部计进了预算（不计的话 spent 只数原生项、远小于落下的旧历史）。
+            let old = d_old_len(&c);
+            assert!(old > 0 && spent >= old, "{v} old={old}");
+            assert!(
+                n <= hrt.len() && n < pending.len(),
+                "the native segments wait for the next slice: {v}"
+            );
+        }
+        txs += 1;
+        if n >= pending.len() {
+            break;
+        }
+        assert!(n > 0 || spent > 0, "no progress: {v}");
+        pending.drain(..n);
+        assert!(txs < 64, "{v}");
+    }
+    assert_eq!(d_old_len(&c), 12);
+}
+
 fn d_old_len(d: &Dev) -> u64 {
     let st = g4(d.h, "status", T1, json!({}));
     st["devices"]
