@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-17T05:52:34Z",
+ "generatedAt": "2026-11-17T05:55:22Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "0721b32b18f94eb4316bc916311e352be81bed9f",
-  "seq": 28546
+  "sha": "91a2fbd5ca8c82c41546f7d03144098bff5fea93",
+  "seq": 28558
  },
  "builds": [
   {
@@ -12,8 +12,8 @@
    "version": "3.3.0",
    "sha": "cacf3bdbbe1ff4b9de84b3db237a3de7f3d1984d",
    "unknown": false,
-   "publishedAt": "2026-11-17T05:52:23Z",
-   "testflight": false,
+   "publishedAt": "2026-11-17T05:55:05Z",
+   "testflight": true,
    "baseSeq": 28450,
    "prs": [
     3638,
@@ -27,16 +27,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44019530673"
+     "state": "ok"
     },
     "macos": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44019530673"
+     "state": "ok"
     },
     "ios": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44019530673"
+     "state": "ok"
     }
    }
   },
@@ -108,10 +105,8 @@
    "unknown": false,
    "publishedAt": "2026-11-17T03:31:19Z",
    "testflight": true,
-   "baseSeq": 28434,
-   "prs": [
-    3628
-   ],
+   "baseSeq": null,
+   "prs": [],
    "direct": [],
    "truncated": false,
    "platforms": {
@@ -129,39 +124,13 @@
      "state": "ok"
     }
    }
-  },
-  {
-   "seq": 28434,
-   "version": "3.3.0",
-   "sha": "131f1ec7d6a495a6a9e62c9c259e82ace568b140",
-   "unknown": false,
-   "publishedAt": "2026-11-17T00:05:42Z",
-   "testflight": true,
-   "baseSeq": null,
-   "prs": [],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43961562866"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
   }
  ],
  "pending": {
-  "headSha": "0721b32b18f94eb4316bc916311e352be81bed9f",
-  "headSeq": 28546,
+  "headSha": "91a2fbd5ca8c82c41546f7d03144098bff5fea93",
+  "headSeq": 28558,
   "prs": [
+   3646,
    3653,
    3651,
    3654,
@@ -184,28 +153,19 @@
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44027087635"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44027435105"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44027087635"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44027435105"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44027087635"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44027435105"
    }
   }
  },
  "prs": {
-  "3628": {
-   "number": 3628,
-   "title": "fix(guards): develop 尖端 native / 构建守卫 7 条红 + Rust format 红",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-17T02:34:30Z",
-   "additions": 55,
-   "deletions": 15,
-   "labels": []
-  },
   "3629": {
    "number": 3629,
    "title": "fix(guards): develop 尖端 structure 组三条红（import 大环 653→640、追踪 seam、新设置项登记）",
@@ -303,6 +263,15 @@
    "mergedAt": "2026-11-17T05:24:52Z",
    "additions": 264,
    "deletions": 37,
+   "labels": []
+  },
+  "3646": {
+   "number": 3646,
+   "title": "fix: subtitle list show-effects toggle clipped on narrow favorites row; arm64 markup parity digest",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-17T05:55:10Z",
+   "additions": 125,
+   "deletions": 42,
    "labels": []
   },
   "3647": {
