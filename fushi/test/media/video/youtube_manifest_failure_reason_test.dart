@@ -206,6 +206,53 @@ void main() {
       expect(e.isTransportFailure, isFalse);
     });
 
+    test('上一个 client 超时后迟到的连接失败不记进下一个 client 的窗口', () async {
+      // 单 client 的整体超时不取消 youtube_explode 重试循环里的在途请求。时序：
+      //   visionOS   取身份挂住 → 超时（无连接层失败）
+      //   ANDROID_VR 首次建连立刻失败，0.5 s 后的重试拖到链起点后 2.0 s 才再次建连
+      //              失败——此时 ANDROID_VR 的窗口（0.8～1.6 s）已结束，轮到 ANDROID
+      //   ANDROID 及之后：连上了但对端不回（零响应、零连接失败）
+      // ANDROID_VR 迟到的那次失败若记进 ANDROID 的窗口，就成了连续两个「出口不通」，
+      // 兜底链在 ANDROID 之后提前停，IOS / TV 没试。
+      const Duration perClient = Duration(milliseconds: 800);
+      final Stopwatch clock = Stopwatch()..start();
+      int androidVrAttempts = 0;
+      bool lateFailureThrown = false;
+      final YoutubeManifestException e = await _failWith((
+        http.Request req,
+      ) async {
+        if (_playerClientName(req) == 'ANDROID_VR') {
+          androidVrAttempts++;
+          if (androidVrAttempts == 1) {
+            throw const SocketException('HTTP connection timed out');
+          }
+          if (androidVrAttempts == 2) {
+            // 拖到 ANDROID 的窗口中段（visionOS 0.8 s + ANDROID_VR 0.8 s 之后）。
+            final Duration wait = perClient * 2.5 - clock.elapsed;
+            if (wait > Duration.zero) await Future<void>.delayed(wait);
+            lateFailureThrown = true;
+            throw const SocketException('HTTP connection timed out');
+          }
+        }
+        return Completer<http.Response>().future;
+      }, perClientTimeout: perClient);
+      expect(lateFailureThrown, isTrue, reason: '迟到的失败必须真的发生在链结束之前');
+      expect(e.failures, hasLength(kYoutubeManifestClientFallback.length));
+    });
+
+    test('生产出站的底层 HttpClient 真的用了 kYoutubeConnectTimeout', () {
+      // 所有提前停用例都注入 MockClient、立刻抛 SocketException；黑洞出口（SYN 被丢）下
+      // 连接层失败能不能在单 client 窗口内浮出来，只取决于生产工厂给底层 HttpClient 设的
+      // 连接超时。改回应用默认的 20 s，上面的用例照绿，而黑洞出口回到 5 × 13 s。
+      HttpClient? underlying;
+      final YoutubeProbingHttpClient client = createYoutubeHttpClient(
+        configure: (HttpClient c) => underlying = c,
+      );
+      addTearDown(client.close);
+      expect(underlying, isNotNull);
+      expect(underlying!.connectionTimeout, kYoutubeConnectTimeout);
+    });
+
     test('连接超时必须短于单 client 上限（否则连接阶段的失败浮不出来）', () {
       expect(
         kYoutubeConnectTimeout,
