@@ -33,17 +33,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4129 条。点号进各自文件。
+> 共 4133 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4773](bugs/BUG-4773-overwrite-snapshot-retention-stamp-failure.md) | ✅ | ✅ | 覆盖前快照钉修改时间失败会按旧库时间提前删快照 |
-| [BUG-4772](bugs/BUG-4772-overwrite-snapshot-preview-sync-probe-ui.md) | ✅ | ✅ | 覆盖前快照预览在 UI isolate 上同步检查书和视频文件 |
-| [BUG-4771](bugs/BUG-4771-merge-audiobook-pos-ignores-tombstone.md) | ✅ | ✅ | 合并与快照恢复的有声书进度不受墓碑与排除过滤 |
-> 共 4130 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4777](bugs/BUG-4777-overwrite-snapshot-retention-stamp-failure.md) | ✅ | ✅ | 覆盖前快照钉修改时间失败会按旧库时间提前删快照 |
+| [BUG-4776](bugs/BUG-4776-overwrite-snapshot-preview-sync-probe-ui.md) | ✅ | ✅ | 覆盖前快照预览在 UI isolate 上同步检查书和视频文件 |
+| [BUG-4775](bugs/BUG-4775-merge-audiobook-pos-ignores-tombstone.md) | ✅ | ✅ | 合并与快照恢复的有声书进度不受墓碑与排除过滤 |
 | [BUG-4774](bugs/BUG-4774-srs-deck-settings-reload-drops-edits.md) | ✅ | ✅ | 牌组设置页点「立即优化 / 恢复默认参数 / 子牌组继承」后重读，静默盖掉没保存的编辑、按返回也不再拦 |
 | [BUG-4773](bugs/BUG-4773-srs-limit-unit-legacy-count-stale-after-log-sync.md) | ✅ | ✅ | 存量单位提醒计数按内容指纹缓存，只同步进来旧复习日志时不刷新 |
 | [BUG-4772](bugs/BUG-4772-licenses-7zip-not-in-native-registry.md) | ✅ | ✅ | 随包的 7-Zip（7z.exe / 7z.dll，含 unRAR 派生代码）没进应用内原生许可清单 |
