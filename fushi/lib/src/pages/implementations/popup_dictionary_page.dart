@@ -187,6 +187,14 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   @override
   ScreenOcrCardImage? get miningCardImage => widget.cardImage;
 
+  /// 截屏识字的定格帧文件只活到下一次截屏（原生写新帧时清旧帧）：一收到来源就读进
+  /// 内存（[ScreenOcrCardImage.readBytes] 留住第一次读到的字节），用户看完词再点
+  /// 「+」/ 高级制卡时又截过屏，这张卡也照样带图。
+  void _preloadCardImage() {
+    final ScreenOcrCardImage? source = widget.cardImage;
+    if (source != null) unawaited(source.readBytes());
+  }
+
   @override
   Future<CrossAppAudioSnapshot?>? get miningAudioSnapshot => widget.miningAudio;
 
@@ -204,6 +212,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   @override
   void initState() {
     super.initState();
+    _preloadCardImage();
     _searchController = TextEditingController(text: widget.searchTerm);
     _imeBinding.attach(focusNode: _searchFocusNode);
     // TODO-1204：接线查词计数（每次查词 +1 → lookup_mining_counters）。
@@ -339,6 +348,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   @override
   void didUpdateWidget(PopupDictionaryPage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.cardImage, widget.cardImage)) _preloadCardImage();
     // TODO-951 症状C：宿主常驻本页、每次新 ProcessText 改 searchTerm/searchGeneration。
     // 复用常驻热槽原地查新词（reuseWarmSlot:true），不重建整页 → 不闪。term 与
     // generation 任一变化都重查（同词连续查词靠 generation 触发）。
