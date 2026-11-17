@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-17T09:52:15Z",
+ "generatedAt": "2026-11-17T09:56:26Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "2f433c850726caa373f976a59972515d52fba1f6",
-  "seq": 28616
+  "sha": "91e704f5fdd9efc8d9838ec4fdd74b960b18616b",
+  "seq": 28618
  },
  "builds": [
   {
@@ -12,8 +12,8 @@
    "version": "3.3.0",
    "sha": "f3ed3b62bc3bf19009cfa721e893ab6cb34addd9",
    "unknown": false,
-   "publishedAt": "2026-11-17T09:45:37Z",
-   "testflight": false,
+   "publishedAt": "2026-11-17T09:56:13Z",
+   "testflight": true,
    "baseSeq": 28598,
    "prs": [
     3650,
@@ -26,16 +26,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44052530947"
+     "state": "ok"
     },
     "macos": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44052530947"
+     "state": "ok"
     },
     "ios": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44052530947"
+     "state": "ok"
     }
    }
   },
@@ -141,43 +138,13 @@
      "url": "https://github.com/hajisensai/Fushi/actions/runs/44027087635"
     }
    }
-  },
-  {
-   "seq": 28460,
-   "version": "3.3.0",
-   "sha": "cacf3bdbbe1ff4b9de84b3db237a3de7f3d1984d",
-   "unknown": false,
-   "publishedAt": "2026-11-17T05:55:05Z",
-   "testflight": true,
-   "baseSeq": 28450,
-   "prs": [
-    3638,
-    3635,
-    3637
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44019530608"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
   }
  ],
  "pending": {
-  "headSha": "2f433c850726caa373f976a59972515d52fba1f6",
-  "headSeq": 28616,
+  "headSha": "91e704f5fdd9efc8d9838ec4fdd74b960b18616b",
+  "headSeq": 28618,
   "prs": [
+   3689,
    3686,
    3683,
    3680
@@ -204,33 +171,6 @@
   }
  },
  "prs": {
-  "3635": {
-   "number": 3635,
-   "title": "fix(licenses): 给 6 个只附 SPDX 文本的原生 crate 登记上游许可原文",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-17T04:45:44Z",
-   "additions": 820,
-   "deletions": 35,
-   "labels": []
-  },
-  "3637": {
-   "number": 3637,
-   "title": "fix(settings): 墨水屏全刷方式图标换回闪电（FushiIcons 补 flash 语义名）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-17T04:38:52Z",
-   "additions": 13,
-   "deletions": 1,
-   "labels": []
-  },
-  "3638": {
-   "number": 3638,
-   "title": "fix(video): CoverMetaStore 共享加载与写锁移到根 Zone，发起者 Zone 停摆不再挂死同目录后来者（BUG-4762）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-17T04:46:52Z",
-   "additions": 157,
-   "deletions": 27,
-   "labels": []
-  },
   "3639": {
    "number": 3639,
    "title": "feat(leaderboard): 拍板台卡片默认展开显示原文（可收起）",
@@ -427,6 +367,15 @@
    "mergedAt": "2026-11-17T09:49:09Z",
    "additions": 98,
    "deletions": 2,
+   "labels": []
+  },
+  "3689": {
+   "number": 3689,
+   "title": "docs(bugs): 登记 BUG-4794 经典版式收藏档筛选分段被对半截窄",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-17T09:55:03Z",
+   "additions": 17,
+   "deletions": 1,
    "labels": []
   }
  }
