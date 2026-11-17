@@ -1,0 +1,16 @@
+## BUG-4791 · 分页恢复落点后的 16ms settle 与揭示后的下一帧重写把旧像素位置写回，盖掉期间的迟到图片重锚 / 用户翻页
+- **报告**：2026-11-17（用户：小说阅读器优化清单复核 gap-readerjs1-1 + gap-readerjs1-8 第一项——代码审查发现，非用户现场报告）
+- **真实性**：✅ 真 bug（代码路径确认 + Node 行为装置复现；未在真机复现，触发频率未知）。根因（修前行号，基准 upstream/develop @ 8d58da51da9）：
+  - `fushi/lib/src/reader/reader_pagination_scripts.dart:3367` 分页 `_settleAndNotify(context, pos)`：三个恢复入口（`restoreProgress` `:3375`、`restoreToCharOffset` `:3391`、`jumpToFragment` `:3430`）落点后读出当前页位置 `pos` 交进来，16 ms 定时器里 `setPagePosition(context, pos)` 把**延后之前捕获的像素值**原样写回，不判断这期间位置有没有被正当改写。
+  - `:3065` `_alignRangeToPage`：揭示落页后 `requestAnimationFrame` 再写一次捕获的 `targetScroll`（跟读淡入分支 `:3056` 同样拿旧值比较），没有代际判断。
+  - 被盖掉的正当改写：未完成的图 `load` 时 `_sharedInitImages` 调 `reapplyImageLateAnchor()` 按语义锚把视口挪到正确页（`:2639-2652`、`:1431`）；用户翻页 `paginate`；程序化揭示替换目标。`setPagePosition` 只钳位后赋值（`:2921`）。图片在窗口内 load 后被写回旧页，之后没有别的图 load 就再没人纠正，随后的进度回传把错位置落库——正是迟到图片语义重锚（BUG-1140 第二轮 / BUG-2744）要消除的漂移，窗口缩到了 16 ms / 一帧。
+  - 触发前提是「initialize 时还有未完成的图」或揭示后一帧内有翻页 / 图片 load。引擎在 `onLoadStop` 之后注入、正文图一律 eager，多数平台此时图已完成，所以实际触发概率给不出；连续 shell 的同名函数只通知不写位置，不受影响。
+- **[x] ① 已修复** — `fushi/lib/src/reader/reader_pagination_scripts.dart`：
+  - 分页 `_settleAndNotify()` 不再接收 `(context, pos)`；定时器回调改为 `reapplyImageLateAnchor()`（按仍登记着的语义锚——字符 / progress / fragment / 揭示目标——重算落点，与图片 load 同一条路，对稳定排版幂等，保住「等一帧防 reflow 把 scroll 归零」的原意）→ `registerSnapScroll(此刻的真实位置)` → `notifyRestoreComplete()`。锚已被清（用户翻页 / 滚动意图）= 位置已归别人所有，回调不写位置。
+  - `clearImageLateAnchor` 维护锚代际 `__imgAnchorGen`（每次替换 / 清除 +1）；`_alignRangeToPage` 的下一帧回调改走 `_realignRevealTarget(range, anchorGen, keepPageTurn)`：代际变了不动，没变则按 range **现在**的几何重新落页（跟读淡入分支仍只在位置不符时瞬时改写、不打断动画）。
+  - 没有加延迟 / 重试；仍是一层 16 ms。
+- **[x] ② 已加自动化测试** —
+  - `fushi/test/reader/paged_settle_semantic_anchor_behavior_test.dart` + `.js`：`flutter test` 内用 Node 真执行分页 shell 对象，定时器与动画帧由测试手动放行，可移动几何模拟迟到图片。A 窗口内迟到图片重锚不被 settle 盖掉（字符 / progress / fragment 三种锚）、snap 基线取真实位置；B reflow 归零后仍重设落点、稳定排版幂等；C 窗口内用户翻页 / 揭示换目标不被拉回；D 揭示后一帧内用户翻页不被拉回、目标没变则重落、目标被图片顶走则跟过去、被新揭示取代的旧帧不写；E 跟读淡入分支同一代际规则且不经 `setPagePosition` 打断动画。把修复还原（settle 写回捕获像素 / 帧回调写捕获目标）后 Node 断言分别在 A、D 失败。
+  - `fushi/test/pages/reader_cross_chapter_settle_guard_static_test.dart`：settle 体内顺序改钉 `reapplyImageLateAnchor` → `registerSnapScroll` → `notifyRestoreComplete`，并断言体内不再出现 `setPagePosition(`、不再带 `(context, pos)` 形参、snap 基线取回调时的位置；「只剩一层 setTimeout」不变。
+  - `fushi/test/reader/reader_selection_viewport_behavior_test.js`：settle 场景改为先登记语义锚再放行定时器（原断言「位置真动才清选区」不变）。
+- **备注**：设备未复测。待真机 / Mac 验证：`paginated` 带图章按精确字符锚、progress、目录 fragment 三种方式恢复位置各验（Windows WebView2、Android WebView、iOS / macOS WKWebView），有声书跟读翻页后开关图片暂停；`continuous` 带图章恢复位置回归（连续 `_settleAndNotify` 未改，只共用 `clearImageLateAnchor` 的代际计数）；`vn` 不含这两个函数，确认未受影响即可。
