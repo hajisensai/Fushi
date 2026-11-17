@@ -226,9 +226,11 @@ class SubtitleFillSkill extends AiAgentAppSkill {
 /// 每部作品搜候选（`video.work.candidates`），出一张候选卡让用户点；点中的那一项
 /// 就是确认，直接认领（`video.work.identify`）。用户点「都不是」就留在待确认队列。
 ///
-/// 与设计稿的差异：设计稿要「高置信的直接认领（撤销 = 退回待确认）」，但目前没有
-/// 「清除作品身份、退回待确认」的路由，认领撤销不了；所以每一部都让用户在卡片上
-/// 点，不自动认领。
+/// 与设计稿的差异：设计稿要「高置信的直接认领（撤销 = 退回待确认）」。当初认领撤销
+/// 不了，所以每一部都让用户在卡片上点、不自动认领。2026-11-18 起 `video.work.identify`
+/// 与 `video.scrape.confirm` 已可撤销（执行前整块快照，撤销恢复认领前状态、无身份的
+/// 作品退回待确认队列），但本技能行为暂不改：自动认领由后续的 AI 库管家来做
+/// （`docs/specs/2026-11-18-ai-library-curator-design.md` §6）。
 class ScrapeResolveSkill extends AiAgentAppSkill {
   @override
   List<String> get requiredOps => const <String>[
