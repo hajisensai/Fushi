@@ -14,6 +14,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/manga/audio/manga_audiobook_source.dart';
+import 'package:fushi/src/media/manga/audio/manga_drama_track_page.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
@@ -96,10 +97,14 @@ class MangaAudiobookSourcePage extends StatelessWidget {
     super.key,
     required this.bookKey,
     required this.backend,
+    this.onOpenDramaTrack,
   });
 
   final String bookKey;
   final MangaAudiobookSourceBackend backend;
+
+  /// 「广播剧 / 动画音轨」入口（没有文本时间表的真人音频走 ASR）；null = 不显示。
+  final VoidCallback? onOpenDramaTrack;
 
   static Future<void> push(
     BuildContext context, {
@@ -112,6 +117,13 @@ class MangaAudiobookSourcePage extends StatelessWidget {
         builder: (BuildContext context) => MangaAudiobookSourcePage(
           bookKey: bookKey,
           backend: AppMangaAudiobookSourceBackend(appModel),
+          onOpenDramaTrack: () => unawaited(
+            MangaDramaTrackPage.push(
+              context,
+              appModel: appModel,
+              bookKey: bookKey,
+            ),
+          ),
         ),
       ),
     );
@@ -126,6 +138,7 @@ class MangaAudiobookSourcePage extends StatelessWidget {
         builder: (BuildContext context) => MangaAudiobookSourcePanel(
           bookKey: bookKey,
           backend: backend,
+          onOpenDramaTrack: onOpenDramaTrack,
           padding: EdgeInsets.only(
             top: 8 + MediaQuery.paddingOf(context).top,
             bottom: 24 + bottomSafeInsetOf(context),
@@ -147,11 +160,15 @@ class MangaAudiobookSourcePanel extends StatefulWidget {
     required this.bookKey,
     required this.backend,
     this.padding = const EdgeInsets.all(16),
+    this.onOpenDramaTrack,
   });
 
   final String bookKey;
   final MangaAudiobookSourceBackend backend;
   final EdgeInsetsGeometry padding;
+
+  /// 见 [MangaAudiobookSourcePage.onOpenDramaTrack]。
+  final VoidCallback? onOpenDramaTrack;
 
   @override
   State<MangaAudiobookSourcePanel> createState() =>
@@ -357,6 +374,7 @@ class _MangaAudiobookSourcePanelState extends State<MangaAudiobookSourcePanel> {
       _linkedSection,
       _policySection,
       _statsSection,
+      if (widget.onOpenDramaTrack != null) _dramaSection,
     ];
     return FushiEntranceScope(
       child: ListView.builder(
@@ -617,6 +635,29 @@ class _MangaAudiobookSourcePanelState extends State<MangaAudiobookSourcePanel> {
             t.manga_audio_source_no_cues(title: _titleOf(key)),
           ),
       ],
+    );
+  }
+
+  /// 有声书之外的另一种真人音源：广播剧 / 动画音轨（先 ASR 再按页匹配）。
+  Widget _dramaSection(BuildContext context) {
+    final VoidCallback? open = widget.onOpenDramaTrack;
+    return Padding(
+      key: const ValueKey<String>('manga_audio_source_drama'),
+      padding: const EdgeInsets.only(top: 16),
+      child: FushiGroupedList(
+        children: <Widget>[
+          FushiPressScale(
+            enabled: open != null,
+            child: FushiListItem(
+              key: const ValueKey<String>('manga_audio_source_open_drama'),
+              leading: const FushiListLeadingIcon(FushiIcons.mic),
+              title: Text(t.manga_audio_drama_title),
+              trailing: const FushiIcon(FushiIcons.chevronRight),
+              onTap: open,
+            ),
+          ),
+        ],
+      ),
     );
   }
 

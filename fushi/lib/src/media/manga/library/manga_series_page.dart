@@ -17,6 +17,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/audio/manga_audiobook_source_page.dart';
+import 'package:fushi/src/media/manga/audio/manga_drama_track_page.dart';
 import 'package:fushi/src/media/manga/download/manga_download_service.dart';
 import 'package:fushi/src/media/manga/download/online_manga_download_gate.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_studio_page.dart';
@@ -2884,6 +2885,15 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
             enabled: !_busy,
             onSelected: () => unawaited(_openAudiobookSource()),
           ),
+        // 广播剧 / 动画音轨（设计 §9 末段）：同上，只给本地卷。
+        if (_bookKey != null && _appModelOrNull != null)
+          MediaDetailMenuItem(
+            key: const ValueKey<String>('manga_series_drama_track'),
+            icon: FushiIcons.mic,
+            label: t.manga_audio_drama_title,
+            enabled: !_busy,
+            onSelected: () => unawaited(_openDramaTrack()),
+          ),
       ];
     }
     final OnlineMangaLibraryEntry? entry = _entry;
@@ -2970,6 +2980,17 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     final AppModel? appModel = _appModelOrNull;
     if (bookKey == null || appModel == null) return;
     await MangaAudiobookSourcePage.push(
+      context,
+      appModel: appModel,
+      bookKey: bookKey,
+    );
+  }
+
+  Future<void> _openDramaTrack() async {
+    final String? bookKey = _bookKey;
+    final AppModel? appModel = _appModelOrNull;
+    if (bookKey == null || appModel == null) return;
+    await MangaDramaTrackPage.push(
       context,
       appModel: appModel,
       bookKey: bookKey,
