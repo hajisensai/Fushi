@@ -62,6 +62,7 @@ import 'package:fushi/src/media/audiobook/tts/studio/tts_render_voices.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_service.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_render_service.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
@@ -105,6 +106,16 @@ class AppTtsRenderRunner implements TtsRenderRunner {
     required TtsRenderProgress onProgress,
     required TtsRenderCancelToken cancel,
   }) async {
+    // 漫画卷：演出稿 → 每句一段音频 + 成品清单（另一条流程，见
+    // `manga_audio_render_service.dart`）。
+    if (job.kind == TtsRenderJobKind.manga) {
+      return runMangaRenderJob(
+        appModel,
+        job,
+        onProgress: onProgress,
+        cancel: cancel,
+      );
+    }
     onProgress(TtsRenderJobPhase.planning, 0, 0);
     final TtsServices tts = TtsServices.of(appModel.prefsRepo);
     final ({EpubBookRow row, EpubBook book})? loaded = await loadEpubForStudio(
