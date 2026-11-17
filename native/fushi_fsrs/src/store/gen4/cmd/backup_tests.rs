@@ -396,3 +396,122 @@ fn v1_events_land_with_the_same_cards_and_logs() {
     assert_eq!(export_bytes(h, P), before);
     ffsrs_store_close(h);
 }
+
+/// 副本里有笔记的日志元数据条数 / 日志元数据总条数。
+fn log_notes_in(scratch: &Path) -> (i64, i64) {
+    let c = crate::store::gen4::dryrun::open_legacy(
+        &scratch.join(crate::store::gen4::files::LEGACY_FILE),
+    )
+    .unwrap();
+    c.query_row(
+        "SELECT COUNT(note_id), COUNT(*) FROM sync2_log_meta WHERE profile_uid = srs_id(?1)",
+        [P],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )
+    .unwrap()
+}
+
+/// 只有事件、日志不带笔记 ID 的旧输入（v2 之前的 `.fushisrs` 事件备份没有卡片缓存）：副本先落笔记 / 修改记录、派生出
+/// 卡片，再按卡片补上日志的笔记——与带着笔记读入的同一份，副本里每条日志都有笔记；条数与直接迁移的相同。补笔记的
+/// 点查走 `srs_cards_cache` 的索引（执行的就是 [super::backup::LOG_NOTE_SQL]）。
+#[test]
+fn v1_events_without_log_notes_take_them_from_the_derived_cards() {
+    let m = migrated();
+    let legacy = m.d._dir.0.join("srs.db");
+    let work = tempdir::new("g114nn");
+    let with = work.0.join("with.jsonl");
+    let without = work.0.join("without.jsonl");
+    let body = v1_events(&legacy);
+    std::fs::write(&with, &body).unwrap();
+    let stripped: String = body
+        .lines()
+        .map(|l| {
+            let mut v: Value = serde_json::from_str(l).unwrap();
+            v.as_object_mut().unwrap().remove("note");
+            format!("{v}\n")
+        })
+        .collect();
+    assert!(
+        !stripped.contains("\"note\":\""),
+        "the stripped input still carries notes"
+    );
+    std::fs::write(&without, stripped).unwrap();
+    let mut seen = Vec::new();
+    for jsonl in [&with, &without] {
+        let scratch = tempdir::new("g114nns");
+        let dir = tempdir::new("g114nnto");
+        let h = open(&dir.0, 0).unwrap();
+        let mut r = legacy_req(jsonl, "events", json!({"confirmed": true}));
+        r["scratch"] = json!(scratch.0.to_str().unwrap());
+        let got = try_g4(h, P, "legacy_backup_import", r).unwrap();
+        assert_eq!(got["outcome"], json!("bound"), "{got}");
+        try_g4(h, P, "cache_config_set", json!({"caches": cfg()})).unwrap();
+        assert_eq!(counts(&dir.0, P), counts(&m.dir.0, P));
+        let (noted, all) = log_notes_in(&scratch.0);
+        assert!(all > 0);
+        assert_eq!(noted, all, "every log in the scratch copy has its note");
+        seen.push((noted, all));
+        ffsrs_store_close(h);
+        if jsonl == &without {
+            let c = crate::store::gen4::dryrun::open_legacy(
+                &scratch.0.join(crate::store::gen4::files::LEGACY_FILE),
+            )
+            .unwrap();
+            let plan: Vec<String> = c
+                .prepare(&format!(
+                    "EXPLAIN QUERY PLAN {}",
+                    super::backup::LOG_NOTE_SQL
+                ))
+                .unwrap()
+                .query_map(rusqlite::params!["c", P], |r| r.get::<_, String>(3))
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap();
+            assert!(plan.iter().any(|d| d.contains("INDEX")), "{plan:?}");
+            assert!(!plan.iter().any(|d| d.starts_with("SCAN")), "{plan:?}");
+        }
+    }
+    assert_eq!(seen[0], seen[1]);
+}
+
+/// 同一份 v1 事件换一个新副本目录、隔一段时间再读一遍（用户隔天又导了同一个旧文件）：副本身份按本机秘密 + 输入摘要
+/// 派生（`seed_scratch_identity`），包出的操作逐字节相同，第二次什么都不改（`unchanged`），派生层与导出流逐字节不变。
+/// 另一个库（另一台设备）读同一份得到另一个合成设备（钥匙混了本机秘密，不能只凭备份内容推出）。
+#[test]
+fn the_same_v1_events_from_a_fresh_scratch_change_nothing() {
+    let m = migrated();
+    let legacy = m.d._dir.0.join("srs.db");
+    let work = tempdir::new("g114re");
+    let jsonl = work.0.join("events.jsonl");
+    std::fs::write(&jsonl, v1_events(&legacy)).unwrap();
+    let land = |h: *mut SrsCoreHandle, name: &str, now: i64| {
+        let scratch = tempdir::new(name);
+        let mut r = legacy_req(&jsonl, "events", json!({"confirmed": true, "now": now}));
+        r["scratch"] = json!(scratch.0.to_str().unwrap());
+        try_g4(h, P, "legacy_backup_import", r).unwrap()
+    };
+    let (dir, h) = fresh("g114reto", P);
+    let first = land(h, "g114res1", T1);
+    assert_ne!(first["unchanged"], json!(true), "{first}");
+    let before = all_derived(&dir.0);
+    let exported = export_bytes(h, P);
+    let again = land(h, "g114res2", T1 + 86_400_000);
+    assert_eq!(again["unchanged"], json!(true), "{again}");
+    assert_eq!(again["applied"], json!(0), "{again}");
+    assert_eq!(all_derived(&dir.0), before);
+    assert_eq!(export_bytes(h, P), exported);
+    let devices = |d: &Path| -> Vec<String> {
+        let c = reader(d);
+        let mut q = c.prepare("SELECT hex(device) FROM peers WHERE device NOT IN (SELECT device FROM self_) ORDER BY device").unwrap();
+        q.query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    };
+    let (other, h2) = fresh("g114reot", P);
+    land(h2, "g114res3", T1);
+    assert!(!devices(&dir.0).is_empty());
+    assert_ne!(devices(&other.0), devices(&dir.0));
+    ffsrs_store_close(h2);
+    ffsrs_store_close(h);
+}

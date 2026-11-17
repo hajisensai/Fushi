@@ -123,8 +123,9 @@ fn already_prepared(db: &Path, profile: &str) -> bool {
         == Some(profile)
 }
 
-/// 备副本（模块文件头「备副本」）：在新代库的写锁之外跑。
-pub fn prepare(req: &Value) -> Result<Prepared, String> {
+/// 备副本（模块文件头「备副本」）：在新代库的写锁之外跑。[secret] = 目标 profile 所在集合的本机签名钥匙种子（还没绑定 /
+/// 没有本机身份时为 `None`），用来给副本定一个可重现的身份（[seed_scratch_identity]）。
+pub fn prepare(req: &Value, secret: Option<&[u8; 32]>) -> Result<Prepared, String> {
     let kind = match str_of(req, "source")? {
         "db" => Kind::Db,
         "events" => Kind::Events,
@@ -167,17 +168,27 @@ pub fn prepare(req: &Value) -> Result<Prepared, String> {
         // 上一次备到一半的副本整份重来（它只是临时库）。
         crate::store::seal::remove_sqlite_files(&db)?;
     }
+    // 输入的摘要在协议 3 代码碰它之前取（`db` 来源会被原地改）。
+    let digest = secret.map(|_| content_digest(&path)).transpose()?;
+    // 副本里的「此刻」：事件来源取输入里最晚的时刻（[input_time]，不晚于请求的 `now`），包出的操作才与哪天导入无关。
+    let now = match kind {
+        Kind::Events => input_time(&path)?.map_or(now, |t| t.min(now)),
+        Kind::Db => now,
+    };
     let core = SrsCore::open(&db).map_err(|e| {
         format!("gen4 legacy backup import: open the protocol 3 library in the backup: {e}")
     })?;
     let out = (|| -> Result<(), String> {
+        if let (Some(secret), Some(digest)) = (secret, digest.as_ref()) {
+            seed_scratch_identity(&db, &profile, kind, secret, digest)?;
+        }
         let base = |op: &str| json!({"op": op, "profile": profile, "now": now, "caches": caches});
         p3(&core, base("cache_config_set"), Vec::new())?;
         let mut migrate = base("migrate");
         migrate["limit"] = json!(MIGRATE_BATCH);
         while p3(&core, migrate.clone(), Vec::new())?["done"] != json!(true) {}
         if kind == Kind::Events {
-            apply_events(&core, &path, &profile, now, &caches)?;
+            apply_events(&core, &db, &path, &profile, now, &caches)?;
         }
         while p3(&core, base("dedup"), Vec::new())?["done"] == json!(false) {}
         while p3(&core, base("replay_pending"), Vec::new())?["more"] == json!(true) {}
@@ -197,17 +208,137 @@ pub fn prepare(req: &Value) -> Result<Prepared, String> {
     Ok(Prepared { kind, db, profile })
 }
 
-/// JSONL 里的外来已盖戳事件按批 `apply` 进副本（[APPLY_BATCH] 项一批；空行跳过）。
+/// 事件 JSONL 里最晚的时刻（毫秒）：日志的 `at`、身份记录的 `createdAt`、修改记录 / 日志 HLC 的物理部分、`server`。
+/// 没有任何时刻回 `None`。
+///
+/// 副本把旧事件包成操作时，操作的时钟由副本的 `now` 推进（协议 3 `Local` 的 HLC）。拿请求的 `now`（墙钟）的话同一份输入
+/// 每天包出的操作不同，第二次落库变成「替换 / 分叉」而不是「已有」；拿输入里最晚的时刻则只由输入决定，语义上也就是「备份
+/// 做完的那一刻收到这些事件」。上限压到请求的 `now`：输入不可信，造一个远未来的时刻不能把副本的时钟推到未来。
+fn input_time(path: &Path) -> Result<Option<i64>, String> {
+    let mut best: Option<i64> = None;
+    let mut see = |t: Option<i64>| {
+        if let Some(t) = t {
+            best = Some(best.map_or(t, |b| b.max(t)));
+        }
+    };
+    each_event(path, |item| {
+        let x = &item["e"]["x"];
+        see(x.get("at").and_then(Value::as_i64));
+        see(x
+            .get("d")
+            .and_then(|d| d.get("createdAt"))
+            .and_then(Value::as_i64));
+        see(item.get("server").and_then(Value::as_i64));
+        if let Some(h) = x.get("hlc").and_then(Value::as_str) {
+            see(h.split(':').next().and_then(|p| p.parse::<i64>().ok()));
+        }
+        Ok(())
+    })?;
+    Ok(best)
+}
+
+/// [path] 整份内容的 BLAKE3 摘要（按块读，不整份进内存）。
+fn content_digest(path: &Path) -> Result<[u8; 32], String> {
+    let f = File::open(path)
+        .map_err(|e| format!("legacy_backup_import: cannot open {}: {e}", path.display()))?;
+    let mut h = blake3::Hasher::new();
+    h.update_reader(f)
+        .map_err(|e| format!("legacy_backup_import: read {}: {e}", path.display()))?;
+    Ok(*h.finalize().as_bytes())
+}
+
+/// 副本自己的身份（设备 ID、签名钥匙种子）：副本里还没有这个 profile 的身份时（`events` 来源总是没有；`db` 来源是剥过
+/// 本机身份的整包备份快照），在协议 3 代码建身份（`Local::create`，随机）之前先写好一个**可重现**的。
+///
+/// 为什么：旧事件（以及没包过的旧行）由副本的身份包成操作，经 [import_backup] 成为这个设备名下的承袭日志。身份每次随机
+/// 的话，用户隔天再导一次同一个旧文件（或覆盖还原之后又合并同一份备份），同样的内容会以另一个合成设备的名义再落一遍
+/// ——派生层不重复，但真相层每导一次多一份、回包报「并入了 N 条」，不幂等。现在设备与钥匙 = BLAKE3 派生（本机签名钥匙
+/// 种子 [secret]、备份里的 profile、输入内容的摘要、来源种类），同一台设备、同一个集合导同一份输入得到同一个合成设备，
+/// 包出的操作逐字节相同，第二次落库全是已有的槽（`same`）。
+///
+/// 钥匙必须混进本机秘密：合成设备的公钥会记进集合的 `peers`，只拿备份内容就能推出私钥的话，拿到备份文件的人可以冒充
+/// 这个设备往位置上写协议 3 段。换一台设备 / 另一个集合导同一份输入得到另一个合成设备（与改动之前同样的结果）。
+///
+/// 时钟：HLC 从 0 起（与 `Local::create` 相同）。
+fn seed_scratch_identity(
+    db: &Path,
+    profile: &str,
+    kind: Kind,
+    secret: &[u8; 32],
+    digest: &[u8; 32],
+) -> Result<(), String> {
+    let c = Connection::open(db).map_err(|e| format!("gen4 legacy backup import: {e}"))?;
+    crate::store::ids::register(&c).map_err(|e| format!("gen4 legacy backup import: {e}"))?;
+    let has: bool = c
+        .query_row(
+            "SELECT EXISTS (SELECT 1 FROM sync2_self WHERE profile_uid = srs_id(?1))",
+            [profile],
+            |r| r.get(0),
+        )
+        .map_err(|e| format!("gen4 legacy backup import: {e}"))?;
+    if has {
+        return Ok(());
+    }
+    let mut h =
+        blake3::Hasher::new_derive_key("fushi gen4 legacy backup scratch identity 2026-11-17");
+    h.update(secret);
+    h.update(&(profile.len() as u64).to_le_bytes());
+    h.update(profile.as_bytes());
+    h.update(kind.wire().as_bytes());
+    h.update(digest);
+    let mut out = [0u8; 48];
+    h.finalize_xof().fill(&mut out);
+    let mut device = [0u8; 16];
+    device.copy_from_slice(&out[..16]);
+    // RFC 9562 UUIDv8（自定义内容）：版本与变体位照规矩，其余是派生字节。
+    device[6] = (device[6] & 0x0f) | 0x80;
+    device[8] = (device[8] & 0x3f) | 0x80;
+    let mut seed = [0u8; 32];
+    seed.copy_from_slice(&out[16..]);
+    let key = crate::sync2::keys::DeviceKey::from_seed(&seed);
+    let chain = crate::sync2::segment::CHAIN_ZERO;
+    let collection = collection_of(profile);
+    // 与 `store/sync2/mod.rs` `Local::create` 写的同两行（冻结的协议 3 形状）。
+    c.execute(
+        "INSERT INTO sync2_self (profile_uid, collection, device, key_seed, next_seq, chain) \
+         VALUES (srs_id(?1), ?2, ?3, ?4, 1, ?5)",
+        rusqlite::params![
+            profile,
+            collection.0.to_vec(),
+            device.to_vec(),
+            seed.to_vec(),
+            chain.to_vec()
+        ],
+    )
+    .map_err(|e| format!("gen4 legacy backup import: {e}"))?;
+    c.execute(
+        "INSERT OR REPLACE INTO sync2_devices (profile_uid, device, public, applied, chain) \
+         VALUES (srs_id(?1), ?2, ?3, 0, ?4)",
+        rusqlite::params![
+            profile,
+            device.to_vec(),
+            key.public().to_vec(),
+            chain.to_vec()
+        ],
+    )
+    .map_err(|e| format!("gen4 legacy backup import: {e}"))?;
+    Ok(())
+}
+
+/// JSONL 里的外来已盖戳事件按批 `apply` 进副本（[APPLY_BATCH] 项一批；空行跳过），分两遍读文件：
+///
+/// 1. 身份记录 / 修改记录 / 不认识的事件，然后 `replay_pending`（副本的卡片派生缓存随之建好）；
+/// 2. 复习日志。没带 `note` 的（v2 之前的 `.fushisrs` 事件备份只有事件、没有卡片缓存；老整包备份的缓存里也可能缺）按
+///    副本 `srs_cards_cache` 的卡片 → 笔记补上（[log_note_of]）——与协议 3 `applyRemote` 落库前按卡片行查笔记同一口径；
+///    卡片派生不出来（笔记被删 / 模板没了）就照旧不带。日志带不带笔记决定新代里笔记一级的删除 / 统计能不能找到它。
 fn apply_events(
     core: &SrsCore,
+    db: &Path,
     path: &Path,
     profile: &str,
     now: i64,
     caches: &Value,
 ) -> Result<(), String> {
-    let f = File::open(path)
-        .map_err(|e| format!("legacy_backup_import: cannot open {}: {e}", path.display()))?;
-    let mut batch: Vec<String> = Vec::with_capacity(APPLY_BATCH);
     let flush = |batch: &mut Vec<String>| -> Result<(), String> {
         if batch.is_empty() {
             return Ok(());
@@ -225,7 +356,91 @@ fn apply_events(
         )
         .map(|_| ())
     };
-    for (n, line) in BufReader::new(f).lines().enumerate() {
+    let mut batch: Vec<String> = Vec::with_capacity(APPLY_BATCH);
+    each_event(path, |item| {
+        if is_log(&item) {
+            return Ok(());
+        }
+        batch.push(item.to_string());
+        if batch.len() >= APPLY_BATCH {
+            flush(&mut batch)?;
+        }
+        Ok(())
+    })?;
+    flush(&mut batch)?;
+    let base = |op: &str| json!({"op": op, "profile": profile, "now": now, "caches": caches});
+    while p3(core, base("replay_pending"), Vec::new())?["more"] == json!(true) {}
+    // 副本的读连接（注册了 ID 编码函数）；每批日志之前重开一次读事务，看得到上一批落下的卡片。
+    let mut notes: Option<Connection> = None;
+    let mut pending: Vec<Value> = Vec::with_capacity(APPLY_BATCH);
+    let land = |pending: &mut Vec<Value>, notes: &mut Option<Connection>| -> Result<(), String> {
+        if pending.is_empty() {
+            return Ok(());
+        }
+        if pending
+            .iter()
+            .any(|it| it.get("note").is_none_or(Value::is_null))
+        {
+            let c = match notes.take() {
+                Some(c) => {
+                    c.execute_batch("COMMIT; BEGIN")
+                        .map_err(|e| format!("gen4 legacy backup import: {e}"))?;
+                    c
+                }
+                None => crate::store::gen4::dryrun::open_legacy(db)?,
+            };
+            for it in pending.iter_mut() {
+                if !it.get("note").is_none_or(Value::is_null) {
+                    continue;
+                }
+                let Some(card) = it["e"]["x"]["card"].as_str().map(str::to_owned) else {
+                    continue;
+                };
+                if let Some(n) = log_note_of(&c, profile, &card)? {
+                    it["note"] = json!(n);
+                }
+            }
+            *notes = Some(c);
+        }
+        let mut lines: Vec<String> = pending.drain(..).map(|v| v.to_string()).collect();
+        flush(&mut lines)
+    };
+    each_event(path, |item| {
+        if !is_log(&item) {
+            return Ok(());
+        }
+        pending.push(item);
+        if pending.len() >= APPLY_BATCH {
+            land(&mut pending, &mut notes)?;
+        }
+        Ok(())
+    })?;
+    land(&mut pending, &mut notes)
+}
+
+/// 一项是不是复习日志（`{e: {t: "log", ...}}`）。
+fn is_log(item: &Value) -> bool {
+    item["e"]["t"].as_str() == Some("log")
+}
+
+/// 副本里卡片 [card] 的笔记（规范文本）；没有这张卡回 `None`。
+pub(crate) const LOG_NOTE_SQL: &str = "SELECT srs_idt(note_id) FROM srs_cards_cache \
+     WHERE id = srs_id(?1) AND profile_uid = srs_id(?2) AND note_id IS NOT NULL";
+
+fn log_note_of(c: &Connection, profile: &str, card: &str) -> Result<Option<String>, String> {
+    c.prepare_cached(LOG_NOTE_SQL)
+        .and_then(|mut q| {
+            q.query_row(rusqlite::params![card, profile], |r| r.get::<_, String>(0))
+                .optional()
+        })
+        .map_err(|e| format!("gen4 legacy backup import: card note: {e}"))
+}
+
+/// 按行读 JSONL，每个非空行解成 JSON 对象交给 [f]；坏行报行号。
+fn each_event(path: &Path, mut f: impl FnMut(Value) -> Result<(), String>) -> Result<(), String> {
+    let file = File::open(path)
+        .map_err(|e| format!("legacy_backup_import: cannot open {}: {e}", path.display()))?;
+    for (n, line) in BufReader::new(file).lines().enumerate() {
         let line = line.map_err(|e| format!("legacy_backup_import: read events: {e}"))?;
         let line = line.trim();
         if line.is_empty() {
@@ -233,7 +448,7 @@ fn apply_events(
         }
         // 先确认是一个 JSON 对象（坏行明确报行号，不交给协议 3 报一个看不出位置的错）。
         match serde_json::from_str::<Value>(line) {
-            Ok(Value::Object(_)) => {}
+            Ok(v @ Value::Object(_)) => f(v)?,
             _ => {
                 return Err(format!(
                     "legacy_backup_import: events line {} is not a JSON object",
@@ -241,12 +456,8 @@ fn apply_events(
                 ));
             }
         }
-        batch.push(line.to_owned());
-        if batch.len() >= APPLY_BATCH {
-            flush(&mut batch)?;
-        }
     }
-    flush(&mut batch)
+    Ok(())
 }
 
 /// 备好的副本 → 认领用的清单（模块文件头「落库」）：协议 3 时代集合 = `collection_of(uid)`、目录名 = uid，盐与设备公钥
