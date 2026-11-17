@@ -1247,7 +1247,7 @@ G8 子规划文档在仓库里不存在（任务点名的「G8 子规划」找�
   `srs_write_statement_cost_test.dart` 2 条（`note` / `noteType` 按成员 ID 读崩在 `_prefetchEdits`，§14）、
   `fushi/test/srs/srs_word_audio_backfill_test.dart` 的 store 用例（成员 / 规范 ID 对不上，§14「派生 ID 的返回值」）。
 
-## G9-7 ID 口径根修（2026-11-17，分支 `pr/srs-gen4-g9-7-id-derivation`，基于 `pr/srs-gen4-switch`）
+## 19. G9-7 ID 口径根修（2026-11-17，分支 `pr/srs-gen4-g9-7-id-derivation`，基于 `pr/srs-gen4-switch`）
 
 收掉 §13.6 第 1 条、§14「派生 ID 的返回值」「按成员 ID 读实体视图会崩」、§18「没做」第 1、2 条。schema 不升（没加表 /
 索引，分到的 40020 没用）；ABI 不变（只多回包键）。
@@ -1379,7 +1379,7 @@ G8 子规划文档在仓库里不存在（任务点名的「G8 子规划」找�
    重名。没让 `ensureBuiltins` 在有被扣住的盐时暂缓：暂缓意味着全新设备在确认信任前没有默认牌组 / Lapis 可用（制卡直接
    失败），比短暂重复更糟；重复会在确认后自动合并。真要处理归确认信任的 UI（G9-4 / G8-7b）。
 
-## G9-5 删旧并入、收薄 profile 关联（2026-11-17，分支 `pr/srs-gen4-g9-5-profile-merge`）
+## 20. G9-5 删旧并入、收薄 profile 关联（2026-11-17，分支 `pr/srs-gen4-g9-5-profile-merge`）
 
 ### 内核命令逐条去向（`cmd/profile_data.rs` 文件头有同一张表）
 
@@ -1451,7 +1451,7 @@ G8 子规划文档在仓库里不存在（任务点名的「G8 子规划」找�
 - `cmd/dispatch_tests.rs` 的 `open` / `call` / `g4req` / `g4` / `T1` / `cfg` 与 `cmd::dispatch_tests` 模块改成 `pub(crate)`，
   给 `prepare_tests.rs` 经 C ABI 跑半截并入收尾用。
 
-## G9-5 复核修复（2026-11-17，同分支 `pr/srs-gen4-g9-5-profile-merge`）
+## 21. G9-5 复核修复（2026-11-17，同分支 `pr/srs-gen4-g9-5-profile-merge`）
 
 ### 半截并入的 Dart 收尾接上了（复核 major）
 
@@ -1513,7 +1513,7 @@ G8 子规划文档在仓库里不存在（任务点名的「G8 子规划」找�
   linker 的 `pullBeforeMerge` 参数与 app 装配）没删：调度器是同批多个模块的热点文件，删上千行留给 integration owner 合流后
   单独一段做。`srs_pull_before_migrate_test.dart` 剩下的用例本来就 `skip`。
 
-## G8-7b 同步补全（2026-11-17，分支 `pr/srs-gen4-g8-7b-sync-complete`，基于 `pr/srs-gen4-switch`）
+## 22. G8-7b 同步补全（2026-11-17，分支 `pr/srs-gen4-g8-7b-sync-complete`，基于 `pr/srs-gen4-switch`）
 
 接 §17.4 的全部「没做」。Rust 在 `native/fushi_fsrs/src/store/gen4/cmd/` 的 `media_sync.rs`（媒体同步）、`sync_oldroot.rs`
 （旧根接手与承袭上传）、`sync_relay.rs`（转发）、`sync.rs`（收段切片、`plan` 收被转发的 head、`obsolete_former`），存储层
@@ -1655,7 +1655,7 @@ Dart：`srs_format_break_test`（保留并转绿）、`srs_sync4_round_test`（�
    Rust 测试的收段循环收成一个照搬 Dart 判据的 `ingest_like_dart`。变异：去掉投递时的预算判断 → 两条用例红；Dart 忽略
    `drainMore` → 真内核双作者用例红（剩等待项）。
 
-## G10-2 远程复习 V2（2026-11-17，分支 `pr/srs-gen4-g10-2-remote-review-v2`）
+## 23. G10-2 远程复习 V2（2026-11-17，分支 `pr/srs-gen4-g10-2-remote-review-v2`）
 
 ### 线上形状与决定
 
@@ -1718,7 +1718,7 @@ Dart：`srs_format_break_test`（保留并转绿）、`srs_sync4_round_test`（�
 - `profile_of_dir` 没做；客户端 `noteTypesFrom` 里内置笔记类型的字段 ID 仍按 uid 派生（ID 口径模块）。
 - 主机目录与信任（G10-4）没碰。schema 号 40023 未使用（没加表 / 索引）。
 
-## G10-3 服务端无头迁移与代际状态机（2026-11-17，分支 `pr/srs-gen4-g10-3-server-migration`，基于 `pr/srs-gen4-switch`）
+## 24. G10-3 服务端无头迁移与代际状态机（2026-11-17，分支 `pr/srs-gen4-g10-3-server-migration`，基于 `pr/srs-gen4-switch`）
 
 纯 Dart（`packages/fushi_server`），Rust 未改，没用 schema 号，`server_backup.dart` 未碰。
 
@@ -1825,7 +1825,7 @@ Dart：`srs_format_break_test`（保留并转绿）、`srs_sync4_round_test`（�
   去掉 `precondition` 分支 → 处置说明用例红；叫停不用现取进度 → 叫停用例红；`_armMigrationRetry` 直接返回 → busy 与别的
   进程两条红；WebUI「开始升级」去掉确认 → WebUI 用例红。
 
-## G11-4 备份 / 还原、主库 schema 升档、服务端备份 v2（2026-11-17，分支 `pr/srs-gen4-g11-4-backup-restore`，基于 `pr/srs-gen4-switch`）
+## 25. G11-4 备份 / 还原、主库 schema 升档、服务端备份 v2（2026-11-17，分支 `pr/srs-gen4-g11-4-backup-restore`，基于 `pr/srs-gen4-switch`）
 
 规划 §1.9、§6、D33 / D34；本节「§9.5 第 6 条」「§13」「§15 定案 5」「§16 旧事件备份进合并条件」点名 G11-4 的全部在这里收口。
 Rust `SCHEMA` 没升（没加表 / 索引，分到的 40024 没用）；ABI 不变（`ffsrs_store_snapshot` 是既有入口）。
@@ -1947,7 +1947,7 @@ Rust `SCHEMA` 没升（没加表 / 索引，分到的 40024 没用）；ABI 不�
 - 上一节「没做」前三条不变（覆盖还原后第一次合并同一份旧事件输入多落一份归 G9；`source: "db"` 的 v1 旧行按请求 `now` 包；
   旧二进制真机互拒归 R0 / G11-5）。
 
-## T1 旧测试按新代重写（2026-11-17，分支 `pr/srs-gen4-t1-tests-to-gen4`，基于 `pr/srs-gen4-switch`）
+## 26. T1 旧测试按新代重写（2026-11-17，分支 `pr/srs-gen4-t1-tests-to-gen4`，基于 `pr/srs-gen4-switch`）
 
 只改测试与测试辅助，不改 Rust、不改别的模块的生产代码。四处 SRS 测试在真内核上跑（`FUSHI_FSRS_LIB` 指向
 `pr/srs-gen4-switch` + G9-7 `8cf0aaea77` 合起来编的 `fushi_fsrs.dll`：不带 G9-7 时引擎侧约 100 条先崩在 ID 口径的

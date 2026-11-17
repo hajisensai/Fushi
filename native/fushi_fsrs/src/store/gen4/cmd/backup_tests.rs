@@ -291,7 +291,8 @@ fn another_collection_needs_confirmation_and_bad_files_change_nothing() {
         legacy_req(&snap, "db", &sc.0, json!({"confirmed": true})),
     )
     .unwrap();
-    assert_eq!(got["outcome"], json!("joined"), "{got}");
+    // Q 是全新 profile、集合是空集合：G9-5「空集合可换绑」之后确认即换绑到对方（`bound`），不再写 Join。
+    assert_eq!(got["outcome"], json!("bound"), "{got}");
     ffsrs_store_close(q);
 }
 

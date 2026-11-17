@@ -103,7 +103,8 @@ void main() {
     expect(secondary.debugQuery('SELECT 1 AS one').single['one'], 1);
   });
 
-  // 协议 1 旧主库的搬迁入口（`ffsrs_store_legacy_*`）与备份快照在新代里还没接线：报类型化的「没接线」，不当成功。
+  // 协议 1 旧主库的搬迁入口（`ffsrs_store_legacy_*`）在新代里还没接线：报类型化的「没接线」，不当成功；备份快照
+  // 已接新代（G11-4），但剥离本机状态的请求明确报错。
   test('legacy import and snapshot are typed unwired errors on gen4', () {
     final SrsCore core = SrsCore.open(dir.path);
     addTearDown(core.close);
@@ -122,11 +123,12 @@ void main() {
         '${dir.path}${Platform.pathSeparator}snap.db',
         stripDeviceLocal: true,
       ),
+      // G11-4 已把快照接到新代；只是不支持剥离本机状态（备份走按集合的导出流），报一般错误。
       throwsA(
-        isA<SrsCoreUnwiredException>().having(
-          (SrsCoreUnwiredException e) => e.owner,
-          'owner',
-          'G11-4',
+        isA<SrsCoreException>().having(
+          (SrsCoreException e) => e.message,
+          'message',
+          contains('stripping device-local state is not supported'),
         ),
       ),
     );
@@ -325,12 +327,12 @@ void main() {
         throwsA(isA<SrsCoreRemovedException>()),
       );
       expect(
-        // `identity` 已由 G9-4 接线；仍未接线的拿 G9-5 的并入命令。
+        // G9-5 把旧并入命令标成已删；W3 合流后已没有未接线命令。
         () => core.sync2(<String, Object?>{
           'op': 'profile_merge_mark',
           'profile': 'p',
         }),
-        throwsA(isA<SrsCoreUnwiredException>()),
+        throwsA(isA<SrsCoreRemovedException>()),
       );
     });
   });

@@ -14,6 +14,7 @@ import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart'
     show RemoteMineErrorKind, RemoteMineResult;
 import 'package:fushi_engine/sync/remote_mining_target.dart';
 import 'package:fushi_engine/srs/srs_ctl_routes.dart' show SrsCtlHost;
+import 'package:fushi_engine/srs/srs_remote_generation.dart';
 import 'package:fushi_engine/srs/srs_remote_store.dart';
 import 'package:fushi_engine/srs/srs_remote_store_routes.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
@@ -167,16 +168,21 @@ void main() {
   Future<void> runs(int n) =>
       until(() => fake.runs.length == n, '$n migration run(s) started');
 
+  // 走 V2 端点（G10-2 起 V1 一律 426）。
   Future<(int, String?)> remoteHello([String? profile]) async {
     final shelf.Response r = await handleSrsRemoteStoreRequest(
       srs.remoteStore!,
       shelf.Request(
         'POST',
-        Uri.parse('http://host/api/srs/remote/call'),
-        body: jsonEncode(<String, Object?>{'op': 'hello', 'profile': ?profile}),
+        Uri.parse('http://host${kSrsRemoteStoreV2PathPrefix}call'),
+        body: jsonEncode(<String, Object?>{
+          kSrsRemoteGenerationKey: kSrsRemoteStoreV2Generation,
+          'op': 'hello',
+          'profile': ?profile,
+        }),
       ),
       'POST',
-      '/api/srs/remote/call',
+      '${kSrsRemoteStoreV2PathPrefix}call',
     );
     final Object? body = jsonDecode(await r.readAsString());
     return (r.statusCode, body is Map ? body['error'] as String? : null);
