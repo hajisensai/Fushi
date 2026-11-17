@@ -3220,3 +3220,67 @@ profile uid 不变」断言，不分 `bound` / `joined`。
 - **BUG-4626 新代并入场景已正式登记为 BUG-4836**（`docs/bugs/BUG-4836-srs-gen4-dangling-op-joins-into-other-collection.md`）：根因
   `file:line`（`gen4/cmd/writes.rs:31` / `:886` 写入口不设闸，`gen4/identity.rs:430` / `:572` 并入无条件并集）、两种修法与复现用例
   全文都在 bug 文件里，交 G9 身份 / 设计；本分支仍不改内核。
+
+## 36. 第五波 G7-6 删旧投影、协议 3 代码冻结（2026-11-18，分支 `pr/srs-gen4-g7-6-delete-legacy`，基于 `pr/srs-gen4-switch`）
+
+### 做了什么（按提交）
+
+- `30ae9c49d2`：删协议 3 并入暂缓整条链（`SrsDeferredProfileMerge` / `SrsProfileAdoptDeferred` / `deferredMerge`、调度器的
+  发布与读取、`srsDeferredProfileMergeReaderProvider`、历史页那一行）与三个死 i18n key（`srs_timeline_merge_deferred` /
+  `_hint`、`srs_sync_profile_merge_queued`，`i18n_sync --remove`）。
+- `d5ea00ca1a`：删 app 内换代前预演（`dryrun.rs` 的登记 / 报告 / 取消 / 关库等待，`ffi.rs` 三个 `gen4_rehearse*` 臂；新代
+  wiring 仍报 `Removed(NO_REHEARSAL)`）。离线干跑 `dryrun::run`（`examples/gen4_dryrun.rs` 与测试夹具用）保留。迁移拿锁后
+  清掉库旁残留的 `gen4-rehearsal/`（`migrate.rs` `remove_leftover_rehearsal`，测试
+  `a_leftover_rehearsal_work_dir_is_removed_by_the_migration`，变异实测删掉清理即红）。
+- `62708c3258`：协议 3 的 JSON 分发器从 `store/ffi.rs` 整段搬进冻结侧 `store/legacy3/mod.rs`。生产入口
+  `legacy3::dispatch` 只认 `FROZEN_OPS`（`cache_config_set` / `migrate` / `apply` / `dedup` / `replay_pending`，换代迁移
+  `prepare.rs` 与整包备份读入 `cmd/backup.rs` 用），其余约 90 条臂、`if op == …` 分支与只给它们用的前置步骤一律
+  `#[cfg(test)]`。测试入口 `legacy3::sync2_dispatch`（全部臂）照旧给协议 3 测试与对拍装置。守卫：
+  `only_the_frozen_commands_are_compiled_into_production`（按源码核对没被 `cfg(test)` 门住的臂 = `FROZEN_OPS`）、
+  `the_production_entry_refuses_every_other_command`；`every_protocol_3_command_has_a_gen4_wiring` 改读 legacy3 源码。
+  变异实测两条守卫都红。
+- `a3eefaf97f`：删 6 个 `ffsrs_store_legacy_*` C 入口与 `gen4/kernel.rs` 对应未接桩。只被测试臂用的约 540 个函数 / 常量 /
+  结构 / 方法（`store/sync2/*`、`reads`、`projections`、`profile_data`、`read_pool`、`registers` 等）收进 `#[cfg(test)]`，**不删**
+  （仍是对拍语料与 gen4 测试夹具的生成器）。默认 quick 构建告警 8 → 7（dead_code 1 → 0）；`--features id_audit` 96 → 12
+  （余下 12 条全是基线既有）。
+- `86078b46d4`：删 Dart 协议 1 主库搬迁（`srs_legacy_store_migration.dart`、`SrsCore.legacy*` 与 6 个符号查找——查找是绑定
+  构造时一次做完的，原生侧删了符号不跟着删会让整个绑定构造失败）。检测与拒绝 `SrsLegacyMainDatabasePending` 保留，提示改成
+  「先用旧版本打开一次完成搬迁」，测试改名 `srs_legacy_main_database_test.dart`。`srs_db_store.dart` 两张命令表去掉新代
+  `Removed` 的 op。`gen4/dispatch.rs` 新增 `PROJECTING_OPS` 作 Dart `kSrsSync2ProjectingOps` 的锚（原锚随分发器进了 legacy3），
+  测试 `projecting_ops_are_wired_and_cover_every_local_write`（变异实测删一条即红）；`srs_read_only_executor_guard_test` 改读它。
+
+### 取舍（下一棒照此理解）
+
+- **实现链原地冻结、不搬文件**：协议 3 的实现仍在 `store/`、`store/sync2/` 原文件里，生产构建只编得进 `legacy3::dispatch`
+  够得着的部分。没有整体搬进 `store/legacy3/`：并行模块正改着同一批文件，搬会成片冲突；冻结边界由编译门（`cfg(test)`）与上面的
+  源码守卫钉住，不靠目录。
+- **冻结内核共用的结构**（`ReadPool`、`Refresh`、`stats::Snapshot` / `StatsCache`、`channel::{LegacyRow, Append}`、
+  `transport::{Held, Delivery, CommitBudget, IngestSession, IngestPhase, Outcome, PreparedSegment, PreparedIngest}`、
+  `sync2::{Local, Group}`）里有字段 / 变体只在测试臂里读，按 `#[cfg_attr(not(test), allow(dead_code))]` 放过并在结构上注明；
+  拆字段要动冻结内核的行为，不值。
+- `SrsCore::legacy_begin / page / commit / abort / mark_none / legacy_imported`（`store/mod.rs`）没删，经门控变成只在测试构建里：
+  它们是写连接恢复（BUG-4297 `legacy_open`）用例的一部分。
+- `_kSync2CacheOps` 只删了已删的 op。新代里只有 `cache_config_set` 读请求里的 `caches`（`legacy_backup_import` 由调用方显式带），
+  其余命令带着它只是多传，没收窄（行为面改动，不在本项范围）。
+- `exec_on` 只在测试与 `raw_sql` 构建编译（以前是基线唯一一条 dead_code）。
+
+### 没做 / 交给别的模块
+
+- **R8 / R9（K2 合入条件）**：清除确认处的保留副本说明、D32 保留副本自动 / 提前删除、Dart 接 `scrub_state` 报错提示——按任务
+  分工归 S5（保留副本 UI / D32 / scrub_state），本分支未动。
+- **D2 协议 1 位置迁移残留**（`srsPrepareLocation` / `SrsV1MediaMigrations` / `onV1Bound` 等）归 S1，未动。
+- **D5**：`srs_profile_merge.dart` 的存根与 `test/srs/sync2/v1_client` 冻结副本**保留**（`srs_format_break_test` 跨版本围栏的唯一
+  实跑证据）；要删得先用冻结位置夹具重写那条测试，属方向性取舍。
+- **N2 基线就死的新代代码**（不归 G7-6）：`gen4/import.rs` `import_legacy` / `check_ops_stream`、`oldroot.rs` `Meta3` /
+  `fence_writes`、`gen4/compact.rs` 整套压实、`Wiring::Unwired` 不再被构造、`cmd/stats.rs:59-79`、`legacy.rs` `merge_marks` /
+  `translate_device`、`seal.rs` `write_tombstone`（R8 要用）、`kernel.rs` `retained_copy_unreadable` 从没被读（G7-5 状态枚举的
+  缺口，应按 bug 登记）。复查方法：`lib.rs` 临时把 `store` / `sync2` 改成 `pub(crate)` 跑 `cargo check --lib`。
+- `srs_p6_vectors_test` 仍是已知红（§32 末「没做」：往协议 3 表灌数据），本分支只删了它对已删 `legacyMarkNone()` 的调用。
+- `srs_store_ownership_guard_test` 的基线红（§25「没做」记的 `srs_storage.dart:112` 表名）本分支修了：那处是保留下来的「主库残留协议 1 表
+  检测」，加进白名单（理由「老形态检测」）。
+- **同步模块的已知红（不归 G7-6，原样交 S1 / 同步 owner）**：`fushi/test/srs/srs_sync_scheduler_test.dart` 9 条（加密路径经调度器、
+  支持服务器时间的后端、多个同步目录 ×2、旧根媒体后台迁移、按位置收手、文件夹存储位置 ×3）——测试夹具 `ownDeviceDir` /
+  `ownSegments` 还按协议 3 布局找 `<ns>/<uid>/v3/devices/<设备>`，新代写在 `v4/`，于是 `PathNotFoundException` / 段数 0；有两条
+  则报 `srs_location_protocol1_root`（夹具建的是旧版位置）。`fushi/test/srs/srs_history_page_test.dart`「存储位置：添加文件夹 /
+  改用途停用 / 移除」MD3 / Apple 两条超时在 `usb removed`（移除走 `location_forget`）。两台机器都红（dist 判 real red）；本分支对
+  这两个文件与 `srs_sync_scheduler.dart` 的改动只删了并入暂缓那几段，不碰这些路径。
