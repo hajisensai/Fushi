@@ -18,6 +18,29 @@
 //! 只有 2 与 3 同时成立才拒绝：ID 不再加盐，两个集合导入同一份内容会有同一个 ID，那是各自的实体，照常写；「哪里都没有的
 //! ID」（同批先后到、给还没生成的卡写血统）也照常写——同协议 3 `ownership.rs` 的口径，别人的 ID 对调用方表现为不存在。
 //!
+//! # 身份记录
+//!
+//! 身份记录（`Body::Entity`）指向它自己要建的实体，同样过闸：以前它不过闸、还直接进 [Born]，A 只要在批里带一条 B 的笔记
+//! 的身份记录，那条身份记录与同批对这条笔记的修改就都写下了，并入后 A 的身份记录按「规范 JSON 最小者胜」（`derive.rs`）
+//! 可能顶掉 B 的（换了 B 的笔记类型、guid，复核实测）。判法按种类：
+//!
+//! - **笔记**：ID 由它自己的内容按规范规则派生（`v5(NS, note/<guid>)`，`gen4_ids/rules.rs` `note`）的照常写——两个集合
+//!   各自导入同一个包 / 同一份挖词历史（guid 来自内容）就该得到同一个 ID，那是各自的实体（文件头第 3 条后面那段）；对
+//!   不上的（随机 guid 新建的笔记、存量带盐 ID、伪造的记录）按上面的判据判。
+//! - **牌组、笔记类型**：不判。它们的规范 ID 按全名 / Anki 编号派生，内置的（默认牌组、内置笔记类型）在每个集合里是同一个
+//!   常量，用户在两个集合里各建一个同名牌组也是同一个 ID：「别的集合里有」说明不了归属。对它们的修改仍按判据判。
+//! - **卡片**：没有合法的卡片身份记录来源（卡由笔记 × 模板派生），按判据判。
+//! - **profile 设置实体**：见下一节。
+//!
+//! 判身份记录时不拿 [Born] 给它自己作保；[Born] 只收过了闸的身份记录。
+//!
+//! # profile 设置实体
+//!
+//! 它不在 `ent_ix` / `alias_ix` / `cards` 里留痕迹，上面的判据看不到。存量里它的 ID 就是 profile uid（别名层把每个盐归到
+//! 规范值 `v5(NS, profile)`，`gen4_ids/alias.rs` `profile_entities`）：A 拿 B 的 uid 改设置，在 A 的集合里归不到规范值，
+//! 写下的是悬空的「B 的 uid」，并入 B（盐取并集）后就成了 B 的设置。判法同协议 3 `ownership.rs`：ID 是别的集合绑定的
+//! profile uid 或盐、又不是本集合的（[PROFILE_SQL]），就是别人的；规范值是各自的常量，永远放行。
+//!
 //! # 为什么在写入口、不在并入时丢
 //!
 //! 闸只决定**本机要不要写下**一条操作；写下之后的操作照常传播、照常并集，收段 / 导入 / 并入的语义一个字不改。所以
@@ -44,10 +67,12 @@
 use std::collections::HashSet;
 
 use rusqlite::params;
+use serde_json::Value;
 
 use super::super::super::derive::Ref;
 use super::super::super::schema::sql;
 use super::{Body, EntKind, Session, ref_of};
+use crate::gen4_ids::rules;
 
 /// 库里有没有别的集合：?1 = 本集合。
 pub(crate) const OTHERS_SQL: &str = "SELECT EXISTS(SELECT 1 FROM collections WHERE col != ?1)";
@@ -65,12 +90,20 @@ pub(crate) const OURS_SQL: &str = "SELECT EXISTS(SELECT 1 FROM ent_ix WHERE col 
      OR EXISTS(SELECT 1 FROM log_ix WHERE col = ?2 AND card = ?1) \
      OR EXISTS(SELECT 1 FROM tag_ix WHERE col = ?2 AND note = ?1)";
 
-/// 这一批输入里要建的实体（规范 ID 文本）：算本集合的（第 3 条）。
+/// profile 级设置实体 E 是不是别的集合的（文件头「profile 设置实体」）：?1 = E（文本），?2 = 本集合。E 是别的集合绑定的
+/// profile uid 或它的盐、又不是本集合的，才是别人的。`collections` 一个 profile 一行，整表就几行。
+pub(crate) const PROFILE_SQL: &str = "SELECT EXISTS(SELECT 1 FROM collections WHERE col != ?2 \
+       AND (profile_uid = ?1 OR EXISTS(SELECT 1 FROM json_each(salts) WHERE value = ?1))) \
+     AND NOT EXISTS(SELECT 1 FROM collections WHERE col = ?2 \
+       AND (profile_uid = ?1 OR EXISTS(SELECT 1 FROM json_each(salts) WHERE value = ?1)))";
+
+/// 这一批输入里要建的实体（规范 ID 文本）：算本集合的（第 3 条）。只收过了闸的身份记录（[Session::foreign_body]）。
 pub(in crate::store::gen4::cmd) type Born = HashSet<String>;
 
-/// 一条操作体指向的实体（文件头「判据」）：建实体、还原点、并入这类不指向已有实体的为 None。
+/// 一条操作体指向的实体（文件头「判据」）：还原点、并入这类不指向已有实体的为 None。身份记录指向它自己建的实体。
 pub(in crate::store::gen4::cmd) fn target(body: &Body) -> Option<(EntKind, String)> {
     match body {
+        Body::Entity { kind, id, .. } => Some((*kind, id.text())),
         Body::Edit(e) => Some((e.kind, e.entity.text())),
         Body::TagAdd { note, .. } | Body::TagRemove { note, .. } | Body::TagOrder { note, .. } => {
             Some((EntKind::Note, note.text()))
@@ -81,6 +114,22 @@ pub(in crate::store::gen4::cmd) fn target(body: &Body) -> Option<(EntKind, Strin
             None => (EntKind::Card, l.card.text()),
         }),
         _ => None,
+    }
+}
+
+/// 身份记录 [data] 的 ID [id] 是不是由它自己的内容按规范规则派生的（文件头「身份记录」）：笔记 = `v5(NS, note/<guid>)`
+/// （`gen4_ids/rules.rs` [rules::note]）。别的集合独立导入 / 新建同一份内容就会得到同一个 ID，那是各自的实体。
+fn content_derived(kind: EntKind, id: &str, data: &str) -> bool {
+    match kind {
+        EntKind::Note => serde_json::from_str::<Value>(data)
+            .ok()
+            .and_then(|d| {
+                d["guid"]
+                    .as_str()
+                    .map(|g| rules::note(rules::CANONICAL, g).text())
+            })
+            .is_some_and(|derived| derived == id),
+        _ => false,
     }
 }
 
@@ -117,7 +166,13 @@ impl Session<'_, '_> {
         id: &str,
         born: &Born,
     ) -> Result<bool, String> {
-        if born.contains(id) || !self.others()? {
+        if !self.others()? {
+            return Ok(false);
+        }
+        if kind == EntKind::Profile {
+            return self.profile_foreign(id);
+        }
+        if born.contains(id) {
             return Ok(false);
         }
         let r = ref_of(id);
@@ -132,12 +187,35 @@ impl Session<'_, '_> {
         Ok(!self.ask(OURS_SQL, &r, Some(kind))?)
     }
 
-    /// [body] 指向别的集合的实体（[target] + [Session::foreign]）。
+    /// profile 级设置实体 [id] 是不是别的集合的（[PROFILE_SQL]）。规范的 profile 设置实体（[rules::profile_entity]）在
+    /// 每个集合里都是同一个常量，是各自的。
+    fn profile_foreign(&self, id: &str) -> Result<bool, String> {
+        if id == rules::profile_entity().text() {
+            return Ok(false);
+        }
+        self.t
+            .conn()
+            .prepare_cached(PROFILE_SQL)
+            .map_err(sql)?
+            .query_row(params![id, self.col], |r| r.get(0))
+            .map_err(sql)
+    }
+
+    /// [body] 指向别的集合的实体（[target] + [Session::foreign]）。身份记录（文件头「身份记录」）：ID 由自己的内容派生的
+    /// 放行（[content_derived]）；牌组与笔记类型的不判；判的时候不拿 [born] 给自己作保。
     pub(in crate::store::gen4::cmd) fn foreign_body(
         &mut self,
         body: &Body,
         born: &Born,
     ) -> Result<bool, String> {
+        if let Body::Entity { kind, id, data } = body {
+            let id = id.text();
+            return match kind {
+                EntKind::Deck | EntKind::NoteType => Ok(false),
+                _ if content_derived(*kind, &id, data) => Ok(false),
+                _ => self.foreign(*kind, &id, &Born::new()),
+            };
+        }
         match target(body) {
             Some((kind, id)) => self.foreign(kind, &id, born),
             None => Ok(false),

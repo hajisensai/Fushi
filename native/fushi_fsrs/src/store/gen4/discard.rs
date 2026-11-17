@@ -229,9 +229,12 @@ pub(crate) const DISPOSABLE_SQL: [&str; 6] = [
     // 本机以外的设备（含只被点过名的）。
     "SELECT EXISTS(SELECT 1 FROM devs WHERE col = ?1 AND id != ?2)",
     // 本机以外的公钥、任何信任记录。
-    "SELECT EXISTS(SELECT 1 FROM peers WHERE col = ?1 AND device != ?2)      OR EXISTS(SELECT 1 FROM trust WHERE col = ?1)",
+    "SELECT EXISTS(SELECT 1 FROM peers WHERE col = ?1 AND device != ?2) \
+     OR EXISTS(SELECT 1 FROM trust WHERE col = ?1)",
     // 发布过 head / 转发过 / 立过位置的根或记过位置的加密（文件头「空集合」）。
-    "SELECT EXISTS(SELECT 1 FROM loc_heads WHERE col = ?1)      OR EXISTS(SELECT 1 FROM relay_out WHERE col = ?1)      OR EXISTS(SELECT 1 FROM loc_state WHERE col = ?1)",
+    "SELECT EXISTS(SELECT 1 FROM loc_heads WHERE col = ?1) \
+     OR EXISTS(SELECT 1 FROM relay_out WHERE col = ?1) \
+     OR EXISTS(SELECT 1 FROM loc_state WHERE col = ?1)",
     // 已传水位（`outbox_ack`）：`gen4_out/<col>/` 开头的键（区间同 [META_DELETE_SQL]）。
     "SELECT EXISTS(SELECT 1 FROM srs_meta WHERE key >= ?6 AND key < substr(?6, 1, length(?6) - 1) || '0')",
     // 本机日志里的 `Join`（并入过别的集合）。

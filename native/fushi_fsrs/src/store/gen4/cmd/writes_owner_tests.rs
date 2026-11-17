@@ -7,9 +7,10 @@ use rusqlite::{Connection, OpenFlags};
 use serde_json::{Value, json};
 
 use super::{OURS_SQL, THEIRS_SQL};
+use crate::gen4_ids::rules;
 use crate::store::ffi::{SrsCoreHandle, ffsrs_store_close};
-use crate::store::gen4::cmd::dispatch_tests::{T1, call, g4req, open};
-use crate::store::gen4::cmd::tests::{N1, N2, N3, N4};
+use crate::store::gen4::cmd::dispatch_tests::{T1, call, g4req, migrated, open};
+use crate::store::gen4::cmd::tests::{N1, N3, N4, card};
 use crate::store::gen4::files::GEN4_FILE;
 use crate::store::gen4::schema::{k_range, open_in_memory};
 use crate::store::sync2::config::default_deck_id;
@@ -47,7 +48,20 @@ fn ready(h: *mut SrsCoreHandle, profile: &str) {
 }
 
 fn note(profile: &str, id: &str) -> Value {
-    json!({"e": {"t": "entity", "x": {"id": id, "p": profile, "k": "note", "d": {"createdAt": 1, "guid": id, "noteTypeId": N4}}}})
+    note_with(profile, id, id)
+}
+
+fn note_with(profile: &str, id: &str, guid: &str) -> Value {
+    json!({"e": {"t": "entity", "x": {"id": id, "p": profile, "k": "note", "d": {"createdAt": 1, "guid": guid, "noteTypeId": N4}}}})
+}
+
+/// 由内容（guid）按规范规则派生的笔记 ID（导入 / 挖词历史这类 guid 来自内容的笔记）。
+fn derived(guid: &str) -> String {
+    rules::note(rules::CANONICAL, guid).text()
+}
+
+fn profile_edit(profile: &str, entity: &str, v: Value) -> Value {
+    json!({"e": {"t": "edit", "x": {"id": "ignored", "p": profile, "k": "profile", "e": entity, "f": "dayRolloverHour", "w": "dart", "s": 1, "ctx": {"vv": {}}, "v": v, "hlc": "0:0:dart", "ts": "anchored"}}, "note": null})
 }
 
 fn field(profile: &str, id: &str, v: Value) -> Value {
@@ -95,12 +109,17 @@ fn another_collections_entities_are_not_written() {
     let h = open(&dir.0, 0).unwrap();
     ready(h, B);
     ready(h, A);
+    let shared = derived("shared-guid");
     let v = run(
         h,
         B,
         "apply",
         json!({}),
-        &[note(B, N1), field(B, N1, json!("鳥")), note(B, N2)],
+        &[
+            note(B, N1),
+            field(B, N1, json!("鳥")),
+            note_with(B, &shared, "shared-guid"),
+        ],
     );
     assert_eq!(v["landed"], json!([true, true, true]), "{v}");
 
@@ -128,18 +147,21 @@ fn another_collections_entities_are_not_written() {
         "A 的日志里没有指向 B 的实体的操作"
     );
 
-    // 两边都有的 ID：A 在同一批里先写修改、后建实体——是 A 自己的。
+    // 两边都有的 ID（由内容派生：两个集合各自导入了同一份内容）：A 在同一批里先写修改、后建实体——是 A 自己的。
     let v = run(
         h,
         A,
         "apply",
         json!({}),
-        &[field(A, N2, json!("川")), note(A, N2)],
+        &[
+            field(A, &shared, json!("川")),
+            note_with(A, &shared, "shared-guid"),
+        ],
     );
     assert_eq!(v["landed"], json!([true, true]), "{v}");
     assert_eq!(v["foreign"], json!([]), "{v}");
     // A 已经有了这条笔记：之后单独改它照常写。
-    let v = run(h, A, "apply", json!({}), &[field(A, N2, json!("山"))]);
+    let v = run(h, A, "apply", json!({}), &[field(A, &shared, json!("山"))]);
     assert_eq!(v["landed"], json!([true]), "{v}");
     // 哪里都没有的 ID：照常写（悬空，但不是别人的）。
     let v = run(h, A, "apply", json!({}), &[field(A, N3, json!("海"))]);
@@ -149,6 +171,124 @@ fn another_collections_entities_are_not_written() {
     let v = run(h, B, "apply", json!({}), &[field(B, N1, json!("鶏"))]);
     assert_eq!(v["landed"], json!([true]), "{v}");
     ffsrs_store_close(h);
+}
+
+/// 身份记录也过闸（复核实测：以前 A 写一条 B 的笔记的身份记录就落了，并入后按「规范 JSON 最小者胜」换掉 B 的笔记类型与
+/// guid）：ID 不由自己内容派生的、别的集合有的笔记身份记录不写，同批对它的修改也不再借它作保。由内容派生的照常写。
+#[test]
+fn another_collections_identity_records_are_not_written() {
+    let dir = tempdir::new("g9-owner-ent");
+    let h = open(&dir.0, 0).unwrap();
+    ready(h, B);
+    ready(h, A);
+    run(
+        h,
+        B,
+        "apply",
+        json!({}),
+        &[note(B, N1), field(B, N1, json!("鳥"))],
+    );
+
+    let before = ops_of(&dir.0, A);
+    // 伪造的记录（guid 对不上 ID）、单发：不写。
+    let v = run(h, A, "apply", json!({}), &[note_with(A, N1, "stolen")]);
+    assert_eq!(v["landed"], json!([false]), "{v}");
+    assert_eq!(v["foreign"], json!([0]), "{v}");
+    // 身份记录 + 同批修改 + 标签：一项都不写（身份记录没过闸，不进同批要建的实体）。
+    let v = run(
+        h,
+        A,
+        "apply",
+        json!({}),
+        &[
+            note(A, N1),
+            field(A, N1, json!("被 A 改")),
+            tags(A, N1, json!(["串了"])),
+        ],
+    );
+    assert_eq!(v["landed"], json!([false, false, false]), "{v}");
+    assert_eq!(v["foreign"], json!([0, 1, 2]), "{v}");
+    // 导入路径同一个闸。
+    let v = run(
+        h,
+        A,
+        "import_drafts",
+        json!({}),
+        &[note_with(A, N1, "stolen")],
+    );
+    assert_eq!(v["foreign"], json!([0]), "{v}");
+    assert_eq!(
+        ops_of(&dir.0, A),
+        before,
+        "A 的日志里没有 B 的笔记的身份记录"
+    );
+
+    // 哪里都没有的随机 ID 照常建。
+    let v = run(h, A, "apply", json!({}), &[note(A, N3)]);
+    assert_eq!(v["landed"], json!([true]), "{v}");
+    assert_eq!(v["foreign"], json!([]), "{v}");
+    ffsrs_store_close(h);
+}
+
+/// profile 设置实体（没有 `ent_ix` 痕迹）：A 拿 B 的 uid 改设置不写；A 自己的 uid、规范的 profile 设置实体、哪里都没有的
+/// uid 照常写。
+#[test]
+fn another_collections_profile_settings_are_not_written() {
+    let dir = tempdir::new("g9-owner-prof");
+    let h = open(&dir.0, 0).unwrap();
+    ready(h, B);
+    ready(h, A);
+    run(h, B, "apply", json!({}), &[profile_edit(B, B, json!(5))]);
+
+    let before = ops_of(&dir.0, A);
+    let v = run(h, A, "apply", json!({}), &[profile_edit(A, B, json!(9))]);
+    assert_eq!(v["landed"], json!([false]), "{v}");
+    assert_eq!(v["foreign"], json!([0]), "{v}");
+    assert_eq!(ops_of(&dir.0, A), before, "A 的日志里没有 B 的设置");
+
+    let canonical = rules::profile_entity().text();
+    let nowhere = "0193a1b2-0000-7000-8000-00000000dead";
+    let v = run(
+        h,
+        A,
+        "apply",
+        json!({}),
+        &[
+            profile_edit(A, A, json!(6)),
+            profile_edit(A, &canonical, json!(7)),
+            profile_edit(A, nowhere, json!(8)),
+        ],
+    );
+    assert_eq!(v["foreign"], json!([]), "{v}");
+    assert_eq!(v["landed"], json!([true, true, true]), "{v}");
+    ffsrs_store_close(h);
+}
+
+/// `sched`（重置 / 改期 / 撤销）对别的集合的卡：按「没有这张卡」跳过，A 的日志不增、撤销计入 `blocked`。对照：同样的
+/// 动作对一张哪里都没有的卡在 A 里照写（A 这边看两张卡一样陌生，差别只在闸）。
+#[test]
+fn sched_skips_another_collections_cards() {
+    let m = migrated();
+    ready(m.h, A);
+    let theirs = card(N1, "t1");
+    let nowhere = card(N3, "nowhere");
+    let sched = |items: Value| -> Value {
+        let extra = json!({"at": T1, "utcOff": 0, "rollover": 4, "ts": "anchored", "items": items});
+        run(m.h, A, "sched", extra, &[])
+    };
+    let before = ops_of(&m.dir.0, A);
+    let v = sched(json!([
+            {"a": "reset", "card": theirs},
+            {"a": "setDue", "card": theirs, "due": 19_800},
+            {"a": "undo", "card": theirs, "log": "r2"},
+    ]));
+    assert_eq!(v["logs"], json!([]), "{v}");
+    assert_eq!(v["blocked"], json!(1), "{v}");
+    assert_eq!(ops_of(&m.dir.0, A), before, "A 的日志里没有 B 的卡的排程");
+
+    let v = sched(json!([{"a": "setDue", "card": nowhere, "due": 19_800}]));
+    assert_eq!(v["logs"].as_array().map(Vec::len), Some(1), "{v}");
+    assert!(ops_of(&m.dir.0, A) > before, "对照：陌生的卡照写");
 }
 
 /// 库里只有一个集合：不查别的集合（一条 `collections` 查询就放行），悬空写照常。

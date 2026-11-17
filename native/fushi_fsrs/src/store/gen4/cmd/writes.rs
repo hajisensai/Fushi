@@ -32,7 +32,8 @@
 //!   有别名成员」的过渡层。
 //! - **实体归属闸**（BUG-4836，`writes_owner.rs`）：ID 不再加盐，同库别的集合的实体 ID 在这里虽然读不到，写下去却会成为
 //!   悬空操作、等本集合之后并进那个集合时对它生效。调用方给实体 ID 的写命令（`apply_in` / `purge` / `sched`）在写之前
-//!   问 [Session::foreign]：别的集合有、本集合一点痕迹都没有的实体不写；`apply` 一族回包的 `foreign` 交回这些项的下标。
+//!   问 [Session::foreign]：别的集合有、本集合一点痕迹都没有的实体不写（身份记录与 profile 设置实体的判法见
+//!   `writes_owner.rs` 文件头）；`apply` 一族回包的 `foreign` 交回这些项的下标。
 //! - **回包**：命令自己的键之外，[write] 统一补上 `changed`（`[种类, 规范实体 ID]`，碰过的实体）、`purged`（彻底清除的
 //!   实体）、`replayed`（写了日志的卡）、`edits`（`[种类, 实体, 字段键, 设备, 序号, 值]`，撤销据它判断之后有没有
 //!   被别人动过，与协议 3 同形）、`nextSeq`（本机身份日志的下一个 seq）与 `settled`（这条命令里派生层收尾的计数，
@@ -788,14 +789,21 @@ pub(super) fn apply_in(
         parsed.push(Item { body, ..item });
     }
     let keep = drop_noops(s, &parsed)?;
-    // 实体归属闸：这一批要建的实体算本集合的（同批先后到）。
-    let born: Born = parsed
-        .iter()
-        .filter_map(|i| match &i.body {
-            Body::Entity { id, .. } => Some(id.text()),
-            _ => None,
-        })
-        .collect();
+    // 实体归属闸（`writes_owner.rs`）：身份记录先各自过闸；过了闸的、这一批要建的实体算本集合的（同批先后到）。
+    let mut entity_foreign = vec![false; parsed.len()];
+    let mut born = Born::new();
+    for (at, item) in parsed.iter().enumerate() {
+        if !keep[at] {
+            continue;
+        }
+        if let Body::Entity { id, .. } = &item.body {
+            if s.foreign_body(&item.body, &Born::new())? {
+                entity_foreign[at] = true;
+            } else {
+                born.insert(id.text());
+            }
+        }
+    }
     let mut foreign: Vec<usize> = Vec::new();
     // 标签：这一批要碰的笔记此刻的标签（批内写过的按批内的算，见 [expand_tags]）。
     let mut tags_now: HashMap<String, Vec<String>> = HashMap::new();
@@ -804,7 +812,11 @@ pub(super) fn apply_in(
         if !keep[at] {
             continue;
         }
-        if s.foreign_body(&item.body, &born)? {
+        let theirs = match &item.body {
+            Body::Entity { .. } => entity_foreign[at],
+            b => s.foreign_body(b, &born)?,
+        };
+        if theirs {
             foreign.push(at);
             continue;
         }
