@@ -33,10 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4118 条。点号进各自文件。
+> 共 4120 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4764](bugs/BUG-4764-disc-back-double-press-repeat-topmenu.md) | ✅ | ✅ | 原盘正片快速连按两次返回会重复发 topMenu，第二次失败会整盘退出 |
+| [BUG-4763](bugs/BUG-4763-disc-back-to-menu-transient-error-exits.md) | ✅ | ✅ | 原盘正片按返回回盘菜单时，任何暂时性错误都会让整个原盘会话退出 |
 | [BUG-4762](bugs/BUG-4762-cover-meta-store-zone-hang.md) | ✅ | ✅ | CoverMetaStore 共享加载 / 写锁建在发起者 Zone 里，那个 Zone 停摆后同目录读写全部永久挂住 |
 | [BUG-4761](bugs/BUG-4761-cross-app-audio-stop-purge-race.md) | ✅ | ✅ | 跨应用语音缓存停止时清不干净：清扫后还能落下新快照，句子音频临时目录在进程被杀后留在缓存里 |
 | [BUG-4760](bugs/BUG-4760-subtitle-per-char-effect-quadratic.md) | ✅ | ✅ | 逐字拆开歌词的特效标记是两两比较，单字事件多又长时间同屏时解析 ASS 退化成 O(N²) |
