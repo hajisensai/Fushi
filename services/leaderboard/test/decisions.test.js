@@ -190,6 +190,42 @@ describe('/dev/decisions', () => {
     expect(() => normalizeDecision({ ...ITEMS[0], original: 'x'.repeat(8001) })).toThrow(/original/);
   });
 
+  it('原文图片：反馈截图走本站附件、原文里只嵌 GitHub 白名单图片，CSP 同步放行', async () => {
+    const env = makeEnv();
+    const att = JSON.stringify([
+      { slot: 's0', kind: 'screenshot', key: 'k0', bytes: 10 }, { slot: 'v0', kind: 'video', key: 'kv', bytes: 10 },
+      { slot: 'log', kind: 'log', key: 'kl', bytes: 10 },
+    ]);
+    env.DB.raw.prepare(`INSERT INTO feedback (id, ticket_hash, category, title, body, attachments, created_at, updated_at)
+      VALUES ('fbimg1', 'h', 'bug', '截图反馈', '看图', ?, ?, ?)`).run(att, NOW - 50, NOW - 50);
+    const gh = 'https://github.com/user-attachments/assets/9a349d0b-e47d-4349-81b4-2a7a235a9bb0';
+    env.DB.raw.exec(addSql([
+      { id: 'fbimg1', kind: 'feedback', title: '反馈', ask: '要不要' },
+      {
+        id: 'pr10', kind: 'pr', title: 'PR 带图', ask: '要不要',
+        original: `before\n![shot](${gh})\n<img width="300" src="https://user-images.githubusercontent.com/1/a.png">\n`
+          + `![evil](https://evil.example/x.png)\n![dup](${gh})\nhttps://github.com/user-attachments/assets/aaaa-video`,
+      },
+    ], NOW - 10).sql);
+    const s = await devSession(env);
+    const res = await page(env, s, 'all');
+    const p = res.data;
+    const card = (id) => p.slice(p.indexOf(`id="d-${id}"`), p.indexOf('</article>', p.indexOf(`id="d-${id}"`)));
+    const fb = card('fbimg1');
+    expect(fb).toContain('<img src="/dev/f/fbimg1/a/s0"');
+    expect(fb).not.toContain('/a/log');
+    expect(fb).toContain('反馈详情（含视频）');
+    const pr = card('pr10');
+    expect(pr.match(/<img /g)).toHaveLength(2);
+    expect(pr).toContain(`<img src="${gh}"`);
+    expect(pr).toContain('<img src="https://user-images.githubusercontent.com/1/a.png"');
+    expect(pr).not.toContain('<img src="https://evil.example');
+    expect(pr).not.toContain('<img src="https://github.com/user-attachments/assets/aaaa-video"');
+    const csp = res.res.headers.get('Content-Security-Policy');
+    expect(csp).toContain("img-src 'self' https://github.com https://github-production-user-asset-6210df.s3.amazonaws.com");
+    expect(csp).not.toMatch(/img-src[^;]*https:(\s|;|$)/);
+  });
+
   it('页面一次渲染全部事项，非当前栏 hidden；放行本站脚本', async () => {
     const env = makeEnv();
     env.DB.raw.exec(addSql(ITEMS, NOW - 10).sql);

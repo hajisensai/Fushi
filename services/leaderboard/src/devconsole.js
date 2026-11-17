@@ -41,7 +41,7 @@ import { PING_PLATFORMS, loadInstallStats, refreshInstallStatsSnapshot, versionI
 import { RELEASE_PLATFORMS, projectStats, refreshProjectStats } from './project_stats.js';
 import {
   DECISIONS_STYLE, DECISION_LIMITS, decisionItem, decisionStageParam, decisionsPayload, decisionsSig, getDecision,
-  listDecisions, renderDecisions, submitDecision,
+  ORIGINAL_IMAGE_ORIGINS, listDecisions, renderDecisions, submitDecision,
 } from './decisions.js';
 import { DECISIONS_CLIENT_JS } from './decisions_client.js';
 
@@ -87,7 +87,8 @@ const CSP = [
 ].join('; ');
 
 /** 拍板台页面放行本站脚本与 fetch，其余照旧。 */
-const DECISIONS_CSP = CSP.replace("default-src 'none'", "default-src 'none'; script-src 'self'; connect-src 'self'");
+const DECISIONS_CSP = CSP.replace("default-src 'none'", "default-src 'none'; script-src 'self'; connect-src 'self'")
+  .replace("img-src 'self'", `img-src 'self' ${ORIGINAL_IMAGE_ORIGINS.join(' ')}`);
 
 /** 脚本内容的短哈希，拼进 URL 防缓存旧版。 */
 function shortHash(text) {

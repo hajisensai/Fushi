@@ -125,13 +125,13 @@ export const CLOSE_DECISION_SQL = `UPDATE decisions SET state = ?2, resolution =
 
 /**
  * 一条事项的完整列：拍板人昵称、最近一条 claude 留言的时刻，以及反馈类事项联表取到的用户原文
- * （feedback_title / feedback_body；id 或 source 就是反馈 id）。列表与单条共用。
+ * 与附件（feedback_id / feedback_title / feedback_body / feedback_attachments；id 或 source 就是反馈 id）。列表与单条共用。
  */
 const DECISION_COLUMNS_SQL = `SELECT d.*, a.nickname AS verdict_nick,
     (SELECT MAX(n.created_at) FROM decision_notes n WHERE n.decision_id = d.id AND n.author = 'claude') AS claude_at,
-    (SELECT f.title FROM feedback f WHERE d.kind = 'feedback' AND f.id IN (d.id, d.source) LIMIT 1) AS feedback_title,
-    (SELECT f.body FROM feedback f WHERE d.kind = 'feedback' AND f.id IN (d.id, d.source) LIMIT 1) AS feedback_body
-  FROM decisions d LEFT JOIN accounts a ON a.id = d.verdict_by`;
+    f.id AS feedback_id, f.title AS feedback_title, f.body AS feedback_body, f.attachments AS feedback_attachments
+  FROM decisions d LEFT JOIN accounts a ON a.id = d.verdict_by
+  LEFT JOIN feedback f ON f.id = (SELECT x.id FROM feedback x WHERE d.kind = 'feedback' AND x.id IN (d.id, d.source) LIMIT 1)`;
 
 /** 列表：最近的 listMax 条。 */
 export const LIST_DECISIONS_SQL = `${DECISION_COLUMNS_SQL}
@@ -280,11 +280,79 @@ export function decisionOriginal(row) {
   return parts.length ? parts.join('\n\n') : null;
 }
 
-/** 原文块：默认展开（维护者要求直接看到原文），点标题收起。 */
+/**
+ * 原文里能直接嵌的外链图片的来源白名单：GitHub 的 PR / issue 附件（user-attachments 302 到固定 S3 桶）
+ * 与 githubusercontent。只放行这些，避免不可信原文把维护者的浏览器引去任意站点；页面 CSP 的 img-src 同此表。
+ */
+export const ORIGINAL_IMAGE_ORIGINS = Object.freeze([
+  'https://github.com', 'https://github-production-user-asset-6210df.s3.amazonaws.com',
+  'https://user-images.githubusercontent.com', 'https://private-user-images.githubusercontent.com',
+  'https://raw.githubusercontent.com', 'https://camo.githubusercontent.com',
+]);
+const ORIGINAL_IMAGES_MAX = 8;
+
+function allowedImageUrl(raw) {
+  let u;
+  try {
+    u = new URL(raw.replace(/&amp;/g, '&'));
+  } catch {
+    return null;
+  }
+  if (u.protocol !== 'https:' || !ORIGINAL_IMAGE_ORIGINS.includes(u.origin)) return null;
+  if (u.origin === 'https://github.com' && !u.pathname.startsWith('/user-attachments/assets/')) return null;
+  return u.href;
+}
+
+/**
+ * 原文（Markdown / HTML）里的图片：只认 `![alt](url)` 与 `<img src="url">` 两种写法（GitHub 里裸附件链接
+ * 多是视频，不当图片），按白名单过滤、去重，最多 ORIGINAL_IMAGES_MAX 张。
+ * @param {string|null} text
+ * @returns {string[]}
+ */
+export function originalImageUrls(text) {
+  if (!text) return [];
+  const out = [];
+  const re = /!\[[^\]]*\]\(\s*<?(https:\/\/[^\s)>]+)>?(?:\s+"[^"]*")?\s*\)|<img\b[^>]*?\bsrc\s*=\s*["'](https:\/\/[^"']+)["']/gi;
+  for (const m of text.matchAll(re)) {
+    const url = allowedImageUrl(m[1] || m[2]);
+    if (url && !out.includes(url)) out.push(url);
+    if (out.length >= ORIGINAL_IMAGES_MAX) break;
+  }
+  return out;
+}
+
+/** 反馈附件 JSON → 截图槽位与视频槽位（坏 JSON 当没有附件）。 */
+function feedbackMedia(raw) {
+  let list;
+  try {
+    list = JSON.parse(raw || '[]');
+  } catch {
+    list = [];
+  }
+  if (!Array.isArray(list)) list = [];
+  const ok = (a) => a && typeof a.slot === 'string' && /^[a-z][0-9]$/.test(a.slot);
+  return {
+    shots: list.filter((a) => ok(a) && a.kind === 'screenshot').map((a) => a.slot),
+    video: list.some((a) => ok(a) && a.kind === 'video'),
+  };
+}
+
+/** 原文块：默认展开（维护者要求直接看到原文），点标题收起。文字下面是图片：反馈截图走本站附件接口，其余取原文里的白名单外链。 */
 function originalHtml(row) {
   const text = decisionOriginal(row);
-  if (!text) return '';
-  return `<details class="dorig" open><summary>原文</summary><div class="body">${esc(text)}</div></details>`;
+  const fid = row.feedback_id;
+  const media = fid ? feedbackMedia(row.feedback_attachments) : { shots: [], video: false };
+  const imgs = [
+    ...media.shots.map((slot) => [`/dev/f/${fid}/a/${slot}`, `截图 ${slot}`]),
+    ...originalImageUrls(row.original).map((u, i) => [u, `原文图片 ${i + 1}`]),
+  ];
+  if (!text && !imgs.length && !media.video) return '';
+  const shots = imgs.map(([src, alt]) => `<a href="${esc(src)}" target="_blank" rel="noopener noreferrer"><img src="${
+    esc(src)}" alt="${esc(alt)}" loading="lazy" referrerpolicy="no-referrer"></a>`).join('');
+  const links = fid ? `<p class="dorig-links"><a href="/dev/f/${esc(fid)}" target="_blank">${
+    media.video ? '反馈详情（含视频）' : '反馈详情'}</a></p>` : '';
+  return `<details class="dorig" open><summary>原文</summary>${text ? `<div class="body">${esc(text)}</div>` : ''}${
+    shots ? `<div class="dshots">${shots}</div>` : ''}${links}</details>`;
 }
 
 const STAGE_LABEL = { todo: '待拍', explain: '等 Claude 解释', exec: '等 Claude 执行', later: '挂着', closed: '已结' };
@@ -435,6 +503,9 @@ kbd{display:inline-block;min-width:1.4em;padding:0 4px;margin-left:6px;border:1p
 .dorig summary{cursor:pointer;color:var(--muted);font-size:13px}
 .dorig[open] summary{margin-bottom:4px}
 .dorig .body{max-height:24em;overflow:auto}
+.dshots{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.dshots img{display:block;max-width:220px;max-height:320px;border:1px solid var(--line);border-radius:8px}
+.dorig-links{margin:6px 0 0;font-size:13px}
 .dform textarea{min-height:0;margin-top:10px;resize:vertical}
 .vrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}
 .vrow button{margin:0}
