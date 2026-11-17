@@ -3,8 +3,7 @@
 // [SrsDbStore.open] 的 `beforeMigrate` 收一轮 A 已上传的操作，再迁移：A 迁出过的旧日志一条不再包，只包 B 独有的那条。
 import 'dart:convert';
 
-import 'package:drift/drift.dart' show QueryRow, Variable, driftRuntimeOptions;
-import 'package:fushi_core/fushi_core.dart' show srsIdType;
+import 'package:drift/drift.dart' show Variable, driftRuntimeOptions;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
@@ -12,6 +11,7 @@ import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:test/test.dart';
 
 import '../support/srs_test_storage.dart';
+import '../support/srs_raw_sql.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000e8';
 const int kT0 = 1700000000000;
@@ -71,7 +71,7 @@ Future<SrsStorage> _legacyStorage(List<String> logIds) async {
 }
 
 Future<int> _logOps(SrsStorage st) async {
-  final QueryRow r = await st.db
+  final SrsRawRow r = await st.core
       .customSelect(
         'SELECT COUNT(*) AS c FROM sync2_ops WHERE profile_uid = ? AND kind = 3',
         variables: <Variable<Object>>[Variable<String>(kProfile, srsIdType)],
@@ -101,7 +101,6 @@ void main() {
 
     final SrsStorage stA = await _legacyStorage(shared);
     final SrsDbStore a = await SrsDbStore.open(
-      db: stA.db,
       core: stA.core,
       profileUid: kProfile,
       deviceId: 'A',
@@ -112,7 +111,6 @@ void main() {
     final SrsStorage stB = await _legacyStorage(<String>[...shared, onlyB]);
     int pulledBefore = -1;
     final SrsDbStore b = await SrsDbStore.open(
-      db: stB.db,
       core: stB.core,
       profileUid: kProfile,
       deviceId: 'B',
@@ -139,7 +137,6 @@ void main() {
     // 已迁移：重开不再调用 beforeMigrate、不再包。
     bool called = false;
     await SrsDbStore.open(
-      db: stB.db,
       core: stB.core,
       profileUid: kProfile,
       deviceId: 'B',

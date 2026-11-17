@@ -239,6 +239,58 @@ void main() {
     );
   });
 
+  test('从音乐库移除（墓碑，拍板台 IDeN5PYaI7）：重扫不论整首重新解析还是「没变」都不复活', () async {
+    final _ScriptedScanner first = _ScriptedScanner(<List<MusicScanRecord>>[
+      <MusicScanRecord>[
+        _track('a1', path: '/m/a.flac'),
+        _track('b1', path: '/m/b.flac'),
+      ],
+    ]);
+    await MusicLibraryScanner(
+      db,
+      scanner: first.call,
+    ).scanSource(sourceId: 1, rootPath: '/m');
+    await db.hideMusicTracks(<String>['a1'], at: 5);
+
+    // 文件动过：Rust 整首重新解析报回同一个 uid。
+    final _ScriptedScanner reparsed = _ScriptedScanner(<List<MusicScanRecord>>[
+      <MusicScanRecord>[
+        _track('a1', path: '/m/a.flac'),
+        const MusicScanUnchanged('/m/b.flac'),
+      ],
+    ]);
+    final MusicScanSummary s2 = await MusicLibraryScanner(
+      db,
+      scanner: reparsed.call,
+    ).scanSource(sourceId: 1, rootPath: '/m');
+    expect(reparsed.lastKnown?.keys.toSet(), <String>{
+      '/m/a.flac',
+      '/m/b.flac',
+    }, reason: '移除过的文件也算已知：没变就不必每次重新解析');
+    expect(s2.removedTrackCount, 0);
+    expect(
+      (await db.listMusicTracks()).map((MusicTrackRow t) => t.trackUid),
+      <String>['b1'],
+    );
+
+    // 文件没动：报「没变」。
+    final _ScriptedScanner unchanged = _ScriptedScanner(<List<MusicScanRecord>>[
+      <MusicScanRecord>[
+        const MusicScanUnchanged('/m/a.flac'),
+        const MusicScanUnchanged('/m/b.flac'),
+      ],
+    ]);
+    await MusicLibraryScanner(
+      db,
+      scanner: unchanged.call,
+    ).scanSource(sourceId: 1, rootPath: '/m');
+    expect(
+      (await db.listMusicTracks()).map((MusicTrackRow t) => t.trackUid),
+      <String>['b1'],
+    );
+    expect((await db.getMusicTrack('a1'))!.hiddenAt, 5);
+  });
+
   test('库里是旧版本的混合分隔符拼法（v145）：Rust 按统一拼法报「没变」不被误删；'
       '文件变了重新解析时沿用旧 uid，曲库仍是那几行', () async {
     final bool win = Platform.isWindows;

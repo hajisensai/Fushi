@@ -109,7 +109,7 @@ import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/media/video/media_server/media_server_library.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/media/video/media_server_video_path.dart';
-import 'package:fushi/src/media/video/video_source_fingerprint.dart';
+import 'package:fushi_engine/media/video/video_source_fingerprint.dart';
 import 'package:fushi/src/media/video/danmaku_manual_match_panel.dart';
 import 'package:fushi/src/media/source_library/source_stream_headers.dart';
 import 'package:fushi/src/media/source_library/source_folder_access.dart';
@@ -2883,6 +2883,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     onExit: () => unawaited(_exitDiscSession()),
   );
 
+  /// 正片阶段「返回」回盘菜单那一级的执行者：只有盘拒绝菜单调用才落到退出会话，
+  /// 回菜单请求在途时连按的返回直接吞掉（[_discSessionReturnToMenuOnBack]）。
+  final DiscMenuReturn _discMenuReturn = DiscMenuReturn(
+    isRefusal: isVideoDiscMenuCallRefusal,
+  );
+
   /// 原盘画面上同时按下的指针数：两指点击 = 呼出 / 收起控制栏（BD-J 盘拿不到按钮
   /// 几何，单指点击全交给盘）。
   int _discSurfacePointers = 0;
@@ -3335,7 +3341,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   String get dictionarySourceType => kStatSourceVideo;
 
   @override
-  ModuleId? get popupDockModule => ModuleId.video;
+  ModuleId? get lookupHostModule => ModuleId.video;
 
   /// TODO-1204：查词 / 制卡计数归属本视频——[title] 用 [_title]（剧集标题，与
   /// 视频统计 tile 的身份分组键对齐），[bookKey] 存
@@ -6230,8 +6236,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // The locator describes exact bytes, not merely a same-named library row.
     // Manual cross-episode navigation retains the session, without reusing the
     // original episode's locator or fingerprint for the newly selected file.
-    // 远端条目（互联 host）的字节在 host 上，本机没有文件可比指纹：身份由 host 的
-    // bookUid 担保（见 card_source_router 的远端分支），不在这里按本地指纹判死。
+    // 远端条目（互联 host）的字节在 host 上，本机没有文件可比指纹：回跳前已由 host
+    // 对原文件算指纹核验过（见 card_source_router 的 resolveRemoteCardSourceVideo），
+    // 不在这里按本地指纹判死。
     final CardSourceLink? source = _isRemote ? null : widget.sourceReview;
     // 无指纹的链接是在线内容身份（BUG-3490），身份由库 uid 担保。
     if (source != null && source.fingerprint != null) {
@@ -8554,12 +8561,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   Future<MinePopupResult> onMineEntry(Map<String, String> fields) =>
       _onMineEntryImpl(fields);
 
-  /// 反馈 OeS0m8tLHc：查词弹窗点「制卡」→ 弹窗立刻关、视频立刻续播（关栈走
-  /// [_popNestedPopupAt]，按 [_pausedForLookup] 恢复），卡在后台落地（本地视频也是，
-  /// 见 [resolveVideoMineDispatch]），结局由 OSD 报告、失败的结果卡带「重试」。
-  /// 视频车道因此不再看「制卡后关闭查词弹窗」偏好，也不再等卡落地才关。
+  /// 制卡后「关闭弹窗、不续播」（拍板台 8ldy3d8XFA）：撤掉查词暂停标记，随后
+  /// [_popNestedPopupAt] 关栈时就不续播。卡照旧在后台落地（反馈 OeS0m8tLHc，见
+  /// [resolveVideoMineDispatch]），弹窗关不关、续不续播由视频模块的「制卡后行为」定，
+  /// 默认「关闭并续播」。
   @override
-  bool get closePopupAfterMining => true;
+  void dropLookupPauseMark() {
+    _pausedForLookup = false;
+  }
 
   /// mixin 的纯字段制卡 / 覆盖（不带视频媒体）。网页档没有锚点 cue 时的退路：extension
   /// 里调不到 `super`，经这两个转发器。
@@ -8631,8 +8640,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 键盘 / 系统返回 / 手柄三条输入通道共用同一份语义，不再各写一份。
   Future<void> _handleBackOrExit() async {
     if (_dismissTopForegroundLayer()) return;
-    // 原盘会话：控制栏收着时「返回」只把它呼出来，开着时才真退出（回详情页）。
+    // 原盘会话：菜单阶段控制栏收着时「返回」只把它呼出来，开着时才真退出（回详情页）；
+    // 正片阶段「返回」回盘菜单，不退整个会话（全屏那一级在全屏路由里先退过了）。
     if (_discSessionShowBarOnBack()) return;
+    if (_discSessionReturnToMenuOnBack()) return;
     _exitVideoPage();
   }
 
@@ -12773,15 +12784,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           // 继续观看后这条栏必须整条消失：此刻已是普通观看，页面要和平时看视频
           // 完全一样，不能再留第二条常驻顶栏把画面挤下去（BUG-102 的单一顶栏原
           // 则）。要回卡片片段就重新点一次 Anki 里的来源链接，走完整回看链路。
+          // 横幅自己带 SafeArea（让出状态栏与横屏刘海）；外面不能再套一层，否则
+          // 横屏时刘海那一侧被外层让成横幅底色以外的空白条。
           if (_sourceReviewSession case final SourceReviewSession session
               when session.isReview)
-            SafeArea(
-              bottom: false,
-              child: SourceReviewBanner(
-                runHidden: runWithLookupPopupHidden,
-                session: session,
-                onReturn: () => unawaited(_handleBackOrExit()),
-              ),
+            SourceReviewBanner(
+              runHidden: runWithLookupPopupHidden,
+              session: session,
+              onReturn: () => unawaited(_handleBackOrExit()),
             ),
           Expanded(child: body),
         ],

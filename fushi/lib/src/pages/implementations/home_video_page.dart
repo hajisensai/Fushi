@@ -1,4 +1,6 @@
 import 'package:fushi/src/media/privacy/media_privacy_dialog.dart';
+import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
+import 'package:fushi/src/media/nsfw/media_nsfw_dialog.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 
 import 'dart:async' show StreamSubscription, Timer, unawaited;
@@ -51,6 +53,7 @@ import 'package:fushi/src/pages/implementations/manual_download_task_dialog.dart
 import 'package:fushi/src/media/video/cover_ui/cover_orientation_builder.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
+import 'package:fushi/src/media/video/cover_ui/video_frame_cover_picker.dart';
 import 'package:fushi/src/media/video/cover_ui/video_online_cover_picker.dart';
 import 'package:fushi/src/media/video/cover_ui/video_scrape_actions.dart';
 import 'package:fushi/src/media/video/cover_ui/video_specs_badges.dart';
@@ -68,7 +71,7 @@ import 'package:fushi/src/media/video/video_subscription_updates.dart';
 import 'package:fushi/src/media/video/scraper/auto_scrape_service.dart';
 import 'package:fushi_engine/media/video/disc/disc_format.dart';
 import 'package:fushi_engine/media/video/video_duration_probe.dart'
-    show VideoProbeFacts, VideoStreamFacts;
+    show VideoProbeFacts, VideoStreamFacts, probeVideoDurationMs;
 import 'package:fushi_engine/media/video/bluray/bluray_disc.dart'
     show blurayDiscRootForDirectory;
 import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
@@ -189,6 +192,7 @@ import 'package:fushi/src/utils/components/cover_badge.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
+import 'package:fushi/src/utils/components/fushi_header_menu_anchor.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
@@ -283,11 +287,13 @@ typedef _CardDownloadMeta = ({
 });
 
 /// 合集封面卡取到的图源（见 `_collectionCoverSource`）：[errorIcon] 是解码失败时的
-/// 占位图标；[remoteMember] 非 null = 图源是这个远端成员自己的封面，按远端卡槽位画。
+/// 占位图标；[remoteMember] 非 null = 图源是这个远端成员自己的封面，按远端卡槽位画；
+/// [localMemberUid] 非 null = 图源借的是这一集本地成员的封面（NSFW 按这一集判定）。
 typedef _CollectionCoverSource = ({
   ImageProvider image,
   IconData errorIcon,
   RemoteVideoInfo? remoteMember,
+  String? localMemberUid,
 });
 
 /// 首页「视频」tab 的内容：已导入视频的库（独立于书架的 EPUB/有声书分区）。
@@ -367,6 +373,8 @@ class HomeVideoPage extends BaseModuleTabPage {
     this.jellyfinVideoClientLoader,
     this.remoteVideoDownloadDestination,
     this.videoRemoteTargetsLoader,
+    this.frameCoverDurationProbe = probeVideoDurationMs,
+    this.frameCoverGrabber = grabVideoFrameToFile,
     super.key,
   });
 
@@ -426,6 +434,11 @@ class HomeVideoPage extends BaseModuleTabPage {
   /// 测试钩子：注入「可遥控的电脑」探测结果。缺省时生产路径走
   /// [probeVideoRemoteTargets]（已配对、可达、声明 `videoRemoteControlV1`）。
   final Future<List<VideoRemoteTarget>> Function()? videoRemoteTargetsLoader;
+
+  /// 「从视频画面选取封面」的读片长 / 取帧接缝。缺省是生产 ffprobe / ffmpeg 抽帧；
+  /// widget 测试注入假实现，让「菜单入口 → 挑帧 → 手选封面落盘」整条可跑。
+  final VideoFrameDurationProbe frameCoverDurationProbe;
+  final VideoFrameFileGrabber frameCoverGrabber;
 
   /// 测试钩子：强制重查本地视频列表（程序化 seed 视频后让其出现在网格）。
   /// 视频页用 initState 一次性 FutureBuilder + IndexedStack 保活，seed 晚于
@@ -519,6 +532,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       _pendingScrapeKeys.isNotEmpty &&
       !_dismissedPendingScrapeKeys.containsAll(_pendingScrapeKeys);
   bool _pendingScrapeInFlight = false;
+
+  /// 批量删除在飞（35YfcYO-zR）：进度对话框挡住了页面，这里再挡一层，快捷键 /
+  /// 手柄等绕过遮罩的入口也不能在删除期间再起一轮。
+  bool _batchDeleteInFlight = false;
 
   /// 计数重算在飞时又来了一次请求：在飞那次读到的可能是旧状态（批次结束前那
   /// 一刻），完成后必须再补一次，不能整个吞掉（BUG-3085）。
@@ -713,7 +730,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       );
 
   /// 页头「排序」按钮打开的菜单（常驻锚点见 [_buildSortMenuAnchor]）。
-  final MenuController _sortMenu = MenuController();
+  final FushiHeaderMenuController _sortMenu = FushiHeaderMenuController();
 
   /// 层次 C：`'video|<uid>' → 该条目在其主折叠合集里的 sortIndex`（组内序真相源，
   /// 与详情页/播放器 `getCollectionItems` 同源——详情页拖完库页行立即同序）。
@@ -2704,6 +2721,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// - 选中散卡 → 删媒体本体（[VideoBookRepository.deleteVideoBook]，现状语义）；
   /// - 混选 → 确认框文案写明「删 N 个媒体、解散 M 个合集」。
   Future<void> _batchDeleteConfirm() async {
+    if (_batchDeleteInFlight) return;
     // 先剔幽灵键再取数：确认框里的 N / M 必须是真会被删的条数。
     if (!await _pruneStaleSelection() || !mounted) return;
     // **在弹确认框之前就把目标定死**。选中集现在是派生视图（只暴露当前可见的
@@ -2743,11 +2761,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     if (collectionCount == 0) {
       // 「同时删除本地文件」只在选中集里至少有一条是本地文件时才摆出来
       // （全是远端流就没有文件可删，与同步勾选框「兑现不了就不显示」同一纪律）。
-      final Set<String> selected = _selectedLocalUids;
-      final bool anyLocalFile = (await widget.repo.listAll()).any(
-        (VideoBookRow b) =>
-            selected.contains(b.bookUid) && videoBookHasLocalFiles(b),
-      );
+      // 只取选中的那些行（BUG-4748：原来整表 listAll 再过滤，大库全选时白读一遍）。
+      final bool anyLocalFile = (await widget.repo.getByBookUids(
+        targetUids,
+      )).any(videoBookHasLocalFiles);
       if (!mounted) return;
       decision = await showDeleteScopeConfirm(
         context,
@@ -2825,8 +2842,44 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         ),
       );
     }
-    if (decision == null || !mounted) return;
+    if (decision == null || !mounted || _batchDeleteInFlight) return;
 
+    // 35YfcYO-zR：上万条删除要跑一阵，确认之后立刻挂上不可点掉的进度对话框（同时
+    // 挡住重复点删除），按删除阶段更新文案 / 进度，结束（含失败）一定关掉。
+    _batchDeleteInFlight = true;
+    final FushiProgressDialogHandle progress = showFushiProgressDialog(
+      context: context,
+      title: t.video_library_delete_progress_title,
+      message: t.video_library_delete_progress_removing(
+        n: mediaCount + collectionCount,
+      ),
+    );
+    try {
+      await _runBatchDelete(
+        decision: decision,
+        targetUids: targetUids,
+        targetCollectionIds: targetCollectionIds,
+        collectionCount: collectionCount,
+        subscriptions: subscriptions,
+        deleteSubscriptions: deleteSubscriptions,
+        progress: progress,
+      );
+    } finally {
+      progress.close();
+      _batchDeleteInFlight = false;
+    }
+  }
+
+  /// [_batchDeleteConfirm] 点头之后的真删除（进度对话框已挂上）。
+  Future<void> _runBatchDelete({
+    required DeleteDecision decision,
+    required Set<String> targetUids,
+    required Set<int> targetCollectionIds,
+    required int collectionCount,
+    required CollectionOwnedSubscriptions subscriptions,
+    required bool deleteSubscriptions,
+    required FushiProgressDialogHandle progress,
+  }) async {
     final AppModel appModel = ref.read(appProvider);
     final FushiDatabase db = appModel.database;
     // 先解散选中合集（只删合集容器 + 成员引用行，绝不删媒体本体）。
@@ -2858,6 +2911,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           _refreshAfterTagChange();
           await _waitForVideoCardsToUnmount();
         },
+        onProgress: (VideoLibraryDeleteProgress p) =>
+            _showBatchDeleteProgress(progress, p),
       );
     } catch (e, stack) {
       // BUG-2754：整批删除抛出（如刮削清理占着操作闸门）不能半截中断、无提示、
@@ -2906,6 +2961,26 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       result,
       source: 'HomeVideoPage.batchDeleteLocalFiles',
     );
+  }
+
+  /// 把一次删除进度写进对话框：删行、压缩数据库阶段不定态，回收阶段按已处理 /
+  /// 总数。
+  void _showBatchDeleteProgress(
+    FushiProgressDialogHandle handle,
+    VideoLibraryDeleteProgress p,
+  ) {
+    if (handle.isClosed) return;
+    switch (p.stage) {
+      case VideoLibraryDeleteStage.removingEntries:
+        handle.progress.value = null;
+      case VideoLibraryDeleteStage.cleaningUp:
+        handle.message.value = t.video_library_delete_progress_cleanup;
+        handle.progress.value = p.total <= 0 ? null : p.done / p.total;
+      case VideoLibraryDeleteStage.compacting:
+        // VACUUM 按整库大小走，给不出比例；停在 100% 会像卡住了。
+        handle.message.value = t.video_library_delete_progress_cleanup;
+        handle.progress.value = null;
+    }
   }
 
   Future<void> _waitForVideoCardsToUnmount() async {
@@ -4451,6 +4526,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       cover: _menuCoverFor(cover),
       coverBackdrop: cover,
       coverMaterial: ShelfCoverMaterial.glossyPoster,
+      nsfw: MediaNsfwTarget.video(book.bookUid),
       title: title,
       showLaunchAction: false,
       // 统一三库页卡菜单次序：重命名 → 封面/刮削 → 媒体特有 → 加入合集 →
@@ -4491,6 +4567,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
             _pickCover(book);
           },
         ),
+        // 从视频画面选封面（拍板 wb8RZZbn90）：紧跟「选择封面图片」，同一条手选落盘。
+        // 只对本地可抽帧的源出现（网络流 / .strm / 播放列表清单 / 蓝光分集虚拟路径
+        // 抽不了帧）。
+        if (isVideoFrameCoverPickableSource(book.videoPath))
+          DialogQuickAction(
+            label: t.video_cover_from_frame,
+            icon: Icons.photo_camera_back_outlined,
+            group: DialogActionGroup.organize,
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              unawaited(_pickFrameCover(book));
+            },
+          ),
         // 在线搜索封面（BUG-2999）：2026-08-23 把旧 Bangumi/TMDB 刮削链整条换成
         // canonical 资料源时，单集菜单的「在线匹配海报」随旧弹窗一起删了、没有
         // 接到新资料源上，设置封面从此只剩本地文件。这里接回到 AniDB / MAL /
@@ -4634,6 +4723,23 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
             Navigator.pop(dialogContext);
             unawaited(
               showMediaPrivacyDialog(
+                context,
+                db: appModelNoUpdate.database,
+                kind: TagHostKind.video,
+                entryKey: book.bookUid,
+                title: book.title,
+              ),
+            );
+          },
+        ),
+        // NSFW：封面按「模糊 NSFW 封面」打模糊。整部剧要标就标在合集上。
+        DialogListAction(
+          label: t.media_nsfw_action,
+          icon: FushiIcons.visibilityOff,
+          onPressed: () {
+            Navigator.pop(dialogContext);
+            unawaited(
+              showMediaNsfwDialog(
                 context,
                 db: appModelNoUpdate.database,
                 kind: TagHostKind.video,
@@ -5136,6 +5242,23 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       pickedPath: picked.path,
     );
     if (mounted) _refresh();
+  }
+
+  /// 从视频画面选封面：挑帧弹窗 → ffmpeg 截原尺寸帧 → 走与 [_pickCover] 同一条
+  /// [MediaCoverService.applyVideoCoverManual]（手选保护标记照记，批量刮削不覆盖）。
+  Future<void> _pickFrameCover(VideoBookRow book) async {
+    final bool applied = await pickAndApplyVideoFrameCover(
+      context: context,
+      videoPath: book.videoPath,
+      probeDurationMs: widget.frameCoverDurationProbe,
+      grabFrame: widget.frameCoverGrabber,
+      apply: (String framePath) => MediaCoverService.applyVideoCoverManual(
+        repo: widget.repo,
+        bookUid: book.bookUid,
+        pickedPath: framePath,
+      ),
+    );
+    if (applied && mounted) _refresh();
   }
 
   /// 「在线搜索封面」用的候选搜索：与「手动指定作品」同一条
@@ -6105,11 +6228,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final ImageProvider? still = hero.image(overlay: true);
     final VoidCallback? onOpen = _selectionMode ? null : hero.onPlay;
     final VoidCallback? onLongPress = _selectionMode ? null : hero.onLongPress;
+    // NSFW：合集条目按合集、散片按 bookUid；封面按「模糊 NSFW 封面」打模糊。
+    final MediaNsfwTarget? nsfw = _videoNsfwTarget(
+      collectionId: hero.collectionId,
+      bookUid: hero.bookUid,
+    );
+    Widget nsfwCover(Widget cover) =>
+        MediaNsfwCover(target: nsfw, child: cover);
     if (still == null && hero.poster != null) {
       return FushiContinueEntry(
         key: hero.cardKey,
         focusId: hero.focusId,
-        cover: _buildHomePosterImage(hero.poster!),
+        cover: nsfwCover(_buildHomePosterImage(hero.poster!)),
         colorSource: hero.poster,
         material: ShelfCoverMaterial.glossyPoster,
         title: hero.title,
@@ -6132,7 +6262,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       return FushiContinueEntry(
         key: hero.cardKey,
         focusId: hero.focusId,
-        cover: _buildHomeHeroImage(null),
+        cover: nsfwCover(_buildHomeHeroImage(null)),
         coverAspectRatio: 16 / 9,
         title: hero.title,
         eyebrow: subtitle,
@@ -6147,8 +6277,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     return FushiContinueEntry(
       key: hero.cardKey,
       focusId: hero.focusId,
-      cover: _buildHomePosterImage(still),
-      landscapeCover: _buildHomeHeroImage(still),
+      cover: nsfwCover(_buildHomePosterImage(still)),
+      landscapeCover: nsfwCover(_buildHomeHeroImage(still)),
       orientationImage: still,
       colorSource: still,
       material: ShelfCoverMaterial.glossyPoster,
@@ -6730,7 +6860,23 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 同系列墙（[shelfCoverCard] + [_videoCoverBlock] 竖版槽 + [FushiHoverLift]），
   /// 拼贴首块带刮削的 logo / 背景图 / 简介（[_videoBlockMeta]）。分区不参与多选
   /// （与行卡同一纪律）：多选态下点按 / 长按置 null、不画勾选圈。
-  Widget _rowBlockCard(_RowCardSpec spec, FushiCoverBlockSize size) {
+  /// 视频库条目的 NSFW 宿主：合集条目按合集、本地散片按 bookUid；远端占位
+  /// （两者都没有）不可标。
+  MediaNsfwTarget? _videoNsfwTarget({int? collectionId, String? bookUid}) {
+    if (collectionId != null) return MediaNsfwTarget.collection(collectionId);
+    return bookUid == null ? null : MediaNsfwTarget.video(bookUid);
+  }
+
+  MediaNsfwTarget? _rowSpecNsfw(_RowCardSpec spec) =>
+      _videoNsfwTarget(collectionId: spec.collectionId, bookUid: spec.bookUid);
+
+  Widget _rowBlockCard(_RowCardSpec spec, FushiCoverBlockSize size) =>
+      MediaNsfwCoverScope(
+        target: _rowSpecNsfw(spec),
+        child: _rowBlockCardInner(spec, size),
+      );
+
+  Widget _rowBlockCardInner(_RowCardSpec spec, FushiCoverBlockSize size) {
     final ImageProvider? cover = spec.cover;
     final int? collectionId = spec.collectionId;
     final String? bookUid = spec.bookUid;
@@ -6844,7 +6990,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// chip / 底边进度条），信息全进封面下的 [_videoCardMeta]：[secondaryText] 是
   /// 副行，[cloudBadge] 变成副行前导 ☁，[progressFraction] 画在副行下的进度条，
   /// [tags]（BUG-1808）是副行尾部的「色点 + 标签名」。
-  Widget _buildRowMediaCard(_RowCardSpec spec, double cardWidth) {
+  Widget _buildRowMediaCard(_RowCardSpec spec, double cardWidth) =>
+      MediaNsfwCoverScope(
+        target: _rowSpecNsfw(spec),
+        child: _buildRowMediaCardInner(spec, cardWidth),
+      );
+
+  Widget _buildRowMediaCardInner(_RowCardSpec spec, double cardWidth) {
     final Key cardKey = spec.cardKey;
     final FushiFocusId focusId = spec.focusId;
     final ImageProvider? cover = spec.cover;
@@ -7672,7 +7824,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     ];
   }
 
-  Widget _buildAllVideoListRow(VideoBookRow book) {
+  Widget _buildAllVideoListRow(VideoBookRow book) => MediaNsfwCoverScope(
+    target: MediaNsfwTarget.video(book.bookUid),
+    child: _buildAllVideoListRowInner(book),
+  );
+
+  Widget _buildAllVideoListRowInner(VideoBookRow book) {
     final bool selected =
         _selectionMode && _selectedUids.contains(book.bookUid);
     final SelectionSlot slot = SelectionSlot.loose(book.bookUid);
@@ -8167,6 +8324,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     CollectionGroup<_VideoSlot> group, {
     VideoCardOrientation orientation = VideoCardOrientation.portrait,
     FushiCoverBlockSize? block,
+  }) => MediaNsfwCoverScope(
+    target: MediaNsfwTarget.collection(group.collection!.id),
+    child: _buildCollectionCoverCardInner(
+      group,
+      orientation: orientation,
+      block: block,
+    ),
+  );
+
+  Widget _buildCollectionCoverCardInner(
+    CollectionGroup<_VideoSlot> group, {
+    VideoCardOrientation orientation = VideoCardOrientation.portrait,
+    FushiCoverBlockSize? block,
   }) {
     final MediaCollectionRow collection = group.collection!;
     final List<_VideoTagChip> tags = _collectionTagChips(collection.id);
@@ -8387,11 +8557,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     // 朝向自适应槽位：不合槽封面由 [PortraitCoverImage] 用「模糊同图垫底 +
     // contain 前景」填充；本地封面解码上限与旧 cacheWidth 同源（resizedFileImage
     // 默认 720）。
-    return PortraitCoverImage(
+    final Widget cover = PortraitCoverImage(
       image: source.image,
       landscapeSlot: landscapeSlot,
       errorBuilder: (BuildContext _) =>
           ShelfCoverPlaceholder(icon: source.errorIcon),
+    );
+    // 借的是某一集的封面：合集卡壳只按合集判定，没标的合集会把被标的那一集原样
+    // 露出来（拍板台 w04vrhUAaX），这里按那一集自己再判一次。
+    final String? memberUid = source.localMemberUid;
+    if (memberUid == null) return cover;
+    return MediaNsfwCover(
+      target: MediaNsfwTarget.video(memberUid),
+      child: cover,
     );
   }
 
@@ -8404,7 +8582,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   ) {
     final ImageProvider? own = _collectionOwnCover(group.collection);
     if (own != null) {
-      return (image: own, errorIcon: FushiIcons.video, remoteMember: null);
+      return (
+        image: own,
+        errorIcon: FushiIcons.video,
+        remoteMember: null,
+        localMemberUid: null,
+      );
     }
     final int? collectionId = group.collection?.id;
     if (collectionId != null) {
@@ -8416,6 +8599,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           image: canonical,
           errorIcon: FushiIcons.video,
           remoteMember: null,
+          localMemberUid: null,
         );
       }
     }
@@ -8428,6 +8612,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           image: poster,
           errorIcon: Icons.movie_outlined,
           remoteMember: null,
+          localMemberUid: null,
         );
       }
     }
@@ -8436,7 +8621,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       if (local == null) continue;
       final ImageProvider? cover = _localFileCover(local.coverPath);
       if (cover != null) {
-        return (image: cover, errorIcon: FushiIcons.video, remoteMember: null);
+        return (
+          image: cover,
+          errorIcon: FushiIcons.video,
+          remoteMember: null,
+          localMemberUid: local.bookUid,
+        );
       }
     }
     for (final CollectionOrderingItem<_VideoSlot> it in group.items) {
@@ -8450,6 +8640,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           image: cover,
           errorIcon: FushiIcons.video,
           remoteMember: remote,
+          localMemberUid: null,
         );
       }
     }
@@ -9040,8 +9231,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       ? null
       : _headerSearch;
 
-  /// 「排序」菜单的零尺寸锚点（[FushiPageHeader.menuAnchor]，叠在页头动作组
-  /// 右下角）：页头里的排序按钮可能被收进「⋯」，菜单挂在这里才总能打开。
+  /// 「排序」菜单的常驻锚点（[FushiPageHeader.menuAnchor]，铺满页头动作组）：
+  /// 页头里的排序按钮可能被收进「⋯」，菜单挂在这里才总能打开；弹出位置跟着
+  /// 触发控件（按钮或 ⋯，BUG-4715）。
   Widget _buildSortMenuAnchor(List<BookTagRow> tags) {
     return FushiTagFilterBar(
       tags: tags,
@@ -11362,6 +11554,27 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// [selectable]（默认 true）= 该卡在多选态可单独勾选。块2：合集横排行里的成员卡
   /// 传 false——多选态不画勾选框、不可单独勾（整合集由行头勾选框选中），点击照常开播。
   Widget _buildCard(
+    VideoBookRow book, {
+    int? playlistCollectionId,
+    bool selectable = true,
+    VideoCardOrientation orientation = VideoCardOrientation.portrait,
+    VoidCallback? onTapOverride,
+    ImageProvider? Function()? coverOverride,
+    FushiCoverBlockSize? block,
+  }) => MediaNsfwCoverScope(
+    target: MediaNsfwTarget.video(book.bookUid),
+    child: _buildCardInner(
+      book,
+      playlistCollectionId: playlistCollectionId,
+      selectable: selectable,
+      orientation: orientation,
+      onTapOverride: onTapOverride,
+      coverOverride: coverOverride,
+      block: block,
+    ),
+  );
+
+  Widget _buildCardInner(
     VideoBookRow book, {
     int? playlistCollectionId,
     bool selectable = true,

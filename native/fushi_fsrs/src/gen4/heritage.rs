@@ -196,6 +196,11 @@ impl Raw3 {
         self.0.id
     }
 
+    /// 依赖向量（收段按它判因果上能不能投）。
+    pub fn deps(&self) -> &Vv {
+        &self.0.deps
+    }
+
     pub fn hlc(&self) -> Hlc {
         self.0.hlc
     }

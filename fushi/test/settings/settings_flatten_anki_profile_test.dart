@@ -533,10 +533,7 @@ void main() {
         srsStoreProvider.overrideWith((Ref ref) async => store),
       ],
     );
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 200)),
-    );
-    await tester.pump();
+    await srsSettle(tester);
 
     // Anki 专属：批量制卡、跨设备中转、Anki 配置 / 刷新 / Lapis、AnkiConnect 入口都不在。
     expect(
@@ -591,10 +588,7 @@ void main() {
         srsStoreProvider.overrideWith((Ref ref) async => store),
       ],
     );
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 200)),
-    );
-    await tester.pump();
+    await srsSettle(tester);
     expect(find.text(t.anki_field_not_mapped), findsOneWidget);
     expect(
       find.byKey(const ValueKey<String>('srs-mining-required-unmapped')),
@@ -664,10 +658,7 @@ void main() {
           srsStoreProvider.overrideWith((Ref ref) async => store),
         ],
       );
-      await tester.runAsync(
-        () => Future<void>.delayed(const Duration(milliseconds: 200)),
-      );
-      await tester.pump();
+      await srsSettle(tester);
       expect(tester.takeException(), isNull);
       expect(selected(tester), SrsMiningTarget.srs);
       expect(

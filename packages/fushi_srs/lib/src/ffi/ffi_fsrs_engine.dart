@@ -33,19 +33,28 @@ class FfiFsrsEngine implements FsrsBatchEngine {
 
   FushiFsrsBindings get _b => library.bindings;
 
-  String? _fsrsRev;
+  ({String rev, Set<String> known})? _version;
 
-  @override
-  String get fsrsRev {
-    final String? cached = _fsrsRev;
+  /// 原生库的 `version`：当前 fsrs-rs 源码版本与本库认识的全部版本（当前版本 + 取代了的旧版本）。
+  ({String rev, Set<String> known}) get _fsrsVersion {
+    final ({String rev, Set<String> known})? cached = _version;
     if (cached != null) return cached;
     final Object? result = _call(<String, Object?>{'op': 'version'});
     final Object? rev = result is Map ? result['fsrsRev'] : null;
-    if (rev is! String) {
+    final Object? known = result is Map ? result['knownFsrsRevs'] : null;
+    if (rev is! String ||
+        known is! List ||
+        known.any((Object? r) => r is! String)) {
       throw SrsFsrsException('bad version response: $result');
     }
-    return _fsrsRev = rev;
+    return _version = (rev: rev, known: <String>{rev, ...known.cast<String>()});
   }
+
+  @override
+  String get fsrsRev => _fsrsVersion.rev;
+
+  @override
+  bool isKnownFsrsRev(String rev) => _fsrsVersion.known.contains(rev);
 
   @override
   List<double> defaultParams(SrsAlgorithm algorithm) {
@@ -408,6 +417,35 @@ class FfiFsrsEngine implements FsrsBatchEngine {
       calloc.free(i);
       calloc.free(o);
     }
+  }
+
+  /// 向内核要 ID（`ids`，native/fushi_fsrs/src/gen4_ids/derive.rs）：[items] 逐项对应结果。经 [SrsKernelIds] 调。
+  List<Object?> deriveIds(String? profile, List<List<Object?>> items) =>
+      _call(<String, Object?>{
+            'op': 'ids',
+            'profile': ?profile,
+            'items': items,
+          })!
+          as List<Object?>;
+
+  /// 复习卡文本导入（CSV / TSV / TXT）的解析（`text_import_parse`，native/fushi_fsrs/src/text_import.rs）：一次调用读完
+  /// 整个文件。[delimiter] / [html] 为 null 时按文件头或猜；[limit] 只回前几条（预览），`total` 仍是全部条数。阻塞到
+  /// 读完——在后台 isolate 里调。
+  Map<String, Object?> textImportParse(
+    String path, {
+    String? delimiter,
+    bool? html,
+    int? limit,
+  }) {
+    final Object? r = _call(<String, Object?>{
+      'op': 'text_import_parse',
+      'path': path,
+      'delimiter': ?delimiter,
+      'html': ?html,
+      'limit': ?limit,
+    });
+    if (r is! Map) throw SrsFsrsException('bad text_import_parse response: $r');
+    return r.cast<String, Object?>();
   }
 
   // ---- JSON 往返 ----

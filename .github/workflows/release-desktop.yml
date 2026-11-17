@@ -899,6 +899,25 @@ jobs:
           mode: save
           name: ${{ steps.native_store.outputs.anki_sync_release }}
           path: native\fushi_anki_sync\target\release\fushi-anki-sync.exe
+      # 资源管理器封面缩略图（native/fushi_shell_thumbs，拍板台 WoAtPpuvwm）：fushi_shell_thumbs.dll
+      # （COM 处理器，fushi.iss 按用户注册，跑在 explorer.exe 里只转交路径）+
+      # fushi_shell_thumbs_host.exe（每张缩略图一次性的宿主进程，用随包的 7za\7z.dll / pdfium.dll）。
+      # 它们不是 app 进程的依赖，不进 CMake bundle，只在这里放进 Release 目录：排在签名步骤之前，
+      # `{#SourceDir}\*` 整目录收进安装包。Rust 已由上面 fushi_web_core 那组装好（p2p_rust 钉的版本）。
+      # 构建失败即 job 失败；最后按处理器的查找方式（只看自己所在目录）核对四个文件都在。
+      - name: Build and bundle fushi_shell_thumbs
+        shell: pwsh
+        run: |
+          $targetDir = Join-Path $PWD 'fushi\build\windows\x64\runner\Release'
+          powershell -ExecutionPolicy Bypass -File native/fushi_shell_thumbs/build_windows_dll.ps1 -InstallDirectory $targetDir
+          if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 (fushi_shell_thumbs) failed" }
+          # 7-Zip 由上面 bundle_7za.ps1 放在 7za\ 子目录，pdfium.dll 由 CMake 放在 exe 同级。
+          foreach ($name in 'fushi_shell_thumbs.dll', 'fushi_shell_thumbs_host.exe', '7za\7z.dll', 'pdfium.dll') {
+            $p = Join-Path $targetDir $name
+            if (-not (Test-Path -LiteralPath $p -PathType Leaf)) {
+              throw "$p missing - the Explorer cover thumbnail handler needs it in the same directory"
+            }
+          }
       # fushi_cli（packages/fushi_cli）：桌面客户端命令行。fushi.exe 是 GUI 子系统，拿不到
       # stdout、退出码也不可靠，所以 CLI 是单独的控制台 exe，经本机控制通道驱动 app。
       # 纯 Dart、无原生资产，dart compile exe 直出；放 fushi.exe 同级（CLI 按同级目录
@@ -3561,6 +3580,16 @@ jobs:
           else
             /usr/libexec/PlistBuddy -c 'Delete :com.apple.developer.kernel.extended-virtual-addressing' "$ENTITLEMENTS_FILE"
             echo "::warning title=Extended virtual addressing missing::The provisioning profile does not grant com.apple.developer.kernel.extended-virtual-addressing. Enable it on the App ID, regenerate the App Store profile and update IOS_PROVISIONING_PROFILE_BASE64 (BUG-4013)."
+          fi
+          # BUG-4758：抬高 jetsam 内存额度。设备端 ASR 装载大模型时 footprint 冲到 ~2 GB，
+          # 默认额度下被 jetsam 杀；授予后 ASR 内存门槛按更高的额度放行原模型。
+          INCREASED_MEM="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.kernel.increased-memory-limit' "$PROFILE_PLIST" 2>/dev/null || true)"
+          if [ "$INCREASED_MEM" = "true" ]; then
+            WIRE_ENTITLEMENTS=1
+            echo "Increased memory limit entitlement enabled"
+          else
+            /usr/libexec/PlistBuddy -c 'Delete :com.apple.developer.kernel.increased-memory-limit' "$ENTITLEMENTS_FILE"
+            echo "::warning title=Increased memory limit missing::The provisioning profile does not grant com.apple.developer.kernel.increased-memory-limit. Enable Increased Memory Limit on the App ID, regenerate the App Store profile and update IOS_PROVISIONING_PROFILE_BASE64 (BUG-4758)."
           fi
           # 主屏小组件 / Live Activity（FushiWidgets 扩展）的 App Group：主 app 描述文件带
           # group 才保留这项；扩展那份描述文件（app.fushi.reader.widgets）也逐项对照它的

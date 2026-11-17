@@ -111,9 +111,9 @@ void main() {
         final Anime4kPreset modeA = kAnime4kPresets.firstWhere(
           (Anime4kPreset e) => e.id == 'mode_a_fast',
         );
-        // 本机直连 GitHub/镜像不通、只有本地代理通（CLAUDE.local.md）；生产代码用用户
-        // 自己的网络环境（不注入代理）。这里注入走本机代理的 Dio，仅为在本机验证「真能
-        // 下到 GLSL 并落盘」的链路；生产 downloadAnime4kFiles 默认 Dio 不变。
+        // 本机 2026-11-15 起直连；需要代理的机器设 HTTPS_PROXY / HTTP_PROXY，这里按
+        // 环境变量决定（没设就直连），不再写死已停用的 127.0.0.1:34151。仅为在本机验证
+        //「真能下到 GLSL 并落盘」的链路；生产 downloadAnime4kFiles 默认 Dio 不变。
         final Dio proxiedDio = Dio(
           BaseOptions(
             connectTimeout: const Duration(seconds: 15),
@@ -125,7 +125,7 @@ void main() {
         );
         proxiedDio.httpClientAdapter = IOHttpClientAdapter(
           onHttpClientCreate: (HttpClient c) {
-            c.findProxy = (Uri _) => 'PROXY 127.0.0.1:34151';
+            c.findProxy = HttpClient.findProxyFromEnvironment;
             c.badCertificateCallback = (_, __, ___) => true;
             return c;
           },

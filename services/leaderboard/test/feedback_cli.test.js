@@ -1,12 +1,15 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { call, makeEnv, nextIp, registerUser } from './harness.js';
 import { DEV_CLI_ORIGIN, FEEDBACK_LIMITS, feedbackInsertStatement } from '../src/feedback.js';
 import { hex, sha256 } from '../src/util.js';
 import {
-  devAccountSql, dupLookupSql, existingIdsSql, fixedSql, formatShow, gzipPayload, inlineSql, listSql, missingIds,
+  attachmentFileName, devAccountSql, downloadableAttachments, dupLookupSql, existingIdsSql, fixedSql, formatShow, gzipPayload, inlineSql, listSql, missingIds,
   newEntries, newSql, parseArgs, parseWranglerJson, pickDevAccount, r2WhereArgs, replySql, showSql, sqlText,
-  statusRowSql, statusSql, summarizeBatchSql, summarizeSql,
+  statusRowSql, statusSql, summarizeBatchSql, summarizeSql, wranglerBin,
 } from '../scripts/feedback.mjs';
 
 const NOW = Date.UTC(2026, 9, 10, 4);
@@ -169,6 +172,19 @@ describe('scripts/feedback.mjs', () => {
     expect(() => inlineSql('SELECT ?1', [1.5])).toThrow(/不支持/);
   });
 
+  it('wranglerBin：新 worktree 没装依赖时报「先 npm ci」，装了返回入口路径', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'fushi-wrangler-bin-'));
+    try {
+      expect(() => wranglerBin(dir)).toThrow(/npm ci/);
+      const bin = join(dir, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
+      mkdirSync(join(dir, 'node_modules', 'wrangler', 'bin'), { recursive: true });
+      writeFileSync(bin, '');
+      expect(wranglerBin(dir)).toBe(bin);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('解析 wrangler 输出（前面可能多一行代理提示）与参数', () => {
     const body = JSON.stringify([{ results: [{ id: 'x' }], success: true }]);
     expect(parseWranglerJson(body)).toEqual([[{ id: 'x' }]]);
@@ -190,6 +206,30 @@ describe('scripts/feedback.mjs', () => {
     const noisy = Buffer.concat([Buffer.from("Proxy environment variables detected. We'll use your proxy for fetch requests.\n"), gz]);
     expect(gunzipSync(gzipPayload(noisy)).toString('utf8')).toBe('第一行\n第二行');
     expect(gzipPayload(gz)).toBe(gz);
+  });
+
+  it('show --attachments：只下截图（--video 才带视频），文件名安全且不以 - 开头', () => {
+    const atts = [
+      { slot: 'log', kind: 'log', key: 'feedback/x/log', bytes: 10, type: 'application/gzip' },
+      { slot: 's0', kind: 'screenshot', key: 'feedback/x/s0', bytes: 20, type: 'image/png' },
+      { slot: 's1', kind: 'screenshot', bytes: 20, type: 'image/jpeg' },
+      { slot: 'v0', kind: 'video', key: 'feedback/x/v0', bytes: 30, type: 'video/quicktime' },
+    ];
+    expect(downloadableAttachments(atts, false).map((a) => a.slot)).toEqual(['s0']);
+    expect(downloadableAttachments(atts, true).map((a) => a.slot)).toEqual(['s0', 'v0']);
+
+    expect(attachmentFileName('-224OrVMLk', atts[1])).toBe('fb-224OrVMLk-s0.png');
+    expect(attachmentFileName('abcdefgh', atts[3])).toBe('fbabcdefgh-v0.mov');
+    expect(attachmentFileName('ab/../cd', { slot: '../s0', type: 'image/x-odd; q=1' })).toBe('fbabcd-s0.xodd');
+    expect(attachmentFileName('abcdefgh', { slot: 's2' })).toBe('fbabcdefgh-s2.bin');
+    // 样本文件：--files 才下；落盘名用服务端核过的扩展名，不用用户给的原文件名。
+    const file = { slot: 'f0', kind: 'file', key: 'f/x-f0', bytes: 40, type: 'application/octet-stream', name: '../../evil.md', ext: 'md' };
+    expect(downloadableAttachments([...atts, file], true).map((a) => a.slot)).toEqual(['s0', 'v0']);
+    expect(downloadableAttachments([...atts, file], false, true).map((a) => a.slot)).toEqual(['s0', 'f0']);
+    expect(attachmentFileName('abcdefgh', file)).toBe('fbabcdefgh-f0.md');
+    expect(attachmentFileName('abcdefgh', { ...file, ext: '../x' })).toBe('fbabcdefgh-f0.octetstream');
+    expect(parseArgs(['show', 'abcdefgh', '--attachments', 'out', '--video']).flags)
+      .toEqual({ attachments: 'out', video: true });
   });
 });
 

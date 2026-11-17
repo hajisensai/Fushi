@@ -111,6 +111,24 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 - **CI**：凡用 `setup-fushi-compute` 的 job 紧跟着用 `.github/actions/setup-fushi-rwkv`（同样的 `android-abis`，导出 `FUSHI_RWKV_LIB`）；出包 job 与 fushi_compute 同处各带 rust-cache 构建并出包后核对（APK 每个 ABI、Windows bundle、macOS Frameworks、iOS Runner 导出 `frwkv_*`、服务端 Linux / Windows bundle），dlopen 冒烟比对的 ABI 版本从 `src/lib.rs` 的 `ABI_VERSION` 读、不写死。PR 上 `native-rwkv-gate.yml` 跑三种 CPU 内核的 `cargo test --release`（权重与小模型包按 `fetch_model.sh` 钉的两个 SHA-256 缓存）+ Android 三 ABI 真编与符号核对。
 - **许可**：fushi_rwkv 是 AGPL-3.0-or-later（推理核心搬自 kuma3-anki-core，所有者 2026-10-19 拍板接受，见 `native/fushi_rwkv/UPSTREAM.md`）。动态加载它的四端 app 与静态链它的 iOS 伞形库 / Runner 都随之受 AGPL 约束（GPL-3.0 第 13 条允许与 AGPL-3.0 合并分发）。
 
+## Windows 资源管理器封面缩略图 fushi_shell_thumbs（Rust，只随安装包）
+
+- 源码 `native/fushi_shell_thumbs/`（拍板台 WoAtPpuvwm）：资源管理器里 epub / cbz / cbr / cb7 / pdf 显示封面。两个产物：`fushi_shell_thumbs.dll`（COM 进程内服务器，`IInitializeWithFile` + `IThumbnailProvider`）和 `fushi_shell_thumbs_host.exe`（每张缩略图一次性的宿主进程）。设计与边界见该目录 `README.md`。
+- **不是 app 进程的依赖**：不进 CMake bundle、不进 `tool/native_libs.ps1`；只由 `release-desktop.yml` 的「Build and bundle fushi_shell_thumbs」步（`build_windows_dll.ps1 -InstallDirectory <Release>`，签名之前）放进 Release 目录，`fushi.iss` 的 `bookassoc` 任务按用户（`HKCU64`）注册。
+- **为什么进程内 + 自己的宿主进程**：系统缩略图隔离进程（COM Surrogate）激活不到 HKCU 注册的 CLSID（2026-11-16 实测 `REGDB_E_CLASSNOTREG`），本安装器又是 `PrivilegesRequired=lowest`，所以 `DisableProcessIsolation=1`。explorer 里的 DLL 不解析文件，只把路径交给宿主进程（job 对象限 1 GiB、15 秒超时、普通优先级——低优先级在满载机器上会被饿到超时），宿主用 `{app}\7za\7z.dll`（rar / 7z）和 `{app}\pdfium.dll`（pdf）。升级时被 explorer 占着的旧 DLL 由 `[Code] FushiSetAsideThumbnailHandler` 改名挪开。
+- 本地：`cargo test --profile quick`（端到端测试要 `FUSHI_TEST_7Z_DIR` / `FUSHI_TEST_PDFIUM_DLL`，没给就 SKIP 那几条）；`examples/probe.rs` 对真实文件出 PNG。PR 上 `native-shell-thumbs-gate.yml` 用钉死 SHA-256 的真 7z.dll / pdfium.dll 跑 `cargo test --release --locked`（`FUSHI_THUMBS_REQUIRE_DEPS=1`，缺依赖判红）。
+
+## Android JVM 单测（`fushi/android/app/src/test`）
+
+- CI：`main.yml` 的 `build` job 在 PR 改到 Android / 原生 / 插件 / pubspec（与 R8 校验同一个路径门）时跑
+  `./gradlew :app:testDebugUnitTest`，红就判红；守卫 `fushi/test/build/android_jvm_unit_tests_ci_guard_test.dart`。
+- 本地定向跑（先在 `fushi/` 下 `flutter pub get` + `flutter build apk --config-only` 生成插件注册与
+  `local.properties`），在 `fushi/android/` 下走租约：
+  `dart ../tool/heavy.dart --check-only -- .\gradlew.bat :app:testDebugUnitTest --tests app.fushi.reader.CrossAppAudioPolicyTest`。
+- 测试类路径上的 `android.jar` 全是抛 `Stub!` / "not mocked" 的桩，也没有 Robolectric：要单测的逻辑抽成不碰 Android
+  类的纯 Java（例：`CrossAppAudioPolicy`、`AnkiChannelHandler.runsOnMainThread`），别让被测类的静态初始化里出现
+  `new Handler(Looper.getMainLooper())` 这类调用。
+
 ## Rust 本地开发循环（quick profile）
 
 - **改 Rust 时的「编译—测试」循环一律用 `quick` profile，不用 `--release`**：在 `native/<crate>/` 下
@@ -166,8 +184,39 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
   加全局状态（分配器、计数器、全局锁）前先想清楚它在 16 个线程下的代价。
 - **sccache（可选）**：`tool/native_libs.ps1` 发现装了就自动挂上。实测只对冷编有用且有限：换一个 target 目录后 146 次可缓存编译只命中 26 次
   （带 build script 的依赖把 `OUT_DIR`——在 target 目录下——编进产物，下游跟着失配），冷编 153 秒 → 92 秒；对「改一行重编」
-  没有帮助（工作区 crate 开了增量，sccache 不缓存增量编译）。缓存目录用 sccache 自己的配置文件指定（Windows 开发机在
-  `D:\dev-cache\sccache`，别落 C 盘）。
+  没有帮助（工作区 crate 开了增量，sccache 不缓存增量编译）。缓存目录用 sccache 自己的配置文件指定（打算放
+  `D:\dev-cache\sccache`、别落 C 盘；**2026-11-17 核对时 Windows 开发机没有配置文件**，用的是默认的
+  `%LOCALAPPDATA%\Mozilla\sccache\cache`，约 6.7 GB）。
+  **它也缓存 C 编译**：cc crate（`cc-rs`）见到 `RUSTC_WRAPPER` 的文件名是 `sccache` 就把 C 编译器也包进去
+  （cc 1.10.0 `src/lib.rs` `rustc_wrapper_fallback`），所以 zstd-sys / libsqlite3-sys 的 `.o` 也进同一个缓存。C 的缓存键
+  不含 target 目录：换一个 `CARGO_TARGET_DIR` 冷编 zstd-sys，25 个 C 编译全部命中（2026-11-17 实测）。手敲的
+  `cargo build` / `cargo test --profile quick` 不设 `RUSTC_WRAPPER`，不经过 sccache。
+- **本机故障：zstd-sys 报 `LNK1106: invalid file or disk full: cannot seek to 0x250E`（2026-11-17）**。表现：
+  `setup_worktree` / `tool/native_libs.ps1` 编 fushi_fsrs 时 zstd-sys 的 build script 失败，lib.exe 打 `libzstd.a` 报
+  `4f97f2375d6aa471-entropy_common.o : fatal error LNK1106`；删掉 build 目录、换 worktree 重编都一样；手敲
+  `cargo build --profile quick` 却能过。PR #3563 / #3577 / #3579 的 worktree 都撞过。
+  - **根因（本机环境，不是仓库脚本）**：sccache 缓存里 entropy_common.c 那一项存的是一个被截断的 COFF 对象。证据：
+    00:01～03:27 之间 24 次失败（14 个不同 worktree、4 个 workflow）报的都是同一个文件、同一个偏移 `0x250E`，
+    而正常的 entropy_common.o 是 10591 字节（`0x295F`），偏移 0x250E 落在文件内——每次读到的是同一份更短的字节，不是随机写坏；
+    24 次全都开着 sccache（日志里有「rustc 编译缓存：sccache」）；C 缓存键不含 target 目录（见上一条），所以删 build 目录、
+    换 worktree 都拿回同一份坏对象；quick profile 能过是因为手敲的命令没挂 sccache，不是因为 profile。03:43 起同样的
+    构建全部恢复（缓存项被重写过），之后再没复现：2026-11-17 13:03 起在新 worktree 里经 sccache 冷编 zstd-sys 与
+    `build_windows_dll.ps1 -IdAudit` 都过了 lib.exe 这一步；把缓存里 720 个 C 对象逐个按 COFF 头核对，没有截断的。
+    坏项当初怎么写进去的没能还原（事后没有现场）；同一时段本机的提交内存（commit charge）顶着上限（见下一条），这是最可能的诱因，
+    但没有直接证据。已排除：磁盘满（D: 剩 296 GB、C: 剩 309 GB）、路径长度（报错的是 out 目录里的相对文件名，
+    其他 worktree 同长度路径能过）、cc 选错工具链（本机 PATH 上没有 gcc / clang / cc，日志里调的是 MSVC 的
+    `HostX64\x64\lib.exe`）、多个构建并发写同一 target（每个 worktree 各有 target，cargo 对同一 target 加锁）。
+  - **处置**：同一个 `.o` 反复报 LNK1106 / 「invalid file」、删 build 目录不管用时，带 `SCCACHE_RECACHE=1` 重编一次——
+    sccache 对这次构建的每个编译都不读缓存、重编并覆盖缓存项（实测 zstd-sys 26 个编译全部「Forced recaches」）：
+    `$env:SCCACHE_RECACHE = '1'; powershell -ExecutionPolicy Bypass -File native/fushi_fsrs/build_windows_dll.ps1 -IdAudit; Remove-Item Env:SCCACHE_RECACHE`。
+    要彻底清就 `sccache --stop-server` 后删缓存目录。不要拿 `-SkipNativeCompute` 绕过去（测试会跑在旧的原生库上），
+    也不要在脚本里加失败重试——坏项在缓存里，重试只会再拿到它。
+- **本机故障：编 fushi_fsrs 时 rustc 报 `memory allocation of N bytes failed`（`STATUS_STACK_BUFFER_OVERRUN`，2026-11-17）**：
+  是整机提交内存耗尽，不是 rustc 或仓库的问题。实测：13:05～13:19 连续两次 `build_windows_dll.ps1 -IdAudit` 在第二份
+  （id_audit）库上报分配 2 MB / 50 MB 失败，当时空闲物理内存还有 20 GB 以上；同期采样提交内存 161.8 / 162.8 GB（页面文件
+  系统托管、上限随用随涨），单个 rustc 只占约 1.5 GB，大头是别的进程（一个与本仓无关的 Python 推理进程 46 GB、58 个
+  claude 进程合计 26 GB）。第三次同样的命令在负载回落后两份库都编过了。处置：先看任务管理器「性能 → 内存 → 已提交」，
+  离上限近就等其他重负载结束或调大页面文件再编；同样不加重试。
 - 旧分支 / 还没合到这份配置的 worktree：本机 `~/.cargo/config.toml` 里放同一段 `[profile.quick]` 即可（Windows 开发机已放）；
   `[env]` 那一段只能跟仓库走（要按 worktree 解析路径），旧分支没有。
 
@@ -183,6 +232,16 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 ### 反馈修复的发布回填（2026-10-13）
 
 应用内反馈的状态挂在**修复 commit** 上：`.github/workflows/feedback-link.yml` 只挂 push develop/main，由 `tool/feedback_link.mjs` 逐个 commit 解析 message，并用 `GITHUB_TOKEN` 查 `GET /repos/{repo}/commits/{sha}/pulls` 取关联 PR（只认已合并、base 是本分支的）解析其描述，把 `Feedback: <id>[, <id>…]` / `Feedback-NoApp: <id>…` 行（行首、不区分大小写）登记到反馈服务 `POST /v1/ci/feedback/fixed`（幂等：sha 与 scope 不变的重登记不重置发布记录）。commit message 里的 id 归该 commit，PR 描述里的 id 归该 PR 在这次 push 里最后一个 commit，同一 id 多次出现取 push 顺序最后的那个；main 上只处理 distinct 的 commit（正式版后 develop 同步进 main 不重登记）。不用 `pull_request_target`：它取默认分支 main 上的定义，main 落后 develop 一个发布周期，且要在有 secret 的上下文里处理外部 PR。两条发布 workflow 在「Publish mirror update manifest」之后各有回填步骤（`release.yml` = android；`release-desktop.yml` 的 publish job 按本次真实存在的产物分别回填 windows / macos / ios），跑 `tool/feedback_mark_released.sh`：GET `pending?channel&platform` → 本地 `git cat-file -e` + `git merge-base --is-ancestor <fix> <github.sha>` → POST `released`，把「这个通道 / 平台的这个版本已包含修复」记下（`manifest_channel` 的 `formal` 映射成 `stable`）。回填与登记**都不会让 workflow 变红**：步骤 `continue-on-error: true`，脚本任何失败只打 `::warning`。需要仓库 **secret `FEEDBACK_CI_TOKEN`**（与反馈 Worker 的同名 secret 一致；未配置时两个脚本 `::notice` 后直接跳过）与可选的仓库 **variable `FEEDBACK_API_BASE`**（接口根，缺省 `https://rank.fushi.moe`）。守卫 `fushi/test/build/feedback_workflow_guard_test.dart`，脚本离线测试 `fushi/test/tools/feedback_{mark_released,link}_script_test.dart`。
+
+### 设置项目录自动同步到官网（2026-11-16）
+
+官网 `fushi.moe/settings.md`、`/settings.json` 是给 AI 读的全量设置项目录（键、中英标题、位置、类型、可选值、范围、默认值），**不手工维护**：
+
+- 导出器 `fushi/test/settings/settings_catalog_export_test.dart` 遍历 `fushi_cli config ls` 用的同一份设置索引（`buildSettingsIndex`，整棵 schema + 逃生口页面）。平时是普通单测（守「能走完整棵 schema、机密项不出值」）；设了 `FUSHI_SETTINGS_CATALOG_DIR` 才把 `settings-catalog.{json,md}` 写进那个目录。内容必须确定（不带时间戳 / commit）。
+- `release.yml` 的 `tests (checks)` 在每次 push 上跑它并传 artifact `settings-catalog`；同一 workflow 的 `publish-settings-catalog` job（`needs: tests` + `always()`，单测分片红不挡它，只有 run 被取消才不跑；job 级 `contents: write`，tests 仍只读）取本 run 的 artifact，由 `tool/publish_settings_catalog.sh` 推到 `update-manifest` 分支：develop → `settings-catalog-debug.*`，main → `settings-catalog-stable.*`。设置没变就不产生提交；与 `publish-android` 并发推同一分支时，脚本被拒后重取远端 tip、只在最新提交上重放这两个文件。没有 artifact 记 notice 后正常结束。
+- **不用 `workflow_run`**：它只认默认分支 main 上的 workflow 定义，main 落后 develop 一个发布周期，独立 workflow 要等下一个正式版进 main 后才第一次触发（同上一节放弃 `pull_request_target` 的原因）。
+- 官网仓（`hajisensai/fushi.moe`）的边缘 Worker `edge/src/settings-catalog.ts` 同域代理这两个文件（不带参数给 stable，没有就退回 debug；`?channel=debug` 指定），llms.txt 的「App reference」指向它。
+- 加减设置项不需要做任何事；改了目录 JSON 的字段含义才要把导出器的 `kSettingsCatalogSchema` 与 Worker 的 `CATALOG_SCHEMA` 一起加一。接线（环境变量名 / artifact 名 / 发布 job 的触发条件与权限）由 `fushi/test/tools/settings_catalog_publish_script_test.dart` 守。
 
 ### Windows 安装器：原地升级与「数据存储位置」页
 
@@ -251,7 +310,6 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 2. 预构建（同一 ref 上两条一起 dispatch；不给 `tag_name` 时两条按同一 commit 算出同一个 `v<version>` / `v<version>-beta.<seq>`，落到同一个 Release）：
 
    ```bash
-   export HTTPS_PROXY=http://127.0.0.1:34151 HTTP_PROXY=http://127.0.0.1:34151
    gh workflow run release.yml         --repo hajisensai/fushi --ref develop -f channel=formal
    gh workflow run release-desktop.yml --repo hajisensai/fushi --ref develop -f channel=formal
    ```

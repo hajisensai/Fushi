@@ -73,7 +73,7 @@ function fixture({continuous = true, css = true, writingMode = 'horizontal-tb', 
     createElement: name => new Element(name)});
   const native = {rangeCount: 1, removeAllRanges() { this.rangeCount = 0; }};
   const highlights = new Map();
-  const stats = {clear: 0, moves: 0, menus: 0, dragNotifications: [], notifications: [], clearWhileConnected: []};
+  const stats = {clear: 0, moves: 0, menus: 0, dragNotifications: [], notifications: [], clearWhileConnected: [], einkPages: 0};
   const vertical = writingMode !== 'horizontal-tb';
   html.scrollTop = vertical ? 0 : initial;
   const window = {scrollX: vertical ? initial : 0, scrollY: 0, innerWidth: 100, innerHeight: 100,
@@ -99,6 +99,7 @@ function fixture({continuous = true, css = true, writingMode = 'horizontal-tb', 
     },
     flutter_inappwebview: {callHandler(name) {
       if (name === 'onSelectionDragStarted') { stats.dragNotifications.push(name); return; }
+      if (name === 'onEinkScrollPage') { stats.einkPages++; return; }
       assert.equal(name, 'onSelectionCleared'); stats.notifications.push(name);
       assert.equal(selection.selection, null, 'notify only after clearing JS state');
       assert.equal(native.rangeCount, 0);
@@ -113,6 +114,9 @@ function fixture({continuous = true, css = true, writingMode = 'horizontal-tb', 
   for (const name of ['clearImageLateAnchor', '_setRestoreCharAnchor', '_isContinuousShell',
     'noteUserScroll', '_clearSelectionOnViewportChange', '_readContinuousScroll',
     '_onContinuousViewportScroll',
+    // 851b737b27 起连续模式实际滚动后按累计位移回传墨水屏全刷计数（_noteEinkScroll →
+    // _noteEinkPage → onEinkScrollPage）；切生产实现，回传在 callHandler 里单独记账。
+    '_noteEinkScroll', '_noteEinkPage',
     // 上游 2026-10-05 起 paginate 会调几何重锚收口；漏掉它 harness 会在第一次翻页就
     // TypeError（this._settleGeometryReanchor is not a function）。
     '_settleGeometryReanchor', '_reanchorFrame']) reader[name] = fn('pagination', name);
@@ -331,6 +335,16 @@ for (const [type, fields] of [['wheel', {deltaY: 1}], ['wheel', {deltaY: 0}],
 test('forwarded popup scroll: note alone preserves; actual scroll clears', () => {
   const f = fixture(); f.reader.noteUserScroll(); preserved(f);
   f.window.scrollBy({top: 60}); f.dispatch('scroll'); cleared(f);
+});
+test('eink page count follows actual root-axis motion only', () => {
+  const f = fixture();
+  f.dispatch('scroll'); f.body.scrollTop = 500; f.dispatch('scroll', f.body);
+  assert.equal(f.stats.einkPages, 0);
+  f.move(60); assert.equal(f.stats.einkPages, 0); cleared(f);
+  f.move(120); assert.equal(f.stats.einkPages, 1);
+  f.move(119); assert.equal(f.stats.einkPages, 1);
+  f.move(1000); assert.equal(f.stats.einkPages, 2, 'one multi-screen jump counts at most one page');
+  f.move(1050); assert.equal(f.stats.einkPages, 2, 'jump resets the accumulator');
 });
 for (const guard of ['dragAnchor', 'activeHandle']) test(`${guard}: motion during drag is protected, not replayed after release`, () => {
   const f = fixture(); f.beginDrag(guard);

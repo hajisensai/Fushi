@@ -76,6 +76,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     );
     return _bookCardShell(
       slotAspectRatio: kShelfBookCardAspectRatio,
+      nsfw: MediaNsfwTarget.srtBook(book.uid),
       cardKey: ValueKey<String>('srt_entry_${book.uid}'),
       focusId: FushiFocusId('${focusIdPrefix}reader-shelf-srt-${book.uid}'),
       selectionKey: selectable ? selKey : null,
@@ -389,6 +390,18 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           MediaRef(kind: MediaKind.srt, entryKey: book.uid),
         ),
       ),
+      // NSFW：「模糊 NSFW 封面」开着时书架封面打模糊（身份 = SrtBooks.uid）。
+      DialogListAction(
+        label: t.media_nsfw_action,
+        icon: FushiIcons.visibilityOff,
+        onPressed: () => showMediaNsfwDialog(
+          context,
+          db: appModel.database,
+          kind: TagHostKind.srt,
+          entryKey: book.uid,
+          title: item.title,
+        ),
+      ),
       // 「重新导入」：音频 + 字幕两半一起换。旧入口叫「导入音频」且只能换音频，
       // 字幕书的字幕在首次导入后全仓无处可换（用户报「有声书没办法重新导入 /
       // 导不了字幕文件」）。对 bookKey 为空的孤儿字幕书同样可见——它们才是最需要
@@ -515,6 +528,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       builder: (ctx) => MediaItemDialogPage(
         item: _srtBookMediaItem(book),
         isHistory: true,
+        nsfw: MediaNsfwTarget.srtBook(book.uid),
         showLaunchAction: false,
         // TODO-1094：SRT 无自选封面且未关联 EPUB 封面时，长按对话框显示与网格
         // `_buildSrtCover` 同判据的占位图标（耳机/字幕），而非整块隐藏封面区。
@@ -915,6 +929,9 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     // 全是纯字幕书就不摆（执行时也跳过它们，见下面的删除循环）。
     final bool anyStatisticsTarget =
         mediaCount > 0 && await _selectionHasStatisticsTarget(targetKeys);
+    // 「保留已下载章节」只在选中散卡里至少有一部在线漫画时摆出来。
+    final bool anyOnlineManga =
+        mediaCount > 0 && await _selectionHasOnlineManga(targetKeys);
     final DeletePromptPreferenceStore preferenceStore =
         DeletePromptPreferenceStore(appModel.database);
     final DeletePromptRememberedChoices? rememberedChoices =
@@ -938,6 +955,9 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
             : null,
         // 纯解散合集不删任何书，统计无从谈起；全是纯字幕书同样不摆。
         statisticsSubtitle: anyStatisticsTarget ? _statisticsSubtitle : null,
+        keepDownloadsSubtitle: anyOnlineManga
+            ? t.delete_keep_downloads_desc
+            : null,
         rememberedChoices: rememberedChoices,
         onPersistChoices: preferenceStore.write,
         onConfirm: (DeleteDecision d) => Navigator.pop(ctx, d),
@@ -1059,6 +1079,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
                 scope: scope,
                 deleteLocalFiles: deleteLocalFiles,
                 deleteStatistics: deleteStatistics,
+                keepDownloadedFiles: decision.keepDownloadedFiles,
               );
           localFiles = localFiles.merge(result.localFiles);
           if (result.deleted) deleted++;
@@ -1099,6 +1120,23 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
   /// 选中散卡里是否至少有一本能安全删统计的书：EPUB / PDF / 漫画（bookKey 选择
   /// 键），或配对了 EPUB 的字幕书（bookKey 非空）。纯字幕书（bookKey 空）不算——
   /// 它的 legacy 统计与墓碑只能按 title 定位，删它会连坐同名 EPUB 的统计。
+  /// [bookKey] 是不是在线漫画书架条目（删书确认框据此摆「保留已下载章节」）。
+  Future<bool> _isOnlineManga(String bookKey) async {
+    final EpubBookRow? row = await appModel.database.getEpubBook(bookKey);
+    return row != null &&
+        OnlineMangaLibraryEntry.tryParse(row.sourceMetadata) != null;
+  }
+
+  /// 选中的散卡里有没有在线漫画。
+  Future<bool> _selectionHasOnlineManga(Set<String> keys) async {
+    for (final String key in keys) {
+      if (key.startsWith('srt_')) continue;
+      final String? bookKey = _parseBookKey(key);
+      if (bookKey != null && await _isOnlineManga(bookKey)) return true;
+    }
+    return false;
+  }
+
   Future<bool> _selectionHasStatisticsTarget(Set<String> keys) async {
     final FushiDatabase db = appModel.database;
     for (final String key in keys) {
@@ -1579,6 +1617,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       db: appModel.database,
       bookKey: bookKey,
     );
+    final bool onlineManga = await _isOnlineManga(bookKey);
     if (!mounted) return;
     // P4：确认弹窗给人看，书名过门面（删除本体仍按 raw bookKey 身份执行）。
     final DeleteDecision? decision = await _confirmMediaDelete(
@@ -1593,6 +1632,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           ? t.delete_local_files_audio_desc
           : null,
       statisticsSubtitle: _statisticsSubtitle,
+      keepDownloadsSubtitle: onlineManga ? t.delete_keep_downloads_desc : null,
     );
     if (decision == null) return;
 
@@ -1606,6 +1646,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       scope: decision.scope,
       deleteLocalFiles: decision.deleteLocalFiles,
       deleteStatistics: decision.deleteStatistics,
+      keepDownloadedFiles: decision.keepDownloadedFiles,
     );
     if (!mounted) return;
     reportLocalFileDeleteFailures(

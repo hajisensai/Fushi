@@ -451,6 +451,7 @@ class HeadlessHost {
         ServerDictionaryHost(
           db: db,
           dictionaryResourceRoot: paths.dictionaryResources,
+          indexCacheDirectory: Directory(p.join(paths.temp.path, 'fushidicts')),
         );
     _dictionaries = dictionaries;
     if (!await dictionaries.start()) {

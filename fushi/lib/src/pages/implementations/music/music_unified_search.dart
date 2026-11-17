@@ -40,6 +40,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/music/music_format_badge.dart';
+import 'package:fushi/src/media/music/music_local_video.dart';
 import 'package:fushi/src/media/music/music_library_data.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
@@ -410,32 +411,23 @@ class _SongTile extends ConsumerWidget {
     final Widget leading;
     VoidCallback? onLongPress;
     MusicItemMenu? menu;
-    // 行尾「⋯」只给在线曲目（喜欢 / 加歌单等在触屏上只有这一个入口）。本地曲目的菜单
-    // 只是「播放 / 曲目详情」，点按与长按已经各管一项，只接右键，与本地曲目列表一致。
-    bool menuButton = true;
+    // 有菜单的行都挂行尾「⋯」：触屏没有右键，本地曲目菜单里的接着播 / 加入队列 /
+    // 加入歌单 / 从音乐库移除也只有这一个入口（与本地曲目列表一致）。
     // 只能放试听片段的来源（未接整曲的 Apple Music）：行尾挂「试听」角标。
     bool preview = false;
     switch (track) {
       case MusicTrackRow r:
-        final String badge = musicFormatBadge(
-          codec: r.codec,
-          isLossless: r.isLossless,
-          sampleRate: r.sampleRate,
-          bitDepth: r.bitDepth,
-          bitrateKbps: r.bitrate,
-        );
         id = 'local-${r.trackUid}';
         title = r.title;
         subtitle = <String>[
           r.artistCredit ?? t.music_artist_unknown,
-          if (badge.isNotEmpty) badge,
+          ...musicLocalTrackBadges(r),
         ].join(' · ');
         durationMs = r.durationMs;
         playable = true;
         leading = const FushiListLeadingIcon(FushiIcons.music);
         onLongPress = () => openMusicTrackDetail(context, r.trackUid);
         menu = musicLocalTrackMenu(context, r, onPlay: onTap);
-        menuButton = false;
       case MusicPluginTrack p:
         id = '${song.plugin?.id}-${p.id}';
         title = p.title;
@@ -521,7 +513,7 @@ class _SongTile extends ConsumerWidget {
                     formatMusicDuration(durationMs),
                     style: context.fushiType.bodySmall,
                   ),
-                  if (menuButton) ?menu?.button(),
+                  ?menu?.button(),
                 ],
               ),
             ),

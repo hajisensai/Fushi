@@ -107,6 +107,51 @@ void main() {
       );
       expect(await writeScreenOcrCardImage(source, imageTier: 2), isNull);
     });
+
+    test('定格帧读过一次后被下一次截屏清掉：字节留在来源里，照样出卡图', () async {
+      final Directory dir = Directory.systemTemp.createTempSync(
+        'fushi_card_frame_cache',
+      );
+      addTearDown(() {
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      });
+      final img.Image page = img.Image(width: 1200, height: 800);
+      img.fill(page, color: img.ColorRgb8(255, 255, 255));
+      final File frame = File('${dir.path}/frame.png')
+        ..writeAsBytesSync(img.encodePng(page));
+      final ScreenOcrCardImage source = ScreenOcrCardImage(
+        path: frame.path,
+        textBlock: const Rect.fromLTRB(100, 100, 700, 300),
+        line: const Rect.fromLTRB(100, 100, 700, 140),
+      );
+      // 高级制卡分区预览 / 查词窗预读先读到了这一帧。
+      expect(await source.readBytes(), isNotNull);
+      frame.deleteSync();
+      final ({String path, Directory dir})? out = await writeScreenOcrCardImage(
+        source,
+        imageTier: 3,
+      );
+      expect(out, isNotNull);
+      addTearDown(() => deleteScreenOcrCardDir(out!.dir));
+    });
+
+    test('第一次读时文件还没写完（不存在）：不记住失败，写好后再读拿得到', () async {
+      final Directory dir = Directory.systemTemp.createTempSync(
+        'fushi_card_frame_late',
+      );
+      addTearDown(() {
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      });
+      final File frame = File('${dir.path}/frame.png');
+      final ScreenOcrCardImage source = ScreenOcrCardImage(
+        path: frame.path,
+        textBlock: const Rect.fromLTRB(0, 0, 10, 10),
+        line: const Rect.fromLTRB(0, 0, 10, 10),
+      );
+      expect(await source.readBytes(), isNull);
+      frame.writeAsBytesSync(<int>[1, 2, 3]);
+      expect(await source.readBytes(), <int>[1, 2, 3]);
+    });
   });
 
   test('screenOcrCardImageForHit：用识别图 + 并出来的文本块 + 被点行', () {

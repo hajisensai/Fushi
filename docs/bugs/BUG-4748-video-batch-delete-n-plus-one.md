@@ -1,0 +1,14 @@
+## BUG-4748 · 视频库批量删一万多条「像没删」——删除链逐条 N+1 + 无进度反馈
+- **报告**：2026-11-11（应用内反馈 35YfcYO-zR：IPTV 播放列表导入 1.1 万多条后批量删除「什么都没删」，后补充是删得很慢、等一阵才删掉，希望有加载提示；拍板台同 id 定「根本性做完」）
+- **真实性**：✅ 真 bug（删除功能正确，但耗时随条数线性放大 × 每条十几条查询 / 独立提交，界面全程无反馈）。根因：
+  - `fushi/lib/src/media/video/video_library_delete.dart` `_deleteStatisticsForVideos`：逐条 `getByBookUid` + 逐条 `deleteVideoStatisticsForIdentity`（每条一个事务、十来条查询）；
+  - `packages/fushi_engine/lib/media/video/bluray/bluray_library_title.dart` `planBlurayExtraDeletionTombstones`：逐条 `getVideoBookByBookUid`；
+  - `packages/fushi_engine/lib/media/video/video_book_repository.dart` `_writeVideoDeletionTombstones`：「从所有设备删除」逐条独立提交同步墓碑；
+  - `packages/fushi_engine/lib/media/video/video_storage.dart` `_deleteOwnedAsset`：每本被删视频各把全部幸存引用路径 canonicalize 一遍（O(删除数 × 幸存数)）；
+  - `packages/fushi_engine/lib/media/video/video_work_companions.dart`：逐下载任务查文件表；
+  - `packages/fushi_engine/lib/media/video/download/video_download_pipeline_service.dart` `prepareVideoDownloadJobsForLocalDelete` / `reconcileVideoDownloadJobsAfterLocalDelete`（勾「同时删除本地文件」才走）：同样逐下载任务查文件表（规模随任务数，不随删除条数）；
+  - 进度（审查补）：回收进度原先只覆盖 app 副本 + 内嵌字幕缓存两步、且每本处理前就报，最后一本没处理完就到 100%；sidecar 扫描、原件删除、整库 VACUUM 全在满格之后，对话框像卡住。
+  - `fushi/lib/src/pages/implementations/home_video_page.dart` `_batchDeleteConfirm`：确认前整表 `listAll` 只为判断选中项有无本地文件；确认后直接 await 删除，无任何进度 UI。
+- **[x] ① 已修复** — 统计删除改为 `FushiDatabase.deleteVideoStatisticsForIdentities`（一个事务、`IN` 分块、碑走 batch，单条版委托给它，语义等价）；段删除 `deleteStudySegmentsForMediaKeys`；同步墓碑 `writeSyncDeletionTombstones` 一个 batch；行快照 `getVideoBooksByBookUids`；回收 `VideoStorage.deleteBooksAssets` 护栏只算一次；伴随行与本地文件删除前后的下载任务联动都改用 `getAllVideoDownloadJobFilesByJob` 一次读；确认后挂 `showFushiProgressDialog`（删行阶段不定态、回收阶段按已处理/总数——勾了删本地文件时 sidecar 扫描与原件删除按实际条数折算进总数，每步做完才报，最后一个文件删完才满；之后压缩数据库切回不定态），在飞期间挡重复删除。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/video_batch_delete_n_plus_one_test.dart`：整条删除链 SQL 语句数与条数无关（删 60 条 == 删 1 条）；批量统计删除结果逐项钉死（歧义复核 / 按集偏好 / 墓碑；单条入口已委托给批量版，两入口一致只证接线）；进度阶段与终点；勾删本地文件时进度满格那一刻原件已全删、最后一个事件是 compacting；批量回收护栏与逐本进度。
+- **备注**：真机（Android 1.1 万条 IPTV）未复测，缺口：耗时绝对值未实测，只由语句数与条数无关这一结构性断言保证。
