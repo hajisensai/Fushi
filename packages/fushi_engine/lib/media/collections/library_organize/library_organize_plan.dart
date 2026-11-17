@@ -605,9 +605,7 @@ OrganizePlan planOrganizeReply({
 String? _reasonOf(String? raw) {
   final String t = (raw ?? '').trim();
   if (t.isEmpty) return null;
-  return t.runes.length <= 200
-      ? t
-      : String.fromCharCodes(t.runes.take(200)).trim();
+  return _clampCodePoints(t, 200);
 }
 
 /// 本地硬归组（spec §7.4，不花钱）：散条目里刮到**同一个**外部作品 id 的成组；
@@ -827,6 +825,11 @@ int _mergeWinnerOrder(OrganizeCollectionFact a, OrganizeCollectionFact b) {
 
 String _clampName(String raw) {
   final String t = raw.trim().replaceAll(RegExp(r'\s+'), ' ');
-  if (t.runes.length <= kOrganizeMaxNameLength) return t;
-  return String.fromCharCodes(t.runes.take(kOrganizeMaxNameLength)).trim();
+  return _clampCodePoints(t, kOrganizeMaxNameLength);
+}
+
+/// 按码点截到 [max] 个（合集名 / 理由的长度上限，不是学习字数）。
+String _clampCodePoints(String t, int max) {
+  if (t.runes.length <= max) return t;
+  return String.fromCharCodes(t.runes.take(max)).trim();
 }

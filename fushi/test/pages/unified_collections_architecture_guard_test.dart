@@ -757,8 +757,11 @@ void main() {
     // 全为远端剧集的合集明明可见却显示「0 集」，与眼前所见割裂（用户实报）。
     // 封面卡形态下同一口径：集数角标必须喂 group.items.length（memberCount），
     // 回退到「只数本地」即转红。
-    final int cardFn = homeSrc.indexOf('Widget _buildCollectionCoverCard(');
-    expect(cardFn, isNonNegative, reason: '缺 _buildCollectionCoverCard');
+    // 卡片本体在 Inner 里（外层只包作品角标），集数口径要查本体。
+    final int cardFn = homeSrc.indexOf(
+      'Widget _buildCollectionCoverCardInner(',
+    );
+    expect(cardFn, isNonNegative, reason: '缺 _buildCollectionCoverCardInner');
     final int cardEnd = homeSrc.indexOf('\n  /// ', cardFn + 1);
     final String cardSrc = homeSrc.substring(
       cardFn,
