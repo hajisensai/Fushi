@@ -46,7 +46,7 @@
   - 复核补测（`089ff6b293` 及其后的测试提交）：第一版把 `srs_profile_ownership_test.dart` 写入口矩阵的判据从 `==` 改成了「不多于」
     并称之为收紧，实际是放宽——某个入口没过闸时别人的 ID 与不存在的 ID 落一样多的悬空记录，「不多于」照样通过，上面两类泄漏就是
     被它盖住的。现在按入口断言「A 为别人的 ID 一条都不写」：只碰别人 ID 的入口断言 A 的日志长度不变，同时写自己实体的入口
-    （`placeDeck 到别人的牌组下`、`dismissDuplicates 自己的 + 别人的`）断言 A 的真相里没有指向别人 ID 的操作；远程路由那组断言
+    （只有 `dismissDuplicates 自己的 + 别人的`，实测得出）断言 A 的真相里没有指向别人 ID 的操作；远程路由那组断言
     别人的 ID 落 0 条。内核新增 `another_collections_identity_records_are_not_written`、
     `another_collections_profile_settings_are_not_written`、`sched_skips_another_collections_cards`；并入端到端补「A 写 B 的笔记的
     身份记录、A 拿 B 的 uid 改翻日时刻 → 并入后 B 的笔记类型 / guid / 翻日时刻不变」。变异实测（各自单独改、跑完还原）：身份记录

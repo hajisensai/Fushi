@@ -61,6 +61,31 @@ void main() {
     });
     await a.setFlag(card, 3);
     await a.setSuspended(card, true);
+    // 身份记录（复核实测：以前这一条落了，并入后按「规范 JSON 最小者胜」换掉 B 的笔记类型与 guid）与 profile 设置
+    // （没有身份记录痕迹的实体：以前 A 拿 B 的 uid 改翻日时刻，并入后成了 B 的设置）。
+    await b.setDayRolloverHour(5);
+    final SrsNoteView original = (await b.note(note))!;
+    await a.writeEdits(
+      const <SrsEditSpec>[],
+      records: <SrsEntityRecord>[
+        SrsEntityRecord(
+          id: note,
+          profileUid: kA,
+          kind: SrsEntityKind.note,
+          payload: <String, Object?>{
+            'noteTypeId': a.fushiCardNoteTypeId,
+            'guid': 'stolen',
+            'createdAt': 1,
+          },
+        ),
+      ],
+    );
+    await a.editField(
+      SrsEntityKind.profile,
+      kB,
+      SrsFieldKeys.dayRolloverHour,
+      9,
+    );
     expect(await _ops(a), before, reason: 'A 的日志里不能有指向 B 的实体的操作');
     expect((await b.note(note))!.field(expression), '鳥');
 
@@ -99,6 +124,9 @@ void main() {
     expect(merged, isNotNull);
     expect(merged!.field(expression), '鳥', reason: 'A 的写不能改到 B 的笔记');
     expect(merged.tags, <String>['tag-鳥']);
+    expect(merged.noteTypeId, original.noteTypeId, reason: 'B 的笔记类型不能被换掉');
+    expect(merged.guid, original.guid);
+    expect((await b2.syncedDayRollover())?.hour, 5, reason: 'B 的翻日时刻');
     final SrsCardCacheRow row = (await b2.cardRow(card))!;
     expect(row.flag, 0);
     expect(row.suspended, isFalse);

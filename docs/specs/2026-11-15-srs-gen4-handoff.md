@@ -3296,7 +3296,7 @@ profile uid 不变」断言，不分 `bound` / `joined`。
   - 残留：伪造一条 guid 与 B 的笔记一致、但笔记类型换掉的身份记录仍会过闸——它与「别的集合独立导入同一份内容」在写入口分不出来。
     正常写入口不会这样写；要彻底防得改并入时同 ID 身份记录的取舍规则，不在本模块。
 - **写入口矩阵判据改回能发现漏闸**：`srs_profile_ownership_test.dart` 按入口断言 A 为别人的 ID 一条都不写（只碰别人 ID 的入口：
-  A 的日志长度不变；同时写自己实体的 `placeDeck 到别人的牌组下`、`dismissDuplicates 自己的 + 别人的`：A 的真相里没有指向别人
+  A 的日志长度不变；同时写自己实体的 `dismissDuplicates 自己的 + 别人的`（实测只有它）：A 的真相里没有指向别人
   ID 的操作）；远程路由那组断言 0 条。
 - **`sched` 闸补测试**：`writes_owner_tests` `sched_skips_another_collections_cards`（迁移来的集合 + 同库第二个集合：重置 / 改期 /
   撤销别人的卡，A 的日志不增、撤销计入 `blocked`；对照组陌生的卡照写）。
