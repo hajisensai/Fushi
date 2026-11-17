@@ -543,6 +543,25 @@ impl Iterator for VerifiedNative<'_> {
     }
 }
 
+impl<'a> OpenNative<'a> {
+    /// 重切中继件（[super::recut]）：段头与明文压缩体由**重切者**的签名担保（调用方 [super::recut::open_recut4] 已验过），
+    /// 不是作者的。之后照常 [OpenNative::verify] 重算链。这种段的 [OpenNative::signed_parts] 交回的是重切者的签名，
+    /// 不能拿去当作者签过的三样再包中继件（[super::relay::open_any4] 本来也不认 `FRX4`）。
+    pub(crate) fn vouched(
+        header: NativeHeader,
+        compressed: Cow<'a, [u8]>,
+        sig: [u8; 64],
+        stored_sealed: bool,
+    ) -> OpenNative<'a> {
+        OpenNative {
+            header,
+            stored_sealed,
+            compressed,
+            sig,
+        }
+    }
+}
+
 impl OpenNative<'_> {
     /// 转发要搬的三样：作者签过的头（规范字节）、明文压缩体、签名。
     pub(crate) fn signed_parts(&self) -> (Vec<u8>, &[u8], &[u8; 64]) {

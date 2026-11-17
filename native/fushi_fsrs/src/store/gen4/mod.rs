@@ -72,6 +72,7 @@ pub(crate) mod prepare;
 pub mod receive;
 pub mod refresh;
 pub mod schema;
+pub(crate) mod scrub;
 pub mod sync_state;
 pub mod truth;
 pub mod weigh;

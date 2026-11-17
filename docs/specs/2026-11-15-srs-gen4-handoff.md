@@ -2086,9 +2086,9 @@ Rust `SCHEMA` 没升（没加表 / 索引，分到的 40024 没用）；ABI 不�
    所以先当夹具问题：要么用真实协议 3 发布版造的库跑一次同样的迁移（过了就按那份重生成两份冻结夹具，不再手改 schema 标记），
    要么由内核 owner 判 parity 对这类开发版数据该给什么结论。重生成要一个能写协议 3 库的生成器（Dart 侧已没有协议 3 开库入口，
    只能在 Rust 侧做），本模块没做。3 个文件的向量用例因此仍红（已知红，归属：换代迁移 owner 定因后决定重生成或改判）。
-2. 新设备首次出现不判「待确认」（BUG-4276 回归）：协议 3 在 `store/sync2/trust.rs:70 note_new_device` 判库非空时首见的
+2. 新设备首次出现不判「待确认」（BUG-4306 回归；原写的 BUG-4276 号有误，那个号是互联局域网设备列表）：协议 3 在 `store/sync2/trust.rs:70 note_new_device` 判库非空时首见的
    设备为 pending、它的删除 / 清除扣住；新代生产代码里没有任何地方写 `TRUST_PENDING`（只有 `cmd/writes_local.rs:136`
-   用户手动改信任与测试），`receive.rs:537` 只读 `trust_of`。别的设备的删除直接生效。红：引擎 `srs_devices_test`（4）、
+   用户手动改信任与测试），`receive.rs:592`（承袭段上传者核对）只读 `trust_of`。别的设备的删除直接生效。红：引擎 `srs_devices_test`（4）、
    `srs_db_store_test`「删除与对端并发修改」，app `srs_device_trust_test`（4）、`srs_conflicts_held_delete_test`（2）。
 3. 彻底清除不抹本机操作日志里的内容：`Truth::advance_purge`（`store/gen4/truth.rs:2881`，完整内容 → 空洞）在生产代码里
    没有调用方，`cmd/writes.rs:989 purge` 只追加 删除 + Purge 两条操作。清除后 `ops` 里带原文的修改记录原样留着（实测
@@ -2615,3 +2615,166 @@ Dart（本 worktree 编的 release DLL）：`srs_stats_vectors` 2/2、`srs_stats
 验证：`native/fushi_fsrs` `cargo fmt --check` 退出 0；`cargo test --profile quick --lib -j 4` 退出 0，1319 passed / 0 failed /
 39 ignored。`packages/fushi_engine` `dart test` 定向跑 `srs_ankiconnect_vectors_test` + `srs_stats_report_parity_test` +
 `srs_stats_vectors_test` + `srs_write_path_read_amplification_test`（本 worktree 编的 DLL）退出 0，13 条全过。
+
+## 33. 第四波 K2 首见信任与清除字节层（2026-11-17，分支 `pr/srs-gen4-k2-trust-purge`，基于 `pr/srs-gen4-switch`）
+
+修 §26 T1 节的 C2、C3。SCHEMA 不升（没加表 / 索引，只多两个 `srs_meta` 键）。
+
+### C2 首见设备判待确认（BUG-4306）
+
+- 真相层新子模块 `store/gen4/truth/trust.rs`：`Truth::library_fresh(col)` 直接查真相（逐台设备按主键区间扫 `ops`，
+  只认内置种子 = `data` 带 `builtin` 的实体创建、盐、并入、还原点为「没有用户内容」；有空洞 / 副本记录 / 待投递承袭槽
+  就不算空），不读派生投影（BUG-4478 那类「投影滞后误判空库」从结构上没有）。比协议 3 的口径更保守，偏差方向只会多问。
+- `Truth::note_new_peer(col, device, public, prev, seen_at)`，判定顺序：① 本机已有它的日志（承袭日志先于公钥到）→ 不追溯，
+  按可信（协议 3 给「有设备行、没公钥」补公钥时也不判待确认）；② 带 `prev` 且 `peers` 里旧身份的公钥与新 head 公钥逐字节
+  相同 → 原样继承旧身份的信任状态与 `since`，新身份没自报名字时带上旧名字；公钥不同不继承；③ 库空 → 首次信任；④ 待确认。
+  由于 ①，写下信任行的设备在本机一条已落库的操作都没有，派生层不必重判。
+- 入口：`cmd/sync.rs` `plan`（含转发来的 head）与 `cmd/sync_oldroot.rs` `oldroot_ingest`（v3 head，没有 prev）在
+  `PeerPut::Inserted` 时调。`plan` 是本机状态写命令（`write_local`，不动派生层），所以不调 `trust_changed`；旧根那条在写了
+  信任行时调 `Receiver::trust_changed` 兜底。
+- 迁移端到端已实测（`sync_trust_tests` 的 `a_migrated_*`）：协议 3 两台库迁移后各换新身份，新 head 的 `prev` 公钥就是
+  `peers` 里搬来的旧公钥（迁移沿用 `key_seed`），b 上 a 的新身份原样继承可信 / 待确认、`since`、名字，不会整批待确认。
+- 语义变化的连带：库非空的设备首见对端都是待确认，D20（不受信上传者的承袭段等确认再收）与转发「只存受信作者的段」从此真的
+  生效。两条既有测试（`old_root_takeover_reaches_migrated_and_new_devices_alike`、`a_device_on_two_locations_relays_between_them`）
+  改成先确认对端再断言原意。
+
+### C3 清除的字节层
+
+- `schema.rs` `configure`：写连接一律 `PRAGMA secure_delete = ON`（读回核对）。新代库的写连接只有 `schema::open` 一个口
+  （内核写连接、迁移 / 预演目标库）；读连接 `query_only`；`kernel.rs` 并 WAL 的旁路连接只做检查点；协议 3 旧库连接不是新代库。
+- 新模块 `store/gen4/scrub.rs`：`advance_purge` 落空洞的同一个事务里记 `srs_meta` `gen4_scrub_due`；`kernel.rs` `write_tx`
+  提交后（事务外、仍拿写锁）做收尾：没有 `gen4_secure_delete` 标记的存量库先 `VACUUM` 一次并记标记，再
+  `wal_checkpoint(TRUNCATE)`，成了才删 `gen4_scrub_due`。命令本身已提交，收尾没做成不改它的结果，标记留着。没做成分两种
+  （复核修复，`scrub.rs`「没做成怎么办」）：检查点被读者挡住 → 之后每条写命令提交后再试，但**不等**读者（忙等临时设 0）；
+  出错（整理时空间不够、I/O 错误）→ 原因记进 `srs_meta` `gen4_scrub_error`，由新读命令 `scrub_state`（`{due, error}`，
+  整库一份）报给 UI，**不再逐条写命令重试**，只在下一次打开或下一次又有清除落空洞时再试，做成了删掉错误。没放进 `status`：
+  `status` 的形状按规划 §2.1 与协议 3 逐键相同（`status_keeps_the_protocol_3_shape` 守着）。`schema::open` 建库那一笔记
+  `gen4_secure_delete`，所以换代迁移建的库与全新安装都不需要整理。
+- 存量库的取舍：每次清除都 `VACUUM` 代价太大（约等于库大小的临时空间、期间占写锁），开库时做会让每个存量库启动卡一次；
+  只在第一次清除时做一次。生产里需要整理的只有换代开发期间用集成分支建的库（develop 上只有预演，没有在用的 `srs4.db`）。
+- 绕开 `write()`/`finish` 的灌库入口：`.fushisrs` 第 2 版、第 1 版、旧备份读入（`import.rs` 三处）原来只 `ingest_settle(Rebuild)`，
+  带进来的 `Purge` 要等下一条写命令的 `finish` 才执行；改成同一个事务里 `execute_purges`（`settle_imported`）。迁移
+  （`dryrun.rs` 的重建）没改：协议 3 的清除在旧库里已经执行过，迁移不改真相是既定口径。
+
+### 封存旧库 `srs.db` 里的原文（定案）
+
+不改封存库。理由：保留副本存在的意义是「出事能回退旧版本」，在封存库上做局部清除会让它变成协议 3 自己也没写过的状态
+（协议 3 的清除要同时改投影、日志、段缓存），回退时反而可能出问题；按 D6 / D32 的设计，它在新代第一次同步成功 14 天后整份删除（设置里
+可提前删），迁移前的原文随之消失。**依赖**：D32 的自动删除与提前删除入口还没实现（§25 末、G7-6），彻底清除确认处的说明也要跟
+那个入口一起加（说明里要指向真实存在的删除入口，现在加只会说空话）。归属 G7-6 / 保留副本 owner。
+
+复核后补充（不改定案）：复核建议的另一条路「先加一句不指向入口的说明（旧版本保留副本里的内容会在保留期结束时一起删除）」
+没采用——自动删除还没实现，这句话现在是假的，用户据此放心反而是误导。**G7-6 的任务清单必须明列两项**：① 彻底清除的
+确认处（`srs_deck_list_page.dart` 的 `_DeckDeleteMode.purge` 选项说明，`srs_deck_delete_purge_hint`）加一句「旧版本保留副本里
+还有迁移前的内容，会在保留期结束时（或你在设置里提前删除时）一起删除」；② 新读命令 `scrub_state` 的 `error` 非空时的提示
+（「清除的内容在磁盘上还没抹干净：<原因>」）。在 G7-6 落地之前，彻底清除迁移前的内容后封存库里原文仍在、界面没有提示，
+这是已知缺口。
+
+### 转发里的副本（复核修复两轮，2026-11-17 / 11-18）
+
+复核指出转发缓存 `relay_segs`（G8-7b）存着作者段原文：同步着 ≥ 2 个位置时，清除之后原文仍留在 `srs4.db` 里、之后还会
+原样转发出去。清除的执行点归本模块，所以在这里修，不外推给转发 owner。
+
+**第一版（6c8d73af34）的回归，已废弃**：清除时整份删掉缓存里的作者段、把已转发的 `rly-` 改成待删、收段时拒收带原文的段，
+等作者自己重切。第二轮复核实测：清除由**转发者 b**（不是作者 a）发起、a 不回来时，只连 L2 的 c 拿不到 a 那一段，b 的 Purge
+指向 a 的 seq、b 此后每条操作的依赖都点着 a，于是 **b 之后的全部操作**（包括普通复习）在 c 上都卡在等待缓冲。根因：作者
+签名覆盖整段明文，转发者改不出空洞，「不搬」就断流。
+
+**现在的数据流（第三轮）**：转发者自己**重切**——新格式 `FRX4`（`gen4/recut.rs`）：同区间、同首尾链值、同文件名，把本机
+已清除的操作换成空洞（相邻空洞合并），用**转发者自己的钥匙**签（签名覆盖原段头、重切者 ID、明文压缩体，域前缀
+`fushi-srs-recut/4`）。读者照原生段的规则落库（空洞落成空洞，本机已有的完整操作不因此被清掉），但只收**本机信任的**
+重切者签的件（`receive.rs`：没记过重切者公钥 = `UnknownSigner`，信任表有它的行 = `UntrustedUploader`，同承袭段上传者，D20）。
+作者自己签的段到了之后链值不接 = 分叉，照常报 G8-6。
+
+**更正（第四轮复核 major，2026-11-18）**：上一版这里写的「受信设备本来就能发 Purge，重切件给它的权力不超过这一条」**不成立**。
+复核实测：重切件的段头与明文全由重切者签名担保，读者只核「操作的 device / seq 对得上段头、至少一个空洞、重算链值等于段头
+`last_chain`」，而空洞的 `chain_after` 与段头 `last_chain` 都由重切者自己填。受信的 b 能伪造作者 a 的段头 `[1..4]`（a 一条都
+没写过），内容是三条 `FORGED` 加一个空洞，读者照收（`last_of(a) = 4`）；a 真正的段到了反而 `Diverged`。也就是能以作者的名义
+写入任意内容、抢占作者以后的 seq（所有读者上 a 的日志分叉，等于拒绝服务）、日后吊销 b 也撤不回。Purge 只能把已有操作挖成
+空洞，做不到这些。
+
+现在的收法（`58e57cf4e6`）：
+- `plan` 读到每一份验过签名、公钥与记录相符的别的设备的 head（直接读到的与被转发来的 `rhd-` 都算，不论信任），把它的
+  (代号, seq, 末端链值, 段清单) 记进 `srs_meta` 的 `gen4_ahead/<col>/<设备>`（`Truth::note_author_head`，只进不退；本机状态，
+  不同步、不导出，丢了下一轮 `plan` 回来）。
+- 收重切件（`receive.rs`）：验过重切者签名之后，区间与链尾必须是作者自己签过的一段——记下的作者最新 head 的段清单里正好有
+  `(first, last, 链尾标签)`，`last` 正好是那份 head 的末端时完整链值也等于 head 的 `chain`（`Truth::author_listed`）；本机自己
+  的日志则要本机已写到 `last`、那里的链值相同。否则 `Defer::Unlisted`（不落、不进等待缓冲；作者的 head 还没读到时下一轮再试）。
+- 这样封住了：伪造作者还没写到的 seq（上面的探针场景）、伪造作者没签过的区间、伪造链尾（标签不同；区间末是 head 末端时
+  完整链值不同）。
+
+**残余风险（如实记下，没有修掉）**：在作者已列出的区间里，空洞**之前**的操作仍只由重切者担保。受信的重切者可以把它们换成
+任意内容，末尾放一个空洞、链值填作者的真链尾，读者核不出来；伪造内容以作者的 HLC 参与冲突裁决，日后吊销重切者也撤不回。
+所以重切件给受信设备的权力**超过** Purge，只是被限制在作者已发布的区间里。另外 head 的段清单只带链尾的前 4 字节（标签），
+区间末不是 head 末端时读者只核得了这 4 字节：重切者可以随手填一个标签相同、其余不同的链尾，读者照收，作者接在后面的段
+到了才报分叉（G8-6 两支都留、不丢数据，但这位作者在这台读者上的后续日志会卡在分叉处理上）。
+根治方案（没做，原因如下）：空洞对每条被挖掉的操作带「信封 + 载荷哈希」（正是 `chain_next4` 的输入，链定义不用改），重切件
+里不再允许只带链值的重置空洞，读者从 `prev_chain` 一路重算到作者签的链尾，活着的操作就都绑回作者签名。卡在数据来源：
+`recut_from_log`（缓存里没有这一段时从日志重切）用的是本机日志，清除之后日志空洞只留区间末链值，被挖掉操作的信封与载荷
+哈希已经没了；要在挖空之前把它们存下来就得动 schema（本模块没有分到 SCHEMA 号），作者自己签的空洞（只带链值）也无法换成
+这种形态。做这一步之前，重切件的这一残余风险由「只收本机信任的重切者」兜着。归同步安全 owner 排期（需 SCHEMA 号）。
+
+- 清除时（`Truth::advance_purge` 同一个事务，`sync_state.rs` `Truth::relay_purged`）：缓存里覆盖这个 seq 的件原地换成本机签
+  的重切件（本机还没有身份签不了才整份删）；`relay_out` 里已转发到各位置、覆盖它的 `rly-` 改成待删。
+- 转发时（`cmd/sync_relay.rs` `relay_outbox`）：待删的同名件算「缺」，用重切件同名重写（`relay_ack` 记回在用，不删）；作者
+  新 head 不再引用的旧名的待删件照两段式删除。缓存里没有这一段（从没留、或每个位置都有了已删）时从本机日志重切
+  （`Truth::recut_from_log`：本机这段有空洞、日志盖得到、两端链值都在、段尾链值与文件名的标签相符）。
+- 收段时（`keep`）：在本机已清除的 seq 上还带着完整内容的件（作者 / 别的重切者清除之前的那份）不留；同一段已存着重切件、
+  这回收到作者签的那份（作者自己重切了）就换成作者签的，读者不必信任本机这个重切者。`wanted_for_relay` 不再为本机清除过
+  其中操作的段去拉原文（`Truth::voids_within`）。原来的 `gen4_rrefuse/…` 拒收记录整套去掉（第二轮复核 nit：键不回收、
+  没有 head 时代号记 0 每轮白拉），不再写这种键；开发期集成分支库里可能残留的这种键没人读，无害。
+- 切点落在一次跨段清除的空洞内部（作者分两次同步写的同一条笔记、两段相邻，清除把两条合成一个空洞区间）：原生日志的空洞
+  区间只记区间末的链值，合并会把切点处的链值埋掉。`Truth::insert_void_run` 合并**别的设备**的原生日志的空洞时，把被合进
+  区间内部的那几处区间末链值记成 `log_marks` 记号，`Truth::chain_known` 在空洞内部先查记号。本机自己的日志不记（本机的段
+  按新切点重签，`cmd/sync.rs`）。**代价**：`.fushisrs` 第 2 版导出流的空洞只带区间末的链值，导入方拿不到这些记号
+  （`import_tests` 的往返测试显式核对了这一处差异，`truth_lines` 不比空洞内部的记号）；从备份还原的库若又要从日志重切一段
+  切点埋在空洞里的作者段，退回「这位作者整台不转发」（`incomplete`）。要彻底补上需导出流升 `ver` 带上这些链值，归 G11 owner
+  评估，本分支不改导出格式。
+- 测试（`cmd/purge_scrub_tests.rs`，a 只连 L1、b 连 L1 + L2、c 只连 L2）：
+  - `a_purge_by_the_relay_does_not_cut_off_a_location_only_it_feeds`（复核 major 的原场景：b 已把 a 的段转发到 L2 后由 b 清除、
+    b 再写一条，a 一直不回来；c1 清除前收过原文、c2 只在清除后来，两台都收齐 a 其余的与 b 之后的、等待缓冲为 0，L2 / c 的库
+    字节里扫不到原文；作者签的原文再到 b 手里，缓存不留）；
+  - `a_purge_recuts_the_relay_copy_in_place_and_relays_the_recut`（缓存原地重切，转发到 L2 的是 b 签的件）；
+  - `a_purge_across_the_authors_cut_point_still_recuts_both_segments`（切点埋在合并后的空洞里，两段都从日志重切出来）；
+  - `a_location_joined_after_the_purge_gets_a_recut_and_no_original_is_fetched`（b 收段时只连 L1、没留原文，清除之后才连上
+    L2：不为转发去拉原文，L2 拿到的是 b 从日志重切的件）；
+  - `a_purge_by_the_author_takes_back_what_was_already_relayed`（作者发起：已转发的旧 `rly-` 删掉，转发作者自己重切的新段，
+    不为转发去拉原文）；
+  - `receive.rs` `recut_pieces_need_a_trusted_recutter_and_land_their_voids`（含作者清单没读到时 `Unlisted`）、
+    `a_trusted_recutter_cannot_write_where_the_author_has_not_signed`（第四轮复核 major 的探针场景：作者没写过时伪造 1..=4、
+    超出作者 head 的区间、链尾标签不同、标签相同而完整链值不同，一律 `Unlisted`、不落不等；作者真正的段与接在后面的照常）、
+    `a_recut_of_my_own_log_must_match_what_i_wrote`；`sync_state.rs` `the_authors_listing_only_moves_forward_and_binds_range_and_chain`；
+    `gen4/recut.rs` 六条编解码 / 验签 / 拒写测试；
+  - `truth.rs` `voids_within_reports_runs_cut_to_the_range_including_a_leading_one`（第二轮复核 minor：前导空洞分支）、
+    `scrub.rs` `a_retry_that_does_not_wait_returns_at_once_when_a_reader_holds_the_wal`（第二轮复核 minor：`Wait::No` 不等读者）。
+  - 变异实测见 PR 描述（9 项，各自对应测试变红）。
+- 没覆盖：别的设备从 L2 上拉走那份旧件、在它收到清除之前——那台设备收到清除时自己落空洞、做字节层收尾，与作者自己的段
+  同一个口径。
+- 清除时缓存里读不了的件（第四轮复核 minor）：`Truth::recut_kept` 遇到解不开、签名者公钥本机没有、重切签不出的缓存件一律按
+  「整份删掉」处理，不再把错误往上报——它跑在 `advance_purge` 的同一个事务里，上一版会让用户的彻底清除整笔失败。删的是转发
+  缓存、不是数据，缺的那一段之后由 `relay_outbox` 从日志重切或记 `incomplete`。测试 `sync_state.rs`
+  `an_unreadable_relay_copy_does_not_fail_the_purge`。
+- 第四轮变异实测（各自还原，工作区干净）：M1 不核作者清单（3 条红）、M2 不核 head 末端完整链值（2 条红）、M3 本机日志不核
+  （1 条红）、M4 `plan` 不记作者清单（4 条端到端红）、M5 读不了的缓存往上报错（1 条红）、M6 清单不只进不退（1 条红）。
+- 交接 §26 T1 节 C2、C3 两条上一轮加的「已修：§28」指针已撤回（不改别人的节）；修复记录只在本节。
+
+### 已知残余风险（复核记录）
+
+- **承袭设备 ID 的认领**（推测，未实测，与协议 3 一致、不是本分支引入）：`note_new_peer` 的 KnownLog 分支对「本机已有
+  它的日志」的设备按可信、不写信任行。协议 3 时代只经代传、从没登记过公钥的承袭设备 ID，能写同步位置的人可以用自己的
+  钥匙在旧根放一份 v3 head 认领它（`oldroot_ingest` 里 `set_peer` 返回 `Inserted` → KnownLog → 可信），之后它以这个 ID
+  写的承袭段里的删除与清除不被扣。新代原生段对承袭类设备有 `receive.rs` 的类型检查，走不通。前提是明文位置、承袭链可续写。
+  可选收紧：只在有可信上传者背书时才走 KnownLog，其余按首见规则判。留给 C2 后续或同步安全 owner 拍。
+- 旧根路径 `cmd/sync_oldroot.rs` 的 `rx.trust_changed()` 是兜底：KnownLog 不变量下不改变结果，删掉它相关测试全绿（复核变异
+  M9）。注释已写明，接受它没有测试能证伪。
+
+### 没做 / 归属别的模块
+
+- 迁移本身（`dryrun.rs` 重建）不执行清除，见上。
+- Dart 侧没接 `scrub_state`（没有 UI 提示），归 G7-6，见上「封存旧库」节的任务清单。
+- Dart：`srs_purge_test`、`srs_devices_test`、`srs_db_store_test` 等的复跑结果见 PR 描述。
+- 清除确认处的封存库说明与 `scrub_state` 出错提示已写成规划 §6 的合并条件（G7-6 不带上这两项不合入 develop）。
+- 导出流带不走空洞内部的链值记号（见「转发里的副本」节的代价），要补需导出格式升 `ver`，归 G11 owner（第四轮复核确认属实、
+  维持登记）。
+- 重切件里空洞之前的操作只由重切者担保（见「转发里的副本」节的更正与残余风险）：根治要空洞带被挖掉操作的信封与载荷哈希、
+  清除前存下这两样，需要 SCHEMA 号，归同步安全 owner。

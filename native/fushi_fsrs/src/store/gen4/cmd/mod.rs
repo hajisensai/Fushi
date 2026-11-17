@@ -99,6 +99,8 @@ mod id_reply_tests;
 #[cfg(test)]
 mod identity_tests;
 #[cfg(test)]
+mod purge_scrub_tests;
+#[cfg(test)]
 mod refresh_tests;
 #[cfg(test)]
 mod study_tests;
@@ -108,6 +110,8 @@ mod sync_complete_tests;
 mod sync_relay_tests;
 #[cfg(test)]
 mod sync_tests;
+#[cfg(test)]
+mod sync_trust_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

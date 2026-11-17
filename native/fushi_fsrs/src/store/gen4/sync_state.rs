@@ -26,10 +26,45 @@ use rusqlite::{OptionalExtension, params};
 
 use super::schema::sql;
 use super::truth::Truth;
+use crate::gen4::location::{V4File, device_path, parse_v4_path};
 use crate::gen4::op::Op4;
+use crate::gen4::recut::{self, open_recut4_items, peek_recut4, recut4, void_one};
+use crate::gen4::relay::open_relay4_items;
+use crate::gen4::segment::{NativeHeader, NativeItem};
 use crate::sync2::codec::Reader;
 use crate::sync2::id::Id;
+use crate::sync2::segment::chain_tag;
 use crate::sync2::vv::OpId;
+
+/// 重切一份缓存的作者段（[Truth::recut_kept]）的结果。
+enum Recut {
+    /// 本机签出的重切件（不封装）。
+    Done(Vec<u8>),
+    /// 那一条在这份里本来就是空洞：不用动。
+    Already,
+    /// 本机还没有身份签不了，或这份缓存读不了（解不开、签名者的公钥本机没有）：整份删掉。删的是转发缓存、不是数据，
+    /// 缺的那一段之后由 `relay_outbox` 从日志重切或记缺。不往上报错：辅助缓存不能挡住用户的彻底清除。
+    Unsigned,
+}
+
+/// 本机记下的作者签过的段清单（[Truth::note_author_head]）。
+#[derive(serde::Deserialize)]
+struct AuthorHead {
+    gen: u64,
+    seq: u64,
+    /// 末端链值（小写十六进制）。
+    chain: String,
+    segs: Vec<(u64, u64, String)>,
+}
+
+fn hex32(c: &[u8; 32]) -> String {
+    c.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// [Truth::note_author_head] 在 `srs_meta` 里的键。
+pub(crate) fn author_head_key(col: i64, device: &Id) -> String {
+    format!("gen4_ahead/{col}/{}", device.text())
+}
 
 /// 一个位置上一台设备最新的 head（只记同步层要的几样）。
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -181,6 +216,78 @@ impl<'c> Truth<'c> {
             return Err(format!("gen4 store: no collection {col}"));
         }
         Ok(())
+    }
+
+    // ------------------------------------------------------------ 作者签过的段清单
+
+    /// `plan` 读到一份验过签名、公钥与本机记录相符的别的设备的 head（直接读到的与被转发来的都算）：代号比记下的大就换
+    /// （只进不退），记它的 (代号, seq, 末端链值, 段清单)。收重切件（[Truth::author_listed]）用：重切件由重切者签名担保，
+    /// 区间与链尾只能拿作者自己签的清单核对。存在 `srs_meta` 的 [author_head_key]（本机状态，不同步、不导出；丢了下一轮
+    /// `plan` 读到 head 就回来，期间重切件只是晚收）。记录坏了按没记过，照写。
+    pub(crate) fn note_author_head(
+        &self,
+        col: i64,
+        device: &Id,
+        gen: u64,
+        seq: u64,
+        chain: &[u8; 32],
+        segs: &[(u64, u64, String)],
+    ) -> Result<(), String> {
+        self.write(|| {
+            let key = author_head_key(col, device);
+            if self.author_head(&key)?.is_some_and(|old| old.gen >= gen) {
+                return Ok(());
+            }
+            let value = serde_json::json!({
+                "gen": gen,
+                "seq": seq,
+                "chain": hex32(chain),
+                "segs": segs,
+            })
+            .to_string();
+            self.conn()
+                .prepare_cached("INSERT OR REPLACE INTO srs_meta (key, value) VALUES (?1, ?2)")
+                .map_err(sql)?
+                .execute(params![key, value])
+                .map_err(sql)?;
+            Ok(())
+        })
+    }
+
+    fn author_head(&self, key: &str) -> Result<Option<AuthorHead>, String> {
+        let text: Option<String> = self
+            .conn()
+            .prepare_cached("SELECT value FROM srs_meta WHERE key = ?1")
+            .map_err(sql)?
+            .query_row([key], |r| r.get(0))
+            .optional()
+            .map_err(sql)?;
+        Ok(text.and_then(|t| serde_json::from_str(&t).ok()))
+    }
+
+    /// 作者 [device] 签过的、本机记下的最新 head（[Truth::note_author_head]）列出了段 `[first, last]`、链尾标签是
+    /// [last_chain] 的；`last` 正好是那份 head 的 seq 时，完整的末端链值也得相同（标签只有 4 字节）。没记过这位作者的
+    /// head、清单里没有这一段 = 否。
+    pub(crate) fn author_listed(
+        &self,
+        col: i64,
+        device: &Id,
+        first: u64,
+        last: u64,
+        last_chain: &[u8; 32],
+    ) -> Result<bool, String> {
+        let Some(h) = self.author_head(&author_head_key(col, device))? else {
+            return Ok(false);
+        };
+        let tag = chain_tag(last_chain);
+        if !h
+            .segs
+            .iter()
+            .any(|(a, b, t)| *a == first && *b == last && *t == tag)
+        {
+            return Ok(false);
+        }
+        Ok(last != h.seq || h.chain == hex32(last_chain))
     }
 
     // ------------------------------------------------------------ loc_heads
@@ -412,6 +519,196 @@ impl<'c> Truth<'c> {
             });
         }
         Ok(out)
+    }
+
+    /// 本机把作者 [device] 的 [seq] 落成了空洞（`Truth::advance_purge` 调，同一个事务）。转发手里这条内容的两种副本：
+    ///
+    /// - 本机缓存的作者段（`relay_segs`）里覆盖它的：**重切**（`gen4/recut.rs`）——把这一条换成空洞、用本机的钥匙签出
+    ///   同区间同首尾链值的重切件，原地换掉原文。之后照常转发出去，只经本机拿数据的位置照样拿得到这位作者其余的操作
+    ///   （本机此后的操作都依赖它们，拿不到就连本机的也投不了）。本机没有身份签不了时整份删掉。
+    /// - 已经转发到各位置上、覆盖它的 `rly-`（`relay_out` 在用的行）改成待删：下一次 `relay_outbox` 把它当缺的、用重切件
+    ///   同名重写（`relay_ack` 记回在用，不再删）；重切不出来时 `relay_ack` 交给调用方删掉位置上那份带原文的件
+    ///   （两段式删除，同 [Truth::relay_supersede]）。
+    pub(crate) fn relay_purged(&self, col: i64, device: &Id, seq: u64) -> Result<(), String> {
+        self.write(|| {
+            let s = i64::try_from(seq).map_err(|_| "gen4 store: seq out of range")?;
+            let kept: Vec<(i64, Vec<u8>)> = {
+                let mut stmt = self
+                    .conn()
+                    .prepare_cached(
+                        "SELECT id, piece FROM relay_segs WHERE col = ?1 AND device = ?2 AND first <= ?3 AND last >= ?3",
+                    )
+                    .map_err(sql)?;
+                let rows = stmt
+                    .query_map(params![col, &device.0[..], s], |r| {
+                        Ok((r.get(0)?, r.get(1)?))
+                    })
+                    .map_err(sql)?;
+                rows.collect::<rusqlite::Result<_>>().map_err(sql)?
+            };
+            for (id, piece) in kept {
+                match self.recut_kept(col, device, &piece, seq)? {
+                    Recut::Done(bytes) => {
+                        self.conn()
+                            .prepare_cached("UPDATE relay_segs SET piece = ?2 WHERE id = ?1")
+                            .map_err(sql)?
+                            .execute(params![id, bytes])
+                            .map_err(sql)?;
+                    }
+                    Recut::Already => {}
+                    Recut::Unsigned => {
+                        self.conn()
+                            .prepare_cached("DELETE FROM relay_segs WHERE id = ?1")
+                            .map_err(sql)?
+                            .execute([id])
+                            .map_err(sql)?;
+                    }
+                }
+            }
+            let rows: Vec<(String, String)> = {
+                let mut stmt = self
+                    .conn()
+                    .prepare_cached(
+                        "SELECT loc_key, name FROM relay_out WHERE col = ?1 AND device = ?2 AND gone = 0",
+                    )
+                    .map_err(sql)?;
+                let rows = stmt
+                    .query_map(params![col, &device.0[..]], |r| Ok((r.get(0)?, r.get(1)?)))
+                    .map_err(sql)?;
+                rows.collect::<rusqlite::Result<_>>().map_err(sql)?
+            };
+            for (loc, name) in rows {
+                let covers = matches!(
+                    parse_v4_path(&device_path(device, &name)),
+                    Some(V4File::Relay { first, last, .. }) if first <= seq && seq <= last
+                );
+                if covers {
+                    self.conn()
+                        .prepare_cached(
+                            "UPDATE relay_out SET gone = 1 WHERE col = ?1 AND loc_key = ?2 AND device = ?3 \
+                             AND name = ?4",
+                        )
+                        .map_err(sql)?
+                        .execute(params![col, loc, &device.0[..], name])
+                        .map_err(sql)?;
+                }
+            }
+            Ok(())
+        })
+    }
+
+    /// 把本机缓存的一份作者段（[piece]：不封装的中继件 `FRL4`，或本机 / 别人签的重切件 `FRX4`）里 seq = [seq] 的操作
+    /// 换成空洞、由本机重切签出（不封装）。
+    fn recut_kept(&self, col: i64, device: &Id, piece: &[u8], seq: u64) -> Result<Recut, String> {
+        let Some(me) = self.self_identity(col)? else {
+            return Ok(Recut::Unsigned);
+        };
+        let opened = if piece.starts_with(recut::MAGIC) {
+            let Ok(r) = peek_recut4(piece).map(|p| p.recutter) else {
+                return Ok(Recut::Unsigned);
+            };
+            let public = if r == me.device {
+                Some(me.public())
+            } else {
+                self.device_key(col, &r)?
+            };
+            let Some(public) = public else {
+                return Ok(Recut::Unsigned);
+            };
+            open_recut4_items(piece, &public, None).map(|(p, items)| (p.header, items))
+        } else {
+            let Some(public) = self.device_key(col, device)? else {
+                return Ok(Recut::Unsigned);
+            };
+            open_relay4_items(piece, &public, None)
+        };
+        let Ok((header, items)) = opened else {
+            return Ok(Recut::Unsigned);
+        };
+        let Some(items) = void_one(&items, header.first, header.prev_chain, seq) else {
+            return Ok(Recut::Already);
+        };
+        Ok(
+            recut4(&header, &items, &me.key(), me.device, None)
+                .map_or(Recut::Unsigned, Recut::Done),
+        )
+    }
+
+    /// 从本机日志重切作者 [device] 的段 `[first, last]`（链尾标签 [tag]）：本机这段里有空洞（清除过）、日志盖得到、两端
+    /// 的链值都在（不落在空洞区间内部）、`last` 处的链值与 [tag] 相符时，交回段头（集合 = 本集合；`encrypted` 记假：
+    /// 原位置的加密状态本机不知道，读者也不看它）与全部项，交 `gen4/recut.rs` 的 `recut4` 签出；否则 None（这一段
+    /// 本机重切不出来）。转发缓存里没留这一段时（`cmd/sync_relay.rs` 的 `relay_outbox`）用它。
+    pub(crate) fn recut_from_log(
+        &self,
+        col: i64,
+        device: &Id,
+        (first, last, tag): (u64, u64, &str),
+    ) -> Result<Option<(NativeHeader, Vec<NativeItem>)>, String> {
+        if first == 0 || last < first || self.last_of(col, device)? < last {
+            return Ok(None);
+        }
+        if self.voids_within(col, device, first, last)?.is_empty() {
+            return Ok(None);
+        }
+        let Some(binding) = self.binding(col)? else {
+            return Ok(None);
+        };
+        let Some(prev_chain) = self.chain_known(col, device, first - 1)? else {
+            return Ok(None);
+        };
+        let Some(last_chain) = self.chain_known(col, device, last)? else {
+            return Ok(None);
+        };
+        if chain_tag(&last_chain) != tag {
+            return Ok(None);
+        }
+        let mut slots: Vec<Option<Op4>> = Vec::new();
+        self.for_range(col, device, first, last, |e| {
+            slots.push(e.op().cloned());
+            Ok(())
+        })?;
+        if slots.len() as u64 != last - first + 1 {
+            return Err(format!(
+                "gen4 store: {device} log {first}..={last} is not contiguous"
+            ));
+        }
+        let mut items: Vec<NativeItem> = Vec::new();
+        let mut run = 0u64;
+        for (i, slot) in slots.into_iter().enumerate() {
+            let at = first + i as u64;
+            match slot {
+                Some(op) => {
+                    if run > 0 {
+                        let Some(c) = self.chain_known(col, device, at - 1)? else {
+                            return Ok(None);
+                        };
+                        items.push(NativeItem::Void {
+                            count: run,
+                            chain_after: c,
+                        });
+                        run = 0;
+                    }
+                    items.push(NativeItem::Op(op));
+                }
+                None => run += 1,
+            }
+        }
+        if run > 0 {
+            items.push(NativeItem::Void {
+                count: run,
+                chain_after: last_chain,
+            });
+        }
+        let header = NativeHeader {
+            encrypted: false,
+            collection: binding.collection,
+            device: *device,
+            first,
+            last,
+            prev_chain,
+            last_chain,
+        };
+        Ok(Some((header, items)))
     }
 
     /// 位置 [loc] 上待删的转发件。
@@ -678,6 +975,88 @@ mod tests {
             seq,
             segs: segs.iter().map(|s| s.to_string()).collect(),
         }
+    }
+
+    /// 作者签过的段清单只进不退；区间、链尾标签都要相同，区间末是 head 的末端时完整链值也要相同；没记过 = 否。
+    #[test]
+    fn the_authors_listing_only_moves_forward_and_binds_range_and_chain() {
+        let conn = open_in_memory().unwrap();
+        let t = Truth::new(&conn);
+        let col = bound(&t);
+        let a = id(0x21);
+        let (c3, c5) = ([3u8; 32], [5u8; 32]);
+        let listed =
+            |first: u64, last: u64, c: &[u8; 32]| t.author_listed(col, &a, first, last, c).unwrap();
+        assert!(!listed(1, 3, &c3), "nothing recorded");
+        let note = |gen: u64, seq: u64, chain: &[u8; 32], segs: &[(u64, u64, String)]| {
+            t.tx(|t| t.note_author_head(col, &a, gen, seq, chain, segs))
+                .unwrap()
+        };
+        note(2, 5, &c5, &[(1, 3, chain_tag(&c3)), (4, 5, chain_tag(&c5))]);
+        assert!(listed(1, 3, &c3) && listed(4, 5, &c5));
+        assert!(!listed(1, 4, &c3), "range");
+        assert!(!listed(1, 3, &[4; 32]), "tag");
+        let mut same_tag = c5;
+        same_tag[31] = 0;
+        assert!(
+            !listed(4, 5, &same_tag),
+            "the head's own end binds the full chain"
+        );
+        let mut mid = c3;
+        mid[31] = 0;
+        assert!(listed(1, 3, &mid), "inside the log only the tag is signed");
+        // 更旧的代号不覆盖。
+        note(1, 9, &[9; 32], &[(1, 9, chain_tag(&[9; 32]))]);
+        assert!(listed(1, 3, &c3) && !listed(1, 9, &[9; 32]));
+        // 更新的代号换掉（作者改了切点）。
+        note(3, 9, &[9; 32], &[(1, 9, chain_tag(&[9; 32]))]);
+        assert!(!listed(1, 3, &c3) && listed(1, 9, &[9; 32]));
+        // 别的集合、别的设备互不相干。
+        assert!(!t.author_listed(col, &id(0x22), 1, 9, &[9; 32]).unwrap());
+    }
+
+    /// 复核 minor：转发缓存里读不了的件（解不开、签名者的公钥本机没有）不让清除失败：整份删掉，清除照常。
+    #[test]
+    fn an_unreadable_relay_copy_does_not_fail_the_purge() {
+        let conn = open_in_memory().unwrap();
+        let t = Truth::new(&conn);
+        let col = crate::store::gen4::native::tests::ready(&t);
+        // a 的公钥本机有（件解不开）；u 的没有（签名者不认得）。
+        let (a, u) = (id(0x21), id(0x22));
+        t.tx(|t| {
+            t.set_peer(
+                col,
+                &crate::store::gen4::truth::Peer {
+                    device: a,
+                    public: crate::sync2::keys::DeviceKey::from_seed(&[0x21; 32]).public(),
+                    name: None,
+                    ext: None,
+                    head_gen: None,
+                    first_seen: None,
+                },
+            )
+            .map(|_| ())
+        })
+        .unwrap();
+        let rows: [(&Id, &[u8]); 4] = [
+            (&a, b"FRX4 not a recut"),
+            (&a, b"FRL4 not a relay"),
+            (&a, b"garbage"),
+            (&u, b"FRL4 of a device without a key"),
+        ];
+        for (i, (dev, piece)) in rows.iter().enumerate() {
+            conn.execute(
+                "INSERT INTO relay_segs (col, device, first, last, tag, piece) VALUES (?1, ?2, 1, ?3, 'x', ?4)",
+                params![col, &dev.0[..], 3 + i as i64, piece],
+            )
+            .unwrap();
+        }
+        assert_eq!(t.tx(|t| t.relay_purged(col, &a, 2)), Ok(()));
+        assert_eq!(t.tx(|t| t.relay_purged(col, &u, 2)), Ok(()));
+        let n: i64 = conn
+            .query_row("SELECT COUNT(*) FROM relay_segs", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 0);
     }
 
     #[test]

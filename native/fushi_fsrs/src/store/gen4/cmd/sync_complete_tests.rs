@@ -262,16 +262,25 @@ fn binding_unbound_names_never_overrides_a_binding() {
 
 // ---------------------------------------------------------------------- 旧根接手
 
-const OLD: u8 = 0xd7;
+pub(super) const OLD: u8 = 0xd7;
 
-fn old_key() -> DeviceKey {
+pub(super) fn old_key() -> DeviceKey {
     DeviceKey::from_seed(&[OLD; 32])
 }
 
 /// 协议 3 旧根：设备 OLD 的 [n] 条操作按 [cuts] 切段写在 `v3/devices/<OLD>/`，带它的 head 与旧根 meta。
 fn old_root(loc: &mut Loc, n: u64, cuts: &[(u64, u64)]) {
+    old_root_with(
+        loc,
+        &crate::sync2::segment::tests::ops_for(id(OLD), n),
+        cuts,
+    );
+}
+
+/// [old_root]，操作由调用方给（设备 OLD 的 seq 1..=n，`ops[i].id.seq == i + 1`）。
+pub(super) fn old_root_with(loc: &mut Loc, ops: &[crate::sync2::op::Op], cuts: &[(u64, u64)]) {
     let dev = id(OLD);
-    let ops = crate::sync2::segment::tests::ops_for(dev, n);
+    let n = ops.len() as u64;
     let mut chain = CHAIN_ZERO;
     let chains: Vec<_> = ops
         .iter()
@@ -340,7 +349,7 @@ fn old_listing(loc: &Loc) -> Vec<Value> {
 }
 
 /// 捡旧根（Dart：扫 → 读 head 与段 → 一批收完 → 带 `settle` 收尾）。回 (扫的回包, 合起来的收的回包)。
-fn take_old_root(d: &Dev, loc: &Loc, now: i64) -> (Value, Option<Value>) {
+pub(super) fn take_old_root(d: &Dev, loc: &Loc, now: i64) -> (Value, Option<Value>) {
     take_old_root_sliced(d, loc, now, None, false)
 }
 
@@ -524,6 +533,16 @@ fn old_root_takeover_reaches_migrated_and_new_devices_alike() {
     assert!(again.is_none());
     assert_eq!(upload_heritage(&a, &mut loc, T1 + 12), 0);
 
+    // b 库非空，第一次见到的 a 是待确认（`truth/trust.rs`），a 代传的承袭段要等 b 确认 a 之后才收（D20）。
+    round(&b, &mut loc, "loc", T1 + 19, Opts::default());
+    assert_eq!(status_row(&b, &a.device())["trust"], json!("pending"));
+    cmd(
+        b.h,
+        "trust",
+        T1 + 19,
+        json!({"device": a.device(), "trust": true}),
+        &[],
+    );
     let (ing, up) = takeover_round(&b, &mut loc, T1 + 20);
     assert_eq!(ing.expect("b scans")["recorded"], json!(true));
     assert_eq!(up, 0, "b sees a's heritage segments and uploads nothing");

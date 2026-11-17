@@ -110,6 +110,16 @@ void main() {
           ).single['c']!
           as int;
 
+  /// 本机日志里空洞的条数（新代真相表 `op_voids`，每行是一段连续空洞、`n` 条）。
+  Future<int> opsVoided(SrsDbStore s) async =>
+      s.core
+              .debugSelectRaw(
+                'SELECT COALESCE(SUM(n), 0) AS c FROM op_voids',
+                <Object?>[],
+              )
+              .single['c']!
+          as int;
+
   /// 被彻底清除的笔记：不可见、内容（字段 / 标签的修改记录与日志载荷）没了，只剩删除寄存器；复习日志保留。
   Future<void> expectPurged(
     SrsDbStore s,
@@ -208,10 +218,14 @@ void main() {
     );
     expect(r.notes, 1);
     expect(r.mediaFiles, 1);
+    // 新代 `status` 的 `ops` 不算空洞（native/fushi_fsrs/src/store/gen4/cmd/writes_local.rs `status`）：清除在同一个
+    // 事务里把带内容的操作落成空洞，条数要扣掉它们。
+    final int voided = await opsVoided(a);
+    expect(voided, greaterThan(0), reason: '带内容的操作落成了空洞');
     expect(
       (await a.sync2Status())['ops'],
-      opsBefore + 2,
-      reason: '一条删除 + 一条 Purge（未删的笔记先删除再清除）',
+      opsBefore + 2 - voided,
+      reason: '一条删除 + 一条 Purge（未删的笔记先删除再清除），被清的落成空洞',
     );
     await expectPurged(a, gone, goneCard, 'secret-snow');
     expect(await logCount(a, goneCard), 1, reason: '统计里过去的复习不能因为清除而消失');

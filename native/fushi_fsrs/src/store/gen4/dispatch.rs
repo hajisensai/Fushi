@@ -125,6 +125,8 @@ pub fn wiring(op: &str) -> Option<Wiring> {
         | "canonical_ids"
         | "key_evidence"
         | "divergence" => Wired,
+        // 彻底清除的字节层收尾状态（`scrub.rs`；新代才有，协议 3 没有字节层收尾）
+        "scrub_state" => Wired,
         // profile 数据（G9-5，`cmd/profile_data.rs`）：清除、无主扫描、链接记的集合、迁移带过来的半截并入的收尾。
         "profile_uids"
         | "orphan_sweep_done"
@@ -485,6 +487,14 @@ fn run(
             let after = int_of(req, "aliveAfter")?;
             c.read(|t| snapshot(t, |t| cmd::media_gc::live_refs_json(t, profile, after)))?
         }
+        // `{due, error}`：`due` = 有清除提交了、磁盘上的旧字节还没抹干净；`error` = 上一次收尾出错的原因（空间不够等；
+        // 没有 = null），UI 据此提示用户（`scrub.rs`「没做成怎么办」）。整个库一份，与 profile 无关。
+        "scrub_state" => c.read(|t| {
+            snapshot(t, |t| {
+                let (due, error) = super::scrub::state(t.conn())?;
+                Ok(json!({"due": due, "error": error}))
+            })
+        })?,
         "collection_info" => read_col(c, profile, cmd::identity::collection_info)?,
         "canonical_ids" => read_col(c, profile, |t, col| {
             cmd::identity::canonical_ids(t, col, req)

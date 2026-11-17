@@ -196,6 +196,7 @@ pub fn oldroot_ingest(
     // 旧根是这个位置目录的协议 3 集合（`Receiver::legacy` 收段同一个判据）。
     let source = collection_of(&dir);
     let mut errors: Vec<String> = Vec::new();
+    let mut trust_moved = false;
     for b in &blobs[..nheads] {
         let h = match Head3::decode(b) {
             Ok(h) => h,
@@ -216,11 +217,19 @@ pub fn oldroot_ingest(
             head_gen: None,
             first_seen: Some(now),
         };
-        if t.set_peer(col, &peer)? == PeerPut::KeyMismatch {
-            errors.push(format!(
+        match t.set_peer(col, &peer)? {
+            PeerPut::KeyMismatch => errors.push(format!(
                 "v3 head of {}: signed by another key than the one on record (impostor)",
                 h.device
-            ));
+            )),
+            // 第一次见到这个旧作者：首见信任判定（`truth/trust.rs`；协议 3 head 没有 `prev`）。库非空 = 待确认，这一批
+            // 随后落进来的它的删除与清除扣住。
+            PeerPut::Inserted => {
+                trust_moved |= t
+                    .note_new_peer(col, &h.device, &h.public, None, h.at_ms)?
+                    .wrote();
+            }
+            PeerPut::Updated | PeerPut::Same => {}
         }
     }
     let listing = if req.get("settle") == Some(&Value::Bool(true)) {
@@ -230,6 +239,12 @@ pub fn oldroot_ingest(
     };
     let mut rx = Receiver::open(t, col, Settle::Incremental)?.with_budget(max_items);
     let mut rest = 0usize;
+    if trust_moved {
+        // 写了信任行：收尾时把扣住的删除与清除重判（写下待确认的作者在本机还没有日志，`truth/trust.rs` 文件头第 1 条，
+        // 这里是兜底，保证增量 == 重建）。在这个不变量下它不改变结果，所以没有测试能证伪它（复核变异：删掉这一行
+        // 相关测试全绿）；留着是为了不变量哪天被打破时派生层不悄悄偏离重建。
+        rx.trust_changed();
+    }
     for (path, b) in paths.iter().zip(&blobs[nheads..]) {
         if rx.exhausted() {
             break;

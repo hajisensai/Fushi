@@ -28,7 +28,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 
 use rusqlite::types::Value as Sv;
@@ -242,6 +242,9 @@ pub struct G4Core {
     pub(super) refresh: Mutex<super::refresh::Refresh>,
     /// 保留副本 `srs.db` 在、但不是 SQLite 文件（`files::Opened::retained_copy_unreadable`）。
     pub retained_copy_unreadable: bool,
+    /// 彻底清除的字节层收尾被读者挡住了（`scrub.rs`）：之后的写命令提交之后不等地再试。出错不置位（原因记在库里，
+    /// 下一次打开 / 下一次清除再试）。
+    scrub_pending: AtomicBool,
     _live: Live,
 }
 
@@ -260,6 +263,7 @@ impl G4Core {
             st: Mutex::new(Pool::default()),
             returned: Condvar::new(),
         };
+        let mut scrub_due = false;
         let writer = match mode {
             OpenMode::Primary => {
                 opened
@@ -269,6 +273,15 @@ impl G4Core {
                 // 开一条读连接放进池里：读得了才算打开成功（也让诊断计数里有连接）。
                 let first = readers.open_one()?;
                 readers.lock().idle.push(first);
+                // 上次清除提交之后没来得及收尾（进程被杀、检查点被挡、出过错）：现在做（`scrub.rs`）。被读者挡住 = 之后
+                // 的写命令不等地再试；出错 = 原因已由 `scrub` 记进库（`ERROR_KEY`，读命令 `scrub_state` 报给 UI），
+                // 不逐条写命令重试，下一次打开或下一次清除再试。打开本身不因收尾没做成而失败。
+                if super::scrub::due(&opened.conn)? {
+                    scrub_due = matches!(
+                        super::scrub::scrub(&opened.conn, super::scrub::Wait::Yes),
+                        Ok(false)
+                    );
+                }
                 Some(opened.conn)
             }
             OpenMode::Secondary => {
@@ -292,6 +305,7 @@ impl G4Core {
             bulk: Mutex::new(Bulk::default()),
             refresh: Mutex::new(super::refresh::Refresh::new()),
             retained_copy_unreadable: opened.retained_copy_unreadable,
+            scrub_pending: AtomicBool::new(scrub_due),
             _live: Live::new(),
         })
     }
@@ -368,13 +382,28 @@ impl G4Core {
     fn write_tx<T>(&self, f: impl FnOnce(&Truth<'_>) -> Result<T, String>) -> Result<T, String> {
         let w = self.writer()?;
         let t = Truth::new(&w);
-        t.tx_immediate(|t| {
+        let v = t.tx_immediate(|t| {
             let v = f(t)?;
             // 测试注入：提交之前 panic（panic_recovery_tests.rs，同协议 3 `in_savepoint` 的注入点）。
             #[cfg(test)]
             crate::store::sync2::test_panic::hit(crate::store::sync2::test_panic::BEFORE_RELEASE);
             Ok(v)
-        })
+        })?;
+        // 提交了落空洞的写（或之前被读者挡住）：字节层收尾（`scrub.rs`「没做成怎么办」），在事务外、还拿着写锁。命令
+        // 本身已经提交，收尾没做成不改它的结果，「欠一次收尾」记在库里。刚落了空洞的按忙等等读者；之前被挡、这次顺手
+        // 再试的不等。被挡 = 之后的写命令再试；出错 = 原因已由 `scrub` 记进库（读命令 `scrub_state`），不逐条写命令
+        // 重试（每条都重做一次注定失败的整库整理），下一次打开或下一次清除再试。
+        let voided = t.take_voided();
+        if voided || self.scrub_pending.load(Ordering::SeqCst) {
+            let wait = if voided {
+                super::scrub::Wait::Yes
+            } else {
+                super::scrub::Wait::No
+            };
+            let blocked = matches!(super::scrub::scrub(&w, wait), Ok(false));
+            self.scrub_pending.store(blocked, Ordering::SeqCst);
+        }
+        Ok(v)
     }
 
     /// 关闭（幂等）：读连接池（等借出的放回）→ 写连接。之后的命令报 `CLOSED`。
