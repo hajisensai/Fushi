@@ -2868,7 +2868,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  group('BUG-4791 · 首页不在用户眼前时不在后台重载', () {
+  group('BUG-4798 · 首页不在用户眼前时不在后台重载', () {
     /// 播放页 / 阅读器压上来、转场走完：首页所在路由被完全盖住。
     Future<NavigatorState> coverWithOpaquePage(WidgetTester tester) async {
       final NavigatorState navigator = tester.state<NavigatorState>(

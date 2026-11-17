@@ -1,4 +1,4 @@
-// BUG-4791：从首页「继续」点开视频后，被播放页盖住的首页不得在播放期间重载。
+// BUG-4798：从首页「继续」点开视频后，被播放页盖住的首页不得在播放期间重载。
 //
 // 真 app、真 media_kit 播放、真学习时钟：首页 tab 当前时打开一段带字幕的视频，边播
 // 边数——
@@ -255,7 +255,7 @@ void main() {
       greaterThanOrEqualTo(5),
       reason: '播放期间断点每秒写一次首页监听的 video_books，否则本测试没在测东西',
     );
-    expect(playing.dashboardBuilds, 0, reason: '首页被播放页盖住期间不得重载 / 重建（BUG-4791）');
+    expect(playing.dashboardBuilds, 0, reason: '首页被播放页盖住期间不得重载 / 重建（BUG-4798）');
     expect(videoClosed, isTrue, reason: '播放页应已关闭');
     expect(
       after.dashboardBuilds,
