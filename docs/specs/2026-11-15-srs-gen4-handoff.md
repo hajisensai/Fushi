@@ -2241,8 +2241,8 @@ Rust `SCHEMA` 没升（没加表 / 索引，分到的 40025 没用）；ABI 不�
 - **首次信任**（内核 `cmd/sync.rs`）：`plan` 里 `Truth::set_peer` 回 `PeerPut::Inserted`（第一次见到这台设备的公钥）时调新
   `note_new_peer`：本机集合已有用户数据（新 `reads::collection_has_user_data`，与 `has_user_data` 读同一判据，内置默认牌组 / 笔记类型
   按规范 ID 不算）就设 `TRUST_PENDING`；库还空（全新设备第一次同步、服务端刚开始提供）直接可信。`Updated` / `Same` 不动信任，
-  冒名（`KeyMismatch`）照旧报错跳过。迁移带来的（`carry.rs`）、导入随备份记的（`import.rs`）、旧根上的协议 3 设备
-  （`sync_oldroot.rs`，承袭段按上传者信任收，D20）不经这里。没加表，`SCHEMA` 不变。
+  冒名（`KeyMismatch`）照旧报错跳过。迁移带来的（`carry.rs`）、导入随备份记的（`import.rs`）不经这里。没加表，`SCHEMA` 不变。
+  （复核后改：身份承接、旧根设备也过首次信任、判空算等待缓冲，见下「复核修复」。）
 
 ### 每 profile 一个库目录（评估，本块不做）
 
@@ -2294,3 +2294,46 @@ Rust `SCHEMA` 没升（没加表 / 索引，分到的 40025 没用）；ABI 不�
   `v4/devices/<dev>/profile.json` 现在没有写者（`srsPublishProfileInfo` 仍写 `v3/devices`），读者跟着写者一起改，归 G9-5 续
   （§21「没做」的关联流程改走 `v4/meta.json`）。新代全新集合在 WebUI 里因此只显示目录名、没有名字与笔记数估计。
 - D32「服务端保留副本 14 天自动删 + ctl 提前删」仍没做（§24 已记，要内核删保留副本的全局命令）。
+
+### 复核修复（2026-11-17，同分支）
+
+- **首次信任按签名钥匙承接身份**（blocker）。原实现只按设备 ID 判「第一次见到」，而迁移强制换新设备 ID、钥匙沿用（`dryrun.rs`
+  `new_self`、`carry.rs`），`rotate` 同样换 ID 沿用钥匙：每个多设备用户升级后，自家设备在有数据的对端上全部变成待确认，无头服务端
+  上所有客户端也都待确认，删除被扣、承袭段被 Deferred、中继不转发。现 `note_new_peer(t, col, device, public, prev, seen_at)`：
+  1. 钥匙是本机自己的（本机旧身份、协议 3 时期的本机）→ 可信；
+  2. 钥匙与已在册的别的设备相同（新 `Truth::peers_with_key`，`peers` 按集合扫，几行）→ 沿用前身的信任：head 自报的 `prev` 在这些
+     设备里就取它的，否则取其中最不受信的（只往待确认偏）；
+  3. 否则按原判据（库有数据 → 待确认）。
+  **定案**：只认钥匙、不单凭自报的 `prev` 承接——`prev` 是对端随便写的字段，钥匙要签名才有（`Head4::decode` / 协议 3
+  `Head::decode` 都验签）；同钥匙就是同一台设备，不必再核 `prev` 的链。复核建议里的「或 prev 的链已核对过」这一支没做：钥匙不同时
+  核 `prev.chain` 只能证明对端知道旧链值（链值写在公开的 head 上），证明不了身份。
+- **旧根上的协议 3 设备也过首次信任**（major）。`oldroot_ingest` 原来对 `set_peer` 的 `Inserted` 不判信任，`Receiver::legacy` 又不看
+  信任，任何能写同步位置的人在 `v3/devices/<新ID>/` 放自签 head + 段，它的删除 / 清除就按可信执行，比协议 3 还宽。原注释「旧根设备
+  按上传者信任收（D20）」不成立：D20 管的是新代设备上传的 `hrt-` 承袭段，`oldroot_ingest` 是本机直接读 v3 段。现 `Inserted` 时同样调
+  `note_new_peer`（`prev` 为空、`since` 取 v3 head 的 `at_ms`）；迁移带来的 v3 设备回 `Same` 不受影响，本机自己的协议 3 旧身份按
+  钥匙认成本机。
+- **判空算上等待缓冲**（minor，推测缺口）：`has_user_data` 新增 `has_buffered`，集合内各设备主键区间在 `op_wait` / `op_pending` 有行就算
+  「有」（协议 3 BUG-4478 同类：已收下、未投递的也是要应用的数据）。同一判据也被 `SrsDbStore.hasUserData`（profile 关联）用，
+  只往「有」偏，不会丢数据。
+- **`since` 改用 head 的写出时刻**（minor）：与协议 3 `note_new_device` 的 `seen_at` 同口径（同步页「首次出现」）。值来自对端，只用于显示。
+- **越界说明**（nit）：规划 §2.3 把 `packages/fushi_server/lib/src/backup/server_backup.dart` 划给 G11-4 独改。本块为「迁移进行中
+  备份要拒绝或等待」改了它一处（把换代过程文件 `srs4.db-migrating` / `srs4.db-creating` / `srs.db-gen4-prepare` 及其 `-wal/-shm/-journal`
+  排除出包，文件名与 `files.rs` 的 `GEN4_TEMP` / `GEN4_CREATING` / `PREPARE_COPY` 已核对一致），因为任务书把这件事交给了 G10-4、
+  而只靠 `ServerSrs` 占位挡不住「被杀后残留的过程文件被打进包」。**G11-4 合并时注意这处冲突**，保留排除表即可。
+- 复核说两条旧测试补的显式 `trust` 「盖住了回归」：核过，`a_device_on_two_locations_relays_between_them` 的 c、
+  `old_root_takeover_reaches_migrated_and_new_devices_alike` 的 a 都是全新安装、与对端不同钥匙的另一台设备，在有数据的库上待确认是
+  正确口径，显式确认保留；真正被盖住的「迁移 / 换身份后的自家设备」由下面新测试覆盖。
+
+测试（Rust，经 C ABI）：
+
+- `sync_tests.rs` `a_new_identity_on_the_same_key_inherits_trust`：a 连续三次 `rotate`，b 上新 ID 依次沿用前身的待确认 / 拒绝 /
+  受信（最后一次同钥匙旧身份里有待确认与拒绝的，按自报 `prev` 取受信的）；陌生钥匙自报 `prev` 指向受信设备仍待确认，`since` 是给的
+  写出时刻。
+- `sync_tests.rs` `two_migrated_devices_keep_trusting_each_other`：两台协议 3 设备互信后各自真迁移（`gen4_migrate_run`，新 ID），在新根
+  上互相同步：彼此仍可信、写入互相收到。辅助 `dispatch_tests.rs` 抽出 `migrate_legacy`（`migrated_prepared` 改为调它）。
+- `sync_complete_tests.rs` `an_unknown_old_root_device_is_pending_on_a_library_with_data`：有数据的库捡到陌生 OLD（含一条清除）→
+  待确认、`heldPurges` = 1，确认后可信；全新库捡同一个旧根 → 可信。辅助 `old_root` 抽出 `old_root_ops`（自带操作）。
+- `receive.rs` `ops_still_waiting_count_as_user_data`：只有等待缓冲里的操作时 `collection_has_user_data` 为真。
+- 变异实测：承接去掉（`same_key` 恒空）→ 前两条红；`oldroot_ingest` 的 `note_new_peer` 换空臂 → 旧根那条红；去掉 `has_buffered` →
+  等待缓冲那条红；`plan` 传 `now` 代替 `h.at_ms` → `first_sight_of_a_device_is_pending_only_when_the_library_has_data`（补了
+  `since` = 对端写 head 的时刻的断言）红；复原后工作区干净、相关 8 条全绿，`cargo test --profile quick --lib -j 4` 全量 1320 过。

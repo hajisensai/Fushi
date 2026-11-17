@@ -464,6 +464,12 @@ fn first_sight_of_a_device_is_pending_only_when_the_library_has_data() {
         Some(TRUST_PENDING),
         "a library with data holds a device it has never seen"
     );
+    // 「首次出现」取 b 写 head 的时刻（T1 + 11），不是 a 读到它的时刻（T1 + 12）。
+    let bd = Id::parse(&b.device()).unwrap();
+    assert_eq!(
+        a.direct(|t, col| t.trust_entry(col, &bd)),
+        Some((TRUST_PENDING, T1 + 11))
+    );
     let (v, _) = cmd(
         a.h,
         "trust",
