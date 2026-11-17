@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-17T05:55:22Z",
+ "generatedAt": "2026-11-17T05:57:46Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "91a2fbd5ca8c82c41546f7d03144098bff5fea93",
-  "seq": 28558
+  "sha": "598403fb703327e8c81dcc633c7379693d308b37",
+  "seq": 28572
  },
  "builds": [
   {
@@ -127,9 +127,10 @@
   }
  ],
  "pending": {
-  "headSha": "91a2fbd5ca8c82c41546f7d03144098bff5fea93",
-  "headSeq": 28558,
+  "headSha": "598403fb703327e8c81dcc633c7379693d308b37",
+  "headSeq": 28572,
   "prs": [
+   3657,
    3646,
    3653,
    3651,
@@ -149,19 +150,19 @@
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44027087370"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44027661798"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44027435105"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44027662086"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44027435105"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44027662086"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44027435105"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44027662086"
    }
   }
  },
@@ -335,6 +336,15 @@
    "mergedAt": "2026-11-17T05:44:23Z",
    "additions": 1387,
    "deletions": 48,
+   "labels": []
+  },
+  "3657": {
+   "number": 3657,
+   "title": "fix(video): 视频指纹在途去重 + host 担保不了字节时不再当老 host 放行 + 回跳去向行为测试",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-17T05:57:09Z",
+   "additions": 648,
+   "deletions": 86,
    "labels": []
   },
   "3658": {
