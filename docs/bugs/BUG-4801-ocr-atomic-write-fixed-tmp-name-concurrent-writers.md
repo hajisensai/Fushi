@@ -30,6 +30,14 @@
     同 isolate 12 个写者 × 5 轮全部成功、目标目录里只有目标本身；四个 isolate 并发写同一目标、
     同时各写各的别的目标，全部成功；锁文件在系统临时目录、始终 0 字节，替换失败的写者不把锁
     带走；锁文件被删后下一次写入照常。把互斥拿掉这两个文件在 Windows 上 5 条变红。
+  - 提交 `894f5205934` 再补 6 条。并发压测文件 3 条（各平台都跑）：同 isolate 一个读者循环读、
+    一个写者写 300 次；两个别的 isolate 里的读者循环读、这边写 300 次；一个
+    `MangaOcrFilePageCache` 循环读、另一个对同一页写 200 次——写入全部成功、读到的都是完整
+    内容。Windows 专属文件 2 条：一个目标的锁被别人拿着时别的目标照常写完、放锁后被卡的也
+    写完；被卡住的目标多于并发名额时别的文件操作照常、放锁后全部写完。
+    `fushi/test/media/manga/manga_ocr_pipeline_wiring_guard_test.dart` 1 条源码守卫：Lens
+    逐页缓存的读走 `readAtomicallyWrittenTextFile`。把 Windows 上的锁拿掉，引擎两个文件 9 条
+    变红（含 3 条读者用例）。
 - **Windows 上两个写者同时替换同一目标**（提交 `4e1d78fa2f8` 修掉）：两个 rename 在同一瞬间
   替换同一个目标时，`MoveFileEx` 让其中一个以「拒绝访问」（errno 5）失败——本机实测同 isolate
   12 个并发写者 5 轮 31 次失败、4 个 isolate 各 100 次写入各 14～17 次失败、4 个进程各 400 次
@@ -44,8 +52,13 @@
     （`atomic_text_file.dart` 的 `_replaceTarget`）。锁是系统临时目录里一个固定锁文件
     （`fushi-atomic-write.lock`）上、按目标规范化路径的 FNV-1a 哈希取的一个字节的区间锁
     （`RandomAccessFile.lock` 阻塞独占 = `LockFileEx`）：按句柄算，同进程不同 isolate、不同
-    进程都互斥，不同目标互不相干。本 isolate 内先在一条队列上排队，任何时刻最多一个锁请求
-    交给 IO 线程去等。临时文件照旧在锁外写，锁里只有 rename。没有重试、没有延迟。
+    进程都互斥，不同目标互不相干。临时文件照旧在锁外写，锁里只有 rename。没有重试、没有延迟。
+  - 本 isolate 内的排队（提交 `894f5205934` 改）：原先是全局一条队列，一个目标的 rename 卡住
+    （网络盘超时）时本 isolate 里别的目标的写入全排在它后面。现在按锁字节偏移各排各的
+    （`_windowsTargetQueues`），交给 IO 线程去阻塞等锁的请求等的一定是别的 isolate / 进程里
+    的持有者；同时处在锁流程里的请求不超过 8 个（`kAtomicWriteMaxConcurrentLockSections`），
+    多出来的在 Dart 里等——`dart:io` 每个 isolate 的 IO 服务口有限，阻塞等锁的请求占满它们
+    之后持锁者自己的 rename / 解锁就排不上了。
   - 原子性不变（仍是写临时文件再 rename 覆盖）；持锁者崩溃或被杀时句柄随进程关闭、系统自动
     放锁；锁文件始终 0 字节、整个系统一份、不在目标目录里，目标旁边不多任何文件。
   - POSIX（macOS / Linux / Android / iOS）不加锁：那里的 rename 原子且可并发，本来就全部成功；
@@ -55,12 +68,25 @@
   - **真机复测未做，待补**：Windows 桌面并发 ≥2 时整卷识别与阅读器页级识别撞同一页，没在真 app
     里验过；跨进程只用四个 `dart` 进程手工量过（加锁 0 次失败，不加锁各 23～39 次），没有
     自动化测试。
-  - **还剩一种「拒绝访问」（没修）**：Windows 上有人正把目标打开着读时，rename 同样失败——
-    `dart:io` 打开文件不带 `FILE_SHARE_DELETE`。本机实测一个读者循环读、一个写者写 300 次，
-    加不加上面的锁都有 50～77 次写入失败。读者不经过这个 helper。要撞上得是「同一页已经有人
-    写过、另一个写者正要再写、同一毫秒又有人在读它」。修法是让读也取同一个字节的共享锁，要改
-    `MangaOcrFilePageCache.read`（`manga_ocr_folder_job.dart`）与 Lens 缓存的读——这两个文件
-    登记在别的在途分支名下，本条没动。
+  - **读者占用的「拒绝访问」**（提交 `894f5205934` 修掉）：Windows 上有人正把目标打开着读时，
+    rename 同样失败——`dart:io` 打开文件不带 `FILE_SHARE_DELETE`。前一个执行者本机实测一个读者
+    循环读、一个写者写 300 次，只有写者互斥时有 50～77 次写入失败。撞上的条件是「同一页已经
+    有人写过、另一个写者正要再写、同一毫秒又有人在读它」（整卷任务或 Lens 读某页缓存做续传
+    校验的同一刻，页级会话写完同一页）。
+    - 做法：新增 `readAtomicallyWrittenTextFile`，Windows 上读之前取与写者同一个字节的**共享**
+      锁（`FileLock.blockingShared`），读者之间互不排斥，写者拿着独占锁做 rename 时没有读者
+      开着目标；POSIX 上就是 `readAsString`。两处逐页缓存的读改走它：
+      `MangaOcrFilePageCache.read`（`manga_ocr_folder_job.dart`，各改一行）与 Lens / 系统 OCR
+      缓存的 `read`（`google_lens_ocr_service.dart`）。
+    - 没覆盖：不走这个 helper 直接读同一批文件的读者仍会让同一刻的写入失败。逐页缓存只有上面
+      两处读者；另外三类经 `writeTextFileAtomically` 写的文件（Lens 的 `manifest.json`、整卷
+      中间产物、已缓存整卷产出 `manga.json`）的读者很多（阅读器、导入、互联主机取结果），本条
+      没逐个改——它们每卷只写一两次，不是逐页并发写的对象。杀软 / 索引器这类外部读者也管不到。
+  - **Windows 上的原子写与配套的读依赖 `%TEMP%` 可用**（审查提出，接受、不改）：锁文件在系统
+    临时目录里，`TEMP` 指向不存在或不可写的目录时锁文件打不开，写入抛 `FileSystemException`、
+    读当缓存未命中，即使没有并发。没把锁文件挪进 app 数据根：写者分散在各 isolate 与别的进程
+    （`fushi_server` 的 `ocr` 命令）里，要每个入口都注入同一个目录，注入不一致时两边各锁各的、
+    互斥悄悄失效，比现在的「明确报错」更糟。
   - 路径写法不同但指向同一个文件（junction / 符号链接 / 8.3 短名）的两个写者算不到同一个字节
     上，互斥不了；两个进程的系统临时目录不同（`TEMP` 不一样）时也互斥不了，退回修之前的行为。
   - 进程在写入中途被杀会留下一个 `.tmp`（固定名时代会被下一次写入覆盖，现在不会）。

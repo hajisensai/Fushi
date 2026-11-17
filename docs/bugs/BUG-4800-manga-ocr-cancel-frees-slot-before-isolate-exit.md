@@ -51,8 +51,13 @@
     互联主机 `cancelAndCleanup` 等执行体停下之后才删页图、才放行串行队列里的下一个任务。
     同文件「disposeAll」组 5 条（提交 `4e1d78fa2f8`）：执行体没停就返回、排队中的任务不再启动、
     完成信号等执行体停下才补；停机途中别的路径增删任务不抛并发修改；途中的 `cancelAndCleanup`
-    仍等执行体停下才删页图；执行体收尾抛错时完成信号照补；真 `FushiSyncServer.stop()` 不被还没
-    停下的执行体挂住。
+    不抢在执行体停下之前删页图；执行体收尾抛错时完成信号照补；真 `FushiSyncServer.stop()` 不被
+    还没停下的执行体挂住。
+    提交 `894f5205934` 再补 4 条并改 1 条：`start` 正在等模型状态时任务被取消 / 遇上停机，回来
+    回 409 且不起跑（各 1 条）；两个 `start` 同时在等模型状态只起一个执行体；途中的
+    `cancelAndCleanup` 跨「停机后新建管理器」不删新管理器同卷任务刚传的页图；原「途中的
+    `cancelAndCleanup`」一条的结尾断言改成「任务已被停机摘出表，执行体停下后页图留着」。
+    把 `start` 的复查与 `cancelAndCleanup` 的出表判断拿掉，这里 4 条变红。
 - **备注**：
   - **真机复测未做，待补**（Android / iOS，本地模型）：整卷识别中点暂停后立刻点继续、以及取消后
     立刻对另一本点识别，量 ① 取消到旧 isolate 退出的时间（`manga_ocr_volume_job` isolate 消失）
@@ -68,16 +73,28 @@
     `stop()` 要等 isolate 跑完当前页，原生推理卡死时不完成；等待期间别的路径改 `_jobs` 还会抛
     `ConcurrentModificationError`。现在它取任务快照、清表、逐个发取消就返回，中间没有 await。
     收尾仍排在各自执行体停下之后：串行队列的完成信号到那时才补（管理器仍被引用时，后面的任务
-    不会在旧执行体还占着模型时起跑），途中的 `cancelAndCleanup` 等的是同一个取消 Future，删页图
-    也仍在其后；执行体收尾抛的错记日志。顺带改掉一处：停机时还在排队的任务原先保持 `running`，
+    不会在旧执行体还占着模型时起跑），途中的 `cancelAndCleanup` 等的是同一个取消 Future（它回来
+    之后删不删页图见下一条）；执行体收尾抛的错记日志。顺带改掉一处：停机时还在排队的任务原先保持 `running`，
     轮到时会在停机之后起一个 isolate，现在标成已取消。要动任务根目录的调用方可等
     `whenExecutorsStopped`（目前没有这样的调用方，停机不删目录）。
   - 其他 await 取消的调用方核对过：`fushi_server` 的 `ocr` 命令是 `await for` 读到流结束，循环体
     不提前退出，走不到取消；向导、阅读器、管理页对 OCR 订阅的取消都是 `unawaited`。只有互联
     主机这两处在等。
-  - 没改：`MangaOcrHostJobManager.start()` 在 `await service.modelStatus()` 期间遇上停机，回来后
-    仍会把任务排进队列并起跑（停机前就有，一次模型状态查询的窗口）；app 侧每次开互联新建管理器
-    与服务，「关互联后立刻再开」时旧 isolate 可能还在收尾当前页，新管理器的队列管不到它。
+  - **`disposeAll` 不再等之后跟着修的三处**（提交 `894f5205934`，都在 `fushi_manga_ocr_host.dart`）：
+    - `start()` 在 `await service.modelStatus()` 期间任务被取消或遇上停机，回来后原先照样把状态
+      覆写成 `running` 并排进队列——出了表的任务起了 isolate，停机后还在跑且没人能取消。现在
+      await 之后复查：任务已是终态或已不在表里就回 `(409, 'bad_state')`。
+    - 同一个窗口里两个 `start` 都在等模型状态时，原先两个都排进队列，同一个任务先后起两个
+      执行体。现在后回来的那个看到任务已是 `running` 就按幂等返回。
+    - 途中的 `cancelAndCleanup` 跨停机：`disposeAll` 不等之后，客户端的 DELETE 还在等执行体
+      停下时用户可以关互联再开；app 每次开互联新建一个管理器（`fushi_server_controller.dart`），
+      同卷的新任务落回同一个 `vol_<slug>` 并重新上传，旧执行体停下后旧的 `cancelAndCleanup`
+      查的是旧管理器的空表，会把新任务的页图删掉。现在它等完之后发现任务已被 `disposeAll`
+      摘出表就不删页图，留给孤儿清扫（与停机时别的任务一样）。
+  - 没改：app 侧每次开互联新建管理器与服务，「关互联后立刻再开」时旧 isolate 可能还在收尾
+    当前页，新管理器的队列管不到它，这段时间新任务起跑就是两套模型同时在内存。要让新管理器
+    的队列接在旧管理器的 `whenExecutorsStopped` 后面，得改 `fushi_server_controller.dart`
+    （登记在别的在途分支名下），本条没动。headless 服务端复用同一个管理器，没有这个窗口。
   - 没动：Lens / 系统 OCR / 外部 mokuro / 配对主机的事件流也是 `async*` + `await for`，取消同样
     要等到下一个事件才生效（Lens 一页一次 HTTP、系统 OCR 一页一次平台调用，晚的是「当前这一页
     之后才停」；外部 mokuro 的 kill 要等它下一行输出）。它们不占模型内存，不在本条范围，另记。
