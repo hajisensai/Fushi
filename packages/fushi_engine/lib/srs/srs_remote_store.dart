@@ -25,6 +25,8 @@ import 'package:fushi_anki/fushi_anki_core.dart'
     show FushiCardItem, kFushiCardDefaultBackItems, kFushiCardDefaultFrontItems;
 import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
 import 'package:fushi_engine/srs/srs_builtin.dart';
+import 'package:fushi_engine/srs/srs_canonical_ids.dart'
+    show srsCanonicalIdIn, srsCanonicalIdMap;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_edit_history.dart';
 import 'package:fushi_engine/srs/srs_entity_views.dart';
@@ -34,6 +36,7 @@ import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
 import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
 import 'package:fushi_srs/fushi_srs.dart';
+import 'package:meta/meta.dart' show visibleForTesting;
 
 /// host 在 `GET /api/capabilities` 声明的能力位。
 const String kSrsRemoteStoreCapability = 'srsRemoteStoreV1';
@@ -1058,7 +1061,7 @@ SrsEntityKind srsRemoteEntityKind(Object? wire) {
   return k;
 }
 
-/// 主机替远程客户端发出的内核命令（经 [_kernel]）只能是这些：只读的实体视图 / 归一 / 修改历史，加浏览会话命令
+/// 主机替远程客户端发出的内核命令（经 [srsRemoteKernelCommand]）只能是这些：只读的实体视图 / 归一 / 修改历史，加浏览会话命令
 /// （[SrsDbStore.kSrsBrowseOps]，也只读）。身份（`identity` / `collection_*` / `binding_set`）、导入导出、清除
 /// （`purge` / `profile_purge`）、同步一轮、加解密（`seal_file` / `open_file` 按请求给的路径读写主机文件）一律不在内。
 const Set<String> kSrsRemoteKernelOps = <String>{
@@ -1068,8 +1071,13 @@ const Set<String> kSrsRemoteKernelOps = <String>{
   ...SrsDbStore.kSrsBrowseOps,
 };
 
-/// 替远程客户端发一条内核命令：不在 [kSrsRemoteKernelOps] 里的 400，不进 store。
-Future<SrsSync2Result> _kernel(SrsDbStore store, Map<String, Object?> request) {
+/// 替远程客户端发一条内核命令：不在 [kSrsRemoteKernelOps] 里的 400，不进 store。主机替远程发的内核命令只经这一处
+/// （`editHistory`、`browseCommand`）；`browseCommand` 自己再收窄到浏览会话命令。测试直接调它核对闸门本身。
+@visibleForTesting
+Future<SrsSync2Result> srsRemoteKernelCommand(
+  SrsDbStore store,
+  Map<String, Object?> request,
+) async {
   if (!kSrsRemoteKernelOps.contains(request['op'])) {
     throw const SrsRemoteStoreError(400, SrsRemoteStoreError.badRequest);
   }
@@ -1191,7 +1199,7 @@ class SrsRemoteStoreService {
   /// 设备：给了且在现实时区范围内（[srsRemoteDeviceOffset]）时这次调用按它算日界（每日上限、到期计数、作答日志
   /// 记下的偏移）；不给（旧客户端）或越界时按主机自己的偏移算，与旧协议一致。翻日时刻照旧取 profile 同步的那一份。
   ///
-  /// [collection]：客户端握手时看到的集合（信封的 `col`）。写操作带了而主机这份 profile 此刻绑定的集合不是它（期间
+  /// [collection]：客户端握手时看到的集合（信封的 `col`）。读写操作带了而主机这份 profile 此刻绑定的集合不是它（期间
   /// 并入 / 认领换了集合，客户端手里的 ID 与缓存都按旧集合）→ 409 [SrsRemoteStoreError.profileChanged]，客户端重新
   /// 握手，不把写入落到它没见过的集合上。
   ///
@@ -1215,7 +1223,9 @@ class SrsRemoteStoreService {
         const SrsRemoteStoreError(404, SrsRemoteStoreError.unknownOp),
       );
     }
-    if (!spec.write) return _run(op, spec, profile, args, offset, null);
+    // 读操作也核对集合：中间一次读看到换了集合就 409，客户端不会在读里悄悄换成新集合、再拿旧集合的 ID
+    // 落写（写带的 `col` 是握手时那一份，读不更新它）。
+    if (!spec.write) return _run(op, spec, profile, args, offset, collection);
     if (request == null ||
         request.isEmpty ||
         profile == null ||
@@ -1519,11 +1529,32 @@ class SrsRemoteStoreService {
                 ? null
                 : (kind: a.kind('entityKind'), id: entityId),
           );
-      final Map<String, Object?> edits = <String, Object?>{};
+      // 涉及的实体按类收齐，每类一次 entity_views 批量取（不按冲突逐个取整份视图）。
+      final Map<SrsEntityKind, Set<String>> byKind =
+          <SrsEntityKind, Set<String>>{};
       for (final (SrsEntityKind kind, String id, _) in all) {
-        final String k = '${kind.wire}/$id';
-        if (edits.containsKey(k)) continue;
-        edits[k] = await _editItemsOf(s, kind, id);
+        (byKind[kind] ??= <String>{}).add(id);
+      }
+      final Map<String, Object?> edits = <String, Object?>{};
+      for (final MapEntry<SrsEntityKind, Set<String>> e in byKind.entries) {
+        // 视图按规范 ID 回来（别名类只回一份）：冲突里的 ID 先归一，再按规范 ID 对回。
+        final Map<String, String> canonical = await srsCanonicalIdMap(
+          e.value,
+          s.canonicalIds,
+        );
+        final Map<String, SrsEntityView> got = <String, SrsEntityView>{
+          for (final SrsEntityView v in await s.entityViews(
+            e.key,
+            ids: canonical.values,
+          ))
+            v.id: v,
+        };
+        for (final String id in e.value) {
+          final SrsEntityView? v = got[srsCanonicalIdIn(canonical, id)];
+          edits['${e.key.wire}/$id'] = v == null
+              ? <Object?>[]
+              : SrsRemoteWire.editItems(srsEntityViewEdits(v));
+        }
       }
       return <String, Object?>{
         'items': <Object?>[
@@ -1558,11 +1589,12 @@ class SrsRemoteStoreService {
       };
     }),
     'editHistory': _Op(
-      (SrsDbStore s, _Args a) async => (await _kernel(s, <String, Object?>{
-        'op': 'history',
-        'kind': a.kind('kind').wire,
-        'entity': a.str('id'),
-      })).json,
+      (SrsDbStore s, _Args a) async =>
+          (await srsRemoteKernelCommand(s, <String, Object?>{
+            'op': 'history',
+            'kind': a.kind('kind').wire,
+            'entity': a.str('id'),
+          })).json,
     ),
     // 规范 ID（主机内核 `canonical_ids`，只读）：客户端的归一在这里做（规划 §1.8；交接 §14 第 5 条）。
     'canonicalIds': _Op((SrsDbStore s, _Args a) async {
@@ -1772,7 +1804,9 @@ class SrsRemoteStoreService {
       if (!SrsDbStore.kSrsBrowseOps.contains(request['op'])) {
         throw const SrsRemoteStoreError(400, SrsRemoteStoreError.badRequest);
       }
-      return SrsRemoteWire.sync2Result(await _kernel(s, request));
+      return SrsRemoteWire.sync2Result(
+        await srsRemoteKernelCommand(s, request),
+      );
     }),
   };
 

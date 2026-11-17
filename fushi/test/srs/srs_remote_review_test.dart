@@ -811,7 +811,12 @@ void main() {
       );
 
       final String deck = remote.defaultDeckId;
-      final String card = (await remote.studyState(deck))!.next!;
+      // 卡 ID 从主机库直接读（不经出卡队列：主机新 profile 的出卡队列归「ID 口径」模块，见交接说明），
+      // 这里卡住的是 V2 的读 → 作答 → 落日志链路。
+      final String hostNote = (await host.store.noteIdsOfType(
+        host.store.lapisNoteTypeId,
+      )).first;
+      final String card = (await host.store.cardsOfNote(hostNote)).first.id;
       final SrsCardDetail detail = (await remote.cardDetail(card))!;
       expect(
         detail.note.fields,
@@ -830,6 +835,91 @@ void main() {
         (Map<String, Object?> b) => b['op'] == 'answerAndStudy',
       );
       expect(answer['col'], host.store.sync2Collection);
+      // 握手之后的读也带握手时的集合（主机据此对读同样回 409，不让读悄悄换集合）。
+      expect(
+        host.bodies
+            .where((Map<String, Object?> b) => b['op'] != 'hello')
+            .map((Map<String, Object?> b) => b['col'])
+            .toSet(),
+        <Object?>{host.store.sync2Collection},
+      );
+    });
+
+    test('回包里的集合与握手时不同：报 profile_changed、作废缓存，不在读里悄悄换成新集合', () async {
+      final SrsRemoteStore remote = await host.remote();
+      final String col = host.store.sync2Collection!;
+      final Map<String, Object?> real = await host.service.call(
+        profile: host.store.profileUid,
+        op: 'deckSummaries',
+        args: const <String, Object?>{},
+      );
+      host.malformed['deckSummaries'] = <String, Object?>{
+        ...real,
+        'col': 'another-collection',
+      };
+      await expectLater(
+        remote.deckSummaries(),
+        throwsA(
+          isA<InterconnectHostError>()
+              .having(
+                (InterconnectHostError e) => e.message,
+                'message',
+                SrsRemoteStoreError.profileChanged,
+              )
+              .having(
+                (InterconnectHostError e) => e.statusCode,
+                'statusCode',
+                409,
+              ),
+        ),
+      );
+      // 之后的请求仍带握手时那一份集合（没有被那次读改掉），作答不会按别的集合落写。
+      host.malformed.clear();
+      await remote.deckSummaries();
+      expect(host.bodies.last['col'], col);
+    });
+
+    test('卡片详情里笔记视图没有身份记录：按不合契约报 bad_response，不当成卡不存在', () async {
+      final SrsRemoteStore remote = await host.remote();
+      final String hostNote = (await host.store.noteIdsOfType(
+        host.store.lapisNoteTypeId,
+      )).first;
+      final String card = (await host.store.cardsOfNote(hostNote)).first.id;
+      final Map<String, Object?> real = await host.service.call(
+        profile: host.store.profileUid,
+        op: 'cardDetail',
+        args: <String, Object?>{'card': card},
+      );
+      final Map<String, Object?> result = Map<String, Object?>.of(
+        real['result']! as Map<String, Object?>,
+      );
+      final String noteId =
+          (result['note']! as Map<String, Object?>)['id']! as String;
+      result['note'] = <String, Object?>{
+        'id': noteId,
+        'tag': 'x',
+        'v': jsonEncode(<String, Object?>{
+          'id': noteId,
+          'd': null,
+          'edits': <Object?>[],
+        }),
+      };
+      host.malformed['cardDetail'] = <String, Object?>{
+        ...real,
+        'result': result,
+      };
+      await expectLater(
+        remote.cardDetail(card),
+        throwsA(
+          isA<SrsRemoteBadResponse>()
+              .having((SrsRemoteBadResponse e) => e.op, 'op', 'cardDetail')
+              .having(
+                (SrsRemoteBadResponse e) => e.cause.path,
+                'path',
+                'cardDetail.note',
+              ),
+        ),
+      );
     });
 
     test('新客户端 → 旧主机（不认 V2 前缀，404 无机读码）：报 upgrade_required，不当成连不上', () async {

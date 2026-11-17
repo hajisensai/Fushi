@@ -57,7 +57,7 @@ class SrsRemoteHostClient extends InterconnectHostClient {
   int? get deviceOffsetMin => srsRemoteDeviceOffset(localOffsetMin());
 
   /// 一次调用（V2）；回包是整个信封（`result` 之外还有主机的集合、内置 ID、修订号、牌组树标签、时钟）。
-  /// [collection]：握手时看到的集合，写操作带上（主机期间换了集合就 409 `profile_changed`）。
+  /// [collection]：握手时看到的集合，握手之后的读写都带上（主机期间换了集合就 409 `profile_changed`）。
   ///
   /// 对端回 404 而没有机读码：它不认 V2 前缀，是只说 V1 的旧主机（新主机复习关着时回 503 `unavailable`），报成
   /// 426 [SrsRemoteStoreError.upgradeRequired]——界面提示「主机需要升级」，不当成连不上。
@@ -316,7 +316,8 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
   /// 渲染出卡面之后、交给页面之前把卡面引用的媒体拉进本机缓存（`[sound:]` 播放读本地文件）。
   final Future<void> Function(Set<String> names)? prefetchMedia;
 
-  /// 主机这份 profile 绑定的集合（信封的 `col`）；写操作带上它（[SrsRemoteHostClient.call]）。
+  /// 主机这份 profile 绑定的集合（信封的 `col`）；握手之后的读写都带上它（[SrsRemoteHostClient.call]），
+  /// 只在握手时取一次，之后回包里看到别的集合就报 profile_changed（[_absorb]）。
   String? _collection;
 
   /// 主机集合里根上内置实体的规范 ID（信封的 `ids`）；握手之后恒非空。
@@ -352,14 +353,21 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
   void _absorb(SrsRemoteEnvelope e) {
     final String? col = e.collection;
     if (col != null && col != _collection) {
-      // 主机这份 profile 换了集合（并入 / 认领）：按旧集合缓存的视图、ID、作答基准全部作废。
-      if (_collection != null) {
+      if (_collection == null) {
+        _collection = col;
+      } else {
+        // 主机这份 profile 换了集合（并入 / 认领）：按旧集合缓存的视图、ID、作答基准全部作废，并且不在这里悄悄
+        // 换成新集合——页面手里的卡 / 笔记 ID 都按旧集合，报 profile_changed 让上层重新握手；`_collection` 留着旧值，
+        // 之后的读写主机照样回 409，不会按新集合落写。
         _tree = null;
         _types.clear();
         _day = null;
         _bases.clear();
+        throw const InterconnectHostError(
+          SrsRemoteStoreError.profileChanged,
+          statusCode: 409,
+        );
       }
-      _collection = col;
     }
     _roots = e.roots ?? _roots;
     _revision = e.revision ?? _revision;
@@ -405,6 +413,7 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
       op,
       args: args ?? const <String, Object?>{},
       profile: profileUid,
+      collection: _collection,
     ),
     decode,
   );
@@ -721,10 +730,10 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
       final SrsRemoteCardDetail? d = SrsRemoteWire.cardDetailFrom(json);
       if (d == null) return null;
       _remember(d.card);
-      final SrsNoteView? note = SrsRemoteWire.notesFrom(<SrsEntityView>[
-        d.note,
-      ]).firstOrNull;
-      if (note == null) return null;
+      // 卡在、笔记视图却没有身份记录：主机回包自相矛盾，按不合契约报，不当成「卡不存在」。
+      final SrsNoteView note =
+          SrsRemoteWire.notesFrom(<SrsEntityView>[d.note]).firstOrNull ??
+          (throw const SrsRemoteWireError('cardDetail.note'));
       final List<SrsNoteTypeView> types = await _typesOf(<SrsRemoteTypeRef>[
         d.type,
       ]);

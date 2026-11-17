@@ -10,6 +10,7 @@ import 'dart:typed_data';
 
 import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
+import 'package:fushi_engine/srs/srs_builtin.dart' show srsLapisFieldId;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart'
     show SrsCardNativeFallback, SrsCardNativeFallbackCode;
@@ -17,6 +18,8 @@ import 'package:fushi_engine/srs/srs_entity_views.dart';
 import 'package:fushi_engine/srs/srs_remote_generation.dart';
 import 'package:fushi_engine/srs/srs_remote_store.dart';
 import 'package:fushi_engine/srs/srs_remote_store_routes.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:test/test.dart';
@@ -1136,6 +1139,166 @@ void main() {
       });
       expect(ok, 200);
       expect((await store.cardRow(cardId))!.flag, 6);
+    });
+
+    test('读操作带的集合与主机此刻的不同：同样 409 profile_changed（不让读悄悄换集合）', () async {
+      final (SrsDbStore store, SrsRemoteStoreService service, String deck) =
+          await _setUp();
+      for (final String op in <String>['deckSummaries', 'deckTree']) {
+        final (
+          int status,
+          Map<String, Object?> body,
+        ) = await _route(service, <String, Object?>{
+          'profile': _uid,
+          'col': 'another-collection',
+          'op': op,
+          'args': const <String, Object?>{},
+        });
+        expect(
+          (status, body['error']),
+          (409, SrsRemoteStoreError.profileChanged),
+          reason: op,
+        );
+      }
+      // 带对的集合 / 握手（不带集合）照常读。
+      final (
+        int ok,
+        Map<String, Object?> body,
+      ) = await _route(service, <String, Object?>{
+        'profile': _uid,
+        'col': store.sync2Collection,
+        'op': 'deckSummaries',
+        'args': const <String, Object?>{},
+      });
+      expect(ok, 200);
+      expect(body['col'], store.sync2Collection);
+      expect(deck, isNotEmpty);
+      final (int hello, _) = await _route(service, <String, Object?>{
+        'op': 'hello',
+        'args': const <String, Object?>{},
+      });
+      expect(hello, 200);
+    });
+
+    test('主机替远程发内核命令的闸门：白名单外的命令 400、不进 store', () async {
+      final (SrsDbStore store, SrsRemoteStoreService _, String _) =
+          await _setUp();
+      for (final String op in <String>[
+        'identity',
+        'binding_set',
+        'collection_join',
+        'collection_adopt',
+        'import_drafts',
+        'export',
+        'purge',
+        'profile_purge',
+        'apply',
+        'seal_file',
+        'open_file',
+        'round',
+      ]) {
+        final int before = store.debugCoreCommands;
+        await expectLater(
+          srsRemoteKernelCommand(store, <String, Object?>{'op': op}),
+          throwsA(
+            isA<SrsRemoteStoreError>().having(
+              (SrsRemoteStoreError e) => e.code,
+              'code',
+              SrsRemoteStoreError.badRequest,
+            ),
+          ),
+          reason: op,
+        );
+        expect(store.debugCoreCommands, before, reason: '$op 不进 store');
+      }
+      // 白名单内的只读命令照常经它发出。
+      final SrsSync2Result r = await srsRemoteKernelCommand(
+        store,
+        <String, Object?>{
+          'op': 'canonical_ids',
+          'ids': <String>[store.defaultDeckId],
+        },
+      );
+      expect(r.map['ids'], <Object?>[store.defaultDeckId]);
+    });
+
+    test('syncConflicts 的修改记录按类批量取视图：内核命令数不随冲突实体数增长，内容与逐个取的相同', () async {
+      int t = DateTime.utc(2026, 11, 1, 12).millisecondsSinceEpoch;
+      final SrsMemoryLocationStore loc = SrsMemoryLocationStore();
+      final SrsDbStore a = await openTestStore(
+        profileUid: _uid,
+        deviceId: 'a',
+        now: () => t,
+      );
+      final SrsDbStore b = await openTestStore(
+        profileUid: _uid,
+        deviceId: 'b',
+        now: () => t,
+      );
+      Future<void> syncAll() async {
+        for (int round = 0; round < 3; round++) {
+          for (final SrsDbStore s in <SrsDbStore>[a, b]) {
+            await srsSync2Round(
+              host: s,
+              location: loc,
+              locationId: 'test',
+              nowMs: () => t,
+            );
+          }
+        }
+      }
+
+      final List<String> cards = <String>[];
+      for (int i = 0; i < 5; i++) {
+        final String note = await a.createNote(
+          noteTypeId: a.lapisNoteTypeId,
+          fieldsById: <String, String>{
+            srsLapisFieldId(_uid, 'Expression'): '猫$i',
+          },
+        );
+        cards.add((await a.cardsOfNote(note)).single.id);
+      }
+      await syncAll();
+      Future<void> conflict(Iterable<String> ids) async {
+        for (final String c in ids) {
+          await a.setSuspended(c, true);
+        }
+        t += 1000;
+        for (final String c in ids) {
+          await b.setSuspended(c, false);
+        }
+        await syncAll();
+      }
+
+      final SrsRemoteStoreService service = SrsRemoteStoreService(
+        readStore: () async => a,
+        readMedia: (String _) async => null,
+      );
+      Future<(int, Map<String, Object?>)> conflicts() async {
+        final int before = a.debugCoreCommands;
+        final Map<String, Object?> r =
+            (await _call(service, 'syncConflicts'))! as Map<String, Object?>;
+        return (a.debugCoreCommands - before, r);
+      }
+
+      await conflict(cards.take(2));
+      final (int two, Map<String, Object?> r2) = await conflicts();
+      expect(r2['items'], hasLength(2));
+      await conflict(cards.skip(2));
+      final (int five, Map<String, Object?> r5) = await conflicts();
+      expect(r5['items'], hasLength(5));
+      expect(five, two, reason: '每类一次 entity_views，不按冲突实体逐个取');
+      final Map<String, Object?> edits = r5['edits']! as Map<String, Object?>;
+      for (final String c in cards) {
+        expect(
+          edits['${SrsEntityKind.card.wire}/$c'],
+          await _call(service, 'entityEdits', <String, Object?>{
+            'kind': SrsEntityKind.card.wire,
+            'id': c,
+          }),
+          reason: c,
+        );
+      }
     });
 
     test('白名单：身份 / 绑定 / 导入导出 / 清除 / 同步类命令没有任何远程入口', () async {
