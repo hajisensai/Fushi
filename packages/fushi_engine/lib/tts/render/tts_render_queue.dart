@@ -114,6 +114,10 @@ class TtsRenderJob {
   /// 要求了响度归一化但本机 ffmpeg 不支持而跳过（UI 提示，不算失败）。
   bool loudnessSkipped = false;
 
+  /// 合成失败、成品里先放了占位静音的句数（记在这本书的未配音账本里，可以补回）。
+  /// 不算任务失败。
+  int unvoiced = 0;
+
   final int createdAt;
   int updatedAt;
   TtsRenderJobStatus status;
@@ -148,6 +152,7 @@ class TtsRenderJob {
     'pause': pausePreset,
     'loudnorm': normalizeLoudness,
     'loudnessSkipped': loudnessSkipped,
+    if (unvoiced > 0) 'unvoiced': unvoiced,
     'createdAt': createdAt,
     'updatedAt': updatedAt,
     'status': status.name,
@@ -203,7 +208,9 @@ class TtsRenderJob {
             if (TtsRenderFlag.fromJson(f) case final TtsRenderFlag flag) flag,
       ],
       verified: json['verified'] == true,
-    )..loudnessSkipped = json['loudnessSkipped'] == true;
+    )
+      ..loudnessSkipped = json['loudnessSkipped'] == true
+      ..unvoiced = json['unvoiced'] is int ? json['unvoiced']! as int : 0;
   }
 }
 
@@ -481,6 +488,7 @@ class TtsRenderQueue extends EngineChangeNotifier {
       ..done = 0
       ..total = 0
       ..error = null
+      ..unvoiced = 0
       ..updatedAt = _now().millisecondsSinceEpoch;
     await _persist();
     notifyListeners();

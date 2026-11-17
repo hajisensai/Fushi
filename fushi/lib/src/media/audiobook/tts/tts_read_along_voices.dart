@@ -1,13 +1,15 @@
 /// 朗读会话的两件纯计算：多声优的声音分派、提前生成的范围。
 ///
-/// - **多声优**：书在制作台标过说话人、给角色配过声音（选角表 [TtsCast]）时，实时朗读
-///   按句换声音。句子先归到「声音槽」：配了声音的角色各一个槽，其余（旁白、没配声音
-///   的角色、没标注的句子）归默认槽，用会话当前的朗读声音。同一份预设只建一个引擎
-///   实例、共用一个并发上限（与制作台同口径）。
+/// - **多声优**：书在制作台标过说话人、给角色配过声音（选角表 [TtsCast]，含系列里
+///   记住的声音与单句指定的声音）时，实时朗读按句换声音。句子先归到「声音槽」：槽 =
+///   这句解析出的声音预设 id（[TtsCast.presetFor]：单句 → 角色本书 → 系列），解析不到
+///   的（旁白、没配声音的角色、没标注的句子）归默认槽，用会话当前的朗读声音。同一份
+///   预设只建一个引擎实例、共用一个并发上限（与制作台同口径）。
 /// - **提前生成**：朗读一开始就把当前章剩余部分与下一章排进合成队列（播放器从缓存读），
 ///   不只是播放位置之后几十秒。合成比听得快时缓冲越攒越多，倍速 / 网络抖动不再断。
 library;
 
+import 'package:fushi_engine/tts/cast/cast_voice_assignment.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
@@ -23,13 +25,27 @@ typedef TtsResolvedVoice = ({
   TtsProviderDescriptor descriptor,
 });
 
-/// [sentence] 归哪个声音槽：说话人在选角表里配了声音 → 该说话人；否则默认槽。
+/// [sentence] 归哪个声音槽：选角表给这句解析出声音 → 那份预设 id；否则默认槽。
 /// [cast] 为 null（单声音朗读）时一律默认槽。
 String ttsVoiceSlotOf(TtsCast? cast, TtsPlanSentence sentence) {
   if (cast == null) return kTtsDefaultVoiceSlot;
-  final String speaker = cast.speakerOf(sentence.section, sentence.matchStart);
-  final String? presetId = cast.voices[speaker];
-  return presetId == null || presetId.isEmpty ? kTtsDefaultVoiceSlot : speaker;
+  final String? presetId = cast.presetFor(
+    sentence.section,
+    sentence.matchStart,
+  );
+  return presetId == null || presetId.isEmpty ? kTtsDefaultVoiceSlot : presetId;
+}
+
+/// 选角表里有没有任何一层给过声音（本书角色、系列、单句）。没有就按单声音朗读。
+bool ttsCastAssignsVoices(TtsCast cast) {
+  if (cast.voices.values.any((String v) => v.isNotEmpty)) return true;
+  if (cast.lines.values.any((TtsCastLine l) => l.voice != null)) return true;
+  final CastVoiceAssignment? series = cast.series;
+  return series != null &&
+      (series.narrationVoice != null ||
+          series.defaultVoice != null ||
+          series.byCharacter.isNotEmpty ||
+          series.byCharacterKind.isNotEmpty);
 }
 
 /// 把每句（[slots]，与计划等长）分到声音：返回按预设 id 去重后的声音表（下标 0 恒为

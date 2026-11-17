@@ -247,8 +247,8 @@ extension _ReaderTtsExtension on _ReaderFushiPageState {
         info: info,
         startPoint: at ?? (resume ? TtsStartAtResume(fallback: here) : here),
         autoplay: autoplay,
-        // 制作台给角色配过声音的书：朗读也按角色换声音。
-        cast: await ttsCastStoreFor(appModel).load(widget.bookKey),
+        // 制作台给角色配过声音的书（含系列里记住的声音）：朗读也按角色换声音。
+        cast: (await loadTtsCastBundle(appModel, widget.bookKey)).cast,
       );
     } on TtsStartException catch (e) {
       if (!mounted) return;

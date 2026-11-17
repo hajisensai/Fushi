@@ -452,7 +452,7 @@ void main() {
         store: store,
         cast: cast,
         slotVoices: <String, TtsResolvedVoice>{
-          'alice': (preset: _preset('c', 'C'), descriptor: descriptor),
+          'c': (preset: _preset('c', 'C'), descriptor: descriptor),
         },
       );
       live.add(readAlong);

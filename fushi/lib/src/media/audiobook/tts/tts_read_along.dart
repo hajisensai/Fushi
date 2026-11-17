@@ -276,7 +276,7 @@ class TtsReadAlong extends ChangeNotifier {
     if (voice.descriptor.validate(voice.preset).isNotEmpty) {
       throw const TtsStartException(TtsStartProblem.voiceIncomplete);
     }
-    final TtsCast? castInUse = cast == null || cast.voices.isEmpty
+    final TtsCast? castInUse = cast == null || !ttsCastAssignsVoices(cast)
         ? null
         : cast;
     // 多声优：分句必须与制作台同一口径（选角表按制作台计划的句首坐标记说话人），
@@ -409,7 +409,7 @@ class TtsReadAlong extends ChangeNotifier {
     for (final TtsPlanSentence s in plan.sentences) {
       final String slot = ttsVoiceSlotOf(cast, s);
       if (slot == kTtsDefaultVoiceSlot || out.containsKey(slot)) continue;
-      final TtsVoicePreset? preset = presets[cast.voices[slot]];
+      final TtsVoicePreset? preset = presets[slot];
       final TtsProviderDescriptor? descriptor = preset == null
           ? null
           : tts.registry[preset.providerId];

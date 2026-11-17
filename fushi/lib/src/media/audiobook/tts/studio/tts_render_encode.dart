@@ -378,6 +378,69 @@ Future<TtsChapterManifest?> readTtsChapterManifest(
   return TtsChapterManifest.decode(await sidecar.readAsString());
 }
 
+/// 已入库成品里一章的清单 sidecar 后缀（持久目录里与 `<stem>.m4a` 同名）。
+const String kTtsPersistedManifestSuffix = '.tts-chapter.json';
+
+/// 读已入库成品（持久目录）里一章的清单；成品或清单缺失 / 损坏返回 null。
+Future<TtsChapterManifest?> readTtsPersistedChapter(
+  Directory persistDir,
+  TtsRenderChapter chapter,
+) async {
+  final File audio = File(p.join(persistDir.path, '${chapter.stem}.m4a'));
+  final File sidecar = File(
+    p.join(persistDir.path, '${chapter.stem}$kTtsPersistedManifestSuffix'),
+  );
+  if (!await audio.exists() || await audio.length() == 0) return null;
+  if (!await sidecar.exists()) return null;
+  return TtsChapterManifest.decode(await sidecar.readAsString());
+}
+
+/// 把已入库的一章（成品 + 清单）拷进任务工作目录，当作本任务编好的章（校对、入库
+/// 都按工作目录里的路径走）。
+Future<void> adoptTtsPersistedChapter(
+  Directory persistDir,
+  Directory workDir,
+  TtsRenderChapter chapter,
+) async {
+  await workDir.create(recursive: true);
+  final File audio = File(p.join(workDir.path, '${chapter.stem}.m4a'));
+  final File part = File('${audio.path}.part');
+  await File(p.join(persistDir.path, '${chapter.stem}.m4a')).copy(part.path);
+  await part.rename(audio.path);
+  await File(
+    p.join(persistDir.path, '${chapter.stem}$kTtsPersistedManifestSuffix'),
+  ).copy(p.join(workDir.path, '${chapter.stem}.json'));
+}
+
+/// 入库时把本次每章的清单存进持久目录，删掉不属于这次成品的旧清单。
+Future<void> persistTtsChapterManifests({
+  required Directory workDir,
+  required Directory persistDir,
+  required List<TtsRenderChapter> chapters,
+}) async {
+  final Set<String> keep = <String>{
+    for (final TtsRenderChapter c in chapters)
+      '${c.stem}$kTtsPersistedManifestSuffix',
+  };
+  if (await persistDir.exists()) {
+    await for (final FileSystemEntity e in persistDir.list()) {
+      final String name = p.basename(e.path);
+      if (e is File &&
+          name.endsWith(kTtsPersistedManifestSuffix) &&
+          !keep.contains(name)) {
+        await e.delete();
+      }
+    }
+  }
+  for (final TtsRenderChapter c in chapters) {
+    final File source = File(p.join(workDir.path, '${c.stem}.json'));
+    if (!await source.exists()) continue;
+    await source.copy(
+      p.join(persistDir.path, '${c.stem}$kTtsPersistedManifestSuffix'),
+    );
+  }
+}
+
 /// 成品统一的采样率 / 声道。每章都一样，导出 M4B 时才能 `-c copy` 直接拼（多声优
 /// 时各章的中间采样率可能不同）；44.1 kHz 单声道也是 ACX 接受的有声书格式。
 const int kTtsOutputSampleRate = 44100;
