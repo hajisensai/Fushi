@@ -93,7 +93,8 @@ class MangaAudioVolume {
   final Map<String, File> pageFiles;
 
   String get bookKey => row.bookKey;
-  String? get engineSignature => payload.ocr?.engineSignature;
+  /// 本卷 OCR 签名（引擎签名优先，没有时按块内容算：mokuro 导入的卷也能判过期）。
+  String get ocrSignature => mangaPayloadOcrSignature(payload);
   bool get hasText =>
       payload.images.any((MokuroImage image) => image.blocks.isNotEmpty);
 }
@@ -253,7 +254,7 @@ class MangaAudioAnnotateSession {
 
   /// OCR 重跑过：块下标不可信，要整卷重新标注。
   bool get isStale =>
-      script.freshness(volume.engineSignature) ==
+      script.freshness(volume.ocrSignature) ==
       MangaScriptFreshness.needsReannotation;
 
   /// 复核界面里说话人的候选：系列角色表 + 本卷角色表。
@@ -335,7 +336,7 @@ class MangaAudioAnnotateSession {
       final bool reset = resetStaleMangaScript(
         script,
         ledger,
-        volume.engineSignature,
+        volume.ocrSignature,
       );
       return runner.run(
         pages: reset ? pagesToAnnotate() : pages,
@@ -405,7 +406,7 @@ class MangaAudioAnnotateSession {
     );
     script.lines.insertAll(at + 1, added);
     script.annotatedPages.add(page);
-    script.engineSignature ??= volume.engineSignature;
+    script.engineSignature ??= volume.ocrSignature;
     ledger.clearPage(page);
   }
 

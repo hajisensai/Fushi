@@ -23,6 +23,8 @@ import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render_plan.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_renderer.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart';
+import 'package:fushi_engine/tts/manga_audio/manga_audio_validate.dart'
+    show mangaPayloadOcrSignature;
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
 import 'package:path/path.dart' as p;
 
@@ -70,7 +72,7 @@ class MangaAudioVolume {
   ];
 
   MangaScriptFreshness get freshness =>
-      script.freshness(payload.ocr?.engineSignature);
+      script.freshness(mangaPayloadOcrSignature(payload));
 }
 
 /// 载入一卷；不是本地漫画卷 / `manga.json` 读不出 → null。

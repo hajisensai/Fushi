@@ -27,6 +27,10 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
     msg: t.manga_audio_import_page_mismatch,
     severity: ToastSeverity.warning,
   ),
+  MangaAudioImportResult.ocrMismatch => (
+    msg: t.manga_audio_import_ocr_mismatch,
+    severity: ToastSeverity.warning,
+  ),
 };
 
 Future<void> pickAndImportMangaAudio(FushiDatabase db, String bookKey) async {

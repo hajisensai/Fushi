@@ -5262,6 +5262,7 @@
   "manga_audio_import": "Import manga audio",
   "manga_audio_import_done": "Manga audio imported",
   "manga_audio_import_invalid": "Not a valid manga audio manifest",
+  "manga_audio_import_ocr_mismatch": "The manifest was made for a different OCR of this volume; regenerate it",
   "manga_audio_import_page_mismatch": "The manifest page count does not match this volume",
   "manga_audio_job_busy": "This volume is already being generated",
   "manga_audio_kind_monologue": "Monologue",

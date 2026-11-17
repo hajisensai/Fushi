@@ -169,7 +169,7 @@ class MangaAnnotateRunner {
     bool withRoster = true,
     bool withReview = true,
   }) async {
-    script.engineSignature = payload.ocr?.engineSignature;
+    script.engineSignature = mangaPayloadOcrSignature(payload);
     final List<int> todo =
         pages.where((int p) => p >= 0 && p < pageCount).toSet().toList()
           ..sort();

@@ -19,8 +19,10 @@ import 'dart:io';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart'
-    show parseMangaJson;
+    show MokuroPayload, parseMangaJson;
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
+import 'package:fushi_engine/tts/manga_audio/manga_audio_validate.dart'
+    show mangaPayloadOcrSignature;
 import 'package:path/path.dart' as p;
 
 /// 一本漫画已登记的有声成品。
@@ -173,6 +175,9 @@ enum MangaAudioImportResult {
 
   /// 清单引用的音频文件缺失。
   missingAudio,
+
+  /// 清单记的 OCR 签名与本卷当前 OCR 不符（OCR 重跑过：块下标对不上，高亮会错位）。
+  ocrMismatch,
 }
 
 /// 漫画卡「导入漫画有声」：校验清单（结构、页数与本卷一致、音频都在）后登记。
@@ -191,11 +196,16 @@ Future<MangaAudioImportResult> importMangaAudioManifest(
     final File mangaJson = File(p.join(row.extractDir, row.epubPath));
     if (await mangaJson.exists()) {
       try {
-        final int pages = parseMangaJson(
+        final MokuroPayload payload = parseMangaJson(
           await mangaJson.readAsString(),
-        ).images.length;
-        if (pages != manifest.pageCount) {
+        );
+        if (payload.images.length != manifest.pageCount) {
           return MangaAudioImportResult.pageMismatch;
+        }
+        // 与标注 / 生成同一种签名（mokuro 导入的卷没有引擎签名时按块内容算）。
+        final String? recorded = manifest.engineSignature;
+        if (recorded != null && recorded != mangaPayloadOcrSignature(payload)) {
+          return MangaAudioImportResult.ocrMismatch;
         }
       } on Object {
         // 读不出本卷的 manga.json：不拿它否决导入，播放时阅读器还会再核一次页数。

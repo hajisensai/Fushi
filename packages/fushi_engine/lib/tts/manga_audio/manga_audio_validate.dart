@@ -226,6 +226,15 @@ String resolveMangaLineText(
 /// 与文字的 sha1，加 `content:` 前缀。块下标只在 OCR 内容不变时才稳定，所以内容签名
 /// 一变（外部重跑 mokuro、换了文件）演出稿就判为需重新标注；从不因为「两边都没有引擎
 /// 签名」而当成没变。
+/// 一卷 `manga.json` 的 OCR 签名（[mangaOcrSignature] 的便捷入口）：标注记录、生成
+/// 核对、播放 / 导入核对都用它，mokuro 导入的卷没有引擎签名也能比。
+String mangaPayloadOcrSignature(MokuroPayload payload) => mangaOcrSignature(
+  engineSignature: payload.ocr?.engineSignature,
+  pages: <List<MokuroBlock>>[
+    for (final MokuroImage image in payload.images) image.blocks,
+  ],
+);
+
 String mangaOcrSignature({
   required String? engineSignature,
   required List<List<MokuroBlock>> pages,

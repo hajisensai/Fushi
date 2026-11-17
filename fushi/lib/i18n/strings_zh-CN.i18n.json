@@ -5262,6 +5262,7 @@
   "manga_audio_import": "导入漫画有声",
   "manga_audio_import_done": "漫画有声已导入",
   "manga_audio_import_invalid": "不是有效的漫画有声清单",
+  "manga_audio_import_ocr_mismatch": "这份清单对应的是本卷另一次 OCR 结果，请重新生成",
   "manga_audio_import_page_mismatch": "清单的页数与本卷不符",
   "manga_audio_job_busy": "这一卷正在生成",
   "manga_audio_kind_monologue": "独白",
