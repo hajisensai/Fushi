@@ -35,6 +35,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_engine/feedback/feedback_models.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
@@ -73,6 +74,28 @@ String _oneLine(String s) =>
 
 LeaderboardClient? _devClient(WidgetRef ref) =>
     ref.read(leaderboardServiceProvider).client;
+
+/// 处理台「另存样本文件」：弹系统「另存为」并写入 [bytes]，用户取消返回 false。
+///
+/// 移动端（Android / iOS）由插件写入，必须把 [bytes] 交给它；桌面端插件只回路径、自己写盘，
+/// 而且**不能**带 [bytes]——file_picker 的 macOS 实现收到 bytes 直接抛 UnsupportedError，
+/// Windows / Linux 收了也不用。写法同 feedback_dev_video_page 的桌面分支。
+Future<bool> saveFeedbackSampleFile({
+  required FilePicker picker,
+  required bool desktop,
+  required String dialogTitle,
+  required String fileName,
+  required Uint8List bytes,
+}) async {
+  final String? path = await picker.saveFile(
+    dialogTitle: dialogTitle,
+    fileName: fileName,
+    bytes: desktop ? null : bytes,
+  );
+  if (path == null || path.trim().isEmpty) return false;
+  if (desktop) await File(path).writeAsBytes(bytes, flush: true);
+  return true;
+}
 
 class FeedbackDevPage extends ConsumerStatefulWidget {
   const FeedbackDevPage({super.key});
@@ -450,15 +473,14 @@ class _FeedbackDevDetailPageState extends ConsumerState<FeedbackDevDetailPage> {
       final String name = feedbackSafeText(
         a.name ?? 'fushi-${widget.feedbackId}-${a.slot}',
       );
-      final String? path = await FilePicker.platform.saveFile(
+      final bool saved = await saveFeedbackSampleFile(
+        picker: FilePicker.platform,
+        desktop: isDesktopPlatform,
         dialogTitle: t.feedback_dev_file_save,
         fileName: name,
         bytes: bytes,
       );
-      if (path == null) return;
-      if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
-        await File(path).writeAsBytes(bytes, flush: true);
-      }
+      if (!saved) return;
       messenger.showSnackBar(
         FushiSnackBar(content: Text(t.feedback_dev_file_saved)),
       );
