@@ -166,6 +166,7 @@ import 'package:fushi/src/reader/reader_exit_flush.dart';
 import 'package:fushi/src/reader/lyrics_position_jump.dart';
 import 'package:fushi/src/reader/reader_back_ladder.dart';
 import 'package:fushi/src/reader/reader_tap_zones.dart';
+import 'package:fushi/src/reader/reader_tracking_progress_reporter.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/srs/srs_sync_progress.dart' show srsSyncProgress;
 import 'package:fushi/src/reader/reader_located_range_script.dart';
@@ -2394,6 +2395,19 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   bool _replayingPageTurns = false;
   int _lastSavedSection = -1;
   double _lastSavedProgress = -1;
+
+  /// BUG-4791：追踪进度上报口。只发起、不让位置落库（返回键等的那条链）等它，
+  /// 同一份「完成章数 + 是否读完」只报一次；判据与失败处理见类文档。
+  final ReaderTrackingProgressReporter _trackingProgressReporter =
+      ReaderTrackingProgressReporter(
+        onError: (Object error, StackTrace stack) {
+          ErrorLogService.instance.log(
+            'ReaderFushi.recordBookProgress',
+            error,
+            stack,
+          );
+        },
+      );
   int _lastProgressSection = -1;
   double _lastProgressValue = 0;
 
