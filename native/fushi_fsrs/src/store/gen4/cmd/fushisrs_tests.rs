@@ -671,7 +671,8 @@ fn alias_classes_survive_an_export_and_a_foreign_import() {
         json!({"manifest": manifest(&exp), "confirmed": true}),
     )
     .unwrap();
-    assert_eq!(got["outcome"], json!("joined"), "{got}");
+    // 导入方 Q 刚打开、集合里只有本机身份写的 Salts：确认后丢掉空集合、直接绑到导出方的集合（G9-5「空集合可换绑」）。
+    assert_eq!(got["outcome"], json!("bound"), "{got}");
     let hist = |h: *mut SrsCoreHandle, profile: &str, e: &Id| -> Vec<String> {
         let v = try_g4(
             h,

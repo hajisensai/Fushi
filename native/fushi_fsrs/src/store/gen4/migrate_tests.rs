@@ -481,7 +481,7 @@ fn a_parity_failure_aborts_and_leaves_the_library_usable() {
     }
 }
 
-/// 前提不齐一律拦下、什么都不碰（旧库逐字节不变，不留临时文件）：没给缓存配置、并入做到一半、收段留下的待重放卡、
+/// 前提不齐一律拦下、什么都不碰（旧库逐字节不变，不留临时文件）：没给缓存配置、收段留下的待重放卡、
 /// 有投影数据却不在操作日志里的 profile。拦下的原因逐条带 profile。
 #[test]
 fn unmet_preconditions_block_before_anything_is_written() {
@@ -492,26 +492,13 @@ fn unmet_preconditions_block_before_anything_is_written() {
         BTreeMap<String, String>,
         BlockCode,
         &str,
-    ); 3] = [
+    ); 2] = [
         (
             "g72-nocfg",
             &|_| {},
             BTreeMap::new(),
             BlockCode::MissingCacheConfig,
             "no cache configuration",
-        ),
-        (
-            "g72-merge",
-            &|c| {
-                c.execute(
-                    "INSERT INTO srs_meta (key, value) VALUES (?1, '{}')",
-                    [format!("profile_merge/{other}")],
-                )
-                .unwrap();
-            },
-            caches(),
-            BlockCode::MergeHalfDone,
-            "profile merge is half done",
         ),
         // 只在投影表里的孤儿 uid 也要缓存配置（补完与迁移都要）：没给就拦，旧库不动。
         (
@@ -1110,4 +1097,17 @@ fn every_protocol_3_card_number_resolves_after_migration() {
         via_members >= 1,
         "the salted card resolves through its members"
     );
+}
+
+/// 空间核对（G9-5 修 G7-2b 复核遗留）：上一次留下的迁移临时文件与补完副本（连同 WAL）算可用空间；补完之后的第二次核对
+/// 时补完副本在用（之后的阶段还要读它），不算。
+#[test]
+fn an_in_use_preparation_copy_is_not_counted_as_free_space() {
+    let dir = tempdir::new("g95-space");
+    std::fs::write(dir.0.join(GEN4_TEMP), vec![0u8; 100]).unwrap();
+    let copy = dir.0.join(PREPARE_COPY);
+    std::fs::write(&copy, vec![0u8; 1000]).unwrap();
+    std::fs::write(seal::with_suffix(&copy, "-wal"), vec![0u8; 24]).unwrap();
+    assert_eq!(reclaimable(&dir.0, PrepCopy::Stale), 1124);
+    assert_eq!(reclaimable(&dir.0, PrepCopy::InUse), 100);
 }

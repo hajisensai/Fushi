@@ -113,7 +113,6 @@ String srsGen4OutcomeText(SrsGen4MigrationOutcome o) => switch (o.verdict) {
     SrsGen4BlockedReason.busy => t.srs_gen4_blocked,
     SrsGen4BlockedReason.newerBuild => t.srs_gen4_blocked_newer,
     SrsGen4BlockedReason.damaged => t.srs_gen4_blocked_damaged,
-    SrsGen4BlockedReason.mergePending => t.srs_gen4_blocked_merge,
     SrsGen4BlockedReason.precondition => t.srs_gen4_blocked_unfinished,
   },
   SrsGen4MigrationVerdict.noSpace => t.srs_gen4_no_space(

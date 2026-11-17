@@ -45,6 +45,7 @@ pub mod compact;
 pub(crate) mod compare;
 pub mod derive;
 pub mod digest;
+pub mod discard;
 pub mod dispatch;
 pub mod dryrun;
 pub mod export;

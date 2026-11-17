@@ -39,7 +39,6 @@ void main() {
             'schemaNewer': SrsGen4BlockedReason.newerBuild,
             'corrupt': SrsGen4BlockedReason.damaged,
             'notProtocol3': SrsGen4BlockedReason.damaged,
-            'mergeHalfDone': SrsGen4BlockedReason.mergePending,
             'missingCacheConfig': SrsGen4BlockedReason.precondition,
             'precondition': SrsGen4BlockedReason.precondition,
             'noLibrary': SrsGen4BlockedReason.precondition,

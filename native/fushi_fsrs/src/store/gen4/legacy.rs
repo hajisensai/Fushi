@@ -225,14 +225,12 @@ pub fn all_profiles(conn: &Connection) -> Result<Vec<String>, String> {
 
 /// 整个库的、不属于某一个 profile 的旧代收尾（空 = 不拦）。真迁移拦，干跑只报：
 ///
-/// - 并入做到一半：`srs_meta` 里有 `profile_merge/<旧 uid>` 标记（D23 选 ②：迁移前用冻结的旧并入代码做完，§5.5）。
 /// - 有投影数据、却不在操作日志里的 profile（没启用过协议 3：[profiles] 只认 `sync2_*`）：读入器看不见它的数据，迁过去
 ///   就丢了。真迁移先由前提补完（`prepare.rs`）把它们包进操作日志，这里只在补完之后核对。
 pub fn library_blockers(conn: &Connection) -> Result<Vec<String>, String> {
-    let mut out: Vec<String> = merge_marks(conn)?
-        .into_iter()
-        .map(|key| format!("a profile merge is half done ({key})"))
-        .collect();
+    // 并入做到一半（`profile_merge/<旧 uid>`，[merge_marks]）不在这里：G9-5 起照常迁移、标记带进新代库，由 Dart 在新代里
+    // 收尾（`cmd/profile_data.rs` 的 `profile_merge_commit`）。
+    let mut out: Vec<String> = Vec::new();
     let logged = logged_profiles(conn)?;
     for p in projected_profiles(conn)?.difference(&logged) {
         out.push(format!(

@@ -129,9 +129,6 @@ enum SrsGen4BlockedReason {
   /// 旧库文件坏了 / 不是复习库（`corrupt` / `notProtocol3`）：重试不会变，原样保留、带日志联系支持。
   damaged,
 
-  /// 旧的 profile 并入做到一半（`mergeHalfDone`）：这一版补不了，重试不会变。
-  mergePending,
-
   /// 其余（`missingCacheConfig` / `precondition` / 目录状态对不上 / 不认识的 code）：原因原文给用户看，可以重新升级
   /// （前提补完每次都会重做一遍能补的部分）。
   precondition;
@@ -142,7 +139,6 @@ enum SrsGen4BlockedReason {
     'busy' => busy,
     'schemaNewer' => newerBuild,
     'corrupt' || 'notProtocol3' => damaged,
-    'mergeHalfDone' => mergePending,
     _ => precondition,
   };
 
@@ -151,7 +147,6 @@ enum SrsGen4BlockedReason {
     'migrating',
     'busy',
     'missingCacheConfig',
-    'mergeHalfDone',
     'schemaNewer',
     'notProtocol3',
     'corrupt',
@@ -161,10 +156,11 @@ enum SrsGen4BlockedReason {
     'precondition',
   ];
 
-  /// 再点一次可能就过了：等一会再来的两类，以及前提补完会再做一遍的 [precondition]。其余三类重试不会变。
+  /// 再点一次可能就过了：等一会再来的两类，以及前提补完会再做一遍的 [precondition]。其余两类重试不会变。
+  /// （旧的 `mergeHalfDone` 已不再拦：并入做到一半的库照常迁移，标记带进新代库由 `profile_merge_commit` 收尾，G9-5。）
   bool get retryable => switch (this) {
     migrating || busy || precondition => true,
-    newerBuild || damaged || mergePending => false,
+    newerBuild || damaged => false,
   };
 }
 

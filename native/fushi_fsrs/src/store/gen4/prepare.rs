@@ -45,9 +45,16 @@
 //! 日志 ID 取操作号最小的一份（`derive.rs`），用户看到的结果不变，只是体积与同步量多一份（交接说明 §11，交 G8 / G9
 //! 判断要不要在新代收敛副本）。
 //!
+//! # 并入做到一半（G9-5）
+//!
+//! 协议 3 的 profile 并入（Dart `srs_profile_merge.dart`）中断留下的 `profile_merge/<旧 uid>` 标记**不拦**：并入两边的
+//! uid 各自照常补完、各迁成一个集合（旧 uid 的数据完整，新 uid 里是目标集合加一部分重映射副本），标记原样带进新代库
+//! （`migrate.rs` [carry_library_meta](super::migrate::carry_library_meta)）。收尾由 Dart（知道主库 profile 现在指着
+//! 哪个 uid）在新代里发 `profile_merge_commit`：一个事务里把旧 uid 的集合并进新 uid 的（`cmd/profile_data.rs` 文件头）。
+//! 补完不碰标记：那是 Dart 并入的状态，协议 3 的这几条命令不读它。
+//!
 //! # 补不了的（拦下，[BlockCode]）
 //!
-//! - 并入做到一半（`profile_merge/<uid>`，D23：由冻结的旧并入代码做完，它由 Dart 驱动、带着主库那一侧的状态）。
 //! - 旧库里有 profile 没给缓存配置（`dedup` / `replay_pending` 要刷新协议 3 的缓存行，迁移也要）：Dart 按
 //!   `gen4_migrate_profiles`（[crate::store::gen4::legacy::all_profiles]）逐个给。
 //! - 拷副本之前 `PRAGMA quick_check` 不过（文件坏了）：不在坏文件上补。
@@ -84,7 +91,7 @@ impl Plan {
 }
 
 /// 只读：[src]（`dryrun::open_legacy` 的读快照，schema 是 [schema]）要补什么。补不了的直接给结论（`Ok(Err(..))`）：
-/// 并入做到一半、缺缓存配置。
+/// 缺缓存配置。
 ///
 /// schema 比这一版旧时表形态不同，`preflight` 读不了：全部 profile 都走一遍补完（命令对已经做完的 profile 什么都不写）。
 pub(crate) fn plan(
@@ -92,13 +99,6 @@ pub(crate) fn plan(
     schema: i64,
     caches: &BTreeMap<String, String>,
 ) -> Result<Result<Plan, Outcome>, String> {
-    let marks = legacy::merge_marks(src)?;
-    if !marks.is_empty() {
-        return Ok(Err(blocked(
-            BlockCode::MergeHalfDone,
-            format!("a profile merge is half done ({})", marks.join(", ")),
-        )));
-    }
     let all = legacy::all_profiles(src)?;
     let missing: Vec<&str> = all
         .iter()

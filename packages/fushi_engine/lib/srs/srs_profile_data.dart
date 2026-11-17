@@ -1,12 +1,11 @@
 /// 一个 profile 在 srs.db 里的本机数据：规模、整体删除、库里出现过的 uid（反馈 8TaOy2i-lL 现象 3）。
 ///
 /// 状态归 Rust（native/fushi_fsrs/src/store/profile_data.rs）：表清单在内核里现查，删除是一个 savepoint 里的
-/// 一条命令；这里只是后台 isolate 里的薄封装（数万行的删除超过 1 ms，不放 UI isolate）。并入的标记 / 收尾
-/// （[srsMarkProfileMerge] / [srsCommitProfileMerge]）与 profile 链接记的集合（[srsEditMetaSet]）也在这里：
+/// 一条命令；这里只是后台 isolate 里的薄封装（数万行的删除超过 1 ms，不放 UI isolate）。迁移带过来的
+/// 半截并入的收尾（[srsFinishProfileMerge]）与 profile 链接记的集合（[srsEditMetaSet]）也在这里：
 /// 都是不针对单个副本的库级命令。
 library;
 
-import 'dart:convert';
 import 'dart:isolate';
 import 'dart:typed_data';
 
@@ -96,13 +95,19 @@ Future<SrsProfileFootprint> srsProfileFootprint(
 
 /// 一个事务里删掉 [profileUid] 在本机 srs.db 里的全部行（只动本机，远端已同步的集合不碰）。返回删之前的规模。
 /// 调用方负责先备份、并保证没有这个 uid 的副本还在写（见 `SrsDbStore.retire`）。
+///
+/// 新代（G9-5，`cmd/profile_data.rs` `profile_purge`）删的是这个 profile 绑定的那一个集合与它的本机状态行，别的
+/// profile 的集合一行不碰。[collection]：给用户看过、用户确认要删的集合标识（`identity` / `collection_info` 回的）；
+/// 给了内核就核对，profile 此刻绑的不是它（确认之后改绑 / 并入过）就报错、什么都不删。
 Future<SrsProfileFootprint> srsPurgeProfileRows(
   SrsCore core,
-  String profileUid,
-) async => SrsProfileFootprint.fromJson(
+  String profileUid, {
+  String? collection,
+}) async => SrsProfileFootprint.fromJson(
   await _run(core, <String, Object?>{
     'op': 'profile_purge',
     'profile': profileUid,
+    'collection': ?collection,
   }),
 );
 
@@ -154,45 +159,29 @@ Future<SrsOrphanSweepRest> srsFinishOrphanSweep(
   );
 }
 
-/// 记下「旧 uid [oldUid]（主库 profile [profileId]）正在并入 [newUid]」（`srs_meta` 的 `profile_merge/<旧 uid>`，
-/// srs_profile_merge.dart 的第一步）。并入提交（[srsCommitProfileMerge]）时随旧 uid 的元数据键一起删掉。
-Future<void> srsMarkProfileMerge(
-  SrsCore core, {
-  required int profileId,
-  required String oldUid,
-  required String newUid,
-}) => _run(core, <String, Object?>{
-  'op': 'profile_merge_mark',
-  'from': oldUid,
-  'profileId': profileId,
-  'to': newUid,
-});
+/// 半截并入收尾（`profile_merge_commit`）的结果：[folded] = 旧 uid 有集合、已经整个并进新 uid（否则旧 uid 一条数据都
+/// 没有，只删了标记）；[outcome] = 并入时内核认领的结论（`bound`：新 uid 是空集合 / 没绑过，直接换绑；`joined`：按 D27
+/// 写了 `Join`），没并时 null。
+typedef SrsProfileMergeFinish = ({bool folded, String? outcome});
 
-/// 并入的收尾：内核在一次持写锁、一个 savepoint 里核对并删掉旧 uid（`profile_merge_commit`）。
-///
-/// - `done`：旧 uid 此刻的每条事件都在 [oldToNew] 里、映射过去的都已在 [newUid] 下，旧 uid 已整个删掉；
-/// - `missing > 0`：有这么多条映射过去的事件不在 [newUid] 下，什么都没删（调用方报错）；
-/// - 都不是：旧 uid 在计划之后又被写了，什么都没删（调用方重新计划再来）。
-///
-/// [debugFailAfterCheck]（测试）：核对通过之后让内核报错，验证整笔回滚。
-Future<({bool done, int missing})> srsCommitProfileMerge(
+/// 续做迁移带过来的半截并入的收尾（`cmd/profile_data.rs` `profile_merge_commit {from, to, now}`，srs_profile_merge.dart
+/// 的最后一步）：内核一个事务里核对标记 `profile_merge/<[from]>` 指着 [to]，把 [from] 的集合（操作、设备公钥）并进 [to]
+/// 的集合，删掉 [from] 的集合、标记与它的本机状态行。标记不在 / 指着别的 uid 时报错、什么都不改。调用前主库 profile
+/// 已经改指 [to]。
+Future<SrsProfileMergeFinish> srsFinishProfileMerge(
   SrsCore core, {
-  required String oldUid,
-  required String newUid,
-  required Map<String, String> oldToNew,
-  bool debugFailAfterCheck = false,
+  required String from,
+  required String to,
+  required int nowMs,
 }) async {
-  final Map<String, Object?> r = await _run(
-    core,
-    <String, Object?>{
-      'op': 'profile_merge_commit',
-      'from': oldUid,
-      'to': newUid,
-      if (debugFailAfterCheck) 'failAfter': 'check',
-    },
-    blobs: <Uint8List>[utf8.encode(jsonEncode(oldToNew))],
-  );
-  return (done: r['done'] == true, missing: (r['missing'] as int?) ?? 0);
+  final Map<String, Object?> r = await _run(core, <String, Object?>{
+    'op': 'profile_merge_commit',
+    'profile': to,
+    'from': from,
+    'to': to,
+    'now': nowMs,
+  });
+  return (folded: r['folded'] == true, outcome: r['outcome'] as String?);
 }
 
 /// profile 链接在 `srs_meta` 里记的字符串集合（srs_profile_link.dart）。

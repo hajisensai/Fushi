@@ -33,9 +33,9 @@ use crate::store::sync2::tests::{DAY, Device, P, edit, review, tempdir};
 
 type Files = Vec<(String, Vec<u8>)>;
 
-pub(super) const T1: i64 = T0 + 3 * DAY;
+pub(crate) const T1: i64 = T0 + 3 * DAY;
 
-pub(super) fn cfg() -> Value {
+pub(crate) fn cfg() -> Value {
     json!({"defaultDeck": default_deck_id(P)})
 }
 
@@ -51,7 +51,7 @@ fn take_error(err: *mut std::ffi::c_char) -> String {
 }
 
 /// 经 C ABI 打开 [dir]（[mode] 0 = Primary，1 = Secondary）。
-pub(super) fn open(dir: &Path, mode: i32) -> Result<*mut SrsCoreHandle, (i32, String)> {
+pub(crate) fn open(dir: &Path, mode: i32) -> Result<*mut SrsCoreHandle, (i32, String)> {
     let p = dir.to_str().unwrap();
     let (mut h, mut err) = (null_mut(), null_mut());
     let rc = ffsrs_store_open_mode(p.as_ptr(), p.len(), mode, &mut h, &mut err);
@@ -65,7 +65,7 @@ pub(super) fn open(dir: &Path, mode: i32) -> Result<*mut SrsCoreHandle, (i32, St
 }
 
 /// 经 `ffsrs_store_sync2` 发一条命令（[items] = `apply` 一类命令的输入项，第一个字节块）。回包解帧成 (JSON, 文件)。
-pub(super) fn call(
+pub(crate) fn call(
     h: *mut SrsCoreHandle,
     req: &Value,
     items: Option<&[Value]>,
@@ -117,7 +117,7 @@ pub(super) fn call(
 }
 
 /// 新代一侧的请求：`{op, profile, now}` 加 [extra]。
-pub(super) fn g4req(op: &str, now: i64, extra: Value) -> Value {
+pub(crate) fn g4req(op: &str, now: i64, extra: Value) -> Value {
     let mut req = json!({"op": op, "profile": P, "now": now});
     for (k, v) in extra.as_object().cloned().unwrap_or_default() {
         req[k.as_str()] = v;
@@ -125,7 +125,7 @@ pub(super) fn g4req(op: &str, now: i64, extra: Value) -> Value {
     req
 }
 
-pub(super) fn g4(h: *mut SrsCoreHandle, op: &str, now: i64, extra: Value) -> Value {
+pub(crate) fn g4(h: *mut SrsCoreHandle, op: &str, now: i64, extra: Value) -> Value {
     g4_files(h, op, now, extra, None).0
 }
 
@@ -751,12 +751,17 @@ fn a_migration_cancelled_before_it_starts_does_nothing() {
 #[test]
 fn unwired_and_removed_commands_name_their_owner() {
     let m = migrated();
-    for (op, owner) in [("profile_merge_mark", "G9-5"), ("relay_outbox", "G8-7b")] {
+    for (op, owner) in [("relay_outbox", "G8-7b")] {
         let (rc, e) = call(m.h, &g4req(op, T1, json!({})), None).unwrap_err();
         assert_eq!(rc, STORE_ERROR, "{op}");
         assert!(e.contains(UNWIRED) && e.contains(owner), "{op}: {e}");
     }
-    for op in ["channel_settle", "migrate", "gen4_rehearse"] {
+    for op in [
+        "channel_settle",
+        "migrate",
+        "gen4_rehearse",
+        "profile_merge_mark",
+    ] {
         let (_, e) = call(m.h, &g4req(op, T1, json!({})), None).unwrap_err();
         assert!(e.contains(REMOVED), "{op}: {e}");
     }

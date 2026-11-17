@@ -584,5 +584,66 @@ void main() {
       final List<SrsRemoteProfile> left = await srsListRemoteProfiles(store);
       expect(left.single.writers, <String>['tab#1']);
     });
+
+    // G9-5：新代集合根 `v4/` 不是写入者目录（名字碰巧像本设备的写入者也不算）；只删本机新代身份的设备目录，
+    // 根与 profile 目录永远留着；不给本机新代身份时 `v4/` 一个字节不碰。
+    test('清理认识新代根 v4/：只删本机新代设备目录', () async {
+      final String ns = await store.ensureNamespace(kSrsSync2Namespace);
+      final String profile = await store.ensureFolder(ns, kMine);
+      final String v4 = await store.ensureFolder(profile, kSrs4Root);
+      final String devices = await store.ensureFolder(v4, 'devices');
+      await store.ensureFolder(devices, 'me4');
+      await store.ensureFolder(devices, 'other4');
+      await store.ensureFolder(profile, 'phone#1');
+      final Directory root4 = Directory(
+        '${root.path}/$kSrsSync2Namespace/$kMine/$kSrs4Root',
+      );
+
+      // 没有本机新代身份：v4 整个算别人的。设备 ID 故意取成 `v4` 的样子，也不许当写入者目录删。
+      await srsRemoveOwnProfileFolder(
+        store,
+        profileUid: kMine,
+        deviceId: kSrs4Root,
+      );
+      expect(Directory('${root4.path}/devices/me4').existsSync(), isTrue);
+      expect(Directory('${root4.path}/devices/other4').existsSync(), isTrue);
+
+      // 本机新代身份 me4：只删它；other4 还在，根与 profile 目录都留着。
+      await srsRemoveOwnProfileFolder(
+        store,
+        profileUid: kMine,
+        deviceId: kDevice,
+        v4Device: 'me4',
+      );
+      expect(Directory('${root4.path}/devices/me4').existsSync(), isFalse);
+      expect(Directory('${root4.path}/devices/other4').existsSync(), isTrue);
+      expect(
+        Directory(
+          '${root.path}/$kSrsSync2Namespace/$kMine/phone#1',
+        ).existsSync(),
+        isFalse,
+      );
+
+      // 只剩本机自己的新代设备目录：也只删它，根（含 meta.json）与 profile 目录留着——别的设备可能已按 meta.json
+      // 换绑到这个集合、只是还没发布自己的设备目录（复核 nit）。
+      await store.deleteAsset(
+        (await store.listChildren(devices)).single.id,
+        isFolder: true,
+      );
+      await store.ensureFolder(devices, 'me4');
+      File('${root4.path}/meta.json').writeAsStringSync('{}');
+      await srsRemoveOwnProfileFolder(
+        store,
+        profileUid: kMine,
+        deviceId: kDevice,
+        v4Device: 'me4',
+      );
+      expect(Directory('${root4.path}/devices/me4').existsSync(), isFalse);
+      expect(File('${root4.path}/meta.json').existsSync(), isTrue);
+      expect(
+        Directory('${root.path}/$kSrsSync2Namespace/$kMine').existsSync(),
+        isTrue,
+      );
+    });
   });
 }

@@ -63,6 +63,7 @@ pub mod lineage;
 pub mod media_gc;
 pub mod preview;
 pub mod profile;
+pub mod profile_data;
 pub mod reads;
 pub mod stats;
 pub mod study;
@@ -81,7 +82,7 @@ mod browse_tests;
 #[cfg(test)]
 mod center_tests;
 #[cfg(test)]
-mod dispatch_tests;
+pub(crate) mod dispatch_tests;
 #[cfg(test)]
 mod fushisrs_tests;
 #[cfg(test)]

@@ -5,7 +5,7 @@
 //! # 命令的三种去向（[wiring]）
 //!
 //! - [Wiring::Wired]：接到新代实现（[run] 里有它的臂）。
-//! - [Wiring::Unwired]：归别的模块接线（G9-5 并入 / 清除；G8-7b 转发、旧身份目录清理、媒体同步），报
+//! - [Wiring::Unwired]：归别的模块接线（G8-7b 转发、旧身份目录清理、媒体同步），报
 //!   `kernel::UNWIRED` 开头的明确错误——不 panic、不回落到协议 3。
 //! - [Wiring::Removed]：新代不需要（派生层随写入维护、没有收段通道、没有协议 3 的存储表示），报 `kernel::REMOVED` 开头的
 //!   错误，调用方（Dart，G7-5）不再发。
@@ -80,6 +80,7 @@ const NO_CHANNEL: &str =
 const P3_REPR: &str = "a protocol 3 storage detail; the implementation is deleted with G7-6";
 const NO_DIGEST_BUCKETS: &str = "gen4 has no digest buckets to bisect: the semantic digest is one hash over the derived layer (Index::digest)";
 const NO_OBSOLETE_ACK: &str = "gen4 `obsolete` keeps no to-delete list: it decides from this round's listing, so failed deletes are simply offered again";
+const NO_P3_MERGE: &str = "gen4 starts no protocol 3 style profile merges: linking another collection is `collection_adopt` / `collection_join`; a merge left half done before the switch is finished by `profile_merge_commit`";
 const NO_REHEARSAL: &str =
     "the pre-migration rehearsal only makes sense before the generation switch; G7-6 deletes it";
 
@@ -121,13 +122,13 @@ pub fn wiring(op: &str) -> Option<Wiring> {
         | "canonical_ids"
         | "key_evidence"
         | "divergence" => Wired,
-        // profile 并入 / 清除 / 旧 uid 集合
+        // profile 数据（G9-5，`cmd/profile_data.rs`）：清除、无主扫描、链接记的集合、迁移带过来的半截并入的收尾。
         "profile_uids"
         | "orphan_sweep_done"
-        | "profile_merge_mark"
-        | "profile_merge_commit"
         | "meta_set_edit"
-        | "profile_purge" => Unwired("G9-5"),
+        | "profile_purge"
+        | "profile_merge_commit" => Wired,
+        "profile_merge_mark" => Removed(NO_P3_MERGE),
         // 同步一轮（G8-7，`cmd/sync.rs`）
         "location_root" | "plan" | "ingest" | "ingest_finish" | "outbox" | "outbox_ack"
         | "head" | "obsolete" | "retire" | "rotate" | "location_sealed" | "location_seal"
@@ -354,6 +355,29 @@ fn run(
         "seal" | "open" | "open_v1" | "seal_file" | "open_file" | "derive_key" => {
             return crate::store::ffi::crypto_command(op, req, blobs, files);
         }
+        // profile 数据（G9-5，`cmd/profile_data.rs`）：不针对单个 profile 的几条。
+        "profile_uids" => return c.read(cmd::profile_data::profile_uids),
+        // 只删本机状态行与写完成标记：不碰真相与派生层，不推进写入代数。
+        "orphan_sweep_done" => {
+            return c.write_local(|t| cmd::profile_data::orphan_sweep_done(t, req));
+        }
+        "meta_set_edit" => {
+            return if cmd::profile_data::meta_set_read_only(req) {
+                c.read(|t| snapshot(t, |t| cmd::profile_data::meta_set_edit(t, req)))
+            } else {
+                c.write_local(|t| cmd::profile_data::meta_set_edit(t, req))
+            };
+        }
+        // 半截并入的收尾：`from` 的集合并进 `to`（可能改绑 `to`），两边按刷新键记的缓存整份作废。
+        "profile_merge_commit" => {
+            let v = write_binding(c, |t| cmd::profile_data::profile_merge_commit(t, req))?;
+            for k in ["from", "to"] {
+                if let Some(p) = req.get(k).and_then(Value::as_str) {
+                    c.refresh_invalidate(p);
+                }
+            }
+            return Ok(v);
+        }
         _ => {}
     }
     let profile = str_of(req, "profile")?;
@@ -534,6 +558,13 @@ fn run(
         // 不要已有绑定：profile 还没绑过时确认后直接绑（「先加入」）。
         "collection_adopt" => {
             let v = write_binding(c, |t| cmd::identity::collection_adopt(t, profile, req))?;
+            c.refresh_invalidate(profile);
+            v
+        }
+        // ------------------------------------------------------------ profile 数据（cmd/profile_data.rs）
+        // 删 profile 时清它的集合（可带 `collection` 核对确认的就是它）与本机状态行。
+        "profile_purge" => {
+            let v = c.write(|t| cmd::profile_data::profile_purge(t, profile, req))?;
             c.refresh_invalidate(profile);
             v
         }

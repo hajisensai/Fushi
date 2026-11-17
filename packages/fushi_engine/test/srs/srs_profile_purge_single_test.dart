@@ -1,5 +1,5 @@
-// 「删掉一个 uid 在 srs.db 里的全部本机行」只有一份实现（Rust `profile_purge`）：并入（srsMergeProfileUid）
-// 与采用（srsAdoptProfileUid / 备份合并改 uid）删旧 uid 时都经它，旧 uid 在每张带 profile_uid 的表、按 profile
+// 「删掉一个 uid 在 srs.db 里的全部本机行」只有一份实现（Rust `profile_purge`）：采用（srsAdoptProfileUid / 备份
+// 合并改 uid）删旧 uid 时经它（协议 3 的 uid 并入 G9-5 删了，续做半截并入由内核 `profile_merge_commit` 收尾），旧 uid 在每张带 profile_uid 的表、按 profile
 // 记的 srs_meta 键、没人引用的 sync2_deps 里一行不剩（BUG 文档见 docs/bugs/，回归）。
 //
 // 残留按表现查：表清单现查 sqlite_master，不手抄。
@@ -12,14 +12,11 @@ import 'package:fushi_engine/srs/srs_backup_merge.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_profile_link.dart';
-import 'package:fushi_engine/srs/srs_profile_merge.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
-import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_srs/fushi_srs.dart' show SrsCore;
 import 'package:test/test.dart';
 
 import 'support/srs_fake_engine.dart';
-import 'support/srs_sync2_peers.dart';
 import 'support/srs_test_storage.dart';
 import 'support/srs_raw_sql.dart';
 
@@ -114,30 +111,6 @@ void main() {
       srsLapisFieldId(s.profileUid, 'Expression'): text,
     },
   );
-
-  test('并入：旧 uid 在每张表、按 profile 的 meta 键、sync2_deps 里都不剩', () async {
-    final SrsDbStore s = await open(oldUid);
-    await addNote(s, '雨');
-    await addNote(s, '風');
-    // 发布过：同步留下的位置进度、按 profile 的 meta 键都要一起删。
-    expect((await srsSyncOnce(s, SrsMemoryLocationStore())).error, isNull);
-    expect(await _residue(srs.core, oldUid), isNotEmpty);
-    final int depsBefore = await _unreferencedDeps(srs.core);
-
-    await srsMergeProfileUid(
-      main,
-      core: srs.core,
-      profileId: profileId,
-      oldUid: oldUid,
-      newUid: _kNewUid,
-      deviceId: 'devA',
-    );
-
-    expect(await main.profileUidOf(profileId), _kNewUid);
-    expect(await _residue(srs.core, oldUid), isEmpty);
-    expect(await _unreferencedDeps(srs.core), lessThanOrEqualTo(depsBefore));
-    expect(await _residue(srs.core, _kNewUid), isNotEmpty, reason: '并入的数据在');
-  });
 
   test('采用：旧 uid 的 srs_* / sync2_* 行与 meta 键全删，主库改用新 uid', () async {
     // 只打开过（内置牌组 / 笔记类型经本机写入落成操作）、没有用户笔记、没发布过：可以直接采用。
