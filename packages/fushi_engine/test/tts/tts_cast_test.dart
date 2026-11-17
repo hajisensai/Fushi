@@ -4,8 +4,8 @@ import 'dart:io';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
 import 'package:test/test.dart';
 
-TtsCastLine _llm(String speaker, [String? emotion]) =>
-    TtsCastLine(speaker: speaker, source: TtsCastSource.llm, emotion: emotion);
+TtsCastLine _llm(String speaker, [String? tone]) =>
+    TtsCastLine(speaker: speaker, source: TtsCastSource.llm, tone: tone);
 
 void main() {
   group('TtsCast', () {
@@ -43,7 +43,7 @@ void main() {
       );
       cast.renameSpeaker('菜月昴', 'スバル');
       expect(cast.speakerOf(0, 1), 'スバル');
-      expect(cast.lines['0:0']!.emotion, '怒り');
+      expect(cast.lines['0:0']!.tone, '怒り');
       expect(cast.voices, <String, String>{'スバル': 'v1', 'レム': 'v2'});
 
       cast.renameSpeaker('レム', 'スバル');
@@ -89,10 +89,10 @@ void main() {
       );
       expect(back.lines.length, 2);
       expect(back.lines['0:0']!.speaker, 'A');
-      expect(back.lines['0:0']!.emotion, '笑い');
+      expect(back.lines['0:0']!.tone, '笑い');
       expect(back.lines['0:0']!.source, TtsCastSource.llm);
       expect(back.lines['1:4']!.source, TtsCastSource.user);
-      expect(back.lines['1:4']!.emotion, isNull);
+      expect(back.lines['1:4']!.tone, isNull);
       expect(back.voices, cast.voices);
       expect(back.annotatedSections, <int>{0, 3});
       expect(cast.toJson()['annotated'], <int>[0, 3]);

@@ -5,6 +5,7 @@
 /// 播放形态得到两张表——边看边听插入页停留与 `lead`，纯听把它们压到 0、只留句间停顿。
 library;
 
+import 'package:fushi_engine/tts/cast/cast_line_direction.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart';
 
 /// 播放形态。
@@ -19,9 +20,9 @@ enum MangaPlaybackMode {
 /// 时间表的默认值（试做里所有者听过两轮后的取值，不是测量结果）。
 class MangaTimingParams {
   const MangaTimingParams({
-    this.sameSpeakerMs = 300,
-    this.speakerChangeMs = 450,
-    this.registerShiftMs = 900,
+    this.sameSpeakerMs = CastTransitionDefaults.sameSpeakerMs,
+    this.speakerChangeMs = CastTransitionDefaults.speakerChangeMs,
+    this.registerShiftMs = CastTransitionDefaults.registerShiftMs,
     this.pageTurnExtraMs = 450,
     this.finalGapMs = 600,
     this.silentPageHoldMs = 4000,
@@ -175,7 +176,7 @@ class MangaTimeline {
   final int totalMs;
 }
 
-/// 句后转场停顿 = 基础值 + 该句一拍。基础值按优先级：内心 ↔ 说出口切换 > 换人 > 同人；
+/// 句后转场停顿 = 基础值 + 该句一拍。基础值见 [castTransitionBaseMs]（与小说共用）；
 /// 下一句在别的页时再加翻页值；没有下一句时用 [MangaTimingParams.finalGapMs]。
 int mangaGapAfter(
   MangaTimedLine line,
@@ -186,13 +187,15 @@ int mangaGapAfter(
   if (next == null) {
     base = params.finalGapMs;
   } else {
-    if (line.kind.isInner != next.kind.isInner) {
-      base = params.registerShiftMs;
-    } else if (line.speaker != next.speaker) {
-      base = params.speakerChangeMs;
-    } else {
-      base = params.sameSpeakerMs;
-    }
+    base = castTransitionBaseMs(
+      speaker: line.speaker,
+      kind: line.kind,
+      nextSpeaker: next.speaker,
+      nextKind: next.kind,
+      sameSpeakerMs: params.sameSpeakerMs,
+      speakerChangeMs: params.speakerChangeMs,
+      registerShiftMs: params.registerShiftMs,
+    );
     if (next.page != line.page) base += params.pageTurnExtraMs;
   }
   return base + line.beatMs;
