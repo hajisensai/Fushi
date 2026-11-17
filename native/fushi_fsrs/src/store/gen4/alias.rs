@@ -1296,14 +1296,14 @@ impl Index<'_, '_> {
             let Some(id) = strict_id(rest) else {
                 return Ok(key.to_owned());
             };
-            let canon = self.canonical(&Ref::Uuid(id.0))?;
+            let canon = self.canonical_embedded(&id)?;
             return Ok(format!("{FIELD_DESC}{}", canon.text()));
         }
         let bytes = key_bytes(key);
         let (Some(id), true) = (key_id(&bytes), bytes.first() != Some(&0)) else {
             return Ok(key.to_owned());
         };
-        let canon = self.canonical(&Ref::Uuid(id.0))?;
+        let canon = self.canonical_embedded(&id)?;
         Ok(format!("{}{}", &key[..key.len() - 36], canon.text()))
     }
 

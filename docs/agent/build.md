@@ -111,6 +111,13 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 - **CI**：凡用 `setup-fushi-compute` 的 job 紧跟着用 `.github/actions/setup-fushi-rwkv`（同样的 `android-abis`，导出 `FUSHI_RWKV_LIB`）；出包 job 与 fushi_compute 同处各带 rust-cache 构建并出包后核对（APK 每个 ABI、Windows bundle、macOS Frameworks、iOS Runner 导出 `frwkv_*`、服务端 Linux / Windows bundle），dlopen 冒烟比对的 ABI 版本从 `src/lib.rs` 的 `ABI_VERSION` 读、不写死。PR 上 `native-rwkv-gate.yml` 跑三种 CPU 内核的 `cargo test --release`（权重与小模型包按 `fetch_model.sh` 钉的两个 SHA-256 缓存）+ Android 三 ABI 真编与符号核对。
 - **许可**：fushi_rwkv 是 AGPL-3.0-or-later（推理核心搬自 kuma3-anki-core，所有者 2026-10-19 拍板接受，见 `native/fushi_rwkv/UPSTREAM.md`）。动态加载它的四端 app 与静态链它的 iOS 伞形库 / Runner 都随之受 AGPL 约束（GPL-3.0 第 13 条允许与 AGPL-3.0 合并分发）。
 
+## Windows 资源管理器封面缩略图 fushi_shell_thumbs（Rust，只随安装包）
+
+- 源码 `native/fushi_shell_thumbs/`（拍板台 WoAtPpuvwm）：资源管理器里 epub / cbz / cbr / cb7 / pdf 显示封面。两个产物：`fushi_shell_thumbs.dll`（COM 进程内服务器，`IInitializeWithFile` + `IThumbnailProvider`）和 `fushi_shell_thumbs_host.exe`（每张缩略图一次性的宿主进程）。设计与边界见该目录 `README.md`。
+- **不是 app 进程的依赖**：不进 CMake bundle、不进 `tool/native_libs.ps1`；只由 `release-desktop.yml` 的「Build and bundle fushi_shell_thumbs」步（`build_windows_dll.ps1 -InstallDirectory <Release>`，签名之前）放进 Release 目录，`fushi.iss` 的 `bookassoc` 任务按用户（`HKCU64`）注册。
+- **为什么进程内 + 自己的宿主进程**：系统缩略图隔离进程（COM Surrogate）激活不到 HKCU 注册的 CLSID（2026-11-16 实测 `REGDB_E_CLASSNOTREG`），本安装器又是 `PrivilegesRequired=lowest`，所以 `DisableProcessIsolation=1`。explorer 里的 DLL 不解析文件，只把路径交给宿主进程（job 对象限 1 GiB、15 秒超时、普通优先级——低优先级在满载机器上会被饿到超时），宿主用 `{app}\7za\7z.dll`（rar / 7z）和 `{app}\pdfium.dll`（pdf）。升级时被 explorer 占着的旧 DLL 由 `[Code] FushiSetAsideThumbnailHandler` 改名挪开。
+- 本地：`cargo test --profile quick`（端到端测试要 `FUSHI_TEST_7Z_DIR` / `FUSHI_TEST_PDFIUM_DLL`，没给就 SKIP 那几条）；`examples/probe.rs` 对真实文件出 PNG。PR 上 `native-shell-thumbs-gate.yml` 用钉死 SHA-256 的真 7z.dll / pdfium.dll 跑 `cargo test --release --locked`（`FUSHI_THUMBS_REQUIRE_DEPS=1`，缺依赖判红）。
+
 ## Rust 本地开发循环（quick profile）
 
 - **改 Rust 时的「编译—测试」循环一律用 `quick` profile，不用 `--release`**：在 `native/<crate>/` 下
@@ -166,8 +173,39 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
   加全局状态（分配器、计数器、全局锁）前先想清楚它在 16 个线程下的代价。
 - **sccache（可选）**：`tool/native_libs.ps1` 发现装了就自动挂上。实测只对冷编有用且有限：换一个 target 目录后 146 次可缓存编译只命中 26 次
   （带 build script 的依赖把 `OUT_DIR`——在 target 目录下——编进产物，下游跟着失配），冷编 153 秒 → 92 秒；对「改一行重编」
-  没有帮助（工作区 crate 开了增量，sccache 不缓存增量编译）。缓存目录用 sccache 自己的配置文件指定（Windows 开发机在
-  `D:\dev-cache\sccache`，别落 C 盘）。
+  没有帮助（工作区 crate 开了增量，sccache 不缓存增量编译）。缓存目录用 sccache 自己的配置文件指定（打算放
+  `D:\dev-cache\sccache`、别落 C 盘；**2026-11-17 核对时 Windows 开发机没有配置文件**，用的是默认的
+  `%LOCALAPPDATA%\Mozilla\sccache\cache`，约 6.7 GB）。
+  **它也缓存 C 编译**：cc crate（`cc-rs`）见到 `RUSTC_WRAPPER` 的文件名是 `sccache` 就把 C 编译器也包进去
+  （cc 1.10.0 `src/lib.rs` `rustc_wrapper_fallback`），所以 zstd-sys / libsqlite3-sys 的 `.o` 也进同一个缓存。C 的缓存键
+  不含 target 目录：换一个 `CARGO_TARGET_DIR` 冷编 zstd-sys，25 个 C 编译全部命中（2026-11-17 实测）。手敲的
+  `cargo build` / `cargo test --profile quick` 不设 `RUSTC_WRAPPER`，不经过 sccache。
+- **本机故障：zstd-sys 报 `LNK1106: invalid file or disk full: cannot seek to 0x250E`（2026-11-17）**。表现：
+  `setup_worktree` / `tool/native_libs.ps1` 编 fushi_fsrs 时 zstd-sys 的 build script 失败，lib.exe 打 `libzstd.a` 报
+  `4f97f2375d6aa471-entropy_common.o : fatal error LNK1106`；删掉 build 目录、换 worktree 重编都一样；手敲
+  `cargo build --profile quick` 却能过。PR #3563 / #3577 / #3579 的 worktree 都撞过。
+  - **根因（本机环境，不是仓库脚本）**：sccache 缓存里 entropy_common.c 那一项存的是一个被截断的 COFF 对象。证据：
+    00:01～03:27 之间 24 次失败（14 个不同 worktree、4 个 workflow）报的都是同一个文件、同一个偏移 `0x250E`，
+    而正常的 entropy_common.o 是 10591 字节（`0x295F`），偏移 0x250E 落在文件内——每次读到的是同一份更短的字节，不是随机写坏；
+    24 次全都开着 sccache（日志里有「rustc 编译缓存：sccache」）；C 缓存键不含 target 目录（见上一条），所以删 build 目录、
+    换 worktree 都拿回同一份坏对象；quick profile 能过是因为手敲的命令没挂 sccache，不是因为 profile。03:43 起同样的
+    构建全部恢复（缓存项被重写过），之后再没复现：2026-11-17 13:03 起在新 worktree 里经 sccache 冷编 zstd-sys 与
+    `build_windows_dll.ps1 -IdAudit` 都过了 lib.exe 这一步；把缓存里 720 个 C 对象逐个按 COFF 头核对，没有截断的。
+    坏项当初怎么写进去的没能还原（事后没有现场）；同一时段本机的提交内存（commit charge）顶着上限（见下一条），这是最可能的诱因，
+    但没有直接证据。已排除：磁盘满（D: 剩 296 GB、C: 剩 309 GB）、路径长度（报错的是 out 目录里的相对文件名，
+    其他 worktree 同长度路径能过）、cc 选错工具链（本机 PATH 上没有 gcc / clang / cc，日志里调的是 MSVC 的
+    `HostX64\x64\lib.exe`）、多个构建并发写同一 target（每个 worktree 各有 target，cargo 对同一 target 加锁）。
+  - **处置**：同一个 `.o` 反复报 LNK1106 / 「invalid file」、删 build 目录不管用时，带 `SCCACHE_RECACHE=1` 重编一次——
+    sccache 对这次构建的每个编译都不读缓存、重编并覆盖缓存项（实测 zstd-sys 26 个编译全部「Forced recaches」）：
+    `$env:SCCACHE_RECACHE = '1'; powershell -ExecutionPolicy Bypass -File native/fushi_fsrs/build_windows_dll.ps1 -IdAudit; Remove-Item Env:SCCACHE_RECACHE`。
+    要彻底清就 `sccache --stop-server` 后删缓存目录。不要拿 `-SkipNativeCompute` 绕过去（测试会跑在旧的原生库上），
+    也不要在脚本里加失败重试——坏项在缓存里，重试只会再拿到它。
+- **本机故障：编 fushi_fsrs 时 rustc 报 `memory allocation of N bytes failed`（`STATUS_STACK_BUFFER_OVERRUN`，2026-11-17）**：
+  是整机提交内存耗尽，不是 rustc 或仓库的问题。实测：13:05～13:19 连续两次 `build_windows_dll.ps1 -IdAudit` 在第二份
+  （id_audit）库上报分配 2 MB / 50 MB 失败，当时空闲物理内存还有 20 GB 以上；同期采样提交内存 161.8 / 162.8 GB（页面文件
+  系统托管、上限随用随涨），单个 rustc 只占约 1.5 GB，大头是别的进程（一个与本仓无关的 Python 推理进程 46 GB、58 个
+  claude 进程合计 26 GB）。第三次同样的命令在负载回落后两份库都编过了。处置：先看任务管理器「性能 → 内存 → 已提交」，
+  离上限近就等其他重负载结束或调大页面文件再编；同样不加重试。
 - 旧分支 / 还没合到这份配置的 worktree：本机 `~/.cargo/config.toml` 里放同一段 `[profile.quick]` 即可（Windows 开发机已放）；
   `[env]` 那一段只能跟仓库走（要按 worktree 解析路径），旧分支没有。
 
@@ -261,7 +299,6 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 2. 预构建（同一 ref 上两条一起 dispatch；不给 `tag_name` 时两条按同一 commit 算出同一个 `v<version>` / `v<version>-beta.<seq>`，落到同一个 Release）：
 
    ```bash
-   export HTTPS_PROXY=http://127.0.0.1:34151 HTTP_PROXY=http://127.0.0.1:34151
    gh workflow run release.yml         --repo hajisensai/fushi --ref develop -f channel=formal
    gh workflow run release-desktop.yml --repo hajisensai/fushi --ref develop -f channel=formal
    ```

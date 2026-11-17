@@ -192,8 +192,10 @@ impl Source for G4<'_, '_> {
         // 归回的写入者表在这一条命令里不变（同一个读快照）：按类拼行每条笔记都要它，读一次（同 `cache.rs` 的
         // `cache_pass`），不让每条笔记各读一遍整张表。
         ix.pass_writers = Some(ix.writer_aliases()?);
+        ix.pass_rules_begin()?;
         let done = edits_with(&mut ix, notes, keys, sink);
         ix.pass_writers = None;
+        ix.pass_rules = None;
         done
     }
 

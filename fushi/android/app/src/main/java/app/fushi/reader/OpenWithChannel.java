@@ -3,11 +3,16 @@ package app.fushi.reader;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.UriPermission;
+import android.content.pm.PackageManager;
+import android.content.pm.PathPermission;
+import android.content.pm.PermissionInfo;
 import android.content.pm.ProviderInfo;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.Process;
 import android.provider.OpenableColumns;
 
 import androidx.annotation.NonNull;
@@ -46,7 +51,9 @@ import io.flutter.plugin.common.MethodChannel;
  * 用 {@code takeIncomingDocuments} 取走即清空。
  *
  * <p>只收 {@code content://}：Android 7+ 跨应用传 {@code file://} 会被系统拦下，留着它
- * 反而让别的 app 能指使 Fushi 读自己的私有文件。同理拒绝指向本包自己 provider 的 URI。
+ * 反而让别的 app 能指使 Fushi 读自己的私有文件。{@code content://} 也只在「Fushi 除了对方的
+ * URI grant 外读不到」时才读（自家 provider、Fushi 凭自身特权权限能读的 exported provider 一律
+ * 拒），见 {@link OpenWithUriPolicy}（BUG-4752）。
  */
 public final class OpenWithChannel {
     private static final String METHOD_TAKE = "takeIncomingDocuments";
@@ -103,9 +110,10 @@ public final class OpenWithChannel {
         final Uri uri = documentUri(intent);
         if (uri == null) return;
         final Context app = context.getApplicationContext();
-        if (isOwnProvider(app, uri)) return;
         final String intentType = intent.getType();
         EXECUTOR.execute(() -> {
+            // 访问判定要查 PackageManager / ContentResolver（binder），放后台线程。
+            if (!mayReadOnBehalfOfSender(app, uri)) return;
             final Map<String, Object> copied = copyToCache(app, uri, intentType);
             if (copied == null) return;
             synchronized (READY) {
@@ -145,14 +153,73 @@ public final class OpenWithChannel {
         }
     }
 
-    private static boolean isOwnProvider(@NonNull Context app, @NonNull Uri uri) {
-        final String authority = uri.getAuthority();
-        if (authority == null) return true;
+    /**
+     * 能否替发起方读这个 URI：只在 Fushi 除了对方的 URI grant 外读不到它时才读，防止
+     * confused deputy（BUG-4752）。判据与威胁模型见 {@link OpenWithUriPolicy}，这里只取事实。
+     */
+    private static boolean mayReadOnBehalfOfSender(@NonNull Context app, @NonNull Uri uri) {
+        final OpenWithUriPolicy.Verdict verdict;
         try {
-            final ProviderInfo info = app.getPackageManager().resolveContentProvider(authority, 0);
-            return info != null && app.getPackageName().equals(info.packageName);
+            verdict = OpenWithUriPolicy.decide(
+                    app.getPackageName(),
+                    OpenWithUriPolicy.bareAuthority(uri.getAuthority()),
+                    providerFacts(app, uri),
+                    selfHasPersistedGrant(app, uri),
+                    permission -> selfHoldsPrivileged(app, permission));
         } catch (RuntimeException e) {
+            // PackageManager / ContentResolver 查询本身出错：判不了就不读。
+            android.util.Log.w("fushi-open-with", "access check failed, refusing " + uri + ": " + e);
             return false;
+        }
+        if (verdict == OpenWithUriPolicy.Verdict.ALLOW) return true;
+        android.util.Log.w("fushi-open-with", "refused " + uri + ": " + verdict);
+        return false;
+    }
+
+    @Nullable
+    private static OpenWithUriPolicy.ProviderFacts providerFacts(
+            @NonNull Context app, @NonNull Uri uri) {
+        final String bare = OpenWithUriPolicy.bareAuthority(uri.getAuthority());
+        if (bare == null) return null;
+        final ProviderInfo info = app.getPackageManager().resolveContentProvider(bare, 0);
+        if (info == null) return null;
+        final List<String> pathReadPermissions = new ArrayList<>();
+        final String path = uri.getPath();
+        if (info.pathPermissions != null && path != null) {
+            for (PathPermission pp : info.pathPermissions) {
+                if (pp != null && pp.getReadPermission() != null && pp.match(path)) {
+                    pathReadPermissions.add(pp.getReadPermission());
+                }
+            }
+        }
+        return new OpenWithUriPolicy.ProviderFacts(
+                info.packageName, info.exported, info.readPermission, pathReadPermissions);
+    }
+
+    private static boolean selfHasPersistedGrant(@NonNull Context app, @NonNull Uri uri) {
+        final String target = uri.toString();
+        for (UriPermission granted : app.getContentResolver().getPersistedUriPermissions()) {
+            if (granted.isReadPermission()
+                    && OpenWithUriPolicy.grantCovers(granted.getUri().toString(), target)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Fushi 持有该权限且它不是 normal 级；查不到定义的权限按特权处理（宁拒勿放）。 */
+    @SuppressWarnings("deprecation")
+    private static boolean selfHoldsPrivileged(@NonNull Context app, @NonNull String permission) {
+        if (app.checkPermission(permission, Process.myPid(), Process.myUid())
+                != PackageManager.PERMISSION_GRANTED) {
+            return false;
+        }
+        try {
+            final PermissionInfo info = app.getPackageManager().getPermissionInfo(permission, 0);
+            return (info.protectionLevel & PermissionInfo.PROTECTION_MASK_BASE)
+                    != PermissionInfo.PROTECTION_NORMAL;
+        } catch (PackageManager.NameNotFoundException e) {
+            return true;
         }
     }
 

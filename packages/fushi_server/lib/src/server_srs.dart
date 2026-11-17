@@ -29,6 +29,7 @@ import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi_engine/srs/srs_profile_link.dart';
 import 'package:fushi_engine/srs/srs_remote_store.dart';
 import 'package:fushi_engine/srs/srs_rwkv_attach.dart';
+import 'package:fushi_engine/srs/srs_rwkv_models.dart';
 import 'package:fushi_engine/srs/srs_rwkv_service.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/srs_style_store.dart';
@@ -372,6 +373,27 @@ class ServerSrsProfile {
     );
   }
 
+  /// 在用的 RWKV 服务换成 [size] 档的（设置文件里的档位与在用的不同：WebUI / admin API / ctl 改了，或手改了
+  /// `<support>/srs_rwkv/model_size`）。旧服务先关（存快照、停在途下载），再挂新档位的；库已对外提供就马上开始
+  /// 准备（有 RWKV 牌组时）。排在同步轮次之间（[ServerSrs._rounds]）：一轮的中途不换。
+  Future<void> _switchRwkv(SrsRwkvModelSize size) async {
+    final SrsRwkvService? old = _rwkv;
+    final SrsDbStore? s = _store;
+    if (old == null || s == null || _closed || old.models.size == size) return;
+    await _owner._rounds.run(() async {
+      if (_closed || !identical(_rwkv, old)) return;
+      try {
+        await old.close();
+      } catch (e, stack) {
+        engineLog.log('ServerSrs.rwkv', e, stack);
+      }
+      _rwkv = _owner._attachRwkv(s, size);
+      _rwkvStarted = false;
+      if (state == ServerSrsProfileState.ready) await _startRwkvIfUsed(s);
+    });
+    _owner._onChanged(uid);
+  }
+
   /// 去抖后跑一轮（已配对设备写了文件 / 服务端自己写了库）。
   void scheduleSync({Duration delay = kServerSrsWriteDebounce}) {
     if (_closed) return;
@@ -640,15 +662,36 @@ class ServerSrs {
   ServerSrsUpgradeRefusal? get upgradeRefusal =>
       _storage != null && _migration == null ? null : _generation.refusal;
 
-  /// 给刚打开的库挂上 RWKV 排程（与 app 共用 [srsAttachRwkv]）：权重在 `<support>/srs_rwkv/models`（按需下载；
-  /// 不能出网的机器可以事先把权重文件放进去，校验通过即用），状态快照在 `<support>/srs_rwkv/state`。
-  SrsRwkvService _attachRwkv(SrsDbStore store) => srsAttachRwkv(
-    store,
-    support: support,
-    createClient: _rwkvHttpClient,
-    openBackend: _rwkvBackend,
-    log: (String message) => engineLog.logDiagnostic('ServerSrs.rwkv', message),
-  );
+  /// 给库挂上 [size] 档的 RWKV 排程（与 app 共用 [srsAttachRwkv]）：权重在 `<support>/srs_rwkv/models`（按需下载；
+  /// 不能出网的机器可以事先把权重文件放进去，校验通过即用），状态快照在该档的目录（[srsRwkvStateDir]）。
+  SrsRwkvService _attachRwkv(SrsDbStore store, SrsRwkvModelSize size) =>
+      srsAttachRwkv(
+        store,
+        support: support,
+        models: SrsRwkvModels(
+          dir: srsRwkvModelsDir(support),
+          size: size,
+          createClient: _rwkvHttpClient,
+        ),
+        openBackend: _rwkvBackend,
+        log: (String message) =>
+            engineLog.logDiagnostic('ServerSrs.rwkv', message),
+      );
+
+  /// 设备的 RWKV 模型档位（`<support>/srs_rwkv/model_size`，与 app 同一个设置文件、同一套读法）。
+  SrsRwkvModelSize get rwkvModelSize => readSrsRwkvModelSize(support);
+
+  /// 换 RWKV 模型档位（WebUI / admin API / ctl）：写设置文件，再把各份已打开的库的 RWKV 服务换成新档位的，
+  /// 不重启。手改设置文件也会生效：每次对齐配置（含兜底定时器那一次）都按文件里的档位对齐在用的服务。
+  Future<void> setRwkvModelSize(SrsRwkvModelSize size) async {
+    await writeRwkvModelSize(size);
+    await applyConfig();
+  }
+
+  /// 只写档位设置文件、不对齐在用的服务：admin PUT 要先写它（写不进去就整次失败、配置不动），
+  /// 再改 config.yaml，最后 [applyConfig] 一次。
+  Future<void> writeRwkvModelSize(SrsRwkvModelSize size) =>
+      writeSrsRwkvModelSize(support, size);
 
   SrsStorage? _storage;
   FsrsEngine? _engine;
@@ -824,6 +867,8 @@ class ServerSrs {
     final SrsStorage? storage = await _openStorage(wanted);
     if (storage == null) return;
     _engine ??= _engineFactory();
+    // 档位每次对齐都重读（不是只在挂载时读一次）：WebUI 改了、或有人手改了设置文件，已打开的库在这里换过去。
+    final SrsRwkvModelSize rwkvSize = rwkvModelSize;
     final Map<String, SrsRemoteProfile> found = await _discover();
     for (final String uid in wanted) {
       final ServerSrsProfile prof = _profiles[uid] ??= ServerSrsProfile._(
@@ -836,7 +881,10 @@ class ServerSrs {
         // 库开着时数以库为准（每轮同步后重数），设备报的旧数不覆盖它。
         if (prof._store == null) prof.noteCount = info.noteCount ?? 0;
       }
-      if (prof._store != null) continue;
+      if (prof._store != null) {
+        await prof._switchRwkv(rwkvSize);
+        continue;
+      }
       if (prof.state == ServerSrsProfileState.upgrading ||
           prof.state == ServerSrsProfileState.upgradeBlocked) {
         // 库目录升级完了（或本来就好）：回到「正在打开」，第一轮同步跑完才对外提供。
@@ -853,7 +901,7 @@ class ServerSrs {
         );
         prof._media = SrsMediaStore(SrsMediaStore.directoryFor(support, uid));
         // 库交出去之前就挂上：没挂 RWKV 的库会把 RWKV 牌组按 FSRS-7 的到期日排（见 srs_rwkv_attach.dart 文件头）。
-        prof._rwkv = _attachRwkv(prof._store!);
+        prof._rwkv = _attachRwkv(prof._store!, rwkvSize);
       } catch (e, stack) {
         prof._setState(ServerSrsProfileState.failed, '$e');
         engineLog.log('ServerSrs.open', e, stack);

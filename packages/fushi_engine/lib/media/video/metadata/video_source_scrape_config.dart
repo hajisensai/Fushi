@@ -139,8 +139,8 @@ class VideoSourceScrapeGlobalConfig {
 
   /// AniDB **HTTP API** 应用身份（anime XML 资料链），与 UDP 是 AniDB 上两条
   /// 独立登记（BUG-2623）。客户端名留空时取随包的 [kBundledAniDbHttpClient]——
-  /// 目前未登记，即空身份，provider 在发请求前就判不可用；用户填了自定义客户端
-  /// 时与 UDP 用同一对。默认空 = 不可用，与「没配身份」的旧默认一致。
+  /// 已登记为 `fushiplayerhttp` v1；用户填了自定义客户端时与 UDP 用同一对。
+  /// 直接构造快照时默认空 = 不可用，生产配置由 fromPreferences 解析随包身份。
   final String anidbHttpClientName;
   final int? anidbHttpClientVersion;
 

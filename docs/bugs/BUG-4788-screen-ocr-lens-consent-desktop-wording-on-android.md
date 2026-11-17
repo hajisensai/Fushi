@@ -1,0 +1,6 @@
+## BUG-4788 · Android 截屏识字的 Google Lens 同意框照搬桌面文案，手机上写着「整块显示器」
+- **报告**：2026-11-17（用户：PR #3615 合入后的遗留缺陷复核——「Android 截屏识字的 Lens 同意框照搬桌面文案」）
+- **真实性**：✅ 真 bug（文案错位，不影响功能与告知实质）。根因：`fushi/lib/src/floating_ball/app_floating_ball_host.dart:323-330`（修前行号）`DesktopSystemBallActionTarget.hasLensConsent` / `askLensConsent` 固定用 `GoogleLensDisclosureScene.desktopScreens`，Android 悬浮球截屏识字（`_androidScreenOcrEngine`，修前 `:1180`）也弹这个框，正文是 `screen_ocr_google_lens_disclosure_body`：「应用外截屏识字时，整块显示器的截图会发送给 Google」。
+- **[x] ① 已修复** — `fushi/lib/src/media/manga/ocr/google_lens_disclosure.dart` 新增场景 `GoogleLensDisclosureScene.mobileScreens`：同意记录与 `desktopScreens` 共用 `kScreenOcrGoogleLensDisclosurePreferenceKey`（同一设备的应用外截屏，不重复问），标题共用，正文用新 key `screen_ocr_google_lens_disclosure_body_mobile`（i18n_sync 加，说「整个屏幕」）。`hasLensConsent` / `askLensConsent` 改为由调用方传场景：桌面冻结层传 `desktopScreens`，`_androidScreenOcrEngine` 传 `mobileScreens`。
+- **[x] ② 已加自动化测试** — `fushi/test/floating_ball/app_floating_ball_host_test.dart`：Android 路径断言同意框场景是 `mobileScreens`、桌面路径是 `desktopScreens`；`fushi/test/media/manga/ocr/google_lens_disclosure_test.dart`「Android 截屏识字：同意框用手机文案（不说显示器），同意记录与桌面截屏共用」。
+- **备注**：新 key 的其余 15 种语言暂为英文（i18n_sync `--add` 只带 en / zh-CN）。

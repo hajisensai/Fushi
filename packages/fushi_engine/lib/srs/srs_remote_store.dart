@@ -510,6 +510,7 @@ abstract final class SrsRemoteWire {
     'total': s.totalCards,
     'rp': s.rwkvPending,
     'rs': s.rwkvScheduled,
+    'rm': ?s.reviewMinutesLeft,
   };
 
   /// 牌组行；null = 没有这个牌组，或它不在 [tree] 里（树与摘要之间主机删了它）。
@@ -540,6 +541,7 @@ abstract final class SrsRemoteWire {
       totalCards: _J.integer(m['total'], '$at.total'),
       rwkvPending: m['rp'] == true,
       rwkvScheduled: m['rs'] == true,
+      reviewMinutesLeft: _J.optInt(m['rm'], '$at.rm'),
     );
   }
 
@@ -1445,6 +1447,10 @@ class SrsRemoteStoreService {
         for (final SrsDeckSummary d in await s.deckSummaries())
           SrsRemoteWire.summary(d),
       ],
+    ),
+    'limitUnitLegacyDecks': _Op(
+      (SrsDbStore s, _Args a) async =>
+          (await s.limitUnitLegacyDecks()).toList()..sort(),
     ),
     'todayReviewSummary': _Op(
       (SrsDbStore s, _Args a) async =>
