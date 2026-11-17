@@ -7,7 +7,7 @@
 //! 由我们自己做：解析不可信文件（zip / 7z.dll / pdfium.dll）全在一次性的子进程里，崩溃、卡死、
 //! 吃内存都只丢这一张缩略图，拖不垮 explorer.exe。
 //!
-//! 资源边界（BUG-4767）：
+//! 资源边界（BUG-4771）：
 //! - 宿主进程**创建时**就在 job 里（`PROC_THREAD_ATTRIBUTE_JOB_LIST`，Win10+），不存在
 //!   「先启动、后 AssignProcessToJobObject」之间不受限的窗口；job 建不出来或入 job 失败，
 //!   CreateProcessW 直接失败，宿主根本不会运行。

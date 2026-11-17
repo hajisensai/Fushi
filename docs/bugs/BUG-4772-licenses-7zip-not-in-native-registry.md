@@ -1,4 +1,4 @@
-## BUG-4768 · 随包的 7-Zip（7z.exe / 7z.dll，含 unRAR 派生代码）没进应用内原生许可清单
+## BUG-4772 · 随包的 7-Zip（7z.exe / 7z.dll，含 unRAR 派生代码）没进应用内原生许可清单
 - **报告**：2026-11-17（用户：PR #3567 合入后的遗留项核实「随包的 7-Zip 没有进应用内的原生许可清单」）
 - **真实性**：✅ 真 bug（许可合规缺口）。根因：
   - `tools/bundle_7za.ps1:22-25` 钉死 7-Zip 26.02（`7z2602-x64.exe`，SHA-256 `6745FA76…82EF0`），`:84-87` 把 7z.exe / 7z.dll / License.txt 放进 `{app}\7za\`；`.github/workflows/release-desktop.yml:858-866` 每次 Windows 发布都跑它，`native/fushi_shell_thumbs/src/win/sevenzip.rs:327` 的缩略图宿主也加载这份 7z.dll。
