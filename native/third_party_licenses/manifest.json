@@ -3236,6 +3236,21 @@
       ],
       "source": "APK lib/arm64-v8a/libc++_shared.so 1253544 B, strings contain 'r27-beta1'; text = llvm-project llvmorg-18.1.8 libcxx/LICENSE.TXT (LLVM 18 line used by NDK r27; version approximate)",
       "note": "NDK runtime, not a pub package; pickFirst takes one copy from several native builds, exact origin not located."
+    },
+    {
+      "name": "7-Zip (7z.exe + 7z.dll)",
+      "version": "26.02",
+      "license": "LGPL-2.1-or-later AND LicenseRef-unRAR-restriction AND BSD-3-Clause AND BSD-2-Clause",
+      "component": "tools/bundle_7za.ps1 (release-desktop.yml, not a pub package)",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/7zip-26.02/License.txt",
+        "native/third_party_licenses/texts/7zip-26.02/DOC-copying.txt"
+      ],
+      "source": "tools/bundle_7za.ps1 $Version='26.02', https://github.com/ip7z/7zip/releases/download/26.02/7z2602-x64.exe (sha256 6745fa76dc2ea031596d8678f6f6b99c3c1b435b4164a63485adbbc7b8d82ef0, pinned in the script); License.txt is the file inside that installer (the same file the script copies to {app}\\7za\\License.txt); DOC-copying.txt is raw.githubusercontent.com/ip7z/7zip/26.02/DOC/copying.txt (the GNU LGPL 2.1 text that License.txt refers to)",
+      "note": "Bundled into {app}\\7za\\ on Windows only. Used by the discovery / manga import offline extractor (7z.exe) and loaded by fushi_shell_thumbs_host.exe (7z.dll, native/fushi_shell_thumbs/src/win/sevenzip.rs) for rar / 7z cover thumbnails. 7z.dll contains RAR decompression code derived from unRAR (see the unRAR license restriction in License.txt)."
     }
   ]
 }

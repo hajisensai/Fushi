@@ -42,8 +42,12 @@ export 'package:fushi/src/floating_ball/screen_ocr_text_block.dart'
 
 /// 一次点字带出来的卡图来源：识别用的那张图（内存字节或 Android 原生写的文件）+
 /// 所点文字的文本块与行框（都是**那张图**的像素坐标）。
+///
+/// Android 的定格帧文件只活到下一次截屏（原生写新帧时清掉旧帧，缓存目录不无限长）：
+/// 本实例第一次读到字节就留在内存里（[readBytes]），高级制卡分区与出卡图共用这一份，
+/// 查词窗收到来源时就先读一次（`PopupDictionaryPage`），之后再截屏也不会让这张卡丢图。
 class ScreenOcrCardImage {
-  const ScreenOcrCardImage({
+  ScreenOcrCardImage({
     this.bytes,
     this.path,
     required this.textBlock,
@@ -63,11 +67,27 @@ class ScreenOcrCardImage {
   /// 被点的那一行（像素），留白按它的粗细算。
   final Rect line;
 
+  /// 第一次成功读到的定格帧字节（[path] 来源）。
+  Uint8List? _readBack;
+
+  /// 正在读的那一次：并发的读取共用它，不重复读盘。
+  Future<Uint8List?>? _reading;
+
+  /// 识别用的那张图的字节。文件来源第一次读成功后留在本实例里，之后不再读盘——
+  /// 原生下一次截屏会删掉这个文件。读失败（文件还没写完 / 已被清掉）不记住，下次再读。
   Future<Uint8List?> readBytes() async {
-    final Uint8List? inMemory = bytes;
+    final Uint8List? inMemory = bytes ?? _readBack;
     if (inMemory != null) return inMemory;
     final String? file = path;
     if (file == null) return null;
+    final Future<Uint8List?> reading = _reading ??= _readFile(file);
+    final Uint8List? data = await reading;
+    if (identical(_reading, reading)) _reading = null;
+    if (data != null) _readBack = data;
+    return data;
+  }
+
+  static Future<Uint8List?> _readFile(String file) async {
     try {
       return await File(file).readAsBytes();
     } on FileSystemException catch (error, stack) {

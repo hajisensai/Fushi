@@ -16,6 +16,8 @@
 //   GET  /dev/decisions           拍板台：AI 代理写入的待拍事项（decisions.js）
 //   GET  /dev/decisions.json      拍板台同步（?sig= 没变回 {same:true}）
 //   GET  /dev/decisions.js        拍板台客户端脚本（decisions_client.js）
+//   POST /dev/d/:id/files         拍板台网页上传附件（multipart file，可多个；拖放 / 粘贴 / 选文件）
+//   GET  /dev/d/:id/f/:n          拍板台附件（设计图 html / md / 图片；CSP sandbox，见 decisions.js）
 //   POST /dev/d/:id  {v,text,back} 拍板并 / 或留言（Accept: application/json → 回新卡片 JSON，不跳转）
 //
 // 安全：页面默认无脚本（CSP script-src 为 none），只有拍板台放行本站脚本 /dev/decisions.js；会话 Cookie HttpOnly + Secure + SameSite=Strict，
@@ -41,7 +43,7 @@ import { PING_PLATFORMS, loadInstallStats, refreshInstallStatsSnapshot, versionI
 import { RELEASE_PLATFORMS, projectStats, refreshProjectStats } from './project_stats.js';
 import {
   DECISIONS_STYLE, DECISION_LIMITS, decisionItem, decisionStageParam, decisionsPayload, decisionsSig, getDecision,
-  listDecisions, renderDecisions, submitDecision,
+  DECISION_UPLOAD_BODY_MAX, ORIGINAL_IMAGE_ORIGINS, decisionFileResponse, uploadDecisionFiles, listDecisions, renderDecisions, submitDecision,
 } from './decisions.js';
 import { DECISIONS_CLIENT_JS } from './decisions_client.js';
 
@@ -87,7 +89,8 @@ const CSP = [
 ].join('; ');
 
 /** 拍板台页面放行本站脚本与 fetch，其余照旧。 */
-const DECISIONS_CSP = CSP.replace("default-src 'none'", "default-src 'none'; script-src 'self'; connect-src 'self'");
+const DECISIONS_CSP = CSP.replace("default-src 'none'", "default-src 'none'; script-src 'self'; connect-src 'self'")
+  .replace("img-src 'self'", `img-src 'self' ${ORIGINAL_IMAGE_ORIGINS.join(' ')}; frame-src 'self'`);
 
 /** 脚本内容的短哈希，拼进 URL 防缓存旧版。 */
 function shortHash(text) {
@@ -943,6 +946,24 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
         'X-Content-Type-Options': 'nosniff',
       },
     });
+  }
+  if (method === 'GET' && (m = /^\/dev\/d\/([A-Za-z0-9_-]{1,40})\/f\/(\d{1,2})$/.exec(path))) {
+    return decisionFileResponse(env, m[1], Number(m[2]));
+  }
+  if (method === 'POST' && (m = /^\/dev\/d\/([A-Za-z0-9_-]{1,40})\/files$/.exec(path))) {
+    if (Number(request.headers.get('Content-Length') || '0') > DECISION_UPLOAD_BODY_MAX) throw new HttpError(413, 'file_too_large');
+    let form;
+    try {
+      form = await request.formData();
+    } catch {
+      throw new HttpError(400, 'bad_upload');
+    }
+    await uploadDecisionFiles(env, dev, m[1], form.getAll('file'), now);
+    if ((request.headers.get('Accept') || '').includes('application/json')) {
+      const [row, sig] = await Promise.all([getDecision(env, m[1]), decisionsSig(env)]);
+      return json({ item: decisionItem(row), sig }, 200, { 'Cache-Control': 'no-store' });
+    }
+    return redirect(`/dev/decisions?stage=${decisionStageParam(form.get('back'))}#d-${m[1]}`);
   }
   if (method === 'POST' && (m = /^\/dev\/d\/([A-Za-z0-9_-]{1,40})$/.exec(path))) {
     const form = await readForm(request, formLimit(DECISION_LIMITS.noteMax));

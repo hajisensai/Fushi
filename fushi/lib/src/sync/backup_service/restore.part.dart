@@ -1,5 +1,12 @@
 part of '../backup_service.dart';
 
+/// 覆盖前快照可达性判定（`BackupRestoreService._overwriteSnapshotReachability`）的
+/// 结果：与输入的书目录 / 视频路径按下标对齐。
+typedef _OverwriteSnapshotReachability = ({
+  List<bool> bookFiles,
+  List<bool> videos,
+});
+
 /// Row counts peeked from a backup's DB blob for the import "what's inside"
 /// manifest when the meta predates the corresponding count field.
 typedef _ContentRowCounts = ({
@@ -1563,8 +1570,8 @@ class BackupRestoreService {
   /// 覆盖前快照的保留期（维护者 2026-11-16 拍板「加过期」）：整份旧主库和主库
   /// 一样大，无期限留在支持目录里既占空间，也让「有意清空旧数据」的用户的旧书库、
   /// 进度、统计静默留在盘上。30 天足够发现「覆盖导入是误操作」，过期后启动时删除
-  /// （[pruneExpiredOverwriteSnapshot]）。计时起点是快照的修改时刻，
-  /// [_retainOverwriteSnapshot] 把它钉成覆盖导入完成的时刻。
+  /// （[pruneExpiredOverwriteSnapshot]）。计时起点是 [_overwriteSnapshotCreatedName]
+  /// 记录的覆盖导入完成时刻，不是快照文件的修改时刻。
   static const Duration overwriteSnapshotRetention = Duration(days: 30);
 
   /// 「覆盖导入完成」提示的待显示标记（[_retainOverwriteSnapshot] 落、
@@ -1573,9 +1580,59 @@ class BackupRestoreService {
   static const String _overwriteSnapshotNoticeName =
       '$_dbName.overwrite-snapshot-notice';
 
-  /// 快照到期时刻（修改时刻 + [overwriteSnapshotRetention]）。
-  static DateTime overwriteSnapshotExpiresAt(DateTime modifiedAt) =>
-      modifiedAt.add(overwriteSnapshotRetention);
+  /// 覆盖前快照的保留期起点记录：内容是覆盖导入完成时刻的 ISO-8601 UTC 字符串，
+  /// 是「快照留到哪天」的唯一真相（[pruneExpiredOverwriteSnapshot] 与
+  /// [previewOverwriteSnapshot] 都读它）。
+  ///
+  /// 不再用快照文件的修改时刻：改名保留的是旧主库最后一次写入的时刻，此前靠改名后
+  /// `setLastModified` 钉成「现在」，而钉失败时快照就带着旧主库的时刻，很久没写过库
+  /// 的用户下次启动快照就被当成过期删掉（误操作的覆盖导入本可找回的书库随之丢失）。
+  /// 与提示标记一样不是快照形态、名字不含 `pre-overwrite`。
+  static const String _overwriteSnapshotCreatedName =
+      '$_dbName.overwrite-snapshot-created';
+
+  /// 快照到期时刻（保留期起点 + [overwriteSnapshotRetention]）。
+  static DateTime overwriteSnapshotExpiresAt(DateTime createdAt) =>
+      createdAt.add(overwriteSnapshotRetention);
+
+  /// 读保留期起点记录；没有记录 / 内容读不出时返回 null。
+  static Future<DateTime?> _readOverwriteSnapshotCreatedAt(
+    String dbDirectory,
+  ) async {
+    final File record = File(
+      p.join(dbDirectory, _overwriteSnapshotCreatedName),
+    );
+    if (!record.existsSync()) return null;
+    try {
+      return DateTime.tryParse((await record.readAsString()).trim())?.toLocal();
+    } on FileSystemException catch (e) {
+      debugPrint(
+        'BackupRestoreService: unreadable overwrite snapshot record: $e',
+      );
+      return null;
+    }
+  }
+
+  /// 写保留期起点记录，返回是否写成。写不成只记日志：快照本身已保住，
+  /// 没有记录的快照在下次启动时由 [pruneExpiredOverwriteSnapshot] 从那一刻起计时
+  /// （只会让快照多留，不会让它提前被删）。
+  static Future<bool> _writeOverwriteSnapshotCreatedAt(
+    String dbDirectory,
+    DateTime createdAt,
+  ) async {
+    try {
+      await File(
+        p.join(dbDirectory, _overwriteSnapshotCreatedName),
+      ).writeAsString(createdAt.toUtc().toIso8601String(), flush: true);
+      return true;
+    } on FileSystemException catch (e, st) {
+      debugPrint(
+        'BackupRestoreService: writing overwrite snapshot record failed: '
+        '$e\n$st',
+      );
+      return false;
+    }
+  }
 
   /// 覆盖导入成功收尾：`pre-restore.bak`（只在恢复流程进行中有意义，由
   /// `sync-preserve.json` 持有）改名成 [overwriteSnapshotPath]，只留最近一份。
@@ -1586,10 +1643,9 @@ class BackupRestoreService {
   /// 持有者、可随时删除的名字。改名失败只记日志并删掉 bak——导入本身已成功，丢掉
   /// 的只是这次恢复机会，不能把成功的导入翻成失败。
   ///
-  /// 改名后把修改时刻钉成「现在」（= 覆盖导入完成的时刻）：改名保留的是旧主库最后
-  /// 一次写入的时刻，`File.copy` 在各平台上对它的处理也不一致，拿它算保留期会让
-  /// 很久没写过库的用户一覆盖导入快照就过期。再落一个提示标记，下次进首页告诉用户
-  /// 快照在哪、留多久（[takeOverwriteSnapshotNotice]）。
+  /// 改名成功后的两步各自独立：保留期起点记录（[_overwriteSnapshotCreatedName]）
+  /// 与下次进首页的提示标记（[takeOverwriteSnapshotNotice]）。任何一步失败都不影响
+  /// 另一步，也绝不回头删已经保住的快照。
   static Future<void> _retainOverwriteSnapshot(
     String dbDirectory,
     String bakPath,
@@ -1597,34 +1653,64 @@ class BackupRestoreService {
     final File bak = File(bakPath);
     if (!bak.existsSync()) return;
     final String target = overwriteSnapshotPath(dbDirectory);
+    // 上一份快照连同它的起点记录一起作废：新记录万一写不成，也不能让新快照
+    // 沿用上一份的（更早的）起点。
+    await _safeDelete(target);
+    await _safeDelete(p.join(dbDirectory, _overwriteSnapshotCreatedName));
     try {
-      await _safeDelete(target);
-      final File snapshot = await bak.rename(target);
-      await snapshot.setLastModified(DateTime.now());
+      await bak.rename(target);
+    } on FileSystemException catch (e, st) {
+      debugPrint(
+        'BackupRestoreService._retainOverwriteSnapshot: renaming the '
+        'pre-restore bak failed: $e\n$st',
+      );
+      await _safeDelete(bakPath);
+      return;
+    }
+    await _writeOverwriteSnapshotCreatedAt(dbDirectory, DateTime.now());
+    try {
       await File(
         p.join(dbDirectory, _overwriteSnapshotNoticeName),
       ).writeAsString('');
     } on FileSystemException catch (e, st) {
       debugPrint(
-        'BackupRestoreService._retainOverwriteSnapshot failed: $e\n$st',
+        'BackupRestoreService._retainOverwriteSnapshot: writing the notice '
+        'marker failed: $e\n$st',
       );
-      await _safeDelete(bakPath);
     }
   }
 
-  /// 启动时删掉过了保留期的覆盖前快照（连同未消费的提示标记）。[now] 只给测试注入。
-  /// 返回是否删了快照。
+  /// 启动时删掉过了保留期的覆盖前快照（连同未消费的提示标记与起点记录）。[now] 只给
+  /// 测试注入。返回是否删了快照。
+  ///
+  /// 快照在但没有起点记录（收尾时记录没写成，或快照来自引入记录之前的版本）时，
+  /// 从这一刻补记起点，不删：保留期只会被延长，不会让快照提前消失。快照不在时
+  /// 顺手清掉孤儿记录（存储页删快照时不认识它）。
   static Future<bool> pruneExpiredOverwriteSnapshot(
     String dbDirectory, {
     DateTime? now,
   }) async {
+    final DateTime current = now ?? DateTime.now();
     final File snapshot = File(overwriteSnapshotPath(dbDirectory));
-    final FileStat stat = snapshot.statSync();
-    if (stat.type == FileSystemEntityType.notFound) return false;
-    final DateTime expiresAt = overwriteSnapshotExpiresAt(stat.modified);
-    if ((now ?? DateTime.now()).isBefore(expiresAt)) return false;
+    final String recordPath = p.join(
+      dbDirectory,
+      _overwriteSnapshotCreatedName,
+    );
+    if (!snapshot.existsSync()) {
+      await _safeDelete(recordPath);
+      return false;
+    }
+    final DateTime? createdAt = await _readOverwriteSnapshotCreatedAt(
+      dbDirectory,
+    );
+    if (createdAt == null) {
+      await _writeOverwriteSnapshotCreatedAt(dbDirectory, current);
+      return false;
+    }
+    if (current.isBefore(overwriteSnapshotExpiresAt(createdAt))) return false;
     await _safeDelete(snapshot.path);
     await _safeDelete(p.join(dbDirectory, _overwriteSnapshotNoticeName));
+    await _safeDelete(recordPath);
     return true;
   }
 
@@ -1671,6 +1757,9 @@ class BackupRestoreService {
     final File snapshot = File(overwriteSnapshotPath(dbDirectory));
     if (!snapshot.existsSync()) return null;
     final FileStat stat = snapshot.statSync();
+    // 没有起点记录时按「现在」显示，与 [pruneExpiredOverwriteSnapshot] 补记同口径。
+    final DateTime createdAt =
+        await _readOverwriteSnapshotCreatedAt(dbDirectory) ?? DateTime.now();
     final String srcPath = p.join(dbDirectory, _mergePreviewSrcName);
     await _safeDelete(srcPath);
     await _safeDelete('$srcPath-wal');
@@ -1683,30 +1772,39 @@ class BackupRestoreService {
       };
       final Set<String> tombstones = (await liveDb.getBookTombstoneKeys())
           .toSet();
-      final List<OverwriteSnapshotBook> books = <OverwriteSnapshotBook>[
+      final List<EpubBookMeta> missing = <EpubBookMeta>[
         for (final EpubBookMeta b in await src.getEpubBookMetas())
           if (!liveBookKeys.contains(b.bookKey) &&
               !tombstones.contains(b.bookKey))
-            OverwriteSnapshotBook(
-              bookKey: b.bookKey,
-              title: b.title,
-              filesPresent: _overwriteSnapshotBookFilesPresent(b.extractDir),
-            ),
+            b,
       ];
       final Set<String> liveVideoUids = <String>{
         for (final VideoBookRow v in await liveDb.allVideoBooks()) v.bookUid,
       };
-      int videos = 0;
-      for (final VideoBookRow v in await src.allVideoBooks()) {
-        if (liveVideoUids.contains(v.bookUid)) continue;
-        if (_overwriteSnapshotVideoReachable(v.videoPath)) videos++;
-      }
+      final List<String> missingVideoPaths = <String>[
+        for (final VideoBookRow v in await src.allVideoBooks())
+          if (!liveVideoUids.contains(v.bookUid)) v.videoPath,
+      ];
+      final _OverwriteSnapshotReachability reachable =
+          await _overwriteSnapshotReachability(
+            extractDirs: <String>[
+              for (final EpubBookMeta b in missing) b.extractDir,
+            ],
+            videoPaths: missingVideoPaths,
+          );
       return OverwriteSnapshotPreview(
         path: snapshot.path,
         sizeBytes: stat.size,
-        modifiedAt: stat.modified,
-        missingBooks: books,
-        missingVideoCount: videos,
+        createdAt: createdAt,
+        missingBooks: <OverwriteSnapshotBook>[
+          for (int i = 0; i < missing.length; i++)
+            OverwriteSnapshotBook(
+              bookKey: missing[i].bookKey,
+              title: missing[i].title,
+              filesPresent: reachable.bookFiles[i],
+            ),
+        ],
+        missingVideoCount: reachable.videos.where((bool r) => r).length,
       );
     } finally {
       await src.close();
@@ -1728,6 +1826,28 @@ class BackupRestoreService {
   /// 预览与合并同一判据，预览说「会补回 N 本」就补回 N 本。
   static bool _overwriteSnapshotBookFilesPresent(String extractDir) =>
       extractDir.isNotEmpty && Directory(extractDir).existsSync();
+
+  /// 对 [extractDirs] / [videoPaths] 逐条做 [_overwriteSnapshotBookFilesPresent] /
+  /// [_overwriteSnapshotVideoReachable]，结果与输入按下标对齐。
+  ///
+  /// 这些是同步的文件存在检查（`existsSync`），条数随书库规模走，视频在 SMB / UNC
+  /// 共享上时单次就可能阻塞数秒；预览在首页首帧（覆盖导入完成提示）与恢复书库页
+  /// 调用，跑在 UI isolate 上会卡住界面。整批交给后台 isolate，只传路径、回传布尔。
+  static Future<_OverwriteSnapshotReachability> _overwriteSnapshotReachability({
+    required List<String> extractDirs,
+    required List<String> videoPaths,
+  }) => Isolate.run<_OverwriteSnapshotReachability>(
+    () => (
+      bookFiles: <bool>[
+        for (final String dir in extractDirs)
+          _overwriteSnapshotBookFilesPresent(dir),
+      ],
+      videos: <bool>[
+        for (final String path in videoPaths)
+          _overwriteSnapshotVideoReachable(path),
+      ],
+    ),
+  );
 
   /// 把覆盖前快照里的书库行、阅读进度、统计**只补缺**合并进当前库（BUG-4701）：
   /// 当前库缺的行插入，已有的行一律不动（[BackupMergeEngine] 的 `fillMissingOnly`），
@@ -1765,15 +1885,23 @@ class BackupRestoreService {
     final Set<String> booksWithoutFiles = <String>{};
     final FushiDatabase srcMigrate = FushiDatabase.atFile(mergeSrcPath);
     try {
-      for (final VideoBookRow v in await srcMigrate.allVideoBooks()) {
-        if (_overwriteSnapshotVideoReachable(v.videoPath)) {
-          reachableVideos.add(v.videoPath);
-        }
+      final List<String> videoPaths = <String>[
+        for (final VideoBookRow v in await srcMigrate.allVideoBooks())
+          v.videoPath,
+      ];
+      final List<EpubBookMeta> books = await srcMigrate.getEpubBookMetas();
+      final _OverwriteSnapshotReachability reachable =
+          await _overwriteSnapshotReachability(
+            extractDirs: <String>[
+              for (final EpubBookMeta b in books) b.extractDir,
+            ],
+            videoPaths: videoPaths,
+          );
+      for (int i = 0; i < videoPaths.length; i++) {
+        if (reachable.videos[i]) reachableVideos.add(videoPaths[i]);
       }
-      for (final EpubBookMeta b in await srcMigrate.getEpubBookMetas()) {
-        if (!_overwriteSnapshotBookFilesPresent(b.extractDir)) {
-          booksWithoutFiles.add(b.bookKey);
-        }
+      for (int i = 0; i < books.length; i++) {
+        if (!reachable.bookFiles[i]) booksWithoutFiles.add(books[i].bookKey);
       }
     } finally {
       await srcMigrate.close();

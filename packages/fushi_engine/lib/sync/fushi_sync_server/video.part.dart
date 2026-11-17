@@ -689,7 +689,10 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     // 它要串流的同一个文件（与 `/streamurl` 同一个 resolveVideoFile）算全文件 SHA-256，
     // 与本地播放制卡的 [VideoSourceFingerprint] 同一口径，卡片因此能跨设备回跳并核验。
     // 需 Basic 鉴权（不在 /stream 豁免名单）。老 host 无此分支 → 兜底 404，client 当作
-    // 「取不到指纹」（制卡不带链接 / 回跳不核验），与此前行为一致。
+    // 「host 不支持指纹」（制卡不带链接 / 回跳按 bookUid 放行），与此前行为一致。
+    // 新 host 有这个端点、却担保不了这份字节（条目 / 文件不在、算的期间被改写）时回
+    // [kVideoFingerprintUnavailableStatus] + JSON reason，绝不回 404——否则 client 会把它
+    // 当成老 host 放行、绕过字节核验（BUG-4782）。
     final String? fingerprintId = _extractVideoId(reqPath, 'fingerprint');
     if (fingerprintId != null) {
       if (method != 'GET') return shelf.Response(405);
@@ -697,16 +700,18 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         fingerprintId,
         episodeIndex: _episodeIndexFromRequest(request),
       );
-      if (file == null) return shelf.Response.notFound('Video not found');
+      if (file == null) {
+        return _videoFingerprintUnavailable(kVideoFingerprintReasonNotFound);
+      }
       try {
         final String digest = await VideoSourceFingerprint.instance.fingerprint(
           file.path,
         );
         return jsonResponse(<String, Object?>{'fingerprint': digest});
       } on FileSystemException catch (error, stack) {
-        // 文件不在 / 算指纹期间被改写：没有可担保的身份，按「取不到」回。
+        // 文件不在 / 算指纹期间被改写：没有可担保的身份。
         engineLog.log('video.fingerprint', error, stack);
-        return shelf.Response.notFound('Video fingerprint unavailable');
+        return _videoFingerprintUnavailable(kVideoFingerprintReasonUnreadable);
       }
     }
 
@@ -1569,6 +1574,13 @@ int _episodeIndexFromRequest(shelf.Request request) {
   if (n == null || n < 0) return 0;
   return n;
 }
+
+/// `/fingerprint` 担保不了字节时的应答（BUG-4782）：不是 404，免得 client 当成老 host。
+shelf.Response _videoFingerprintUnavailable(String reason) => shelf.Response(
+  kVideoFingerprintUnavailableStatus,
+  body: jsonEncode(<String, String>{'reason': reason}),
+  headers: <String, String>{'Content-Type': 'application/json'},
+);
 
 /// 裸视频 id（`/api/library/videos/<id>`，**无** suffix）的提取 + 穿越校验。
 ///

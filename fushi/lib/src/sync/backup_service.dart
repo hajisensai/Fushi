@@ -145,7 +145,7 @@ class OverwriteSnapshotPreview {
   const OverwriteSnapshotPreview({
     required this.path,
     required this.sizeBytes,
-    required this.modifiedAt,
+    required this.createdAt,
     required this.missingBooks,
     required this.missingVideoCount,
   });
@@ -153,8 +153,8 @@ class OverwriteSnapshotPreview {
   final String path;
   final int sizeBytes;
 
-  /// 快照文件的修改时刻（= 覆盖导入完成的时刻，保留期从这里起算）。
-  final DateTime modifiedAt;
+  /// 覆盖导入完成的时刻（保留期起点，读自起点记录而不是快照文件的修改时刻）。
+  final DateTime createdAt;
 
   /// 快照里有、当前库没有（也没被删除墓碑挡住）的书，含书文件已不在盘上的。
   final List<OverwriteSnapshotBook> missingBooks;
@@ -165,7 +165,7 @@ class OverwriteSnapshotPreview {
   /// 到这一刻快照会在启动时被自动删除
   /// （`BackupRestoreService.overwriteSnapshotRetention`）。
   DateTime get expiresAt =>
-      BackupRestoreService.overwriteSnapshotExpiresAt(modifiedAt);
+      BackupRestoreService.overwriteSnapshotExpiresAt(createdAt);
 
   /// 恢复时真正会补回来的书（书文件还在盘上）。
   List<OverwriteSnapshotBook> get restorableBooks => <OverwriteSnapshotBook>[

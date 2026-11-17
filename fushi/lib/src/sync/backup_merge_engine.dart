@@ -2192,14 +2192,32 @@ class BackupMergeEngine {
   /// exception is audiobook positions (per-book content): UNION push-only so the
   /// backup positions for books the device lacks are added, without clobbering
   /// the device's existing positions.
+  ///
+  /// 与书库行同一道「这本书不得落进本库」闸（[_blockedBookKeysSubquery]：删除墓碑 +
+  /// `excludedBookKeys`）：被挡住的书，它的进度也不落，否则恢复后留下没有书的孤儿
+  /// 进度，按同一 key 重新导入时还会捡回删除前的旧进度。
   Future<void> _mergeAudiobookPositionPrefs() async {
     await _db.customStatement(
       'INSERT INTO preferences ("key", "value") '
       'SELECT "key", "value" FROM $_srcAlias.preferences AS s '
       "WHERE s.\"key\" LIKE 'audiobook_pos_%' "
-      'AND NOT EXISTS (SELECT 1 FROM preferences AS t WHERE t."key" = s."key")',
+      'AND NOT EXISTS (SELECT 1 FROM preferences AS t WHERE t."key" = s."key") '
+      'AND $_audiobookPositionBookKey NOT IN $_blockedBookKeysSubquery',
     );
   }
+
+  /// `audiobook_pos_<身份>` / `audiobook_pos_at_<身份>`（位置与它的 LWW 时间戳孪生
+  /// 键）行 `s` 所属书的 bookKey。身份对普通有声书就是 bookKey
+  /// （`AudiobookRepository`），对字幕书是 `srt_books.uid`（`SrtBookRepository`），
+  /// 经源库 `srt_books` 换成该行的 `book_key` 再比。
+  static const String _audiobookPositionIdentity =
+      "CASE WHEN substr(s.\"key\", 1, 17) = 'audiobook_pos_at_' "
+      'THEN substr(s."key", 18) ELSE substr(s."key", 15) END';
+
+  String get _audiobookPositionBookKey =>
+      'COALESCE((SELECT sb.book_key FROM $_srcAlias.srt_books AS sb '
+      'WHERE sb.uid = $_audiobookPositionIdentity), '
+      '$_audiobookPositionIdentity)';
 
   /// 用户给书改的名字（BUG-1488）。
   ///

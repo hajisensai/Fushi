@@ -62,10 +62,10 @@ void main() {
       describeCumulativeCpu(270190, threads),
       'cpuSum=2701.9s[Chrome_InProcGp 2500.0s R1; #.ui 12.0s; DartWorker×2 5.0s; +1]',
     );
-    // 读不到 /proc/self/stat：总数退回活线程之和。
+    // 读不到 /proc/self/stat：总数退回活线程之和，不含已退出线程，只是下限，标成 ≥。
     expect(
       describeCumulativeCpu(null, threads, top: 1),
-      'cpuSum=2518.0s[Chrome_InProcGp 2500.0s R1; +3]',
+      'cpuSum≥2518.0s[Chrome_InProcGp 2500.0s R1; +3]',
     );
     // 没有活线程吃过 CPU：只给进程总数；都没有返回 null。
     expect(

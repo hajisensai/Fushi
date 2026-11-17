@@ -39,6 +39,38 @@
 |---|:--:|:--:|---|
 | [BUG-4764](bugs/BUG-4764-cross-app-audio-consent-destroy-busy.md) | ✅ | ✅ | 跨应用语音授权页被系统以非 finishing 方式销毁后，start 永远挂着，之后每次开启都回 busy |
 | [BUG-4763](bugs/BUG-4763-cross-app-audio-provider-rpc-main-thread.md) | ✅ | ✅ | 应用外查词取跨应用语音快照时，跨进程 RPC 与约 2.9MB 写盘压在查词窗平台主线程上 |
+> 共 4146 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4790](bugs/BUG-4790-screen-ocr-dart-recognition-no-cancel.md) | 🚧 | 🚧 | Android 截屏识字交给 Dart 识别期间没有取消出口，识别慢时悬浮球一直藏着 |
+| [BUG-4789](bugs/BUG-4789-screen-ocr-engine-destroyed-orphan-dart-reply.md) | ✅ | ✅ | 截屏识字等 Dart 回话时主引擎被销毁，挂起的回话永远不来，流程锁不解、悬浮球一直藏着 |
+| [BUG-4788](bugs/BUG-4788-screen-ocr-lens-consent-desktop-wording-on-android.md) | ✅ | ✅ | Android 截屏识字的 Google Lens 同意框照搬桌面文案，手机上写着「整块显示器」 |
+| [BUG-4787](bugs/BUG-4787-screen-ocr-card-frame-deleted-before-mining.md) | ✅ | ✅ | 截屏识字：查词窗打开后又截了一次屏，Android 定格帧文件被清掉，这张卡静默不带图 |
+| [BUG-4786](bugs/BUG-4786-feedback-dev-save-file-macos.md) | ✅ | ✅ | 处理台另存样本文件在 macOS 上必定失败 |
+| [BUG-4785](bugs/BUG-4785-feedback-pending-file-missing-name.md) | ✅ | ✅ | 待传样本文件缺原文件名旁注时用假名上传、被服务端拒收后丢掉 |
+| [BUG-4784](bugs/BUG-4784-feedback-video-upload-after-files.md) | ✅ | ✅ | 反馈视频排在样本文件后上传，共用每 IP 每天额度被 429 挤掉 |
+| [BUG-4783](bugs/BUG-4783-video-fingerprint-inflight-dedupe.md) | ✅ | ✅ | host 端视频指纹没有在途去重：同一文件并发请求各自整文件算一遍 SHA-256 |
+| [BUG-4782](bugs/BUG-4782-remote-fingerprint-unavailable-404-bypass.md) | ✅ | ✅ | 新 host 算指纹失败也回 404，client 当成老 host 直接放行，绕过字节核验 |
+| [BUG-4781](bugs/BUG-4781-subtitle-panel-effects-toggle-clipped.md) | ✅ | ✅ | 经典版式字幕列表收藏档里「显示特效字幕」开关被挤出可视区，窄面板要横向拖才看得到 |
+| [BUG-4780](bugs/BUG-4780-srs-text-import-progress-stop-empty-decks.md) | ✅ | ✅ | 文本导入纯更新时进度一直是 0、点不了停止；叫停后牌组列新建的牌组留成空牌组 |
+| [BUG-4779](bugs/BUG-4779-srs-browse-source-sort-episode-split.md) | ✅ | ✅ | 复习卡浏览按出处列排序时同一部番的笔记被别作同名集拆散，与出处视图的集顺序不一致 |
+| [BUG-4778](bugs/BUG-4778-srs-text-import-batch-failure-leaves-new-decks.md) | 🚧 | 🚧 | 文本导入某一批落库抛异常时这一批刚建的牌组留成空牌组 |
+| [BUG-4777](bugs/BUG-4777-overwrite-snapshot-retention-stamp-failure.md) | ✅ | ✅ | 覆盖前快照钉修改时间失败会按旧库时间提前删快照 |
+| [BUG-4776](bugs/BUG-4776-overwrite-snapshot-preview-sync-probe-ui.md) | ✅ | ✅ | 覆盖前快照预览在 UI isolate 上同步检查书和视频文件 |
+| [BUG-4775](bugs/BUG-4775-merge-audiobook-pos-ignores-tombstone.md) | ✅ | ✅ | 合并与快照恢复的有声书进度不受墓碑与排除过滤 |
+| [BUG-4774](bugs/BUG-4774-srs-deck-settings-reload-drops-edits.md) | ✅ | ✅ | 牌组设置页点「立即优化 / 恢复默认参数 / 子牌组继承」后重读，静默盖掉没保存的编辑、按返回也不再拦 |
+| [BUG-4773](bugs/BUG-4773-srs-limit-unit-legacy-count-stale-after-log-sync.md) | ✅ | ✅ | 存量单位提醒计数按内容指纹缓存，只同步进来旧复习日志时不刷新 |
+| [BUG-4772](bugs/BUG-4772-licenses-7zip-not-in-native-registry.md) | ✅ | ✅ | 随包的 7-Zip（7z.exe / 7z.dll，含 unRAR 派生代码）没进应用内原生许可清单 |
+| [BUG-4771](bugs/BUG-4771-shell-thumbs-host-job-window.md) | ✅ | ✅ | 缩略图宿主进程先启动后入内存 job、入 job 失败照跑，并发宿主无总内存上限 |
+| [BUG-4770](bugs/BUG-4770-music-album-track-row-no-touch-menu.md) | 🚧 | 🚧 | 专辑页本地曲目行在触屏上打不开曲目菜单（加入队列 / 加入歌单 / 从音乐库移除只有右键入口） |
+| [BUG-4769](bugs/BUG-4769-music-track-blocks-no-touch-menu.md) | 🚧 | 🚧 | 色块样式曲目格在触屏上打不开曲目菜单（多选 / 从歌单移除 / 加入队列等只有右键入口） |
+| [BUG-4768](bugs/BUG-4768-music-local-track-row-no-touch-menu.md) | ✅ | ✅ | 触屏上本地曲目行打不开菜单：歌曲 / 艺人 / 歌单页进不了多选、点不到「从这个歌单移除」 |
+| [BUG-4767](bugs/BUG-4767-music-stage-lyrics-blur-pref-stale.md) | ✅ | ✅ | MV / 卡拉 OK 舞台页歌词用 ref.read 读「模糊非当前行」，页面开着时改了偏好不刷新 |
+| [BUG-4766](bugs/BUG-4766-frame-cover-preview-concurrent-ffmpeg.md) | ✅ | ✅ | 挑帧封面弹窗连点微调会并发起多个 ffmpeg 抽帧 |
+| [BUG-4765](bugs/BUG-4765-lyrics-zlib-bomb-unbounded.md) | ✅ | ✅ | KRC / 加密 QRC 解压没有明文上限，构造的歌词文件或插件结果能把内存撑爆导致闪退 |
+| [BUG-4764](bugs/BUG-4764-qrc-kana-ideograph-count-mismatch.md) | ✅ | ✅ | QRC 注音轨汉字计数口径和来源不一致（〇 〆 等），整首歌的注音全部丢失 |
+| [BUG-4763](bugs/BUG-4763-server-srs-put-rwkv-not-atomic.md) | ✅ | ✅ | 服务端 admin PUT 同时改 RWKV 档位与别的复习配置时不原子：档位文件写不进去时报 500，但其它字段已经生效 |
 | [BUG-4762](bugs/BUG-4762-cover-meta-store-zone-hang.md) | ✅ | ✅ | CoverMetaStore 共享加载 / 写锁建在发起者 Zone 里，那个 Zone 停摆后同目录读写全部永久挂住 |
 | [BUG-4761](bugs/BUG-4761-cross-app-audio-stop-purge-race.md) | ✅ | ✅ | 跨应用语音缓存停止时清不干净：清扫后还能落下新快照，句子音频临时目录在进程被杀后留在缓存里 |
 | [BUG-4760](bugs/BUG-4760-subtitle-per-char-effect-quadratic.md) | ✅ | ✅ | 逐字拆开歌词的特效标记是两两比较，单字事件多又长时间同屏时解析 ASS 退化成 O(N²) |

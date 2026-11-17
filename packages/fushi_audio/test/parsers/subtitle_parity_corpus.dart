@@ -8,6 +8,7 @@
 // 生成器只用自带的 xorshift64*，不依赖 dart:math Random（跨 SDK 版本不保证序列不变）。
 // **改动本文件任何生成逻辑都会改变摘要**：那等于换了一套回归向量，必须先用旧实现
 // （git 历史里删 Dart 实现之前的版本）重新求摘要，不能拿新实现的输出回填。
+import 'dart:ffi' show Abi;
 import 'dart:typed_data';
 
 /// xorshift64*（确定性、平台无关）。
@@ -844,7 +845,30 @@ class ParityDigest {
 
 const int kParitySeedBase = 0x5eed0000;
 
-const List<double?> kPlayResChoices = <double?>[
+/// PlayRes 里的 NaN：**按位写明**本 CPU 硬件生成的 NaN（与 Dart VM 的 `double.nan` 以及
+/// Rust 侧 `dart_nan()` 同值：x64 0xFFF8…、arm64 0x7FF8…），不写 `double.nan` 常量。
+/// 摘要对这个输入的符号位敏感：arm64 上同一份语料、同一实现，喂 0x7FF8… 得
+/// `9e8c3c547a4312bb`，喂 0xFFF8… 得 `9d8ad6ef76adc21f`（2026-11-17 在 macOS arm64 上用旧 Dart
+/// 实现与 Rust 实现各实测一遍，两边一致）。常量 `double.nan` 的位模式取决于求值它的工具链，
+/// 输入不能交给它；按位写死后摘要只随被测实现内部的硬件 NaN 变化，那部分由测试按 ABI 分表。
+final double kParityHardwareNan = _hardwareNanForAbi(Abi.current());
+
+double _hardwareNanForAbi(Abi abi) {
+  final int bits = switch (abi) {
+    Abi.windowsX64 || Abi.linuxX64 || Abi.macosX64 => 0xFFF8000000000000,
+    Abi.windowsArm64 ||
+    Abi.linuxArm64 ||
+    Abi.macosArm64 ||
+    Abi.androidArm64 ||
+    Abi.iosArm64 => 0x7FF8000000000000,
+    final Abi other => throw UnsupportedError('no hardware NaN for $other'),
+  };
+  return (ByteData(
+    8,
+  )..setUint64(0, bits, Endian.little)).getFloat64(0, Endian.little);
+}
+
+final List<double?> kPlayResChoices = <double?>[
   null,
   384,
   288,
@@ -852,7 +876,7 @@ const List<double?> kPlayResChoices = <double?>[
   1080,
   0,
   -5,
-  double.nan,
+  kParityHardwareNan,
   double.infinity,
   640,
 ];

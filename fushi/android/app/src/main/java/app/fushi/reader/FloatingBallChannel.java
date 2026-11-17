@@ -87,6 +87,13 @@ final class FloatingBallChannel {
     private static MethodChannel ocrChannel;
     @Nullable
     private static FlutterEngine ocrEngine;
+    /**
+     * 经 {@link #ocrChannel} 发出、还在等 Dart 回话的请求（随 {@link #ocrEngine} 换新）。
+     * 引擎销毁时 Flutter 不回调挂起的 reply，由它替这些请求按错误收尾，截屏 OCR 走
+     * 「Dart 不在」那条路，不会一直锁着流程、藏着悬浮球。主线程读写。
+     */
+    @Nullable
+    private static PendingDartReplies ocrReplies;
 
     /**
      * 系统球「查词」发生时主引擎不在（MainActivity 已销毁）：先记下，等新引擎上的 Dart
@@ -127,33 +134,46 @@ final class FloatingBallChannel {
 
     private static void bindOcrChannel(@NonNull FlutterEngine engine) {
         if (engine == ocrEngine) return;
+        final PendingDartReplies replies = new PendingDartReplies();
         ocrEngine = engine;
+        ocrReplies = replies;
         ocrChannel = new MethodChannel(engine.getDartExecutor().getBinaryMessenger(),
                 ChannelNames.FLOATING_BALL);
         engine.addEngineLifecycleListener(new FlutterEngine.EngineLifecycleListener() {
             @Override
-            public void onPreEngineRestart() {}
+            public void onPreEngineRestart() {
+                // 热重启丢掉了 Dart isolate：发给旧 isolate 的请求不会再有回话。
+                replies.abandonAll();
+            }
 
             @Override
             public void onEngineWillDestroy() {
-                if (ocrEngine != engine) return;
-                ocrEngine = null;
-                ocrChannel = null;
+                if (ocrEngine == engine) {
+                    ocrEngine = null;
+                    ocrChannel = null;
+                    ocrReplies = null;
+                }
+                // 不管它此刻还是不是当前引擎：发给它的请求都等不到回话了。
+                replies.abandonAll();
             }
         });
     }
 
     /**
      * 问 Dart 这次截屏 OCR 用哪个引擎。主引擎不在（进程是悬浮球服务冷启动的、从没
-     * 起过界面）返回 false，调用方直接用设备自带 OCR。回调在主线程。
+     * 起过界面）返回 false，调用方直接用设备自带 OCR。回调在主线程；引擎在回话前被
+     * 销毁时回调以 {@link PendingDartReplies#ENGINE_DESTROYED} 错误到达。
      */
     static boolean queryScreenOcrEngine(@NonNull MethodChannel.Result callback) {
         MethodChannel ch = ocrChannel;
-        if (ch == null) return false;
+        PendingDartReplies replies = ocrReplies;
+        if (ch == null || replies == null) return false;
+        MethodChannel.Result tracked = replies.track(callback);
         try {
-            ch.invokeMethod(METHOD_SCREEN_OCR_ENGINE, null, callback);
+            ch.invokeMethod(METHOD_SCREEN_OCR_ENGINE, null, tracked);
             return true;
         } catch (RuntimeException e) {
+            replies.forget(tracked);
             Log.w(TAG, "screenOcrEngine could not be delivered", e);
             return false;
         }
@@ -166,15 +186,18 @@ final class FloatingBallChannel {
     static boolean recognizeScreenOcrFrame(@NonNull byte[] png, @NonNull String engine,
             boolean fallback, @NonNull MethodChannel.Result callback) {
         MethodChannel ch = ocrChannel;
-        if (ch == null) return false;
+        PendingDartReplies replies = ocrReplies;
+        if (ch == null || replies == null) return false;
         Map<String, Object> args = new HashMap<>();
         args.put("png", png);
         args.put("engine", engine);
         args.put("fallback", fallback);
+        MethodChannel.Result tracked = replies.track(callback);
         try {
-            ch.invokeMethod(METHOD_RECOGNIZE_SCREEN_OCR_FRAME, args, callback);
+            ch.invokeMethod(METHOD_RECOGNIZE_SCREEN_OCR_FRAME, args, tracked);
             return true;
         } catch (RuntimeException e) {
+            replies.forget(tracked);
             Log.w(TAG, "recognizeScreenOcrFrame could not be delivered", e);
             return false;
         }
