@@ -166,6 +166,30 @@ describe('/dev/decisions', () => {
     expect(p.data).not.toContain('<b>hi</b>');
   });
 
+  it('原文默认展开显示：写入方给的 original 优先，反馈类事项联表取用户原话，都转义', async () => {
+    const env = makeEnv();
+    env.DB.raw.prepare(`INSERT INTO feedback (id, ticket_hash, category, title, body, created_at, updated_at)
+      VALUES ('C9wcnKaPq_', 'h', 'suggestion', '想点句子跳播', '左键点句子<b>直接</b>跳到那句', ?, ?)`).run(NOW - 50, NOW - 50);
+    env.DB.raw.exec(addSql([
+      ...ITEMS,
+      { id: 'pr9', kind: 'pr', title: '外部 PR', ask: '要不要', original: 'Add <i>foo</i> option' },
+    ], NOW - 10).sql);
+    expect(row(env, 'pr9').original).toBe('Add <i>foo</i> option');
+    const s = await devSession(env);
+    const p = (await page(env, s, 'all')).data;
+    const card = (id) => p.slice(p.indexOf(`id="d-${id}"`), p.indexOf('</article>', p.indexOf(`id="d-${id}"`)));
+    expect(card('pr9')).toContain('<details class="dorig" open><summary>原文</summary>');
+    expect(card('pr9')).toContain('Add &#60;i&#62;foo&#60;/i&#62; option');
+    expect(card('C9wcnKaPq_')).toContain('想点句子跳播');
+    expect(card('C9wcnKaPq_')).toContain('左键点句子&#60;b&#62;直接&#60;/b&#62;跳到那句');
+    expect(card('pr3162a')).not.toContain('dorig');
+    // 拍板后回给客户端的单卡同样带原文（getDecision 与列表共用列）。
+    const r = await submit(env, s, 'C9wcnKaPq_', { v: 'choice:a' }, { accept: 'application/json' });
+    expect(r.status).toBe(200);
+    expect(JSON.stringify(r.data)).toContain('想点句子跳播');
+    expect(() => normalizeDecision({ ...ITEMS[0], original: 'x'.repeat(8001) })).toThrow(/original/);
+  });
+
   it('页面一次渲染全部事项，非当前栏 hidden；放行本站脚本', async () => {
     const env = makeEnv();
     env.DB.raw.exec(addSql(ITEMS, NOW - 10).sql);

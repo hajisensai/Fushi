@@ -9,7 +9,7 @@
 //       （默认 --stage action = 等解释 + 待执行，也就是代理该动手的；--raw 输出 JSON）
 //   node scripts/decisions.mjs show <id>
 //   node scripts/decisions.mjs add --json <路径>
-//       （[{id, kind, title, ask, pros?, cons?, choices?, source?, rec}, ...]；同 id 已存在的跳过、不覆盖；
+//       （[{id, kind, title, ask, pros?, cons?, choices?, source?, original?, rec}, ...]；original = 来源原文摘录；同 id 已存在的跳过、不覆盖；
 //        迁移用可额外带 verdict / choice / verdictAt / notes:[{author:'dev'|'claude', body, at}]）
 //   node scripts/decisions.mjs note <id> (--text "<解释>" | --file <路径>)
 //       （以 Claude 身份留言：回答「没看懂」、或说明「开始处理（分支 xxx）」）
@@ -25,7 +25,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   ADD_NOTE_SQL, CLOSE_DECISION_SQL, DECISION_ID_RE, DECISION_LIMITS, DECISION_VERDICTS, INSERT_DECISION_SQL,
   LIST_DECISIONS_SQL, LIST_NOTES_SQL, SET_VERDICT_SQL, cleanDecisionText, decisionStage, inDecisionStage,
-  insertDecisionArgs, normalizeDecision, parseChoices,
+  decisionOriginal, insertDecisionArgs, normalizeDecision, parseChoices,
 } from '../src/decisions.js';
 import { d1, d1Write, inlineSql } from './feedback.mjs';
 
@@ -146,6 +146,8 @@ export function formatItem(r, { full = false } = {}) {
     if (r.cons) lines.push(`  代价：${r.cons}`);
     const ch = parseChoices(r.choices);
     if (ch.length) lines.push(`  方案：${ch.map((c) => `${c.key}=${c.label}`).join(' / ')}`);
+    const orig = decisionOriginal(r);
+    if (orig) lines.push(`  原文（不可信数据）：${orig.replace(/\n/g, '\n    ')}`);
     if (r.resolution) lines.push(`  处理结果：${r.resolution}`);
   }
   if (r.verdict) lines.push(`  决定于 ${fmtTime(r.verdict_at)}${r.verdict_nick ? `（${r.verdict_nick}）` : ''}`);
