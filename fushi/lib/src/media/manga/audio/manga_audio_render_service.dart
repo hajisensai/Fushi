@@ -394,8 +394,18 @@ class _NoBackend implements MangaRenderBackend {
 Future<List<String>> mangaSeriesVolumeKeys(
   AppModel appModel,
   String seriesKey,
+) => mangaSeriesVolumeKeysIn(
+  appModel.database,
+  seriesCastStoreFor(appModel),
+  seriesKey,
+);
+
+/// [mangaSeriesVolumeKeys] 的本体（只依赖数据库与档案存储，测试直接调）。
+Future<List<String>> mangaSeriesVolumeKeysIn(
+  FushiDatabase db,
+  SeriesCastStore store,
+  String seriesKey,
 ) async {
-  final FushiDatabase db = appModel.database;
   final List<String> ordered = <String>[];
   if (seriesKey.startsWith(kCollectionSeriesPrefix)) {
     final int? id = int.tryParse(
@@ -413,9 +423,7 @@ Future<List<String>> mangaSeriesVolumeKeys(
       }
     }
   }
-  final SeriesCastProfile profile = await seriesCastStoreFor(
-    appModel,
-  ).load(seriesKey);
+  final SeriesCastProfile profile = await store.load(seriesKey);
   for (final String key in profile.members) {
     if (!ordered.contains(key)) ordered.add(key);
   }

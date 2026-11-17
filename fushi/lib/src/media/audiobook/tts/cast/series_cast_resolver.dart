@@ -27,10 +27,21 @@ SeriesCastStore seriesCastStoreFor(AppModel appModel) => SeriesCastStore(
 const String kCollectionSeriesPrefix = 'collection:';
 
 /// [bookKey] 所属系列；null = 不属于任何系列。
-Future<String?> resolveSeriesKey(AppModel appModel, String bookKey) async {
-  final String? linked = await seriesCastStoreFor(appModel).linkOf(bookKey);
+Future<String?> resolveSeriesKey(AppModel appModel, String bookKey) =>
+    resolveSeriesKeyIn(
+      appModel.database,
+      seriesCastStoreFor(appModel),
+      bookKey,
+    );
+
+/// [resolveSeriesKey] 的本体（只依赖数据库与档案存储，测试直接调）。
+Future<String?> resolveSeriesKeyIn(
+  FushiDatabase db,
+  SeriesCastStore store,
+  String bookKey,
+) async {
+  final String? linked = await store.linkOf(bookKey);
   if (linked != null) return linked;
-  final FushiDatabase db = appModel.database;
   final EpubBookRow? row = await db.getEpubBook(bookKey);
   final List<String> keys = <String>[bookKey, ?row?.uid];
   final List<QueryRow> rows = await db
