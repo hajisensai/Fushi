@@ -288,7 +288,9 @@ fn dispatch(req: &Value) -> Result<Value, String> {
         "gen4_migrate_status"
         | "gen4_migrate_profiles"
         | "gen4_migrate_run"
-        | "gen4_migrate_cancel" => store::gen4::kernel::global(op, req),
+        | "gen4_migrate_cancel"
+        | "gen4_retained_state"
+        | "gen4_retained_delete" => store::gen4::kernel::global(op, req),
         // 复习卡文本导入（CSV / TSV / TXT）的解析：一次读完整个文件（text_import.rs）。
         "text_import_parse" => text_import::dispatch(req),
         "defaults" => {

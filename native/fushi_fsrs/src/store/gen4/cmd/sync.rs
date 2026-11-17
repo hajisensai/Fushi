@@ -1335,6 +1335,8 @@ pub fn head(t: &Truth<'_>, col: i64, req: &Value, files: &mut Files) -> Result<V
     // 走到写 head 就是这一轮在这个位置上成功了（不变跳过也算）：记 `last_ok`，转发只认最近成功过的位置
     // （`cmd/sync_relay.rs` 的活跃窗口）。
     touch_location(t, col, location, now)?;
+    // 新代第一次同步成功：保留副本从这一刻起再留 14 天（`retained.rs`，D32）。
+    t.write(|| crate::store::gen4::retained::note_first_sync(t.conn(), now))?;
     if out.gen > 0
         && out.tag == tag
         && !out.path.is_empty()

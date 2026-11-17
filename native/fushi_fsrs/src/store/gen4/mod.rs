@@ -71,6 +71,7 @@ pub(crate) mod parity;
 pub(crate) mod prepare;
 pub mod receive;
 pub mod refresh;
+pub mod retained;
 pub mod schema;
 pub(crate) mod scrub;
 pub mod sync_state;
