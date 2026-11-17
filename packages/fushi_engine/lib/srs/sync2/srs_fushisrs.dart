@@ -21,8 +21,11 @@
 /// **旧格式**：
 ///
 /// - 第 1 版（`v: 1`，协议 3 的 `FSRS2EXP` 操作流）：同样交给内核，内核用冻结的读入器转译导入；另一个 profile 的拒收。
-/// - v2 同步之前的事件备份（清单魔数 [kSrsLegacyBackupMagic]）：新代内核已不收「带来源身份的外来事件」，冻结侧的转换器
-///   还没有（交接说明 G11-3 一节），明确拒绝（[SrsFushiSrsLegacyFormat]）并提示先在 3.x 版本里导入、升级后随库迁移。
+/// - v2 同步之前的事件备份（清单魔数 [kSrsLegacyBackupMagic]，D34 长期支持；G11-4）：`events.jsonl` 校验摘要与条数后
+///   写成「外来、已盖戳」的 JSONL（带 `server_times.json` 的逐事件服务器时间），交给内核 `legacy_backup_import`
+///   （`source: "events"`）——在临时目录里用冻结的协议 3 代码落进一份临时库，再读进新代库，认领 / 确认与第 2 版同一口径。
+///   只认本 profile 的（与协议 3 时代一样，另一个 profile 的拒收）；媒体取文件内嵌的 `media/<sha256>`，没内嵌（本机自动
+///   备份）就到旧备份根的共享池 `<srs_backups>/media/<sha256>` 找，一律按 SHA-256 校验。
 ///
 /// **旧版本**：新包的 `v` 是 2，已发布版本的读者（`v > 1` 一律「unsupported .fushisrs version」）在碰库之前就拒收；协议 3
 /// 内核也不认 `FSRS4EXP` 魔数（Rust 测试 `old_binaries_refuse_the_new_stream_and_change_nothing`）。
@@ -36,6 +39,7 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:archive/archive_io.dart';
+import 'package:crypto/crypto.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_media_sync.dart';
 import 'package:path/path.dart' as p;
@@ -48,8 +52,18 @@ const int kSrsFushiSrsVersion = 2;
 /// 第 2 版清单的代号（协议 4）。
 const int kSrsFushiSrsGen = 4;
 
-/// 旧格式备份清单的魔数（develop f71b5aaa98 `srs_backup_store.dart` 的 `kSrsBackupMagic`，冻结）：认出来只为明确拒绝。
+/// 旧格式备份清单的魔数（develop f71b5aaa98 `srs_backup_store.dart` 的 `kSrsBackupMagic`，冻结）。
 const String kSrsLegacyBackupMagic = 'fushi-srs-backup';
+
+/// 旧格式能读的最高 `minReaderVersion`（冻结）。
+const int _kLegacyReaderVersion = 1;
+
+/// 旧格式的解压上限（冻结，与旧备份层同值）：事件正文、服务器时间表、单个内嵌媒体。
+const int _kLegacyMaxEventsBytes = 1024 << 20;
+const int _kLegacyMaxServerTimesBytes = 512 << 20;
+const int _kLegacyMaxMediaBytes = 2047 << 20;
+
+final RegExp _sha256Re = RegExp(r'^[0-9a-f]{64}$');
 
 /// 清单的上限（外部文件不可信，防解压炸弹）。
 const int _kMaxManifestBytes = 64 << 20;
@@ -130,15 +144,6 @@ class SrsFushiSrsForeign {
 
   /// 这次会记下公钥的新设备（设备 ID）。
   final List<String> newPeers;
-}
-
-/// v2 同步之前的事件备份：这一版不能导入（见文件头）。
-class SrsFushiSrsLegacyFormat extends FormatException {
-  const SrsFushiSrsLegacyFormat()
-    : super(
-        'legacy .fushisrs backup (before sync v2) can no longer be imported; '
-        'import it with Fushi 3.x first',
-      );
 }
 
 /// 导出到 [out]（覆盖）。[withMedia] = 带上全部被引用的媒体（缺省带）。
@@ -228,10 +233,9 @@ Future<SrsFushiSrsExport> _writeFushiSrs(
   return SrsFushiSrsExport(bytes: await done.length(), mediaFiles: media);
 }
 
-/// 导入 [file]：操作并入、媒体补缺。不是 `.fushisrs`、另一个 profile 的第 1 版、来自更新版本、坏文件抛
-/// [FormatException]（v2 同步之前的事件备份抛它的子类 [SrsFushiSrsLegacyFormat]）；文件来自另一个复习库，或同一个
-/// 复习库的文件带来新的旧 profile 标识 / 设备公钥时问 [confirmForeign]（原因见 [SrsFushiSrsForeign.reason]；没给或
-/// 答否 = 不导入，[SrsFushiSrsImport.declined]）。
+/// 导入 [file]：操作并入、媒体补缺。不是 `.fushisrs`、另一个 profile 的第 1 版 / 旧事件备份、来自更新版本、坏文件抛
+/// [FormatException]；文件来自另一个复习库，或同一个复习库的文件带来新的旧 profile 标识 / 设备公钥时问 [confirmForeign]
+/// （原因见 [SrsFushiSrsForeign.reason]；没给或答否 = 不导入，[SrsFushiSrsImport.declined]）。
 Future<SrsFushiSrsImport> srsImportFushiSrs(
   SrsDbStore store,
   File file, {
@@ -243,15 +247,42 @@ Future<SrsFushiSrsImport> srsImportFushiSrs(
   );
   try {
     final String opsPath = p.join(staging.path, 'ops.bin');
-    final Map<String, Object?>? manifest = await _runReadFushiSrs(
+    final _FushiSrsRead read = await _runReadFushiSrs(
       path: file.path,
       opsPath: opsPath,
     );
+    final _KernelLanding land;
+    switch (read) {
+      case _OpsRead(:final Map<String, Object?>? manifest):
+        land = ({required bool confirmed, bool preflight = false}) =>
+            _kernelImport(
+              store,
+              opsPath,
+              manifest,
+              confirmed: confirmed,
+              preflight: preflight,
+            );
+      case _LegacyEventsRead(:final String profileUid):
+        // 与协议 3 时代一样只认本 profile 的旧备份（D34：另一个复习库的旧输入继续拒收）。
+        if (profileUid != store.profileUid) {
+          throw const FormatException(
+            'this .fushisrs belongs to another profile',
+          );
+        }
+        final Directory scratch = Directory(p.join(staging.path, 'scratch'));
+        await scratch.create();
+        land = ({required bool confirmed, bool preflight = false}) =>
+            _kernelLegacyImport(
+              store,
+              opsPath,
+              scratch.path,
+              profileUid,
+              confirmed: confirmed,
+              preflight: preflight,
+            );
+    }
     // 先预检（内核什么都不写）：要确认就先问，用户答否 = 本机一点没动（不打还原点、不写媒体）。
-    final Map<String, Object?> pre = await _kernelImport(
-      store,
-      opsPath,
-      manifest,
+    final Map<String, Object?> pre = await land(
       confirmed: false,
       preflight: true,
     );
@@ -274,10 +305,11 @@ Future<SrsFushiSrsImport> srsImportFushiSrs(
         : await _runCopyFushiSrsMedia(
             path: file.path,
             mediaRootPath: mediaRoot.path,
+            legacy: read is _LegacyEventsRead,
           );
     final Map<String, Object?> r;
     try {
-      r = await _kernelImport(store, opsPath, manifest, confirmed: confirmed);
+      r = await land(confirmed: confirmed);
       if (r['outcome'] == 'needsConfirm') {
         // 预检之后别的调用改了这个 profile 的绑定：不按旧的确认结论并入，交给用户重来。
         throw StateError(
@@ -299,6 +331,32 @@ Future<SrsFushiSrsImport> srsImportFushiSrs(
       // 句柄滞后（Windows）：留给系统清理临时目录。
     }
   }
+}
+
+/// 发一次内核落库（[preflight] = 只预检）。
+typedef _KernelLanding =
+    Future<Map<String, Object?>> Function({
+      required bool confirmed,
+      bool preflight,
+    });
+
+/// 读包的结果（纯数据，跨 isolate 传）。
+sealed class _FushiSrsRead {
+  const _FushiSrsRead();
+}
+
+/// 第 1 / 2 版：`ops.bin` 已拷进临时文件；[manifest] 是第 2 版清单里归内核的几项（第 1 版为 null）。
+final class _OpsRead extends _FushiSrsRead {
+  const _OpsRead(this.manifest);
+
+  final Map<String, Object?>? manifest;
+}
+
+/// v2 同步之前的事件备份：事件已写成 JSONL（同一个临时文件路径）；[profileUid] 是清单里的 profile。
+final class _LegacyEventsRead extends _FushiSrsRead {
+  const _LegacyEventsRead(this.profileUid);
+
+  final String profileUid;
 }
 
 /// 删掉这次导入补进 [mediaRoot] 的媒体 [added]（内核拒收之后；本机原有的文件不在 [added] 里，不会被碰）。
@@ -342,8 +400,38 @@ Future<Map<String, Object?>> _kernelImport(
   }
 }
 
-/// 同 [_runWriteFushiSrs]：闭包只捕获纯数据参数。回交给内核的清单（第 2 版；第 1 版为 null），纯数据。
-Future<Map<String, Object?>?> _runReadFushiSrs({
+/// 发内核旧事件备份读入（[SrsDbStore.sync2LegacyEventsImport]）；坏事件 / 副本备不好的错误换成 [FormatException]。
+Future<Map<String, Object?>> _kernelLegacyImport(
+  SrsDbStore store,
+  String jsonlPath,
+  String scratch,
+  String backupProfile, {
+  required bool confirmed,
+  bool preflight = false,
+}) async {
+  try {
+    return await store.sync2LegacyEventsImport(
+      path: jsonlPath,
+      scratch: scratch,
+      backupProfile: backupProfile,
+      confirmed: confirmed,
+      preflight: preflight,
+    );
+  } on Object catch (e) {
+    final String m = e.toString();
+    if (m.contains('belongs to another collection')) {
+      throw const FormatException('this .fushisrs belongs to another profile');
+    }
+    if (m.contains('legacy_backup_import:') ||
+        m.contains('gen4 legacy backup import')) {
+      throw FormatException('corrupt legacy .fushisrs backup: $m');
+    }
+    rethrow;
+  }
+}
+
+/// 同 [_runWriteFushiSrs]：闭包只捕获纯数据参数。回读包结果（[_FushiSrsRead]），纯数据。
+Future<_FushiSrsRead> _runReadFushiSrs({
   required String path,
   required String opsPath,
 }) => Isolate.run(
@@ -355,8 +443,11 @@ Future<Map<String, Object?>?> _runReadFushiSrs({
 Future<List<String>> _runCopyFushiSrsMedia({
   required String path,
   required String mediaRootPath,
+  bool legacy = false,
 }) => Isolate.run(
-  () => _copyFushiSrsMedia(path, mediaRootPath),
+  () => legacy
+      ? _copyLegacyMedia(path, mediaRootPath)
+      : _copyFushiSrsMedia(path, mediaRootPath),
   debugName: 'srs-fushisrs-import-media',
 );
 
@@ -365,7 +456,7 @@ FormatException _invalid() => const FormatException('not a .fushisrs file');
 /// 在后台 isolate 跑：读清单、校验版本，把 `ops.bin` 拷进 [opsPath]（不压缩存放的条目按文件流式拷，不整份进内存）。
 /// **不碰媒体目录**：媒体等内核预检通过、用户确认之后才由 [_copyFushiSrsMedia] 写（复核：用户拒绝后不留孤儿文件）。
 /// 任何校验失败抛 [FormatException]（[Isolate.run] 原样转抛给调用方），此时本机什么都没被碰过。
-Future<Map<String, Object?>?> _readFushiSrs(String path, String opsPath) async {
+Future<_FushiSrsRead> _readFushiSrs(String path, String opsPath) async {
   final InputFileStream input;
   try {
     input = InputFileStream(path);
@@ -392,7 +483,7 @@ Future<Map<String, Object?>?> _readFushiSrs(String path, String opsPath) async {
     }
     if (m is! Map) throw _invalid();
     if (m['magic'] == kSrsLegacyBackupMagic) {
-      throw const SrsFushiSrsLegacyFormat();
+      return _readLegacy(zip, m.cast<String, Object?>(), opsPath);
     }
     final Object? v = m['v'];
     if (v is! int || v < 1) throw _invalid();
@@ -414,14 +505,16 @@ Future<Map<String, Object?>?> _readFushiSrs(String path, String opsPath) async {
     } finally {
       out.closeSync();
     }
-    return v == kSrsFushiSrsVersion
-        ? <String, Object?>{
-            'collection': m['collection'],
-            'dir': m['dir'],
-            'salts': m['salts'],
-            'peers': m['peers'],
-          }
-        : null;
+    return _OpsRead(
+      v == kSrsFushiSrsVersion
+          ? <String, Object?>{
+              'collection': m['collection'],
+              'dir': m['dir'],
+              'salts': m['salts'],
+              'peers': m['peers'],
+            }
+          : null,
+    );
   } finally {
     input.closeSync();
   }
@@ -454,6 +547,151 @@ Future<List<String>> _copyFushiSrsMedia(
     input.closeSync();
   }
   return added;
+}
+
+FormatException _corruptLegacy(String detail) =>
+    FormatException('corrupt legacy .fushisrs backup: $detail');
+
+/// 旧格式条目正文（超过 [max] 当坏包）。
+List<int> _legacyContent(ArchiveFile f, int max, String what) {
+  if (f.size > max) throw _corruptLegacy('$what too large');
+  final Object? c = f.content;
+  if (c is List<int>) return c;
+  throw _corruptLegacy(what);
+}
+
+/// 在后台 isolate 跑：校验旧事件备份（`minReaderVersion`、`events.jsonl` 的 SHA-256 与条数），把事件写成内核
+/// `legacy_backup_import`（`source: "events"`）读的 JSONL 到 [jsonlPath]：每行 `{e, stamped: true, server?}`（事件原样，
+/// `server` 取 `server_times.json`）。日志不带笔记 ID：内核在临时协议 3 库里按派生出的卡片补（与协议 3 `applyRemote`
+/// 同口径）。不碰媒体目录。
+_LegacyEventsRead _readLegacy(
+  Archive zip,
+  Map<String, Object?> manifest,
+  String jsonlPath,
+) {
+  final Object? minReader = manifest['minReaderVersion'];
+  if (minReader is! int || minReader > _kLegacyReaderVersion) {
+    throw const FormatException('unsupported .fushisrs version');
+  }
+  final Object? profileUid = manifest['profileUid'];
+  if (profileUid is! String || profileUid.isEmpty) {
+    throw _corruptLegacy('manifest profile');
+  }
+  final Object? ev = manifest['events'];
+  if (ev is! Map || ev['sha256'] is! String || ev['count'] is! int) {
+    throw _corruptLegacy('manifest events');
+  }
+  final ArchiveFile? eventsFile = zip.findFile('events.jsonl');
+  if (eventsFile == null) throw _corruptLegacy('events missing');
+  final List<int> body = _legacyContent(
+    eventsFile,
+    _kLegacyMaxEventsBytes,
+    'events',
+  );
+  if (sha256.convert(body).toString() != ev['sha256']) {
+    throw _corruptLegacy('events sha256 mismatch');
+  }
+  final Map<String, int> serverTimes = <String, int>{};
+  final ArchiveFile? st = zip.findFile('server_times.json');
+  if (st != null) {
+    final Object? j;
+    try {
+      j = jsonDecode(
+        utf8.decode(
+          _legacyContent(st, _kLegacyMaxServerTimesBytes, 'server times'),
+        ),
+      );
+    } on FormatException {
+      throw _corruptLegacy('server times');
+    }
+    if (j is Map) {
+      for (final MapEntry<Object?, Object?> e in j.entries) {
+        if (e.key is String && e.value is int) {
+          serverTimes[e.key! as String] = e.value! as int;
+        }
+      }
+    }
+  }
+  final RandomAccessFile out = File(jsonlPath).openSync(mode: FileMode.write);
+  int n = 0;
+  try {
+    for (final String line in const LineSplitter().convert(utf8.decode(body))) {
+      if (line.isEmpty) continue;
+      final Object? e;
+      try {
+        e = jsonDecode(line);
+      } on FormatException {
+        throw _corruptLegacy('event line ${n + 1}');
+      }
+      if (e is! Map) throw _corruptLegacy('event line ${n + 1}');
+      final Object? x = e['x'];
+      final Object? id = x is Map ? x['id'] : null;
+      final int? server = id is String ? serverTimes[id] : null;
+      final Map<String, Object?> item = <String, Object?>{
+        'e': e,
+        'stamped': true,
+        'server': ?server,
+      };
+      out.writeStringSync('${jsonEncode(item)}\n');
+      n++;
+    }
+  } finally {
+    // 后台 isolate 里同步写完、关文件，内核随后按文件读（旧格式只会越来越少，不为它做异步流水线）。
+    out.closeSync();
+  }
+  if (n != ev['count']) throw _corruptLegacy('event count mismatch');
+  return _LegacyEventsRead(profileUid);
+}
+
+/// 在后台 isolate 跑：旧事件备份的媒体（清单 `media: [{name, sha256}]`）补进 [mediaRootPath]（已有的不覆盖）：先取文件
+/// 内嵌的 `media/<sha256>`，再到旧备份根的共享池（`<备份根>/<profileUid>/<文件>` 布局下的 `<备份根>/media/`）找；一律按
+/// SHA-256 校验，对不上当没有。回补进来的文件名。
+Future<List<String>> _copyLegacyMedia(String path, String mediaRootPath) async {
+  final InputFileStream input = InputFileStream(path);
+  final List<String> added = <String>[];
+  try {
+    final Archive zip = ZipDecoder().decodeBuffer(input);
+    final ArchiveFile? mf = zip.findFile('manifest.json');
+    if (mf == null) return added;
+    final Object? m = jsonDecode(utf8.decode(mf.content as List<int>));
+    if (m is! Map) return added;
+    final Directory pool = Directory(
+      p.join(p.dirname(p.dirname(path)), 'media'),
+    );
+    final Directory mediaRoot = Directory(mediaRootPath);
+    for (final Object? raw in (m['media'] as List?) ?? const <Object?>[]) {
+      if (raw is! Map) continue;
+      final Object? name = raw['name'];
+      final Object? sha = raw['sha256'];
+      if (name is! String || sha is! String) continue;
+      if (!srsIsBareMediaName(name) || !_sha256Re.hasMatch(sha)) continue;
+      final File local = File(p.join(mediaRoot.path, name));
+      if (local.existsSync()) continue;
+      final List<int>? bytes = _legacyMediaBytes(zip, sha, pool);
+      if (bytes == null) continue;
+      await mediaRoot.create(recursive: true);
+      final File tmp = File('${local.path}.import.tmp');
+      await tmp.writeAsBytes(bytes, flush: true);
+      await tmp.rename(local.path);
+      added.add(name);
+    }
+  } finally {
+    input.closeSync();
+  }
+  return added;
+}
+
+/// 旧格式媒体正文（[_copyLegacyMedia]）。
+List<int>? _legacyMediaBytes(Archive zip, String sha, Directory pool) {
+  final ArchiveFile? embedded = zip.findFile('media/$sha');
+  if (embedded != null && embedded.size <= _kLegacyMaxMediaBytes) {
+    final Object? c = embedded.content;
+    if (c is List<int> && sha256.convert(c).toString() == sha) return c;
+  }
+  final File f = File(p.join(pool.path, sha));
+  if (!f.existsSync() || f.lengthSync() > _kLegacyMaxMediaBytes) return null;
+  final List<int> b = f.readAsBytesSync();
+  return sha256.convert(b).toString() == sha ? b : null;
 }
 
 /// zip 目录里名为 [name] 的条目（取 [ZipFile] 才拿得到不解压的原始字节流）。

@@ -10151,7 +10151,6 @@
   "srs_timeline_import_foreign_confirm": "This file comes from another review library. Importing merges the two libraries into one, and every device syncs the merged library from then on.",
   "srs_timeline_import_identity_confirm": "This file is from this review library but adds ${salts} old profile IDs and ${devices} devices it does not know yet. Only continue if the file is yours.",
   "srs_timeline_import_invalid": "This is not a Fushi review export, or it was made by a newer version",
-  "srs_timeline_import_legacy_format": "This is an old backup from before sync v2 and can't be imported by this version. Import it with Fushi 3.x first; it will be carried over when you upgrade.",
   "srs_timeline_import_other_profile": "This file belongs to another profile",
   "srs_timeline_location_add": "Add folder",
   "srs_timeline_location_add_any": "Add storage location",

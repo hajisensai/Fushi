@@ -1246,3 +1246,87 @@ G8 子规划文档在仓库里不存在（任务点名的「G8 子规划」找�
   `srs_fresh_profile_e2e_test.dart` 3 条（新卡被藏，§13.6 第 1 条）、`srs_fushisrs_test.dart` 3 条与
   `srs_write_statement_cost_test.dart` 2 条（`note` / `noteType` 按成员 ID 读崩在 `_prefetchEdits`，§14）、
   `fushi/test/srs/srs_word_audio_backfill_test.dart` 的 store 用例（成员 / 规范 ID 对不上，§14「派生 ID 的返回值」）。
+
+## G11-4 备份 / 还原、主库 schema 升档、服务端备份 v2（2026-11-17，分支 `pr/srs-gen4-g11-4-backup-restore`，基于 `pr/srs-gen4-switch`）
+
+规划 §1.9、§6、D33 / D34；本节「§9.5 第 6 条」「§13」「§15 定案 5」「§16 旧事件备份进合并条件」点名 G11-4 的全部在这里收口。
+Rust `SCHEMA` 没升（没加表 / 索引，分到的 40024 没用）；ABI 不变（`ffsrs_store_snapshot` 是既有入口）。
+
+### 定案（所有者授权自定）
+
+1. **整包备份的复习部分 = 按集合的 `FSRS4EXP` 流**（不是快照）：zip 里 `srs/manifest.json` + 每个集合一条 `srs/<n>.bin`
+   （内核 `export`，与 `.fushisrs` 第 2 版的 `ops.bin` 同一种）。清单 `{v: 2, gen: 4, exportedAt, collections: [{n, profiles:
+   [{uid, name}], collection, dir, salts, peers, counts}]}`，**不带 `magic`**、不带签名私钥（快照带私钥，还原到另一台设备 = 两台
+   设备共用一个身份）。不再写 `srs.db` 条目。实现 `packages/fushi_engine/lib/srs/srs_backup_bundle.dart`。
+2. **`ffsrs_store_snapshot` 接新代**（`G4Core::snapshot_into`，`kernel.rs`）：`VACUUM INTO` 一个读事务里的一致快照（读不挡写）；
+   Secondary 报只读；`stripDeviceLocal = true` 报错（新代不给半定义的剥表模式）；先查空闲空间、写完核对是建好的新代库、
+   中途失败删掉半截目标。只给服务端备份用。
+3. **服务端备份第 2 版**（`kServerBackupFormatVersion = 2`）：`data/support/srs4.db` = 上面的快照（同一台设备原样回来，身份
+   与同步进度都要在）；封存的 `srs.db`（有才带）原样拷。旧二进制（只认 v1）在动任何东西之前拒绝、提示升级；这一版照样还原
+   v1（只有协议 3 `srs.db`，下次启动按迁移处理）。还原把现有数据目录整体挪到 `<data_dir>.pre-restore-<时间>/`，不删。
+4. **覆盖还原 = 空库 + 并入（D34）**：在 `<库目录>/srs-restore-staged/` 新建空的新代库，把备份的复习数据全部落进去（任何一步
+   失败删掉暂存目录、原样抛错，本机没动）；主库换好之后换库：本机 `srs4.db`（连同 -wal / -shm）改名成
+   `srs4.db.pre-restore-<UTC 时间>`（回退副本，**不删**；同名已在就加序号），暂存库改名到位。封存的协议 3 `srs.db` 一概不碰。
+   sidecar 的 `srs` 键记新代计划 `{gen4, rollback, profiles}`，崩溃后 `recoverPendingRestore` 幂等重放。**旧版本留下的协议 3
+   计划（字符串）不再删 / 换 `srs.db`**，只把没换进去的暂存文件改名成 `-unapplied` 留存、记日志（§9.5 第 6 条）。
+5. **合并还原**经内核落库（新形态 `import`、旧形态 `legacy_backup_import`，先 G9-4 `collection_adopt` 认领）。并入另一个
+   复习库、记下新的旧 profile 标识（盐）/ 设备公钥要用户确认：导入流程里加一个确认框（`backup_srs_merge_confirm*`），答否 =
+   只合并其余内容、那份复习数据不落（回报 `declined`）；控制通道的预设不替用户确认。`srs_backup_merge.dart` 的 `adoptedUid`
+   改成 `collection_adopt`（profile 的 uid 不变，以前是改 uid）。
+6. **本机复习库状态不对时整次拒绝**（`SrsRestoreBlockedException`，`backup_srs_restore_blocked`）：只看代际状态
+   （`SrsGen4Migration.status`，**不开库**——开库会写文件头，失败时本机就不再逐字节原样）；没迁移 / 迁移中 / 只剩封存旧库 /
+   上次迁移失败都拒，提示先完成升级或取消勾选「复习」。G7-5 的 `SrsRestoreUnavailableException` 整次拒绝删掉。
+7. **旧形态全部能进（D34）**，经新命令 `legacy_backup_import`（`cmd/backup.rs`）：
+   - 协议 3 整包备份的 `srs.db` 条目：`source: "db"`；
+   - 2026-10-23 之前 SRS 表在主库条目里的整包备份、v2 同步之前的 `.fushisrs` 事件备份（魔数 `fushi-srs-backup`）：Dart 写成
+     「外来、已盖戳」的 JSONL，`source: "events"`。
+   命令先在新代库写锁之外用冻结的协议 3 代码备一份临时副本（schema 阶梯 → `cache_config_set` → `migrate` → 分批 `apply` →
+   `dedup` → `replay_pending`，副本里记 `gen4_backup_prepared`，预检之后的真导入不重备），再一个写事务里认领 + G11-2
+   `import_backup` + 本机状态行。确认口径与 `.fushisrs` 第 2 版相同。坏文件 / 备不好的副本整笔回滚。
+8. **`.fushisrs` 旧事件备份不再拒收**（推翻 §15 定案 5）：`srs_fushisrs.dart` 校验 `minReaderVersion`、事件摘要与条数，写
+   JSONL（带 `server_times.json` 的逐事件服务器时间）交给 `SrsDbStore.sync2LegacyEventsImport`；只认本 profile 的（另一个
+   profile 的拒收，同协议 3 时代与 D34）；媒体取内嵌 `media/<sha256>`、再到旧备份根共享池找，按 SHA-256 校验。
+   `SrsFushiSrsLegacyFormat` 与 i18n 键 `srs_timeline_import_legacy_format` 删掉。
+9. **旧事件的日志笔记**：v1 事件的复习日志多数不带笔记 ID（`.fushisrs` 事件备份没有卡片缓存）。副本分两遍读：先落身份 /
+   修改记录、`replay_pending` 派生出卡片，再按副本 `srs_cards_cache`（`LOG_NOTE_SQL`，走索引）给没带笔记的日志补上，与协议 3
+   `applyRemote` 落库前按卡片行查笔记同口径。
+10. **旧输入读入幂等**：副本把旧事件包成操作，成为副本身份名下的承袭日志。副本身份每次随机的话，再导一次同一份旧输入会以
+    另一个合成设备再落一遍（实测 `inserted 26` / 换了时钟后 `replaced 10, forks 16`）。现在：副本里没有这个 profile 的身份时
+    先写一个**可重现**的（`seed_scratch_identity`：BLAKE3 派生自目标集合的本机签名钥匙种子 + 备份 profile + 输入摘要 + 来源
+    种类，设备 ID 是 UUIDv8）；事件来源的副本时钟取输入里最晚的时刻（`input_time`，上限压到请求的 `now`，输入不可信）。同一台
+    设备、同一个集合再导一次全是已有的槽（`unchanged`）。钥匙必须混本机秘密：合成设备的公钥进 `peers`，只凭备份内容就能推出
+    私钥的话，拿到备份文件的人能冒充它往位置上写协议 3 段。
+11. **主库 Drift schemaVersion 155 → 156（D33）**，空迁移：旧版本见到更新的主库在动任何文件之前拒绝整份备份（导入流程既有
+    的 `backup_schema_newer`）。这是旧二进制拒收新整包备份的唯一闸门（旧二进制只找 `srs.db` 条目，会把 `srs/` 当未知条目
+    跳过），所以与断代同一次推送。
+
+### 守卫 / 测试
+
+- `fushi/test/build/backup_srs_gen4_guard_test.dart`：备份路径（`backup_service.dart`、`restore.part.dart`、`srs_restore.part.dart`、
+  `backup_merge_engine.dart`、`server_backup.dart`、`srs_backup_bundle.dart`、`srs_backup_merge.dart`）里没有 `SrsStorage.open`、
+  没有 `stripDeviceLocal: true`、清单不写 `magic`、封存的 `srs.db` 只在协议 3 暂存文件路径上出现。
+- Rust `cmd/backup_tests.rs`（7 条，经 C ABI）：别的线程一直在写时拍的快照能当新代库打开、派生层与整层重建逐行相同；
+  快照拒绝路径不留文件；协议 3 `srs.db` 读入与直接迁移逐行相同、再读不改；另一个集合要确认、坏文件库一字不变；v1 事件与
+  直接迁移条数相同、坏行报行号；日志不带笔记时从派生卡片补齐（EXPLAIN 测执行的同一份 `LOG_NOTE_SQL`）；换副本目录隔天再导
+  同一份全是已有的槽、派生层与导出流不变，另一个库得到另一个合成设备。变异实测：去掉可重现身份 → `inserted 26` 红；副本时钟
+  回到请求 `now` → `replaced 10` 红。
+- Dart：`backup_srs_category_test.dart`（覆盖还原逐表与源一致且本机旧 `srs4.db` 改名留存逐字节原样、合并没确认不落 / 确认后落
+  且再合并不变、坏操作流与更新版本清单什么都不换、没迁移时拒绝且 `srs.db` 逐字节原样、主库表形态 v1 事件覆盖还原、协议 3
+  `srs.db` 条目合并两次不重复）、
+  `srs_backup_merge_test.dart`、`server_backup_srs_test.dart`（serve 在跑 / 离线两种快照、没开过复习库不带、v2 往返后新代库照常
+  打开且封存旧库逐字节回来；旧二进制拒 v2 靠的是既有的 `formatVersion > kServerBackupFormatVersion` 判断）、`srs_fushisrs_test.dart`
+  （旧事件备份读入对拍 + 再导不重复；另一个 profile / 摘要不符拒收、不打还原点）、`backup_device_local_leak_guard_test.dart`
+  （整包备份不再带整库快照）。
+
+### 没做 / 交给谁
+
+- 覆盖还原后的**第一次**合并同一份旧输入仍会多落一份：暂存库里 profile 还没有本机身份（绑定在落库事务里才建），副本身份只能
+  随机；之后的再导入才可重现。要根治得让落库前先建身份（改 `collection_adopt` 的时序，归 G9 身份模块评估）。新形态（`FSRS4EXP`）
+  备份不受影响。
+- 协议 3 `srs.db` 来源（`source: "db"`）里没包过的 v1 旧行由副本 `migrate` 按请求的 `now` 包，同一份隔天再导会是「替换」：
+  只影响 v2 同步之前从没迁移过的库的整包备份（很少见），没做输入时刻推断。
+- 旧二进制（已发布版本）真机互拒实测归 R0 / G11-5（本分支只有源码层与单测层证据）。
+- 已知基线红（不归本模块，原样记下）：`srs_fushisrs_test.dart` 的 3 条 ID 口径族（§18「没做」）；`fushi_engine` 的
+  `srs_profile_link_sync_test` / `srs_profile_purge_single_test` / `srs_profile_adopt_user_data_test`（断言协议 3 表 `sync2_ops`，
+  归 T1 / G9-5）；`fushi/test/srs/srs_profile_cleanup_test.dart`（`profile_purge` 未接线，G9-5）；
+  `srs_store_ownership_guard_test.dart`（`srs_storage.dart:112` 的表名，本分支没碰该文件）。

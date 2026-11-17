@@ -2035,6 +2035,45 @@ class SrsDbStore implements SrsSync2Host {
     return r;
   });
 
+  /// v2 同步之前的 `.fushisrs` 事件备份（G11-4，D34）：内核 `legacy_backup_import {source: "events"}`
+  /// （native/fushi_fsrs/src/store/gen4/cmd/backup.rs）先在 [scratch]（调用方给的空目录）里用冻结的协议 3 代码把 [path]
+  /// （「外来、已盖戳」事件的 JSONL）落进一份临时协议 3 库，再在一个写事务里认领（G9-4）+ 旧备份读入。[backupProfile]
+  /// 是事件所属的旧 profile。认领口径与 [sync2ImportOps] 相同：另一个集合 / 新盐 / 新设备公钥没 [confirmed] 时回
+  /// `needsConfirm`、新代库什么都不写；[preflight] 只判断（副本照样备好，同一个 [scratch] 再来真导入时不重备）。
+  Future<Map<String, Object?>> sync2LegacyEventsImport({
+    required String path,
+    required String scratch,
+    required String backupProfile,
+    bool confirmed = false,
+    bool preflight = false,
+  }) => runExclusive(() async {
+    Map<String, Object?> request() => <String, Object?>{
+      'op': 'legacy_backup_import',
+      'now': now().$1,
+      if (!preflight) 'anchor': ?_anchorArg(),
+      'source': 'events',
+      'path': path,
+      'scratch': scratch,
+      'backupProfile': backupProfile,
+      'caches': srsCacheConfigFor(backupProfile),
+      'confirmed': confirmed,
+      'preflight': preflight,
+    };
+    if (preflight) return _sync2(request());
+    late Map<String, Object?> r;
+    await _commandOrReload(() async {
+      r = await _sync2(request());
+      if (r['outcome'] == 'needsConfirm') return;
+      _absorbLocalWrite(r);
+      // 旧备份读入整份重建派生层（同 [sync2ImportOps]）：有改动就丢掉全部缓存日志。
+      if (r['unchanged'] != true) _resetCacheJournal();
+    });
+    if (r['outcome'] == 'needsConfirm') return r;
+    await _sync2Open();
+    await _notifyPurged();
+    return r;
+  });
+
   /// 同步状态（设计 §10.6）。
   Future<Map<String, Object?>> sync2Status() async =>
       (await sync2Command(<String, Object?>{'op': 'status'})).map;

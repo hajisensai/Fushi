@@ -862,9 +862,6 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
                 icon: FushiIcons.importFile,
               ),
         );
-      } on SrsFushiSrsLegacyFormat {
-        failure = t.srs_timeline_import_legacy_format;
-        rethrow;
       } on FormatException catch (e) {
         failure = e.message.contains('another profile')
             ? t.srs_timeline_import_other_profile

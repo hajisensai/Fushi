@@ -1,6 +1,7 @@
 // 手动导出 / 导入 `.fushisrs`（sync2/srs_fushisrs.dart；协议 4 第 2 版，G11-3）：导出到文件、在另一台设备导入后
 // 笔记 / 复习 / 媒体都到齐；导入是并入（不覆盖本机）、幂等；另一个复习库的包要确认才合并；导入前自动打还原点；
-// 清单 v 2 / gen 4、不带 magic（已发布版本在碰库之前拒收）；更新版本的包拒收；v2 同步之前的事件备份明确拒收。
+// 清单 v 2 / gen 4、不带 magic（已发布版本在碰库之前拒收）；更新版本的包拒收；v2 同步之前的事件备份经冻结的协议 3
+// 代码读入（G11-4，D34），另一个 profile 的 / 坏包拒收。
 // 内核侧（导出再导入逐表相同、需确认 / 并入、第 1 版对拍、大文件、别名类）在 Rust 的 cmd/fushisrs_tests.rs。
 import 'dart:convert';
 import 'dart:io';
@@ -340,19 +341,99 @@ void main() {
     return out;
   }
 
-  test('v2 同步之前的事件备份：明确拒收（提示先用 3.x 导入），本机不变、不打还原点', () async {
+  test('v2 同步之前的事件备份（D34）：经冻结的协议 3 代码读进新代库，笔记 / 复习条数对拍；再导一次不重复', () async {
     final SrsDbStore a = await device('a');
-    await addNote(a, '猫');
+    final String n1 = await addNote(a, '猫');
+    await addNote(a, '犬');
+    final String card = (await a.cardsOfNote(n1)).single.id;
+    t += 60 * 1000;
+    await a.answer(card, 3);
+    final int aLogs =
+        ((await a.logsOfCards(<String>[card]))[card] ?? const <SrsReviewLog>[])
+            .length;
     final File pkg = await legacyBackup(
       a,
       File(p.join(tmp.path, 'old.$kSrsFushiSrsExtension')),
     );
     final SrsDbStore b = await device('b');
+    final int checkpoints = (await b.sync2Checkpoints()).length;
+    // 用户不确认：什么都不写、不打还原点。
+    final SrsFushiSrsImport no = await srsImportFushiSrs(
+      b,
+      pkg,
+      confirmForeign: (_) async => false,
+    );
+    if (no.declined) {
+      expect(await noteCount(b), 0);
+      expect((await b.sync2Checkpoints()).length, checkpoints);
+    }
+    final SrsFushiSrsImport imp = await srsImportFushiSrs(
+      b,
+      pkg,
+      confirmForeign: (_) async => true,
+    );
+    expect(imp.declined, isFalse);
+    expect(await noteCount(b), await noteCount(a));
+    expect(
+      ((await b.logsOfCards(<String>[card]))[card] ?? const <SrsReviewLog>[])
+          .length,
+      aLogs,
+    );
+    final SrsFushiSrsImport again = await srsImportFushiSrs(
+      b,
+      pkg,
+      confirmForeign: (_) async => true,
+    );
+    expect(again.applied, 0);
+    expect(await noteCount(b), await noteCount(a));
+    expect(
+      ((await b.logsOfCards(<String>[card]))[card] ?? const <SrsReviewLog>[])
+          .length,
+      aLogs,
+    );
+  });
+
+  test('v2 同步之前的事件备份：另一个 profile 的、摘要对不上的明确拒收，本机不变、不打还原点', () async {
+    final SrsDbStore other = await device('o', profile: kOtherProfile);
+    await addNote(other, '猫');
+    final File foreign = await legacyBackup(
+      other,
+      File(p.join(tmp.path, 'foreign.$kSrsFushiSrsExtension')),
+    );
+    final SrsDbStore b = await device('b');
     final int notes = await noteCount(b);
     final int checkpoints = (await b.sync2Checkpoints()).length;
     await expectLater(
-      srsImportFushiSrs(b, pkg),
-      throwsA(isA<SrsFushiSrsLegacyFormat>()),
+      srsImportFushiSrs(b, foreign, confirmForeign: (_) async => true),
+      throwsA(
+        isA<FormatException>().having(
+          (FormatException e) => e.message,
+          'message',
+          contains('another profile'),
+        ),
+      ),
+    );
+    // 摘要对不上（正文被改）：坏包。
+    final Archive zip = ZipDecoder().decodeBytes(
+      (await legacyBackup(
+        b,
+        File(p.join(tmp.path, 'mine.$kSrsFushiSrsExtension')),
+      )).readAsBytesSync(),
+    );
+    final Archive bad = Archive();
+    for (final ArchiveFile f in zip.files) {
+      if (f.name == 'events.jsonl') {
+        final List<int> body = <int>[...(f.content as List<int>), 10, 10];
+        bad.addFile(ArchiveFile('events.jsonl', body.length, body));
+      } else {
+        bad.addFile(f);
+      }
+    }
+    final File tampered = File(p.join(tmp.path, 'bad.$kSrsFushiSrsExtension'))
+      ..writeAsBytesSync(ZipEncoder().encode(bad)!);
+    await expectLater(
+      srsImportFushiSrs(b, tampered, confirmForeign: (_) async => true),
+      throwsFormatException,
     );
     expect(await noteCount(b), notes);
     expect((await b.sync2Checkpoints()).length, checkpoints);
@@ -396,7 +477,7 @@ void main() {
     expect(import, contains('_runCopyFushiSrsMedia('));
     expect(export, contains('_runWriteFushiSrs('));
     expect(
-      topLevelBody('Future<Map<String, Object?>?> _runReadFushiSrs('),
+      topLevelBody('Future<_FushiSrsRead> _runReadFushiSrs('),
       contains('Isolate.run('),
     );
     expect(
@@ -410,8 +491,13 @@ void main() {
     expect(import.indexOf('sync2Checkpoint('), greaterThan(pre));
     expect(import.indexOf('_runCopyFushiSrsMedia('), greaterThan(pre));
     expect(
-      topLevelBody('Future<Map<String, Object?>?> _readFushiSrs('),
+      topLevelBody('Future<_FushiSrsRead> _readFushiSrs('),
       isNot(contains('media')),
+    );
+    // 旧事件备份同样：读包只写 JSONL，不碰媒体目录。
+    expect(
+      topLevelBody('_LegacyEventsRead _readLegacy('),
+      isNot(contains('mediaRoot')),
     );
     expect(
       topLevelBody('Future<SrsFushiSrsExport> _runWriteFushiSrs('),
