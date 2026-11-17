@@ -612,13 +612,61 @@ Future<void> _restoreDatabase(
             const <VideoClaimSqlRow>[])
       row['id']! as int,
   ];
-  // 1. 删掉当前单元的作品子树（季 / 集 / 身份 / 快照 / 词 / 人物表 / 图 / 特典随 FK 级联）。
+  // 1. 删掉当前单元（与认领前快照里）的作品子树。子表逐张显式删、先子后父，不靠
+  //    FK 级联：级联依赖连接上的 `PRAGMA foreign_keys`，显式删在任何连接上都一样。
+  List<int> ids(String table) => <int>[
+    for (final VideoClaimSqlRow row
+        in snapshot.tables[table] ?? const <VideoClaimSqlRow>[])
+      row['id']! as int,
+  ];
+  final List<int> works = <int>{...current.works, ...oldWorkIds}.toList();
+  final List<int> seasons = <int>{
+    ...current.seasons,
+    ...ids('video_metadata_seasons'),
+  }.toList();
+  final List<int> episodes = <int>{
+    ...current.episodes,
+    ...ids('video_metadata_episodes'),
+  }.toList();
+  final List<(String, List<Object>)> owners = <(String, List<Object>)>[
+    ('work_id', works),
+    ('season_id', seasons),
+    ('episode_id', episodes),
+  ];
+  final List<Object> identityKeys = <Object>{
+    for (final VideoClaimSqlRow row in await _selectWhere(
+      db,
+      'video_metadata_provider_identities',
+      owners,
+    ))
+      row['identity_key']!,
+    for (final VideoClaimSqlRow row
+        in snapshot.tables['video_metadata_provider_identities'] ??
+            const <VideoClaimSqlRow>[])
+      row['identity_key']!,
+  }.toList();
   await _delete(
     db,
-    'video_metadata_works',
-    'id',
-    <int>{...current.works, ...oldWorkIds}.toList(),
+    'video_metadata_raw_snapshots',
+    'identity_key',
+    identityKeys,
   );
+  for (final String table in const <String>[
+    'video_metadata_provider_identities',
+    'video_metadata_credits',
+    'video_metadata_images',
+  ]) {
+    for (final (String column, List<Object> values) in owners) {
+      await _delete(db, table, column, values);
+    }
+  }
+  await _delete(db, 'video_metadata_work_terms', 'work_id', works);
+  await _delete(db, 'video_metadata_extras', 'work_id', works);
+  await _delete(db, 'video_metadata_episodes', 'id', episodes);
+  await _delete(db, 'video_metadata_episodes', 'season_id', seasons);
+  await _delete(db, 'video_metadata_seasons', 'id', seasons);
+  await _delete(db, 'video_metadata_seasons', 'work_id', works);
+  await _delete(db, 'video_metadata_works', 'id', works);
 
   // 2. 字典：认领前的行写回（已有的按列 UPDATE，不用 REPLACE——REPLACE 会先删行、
   //    级联掉别的作品挂在它名下的身份与图片）。
