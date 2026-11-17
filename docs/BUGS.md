@@ -40,6 +40,16 @@
 | [BUG-4793](bugs/BUG-4793-manga-import-book-dir-not-owned.md) | ✅ | ✅ | 漫画导入直接往书目录里写、失败回滚无条件删目录：会删掉同名并发导入或孤儿书的目录；暂存在系统临时目录 |
 | [BUG-4792](bugs/BUG-4792-concurrent-same-title-import-deletes-winner-dir.md) | ✅ | ✅ | 并发导入同名书，后一次把前一次的书目录换掉再删掉，留下指向空目录的行 |
 | [BUG-4791](bugs/BUG-4791-epub-import-parse-failure-leaves-staging-dir.md) | ✅ | ✅ | EPUB 导入解析失败时书库根下的 .tmp-* 解压目录永久残留，崩溃留下的 .tmp-* / .bak-* 也没人清 |
+> 共 4152 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4796](bugs/BUG-4796-disc-back-double-press-repeat-topmenu.md) | ✅ | ✅ | 原盘正片快速连按两次返回会重复发 topMenu，第二次失败会整盘退出 |
+| [BUG-4795](bugs/BUG-4795-disc-back-to-menu-transient-error-exits.md) | ✅ | ✅ | 原盘正片按返回回盘菜单时，任何暂时性错误都会让整个原盘会话退出 |
+| [BUG-4794](bugs/BUG-4794-subtitle-panel-favorites-filter-width-wasted.md) | 🚧 | 🚧 | 经典版式字幕列表收藏档的筛选分段被截到剩余宽度一半，收藏计数用不满的宽度空着 |
+| [BUG-4793](bugs/BUG-4793-server-admin-update-config-mutates-before-save.md) | ✅ | ✅ | 服务端 AdminContext.updateConfig 写盘前就换了内存配置：config.yaml 写失败时内存与文件分家，BUG-4763 的档位回滚也因此不触发 |
+| [BUG-4792](bugs/BUG-4792-cross-app-audio-consent-destroy-busy.md) | ✅ | ✅ | 跨应用语音授权页被系统以非 finishing 方式销毁后，start 永远挂着，之后每次开启都回 busy |
+| [BUG-4791](bugs/BUG-4791-cross-app-audio-provider-rpc-main-thread.md) | ✅ | ✅ | 应用外查词取跨应用语音快照时，跨进程 RPC 与约 2.9MB 写盘压在查词窗平台主线程上 |
 | [BUG-4790](bugs/BUG-4790-screen-ocr-dart-recognition-no-cancel.md) | 🚧 | 🚧 | Android 截屏识字交给 Dart 识别期间没有取消出口，识别慢时悬浮球一直藏着 |
 | [BUG-4789](bugs/BUG-4789-screen-ocr-engine-destroyed-orphan-dart-reply.md) | ✅ | ✅ | 截屏识字等 Dart 回话时主引擎被销毁，挂起的回话永远不来，流程锁不解、悬浮球一直藏着 |
 | [BUG-4788](bugs/BUG-4788-screen-ocr-lens-consent-desktop-wording-on-android.md) | ✅ | ✅ | Android 截屏识字的 Google Lens 同意框照搬桌面文案，手机上写着「整块显示器」 |
