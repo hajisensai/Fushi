@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-17T13:40:04Z",
+ "generatedAt": "2026-11-17T18:00:19Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "29ee33b204b2f2b22e339d10c932c90bd6e38a1d",
-  "seq": 28638
+  "sha": "171902833840b7788ccae1bc580c0326663e0232",
+  "seq": 28647
  },
  "builds": [
   {
@@ -103,7 +103,34 @@
    }
   }
  ],
- "pending": null,
+ "pending": {
+  "headSha": "171902833840b7788ccae1bc580c0326663e0232",
+  "headSeq": 28647,
+  "prs": [
+   3716,
+   3722
+  ],
+  "direct": [],
+  "truncated": false,
+  "platforms": {
+   "android": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44142854065"
+   },
+   "windows": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44142853667"
+   },
+   "macos": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44142853667"
+   },
+   "ios": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44142853667"
+   }
+  }
+ },
  "prs": {
   "3644": {
    "number": 3644,
@@ -229,6 +256,24 @@
    "mergedAt": "2026-11-17T10:24:18Z",
    "additions": 148,
    "deletions": 5,
+   "labels": []
+  },
+  "3716": {
+   "number": 3716,
+   "title": "fix(subtitle): 桌面三端与无头服务端按 CP932 / GBK / EUC-JP / Big5 解非 Unicode 文本（BUG-4798）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-17T17:58:46Z",
+   "additions": 2312,
+   "deletions": 41,
+   "labels": []
+  },
+  "3722": {
+   "number": 3722,
+   "title": "docs(plans): 小说 / 漫画 / 视频优化剩余路线图（第 2～7 波，33 组）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-17T17:58:18Z",
+   "additions": 666,
+   "deletions": 0,
    "labels": []
   }
  }
