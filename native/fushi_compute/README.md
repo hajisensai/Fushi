@@ -145,6 +145,20 @@ galgame helper / hook 相关（Windows 专属规则域，另开任务）。
 | 内存 SHA-256 | 64 MiB | 1,173 ms | 43 ms | 27× |
 | 整文件 SHA-256（异步读，UI isolate 可用） | 256 MiB | 4,829 ms | 408 ms | 11.8× |
 
+## 图像域：漫画上传副本的文字覆盖
+
+`src/image/composite.rs` 的 `ffc_image_composite_rgba_jpeg` 接收编码原图与整页 straight RGBA
+覆盖层，解码并转正 EXIF、将透明源合白底、按面积平均缩小，再一次合成并编码 4:4:4 JPEG。
+输出宽高各为 1..1280，不能放大源图；输入只读，Rust 返回缓冲按通用 `ffc_free_bytes` 释放。
+
+Dart 入口为 `FushiComputeImage.compositeRgbaJpeg`，符号首次调用时绑定；缺符号仍是硬依赖错误。
+应用层 `manga_audio_substitution_image.dart` 用系统字体为命中替换表的 OCR 块排字，生成整页透明覆盖层；
+传 `ImageByteFormat.rawStraightRgba`，不能用预乘 alpha 的 `rawRgba`。解码、缩放、合成、编码放后台
+isolate，整页一次跨 FFI。处理失败返回 null，不可回退上传原图；本地页图与 OCR 文件不改写。
+
+回归覆盖原生像素合成、EXIF、透明度与参数校验，Dart FFI 生命周期，以及 Flutter 横竖排、缩放坐标、
+倾斜块范围与最终上传 JPEG 的实际像素。
+
 ## 字体域
 
 `ffc_font_woff2_to_sfnt(const u8*, usize, u8** out, usize* out_len) -> i32`：WOFF2 → 裸 sfnt

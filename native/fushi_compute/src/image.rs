@@ -27,6 +27,7 @@
 use crate::{guard, status};
 
 mod avif;
+mod composite;
 
 /// 缩放插值，取值与 `package:image` 的 `Interpolation` 对应（不支持 cubic）。
 pub const INTERP_NEAREST: i32 = 0;

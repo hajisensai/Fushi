@@ -20,6 +20,8 @@ import 'dart:math' as math;
 import 'package:fushi_engine/ai/ai_reply_json.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/tts/cast/series_cast.dart';
+import 'package:fushi_engine/tts/cast/cast_text_substitution.dart';
+import 'package:fushi_engine/tts/cast/cast_prompt_roster.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_validate.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
@@ -53,8 +55,12 @@ String _toPromptSpeaker(String speaker) => switch (speaker) {
 
 /// 回复里的说话人 → 角色表规范名；别名换成规范名，旁白 / 不明换回内部名。
 /// 不认识的原样返回（交校验丢弃）。
-String normalizeMangaSpeaker(Map<String, TtsCastCharacter> roster, String raw) {
-  final String s = raw.trim();
+String normalizeMangaSpeaker(
+  Map<String, TtsCastCharacter> roster,
+  String raw, {
+  CastPromptRoster? promptRoster,
+}) {
+  final String s = promptRoster?.restoreSpeaker(raw) ?? raw.trim();
   if (s == kMangaPromptUnknown || s == kTtsUnknown) return kTtsUnknown;
   if (s == kMangaPromptNarrator || s == kTtsNarrator) return kTtsNarrator;
   return canonicalCastName(roster, s) ?? s;
@@ -97,7 +103,12 @@ void _writeRoster(StringBuffer b, Iterable<TtsCastCharacter> roster) {
 
 /// 一块在提示词里的一行：下标、0..1000 归一化外框、竖 / 横、文字（JSON 字符串字面量，
 /// 多行与引号不会串行）。
-String _blockLine(int index, MokuroBlock block, MokuroSize size) {
+String _blockLine(
+  int index,
+  MokuroBlock block,
+  MokuroSize size,
+  List<CastTextSubstitution> substitutions,
+) {
   int norm(double v, double extent) =>
       extent <= 0 ? 0 : (v / extent * 1000).round().clamp(0, 1000);
   final MokuroRect r = block.rectangle;
@@ -105,7 +116,7 @@ String _blockLine(int index, MokuroBlock block, MokuroSize size) {
       '${norm(r.left, size.width)},${norm(r.top, size.height)},'
       '${norm(r.right, size.width)},${norm(r.bottom, size.height)}';
   return '$index [$box] ${block.isVertical ? 'V' : 'H'} '
-      '${jsonEncode(block.lines.join('\n'))}';
+      '${jsonEncode(applyCastSubstitutions(block.lines.join(), substitutions))}';
 }
 
 // ---------------------------------------------------------------------------
@@ -130,9 +141,14 @@ String buildMangaRosterUserPrompt({
   required Iterable<TtsCastCharacter> roster,
   required List<({int page, MokuroImage image})> pages,
   required bool hasCover,
+  List<CastTextSubstitution> substitutions = const <CastTextSubstitution>[],
+  CastPromptRoster? promptRoster,
 }) {
+  final CastPromptRoster view =
+      promptRoster ??
+      CastPromptRoster(roster: roster, substitutions: substitutions);
   final StringBuffer b = StringBuffer();
-  _writeRoster(b, roster);
+  _writeRoster(b, view.characters);
   b.writeln();
   final int imageCount = pages.length + (hasCover ? 1 : 0);
   b.writeln(
@@ -145,7 +161,7 @@ String buildMangaRosterUserPrompt({
     b.writeln('[page ${e.page + 1} text blocks]');
     if (e.image.blocks.isEmpty) b.writeln('(no text)');
     for (int i = 0; i < e.image.blocks.length; i++) {
-      b.writeln(_blockLine(i, e.image.blocks[i], e.image.size));
+      b.writeln(_blockLine(i, e.image.blocks[i], e.image.size, substitutions));
     }
   }
   return b.toString();
@@ -186,13 +202,19 @@ TtsCastCharacter? _characterFrom(Object? raw) {
 }
 
 /// 解析第一遍回复；不是 `{"characters":[…]}` 返回 null（调用方记 `bad_output`）。
-List<TtsCastCharacter>? parseMangaRosterReply(String reply) {
+List<TtsCastCharacter>? parseMangaRosterReply(
+  String reply, {
+  CastPromptRoster? promptRoster,
+}) {
   final Map<String, Object?>? json = decodeAiJsonObject(reply);
   final Object? list = json?['characters'];
   if (list is! List) return null;
   return <TtsCastCharacter>[
     for (final Object? raw in list)
-      if (_characterFrom(raw) case final TtsCastCharacter c) c,
+      if (_characterFrom(raw) case final TtsCastCharacter c)
+        if ((promptRoster == null ? c : promptRoster.restoreCharacter(c))
+            case final TtsCastCharacter restored)
+          restored,
   ];
 }
 
@@ -233,23 +255,28 @@ String buildMangaPageUserPrompt({
   required MokuroImage image,
   required Iterable<TtsCastCharacter> roster,
   required List<MangaPreviousLine> previous,
+  List<CastTextSubstitution> substitutions = const <CastTextSubstitution>[],
+  CastPromptRoster? promptRoster,
 }) {
+  final CastPromptRoster view =
+      promptRoster ??
+      CastPromptRoster(roster: roster, substitutions: substitutions);
   final StringBuffer b = StringBuffer();
   b.writeln('[page ${page + 1} of $pageCount] image attached.');
   b.writeln();
-  _writeRoster(b, roster);
+  _writeRoster(b, view.characters);
   b.writeln();
   b.writeln('[previous lines]');
   if (previous.isEmpty) b.writeln('(none)');
   for (final MangaPreviousLine l in previous.take(kMangaPagePreviousLines)) {
     b.writeln(
-      '- ${_toPromptSpeaker(l.speaker)} (${l.kind.wire}): ${jsonEncode(l.text)}',
+      '- ${_toPromptSpeaker(view.speakerFor(l.speaker))} (${l.kind.wire}): ${jsonEncode(l.text)}',
     );
   }
   b.writeln();
   b.writeln('[text blocks]');
   for (int i = 0; i < image.blocks.length; i++) {
-    b.writeln(_blockLine(i, image.blocks[i], image.size));
+    b.writeln(_blockLine(i, image.blocks[i], image.size, substitutions));
   }
   return b.toString();
 }
@@ -288,6 +315,7 @@ MangaPageAnnotation? parseMangaPageReply(
   required int page,
   required int blockCount,
   required Map<String, TtsCastCharacter> roster,
+  CastPromptRoster? promptRoster,
 }) {
   final Map<String, Object?>? json = decodeAiJsonObject(reply);
   final Object? lines = json?['lines'];
@@ -298,7 +326,9 @@ MangaPageAnnotation? parseMangaPageReply(
     if (rawNew is List)
       for (final Object? raw in rawNew)
         if (_characterFrom(raw) case final TtsCastCharacter c)
-          if (canonicalCastName(roster, c.name) == null) c,
+          if ((promptRoster == null ? c : promptRoster.restoreCharacter(c))
+              case final TtsCastCharacter restored)
+            if (canonicalCastName(roster, restored.name) == null) restored,
   ];
   mergeCastRoster(roster, fresh);
 
@@ -307,7 +337,11 @@ MangaPageAnnotation? parseMangaPageReply(
       if (raw is Map && raw['s'] is String)
         <Object?, Object?>{
           ...raw,
-          's': normalizeMangaSpeaker(roster, raw['s'] as String),
+          's': normalizeMangaSpeaker(
+            roster,
+            raw['s'] as String,
+            promptRoster: promptRoster,
+          ),
         }
       else
         raw,
@@ -407,9 +441,14 @@ String buildMangaSceneReviewUserPrompt({
   required MangaScene scene,
   required Iterable<TtsCastCharacter> roster,
   required String Function(MangaScriptLine line) textOf,
+  List<CastTextSubstitution> substitutions = const <CastTextSubstitution>[],
+  CastPromptRoster? promptRoster,
 }) {
+  final CastPromptRoster view =
+      promptRoster ??
+      CastPromptRoster(roster: roster, substitutions: substitutions);
   final StringBuffer b = StringBuffer();
-  _writeRoster(b, roster);
+  _writeRoster(b, view.characters);
   for (final int page in scene) {
     b.writeln();
     b.writeln('[page ${page + 1}]');
@@ -419,7 +458,7 @@ String buildMangaSceneReviewUserPrompt({
           ? '-'
           : '${l.emotion!.wire}/${l.intensity ?? '-'}';
       b.writeln(
-        '${l.lineId} | ${_toPromptSpeaker(l.speaker)} | ${l.kind.wire} | '
+        '${l.lineId} | ${_toPromptSpeaker(view.speakerFor(l.speaker))} | ${l.kind.wire} | '
         '$emotion | ${l.beatMs} | ${jsonEncode(textOf(l))}',
       );
     }
@@ -459,6 +498,7 @@ class MangaReviewEdit {
 List<MangaReviewEdit>? parseMangaSceneReviewReply(
   String reply, {
   required Map<String, TtsCastCharacter> roster,
+  CastPromptRoster? promptRoster,
 }) {
   final Map<String, Object?>? json = decodeAiJsonObject(reply);
   final Object? edits = json?['edits'];
@@ -468,7 +508,11 @@ List<MangaReviewEdit>? parseMangaSceneReviewReply(
     if (raw is! Map || raw['id'] is! String) continue;
     String? speaker;
     if (raw['s'] case final String s) {
-      final String n = normalizeMangaSpeaker(roster, s);
+      final String n = normalizeMangaSpeaker(
+        roster,
+        s,
+        promptRoster: promptRoster,
+      );
       if (n == kTtsUnknown || n == kTtsNarrator || roster.containsKey(n)) {
         speaker = n;
       }

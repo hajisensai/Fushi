@@ -17,6 +17,8 @@ library;
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/tts/cast/series_cast.dart';
+import 'package:fushi_engine/tts/cast/cast_text_substitution.dart';
+import 'package:fushi_engine/tts/cast/cast_prompt_roster.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_annotate.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_annotate_ledger.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart';
@@ -77,6 +79,7 @@ class MangaAnnotateRunner {
     required this.checkpoint,
     required this.isCancelled,
     this.onProgress,
+    this.substitutions = const <CastTextSubstitution>[],
     DateTime Function()? clock,
   }) : _clock = clock ?? DateTime.now;
 
@@ -87,6 +90,8 @@ class MangaAnnotateRunner {
   /// 系列角色表（`SeriesCastProfile.roster`）；只读，学回系列由调用方做
   /// （[workingRoster] 是本次运行结束时的完整角色表）。
   final Map<String, TtsCastCharacter> seriesRoster;
+
+  final List<CastTextSubstitution> substitutions;
 
   final MangaAnnotateAsk ask;
   final MangaAnnotateImageLoader imageFor;
@@ -109,10 +114,16 @@ class MangaAnnotateRunner {
   int get pageCount => payload.images.length;
 
   /// 一句的台词文本（按 OCR 块拼，手填的 `say` 优先）。
-  String textOf(MangaScriptLine line) =>
-      line.page >= 0 && line.page < payload.images.length
-      ? resolveMangaLineText(line, payload.images[line.page].blocks)
-      : '';
+  String textOf(MangaScriptLine line) {
+    if (line.page < 0 || line.page >= payload.images.length) return '';
+    final String text = resolveMangaLineText(
+      line,
+      payload.images[line.page].blocks,
+    );
+    return line.say != null
+        ? text
+        : applyCastSubstitutions(text, substitutions);
+  }
 
   void _throwIfCancelled() {
     if (isCancelled()) throw const MangaAnnotateAbort('cancelled');
@@ -228,6 +239,10 @@ class MangaAnnotateRunner {
       await checkpoint();
       return;
     }
+    final CastPromptRoster promptRoster = CastPromptRoster(
+      roster: workingRoster.values,
+      substitutions: substitutions,
+    );
     final ({String? reply, String? code, String? detail, bool fatal}) r =
         await _ask(
           kMangaRosterSystemPrompt,
@@ -235,6 +250,8 @@ class MangaAnnotateRunner {
             roster: workingRoster.values,
             pages: withImages,
             hasCover: cover != null,
+            substitutions: substitutions,
+            promptRoster: promptRoster,
           ),
           images: images,
         );
@@ -244,7 +261,10 @@ class MangaAnnotateRunner {
       if (r.fatal) throw MangaAnnotateAbort(r.detail ?? r.code!);
       return;
     }
-    final List<TtsCastCharacter>? found = parseMangaRosterReply(r.reply!);
+    final List<TtsCastCharacter>? found = parseMangaRosterReply(
+      r.reply!,
+      promptRoster: promptRoster,
+    );
     if (found == null) {
       _record(
         MangaAnnotateStage.roster,
@@ -273,6 +293,10 @@ class MangaAnnotateRunner {
       _record(MangaAnnotateStage.page, page, MangaAnnotateFailureCode.image);
       return (ok: false, rejected: 0);
     }
+    final CastPromptRoster promptRoster = CastPromptRoster(
+      roster: workingRoster.values,
+      substitutions: substitutions,
+    );
     final ({String? reply, String? code, String? detail, bool fatal}) r =
         await _ask(
           kMangaPageSystemPrompt,
@@ -282,6 +306,8 @@ class MangaAnnotateRunner {
             image: image,
             roster: workingRoster.values,
             previous: mangaPreviousLines(script, page, textOf),
+            substitutions: substitutions,
+            promptRoster: promptRoster,
           ),
           images: <AiChatImage>[img],
         );
@@ -298,6 +324,7 @@ class MangaAnnotateRunner {
       page: page,
       blockCount: image.blocks.length,
       roster: workingRoster,
+      promptRoster: promptRoster,
     );
     if (parsed == null) {
       _record(
@@ -334,6 +361,10 @@ class MangaAnnotateRunner {
     for (int i = 0; i < scenes.length; i++) {
       _throwIfCancelled();
       final MangaScene scene = scenes[i];
+      final CastPromptRoster promptRoster = CastPromptRoster(
+        roster: workingRoster.values,
+        substitutions: substitutions,
+      );
       final ({String? reply, String? code, String? detail, bool fatal}) r =
           await _ask(
             kMangaSceneReviewSystemPrompt,
@@ -342,6 +373,8 @@ class MangaAnnotateRunner {
               scene: scene,
               roster: workingRoster.values,
               textOf: textOf,
+              substitutions: substitutions,
+              promptRoster: promptRoster,
             ),
           );
       if (r.reply == null) {
@@ -359,6 +392,7 @@ class MangaAnnotateRunner {
       final List<MangaReviewEdit>? edits = parseMangaSceneReviewReply(
         r.reply!,
         roster: workingRoster,
+        promptRoster: promptRoster,
       );
       if (edits == null) {
         _record(
