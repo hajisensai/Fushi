@@ -540,6 +540,61 @@ void main() {
       );
     });
 
+    test('字幕生成任务单列一类：任务缓存可删、登记着的产物只读，不再混进 database', () async {
+      final String asr = p.join(support.path, kAsrJobsSupportChild);
+      final String videoJobs = p.join(asr, 'video_subtitles');
+      writeFile(p.join(support.path, 'fushi.sqlite'), 1000);
+      // 日语任务（state.json 记着媒体路径）与普通话任务（目录名带语言后缀）。
+      writeFile(p.join(videoJobs, 'aaa', 'drafts.sliding_mixed.json'), 200);
+      File(
+        p.join(videoJobs, 'aaa', 'state.json'),
+      ).writeAsStringSync('{"videoPath": "/v/ep01.mkv"}');
+      writeFile(p.join(videoJobs, 'bbb.zh', 'audio_bbb.zh.wav'), 300);
+      File(
+        p.join(videoJobs, 'bbb.zh', 'state.json'),
+      ).writeAsStringSync('{"videoPath": "/v/ep02.mkv"}');
+      // 原盘字幕产物（库行的字幕选择指着）：只读。
+      writeFile(p.join(videoJobs, 'disc_out', 'ccc', '00001.ja.srt'), 40);
+      // 音乐字幕产物：只读；插件音频副本：可删。
+      writeFile(p.join(asr, 'music_subtitles', 'out', 'ddd', 'a.ja.srt'), 50);
+      writeFile(p.join(asr, 'music_subtitles', 'plugin_audio', 'x.m4a'), 60);
+      // 上游转录任务目录。
+      writeFile(p.join(asr, '0f0f', 'transcript.srt'), 70);
+
+      final List<StorageCategoryUsage> all = await service()
+          .scanCategories(
+            books: const <StorageBookRef>[],
+            dictionaryNames: const <String>[],
+          )
+          .toList();
+      final StorageCategoryUsage jobs = all.singleWhere(
+        (StorageCategoryUsage u) => u.id == StorageCategoryId.subtitleJobs,
+      );
+      final StorageCategoryUsage database = all.singleWhere(
+        (StorageCategoryUsage u) => u.id == StorageCategoryId.database,
+      );
+      expect(database.bytes, 1000, reason: 'asr_jobs 不再算进数据库类目');
+      final int stateBytes =
+          File(p.join(videoJobs, 'aaa', 'state.json')).lengthSync() +
+          File(p.join(videoJobs, 'bbb.zh', 'state.json')).lengthSync();
+      expect(jobs.bytes, 200 + 300 + 40 + 50 + 60 + 70 + stateBytes);
+      final Map<String, StorageEntryKind> kinds = <String, StorageEntryKind>{
+        for (final StorageEntryUsage e in jobs.entries) e.label: e.kind,
+      };
+      expect(kinds, <String, StorageEntryKind>{
+        'video_subtitles/ep01.mkv': StorageEntryKind.derivedFile,
+        'video_subtitles/ep02.mkv (zh)': StorageEntryKind.derivedFile,
+        'video_subtitles/disc_out/00001.ja.srt': StorageEntryKind.readOnly,
+        'music_subtitles/out/a.ja.srt': StorageEntryKind.readOnly,
+        'music_subtitles/plugin_audio': StorageEntryKind.derivedFile,
+        '0f0f': StorageEntryKind.derivedFile,
+      });
+      expect(
+        kDeletableEntryCategories,
+        contains(StorageCategoryId.subtitleJobs),
+      );
+    });
+
     test('通用类目：明细 = 类目根下直接子项，label 带顶层目录前缀，总量 = 明细之和', () async {
       writeFile(p.join(docs.path, 'videos', 'a.mkv'), 700);
       writeFile(p.join(docs.path, 'remote_videos', 'series', 'ep1.mp4'), 300);

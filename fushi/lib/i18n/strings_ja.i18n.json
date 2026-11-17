@@ -10647,6 +10647,7 @@
   "storage_category_ocr_models": "マンガOCRモデル",
   "storage_category_other": "その他（未分類）",
   "storage_category_shaders": "動画シェーダー",
+  "storage_category_subtitle_jobs": "Subtitle generation jobs",
   "storage_category_subtitles": "字幕",
   "storage_category_video_downloads": "動画ダウンロード",
   "storage_category_web": "Webアーカイブとブラウザデータ",

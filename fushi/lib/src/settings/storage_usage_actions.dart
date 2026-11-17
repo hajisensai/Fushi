@@ -417,6 +417,7 @@ String storageCategoryTitle(StorageCategoryId id) => switch (id) {
   StorageCategoryId.videoDownloads => t.storage_category_video_downloads,
   StorageCategoryId.covers => t.storage_category_covers,
   StorageCategoryId.subtitles => t.storage_category_subtitles,
+  StorageCategoryId.subtitleJobs => t.storage_category_subtitle_jobs,
   StorageCategoryId.shaders => t.storage_category_shaders,
   StorageCategoryId.customFonts => t.storage_category_custom_fonts,
   StorageCategoryId.web => t.storage_category_web,
