@@ -65,6 +65,22 @@ void main() {
         throwsA(isA<CtlUsageError>()),
       );
     });
+
+    test('organize-proposals / organize-accept / organize-reject 的路径', () {
+      final CtlRequestSpec l = _build('organize-proposals', <String>['--all']);
+      expect(l.method, 'GET');
+      expect(l.path, '/api/admin/library/organize/proposals');
+      expect(l.query, <String, String>{'all': 'true'});
+      final CtlRequestSpec a = _build('organize-accept', <String>['7']);
+      expect(a.method, 'POST');
+      expect(a.path, '/api/admin/library/organize/proposals/7/accept');
+      final CtlRequestSpec r = _build('organize-reject', <String>['7']);
+      expect(r.path, '/api/admin/library/organize/proposals/7/reject');
+      expect(
+        () => _build('organize-accept', <String>['0']),
+        throwsA(isA<CtlUsageError>()),
+      );
+    });
   });
 
   test('命令组与子命令齐全', () {
@@ -92,6 +108,9 @@ void main() {
         'organize',
         'organize-history',
         'organize-undo',
+        'organize-proposals',
+        'organize-accept',
+        'organize-reject',
         'source-add',
         'source-rename',
         'source-rm',
