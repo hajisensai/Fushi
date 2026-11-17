@@ -85,6 +85,18 @@ srsAppRuntimeProvider = Provider<SrsAppRuntime?>((Ref ref) {
         return null;
       }
     },
+    // 远程复习（G10-2）：库在换代途中（[SrsStoreOpenBlocked]）不吞成「没有库」，交给远程复习服务回
+    // `migrating` / `migration_failed`，已配对设备据此提示，而不是当成复习没开。
+    readRemoteStore: () async {
+      try {
+        return await ref.read(srsStoreProvider.future);
+      } on SrsStoreOpenBlocked {
+        rethrow;
+      } catch (e, stack) {
+        ErrorLogService.instance.log('SrsAppRuntime.readRemoteStore', e, stack);
+        return null;
+      }
+    },
     readMedia: () async {
       try {
         return await ref.read(srsMediaStoreProvider.future);
@@ -167,9 +179,11 @@ class SrsAppRuntime {
     required FsrsEngine? Function() engine,
     required void Function() bumpRevision,
     required void Function() bumpPulledRevision,
+    Future<SrsDbStore?> Function()? readRemoteStore,
     SrsProfileLinker? profileLinker,
   }) : _profileLinker = profileLinker,
        _readStore = readStore,
+       _readRemoteStore = readRemoteStore ?? readStore,
        _readMedia = readMedia,
        _engine = engine,
        _bumpRevision = bumpRevision,
@@ -177,6 +191,9 @@ class SrsAppRuntime {
 
   final AppModel app;
   final Future<SrsDbStore?> Function() _readStore;
+
+  /// 远程复习服务读库：与 [_readStore] 同一份，但库在换代途中时抛 [SrsStoreOpenBlocked]（服务据此回机读码）。
+  final Future<SrsDbStore?> Function() _readRemoteStore;
   final Future<SrsMediaStore?> Function() _readMedia;
   final FsrsEngine? Function() _engine;
 
@@ -430,7 +447,7 @@ class SrsAppRuntime {
       openNote: (String noteId) => srsPushNoteEditor(navigator(), noteId),
       openBrowse: () => srsPushBrowse(navigator()),
       remoteStore: SrsRemoteStoreService(
-        readStore: _readStore,
+        readStore: _readRemoteStore,
         readMedia: (String name) async => (await _readMedia())?.load(name),
         // 已配对设备的远程写入与本机写入一样：本机界面重读，互联推送照常发出。
         onWrite: (String _) => _bumpRevision(),

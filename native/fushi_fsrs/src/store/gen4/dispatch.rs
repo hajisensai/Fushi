@@ -95,6 +95,8 @@ pub fn wiring(op: &str) -> Option<Wiring> {
         | "stats_release" | "anki_resolve" | "anki_notes_info" | "lineages" | "history"
         | "conflicts" | "checkpoints" | "undo_check" | "plan_restore" | "binding_get"
         | "profile_footprint" | "status" | "study" | "local_state" | "preview" => Wired,
+        // 每实体视图（G10-2：协议 3 没有对应命令；远程复习 V2 的主机搬它，线上形状见 `cmd/views.rs` 文件头）
+        "entity_views" => Wired,
         // 进程内刷新键（S1c，`refresh.rs`）
         "refresh_keys" => Wired,
         // 浏览会话
@@ -437,6 +439,9 @@ fn run(
                 cmd::history::history(t, col, kind, entity)
             })?
         }
+        "entity_views" => read_col(c, profile, |t, col| {
+            cmd::views::entity_views_cmd(t, col, req)
+        })?,
         "conflicts" => read_col(c, profile, cmd::center::conflicts)?,
         "checkpoints" => read_col(c, profile, cmd::center::checkpoints)?,
         "undo_check" => read_col(c, profile, |t, col| cmd::center::undo_check(t, col, req))?,

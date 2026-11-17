@@ -335,7 +335,7 @@ pub fn collection_adopt(t: &Truth<'_>, profile: &str, req: &Value) -> Result<Emi
 /// 读快照，上限卡住「整库 ID 一次传进来、长时间占着读连接」。调用方按这个数分批。
 pub const LOOKUP_MAX: usize = 4096;
 
-fn lookup_cap(n: usize, op: &str) -> Result<(), String> {
+pub(super) fn lookup_cap(n: usize, op: &str) -> Result<(), String> {
     if n > LOOKUP_MAX {
         return Err(format!(
             "{op}: at most {LOOKUP_MAX} entries per request, got {n}; split into batches"

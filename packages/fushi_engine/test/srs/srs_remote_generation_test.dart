@@ -56,10 +56,14 @@ void main() {
   });
 
   group('本机线格式 × 主机代的配对', () {
-    test('本机这个构建仍说 V1：现有（只声明 V1 的）主机照常连', () {
-      expect(kSrsRemoteClientWire, SrsRemoteWireVersion.v1);
+    test('本机这个构建说 V2（G10-2）：只声明 V1 的旧主机判「主机需要升级」，新主机照常连', () {
+      expect(kSrsRemoteClientWire, SrsRemoteWireVersion.v2);
       expect(
         srsRemoteHostCompat(SrsRemoteHostGeneration.v1Only),
+        SrsRemoteHostCompat.hostNeedsUpgrade,
+      );
+      expect(
+        srsRemoteHostCompat(SrsRemoteHostGeneration.v2),
         SrsRemoteHostCompat.ready,
       );
     });
