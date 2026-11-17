@@ -466,6 +466,25 @@ class SrsSyncScheduler {
   /// 最近一轮里那头的设备报告「还没加入复习同步」的位置（directoryKey）。同步与历史页的摘要据此说「已配对设备还没
   /// 开启复习同步」，而不是按本机未上传条数说「所有改动都已同步」。那台设备报告已加入后即移除。
   ValueListenable<Set<String>> get peersNotJoined => _peersNotJoined;
+
+  final ValueNotifier<Set<String>> _heritageUnvouched =
+      ValueNotifier<Set<String>>(const <String>{});
+
+  /// 本机有、但因作者在本机待确认 / 已拒绝而不替传的承袭日志的作者（设备 ID，[SrsSync2Report.heritageUnvouched]）：
+  /// 同步与历史页据此提示「有旧设备的数据等你确认该设备后才会继续上传」。这是本机库的事实、与位置无关，取最近一轮
+  /// 走到承袭上传那一步的结论；确认之后下一轮回包里没有它即消失。
+  ValueListenable<Set<String>> get heritageUnvouched => _heritageUnvouched;
+
+  /// 一轮的报告里有承袭上传的结论（[SrsSync2Report.heritageUnvouched] 非 null）就更新 [heritageUnvouched]。
+  void _noteHeritageUnvouched(SrsSync2Report? report) {
+    final List<String>? unvouched = report?.heritageUnvouched;
+    if (unvouched == null) return;
+    final Set<String> next = Set<String>.unmodifiable(unvouched.toSet());
+    if (!setEquals(next, _heritageUnvouched.value)) {
+      _heritageUnvouched.value = next;
+    }
+  }
+
   final void Function() _onDataChanged;
   final void Function(SrsSyncNotice notice) _onNotice;
 
@@ -998,6 +1017,7 @@ class SrsSyncScheduler {
     if (store.isWindingDown && report.error == null) {
       report.error = kSrsSync2Stopped;
     }
+    _noteHeritageUnvouched(report);
     return report;
   }
 
@@ -1734,6 +1754,7 @@ class SrsSyncScheduler {
         if (outcome.stopped) continue;
         final SrsSync2Report? folderOps = r.ops;
         if (folderOps != null) _logFormerSweep(l.locationId, folderOps);
+        _noteHeritageUnvouched(folderOps);
         await _noteCrypto(l.locationId, r.crypto);
         _noteMediaKey(l.locationId, r.media);
         // 口令类问题不进 folderErrors，由 [locationCrypto] 显示（需要口令 / 口令不对 / 加密设置不见了）。

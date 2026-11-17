@@ -174,6 +174,11 @@ class SrsSync2Report {
   /// 非致命错误（段损坏 / 签名不符 / 解不开……）：记日志，不打断这一轮。
   final List<String> errors = <String>[];
 
+  /// 本机有内容、但因作者在本机待确认 / 已拒绝而**不替传**的承袭日志的作者（设备 ID，内核 `heritage_plan` 的
+  /// `unvouched`，G10-4）：用户在设备页确认了那台设备，下一轮就补传。没走到承袭上传这一步为 null。只是提示，不算
+  /// 这一轮失败。
+  List<String>? heritageUnvouched;
+
   /// 清位置上本机旧身份的目录时没做成的（[srsSync4SweepFormer]），每项
   /// `<旧身份>: <原因>`。不算这一轮失败、也不算跳过了段（不进 [errors]）：这一轮自己的收发与 head 都已完成，旧
   /// 目录里多留几份旧 head 不影响任何设备读到的内容，内核过一个周期再让看。只供记日志。

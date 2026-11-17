@@ -72,6 +72,21 @@ import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 final ValueListenable<Set<String>> _noPeersNotJoined =
     ValueNotifier<Set<String>>(const <String>{});
 
+/// 同上，「旧设备的数据等确认」提示行听的空集合。
+final ValueListenable<Set<String>> _noHeritageUnvouched =
+    ValueNotifier<Set<String>>(const <String>{});
+
+/// 「旧设备的数据等确认」提示行（[SrsSyncScheduler.heritageUnvouched] 非空时显示）：本机有那几台设备的旧历史，
+/// 因为它们在本机还待确认 / 已被拒绝，不替它们传到位置上；在下面的设备列表里确认后下一轮补传。
+Widget srsHeritageUnvouchedRow(Set<String> unvouched) => AdaptiveSettingsRow(
+  key: const ValueKey<String>('srs_timeline_status_heritage_unvouched'),
+  title: t.srs_sync_heritage_unvouched(n: unvouched.length),
+  subtitle: t.srs_sync_heritage_unvouched_hint,
+  icon: FushiIcons.warning,
+  showIcon: true,
+  subtitleMaxLines: 3,
+);
+
 /// 「同步状态」摘要行标题：同步在跑时说进行中（不能说「所有改动都已同步」——数字是开跑前的
 /// 快照）；已配对设备（互联 host）报告还没加入复习同步时如实说（BUG-4320：本机未上传条数为 0 只说明
 /// 发出去了，对端没并入、也没发它的数据）；否则按未上传条数说。
@@ -978,66 +993,78 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
     final ValueListenable<Set<String>> peersNotJoined =
         ref.read(srsAppRuntimeProvider)?.sync.peersNotJoined ??
         _noPeersNotJoined;
+    // 本机扣着不替传的旧设备承袭日志（G10-4）：调度器最近一轮承袭上传问到的。
+    final ValueListenable<Set<String>> heritageUnvouched =
+        ref.read(srsAppRuntimeProvider)?.sync.heritageUnvouched ??
+        _noHeritageUnvouched;
     // 状态数字是上次重读时的快照；同步在跑时它们正在变，不能说「都已同步」，
     // 摘要行换成进行中的阶段与进度，对端行的「没收到」换成「正在接收」。
     return ValueListenableBuilder<Set<String>>(
-      valueListenable: peersNotJoined,
-      builder: (BuildContext context, Set<String> notJoined, _) =>
-          ValueListenableBuilder<SrsSyncProgress?>(
-            valueListenable: srsSyncProgress,
-            builder: (BuildContext context, SrsSyncProgress? syncing, _) {
-              final bool peerNotJoined =
-                  syncing == null && notJoined.isNotEmpty;
-              return AdaptiveSettingsSection(
-                title: t.srs_timeline_status,
-                children: <Widget>[
-                  AdaptiveSettingsRow(
-                    key: const ValueKey<String>('srs_timeline_status_summary'),
-                    title: srsTimelineSummaryTitle(
-                      syncing: syncing,
-                      unpublished: unpublished,
-                      peerNotJoined: peerNotJoined,
-                    ),
-                    subtitle: syncing != null
-                        ? srsSyncProgressLine(syncing)
-                        : (peerNotJoined
-                              ? t.srs_sync_peer_not_joined_hint
-                              : t.srs_timeline_ops(n: ops)),
-                    icon: syncing != null
-                        ? FushiIcons.sync
-                        : (peerNotJoined
-                              ? FushiIcons.warning
-                              : (unpublished > 0
-                                    ? FushiIcons.cloudSync
-                                    : FushiIcons.success)),
-                    showIcon: true,
-                    subtitleMaxLines: 3,
-                  ),
-                  if (pending > 0)
-                    AdaptiveSettingsRow(
-                      key: const ValueKey<String>(
-                        'srs_timeline_status_pending',
-                      ),
-                      title: t.srs_timeline_waiting(n: pending),
-                      subtitle: t.srs_timeline_waiting_hint,
-                      icon: FushiIcons.schedule,
-                      showIcon: true,
-                    ),
-                  if (deferred != null)
-                    AdaptiveSettingsRow(
-                      key: const ValueKey<String>(
-                        'srs_timeline_status_merge_deferred',
-                      ),
-                      title: t.srs_timeline_merge_deferred,
-                      subtitle: t.srs_timeline_merge_deferred_hint(
-                        n: deferred.missingRevoked.length,
-                      ),
-                      icon: FushiIcons.merge,
-                      showIcon: true,
-                    ),
-                ],
-              );
-            },
+      valueListenable: heritageUnvouched,
+      builder: (BuildContext context, Set<String> unvouched, _) =>
+          ValueListenableBuilder<Set<String>>(
+            valueListenable: peersNotJoined,
+            builder: (BuildContext context, Set<String> notJoined, _) =>
+                ValueListenableBuilder<SrsSyncProgress?>(
+                  valueListenable: srsSyncProgress,
+                  builder: (BuildContext context, SrsSyncProgress? syncing, _) {
+                    final bool peerNotJoined =
+                        syncing == null && notJoined.isNotEmpty;
+                    return AdaptiveSettingsSection(
+                      title: t.srs_timeline_status,
+                      children: <Widget>[
+                        AdaptiveSettingsRow(
+                          key: const ValueKey<String>(
+                            'srs_timeline_status_summary',
+                          ),
+                          title: srsTimelineSummaryTitle(
+                            syncing: syncing,
+                            unpublished: unpublished,
+                            peerNotJoined: peerNotJoined,
+                          ),
+                          subtitle: syncing != null
+                              ? srsSyncProgressLine(syncing)
+                              : (peerNotJoined
+                                    ? t.srs_sync_peer_not_joined_hint
+                                    : t.srs_timeline_ops(n: ops)),
+                          icon: syncing != null
+                              ? FushiIcons.sync
+                              : (peerNotJoined
+                                    ? FushiIcons.warning
+                                    : (unpublished > 0
+                                          ? FushiIcons.cloudSync
+                                          : FushiIcons.success)),
+                          showIcon: true,
+                          subtitleMaxLines: 3,
+                        ),
+                        if (pending > 0)
+                          AdaptiveSettingsRow(
+                            key: const ValueKey<String>(
+                              'srs_timeline_status_pending',
+                            ),
+                            title: t.srs_timeline_waiting(n: pending),
+                            subtitle: t.srs_timeline_waiting_hint,
+                            icon: FushiIcons.schedule,
+                            showIcon: true,
+                          ),
+                        if (unvouched.isNotEmpty)
+                          srsHeritageUnvouchedRow(unvouched),
+                        if (deferred != null)
+                          AdaptiveSettingsRow(
+                            key: const ValueKey<String>(
+                              'srs_timeline_status_merge_deferred',
+                            ),
+                            title: t.srs_timeline_merge_deferred,
+                            subtitle: t.srs_timeline_merge_deferred_hint(
+                              n: deferred.missingRevoked.length,
+                            ),
+                            icon: FushiIcons.merge,
+                            showIcon: true,
+                          ),
+                      ],
+                    );
+                  },
+                ),
           ),
     );
   }
