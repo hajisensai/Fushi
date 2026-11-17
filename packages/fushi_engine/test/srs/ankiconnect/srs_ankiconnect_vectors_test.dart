@@ -311,7 +311,7 @@ void main() {
     deletedNote =
         (await s.core
                 .customSelect(
-                  'SELECT anki_id FROM srs_notes_cache WHERE deleted_at IS NOT NULL',
+                  'SELECT anki_id FROM notes WHERE deleted_at IS NOT NULL',
                 )
                 .get())
             .map((SrsRawRow r) => '${r.read<int>('anki_id')}')
