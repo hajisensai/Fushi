@@ -1,0 +1,110 @@
+// 真并发压测只在非 Windows 上跑：Windows 上两个 rename 在同一瞬间替换同一个目标
+// 时，`MoveFileEx` 会让其中一个以「拒绝访问」失败（POSIX 的 rename 没有这个
+// 限制）。唯一临时名解决的是「两个写者共用一个临时文件」，不是这个平台限制；
+// Windows 上由 atomic_text_file_test.dart 里那条确定性的交错用例钉住。
+@TestOn('!windows')
+library;
+
+import 'dart:convert';
+import 'dart:io';
+import 'dart:isolate';
+
+import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
+import 'package:fushi_engine/ocr/ocr_types.dart';
+import 'package:fushi_engine/utils/misc/atomic_text_file.dart';
+import 'package:path/path.dart' as p;
+import 'package:test/test.dart';
+
+/// 目录里残留的临时文件（任何以 `.tmp` 结尾的）。
+List<String> _leftoverTemporaries(Directory dir) => <String>[
+  for (final FileSystemEntity entry in dir.listSync(recursive: true))
+    if (entry is File && entry.path.endsWith('.tmp')) p.basename(entry.path),
+];
+
+/// BUG-4801：同一个目标的并发写者各用各的临时文件，后 rename 的覆盖先 rename
+/// 的，谁也不会把别人写到一半的文件带走。
+void main() {
+  late Directory temporary;
+
+  setUp(() {
+    temporary = Directory.systemTemp.createTempSync('atomic_text_file_mt_');
+  });
+
+  tearDown(() {
+    if (temporary.existsSync()) temporary.deleteSync(recursive: true);
+  });
+
+  test('并发写同一个目标：都成功，目标是其中一份完整内容，不留临时文件', () async {
+    final File target = File(p.join(temporary.path, 'page.json'));
+    // 内容够大，让各次写入真正交叠；固定名下它们写的是同一个临时文件，先
+    // rename 的把文件带走，后 rename 的找不到源。
+    final List<String> contents = <String>[
+      for (int i = 0; i < 12; i++) jsonEncode(List<int>.filled(200000, i)),
+    ];
+    await Future.wait(<Future<void>>[
+      for (final String content in contents)
+        writeTextFileAtomically(target, content),
+    ]);
+    expect(contents, contains(target.readAsStringSync()));
+    expect(_leftoverTemporaries(temporary), isEmpty);
+  });
+
+  test('两个 isolate 并发写同一个目标：都成功，目标是完整内容', () async {
+    final String targetPath = p.join(temporary.path, 'page.json');
+    Future<void> writer(int seed) => Isolate.run<void>(() async {
+      for (int i = 0; i < 40; i++) {
+        await writeTextFileAtomically(
+          File(targetPath),
+          jsonEncode(List<int>.filled(20000, seed)),
+        );
+      }
+    });
+
+    await Future.wait(<Future<void>>[writer(1), writer(2)]);
+    final Object? decoded = jsonDecode(File(targetPath).readAsStringSync());
+    expect(decoded, isA<List<Object?>>());
+    expect((decoded! as List<Object?>).length, 20000);
+    expect(_leftoverTemporaries(temporary), isEmpty);
+  });
+
+  // 整卷任务与页级会话、取消后还在收尾的旧任务与新任务，都会各拿一个
+  // MangaOcrFilePageCache 写同一页。
+  test('逐页缓存：两个写者并发写同一页，都成功且读回的是完整结果', () async {
+    final File page = File(p.join(temporary.path, 'p1.png'))
+      ..writeAsBytesSync(<int>[1, 2, 3]);
+    final Directory cacheDir = Directory(p.join(temporary.path, 'cache'));
+    MangaOcrFilePageCache cache() => MangaOcrFilePageCache(
+      cacheDir: cacheDir,
+      pageNames: const <String>['p1.png'],
+      pageFiles: <File>[page],
+    );
+    OcrPageResult result(int width) => OcrPageResult(
+      pageIndex: 0,
+      imageWidth: width,
+      imageHeight: 80,
+      blocks: <OcrBlock>[
+        for (int i = 0; i < 400; i++)
+          OcrBlock(
+            box: OcrRect(left: 0, top: i * 1.0, right: 10, bottom: i + 1.0),
+            vertical: true,
+            lines: <String>['line $i of writer $width'],
+          ),
+      ],
+    );
+
+    final MangaOcrFilePageCache oldJob = cache();
+    final MangaOcrFilePageCache newJob = cache();
+    await Future.wait(<Future<void>>[
+      for (int i = 0; i < 6; i++) ...<Future<void>>[
+        oldJob.write('manga_ocr', result(40)),
+        newJob.write('manga_ocr', result(50)),
+      ],
+    ]);
+
+    final OcrPageResult? read = await cache().read('manga_ocr', 0);
+    expect(read, isNotNull, reason: '半截 JSON 会被当成缓存未命中');
+    expect(read!.blocks, hasLength(400));
+    expect(<int>[40, 50], contains(read.imageWidth));
+    expect(_leftoverTemporaries(temporary), isEmpty);
+  });
+}
