@@ -379,7 +379,7 @@ enum SrsSyncNotice {
   /// 升级到同步 v2 后首次同步还没确认（[kSrsSyncAwaitingConfirm]），复习数据暂不同步。
   awaitingConfirm,
 
-  /// 有同步位置只有协议 1 旧根 `v2/`（[kSrsLocationProtocol1Root]）：要在另一台仍是 3.x 的设备上同步一次把它升级，或换一个位置（本机库已封存，装回 3.x 打不开，交接 §第四波 G8-7c）。
+  /// 有同步位置只有协议 1 旧根 `v2/`（[kSrsLocationProtocol1Root]）：要在另一台装 3.3.0 的设备上同步一次把它升级（只有 3.3.0 会升级位置，3.0.x 与协议 1 预发布版不会），或换一个位置（本机库已封存，装回 3.x 打不开，交接 §第四波 G8-7c）。
   locationProtocol1,
 }
 

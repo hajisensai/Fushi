@@ -87,8 +87,18 @@ fn only_a_protocol1_root_is_refused() {
     let refused = check_root(&["v2"]).unwrap_err();
     assert_eq!(refused.code, ERR_PROTOCOL1_ROOT);
     assert!(refused.message.contains("not affected"));
-    // G8-7c：升级位置要在另一台仍是 3.x 的设备上做；本机库已封存，装回 3.x 打不开（交接 §第四波 G8-7c）。
-    assert!(refused.message.contains("another device still running 3.x"));
+    // G8-7c：升级位置只有 v3.3.0 做得到，要在另一台装 3.3.0 的设备上做（3.0.x 与协议 1 预发布版不会升级它）；本机库
+    // 已封存，装回 3.x 打不开（交接 §第四波 G8-7c）。
+    assert!(
+        refused
+            .message
+            .contains("another device running Fushi 3.3.0")
+    );
+    assert!(
+        refused
+            .message
+            .contains("3.0.x and protocol 1 pre-release builds")
+    );
     assert!(refused.message.contains("do not downgrade this device"));
     assert_eq!(
         check_root(&["v2", "media"]).unwrap_err().code,
@@ -348,6 +358,22 @@ fn slices_of_one_round_add_up_to_a_recorded_fingerprint() {
     // 再交第一段（第二段随之投出）、提交；收尾批什么都不交：坏段的结论在更早那一批里，记下指纹。
     assert_eq!(one(&[(&p1, &s1)], false, false).map(|r| r.1), Ok(false));
     assert_eq!(t.tx(|t| t.audit(col)), Ok(12));
+    // 收尾批交来的清单与这一轮的指纹对不上（调用方违反契约：清单在轮中被换了）：结论都在也不记——累计的结论属于
+    // 那份旧清单，不能拿来给新清单背书。
+    let mut swapped = listing.clone();
+    swapped[2].modified = Some(7);
+    assert_eq!(
+        batch(
+            &t,
+            col,
+            (&scan, &swapped),
+            &[],
+            None,
+            (true, true, NOW, false)
+        ),
+        Ok((vec![], false))
+    );
+    assert_eq!(t.oldroot_fp(col, LOC), Ok(None));
     assert_eq!(one(&[], true, false), Ok((vec![], true)));
     assert!(
         !t.tx(|t| t.oldroot_scan(col, LOC, "dir", &listing))
@@ -373,6 +399,125 @@ fn slices_of_one_round_add_up_to_a_recorded_fingerprint() {
             (true, true, NOW, false)
         ),
         Ok((vec![], false))
+    );
+}
+
+/// 收尾批的等待缓冲没投完（预算用完，`drain_more`）：段都有了结论也不记指纹——下一片还要接着投，这一轮没收完。
+/// 投完的那一片（不带段的收尾批）才记。
+#[test]
+fn a_settling_slice_that_must_drain_more_does_not_record() {
+    let conn = open_in_memory().unwrap();
+    let t = Truth::new(&conn);
+    let col = ready(&t);
+    peer(&t, col, id(OLD), key_of(OLD).public());
+    let (ops, chains) = old_log(12);
+    let (h1, s1) = old_seg(&ops, &chains, (1, 6), None);
+    let (h2, s2) = old_seg(&ops, &chains, (7, 12), None);
+    let (p1, p2) = (seg_path(&h1), seg_path(&h2));
+    let listing = vec![
+        entry(&p1, s1.len() as u64, 1),
+        entry(&p2, s2.len() as u64, 1),
+    ];
+    let scan = t.tx(|t| t.oldroot_scan(col, LOC, "dir", &listing)).unwrap();
+    assert_eq!(scan.fetch.len(), 2);
+    // 第二段先到：依赖第一段，整段停进等待缓冲。
+    assert_eq!(
+        batch(
+            &t,
+            col,
+            (&scan, &listing),
+            &[(&p2, &s2)],
+            None,
+            (false, true, NOW, false)
+        ),
+        Ok((vec![landed(0, 0, 6)], false))
+    );
+    // 收尾批交第一段、预算 1：第一段落库，等待缓冲投不完。
+    let settle = |segs: &[(&str, &[u8])]| {
+        t.tx(|t| {
+            let mut r = Receiver::open(t, col, Settle::Incremental)?.with_budget(Some(1));
+            for (_, s) in segs {
+                r.legacy(s, "dir", None)?;
+            }
+            let paths: Vec<String> = segs.iter().map(|(p, _)| (*p).to_owned()).collect();
+            let (got, recorded) = r.finish_oldroot(
+                LOC,
+                &scan.fp,
+                &paths,
+                Some(OldRootSettle {
+                    dir: "dir",
+                    listing: &listing,
+                    fenced: true,
+                    at: NOW,
+                }),
+            )?;
+            Ok((got.drain_more, recorded))
+        })
+    };
+    assert_eq!(settle(&[(&p1, &s1)]), Ok((true, false)));
+    assert_eq!(t.oldroot_fp(col, LOC), Ok(None));
+    // 不带段的片接着投，投完那一片记下指纹。
+    let mut last = settle(&[]);
+    for _ in 0..12 {
+        if last != Ok((true, false)) {
+            break;
+        }
+        last = settle(&[]);
+    }
+    assert_eq!(last, Ok((false, true)));
+    assert_eq!(t.tx(|t| t.audit(col)), Ok(12));
+}
+
+/// 移除位置（`location_forget`）连旧根接手累计的段结论一起清掉：不留在 `srs_meta` 里。
+#[test]
+fn forgetting_a_location_drops_its_accumulated_old_root_conclusions() {
+    let conn = open_in_memory().unwrap();
+    let t = Truth::new(&conn);
+    let col = ready(&t);
+    peer(&t, col, id(OLD), key_of(OLD).public());
+    let (ops, chains) = old_log(6);
+    let (h1, s1) = old_seg(&ops, &chains, (1, 6), None);
+    let p1 = seg_path(&h1);
+    let listing = [entry(&p1, s1.len() as u64, 1)];
+    let scan = t.tx(|t| t.oldroot_scan(col, LOC, "dir", &listing)).unwrap();
+    batch(
+        &t,
+        col,
+        (&scan, &listing),
+        &[(&p1, &s1)],
+        None,
+        (false, true, NOW, false),
+    )
+    .unwrap();
+    assert_eq!(
+        t.tx(|t| t.oldroot_concluded(col, LOC, &scan.fp, &p1)),
+        Ok(true)
+    );
+    let rows = |t: &Truth<'_>| -> i64 {
+        t.conn()
+            .query_row(
+                "SELECT COUNT(*) FROM srs_meta WHERE key >= ?1 AND key < ?2",
+                rusqlite::params![
+                    format!("gen4_oldrun/{col}/{LOC}\n"),
+                    format!("gen4_oldrun/{col}/{LOC}\u{b}")
+                ],
+                |r| r.get(0),
+            )
+            .unwrap()
+    };
+    assert_eq!(rows(&t), 1);
+    t.tx(|t| {
+        crate::store::gen4::cmd::sync::location_forget(
+            t,
+            col,
+            &serde_json::json!({ "location": LOC }),
+        )
+    })
+    .unwrap();
+    assert_eq!(rows(&t), 0);
+    assert_eq!(
+        t.tx(|t| t.oldroot_concluded(col, LOC, &scan.fp, &p1)),
+        Ok(false)
     );
 }
 
