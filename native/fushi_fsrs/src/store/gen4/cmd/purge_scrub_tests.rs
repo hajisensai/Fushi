@@ -136,3 +136,44 @@ fn an_owed_byte_level_pass_runs_on_the_next_open() {
     a.h = open(&a.dir.0, 0).unwrap();
     assert!(!meta_has(&a, DUE_KEY));
 }
+
+/// 导入带来的清除（`import.rs` 的灌入收尾）：b 写的内容同步给 a，a 清除后导出，b 导入 a 的文件——同一个事务里把 b 自己
+/// 那条操作落成空洞、字节层收尾，不留到下一条写命令。
+#[test]
+fn a_purge_carried_by_an_import_voids_the_text_at_once() {
+    let a = Dev::new("c3ia");
+    let b = Dev::new("c3ib");
+    b.write(T1, N1, "secret-c3-imp");
+    b.write(T1, N2, "keep-c3");
+    let mut loc = Loc::new();
+    sync_all(&[&a, &b], &mut loc, T1 + 1, Opts::default());
+    let (v, _) = cmd(
+        b.h,
+        "trust",
+        T1 + 2,
+        json!({"device": a.device(), "trust": true}),
+        &[],
+    );
+    assert_eq!(v["trusted"], json!(true), "{v}");
+    purge(&a, T1 + 3, N1);
+    let path = a.dir.0.join("export-c3.bin");
+    cmd(
+        a.h,
+        "export",
+        T1 + 4,
+        json!({"path": path.to_str().unwrap()}),
+        &[],
+    );
+    assert!(bytes_carrying(&b.dir.0, "secret-c3-imp") > 0);
+    let (got, _) = cmd(
+        b.h,
+        "import",
+        T1 + 5,
+        json!({"path": path.to_str().unwrap()}),
+        &[],
+    );
+    assert!(got.get("outcome").is_some(), "{got}");
+    assert_eq!(bytes_carrying(&b.dir.0, "secret-c3-imp"), 0);
+    assert!(bytes_carrying(&b.dir.0, "keep-c3") > 0);
+    assert!(!meta_has(&b, DUE_KEY));
+}
