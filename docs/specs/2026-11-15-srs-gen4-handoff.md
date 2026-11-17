@@ -2192,3 +2192,87 @@ Rust `SCHEMA` 没升（没加表 / 索引，分到的 40024 没用）；ABI 不�
   `backup_merge_engine.dart` 保留 develop 的 `excludedBookKeys`，不带回 G11-4 已删的 `localSrs` / `sourceSrs`。develop 改过的
   三份协议 3 测试 / 夹具（`srs_legacy_clock_conformance_test`、`legacy_clock_store_vectors.json`、`srs_gen4_rehearsal_test`）
   维持删除。
+
+## 第四波 G10-4 host 目录与信任（2026-11-17，分支 `pr/srs-gen4-g10-4-host-directory`，基于 `pr/srs-gen4-switch` 9ad57c71096）
+
+收口 §10「没做」的 `profile_of_dir`、§23「没做」第 3、4 条、§24「已知」的 `server_backup` 与「每 profile 一个库目录」。
+Rust `SCHEMA` 没升（没加表 / 索引，分到的 40025 没用）；ABI 不变（多一条 JSON 命令）。
+
+### 规划与现状不符处（以代码为准）
+
+- 规划 §2.2 只写了「G10-4 host 目录与信任 ← G9-5、G8-7」，没有条目细则；设计稿 §8 G10 行写的「服务端设备信任（#3294）接到
+  新表」**已经成立**：admin `GET/POST /api/admin/srs/devices[/trust]` → `srsSetDeviceTrust` → 内核 `trust`（新代
+  `cmd/writes_local.rs`，S1 已接线），本块没改信任的实现，只补拒绝路径的测试（见「测试」）。
+- §10 写「`collections.dir` 没有索引，需要时加索引（升 schema）」：一台设备的 `collections` 只有几行，`profile_of_dir` 全表扫，
+  **不加索引、不升 SCHEMA**。
+- 「host 目录」在 app 侧没有按目录名找 profile 的读法：`srs_app_runtime.dart` 的 `_onHostClientWrite` 只叫醒本机目录的整轮同步，
+  补充名按设备记；按目录名当 uid 读的只有无头服务端（`server_srs.dart` 的 `onClientWrite` / `onClientUpload`，以及
+  `_reconcile` 取名字 / 笔记数），本块改的就是这三处。
+
+### 实现
+
+- **内核 `profile_of_dir`**（`cmd/identity.rs`，不针对单个 profile 的读，`dispatch.rs` 全局臂）：请求 `{dir}`，回
+  `{profiles: [uid…]}`——当前**绑定**的位置目录名等于 `dir` 的本机 profile（`Truth::profiles_of_dir`，按 uid 排）。`dir` 来自对端
+  写入的路径，不可信：缺、不是字符串、空、`.` / `..`、含 `/` `\`、超过 255 字节（`DIR_MAX`）一律报错（`profile_of_dir: bad dir` /
+  `dir must be a string` / `missing dir`），不回空表，调用方据此区分「坏路径」与「没人绑这个目录」。位置目录名的判据与
+  `joined4` 同一份（`gen4/location.rs` `dir_name_ok` 改成 `pub(crate)`）。
+- **engine**（`srs_host_directory.dart`）：`srsHostPathProfile` 改名 `srsHostPathDir`（它取的一直是目录名，不是 uid；空段 / `.` / `..`
+  回 null）；新 `srsHostProfilesOfDir(core, dir)`（后台 isolate 发 `profile_of_dir`，回包形状不对抛 `FormatException`）。
+- **服务端**（`server_srs.dart`）：
+  - `onClientWrite` 按绑定反查（`_servedProfilesOfDir`：库目录开着才查；内核拒绝坏目录名记诊断日志、当作不属于任何 profile；
+    只叫醒在提供中的 profile）。改成返回 `Future<List<String>>`（排了同步的 uid，测试用），`headless_host.dart` 包一层 `unawaited`。
+  - `onClientUpload`（补充名）：同样按绑定反查，只给落在提供中的 profile 绑定目录里的段补；补充名按设备记（内核 `device_hint`
+    不分集合），去重键从 `uid/device` 改成 `device`。
+  - `_reconcile` 的名字 / 笔记数：库开着按 `srsLocationDir`（`identity` 的 `dir`）取同步目录里的说明；库没开时仍按配置里的 uid——
+    D32：管理员勾的就是同步目录名，第一次 `identity` 绑的也是它。
+- **整机备份与迁移互斥**（§24「已知」第 2 条）：迁移进行中库没开、`srs4.db` 不存在，提交点又会改名出 `srs4.db` 并原位封存
+  `srs.db`——中途拷出来的包可能只有封存的旧库、没有新库。`ServerSrs.holdForBackup()`：迁移在跑回 null（admin
+  `POST /api/admin/backups` 回 409 `srs_migration_running`）；否则给一个占位（`ServerSrsBackupHold`，`release` 只生效一次），持有期间
+  `_beginMigration` 不开始、记「推迟」，管理员手动开始回 409 `srs_backup_running`；最后一个占位放开时有推迟就重新套用配置一次。
+  `server_backup.dart` 另把换代过程文件（`srs4.db-migrating`、`srs4.db-creating`、`srs.db-gen4-prepare` 及其 `-wal/-shm/-journal`）
+  排除出包：只在迁移中或被杀后存在，还原回来也只是要清的垃圾。复习关着（没有 `ServerSrs`）不占位。
+- **远程复习客户端内置笔记类型**（§23「没做」第 3 条）：`SrsRemoteWire.noteTypesFrom` 的参数从 profile uid 改成主机信封里的
+  `SrsRemoteRootIds`，内置类型的代码默认值（字段 / 模板 ID）由 `ids.lapis` / `ids.fushi` 派生（新 `srsBuiltinNoteTypeIn(nt, spec)`，
+  `srsBuiltinNoteType(uid, spec)` 改为转调它）。信封没带某种内置类型的 ID 时报线格式错，不退回按 uid 派生。G9-7 之后
+  `SrsKernelIds(uid)` 的内置 ID 与 uid 无关，所以这是口径收口（客户端不再拿主机 uid 派生任何 ID），不是行为修复。
+
+### 每 profile 一个库目录（评估，本块不做）
+
+§24 提出「多 profile 逐个迁、单个失败不影响其余」要每 profile 一个库目录。评估结论：**不改布局，保留一个 `<support>` 一份
+`srs4.db`**。理由：
+
+1. 迁移是「一份协议 3 `srs.db` → 一份新代库」整目录一次提交（对拍、封存、提交点都按文件）。按 profile 拆要内核新增「只迁旧库里
+   某几个 profile 到另一个目录」的能力，封存语义也要改（一份旧库被拆成几次迁，什么时候封？封了之后没迁的 profile 怎么办），
+   这是 G7-2 级别的改动，不是服务端布局能单独做的。
+2. 唯一会拦下整个目录的 profile 级原因是 `mergeHalfDone`（半截并入），G9-5 已经让迁移带过去、由 `profile_merge_commit` 收尾
+   （§20「半截并入」），剩下的拦截原因（空间、锁、对拍）本来就是整库的。隔离的收益很小。
+3. 代价面大：整机备份格式（v2 刚定，G11-4）、还原、`snapshotFn`、`profile_of_dir`（要遍历 N 个库）、AnkiConnect / 制卡按 profile
+   取库、app 侧 `SrsStorage` 单例都要改，而且是又一次存储布局换代。
+如果以后真的需要，先做内核「按 profile 子集迁移 + 分库」，服务端布局随后。
+
+### 测试
+
+- Rust `cmd/identity_tests.rs` 2 条（经 C ABI）：`profile_of_dir_follows_the_binding_not_the_uid`（没绑过的目录空表；认领到
+  `zz-remote` 的 R 只在那个目录下、不在 R 的 uid 下；大小写不同不算同一个目录；`collection_join` 改绑后跟着新目录走；Secondary
+  只读也能查）、`profile_of_dir_refuses_untrusted_dir_names`（缺 / 非字符串 4 种 / 空 / `.` / `..` / `a/b` / `a\b` / `../uid` / 256 字节
+  一律报错，255 字节可用）。
+- engine `srs_v4_layout_names_test.dart` 新 1 条：空段、`.`、`..`、别的命名空间不是任何目录。
+- 服务端 `server_srs_test.dart`：原「已配对设备写进来的文件只叫醒对应那份 profile」改成 await 回值；新 1 条「写入按绑定的位置目录
+  找 profile」（两份 profile 各叫醒自己；kJa `collection_join` 到 `0000-home` 后那个目录叫醒 kJa、kJa 的 uid 目录不再算它；补充名
+  只落绑定目录里的段；超长目录名（内核拒绝）、空段、`..`、`.`、别的命名空间不叫醒；管理员不再提供的 profile 不叫醒）。
+- 服务端 `server_srs_migration_test.dart` 新 1 条：备份占位期间自动判定与手动开始都不迁移（`srs_backup_running`）、放开后接着迁、
+  重复放开只算一次、迁移中拿不到占位、没有推迟就不因放开重跑。
+- 服务端 `admin_srs_device_trust_test.dart`「参数与拒绝原因」补：不是设备 ID 的串（`../uid`、500 字符）点名 profile 回 404
+  `device_unknown`，空白回 400。
+- engine `srs_remote_store_test.dart`「线格式还原的视图与主机上读到的相同」改用主机根 ID，并加一条：对调两种内置类型的根 ID，
+  物化出的字段 ID 跟着变（证明默认值来自给的 ID）。
+
+### 没做 / 交给谁
+
+- admin `POST /api/admin/backups` 的 409 `srs_migration_running` 只有 `ServerSrs` 层的测试（占位语义），没有经 AdminBackups +
+  真 HeadlessHost 的端到端测试（要让真 HeadlessHost 停在迁移中，没有现成接缝）。
+- 离线 `fushi_server backup create`（serve 不在跑）不经 `ServerSrs`，不占位；那时没有本进程迁移，别的进程迁移被数据目录锁挡住。
+- 同步目录的 profile 列表（`srsListRemoteProfiles`，WebUI 勾选列表）仍只读 `v3/devices/*/profile.json`；规划 §1.1 G-6 定的
+  `v4/devices/<dev>/profile.json` 现在没有写者（`srsPublishProfileInfo` 仍写 `v3/devices`），读者跟着写者一起改，归 G9-5 续
+  （§21「没做」的关联流程改走 `v4/meta.json`）。新代全新集合在 WebUI 里因此只显示目录名、没有名字与笔记数估计。
+- D32「服务端保留副本 14 天自动删 + ctl 提前删」仍没做（§24 已记，要内核删保留副本的全局命令）。
