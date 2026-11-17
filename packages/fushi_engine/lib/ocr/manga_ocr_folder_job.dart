@@ -18,6 +18,7 @@ import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
 import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
+import 'package:fushi_engine/utils/misc/atomic_text_file.dart';
 
 /// OCR 产物目录名（在被扫描目录内，枚举时必须排除自己）。
 const String kMangaOcrOutDirName = 'manga_ocr_out';
@@ -304,21 +305,15 @@ class MangaOcrFilePageCache implements OcrPageCache {
     }
     await cacheDir.create(recursive: true);
     final FileStat stat = await pageFiles[result.pageIndex].stat();
-    final File target = _fileFor(result.pageIndex);
-    final File temporary = File('${target.path}.tmp');
-    await temporary.writeAsString(
+    await writeTextFileAtomically(
+      _fileFor(result.pageIndex),
       jsonEncode(<String, Object?>{
         'source_path': pageNames[result.pageIndex],
         'source_size': stat.size,
         'source_modified_ms': stat.modified.millisecondsSinceEpoch,
         'result': result.toJson(),
       }),
-      flush: true,
     );
-    if (target.existsSync()) {
-      await target.delete();
-    }
-    await temporary.rename(target.path);
   }
 }
 
@@ -550,14 +545,9 @@ Future<String> runMangaOcrFolderJob({
     ),
   );
   final File output = File(p.join(outDir.path, kMangaOcrOutputFileName));
-  final File temporary = File('${output.path}.tmp');
-  await temporary.writeAsString(
+  await writeTextFileAtomically(
+    output,
     jsonEncode(mangaPayloadToJson(payload)),
-    flush: true,
   );
-  if (output.existsSync()) {
-    await output.delete();
-  }
-  await temporary.rename(output.path);
   return output.path;
 }

@@ -32,6 +32,7 @@ import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart'
     show mangaOcrPageOrder;
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
+import 'package:fushi_engine/utils/misc/atomic_text_file.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
 import 'package:fushi/i18n/strings.g.dart';
 
@@ -507,15 +508,9 @@ Future<String> writeMangaOcrCachedOutput(
   final File output = File(
     p.join(dir, kMangaOcrOutDirName, kMangaOcrOutputFileName),
   );
-  await output.parent.create(recursive: true);
-  final File temporary = File('${output.path}.tmp');
-  await temporary.writeAsString(
+  await writeTextFileAtomically(
+    output,
     jsonEncode(mangaPayloadToJson(payload)),
-    flush: true,
   );
-  if (output.existsSync()) {
-    await output.delete();
-  }
-  await temporary.rename(output.path);
   return output.path;
 }
