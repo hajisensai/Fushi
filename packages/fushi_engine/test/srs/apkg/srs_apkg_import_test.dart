@@ -710,6 +710,60 @@ void main() {
     expect((await other.cardRow(cardId2))!.queue, before.queue);
   });
 
+  test('回导的外来复习比本机复习早：不改本机当前排程，重导不变（第五波 规划 §6）', () async {
+    final SrsDbStore a = await openTestStore(
+      profileUid: kProfile,
+      deviceId: 'a',
+      now: () => t,
+    );
+    final String noteId = await a.createNote(
+      noteTypeId: a.lapisNoteTypeId,
+      fieldsById: <String, String>{
+        srsLapisFieldId(kProfile, 'Expression'): '走る',
+      },
+    );
+    final String cardA = (await a.cardsOfNote(noteId)).single.id;
+    final SrsDbStore b = await openTestStore(
+      profileUid: kProfile2,
+      deviceId: 'b',
+      now: () => t,
+    );
+    await importInto(b, await exportAnkiPackage(store: a));
+    final String noteB = SrsKernelIds(
+      kProfile2,
+    ).note((await a.note(noteId))!.guid);
+    final String cardB = (await b.cardsOfNote(noteB)).single.id;
+    // A 先复习（忘了），B 之后复习（很简单）。
+    t += 60000;
+    await a.answer(cardA, 1);
+    t += 3600000;
+    final SrsReviewLog mine = await b.answer(cardB, 4);
+    final SrsCardCacheRow before = (await b.cardRow(cardB))!;
+    // 一天后 B 回导 A 的导出包：A 那条更早的复习落到 B 的卡上，排在 B 的复习之前。
+    t += 86400000;
+    final Uint8List pkg = await exportAnkiPackage(store: a);
+    final SrsImportReport rep = await importInto(b, pkg);
+    expect(rep.fushiLogsRestored, 1);
+    final SrsCardHistory h = await b.history(cardB);
+    expect(h.all, hasLength(2));
+    expect(h.effective.last.id, mine.id);
+    final SrsCardCacheRow after = (await b.cardRow(cardB))!;
+    expect(
+      (after.queue, after.dueAt, after.lastLogId),
+      (before.queue, before.dueAt, before.lastLogId),
+    );
+    expect(after.scheduledDays, before.scheduledDays);
+    // 再导一次（更晚的导入时刻）：什么都不变。
+    t += 86400000;
+    await importInto(b, pkg);
+    final SrsCardCacheRow again = (await b.cardRow(cardB))!;
+    expect(
+      (again.queue, again.dueAt, again.lastLogId),
+      (before.queue, before.dueAt, before.lastLogId),
+    );
+    expect((await b.history(cardB)).all, hasLength(2));
+  });
+
   test('Anki 端在导出之后又复习：新 revlog 照常导入并写锚点', () async {
     final SrsDbStore s = await openTestStore(
       profileUid: kProfile,

@@ -22,8 +22,10 @@
 //!     （G9 `collection_join` / `adopt_foreign`）进来，不在本机日志里冒充；
 //!   - 日志事件里的 `hlc` 丢掉（协议 3 存成 `legacy_hlc`）：原生日志的排序键（卡片历史规则 `crate::history` 按 HLC
 //!     排、按 HLC 认同一事件的副本）是操作自己的 HLC；**Anki 来源的日志例外**：它的 HLC 由来源数据派生（铁律 C，
-//!     `crate::anki_import_rules` [anki_source_hlc]，与 Dart 导入器写的 `srsImportedRevlogHlc` / `srsImportAnchorHlc`
+//!     `crate::anki_import_rules` [derived_log_hlc]，与 Dart 导入器写的 `srsImportedRevlogHlc` / `srsImportAnchorHlc`
 //!     逐字相同），在日志投影（`cache.rs` `log_body`）与回包 `logHlcs` 里派生，不落进操作——输入里带的 `hlc` 照样丢；
+//!     **回导的外来原生日志**（Dart `_remapExtLog` 打上 `foreignLog: true` 的）同理按发生时刻派生 `{at}:0:fushi`（第五波，
+//!     规划 §6）：作者 HLC 不进操作，排序键也不随导入时刻 / 导入设备变；
 //!   - 旧版时钟（`legacyDevice` / `recvNow` / `tickNow` / 输入项的 `clk`）不再存在（设计 §2.4 删旧写入者状态），这些
 //!     键收到也不看；要旧版时钟戳的 `stamps: true` 明确拒绝；
 //!   - 不认识的事件（协议 3 存成 `LegacyUnknown`）明确拒绝：那是协议 1 的残留，新写入不生成。
@@ -47,10 +49,13 @@
 //!     `read` 的 `logs` 行里的 `hlc` 同形（原生日志是操作的 HLC，Anki 来源的是派生 HLC，见上「只写协议 4 原生能收的
 //!     形」）。导入成批的日志不要它（回包会随日志数线性涨）。
 //!   - 修改行（只在 `apply` / `import_drafts` / `change` 的请求带 `editRows: true` 时）：`edits` 里有输入下标的每项后面
-//!     补两列 `[…, 行 JSON, 服务器时刻]`，`tagWrites` 每项后面补一列 `[…, 行 JSON]`——都是收尾之后这条修改 / 这条笔记
-//!     合成的 `tags` 行在 `read` 的 `edits` 里的 `j` / `st`（同一个函数 [super::edit_rows] 出的，逐字相同）；那一行已
-//!     不是活着的（同批后面的写入盖掉了）是 null。调用方（Dart `_emit(stamps: true)` 的 `_writtenEdits`）直接用它拼
-//!     落库后的修改记录，不在命令之后再发一条 `read edits` 回读（T1 `srs_write_preread_cost`）。
+//!     补三列 `[…, 行 JSON, 服务器时刻, 被盖掉]`，`tagWrites` 每项后面补两列 `[…, 行 JSON, 被盖掉]`——行是收尾之后这条
+//!     修改 / 这条笔记合成的 `tags` 行在 `read` 的 `edits` 里的 `j` / `st`（同一个函数 [super::edit_rows] 出的，逐字
+//!     相同）。**被盖掉**（第五波，交接「第五波 导入与写接口」节）是 bool：这一项被同批后面的写入盖掉了——同一 (种类,
+//!     实体, 字段键) 后面还有一条修改（标签是同一条笔记后面还有一次整列表写入）、或这个实体在这批里被彻底清除；这时行
+//!     与服务器时刻是 null（标签项不给后面那次的合成行）。行是 null 却没标被盖掉 = 内核与调用方对不上（调用方报错）。
+//!     调用方（Dart `_emit(stamps: true)` 的 `_writtenEdits`）直接用它拼落库后的修改记录、跳过被盖掉的项（同一个键
+//!     只交回最后一条），不在命令之后再发一条 `read edits` 回读（T1 `srs_write_preread_cost`）。
 //!   - `entityWrites`（G9-7）：每条落下的身份记录 `[输入下标, 种类, 规范实体 ID]`（输入下标规则同 `edits`）。调用方
 //!     按请求 ID 建实体（Dart `createDeck` / `createNote` / 内置实体），返回给上层的是这里的规范 ID，不拿请求 ID 当
 //!     结果：请求 ID 是别名类的成员时（迁移来的库里持久化的旧 ID、带盐的旧算法），两者不同。
@@ -76,7 +81,7 @@ use super::super::refresh::{TALLY_KEY, Tally};
 use super::super::schema::sql;
 use super::super::truth::Truth;
 use super::{profile_of, ref_of, with_profile};
-use crate::anki_import_rules::anki_source_hlc;
+use crate::anki_import_rules::derived_log_hlc;
 use crate::gen4::translate::native_body4;
 use crate::registers::{self, StoredEdit};
 use crate::store::caches::NoteInfo;
@@ -264,7 +269,7 @@ impl<'t, 'c> Session<'t, 'c> {
         let log = match &body {
             Body::Log(l) if self.log_hlcs.is_some() => Some((
                 l.id.text(),
-                anki_source_hlc(&l.origin, &l.kind, l.anki_id, l.at),
+                derived_log_hlc(&l.origin, &l.kind, l.anki_id, l.at, &l.extra),
             )),
             _ => None,
         };
@@ -284,8 +289,8 @@ impl<'t, 'c> Session<'t, 'c> {
             ]));
         }
         if let Some((log_id, derived)) = log {
-            // 与 `read` 的 `logs` 行里的 `hlc` 同口径（`cache.rs` `log_body` / `log_at`）：Anki 来源的日志是由来源数据派生的
-            // HLC，原生日志是它那条操作的 HLC（文件头「只写协议 4 原生能收的形」），后者刚写下、按主键点读。
+            // 与 `read` 的 `logs` 行里的 `hlc` 同口径（`cache.rs` `log_body` / `log_at`）：Anki 来源与回导的外来原生日志是由
+            // 来源数据派生的 HLC，其余原生日志是它那条操作的 HLC（文件头「只写协议 4 原生能收的形」），后者刚写下、按主键点读。
             let text = match derived {
                 Some(text) => text,
                 None => {
@@ -397,22 +402,50 @@ impl<'t, 'c> Session<'t, 'c> {
                 })
                 .map_or(json!([null, null]), |(_, j, st)| json!([j, st]))
         };
-        for e in &mut self.edits {
+        // 被同批后面的写入盖掉（文件头「回包」修改行）：同一 (种类, 实体, 字段键) 后面还有一条修改、或这个实体在这批里被
+        // 彻底清除。按位置判，不按「行找不到」猜——找不到又不是被盖掉的，照样给 null、不标，调用方当契约不符报错。
+        let purged = &self.purged;
+        let edit_key = |e: &Value| -> (String, String, String) {
+            (
+                e[0].as_str().unwrap_or("").to_owned(),
+                e[1].as_str().unwrap_or("").to_owned(),
+                e[2].as_str().unwrap_or("").to_owned(),
+            )
+        };
+        let keys: Vec<(String, String, String)> = self.edits.iter().map(edit_key).collect();
+        for (i, e) in self.edits.iter_mut().enumerate() {
             if e[6].is_null() {
                 continue;
             }
-            let (k, id) = (e[0].as_str().unwrap_or(""), e[1].as_str().unwrap_or(""));
+            let (k, id, _) = &keys[i];
             let (device, seq) = (e[3].clone(), e[4].clone());
             let found = row_of(k, id, &|_, v| v["w"] == device && v["s"] == seq);
+            let superseded = found[0].is_null()
+                && (keys[i + 1..].contains(&keys[i]) || purged.contains(&(k.clone(), id.clone())));
             if let (Some(arr), Value::Array(pair)) = (e.as_array_mut(), found) {
                 arr.extend(pair);
+                arr.push(Value::Bool(superseded));
             }
         }
-        for tw in &mut self.tag_writes {
-            let id = tw[1].as_str().unwrap_or("").to_owned();
-            let found = row_of(EntKind::Note.wire(), &id, &|f, _| f == "tags");
-            if let (Some(arr), Value::Array(mut pair)) = (tw.as_array_mut(), found) {
-                arr.push(pair.swap_remove(0));
+        let notes: Vec<String> = self
+            .tag_writes
+            .iter()
+            .map(|tw| tw[1].as_str().unwrap_or("").to_owned())
+            .collect();
+        let note_kind = EntKind::Note.wire().to_owned();
+        for (i, tw) in self.tag_writes.iter_mut().enumerate() {
+            let id = &notes[i];
+            // 同一条笔记后面还有一次整列表标签写入：合成的 `tags` 行是后面那次的结果，不是这一项写下的。
+            let superseded =
+                notes[i + 1..].contains(id) || purged.contains(&(note_kind.clone(), id.clone()));
+            let row = if superseded {
+                Value::Null
+            } else {
+                row_of(&note_kind, id, &|f, _| f == "tags")[0].clone()
+            };
+            if let Some(arr) = tw.as_array_mut() {
+                arr.push(row);
+                arr.push(Value::Bool(superseded));
             }
         }
         Ok(())

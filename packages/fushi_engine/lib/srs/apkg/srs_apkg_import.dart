@@ -2270,8 +2270,11 @@ class _Importer {
     report.anchorsWritten++;
   }
 
+  /// fushi-ext 里的一条日志 → 落到本机卡 [cardId] 上的那条。一律带 [srsForeignLogKey]：它的排序键由发生时刻派生
+  /// （新代内核不收作者 HLC），与导入时刻、导入设备无关。
   SrsReviewLog _remapExtLog(SrsReviewLog l, String cardId) {
-    if (_extSameProfile && l.cardId == cardId) return l;
+    final Map<String, Object?> j = l.toJson()..[srsForeignLogKey] = true;
+    if (_extSameProfile && l.cardId == cardId) return SrsReviewLog.fromJson(j);
     if (_extSameProfile && _extLogCards.containsKey(l.id)) {
       // 同 profile：前身卡的身份在本 profile 下不变，日志原样落回前身卡，再补上前身链接。
       _historyLinks.add(
@@ -2282,9 +2285,8 @@ class _Importer {
           true,
         ),
       );
-      return l;
+      return SrsReviewLog.fromJson(j);
     }
-    final Map<String, Object?> j = l.toJson();
     j['id'] = SrsIds.remappedLog(cardId, l.id);
     if (l.revokesId != null) {
       j['revokes'] = SrsIds.remappedLog(cardId, l.revokesId!);

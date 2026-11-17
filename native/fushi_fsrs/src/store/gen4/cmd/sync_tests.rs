@@ -530,6 +530,108 @@ fn an_anki_revlog_imported_on_two_devices_is_one_event() {
     assert_eq!(a.derived(), b.derived());
 }
 
+/// 两台设备在不同时刻各自回导同一份 Fushi 导出包里的同一条外来原生日志（`_remapExtLog`，origin = fushi，带
+/// `foreignLog` 标记），它比 a 上一条本机复习早：同步之后两边卡片行逐行相同、派生层一致，卡片当前排程仍是那条本机
+/// 复习（最后一条有效日志是它），不是外来日志——排序键由日志内容（发生时刻）派生，不随写入设备与导入时刻变。
+/// 改前按操作 HLC 排：外来日志的导入时刻晚于本机复习，成了最后一条有效日志，两台设备的卡片排程都按它重放。
+#[test]
+fn a_foreign_native_log_imported_on_two_devices_keeps_the_local_schedule() {
+    let mut a = Dev::new("w5a");
+    let mut b = Dev::new("w5b");
+    let c1 = card(N1, "t1");
+    let fdef = json!({"name": "Expression", "ord": 0});
+    let item = |e: Value| json!({"e": e, "note": N1});
+    write_items(
+        &a,
+        "apply",
+        T1,
+        vec![
+            item(
+                json!({"t": "entity", "x": {"id": "NT", "p": P, "k": "notetype", "d": {"createdAt": 1, "ntKind": "standard"}}}),
+            ),
+            item(edit("notetype", "NT", "fieldDef/fa", fdef)),
+            item(edit(
+                "notetype",
+                "NT",
+                "tmplDef/t1",
+                json!({"name": "A", "ord": 0, "front": "{{Expression}}"}),
+            )),
+            item(note(N1, "NT", 10)),
+            item(edit("note", N1, "f/fa", json!("猫"))),
+        ],
+    );
+    let log = |id: &str, at: i64, rating: i64, ivl: i64, foreign: bool| {
+        let mut x = json!({
+            "id": id, "p": P, "card": c1, "kind": "review", "rating": rating, "hlc": format!("{at}:0:someone"),
+            "at": at, "ts": "wall", "origin": "fushi", "rtype": "review", "dur": 3000, "alg": "fsrs6",
+            "utcOff": 0, "rollover": 4,
+            "res": {"queue": "review", "ivl": ivl, "step": 0, "reps": 1, "lapses": 0, "scheduler": "fushi", "dueDay": ivl}
+        });
+        if foreign {
+            x["foreignLog"] = json!(true);
+        }
+        item(json!({"t": "log", "x": x}))
+    };
+    write_items(
+        &a,
+        "apply",
+        T1 + 5,
+        vec![log("w5-local", T1 + 5, 3, 30, false)],
+    );
+    let mut loc = Loc::new();
+    let o = Opts::default();
+    sync_all(&[&a, &b], &mut loc, T1 + 10, o);
+    let foreign = log("w5-ext", T1 - DAY, 1, 9, true);
+    write_items(&a, "import_drafts", T1 + 20, vec![foreign.clone()]);
+    write_items(&b, "import_drafts", T1 + 21, vec![foreign]);
+    sync_all(&[&a, &b], &mut loc, T1 + 30, o);
+    let mut seen = Vec::new();
+    for d in [&mut a, &mut b] {
+        let rows = d.direct(|t, col| {
+            let mut stmt = t
+                .conn()
+                .prepare(
+                    "SELECT hex(id), hex(last_log_id), due_day, scheduled_days, reps, queue FROM cards \
+                     WHERE col = ?1 ORDER BY id",
+                )
+                .map_err(|e| e.to_string())?;
+            let rows: Vec<(String, Option<String>)> = stmt
+                .query_map([col], |r| {
+                    Ok((
+                        format!(
+                            "{:?} {:?} {:?} {:?} {:?}",
+                            r.get::<_, Option<String>>(0)?,
+                            r.get::<_, Option<i64>>(2)?,
+                            r.get::<_, Option<i64>>(3)?,
+                            r.get::<_, Option<i64>>(4)?,
+                            r.get::<_, Option<String>>(5)?,
+                        ),
+                        r.get::<_, Option<String>>(1)?,
+                    ))
+                })
+                .map_err(|e| e.to_string())?
+                .collect::<Result<_, _>>()
+                .map_err(|e| e.to_string())?;
+            Ok(rows)
+        });
+        // 文本日志 ID 的规范 ID 是它的 UTF-8 字节：最后一条有效日志仍是本机复习 `w5-local`，不是回导的 `w5-ext`。
+        let local = "w5-local"
+            .bytes()
+            .map(|b| format!("{b:02X}"))
+            .collect::<String>();
+        assert_eq!(
+            rows.iter()
+                .map(|(_, last)| last.clone())
+                .collect::<Vec<_>>(),
+            vec![Some(local)],
+            "the local review still schedules the card: {rows:?}"
+        );
+        seen.push(rows);
+    }
+    assert_eq!(seen[0], seen[1]);
+    assert_eq!(a.derived(), b.derived());
+}
+
 /// 缓存层推导口径修订号（`cache.rs` [CACHE_RULES]，K3）：库里记的不是当前值（这个口径之前建的新代开发库没有这一项）时，
 /// 宿主打开发的 `cache_config_set` 即使配置没变也整层重建一次、记下当前值；之后同一份配置什么都不做。
 #[test]

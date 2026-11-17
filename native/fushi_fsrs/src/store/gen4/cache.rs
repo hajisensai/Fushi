@@ -117,7 +117,7 @@ use serde_json::{Value, json};
 use super::class::builtin_template_members;
 use super::derive::{Index, R_LIVE, Ref, Reg, Settled, body_of};
 use super::schema::sql;
-use crate::anki_import_rules::anki_source_hlc;
+use crate::anki_import_rules::derived_log_hlc;
 use crate::gen4::heritage::SlotBody;
 use crate::gen4::name::{read_edit_key, write_edit_key};
 use crate::gen4::op::{Body4, Log4};
@@ -280,7 +280,10 @@ pub const RULES_KEY: &str = "cacheRules";
 /// - 1（K3，交接 §26 C4）：Anki 来源日志的排序键改为来源数据派生的 HLC（[log_body]、`crate::anki_import_rules`）。之前
 ///   新导入的 Anki 日志按操作 HLC 排：同一条 revlog 在血统两张卡上的副本各算一次、更早的 Anki 复习排到原生复习之后
 ///   覆盖当前排程。
-pub const CACHE_RULES: i64 = 1;
+/// - 2（第五波，交接「第五波 导入与写接口」节）：回导的外来原生日志（带 `foreignLog` 标记，Dart `_remapExtLog`）的排序键改为
+///   由发生时刻派生的 HLC（`crate::anki_import_rules::derived_log_hlc`）。之前按导入时刻的操作 HLC 排：更早的外来复习排到
+///   本机更晚的复习之后、改掉当前排程。
+pub const CACHE_RULES: i64 = 2;
 
 /// [Index::log_class_rep] 每个成员一次的点查（走 `log_id (col, id, k)`；查询计划测试用同一份）。
 pub(crate) const LOG_REP_SQL: &str =
@@ -413,12 +416,13 @@ fn ref_of(text: &str) -> Ref {
 }
 
 fn log_body(l: Log4) -> LogBody {
-    // 承袭的日志带作者给的旧 HLC；原生日志没有，排序键回落到操作自己的 HLC（[Index::log_at]）——Anki 来源的除外：
-    // 它的 HLC 由来源数据派生（铁律 C，`crate::anki_import_rules`）。协议 3 的卡片历史规则（`crate::history`）靠它把
-    // 同一条 revlog 落在血统里几张卡上的副本归成一个事件、把更早的 Anki 复习排在更晚的原生复习之前。
+    // 承袭的日志带作者给的旧 HLC；原生日志没有，排序键回落到操作自己的 HLC（[Index::log_at]）——Anki 来源与回导的外来
+    // 原生日志除外：它们的 HLC 由来源数据派生（铁律 C，`crate::anki_import_rules` [derived_log_hlc]）。协议 3 的卡片历史
+    // 规则（`crate::history`）靠它把同一条 revlog 落在血统里几张卡上的副本归成一个事件、把更早的 Anki / 外来复习排在
+    // 更晚的原生复习之前。
     let legacy_hlc = match l.hlc {
         Some(h) => Some(h.text()),
-        None => anki_source_hlc(&l.origin, &l.kind, l.anki_id, l.at),
+        None => derived_log_hlc(&l.origin, &l.kind, l.anki_id, l.at, &l.extra),
     };
     LogBody {
         id: l.id,

@@ -1462,7 +1462,7 @@ class SrsDbStore implements SrsSync2Host {
   }
 
   /// 一批草稿里修改记录草稿落库后的修改记录（按草稿顺序；内核没写出操作的草稿——值没变、标签列表与现值相同——不在
-  /// 其中）。
+  /// 其中；被同批后面的草稿盖掉的也不在其中——同一个键只交回最后一条，它才是落库后活着的那条）。
   ///
   /// 协议 3 由内核在 `apply` 里交回逐项的落库投影行（`stamps`，旧版时钟的产物）；新代没有旧版时钟、明确拒绝
   /// `stamps`，改由回包按**输入下标**报写下的东西（native/fushi_fsrs/src/store/gen4/cmd/writes.rs 文件头「回包」）：
@@ -1485,12 +1485,14 @@ class SrsDbStore implements SrsSync2Host {
       final SrsEventDraft d = drafts[i];
       final SrsWrittenItem? w = written[i];
       if (w == null || d is! SrsEditDraft) continue;
+      // 内核明确标了「被同批后面的写入盖掉」：它没有落库后的行，后面那条草稿交回的才是。
+      if (w.superseded) continue;
       final String? row = w.row;
       if (row == null) {
         throw StateError(
           'srs: ${w.tags ? 'the tags of ${w.entity}' : 'edit ${w.writer}/${w.seq}'} '
-          'from the `apply` reply carries no stored row (the native core and '
-          'Dart do not match)',
+          'from the `apply` reply carries no stored row and is not marked '
+          'superseded (the native core and Dart do not match)',
         );
       }
       final SrsFieldEdit edit = SrsEditItem.stored(
@@ -6641,7 +6643,9 @@ List<String?> srsEntityWritesByInput(int inputs, Map<String, Object?> reply) {
 /// `apply` 一类命令的一条输入写下的东西（[srsWrittenByInput]）：修改记录（[tags] = false，`(writer, seq)` 是它的 dot）
 /// 或整列表标签草稿展开成的标签操作（[tags] = true，`(writer, seq)` 是展开出的最后一条操作）。[entity] / [key] 是
 /// 内核归一后的规范形。[row] / [serverTime]：请求带了 `editRows` 时，收尾之后这条修改（标签草稿是那条笔记合成的
-/// `tags` 行）在 `read edits` 里的行 JSON 与服务器时刻；没要、或那一行已不是活着的（同批后面的写入盖掉了）= null。
+/// `tags` 行）在 `read edits` 里的行 JSON 与服务器时刻；没要、或这一项被同批后面的写入盖掉了 = null。
+/// [superseded]：内核明确标出这一项被同批后面的写入盖掉了（同一个键后面又写了一次、标签是同一条笔记后面又整列表写了
+/// 一次、或实体在这批里被彻底清除；native/fushi_fsrs/src/store/gen4/cmd/writes.rs 文件头「回包」修改行）。
 typedef SrsWrittenItem = ({
   String kind,
   String entity,
@@ -6651,14 +6655,15 @@ typedef SrsWrittenItem = ({
   bool tags,
   String? row,
   int? serverTime,
+  bool superseded,
 });
 
 /// `apply` 回包按输入下标认领（native/fushi_fsrs/src/store/gen4/cmd/writes.rs 文件头「回包」）：返回长 [inputs] 的列表，
 /// 第 i 项是第 i 条输入写下的那条，没写出（内核按「值没变」丢掉、日志、身份记录）= null。
 ///
-/// - `edits` 每项 `[种类, 规范实体, 字段键, 设备, 序号, 值, 输入下标, 行 JSON?, 服务器时刻?]`，输入下标是 null 的
-///   （意图命令自己拼的项）不认领；后两列只在请求带 `editRows` 时有；
-/// - `tagWrites` 每项 `[输入下标, 规范笔记, 设备, 最后一条操作的序号, 行 JSON?]`。
+/// - `edits` 每项 `[种类, 规范实体, 字段键, 设备, 序号, 值, 输入下标, 行 JSON?, 服务器时刻?, 被盖掉]`，输入下标是
+///   null 的（意图命令自己拼的项）不认领；后三列只在请求带 `editRows` 时有；
+/// - `tagWrites` 每项 `[输入下标, 规范笔记, 设备, 最后一条操作的序号, 行 JSON?, 被盖掉]`（后两列同上）。
 ///
 /// 一条输入认领两次、下标越界 = 内核与 Dart 对不上，报错（不静默挑一条）。
 @visibleForTesting
@@ -6690,6 +6695,7 @@ List<SrsWrittenItem?> srsWrittenByInput(
       tags: false,
       row: e.length > 7 ? e[7] as String? : null,
       serverTime: e.length > 8 ? (e[8] as num?)?.toInt() : null,
+      superseded: e.length > 9 && e[9] == true,
     ));
   }
   for (final Object? raw
@@ -6704,6 +6710,7 @@ List<SrsWrittenItem?> srsWrittenByInput(
       tags: true,
       row: t.length > 4 ? t[4] as String? : null,
       serverTime: null,
+      superseded: t.length > 5 && t[5] == true,
     ));
   }
   return out;
