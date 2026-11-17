@@ -33,9 +33,25 @@ void main() {
 
     // 注释掩码（共享 maskComments，行+块）后再断言：把锚点字面量塞进行注释或
     // /* */ 块注释、实际代码回退定值的假绿被堵死（两种形态都变异实测确认）。
+    // ec348e9444（NSFW 封面模糊）起 `_buildCard` 只是一层 `MediaNsfwCoverScope`
+    // 外壳，卡片本体（封面比例 + 文字块）搬进 `_buildCardInner`。先钉住外壳必须
+    // 原样委托给本体，再对本体断言——否则外壳另画一张卡就能绕过下面的比例锚点。
+    final String cardShell = compactCode(
+      _stripLineComments(_functionSource(source, 'Widget _buildCard(')),
+    );
+    expect(
+      cardShell,
+      contains(compactCode('child: _buildCardInner(book,')),
+      reason: '_buildCard 只能是 NSFW 外壳，卡片本体必须委托给 _buildCardInner',
+    );
+    expect(
+      containsIdentifierCall(cardShell, 'AspectRatio'),
+      isFalse,
+      reason: '_buildCard 外壳不得自己另画封面',
+    );
     final Map<String, String> bodies = <String, String>{
-      '_buildCard': _stripLineComments(
-        _functionSource(source, 'Widget _buildCard('),
+      '_buildCardInner': _stripLineComments(
+        _functionSource(source, 'Widget _buildCardInner('),
       ),
       '_buildRemoteVideoCard': _stripLineComments(
         _functionSource(source, 'Widget _buildRemoteVideoCard('),
