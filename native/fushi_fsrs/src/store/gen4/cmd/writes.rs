@@ -355,6 +355,8 @@ impl<'t, 'c> Session<'t, 'c> {
                 "cacheNotes": self.settled.cache_notes,
                 "cacheCards": self.settled.cache_cards,
                 "cacheStats": self.settled.cache_stats,
+                // 这条命令里别名表整表重算的次数（诊断；`alias.rs`「重算与增量」，C8）。
+                "aliasRebuilds": self.settled.aliases_rebuilt,
             }),
         );
         Ok(())
@@ -630,6 +632,7 @@ fn absorb(total: &mut Settled, s: &Settled) {
     total.scanned += s.scanned;
     total.aliases += s.aliases;
     total.aliases_proven += s.aliases_proven;
+    total.aliases_rebuilt += s.aliases_rebuilt;
     total.digests += s.digests;
     total.cache_notes += s.cache_notes;
     total.cache_cards += s.cache_cards;

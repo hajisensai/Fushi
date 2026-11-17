@@ -265,6 +265,9 @@ pub struct Settled {
     pub aliases: u64,
     /// 别名表这一批是增量证明出来的（1），不是整表重算（`alias.rs`「重算与增量」）。
     pub aliases_proven: u64,
+    /// 别名表这一批整表重算了（1）。逐条维护时它只该随第 3 档变化（拿走证据、定义变了……）出现，不随库大小、
+    /// 也不随草稿顺序出现（C8：新卡的卡片修改单独成批收尾时，曾经每条笔记整表重算一次）。
+    pub aliases_rebuilt: u64,
     pub digests: u64,
     /// 缓存层（`cache.rs`）重算了的笔记行 / 卡行 / 统计行。
     pub cache_notes: u64,
@@ -1199,9 +1202,10 @@ impl<'t, 'c> Index<'t, 'c> {
         if std::mem::take(&mut self.salts_dirty) {
             self.settle_salts()?;
         }
-        let (rows, proven) = self.settle_aliases()?;
+        let (rows, proven, rebuilt) = self.settle_aliases()?;
         out.aliases = rows;
         out.aliases_proven = u64::from(proven);
+        out.aliases_rebuilt = u64::from(rebuilt);
         self.weigh_rest(false, trust, &mut out)?;
         let mut regs = std::mem::take(&mut self.regs);
         self.dirt.registers(&regs);
