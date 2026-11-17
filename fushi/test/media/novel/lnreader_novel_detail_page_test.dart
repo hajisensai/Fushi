@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/native.dart';
@@ -6,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/detail/media_detail_kit.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
 import 'package:fushi/src/media/media_source.dart';
@@ -17,6 +19,8 @@ import 'package:fushi/src/media/novel/online/lnreader_online_book.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi_audio/fushi_audio.dart' show Bookmark;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
@@ -275,6 +279,171 @@ void main() {
     expect(buttonLabel(tester, readKey), startReading());
   });
 
+  group('已上架的作品先出旧目录（novel-d4）', () {
+    const ValueKey<String> downloadKey = ValueKey<String>(
+      'novel_detail_download',
+    );
+    const ValueKey<String> rowDownloadKey = ValueKey<String>(
+      'novel_chapter_download_/a/1',
+    );
+
+    bool enabled(WidgetTester tester, ValueKey<String> key) =>
+        tester.widget<FushiIconButtonControl>(find.byKey(key)).onPressed !=
+        null;
+
+    bool readEnabled(WidgetTester tester) =>
+        tester
+            .widget<MediaDetailPrimaryButton>(
+              find.ancestor(
+                of: find.byKey(readKey),
+                matching: find.byType(MediaDetailPrimaryButton),
+              ),
+            )
+            .onPressed !=
+        null;
+
+    bool secondaryEnabled(WidgetTester tester, ValueKey<String> key) =>
+        tester
+            .widget<MediaDetailSecondaryButton>(
+              find.ancestor(
+                of: find.byKey(key),
+                matching: find.byType(MediaDetailSecondaryButton),
+              ),
+            )
+            .onPressed !=
+        null;
+
+    /// 先走页面自己的「加入书架」建好在线书，再换成源站卡住的运行时重进页面。
+    Future<_GatedRuntime> reenterWithGatedSource(WidgetTester tester) async {
+      await pumpDetail(tester);
+      await pumpUntil(tester, find.byKey(addKey));
+      await tester.tap(find.byKey(addKey));
+      await pumpUntil(tester, find.byKey(removeKey));
+      await tester.pumpWidget(const SizedBox.shrink());
+
+      final _GatedRuntime gated = _GatedRuntime(
+        novelResult: const LnReaderNovel(
+          name: 'Novel A',
+          path: '/a',
+          author: 'Author A',
+          chapters: <LnReaderChapter>[
+            ...chapters,
+            LnReaderChapter(name: 'Chapter four', path: '/a/4'),
+          ],
+          totalPages: 1,
+        ),
+      );
+      final LnReaderManager gatedManager = LnReaderManager(
+        rootDirectory: Directory(p.join(root.path, 'lnreader')),
+        runtime: gated,
+        httpClientFactory: HttpClient.new,
+        legacyBuiltinStoreUrl: builtin,
+      );
+      addTearDown(gatedManager.dispose);
+      await gatedManager.initialise();
+      await pumpDetail(tester, withManager: gatedManager);
+      return gated;
+    }
+
+    testWidgets('源站还没回来：章节已经能看能读，下载等详情；回来后换成新目录', (WidgetTester tester) async {
+      late _GatedRuntime gated;
+      await tester.runAsync(() async {
+        gated = await reenterWithGatedSource(tester);
+        await pumpUntil(tester, find.text('Chapter one'));
+      });
+      expect(gated.calls, isNot(contains('novel:/a')), reason: '源站的详情确实还没取回。');
+      expect(find.text('Chapter three'), findsOneWidget);
+      expect(find.text('Chapter four'), findsNothing);
+      expect(find.byKey(removeKey), findsOneWidget);
+      expect(buttonLabel(tester, readKey), startReading());
+      expect(
+        readEnabled(tester),
+        isTrue,
+        reason: '旧目录的序号就是那本书现在的 spine，可以直接读。',
+      );
+      expect(
+        secondaryEnabled(tester, downloadKey),
+        isFalse,
+        reason: '作者 / 简介 / 封面还没取回，不拿残缺详情去打 EPUB。',
+      );
+      expect(enabled(tester, rowDownloadKey), isFalse);
+
+      await tester.runAsync(() async {
+        gated.gate.complete();
+        await pumpUntil(tester, find.text('Chapter four'));
+      });
+      expect(find.text('Author A'), findsOneWidget);
+      expect(secondaryEnabled(tester, downloadKey), isTrue);
+      expect(enabled(tester, rowDownloadKey), isTrue);
+    });
+
+    testWidgets('源站取不回来：旧目录留着照常可读，头部挂错误，不退成整页报错', (WidgetTester tester) async {
+      late _GatedRuntime gated;
+      await tester.runAsync(() async {
+        gated = await reenterWithGatedSource(tester);
+        await pumpUntil(tester, find.text('Chapter one'));
+        gated.novelError = Exception('HTTP 503');
+        gated.gate.complete();
+        await pumpUntil(tester, find.byType(FushiInlineNotice));
+      });
+      expect(find.text('Chapter three'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('novel_detail_error')),
+        findsNothing,
+      );
+      expect(readEnabled(tester), isTrue);
+    });
+
+    testWidgets('旧目录阶段移出书架：目录跟着撤，不留一份假详情给「加入书架」', (WidgetTester tester) async {
+      late _GatedRuntime gated;
+      await tester.runAsync(() async {
+        gated = await reenterWithGatedSource(tester);
+        await pumpUntil(tester, find.text('Chapter one'));
+        await tester.tap(find.byKey(removeKey));
+        await pumpUntil(tester, find.text(t.dialog_delete));
+        await tester.tap(find.text(t.dialog_delete));
+        await pumpUntil(tester, find.byKey(addKey));
+      });
+      expect(find.text('Chapter one'), findsNothing);
+      expect(
+        secondaryEnabled(tester, addKey),
+        isFalse,
+        reason: '详情没回来之前没有可加入的东西。',
+      );
+
+      await tester.runAsync(() async {
+        gated.gate.complete();
+        await pumpUntil(tester, find.text('Chapter four'));
+      });
+      expect(find.byKey(addKey), findsOneWidget);
+      expect(secondaryEnabled(tester, addKey), isTrue);
+    });
+
+    testWidgets('不在书架：没有旧目录可垫，照旧等源站', (WidgetTester tester) async {
+      final _GatedRuntime gated = _GatedRuntime(
+        novelResult: runtime.novelResult,
+      );
+      late LnReaderManager gatedManager;
+      await tester.runAsync(() async {
+        gatedManager = LnReaderManager(
+          rootDirectory: Directory(p.join(root.path, 'lnreader')),
+          runtime: gated,
+          httpClientFactory: HttpClient.new,
+          legacyBuiltinStoreUrl: builtin,
+        );
+        await gatedManager.initialise();
+        await pumpDetail(tester, withManager: gatedManager);
+        await pumpUntil(tester, find.byKey(addKey));
+      });
+      addTearDown(gatedManager.dispose);
+      expect(find.text('Chapter one'), findsNothing);
+      await tester.runAsync(() async {
+        gated.gate.complete();
+        await pumpUntil(tester, find.text('Chapter one'));
+      });
+    });
+  });
+
   testWidgets('「下载」弹章节范围对话框，取消后什么都不入库', (WidgetTester tester) async {
     await tester.runAsync(() async {
       await pumpDetail(tester);
@@ -296,6 +465,19 @@ void main() {
     expect(await tester.runAsync(() => db.select(db.epubBooks).get()), isEmpty);
     expect(find.byKey(addKey), findsOneWidget);
   });
+}
+
+/// 源站的详情卡在 [gate] 上：放行前 `novel()` 不返回。
+class _GatedRuntime extends FakeLnReaderRuntime {
+  _GatedRuntime({super.novelResult});
+
+  final Completer<void> gate = Completer<void>();
+
+  @override
+  Future<LnReaderNovel> novel(String pluginId, String path) async {
+    await gate.future;
+    return super.novel(pluginId, path);
+  }
 }
 
 class _TestAppModel extends AppModel {
