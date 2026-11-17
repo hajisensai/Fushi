@@ -46,7 +46,7 @@ use crate::store::gen4::oldroot::OldRootSettle;
 use crate::store::gen4::receive::{Received, Receiver, Taken};
 use crate::store::gen4::schema::{k_range, sql};
 use crate::store::gen4::sync_state::OldRootEntry;
-use crate::store::gen4::truth::{DEV_HERITAGE, Peer, PeerPut, Truth};
+use crate::store::gen4::truth::{DEV_HERITAGE, Peer, PeerPut, TRUST_PENDING, Truth};
 use crate::store::sync2::collection_of;
 use crate::sync2::id::Id;
 use crate::sync2::keys::CollectionKey;
@@ -313,16 +313,22 @@ fn heritage_logs(t: &Truth<'_>, col: i64) -> Result<Vec<(i64, Id, u64)>, String>
     Ok(out)
 }
 
-/// 本机有内容、但作者不受信而不替传的承袭日志（[heritage_plan] 的 `unvouched`），设备 ID 文本、按 ID 排序。
-fn unvouched_logs(t: &Truth<'_>, col: i64) -> Result<Vec<String>, String> {
-    let mut out = Vec::new();
+/// 本机有内容、但作者不受信而不替传的承袭日志（[heritage_plan] 的 `unvouched`），设备 ID 文本、按 ID 排序；连同其中
+/// 作者还**待确认**的那部分（`pending`，已拒绝的不在里面）。
+fn unvouched_logs(t: &Truth<'_>, col: i64) -> Result<(Vec<String>, Vec<String>), String> {
+    let mut all = Vec::new();
+    let mut pending = Vec::new();
     for d in t.devices(col)? {
         if d.kind == Some(DEV_HERITAGE) && d.last > 0 && !vouches_for(t, col, &d)? {
-            out.push(d.id.text());
+            if t.trust_of(col, &d.id)? == Some(TRUST_PENDING) {
+                pending.push(d.id.text());
+            }
+            all.push(d.id.text());
         }
     }
-    out.sort();
-    Ok(out)
+    all.sort();
+    pending.sort();
+    Ok((all, pending))
 }
 
 /// 位置上的承袭段（`listing: {设备: [文件名…]}` 里 `hrt-` 开头、名字认得的），路径相对 `v4/`，连同它的旧设备。
@@ -392,29 +398,30 @@ fn heritage_fp(
 /// `heritage_plan {progress, listing}`（读）：本机没有承袭日志、或指纹与上次传完时记下的相同 → `{skip: true}`；否则
 /// `{skip: false, read: [路径…]}` = 位置上旧设备是本机某条承袭日志的承袭段（相对 `v4/`，交 [heritage_outbox]）。
 /// 两种回包都带 `unvouched: [设备…]`：本机有内容、但因作者在本机待确认 / 已拒绝而**不替传**的承袭日志（`inherit.rs`
-/// 文件头）。非空 = 别的设备只能从旧根拿这些作者，旧根还不能退役，同步页要提示用户先确认或拒绝它们。
+/// 文件头）。非空 = 别的设备只能从旧根拿这些作者，旧根还不能退役。另带 `pending: [设备…]`：其中作者还待确认的那部分，
+/// 同步页只按它提示「等你确认」——用户有意拒绝的设备不该一直被催着去确认。
 pub fn heritage_plan(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String> {
     let progress = str_req(req, "progress")?;
-    let unvouched = unvouched_logs(t, col)?;
+    let (unvouched, pending) = unvouched_logs(t, col)?;
     let logs: BTreeSet<Id> = heritage_logs(t, col)?
         .into_iter()
         .map(|(_, id, _)| id)
         .collect();
     if logs.is_empty() {
-        return Ok(json!({"skip": true, "unvouched": unvouched}));
+        return Ok(json!({"skip": true, "unvouched": unvouched, "pending": pending}));
     }
     let all = heritage_paths(req);
     let paths: Vec<String> = all.iter().map(|(p, _)| p.clone()).collect();
     let fp = heritage_fp(t, col, progress, &paths)?;
     if meta_get(t, &hrt_key(col, progress))?.as_deref() == Some(fp.as_str()) {
-        return Ok(json!({"skip": true, "unvouched": unvouched}));
+        return Ok(json!({"skip": true, "unvouched": unvouched, "pending": pending}));
     }
     let read: Vec<String> = all
         .into_iter()
         .filter(|(_, old)| logs.contains(old))
         .map(|(p, _)| p)
         .collect();
-    Ok(json!({"skip": false, "read": read, "unvouched": unvouched}))
+    Ok(json!({"skip": false, "read": read, "unvouched": unvouched, "pending": pending}))
 }
 
 /// `heritage_outbox {paths, key?}`，字节块与 `paths` 一一对应（读快照）：位置上这些承袭段交 [Uploader::see]，按

@@ -241,6 +241,7 @@ Future<void> srsSync4UploadHeritage({
   })).map;
   // 两种回包都带：指纹没变（`skip`）时本机照样可能还扣着待确认作者的承袭日志，提示不能因此消失。
   report.heritageUnvouched = _strings(plan['unvouched']);
+  report.heritagePending = _strings(plan['pending']);
   if (plan['skip'] == true) return;
   onStep?.call('heritage');
   final List<String> read = _strings(plan['read']);

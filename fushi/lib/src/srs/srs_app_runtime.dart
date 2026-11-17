@@ -68,6 +68,18 @@ srsDeferredProfileMergeReaderProvider =
               ref.read(srsAppRuntimeProvider)?.sync.deferredProfileMerge(),
     );
 
+/// 本机因作者还待确认而不替传的承袭日志的作者（[SrsSyncScheduler.heritagePending]）；模块关着时是个空集合。同步状态
+/// 页的「旧设备的数据等确认」提示行听它。单独一个 provider 是让页面测试能注入（同 [srsDeferredProfileMergeReaderProvider]）。
+final Provider<ValueListenable<Set<String>>> srsHeritagePendingProvider =
+    Provider<ValueListenable<Set<String>>>(
+      (Ref ref) =>
+          ref.watch(srsAppRuntimeProvider)?.sync.heritagePending ??
+          _kNoHeritagePending,
+    );
+
+final ValueListenable<Set<String>> _kNoHeritagePending =
+    ValueNotifier<Set<String>>(const <String>{});
+
 /// 模块开着时的常驻装配（见文件头）；关着时为 null。
 final Provider<SrsAppRuntime?>
 srsAppRuntimeProvider = Provider<SrsAppRuntime?>((Ref ref) {

@@ -74,11 +74,13 @@ fn a_purge_held_on_the_uploader_stays_held_on_other_devices() {
     assert_eq!(row["trust"], json!("pending"), "{row}");
     assert_eq!(row["heldPurges"], json!(1), "{row}");
     assert_eq!(d_old_len(&a), 4, "a holds OLD's log");
+    let plan = heritage_plan(&a, &loc, T1 + 10);
     assert_eq!(
-        heritage_plan(&a, &loc, T1 + 10)["unvouched"],
+        plan["unvouched"],
         json!([old]),
         "the sync page learns which authors only the old root still has"
     );
+    assert_eq!(plan["pending"], json!([old]), "still waiting for the user");
     assert_eq!(
         upload_heritage(&a, &mut loc, T1 + 10),
         0,
@@ -110,9 +112,40 @@ fn a_purge_held_on_the_uploader_stays_held_on_other_devices() {
 
     // a 确认 OLD：信任变了、承袭指纹跟着变，下一轮补传。
     trust(&a, T1 + 30, &old);
-    assert_eq!(heritage_plan(&a, &loc, T1 + 30)["unvouched"], json!([]));
+    let plan = heritage_plan(&a, &loc, T1 + 30);
+    assert_eq!(plan["unvouched"], json!([]));
+    assert_eq!(plan["pending"], json!([]));
     assert!(upload_heritage(&a, &mut loc, T1 + 30) > 0);
     assert!(heritage_files(&loc) > 0);
+}
+
+/// 用户有意拒绝的承袭作者照样不替传、照样算在 `unvouched` 里（旧根还不能退役），但不在 `pending` 里：同步页只对
+/// 待确认的提示「等你确认」，不会一直催用户去确认一台他拒绝了的设备。
+#[test]
+fn a_rejected_heritage_author_is_unvouched_but_not_pending() {
+    let mut loc = Loc::new();
+    old_root_with(&mut loc, &ops_ending_in_a_purge(4), &[(1, 4)]);
+    let old = id(OLD).text();
+
+    let a = Dev::new("g104hrj");
+    a.write(T1 + 1, N1, "鯨");
+    round(&a, &mut loc, "loc", T1 + 10, Opts::default());
+    let (_, ing) = take_old_root(&a, &loc, T1 + 10);
+    assert_eq!(ing.expect("a scans")["errors"], json!([]));
+    assert_eq!(status_row(&a, &old)["trust"], json!("pending"));
+
+    let (v, _) = cmd(
+        a.h,
+        "trust",
+        T1 + 20,
+        json!({"device": old, "trust": false}),
+        &[],
+    );
+    assert_eq!(v["trusted"], json!(false), "{v}");
+    let plan = heritage_plan(&a, &loc, T1 + 21);
+    assert_eq!(plan["unvouched"], json!([old]), "{plan}");
+    assert_eq!(plan["pending"], json!([]), "{plan}");
+    assert_eq!(upload_heritage(&a, &mut loc, T1 + 21), 0);
 }
 
 /// 混合版本家庭（复核 minor）：用户自己还没升级的 OLD 在 a 上可信（a 捡旧根时库还是空的），a 替它承袭上传。库里有

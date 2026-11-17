@@ -1049,7 +1049,7 @@ void main() {
     expect(changed, 1, reason: '没有新数据的轮次不该让界面重读（也就不会再触发推送）');
   });
 
-  test('不替传的旧设备承袭日志（G10-4）：取最近一轮走到承袭上传那一步的结论，确认后消失', () async {
+  test('不替传的待确认旧设备承袭日志（G10-4）：取最近一轮走到承袭上传那一步的结论，确认后消失', () async {
     // 每轮的报告依次是：有两台待确认的旧作者 → 没走到承袭上传（null，提示不动）→ 确认后内核不再列。
     final List<List<String>?> unvouched = <List<String>?>[
       <String>['dev-old', 'dev-older'],
@@ -1071,16 +1071,15 @@ void main() {
             SrsDbStore st,
             String key, {
             SrsLocationKey? locationKey,
-          }) async =>
-              SrsSync2Report()..heritageUnvouched = unvouched.removeAt(0),
+          }) async => SrsSync2Report()..heritagePending = unvouched.removeAt(0),
     );
-    expect(s.heritageUnvouched.value, isEmpty);
+    expect(s.heritagePending.value, isEmpty);
     await s.syncWithBackend(LocalDirectoryAssetStore(root));
-    expect(s.heritageUnvouched.value, <String>{'dev-old', 'dev-older'});
+    expect(s.heritagePending.value, <String>{'dev-old', 'dev-older'});
     await s.syncWithBackend(LocalDirectoryAssetStore(root));
-    expect(s.heritageUnvouched.value, <String>{'dev-old', 'dev-older'});
+    expect(s.heritagePending.value, <String>{'dev-old', 'dev-older'});
     await s.syncWithBackend(LocalDirectoryAssetStore(root));
-    expect(s.heritageUnvouched.value, isEmpty);
+    expect(s.heritagePending.value, isEmpty);
     expect(unvouched, isEmpty);
   });
 

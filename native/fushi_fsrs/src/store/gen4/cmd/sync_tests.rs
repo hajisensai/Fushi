@@ -21,7 +21,8 @@ use serde_json::{Value, json};
 
 use super::dispatch_tests::{T1, cfg, g4, g4req, open};
 use super::sync::{
-    ERR_META_UNAVAILABLE, LOC_HEAD_SEQ_SQL, LOC_STATE_SQL, VOIDS_SQL, sealed_at_location,
+    ERR_META_UNAVAILABLE, ERR_NEW_ROOT_MISSING, LOC_HEAD_SEQ_SQL, LOC_STATE_SQL, VOIDS_SQL,
+    sealed_at_location,
 };
 use super::tests::{N1, N2, N3, card, note};
 use crate::gen4::head::Head4;
@@ -1023,6 +1024,27 @@ fn an_unreadable_new_root_meta_behind_a_fence_is_not_rebuilt() {
         &[],
     );
     assert_eq!(r["code"], json!(ERR_META_UNAVAILABLE), "{r}");
+    assert!(files.is_empty());
+    // 旧根读不到、Dart 也没列到数据，但新根下有 loc 标记：内核自己认得这是立过的新根，同样拒绝（不靠 Dart 的判断）。
+    let (r, files) = cmd(
+        a.h,
+        "location_root",
+        T1,
+        json!({"location": "loc", "has4": false, "has3": false, "locs": [mark]}),
+        &[],
+    );
+    assert_eq!(r["code"], json!(ERR_META_UNAVAILABLE), "{r}");
+    assert!(files.is_empty());
+    // 新根下什么都列不到、只剩围栏（v4/ 被整个删了）：不重建，换一个码让界面说清楚怎么恢复。
+    let (r, files) = cmd(
+        a.h,
+        "location_root",
+        T1,
+        json!({"location": "loc", "has4": false, "has3": true, "locs": []}),
+        &[fence.clone()],
+    );
+    assert_eq!(r["state"], json!("refused"), "{r}");
+    assert_eq!(r["code"], json!(ERR_NEW_ROOT_MISSING), "{r}");
     assert!(files.is_empty());
     // 放回后照常：媒体根仍是 v4，什么都不重写。
     let (r, files) = cmd(

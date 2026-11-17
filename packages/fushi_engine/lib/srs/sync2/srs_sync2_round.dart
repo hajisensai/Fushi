@@ -110,6 +110,12 @@ const String kSrs4LocationRefused = 'srs location root refused';
 /// 正好是它，界面据此给专门的升级提示（先用 3.x 同步一次把位置升级，或换位置；本机卡片不受影响），不当一般错误报。
 const String kSrsLocationProtocol1Root = 'srs_location_protocol1_root';
 
+/// 旧根 `v3/meta.json` 是本版本立的围栏、新根 `v4/` 下却什么都列不到（没有 meta、设备 / 媒体数据、loc 标记；内核
+/// `gen4/cmd/sync.rs` `ERR_NEW_ROOT_MISSING`，同一个机读码）：新根多半被整个删了。不重建（新根原来的媒体根 / `kdf`
+/// 从围栏推不出来），这一轮的 [SrsSync2Report.error] 正好是它，界面据此说明恢复办法——它不像 [kSrsSync2MetaUnavailable]
+/// 那样等下去会自己好。
+const String kSrsLocationNewRootMissing = 'srs_location_new_root_missing';
+
 /// 不是一个同步位置的读（v1 旧根的一次性迁移）：`plan` 记位置上的 head 时用的位置名。
 const String kSrs4NoLocation = 'oldroot';
 
@@ -178,6 +184,10 @@ class SrsSync2Report {
   /// `unvouched`，G10-4）：用户在设备页确认了那台设备，下一轮就补传。没走到承袭上传这一步为 null。只是提示，不算
   /// 这一轮失败。
   List<String>? heritageUnvouched;
+
+  /// [heritageUnvouched] 里作者在本机还**待确认**的那部分（内核 `heritage_plan` 的 `pending`；已拒绝的不在里面）。
+  /// 同步页只按它提示「等你确认」：用户有意拒绝的设备不该一直被催着去确认。null 的含义同 [heritageUnvouched]。
+  List<String>? heritagePending;
 
   /// 清位置上本机旧身份的目录时没做成的（[srsSync4SweepFormer]），每项
   /// `<旧身份>: <原因>`。不算这一轮失败、也不算跳过了段（不进 [errors]）：这一轮自己的收发与 head 都已完成，旧
@@ -480,13 +490,22 @@ Future<SrsLocationRoot?> srsSync4LocationRoot({
       ? await protocol1Root?.get('meta.json')
       : null;
   final bool has2 = meta2 != null && srsDecodeV1Fence(meta2) == null;
+  final List<String> locs = <String>[
+    for (final SrsLocationEntry e in await location.list('loc'))
+      if (!e.isFolder) e.name,
+  ];
   // 新根 meta 读不到（最终一致的网盘暂时列不到 / 被删）而这个集合的新根已经立过：旧根是围栏（围栏只在新根 meta 写好
-  // 之后才写），或新根下已有设备 / 媒体数据。这时新根原来的 `media` / `kdf` 从别处推不出来（围栏不带 `media`），重建
-  // 一份会把媒体根改错、在允许同名文件的后端上多出一份 meta：报 [kSrsSync2MetaUnavailable]，这一轮什么都不写（与协议 3
-  // 的「已有数据却读不到 meta 就不重写」同一条闸）。围栏也不能当 meta 交给握手——那正是绕过这道闸的路。
-  final bool v4Data = meta4 == null && await _srsV4HasData(location);
+  // 之后才写），或新根下已有设备 / 媒体数据 / loc 标记。这时新根原来的 `media` / `kdf` 从别处推不出来（围栏不带
+  // `media`），重建一份会把媒体根改错、把加密位置的 `kdf` 丢掉、在允许同名文件的后端上多出一份 meta：这一轮什么都不写
+  // （与协议 3 的「已有数据却读不到 meta 就不重写」同一条闸）。新根下还列得到东西 → [kSrsSync2MetaUnavailable]（多半
+  // 一时读不到）；只剩围栏 → [kSrsLocationNewRootMissing]（新根多半被整个删了，要用户处理）。围栏也不能当 meta 交给
+  // 握手——那正是绕过这道闸的路。内核 `location_root` 按同一组证据再判一次。
+  final bool v4Data =
+      meta4 == null && (locs.isNotEmpty || await _srsV4HasData(location));
   if (meta4 == null && (srsIsOldRootFence(meta3) || v4Data)) {
-    report.error = kSrsSync2MetaUnavailable;
+    report.error = v4Data
+        ? kSrsSync2MetaUnavailable
+        : kSrsLocationNewRootMissing;
     return null;
   }
   final _SrsMetaView view = _SrsMetaView(location, meta4 ?? meta3);
@@ -521,10 +540,7 @@ Future<SrsLocationRoot?> srsSync4LocationRoot({
       'has3': meta3 != null,
       'has2': has2,
       'v4Data': v4Data,
-      'locs': <String>[
-        for (final SrsLocationEntry e in await location.list('loc'))
-          if (!e.isFolder) e.name,
-      ],
+      'locs': locs,
       'enableKdf': view.writtenKdf,
     },
     blobs: <Uint8List>[?meta4, ?meta3],
@@ -538,8 +554,9 @@ Future<SrsLocationRoot?> srsSync4LocationRoot({
     // 只有协议 1 旧根：错误就是机读码本身（[kSrsLocationProtocol1Root]），界面按它给专门的升级提示；其余带码的拒绝把
     // 码放在前面。
     final Object? code = root.map['code'];
-    report.error = code == kSrsLocationProtocol1Root
-        ? kSrsLocationProtocol1Root
+    report.error =
+        code == kSrsLocationProtocol1Root || code == kSrsLocationNewRootMissing
+        ? code! as String
         : code == kSrs4MetaUnavailableCode
         ? kSrsSync2MetaUnavailable
         : code == null

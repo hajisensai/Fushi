@@ -6,6 +6,7 @@
 import 'dart:io';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
+import 'package:flutter/foundation.dart' show ValueListenable, ValueNotifier;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -125,6 +126,7 @@ Future<void> _pump(
   required bool apple,
   Size size = const Size(1100, 2400),
   Future<SrsDeferredProfileMerge?> Function()? deferredMerge,
+  ValueListenable<Set<String>>? heritagePending,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -140,6 +142,8 @@ Future<void> _pump(
           srsDeferredProfileMergeReaderProvider.overrideWithValue(
             deferredMerge,
           ),
+        if (heritagePending != null)
+          srsHeritagePendingProvider.overrideWithValue(heritagePending),
       ],
       child: TranslationProvider(
         child: MaterialApp(
@@ -374,6 +378,42 @@ void main() {
         () async => row.evaluate().isEmpty,
         reason: 'deferred row disappears after the merge completes',
       );
+      expect(row, findsNothing);
+      expect(tester.takeException(), isNull);
+      await _close(tester, env);
+    });
+
+    testWidgets('[$ds] 有待确认的旧设备承袭日志：状态卡提示等确认，确认 / 拒绝后（集合变空）消失', (
+      WidgetTester tester,
+    ) async {
+      final ValueNotifier<Set<String>> pending = ValueNotifier<Set<String>>(
+        const <String>{},
+      );
+      addTearDown(pending.dispose);
+      final _Env env = await _open(tester);
+      await _pump(tester, env, apple: apple, heritagePending: pending);
+      await _pumpUntil(
+        tester,
+        find.byKey(const ValueKey<String>('srs_timeline_status_summary')),
+      );
+      final Finder row = find.byKey(
+        const ValueKey<String>('srs_timeline_status_heritage_unvouched'),
+      );
+      expect(row, findsNothing);
+
+      pending.value = const <String>{'dev-old', 'dev-older'};
+      await tester.pump();
+      expect(row, findsOneWidget);
+      expect(
+        find.descendant(
+          of: row,
+          matching: find.text(t.srs_sync_heritage_unvouched(n: 2)),
+        ),
+        findsOneWidget,
+      );
+
+      pending.value = const <String>{};
+      await tester.pump();
       expect(row, findsNothing);
       expect(tester.takeException(), isNull);
       await _close(tester, env);

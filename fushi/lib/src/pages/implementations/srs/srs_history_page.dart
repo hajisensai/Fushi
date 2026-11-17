@@ -72,15 +72,11 @@ import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 final ValueListenable<Set<String>> _noPeersNotJoined =
     ValueNotifier<Set<String>>(const <String>{});
 
-/// 同上，「旧设备的数据等确认」提示行听的空集合。
-final ValueListenable<Set<String>> _noHeritageUnvouched =
-    ValueNotifier<Set<String>>(const <String>{});
-
-/// 「旧设备的数据等确认」提示行（[SrsSyncScheduler.heritageUnvouched] 非空时显示）：本机有那几台设备的旧历史，
-/// 因为它们在本机还待确认 / 已被拒绝，不替它们传到位置上；在下面的设备列表里确认后下一轮补传。
-Widget srsHeritageUnvouchedRow(Set<String> unvouched) => AdaptiveSettingsRow(
+/// 「旧设备的数据等确认」提示行（[srsHeritagePendingProvider] 非空时显示）：本机有那几台设备的旧历史，因为它们在本机
+/// 还待确认，不替它们传到位置上；在下面的设备列表里确认后下一轮补传。已拒绝的设备不提示（用户有意为之）。
+Widget srsHeritagePendingRow(Set<String> pending) => AdaptiveSettingsRow(
   key: const ValueKey<String>('srs_timeline_status_heritage_unvouched'),
-  title: t.srs_sync_heritage_unvouched(n: unvouched.length),
+  title: t.srs_sync_heritage_unvouched(n: pending.length),
   subtitle: t.srs_sync_heritage_unvouched_hint,
   icon: FushiIcons.warning,
   showIcon: true,
@@ -750,6 +746,10 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
                 message: kSrsLocationProtocol1Root,
               ))
                 t.srs_sync_location_protocol1_root
+              else if (errors[l.id] case SrsSyncReportError(
+                message: kSrsLocationNewRootMissing,
+              ))
+                t.srs_sync_location_new_root_missing
               else if (errors.containsKey(l.id))
                 t.srs_timeline_location_unavailable
               else
@@ -993,15 +993,15 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
     final ValueListenable<Set<String>> peersNotJoined =
         ref.read(srsAppRuntimeProvider)?.sync.peersNotJoined ??
         _noPeersNotJoined;
-    // 本机扣着不替传的旧设备承袭日志（G10-4）：调度器最近一轮承袭上传问到的。
-    final ValueListenable<Set<String>> heritageUnvouched =
-        ref.read(srsAppRuntimeProvider)?.sync.heritageUnvouched ??
-        _noHeritageUnvouched;
+    // 本机因作者待确认而扣着不替传的旧设备承袭日志（G10-4）：调度器最近一轮承袭上传问到的。
+    final ValueListenable<Set<String>> heritagePending = ref.read(
+      srsHeritagePendingProvider,
+    );
     // 状态数字是上次重读时的快照；同步在跑时它们正在变，不能说「都已同步」，
     // 摘要行换成进行中的阶段与进度，对端行的「没收到」换成「正在接收」。
     return ValueListenableBuilder<Set<String>>(
-      valueListenable: heritageUnvouched,
-      builder: (BuildContext context, Set<String> unvouched, _) =>
+      valueListenable: heritagePending,
+      builder: (BuildContext context, Set<String> heritage, _) =>
           ValueListenableBuilder<Set<String>>(
             valueListenable: peersNotJoined,
             builder: (BuildContext context, Set<String> notJoined, _) =>
@@ -1047,8 +1047,8 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
                             icon: FushiIcons.schedule,
                             showIcon: true,
                           ),
-                        if (unvouched.isNotEmpty)
-                          srsHeritageUnvouchedRow(unvouched),
+                        if (heritage.isNotEmpty)
+                          srsHeritagePendingRow(heritage),
                         if (deferred != null)
                           AdaptiveSettingsRow(
                             key: const ValueKey<String>(
