@@ -9,6 +9,7 @@ import 'package:fushi/src/media/novel/online/lnreader_book_download.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
 import 'package:fushi/src/media/novel/online/lnreader_online_book.dart';
+import 'package:fushi/src/media/novel/online/online_novel_chapter_loader.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:path/path.dart' as p;
@@ -345,11 +346,14 @@ void main() {
       final String dir = loader.extractDir;
       final String second = lnReaderOnlineChapterFile(dir, 1).path;
 
-      final List<bool> results = await Future.wait(<Future<bool>>[
-        loader.ensureLoaded(second),
-        loader.ensureLoaded(second),
-      ]);
-      expect(results, <bool>[true, true]);
+      final List<OnlineNovelChapterLoaded?> results = await Future.wait(
+        <Future<OnlineNovelChapterLoaded?>>[
+          loader.ensureLoaded(second),
+          loader.ensureLoaded(second),
+        ],
+      );
+      expect(results, everyElement(isNotNull));
+      expect(results.first!.index, 1);
       expect(runtime.calls.where((String c) => c == 'chapter:/2').length, 1);
 
       final String xhtml = File(second).readAsStringSync();
@@ -367,12 +371,18 @@ void main() {
         greaterThan(0),
       );
       expect((counts[0]! as Map<String, Object?>)['characters'], 0);
+      // 新字数同时交回调用方（阅读器据此换掉内存里那一章的字数，BUG-4791），
+      // 与写进书行的是同一个数。
+      expect(
+        results.first!.characters,
+        (counts[1]! as Map<String, Object?>)['characters'],
+      );
 
       // 已取过的章不再取；不是正文文件的请求不管。
-      expect(await loader.ensureLoaded(second), isFalse);
+      expect(await loader.ensureLoaded(second), isNull);
       expect(
         await loader.ensureLoaded(p.join(dir, 'OEBPS', 'nav.xhtml')),
-        isFalse,
+        isNull,
       );
 
       // 预取的下一章在后台落盘。
@@ -393,7 +403,7 @@ void main() {
       final String dir = loader.extractDir;
       expect(
         await loader.ensureLoaded(lnReaderOnlineChapterFile(dir, 1).path),
-        isTrue,
+        isNotNull,
       );
       // 第三章在后台预取落盘——阅读器自己的相邻章预热可能在此之前已把它的占位
       // 页读进了缓存。
@@ -401,10 +411,91 @@ void main() {
       final String third = lnReaderOnlineChapterFile(dir, 2).path;
       expect(File(third).readAsStringSync(), contains('第三章の本文'));
 
-      expect(await loader.ensureLoaded(third), isTrue);
+      final OnlineNovelChapterLoaded? acknowledged = await loader.ensureLoaded(
+        third,
+      );
+      expect(acknowledged?.index, 2);
+      // 预取时算好的字数留到确认这一刻才交出去：阅读器只能在翻到这一章（导航
+      // 中）时换字数，预取落盘那会儿用户还在读上一章。
+      expect(acknowledged?.characters, greaterThan(0));
       expect(runtime.calls.where((String c) => c == 'chapter:/3').length, 1);
       // 确认过一次就不再报。
-      expect(await loader.ensureLoaded(third), isFalse);
+      expect(await loader.ensureLoaded(third), isNull);
+    });
+
+    test('顺序连读：翻到已被预取的章照样接着预取再下一章（不是隔一章才预取一次）', () async {
+      const List<LnReaderChapter> five = <LnReaderChapter>[
+        LnReaderChapter(name: '一', path: '/1'),
+        LnReaderChapter(name: '二', path: '/2'),
+        LnReaderChapter(name: '三', path: '/3'),
+        LnReaderChapter(name: '四', path: '/4'),
+        LnReaderChapter(name: '五', path: '/5'),
+      ];
+      final String key = await library().ensureBook(
+        plugin: plugin,
+        novel: const LnReaderNovel(
+          name: 'テスト小説',
+          path: '/novel',
+          chapters: five,
+          totalPages: 1,
+        ),
+        pendingText: 'PENDING',
+      );
+      final LnReaderOnlineChapterLoader loader = await loaderFor(key);
+      final String dir = loader.extractDir;
+      String chapter(int index) => lnReaderOnlineChapterFile(dir, index).path;
+      List<String> fetched() =>
+          runtime.calls.where((String c) => c.startsWith('chapter:')).toList();
+
+      // 开第一章：亲手取它，预取第二章。
+      expect(await loader.ensureLoaded(chapter(0)), isNotNull);
+      await loader.whenIdle();
+      expect(fetched(), <String>['chapter:/1', 'chapter:/2']);
+
+      // 一章一章往后翻：每翻到一章（都已被预取，本次什么都不用取），再下一章
+      // 就该已经在后台取好——前台从头到尾没等过网络。
+      for (int index = 1; index < five.length; index++) {
+        expect(
+          File(chapter(index)).readAsStringSync(),
+          isNot(contains(kLnReaderPendingChapterAttribute)),
+          reason: '翻到第 ${index + 1} 章时它应已被预取',
+        );
+        expect(await loader.ensureLoaded(chapter(index)), isNotNull);
+        await loader.whenIdle();
+      }
+      expect(fetched(), <String>[
+        'chapter:/1',
+        'chapter:/2',
+        'chapter:/3',
+        'chapter:/4',
+        'chapter:/5',
+      ]);
+
+      // 回头重进已确认过的章：不再报、也不再触发预取。
+      expect(await loader.ensureLoaded(chapter(2)), isNull);
+      await loader.whenIdle();
+      expect(fetched().length, 5);
+    });
+
+    test('关书（dispose）之后不再取章', () async {
+      final String key = await library().ensureBook(
+        plugin: plugin,
+        novel: novel,
+        pendingText: 'PENDING',
+      );
+      final LnReaderOnlineChapterLoader loader = await loaderFor(key);
+      final String first = lnReaderOnlineChapterFile(loader.extractDir, 0).path;
+      loader.dispose();
+      expect(await loader.ensureLoaded(first), isNull);
+      await loader.whenIdle();
+      expect(
+        runtime.calls.where((String c) => c.startsWith('chapter:')),
+        isEmpty,
+      );
+      expect(
+        File(first).readAsStringSync(),
+        contains(kLnReaderPendingChapterAttribute),
+      );
     });
 
     test('在线源平台门没过（iOS 合规 / Linux）：不建加载器，也不碰 LNReader 管理器', () async {
@@ -445,7 +536,7 @@ void main() {
       expect(File(first).readAsStringSync(), contains('PENDING'));
 
       runtime.failingChapters = <String>{};
-      expect(await loader.ensureLoaded(first), isTrue);
+      expect(await loader.ensureLoaded(first), isNotNull);
       await loader.whenIdle();
 
       await manager.uninstall(manager.installed.single);
@@ -467,7 +558,7 @@ void main() {
         await loader.ensureLoaded(
           lnReaderOnlineChapterFile(loader.extractDir, 1).path,
         ),
-        isTrue,
+        isNotNull,
       );
       await loader.whenIdle();
 
@@ -544,7 +635,7 @@ void main() {
         chaptersJson: chaptersJson(4),
       );
       final File second = lnReaderOnlineChapterFile(loader.extractDir, 1);
-      expect(await loader.ensureLoaded(second.path), isFalse);
+      expect(await loader.ensureLoaded(second.path), isNull);
       expect(
         second.readAsStringSync(),
         contains(kLnReaderPendingChapterAttribute),

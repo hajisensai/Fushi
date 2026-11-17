@@ -20,6 +20,7 @@ import 'package:fushi/src/media/novel/online/lnreader_source_browse_page.dart';
 import 'package:fushi/src/media/novel/online/novel_online_sources_gate.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/media_sources_page.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_audio/fushi_audio.dart' show Bookmark;
@@ -360,6 +361,23 @@ void main() {
     expect(
       ((counts[1]! as Map<String, Object?>)['characters']! as num) > 50,
       isTrue,
+    );
+    // BUG-4791：阅读器内存里那一章的字数也得换成正文的（进度 / 统计按它算），
+    // 不能停在开书时读到的占位页字数。预取落盘的第 3 章还没翻到、没经拦截层
+    // 确认，内存里仍是占位页的字数（翻到时才换，免得丢掉当前未结算的单元）。
+    final List<int>? liveCounts = ReaderFushiPage.debugChapterCharCounts
+        ?.call();
+    debugPrint('[lnreader-itest] reader in-memory chars=$liveCounts');
+    expect(liveCounts, isNotNull, reason: '阅读器应已挂上字数钩子');
+    expect(
+      liveCounts![1],
+      (counts[1]! as Map<String, Object?>)['characters'],
+      reason: '取章后内存字数应与书行里的新字数一致',
+    );
+    expect(
+      liveCounts[2],
+      lessThan(((counts[2]! as Map<String, Object?>)['characters']! as num)),
+      reason: '预取的章要等翻到它时才换字数',
     );
     await popAll(tester, appModel);
   });
