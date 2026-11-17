@@ -1961,8 +1961,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
 
   /// 把远端视频上用户导入 / 重定时得到的字幕 [path] 上传到互联 host，设为该集默认
   /// 字幕（host 让位旧 sidecar，见 `VideoSubtitleDefaultHost`）。本机的应用与持久化
-  /// 已经完成，上传失败只提示、不回滚。host 的 sidecar 只能挂在主视频文件旁，
-  /// host 播放列表里的第 2 集起（集下标 > 0）没有落点，跳过。
+  /// 已经完成，上传失败只提示、不回滚。host 播放列表的第 N 集带集下标，host 落到那一集
+  /// 文件旁；老 host 不认集下标时 backend 不上传（见 `putRemoteVideoSubtitleAsDefault`）。
   ///
   /// 设置「导入的字幕自动上传到服务端」（`video_subtitle_auto_upload_to_host`）关掉
   /// 时直接返回：不发请求、不提示，字幕只在本机生效——上传会改掉所有 peer 在这一
@@ -1973,7 +1973,6 @@ extension _VideoSubtitle on _VideoFushiPageState {
         _remoteHostVideoTarget();
     if (target == null) return;
     final (InterconnectSyncBackend backend, String id, int episode) = target;
-    if (episode > 0) return;
     final String? suffix = defaultSidecarSubtitleSuffix(
       p.extension(path),
       langCode: _targetLangCode,
@@ -1988,6 +1987,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
         id,
         File(path),
         suffix: suffix,
+        episodeIndex: episode,
       );
     } catch (e, st) {
       ErrorLogService.instance.log('video.uploadRemoteSubtitle', e, st);
@@ -3274,9 +3274,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
 
   /// 「生成字幕」嵌进工作台工具栏的选项面板（[VideoSubtitleStudioActions.generatePanel]）：
   /// 与 [_openJapaneseSubtitlePipeline] / [_openRemoteJapaneseSubtitlePipeline] 同一个
-  /// 面板、同一套参数，只是不另起弹层——本机视频嵌本机管线面板，互联远端视频嵌 host
-  /// 管线面板。管线认不到这一集时返回 null（不在媒体库里、蓝光、非互联的远端流、host
-  /// 播放列表第 2 集起）：这些只有本机转录一条路，工作台退回「生成字幕」那一行按钮走
+  /// 面板、同一套参数，只是不另起弹层——本机视频嵌本机管线面板，互联远端视频（含 host
+  /// 播放列表的任意一集）嵌 host 管线面板。管线认不到这一集时返回 null（蓝光、非互联
+  /// 的远端流）：这些只有本机转录一条路，工作台退回「生成字幕」那一行按钮走
   /// [_openSubtitleGeneration]，转录弹层盖在工作台上。
   Future<WidgetBuilder?> _subtitleStudioGeneratePanel(
     VideoPlayerController controller,
@@ -3295,23 +3295,24 @@ extension _VideoSubtitle on _VideoFushiPageState {
           _remoteHostVideoTarget();
       if (host == null) return null;
       final (InterconnectSyncBackend _, String videoId, int episode) = host;
-      // host 任务认不到播放列表里第 2 集起的文件：只剩本机转录。
-      if (episode > 0) return null;
-      final String title = _title ?? _effectiveRemoteInfo?.title ?? videoId;
+      final RemoteVideoSubtitleTarget remoteTarget = _remoteHostSubtitleTarget(
+        videoId,
+        episode,
+      );
       final RemoteVideoSubtitleService remoteService =
           appRemoteVideoSubtitleService(appModel);
       return (BuildContext context) => RemoteVideoSubtitleSheet(
         embedded: true,
         service: remoteService,
-        target: RemoteVideoSubtitleTarget(
-          title: title,
-          episodes: <RemoteVideoSubtitleEpisode>[
-            RemoteVideoSubtitleEpisode(videoId: videoId, title: title),
-          ],
-        ),
+        target: remoteTarget,
         prefs: PrefsRepoVideoSubtitleGeneratePrefs(appModel.prefsRepo),
         onJobStarted: (RemoteVideoSubtitleJob job) => unawaited(
-          _applyRemotePipelineSubtitleWhenDone(controller, job, videoId),
+          _applyRemotePipelineSubtitleWhenDone(
+            controller,
+            job,
+            videoId,
+            episode,
+          ),
         ),
         onTranscribeInApp: inApp,
       );
@@ -3648,7 +3649,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
 
   /// 互联远端视频：在放视频的 host 上跑同一条管线（[RemoteVideoSubtitleService]），
   /// AI 用 host 自己的指派；结束后取回的 SRT 走「远端视频加外挂字幕」同一条路加载。
-  /// host 播放列表从第 2 集起 host 任务认不到那一集的文件，直接说明。
+  /// host 播放列表的第 N 集带集下标交给 host（host 按集解析那一集的文件）。
   Future<void> _openRemoteJapaneseSubtitlePipeline(
     VideoPlayerController controller, {
     VideoSubtitleInAppTranscribe? onTranscribeInApp,
@@ -3657,56 +3658,74 @@ extension _VideoSubtitle on _VideoFushiPageState {
         _remoteHostVideoTarget();
     if (host == null) return;
     final (InterconnectSyncBackend _, String videoId, int episode) = host;
-    if (episode > 0) {
-      // host 管线认不到这一集，本机转录（host 照样能裁音轨）不受影响。
-      if (onTranscribeInApp != null) {
-        await _generateSubtitleWithSpeechModel(controller);
-        return;
-      }
-      _showOsd(
-        t.video_subtitle_ai_remote_episode_unsupported,
-        severity: ToastSeverity.warning,
-      );
-      return;
-    }
-    final String title = _title ?? _effectiveRemoteInfo?.title ?? videoId;
     await showRemoteVideoSubtitleSheet(
       context: context,
       service: appRemoteVideoSubtitleService(appModel),
-      target: RemoteVideoSubtitleTarget(
-        title: title,
-        episodes: <RemoteVideoSubtitleEpisode>[
-          RemoteVideoSubtitleEpisode(videoId: videoId, title: title),
-        ],
-      ),
+      target: _remoteHostSubtitleTarget(videoId, episode),
       prefs: PrefsRepoVideoSubtitleGeneratePrefs(appModel.prefsRepo),
       onJobStarted: (RemoteVideoSubtitleJob job) => unawaited(
-        _applyRemotePipelineSubtitleWhenDone(controller, job, videoId),
+        _applyRemotePipelineSubtitleWhenDone(controller, job, videoId, episode),
       ),
       onTranscribeInApp: onTranscribeInApp,
     );
   }
 
-  /// 远端任务结束后：页面还停在这一集就加载取回的 SRT（并入字幕轨列表、调轴归零）。
-  /// host 已经在它那边的视频旁写了字幕，这里不再上传回去。
+  /// host 管线的单集目标：host 上的 ([videoId], 集下标 [episode])。播放列表的集名取剧集
+  /// 面板那一集的名字（与选集列表同口径），单视频 / 合集成员取视频标题。
+  RemoteVideoSubtitleTarget _remoteHostSubtitleTarget(
+    String videoId,
+    int episode,
+  ) {
+    final _PlaylistEpisodeRef? ref =
+        !_isRemoteCollection && _isPlaylist && episode < _episodes.length
+        ? _episodes[episode]
+        : null;
+    final String title =
+        (ref == null ? null : ref.displayTitle ?? ref.title) ??
+        _title ??
+        _effectiveRemoteInfo?.title ??
+        videoId;
+    return RemoteVideoSubtitleTarget(
+      title: title,
+      episodes: <RemoteVideoSubtitleEpisode>[
+        RemoteVideoSubtitleEpisode(
+          videoId: videoId,
+          episodeIndex: episode,
+          title: title,
+        ),
+      ],
+    );
+  }
+
+  /// 远端任务结束后：页面还停在 host 上的这一集（[videoId], 集下标 [episodeIndex]）就
+  /// 加载取回的 SRT（并入字幕轨列表、调轴归零）。host 已经在它那边那一集的视频旁写了
+  /// 字幕，这里不再上传回去。
   Future<void> _applyRemotePipelineSubtitleWhenDone(
     VideoPlayerController controller,
     RemoteVideoSubtitleJob job,
     String videoId,
+    int episodeIndex,
   ) async {
     final int loadSeq = _episodeLoadSeq;
     await job.done;
     if (!mounted ||
         !identical(_controller, controller) ||
         _episodeLoadSeq != loadSeq ||
-        _effectiveRemoteInfo?.id != videoId ||
         job.status != RemoteVideoSubtitleJobStatus.succeeded) {
+      return;
+    }
+    // 换集（同一播放列表的另一集同 videoId）后不能把这一集的字幕挂到别的集上。
+    final (InterconnectSyncBackend, String, int)? current =
+        _remoteHostVideoTarget();
+    if (current == null ||
+        current.$2 != videoId ||
+        current.$3 != episodeIndex) {
       return;
     }
     final RemoteVideoSubtitleEpisodeProgress? episode = job.episodes
         .firstWhereOrNull(
           (RemoteVideoSubtitleEpisodeProgress e) =>
-              e.episode.videoId == videoId,
+              e.episode.matches(videoId, episodeIndex),
         );
     final String? path = episode?.subtitle?.path;
     if (path == null) {

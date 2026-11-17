@@ -15,11 +15,14 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:path/path.dart' as p;
 
-HostJobTarget hostTarget(List<String> kinds) => HostJobTarget(
+HostJobTarget hostTarget(
+  List<String> kinds, {
+  Map<String, Object?> capability = const <String, Object?>{},
+}) => HostJobTarget(
   baseUrl: 'http://host-a.invalid:8080',
   deviceName: 'Desk PC',
   kinds: kinds,
-  capability: const <String, Object?>{},
+  capability: capability,
 );
 
 /// host 替身：每次 [run] 按脚本推进一集。
@@ -178,6 +181,94 @@ void main() {
     expect(job.episodes.single.status, 'exported');
     expect(svc.latestJobFor(single), same(job));
     expect(svc.activeJob, isNull);
+  });
+
+  group('host 播放列表第 2 集起（集下标 > 0）', () {
+    const RemoteVideoSubtitleTarget episode2 = RemoteVideoSubtitleTarget(
+      title: 'K-ON 02',
+      episodes: <RemoteVideoSubtitleEpisode>[
+        RemoteVideoSubtitleEpisode(
+          videoId: 'v1',
+          episodeIndex: 1,
+          title: 'K-ON 02',
+        ),
+      ],
+    );
+
+    test(
+      '老 host（capability 没有 acceptsEpisode）：episodeUnsupported，不提交任务',
+      () async {
+        final FakeHostPort host = FakeHostPort(
+          target: hostTarget(
+            <String>['video_subtitle'],
+            capability: const <String, Object?>{
+              'video_subtitle': <String, Object?>{'acceptsVideoId': true},
+            },
+          ),
+          script: exportEpisode,
+        );
+        final RemoteVideoSubtitleJob job = service(
+          host,
+        ).start(episode2, const RemoteVideoSubtitleOptions());
+        await job.done;
+        expect(job.status, RemoteVideoSubtitleJobStatus.episodeUnsupported);
+        expect(host.submitted, isEmpty, reason: '老 host 会静默跑第 1 集，一个任务都不能发');
+      },
+    );
+
+    test('老 host 上的第 1 集照常提交，不带 episode', () async {
+      final FakeHostPort host = FakeHostPort(
+        target: hostTarget(<String>['video_subtitle']),
+        script: exportEpisode,
+      );
+      final RemoteVideoSubtitleJob job = service(
+        host,
+      ).start(single, const RemoteVideoSubtitleOptions());
+      await job.done;
+      expect(job.status, RemoteVideoSubtitleJobStatus.succeeded);
+      expect(host.submitted.single.containsKey('episode'), isFalse);
+    });
+
+    test('新 host：参数带 episode；同一 videoId 的各集任务键与落盘名互不相同', () async {
+      final FakeHostPort host = FakeHostPort(
+        target: hostTarget(
+          <String>['video_subtitle'],
+          capability: const <String, Object?>{
+            'video_subtitle': <String, Object?>{'acceptsEpisode': true},
+          },
+        ),
+        script: exportEpisode,
+      );
+      final RemoteVideoSubtitleService svc = service(host);
+      final RemoteVideoSubtitleJob first = svc.start(
+        single,
+        const RemoteVideoSubtitleOptions(),
+      );
+      await first.done;
+      final RemoteVideoSubtitleJob second = svc.start(
+        episode2,
+        const RemoteVideoSubtitleOptions(),
+      );
+      await second.done;
+      expect(second.status, RemoteVideoSubtitleJobStatus.succeeded);
+      expect(host.submitted.last, <String, Object?>{
+        'videoId': 'v1',
+        'episode': 1,
+        'proofread': false,
+        'segmenter': 'auto',
+        'mossBackend': 'auto',
+      });
+      expect(single.key, isNot(episode2.key));
+      expect(svc.latestJobFor(single), same(first));
+      expect(svc.latestJobFor(episode2), same(second));
+      final File a = first.episodes.single.subtitle!;
+      final File b = second.episodes.single.subtitle!;
+      expect(a.path, isNot(b.path), reason: '第 2 集取回的字幕不能覆盖第 1 集的');
+      expect(a.existsSync(), isTrue);
+      expect(b.existsSync(), isTrue);
+      expect(second.episodes.single.episode.matches('v1', 1), isTrue);
+      expect(second.episodes.single.episode.matches('v1', 0), isFalse);
+    });
   });
 
   test('host 另出了套样式的 ASS：取回 ASS 而不是 SRT', () async {

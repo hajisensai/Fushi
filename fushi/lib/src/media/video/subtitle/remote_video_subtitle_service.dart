@@ -5,6 +5,10 @@
 ///   时它直接拒绝（400），报错原样给用户，不在本机悄悄改成不校对。
 /// - 老 host 的 capability 里没有 `video_subtitle`：[RemoteVideoSubtitleJobStatus.unsupported]，
 ///   面板给「host 版本不支持」，不发任务。
+/// - host 播放列表（一行 `video_books` 带 `playlistJson`）的第 N 集：任务带
+///   `episode=N`，host 按集解析那一集的文件、字幕写在那一集旁。老 host 不认 `episode`
+///   （会静默跑第 0 集），所以只有 capability 声明 `acceptsEpisode` 才发；否则
+///   [RemoteVideoSubtitleJobStatus.episodeUnsupported]，不发任务。
 /// - 整季（远端合集）：wire 上的远端视频只带合集**名**、不带 host 的合集 id，所以按
 ///   成员逐集提交 `videoId` 任务。host 侧 `SubtitleWorkContextLoader.forBook` 会把合集
 ///   成员解析到同一个作品键（`collection:<host 合集 id>`），各集共用 host 上的同一张
@@ -86,10 +90,22 @@ class RemoteVideoSubtitleEpisode {
   const RemoteVideoSubtitleEpisode({
     required this.videoId,
     required this.title,
+    this.episodeIndex = 0,
   });
 
   final String videoId;
+
+  /// host 上这一行播放列表的集下标（0 = 主视频 / 单视频），与播放端点的
+  /// `?episode=` 同口径。同一个播放列表的各集共用 [videoId]，靠它区分。
+  final int episodeIndex;
   final String title;
+
+  /// (videoId, 集下标) 的稳定标识：任务键、落盘名都按它分。
+  String get key => episodeIndex == 0 ? videoId : '$videoId#$episodeIndex';
+
+  /// 这一集是不是 host 上的 ([videoId], [index])。
+  bool matches(String videoId, int index) =>
+      this.videoId == videoId && episodeIndex == index;
 }
 
 /// 一次远端生成的目标。
@@ -110,7 +126,11 @@ class RemoteVideoSubtitleTarget {
   final List<String> skippedExisting;
 
   String get key =>
-      'remote:${episodes.map((RemoteVideoSubtitleEpisode e) => e.videoId).join('|')}';
+      'remote:${episodes.map((RemoteVideoSubtitleEpisode e) => e.key).join('|')}';
+
+  /// 有没有 host 播放列表第 2 集起的集（要 host 声明 `acceptsEpisode`）。
+  bool get needsEpisodeSupport =>
+      episodes.any((RemoteVideoSubtitleEpisode e) => e.episodeIndex > 0);
 }
 
 /// 远端任务的选项（AI 提供商是 host 自己的，不在这里）。
@@ -140,6 +160,10 @@ enum RemoteVideoSubtitleJobStatus {
 
   /// host 版本不支持 `video_subtitle`。
   unsupported,
+
+  /// host 支持 `video_subtitle`，但版本太老、不认播放列表的集下标（capability 没有
+  /// `acceptsEpisode`）：发过去会静默跑第 1 集，所以不发。
+  episodeUnsupported,
 
   /// 连不上放视频的 host。
   unreachable,
@@ -236,6 +260,13 @@ VideoSubtitleStage? parseRemoteVideoSubtitleStage(String? message) {
   return null;
 }
 
+/// host 的 `video_subtitle` 能力里有没有 `acceptsEpisode`（认播放列表集下标）。老 host
+/// 没有这个位：它不校验未知参数，收到 `episode` 会照第 0 集跑完并把结果当第 N 集回。
+bool hostAcceptsVideoSubtitleEpisode(HostJobTarget target) {
+  final Object? entry = target.capability[kVideoSubtitleJobKind];
+  return entry is Map && entry['acceptsEpisode'] == true;
+}
+
 /// host 报错的原话：HTTP 错误体是 `{"error": "..."}` 时取 `error`，否则原样。
 String remoteVideoSubtitleErrorText(Object error) {
   if (error is HostJobRemoteException) {
@@ -320,6 +351,11 @@ class RemoteVideoSubtitleService {
         job._finish(RemoteVideoSubtitleJobStatus.unsupported);
         return;
       }
+      if (job.target.needsEpisodeSupport &&
+          !hostAcceptsVideoSubtitleEpisode(target)) {
+        job._finish(RemoteVideoSubtitleJobStatus.episodeUnsupported);
+        return;
+      }
       job.status = RemoteVideoSubtitleJobStatus.running;
       job._changed();
       final Directory root = await _workRoot();
@@ -376,6 +412,7 @@ class RemoteVideoSubtitleService {
       target: target,
       params: <String, Object?>{
         'videoId': e.episode.videoId,
+        if (e.episode.episodeIndex > 0) 'episode': e.episode.episodeIndex,
         'proofread': job.options.proofread,
         'segmenter': job.options.segmenter.name,
         'mossBackend': job.options.mossBackend.name,
@@ -460,7 +497,7 @@ class RemoteVideoSubtitleService {
     final Directory dir = await _subtitlesDir();
     await dir.create(recursive: true);
     final String key = sha256
-        .convert(utf8.encode('${target.baseUrl}|${e.episode.videoId}'))
+        .convert(utf8.encode('${target.baseUrl}|${e.episode.key}'))
         .toString()
         .substring(0, 12);
     final File dest = File(

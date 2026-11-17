@@ -106,6 +106,7 @@ void main() {
     RemoteVideoSubtitleService svc, {
     _Prefs? prefs,
     VideoSubtitleInAppTranscribe? onTranscribeInApp,
+    RemoteVideoSubtitleTarget sheetTarget = target,
   }) async {
     tester.view
       ..physicalSize = const Size(900, 1400)
@@ -116,7 +117,7 @@ void main() {
         home: Scaffold(
           body: RemoteVideoSubtitleSheet(
             service: svc,
-            target: target,
+            target: sheetTarget,
             prefs: prefs ?? _Prefs(),
             onTranscribeInApp: onTranscribeInApp,
           ),
@@ -326,6 +327,78 @@ void main() {
       expect(prefs.consented, isTrue);
       expect(prefs.framesConsented, isTrue);
       expect(toggle, findsOneWidget);
+    });
+  });
+
+  group('host 播放列表第 2 集起', () {
+    const RemoteVideoSubtitleTarget episode2 = RemoteVideoSubtitleTarget(
+      title: 'K-ON 02',
+      episodes: <RemoteVideoSubtitleEpisode>[
+        RemoteVideoSubtitleEpisode(
+          videoId: 'v1',
+          episodeIndex: 1,
+          title: 'K-ON 02',
+        ),
+      ],
+    );
+
+    testWidgets('老 host（没报 acceptsEpisode）：明确提示更新 host，「开始」不可点，本机转录照常可用', (
+      WidgetTester tester,
+    ) async {
+      final List<bool> handedOff = <bool>[];
+      await pump(
+        tester,
+        service(_Host(const <String>['video_subtitle'])),
+        sheetTarget: episode2,
+        onTranscribeInApp: ({required bool proofread}) =>
+            handedOff.add(proofread),
+      );
+      expect(
+        find.byKey(
+          const ValueKey<String>('remote-subtitle-episode-unsupported'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining(t.video_subtitle_ai_remote_episode_host_outdated),
+        findsOneWidget,
+      );
+      expect(startPressed(tester), isNull);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('remote-subtitle-save-beside')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('remote-subtitle-transcribe-start')),
+      );
+      await tester.pumpAndSettle();
+      expect(handedOff, <bool>[false]);
+    });
+
+    testWidgets('新 host（acceptsEpisode）：「开始」可点，提交带集下标', (
+      WidgetTester tester,
+    ) async {
+      final _Host host = _Host(
+        const <String>['video_subtitle'],
+        capability: const <String, Object?>{
+          'video_subtitle': <String, Object?>{'acceptsEpisode': true},
+        },
+      );
+      await pump(tester, service(host), sheetTarget: episode2);
+      expect(
+        find.byKey(
+          const ValueKey<String>('remote-subtitle-episode-unsupported'),
+        ),
+        findsNothing,
+      );
+      expect(startPressed(tester), isNotNull);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('remote-subtitle-start')),
+      );
+      await tester.pumpAndSettle();
+      expect(host.runs.single['videoId'], 'v1');
+      expect(host.runs.single['episode'], 1);
     });
   });
 

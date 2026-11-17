@@ -12641,7 +12641,7 @@
   "video_subtitle_ai_proofread_hint": "用 AI 修正人名與誤識（預設關閉）",
   "video_subtitle_ai_proofread_label": "AI 校對",
   "video_subtitle_ai_provider": "供應商：${name}（${model}）",
-  "video_subtitle_ai_remote_episode_unsupported": "Generating on the host only works for the first episode of a host playlist",
+  "video_subtitle_ai_remote_episode_host_outdated": "The host's Fushi version is too old to generate subtitles for episode 2 onward of a host playlist. Update Fushi on the host first.",
   "video_subtitle_ai_remote_host": "Runs on ${host}",
   "video_subtitle_ai_remote_host_error": "Host error: ${reason}",
   "video_subtitle_ai_remote_probing": "Connecting to the host…",

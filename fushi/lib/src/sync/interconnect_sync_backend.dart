@@ -2865,12 +2865,19 @@ class InterconnectSyncBackend extends SyncBackend
   /// 只有 host 回了实际落盘后缀（响应头 [kSubtitleSuffixHeader]，新语义才有；
   /// 改名前的 host 只回旧名，按 [interconnectHeaderNameCandidates] 回退）才算
   /// [RemoteSubtitleDefaultUpload.applied]。网络 / 其余 HTTP 失败照常抛。
+  ///
+  /// [episodeIndex] > 0（host 播放列表第 N 集）带 `?episode=N`，host 落到那一集文件
+  /// 旁。要 host 声明 `liveLibrary.videoSubtitleDefaultEpisode`：老 host 不认 `episode`，
+  /// 会落到第 0 集旁、压掉第 0 集的默认字幕，所以不支持时同样不发请求。
   Future<RemoteSubtitleDefaultUpload> putRemoteVideoSubtitleAsDefault(
     String id,
     File file, {
     required String suffix,
+    int episodeIndex = 0,
   }) async {
-    if (!await hostSupportsVideoSubtitleDefault()) {
+    final Map<Object?, Object?> live = await _liveLibraryCapabilities();
+    if (live['videoSubtitleDefault'] != true ||
+        (episodeIndex > 0 && live['videoSubtitleDefaultEpisode'] != true)) {
       return RemoteSubtitleDefaultUpload.hostUnsupported;
     }
     final HttpClientResponse res = await _sendVideoSubtitle(
@@ -2878,6 +2885,7 @@ class InterconnectSyncBackend extends SyncBackend
       file,
       suffix: suffix,
       asDefault: true,
+      episodeIndex: episodeIndex,
     );
     String? placed;
     for (final String name in interconnectHeaderNameCandidates(
@@ -2905,11 +2913,13 @@ class InterconnectSyncBackend extends SyncBackend
     File file, {
     required String suffix,
     required bool asDefault,
+    int episodeIndex = 0,
   }) async {
     await _ensureResolved();
     final HttpClientRequest req = await _ops!.buildRequest(
       'PUT',
-      '$_apiBase/api/library/videos/${_encodeVideoId(id)}/subtitle',
+      '$_apiBase/api/library/videos/${_encodeVideoId(id)}/subtitle'
+          '${episodeIndex > 0 ? '?episode=$episodeIndex' : ''}',
     );
     final int length = await file.length();
     req.headers.set('Content-Type', 'application/octet-stream');
@@ -2927,17 +2937,22 @@ class InterconnectSyncBackend extends SyncBackend
     return await req.close();
   }
 
-  /// [hostSupportsVideoSubtitleDefault] 的缓存：按 host 基址分槽（后端是进程级单例，
+  /// [_liveLibraryCapabilities] 的缓存：按 host 基址分槽（后端是进程级单例，
   /// 换 host / 换链路就重探）。探测失败（网络 / 超时）不入缓存，下次再探。
   String? _subtitleDefaultCapabilityScope;
-  bool? _subtitleDefaultCapability;
+  Map<Object?, Object?>? _subtitleDefaultCapability;
 
   /// host 的 `/api/capabilities` 是否声明 `liveLibrary.videoSubtitleDefault == true`。
   /// 老 host 没有该字段（或整个端点 404）→ false。同一 host 基址只探一次。
-  Future<bool> hostSupportsVideoSubtitleDefault() async {
+  Future<bool> hostSupportsVideoSubtitleDefault() async =>
+      (await _liveLibraryCapabilities())['videoSubtitleDefault'] == true;
+
+  /// host `/api/capabilities` 的 `liveLibrary` 段（端点 404 / 没有该段 → 空表）。同一
+  /// host 基址只探一次。
+  Future<Map<Object?, Object?>> _liveLibraryCapabilities() async {
     await _ensureResolved();
     final String scope = _apiBase;
-    final bool? cached = _subtitleDefaultCapability;
+    final Map<Object?, Object?>? cached = _subtitleDefaultCapability;
     if (cached != null && _subtitleDefaultCapabilityScope == scope) {
       return cached;
     }
@@ -2946,18 +2961,18 @@ class InterconnectSyncBackend extends SyncBackend
       '$_apiBase/api/capabilities',
     );
     final HttpClientResponse res = await _sendBounded(req);
-    bool supported = false;
+    Map<Object?, Object?> live = const <Object?, Object?>{};
     if (res.statusCode == 404 || res.statusCode == 405) {
       await res.drain<void>();
     } else {
       _ops!.checkStatus(res.statusCode, 'GET /api/capabilities');
       final Object? decoded = jsonDecode(await _readBodyBounded(res));
-      final Object? live = decoded is Map ? decoded['liveLibrary'] : null;
-      supported = live is Map && live['videoSubtitleDefault'] == true;
+      final Object? section = decoded is Map ? decoded['liveLibrary'] : null;
+      if (section is Map) live = Map<Object?, Object?>.of(section);
     }
     _subtitleDefaultCapabilityScope = scope;
-    _subtitleDefaultCapability = supported;
-    return supported;
+    _subtitleDefaultCapability = live;
+    return live;
   }
 
   // ── 画质档（弱网可用）────────────────────────────────────────────────────

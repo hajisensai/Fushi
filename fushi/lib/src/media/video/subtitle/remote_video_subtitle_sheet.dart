@@ -188,7 +188,18 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
     });
   }
 
-  bool get _supported => _host?.supports(kVideoSubtitleJobKind) ?? false;
+  bool get _hostSupportsKind => _host?.supports(kVideoSubtitleJobKind) ?? false;
+
+  /// 目标里有 host 播放列表第 2 集起的集，而 host 没声明 `acceptsEpisode`（老 host
+  /// 会静默跑第 1 集）。
+  bool get _episodeBlocked {
+    final HostJobTarget? host = _host;
+    return host != null &&
+        widget.target.needsEpisodeSupport &&
+        !hostAcceptsVideoSubtitleEpisode(host);
+  }
+
+  bool get _supported => _hostSupportsKind && !_episodeBlocked;
 
   /// host 的校对提供商能不能收图（capability 的 `framesAvailable`）；null = 老 host
   /// 不认画面参考，面板不显示这个开关、也不带参数。
@@ -322,10 +333,17 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
         error: true,
       );
     }
-    if (!_supported) {
+    if (!_hostSupportsKind) {
       return _hint(
         t.video_subtitle_ai_remote_unsupported,
         key: const ValueKey<String>('remote-subtitle-unsupported'),
+        error: true,
+      );
+    }
+    if (_episodeBlocked) {
+      return _hint(
+        t.video_subtitle_ai_remote_episode_host_outdated,
+        key: const ValueKey<String>('remote-subtitle-episode-unsupported'),
         error: true,
       );
     }
@@ -569,6 +587,8 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
     ),
     RemoteVideoSubtitleJobStatus.unsupported =>
       t.video_subtitle_ai_remote_unsupported,
+    RemoteVideoSubtitleJobStatus.episodeUnsupported =>
+      t.video_subtitle_ai_remote_episode_host_outdated,
     RemoteVideoSubtitleJobStatus.unreachable =>
       t.video_subtitle_ai_remote_unreachable,
     RemoteVideoSubtitleJobStatus.failed =>
@@ -592,6 +612,7 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
     final bool bad =
         job.status == RemoteVideoSubtitleJobStatus.failed ||
         job.status == RemoteVideoSubtitleJobStatus.unsupported ||
+        job.status == RemoteVideoSubtitleJobStatus.episodeUnsupported ||
         job.status == RemoteVideoSubtitleJobStatus.unreachable;
     return FushiCard(
       key: const ValueKey<String>('remote-subtitle-job-card'),

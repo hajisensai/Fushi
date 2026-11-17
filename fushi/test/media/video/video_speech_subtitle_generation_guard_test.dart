@@ -101,10 +101,17 @@ void main() {
         .split('Future<void> _openRemoteJapaneseSubtitlePipeline(')[1]
         .split('Future<void> _applyRemotePipelineSubtitleWhenDone(')[0];
     expect(remote, contains('onTranscribeInApp: onTranscribeInApp'));
-    expect(
-      remote,
-      contains('await _generateSubtitleWithSpeechModel(controller)'),
-    );
+    // host 播放列表的任意一集都交给 host 管线（带集下标），本机转录作为面板里的
+    // 「保存」选项保留；不再按集下标放弃 host 管线。
+    expect(remote, contains('_remoteHostSubtitleTarget(videoId, episode)'));
+    expect(remote, contains('episodeIndex: episode'));
+    expect(remote, isNot(contains('episode > 0')));
+    final String studioPanel = source
+        .split('Future<WidgetBuilder?> _subtitleStudioGeneratePanel(')[1]
+        .split('final String? videoPath = _currentVideoPath;')[0];
+    expect(studioPanel, contains('_remoteHostSubtitleTarget('));
+    expect(studioPanel, contains('onTranscribeInApp: inApp'));
+    expect(studioPanel, isNot(contains('episode > 0')));
 
     final String transcribe = source
         .split('Future<String?> _transcribeVideoSpeech(')[1]

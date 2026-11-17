@@ -12641,7 +12641,7 @@
   "video_subtitle_ai_proofread_hint": "用 AI 修正人名与误识（默认关）",
   "video_subtitle_ai_proofread_label": "AI 校对",
   "video_subtitle_ai_provider": "提供商：${name}（${model}）",
-  "video_subtitle_ai_remote_episode_unsupported": "host 播放列表从第 2 集起不支持在 host 上生成字幕",
+  "video_subtitle_ai_remote_episode_host_outdated": "host 上的 Fushi 版本太旧，不能为 host 播放列表第 2 集起生成字幕，请先更新 host。",
   "video_subtitle_ai_remote_host": "在 ${host} 上运行",
   "video_subtitle_ai_remote_host_error": "host 报错：${reason}",
   "video_subtitle_ai_remote_probing": "正在连接 host…",

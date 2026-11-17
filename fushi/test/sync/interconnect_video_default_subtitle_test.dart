@@ -93,6 +93,28 @@ Future<File> _seedVideo(FushiDatabase db, Directory dir) async {
   return vid;
 }
 
+/// host 播放列表（一行带 `playlistJson`）：第 0 集 = `ep1.mp4`，第 1 集 = `ep2.mp4`。
+Future<(File, File)> _seedPlaylist(FushiDatabase db, Directory dir) async {
+  final File ep1 = File(p.join(dir.path, 'ep1.mp4'))
+    ..writeAsBytesSync(<int>[1, 2, 3]);
+  final File ep2 = File(p.join(dir.path, 'ep2.mp4'))
+    ..writeAsBytesSync(<int>[4, 5, 6]);
+  await db.upsertVideoBook(
+    VideoBooksCompanion.insert(
+      bookUid: 'video/show',
+      title: 'Show',
+      videoPath: ep1.path,
+      playlistJson: Value<String?>(
+        jsonEncode(<Map<String, String>>[
+          <String, String>{'title': 'EP1', 'path': ep1.path},
+          <String, String>{'title': 'EP2', 'path': ep2.path},
+        ]),
+      ),
+    ),
+  );
+  return (ep1, ep2);
+}
+
 void main() {
   group('纯函数', () {
     test('defaultSidecarSubtitleSuffix 取学习语言标记组，非字幕格式为 null', () {
@@ -184,6 +206,56 @@ void main() {
       final VideoBookRow row = (await db.getVideoBookByBookUid('video/movie'))!;
       expect(row.subtitleSource, landed.path);
       expect(row.subtitleFormat, 'ass');
+    });
+
+    test('播放列表第 N 集：落到那一集文件旁、让位同集旧档，第 0 集的库行与字幕不动', () async {
+      final Directory vidDir = Directory(p.join(work.path, 'vids'))
+        ..createSync(recursive: true);
+      final (File ep1, File ep2) = await _seedPlaylist(db, vidDir);
+      final File ep1Ja = File(p.join(vidDir.path, 'ep1.ja.srt'))
+        ..writeAsStringSync(_srtOriginal);
+      final File ep2Ja = File(p.join(vidDir.path, 'ep2.ja.srt'))
+        ..writeAsStringSync(_srtOriginal);
+      final File upload = File(p.join(work.path, 'upload.tmp'))
+        ..writeAsStringSync(_srtUploaded);
+      final LocalLibraryHostService svc = _hostService(db: db, work: work);
+
+      final String placed = await svc.importDefaultVideoSubtitle(
+        upload,
+        id: 'video/show',
+        format: 'srt',
+        episodeIndex: 1,
+      );
+
+      expect(placed, '.ja.srt');
+      expect(ep2Ja.readAsStringSync(), _srtUploaded);
+      expect(
+        File('${ep2Ja.path}$kDisplacedSidecarBackupSuffix').readAsStringSync(),
+        _srtOriginal,
+      );
+      expect(ep1Ja.readAsStringSync(), _srtOriginal, reason: '第 0 集的字幕不能被压掉');
+      expect(
+        (await svc.resolveVideoSubtitle('video/show', episodeIndex: 1))?.path,
+        ep2Ja.path,
+      );
+      final VideoBookRow row = (await db.getVideoBookByBookUid('video/show'))!;
+      expect(row.videoPath, ep1.path);
+      expect(row.subtitleSource, isNull, reason: '行上的字幕源属于第 0 集');
+      expect(await db.getCuesForBook('video/show'), isEmpty);
+      expect(ep2.existsSync(), isTrue);
+
+      // 越界的集：StateError（端点 404），不退回第 0 集。
+      final File again = File(p.join(work.path, 'upload2.tmp'))
+        ..writeAsStringSync(_srtUploaded);
+      expect(
+        () => svc.importDefaultVideoSubtitle(
+          again,
+          id: 'video/show',
+          format: 'srt',
+          episodeIndex: 2,
+        ),
+        throwsStateError,
+      );
     });
 
     test('连续上传：原始文件只备份一次，之前的上传产物直接替换', () async {
@@ -293,6 +365,11 @@ void main() {
           (json['liveLibrary'] as Map<String, dynamic>)['videoSubtitleDefault'],
           isTrue,
         );
+        expect(
+          (json['liveLibrary']
+              as Map<String, dynamic>)['videoSubtitleDefaultEpisode'],
+          isTrue,
+        );
       } finally {
         http.close(force: true);
       }
@@ -333,6 +410,28 @@ void main() {
         'video/movie',
       ))!;
       expect(row.subtitleSource, oldJa.path);
+    });
+
+    test('播放列表第 N 集：client 带集下标上传，host 落到那一集旁并成为它的首选字幕', () async {
+      final (File _, File ep2) = await _seedPlaylist(hostDb, vidDir);
+      final InterconnectSyncBackend backend = await _clientBackend(
+        base: base,
+        token: token,
+      );
+      final File sub = File(p.join(work.path, 'picked.srt'))
+        ..writeAsStringSync(_srtUploaded);
+      expect(
+        await backend.putRemoteVideoSubtitleAsDefault(
+          'video/show',
+          sub,
+          suffix: '.ja.srt',
+          episodeIndex: 1,
+        ),
+        RemoteSubtitleDefaultUpload.applied,
+      );
+      final File landed = File(p.join(p.dirname(ep2.path), 'ep2.ja.srt'));
+      expect(landed.readAsStringSync(), _srtUploaded);
+      expect(File(p.join(vidDir.path, 'ep1.ja.srt')).existsSync(), isFalse);
     });
 
     // 改名前（Hibiki）的 client 只发 X-Hibiki-* 请求头、只读 x-hibiki-subtitle-suffix
@@ -516,6 +615,30 @@ void main() {
         expect(capabilityProbes, 1, reason: '同一 host 基址的能力位只探一次（缓存）');
       });
     }
+
+    test('认默认字幕但没声明 videoSubtitleDefaultEpisode：第 N 集不上传（会压掉第 0 集）', () async {
+      capabilities = <String, dynamic>{
+        'liveLibrary': <String, dynamic>{'videoSubtitleDefault': true},
+      };
+      final List<int> before = hostJa.readAsBytesSync();
+      final InterconnectSyncBackend backend = await _clientBackend(
+        base: base,
+        token: 'old-host-token',
+      );
+      final File sub = File(p.join(work.path, 'picked.srt'))
+        ..writeAsStringSync(_srtUploaded);
+      expect(
+        await backend.putRemoteVideoSubtitleAsDefault(
+          'video/movie',
+          sub,
+          suffix: '.ja.srt',
+          episodeIndex: 1,
+        ),
+        RemoteSubtitleDefaultUpload.hostUnsupported,
+      );
+      expect(subtitlePuts, 0);
+      expect(hostJa.readAsBytesSync(), before);
+    });
 
     test('能力位为 true 时才上传（假 host 的覆盖语义证明门确实在 PUT 之前）', () async {
       capabilities = <String, dynamic>{
