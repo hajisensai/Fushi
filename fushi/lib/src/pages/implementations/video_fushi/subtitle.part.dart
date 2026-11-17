@@ -1255,24 +1255,28 @@ extension _VideoSubtitle on _VideoFushiPageState {
     if (source.isEmbedded) {
       // 内封轨缓存未命中要整轨抽取（慢盘上一分钟以上）：不上锁菜单的加载遮罩，改在字幕
       // 面板顶部显示「正在读取完整字幕」+ 停止入口（[_EmbeddedTextFullLoad]）。
-      result = await loadSubtitleCueResult(
-        source,
-        videoPath,
-        bookUid,
-        cancel: _embeddedSubtitleExtractCancelFor(videoPath),
-        onExtractionStarted: () {
-          if (!stillChosen()) return;
-          _rebuild(
-            () => _secondaryEmbeddedFullLoad = _EmbeddedTextFullLoad(
-              label: source.label,
-              videoPath: videoPath,
-              selectSeq: selectSeq,
-            ),
-          );
-        },
-      );
-      if (mounted && _secondaryEmbeddedFullLoad?.selectSeq == selectSeq) {
-        _rebuild(() => _secondaryEmbeddedFullLoad = null);
+      try {
+        result = await loadSubtitleCueResult(
+          source,
+          videoPath,
+          bookUid,
+          cancel: _embeddedSubtitleExtractCancelFor(videoPath),
+          onExtractionStarted: () {
+            if (!stillChosen()) return;
+            _rebuild(
+              () => _secondaryEmbeddedFullLoad = _EmbeddedTextFullLoad(
+                label: source.label,
+                videoPath: videoPath,
+                selectSeq: selectSeq,
+              ),
+            );
+          },
+        );
+      } finally {
+        // 任何返回 / 异常路径都撤下读取行，不留一行永远在转的「正在读取」。
+        if (mounted && _secondaryEmbeddedFullLoad?.selectSeq == selectSeq) {
+          _rebuild(() => _secondaryEmbeddedFullLoad = null);
+        }
       }
     } else {
       // 副字幕只在播放器侧（设置面板 / 遥控 / CLI）选，第二屏面板没有副字幕入口。
@@ -3256,7 +3260,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
               : 'video-subtitle-full-load-cancel',
         ),
         tooltip: t.video_subtitle_full_load_stop,
-        icon: const FushiIcon(Icons.stop_circle_outlined),
+        icon: const FushiIcon(FushiIcons.stop),
         onPressed: _cancelEmbeddedTextFullLoad,
       ),
     );
@@ -4421,33 +4425,40 @@ extension _VideoSubtitle on _VideoFushiPageState {
       // 直出容器同一条回流），字幕面板顶部显示「正在读取完整字幕」+ 停止入口
       // （[_EmbeddedTextFullLoad]）；用户随时可以停止读取、改选别的轨 / 关字幕 / 选外挂，
       // 本次结果按 [selectSeq] 作废。抽完把边播边累积的 cue 换成完整列表。
-      result = await loadSubtitleCueResult(
-        source,
-        videoPath,
-        bookUid,
-        cancel: _embeddedSubtitleExtractCancelFor(videoPath),
-        onExtractionStarted: () {
-          if (!stillChosen()) return;
-          _rebuild(
-            () => _primaryEmbeddedFullLoad = _EmbeddedTextFullLoad(
-              label: source.label,
-              videoPath: videoPath,
-              selectSeq: selectSeq,
-            ),
-          );
-          final int? streamIndex = source.streamIndex;
-          if (streamIndex == null) return;
-          bridge = controller.beginEmbeddedTextBridge(streamIndex).then((
-            Object? token,
-          ) {
-            if (token != null && stillChosen()) {
-              _rebuild(() => _currentSubtitleSource = persisted);
-              _showOsd(t.video_subtitle_full_load_live(label: source.label));
-            }
-            return token;
-          });
-        },
-      );
+      try {
+        result = await loadSubtitleCueResult(
+          source,
+          videoPath,
+          bookUid,
+          cancel: _embeddedSubtitleExtractCancelFor(videoPath),
+          onExtractionStarted: () {
+            if (!stillChosen()) return;
+            _rebuild(
+              () => _primaryEmbeddedFullLoad = _EmbeddedTextFullLoad(
+                label: source.label,
+                videoPath: videoPath,
+                selectSeq: selectSeq,
+              ),
+            );
+            final int? streamIndex = source.streamIndex;
+            if (streamIndex == null) return;
+            bridge = controller.beginEmbeddedTextBridge(streamIndex).then((
+              Object? token,
+            ) {
+              if (token != null && stillChosen()) {
+                _rebuild(() => _currentSubtitleSource = persisted);
+                _showOsd(t.video_subtitle_full_load_live(label: source.label));
+              }
+              return token;
+            });
+          },
+        );
+      } finally {
+        // 任何返回 / 异常路径都撤下读取行，不留一行永远在转的「正在读取」。
+        if (mounted && _primaryEmbeddedFullLoad?.selectSeq == selectSeq) {
+          _rebuild(() => _primaryEmbeddedFullLoad = null);
+        }
+      }
     } else {
       // 外挂文件解析很快：沿用加载状态（锁菜单的时间可以忽略）。
       _showSubtitleLoadingOverlay(origin: origin);
@@ -4458,9 +4469,6 @@ extension _VideoSubtitle on _VideoFushiPageState {
       }
     }
     final Object? bridgeToken = await bridge;
-    if (mounted && _primaryEmbeddedFullLoad?.selectSeq == selectSeq) {
-      _rebuild(() => _primaryEmbeddedFullLoad = null);
-    }
     if (!stillChosen()) return false;
     // 桥装上过、但已被别的路径换掉了字幕（不经本页选择世代的换源）：同样作废。
     if (bridgeToken != null &&
