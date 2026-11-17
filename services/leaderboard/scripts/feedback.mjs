@@ -35,7 +35,7 @@
 //
 
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -368,8 +368,20 @@ export function formatShow(row, messages) {
 
 // ---- wrangler ----
 
+/**
+ * 本服务目录下装的 wrangler 入口。新 worktree 没有 node_modules（setup_worktree 不装 npm 依赖）：
+ * 缺了直接报「先 npm ci」，而不是让 node 吐一段 Cannot find module 被包成「wrangler 失败（1）」。
+ */
+export function wranglerBin(serviceDir = SERVICE_DIR) {
+  const bin = join(serviceDir, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
+  if (!existsSync(bin)) {
+    throw new Error(`缺 wrangler（${bin} 不存在）：先在 ${serviceDir} 下执行 npm ci 装依赖，再重跑本命令`);
+  }
+  return bin;
+}
+
 function wrangler(args, { binary = false } = {}) {
-  const bin = join(SERVICE_DIR, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
+  const bin = wranglerBin();
   const res = spawnSync(process.execPath, [bin, ...args, '--config', join(SERVICE_DIR, 'wrangler.toml')], {
     cwd: SERVICE_DIR,
     encoding: binary ? 'buffer' : 'utf8',

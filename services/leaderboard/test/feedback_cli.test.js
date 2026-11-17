@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { call, makeEnv, nextIp, registerUser } from './harness.js';
@@ -6,7 +9,7 @@ import { hex, sha256 } from '../src/util.js';
 import {
   attachmentFileName, devAccountSql, downloadableAttachments, dupLookupSql, existingIdsSql, fixedSql, formatShow, gzipPayload, inlineSql, listSql, missingIds,
   newEntries, newSql, parseArgs, parseWranglerJson, pickDevAccount, r2WhereArgs, replySql, showSql, sqlText,
-  statusRowSql, statusSql, summarizeBatchSql, summarizeSql,
+  statusRowSql, statusSql, summarizeBatchSql, summarizeSql, wranglerBin,
 } from '../scripts/feedback.mjs';
 
 const NOW = Date.UTC(2026, 9, 10, 4);
@@ -167,6 +170,19 @@ describe('scripts/feedback.mjs', () => {
     expect(parseArgs(['fixed', a, '--sha', sha, '--no-app'])).toEqual({ cmd: 'fixed', id: a, rest: [], flags: { sha, 'no-app': true } });
     expect(inlineSql('SELECT ?1, ?2, ?3', ["it's", 5, null])).toBe(`SELECT ${sqlText("it's")}, 5, NULL`);
     expect(() => inlineSql('SELECT ?1', [1.5])).toThrow(/不支持/);
+  });
+
+  it('wranglerBin：新 worktree 没装依赖时报「先 npm ci」，装了返回入口路径', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'fushi-wrangler-bin-'));
+    try {
+      expect(() => wranglerBin(dir)).toThrow(/npm ci/);
+      const bin = join(dir, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
+      mkdirSync(join(dir, 'node_modules', 'wrangler', 'bin'), { recursive: true });
+      writeFileSync(bin, '');
+      expect(wranglerBin(dir)).toBe(bin);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('解析 wrangler 输出（前面可能多一行代理提示）与参数', () => {
