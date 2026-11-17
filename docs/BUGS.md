@@ -33,16 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4138 条。点号进各自文件。
+> 共 4139 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4783](bugs/BUG-4783-video-fingerprint-inflight-dedupe.md) | ✅ | ✅ | host 端视频指纹没有在途去重：同一文件并发请求各自整文件算一遍 SHA-256 |
 | [BUG-4782](bugs/BUG-4782-remote-fingerprint-unavailable-404-bypass.md) | ✅ | ✅ | 新 host 算指纹失败也回 404，client 当成老 host 直接放行，绕过字节核验 |
-| [BUG-4781](bugs/BUG-4781-video-fingerprint-inflight-dedupe.md) | ✅ | ✅ | host 端视频指纹没有在途去重：同一文件并发请求各自整文件算一遍 SHA-256 |
-> 共 4137 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
 | [BUG-4781](bugs/BUG-4781-subtitle-panel-effects-toggle-clipped.md) | ✅ | ✅ | 经典版式字幕列表收藏档里「显示特效字幕」开关被挤出可视区，窄面板要横向拖才看得到 |
 | [BUG-4780](bugs/BUG-4780-srs-text-import-progress-stop-empty-decks.md) | ✅ | ✅ | 文本导入纯更新时进度一直是 0、点不了停止；叫停后牌组列新建的牌组留成空牌组 |
 | [BUG-4779](bugs/BUG-4779-srs-browse-source-sort-episode-split.md) | ✅ | ✅ | 复习卡浏览按出处列排序时同一部番的笔记被别作同名集拆散，与出处视图的集顺序不一致 |
