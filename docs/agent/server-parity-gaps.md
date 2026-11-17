@@ -204,3 +204,9 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
   recorded in `media_sources` with `mediaKind = 'audiobook'`. This value is server-only:
   it is not in the shared `SourceLibraryKind` enum, because adding it would touch every
   exhaustive switch in the app.
+- **AI library curator** (`docs/specs/2026-11-18-ai-library-curator-design.md` §14.2): the server
+  has no `ai.library_curate`. The curator runs every write through the op catalog, and the
+  server catalog (`admin_ops.dart` / `ServerAgentToolbox`) only has `server.*` ops: none of
+  `library.organize.run`, the scrape claims or `links.infer`. Link inference also depends on the
+  app-only snapshot loader in `fushi/lib/src/media/links/media_link_inference_host.dart`. Needed
+  first: an undoable server `library.organize.run` and a host hook for link inference.
