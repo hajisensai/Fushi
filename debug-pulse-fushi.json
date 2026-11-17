@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-17T18:00:57Z",
+ "generatedAt": "2026-11-17T18:07:50Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "171902833840b7788ccae1bc580c0326663e0232",
-  "seq": 28647
+  "sha": "0565a15895da1a3328fda8fe47436f0cf182a28c",
+  "seq": 28650
  },
  "builds": [
   {
@@ -104,9 +104,10 @@
   }
  ],
  "pending": {
-  "headSha": "171902833840b7788ccae1bc580c0326663e0232",
-  "headSeq": 28647,
+  "headSha": "0565a15895da1a3328fda8fe47436f0cf182a28c",
+  "headSeq": 28650,
   "prs": [
+   3702,
    3716,
    3722
   ],
@@ -115,19 +116,19 @@
   "platforms": {
    "android": {
     "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44142854065"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44144059814"
    },
    "windows": {
     "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44142853667"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44144059486"
    },
    "macos": {
     "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44142853667"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44144059486"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44142853667"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44144059486"
    }
   }
  },
@@ -256,6 +257,15 @@
    "mergedAt": "2026-11-17T10:24:18Z",
    "additions": 148,
    "deletions": 5,
+   "labels": []
+  },
+  "3702": {
+   "number": 3702,
+   "title": "perf(manga): 在线漫画开章只等本地就绪、广告候选页有界并发、搜索排队取消",
+   "author": "W1ght",
+   "mergedAt": "2026-11-17T18:05:25Z",
+   "additions": 881,
+   "deletions": 53,
    "labels": []
   },
   "3716": {
