@@ -653,7 +653,7 @@ class _EdgeLabel extends StatelessWidget {
     );
     final Widget chip = DecoratedBox(
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHigh,
+        color: FushiDesignTokens.of(context).surfaces.search,
         borderRadius: FushiBorderRadius.card,
         border: Border.all(color: color, width: edge.suggested ? 1 : 1.5),
       ),
