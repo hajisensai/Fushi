@@ -14,6 +14,7 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
@@ -429,7 +430,7 @@ class _VideoFrameCoverPickerDialogState
     return Row(
       children: <Widget>[
         FushiIconButton(
-          icon: Icons.replay_10,
+          icon: FushiIcons.replay10,
           tooltip: t.video_bottom_seek_back,
           onTap: () => _seekTo(_positionMs - kVideoFrameCoverStepMs),
         ),
@@ -444,7 +445,7 @@ class _VideoFrameCoverPickerDialogState
           ),
         ),
         FushiIconButton(
-          icon: Icons.forward_10,
+          icon: FushiIcons.forward10,
           tooltip: t.video_bottom_seek_forward,
           onTap: () => _seekTo(_positionMs + kVideoFrameCoverStepMs),
         ),

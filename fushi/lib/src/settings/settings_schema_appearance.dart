@@ -289,7 +289,7 @@ SettingsDestination buildAppearanceDestination() {
             id: 'appearance.eink_full_refresh_interval',
             title: t.eink_full_refresh_interval,
             subtitle: t.eink_full_refresh_interval_hint,
-            icon: Icons.autorenew,
+            icon: FushiIcons.refresh,
             dropdown: true,
             options: <SettingsSegmentOption<int>>[
               for (final int interval in kEinkFullRefreshIntervalChoices)
@@ -310,7 +310,7 @@ SettingsDestination buildAppearanceDestination() {
             id: 'appearance.eink_full_refresh_method',
             title: t.eink_full_refresh_method,
             subtitle: t.eink_full_refresh_method_hint,
-            icon: Icons.flash_on_outlined,
+            icon: FushiIcons.brightnessAuto,
             visible: (SettingsContext settingsContext) =>
                 settingsContext.appModel.einkFullRefreshInterval > 0,
             options: <SettingsSegmentOption<EinkFullRefreshMethod>>[
