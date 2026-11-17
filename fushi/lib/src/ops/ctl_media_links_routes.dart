@@ -433,6 +433,8 @@ Map<String, Object?> mediaLinkViewJson(MediaLinkView v) => <String, Object?>{
   'id': mediaLinkIdJson(v.id),
   'relation': v.row.relation,
   'state': v.state.name,
+  // 谁让它生效（user / ai）；建议没有这个键。
+  if (mediaLinkConfirmerOf(v.row) case final String by) 'confirmedBy': by,
   // 另一端是连接的 from 还是 to（adaptation 的 from = 原作，theme_song 的 from = 音乐）。
   'otherIs': v.otherIsFrom ? 'from' : 'to',
   'other': <String, Object?>{

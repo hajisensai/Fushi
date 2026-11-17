@@ -13,7 +13,8 @@ import 'package:fushi/src/ops/op_descriptions_library.dart' show opUndoDisplay;
 /// - 关联作品 / 移除关联 → `restoreMediaLinkSnapshot` 把这一行恢复成执行前的快照
 ///   （执行前没有这一行就写墓碑，不删行）；
 /// - 查找相关作品 → `discardMediaLinkSuggestion` 删掉这轮刚写入、用户还没处理过的
-///   建议（不写墓碑：撤销推断不是否决，下次推断仍可再提）；
+///   建议，`revertAiMediaLink` 撤回这轮 AI 直接生效、用户还没确认 / 否决的连接
+///   （都不写墓碑：撤销推断不是否决，下次推断仍可再提）；
 /// - 确认 / 否决同一人 → `restoreManualPersonBridge` 把这一对的手动桥恢复成执行前
 ///   （执行前没有就删掉）。
 /// 执行后用户又处理过（确认 / 否决 / 改判）的，撤销报 superseded、不覆盖。
@@ -157,10 +158,12 @@ List<OpDescription> describeMediaLinksOps(OpDescribeKit kit) {
       method: 'POST',
       pattern: '$kMediaLinksCtlRoot/:endpoint/infer',
       summary:
-          'Find related works for an item and store them as suggestions '
-          '(shared external ids, MAL source material, title match). Queries '
-          'MAL / Wikidata; when an LLM is assigned to "media links" the '
-          'candidates are also sent to that LLM for a verdict. Slow.',
+          'Find related works for an item (shared external ids, MAL source '
+          'material, title match). Strong evidence and high-confidence LLM '
+          'verdicts are linked directly (confirmed_by=ai, undoable); the rest '
+          'are stored as suggestions. Queries MAL / Wikidata; when an LLM is '
+          'assigned to "media links" the candidates are also sent to that LLM '
+          'for a verdict. Slow.',
       risk: OpRisk.write,
       params: const <OpParam>[_endpointParam],
       undo: opCustomUndo(
@@ -173,19 +176,23 @@ List<OpDescription> describeMediaLinksOps(OpDescribeKit kit) {
               ],
             },
         describe: (Map<String, Object?> p) =>
-            '${(p['ids'] as List? ?? const <Object?>[]).length} suggestion(s)',
+            '${(p['ids'] as List? ?? const <Object?>[]).length} link(s)',
         revert: (Map<String, Object?> payload) async {
           final List<Object?> ids =
               payload['ids'] as List? ?? const <Object?>[];
           int discarded = 0;
           for (final Object? raw in ids) {
             final MediaLinkId? id = mediaLinkIdFromJson(raw);
-            if (id != null && await db().discardMediaLinkSuggestion(id)) {
+            if (id == null) continue;
+            // 这一轮新写的行：建议直接删；AI 生效的退回「之前没有」（删行、不留
+            // 否决墓碑）。用户之后确认 / 否决过的两者都拒绝，算已被处理。
+            if (await db().discardMediaLinkSuggestion(id) ||
+                await db().revertAiMediaLink(id)) {
               discarded++;
             }
           }
           if (ids.isNotEmpty && discarded == 0) {
-            return const OpUndoOutcome.superseded('这些建议都已被处理过');
+            return const OpUndoOutcome.superseded('这些连接都已被处理过');
           }
           return OpUndoOutcome.done(
             discarded < ids.length ? '已撤回 $discarded 条，其余已被处理过，保留' : null,

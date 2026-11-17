@@ -47,12 +47,15 @@ Future<Set<int>> applyOrganizeActions(
             if (!present.contains('${r.mediaType}\u0000${r.entryKey}')) {
               continue;
             }
-            await db.removeFromCollectionRaw(
-              c.id,
-              r.mediaType,
-              r.entryKey,
-              userIntent: false,
-            );
+            // 自动移出入口：用户亲手放进来 / 撤销过移出的成员（pinned）拒绝移出，
+            // 不改合集所有权（AI 库管家设计稿 §7）。
+            final CollectionAutoRemoveResult result = await db
+                .removeFromCollectionAutomatically(
+                  c.id,
+                  r.mediaType,
+                  r.entryKey,
+                );
+            if (result != CollectionAutoRemoveResult.removed) continue;
             removed.add(r);
           }
         }
@@ -269,7 +272,7 @@ Future<void> _record(
 /// - 并入：移出这次加的成员（写成员墓碑，AI 不再放回）；
 /// - 合并：按快照把败方重建成**用户的**合集、把它的成员从胜方移回，胜方也转成用户的
 ///   （用户说了这几个不是一个，收敛不会再合用户的合集）；
-/// - 移出：把成员放回；
+/// - 移出：把成员放回并钉住（pinned_by_user，AI 不再移它）；
 /// - 标签：摘掉这次打的标签。
 /// 找不到目标（已被删 / 改名）的那一处跳过，不报错。返回实际撤销的处数。
 Future<int> undoLibraryOrganizeChanges(
@@ -327,8 +330,16 @@ Future<int> undoLibraryOrganizeChanges(
               origin: CollectionOrigin.ai,
               organizeKey: r.organizeKey,
             );
+        // 撤销移出 = 用户否决这次移出：成员加回去并钉住（pinned），任何设备上的
+        // AI 都不再移它；不接手合集所有权（AI 库管家设计稿 §7）。
         for (final ({String t, String k}) m in _members(payload['members'])) {
-          await db.addToCollectionRaw(id, m.t, m.k, userIntent: false);
+          await db.addToCollectionRaw(
+            id,
+            m.t,
+            m.k,
+            userIntent: false,
+            pinnedByUser: true,
+          );
         }
         did = true;
       case 'merge':

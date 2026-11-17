@@ -261,8 +261,9 @@ Future<List<MediaLinkCandidate>> collectMediaLinkCandidates({
   return out;
 }
 
-/// 跑一轮以 [self] 为中心的推断并写成建议，返回新增建议数。AI 已指派（且 AI 模块
-/// 开着）时候选先经 AI 裁决；AI 失败提示用户并退回只写确定性建议。
+/// 跑一轮以 [self] 为中心的推断（用户手动触发：[MediaLinkInferenceTrigger.manual]
+/// 门槛），返回新写入的连接数（直接生效 + 建议）。AI 已指派（且 AI 模块开着）时
+/// 候选先经 AI 裁决；AI 失败提示用户并退回只跑确定性规则。
 Future<int> runMediaLinkInference({
   required FushiDatabase db,
   required MediaLinkEndpoint self,
@@ -284,8 +285,9 @@ Future<int> runMediaLinkInference({
       return (await applyMediaLinkCandidates(
         db: db,
         candidates: candidates,
+        trigger: MediaLinkInferenceTrigger.manual,
         judge: judge,
-      )).proposed;
+      )).written;
     } on AiChatFailure {
       FushiToast.show(
         msg: t.media_link_infer_ai_failed,
@@ -296,7 +298,8 @@ Future<int> runMediaLinkInference({
   return (await applyMediaLinkCandidates(
     db: db,
     candidates: candidates,
-  )).proposed;
+    trigger: MediaLinkInferenceTrigger.manual,
+  )).written;
 }
 
 /// 详情页「查找相关作品」按钮的回调（[MediaLinksSection.onInfer]）。音乐端点没有
