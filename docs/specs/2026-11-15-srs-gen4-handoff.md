@@ -3220,3 +3220,82 @@ profile uid 不变」断言，不分 `bound` / `joined`。
 - **BUG-4626 新代并入场景已正式登记为 BUG-4836**（`docs/bugs/BUG-4836-srs-gen4-dangling-op-joins-into-other-collection.md`）：根因
   `file:line`（`gen4/cmd/writes.rs:31` / `:886` 写入口不设闸，`gen4/identity.rs:430` / `:572` 并入无条件并集）、两种修法与复现用例
   全文都在 bug 文件里，交 G9 身份 / 设计；本分支仍不改内核。
+
+## 第五波 导入与写接口（2026-11-18，分支 `pr/srs-gen4-w5-import-write`，基于 `pr/srs-gen4-switch` `3d78fe51d0`）
+
+收第五波审计（规划 §6）里归「导入与写接口」的四项：B4 / C13（回导外来原生日志的排序键）、N6（`.fushisrs` 内核流不带空洞内部
+记号）、N13（写回包没标被同批盖掉的项）、R4 之后剩的两条既有红与 K1 两条 nit。不升 SCHEMA（仍 40021），不加表 / 索引；
+存量持久化名不动。
+
+### ① 回导外来原生日志：排序键由来源数据派生（B4 / C13）
+
+- **根因**：`.apkg` 回导时 Dart `_remapExtLog`（`packages/fushi_engine/lib/srs/apkg/srs_apkg_import.dart`）把别处导出、
+  origin = `fushi` 的原生日志重新挂到本机卡上，内核当新原生操作收下；原生操作不带旧 HLC（设计 §3.4 `native_allowed`），
+  投影回落到操作自己的 HLC（导入时刻 + 本机设备）。后果：一条比本机复习**早**的外来复习排到了本机复习**之后**，成了最后一条
+  有效日志，静默改掉当前排程；两台设备各导一次，排序键各不相同（各自的导入时刻 / 设备），重放结果不一致。
+- **定案**：与 K3（§28）同一层——**日志投影层派生，不进操作**。Dart 在 `_remapExtLog` 给日志的 `extra` 打记号
+  `"foreignLog": true`（键常量 `srsForeignLogKey`，`packages/fushi_srs/lib/src/anki_import_rules.dart`）；内核
+  `anki_import_rules.rs` 的唯一入口 `derived_log_hlc(origin, kind, anki_id, at, extra)`：origin = `anki` 走原来的
+  `anki_source_hlc`，否则 extra 带记号的派生 `{at}:0:fushi`（`at` = 复习发生时刻，写入者固定 `fushi`），其余 None。
+  `cache.rs` `log_body` 与 `cmd/writes.rs` 回包 `logHlcs` 都改用它（两处逐字同口径）。派生只依赖操作体，各设备一致；摘要
+  只含 ID 集合，不受影响。
+- **口径变了要重建**：`CACHE_RULES` 1 → 2（`cache.rs`）。已打开过的库在 `derive_cfg` 里记的是 1，开库时按「推导口径变了」
+  全量重物化一次；不改真相、不丢卡。
+- **同发生时刻的并列**：外来日志 `{at}:0:fushi` 与本机同毫秒的原生日志靠 `history.rs` 冻结的排序键后几位（counter、writer、
+  event_id）定序，各设备算出的相同；不是本波的问题。
+- **测试**：Rust `writes_tests.rs` `a_foreign_native_review_older_than_a_local_one_does_not_reschedule_the_card`（修前红：
+  最后一条有效日志变成外来那条）、`importing_the_same_foreign_logs_twice_changes_nothing`；`sync_tests.rs`
+  `a_foreign_native_log_imported_on_two_devices_keeps_the_local_schedule`（两台设备各导一次，卡行逐列相同、最后一条日志仍是
+  本机那条；修前红）；`anki_import_rules.rs` 单测 `a_marked_foreign_log_sorts_by_when_it_happened`。Dart
+  `srs_apkg_import_test.dart`「回导的外来复习比本机复习早：不改本机当前排程，重导不变」：比的是队列 / 到期时刻 / 最后一条日志
+  ——**不比 `scheduledDays`**：历史前面多了一条复习，重放出来的记忆状态本来就该变，当前排程（由最后一条有效日志定）不变。
+
+### ② `.fushisrs` 内核流第 2 版：空洞带区间内部的链值记号（N6）
+
+- **根因**：K2（§33）在合并别的设备的空洞时留下区间**内部**的切点链值（`log_marks` 里 seq 落在 [区间首, 区间末) 的），之后切
+  承袭段要用；FSRS4EXP 第 1 版的空洞项只有 (首, 长度, 末链值)，导出 → 导入后这些内部记号丢了，导入方之后再切承袭段对不上链。
+- **定案**：`gen4/export.rs` `EXPORT4_VER` 1 → 2（`EXPORT4_VER_OLDEST` = 1，读侧 1..=2 都收）；新项标签 4（`ITEM_VOID_MARKED`）
+  = 空洞 + 内部记号表，只在第 2 版出现，记号必须严格升序、落在 [首, 首 + 长度 − 1) 里，否则整流拒收；没有内部记号的空洞仍写
+  标签 3，字节与第 1 版相同。导入（`store/gen4/import.rs`）对每个记号：本库已知那一格的链值就比对（不一致拒收，同普通原生操作
+  的分叉判定），未知就经 `truth.rs` `land_void_mark` 落在本库同一空洞的内部（不在空洞内部 = 拒收；本机设备 / 已有记号跳过）。
+  第 1 版流照常读（没有记号，行为同以前）；未知版本（0、3、255）拒收。
+- **测试**：`gen4/export.rs` 新 golden `export4_native_void_marks`、冻结的第 1 版头 golden、`older_versions_still_read`、
+  `void_marks_must_sit_inside_their_run`、未知版本拒收；`store/gen4/import_tests.rs` 往返用例改为断言两边内部记号相同
+  （修前红：导入方没有记号）、`a_version_1_stream_still_imports`、`a_void_mark_that_disagrees_with_this_library_is_refused`。
+
+### ③ 写回包标出被同批盖掉的项（N13）
+
+- **根因**：请求带 `editRows` 时，`cmd/writes.rs` `attach_rows` 给被同批后一项盖掉（或实体被同批清除）的修改补的行是 null，
+  可「行是 null」也可能是内核没物化出这一项（真异常）；Dart `_writtenEdits` 分不清，只能一律当错误抛或一律放过。
+- **定案**：回包每项**明确带一列布尔「被盖掉」**：`edits` 项 = `[…, 行 JSON, 服务器时刻, 被盖掉]`，`tagWrites` 项 =
+  `[…, 行 JSON|null, 被盖掉]`。被盖掉 = 行为 null 且（同批后面还有同 (种类, 实体, 键) 的写 / 实体在同批清除集里）；标签整列表
+  写入同理（同批后面还有同一笔记的标签写入 / 笔记被清除，行给 null）。Dart `SrsWrittenItem` 加 `superseded`，
+  `srsWrittenByInput` 读这一列，`_writtenEdits` 跳过被盖掉的，**没标被盖掉却没有行的仍抛**（错误信息写明）。
+- **测试**：Rust `writes_tests.rs` `a_later_write_in_the_same_batch_marks_the_earlier_one_superseded`、`edit_rows` 用例改 10 列；
+  Dart `srs_written_edits_match_test.dart` 新形状、新文件 `srs_written_edits_superseded_test.dart`（真库同批写同一键两次 +
+  标签两次，回 2 项、值是后写的）。
+
+### ④ 既有红定因
+
+- **`srs_exclusive_sites_cost_test.dart` 远程作答**：期望（6 条读、2 条命令）量的是 V1 路由；G10-2 起远程复习走 V2，每个
+  回包的信封带牌组树标签（`srs_remote_store.dart` `_treeWire`），按结构键缓存，服务的第一次调用取一次 `entity_views`。V2 那一轮
+  这条用例还崩在 ID 口径上，从没重量过。实测冷缓存 4 条读 + 3 条命令，先打一次 `hello` 暖上之后 3 条读 + 2 条命令；用例改为
+  先暖、量作答这一站的稳态开销，读的种类仍钉住 `{edits, entities}`。不是回归。
+- **`srs_browse_vectors_test.dart`**：fixture 里的卡 / 笔记 ID 是 G9-7 之前的口径，ID 规则换了，向量全错。重新生成前按
+  「排序字段 + 牌组 + 笔记类型」把新旧 16 张卡一一对上（无歧义、笔记 / 牌组映射一致）逐项核过：行的其余列除两张复习卡的到期
+  天数（重放的 fuzz 以卡 ID 为种子：338→346、344→347）外完全相同；2340 条结果里 396 条不同，**全部**是「同一排序值的两行按 ID
+  定序」的相邻对换，0 条别的差异。浏览语义没变，按文件头允许的方式重新生成，证据写进了用例文件头。
+
+### ⑤ K1 nit
+
+- **AnkiConnect 向量的牌组 / 笔记类型号独立比对**：`srs_ankiconnect_vectors_test.dart` `_renumber` 以前从被测的
+  `deckNamesAndIds` / `modelNamesAndIds` 回答里按名字抄新号，等于自己跟自己比。改为由规则独立算：牌组的新号 =
+  `SrsIds.ankiNumericId(SrsKernelIds.deck(全名))`（`Default` 用 `defaultDeck`）；笔记类型的号是 ankiNum（内置是固定常量、
+  自建是存量属性），迁移不换号，不进映射表、原样比。
+- **`anki_members` 内置模板成员的笛卡尔积不收窄到同盐组合**（记量级，不改）：一张卡的行数 = (1 + 笔记成员数) × (1 + 模板
+  成员数)；k 个盐下内置笔记的卡是 (k+1)² 行，只配同盐是 k+1 行。k 实际 1～2，即每卡 4～9 行对 2～3 行，按卡线性。收窄要逐盐
+  `rules::note(盐, guid)` 认出笔记成员的盐，换来的只是少几行没有旧号的组合，不做；写在 `cache.rs` 文件头「表」那段。
+
+### 没做 / 交给别人
+
+- 本分支没在真机 / 双设备上实测回导与 `.fushisrs` 往返；证据是上面的 Rust / Dart 用例。

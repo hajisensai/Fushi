@@ -275,11 +275,10 @@ List<int> _recordedNotesInfoIds(Map<String, Object?> recorded) {
 /// 迁移前的数字 id → 迁移后的（G9-7：对外给规范 ID 的号 `hash53("anki-id/<规范 ID>")`，带盐的内置实体换了号）。
 ///
 /// 笔记 / 卡片经内核反查（[SrsDbStore.noteIdsForAnkiNumericIds] / [SrsDbStore.cardIdsForAnkiNumericIds]：旧号是
-/// 别名类成员的号，`anki_members` 仍认得），再按规范 ID 算新号；反查不到就是迁移丢了实体，直接失败。牌组 / 笔记类型
-/// AnkiConnect 只按名字对外（`deckNamesAndIds` / `modelNamesAndIds`），按名字对。没有对上的号不在表里（原样比）。
+/// 别名类成员的号，`anki_members` 仍认得），再按规范 ID 算新号；反查不到就是迁移丢了实体，直接失败。牌组按全名由
+/// 规则独立算规范 ID 的号，笔记类型的号不换（见函数里）。没有对上的号不在表里（原样比）。
 Future<Map<int, int>> _renumber(
   SrsDbStore s,
-  SrsAnkiConnectHandler h,
   Map<String, Object?> recorded,
 ) async {
   final Map<int, int> out = <int, int>{};
@@ -306,17 +305,18 @@ Future<Map<int, int>> _renumber(
     s.cardIdsForAnkiNumericIds,
     'card',
   );
-  for (final String action in <String>['deckNamesAndIds', 'modelNamesAndIds']) {
-    final Map<String, Object?> was =
-        ((recorded['$action {}']! as Map)['result']! as Map)
-            .cast<String, Object?>();
-    final Map<String, Object?> now =
-        ((await _ok(h, action, <String, Object?>{}))! as Map)
-            .cast<String, Object?>();
-    for (final MapEntry<String, Object?> e in was.entries) {
-      final Object? n = now[e.key];
-      if (n is int) out[e.value! as int] = n;
-    }
+  // 牌组 / 笔记类型的新号不从被测的回答里抄（那样 deckNamesAndIds / modelNamesAndIds 自己跟自己比，第五波 K1 nit），
+  // 由规则独立算：牌组的号是它规范 ID 的号，规范 ID 按全名（内置默认牌组是常量）向内核的派生规则要；笔记类型的号是
+  // 它的 ankiNum（内置笔记类型是固定常量、自建的是存量属性），迁移不换号，所以不进表、原样比。
+  final SrsKernelIds kernel = SrsKernelIds(kAcVecProfile);
+  final Map<String, Object?> decks =
+      ((recorded['deckNamesAndIds {}']! as Map)['result']! as Map)
+          .cast<String, Object?>();
+  for (final MapEntry<String, Object?> e in decks.entries) {
+    final String canon = e.key == 'Default'
+        ? kernel.defaultDeck
+        : kernel.deck(e.key);
+    out[e.value! as int] = SrsIds.ankiNumericId(canon);
   }
   return out;
 }
@@ -391,7 +391,7 @@ void main() {
     // 旧号 → 新号（G9-7：数字 id 是规范 ID 的号，内置实体换了号；旧号经 `anki_members` 仍能反查）。
     final Map<int, int> renum = write
         ? <int, int>{}
-        : await _renumber(s, h, recorded);
+        : await _renumber(s, recorded);
     final Map<String, Object?> produced = <String, Object?>{};
     Future<void> req(String action, Map<String, Object?> params) async {
       produced['$action ${jsonEncode(params)}'] = await _call(
