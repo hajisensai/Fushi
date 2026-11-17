@@ -482,6 +482,10 @@ const Map<String, _ShellSpecific> _shellSpecific = <String, _ShellSpecific>{
     'VN 重排后的节点 → 原文偏移映射；分页 / 连续的 DOM 就是原文，选区脚本探测不到时用自己的遍历',
   ),
   'getMatchableOffset': _ShellSpecific(_vnOnly, '同 sourceTextOffsetForNode'),
+  'refitScreensToCurrentViewport': _ShellSpecific(
+    _vnOnly,
+    'VN 按当前视口重切屏表、当前屏内容没变就原地不动；分页走几何重锚，连续没有屏表',
+  ),
 };
 
 /// [script]（已掩注释的 shell JS）里是否**定义**了名为 [name] 的方法。认三种写法：
