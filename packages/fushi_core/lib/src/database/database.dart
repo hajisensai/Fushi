@@ -999,7 +999,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 155;
+  int get schemaVersion => 156;
 
   /// v125–v128 四步的产物（全部幂等）：SRS 写路径索引、
   /// `collection_member_tombstones.published_at`、`bookmarks.char_offset` /
@@ -3146,6 +3146,9 @@ class FushiDatabase extends _$FushiDatabase
           );
         }
       }
+      // v156：表结构不变（空迁移）。复习换代第二段（协议 4，G11-4 / D33）把整包备份的复习部分换成按集合导出的
+      // 操作流、服务端备份换成新代复习库：主库 schema 升一档是旧版本拒收新备份的唯一闸门（旧版本见到更新的主库，
+      // 在动任何文件之前拒绝整份备份），本身不改任何表。
     },
     onCreate: (m) async {
       await m.createAll();

@@ -1,5 +1,7 @@
 import 'package:fushi/src/sync/backup_service.dart'
-    show SrsRestoreUnavailableException;
+    show SrsRestoreBlockedException;
+import 'package:fushi_engine/srs/srs_backup_bundle.dart'
+    show SrsBackupTooNewException;
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_core/fushi_core.dart'
@@ -19,9 +21,12 @@ String? _friendlyClause(Object error) {
       url: kLegacySchemaBridgeReleaseUrl,
     );
   }
-  // 复习换代第二段：备份带复习数据、这一版还原不了复习，还原在动任何文件之前拒绝了。
-  if (error is SrsRestoreUnavailableException) {
-    return t.backup_srs_restore_unavailable;
+  // 复习（G11-4）：本机复习库还没升级完 / 备份的复习数据来自更新版本，还原在动任何文件之前拒绝了。
+  if (error is SrsRestoreBlockedException) {
+    return t.backup_srs_restore_blocked;
+  }
+  if (error is SrsBackupTooNewException) {
+    return t.backup_srs_restore_too_new;
   }
   // BUG-1323 / BUG-1348：凡是**有类型可依**的鉴权失败都在这里一次分派掉，绝不落到
   // 下面的字符串猜测区。下面那条 `error is SyncAuthError && l.contains('auth')` 会把

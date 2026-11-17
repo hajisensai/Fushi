@@ -1179,6 +1179,23 @@ Future<void> runBackupImportFlowForFile({
     // 用户取消确认 → 彻底退出遮罩态，回到调用方页面（validating 遮罩已退出）。
     return;
   }
+  // 复习（G11-4）：合并会把备份的复习数据并进本机复习库——来自另一个复习库、或带着本库不认识的旧档案标识 / 设备时
+  // 改的是本库的身份与绑定，必须用户亲自确认。答否 = 只合并其余内容（那样的复习数据不落，本机复习库不动）。预设
+  // （控制通道）不替用户确认这一项。
+  bool srsConfirmed = false;
+  if (preset == null &&
+      choice.mode == BackupImportMode.merge &&
+      choice.categories.contains(BackupCategory.srs) &&
+      summary.present.contains(BackupCategory.srs) &&
+      rootCtx.mounted) {
+    srsConfirmed = await showFushiConfirmDialog(
+      context: rootCtx,
+      title: t.backup_srs_merge_confirm_title,
+      message: t.backup_srs_merge_confirm,
+      confirmLabel: t.backup_srs_merge_confirm_ok,
+      cancelLabel: t.backup_srs_merge_confirm_skip,
+    );
+  }
 
   final String booksRoot = p.join(appModel.appDirectory.path, 'fushi_books');
   final String audiobooksRoot = p.join(
@@ -1228,6 +1245,7 @@ Future<void> runBackupImportFlowForFile({
         // TODO-1183: 后台解压 isolate 经 SendPort 回报字节 → 确定进度条。
         onProgress: appModel.reportBackupImportProgress,
         mergePortableSettings: mergeSettings,
+        srsConfirmed: srsConfirmed,
       );
     } else {
       await BackupRestoreService.restoreBackup(
