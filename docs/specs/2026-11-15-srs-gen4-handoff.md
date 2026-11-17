@@ -1246,3 +1246,97 @@ G8 子规划文档在仓库里不存在（任务点名的「G8 子规划」找�
   `srs_fresh_profile_e2e_test.dart` 3 条（新卡被藏，§13.6 第 1 条）、`srs_fushisrs_test.dart` 3 条与
   `srs_write_statement_cost_test.dart` 2 条（`note` / `noteType` 按成员 ID 读崩在 `_prefetchEdits`，§14）、
   `fushi/test/srs/srs_word_audio_backfill_test.dart` 的 store 用例（成员 / 规范 ID 对不上，§14「派生 ID 的返回值」）。
+
+## G8-7b 同步补全（2026-11-17，分支 `pr/srs-gen4-g8-7b-sync-complete`，基于 `pr/srs-gen4-switch`）
+
+接 §17.4 的全部「没做」。Rust 在 `native/fushi_fsrs/src/store/gen4/cmd/` 的 `media_sync.rs`（媒体同步）、`sync_oldroot.rs`
+（旧根接手与承袭上传）、`sync_relay.rs`（转发）、`sync.rs`（收段切片、`plan` 收被转发的 head、`obsolete_former`），存储层
+复用第一段（G8-3 媒体清单 / `media_at`，G8-5 `oldroot.rs` / `inherit.rs`，G8-4 `sync_state.rs`，G8-2 `FRL4`）。Dart 在
+`srs_sync2_round.dart`（一轮的顺序）与新文件 `srs_sync4_steps.dart`（旧根、承袭、媒体清单、旧身份目录、转发各一步）。
+
+### 命令（新接线 / 改了请求的）
+
+| 命令 | 事务 | 做什么 |
+|---|---|---|
+| `media_known` / `media_record` / `media_hash` / `media_scan` / `media_landed` / `media_bind_unbound` / `media_doomed` | 见 `media_sync.rs` 文件头的表 | 协议 3 同名命令的新代实现；名字 → 内容的绑定是真相层的 `Media` 操作 |
+| `media_manifests` / `media_manifest_ingest` / `media_manifest_build` / `media_manifest_published` | 读 / `write_local` | 新代才有的媒体清单收发（D18：每个 hash 带在 / 不在与 HLC） |
+| `oldroot_scan` / `oldroot_ingest` | 读 / `write` | 协议 3 根 `v3/` 上的段 → 本机承袭日志（指纹门；指纹与落库同一事务） |
+| `heritage_plan` / `heritage_outbox` / `heritage_ack` | 读 / 读 / `write_local` | 本机承袭日志里位置上缺的区间 → `v4/devices/<本机>/hrt-…`（D19，先于本机原生段） |
+| `obsolete_former {device, present, archive?}` | 读 | 本机旧身份目录里只删旧两代以上的 head，段一个不删 |
+| `relay_outbox {location, key?, maxBytes?}` | 读 | 位置缺的别的设备的段（`rly-`，按目标位置钥匙封装）与段齐了之后的 head（`rhd-`）；回包 `{files, more, incomplete}` |
+| `relay_ack {location, paths?, deleted?}` | `write_local` | 记 `relay_out`；head 写上后不再被引用的中继件与旧 `rhd-` 改待删；删可转发段；回包 `{delete}`（两段式：删好了带 `deleted` 报回） |
+| `ingest {key?, maxItems?}` | `write` | 新增 `maxItems`（收段让路）：一个事务最多做多少项新工作，回包 `rest` = 交完了的段数；另回 `kept`（留了几份转发原文） |
+| `plan {…, relayed?}` | `write_local` | 新增 `relayed`：块的末尾几份是 `rhd-`（认公钥、定要拉的段，不记 `loc_heads`、不取消停用）；早有但没留原文、别的位置缺的段再要一次 |
+| `ingest_begin` / `ingest_end` | 无事务 | 内核收段会话：期间攒住 RWKV 刷新键，结束放一次（`refresh.rs` `rwkv_held`） |
+
+schema `40021`：`relay_segs`（收段时留下的可转发作者段，不封装的 `FRL4`；普通 rowid 表 + 唯一约束，没有显式索引，
+`PLANNER_STATS` 不变）。40020 没用（预分配给同批别的 PR）。
+
+### 定案（所有者授权自定）
+
+1. **文件夹位置只收不发（major）**：`media_*` 全部接线后 `beforeUpload` 的媒体对账不再抛 `SrsCoreUnwiredException`，
+   文件夹与云端位置都走到 outbox / head（`srs_folder_location_test`、`sync_complete_tests.rs` 的媒体两设备用例）。
+2. **旧根接手（硬条件）**：`v3/` 每轮按清单指纹判要不要读（没变不读），收进承袭日志后经承袭段发到新根；新设备只连
+   新根也拿得全（`old_root_takeover_reaches_migrated_and_new_devices_alike`：两台各自接手 + 一台新设备，派生层相同）。
+   **只有协议 1 `v2/` 的位置不做一次性迁移，明确拒绝**（D21 定为不支持）：机读码 `srs_location_protocol1_root`、位置上
+   一个字节不写、本机卡片与复习记录不动，提示「先用 3.x 同步一次把位置升级，或换一个同步位置」。理由：旧迁移入口
+   `srsPrepareLocation` 按协议 3 写 `minReader 3` 的 v3 meta，在协议 4 下等于拆围栏；在新代里再实现一份协议 1 读者
+   代价与风险都远大于收益（协议 1 已两代之前）。另外每个位置都先在 `v2/` 立协议 1 围栏（`srsEncodeV1Fence`），协议 1
+   客户端读到就停。**与任务书「v2/ 一次性迁移接进一轮同步」不符，按「旧格式兼容可从简（明确拒绝并提示升级）」定案。**
+3. **多台各自迁移的设备不做副本收敛**（§11 第二条交 G8 / G9 的那项）：同一份协议 3 历史经旧根接手走承袭日志，按
+   （旧设备, seq）槽对齐（同号槽只降不升，D19），不会多一份；§11 说的「每台各自把旧行包一遍」产生的是各自设备名下的
+   原生操作，派生层按 dot / 日志 ID 取操作号最小的那份（`derive.rs`），用户看到的结果正确，只多体积与同步量。要收敛
+   就得跨设备删别人签过的操作，违反「只增」与签名链；只出现在「多台设备、协议 3 从没同步确认过、共享旧行」的用户身上。
+   不做，记在这里。
+4. **摘要核对不需要协议 3 `heal.rs` 的新代对应物**：新代真相是每台设备一条签名链（收段逐项验链），派生层是真相的
+   纯函数（每条端到端测试都核「增量 == 整个重建」），所以同一个版本向量（head 的 `ack`）下摘要必然相同；不同只可能是
+   派生口径版本不同（head 的 `derive`）或派生 bug，本机重放修不好、只能升级或修 bug。所以只诊断不自愈：`status` 的
+   `seenAt`（对端最新 head 的写出时刻）/ `digestMismatch`（同 `ack` 指纹下摘要不同）/ `warning` / `frozen`（换身份后
+   冻结的旧身份）填真实值（`plan` 把对端 head 的时刻、`ack` 指纹、摘要记进 `peers.ext`）。Dart 的
+   `SrsSync2Report.healFailed` 与调度器 `_reportHealFailed` 一起删掉（恒空的字段）。本机派生层坏了的修复入口照旧是
+   `digest_heal`（整个重建，冲突中心 / 诊断用），一轮同步里不调。
+5. **收段让路**：`ingest` 带 `maxItems`，`Receiver::with_budget` 数「落进日志 + 新进等待缓冲」的项，用完时停在原生段
+   的下一项之前（已落的是日志前缀，下一事务再交同一段时按本机已有跳过，只重算链）。Dart `SrsDbStore.sync2IngestBatch`
+   按 `kSrsSync2IngestSliceItems = 256` 循环，每片一次 `_sync2IngestStep`（各进一次写锁），作答在两片之间插进来；各片计数
+   合成一份回包。实测（`ingest_slices_a_large_batch_into_budgeted_transactions`，桌面 quick profile）：1500 条操作、
+   每片 ≤ 200 项、8 个事务，最慢一片约 0.47 s（大半是每片重新解开整段的开销）。收段会话期间 RWKV 刷新推迟到
+   `ingest_end`（`an_ingest_session_holds_the_rwkv_key_until_it_ends`）。
+6. **purge 接成生产路径**：`Session` 收尾与 `Receiver` 收尾里 `Index::execute_purges` 把被清除的操作在同一事务落成空洞，
+   发件按「传时空洞条数」退水位重切重传（`the_purge_command_voids_published_ops_everywhere`）。
+7. **转发**（协议 3 `relay.rs` 的新代对应物，设计 §4.4 / D16 A）：收段时把别的受信设备的原生段 / 中继件重新包成不封装
+   的 `FRL4` 存进 `relay_segs`（只在本机同步着 ≥ 2 个位置时存）；`plan` 把读到的别的设备 head 按代号只进不退记进
+   `srs_meta` `gen4_rhead/<col>/<设备>`；`relay_outbox` 给目标位置缺的段（按目标位置钥匙封装，签名照用作者的），段都
+   确认之后才给 `rhd-` head；每个位置都有了就删原文。本机在有第二个位置之前就收过的段：`plan` 再要一次（收段按已有
+   跳过、只留原文），下一轮转发。被转发的 head 用 `rhd-` 前缀，不覆盖作者自写的 `head-`、不当位置证据。
+
+### 委托描述与代码不符
+
+- 「转发要存收到的作者段原字节」：原字节在加密位置上是按源位置钥匙封装的密文，换位置要先解开；存的是解开后、作者签名
+  不变的不封装中继件（`wrap_relay4(seg, pub, src_key, None)`），发出时再按目标钥匙封装。效果相同，且本机不必记源位置钥匙。
+- 「新加入的设备只能拿到迁移之后的操作」：旧根接手接上之前确实如此；接上后由承袭段补齐（见定案 2）。
+
+### 测试
+
+Rust（`cmd/sync_complete_tests.rs`、`cmd/sync_relay_tests.rs`，经 C ABI）：媒体两设备经文件夹位置对账；旧根接手（协议 3
+位置 + 两台迁移设备 + 一台新设备）；新集合不判成存量、只有 `v2/` 拒绝；purge 两端落空洞；收段会话攒 RWKV；状态字段；
+旧身份目录清理；拓扑不全连通的转发（明文 L1 + 加密 L2，三台收敛、转发件按 L2 钥匙封装、转发完不留原文）；作者自己连上
+目标位置后停止转发；后连上的位置补拉转发；只连一个位置不留原文；收段切片（增量 == 重建、三台摘要相同）；并入
+（`collection_join`）之后经位置同步收敛、两份盐的默认牌组归一到同一规范 ID；围栏中途（只写成新根就断）由下一台设备
+补上；新语句查询计划（`relay_lookups_use_their_keys`、`g87b_lookups_use_their_keys`）。加密位置、增量 == 重建的
+通用用例在 G8-7 的 `sync_tests.rs`。
+
+Dart：`srs_format_break_test`（保留并转绿）、`srs_sync4_round_test`（假内核：一轮顺序、旧根 / 承袭 / 媒体清单 / 旧身份
+目录 / 转发各一步）、`srs_sync4_folder_test`、`srs_sync2_lock_free_test`、`srs_sync2_ingest_batching_test` 的新用例「收段
+让路」（真内核：一批切成多个写锁事务，摘要与对端一致）；`fushi_server` 的 `server_srs_test`（首次同步含 `location_sealed`
+一路走通，7 条全绿）。
+
+### 没做 / 交给谁
+
+- **ID 口径（G9-7）一族的红**（`SrsDbStore.note` 读回的 `edits` 与请求 ID 对不上，崩在 `_prefetchEdits`）：
+  `srs_folder_location_test`「两台设备经同一个文件夹收敛」、`srs_sync2_round_test` 4 条、`srs_sync2_relay_test`（转发本身已
+  通：C 收到 A 的段，崩在之后的 `c.note`）、`srs_sync2_ingest_batching_test` 3 条（其中「第二批上传失败」的前提已按新代
+  改成切小段）、`srs_location_sealed_test`「从没见过加密的明文位置」。没有绕开，等 G9-7。
+- 收尾时投递等待缓冲（`Receiver::finish` 的 drain）不受 `maxItems` 约束：依赖最后才到、之前堆了大量等待项时那一片
+  可能偏长。要收紧得让 drain 也分片（跨事务记游标），本轮没做。
+- `srs_location_runner.dart` / 调度器对 `srs_location_protocol1_root` 只当一般错误报，没有专门的「请升级位置」提示文案
+  （要加 i18n key，归 UI）。
