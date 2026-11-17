@@ -462,7 +462,11 @@ class MangaAudioRenderer {
     if (voice == null) return MangaBackfillStatus.noRetryVoice;
     final String? say = (req.say?.trim().isEmpty ?? true) ? null : req.say;
     final MangaScriptLine probe = say == null ? line : line.copyWith(say: say);
-    final String text = mangaLineText(probe, pageBlocks);
+    final String text = mangaLineText(
+      probe,
+      pageBlocks,
+      substitutions: script.substitutions,
+    );
     final int seed = line.effectiveSeed(script.defaultSeed);
     final MangaRenderItem item = MangaRenderItem(
       line: probe,
@@ -527,7 +531,11 @@ class MangaAudioRenderer {
   }) async {
     final MangaScriptLine? line = script.lineById(lineId);
     if (line == null) throw const MangaLineFailure('line_missing');
-    final String text = mangaLineText(line, pageBlocks);
+    final String text = mangaLineText(
+      line,
+      pageBlocks,
+      substitutions: script.substitutions,
+    );
     final String voice = mangaResolvedVoice(script, line, defaultVoice);
     final MangaRenderItem item = MangaRenderItem(
       line: line,

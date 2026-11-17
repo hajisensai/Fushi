@@ -14,6 +14,7 @@ library;
 
 import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/tts/cast/cast_text_substitution.dart';
 import 'package:fushi_engine/tts/cast/cast_line_voicing.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
@@ -224,8 +225,12 @@ Future<TtsBackfillResult> backfillTtsUnvoiced({
       last?.presetId ?? tts.store.activePreset()?.id;
   if (defaultPresetId == null) throw const TtsBackfillFailure('no_voice');
 
-  final TtsBookPlan plan = await buildStudioPlan(loaded.book, tts);
   final TtsCastBundle bundle = await loadTtsCastBundle(appModel, bookKey);
+  // 与制作流程同一口径：念的文字过系列用词替换表（手动填写的念法不过）。
+  final TtsBookPlan plan = ttsPlanWithSubstitutions(
+    await buildStudioPlan(loaded.book, tts),
+    bundle.series?.substitutions ?? const <CastTextSubstitution>[],
+  );
   final TtsCast cast = bundle.cast;
   final CastVoicingStore voicingStore = ttsVoicingStoreFor(appModel);
   final CastVoicingLedger ledger = await voicingStore.load(bookKey);

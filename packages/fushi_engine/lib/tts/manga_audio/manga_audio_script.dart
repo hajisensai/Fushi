@@ -20,6 +20,7 @@ import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/tts/cast/cast_line_kind.dart';
+import 'package:fushi_engine/tts/cast/cast_text_substitution.dart';
 import 'package:fushi_engine/tts/cast/cast_voice_assignment.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
 
@@ -600,6 +601,11 @@ class MangaAudioScript {
 
   /// 这卷所属系列的声音指派（`SeriesCastProfile.voices`，不随本文件落盘）。
   CastVoiceAssignment? series;
+
+  /// 这卷所属系列的用词替换表（`SeriesCastProfile.substitutions`，不随本文件落盘）。
+  /// 只用于生成端实际念的文字与成品 cue 文本；AI 标注、有声书匹配照常看原文，单句
+  /// 手动填写的念法（`say`）不替换。
+  List<CastTextSubstitution> substitutions = const <CastTextSubstitution>[];
 
   /// 一句该用的声音：单句指定 → 本卷指派表叠在系列上（见
   /// [CastVoiceAssignment.resolveOver]）；null = 当前朗读声音。

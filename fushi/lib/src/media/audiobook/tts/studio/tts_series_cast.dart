@@ -8,6 +8,7 @@ library;
 import 'dart:io';
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/tts/cast/cast_text_substitution.dart';
 import 'package:fushi_engine/tts/cast/cast_line_voicing.dart';
 import 'package:fushi_engine/tts/cast/cast_voice_assignment.dart';
 import 'package:fushi_engine/tts/cast/series_cast.dart';
@@ -16,12 +17,54 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/audiobook/tts/cast/series_cast_resolver.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_service.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
 import 'package:fushi/src/models/app_model.dart';
 
 /// 每本书的未配音账本：`<db>/tts_cast/<sha1>.voicing.json`。
 CastVoicingStore ttsVoicingStoreFor(AppModel appModel) => CastVoicingStore(
   Directory(p.join(appModel.databaseDirectory.path, 'tts_cast')),
 );
+
+/// 制作用的计划：按系列用词替换表改写每句的显示文字（进 cue / SRT / 制卡）与送去合成
+/// 的文字（纯函数）。只在制作流程与补回里用——制作台给 AI 标注的计划照常是原文。
+/// 单句手动填写的念法（`TtsCast.sayFor`）在 `ttsSentenceSpokenText` 里优先，不过表。
+///
+/// 送去合成的文字可能已被读音词典改写过（ruby 底本换成读音、词典规则）：两者相同时
+/// 直接用替换后的显示文字；不同时对念法单独替换（原文写法被读音改掉的就不再命中）。
+/// 选角表的行键是 `(section, matchStart)`，与文字无关，所以替换不影响选角与账本。
+TtsBookPlan ttsPlanWithSubstitutions(
+  TtsBookPlan plan,
+  List<CastTextSubstitution> table,
+) {
+  if (table.isEmpty) return plan;
+  return TtsBookPlan(<TtsPlanSentence>[
+    for (final TtsPlanSentence s in plan.sentences)
+      _substituted(s, table),
+  ]);
+}
+
+TtsPlanSentence _substituted(
+  TtsPlanSentence s,
+  List<CastTextSubstitution> table,
+) {
+  final String text = applyCastSubstitutions(s.text, table);
+  final String spoken = s.spokenText == s.text
+      ? text
+      : applyCastSubstitutions(s.spokenText, table);
+  if (identical(text, s.text) && identical(spoken, s.spokenText)) return s;
+  return TtsPlanSentence(
+    section: s.section,
+    href: s.href,
+    text: text,
+    spokenText: spoken,
+    matchStart: s.matchStart,
+    matchEnd: s.matchEnd,
+    studyStart: s.studyStart,
+    studyEnd: s.studyEnd,
+    endsParagraph: s.endsParagraph,
+    sceneBreakAfter: s.sceneBreakAfter,
+  );
+}
 
 /// 一本书的选角表 + 它所属的系列档案（没有系列时为 null）。
 typedef TtsCastBundle = ({TtsCast cast, SeriesCastProfile? series});

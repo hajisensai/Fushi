@@ -50,6 +50,7 @@ import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi_engine/media/import/epub_backed_srt_book.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart'
     show FfmpegBackend, FfmpegRunResult, resolveFfmpegBackend;
+import 'package:fushi_engine/tts/cast/cast_text_substitution.dart';
 import 'package:fushi_engine/tts/cast/cast_line_voicing.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
 import 'package:fushi_engine/tts/render/tts_pause.dart';
@@ -118,7 +119,13 @@ class AppTtsRenderRunner implements TtsRenderRunner {
       job.bookKey,
     );
     if (loaded == null) throw const TtsRenderFailure('book_missing');
-    final TtsBookPlan plan = await buildStudioPlan(loaded.book, tts);
+    // 选角表 + 系列档案先读：系列用词替换表要改写这次实际念的文字与 cue 文本（文字
+    // 变了缓存键 / 章清单键跟着变，受影响的章自然重做）。
+    final TtsCastBundle bundle = await loadTtsCastBundle(appModel, job.bookKey);
+    final TtsBookPlan plan = ttsPlanWithSubstitutions(
+      await buildStudioPlan(loaded.book, tts),
+      bundle.series?.substitutions ?? const <CastTextSubstitution>[],
+    );
     final List<TtsRenderChapter> chapters = groupTtsRenderChapters(
       plan.sentences,
       sections: job.sections.toSet(),
@@ -128,7 +135,7 @@ class AppTtsRenderRunner implements TtsRenderRunner {
     // 每句的声音：单句指定 → 角色（本书 → 系列）→ 任务默认声音。用到的每份预设各
     // 解析一次。任务默认声音不可用如实失败；角色 / 单句的声音缺失 / 不可用 / 不完整
     // 时，那些句子占位记账（不悄悄换成别的声音），其余照常生成。
-    final TtsCast cast = (await loadTtsCastBundle(appModel, job.bookKey)).cast;
+    final TtsCast cast = bundle.cast;
     final CastVoicingStore voicingStore = ttsVoicingStoreFor(appModel);
     final CastVoicingLedger ledger = await voicingStore.load(job.bookKey);
     final Map<int, String> presetOf = resolveTtsSentencePresets(

@@ -14,6 +14,7 @@
 library;
 
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/tts/cast/cast_text_substitution.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_validate.dart';
@@ -233,7 +234,11 @@ MangaRenderPlan planMangaRender({
       outOfRange.add(line.lineId);
       continue;
     }
-    final String text = mangaLineText(line, pageBlocks);
+    final String text = mangaLineText(
+      line,
+      pageBlocks,
+      substitutions: script.substitutions,
+    );
     final MangaRenderSource? source = mangaRenderSourceFor(
       script: script,
       line: line,
@@ -256,8 +261,19 @@ MangaRenderPlan planMangaRender({
 /// 一句要念的文字（页码越界时只认手填）。
 String mangaLineText(
   MangaScriptLine line,
-  List<List<MokuroBlock>> pageBlocks,
-) => resolveMangaLineText(
-  line,
-  line.page < pageBlocks.length ? pageBlocks[line.page] : const <MokuroBlock>[],
-).trim();
+  List<List<MokuroBlock>> pageBlocks, {
+  List<CastTextSubstitution> substitutions = const <CastTextSubstitution>[],
+}) {
+  final String? say = line.say;
+  // 手动填写的念法是用户写好的最终文字：不过替换表。
+  if (say != null) return say.trim();
+  return applyCastSubstitutions(
+    resolveMangaLineText(
+      line,
+      line.page < pageBlocks.length
+          ? pageBlocks[line.page]
+          : const <MokuroBlock>[],
+    ).trim(),
+    substitutions,
+  );
+}
