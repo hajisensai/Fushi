@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-17T03:15:50Z",
+ "generatedAt": "2026-11-17T03:20:34Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "2594533633be224945ed35a7b2a430d59b93ff8f",
-  "seq": 28439
+  "sha": "f650a4771313007ea9893c2c552dc2ab29764d3c",
+  "seq": 28442
  },
  "builds": [
   {
@@ -247,29 +247,30 @@
   }
  ],
  "pending": {
-  "headSha": "2594533633be224945ed35a7b2a430d59b93ff8f",
-  "headSeq": 28439,
+  "headSha": "f650a4771313007ea9893c2c552dc2ab29764d3c",
+  "headSeq": 28442,
   "prs": [
+   3630,
    3629
   ],
   "direct": [],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44006308961"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44008978846"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44006309008"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44008978831"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44006309008"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44008978831"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44006309008"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44008978831"
    }
   }
  },
@@ -1136,6 +1137,15 @@
    "mergedAt": "2026-11-17T02:53:58Z",
    "additions": 155,
    "deletions": 108,
+   "labels": []
+  },
+  "3630": {
+   "number": 3630,
+   "title": "fix(tests): develop 视频首页组红——图标走 FushiIcons、守卫锚点跟进 NSFW 外壳与外部入库抽取、批量删除测试驱动进度对话框",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-17T03:16:01Z",
+   "additions": 170,
+   "deletions": 23,
    "labels": []
   }
  }
