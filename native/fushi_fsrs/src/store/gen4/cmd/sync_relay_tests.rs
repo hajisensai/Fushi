@@ -408,6 +408,77 @@ fn ingest_slices_a_large_batch_into_budgeted_transactions() {
     assert_eq!(a.derived(), c.derived());
 }
 
+/// 照搬 Dart `SrsDbStore.sync2IngestBatch` 的循环收一批：每片带 `maxItems`，交完的段从队首去掉；段都交完了但回包
+/// `drainMore`（收尾投等待缓冲时预算用完）就不带段再收一次；`rest == 0 && spent == 0` 判契约坏了。每片的新工作
+/// （`spent`、落库 + 投出）不超过预算。回包：(事务数, 只停放没落库的片数, 不带段的投递片数)。
+fn ingest_like_dart(d: &Dev, mut pending: Vec<Vec<u8>>, budget: u64, now: i64) -> (u32, u32, u32) {
+    let (mut txs, mut parked_only, mut drains) = (0u32, 0u32, 0u32);
+    loop {
+        let (v, _) = cmd(d.h, "ingest", now, json!({"maxItems": budget}), &pending);
+        txs += 1;
+        assert!(txs < 200, "{v}");
+        let done = v["rest"].as_u64().unwrap() as usize;
+        let spent = v["spent"].as_u64().unwrap();
+        let work = v["landed"].as_u64().unwrap() + v["delivered"].as_u64().unwrap();
+        assert!(spent <= budget && work <= budget, "{v}");
+        if pending.is_empty() {
+            drains += 1;
+        }
+        if done >= pending.len() {
+            if v["drainMore"] == json!(true) {
+                assert!(spent > 0, "a drain slice must deliver something: {v}");
+                pending.clear();
+                continue;
+            }
+            return (txs, parked_only, drains);
+        }
+        // Dart 的判据：交完的段数与新工作数都是 0 才算没进展。
+        assert!(!(done == 0 && spent == 0), "no progress: {v}");
+        if done == 0 && v["landed"] == json!(0) {
+            parked_only += 1;
+        }
+        pending.drain(..done);
+    }
+}
+
+/// c 认位置、读 head，回各设备要拉的段（按 `plan` 的 fetch，设备 → 段的字节）。
+fn fetch_of(c: &Dev, loc: &Loc, now: i64) -> Vec<(String, Vec<Vec<u8>>)> {
+    let mut blobs = Vec::new();
+    blobs.extend(loc.get("v4/meta.json").cloned());
+    let locs: Vec<String> = loc
+        .keys()
+        .filter_map(|k| k.strip_prefix("v4/loc/").map(str::to_owned))
+        .collect();
+    let (root, _) = cmd(
+        c.h,
+        "location_root",
+        now,
+        json!({"location": "loc", "has4": true, "has3": false, "locs": locs}),
+        &blobs,
+    );
+    let (plan, _) = cmd(
+        c.h,
+        "plan",
+        now,
+        json!({"location": "loc", "loc": root["loc"], "listing": listing(loc)}),
+        &heads(loc),
+    );
+    plan["fetch"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| {
+            let files = f["files"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|p| loc.get(&format!("v4/{}", p.as_str().unwrap())).cloned())
+                .collect();
+            (f["device"].as_str().unwrap().to_owned(), files)
+        })
+        .collect()
+}
+
 /// 收段让路的进展判据：依赖方的段排在被依赖方前面时，前几片全停进等待缓冲、一项都不落库（`landed == 0`、`rest == 0`），
 /// 这也是进展。a 写 300 条、b 收下后改这 300 条（b 的操作依赖 a 的），c 收段时把 b 的段排在前面、预算很小；循环照搬
 /// Dart `sync2IngestBatch` 的判据（`rest == 0 && spent == 0` 才算没进展），必须一路收完、不报没进展，最后与 b 收敛。
@@ -424,58 +495,13 @@ fn ingest_slices_count_parked_items_as_progress() {
     round(&b, &mut loc, "loc", T1 + 3, Opts::default());
     write_many_as(&b, T1 + 4, N, "b");
     round(&b, &mut loc, "loc", T1 + 5, Opts::default());
-    let root = {
-        let mut blobs = Vec::new();
-        blobs.extend(loc.get("v4/meta.json").cloned());
-        let locs: Vec<String> = loc
-            .keys()
-            .filter_map(|k| k.strip_prefix("v4/loc/").map(str::to_owned))
-            .collect();
-        cmd(
-            c.h,
-            "location_root",
-            T1 + 6,
-            json!({"location": "loc", "has4": true, "has3": false, "locs": locs}),
-            &blobs,
-        )
-        .0
-    };
-    let (plan, _) = cmd(
-        c.h,
-        "plan",
-        T1 + 6,
-        json!({"location": "loc", "loc": root["loc"], "listing": listing(&loc)}),
-        &heads(&loc),
-    );
     let db = b.device();
-    let mut fetch: Vec<Value> = plan["fetch"].as_array().unwrap().clone();
+    let mut fetch = fetch_of(&c, &loc, T1 + 6);
     // 依赖方（b）排在前面。
-    fetch.sort_by_key(|f| f["device"].as_str() != Some(db.as_str()));
-    assert_eq!(fetch[0]["device"], json!(db), "{plan}");
-    let mut pending: Vec<Vec<u8>> = fetch
-        .iter()
-        .flat_map(|f| f["files"].as_array().unwrap().clone())
-        .filter_map(|p| loc.get(&format!("v4/{}", p.as_str().unwrap())).cloned())
-        .collect();
-    let mut parked_only = 0;
-    let mut txs = 0;
-    while !pending.is_empty() {
-        let (v, _) = cmd(c.h, "ingest", T1 + 7, json!({"maxItems": BUDGET}), &pending);
-        txs += 1;
-        let done = v["rest"].as_u64().unwrap() as usize;
-        let spent = v["spent"].as_u64().unwrap();
-        assert!(spent <= BUDGET, "{v}");
-        if done >= pending.len() {
-            break;
-        }
-        // Dart 的判据：交完的段数与新工作数都是 0 才算没进展。
-        assert!(!(done == 0 && spent == 0), "no progress: {v}");
-        if done == 0 && v["landed"] == json!(0) {
-            parked_only += 1;
-        }
-        pending.drain(..done);
-        assert!(txs < 100, "{v}");
-    }
+    fetch.sort_by_key(|(d, _)| *d != db);
+    assert_eq!(fetch[0].0, db);
+    let pending: Vec<Vec<u8>> = fetch.into_iter().flat_map(|(_, f)| f).collect();
+    let (_, parked_only, _) = ingest_like_dart(&c, pending, BUDGET, T1 + 7);
     assert!(
         parked_only >= 1,
         "the dependent-first order must produce parked-only slices"
@@ -487,6 +513,42 @@ fn ingest_slices_count_parked_items_as_progress() {
         assert_eq!(c.field(&note_id(i)), b.field(&note_id(i)));
     }
     sync_all(&[&a, &b, &c], &mut loc, T1 + 8, Opts::default());
+    assert_eq!(b.derived(), c.derived());
+}
+
+/// 收尾投递等待缓冲也按预算切：c 先把 b 的段整段收进等待缓冲（b 的 300 条都依赖 a），再按预算收 a 的段；a 的段收完
+/// 那一片投不完 b 的 300 条，回包 `drainMore`，之后不带段的几片接着投，每片投出的不超过预算。最后不剩等待项、与 b
+/// 收敛、增量 == 重建。
+#[test]
+fn ingest_drain_of_the_waiting_buffer_is_sliced_too() {
+    const N: usize = 300;
+    const BUDGET: u64 = 64;
+    let a = Dev::new("g87da");
+    let mut b = Dev::new("g87db");
+    let mut c = Dev::new("g87dc");
+    let mut loc = Loc::new();
+    write_many(&a, T1 + 1, N);
+    round(&a, &mut loc, "loc", T1 + 2, Opts::default());
+    round(&b, &mut loc, "loc", T1 + 3, Opts::default());
+    write_many_as(&b, T1 + 4, N, "b");
+    round(&b, &mut loc, "loc", T1 + 5, Opts::default());
+    let db = b.device();
+    let fetch = fetch_of(&c, &loc, T1 + 6);
+    let (of_b, others): (Vec<_>, Vec<_>) = fetch.into_iter().partition(|(d, _)| *d == db);
+    // b 的段一次收完（不限预算）：依赖 a 的 300 条全部停进等待缓冲（b 在收 a 之前写的身份操作直接落）。
+    let (v, _) = cmd(c.h, "ingest", T1 + 7, json!({}), &of_b[0].1);
+    assert!(v["waiting"].as_u64().unwrap() >= N as u64, "{v}");
+    let pending: Vec<Vec<u8>> = others.into_iter().flat_map(|(_, f)| f).collect();
+    let (_, _, drains) = ingest_like_dart(&c, pending, BUDGET, T1 + 8);
+    assert!(
+        drains >= (N as u64 / BUDGET) as u32 - 1,
+        "the waiting buffer is drained in budgeted slices: {drains}"
+    );
+    assert_eq!(v_pending(&c), 0);
+    for i in [0, N / 2, N - 1] {
+        assert_eq!(c.field(&note_id(i)), b.field(&note_id(i)));
+    }
+    sync_all(&[&a, &b, &c], &mut loc, T1 + 9, Opts::default());
     assert_eq!(b.derived(), c.derived());
 }
 

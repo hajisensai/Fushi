@@ -1343,8 +1343,6 @@ Dart：`srs_format_break_test`（保留并转绿）、`srs_sync4_round_test`（�
   `srs_folder_location_test`「两台设备经同一个文件夹收敛」、`srs_sync2_round_test` 4 条、`srs_sync2_relay_test`（转发本身已
   通：C 收到 A 的段，崩在之后的 `c.note`）、`srs_sync2_ingest_batching_test` 3 条（其中「第二批上传失败」的前提已按新代
   改成切小段）、`srs_location_sealed_test`「从没见过加密的明文位置」。没有绕开，等 G9-7。
-- 收尾时投递等待缓冲（`Receiver::finish` 的 drain）不受 `maxItems` 约束：依赖最后才到、之前堆了大量等待项时那一片
-  可能偏长。要收紧得让 drain 也分片（跨事务记游标），本轮没做。
 - `oldroot_ingest`（旧根接手的落库）没有 `maxItems`：每批按 Dart 的 8 MB 字节预算切，一批一个写事务。迁移后第一轮捡
   大的旧根时一个事务可能装几百个协议 3 段，作答要等它。没切是因为收尾批（`settle`）要求「这一批正好是本轮重算的待读
   清单」才记指纹（指纹与落库同一事务，`oldroot.rs` 文件头）——按项切会让收尾批永远凑不齐整份清单，得先把指纹改成
@@ -1383,3 +1381,10 @@ Dart：`srs_format_break_test`（保留并转绿）、`srs_sync4_round_test`（�
 6. **承袭段计入收段预算**：`land_slots` 把落下 / 待投的槽记进 `spent`；承袭段不在中途停，但用完预算后这一片不再开下一段。
    用例 `heritage_segments_count_toward_the_ingest_budget`（旧根接手后的新设备按预算 1 收：第一片只收承袭段、`spent` ≥
    落下的旧历史，原生段留到下一片）。变异：去掉计数 → 该用例红。`oldroot_ingest` 本身没切，见「没做」。
+7. **收尾投递等待缓冲也按片**（上一轮「没做」里的那条）：`drain_native` 投出的项计入 `spent`，预算用完时停在下一项
+   接得上的等待项之前，回包 `drainMore`；Dart 段都交完了见到 `drainMore` 就不带段再收一片（投递片必有进展，否则抛
+   `sync2 ingest drain made no progress`）。不用跨事务游标：投出的行当场删，下一片重扫 `op_wait` 从剩下的接着投。停下时
+   那一遍的分叉 / 两支报告可能不全，投完那一片再报。用例 `ingest_drain_of_the_waiting_buffer_is_sliced_too`（c 先把 b 依赖
+   a 的 300 条整段停进缓冲，再按预算 64 收 a：之后有 ≥ 3 片不带段的投递片、每片投出 ≤ 64，最后不剩等待项、与 b 收敛）。
+   Rust 测试的收段循环收成一个照搬 Dart 判据的 `ingest_like_dart`。变异：去掉投递时的预算判断 → 两条用例红；Dart 忽略
+   `drainMore` → 真内核双作者用例红（剩等待项）。

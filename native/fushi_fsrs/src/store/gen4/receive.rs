@@ -158,6 +158,12 @@ pub struct Received {
     pub settled: Settled,
     /// 收尾时在真相层落成空洞的操作数（[Index::execute_purges]）。
     pub voided: u64,
+    /// 收尾投递等待缓冲时预算用完、还有接得上的项没投（[Receiver::with_budget]）：调用方再开一个事务、不带段地收一次
+    /// 接着投（`cmd/sync.rs` `ingest` 回包 `drainMore`）。不限预算时恒为 false。
+    pub drain_more: bool,
+    /// 这一批做的新工作数（[Receiver::with_budget] 数的那些，含收尾投出的原生等待项）。调用方拿它判断一片有没有进展：
+    /// 只停放进等待缓冲、一项都没落库的一片（依赖方的段排在被依赖方前面）也是进展，不能拿落库数当代理。
+    pub spent: u64,
 }
 
 fn reject_of(e: SegmentError) -> Taken {
@@ -199,13 +205,16 @@ pub struct Receiver<'t, 'c> {
     /// 这一批 [Receiver::legacy] 逐段的结论（按调用顺序）。旧根核对的收尾（`oldroot.rs` 的
     /// [Receiver::finish_oldroot]）拿它判断本轮清单是否全部有了结论，不让调用方另报一份。
     legacy_taken: Vec<Taken>,
-    /// 这一批最多做多少项新工作（落库 + 新进等待缓冲的原生项，与承袭段落库 / 待投的槽；[Receiver::with_budget]）。
+    /// 这一批最多做多少项新工作（落库 + 新进等待缓冲的原生项、收尾从原生等待缓冲投出的项，与承袭段落库 / 待投的槽；
+    /// [Receiver::with_budget]）。
     /// None = 不限。
     budget: Option<u64>,
     /// 这一批已做的新工作。
     spent: u64,
     /// 上一个原生段因为 [Receiver::budget] 用完在中途停下（后面的项这一批没碰）。
     cut: bool,
+    /// 收尾投递等待缓冲时预算用完、留下了接得上的项（[Received::drain_more]）。
+    drain_cut: bool,
 }
 
 impl<'t, 'c> Receiver<'t, 'c> {
@@ -240,6 +249,7 @@ impl<'t, 'c> Receiver<'t, 'c> {
             budget: None,
             spent: 0,
             cut: false,
+            drain_cut: false,
         })
     }
 
@@ -260,12 +270,6 @@ impl<'t, 'c> Receiver<'t, 'c> {
     /// 上一个 [Receiver::native] 在段的中途停下了：这一段还要原样再交一次。
     pub fn cut(&self) -> bool {
         self.cut
-    }
-
-    /// 这一批已做的新工作数（落进日志的原生项 / 空洞 + 新进等待缓冲的原生项）。调用方拿它判断一片有没有进展：只停放
-    /// 进等待缓冲、一项都没落库的一片（依赖方的段排在被依赖方前面）也是进展，不能拿落库数当代理。
-    pub fn spent(&self) -> u64 {
-        self.spent
     }
 
     fn public_of(&self, device: &Id) -> Result<Option<[u8; 32]>, String> {
@@ -840,14 +844,18 @@ impl<'t, 'c> Receiver<'t, 'c> {
 
     /// 把等待缓冲里接得上的投完，再收派生层。消费这一批。
     pub fn finish(mut self) -> Result<Received, String> {
+        // 原生等待项的投递同样受预算约束（收段让路）：用完就停，剩下接得上的留给调用方下一个事务（`drain_more`）。
+        // 停下时这一遍的分叉 / 两支报告可能不全，下一遍投完时再报。
         let last_pass = loop {
             let pass = self.drain_native()?;
             let heritage = self.drain_heritage()?;
-            if pass.delivered + heritage == 0 {
+            self.tally.delivered += pass.delivered + heritage;
+            if pass.delivered + heritage == 0 || self.drain_cut {
                 break pass;
             }
-            self.tally.delivered += pass.delivered + heritage;
         };
+        self.tally.drain_more = self.drain_cut;
+        self.tally.spent = self.spent;
         self.tally.forked = last_pass.forked;
         self.tally.diverged_waiting = last_pass.diverged.into_iter().collect();
         self.tally.waiting = self.t.waiting(self.col)?.len() as u64;
@@ -968,7 +976,13 @@ impl<'t, 'c> Receiver<'t, 'c> {
                         break;
                     }
                 }
+                if self.exhausted() {
+                    // 预算用完：这一项接得上但这一批不投（[Received::drain_more]）。
+                    self.drain_cut = true;
+                    break;
+                }
                 self.land(&device, seq, last, &item, &after)?;
+                self.spent += 1;
                 stale.push(key(r));
                 pass.delivered += 1;
                 last = span_end(r);

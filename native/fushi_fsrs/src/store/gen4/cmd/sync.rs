@@ -894,8 +894,9 @@ pub fn plan(t: &Truth<'_>, col: i64, req: &Value, heads: &[Vec<u8>]) -> Result<V
 
 /// `ingest {profile, key?, maxItems?}`，字节块 = 这一批从位置上读到的段（原生段 `FSG4`、中继件 `FRL4`、承袭段 `FSH4`）。
 /// `maxItems`（收段让路）：这一个事务最多做多少项新工作（[Receiver::with_budget]）；用完就停，回包 `rest` = 交完了的段数、
-/// `spent` = 这一片做的新工作数（落库 + 新进等待缓冲；调用方判「这一片有没有进展」只认它，不拿 `landed` 当代理——
-/// 依赖方的段排在前面时，一片可能全停进等待缓冲、一项都不落），
+/// `spent` = 这一片做的新工作数（落库 + 新进等待缓冲 + 收尾投出的等待项；调用方判「这一片有没有进展」只认它，不拿
+/// `landed` 当代理——依赖方的段排在前面时，一片可能全停进等待缓冲、一项都不落）；`drainMore` = 收尾投递等待缓冲时预算
+/// 用完、还有接得上的项，段都交完了也要再不带段地收一次接着投，
 /// Dart 把剩下的（含中途停下的那一段）放到下一个事务里交，两个事务之间放开写锁让作答插进来。一批一个
 /// 写事务（[Receiver]：先全部核对再落、按因果投递、终点收派生层）；本机当前身份的段收完再逐条与本机日志比链
 /// （[ForkScan]），找到分叉点就记下（[fork::record_fork]），换身份推到 [ingest_finish]。回包是这一批的计数、逐段没收的
@@ -972,7 +973,6 @@ pub fn ingest(
             }
         }
     }
-    let spent = rx.spent();
     let r: Received = rx.finish()?;
     let fork_at = match scan.as_ref().and_then(ForkScan::fork_point) {
         Some(keep) => Some(fork::record_fork(t, col, keep)?),
@@ -997,7 +997,8 @@ pub fn ingest(
         "settled": settled_json(&r.settled),
         "voided": r.voided,
         "rest": rest,
-        "spent": spent,
+        "spent": r.spent,
+        "drainMore": r.drain_more,
         "kept": kept,
     });
     bump_revision(t, profile, applied + r.voided, &mut out)?;

@@ -1846,7 +1846,8 @@ class SrsDbStore implements SrsSync2Host {
   ///
   /// 收段让路（G8-7b）：一批在内核里按 [kSrsSync2IngestSliceItems] 项新工作切成多个事务（`ingest` 的 `maxItems`，
   /// 回包 `rest` = 交完了的段数），每个事务各进一次写锁——两个事务之间排着的作答先写，复习不被一大批收段卡住。中途
-  /// 停下的那一段下一个事务原样再交，已落的部分内核按本机已有跳过。各片的计数合成一份回包。
+  /// 停下的那一段下一个事务原样再交，已落的部分内核按本机已有跳过；收尾从等待缓冲投递同样按片（回包 `drainMore` 时
+  /// 不带段再收）。各片的计数合成一份回包。
   @override
   Future<Map<String, Object?>> sync2IngestBatch(
     List<Uint8List> segments, {
@@ -1863,8 +1864,18 @@ class SrsDbStore implements SrsSync2Host {
         }, rest);
         _mergeIngestSlice(merged, r);
         final int done = (r['rest'] as int?) ?? rest.length;
-        if (done >= rest.length) break;
-        if (done == 0 && ((r['spent'] as int?) ?? 0) == 0) {
+        final int spent = (r['spent'] as int?) ?? 0;
+        if (done >= rest.length) {
+          // 段都交完了，但收尾投等待缓冲时这一片的预算用完、还有接得上的（`drainMore`）：不带段再收一片接着投。
+          // 投递片必有进展（内核只在确有一项接得上却没投时才报 drainMore）；没有就是契约坏了。
+          if (r['drainMore'] != true) break;
+          if (rest.isEmpty && spent == 0) {
+            throw StateError('sync2 ingest drain made no progress: $r');
+          }
+          rest = const <Uint8List>[];
+          continue;
+        }
+        if (done == 0 && spent == 0) {
           // 进展只认内核报的 `spent`（落库 + 新进等待缓冲的项）：依赖方的段排在前面时一片可能全停进等待缓冲、
           // `landed` 为 0，那也是进展。交完的段与新工作都是 0 = 契约坏了，不原地打转。
           throw StateError('sync2 ingest slice made no progress: $r');
