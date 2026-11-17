@@ -199,6 +199,12 @@ pub struct Receiver<'t, 'c> {
     /// 这一批 [Receiver::legacy] 逐段的结论（按调用顺序）。旧根核对的收尾（`oldroot.rs` 的
     /// [Receiver::finish_oldroot]）拿它判断本轮清单是否全部有了结论，不让调用方另报一份。
     legacy_taken: Vec<Taken>,
+    /// 这一批最多做多少项新工作（落库 + 新进等待缓冲的原生项；[Receiver::with_budget]）。None = 不限。
+    budget: Option<u64>,
+    /// 这一批已做的新工作。
+    spent: u64,
+    /// 上一个原生段因为 [Receiver::budget] 用完在中途停下（后面的项这一批没碰）。
+    cut: bool,
 }
 
 impl<'t, 'c> Receiver<'t, 'c> {
@@ -230,7 +236,29 @@ impl<'t, 'c> Receiver<'t, 'c> {
             tally: Received::default(),
             marks_due: Vec::new(),
             legacy_taken: Vec::new(),
+            budget: None,
+            spent: 0,
+            cut: false,
         })
+    }
+
+    /// 收段让路（G8-7b）：这一批最多做 [items] 项新工作（落进日志的原生项 / 空洞 + 新进等待缓冲的原生项）。用完时
+    /// 正在收的原生段在下一项之前停下（[Receiver::cut]）——已落的部分是本机日志的前缀，同一段下一批再交一次时这部分
+    /// 按「本机已有」跳过（只重算链，不落库），从停下的地方接着落。调用方据此把一大批切成几个短事务，事务之间放开
+    /// 写锁让作答插进来（`cmd/sync.rs` `ingest` 的 `maxItems`）。
+    pub fn with_budget(mut self, items: Option<u64>) -> Self {
+        self.budget = items.map(|n| n.max(1));
+        self
+    }
+
+    /// 这一批的预算用完了（下一段不该再交）。
+    pub fn exhausted(&self) -> bool {
+        self.budget.is_some_and(|b| self.spent >= b)
+    }
+
+    /// 上一个 [Receiver::native] 在段的中途停下了：这一段还要原样再交一次。
+    pub fn cut(&self) -> bool {
+        self.cut
     }
 
     fn public_of(&self, device: &Id) -> Result<Option<[u8; 32]>, String> {
@@ -277,6 +305,7 @@ impl<'t, 'c> Receiver<'t, 'c> {
 
     /// 收一个原生段（`seg-…`，`FSG4`）或中继件（`rly-…`，`FRL4`）。[key] = 它所在位置的密钥。
     pub fn native(&mut self, bytes: &[u8], key: Option<&CollectionKey>) -> Result<Taken, String> {
+        self.cut = false;
         let taken = self.native_inner(bytes, key)?;
         Ok(self.count(taken))
     }
@@ -342,6 +371,16 @@ impl<'t, 'c> Receiver<'t, 'c> {
         let mut chain = header.prev_chain;
         let mut seq = header.first;
         for item in items {
+            if self.exhausted() {
+                // 预算用完：停在这一项之前。已落的是日志前缀，下一批再交这一段时按已有跳过。
+                self.cut = true;
+                self.tally.landed += landed;
+                return Ok(Taken::Landed {
+                    landed,
+                    known,
+                    parked,
+                });
+            }
             // verify() 已整段校验过；第二遍流式解（超大的段）不该再出错，出了就是库外的意外，整笔回滚。
             let item =
                 item.map_err(|e| format!("gen4 receive: segment changed while reading: {e}"))?;
@@ -372,7 +411,9 @@ impl<'t, 'c> Receiver<'t, 'c> {
                     }
                 }
                 if seq > last + 1 || !self.ready(&item) {
-                    self.park(&device, seq, &prev, &after, &item)?;
+                    if self.park(&device, seq, &prev, &after, &item)? {
+                        self.spent += 1;
+                    }
                     parked += 1;
                     chain = after;
                     seq = end + 1;
@@ -382,6 +423,7 @@ impl<'t, 'c> Receiver<'t, 'c> {
                 known += last + 1 - seq;
                 self.land(&device, seq, last, &item, &after)?;
                 landed += 1;
+                self.spent += 1;
                 last = end;
                 tail = after;
             }
@@ -477,7 +519,7 @@ impl<'t, 'c> Receiver<'t, 'c> {
         prev: &Chain,
         after: &Chain,
         item: &NativeItem,
-    ) -> Result<(), String> {
+    ) -> Result<bool, String> {
         let k = self.t.key_for(
             self.col,
             &OpId {
@@ -499,7 +541,7 @@ impl<'t, 'c> Receiver<'t, 'c> {
                 .map_err(sql)?
                 .execute(params![k, &prev[..], &after[..], span, op])
                 .map_err(sql)
-                .map(|_| ())
+                .map(|n| n > 0)
         })
     }
 

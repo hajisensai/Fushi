@@ -249,6 +249,32 @@ pub(super) fn heads(loc: &Loc) -> Vec<Vec<u8>> {
     best.values().map(|(_, k)| loc[k].clone()).collect()
 }
 
+/// 每台设备代号最大的被转发 head（`rhd-`，`cmd/sync_relay.rs`）的字节。
+pub(super) fn relayed_heads(loc: &Loc) -> Vec<Vec<u8>> {
+    let mut best: BTreeMap<String, (u64, String)> = BTreeMap::new();
+    for k in loc.keys() {
+        let Some(rel) = k.strip_prefix("v4/") else {
+            continue;
+        };
+        if let Some(V4File::RelayHead { author, gen, .. }) = parse_v4_path(rel) {
+            let e = best.entry(author.text()).or_insert((0, String::new()));
+            if gen > e.0 {
+                *e = (gen, k.clone());
+            }
+        }
+    }
+    best.values().map(|(_, k)| loc[k].clone()).collect()
+}
+
+/// 拉一个段：作者自写的 `seg-…` 不在就拉别的设备转发来的同名 `rly-…`（Dart `srsFetchSegment`）。
+pub(super) fn fetch_seg(loc: &Loc, path: &str) -> Option<Vec<u8>> {
+    loc.get(&format!("v4/{path}")).cloned().or_else(|| {
+        let (dir, name) = path.rsplit_once('/')?;
+        let rest = name.strip_prefix("seg-")?;
+        loc.get(&format!("v4/{dir}/rly-{rest}")).cloned()
+    })
+}
+
 /// 一轮的选项。
 #[derive(Clone, Copy, Default)]
 pub(super) struct Opts<'a> {
@@ -305,13 +331,17 @@ pub(super) fn round(d: &Dev, loc: &mut Loc, location: &str, now: i64, o: Opts<'_
         loc.insert(p, b);
     }
     let loc_id = root["loc"].as_str().unwrap().to_owned();
-    // 2. plan。
+    // 2. plan（作者自写的 head 在前，被转发的 head 在后，`relayed` 是后者的份数）。
+    let mut hs = heads(loc);
+    let rh = relayed_heads(loc);
+    let relayed = rh.len();
+    hs.extend(rh);
     let (plan, _) = cmd(
         d.h,
         "plan",
         now,
-        json!({"location": location, "loc": loc_id, "listing": listing(loc)}),
-        &heads(loc),
+        json!({"location": location, "loc": loc_id, "listing": listing(loc), "relayed": relayed}),
+        &hs,
     );
     assert_eq!(plan["needsUpgrade"], json!(false), "{plan}");
     // 3. 收。
@@ -320,7 +350,7 @@ pub(super) fn round(d: &Dev, loc: &mut Loc, location: &str, now: i64, o: Opts<'_
         .unwrap()
         .iter()
         .flat_map(|f| f["files"].as_array().unwrap().clone())
-        .filter_map(|p| loc.get(&format!("v4/{}", p.as_str().unwrap())).cloned())
+        .filter_map(|p| fetch_seg(loc, p.as_str().unwrap()))
         .collect();
     let mut fork = plan["finishPending"] == json!(true);
     if !fetched.is_empty() {
@@ -1109,9 +1139,13 @@ fn removed_and_unwired_sync_commands_name_their_reason() {
         let e = raw(a.h, &g4req(op, T1, json!({})), &[]).unwrap_err();
         assert!(e.contains(REMOVED), "{op}: {e}");
     }
+    // 转发（G8-7b）已接线：缺参数报参数错，不再报未接线。
     for op in ["relay_outbox", "relay_ack"] {
         let e = raw(a.h, &g4req(op, T1, json!({})), &[]).unwrap_err();
-        assert!(e.contains(UNWIRED) && e.contains("G8-7b"), "{op}: {e}");
+        assert!(
+            !e.contains(UNWIRED) && e.contains("missing location"),
+            "{op}: {e}"
+        );
     }
 }
 

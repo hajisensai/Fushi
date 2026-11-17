@@ -39,6 +39,7 @@ use rusqlite::{OptionalExtension, params};
 use serde_json::{Map, Value, json};
 
 use super::Files;
+use super::sync_relay::keep;
 use crate::gen4::head::{Head4, HeadError};
 use crate::gen4::heritage::{MAGIC as HERITAGE_MAGIC, peek_heritage_header};
 use crate::gen4::location::{
@@ -724,7 +725,16 @@ pub fn plan(t: &Truth<'_>, col: i64, req: &Value, heads: &[Vec<u8>]) -> Result<V
     let mut sealed = false;
     let mut finish_pending = fork::recorded_fork(t, col)?.is_some();
     let mut fetch: BTreeMap<Id, (bool, BTreeSet<String>)> = BTreeMap::new();
-    for bytes in heads {
+    // 末尾 `relayed` 份是别的设备转发来的 head（`rhd-`，`cmd/sync_relay.rs`）：认公钥、定要拉的段，但不是这个位置的
+    // 证据（不记 `loc_heads`、不取消停用、本机身份的不比）。
+    let relayed = req
+        .get("relayed")
+        .and_then(Value::as_u64)
+        .map_or(0, |n| usize::try_from(n).unwrap_or(usize::MAX))
+        .min(heads.len());
+    let first_relayed = heads.len() - relayed;
+    for (i, bytes) in heads.iter().enumerate() {
+        let is_relayed = i >= first_relayed;
         let h = match Head4::decode(bytes) {
             Ok(h) => h,
             Err(HeadError::NeedsUpgrade { min_reader }) => {
@@ -742,6 +752,12 @@ pub fn plan(t: &Truth<'_>, col: i64, req: &Value, heads: &[Vec<u8>]) -> Result<V
         }
         if loc.is_some_and(|l| l == h.loc) && !h.seal.is_empty() {
             sealed = true;
+        }
+        if is_relayed
+            && (h.device == me.device
+                || super::sync_oldroot::former_identities(t, col)?.contains(&h.device))
+        {
+            continue;
         }
         if h.device == me.device {
             match fork::judge_own_head(t, col, &h)? {
@@ -782,24 +798,30 @@ pub fn plan(t: &Truth<'_>, col: i64, req: &Value, heads: &[Vec<u8>]) -> Result<V
             ));
             continue;
         }
-        let lh = LocHead {
-            device: h.device,
-            gen: h.gen,
-            seq: h.seq,
-            segs: h.segment_files(),
-        };
-        if t.put_loc_head(col, location, &lh)?
-            == crate::store::gen4::sync_state::LocHeadPut::Conflict
-        {
-            errors.push(format!(
-                "head of {}: contradicts the head seen before at this location",
-                h.device
-            ));
-        }
-        if let Some(r) = retired.get(&h.device) {
-            if r["headSeq"].as_u64().is_some_and(|s| h.seq > s) {
-                t.set_retired(col, &h.device, None)?;
+        // 转发用：记下这台设备最新的 head（只进不退）。
+        super::sync_relay::note_head(t, col, &h, bytes)?;
+        if !is_relayed {
+            let lh = LocHead {
+                device: h.device,
+                gen: h.gen,
+                seq: h.seq,
+                segs: h.segment_files(),
+            };
+            if t.put_loc_head(col, location, &lh)?
+                == crate::store::gen4::sync_state::LocHeadPut::Conflict
+            {
+                errors.push(format!(
+                    "head of {}: contradicts the head seen before at this location",
+                    h.device
+                ));
             }
+            if let Some(r) = retired.get(&h.device) {
+                if r["headSeq"].as_u64().is_some_and(|s| h.seq > s) {
+                    t.set_retired(col, &h.device, None)?;
+                }
+            }
+            // 这个位置上作者自己有了的段，不必再替它转发（`cmd/sync_relay.rs` [prune]）。
+            super::sync_relay::prune(t, col, &h.device)?;
         }
         let last = t.last_of(col, &h.device)?;
         for (a, b, tag) in &h.segs {
@@ -859,7 +881,9 @@ pub fn plan(t: &Truth<'_>, col: i64, req: &Value, heads: &[Vec<u8>]) -> Result<V
 
 // ---------------------------------------------------------------------- 3. 收段
 
-/// `ingest {profile, key?}`，字节块 = 这一批从位置上读到的段（原生段 `FSG4`、中继件 `FRL4`、承袭段 `FSH4`）。一批一个
+/// `ingest {profile, key?, maxItems?}`，字节块 = 这一批从位置上读到的段（原生段 `FSG4`、中继件 `FRL4`、承袭段 `FSH4`）。
+/// `maxItems`（收段让路）：这一个事务最多做多少项新工作（[Receiver::with_budget]）；用完就停，回包 `rest` = 交完了的段数，
+/// Dart 把剩下的（含中途停下的那一段）放到下一个事务里交，两个事务之间放开写锁让作答插进来。一批一个
 /// 写事务（[Receiver]：先全部核对再落、按因果投递、终点收派生层）；本机当前身份的段收完再逐条与本机日志比链
 /// （[ForkScan]），找到分叉点就记下（[fork::record_fork]），换身份推到 [ingest_finish]。回包是这一批的计数、逐段没收的
 /// 原因（`errors`）、派生层的收尾与本机修订号。
@@ -867,15 +891,24 @@ pub fn ingest(
     t: &Truth<'_>,
     col: i64,
     profile: &str,
+    req: &Value,
     blobs: &[Vec<u8>],
     key: Option<&CollectionKey>,
 ) -> Result<Value, String> {
     let me = me_of(t, col)?;
     let public = me.public();
-    let mut rx = Receiver::open(t, col, Settle::Incremental)?;
+    let max_items = req.get("maxItems").and_then(Value::as_u64);
+    let mut rx = Receiver::open(t, col, Settle::Incremental)?.with_budget(max_items);
     let mut scan: Option<ForkScan> = None;
     let mut errors: Vec<String> = Vec::new();
-    for b in blobs {
+    let mut kept = 0u64;
+    // 这一批交完了几段（后面的 Dart 下一个事务再交；中途停下的那一段算没交完）。
+    let mut rest = blobs.len();
+    for (i, b) in blobs.iter().enumerate() {
+        if rx.exhausted() {
+            rest = i;
+            break;
+        }
         let heritage = b.starts_with(HERITAGE_MAGIC);
         let author = if heritage {
             peek_heritage_header(b).ok().map(|h| h.uploader)
@@ -889,12 +922,23 @@ pub fn ingest(
         } else {
             rx.native(b, key)?
         };
+        let cut = rx.cut();
         match &taken {
-            Taken::Landed { .. } => {}
+            Taken::Landed { .. } => {
+                // 别的设备的原生段：本机同步着多个位置时留一份原文给转发（`cmd/sync_relay.rs`）。
+                if !heritage && author.is_some_and(|a| a != me.device) && keep(t, col, b, key)? {
+                    kept += 1;
+                }
+            }
             other => errors.push(format!(
                 "{}: {other:?}",
                 author.map_or_else(|| "?".to_owned(), |d| d.text())
             )),
+        }
+        if cut {
+            // 预算在这一段中途用完：这一段下一批原样再交（已落的部分按本机已有跳过）；比链等它整段收完再做。
+            rest = i;
+            break;
         }
         // 本机当前身份的原生段：比链找分叉点（收过的部分与本机日志相同，接得上的已经接回来了）。
         if !heritage && author == Some(me.device) {
@@ -938,6 +982,8 @@ pub fn ingest(
         "errors": errors,
         "settled": settled_json(&r.settled),
         "voided": r.voided,
+        "rest": rest,
+        "kept": kept,
     });
     bump_revision(t, profile, applied + r.voided, &mut out)?;
     Ok(out)

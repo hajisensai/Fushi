@@ -156,8 +156,8 @@ pub fn wiring(op: &str) -> Option<Wiring> {
         // 旧根接手与承袭上传（G8-7b，`cmd/sync_oldroot.rs`）
         "oldroot_scan" | "oldroot_ingest" | "heritage_plan" | "heritage_outbox"
         | "heritage_ack" => Wired,
-        // 转发（FRL4）：要收下的作者段原字节，存储表还没有（交接说明「G8-7b 同步补全」未做项）。
-        "relay_outbox" | "relay_ack" => Unwired("G8-7b"),
+        // 转发（FRL4，G8-7b，`cmd/sync_relay.rs`）：收段时留下的作者段原文（`relay_segs`）装成中继件发到缺它的位置。
+        "relay_outbox" | "relay_ack" => Wired,
         // 导入 / 导出（G11-3，`cmd/fushisrs.rs`）
         "import" | "export" => Wired,
         // 新代不需要
@@ -572,7 +572,7 @@ fn run(
         "ingest" => {
             let key = cmd::sync::key_of(req)?;
             let v = c.write(|t| {
-                cmd::sync::ingest(t, col_of(t, profile)?, profile, blobs, key.as_ref())
+                cmd::sync::ingest(t, col_of(t, profile)?, profile, req, blobs, key.as_ref())
             })?;
             noted(c, profile, v)
         }
@@ -614,6 +614,16 @@ fn run(
         }
         "location_seal" => {
             c.write_local(|t| cmd::sync::location_seal(t, col_of(t, profile)?, req, blobs))?
+        }
+        // ------------------------------------------------------------ 转发（cmd/sync_relay.rs）
+        "relay_outbox" => {
+            let key = cmd::sync::key_of(req)?;
+            read_col(c, profile, |t, col| {
+                cmd::sync_relay::relay_outbox(t, col, req, key.as_ref(), files)
+            })?
+        }
+        "relay_ack" => {
+            c.write_local(|t| cmd::sync_relay::relay_ack(t, col_of(t, profile)?, req))?
         }
         "obsolete_former" => {
             read_col(c, profile, |t, col| cmd::sync::obsolete_former(t, col, req))?

@@ -2777,7 +2777,8 @@ mod tests {
             }
         }
         assert!(
-            wired > 40 && unwired > 10 && gone > 8,
+            // 未接线的随各模块接上越来越少（G8-7b 之后只剩 G9-5 等几条），只要求分类齐全。
+            wired > 40 && unwired > 0 && gone > 8,
             "{wired} / {unwired} / {gone}"
         );
         ffsrs_store_close(h);
