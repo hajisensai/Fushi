@@ -414,7 +414,7 @@ jobs:
       working-directory: fushi
       run: |
         set -euo pipefail
-        flutter build apk --debug --config-only
+        flutter build apk --config-only
         cd android
         ./gradlew :app:testDebugUnitTest -Ptarget-platform=android-arm64 --no-daemon
 

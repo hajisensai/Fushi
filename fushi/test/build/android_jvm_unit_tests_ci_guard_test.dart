@@ -28,7 +28,7 @@ void main() {
     // app 的 checkFushi*Native 按 target-platform 查原生库，本 job 只编了 arm64。
     expect(body, contains('-Ptarget-platform=android-arm64'));
     // gradlew 需要 local.properties（flutter.sdk），由 --config-only 生成。
-    expect(body, contains('flutter build apk --debug --config-only'));
+    expect(body, contains('flutter build apk --config-only'));
     expect(body, contains('set -euo pipefail'));
     expect(body, isNot(contains('continue-on-error')));
     expect(body, isNot(contains('|| true')));

@@ -122,7 +122,7 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 
 - CI：`main.yml` 的 `build` job 在 PR 改到 Android / 原生 / 插件 / pubspec（与 R8 校验同一个路径门）时跑
   `./gradlew :app:testDebugUnitTest`，红就判红；守卫 `fushi/test/build/android_jvm_unit_tests_ci_guard_test.dart`。
-- 本地定向跑（先在 `fushi/` 下 `flutter pub get` + `flutter build apk --debug --config-only` 生成插件注册与
+- 本地定向跑（先在 `fushi/` 下 `flutter pub get` + `flutter build apk --config-only` 生成插件注册与
   `local.properties`），在 `fushi/android/` 下走租约：
   `dart ../tool/heavy.dart --check-only -- .\gradlew.bat :app:testDebugUnitTest --tests app.fushi.reader.CrossAppAudioPolicyTest`。
 - 测试类路径上的 `android.jar` 全是抛 `Stub!` / "not mocked" 的桩，也没有 Robolectric：要单测的逻辑抽成不碰 Android
