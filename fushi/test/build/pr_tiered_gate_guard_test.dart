@@ -163,7 +163,7 @@ void main() {
       releaseWorkflow.indexOf('\non:\n'),
       releaseWorkflow.indexOf('\nconcurrency:\n'),
     );
-    expect(on, contains("  push:\n"));
+    expect(on, contains('  push:\n'));
     expect(on, contains("branches: ['main', 'develop']"));
     expect(
       releaseWorkflow,
