@@ -43,10 +43,21 @@ node scripts/decisions.mjs add --json items.json
 ```
 
 - `id`：PR 用 `pr<号>`（同一 PR 多个取舍用 `pr3162a` / `pr3162b`），反馈用反馈 id，issue 用 `issue<号>`，其余用 `<kind>-<短 slug>`；只允许字母数字 `_` `-`，最长 40。**同 id 已存在的跳过、不覆盖**，可以放心重复跑。
-- `original`：页面在卡片里默认展开显示（可收起），让维护者直接对照原话。反馈类事项不用填，页面按 id / source 联表取用户的标题与正文；PR / issue / 评论类尽量贴原话（外文照贴，不必翻译）。
+- `original`：页面在卡片里默认展开显示（可收起），让维护者直接对照原话。反馈类事项不用填，页面按 id / source 联表取用户的标题与正文；PR / issue / 评论类尽量贴原话（外文照贴，不必翻译）。图片：反馈截图自动显示；`original` 里的 `![](url)` / `<img src>` 若是 GitHub 附件（`github.com/user-attachments/assets/…`、`*.githubusercontent.com`）会直接显示在原文下方，所以贴 PR / issue 原文时保留图片标记；其他图床不显示。
 - `choices` 只在有两个以上互斥方案时给；给了就没有「做」按钮，改成每个方案一个按钮。
 - `ask` 要自洽：说清现状、诉求、建议。维护者点「没看懂」最常见的原因是缺上下文（例如「咱们不是自己有了吗」），写之前先查清现有实现，把「已有什么、差什么」写进去。
 - 写之前先查 [feature-blacklist.md](feature-blacklist.md)，命中就不写。
+
+### 附设计图
+
+```bash
+node scripts/decisions.mjs attach <id> design-a.html design-b.html spec.md shot.png
+node scripts/decisions.mjs detach <id> <序号>   # 序号从 0 数，show 里能看到
+```
+
+- 收 html / htm / md / markdown / txt / png / jpg / jpeg / webp / gif / svg，单个 ≤ 10 MB，每条最多 10 个；文件传到 R2，卡片里直接预览：html 默认展开 iframe 预览（sandbox，页面脚本能跑、拿不到处理台会话），图片出缩略图，md / txt 给打开链接（纯文本显示）。
+- 要维护者在几个设计里挑一个时，每个方案一个文件 + `choices` 一一对应，标题写进文件名（如 `a-卡片式.html`）。
+- html 要自包含（CSS / 图片内联，外部脚本只用 CDN）；同目录的相对路径资源不会跟着上传。
 
 ## 巡检与执行
 
