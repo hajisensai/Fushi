@@ -165,10 +165,12 @@ class TtsCast {
     Map<String, TtsCastLine>? lines,
     Map<String, String>? voices,
     Map<String, TtsCastCharacter>? roster,
+    List<String>? retryVoices,
     this.annotatedSections = const <int>{},
   }) : lines = lines ?? <String, TtsCastLine>{},
        voices = voices ?? <String, String>{},
-       roster = roster ?? <String, TtsCastCharacter>{};
+       roster = roster ?? <String, TtsCastCharacter>{},
+       retryVoices = retryVoices ?? <String>[];
 
   /// 行键（[ttsLineKey]）→ 角色。
   final Map<String, TtsCastLine> lines;
@@ -179,6 +181,10 @@ class TtsCast {
   /// 角色表：规范名 → 角色（别名 / 性别 / 年龄 / 人设）。LLM 第一遍按章增量抽取，
   /// 第二遍逐句归属只能从这里选（或 [kTtsUnknown]）。
   final Map<String, TtsCastCharacter> roster;
+
+  /// 本书自己的「切配置重试」候选声音（按顺序试，排在系列的候选前面）。书不属于
+  /// 任何系列时只有这一份。
+  final List<String> retryVoices;
 
   /// 已经跑过 LLM 标注的章（UI 显示进度、重新标注跳过已完成的章）。
   Set<int> annotatedSections;
@@ -194,6 +200,7 @@ class TtsCast {
       for (final MapEntry<String, String> e in voices.entries)
         if (e.key != kTtsNarrator) e.key: e.value,
     },
+    retryVoices: retryVoices,
   );
 
   /// 某个角色用的声音：本书 → 系列；null = 任务默认声音。
@@ -341,6 +348,7 @@ class TtsCast {
       for (final TtsCastCharacter c in roster.values) c.toJson(),
     ],
     'annotated': annotatedSections.toList()..sort(),
+    if (retryVoices.isNotEmpty) 'retry': retryVoices,
   };
 
   static TtsCast fromJson(Object? raw) {
@@ -349,7 +357,13 @@ class TtsCast {
     final Object? voices = raw['voices'];
     final Object? annotated = raw['annotated'];
     final Object? roster = raw['roster'];
+    final Object? retry = raw['retry'];
     return TtsCast(
+      retryVoices: <String>[
+        if (retry is List)
+          for (final Object? v in retry)
+            if (v is String && v.isNotEmpty) v,
+      ],
       roster: <String, TtsCastCharacter>{
         if (roster is List)
           for (final Object? r in roster)

@@ -58,7 +58,6 @@ import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_retry.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
-import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/asr_host/asr_host.dart';
@@ -80,21 +79,6 @@ const String kTtsRenderSrtFileName = 'tts_audiobook.srt';
 /// 工作目录里「重新生成的缓存已丢弃」的标记：续跑同一任务时不再丢第二次（否则会把
 /// 已经重新合成好的音频又删掉）。
 const String _kRegeneratedMarker = 'regenerated.done';
-
-/// 解析好的一份声音预设（每份预设只解析一次）。
-class _RenderVoice {
-  const _RenderVoice({
-    required this.preset,
-    required this.descriptor,
-    required this.identity,
-  });
-
-  final TtsVoicePreset preset;
-  final TtsProviderDescriptor descriptor;
-
-  /// 进缓存键的音色身份。
-  final Map<String, Object?> identity;
-}
 
 /// 合成一句要用的引擎实例；[group] = 预设 id，同组共用一个并发上限。
 typedef _SentenceVoice = ({
@@ -142,12 +126,12 @@ class AppTtsRenderRunner implements TtsRenderRunner {
       cast: cast,
       defaultPresetId: job.presetId,
     );
-    final Map<String, _RenderVoice> voices = <String, _RenderVoice>{};
+    final Map<String, TtsRenderVoice> voices = <String, TtsRenderVoice>{};
     final Map<String, TtsRenderFailure> unavailable =
         <String, TtsRenderFailure>{};
     for (final String presetId in presetOf.values.toSet()) {
       try {
-        voices[presetId] = _resolveVoice(tts, presetId);
+        voices[presetId] = resolveTtsRenderVoice(tts, presetId);
       } on TtsRenderFailure catch (e) {
         if (presetId == job.presetId) rethrow;
         unavailable[presetId] = e;
@@ -194,7 +178,7 @@ class AppTtsRenderRunner implements TtsRenderRunner {
     })
     rendered;
     try {
-      voices.forEach((String presetId, _RenderVoice voice) {
+      voices.forEach((String presetId, TtsRenderVoice voice) {
         providers[presetId] = voice.descriptor.create(voice.preset, tts.host);
       });
       rendered = await _renderChapters(
@@ -290,26 +274,6 @@ class AppTtsRenderRunner implements TtsRenderRunner {
       '-filters',
     ], const Duration(seconds: 20));
     return result.isSuccess && ffmpegFiltersListHas(result.output, 'loudnorm');
-  }
-
-  _RenderVoice _resolveVoice(TtsServices tts, String presetId) {
-    TtsVoicePreset? preset;
-    for (final TtsVoicePreset candidate in tts.store.loadPresets()) {
-      if (candidate.id == presetId) preset = candidate;
-    }
-    if (preset == null) throw const TtsRenderFailure('voice_missing');
-    final TtsProviderDescriptor? descriptor = tts.registry[preset.providerId];
-    if (descriptor == null || !descriptor.isAvailable) {
-      throw const TtsRenderFailure('voice_unavailable');
-    }
-    if (descriptor.validate(preset).isNotEmpty) {
-      throw const TtsRenderFailure('voice_incomplete');
-    }
-    return _RenderVoice(
-      preset: preset,
-      descriptor: descriptor,
-      identity: descriptor.audioIdentity(preset),
-    );
   }
 
   /// 「重新生成」：开始前丢掉这些句的缓存音频（按各句自己的声音算键；不在本次渲染
