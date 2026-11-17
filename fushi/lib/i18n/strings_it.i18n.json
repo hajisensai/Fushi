@@ -5820,6 +5820,7 @@
   "media_source_rename_label": "Nome della sorgente",
   "media_source_rescan": "Ri-scansiona",
   "media_source_root_already_added": "Già una sorgente · nuova scansione: $path",
+  "media_source_scan_blocked_scrape_cleanup": "Video scrape data is being cleaned up. Scan again when it finishes.",
   "media_source_scan_error": "Scansione fallita",
   "media_source_section_title": "Fonti libreria",
   "media_stats_action": "Vedi statistiche",

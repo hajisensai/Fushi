@@ -5820,6 +5820,7 @@
   "media_source_rename_label": "Tên nguồn",
   "media_source_rescan": "Quét lại",
   "media_source_root_already_added": "Đã là nguồn — đang quét lại: $path",
+  "media_source_scan_blocked_scrape_cleanup": "Video scrape data is being cleaned up. Scan again when it finishes.",
   "media_source_scan_error": "Quét thất bại",
   "media_source_section_title": "Nguồn thư viện",
   "media_stats_action": "Xem thống kê",

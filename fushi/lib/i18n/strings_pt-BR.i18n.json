@@ -5820,6 +5820,7 @@
   "media_source_rename_label": "Nome da fonte",
   "media_source_rescan": "Varrer novamente",
   "media_source_root_already_added": "Já é uma fonte — verificando novamente: $path",
+  "media_source_scan_blocked_scrape_cleanup": "Video scrape data is being cleaned up. Scan again when it finishes.",
   "media_source_scan_error": "Varredura falhou",
   "media_source_section_title": "Fontes da biblioteca",
   "media_stats_action": "Ver estatísticas",
