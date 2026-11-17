@@ -2177,6 +2177,16 @@ class SrsDbStore implements SrsSync2Host {
   Future<Map<String, Object?>> sync2Status() async =>
       (await sync2Command(<String, Object?>{'op': 'status'})).map;
 
+  /// 彻底清除的字节层收尾（内核 `scrub_state`，`gen4/scrub.rs`；整个库一份，与 profile 无关）：`due` = 有清除提交了、
+  /// 磁盘上的旧字节还没抹干净（等下一次写入或开库时收尾）；`error` = 上一次收尾没做成的原因（空间不够等），没有 = null。
+  /// `error` 非空时同步 / 清除相关页面提示用户（`srs_scrub_error_notice`）。读快照，不写库。
+  Future<SrsScrubState> scrubState() async {
+    final Map<String, Object?> r = (await sync2Command(const <String, Object?>{
+      'op': 'scrub_state',
+    })).map;
+    return (due: r['due'] == true, error: r['error'] as String?);
+  }
+
   /// 本机设备信息（native/fushi_fsrs/src/store/sync2/devices.rs）：给了哪个改哪个，[nick] 给空串 = 清掉昵称、回到
   /// 型号。人读名 = 昵称或型号，随下一次写 head 发布（型号 / 版本 / 平台进 head 的扩展）。没变时内核不进写锁。
   Future<Map<String, Object?>> sync2DeviceInfo({
@@ -6708,3 +6718,6 @@ List<SrsWrittenItem?> srsWrittenByInput(
   }
   return out;
 }
+
+/// [SrsDbStore.scrubState] 的结果。
+typedef SrsScrubState = ({bool due, String? error});

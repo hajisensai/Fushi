@@ -7,6 +7,10 @@ import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/storage_usage_actions.dart';
+import 'package:fushi/src/srs/srs_retained_copy.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_srs/fushi_srs.dart'
+    show SrsCoreException, SrsRetainedCopyState;
 import 'package:fushi/src/storage/storage_usage_service.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart'
     show buildDataStorageLocationSection;
@@ -63,6 +67,26 @@ SettingsDestination buildStorageDestination() {
             ),
             onTap: openLibraryRecoveryPage,
           ),
+          // D32：迁移后封存的旧版本复习库（保留副本）。到期自动删；这里提前删。只在本机有保留副本时出现。
+          SettingsActionItem(
+            id: 'storage.srs_retained_copy',
+            title: t.srs_retained_copy_title,
+            subtitle: t.srs_retained_copy_summary,
+            subtitleBuilder: _srsRetainedCopySubtitle,
+            icon: FushiIcons.delete,
+            destructive: true,
+            visible: (SettingsContext c) =>
+                _srsRetainedCopy(c)?.present ?? false,
+            cli: const SettingsCliAction.unsupported(
+              '删除旧版本保留副本走复习的控制通道：srs.retained.status 看大小与到期，'
+              'srs.retained.delete（confirm: true）删除',
+            ),
+            onTap: (SettingsContext c) => confirmAndDeleteSrsRetainedCopy(
+              c.context,
+              c.appModel,
+              c.ref.read(srsRetainedCopyBackendProvider),
+            ),
+          ),
         ],
       ),
     ],
@@ -98,4 +122,23 @@ SettingsDestination buildStorageDestination() {
       ),
     ],
   );
+}
+
+/// 本机保留副本的状态；读不了（新代库坏了等）记日志、按没有处理（删除同样会被内核拒绝）。
+SrsRetainedCopyState? _srsRetainedCopy(SettingsContext c) {
+  try {
+    return srsRetainedCopyStateOf(
+      c.appModel,
+      c.ref.read(srsRetainedCopyBackendProvider),
+    );
+  } on SrsCoreException catch (e, stack) {
+    ErrorLogService.instance.log('settings.srs_retained_copy', e, stack);
+    return null;
+  }
+}
+
+String? _srsRetainedCopySubtitle(SettingsContext c) {
+  final SrsRetainedCopyState? s = _srsRetainedCopy(c);
+  if (s == null || !s.present) return null;
+  return srsRetainedCopyStatusText(c.context, s);
 }

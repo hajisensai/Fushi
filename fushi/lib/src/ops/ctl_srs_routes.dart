@@ -16,6 +16,7 @@ import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/ops/op_context.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_retained_copy.dart' show srsLibraryDirOf;
 
 export 'package:fushi_engine/srs/srs_ctl_routes.dart' show kSrsCtlRoot;
 
@@ -25,6 +26,7 @@ class SrsCtlDeps {
     required this.store,
     required this.moduleEnabled,
     required this.changed,
+    this.libraryDir,
   });
 
   /// 与页面同一个 store（`srsStoreProvider`）。null = 复习库没就绪。
@@ -36,10 +38,14 @@ class SrsCtlDeps {
   /// 写完后让打开着的复习页面重读（页面按钮写完也调同一个 `bumpSrsRevision`）。
   final void Function() changed;
 
+  /// 复习库所在目录（旧版本保留副本的路由按它）；主库没开好 = null。
+  final String? Function()? libraryDir;
+
   factory SrsCtlDeps.of(OpContext context) => SrsCtlDeps(
     store: () => readSrsStore(context.ref),
     moduleEnabled: () => context.appModel.moduleEnabled(ModuleId.srs),
     changed: () => bumpSrsRevision(context.ref),
+    libraryDir: () => srsLibraryDirOf(context.appModel),
   );
 
   /// engine 路由 / 撤销要的宿主：app 只有当前 profile 这一份库，点名的 profile 参数不看。
@@ -47,6 +53,7 @@ class SrsCtlDeps {
     open: (String? profile) async =>
         SrsCtlTarget(await requireSrsCtlStore(this)),
     changed: (SrsCtlTarget target) => changed(),
+    libraryDir: libraryDir,
   );
 }
 

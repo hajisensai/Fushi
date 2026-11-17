@@ -43,6 +43,7 @@ import 'package:fushi/src/srs/srs_sync_scheduler.dart';
 import 'package:fushi/src/sync/sync_progress_banner.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_retained_copy.dart' show SrsScrubErrorNotice;
 import 'package:fushi/src/utils/adaptive/shell_style.dart'
     show shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
@@ -1159,6 +1160,8 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
           modules: ref.watch(appProvider).moduleVisibility,
         ),
       ),
+      // 彻底清除的字节层收尾出错（内核 `scrub_state`）：清除的原文还在磁盘上。
+      const SrsScrubErrorNotice(),
       if (_status['enabled'] == true || _deferredMerge != null)
         _buildStatus(context),
       if (_status['enabled'] == true && _devices.isNotEmpty)

@@ -61,6 +61,7 @@ import 'package:fushi/src/srs/srs_import_task.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_import_tasks_bar.dart';
 import 'package:fushi/src/srs/srs_home_stats.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_retained_copy.dart';
 import 'package:fushi/src/srs/srs_remote_store_client.dart'
     show
         SrsRemoteBadResponse,
@@ -368,6 +369,15 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
   Future<void> _delete(SrsDeckSummary deck) async {
     final SrsDbStore? before = await readSrsStore(ref);
     if (before == null || !mounted) return;
+    // 迁移后的旧版本保留副本（D32）：彻底清除管不到它，里面仍有升级前的原文——选项说明与随后的选择写明，并给立即删除。
+    final AppModel app = ref.read(appProvider);
+    final SrsRetainedCopyBackend retainedBackend = ref.read(
+      srsRetainedCopyBackendProvider,
+    );
+    final SrsRetainedCopyState? retained = srsRetainedCopyStateOf(
+      app,
+      retainedBackend,
+    );
     final _DeckDeleteMode? mode = await showFushiChoiceDialog<_DeckDeleteMode>(
       context: context,
       title: t.srs_deck_delete,
@@ -390,12 +400,17 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
         FushiChoiceOption<_DeckDeleteMode>(
           value: _DeckDeleteMode.purge,
           label: t.srs_deck_delete_purge,
-          subtitle: t.srs_deck_delete_purge_hint,
+          subtitle: srsPurgeOptionHint(retained),
           icon: FushiIcons.delete,
         ),
       ],
     );
     if (mode == null || !mounted) return;
+    final SrsPurgeRetainedChoice? retainedChoice = mode == _DeckDeleteMode.purge
+        ? await askSrsPurgeRetainedCopy(context, retained)
+        : SrsPurgeRetainedChoice.keep;
+    if (retainedChoice == null || !mounted) return;
+    final String? libraryDir = srsLibraryDirOf(app);
     // 控制器先取出来：删除途中本页可能被销毁（复习 tab 不常驻），之后不能再碰 ref。
     final SrsDeckDeleteController deleter = ref.read(
       srsDeckDeleteControllerProvider,
@@ -414,6 +429,11 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
       deleteCards: mode != _DeckDeleteMode.moveCards,
       purgeNow: purge,
       mediaRoot: mediaRoot,
+    );
+    await settleSrsPurgeRetainedCopy(
+      retainedChoice,
+      retainedBackend,
+      libraryDir,
     );
   }
 
@@ -977,38 +997,46 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
       selectedId: _selectedId ?? _focusId,
       stats: ref.watch(srsHomeStatsProvider).valueOrNull,
       deleting: deleter.deleting,
-      banners: _srsDeckBanners(
-        context,
-        data: list,
-        showImportTasks: ref.read(srsImportControllerProvider).tasks.isNotEmpty,
-        lapisPending: ref.watch(srsLegacyLapisPendingProvider).valueOrNull ?? 0,
-        joinProvisional:
-            ref.watch(srsCollectionBindingProvider).valueOrNull?.state ==
-            SrsCollectionBindingState.provisional,
-        onMigrateLapis: () => srsRunLogged(
-          'SrsDeckList.lapisMigration',
-          () => openSrsLegacyLapisMigrationPage(context),
+      banners: <Widget>[
+        // 彻底清除的字节层收尾出错（内核 `scrub_state`）：清除的原文还在磁盘上。
+        const SrsScrubErrorNotice(),
+        ..._srsDeckBanners(
+          context,
+          data: list,
+          showImportTasks: ref
+              .read(srsImportControllerProvider)
+              .tasks
+              .isNotEmpty,
+          lapisPending:
+              ref.watch(srsLegacyLapisPendingProvider).valueOrNull ?? 0,
+          joinProvisional:
+              ref.watch(srsCollectionBindingProvider).valueOrNull?.state ==
+              SrsCollectionBindingState.provisional,
+          onMigrateLapis: () => srsRunLogged(
+            'SrsDeckList.lapisMigration',
+            () => openSrsLegacyLapisMigrationPage(context),
+          ),
+          onDismissLapisReminder: () => srsRunLogged(
+            'SrsDeckList.lapisReminderDismiss',
+            () => dismissSrsLapisMigrationReminder(ref),
+          ),
+          onStarterPacks: () => srsRunLogged(
+            'SrsDeckList.starterPacks',
+            () => openSrsStarterPacks(context, ref),
+          ),
+          onAddFirst: () => srsRunLogged('SrsDeckList.addFirst', _addNote),
+          legacyLimitUnitDecks:
+              ref.watch(srsLimitUnitLegacyCountProvider).valueOrNull ?? 0,
+          onKeepLegacyLimitCards: () => srsRunLogged(
+            'SrsDeckList.limitUnitKeepCards',
+            () => _settleLegacyLimitUnit(list.store, SrsLimitUnit.cards),
+          ),
+          onAcceptLimitAnswers: () => srsRunLogged(
+            'SrsDeckList.limitUnitAcceptAnswers',
+            () => _settleLegacyLimitUnit(list.store, SrsLimitUnit.reviews),
+          ),
         ),
-        onDismissLapisReminder: () => srsRunLogged(
-          'SrsDeckList.lapisReminderDismiss',
-          () => dismissSrsLapisMigrationReminder(ref),
-        ),
-        onStarterPacks: () => srsRunLogged(
-          'SrsDeckList.starterPacks',
-          () => openSrsStarterPacks(context, ref),
-        ),
-        onAddFirst: () => srsRunLogged('SrsDeckList.addFirst', _addNote),
-        legacyLimitUnitDecks:
-            ref.watch(srsLimitUnitLegacyCountProvider).valueOrNull ?? 0,
-        onKeepLegacyLimitCards: () => srsRunLogged(
-          'SrsDeckList.limitUnitKeepCards',
-          () => _settleLegacyLimitUnit(list.store, SrsLimitUnit.cards),
-        ),
-        onAcceptLimitAnswers: () => srsRunLogged(
-          'SrsDeckList.limitUnitAcceptAnswers',
-          () => _settleLegacyLimitUnit(list.store, SrsLimitUnit.reviews),
-        ),
-      ),
+      ],
       onFocus: _setFocus,
       onSelect: _select,
       onReview: (SrsDeckSummary d) =>
