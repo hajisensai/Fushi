@@ -2130,6 +2130,46 @@ void main() {
             expect(target.recognizeEngines, isEmpty);
           });
 
+          testWidgets('BUG-4508：ML Kit 报不可用后的本机模型重试，模型已就绪 → 交给本机模型识别、行回原生', (
+            WidgetTester tester,
+          ) async {
+            // 全局 / 截屏识字引擎都留默认：重试走的是原生点名的 localModel，不看设置。
+            target.modelReady = true;
+            target.onRecognize = (Uint8List bytes) async =>
+                const SystemOcrPageResult(
+                  lines: <SystemOcrTextLine>[
+                    SystemOcrTextLine(
+                      text: '猫',
+                      rect: Rect.fromLTRB(10, 20, 60, 70),
+                      isVertical: true,
+                    ),
+                  ],
+                  imageWidth: 720,
+                  imageHeight: 1600,
+                );
+            await pumpHost(tester);
+            final Object? reply = await askNative(
+              tester,
+              'recognizeScreenOcrFrame',
+              <String, Object?>{
+                'png': png,
+                'engine': 'localModel',
+                'fallback': true,
+              },
+            );
+            expect(target.recognizeEngines.single, isA<LocalScreenOcr>());
+            expect(reply, <String, Object?>{
+              'lines': <Object?>[
+                <String, Object?>{
+                  'text': '猫',
+                  'rect': <int>[10, 20, 60, 70],
+                  'vertical': true,
+                  'segments': <Object?>[],
+                },
+              ],
+            });
+          });
+
           testWidgets('识别器报本机模型没下载（非重试）→ 回「请下载模型」文案', (
             WidgetTester tester,
           ) async {
