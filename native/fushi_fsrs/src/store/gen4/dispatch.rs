@@ -631,19 +631,40 @@ fn run(
                 return Err(READ_ONLY.to_owned());
             }
             let anchor = crate::store::local_state::anchor_of(req)?;
-            // 副本身份的本机秘密（cmd/backup.rs `seed_scratch_identity`）：一个读快照取目标集合的本机签名钥匙种子。
-            let secret = c.read(|t| {
+            // 副本身份的本机秘密（cmd/backup.rs `seed_scratch_identity`）：一个读快照取目标集合的本机签名钥匙种子。profile
+            // 还没绑定（覆盖还原的空库）时先定好落库时要建的本机身份（cmd/identity.rs [PendingSelf]），拿它的种子：落库之前
+            // 就有身份，还原之后第一次合并同一份旧输入照样全是已有的槽（第五波 G9 身份收尾）。
+            let bound = c.read(|t| {
                 snapshot(t, |t| match t.binding_of(profile)? {
-                    Some(b) => Ok(t.self_identity(b.col)?.map(|s| s.sk)),
+                    Some(b) => Ok(Some(t.self_identity(b.col)?.map(|s| s.sk))),
                     None => Ok(None),
                 })
             })?;
+            let pending = match bound {
+                None => Some(cmd::identity::PendingSelf::generate(
+                    profile,
+                    int_of(req, "now")?,
+                )),
+                Some(_) => None,
+            };
+            let secret = match (&bound, &pending) {
+                (Some(sk), _) => *sk,
+                (None, Some(p)) => Some(*p.seed()),
+                (None, None) => None,
+            };
             let prepared = cmd::backup::prepare(req, secret.as_ref(), c.dir())?;
             let src = super::dryrun::open_legacy(&prepared.db)?;
             let v = write_binding(c, |t| {
-                cmd::backup::land(t, profile, req, &prepared, &src, anchor.as_ref(), &|t| {
-                    col_of(t, profile)
-                })
+                cmd::backup::land(
+                    t,
+                    profile,
+                    req,
+                    &prepared,
+                    &src,
+                    anchor.as_ref(),
+                    pending.as_ref(),
+                    &|t| col_of(t, profile),
+                )
             })?;
             noted(c, profile, v)
         }

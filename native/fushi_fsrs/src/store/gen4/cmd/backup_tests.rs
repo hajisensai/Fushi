@@ -528,6 +528,46 @@ fn the_same_v1_events_from_a_fresh_scratch_change_nothing() {
     ffsrs_store_close(h);
 }
 
+/// 覆盖还原之后的第一次合并（第五波 G9 身份收尾，交接 §25「没做」）：同一份 v1 事件读进一个**没有任何绑定**的空库
+/// （覆盖还原 = 空库 + 并入），先没确认（`needsConfirm`）、再确认（`bound`），之后换一个新副本目录隔天再读一遍：全是
+/// 已有的槽（`unchanged`）。以前 profile 没绑定时副本身份只能随机、本机身份在落库事务里另随机生成，第二次读入以另一个
+/// 合成设备再落一遍；现在落库前先定好本机身份（`PendingSelf`），副本身份从它派生。
+#[test]
+fn the_first_merge_after_landing_into_an_unbound_profile_changes_nothing() {
+    let m = migrated();
+    let legacy = m.d._dir.0.join("srs.db");
+    let work = tempdir::new("g9n7ev");
+    let jsonl = work.0.join("events.jsonl");
+    std::fs::write(&jsonl, v1_events(&legacy)).unwrap();
+    let land = |h: *mut SrsCoreHandle, scratch: &Path, confirmed: bool, now: i64| {
+        let r = legacy_req(
+            &jsonl,
+            "events",
+            scratch,
+            json!({"confirmed": confirmed, "now": now}),
+        );
+        try_g4(h, P, "legacy_backup_import", r).unwrap()
+    };
+    let dir = tempdir::new("g9n7to");
+    let h = open(&dir.0, 0).unwrap();
+    let s1 = tempdir::new("g9n7s1");
+    let ask = land(h, &s1.0, false, T1);
+    assert_eq!(ask["outcome"], json!("needsConfirm"), "{ask}");
+    let first = land(h, &s1.0, true, T1);
+    assert_eq!(first["outcome"], json!("bound"), "{first}");
+    assert_ne!(first["unchanged"], json!(true), "{first}");
+    try_g4(h, P, "cache_config_set", json!({"caches": cfg()})).unwrap();
+    let before = all_derived(&dir.0);
+    let exported = export_bytes(h, P);
+    let s2 = tempdir::new("g9n7s2");
+    let again = land(h, &s2.0, true, T1 + 86_400_000);
+    assert_eq!(again["unchanged"], json!(true), "{again}");
+    assert_eq!(again["applied"], json!(0), "{again}");
+    assert_eq!(all_derived(&dir.0), before);
+    assert_eq!(export_bytes(h, P), exported);
+    ffsrs_store_close(h);
+}
+
 // ---------------------------------------------------------------------- 身份确认 / 预检 / 不可信输入
 
 /// [src] 的一份拷贝，拷完在它上面跑 [edit]（注册了 ID 编码函数的连接）。
