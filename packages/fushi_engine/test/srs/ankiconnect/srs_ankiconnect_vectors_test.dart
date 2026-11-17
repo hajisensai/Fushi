@@ -290,8 +290,9 @@ Future<Map<int, int>> _renumber(
     final List<String?> ids = await find(old);
     for (int i = 0; i < old.length; i++) {
       final String? id = ids[i];
-      if (id == null)
+      if (id == null) {
         throw StateError('$what ${old[i]} unknown after migrating');
+      }
       out[old[i]] = SrsIds.ankiNumericId(id);
     }
   }
