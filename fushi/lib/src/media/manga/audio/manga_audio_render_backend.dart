@@ -20,6 +20,7 @@ import 'dart:io';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
 import 'package:fushi_engine/tts/local/irodori_batch_worker.dart';
+import 'package:fushi_engine/tts/local/irodori_voice_pack.dart';
 import 'package:fushi_engine/tts/local/irodori_voice_pack_provider.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render_plan.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_renderer.dart';
@@ -143,9 +144,7 @@ class _MangaVoice {
       s,
       TtsDirection(
         seed: seed,
-        durationSeconds: s.adapter
-            ? null
-            : mangaShortLineDurationSeconds(segment),
+        durationSeconds: irodoriManualSeconds(segment, lora: s.adapter),
       ),
     );
   }

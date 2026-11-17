@@ -229,6 +229,11 @@ void main() {
     test('超过 20 字或挂 LoRA → null（交给时长预测）', () {
       expect(irodoriManualSeconds('あ' * 21, lora: false), isNull);
       expect(irodoriManualSeconds('うん', lora: true), isNull);
+      // 漫画生成端原先的第二份实现合并进来后：只有标点 / 长音的句子交给引擎预测。
+      expect(irodoriSpokenCharCount('えっ！？'), 2);
+      expect(irodoriSpokenCharCount('すごーい♪'), 3);
+      expect(irodoriManualSeconds('……', lora: false), isNull);
+      expect(irodoriManualSeconds('ーー！', lora: false), isNull);
     });
 
     test('forPack 自动套用、调用方给定时优先', () {

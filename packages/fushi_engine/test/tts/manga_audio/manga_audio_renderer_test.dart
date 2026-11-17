@@ -223,14 +223,6 @@ void main() {
       expect(plan.outOfRange, <String>['p9b0']);
     });
 
-    test('短句定长：≤20 字给 0.55 + 0.15 × 字数秒，标点不计；更长交给引擎', () {
-      expect(mangaSpokenCharCount('えっ！？'), 2);
-      expect(mangaShortLineDurationSeconds('えっ！？'), closeTo(0.85, 1e-9));
-      expect(mangaShortLineDurationSeconds('あ' * 20), closeTo(3.55, 1e-9));
-      expect(mangaShortLineDurationSeconds('あ' * 21), isNull);
-      expect(mangaShortLineDurationSeconds('……'), isNull);
-    });
-
     test('文件名按行身份', () {
       expect(mangaLineFileName('p3b1.2'), 'p3b1.2.m4a');
       expect(mangaPlaceholderFileName('p3b1.2'), 'p3b1.2.ph.wav');

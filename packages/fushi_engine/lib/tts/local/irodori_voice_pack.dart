@@ -365,18 +365,27 @@ class IrodoriVoicePackStore {
 /// 实测（第 2 卷整卷）：不挂 LoRA 时时长预测给 20 字以内的短句 2.5～6 秒，模型会把这句
 /// 念两遍（首轮 49 条里 19 条，挂 LoRA 的 0 条）。按挂 LoRA 声音的实测语速（3 字约
 /// 1.0 秒、5 字 1.3 秒、10 字 2.0 秒）直接给定 `0.55 + 0.15 × 字数` 秒后消失。字数不计
-/// 空白与标点（与参考实现 `generate.manual_seconds` 同一组字符）。
+/// 空白、标点、符号与长音符「ー」（[irodoriSpokenCharCount]）。没有可念的字时返回 null。
+///
+/// 这是短句定长规则的唯一实现：声音包 provider、批处理 worker 的 [IrodoriBatchItem]
+/// 和漫画生成端（`manga_audio_render_backend.dart`）都调它。
 double? irodoriManualSeconds(String text, {required bool lora}) {
   if (lora) return null;
-  final int chars = text.replaceAll(_kIrodoriPunct, '').runes.length;
-  if (chars > kIrodoriShortLineChars) return null;
+  final int chars = irodoriSpokenCharCount(text);
+  if (chars == 0 || chars > kIrodoriShortLineChars) return null;
   return ((0.55 + 0.15 * chars) * 100).round() / 100;
 }
 
 /// 短句规则的上限字数。
 const int kIrodoriShortLineChars = 20;
 
-final RegExp _kIrodoriPunct = RegExp(r'[\s、。,.!?！？…～~・「」『』（）()\-ー♪―]');
+/// 念出来的字数：去掉空白、Unicode 标点 / 符号，以及参考实现同样不计的长音符「ー」。
+int irodoriSpokenCharCount(String text) => text.runes.where((int r) {
+  final String c = String.fromCharCode(r);
+  return c.trim().isNotEmpty && c != 'ー' && !_kIrodoriNonSpoken.hasMatch(c);
+}).length;
+
+final RegExp _kIrodoriNonSpoken = RegExp(r'[\p{P}\p{S}]', unicode: true);
 
 /// 模型单条上限 30 秒；调用方按句末把长段切成不超过这个字数的片段。
 const int kIrodoriMaxLineChars = 70;

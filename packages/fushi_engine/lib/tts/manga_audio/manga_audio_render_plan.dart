@@ -6,9 +6,9 @@
 /// - 文件名按行身份 [MangaScriptLine.lineId]（页 + 块下标），不用行序号；
 /// - 模型单条上限 30 秒：长台词按句末切成 ≤ [kMangaSegmentMaxChars] 字的片段，各片段
 ///   分别合成后拼回同一句的一个文件（片段序号进缓存键，不单独成文件）；
-/// - 不挂 LoRA 的声音在 ≤ [kMangaShortLineMaxChars] 字的短句上会念两遍：按
-///   `0.55 + 0.15 × 字数` 秒直接给定时长（[mangaShortLineDurationSeconds]），只在引擎
-///   声明支持给定时长时生效（`tts_direction.dart`）；
+/// - 不挂 LoRA 的声音在 20 字以内的短句上会念两遍：生成端按
+///   `irodori_voice_pack.dart` 的 `irodoriManualSeconds` 直接给定时长（唯一实现），只在
+///   引擎声明支持给定时长时生效（`tts_direction.dart`）；
 /// - 音源策略：有声书优先（命中的句子剪有声书）/ 只用有声书（没命中的不读）/ 只合成。
 ///   「不读」不是未配音：不进成品、不进未配音账本、没有自动重试。
 library;
@@ -22,25 +22,6 @@ import 'package:fushi_engine/tts/tts_text_split.dart';
 
 /// 一个合成片段的字数上限（30 秒模型上限对应的保守字数，handoff `split_long`）。
 const int kMangaSegmentMaxChars = 70;
-
-/// 短句定长规则的字数上限。
-const int kMangaShortLineMaxChars = 20;
-
-final RegExp _punctuation = RegExp(r'[\p{P}\p{S}]', unicode: true);
-
-/// 念出来的字数：去掉空白与标点 / 符号。
-int mangaSpokenCharCount(String text) => text.runes.where((int r) {
-  final String c = String.fromCharCode(r);
-  return c.trim().isNotEmpty && !_punctuation.hasMatch(c);
-}).length;
-
-/// 短句定长：≤ [kMangaShortLineMaxChars] 字时给 `0.55 + 0.15 × 字数` 秒；更长或没有
-/// 可念的字返回 null（交给引擎预测）。
-double? mangaShortLineDurationSeconds(String text) {
-  final int chars = mangaSpokenCharCount(text);
-  if (chars == 0 || chars > kMangaShortLineMaxChars) return null;
-  return 0.55 + 0.15 * chars;
-}
 
 /// 把一句切成合成片段（按句末标点，单句仍超长再硬切）。
 List<String> splitMangaLineSegments(String text) =>
