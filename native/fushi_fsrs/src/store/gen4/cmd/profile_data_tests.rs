@@ -7,6 +7,8 @@
 //! - `profile_purge`：只删这个 profile 的集合，另一个 profile 的集合逐表行数、内容、历史不变；确认的集合对不上报错、
 //!   什么都不删；没绑定的 profile 回全 0。
 //! - `profile_uids` / `meta_set_edit` / `orphan_sweep_done` 与协议 3 对拍；`profile_merge_commit` 没有标记报错。
+//! - `profile_merge_commit` 方向固定：`to` 目录名比 `from` 大、`to` 没绑定、`to` 是空集合三种情形下 `to` 的集合与目录名
+//!   都不变，`from` 的数据并进 `to` 的集合（G9-5 第二轮复核）。
 //!   半截并入经迁移再收尾的端到端在 `prepare_tests.rs`（`a_half_done_merge_is_migrated_and_finished_in_the_new_generation`）。
 //! - 新语句的执行计划。
 
@@ -145,7 +147,7 @@ fn a_new_device_binds_to_an_existing_collection_without_a_join() {
 #[test]
 fn a_collection_with_anything_beyond_its_own_salts_still_joins() {
     let foreign = id(0x0a).text();
-    let flips: [(&str, &dyn Fn(&Path, *mut SrsCoreHandle)); 6] = [
+    let flips: [(&str, &dyn Fn(&Path, *mut SrsCoreHandle)); 7] = [
         ("content", &|_, h| write_note(h, P)),
         ("peer", &|d, _| {
             let c = side(d);
@@ -191,6 +193,16 @@ fn a_collection_with_anything_beyond_its_own_salts_still_joins() {
             c.execute(
                 "INSERT INTO srs_meta (key, value) VALUES (?1, '1')",
                 [format!("gen4_out/{col}/loc")],
+            )
+            .unwrap();
+        }),
+        // 立过位置的根（`location_root` 记下 loc 标记）：位置上已有它的 `meta.json`，丢掉会留孤儿（G9-5 第二轮复核）。
+        ("rooted", &|d, _| {
+            let c = side(d);
+            let col = col_of(&c, P);
+            c.execute(
+                "INSERT INTO loc_state (col, loc_key, loc_ids, sealed) VALUES (?1, 'loc', '[]', 0)",
+                [col],
             )
             .unwrap();
         }),
@@ -441,6 +453,127 @@ fn library_commands_match_protocol_3() {
     assert!(e.contains("no half-done merge"), "{e}");
     let e = try_as(m.h, P, "profile_merge_mark", json!({"from": Q, "to": P})).unwrap_err();
     assert!(e.contains("collection_adopt"), "{e}");
+}
+
+// ---------------------------------------------------------------------- 半截并入的收尾：方向固定
+
+/// [profile] 写一条笔记 [note]（`apply`），断言落库。
+fn write_note_id(h: *mut SrsCoreHandle, profile: &str, note: &str) {
+    let mut e = edit("note", note, "f/fa", json!("鯨"));
+    e["x"]["p"] = json!(profile);
+    let mut req = g4req("apply", T1, json!({}));
+    req["profile"] = json!(profile);
+    let (v, _) = call(h, &req, Some(&[json!({"e": e, "note": note})])).unwrap();
+    assert_eq!(v["landed"], json!([true]), "{v}");
+}
+
+/// [profile] 的集合里笔记 [note] 的修改历史条数。
+fn history_of(h: *mut SrsCoreHandle, profile: &str, note: &str) -> usize {
+    as_profile(
+        h,
+        profile,
+        "history",
+        json!({"kind": "note", "entity": note}),
+    )
+    .as_array()
+    .map_or(0, Vec::len)
+}
+
+/// 半截并入的收尾（`profile_merge_commit`）方向固定（G9-5 第二轮复核）：`from` 的数据进 `to` 的集合，`to` 的集合标识与
+/// 目录名绝不改变。三种以前会把 `to` 改绑到 `from` 的集合的情形——`to` 的目录名比 `from` 大（D27 会让 `to` 并入
+/// `from`）、`to` 在本机没绑定（以前直接绑到 `from` 的集合）、`to` 是空集合（以前空集合换绑到 `from` 的集合）——
+/// 收尾之后 `to` 都在它自己的集合（没绑定的按打开 profile 的口径建：`collection_of(to)`、目录名 `to`），日志里一条
+/// from = `from` 的集合的 `Join`，`from` 的修改在 `to` 里查得到、`to` 自己的还在，库里只剩一个集合。
+fn finishing_a_half_done_merge_never_rebinds_the_target(case: &str) {
+    const FROM_NOTE: &str = "0193a1b2-0000-7000-8000-00000000a001";
+    const TO_NOTE: &str = "0193a1b2-0000-7000-8000-00000000a002";
+    // P（…beef）< Q（…cafe）：`to` = Q 的目录名比 `from` = P 大。
+    assert!(Q > P);
+    {
+        let dir = tempdir::new(&format!("g95-commit-{case}"));
+        let h = open(&dir.0, 0).unwrap();
+        let from_id = as_profile(h, P, "identity", json!({}));
+        write_note_id(h, P, FROM_NOTE);
+        match case {
+            "larger" => {
+                as_profile(h, Q, "identity", json!({}));
+                write_note_id(h, Q, TO_NOTE);
+            }
+            "empty" => {
+                as_profile(h, Q, "identity", json!({}));
+            }
+            _ => {}
+        }
+        let want = match case {
+            "unbound" => (
+                json!(crate::store::sync2::collection_of(Q).text()),
+                json!(Q),
+            ),
+            _ => {
+                let v = as_profile(h, Q, "identity", json!({}));
+                (v["collection"].clone(), v["dir"].clone())
+            }
+        };
+        assert_eq!(history_of(h, P, FROM_NOTE), 1, "{case}");
+        side(&dir.0)
+            .execute(
+                "INSERT INTO srs_meta (key, value) VALUES (?1, ?2)",
+                [
+                    format!("profile_merge/{P}"),
+                    json!({"profileId": 7, "newUid": Q}).to_string(),
+                ],
+            )
+            .unwrap();
+        let v = as_profile(h, Q, "profile_merge_commit", json!({"from": P, "to": Q}));
+        assert_eq!(v["folded"], json!(true), "{case}: {v}");
+        assert_eq!(v["outcome"], json!("joined"), "{case}: {v}");
+        let now = as_profile(h, Q, "identity", json!({}));
+        assert_eq!(
+            (now["collection"].clone(), now["dir"].clone()),
+            want,
+            "{case}: to 的集合与目录名不变"
+        );
+        let info = as_profile(h, Q, "collection_info", json!({}));
+        let joins = info["joins"].as_array().unwrap();
+        assert_eq!(joins.len(), 1, "{case}: {info}");
+        assert_eq!(joins[0]["from"], from_id["collection"], "{case}: {info}");
+        assert_eq!(
+            history_of(h, Q, FROM_NOTE),
+            1,
+            "{case}: from 的修改并进了 to"
+        );
+        if case == "larger" {
+            assert_eq!(history_of(h, Q, TO_NOTE), 1, "{case}: to 自己的修改还在");
+        }
+        assert_eq!(
+            as_profile(h, Q, "profile_uids", json!({}))["uids"],
+            json!([Q]),
+            "{case}"
+        );
+        let n: i64 = ro(&dir.0)
+            .query_row("SELECT COUNT(*) FROM collections", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 1, "{case}");
+        ffsrs_store_close(h);
+    }
+}
+
+/// [finishing_a_half_done_merge_never_rebinds_the_target]：`to` 有实质数据、目录名比 `from` 大（D27 会让 `to` 并入 `from`）。
+#[test]
+fn finishing_a_half_done_merge_keeps_a_larger_target() {
+    finishing_a_half_done_merge_never_rebinds_the_target("larger");
+}
+
+/// [finishing_a_half_done_merge_never_rebinds_the_target]：`to` 在本机没绑定（以前直接绑到 `from` 的集合）。
+#[test]
+fn finishing_a_half_done_merge_binds_an_unbound_target_to_its_own_collection() {
+    finishing_a_half_done_merge_never_rebinds_the_target("unbound");
+}
+
+/// [finishing_a_half_done_merge_never_rebinds_the_target]：`to` 是空集合（以前空集合换绑到 `from` 的集合）。
+#[test]
+fn finishing_a_half_done_merge_keeps_an_empty_target() {
+    finishing_a_half_done_merge_never_rebinds_the_target("empty");
 }
 
 // ---------------------------------------------------------------------- 执行计划

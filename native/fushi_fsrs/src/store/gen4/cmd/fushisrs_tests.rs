@@ -660,7 +660,8 @@ fn alias_classes_survive_an_export_and_a_foreign_import() {
     let src_dir = tempdir::new("g113alias");
     let w = {
         let c = G4Core::open(&src_dir.0, OpenMode::Primary).unwrap();
-        let col = c.write(|t| t.bind(P, &id(0xc0), "dir")).unwrap();
+        // 目录名比导入方 Q 小：导入方的空集合按 D27 的方向换绑（G9-5 第二轮复核：只在这个方向上换绑）。
+        let col = c.write(|t| t.bind(P, &id(0xc0), "0-dir")).unwrap();
         let w = c.write(|t| Ok(tests_class::land(t, col))).unwrap();
         c.close();
         w
@@ -676,7 +677,8 @@ fn alias_classes_survive_an_export_and_a_foreign_import() {
         json!({"manifest": manifest(&exp), "confirmed": true}),
     )
     .unwrap();
-    // 导入方 Q 刚打开、集合里只有本机身份写的 Salts：确认后丢掉空集合、直接绑到导出方的集合（G9-5「空集合可换绑」）。
+    // 导入方 Q 刚打开、集合里只有本机身份写的 Salts、目录名（Q）比导出方大：确认后丢掉空集合、直接绑到导出方的集合
+    // （G9-5「空集合可换绑」）。
     assert_eq!(got["outcome"], json!("bound"), "{got}");
     let hist = |h: *mut SrsCoreHandle, profile: &str, e: &Id| -> Vec<String> {
         let v = try_g4(

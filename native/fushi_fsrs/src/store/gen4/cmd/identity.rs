@@ -260,7 +260,7 @@ fn written_json(w: &JoinWritten) -> Value {
 }
 
 /// 认领 / 并入的结论（[AdoptOutcome]）：`outcome` 是结论名，其余是写下的东西。
-fn outcome_json(o: &AdoptOutcome) -> Value {
+pub(crate) fn outcome_json(o: &AdoptOutcome) -> Value {
     match o {
         AdoptOutcome::Same => json!({"outcome": "same"}),
         AdoptOutcome::AlreadyJoined => json!({"outcome": "alreadyJoined"}),

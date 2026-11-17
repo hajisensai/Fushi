@@ -21,10 +21,26 @@
 //! 1. 核对标记：`profile_merge/<from>` 在、`newUid == to`（不是半截并入的两个 profile 不许经这里合）；
 //! 2. `from` 没有集合（迁移时它一条数据都没有）：只删标记；
 //! 3. 否则把 `from` 的真相层导出成 `FSRS4EXP`（内存里；`export.rs`）、记下它的公钥表，**丢掉** `from` 的集合
-//!    （`discard.rs`），再以 `to` 的身份认领它（G9-4 `collection_adopt`，`confirmed`：用户当初已经在关联页确认过并入）——
-//!    `to` 有实质数据就按 D27 写 `Join` 并入（方向与谁发起无关），`to` 是空集合 / 没绑过就直接绑到 `from` 的集合
-//!    （「空集合可换绑」）；然后导入公钥与操作（`import.rs`，同 `.fushisrs` 导入同一条路）；
+//!    （`discard.rs`），再把它**方向固定地**并进 `to` 的集合（`identity.rs` [absorb_foreign]：在 `to` 的日志里写
+//!    `Join{from: from 的集合}`，用户当初已经在关联页确认过并入，不再问）；然后导入公钥与操作（`import.rs`，同
+//!    `.fushisrs` 导入同一条路）；
 //! 4. 删标记与 `from` 的本机状态行。
+//!
+//! **方向固定、`to` 绝不改绑**（G9-5 第二轮复核）：`to` 是用户当初选定、别的设备在用的那个集合，收尾只能是 `from` 的
+//! 数据进 `to` 的集合。所以不走 `collection_adopt`（它按 D27 比目录名定方向，`to` 的目录名更大时会把 `to` 改绑到
+//! `from` 的集合；`to` 是空集合时会换绑到 `from` 的集合），也不在 `to` 没绑定时绑到 `from` 的集合：`to` 在本机还没有
+//! 集合时先按打开 profile 的同一口径建（`identity`：集合标识 `collection_of(to)`、目录名 `to`——协议 3 时代采用过
+//! `to` 的设备迁移后都在这个集合里），再吸收。三个方向（`to` 目录名比 `from` 大、`to` 没绑定、`to` 是空集合）的测试在
+//! `profile_data_tests.rs` `finishing_a_half_done_merge_never_rebinds_the_target`。
+//!
+//! 已知的取舍：`from` 的集合若曾被别的设备持有（协议 3 时代 `from` 的目录被别的设备采用过），那台设备之后遇到 `to`
+//! 时仍按 D27 判方向，可能吸收 `to` 而不是并进 `to`；它不会看到本机这条 `Join`（只在 `to` 的日志里）。`from` 是本机
+//! 被并入方的旧 uid，正常只有本机持有，不另做处理。
+//!
+//! 整笔在分发器的一个 `BEGIN IMMEDIATE` 写事务里，`from` 的导出流（压缩过的 `FSRS4EXP`）整份在内存里：拆成多个事务会
+//! 出现「`from` 已丢、`to` 只导入了一部分」的中间态（崩溃后无从续做）；同一事务里分批要么先吸收再边读 `from` 边导入
+//! （导入会改 `to` 的派生层，读 `from` 的游标跨着写不安全），要么落临时文件（多一份要清理的用户数据），都不是低成本
+//! 改动，记在交接说明 G9-5 节。
 //!
 //! 重映射副本与原件在新代里是同一个别名类（盐集合含两个 uid：派生 ID 按盐验上；协议 3 并入的兜底 ID 与 `merged-…` 写入者
 //! 由别名层认回原件，`alias.rs` 的 `A_FALLBACK` / `alias_writer_ix`），所以不会出现两份。不丢：`from` 的每条操作都进了
@@ -40,11 +56,11 @@
 use rusqlite::{OptionalExtension, params};
 use serde_json::{Value, json};
 
-use super::identity::{Emitting, collection_adopt};
+use super::identity::{Emitting, identity_ensure, outcome_json};
 use super::snapshot;
 use crate::store::gen4::discard::{Discarded, discard_collection};
 use crate::store::gen4::export::export_ops;
-use crate::store::gen4::identity::BindingChanged;
+use crate::store::gen4::identity::{BindingChanged, Foreign, absorb_foreign};
 use crate::store::gen4::import::{import_ops, import_peers};
 use crate::store::gen4::local::KEY_PREFIX as LOCAL_STATE_PREFIX;
 use crate::store::gen4::schema::sql;
@@ -376,26 +392,26 @@ pub fn profile_merge_commit(t: &Truth<'_>, req: &Value) -> Result<Emitting, Stri
         let (bytes, _) = export_ops(t, src.col, Vec::new())?;
         let peers = peers_of(t, src.col)?;
         discard_collection(t, src.col)?;
-        let adopt = json!({
-            "collection": src.collection.text(),
-            "dir": src.dir,
-            "salts": src.salts.iter().collect::<Vec<_>>(),
-            "confirmed": true,
-            "now": now,
-        });
-        let (a, ch) = collection_adopt(t, to, &adopt)?;
+        // `to` 没绑定 / 没有本机身份就按打开 profile 的口径建（模块文件头「方向固定、`to` 绝不改绑」），已有的不动。
+        identity_ensure(t, to, now)?;
+        let foreign = Foreign {
+            collection: src.collection,
+            dir: src.dir.clone(),
+            salts: src.salts.clone(),
+        };
+        let out = absorb_foreign(t, to, &foreign, now)?;
         let col = t
             .binding_of(to)?
-            .ok_or_else(|| format!("profile_merge_commit: {to} has no collection after adopting"))?
+            .ok_or_else(|| format!("profile_merge_commit: {to} has no collection"))?
             .col;
         import_peers(t, col, peers)?;
         let got = import_ops(t, col, &bytes)?;
-        changed = ch.or(Some(BindingChanged {
+        changed = Some(BindingChanged {
             profile: to.to_owned(),
             col,
-        }));
+        });
         v["folded"] = json!(true);
-        v["outcome"] = a["outcome"].clone();
+        v["outcome"] = outcome_json(&out)["outcome"].clone();
         v["applied"] = json!(got.native_landed + got.voids_landed + got.slots_inserted);
     }
     meta_delete(t, &marker)?;

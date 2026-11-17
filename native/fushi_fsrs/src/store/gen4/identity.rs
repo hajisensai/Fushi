@@ -49,6 +49,19 @@
 //! 集合里重建（`cmd/identity.rs` `collection_adopt`）。派生层配置（`derive_cfg`：Dart 按 profile 给的缓存配置）照搬到
 //! 新集合号。不是空集合的照旧按 D27 并入。没确认之前一律 `NeedsConfirm`、什么都不动（与以前相同）。
 //!
+//! **只在 D27 的方向上换绑**（G9-5 第二轮复核）：只有本机目录名**更大**（D27 本来就是本机并入对方、改绑到对方）时
+//! 空集合才直接换绑；本机目录名更小时即使是空集合也照 D27 写 `Join` 让对方并入本机。这样换绑的结果与 D27 完全一致
+//! （都落在目录名较小的那个集合），只是省掉那条 `Join`：两台都是空集合的设备互相确认，一边换绑、一边吸收，收敛到
+//! 同一个集合，不会交叉换绑（测试 `two_empty_collections_converge_whichever_initiates`）。新 profile 的目录名是它
+//! 自己的 uid（UUIDv7，按时间递增）：「新设备加入已有集合」的常见情形本机目录名更大，照样换绑、不用别的设备再确认。
+//!
+//! # 方向固定的吸收（[absorb_foreign]）
+//!
+//! 迁移带过来的半截并入收尾（`cmd/profile_data.rs` `profile_merge_commit`）不走 [adopt_foreign]：用户当初在关联页
+//! 选定的目标就是 `to`，`to` 的集合是用户别的设备在用的那个，**绝不改绑**。[absorb_foreign] 不按 D27 定方向、不做
+//! 空集合换绑：一律在 `to` 的日志里写 `Join{from: 被并入的集合}`、`to` 的集合标识与目录名不变（测试
+//! `cmd/profile_data_tests.rs` 的 `finishing_a_half_done_merge_never_rebinds_the_target`）。
+//!
 //! # 已经并入过
 //!
 //! `join_ix(col, k, src, dir)`：日志里每条 `Join` 一行（被并入的集合标识、它的目录名；盐在 `salt_ix`）。派生表：
@@ -408,7 +421,7 @@ impl Truth<'_> {
 ///
 /// 判定顺序：profile 没绑过 → 确认后直接绑；同一个集合 → 补盐；日志里有受信的 from = 对方的 `Join` → 补盐；对方绑在
 /// 本机别的 profile 上 → 报错（同机两个 profile 不能是同一个集合，设计 §5.1）；没确认 → `NeedsConfirm`；确认了、本机
-/// 集合是空集合 → 丢掉它、直接绑到对方（文件头「空集合可换绑」）；否则按 D27 的方向并入。同一个集合而目录名不同、或两个集合目录名相同，是坏数据，报错、什么都不写。
+/// 集合是空集合、且 D27 的方向是本机并入对方 → 丢掉它、直接绑到对方（文件头「空集合可换绑」）；否则按 D27 的方向并入。同一个集合而目录名不同、或两个集合目录名相同，是坏数据，报错、什么都不写。
 ///
 /// [foreign] 的 `dir` 必须是位置目录名（`meta.json` 所在的那一级），旧 profile uid 只能进 `salts`（[Foreign::dir]）。
 /// 绑定变了的结论经 [AdoptOutcome::binding_changed] 取事件，由命令层在最外层提交后发。
@@ -473,20 +486,7 @@ pub fn adopt_foreign(
             if extra.is_empty() {
                 return Ok(quiet);
             }
-            let op = Native::open(t, col)?
-                .write_salts(&mut ix, &extra, now)?
-                .ok_or_else(|| {
-                    "gen4 identity: salts the collection does not count are already in the local \
-                     log"
-                    .to_owned()
-                })?;
-            let settled = ingest_settle(t, &mut ix, col, Settle::Incremental)?;
-            let after = binding_or_err(t, col)?;
-            return Ok(AdoptOutcome::SaltsAdded {
-                op,
-                settled,
-                changed: changed(&before, &after),
-            });
+            return add_salts(t, &mut ix, &before, &extra, now);
         }
         if let Some(o) = t.binding_of_collection(&foreign.collection)? {
             return Err(format!(
@@ -498,8 +498,9 @@ pub fn adopt_foreign(
         if !confirmed {
             return Ok(AdoptOutcome::NeedsConfirm);
         }
-        if disposable(t, col)? {
-            // 空集合可换绑（文件头「空集合可换绑」）：丢掉本机这个空集合、直接绑到对方，不写 Join。
+        if dir == Ordering::Greater && disposable(t, col)? {
+            // 空集合可换绑（文件头「空集合可换绑」）：只在 D27 本来就是本机改绑到对方的方向上，丢掉本机这个空集合、
+            // 直接绑到对方，不写 Join。反方向照 D27 吸收，两台空集合设备互相确认时不会交叉换绑。
             return rebind_empty(t, profile, col, foreign, &have);
         }
         let (rebound, (op, chain, join), salts) = if dir == Ordering::Greater {
@@ -532,6 +533,97 @@ pub fn adopt_foreign(
                 settled,
             },
             salts,
+        })
+    })
+}
+
+/// 同一个集合 / 早已并入的集合带来了本机还不算数的盐 [extra]（非空）：写一条只含它们的 `Salts`、收尾。
+fn add_salts(
+    t: &Truth<'_>,
+    ix: &mut Index<'_, '_>,
+    before: &Binding,
+    extra: &BTreeSet<String>,
+    now: i64,
+) -> Result<AdoptOutcome, String> {
+    let col = before.col;
+    let op = Native::open(t, col)?
+        .write_salts(ix, extra, now)?
+        .ok_or_else(|| {
+            "gen4 identity: salts the collection does not count are already in the local log"
+                .to_owned()
+        })?;
+    let settled = ingest_settle(t, ix, col, Settle::Incremental)?;
+    let after = binding_or_err(t, col)?;
+    Ok(AdoptOutcome::SaltsAdded {
+        op,
+        settled,
+        changed: changed(before, &after),
+    })
+}
+
+/// 方向固定地把 [foreign] 并进 [profile] 绑着的集合（文件头「方向固定的吸收」）：只给半截并入的收尾用
+/// （`cmd/profile_data.rs` `profile_merge_commit`，用户当初已经确认过并入，这里不再问）。[profile] 的集合标识与目录名
+/// **绝不改变**：不按 D27 比目录名、不做空集合换绑，一律写 `Join{from: foreign}`。
+///
+/// 结论只有三种：[foreign] 早已并入、盐也都算数 → `AlreadyJoined`；早已并入、带来新盐 → `SaltsAdded`；否则 `Joined`
+/// （`rebound` 恒为 false）。拒绝（什么都不写）：[profile] 没绑定（调用方先按打开 profile 的口径建，`identity`）；
+/// [foreign] 就是 [profile] 的集合；[foreign] 还绑在本机别的 profile 上（调用方先丢掉它）；两个集合目录名相同（坏数据，
+/// 同 D27）；本机在 [profile] 的集合里还没有身份。
+pub fn absorb_foreign(
+    t: &Truth<'_>,
+    profile: &str,
+    foreign: &Foreign,
+    now: i64,
+) -> Result<AdoptOutcome, String> {
+    check_dir(&foreign.dir)?;
+    if foreign.salts.len() > SALTS_MAX {
+        return Err(format!(
+            "gen4 identity: at most {SALTS_MAX} salts, got {}",
+            foreign.salts.len()
+        ));
+    }
+    t.tx(|t| {
+        let before = t
+            .binding_of(profile)?
+            .ok_or_else(|| format!("gen4 identity: profile {profile} has no collection"))?;
+        if before.collection == foreign.collection {
+            return Err(format!(
+                "gen4 identity: {} is already the collection of profile {profile}",
+                foreign.collection
+            ));
+        }
+        direction(&before, &foreign.collection, &foreign.dir)?;
+        let col = before.col;
+        let mut ix = Index::new(t, col);
+        let have = ix.trusted_salts()?;
+        let extra: BTreeSet<String> = foreign.salts.difference(&have).cloned().collect();
+        if ix.joined(&foreign.collection)? {
+            if extra.is_empty() {
+                return Ok(AdoptOutcome::AlreadyJoined);
+            }
+            return add_salts(t, &mut ix, &before, &extra, now);
+        }
+        if let Some(o) = t.binding_of_collection(&foreign.collection)? {
+            return Err(format!(
+                "gen4 identity: collection {} is already bound to profile {}",
+                foreign.collection, o.profile
+            ));
+        }
+        let (op, chain, join) = absorb(t, &mut ix, &before, foreign, now)?;
+        let settled = ingest_settle(t, &mut ix, col, Settle::Incremental)?;
+        let binding = binding_or_err(t, col)?;
+        Ok(AdoptOutcome::Joined {
+            written: JoinWritten {
+                col,
+                op,
+                chain,
+                join,
+                rebound: false,
+                changed: changed(&before, &binding),
+                binding,
+                settled,
+            },
+            salts: None,
         })
     })
 }
@@ -1284,6 +1376,36 @@ mod tests {
             assert_eq!((rows[0].from, rows[0].dir.as_str()), (id(0xb0), "b"));
             assert_eq!(rows[0].salts, vec!["ub".to_owned()]);
         }
+    }
+
+    /// 两台都是空集合的设备互相确认（G9-5 第二轮复核）：空集合只在 D27 的方向上换绑——B（目录名大）换绑到 A、不写
+    /// Join；A（目录名小）照 D27 吸收 B、绑定不动。两边都落在 A，不会交叉换绑。
+    #[test]
+    fn two_empty_collections_converge_whichever_initiates() {
+        let (ca, cb) = (open_in_memory().unwrap(), open_in_memory().unwrap());
+        let (ta, tb) = (Truth::new(&ca), Truth::new(&cb));
+        let bind = |t: &Truth<'_>, c: u8, dir: &str| -> i64 {
+            let col = t.tx(|t| t.bind(P, &id(c), dir)).unwrap();
+            t.tx(|t| t.create_self(col, &id(c ^ 0x0f), &[3; 32], None, NOW))
+                .unwrap();
+            col
+        };
+        let col_a = bind(&ta, 0xa0, "a");
+        let col_b = bind(&tb, 0xb0, "b");
+        declare(&ta, col_a, &["ua"]);
+        declare(&tb, col_b, &["ub"]);
+        assert!(disposable(&ta, col_a).unwrap() && disposable(&tb, col_b).unwrap());
+        let from_b = adopt(&tb, &foreign(0xa0, "a", &["ua"]), true).unwrap();
+        let from_a = adopt(&ta, &foreign(0xb0, "b", &["ub"]), true).unwrap();
+        assert!(matches!(from_b, AdoptOutcome::Bound { .. }), "{from_b:?}");
+        let AdoptOutcome::Joined { written: wa, .. } = from_a else {
+            panic!("A absorbs B: {from_a:?}");
+        };
+        assert!(!wa.rebound);
+        let a = ta.binding(col_a).unwrap().unwrap();
+        assert_eq!((a.collection, a.dir.as_str()), (id(0xa0), "a"));
+        let b = tb.binding_of(P).unwrap().unwrap();
+        assert_eq!((b.collection, b.dir.as_str()), (id(0xa0), "a"));
     }
 
     /// 两个连接（各自一个缓存过的会话）先后认同一个外来集合：只写一条 Join，后到的从库里看到已经并入。两个线程在
