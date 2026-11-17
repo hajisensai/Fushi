@@ -51,6 +51,8 @@ pub mod dryrun;
 pub mod export;
 pub mod files;
 pub mod fork;
+#[cfg(test)]
+mod guards_tests;
 #[cfg(any(test, feature = "id_audit"))]
 pub(crate) mod id_audit;
 pub mod identity;
