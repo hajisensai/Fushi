@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-17T20:08:58Z",
+ "generatedAt": "2026-11-17T20:14:46Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "538601d4d79d3bfa301baeb6b7b45500f6420d0a",
-  "seq": 28844
+  "sha": "2154ab7772f26c223b979acae1434dd52bb069ef",
+  "seq": 28845
  },
  "builds": [
   {
@@ -127,7 +127,36 @@
    }
   }
  ],
- "pending": null,
+ "pending": {
+  "headSha": "2154ab7772f26c223b979acae1434dd52bb069ef",
+  "headSeq": 28845,
+  "prs": [],
+  "direct": [
+   {
+    "sha": "2154ab7772f26c223b979acae1434dd52bb069ef",
+    "subject": "test(reader): 方法 × shell 总表登记 VN 专有的 refitScreensToCurrentViewport（#3710 与 #3712 交叉合并漏登记）"
+   }
+  ],
+  "truncated": false,
+  "platforms": {
+   "android": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44166954586"
+   },
+   "windows": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44166954891"
+   },
+   "macos": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44166954891"
+   },
+   "ios": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44166954891"
+   }
+  }
+ },
  "prs": {
   "3692": {
    "number": 3692,
