@@ -1189,8 +1189,8 @@ class FeedbackService extends ChangeNotifier {
   }
 
   /// 把另一处数据根（[spoolRoot]，结构同 `<数据根>`）里提交的反馈并进本机清单：回执
-  /// 插到最前（同 id 以 spool 里的为准——那是刚提交的），没传上去的截图 / 日志挪进本机
-  /// 待传区，然后删掉 [spoolRoot]。返回并入的条数。
+  /// 插到最前（同 id 以 spool 里的为准——那是刚提交的），没传上去的附件连同旁注整项
+  /// 并进本机待传区（[FeedbackPendingStore.adoptSlot]），然后删掉 [spoolRoot]。返回并入的条数。
   ///
   /// 用于启动即闪退时的闪退报告（crash_report.dart）：那时数据库还没打开、数据根未解析，
   /// 提交先落在错误日志目录下，初始化完成后由这里接手，反馈中心照常看得到进度、能重试。
@@ -1217,9 +1217,9 @@ class FeedbackService extends ChangeNotifier {
     final Map<String, Set<String>> pending = await from.scan();
     for (final MapEntry<String, Set<String>> e in pending.entries) {
       for (final String slot in e.value) {
-        final Uint8List? bytes = await from.read(e.key, slot);
-        if (bytes == null) continue;
-        await to.put(e.key, slot, bytes);
+        // 整项并入（本体 + `.type` / `.name` 旁注）：只搬字节会让样本文件丢了原文件名、
+        // 上传时被当损坏丢掉，视频丢了 MIME。
+        if (!await to.adoptSlot(from, e.key, slot)) continue;
         (_pending[e.key] ??= <String>{}).add(slot);
       }
     }
