@@ -2261,7 +2261,35 @@ Rust `SCHEMA` 没升（没加表 / 索引，分到的 40024 没用）；ABI 不�
 已清除的操作换成空洞（相邻空洞合并），用**转发者自己的钥匙**签（签名覆盖原段头、重切者 ID、明文压缩体，域前缀
 `fushi-srs-recut/4`）。读者照原生段的规则落库（空洞落成空洞，本机已有的完整操作不因此被清掉），但只收**本机信任的**
 重切者签的件（`receive.rs`：没记过重切者公钥 = `UnknownSigner`，信任表有它的行 = `UntrustedUploader`，同承袭段上传者，D20）。
-受信设备本来就能发 Purge 清掉任何内容，重切件给它的权力不超过这一条；作者自己签的段到了之后链值不接 = 分叉，照常报 G8-6。
+作者自己签的段到了之后链值不接 = 分叉，照常报 G8-6。
+
+**更正（第四轮复核 major，2026-11-18）**：上一版这里写的「受信设备本来就能发 Purge，重切件给它的权力不超过这一条」**不成立**。
+复核实测：重切件的段头与明文全由重切者签名担保，读者只核「操作的 device / seq 对得上段头、至少一个空洞、重算链值等于段头
+`last_chain`」，而空洞的 `chain_after` 与段头 `last_chain` 都由重切者自己填。受信的 b 能伪造作者 a 的段头 `[1..4]`（a 一条都
+没写过），内容是三条 `FORGED` 加一个空洞，读者照收（`last_of(a) = 4`）；a 真正的段到了反而 `Diverged`。也就是能以作者的名义
+写入任意内容、抢占作者以后的 seq（所有读者上 a 的日志分叉，等于拒绝服务）、日后吊销 b 也撤不回。Purge 只能把已有操作挖成
+空洞，做不到这些。
+
+现在的收法（`58e57cf4e6`）：
+- `plan` 读到每一份验过签名、公钥与记录相符的别的设备的 head（直接读到的与被转发来的 `rhd-` 都算，不论信任），把它的
+  (代号, seq, 末端链值, 段清单) 记进 `srs_meta` 的 `gen4_ahead/<col>/<设备>`（`Truth::note_author_head`，只进不退；本机状态，
+  不同步、不导出，丢了下一轮 `plan` 回来）。
+- 收重切件（`receive.rs`）：验过重切者签名之后，区间与链尾必须是作者自己签过的一段——记下的作者最新 head 的段清单里正好有
+  `(first, last, 链尾标签)`，`last` 正好是那份 head 的末端时完整链值也等于 head 的 `chain`（`Truth::author_listed`）；本机自己
+  的日志则要本机已写到 `last`、那里的链值相同。否则 `Defer::Unlisted`（不落、不进等待缓冲；作者的 head 还没读到时下一轮再试）。
+- 这样封住了：伪造作者还没写到的 seq（上面的探针场景）、伪造作者没签过的区间、伪造链尾（标签不同；区间末是 head 末端时
+  完整链值不同）。
+
+**残余风险（如实记下，没有修掉）**：在作者已列出的区间里，空洞**之前**的操作仍只由重切者担保。受信的重切者可以把它们换成
+任意内容，末尾放一个空洞、链值填作者的真链尾，读者核不出来；伪造内容以作者的 HLC 参与冲突裁决，日后吊销重切者也撤不回。
+所以重切件给受信设备的权力**超过** Purge，只是被限制在作者已发布的区间里。另外 head 的段清单只带链尾的前 4 字节（标签），
+区间末不是 head 末端时读者只核得了这 4 字节：重切者可以随手填一个标签相同、其余不同的链尾，读者照收，作者接在后面的段
+到了才报分叉（G8-6 两支都留、不丢数据，但这位作者在这台读者上的后续日志会卡在分叉处理上）。
+根治方案（没做，原因如下）：空洞对每条被挖掉的操作带「信封 + 载荷哈希」（正是 `chain_next4` 的输入，链定义不用改），重切件
+里不再允许只带链值的重置空洞，读者从 `prev_chain` 一路重算到作者签的链尾，活着的操作就都绑回作者签名。卡在数据来源：
+`recut_from_log`（缓存里没有这一段时从日志重切）用的是本机日志，清除之后日志空洞只留区间末链值，被挖掉操作的信封与载荷
+哈希已经没了；要在挖空之前把它们存下来就得动 schema（本模块没有分到 SCHEMA 号），作者自己签的空洞（只带链值）也无法换成
+这种形态。做这一步之前，重切件的这一残余风险由「只收本机信任的重切者」兜着。归同步安全 owner 排期（需 SCHEMA 号）。
 
 - 清除时（`Truth::advance_purge` 同一个事务，`sync_state.rs` `Truth::relay_purged`）：缓存里覆盖这个 seq 的件原地换成本机签
   的重切件（本机还没有身份签不了才整份删）；`relay_out` 里已转发到各位置、覆盖它的 `rly-` 改成待删。
@@ -2289,12 +2317,22 @@ Rust `SCHEMA` 没升（没加表 / 索引，分到的 40024 没用）；ABI 不�
     L2：不为转发去拉原文，L2 拿到的是 b 从日志重切的件）；
   - `a_purge_by_the_author_takes_back_what_was_already_relayed`（作者发起：已转发的旧 `rly-` 删掉，转发作者自己重切的新段，
     不为转发去拉原文）；
-  - `receive.rs` `recut_pieces_need_a_trusted_recutter_and_land_their_voids`、`gen4/recut.rs` 六条编解码 / 验签 / 拒写测试；
+  - `receive.rs` `recut_pieces_need_a_trusted_recutter_and_land_their_voids`（含作者清单没读到时 `Unlisted`）、
+    `a_trusted_recutter_cannot_write_where_the_author_has_not_signed`（第四轮复核 major 的探针场景：作者没写过时伪造 1..=4、
+    超出作者 head 的区间、链尾标签不同、标签相同而完整链值不同，一律 `Unlisted`、不落不等；作者真正的段与接在后面的照常）、
+    `a_recut_of_my_own_log_must_match_what_i_wrote`；`sync_state.rs` `the_authors_listing_only_moves_forward_and_binds_range_and_chain`；
+    `gen4/recut.rs` 六条编解码 / 验签 / 拒写测试；
   - `truth.rs` `voids_within_reports_runs_cut_to_the_range_including_a_leading_one`（第二轮复核 minor：前导空洞分支）、
     `scrub.rs` `a_retry_that_does_not_wait_returns_at_once_when_a_reader_holds_the_wal`（第二轮复核 minor：`Wait::No` 不等读者）。
   - 变异实测见 PR 描述（9 项，各自对应测试变红）。
 - 没覆盖：别的设备从 L2 上拉走那份旧件、在它收到清除之前——那台设备收到清除时自己落空洞、做字节层收尾，与作者自己的段
   同一个口径。
+- 清除时缓存里读不了的件（第四轮复核 minor）：`Truth::recut_kept` 遇到解不开、签名者公钥本机没有、重切签不出的缓存件一律按
+  「整份删掉」处理，不再把错误往上报——它跑在 `advance_purge` 的同一个事务里，上一版会让用户的彻底清除整笔失败。删的是转发
+  缓存、不是数据，缺的那一段之后由 `relay_outbox` 从日志重切或记 `incomplete`。测试 `sync_state.rs`
+  `an_unreadable_relay_copy_does_not_fail_the_purge`。
+- 第四轮变异实测（各自还原，工作区干净）：M1 不核作者清单（3 条红）、M2 不核 head 末端完整链值（2 条红）、M3 本机日志不核
+  （1 条红）、M4 `plan` 不记作者清单（4 条端到端红）、M5 读不了的缓存往上报错（1 条红）、M6 清单不只进不退（1 条红）。
 - 交接 §26 T1 节 C2、C3 两条上一轮加的「已修：§28」指针已撤回（不改别人的节）；修复记录只在本节。
 
 ### 已知残余风险（复核记录）
@@ -2313,4 +2351,7 @@ Rust `SCHEMA` 没升（没加表 / 索引，分到的 40024 没用）；ABI 不�
 - Dart 侧没接 `scrub_state`（没有 UI 提示），归 G7-6，见上「封存旧库」节的任务清单。
 - Dart：`srs_purge_test`、`srs_devices_test`、`srs_db_store_test` 等的复跑结果见 PR 描述。
 - 清除确认处的封存库说明与 `scrub_state` 出错提示已写成规划 §6 的合并条件（G7-6 不带上这两项不合入 develop）。
-- 导出流带不走空洞内部的链值记号（见「转发里的副本」节的代价），要补需导出格式升 `ver`，归 G11 owner。
+- 导出流带不走空洞内部的链值记号（见「转发里的副本」节的代价），要补需导出格式升 `ver`，归 G11 owner（第四轮复核确认属实、
+  维持登记）。
+- 重切件里空洞之前的操作只由重切者担保（见「转发里的副本」节的更正与残余风险）：根治要空洞带被挖掉操作的信封与载荷哈希、
+  清除前存下这两样，需要 SCHEMA 号，归同步安全 owner。
