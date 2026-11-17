@@ -34,8 +34,9 @@ File temporaryFileForAtomicWrite(File target) =>
 /// 目标仍是另一个写者的完整内容。要连这个也消掉得做跨 isolate 的互斥，这里不做。
 ///
 /// 写入或 rename 失败时删掉本次的临时文件再把原错误抛出去（唯一名不会被下一次
-/// 写入覆盖，不删就一直留在盘上）。进程在写入中途被杀时会留下一个 `.tmp`，
-/// 它不会被当成目标读到。
+/// 写入覆盖，不删就一直留在盘上）。抛出去的始终是写入 / rename 的那个错误：
+/// 临时文件删不掉时留在盘上，不让清理的错误顶掉它。进程在写入中途被杀时也会
+/// 留下一个 `.tmp`，它不会被当成目标读到。
 ///
 /// 这是最底层的一层，只管「文本怎么落盘」；带业务合并语义的写入（例如书根
 /// `manga.json` 的 PDF 文字层合并）在各自的上层做，不要塞进这里。
@@ -46,7 +47,20 @@ Future<void> writeTextFileAtomically(File target, String content) async {
     await temporary.writeAsString(content, flush: true);
     await temporary.rename(target.path);
   } on Object {
-    if (temporary.existsSync()) temporary.deleteSync();
+    _discardTemporary(temporary);
     rethrow;
+  }
+}
+
+/// 删掉一次失败写入留下的临时文件。
+///
+/// 删不掉就留着（Windows 上杀软 / 索引器正拿着刚写完的文件时会这样）：调用方要
+/// 看到的是写入 / rename 为什么失败，这里再抛就把那个错误顶掉了。留下的文件以
+/// `.tmp` 结尾，不会被当成目标读到。
+void _discardTemporary(File temporary) {
+  try {
+    if (temporary.existsSync()) temporary.deleteSync();
+  } on FileSystemException {
+    // 见上：清理失败不改变这次写入的结局。
   }
 }

@@ -1,7 +1,8 @@
 // 真并发压测只在非 Windows 上跑：Windows 上两个 rename 在同一瞬间替换同一个目标
 // 时，`MoveFileEx` 会让其中一个以「拒绝访问」失败（POSIX 的 rename 没有这个
 // 限制）。唯一临时名解决的是「两个写者共用一个临时文件」，不是这个平台限制；
-// Windows 上由 atomic_text_file_test.dart 里那条确定性的交错用例钉住。
+// Windows 上由 atomic_text_file_test.dart 里那条确定性的交错用例、以及
+// atomic_text_file_concurrent_windows_test.dart（落败的写者只能干净地失败）钉住。
 @TestOn('!windows')
 library;
 

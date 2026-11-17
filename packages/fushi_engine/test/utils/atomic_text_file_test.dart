@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 
@@ -10,6 +11,44 @@ List<String> _leftoverTemporaries(Directory dir) => <String>[
   for (final FileSystemEntity entry in dir.listSync(recursive: true))
     if (entry is File && entry.path.endsWith('.tmp')) p.basename(entry.path),
 ];
+
+/// rename 失败、随后连删都删不掉的临时文件（Windows 上杀软 / 索引器正拿着刚
+/// 写完的文件时就是这样）。不碰磁盘。
+class _StubbornTemporary implements File {
+  _StubbornTemporary(this.path);
+
+  @override
+  final String path;
+
+  bool deleteAttempted = false;
+
+  @override
+  Future<File> writeAsString(
+    String contents, {
+    FileMode mode = FileMode.write,
+    Encoding encoding = utf8,
+    bool flush = false,
+  }) async => this;
+
+  @override
+  Future<File> rename(String newPath) async => throw FileSystemException(
+    'rename denied',
+    path,
+    const OSError('Access is denied', 5),
+  );
+
+  @override
+  bool existsSync() => true;
+
+  @override
+  void deleteSync({bool recursive = false}) {
+    deleteAttempted = true;
+    throw FileSystemException('delete denied', path);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
 
 void main() {
   late Directory temporary;
@@ -94,6 +133,29 @@ void main() {
         throwsA(isA<FileSystemException>()),
       );
       expect(_leftoverTemporaries(temporary), isEmpty);
+    });
+
+    test('rename 失败后临时文件也删不掉：抛出去的仍是 rename 的错误', () async {
+      final File target = File(p.join(temporary.path, 'page.json'));
+      final List<_StubbornTemporary> created = <_StubbornTemporary>[];
+      await IOOverrides.runZoned(
+        () => expectLater(
+          writeTextFileAtomically(target, 'x'),
+          throwsA(
+            isA<FileSystemException>().having(
+              (FileSystemException e) => e.message,
+              'message',
+              'rename denied',
+            ),
+          ),
+        ),
+        createFile: (String path) {
+          final _StubbornTemporary file = _StubbornTemporary(path);
+          created.add(file);
+          return file;
+        },
+      );
+      expect(created.single.deleteAttempted, isTrue, reason: '清理要试，只是不能顶掉原错误');
     });
   });
 

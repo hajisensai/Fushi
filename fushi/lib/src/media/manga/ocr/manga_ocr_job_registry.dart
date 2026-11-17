@@ -98,8 +98,9 @@ class MangaOcrRunningJob {
   /// 广播给观察者的事件流：与底层流同序，finished 事件在落盘**之后**才转发。
   ///
   /// 有跟随步骤（[MangaOcrBackgroundJob.follower]，大模型重读）时，它改好的页
-  /// 以带页的 progress 事件插进来——任务结束（[whenEnded]，名额已释放）之后也
-  /// 可能还有，流要等跟随步骤做完才关。
+  /// 以带页的 progress 事件插进来——任务结束（[whenEnded]）之后也可能还有，流要
+  /// 等跟随步骤做完才关。名额此时还没还的只有用户取消这一种（等 [whenStopped]），
+  /// 而取消会先停掉跟随步骤。
   Stream<MangaOcrBackgroundEvent> get events => _observers.stream;
 
   MangaOcrJobFollower? get _follower => job.follower;
