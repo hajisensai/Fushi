@@ -204,8 +204,8 @@ class MangaOcrHostJobManager {
   ///
   /// 各任务的收尾仍排在自己的执行体停下之后（[_finishWhenStopped]）：串行队列的
   /// 完成信号到那时才补，管理器若仍被引用，后面的任务不会在旧执行体还占着模型时
-  /// 起跑；正在途中的 [cancelAndCleanup] 等的是同一个取消 Future，它的删页图也
-  /// 仍在执行体停下之后。全部停下的时刻见 [whenExecutorsStopped]。
+  /// 起跑；正在途中的 [cancelAndCleanup] 等的是同一个取消 Future，回来发现任务
+  /// 已被这里摘出表就不再删页图。全部停下的时刻见 [whenExecutorsStopped]。
   Future<void> disposeAll() async {
     final List<MangaOcrHostJob> jobs = _jobs.values.toList(growable: false);
     _jobs.clear();
@@ -338,6 +338,13 @@ class MangaOcrHostJobManager {
       return (503, 'models_not_ready');
     }
     if (!status.canRun) return (503, 'models_not_ready');
+    // 等模型状态的那段时间里任务可能已经变了：被取消 / 停机清表（不能再把它
+    // 改回 running 排进队列——出了表的任务起跑之后没人能取消），或者另一个
+    // start 已经把它排上了（再排一次就是同一个任务起两个执行体）。
+    if (job.state.isTerminal || !identical(_jobs[job.id], job)) {
+      return (409, 'bad_state');
+    }
+    if (job.state == MangaOcrHostJobState.running) return null;
     job.state = MangaOcrHostJobState.running;
     job.touchedAt = _now();
     _queueTail = _queueTail.then((_) => _runJob(job));
@@ -397,8 +404,14 @@ class MangaOcrHostJobManager {
   ///
   /// 卷目录 `vol_<slug>` 可被同卷的新任务共用（旧任务终态后 [createJob] 落回
   /// 同一目录）：表里还有**非终态**任务用着这个目录时页图归它，一个文件也不删。
+  ///
+  /// 等执行体停下的那段时间里任务被 [disposeAll] 摘出表（server 停机）的，回来
+  /// 之后也不删页图：停机之后这个目录归谁，本管理器已经不知道了——app 每次开
+  /// 互联都新建一个管理器，同卷的新任务会落回同一个 `vol_<slug>` 并重新上传，
+  /// 这里再删就删到新任务头上。留下的页图与停机时别的任务一样交给孤儿清扫。
   Future<void> cancelAndCleanup(MangaOcrHostJob job) async {
     await job.subscription?.cancel();
+    final bool detached = !identical(_jobs[job.id], job);
     job.subscription = null;
     if (!job.state.isTerminal) {
       job.state = MangaOcrHostJobState.cancelled;
@@ -410,6 +423,7 @@ class MangaOcrHostJobManager {
       running.complete();
     }
     job.runCompleted = null;
+    if (detached) return;
     _jobs.remove(job.id);
     if (_dirSharedWithOtherJob(job, liveOnly: true)) return;
     try {

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -38,9 +39,9 @@ File temporaryFileForAtomicWrite(File target) =>
 /// 「拒绝访问」失败（POSIX 的 rename 可以并发）。并发的写者因此排队替换、全部
 /// 成功，最后替换的那份留在目标上。
 ///
-/// 没管的一种：Windows 上别人正把 [target] 打开着读（`dart:io` 打开文件不带
-/// `FILE_SHARE_DELETE`）时，rename 同样以「拒绝访问」失败。读者不经过这里，
-/// 这个 helper 管不到。
+/// Windows 上别人正把 [target] 打开着读（`dart:io` 打开文件不带
+/// `FILE_SHARE_DELETE`）时，rename 同样以「拒绝访问」失败。与写者并发的读者用
+/// [readAtomicallyWrittenTextFile] 读，它与这里的替换互斥。
 ///
 /// 写入或 rename 失败时删掉本次的临时文件再把原错误抛出去（唯一名不会被下一次
 /// 写入覆盖，不删就一直留在盘上）。抛出去的始终是写入 / rename 的那个错误：
@@ -74,12 +75,50 @@ void _discardTemporary(File temporary) {
   }
 }
 
+/// 读一个由 [writeTextFileAtomically] 写的文本文件。
+///
+/// POSIX 上就是 `readAsString`。Windows 上 `dart:io` 打开文件不带
+/// `FILE_SHARE_DELETE`，读者把 [target] 打开着的那一小段时间里，写者的 rename
+/// 会以「拒绝访问」失败（BUG-4801）。所以读者在打开之前先取与写者同一个字节上的
+/// **共享**锁（见 [_withWindowsTargetLock]）：写者拿着独占锁做 rename 时没有读者
+/// 开着目标，读者之间互不排斥。
+///
+/// 与并发写者共用同一个目标的读者都要走这里（漫画 OCR 的逐页缓存）。不走这里
+/// 直接 `readAsString` 的读者仍会让同一刻的写入失败。
+///
+/// [target] 不存在等读取错误原样抛出，调用方自己决定怎么处理。
+Future<String> readAtomicallyWrittenTextFile(File target) {
+  if (!Platform.isWindows) {
+    return target.readAsString();
+  }
+  return _withWindowsTargetLock<String>(
+    target,
+    FileLock.blockingShared,
+    target.readAsString,
+  );
+}
+
 /// 把写好的 [temporary] rename 到 [target] 上。
 ///
 /// POSIX 的 rename 原子、可并发，直接做。Windows 上并发替换同一个目标会有一个
-/// 「拒绝访问」（BUG-4801），所以那里同一目标的替换要互斥，而写者分散在不同的
-/// isolate（整卷任务与页级会话）甚至不同进程里，Dart 层的队列够不着，只能用
-/// 操作系统的锁：
+/// 「拒绝访问」（BUG-4801），所以那里同一目标的替换要互斥
+/// （[_withWindowsTargetLock] 的独占锁），锁里只有 rename。
+Future<void> _replaceTarget(File temporary, File target) {
+  if (!Platform.isWindows) {
+    return temporary.rename(target.path);
+  }
+  return _withWindowsTargetLock<void>(
+    target,
+    FileLock.blockingExclusive,
+    () => temporary.rename(target.path),
+  );
+}
+
+/// Windows 上拿着 [target] 对应的锁做 [action]（写者 = 独占锁里 rename，读者 =
+/// 共享锁里读）。
+///
+/// 写者与读者分散在不同的 isolate（整卷任务与页级会话）甚至不同进程里，Dart 层
+/// 的队列够不着，只能用操作系统的锁：
 ///
 /// - 锁是 [_windowsReplaceLockFile] 上按目标路径哈希出来的一个字节的区间锁
 ///   （`LockFileEx`，阻塞等待）。它按句柄算，同进程的不同 isolate、不同进程都
@@ -87,29 +126,41 @@ void _discardTemporary(File temporary) {
 /// - 持有者崩溃或被杀时句柄随进程关闭，系统自动放锁，不会留下死锁；锁文件
 ///   始终是 0 字节、整个系统一份、放在系统临时目录里，目标所在的目录不多出
 ///   任何文件。
-/// - 本 isolate 内先在 [_windowsReplaceQueue] 上排队，任何时刻最多只有一个锁
-///   请求交给 IO 线程去等，不会把 IO 线程占满而让持锁者自己的 rename 排不上。
+/// - 本 isolate 内同一个字节上的请求先在 [_windowsTargetQueues] 里排队（读者
+///   也排）：交给 IO 线程去阻塞等锁的请求，等的一定是别的 isolate / 进程里的
+///   持有者。不同目标各排各的，一个目标卡住（比如网络盘上的 rename 迟迟不
+///   返回）不耽误别的目标。
+/// - 同时在锁流程里的请求不超过 [kAtomicWriteMaxConcurrentLockSections] 个
+///   （[_windowsLockSectionSlots]）：`dart:io` 每个 isolate 的 IO 服务口有限，
+///   阻塞等锁的请求各占一个；占满之后持锁者自己的 rename / 解锁排在被占住的
+///   口后面，就成了死锁。
 ///
-/// 路径不同但指向同一个文件（junction / 符号链接 / 8.3 短名）的两个写者算不到
-/// 同一个字节上，互斥不了；同一份数据的写者都从同一个根路径拼出目标，不会这样。
-Future<void> _replaceTarget(File temporary, File target) {
-  if (!Platform.isWindows) {
-    return temporary.rename(target.path);
-  }
-  final Future<void> previous = _windowsReplaceQueue;
+/// 路径不同但指向同一个文件（junction / 符号链接 / 8.3 短名）的两个调用方算不到
+/// 同一个字节上，互斥不了；同一份数据的读写者都从同一个根路径拼出目标，不会这样。
+///
+/// 系统临时目录不存在或不可写时锁文件打不开，这里抛 [FileSystemException]：
+/// Windows 上的原子写与配套的读都依赖 `%TEMP%` 可用（BUG-4801 备注）。
+Future<T> _withWindowsTargetLock<T>(
+  File target,
+  FileLock mode,
+  Future<T> Function() action,
+) async {
+  final int offset = replaceLockOffsetForTarget(target);
+  final Future<void>? previous = _windowsTargetQueues[offset];
   final Completer<void> done = Completer<void>();
-  _windowsReplaceQueue = done.future;
-  return () async {
-    await previous;
+  final Future<void> tail = done.future;
+  _windowsTargetQueues[offset] = tail;
+  try {
+    if (previous != null) await previous;
+    await _windowsLockSectionSlots.acquire();
     try {
       final RandomAccessFile lock = await _windowsReplaceLockFile.open(
         mode: FileMode.append,
       );
       try {
-        final int offset = replaceLockOffsetForTarget(target);
-        await lock.lock(FileLock.blockingExclusive, offset, offset + 1);
+        await lock.lock(mode, offset, offset + 1);
         try {
-          await temporary.rename(target.path);
+          return await action();
         } finally {
           await lock.unlock(offset, offset + 1);
         }
@@ -117,17 +168,58 @@ Future<void> _replaceTarget(File temporary, File target) {
         await lock.close();
       }
     } finally {
-      done.complete();
+      _windowsLockSectionSlots.release();
     }
-  }();
+  } finally {
+    if (identical(_windowsTargetQueues[offset], tail)) {
+      _windowsTargetQueues.remove(offset);
+    }
+    done.complete();
+  }
 }
 
-/// 本 isolate 内排队做替换的队尾（只在 Windows 上用，见 [_replaceTarget]）。
-/// 它只表示「前一个做完了」，前一个的成败由它自己的调用方拿到，不经这里传。
-Future<void> _windowsReplaceQueue = Future<void>.value();
+/// 本 isolate 内各目标（按锁字节偏移）排队的队尾，只在 Windows 上用，见
+/// [_withWindowsTargetLock]。队尾只表示「前一个做完了」，前一个的成败由它自己的
+/// 调用方拿到，不经这里传；一个偏移上没人排了就删掉这一项。
+final Map<int, Future<void>> _windowsTargetQueues = <int, Future<void>>{};
 
-/// Windows 上替换目标用的锁文件：系统临时目录里固定的一个，内容永远为空（锁的是
-/// 文件末尾之外的字节区间）。被清理工具删掉也无妨，下次写入时重新建出来。
+/// 本 isolate 内同时处在锁流程里的请求数上限。`dart:io` 每个 isolate 最多 32 个
+/// IO 服务口，留足余量给持锁者自己和别的文件操作。
+const int kAtomicWriteMaxConcurrentLockSections = 8;
+
+final _LockSectionSlots _windowsLockSectionSlots = _LockSectionSlots(
+  kAtomicWriteMaxConcurrentLockSections,
+);
+
+/// 计数名额：先到先得，没有名额时按到达顺序等。
+class _LockSectionSlots {
+  _LockSectionSlots(this._free);
+
+  int _free;
+  final Queue<Completer<void>> _waiters = Queue<Completer<void>>();
+
+  Future<void> acquire() {
+    if (_free > 0) {
+      _free -= 1;
+      return Future<void>.value();
+    }
+    final Completer<void> waiter = Completer<void>();
+    _waiters.add(waiter);
+    return waiter.future;
+  }
+
+  /// 有人在等就把名额直接交给队首，否则还回去。
+  void release() {
+    if (_waiters.isEmpty) {
+      _free += 1;
+    } else {
+      _waiters.removeFirst().complete();
+    }
+  }
+}
+
+/// Windows 上读写互斥用的锁文件：系统临时目录里固定的一个，内容永远为空（锁的是
+/// 文件末尾之外的字节区间）。被清理工具删掉也无妨，下次用到时重新建出来。
 final File _windowsReplaceLockFile = File(
   p.join(Directory.systemTemp.path, kAtomicWriteReplaceLockFileName),
 );

@@ -26,16 +26,24 @@ class _LingeringOcrService implements MangaOcrService {
   final List<String> startedDirs = <String>[];
   int cancelRequests = 0;
 
+  /// 非 null 时 [modelStatus] 等它完成才返回（模拟查模型状态要花时间）。
+  Completer<void>? modelStatusGate;
+  int modelStatusCalls = 0;
+
   @override
   bool get isSupportedPlatform => true;
 
   @override
-  Future<MangaOcrModelStatus> modelStatus() async => const MangaOcrModelStatus(
-    detectorReady: true,
-    recognizerReady: true,
-    diskBytes: 1,
-    totalBytes: 1,
-  );
+  Future<MangaOcrModelStatus> modelStatus() async {
+    modelStatusCalls += 1;
+    await modelStatusGate?.future;
+    return const MangaOcrModelStatus(
+      detectorReady: true,
+      recognizerReady: true,
+      diskBytes: 1,
+      totalBytes: 1,
+    );
+  }
 
   @override
   Stream<MangaOcrDownloadEvent> downloadModels() =>
@@ -151,6 +159,55 @@ void main() {
     return job;
   }
 
+  test('start 正在等模型状态时任务被取消：回来不再起跑', () async {
+    final _LingeringOcrService service = _LingeringOcrService()
+      ..modelStatusGate = Completer<void>();
+    final MangaOcrHostJobManager manager = MangaOcrHostJobManager(
+      service: service,
+      jobRoot: Directory(p.join(tmpRoot.path, 'jobs')),
+    );
+    final MangaOcrHostJob job = manager.createJob(volumeTitle: '卷一');
+    expect(
+      await manager.uploadPage(job, name: 'p001.jpg', bytes: <int>[1]),
+      isNull,
+    );
+    final Future<(int, String)?> starting = manager.start(job);
+    await _waitFor(() => service.modelStatusCalls == 1);
+
+    await manager.cancelAndCleanup(job);
+    service.modelStatusGate!.complete();
+    expect(await starting, (409, 'bad_state'));
+    await _settle();
+    expect(job.state, MangaOcrHostJobState.cancelled);
+    expect(service.startedDirs, isEmpty);
+  });
+
+  test('两个 start 同时在等模型状态：只起一个执行体', () async {
+    final _LingeringOcrService service = _LingeringOcrService()
+      ..modelStatusGate = Completer<void>();
+    final MangaOcrHostJobManager manager = MangaOcrHostJobManager(
+      service: service,
+      jobRoot: Directory(p.join(tmpRoot.path, 'jobs')),
+    );
+    final MangaOcrHostJob job = manager.createJob(volumeTitle: '卷一');
+    expect(
+      await manager.uploadPage(job, name: 'p001.jpg', bytes: <int>[1]),
+      isNull,
+    );
+    final Future<(int, String)?> first = manager.start(job);
+    final Future<(int, String)?> second = manager.start(job);
+    await _waitFor(() => service.modelStatusCalls == 2);
+    service.modelStatusGate!.complete();
+    expect(await first, isNull);
+    expect(await second, isNull, reason: '已受理的任务再 start 是幂等的');
+    await _waitFor(() => service.startedDirs.length == 1);
+    await _settle();
+    expect(service.startedDirs, hasLength(1));
+
+    service.exits.single.complete();
+    await manager.cancelAndCleanup(job);
+  });
+
   group('disposeAll', () {
     test('执行体没停就返回；排队中的任务不再启动；完成信号等执行体停下才补', () async {
       final _LingeringOcrService service = _LingeringOcrService();
@@ -211,7 +268,7 @@ void main() {
       expect(manager.jobCount, 1);
     });
 
-    test('途中的 cancelAndCleanup：disposeAll 先返回，页图仍等执行体停下才删', () async {
+    test('途中的 cancelAndCleanup：disposeAll 先返回；执行体停下后不删已出表任务的页图', () async {
       final _LingeringOcrService service = _LingeringOcrService();
       final MangaOcrHostJobManager manager = MangaOcrHostJobManager(
         service: service,
@@ -232,7 +289,48 @@ void main() {
       service.exits.first.complete();
       await _waitFor(() => cleaned);
       await manager.whenExecutorsStopped;
-      expect(pageImage.existsSync(), isFalse);
+      expect(
+        pageImage.existsSync(),
+        isTrue,
+        reason: '任务已被停机摘出表：目录归谁本管理器不知道了，留给孤儿清扫',
+      );
+      expect(a.state, MangaOcrHostJobState.cancelled);
+    });
+
+    // app 每次开互联新建一个管理器：关了立刻再开时，旧管理器上途中的
+    // cancelAndCleanup 回来不能删到新管理器的同卷任务头上。
+    test('途中的 cancelAndCleanup 跨停机重开：不删新管理器同卷任务刚传的页图', () async {
+      final _LingeringOcrService service = _LingeringOcrService();
+      final Directory jobRoot = Directory(p.join(tmpRoot.path, 'jobs'));
+      final MangaOcrHostJobManager oldManager = MangaOcrHostJobManager(
+        service: service,
+        jobRoot: jobRoot,
+      );
+      final MangaOcrHostJob a = await startedJob(oldManager, '卷一');
+      await _waitFor(() => service.startedDirs.length == 1);
+
+      bool cleaned = false;
+      unawaited(oldManager.cancelAndCleanup(a).then((_) => cleaned = true));
+      await oldManager.disposeAll().timeout(const Duration(seconds: 5));
+
+      final MangaOcrHostJobManager newManager = MangaOcrHostJobManager(
+        service: service,
+        jobRoot: jobRoot,
+      );
+      final MangaOcrHostJob b = newManager.createJob(volumeTitle: '卷一');
+      expect(b.dir.path, a.dir.path, reason: '同卷落回同一个目录');
+      expect(
+        await newManager.uploadPage(b, name: 'p001.jpg', bytes: <int>[9]),
+        isNull,
+      );
+
+      service.exits.first.complete();
+      await _waitFor(() => cleaned);
+      await oldManager.whenExecutorsStopped;
+      expect(File(p.join(b.dir.path, 'p001.jpg')).readAsBytesSync(), <int>[
+        9,
+      ], reason: '新任务的页图还在');
+      await newManager.cancelAndCleanup(b);
     });
 
     test('执行体收尾抛错：完成信号照补，后面的任务照常起跑', () async {
@@ -253,6 +351,29 @@ void main() {
 
       service.exits.last.complete();
       await manager.cancelAndCleanup(next);
+    });
+
+    test('start 正在等模型状态时停机：回来不再起跑', () async {
+      final _LingeringOcrService service = _LingeringOcrService()
+        ..modelStatusGate = Completer<void>();
+      final MangaOcrHostJobManager manager = MangaOcrHostJobManager(
+        service: service,
+        jobRoot: Directory(p.join(tmpRoot.path, 'jobs')),
+      );
+      final MangaOcrHostJob job = manager.createJob(volumeTitle: '卷一');
+      expect(
+        await manager.uploadPage(job, name: 'p001.jpg', bytes: <int>[1]),
+        isNull,
+      );
+      final Future<(int, String)?> starting = manager.start(job);
+      await _waitFor(() => service.modelStatusCalls == 1);
+
+      await manager.disposeAll();
+      service.modelStatusGate!.complete();
+      expect(await starting, (409, 'bad_state'));
+      await _settle();
+      expect(job.state, MangaOcrHostJobState.cancelled);
+      expect(service.startedDirs, isEmpty, reason: '出了表的任务起跑之后没人能取消');
     });
 
     test('FushiSyncServer.stop() 不被还没停下的 OCR 执行体挂住', () async {

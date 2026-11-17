@@ -109,4 +109,130 @@ void main() {
     expect(<int>[40, 50], contains(read.imageWidth));
     expect(_leftoverTemporaries(temporary), isEmpty);
   });
+
+  // Windows 上读者把目标打开着的那一刻，写者的 rename 会「拒绝访问」；读者走
+  // readAtomicallyWrittenTextFile 之后与替换互斥。POSIX 上本来就不冲突。
+  test('一个读者循环读、一个写者循环写同一个目标：写入全部成功，读到的都是完整内容', () async {
+    final File target = File(p.join(temporary.path, 'page.json'));
+    await writeTextFileAtomically(
+      target,
+      jsonEncode(List<int>.filled(20000, 0)),
+    );
+    bool writing = true;
+    int reads = 0;
+    Future<void> reader() async {
+      while (writing) {
+        final Object? decoded = jsonDecode(
+          await readAtomicallyWrittenTextFile(target),
+        );
+        expect((decoded! as List<Object?>).length, 20000);
+        reads += 1;
+      }
+    }
+
+    final Future<void> reading = reader();
+    try {
+      for (int i = 1; i <= 300; i++) {
+        await writeTextFileAtomically(
+          target,
+          jsonEncode(List<int>.filled(20000, i)),
+        );
+      }
+    } finally {
+      writing = false;
+    }
+    await reading;
+    expect(reads, greaterThan(0));
+    expect(_leftoverTemporaries(temporary), isEmpty);
+  });
+
+  test('别的 isolate 里的读者循环读，这边循环写同一个目标：写入全部成功', () async {
+    final String targetPath = p.join(temporary.path, 'page.json');
+    final String stopPath = p.join(temporary.path, 'stop');
+    await writeTextFileAtomically(
+      File(targetPath),
+      jsonEncode(List<int>.filled(20000, 0)),
+    );
+    Future<int> reader() => Isolate.run<int>(() async {
+      int reads = 0;
+      while (!File(stopPath).existsSync()) {
+        final Object? decoded = jsonDecode(
+          await readAtomicallyWrittenTextFile(File(targetPath)),
+        );
+        if ((decoded! as List<Object?>).length != 20000) {
+          throw StateError('torn read');
+        }
+        reads += 1;
+      }
+      return reads;
+    });
+
+    final List<Future<int>> readers = <Future<int>>[reader(), reader()];
+    try {
+      for (int i = 1; i <= 300; i++) {
+        await writeTextFileAtomically(
+          File(targetPath),
+          jsonEncode(List<int>.filled(20000, i)),
+        );
+      }
+    } finally {
+      File(stopPath).writeAsStringSync('');
+    }
+    for (final int reads in await Future.wait(readers)) {
+      expect(reads, greaterThan(0));
+    }
+    expect(_leftoverTemporaries(temporary), isEmpty);
+  });
+
+  // 整卷任务读某页缓存做续传校验的同一刻，页级会话写完同一页。
+  test('逐页缓存：一边循环读、一边循环写同一页，写入全部成功', () async {
+    final File page = File(p.join(temporary.path, 'p1.png'))
+      ..writeAsBytesSync(<int>[1, 2, 3]);
+    final Directory cacheDir = Directory(p.join(temporary.path, 'cache'));
+    MangaOcrFilePageCache cache() => MangaOcrFilePageCache(
+      cacheDir: cacheDir,
+      pageNames: const <String>['p1.png'],
+      pageFiles: <File>[page],
+    );
+    OcrPageResult result(int width) => OcrPageResult(
+      pageIndex: 0,
+      imageWidth: width,
+      imageHeight: 80,
+      blocks: <OcrBlock>[
+        for (int i = 0; i < 400; i++)
+          OcrBlock(
+            box: OcrRect(left: 0, top: i * 1.0, right: 10, bottom: i + 1.0),
+            vertical: true,
+            lines: <String>['line $i of writer $width'],
+          ),
+      ],
+    );
+
+    final MangaOcrFilePageCache volumeJob = cache();
+    final MangaOcrFilePageCache pageSession = cache();
+    await pageSession.write('manga_ocr', result(1));
+    bool writing = true;
+    int hits = 0;
+    Future<void> reader() async {
+      while (writing) {
+        final OcrPageResult? read = await volumeJob.read('manga_ocr', 0);
+        expect(read, isNotNull);
+        expect(read!.blocks, hasLength(400));
+        hits += 1;
+      }
+    }
+
+    final Future<void> reading = reader();
+    try {
+      for (int i = 2; i <= 200; i++) {
+        await pageSession.write('manga_ocr', result(i));
+      }
+    } finally {
+      writing = false;
+    }
+    await reading;
+    expect(hits, greaterThan(0));
+    expect((await cache().read('manga_ocr', 0))!.imageWidth, 200);
+    expect(_leftoverTemporaries(temporary), isEmpty);
+  });
 }

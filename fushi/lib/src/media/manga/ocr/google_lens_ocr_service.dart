@@ -434,7 +434,9 @@ class GoogleLensPageCache {
       if (await file.length() > kGoogleLensMaximumCachedPageBytes) {
         return null;
       }
-      final Object? decoded = jsonDecode(await file.readAsString());
+      final Object? decoded = jsonDecode(
+        await readAtomicallyWrittenTextFile(file),
+      );
       if (decoded is! Map) {
         return null;
       }
