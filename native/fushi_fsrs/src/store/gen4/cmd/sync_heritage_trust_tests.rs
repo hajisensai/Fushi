@@ -1,16 +1,22 @@
 //! 承袭段与首次信任（G10-4 第三轮复核）：上传者只担保自己信任的作者（`inherit.rs` 文件头「只替本机信任的作者上传」），
 //! 收方经受信上传者拿到日志的作者在旧根上再见到时不追溯（`truth/trust.rs` 第 1 条）。一律经 C ABI，装置沿用
-//! `sync_tests.rs` / `sync_complete_tests.rs`。
+//! `sync_tests.rs` / `sync_complete_tests.rs`。另有两条真相层的身份承接边界（第三轮复核 minor 3）：本机迁移前的
+//! 协议 3 旧身份在旧根上再见到不判待确认；与在册设备同钥匙、却不带（或带错）`prev` 的新身份不承接、更不偏向可信。
 
 use serde_json::{Value, json};
 
 use super::dispatch_tests::T1;
 use super::sync_complete_tests::{OLD, d_old_len, old_root_with, take_old_root, upload_heritage};
 use super::sync_tests::{Dev, Loc, Opts, cmd, round, status_row};
+use super::sync_trust_tests::{legacy_library, migrate_to};
 use super::tests::{N1, N2};
+use crate::gen4::head::PrevIdentity;
 use crate::gen4::op::tests::id;
-use crate::sync2::id::Key;
+use crate::store::gen4::truth::{FirstSeen, Peer, PeerPut, TRUST_PENDING, TRUST_REJECTED};
+use crate::sync2::id::{Id, Key};
+use crate::sync2::keys::DeviceKey;
 use crate::sync2::op::{Body, EntKind, KIND_PURGE, Op};
+use crate::sync2::segment::CHAIN_ZERO;
 
 /// OLD 的 [n] 条操作，最后一条改成彻底清除（随便一个笔记键；扣不扣看 `status` 的 `heldPurges`）。
 fn ops_ending_in_a_purge(n: u64) -> Vec<Op> {
@@ -137,4 +143,90 @@ fn an_old_device_vouched_for_through_heritage_is_not_pending_later() {
     let row = status_row(&c, &old);
     assert!(row.get("trust").is_none(), "{row}");
     assert!(row.get("heldPurges").is_none(), "{row}");
+}
+
+/// 本机迁移前的协议 3 旧身份（复核 minor 3 第二条）：迁移换了新设备 ID、沿用签名钥匙，旧身份由迁移记进 `peers`
+/// （公钥同一把）。之后捡旧根时再读到旧身份的 v3 head，`oldroot_ingest` 的登记不是「第一次见到」，不走首次信任，
+/// 不会把自己记成待确认——库里显然有数据，走首次信任就一定是待确认。
+#[test]
+fn the_own_protocol3_identity_seen_on_the_old_root_is_not_pending() {
+    let (dir, old_self, seed) = legacy_library("g104own");
+    migrate_to(&dir.0, Id([0x5a; 16]));
+    let h = super::dispatch_tests::open(&dir.0, 0).unwrap();
+    let mut d = Dev { dir, h };
+    assert_ne!(
+        d.device(),
+        old_self.text(),
+        "migration gives a new identity"
+    );
+    let public = DeviceKey::from_seed(&seed).public();
+    let (put, seen, entry) = d.direct(|t, col| {
+        // 与 `oldroot_ingest` 登记 v3 head 相同的两步。
+        let put = t.set_peer(
+            col,
+            &Peer {
+                device: old_self,
+                public,
+                name: Some("old self".into()),
+                ext: None,
+                head_gen: None,
+                first_seen: Some(T1),
+            },
+        )?;
+        let seen = if put == PeerPut::Inserted {
+            Some(t.note_new_peer(col, &old_self, &public, None, T1)?)
+        } else {
+            None
+        };
+        Ok((put, seen, t.trust_entry(col, &old_self)?))
+    });
+    assert_ne!(
+        put,
+        PeerPut::Inserted,
+        "migration already knows the old self"
+    );
+    assert_eq!(seen, None);
+    assert_eq!(entry, None, "the old self stays trusted");
+}
+
+/// 同钥匙但不带 `prev`（或 `prev` 指向别的钥匙的设备）的新身份（复核 minor 3 第一条）：只按 `prev` + 同钥匙承接
+/// （`truth/trust.rs` 第 2 条），这里两样都不满足，当新设备判——库非空就待确认。重点是**不偏向可信**：前身已拒绝 / 待确认
+/// 时换个 ID 不能洗成可信；前身可信时也不凭钥匙自动承接（`prev` 指向的受信设备钥匙不同 = 冒充）。
+#[test]
+fn a_same_key_identity_without_a_matching_prev_is_judged_as_new() {
+    let mut d = Dev::new("g104sk");
+    d.write(T1, N1, "鯨");
+    d.direct(|t, col| {
+        let peer = |dev: u8, seed: u8| Peer {
+            device: id(dev),
+            public: DeviceKey::from_seed(&[seed; 32]).public(),
+            name: None,
+            ext: None,
+            head_gen: None,
+            first_seen: None,
+        };
+        // 同一把钥匙 0x31 下在册两台：0xa1 已拒绝、0xa2 待确认；另一把钥匙 0x32 下 0xa3 可信。
+        t.set_peer(col, &peer(0xa1, 0x31))?;
+        t.set_trust(col, &id(0xa1), Some(TRUST_REJECTED), 5)?;
+        t.set_peer(col, &peer(0xa2, 0x31))?;
+        t.set_trust(col, &id(0xa2), Some(TRUST_PENDING), 6)?;
+        t.set_peer(col, &peer(0xa3, 0x32))?;
+        let trusted_prev = PrevIdentity {
+            device: id(0xa3),
+            seq: 1,
+            chain: CHAIN_ZERO,
+        };
+        for (new, prev) in [(0xb1u8, None), (0xb2, Some(&trusted_prev))] {
+            let p = peer(new, 0x31);
+            assert_eq!(t.set_peer(col, &p)?, PeerPut::Inserted);
+            let got = t.note_new_peer(col, &id(new), &p.public, prev, T1 + 7)?;
+            assert_eq!(got, FirstSeen::Pending, "{new:#x}");
+            assert_eq!(
+                t.trust_entry(col, &id(new))?,
+                Some((TRUST_PENDING, T1 + 7)),
+                "{new:#x}"
+            );
+        }
+        Ok(())
+    });
 }

@@ -2337,3 +2337,63 @@ Rust `SCHEMA` 没升（没加表 / 索引，分到的 40025 没用）；ABI 不�
 - 变异实测：承接去掉（`same_key` 恒空）→ 前两条红；`oldroot_ingest` 的 `note_new_peer` 换空臂 → 旧根那条红；去掉 `has_buffered` →
   等待缓冲那条红；`plan` 传 `now` 代替 `h.at_ms` → `first_sight_of_a_device_is_pending_only_when_the_library_has_data`（补了
   `since` = 对端写 head 的时刻的断言）红；复原后工作区干净、相关 8 条全绿，`cargo test --profile quick --lib -j 4` 全量 1320 过。
+
+### 第二次复核修复（第三轮，2026-11-18，同分支；提交 `dffeeae986`、`6251f850e9` 与本节同提交的测试 / 文档）
+
+上面「复核修复」第 1 条（钥匙承接：本机钥匙可信、`peers_with_key`、同钥匙取最不受信）与第 3 条（`has_buffered`）的**实现已被替换**，
+以本节为准。
+
+- **首次信任并入 K2 的单一实现**。K2（`pr/srs-gen4-k2-trust-purge`）同时在改首见信任，为不两边各写一份，删掉 G10-4 自己的
+  `cmd/sync.rs` `note_new_peer`、`Truth::peers_with_key`、`reads::collection_has_user_data` / `has_buffered` 及重复测试，改用 K2 的
+  `truth/trust.rs` `Truth::note_new_peer` / `library_fresh`（判定顺序：本机已有它的日志 → 不追溯；`prev` + 同一把钥匙 → 原样承接；
+  库空 → 首次信任；否则待确认）。口径差异：同钥匙但不带 `prev`（或 `prev` 指向别的钥匙的设备）**不承接**、当新设备判。定案理由：
+  迁移与 `rotate` 写的新 head 都带 `prev`，诚实路径都能承接；不带 `prev` 的同钥匙新身份最多拿到「待确认」，不会比换一把新钥匙
+  更宽（对方随时能换钥匙），所以原先「同钥匙取最不受信」那支没有安全价值，不保留。
+- **承袭段只替本机信任的作者上传**（复核 major）。D20 收承袭段只看上传者信不信，段里各作者在收方没有信任行（= 可信），收方之后
+  在旧根上见到这位作者也按「本机已有它的日志」不追溯——所以首次信任只挡住了读旧根的那一台。现 `inherit.rs` 新
+  `vouches_for(t, col, dev)`：作者在本机有待确认 / 已拒绝的信任行时，`Uploader::open` 不替它切段、`cmd/sync_oldroot.rs`
+  `heritage_logs`（承袭对账指纹）也不含它；本机确认之后指纹变、下一轮照常补传。别的设备拿不到它就自己捡旧根、自己读它的 head、
+  自己做首次信任，待确认作者的清除在那边同样扣住。选这一支（复核建议 a）而不是让收方对承袭来的作者也做首次信任（建议 b）：b 要
+  承袭段带作者公钥或先从旧根学 head，且会把**受信上传者已担保**的作者也回溯扣住（下一条 minor 的口径问题）。
+  **残余**：本机改成不信任之前已经传上去的承袭段收不回（同新代原生段：信任是各设备本机的事）。
+- **混合版本家庭不再把自家未升级设备记成待确认**（复核 minor 2）。经受信上传者承袭来的作者在收方已有日志，之后在旧根上第一次见到
+  它的 head 走 `trust.rs` 第 1 条（`KnownLog`），不记待确认、清除不扣，与上传者 a 上的结果一致。
+  **与协议 3 口径仍有的差异（不修，记在这里）**：一台协议 3 设备 OLD 如果**没有任何已升级设备担保过**（例如它是迁移之后才加入
+  旧根的新设备、在库里有数据的已升级设备上本来就是待确认），全新设备 c 第一轮先收新根（库里就有了 a 的内容）、再捡旧根，OLD 在 c
+  上也是待确认；协议 3 的全新设备第一轮会信任所有设备。这里与 a 上的状态一致、不丢数据、只多一次确认。要完全对齐协议 3 需要
+  「本轮开始时库是空的」这种按轮记的判据，而旧根两条命令目前还没有 Dart 调用方（同步轮 2b 步未接线），等接线时由同步轮持有者
+  决定要不要加。
+- **身份承接边界补测试**（复核 minor 3）。复核变异的两支（本机钥匙恒可信、同钥匙取最不受信）随 K2 合一已不存在，按现口径补：
+  - 本机迁移前的协议 3 旧身份在旧根上再见到：迁移已把它记进 `peers`（同钥匙），登记不是「第一次见到」，不判待确认。
+  - 与在册设备同钥匙、不带 `prev` / `prev` 指向另一把钥匙的受信设备：不承接，库非空即待确认（前身已拒绝 / 待确认也不能换 ID 洗白，
+    前身可信也不凭钥匙自动承接）。
+
+**归 K2 文件的改动（由合流统一）**：
+
+- `truth/trust.rs`：`library_fresh` 的空洞表多查 `op_wait`（等待缓冲里已收下的原生操作算内容）；文件头第 1 条补一句「前提是承袭段只带
+  上传者自己信任的作者（`vouches_for`）」。其余与 K2 当前头（`003b61429f`）逐字节相同。
+- `cmd/sync_trust_tests.rs`：`legacy_library` / `migrate_to` 改成 `pub(super)`（本块新测试复用），其余不动。
+- `cmd/sync.rs`、`receive.rs`：本分支是 K2 较早版本的逐字节副本；K2 之后加了重切中继件（`FRX4`）等，**合流时取 K2 的**。
+- `inherit.rs`（`vouches_for`、`Uploader::open`）与 `cmd/sync_oldroot.rs`（`heritage_logs`）归本块。
+
+测试（Rust，经 C ABI 或真相层）：
+
+- `cmd/sync_heritage_trust_tests.rs`（本块新文件）：
+  - `a_purge_held_on_the_uploader_stays_held_on_other_devices`（拒绝路径）：a 上待确认的 OLD 不经承袭段上传，c 收不到它的任何操作，
+    c 捡旧根自己判待确认、清除同样扣住；a 确认后下一轮补传。
+  - `an_old_device_vouched_for_through_heritage_is_not_pending_later`：经受信 a 承袭来的 OLD 之后在旧根上写新段（含清除），c 不记待确认、
+    清除不扣。
+  - `the_own_protocol3_identity_seen_on_the_old_root_is_not_pending`、`a_same_key_identity_without_a_matching_prev_is_judged_as_new`：上面 minor 3。
+- `inherit_tests.rs` `an_author_this_device_does_not_trust_is_not_uploaded`：`Uploader` 本身不替待确认的作者切段（不靠同步轮指纹）。
+- 两条旧根接手测试改为先确认 OLD 再上传（`sync_complete_tests.rs`）。
+
+变异实测（改完跑、看红、`git restore` 复原）：
+
+- `vouches_for` 去掉信任条件 → `store::gen4` 596 条里 4 条红（上面拒绝路径、`an_author_this_device_does_not_trust_is_not_uploaded`、
+  `heritage_segments_count_toward_the_ingest_budget`、`old_root_takeover_reaches_migrated_and_new_devices_alike`），exit 101。
+- `note_new_peer` 去掉「本机已有它的日志」 → `an_old_device_vouched_for_through_heritage_is_not_pending_later` 与 K2 的
+  `note_new_peer_inherits_only_under_the_same_key` 红。
+- 承接不核公钥（只要 `prev` 在册就承接） → `a_same_key_identity_without_a_matching_prev_is_judged_as_new` 与 K2 那条红。
+- 本机旧身份：迁移有两处各自把它记进 `peers`（`carry.rs` 搬 `sync2_devices`、`create_self` 的 `own_peer(prev)`），单去一处测试仍绿
+  （冗余，符合预期），两处一起去掉 → `the_own_protocol3_identity_seen_on_the_old_root_is_not_pending` 红。
+- 复原后 `cargo fmt --check` exit 0；`cargo test --profile quick --lib -j 4 store::gen4` exit 0，596 passed、0 failed、7 ignored。
