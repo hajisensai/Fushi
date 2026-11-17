@@ -196,12 +196,98 @@ pub(crate) fn read_kind_fmt(r: &mut Reader<'_>) -> DResult<(u16, u16)> {
 
 /// 链的下一环：`blake3(域前缀 || 前一环 || 信封 || 载荷哈希)`。
 pub fn chain_next4(prev: &Chain, op: &Op4) -> Chain {
+    chain_next4_parts(prev, &op.envelope(), blake3::hash(&op.payload).as_bytes())
+}
+
+/// [chain_next4] 的拆开形：只有信封与载荷哈希也算得出（重切件里被剔除的操作，`gen4/recut.rs`）。
+pub fn chain_next4_parts(prev: &Chain, envelope: &[u8], payload_hash: &[u8; 32]) -> Chain {
     let mut h = blake3::Hasher::new();
     h.update(CHAIN_DOMAIN);
     h.update(prev);
-    h.update(&op.envelope());
-    h.update(blake3::hash(&op.payload).as_bytes());
+    h.update(envelope);
+    h.update(payload_hash);
     *h.finalize().as_bytes()
+}
+
+/// 一条 Purge 点得到这条操作的实体：(种类, 规范形引用)。见 [purge_targets_v1]。
+pub type PurgeTargets = BTreeSet<(EntKind, Key)>;
+
+/// **冻结**的「哪些实体上的 Purge 能清掉这条操作」（第五波 K2 根治，`gen4/segment.rs`「签名」）。它是原生段签名原文
+/// 的一部分（每条操作的摘要带着它），所以按第 1 版的规则冻结：以后清除的语义变了也不改这里（否则旧段的签名全部
+/// 验不过），新语义要新的格式版本。规则与派生层判「已清除」的那几类内容操作一一对应（`store/gen4/weigh.rs` 文件头
+/// 「彻底清除」）：
+///
+/// - `fmt == 4` 的 Edit，键不是 `deleted`：它的 (种类, 实体)；卡的 `deck` 写入、值是 JSON 字符串 d 时另加 (牌组, d)
+///   （把卡挪进被清除牌组的修改，牌组那边的清除也管它）。笔记的 `tags` 整列表写入同样是 (笔记, 实体)。
+/// - `fmt == 4` 的 TagAdd / TagRemove / TagOrder：(笔记, note)。
+/// - 其余一律为空：日志、身份记录、媒体、盐、Purge 本身……清除不碰它们；`fmt != 4`（更新版本写的）的操作体本版本
+///   不解，也为空——更新的版本按同一条冻结规则算，同一条操作在新旧读者上得到同一个集合。
+///
+/// 引用取规范形（`Key::of(text)`：UUID 文本压成 16 字节，与派生层 `Ref::of` 同一个归一）。
+pub fn purge_targets_v1(op: &Op4) -> PurgeTargets {
+    let mut out = PurgeTargets::new();
+    if op.fmt != BODY_FMT {
+        return out;
+    }
+    let norm = |k: &Key| Key::of(&k.text());
+    match op.body() {
+        Ok(Body4::Edit(ed)) if ed.key != "deleted" => {
+            out.insert((ed.kind, norm(&ed.entity)));
+            if ed.kind == EntKind::Card && ed.key == "deck" {
+                if let Ok(serde_json::Value::String(d)) =
+                    serde_json::from_str::<serde_json::Value>(&ed.value)
+                {
+                    out.insert((EntKind::Deck, Key::of(&d)));
+                }
+            }
+        }
+        Ok(Body4::TagAdd { note, .. } | Body4::TagRemove { note, .. })
+        | Ok(Body4::TagOrder { note, .. }) => {
+            out.insert((EntKind::Note, norm(&note)));
+        }
+        _ => {}
+    }
+    out
+}
+
+/// [PurgeTargets] 的规范编码：`n uv | (种类 u8 | 引用) × n`，按 (种类, 引用) 升序（集合的迭代序）。
+pub fn write_purge_targets(w: &mut Writer, targets: &PurgeTargets) {
+    w.uv(targets.len() as u64);
+    for (kind, key) in targets {
+        w.u8(*kind as u8);
+        write_key(w, key);
+    }
+}
+
+/// 读 [write_purge_targets] 的编码：只收规范形（严格升序、引用规范、条数有上限）。
+pub fn read_purge_targets(r: &mut Reader<'_>) -> DResult<PurgeTargets> {
+    let n = uv_min(r)?;
+    if n > 64 {
+        return Err(DecodeError("too many purge targets"));
+    }
+    let mut out = PurgeTargets::new();
+    let mut prev: Option<(EntKind, Key)> = None;
+    for _ in 0..n {
+        let kind = ent_kind(r.u8()?)?;
+        let key = read_key(r)?;
+        let item = (kind, key);
+        if prev.as_ref().is_some_and(|p| *p >= item) {
+            return Err(DecodeError("purge targets out of order"));
+        }
+        prev = Some(item.clone());
+        out.insert(item);
+    }
+    Ok(out)
+}
+
+/// 清除语义下 [x] 的作者写它时**没见过** [purge]（同一台设备 = purge 在它之后；别的设备 = 依赖里没有它）：这条 Purge
+/// 管得到它（`store/gen4/weigh.rs`「彻底清除」的 `unseen`）。
+pub fn purge_unseen_by(x: &Op4, purge: &OpId) -> bool {
+    if purge.device == x.id.device {
+        purge.seq > x.id.seq
+    } else {
+        !x.deps.contains(purge)
+    }
 }
 
 /// 一次可编辑字段的写入。

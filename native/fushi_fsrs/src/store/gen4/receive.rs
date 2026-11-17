@@ -64,11 +64,21 @@
 //!
 //! # 重切中继件
 //!
-//! `FRX4`（`gen4/recut.rs`）= 转发者把本机已彻底清除的操作换成空洞、用自己的钥匙签出的作者段（区间与首尾链值同原段）。
-//! 先要有作者的公钥（读过它的 head）与重切者的公钥，重切者必须是本机信任的设备（本机自己也算），否则
-//! [Defer::UnknownSigner] / [Defer::UntrustedUploader]；区间与链尾必须是本机记下的作者自己签的 head 列出的一段（标签
-//! 相同；正好是那份 head 的末端时完整链值相同），否则 [Defer::Unlisted]；之后与原生段同一套核对与落库（空洞落成空洞，
-//! 本机已有的完整操作不因此被清掉）。空洞之前的操作仍只由重切者担保（`gen4/recut.rs`「信任口径」的残余风险）。
+//! `FRX4`（`gen4/recut.rs`）= 转发者把本机已彻底清除的操作挖掉（换成剔除项：信封、载荷哈希、作者签的清除目标、清掉它
+//! 的 Purge）、用自己的钥匙问责签名的作者段。先要有作者的公钥（读过它的 head）与重切者的公钥，重切者必须是本机信任的
+//! 设备（本机自己也算），否则 [Defer::UnknownSigner] / [Defer::UntrustedUploader]。之后：
+//!
+//! - **作者的原签名**照样验（`open_recut4`：逐项摘要、剔除项的摘要等于原操作的）、链逐条重算：段头与留下的每条操作都是
+//!   作者签过的原件，挖掉的每一项对应作者签过的一条操作。验不过 = [Reject::BadSignature] / [Reject::ChainMismatch]。
+//! - 每个**要落库**的剔除项（seq 在本机这位作者日志末尾之后）声称的 Purge：本机日志或等待缓冲里有了、确是 Purge、目标在
+//!   作者签的清除目标里、这一项的作者写它时没见过它，才收；本机还没有它 = [Defer::PurgePending]（它在别的段里，到了
+//!   再收）；它的作者本机不信任 = [Defer::UntrustedUploader]；有了却管不到 = [Reject::NotPurged]（重切者挖了没被清除的
+//!   操作）。本机已有的那些 seq 不看：本机的槽只由本机自己的清除推进，件里的剔除项不会把它们挖掉。
+//! - 落库同原生段：剔除项落成一条的空洞（链值是读者自己从信封与载荷哈希算的那一环，不是重切者填的），连同剔除记录
+//!   （`relay_stubs`，本机以后再转发这一段时重切用）；作者签的空洞照原生段落。
+//!
+//! 收下的作者签的每一段（原生段、中继件、重切件）都记下作者签名与作者签的空洞（[Truth::note_author_version]，
+//! `relay_auth`）：本机以后清除了这位作者的操作、要从日志重切这一段时用。
 
 use std::collections::BTreeSet;
 
@@ -78,16 +88,16 @@ use super::derive::{Index, Settled};
 use super::import::HERITAGE_MARK_EVERY;
 use super::ingest::{Settle, ingest_settle};
 use super::schema::{k_range, k_seq, sql};
-use super::sync_state::{WaitKey, chain32};
+use super::sync_state::{AuthorVersion, WaitKey, chain32, op_of_bytes};
 use super::truth::{DEV_HERITAGE, DEV_NATIVE, Peer, Put, Truth};
 use crate::gen4::heritage::{
     Fp, HeritageHeader, HeritageSlot, SlotBody, fingerprint, open_heritage_verified,
     peek_heritage_header,
 };
-use crate::gen4::op::chain_next4;
-use crate::gen4::recut::{self, open_recut4, peek_recut4};
+use crate::gen4::op::{Body4, KIND_PURGE, Op4, chain_next4};
+use crate::gen4::recut::{self, RecutItem, Stub, open_recut4, peek_recut4};
 use crate::gen4::relay::{self, open_any4, peek_relay4};
-use crate::gen4::segment::{NativeHeader, NativeItem, peek_native_header};
+use crate::gen4::segment::{NativeHeader, NativeItem, VerifiedNative, peek_native_header};
 use crate::gen4::translate::{T_VERSION, translate};
 use crate::store::sync2::collection_of;
 use crate::sync2::id::Id;
@@ -105,9 +115,9 @@ pub enum Defer {
     UntrustedUploader(Id),
     /// 加密的件、本机没有（或拿错了）密钥。
     Undecryptable,
-    /// 重切中继件（`FRX4`）的区间与链尾不在本机记下的、作者自己签的段清单里（作者的 head 还没读到、作者还没写到
-    /// 那里、或件是伪造的）。重切件由重切者签名担保，作者没列出的区间一律不收（`gen4/recut.rs`「信任口径」）。
-    Unlisted(Id),
+    /// 重切中继件（`FRX4`）里一条要落库的剔除项声称的那条 Purge 本机还没有（没落库、也不在等待缓冲里）：它到了再收
+    /// （`gen4/recut.rs`「信任口径」第 3 条）。
+    PurgePending(OpId),
 }
 
 /// 这一段是坏的，永远不收。
@@ -126,6 +136,9 @@ pub enum Reject {
     WrongLog(Id),
     /// 承袭段头担保的旧设备公钥（`author_key`）与本机记着的不同：上传者与本机至少有一方认的是冒充者，整段不收。
     AuthorKeyMismatch(Id),
+    /// 重切中继件（`FRX4`）挖掉了 [0] 这条操作，而它声称的那条 Purge 本机有了、却管不到它（不是 Purge、目标不在
+    /// 作者签的清除目标里、或作者写它时已经见过这条 Purge）：重切者挖了没被清除的操作，整件不收。
+    NotPurged(OpId),
 }
 
 /// 收一段的结论。
@@ -357,9 +370,16 @@ impl<'t, 'c> Receiver<'t, 'c> {
         let Some(public) = self.public_of(&device)? else {
             return Ok(Taken::Deferred(Defer::UnknownSigner(device)));
         };
-        let opened = match recutter {
-            // 重切中继件（`gen4/recut.rs`）：段由重切者签名担保，只收本机信任的重切者签的（同承袭段的上传者，D20）。
-            // 作者的公钥照样要先有（读过它的 head，首见设备的信任判定已经走过）。
+        let start_last = self.t.last_of(self.col, &device)?;
+        // 验过之后要落的项（重切件的剔除项带着它的剔除记录）、作者签名、作者签的空洞。
+        let author_sig: [u8; 64];
+        let items: Vec<(NativeItem, Option<Stub>)>;
+        let author_voids: Option<Vec<(u64, u64, Chain)>>;
+        let open_native_piece;
+        let mut stream: Option<VerifiedNative<'_>> = None;
+        match recutter {
+            // 重切中继件（`gen4/recut.rs`）：作者的原签名与链照样验；重切者只为挖掉哪些负责（每个要落的剔除项核对它
+            // 声称的 Purge），另外只收本机信任的重切者签的（同承袭段的上传者，D20）。
             Some(r) => {
                 let Some(rp) = self.public_of(&r)? else {
                     return Ok(Taken::Deferred(Defer::UnknownSigner(r)));
@@ -369,56 +389,97 @@ impl<'t, 'c> Receiver<'t, 'c> {
                 {
                     return Ok(Taken::Deferred(Defer::UntrustedUploader(r)));
                 }
-                open_recut4(bytes, &rp, key)
-            }
-            None => open_any4(bytes, &public, key),
-        };
-        let open = match opened {
-            Ok(o) => o,
-            Err(e) => return Ok(reject_of(e)),
-        };
-        if key.is_some() && !open.stored_sealed {
-            return Ok(Taken::Rejected(Reject::PlainOnSealed));
-        }
-        // 签名之下的段头才可信（peek 的只是提示）。
-        if open.header != header {
-            return Ok(Taken::Rejected(Reject::Corrupt(
-                "header changed under the signature".into(),
-            )));
-        }
-        // 重切件的段头由重切者担保：区间与链尾必须是作者自己签过的清单里的一段。不核的话受信的重切者能以作者的名义
-        // 写进作者还没写到的 seq（抢占作者以后的日志）、编出任意链尾。
-        if recutter.is_some() && !self.author_listed(&header)? {
-            return Ok(Taken::Deferred(Defer::Unlisted(device)));
-        }
-        // 每条操作的信封：作者的、依赖里不点作者自己（真相层的原生日志拒收这两样，到落库时才发现就晚了）。流式解一遍、
-        // 不落库；整段的链在下面 verify。
-        let stream = match open.items() {
-            Ok(s) => s,
-            Err(e) => return Ok(reject_of(e)),
-        };
-        for item in stream {
-            match item {
-                Err(e) => return Ok(reject_of(e)),
-                Ok(NativeItem::Op(op)) if op.hlc.device != device || op.deps.get(&device) != 0 => {
-                    return Ok(Taken::Rejected(Reject::Corrupt(format!(
-                        "op {} names the wrong device in its envelope",
-                        op.id.seq
-                    ))));
+                let open = match open_recut4(bytes, &public, &rp, key) {
+                    Ok(o) => o,
+                    Err(e) => return Ok(reject_of(e)),
+                };
+                if key.is_some() && !open.stored_sealed {
+                    return Ok(Taken::Rejected(Reject::PlainOnSealed));
                 }
-                Ok(_) => {}
+                if open.header != header {
+                    return Ok(Taken::Rejected(Reject::Corrupt(
+                        "header changed under the signature".into(),
+                    )));
+                }
+                for item in &open.items {
+                    if let RecutItem::Stub(s) = item {
+                        if s.op.id.seq > start_last {
+                            if let Some(t) = self.purge_vouches(s)? {
+                                return Ok(t);
+                            }
+                        }
+                    }
+                }
+                let mut seq = header.first;
+                let mut voids = Vec::new();
+                for item in &open.items {
+                    if let RecutItem::Void { count, chain_after } = item {
+                        voids.push((seq, *count, *chain_after));
+                    }
+                    seq += item.span();
+                }
+                author_sig = open.author_sig;
+                author_voids = Some(voids);
+                items = open.landing_items();
+            }
+            None => {
+                let open = match open_any4(bytes, &public, key) {
+                    Ok(o) => o,
+                    Err(e) => return Ok(reject_of(e)),
+                };
+                if key.is_some() && !open.stored_sealed {
+                    return Ok(Taken::Rejected(Reject::PlainOnSealed));
+                }
+                // 签名之下的段头才可信（peek 的只是提示）。
+                if open.header != header {
+                    return Ok(Taken::Rejected(Reject::Corrupt(
+                        "header changed under the signature".into(),
+                    )));
+                }
+                // 每条操作的信封：作者的、依赖里不点作者自己（真相层的原生日志拒收这两样，到落库时才发现就晚了）。流式解
+                // 一遍、不落库；整段的链在下面 verify。
+                let check = match open.items() {
+                    Ok(s) => s,
+                    Err(e) => return Ok(reject_of(e)),
+                };
+                for item in check {
+                    match item {
+                        Err(e) => return Ok(reject_of(e)),
+                        Ok(NativeItem::Op(op))
+                            if op.hlc.device != device || op.deps.get(&device) != 0 =>
+                        {
+                            return Ok(Taken::Rejected(Reject::Corrupt(format!(
+                                "op {} names the wrong device in its envelope",
+                                op.id.seq
+                            ))));
+                        }
+                        Ok(_) => {}
+                    }
+                }
+                author_sig = open.author_sig();
+                author_voids = None;
+                items = Vec::new();
+                open_native_piece = open;
+                stream = match open_native_piece.verify() {
+                    Ok(v) => Some(v),
+                    Err(e) => return Ok(reject_of(e)),
+                };
             }
         }
-        let items = match open.verify() {
-            Ok(v) => v,
-            Err(e) => return Ok(reject_of(e)),
+        let mut native_voids: Vec<(u64, u64, Chain)> = Vec::new();
+        let mut pairs = items.into_iter();
+        let mut next = || -> Option<Result<(NativeItem, Option<Stub>), SegmentError>> {
+            match stream.as_mut() {
+                Some(s) => s.next().map(|r| r.map(|i| (i, None))),
+                None => pairs.next().map(Ok),
+            }
         };
-        let mut last = self.t.last_of(self.col, &device)?;
+        let mut last = start_last;
         let mut tail = self.tail(&device, last)?;
         let (mut landed, mut known, mut parked) = (0u64, 0u64, 0u64);
         let mut chain = header.prev_chain;
         let mut seq = header.first;
-        for item in items {
+        while let Some(item) = next() {
             if self.exhausted() {
                 // 预算用完：停在这一项之前。已落的是日志前缀，下一批再交这一段时按已有跳过。
                 self.cut = true;
@@ -430,7 +491,7 @@ impl<'t, 'c> Receiver<'t, 'c> {
                 });
             }
             // verify() 已整段校验过；第二遍流式解（超大的段）不该再出错，出了就是库外的意外，整笔回滚。
-            let item =
+            let (item, stub) =
                 item.map_err(|e| format!("gen4 receive: segment changed while reading: {e}"))?;
             let prev = chain;
             let end = seq + item.span() - 1;
@@ -438,6 +499,9 @@ impl<'t, 'c> Receiver<'t, 'c> {
                 NativeItem::Op(op) => chain_next4(&prev, op),
                 NativeItem::Void { chain_after, .. } => *chain_after,
             };
+            if let (NativeItem::Void { count, .. }, None) = (&item, &stub) {
+                native_voids.push((seq, *count, after));
+            }
             if end <= last {
                 known += item.span();
                 if end == last && after != tail {
@@ -457,6 +521,10 @@ impl<'t, 'c> Receiver<'t, 'c> {
                         self.tally.landed += landed;
                         return Ok(Taken::Diverged { device, seq });
                     }
+                }
+                // 剔除项落成空洞之前（或进等待缓冲之前）记下它的剔除记录：本机以后重切这一段要用。
+                if let Some(s) = &stub {
+                    self.t.put_stub(self.col, s)?;
                 }
                 if seq > last + 1 || !self.ready(&item) {
                     if self.park(&device, seq, &prev, &after, &item)? {
@@ -491,6 +559,17 @@ impl<'t, 'c> Receiver<'t, 'c> {
                 }
             }
         }
+        // 整段走完：记下作者签名与作者签的空洞（本机以后从日志重切这一段用，`sync_state.rs` `recut_from_log`）。
+        if !matches!(&self.me, Some((me, _)) if *me == device) {
+            self.t.note_author_version(
+                self.col,
+                &AuthorVersion {
+                    header,
+                    sig: author_sig,
+                    voids: author_voids.unwrap_or(native_voids),
+                },
+            )?;
+        }
         Ok(Taken::Landed {
             landed,
             known,
@@ -498,21 +577,51 @@ impl<'t, 'c> Receiver<'t, 'c> {
         })
     }
 
-    /// 重切件的区间 `[first, last]` 与链尾是不是作者自己签过的一段：本机自己的日志 = 本机已写到那里、那里的链值相同；
-    /// 别的设备 = 本机记下的它最新的 head 列出了这一段（[Truth::author_listed]）。
-    fn author_listed(&self, header: &NativeHeader) -> Result<bool, String> {
-        if matches!(&self.me, Some((me, _)) if *me == header.device) {
-            return Ok(self.t.last_of(self.col, &header.device)? >= header.last
-                && self.t.chain_known(self.col, &header.device, header.last)?
-                    == Some(header.last_chain));
+    /// 重切件里一条要落库的剔除项 [s] 声称的那条 Purge 本机认不认（`gen4/recut.rs`「信任口径」第 3 条）：本机日志或等待
+    /// 缓冲里有了这条操作、它是 Purge、目标在 [s] 作者签的清除目标里、[s] 的作者写它时没见过它、它的作者本机不拒绝 =
+    /// None（认）；否则交回这一件的结论。
+    fn purge_vouches(&self, s: &Stub) -> Result<Option<Taken>, String> {
+        let p = s.purge;
+        let mut candidates: Vec<Op4> = Vec::new();
+        match self.t.entry(self.col, &p)? {
+            Some(e) => match e.op() {
+                Some(op) => candidates.push(op.clone()),
+                None => return Ok(Some(Taken::Rejected(Reject::NotPurged(s.id())))),
+            },
+            None => {
+                if let Some(k) = self.t.key_of(self.col, &p)? {
+                    let rows: Vec<Option<Vec<u8>>> = {
+                        let mut stmt = self
+                            .t
+                            .conn()
+                            .prepare_cached("SELECT op FROM op_wait WHERE k = ?1")
+                            .map_err(sql)?;
+                        let rows = stmt.query_map([k], |r| r.get(0)).map_err(sql)?;
+                        rows.collect::<rusqlite::Result<_>>().map_err(sql)?
+                    };
+                    for op in rows.into_iter().flatten() {
+                        candidates.push(op_of_bytes(&op)?);
+                    }
+                }
+            }
         }
-        self.t.author_listed(
-            self.col,
-            &header.device,
-            header.first,
-            header.last,
-            &header.last_chain,
-        )
+        if candidates.is_empty() {
+            return Ok(Some(Taken::Deferred(Defer::PurgePending(p))));
+        }
+        let covers = candidates.iter().any(|op| {
+            op.id == p
+                && op.kind == KIND_PURGE
+                && matches!(op.body(), Ok(Body4::Purge { kind, entity }) if s.covered_by(&p, &(kind, entity.clone())))
+        });
+        if !covers {
+            return Ok(Some(Taken::Rejected(Reject::NotPurged(s.id()))));
+        }
+        if !matches!(&self.me, Some((me, _)) if *me == p.device)
+            && self.t.trust_of(self.col, &p.device)?.is_some()
+        {
+            return Ok(Some(Taken::Deferred(Defer::UntrustedUploader(p.device))));
+        }
+        Ok(None)
     }
 
     /// 本机这台设备日志末尾的链值（原生日志；一条都没有 = 链的起点）。
@@ -1165,7 +1274,7 @@ mod tests {
     use crate::gen4::heritage::{HeritageMeta, pack_heritage};
     use crate::gen4::op::Op4;
     use crate::gen4::op::tests::id;
-    use crate::gen4::recut::{recut4, void_one};
+    use crate::gen4::recut::recut4;
     use crate::gen4::relay::wrap_relay4;
     use crate::gen4::segment::pack_native;
     use crate::gen4::segment::tests::{chain_of, coll};
@@ -1539,25 +1648,91 @@ mod tests {
         assert_eq!(got, vec![landed(2, 0, 0)]);
     }
 
-    /// 中继件与原段收法相同；转发到加密位置的件必须封装，明文转发到加密位置的拒。
+    /// 作者 [dev] 的段 1..=n（[ops]）打包后的段头、作者签名与全部重切项。
+    fn signed_by_author(ops: &[Op4], dev: u8) -> (NativeHeader, [u8; 64], Vec<RecutItem>) {
+        let items = ops_items(ops);
+        let (header, bytes) =
+            pack_native(coll(), id(dev), 1, &items, CHAIN_ZERO, &key_of(dev), None).unwrap();
+        let open = crate::gen4::segment::open_native_verified(&bytes, &key_of(dev).public(), None)
+            .unwrap();
+        let all = recut::from_native(&open).unwrap();
+        (header, open.author_sig(), all)
+    }
+
+    /// 要被清除的那个实体（与 [nop] 写的实体不同：清除它不波及别的操作）。
+    fn doomed_entity() -> crate::sync2::id::Key {
+        crate::sync2::id::Key::Uuid(id(0x99))
+    }
+
+    /// 写 [doomed_entity] 的一条操作（设备 [dev] 第 [seq] 条）。
+    fn doomed(dev: u8, seq: u64, deps: &[(u8, u64)]) -> Op4 {
+        let e = crate::gen4::op::tests::native_edit();
+        op(
+            dev,
+            seq,
+            seq as i64 * 10 + i64::from(dev),
+            deps,
+            &Body4::Edit(crate::gen4::op::Edit4 {
+                entity: doomed_entity(),
+                value: format!("\"doomed-{dev}-{seq}\""),
+                ..e
+            }),
+        )
+    }
+
+    /// 清除 [doomed_entity] 的一条 Purge（设备 [dev] 第 [seq] 条）。
+    fn purge_op(dev: u8, seq: u64, deps: &[(u8, u64)]) -> Op4 {
+        op(
+            dev,
+            seq,
+            seq as i64 * 10 + i64::from(dev) + 5,
+            deps,
+            &Body4::Purge {
+                kind: crate::gen4::op::tests::native_edit().kind,
+                entity: doomed_entity(),
+            },
+        )
+    }
+
+    fn at(t: &Truth<'_>, col: i64, dev: u8, seq: u64) -> crate::store::gen4::truth::Entry {
+        t.entry(
+            col,
+            &OpId {
+                device: id(dev),
+                seq,
+            },
+        )
+        .unwrap()
+        .unwrap()
+    }
+
     /// 重切中继件（`gen4/recut.rs`）：重切者没记过公钥 = 等它的 head，待确认 = 等确认（这期间依赖作者的操作留在等待
-    /// 缓冲）；签名不是前缀里那个重切者的 = 坏件；受信之后照原生段落库，空洞落成空洞，等着的操作随即投递。
+    /// 缓冲）；重切者签名不是前缀里那个重切者的 = 坏件；受信之后照原生段落库，剔除项落成空洞、记下剔除记录与作者签名，
+    /// 等着的操作随即投递。读者从没读过作者的 head 也收得下（区间与链尾由作者的原签名担保，不再看 head 的段清单）。
     #[test]
     fn recut_pieces_need_a_trusted_recutter_and_land_their_voids() {
         const C: u8 = 0x23;
         let conn = open_in_memory().unwrap();
         let t = Truth::new(&conn);
         let col = setup(&t);
-        let a: Vec<Op4> = (1..=3).map(|s| nop(A, s, &[])).collect();
-        let items = ops_items(&a);
-        let (header, _) =
-            pack_native(coll(), id(A), 1, &items, CHAIN_ZERO, &key_of(A), None).unwrap();
-        let voided = void_one(&items, 1, CHAIN_ZERO, 2).unwrap();
+        let a = vec![nop(A, 1, &[]), doomed(A, 2, &[]), nop(A, 3, &[])];
+        let (header, sig, all) = signed_by_author(&a, A);
+        // B 清除 A2 写的那个实体（见过 A3），B 之后的操作都依赖它：拿不到 A 这一段就投不了。
+        let p = purge_op(B, 1, &[(A, 3)]);
+        let stubbed = recut::stub_one(&all, 1, 2, p.id).unwrap();
         let cut = |signer: u8, named: u8| {
-            recut4(&header, &voided, &key_of(signer), id(named), None).unwrap()
+            recut4(
+                &header,
+                &sig,
+                &stubbed,
+                &key_of(A).public(),
+                &key_of(signer),
+                id(named),
+                None,
+            )
+            .unwrap()
         };
-        // B 的操作依赖 A3：拿不到 A 这一段就投不了。
-        let b = seg_of(B, CHAIN_ZERO, &ops_items(&[nop(B, 1, &[(A, 3)])]), None);
+        let b = seg_of(B, CHAIN_ZERO, &ops_items(std::slice::from_ref(&p)), None);
 
         let (got, _) = take(&t, col, Settle::Incremental, &[&cut(C, C)], None);
         assert_eq!(got, vec![Taken::Deferred(Defer::UnknownSigner(id(C)))]);
@@ -1571,150 +1746,216 @@ mod tests {
         t.tx(|t| t.set_trust(col, &id(B), None, NOW)).unwrap();
         let (got, _) = take(&t, col, Settle::Incremental, &[&cut(A, B)], None);
         assert_eq!(got, vec![Taken::Rejected(Reject::BadSignature)]);
-        // A 自己签的清单还没读到：重切件的区间没有作者担保，不收。
-        let (got, _) = take(&t, col, Settle::Incremental, &[&cut(B, B)], None);
-        assert_eq!(got, vec![Taken::Deferred(Defer::Unlisted(id(A)))]);
-        note_author(
-            &t,
-            col,
-            A,
-            3,
-            &header.last_chain,
-            &[(1, 3, header.last_chain)],
-        );
+        // B 的 Purge 在等待缓冲里（它依赖的 A3 还没到）：读者认得它，件照收。
         let (got, r) = take(&t, col, Settle::Incremental, &[&cut(B, B)], None);
         assert_eq!(got, vec![landed(3, 0, 0)]);
         assert_eq!((r.delivered, r.waiting), (1, 0));
-        let at = |s: u64| {
-            t.entry(
-                col,
-                &OpId {
-                    device: id(A),
-                    seq: s,
-                },
-            )
-            .unwrap()
-            .unwrap()
-        };
-        assert!(at(1).is_whole() && at(3).is_whole());
-        assert!(!at(2).is_whole(), "the recut void lands as a void");
+        assert!(at(&t, col, A, 1).is_whole() && at(&t, col, A, 3).is_whole());
+        assert!(!at(&t, col, A, 2).is_whole(), "the stub lands as a void");
         assert_eq!(t.last_of(col, &id(B)).unwrap(), 1);
         assert_eq!(t.chain_at(col, &id(A), 3).unwrap(), header.last_chain);
+        // 本机以后重切这一段的材料：剔除记录与作者签名都记下了。
+        let stub = t.stub_at(col, &id(A), 2).unwrap().unwrap();
+        assert_eq!((stub.id(), stub.purge), (a[1].id, p.id));
+        let v = t.author_version(col, &id(A), 1, 3).unwrap().unwrap();
+        assert_eq!((v.header, v.sig, v.voids), (header, sig, vec![]));
     }
 
-    /// 本机记下作者 [dev] 签过的 head：seq = [seq]、末端链值 [chain]、段清单 [segs]（区间与链尾）。
-    fn note_author(
-        t: &Truth<'_>,
-        col: i64,
-        dev: u8,
-        seq: u64,
-        chain: &Chain,
-        segs: &[(u64, u64, Chain)],
-    ) {
-        let segs: Vec<(u64, u64, String)> = segs
-            .iter()
-            .map(|(a, b, c)| (*a, *b, crate::sync2::segment::chain_tag(c)))
-            .collect();
-        t.tx(|t| t.note_author_head(col, &id(dev), 1, seq, chain, &segs))
-            .unwrap();
-    }
-
-    /// 重切者 B（受信）以 [dev] 的名义签的件：区间 `[first, last]`，[ops] 之后一个空洞盖满，链尾 = 空洞的链值 = [end]。
-    fn forge(dev: u8, first: u64, last: u64, ops: &[Op4], end: Chain) -> Vec<u8> {
-        let mut items = ops_items(ops);
-        items.push(NativeItem::Void {
-            count: last - first + 1 - ops.len() as u64,
-            chain_after: end,
-        });
-        let header = NativeHeader {
-            encrypted: false,
-            collection: coll(),
-            device: id(dev),
-            first,
-            last,
-            prev_chain: CHAIN_ZERO,
-            last_chain: end,
-        };
-        recut4(&header, &items, &key_of(B), id(B), None).unwrap()
-    }
-
-    /// 复核 major（K2 第四轮）：受信的重切者 B 不能借重切件以作者 A 的名义写进 A 没签过的区间。A 一条都没写过时伪造
-    /// A 的 1..=4（三条伪造内容 + 一个空洞，链尾随便填）；A 签了 1..=3 之后伪造超出它 head 的 1..=4、在 1..=3 编一个
-    /// 链尾标签不同的、标签相同而完整链值不同的（区间末就是 head 的末端）：一律不收、一条都不落、不进等待缓冲。A 自己
-    /// 签的段之后照常收下，接在后面的也照常（没有被伪造的链值占住）。
+    /// 第五波根治（复核建议 (a)）：受信的重切者 B 换不了留下的操作、伪造不了作者没写到的 seq、挖不了没被清除的操作。
+    /// 一律不落、不进等待缓冲；合法的那份之后照常收下。
     #[test]
-    fn a_trusted_recutter_cannot_write_where_the_author_has_not_signed() {
+    fn a_trusted_recutter_cannot_forge_kept_ops_future_seqs_or_unpurged_stubs() {
         let conn = open_in_memory().unwrap();
         let t = Truth::new(&conn);
         let col = setup(&t);
-        let forged: Vec<Op4> = (1..=3)
-            .map(|s| op(A, s, s as i64 * 10 + 7, &[], &edit("FORGED")))
-            .collect();
-        let nothing = |t: &Truth<'_>| {
-            assert_eq!(t.last_of(col, &id(A)).unwrap(), 0);
-            assert!(t.waiting(col).unwrap().is_empty());
+        // A3 依赖 B1（= Purge）：A3 是作者见过这条清除之后写的，管不到它。
+        let p = purge_op(B, 1, &[(A, 2)]);
+        let a = vec![nop(A, 1, &[]), doomed(A, 2, &[]), doomed(A, 3, &[(B, 1)])];
+        let (header, sig, all) = signed_by_author(&a, A);
+        let author = key_of(A).public();
+        let forge = |h: &NativeHeader, items: &[RecutItem]| {
+            recut::sign_unchecked(h, &sig, items, &key_of(B), id(B))
         };
-
-        // A 还没有任何 head：伪造它未来的 seq。
+        // 什么都没落、等待缓冲里只有 B 自己的 [waiting] 条。
+        let nothing = |t: &Truth<'_>, waiting: u64| {
+            assert_eq!(t.last_of(col, &id(A)).unwrap(), 0);
+            assert_eq!(t.waiting_count(col).unwrap(), waiting);
+        };
+        let good = recut::stub_one(&all, 1, 2, p.id).unwrap();
+        // 1. 那条 Purge 本机还没有：等它（不落、不报坏）。
         let (got, _) = take(
             &t,
             col,
             Settle::Incremental,
-            &[&forge(A, 1, 4, &forged, [0x42; 32])],
+            &[&forge(&header, &good)],
             None,
         );
-        assert_eq!(got, vec![Taken::Deferred(Defer::Unlisted(id(A)))]);
-        nothing(&t);
-
-        let a: Vec<Op4> = (1..=3).map(|s| nop(A, s, &[])).collect();
-        let real = chain_of(CHAIN_ZERO, &a);
-        note_author(&t, col, A, 3, &real, &[(1, 3, real)]);
-        let mut same_tag = real;
-        same_tag[31] ^= 0xff;
-        for bad in [
-            forge(A, 1, 4, &forged, [0x42; 32]),
-            forge(A, 1, 3, &forged[..2], [0x42; 32]),
-            forge(A, 1, 3, &forged[..2], same_tag),
+        assert_eq!(got, vec![Taken::Deferred(Defer::PurgePending(p.id))]);
+        nothing(&t, 0);
+        // B 的段到了（Purge 等着 A2）。
+        let b2 = nop(B, 2, &[(A, 2)]);
+        let other = op(
+            B,
+            3,
+            77,
+            &[(A, 2)],
+            &Body4::Purge {
+                kind: crate::gen4::op::tests::native_edit().kind,
+                entity: crate::sync2::id::Key::Uuid(id(0x77)),
+            },
+        );
+        let bs = seg_of(
+            B,
+            CHAIN_ZERO,
+            &ops_items(&[p.clone(), b2.clone(), other.clone()]),
+            None,
+        );
+        let (got, r) = take(&t, col, Settle::Incremental, &[&bs], None);
+        assert_eq!(got, vec![landed(0, 0, 3)]);
+        assert_eq!(r.waiting, 3);
+        // 2. 留下的操作换了内容（链尾跟着改成新链的值）：作者签名不认。
+        let mut kept = good.clone();
+        if let RecutItem::Op(op) = &mut kept[0] {
+            op.hlc.logical += 1;
+        }
+        let mut h = header.clone();
+        h.last_chain = recut::chain_through(h.prev_chain, &kept);
+        // 3. 作者没写到的 seq：区间伸到 4，多一条伪造的操作。
+        let mut future = good.clone();
+        future.push(RecutItem::Op(op(A, 4, 47, &[], &edit("FORGED"))));
+        let mut h4 = header.clone();
+        h4.last = 4;
+        h4.last_chain = recut::chain_through(h4.prev_chain, &future);
+        // 4. 只带链值的重置空洞（作者没签过这个空洞）。
+        let mut reset = good.clone();
+        reset[0] = RecutItem::Void {
+            count: 1,
+            chain_after: chain_of(CHAIN_ZERO, &a[..1]),
+        };
+        for (bad, why) in [
+            (forge(&h, &kept), Reject::BadSignature),
+            (forge(&header, &kept), Reject::ChainMismatch),
+            (forge(&h4, &future), Reject::BadSignature),
+            (forge(&header, &reset), Reject::BadSignature),
         ] {
             let (got, _) = take(&t, col, Settle::Incremental, &[&bad], None);
-            assert_eq!(got, vec![Taken::Deferred(Defer::Unlisted(id(A)))]);
-            nothing(&t);
+            assert_eq!(got, vec![Taken::Rejected(why)]);
+            nothing(&t, 3);
         }
-
-        let a4 = nop(A, 4, &[]);
-        let (got, _) = take(
+        // 5. 挖掉没被清除的操作：声称的「Purge」是 B2（不是 Purge）、是清别的实体的 B3、或作者已经见过它（A3）。
+        for (seq, by) in [(2, b2.id), (2, other.id), (3, p.id)] {
+            let stubbed = recut::stub_one(&all, 1, seq, by).unwrap();
+            let (got, _) = take(
+                &t,
+                col,
+                Settle::Incremental,
+                &[&forge(&header, &stubbed)],
+                None,
+            );
+            assert_eq!(
+                got,
+                vec![Taken::Rejected(Reject::NotPurged(a[seq as usize - 1].id))]
+            );
+            nothing(&t, 3);
+        }
+        // 合法的那份：落下，B 的三条随即投递。
+        assert!(recut::author_signed(&header, &sig, &good, &author));
+        let (got, r) = take(
             &t,
             col,
             Settle::Incremental,
-            &[
-                &seg_of(A, CHAIN_ZERO, &ops_items(&a), None),
-                &seg_of(A, real, &ops_items(std::slice::from_ref(&a4)), None),
-            ],
+            &[&forge(&header, &good)],
             None,
         );
-        assert_eq!(got, vec![landed(3, 0, 0), landed(1, 0, 0)]);
-        assert_eq!(t.last_of(col, &id(A)).unwrap(), 4);
+        // A1、A2（剔除项）落下；A3 依赖 B1，先进缓冲，随 B 的三条一起投递。
+        assert_eq!(got, vec![landed(2, 0, 1)]);
+        assert_eq!((r.delivered, r.waiting), (4, 0));
+        assert_eq!(t.last_of(col, &id(A)).unwrap(), 3);
+        assert!(!at(&t, col, A, 2).is_whole());
+        assert!(at(&t, col, A, 3).is_whole(), "A3 saw the purge: kept");
     }
 
-    /// 本机自己的日志：重切件只收本机已写到、链尾与本机相同的区间，伪造本机以后的 seq 不收。
+    /// 合法的重切件在各种读者上都收得下：只有 Purge 的、已有原文而还没有 Purge 的（不因此挖掉本机的完整操作）、
+    /// 原文与 Purge 都有的、只有前一半的；作者的原签名担保区间与链尾，读者读没读过、读的是哪个位置的作者 head 都不相干。
     #[test]
-    fn a_recut_of_my_own_log_must_match_what_i_wrote() {
+    fn a_legal_recut_lands_on_every_reader() {
+        let a = vec![
+            nop(A, 1, &[]),
+            nop(A, 2, &[]),
+            doomed(A, 3, &[]),
+            nop(A, 4, &[]),
+        ];
+        let (header, sig, all) = signed_by_author(&a, A);
+        let p = purge_op(B, 1, &[(A, 4)]);
+        let stubbed = recut::stub_one(&all, 1, 3, p.id).unwrap();
+        let piece = recut4(
+            &header,
+            &sig,
+            &stubbed,
+            &key_of(A).public(),
+            &key_of(B),
+            id(B),
+            None,
+        )
+        .unwrap();
+        let b = seg_of(B, CHAIN_ZERO, &ops_items(std::slice::from_ref(&p)), None);
+        let original = seg_of(A, CHAIN_ZERO, &ops_items(&a), None);
+        let first_half = seg_of(A, CHAIN_ZERO, &ops_items(&a[..2]), None);
+        // (读者已有的, 期望：A3 完整?, 期望：B 的末尾)
+        let readers: [(&[&[u8]], bool, u64); 4] = [
+            (&[&b], false, 1),
+            (&[&original], true, 0),
+            (&[&original, &b], false, 1),
+            (&[&first_half, &b], false, 1),
+        ];
+        for (i, (before, keeps, b_last)) in readers.iter().enumerate() {
+            let conn = open_in_memory().unwrap();
+            let t = Truth::new(&conn);
+            let col = setup(&t);
+            take(&t, col, Settle::Incremental, before, None);
+            let (got, r) = take(&t, col, Settle::Incremental, &[&piece], None);
+            assert!(
+                matches!(got[0], Taken::Landed { .. }),
+                "reader {i}: {got:?}"
+            );
+            assert_eq!(r.waiting, 0, "reader {i}");
+            assert_eq!(t.last_of(col, &id(A)).unwrap(), 4, "reader {i}");
+            assert_eq!(t.last_of(col, &id(B)).unwrap(), *b_last, "reader {i}");
+            assert_eq!(at(&t, col, A, 3).is_whole(), *keeps, "reader {i}");
+            assert!(at(&t, col, A, 4).is_whole(), "reader {i}");
+            assert_eq!(t.chain_at(col, &id(A), 4).unwrap(), header.last_chain);
+        }
+    }
+
+    /// 本机自己的日志：别人以本机的名义伪造本机以后的 seq（作者签名是假的）不收。
+    #[test]
+    fn a_recut_of_my_own_log_must_carry_my_signature() {
         use crate::store::gen4::native::tests::ME;
         let conn = open_in_memory().unwrap();
         let t = Truth::new(&conn);
         let col = setup(&t);
-        let forged = [op(ME, 1, 17, &[], &edit("FORGED"))];
-        let (got, _) = take(
-            &t,
-            col,
-            Settle::Incremental,
-            &[&forge(ME, 1, 2, &forged, [0x42; 32])],
-            None,
-        );
-        assert_eq!(got, vec![Taken::Deferred(Defer::Unlisted(id(ME)))]);
+        let p = purge_op(B, 1, &[]);
+        let mine = vec![nop(ME, 1, &[]), nop(ME, 2, &[])];
+        let items: Vec<RecutItem> = vec![
+            RecutItem::Op(mine[0].clone()),
+            RecutItem::Stub(Stub::of(&mine[1], p.id)),
+        ];
+        let header = NativeHeader {
+            encrypted: false,
+            collection: coll(),
+            device: id(ME),
+            first: 1,
+            last: 2,
+            prev_chain: CHAIN_ZERO,
+            last_chain: recut::chain_through(CHAIN_ZERO, &items),
+        };
+        let forged = recut::sign_unchecked(&header, &[0; 64], &items, &key_of(B), id(B));
+        let (got, _) = take(&t, col, Settle::Incremental, &[&forged], None);
+        assert_eq!(got, vec![Taken::Rejected(Reject::BadSignature)]);
         assert_eq!(t.last_of(col, &id(ME)).unwrap(), 0);
     }
 
+    /// 中继件与原段收法相同；转发到加密位置的件必须封装，明文转发到加密位置的拒。
     #[test]
     fn relay_pieces_land_like_the_segments_they_carry() {
         let conn = open_in_memory().unwrap();
@@ -2117,7 +2358,22 @@ mod tests {
         let t = Truth::new(&conn);
         let col = setup(&t);
         let bad = vec![nop(A, 1, &[]), op(A, 2, 20, &[(A, 1)], &edit("self-dep"))];
-        let s = seg_of(A, CHAIN_ZERO, &ops_items(&bad), None);
+        // `pack_native` 签不出这种段（摘要要逐项解码），手拼一个由 A 签名的。
+        let header = NativeHeader {
+            encrypted: false,
+            collection: coll(),
+            device: id(A),
+            first: 1,
+            last: 2,
+            prev_chain: CHAIN_ZERO,
+            last_chain: chain_of(CHAIN_ZERO, &bad),
+        };
+        let s = crate::gen4::segment::tests::assemble_by(
+            &header,
+            &crate::gen4::segment::write_body(&ops_items(&bad)),
+            &key_of(A),
+            None,
+        );
         let b = seg_of(B, CHAIN_ZERO, &ops_items(&[nop(B, 1, &[])]), None);
         let (got, rec) = take(&t, col, Settle::Incremental, &[&s, &b], None);
         assert!(

@@ -83,8 +83,9 @@ fn a_purge_leaves_no_bytes_of_the_text_in_the_library_files() {
 /// 回 (重切者, 全部项)。
 fn piece_items(bytes: &[u8], key_of: &dyn Fn(&Id) -> [u8; 32]) -> (Option<Id>, Vec<NativeItem>) {
     if bytes.starts_with(recut::MAGIC) {
-        let r = peek_recut4(bytes).unwrap().recutter;
-        let (_, items) = open_recut4_items(bytes, &key_of(&r), None).unwrap();
+        let peek = peek_recut4(bytes).unwrap();
+        let (a, r) = (peek.header.device, peek.recutter);
+        let (_, items) = open_recut4_items(bytes, &key_of(&a), &key_of(&r), None).unwrap();
         (Some(r), items)
     } else {
         let a = peek_relay4(bytes).unwrap().header.device;

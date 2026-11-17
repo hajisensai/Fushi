@@ -64,9 +64,10 @@ use rusqlite::Connection;
 /// （AnkiConnect 数字 id 的成员反查表 `anki_members` 与它按笔记维护用的 `anki_members_note`——`cmd/columns.rs`
 /// 按号点查，不再扫别名表逐个算号，`cache.rs` 文件头「表」；`entity_count {kind, limit}` 按种类数到 `limit` 就停用的
 /// `ent_ix` 部分索引 `ent_kind`，`cmd/reads.rs` `each_class`）；G8-7b 起 `40021`（转发要的作者段原文 `relay_segs`，
-/// [SYNC]，`cmd/sync_relay.rs`；没有显式索引，[PLANNER_STATS] 不变；40020 预分配给同批别的 PR）。整批推送前每个改表的
-/// PR 各自用分到的号。
-pub const SCHEMA: i64 = 40_021;
+/// [SYNC]，`cmd/sync_relay.rs`；没有显式索引，[PLANNER_STATS] 不变；40020 预分配给同批别的 PR）；第五波 K2 根治起
+/// `40024`（重切的材料 `relay_auth` / `relay_stubs`，[SYNC]，`sync_state.rs`；主键点查与主键前缀，没有显式索引，
+/// [PLANNER_STATS] 不变；40022 / 40023 预分配给同批别的 PR）。整批推送前每个改表的 PR 各自用分到的号。
+pub const SCHEMA: i64 = 40_024;
 
 /// 新代的号段从这里起：`schema` 小于它的都不是新代库（协议 3 的 1～29 与封存值 39999）。
 pub const GEN_FLOOR: i64 = 40_000;
@@ -314,6 +315,12 @@ CREATE TABLE IF NOT EXISTS loc_state (
 ///   （作者, 区间, 链尾标签）唯一；每个位置都有了就删（`cmd/sync_relay.rs`）。行里是几 KB 到几 MB 的 blob，所以是普通
 ///   rowid 表（唯一约束的自动索引承担全部查找：前缀 `(col, device)` 与整键等值），不用 `WITHOUT ROWID`。协议 3
 ///   `sync2_relay_segs` 的对应物。
+/// - `relay_auth`（第五波 K2 根治起）：收下的别的设备的每一段的作者签名、原段头与作者签的空洞（`voids` =
+///   `n uv | (起始 seq uv | 条数 uv | 区间末链值[32]) × n`），同一区间只留作者签的空洞最多的那份。本机清除了这位作者的
+///   操作之后从日志重切这一段（`gen4/recut.rs` 的 `FRX4` 带作者原签名）用（`sync_state.rs` `recut_from_log`）。
+/// - `relay_stubs`（同上）：被挖掉的别的设备的操作的剔除记录（`gen4/recut.rs` `Stub` 的独立编码：信封、载荷哈希、
+///   清除目标、清掉它的 Purge），按操作主键 `k`。本机清除别人的操作时（`truth.rs` `advance_purge`）与收重切件落下别人
+///   挖掉的那些时写；重切要它把被挖掉的那一项照样算进作者签名的摘要与链里。
 pub(crate) const SYNC: &str = "
 CREATE TABLE IF NOT EXISTS loc_heads (
   col INTEGER NOT NULL,
@@ -350,6 +357,20 @@ CREATE TABLE IF NOT EXISTS relay_segs (
   tag TEXT NOT NULL,
   piece BLOB NOT NULL,
   UNIQUE (col, device, first, last, tag)
+);
+CREATE TABLE IF NOT EXISTS relay_auth (
+  col INTEGER NOT NULL,
+  device BLOB NOT NULL,
+  first INTEGER NOT NULL,
+  last INTEGER NOT NULL,
+  head BLOB NOT NULL,
+  sig BLOB NOT NULL,
+  voids BLOB NOT NULL,
+  PRIMARY KEY (col, device, first, last)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS relay_stubs (
+  k INTEGER PRIMARY KEY,
+  stub BLOB NOT NULL
 );
 CREATE TABLE IF NOT EXISTS oldroot_fp (
   col INTEGER NOT NULL,
@@ -1080,7 +1101,7 @@ mod tests {
                 .collect::<Result<_, _>>()
                 .unwrap()
         };
-        let want: [(&str, &[&str]); 16] = [
+        let want: [(&str, &[&str]); 18] = [
             (
                 "collections",
                 &[
@@ -1245,6 +1266,19 @@ mod tests {
                 ],
             ),
             (
+                "relay_auth",
+                &[
+                    "col INTEGER NN PK1",
+                    "device BLOB NN PK2",
+                    "first INTEGER NN PK3",
+                    "last INTEGER NN PK4",
+                    "head BLOB NN",
+                    "sig BLOB NN",
+                    "voids BLOB NN",
+                ],
+            ),
+            ("relay_stubs", &["k INTEGER PK1", "stub BLOB NN"]),
+            (
                 "oldroot_fp",
                 &[
                     "col INTEGER NN PK1",
@@ -1271,6 +1305,7 @@ mod tests {
             "loc_heads",
             "op_wait",
             "relay_out",
+            "relay_auth",
             "oldroot_fp",
         ] {
             let sql: String = conn

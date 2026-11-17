@@ -28,42 +28,64 @@ use super::schema::sql;
 use super::truth::Truth;
 use crate::gen4::location::{V4File, device_path, parse_v4_path};
 use crate::gen4::op::Op4;
-use crate::gen4::recut::{self, open_recut4_items, peek_recut4, recut4, void_one};
-use crate::gen4::relay::open_relay4_items;
-use crate::gen4::segment::{NativeHeader, NativeItem};
-use crate::sync2::codec::Reader;
+use crate::gen4::recut::{RecutItem, Stub, author_signed, recut4};
+use crate::gen4::segment::NativeHeader;
+use crate::sync2::codec::{Reader, Writer};
 use crate::sync2::id::Id;
-use crate::sync2::segment::chain_tag;
+use crate::sync2::keys::CollectionKey;
+use crate::sync2::segment::{Chain, chain_tag};
 use crate::sync2::vv::OpId;
 
-/// 重切一份缓存的作者段（[Truth::recut_kept]）的结果。
-enum Recut {
-    /// 本机签出的重切件（不封装）。
-    Done(Vec<u8>),
-    /// 那一条在这份里本来就是空洞：不用动。
-    Already,
-    /// 本机还没有身份签不了，或这份缓存读不了（解不开、签名者的公钥本机没有）：整份删掉。删的是转发缓存、不是数据，
-    /// 缺的那一段之后由 `relay_outbox` 从日志重切或记缺。不往上报错：辅助缓存不能挡住用户的彻底清除。
-    Unsigned,
+/// 作者签过的一段（一个版本）：从本机日志重切（[Truth::recut_from_log]）要的全部材料——作者签的段头与签名、作者签
+/// 的空洞在哪（`(起始 seq, 条数, 区间末链值)`）。收段时落下（[Truth::note_author_version]）。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AuthorVersion {
+    pub header: NativeHeader,
+    pub sig: [u8; 64],
+    pub voids: Vec<(u64, u64, Chain)>,
 }
 
-/// 本机记下的作者签过的段清单（[Truth::note_author_head]）。
-#[derive(serde::Deserialize)]
-struct AuthorHead {
-    gen: u64,
-    seq: u64,
-    /// 末端链值（小写十六进制）。
-    chain: String,
-    segs: Vec<(u64, u64, String)>,
+impl AuthorVersion {
+    fn voided(&self) -> u64 {
+        self.voids.iter().map(|v| v.1).sum()
+    }
 }
 
-fn hex32(c: &[u8; 32]) -> String {
-    c.iter().map(|b| format!("{b:02x}")).collect()
+fn voids_bytes(voids: &[(u64, u64, Chain)]) -> Vec<u8> {
+    let mut w = Writer::new();
+    w.uv(voids.len() as u64);
+    for (at, n, chain) in voids {
+        w.uv(*at);
+        w.uv(*n);
+        w.raw(chain);
+    }
+    w.into_vec()
 }
 
-/// [Truth::note_author_head] 在 `srs_meta` 里的键。
-pub(crate) fn author_head_key(col: i64, device: &Id) -> String {
-    format!("gen4_ahead/{col}/{}", device.text())
+fn voids_of(bytes: &[u8]) -> Result<Vec<(u64, u64, Chain)>, String> {
+    let bad = |_| "gen4 store: bad author version voids".to_owned();
+    let mut r = Reader::new(bytes);
+    let n = r.uv().map_err(bad)?;
+    let mut out = Vec::new();
+    for _ in 0..n {
+        let at = r.uv().map_err(bad)?;
+        let count = r.uv().map_err(bad)?;
+        out.push((at, count, chain32(r.raw(32).map_err(bad)?)?));
+    }
+    if !r.is_empty() {
+        return Err("gen4 store: trailing bytes in author version voids".to_owned());
+    }
+    Ok(out)
+}
+
+/// 从本机日志重切出来、还没签的一段（[Truth::recut_from_log]）：作者签的段头、作者签名与全部项（已核对作者签名）。
+#[derive(Clone, Debug)]
+pub struct RecutParts {
+    pub header: NativeHeader,
+    pub author_sig: [u8; 64],
+    pub items: Vec<RecutItem>,
+    /// 作者公钥（签之前 `recut4` 再核一次）。
+    pub author: [u8; 32],
 }
 
 /// 一个位置上一台设备最新的 head（只记同步层要的几样）。
@@ -218,76 +240,123 @@ impl<'c> Truth<'c> {
         Ok(())
     }
 
-    // ------------------------------------------------------------ 作者签过的段清单
+    // ------------------------------------------------------------ 作者签过的段（重切的材料）
 
-    /// `plan` 读到一份验过签名、公钥与本机记录相符的别的设备的 head（直接读到的与被转发来的都算）：代号比记下的大就换
-    /// （只进不退），记它的 (代号, seq, 末端链值, 段清单)。收重切件（[Truth::author_listed]）用：重切件由重切者签名担保，
-    /// 区间与链尾只能拿作者自己签的清单核对。存在 `srs_meta` 的 [author_head_key]（本机状态，不同步、不导出；丢了下一轮
-    /// `plan` 读到 head 就回来，期间重切件只是晚收）。记录坏了按没记过，照写。
-    pub(crate) fn note_author_head(
-        &self,
-        col: i64,
-        device: &Id,
-        gen: u64,
-        seq: u64,
-        chain: &[u8; 32],
-        segs: &[(u64, u64, String)],
-    ) -> Result<(), String> {
+    /// 收下（或重收）作者 [header] 的设备签的一段之后调：记下这一段的作者签名与作者签的空洞（[AuthorVersion]），之后
+    /// 本机清除了其中别人的操作、要从日志重切这一段时用（[Truth::recut_from_log]）。同一区间只留一份：作者签的空洞
+    /// 最多的那份（作者每次重切只会多挖，空洞多的那份与本机日志对得上的机会不少于旧的；本机落了作者新版里的空洞，
+    /// 旧版本就对不上了）。本机状态（`relay_auth`，[super::schema] 的 `SYNC`），不同步、不导出。
+    pub(crate) fn note_author_version(&self, col: i64, v: &AuthorVersion) -> Result<(), String> {
+        let (first, last) = (
+            i64_of(v.header.first, "seq")?,
+            i64_of(v.header.last, "seq")?,
+        );
+        let device = v.header.device;
+        if self
+            .author_version(col, &device, v.header.first, v.header.last)?
+            .is_some_and(|old| old.voided() >= v.voided())
+        {
+            return Ok(());
+        }
+        let mut hw = Writer::new();
+        v.header.write(&mut hw);
         self.write(|| {
-            let key = author_head_key(col, device);
-            if self.author_head(&key)?.is_some_and(|old| old.gen >= gen) {
-                return Ok(());
-            }
-            let value = serde_json::json!({
-                "gen": gen,
-                "seq": seq,
-                "chain": hex32(chain),
-                "segs": segs,
-            })
-            .to_string();
             self.conn()
-                .prepare_cached("INSERT OR REPLACE INTO srs_meta (key, value) VALUES (?1, ?2)")
+                .prepare_cached(
+                    "INSERT OR REPLACE INTO relay_auth (col, device, first, last, head, sig, voids) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                )
                 .map_err(sql)?
-                .execute(params![key, value])
+                .execute(params![
+                    col,
+                    &device.0[..],
+                    first,
+                    last,
+                    hw.into_vec(),
+                    &v.sig[..],
+                    voids_bytes(&v.voids)
+                ])
                 .map_err(sql)?;
             Ok(())
         })
     }
 
-    fn author_head(&self, key: &str) -> Result<Option<AuthorHead>, String> {
-        let text: Option<String> = self
-            .conn()
-            .prepare_cached("SELECT value FROM srs_meta WHERE key = ?1")
-            .map_err(sql)?
-            .query_row([key], |r| r.get(0))
-            .optional()
-            .map_err(sql)?;
-        Ok(text.and_then(|t| serde_json::from_str(&t).ok()))
-    }
-
-    /// 作者 [device] 签过的、本机记下的最新 head（[Truth::note_author_head]）列出了段 `[first, last]`、链尾标签是
-    /// [last_chain] 的；`last` 正好是那份 head 的 seq 时，完整的末端链值也得相同（标签只有 4 字节）。没记过这位作者的
-    /// head、清单里没有这一段 = 否。
-    pub(crate) fn author_listed(
+    /// 记下的作者 [device] 段 `[first, last]` 的那一份（[Truth::note_author_version]）。
+    pub(crate) fn author_version(
         &self,
         col: i64,
         device: &Id,
         first: u64,
         last: u64,
-        last_chain: &[u8; 32],
-    ) -> Result<bool, String> {
-        let Some(h) = self.author_head(&author_head_key(col, device))? else {
-            return Ok(false);
+    ) -> Result<Option<AuthorVersion>, String> {
+        let row: Option<(Vec<u8>, Vec<u8>, Vec<u8>)> = self
+            .conn()
+            .prepare_cached(
+                "SELECT head, sig, voids FROM relay_auth WHERE col = ?1 AND device = ?2 AND first = ?3 AND last = ?4",
+            )
+            .map_err(sql)?
+            .query_row(
+                params![
+                    col,
+                    &device.0[..],
+                    i64_of(first, "seq")?,
+                    i64_of(last, "seq")?
+                ],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()
+            .map_err(sql)?;
+        row.map(|(head, sig, voids)| {
+            let mut r = Reader::new(&head);
+            let header = NativeHeader::read(&mut r)
+                .map_err(|e| format!("gen4 store: bad author version head: {}", e.0))?;
+            Ok(AuthorVersion {
+                header,
+                sig: sig
+                    .try_into()
+                    .map_err(|_| "gen4 store: bad author version sig".to_owned())?,
+                voids: voids_of(&voids)?,
+            })
+        })
+        .transpose()
+    }
+
+    /// 记下一条被挖掉的操作的剔除记录（[Stub]：作者签名覆盖的那部分 + 清掉它的 Purge）。本机清除了别人的操作时
+    /// （`Truth::advance_purge`）、收重切件落下别人挖掉的那些时（`receive.rs`）写。本机状态（`relay_stubs`），只给
+    /// [Truth::recut_from_log] 用。
+    pub(crate) fn put_stub(&self, col: i64, stub: &Stub) -> Result<(), String> {
+        self.write(|| {
+            let k = self.key_for(col, &stub.id())?;
+            self.conn()
+                .prepare_cached("INSERT OR REPLACE INTO relay_stubs (k, stub) VALUES (?1, ?2)")
+                .map_err(sql)?
+                .execute(params![k, stub.encode()])
+                .map_err(sql)?;
+            Ok(())
+        })
+    }
+
+    /// 记下的 [device] 第 [seq] 条的剔除记录。
+    pub(crate) fn stub_at(&self, col: i64, device: &Id, seq: u64) -> Result<Option<Stub>, String> {
+        let id = OpId {
+            device: *device,
+            seq,
         };
-        let tag = chain_tag(last_chain);
-        if !h
-            .segs
-            .iter()
-            .any(|(a, b, t)| *a == first && *b == last && *t == tag)
-        {
-            return Ok(false);
-        }
-        Ok(last != h.seq || h.chain == hex32(last_chain))
+        let Some(k) = self.key_of(col, &id)? else {
+            return Ok(None);
+        };
+        let bytes: Option<Vec<u8>> = self
+            .conn()
+            .prepare_cached("SELECT stub FROM relay_stubs WHERE k = ?1")
+            .map_err(sql)?
+            .query_row([k], |r| r.get(0))
+            .optional()
+            .map_err(sql)?;
+        let Some(bytes) = bytes else {
+            return Ok(None);
+        };
+        let stub = Stub::decode(&bytes).map_err(|e| format!("gen4 store: bad stub: {}", e.0))?;
+        Ok((stub.id() == id).then_some(stub))
     }
 
     // ------------------------------------------------------------ loc_heads
@@ -523,40 +592,50 @@ impl<'c> Truth<'c> {
 
     /// 本机把作者 [device] 的 [seq] 落成了空洞（`Truth::advance_purge` 调，同一个事务）。转发手里这条内容的两种副本：
     ///
-    /// - 本机缓存的作者段（`relay_segs`）里覆盖它的：**重切**（`gen4/recut.rs`）——把这一条换成空洞、用本机的钥匙签出
-    ///   同区间同首尾链值的重切件，原地换掉原文。之后照常转发出去，只经本机拿数据的位置照样拿得到这位作者其余的操作
-    ///   （本机此后的操作都依赖它们，拿不到就连本机的也投不了）。本机没有身份签不了时整份删掉。
+    /// - 本机缓存的作者段（`relay_segs`）里覆盖它的：**重切**（`gen4/recut.rs`）——从本机日志重切这一段（被清除的
+    ///   操作换成剔除项，作者签名照样验得过）、用本机的钥匙签出，原地换掉原文。之后照常转发出去，只经本机拿数据的位置
+    ///   照样拿得到这位作者其余的操作（本机此后的操作都依赖它们，拿不到就连本机的也投不了）。重切不出来（本机还没有
+    ///   身份、没记下这一段的作者签名、这条没有剔除记录……）时整份删掉：删的是转发缓存、不是数据，缺的那一段之后由
+    ///   `relay_outbox` 从日志重切或记缺。不往上报错：辅助缓存不能挡住用户的彻底清除。
     /// - 已经转发到各位置上、覆盖它的 `rly-`（`relay_out` 在用的行）改成待删：下一次 `relay_outbox` 把它当缺的、用重切件
     ///   同名重写（`relay_ack` 记回在用，不再删）；重切不出来时 `relay_ack` 交给调用方删掉位置上那份带原文的件
     ///   （两段式删除，同 [Truth::relay_supersede]）。
     pub(crate) fn relay_purged(&self, col: i64, device: &Id, seq: u64) -> Result<(), String> {
         self.write(|| {
             let s = i64::try_from(seq).map_err(|_| "gen4 store: seq out of range")?;
-            let kept: Vec<(i64, Vec<u8>)> = {
+            let kept: Vec<(i64, i64, i64, String, Vec<u8>)> = {
                 let mut stmt = self
                     .conn()
                     .prepare_cached(
-                        "SELECT id, piece FROM relay_segs WHERE col = ?1 AND device = ?2 AND first <= ?3 AND last >= ?3",
+                        "SELECT id, first, last, tag, piece FROM relay_segs WHERE col = ?1 AND device = ?2 AND first <= ?3 AND last >= ?3",
                     )
                     .map_err(sql)?;
                 let rows = stmt
                     .query_map(params![col, &device.0[..], s], |r| {
-                        Ok((r.get(0)?, r.get(1)?))
+                        Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
                     })
                     .map_err(sql)?;
                 rows.collect::<rusqlite::Result<_>>().map_err(sql)?
             };
-            for (id, piece) in kept {
-                match self.recut_kept(col, device, &piece, seq)? {
-                    Recut::Done(bytes) => {
+            for (id, first, last, tag, piece) in kept {
+                // 这一份在 [seq] 上本来就没有内容（作者自己重切过、或已是重切件）：不用动。
+                if self.relay_piece_carries(col, device, &piece, seq)? == Some(false) {
+                    continue;
+                }
+                let range = (u64_of(first, "seq")?, u64_of(last, "seq")?, tag.as_str());
+                let recut = match self.recut_from_log(col, device, range)? {
+                    Some(parts) => self.sign_recut(col, &parts, None)?,
+                    None => None,
+                };
+                match recut {
+                    Some(bytes) => {
                         self.conn()
                             .prepare_cached("UPDATE relay_segs SET piece = ?2 WHERE id = ?1")
                             .map_err(sql)?
                             .execute(params![id, bytes])
                             .map_err(sql)?;
                     }
-                    Recut::Already => {}
-                    Recut::Unsigned => {
+                    None => {
                         self.conn()
                             .prepare_cached("DELETE FROM relay_segs WHERE id = ?1")
                             .map_err(sql)?
@@ -597,71 +676,92 @@ impl<'c> Truth<'c> {
         })
     }
 
-    /// 把本机缓存的一份作者段（[piece]：不封装的中继件 `FRL4`，或本机 / 别人签的重切件 `FRX4`）里 seq = [seq] 的操作
-    /// 换成空洞、由本机重切签出（不封装）。
-    fn recut_kept(&self, col: i64, device: &Id, piece: &[u8], seq: u64) -> Result<Recut, String> {
-        let Some(me) = self.self_identity(col)? else {
-            return Ok(Recut::Unsigned);
+    /// 转发缓存里作者 [device] 的一份不封装的件 [piece]（`FRL4` / `FRX4`）在 [seq] 上带不带操作的完整内容。解不开
+    /// （签名者的公钥本机没有、坏件）= None。
+    fn relay_piece_carries(
+        &self,
+        col: i64,
+        device: &Id,
+        piece: &[u8],
+        seq: u64,
+    ) -> Result<Option<bool>, String> {
+        let Some(author) = self.device_key(col, device)? else {
+            return Ok(None);
         };
-        let opened = if piece.starts_with(recut::MAGIC) {
-            let Ok(r) = peek_recut4(piece).map(|p| p.recutter) else {
-                return Ok(Recut::Unsigned);
+        let opened = if piece.starts_with(crate::gen4::recut::MAGIC) {
+            let Ok(prefix) = crate::gen4::recut::peek_recut4(piece) else {
+                return Ok(None);
             };
-            let public = if r == me.device {
-                Some(me.public())
-            } else {
-                self.device_key(col, &r)?
+            let Some(recutter) = self.device_key(col, &prefix.recutter)? else {
+                return Ok(None);
             };
-            let Some(public) = public else {
-                return Ok(Recut::Unsigned);
-            };
-            open_recut4_items(piece, &public, None).map(|(p, items)| (p.header, items))
+            crate::gen4::recut::open_recut4_items(piece, &author, &recutter, None)
+                .map(|(p, items)| (p.header.first, items))
         } else {
-            let Some(public) = self.device_key(col, device)? else {
-                return Ok(Recut::Unsigned);
-            };
-            open_relay4_items(piece, &public, None)
+            crate::gen4::relay::open_relay4_items(piece, &author, None)
+                .map(|(h, items)| (h.first, items))
         };
-        let Ok((header, items)) = opened else {
-            return Ok(Recut::Unsigned);
+        let Ok((mut at, items)) = opened else {
+            return Ok(None);
         };
-        let Some(items) = void_one(&items, header.first, header.prev_chain, seq) else {
-            return Ok(Recut::Already);
-        };
-        Ok(
-            recut4(&header, &items, &me.key(), me.device, None)
-                .map_or(Recut::Unsigned, Recut::Done),
-        )
+        for item in &items {
+            let end = at + item.span() - 1;
+            if (at..=end).contains(&seq) {
+                return Ok(Some(matches!(
+                    item,
+                    crate::gen4::segment::NativeItem::Op(_)
+                )));
+            }
+            at = end + 1;
+        }
+        Ok(Some(false))
     }
 
-    /// 从本机日志重切作者 [device] 的段 `[first, last]`（链尾标签 [tag]）：本机这段里有空洞（清除过）、日志盖得到、两端
-    /// 的链值都在（不落在空洞区间内部）、`last` 处的链值与 [tag] 相符时，交回段头（集合 = 本集合；`encrypted` 记假：
-    /// 原位置的加密状态本机不知道，读者也不看它）与全部项，交 `gen4/recut.rs` 的 `recut4` 签出；否则 None（这一段
-    /// 本机重切不出来）。转发缓存里没留这一段时（`cmd/sync_relay.rs` 的 `relay_outbox`）用它。
+    /// 用本机的钥匙签出 [parts]（[Truth::recut_from_log] 的结果），按 [dst_key] 封装。本机还没有身份 = None。
+    pub(crate) fn sign_recut(
+        &self,
+        col: i64,
+        parts: &RecutParts,
+        dst_key: Option<&CollectionKey>,
+    ) -> Result<Option<Vec<u8>>, String> {
+        let Some(me) = self.self_identity(col)? else {
+            return Ok(None);
+        };
+        Ok(recut4(
+            &parts.header,
+            &parts.author_sig,
+            &parts.items,
+            &parts.author,
+            &me.key(),
+            me.device,
+            dst_key,
+        )
+        .ok())
+    }
+
+    /// 从本机日志重切作者 [device] 的段 `[first, last]`（链尾标签 [tag]）：本机记着这一段的作者签名（[AuthorVersion]），
+    /// 日志盖得到这一段；作者签的空洞原样照搬，其余每个 seq 本机要么有完整的操作（原样留下），要么有它的剔除记录
+    /// （[Truth::put_stub]）；至少挖掉一条；拼出来的项作者签名验得过（拿作者公钥核过，签不出作者不认的件）。都满足
+    /// 时交回段头、作者签名与全部项，交 `gen4/recut.rs` 的 `recut4` 签出；否则 None（这一段本机重切不出来）。转发缓存
+    /// 原地重切（[Truth::relay_purged]）与缓存里没留这一段时（`cmd/sync_relay.rs` 的 `relay_outbox`）用它。
     pub(crate) fn recut_from_log(
         &self,
         col: i64,
         device: &Id,
         (first, last, tag): (u64, u64, &str),
-    ) -> Result<Option<(NativeHeader, Vec<NativeItem>)>, String> {
+    ) -> Result<Option<RecutParts>, String> {
         if first == 0 || last < first || self.last_of(col, device)? < last {
             return Ok(None);
         }
-        if self.voids_within(col, device, first, last)?.is_empty() {
+        let Some(v) = self.author_version(col, device, first, last)? else {
+            return Ok(None);
+        };
+        if chain_tag(&v.header.last_chain) != tag {
             return Ok(None);
         }
-        let Some(binding) = self.binding(col)? else {
+        let Some(author) = self.device_key(col, device)? else {
             return Ok(None);
         };
-        let Some(prev_chain) = self.chain_known(col, device, first - 1)? else {
-            return Ok(None);
-        };
-        let Some(last_chain) = self.chain_known(col, device, last)? else {
-            return Ok(None);
-        };
-        if chain_tag(&last_chain) != tag {
-            return Ok(None);
-        }
         let mut slots: Vec<Option<Op4>> = Vec::new();
         self.for_range(col, device, first, last, |e| {
             slots.push(e.op().cloned());
@@ -672,43 +772,42 @@ impl<'c> Truth<'c> {
                 "gen4 store: {device} log {first}..={last} is not contiguous"
             ));
         }
-        let mut items: Vec<NativeItem> = Vec::new();
-        let mut run = 0u64;
-        for (i, slot) in slots.into_iter().enumerate() {
-            let at = first + i as u64;
-            match slot {
-                Some(op) => {
-                    if run > 0 {
-                        let Some(c) = self.chain_known(col, device, at - 1)? else {
-                            return Ok(None);
-                        };
-                        items.push(NativeItem::Void {
-                            count: run,
-                            chain_after: c,
-                        });
-                        run = 0;
-                    }
-                    items.push(NativeItem::Op(op));
+        let mut items: Vec<RecutItem> = Vec::new();
+        let mut stubs = 0usize;
+        let mut seq = first;
+        while seq <= last {
+            if let Some((_, count, chain)) = v.voids.iter().find(|(at, _, _)| *at == seq) {
+                if *count == 0 || seq + count - 1 > last {
+                    return Ok(None);
                 }
-                None => run += 1,
+                items.push(RecutItem::Void {
+                    count: *count,
+                    chain_after: *chain,
+                });
+                seq += count;
+                continue;
             }
+            match &slots[(seq - first) as usize] {
+                Some(op) => items.push(RecutItem::Op(op.clone())),
+                None => match self.stub_at(col, device, seq)? {
+                    Some(s) => {
+                        items.push(RecutItem::Stub(s));
+                        stubs += 1;
+                    }
+                    None => return Ok(None),
+                },
+            }
+            seq += 1;
         }
-        if run > 0 {
-            items.push(NativeItem::Void {
-                count: run,
-                chain_after: last_chain,
-            });
+        if stubs == 0 || !author_signed(&v.header, &v.sig, &items, &author) {
+            return Ok(None);
         }
-        let header = NativeHeader {
-            encrypted: false,
-            collection: binding.collection,
-            device: *device,
-            first,
-            last,
-            prev_chain,
-            last_chain,
-        };
-        Ok(Some((header, items)))
+        Ok(Some(RecutParts {
+            header: v.header,
+            author_sig: v.sig,
+            items,
+            author,
+        }))
     }
 
     /// 位置 [loc] 上待删的转发件。
@@ -977,42 +1076,66 @@ mod tests {
         }
     }
 
-    /// 作者签过的段清单只进不退；区间、链尾标签都要相同，区间末是 head 的末端时完整链值也要相同；没记过 = 否。
+    /// 作者签名的版本按区间记一份，只换成作者签的空洞更多的那份；剔除记录按 (设备, seq) 存取，别的集合 / 设备互不相干。
     #[test]
-    fn the_authors_listing_only_moves_forward_and_binds_range_and_chain() {
+    fn author_versions_keep_the_most_voided_and_stubs_round_trip() {
+        use crate::gen4::segment::tests::{DEV, coll, items_of, ops};
+        use crate::gen4::segment::{NativeItem, pack_native};
+        use crate::sync2::keys::DeviceKey;
         let conn = open_in_memory().unwrap();
         let t = Truth::new(&conn);
         let col = bound(&t);
-        let a = id(0x21);
-        let (c3, c5) = ([3u8; 32], [5u8; 32]);
-        let listed =
-            |first: u64, last: u64, c: &[u8; 32]| t.author_listed(col, &a, first, last, c).unwrap();
-        assert!(!listed(1, 3, &c3), "nothing recorded");
-        let note = |gen: u64, seq: u64, chain: &[u8; 32], segs: &[(u64, u64, String)]| {
-            t.tx(|t| t.note_author_head(col, &a, gen, seq, chain, segs))
+        let a = id(DEV);
+        let signer = DeviceKey::from_seed(&[7; 32]);
+        let ops = ops();
+        let version = |items: &[NativeItem], voids: Vec<(u64, u64, Chain)>| {
+            let (header, bytes) = pack_native(coll(), a, 1, items, [0; 32], &signer, None).unwrap();
+            let sig = crate::gen4::segment::open_native_verified(&bytes, &signer.public(), None)
                 .unwrap()
+                .author_sig();
+            AuthorVersion { header, sig, voids }
         };
-        note(2, 5, &c5, &[(1, 3, chain_tag(&c3)), (4, 5, chain_tag(&c5))]);
-        assert!(listed(1, 3, &c3) && listed(4, 5, &c5));
-        assert!(!listed(1, 4, &c3), "range");
-        assert!(!listed(1, 3, &[4; 32]), "tag");
-        let mut same_tag = c5;
-        same_tag[31] = 0;
-        assert!(
-            !listed(4, 5, &same_tag),
-            "the head's own end binds the full chain"
+        assert!(t.author_version(col, &a, 1, 5).unwrap().is_none());
+        let plain = version(&items_of(&ops), Vec::new());
+        t.tx(|t| t.note_author_version(col, &plain)).unwrap();
+        assert_eq!(
+            t.author_version(col, &a, 1, 5).unwrap().unwrap().sig,
+            plain.sig
         );
-        let mut mid = c3;
-        mid[31] = 0;
-        assert!(listed(1, 3, &mid), "inside the log only the tag is signed");
-        // 更旧的代号不覆盖。
-        note(1, 9, &[9; 32], &[(1, 9, chain_tag(&[9; 32]))]);
-        assert!(listed(1, 3, &c3) && !listed(1, 9, &[9; 32]));
-        // 更新的代号换掉（作者改了切点）。
-        note(3, 9, &[9; 32], &[(1, 9, chain_tag(&[9; 32]))]);
-        assert!(!listed(1, 3, &c3) && listed(1, 9, &[9; 32]));
-        // 别的集合、别的设备互不相干。
-        assert!(!t.author_listed(col, &id(0x22), 1, 9, &[9; 32]).unwrap());
+        // 作者挖掉 seq 2 的那一版：空洞更多，换掉。
+        let mut cut = items_of(&ops);
+        cut[1] = NativeItem::Void {
+            count: 1,
+            chain_after: [2; 32],
+        };
+        let voided = version(&cut, vec![(2, 1, [2; 32])]);
+        t.tx(|t| t.note_author_version(col, &voided)).unwrap();
+        let got = t.author_version(col, &a, 1, 5).unwrap().unwrap();
+        assert_eq!(
+            (got.sig, got.voids.clone()),
+            (voided.sig, vec![(2, 1, [2; 32])])
+        );
+        assert_eq!(got.header.last_chain, voided.header.last_chain);
+        // 空洞没更多的旧版不覆盖。
+        t.tx(|t| t.note_author_version(col, &plain)).unwrap();
+        assert_eq!(
+            t.author_version(col, &a, 1, 5).unwrap().unwrap().sig,
+            voided.sig
+        );
+        // 区间、设备不同都查不到。
+        assert!(t.author_version(col, &a, 1, 4).unwrap().is_none());
+        assert!(t.author_version(col, &id(0x22), 1, 5).unwrap().is_none());
+
+        let purge = OpId {
+            device: id(0x22),
+            seq: 7,
+        };
+        let stub = Stub::of(&ops[2], purge);
+        assert!(t.stub_at(col, &a, 3).unwrap().is_none());
+        t.tx(|t| t.put_stub(col, &stub)).unwrap();
+        let back = t.stub_at(col, &a, 3).unwrap().unwrap();
+        assert_eq!(back.encode(), stub.encode());
+        assert!(t.stub_at(col, &a, 4).unwrap().is_none());
     }
 
     /// 复核 minor：转发缓存里读不了的件（解不开、签名者的公钥本机没有）不让清除失败：整份删掉，清除照常。
