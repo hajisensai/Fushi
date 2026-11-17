@@ -845,7 +845,7 @@ end;
 function FushiThumbnailHandlerOf(const SubKey: String): String;
 begin
   Result := '';
-  { ThumbnailShellExKey 里是 Inno 的 {{ 转义，过一遍 ExpandConstant 还原成单个花括号。 }
+  // ThumbnailShellExKey 里是 Inno 的 {{ 转义，过一遍 ExpandConstant 还原成单个花括号。
   if not RegQueryStringValue(HKCR64, SubKey + ExpandConstant('\{#ThumbnailShellExKey}'), '', Result) then
     Result := '';
 end;

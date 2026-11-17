@@ -56,8 +56,11 @@ void main() {
   String curStepChangedCode(String iss) {
     final RegExp proc = RegExp(
       r'procedure\s+CurStepChanged\s*\(\s*CurStep\s*:\s*TSetupStep\s*\)\s*;'
-      r'(.*?)\n\s*end\s*;',
+      // 过程收口是顶格的 `end;`：过程体里还有 `if ... then begin ... end;` 这类
+      // 缩进的内层 end（ssInstall 分支），不能停在第一个 end 上。
+      r'(.*?)^end\s*;',
       dotAll: true,
+      multiLine: true,
     );
     final RegExpMatch? match = proc.firstMatch(iss);
     expect(
@@ -71,7 +74,13 @@ void main() {
     // `AppUpdatesURL=https://…` 之类是 ini 行、不是字符串字面量，整份掩会把它们
     // 从 `//` 起截到行尾；`;` 注释也不归 [maskComments] 管（`directiveLines` 另行
     // 处理）。过程体本身是纯 Pascal 代码，掩码等长且字符串字面量原样保留。
-    return maskComments(match!.group(1)!);
+    final String code = maskComments(match!.group(1)!);
+    // 只认 ssPostInstall 门之后的部分：门之前是 ssInstall 等复制前的分支，旧名清理
+    // 挪进那里就回到了「复制前删、失败不回滚」的老问题。找不到门时原样返回，
+    // 由下面「必须门在 ssPostInstall」那条断言报红。
+    const String gate = 'if CurStep <> ssPostInstall then';
+    final int gateAt = code.indexOf(gate);
+    return gateAt < 0 ? code : code.substring(gateAt);
   }
 
   test('[InstallDelete] no longer deletes legacy binaries or shortcuts', () {
