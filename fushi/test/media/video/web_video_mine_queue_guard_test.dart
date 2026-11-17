@@ -72,6 +72,32 @@ void main() {
       final int finish = run.lastIndexOf('_finishMining(');
       expect(finish, greaterThan(round));
       expect(run.substring(finish), contains('WebMineAutoFinished('));
+      // 「无条件」= 这次调用是方法体顶层的语句，没有被 if (...) { } 之类的块包住
+      // （包进一个只在正常跑完时才进的分支，BUG-4792 就原样回来了）。
+      final String finishLine = run.substring(
+        run.lastIndexOf('\n', finish) + 1,
+        finish,
+      );
+      expect(finishLine, '    ', reason: '_finishMining 必须是方法体顶层语句');
+      // 骨架的返回值（是否正常跑完）不拿来决定要不要收尾。
+      expect(run, isNot(contains('= await runWebMineQueueRound(')));
+    });
+
+    test('空闲自动制卡跨轮记住本次空闲已放弃的视频 / 书（进程级，不是本页字段）', () {
+      // 开跑前排除到不了的视频的行；到不了的视频记进去；出错 / 只剩到不了的视频时整本放弃。
+      expect(run, contains('WebMineIdleGiveUps.instance'));
+      expect(run, contains('giveUps.startable(widget.bookUid, queued)'));
+      expect(run, contains('giveUps.giveUpVideo(widget.bookUid, videoKey)'));
+      expect(run, contains('giveUps.giveUpBook(widget.bookUid)'));
+      expect(run, contains('giveUps.settleAfterRound('));
+      // 空闲调度（含窗口宿主档的交接）开跑前先查这本书有没有被放弃。
+      final String canStart = maskComments(
+        methodBody(page, 'bool _canStartIdleMining()'),
+      );
+      expect(
+        canStart,
+        contains('!WebMineIdleGiveUps.instance.isBookGivenUp(widget.bookUid)'),
+      );
     });
 
     test('逐行循环交给 runWebMineQueueRows，行先按视频归组', () {

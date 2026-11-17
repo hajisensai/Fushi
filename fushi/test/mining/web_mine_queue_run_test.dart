@@ -3,7 +3,8 @@ import 'package:fushi/src/mining/web_mine_queue_run.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 网页视频制卡队列一轮重放的编排规则（`web_mine_queue_run.dart`）：按视频归组、
-/// 一行抛出不断整轮、让位的行留在待办、到不了的视频只等一次、整轮必收尾。
+/// 一行抛出只损失这一行并结束本轮、让位的行留在待办、到不了的视频只等一次（跨轮也是）、
+/// 整轮必收尾。
 WebMineQueueRow _row(int id, String video) => WebMineQueueRow(
   id: id,
   bookUid: 'video/stream/book',
@@ -44,38 +45,58 @@ class _FakePage {
 
   bool markFailedThrows = false;
 
-  Future<void> run(List<WebMineQueueRow> rows) => runWebMineQueueRows(
-    rows: rows,
-    tally: tally,
-    currentVideoKey: () => current,
-    shouldStop: () => stop,
-    navigate: (WebMineQueueRow row) async {
-      log.add('nav:${row.videoKey}');
-      if (interruptAt == row.videoKey) {
-        stop = true;
-        return WebMineNavigateOutcome.interrupted;
-      }
-      if (unreachable.contains(row.videoKey)) {
-        return WebMineNavigateOutcome.timedOut;
-      }
-      current = row.videoKey;
-      return WebMineNavigateOutcome.ready;
-    },
-    mineRow: (WebMineQueueRow row) async {
-      log.add('mine:${row.id}');
-      if (stopDuringRow == row.id) {
-        stop = true;
-        throw StateError('unmounted');
-      }
-      if (throwingRows.contains(row.id)) throw StateError('boom ${row.id}');
-      return !failingRows.contains(row.id);
-    },
-    markFailed: (WebMineQueueRow row, String error) async {
-      if (markFailedThrows) throw StateError('db closed');
-      failedRows[row.id] = error;
-    },
-    onError: (Object error, StackTrace stack) => errors.add(error),
-    onProgress: () => progressCalls++,
+  /// 报给调用方的「到不了的视频」。
+  final List<String> reportedUnreachable = <String>[];
+
+  Future<WebMineQueueRowsEnd> run(List<WebMineQueueRow> rows) =>
+      runWebMineQueueRows(
+        rows: rows,
+        tally: tally,
+        currentVideoKey: () => current,
+        shouldStop: () => stop,
+        navigate: (WebMineQueueRow row) async {
+          log.add('nav:${row.videoKey}');
+          if (interruptAt == row.videoKey) {
+            stop = true;
+            return WebMineNavigateOutcome.interrupted;
+          }
+          if (unreachable.contains(row.videoKey)) {
+            return WebMineNavigateOutcome.timedOut;
+          }
+          current = row.videoKey;
+          return WebMineNavigateOutcome.ready;
+        },
+        mineRow: (WebMineQueueRow row) async {
+          log.add('mine:${row.id}');
+          if (stopDuringRow == row.id) {
+            stop = true;
+            throw StateError('unmounted');
+          }
+          if (throwingRows.contains(row.id)) throw StateError('boom ${row.id}');
+          return !failingRows.contains(row.id);
+        },
+        markFailed: (WebMineQueueRow row, String error) async {
+          if (markFailedThrows) throw StateError('db closed');
+          failedRows[row.id] = error;
+        },
+        onError: (Object error, StackTrace stack) => errors.add(error),
+        onUnreachable: reportedUnreachable.add,
+        onProgress: () => progressCalls++,
+      );
+}
+
+/// 假的系统空闲时钟：[now] 往前走，[lastInput] 是最后一次用户输入的时刻。
+class _FakeIdle {
+  Duration now = const Duration(minutes: 10);
+  Duration lastInput = Duration.zero;
+  bool unsupported = false;
+
+  void advance(Duration d) => now += d;
+  void userInput() => lastInput = now;
+
+  WebMineIdleGiveUps giveUps() => WebMineIdleGiveUps(
+    inputIdle: () => unsupported ? null : now - lastInput,
+    clock: () => now,
   );
 }
 
@@ -145,28 +166,45 @@ void main() {
       expect(onB.log, <String>['mine:2', 'nav:A', 'mine:1', 'mine:3']);
     });
 
-    test('BUG-4792：一行重放抛出只标这一行失败，后面的行照跑', () async {
+    test('BUG-4792：一行重放抛出只标这一行失败并结束本轮，其余行留在待办', () async {
       final _FakePage page = _FakePage(current: 'A')..throwingRows.add(2);
-      await page.run(<WebMineQueueRow>[
+      final WebMineQueueRowsEnd end = await page.run(<WebMineQueueRow>[
         _row(1, 'A'),
         _row(2, 'A'),
         _row(3, 'A'),
       ]);
-      expect(page.log, <String>['mine:1', 'mine:2', 'mine:3']);
-      expect(page.tally.ok, 2);
+      expect(end, WebMineQueueRowsEnd.rowThrew);
+      expect(page.log, <String>['mine:1', 'mine:2']);
+      expect(page.tally.ok, 1);
       expect(page.tally.failed, 1);
       expect(page.failedRows.keys, <int>[2]);
       expect(page.failedRows[2], contains('boom 2'));
       expect(page.errors, hasLength(1));
+      expect(page.progressCalls, 2);
     });
 
-    test('BUG-4792：导航本身抛出同样只算这一行失败', () async {
+    test('环境级故障（每一行都会抛）一轮只损失一行，不把整条队列标成失败', () async {
+      final _FakePage page = _FakePage(current: 'A')
+        ..throwingRows.addAll(<int>[1, 2, 3, 4]);
+      final WebMineQueueRowsEnd end = await page.run(<WebMineQueueRow>[
+        _row(1, 'A'),
+        _row(2, 'A'),
+        _row(3, 'B'),
+        _row(4, 'B'),
+      ]);
+      expect(end, WebMineQueueRowsEnd.rowThrew);
+      expect(page.log, <String>['mine:1']);
+      expect(page.failedRows.keys, <int>[1]);
+      expect(page.tally.failed, 1);
+    });
+
+    test('BUG-4792：导航本身抛出同样只算这一行失败并结束本轮', () async {
       final _FakePage page = _FakePage(current: 'A');
       final WebMineQueueTally tally = WebMineQueueTally();
       final List<int> mined = <int>[];
       final Map<int, String> failed = <int, String>{};
-      await runWebMineQueueRows(
-        rows: <WebMineQueueRow>[_row(1, 'B'), _row(2, 'A')],
+      final WebMineQueueRowsEnd end = await runWebMineQueueRows(
+        rows: <WebMineQueueRow>[_row(1, 'B'), _row(2, 'B'), _row(3, 'A')],
         tally: tally,
         currentVideoKey: () => 'A',
         shouldStop: () => false,
@@ -179,26 +217,36 @@ void main() {
             failed[row.id] = error,
         onError: (Object error, StackTrace stack) => page.errors.add(error),
       );
-      expect(mined, <int>[2]);
+      expect(end, WebMineQueueRowsEnd.rowThrew);
+      expect(mined, isEmpty);
       expect(failed.keys, <int>[1]);
-      expect(tally.ok, 1);
+      expect(tally.ok, 0);
       expect(tally.failed, 1);
     });
 
-    test('标失败自己抛出（库写不进去）也不中断整轮', () async {
+    test('标失败自己抛出（库写不进去）不向外抛，本轮照样结束', () async {
       final _FakePage page = _FakePage(current: 'A')
         ..throwingRows.add(1)
         ..markFailedThrows = true;
-      await page.run(<WebMineQueueRow>[_row(1, 'A'), _row(2, 'A')]);
-      expect(page.log, <String>['mine:1', 'mine:2']);
-      expect(page.tally.ok, 1);
+      final WebMineQueueRowsEnd end = await page.run(<WebMineQueueRow>[
+        _row(1, 'A'),
+        _row(2, 'A'),
+      ]);
+      expect(end, WebMineQueueRowsEnd.rowThrew);
+      expect(page.log, <String>['mine:1']);
+      expect(page.tally.ok, 0);
       expect(page.tally.failed, 1);
       expect(page.errors, hasLength(2));
     });
 
     test('重放返回失败（原因已由它写进行里）不再重复标失败', () async {
       final _FakePage page = _FakePage(current: 'A')..failingRows.add(1);
-      await page.run(<WebMineQueueRow>[_row(1, 'A'), _row(2, 'A')]);
+      final WebMineQueueRowsEnd end = await page.run(<WebMineQueueRow>[
+        _row(1, 'A'),
+        _row(2, 'A'),
+      ]);
+      expect(end, WebMineQueueRowsEnd.drained);
+      expect(page.log, <String>['mine:1', 'mine:2']);
       expect(page.tally.ok, 1);
       expect(page.tally.failed, 1);
       expect(page.failedRows, isEmpty);
@@ -207,11 +255,13 @@ void main() {
 
     test('BUG-4793：导航途中让位，这一行与之后的行都留在待办，不标 navigate_timeout', () async {
       final _FakePage page = _FakePage(current: 'A')..interruptAt = 'B';
-      await page.run(<WebMineQueueRow>[
+      final WebMineQueueRowsEnd end = await page.run(<WebMineQueueRow>[
         _row(1, 'A'),
         _row(2, 'B'),
         _row(3, 'B'),
       ]);
+      expect(end, WebMineQueueRowsEnd.stopped);
+      expect(page.reportedUnreachable, isEmpty);
       expect(page.log, <String>['mine:1', 'nav:B']);
       expect(page.failedRows, isEmpty);
       expect(page.tally.ok, 1);
@@ -232,22 +282,162 @@ void main() {
       expect(page.failedRows, <int, String>{1: 'navigate_timeout'});
       expect(page.tally.ok, 1);
       expect(page.tally.failed, 1);
+      // 到不了的视频报给调用方（跨轮由 WebMineIdleGiveUps 记住）。
+      expect(page.reportedUnreachable, <String>['B']);
     });
 
     test('已经叫停：一行都不碰', () async {
       final _FakePage page = _FakePage(current: 'A')..stop = true;
-      await page.run(<WebMineQueueRow>[_row(1, 'A')]);
+      expect(
+        await page.run(<WebMineQueueRow>[_row(1, 'A')]),
+        WebMineQueueRowsEnd.stopped,
+      );
       expect(page.log, isEmpty);
       expect(page.tally.done, 0);
     });
 
     test('重放途中页面被叫停后抛出：这一行不标失败、留在待办，整轮停下', () async {
       final _FakePage page = _FakePage(current: 'A')..stopDuringRow = 1;
-      await page.run(<WebMineQueueRow>[_row(1, 'A'), _row(2, 'A')]);
+      expect(
+        await page.run(<WebMineQueueRow>[_row(1, 'A'), _row(2, 'A')]),
+        WebMineQueueRowsEnd.stopped,
+      );
       expect(page.log, <String>['mine:1']);
       expect(page.failedRows, isEmpty);
       expect(page.tally.done, 0);
       expect(page.errors, hasLength(1));
+    });
+  });
+
+  group('WebMineIdleGiveUps（本次空闲已放弃的视频 / 书）', () {
+    test('记下之后没有输入就一直有效，来过一次输入就作废', () {
+      final _FakeIdle idle = _FakeIdle();
+      final WebMineIdleGiveUps giveUps = idle.giveUps();
+      giveUps.giveUpVideo('book', 'B');
+      giveUps.giveUpBook('other');
+      idle.advance(const Duration(hours: 3));
+      expect(giveUps.unreachableVideos('book'), <String>{'B'});
+      expect(giveUps.isBookGivenUp('other'), isTrue);
+      expect(giveUps.isBookGivenUp('book'), isFalse);
+      expect(giveUps.unreachableVideos('other'), isEmpty);
+
+      idle.userInput();
+      idle.advance(const Duration(minutes: 5));
+      expect(giveUps.unreachableVideos('book'), isEmpty);
+      expect(giveUps.isBookGivenUp('other'), isFalse);
+    });
+
+    test('输入只作废它之前记下的；之后记下的仍有效', () {
+      final _FakeIdle idle = _FakeIdle();
+      final WebMineIdleGiveUps giveUps = idle.giveUps();
+      giveUps.giveUpVideo('book', 'B');
+      idle.advance(const Duration(seconds: 10));
+      idle.userInput();
+      idle.advance(const Duration(minutes: 3));
+      giveUps.giveUpVideo('book', 'C');
+      idle.advance(const Duration(minutes: 1));
+      expect(giveUps.unreachableVideos('book'), <String>{'C'});
+    });
+
+    test('判不了系统空闲（非 Windows）：一律作废', () {
+      final _FakeIdle idle = _FakeIdle()..unsupported = true;
+      final WebMineIdleGiveUps giveUps = idle.giveUps();
+      giveUps.giveUpVideo('book', 'B');
+      giveUps.giveUpBook('book');
+      expect(giveUps.unreachableVideos('book'), isEmpty);
+      expect(giveUps.isBookGivenUp('book'), isFalse);
+    });
+
+    test('startable 去掉到不了的视频的行；全在到不了的视频上时整本放弃', () {
+      final _FakeIdle idle = _FakeIdle();
+      final WebMineIdleGiveUps giveUps = idle.giveUps();
+      final List<WebMineQueueRow> rows = <WebMineQueueRow>[
+        _row(1, 'A'),
+        _row(2, 'B'),
+        _row(3, 'B'),
+      ];
+      expect(giveUps.startable('video/stream/book', rows), same(rows));
+      giveUps.giveUpVideo('video/stream/book', 'B');
+      expect(
+        giveUps
+            .startable('video/stream/book', rows)
+            .map((WebMineQueueRow r) => r.id),
+        <int>[1],
+      );
+      giveUps.settleAfterRound('video/stream/book', rows);
+      expect(giveUps.isBookGivenUp('video/stream/book'), isFalse);
+      giveUps.settleAfterRound('video/stream/book', rows.sublist(1));
+      expect(giveUps.isBookGivenUp('video/stream/book'), isTrue);
+      // 队列空了不算放弃。
+      giveUps.settleAfterRound('empty', const <WebMineQueueRow>[]);
+      expect(giveUps.isBookGivenUp('empty'), isFalse);
+    });
+
+    test('BUG-4793：空闲自动制卡跨轮——到不了的视频整次空闲只等一次、只标一行失败；用户回来后重新给机会', () async {
+      const String book = 'video/stream/book';
+      final _FakeIdle idle = _FakeIdle();
+      final WebMineIdleGiveUps giveUps = idle.giveUps();
+      final List<WebMineQueueRow> pending = <WebMineQueueRow>[
+        _row(1, 'B'),
+        _row(2, 'B'),
+        _row(3, 'B'),
+        _row(4, 'A'),
+      ];
+      final List<String> navigations = <String>[];
+      final Map<int, String> failed = <int, String>{};
+
+      // 与页面同一套流程：调度器每 5 秒问一次能不能开跑，能就跑一轮。
+      Future<int> idleRounds() async {
+        int rounds = 0;
+        for (int tick = 0; tick < 20; tick++) {
+          idle.advance(const Duration(seconds: 5));
+          if (pending.isEmpty || giveUps.isBookGivenUp(book)) continue;
+          final List<WebMineQueueRow> rows = giveUps.startable(book, pending);
+          if (rows.isEmpty) {
+            giveUps.settleAfterRound(book, pending);
+            continue;
+          }
+          rounds++;
+          final WebMineQueueTally tally = WebMineQueueTally();
+          await runWebMineQueueRows(
+            rows: groupWebMineRowsByVideo(rows, currentVideoKey: 'A'),
+            tally: tally,
+            currentVideoKey: () => 'A',
+            shouldStop: () => false,
+            navigate: (WebMineQueueRow row) async {
+              navigations.add(row.videoKey);
+              idle.advance(const Duration(seconds: 30));
+              return WebMineNavigateOutcome.timedOut;
+            },
+            mineRow: (WebMineQueueRow row) async {
+              pending.remove(row);
+              return true;
+            },
+            markFailed: (WebMineQueueRow row, String error) async {
+              failed[row.id] = error;
+              pending.remove(row);
+            },
+            onError: (Object error, StackTrace stack) => fail('$error'),
+            onUnreachable: (String videoKey) =>
+                giveUps.giveUpVideo(book, videoKey),
+          );
+          giveUps.settleAfterRound(book, List<WebMineQueueRow>.of(pending));
+        }
+        return rounds;
+      }
+
+      expect(await idleRounds(), 1);
+      expect(navigations, <String>['B']);
+      expect(failed, <int, String>{1: 'navigate_timeout'});
+      expect(pending.map((WebMineQueueRow r) => r.id), <int>[2, 3]);
+      expect(giveUps.isBookGivenUp(book), isTrue);
+
+      // 用户回来过一次再离开：再给这个视频一次机会（仍然一次空闲只等一次）。
+      idle.userInput();
+      expect(giveUps.isBookGivenUp(book), isFalse);
+      expect(await idleRounds(), 1);
+      expect(navigations, <String>['B', 'B']);
+      expect(pending.map((WebMineQueueRow r) => r.id), <int>[3]);
     });
   });
 

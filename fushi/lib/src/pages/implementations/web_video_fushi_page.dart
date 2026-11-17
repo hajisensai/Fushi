@@ -1299,6 +1299,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       !_mineRunning &&
       !WebMineIdleScheduler.silentCaptureUnavailable &&
       !_autoGaveUp &&
+      !WebMineIdleGiveUps.instance.isBookGivenUp(widget.bookUid) &&
       _minePending > 0 &&
       _row != null &&
       (_state?.hasVideo ?? false) &&
@@ -1570,10 +1571,18 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     if (auto && !widget.idleAutoMining) {
       _autoYieldRequested = false;
     }
-    final List<WebMineQueueRow> rows = await _mineQueue.pending(widget.bookUid);
+    final WebMineIdleGiveUps giveUps = WebMineIdleGiveUps.instance;
+    final List<WebMineQueueRow> queued = await _mineQueue.pending(
+      widget.bookUid,
+    );
     if (!mounted) return;
+    // 自动跑不再去本次空闲里已经到不了的视频（BUG-4793）；用户自己点的照跑。
+    final List<WebMineQueueRow> rows = auto
+        ? giveUps.startable(widget.bookUid, queued)
+        : queued;
     if (rows.isEmpty) {
       if (!auto) FushiToast.show(msg: t.web_video_mine_queue_empty);
+      if (auto) giveUps.settleAfterRound(widget.bookUid, queued);
       _finishMining(auto: auto, status: null);
       return;
     }
@@ -1592,6 +1601,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     final LoopbackGalAudioSource loopback = audio.source;
     final PcmFormat? format = audio.format;
     final WebMineQueueTally tally = WebMineQueueTally();
+    WebMineQueueRowsEnd? rowsEnd;
     bool sawError = false;
     void onMineError(Object error, StackTrace stack) {
       sawError = true;
@@ -1602,7 +1612,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     _pendingRestore = null;
     // 采集起好之后的每一步都在 [runWebMineQueueRound] 里：哪一步抛出，后面的还原步骤
     // （停采集 = 还原会话音量、复位运行态）与整轮收尾 [_finishMining] 都照常执行（BUG-4792）。
-    final bool completed = await runWebMineQueueRound(
+    await runWebMineQueueRound(
       onError: onMineError,
       body: () async {
         setState(() {
@@ -1652,7 +1662,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
           ),
         );
         // 行的先后、失败 / 留待办的判定都在 [runWebMineQueueRows]。
-        await runWebMineQueueRows(
+        rowsEnd = await runWebMineQueueRows(
           rows: groupWebMineRowsByVideo(rows, currentVideoKey: _videoKey),
           tally: tally,
           currentVideoKey: () => _videoKey,
@@ -1676,6 +1686,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
           markFailed: (WebMineQueueRow row, String error) =>
               _mineQueue.markFailed(row.id, error),
           onError: onMineError,
+          onUnreachable: (String videoKey) =>
+              giveUps.giveUpVideo(widget.bookUid, videoKey),
           onProgress: () {
             if (!mounted) return;
             setState(() {
@@ -1712,17 +1724,28 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
           }
           unawaited(_refreshMinePending());
         },
+        // 自动跑：出了错（准备步骤抛出 / 某一行抛出），或剩下的待办全在到不了的视频上——
+        // 这本书本次空闲不再开跑。用户还没回来，空闲调度几秒后就会原样再撞一次；窗口宿主档
+        // 每撞一次还是一趟整页交接，所以记在进程级的 [WebMineIdleGiveUps] 而不是本页。
+        () async {
+          if (!auto) return;
+          if (rowsEnd == null || rowsEnd == WebMineQueueRowsEnd.rowThrew) {
+            giveUps.giveUpBook(widget.bookUid);
+          } else if (giveUps.unreachableVideos(widget.bookUid).isNotEmpty) {
+            giveUps.settleAfterRound(
+              widget.bookUid,
+              await _mineQueue.pending(widget.bookUid),
+            );
+          }
+        },
       ],
     );
-    // 整轮的准备步骤抛了（不是某一行）：行都还在待办，本页不再自动重试——用户还没回来，
-    // 空闲调度几秒后就会原样再撞一次。
-    if (!completed && auto) _autoGaveUp = true;
     _finishMining(
       auto: auto,
       status: WebMineAutoFinished(
         ok: tally.ok,
         failed: tally.failed,
-        remaining: rows.length - tally.done,
+        remaining: queued.length - tally.done,
         auto: auto,
       ),
     );
