@@ -9,6 +9,12 @@
 ///   `episode=N`，host 按集解析那一集的文件、字幕写在那一集旁。老 host 不认 `episode`
 ///   （会静默跑第 0 集），所以只有 capability 声明 `acceptsEpisode` 才发；否则
 ///   [RemoteVideoSubtitleJobStatus.episodeUnsupported]，不发任务。
+/// - 远端原盘会话的 title（盘在 host 上，本机没有文件）：host 库里有这条 title 的行就按
+///   它的 `videoId` 提交；没有（菜单里的特典等）就用同盘一行当锚点、带 `discTitle`
+///   （相对盘根的 `BDMV/PLAYLIST/<名>.mpls`），host 按（盘, title）定位，产物落 host 的
+///   `disc_out`、随任务产物取回。老 host 不认 `discTitle`（会静默跑锚点那一行），所以
+///   只有 capability 声明 `acceptsDiscTitle` 才发；否则
+///   [RemoteVideoSubtitleJobStatus.discTitleUnsupported]，不发任务。
 /// - 整季（远端合集）：wire 上的远端视频只带合集**名**、不带 host 的合集 id，所以按
 ///   成员逐集提交 `videoId` 任务。host 侧 `SubtitleWorkContextLoader.forBook` 会把合集
 ///   成员解析到同一个作品键（`collection:<host 合集 id>`），各集共用 host 上的同一张
@@ -91,7 +97,11 @@ class RemoteVideoSubtitleEpisode {
     required this.videoId,
     required this.title,
     this.episodeIndex = 0,
-  });
+    this.discTitle,
+  }) : assert(
+         discTitle == null || episodeIndex == 0,
+         'episodeIndex and discTitle are exclusive',
+       );
 
   final String videoId;
 
@@ -100,12 +110,27 @@ class RemoteVideoSubtitleEpisode {
   final int episodeIndex;
   final String title;
 
-  /// (videoId, 集下标) 的稳定标识：任务键、落盘名都按它分。
-  String get key => episodeIndex == 0 ? videoId : '$videoId#$episodeIndex';
+  /// 远端原盘会话：[videoId] 那一行所在蓝光盘上的另一条 title（相对盘根，
+  /// `BDMV/PLAYLIST/<名>.mpls`）；null = 就是 [videoId] 那一行（的第 [episodeIndex] 集）。
+  final String? discTitle;
 
-  /// 这一集是不是 host 上的 ([videoId], [index])。
+  /// (videoId, 集下标 / 盘上 title) 的稳定标识：任务键、落盘名都按它分。
+  String get key => discTitle != null
+      ? '$videoId@$discTitle'
+      : episodeIndex == 0
+      ? videoId
+      : '$videoId#$episodeIndex';
+
+  /// 这一集是不是 host 上的 ([videoId], [index])（不是盘上另一条 title）。
   bool matches(String videoId, int index) =>
-      this.videoId == videoId && episodeIndex == index;
+      this.videoId == videoId && episodeIndex == index && discTitle == null;
+
+  /// 这一集是不是 host 上 ([videoId], [discTitle]) 那条原盘 title（[discTitle] 为 null
+  /// = [videoId] 那一行本身）。
+  bool matchesDiscTitle(String videoId, String? discTitle) =>
+      this.videoId == videoId &&
+      episodeIndex == 0 &&
+      this.discTitle == discTitle;
 }
 
 /// 一次远端生成的目标。
@@ -131,6 +156,10 @@ class RemoteVideoSubtitleTarget {
   /// 有没有 host 播放列表第 2 集起的集（要 host 声明 `acceptsEpisode`）。
   bool get needsEpisodeSupport =>
       episodes.any((RemoteVideoSubtitleEpisode e) => e.episodeIndex > 0);
+
+  /// 有没有要 host 按（盘, title）定位的原盘 title（要 host 声明 `acceptsDiscTitle`）。
+  bool get needsDiscTitleSupport =>
+      episodes.any((RemoteVideoSubtitleEpisode e) => e.discTitle != null);
 }
 
 /// 远端任务的选项（AI 提供商是 host 自己的，不在这里）。
@@ -164,6 +193,10 @@ enum RemoteVideoSubtitleJobStatus {
   /// host 支持 `video_subtitle`，但版本太老、不认播放列表的集下标（capability 没有
   /// `acceptsEpisode`）：发过去会静默跑第 1 集，所以不发。
   episodeUnsupported,
+
+  /// host 支持 `video_subtitle`，但版本太老、不认按（盘, title）定位（capability 没有
+  /// `acceptsDiscTitle`）：发过去会静默跑锚点那一行，所以不发。
+  discTitleUnsupported,
 
   /// 连不上放视频的 host。
   unreachable,
@@ -267,6 +300,13 @@ bool hostAcceptsVideoSubtitleEpisode(HostJobTarget target) {
   return entry is Map && entry['acceptsEpisode'] == true;
 }
 
+/// host 的 `video_subtitle` 能力里有没有 `acceptsDiscTitle`（认按盘 + title 定位）。老
+/// host 没有这个位：它不校验未知参数，收到 `discTitle` 会照 `videoId` 那一行跑。
+bool hostAcceptsVideoSubtitleDiscTitle(HostJobTarget target) {
+  final Object? entry = target.capability[kVideoSubtitleJobKind];
+  return entry is Map && entry['acceptsDiscTitle'] == true;
+}
+
 /// host 报错的原话：HTTP 错误体是 `{"error": "..."}` 时取 `error`，否则原样。
 String remoteVideoSubtitleErrorText(Object error) {
   if (error is HostJobRemoteException) {
@@ -356,6 +396,11 @@ class RemoteVideoSubtitleService {
         job._finish(RemoteVideoSubtitleJobStatus.episodeUnsupported);
         return;
       }
+      if (job.target.needsDiscTitleSupport &&
+          !hostAcceptsVideoSubtitleDiscTitle(target)) {
+        job._finish(RemoteVideoSubtitleJobStatus.discTitleUnsupported);
+        return;
+      }
       job.status = RemoteVideoSubtitleJobStatus.running;
       job._changed();
       final Directory root = await _workRoot();
@@ -413,6 +458,7 @@ class RemoteVideoSubtitleService {
       params: <String, Object?>{
         'videoId': e.episode.videoId,
         if (e.episode.episodeIndex > 0) 'episode': e.episode.episodeIndex,
+        'discTitle': ?e.episode.discTitle,
         'proofread': job.options.proofread,
         'segmenter': job.options.segmenter.name,
         'mossBackend': job.options.mossBackend.name,

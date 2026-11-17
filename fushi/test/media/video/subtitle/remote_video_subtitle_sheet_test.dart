@@ -402,6 +402,71 @@ void main() {
     });
   });
 
+  group('远端原盘会话里库中没有行的 title（discTitle）', () {
+    const RemoteVideoSubtitleTarget bonus = RemoteVideoSubtitleTarget(
+      title: 'Disc · 00005',
+      episodes: <RemoteVideoSubtitleEpisode>[
+        RemoteVideoSubtitleEpisode(
+          videoId: 'disc/main',
+          discTitle: 'BDMV/PLAYLIST/00005.mpls',
+          title: 'Disc · 00005',
+        ),
+      ],
+    );
+
+    testWidgets('老 host（没报 acceptsDiscTitle）：明确提示更新 host，「开始」不可点', (
+      WidgetTester tester,
+    ) async {
+      final _Host host = _Host(
+        const <String>['video_subtitle'],
+        capability: const <String, Object?>{
+          'video_subtitle': <String, Object?>{'acceptsEpisode': true},
+        },
+      );
+      await pump(tester, service(host), sheetTarget: bonus);
+      expect(
+        find.byKey(
+          const ValueKey<String>('remote-subtitle-disc-title-unsupported'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining(
+          t.video_subtitle_ai_remote_disc_title_host_outdated,
+        ),
+        findsOneWidget,
+      );
+      expect(startPressed(tester), isNull);
+      expect(host.runs, isEmpty);
+    });
+
+    testWidgets('新 host（acceptsDiscTitle）：「开始」可点，提交带锚点 videoId 与 discTitle', (
+      WidgetTester tester,
+    ) async {
+      final _Host host = _Host(
+        const <String>['video_subtitle'],
+        capability: const <String, Object?>{
+          'video_subtitle': <String, Object?>{'acceptsDiscTitle': true},
+        },
+      );
+      await pump(tester, service(host), sheetTarget: bonus);
+      expect(
+        find.byKey(
+          const ValueKey<String>('remote-subtitle-disc-title-unsupported'),
+        ),
+        findsNothing,
+      );
+      expect(startPressed(tester), isNotNull);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('remote-subtitle-start')),
+      );
+      await tester.pumpAndSettle();
+      expect(host.runs.single['videoId'], 'disc/main');
+      expect(host.runs.single['discTitle'], 'BDMV/PLAYLIST/00005.mpls');
+      expect(host.runs.single.containsKey('episode'), isFalse);
+    });
+  });
+
   testWidgets('支持的 host：显示在哪台上运行，「开始」可点', (WidgetTester tester) async {
     await pump(tester, service(_Host(<String>['video_subtitle'])));
     expect(

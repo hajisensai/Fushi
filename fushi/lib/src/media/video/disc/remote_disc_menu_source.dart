@@ -1,6 +1,9 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:fushi_engine/media/video/bluray/bluray_menu_info.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
+    show isBlurayPlaylistPath;
 import 'package:fushi_engine/media/video/disc/disc_format.dart';
 import 'package:fushi_engine/media/video/disc/disc_share_manifest.dart';
 import 'package:fushi_engine/media/video/dvd/dvd_disc.dart' show dvdTitlePath;
@@ -20,6 +23,7 @@ class RemoteDiscMenuSource {
     required this.readFile,
     required this.title,
     this.downloadToDevice,
+    this.fetchTitleAudio,
   });
 
   final RemoteDiscShare share;
@@ -34,7 +38,51 @@ class RemoteDiscMenuSource {
   /// 给不出下载（提示只留「不再提示」与关闭）。
   final Future<void> Function()? downloadToDevice;
 
+  /// 请 host 在它本地裁出一条 title（[hostTitleFor]）的音频落到本机（本机转录 /
+  /// 重定时 / 对轴的整集音源）。null = 这个入口的盘源不是互联 host，取不到。
+  final RemoteDiscTitleAudioFetch? fetchTitleAudio;
+
   DiscShareManifest get manifest => share.manifest;
+
+  /// 会话里一条 title（[sessionMemberPath]：[identityRoot] 下的
+  /// `BDMV/PLAYLIST/<名>.mpls`）在 host 上的定位：host 库里有这一条的行就用它；没有
+  /// （菜单里的特典等）就用盘上任一条蓝光行当锚点、带上相对盘根的 title 路径，由 host
+  /// 按（盘, title）定位（字幕任务的 `discTitle`、`clipaudio?discTitle=`）。
+  ///
+  /// 不在这张盘的身份根下、不是蓝光播放列表（DVD title：DVD 的媒体要经原生 libdvdnav
+  /// 按 title 读，host 上的 ffmpeg 读不了，`hasLocalMediaFile` 对它恒假）、或共享里
+  /// 没有任何蓝光行可当锚点 → null。
+  RemoteDiscHostTitle? hostTitleFor(String sessionMemberPath) {
+    final List<String> root = p.split(p.normalize(identityRoot));
+    final List<String> parts = p.split(p.normalize(sessionMemberPath));
+    if (parts.length != root.length + 3) return null;
+    for (int i = 0; i < root.length; i++) {
+      if (parts[i] != root[i]) return null;
+    }
+    final List<String> rel = parts.sublist(root.length);
+    if (rel[0].toUpperCase() != 'BDMV' ||
+        rel[1].toUpperCase() != 'PLAYLIST' ||
+        !isBlurayPlaylistPath(rel[2])) {
+      return null;
+    }
+    final String memberPath = rel.join('/');
+    final String key = memberPath.toUpperCase();
+    for (final RemoteDiscShareTitle t in share.titles) {
+      if (t.path.toUpperCase() == key) {
+        return RemoteDiscHostTitle(videoId: t.id, memberPath: memberPath);
+      }
+    }
+    for (final RemoteDiscShareTitle t in share.titles) {
+      if (isBlurayPlaylistPath(t.path)) {
+        return RemoteDiscHostTitle(
+          videoId: t.id,
+          memberPath: memberPath,
+          discTitle: memberPath,
+        );
+      }
+    }
+    return null;
+  }
 
   bool get isDvd => manifest.format == DiscFormat.dvd;
 
@@ -68,6 +116,54 @@ class RemoteDiscMenuSource {
     }
     return null;
   }
+}
+
+/// 请 host 把一条原盘 title 的 `[startMs, endMs)` 音频裁好落到本机 [dest]（单音轨 aac）。
+/// [audioStreamIndex] / [audioStreamCount] 选会话里当前在听的音轨。
+typedef RemoteDiscTitleAudioFetch =
+    Future<void> Function(
+      RemoteDiscHostTitle title,
+      File dest, {
+      required int startMs,
+      required int endMs,
+      int? audioStreamIndex,
+      int? audioStreamCount,
+    });
+
+/// 远端原盘会话里的一条 title 在 host 上的定位（见 [RemoteDiscMenuSource.hostTitleFor]）。
+class RemoteDiscHostTitle {
+  const RemoteDiscHostTitle({
+    required this.videoId,
+    required this.memberPath,
+    this.discTitle,
+  });
+
+  /// host 库里的视频行：这条 title 自己的行，或（[discTitle] 非 null 时）同一张盘上
+  /// 当锚点的那一行。
+  final String videoId;
+
+  /// 相对盘根的成员路径（`BDMV/PLAYLIST/00800.mpls`），总有。
+  final String memberPath;
+
+  /// host 库里没有这条 title 的行时要 host 按（盘, title）定位的 title（= [memberPath]）；
+  /// null = [videoId] 就是这条 title。
+  final String? discTitle;
+
+  /// 同一张盘上各条 title 互不相同的稳定标识（任务键、落盘名用）。
+  String get key => discTitle == null ? videoId : '$videoId@$discTitle';
+
+  @override
+  bool operator ==(Object other) =>
+      other is RemoteDiscHostTitle &&
+      other.videoId == videoId &&
+      other.memberPath == memberPath &&
+      other.discTitle == discTitle;
+
+  @override
+  int get hashCode => Object.hash(videoId, memberPath, discTitle);
+
+  @override
+  String toString() => 'RemoteDiscHostTitle($key)';
 }
 
 /// 一张共享盘不能流式开菜单的结构性原因（与平台能力无关、只看清单就定得下）。

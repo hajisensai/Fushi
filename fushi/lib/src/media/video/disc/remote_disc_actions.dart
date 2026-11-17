@@ -17,6 +17,7 @@ class RemoteDiscActions {
     required this.readFile,
     this.hostCanOpenDisc,
     this.openOnHost,
+    this.fetchTitleAudio,
   });
 
   /// 为盘上任一条标题签发共享会话。老 host 抛 [RemoteDiscShareUnsupported]。
@@ -37,6 +38,10 @@ class RemoteDiscActions {
   /// 遥控 host 在它自己那边打开 [videoId] 所在的原盘会话。
   final Future<void> Function(String videoId)? openOnHost;
 
+  /// 请 host 裁出会话里一条 title 的音频（见 [RemoteDiscMenuSource.fetchTitleAudio]）；
+  /// null = 这个远端来源给不出。
+  final RemoteDiscTitleAudioFetch? fetchTitleAudio;
+
   /// 会话用的盘源。
   RemoteDiscMenuSource menuSource(
     RemoteDiscShare share,
@@ -47,6 +52,7 @@ class RemoteDiscActions {
     title: title,
     readFile: (String path, int maxBytes) => readFile(share, path, maxBytes),
     downloadToDevice: downloadToDevice,
+    fetchTitleAudio: fetchTitleAudio,
   );
 }
 

@@ -271,6 +271,103 @@ void main() {
     });
   });
 
+  group('远端原盘会话的 title', () {
+    const RemoteVideoSubtitleTarget mainTitle = RemoteVideoSubtitleTarget(
+      title: 'Disc · 00001',
+      episodes: <RemoteVideoSubtitleEpisode>[
+        RemoteVideoSubtitleEpisode(videoId: 'disc-main', title: 'Disc · 00001'),
+      ],
+    );
+    const RemoteVideoSubtitleTarget bonus = RemoteVideoSubtitleTarget(
+      title: 'Disc · 00005',
+      episodes: <RemoteVideoSubtitleEpisode>[
+        RemoteVideoSubtitleEpisode(
+          videoId: 'disc-main',
+          discTitle: 'BDMV/PLAYLIST/00005.mpls',
+          title: 'Disc · 00005',
+        ),
+      ],
+    );
+
+    test('老 host（没有 acceptsDiscTitle）：discTitleUnsupported，不提交任务', () async {
+      final FakeHostPort host = FakeHostPort(
+        target: hostTarget(
+          <String>['video_subtitle'],
+          capability: const <String, Object?>{
+            'video_subtitle': <String, Object?>{'acceptsEpisode': true},
+          },
+        ),
+        script: exportEpisode,
+      );
+      final RemoteVideoSubtitleJob job = service(
+        host,
+      ).start(bonus, const RemoteVideoSubtitleOptions());
+      await job.done;
+      expect(job.status, RemoteVideoSubtitleJobStatus.discTitleUnsupported);
+      expect(host.submitted, isEmpty, reason: '老 host 会静默跑锚点那一行');
+    });
+
+    test('库里有行的 title 在老 host 上照常提交，不带 discTitle', () async {
+      final FakeHostPort host = FakeHostPort(
+        target: hostTarget(<String>['video_subtitle']),
+        script: exportEpisode,
+      );
+      final RemoteVideoSubtitleJob job = service(
+        host,
+      ).start(mainTitle, const RemoteVideoSubtitleOptions());
+      await job.done;
+      expect(job.status, RemoteVideoSubtitleJobStatus.succeeded);
+      expect(host.submitted.single.containsKey('discTitle'), isFalse);
+      expect(
+        job.episodes.single.episode.matchesDiscTitle('disc-main', null),
+        isTrue,
+      );
+    });
+
+    test('新 host：参数带 discTitle；与锚点行的任务键、落盘名互不相同', () async {
+      final FakeHostPort host = FakeHostPort(
+        target: hostTarget(
+          <String>['video_subtitle'],
+          capability: const <String, Object?>{
+            'video_subtitle': <String, Object?>{'acceptsDiscTitle': true},
+          },
+        ),
+        script: exportEpisode,
+      );
+      final RemoteVideoSubtitleService svc = service(host);
+      final RemoteVideoSubtitleJob first = svc.start(
+        mainTitle,
+        const RemoteVideoSubtitleOptions(),
+      );
+      await first.done;
+      final RemoteVideoSubtitleJob second = svc.start(
+        bonus,
+        const RemoteVideoSubtitleOptions(),
+      );
+      await second.done;
+      expect(second.status, RemoteVideoSubtitleJobStatus.succeeded);
+      expect(host.submitted.last, <String, Object?>{
+        'videoId': 'disc-main',
+        'discTitle': 'BDMV/PLAYLIST/00005.mpls',
+        'proofread': false,
+        'segmenter': 'auto',
+        'mossBackend': 'auto',
+      });
+      expect(mainTitle.key, isNot(bonus.key));
+      expect(svc.latestJobFor(bonus), same(second));
+      final File a = first.episodes.single.subtitle!;
+      final File b = second.episodes.single.subtitle!;
+      expect(a.path, isNot(b.path), reason: '特典 title 取回的字幕不能覆盖正片的');
+      final RemoteVideoSubtitleEpisode e = second.episodes.single.episode;
+      expect(
+        e.matchesDiscTitle('disc-main', 'BDMV/PLAYLIST/00005.mpls'),
+        isTrue,
+      );
+      expect(e.matchesDiscTitle('disc-main', null), isFalse);
+      expect(e.matches('disc-main', 0), isFalse, reason: '不能当成锚点那一行');
+    });
+  });
+
   test('host 另出了套样式的 ASS：取回 ASS 而不是 SRT', () async {
     final FakeHostPort host = FakeHostPort(
       target: hostTarget(<String>['video_subtitle']),

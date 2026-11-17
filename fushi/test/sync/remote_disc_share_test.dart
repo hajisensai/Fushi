@@ -444,6 +444,117 @@ void main() {
     });
   });
 
+  group('远端原盘 title 在 host 上的定位（字幕管线 / 取音频）', () {
+    RemoteDiscMenuSource source({
+      List<RemoteDiscShareTitle> titles = const <RemoteDiscShareTitle>[
+        RemoteDiscShareTitle(id: 'host/t1', path: 'BDMV/PLAYLIST/00001.mpls'),
+        RemoteDiscShareTitle(id: 'host/t8', path: 'BDMV/PLAYLIST/00800.MPLS'),
+      ],
+      RemoteDiscTitleAudioFetch? fetchTitleAudio,
+    }) => RemoteDiscMenuSource(
+      share: RemoteDiscShare(
+        baseUrl: Uri.parse('http://h:1/api/library/disc/t/'),
+        manifest: _manifest(),
+        titles: titles,
+      ),
+      title: 'Disc',
+      readFile: (String _, int _) async => null,
+      fetchTitleAudio: fetchTitleAudio,
+    );
+
+    String member(RemoteDiscMenuSource s, String name) =>
+        p.join(s.identityRoot, 'BDMV', 'PLAYLIST', name);
+
+    test('host 库里有这条 title 的行：直接用它，不带 discTitle（老 host 也认）', () {
+      final RemoteDiscMenuSource s = source();
+      expect(
+        s.hostTitleFor(member(s, '00001.mpls')),
+        const RemoteDiscHostTitle(
+          videoId: 'host/t1',
+          memberPath: 'BDMV/PLAYLIST/00001.mpls',
+        ),
+      );
+      // 盘上目录 / 文件名大小写与 libbluray 报的不一致也认得出。
+      expect(s.hostTitleFor(member(s, '00800.mpls'))!.videoId, 'host/t8');
+    });
+
+    test('库里没有行的 title：同盘蓝光行当锚点 + discTitle；各条 title 键互不相同', () {
+      final RemoteDiscMenuSource s = source();
+      final RemoteDiscHostTitle bonus = s.hostTitleFor(
+        member(s, '00005.mpls'),
+      )!;
+      expect(bonus.videoId, 'host/t1');
+      expect(bonus.discTitle, 'BDMV/PLAYLIST/00005.mpls');
+      expect(bonus.memberPath, 'BDMV/PLAYLIST/00005.mpls');
+      expect(bonus.key, isNot(s.hostTitleFor(member(s, '00001.mpls'))!.key));
+      expect(bonus.key, isNot(s.hostTitleFor(member(s, '00006.mpls'))!.key));
+    });
+
+    test('不在这张盘的身份根下 / DVD title / 没有蓝光行可当锚点 → null', () {
+      final RemoteDiscMenuSource s = source();
+      expect(
+        s.hostTitleFor(
+          p.join(
+            'fushi-remote-disc',
+            'other',
+            'Disc 2',
+            'BDMV',
+            'PLAYLIST',
+            '00001.mpls',
+          ),
+        ),
+        isNull,
+      );
+      expect(
+        s.hostTitleFor(p.join(s.identityRoot, 'VIDEO_TS', 'TITLE_01.dvdtitle')),
+        isNull,
+      );
+      expect(
+        s.hostTitleFor(p.join(s.identityRoot, 'BDMV', 'STREAM', '00001.m2ts')),
+        isNull,
+      );
+      expect(
+        source(
+          titles: const <RemoteDiscShareTitle>[],
+        ).hostTitleFor(member(s, '00005.mpls')),
+        isNull,
+      );
+    });
+
+    test('RemoteDiscActions 把 host 取音频接到会话盘源上', () async {
+      final List<(RemoteDiscHostTitle, int, int?)> asked =
+          <(RemoteDiscHostTitle, int, int?)>[];
+      final RemoteDiscActions actions = RemoteDiscActions(
+        openShare: (String _) async => RemoteDiscShare.fromJson(_issueBody())!,
+        readFile: (RemoteDiscShare _, String _, int _) async => null,
+        fetchTitleAudio:
+            (
+              RemoteDiscHostTitle title,
+              File dest, {
+              required int startMs,
+              required int endMs,
+              int? audioStreamIndex,
+              int? audioStreamCount,
+            }) async => asked.add((title, endMs, audioStreamIndex)),
+      );
+      final RemoteDiscMenuSource s = actions.menuSource(
+        RemoteDiscShare.fromJson(_issueBody())!,
+        'Box',
+      );
+      final RemoteDiscHostTitle title = s.hostTitleFor(
+        member(s, '00001.mpls'),
+      )!;
+      await s.fetchTitleAudio!(
+        title,
+        File(p.join(temp.path, 'a.aac')),
+        startMs: 0,
+        endMs: 5000,
+        audioStreamIndex: 1,
+      );
+      expect(asked.single, (title, 5000, 1));
+    });
+  });
+
   test('buffering monitor: three stalls after playback within the window', () {
     final RemoteDiscBufferingMonitor monitor = RemoteDiscBufferingMonitor();
     DateTime at(int s) => DateTime(2026, 10, 24).add(Duration(seconds: s));
