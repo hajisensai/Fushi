@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-17T08:11:47Z",
+ "generatedAt": "2026-11-17T09:07:59Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "8d58da51da95979f54a169017f01628f65396e4c",
-  "seq": 28600
+  "sha": "f3ed3b62bc3bf19009cfa721e893ab6cb34addd9",
+  "seq": 28607
  },
  "builds": [
   {
@@ -142,25 +142,30 @@
   }
  ],
  "pending": {
-  "headSha": "8d58da51da95979f54a169017f01628f65396e4c",
-  "headSeq": 28600,
+  "headSha": "f3ed3b62bc3bf19009cfa721e893ab6cb34addd9",
+  "headSeq": 28607,
   "prs": [
+   3650,
    3664
   ],
   "direct": [],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44052531041"
    },
    "windows": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44052530947"
    },
    "macos": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44052530947"
    },
    "ios": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44052530947"
    }
   }
  },
@@ -253,6 +258,15 @@
    "mergedAt": "2026-11-17T05:39:57Z",
    "additions": 267,
    "deletions": 17,
+   "labels": []
+  },
+  "3650": {
+   "number": 3650,
+   "title": "fix(android): 跨应用语音 RPC 移出主线程、授权页销毁结账 start；CI 跑 Android JVM 单测",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-17T09:06:34Z",
+   "additions": 242,
+   "deletions": 27,
    "labels": []
   },
   "3651": {
