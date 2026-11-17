@@ -9,7 +9,10 @@
 // 修后：按已知信息先切屏（没加载完的图认 width / height 属性），图 load 后复核：
 // - 归类变了（行内 → 独立图片屏）→ 整章重建屏表；当前屏内容没变就原地保留，变了按首字符
 //   偏移落回并重渲；
-// - 屏上的克隆自己 load 后补升 block-img。
+// - 屏上的克隆自己 load 后补升 block-img；
+// - 归类没变的行内图只按新尺寸重切（不重建屏表）；
+// - 归类没变、本来就是独立媒体的图（纯图片段、属性写明大尺寸）不触发任何重切：它所在的
+//   屏不可拆、不参与量屏，整章重量一遍改变不了任何一屏。
 // 图片由本文件起的回环服务器按需放行，页面里用 fetch('/release?name') 触发。
 import fs from 'node:fs';
 import http from 'node:http';
@@ -61,21 +64,23 @@ function png(size) {
   ]);
 }
 const bigPng = png(300);
+const smallPng = png(16);
 
-// /img/<name>.png：放行前挂住，放行后立即回 300×300 的图；never 永不放行。
+// /img/<name>.png：放行前挂住，放行后立即回 300×300 的图（small 开头的回 16×16）；
+// never 永不放行。
 const released = new Set();
 const held = new Map();
-const serve = (res) => {
+const serve = (res, name) => {
   res.setHeader('content-type', 'image/png');
   res.setHeader('cache-control', 'max-age=3600');
-  res.end(bigPng);
+  res.end(name.startsWith('small') ? smallPng : bigPng);
 };
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
   if (url.pathname === '/release') {
     const name = url.search.slice(1);
     released.add(name);
-    (held.get(name) || []).forEach(serve);
+    (held.get(name) || []).forEach((pending) => serve(pending, name));
     held.delete(name);
     res.setHeader('access-control-allow-origin', '*');
     res.end('ok');
@@ -88,7 +93,7 @@ const server = http.createServer((req, res) => {
     return;
   }
   if (released.has(m[1])) {
-    serve(res);
+    serve(res, m[1]);
     return;
   }
   if (!held.has(m[1])) held.set(m[1], []);
@@ -103,8 +108,8 @@ const img = (name, attrs) => '<img id="' + name + '" src="' + origin + '/img/' +
 
 // 块模式一段一屏：
 //   0 文字 / 1 文字 + late1（行内，加载后 300px → 独立）/ 2 文字 / 3 文字 + late2 /
-//   4 纯图片段 late3（没有文字，始终独立屏）/ 5 文字 + declared（属性写明 400×300，永不加载）/
-//   6 纯图片段 never（永不加载）/ 7 文字
+//   4 纯图片段 late3（没有文字，始终独立屏）/ 5 文字 + declared（属性写明 400×300）/
+//   6 纯图片段 never（永不加载）/ 7 文字 / 8 文字 + small（16px，加载后仍是行内）
 const body =
   '<p>一段目の文章です。</p>' +
   '<p>二段目の途中に' + img('late1') + '挿絵が入ります。</p>' +
@@ -113,7 +118,8 @@ const body =
   '<p>' + img('late3') + '</p>' +
   '<p>六段目の途中に' + img('declared', ' width="400" height="300"') + '挿絵が入ります。</p>' +
   '<p>' + img('never') + '</p>' +
-  '<p>八段目の文章です。</p>';
+  '<p>八段目の文章です。</p>' +
+  '<p>九段目の途中に' + img('small') + '小さな絵が入ります。</p>';
 const config = {
   vnRevealSpeed: 0,
   vnScreenMode: 'block',
@@ -165,12 +171,22 @@ try {
     if (!out.ready) return out;
     const reader = window.fushiReader;
     const source = (id) => reader.sourceRoot.querySelector('#' + id);
-    out.pendingAtReady = ['late1', 'late2', 'late3', 'never', 'declared'].map((id) => source(id).complete);
+    out.pendingAtReady = ['late1', 'late2', 'late3', 'never', 'declared', 'small'].map((id) => source(id).complete);
     const table = () => reader.screens.map((s) => [s.startCharCount, s.endCharCount, !!s.mediaStop, !!s.splittable]);
     out.before = table();
     let renders = 0;
     const origRender = reader.renderScreen;
     reader.renderScreen = function() { renders++; return origRender.apply(this, arguments); };
+    // 整章量屏次数：迟到的图引起的每一次重切（重建屏表或只重量）都会走到这里。
+    let fits = 0;
+    const origFit = reader.fitScreensToViewport;
+    reader.fitScreensToViewport = function() { fits++; return origFit.apply(this, arguments); };
+    // 源图 load / error 之后，等合并用的零延时任务（如果排了的话）跑完。
+    const settled = async (id) => {
+      const done = await until(() => source(id).complete, 5000);
+      for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0));
+      return done;
+    };
 
     // ② 别的屏上的图加载完、归类变了：屏表重建，当前屏（第 3 段）内容没变 → 原地保留。
     origRender.call(reader, 2, true);
@@ -182,6 +198,7 @@ try {
       renders: renders,
       sameDom: reader.screen.firstElementChild === kept,
       index: reader.currentScreenIndex,
+      fits: fits,
     };
 
     // ③ 当前屏自己的图加载完、归类变了：按首字符偏移落回并重渲，屏上的图升成 block-img。
@@ -207,12 +224,32 @@ try {
       promoted: !!reader.screen.querySelector('img.block-img'),
     };
     renders = 0;
+    fits = 0;
     await release('late3');
     out.imageScreenPromoted = await until(
       () => !!reader.screen.querySelector('.block-img-wrapper > img.block-img'), 5000);
+    out.late3Settled = await settled('late3');
     out.imageScreenAfter = {
       renders: renders,
       sameDom: reader.screen.firstElementChild === imageScreen,
+      index: reader.currentScreenIndex,
+      fits: fits,
+    };
+
+    // ⑤ 属性已写明大尺寸的图：加载前后都是独立媒体，同样不重切。
+    await release('declared');
+    out.declaredSettled = await settled('declared');
+    out.afterDeclared = { fits: fits, renders: renders };
+
+    // ⑥ 加载后仍是行内的小图：归类没变，但它的尺寸会改变所在文字屏装得下多少 → 只重量
+    //    一次，不重建屏表、当前屏不重渲。
+    const baseBefore = reader.baseScreens;
+    await release('small');
+    out.smallSettled = await settled('small');
+    out.afterSmall = {
+      fits: fits,
+      renders: renders,
+      sameBase: reader.baseScreens === baseBefore,
       index: reader.currentScreenIndex,
     };
     out.after = table();
@@ -220,8 +257,8 @@ try {
   })()`);
   const dump = JSON.stringify(r);
   assert.equal(r.ready, true, 'the first screen must not wait for images that never finish ' + dump);
-  assert.deepEqual(r.pendingAtReady, [false, false, false, false, false], 'fixture: every image is still loading at ready ' + dump);
-  assert.equal(r.before.length, 8, 'fixture cuts eight screens ' + dump);
+  assert.deepEqual(r.pendingAtReady, [false, false, false, false, false, false], 'fixture: every image is still loading at ready ' + dump);
+  assert.equal(r.before.length, 9, 'fixture cuts nine screens ' + dump);
   // [start, end, mediaStop, splittable]
   assert.deepEqual([r.before[1][2], r.before[1][3]], [false, true], 'a loading image without declared size is inline for now ' + dump);
   assert.deepEqual([r.before[4][2], r.before[4][3]], [true, false], 'an image-only paragraph is a media screen before it loads ' + dump);
@@ -229,7 +266,8 @@ try {
   assert.deepEqual([r.before[6][2], r.before[6][3]], [true, false], dump);
 
   assert.equal(r.late1Reclassified, true, 'a late image that turns out large re-cuts the chapter ' + dump);
-  assert.equal(r.afterLate1.table.length, 8, dump);
+  assert.equal(r.afterLate1.table.length, 9, dump);
+  assert.ok(r.afterLate1.fits >= 1, 'control: a re-cut goes through fitScreensToViewport ' + dump);
   assert.equal(r.afterLate1.renders, 0, 'an unchanged current screen is not re-rendered ' + dump);
   assert.equal(r.afterLate1.sameDom, true, 'the current screen DOM is kept ' + dump);
   assert.equal(r.afterLate1.index, 2, dump);
@@ -242,8 +280,16 @@ try {
 
   assert.deepEqual(r.imageScreenBefore, { mediaStop: true, promoted: false }, dump);
   assert.equal(r.imageScreenPromoted, true, 'a clone that loads after render is promoted on its own load ' + dump);
-  assert.deepEqual(r.imageScreenAfter, { renders: 0, sameDom: true, index: 4 }, 'an image screen is not re-rendered when its image arrives ' + dump);
-  assert.deepEqual(r.after.map((s) => s[2]), [false, true, false, true, true, true, true, false], dump);
+  assert.equal(r.late3Settled, true, dump);
+  assert.deepEqual(r.imageScreenAfter, { renders: 0, sameDom: true, index: 4, fits: 0 },
+    'an image-only paragraph neither re-renders nor re-measures the chapter when its image arrives ' + dump);
+  assert.equal(r.declaredSettled, true, dump);
+  assert.deepEqual(r.afterDeclared, { fits: 0, renders: 0 },
+    'an image that was already a media screen by its declared size does not re-measure the chapter ' + dump);
+  assert.equal(r.smallSettled, true, dump);
+  assert.deepEqual(r.afterSmall, { fits: 1, renders: 0, sameBase: true, index: 4 },
+    'a late inline image re-measures once without rebuilding the screen table ' + dump);
+  assert.deepEqual(r.after.map((s) => s[2]), [false, true, false, true, true, true, true, false, false], dump);
   console.log('PASS VN late image');
 } finally {
   driver.close();

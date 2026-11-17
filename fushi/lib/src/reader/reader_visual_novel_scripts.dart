@@ -731,7 +731,8 @@ $imageRevealSemantics
     create: function(root, options) {
       return new ReaderVnContentStream(root, options);
     },
-    isLargeImage: isLargeImage
+    isLargeImage: isLargeImage,
+    isStandaloneImage: isStandaloneImageNode
   };
 })(window);
 (function(global) {
@@ -1034,25 +1035,53 @@ $kSentenceAudioRubyGapJs
   // - 拆屏量尺：行内图的真实尺寸会改变所在文字屏装得下多少，归类没变也要按新尺寸重切。
   // 两种都经 refitScreensToCurrentViewport：当前屏的内容没变就原地不动（不清选区、不打断
   // 逐字显现），变了才按当前屏首字符偏移落回。同一批迟到的图合并成一次重切。
+  //
+  // 两种都不沾的图不重切：归类没变、且在所属块里本来就是独立媒体的图（纯图片段的插图、
+  // 属性已写明大尺寸的图）所在的屏不可拆、不参与量屏，它的尺寸改变不了任何一屏。多插图章
+  // 的图解码时间错开，每张都整章重量一遍会在首屏逐字显现时连续占住主线程。
+  //
+  // 归类按切屏实际用到的两个上下文各记一份：所属块（buildBlockScreens /
+  // buildSentenceAtomicRoots 的 containsStandaloneMedia(块)）与整章根（内容流 mediaUnits）。
   watchLateImages: function() {
-    var isLargeImage = window.fushiReaderVnContentStream &&
-      window.fushiReaderVnContentStream.isLargeImage;
-    if (typeof isLargeImage !== 'function') return;
+    var api = window.fushiReaderVnContentStream;
+    if (!api || typeof api.isStandaloneImage !== 'function') return;
     var images = this.sourceRoot && this.sourceRoot.querySelectorAll
       ? Array.from(this.sourceRoot.querySelectorAll('img'))
       : [];
+    var pending = images.filter(function(img) { return !img.complete; });
+    if (!pending.length) return;
+    var sources = this.collectBlockScreenSources(this.sourceRoot);
+    var chapterRoot = this.sourceRoot;
     var self = this;
-    images.forEach(function(img) {
-      if (img.complete) return;
-      var wasLarge = isLargeImage(img);
+    pending.forEach(function(img) {
+      var block = self.blockScreenSourceOf(sources, img);
+      var classify = function() {
+        return {
+          // 没找到所属块（不会进任何屏）时按行内处理：宁可多切一次。
+          inBlock: !!block && api.isStandaloneImage(img, block),
+          inChapter: api.isStandaloneImage(img, chapterRoot)
+        };
+      };
+      var before = classify();
       var settle = function() {
         img.removeEventListener('load', settle);
         img.removeEventListener('error', settle);
-        self.scheduleLateImageRelayout(isLargeImage(img) !== wasLarge);
+        var after = classify();
+        var reclassified = after.inBlock !== before.inBlock ||
+          after.inChapter !== before.inChapter;
+        if (!reclassified && after.inBlock) return;
+        self.scheduleLateImageRelayout(reclassified);
       };
       img.addEventListener('load', settle);
       img.addEventListener('error', settle);
     });
+  },
+  blockScreenSourceOf: function(sources, node) {
+    for (var i = 0; i < sources.length; i++) {
+      var source = sources[i].node;
+      if (source === node || (source.contains && source.contains(node))) return source;
+    }
+    return null;
   },
   scheduleLateImageRelayout: function(reclassified) {
     if (reclassified) this.lateImageReclassified = true;
