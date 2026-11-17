@@ -1,4 +1,4 @@
-## BUG-4792 · 重开书恢复增量 OCR 结果时漏掉系统 OCR 的逐页缓存
+## BUG-4799 · 重开书恢复增量 OCR 结果时漏掉系统 OCR 的逐页缓存
 - **报告**：2026-11-17（用户：代码审查，漫画优化清单第 15 条）
 - **真实性**：✅ 真 bug。根因 `fushi/lib/src/media/manga/ocr/manga_ocr_cache_recovery.dart:68`
   （develop `8d58da51da9`）—— 恢复候选只有本地模型签名目录和

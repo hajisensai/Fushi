@@ -262,7 +262,7 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
       // 已识别的页只认 Lens **自己**的逐页缓存（目录名即引擎签名，带语言）；
       // 「重新识别」由调用方先清掉这个目录（`mangaOcrLensEvents`）。共用的
       // `manga_ocr_out/manga.json` 可能是别的引擎写的：从那里收页会把别家的
-      // 结果标成 `google_lens`（BUG-4791）。
+      // 结果标成 `google_lens`（BUG-4798）。
       final MokuroImage? cached = await cache.read(pageIndex, page);
       final MokuroImage image =
           cached ?? await _recognizePage(page, language: language);

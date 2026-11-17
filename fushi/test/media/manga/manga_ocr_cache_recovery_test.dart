@@ -130,7 +130,7 @@ void main() {
     },
   );
 
-  // BUG-4792：系统 OCR 与 Lens 同格式同根写逐页缓存，被杀进程 / 取消后重开书
+  // BUG-4799：系统 OCR 与 Lens 同格式同根写逐页缓存，被杀进程 / 取消后重开书
   // 只能靠这份缓存读回已识别的页。
   test('recovers pages cached by a system OCR run', () async {
     final GoogleLensPageCache system = _pageJsonCache(

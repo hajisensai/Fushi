@@ -15,7 +15,7 @@ import 'package:fushi_engine/ocr/ocr_types.dart';
 /// 用 [GoogleLensPageCache] 格式写逐页缓存的引擎 → 缓存目录名前缀（后接语言）。
 ///
 /// 重开书恢复按这张表枚举缓存目录。新增一个写这种逐页缓存的引擎时在这里加
-/// 一行；漏了的后果是该引擎被杀进程 / 取消后的成果重开书读不回来（BUG-4792）。
+/// 一行；漏了的后果是该引擎被杀进程 / 取消后的成果重开书读不回来（BUG-4799）。
 /// 前缀都带版本号：换签名作废的旧目录（例如系统 OCR 的 v1）不会被收回来。
 const Map<MangaOcrEngineId, String> kMangaOcrPageJsonCachePrefixes =
     <MangaOcrEngineId, String>{
