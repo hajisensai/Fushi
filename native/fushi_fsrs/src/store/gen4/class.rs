@@ -2621,6 +2621,13 @@ mod tests {
                     json!(c_f.text())
                 );
                 assert_eq!(cfg["builtins"]["lapis"]["reading"], json!(c_f.text()));
+                // 对外命令 `canonical_ids` 与键 / 值 / 配置同一个结论（偏好里存的带盐内置字段 ID 发进来要换成视图里的那个）。
+                let req = json!({"ids": [s_f.text(), c_f.text(), "plain"]});
+                assert_eq!(
+                    super::super::cmd::identity::canonical_ids(t, col, &req)?,
+                    json!({"ids": [c_f.text(), c_f.text(), "plain"]})
+                );
+                // 实体口径（别名类成员）只来自表：表外的 ID 自成一类，`members` 不会给出不含它自己的类。
                 assert_eq!(ix.canonical(&r(s_f))?, r(s_f));
                 assert_eq!(ix.members(&r(s_f))?, vec![r(s_f)]);
                 Ok(())
