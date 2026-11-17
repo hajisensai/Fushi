@@ -1,7 +1,9 @@
 // 反馈样本文件附件（拍板台 PLFh2VXDcN / ZbLcRNOvKU）的服务层：
 // - 提交时原件复制进待传区（原件不动），按 f0..f2 流式 PUT，带编码后的原文件名；
 // - 传失败留在待传区（连同原文件名旁注），详情页重试时照样带原文件名；永久拒收丢弃；
-// - 本机先拦住服务端必然拒收的（扩展名 / 空文件 / 超限）。
+// - 本机先拦住服务端必然拒收的（扩展名 / 空文件 / 超限）；
+// - 视频先于样本文件传（两者共用服务端每 IP 每天的大附件额度），重试同序；
+// - 待传区里本体在 = 原文件名旁注在（copyFile 本体最后落地）；缺旁注的槽位当损坏丢掉，不编假名上传。
 
 import 'dart:convert';
 import 'dart:io';
@@ -11,6 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/feedback/feedback_files.dart';
 import 'package:fushi/src/feedback/feedback_service.dart';
 import 'package:fushi/src/feedback/feedback_store.dart';
+import 'package:fushi/src/feedback/feedback_video.dart';
 import 'package:fushi_engine/feedback/feedback_models.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:http/http.dart' as http;
@@ -41,6 +44,21 @@ void main() {
     logText: ({required bool includeDebugLog}) => 'log',
     logEncoder: (String s) =>
         Uint8List.fromList(<int>[0x1f, 0x8b, ...utf8.encode(s)]),
+    prepareVideo:
+        (
+          File source,
+          Directory work,
+          void Function(double) onProgress,
+          FeedbackVideoPrepareOptions _,
+        ) async {
+          final File out = await source.copy(p.join(work.path, 'out.mp4'));
+          return PreparedFeedbackVideo(
+            file: out,
+            contentType: 'video/mp4',
+            bytes: await out.length(),
+            transcoded: true,
+          );
+        },
   );
 
   Future<http.Response> receipt(http.Request r) async =>
@@ -177,6 +195,114 @@ void main() {
       requests.map((http.Request r) => p.url.basename(r.url.path)).skip(1),
       <String>['f0', 'f1', 'f2'],
     );
+  });
+
+  test('视频与样本文件同交：视频先传（共用每 IP 每天额度，不被样本文件挤掉），重试也是视频先', () async {
+    final File clip = File(p.join(root.path, 'user', 'clip.mp4'))
+      ..writeAsBytesSync(List<int>.filled(64, 7));
+    handler = (http.Request r) async {
+      if (r.url.path == '/v1/feedback') return receipt(r);
+      return _json(<String, dynamic>{'error': 'rate_limited'}, 429);
+    };
+    final List<FeedbackSubmitStage> stages = <FeedbackSubmitStage>[];
+    final FeedbackService s = service();
+    final FeedbackSubmitResult result = await s.submit(
+      FeedbackDraft(
+        category: FeedbackCategory.bug,
+        title: 't',
+        body: 'b',
+        includeLogs: false,
+        files: <File>[md, srt],
+        video: clip,
+      ),
+      onStage: stages.add,
+    );
+    expect(result.failedAttachments, 3);
+    expect(
+      requests.map((http.Request r) => p.url.basename(r.url.path)).skip(1),
+      <String>['v0', 'f0', 'f1'],
+    );
+    expect(
+      stages.skipWhile(
+        (FeedbackSubmitStage x) => x != FeedbackSubmitStage.video,
+      ),
+      <FeedbackSubmitStage>[
+        FeedbackSubmitStage.video,
+        FeedbackSubmitStage.files,
+      ],
+    );
+    // 429 不是永久拒收：都留在待传区；重试仍是视频排第一。
+    expect(s.pendingSlots('abcdefghij'), <String>{'v0', 'f0', 'f1'});
+    requests.clear();
+    handler = (http.Request r) async =>
+        _json(<String, dynamic>{'slot': 'x'}, 201);
+    final FeedbackRetryResult retry = await s.retryPending('abcdefghij');
+    expect(retry.uploaded, 3);
+    expect(
+      requests.map((http.Request r) => p.url.basename(r.url.path)),
+      <String>['v0', 'f0', 'f1'],
+    );
+  });
+
+  test('copyFile 中途失败（写原文件名旁注出错）不留下没有原文件名的待传槽位', () async {
+    final FeedbackPendingStore store = FeedbackPendingStore(root);
+    // 在 .name 旁注的位置放一个目录，写旁注必然失败——模拟复制本体之后、记下原文件名之前中断。
+    Directory(
+      p.join(root.path, 'feedback', 'pending', 'abcdefghij', 'f0.name'),
+    ).createSync(recursive: true);
+    await expectLater(
+      store.copyFile('abcdefghij', 'f0', md, name: '复现 步骤.md'),
+      throwsA(isA<FileSystemException>()),
+    );
+    expect(await store.scan(), isEmpty);
+    expect(
+      File(
+        p.join(root.path, 'feedback', 'pending', 'abcdefghij', 'f0.part'),
+      ).existsSync(),
+      isFalse,
+    );
+
+    // 正常走完：本体在、旁注在，复制中的 .part 不算槽位也不残留。
+    Directory(
+      p.join(root.path, 'feedback', 'pending', 'abcdefghij', 'f0.name'),
+    ).deleteSync();
+    await store.copyFile('abcdefghij', 'f0', md, name: '复现 步骤.md');
+    expect(await store.scan(), <String, Set<String>>{
+      'abcdefghij': <String>{'f0'},
+    });
+    expect(await store.nameOf('abcdefghij', 'f0'), '复现 步骤.md');
+    File(
+      p.join(root.path, 'feedback', 'pending', 'abcdefghij', 'f1.part'),
+    ).writeAsStringSync('half');
+    expect(await store.scan(), <String, Set<String>>{
+      'abcdefghij': <String>{'f0'},
+    });
+  });
+
+  test('待传样本文件缺原文件名旁注：当损坏丢掉，不编假名上传', () async {
+    handler = (http.Request r) async {
+      if (r.url.path == '/v1/feedback') return receipt(r);
+      return _json(<String, dynamic>{'error': 'unavailable'}, 503);
+    };
+    final FeedbackService s = service();
+    await s.submit(draft());
+    expect(s.pendingSlots('abcdefghij'), <String>{'f0', 'f1'});
+    File(
+      p.join(root.path, 'feedback', 'pending', 'abcdefghij', 'f0.name'),
+    ).deleteSync();
+
+    requests.clear();
+    handler = (http.Request r) async =>
+        _json(<String, dynamic>{'slot': 'x'}, 201);
+    final FeedbackRetryResult retry = await s.retryPending('abcdefghij');
+    expect(
+      requests.map((http.Request r) => p.url.basename(r.url.path)),
+      <String>['f1'],
+    );
+    expect(retry.uploaded, 1);
+    expect(retry.dropped, 1);
+    expect(s.pendingSlots('abcdefghij'), isEmpty);
+    expect(await FeedbackPendingStore(root).scan(), isEmpty);
   });
 
   test('feedbackFileProblem：白名单外 / 空 / 超限本机就拦', () {

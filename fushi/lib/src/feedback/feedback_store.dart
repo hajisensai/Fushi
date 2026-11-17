@@ -251,7 +251,8 @@ class FeedbackTicketStore {
 class FeedbackPendingStore {
   FeedbackPendingStore(this.supportRoot);
 
-  static const Set<String> _sidecars = <String>{'.type', '.name'};
+  /// 不算槽位的旁注 / 半成品后缀（`.part` 是 [copyFile] 还没复制完的本体）。
+  static const Set<String> _sidecars = <String>{'.type', '.name', '.part'};
 
   final Directory supportRoot;
 
@@ -267,6 +268,10 @@ class FeedbackPendingStore {
   /// 样本文件的原文件名旁注（`<槽位>.name`）。
   File _nameFile(String id, String slot) =>
       File('${_file(id, slot).path}.name');
+
+  /// [copyFile] 复制中的本体（`<槽位>.part`）。
+  File _partFile(String id, String slot) =>
+      File('${_file(id, slot).path}.part');
 
   Future<void> put(String id, String slot, List<int> bytes) async {
     final File f = _file(id, slot);
@@ -309,13 +314,23 @@ class FeedbackPendingStore {
     final File f = _file(id, slot);
     await f.parent.create(recursive: true);
     if (f.existsSync()) await f.delete();
-    await source.copy(f.path);
-    await _typeFile(
-      id,
-      slot,
-    ).writeAsString('application/octet-stream', flush: true);
-    await _nameFile(id, slot).writeAsString(name, flush: true);
-    return f;
+    // 槽位本体最后一步才以正式名出现（先复制成 `<槽位>.part`，旁注写完再 rename）：[scan]
+    // 只认本体，本体在 = 原文件名旁注一定在。旧顺序（本体先落地、`.name` 最后写）在两步之间
+    // 崩溃 / 断电会留下一个没有原文件名的待传槽位，上传时服务端按扩展名永久拒收、被丢掉。
+    final File part = _partFile(id, slot);
+    try {
+      await source.copy(part.path);
+      await _typeFile(
+        id,
+        slot,
+      ).writeAsString('application/octet-stream', flush: true);
+      await _nameFile(id, slot).writeAsString(name, flush: true);
+      return await part.rename(f.path);
+    } on Object {
+      // 没走完：半成品不留（异常照样抛给调用方记日志）。
+      if (part.existsSync()) await part.delete();
+      rethrow;
+    }
   }
 
   /// 待传样本文件的原文件名（没有旁注返回 null）。
@@ -352,6 +367,8 @@ class FeedbackPendingStore {
     if (type.existsSync()) await type.delete();
     final File name = _nameFile(id, slot);
     if (name.existsSync()) await name.delete();
+    final File part = _partFile(id, slot);
+    if (part.existsSync()) await part.delete();
     final Directory dir = f.parent;
     if (!dir.existsSync() || dir.listSync().isNotEmpty) return;
     try {
