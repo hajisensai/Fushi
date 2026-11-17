@@ -1,0 +1,14 @@
+{
+  "about": "Anki-source log HLC (iron rule C). Rust: native/fushi_fsrs/src/anki_import_rules.rs anki_source_hlc; Dart: packages/fushi_srs/lib/src/anki_import_rules.dart srsImportedRevlogHlc / srsImportAnchorHlc. hlc null = not an Anki-source log (the sort key is the op's own HLC).",
+  "vectors": [
+    {"origin": "anki", "kind": "review", "ankiId": 1699999999000, "at": 1699999999000, "hlc": "1699999999000:0:anki"},
+    {"origin": "anki", "kind": "manual", "ankiId": 1741061848001, "at": 1741061848001, "hlc": "1741061848001:0:anki"},
+    {"origin": "anki", "kind": "review", "ankiId": 1700000000123, "at": 1700000000999, "hlc": "1700000000123:0:anki"},
+    {"origin": "anki", "kind": "importAnchor", "ankiId": null, "at": 1700000000000, "hlc": "1700000000000:1:anki"},
+    {"origin": "anki", "kind": "importAnchor", "ankiId": 1690000000000, "at": 1700000000000, "hlc": "1700000000000:1:anki"},
+    {"origin": "anki", "kind": "importAnchor", "ankiId": null, "at": 0, "hlc": "0:1:anki"},
+    {"origin": "anki", "kind": "review", "ankiId": null, "at": 1700000000000, "hlc": null},
+    {"origin": "fushi", "kind": "review", "ankiId": 1700000000000, "at": 1700000000000, "hlc": null},
+    {"origin": "fushi", "kind": "importAnchor", "ankiId": null, "at": 1700000000000, "hlc": null}
+  ]
+}

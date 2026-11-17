@@ -21,9 +21,41 @@ SrsWrittenItem _item(
   String dev,
   int seq, {
   bool tags = false,
-}) => (kind: kind, entity: id, key: key, writer: dev, seq: seq, tags: tags);
+  String? row,
+  int? serverTime,
+}) => (
+  kind: kind,
+  entity: id,
+  key: key,
+  writer: dev,
+  seq: seq,
+  tags: tags,
+  row: row,
+  serverTime: serverTime,
+);
 
 void main() {
+  test('editRows replies carry the stored row and server time', () {
+    // 请求带 `editRows` 时（native/fushi_fsrs/src/store/gen4/cmd/writes.rs 文件头「回包」修改行）：`edits` 每项后面补
+    // `[行 JSON, 服务器时刻]`，`tagWrites` 每项后面补 `[行 JSON]`；盖掉的那项是 null。
+    expect(
+      srsWrittenByInput(3, <String, Object?>{
+        'edits': <Object?>[
+          <Object?>['note', 'A', 'f/x', 'dev', 1, 'v', 0, '{"s":1}', 42],
+          <Object?>['note', 'A', 'f/y', 'dev', 2, 'v', 1, null, null],
+        ],
+        'tagWrites': <Object?>[
+          <Object?>[2, 'A', 'dev', 3, '{"f":"tags"}'],
+        ],
+      }),
+      <SrsWrittenItem?>[
+        _item('note', 'A', 'f/x', 'dev', 1, row: '{"s":1}', serverTime: 42),
+        _item('note', 'A', 'f/y', 'dev', 2),
+        _item('note', 'A', 'tags', 'dev', 3, tags: true, row: '{"f":"tags"}'),
+      ],
+    );
+  });
+
   test(
     'a no-op draft does not claim another entity\'s edit on the same key',
     () {

@@ -1447,6 +1447,7 @@ class SrsDbStore implements SrsSync2Host {
         study: study,
         onStudy: onStudy,
         onEdits: (List<Object?> w) => written = w,
+        editRows: stamps,
       );
     });
     if (recorded.isNotEmpty) {
@@ -1472,7 +1473,7 @@ class SrsDbStore implements SrsSync2Host {
     if (!stamps || identical(applied, _Applied.stale)) {
       return const <SrsFieldEdit>[];
     }
-    return _readBackEdits(drafts, applied.reply);
+    return _writtenEdits(drafts, applied.reply);
   }
 
   /// 一批草稿里修改记录草稿落库后的修改记录（按草稿顺序；内核没写出操作的草稿——值没变、标签列表与现值相同——不在
@@ -1482,59 +1483,35 @@ class SrsDbStore implements SrsSync2Host {
   /// `stamps`，改由回包按**输入下标**报写下的东西（native/fushi_fsrs/src/store/gen4/cmd/writes.rs 文件头「回包」）：
   /// `edits` 每项第 7 列是它来自第几条输入（= 第几条草稿，[_applyInput] 一条草稿一项），整列表标签草稿展开成的标签
   /// 操作在 `tagWrites` 里报一项（[srsWrittenByInput]）。所以草稿直接按下标认领，不按 (种类, 实体, 字段键) 猜、不逐条
-  /// 点查归一（别名类的非规范成员也对得上）。再按回包里的规范实体分块读回修改记录（`read` 的 `edits`，与别的读同一份
-  /// 落库行）：普通修改按 (设备, 序号) 认出这批写下的；标签草稿取那条笔记的 `tags` 行（读侧给碰过标签的笔记合成的
-  /// 一行，cmd/mod.rs `edit_rows`，值是标签 OR-Set 的当前值）。返回值里带调用方给的原值（落库形态里内联样式已换成
-  /// 共享引用）。
-  Future<List<SrsFieldEdit>> _readBackEdits(
+  /// 点查归一（别名类的非规范成员也对得上）。[_emit] 带 `stamps` 时请求里带 `editRows`，回包每项再带收尾之后那一行
+  /// 落库修改行（与 `read edits` 的 `j` / `st` 同一个函数出的，cmd/mod.rs `edit_rows`；标签草稿是那条笔记合成的
+  /// `tags` 行，值是标签 OR-Set 的当前值），这里直接拼，命令之后不再发一条 `read edits` 回读（T1
+  /// `srs_write_preread_cost`）。返回值里带调用方给的原值（落库形态里内联样式已换成共享引用）。
+  List<SrsFieldEdit> _writtenEdits(
     List<SrsEventDraft> drafts,
     Map<String, Object?> reply,
-  ) async {
+  ) {
     final List<SrsWrittenItem?> written = srsWrittenByInput(
       drafts.length,
       reply,
     );
-    final Map<String, Set<String>> idsByKind = <String, Set<String>>{};
-    for (int i = 0; i < drafts.length; i++) {
-      final SrsWrittenItem? w = written[i];
-      if (w == null || drafts[i] is! SrsEditDraft) continue;
-      (idsByKind[w.kind] ??= <String>{}).add(w.entity);
-    }
-    final Map<(String, int), SrsFieldEdit> byDot =
-        <(String, int), SrsFieldEdit>{};
-    final Map<String, SrsFieldEdit> tagsOf = <String, SrsFieldEdit>{};
-    for (final MapEntry<String, Set<String>> k in idsByKind.entries) {
-      for (final List<String> chunk in _chunks(k.value)) {
-        final Map<String, List<SrsEditItem>> rows = await _editItemsById(
-          <String, Object?>{'kind': k.key, 'ids': chunk},
-        );
-        for (final MapEntry<String, List<SrsEditItem>> row in rows.entries) {
-          for (final SrsEditItem item in row.value) {
-            final SrsFieldEdit edit = item.edit;
-            byDot[(edit.dot.writerId, edit.dot.seq)] = edit;
-            if (k.key == SrsEntityKind.note.wire &&
-                edit.fieldKey == SrsFieldKeys.noteTags) {
-              tagsOf[row.key] = edit;
-            }
-          }
-        }
-      }
-    }
     final List<SrsFieldEdit> out = <SrsFieldEdit>[];
     for (int i = 0; i < drafts.length; i++) {
       final SrsEventDraft d = drafts[i];
       final SrsWrittenItem? w = written[i];
       if (w == null || d is! SrsEditDraft) continue;
-      final SrsFieldEdit? edit = w.tags
-          ? tagsOf[w.entity]
-          : byDot[(w.writer, w.seq)];
-      if (edit == null) {
+      final String? row = w.row;
+      if (row == null) {
         throw StateError(
           'srs: ${w.tags ? 'the tags of ${w.entity}' : 'edit ${w.writer}/${w.seq}'} '
-          'from the `apply` reply is not readable back (the native core and '
+          'from the `apply` reply carries no stored row (the native core and '
           'Dart do not match)',
         );
       }
+      final SrsFieldEdit edit = SrsEditItem.stored(
+        Uint8List.fromList(utf8.encode(row)),
+        w.serverTime,
+      ).edit;
       out.add(_withValue(edit, d.value));
     }
     return out;
@@ -1644,6 +1621,7 @@ class SrsDbStore implements SrsSync2Host {
   /// dot / ID 由 Rust 按本机设备身份分配，这里只交内容；日志的结果由重放算，作者给的只是提示。旧版 HLC 时钟按各项的
   /// `clk` 在同一条命令里推进并写下（[recvNow] / [tickNow] 是收 / 走一步用的「此刻」）；本机状态行由内核在
   /// 同一笔事务里写下（[_absorbLocalWrite]）。[logHlcs]：回包按输入下标带写下的日志的 HLC（`logHlcs`，作答取它）。
+  /// [editRows]：回包的 `edits` / `tagWrites` 每项带上落库修改行（[srsWrittenByInput]，[_writtenEdits] 用）。
   Future<_Applied> _applyLocal(
     List<Map<String, Object?>> input, {
     int? recvNow,
@@ -1655,6 +1633,7 @@ class SrsDbStore implements SrsSync2Host {
     Map<String, Object?>? expectLast,
     bool remote = false,
     bool logHlcs = false,
+    bool editRows = false,
   }) async {
     final Map<String, Object?> r = await _sync2(
       <String, Object?>{
@@ -1667,6 +1646,7 @@ class SrsDbStore implements SrsSync2Host {
         'study': ?study,
         'expectLast': ?expectLast,
         if (logHlcs) 'logHlcs': true,
+        if (editRows) 'editRows': true,
         'anchor': ?_anchorArg(),
       },
       blobs: <Uint8List>[utf8.encode(jsonEncode(input))],
@@ -6184,7 +6164,7 @@ final class _Applied {
 
   final int landed;
 
-  /// 内核的回包（`edits` / `tagWrites` / `logHlcs` 按输入下标读，见 [SrsDbStore._readBackEdits]）。
+  /// 内核的回包（`edits` / `tagWrites` / `logHlcs` 按输入下标读，见 [SrsDbStore._writtenEdits]）。
   final Map<String, Object?> reply;
 }
 
@@ -6675,7 +6655,8 @@ List<String?> srsEntityWritesByInput(int inputs, Map<String, Object?> reply) {
 
 /// `apply` 一类命令的一条输入写下的东西（[srsWrittenByInput]）：修改记录（[tags] = false，`(writer, seq)` 是它的 dot）
 /// 或整列表标签草稿展开成的标签操作（[tags] = true，`(writer, seq)` 是展开出的最后一条操作）。[entity] / [key] 是
-/// 内核归一后的规范形。
+/// 内核归一后的规范形。[row] / [serverTime]：请求带了 `editRows` 时，收尾之后这条修改（标签草稿是那条笔记合成的
+/// `tags` 行）在 `read edits` 里的行 JSON 与服务器时刻；没要、或那一行已不是活着的（同批后面的写入盖掉了）= null。
 typedef SrsWrittenItem = ({
   String kind,
   String entity,
@@ -6683,13 +6664,16 @@ typedef SrsWrittenItem = ({
   String writer,
   int seq,
   bool tags,
+  String? row,
+  int? serverTime,
 });
 
 /// `apply` 回包按输入下标认领（native/fushi_fsrs/src/store/gen4/cmd/writes.rs 文件头「回包」）：返回长 [inputs] 的列表，
 /// 第 i 项是第 i 条输入写下的那条，没写出（内核按「值没变」丢掉、日志、身份记录）= null。
 ///
-/// - `edits` 每项 `[种类, 规范实体, 字段键, 设备, 序号, 值, 输入下标]`，输入下标是 null 的（意图命令自己拼的项）不认领；
-/// - `tagWrites` 每项 `[输入下标, 规范笔记, 设备, 最后一条操作的序号]`。
+/// - `edits` 每项 `[种类, 规范实体, 字段键, 设备, 序号, 值, 输入下标, 行 JSON?, 服务器时刻?]`，输入下标是 null 的
+///   （意图命令自己拼的项）不认领；后两列只在请求带 `editRows` 时有；
+/// - `tagWrites` 每项 `[输入下标, 规范笔记, 设备, 最后一条操作的序号, 行 JSON?]`。
 ///
 /// 一条输入认领两次、下标越界 = 内核与 Dart 对不上，报错（不静默挑一条）。
 @visibleForTesting
@@ -6719,6 +6703,8 @@ List<SrsWrittenItem?> srsWrittenByInput(
       writer: e[3]! as String,
       seq: (e[4]! as num).toInt(),
       tags: false,
+      row: e.length > 7 ? e[7] as String? : null,
+      serverTime: e.length > 8 ? (e[8] as num?)?.toInt() : null,
     ));
   }
   for (final Object? raw
@@ -6731,6 +6717,8 @@ List<SrsWrittenItem?> srsWrittenByInput(
       writer: t[2]! as String,
       seq: (t[3]! as num).toInt(),
       tags: true,
+      row: t.length > 4 ? t[4] as String? : null,
+      serverTime: null,
     ));
   }
   return out;

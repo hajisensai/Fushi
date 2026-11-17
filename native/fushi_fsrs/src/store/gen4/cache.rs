@@ -115,6 +115,7 @@ use serde_json::{Value, json};
 
 use super::derive::{Index, R_LIVE, Ref, Reg, Settled, body_of};
 use super::schema::sql;
+use crate::anki_import_rules::anki_source_hlc;
 use crate::gen4::heritage::SlotBody;
 use crate::gen4::name::{read_edit_key, write_edit_key};
 use crate::gen4::op::{Body4, Log4};
@@ -263,6 +264,20 @@ const TABLES: [&str; 4] = ["notes", "cards", "stats", "anki_members"];
 /// `derive_cfg` 里缓存配置的键。
 pub const CFG_KEY: &str = "caches";
 
+/// `derive_cfg` 里「缓存层按哪一版推导口径物化的」的键（文件头「缓存配置」）。值是 [CACHE_RULES] 的十进制文本；没有 =
+/// 0（这个口径之前建的库）。
+pub const RULES_KEY: &str = "cacheRules";
+
+/// 缓存层推导口径修订号：同一份真相、同一份缓存配置算出的缓存行变了（规则改了）时 +1，并在这里记一行。整份物化
+/// （[Index::materialize_caches]，`rebuild_all` / `rebuild_caches` 的最后一步）写下当前值；`cache_config_set`（宿主每次
+/// 打开都发，`dispatch.rs`）发现库里记的不是当前值就整层重建一次——已有的新代库不必等配置变了才换上新口径。
+/// 真相不动、线格式不动，所以不升 schema；不进 head 的 `derive`（摘要不含缓存行，`digest.rs`）。
+///
+/// - 1（K3，交接 §26 C4）：Anki 来源日志的排序键改为来源数据派生的 HLC（[log_body]、`crate::anki_import_rules`）。之前
+///   新导入的 Anki 日志按操作 HLC 排：同一条 revlog 在血统两张卡上的副本各算一次、更早的 Anki 复习排到原生复习之后
+///   覆盖当前排程。
+pub const CACHE_RULES: i64 = 1;
+
 /// [Index::log_class_rep] 每个成员一次的点查（走 `log_id (col, id, k)`；查询计划测试用同一份）。
 pub(crate) const LOG_REP_SQL: &str =
     "SELECT k, at, card FROM log_ix WHERE col = ?1 AND id = ?2 AND win = 1";
@@ -362,6 +377,13 @@ fn ref_of(text: &str) -> Ref {
 }
 
 fn log_body(l: Log4) -> LogBody {
+    // 承袭的日志带作者给的旧 HLC；原生日志没有，排序键回落到操作自己的 HLC（[Index::log_at]）——Anki 来源的除外：
+    // 它的 HLC 由来源数据派生（铁律 C，`crate::anki_import_rules`）。协议 3 的卡片历史规则（`crate::history`）靠它把
+    // 同一条 revlog 落在血统里几张卡上的副本归成一个事件、把更早的 Anki 复习排在更晚的原生复习之前。
+    let legacy_hlc = match l.hlc {
+        Some(h) => Some(h.text()),
+        None => anki_source_hlc(&l.origin, &l.kind, l.anki_id, l.at),
+    };
     LogBody {
         id: l.id,
         card: l.card,
@@ -383,7 +405,7 @@ fn log_body(l: Log4) -> LogBody {
         intent: l.intent,
         res: l.res,
         extra: l.extra,
-        legacy_hlc: l.hlc.map(|h| h.text()),
+        legacy_hlc,
         legacy_server_time: l.server_time,
     }
 }
@@ -467,7 +489,11 @@ impl<'t, 'c> Index<'t, 'c> {
             }
             out
         };
-        self.cache_pass(&cfg, notes, BTreeSet::new(), true, out)
+        self.cache_pass(&cfg, notes, BTreeSet::new(), true, out)?;
+        // 整份物化完：这一层是按当前推导口径建的（[CACHE_RULES]）。
+        self.t
+            .set_derive_cfg(self.col, RULES_KEY, Some(&CACHE_RULES.to_string()))?;
+        Ok(())
     }
 
     /// 收尾（[Index::settle] 的最后一步）：只重算这一批碰到的。别名表还没重算（[Index::hold_aliases] 攒着）时不动、

@@ -225,7 +225,9 @@ const EDIT_STAMP: u8 = 4;
 const EDIT_KNOWN: u8 = 7;
 
 /// 复习日志。字段与协议 3 的 `LogBody` 一一对应；`hlc` / `server_time` 是它的 `legacy_hlc` / `legacy_server_time`
-/// （作者给日志的旧 HLC、迁移进来的旧日志的 S(e)），只有承袭的日志有——原生日志的排序键就是操作自己的 HLC。
+/// （作者给日志的旧 HLC、迁移进来的旧日志的 S(e)），只有承袭的日志有。原生日志不带：排序键是操作自己的 HLC，
+/// **Anki 来源的例外**——它的 HLC 由来源数据派生（铁律 C，`crate::anki_import_rules::anki_source_hlc`：revlog
+/// `(ankiId, 0, "anki")`、导入锚点 `(at, 1, "anki")`），在日志投影（`store/gen4/cache.rs` `log_body`）里算，不进线格式。
 #[derive(Clone, Debug, PartialEq)]
 pub struct Log4 {
     pub id: Key,

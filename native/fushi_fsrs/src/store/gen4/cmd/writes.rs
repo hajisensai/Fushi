@@ -20,8 +20,10 @@
 //!   `native_allowed` 两道关）。所以：
 //!   - 输入项的 `stamped`（带来源身份的外来修改 / 日志，协议 3 并入旧 profile 用）一律拒：换代后外来数据经并入
 //!     （G9 `collection_join` / `adopt_foreign`）进来，不在本机日志里冒充；
-//!   - 日志事件里的 `hlc` 丢掉（协议 3 存成 `legacy_hlc`）：新代日志的排序键是 (发生时刻, 操作号)（`cache.rs`
-//!     `card_logs`），HLC 就是操作自己的；
+//!   - 日志事件里的 `hlc` 丢掉（协议 3 存成 `legacy_hlc`）：原生日志的排序键（卡片历史规则 `crate::history` 按 HLC
+//!     排、按 HLC 认同一事件的副本）是操作自己的 HLC；**Anki 来源的日志例外**：它的 HLC 由来源数据派生（铁律 C，
+//!     `crate::anki_import_rules` [anki_source_hlc]，与 Dart 导入器写的 `srsImportedRevlogHlc` / `srsImportAnchorHlc`
+//!     逐字相同），在日志投影（`cache.rs` `log_body`）与回包 `logHlcs` 里派生，不落进操作——输入里带的 `hlc` 照样丢；
 //!   - 旧版时钟（`legacyDevice` / `recvNow` / `tickNow` / 输入项的 `clk`）不再存在（设计 §2.4 删旧写入者状态），这些
 //!     键收到也不看；要旧版时钟戳的 `stamps: true` 明确拒绝；
 //!   - 不认识的事件（协议 3 存成 `LegacyUnknown`）明确拒绝：那是协议 1 的残留，新写入不生成。
@@ -42,7 +44,13 @@
 //!     （协议 3 的 `stamps` 给这一项的也是展开出的最后一条操作的身份）。不进 `edits`：它们不是修改记录，撤销记录器按
 //!     差量撤标签（Dart `noteTags`）。
 //!   - `logHlcs`（只在 `apply` 的请求带 `logHlcs: true` 时）：每条写下的日志 `[输入下标, 规范日志 ID, HLC]`，HLC 与
-//!     `read` 的 `logs` 行里的 `hlc` 同形。导入成批的日志不要它（回包会随日志数线性涨）。
+//!     `read` 的 `logs` 行里的 `hlc` 同形（原生日志是操作的 HLC，Anki 来源的是派生 HLC，见上「只写协议 4 原生能收的
+//!     形」）。导入成批的日志不要它（回包会随日志数线性涨）。
+//!   - 修改行（只在 `apply` / `import_drafts` / `change` 的请求带 `editRows: true` 时）：`edits` 里有输入下标的每项后面
+//!     补两列 `[…, 行 JSON, 服务器时刻]`，`tagWrites` 每项后面补一列 `[…, 行 JSON]`——都是收尾之后这条修改 / 这条笔记
+//!     合成的 `tags` 行在 `read` 的 `edits` 里的 `j` / `st`（同一个函数 [super::edit_rows] 出的，逐字相同）；那一行已
+//!     不是活着的（同批后面的写入盖掉了）是 null。调用方（Dart `_emit(stamps: true)` 的 `_writtenEdits`）直接用它拼
+//!     落库后的修改记录，不在命令之后再发一条 `read edits` 回读（T1 `srs_write_preread_cost`）。
 //!   - `entityWrites`（G9-7）：每条落下的身份记录 `[输入下标, 种类, 规范实体 ID]`（输入下标规则同 `edits`）。调用方
 //!     按请求 ID 建实体（Dart `createDeck` / `createNote` / 内置实体），返回给上层的是这里的规范 ID，不拿请求 ID 当
 //!     结果：请求 ID 是别名类的成员时（迁移来的库里持久化的旧 ID、带盐的旧算法），两者不同。
@@ -68,6 +76,7 @@ use super::super::refresh::{TALLY_KEY, Tally};
 use super::super::schema::sql;
 use super::super::truth::Truth;
 use super::{profile_of, ref_of, with_profile};
+use crate::anki_import_rules::anki_source_hlc;
 use crate::gen4::translate::native_body4;
 use crate::registers::{self, StoredEdit};
 use crate::store::caches::NoteInfo;
@@ -114,6 +123,8 @@ pub struct Session<'t, 'c> {
     log_hlcs: Option<Vec<Value>>,
     /// 落下的身份记录，每条 `[输入下标, 种类, 规范实体 ID]`（文件头「回包」`entityWrites`）。
     entity_writes: Vec<Value>,
+    /// 请求带 `editRows: true`：收尾时给 `edits` / `tagWrites` 补上落库修改行（文件头「回包」，[Session::attach_rows]）。
+    edit_rows: bool,
 }
 
 /// 一条写命令（见文件头「一条命令一个事务」）：[f] 在 [Session] 里做命令本体，返回命令自己的回包（JSON 对象）；
@@ -160,7 +171,13 @@ impl<'t, 'c> Session<'t, 'c> {
             tag_writes: Vec::new(),
             log_hlcs: None,
             entity_writes: Vec::new(),
+            edit_rows: false,
         })
+    }
+
+    /// 请求带 `editRows: true` 就在回包里补上落库修改行（文件头「回包」）。
+    pub(super) fn want_edit_rows(&mut self, req: &Value) {
+        self.edit_rows = req.get("editRows") == Some(&Value::Bool(true));
     }
 
     /// 本机身份（作者）的设备 ID。
@@ -245,7 +262,10 @@ impl<'t, 'c> Session<'t, 'c> {
             _ => None,
         };
         let log = match &body {
-            Body::Log(l) if self.log_hlcs.is_some() => Some(l.id.text()),
+            Body::Log(l) if self.log_hlcs.is_some() => Some((
+                l.id.text(),
+                anki_source_hlc(&l.origin, &l.kind, l.anki_id, l.at),
+            )),
             _ => None,
         };
         let b4 = native_body4(body)?;
@@ -263,15 +283,22 @@ impl<'t, 'c> Session<'t, 'c> {
                 self.at,
             ]));
         }
-        if let Some(log_id) = log {
-            // 日志的 HLC 就是它那条操作的（文件头「只写协议 4 原生能收的形」），与 `read` 的 `logs` 行里的 `hlc` 同形
-            // （`cache.rs` 拼日志行的同一个格式）。刚写下的这条按主键点读。
-            let hlc = self
-                .t
-                .entry(self.col, &id)?
-                .and_then(|e| e.op().map(|o| o.hlc))
-                .ok_or_else(|| format!("gen4 write: log {log_id} is not readable after append"))?;
-            let text = format!("{}:{}:{}", hlc.wall, hlc.logical, id.device.text());
+        if let Some((log_id, derived)) = log {
+            // 与 `read` 的 `logs` 行里的 `hlc` 同口径（`cache.rs` `log_body` / `log_at`）：Anki 来源的日志是由来源数据派生的
+            // HLC，原生日志是它那条操作的 HLC（文件头「只写协议 4 原生能收的形」），后者刚写下、按主键点读。
+            let text = match derived {
+                Some(text) => text,
+                None => {
+                    let hlc = self
+                        .t
+                        .entry(self.col, &id)?
+                        .and_then(|e| e.op().map(|o| o.hlc))
+                        .ok_or_else(|| {
+                            format!("gen4 write: log {log_id} is not readable after append")
+                        })?;
+                    format!("{}:{}:{}", hlc.wall, hlc.logical, id.device.text())
+                }
+            };
             if let Some(out) = self.log_hlcs.as_mut() {
                 out.push(json!([self.at, log_id, text]));
             }
@@ -290,6 +317,9 @@ impl<'t, 'c> Session<'t, 'c> {
             self.tally.landed = true;
             self.tally.content = true;
             self.tally.stats = true;
+        }
+        if self.edit_rows {
+            self.attach_rows()?;
         }
         let next = self.t.last_of(self.col, &self.native.device())? + 1;
         if !v.is_object() {
@@ -327,6 +357,62 @@ impl<'t, 'c> Session<'t, 'c> {
                 "cacheStats": self.settled.cache_stats,
             }),
         );
+        Ok(())
+    }
+
+    /// 给回包 `edits` 里有输入下标的每项补上 `[行 JSON, 服务器时刻]`、`tagWrites` 每项补上 `[行 JSON]`（文件头「回包」
+    /// 修改行）。在收尾之后调：行与之后一条 `read edits` 读到的逐字相同（同一个 [super::edit_rows]，按类判定活着的行）。
+    /// 每个碰过的实体只读一次。
+    fn attach_rows(&mut self) -> Result<(), String> {
+        let mut want: BTreeSet<(String, String)> = BTreeSet::new();
+        for e in &self.edits {
+            if e[6].is_null() {
+                continue;
+            }
+            if let (Some(k), Some(id)) = (e[0].as_str(), e[1].as_str()) {
+                want.insert((k.to_owned(), id.to_owned()));
+            }
+        }
+        for tw in &self.tag_writes {
+            if let Some(id) = tw[1].as_str() {
+                want.insert((EntKind::Note.wire().to_owned(), id.to_owned()));
+            }
+        }
+        let mut rows: HashMap<(String, String), Vec<(String, String, Option<i64>)>> =
+            HashMap::with_capacity(want.len());
+        for (k, id) in want {
+            let kind = EntKind::parse(&k)
+                .ok_or_else(|| format!("gen4 write: unknown entity kind {k} in edits"))?;
+            let r = super::edit_rows(self.t, &mut self.ix, kind, &ref_of(&id), &self.profile)?;
+            rows.insert((k, id), r);
+        }
+        let row_of = |k: &str, id: &str, pick: &dyn Fn(&str, &Value) -> bool| -> Value {
+            rows.get(&(k.to_owned(), id.to_owned()))
+                .and_then(|r| {
+                    r.iter().find(|(f, j, _)| {
+                        serde_json::from_str::<Value>(j).is_ok_and(|v| pick(f, &v))
+                    })
+                })
+                .map_or(json!([null, null]), |(_, j, st)| json!([j, st]))
+        };
+        for e in &mut self.edits {
+            if e[6].is_null() {
+                continue;
+            }
+            let (k, id) = (e[0].as_str().unwrap_or(""), e[1].as_str().unwrap_or(""));
+            let (device, seq) = (e[3].clone(), e[4].clone());
+            let found = row_of(k, id, &|_, v| v["w"] == device && v["s"] == seq);
+            if let (Some(arr), Value::Array(pair)) = (e.as_array_mut(), found) {
+                arr.extend(pair);
+            }
+        }
+        for tw in &mut self.tag_writes {
+            let id = tw[1].as_str().unwrap_or("").to_owned();
+            let found = row_of(EntKind::Note.wire(), &id, &|f, _| f == "tags");
+            if let (Some(arr), Value::Array(mut pair)) = (tw.as_array_mut(), found) {
+                arr.push(pair.swap_remove(0));
+            }
+        }
         Ok(())
     }
 
@@ -898,6 +984,7 @@ pub fn apply(t: &Truth<'_>, col: i64, req: &Value, items: &[Value]) -> Result<Va
         if req.get("logHlcs") == Some(&Value::Bool(true)) {
             s.log_hlcs = Some(Vec::new());
         }
+        s.want_edit_rows(req);
         apply_in(
             s,
             now,
@@ -926,6 +1013,7 @@ pub fn import_drafts(
 ) -> Result<Value, String> {
     let now = now_of(req)?;
     write(t, col, |s| {
+        s.want_edit_rows(req);
         let mut existed: BTreeSet<String> = BTreeSet::new();
         for it in items {
             if it["e"]["t"].as_str() != Some("entity") {
