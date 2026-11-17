@@ -113,7 +113,7 @@ MangaPageValidation validateMangaPageLines({
       reject(MangaLineRejection.wrongPage, 'p=$rawPage');
       continue;
     }
-    final MangaLineKind? kind = MangaLineKind.parse(rawKind);
+    final CastLineKind? kind = CastLineKind.parse(rawKind);
     if (kind == null) {
       reject(MangaLineRejection.unknownKind, rawKind);
       continue;
@@ -147,7 +147,7 @@ MangaPageValidation validateMangaPageLines({
       continue;
     }
     final Object? rawEmotion = raw['e'];
-    final MangaEmotion? emotion = MangaEmotion.parse(rawEmotion);
+    final CastEmotion? emotion = CastEmotion.parse(rawEmotion);
     if (rawEmotion != null && emotion == null) {
       reject(MangaLineRejection.unknownEmotion, '$rawEmotion');
       continue;
@@ -201,16 +201,18 @@ String joinMangaBlockTexts(Iterable<String> parts) {
   return out.toString();
 }
 
-/// 一句的台词文本：按 [MangaScriptLine.blocks] 顺序取该页 OCR 块的文字（块内各行直接
-/// 相连），有文本修正时用修正值，再按 [joinMangaBlockTexts] 拼接。越界的块下标跳过
-/// （校验过的行不会出现）。
+/// 一句的台词文本：手动填写了 [MangaScriptLine.say] 就用它；否则按
+/// [MangaScriptLine.blocks] 顺序取该页 OCR 块的文字（块内各行直接相连），有文本修正时
+/// 用修正值，再按 [joinMangaBlockTexts] 拼接。越界的块下标跳过（校验过的行不会出现）。
 String resolveMangaLineText(
   MangaScriptLine line,
   List<MokuroBlock> pageBlocks,
-) => joinMangaBlockTexts(<String>[
-  for (final int b in line.blocks)
-    if (line.textFixes[b] case final String fix)
-      fix
-    else if (b >= 0 && b < pageBlocks.length)
-      pageBlocks[b].lines.join(),
-]);
+) =>
+    line.say ??
+    joinMangaBlockTexts(<String>[
+      for (final int b in line.blocks)
+        if (line.textFixes[b] case final String fix)
+          fix
+        else if (b >= 0 && b < pageBlocks.length)
+          pageBlocks[b].lines.join(),
+    ]);

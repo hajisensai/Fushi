@@ -6,7 +6,7 @@ MangaTimedLine _l(
   int page,
   int durationMs, {
   String speaker = 'A',
-  MangaLineKind kind = MangaLineKind.spoken,
+  CastLineKind kind = CastLineKind.spoken,
   int beatMs = 0,
 }) => MangaTimedLine(
   page: page,
@@ -47,20 +47,20 @@ void main() {
 
     test('内心与说出口切换 900（同一人也算，且优先于换人）', () {
       expect(
-        mangaGapAfter(_l(0, 1, kind: MangaLineKind.thought), _l(0, 1)),
+        mangaGapAfter(_l(0, 1, kind: CastLineKind.thought), _l(0, 1)),
         900,
       );
       expect(
         mangaGapAfter(
           _l(0, 1),
-          _l(0, 1, speaker: 'B', kind: MangaLineKind.mutter),
+          _l(0, 1, speaker: 'B', kind: CastLineKind.mutter),
         ),
         900,
       );
       expect(
         mangaGapAfter(
-          _l(0, 1, kind: MangaLineKind.monologue),
-          _l(0, 1, speaker: 'B', kind: MangaLineKind.thought),
+          _l(0, 1, kind: CastLineKind.monologue),
+          _l(0, 1, speaker: 'B', kind: CastLineKind.thought),
         ),
         450,
       );
@@ -69,8 +69,8 @@ void main() {
     test('叙述与喊不算内心', () {
       expect(
         mangaGapAfter(
-          _l(0, 1, kind: MangaLineKind.narration),
-          _l(0, 1, kind: MangaLineKind.shout),
+          _l(0, 1, kind: CastLineKind.narration),
+          _l(0, 1, kind: CastLineKind.shout),
         ),
         300,
       );
@@ -80,7 +80,7 @@ void main() {
       expect(mangaGapAfter(_l(0, 1, beatMs: 120), _l(1, 1)), 300 + 450 + 120);
       expect(
         mangaGapAfter(
-          _l(0, 1, kind: MangaLineKind.thought, beatMs: 50),
+          _l(0, 1, kind: CastLineKind.thought, beatMs: 50),
           _l(3, 1, speaker: 'B'),
         ),
         900 + 450 + 50,
@@ -280,7 +280,7 @@ void main() {
       );
       expect(
         () => computeMangaTimeline(
-          lines: <MangaTimedLine>[_l(0, 1, kind: MangaLineKind.skip)],
+          lines: <MangaTimedLine>[_l(0, 1, kind: CastLineKind.skip)],
           pageCount: 1,
         ),
         throwsArgumentError,
@@ -301,14 +301,14 @@ void main() {
           page: 4,
           blocks: <int>[0],
           speaker: 'B',
-          kind: MangaLineKind.shout,
+          kind: CastLineKind.shout,
           beatMs: 80,
         ),
         durationMs: 1234,
       );
       expect(
         (t.page, t.speaker, t.kind, t.beatMs, t.durationMs),
-        (4, 'B', MangaLineKind.shout, 80, 1234),
+        (4, 'B', CastLineKind.shout, 80, 1234),
       );
     });
   });

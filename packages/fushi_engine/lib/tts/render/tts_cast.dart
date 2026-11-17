@@ -15,6 +15,10 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/tts/cast/cast_line_kind.dart';
+import 'package:fushi_engine/tts/cast/cast_voice_assignment.dart';
+import 'package:fushi_engine/tts/cast/series_cast.dart';
+
 /// 旁白（叙述）的固定角色名。
 const String kTtsNarrator = '__narrator__';
 
@@ -37,6 +41,8 @@ class TtsCastLine {
     this.emotion,
     this.confidence,
     this.evidence,
+    this.voice,
+    this.say,
   });
 
   /// 角色名；[kTtsNarrator] = 旁白，[kTtsUnknown] = 说话人不明。
@@ -49,6 +55,22 @@ class TtsCastLine {
   /// LLM 自报的把握（0..1）；用户手改的行为 null（视为确定）。
   final double? confidence;
   final TtsCastEvidence? evidence;
+
+  /// 这一句单独指定的声音（「切配置重试」成功后写入，或用户手动指定）；null = 按角色。
+  final String? voice;
+
+  /// 手动填写的要念的文字（替换计划里的念法）；null = 照原文。与漫画演出稿同名字段。
+  final String? say;
+
+  TtsCastLine withOverrides({String? voice, String? say}) => TtsCastLine(
+    speaker: speaker,
+    source: source,
+    emotion: emotion,
+    confidence: confidence,
+    evidence: evidence,
+    voice: voice,
+    say: say,
+  );
 
   /// 需要人看一眼：不明、把握低于 0.7、或无提示推断的台词。
   bool get needsReview =>
@@ -64,6 +86,8 @@ class TtsCastLine {
     if (emotion != null) 'e': emotion,
     if (confidence != null) 'c': confidence,
     if (evidence != null) 'ev': evidence!.name,
+    if (voice != null) 'voice': voice,
+    if (say != null) 'say': say,
   };
 
   static TtsCastLine? fromJson(Object? raw) {
@@ -81,6 +105,10 @@ class TtsCastLine {
       emotion: raw['e'] is String ? raw['e'] as String : null,
       confidence: c is num ? c.toDouble().clamp(0.0, 1.0) : null,
       evidence: evidence,
+      voice: raw['voice'] is String ? raw['voice'] as String : null,
+      say: raw['say'] is String && (raw['say'] as String).trim().isNotEmpty
+          ? raw['say'] as String
+          : null,
     );
   }
 }
@@ -155,14 +183,60 @@ class TtsCast {
   /// 已经跑过 LLM 标注的章（UI 显示进度、重新标注跳过已完成的章）。
   Set<int> annotatedSections;
 
+  /// 这本书所属系列的声音指派（[SeriesCastProfile.voices]，不随本文件落盘）：本书
+  /// 没给角色配声音时回落到系列里记住的声音。
+  CastVoiceAssignment? series;
+
+  /// 本书自己的指派表视图（旁白一行 = 叙述类）。
+  CastVoiceAssignment get ownAssignment => CastVoiceAssignment(
+    narrationVoice: voices[kTtsNarrator],
+    byCharacter: <String, String>{
+      for (final MapEntry<String, String> e in voices.entries)
+        if (e.key != kTtsNarrator) e.key: e.value,
+    },
+  );
+
+  /// 某个角色用的声音：本书 → 系列；null = 任务默认声音。
+  String? voiceOf(String speaker) => ownAssignment.resolveOver(
+    speaker,
+    speaker == kTtsNarrator ? CastLineKind.narration : CastLineKind.spoken,
+    series,
+  );
+
+  /// 声音是不是从系列继承来的（本书没设）。
+  bool voiceInherited(String speaker) =>
+      !voices.containsKey(speaker) && voiceOf(speaker) != null;
+
   bool get isEmpty => lines.isEmpty && voices.isEmpty;
 
   String speakerOf(int section, int matchStart) =>
       lines[ttsLineKey(section, matchStart)]?.speaker ?? kTtsNarrator;
 
-  /// 这一句用哪份声音预设；null = 用任务默认声音。
-  String? presetFor(int section, int matchStart) =>
-      voices[speakerOf(section, matchStart)];
+  /// 这一句用哪份声音预设：句子单独指定 → 角色（本书 → 系列）；null = 任务默认声音。
+  String? presetFor(int section, int matchStart) {
+    final TtsCastLine? line = lines[ttsLineKey(section, matchStart)];
+    return line?.voice ?? voiceOf(line?.speaker ?? kTtsNarrator);
+  }
+
+  /// 这一句手动填写的念法；null = 照原文。
+  String? sayFor(int section, int matchStart) =>
+      lines[ttsLineKey(section, matchStart)]?.say;
+
+  /// 给一句单独指定声音 / 念法（null 清掉）；没有标注行的句子按旁白建一行。
+  void setLineOverrides(
+    int section,
+    int matchStart, {
+    required String? voice,
+    required String? say,
+  }) {
+    final String key = ttsLineKey(section, matchStart);
+    final TtsCastLine base =
+        lines[key] ??
+        // 只为挂覆盖而建的行不算用户标注：之后的 AI 标注照常给它定说话人。
+        const TtsCastLine(speaker: kTtsNarrator, source: TtsCastSource.llm);
+    final String? cleanSay = say == null || say.trim().isEmpty ? null : say;
+    lines[key] = base.withOverrides(voice: voice, say: cleanSay);
+  }
 
   /// 出现过的角色（不含旁白）及台词数，按台词数降序。
   List<({String speaker, int count})> speakers() {
@@ -181,35 +255,31 @@ class TtsCast {
 
   /// 并入 LLM 的一章标注：用户手改过的行保留。
   void mergeLlm(int section, Map<String, TtsCastLine> annotated) {
-    lines.removeWhere(
-      (String key, TtsCastLine line) =>
-          key.startsWith('$section:') && line.source == TtsCastSource.llm,
-    );
+    // 单句声音 / 念法是用户的补回设置，挂在 AI 行上也要跨重新标注保留。
+    final Map<String, TtsCastLine> overrides = <String, TtsCastLine>{};
+    lines.removeWhere((String key, TtsCastLine line) {
+      if (!key.startsWith('$section:') || line.source != TtsCastSource.llm) {
+        return false;
+      }
+      if (line.voice != null || line.say != null) overrides[key] = line;
+      return true;
+    });
     annotated.forEach((String key, TtsCastLine line) {
       final TtsCastLine? existing = lines[key];
       if (existing != null && existing.source == TtsCastSource.user) return;
-      lines[key] = line;
+      final TtsCastLine? kept = overrides.remove(key);
+      lines[key] = kept == null
+          ? line
+          : line.withOverrides(voice: kept.voice, say: kept.say);
     });
+    // 这次没标到的句子：覆盖照样留着（说话人回到它原来的值）。
+    lines.addAll(overrides);
     annotatedSections = <int>{...annotatedSections, section};
   }
 
   /// 并入第一遍抽到的角色：同名合并别名、空特征用新值补上（不覆盖已有值）。
-  void mergeRoster(Iterable<TtsCastCharacter> found) {
-    for (final TtsCastCharacter c in found) {
-      final TtsCastCharacter? old = roster[c.name];
-      if (old == null) {
-        roster[c.name] = c;
-        continue;
-      }
-      roster[c.name] = TtsCastCharacter(
-        name: old.name,
-        aliases: <String>{...old.aliases, ...c.aliases}.toList(),
-        gender: old.gender ?? c.gender,
-        age: old.age ?? c.age,
-        description: old.description ?? c.description,
-      );
-    }
-  }
+  void mergeRoster(Iterable<TtsCastCharacter> found) =>
+      mergeCastRoster(roster, found);
 
   /// 需要人工复核的行数（不明 / 低把握 / 无提示推断）。
   int get reviewCount =>
@@ -217,9 +287,13 @@ class TtsCast {
 
   /// 用户手动改一句的角色。
   void setUserSpeaker(int section, int matchStart, String speaker) {
-    lines[ttsLineKey(section, matchStart)] = TtsCastLine(
+    final String key = ttsLineKey(section, matchStart);
+    final TtsCastLine? old = lines[key];
+    lines[key] = TtsCastLine(
       speaker: speaker,
       source: TtsCastSource.user,
+      voice: old?.voice,
+      say: old?.say,
     );
   }
 
@@ -234,6 +308,8 @@ class TtsCast {
               emotion: line.emotion,
               confidence: line.confidence,
               evidence: line.evidence,
+              voice: line.voice,
+              say: line.say,
             )
           : line,
     );

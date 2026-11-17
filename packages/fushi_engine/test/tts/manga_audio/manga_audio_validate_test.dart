@@ -53,7 +53,7 @@ void main() {
       expect(l.page, 2);
       expect(l.blocks, <int>[1, 0]);
       expect(l.beatMs, 0);
-      expect(l.emotion, MangaEmotion.joy);
+      expect(l.emotion, CastEmotion.joy);
       expect(l.intensity, MangaScriptLimits.maxIntensity);
       expect(l.source, TtsCastSource.llm);
       expect(l.seed, 3);
@@ -164,7 +164,7 @@ void main() {
         page: 0,
         blocks: <int>[2, 0, 1],
         speaker: 'A',
-        kind: MangaLineKind.spoken,
+        kind: CastLineKind.spoken,
         textFixes: <int, String>{1: 'なに'},
       );
       expect(resolveMangaLineText(line, blocks), 'たち。かきく、なに');
@@ -175,7 +175,7 @@ void main() {
         page: 0,
         blocks: <int>[0, 9],
         speaker: 'A',
-        kind: MangaLineKind.spoken,
+        kind: CastLineKind.spoken,
       );
       expect(
         resolveMangaLineText(line, <MokuroBlock>[
