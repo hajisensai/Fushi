@@ -148,16 +148,18 @@ class AnkiVideoTemplateService {
     final AnkiSettings settings = await _validate(expected);
     final AnkiVideoTemplateOptions? options =
         readAnkiVideoTemplateRecoveryOptions(expected);
-    if (options == null)
+    if (options == null) {
       throw const AnkiVideoTemplateException(
         AnkiVideoTemplateErrorCode.noVideoBlock,
       );
+    }
     final String target = _target(settings);
     final Map<String, dynamic>? backup = await _findBackup(target, options);
-    if (backup == null)
+    if (backup == null) {
       throw const AnkiVideoTemplateException(
         AnkiVideoTemplateErrorCode.restoreBackupMissing,
       );
+    }
     final Map<String, String?> originals = Map<String, String?>.from(
       backup['originalMappings'] as Map,
     );
@@ -175,10 +177,11 @@ class AnkiVideoTemplateService {
     AnkiNoteTypeDefinition expected, {
     String? target,
   }) async {
-    if (!supportsEditing)
+    if (!supportsEditing) {
       throw const AnkiVideoTemplateException(
         AnkiVideoTemplateErrorCode.hostOnly,
       );
+    }
     final AnkiSettings settings = await _repository.loadSettings();
     final String? readTarget = target ?? _readTargets[expected];
     if (readTarget == null) {
@@ -327,10 +330,11 @@ class AnkiVideoTemplateService {
     AnkiNoteTypeDefinition after,
   ) async {
     final AnkiNoteTypeDefinition? current = await read(before.name);
-    if (current == null)
+    if (current == null) {
       throw const AnkiVideoTemplateException(
         AnkiVideoTemplateErrorCode.rollbackUnreadable,
       );
+    }
     final Map<String, AnkiCardTemplate> originals = <String, AnkiCardTemplate>{
       for (final AnkiCardTemplate card in before.templates) card.name: card,
     };
@@ -458,13 +462,20 @@ class AnkiVideoTemplateService {
   }
 
   /// 读一份备份；坏的返回 null 并记一条诊断日志。形状也在这里验（`options` /
-  /// `originalMappings` 是调用方要直接取用的两块），调用方不再各自强转。
+  /// `originalMappings` 是调用方要直接取用的两块，连同映射的值类型），调用方之后的
+  /// 取用不会再因为形状抛错。
+  ///
+  /// `options` 必须过得了 [AnkiVideoTemplateOptions.fromJson]（`field` / `placement` /
+  /// `autoplay` 齐全、`placement` 是认得的枚举名）。写入端一直是 `toJson()` 全字段，
+  /// 存量备份都满足；**以后给 options 加字段必须在 `fromJson` 里给缺省值、枚举名不能
+  /// 改**，否则旧备份会在这里被当成坏文件跳过，用户看到的是「找不到原始映射备份」。
   static Future<Map<String, dynamic>?> _readBackup(File file) async {
     try {
       final Object? data = jsonDecode(await file.readAsString());
       if (data is! Map<String, dynamic> || data['originalMappings'] is! Map) {
         throw const FormatException('not a video template backup');
       }
+      Map<String, String?>.from(data['originalMappings'] as Map);
       AnkiVideoTemplateOptions.fromJson(
         data['options'] as Map<String, dynamic>,
       );

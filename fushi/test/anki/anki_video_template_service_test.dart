@@ -448,6 +448,57 @@ void main() {
       );
     });
 
+    // 审查补的形状：JSON 合法、options 也对，但原始映射的值不是字符串 / null。以前这种
+    // 文件过得了读取，随后在取用处抛 TypeError，照样挡住应用 / 恢复。
+    test('原始映射的值类型不对的备份同样跳过', () async {
+      await apply();
+      final File real = (await directory.list().toList())
+          .whereType<File>()
+          .single;
+      final Map<String, dynamic> data =
+          jsonDecode(await real.readAsString()) as Map<String, dynamic>;
+      data['originalMappings'] = <String, Object?>{'Picture': 1};
+      await File(
+        '${directory.path}/${await keyPrefix()}-9999999999999995.json',
+      ).writeAsString(jsonEncode(data));
+
+      await apply('Other');
+      expect(repo.settings.fieldMappings['Other'], '{card-video}');
+      await service.restore(expected: (await service.read('Kiku'))!);
+      expect(repo.settings.fieldMappings['Picture'], '{card-image}');
+      expect(repo.definition.toJson(), baseline.toJson());
+    });
+
+    // 读取端现在会解析 options、校验映射值类型：钉住「当前写入格式的备份读得回来」。
+    // 文件内容按磁盘上的样子逐字写死（不经 toJson），写入格式或读取校验任何一边漂了
+    // 这条就红。原始映射的值可以是 null（应用前该字段没有映射）。
+    test('当前格式的存量备份读得回来（含值为 null 的原始映射）', () async {
+      repo.settings = repo.settings.copyWith(
+        fieldMappings: <String, String>{'Audio': '{sentence-audio}'},
+      );
+      await apply();
+      final File real = (await directory.list().toList())
+          .whereType<File>()
+          .single;
+      final String target =
+          (jsonDecode(await real.readAsString())
+                  as Map<String, dynamic>)['target']
+              as String;
+      await real.writeAsString(
+        '{"version":1,"target":${jsonEncode(target)},'
+        '"definition":{},'
+        '"originalMappings":{"Picture":null},'
+        '"options":{"field":"Picture","placement":"bottom","autoplay":true,'
+        '"previousFields":[]},'
+        '"appliedFingerprint":"x","restoring":false}',
+      );
+      expect(repo.settings.fieldMappings['Picture'], '{card-video}');
+
+      await service.restore(expected: (await service.read('Kiku'))!);
+      expect(repo.settings.fieldMappings.containsKey('Picture'), isFalse);
+      expect(repo.definition.toJson(), baseline.toJson());
+    });
+
     test('只有坏文件时按「没有备份」报，不是 FormatException', () async {
       await apply();
       final String key = await keyPrefix();

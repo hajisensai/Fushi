@@ -35,9 +35,8 @@ class _FakePlayer implements SrsCardVideoPlayer {
   final StreamController<Size> size = StreamController<Size>.broadcast(
     sync: true,
   );
-  final StreamController<String> errors = StreamController<String>.broadcast(
-    sync: true,
-  );
+  final StreamController<String> loadFailed =
+      StreamController<String>.broadcast(sync: true);
   bool atEnd = false;
   bool disposed = false;
 
@@ -77,7 +76,7 @@ class _FakePlayer implements SrsCardVideoPlayer {
   Stream<Size> get videoSizeStream => size.stream;
 
   @override
-  Stream<String> get errorStream => errors.stream;
+  Stream<String> get loadFailedStream => loadFailed.stream;
 
   @override
   bool get isCompleted => atEnd;
@@ -525,8 +524,8 @@ void main() {
     });
 
     // BUG-4794：加载不了的文件（0 字节 / 认不出格式）在 media_kit 里 open 不抛、completed
-    // 不发，只走错误流。以前没接错误流：序列一直等、卡面是黑框。
-    testWidgets('BUG-4794 还没出画面就报错 = 加载失败：序列以 false 结束、落「视频未同步」占位、释放播放器', (
+    // 不发，播放器只是回到空闲。以前抽象上没有这个出口：序列一直等、卡面是黑框。
+    testWidgets('BUG-4794 播放器判加载失败：序列以 false 结束、落「视频未同步」占位、释放播放器', (
       WidgetTester tester,
     ) async {
       await mount(tester);
@@ -537,7 +536,7 @@ void main() {
       expect(p.calls, contains('play'));
       expect(result, isNull, reason: '起播后还在等片段播完');
 
-      p.errors.add('Failed to recognize file format.');
+      p.loadFailed.add('Failed to recognize file format.');
       await settle(tester);
 
       expect(result, isFalse, reason: '序列不再等这段放不了的片段');
@@ -555,13 +554,13 @@ void main() {
       expect(find.text(t.srs_card_media_missing_video), findsOne);
     });
 
-    testWidgets('BUG-4794 没起序列时报加载错误：同样落占位，之后的序列退回只播音频', (
+    testWidgets('BUG-4794 没起序列时判加载失败：同样落占位，之后的序列退回只播音频', (
       WidgetTester tester,
     ) async {
       await mount(tester);
       final _FakePlayer p = players.single;
 
-      p.errors.add('Failed to recognize file format.');
+      p.loadFailed.add('Failed to recognize file format.');
       await settle(tester);
 
       expect(p.disposed, isTrue);
@@ -572,7 +571,9 @@ void main() {
       expect(channel.playToEnd('clip.webm'), isNull);
     });
 
-    testWidgets('BUG-4794 已出画面后的错误（解码器单帧报错等）不算加载失败：照常播完 = true', (
+    // 判据不看「有没有拿到画面尺寸」：容器声明了尺寸、但没有一条轨能播的文件同样是
+    // 加载失败（播放器回空闲），序列不能卡在它上面。
+    testWidgets('BUG-4794 已拿到画面尺寸后才判加载失败：同样结束序列并落占位', (
       WidgetTester tester,
     ) async {
       await mount(tester);
@@ -582,22 +583,18 @@ void main() {
       bool? result;
       unawaited(channel.playToEnd('clip.webm')!.then((bool v) => result = v));
       await settle(tester);
+      expect(result, isNull);
 
-      p.errors.add('Error while decoding frame!');
+      p.loadFailed.add('no audio or video data played');
       await settle(tester);
 
-      expect(result, isNull);
-      expect(p.disposed, isFalse);
-      expect(channel.isAttached('clip.webm'), isTrue);
+      expect(result, isFalse);
+      expect(p.disposed, isTrue);
+      expect(channel.isAttached('clip.webm'), isFalse);
       expect(
         find.byKey(const ValueKey<String>('srs-card-video-missing')),
-        findsNothing,
+        findsOne,
       );
-      expect(find.byKey(const ValueKey<String>('fake-video-view')), findsOne);
-
-      p.emitCompleted();
-      await settle(tester);
-      expect(result, isTrue);
     });
 
     testWidgets('铺满模式：16:9 片段宽 = 父级宽度（300），高不超过铺满上限', (

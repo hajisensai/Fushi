@@ -8,6 +8,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/anki/anki_video_template_error_text.dart';
 import 'package:fushi/src/anki/anki_video_template_page.dart';
 import 'package:fushi/src/anki/anki_video_template_service.dart';
 import 'package:fushi_anki/fushi_anki.dart';
@@ -33,9 +34,9 @@ class _Service implements AnkiVideoTemplateService {
   bool fail = false;
 
   /// 非 null 时对应操作抛它（服务判出来的带码错误，或后端的任意异常）。
-  Object? readError;
-  Object? applyError;
-  Object? restoreError;
+  Exception? readError;
+  Exception? applyError;
+  Exception? restoreError;
   @override
   bool get supportsEditing => true;
   @override
@@ -336,7 +337,7 @@ void main() {
         AppLocale.en,
         AppLocale.zhCn,
       ]) {
-        await LocaleSettings.setLocale(locale);
+        LocaleSettings.setLocale(locale);
         final Set<String> seen = <String>{};
         for (final AnkiVideoTemplateErrorCode code
             in AnkiVideoTemplateErrorCode.values) {

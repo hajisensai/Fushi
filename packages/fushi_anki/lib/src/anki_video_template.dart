@@ -104,8 +104,9 @@ class AnkiVideoTemplateException implements Exception {
       'AnkiVideoTemplateException(${code.name})',
     );
     if (cause != null) buffer.write(': $cause');
-    if (rollbackCause != null)
+    if (rollbackCause != null) {
       buffer.write('; rollback failed: $rollbackCause');
+    }
     return buffer.toString();
   }
 }
