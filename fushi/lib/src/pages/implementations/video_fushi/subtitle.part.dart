@@ -1203,7 +1203,12 @@ extension _VideoSubtitle on _VideoFushiPageState {
     switch (failure) {
       case SubtitleCueLoadFailure.unsupportedFormat:
       case SubtitleCueLoadFailure.extractionFailed:
+      // 取消只发生在退页 / 换集，结果按世代丢弃、到不了这里；列出只为穷尽 switch。
+      case SubtitleCueLoadFailure.extractionCancelled:
         return t.video_subtitle_load_failed(label: label);
+      // 轨没问题、是读视频文件卡住（BUG-4791）：不能说成「图形或不支持的轨」。
+      case SubtitleCueLoadFailure.extractionStalled:
+        return t.video_subtitle_extract_stalled(label: label);
       case SubtitleCueLoadFailure.fileUnreadable:
       case SubtitleCueLoadFailure.parseFailed:
         return t.video_subtitle_read_failed(label: label);
@@ -1235,7 +1240,12 @@ extension _VideoSubtitle on _VideoFushiPageState {
     _showSubtitleLoadingOverlay(origin: VideoSubtitlePickOrigin.player);
     final SubtitleCueLoadResult result;
     try {
-      result = await loadSubtitleCueResult(source, videoPath, bookUid);
+      result = await loadSubtitleCueResult(
+        source,
+        videoPath,
+        bookUid,
+        cancel: _embeddedSubtitleExtractCancelFor(videoPath),
+      );
     } finally {
       _hideSubtitleLoadingOverlay();
     }
@@ -1366,6 +1376,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       source,
       videoPath,
       bookUid,
+      cancel: _embeddedSubtitleExtractCancelFor(videoPath),
     );
     if (!mounted ||
         _controller != controller ||
@@ -3115,6 +3126,25 @@ extension _VideoSubtitle on _VideoFushiPageState {
     cancel.complete();
   }
 
+  /// [videoPath] 的内封文本字幕抽取取消信号（BUG-4791，见
+  /// [_VideoFushiPageState._embeddedSubtitleExtractCancels]）。
+  Future<void> _embeddedSubtitleExtractCancelFor(String videoPath) =>
+      (_embeddedSubtitleExtractCancels[videoPath] ??= Completer<void>()).future;
+
+  /// 撤掉本页对内封文本字幕抽取的等待：[keepVideoPath] 的那份保留，其余全撤。
+  void _cancelEmbeddedSubtitleExtracts([String? keepVideoPath]) {
+    final List<String> stale = <String>[
+      for (final String path in _embeddedSubtitleExtractCancels.keys)
+        if (path != keepVideoPath) path,
+    ];
+    for (final String path in stale) {
+      final Completer<void> cancel = _embeddedSubtitleExtractCancels.remove(
+        path,
+      )!;
+      if (!cancel.isCompleted) cancel.complete();
+    }
+  }
+
   /// 开始整轨转文字前的确认框：说明会用哪个识别引擎（漫画 OCR 设置里的引擎偏好 /
   /// 本机模型）与 AI 重读是否开启，「OCR 设置」直达同一个设置页改模型 / 引擎 /
   /// AI 档位，回来后确认框按新设置重绘。返回是否开始。
@@ -4259,7 +4289,12 @@ extension _VideoSubtitle on _VideoFushiPageState {
     _showSubtitleLoadingOverlay(origin: origin);
     final SubtitleCueLoadResult result;
     try {
-      result = await loadSubtitleCueResult(source, videoPath, bookUid);
+      result = await loadSubtitleCueResult(
+        source,
+        videoPath,
+        bookUid,
+        cancel: _embeddedSubtitleExtractCancelFor(videoPath),
+      );
     } finally {
       _hideSubtitleLoadingOverlay();
     }

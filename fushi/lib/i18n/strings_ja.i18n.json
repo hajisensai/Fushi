@@ -12722,6 +12722,7 @@
   "video_subtitle_error_key_rejected": "${provider} が API キーを拒否しました。字幕設定のキーを確認してください",
   "video_subtitle_error_network": "${provider} に接続できません。ネットワークまたはプロキシを確認してください",
   "video_subtitle_error_with_code": "${msg}（HTTP ${code}）",
+  "video_subtitle_extract_stalled": "Reading the video file stalled while loading this subtitle (drive busy or unreachable): $label",
   "video_subtitle_filter_all": "すべて",
   "video_subtitle_filter_favorites": "お気に入り",
   "video_subtitle_filter_favorites_empty": "お気に入りの行はまだありません",

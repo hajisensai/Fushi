@@ -452,6 +452,17 @@ class VideoPlayerController extends ChangeNotifier
   /// 在途整轨抽取的取消信号（网络流抽取读整条流，换轨 / 换片 / 销毁时撤销）。
   Completer<void>? _graphicTimingCancel;
 
+  /// 本次 [load] 自动抽内封**文本**字幕（[_loadEmbeddedSubtitleIfNeeded]）的取消信号：
+  /// 换片（下一次 [load]）/ 释放媒体句柄 / 销毁时完成，撤掉本控制器对共享整轨抽取的
+  /// 占用——没有别的等待方时 ffmpeg 被强杀，不在后台把旧文件读完（BUG-4791）。
+  Completer<void>? _embeddedTextExtractCancel;
+
+  void _cancelEmbeddedTextExtract() {
+    final Completer<void>? cancel = _embeddedTextExtractCancel;
+    _embeddedTextExtractCancel = null;
+    if (cancel != null && !cancel.isCompleted) cancel.complete();
+  }
+
   /// 整轨抽取出的**位图时间表**（与 [_graphicExtractedTimingCues] 同一次结果，任何来源：
   /// 本地文件 / 网络流 / 互联 host 回传的整轨）。换轨 / 换片清空。
   final ValueNotifier<GraphicSubtitleRegionTrack?> _graphicRegionTrack =
@@ -3295,6 +3306,9 @@ class VideoPlayerController extends ChangeNotifier
       'Provide exactly one of videoFile or mediaUri.',
     );
     final int loadToken = ++_loadToken;
+    // 换片：上一片的内封文本字幕自动抽取作废（BUG-4791），本片另起一个取消信号。
+    _cancelEmbeddedTextExtract();
+    _embeddedTextExtractCancel = Completer<void>();
     // BUG-3767：mpv 不把上一片的 `aid=no` 沿用到新文件，上一片的音频恢复状态作废。
     _audioOutputRecovery.reset();
     // 换片：A-B 端点是旧片的时间轴，作废；有限次数循环数的是旧片那一句，连模式一起关
@@ -4346,10 +4360,12 @@ class VideoPlayerController extends ChangeNotifier
   /// 及 libmpv 正在 demux 播放三方争用磁盘 IO，[probeEmbeddedSubtitleTracks] 可能
   /// 超时返回 0 轨 → `enumerationTimeout`，整条链路当「无内封字幕」处理，用户必须
   /// 退出重开（此时缓存命中 / 争用消退）才出字幕。BUG-303 仅放宽超时窗口未消除
-  /// 时序，故此处对**瞬态失败**（枚举超时 / 失败 / 抽出空 cue——即「本该有字幕但
-  /// 这次没拿到」）等 libmpv 字幕轨真实就绪信号（说明容器字幕区已 demux 进页缓存、
-  /// 三方争用已消退）后**重试一次**，与 BUG-313 章节首载「等就绪信号重读」同构。
-  /// 终态（无内封轨 / 无文本轨 / 文件缺失 / 已加载）不重试。
+  /// 时序，故此处对**瞬态失败**（枚举超时 / 失败——即「本该有字幕但这次没拿到」）
+  /// 等 libmpv 字幕轨真实就绪信号（说明容器字幕区已 demux 进页缓存、三方争用已消退）
+  /// 后**重试一次**，与 BUG-313 章节首载「等就绪信号重读」同构。终态（无内封轨 /
+  /// 无文本轨 / 文件缺失 / 已加载）不重试；选中轨抽取 / 解析失败（`emptyCues`）也不
+  /// 重试——整轨抽取按进度判活，失败已是真失败，重跑只会把整个容器再读一遍（BUG-4791）。
+  /// 抽取带 [_embeddedTextExtractCancel]，换片 / 销毁时撤销。
   Future<void> _loadEmbeddedSubtitleIfNeeded({
     required Player player,
     required int loadToken,
@@ -4366,7 +4382,7 @@ class VideoPlayerController extends ChangeNotifier
     _setSubtitleCuesLoading(true);
     try {
       // 首开瞬态争用重试（TODO-572）：协调器先枚举加载一次，瞬态失败（枚举超时 /
-      // 失败 / 空 cue）时等 libmpv 字幕轨真实就绪后重试一次。换片（含复用同一
+      // 失败）时等 libmpv 字幕轨真实就绪后重试一次。换片（含复用同一
       // player）期间用 player identity + loadToken 双判据丢弃旧结果。
       final DefaultEmbeddedSubtitleLoadResult result =
           await loadDefaultTextEmbeddedSubtitleCuesWithReadinessRetry(
@@ -4375,6 +4391,7 @@ class VideoPlayerController extends ChangeNotifier
             waitForReady: () => _waitUntilSubtitleTracksReady(player),
             isStillCurrent: () => _isCurrentLoad(player, loadToken),
             preferredLanguages: preferredLanguages,
+            cancel: _embeddedTextExtractCancel?.future,
           );
       if (!_isCurrentLoad(player, loadToken)) return;
 
@@ -4395,7 +4412,12 @@ class VideoPlayerController extends ChangeNotifier
           onResult?.call(result);
           return;
         case DefaultEmbeddedSubtitleLoadStatus.emptyCues:
-          debugPrint('[video-embedded-sub] parsed 0 cues from embedded track');
+          // 按真实原因写（BUG-4791）：抽取卡住 / 抽取失败 / 读不出 / 解析不出各不相同，
+          // 旧日志一律写「解析出 0 条 cue」，把读盘卡住误导成字幕轨本身是空的。
+          debugPrint(
+            '[video-embedded-sub] embedded track load failed: '
+            '${result.cueFailure?.name ?? 'unknown'}',
+          );
           onResult?.call(result);
           return;
         case DefaultEmbeddedSubtitleLoadStatus.enumerationTimeout:
@@ -6926,6 +6948,7 @@ class VideoPlayerController extends ChangeNotifier
     _graphicLiveObservedPlayer = null;
     _graphicLiveGeneration++;
     _cancelGraphicTimingFetch();
+    _cancelEmbeddedTextExtract();
     unawaited(_discTrackSub?.cancel());
     unawaited(_discTracksSub?.cancel());
     unawaited(_discLogSub?.cancel());
@@ -7054,6 +7077,7 @@ class VideoPlayerController extends ChangeNotifier
     _graphicLiveObservedPlayer = null;
     _graphicLiveGeneration++;
     _cancelGraphicTimingFetch();
+    _cancelEmbeddedTextExtract();
     unawaited(_discTrackSub?.cancel());
     unawaited(_discTracksSub?.cancel());
     unawaited(_discLogSub?.cancel());

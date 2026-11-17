@@ -12722,6 +12722,7 @@
   "video_subtitle_error_key_rejected": "${provider} rejected the API key. Check the key in subtitle settings",
   "video_subtitle_error_network": "Could not reach ${provider}. Check your network or proxy",
   "video_subtitle_error_with_code": "${msg} (HTTP ${code})",
+  "video_subtitle_extract_stalled": "Reading the video file stalled while loading this subtitle (drive busy or unreachable): $label",
   "video_subtitle_filter_all": "Tümü",
   "video_subtitle_filter_favorites": "Sık kullanılanlar",
   "video_subtitle_filter_favorites_empty": "Henüz favorilere eklenmiş satır yok",

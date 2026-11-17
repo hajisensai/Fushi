@@ -3420,6 +3420,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 对不上，疑似中途切换；本机不可复现，加此守卫兜底竞态）。
   int _episodeLoadSeq = 0;
 
+  /// 本页对内封文本字幕整轨抽取的取消信号，按视频路径分（BUG-4791）：当前集与预热中的
+  /// 下一集各一份。换了视频源时撤掉除新当前集以外的全部，退页时全撤；撤掉只是本页不再
+  /// 等，共享抽取在没有别的等待方时才被强杀（`_ensureAllEmbeddedSubtitlesExtracted`）。
+  final Map<String, Completer<void>> _embeddedSubtitleExtractCancels =
+      <String, Completer<void>>{};
+
   /// 当前播放的视频文件绝对路径（枚举字幕源用）；未 load 时为 null。
   String? _currentVideoPath;
 
@@ -5996,6 +6002,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         external,
         videoPath,
         _activeBookUid,
+        cancel: _embeddedSubtitleExtractCancelFor(videoPath),
       );
       if (cues.isNotEmpty) {
         return (
@@ -6032,6 +6039,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       chosen,
       videoPath,
       _activeBookUid,
+      cancel: _embeddedSubtitleExtractCancelFor(videoPath),
     );
     if (cues.isEmpty) return null;
     return (
@@ -6434,6 +6442,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // isCurrent 丢弃），强杀它在途的抽轨 ffmpeg——否则它在后台把旧文件整个读完，
     // 进度卡与「一次只跑一轨」的闸门一直挂在新视频上。
     if (clipExportSourceChanged) _cancelGraphicSubtitleOcr();
+    // 同理撤掉旧视频的内封文本字幕抽取（BUG-4791）；新当前集（可能正是预热过的
+    // 下一集）的那份保留。
+    if (clipExportSourceChanged) _cancelEmbeddedSubtitleExtracts(videoPath);
     setState(() {
       if (clipExportSourceChanged) _clearClipExportState();
       _controller = controller;
@@ -6512,7 +6523,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // TODO-011: large REMUX containers can spend many seconds demuxing text
       // embedded subtitles on the first switch. Start the shared cache fill
       // only after playback has opened so UI/video startup is not blocked.
-      unawaited(prewarmEmbeddedSubtitleCache(videoPath));
+      unawaited(
+        prewarmEmbeddedSubtitleCache(
+          videoPath,
+          cancel: _embeddedSubtitleExtractCancelFor(videoPath),
+        ),
+      );
       unawaited(_loadDanmakuForVideo(videoPath));
       // 视频内嵌字体（对齐 mpv）：抽 MKV attachment 字体注册进引擎，字幕按 ASS Fontname
       // 命中真实字体。仅本地 + 开「尊重 .ass 样式」时做；远端/无 ffmpeg/无附件静默降级。
@@ -6607,6 +6623,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       pick,
       videoPath,
       bookUid,
+      cancel: _embeddedSubtitleExtractCancelFor(videoPath),
     );
     if (!current() || result.isFailure || result.cues.isEmpty) return;
     controller.setSecondaryCues(result.cues);
@@ -6942,8 +6959,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     }
     if (!result.shouldNotifyFailure) return;
     final String label = result.source?.label ?? t.video_menu_subtitle_track;
+    // 选中轨加载失败按真实原因给文案（BUG-4791：读盘卡住不再说成「图形或不支持的轨」）。
+    final SubtitleCueLoadFailure? cueFailure = result.cueFailure;
+    if (cueFailure == SubtitleCueLoadFailure.extractionCancelled) return;
     _showOsd(
-      t.video_subtitle_load_failed(label: label),
+      cueFailure == null
+          ? t.video_subtitle_load_failed(label: label)
+          : _subtitleFailureMessage(cueFailure, label),
       severity: ToastSeverity.error,
     );
   }
@@ -7005,7 +7027,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final String path = _episodes[cur + 1].path;
     if (path.isEmpty || path == _lastPrewarmedEpisodePath) return;
     _lastPrewarmedEpisodePath = path;
-    unawaited(prewarmEmbeddedSubtitleCache(path));
+    unawaited(
+      prewarmEmbeddedSubtitleCache(
+        path,
+        cancel: _embeddedSubtitleExtractCancelFor(path),
+      ),
+    );
   }
 
   String _safeFileName(String input) =>
@@ -7212,6 +7239,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _discBindingGeneration++;
     // 退页即停整轨转文字：强杀在途的抽轨 ffmpeg（否则它会在后台把整个文件读完）。
     _cancelGraphicSubtitleOcr();
+    // 内封文本字幕的整轨抽取同理（BUG-4791）。
+    _cancelEmbeddedSubtitleExtracts();
     _graphicSubtitleOcrJob.dispose();
     _controller?.removeListener(_onDiscNavigationChanged);
     _controller?.removeListener(_onRemoteDiscBufferingChanged);

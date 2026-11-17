@@ -12722,6 +12722,7 @@
   "video_subtitle_error_key_rejected": "${provider} 拒绝了 API key，请检查字幕设置里填的 key",
   "video_subtitle_error_network": "连不上 ${provider}，请检查网络或代理",
   "video_subtitle_error_with_code": "${msg}（HTTP ${code}）",
+  "video_subtitle_extract_stalled": "加载这条字幕时读取视频文件卡住了（磁盘繁忙或无法访问）：$label",
   "video_subtitle_filter_all": "全部",
   "video_subtitle_filter_favorites": "收藏",
   "video_subtitle_filter_favorites_empty": "暂无收藏的句子",

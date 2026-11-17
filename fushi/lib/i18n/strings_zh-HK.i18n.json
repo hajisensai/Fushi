@@ -12722,6 +12722,7 @@
   "video_subtitle_error_key_rejected": "${provider} 拒絕了 API key，請檢查字幕設定裡填的 key",
   "video_subtitle_error_network": "連不上 ${provider}，請檢查網絡或代理",
   "video_subtitle_error_with_code": "${msg}（HTTP ${code}）",
+  "video_subtitle_extract_stalled": "Reading the video file stalled while loading this subtitle (drive busy or unreachable): $label",
   "video_subtitle_filter_all": "全部",
   "video_subtitle_filter_favorites": "收藏",
   "video_subtitle_filter_favorites_empty": "暫無收藏的句子",
