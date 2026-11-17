@@ -1,5 +1,11 @@
-// 一份 srs.db 里开着两份 profile 时，拿 A 的 SrsDbStore 给出 B 的实体 ID：读不到、写不落，与「哪里都没有的
+// 一份复习库里开着两份 profile 时，拿 A 的 SrsDbStore 给出 B 的实体 ID：读不到、写不落，与「哪里都没有的
 // ID」同样对待（docs/bugs/ 里「复习库按 id 的读写不看 profile」那一条）。
+//
+// 新代（协议 4）里每个 profile 是一个独立的集合，B 的 ID 在 A 的集合里就是「哪里都没有的 ID」：A 的写入口拿它
+// 下手时与拿一个真不存在的 ID 落同样的东西（悬空记录只记在 A 自己的集合里，B 永远看不到），所以这里比的是
+// 「B 的整份真相（导出的全部操作）逐条不变、A 这边多出的操作与给不存在的 ID 时一样多」，不再看协议 3 那几张
+// 带 `profile_uid` 列的共享表。内置实体（默认牌组、内置笔记类型）的 ID 在新代里与 profile 无关、两边相同，
+// 它们是 A 自己的，不能当「B 的 ID」用：B 专属的笔记类型另建一个（按名字派生，两边名字不同）。
 //
 // - 读：笔记 / 笔记类型 / 牌组 / 卡片 / 复习历史 / 修改记录 / 修改历史，逐个入口；
 // - 写：SrsDbStore 的每个按 ID 的写入口（改字段、删笔记、卡片标志、手动排程、作答、牌组、彻底清除、合并重复、
@@ -9,7 +15,7 @@
 // - 正常路径：同样的入口对本 profile 自己的 ID 照常生效。
 import 'dart:convert';
 
-import 'package:drift/drift.dart' show Variable, driftRuntimeOptions;
+import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -25,7 +31,6 @@ import 'package:test/test.dart';
 
 import 'support/srs_fake_engine.dart';
 import 'support/srs_test_storage.dart';
-import 'support/srs_raw_sql.dart';
 
 const String kA = '01928c3e-0000-7000-8000-0000000000a1';
 const String kB = '01928c3e-0000-7000-8000-0000000000b2';
@@ -41,32 +46,26 @@ class _Side {
   late final String card;
   late final String log;
 
+  /// 这一份专属的笔记类型（按名字派生，两份名字不同）。笔记仍用内置 Lapis（它的 ID 两份相同，是各自的）。
+  late final String type;
+
   String get uid => store.profileUid;
-  String get type => store.lapisNoteTypeId;
   String get expression => srsLapisFieldId(uid, 'Expression');
 
-  /// 这一份里测试会用到的全部实体 ID。
-  Set<String> get ids => <String>{
-    uid,
-    deck,
-    store.defaultDeckId,
-    note,
-    twin,
-    card,
-    log,
-    type,
-  };
+  /// 这一份专属的全部实体 ID（不含两份共有的内置实体 ID）。
+  Set<String> get ids => <String>{uid, deck, note, twin, card, log, type};
 
   Future<void> seed(String word) async {
     deck = await store.createDeck('牌组 $word');
+    type = await store.createStockNoteType(SrsStockNoteType.basic, '类型 $word');
     note = await store.createNote(
-      noteTypeId: type,
+      noteTypeId: store.lapisNoteTypeId,
       fieldsById: <String, String>{expression: word},
       deckId: deck,
       tags: <String>['tag-$word'],
     );
     twin = await store.createNote(
-      noteTypeId: type,
+      noteTypeId: store.lapisNoteTypeId,
       fieldsById: <String, String>{expression: word},
       deckId: deck,
     );
@@ -111,97 +110,20 @@ class _Env {
     return _Env(st.core, await side(kA, '魚'), await side(kB, '鳥'));
   }
 
-  /// srs.db 里带 `profile_uid` 列的表 → 它的列（现查，不手抄）。
-  Future<Map<String, List<String>>> _tables() async {
-    final Map<String, List<String>> out = <String, List<String>>{};
-    for (final SrsRawRow r
-        in await db
-            .customSelect(
-              'SELECT m.name AS t, p.name AS c FROM sqlite_master m, '
-              "pragma_table_info(m.name) p WHERE m.type = 'table' "
-              'AND EXISTS (SELECT 1 FROM pragma_table_info(m.name) q '
-              "WHERE q.name = 'profile_uid') ORDER BY m.name, p.cid",
-            )
-            .get()) {
-      (out[r.read<String>('t')] ??= <String>[]).add(r.read<String>('c'));
-    }
-    return out;
-  }
+  SrsDbStore _storeOf(String uid) => uid == a.uid ? a.store : b.store;
 
-  /// [uid] 名下的每一行（表 → 排好序的行文本）：操作日志、投影、缓存、摘要桶、同步元数据全在里面。
-  /// [skip] 里的表不比（本机时钟之类写不写操作都会前进的状态）。每列取 `quote(...)` 的字面量：BLOB（ID、
-  /// 载荷、链哈希）读成 `X'..'` 文本，逐字节可比，也不把 ID 的存储字节交回 Dart。
-  Future<Map<String, List<String>>> dump(
-    String uid, {
-    Set<String> skip = const <String>{},
-  }) async {
-    final Map<String, List<String>> out = <String, List<String>>{};
-    for (final MapEntry<String, List<String>> t in (await _tables()).entries) {
-      if (skip.contains(t.key)) continue;
-      final String columns = <String>[
-        for (final String c in t.value) 'quote("$c") AS "$c"',
-      ].join(', ');
-      final List<String> rows = <String>[
-        for (final SrsRawRow r
-            in await db
-                .customSelect(
-                  'SELECT $columns FROM "${t.key}" WHERE profile_uid = ?',
-                  variables: <Variable<Object>>[
-                    Variable<String>(uid, srsIdType),
-                  ],
-                )
-                .get())
-          r.data.entries
-              .map((MapEntry<String, Object?> e) => '${e.key}=${e.value}')
-              .join(' | '),
-      ]..sort();
-      if (rows.isNotEmpty) out[t.key] = rows;
-    }
-    return out;
-  }
+  /// [uid] 的整份真相：导出的全部操作（身份记录、修改记录、复习日志、不认识的事件；内核 `read events`），每条按
+  /// 规范 JSON 成文、排好序，逐条可比。新代的派生层（卡片 / 笔记缓存、统计投影、摘要）是真相的纯函数，真相逐条
+  /// 不变派生就不变；本机状态（时钟、修订号）不在真相里，不用像协议 3 那样另外跳过。
+  Future<List<String>> dump(String uid) async => <String>[
+    for (final SrsEvent e in await _storeOf(uid).exportAll())
+      jsonEncode(e.toJson()),
+  ]..sort();
 
-  Future<int> _count(String sql, String uid, Iterable<String> ids) async {
-    final List<String> list = ids.toList();
-    return (await db
-            .customSelect(
-              '$sql (${List<String>.filled(list.length, '?').join(',')})',
-              variables: <Variable<Object>>[
-                Variable<String>(uid, srsIdType),
-                for (final String id in list) Variable<String>(id, srsIdType),
-              ],
-            )
-            .getSingle())
-        .read<int>('c');
-  }
-
-  /// [uid] 名下指向 [ids] 的投影行数（身份记录 / 修改记录 / 复习日志 / 两张缓存）。
-  Future<int> rowsPointingAt(String uid, Iterable<String> ids) async {
-    int n = 0;
-    for (final String sql in <String>[
-      'SELECT COUNT(*) AS c FROM srs_entities WHERE profile_uid = ? AND id IN',
-      'SELECT COUNT(*) AS c FROM srs_field_edits WHERE profile_uid = ? '
-          'AND entity_id IN',
-      'SELECT COUNT(*) AS c FROM srs_review_logs WHERE profile_uid = ? '
-          'AND card_id IN',
-      'SELECT COUNT(*) AS c FROM srs_notes_cache WHERE profile_uid = ? '
-          'AND id IN',
-      'SELECT COUNT(*) AS c FROM srs_cards_cache WHERE profile_uid = ? '
-          'AND id IN',
-    ]) {
-      n += await _count(sql, uid, ids);
-    }
-    return n;
-  }
-
-  /// [uid] 的操作日志条数。
+  /// [uid] 的集合里的操作条数（内核 `status` 的 `ops`：全部设备的日志条数；[dump] 是投影后的值，同一字段改两次只剩
+  /// 最后一条，不能拿它数写了几次）。
   Future<int> ops(String uid) async =>
-      (await db
-              .customSelect(
-                'SELECT COUNT(*) AS c FROM sync2_ops WHERE profile_uid = ?',
-                variables: <Variable<Object>>[Variable<String>(uid, srsIdType)],
-              )
-              .getSingle())
-          .read<int>('c');
+      (await _storeOf(uid).sync2Status())['ops']! as int;
 }
 
 /// 一次调用的结局：正常返回（连同返回值的文本）或抛了哪一类错。
@@ -440,9 +362,6 @@ Future<(int, Map<String, Object?>)> _remote(
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
 
-  // A 的写入不会让这几张表里 A 自己的行变化之外再有别的差别：本机时钟 / 修订号（写不写操作都会存一次）。
-  const Set<String> ownVolatile = <String>{'srs_local_state', 'sync2_self'};
-
   group('别的 profile 的 ID：读不到', () {
     late _Env env;
     late SrsDbStore a;
@@ -552,33 +471,15 @@ void main() {
       test(w.key, () async {
         final _Env env = await _Env.open();
         final SrsDbStore a = env.a.store;
-        final Map<String, List<String>> bBefore = await env.dump(kB);
-        final Map<String, List<String>> aBefore = await env.dump(
-          kA,
-          skip: ownVolatile,
-        );
+        final List<String> bBefore = await env.dump(kB);
         final int opsBefore = await env.ops(kA);
 
         final String got = await _outcome(
           () => w.value(a, env.a, _Target.of(env.b)),
         );
+        final int opsForeign = await env.ops(kA) - opsBefore;
 
-        expect(await env.dump(kB), bBefore, reason: 'B 名下的行被动了（$got）');
-        expect(
-          await env.rowsPointingAt(kA, env.b.ids),
-          0,
-          reason: 'A 名下多出了指向 B 的行（$got）',
-        );
-        // 「不是重复」是成对写的：别人那一条不落，自己笔记上那一条（键里带着对方的 ID）照写——它记在 A 自己的实体上，
-        // 与给一个哪里都没有的 ID 时一样。其余入口 A 这边一条操作都不多。
-        if (w.key != 'dismissDuplicates 自己的 + 别人的') {
-          expect(await env.ops(kA), opsBefore, reason: 'A 多写了操作（$got）');
-          expect(
-            await env.dump(kA, skip: ownVolatile),
-            aBefore,
-            reason: 'A 自己的数据被动了（$got）',
-          );
-        }
+        expect(await env.dump(kB), bBefore, reason: 'B 的真相被动了（$got）');
         // B 的 store 读到的也还是原样。
         final SrsNoteView n = (await env.b.store.note(env.b.note))!;
         expect(n.deletedAt, isNull);
@@ -588,33 +489,55 @@ void main() {
         expect(c.hidden, isFalse);
         expect(c.suspended, isFalse);
         expect(c.lastLogId, env.b.log);
+        expect(
+          (await env.b.store.noteType(env.b.type))?.name,
+          '类型 鳥',
+          reason: 'B 专属的笔记类型还在、没被改名（$got）',
+        );
 
-        // 对调用方：与「哪里都没有的 ID」同一类结局（正常返回 / 抛同一类错）。不比返回值——没人的 ID 照旧落一条
-        // 悬空记录，返回的是那条记录。上面的写入什么都没落，这份库还是原样，接着用。
+        // 对调用方：与「哪里都没有的 ID」同一类结局（正常返回 / 抛同一类错），A 这边多出的操作也一样多——没人的
+        // ID 照旧落一条悬空记录（记在 A 自己的集合里），B 的 ID 在 A 的集合里就是没人的 ID。不比返回值（返回的是
+        // 那条悬空记录）。上面的写入没动 B，这份库接着用。
         String kind(String o) => o.startsWith('ok') ? 'ok' : o;
+        final int opsMid = await env.ops(kA);
         final String absent = await _outcome(
           () => w.value(a, env.a, _nowhere(0)),
         );
         expect(kind(got), kind(absent), reason: '别人的 ID：$got；不存在的 ID：$absent');
+        expect(
+          opsForeign,
+          await env.ops(kA) - opsMid,
+          reason: 'A 多写的操作：别人的 ID 与不存在的 ID 不一样多（$got / $absent）',
+        );
+        expect(await env.dump(kB), bBefore, reason: 'B 的真相被动了（$absent）');
       });
     }
 
-    test('改别人的字段：返回的是「没写出任何修改记录」', () async {
+    test('改别人的字段：返回的与改一个不存在的 ID 相同，B 不变', () async {
       final _Env env = await _Env.open();
       final SrsDbStore a = env.a.store;
       final _Side b = env.b;
+      final _Target none = _nowhere(1);
       expect(
-        await a.editFields(SrsEntityKind.note, b.note, <String, Object?>{
+        (await a.editFields(SrsEntityKind.note, b.note, <String, Object?>{
           SrsFieldKeys.noteField(b.expression): '被改',
-        }),
-        isEmpty,
+        }))?.length,
+        (await a.editFields(SrsEntityKind.note, none.note, <String, Object?>{
+          SrsFieldKeys.noteField(none.expression): '被改',
+        }))?.length,
       );
-      // 一批里自己的照写、别人的不写，返回的只有写出的那些。
+      expect((await b.store.note(b.note))!.field(b.expression), '鳥');
+      // 一批里自己的照写；别人的卡与不存在的卡同样处理（要么都落悬空记录、要么都不落），B 的卡不变。
       final List<SrsFieldEdit> out = await a.editFieldsBatch(<SrsFieldChange>[
         SrsFieldChange(SrsEntityKind.card, b.card, SrsFieldKeys.flag, 3),
+        SrsFieldChange(SrsEntityKind.card, none.card, SrsFieldKeys.flag, 3),
         SrsFieldChange(SrsEntityKind.card, env.a.card, SrsFieldKeys.flag, 3),
       ]);
-      expect(out.map((SrsFieldEdit e) => e.entityId), <String>[env.a.card]);
+      final List<String> written = <String>[
+        for (final SrsFieldEdit e in out) e.entityId,
+      ];
+      expect(written, contains(env.a.card));
+      expect(written.contains(b.card), written.contains(none.card));
       expect((await a.cardRow(env.a.card))!.flag, 3);
       expect((await b.store.cardRow(b.card))!.flag, 0);
     });
@@ -647,7 +570,7 @@ void main() {
       test(w.key, () async {
         final _Env env = await _Env.open();
         final int opsBefore = await env.ops(kA);
-        final Map<String, List<String>> bBefore = await env.dump(kB);
+        final List<String> bBefore = await env.dump(kB);
         final String got = await _outcome(
           () => w.value(env.a.store, env.a, _Target.of(env.a)),
         );
@@ -795,12 +718,12 @@ void main() {
       expect((status, body['error']), (status0, body0['error']));
     });
 
-    test('写：B 逐行不变，A 没多出操作', () async {
-      final Map<String, List<String>> bBefore = await env.dump(kB);
-      final int opsBefore = await env.ops(kA);
+    test('写：B 的真相逐条不变，A 的结局与多出的操作同给不存在的 ID 时一样', () async {
+      final List<String> bBefore = await env.dump(kB);
       int request = 0;
-      final Map<String, Map<String, Object?>>
-      writes = <String, Map<String, Object?>>{
+      Map<String, Map<String, Object?>> writesOn(
+        _Target b,
+      ) => <String, Map<String, Object?>>{
         'updateNote': <String, Object?>{
           'note': b.note,
           'fields': <String, String>{b.expression: '被改'},
@@ -854,20 +777,44 @@ void main() {
           'templateMap': <String, String?>{},
         },
       };
-      final Map<String, (int, Object?)> got = <String, (int, Object?)>{};
-      for (final MapEntry<String, Map<String, Object?>> w in writes.entries) {
-        final (int status, Map<String, Object?> body) = await _remote(
-          service,
-          kA,
-          w.key,
-          w.value,
-          request: 'r${request++}',
-        );
-        got[w.key] = (status, body['error']);
+      Future<(Map<String, (int, Object?)>, int)> run(_Target t) async {
+        final int before = await env.ops(kA);
+        final Map<String, (int, Object?)> got = <String, (int, Object?)>{};
+        for (final MapEntry<String, Map<String, Object?>> w in writesOn(
+          t,
+        ).entries) {
+          final (int status, Map<String, Object?> body) = await _remote(
+            service,
+            kA,
+            w.key,
+            w.value,
+            request: 'r${request++}',
+          );
+          got[w.key] = (status, body['error']);
+        }
+        return (got, await env.ops(kA) - before);
       }
+
+      final (Map<String, (int, Object?)> got, int foreignOps) = await run(
+        _Target.of(b),
+      );
       expect(await env.dump(kB), bBefore, reason: '$got');
-      expect(await env.rowsPointingAt(kA, b.ids), 0, reason: '$got');
-      expect(await env.ops(kA), opsBefore, reason: '$got');
+      final (Map<String, (int, Object?)> absent, int absentOps) = await run(
+        _nowhere(2),
+      );
+      expect(await env.dump(kB), bBefore, reason: '$absent');
+      expect(
+        <String, int>{
+          for (final MapEntry<String, (int, Object?)> e in got.entries)
+            e.key: e.value.$1,
+        },
+        <String, int>{
+          for (final MapEntry<String, (int, Object?)> e in absent.entries)
+            e.key: e.value.$1,
+        },
+        reason: '别人的 ID：$got；不存在的 ID：$absent',
+      );
+      expect(foreignOps, absentOps, reason: '$got / $absent');
       // 没有一条回 500（内部错误）：要么照「没有这个实体」正常返回，要么是与不存在同样的 4xx。
       expect(
         got.values.where(((int, Object?) r) => r.$1 >= 500),

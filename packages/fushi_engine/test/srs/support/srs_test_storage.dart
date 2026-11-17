@@ -7,7 +7,14 @@ import 'package:fushi_engine/srs/srs_core_workers.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_srs/fushi_srs.dart'
-    show SrsCore, SrsEntityKind, SrsNoteView;
+    show
+        SrsCore,
+        SrsEntityKind,
+        SrsGen4Migration,
+        SrsGen4MigrationOutcome,
+        SrsGen4MigrationVerdict,
+        SrsNoteView,
+        SrsOpenMode;
 import 'package:test/test.dart';
 
 /// 在临时目录里建一份 srs.db（磁盘文件，WAL；Rust 独占连接）。
@@ -44,6 +51,81 @@ Future<TestSrs> openTestSrsAt(String path) async {
   SrsCoreWorkers.of(core.libraryPath).setQueryConcurrency(core.readConcurrency);
   addTearDown(core.close);
   return (core: core);
+}
+
+/// 新建一个临时**库目录**（新代 [SrsCore.open] 收目录；里面放 `srs.gen.lock`、新代库 `srs4.db`、封存旧库 `srs.db`）。
+/// 注册清理：删目录（Windows 句柄滞后删不掉时留给系统）。清理按注册的倒序跑，先注册目录、后开库，关库就在删目录之前。
+Directory newTestSrsDir([String prefix = 'srs_test_']) {
+  final Directory dir = Directory.systemTemp.createTempSync(prefix);
+  addTearDown(() {
+    try {
+      dir.deleteSync(recursive: true);
+    } on FileSystemException {
+      // 句柄晚释放；临时目录留给系统清理。
+    }
+  });
+  return dir;
+}
+
+/// 在库目录 [dir] 上打开新代复习库（[SrsCore.open]，缺省主进程 Primary；同一目录重开落到同一个库）。注册清理：关库。
+///
+/// 只拿 [SrsCore] 发命令（不经 [SrsDbStore]）的测试，第一条按集合的命令之前要先 [bindTestProfile]；经
+/// [SrsDbStore.open] 打开的不用（它自己先取身份、再登记缓存配置）。
+TestSrs openTestSrsIn(String dir, {SrsOpenMode mode = SrsOpenMode.primary}) {
+  final SrsCore core = SrsCore.open(dir, mode: mode);
+  SrsCoreWorkers.of(core.libraryPath).setQueryConcurrency(core.readConcurrency);
+  addTearDown(core.close);
+  return (core: core);
+}
+
+/// 新代开库的前两步，给只用 [SrsCore] 的测试：`identity`（主进程上没有就建集合、绑定与本机身份——新代里每条按
+/// profile 的命令都要绑定，没绑定报 [SrsProfileUnboundException]）+ `cache_config_set`（派生层要的默认牌组 / 内置
+/// 笔记类型默认值，[srsCacheConfigFor]）。与 [SrsDbStore.open] 同一顺序。返回 identity 回包（`device` / `collection` / `dir`）。
+Map<String, Object?> bindTestProfile(
+  SrsCore core,
+  String profileUid, {
+  int? nowMs,
+}) {
+  final Map<String, Object?> id = core.sync2(<String, Object?>{
+    'op': 'identity',
+    'profile': profileUid,
+    'now': nowMs ?? DateTime.now().millisecondsSinceEpoch,
+  }).map;
+  core.sync2(<String, Object?>{
+    'op': 'cache_config_set',
+    'profile': profileUid,
+    'caches': srsCacheConfigFor(profileUid),
+  });
+  return id;
+}
+
+/// 把一份协议 3 的旧库文件（冻结夹具，[legacyBytes]）放进新库目录当封存旧库 `srs.db`，跑一次换代迁移
+/// （[SrsGen4Migration.run]，缓存配置按旧库里每个 profile 给 [srsCacheConfigFor]），断言提交，再打开新代库。
+/// 这是用户升级时走的同一条路：协议 3 时代冻结下来的向量库，迁移之后用新代的读命令再对一遍。
+Future<TestSrs> openMigratedTestSrs(
+  List<int> legacyBytes, {
+  String prefix = 'srs_migrated_',
+  int? nowMs,
+}) async {
+  final Directory dir = newTestSrsDir(prefix);
+  File(
+    '${dir.path}${Platform.pathSeparator}srs.db',
+  ).writeAsBytesSync(legacyBytes);
+  final List<String> uids = await SrsGen4Migration.legacyProfiles(dir.path);
+  final SrsGen4MigrationOutcome out = await SrsGen4Migration.run(
+    dir.path,
+    caches: <String, Map<String, Object?>>{
+      for (final String u in uids) u: srsCacheConfigFor(u),
+    },
+    nowMs: nowMs ?? DateTime.now().millisecondsSinceEpoch,
+  );
+  expect(
+    out.verdict,
+    SrsGen4MigrationVerdict.committed,
+    reason:
+        'migrating the frozen protocol 3 fixture: ${out.code} ${out.reason}',
+  );
+  return openTestSrsIn(dir.path);
 }
 
 /// 模拟 2026-10-23 之前的老形态：在 [legacy]（主库形态的 FushiDatabase）上用旧表定义建出 9 张
