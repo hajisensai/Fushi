@@ -876,7 +876,7 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       _reanchorClearedAt = DateTime.now();
     }
     // 本方法是播放器监听的同步回调，高亮只能放飞；WebView 正在销毁 / 换文档时
-    // evaluateJavascript 会抛，错误由 logHighlightError 接住记日志（BUG-4797）。
+    // evaluateJavascript 会抛，错误由 logHighlightError 接住记日志（BUG-4798）。
     unawaited(
       AudiobookBridge.highlight(
         _controller!,

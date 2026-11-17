@@ -1,4 +1,4 @@
-## BUG-4797 · 阅读器 cue 变更回调里放飞的高亮 Future 不接错误，WebView 销毁中抛出的异常成为未处理的异步错误
+## BUG-4798 · 阅读器 cue 变更回调里放飞的高亮 Future 不接错误，WebView 销毁中抛出的异常成为未处理的异步错误
 - **报告**：2026-11-17（用户：小说域优化清单 novel-17b，代码复核时发现，非用户现场报告）
 - **真实性**：✅ 真 bug（代码路径确认 + 单测复现「裸放飞 → 未处理的异步错误」，未在真机抓到现场）。根因：
   - `fushi/lib/src/pages/implementations/reader_fushi/audiobook.part.dart` 的 `_onCueChanged` 是播放器 `addListener` 的**同步**回调，里面三处直接调 `AudiobookBridge.highlight(...)`（修复前 `:796` 跨章时清空高亮、`:839` SRT 书不跟随时清空高亮、`:870` 末尾带 cue 的跟随高亮），返回的 Future 既不 await 也不接错误。
