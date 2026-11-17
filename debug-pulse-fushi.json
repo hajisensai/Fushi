@@ -1,12 +1,75 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-17T19:13:05Z",
+ "generatedAt": "2026-11-17T19:30:58Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "538601d4d79d3bfa301baeb6b7b45500f6420d0a",
   "seq": 28844
  },
  "builds": [
+  {
+   "seq": 28844,
+   "version": "3.3.0",
+   "sha": "538601d4d79d3bfa301baeb6b7b45500f6420d0a",
+   "unknown": false,
+   "publishedAt": "2026-11-17T19:30:46Z",
+   "testflight": false,
+   "baseSeq": 28650,
+   "prs": [
+    3721,
+    3693,
+    3712,
+    3718,
+    3707,
+    3705,
+    3694,
+    3696,
+    3701,
+    3719,
+    3700,
+    3697,
+    3706,
+    3708,
+    3698,
+    3709,
+    3699,
+    3710,
+    3711,
+    3704,
+    3703,
+    3715,
+    3713,
+    3714
+   ],
+   "direct": [
+    {
+     "sha": "538601d4d79d3bfa301baeb6b7b45500f6420d0a",
+     "subject": "docs(bugs): 第二批合并后 settle 撞号（→ BUG-4836～4842）"
+    },
+    {
+     "sha": "74d8fa9d3616e22ba70689535b638dd5b6c724ce",
+     "subject": "docs(bugs): 批量合并后 settle 撞号（BUG-4798～4801 → BUG-4802～4835）"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44150320224"
+    },
+    "macos": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44150320224"
+    },
+    "ios": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44150320224"
+    }
+   }
+  },
   {
    "seq": 28650,
    "version": "3.3.0",
@@ -92,7 +155,8 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44060409366"
     },
     "windows": {
      "state": "ok"
@@ -106,65 +170,7 @@
    }
   }
  ],
- "pending": {
-  "headSha": "538601d4d79d3bfa301baeb6b7b45500f6420d0a",
-  "headSeq": 28844,
-  "prs": [
-   3721,
-   3693,
-   3712,
-   3718,
-   3707,
-   3705,
-   3694,
-   3696,
-   3701,
-   3719,
-   3700,
-   3697,
-   3706,
-   3708,
-   3698,
-   3709,
-   3699,
-   3710,
-   3711,
-   3704,
-   3703,
-   3715,
-   3713,
-   3714
-  ],
-  "direct": [
-   {
-    "sha": "538601d4d79d3bfa301baeb6b7b45500f6420d0a",
-    "subject": "docs(bugs): 第二批合并后 settle 撞号（→ BUG-4836～4842）"
-   },
-   {
-    "sha": "74d8fa9d3616e22ba70689535b638dd5b6c724ce",
-    "subject": "docs(bugs): 批量合并后 settle 撞号（BUG-4798～4801 → BUG-4802～4835）"
-   }
-  ],
-  "truncated": false,
-  "platforms": {
-   "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44150320125"
-   },
-   "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44150320224"
-   },
-   "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44150320224"
-   },
-   "ios": {
-    "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44150320224"
-   }
-  }
- },
+ "pending": null,
  "prs": {
   "3644": {
    "number": 3644,
