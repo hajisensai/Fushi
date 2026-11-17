@@ -95,6 +95,12 @@
 | [BUG-4800](bugs/BUG-4800-manga-ocr-cancel-frees-slot-before-isolate-exit.md) | ✅ | ✅ | 漫画 OCR 取消 / 暂停后 isolate 还没退出就释放并发名额，新旧任务同时占模型内存 |
 | [BUG-4799](bugs/BUG-4799-manga-ocr-reopen-recovery-misses-system-ocr-cache.md) | ✅ | ✅ | 重开书恢复增量 OCR 结果时漏掉系统 OCR 的逐页缓存 |
 | [BUG-4798](bugs/BUG-4798-manga-ocr-lens-fill-missing-adopts-other-engine-pages.md) | ✅ | ✅ | Lens 只补缺页时把别的引擎写的整卷产物收作自己的结果，系统 OCR 取消还会写出半卷占位产物 |
+> 共 4155 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4799](bugs/BUG-4799-kavita-page-image-whole-request-timeout.md) | ✅ | ✅ | Kavita 页图 / 封面用整请求超时且不中止，慢链路大页图必失败；同步路径吞掉的失败不留日志 |
+| [BUG-4798](bugs/BUG-4798-manga-split-large-panel-rows-dead.md) | ✅ | ✅ | 分镜大格按行切是死代码：文字框上下排列时被切成竖条 |
 | [BUG-4797](bugs/BUG-4797-feedback-files-share-video-ip-quota.md) | 🚧 | 🚧 | 样本文件与录屏共用每 IP 每天 200 MiB 额度，满额样本文件仍会被 429 挤掉 |
 | [BUG-4796](bugs/BUG-4796-disc-back-double-press-repeat-topmenu.md) | ✅ | ✅ | 原盘正片快速连按两次返回会重复发 topMenu，第二次失败会整盘退出 |
 | [BUG-4795](bugs/BUG-4795-disc-back-to-menu-transient-error-exits.md) | ✅ | ✅ | 原盘正片按返回回盘菜单时，任何暂时性错误都会让整个原盘会话退出 |
