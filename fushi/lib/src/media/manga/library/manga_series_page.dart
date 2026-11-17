@@ -18,6 +18,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/download/manga_download_service.dart';
 import 'package:fushi/src/media/manga/download/online_manga_download_gate.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_studio_page.dart';
 import 'package:fushi/src/media/manga/library/manga_book_ocr.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_list.dart';
 import 'package:fushi/src/media/manga/library/manga_series_download_banner.dart';
@@ -2847,7 +2848,23 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         ShelfMangaSeriesTarget(:final showShelfMenu) => showShelfMenu,
         SourceMangaSeriesTarget() => null,
       };
+      final String? bookKey = _bookKey;
+      final AppModel? appModel = _appModelOrNull;
       return <MediaDetailMenuItem>[
+        if (bookKey != null && appModel != null)
+          MediaDetailMenuItem(
+            key: const ValueKey<String>('manga_series_audio_studio'),
+            icon: FushiIcons.voice,
+            label: t.manga_audio_studio_title,
+            enabled: !_busy,
+            onSelected: () => unawaited(
+              openMangaAudioStudioPage(
+                context,
+                appModel: appModel,
+                bookKey: bookKey,
+              ),
+            ),
+          ),
         if (showShelfMenu != null)
           MediaDetailMenuItem(
             key: const ValueKey<String>('manga_series_manage_volume'),

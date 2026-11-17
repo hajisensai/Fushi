@@ -112,6 +112,16 @@ Future<MangaAudioVolume?> loadMangaAudioVolume(
   if (seriesKey != null) {
     series = await seriesCastStoreFor(appModel).load(seriesKey);
     script.series = series.voices;
+    // 合集派生的系列：展示名取合集名快照（档案落盘时一并记下）。
+    if (series.title.isEmpty && seriesKey.startsWith(kCollectionSeriesPrefix)) {
+      final int? id = int.tryParse(
+        seriesKey.substring(kCollectionSeriesPrefix.length),
+      );
+      final MediaCollectionRow? collection = id == null
+          ? null
+          : await appModel.database.getMediaCollectionById(id);
+      if (collection != null) series.title = collection.name;
+    }
   }
   return MangaAudioVolume(
     row: row,
