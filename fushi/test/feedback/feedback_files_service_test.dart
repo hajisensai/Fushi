@@ -261,6 +261,12 @@ void main() {
       ).existsSync(),
       isFalse,
     );
+    expect(
+      File(
+        p.join(root.path, 'feedback', 'pending', 'abcdefghij', 'f0.type'),
+      ).existsSync(),
+      isFalse,
+    );
 
     // 正常走完：本体在、旁注在，复制中的 .part 不算槽位也不残留。
     Directory(
@@ -277,6 +283,22 @@ void main() {
     expect(await store.scan(), <String, Set<String>>{
       'abcdefghij': <String>{'f0'},
     });
+    // 上次进程在 f1 复制中途崩溃（.part 与旁注都留着、本体没落地）：load 时清掉，
+    // 不让它一直占着磁盘；已落地的 f0 不受影响。
+    File(
+      p.join(root.path, 'feedback', 'pending', 'abcdefghij', 'f1.name'),
+    ).writeAsStringSync('b.log');
+    await service().load();
+    for (final String leftover in <String>['f1.part', 'f1.name']) {
+      expect(
+        File(
+          p.join(root.path, 'feedback', 'pending', 'abcdefghij', leftover),
+        ).existsSync(),
+        isFalse,
+        reason: leftover,
+      );
+    }
+    expect(await store.nameOf('abcdefghij', 'f0'), '复现 步骤.md');
   });
 
   test('待传样本文件缺原文件名旁注：当损坏丢掉，不编假名上传', () async {

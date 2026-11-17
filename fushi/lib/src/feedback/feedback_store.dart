@@ -327,9 +327,38 @@ class FeedbackPendingStore {
       await _nameFile(id, slot).writeAsString(name, flush: true);
       return await part.rename(f.path);
     } on Object {
-      // 没走完：半成品不留（异常照样抛给调用方记日志）。
-      if (part.existsSync()) await part.delete();
+      // 没走完：半成品与已写的旁注都不留（本体此前已删，旁注不属于任何槽位；异常照样抛给
+      // 调用方记日志）。
+      await _deleteInterrupted(id, slot);
       rethrow;
+    }
+  }
+
+  /// 删掉一次没走完的 [copyFile] 留下的 `<槽位>.part`，以及本体不在时孤立的旁注。
+  Future<void> _deleteInterrupted(String id, String slot) async {
+    final File part = _partFile(id, slot);
+    if (part.existsSync()) await part.delete();
+    if (_file(id, slot).existsSync()) return;
+    final File type = _typeFile(id, slot);
+    if (type.existsSync()) await type.delete();
+    final File name = _nameFile(id, slot);
+    if (name.existsSync()) await name.delete();
+  }
+
+  /// 清掉上次进程在 [copyFile] 中途崩溃 / 断电留下的 `.part`（最多 100 MB 一个，不算槽位，
+  /// 否则只有「从本机移除」整条反馈才会被删）。只能在本进程还没有 [copyFile] 在跑时调：
+  /// [FeedbackService] 在 load 里、任何提交之前调用。
+  Future<void> discardInterrupted() async {
+    if (!_root.existsSync()) return;
+    for (final FileSystemEntity d in _root.listSync()) {
+      if (d is! Directory) continue;
+      for (final FileSystemEntity f in d.listSync()) {
+        if (f is! File || p.extension(f.path) != '.part') continue;
+        await _deleteInterrupted(
+          p.basename(d.path),
+          p.basenameWithoutExtension(f.path),
+        );
+      }
     }
   }
 

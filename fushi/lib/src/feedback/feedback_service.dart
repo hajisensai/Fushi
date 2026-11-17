@@ -322,8 +322,10 @@ class FeedbackService extends ChangeNotifier {
   Future<void> _load() async {
     _tickets = await (await _storeFor()).read();
     try {
-      final Map<String, Set<String>> pending = await (await _pendingFor())
-          .scan();
+      final FeedbackPendingStore store = await _pendingFor();
+      // 提交（唯一会 copyFile 的路径）都先 await load()，此刻没有复制在跑。
+      await store.discardInterrupted();
+      final Map<String, Set<String>> pending = await store.scan();
       _pending
         ..clear()
         ..addAll(pending);
