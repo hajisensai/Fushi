@@ -1,12 +1,40 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-18T12:34:34Z",
+ "generatedAt": "2026-11-18T13:22:00Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "5ebe5543214611908771a25872dc9a9ce4f43f70",
   "seq": 29071
  },
  "builds": [
+  {
+   "seq": 29071,
+   "version": "3.4.0",
+   "sha": "5ebe5543214611908771a25872dc9a9ce4f43f70",
+   "unknown": false,
+   "publishedAt": "2026-11-18T13:21:48Z",
+   "testflight": true,
+   "baseSeq": 29065,
+   "prs": [
+    3520
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "ok"
+    },
+    "macos": {
+     "state": "ok"
+    },
+    "ios": {
+     "state": "ok"
+    }
+   }
+  },
   {
    "seq": 29065,
    "version": "3.3.0",
@@ -60,7 +88,7 @@
    "unknown": false,
    "publishedAt": "2026-11-18T08:37:54Z",
    "testflight": true,
-   "baseSeq": 28910,
+   "baseSeq": 28845,
    "prs": [
     3677,
     3691,
@@ -72,7 +100,16 @@
     3566,
     3605,
     3557,
-    3554
+    3554,
+    3724,
+    3662,
+    3737,
+    3727,
+    3726,
+    3640,
+    3678,
+    3649,
+    3656
    ],
    "direct": [
     {
@@ -95,71 +132,9 @@
      "state": "ok"
     }
    }
-  },
-  {
-   "seq": 28910,
-   "version": "3.3.0",
-   "sha": "1d3b256ddb4c3417bf1abe6dcf98b280f96429dc",
-   "unknown": false,
-   "publishedAt": "2026-11-18T03:53:02Z",
-   "testflight": true,
-   "baseSeq": 28845,
-   "prs": [
-    3724,
-    3662,
-    3737,
-    3727,
-    3726,
-    3640,
-    3678,
-    3649,
-    3656
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
   }
  ],
- "pending": {
-  "headSha": "5ebe5543214611908771a25872dc9a9ce4f43f70",
-  "headSeq": 29071,
-  "prs": [
-   3520
-  ],
-  "direct": [],
-  "truncated": false,
-  "platforms": {
-   "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44304649678"
-   },
-   "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44304650085"
-   },
-   "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44304650085"
-   },
-   "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44304650085"
-   }
-  }
- },
+ "pending": null,
  "prs": {
   "3467": {
    "number": 3467,
