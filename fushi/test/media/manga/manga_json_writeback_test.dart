@@ -95,6 +95,28 @@ void main() {
     });
   });
 
+  test(
+    'parseMangaJsonOffUi / parseMokuroOffUi: isolate result equals in-place parse',
+    () async {
+      final File file = _writeTempMangaJson();
+      final String source = file.readAsStringSync();
+      final MokuroPayload offUi = await parseMangaJsonOffUi(source);
+      expect(
+        mangaPayloadToJson(offUi),
+        mangaPayloadToJson(parseMangaJson(source)),
+      );
+      const String mokuro =
+          '{"version":"0.2.0","title":"t","volume":"v","pages":['
+          '{"img_path":"p1.jpg","img_width":10,"img_height":20,"blocks":[]}]}';
+      final MokuroPayload external = await parseMokuroOffUi(mokuro);
+      expect(
+        mangaPayloadToJson(external),
+        mangaPayloadToJson(parseMokuro(mokuro)),
+      );
+      expect(external.images, hasLength(1));
+    },
+  );
+
   group('writeMangaJsonAtomically', () {
     test('rename 直接覆盖已存在的目标：绝不先 delete（那是唯一的原子性缺口）', () async {
       final File file = _writeTempMangaJson();

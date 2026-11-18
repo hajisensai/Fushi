@@ -193,13 +193,19 @@ class MangaCookieJar {
     }
   }
 
-  /// 当前对 [url] 生效（域匹配且未过期）的 cookie。
+  /// 当前对 [url] 生效（域匹配、未过期、`Secure` 的只给 https）的 cookie。
+  ///
+  /// `Secure` 判据写在这里一次：出站桥、封面、章节插图都从这里取，正文里一张
+  /// `http://同站/...` 的图不该把标了 `Secure` 的登录会话明文带出去。
   List<MangaCookie> cookiesFor(Uri url) {
     final int now = _clock();
+    final bool secureChannel = url.scheme == 'https';
     return _cookies
         .where(
           (MangaCookie cookie) =>
-              !cookie.isExpiredAt(now) && cookie.matchesHost(url.host),
+              !cookie.isExpiredAt(now) &&
+              cookie.matchesHost(url.host) &&
+              (secureChannel || !cookie.secure),
         )
         .toList(growable: false);
   }

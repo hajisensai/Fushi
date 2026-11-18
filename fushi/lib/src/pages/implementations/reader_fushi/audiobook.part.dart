@@ -793,7 +793,11 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
         cue.textFragmentId,
       );
       if (frag != null && frag.sectionIndex != _currentChapter) {
-        AudiobookBridge.highlight(_controller!);
+        unawaited(
+          AudiobookBridge.highlight(
+            _controller!,
+          ).catchError(AudiobookBridge.logHighlightError),
+        );
         return;
       }
       if (frag == null && _srtCueChapterMap != null) {
@@ -836,7 +840,11 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
             // 序号；navTarget 已剔除「反查不到 / 目录页 / 同章」三种保位情况。
             _navigateToChapter(navTarget, progress: progress ?? 0.0);
           } else {
-            AudiobookBridge.highlight(_controller!);
+            unawaited(
+              AudiobookBridge.highlight(
+                _controller!,
+              ).catchError(AudiobookBridge.logHighlightError),
+            );
           }
           return;
         }
@@ -867,12 +875,16 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     if (reveal) {
       _reanchorClearedAt = DateTime.now();
     }
-    AudiobookBridge.highlight(
-      _controller!,
-      cue: cue,
-      reveal: reveal,
-      pauseEnabled: pauseEnabled,
-      fromChapterStart: _consumeAudioChapterArrival(cue),
+    // 本方法是播放器监听的同步回调，高亮只能放飞；WebView 正在销毁 / 换文档时
+    // evaluateJavascript 会抛，错误由 logHighlightError 接住记日志（BUG-4811）。
+    unawaited(
+      AudiobookBridge.highlight(
+        _controller!,
+        cue: cue,
+        reveal: reveal,
+        pauseEnabled: pauseEnabled,
+        fromChapterStart: _consumeAudioChapterArrival(cue),
+      ).catchError(AudiobookBridge.logHighlightError),
     );
     // reveal 落定后的进度补刷（B-3 窗吃掉了跟随滚动的 scroll 回传，见方法注释）。
     if (reveal) _scheduleReanchorSettleProgressRefresh();

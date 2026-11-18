@@ -154,7 +154,8 @@ void main() {
             '_reanchorClearedAt，否则动画落定尾沿 scroll 触发 _refreshProgress 重绘 / '
             'TODO-798 二次复位 = 闪屏（撤此打点即闪屏回归）',
       );
-      final int highlightIdx = body.indexOf('AudiobookBridge.highlight(\n');
+      // 末尾那一处才是带 cue 的跟随高亮（前面两处是跨章时清空高亮）。
+      final int highlightIdx = body.lastIndexOf('AudiobookBridge.highlight(\n');
       expect(
         highlightIdx,
         greaterThanOrEqualTo(0),

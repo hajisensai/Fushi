@@ -973,6 +973,11 @@ void main() {
           '/remote/manga/Vol1/chapter/002.png': png('b.png', width: 30),
           '/remote/manga/Vol1/manga_ocr_out/ocr.png': png('c.png'),
           '/remote/manga/Vol1/notes.txt': png('d.png'),
+          // BUG-4831：macOS 资源叉与群晖缩略图目录，扩展名都是页图。
+          '/remote/manga/Vol1/._001.png': png('f.png'),
+          '/remote/manga/Vol1/@eaDir/001.png/SYNOPHOTO_THUMB_M.png': png(
+            'g.png',
+          ),
           '/remote/manga/Vol2/001.png': png('e.png'),
         });
         final int sid = await db.insertMediaSource(
@@ -1011,7 +1016,11 @@ void main() {
           isTrue,
         );
         expect(books.every((EpubBookRow b) => b.sourceId == sid), isTrue);
-        expect(fs.copyToLocalCalls, 3, reason: '只下三张页图：OCR 产物目录与非图片文件不下载');
+        expect(
+          fs.copyToLocalCalls,
+          3,
+          reason: '只下三张页图：OCR 产物目录、非图片文件、._ 资源叉与 @eaDir 缩略图不下载',
+        );
         // 子目录布局原样保留（与本地散图卷同构）：Vol1 两页都在。
         final Map<String, Object?> manifest =
             jsonDecode(

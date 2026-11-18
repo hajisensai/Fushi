@@ -1,0 +1,6 @@
+## BUG-4834 · 制卡交接页把机器驱动的播放头写成本书续播点，并在开跑前后计观看
+- **报告**：2026-11-17（网页视频只读补查 gap-webvideo-7，复核 confirmed）
+- **真实性**：✅ 真 bug（代码确证）。`fushi/lib/src/pages/implementations/web_video_fushi_page.dart:970-973`（修前）`_onState` 写进度 / 起观看采样的门是 `!_mineRunning && !widget.closeAfterMining`，`fushi/lib/src/pages/implementations/web_video_fushi_page.dart:799` dispose 的 `_flushPosition` 只排除 `closeAfterMining`——交接页（`returnHostingAfterMining != null`）不在排除之列，而它和后台制卡页一样整页都是机器驱动（`_isMiningHost` 早就定义了，只用于静音与残留还原）。后果：交接页开跑前（站点自动播放）与跑完到换回原档之间，每秒把播放头写成续播点并建 `VideoWatchTracker` 采样；跑完 `_reopen` 用 `pushReplacement` 换页，交接页 dispose 必把「最后一句重放处」写库一次。之后靠换回的页面恢复 seek 后覆盖；恢复没成功（`mineReturnState` 为 null / 超过期限）或覆盖前进程退出，库里留的就是重放位置。原页重放途中被关掉时 dispose 的 flush 同样写的是重放位置。
+- **[x] ① 已修复**（`e40b885fc55`）— 新判据 `_playheadIsUsers => !_mineRunning && !_isMiningHost`：`_onState` 用它决定写不写进度、起不起采样；续播点写库的唯一出口 `_persistPosition` 开头也判一次（每秒写、dispose flush、切宿主档 flush 都经它）。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/web_video_mine_queue_guard_test.dart`「BUG-4834」组（源码守卫：判据定义、`updatePosition` 只有一个调用点且在判据之后、`_syncWatchTracker()` 只在判据块内调用）。页面要真 WebView2，行为层单测落不了地。
+- **备注**：待真机复测——窗口档看到某处，手动 / 空闲触发交接制卡，跑完换回后（以及交接途中直接杀进程后重开）续播点仍是用户原来的位置；统计页观看时长不含重放那几分钟。未改：原页重放结束到恢复 seek 落定之间仍可能写一两拍重放位置（之后被恢复后的位置覆盖），属既有行为。观看时长是否真被多记取决于空闲门，未实测。

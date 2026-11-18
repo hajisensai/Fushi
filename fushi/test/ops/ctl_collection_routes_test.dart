@@ -48,6 +48,7 @@ MediaCollectionItemRow _row(String mediaType, String entryKey) =>
       mediaType: mediaType,
       entryKey: entryKey,
       sortIndex: 0,
+      pinnedByUser: false,
     );
 
 Matcher _status(int status) => throwsA(

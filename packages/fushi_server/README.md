@@ -38,7 +38,7 @@ fushi_server/
 
 解压到任意目录即可（例 `/opt/fushi_server`）。**目标机运行期依赖**：
 
-- Linux：glibc ≥ 2.35（Debian 12 / Ubuntu 22.04 及以后）。内置 torrent 引擎与 onnxruntime 都随包、静态，不用装 `libtorrent-rasterbar` / `libssl`。
+- Linux：glibc ≥ 2.35（Debian 12 / Ubuntu 22.04 及以后）。内置 torrent 引擎与 onnxruntime 都随包、静态，不用装 `libtorrent-rasterbar` / `libssl`。CI 产物（`build-multiplatform.yml`）与正式发布包（`release-server.yml`）都在 ubuntu-22.04 上编，出包前 `.github/scripts/check_glibc_baseline.sh` 对 bundle 里每个 ELF 跑 `objdump -T`，要求的 GLIBC_ 版本超过这里写的基线就判红（基线数字只在该脚本与本句两处，改一处必须改另一处）。
 - `ffmpeg` / `ffprobe`：视频封面抽帧、ASR 音轨解码、下载后转封装。不在 PATH 时在配置里写 `ffmpeg:` / `ffprobe:` 路径（直接生效，不需要环境变量；`FUSHI_FFMPEG` 仍认，配置优先）。
 - 局域网自动发现（可选）：`avahi-utils`（有 `avahi-publish` 就广播 `_fushi-sync._tcp`；没有也能手输地址配对）。
 
@@ -627,7 +627,7 @@ DB 的 `dictionary_history` / `search_history_items`）。`/api/capabilities` �
   Linux 自编：`CC=gcc-14 CXX=g++-14 bash native/fushidicts/build_linux_so.sh`，产物
   `native/fushidicts/prebuilt/linux-x64/libfushidicts_ffi.so`（静态链 libstdc++，只动态依赖 glibc；需要支持
   `std::ranges::to` 的编译器，即 GCC 14+，GCC 13 编不过）。CI 的 `build-multiplatform.yml` linux-server 产物与正式发布包
-  （`release-server.yml`，ubuntu-22.04，GCC 14 PPA 编译并断言 glibc ≤ 2.35）都已随包这份 .so 与变形表；
+  （`release-server.yml`）都在 ubuntu-22.04 上用 GCC 14 PPA 编译、出包前统一核 glibc 基线，都已随包这份 .so 与变形表；
   Windows 发布包随包 MSVC 编的 `lib/fushidicts_ffi.dll` 与同一份变形表（自编：`cmake -S native/fushidicts -B <短路径>
   -G "Visual Studio 17 2022" -A x64` 后 `cmake --build <短路径> --config Release --target fushidicts_ffi`）。
 - 去屈折变形表：`FUSHI_TRANSFORMS_DIR` → `bin/../share/fushi/transforms/` → `bin/transforms/`（目录里要有

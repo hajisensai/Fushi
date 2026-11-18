@@ -124,8 +124,11 @@ enum AiFeature {
   /// 作品图谱裁决（`ai_media_link_assistant.dart`，spec
   /// `docs/specs/2026-10-24-cross-media-links.md`「AI 辅助判断」）：确定性规则缩出的
   /// 候选（标题对得上但没有共享 id 的跨模块条目）交 AI 判是否同一作品、关系与方向。
-  /// AI 只按候选下标回结论，不产生任何 id；结论一律写成建议，用户确认后才算事实。
-  /// 只在用户点「查找相关作品」时发请求。
+  /// AI 只按候选下标回结论，不产生任何 id。结论按 AI 库管家设计稿 §5.2 的门槛落库：
+  /// 证据够强 / AI 置信度够高的直接**生效**（`confirmed_by = ai`，可撤销，用户确认后
+  /// 升为 `user`，用户移除即否决墓碑），其余写成建议或丢弃；用户确认 / 否决过的一对
+  /// 条目 AI 永远不改（`applyMediaLinkCandidates`）。只在用户点「查找相关作品」时
+  /// 发请求。
   mediaLinks,
 
   /// AI 助手（spec `docs/specs/2026-10-26-ai-operations-agent-design.md`）：用户用一句
