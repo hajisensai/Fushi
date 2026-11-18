@@ -1,12 +1,43 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-18T21:38:25Z",
+ "generatedAt": "2026-11-18T22:01:58Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "7aeb1612a3c7fe5706d0c42edcda462546c5ed4c",
   "seq": 29089
  },
  "builds": [
+  {
+   "seq": 29089,
+   "version": "3.4.0",
+   "sha": "7aeb1612a3c7fe5706d0c42edcda462546c5ed4c",
+   "unknown": false,
+   "publishedAt": "2026-11-18T22:01:44Z",
+   "testflight": false,
+   "baseSeq": 29087,
+   "prs": [
+    3747
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44394996540"
+    },
+    "macos": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44394996540"
+    },
+    "ios": {
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44394996540"
+    }
+   }
+  },
   {
    "seq": 29087,
    "version": "3.4.0",
@@ -100,7 +131,8 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44362713326"
     },
     "windows": {
      "state": "ok"
@@ -114,33 +146,7 @@
    }
   }
  ],
- "pending": {
-  "headSha": "7aeb1612a3c7fe5706d0c42edcda462546c5ed4c",
-  "headSeq": 29089,
-  "prs": [
-   3747
-  ],
-  "direct": [],
-  "truncated": false,
-  "platforms": {
-   "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44394996580"
-   },
-   "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44394996540"
-   },
-   "macos": {
-    "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44394996540"
-   },
-   "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44394996540"
-   }
-  }
- },
+ "pending": null,
  "prs": {
   "3467": {
    "number": 3467,
