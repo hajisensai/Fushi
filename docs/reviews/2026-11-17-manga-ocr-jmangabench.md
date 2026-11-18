@@ -22,7 +22,7 @@
 | 标点 | 50 | | 省略号、长音、感叹号一类 |
 | 多读进注音 | 7 | | |
 
-前两类都在识别之前，占了字错的大半；根因与修复见 [BUG-4797](../bugs/BUG-4797-manga-ctc-body-column-dropped-as-ruby.md)。
+前两类都在识别之前，占了字错的大半；根因与修复见 [BUG-4891](../bugs/BUG-4891-manga-ctc-body-column-dropped-as-ruby.md)。
 
 ## 2. 修复后的数字
 
