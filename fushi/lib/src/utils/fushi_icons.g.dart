@@ -82,6 +82,12 @@ abstract final class FushiIcons {
     fontFamily: kFushiSymbolsFontFamily,
   );
 
+  /// 生成字幕 / 字幕工作台（语音转文字）：Symbols `transcribe`（取代 Icons.transcribe_outlined / Icons.transcribe）
+  static const IconData transcribe = IconData(
+    0xf8ec,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
   /// 合集：Symbols `collections_bookmark`（取代 Icons.collections_bookmark_outlined / Icons.collections_bookmark）
   static const IconData collection = IconData(
     0xe431,
@@ -1780,6 +1786,7 @@ abstract final class FushiIcons {
     'audiobook': audiobook,
     'dictionary': dictionary,
     'subtitles': subtitles,
+    'transcribe': transcribe,
     'collection': collection,
     'tag': tag,
     'statistics': statistics,
@@ -2441,6 +2448,7 @@ abstract final class FushiIcons {
     0xf539: IconData(0xf539, fontFamily: kFushiSymbolsFilledFontFamily),
     0xf7e4: IconData(0xf7e4, fontFamily: kFushiSymbolsFilledFontFamily),
     0xf8b6: IconData(0xf8b6, fontFamily: kFushiSymbolsFilledFontFamily),
+    0xf8ec: IconData(0xf8ec, fontFamily: kFushiSymbolsFilledFontFamily),
   };
 }
 
@@ -2917,4 +2925,5 @@ kFushiSymbolAppleMap = <int, (IconData, IconData)>{
     CupertinoIcons.exclamationmark_circle,
     CupertinoIcons.exclamationmark_circle_fill,
   ),
+  0xf8ec: (CupertinoIcons.captions_bubble, CupertinoIcons.captions_bubble_fill),
 };

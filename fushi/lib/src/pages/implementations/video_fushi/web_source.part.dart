@@ -982,7 +982,7 @@ extension _VideoWebSource on _VideoFushiPageState {
             _subtitleStudioAvailable(controller)) ...<Widget>[
           FushiListTileControl(
             key: const ValueKey<String>('video-web-subtitle-studio'),
-            leading: const FushiIcon(Icons.transcribe_outlined),
+            leading: const FushiIcon(FushiIcons.transcribe),
             title: Text(t.video_subtitle_studio_title),
             subtitle: Text(t.video_subtitle_studio_entry_hint),
             onTap: () => unawaited(_openSubtitleStudio(controller)),

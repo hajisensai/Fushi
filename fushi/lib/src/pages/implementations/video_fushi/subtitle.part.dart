@@ -241,7 +241,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       if (_subtitleStudioAvailable(controller))
         FushiListTileControl(
           key: const ValueKey<String>('video-subtitle-studio'),
-          leading: const FushiIcon(Icons.transcribe_outlined),
+          leading: const FushiIcon(FushiIcons.transcribe),
           title: Text(t.video_subtitle_studio_title),
           subtitle: Text(t.video_subtitle_studio_entry_hint),
           enabled: !_subtitleLoadingShown,
