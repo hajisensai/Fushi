@@ -898,7 +898,7 @@ void main() {
       expect(calls.last.method, 'stopSystemBall');
     });
 
-    testWidgets('查词模块关着：应用外球不下发「查词」「应用外查词」「截屏识字」，模块打开后重新同步补上', (
+    testWidgets('查词模块关着：应用外球只不下发「查词」（打开查词页），应用外查词与截屏识字照常；模块打开后重新同步补上', (
       WidgetTester tester,
     ) async {
       mockNative(tester);
@@ -915,7 +915,12 @@ void main() {
         await waitFor(() => starts().isNotEmpty);
       });
       await tester.pump();
-      expect(startedActions(starts().last), <String>['clipboard']);
+      // BUG-4846：查词模块只关查词页入口，覆盖窗上的查词能力不跟着消失。
+      expect(startedActions(starts().last), <String>[
+        'popup_lookup',
+        'clipboard',
+        'screen_ocr',
+      ]);
 
       await tester.runAsync(() async {
         await prefs.setModuleEnabled(ModuleId.lookup, true);
