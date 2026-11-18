@@ -1130,7 +1130,7 @@ enum Compiled {
     IntProp(IntColumn, Cmp, i64),
     FloatProp(FloatColumn, Cmp, f64),
     IdIn(IntColumn, HashSet<i64>),
-    /// true = `[sound:` 或 `<audio` 标签（制卡内嵌的单词 / 句子音频，BUG-4861），false = `<img`。
+    /// true = `[sound:` 或 `<audio` 标签（制卡内嵌的单词 / 句子音频，BUG-4710），false = `<img`。
     HasMedia(bool),
 }
 
@@ -1853,7 +1853,7 @@ mod tests {
         assert_eq!(hits(&c, json!({"t":"has","v":"audio"})), [1, 0, 1]);
         assert_eq!(hits(&c, json!({"t":"has","v":"image"})), [0, 1, 0]);
 
-        // BUG-4861：WebM 内嵌片段制卡把单词 / 句子音频写成页内 `<audio src>`（没有 `[sound:]`），
+        // BUG-4710：WebM 内嵌片段制卡把单词 / 句子音频写成页内 `<audio src>`（没有 `[sound:]`），
         // 也是音频；`<audiox>` 这类不是 audio 标签的不算。
         let inline = corpus(
             &[

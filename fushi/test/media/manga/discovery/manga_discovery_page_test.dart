@@ -460,7 +460,16 @@ void main() {
       expect(find.text('第1页 0'), findsOneWidget);
 
       final Finder scroll = find.byType(CustomScrollView);
-      await tester.drag(scroll, const Offset(0, -3000));
+      // 拼贴改版后网格卡更高（40 张首页约 3900 高），固定拖 3000 已不进离底
+      // 600 的区间：直接拖到当前内容的底部。
+      final ScrollPosition position = tester
+          .state<ScrollableState>(
+            find
+                .descendant(of: scroll, matching: find.byType(Scrollable))
+                .first,
+          )
+          .position;
+      await tester.drag(scroll, Offset(0, -position.maxScrollExtent));
       await tester.pumpAndSettle();
       expect(requested, <int>[1, 2], reason: '不用点「加载更多」');
 

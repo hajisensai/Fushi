@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/download/video_resource_version_groups.dart';
@@ -159,7 +160,7 @@ class _VideoResourceVersionGroupListState
       selected: containsSelection,
       onTap: widget.onSelect == null ? null : () => _onCardTap(group),
       // 展开 / 收起组内文件时卡片高度随 M3E 弹簧过渡，不再一帧跳变。
-      child: AnimatedSize(
+      child: FushiAnimatedSize(
         duration: fushiMotionDuration(context, FushiMotion.medium),
         curve: FushiMotion.standard,
         alignment: AlignmentDirectional.topCenter,

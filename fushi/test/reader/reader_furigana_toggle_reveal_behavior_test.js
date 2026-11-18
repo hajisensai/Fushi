@@ -34,7 +34,7 @@ function extractMethod(name) {
 
 const hiddenRubyAt = extractMethod('_hiddenFuriganaRubyAt');
 const selectText = extractMethod('selectText');
-// BUG-4862 起 selectText 的同词判据走 designatesCurrentSelection（ruby 组首吸附 + 被点字
+// BUG-4711 起 selectText 的同词判据走 designatesCurrentSelection（ruby 组首吸附 + 被点字
 // 落在 matchedRanges 里才算同词）；切生产实现，不写恒 false 的桩。
 const designatesCurrentSelection = extractMethod('designatesCurrentSelection');
 

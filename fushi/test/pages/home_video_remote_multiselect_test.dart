@@ -20,8 +20,9 @@ import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/sync/remote_library_source.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiSpringReveal;
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
-import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
@@ -216,9 +217,21 @@ void main() {
     expect(remoteClient.downloadedIds, <String>[
       'remote/video-1',
     ], reason: '串行：第一个挂在闸门上时第二个不起');
+    // 「选择」入口已收进页头「⋯」（设计稿 #video V2），退出多选后页头上不再有
+    // checklist 图标可找；改认批量栏外层的弹簧显隐已翻成收起（沉下去那一程还画着
+    // 上一帧的批量栏，所以不能按「栏不在树上」判）。
     expect(
-      find.byIcon(FushiIcons.checklist),
-      findsOneWidget,
+      tester
+          .widget<FushiSpringReveal>(
+            find.ancestor(
+              of: find.byKey(
+                const ValueKey<String>('home_video_batch_download'),
+              ),
+              matching: find.byType(FushiSpringReveal),
+            ),
+          )
+          .visible,
+      isFalse,
       reason: '批量下载一开始就退出多选态',
     );
 

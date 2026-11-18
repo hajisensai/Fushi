@@ -717,4 +717,85 @@ void main() {
       expect(of(), isNull);
     });
   });
+
+  group('默认布局补洞', () {
+    HomeWidgetItem w(HomeWidgetKind k, int c, int r) =>
+        HomeWidgetItem(k, HomeWidgetSize(c, r));
+
+    test('宽网格默认模板：最近添加向下长一行补掉追踪右边的 4×1 洞', () {
+      final List<HomeWidgetItem> items = <HomeWidgetItem>[
+        w(HomeWidgetKind.continueHero, 4, 2),
+        w(HomeWidgetKind.today, 2, 1),
+        w(HomeWidgetKind.srsReview, 1, 1),
+        w(HomeWidgetKind.aiAgent, 1, 1),
+        w(HomeWidgetKind.week, 2, 2),
+        w(HomeWidgetKind.recentlyAdded, 4, 2),
+        w(HomeWidgetKind.tracking, 2, 1),
+      ];
+      final List<HomeWidgetItem> filled = fillHomeWidgetGaps(
+        items,
+        HomeGridKind.wide,
+      );
+      expect(filled[5].size, const HomeWidgetSize(4, 3));
+      expect(filled[6].size, const HomeWidgetSize(2, 1));
+      final HomeWidgetPacking packing = packHomeWidgets(filled, 6);
+      int area = 0;
+      for (final HomeWidgetPlacement p in packing.placements) {
+        area += p.cols * p.rows;
+      }
+      expect(area, packing.rowCount * 6);
+    });
+
+    test('洞上方没有等宽组件时，同一行起始侧的组件横向拉宽', () {
+      final List<HomeWidgetItem> filled = fillHomeWidgetGaps(<HomeWidgetItem>[
+        w(HomeWidgetKind.today, 2, 1),
+        w(HomeWidgetKind.aiAgent, 2, 1),
+        w(HomeWidgetKind.recentlyAdded, 1, 2),
+        w(HomeWidgetKind.srsReview, 2, 1),
+        w(HomeWidgetKind.week, 2, 1),
+      ], HomeGridKind.wide);
+      expect(filled[2].size, const HomeWidgetSize(2, 2));
+    });
+
+    test('窄网格：洞上方的半栏组件先向下长（先竖后横）', () {
+      final List<HomeWidgetItem> filled = fillHomeWidgetGaps(<HomeWidgetItem>[
+        w(HomeWidgetKind.continueHero, 2, 2),
+        w(HomeWidgetKind.today, 1, 1),
+        w(HomeWidgetKind.week, 1, 1),
+        w(HomeWidgetKind.aiAgent, 1, 1),
+      ], HomeGridKind.compact);
+      expect(filled[2].size, const HomeWidgetSize(1, 2));
+      expect(filled[3].size, const HomeWidgetSize(1, 1));
+    });
+
+    test('超上限的扩展不做；所有组件装箱位置不变', () {
+      // 今日（上限 3 宽）拉不到 4 宽，第 1 行 3、4 列补不上；第 5 列由 AI 向下长补。
+      final List<HomeWidgetItem> items = <HomeWidgetItem>[
+        w(HomeWidgetKind.continueHero, 5, 1),
+        w(HomeWidgetKind.aiAgent, 1, 1),
+        w(HomeWidgetKind.today, 3, 1),
+      ];
+      final List<HomeWidgetItem> filled = fillHomeWidgetGaps(
+        items,
+        HomeGridKind.wide,
+      );
+      final HomeWidgetPacking before = packHomeWidgets(items, 6);
+      final HomeWidgetPacking after = packHomeWidgets(filled, 6);
+      for (int i = 0; i < items.length; i++) {
+        expect(after.placements[i].col, before.placements[i].col);
+        expect(after.placements[i].row, before.placements[i].row);
+      }
+      expect(after.rowCount, before.rowCount);
+      expect(filled[1].size, const HomeWidgetSize(1, 2));
+      expect(filled[2].size, const HomeWidgetSize(3, 1));
+    });
+
+    test('没有洞时原样返回', () {
+      final List<HomeWidgetItem> items = <HomeWidgetItem>[
+        w(HomeWidgetKind.continueHero, 4, 2),
+        w(HomeWidgetKind.today, 2, 2),
+      ];
+      expect(fillHomeWidgetGaps(items, HomeGridKind.wide), items);
+    });
+  });
 }

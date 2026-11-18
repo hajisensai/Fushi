@@ -12,7 +12,7 @@ import 'package:path/path.dart' as p;
 
 import 'temp_dir_cleanup.dart';
 
-/// BUG-4852：覆盖导入成功后保留覆盖前快照；「从快照恢复书库」只补缺合并书库行、
+/// BUG-4701：覆盖导入成功后保留覆盖前快照；「从快照恢复书库」只补缺合并书库行、
 /// 进度、统计，不改当前库已有的行。
 void main() {
   late Directory curDir;

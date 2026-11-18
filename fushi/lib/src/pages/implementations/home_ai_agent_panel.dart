@@ -100,7 +100,9 @@ class HomeAiAgentPanel extends StatelessWidget {
     if (onBlock == null) {
       return HomeAiAgentInput(
         key: const ValueKey<String>('home-ai-agent-panel-input'),
-        textStyle: base.copyWith(fontSize: 14, color: style.foreground),
+        textStyle: context.fushiType.bodyMedium.copyWith(
+          color: style.foreground,
+        ),
         hintColor: style.muted,
         opener: opener,
       );

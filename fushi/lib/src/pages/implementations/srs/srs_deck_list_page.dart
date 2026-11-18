@@ -36,6 +36,8 @@ import 'package:fushi_engine/srs/srs_remote_store.dart'
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/home_tab.dart'
+    show HomeTab, homeShellTabNotifier;
 import 'package:fushi/src/pages/implementations/srs/srs_anki_migration_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_history_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_page.dart';
@@ -60,6 +62,7 @@ import 'package:fushi/src/srs/srs_import_entry.dart';
 import 'package:fushi/src/srs/srs_import_task.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_import_tasks_bar.dart';
 import 'package:fushi/src/srs/srs_home_stats.dart';
+import 'package:fushi/src/utils/components/section_visibility.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_remote_store_client.dart'
     show
@@ -201,11 +204,19 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
   @override
   void dispose() {
     // 只摘监听与选库对话框：缓存与会话归 [_srsPairedHostsProvider]，后台刷新跑完照样落进缓存。
+    homeShellTabNotifier.removeListener(_onShellTabActivated);
     _paired.removeListener(_onPairedChanged);
     if (_paired.chooseProfile == _chooseRemoteProfile) {
       _paired.chooseProfile = null;
     }
     super.dispose();
+  }
+
+  /// 切回复习 tab：刷新已配对主机。本页保活（`HomePage` 的 `_keepAliveTabs`）
+  /// 之后 initState 只跑一次，原先靠「每次切入重新挂载」做的这次刷新改在这里做。
+  void _onShellTabActivated() {
+    if (!mounted || homeShellTabNotifier.value != HomeTab.srs) return;
+    srsRunLogged('SrsPairedHosts.refresh', _paired.refresh);
   }
 
   @override
@@ -215,6 +226,7 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
     _paired
       ..chooseProfile = _chooseRemoteProfile
       ..addListener(_onPairedChanged);
+    homeShellTabNotifier.addListener(_onShellTabActivated);
     srsRunLogged('SrsPairedHosts.refresh', _paired.refresh);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_askedFirstSync || !mounted) return;
@@ -709,11 +721,10 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
         final String title = focus?.deck.name ?? t.nav_srs;
         // 重设计外壳（墨水屏除外，两套设计系统都换）：页头换成页头大字。
         final bool masthead = shellRedesignActive(context);
-        return PopScope(
-          canPop: !nested,
-          onPopInvokedWithResult: (bool didPop, Object? _) {
-            if (!didPop) _back(list);
-          },
+        // 保活 tab 藏着时不拦系统返回、也不在背后退层（[SectionPopScope]）。
+        return SectionPopScope(
+          intercepting: nested,
+          onIntercept: () => _back(list),
           child: FushiPageScaffold(
             title: title,
             leading: apple && nested

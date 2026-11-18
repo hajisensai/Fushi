@@ -12,7 +12,7 @@ import 'package:fushi_engine/sync/remote_collection_adoption_service.dart';
 import 'package:fushi_engine/sync/collection_book_identity_index.dart';
 import 'package:fushi_engine/media/collections/collection_cover.dart'
     show collectionOwnCoverCandidates;
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show ValueListenable, kIsWeb;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:transparent_image/transparent_image.dart';
@@ -125,6 +125,7 @@ import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
     show fushiNotificationFromVisibleSubtree;
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
     show FushiShellActionsSlot, FushiShellTitleScope;
+import 'package:fushi/src/utils/components/section_deferred_build.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
     show ShelfCoverFrame, shelfCoverCard;
 import 'package:fushi/src/utils/components/section_swipe_navigator.dart'
@@ -594,7 +595,10 @@ class _HomeAvatarPillState extends ConsumerState<_HomeAvatarPill> {
 /// 书与阅读位置走 Riverpod provider（响应式）；视频 / 统计等本地聚合在
 /// [initState] 一次并发载入，结果按数据库实例做快照（BUG-3034），重建时首帧直接
 /// 用快照渲染。
-class HomeDashboardPage extends BaseModuleTabPage {
+///
+/// 藏在别的 tab 后面时不重建（[SectionDeferredBuild]）：书列表 / 阅读位置这些
+/// 共享 provider 被别的页面失效时，等切回首页再按新值构建一次。
+class HomeDashboardPage extends BaseModuleTabPage with SectionDeferredBuild {
   const HomeDashboardPage({
     super.key,
     required this.videoRepo,
@@ -655,12 +659,16 @@ class _ContinueEntry {
     this.game,
     this.remote,
     this.server,
-    this.groupBooks = const <MediaItem>[],
+    this.seriesBooks = const <MediaItem>[],
+    this.seriesCount = 0,
   });
 
-  /// 「最近添加」里同一系列合并成的一张卡（设计稿 H8）：这一系列新加的各卷，
-  /// 最新的在前；[book] 是点开时打开的那一卷。少于两卷时为空（散卡）。
-  final List<MediaItem> groupBooks;
+  /// 「最近添加」里同一合集的书合成一项时：除 [book]（最新加入的那本）外再画进
+  /// 扇形的几本（按加入时间倒序，最多两本）。其余场景为空。
+  final List<MediaItem> seriesBooks;
+
+  /// 「最近添加」合集项的成员数（书 = 卷数、视频 = 集数）；0 = 散项。
+  final int seriesCount;
 
   /// 所属主合集 id（v68 横版选图链按它取合集附加图组）；null = 散卡。
   final int? collectionId;
@@ -972,12 +980,29 @@ class _HomeDashboardPageState
 
   /// 首页此刻是否真被看着（所在 tab 可见、没被别的页面盖住）：两种情况 Flutter 都会关掉这里的 TickerMode。
   /// 复习条据此只在看得见时订阅牌组计数（[homeSrsLiveProvider]）。
+  ///
+  /// 订阅 TickerMode 的 notifier 而不是 `TickerMode.valuesOf(context)`：后者让本页
+  /// 的 Element 依赖 TickerMode，每次切走 / 切回都被标脏整页重建一遍，而这里要的
+  /// 只是这一个开关。
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final bool live = TickerMode.valuesOf(context).enabled;
+    final ValueListenable<TickerModeData> values = TickerMode.getValuesNotifier(
+      context,
+    );
+    if (!identical(values, _tickerValues)) {
+      _tickerValues?.removeListener(_syncSrsLive);
+      _tickerValues = values..addListener(_syncSrsLive);
+    }
+    _syncSrsLive();
+  }
+
+  ValueListenable<TickerModeData>? _tickerValues;
+
+  void _syncSrsLive() {
+    final bool live = _tickerValues?.value.enabled ?? true;
     if (ref.read(homeSrsLiveProvider) == live) return;
-    // 依赖变化回调在构建期内，不能当场改 provider。
+    // TickerMode 的通知与依赖变化回调都在构建期内，不能当场改 provider。
     scheduleMicrotask(() {
       if (mounted) ref.read(homeSrsLiveProvider.notifier).state = live;
     });
@@ -1079,20 +1104,42 @@ class _HomeDashboardPageState
     // 服务器侧的进度在别处（播放页 / 其它设备）会变，切回首页时重拉——经
     // [ServerContinueFeed] 节流，短时间内来回切 tab 不重发请求。
     unawaited(_loadServerContinue());
-    if (_reloadDeferredWhileHidden) {
-      _reloadDeferredWhileHidden = false;
-      _reloadNow();
-      return;
-    }
+    // 有推迟的重载：现在就做，或（Offstage 还没重建时）留给紧随其后的
+    // [onShownToUserAgain]。重载自己会补位远端，不必再单独拉一次。
+    if (_flushDeferredReload() || _reloadDeferredWhileHidden) return;
     unawaited(_loadRemoteDashboardData(skipIfUnchanged: true));
   }
 
-  /// 首页被 Offstage 藏着时到达的数据变更：只记一笔，不在后台重跑整批聚合。
+  /// 首页回到用户眼前（盖在上面的播放页 / 阅读器 / 详情页弹走，或切回首页 tab）：
+  /// 补做不在眼前期间推迟的重载。
+  @override
+  void onShownToUserAgain() {
+    _flushDeferredReload();
+  }
+
+  /// 首页不在用户眼前（[isShownToUser] 为假）时到达的数据变更：只记一笔，不在
+  /// 后台重跑整批聚合。
   ///
-  /// 保活之前首页一切走就 dispose，根本不会在别的 tab 上重查；保活之后若照旧
-  /// 每次写库都重载，用户在书架 / 阅读器里翻页（readerPositions 写入）就会让
-  /// 看不见的首页隔几秒在 UI isolate 上跑一遍全量统计聚合。
+  /// 两种「不在眼前」都要挡：
+  /// - 切到了别的 tab（被 Offstage 藏着）：保活之前首页一切走就 dispose，根本不会
+  ///   在别的 tab 上重查；保活之后若照旧每次写库都重载，用户在书架 / 阅读器里
+  ///   翻页（readerPositions 写入）就会让看不见的首页隔几秒在 UI isolate 上跑
+  ///   一遍全量统计聚合。
+  /// - 被别的页面盖住（BUG-4895）：从首页「继续」点开视频后首页仍是当前 tab。
+  ///   播放断点每秒往 video_books 落一次库（学习时钟每分钟再写一笔
+  ///   study_segments），于是首页每秒整批重查 + 整页 setState 一次，每次占 UI
+  ///   线程几十毫秒；视频纹理的新帧要等 UI 线程排到才上屏，画面就一顿一顿地
+  ///   掉帧（libmpv 自己的丢帧计数是 0）。
   bool _reloadDeferredWhileHidden = false;
+
+  /// 首页回到用户眼前时补做被推迟的重载；没有推迟的、或仍不在眼前就什么都不做。
+  /// 返回是否发起了重载。
+  bool _flushDeferredReload() {
+    if (!_reloadDeferredWhileHidden || !isShownToUser) return false;
+    _reloadDeferredWhileHidden = false;
+    _reloadNow();
+    return true;
+  }
 
   bool get _isVisibleTab => homeShellTabNotifier.value == HomeTab.home;
 
@@ -1140,7 +1187,7 @@ class _HomeDashboardPageState
     _reloadDebounce?.cancel();
     _reloadDebounce = Timer(const Duration(milliseconds: 400), () {
       if (!mounted) return;
-      if (!_isVisibleTab) {
+      if (!isShownToUser) {
         _reloadDeferredWhileHidden = true;
         return;
       }
@@ -1187,6 +1234,7 @@ class _HomeDashboardPageState
   void dispose() {
     _reloadDebounce?.cancel();
     _kavitaLifecycle?.dispose();
+    _tickerValues?.removeListener(_syncSrsLive);
     homeShellTabNotifier.removeListener(_onTabForKavita);
     _midnightReload?.cancel();
     unawaited(_dataChangeSub?.cancel());
@@ -1801,12 +1849,27 @@ class _HomeDashboardPageState
           epubUidByKey,
           completedBookKeys,
         );
-        final List<HomeWidgetItem> items = _widgetItemsFor(appModel, grid);
-        _widgetItemsShown = items;
-        final List<HomeWidgetItem> visible = <HomeWidgetItem>[
+        List<HomeWidgetItem> items = _widgetItemsFor(appModel, grid);
+        List<HomeWidgetItem> visible = <HomeWidgetItem>[
           for (final HomeWidgetItem item in items)
             if (availableKinds.contains(item.kind)) item,
         ];
+        // 默认布局（这份网格没编辑过、也没在编辑）按此刻可见的组件补洞填满；
+        // 自定义过的完全按存档尺寸（用户 2026-11-17）。补出来的尺寸回写进完整列表，
+        // 首次编辑以填满后的样子为起点，进编辑态不会缩回去露出空洞。
+        if (_widgetSessions[grid] == null &&
+            appModel.homeWidgetLayout.itemsFor(grid) == null) {
+          visible = fillHomeWidgetGaps(visible, grid);
+          final Map<HomeWidgetKind, HomeWidgetSize> filled =
+              <HomeWidgetKind, HomeWidgetSize>{
+                for (final HomeWidgetItem e in visible) e.kind: e.size,
+              };
+          items = <HomeWidgetItem>[
+            for (final HomeWidgetItem e in items)
+              e.withSize(filled[e.kind] ?? e.size),
+          ];
+        }
+        _widgetItemsShown = items;
         // 新手引导卡（用户 2026-10-21：跳过了引导 / 还没导入任何东西时，首页常驻
         // 一个回到引导的入口）。排在网格上面、最先进场。
         final Widget? onboardingCard =
@@ -2311,7 +2374,8 @@ class _HomeDashboardPageState
       art: art,
       title: entry.collectionName ?? entry.title,
       covers: <Widget>[cover],
-      tintImage: image ?? fushiCoverImageOf(cover),
+      tintImage:
+          _continueTintImage(appModel, entry) ?? fushiCoverImageOf(cover),
       eyebrow: hero
           ? (recent > 0
                 ? formatActivityRelativeTime(recent, DateTime.now())
@@ -2351,6 +2415,31 @@ class _HomeDashboardPageState
         ),
       ),
     );
+  }
+
+  /// 封面色块取色的图源：直接按条目取封面图（书 = 书架缩略图、视频 = 海报、
+  /// 游戏 = 本地封面）。不能靠 [fushiCoverImageOf] 从封面 widget 里扒——
+  /// [_continueCover] 外面包了 [MediaNsfwCover]，扒不到图就只剩中性灰。NSFW
+  /// 模糊中的条目不取色（色块颜色也会透出封面内容），回落中性色。
+  ImageProvider? _continueTintImage(AppModel appModel, _ContinueEntry entry) {
+    if (mediaNsfwBlurOf(context, _continueNsfwTarget(entry))) return null;
+    if (entry.isVideo) return _videoCoverImage(entry);
+    if (entry.game case final GalgameEntry game) {
+      return resolveMediaCoverImage(
+        kind: MediaKind.game,
+        localPath: game.coverPath,
+        decodeWidth: kLocalCoverDecodePixelWidth,
+      );
+    }
+    if (entry.remote != null || entry.server != null) return null;
+    final MediaItem? book = entry.book;
+    if (book == null) return null;
+    final ImageProvider image = ReaderFushiSource.instance
+        .getDisplayThumbnailFromMediaItem(appModel: appModel, item: book);
+    if (image is MemoryImage && identical(image.bytes, kTransparentImage)) {
+      return null;
+    }
+    return image;
   }
 
   /// 按封面固有朝向给视频条目选摆法（「继续」与「最近添加」色块共用）：竖版
@@ -3114,10 +3203,11 @@ class _HomeDashboardPageState
 
   /// 「最近添加」条目副行：「类型 · 相对时间」（列表行与色块同一份）。
   String _recentSubtitle(_ContinueEntry e, DateTime now) => <String>[
-    if (e.groupBooks.length > 1)
-      t.home_recent_new_volumes(n: e.groupBooks.length)
-    else if (e.kind case final MediaKind kind)
-      _kindLabel(kind),
+    if (e.kind case final MediaKind kind) _kindLabel(kind),
+    if (e.seriesCount > 1)
+      e.isVideo
+          ? t.home_widget_recent_episode_count(n: e.seriesCount)
+          : t.home_widget_recent_volume_count(n: e.seriesCount),
     formatActivityRelativeTime(e.recentMs, now),
   ].join(' · ');
 
@@ -3134,7 +3224,7 @@ class _HomeDashboardPageState
   }
 
   /// 一组新加的书 → 「最近添加」的一张卡：单卷是散卡；多卷合成扇形叠放卡
-  /// （[_ContinueEntry.groupBooks]，最新的在最前），标题是合集名 / 系列名，点开
+  /// （[_ContinueEntry.seriesBooks] 带两本画进扇形，副行写卷数），标题是合集名 / 系列名，点开
   /// 打开这批里卷号最小的那一卷（从新加的第一卷读起）。
   _ContinueEntry _recentBookEntry(
     List<({MediaItem item, int addedAt, String title})> group,
@@ -3166,7 +3256,7 @@ class _HomeDashboardPageState
       group: ordered,
       collectionId: collectionId,
     );
-    // 封面 / 标题取卷号最小的一卷（合集卡也一样，扇形叠放用 groupBooks）。
+    // 封面 / 标题取卷号最小的一卷（合集卡也一样，扇形里再画最新加入的两本）。
     final ({MediaItem item, String title}) first = recentBookGroupFirstVolume(
       ordered,
     );
@@ -3186,16 +3276,17 @@ class _HomeDashboardPageState
         RecentBookGroupVolume() => null,
       },
       book: first.item,
-      groupBooks: <MediaItem>[
+      seriesBooks: <MediaItem>[
         for (final ({MediaItem item, int addedAt, String title}) b in byAdded)
-          b.item,
-      ],
+          if (!identical(b.item, first.item)) b.item,
+      ].take(2).toList(),
+      seriesCount: byAdded.length,
     );
   }
 
-  /// 色块面板版式的「最近添加」一格：与「继续」色块同一个 [FushiCoverBlock]
-  /// （封面取色、作品名水印、书 / 视频 / 游戏各自的封面摆法），副行是「类型 ·
-  /// 相对时间」；点按打开（与列表行同一条 [_openContinueEntry]）。
+  /// 「最近添加」一项的封面色块（用户 2026-11-17：与「继续」卡同一套色块）：底色取
+  /// 封面主色、背景压标题大字；合集项把同合集的另外几本画进扇形，副行带卷数 / 集数。
+  /// 不画进度（刚加进来的东西没有进度可言），点按打开。
   Widget _recentBlock(
     FushiDesignTokens tokens,
     AppModel appModel,
@@ -3211,26 +3302,37 @@ class _HomeDashboardPageState
       entry,
       videoImage: image,
     );
+    final List<Widget> series = <Widget>[
+      for (final MediaItem book in entry.seriesBooks)
+        _continueCover(
+          tokens,
+          appModel,
+          _ContinueEntry(
+            kind: _bookMediaKind(book),
+            title: ReaderFushiSource.instance.getDisplayTitleFromMediaItem(
+              book,
+            ),
+            recentMs: 0,
+            book: book,
+          ),
+        ),
+    ];
+    Widget blockOf(FushiCoverBlockArt art, Widget cover) => FushiCoverBlock(
+      size: size,
+      art: art,
+      title: entry.collectionName ?? entry.title,
+      covers: <Widget>[cover, ...series],
+      tintImage:
+          _continueTintImage(appModel, entry) ?? fushiCoverImageOf(cover),
+      subtitle: _recentSubtitle(entry, now),
+    );
     final Widget block = _orientedBlock(
       tokens,
       appModel,
       entry,
       image: image,
       cover: cover,
-      blockOf: (FushiCoverBlockArt art, Widget cover) => FushiCoverBlock(
-        size: size,
-        art: art,
-        title: entry.collectionName ?? entry.title,
-        // 同系列合成的卡（H8）：这批新卷排成扇形叠放（书封摆法最多画三本）。
-        covers: entry.groupBooks.length > 1
-            ? <Widget>[
-                for (final MediaItem b in entry.groupBooks.take(3))
-                  _bookCover(tokens, appModel, b),
-              ]
-            : <Widget>[cover],
-        tintImage: image ?? fushiCoverImageOf(cover),
-        subtitle: _recentSubtitle(entry, now),
-      ),
+      blockOf: blockOf,
     );
     return FushiHoverLift(
       builder: (BuildContext _, bool _) => shelfCoverCard(
@@ -3269,19 +3371,21 @@ class _HomeDashboardPageState
     }
 
     final List<_ContinueEntry> entries = <_ContinueEntry>[];
-    // 同一系列新加的几卷合成一张（设计稿 H8「最近添加里同一系列连着三张」）：
-    // 先按系列分组，单卷照旧是散卡。
+    int bookAddedAt(MediaItem item) {
+      final String? bookKey = ReaderFushiSource.parseBookKey(
+        item.mediaIdentifier,
+      );
+      return bookKey == null ? 0 : (_epubLocalAddedAtByKey[bookKey] ?? 0);
+    }
+
+    // 同一合集 / 同一系列新加的几卷合成一项（用户 2026-11-17：一排相同系列名的条目
+    // 没法看；设计稿 H8）：在合集里的按主合集归，否则按书名系列键归；单卷照旧是散项。
     final Map<String, List<({MediaItem item, int addedAt, String title})>>
     bookGroups =
         <String, List<({MediaItem item, int addedAt, String title})>>{};
     for (final MediaItem item in books) {
       if (shownBooks.contains(item.mediaIdentifier)) continue;
-      final String? bookKey = ReaderFushiSource.parseBookKey(
-        item.mediaIdentifier,
-      );
-      final int addedAt = bookKey == null
-          ? 0
-          : (_epubLocalAddedAtByKey[bookKey] ?? 0);
+      final int addedAt = bookAddedAt(item);
       if (addedAt <= 0) continue;
       final String title = ReaderFushiSource.instance
           .getDisplayTitleFromMediaItem(item);
@@ -3346,6 +3450,7 @@ class _HomeDashboardPageState
           collectionName: _collectionNamesById[ce.key],
           collectionId: ce.key,
           video: first,
+          seriesCount: ce.value.length,
         ),
       );
     }
@@ -3942,7 +4047,9 @@ class _HomeDashboardPageState
       return;
     }
     // 「最近添加」里同属一个合集的系列合并卡（H8）：进合集详情页。
-    if (entry.groupBooks.length > 1 && entry.collectionId != null) {
+    if (entry.book != null &&
+        entry.seriesCount > 1 &&
+        entry.collectionId != null) {
       _openBookCollection(
         entry.collectionId!,
         manga: entry.module == ModuleId.manga,

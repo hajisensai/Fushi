@@ -323,6 +323,7 @@ class WebVideoPlaybackState {
     this.siteAudioTracks = const <WebVideoSiteTrack>[],
     this.siteAudioTrackCurrent = '',
     this.blocker = '',
+    this.encrypted = false,
   });
 
   final String href;
@@ -376,6 +377,10 @@ class WebVideoPlaybackState {
   final String blocker;
 
   bool get isBlocked => blocker.isNotEmpty;
+
+  /// 主视频是 EME 加密流（glue 的 `eme`：`<video>.mediaKeys` 已挂，或 Netflix）：媒体数据只有
+  /// CDM 解得开，拿到地址也拉不出可转写的音频——字幕生成入口据此不出现。
+  final bool encrypted;
 
   /// 错误码（`error:M7375` → `M7375`）；不是错误或没有码为空。
   String get blockerErrorCode =>
@@ -483,6 +488,7 @@ WebVideoPlaybackState? parseWebVideoStatePayload(
     siteAudioTracks: parseWebVideoSiteTracks(raw['nfat']),
     siteAudioTrackCurrent: parseWebVideoSiteTrackCurrent(raw['nfat']),
     blocker: (raw['blk'] ?? '').toString(),
+    encrypted: raw['eme'] == true,
   );
 }
 

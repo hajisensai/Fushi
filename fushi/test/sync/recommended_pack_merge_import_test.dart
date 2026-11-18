@@ -12,7 +12,7 @@ import 'package:path/path.dart' as p;
 
 import 'temp_dir_cleanup.dart';
 
-/// BUG-4849：导入推荐包后用户的漫画 / 小说全没了。
+/// BUG-4698：导入推荐包后用户的漫画 / 小说全没了。
 ///
 /// 推荐包是一份净化过的备份（只剩 `dictionary_metadata`、两条音频来源注册偏好与
 /// 词典资源 / 本地发音库文件，见 `tool/pack/recommended_pack_database.dart`）。app 内

@@ -1013,7 +1013,7 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
 /// [preset] 非 null 时跳过确认框（见 [BackupImportPreset]）；缺省行为不变。
 /// [confirmInitialMode] 是确认框打开时预选的导入方式（[preset] 非 null 时不弹框，
 /// 它不起作用）：缺省「覆盖」保持设置页「导入备份」的既有行为；推荐包传「合并」——
-/// 推荐包只带词典 / 音频资源，照默认点「覆盖」会整库被包里的库替换（BUG-4849）。
+/// 推荐包只带词典 / 音频资源，照默认点「覆盖」会整库被包里的库替换（BUG-4698）。
 Future<void> runBackupImportFlowForFile({
   required AppModel appModel,
   required String filePath,
@@ -1353,7 +1353,7 @@ Future<BackupImportMode?> showBackupImportConfirmDialogForTesting(
 ///
 /// [initialMode] is the option preselected when the dialog opens: the generic
 /// "import backup" row keeps OVERWRITE (Never break userspace — the existing
-/// behavior); the recommended pack opens on MERGE (BUG-4849 / decision pr3449).
+/// behavior); the recommended pack opens on MERGE (BUG-4698 / decision pr3449).
 Future<_BackupImportChoice?> _showBackupImportConfirmDialog(
   BuildContext dialogContext,
   BackupMeta meta,

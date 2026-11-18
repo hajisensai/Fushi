@@ -16,9 +16,14 @@ void main() {
   const Key titleKey = ValueKey<String>('floating-chrome-shell-title');
 
   /// 手机竖屏（compact 档）。
+  ///
+  /// 改 [WidgetTester.view] 而不是 `binding.setSurfaceSize`：页头的 compact 判据
+  /// （[fushiMastheadCompact]）读 `MediaQuery` 宽度，`setSurfaceSize` 只改渲染面、
+  /// 不改 MediaQuery（仍是默认 800 宽 → 走宽窗 84 → 36 档），基线断言就对不上。
   Future<void> usePhoneSurface(WidgetTester tester) async {
-    await tester.binding.setSurfaceSize(const Size(400, 800));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(400, 800);
+    addTearDown(tester.view.reset);
   }
 
   Future<

@@ -5,7 +5,7 @@ import 'package:fushi/src/media/tags/tag_drag_handle.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart'
     show HorizontalDragScrollable;
 
-/// BUG-4847：库页标签条（横向、鼠标可拖滚的 `HorizontalDragScrollable` 列表）里
+/// BUG-4899：库页标签条（横向、鼠标可拖滚的 `HorizontalDragScrollable` 列表）里
 /// 只靠长按拖动重排，桌面鼠标 1 px 的 hit slop 下长按必输给横滚；「⋮⋮」拖动柄
 /// 按下即拖，越过 slop 的同一帧先认领，横滚抢不到。
 void main() {

@@ -224,11 +224,12 @@ Future<void> _tapNav(WidgetTester tester, String label) async {
 /// 只是把同一个坑往后挪一次。任何文本输入控件底下都有 EditableText，取它的
 /// focusNode 才是真正与实现无关的判据。
 /// 搜索框当前的文本。理由同 [_searchFocusNode]：不绑具体控件类型。
+/// 查词页保活后可能正藏着（Offstage），所以两个取值器都不跳过离屏子树。
 String _searchText(WidgetTester tester) => tester
     .widget<EditableText>(
       find.descendant(
-        of: find.byKey(_searchFieldKey),
-        matching: find.byType(EditableText),
+        of: find.byKey(_searchFieldKey, skipOffstage: false),
+        matching: find.byType(EditableText, skipOffstage: false),
       ),
     )
     .controller
@@ -237,8 +238,8 @@ String _searchText(WidgetTester tester) => tester
 FocusNode _searchFocusNode(WidgetTester tester) => tester
     .widget<EditableText>(
       find.descendant(
-        of: find.byKey(_searchFieldKey),
-        matching: find.byType(EditableText),
+        of: find.byKey(_searchFieldKey, skipOffstage: false),
+        matching: find.byType(EditableText, skipOffstage: false),
       ),
     )
     .focusNode;
@@ -305,6 +306,46 @@ void main() {
       _searchFocusNode(tester).hasFocus,
       isTrue,
       reason: '清空之后焦点仍要留在搜索框上，用户直接就能打字。',
+    );
+    await _unmount(tester);
+  });
+
+  testWidgets('BUG-4849 查词页保活：去别的 tab 再点回「查词」，是同一页、清空残留查询并聚焦', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await _pumpHome(tester);
+    await _tapNav(tester, t.nav_lookup);
+    await tester.enterText(find.byKey(_searchFieldKey), 'おばさん');
+    await _settle(tester);
+    final State<StatefulWidget> before = tester.state(
+      find.byType(HomeDictionaryPage),
+    );
+
+    HomePage.debugSelectTab!(HomeTab.home);
+    await _settle(tester);
+    expect(find.byType(HomeDictionaryPage), findsNothing, reason: '查词页已被藏起。');
+    expect(
+      _searchFocusNode(tester).hasFocus,
+      isFalse,
+      reason: '藏起的查词页不能留着焦点——否则在别的 tab 上打字会进看不见的搜索框。',
+    );
+
+    await _tapNav(tester, t.nav_lookup);
+
+    expect(
+      identical(tester.state(find.byType(HomeDictionaryPage)), before),
+      isTrue,
+      reason: '查词页保活：切回是同一个 State，不是重新挂载出来的新页。',
+    );
+    expect(_searchText(tester), isEmpty, reason: '点导航进查词 = 要查新词：保活之后这条清空仍要生效。');
+    expect(
+      _searchFocusNode(tester).hasFocus,
+      isTrue,
+      reason: '聚焦请求在本页还藏着时到达，必须等它变成可见之后再消费，不能被吞掉。',
     );
     await _unmount(tester);
   });

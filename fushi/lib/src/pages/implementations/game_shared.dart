@@ -333,7 +333,7 @@ class GameSectionTabs extends StatelessWidget {
         : selected;
     final LibrarySectionGroup? group = gameSectionGroupOf(shown);
     // 停在诊断时「工作台」的高亮只是视觉锚点（诊断不是页签），点它必须照常回到
-    // 捕获工作台（BUG-4857）。
+    // 捕获工作台（BUG-4706）。
     final bool shownIsCurrent = shown == selected;
     if (secondary) {
       final List<GameSection> members = <GameSection>[
@@ -396,7 +396,7 @@ class GameSectionTabs extends StatelessWidget {
     return LibrarySectionTabs<GameSection>(
       tabs: tabs,
       // 停在导入页时高亮「我的游戏」组：导入管理的就是本地库。此时与停在诊断时
-      // 一样，高亮只是视觉锚点、不是当前视图，点它照常切回（BUG-4857）。
+      // 一样，高亮只是视觉锚点、不是当前视图，点它照常切回（BUG-4706）。
       selected: group == null ? tabs.first.value : shown,
       selectedIsCurrent: group != null && shownIsCurrent,
       onChanged: select,

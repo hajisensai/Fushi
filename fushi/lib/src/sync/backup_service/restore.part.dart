@@ -1543,7 +1543,7 @@ class BackupRestoreService {
       }
 
       // 4) Success: drop the sidecar; the pre-restore copy is RETAINED as the
-      // pre-overwrite snapshot (BUG-4852: deleting it made an accidental
+      // pre-overwrite snapshot (BUG-4701: deleting it made an accidental
       // overwrite unrecoverable). A failed device-local replay is recoverable
       // at the next startup, but only while BOTH artifacts survive. The replay
       // transaction starts with a child-first wipe and is therefore safe to
@@ -1563,7 +1563,7 @@ class BackupRestoreService {
     }
   }
 
-  /// 覆盖导入成功后保留的「覆盖前」整库快照路径（BUG-4852）。
+  /// 覆盖导入成功后保留的「覆盖前」整库快照路径（BUG-4701）。
   static String overwriteSnapshotPath(String dbDirectory) =>
       p.join(dbDirectory, databasePreOverwriteSnapshotFileName);
 
@@ -1849,7 +1849,7 @@ class BackupRestoreService {
     ),
   );
 
-  /// 把覆盖前快照里的书库行、阅读进度、统计**只补缺**合并进当前库（BUG-4852）：
+  /// 把覆盖前快照里的书库行、阅读进度、统计**只补缺**合并进当前库（BUG-4701）：
   /// 当前库缺的行插入，已有的行一律不动（[BackupMergeEngine] 的 `fillMissingOnly`），
   /// bookKey 原样。复用合并导入的整套引擎（快照副本先迁到当前 schema 再 ATTACH），
   /// 同一个事务、同一套崩溃清理协议（merge sidecar + `pre-merge.bak`）。
@@ -2831,7 +2831,8 @@ class BackupRestoreService {
     void Function(int deltaBytes)? onBytes,
   }) async {
     final Directory targetRoot = Directory(dictionaryResourceDirectory);
-    // 引擎常驻映射着每本词典的 hash.table / blobs.bin（native map_rd）；Windows 上
+    // 引擎常驻映射着每本词典的索引与记录文件（key.index / blobs.bin 等，native
+    // map_rd）；Windows 上
     // 只要 view 还活着，删资源根一律 ERROR_USER_MAPPED_FILE，整个恢复流程就断在
     // 这一行（BUG-1756）。恢复流程收尾必定重启 app（backupImportRestart），故这里
     // 把引擎清空不需要再装回来。删 + 解压整段在映射释放的作用域里：作用域先等

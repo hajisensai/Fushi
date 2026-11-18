@@ -8,7 +8,7 @@ import 'package:fushi_engine/media/manga/manga_storage.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:path/path.dart' as p;
 
-/// 孤儿书目录里能识别出的书类型（BUG-4852）。
+/// 孤儿书目录里能识别出的书类型（BUG-4701）。
 enum OrphanBookKind {
   /// 解压后的 EPUB 树（`META-INF/container.xml`）。
   epub,
@@ -126,7 +126,7 @@ typedef OrphanBookRegistrar =
     });
 
 /// 「可恢复的书」：书库根（`fushi_books`）下有目录、书库里却没有对应行的书，
-/// 重新登记回书库（BUG-4852）。
+/// 重新登记回书库（BUG-4701）。
 ///
 /// 场景：覆盖导入把整个书库换成了别的库（书库行、进度、统计全没），但书文件树
 /// 只有备份里带树时才会被替换，于是本机的书目录原样留在盘上成了孤儿；SRS 卡片

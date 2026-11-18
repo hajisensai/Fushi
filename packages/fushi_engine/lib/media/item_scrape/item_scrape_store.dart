@@ -11,7 +11,7 @@ import 'package:fushi_engine/media/cover_file_writer.dart';
 import 'package:fushi_engine/media/metadata/image_download.dart';
 import 'package:fushi_engine/media/video/video_storage.dart';
 
-/// 单本书 / 漫画 / 字幕书 / 游戏的刮削资料与附加图（schema v160 的
+/// 单本书 / 漫画 / 字幕书 / 游戏的刮削资料与附加图（schema v161 的
 /// `item_scrape_meta` / `item_images`）的唯一写入口。
 ///
 /// 书籍刮削门面（Bangumi / DLsite，以及之后的 AniList / openBD / NDL / 楽天）、

@@ -65,7 +65,7 @@ List<CtlRoute> buildLibraryCtlRoutes(OpContext context) {
     // 书架管理（合集 / 标签 / 书签 / 收藏句 / 改名 / 封面 / 读完 / 重置 / 来源增删改）、
     // 阅读会话遥控、有声书、漫画 OCR：各自一个文件，路径同在 library 前缀下。
     ...buildLibraryManageCtlRoutes(context),
-    // v160 条目刮削资料 / 横版背景（CLI `library scrape-meta`）。
+    // v161 条目刮削资料 / 横版背景（CLI `library scrape-meta`）。
     ...buildLibraryScrapeCtlRoutes(context),
     ...buildReaderCtlRoutes(context),
     ...buildAudiobookCtlRoutes(context),

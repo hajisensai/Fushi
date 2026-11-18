@@ -557,7 +557,7 @@ const List<String> _kImportBakSuffixes = <String>[
 
 const String _kPreOverwriteSnapshotSuffix = '.pre-overwrite.bak';
 
-/// 覆盖导入**成功后**保留的「覆盖前」整库快照（BUG-4852）：覆盖导入动手前的
+/// 覆盖导入**成功后**保留的「覆盖前」整库快照（BUG-4701）：覆盖导入动手前的
 /// `pre-restore.bak` 在成功后改名成它，只留最近一份（下一次覆盖导入成功时替换）。
 /// 存储页「数据库备份快照」条目列出它、可删；备份页「从覆盖导入前的快照恢复书库」
 /// 从它只补缺合并书库行。不在 [_kSnapshotOwnerSidecar] 里——没有任何启动恢复流程
@@ -1004,7 +1004,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 160;
+  int get schemaVersion => 161;
 
   /// v125–v128 四步的产物（全部幂等）：SRS 写路径索引、
   /// `collection_member_tombstones.published_at`、`bookmarks.char_offset` /
@@ -3203,7 +3203,16 @@ class FushiDatabase extends _$FushiDatabase
         }
       }
       if (from < 160) {
-        // v160：item_scrape_meta / item_images——单本书 / 漫画 / 字幕书 / 游戏的
+        // v160：audio_cues.token_timing_json——转录产物的逐 token 时间随 cue 落库，
+        // 运行时（漫画台词半句命中按 token 裁区间）从库里就能取到；此前它是导入时
+        // 的瞬态字段，落库即丢。纯加列、存量 NULL（要重新匹配才有）；按列存在性守卫，幂等。
+        if (await _tableExists('audio_cues') &&
+            !await _columnExists('audio_cues', 'token_timing_json')) {
+          await m.addColumn(audioCues, audioCues.tokenTimingJson);
+        }
+      }
+      if (from < 161) {
+        // v161：item_scrape_meta / item_images——单本书 / 漫画 / 字幕书 / 游戏的
         // 刮削资料与横版背景图（2026-11-16 所有者：刮削过的条目都走系列色块）。
         // 纯新增、无回填：重刮 / 脚本写入时填；幂等守卫同 v151。
         if (!await _tableExists('item_scrape_meta')) {

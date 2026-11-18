@@ -192,7 +192,8 @@ void main() {
 
       test('刚装载就释放：词典目录立刻删得动', () async {
         // 复制一本词典出来装载，装完不等过滤器就释放并删目录。Windows 上只要还有
-        // 线程撑着 hash.table 的映射，这里的改名 / 删除就会抛（BUG-1756 的形状）。
+        // 线程撑着索引文件的映射，这里的改名 / 删除就会抛（BUG-1756 的形状）。新导入的
+        // 词典索引是 key.index（旧式词典才有 hash.table）。
         // 只在 Windows 上有判别力（POSIX 允许改名 / 删除被映射的文件），且是概率性的
         // （构建线程要恰好还没跑完）；确定性的保证是引擎析构里叫停并等线程退出，
         // 由 ctest `union_filter_test` 用映射计数钉。
@@ -208,8 +209,8 @@ void main() {
           FushiDicts.initializeTyped(termPaths: <String>[copy.path]);
           FushiDicts.releaseAllMappings();
           await FushiDicts.whenBackgroundBorrowsSettled();
-          final File table = File('${copy.path}/hash.table');
-          final File moved = table.renameSync('${copy.path}/hash.table.moved');
+          final File table = File('${copy.path}/key.index');
+          final File moved = table.renameSync('${copy.path}/key.index.moved');
           moved.renameSync(table.path);
         }
         copy.deleteSync(recursive: true);

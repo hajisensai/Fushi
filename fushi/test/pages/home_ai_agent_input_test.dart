@@ -58,8 +58,11 @@ Future<void> _pumpPanel(
       debugShowCheckedModeBanner: false,
       theme: _theme(),
       home: Scaffold(
+        // 与真首页一样，整页 key sink 自己持焦（HomePage 的 `_keyboardFocusNode`）：
+        // 不持焦的话初始主焦点停在路由 FocusScope 上，按键根本不经过这里，
+        // 「未持焦时裸字母归快捷键层」无从观察。skipTraversal 让 Tab 直接进块内。
         body: Focus(
-          canRequestFocus: false,
+          autofocus: true,
           skipTraversal: true,
           onKeyEvent: (FocusNode _, KeyEvent event) {
             if (event is KeyDownEvent) {

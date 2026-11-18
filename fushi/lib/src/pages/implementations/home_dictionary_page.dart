@@ -37,6 +37,7 @@ import 'package:fushi/src/sync/manual_sync_ui.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
 import 'package:fushi/src/utils/components/clipboard_lookup_text_panel.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/section_visibility.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/overlay_entry_lifecycle.dart';
 import 'package:fushi/src/utils/components/fushi_deferred_loading.dart';
@@ -215,6 +216,16 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   /// Overlay 仍可能同帧重建 [_buildPopupOverlay] → 读已失效 State 的 appModel/Theme 红屏；
   /// 置位后 builder 一律空渲染。
   bool _overlayInert = false;
+
+  /// State 正被摘下（切模块销毁 / GlobalKey 换父节点途中）：根 Overlay 的浮层
+  /// 这时不能再读本 State，空渲染兜底（BUG-121）。与 [_overlayInert] 分开——
+  /// 后者只是「此刻不在屏上」，浮层要留在树上。
+  bool _deactivated = false;
+
+  /// 本页所在的保活 tab 此刻是否是当前 tab（[SectionVisibility]；不在首页外壳里
+  /// ——独立查词路由、新手引导——恒为 true）。藏着时不消费待查词与聚焦请求，
+  /// 变成可见后再消费（见 [didChangeDependencies]）。
+  bool _sectionVisible = true;
   bool _popupOverlayRebuildScheduled = false;
 
   bool _isSearching = false;
@@ -379,6 +390,10 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     final ValueNotifier<DictionaryFocusRequest?>? signal = widget.focusSignal;
     final DictionaryFocusRequest? request = signal?.value;
     if (signal == null || request == null) return;
+    // 所在保活 tab 还藏着：请求留着，变成可见后由 [didChangeDependencies] 再消费。
+    // 「点导航切到查词」是先切 tab 再发请求，请求到达时本页还没按新的可见性重建，
+    // 外层的 ExcludeFocus 仍在——这时聚焦会被吞掉。
+    if (!_sectionVisible) return;
     // 被全屏路由（阅读器 / 播放器）压在底下的 tab 承载不消费：同一个 focusSignal
     // 此刻还有另一个消费者——HomePage 为「被遮住」推的独立查词路由（同一个
     // HomeDictionaryPage、同一条信号）。底下这份先监听、先抢走请求，往看不见的
@@ -441,6 +456,10 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   }
 
   void _onDesktopLookupPending() {
+    // 所在保活 tab 藏着时不消费（与「本页还没挂载」同义）：待查词留给把查词页
+    // 显示出来的那条路——切到本 tab 后由 [didChangeDependencies] 消费，或 HomePage
+    // 被遮住时推出来的独立查词路由在挂载后消费。
+    if (!_sectionVisible) return;
     final DesktopLookupRequest? request =
         DesktopLookupService.instance.pendingRequest;
     if (request == null) return;
@@ -598,6 +617,21 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
       _overlayInert = nextInert;
       _schedulePopupOverlayRebuild();
     }
+    // 保活 tab 由藏转显：补做「切入查词页」时要做的事——消费切过来之前排入的
+    // 待查词（TODO-376）与聚焦请求。本页不保活时这两件事靠每次切入重新挂载、在
+    // initState 的后帧回调里做；现在是同一条路换了个触发点。排后帧：外层分区此刻
+    // 才开始按新的可见性重建，同步聚焦会被它的 ExcludeFocus 吞掉。
+    final bool visible = SectionVisibility.of(context);
+    if (visible != _sectionVisible) {
+      _sectionVisible = visible;
+      if (visible) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || !_sectionVisible) return;
+          _onDesktopLookupPending();
+          _consumeFocusRequest();
+        });
+      }
+    }
   }
 
   void _schedulePopupOverlayRebuild() {
@@ -616,7 +650,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   /// 当帧根 Overlay 仍可能重建 entry → 读失效 State 红屏；置位让 builder 空渲染。
   @override
   void deactivate() {
-    _overlayInert = true;
+    _deactivated = true;
     super.deactivate();
   }
 
@@ -624,7 +658,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   void activate() {
     super.activate();
     // GlobalKey 重挂等重新激活：恢复正常渲染，下次 build 的 _syncPopupOverlay 重建浮层。
-    _overlayInert = false;
+    _deactivated = false;
   }
 
   bool get _hasActiveQuery => _controller.text.isNotEmpty;
@@ -753,11 +787,14 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   }
 
   Widget _buildPage(BuildContext context) {
+    // 所在保活 tab 藏着时不参与系统返回：看不见的页面不能吃掉用户的返回键，也
+    // 不能在背后清自己的查询（HBK-AUDIT-017，与 [SectionPopScope] 同一判据）。
+    final bool sectionVisible = SectionVisibility.of(context);
     return PopScope(
       // TODO-931：常驻热槽永远占着 entries[0]，返回判据改用 hasVisiblePopup（隐藏热槽不拦返回）。
-      canPop: !_hasActiveQuery && !_popup.hasVisiblePopup,
+      canPop: !sectionVisible || (!_hasActiveQuery && !_popup.hasVisiblePopup),
       onPopInvokedWithResult: (didPop, _) {
-        if (didPop) return;
+        if (didPop || !sectionVisible) return;
         if (_popup.hasVisiblePopup) {
           _popNestedPopupAt(_popup.lastVisibleIndex);
         } else if (_hasActiveQuery) {
@@ -2220,15 +2257,36 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     // 切 tab 销毁本页当帧根 Overlay 仍会重建本 entry——彼时读失效 State 的 appModel/Theme
     // 会红屏（BUG-121）。State 失效 / 销毁期标志置位则空渲染兜底；Theme 用 entry 自己的
     // overlayContext（与本 entry 同寿命）而非更短命的 State context。
-    if (!mounted || _overlayInert) return const SizedBox.shrink();
+    if (!mounted || _deactivated) return const SizedBox.shrink();
+    // inert（所在保活 tab 被藏起 / 被不透明路由盖住）时浮层**留在树上、整棵
+    // Offstage**：不画、不接点击、不持焦点、停动画，但常驻热槽的查词 WebView
+    // （TODO-931）不拆。这里曾在 inert 时收成 `SizedBox.shrink()`——热槽开页即
+    // seed、`entries` 永不空，于是每次切出查词 tab / 每推一个整页上来都销毁预热
+    // 好的 WebView，回来再冷建一个并重新装载 popup.html + JS + CSS
+    // （BUG-4849，与游戏工作台 BUG-4896 同一个坑）。祖先结构恒定、只翻
+    // `offstage` 参数（平台视图上方的祖先在层的生命周期内不能增删）。
+    final bool inert = _overlayInert;
     // BUG-2953：浮层自带导航层，弹窗里唤出的菜单画在浮层之上（见 LookupOverlayNavigator）。
+    return Offstage(
+      offstage: inert,
+      child: TickerMode(
+        enabled: !inert,
+        child: ExcludeFocus(
+          excluding: inert,
+          child: _buildPopupOverlayBody(overlayContext),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPopupOverlayBody(BuildContext overlayContext) {
     return LookupOverlayNavigator(
       child: FushiAppUiScaleNeutralizer(
         child: Theme(
           data: appModel.overrideDictionaryTheme ?? Theme.of(overlayContext),
           child: LayoutBuilder(
             builder: (BuildContext context, BoxConstraints constraints) {
-              if (!mounted || _overlayInert) return const SizedBox.shrink();
+              if (!mounted || _deactivated) return const SizedBox.shrink();
               final Size screen = Size(
                 constraints.maxWidth,
                 constraints.maxHeight,

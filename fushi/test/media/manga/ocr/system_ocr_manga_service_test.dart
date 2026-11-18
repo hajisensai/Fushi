@@ -753,7 +753,7 @@ void main() {
       );
     });
 
-    test('BUG-4856：modelStatus 透传平台的模型 / Play 服务状态，按语言查', () async {
+    test('BUG-4705：modelStatus 透传平台的模型 / Play 服务状态，按语言查', () async {
       final _ModelStatusPlatform platform = _ModelStatusPlatform(
         SystemOcrModelStatus.playServicesMissing,
       );
@@ -766,7 +766,7 @@ void main() {
       expect(platform.languages, <String>['zh']);
     });
 
-    test('BUG-4856：没有模型概念的平台（只实现识别）恒答 ready', () async {
+    test('BUG-4705：没有模型概念的平台（只实现识别）恒答 ready', () async {
       expect(
         await SystemOcrMangaService(
           platform: _FakePlatform(),
@@ -775,7 +775,7 @@ void main() {
       );
     });
 
-    test('BUG-4856：model_unavailable 只在系统 OCR 引擎上算「缺模型 / Play 服务」', () {
+    test('BUG-4705：model_unavailable 只在系统 OCR 引擎上算「缺模型 / Play 服务」', () {
       const SystemOcrUnavailableException modelUnavailable =
           SystemOcrUnavailableException(kSystemOcrModelUnavailableReason);
       expect(

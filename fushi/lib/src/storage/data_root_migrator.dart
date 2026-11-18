@@ -1357,7 +1357,7 @@ class DataRootMigrator {
     }
   }
 
-  /// item_images：path（v160 单本书 / 字幕书 / 游戏附加图：
+  /// item_images：path（v161 单本书 / 字幕书 / 游戏附加图：
   /// `<documents>/video_covers/items/`，与 media_images 同目录族）。不改写 = 换
   /// 数据根后书架 / 游戏库系列色块的横版背景全部变死链、静默退回书封摆法。
   /// media_type / entry_key / kind / source_url 不是本机路径，绝不改写。

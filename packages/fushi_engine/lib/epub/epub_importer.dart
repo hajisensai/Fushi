@@ -308,7 +308,7 @@ class EpubImporter {
   }
 
   /// 已解析的 [book] → `EpubBooks` 行：用户导入（[_persistParsed]）与「孤儿书目录
-  /// 重新登记」（[registerExtractedBook]，BUG-4852）共用的**唯一**行构造口径，
+  /// 重新登记」（[registerExtractedBook]，BUG-4701）共用的**唯一**行构造口径，
   /// 两条路径落下的列逐字段同构。
   static EpubBooksCompanion bookRowFor({
     required EpubBook book,
@@ -367,7 +367,7 @@ class EpubImporter {
   }
 
   /// 把盘上**已解压**、但没有书库行的 EPUB 目录 [extractDir] 重新登记成书
-  /// （BUG-4852：覆盖导入换掉书库后，书文件成了孤儿目录）。
+  /// （BUG-4701：覆盖导入换掉书库后，书文件成了孤儿目录）。
   ///
   /// [bookKey] 由调用方给定（= 目录名），**不**按标题重新派生、不做重名后缀——
   /// 卡片背面的来源链接按 uid → bookKey 回退找书，键不变才能重新连上。解析与字数

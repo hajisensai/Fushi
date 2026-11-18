@@ -8,6 +8,7 @@ import 'package:fushi/src/utils/components/fushi_series_cover_block.dart';
 import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async' show StreamSubscription, Timer, unawaited;
+import 'dart:convert' show jsonEncode;
 import 'dart:io';
 
 import 'package:cupertino_ui/cupertino_ui.dart';
@@ -55,6 +56,8 @@ import 'package:fushi/src/media/drag_drop/card_drop_registry.dart';
 import 'package:fushi/src/media/drag_drop/reader_shelf_drop_router.dart';
 import 'package:fushi/src/media/tags/tag_drop.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
+import 'package:fushi/src/media/collections/collection_art_scrape.dart'
+    show CollectionArtScrape;
 import 'package:fushi/src/media/collections/collection_member_view.dart'
     show CollectionMemberInfo, pickContinueIndex;
 import 'package:fushi/src/media/display_title.dart';
@@ -180,6 +183,7 @@ import 'package:fushi_engine/sync/pdf_sync_package.dart'
 import 'package:fushi/src/sync/synced_book_import.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
+import 'package:fushi/src/utils/components/section_deferred_build.dart';
 import 'package:fushi/src/utils/components/section_visibility.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -261,7 +265,21 @@ bool shouldReloadShelfProgressNow({
   required bool mediaOpen,
 }) => shelfVisible && !mediaOpen;
 
-class ReaderFushiHistoryPage extends HistoryReaderPage {
+/// 两个书架都不在前台（别的 tab / 书正开着）时到达的进度写入：只记一笔，切回
+/// 任一书架再重算。阅读器每翻几页就写一次位置，不能让藏在后面的书架跟着重算
+/// 整个书列表。
+///
+/// 书架与漫画书架共用同一对进度缓存 provider，欠账也只记一份：此前各记各的、
+/// 且都按「书 tab 在前」判，停在漫画 tab 时到达的写入要等切到书 tab 才生效
+/// （BUG-4847）。
+final StateProvider<bool> _shelfProgressReloadOwedProvider =
+    StateProvider<bool>((Ref ref) => false);
+
+/// 藏在别的 tab / 别的库视图后面时不重建（[SectionDeferredBuild]）：首页切回时
+/// 失效书列表 provider，藏着的书架与漫画书架不再各跟着整页重建四次
+/// （BUG-4848），等切回书架再按新值构建一次。
+class ReaderFushiHistoryPage extends HistoryReaderPage
+    with SectionDeferredBuild {
   const ReaderFushiHistoryPage({
     this.mangaOnly = false,
     this.navigation,
@@ -879,41 +897,53 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
-  /// 切回书架 tab 时自动重拉远端书（BUG-992）。非书架 tab 的切换忽略。
+  /// 本实例所在的顶层 tab：漫画书架（`mangaOnly`）住在漫画 tab，其余住在书 tab。
+  HomeTab get _shelfTab => _mangaOnly ? HomeTab.manga : HomeTab.books;
+
+  /// 切回**本书架所在的** tab 时自动对账远端书（BUG-992）。别的 tab 的切换忽略。
+  ///
+  /// 书架与漫画书架是同一个 State 类的两个实例、都订阅这一个信号。此前两个实例
+  /// 判的都是 `== HomeTab.books`：切到书 tab 时藏着的漫画书架跟着整页重建，而切到
+  /// 漫画 tab 时漫画书架反而不对账（BUG-4847）。
   void _onShellTabActivated() {
     if (!mounted) return;
-    if (homeShellTabNotifier.value == HomeTab.books) {
+    final HomeTab active = homeShellTabNotifier.value;
+    if (active == _shelfTab) {
       _reconcileKavitaProgress();
-      _refreshRemoteBooks();
-      if (_progressReloadDeferred) _reloadBookProgress();
+      unawaited(_reconcileRemoteBooksOnActivation());
+      // 两个书架都不在前台时攒下的进度重算，谁先被切回来谁补（欠账两个实例
+      // 共用一份，见 [_shelfProgressReloadOwedProvider]）。
+      if (ref.read(_shelfProgressReloadOwedProvider)) _reloadBookProgress();
     }
   }
 
   StreamSubscription<void>? _readerPositionsSub;
   Timer? _progressReloadDebounce;
 
-  /// 书架不可见（别的 tab / 书正开着）时到达的进度写入：只记一笔，切回书架再重算。
-  /// 阅读器每翻几页就写一次位置，不能让藏在后面的书架跟着重算整个书列表。
-  bool _progressReloadDeferred = false;
-
   /// reader_positions 写入回调：防抖后失效书列表 / 最近阅读时刻两个缓存 provider。
   void _onReaderPositionsChanged(void _) {
     _progressReloadDebounce?.cancel();
     _progressReloadDebounce = Timer(const Duration(milliseconds: 400), () {
       if (!mounted) return;
-      if (!shouldReloadShelfProgressNow(
-        shelfVisible: homeShellTabNotifier.value == HomeTab.books,
-        mediaOpen: appModelNoUpdate.isMediaOpen,
+      final HomeTab active = homeShellTabNotifier.value;
+      final bool mediaOpen = appModelNoUpdate.isMediaOpen;
+      if (shouldReloadShelfProgressNow(
+        shelfVisible: active == _shelfTab,
+        mediaOpen: mediaOpen,
       )) {
-        _progressReloadDeferred = true;
+        _reloadBookProgress();
         return;
       }
-      _reloadBookProgress();
+      // 另一个书架实例正被看着：这次写入归它当场重算，这里不记欠账。
+      final bool otherShelfShowing =
+          !mediaOpen && (active == HomeTab.books || active == HomeTab.manga);
+      if (otherShelfShowing) return;
+      ref.read(_shelfProgressReloadOwedProvider.notifier).state = true;
     });
   }
 
   void _reloadBookProgress() {
-    _progressReloadDeferred = false;
+    ref.read(_shelfProgressReloadOwedProvider.notifier).state = false;
     ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
     ref.invalidate(bookLastReadAtProvider);
   }
@@ -3783,6 +3813,14 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           collectionAiSettings: isAiModuleEnabled(appModel.moduleVisibility)
               ? appModel.prefsRepo
               : null,
+          // 「获取各卷封面与横幅」：只传数据，按钮与结果面板在详情页 / 刮削模块里。
+          artScrape: CollectionArtScrape(
+            database: appModel.database,
+            thumbnailsDirectory: appModel.thumbnailsDirectory,
+            servicesEnabled: () =>
+                appModel.moduleVisibility.isEnabled(ModuleId.services),
+            migrationReadonly: () => appModel.isMigrationReadonly,
+          ),
         ),
       ),
     );

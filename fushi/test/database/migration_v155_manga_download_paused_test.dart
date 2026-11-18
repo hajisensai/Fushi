@@ -99,7 +99,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 160);
+    expect(migrated.schemaVersion, 161);
     final MangaDownloadJobRow row = (await migrated.getMangaDownloadJob('j1'))!;
     expect(row.status, MangaDownloadJobStatus.failed);
     expect(row.pagesDone, 2);
@@ -130,7 +130,7 @@ void main() {
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
-    expect(probe.select('PRAGMA user_version').first.values.first, 160);
+    expect(probe.select('PRAGMA user_version').first.values.first, 161);
     expect(createSql(probe), contains("'paused'"));
     expect(
       indexNames(probe),

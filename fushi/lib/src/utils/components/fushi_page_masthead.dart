@@ -604,7 +604,7 @@ class FushiMastheadSwitch<T extends Object> extends StatelessWidget {
 
   /// false = [selected] 只是视觉锚点，宿主此刻停在不属于任何一项的视图上
   /// （库页停在导入页时高亮「我的」组）：点中它也要照常回调 [onChanged]，否则
-  /// 那一项看着是选中的、却点不回去（BUG-4857）。默认 true：点当前项不回调。
+  /// 那一项看着是选中的、却点不回去（BUG-4706）。默认 true：点当前项不回调。
   final bool selectedIsCurrent;
 
   @override

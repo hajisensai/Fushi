@@ -343,19 +343,28 @@ Future<T?> adaptiveModalSheet<T>({
   bool isDismissible = true,
   bool studyClockTransparent = false,
   ThemeData? md3Theme,
+  bool? useRootNavigator,
 }) {
   // [md3Theme]：MD3 弹层整体（面板底色 + 内容）换一套主题——导入流程里的弹层
   // 跟随模块色系（见 importToneThemeOrNull）。只作用于下面的 Material 分支；
   // Apple / 液态玻璃分支不受影响。
+  //
+  // [useRootNavigator]：null = 各形态原有的默认（Cupertino 弹层 / 桌面玻璃 sheet 在
+  // root navigator 上，Material 底部 sheet 与宽屏浮动 sheet 在最近的 navigator 上）。
+  // true = 一律开在 root navigator 上——调用方的 context 可能在一条 root 路由**下面**
+  // 的页面里（视频页开着整页的字幕工作台时起面板），开在最近的 navigator 上会被那条
+  // 整页路由挡住。
   final ThemeData? sheetTheme = md3Theme;
   Widget themed(Widget child) =>
       sheetTheme == null ? child : Theme(data: sheetTheme, child: child);
+
   final RouteSettings? routeSettings = studyClockRouteSettings(
     transparent: studyClockTransparent,
   );
   if (isCupertinoPlatform(context)) {
     return showCupertinoModalPopup<T>(
       context: context,
+      useRootNavigator: useRootNavigator ?? true,
       barrierDismissible: isDismissible,
       routeSettings: routeSettings,
       builder: builder,
@@ -377,6 +386,7 @@ Future<T?> adaptiveModalSheet<T>({
       // 关闭、点遮罩关闭、独立焦点作用域、pop 返回值与底部弹层一致。
       return showGeneralDialog<T>(
         context: context,
+        useRootNavigator: useRootNavigator ?? true,
         barrierDismissible: isDismissible,
         barrierLabel: MaterialLocalizations.of(
           context,
@@ -424,6 +434,7 @@ Future<T?> adaptiveModalSheet<T>({
     // 45%），且自带路由，Esc / 焦点作用域 / isScrollControlled 语义都要重接。
     return showModalBottomSheet<T>(
       context: context,
+      useRootNavigator: useRootNavigator ?? false,
       routeSettings: routeSettings,
       isScrollControlled: isScrollControlled,
       useSafeArea: useSafeArea,
@@ -444,7 +455,10 @@ Future<T?> adaptiveModalSheet<T>({
   }
   final bool frosted = glassMaterialOf(context) != FushiGlassMaterial.off;
   if (MediaQuery.sizeOf(context).width >= kFushiSheetWideBreakpoint) {
-    final NavigatorState navigator = Navigator.of(context);
+    final NavigatorState navigator = Navigator.of(
+      context,
+      rootNavigator: useRootNavigator ?? false,
+    );
     return navigator.push<T>(
       FushiDialogRoute<T>(
         context: context,
@@ -466,6 +480,7 @@ Future<T?> adaptiveModalSheet<T>({
     // 关掉它、在玻璃里按 M3 同一几何（48 高交互区 + 32x4 横条）自己画。
     return showModalBottomSheet<T>(
       context: context,
+      useRootNavigator: useRootNavigator ?? false,
       routeSettings: routeSettings,
       isScrollControlled: isScrollControlled,
       useSafeArea: useSafeArea,
@@ -490,6 +505,7 @@ Future<T?> adaptiveModalSheet<T>({
   }
   return showModalBottomSheet<T>(
     context: context,
+    useRootNavigator: useRootNavigator ?? false,
     routeSettings: routeSettings,
     isScrollControlled: isScrollControlled,
     useSafeArea: useSafeArea,

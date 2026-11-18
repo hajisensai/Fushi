@@ -47,7 +47,7 @@ class MangaOcrEngineAvailability {
   final bool systemOcrOffered;
   final bool systemOcrReady;
 
-  /// 原生侧报这台设备**根本没有可用的 Play 服务**（BUG-4856，
+  /// 原生侧报这台设备**根本没有可用的 Play 服务**（BUG-4705，
   /// [SystemOcrModelStatus.playServicesAbsent]）。只影响自动选引擎：选项本身照旧
   /// 可用（[isUsable] 不看它），用户显式选了它时由引导弹窗说明原因，而不是让它
   /// 从列表里消失、用户不知道为什么。
@@ -74,7 +74,7 @@ class MangaOcrEngineAvailability {
     // 系统 OCR 必须进能力表：`resolveMangaOcrEngine` 的 auto 回退顺序里排着
     // 它，漏在这里 auto 就永远落不到它上——Apple 上没下本地模型时「装完即用」
     // 的 Vision 引擎只有手动选才用得上。没有 Play 服务的 Android 设备上它每页
-    // 都必然失败，auto 不得落到它上（BUG-4856）。
+    // 都必然失败，auto 不得落到它上（BUG-4705）。
     MangaOcrEngineCapability(
       id: MangaOcrEngineId.systemOcr,
       supported: systemOcrOffered,
@@ -245,7 +245,7 @@ Future<_SystemOcrProbe> _probeSystemOcr(
     available = false;
   }
   if (!available) return const _SystemOcrProbe.unavailable();
-  // 平台有系统 OCR 时再问一句 Play 服务（BUG-4856）：Android 的 isAvailable 恒真
+  // 平台有系统 OCR 时再问一句 Play 服务（BUG-4705）：Android 的 isAvailable 恒真
   // （BUG-2906，选项不置灰），没有 Play 服务的设备只有这里答得出来。查不出来
   // （超时 / 抛异常）按「不确定」处理、不拦自动档——宁可让识别失败后由引导弹窗
   // 说明，也不因一次探测抖动把能用的引擎藏起来。

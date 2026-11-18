@@ -160,7 +160,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
   /// 本游戏挂的共享用户标签，与 bgm/vndb 元数据标签分开。
   List<BookTagRow> _userTags = const <BookTagRow>[];
 
-  /// 单条目刮削附加数据（v160 `item_scrape_meta` + `item_images`）：横版背景 /
+  /// 单条目刮削附加数据（v161 `item_scrape_meta` + `item_images`）：横版背景 /
   /// 艺术字进 hero，资料行只补游戏合并资料里缺的简介 / 评分。
   ItemScrapeDetail _scrapeDetail = ItemScrapeDetail.empty;
 

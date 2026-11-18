@@ -255,8 +255,8 @@ bool get floatingBallSystemBallSupported =>
       isDesktop: isDesktopSystemBallPlatform,
     );
 
-/// 应用外球上有没有这颗全局按钮（桌面另有一套、并受查词模块开关约束，见
-/// [FloatingBallGlobalAction.availableIn]）。
+/// 应用外球上有没有这颗全局按钮（桌面另有一套，「打开查词页」受查词模块开关
+/// 约束，见 [FloatingBallGlobalAction.availableIn]）。
 bool floatingBallSystemActionAvailable(
   FloatingBallGlobalAction action, {
   required bool lookupModuleEnabled,
@@ -274,7 +274,7 @@ bool floatingBallSystemActionAvailable(
 class DesktopSystemBallActionTarget {
   const DesktopSystemBallActionTarget();
 
-  /// 全局查词覆盖窗此刻能不能接查词（查词模块开着且启动过）。
+  /// 全局查词覆盖窗此刻能不能接查词（平台支持且启动过）。
   bool get overlayLookupAvailable =>
       GlobalLookupController.instance.isAvailable;
 
@@ -959,9 +959,8 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
         ref.read(appProvider).requestHomeDictionaryTab(focusSearch: true);
       case 'popup_lookup':
         // 查前台程序当前选中的文字：点球不激活 Fushi，前台还是那个程序。按钮只在
-        // 查词模块开着时下发，而模块一开覆盖窗就起（含会话中途打开，见
-        // [GlobalLookupController.followLookupModule]）；走到 else 是真异常，
-        // 记一笔而不是静默。
+        // 平台支持覆盖窗时下发，而覆盖窗在启动链里按平台能力无条件起（见
+        // `startDesktopLookupSurfaces`）；走到 else 是真异常，记一笔而不是静默。
         if (target.overlayLookupAvailable) {
           await target.lookupSelection();
         } else {
@@ -1330,7 +1329,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           'anchor=${_rectSummary(anchorScreenRect)} '
           'text="$linePreview"',
     );
-    // BUG-4858：查词串从被点字起、跨过 OCR 折行接上同一文本块的后续行（词被折到
+    // BUG-4707：查词串从被点字起、跨过 OCR 折行接上同一文本块的后续行（词被折到
     // 下一行时不再在行尾截断）；制卡句子取块里含被点字的整句。
     final ScreenOcrBlockLookup lookup = screenOcrBlockLookupForHit(
       lines: lines,

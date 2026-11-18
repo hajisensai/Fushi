@@ -1183,10 +1183,14 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
           const Spacer()
         else
           SizedBox(height: tokens.spacing.card),
+        // 定高块（拼贴里与两行来源块等高）：标题 / 计数各自限行，长文案或大字号
+        // 下省略号收尾，不把按钮顶出块底。
         Text(
           sources.isEmpty
               ? t.discovery_guide_no_sources
               : t.discovery_source_pick_hint,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
           style: theme.textTheme.titleLarge?.copyWith(
             fontWeight: FontWeight.w600,
             letterSpacing: apple ? -0.3 : null,
@@ -1200,6 +1204,8 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
               browsable: browsable,
               searchOnly: sources.length - browsable,
             ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: theme.textTheme.bodyMedium?.copyWith(color: secondary),
           ),
         ],
@@ -1411,11 +1417,14 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
         SliverToBoxAdapter(
           child: FushiSectionTitle(
             title,
+            shrinkTrailing: true,
             trailing: Text(
               t.discovery_results_summary(
                 sources: sourceCount,
                 n: visible.entries.length,
               ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: tokens.type.metadata.copyWith(
                 color: tokens.surfaces.onVariant,
               ),

@@ -28,6 +28,8 @@ import 'package:fushi/src/media/video/web_video_login_migration.dart';
 import 'package:fushi/src/media/video/underlay_composition.dart'
     show UnderlayInputExclusion, underlayInputExclusions;
 import 'package:fushi/src/media/video/web_video_shaders.dart';
+import 'package:fushi/src/media/video/web_video_subtitle_media.dart'
+    show webVideoCookieHeader;
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
@@ -586,6 +588,18 @@ class WebVideoSession {
       );
       return null;
     }
+  }
+
+  /// 页面里这个 WebView 读 [url] 时会带的 Cookie（本会话的 WebView 环境就是站点登录态所在的
+  /// cookie 罐），拼成 `Cookie` 请求头的值；没有 cookie 为空串。字幕生成在 app 外（ffmpeg）
+  /// 拉站点媒体时带上它，与页面自己的请求同一身份。读不出来时抛错（由调用方报给用户）。
+  Future<String> cookieHeaderFor(String url) async {
+    final List<Cookie> cookies = await CookieManager.instance(
+      webViewEnvironment: _environment,
+    ).getCookies(url: WebUri(url));
+    return webVideoCookieHeader(<(String, String)>[
+      for (final Cookie c in cookies) (c.name, '${c.value ?? ''}'),
+    ]);
   }
 
   /// 原样求值（诊断 / 集成测试读页面状态），返回结果的字符串形式。

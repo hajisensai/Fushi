@@ -16,10 +16,10 @@ import 'package:material_ui/material_ui.dart';
 
 /// 首页拼贴版式（设计稿 H1–H8）的排版组件。
 ///
-/// - BUG-4851（H4）：桌面「继续」右侧的卡被窗口切掉一半——旧版是「首块 + 两行
+/// - BUG-4903（H4）：桌面「继续」右侧的卡被窗口切掉一半——旧版是「首块 + 两行
 ///   半高卡横滑」，横滑条铺到内容区外、最后一列总是被视口切在窗口边。新网格按
 ///   可用宽度算列数，任何宽度下每一块都完整落在内容区里，放不下的进「全部 ›」。
-/// - BUG-4850（H3）：首页不再挂右下的「后台任务」FAB，同步状态改画在头像外圈。
+/// - BUG-4902（H3）：首页不再挂右下的「后台任务」FAB，同步状态改画在头像外圈。
 void main() {
   group('HomeContinueGrid（H4）', () {
     test('列数随可用宽度增加、夹在 1…最大列数', () {
@@ -41,6 +41,10 @@ void main() {
 
     for (final double width in <double>[820, 1000, 1366, 1920]) {
       testWidgets('宽 $width：每块完整落在内容区里，首块是 hero', (WidgetTester tester) async {
+        // 测试视口默认 800 宽：不放大的话 SizedBox(width) 被夹回 800，网格按
+        // 800 排列，与按 [width] 算的期望条数对不上（测的就不是这个宽度）。
+        await tester.binding.setSurfaceSize(Size(width, 900));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
         final Map<int, FushiCoverBlockSize> built =
             <int, FushiCoverBlockSize>{};
         await tester.pumpWidget(

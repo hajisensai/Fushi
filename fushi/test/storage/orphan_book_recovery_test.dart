@@ -12,7 +12,7 @@ import 'package:path/path.dart' as p;
 
 import '../sync/temp_dir_cleanup.dart';
 
-/// BUG-4852：覆盖导入后书目录成孤儿，按目录名（= bookKey）重新登记，卡片来源
+/// BUG-4701：覆盖导入后书目录成孤儿，按目录名（= bookKey）重新登记，卡片来源
 /// 重新连上；不能还原 bookKey / 来源的目录列为不可恢复。
 void main() {
   late Directory tmp;

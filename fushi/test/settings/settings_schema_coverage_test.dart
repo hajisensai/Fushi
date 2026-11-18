@@ -10,6 +10,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
@@ -2117,6 +2118,15 @@ void main() {
         ProviderScope(
           overrides: <Override>[
             appProvider.overrideWith((Ref ref) => appModel),
+            // 拼贴打磨（PR #3515）起外观页的外壳样式预览 `ref.watch`
+            // fushiBooksProvider 取书封（shell_style_preview.dart），它连带订阅
+            // drift `.watch()` 的 StreamProvider。测试结束卸载树时 drift
+            // `StreamQueryStore.markAsClosed` 排一个零延时 timer，紧接着的
+            // pending-timer 校验必红并挂到 10 分钟超时（同 home_dashboard_page_test
+            // 的 bookStreamOverrides）。harness 设置页不测书封，打桩成空书架。
+            fushiBooksProvider.overrideWith(
+              (ref, language) async => const <MediaItem>[],
+            ),
             platformServicesProvider.overrideWithValue(platformServices),
             // 网页广告拦截的状态在 Rust 核心里、落在数据目录下；本 harness 的 AppModel 没走
             // initialise()（没有数据目录），给它一个临时目录，下载一律离线失败（不联网）。

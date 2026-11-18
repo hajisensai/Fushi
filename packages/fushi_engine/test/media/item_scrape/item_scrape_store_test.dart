@@ -7,7 +7,7 @@ import 'package:fushi_engine/media/item_scrape/item_scrape_store.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
-/// [ItemScrapeStore]：v160 条目刮削资料 / 附加图的唯一写入口——资料整行写 / 合并写、
+/// [ItemScrapeStore]：v161 条目刮削资料 / 附加图的唯一写入口——资料整行写 / 合并写、
 /// 附加图原子落盘 + 登记、换图回收旧文件、宿主删除后按「不被任何行引用」回收。
 void main() {
   late FushiDatabase db;

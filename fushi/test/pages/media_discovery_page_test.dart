@@ -16,9 +16,12 @@ import 'package:fushi/src/media/discovery/media_discovery_source.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/pages/implementations/discovery/discovery_source_block.dart';
 import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import '../helpers/source_guard.dart';
 import '../helpers/test_platform_services.dart';
 import '../torrent/nyaa_html_fixture.dart';
@@ -283,7 +286,11 @@ void main() {
         of: find.byKey(
           const ValueKey<String>('discovery_source_pick_browsable'),
         ),
-        matching: find.text(t.discovery_source_chip_browsable),
+        // 只认 chip：本测试的来源名也叫 'Browsable'，与英文 chip 文案同字。
+        matching: find.widgetWithText(
+          DiscoverySourceChip,
+          t.discovery_source_chip_browsable,
+        ),
       ),
       findsOneWidget,
     );
@@ -457,7 +464,11 @@ void main() {
 
     final Finder download = find.descendant(
       of: row,
-      matching: find.byIcon(Icons.download_outlined),
+      // 下载键改走设计系统按钮（FushiIconButton + FushiIcons.download），
+      // 不再是 Material IconButton + Icons.download_outlined。
+      matching: find.byWidgetPredicate(
+        (Widget w) => w is FushiIconButton && w.icon == FushiIcons.download,
+      ),
     );
     // 取消：不入队。
     await tester.tap(download);
@@ -832,18 +843,22 @@ void main() {
     );
     ScrollPosition position() => tester
         .state<ScrollableState>(
-          find.descendant(of: results, matching: find.byType(Scrollable)),
+          find.descendant(of: results, matching: find.byType(Scrollable)).first,
         )
         .position;
 
-    await tester.drag(results, const Offset(0, -400));
-    await tester.pumpAndSettle();
-    expect(position().pixels, greaterThan(0));
-
+    // PR #3515 起搜索行是同一滚动视图的第一行、随内容滚走：先在顶部输入关键词
+    // （停顿后自动搜一轮），再把结果滚下去，最后提交新一轮搜索——输入框仍持焦，
+    // 提交不需要它在视口里。
     await tester.enterText(
       find.byKey(const ValueKey<String>('discovery_search_field')),
       'paged',
     );
+    await tester.pumpAndSettle(const Duration(milliseconds: 400));
+    await tester.drag(results, const Offset(0, -400));
+    await tester.pumpAndSettle();
+    expect(position().pixels, greaterThan(0));
+
     await tester.testTextInput.receiveAction(TextInputAction.search);
     await tester.pumpAndSettle();
     expect(find.text('paged-1-0'), findsOneWidget);

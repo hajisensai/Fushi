@@ -17,6 +17,7 @@ import 'package:fushi_core/fushi_core.dart' show MediaTrackingMappingRow;
 import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/home_widget_layout.dart';
@@ -600,7 +601,7 @@ class _HomeTrackingCoverFan extends StatelessWidget {
                 child: Transform.rotate(
                   angle: _angle(i, n),
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
+                    borderRadius: FushiBorderRadius.chip,
                     child: SizedBox(
                       width: _width,
                       height: _height,

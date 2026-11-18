@@ -718,7 +718,7 @@ String mangaPageDivHtml(
       '$sizingCss'
       'aspect-ratio:${_num(w)}/${_num(h)};">'
       '<div class="manga-source" style="position:absolute;inset:0;container-type:inline-size;">'
-      // fitToDisplay（BUG-4855）：不在 HTML 里写 src，只留 data-src；文档脚本按本页排版
+      // fitToDisplay（BUG-4704）：不在 HTML 里写 src，只留 data-src；文档脚本按本页排版
       // 宽度 × devicePixelRatio 算出需要的像素宽，再把带 `fit=` 的 src 挂上去（_refitPage），
       // 浏览器就不会先把整张原图取来解码一遍。
       '<img ${fitToDisplay ? 'data-src' : 'src'}="${_escapeAttr(imgSrc)}" loading="$loading" '
@@ -800,7 +800,7 @@ String mangaWindowDocument(
   bool enableMouseTextSelection = false,
   // 折叠屏书本姿态：双页之间留出的铰链缝（逻辑像素，见 fushiHingeGutterPx）。0 = 无缝。
   double spreadGutterPx = 0,
-  // BUG-4855：页图按显示尺寸降采样（见 manga_page_fit.dart）。只给 manga.json 带真实
+  // BUG-4704：页图按显示尺寸降采样（见 manga_page_fit.dart）。只给 manga.json 带真实
   // 像素尺寸的页（本地卷 / 已下载章）开：降采样图的 naturalWidth 不再是原图宽，页几何
   // 必须以 manga.json 的尺寸为准。
   bool fitImagesToDisplay = false,
@@ -1248,7 +1248,7 @@ String _mangaGestureJs({
   var PAN_Y = 0;
   // One source transform owns image and OCR geometry. Crop bounds stay in
   // original pixels, so selection, background OCR and captures share a frame.
-  // ── 页图按显示尺寸取图（BUG-4855）──
+  // ── 页图按显示尺寸取图（BUG-4704）──
   // 每页要的源像素宽 = 原图宽 × 排版缩放（_layoutSource 算出的 CSS px / 源 px）×
   // devicePixelRatio × 缩放档，向上取整到 FIT_STEP（拦截器按档缓存，档太碎缓存就没用）。
   // 缩放档只给屏上那一页（跨页模式的当前跨页 / 条漫里与视口相交的页），1 / 2 / 4 / 8：
@@ -2306,7 +2306,7 @@ String _mangaGestureJs({
     if (!image) return;
     var apply = function(){
       if (!(image.naturalWidth > 0 && image.naturalHeight > 0)) return;
-      // 降采样图（BUG-4855）的 naturalWidth 是显示尺寸，不是原图宽：页几何留用
+      // 降采样图（BUG-4704）的 naturalWidth 是显示尺寸，不是原图宽：页几何留用
       // manga.json 的真实尺寸，只校宽高比。比例对不上（manga.json 记错了尺寸）就放弃
       // 降采样、换回原图，由下一次 load 按原图的真实尺寸纠正几何。
       if (_isFittedImage(image)) {
@@ -3546,7 +3546,7 @@ String _mangaGestureJs({
               LAST_VISIBLE_PAGES.indexOf(index) < 0;
         });
         LAST_VISIBLE_PAGES = visiblePages;
-        // 放大状态下滚进视口的页换缩放档、滚出去的退回 1 档（BUG-4855）。
+        // 放大状态下滚进视口的页换缩放档、滚出去的退回 1 档（BUG-4704）。
         if (ZOOM > 1.01) _scheduleRefit();
         b.callHandler('onMangaScroll', JSON.stringify({ fraction: fraction, topPage: topPage, visiblePages: visiblePages }));
       }, 120);

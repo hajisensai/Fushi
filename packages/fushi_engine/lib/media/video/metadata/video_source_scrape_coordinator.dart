@@ -1413,7 +1413,7 @@ class VideoSourceScrapeCoordinator
     );
     // 单标题蓝光盘：文件名是播放列表号（`00001.mpls`），按它解出来的「集号」不是
     // 形态证据。看播放列表本身——串着几段时长相近的正片就是剧集盘（只有「全部
-    // 播放」、没有逐集播放列表），否则是电影盘（BUG-4846）。
+    // 播放」、没有逐集播放列表），否则是电影盘（BUG-4695）。
     if (!localWork.isEpisodic && kindEvidence == null) {
       final VideoMetadataMediaKind? discKind = await _blurayTitleKind(
         localWork.members.single.videoPath,
@@ -1720,7 +1720,7 @@ class VideoSourceScrapeCoordinator
         primaryProvider: selectedProvider,
         // `片名 - S00E01.mkv` 这类单文件只凭文件名里的序号猜成剧集，而标题在
         // AniDB 只对得上一部电影：序号是弱证据，标题唯一精确命中是强证据
-        // （BUG-4847）。反方向不成立：电影关键词 / 没有集号都是电影证据，标题
+        // （BUG-4696）。反方向不成立：电影关键词 / 没有集号都是电影证据，标题
         // 只对上 TV 本体时改成剧集会把剧场版绑到 TV 上（BUG-2828）。
         adoptOtherKindAsMovie: kindSource == _MediaKindSource.fileNameEpisode,
       );
@@ -1926,6 +1926,7 @@ class VideoSourceScrapeCoordinator
             localWorkTitle: localWork.title,
             candidates: options,
             aiSuggestion: ai.suggestion,
+            strictMatches: resolution.strictMatches,
             workStableKey: localWork.stableKey,
           ),
         );
@@ -4237,6 +4238,9 @@ class VideoSourceScrapeCoordinator
     if (result.error case final AnidbUdpException error) {
       return switch (error.reason) {
         AnidbUdpFailure.authentication => 'AniDB 登录失败，请检查用户名和密码。',
+        AnidbUdpFailure.encryption =>
+          'AniDB 加密登录失败：请在 AniDB 个人资料里设置 UDP API Key，'
+              '并在 设置 → 在线服务 → AniDB 填入同一个 Key。',
         AnidbUdpFailure.unavailable ||
         AnidbUdpFailure.clientOutdated ||
         AnidbUdpFailure.clientBanned => 'AniDB 客户端不可用，请核对注册的客户端名称与版本。',
@@ -5835,7 +5839,7 @@ List<String> videoScrapeTitleCandidates({
   final List<String> directoryDerived;
   final String? discDirectory = _discReleaseDirectoryName(videoPath);
   if (discDirectory != null) {
-    // 原盘标题（BUG-4846）：成员是 `<盘根>/BDMV/PLAYLIST/00001.mpls` /
+    // 原盘标题（BUG-4695）：成员是 `<盘根>/BDMV/PLAYLIST/00001.mpls` /
     // `<盘根>/VIDEO_TS/TITLE_01.dvdtitle`。文件名是播放列表号，父 / 祖父目录是
     // `PLAYLIST` / `BDMV`——照散装文件的取法，拿去搜的是这两个词，换回一屏无关候选。
     // 能当标题的只有盘名（标题名去掉 ` - NN` 序号，再去掉「上巻 / Disc 1」这类

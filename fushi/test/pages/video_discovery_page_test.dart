@@ -1149,6 +1149,11 @@ void main() {
       find.byType(PortraitCoverImage).first,
     );
     expect(cover.image, isA<CachedNetworkImageProvider>());
+    // 结果卡按封面取色（FushiCoverBlock → 进程级 coverColorSchemeCache →
+    // extractImageProviderSeedArgb 给图片加载挂 10 秒超时）。远端封面在 fakeAsync
+    // 里加载不完；这条取色请求属于进程级缓存、按设计不随页面销毁，把 10 秒走完
+    // （超时落 null），免得定时器挂到 widget 树销毁之后（同 collection_detail_focus_id_test）。
+    await tester.pump(const Duration(seconds: 11));
   });
 
   testWidgets('部分来源失败保留结果并展示来源警告', (WidgetTester tester) async {

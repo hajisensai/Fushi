@@ -52,10 +52,16 @@ const String kMangaOcrPagesCacheDirName = '_pages';
 // keep token positions as per-character hit boxes (`glyphBoxes` → manga.json
 // `regions`) instead of the overlay spreading characters evenly over the line.
 // Output changes, so v6 caches are not reused.
+// v8: the per-column CTC recogniser no longer drops short body columns as ruby
+// (ink width + gap to the neighbour re-check the box-geometry verdict), re-runs
+// line detection on a horizontally stretched crop when a tall block votes
+// horizontal (loosely set vertical text was read row by row), and splits a
+// detected box that spans the heads of several columns instead of chaining
+// them into one. Text changes, so v7 caches are not reused.
 // 这只是**算法/坐标口径基线**，不代表模型身份：实际落盘的目录名要再接一段已安装模型
 // 的内容指纹（`manga_ocr_model_fingerprint.dart`），否则上游换模型后旧缓存被静默
 // 复用（BUG-1173）。
-const String kMangaOcrPipelineRevision = 'v7-leaf-blocks-glyph-boxes';
+const String kMangaOcrPipelineRevision = 'v8-ink-ruby-stretch-orientation';
 const String kLocalMangaOcrEngineSignature =
     'local-onnx-$kMangaOcrPipelineRevision';
 

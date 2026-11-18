@@ -79,7 +79,12 @@ void main() {
       'AdaptiveSettingsSegmentedRow',
       'AdaptiveSettingsSliderRow',
     ],
-    'lib/src/settings/settings_home_page.dart': <String>['FushiPageHeader'],
+    // 宽屏全平台同壳后不再画「返回 + 设置」外壳页头（FushiPageHeader）：窄屏
+    // 页头走共享的页头大字 / 浮动折叠页头，宽屏由右窗格分类页头承担。
+    'lib/src/settings/settings_home_page.dart': <String>[
+      'FushiStaticMasthead',
+      'SettingsFloatingHeader',
+    ],
     'lib/src/utils/components/fushi_list_tile.dart': <String>['FushiListItem'],
     'lib/src/utils/components/fushi_text_selection_controls.dart': <String>[
       // 选区工具条是浮层（MD3 浮层面 / Apple 玻璃胶囊），不是内容卡片。
@@ -1308,6 +1313,13 @@ class AnotherPopupPart {
           kSharedComponentImplementation,
       'lib/src/utils/components/fushi_generated_cover.dart':
           kSharedComponentImplementation,
+      // 拼贴打磨（设计稿 G3 / H2）：游戏库与首页拼贴的积木本体——游戏时长大字
+      // （字号随色块高度）、横版背景 / 进度条 / 状态胶囊的圆角按色块边长取、
+      // 时长色块底色取容器色阶；首页统计块的大数字同理随块高缩放。
+      'lib/src/pages/implementations/games/galgame_home_blocks.dart':
+          kSharedComponentImplementation,
+      'lib/src/pages/implementations/home_collage_widgets.dart':
+          kSharedComponentImplementation,
       'lib/src/utils/components/fushi_floating_chrome.dart':
           kSharedComponentImplementation,
       'lib/src/utils/components/fushi_page_masthead.dart':
@@ -1693,6 +1705,14 @@ class AnotherPopupPart {
       'lib/src/utils/components/fushi_fit_title.dart': <String>{'fontSize:'},
       'lib/src/utils/components/fushi_fit_text.dart': <String>{'fontSize:'},
       'lib/src/utils/components/fushi_generated_cover.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/pages/implementations/games/galgame_home_blocks.dart': <String>{
+        'BorderRadius.circular(',
+        'surfaceContainerHigh',
+        'fontSize:',
+      },
+      'lib/src/pages/implementations/home_collage_widgets.dart': <String>{
         'fontSize:',
       },
       'lib/src/settings/shell_style_preview.dart': <String>{
@@ -2769,12 +2789,15 @@ class AnotherPopupPart {
       isNot(contains('Theme.of(context).colorScheme.primary')),
     );
 
+    // 书籍导入框已改成导入拼贴积木（2026-11 导入对话框统一）：块间距统一走
+    // 共享节奏 [importDialogRhythm]（import_dialog_blocks），不再逐处取 tokens.spacing。
+    expect(bookImportFlow, contains('importDialogRhythm'));
+    expect(audiobookImportFlow, contains('FushiDesignTokens.of(context)'));
+    expect(audiobookImportFlow, contains('tokens.spacing'));
     for (final String section in <String>[
       bookImportFlow,
       audiobookImportFlow,
     ]) {
-      expect(section, contains('FushiDesignTokens.of(context)'));
-      expect(section, contains('tokens.spacing'));
       // M3E：导入中进度收敛成共享 ImportProgressCard（下方钉住它的排版走
       // context.fushiType），flow 不再自己拼 metadata 文本行。
       expect(section, contains('ImportProgressCard('));

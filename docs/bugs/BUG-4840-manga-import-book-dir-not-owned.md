@@ -4,7 +4,7 @@
   - `packages/fushi_engine/lib/media/manga/manga_importer.dart:461-462`：`MangaStorage.bookDirectory(bookKey)` →`packages/fushi_engine/lib/epub/epub_storage.dart:44-52` 存在即复用。页图与 `manga.json` 直接往 `<fushi_books>/<bookKey>/` 里写（`copyMangaArtifacts`，`:226-274`）。
   - `:511-527`：任何失败都 `dir.deleteSync(recursive: true)`，不管这个目录是不是本次导入建的。
   - 后果一：两次同名导入并发（来源库后台扫描 × 手动导入 / 拖放 / 操作目录），查重只比库里已有的标题，双方都往同一个目录写；输家插行主键冲突后把整个目录删掉——赢家的行指向空目录，而且在那之前输家已经用自己的页图和 `manga.json` 覆盖过赢家的文件。
-  - 后果二：崩溃留下的同 key 孤儿目录是「找回书库」可恢复的资产（BUG-4852）；新导入往里混写，失败时整个删掉。
+  - 后果二：崩溃留下的同 key 孤儿目录是「找回书库」可恢复的资产（BUG-4701）；新导入往里混写，失败时整个删掉。
   - 暂存：`packages/fushi_engine/lib/media/manga/manga_archive_importer.dart:504-506`（压缩包 staging）、`:582-584`（纯图 EPUB 解压）、`fushi/lib/src/media/manga/book_format_rebuild.dart:258-260`（PDF / EPUB 转漫画）都建在 `Directory.systemTemp`：数据根在别的盘时页图进书目录由 rename 退成「拷贝 + 删源」，等于写两遍；崩溃残留在桌面端 app 内看不见也清不掉（`storage_usage_service.dart` 的 `sharedTempDesktop` 返回空）。
 - **[x] ① 已修复** —
   - `MangaImporter._copyAndInsert` 改用 EPUB 那一套：页图 + `manga.json` 先备进书库根下本次独占的 `.tmp-*`（`EpubImporter.createStagingDir`），再经 `EpubImporter.placeUnderResolvedTitle` 在落位锁内「重取快照 → `EpubStorage.moveDirIntoPlace` → 插行」。活行占着的目录绝不碰（改落 `~n`）；无主的同名目录沿用 EPUB 的既有取舍（BUG-564）带 `.bak` 回滚整体替换，不混写。回滚只删本次自己建的：暂存目录，和已落位而行没插成的目录。

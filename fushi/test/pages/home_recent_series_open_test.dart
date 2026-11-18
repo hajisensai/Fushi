@@ -70,7 +70,7 @@ void main() {
       expect(recentBookGroupFirstVolume(group).item, same(group[1].item));
     });
 
-    test('书店写法「卷号<系列名> (文库名)」也按卷号挑（BUG-4852）', () {
+    test('书店写法「卷号<系列名> (文库名)」也按卷号挑（BUG-4904）', () {
       const String rezero = 'Re：ゼロから始める異世界生活';
       final List<({MediaItem item, String title})> group =
           <({MediaItem item, String title})>[

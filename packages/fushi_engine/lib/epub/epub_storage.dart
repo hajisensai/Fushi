@@ -300,7 +300,7 @@ class EpubStorage {
   ///   content is never lost mid-way. Never delete-then-rename directly: a
   ///   crash in between would lose both copies.
   ///
-  /// 无主目录也可能是「找回书库」（BUG-4852）还能恢复的孤儿书。同键的新导入照
+  /// 无主目录也可能是「找回书库」（BUG-4701）还能恢复的孤儿书。同键的新导入照
   /// BUG-564 的既有取舍把它替换掉——用户此刻要的是这本新书，绕开旧目录只会让新书
   /// 落到 `~n` 去；要保住孤儿，得在导入同名书之前先去「找回书库」登记。
   ///

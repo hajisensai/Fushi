@@ -5,7 +5,7 @@ import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/sources/manga_fushi_source.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 
-/// BUG-4846：书 / 漫画显示名去掉文件名标题末尾的 `[8 位十六进制]` 哈希后缀。
+/// BUG-4898：书 / 漫画显示名去掉文件名标题末尾的 `[8 位十六进制]` 哈希后缀。
 ///
 /// 纯函数 [stripTitleHashSuffix] 的边界 + 书族显示出口（`ReaderMediaSource
 /// .getDisplayTitleFromMediaItem` / [displayTitleForBook]）真的调用了它，且

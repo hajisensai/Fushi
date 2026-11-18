@@ -512,7 +512,7 @@ class MangaOcrJobRegistry {
             );
             // 任务失败：没有整卷结果可落，跟随步骤也就没有落点。
             unawaited(running._cancelFollower());
-            // 系统 OCR 报「没有可用模型 / Play 服务」是设备级的（BUG-4856）：同引擎
+            // 系统 OCR 报「没有可用模型 / Play 服务」是设备级的（BUG-4705）：同引擎
             // 排着的其它卷必然一样失败，每卷再各弹一次失败只是噪音。必须在
             // _forget / _end 之前摘：_end 一完成，同书排队链就会把下一个 start 起来。
             if (isSystemOcrModelUnavailableFailure(job.engine, error)) {

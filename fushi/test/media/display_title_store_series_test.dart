@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/display_title_store_series.dart';
 
-/// BUG-4851（设计稿 H4）：首页「继续」把「Re：ゼロから始める異世界生活 1<Re：…」
+/// BUG-4903（设计稿 H4）：首页「继续」把「Re：ゼロから始める異世界生活 1<Re：…」
 /// 显示成两段标题粘在一起。根因是书店（Kindle / BookWalker）标题自带的
 /// `<系列名> (文库名)` 注记原样进了显示名；显示出口去掉它，身份原名不变。
 void main() {

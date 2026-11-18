@@ -10,7 +10,7 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
         FushiFloatingChromeInset,
         FushiFloatingChromeScope;
 
-/// BUG-4845：库页「书架 / 在线」切换时页头与内容状态错位、点下去要等。
+/// BUG-4897：库页「书架 / 在线」切换时页头与内容状态错位、点下去要等。
 ///
 /// 录屏现象：从「在线」切回滚到中段的「书架」，第一帧是展开的大号页头压在按旧
 /// 滚动位置画的书架内容上，下一帧页头才缩回小号。根因是浮动工具栏状态（显隐 /
@@ -143,9 +143,13 @@ void main() {
       .ignoring;
 
   Future<void> focusSections(WidgetTester tester) async {
-    final FushiFocusController focus = FushiFocusRoot.controllerOf(
+    // 不建立依赖（listen: false）：`controllerOf` 会让壳的 Element 订阅焦点
+    // controller，之后每次焦点移动都触发壳的 didChangeDependencies、作废视图缓存
+    // ——那是测试自己挂上去的依赖（壳本身不订阅焦点），会把「切视图不重建」数成 2。
+    final FushiFocusController focus = FushiFocusRoot.maybeControllerOf(
       tester.element(find.byType(MediaLibraryShell)),
-    );
+      listen: false,
+    )!;
     expect(focus.requestById(sectionsId), isTrue);
     await tester.pump();
   }

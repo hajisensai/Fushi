@@ -74,7 +74,7 @@
 | `rated:N` | 最近 N 天内（含今天，按日界）作答过（N ≥ 1 的整数；0 当 1） |
 | `rated:N:E` | 且那次作答评分为 E（1 重来 / 2 困难 / 3 良好 / 4 简单）；E 不是 1..4 报语法错误 |
 | `is:emptyfield` | **调整**：笔记的排序字段（第一个字段）去 HTML、trim 后为空。原稿写「任一字段为空」——Fushi 卡片类型有一串可选字段（图片、备注、例句翻译…），按「任一」几乎每张卡都命中，「对空字段的卡给出删除建议」会建议删掉正常卡，所以改成主字段为空 |
-| `has:audio` / `has:image` | 笔记任一字段原文含 `[sound:` 或 `<audio` 标签 / `<img` 标签（标签名不区分大小写）。`<audio` 是 WebM 内嵌片段制卡写出的单词 / 句子音频形态（`<audio class="fushi-*-audio" src>`，BUG-4861），不认它会把这类卡都算成缺音频 |
+| `has:audio` / `has:image` | 笔记任一字段原文含 `[sound:` 或 `<audio` 标签 / `<img` 标签（标签名不区分大小写）。`<audio` 是 WebM 内嵌片段制卡写出的单词 / 句子音频形态（`<audio class="fushi-*-audio" src>`，BUG-4710），不认它会把这类卡都算成缺音频 |
 | `is:dupe` | 同笔记类型（未删除）下首字段查重规范形（`anki_dupes` 用的 `dupe_norm`：去 HTML、trim）相同且非空的笔记，≥ 2 条才算 |
 | `src:none` | 没有出处 |
 | `src:<kind>`（值里没有 `:`） | 出处种类为 kind（如 `src:book`、`src:onlineVideo`；大小写敏感，整值相等） |

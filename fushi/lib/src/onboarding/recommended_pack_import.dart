@@ -6,7 +6,7 @@ import 'package:fushi/src/sync/sync_settings_schema.dart'
 
 /// 推荐包在 app 内导入时确认框**预选**的导入方式：合并。
 ///
-/// BUG-4849（推荐包覆盖书库）：推荐包本身是一份净化过的 Fushi 备份 zip，里面只有
+/// BUG-4698（推荐包覆盖书库）：推荐包本身是一份净化过的 Fushi 备份 zip，里面只有
 /// 词典元数据、音频来源注册项与对应的资源文件（见
 /// `tool/pack/recommended_pack_database.dart`）。早先 app 内发起点弹的是通用备份导入
 /// 确认框，而那个框默认选「覆盖」——用户照默认点下去，整库被包里的库替换，漫画 /

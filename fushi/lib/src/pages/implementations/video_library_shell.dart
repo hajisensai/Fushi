@@ -152,7 +152,7 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
   final Set<VideoLibrarySection> _onlineVisited = <VideoLibrarySection>{};
 
   /// 每个保活页面**各自一份**浮动工具栏状态（显隐、页头大字的折叠进度、内容
-  /// 是否滚到工具区底下），按页面存（BUG-4845，与 `MediaLibraryShell` 同一做法）。
+  /// 是否滚到工具区底下），按页面存（BUG-4897，与 `MediaLibraryShell` 同一做法）。
   ///
   /// 页面是保活的，各自的滚动位置切走再切回原样还在；工具栏状态若全壳共用一份，
   /// 切分区时只能「重置成顶部」——切回一个滚到中段的页面，第一帧是展开的大号
@@ -412,7 +412,7 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
             tabs: groupTabs,
             selected: currentGroup == null ? groupTabs.first.value : _section,
             // 停在导入页时「媒体库」高亮只是视觉锚点、不是当前视图：点它 / 方向键
-            // 落到它照常切回（BUG-4857）。
+            // 落到它照常切回（BUG-4706）。
             selectedIsCurrent: currentGroup != null,
             onChanged: _select,
             focusIdPrefix: 'video-library-view',

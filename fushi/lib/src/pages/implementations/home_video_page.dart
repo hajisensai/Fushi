@@ -28,8 +28,7 @@ import 'package:fushi/src/media/collections/collection_owned_subscriptions.dart'
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi/src/pages/base_module_tab_page.dart';
-import 'package:fushi/src/pages/implementations/home_page.dart'
-    show HomeTab, homeShellTabNotifier;
+import 'package:fushi/src/pages/implementations/home_page.dart' show HomeTab;
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/pages/implementations/collection_management_page.dart';
@@ -184,6 +183,8 @@ import 'package:fushi/src/sync/remote_library_cache.dart';
 import 'package:fushi/src/sync/remote_disc_share.dart';
 import 'package:fushi/src/sync/remote_disc_host_open.dart';
 import 'package:fushi/src/media/video/disc/remote_disc_actions.dart';
+import 'package:fushi/src/media/video/disc/remote_disc_menu_source.dart'
+    show RemoteDiscHostTitle;
 import 'package:fushi/src/media/video/disc/remote_disc_download.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
@@ -614,9 +615,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 本页不在前台时到达的本机远端断点变化：露出来再重算一次（同 [_watchProgressStale]）。
   bool _remotePositionsStale = false;
 
-  /// 上一次看到的本页路由是否在栈顶（判「被盖住 → 又露出来」的边沿）。
-  bool _routeWasCurrent = true;
-
   /// 上一次已知的视频 uid 集合，用于对 [_videoUidsSub] 事件去重：仅集合变化才刷新，
   /// 封面自愈 / 进度回写等纯列更新（集合不变）跳过，避免写回→重刷环。null=尚未收到
   /// 首个事件（首事件仅登记基线，不刷——initState 已首载）。
@@ -1020,17 +1018,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       context,
       focusChanges: FushiFocusRoot.maybeControllerOf(context),
     );
-    // BUG-3610：本页路由被盖住（合集详情页 / 播放页）→ 又露出来的边沿，补做
-    // 被盖住期间推迟的进度重读。isCurrentOf 只依赖路由的 isCurrent 一项。
-    final bool current = ModalRoute.isCurrentOf(context) ?? true;
-    final bool returned = current && !_routeWasCurrent;
-    _routeWasCurrent = current;
-    if (returned) _reloadStaleWatchProgress();
   }
 
-  /// 本页此刻是否真在用户眼前：路由在栈顶且视频 tab 是当前 tab。
-  bool get _isShowingWatchProgress =>
-      _routeWasCurrent && homeShellTabNotifier.value == HomeTab.video;
+  /// BUG-3610：本页被盖住（合集详情页 / 播放页）→ 又露出来的边沿，补做被盖住
+  /// 期间推迟的进度重读。
+  @override
+  void onShownToUserAgain() {
+    _reloadStaleWatchProgress();
+  }
 
   /// BUG-3610：观看进度变了。前台 → 防抖后走播放返回同一条窄刷新（书架列表 +
   /// 最近观看两张表；进度只改这两处，见 [_refreshAfterPlayback]）；不在前台 →
@@ -1040,7 +1035,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     _watchProgressReloadDebounce?.cancel();
     _watchProgressReloadDebounce = Timer(const Duration(milliseconds: 300), () {
       if (!mounted) return;
-      if (!_isShowingWatchProgress) {
+      if (!isShownToUser) {
         _watchProgressStale = true;
         return;
       }
@@ -1058,7 +1053,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       const Duration(milliseconds: 300),
       () {
         if (!mounted) return;
-        if (!_isShowingWatchProgress) {
+        if (!isShownToUser) {
           _remotePositionsStale = true;
           return;
         }
@@ -11268,9 +11263,30 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           : VideoRemoteClient(repository: repository, peer: peer);
     }
 
+    final InterconnectSyncBackend? interconnect =
+        source is InterconnectSyncBackend ? source : null;
     return RemoteDiscActions(
       openShare: discs.openRemoteDiscShare,
       readFile: discs.readRemoteDiscFile,
+      // 会话里的 title 由 host 本地裁音频（clipaudio；库里没有行的 title 带 discTitle）。
+      fetchTitleAudio: interconnect == null
+          ? null
+          : (
+              RemoteDiscHostTitle title,
+              File dest, {
+              required int startMs,
+              required int endMs,
+              int? audioStreamIndex,
+              int? audioStreamCount,
+            }) => interconnect.getRemoteVideoAudioClip(
+              title.videoId,
+              dest,
+              startMs: startMs,
+              endMs: endMs,
+              discTitle: title.discTitle,
+              audioStreamIndex: audioStreamIndex,
+              audioStreamCount: audioStreamCount,
+            ),
       hostCanOpenDisc: () async {
         final VideoRemoteClient? client = await hostClient();
         return client != null && await hostCanOpenDiscMenu(client);

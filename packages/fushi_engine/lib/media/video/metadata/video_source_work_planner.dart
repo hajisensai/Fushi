@@ -198,7 +198,7 @@ class VideoSourceWorkPlanner {
           !await _collectionHasIdentity(collection.id)) {
         // 清单合集装的是几部不同的作品（「剧场版合集」「观看顺序」这类 m3u8：
         // 成员各在自己的作品目录、集位撞车）。把整个合集当一部作品去认，只能
-        // 得到「候选都不像」的待确认；各成员各自识别才对得上（BUG-4847）。合集
+        // 得到「候选都不像」的待确认；各成员各自识别才对得上（BUG-4696）。合集
         // 本身不动，它仍是用户的播放清单。合集上已记着作品身份（用户确认 / 已
         // 刮过）时那份身份优先，不按推断拆开绕过它。
         for (final VideoBookRow book in entry.value) {

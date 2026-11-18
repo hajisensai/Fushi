@@ -19,7 +19,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/ops/ctl_library_entries.dart';
 import 'package:fushi/src/ops/op_context.dart';
 
-/// 单本书 / 漫画 / 字幕书 / 游戏的刮削资料与横版背景（v160 `item_scrape_meta` /
+/// 单本书 / 漫画 / 字幕书 / 游戏的刮削资料与横版背景（v161 `item_scrape_meta` /
 /// `item_images`）的控制通道路由：`fushi_cli library scrape-meta get|set|clear`。
 ///
 /// 写入经 [ItemScrapeStore]（与书籍刮削写回、游戏元数据刮削同一个入口），图片走

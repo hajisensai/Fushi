@@ -459,7 +459,7 @@ class GalgameHoursFigure extends StatelessWidget {
             TextSpan(
               text: ' ${figure.unit}',
               style: base.copyWith(
-                fontSize: 12,
+                fontSize: context.fushiType.labelMedium.fontSize,
                 fontWeight: FontWeight.w700,
                 color: color.withValues(alpha: 0.9),
               ),
@@ -1190,7 +1190,7 @@ class GalgameHomeHeroBlock extends StatelessWidget {
                       child: GalgameHoursFigure(
                         figure: figure,
                         color: colors.accent,
-                        fontSize: 56,
+                        fontSize: context.fushiType.displayLarge.fontSize ?? 57,
                       ),
                     ),
                   ),
@@ -1533,7 +1533,7 @@ class _StatValue extends StatelessWidget {
           TextSpan(
             text: ' $unit',
             style: base.copyWith(
-              fontSize: 13,
+              fontSize: context.fushiType.bodyMedium.fontSize,
               fontWeight: FontWeight.w700,
               color: c.muted,
             ),

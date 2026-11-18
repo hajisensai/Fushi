@@ -444,7 +444,7 @@ void main() {
     expect(find.text('focused-monitor'), findsOneWidget);
   });
 
-  // BUG-4857：高亮只是视觉锚点（停在不属于任何页签的导入 / 诊断页）时，点那个
+  // BUG-4706：高亮只是视觉锚点（停在不属于任何页签的导入 / 诊断页）时，点那个
   // 高亮页签必须照常切过去，不能被当成重复点击吞掉。
   Future<void> pumpGameShell(WidgetTester tester) async {
     await tester.binding.setSurfaceSize(const Size(1280, 800));
@@ -466,7 +466,7 @@ void main() {
     await _settleOnLibrary(tester);
   }
 
-  testWidgets('BUG-4857：游戏导入页点高亮的一级「游戏库」回到游戏库', (WidgetTester tester) async {
+  testWidgets('BUG-4706：游戏导入页点高亮的一级「游戏库」回到游戏库', (WidgetTester tester) async {
     await pumpGameShell(tester);
     gameSectionNotifier.value = GameSection.importGames;
     await tester.pumpAndSettle();
@@ -486,7 +486,7 @@ void main() {
     );
   });
 
-  testWidgets('BUG-4857：诊断页点高亮的二级「工作台」回到捕获工作台', (WidgetTester tester) async {
+  testWidgets('BUG-4706：诊断页点高亮的二级「工作台」回到捕获工作台', (WidgetTester tester) async {
     await pumpGameShell(tester);
     gameSectionNotifier.value = GameSection.diagnostics;
     await tester.pumpAndSettle();

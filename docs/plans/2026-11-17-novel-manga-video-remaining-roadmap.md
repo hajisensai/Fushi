@@ -281,7 +281,7 @@
 - gap-mangamisc-7（部分成立）：分镜检测的失败结果被两层缓存，检测器创建没有在途去重。修法：只对抛错不缓存；`_ensurePanelDetector` 存在途 Future。
 - 文件：`MG/reader/manga_fushi_page.dart`、`MG/manga_overlay_html.dart`、`MG/reader/manga_page_fit.dart`、`T/media/manga/manga_page_fit_test.dart`、`EN/media/manga/panel_detection.dart`。
 - 测试：fit 单测 + 分镜单测。验证：Android 真机 4K 页图卷跳页、捏合 profile；桌面拖窗口看 `fit=` 请求数。
-- 风险：fit 串行是 BUG-4855 的刻意设计。c10 留下的一件可在这组收：`manga_fushi_page.dart` 里同名的 `parseMangaJsonOffUi` 静态方法没有转调新的顶层函数。
+- 风险：fit 串行是 BUG-4704 的刻意设计。c10 留下的一件可在这组收：`manga_fushi_page.dart` 里同名的 `parseMangaJsonOffUi` 静态方法没有转调新的顶层函数。
 
 #### c39 `pr/manga-import-dialog-async`（M）
 - 依赖：c26。闸：#3515。

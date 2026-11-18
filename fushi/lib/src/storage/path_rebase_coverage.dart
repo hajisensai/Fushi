@@ -271,6 +271,14 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
     '<documents>/audiobooks/<hash>/ 下的字幕副本绝对路径。',
   ),
 
+  // ── audio_cues ────────────────────────────────────────────────────
+  PathRebaseColumn(
+    'AudioCues',
+    'tokenTimingJson',
+    PathRebaseKind.notAPath,
+    'v160 逐 token 发射时间 JSON（token 文本 + 相对毫秒偏移），无路径。',
+  ),
+
   // ── srt_books ─────────────────────────────────────────────────────
   PathRebaseColumn(
     'SrtBooks',
@@ -682,7 +690,7 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
     'ItemImages',
     'path',
     PathRebaseKind.documentsRooted,
-    'v160 条目附加图落盘位：<documents>/video_covers/items/（与 media_images '
+    'v161 条目附加图落盘位：<documents>/video_covers/items/（与 media_images '
         '同目录族）→ 不改写 = 换数据根后书架 / 游戏库系列色块的横版背景全部死链，'
         '静默退回书封摆法（DataRootMigrator._rebaseItemImages）。',
   ),

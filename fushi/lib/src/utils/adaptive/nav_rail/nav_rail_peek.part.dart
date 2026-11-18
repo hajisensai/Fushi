@@ -662,7 +662,7 @@ class _NavPeekEmpty extends StatelessWidget {
     final ColorScheme colors = Theme.of(context).colorScheme;
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: colors.surfaceContainerHigh,
+        color: FushiDesignTokens.of(context).surfaces.search,
         borderRadius: FushiM3eShape.cardRadius,
       ),
       child: Padding(
@@ -1088,7 +1088,7 @@ class _NavPeekStatusChip extends StatelessWidget {
         colors.onErrorContainer,
       ),
       AdaptiveNavPeekStatusTone.neutral => (
-        colors.surfaceContainerHighest,
+        FushiDesignTokens.of(context).surfaces.overlay,
         colors.onSurfaceVariant,
       ),
     };

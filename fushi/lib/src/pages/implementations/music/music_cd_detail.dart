@@ -35,6 +35,7 @@ import 'package:fushi/src/pages/implementations/music/music_queue_panel.dart'
     show musicQueueDurationLabel;
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart'
     show formatMusicDuration;
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
     show isEinkTheme;
 import 'package:fushi/src/utils/components/fushi_continue_card_row.dart'
@@ -56,6 +57,10 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 窄于这个宽度时面板全屏、hero 在上（W 原型 `full = vw < 760`）。
 const double kMusicCdDetailFullScreenWidth = 760;
+
+/// 盘面标签的碟号大字：拼贴设计稿 M3 的固定版式值（介于 headlineSmall 24 与
+/// headlineMedium 28 之间，FushiTypeRoles 没有这一阶）。
+const double _kDiscNumeralSize = 26;
 
 /// 面板在 [viewport] 里的目标矩形（W 原型：桌面 ≤1160×740 居中、四周至少留 24；
 /// 窄窗全屏）。纯函数。
@@ -524,8 +529,7 @@ class _MusicCdDetailPanelState extends ConsumerState<MusicCdDetailPanel>
     final List<Widget> head = <Widget>[
       Text(
         t.music_cd_kicker,
-        style: TextStyle(
-          fontSize: 12,
+        style: context.fushiType.labelMedium.copyWith(
           fontWeight: FontWeight.w800,
           letterSpacing: 1.4,
           color: colors.accent,
@@ -546,8 +550,7 @@ class _MusicCdDetailPanelState extends ConsumerState<MusicCdDetailPanel>
         const SizedBox(height: 10),
         Text(
           artist,
-          style: TextStyle(
-            fontSize: 16,
+          style: context.fushiType.titleMedium.copyWith(
             fontWeight: FontWeight.w600,
             color: colors.onContainer,
           ),
@@ -571,8 +574,7 @@ class _MusicCdDetailPanelState extends ConsumerState<MusicCdDetailPanel>
                 ),
                 child: Text(
                   pill,
-                  style: const TextStyle(
-                    fontSize: 12,
+                  style: context.fushiType.labelMedium.copyWith(
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -799,8 +801,7 @@ class _VersionHeader extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         child: DefaultTextStyle.merge(
-          style: TextStyle(
-            fontSize: 12,
+          style: context.fushiType.labelMedium.copyWith(
             fontWeight: FontWeight.w800,
             color: colors.accent,
           ),
@@ -850,8 +851,7 @@ class _DiscHeader extends StatelessWidget {
           children: <Widget>[
             Text(
               t.music_cd_disc_kicker,
-              style: TextStyle(
-                fontSize: 11,
+              style: context.fushiType.labelSmall.copyWith(
                 fontWeight: FontWeight.w800,
                 letterSpacing: 1.5,
                 color: colors.accent,
@@ -859,8 +859,8 @@ class _DiscHeader extends StatelessWidget {
             ),
             Text(
               number == null ? '—' : '$number',
-              style: TextStyle(
-                fontSize: 26,
+              style: context.fushiType.headlineSmall.copyWith(
+                fontSize: _kDiscNumeralSize,
                 fontWeight: FontWeight.w900,
                 color: colors.accent,
               ),
@@ -868,7 +868,9 @@ class _DiscHeader extends StatelessWidget {
             const Spacer(),
             Text(
               t.music_tracks_count(count: count),
-              style: TextStyle(fontSize: 12, color: colors.accent),
+              style: context.fushiType.labelMedium.copyWith(
+                color: colors.accent,
+              ),
             ),
           ],
         ),
@@ -927,7 +929,7 @@ class _TrackLine extends StatelessWidget {
                     track.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 14),
+                    style: context.fushiType.bodyMedium,
                   ),
                 ),
                 Text(formatMusicDuration(track.durationMs), style: figures),

@@ -2412,6 +2412,17 @@ class $AudioCuesTable extends AudioCues
     type: DriftSqlType.int,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _tokenTimingJsonMeta = const VerificationMeta(
+    'tokenTimingJson',
+  );
+  @override
+  late final GeneratedColumn<String> tokenTimingJson = GeneratedColumn<String>(
+    'token_timing_json',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -2423,6 +2434,7 @@ class $AudioCuesTable extends AudioCues
     startMs,
     endMs,
     audioFileIndex,
+    tokenTimingJson,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -2515,6 +2527,15 @@ class $AudioCuesTable extends AudioCues
     } else if (isInserting) {
       context.missing(_audioFileIndexMeta);
     }
+    if (data.containsKey('token_timing_json')) {
+      context.handle(
+        _tokenTimingJsonMeta,
+        tokenTimingJson.isAcceptableOrUnknown(
+          data['token_timing_json']!,
+          _tokenTimingJsonMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -2560,6 +2581,10 @@ class $AudioCuesTable extends AudioCues
         DriftSqlType.int,
         data['${effectivePrefix}audio_file_index'],
       )!,
+      tokenTimingJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}token_timing_json'],
+      ),
     );
   }
 
@@ -2579,6 +2604,11 @@ class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
   final int startMs;
   final int endMs;
   final int audioFileIndex;
+
+  /// v160：转录产物的逐 token 发射时间（`{"t":[token...],"o":[相对 startMs 的毫秒...]}`），
+  /// 与本行 cue **重切 / 后处理之后**的边界同步；非转录字幕 / 存量行为 NULL。
+  /// 编解码只在 `AudioCue.fromRow` / `toCompanion`（fushi_audio）。
+  final String? tokenTimingJson;
   const AudioCueRow({
     required this.id,
     required this.bookKey,
@@ -2589,6 +2619,7 @@ class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
     required this.startMs,
     required this.endMs,
     required this.audioFileIndex,
+    this.tokenTimingJson,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -2602,6 +2633,9 @@ class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
     map['start_ms'] = Variable<int>(startMs);
     map['end_ms'] = Variable<int>(endMs);
     map['audio_file_index'] = Variable<int>(audioFileIndex);
+    if (!nullToAbsent || tokenTimingJson != null) {
+      map['token_timing_json'] = Variable<String>(tokenTimingJson);
+    }
     return map;
   }
 
@@ -2616,6 +2650,9 @@ class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
       startMs: Value(startMs),
       endMs: Value(endMs),
       audioFileIndex: Value(audioFileIndex),
+      tokenTimingJson: tokenTimingJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(tokenTimingJson),
     );
   }
 
@@ -2634,6 +2671,7 @@ class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
       startMs: serializer.fromJson<int>(json['startMs']),
       endMs: serializer.fromJson<int>(json['endMs']),
       audioFileIndex: serializer.fromJson<int>(json['audioFileIndex']),
+      tokenTimingJson: serializer.fromJson<String?>(json['tokenTimingJson']),
     );
   }
   @override
@@ -2649,6 +2687,7 @@ class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
       'startMs': serializer.toJson<int>(startMs),
       'endMs': serializer.toJson<int>(endMs),
       'audioFileIndex': serializer.toJson<int>(audioFileIndex),
+      'tokenTimingJson': serializer.toJson<String?>(tokenTimingJson),
     };
   }
 
@@ -2662,6 +2701,7 @@ class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
     int? startMs,
     int? endMs,
     int? audioFileIndex,
+    Value<String?> tokenTimingJson = const Value.absent(),
   }) => AudioCueRow(
     id: id ?? this.id,
     bookKey: bookKey ?? this.bookKey,
@@ -2672,6 +2712,9 @@ class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
     startMs: startMs ?? this.startMs,
     endMs: endMs ?? this.endMs,
     audioFileIndex: audioFileIndex ?? this.audioFileIndex,
+    tokenTimingJson: tokenTimingJson.present
+        ? tokenTimingJson.value
+        : this.tokenTimingJson,
   );
   AudioCueRow copyWithCompanion(AudioCuesCompanion data) {
     return AudioCueRow(
@@ -2692,6 +2735,9 @@ class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
       audioFileIndex: data.audioFileIndex.present
           ? data.audioFileIndex.value
           : this.audioFileIndex,
+      tokenTimingJson: data.tokenTimingJson.present
+          ? data.tokenTimingJson.value
+          : this.tokenTimingJson,
     );
   }
 
@@ -2706,7 +2752,8 @@ class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
           ..write('cueText: $cueText, ')
           ..write('startMs: $startMs, ')
           ..write('endMs: $endMs, ')
-          ..write('audioFileIndex: $audioFileIndex')
+          ..write('audioFileIndex: $audioFileIndex, ')
+          ..write('tokenTimingJson: $tokenTimingJson')
           ..write(')'))
         .toString();
   }
@@ -2722,6 +2769,7 @@ class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
     startMs,
     endMs,
     audioFileIndex,
+    tokenTimingJson,
   );
   @override
   bool operator ==(Object other) =>
@@ -2735,7 +2783,8 @@ class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
           other.cueText == this.cueText &&
           other.startMs == this.startMs &&
           other.endMs == this.endMs &&
-          other.audioFileIndex == this.audioFileIndex);
+          other.audioFileIndex == this.audioFileIndex &&
+          other.tokenTimingJson == this.tokenTimingJson);
 }
 
 class AudioCuesCompanion extends UpdateCompanion<AudioCueRow> {
@@ -2748,6 +2797,7 @@ class AudioCuesCompanion extends UpdateCompanion<AudioCueRow> {
   final Value<int> startMs;
   final Value<int> endMs;
   final Value<int> audioFileIndex;
+  final Value<String?> tokenTimingJson;
   const AudioCuesCompanion({
     this.id = const Value.absent(),
     this.bookKey = const Value.absent(),
@@ -2758,6 +2808,7 @@ class AudioCuesCompanion extends UpdateCompanion<AudioCueRow> {
     this.startMs = const Value.absent(),
     this.endMs = const Value.absent(),
     this.audioFileIndex = const Value.absent(),
+    this.tokenTimingJson = const Value.absent(),
   });
   AudioCuesCompanion.insert({
     this.id = const Value.absent(),
@@ -2769,6 +2820,7 @@ class AudioCuesCompanion extends UpdateCompanion<AudioCueRow> {
     required int startMs,
     required int endMs,
     required int audioFileIndex,
+    this.tokenTimingJson = const Value.absent(),
   }) : bookKey = Value(bookKey),
        chapterHref = Value(chapterHref),
        sentenceIndex = Value(sentenceIndex),
@@ -2787,6 +2839,7 @@ class AudioCuesCompanion extends UpdateCompanion<AudioCueRow> {
     Expression<int>? startMs,
     Expression<int>? endMs,
     Expression<int>? audioFileIndex,
+    Expression<String>? tokenTimingJson,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -2798,6 +2851,7 @@ class AudioCuesCompanion extends UpdateCompanion<AudioCueRow> {
       if (startMs != null) 'start_ms': startMs,
       if (endMs != null) 'end_ms': endMs,
       if (audioFileIndex != null) 'audio_file_index': audioFileIndex,
+      if (tokenTimingJson != null) 'token_timing_json': tokenTimingJson,
     });
   }
 
@@ -2811,6 +2865,7 @@ class AudioCuesCompanion extends UpdateCompanion<AudioCueRow> {
     Value<int>? startMs,
     Value<int>? endMs,
     Value<int>? audioFileIndex,
+    Value<String?>? tokenTimingJson,
   }) {
     return AudioCuesCompanion(
       id: id ?? this.id,
@@ -2822,6 +2877,7 @@ class AudioCuesCompanion extends UpdateCompanion<AudioCueRow> {
       startMs: startMs ?? this.startMs,
       endMs: endMs ?? this.endMs,
       audioFileIndex: audioFileIndex ?? this.audioFileIndex,
+      tokenTimingJson: tokenTimingJson ?? this.tokenTimingJson,
     );
   }
 
@@ -2855,6 +2911,9 @@ class AudioCuesCompanion extends UpdateCompanion<AudioCueRow> {
     if (audioFileIndex.present) {
       map['audio_file_index'] = Variable<int>(audioFileIndex.value);
     }
+    if (tokenTimingJson.present) {
+      map['token_timing_json'] = Variable<String>(tokenTimingJson.value);
+    }
     return map;
   }
 
@@ -2869,7 +2928,8 @@ class AudioCuesCompanion extends UpdateCompanion<AudioCueRow> {
           ..write('cueText: $cueText, ')
           ..write('startMs: $startMs, ')
           ..write('endMs: $endMs, ')
-          ..write('audioFileIndex: $audioFileIndex')
+          ..write('audioFileIndex: $audioFileIndex, ')
+          ..write('tokenTimingJson: $tokenTimingJson')
           ..write(')'))
         .toString();
   }
@@ -85080,6 +85140,7 @@ typedef $$AudioCuesTableCreateCompanionBuilder =
       required int startMs,
       required int endMs,
       required int audioFileIndex,
+      Value<String?> tokenTimingJson,
     });
 typedef $$AudioCuesTableUpdateCompanionBuilder =
     AudioCuesCompanion Function({
@@ -85092,6 +85153,7 @@ typedef $$AudioCuesTableUpdateCompanionBuilder =
       Value<int> startMs,
       Value<int> endMs,
       Value<int> audioFileIndex,
+      Value<String?> tokenTimingJson,
     });
 
 class $$AudioCuesTableFilterComposer
@@ -85145,6 +85207,11 @@ class $$AudioCuesTableFilterComposer
 
   ColumnFilters<int> get audioFileIndex => $composableBuilder(
     column: $table.audioFileIndex,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get tokenTimingJson => $composableBuilder(
+    column: $table.tokenTimingJson,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -85202,6 +85269,11 @@ class $$AudioCuesTableOrderingComposer
     column: $table.audioFileIndex,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get tokenTimingJson => $composableBuilder(
+    column: $table.tokenTimingJson,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$AudioCuesTableAnnotationComposer
@@ -85247,6 +85319,11 @@ class $$AudioCuesTableAnnotationComposer
     column: $table.audioFileIndex,
     builder: (column) => column,
   );
+
+  GeneratedColumn<String> get tokenTimingJson => $composableBuilder(
+    column: $table.tokenTimingJson,
+    builder: (column) => column,
+  );
 }
 
 class $$AudioCuesTableTableManager
@@ -85289,6 +85366,7 @@ class $$AudioCuesTableTableManager
                 Value<int> startMs = const Value.absent(),
                 Value<int> endMs = const Value.absent(),
                 Value<int> audioFileIndex = const Value.absent(),
+                Value<String?> tokenTimingJson = const Value.absent(),
               }) => AudioCuesCompanion(
                 id: id,
                 bookKey: bookKey,
@@ -85299,6 +85377,7 @@ class $$AudioCuesTableTableManager
                 startMs: startMs,
                 endMs: endMs,
                 audioFileIndex: audioFileIndex,
+                tokenTimingJson: tokenTimingJson,
               ),
           createCompanionCallback:
               ({
@@ -85311,6 +85390,7 @@ class $$AudioCuesTableTableManager
                 required int startMs,
                 required int endMs,
                 required int audioFileIndex,
+                Value<String?> tokenTimingJson = const Value.absent(),
               }) => AudioCuesCompanion.insert(
                 id: id,
                 bookKey: bookKey,
@@ -85321,6 +85401,7 @@ class $$AudioCuesTableTableManager
                 startMs: startMs,
                 endMs: endMs,
                 audioFileIndex: audioFileIndex,
+                tokenTimingJson: tokenTimingJson,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

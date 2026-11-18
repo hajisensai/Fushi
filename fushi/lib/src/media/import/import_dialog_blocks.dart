@@ -164,7 +164,6 @@ class ImportTileActions extends StatelessWidget {
         // 紧凑小片（32 高）：格子里的次要来源，不是对话框主按钮。
         minimumSize: const Size(0, 32),
         padding: const EdgeInsetsDirectional.only(start: 10, end: 12),
-        visualDensity: VisualDensity.compact,
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         iconSize: 16,
         textStyle: context.fushiType.labelMedium.copyWith(

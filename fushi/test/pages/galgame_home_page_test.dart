@@ -13,7 +13,7 @@ import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_library_query.dart';
-import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_merge.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/galgame_home_page.dart';
 import 'package:fushi/src/pages/implementations/games/galgame_home_blocks.dart';
@@ -255,7 +255,10 @@ void main() {
         exePath: r'Z:\games\adult.exe',
         workdir: r'Z:\games',
         addedAt: DateTime(2026, 7, 20),
-        metadata: const GalgameMetadataDraft(nsfw: true),
+        // 成人向标记走用户覆盖层（`galgames.customDataJson`）：`setGalgames` 只写
+        // galgames 自己的列，`metadata`（源快照合并结果，属 galgame_sources）不会
+        // 落库，用它造夹具时重载后 isNsfw 恒为 false，测的就不是隐藏逻辑。
+        customData: const GalgameCustomData(nsfw: true),
       ),
       game('safe', 'Safe Game'),
     ]);

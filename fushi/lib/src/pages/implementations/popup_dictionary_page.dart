@@ -277,7 +277,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     return block;
   }
 
-  /// BUG-4858：源文本条是被点的那一行，查词串却要跨过 OCR 折行——词被折到下一行时
+  /// BUG-4707：源文本条是被点的那一行，查词串却要跨过 OCR 折行——词被折到下一行时
   /// 只扫到行尾会把它截断。返回块里接在这行后面的续文（没有块 / 块对不上时为空串），
   /// 首查与条上点字都把它接在行内后缀后面。
   static String _blockContinuationOf(PopupDictionaryPage page) {
@@ -472,7 +472,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   /// 搜索框里的整句都留着，只有高亮跨度跟着挪。条上是外部入口那一行时，这次查询串
   /// 记作「出自这一行」（BUG-2900 制卡句子的判据）。
   Future<void> _lookupFromSourceStrip(String suffix, Rect rect, int charIndex) {
-    // 条上是外部入口那一行时，后缀同样接上块里的后续行（BUG-4858）。
+    // 条上是外部入口那一行时，后缀同样接上块里的后续行（BUG-4707）。
     final String query = _sourceSentence.isEmpty
         ? suffix
         : suffix + _blockContinuationOf(widget);

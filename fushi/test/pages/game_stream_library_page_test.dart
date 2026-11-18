@@ -258,7 +258,22 @@ void main() {
       // 没在跑的游戏：副行直说「未运行 · 不可启动」，不再给出点了才报错的启动入口。
       expect(find.text(t.game_stream_launch_unavailable), findsOneWidget);
 
-      await _enterOn(tester, 'game-stream-card-aa:bb-g1');
+      // 本 PR 起没在跑、又不能远程启动的块没有动作（onTap == null），FushiCard
+      // 不为无动作的卡注册焦点站点：手柄 / 键盘根本停不上去，也就无从按 Enter
+      // 发启动请求。运行中的 g2 照旧是可加入的停靠点。
+      final FushiFocusController controller = FushiFocusRoot.controllerOf(
+        tester.element(find.byType(GameStreamLibraryPage)),
+      );
+      expect(
+        controller.requestById(const FushiFocusId('game-stream-card-aa:bb-g1')),
+        isFalse,
+        reason: '不可启动的块不应是焦点停靠点',
+      );
+      expect(
+        controller.requestById(const FushiFocusId('game-stream-card-aa:bb-g2')),
+        isTrue,
+        reason: '运行中的块仍可经手柄 / 键盘加入',
+      );
       await _settle(tester);
 
       expect(transport.paths, isNot(contains('/api/game-stream/launch')));

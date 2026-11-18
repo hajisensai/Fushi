@@ -115,7 +115,7 @@ class GalgameRepository extends ChangeNotifier {
 
   final FushiDatabase _db;
 
-  /// 条目附加图目录（v160 `video_covers/items/`）；测试注入，生产为 null。
+  /// 条目附加图目录（v161 `video_covers/items/`）；测试注入，生产为 null。
   final Directory? itemImagesDirectory;
 
   /// 附加图下载（测试接缝；生产为 null = 引擎默认下载器）。
@@ -127,7 +127,7 @@ class GalgameRepository extends ChangeNotifier {
     downloadImage: itemImageDownload,
   );
 
-  /// 把刮削源给的横版图（VNDB 截图）下成该游戏的横版背景（v160 `item_images`，
+  /// 把刮削源给的横版图（VNDB 截图）下成该游戏的横版背景（v161 `item_images`，
   /// 游戏库系列色块铺在尾侧）。[replaceExisting] = 显式刮削（换条目就换背景）；
   /// false = 自动补齐，已有可用背景文件就不动。下载 / 解码失败只记日志（背景是
   /// 锦上添花，不打断刮削落库）。

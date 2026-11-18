@@ -164,6 +164,59 @@ void main() {
       expect(playlist.audioStreams.single.codecName, 'DTS-HD MA');
     });
 
+    test('多角度 PlayItem 读出各角度的片段号，单角度段为空', () {
+      final Uint8List bytes = buildMplsFixture(
+        playItems: const <FixturePlayItem>[
+          FixturePlayItem(
+            clipId: '00010',
+            inTimeTicks: 45000,
+            outTimeTicks: 45000 * 61,
+          ),
+          FixturePlayItem(
+            clipId: '00011',
+            inTimeTicks: 90000,
+            outTimeTicks: 45000 * 32,
+            angleClipIds: <String>['00021', '00031'],
+          ),
+        ],
+      );
+
+      final BlurayPlaylist playlist = parseBlurayPlaylist(bytes, id: '00001')!;
+
+      expect(playlist.angleCount, 3);
+      expect(playlist.clips[0].angleClipIds, isEmpty);
+      expect(playlist.clips[0].angleCount, 1);
+      expect(playlist.clips[1].angleClipIds, <String>['00021', '00031']);
+      expect(playlist.clips[1].clipIdForAngle(0), '00011');
+      expect(playlist.clips[1].clipIdForAngle(2), '00031');
+      // 角度数不够的段回到第 1 个角度（libbluray `_fill_clip` 同口径）。
+      expect(playlist.clips[0].clipIdForAngle(2), '00010');
+      expect(playlist.clips[1].clipIdForAngle(3), '00011');
+      // 片段号序列仍是第 1 个角度的。
+      expect(playlist.clipIds, <String>['00010', '00011']);
+    });
+
+    test('多角度块被截断时整条判坏', () {
+      final Uint8List bytes = buildMplsFixture(
+        playItems: const <FixturePlayItem>[
+          FixturePlayItem(
+            clipId: '00011',
+            inTimeTicks: 0,
+            outTimeTicks: 45000 * 30,
+            angleClipIds: <String>['00021'],
+          ),
+        ],
+        streams: const <FixtureStream>[],
+      );
+      // 把第一个 PlayItem 的 length 改短到恰好切在角度引用中间：固定头 32B + 角度
+      // 块头 2B + 半条角度引用。
+      final ByteData view = ByteData.sublistView(bytes);
+      final int playListStart = view.getUint32(8);
+      view.setUint16(playListStart + 10, 32 + 2 + 5);
+
+      expect(parseBlurayPlaylist(bytes, id: '00001'), isNull);
+    });
+
     test('章节按播放列表时间轴换算，IN 不为零也对', () {
       final Uint8List bytes = buildMplsFixture(
         playItems: const <FixturePlayItem>[

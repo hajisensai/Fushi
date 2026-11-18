@@ -140,7 +140,7 @@ enum BackupCategory {
 }
 
 /// 覆盖前快照（`BackupRestoreService.overwriteSnapshotPath`）的预览：快照文件本身
-/// 与其中「当前库没有」的书（BUG-4852）。
+/// 与其中「当前库没有」的书（BUG-4701）。
 class OverwriteSnapshotPreview {
   const OverwriteSnapshotPreview({
     required this.path,
@@ -2041,7 +2041,7 @@ class BackupService {
         "OR (media_kind = 'game' AND entry_key NOT IN "
         '(SELECT id FROM galgames))',
       );
-      // v160 条目刮削资料 / 附加图：键与合集成员同一套（epub=uid / srt=uid /
+      // v161 条目刮削资料 / 附加图：键与合集成员同一套（epub=uid / srt=uid /
       // game=galgames.id），宿主不在本份导出里的行一并收敛。
       for (final String table in const <String>[
         'item_scrape_meta',

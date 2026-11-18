@@ -141,6 +141,7 @@ class HomeWidgetFrame extends StatelessWidget {
     this.semanticLabel,
     this.watermark,
     this.watermarkStartFactor = 0.5,
+    this.bare = false,
   });
 
   final String title;
@@ -170,12 +171,17 @@ class HomeWidgetFrame extends StatelessWidget {
   /// [watermark] 从块宽的这个比例处起排（装进末端那半块，不压内容）。
   final double watermarkStartFactor;
 
+  /// true = 不画外框（色块 / 分区卡底都不要），只留小标题行 + 内容直接摆在页面
+  /// 底上、四周不留内边距。内容本身就是一排封面色块时用（「最近添加」）：色块
+  /// 套在另一块色块里，两层底色互相打架（用户 2026-11-17）。
+  final bool bare;
+
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final double pad = homeWidgetFramePadding(dense: dense);
-    final FushiCoverBlockColors? colors = poster
+    final FushiCoverBlockColors? colors = poster && !bare
         ? fushiPosterColors(context, fushiPosterHue('home-widget/$hueKey'))
         : null;
     final Color foreground = colors?.onContainer ?? tokens.surfaces.onSurface;
@@ -215,6 +221,8 @@ class HomeWidgetFrame extends StatelessWidget {
               height: kHomeWidgetHeaderHeight,
               child: Row(
                 children: <Widget>[
+                  // 无外框时标题行与下面色块里的文字对齐，往里收一点。
+                  if (bare) const SizedBox(width: 12),
                   FushiIcon(icon, size: 14, color: headerColor),
                   const SizedBox(width: 6),
                   Expanded(
@@ -234,6 +242,8 @@ class HomeWidgetFrame extends StatelessWidget {
         ],
       ),
     );
+
+    if (bare) return body;
 
     final VoidCallback? tap = onTap;
     if (colors != null) {

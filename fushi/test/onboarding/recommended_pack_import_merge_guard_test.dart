@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
-/// BUG-4849 守卫：app 内的推荐包入口一律经 `importRecommendedPackFile` /
+/// BUG-4698 守卫：app 内的推荐包入口一律经 `importRecommendedPackFile` /
 /// `importDownloadedRecommendedPack`（确认框预选合并），不得直接调
 /// `runBackupImportFlowForFile`——那条路径缺省预选「覆盖」，用户照默认点下去就整库
 /// 被推荐包替换（漫画 / 小说 / 进度全没）。
@@ -58,7 +58,7 @@ void main() {
   test('runBackupImportFlowForFile forwards confirmInitialMode to the '
       'confirm dialog', () {
     // 编排函数把 confirmInitialMode 转给确认框；这一行被删，确认框会退回缺省「覆盖」，
-    // BUG-4849 原样复发，而直接调确认框的 widget 测试仍全绿。
+    // BUG-4698 原样复发，而直接调确认框的 widget 测试仍全绿。
     final String src = read('sync/sync_settings_schema/backup.part.dart');
     final int start = src.indexOf('Future<void> runBackupImportFlowForFile({');
     expect(start, isNonNegative);

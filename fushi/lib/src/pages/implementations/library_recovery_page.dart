@@ -56,7 +56,7 @@ Map<OrphanBookKind, OrphanBookRegistrar> libraryRecoveryRegistrars() =>
       OrphanBookKind.pdf: PdfImporter.registerExistingBookDir,
     };
 
-/// 设置 › 存储 →「恢复书库」入口（BUG-4852）。
+/// 设置 › 存储 →「恢复书库」入口（BUG-4701）。
 Future<void> openLibraryRecoveryPage(final SettingsContext c) =>
     Navigator.of(c.context).push<void>(
       adaptivePageRoute<void>(
@@ -66,7 +66,7 @@ Future<void> openLibraryRecoveryPage(final SettingsContext c) =>
       ),
     );
 
-/// 「恢复书库」页（BUG-4852）：覆盖导入把书库换掉之后的两条找回路径。
+/// 「恢复书库」页（BUG-4701）：覆盖导入把书库换掉之后的两条找回路径。
 ///
 /// 1. **覆盖导入前的快照**：覆盖导入成功后保留的最近一份整库快照
 ///    （`BackupRestoreService.overwriteSnapshotPath`），可只补缺地把书库行、阅读进度、

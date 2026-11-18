@@ -70,7 +70,7 @@ abstract interface class SystemOcrMangaRunner {
   /// 本机能不能用（决定引擎选项出不出现）。
   Future<bool> isAvailable();
 
-  /// [language] 的识别模型 / Play 服务状态（BUG-4856）。只查询，不触发下载。
+  /// [language] 的识别模型 / Play 服务状态（BUG-4705）。只查询，不触发下载。
   ///
   /// [isAvailable] 只答「这个平台有没有系统 OCR」，选项因此恒保留；它答不了
   /// 「没有 Play 服务的 Android 设备上每页都会失败」——自动选引擎要靠这里。
@@ -78,7 +78,7 @@ abstract interface class SystemOcrMangaRunner {
   Future<SystemOcrModelStatus> modelStatus({required String language});
 }
 
-/// [engine] 上的这次失败是不是「系统 OCR 没有可用模型 / Play 服务」（BUG-4856）。
+/// [engine] 上的这次失败是不是「系统 OCR 没有可用模型 / Play 服务」（BUG-4705）。
 ///
 /// 只认系统 OCR 引擎：本机模型的截屏识字同样借 [kSystemOcrModelUnavailableReason]
 /// 报「本机模型没下载」，那不是 Play 服务的问题，不能被这里误判。

@@ -1,3 +1,4 @@
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_continue_blocks.dart';
 import 'package:fushi/src/utils/components/fushi_continue_card_row.dart';
 import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
@@ -2526,7 +2527,7 @@ class _GameDownloadItem extends StatelessWidget {
             width: 40,
             height: 56,
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(6),
+              borderRadius: FushiBorderRadius.chip,
               child: coverUrl != null && coverUrl.isNotEmpty
                   ? Opacity(
                       // 压暗以示「还不能玩」。
@@ -3811,7 +3812,7 @@ class _GameSessionBand extends StatelessWidget {
       listenable: controller,
       builder: (BuildContext context, Widget? _) {
         final GalHookSessionState state = controller.state;
-        return AnimatedSize(
+        return FushiAnimatedSize(
           duration: duration,
           curve: FushiMotion.standard,
           alignment: AlignmentDirectional.topStart,

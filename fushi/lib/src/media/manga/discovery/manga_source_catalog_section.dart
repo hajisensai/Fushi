@@ -320,6 +320,7 @@ class MangaSourceCatalogSection extends StatelessWidget {
           children: <Widget>[
             FushiSectionTitle(
               t.manga_discovery_sources_browse,
+              shrinkTrailing: true,
               trailing: Text(
                 caption,
                 maxLines: 1,

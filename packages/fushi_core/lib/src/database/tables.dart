@@ -95,6 +95,11 @@ class AudioCues extends Table {
   IntColumn get startMs => integer()();
   IntColumn get endMs => integer()();
   IntColumn get audioFileIndex => integer()();
+
+  /// v160：转录产物的逐 token 发射时间（`{"t":[token...],"o":[相对 startMs 的毫秒...]}`），
+  /// 与本行 cue **重切 / 后处理之后**的边界同步；非转录字幕 / 存量行为 NULL。
+  /// 编解码只在 `AudioCue.fromRow` / `toCompanion`（fushi_audio）。
+  TextColumn get tokenTimingJson => text().nullable()();
 }
 
 // ── srt_books ───────────────────────────────────────────────────────
@@ -1972,7 +1977,7 @@ class MediaImages extends Table {
   ];
 }
 
-// ── item_scrape_meta / item_images（单本书 / 漫画 / 字幕书 / 游戏的刮削资料，v160）──
+// ── item_scrape_meta / item_images（单本书 / 漫画 / 字幕书 / 游戏的刮削资料，v161）──
 // 2026-11-16 所有者：「都接上啊横屏海报都得用」——所有刮削过的条目都要走共享系列
 // 色块（竖版海报斜放 + 无字横版背景图 + 概览 / chip），单本书 / 单本漫画 / 单个游戏
 // 也不例外。此前只有视频（[VideoScrapeMeta] / [MediaImages] 的 bookUid 归属，FK 指向

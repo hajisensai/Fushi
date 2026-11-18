@@ -8,11 +8,21 @@ import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart';
 import 'package:fushi/src/media/video/video_playback_remote.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_angle.dart'
+    show blurayAnglePath;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_work_context_loader.dart'
+    show fallbackSubtitleWorkKey;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
+import 'package:fushi_engine/media/video/dvd/dvd_angle.dart'
+    show dvdTitleAnglePath;
+import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
+    show dvdTitlePath;
+import 'package:fushi_engine/media/video/video_duration_probe.dart'
+    show AudioTrackFacts;
 import 'package:path/path.dart' as p;
 
 import '../../../helpers/fake_ai_text_completer.dart';
@@ -30,8 +40,10 @@ void main() {
 
   AppVideoSubtitleService buildService({
     Future<VideoSubtitleRecognizerChoice> Function()? resolve,
+    AppVideoSubtitleAudioTrackProbe? probeAudioTracks,
   }) => AppVideoSubtitleService(
     database: db,
+    probeAudioTracks: probeAudioTracks,
     settings: settings,
     glossaryStore: store,
     jobRegistry: registry,
@@ -58,6 +70,21 @@ void main() {
     completerFactory: (AiProviderConfig _) =>
         (completer: completer, close: () {}),
   );
+
+  /// 一张蓝光盘的目录结构（盘根 / BDMV / PLAYLIST 下一条真实的 `.mpls`）。返回 `.mpls`。
+  String blurayTitle(String discName, [String playlist = '00001.mpls']) {
+    final String root = p.join(tmp.path, 'discs', discName);
+    Directory(p.join(root, 'BDMV', 'STREAM')).createSync(recursive: true);
+    final File f = File(p.join(root, 'BDMV', 'PLAYLIST', playlist))
+      ..createSync(recursive: true)
+      ..writeAsBytesSync(List<int>.filled(32, 7));
+    return f.path;
+  }
+
+  List<String> filesUnder(String dir) => <String>[
+    for (final FileSystemEntity e in Directory(dir).listSync(recursive: true))
+      e.path,
+  ]..sort();
 
   String video(String name) {
     final File f = File(p.join(tmp.path, 'videos', name))
@@ -149,6 +176,114 @@ void main() {
       );
     });
 
+    test('没入库的文件：按文件解析，作品身份按所在文件夹兜底，不登记库条目', () async {
+      final String ep1 = video('loose01.mkv');
+      final String ep2 = video('loose02.mkv');
+      final AppVideoSubtitleService service = buildService();
+
+      final AppVideoSubtitleTarget a = await service.resolveFile(
+        ep1,
+        title: 'loose01',
+      );
+      expect(a.videoPaths, <String>[ep1]);
+      expect(a.bookUid, isNull);
+      expect(a.wholeSeason, isFalse);
+      expect(a.episodes.single.bookUid, isNull);
+      expect(a.episodes.single.registersSubtitleSource, isFalse);
+      // 同一文件夹里的各集共用一份作品身份（专名表 / 缓存），任务键各不相同。
+      final AppVideoSubtitleTarget b = await service.resolveFile(
+        ep2,
+        title: 'loose02',
+      );
+      expect(b.work.workKey, a.work.workKey);
+      expect(b.key, isNot(a.key));
+      // 互联镜像任务的主体：没有库条目也没有合集时用目标自己的键，不是 collection:null。
+      expect(VideoBookSubtitleSink(db).mirrorSubject(a), a.key);
+
+      await expectLater(
+        service.resolveFile(
+          p.join(tmp.path, 'videos', 'gone.mkv'),
+          title: 'gone',
+        ),
+        throwsA(isA<AppVideoSubtitleTargetNotFound>()),
+      );
+      await expectLater(
+        service.resolveFile('https://host.invalid/v.mkv', title: 'remote'),
+        throwsA(isA<AppVideoSubtitleTargetNotFound>()),
+      );
+    });
+
+    test('在线流：作品身份按来源给的作品名兜底，同一部作品各集共用；副本不在就报找不到', () async {
+      final AppVideoSubtitleService service = buildService();
+      final Directory exportDir = Directory(p.join(tmp.path, 'generated'));
+      String staged(String name) =>
+          (File(p.join(tmp.path, 'sa', name))
+                ..createSync(recursive: true)
+                ..writeAsBytesSync(<int>[1, 2, 3]))
+              .path;
+      final AppVideoSubtitleTarget ep1 = await service.resolveStream(
+        audioPath: staged('ep1.m4a'),
+        title: 'Episode 1',
+        key: 'a',
+        exportDir: exportDir,
+        workTitle: 'Fixture Show',
+      );
+      final AppVideoSubtitleTarget ep2 = await service.resolveStream(
+        audioPath: staged('ep2.m4a'),
+        title: 'Episode 2',
+        key: 'b',
+        exportDir: exportDir,
+        workTitle: 'Fixture Show',
+      );
+      expect(ep1.work.workKey, fallbackSubtitleWorkKey(title: 'Fixture Show'));
+      expect(ep2.work.workKey, ep1.work.workKey);
+      expect(ep1.work.title, 'Fixture Show');
+      expect(ep1.key, isNot(ep2.key));
+      expect(
+        ep1.sink!.exportDirFor(ep1.videoPaths.single)?.path,
+        exportDir.path,
+      );
+      // 没有作品名（单条粘贴的流）：按这一集的标题。
+      final AppVideoSubtitleTarget loose = await service.resolveStream(
+        audioPath: staged('loose.m4a'),
+        title: 'Some Clip',
+        key: 'c',
+        exportDir: exportDir,
+      );
+      expect(loose.work.workKey, fallbackSubtitleWorkKey(title: 'Some Clip'));
+      await expectLater(
+        service.resolveStream(
+          audioPath: p.join(tmp.path, 'sa', 'gone.m4a'),
+          title: 'gone',
+          key: 'd',
+          exportDir: exportDir,
+        ),
+        throwsA(isA<AppVideoSubtitleTargetNotFound>()),
+      );
+    });
+
+    test('播放页当前集：库里有就按库解析，没有就按文件解析', () async {
+      final String inLibrary = video('lib01.mkv');
+      final String loose = video('loose03.mkv');
+      await addBook('lib', inLibrary);
+      final AppVideoSubtitleService service = buildService();
+
+      final AppVideoSubtitleTarget fromBook = await service.resolvePlaying(
+        'lib',
+        videoPath: inLibrary,
+        title: 'ignored',
+      );
+      expect(fromBook.bookUid, 'lib');
+
+      final AppVideoSubtitleTarget fromFile = await service.resolvePlaying(
+        'not-in-library',
+        videoPath: loose,
+        title: 'loose03',
+      );
+      expect(fromFile.bookUid, isNull);
+      expect(fromFile.videoPaths, <String>[loose]);
+    });
+
     test('播放列表条目：各集都处理，但不替整行登记字幕选择', () async {
       final String ep1 = video('p01.mkv');
       final String ep2 = video('p02.mkv');
@@ -176,9 +311,433 @@ void main() {
       );
       expect(only.videoPaths, <String>[ep2]);
     });
+
+    test('蓝光 title：整卷与分集 .mpls 都是一集并登记库条目，作品按盘根兜底', () async {
+      final String mpls = blurayTitle('Show Vol.1');
+      final String discRoot = p.join(tmp.path, 'discs', 'Show Vol.1');
+      // 按集展开的虚拟分集：磁盘上没有这个文件，背后是整卷 00001.mpls。
+      final String episode = p.join(p.dirname(mpls), '00001.p02.mpls');
+      final String gone = p.join(
+        tmp.path,
+        'discs',
+        'Gone',
+        'BDMV',
+        'PLAYLIST',
+        '00001.mpls',
+      );
+      await addBook('bd', mpls);
+      await addBook('bd-ep2', episode);
+      await addBook('bd-gone', gone);
+      final AppVideoSubtitleService service = buildService();
+
+      final AppVideoSubtitleTarget whole = await service.resolveBook('bd');
+      expect(whole.videoPaths, <String>[mpls]);
+      expect(whole.unavailable, isEmpty);
+      expect(whole.episodes.single.registersSubtitleSource, isTrue);
+      expect(
+        whole.work.workKey,
+        fallbackSubtitleWorkKey(folderPath: discRoot, title: 'bd'),
+        reason: '没刮削的盘按盘根兜底作品身份，不按每张盘都同名的 BDMV/PLAYLIST',
+      );
+
+      final AppVideoSubtitleTarget split = await service.resolveBook('bd-ep2');
+      expect(split.videoPaths, <String>[episode]);
+      expect(split.episodes.single.registersSubtitleSource, isTrue);
+
+      final int collection = await addCollection(<String>[
+        'bd',
+        'bd-ep2',
+        'bd-gone',
+      ]);
+      final AppVideoSubtitleTarget season = await service.resolveCollection(
+        collection,
+      );
+      expect(season.videoPaths, <String>[mpls, episode]);
+      expect(
+        season.unavailable.map((AppVideoSubtitleUnavailable u) => u.reason),
+        <AppVideoSubtitleUnavailableReason>[
+          AppVideoSubtitleUnavailableReason.missingFile,
+        ],
+      );
+
+      // 播放页当前 title（库里有这一行）走库解析；没入库的 `.mpls` 按文件解析，作品名
+      // 取盘根目录名。
+      final AppVideoSubtitleTarget playing = await service.resolvePlaying(
+        'bd',
+        videoPath: mpls,
+        title: 'ignored',
+      );
+      expect(playing.bookUid, 'bd');
+      expect(playing.episodes.single.registersSubtitleSource, isTrue);
+      final String loose = blurayTitle('Loose Disc', '00800.mpls');
+      final AppVideoSubtitleTarget file = await service.resolveFile(
+        loose,
+        title: '00800',
+      );
+      expect(file.videoPaths, <String>[loose]);
+      expect(file.work.title, 'Loose Disc');
+    });
   });
 
   group('任务', () {
+    test('在线流：整集音频副本走完整管线，产物落 app 目录，按集记住选择后删副本', () async {
+      final Directory staged = Directory(
+        p.join(tmp.path, 'subs', 'stream_audio'),
+      )..createSync(recursive: true);
+      final File audio = File(p.join(staged.path, 'Ep 1 [k1].m4a'))
+        ..writeAsBytesSync(List<int>.filled(64, 3));
+      final Directory exportDir = Directory(
+        p.join(tmp.path, 'subs', 'generated'),
+      );
+      final List<String> remembered = <String>[];
+      final AppVideoSubtitleService service = buildService();
+      final AppVideoSubtitleTarget target = await service.resolveStream(
+        audioPath: audio.path,
+        title: 'Ep 1',
+        key: 'k1',
+        exportDir: exportDir,
+        workTitle: 'Fixture Show',
+        contentLanguage: 'jpn',
+        remember: (String path) async => remembered.add(path),
+      );
+      expect(target.videoPaths, <String>[audio.path]);
+      expect(target.bookUid, isNull);
+      expect(target.wholeSeason, isFalse);
+      expect(target.isMusic, isFalse);
+      expect(target.key, 'stream:k1');
+      expect(target.episodes.single.registersSubtitleSource, isFalse);
+      expect(target.episodes.single.contentLanguage, 'jpn');
+      // 互联镜像任务的主体是目标自己的键。
+      expect(target.sink!.mirrorSubject(target), 'stream:k1');
+      expect(target.sink!.mirrorKind, VideoRemoteJobKind.subtitleGenerate);
+      expect(target.sink!.usesStyleReference, isFalse);
+
+      final AppVideoSubtitleJob job = service.start(
+        target,
+        const AppVideoSubtitleOptions(),
+      );
+      await job.done;
+      expect(
+        job.status,
+        AppVideoSubtitleJobStatus.succeeded,
+        reason: '${job.errorMessage}',
+      );
+      final String expected = p.join(exportDir.path, 'Ep 1 [k1].ja.srt');
+      final VideoSubtitleEpisodeResult result = job.result!.episodes.single;
+      expect(result.exported, isTrue);
+      expect(result.outputPath, expected);
+      expect(File(expected).existsSync(), isTrue);
+      expect(await service.subtitlePathFor(target, audio.path), expected);
+      expect(remembered, <String>[expected]);
+      expect(audio.existsSync(), isFalse, reason: '副本只是转写输入，登记后删掉');
+      expect(job.registeredBookUids, isEmpty);
+    });
+
+    test('在线流：参考画面向目标给的取帧要（副本只有音频，画面从流里抽）', () async {
+      settings.provider = AiProviderConfig(
+        id: 'p1',
+        presetId: 'openai',
+        name: 'Test AI',
+        baseUrl: Uri.parse('https://example.invalid/v1'),
+        model: 'm1',
+        acceptsImages: true,
+      );
+      final File audio = File(p.join(tmp.path, 'sa', 'Ep 2 [k2].m4a'))
+        ..createSync(recursive: true)
+        ..writeAsBytesSync(List<int>.filled(64, 5));
+      final List<String> asked = <String>[];
+      final AppVideoSubtitleService service = buildService();
+      final AppVideoSubtitleTarget target = await service.resolveStream(
+        audioPath: audio.path,
+        title: 'Ep 2',
+        key: 'k2',
+        exportDir: Directory(p.join(tmp.path, 'generated')),
+        frameSource: (String videoPath, int atMs) async {
+          asked.add('$videoPath@$atMs');
+          return null;
+        },
+      );
+      final AppVideoSubtitleJob job = service.start(
+        target,
+        const AppVideoSubtitleOptions(proofread: true, frames: true),
+      );
+      await job.done;
+      expect(
+        job.status,
+        AppVideoSubtitleJobStatus.succeeded,
+        reason: '${job.errorMessage}',
+      );
+      expect(asked, isNotEmpty);
+      expect(asked.first, startsWith('${audio.path}@'));
+    });
+
+    test('蓝光 title：产物落在任务根的 disc_out，登记到这一行，盘里不多任何文件', () async {
+      final String mpls = blurayTitle('Show Vol.1');
+      final String discRoot = p.join(tmp.path, 'discs', 'Show Vol.1');
+      await addBook('bd', mpls, subtitleSource: 'embedded:3');
+      final List<String> before = filesUnder(discRoot);
+      final AppVideoSubtitleService service = buildService();
+      // 原盘会话里播放页给的就是当前 title 的 `.mpls`（视频页单集入口）。
+      final AppVideoSubtitleTarget target = await service.resolvePlaying(
+        'bd',
+        videoPath: mpls,
+        title: 'ignored',
+      );
+      final AppVideoSubtitleJob job = service.start(
+        target,
+        const AppVideoSubtitleOptions(),
+      );
+      await job.done;
+
+      expect(
+        job.status,
+        AppVideoSubtitleJobStatus.succeeded,
+        reason: '${job.errorMessage}',
+      );
+      final String expected = p.join(
+        jobs.path,
+        'disc_out',
+        videoSubtitleJobId(mpls),
+        '00001.ja.srt',
+      );
+      final VideoSubtitleEpisodeResult result = job.result!.episodes.single;
+      expect(result.exported, isTrue);
+      expect(result.outputPath, expected);
+      expect(File(expected).existsSync(), isTrue);
+      expect(await service.subtitlePathFor(target, mpls), expected);
+      expect(filesUnder(discRoot), before, reason: '盘结构里不能写字幕');
+      // 登记进这个 title 行（替换原盘内嵌轨的旧选择）：重进这张盘时字幕菜单按库里的
+      // subtitleSource 把它列成候选。
+      expect((await db.getVideoBookByBookUid('bd'))!.subtitleSource, expected);
+      expect(job.registeredBookUids, <String>['bd']);
+    });
+
+    test('多角度 title：按当前角度的抽取路径跑，产物登记到不带角度的 title 行', () async {
+      final String mpls = blurayTitle('Multi Angle');
+      final String discRoot = p.join(tmp.path, 'discs', 'Multi Angle');
+      await addBook('bd', mpls, subtitleSource: 'embedded:3');
+      final List<String> before = filesUnder(discRoot);
+      final AppVideoSubtitleService service = buildService();
+      // 原盘会话正放第 2 个角度：播放页给的是角度成员路径（盘上没有这个文件）。
+      final String angle = blurayAnglePath(mpls, 1);
+      final AppVideoSubtitleTarget target = await service.resolvePlaying(
+        'bd',
+        videoPath: angle,
+        title: 'ignored',
+      );
+      expect(target.bookUid, 'bd');
+      expect(target.videoPaths, <String>[angle]);
+      expect(target.unavailable, isEmpty);
+      expect(target.episodes.single.registersSubtitleSource, isTrue);
+      expect(target.episodes.single.replacesSubtitleSelection, isTrue);
+
+      final AppVideoSubtitleJob job = service.start(
+        target,
+        const AppVideoSubtitleOptions(),
+      );
+      await job.done;
+
+      expect(
+        job.status,
+        AppVideoSubtitleJobStatus.succeeded,
+        reason: '${job.errorMessage}',
+      );
+      final VideoSubtitleEpisodeResult result = job.result!.episodes.single;
+      expect(result.videoPath, angle);
+      expect(result.exported, isTrue);
+      final String output = result.outputPath!;
+      expect(
+        p.isWithin(
+          p.join(jobs.path, 'disc_out', videoSubtitleJobId(angle)),
+          output,
+        ),
+        isTrue,
+        reason: output,
+      );
+      expect(File(output).existsSync(), isTrue);
+      expect(filesUnder(discRoot), before, reason: '盘结构里不能写字幕');
+      expect((await db.getVideoBookByBookUid('bd'))!.subtitleSource, output);
+      expect(job.registeredBookUids, <String>['bd']);
+    });
+
+    test('播放页发起：识别播放器当前音轨；批量与只重跑写法统一不换轨', () async {
+      final String ep = video('dual.mkv');
+      await addBook('dual', ep);
+      final List<String> probed = <String>[];
+      // 第 0 条英语（流 1）、第 1 条日语（流 2）：按日语挑的是流 2。
+      final AppVideoSubtitleService service = buildService(
+        probeAudioTracks: (String path) async {
+          probed.add(path);
+          return const <AudioTrackFacts>[
+            AudioTrackFacts(index: 1, language: 'eng'),
+            AudioTrackFacts(index: 2, language: 'jpn'),
+          ];
+        },
+      );
+      final AppVideoSubtitleTarget playing = await service.resolvePlaying(
+        'dual',
+        videoPath: ep,
+        title: 'dual',
+        audioTrack: 0,
+      );
+      expect(playing.episodes.single.audioTrack, 0);
+      final AppVideoSubtitleJob job = service.start(
+        playing,
+        const AppVideoSubtitleOptions(),
+      );
+      await job.done;
+      expect(
+        job.status,
+        AppVideoSubtitleJobStatus.succeeded,
+        reason: '${job.errorMessage}',
+      );
+      expect(recognizer.audioStreams, <int?>[1], reason: '正在听的是英语轨');
+      expect(probed, <String>[ep]);
+
+      // 没入库的文件同口径。
+      final String loose = video('loose_dual.mkv');
+      final AppVideoSubtitleTarget file = await service.resolvePlaying(
+        'missing',
+        videoPath: loose,
+        title: 'loose',
+        audioTrack: 0,
+      );
+      expect(file.episodes.single.audioTrack, 0);
+
+      // 批量（合集）：没有播放上下文，按语言挑（不换算、不探测）。
+      final AppVideoSubtitleTarget season = await service.resolveCollection(
+        await addCollection(<String>['dual']),
+      );
+      expect(season.episodes.single.audioTrack, isNull);
+      expect(
+        (await service.resolveBook('dual')).episodes.single.audioTrack,
+        isNull,
+      );
+    });
+
+    test('DVD title：经 dvdvideo 按 title 读，解析成一集，产物落 disc_out 并登记到这一行', () async {
+      final String discRoot = p.join(tmp.path, 'discs', 'Show DVD');
+      File(p.join(discRoot, 'VIDEO_TS', 'VIDEO_TS.IFO'))
+        ..createSync(recursive: true)
+        ..writeAsBytesSync(List<int>.filled(16, 1));
+      final String title = dvdTitlePath(discRoot, 2);
+      await addBook('dvd', title, subtitleSource: 'embedded:1');
+      final List<String> before = filesUnder(discRoot);
+      final AppVideoSubtitleService service = buildService();
+
+      // 播放页（原盘会话里当前 title）与合集整季都认得这一条。
+      final AppVideoSubtitleTarget target = await service.resolvePlaying(
+        'dvd',
+        videoPath: title,
+        title: 'ignored',
+      );
+      expect(target.videoPaths, <String>[title]);
+      expect(target.unavailable, isEmpty);
+      expect(target.episodes.single.registersSubtitleSource, isTrue);
+      expect(
+        target.work.workKey,
+        fallbackSubtitleWorkKey(folderPath: discRoot, title: 'dvd'),
+        reason: '没刮削的盘按盘根兜底作品身份',
+      );
+      expect(
+        (await service.resolveCollection(
+          await addCollection(<String>['dvd']),
+        )).videoPaths,
+        <String>[title],
+      );
+
+      final AppVideoSubtitleJob job = service.start(
+        target,
+        const AppVideoSubtitleOptions(),
+      );
+      await job.done;
+      expect(
+        job.status,
+        AppVideoSubtitleJobStatus.succeeded,
+        reason: '${job.errorMessage}',
+      );
+      final String output = job.result!.episodes.single.outputPath!;
+      expect(
+        p.isWithin(
+          p.join(jobs.path, 'disc_out', videoSubtitleJobId(title)),
+          output,
+        ),
+        isTrue,
+        reason: output,
+      );
+      expect(filesUnder(discRoot), before, reason: '盘结构里不能写字幕');
+      expect((await db.getVideoBookByBookUid('dvd'))!.subtitleSource, output);
+
+      // 盘不在了：照常报文件不在，不进管线。
+      File(p.join(discRoot, 'VIDEO_TS', 'VIDEO_TS.IFO')).deleteSync();
+      final AppVideoSubtitleTarget gone = await service.resolveBook('dvd');
+      expect(gone.episodes, isEmpty);
+      expect(
+        gone.unavailable.single.reason,
+        AppVideoSubtitleUnavailableReason.missingFile,
+      );
+    });
+
+    test('DVD 多角度 title：按当前角度的抽取路径跑，产物分角度落 disc_out、登记到不带角度的行', () async {
+      final String discRoot = p.join(tmp.path, 'discs', 'Angle DVD');
+      File(p.join(discRoot, 'VIDEO_TS', 'VIDEO_TS.IFO'))
+        ..createSync(recursive: true)
+        ..writeAsBytesSync(List<int>.filled(16, 1));
+      final String title = dvdTitlePath(discRoot, 2);
+      await addBook('dvd', title, subtitleSource: 'embedded:1');
+      final List<String> before = filesUnder(discRoot);
+      final AppVideoSubtitleService service = buildService();
+      // 原盘会话正放第 2 个角度：播放页给的是角度成员路径（虚拟，盘上没有这个文件）。
+      final String angle = dvdTitleAnglePath(title, 1);
+      final AppVideoSubtitleTarget target = await service.resolvePlaying(
+        'dvd',
+        videoPath: angle,
+        title: 'ignored',
+      );
+      expect(target.bookUid, 'dvd');
+      expect(target.videoPaths, <String>[angle]);
+      expect(target.unavailable, isEmpty);
+      expect(target.episodes.single.registersSubtitleSource, isTrue);
+
+      final AppVideoSubtitleJob job = service.start(
+        target,
+        const AppVideoSubtitleOptions(),
+      );
+      await job.done;
+      expect(
+        job.status,
+        AppVideoSubtitleJobStatus.succeeded,
+        reason: '${job.errorMessage}',
+      );
+      final VideoSubtitleEpisodeResult result = job.result!.episodes.single;
+      expect(result.videoPath, angle);
+      final String output = result.outputPath!;
+      expect(
+        p.isWithin(
+          p.join(jobs.path, 'disc_out', videoSubtitleJobId(angle)),
+          output,
+        ),
+        isTrue,
+        reason: output,
+      );
+      expect(videoSubtitleJobId(angle), isNot(videoSubtitleJobId(title)));
+      expect(filesUnder(discRoot), before, reason: '盘结构里不能写字幕');
+      expect((await db.getVideoBookByBookUid('dvd'))!.subtitleSource, output);
+      expect(job.registeredBookUids, <String>['dvd']);
+    });
+
+    test('没入库的多角度 title 也按角度成员路径解析成一集', () async {
+      final String loose = blurayTitle('Loose Angle', '00800.mpls');
+      final String angle = blurayAnglePath(loose, 2);
+      final AppVideoSubtitleTarget file = await buildService().resolvePlaying(
+        'missing',
+        videoPath: angle,
+        title: '00800',
+      );
+      expect(file.videoPaths, <String>[angle]);
+      expect(file.work.title, 'Loose Angle');
+    });
+
     test('开了 AI 校对却没指派提供商：拒绝，一个请求都不发', () async {
       await addBook('a', video('ep01.mkv'));
       final AppVideoSubtitleService service = buildService();

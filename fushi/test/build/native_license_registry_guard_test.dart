@@ -72,7 +72,7 @@ void main() {
         isNot(anyOf(contains('<!doctype html'), contains('<html'))),
         reason: '$name 是网页不是许可原文；检查 native/third_party_licenses/ 里对应的来源文件',
       );
-      // BUG-4845：core.symlinks=false 的 git 检出把符号链接写成内容为目标路径的文本，
+      // BUG-4694：core.symlinks=false 的 git 检出把符号链接写成内容为目标路径的文本，
       // 生成器若读了它，产物里就是「../LICENSE-MIT」这样一行相对路径。
       expect(
         RegExp(r'^\.\.?[/\\]\S+$').hasMatch(text.trim()),

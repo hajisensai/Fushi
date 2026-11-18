@@ -55,6 +55,7 @@ class AiCollectionOrderMember {
     this.episode,
     this.volume,
     this.bookEpisode,
+    this.bookBonus = false,
     String? volumeMarkerText,
     this.metadata = const <String, Object?>{},
   }) : _volumeMarkerText = volumeMarkerText;
@@ -87,6 +88,7 @@ class AiCollectionOrderMember {
       title: title,
       volume: key?.volume,
       bookEpisode: episode,
+      bookBonus: key?.bonus ?? false,
       // 已解析成话号的结尾「第N話 前編」不是认不出的卷位标记，只查它前面那段。
       volumeMarkerText: episode == null ? null : key!.seriesTitle,
     );
@@ -100,6 +102,9 @@ class AiCollectionOrderMember {
 
   /// 书成员的话号（按话发布的漫画「第N話 前編」，见 [BookSeriesKey.episode]）。
   final BookEpisodeNumber? bookEpisode;
+
+  /// 书成员是否特典册（排在同卷正篇之后，见 [BookSeriesKey.bonus]）。
+  final bool bookBonus;
 
   final String? _volumeMarkerText;
 
@@ -146,14 +151,17 @@ Set<int> collectionOrderAmbiguousIndices(
       };
     case AiCollectionOrderKind.book:
       final Set<int> out = <int>{};
-      final Map<({num? volume, num? episode, int part}), List<int>> byPosition =
-          <({num? volume, num? episode, int part}), List<int>>{};
+      final Map<BookSeriesPosition, List<int>> byPosition =
+          <BookSeriesPosition, List<int>>{};
       final List<int> unnumbered = <int>[];
       for (int i = 0; i < members.length; i++) {
         final AiCollectionOrderMember m = members[i];
         if (_bookUnparsedVolumeMarker.hasMatch(m.volumeMarkerText)) out.add(i);
-        final ({num? volume, num? episode, int part})? position =
-            bookSeriesPositionOf(volume: m.volume, episode: m.bookEpisode);
+        final BookSeriesPosition? position = bookSeriesPositionOf(
+          volume: m.volume,
+          episode: m.bookEpisode,
+          bonus: m.bookBonus,
+        );
         if (position == null) {
           unnumbered.add(i);
         } else {
@@ -191,8 +199,10 @@ List<int> ruleOrderCollectionMembers(
         c = compareBookSeriesPositionParts(
           volumeA: ma.volume,
           episodeA: ma.bookEpisode,
+          bonusA: ma.bookBonus,
           volumeB: mb.volume,
           episodeB: mb.bookEpisode,
+          bonusB: mb.bookBonus,
         );
         if (c != 0) return c;
         c = naturalCompare(ma.title, mb.title);

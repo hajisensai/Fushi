@@ -221,7 +221,7 @@ void main() {
       'lib/src/anki/card_source_router.dart',
     ).readAsStringSync();
     expect(router, contains('matchRemoteCardSourceVideo('));
-    // 反馈 7gkdbfCXQ0 / BUG-4861：等 host 算指纹（几 GB 的片子首次几十秒）与等清单
+    // 反馈 7gkdbfCXQ0 / BUG-4710：等 host 算指纹（几 GB 的片子首次几十秒）与等清单
     // 合成同一段 work，套可取消的进度反馈；只有「缓存新鲜且不用核验指纹」才直取。
     expect(router, contains('cached && link.fingerprint == null'));
     expect(router, contains('>(navigator: navigator, work: work);'));

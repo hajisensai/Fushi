@@ -338,10 +338,61 @@ void main() {
               },
             ],
           },
-          <String, Object?>{'role': 'user', 'content': 'thanks'},
+          // 带工具的请求是 agent 多轮循环：尾部滚动断点让下一步复用整段历史。
+          <String, Object?>{
+            'role': 'user',
+            'content': <Object?>[
+              <String, Object?>{
+                'type': 'text',
+                'text': 'thanks',
+                'cache_control': <String, Object?>{'type': 'ephemeral'},
+              },
+            ],
+          },
         ]);
       },
     );
+
+    test('尾部是 tool_result 时断点挂在最后一个结果块上', () async {
+      final f = fixture(reply);
+      await f.client.chat(
+        provider: provider(AiWireProtocol.anthropicMessages),
+        messages: <AiChatMessage>[
+          const AiChatMessage.user('q'),
+          AiChatMessage.assistantToolCalls('', const <AiChatToolCall>[
+            AiChatToolCall(id: 'a', name: 'n', arguments: <String, Object?>{}),
+            AiChatToolCall(id: 'b', name: 'n', arguments: <String, Object?>{}),
+          ]),
+          const AiChatMessage.toolResult(
+            toolCallId: 'a',
+            toolName: 'n',
+            content: 'one',
+          ),
+          const AiChatMessage.toolResult(
+            toolCallId: 'b',
+            toolName: 'n',
+            content: 'two',
+          ),
+        ],
+        tools: tools,
+      );
+      final List<Object?> messages =
+          f.sent.single['messages']! as List<Object?>;
+      expect(messages.first, <String, Object?>{'role': 'user', 'content': 'q'});
+      expect((messages.last! as Map)['content'], <Object?>[
+        <String, Object?>{
+          'type': 'tool_result',
+          'tool_use_id': 'a',
+          'content': 'one',
+        },
+        <String, Object?>{
+          'type': 'tool_result',
+          'tool_use_id': 'b',
+          'content': 'two',
+          'cache_control': <String, Object?>{'type': 'ephemeral'},
+        },
+      ]);
+    });
 
     test('assistantToolCalls 带正文时先发 text 块', () async {
       final f = fixture(reply);

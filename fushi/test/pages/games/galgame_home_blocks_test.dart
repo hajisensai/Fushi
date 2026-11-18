@@ -15,6 +15,9 @@ import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart'
 /// 游戏首页拼贴块的纯函数：网格排行、状态计数、平均通关文案、库页视图请求、
 /// 上下文菜单清单（与游戏库卡片同序同项）。
 void main() {
+  // 纯函数测试不走 testWidgets，切 slang 语言要先有 binding（setLocale 会碰
+  // WidgetsBinding.instance）。
+  TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
 
   GalgameEntry entry(String id, GalgamePlayStatus status) => GalgameEntry(

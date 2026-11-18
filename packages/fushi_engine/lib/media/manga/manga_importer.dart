@@ -572,7 +572,7 @@ class MangaImporter {
   }
 
   /// 本地漫画书目录 → `EpubBooks` 行：导入（[_copyAndInsert]）与「孤儿书目录
-  /// 重新登记」（[registerExistingBookDir]，BUG-4852）共用的唯一行构造口径。
+  /// 重新登记」（[registerExistingBookDir]，BUG-4701）共用的唯一行构造口径。
   static EpubBooksCompanion bookRowFor({
     required String bookKey,
     required String title,
@@ -602,7 +602,7 @@ class MangaImporter {
   }
 
   /// 把盘上已有、但没有书库行的本地漫画书目录 [bookDir]（`manga.json` + `images/`，
-  /// 即 [copyMangaArtifacts] 的产物）重新登记成书（BUG-4852）。[bookKey] 由调用方
+  /// 即 [copyMangaArtifacts] 的产物）重新登记成书（BUG-4701）。[bookKey] 由调用方
   /// 给定（= 目录名），不重新派生。页数 = `manga.json` 的页数，封面 = 第一页（与
   /// [copyMangaArtifacts] 返回的 coverRel 同一规则）。`manga.json` 缺失 / 无页抛
   /// [MangaImportException]。

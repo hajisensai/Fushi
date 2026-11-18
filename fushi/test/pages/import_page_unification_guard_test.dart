@@ -210,7 +210,28 @@ void main() {
 
     test('来源 / 扩展 / 发现 / 下载的二级选择是标签页，不再是分段按钮', () {
       expect(browse, isNot(contains('FushiSegmentedStrip')));
-      expect(browse, isNot(contains('ButtonSegment<')));
+      // 裸 SegmentedButton（前面不是标识符字符，排除 adaptiveSegmentedButton）。
+      expect(
+        RegExp(r'(?<![A-Za-z_])SegmentedButton<').hasMatch(browse),
+        isFalse,
+      );
+      // 唯一例外：页头大字形态下「来源 / 扩展」排在内容域标签行右端，用设计系统
+      // 单选分段（[adaptiveSegmentedButton]，CLAUDE.md「分段选择用设计系统组件」）；
+      // 内容域本身仍是下面三处标签条。非页头形态（墨水屏）照旧是标签胶囊。
+      expect(
+        'adaptiveSegmentedButton<'.allMatches(browse),
+        hasLength(1),
+        reason: '只有「来源 / 扩展」这一处分段，别处的二级选择仍是标签页',
+      );
+      expect(
+        'ButtonSegment<OnlineSourcesSection>('.allMatches(browse),
+        hasLength(2),
+        reason: '分段只给「来源 / 扩展」两段用',
+      );
+      expect(
+        RegExp(r'ButtonSegment<(?!OnlineSourcesSection)').hasMatch(browse),
+        isFalse,
+      );
       expect(
         RegExp(
           r'_BrowseSwipeSections<(?:OnlineSourcesDomain|_DownloadsResourceDomain|BrowseDownloadsSection)>\(',

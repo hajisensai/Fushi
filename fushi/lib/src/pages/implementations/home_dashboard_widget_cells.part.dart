@@ -149,7 +149,7 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
               entries.first,
               0,
               FushiCoverBlockSize.hero,
-              // 首页拼贴（BUG-4851）：视频一律竖版海报摆法，没有海报时剧照裁成
+              // 首页拼贴（BUG-4903）：视频一律竖版海报摆法，没有海报时剧照裁成
               // 竖版，不整张铺成横版背景（小块里看起来像没封面）。
               portraitOnly: true,
             );
@@ -985,9 +985,13 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
 
   // ── 最近添加 / 追踪 ──────────────────────────────────────────────────────
 
-  /// 「最近添加」：条目小行按格子实际大小铺成几行几列（[_widgetMiniList]，格子越大
-  /// 列得越多，最多 [_HomeDashboardPageState._kRecentLimit] 条；「继续」里已有的
-  /// 去重）。
+  /// 「最近添加」（用户 2026-11-17 重设计）：按格子实际大小选样式——
+  /// - 色块外观、够宽放色块（每块宽 ≥ [_kRecentBlockMinWidth]、高 ≥
+  ///   [_kContinueBlockRowMin]）：与「继续」卡同一套封面色块铺成几行几列；够大
+  ///   （≥ 2 列 × 3 行）时最新一项放大成占满起始侧一整列的主色块；
+  /// - 否则（1 列宽的窄格 / 分区卡外观）：条目小行（[_widgetMiniList]）。
+  /// 同一合集已在数据层合成一项（扇形 + 卷数）；「继续」里已有的去重。有内容时外框
+  /// 不画「最近添加」大水印（会压在条目文字后面）。
   Widget _recentCell(
     FushiDesignTokens tokens,
     AppModel appModel,
@@ -998,101 +1002,128 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
         ? _recentlyAddedEntries(appModel, books)
         : const <_ContinueEntry>[];
     final DateTime now = DateTime.now();
-    if (poster && list.isNotEmpty) {
-      return _recentBlocks(tokens, appModel, list, now);
-    }
-    return HomeWidgetFrame(
-      key: const ValueKey<String>('home-recent-card'),
-      title: t.home_recently_added,
-      icon: FushiIcons.schedule,
-      hueKey: HomeWidgetKind.recentlyAdded.id,
-      poster: poster,
-      dense: false,
-      child: list.isEmpty
-          ? _widgetEmptyLine(
-              tokens,
-              _initialLoadDone ? t.home_widget_recent_empty : '',
-            )
-          : LayoutBuilder(
-              builder: (BuildContext context, BoxConstraints c) =>
-                  _widgetMiniList(
-                    tokens: tokens,
-                    appModel: appModel,
-                    key: const ValueKey<String>('home-recent-list'),
-                    keyPrefix: 'home-recent-item',
-                    entries: list,
-                    area: c.biggest,
-                    subtitleOf: (_ContinueEntry e) => _recentSubtitle(e, now),
-                  ),
-            ),
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints c) {
+        // 色块模式下外框不画底（[HomeWidgetFrame.bare]）、四周不留内边距：内容区
+        // = 整格减去小标题行。
+        final Size blockArea = Size(
+          c.maxWidth,
+          math.max(
+            0,
+            c.maxHeight - kHomeWidgetHeaderHeight - kHomeWidgetHeaderGap,
+          ),
+        );
+        final _RecentBlockGrid? blocks = poster && list.isNotEmpty
+            ? _recentBlockGridFor(blockArea, list.length)
+            : null;
+        return HomeWidgetFrame(
+          key: const ValueKey<String>('home-recent-card'),
+          title: t.home_recently_added,
+          icon: FushiIcons.schedule,
+          hueKey: HomeWidgetKind.recentlyAdded.id,
+          poster: poster,
+          dense: false,
+          bare: blocks != null,
+          child: list.isEmpty
+              ? _widgetEmptyLine(
+                  tokens,
+                  _initialLoadDone ? t.home_widget_recent_empty : '',
+                )
+              : blocks != null
+              ? _recentBlocks(tokens, appModel, list, blocks, blockArea, now)
+              : LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints box) =>
+                      _widgetMiniList(
+                        tokens: tokens,
+                        appModel: appModel,
+                        key: const ValueKey<String>('home-recent-list'),
+                        keyPrefix: 'home-recent-item',
+                        entries: list,
+                        area: box.biggest,
+                        subtitleOf: (_ContinueEntry e) =>
+                            _recentSubtitle(e, now),
+                      ),
+                ),
+        );
+      },
     );
   }
 
-  /// 色块外观的「最近添加」（拼贴设计稿 H8）：分区标题 + 与「继续」同一套的半高
-  /// 封面色块（[_recentBlock]，同系列新加的几卷合成扇形叠放卡），按格子实际大小
-  /// 铺几行几列（行高至少 [_kContinueBlockRowMin]，格子越大块越多）。
+  /// 按 [grid] 把色块铺满 [area]：有主色块时它占起始侧一整列（全高、宽约四成），
+  /// 其余在剩下的区域里几行几列；放不下的条目不画（不缩字号）。
   Widget _recentBlocks(
     FushiDesignTokens tokens,
     AppModel appModel,
     List<_ContinueEntry> list,
+    _RecentBlockGrid grid,
+    Size area,
     DateTime now,
   ) {
     const double gap = kFushiCoverBlockSpacing;
-    return KeyedSubtree(
-      key: const ValueKey<String>('home-recent-card'),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+    Widget tiles(Size box, int cols, int rows, int offset) {
+      final double w = (box.width - gap * (cols - 1)) / cols;
+      final double h = (box.height - gap * (rows - 1)) / rows;
+      final int count = math.min(list.length - offset, cols * rows);
+      return Wrap(
+        spacing: gap,
+        runSpacing: gap,
         children: <Widget>[
-          HomeSectionHeader(
-            key: const ValueKey<String>('home-recent-header'),
-            title: t.home_recently_added,
-            compact: true,
-          ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: LayoutBuilder(
-              builder: (BuildContext context, BoxConstraints area) {
-                final int rows = math.max(
-                  1,
-                  ((area.maxHeight + gap) / (_kContinueBlockRowMin + gap))
-                      .floor(),
-                );
-                final double rowHeight =
-                    (area.maxHeight - gap * (rows - 1)) / rows;
-                final int cols = math.max(
-                  1,
-                  ((area.maxWidth + gap) / (rowHeight * 1.6 + gap)).floor(),
-                );
-                final double width = (area.maxWidth - gap * (cols - 1)) / cols;
-                final int count = math.min(list.length, rows * cols);
-                // 不裁切：块数按行列算好（count ≤ rows × cols、块尺寸恰好铺满），
-                // 不会溢出；包 ClipRect 会把色块投影齐格子边切成直角矩形（与
-                // 「继续」的 [_continueBlockSide] 同口径，投影伸进格间距）。
-                return Wrap(
-                  key: const ValueKey<String>('home-recent-list'),
-                  spacing: gap,
-                  runSpacing: gap,
-                  children: <Widget>[
-                    for (int i = 0; i < count; i++)
-                      SizedBox(
-                        width: width,
-                        height: rowHeight,
-                        child: _recentBlock(
-                          tokens,
-                          appModel,
-                          list[i],
-                          i,
-                          FushiCoverBlockSize.half,
-                          now,
-                        ),
-                      ),
-                  ],
-                );
-              },
+          for (int i = 0; i < count; i++)
+            SizedBox(
+              width: w,
+              height: h,
+              child: FushiStaggeredEntrance(
+                index: i + offset,
+                child: _recentBlock(
+                  tokens,
+                  appModel,
+                  list[i + offset],
+                  i + offset,
+                  FushiCoverBlockSize.half,
+                  now,
+                ),
+              ),
+            ),
+        ],
+      );
+    }
+
+    if (!grid.featured) {
+      return KeyedSubtree(
+        key: const ValueKey<String>('home-recent-blocks'),
+        child: tiles(area, grid.cols, grid.rows, 0),
+      );
+    }
+    final double leadWidth = (area.width - gap) * _kRecentLeadShare;
+    final double restWidth = area.width - leadWidth - gap;
+    final int restCols = math.max(
+      1,
+      ((restWidth + gap) / (_kRecentBlockMinWidth + gap)).floor(),
+    );
+    return Row(
+      key: const ValueKey<String>('home-recent-blocks'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        SizedBox(
+          width: leadWidth,
+          child: FushiStaggeredEntrance(
+            index: 0,
+            child: _recentBlock(
+              tokens,
+              appModel,
+              list.first,
+              0,
+              FushiCoverBlockSize.regular,
+              now,
             ),
           ),
-        ],
-      ),
+        ),
+        const SizedBox(width: gap),
+        SizedBox(
+          width: restWidth,
+          child: tiles(Size(restWidth, area.height), restCols, grid.rows, 1),
+        ),
+      ],
     );
   }
 
@@ -1149,6 +1180,43 @@ const double _kContinueMiniSideMin = 64;
 
 /// 色块外观其余条目铺多行时每行至少多高。
 const double _kContinueBlockRowMin = 96;
+
+/// 「最近添加」一块色块的最小宽度：再窄标题只剩几个字，退回条目小行。
+const double _kRecentBlockMinWidth = 220;
+
+/// 「最近添加」主色块占的宽度比例。
+const double _kRecentLeadShare = 0.4;
+
+/// 「最近添加」色块的排法（[_recentBlockGridFor]）。
+@immutable
+class _RecentBlockGrid {
+  const _RecentBlockGrid({
+    required this.cols,
+    required this.rows,
+    required this.featured,
+  });
+
+  final int cols;
+  final int rows;
+
+  /// 最新一项放大成占满起始侧一整列的主色块。
+  final bool featured;
+}
+
+/// [area] 里「最近添加」色块怎么排；放不下一块够宽的色块时为 null（退回条目
+/// 小行）。[count] 是条目数（够 3 项才有主色块）。
+_RecentBlockGrid? _recentBlockGridFor(Size area, int count) {
+  const double gap = kFushiCoverBlockSpacing;
+  final int cols = ((area.width + gap) / (_kRecentBlockMinWidth + gap)).floor();
+  final int rows = ((area.height + gap) / (_kContinueBlockRowMin + gap))
+      .floor();
+  if (cols < 1 || rows < 1) return null;
+  return _RecentBlockGrid(
+    cols: cols,
+    rows: rows,
+    featured: cols >= 2 && rows >= 3 && count >= 3,
+  );
+}
 
 /// 分区卡外观主卡旁的封面卡横滑行最高多高；更高就改铺条目小行（封面放大没有意义，
 /// 多列条目更有用）。

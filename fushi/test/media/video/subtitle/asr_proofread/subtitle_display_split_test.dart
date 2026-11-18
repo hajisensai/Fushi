@@ -47,6 +47,7 @@ class _OneCueRecognizer implements VideoSubtitleRecognizer {
     required Directory workDir,
     required VideoSubtitleRecognizeProgress onProgress,
     required SubtitleCancelToken cancel,
+    int? audioStreamIndex,
   }) async => <SubtitleDraftCue>[
     const SubtitleDraftCue(startMs: 0, endMs: 1000, text: 'はい!'),
     const SubtitleDraftCue(startMs: 2000, endMs: 3000, text: 'うん'),

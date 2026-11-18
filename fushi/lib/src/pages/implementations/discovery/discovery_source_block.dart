@@ -392,14 +392,17 @@ class DiscoverySourceChip extends StatelessWidget {
               FushiIcon(icon, size: 13, color: colors.onContainer),
               const SizedBox(width: 3),
             ],
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: context.fushiType.labelMedium.copyWith(
-                height: 1.25,
-                fontWeight: FontWeight.w600,
-                color: colors.onContainer,
+            // Flexible：chip 比块窄时标签自己省略号收尾，不把整行顶出块外。
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: context.fushiType.labelMedium.copyWith(
+                  height: 1.25,
+                  fontWeight: FontWeight.w600,
+                  color: colors.onContainer,
+                ),
               ),
             ),
           ],

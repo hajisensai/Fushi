@@ -294,7 +294,7 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
             borderRadius: tokens.radii.chipRadius,
             child: _tagFilterChip(tag: tag, isSelected: true, isDimmed: false),
           );
-          // BUG-4847：chip 左侧的「⋮⋮」柄是即时 Draggable——鼠标精确指针 hit slop
+          // BUG-4899：chip 左侧的「⋮⋮」柄是即时 Draggable——鼠标精确指针 hit slop
           // 只有 1 px，长按计时里手一抖长按拖动就输给标签条的横滚；柄比滚动区深、
           // 越过 slop 的同一帧先认领，桌面也拖得动。LongPressDraggable 留给触屏
           // 长按整枚 chip；落点仍是 chip 上的 DragTarget。

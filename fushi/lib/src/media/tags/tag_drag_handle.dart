@@ -4,7 +4,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
-/// 标签 chip 左侧的「⋮⋮」拖动柄（BUG-4847）：按下即拖，不等长按。
+/// 标签 chip 左侧的「⋮⋮」拖动柄（BUG-4899）：按下即拖，不等长按。
 ///
 /// 根因：库页标签条的 chip 只有 `LongPressDraggable` 一条重排路径，而它住在
 /// `HorizontalDragScrollable` 包的横向 `ListView` 里（鼠标拖动 = 横滚）。鼠标

@@ -26,7 +26,6 @@ import 'package:fushi/src/onboarding/recommended_pack_download_mini_bar.dart';
 import 'package:fushi/src/onboarding/recommended_pack_tutorial_prompt.dart';
 import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
 import 'package:fushi/src/updates/update_probes.dart';
-import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show
         FushiFloatingChromeInset,
@@ -1753,23 +1752,10 @@ class _HomePageState extends BasePageState<HomePage>
     _appleChrome.syncScope(_visibleTab);
     _largeTitle.syncScope(_visibleTab);
     final bool apple = isGlassDesign(context);
-    final bool overlayTitle = !apple && _tabHasFloatingChrome(_visibleTab);
-    final bool narrow =
-        windowSizeClassReal(
-          MediaQuery.sizeOf(context).width,
-          FushiAppUiScale.of(context),
-        ) ==
-        WindowSizeClass.compact;
+    final bool overlayTitle = _shellTitleOverlaid(_visibleTab);
+    final bool narrow = _shellWindowCompact();
     // 页面名并进库页工具栏行（[_shellTitleInline]）的 tab 不再叠标题行。
     final bool inlineTitle = _shellTitleInline(_visibleTab);
-    // 叠放标题让出的高度：宽窗 = 标题条展开高度 + 6（收起成 48 的标题胶囊后，
-    // 胶囊下沿到页签胶囊恰好 12，M3E 组间距）；窄窗不显示标题、标题并进工具栏
-    // 行的宽窗也不另占一行，只留 8 的呼吸。
-    final double titleInset = !overlayTitle
-        ? 0
-        : narrow || inlineTitle
-        ? kFushiFloatingChromeGap
-        : _overlayTitleHeight + 6;
     return NotificationListener<Notification>(
       onNotification: (Notification notification) {
         // 隐藏的保活 tab / 分区后台加载发来的尺寸通知不算数。
@@ -1799,7 +1785,9 @@ class _HomePageState extends BasePageState<HomePage>
           ),
           Expanded(
             child: _withAppleTopEdge(
-              FushiFloatingChromeInset(top: titleInset, child: content),
+              // 叠放标题让出的顶部高度不在这里下发：它按 tab 不同，而这里是全部
+              // 保活 tab 的共同祖先（见 [_shellTitleInsetFor]）。
+              content,
               apple: apple,
               overlay: overlayTitle && !narrow && !inlineTitle
                   ? _floatingTitleOverlay()
@@ -1809,6 +1797,34 @@ class _HomePageState extends BasePageState<HomePage>
         ],
       ),
     );
+  }
+
+  bool _shellWindowCompact() =>
+      windowSizeClassReal(
+        MediaQuery.sizeOf(context).width,
+        FushiAppUiScale.of(context),
+      ) ==
+      WindowSizeClass.compact;
+
+  /// [tab] 的外壳大标题是否叠在内容之上（MD3 库页，见 [_floatingTitleOverlay]）。
+  bool _shellTitleOverlaid(HomeTab tab) =>
+      !isGlassDesign(context) && _tabHasFloatingChrome(tab);
+
+  /// [tab] 的内容为叠放的外壳大标题让出的顶部高度：宽窗 = 标题条展开高度 + 6
+  /// （收起成 48 的标题胶囊后，胶囊下沿到页签胶囊恰好 12，M3E 组间距）；窄窗
+  /// 不显示标题、标题并进工具栏行的宽窗也不另占一行，只留 8 的呼吸；标题不
+  /// 叠放的 tab（首页 / 查词 / 复习 / 设置，Apple 设计系统）为 0。
+  ///
+  /// 按 **tab 自己**算、由 [_buildTabContent] 在各 tab 的子树里下发
+  /// [FushiFloatingChromeInset]，不能按当前可见 tab 算了挂在全部 tab 的共同祖先
+  /// 上（BUG-4851）：那样每次在库页（8）与首页 / 查词 / 复习 / 设置（0）之间切，
+  /// 这个值就翻一次，所有访问过的隐藏保活页里读它的浮动工具区、滚动视图、网格
+  /// 都跟着在切 tab 的那一帧重建 + 重排。
+  double _shellTitleInsetFor(HomeTab tab) {
+    if (!_shellTitleOverlaid(tab)) return 0;
+    return _shellWindowCompact() || _shellTitleInline(tab)
+        ? kFushiFloatingChromeGap
+        : _overlayTitleHeight + 6;
   }
 
   /// 外壳大标题条（两种摆法共用同一份配置）。
@@ -1910,11 +1926,7 @@ class _HomePageState extends BasePageState<HomePage>
         appModelNoUpdate.gamesModuleForm == GamesModuleForm.streamClient) {
       return false;
     }
-    return windowSizeClassReal(
-          MediaQuery.sizeOf(context).width,
-          FushiAppUiScale.of(context),
-        ) !=
-        WindowSizeClass.compact;
+    return !_shellWindowCompact();
   }
 
   /// 叠放大标题条的实测高度（取见过的最大值 = 展开高度；收起变矮不改它，
@@ -2098,34 +2110,10 @@ class _HomePageState extends BasePageState<HomePage>
     // Apple：「后台任务」入口进外壳大标题行（[_appleBackgroundTasksAction]）——
     // 只在可见 tab 确有那一行时；首页 / 设置 / 复习没有，仍画右下 FAB。
     _shellFabHostedByBar = _backgroundTasksHostedByChrome();
-    // 自绘标题栏（[FushiDesktopTitleBar.isEnabled]，Windows + macOS）已经把当前
-    // tab 名画在应用顶栏上，主导航 rail 始终可见，再叠一层「隐藏 rail + 页头返回
-    // 箭头」的全屏设置就成了没有来源的第二条返回出口。macOS 现在与 Windows 同壳，
-    // 设置页因此也是「rail 常驻 + 二栏 list-detail」（用户拍板：两端一致）。
-    // Linux、横屏 Android 平板仍走原分支：它们的顶栏没有 tab 名、也没有 rail 常驻
-    // 的保证。
-    if (_visibleTab == HomeTab.settings && !FushiDesktopTitleBar.isEnabled) {
-      // 设置标签（全部设计系统）：隐藏 3 图标侧栏，全屏二栏（内部
-      // MaterialSupportingPaneLayout），左上返回箭头切回来源 tab（参考 Mihon
-      // 宽屏设置）。Cupertino 桌面也走这里——叶子控件保持 Cupertino 皮肤，但外壳
-      // 复用同一 Material 架构；返回出口由 SettingsHomePage 的嵌入页头提供
-      // （BUG-009 R2）。否则会退化成「3 图标 rail + 嵌入式 Cupertino 设置」三栏
-      // 混排、无返回出口、且详情面板溢出。
-      return Scaffold(
-        resizeToAvoidBottomInset: false,
-        body: SafeArea(
-          // 这里曾按 BUG-869 预留一条 macOS 标题栏高度：透明标题栏 +
-          // full-size content view 下交通灯不计入 MediaQuery.padding，会压住返回
-          // 箭头。macOS 改用自绘顶栏后交通灯已被隐藏（`main()` 的
-          // `windowButtonVisibility: false`），且这条分支在 macOS 上根本不再命中
-          // （[FushiDesktopTitleBar.isEnabled] 恒真），预留带随之删除。
-          child: FocusTraversalGroup(
-            child: _buildSettingsTabContent(showBackButton: true),
-          ),
-        ),
-      );
-    }
-
+    // 设置 tab 与其它 tab 同壳：主导航 rail 常驻 + 设置自己的二栏 list-detail，
+    // 全平台一致（用户 2026-11-17：平板 / Linux 宽屏也不再「隐藏 rail + 返回箭头 +
+    // 『设置』大标题」的二级界面，统一成 Windows / macOS 的样子）。切走靠 rail，
+    // 系统返回键由 [HomeSettingsTabContent] 的 PopScope 切回来源 tab。
     final List<HomeTab> tabs = _activeTabs();
     final bool reversed = appModel.reverseNavigationBar;
     final List<AdaptiveNavItem> items = _navItems(tabs);
@@ -2508,10 +2496,15 @@ class _HomePageState extends BasePageState<HomePage>
   /// 保活后它自己的表级变更流照常刷新数据；隐藏期间到达的变更推迟到切回时再
   /// 重载（见 `_HomeDashboardPageState._reloadDeferredWhileHidden`）。
   ///
-  /// 其余 tab（词典 / 设置）**故意不保活**、按需重建，以保留其依赖
-  /// `initState` 挂载的语义——尤其 [HomeDictionaryPage] 靠切到查词 tab 时 re-mount
-  /// 消费桌面悬浮字幕的 pending 查词（TODO-376，见 [_onHomeDictionaryTabRequested]）；
-  /// 若把它也保活会不再 re-mount 而漏消费。
+  /// 查词与复习也保活（BUG-4849）：不保活时每次切入整页从零 inflate + 全量
+  /// 布局（实测首帧 16～27 ms），查词页还要每次冷建一个预热用的查词 WebView、切走
+  /// 再销毁（切入后约 0.6 s 处 UI 线程被堵 30～40 ms）。两页原先靠「切入即重挂」
+  /// 做的事改成显式的「切入时做」：[HomeDictionaryPage] 藏着时不消费待查词 / 聚焦
+  /// 请求，变成可见的那一帧之后再消费（与挂载时消费同一条路，TODO-376）；
+  /// [SrsDeckListPage] 切回时刷新已配对主机。
+  ///
+  /// 设置与网页**不保活**、按需重建：设置每次进入从根页开始（来源 tab 的返回出口
+  /// 也按进入时算），网页页首帧本来就在一帧内。
   static const Set<HomeTab> _keepAliveTabs = <HomeTab>{
     HomeTab.home,
     HomeTab.books,
@@ -2520,6 +2513,8 @@ class _HomePageState extends BasePageState<HomePage>
     HomeTab.music,
     HomeTab.games,
     HomeTab.browse,
+    HomeTab.dictionaries,
+    HomeTab.srs,
   };
 
   /// 用户已实际打开过至少一次的保活 tab。惰性构建：没进过的视频/书架 tab 不预建，
@@ -4129,8 +4124,8 @@ class _HomePageState extends BasePageState<HomePage>
                     // 隐藏 tab 不参与焦点遍历与系统返回（HBK-AUDIT-017）；库页壳里的
                     // 视图可见性与它取与，外层 tab 藏起时里面的「当前」视图也不拦
                     // 返回、不持焦点。「切 tab 同时聚焦搜索框」只发生在查词 tab
-                    // （_selectTabFromNav），它不是保活 tab、切过去才挂载并在挂载后
-                    // 消费聚焦请求，不经过这一层。
+                    // （_selectTabFromNav）：它藏着时不消费聚焦请求，等这一层按新的
+                    // 可见性重建之后（后帧）再消费，焦点才不会被 ExcludeFocus 吞掉。
                     child: SectionVisibilityScope(
                       visible: visible == tab,
                       // 藏起的保活 tab 在 rail 展开 / 收起过渡中钉宽、不逐帧重排；
@@ -4368,39 +4363,39 @@ class _HomePageState extends BasePageState<HomePage>
       HomeTab.settings =>
         // 设置 tab 走侧栏/底栏切回，不显示页头返回箭头；但仍需 PopScope 拦截系统
         // 返回键（否则冒泡到顶层 PopScope = 退出 app，见 BUG-236）。
-        _buildSettingsTabContent(showBackButton: false),
+        _buildSettingsTabContent(),
       HomeTab.books => const HomeReaderPage(),
       HomeTab.manga => const MangaLibraryPage(),
       HomeTab.music => const MusicLibraryPage(),
     };
-    return FushiShellTitleScope(
-      title: _shellTitleFor(tab),
-      actionsSlot: _shellActions,
-      // 页头大字旁的徽标与侧栏当前项用同一枚模块多边形。
-      child: FushiMastheadBadgeScope(
-        shape: homeNavRailShapeFor(tab),
-        child: FushiShellInlineTitle(
-          enabled: _shellTitleInline(tab),
-          child: PrimaryScrollController(
-            controller: _tabScrollControllers.putIfAbsent(
-              tab,
-              ScrollController.new,
+    return FushiFloatingChromeInset(
+      top: _shellTitleInsetFor(tab),
+      child: FushiShellTitleScope(
+        title: _shellTitleFor(tab),
+        actionsSlot: _shellActions,
+        // 页头大字旁的徽标与侧栏当前项用同一枚模块多边形。
+        child: FushiMastheadBadgeScope(
+          shape: homeNavRailShapeFor(tab),
+          child: FushiShellInlineTitle(
+            enabled: _shellTitleInline(tab),
+            child: PrimaryScrollController(
+              controller: _tabScrollControllers.putIfAbsent(
+                tab,
+                ScrollController.new,
+              ),
+              automaticallyInheritForPlatforms: TargetPlatform.values.toSet(),
+              child: content,
             ),
-            automaticallyInheritForPlatforms: TargetPlatform.values.toSet(),
-            child: content,
           ),
         ),
       ),
     );
   }
 
-  /// 设置 tab 的内容外壳。[showBackButton] 为 true 时（宽屏隐藏 3 图标侧栏的全屏
-  /// 设置）显示页头左上返回箭头；为 false 时（移动底栏 / 宽屏侧栏在侧 / Windows 自绘
-  /// 标题栏常驻 rail，可直接切回）不显示箭头，系统返回手势仍由
-  /// [HomeSettingsTabContent] 内的 PopScope 拦截。
-  Widget _buildSettingsTabContent({required bool showBackButton}) {
+  /// 设置 tab 的内容外壳：底栏 / rail 常驻、可直接切回，不画返回箭头；系统返回
+  /// 手势由 [HomeSettingsTabContent] 内的 PopScope 拦截。
+  Widget _buildSettingsTabContent() {
     return HomeSettingsTabContent(
-      showBackButton: showBackButton,
       onReturnToPreviousTab: () => _selectTab(_previousVisibleTab),
     );
   }
@@ -4528,15 +4523,11 @@ class HomeSettingsTabContent extends StatelessWidget {
   const HomeSettingsTabContent({
     super.key,
     required this.onReturnToPreviousTab,
-    this.showBackButton = false,
     this.child,
   });
 
   /// 系统返回键被拦截后调用：切回进入设置前的来源 tab。
   final VoidCallback onReturnToPreviousTab;
-
-  /// 是否在设置页头左侧显示返回箭头（宽屏隐藏图标侧栏的全屏设置场景）。
-  final bool showBackButton;
 
   /// 设置内容；为空时回落到默认的 [FushiSettingsContent]。
   final Widget? child;
@@ -4549,11 +4540,7 @@ class HomeSettingsTabContent extends StatelessWidget {
         if (didPop) return;
         onReturnToPreviousTab();
       },
-      child:
-          child ??
-          FushiSettingsContent(
-            onBack: showBackButton ? onReturnToPreviousTab : null,
-          ),
+      child: child ?? const FushiSettingsContent(),
     );
   }
 }

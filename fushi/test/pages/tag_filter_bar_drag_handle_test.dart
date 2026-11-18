@@ -7,7 +7,7 @@ import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:material_ui/material_ui.dart';
 
-/// BUG-4847 接入层：库页标签条（[FushiTagFilterBar]，书架 / 视频 / 游戏共用）每枚
+/// BUG-4899 接入层：库页标签条（[FushiTagFilterBar]，书架 / 视频 / 游戏共用）每枚
 /// 标签左侧都有「⋮⋮」拖动柄；鼠标在柄上按下即拖，放到另一枚标签上触发
 /// `onReorder`，标签条不被横滚抢走。
 Widget _host(Widget child) => ProviderScope(

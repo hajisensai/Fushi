@@ -271,7 +271,7 @@ class _MediaLibraryShellState extends State<MediaLibraryShell>
   );
 
   /// 每个视图**各自一份**浮动工具栏状态（显隐、页头大字的折叠进度、内容是否
-  /// 滚到工具区底下），按视图种类存（BUG-4845）。
+  /// 滚到工具区底下），按视图种类存（BUG-4897）。
   ///
   /// 视图是保活的，各自的滚动位置切走再切回原样还在；工具栏状态若全壳共用一份，
   /// 切视图时只能「重置成顶部」——于是切回一个滚到中段的书架，第一帧是展开的
@@ -287,7 +287,7 @@ class _MediaLibraryShellState extends State<MediaLibraryShell>
   FushiFloatingChromeController _chromeFor(MediaLibraryViewKind kind) =>
       _chromes.putIfAbsent(kind, FushiFloatingChromeController.new);
 
-  /// 已构建的视图内容，按种类缓存（BUG-4845：切换点下去约 0.5 秒才动）。
+  /// 已构建的视图内容，按种类缓存（BUG-4897：切换点下去约 0.5 秒才动）。
   ///
   /// 切视图只是壳自己 setState；以前每次都把**所有**访问过的保活视图重新调一遍
   /// builder、生成新的页面 widget——书架（整页卡片墙）和在线视图都整页重建，
@@ -678,7 +678,7 @@ class _MediaLibraryShellState extends State<MediaLibraryShell>
     }
     // 停在导入页时高亮「我的」组：导入管理的就是本地库。此时高亮只是视觉锚点、
     // 不是当前视图（[LibrarySectionTabs.selectedIsCurrent]），点它照常切回书架
-    // （BUG-4857：曾被当成重复点击丢掉，导入页点「书架」回不去）。
+    // （BUG-4706：曾被当成重复点击丢掉，导入页点「书架」回不去）。
     final bool onTab = librarySectionGroupOf(selected) != null;
     final MediaLibraryViewKind shown = onTab ? selected : tabs.first.value;
     // 分段条走库页共享的 [LibrarySectionTabs]（内含 [FushiAdjustableSegmented]：

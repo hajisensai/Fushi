@@ -647,6 +647,10 @@ void main() {
     );
     expect(moveButton().enabled, isFalse);
 
+    // PR #3515 后行高 / 页头变高，1280×800 下第六行落在左列视口之外（被批量栏
+    // 上沿裁掉，tap 命中不到）：先把它滚进视口再点。
+    await tester.ensureVisible(find.text('Dict 6'));
+    await _settle(tester);
     await tester.tap(find.text('Dict 6'));
     await _settle(tester);
     expect(moveButton().enabled, isTrue);

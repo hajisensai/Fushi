@@ -146,7 +146,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  /// 批量删除 / 解散点头之后：bfa7138bf1（BUG-4860 / 35YfcYO-zR）起删除期间挂着
+  /// 批量删除 / 解散点头之后：bfa7138bf1（BUG-4709 / 35YfcYO-zR）起删除期间挂着
   /// 不可点掉的进度对话框（不定态指示器持续出帧），解散 / 删除链路里的真实 IO
   /// （合集资产 / 文件回收）在 fakeAsync 下不回话，直接 pumpAndSettle 只会对着
   /// 转圈超时。交替 pump 与 runAsync 让真实 IO 跑完，直到进度对话框自己关掉；
