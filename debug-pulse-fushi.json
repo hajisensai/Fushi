@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-18T19:28:22Z",
+ "generatedAt": "2026-11-18T19:34:30Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "f3a2197900bd98c4815e038029f84f43a0f9108a",
-  "seq": 29083
+  "sha": "9d5f51ca2688b560f22bd8f4012b97e55a63848c",
+  "seq": 29085
  },
  "builds": [
   {
@@ -112,7 +112,32 @@
    }
   }
  ],
- "pending": null,
+ "pending": {
+  "headSha": "9d5f51ca2688b560f22bd8f4012b97e55a63848c",
+  "headSeq": 29085,
+  "prs": [
+   3745
+  ],
+  "direct": [],
+  "truncated": false,
+  "platforms": {
+   "android": {
+    "state": "none"
+   },
+   "windows": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44381640231"
+   },
+   "macos": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44381640231"
+   },
+   "ios": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44381640231"
+   }
+  }
+ },
  "prs": {
   "3467": {
    "number": 3467,
@@ -202,6 +227,15 @@
    "mergedAt": "2026-11-18T17:48:17Z",
    "additions": 0,
    "deletions": 0,
+   "labels": []
+  },
+  "3745": {
+   "number": 3745,
+   "title": "fix(develop): 修 #3515 合入后 develop 尖端约 30 个单测红",
+   "author": "W1ght",
+   "mergedAt": "2026-11-18T19:32:41Z",
+   "additions": 329,
+   "deletions": 133,
    "labels": []
   }
  }
