@@ -83,8 +83,9 @@ fn a_purge_leaves_no_bytes_of_the_text_in_the_library_files() {
 /// 回 (重切者, 全部项)。
 fn piece_items(bytes: &[u8], key_of: &dyn Fn(&Id) -> [u8; 32]) -> (Option<Id>, Vec<NativeItem>) {
     if bytes.starts_with(recut::MAGIC) {
-        let r = peek_recut4(bytes).unwrap().recutter;
-        let (_, items) = open_recut4_items(bytes, &key_of(&r), None).unwrap();
+        let peek = peek_recut4(bytes).unwrap();
+        let (a, r) = (peek.header.device, peek.recutter);
+        let (_, items) = open_recut4_items(bytes, &key_of(&a), &key_of(&r), None).unwrap();
         (Some(r), items)
     } else {
         let a = peek_relay4(bytes).unwrap().header.device;
@@ -352,6 +353,57 @@ fn a_purge_by_the_relay_does_not_cut_off_a_location_only_it_feeds() {
         assert_eq!(c.field(N1), purged, "purged as on b");
         assert_eq!(bytes_carrying(&c.dir.0, "secret-c3-relay-purge"), 0);
     }
+}
+
+/// 同一批里重切件排在它点名的 Purge 前面（c2 第一次收 L2：b 重切的 a 段在前、b 带 Purge 的段在后）：一轮收齐，
+/// 不留到下一轮——收段对一批之内的顺序不敏感（重切件等 Purge 的那一次延后在这一批交完之后再收一次）。
+#[test]
+fn a_recut_ahead_of_its_purge_in_one_batch_lands_in_that_round() {
+    let a = Dev::new("c3oa");
+    let b = Dev::new("c3ob");
+    let c = Dev::new("c3oc");
+    let (mut l1, mut l2) = (Loc::new(), Loc::new());
+    let plain = Opts::default();
+    round(&b, &mut l1, "L1", T1, plain);
+    round(&b, &mut l2, "L2", T1, plain);
+    round(&c, &mut l2, "L2", T1, plain);
+    a.write(T1 + 1, N1, "secret-c3-order");
+    a.write(T1 + 1, N2, "keep-c3-order");
+    round(&a, &mut l1, "L1", T1 + 2, plain);
+    round(&b, &mut l1, "L1", T1 + 3, plain);
+    round(&b, &mut l2, "L2", T1 + 3, plain);
+    purge(&b, T1 + 5, N1);
+    b.write(T1 + 6, N3, "b-after-purge");
+    round(&b, &mut l1, "L1", T1 + 7, plain);
+    round(&b, &mut l2, "L2", T1 + 7, plain);
+    relay(&b, &mut l2, "L2", None, T1 + 7);
+    let da = a.device();
+    assert!(
+        l2.iter()
+            .any(|(k, v)| k.contains(&da) && v.starts_with(recut::MAGIC)),
+        "L2 carries a recut of a's segment"
+    );
+    let r = round(
+        &c,
+        &mut l2,
+        "L2",
+        T1 + 8,
+        Opts {
+            recut_first: true,
+            ..plain
+        },
+    );
+    let v = &r.ingest[0];
+    assert_eq!(v["errors"], json!([]), "{v}");
+    assert_eq!(
+        (v["deferred"].clone(), v["pending"].clone()),
+        (json!(0), json!(0)),
+        "{v}"
+    );
+    assert_eq!(c.field(N2), Some(json!("keep-c3-order")));
+    assert_eq!(c.field(N3), Some(json!("b-after-purge")));
+    assert_eq!(c.field(N1), b.field(N1), "purged as on b");
+    assert_eq!(bytes_carrying(&c.dir.0, "secret-c3-order"), 0);
 }
 
 /// b 收 a 的段时只同步着 L1（没留原文），清除之后才连上 L2：`plan` 不为转发去拉 a 的原文（`wanted_for_relay` 看到本机在那段

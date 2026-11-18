@@ -20,15 +20,19 @@
 //! - 只存作者受信（`trust` 没有行）、不是本机（当前或旧身份）的原生段。
 //! - 每次确认转发（[relay_ack]）与读到 head（`plan` 调 [prune]）之后，删掉**每个**位置都已有的段：那个位置上作者的
 //!   head 已覆盖到段尾、head 引用了它，或本机已转发过去。
-//! - **彻底清除**（设计 §3.2「清除后原文不在本机」，交接 §26 C3 / §33）：作者签过的段改不出空洞，本机把一条别的设备的
-//!   操作落成空洞时，由本机**重切**（`gen4/recut.rs` 的 `FRX4`：同区间、同首尾链值、本机签名）代替原文转发——
-//!   - 缓存里覆盖它的那份在同一个事务里原地换成重切件（`Truth::relay_purged`）；已经转发到各位置上的同名 `rly-`
-//!     改成待删，[relay_outbox] 把它当缺的、用重切件同名重写（重写确认后回到在用，不再删）。
-//!   - 缓存里没有这一段（从没留、或已删）而别的位置缺它：[relay_outbox] 从本机日志重切（`Truth::recut_from_log`），
-//!     [wanted_for_relay] 不再为它去拉原文；收到的段若在本机已清除的 seq 上还带着完整内容，[keep] 不留。
+//! - **彻底清除**（设计 §3.2「清除后原文不在本机」，交接 §26 C3 / §33 / §36）：作者签过的段改不出空洞，本机把一条别的
+//!   设备的操作落成空洞时，由本机**重切**（`gen4/recut.rs` 的 `FRX4`：带作者的原签名，被挖掉的操作换成剔除项——作者签名
+//!   覆盖的那部分 + 清掉它的 Purge，本机签名）代替原文转发——
+//!   - 缓存里覆盖它的那份在同一个事务里原地换成重切件（`Truth::relay_purged`；那一份在这个 seq 上本来就没有内容——作者
+//!     自己重切过——就不动）；已经转发到各位置上的同名 `rly-` 改成待删，[relay_outbox] 把它当缺的、用重切件同名重写
+//!     （重写确认后回到在用，不再删）。
+//!   - 缓存里没有这一段（从没留、或已删）而别的位置缺它：[relay_outbox] 从本机日志重切（`Truth::recut_from_log`：用收段时
+//!     记下的作者签名版本与清除时记下的剔除记录），[wanted_for_relay] 不再为它去拉原文；收到的段若在本机已清除的 seq 上
+//!     还带着完整内容，[keep] 不留。
 //!   这样只经本机拿数据的位置照样收得到这位作者其余的操作，进而收得到本机此后依赖它们的操作；被清除的内容不经本机
-//!   离开。读者只收本机信任的重切者签的件（`receive.rs`）。本机日志里两端的链值落在空洞区间内部（一次清除跨过了这段
-//!   的切点）时重切不出来，这一段退回「不转发」（`incomplete`），等作者自己重切（交接 §33）。
+//!   离开。读者拿作者签名验每一条留下的操作与每个剔除项，剔除项还要对上它点名的、读者自己认的 Purge（`receive.rs`），
+//!   另外只收本机信任的重切者签的件。本机没记下这一段的作者签名版本、或缺某条的剔除记录（例如从备份还原的库）时重切
+//!   不出来，这一段退回「不转发」（`incomplete`），等作者自己重切。
 //!
 //! 本机在同步着 ≥ 2 个位置之前就收过的段当时没留原文：`plan` 读到作者 head 时把「本机早有、没留原文、别的位置缺」的
 //! 段再要一次（[wanted_for_relay]），收段时按本机已有跳过、只留原文，下一轮就能转发。转发时缺的段本机还凑不齐原文的
@@ -44,12 +48,11 @@ use super::sync::{meta_get, meta_set};
 use super::sync_oldroot::former_identities;
 use crate::gen4::head::Head4;
 use crate::gen4::location::{V4File, device_path, parse_v4_path, relay_head_name};
-use crate::gen4::recut::{
-    MAGIC as RECUT_MAGIC, open_recut4_items, peek_recut4, recut4, rewrap_recut4,
-};
+use crate::gen4::recut::{MAGIC as RECUT_MAGIC, open_recut4_items, peek_recut4, rewrap_recut4};
 use crate::gen4::relay::{open_relay4_items, peek_relay4, wrap_relay4};
-use crate::gen4::segment::{NativeHeader, NativeItem};
+use crate::gen4::segment::NativeItem;
 use crate::store::gen4::schema::sql;
+use crate::store::gen4::sync_state::RecutParts;
 use crate::store::gen4::truth::Truth;
 use crate::sync2::id::Id;
 use crate::sync2::keys::CollectionKey;
@@ -100,23 +103,23 @@ fn rhead_range(col: i64) -> (String, String) {
     (format!("gen4_rhead/{col}/"), format!("gen4_rhead/{col}0"))
 }
 
-/// 不封装的中继件 / 重切件 [piece]（作者 [header]，签名者公钥 [public]）在本机已清除（空洞）的 seq 上带着操作的完整
-/// 内容。本机这段没有空洞 = 否，不解段。
+/// 不封装的中继件 / 重切件 [piece]（作者 [header]，作者公钥 [author]，重切件的重切者公钥 [recutter]）在本机已清除
+/// （空洞）的 seq 上带着操作的完整内容。本机这段没有空洞 = 否，不解段。
 fn carries_voided(
     t: &Truth<'_>,
     col: i64,
     header: &crate::gen4::segment::NativeHeader,
     piece: &[u8],
-    public: &[u8; 32],
+    author: &[u8; 32],
+    recutter: Option<&[u8; 32]>,
 ) -> Result<bool, String> {
     let voids = t.voids_within(col, &header.device, header.first, header.last)?;
     if voids.is_empty() {
         return Ok(false);
     }
-    let items = if piece.starts_with(RECUT_MAGIC) {
-        open_recut4_items(piece, public, None).map(|(_, items)| items)
-    } else {
-        open_relay4_items(piece, public, None).map(|(_, items)| items)
+    let items = match recutter {
+        Some(r) => open_recut4_items(piece, author, r, None).map(|(_, items)| items),
+        None => open_relay4_items(piece, author, None).map(|(_, items)| items),
     }
     .map_err(|e| format!("relay: kept piece unreadable: {e:?}"))?;
     let mut seq = header.first;
@@ -233,26 +236,27 @@ pub(crate) fn keep(
     if !relayable(t, col, &header.device)? {
         return Ok(false);
     }
-    let signer = recutter.unwrap_or(header.device);
-    let public = match t.self_identity(col)? {
-        Some(me) if me.device == signer => Some(me.public()),
-        _ => t.device_key(col, &signer)?,
-    };
-    let Some(public) = public else {
+    let Some(author) = public_of(t, col, &header.device)? else {
         return Ok(false);
     };
+    let recutter_public = match recutter {
+        Some(r) => match public_of(t, col, &r)? {
+            Some(p) => Some(p),
+            None => return Ok(false),
+        },
+        None => None,
+    };
     // 收段时已整段验过；这里再包一次（验签 + 链）只是包的约定，失败就不存（不影响收段本身）。
-    let wrapped = if recut {
-        rewrap_recut4(bytes, &public, key, None)
-    } else {
-        wrap_relay4(bytes, &public, key, None)
+    let wrapped = match &recutter_public {
+        Some(r) => rewrap_recut4(bytes, &author, r, key, None),
+        None => wrap_relay4(bytes, &author, key, None),
     };
     let Ok(piece) = wrapped else {
         return Ok(false);
     };
     // 本机已经清除了这段里的操作，而这一份还带着它们的完整内容（作者 / 重切者清除之前的那份）：不留。缺它的位置由
     // [relay_outbox] 从本机日志重切。
-    if carries_voided(t, col, &header, &piece, &public)? {
+    if carries_voided(t, col, &header, &piece, &author, recutter_public.as_ref())? {
         return Ok(false);
     }
     let tag = chain_tag(&header.last_chain);
@@ -370,12 +374,20 @@ fn stored_heads(t: &Truth<'_>, col: i64) -> Result<BTreeMap<Id, Head4>, String> 
         .collect())
 }
 
+/// 本机认得的设备公钥（本机自己也算）。
+fn public_of(t: &Truth<'_>, col: i64, device: &Id) -> Result<Option<[u8; 32]>, String> {
+    Ok(match t.self_identity(col)? {
+        Some(me) if me.device == *device => Some(me.public()),
+        _ => t.device_key(col, device)?,
+    })
+}
+
 /// [relay_outbox] 要发的一段。
 enum Part {
     /// 转发缓存里存着的（不封装的中继件，或重切件）。
     Kept(Vec<u8>),
     /// 从本机日志重切出来、还没签的（`Truth::recut_from_log`）。
-    Cut((NativeHeader, Vec<NativeItem>)),
+    Cut(RecutParts),
 }
 
 impl Part {
@@ -383,13 +395,18 @@ impl Part {
     fn len(&self) -> u64 {
         match self {
             Part::Kept(p) => p.len() as u64,
-            Part::Cut((_, items)) => items
-                .iter()
-                .map(|i| match i {
-                    NativeItem::Op(op) => op.payload.len() as u64 + 48,
-                    NativeItem::Void { .. } => 40,
-                })
-                .sum(),
+            Part::Cut(parts) => {
+                parts
+                    .items
+                    .iter()
+                    .map(|i| match i {
+                        crate::gen4::recut::RecutItem::Op(op) => op.payload.len() as u64 + 48,
+                        crate::gen4::recut::RecutItem::Void { .. } => 40,
+                        crate::gen4::recut::RecutItem::Stub(_) => 120,
+                    })
+                    .sum::<u64>()
+                    + 200
+            }
         }
     }
 
@@ -406,20 +423,14 @@ impl Part {
         match self {
             Part::Kept(p) if p.starts_with(RECUT_MAGIC) => {
                 let r = peek_recut4(&p).map_err(unreadable)?.recutter;
-                let public = match t.self_identity(col)? {
-                    Some(me) if me.device == r => Some(me.public()),
-                    _ => t.device_key(col, &r)?,
-                }
-                .ok_or_else(|| format!("relay: stored recut of {device} by unknown {r}"))?;
-                rewrap_recut4(&p, &public, None, key).map_err(unreadable)
+                let public = public_of(t, col, &r)?
+                    .ok_or_else(|| format!("relay: stored recut of {device} by unknown {r}"))?;
+                rewrap_recut4(&p, author, &public, None, key).map_err(unreadable)
             }
             Part::Kept(p) => wrap_relay4(&p, author, None, key).map_err(unreadable),
-            Part::Cut((header, items)) => {
-                let me = t
-                    .self_identity(col)?
-                    .ok_or("relay: no identity to sign a recut with")?;
-                recut4(&header, &items, &me.key(), me.device, key)
-            }
+            Part::Cut(parts) => t
+                .sign_recut(col, &parts, key)?
+                .ok_or_else(|| format!("relay: cannot sign a recut of {device}")),
         }
     }
 }

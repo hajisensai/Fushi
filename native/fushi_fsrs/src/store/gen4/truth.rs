@@ -68,6 +68,7 @@ use std::sync::Arc;
 
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
+use super::derive::Ref;
 use super::pack::{self, F_RAW3, F_STAMP, Names, tv_bits, tv_of};
 use super::schema::{in_tx, in_write_tx, k_dev, k_range, k_seq, opk, sql};
 use crate::gen4::head::PrevIdentity;
@@ -75,7 +76,9 @@ use crate::gen4::heritage::{Alias, Fp, HeritageSlot, Raw3, SlotBody, fingerprint
 use crate::gen4::name::{read_name, write_name};
 use crate::gen4::op::{
     Body4, Edit4, KIND_EDIT, KIND_JOIN, KIND_SALTS, Op4, chain_next4, native_allowed,
+    purge_targets_v1, purge_unseen_by,
 };
+use crate::gen4::recut::Stub;
 use crate::gen4::stamp::HeritageStamp;
 use crate::gen4::translate::{Joined, applied_body, dedup_slot, join_slots};
 use crate::sync2::codec::{Reader, Writer};
@@ -3023,6 +3026,16 @@ impl<'c> Truth<'c> {
                     )?;
                 }
                 None => {
+                    // 别的设备的操作：挖空之前记下剔除记录（作者签名覆盖的那部分 + 清掉它的 Purge），本机以后转发这一段
+                    // 时重切要它（`sync_state.rs` `recut_from_log`，`gen4/recut.rs`）。找不到管得到它的生效 Purge（直接
+                    // 调本函数的测试与工具）就不记：这一段本机重切不出来，转发退回「缺」。
+                    if let Some(op) = e.op() {
+                        if !self.is_self_dev(dev)? {
+                            if let Some(p) = self.purge_covering(col, op)? {
+                                self.put_stub(col, &Stub::of(op, p))?;
+                            }
+                        }
+                    }
                     let chain = self.chain_at_dev(dev, target.seq)?;
                     self.delete_at(dev, target.seq)?;
                     self.insert_void_run(dev, target.seq, 1, None, Some(chain), A_LOCAL)?;
@@ -3036,6 +3049,34 @@ impl<'c> Truth<'c> {
             self.voided.set(true);
             Ok(true)
         })
+    }
+
+    /// 本机生效的、管得到 [op] 的 Purge（操作号最小的那条）：目标在 [op] 的清除目标里（`gen4/op.rs`
+    /// `purge_targets_v1`）、[op] 的作者写它时没见过、本机执行它（`purge_ix.state = 1`：落库了、作者受信）。派生层
+    /// 判「已清除」用的是同一组条件（`weigh.rs`「彻底清除」），所以本机执行清除时（`Index::execute_purges` 之后）总找得到。
+    fn purge_covering(&self, col: i64, op: &Op4) -> Result<Option<OpId>, String> {
+        let mut best: Option<OpId> = None;
+        for (kind, key) in purge_targets_v1(op) {
+            let ks: Vec<i64> = {
+                let mut stmt = self
+                    .conn
+                    .prepare_cached(
+                        "SELECT k FROM purge_ix WHERE col = ?1 AND ekind = ?2 AND ent = ?3 AND state = 1",
+                    )
+                    .map_err(sql)?;
+                let rows = stmt
+                    .query_map(params![col, kind as i64, Ref::of(&key)], |r| r.get(0))
+                    .map_err(sql)?;
+                rows.collect::<rusqlite::Result<_>>().map_err(sql)?
+            };
+            for k in ks {
+                let p = self.id_of_key(k)?;
+                if purge_unseen_by(op, &p) && best.is_none_or(|b| p < b) {
+                    best = Some(p);
+                }
+            }
+        }
+        Ok(best)
     }
 
     /// 本机执行了一条 Dedup、其中一对说 [target] 是 [of] 的副本：完整内容 → 副本记录（`gen4::translate::dedup_slot`

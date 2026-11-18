@@ -677,7 +677,8 @@ impl<'s> SlotStream<'s> {
             match tag {
                 TAG_OP | TAG_RAW3 => {
                     let fp = read_fp(r)?;
-                    let op = read_op_slot(r, id, wall, deps.as_ref())?;
+                    // 承袭段先验签（签名覆盖压缩体）后解压，不可信字节到不了这里。
+                    let op = read_op_slot(r, id, wall, deps.as_ref(), usize::MAX)?;
                     let body = if tag == TAG_OP {
                         SlotBody::Op(op)
                     } else {
