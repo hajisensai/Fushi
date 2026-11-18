@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4082 条。点号进各自文件。
+> 共 4201 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4725](bugs/BUG-4725-mascot-glow-starves-windows-input.md) | ✅ | ✅ | 吉祥物光晕开着冷启动：启动期 idle 任务让调度器空转，Windows 鼠标键盘全失灵 |
-> 共 4200 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4893](bugs/BUG-4893-mascot-glow-starves-windows-input.md) | ✅ | ✅ | 吉祥物光晕开着冷启动：启动期 idle 任务让调度器空转，Windows 鼠标键盘全失灵 |
 | [BUG-4844](bugs/BUG-4844-book-cover-undo-backup-pruned-by-source-mtime.md) | ✅ | ✅ | book-cover-undo-backup-pruned-by-source-mtime |
 | [BUG-4843](bugs/BUG-4843-linux-server-glibc-baseline.md) | ✅ | ✅ | Linux 服务端 CI 包原生库要 GLIBC_2.43，超出 README 声明的 glibc ≥ 2.35 |
 | [BUG-4842](bugs/BUG-4842-series-wall-wheel-scroll-rebake.md) | ✅ | ✅ | 视频系列墙滚轮滚动卡顿：每档滚轮把整屏封面面重新离屏烘焙 |

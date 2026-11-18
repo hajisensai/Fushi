@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import '../helpers/scan_scale.dart';
 import '../helpers/source_guard.dart';
 
-/// BUG-4387 / BUG-4725：Windows 上「画面在动、鼠标键盘全失灵」的两道结构守卫。
+/// BUG-4387 / BUG-4893：Windows 上「画面在动、鼠标键盘全失灵」的两道结构守卫。
 ///
 /// 1. `lib` 下不得调 `SchedulerBinding.scheduleTask`。它在调度策略不放行时用零延迟
 ///    定时器把自己一圈圈重排，Windows 嵌入层每圈一条 posted 消息，输入永远排不上。
@@ -80,7 +80,7 @@ final Future<void> c = binding.scheduleTask <void> (() {}, Priority.touch);
       isEmpty,
       reason:
           'scheduleTask 在调度策略不放行时零延迟空转，饿死 Windows 输入（BUG-4387 / '
-          'BUG-4725）。等空闲改用 lib/src/utils/scheduling/ambient_ticker.dart 的 '
+          'BUG-4893）。等空闲改用 lib/src/utils/scheduling/ambient_ticker.dart 的 '
           'waitForUiIdle。',
     );
   });

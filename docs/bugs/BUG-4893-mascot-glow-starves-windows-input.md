@@ -1,4 +1,4 @@
-## BUG-4725 · 吉祥物光晕开着冷启动：启动期 idle 任务让调度器空转，Windows 鼠标键盘全失灵
+## BUG-4893 · 吉祥物光晕开着冷启动：启动期 idle 任务让调度器空转，Windows 鼠标键盘全失灵
 - **报告**：2026-11-16（所有者本机，安装版 3.3.0-debug.27582，Windows 11 Insider build 29704，4K 144 Hz。原话：「安装版 fushi 升级后打开无法操作界面打不开，而且 gpu 占的很高」）
 - **真实性**：✅ 真 bug，BUG-4387 的同型复发。现象：主窗口正常出帧（首页内容都在），鼠标键盘全部无反应；进程 4 s 烧 6.8 s CPU，GPU 3D 引擎 20.7%。升级后连开三次都中招。
   - 根因一（直接）：`fushi/lib/src/utils/components/mascot_glow.dart:85` 的呼吸光晕是永不停止的 `repeat` 装饰动画，却用普通 `TickerProviderStateMixin`，没登记成 BUG-4387 的 ambient ticker。系统悬浮球开着（`floating_ball.system = true`）时它从启动就挂着帧回调，`ambientAwareSchedulingStrategy` 把它算成真实动画，`fushi/lib/main.dart:782`（内存首采样）与 `fushi/lib/main.dart:934`（WebView 预热）两个 `Priority.idle` 任务永远不放行。

@@ -31,7 +31,7 @@ bool shouldPrewarmWebView({
 /// [whenIdle]（生产传 `waitForUiIdle`：有动画在跑时不完成，正好避开首屏入场动效。
 /// 主页背景、吉祥物光晕这类常驻装饰动画登记成 ambient ticker、不算「在跑」。不能传
 /// `SchedulerBinding.scheduleTask(..., Priority.idle)`：它等的是同一个条件，但忙时用
-/// 零延迟定时器空转，把 Windows 输入饿死，BUG-4387 / BUG-4725）。
+/// 零延迟定时器空转，把 Windows 输入饿死，BUG-4387 / BUG-4893）。
 ///
 /// [prewarm] 抛错原样外抛，由调用方（main.dart 已有 try/catch + session 收口）处理。
 Future<void> runWebViewPrewarmWhenIdle({

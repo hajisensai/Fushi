@@ -84,7 +84,7 @@ class MascotGlow extends StatefulWidget {
 }
 
 // 呼吸是永不停止的纯装饰动画，悬浮球常驻时从启动一直挂着帧回调：用 ambient ticker，
-// 不算「有动画在跑」，启动期等空闲的工作才等得到（BUG-4725）。
+// 不算「有动画在跑」，启动期等空闲的工作才等得到（BUG-4893）。
 class _MascotGlowState extends State<MascotGlow>
     with AmbientTickerProviderStateMixin {
   AnimationController? _breath;
