@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-17T21:02:26Z",
+ "generatedAt": "2026-11-18T02:58:43Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "2154ab7772f26c223b979acae1434dd52bb069ef",
-  "seq": 28845
+  "sha": "c86dfeb92d6981e53e09911061f77f2033f763cf",
+  "seq": 28871
  },
  "builds": [
   {
@@ -13,7 +13,7 @@
    "sha": "2154ab7772f26c223b979acae1434dd52bb069ef",
    "unknown": false,
    "publishedAt": "2026-11-17T21:02:12Z",
-   "testflight": false,
+   "testflight": true,
    "baseSeq": 28844,
    "prs": [],
    "direct": [
@@ -129,8 +129,86 @@
    }
   }
  ],
- "pending": null,
+ "pending": {
+  "headSha": "c86dfeb92d6981e53e09911061f77f2033f763cf",
+  "headSeq": 28871,
+  "prs": [
+   3662,
+   3737,
+   3727,
+   3726,
+   3640,
+   3678,
+   3649,
+   3656
+  ],
+  "direct": [],
+  "truncated": false,
+  "platforms": {
+   "android": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44227057454"
+   },
+   "windows": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44227057085"
+   },
+   "macos": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44227057085"
+   },
+   "ios": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44227057085"
+   }
+  }
+ },
  "prs": {
+  "3640": {
+   "number": 3640,
+   "title": "docs(specs): 漫画有声模式设计",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-18T02:56:59Z",
+   "additions": 345,
+   "deletions": 0,
+   "labels": []
+  },
+  "3649": {
+   "number": 3649,
+   "title": "首页「今日」色块宽格设了目标时同时显示今日学习时长",
+   "author": "W1ght",
+   "mergedAt": "2026-11-18T02:56:51Z",
+   "additions": 45,
+   "deletions": 5,
+   "labels": []
+  },
+  "3656": {
+   "number": 3656,
+   "title": "feat(fushi_engine): 漫画有声模式演出稿引擎层（第 1 步）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-18T02:56:45Z",
+   "additions": 2171,
+   "deletions": 0,
+   "labels": []
+  },
+  "3662": {
+   "number": 3662,
+   "title": "feat(tts): 小说/漫画共用选角层——系列角色声音记忆、单句覆盖、未配音占位账本",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-18T02:58:13Z",
+   "additions": 3804,
+   "deletions": 25,
+   "labels": []
+  },
+  "3678": {
+   "number": 3678,
+   "title": "docs(build): quick 改一行重编的分项耗时与链接器结论",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-18T02:56:55Z",
+   "additions": 14,
+   "deletions": 1,
+   "labels": []
+  },
   "3693": {
    "number": 3693,
    "title": "fix(import): 导入目录归属与残留（BUG-4800 / BUG-4798 / BUG-4799）",
@@ -372,6 +450,33 @@
    "mergedAt": "2026-11-17T17:58:18Z",
    "additions": 666,
    "deletions": 0,
+   "labels": []
+  },
+  "3726": {
+   "number": 3726,
+   "title": "fix(ci): Linux 服务端包钉 ubuntu-22.04 并核 glibc 基线（BUG-4843）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-18T02:57:03Z",
+   "additions": 264,
+   "deletions": 13,
+   "labels": []
+  },
+  "3727": {
+   "number": 3727,
+   "title": "ci: PR 主门分层——每推只跑快门，全量按需 / 合并后跑",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-18T02:57:07Z",
+   "additions": 397,
+   "deletions": 10,
+   "labels": []
+  },
+  "3737": {
+   "number": 3737,
+   "title": "perf(heavy): test / analyze 的记账跟实测峰值走，新增 --replay 回放排队",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-18T02:57:12Z",
+   "additions": 838,
+   "deletions": 4,
    "labels": []
   }
  }
