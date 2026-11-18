@@ -1,12 +1,43 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-18T20:41:38Z",
+ "generatedAt": "2026-11-18T21:19:27Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "93afb03494806e72812b73e1304ca5ecb0b63424",
-  "seq": 29087
+  "sha": "7aeb1612a3c7fe5706d0c42edcda462546c5ed4c",
+  "seq": 29089
  },
  "builds": [
+  {
+   "seq": 29087,
+   "version": "3.4.0",
+   "sha": "93afb03494806e72812b73e1304ca5ecb0b63424",
+   "unknown": false,
+   "publishedAt": "2026-11-18T21:19:07Z",
+   "testflight": false,
+   "baseSeq": 29085,
+   "prs": [
+    3746
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44393339938"
+    },
+    "macos": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44393339938"
+    },
+    "ios": {
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44393339938"
+    }
+   }
+  },
   {
    "seq": 29085,
    "version": "3.4.0",
@@ -99,7 +130,8 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44360719615"
     },
     "windows": {
      "state": "ok"
@@ -114,29 +146,29 @@
   }
  ],
  "pending": {
-  "headSha": "93afb03494806e72812b73e1304ca5ecb0b63424",
-  "headSeq": 29087,
+  "headSha": "7aeb1612a3c7fe5706d0c42edcda462546c5ed4c",
+  "headSeq": 29089,
   "prs": [
-   3746
+   3747
   ],
   "direct": [],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44393339727"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44394996580"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44393339938"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44394996540"
    },
    "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44393339938"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44394996540"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44393339938"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44394996540"
    }
   }
  },
@@ -247,6 +279,15 @@
    "mergedAt": "2026-11-18T20:39:34Z",
    "additions": 18,
    "deletions": 14,
+   "labels": []
+  },
+  "3747": {
+   "number": 3747,
+   "title": "test(itest): 夹具把「选一种库页布局」框记成已处理，修 appSmoke 焦点导航红",
+   "author": "W1ght",
+   "mergedAt": "2026-11-18T20:49:10Z",
+   "additions": 88,
+   "deletions": 9,
    "labels": []
   }
  }
