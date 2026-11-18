@@ -17,10 +17,12 @@ Future<Set<int>> applyOrganizeActions(
   required List<OrganizeAction> actions,
 }) async {
   final Set<int> touched = <int>{};
-  // 先移出、再合并、最后加 / 建 / 打标签：移出腾地方，合并决定胜方，加入落到胜方。
+  // 先移出 / 挪走、再合并、最后加 / 建 / 打标签：移出腾地方，合并决定胜方，加入落到
+  // 胜方（挪走的去处在裁决时已改成合并胜方，胜方合并前后都在）。
   final List<OrganizeAction> ordered = <OrganizeAction>[
     for (final OrganizeActionKind k in const <OrganizeActionKind>[
       OrganizeActionKind.evict,
+      OrganizeActionKind.move,
       OrganizeActionKind.merge,
       OrganizeActionKind.add,
       OrganizeActionKind.create,
@@ -47,12 +49,15 @@ Future<Set<int>> applyOrganizeActions(
             if (!present.contains('${r.mediaType}\u0000${r.entryKey}')) {
               continue;
             }
-            await db.removeFromCollectionRaw(
-              c.id,
-              r.mediaType,
-              r.entryKey,
-              userIntent: false,
-            );
+            // 自动移出入口：用户亲手放进来 / 撤销过移出的成员（pinned）拒绝移出，
+            // 不改合集所有权（AI 库管家设计稿 §7）。
+            final CollectionAutoRemoveResult result = await db
+                .removeFromCollectionAutomatically(
+                  c.id,
+                  r.mediaType,
+                  r.entryKey,
+                );
+            if (result != CollectionAutoRemoveResult.removed) continue;
             removed.add(r);
           }
         }
@@ -65,7 +70,79 @@ Future<Set<int>> applyOrganizeActions(
           c.name,
           c.collectionType,
           c.organizeKey,
-          <String, Object?>{'members': _rowsJson(removed)},
+          <String, Object?>{
+            'members': _rowsJson(removed),
+            // 移空自删后撤销要按原来源重建（用户合集重建成用户的）。
+            'origin': c.origin,
+            if (a.reason != null) 'reason': a.reason,
+          },
+        );
+      case OrganizeActionKind.move:
+        final MediaCollectionRow? from = await db.getMediaCollectionById(
+          a.fromCollectionId!,
+        );
+        final MediaCollectionRow? to = await db.getMediaCollectionById(
+          a.targetCollectionId!,
+        );
+        if (from == null || to == null || from.id == to.id) continue;
+        final Set<String> tombstoned = await db
+            .collectionMemberTombstoneKeysFor(to.name, to.collectionType);
+        final Set<String> inFrom = await _memberKeysOf(db, from.id);
+        final Set<String> inTo = await _memberKeysOf(db, to.id);
+        final List<OrganizeMemberRow> moved = <OrganizeMemberRow>[];
+        final List<OrganizeMemberRow> added = <OrganizeMemberRow>[];
+        for (final OrganizeEntry e in a.entries) {
+          // 用户从去处移出过（整卷看主行）：不挪，留在原处——先移出再发现放不进去
+          // 会让它变成散条目。
+          if (tombstoned.contains(e.tombstoneKey)) continue;
+          for (final OrganizeMemberRow r in e.rows) {
+            final String key = '${r.mediaType}\u0000${r.entryKey}';
+            if (!inFrom.contains(key) || tombstoned.contains(r.tombstoneKey)) {
+              continue;
+            }
+            final CollectionAutoRemoveResult result = await db
+                .removeFromCollectionAutomatically(
+                  from.id,
+                  r.mediaType,
+                  r.entryKey,
+                );
+            if (result != CollectionAutoRemoveResult.removed) continue;
+            moved.add(r);
+            if (inTo.add(key)) {
+              await db.addToCollectionRaw(
+                to.id,
+                r.mediaType,
+                r.entryKey,
+                userIntent: false,
+              );
+              added.add(r);
+            }
+          }
+        }
+        if (moved.isEmpty) continue;
+        touched
+          ..add(from.id)
+          ..add(to.id);
+        await _record(
+          db,
+          runId,
+          a,
+          to.name,
+          to.collectionType,
+          to.organizeKey,
+          <String, Object?>{
+            'from': <String, Object?>{
+              'name': from.name,
+              'type': from.collectionType,
+              'origin': from.origin,
+              'key': from.organizeKey,
+            },
+            // members = 从来处移出的；added = 这次才放进去处的（去处原本就有的不算，
+            // 撤销时不从去处移出它）。
+            'members': _rowsJson(moved),
+            'added': _rowsJson(added),
+            if (a.reason != null) 'reason': a.reason,
+          },
         );
       case OrganizeActionKind.merge:
         final MediaCollectionRow? target = await db.getMediaCollectionById(
@@ -88,10 +165,16 @@ Future<Set<int>> applyOrganizeActions(
             'origin': s.origin,
             'key': s.organizeKey,
             'aliases': s.organizeAliases,
-            'members': <Map<String, String>>[
+            // pinned：用户亲手放进来 / 否决过移出的成员，撤销重建时照原样钉住
+            // （缺字段的旧记录按 false）。
+            'members': <Map<String, Object?>>[
               for (final MediaCollectionItemRow i
                   in await db.getCollectionItems(id))
-                <String, String>{'t': i.mediaType, 'k': i.entryKey},
+                <String, Object?>{
+                  't': i.mediaType,
+                  'k': i.entryKey,
+                  if (i.pinnedByUser) 'pinned': true,
+                },
             ],
           });
         }
@@ -201,6 +284,14 @@ Future<Set<int>> applyOrganizeActions(
   return touched;
 }
 
+Future<Set<String>> _memberKeysOf(FushiDatabase db, int collectionId) async =>
+    <String>{
+      for (final MediaCollectionItemRow i in await db.getCollectionItems(
+        collectionId,
+      ))
+        '${i.mediaType}\u0000${i.entryKey}',
+    };
+
 Future<List<OrganizeMemberRow>> _addRows(
   FushiDatabase db,
   MediaCollectionRow c,
@@ -269,16 +360,25 @@ Future<void> _record(
 /// - 并入：移出这次加的成员（写成员墓碑，AI 不再放回）；
 /// - 合并：按快照把败方重建成**用户的**合集、把它的成员从胜方移回，胜方也转成用户的
 ///   （用户说了这几个不是一个，收敛不会再合用户的合集）；
-/// - 移出：把成员放回；
+/// - 移出：把成员放回并钉住（pinned_by_user，AI 不再移它）；来处被移空自删了就按
+///   记录的来源重建；
+/// - 挪走：从去处移出这次放进去的成员（写成员墓碑，AI 不再放回；不钉住），放回来处
+///   并钉住；
 /// - 标签：摘掉这次打的标签。
+/// 待确认建议（[kLibraryOrganizeProposalKind]）不是改动，不参与撤销。
 /// 找不到目标（已被删 / 改名）的那一处跳过，不报错。返回实际撤销的处数。
 Future<int> undoLibraryOrganizeChanges(
   FushiDatabase db,
   Iterable<int> changeIds,
 ) async {
-  final List<LibraryOrganizeChangeRow> rows = await (db.select(
-    db.libraryOrganizeChanges,
-  )..where((t) => t.id.isIn(changeIds.toList()) & t.undoneAt.isNull())).get();
+  final List<LibraryOrganizeChangeRow> rows =
+      await (db.select(db.libraryOrganizeChanges)..where(
+            (t) =>
+                t.id.isIn(changeIds.toList()) &
+                t.undoneAt.isNull() &
+                t.kind.equals(kLibraryOrganizeProposalKind).not(),
+          ))
+          .get();
   rows.sort(
     (LibraryOrganizeChangeRow a, LibraryOrganizeChangeRow b) =>
         b.id.compareTo(a.id),
@@ -324,12 +424,39 @@ Future<int> undoLibraryOrganizeChanges(
             await db.createMediaCollection(
               r.collectionName,
               collectionType: r.collectionType,
-              origin: CollectionOrigin.ai,
+              origin: _originOr(payload['origin'], CollectionOrigin.ai),
               organizeKey: r.organizeKey,
             );
-        for (final ({String t, String k}) m in _members(payload['members'])) {
-          await db.addToCollectionRaw(id, m.t, m.k, userIntent: false);
+        // 撤销移出 = 用户否决这次移出：成员加回去并钉住（pinned），任何设备上的
+        // AI 都不再移它；不接手合集所有权（AI 库管家设计稿 §7）。
+        await _restorePinned(db, id, _members(payload['members']));
+        did = true;
+      case 'move':
+        // 去处：只移出这次才放进去的（原本就在的不动），走自动入口语义但写墓碑。
+        if (c != null) {
+          for (final ({String t, String k}) m in _members(payload['added'])) {
+            await db.removeFromCollectionRaw(c.id, m.t, m.k, userIntent: false);
+          }
         }
+        final Object? rawFrom = payload['from'];
+        if (rawFrom is! Map ||
+            rawFrom['name'] is! String ||
+            rawFrom['type'] is! String) {
+          break;
+        }
+        final String fromName = rawFrom['name'] as String;
+        final String fromType = rawFrom['type'] as String;
+        final MediaCollectionRow? from = await db
+            .getMediaCollectionByNaturalKey(fromName, fromType);
+        final int fromId =
+            from?.id ??
+            await db.createMediaCollection(
+              fromName,
+              collectionType: fromType,
+              origin: _originOr(rawFrom['origin'], CollectionOrigin.ai),
+              organizeKey: rawFrom['key'] as String?,
+            );
+        await _restorePinned(db, fromId, _members(payload['members']));
         did = true;
       case 'merge':
         if (c == null) break;
@@ -366,8 +493,16 @@ Future<int> undoLibraryOrganizeChanges(
             organizeKey: s['key'] as String?,
             organizeAliases: sourceAliases,
           );
-          for (final ({String t, String k}) m in _members(s['members'])) {
-            await db.addToCollectionRaw(id, m.t, m.k, userIntent: false);
+          for (final ({String t, String k, bool pinned}) m in _membersWithPin(
+            s['members'],
+          )) {
+            await db.addToCollectionRaw(
+              id,
+              m.t,
+              m.k,
+              userIntent: false,
+              pinnedByUser: m.pinned,
+            );
             if (!before.contains('${m.t}\u0000${m.k}')) {
               await db.removeFromCollectionRaw(
                 c.id,
@@ -415,14 +550,308 @@ Future<int> undoLibraryOrganizeChanges(
   return undone;
 }
 
-/// 撤销一次整理里还没撤销的全部改动。
+/// 撤销移出 / 挪走：成员放回 [collectionId] 并钉住（用户否决了这次移出，但不接手
+/// 合集所有权）。只钉这次被移出的那几行，合集里其它成员的 pinned 不动。
+Future<void> _restorePinned(
+  FushiDatabase db,
+  int collectionId,
+  List<({String t, String k})> members,
+) async {
+  for (final ({String t, String k}) m in members) {
+    await db.addToCollectionRaw(
+      collectionId,
+      m.t,
+      m.k,
+      userIntent: false,
+      pinnedByUser: true,
+    );
+  }
+}
+
+CollectionOrigin _originOr(Object? raw, CollectionOrigin fallback) =>
+    raw is String ? CollectionOrigin.parse(raw) : fallback;
+
+/// 撤销一次整理里还没撤销的全部改动（待确认建议不算改动，不动）。
 Future<int> undoLibraryOrganizeRun(FushiDatabase db, int runId) async {
   final List<LibraryOrganizeChangeRow> rows = await (db.select(
     db.libraryOrganizeChanges,
   )..where((t) => t.runId.equals(runId) & t.undoneAt.isNull())).get();
   return undoLibraryOrganizeChanges(db, <int>[
-    for (final LibraryOrganizeChangeRow r in rows) r.id,
+    for (final LibraryOrganizeChangeRow r in rows)
+      if (r.kind != kLibraryOrganizeProposalKind) r.id,
   ]);
+}
+
+// ── 待确认的合集级建议（AI 库管家设计稿 §8）────────────────────────────────
+
+/// 整理记录里「待确认建议」行的 kind。与改动同表（设备本地、不同步），但不计入改动
+/// 数、不出现在整理记录的改动列表、不参与撤销。
+const String kLibraryOrganizeProposalKind = 'proposal';
+
+/// 一条建议当前的状态。
+enum OrganizeProposalState {
+  pending,
+  accepted,
+  rejected,
+
+  /// 涉及的合集已不在 / 新名字被占：没法照原样执行。
+  stale;
+
+  static OrganizeProposalState parse(Object? raw) {
+    for (final OrganizeProposalState s in OrganizeProposalState.values) {
+      if (s.name == raw) return s;
+    }
+    return OrganizeProposalState.pending;
+  }
+}
+
+/// 一条待确认建议（给确认卡 / 路由用）。合集按记录时的自然键（名字 + 类型）指认。
+class LibraryOrganizeProposalView {
+  const LibraryOrganizeProposalView({
+    required this.id,
+    required this.runId,
+    required this.kind,
+    required this.state,
+    required this.targetName,
+    required this.targetType,
+    required this.sourceNames,
+    required this.confidence,
+    this.newName,
+    this.reason,
+  });
+
+  final int id;
+  final int runId;
+  final OrganizeProposalKind kind;
+  final OrganizeProposalState state;
+
+  /// merge：并进哪个合集；rename：改哪个合集的名字。
+  final String targetName;
+  final String targetType;
+
+  /// merge 的败方合集名（同类型）。
+  final List<String> sourceNames;
+
+  /// rename 的新名字。
+  final String? newName;
+  final AiOrganizeConfidence confidence;
+  final String? reason;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'id': id,
+    'runId': runId,
+    'kind': kind.name,
+    'state': state.name,
+    'collection': targetName,
+    'collectionType': targetType,
+    if (kind == OrganizeProposalKind.merge) 'sources': sourceNames,
+    if (newName != null) 'newName': newName,
+    'confidence': confidence.name,
+    if (reason != null) 'reason': reason,
+  };
+}
+
+String _proposalSignature(
+  OrganizeProposalKind kind,
+  String targetName,
+  String type,
+  List<String> sources,
+  String? newName,
+) => <String>[
+  kind.name,
+  type,
+  targetName,
+  ...(List<String>.of(sources)..sort()),
+  newName ?? '',
+].join('\u0000');
+
+/// 把裁决出的待确认建议记进整理记录（按此刻的合集自然键快照）。同一条建议已在等确认
+/// 或用户拒绝过的不再记（不反复打扰）。返回新记的条数。
+Future<int> recordOrganizeProposals(
+  FushiDatabase db, {
+  required int runId,
+  required List<OrganizeProposal> proposals,
+}) async {
+  if (proposals.isEmpty) return 0;
+  final Set<String> known = <String>{
+    for (final LibraryOrganizeChangeRow r in await (db.select(
+      db.libraryOrganizeChanges,
+    )..where((t) => t.kind.equals(kLibraryOrganizeProposalKind))).get())
+      if (_decode(r.payloadJson) case final Map<String, Object?> p)
+        if (OrganizeProposalState.parse(p['state']) !=
+            OrganizeProposalState.accepted)
+          if (p['sig'] case final String sig) sig,
+  };
+  int recorded = 0;
+  for (final OrganizeProposal p in proposals) {
+    final MediaCollectionRow? target = await db.getMediaCollectionById(
+      p.targetCollectionId,
+    );
+    if (target == null) continue;
+    final List<String> sources = <String>[
+      for (final int id in p.sourceCollectionIds)
+        if (await db.getMediaCollectionById(id) case final MediaCollectionRow s
+            when s.collectionType == target.collectionType)
+          s.name,
+    ];
+    if (p.kind == OrganizeProposalKind.merge && sources.isEmpty) continue;
+    if (p.kind == OrganizeProposalKind.rename && p.newName == null) continue;
+    final String sig = _proposalSignature(
+      p.kind,
+      target.name,
+      target.collectionType,
+      sources,
+      p.newName,
+    );
+    if (!known.add(sig)) continue;
+    await db
+        .into(db.libraryOrganizeChanges)
+        .insert(
+          LibraryOrganizeChangesCompanion.insert(
+            runId: runId,
+            kind: kLibraryOrganizeProposalKind,
+            collectionName: target.name,
+            collectionType: target.collectionType,
+            organizeKey: Value<String?>(target.organizeKey),
+            source: 'ai',
+            confidence: p.confidence.name,
+            payloadJson: jsonEncode(<String, Object?>{
+              'proposal': p.kind.name,
+              'state': OrganizeProposalState.pending.name,
+              'sig': sig,
+              if (p.kind == OrganizeProposalKind.merge) 'sources': sources,
+              if (p.newName != null) 'newName': p.newName,
+              if (p.reason != null) 'reason': p.reason,
+            }),
+          ),
+        );
+    recorded++;
+  }
+  return recorded;
+}
+
+/// 列出待确认建议（新的在前）。[pendingOnly] 为 false 时连已处理的一起列。
+Future<List<LibraryOrganizeProposalView>> loadLibraryOrganizeProposals(
+  FushiDatabase db, {
+  bool pendingOnly = true,
+}) async {
+  final List<LibraryOrganizeChangeRow> rows =
+      await (db.select(db.libraryOrganizeChanges)
+            ..where((t) => t.kind.equals(kLibraryOrganizeProposalKind))
+            ..orderBy(<OrderClauseGenerator<$LibraryOrganizeChangesTable>>[
+              (t) => OrderingTerm.desc(t.id),
+            ]))
+          .get();
+  return <LibraryOrganizeProposalView>[
+    for (final LibraryOrganizeChangeRow r in rows)
+      if (_proposalView(r) case final LibraryOrganizeProposalView v)
+        if (!pendingOnly || v.state == OrganizeProposalState.pending) v,
+  ];
+}
+
+LibraryOrganizeProposalView? _proposalView(LibraryOrganizeChangeRow r) {
+  final Map<String, Object?>? p = _decode(r.payloadJson);
+  if (p == null) return null;
+  final OrganizeProposalKind? kind = switch (p['proposal']) {
+    'merge' => OrganizeProposalKind.merge,
+    'rename' => OrganizeProposalKind.rename,
+    _ => null,
+  };
+  if (kind == null) return null;
+  return LibraryOrganizeProposalView(
+    id: r.id,
+    runId: r.runId,
+    kind: kind,
+    state: OrganizeProposalState.parse(p['state']),
+    targetName: r.collectionName,
+    targetType: r.collectionType,
+    sourceNames: <String>[
+      if (p['sources'] is List)
+        for (final Object? s in p['sources']! as List<Object?>)
+          if (s is String) s,
+    ],
+    newName: p['newName'] as String?,
+    confidence: organizeChangeConfidence(r),
+    reason: p['reason'] as String?,
+  );
+}
+
+/// 用户处理一条待确认建议：[accept] 为 true 时以**用户身份**执行（`userIntent:
+/// true`，一次用户写入，不进整理撤销），false 时记为拒绝（以后同样的建议不再提）。
+/// 返回处理后的状态；建议不存在或已处理过返回 null。
+Future<OrganizeProposalState?> resolveLibraryOrganizeProposal(
+  FushiDatabase db,
+  int proposalId, {
+  required bool accept,
+}) async {
+  final LibraryOrganizeChangeRow? row =
+      await (db.select(db.libraryOrganizeChanges)..where(
+            (t) =>
+                t.id.equals(proposalId) &
+                t.kind.equals(kLibraryOrganizeProposalKind),
+          ))
+          .getSingleOrNull();
+  if (row == null) return null;
+  final LibraryOrganizeProposalView? view = _proposalView(row);
+  if (view == null || view.state != OrganizeProposalState.pending) return null;
+  OrganizeProposalState next = OrganizeProposalState.rejected;
+  if (accept) {
+    // 不包事务：合并会回收被解散合集的封面等磁盘资产，回滚不了。
+    next = await (() async {
+      final MediaCollectionRow? target = await db
+          .getMediaCollectionByNaturalKey(view.targetName, view.targetType);
+      if (target == null) return OrganizeProposalState.stale;
+      switch (view.kind) {
+        case OrganizeProposalKind.merge:
+          final List<int> sources = <int>[
+            for (final String name in view.sourceNames)
+              if (await db.getMediaCollectionByNaturalKey(name, view.targetType)
+                  case final MediaCollectionRow s
+                  when s.id != target.id && s.sourceFolderPath == null)
+                s.id,
+          ];
+          if (sources.isEmpty) return OrganizeProposalState.stale;
+          await mergeMediaCollectionsInto(
+            db,
+            targetId: target.id,
+            sourceIds: sources,
+          );
+          return OrganizeProposalState.accepted;
+        case OrganizeProposalKind.rename:
+          final String? newName = view.newName;
+          if (newName == null ||
+              await db.getMediaCollectionByNaturalKey(
+                    newName,
+                    view.targetType,
+                  ) !=
+                  null) {
+            return OrganizeProposalState.stale;
+          }
+          await db.renameMediaCollection(target.id, newName);
+          return OrganizeProposalState.accepted;
+      }
+    })();
+  }
+  final Map<String, Object?> payload = _decode(row.payloadJson)!
+    ..['state'] = next.name
+    ..['resolvedAt'] = DateTime.now().millisecondsSinceEpoch;
+  await (db.update(
+    db.libraryOrganizeChanges,
+  )..where((t) => t.id.equals(row.id))).write(
+    LibraryOrganizeChangesCompanion(
+      payloadJson: Value<String>(jsonEncode(payload)),
+    ),
+  );
+  return next;
+}
+
+Map<String, Object?>? _decode(String raw) {
+  try {
+    final Object? v = jsonDecode(raw);
+    return v is Map ? v.cast<String, Object?>() : null;
+  } on FormatException {
+    return null;
+  }
 }
 
 /// 整理记录页的数据：最近 [limit] 次运行（新的在前）与各自的改动。
@@ -445,9 +874,14 @@ loadLibraryOrganizeHistory(FushiDatabase db, {int limit = 50}) async {
   }
   final Map<int, List<LibraryOrganizeChangeRow>> byRun =
       <int, List<LibraryOrganizeChangeRow>>{};
-  for (final LibraryOrganizeChangeRow c in await (db.select(
-    db.libraryOrganizeChanges,
-  )..where((t) => t.runId.isIn(<int>[for (final r in runs) r.id]))).get()) {
+  // 待确认建议不是改动，走 [loadLibraryOrganizeProposals]。
+  for (final LibraryOrganizeChangeRow c
+      in await (db.select(db.libraryOrganizeChanges)..where(
+            (t) =>
+                t.runId.isIn(<int>[for (final r in runs) r.id]) &
+                t.kind.equals(kLibraryOrganizeProposalKind).not(),
+          ))
+          .get()) {
     (byRun[c.runId] ??= <LibraryOrganizeChangeRow>[]).add(c);
   }
   return <
@@ -463,6 +897,17 @@ List<({String t, String k})> _members(Object? raw) => <({String t, String k})>[
     for (final Object? m in raw)
       if (m is Map && m['t'] is String && m['k'] is String)
         (t: m['t'] as String, k: m['k'] as String),
+];
+
+/// [_members] 连同成员行当时的 `pinned_by_user`（合并快照记的 `pinned`；旧记录缺
+/// 字段按 false）。
+List<({String t, String k, bool pinned})> _membersWithPin(
+  Object? raw,
+) => <({String t, String k, bool pinned})>[
+  if (raw is List)
+    for (final Object? m in raw)
+      if (m is Map && m['t'] is String && m['k'] is String)
+        (t: m['t'] as String, k: m['k'] as String, pinned: m['pinned'] == true),
 ];
 
 /// 一处改动的置信度字面量 → 枚举（整理记录页展示用）。

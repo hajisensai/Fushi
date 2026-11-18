@@ -902,12 +902,22 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
             figure,
             if (!dense) ...<Widget>[
               const SizedBox(height: 4),
+              // 宽格有目标时目标进度与今日时长同一行：时长不让位，目标文字放不下才省略。
               if (goalLine != null && wide)
-                Text(
-                  goalLine,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: caption,
+                Row(
+                  children: <Widget>[
+                    Flexible(
+                      child: Text(
+                        goalLine,
+                        key: const ValueKey<String>('home-today-goal-line'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: caption,
+                      ),
+                    ),
+                    Text(' · ', maxLines: 1, style: caption),
+                    time,
+                  ],
                 )
               else
                 time,

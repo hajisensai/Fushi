@@ -133,7 +133,7 @@ void main() {
       expect(run, contains('_prepareSiteForReplay()'));
       final String nav = body(
         page,
-        'Future<bool> _navigateForMining(',
+        'Future<WebMineNavigateOutcome> _navigateForMining(',
         'Future<void> _runMineQueue(',
       );
       expect(nav, contains('_prepareSiteForReplay()'));
@@ -153,7 +153,15 @@ void main() {
         'Future<void> _runMineQueue(',
         'Future<String?> _mineQueuedRow(',
       );
-      final String fin = run.substring(run.indexOf('} finally {'));
+      // 还原步骤是 [runWebMineQueueRound] 的 cleanup 列表（body 抛不抛都逐步执行，
+      // BUG-4829），不再是一个 finally 块。
+      final int cleanupAt = run.indexOf('cleanup: <Future<void> Function()>[');
+      expect(
+        cleanupAt,
+        greaterThanOrEqualTo(0),
+        reason: 'missing cleanup list',
+      );
+      final String fin = run.substring(cleanupAt);
       expect(fin, contains('_setNativeSubtitlesHidden(_hideNativeSubtitles)'));
       expect(fin, contains('_beginRestore(_replayOrigin)'));
     });
@@ -238,15 +246,34 @@ void main() {
     });
 
     test('background mining page never writes the resume position', () {
-      final String onState = body(page, 'void _onState(', 'void _onKeyToken(');
-      expect(
-        onState,
-        contains('if (!_mineRunning && !widget.closeAfterMining)'),
-      );
+      // 判据收成 [_playheadIsUsers]（BUG-4834）：队列重放期间与制卡宿主页
+      // （后台制卡页 closeAfterMining 是其中一种）都不是用户的播放头。
       expect(
         page,
-        contains('if (!widget.closeAfterMining) unawaited(_flushPosition());'),
+        contains(
+          'bool get _playheadIsUsers => !_mineRunning && !_isMiningHost;',
+        ),
       );
+      final String onState = body(page, 'void _onState(', 'void _onKeyToken(');
+      expect(onState, contains('if (_playheadIsUsers) {'));
+      // dispose / 切宿主档的 flush 与每秒一次的写入都经 [_persistPosition]，门在它开头。
+      final String persist = body(
+        page,
+        'Future<void> _persistPosition(int posMs) async {',
+        'Future<void> _flushPosition() async {',
+      );
+      final int gate = persist.indexOf('if (!_playheadIsUsers) return;');
+      expect(gate, greaterThanOrEqualTo(0));
+      expect(gate, lessThan(persist.indexOf('setPref(')));
+      expect(gate, lessThan(persist.indexOf('updatePosition(')));
+      final String flush = body(
+        page,
+        'Future<void> _flushPosition() async {',
+        '/// 每条站点播放快照都过一次',
+      );
+      expect(flush, contains('await _persistPosition(pos);'));
+      expect(flush, isNot(contains('setPref(')));
+      expect(flush, isNot(contains('updatePosition(')));
     });
 
     test('background mining page closes its own route', () {
