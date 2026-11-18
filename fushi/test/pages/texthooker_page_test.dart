@@ -1065,7 +1065,7 @@ void main() {
     );
   });
 
-  testWidgets('tab 藏起时查词浮层留在树上只是 Offstage，切回是同一棵子树（BUG-4894）', (
+  testWidgets('tab 藏起时查词浮层留在树上只是 Offstage，切回是同一棵子树（BUG-4896）', (
     WidgetTester tester,
   ) async {
     final ValueNotifier<bool> visible = ValueNotifier<bool>(true);

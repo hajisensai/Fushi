@@ -2276,7 +2276,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     // （TODO-931）不拆。这里曾在 inert 时收成 `SizedBox.shrink()`——热槽开页即
     // seed、`entries` 永不空，于是每次切出查词 tab / 每推一个整页上来都销毁预热
     // 好的 WebView，回来再冷建一个并重新装载 popup.html + JS + CSS
-    // （BUG-4849，与游戏工作台 BUG-4894 同一个坑）。祖先结构恒定、只翻
+    // （BUG-4849，与游戏工作台 BUG-4896 同一个坑）。祖先结构恒定、只翻
     // `offstage` 参数（平台视图上方的祖先在层的生命周期内不能增删）。
     final bool inert = _overlayInert;
     // BUG-2953：浮层自带导航层，弹窗里唤出的菜单画在浮层之上（见 LookupOverlayNavigator）。
