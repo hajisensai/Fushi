@@ -24,6 +24,7 @@ import 'package:fushi/src/media/manga/book_format_convert.dart';
 import 'package:fushi/src/media/manga/book_format_rebuild.dart';
 import 'package:fushi/src/media/manga/pdf_text_layer_backfill.dart';
 import 'package:fushi_engine/media/manga/manga_pdf_text_layer.dart';
+import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/pdf/pdf_importer.dart';
@@ -379,12 +380,14 @@ void main() {
       chaptersJson: '[]',
       coverPath: PdfImporter.kCoverFileName,
     );
+    String? stagingPath;
     BookFormatRebuild.debugPdfPageStager =
         (
           String pdfPath,
           Directory staging,
           void Function(int, int)? onProgress,
         ) async {
+          stagingPath = staging.path;
           for (int i = 0; i < 3; i++) {
             File(
               p.join(staging.path, 'page_${i.toString().padLeft(6, '0')}.png'),
@@ -414,6 +417,11 @@ void main() {
       payload.images.map((MokuroImage e) => e.size.width).toList(),
       <double>[50, 51, 52],
     );
+    // 暂存是书目录的兄弟 `.tmp-*`（与书目录同卷，页图 rename 进 `images/`），不在
+    // 系统临时目录、也不在书目录里面；转化完即删。
+    expect(p.equals(p.dirname(stagingPath!), p.dirname(bookDir)), isTrue);
+    expect(p.basename(stagingPath!), startsWith(EpubStorage.kStagingDirPrefix));
+    expect(Directory(stagingPath!).existsSync(), isFalse);
   });
 
   test('PDF 转成漫画：带文字层的页直接写成文字块（真实逐字坐标），不等 OCR', () async {

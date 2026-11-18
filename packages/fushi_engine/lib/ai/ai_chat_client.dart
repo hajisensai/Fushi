@@ -18,6 +18,7 @@ import 'package:fushi_engine/ai/ai_key_rotation.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/ai_rate_limiter.dart';
 import 'package:fushi_engine/ai/ai_relay.dart';
+import 'package:fushi_engine/ai/ai_upstream_model.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:http/http.dart' as http;
 
@@ -753,14 +754,15 @@ class AiChatClient {
     }
   }
 
-  /// 拉这家提供商可用的模型名。
+  /// 拉这家提供商可用的模型，连同上游给的显示名 / 收图能力 / 单价（见
+  /// [AiUpstreamModel]，没给的项为 null）。
   ///
   /// 存在的理由：内置预设里的默认模型名**必然过时**（厂商迭代比本 app 发版快），
   /// 把用户钉死在一个写死的字符串上迟早变成「开箱即 404」。
   ///
   /// 互联主机提供商没有模型列表可拉（选的是主机上的一家提供商，不是模型）：抛
   /// [kAiRelayOperationUnsupported]。
-  Future<List<String>> listModels(AiProviderConfig provider) async {
+  Future<List<AiUpstreamModel>> listModels(AiProviderConfig provider) async {
     if (provider.isInterconnectHost) {
       throw const AiChatFailure(kAiRelayOperationUnsupported);
     }
@@ -770,7 +772,7 @@ class AiChatClient {
     );
   }
 
-  Future<List<String>> _listModels(
+  Future<List<AiUpstreamModel>> _listModels(
     AiProviderConfig provider,
     String key,
   ) async {
@@ -792,22 +794,7 @@ class AiChatClient {
     if (body is! Map) {
       throw const AiChatFailure('bad_response');
     }
-    final List<String> models = <String>[];
-    final Object? data = body['data'] ?? body['models'];
-    if (data is List) {
-      for (final Object? entry in data) {
-        if (entry is! Map) {
-          continue;
-        }
-        final Object? id = entry['id'] ?? entry['name'];
-        if (id is String && id.isNotEmpty) {
-          // Gemini 回的是 `models/gemini-...`，剥掉前缀才是请求里要用的模型名。
-          models.add(id.startsWith('models/') ? id.substring(7) : id);
-        }
-      }
-    }
-    models.sort();
-    return List<String>.unmodifiable(models);
+    return parseAiUpstreamModels(body);
   }
 
   /// 云端语音转录：一段音频发到 OpenAI 兼容的 `POST {baseUrl}/audio/transcriptions`

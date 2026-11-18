@@ -20,7 +20,9 @@
   var libs = globalThis.__fushiLnReaderLibs;
   if (!libs) throw new Error('lnreader_libs.js must be loaded first');
 
-  function defaultBridge() {
+  // The only way out of the page: the two handlers the Dart runtime registers.
+  // There is deliberately no global override point here.
+  function bridge() {
     var host = globalThis.flutter_inappwebview;
     return {
       fetch: function (request) {
@@ -30,10 +32,6 @@
         return host.callHandler('fushiLnStorage', { id: pluginId, data: data });
       },
     };
-  }
-
-  function bridge() {
-    return globalThis.__fushiLnReaderBridge || defaultBridge();
   }
 
   // ── base64 ────────────────────────────────────────────────────────────────
@@ -292,13 +290,60 @@
     }
   }
 
+  /**
+   * kakuyomu 列表补封面：排行榜 / 搜索页内嵌的 Apollo 缓存里 `Work` 不带
+   * `adminCoverImageUrl`（只有作品详情页的查询取这个字段），插件于是整列给
+   * `defaultCover`，详情页却有封面。站点自己的公开 GraphQL（`/graphql`，前端同一个
+   * 端点，无需登录）按 id 取得到同一字段：整页作品拼成**一个**带别名的查询
+   * （`w0: work(id: "…") { adminCoverImageUrl }`），一页只多一次请求，不逐条拉详情。
+   * 作品本身没有书籍封面时字段为 null，照旧是占位图（详情页也一样）。
+   * 封面是附加信息：查询失败（网络 / 站点改版）时列表照常返回、保留占位图，
+   * 不让封面拖垮整页列表。
+   */
+  async function kakuyomuFillCovers(plugin, fetchLib, novels) {
+    if (!Array.isArray(novels)) return novels;
+    var pending = [];
+    novels.forEach(function (novel) {
+      if (!novel || (novel.cover && novel.cover !== defaultCover)) return;
+      var match = /^\/works\/(\d+)\/?$/.exec(str(novel.path));
+      if (match) pending.push({ novel: novel, id: match[1] });
+    });
+    if (!pending.length) return novels;
+    var query =
+      'query FushiWorkCovers {' +
+      pending
+        .map(function (item, index) {
+          return ' w' + index + ': work(id: ' + JSON.stringify(item.id) + ') { adminCoverImageUrl }';
+        })
+        .join('') +
+      ' }';
+    var text = await fetchLib.fetchText(new URL('/graphql', plugin.site).toString(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ operationName: 'FushiWorkCovers', query: query, variables: {} }),
+    });
+    var data;
+    try {
+      data = (JSON.parse(text || '{}') || {}).data || {};
+    } catch (_) {
+      return novels;
+    }
+    pending.forEach(function (item, index) {
+      var work = data['w' + index];
+      var cover = work && optionalStr(work.adminCoverImageUrl);
+      if (cover) item.novel.cover = cover;
+    });
+    return novels;
+  }
+
   var pluginFixes = [
     {
       // 2026-09 kakuyomu.jp 把排行榜改成 Next.js（CSS 类名带哈希、307 到
       // `?work_variation=long`），插件 1.0.0 的 `.widget-media-genresWorkList-right`
       // 一个都匹配不上，「热门」恒空——源一进去就是空页。排名顺序改从页面内嵌的
       // Apollo 缓存 `rankedWorks(...)` 读（每页 100 部，`?page=N` 翻页）。
-      // 详情 / 章节 / 搜索本就读 `__NEXT_DATA__`，实测仍可用，不动。
+      // 详情 / 章节 / 搜索本就读 `__NEXT_DATA__`，实测仍可用，不动；热门与搜索的
+      // 列表封面另经 `kakuyomuFillCovers` 一次 GraphQL 补齐（页面缓存里没有封面字段）。
       id: 'kakuyomu',
       maxVersion: '1.0.0',
       apply: function (plugin, fetchLib) {
@@ -325,7 +370,12 @@
               cover: work.adminCoverImageUrl || defaultCover,
             });
           });
-          return novels;
+          return kakuyomuFillCovers(plugin, fetchLib, novels);
+        };
+        // 搜索页同样读内嵌 Apollo 缓存（插件实现仍可用），封面字段同样缺，补法同上。
+        var searchNovels = plugin.searchNovels;
+        plugin.searchNovels = async function (term, pageNo) {
+          return kakuyomuFillCovers(plugin, fetchLib, await searchNovels.call(plugin, term, pageNo));
         };
       },
     },

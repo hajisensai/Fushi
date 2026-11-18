@@ -26,11 +26,17 @@ public final class NotificationIds {
     /** Foreground notification for {@code ScreenOcrService}（截屏 OCR，mediaProjection）. */
     public static final int SCREEN_OCR = 9531;
 
+    /** Foreground notification for {@code CrossAppAudioService}（跨应用语音缓存，mediaProjection）. */
+    public static final int CROSS_APP_AUDIO = 9532;
+
     /** Notification channel ID for {@code FloatingBallService}. */
     public static final String CHANNEL_FLOATING_BALL = "fushi_floating_ball";
 
     /** Notification channel ID for {@code ScreenOcrService}. */
     public static final String CHANNEL_SCREEN_OCR = "fushi_screen_ocr";
+
+    /** Notification channel ID for {@code CrossAppAudioService}（低重要度、无声）. */
+    public static final String CHANNEL_CROSS_APP_AUDIO = "fushi_cross_app_audio";
 
     /** Notification channel ID for {@code DownloadKeepAliveService}（低重要度、无声）. */
     public static final String CHANNEL_DOWNLOAD_KEEP_ALIVE = "fushi_download_keep_alive";

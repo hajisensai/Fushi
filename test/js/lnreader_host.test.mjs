@@ -24,10 +24,14 @@ function createHost(routes) {
     XMLSerializer: dom.window.XMLSerializer,
   });
   ctx.globalThis = ctx;
-  ctx.__fushiLnReaderBridge = {
-    async fetch(request) {
+  // 宿主只认 Dart 运行时注册的两个 handler（`fushiLnFetch` / `fushiLnStorage`），
+  // 没有别的可替换入口：测试从同一个口进，载荷形状就是真实过桥的形状。
+  const handlers = {
+    async fushiLnFetch(request) {
       requests.push(request);
-      const route = routes[request.url];
+      const entry = routes[request.url];
+      // 路由可以是函数：按请求（方法 / 请求体）动态应答，如 POST GraphQL。
+      const route = typeof entry === 'function' ? entry(request) : entry;
       if (!route) return { error: 'no route' };
       const body = Buffer.from(route.body ?? '', route.encoding ?? 'utf8');
       return {
@@ -37,10 +41,13 @@ function createHost(routes) {
         body: body.toString('base64'),
       };
     },
-    persistStorage(id, data) {
+    fushiLnStorage({ id, data }) {
       persisted.push({ id, data: JSON.parse(JSON.stringify(data)) });
       return Promise.resolve(true);
     },
+  };
+  ctx.flutter_inappwebview = {
+    callHandler: (name, payload) => handlers[name](payload),
   };
   vm.runInContext(fs.readFileSync(path.join(assets, 'lnreader_libs.js'), 'utf8'), ctx);
   vm.runInContext(fs.readFileSync(path.join(assets, 'lnreader_host.js'), 'utf8'), ctx);
@@ -253,7 +260,17 @@ var KakuyomuPlugin = (function () {
     var $ = (0, cheerio_1.load)(await (0, fetch_1.fetchText)(this.site + "/rankings/all/entire"));
     return $(".widget-media-genresWorkList-right > .widget-work").map(function () { return {}; }).get();
   };
-  KakuyomuPlugin.prototype.searchNovels = async function () { return []; };
+  // 与官方 1.0.0 同口径：读搜索页内嵌 Apollo 里的 Work，封面取 adminCoverImageUrl（页面缓存里缺）。
+  KakuyomuPlugin.prototype.searchNovels = async function (term, page) {
+    var html = await (0, fetch_1.fetchText)(this.site + "/search?q=" + encodeURIComponent(term));
+    var raw = (0, cheerio_1.load)(html)('script#__NEXT_DATA__').html() || "{}";
+    var state = ((JSON.parse(raw).props || {}).pageProps || {}).__APOLLO_STATE__ || {};
+    return Object.values(state).filter(function (v) { return v && v.__typename === "Work"; })
+      .map(function (w) {
+        return { name: w.title || "", path: "/works/" + w.id,
+          cover: w.adminCoverImageUrl || "https://github.com/lnreader/lnreader-plugins/blob/master/public/static/coverNotAvailable.webp?raw=true" };
+      });
+  };
   KakuyomuPlugin.prototype.parseNovel = async function (path) { return { path: path, name: "" }; };
   KakuyomuPlugin.prototype.parseChapter = async function () { return ""; };
   return KakuyomuPlugin;
@@ -302,7 +319,69 @@ test('kakuyomu 1.0.0：热门改读排行榜页内嵌的 rankedWorks（顺序 / 
     period: { type: 'Picker', value: 'daily' },
   });
   assert.equal(page2[0].path, '/works/40');
-  assert.equal(requests.length, 2);
+  // 第 1 页没有 GraphQL 路由（封面查询失败）：列表照常返回、缺的封面保留占位图（上面 items[1]）；
+  // 第 2 页唯一一部已带封面，不再发封面查询。
+  assert.deepEqual(
+    requests.map((r) => `${r.method} ${r.url}`),
+    [
+      'GET https://kakuyomu.jp/rankings/all/entire?work_variation=long',
+      'POST https://kakuyomu.jp/graphql',
+      'GET https://kakuyomu.jp/rankings/fantasy/daily?work_variation=long&page=2',
+    ],
+  );
+});
+
+// 真站 /graphql 的应答形态：按别名回 { w0: { adminCoverImageUrl } }，无封面为 null。
+function kakuyomuGraphqlRoute(covers, seen) {
+  return (request) => {
+    if (request.method !== 'POST') return null;
+    const payload = JSON.parse(Buffer.from(request.body, 'base64').toString('utf8'));
+    seen.push(payload.query);
+    const data = {};
+    for (const [, alias, id] of payload.query.matchAll(/(w\d+): work\(id: "(\d+)"\)/g)) {
+      data[alias] = { adminCoverImageUrl: covers[id] ?? null };
+    }
+    return { headers: { 'content-type': 'application/json' }, body: JSON.stringify({ data }) };
+  };
+}
+
+test('kakuyomu 1.0.0：热门列表缺的封面一次 GraphQL 按 id 补齐（详情同源字段）', async () => {
+  const queries = [];
+  const { ln, requests } = createHost({
+    'https://kakuyomu.jp/rankings/all/entire?work_variation=long': {
+      body: kakuyomuRankingPage({ first: 100, genre: null, period: 'ENTIRE', workVariation: 'LONG' }, ['30', '10', '20']),
+    },
+    'https://kakuyomu.jp/graphql': kakuyomuGraphqlRoute({ 10: 'https://cdn.kdkw.jp/cover_1000/10.webp' }, queries),
+  });
+  ln.load('kakuyomu', kakuyomuPlugin('1.0.0'), {});
+  const items = JSON.parse(JSON.stringify(await ln.popular('kakuyomu', 1, false, null)));
+  assert.equal(items[0].cover, 'https://cdn.kakuyomu.jp/cover.jpg', '页面里已有的封面原样保留');
+  assert.equal(items[1].cover, 'https://cdn.kdkw.jp/cover_1000/10.webp');
+  assert.match(items[2].cover, /coverNotAvailable/, '作品本身无封面仍是占位图');
+  assert.equal(queries.length, 1, '整页只多一次请求');
+  assert.doesNotMatch(queries[0], /"30"/, '已有封面的作品不再查');
+  assert.match(queries[0], /w0: work\(id: "10"\).*w1: work\(id: "20"\)/);
+  const post = requests.find((r) => r.method === 'POST');
+  assert.equal(post.headers['content-type'] ?? post.headers['Content-Type'], 'application/json');
+});
+
+test('kakuyomu 1.0.0：搜索结果的封面同样经 GraphQL 补齐', async () => {
+  const queries = [];
+  const state = {
+    ROOT_QUERY: { __typename: 'Query' },
+    'Work:7': { __typename: 'Work', id: '7', title: '搜到的作品' },
+  };
+  const data = JSON.stringify({ props: { pageProps: { __APOLLO_STATE__: state } } });
+  const { ln } = createHost({
+    'https://kakuyomu.jp/search?q=%E8%BB%A2%E7%94%9F': {
+      body: `<script id="__NEXT_DATA__" type="application/json">${data}</script>`,
+    },
+    'https://kakuyomu.jp/graphql': kakuyomuGraphqlRoute({ 7: 'https://cdn.kdkw.jp/cover_1000/7.webp' }, queries),
+  });
+  ln.load('kakuyomu', kakuyomuPlugin('1.0.0'), {});
+  const items = JSON.parse(JSON.stringify(await ln.search('kakuyomu', '転生', 1)));
+  assert.deepEqual(items.map((i) => [i.path, i.cover]), [['/works/7', 'https://cdn.kdkw.jp/cover_1000/7.webp']]);
+  assert.equal(queries.length, 1);
 });
 
 test('kakuyomu 补丁在上游发新版后自动退役', async () => {

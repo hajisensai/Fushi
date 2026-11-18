@@ -328,6 +328,73 @@ void main() {
     expect(id, isNotNull);
   });
 
+  test('只导出一个牌组：FSRS-7 提示按该牌组子树算，导回只有子树里的笔记', () async {
+    final String fsrs6 = await store.createDeck('Six');
+    await store.editFields(SrsEntityKind.deck, fsrs6, <String, Object?>{
+      SrsFieldKeys.deckParamsMode: 'own',
+      SrsFieldKeys.deckAlgorithm: <String, Object?>{
+        'alg': SrsAlgorithm.fsrs6.wire,
+        'auto': false,
+      },
+    });
+    final String inScope = await store.createNote(
+      noteTypeId: store.lapisNoteTypeId,
+      fieldsById: <String, String>{
+        srsLapisFieldId(kSrsTestProfile, 'Expression'): '雪',
+      },
+      deckId: fsrs6,
+    );
+    await store.createNote(
+      noteTypeId: store.lapisNoteTypeId,
+      fieldsById: <String, String>{
+        srsLapisFieldId(kSrsTestProfile, 'Expression'): '雨',
+      },
+    );
+    expect(
+      await srsExportScopeUsesFsrs7(store),
+      isTrue,
+      reason: '整库含默认 FSRS-7',
+    );
+
+    final SrsAnkiExport export = await buildSrsAnkiExport(
+      store: store,
+      media: media,
+      file: File('${tmp.path}/six.apkg'),
+      deckId: fsrs6,
+    );
+    expect(export.usesFsrs7, isFalse, reason: '只看所选牌组子树');
+
+    final (FushiDatabase db2, SrsDbStore other) = await openSrsTestStore(
+      profileUid: '01928c3e-0000-7000-8000-0000000000ee',
+      deviceId: 'other',
+    );
+    addTearDown(db2.close);
+    final SrsImportReport back = await runSrsAnkiImport(
+      store: other,
+      media: SrsMediaStore(Directory('${tmp.path}/media3')),
+      file: export.file,
+      zstdDecompress: (Uint8List b) => null,
+    );
+    expect(back.notesAdded, 1);
+    expect(
+      await other.noteIdByGuid((await store.note(inScope))!.guid),
+      isNotNull,
+    );
+  });
+
+  test('导出文件名：整库固定名；单个牌组用全名、去掉文件名非法字符', () {
+    expect(srsExportFileName(null), 'fushi-review.apkg');
+    expect(srsExportFileName('JP::N5'), 'JP-N5.apkg');
+    expect(srsExportFileName('a/b:c*?"<>|'), 'a_b_c______.apkg');
+    expect(srsExportFileName(' 日本語 '), '日本語.apkg');
+    expect(srsExportFileName('..'), 'fushi-review.apkg');
+    // Windows 保留设备名前缀 `_`，否则 CON.apkg 在 Windows 上存不下。
+    expect(srsExportFileName('CON'), '_CON.apkg');
+    expect(srsExportFileName('nul'), '_nul.apkg');
+    expect(srsExportFileName('LPT1.v2'), '_LPT1.v2.apkg');
+    expect(srsExportFileName('COM1::x'), 'COM1-x.apkg');
+  });
+
   test('制卡历史导入：Lapis 字段 + 出处；重复导入不重复建卡', () async {
     final int t0 = DateTime.utc(2026, 9, 1).millisecondsSinceEpoch;
     await db

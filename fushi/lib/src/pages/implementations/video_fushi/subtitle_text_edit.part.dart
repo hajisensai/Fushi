@@ -1,5 +1,8 @@
 part of '../video_fushi_page.dart';
 
+/// 一层手改字幕的存储键（视频 + 字幕源）。
+typedef _SubtitleTextOverrideKeys = ({String videoKey, String sourceKey});
+
 /// 字幕列表里手改单条字幕（反馈 gleDreKAvo / dpAsMkUjKT）。
 ///
 /// 数据流：字幕列表行菜单「编辑字幕」→ [_editCueText] 弹输入框 → 写 Drift 表
@@ -23,6 +26,12 @@ extension _VideoSubtitleTextEdit on _VideoFushiPageState {
   /// 当前主字幕源的覆盖层源键。
   String get _subtitleTextOverrideSourceKey =>
       subtitleTextOverrideSourceKey(_currentSubtitleSource);
+
+  /// 此刻「视频 + 字幕源」的覆盖层键。
+  _SubtitleTextOverrideKeys get _subtitleTextOverrideKeys => (
+    videoKey: _subtitleTextOverrideVideoKey,
+    sourceKey: _subtitleTextOverrideSourceKey,
+  );
 
   /// 按当前「视频 + 字幕源」从库里重读手改字幕并交给控制器。并发调用只认最后一次
   /// （[_subtitleTextOverrideSeq]）：先发后到的旧读取不会盖掉新源的覆盖。
@@ -50,6 +59,9 @@ extension _VideoSubtitleTextEdit on _VideoFushiPageState {
   Future<void> _editCueText(AudioCue cue) async {
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
+    // 键在暂停 / 弹输入框之前就取：[cue] 属于此刻的字幕源。输入框开着的时候字幕源可能被换掉
+    // （整轨转文字 / ASR 恰好完成并换源），那时再取键会把这条改动存到新源名下。
+    final _SubtitleTextOverrideKeys keys = _subtitleTextOverrideKeys;
     // 打字时视频别往前跑：编辑期间暂停，关掉对话框后按原状态恢复。
     final bool wasPlaying = controller.isPlaying;
     if (wasPlaying) await controller.pause();
@@ -67,7 +79,7 @@ extension _VideoSubtitleTextEdit on _VideoFushiPageState {
     );
     if (!mounted) return;
     if (edited != null && edited != cue.text) {
-      await _saveCueTextOverride(cue, edited);
+      await _saveCueTextOverride(cue, edited, keys);
     }
     if (wasPlaying && mounted && identical(_controller, controller)) {
       await controller.resumePlayback();
@@ -77,13 +89,19 @@ extension _VideoSubtitleTextEdit on _VideoFushiPageState {
   /// 字幕列表行菜单「还原原文」：删掉 [cue] 的手改覆盖。
   Future<void> _restoreCueText(AudioCue cue) async {
     if (cue.uneditedCue == null) return;
-    await _saveCueTextOverride(cue, cue.sourceText);
+    await _saveCueTextOverride(cue, cue.sourceText, _subtitleTextOverrideKeys);
   }
 
   /// 写入（或在 [edited] 等于原文时删除）[cue] 的覆盖，再重读整层交给控制器。
-  Future<void> _saveCueTextOverride(AudioCue cue, String edited) async {
-    final String videoKey = _subtitleTextOverrideVideoKey;
-    final String sourceKey = _subtitleTextOverrideSourceKey;
+  /// [keys] 是 [cue] 所属的那一层（调用方在弹输入框之前取）；写完时当前层已经不是它
+  /// （期间换了字幕源 / 换了集）就不重读——当前层没有变化。
+  Future<void> _saveCueTextOverride(
+    AudioCue cue,
+    String edited,
+    _SubtitleTextOverrideKeys keys,
+  ) async {
+    final String videoKey = keys.videoKey;
+    final String sourceKey = keys.sourceKey;
     final String original = cue.sourceText;
     final bool restore = edited == original;
     try {
@@ -114,8 +132,11 @@ extension _VideoSubtitleTextEdit on _VideoFushiPageState {
       );
       return;
     }
-    await _reloadSubtitleTextOverrides();
     if (!mounted) return;
+    if (keys == _subtitleTextOverrideKeys) {
+      await _reloadSubtitleTextOverrides();
+      if (!mounted) return;
+    }
     _showOsd(
       restore
           ? t.video_subtitle_list_edit_restored

@@ -29,6 +29,8 @@ import 'package:fushi/src/pages/implementations/music/music_plugin_settings.dart
 import 'package:fushi/src/pages/implementations/music/music_plugin_pages.dart'
     show openMusicPluginManagement;
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart';
+import 'package:fushi/src/pages/implementations/music/music_track_list.dart'
+    show MusicHiddenTracksPage;
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart'
     show buildMusicServersDestination;
@@ -59,10 +61,11 @@ Future<void> openMusicSourcesPage(BuildContext context) =>
       ),
     );
 
-/// 读齐本机全部在线来源（插件音源 + 服务器），未排序。合规门没过的平台没有插件。
+/// 读齐本机全部在线来源（插件音源 + 服务器），未排序。插件含本机装的与经互联中继的
+/// （[isMusicPluginSourcesUsable]）；两者都没有的平台没有插件。
 Future<List<MusicOnlineSource>> loadMusicOnlineSources(AppModel app) async {
   final List<MusicOnlineSource> out = <MusicOnlineSource>[];
-  if (isMusicPluginSourcesAvailable) {
+  if (isMusicPluginSourcesUsable) {
     for (final InstalledMusicPlugin p in await app.musicPluginManager.list()) {
       if (p.isMusicSource) out.add(MusicPluginOnlineSource(p.info!.manifest));
     }
@@ -336,6 +339,26 @@ class _MusicSourcesPageState extends ConsumerState<MusicSourcesPage> {
               onTap: () => unawaited(showMusicSourcesDialog(context)),
             ),
           ),
+          // 从音乐库移除过的本地曲目（墓碑，拍板台 IDeN5PYaI7）：在这里恢复。
+          FushiStaggeredEntrance(
+            index: 1,
+            child: AdaptiveSettingsRow(
+              key: const ValueKey<String>('music-sources-hidden-tracks'),
+              icon: FushiIcons.visibilityOff,
+              showIcon: true,
+              title: t.music_hidden_tracks_title,
+              subtitle: t.music_hidden_tracks_hint,
+              trailing: const FushiIcon(FushiIcons.chevronRight, size: 20),
+              onTap: () => unawaited(
+                Navigator.of(context).push<void>(
+                  adaptivePageRoute<void>(
+                    context: context,
+                    builder: (_) => const MusicHiddenTracksPage(),
+                  ),
+                ),
+              ),
+            ),
+          ),
           Text(t.music_sources_online_hint, style: context.fushiType.bodySmall),
           if (rows == null)
             const FushiLinearProgressIndicator()
@@ -351,7 +374,7 @@ class _MusicSourcesPageState extends ConsumerState<MusicSourcesPage> {
                 final bool am = r.source.key == kAppleMusicSourceKey;
                 final bool on = _isOn(r);
                 return FushiStaggeredEntrance(
-                  index: i + 1,
+                  index: i + 2,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: <Widget>[

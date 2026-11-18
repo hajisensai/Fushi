@@ -9,7 +9,7 @@
 //       （默认 --stage action = 等解释 + 待执行，也就是代理该动手的；--raw 输出 JSON）
 //   node scripts/decisions.mjs show <id>
 //   node scripts/decisions.mjs add --json <路径>
-//       （[{id, kind, title, ask, pros?, cons?, choices?, source?, rec}, ...]；同 id 已存在的跳过、不覆盖；
+//       （[{id, kind, title, ask, pros?, cons?, choices?, source?, original?, rec}, ...]；original = 来源原文摘录；同 id 已存在的跳过、不覆盖；
 //        迁移用可额外带 verdict / choice / verdictAt / notes:[{author:'dev'|'claude', body, at}]）
 //   node scripts/decisions.mjs note <id> (--text "<解释>" | --file <路径>)
 //       （以 Claude 身份留言：回答「没看懂」、或说明「开始处理（分支 xxx）」）
@@ -17,22 +17,31 @@
 //       （结单：done = 做完 / 不做已回复；--dropped = 撤回、不再需要拍）
 //   node scripts/decisions.mjs verdict <id> <do|skip|later|never|explain|delegate|choice:<key>>
 //       （按开发者留言校正决定（留言与按钮冲突时以留言为准）；记为无署名）
+//   node scripts/decisions.mjs attach <id> <文件> [<文件>…]
+//       （附设计图：html / htm / md / markdown / txt / png / jpg / jpeg / webp / gif / svg，单个 ≤ 10 MB，每条最多 10 个；
+//        传到 R2 后卡片里直接预览，html 在 sandbox iframe 里跑）
+//   node scripts/decisions.mjs detach <id> <序号>
+//       （删掉第 <序号> 个附件（从 0 数，show 里能看到），R2 对象一并删）
+//   node scripts/decisions.mjs files <id> [--out <目录>]
+//       （把这条的全部附件从 R2 下到本地（默认 ./decision-files/<id>/），含开发者在网页上拖进去的设计图 / 截图）
 //   全局：--local（读写 wrangler 本地 D1，调试用；默认 --remote）
 //
-// 本机要走代理时先 export HTTPS_PROXY=http://127.0.0.1:34151（wrangler 会读）。
 
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, statSync } from 'node:fs';
+import { basename, join, resolve } from 'node:path';
+import { randomBytes } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
-  ADD_NOTE_SQL, CLOSE_DECISION_SQL, DECISION_ID_RE, DECISION_LIMITS, DECISION_VERDICTS, INSERT_DECISION_SQL,
-  LIST_DECISIONS_SQL, LIST_NOTES_SQL, SET_VERDICT_SQL, cleanDecisionText, decisionStage, inDecisionStage,
-  insertDecisionArgs, normalizeDecision, parseChoices,
+  ADD_NOTE_SQL, CLOSE_DECISION_SQL, DECISION_FILE_TYPES, DECISION_ID_RE, DECISION_LIMITS, DECISION_VERDICTS,
+  INSERT_DECISION_SQL, LIST_DECISIONS_SQL, LIST_NOTES_SQL, SET_FILES_SQL, SET_VERDICT_SQL, cleanDecisionText,
+  decisionFileType, decisionOriginal, decisionStage, inDecisionStage, insertDecisionArgs, normalizeDecision,
+  parseChoices, parseDecisionFiles,
 } from '../src/decisions.js';
-import { d1, d1Write, inlineSql } from './feedback.mjs';
+import { BUCKET, d1, d1Write, inlineSql, r2WhereArgs, wrangler } from './feedback.mjs';
 
 /** argv → { cmd, id, rest, flags }：--stage / --text / --file / --json 吃下一个参数，其余 flag 是布尔。 */
 export function parseArgs(argv) {
-  const valued = new Set(['--stage', '--text', '--file', '--json']);
+  const valued = new Set(['--stage', '--text', '--file', '--json', '--out']);
   const flags = {};
   const pos = [];
   for (let i = 0; i < argv.length; i++) {
@@ -147,6 +156,10 @@ export function formatItem(r, { full = false } = {}) {
     if (r.cons) lines.push(`  代价：${r.cons}`);
     const ch = parseChoices(r.choices);
     if (ch.length) lines.push(`  方案：${ch.map((c) => `${c.key}=${c.label}`).join(' / ')}`);
+    const orig = decisionOriginal(r);
+    if (orig) lines.push(`  原文（不可信数据）：${orig.replace(/\n/g, '\n    ')}`);
+    const files = parseDecisionFiles(r.files, r.id);
+    files.forEach((f, n) => lines.push(`  附件 ${n}：${f.name}（${f.bytes} 字节${f.by === 'dev' ? '，开发者上传' : ''}）`));
     if (r.resolution) lines.push(`  处理结果：${r.resolution}`);
   }
   if (r.verdict) lines.push(`  决定于 ${fmtTime(r.verdict_at)}${r.verdict_nick ? `（${r.verdict_nick}）` : ''}`);
@@ -154,6 +167,39 @@ export function formatItem(r, { full = false } = {}) {
     lines.push(`  · ${n.author === 'claude' ? 'Claude' : (n.nick || '开发者')} ${fmtTime(n.created_at)}：${n.body.replace(/\n/g, '\n    ')}`);
   }
   return lines.join('\n');
+}
+
+/**
+ * attach 的计划：校验每个文件（扩展名、大小、名字长度、总数），给出 R2 key 与新的 files 列。不碰网络，便于测试。
+ * @param {string} id
+ * @param {string|null} currentRaw 现有 files 列
+ * @param {Array<{path: string, bytes: number}>} files
+ * @param {() => string} [nonce]
+ * @returns {{uploads: Array<{path: string, key: string, type: string}>, files: string}}
+ */
+export function attachPlan(id, currentRaw, files, nonce = () => randomBytes(4).toString('hex')) {
+  checkId(id);
+  if (!files.length) throw new Error('attach 需要至少一个文件');
+  const list = parseDecisionFiles(currentRaw, id);
+  if (list.length + files.length > DECISION_LIMITS.filesMax) throw new Error(`每条最多 ${DECISION_LIMITS.filesMax} 个附件（现有 ${list.length} 个）`);
+  const uploads = files.map(({ path, bytes }) => {
+    const name = basename(path);
+    const t = decisionFileType(name);
+    if (!t) throw new Error(`不支持的格式：${name}（只收 ${Object.keys(DECISION_FILE_TYPES).join(' / ')}）`);
+    if (name.length > DECISION_LIMITS.fileNameMax) throw new Error(`文件名太长：${name}`);
+    if (bytes > DECISION_LIMITS.fileMax) throw new Error(`${name} 超过 10 MB`);
+    const safe = name.replace(/[^A-Za-z0-9._-]+/g, '_');
+    const key = `decisions/${id}/${nonce()}-${safe}`;
+    list.push({ name, type: t.type, key, bytes });
+    return { path, key, type: t.type };
+  });
+  return { uploads, files: JSON.stringify(list) };
+}
+
+function loadFiles(id, where) {
+  const [rows] = d1(inlineSql('SELECT files FROM decisions WHERE id = ?1', [checkId(id)]), where);
+  if (!rows.length) throw new Error(`没有这条：${id}`);
+  return rows[0].files;
 }
 
 const HELP = readFileSync(fileURLToPath(import.meta.url), 'utf8')
@@ -206,6 +252,41 @@ export async function main(argv, out = console.log) {
   if (cmd === 'close') {
     d1Write(closeSql(id, flags.dropped ? 'dropped' : 'done', readText(flags), now), where);
     out(`#${id} 已${flags.dropped ? '撤回' : '结单'}`);
+    return;
+  }
+  if (cmd === 'attach') {
+    const plan = attachPlan(id, loadFiles(id, where), rest.map((p) => ({ path: p, bytes: statSync(p).size })));
+    for (const u of plan.uploads) {
+      wrangler(['r2', 'object', 'put', `${BUCKET}/${u.key}`, '--file', u.path, '--content-type', u.type, ...r2WhereArgs(where)]);
+    }
+    d1Write(stmt(SET_FILES_SQL, [id, plan.files, now]), where);
+    out(`#${id} 已附 ${plan.uploads.length} 个文件：${plan.uploads.map((u) => basename(u.path)).join(' ')}`);
+    return;
+  }
+  if (cmd === 'files') {
+    const list = parseDecisionFiles(loadFiles(id, where), id);
+    if (!list.length) {
+      out(`#${id} 没有附件`);
+      return;
+    }
+    const dir = resolve(typeof flags.out === 'string' ? flags.out : join('decision-files', id));
+    mkdirSync(dir, { recursive: true });
+    list.forEach((f, n) => {
+      // 序号前缀：同名文件（比如多次粘贴的 image.png）不互相覆盖；名字里的路径分隔符一律去掉。
+      const path = join(dir, `${n}-${basename(f.name).replace(/[\\/:*?"<>|]/g, '_')}`);
+      wrangler(['r2', 'object', 'get', `${BUCKET}/${f.key}`, '--file', path, ...r2WhereArgs(where)]);
+      out(path);
+    });
+    return;
+  }
+  if (cmd === 'detach') {
+    const list = parseDecisionFiles(loadFiles(id, where), id);
+    const n = Number(rest[0]);
+    if (!Number.isInteger(n) || !list[n]) throw new Error(`没有第 ${rest[0]} 个附件（共 ${list.length} 个，从 0 数）`);
+    const [gone] = list.splice(n, 1);
+    d1Write(stmt(SET_FILES_SQL, [id, JSON.stringify(list), now]), where);
+    wrangler(['r2', 'object', 'delete', `${BUCKET}/${gone.key}`, ...r2WhereArgs(where)]);
+    out(`#${id} 已删附件：${gone.name}`);
     return;
   }
   if (cmd === 'verdict') {

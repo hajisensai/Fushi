@@ -1,12 +1,25 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
 
+/// 一个查询变体。[min_rewrite] / [max_rewrite] 约束拿它做变形还原时**允许改写的尾部
+/// 码点数**（上游 hoshidicts ad0be91）：还原形与变体逐字节比，从第一个不同处到变体
+/// 末尾的码点数记为改写量（只在尾部追加不算改写，见 lookup.cpp rewritten_chars）。
+///  - 改写量 > max_rewrite 的还原丢弃：原文里的中点 / 被折叠掉的っ 这一处不许被变形
+///    跨过——「行・った」删点成「行った」后不得经「った → く」还原成 行く（改写 2 个
+///    码点，越过了点）；只改写点右边的部分照常允许（見・た → 見た → 見る 改写 1 个）。
+///    原文本身含中点时同样受限（变体「見・た」也只许改写 1 个码点）。
+///  - 0 < 改写量 < min_rewrite 的还原丢弃：原文以「平假名 + 片假名词」收尾时，变形
+///    要么不动片假名词，要么把整段片假名一起改写（行きマス → 行く 可以，只改写片假名
+///    词末尾一两个字不行）。
 struct TextVariant {
   std::string text;
   int steps;
+  std::size_t min_rewrite = 0;
+  std::size_t max_rewrite = SIZE_MAX;
 };
 
 namespace text_processor {
@@ -18,7 +31,14 @@ namespace text_processor {
 /// 所以「我们」能命中更长的「我們」，而不是只在原文零结果时才回落。默认 false：非中文
 /// （日语的汉字大量有简体 / 繁體形）查询的变体集与耗时都与此前逐字节一致。
 /// （字段名沿用历史的 simp_to_trad，语义已是双向。）
-std::vector<TextVariant> process(const std::string& src, bool chinese_simp_to_trad = false);
+///
+/// [next_char]：原文里紧跟在 [src] 后面的那个码点（扫描窗口外或串尾传 0）。[src] 以
+/// 「平假名 + 片假名词」收尾、而 [next_char] 还在这个片假名词里（片假名或长音符）时，
+/// [src] 的结尾落在一个片假名词的中间：只返回原文一个变体、且不许变形还原
+/// （max_rewrite = 0），即只认词典里正好这么写的词条——「はテスト」不会在「はテ」
+/// 处经平假名化命中「果て」（上游 hoshidicts ad0be91）。
+std::vector<TextVariant> process(const std::string& src, bool chinese_simp_to_trad = false,
+                                 char32_t next_char = 0);
 
 /// 一次中文查词每个文本变体最多展开的繁體拼写数。
 inline constexpr std::size_t kMaxChineseTraditionalVariants = 16;

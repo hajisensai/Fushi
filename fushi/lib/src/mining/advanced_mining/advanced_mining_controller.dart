@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' show Rect;
 
 import 'package:flutter/foundation.dart';
@@ -19,6 +20,54 @@ enum MangaCropChoice { wholePage, panel, textArea, custom, none }
 
 /// 整页（不裁）的归一化矩形。
 const Rect kMangaWholePageRect = Rect.fromLTRB(0, 0, 1, 1);
+
+/// 起点 / 终点按当前已知区间 [window] 可去的绝对时刻范围（毫秒）：起点不早于 0、
+/// 区间不短于 [kAdvancedMiningAudioMinDurationMs]（起点永远不越过终点）；终点往后
+/// 不设上限（媒体时长只有宿主知道，交给它夹）。
+///
+/// 区间本来就比最短时长还短（宿主夹到媒体两端）时只许往外放、不许再往里收：范围
+/// 总是包含当前时刻，不会反把端点往回拽。
+({int lo, int hi}) advancedMiningEdgeBoundsMs({
+  required AdvancedMiningAudioWindow window,
+  required bool start,
+}) {
+  if (start) {
+    return (
+      lo: math.min(0, window.startMs),
+      hi: math.max(
+        window.endMs - kAdvancedMiningAudioMinDurationMs,
+        window.startMs,
+      ),
+    );
+  }
+  return (
+    lo: math.min(
+      window.startMs + kAdvancedMiningAudioMinDurationMs,
+      window.endMs,
+    ),
+    // 只是「不设上限」：取一个远超任何媒体时长、又不会在加减里溢出的值。
+    hi: math.max(window.endMs, 1 << 52),
+  );
+}
+
+/// 端点往后 / 往前挪一步 [stepMs] 后**实际**会落到的绝对时刻（按
+/// [advancedMiningEdgeBoundsMs] 夹过）：读屏的增减读数用它，边界处不念一个到不了的
+/// 时刻。
+({int increased, int decreased}) advancedMiningSteppedEdgeMs({
+  required AdvancedMiningAudioWindow window,
+  required bool start,
+  required int stepMs,
+}) {
+  final int at = start ? window.startMs : window.endMs;
+  final ({int lo, int hi}) bounds = advancedMiningEdgeBoundsMs(
+    window: window,
+    start: start,
+  );
+  return (
+    increased: (at + stepMs).clamp(bounds.lo, bounds.hi),
+    decreased: (at - stepMs).clamp(bounds.lo, bounds.hi),
+  );
+}
 
 /// 「高级制卡」对话框的全部可变状态与宿主往返。
 ///
@@ -43,6 +92,10 @@ class AdvancedMiningController extends ChangeNotifier {
   AdvancedMiningVideoImageSection? get videoSection => sections.videoImage;
   AdvancedMiningMangaImageSection? get mangaSection => sections.mangaImage;
   AdvancedMiningStillImageSection? get stillSection => sections.stillImage;
+
+  /// 裁切分区框的是截屏识字的截图（没有分镜），见 [AdvancedMiningCropSource]。
+  bool get cropsScreenshot =>
+      mangaSection?.source == AdvancedMiningCropSource.screenshot;
 
   /// 卡片字段分区；没配字段映射（字段为空）时当作没有这项能力。
   AdvancedMiningFieldsSection? get fieldsSection {
@@ -592,23 +645,59 @@ class AdvancedMiningController extends ChangeNotifier {
   /// 起点 / 终点各挪 [deltaMs]（负 = 提前）。画面窗口（动图 / 片段首尾帧）与音频共用
   /// 这一对偏移，所以视频的逐帧挪动也走这里。
   void nudgeAudioEdge({required bool start, required int deltaMs}) {
+    setAudioEdgeDelta(
+      start: start,
+      deltaMs: (start ? audioStartDeltaMs : audioEndDeltaMs) + deltaMs,
+    );
+  }
+
+  /// 把起点 / 终点的偏移**直接设成** [deltaMs]（拖动区间条端点走这里；按钮微调经
+  /// [nudgeAudioEdge] 也落到这里，两条路径同一套约束）。
+  ///
+  /// 约束按当前已知区间换算：起点不早于 0、区间不短于
+  /// [kAdvancedMiningAudioMinDurationMs]（起点永远不越过终点）。区间还没回来时
+  /// 不夹，交给宿主 describe。
+  ///
+  /// [describe] = false 只做乐观更新、不问宿主：拖动途中每一帧都问一次没有意义，
+  /// 松手后调 [refreshAudioWindow] 以宿主为准。
+  void setAudioEdgeDelta({
+    required bool start,
+    required int deltaMs,
+    bool describe = true,
+  }) {
     if (locked) return;
+    final int current = start ? audioStartDeltaMs : audioEndDeltaMs;
+    int next = deltaMs;
+    final AdvancedMiningAudioWindow? w = audioWindow;
+    if (w != null) {
+      // 绝对时刻的可去范围换算回偏移：偏移与绝对时刻只差一个常数。
+      final int at = start ? w.startMs : w.endMs;
+      final ({int lo, int hi}) bounds = advancedMiningEdgeBoundsMs(
+        window: w,
+        start: start,
+      );
+      next = (at + (next - current)).clamp(bounds.lo, bounds.hi) - at + current;
+    }
+    final int moved = next - current;
+    if (moved == 0) return;
+    // 偏移一变，所有在途的 describe 都是按旧偏移算的：一律作废，不能等它回来把
+    // 乐观区间换回旧窗口（拖动途中按旧窗口算约束会让起点越过终点）。
+    _describeGen++;
     if (start) {
-      audioStartDeltaMs += deltaMs;
+      audioStartDeltaMs = next;
     } else {
-      audioEndDeltaMs += deltaMs;
+      audioEndDeltaMs = next;
     }
     // 先按偏移量乐观地平移已知区间，让时间标签 / 区间条 / 首尾帧即时跟手；宿主的
     // describe 回来后再以它为准（它可能夹到 0 或媒体时长）。
-    final AdvancedMiningAudioWindow? w = audioWindow;
     if (w != null) {
       audioWindow = AdvancedMiningAudioWindow(
-        startMs: start ? w.startMs + deltaMs : w.startMs,
-        endMs: start ? w.endMs : w.endMs + deltaMs,
+        startMs: start ? w.startMs + moved : w.startMs,
+        endMs: start ? w.endMs : w.endMs + moved,
       );
     }
     _notify();
-    unawaited(refreshAudioWindow());
+    if (describe) unawaited(refreshAudioWindow());
   }
 
   /// 试听 / 停止。返回 false = 宿主说这段没有可试听的音频（调用方如实提示）。
@@ -898,11 +987,18 @@ class AdvancedMiningController extends ChangeNotifier {
   }
 
   /// 静态帧逐帧挪动。
-  void nudgeStillFrame({required bool forward}) {
+  ///
+  /// [scale] 是按住的修饰键档位（Shift 一次挪 [kAdvancedMiningCoarseStepFactor]
+  /// 帧；细调低不过一帧，与普通相同）。
+  void nudgeStillFrame({
+    required bool forward,
+    AdvancedMiningStepScale scale = AdvancedMiningStepScale.normal,
+  }) {
     final VideoMiningImageMode? mode = videoImageMode;
     final AdvancedMiningVideoImageSection? section = videoSection;
     if (locked || mode == null || !mode.isStill || section == null) return;
-    final int step = forward ? section.frameStepMs : -section.frameStepMs;
+    final int frameMs = _frameStepMs(section, scale);
+    final int step = forward ? frameMs : -frameMs;
     final int base = stillBaseMs(mode) ?? 0;
     final int next = (_stillDeltaMs[mode] ?? 0) + step;
     // 不挪到播放器轴 0 之前：那一帧不存在。
@@ -911,14 +1007,26 @@ class AdvancedMiningController extends ChangeNotifier {
   }
 
   /// 动图 / 片段的首帧 / 尾帧逐帧挪动：挪的就是音频起止偏移（画面窗口与音频共用）。
-  void nudgeVideoEdge({required bool first, required bool forward}) {
+  void nudgeVideoEdge({
+    required bool first,
+    required bool forward,
+    AdvancedMiningStepScale scale = AdvancedMiningStepScale.normal,
+  }) {
     final AdvancedMiningVideoImageSection? section = videoSection;
     if (section == null) return;
-    nudgeAudioEdge(
-      start: first,
-      deltaMs: forward ? section.frameStepMs : -section.frameStepMs,
-    );
+    final int frameMs = _frameStepMs(section, scale);
+    nudgeAudioEdge(start: first, deltaMs: forward ? frameMs : -frameMs);
   }
+
+  /// 逐帧挪动按档位换算的一步：最小单位是一帧。
+  static int _frameStepMs(
+    AdvancedMiningVideoImageSection section,
+    AdvancedMiningStepScale scale,
+  ) => scaleAdvancedMiningStepMs(
+    section.frameStepMs,
+    scale,
+    minMs: section.frameStepMs,
+  );
 
   // ───────────────────────────── 漫画裁切 ─────────────────────────────
 

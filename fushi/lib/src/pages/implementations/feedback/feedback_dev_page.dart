@@ -4,10 +4,13 @@
 // 列表按状态筛选、游标分页；详情含反馈人 / 联系方式 / 设备信息 / 截图 / 日志，
 // 改状态与回复在同一个表单里一次保存。AI 总结（只读）与开发者批改只在开发者接口里有，
 // 反馈人接口从不返回——「反馈人看不到」由服务端保证，这里只负责展示与编辑。
+// 样本文件（f0..f2）是不可信文件：只给「另存为」，App 内不打开、不解析。
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
@@ -32,6 +35,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_engine/feedback/feedback_models.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
@@ -70,6 +74,28 @@ String _oneLine(String s) =>
 
 LeaderboardClient? _devClient(WidgetRef ref) =>
     ref.read(leaderboardServiceProvider).client;
+
+/// 处理台「另存样本文件」：弹系统「另存为」并写入 [bytes]，用户取消返回 false。
+///
+/// 移动端（Android / iOS）由插件写入，必须把 [bytes] 交给它；桌面端插件只回路径、自己写盘，
+/// 而且**不能**带 [bytes]——file_picker 的 macOS 实现收到 bytes 直接抛 UnsupportedError，
+/// Windows / Linux 收了也不用。写法同 feedback_dev_video_page 的桌面分支。
+Future<bool> saveFeedbackSampleFile({
+  required FilePicker picker,
+  required bool desktop,
+  required String dialogTitle,
+  required String fileName,
+  required Uint8List bytes,
+}) async {
+  final String? path = await picker.saveFile(
+    dialogTitle: dialogTitle,
+    fileName: fileName,
+    bytes: desktop ? null : bytes,
+  );
+  if (path == null || path.trim().isEmpty) return false;
+  if (desktop) await File(path).writeAsBytes(bytes, flush: true);
+  return true;
+}
 
 class FeedbackDevPage extends ConsumerStatefulWidget {
   const FeedbackDevPage({super.key});
@@ -433,6 +459,42 @@ class _FeedbackDevDetailPageState extends ConsumerState<FeedbackDevDetailPage> {
     () => _devClient(ref)!.devFeedbackAttachment(widget.feedbackId, slot),
   );
 
+  /// 另存样本文件：取回字节 → 系统「另存为」（移动端由插件写入，桌面端拿到路径后自己写）。
+  /// 默认文件名是服务端清洗过的原文件名。
+  Future<void> _saveFile(FeedbackAttachmentInfo a) async {
+    final LeaderboardClient? client = _devClient(ref);
+    if (client == null) return;
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    try {
+      final Uint8List bytes = await client.devFeedbackAttachment(
+        widget.feedbackId,
+        a.slot,
+      );
+      final String name = feedbackSafeText(
+        a.name ?? 'fushi-${widget.feedbackId}-${a.slot}',
+      );
+      final bool saved = await saveFeedbackSampleFile(
+        picker: FilePicker.platform,
+        desktop: isDesktopPlatform,
+        dialogTitle: t.feedback_dev_file_save,
+        fileName: name,
+        bytes: bytes,
+      );
+      if (!saved) return;
+      messenger.showSnackBar(
+        FushiSnackBar(content: Text(t.feedback_dev_file_saved)),
+      );
+    } on Object catch (e) {
+      messenger.showSnackBar(
+        FushiSnackBar(
+          content: Text(
+            t.feedback_dev_file_save_failed(reason: feedbackErrorReason(e)),
+          ),
+        ),
+      );
+    }
+  }
+
   Future<void> _save() async {
     final FeedbackDetail? d = _detail;
     final LeaderboardClient? client = _devClient(ref);
@@ -538,6 +600,9 @@ class _FeedbackDevDetailPageState extends ConsumerState<FeedbackDevDetailPage> {
         .firstOrNull;
     final bool hasLog =
         d?.attachments.any((FeedbackAttachmentInfo a) => a.isLog) ?? false;
+    final List<FeedbackAttachmentInfo> files = <FeedbackAttachmentInfo>[
+      ...?d?.attachments.where((FeedbackAttachmentInfo a) => a.isFile),
+    ];
     return FushiPageScaffold(
       automaticallyImplyLeading: !widget.embedded,
       title: d == null
@@ -698,6 +763,37 @@ class _FeedbackDevDetailPageState extends ConsumerState<FeedbackDevDetailPage> {
                       ),
                     ),
                   ),
+                ],
+                if (files.isNotEmpty) ...<Widget>[
+                  SizedBox(height: tokens.spacing.card),
+                  FushiSectionTitle(t.feedback_detail_files),
+                  Text(
+                    t.feedback_dev_files_untrusted,
+                    style: tokens.type.metadata,
+                  ),
+                  SizedBox(height: tokens.spacing.gap),
+                  for (final FeedbackAttachmentInfo a in files)
+                    FushiCard(
+                      key: ValueKey<String>('feedback-dev-file-${a.slot}'),
+                      margin: EdgeInsets.only(bottom: tokens.spacing.gap),
+                      child: FushiListItem(
+                        leading: const FushiIcon(FushiIcons.file),
+                        title: Text(
+                          feedbackSafeText(a.name ?? a.slot),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Text(FushiByteFormat.bytes(a.bytes)),
+                        trailing: FushiIconButton(
+                          key: ValueKey<String>(
+                            'feedback-dev-save-file-${a.slot}',
+                          ),
+                          icon: FushiIcons.save,
+                          tooltip: t.feedback_dev_file_save,
+                          onTap: () => unawaited(_saveFile(a)),
+                        ),
+                      ),
+                    ),
                 ],
                 SizedBox(height: tokens.spacing.card),
                 if (hasLog)
