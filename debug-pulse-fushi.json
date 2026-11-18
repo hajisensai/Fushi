@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-18T09:01:16Z",
+ "generatedAt": "2026-11-18T09:45:26Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "568dd53f1aac7fe25c3b9fe5415effb2afdbdd41",
@@ -12,7 +12,7 @@
    "version": "3.3.0",
    "sha": "568dd53f1aac7fe25c3b9fe5415effb2afdbdd41",
    "unknown": false,
-   "publishedAt": "2026-11-18T09:01:06Z",
+   "publishedAt": "2026-11-18T09:45:13Z",
    "testflight": false,
    "baseSeq": 28975,
    "prs": [
@@ -43,16 +43,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44266580078"
+     "state": "ok"
     },
     "macos": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44266580078"
+     "state": "ok"
     },
     "ios": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44266580078"
+     "state": "ok"
     }
    }
   },
@@ -123,71 +120,6 @@
    "platforms": {
     "android": {
      "state": "ok"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 28845,
-   "version": "3.3.0",
-   "sha": "2154ab7772f26c223b979acae1434dd52bb069ef",
-   "unknown": false,
-   "publishedAt": "2026-11-17T21:02:12Z",
-   "testflight": true,
-   "baseSeq": 28650,
-   "prs": [
-    3721,
-    3693,
-    3712,
-    3718,
-    3707,
-    3705,
-    3694,
-    3696,
-    3701,
-    3719,
-    3700,
-    3697,
-    3706,
-    3708,
-    3698,
-    3709,
-    3699,
-    3710,
-    3711,
-    3704,
-    3703,
-    3715,
-    3713,
-    3714
-   ],
-   "direct": [
-    {
-     "sha": "2154ab7772f26c223b979acae1434dd52bb069ef",
-     "subject": "test(reader): 方法 × shell 总表登记 VN 专有的 refitScreensToCurrentViewport（#3710 与 #3712 交叉合并漏登记）"
-    },
-    {
-     "sha": "538601d4d79d3bfa301baeb6b7b45500f6420d0a",
-     "subject": "docs(bugs): 第二批合并后 settle 撞号（→ BUG-4836～4842）"
-    },
-    {
-     "sha": "74d8fa9d3616e22ba70689535b638dd5b6c724ce",
-     "subject": "docs(bugs): 批量合并后 settle 撞号（BUG-4798～4801 → BUG-4802～4835）"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44166954586"
     },
     "windows": {
      "state": "ok"
@@ -390,222 +322,6 @@
    "mergedAt": "2026-11-18T07:28:35Z",
    "additions": 856,
    "deletions": 47,
-   "labels": []
-  },
-  "3693": {
-   "number": 3693,
-   "title": "fix(import): 导入目录归属与残留（BUG-4800 / BUG-4798 / BUG-4799）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-17T18:40:05Z",
-   "additions": 1766,
-   "deletions": 347,
-   "labels": []
-  },
-  "3694": {
-   "number": 3694,
-   "title": "网页视频制卡队列可靠性：中途抛错必收尾、让位不误标失败、到不了的视频一次空闲只等一次、宿主页不写机器播放头",
-   "author": "W1ght",
-   "mergedAt": "2026-11-17T18:29:16Z",
-   "additions": 1181,
-   "deletions": 161,
-   "labels": []
-  },
-  "3696": {
-   "number": 3696,
-   "title": "漫画 OCR：AI 回写攒批、互联同卷重传命中逐页缓存、host 逐页供图不再全表读（BUG-4798）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-17T18:29:16Z",
-   "additions": 1160,
-   "deletions": 53,
-   "labels": []
-  },
-  "3697": {
-   "number": 3697,
-   "title": "fix(video): 后台补刮计划失败不再吞成空清单（BUG-4798），视频库刮削与封面 IO 减少重复读",
-   "author": "W1ght",
-   "mergedAt": "2026-11-17T18:29:16Z",
-   "additions": 735,
-   "deletions": 70,
-   "labels": []
-  },
-  "3698": {
-   "number": 3698,
-   "title": "perf(audiobook): 整书 cue 重灌不再重复排序 / 解码，桥接脚本一次注入；cue 高亮 Future 接错误（BUG-4798）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-17T18:29:16Z",
-   "additions": 741,
-   "deletions": 61,
-   "labels": []
-  },
-  "3699": {
-   "number": 3699,
-   "title": "fix(reader): 在线小说按需取章——取章后换正文字数、预取链、前台让位、骨架共用",
-   "author": "W1ght",
-   "mergedAt": "2026-11-17T18:29:16Z",
-   "additions": 1441,
-   "deletions": 178,
-   "labels": []
-  },
-  "3700": {
-   "number": 3700,
-   "title": "fix(manga-ocr): Lens 只认自己的逐页缓存、系统 OCR 取消不写半卷、恢复补系统 OCR 缓存、探测并行",
-   "author": "W1ght",
-   "mergedAt": "2026-11-17T18:29:16Z",
-   "additions": 919,
-   "deletions": 195,
-   "labels": []
-  },
-  "3701": {
-   "number": 3701,
-   "title": "fix(kavita/manga): Kavita 不可达不再每章等、页图按停顿超时、分镜大格切分与模型下载卡住",
-   "author": "W1ght",
-   "mergedAt": "2026-11-17T18:29:16Z",
-   "additions": 1098,
-   "deletions": 52,
-   "labels": []
-  },
-  "3703": {
-   "number": 3703,
-   "title": "fix(video): HLS 画质探测走应用代理、YouTube 出口不通提前停、字幕下载加超时、中继登记表淘汰",
-   "author": "W1ght",
-   "mergedAt": "2026-11-17T18:29:16Z",
-   "additions": 1141,
-   "deletions": 148,
-   "labels": []
-  },
-  "3704": {
-   "number": 3704,
-   "title": "perf(media-server): 起播只取一次条目详情、Plex 探测并发、互联视频同步缺文件不再每轮报错",
-   "author": "W1ght",
-   "mergedAt": "2026-11-17T18:29:16Z",
-   "additions": 1105,
-   "deletions": 79,
-   "labels": []
-  },
-  "3705": {
-   "number": 3705,
-   "title": "fix(lnreader): 状态读失败不当空、章节插图请求头、已上架作品页先出旧目录（BUG-4799 / BUG-4798）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-17T18:29:16Z",
-   "additions": 1040,
-   "deletions": 82,
-   "labels": []
-  },
-  "3706": {
-   "number": 3706,
-   "title": "视频制卡暂存队列：退出只写待写入的行、写完即出表、窄查询与一次 multi 读模板（BUG-4798）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-17T18:29:16Z",
-   "additions": 913,
-   "deletions": 175,
-   "labels": []
-  },
-  "3707": {
-   "number": 3707,
-   "title": "fix(source-scan): 来源扫描正确性——视频搬家要正证据、滤系统垃圾条目、漫画索引逐卷落盘、扫描残留可回收（BUG-4798～BUG-4801）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-17T18:29:15Z",
-   "additions": 1864,
-   "deletions": 179,
-   "labels": []
-  },
-  "3708": {
-   "number": 3708,
-   "title": "fix(anki,srs): 视频模板报错带码 + i18n、坏备份逐文件跳过、卡面片段加载失败落占位（BUG-4798 / BUG-4799）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-17T18:29:16Z",
-   "additions": 1380,
-   "deletions": 87,
-   "labels": []
-  },
-  "3709": {
-   "number": 3709,
-   "title": "fix(audiobook): 换音频 / 换字幕改成拷新 → 写库 → 删旧并可撤回，播放位置原子写入（BUG-4798 / BUG-4799）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-17T18:29:15Z",
-   "additions": 1427,
-   "deletions": 165,
-   "labels": []
-  },
-  "3710": {
-   "number": 3710,
-   "title": "fix(reader): 分页 settle / 揭示帧按语义锚重算落点，补方法 × shell 总表守卫（BUG-4798）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-17T18:29:15Z",
-   "additions": 1242,
-   "deletions": 115,
-   "labels": []
-  },
-  "3711": {
-   "number": 3711,
-   "title": "fix(reader): 进度快照取样口收成一处，追踪上报挪出返回键等待链，点词选区状态在 await 前写齐（BUG-4798/BUG-4799）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-17T18:29:16Z",
-   "additions": 1564,
-   "deletions": 255,
-   "labels": []
-  },
-  "3712": {
-   "number": 3712,
-   "title": "fix(reader): VN 重切不打断当前屏、首屏不等图片、合成书句子命中；无缝衔接启动失败复位",
-   "author": "W1ght",
-   "mergedAt": "2026-11-17T18:40:05Z",
-   "additions": 1242,
-   "deletions": 49,
-   "labels": []
-  },
-  "3713": {
-   "number": 3713,
-   "title": "视频：图形字幕抽取取消与失败日志、原盘采样按脏位读轨道、字幕手改存储键",
-   "author": "W1ght",
-   "mergedAt": "2026-11-17T18:29:16Z",
-   "additions": 1217,
-   "deletions": 59,
-   "labels": []
-  },
-  "3714": {
-   "number": 3714,
-   "title": "fix(subtitle): 字幕搜索 / 合集面板可靠性——搜索代次、多选契约、批量失败原因、探测失败不进缓存",
-   "author": "W1ght",
-   "mergedAt": "2026-11-17T18:29:16Z",
-   "additions": 1816,
-   "deletions": 141,
-   "labels": []
-  },
-  "3715": {
-   "number": 3715,
-   "title": "fix(video): Android 画中画换集后认领 PiP 状态，小窗补播放 / 暂停键与换集比例同步",
-   "author": "W1ght",
-   "mergedAt": "2026-11-17T18:29:15Z",
-   "additions": 1216,
-   "deletions": 37,
-   "labels": []
-  },
-  "3718": {
-   "number": 3718,
-   "title": "fix(video): 系列墙滚轮每档不再把整屏封面重新离屏烘焙（BUG-4802）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-17T18:40:05Z",
-   "additions": 1016,
-   "deletions": 14,
-   "labels": []
-  },
-  "3719": {
-   "number": 3719,
-   "title": "fix(manga-ocr): 取消 / 暂停后等 OCR isolate 真退出再释放并发名额；原子写临时文件唯一名",
-   "author": "W1ght",
-   "mergedAt": "2026-11-17T18:29:15Z",
-   "additions": 3119,
-   "deletions": 226,
-   "labels": []
-  },
-  "3721": {
-   "number": 3721,
-   "title": "feat(video): 内封字幕读取期间先出字、可停止可改选，下一集预热同盘排队",
-   "author": "W1ght",
-   "mergedAt": "2026-11-17T18:40:05Z",
-   "additions": 4524,
-   "deletions": 237,
    "labels": []
   },
   "3723": {
