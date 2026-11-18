@@ -79,7 +79,12 @@ void main() {
       'AdaptiveSettingsSegmentedRow',
       'AdaptiveSettingsSliderRow',
     ],
-    'lib/src/settings/settings_home_page.dart': <String>['FushiPageHeader'],
+    // 宽屏全平台同壳后不再画「返回 + 设置」外壳页头（FushiPageHeader）：窄屏
+    // 页头走共享的页头大字 / 浮动折叠页头，宽屏由右窗格分类页头承担。
+    'lib/src/settings/settings_home_page.dart': <String>[
+      'FushiStaticMasthead',
+      'SettingsFloatingHeader',
+    ],
     'lib/src/utils/components/fushi_list_tile.dart': <String>['FushiListItem'],
     'lib/src/utils/components/fushi_text_selection_controls.dart': <String>[
       // 选区工具条是浮层（MD3 浮层面 / Apple 玻璃胶囊），不是内容卡片。
