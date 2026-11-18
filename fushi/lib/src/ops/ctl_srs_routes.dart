@@ -48,12 +48,13 @@ class SrsCtlDeps {
     libraryDir: () => srsLibraryDirOf(context.appModel),
   );
 
-  /// engine 路由 / 撤销要的宿主：app 只有当前 profile 这一份库，点名的 profile 参数不看。
+  /// engine 路由 / 撤销要的宿主：app 只有当前 profile 这一份库，点名的 profile 参数不看。保留副本的路由不经 [open]
+  /// 取库、只要库目录：同一道模块门也加在这里（模块关着时查看 / 删除保留副本一样回 422）。
   SrsCtlHost get host => SrsCtlHost(
     open: (String? profile) async =>
         SrsCtlTarget(await requireSrsCtlStore(this)),
     changed: (SrsCtlTarget target) => changed(),
-    libraryDir: libraryDir,
+    libraryDir: libraryDir == null ? null : () => requireSrsCtlLibraryDir(this),
   );
 }
 
@@ -71,16 +72,27 @@ void debugOverrideSrsCtlDeps(OpContext context, SrsCtlDeps deps) =>
 List<CtlRoute> buildSrsCtlRoutes(OpContext context) =>
     buildSrsCtlRoutesFor(srsCtlDeps(context));
 
-/// 门控后的 store：模块关 → 422；复习库没就绪 → 422。
-Future<SrsDbStore> requireSrsCtlStore(SrsCtlDeps deps) async {
+/// 复习模块门：模块关 → 422。
+void _requireSrsModule(SrsCtlDeps deps) {
   if (!deps.moduleEnabled()) {
     throw const CtlFailure.rejected('复习模块已关闭（设置 › 模块里打开）');
   }
+}
+
+/// 门控后的 store：模块关 → 422；复习库没就绪 → 422。
+Future<SrsDbStore> requireSrsCtlStore(SrsCtlDeps deps) async {
+  _requireSrsModule(deps);
   final SrsDbStore? store = await deps.store();
   if (store == null) {
     throw const CtlFailure.rejected('复习库还没就绪（稍后再试，或先打开一次复习页）');
   }
   return store;
+}
+
+/// 门控后的复习库目录（保留副本路由）：模块关 → 422；目录没就绪 = null（engine 路由回 422）。
+String? requireSrsCtlLibraryDir(SrsCtlDeps deps) {
+  _requireSrsModule(deps);
+  return deps.libraryDir?.call();
 }
 
 /// 路由表：依赖按 [deps] 注入，测试不必起 [OpContext]。

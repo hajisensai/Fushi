@@ -43,24 +43,38 @@ String? srsLibraryDirOf(AppModel app) =>
 /// 本机的保留副本：所在库目录 + 状态。
 typedef SrsRetainedCopyInfo = ({String dir, SrsRetainedCopyState state});
 
-/// 当前的保留副本（设置行、牌组彻底清除共用）：状态命令在后台 isolate 跑（内核要打开两个 SQLite 文件）；随复习库的
-/// 修订号重读，删除之后调用方 invalidate。主库没开好 = null；读不了（新代库坏了等，内核报错）记日志、按没有处理——
-/// 它只决定提示文字和入口显不显示，不能让删牌组 / 设置页跟着用不了（删除本身同样会被内核拒绝）。
-final FutureProvider<SrsRetainedCopyInfo?> srsRetainedCopyProvider =
-    FutureProvider<SrsRetainedCopyInfo?>((Ref ref) async {
-      ref.watch(srsRevisionProvider);
-      final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
-      if (store == null) return null;
-      final String? dir = srsLibraryDirOf(ref.read(appProvider));
-      if (dir == null) return null;
+/// 当前的保留副本（设置行、牌组彻底清除共用）：状态命令在后台 isolate 跑（内核要打开两个 SQLite 文件）。主库没开好
+/// = null；读不了（新代库坏了等，内核报错）记日志、按没有处理——它只决定提示文字和入口显不显示，不能让删牌组 / 设置页
+/// 跟着用不了（删除本身同样会被内核拒绝）。
+///
+/// 只在会改变它的事件之后重读，不跟复习库的修订号（每次评分 / 编辑 / 同步拉入都跳一次，跟着它就每跳都起一个后台
+/// isolate 打开两个库文件，而结果几乎从不变）。会改变它的只有：
+/// - 复习库换了（迁移完成、换 profile、到期自动删都发生在开库时）：watch [srsStoreProvider]；
+/// - 删除：删的调用方 invalidate；
+/// - 第一次同步成功（到期时刻从「迁移 + 30 天」改成「首次同步 + 14 天」）：只影响设置行的日期，自动释放（没人看
+///   就丢掉），下次进设置页现读。
+/// 读的过程中 [Ref.keepAlive] 撑住：删牌组那条路是 `read(.future)`，没有监听者也要等它读完。
+final AutoDisposeFutureProvider<SrsRetainedCopyInfo?> srsRetainedCopyProvider =
+    FutureProvider.autoDispose<SrsRetainedCopyInfo?>((
+      AutoDisposeFutureProviderRef<SrsRetainedCopyInfo?> ref,
+    ) async {
+      final KeepAliveLink loading = ref.keepAlive();
       try {
-        final SrsRetainedCopyState state = await ref
-            .read(srsRetainedCopyBackendProvider)
-            .state(dir, nowMs: DateTime.now().millisecondsSinceEpoch);
-        return (dir: dir, state: state);
-      } on SrsCoreException catch (e, stack) {
-        ErrorLogService.instance.log('srs.retained_copy.state', e, stack);
-        return null;
+        final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
+        if (store == null) return null;
+        final String? dir = srsLibraryDirOf(ref.read(appProvider));
+        if (dir == null) return null;
+        try {
+          final SrsRetainedCopyState state = await ref
+              .read(srsRetainedCopyBackendProvider)
+              .state(dir, nowMs: DateTime.now().millisecondsSinceEpoch);
+          return (dir: dir, state: state);
+        } on SrsCoreException catch (e, stack) {
+          ErrorLogService.instance.log('srs.retained_copy.state', e, stack);
+          return null;
+        }
+      } finally {
+        loading.close();
       }
     });
 
@@ -161,13 +175,20 @@ final FutureProvider<SrsScrubState?> srsScrubStateProvider =
       return store.scrubState();
     });
 
+/// 收尾出错的原因（[srsScrubStateProvider] 的 `error`）；没出错 / 还没读到 = null。放进带间距的列表（牌组列表
+/// 横幅是 `ListView.separated`）的调用方按它决定挂不挂 [SrsScrubErrorNotice]：零高度的一项照样占一条间距，会把下面
+/// 的内容整体往下推一截。
+final Provider<String?> srsScrubErrorProvider = Provider<String?>(
+  (Ref ref) => ref.watch(srsScrubStateProvider).valueOrNull?.error,
+);
+
 /// 收尾出错时的提示：「清除的内容在磁盘上还没抹干净：<原因>」。没出错时零高度。出现 / 消失淡入淡出。
 class SrsScrubErrorNotice extends ConsumerWidget {
   const SrsScrubErrorNotice({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final String? error = ref.watch(srsScrubStateProvider).valueOrNull?.error;
+    final String? error = ref.watch(srsScrubErrorProvider);
     return AnimatedSwitcher(
       duration: fushiMotionDuration(context, FushiMotion.short),
       child: error == null

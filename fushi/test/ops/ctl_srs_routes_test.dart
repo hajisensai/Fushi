@@ -118,6 +118,45 @@ void main() {
         _failure(422),
       );
     });
+
+    // 第五波复核遗留：保留副本的路由只要库目录、不经取库那道门，模块关着时也照样查看 / 删除。现在同一道模块门。
+    test('模块关：保留副本的查看 / 删除也回 422，不碰执行端', () async {
+      bool dirAsked = false;
+      final List<CtlRoute> routes = buildSrsCtlRoutesFor(
+        SrsCtlDeps(
+          store: () async => null,
+          moduleEnabled: () => false,
+          changed: () {},
+          libraryDir: () {
+            dirAsked = true;
+            return 'D:/lib';
+          },
+        ),
+      );
+      final Matcher moduleOff = throwsA(
+        isA<CtlFailure>()
+            .having((CtlFailure f) => f.status, 'status', 422)
+            .having(
+              (CtlFailure f) => f.message,
+              'message',
+              contains('复习模块已关闭'),
+            ),
+      );
+      await expectLater(
+        _call(routes, 'GET', '$kSrsCtlRoot/retained'),
+        moduleOff,
+      );
+      await expectLater(
+        _call(
+          routes,
+          'POST',
+          '$kSrsCtlRoot/retained/delete',
+          body: const <String, Object?>{'confirm': true},
+        ),
+        moduleOff,
+      );
+      expect(dirAsked, isFalse);
+    });
   });
 
   group('查询', () {

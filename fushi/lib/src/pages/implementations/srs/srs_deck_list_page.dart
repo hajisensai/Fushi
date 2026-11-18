@@ -1004,8 +1004,10 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
       stats: ref.watch(srsHomeStatsProvider).valueOrNull,
       deleting: deleter.deleting,
       banners: <Widget>[
-        // 彻底清除的字节层收尾出错（内核 `scrub_state`）：清除的原文还在磁盘上。
-        const SrsScrubErrorNotice(),
+        // 彻底清除的字节层收尾出错（内核 `scrub_state`）：清除的原文还在磁盘上。只在出错时挂：列表项之间有间距，
+        // 没出错时挂一个零高度的项也会多出一条空白，把牌组树往下推。
+        if (ref.watch(srsScrubErrorProvider) != null)
+          const SrsScrubErrorNotice(),
         ..._srsDeckBanners(
           context,
           data: list,
