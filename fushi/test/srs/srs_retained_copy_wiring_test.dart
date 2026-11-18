@@ -7,7 +7,6 @@
 import 'dart:async';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
-import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
