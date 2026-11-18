@@ -3283,7 +3283,7 @@ profile uid 不变」断言，不分 `bound` / `joined`。
 | 回退到旧版本 | 新增 `store::seal::tests::a_generation_4_library_copied_under_the_old_name_is_refused_by_protocol_3`：新代库拷成 `srs.db` 交协议 3 内核打开 → 拒开，页内容（抹掉文件头计数字段）与 `srs_meta` 不变，新代仍能打开。变异（协议 3 不拒更新的 schema）→ 红。反方向（协议 3 库改名成 `srs4.db`）原有 `gen4/files.rs` `a_protocol_3_library_under_the_new_name_is_refused`；封存库原有 `seal.rs` `a_sealed_library_is_refused_by_protocol_3_and_its_pages_stay`。四个方向（新读旧、旧读新、新读封存、旧读封存）本机层都有了；**位置层**仍只有 `srs_format_break_test`（协议 1 客户端）与围栏内容钉死，没有真跑协议 3 客户端（树里没冻结 v3 客户端），同 §31 |
 | 新装的新版本设备加入全是旧版本的位置 | §31 标「缺单独一条」**不准确**：`cmd/sync_tests.rs` `the_location_root_fences_protocol_3_and_refuses_what_it_cannot_read` 的设备是 `Dev::new`（空目录新装、没有迁移来源），断言它在存量协议 3 位置上建新根、立围栏、`fresh: true`。改记为已覆盖 |
 | 同机多 profile | 新增 `one_failing_profile_of_two_keeps_the_whole_file_uncommitted`（见第 2 条） |
-| 两台同时升级 | 仍缺「两台各自迁移同一份协议 3 历史、比较转译结果逐字节相同」的端到端用例（迁移层只有单设备重跑结果相同：`every_crash_point_resumes_to_the_same_library`）。归 G7 / G8 |
+| 两台同时升级 | 迁移层已补（第 9 条）：`gen4/migrate_tests.rs` `two_devices_upgrading_at_once_translate_the_same_bytes`。位置层「两台重叠上传承袭段幂等」没有两台真并发上传的端到端用例（本段没核位置层现有用例能否覆盖），归 G7 / G8 |
 | 服务端 / 客户端先后升级、服务端一直不升级 | 仍缺，归 G10（同 §31） |
 | 只有协议 1 旧根 | 仍按 D21 偏离定案拒绝，只读转译缺，等所有者确认（同 §31） |
 
@@ -3332,8 +3332,42 @@ exit 1；成功 949、失败 9、错误 6、跳过 21，实际执行 964。上�
 `oldroot_scan`、同文件发 `oldroot_ingest`。**真正没接的是** `heritage_plan` 回包的 `unvouched`：Dart 里一处都没读
 （`git grep unvouched -- '*.dart'` 为空），同步页也没提示——归同步轮持有者（G8-7c / G9-5）。
 
+### 9. 复核后修正（同一分支第二轮）
+
+- **Rust 旧表名守卫有盲区**：`live_code` 原来在第一个 `#[cfg(test)]` 处截到文件尾，「测试模块都在末尾」不成立——
+  `kernel.rs`（`:388` 的 `test_panic` 注入之后，含 `run_migration`）、`cmd/mod.rs`（`:87` 起一串 `#[cfg(test)] mod x;`
+  之后，含 `profile_of` 等约 510 行）、`cmd/fushisrs.rs`（`:151` 的 `meter` 注入之后，整个导入导出）、`files.rs`
+  （`DIGESTS` 之后，含 `open_ready`）、`gen4/mod.rs`（`guards_tests` 声明之后）都没扫到。改成**按条目去**：每个
+  `#[cfg(test)]` 只去它管的那一项（`mod x;` / 带属性的语句到 `;`，`mod x { … }` / fn / impl / `thread_local! { … }`
+  按括号配对到块尾，结构体字段到 `,`；字面量里的括号不算；声明头部的 `<…>` 配对），行号不变。新增
+  `live_code_strips_only_the_cfg_test_items`（合成源码逐项断言留 / 去）与 `live_code_keeps_production_code_after_test_hooks`
+  （上述五个真实文件里注入点之后的生产代码还在、测试项已去）。按新口径扫，现有活代码里仍没有旧表名。
+- **冻结侧白名单按表放行**：`FROZEN_SIDE` 从「文件 → 理由」改成「文件 → 理由 + 允许的表」，冻结侧文件里新写一张没登记的旧表
+  照样红，登记了却已不写的表也红。`migrate.rs` 只许 `srs_cards_cache` / `srs_notes_cache` / `srs_stat_reviews`，`media.rs`
+  只许 `sync2_media_at` / `sync2_media_seeded`，其余五个文件按现状逐表登记。
+- 变异：`kernel.rs`、`cmd/fushisrs.rs` 末尾各加含旧表名的常量 → 守卫报 `kernel.rs:853`、`cmd/fushisrs.rs:576`（原来不报）；
+  `migrate.rs` 末尾加 `sync2_ops` → 报 `migrate.rs:1055`（原来整份放行）；`live_code` 改回截到文件尾 → 两条自检红。
+- **§6.3「两台同时升级」迁移层用例**：`migrate_tests.rs` `two_devices_upgrading_at_once_translate_the_same_bytes`——同一份两
+  profile 的协议 3 库拷两份，分别以不同的新设备 ID、迁移时刻、批大小迁移；比较每个集合的集合标识 / 目录名 / 盐集合、
+  `location::meta4` 字节、新身份的签名钥匙与 `prev`、每台承袭设备每个槽的规范编码、原生日志每条操作的 (kind, fmt, deps,
+  载荷)，逐行相等。绿：本机转译与设备无关。变异（`dryrun.rs` 写 `Salts` 时把新设备 ID 混进盐集合）→ 红。
+- **Dart 命令登记守卫**：原来只认 `'op': '字面量'`。改成取 `'op':` 后面整个值表达式，条件表达式两侧（可嵌套）各自当命令查；
+  值不是字面量的必须逐条登记在 `_kOpForwarders`（死条目也红）。新口径扫出两处非字面量，都不是内核命令：
+  `fushi/lib/src/srs/srs_remote_store_client.dart` 的 `'op': op`（互联远端复习 V2 协议的动词，主机 `srs_remote_store_routes.dart`
+  → `service.call` 自己路由）与 `packages/fushi_srs/lib/src/search/search_kernel.dart` 的 `'op': compare.name`（搜索树比较节点的
+  比较符），登记了理由。另加解析自检一条。变异：`srs_db_store.dart:1625` 条件表达式的 `'import_drafts'` 改成没登记的名字 → 红
+  （原来条件表达式整个漏检）。不经 dispatch 的 `ffsrs_store_*` 直连 C 入口仍不在这条守卫范围内。
+- **p6 冻结库生成脚本留档**：`packages/fushi_engine/test/srs/fixtures/gen_p6_vectors_db.dart.txt`。按第 3 条描述与夹具内容复原
+  （灌库同 `5ad47c2edb` 上 `srs_p6_vectors_test` 的 setUpAll，落库前把日志 JSON 的 `card` / `p` 改写成 `v$i` / `p$i`，
+  每个 profile `identity` + `migrate` 循环到 `done`，时刻 `1767225600000`，`snapshotInto(stripDeviceLocal: false)` + gzip）。
+  对已入库夹具核对过：schema 29、日志 8548 条且 jslim 的 `card` 全部等于 `v$i`、`srs_event_local` 2811、`sync2_ops` 8548、
+  `sync2_self` 1200 行且 `migrated_at` 全是 `1767225600000`。**没有在 `5ad47c2edb` 上重跑逐字节比对**。
+- 还原了 `store/seal.rs` 里一处与本段无关的空白改动（`static TRACED:` 少了空格；rustfmt 不进花括号宏所以 `fmt --check` 不报）。
+- 第 6 条（§10 第 23 条）的口径不变：只证明当前样本库上没有差异类别，不是逐条复现原 5 条；接不接受这个口径关闭由 integration
+  owner 定，不接受就要找原 5 类差异对应的代码路径补定向测试。
+
 ### 没做
 
-- §6.3「两台同时升级」端到端、服务端 / 客户端先后升级三行、协议 1 只读转译、位置层真跑协议 3 客户端（见第 5 条，按归属）。
+- §6.3 服务端 / 客户端先后升级三行、协议 1 只读转译、位置层真跑协议 3 客户端、两台并发上传承袭段的位置层端到端（见第 5 条，按归属）。
 - `unvouched` 提示（第 8 条）。
 - 第 7 条表里的 14 条非 ENV 红，按归属各自修。
