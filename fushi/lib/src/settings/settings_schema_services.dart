@@ -261,7 +261,7 @@ SettingsDestination buildServicesDestination() {
                       value: (SettingsContext settingsContext) =>
                           settingsContext.appModel.prefsRepo.getPref(
                                 kVideoAniDbHashEnabledPref,
-                                defaultValue: false,
+                                defaultValue: kVideoAniDbHashEnabledDefault,
                               )
                               as bool,
                       onChanged:
@@ -308,6 +308,27 @@ SettingsDestination buildServicesDestination() {
                               commitVideoMetadataRuntimePreference(
                                 settingsContext,
                                 kVideoAniDbPasswordPref,
+                                value,
+                                trimValue: false,
+                              ),
+                    ),
+                    SettingsTextItem(
+                      id: 'services.metadata.anidb_udp_api_key',
+                      title: t.video_anidb_udp_api_key,
+                      subtitle: t.video_anidb_udp_api_key_hint,
+                      icon: FushiIcons.lock,
+                      secret: true,
+                      value: (SettingsContext settingsContext) =>
+                          settingsContext.appModel.prefsRepo.getPref(
+                                kVideoAniDbUdpApiKeyPref,
+                                defaultValue: '',
+                              )
+                              as String,
+                      onChanged:
+                          (SettingsContext settingsContext, String value) =>
+                              commitVideoMetadataRuntimePreference(
+                                settingsContext,
+                                kVideoAniDbUdpApiKeyPref,
                                 value,
                                 trimValue: false,
                               ),

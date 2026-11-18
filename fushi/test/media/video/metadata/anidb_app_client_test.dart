@@ -25,10 +25,11 @@ void main() {
     expect(config.anidbHttpClientConfigured, isTrue);
     expect(config.anidbUsername, isEmpty);
     expect(config.anidbPassword, isEmpty);
-    expect(config.hashEnabled, isFalse);
+    expect(config.hashEnabled, isTrue, reason: 'UDP 已加密，哈希识别默认开');
     expect(config.anidbUdpConfig.isAvailable, isFalse);
     await prefs.setPref(kVideoAniDbUsernamePref, 'myaccount');
     await prefs.setPref(kVideoAniDbPasswordPref, ' my password ');
+    await prefs.setPref(kVideoAniDbUdpApiKeyPref, 'udp-key');
     final VideoSourceScrapeGlobalConfig personal =
         VideoSourceScrapeGlobalConfig.fromPreferences(
           prefs,
@@ -37,7 +38,8 @@ void main() {
         );
     expect(personal.anidbUdpConfig.isAvailable, isTrue);
     expect(personal.anidbPassword, ' my password ');
-    expect(personal.hashEnabled, isFalse);
+    expect(personal.hashEnabled, isTrue);
+    expect(personal.anidbHashReady, isTrue);
   });
 
   test(

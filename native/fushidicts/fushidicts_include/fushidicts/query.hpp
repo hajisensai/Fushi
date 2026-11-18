@@ -132,7 +132,10 @@ class DictionaryQuery {
   DictionaryQuery(DictionaryQuery&&) noexcept;
   DictionaryQuery& operator=(DictionaryQuery&&) noexcept;
 
-  void add_term_dict(const std::string& path);
+  // [language]：这本词典词头的语言（BCP-47 / ISO 639 码，宿主给：用户手动指定的优先，
+  // 其次包内 index.json 的 sourceLanguage）。空 = 未标注。标了语言的词典只接受本语言
+  // 变形表还原出来的词形（Lookup::lookup 的语言把关），精确命中不受影响。
+  void add_term_dict(const std::string& path, std::string_view language = {});
   void add_freq_dict(const std::string& path);
   void add_pitch_dict(const std::string& path);
   void add_kanji_dict(const std::string& path);
@@ -211,11 +214,13 @@ class DictionaryQuery {
 
     std::string name;
     std::string styles;
+    // 归一后的词头语言（fushi::primary_language_tag），空 = 未标注。只有 term 词典填。
+    std::string language;
     std::unique_ptr<DictionaryData> data;
   };
   enum DictionaryType : uint8_t { TERM, FREQ, PITCH, KANJI };
 
-  void add_dict(const std::string& path, DictionaryType);
+  void add_dict(const std::string& path, DictionaryType, std::string_view language = {});
 
   // 联合过滤器的发布槽：后台构建线程与本对象共同持有（本对象析构后线程把成果发布进
   // 一个没人读的槽，随线程结束释放）。定义在 query.cpp。

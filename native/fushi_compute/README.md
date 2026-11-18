@@ -457,6 +457,7 @@ Unicode 版本也比 Dart VM 的表新——Rust 1.96 下有 465 个码点 Dart 
 |---|---|---|
 | `ffc_crypto_aacs_open / _decrypt_units / _close` | AACS 1 内容解密：求单元密钥 + CBC + 0x47 校验 + 清 CPI + 多 key 轮换重试，一次处理一批 6144 字节单元；遇坏即停，失败码分三类：-20 标为未加密却不是合法 TS（全零单元落这里，数据坏）、-21 哪个 key 都解不开且还没解开过加密单元（key 不符或首单元坏，分不清）、-23 哪个 key 都解不开但此前已解开过加密单元 / 单元含整扇区全零（数据坏，不是 key） | `fushi_engine/.../aacs_content_decoder.dart`（relay 每 32 单元一次） |
 | `ffc_crypto_aes128_ecb_decrypt` | unit key 表解密 | 同上 `fromVolumeUniqueKey` |
+| `ffc_crypto_aes128_ecb_encrypt` | AES-128 ECB 加密（不填充） | AniDB UDP `ENCRYPT` 会话（`anidb_udp_file_client.dart` 的 `AnidbUdpCipher`） |
 | `ffc_crypto_aes_cbc_pkcs7_decrypt` | AES-128/192/256-CBC + PKCS7，原地 | HLS 分片（`anime_episode_downloader.dart`）、comico 根 URL |
 | `ffc_crypto_aes_cbc_encrypt` | AES-CBC 加密（不填充） | 只给测试造密文 |
 | `ffc_crypto_sync_obfuscate_file / _deobfuscate_file(src, src_len, dst, dst_len)` | 云同步「防扫盘」混淆：文件 → 文件整段在 Rust 里流式读（1 MiB 块）、XOR、写（目标创建或截断）；还原时无魔数则原样复制。keystream = SHA-256("hibiki")、魔数 `HBKOBF 01 00`，**永远不能改**，云端旧文件靠它解开；读写失败返回 -30 | `fushi/lib/src/sync/sync_obfuscator.dart` `obfuscateFile` / `deobfuscateFile`（`Isolate.run`）← `ObfuscatingSyncBackend` 上传 / 下载临时文件。内存里的字节（封面、Range 流播）留 Dart，见下 |

@@ -591,6 +591,7 @@ void main() {
           clientVersion: 1,
           username: 'u',
           password: 'p',
+          apiKey: 'udp-key',
         ),
         mapping: AnimeIdentityMapping(
           httpClient: VideoMetadataHttpClient(

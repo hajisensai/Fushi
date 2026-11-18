@@ -308,9 +308,13 @@ class _AiIdentifyRunner
 
 /// 交互式批次里把一个带 AI 建议的确认请求交给面板，等用户选。
 class _AiSuggestionConfirmationRunner implements VideoSourceScrapeRunner {
-  _AiSuggestionConfirmationRunner(this.candidates);
+  _AiSuggestionConfirmationRunner(
+    this.candidates, {
+    this.strictMatches = false,
+  });
 
   final List<VideoSourceScrapeConfirmationCandidate> candidates;
+  final bool strictMatches;
   VideoSourceScrapeConfirmationCandidate? chosen;
 
   @override
@@ -334,6 +338,7 @@ class _AiSuggestionConfirmationRunner implements VideoSourceScrapeRunner {
           confidencePercent: 72,
           reason: 'theatrical release matches the folder',
         ),
+        strictMatches: strictMatches,
       ),
     );
     return SourceScrapeReport(
@@ -1255,6 +1260,66 @@ void main() {
       );
     });
   });
+
+  // BUG-4894：只有候选都过了严格匹配门才能说「多个严格匹配」；标题对不上 /
+  // 只有目录摘要的「可能」候选要说「无法确认」，不能冒充严格匹配。
+  for (final bool strict in <bool>[true, false]) {
+    testWidgets('confirmation hint reflects strictMatches=$strict', (
+      WidgetTester tester,
+    ) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final int sourceId = await _seedSource(db, mediaKind: 'video');
+      final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+      final _AiSuggestionConfirmationRunner runner =
+          _AiSuggestionConfirmationRunner(
+            <VideoSourceScrapeConfirmationCandidate>[
+              _candidate(id: '1001', title: 'Doraemon (TV)', year: 2005),
+              _candidate(id: '1002', title: 'Doraemon Movie', year: 2006),
+            ],
+            strictMatches: strict,
+          );
+      final VideoSourceScrapeTaskController controller =
+          VideoSourceScrapeTaskController(runner);
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (BuildContext context) => Scaffold(
+              body: TextButton(
+                onPressed: () {
+                  unawaited(controller.scrapeSource(source, interactive: true));
+                  unawaited(
+                    showVideoSourceScrapeTaskPanel(
+                      context: context,
+                      controller: controller,
+                      loadRuns: () => db.getVideoSourceScrapeRuns(limit: 20),
+                    ),
+                  );
+                },
+                child: const Text('Start'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Start'));
+      await tester.pumpAndSettle();
+      expect(controller.pendingConfirmation, isNotNull);
+
+      expect(
+        find.text(t.video_source_scrape_confirmation_hint),
+        strict ? findsOneWidget : findsNothing,
+      );
+      expect(
+        find.text(t.video_source_scrape_confirmation_review_hint),
+        strict ? findsNothing : findsOneWidget,
+      );
+      controller.skipPendingConfirmation();
+      await tester.pumpAndSettle();
+    });
+  }
 
   testWidgets('confirmation marks only the AI-suggested candidate', (
     WidgetTester tester,
