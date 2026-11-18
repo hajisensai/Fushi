@@ -459,10 +459,17 @@ class _FakeHost implements GameCtlHost {
   }
 
   @override
-  Future<bool> applyScrape(String gameId, SourceCandidate candidate) async {
+  Future<bool> applyScrape(
+    String gameId,
+    SourceCandidate candidate, {
+    bool replaceExistingCover = true,
+  }) async {
     applied = candidate;
+    appliedReplaceCover = replaceExistingCover;
     return applyResult;
   }
+
+  bool? appliedReplaceCover;
 
   @override
   Future<List<String>> metadataSources(String gameId) async => sourceKeys;
@@ -1923,6 +1930,15 @@ void main() {
       );
       expect(host.applied!.source, GalgameMetadataSource.bgm);
       expect(host.applied!.externalId, '123');
+      // 默认显式语义：替换已有封面；keepCover = 已有封面不换（库管家自动写回）。
+      expect(host.appliedReplaceCover, isTrue);
+      await run(
+        host,
+        'POST',
+        '/api/admin/game/games/g1/scrape',
+        body: {'candidate': 'bgm:123', 'keepCover': true},
+      );
+      expect(host.appliedReplaceCover, isFalse);
 
       host.applyResult = false;
       await expectLater(

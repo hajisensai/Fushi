@@ -4,6 +4,9 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart' show JapaneseLanguage;
+import 'package:fushi_engine/media/metadata/books/book_catalog.dart'
+    show findIsbnIn;
+import 'package:fushi_engine/media/metadata/books/rakuten_books.dart';
 import 'package:fushi_engine/media/metadata/image_download.dart';
 
 import 'package:fushi/src/media/media_item.dart';
@@ -32,12 +35,29 @@ List<CtlRoute> buildBookMetadataCtlRoutes(OpContext context) {
     }
   }
 
+  /// 楽天要设备本地凭据；没填时与弹窗一样不可用（422，带去哪填的提示）。
+  RakutenBooksCredentials requireSourceUsable(BookScrapeSource source) {
+    final RakutenBooksCredentials creds = app().bookScrapeRakutenCredentials;
+    if (source.needsCredentials && !creds.isComplete) {
+      throw const CtlFailure.rejected(
+        '楽天ブックス需要先在「设置 › 在线服务 › 资料来源 › 楽天ブックス」填写 '
+        'applicationId 与 accessKey',
+      );
+    }
+    return creds;
+  }
+
   return <CtlRoute>[
     CtlRoute.get(kBookMetadataCtlSearch, (CtlCall call) async {
       requireServices();
       final BookScrapeSource source = _source(call.optString('source'));
       final String query = call.requireString('query');
-      final BookMetadataScrapeFacade facade = bookMetadataFacadeFactory();
+      if (source.isbnOnly && findIsbnIn(query) == null) {
+        throw CtlFailure.badRequest('${source.label} 只能按 ISBN 查：$query');
+      }
+      final BookMetadataScrapeFacade facade = bookMetadataFacadeFactory(
+        rakuten: requireSourceUsable(source),
+      );
       try {
         final List<BookScrapeCandidate> found = await _scrape(
           () => facade.search(source: source, query: query),
@@ -58,7 +78,9 @@ List<CtlRoute> buildBookMetadataCtlRoutes(OpContext context) {
       requireServices();
       final BookScrapeSource source = _source(call.params['source']);
       final String id = call.params['id'] ?? '';
-      final BookMetadataScrapeFacade facade = bookMetadataFacadeFactory();
+      final BookMetadataScrapeFacade facade = bookMetadataFacadeFactory(
+        rakuten: requireSourceUsable(source),
+      );
       try {
         final BookScrapeCandidate? found = await _scrape(
           () => facade.fetchById(source: source, id: id),
@@ -83,9 +105,30 @@ List<CtlRoute> buildBookMetadataCtlRoutes(OpContext context) {
       final BookScrapeSource source = _source(call.optString('source'));
       final String id = call.requireString('id');
       final Set<BookMetadataField> fields = _fields(call.stringList('fields'));
-      final BookMetadataScrapeFacade facade = bookMetadataFacadeFactory();
+      final BookMetadataScrapeFacade facade = bookMetadataFacadeFactory(
+        rakuten: requireSourceUsable(source),
+      );
       File? cover;
       try {
+        // onlyEmpty：只填当前空着的字段（库管家自动写回用）。显示名覆盖 / 作者 /
+        // override 封面都没有「谁设的」标记，有值就一律不碰。
+        if (call.optBool('onlyEmpty') ?? false) {
+          final BookMetadataState now = await facade.currentState(
+            appModel: app(),
+            item: item,
+          );
+          fields.removeWhere(
+            (BookMetadataField f) => switch (f) {
+              BookMetadataField.title =>
+                (now.overrideTitle ?? '').trim().isNotEmpty,
+              BookMetadataField.author => (now.author ?? '').trim().isNotEmpty,
+              BookMetadataField.cover => now.coverSha != null,
+            },
+          );
+          if (fields.isEmpty) {
+            throw const CtlFailure.rejected('要写的字段都已有值（onlyEmpty），没有可写回的内容');
+          }
+        }
         final BookScrapeCandidate? candidate = await _scrape(
           () => facade.fetchById(source: source, id: id),
         );
@@ -140,9 +183,13 @@ List<CtlRoute> buildBookMetadataCtlRoutes(OpContext context) {
   ];
 }
 
+/// 造门面的工厂（[rakuten] = 本机楽天凭据，路由从设置里读出后传入）。
+typedef BookMetadataFacadeFactory =
+    BookMetadataScrapeFacade Function({RakutenBooksCredentials? rakuten});
+
 /// 测试接缝：路由用它造门面（测试注入离线 scraper / 下载桩）。
 @visibleForTesting
-BookMetadataScrapeFacade Function() bookMetadataFacadeFactory =
+BookMetadataFacadeFactory bookMetadataFacadeFactory =
     BookMetadataScrapeFacade.new;
 
 /// 候选搜索路由（`?source=&query=`）。
@@ -160,11 +207,16 @@ Map<String, Object?> bookScrapeCandidateJson(BookScrapeCandidate c) =>
       if (c.originalTitle != null) 'originalTitle': c.originalTitle,
       if (c.author != null) 'author': c.author,
       if (c.year != null) 'year': c.year,
+      if (c.publisher != null) 'publisher': c.publisher,
+      if (c.series != null) 'series': c.series,
+      if (c.volume != null) 'volume': c.volume,
+      if (c.isbn != null) 'isbn': c.isbn,
       if (c.summary != null)
         'summary': c.summary!.length > 300
             ? '${c.summary!.substring(0, 300)}…'
             : c.summary,
       'coverUrl': c.coverUrl,
+      if (c.bannerUrl != null) 'bannerUrl': c.bannerUrl,
       'detailUrl': c.detailUrl,
       if (c.isAdult) 'adult': true,
     };
@@ -211,10 +263,12 @@ Future<MediaItem> resolveBookMetadataItem(AppModel app, String raw) async {
 
 BookScrapeSource _source(String? raw) {
   if (raw == null || raw.trim().isEmpty) return BookScrapeSource.bangumi;
-  for (final BookScrapeSource s in BookScrapeSource.values) {
-    if (s.name == raw.trim().toLowerCase()) return s;
-  }
-  throw CtlFailure.badRequest('source 只能是 bangumi / dlsite：$raw');
+  return BookScrapeSource.tryParse(raw) ??
+      (throw CtlFailure.badRequest(
+        'source 只能是 '
+        '${BookScrapeSource.values.map((BookScrapeSource s) => s.name).join(' / ')}'
+        '：$raw',
+      ));
 }
 
 Set<BookMetadataField> _fields(List<String> raw) {

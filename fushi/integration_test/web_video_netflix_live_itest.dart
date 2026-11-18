@@ -474,13 +474,13 @@ void main() {
       expect(cap.audio!.length, greaterThan(1000));
       // runner 的隔离 DB 跨次运行保留：只看本次入队的那一行（上次的 failed 行不再是
       // pending、不会被重放；caps 恰一次已在上面断言）。
-      final WebMineQueueRow mine = rows.firstWhere(
-        (WebMineQueueRow r) => r.id == queuedId,
-      );
+      // 写完的行直接出表（BUG-4813），所以「不在表里」= 写成了；还在就必须是 failed。
       expect(
-        mine.status,
-        isNot(WebMineQueueStatus.pending),
-        reason: '跑完后行必须离开 pending（done 或 failed 都写了结果）',
+        rows
+            .where((WebMineQueueRow r) => r.id == queuedId)
+            .map((WebMineQueueRow r) => r.status),
+        isNot(contains(WebMineQueueStatus.pending)),
+        reason: '跑完后行必须离开 pending（写成了出表，或标 failed 写了原因）',
       );
       final WebVideoDebugSnapshot afterMine =
           WebVideoFushiPage.debugSnapshot!();

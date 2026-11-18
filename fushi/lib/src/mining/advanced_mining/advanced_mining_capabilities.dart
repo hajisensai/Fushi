@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' show Rect, Size;
 
@@ -224,6 +225,58 @@ int normalizeAdvancedMiningAudioNudgeStepMs(int? ms) =>
     ? ms
     : kAdvancedMiningAudioNudgeStepDefaultMs;
 
+/// 句子音频区间的最短时长（毫秒）：拖动 / 微调起止都不能把区间压到比这更短，更不能
+/// 让起点越过终点（反馈 66LR2RsYcl：端点可拖之后，一把拖过头就会倒挂）。
+const int kAdvancedMiningAudioMinDurationMs = 100;
+
+/// 拖动端点时的基础吸附粒度（毫秒）：像素换算出来的时刻取整到这一格，标签不抖。
+const int kAdvancedMiningAudioDragSnapMs = 10;
+
+/// 起止微调 / 逐帧挪动按住修饰键时的步长档位（反馈 66LR2RsYcl 维护者留言：「支持
+/// shift/ctrl 之类的调整步长」）。所有同类控件（音频起止按钮、区间条方向键与拖动、
+/// 首尾帧 / 静态帧逐帧按钮）都按这一处的规则换算，不各算各的。
+enum AdvancedMiningStepScale {
+  /// 无修饰键：当前选中的步长。
+  normal,
+
+  /// Shift：粗调——步长 ×[kAdvancedMiningCoarseStepFactor]；拖动时吸附到当前步长的整数倍。
+  coarse,
+
+  /// Ctrl / ⌘：细调——步长 ÷[kAdvancedMiningFineStepDivisor]；拖动时位移按同一比例减速。
+  fine,
+}
+
+/// 粗调倍数。
+const int kAdvancedMiningCoarseStepFactor = 10;
+
+/// 细调除数。
+const int kAdvancedMiningFineStepDivisor = 5;
+
+/// 由当前按住的修饰键得出档位。Shift 与 Ctrl 同时按住时以细调为准（更保守）。
+AdvancedMiningStepScale advancedMiningStepScaleFor({
+  required bool shift,
+  required bool control,
+}) {
+  if (control) return AdvancedMiningStepScale.fine;
+  if (shift) return AdvancedMiningStepScale.coarse;
+  return AdvancedMiningStepScale.normal;
+}
+
+/// 按档位换算一步的毫秒数。[minMs] 是这类控件的最小可分辨步长（音频为
+/// [kAdvancedMiningAudioDragSnapMs]，逐帧为一帧的时长），细调不会低于它。
+int scaleAdvancedMiningStepMs(
+  int baseMs,
+  AdvancedMiningStepScale scale, {
+  required int minMs,
+}) => switch (scale) {
+  AdvancedMiningStepScale.normal => baseMs,
+  AdvancedMiningStepScale.coarse => baseMs * kAdvancedMiningCoarseStepFactor,
+  AdvancedMiningStepScale.fine => math.max(
+    minMs,
+    (baseMs / kAdvancedMiningFineStepDivisor).round(),
+  ),
+};
+
 /// 句子音频分区。所有回调都收**本次的起止偏移**（对话框持有，确认时并进覆盖项），
 /// 宿主据此算出与写卡完全一致的区间——试听与写卡同源（BUG-2196 ②）。
 class AdvancedMiningAudioSection {
@@ -344,7 +397,16 @@ class MangaCropSuggestions {
   final Rect? textAreaRect;
 }
 
-/// 漫画图片分区。
+/// 裁切分区框的是哪种图：漫画原页图，还是截屏识字 / 拍照查词点字用的那张截图。
+enum AdvancedMiningCropSource {
+  /// 漫画原页图：有分镜检测（所在分镜、Tab 切分镜、未下载模型提示）。
+  mangaPage,
+
+  /// 截屏识字 / 拍照查词的截图（反馈 mOe5HjBtuG）：没有分镜，「整页」叫「整张截图」。
+  screenshot,
+}
+
+/// 漫画图片分区（截屏识字的截图也走这一块，见 [source]）。
 class AdvancedMiningMangaImageSection {
   const AdvancedMiningMangaImageSection({
     required this.loadPage,
@@ -352,7 +414,14 @@ class AdvancedMiningMangaImageSection {
     required this.panelModelAvailable,
     this.downloadPanelModel,
     this.panelModelSizeBytes,
+    this.source = AdvancedMiningCropSource.mangaPage,
   });
+
+  /// 框的是哪种图；[AdvancedMiningCropSource.screenshot] 时不提分镜。
+  final AdvancedMiningCropSource source;
+
+  /// 有没有分镜这回事（截图没有：不显示「未下载分镜模型」、图例与提示不提分镜）。
+  bool get hasPanels => source == AdvancedMiningCropSource.mangaPage;
 
   /// 原页图字节（不是屏幕渲染）。
   final Future<Uint8List?> Function() loadPage;

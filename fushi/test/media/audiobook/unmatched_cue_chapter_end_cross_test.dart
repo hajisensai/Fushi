@@ -130,10 +130,16 @@ void main() {
     ).readAsStringSync();
 
     test('setChapterCues 维护按 (audioFileIndex, startMs) 排的播放序视图', () {
+      // 章 cue 与播放序视图是同一份按播放顺序排好的副本（排一次，两处共用）。
       expect(
         controller,
-        contains('_playbackOrderedCues = List<AudioCue>.from'),
-        reason: '未匹配 cue 的邻居判定要的是播放顺序，_chapterCues 只按 startMs 排',
+        contains('..sort(playbackOrder);'),
+        reason: '未匹配 cue 的邻居判定要的是播放顺序',
+      );
+      expect(
+        controller,
+        contains('_playbackOrderedCues = ordered;'),
+        reason: '播放序视图必须指向排好的那份副本',
       );
       expect(
         controller,

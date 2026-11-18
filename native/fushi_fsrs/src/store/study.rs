@@ -166,6 +166,18 @@ impl LimitUnit {
             _ => left.max(0),
         }
     }
+
+    /// 分钟单位下上限 [limit] 减去 [t] 今天的复习用时还剩几分钟（不足一分钟按一分钟，用满为 0）；其余单位 None。
+    /// 与 [Self::review_room] 同一个「已用 / 上限」口径：剩余 > 0 ⇔ 这一层不截复习卡。
+    fn minutes_left(self, limit: i64, t: &Tally) -> Option<i64> {
+        match self {
+            LimitUnit::Minutes => {
+                let left = (self.limit_in_usage(limit) - self.used(t)).max(0);
+                Some((left + 59_999) / 60_000)
+            }
+            _ => None,
+        }
+    }
 }
 
 /// 出的一张是哪一类（「再下一张」按它虚拟扣掉一张的计数）。
@@ -344,6 +356,10 @@ struct Count {
     new_count: i64,
     review_count: i64,
     learn_count: i64,
+    /// 牌组按分钟计复习上限（[LimitUnit::Minutes]，且这一层没开「忽略每日复习上限」）时今天还剩的复习分钟
+    /// （[LimitUnit::minutes_left]）；其余单位为 None。分钟单位下 [Self::review_count] 是「没用满就不截」后的全部
+    /// 合格 / 到期卡（可能成千），牌组列表的到期一格改显示这个剩余量。
+    review_minutes_left: Option<i64>,
 }
 
 /// RWKV-Instant 一个牌组的排队设置：目标保留率与 `SrsRwkvQueueSettings`。
@@ -378,8 +394,136 @@ fn int(v: &Value, k: &str, d: i64) -> i64 {
     v.get(k).and_then(Value::as_i64).unwrap_or(d)
 }
 
-/// 排队读的卡 / 日志数据：生产是常驻会话（[SessionSource]），测试里另有 L2 的逐条 SQL 实现当对拍基准。
+/// 排队里仍走 SQL 的查询（新卡按索引序取第一张、自定义学习、[SqlSource]）落在哪张表、按什么分区、ID 怎么进出：
+/// 协议 3 是 `srs_cards_cache` / `srs_notes_cache` 按 profile 分区、ID 列经 `srs_id` / `srs_idt` 编解码（[P3Tables]）；
+/// 新代是缓存层的 `cards` / `notes` 按集合号分区、ID 列存 `Ref`（`store/gen4/cmd/study.rs`）。排队规则只有本文件这一份。
+pub(crate) trait Tables {
+    fn conn(&self) -> &Connection;
+    /// 卡片缓存表名。
+    fn cards(&self) -> &'static str;
+    /// 排队的那几条按索引设计的查询里卡片表的写法（[CardIx]）：协议 3 就是表名（查询计划交给 SQLite，`schema.rs` v9
+    /// 的注释与 [tests] 的计划测试钉住）；新代钉住对应的部分索引（`INDEXED BY`）——新代库带手写的规划统计，「按牌组 +
+    /// 队列取出再排序」与「沿新卡索引序取第一张」在统计上看不出谁便宜，不能交给规划器猜。
+    fn cards_via(&self, ix: CardIx) -> String;
+    /// 笔记缓存表名。
+    fn notes(&self) -> &'static str;
+    /// 分区条件（[alias] = 列名前缀，如 `"n."`；绑定一个参数 [Tables::scope_arg]）。
+    fn scope(&self, alias: &str) -> String;
+    /// 按 id 点读时的分区条件（同样绑定 [Tables::scope_arg]）：协议 3 写成 `+profile_uid` 只当过滤、让 SQLite 走 id 主键；
+    /// 新代主键是 (col, id)，照常写。
+    fn scope_by_id(&self) -> &'static str;
+    fn scope_arg(&self) -> Sql;
+    /// 一个 ID 参数的占位符。
+    fn mark(&self) -> &'static str;
+    /// 结果里取文本 ID 的列表达式（[col] = 列名）。
+    fn id_sel(&self, col: &str) -> String;
+    /// 一个 ID 参数的值。
+    fn id_arg(&self, id: &str) -> Sql;
+    /// 读出 [Tables::id_sel] 那一列的文本 ID。
+    fn id_get(&self, r: &rusqlite::Row<'_>, i: usize) -> rusqlite::Result<String>;
+    /// 自定义学习「卡在 [since] 之后有作答日志」：对 `id` 列的条件与它的参数。
+    fn answered(&self, since: i64) -> Result<(String, Vec<Sql>), String>;
+    /// 自定义学习「卡在 [from] 之后有评『重来』的有效复习」：对 `id` 列的条件与它的参数。
+    fn forgotten(&self, from: i64) -> (String, Vec<Sql>);
+}
+
+/// 排队查询各自为之设计的部分索引（协议 3 `schema.rs` v9 的 `idx_srs_cards_cache_*`，新代 `cache.rs` 的 `cards_*`）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CardIx {
+    NewPosition,
+    NewFreq,
+    Learning,
+    ReviewDue,
+    Tally,
+}
+
+impl CardIx {
+    /// 去掉表名前缀的索引名（`new_position` …）。
+    pub(crate) fn suffix(self) -> &'static str {
+        match self {
+            CardIx::NewPosition => "new_position",
+            CardIx::NewFreq => "new_freq",
+            CardIx::Learning => "learning",
+            CardIx::ReviewDue => "review_due",
+            CardIx::Tally => "tally",
+        }
+    }
+}
+
+/// 协议 3 的表（profile 分区）。
+pub(crate) struct P3Tables<'a> {
+    pub c: &'a Connection,
+    pub profile: &'a str,
+}
+
+impl Tables for P3Tables<'_> {
+    fn conn(&self) -> &Connection {
+        self.c
+    }
+
+    fn cards(&self) -> &'static str {
+        "srs_cards_cache"
+    }
+
+    fn cards_via(&self, _ix: CardIx) -> String {
+        self.cards().to_owned()
+    }
+
+    fn notes(&self) -> &'static str {
+        "srs_notes_cache"
+    }
+
+    fn scope(&self, alias: &str) -> String {
+        format!("{alias}profile_uid = srs_id(?)")
+    }
+
+    fn scope_by_id(&self) -> &'static str {
+        "+profile_uid = srs_id(?)"
+    }
+
+    fn scope_arg(&self) -> Sql {
+        Sql::Text(self.profile.to_owned())
+    }
+
+    fn mark(&self) -> &'static str {
+        // ID 列表（store/ids.rs）：srs_id 对非 UUID 的值原样返回。
+        "srs_id(?)"
+    }
+
+    fn id_sel(&self, col: &str) -> String {
+        format!("srs_idt({col})")
+    }
+
+    fn id_arg(&self, id: &str) -> Sql {
+        Sql::Text(id.to_owned())
+    }
+
+    fn id_get(&self, r: &rusqlite::Row<'_>, i: usize) -> rusqlite::Result<String> {
+        r.get(i)
+    }
+
+    fn answered(&self, since: i64) -> Result<(String, Vec<Sql>), String> {
+        Ok((
+            "id IN (SELECT card_id FROM srs_review_logs WHERE profile_uid = srs_id(?) AND kind = 'review' AND occurred_at >= ?)"
+                .to_owned(),
+            vec![self.scope_arg(), Sql::Integer(since)],
+        ))
+    }
+
+    fn forgotten(&self, from: i64) -> (String, Vec<Sql>) {
+        (
+            "id IN (SELECT card_id FROM srs_stat_reviews WHERE profile_uid = srs_id(?) AND rating = 1 AND occurred_at >= ?)"
+                .to_owned(),
+            vec![self.scope_arg(), Sql::Integer(from)],
+        )
+    }
+}
+
+/// 排队读的卡 / 日志数据：生产是常驻会话（[SessionSource]）；[SqlSource] 是 L2 的逐条 SQL 实现（会话的对拍基准，
+/// 也是新代 `store/gen4/cmd/study.rs` 的数据来源）。
 trait Source {
+    /// 新卡 / 自定义学习那几条 SQL 落在哪。
+    fn tables(&self) -> &dyn Tables;
     fn logs(&self) -> &LogState;
     /// 每个牌组**自己**（不含子牌组）的计数原料；只给有 hidden = 0 的卡的牌组。[decks] 为 None = 全部牌组。
     fn tallies(
@@ -409,9 +553,13 @@ trait Source {
     fn ensure_order(&mut self, order: ReviewOrder);
 }
 
-struct SessionSource<'a>(&'a mut Session);
+struct SessionSource<'a>(&'a mut Session, P3Tables<'a>);
 
 impl Source for SessionSource<'_> {
+    fn tables(&self) -> &dyn Tables {
+        &self.1
+    }
+
     fn logs(&self) -> &LogState {
         self.0.logs()
     }
@@ -453,25 +601,279 @@ impl Source for SessionSource<'_> {
 }
 
 /// 新卡的「按索引序取第一张」（`idx_srs_cards_cache_new_*` 部分索引）。
-fn first_sql(decks: usize, condition: &str, order: &str, exclude: usize) -> String {
+/// 参数：分区、今天、[decks] 个牌组、条件里的参数、[exclude] 个卡。[ix] = 这个顺序的部分索引。
+fn first_sql(
+    tb: &dyn Tables,
+    ix: CardIx,
+    decks: usize,
+    condition: &str,
+    order: &str,
+    exclude: usize,
+) -> String {
     let not_in = if exclude == 0 {
         String::new()
     } else {
-        format!(" AND id NOT IN ({})", marks(exclude))
+        format!(" AND id NOT IN ({})", marks(tb, exclude))
     };
     format!(
-        "SELECT srs_idt(id), due_at FROM srs_cards_cache WHERE profile_uid = srs_id(?) AND {LIVE} AND deck_id IN ({}) AND {condition}{not_in} ORDER BY {order} LIMIT 1",
-        marks(decks)
+        "SELECT {}, due_at FROM {} WHERE {} AND {LIVE} AND deck_id IN ({}) AND {condition}{not_in} ORDER BY {order} LIMIT 1",
+        tb.id_sel("id"),
+        tb.cards_via(ix),
+        tb.scope(""),
+        marks(tb, decks)
     )
 }
 
-const NEW_BY_POSITION: &str = "new_position IS NULL, new_position, note_created_at, id";
-const NEW_BY_FREQUENCY: &str =
+pub(crate) const NEW_BY_POSITION: &str = "new_position IS NULL, new_position, note_created_at, id";
+pub(crate) const NEW_BY_FREQUENCY: &str =
     "freq_rank IS NULL, freq_rank, new_position IS NULL, new_position, note_created_at, id";
 
-fn marks(n: usize) -> String {
-    // ID 列表（store/ids.rs）：srs_id 对非 UUID 的值原样返回。
-    vec!["srs_id(?)"; n].join(", ")
+fn marks(tb: &dyn Tables, n: usize) -> String {
+    vec![tb.mark(); n].join(", ")
+}
+
+/// 学习卡「在给定时刻前到期」（绑定一个参数）与它们的出卡顺序。
+const LEARNING_WHERE: &str = "queue IN ('learning', 'relearning') AND COALESCE(due_at, 0) <= ?";
+const LEARNING_ORDER: &str = "COALESCE(due_at, 0), id";
+
+/// 每个牌组自己的计数原料（参数：今天 ×2、学习卡的到期界、今天 ×2、分区，再是 [decks] 个牌组）。
+fn tallies_sql(tb: &dyn Tables, decks: Option<usize>) -> String {
+    let deck_sql = decks.map_or(String::new(), |n| {
+        format!(" AND deck_id IN ({})", marks(tb, n))
+    });
+    format!(
+        "SELECT {} AS deck_id, COUNT(*), \
+         SUM(CASE WHEN {LIVE} AND queue NOT IN ('learning', 'relearning', 'review') THEN 1 ELSE 0 END), \
+         SUM(CASE WHEN {LIVE} AND queue IN ('learning', 'relearning') AND COALESCE(due_at, 0) <= ? THEN 1 ELSE 0 END), \
+         SUM(CASE WHEN {LIVE} AND queue = 'review' AND COALESCE(due_day, 0) <= ? THEN 1 ELSE 0 END) \
+         FROM {} WHERE {} AND hidden = 0{deck_sql} GROUP BY deck_id",
+        tb.id_sel("deck_id"),
+        tb.cards_via(CardIx::Tally),
+        tb.scope(""),
+    )
+}
+
+/// R 顺序的到期复习卡（参数：分区、今天、[decks] 个牌组、今天、[exclude] 个卡、此刻）。
+fn due_sql(tb: &dyn Tables, decks: usize, exclude: usize) -> String {
+    let not_in = if exclude == 0 {
+        String::new()
+    } else {
+        format!(" AND id NOT IN ({})", marks(tb, exclude))
+    };
+    format!(
+        "SELECT {}, last_reviewed_at, stability FROM {} WHERE {} AND {LIVE} \
+         AND deck_id IN ({}) AND queue = 'review' AND COALESCE(due_day, 0) <= ?{not_in} \
+         ORDER BY 1.0 / (1.0 + (CASE WHEN last_reviewed_at IS NULL THEN 0.0 ELSE (? - last_reviewed_at) / 86400000.0 END) \
+         / (9.0 * COALESCE(stability, 1.0))), id LIMIT 2",
+        tb.id_sel("id"),
+        tb.cards_via(CardIx::ReviewDue),
+        tb.scope(""),
+        marks(tb, decks),
+    )
+}
+
+/// 子树里全部到期复习候选（不排序）：id、上次作答、稳定度、到期日、间隔、难度（参数同 [due_sql]，没有此刻）。
+fn due_all_sql(tb: &dyn Tables, decks: usize, exclude: usize) -> String {
+    let not_in = if exclude == 0 {
+        String::new()
+    } else {
+        format!(" AND id NOT IN ({})", marks(tb, exclude))
+    };
+    format!(
+        "SELECT {}, last_reviewed_at, stability, due_day, scheduled_days, difficulty FROM {} \
+         WHERE {} AND {LIVE} \
+         AND deck_id IN ({}) AND queue = 'review' AND COALESCE(due_day, 0) <= ?{not_in}",
+        tb.id_sel("id"),
+        tb.cards_via(CardIx::ReviewDue),
+        tb.scope(""),
+        marks(tb, decks),
+    )
+}
+
+/// L2 的逐条 SQL 排队（2026-10-29 搬进常驻会话之前的生产实现）：每次排队按子树聚合计数、顺着到期索引有界排序取
+/// 最低、日志由调用方整段扫好（[LogState]）。协议 3 里是会话的对拍基准；新代（`store/gen4/cmd/study.rs`）每条命令
+/// 在一个读快照里用它（常驻会话是命令层的状态，见那里的文件头）。
+pub(crate) struct SqlSource<'a> {
+    pub tb: &'a dyn Tables,
+    pub today: i64,
+    pub logs: LogState,
+}
+
+impl Source for SqlSource<'_> {
+    fn tables(&self) -> &dyn Tables {
+        self.tb
+    }
+
+    fn logs(&self) -> &LogState {
+        &self.logs
+    }
+
+    fn tallies(
+        &self,
+        now: i64,
+        decks: Option<&[String]>,
+    ) -> Result<HashMap<String, DeckRaw>, String> {
+        let tb = self.tb;
+        let sql_text = tallies_sql(tb, decks.map(<[String]>::len));
+        let mut args: Vec<Sql> = vec![
+            Sql::Integer(self.today),
+            Sql::Integer(self.today),
+            Sql::Integer(now + LEARN_AHEAD_MS),
+            Sql::Integer(self.today),
+            Sql::Integer(self.today),
+            tb.scope_arg(),
+        ];
+        for d in decks.unwrap_or(&[]) {
+            args.push(tb.id_arg(d));
+        }
+        let mut stmt = tb.conn().prepare_cached(&sql_text).map_err(sql)?;
+        let mut q = stmt.query(params_from_iter(args)).map_err(sql)?;
+        let mut out = HashMap::new();
+        while let Some(r) = q.next().map_err(sql)? {
+            out.insert(
+                tb.id_get(r, 0).map_err(sql)?,
+                DeckRaw {
+                    total: r.get(1).map_err(sql)?,
+                    new_avail: r.get(2).map_err(sql)?,
+                    learn: r.get(3).map_err(sql)?,
+                    due: r.get(4).map_err(sql)?,
+                },
+            );
+        }
+        Ok(out)
+    }
+
+    fn decks_of(&self, ids: &HashSet<String>) -> Result<HashMap<String, (String, bool)>, String> {
+        let tb = self.tb;
+        let all: Vec<&String> = ids.iter().collect();
+        let mut out = HashMap::new();
+        for chunk in all.chunks(400) {
+            let sql_text = format!(
+                "SELECT {} AS id, {} AS deck_id, hidden FROM {} WHERE id IN ({}) AND {}",
+                tb.id_sel("id"),
+                tb.id_sel("deck_id"),
+                tb.cards(),
+                marks(tb, chunk.len()),
+                tb.scope_by_id(),
+            );
+            let mut stmt = tb.conn().prepare_cached(&sql_text).map_err(sql)?;
+            let mut args: Vec<Sql> = chunk.iter().map(|s| tb.id_arg(s)).collect();
+            args.push(tb.scope_arg());
+            let mut q = stmt.query(params_from_iter(args)).map_err(sql)?;
+            while let Some(r) = q.next().map_err(sql)? {
+                out.insert(
+                    tb.id_get(r, 0).map_err(sql)?,
+                    (
+                        tb.id_get(r, 1).map_err(sql)?,
+                        r.get::<_, bool>(2).map_err(sql)?,
+                    ),
+                );
+            }
+        }
+        Ok(out)
+    }
+
+    fn first_learning(
+        &self,
+        decks: &[&str],
+        limit: i64,
+        exclude: &[&str],
+    ) -> Result<Option<(String, Option<i64>)>, String> {
+        if decks.is_empty() {
+            return Ok(None);
+        }
+        let tb = self.tb;
+        let sql_text = first_sql(
+            tb,
+            CardIx::Learning,
+            decks.len(),
+            LEARNING_WHERE,
+            LEARNING_ORDER,
+            exclude.len(),
+        );
+        let mut args: Vec<Sql> = vec![tb.scope_arg(), Sql::Integer(self.today)];
+        args.extend(decks.iter().map(|d| tb.id_arg(d)));
+        args.push(Sql::Integer(limit));
+        args.extend(exclude.iter().map(|d| tb.id_arg(d)));
+        let mut stmt = tb.conn().prepare_cached(&sql_text).map_err(sql)?;
+        let mut q = stmt.query(params_from_iter(args)).map_err(sql)?;
+        match q.next().map_err(sql)? {
+            Some(r) => Ok(Some((
+                tb.id_get(r, 0).map_err(sql)?,
+                r.get(1).map_err(sql)?,
+            ))),
+            None => Ok(None),
+        }
+    }
+
+    fn first_due(
+        &self,
+        decks: &[&str],
+        order: ReviewOrder,
+        now: i64,
+        exclude: &HashSet<&str>,
+    ) -> Result<Option<DueCand>, String> {
+        if order != ReviewOrder::Retrievability {
+            return self.first_by_key(decks, order, exclude);
+        }
+        let tb = self.tb;
+        let ex: Vec<&str> = exclude.iter().copied().collect();
+        let sql_text = due_sql(tb, decks.len(), ex.len());
+        let mut args: Vec<Sql> = vec![tb.scope_arg(), Sql::Integer(self.today)];
+        args.extend(decks.iter().map(|d| tb.id_arg(d)));
+        args.push(Sql::Integer(self.today));
+        args.extend(ex.iter().map(|d| tb.id_arg(d)));
+        args.push(Sql::Integer(now));
+        let mut stmt = tb.conn().prepare_cached(&sql_text).map_err(sql)?;
+        let mut q = stmt.query(params_from_iter(args)).map_err(sql)?;
+        match q.next().map_err(sql)? {
+            Some(r) => Ok(Some((
+                tb.id_get(r, 0).map_err(sql)?,
+                r.get(1).map_err(sql)?,
+                r.get(2).map_err(sql)?,
+            ))),
+            None => Ok(None),
+        }
+    }
+
+    fn ensure_order(&mut self, _order: ReviewOrder) {}
+}
+
+impl SqlSource<'_> {
+    /// R 以外的复习顺序：把全部到期候选读出来（当天哈希在 SQL 里算不了），按（键, id）取最小。
+    pub(crate) fn first_by_key(
+        &self,
+        decks: &[&str],
+        order: ReviewOrder,
+        exclude: &HashSet<&str>,
+    ) -> Result<Option<DueCand>, String> {
+        let tb = self.tb;
+        let ex: Vec<&str> = exclude.iter().copied().collect();
+        let sql_text = due_all_sql(tb, decks.len(), ex.len());
+        let mut args: Vec<Sql> = vec![tb.scope_arg(), Sql::Integer(self.today)];
+        args.extend(decks.iter().map(|d| tb.id_arg(d)));
+        args.push(Sql::Integer(self.today));
+        args.extend(ex.iter().map(|d| tb.id_arg(d)));
+        let mut stmt = tb.conn().prepare_cached(&sql_text).map_err(sql)?;
+        let mut q = stmt.query(params_from_iter(args)).map_err(sql)?;
+        let mut best: Option<(crate::store::queue::OrdKey, String, DueCand)> = None;
+        while let Some(r) = q.next().map_err(sql)? {
+            let id: String = tb.id_get(r, 0).map_err(sql)?;
+            let key = crate::store::queue::order_key(
+                order,
+                &id,
+                self.today,
+                r.get(3).map_err(sql)?,
+                r.get(4).map_err(sql)?,
+                r.get::<_, Option<f64>>(5).map_err(sql)?.map(|d| d as f32),
+            );
+            if best.as_ref().is_none_or(|(k, i, _)| (key, &id) < (*k, i)) {
+                let cand = (id.clone(), r.get(1).map_err(sql)?, r.get(2).map_err(sql)?);
+                best = Some((key, id, cand));
+            }
+        }
+        Ok(best.map(|(_, _, c)| c))
+    }
 }
 
 /// RWKV-Instant 合格的复习卡（按 R 升序，同 R 按 id）。与旧 Dart `_instantReviews` 同口径：
@@ -653,10 +1055,15 @@ fn count_tree(
         // RWKV 牌组开了「忽略每日复习上限」（上游 Anki 的 Ignore review limit）：按 R 合格的卡全部出，这一层不截断
         // （祖先没开的照样按自己的上限截）。
         // 已用按牌组自己的单位（[LimitUnit]）对整棵子树统计，与以前「子树里已复习的卡」同一个汇总口径。
-        let review_remaining = if ctx.tree.ignores_review_limit(id) {
-            UNLIMITED_REVIEWS
+        let (review_remaining, review_minutes_left) = if ctx.tree.ignores_review_limit(id) {
+            (UNLIMITED_REVIEWS, None)
         } else {
-            LimitUnit::of_view(view).review_room(int(view, "rp", 200) + ext_review, &sub)
+            let unit = LimitUnit::of_view(view);
+            let limit = int(view, "rp", 200) + ext_review;
+            (
+                unit.review_room(limit, &sub),
+                unit.minutes_left(limit, &sub),
+            )
         };
         let r = Count {
             sub,
@@ -666,6 +1073,7 @@ fn count_tree(
             new_count: new_remaining.min(new_sum),
             review_count: review_remaining.min(review_sum),
             learn_count: learn_sum,
+            review_minutes_left,
         };
         out.insert(id.to_owned(), r);
         r
@@ -678,9 +1086,7 @@ fn count_tree(
 }
 
 struct Picker<'a> {
-    c: &'a Connection,
     src: &'a dyn Source,
-    profile: &'a str,
     ctx: &'a Ctx<'a>,
     root: &'a str,
     sub: &'a [String],
@@ -731,23 +1137,21 @@ impl Picker<'_> {
     fn first_new(
         &self,
         decks: &[&str],
-        order: &str,
+        (order, ix): (&str, CardIx),
         exclude: &[&str],
     ) -> Result<Option<String>, String> {
         if decks.is_empty() {
             return Ok(None);
         }
-        let sql_text = first_sql(decks.len(), "queue = 'new'", order, exclude.len());
-        let mut args: Vec<Sql> = vec![
-            Sql::Text(self.profile.to_owned()),
-            Sql::Integer(self.ctx.today),
-        ];
-        args.extend(decks.iter().map(|d| Sql::Text((*d).to_owned())));
-        args.extend(exclude.iter().map(|d| Sql::Text((*d).to_owned())));
-        let mut stmt = self.c.prepare_cached(&sql_text).map_err(sql)?;
+        let tb = self.src.tables();
+        let sql_text = first_sql(tb, ix, decks.len(), "queue = 'new'", order, exclude.len());
+        let mut args: Vec<Sql> = vec![tb.scope_arg(), Sql::Integer(self.ctx.today)];
+        args.extend(decks.iter().map(|d| tb.id_arg(d)));
+        args.extend(exclude.iter().map(|d| tb.id_arg(d)));
+        let mut stmt = tb.conn().prepare_cached(&sql_text).map_err(sql)?;
         let mut q = stmt.query(params_from_iter(args)).map_err(sql)?;
         match q.next().map_err(sql)? {
-            Some(r) => Ok(Some(r.get(0).map_err(sql)?)),
+            Some(r) => Ok(Some(tb.id_get(r, 0).map_err(sql)?)),
             None => Ok(None),
         }
     }
@@ -793,8 +1197,8 @@ impl Picker<'_> {
             .collect();
         let owner = self.ctx.tree.params_owner(self.root).map(|d| &d.view);
         let order = match owner.and_then(|v| v["no"].as_str()) {
-            Some("position") => NEW_BY_POSITION,
-            _ => NEW_BY_FREQUENCY,
+            Some("position") => (NEW_BY_POSITION, CardIx::NewPosition),
+            _ => (NEW_BY_FREQUENCY, CardIx::NewFreq),
         };
         self.first_new(&decks, order, exclude)
     }
@@ -951,53 +1355,44 @@ impl CustomStudy {
 
 /// 自定义学习的出卡（见 [CustomStudy]）。
 struct CustomPicker<'a> {
-    c: &'a Connection,
-    profile: &'a str,
+    tb: &'a dyn Tables,
     ctx: &'a Ctx<'a>,
     decks: &'a [String],
     cu: &'a CustomStudy,
+    /// 子树里会话开始之后有作答日志的卡：对 `id` 列的条件与它的参数（[Tables::answered]，一次排队算一次）。
+    answered: (String, Vec<Sql>),
 }
 
 impl CustomPicker<'_> {
-    /// 子树里会话开始之后有作答日志的卡（子查询，绑定 profile、since）。
-    const ANSWERED: &'static str = "id IN (SELECT card_id FROM srs_review_logs WHERE profile_uid = srs_id(?) AND kind = 'review' AND occurred_at >= ?)";
-
     fn base_args(&self) -> Vec<Sql> {
-        let mut a = vec![
-            Sql::Text(self.profile.to_owned()),
-            Sql::Integer(self.ctx.today),
-        ];
-        a.extend(self.decks.iter().map(|d| Sql::Text(d.clone())));
+        let mut a = vec![self.tb.scope_arg(), Sql::Integer(self.ctx.today)];
+        a.extend(self.decks.iter().map(|d| self.tb.id_arg(d)));
         a
-    }
-
-    fn answered_args(&self) -> [Sql; 2] {
-        [
-            Sql::Text(self.profile.to_owned()),
-            Sql::Integer(self.cu.since),
-        ]
     }
 
     fn base(&self) -> String {
         format!(
-            "FROM srs_cards_cache WHERE profile_uid = srs_id(?) AND {LIVE} AND deck_id IN ({})",
-            marks(self.decks.len())
+            "FROM {} WHERE {} AND {LIVE} AND deck_id IN ({})",
+            self.tb.cards(),
+            self.tb.scope(""),
+            marks(self.tb, self.decks.len())
         )
     }
 
     /// 会话里答过、仍在学习 / 重学队列的卡：(卡, due_at)，按到期先后。
     fn learning(&self) -> Result<Vec<(String, i64)>, String> {
         let q = format!(
-            "SELECT srs_idt(id), COALESCE(due_at, 0) {} AND queue IN ('learning', 'relearning') AND {} ORDER BY COALESCE(due_at, 0), id",
+            "SELECT {}, COALESCE(due_at, 0) {} AND queue IN ('learning', 'relearning') AND {} ORDER BY COALESCE(due_at, 0), id",
+            self.tb.id_sel("id"),
             self.base(),
-            Self::ANSWERED
+            self.answered.0
         );
         let mut args = self.base_args();
-        args.extend(self.answered_args());
-        let mut stmt = self.c.prepare_cached(&q).map_err(sql)?;
+        args.extend(self.answered.1.iter().cloned());
+        let mut stmt = self.tb.conn().prepare_cached(&q).map_err(sql)?;
         let rows = stmt
             .query_map(params_from_iter(args), |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+                Ok((self.tb.id_get(r, 0)?, r.get::<_, i64>(1)?))
             })
             .map_err(sql)?;
         rows.collect::<Result<Vec<_>, _>>().map_err(sql)
@@ -1006,14 +1401,17 @@ impl CustomPicker<'_> {
     /// 子树里会话开始之后答过的卡数（扣 [CustomStudy::limit]）。
     fn done(&self) -> Result<i64, String> {
         let q = format!(
-            "SELECT COUNT(*) FROM srs_cards_cache WHERE profile_uid = srs_id(?) AND deck_id IN ({}) AND {}",
-            marks(self.decks.len()),
-            Self::ANSWERED
+            "SELECT COUNT(*) FROM {} WHERE {} AND deck_id IN ({}) AND {}",
+            self.tb.cards(),
+            self.tb.scope(""),
+            marks(self.tb, self.decks.len()),
+            self.answered.0
         );
-        let mut args: Vec<Sql> = vec![Sql::Text(self.profile.to_owned())];
-        args.extend(self.decks.iter().map(|d| Sql::Text(d.clone())));
-        args.extend(self.answered_args());
-        self.c
+        let mut args: Vec<Sql> = vec![self.tb.scope_arg()];
+        args.extend(self.decks.iter().map(|d| self.tb.id_arg(d)));
+        args.extend(self.answered.1.iter().cloned());
+        self.tb
+            .conn()
             .query_row(&q, params_from_iter(args), |r| r.get(0))
             .map_err(sql)
     }
@@ -1024,10 +1422,10 @@ impl CustomPicker<'_> {
         match self.cu.mode {
             CustomMode::Forgotten => {
                 let from = self.ctx.day_start(today - self.cu.days + 1);
+                let (forgot, args) = self.tb.forgotten(from);
                 (
-                    "queue <> 'new' AND id IN (SELECT card_id FROM srs_stat_reviews WHERE profile_uid = srs_id(?) AND rating = 1 AND occurred_at >= ?)"
-                        .to_owned(),
-                    vec![Sql::Text(self.profile.to_owned()), Sql::Integer(from)],
+                    format!("queue <> 'new' AND {forgot}"),
+                    args,
                     "last_reviewed_at, id",
                 )
             }
@@ -1065,9 +1463,11 @@ impl CustomPicker<'_> {
                     ]
                     .join(" OR ");
                     parts.push(format!(
-                        "note_id IN (SELECT n.id FROM srs_notes_cache n, json_each(n.tags_json) t WHERE n.profile_uid = srs_id(?) AND ({each}))"
+                        "note_id IN (SELECT n.id FROM {} n, json_each(n.tags_json) t WHERE {} AND ({each}))",
+                        self.tb.notes(),
+                        self.tb.scope("n.")
                     ));
-                    args.push(Sql::Text(self.profile.to_owned()));
+                    args.push(self.tb.scope_arg());
                     for t in &self.cu.tags {
                         let escaped = t
                             .replace('\\', "\\\\")
@@ -1078,11 +1478,12 @@ impl CustomPicker<'_> {
                     }
                 }
                 if let Some(key) = &self.cu.source {
-                    parts.push(
-                        "note_id IN (SELECT n.id FROM srs_notes_cache n WHERE n.profile_uid = srs_id(?) AND n.deleted_at IS NULL AND n.source_key = ?)"
-                            .to_owned(),
-                    );
-                    args.push(Sql::Text(self.profile.to_owned()));
+                    parts.push(format!(
+                        "note_id IN (SELECT n.id FROM {} n WHERE {} AND n.deleted_at IS NULL AND n.source_key = ?)",
+                        self.tb.notes(),
+                        self.tb.scope("n.")
+                    ));
+                    args.push(self.tb.scope_arg());
                     args.push(Sql::Text(key.clone()));
                 }
                 let cond = if parts.is_empty() {
@@ -1111,7 +1512,7 @@ impl CustomPicker<'_> {
             Some((l, keep)) if !l.is_empty() => format!(
                 " AND id {}IN ({})",
                 if keep { "" } else { "NOT " },
-                marks(l.len())
+                marks(self.tb, l.len())
             ),
             _ => String::new(),
         };
@@ -1119,33 +1520,36 @@ impl CustomPicker<'_> {
         let tail = format!(
             "{} AND {cond} AND NOT {}{id_filter}",
             self.base(),
-            Self::ANSWERED
+            self.answered.0
         );
         let mut args = self.base_args();
         args.extend(cond_args);
-        args.extend(self.answered_args());
+        args.extend(self.answered.1.iter().cloned());
         args.extend(
             ids.into_iter()
                 .flat_map(|(l, _)| l.iter())
-                .map(|e| Sql::Text((*e).to_owned())),
+                .map(|e| self.tb.id_arg(e)),
         );
         let first: Option<String> = {
             let mut stmt = self
-                .c
+                .tb
+                .conn()
                 .prepare_cached(&format!(
-                    "SELECT srs_idt(id) {tail} ORDER BY {order} LIMIT 1"
+                    "SELECT {} {tail} ORDER BY {order} LIMIT 1",
+                    self.tb.id_sel("id")
                 ))
                 .map_err(sql)?;
             let mut q = stmt.query(params_from_iter(args.clone())).map_err(sql)?;
             match q.next().map_err(sql)? {
-                Some(r) => Some(r.get(0).map_err(sql)?),
+                Some(r) => Some(self.tb.id_get(r, 0).map_err(sql)?),
                 None => None,
             }
         };
         let mut count_args = args;
         count_args.push(Sql::Integer(cap.max(0)));
         let count: i64 = self
-            .c
+            .tb
+            .conn()
             .query_row(
                 &format!("SELECT COUNT(*) FROM (SELECT 1 {tail} LIMIT ?)"),
                 params_from_iter(count_args),
@@ -1197,7 +1601,7 @@ impl CustomPicker<'_> {
 }
 
 /// 请求里的「此刻」与日界。
-fn when(req: &Value) -> Result<(i64, Day), String> {
+pub(crate) fn when(req: &Value) -> Result<(i64, Day), String> {
     let now = req
         .get("now")
         .and_then(Value::as_i64)
@@ -1226,14 +1630,22 @@ pub(crate) fn study(
 ) -> Result<Value, String> {
     let (now, day) = when(req)?;
     hub.with_session(c, profile, day, day.index(now), uncommitted, |s| {
-        run(c, &mut SessionSource(s), profile, req)
+        let tree = DeckTree::load(c, profile)?;
+        run(&mut SessionSource(s, P3Tables { c, profile }), tree, req)
     })
 }
 
-/// 排队本身：数据从 [src] 取（会话，或测试基准）。
-fn run(c: &Connection, src: &mut dyn Source, profile: &str, req: &Value) -> Result<Value, String> {
+/// 排队本身：数据从 [src] 取（会话，或 [SqlSource]），牌组树 [tree] 由调用方在同一个读快照里读好（ID 与 [src] 同一口径）。
+pub(crate) fn run_with(
+    src: &mut SqlSource<'_>,
+    tree: DeckTree,
+    req: &Value,
+) -> Result<Value, String> {
+    run(src, tree, req)
+}
+
+fn run(src: &mut dyn Source, tree: DeckTree, req: &Value) -> Result<Value, String> {
     let (now, day) = when(req)?;
-    let tree = DeckTree::load(c, profile)?;
     let root = req.get("deck").and_then(Value::as_str);
     // 出卡顺序随所点牌组的 own 祖先（读完牌组树才知道）；要出卡、不是自定义学习时才让会话建这个顺序的索引。
     let (order, mix) = root.map_or((ReviewOrder::default(), NewMix::default()), |r| {
@@ -1385,11 +1797,11 @@ fn run(c: &Connection, src: &mut dyn Source, profile: &str, req: &Value) -> Resu
             .collect();
         let ex: Vec<&str> = exclude.iter().map(String::as_str).collect();
         let picker = CustomPicker {
-            c,
-            profile,
+            tb: src.tables(),
             ctx: &ctx,
             decks: &ids,
             cu,
+            answered: src.tables().answered(cu.since)?,
         };
         let (n, a, left, learn) = picker.pick(&ex)?;
         if req["pick"] == Value::Bool(true) {
@@ -1405,9 +1817,7 @@ fn run(c: &Connection, src: &mut dyn Source, profile: &str, req: &Value) -> Resu
             .map(str::to_owned)
             .collect();
         let picker = Picker {
-            c,
             src,
-            profile,
             ctx: &ctx,
             root: r,
             sub: &ids,
@@ -1441,7 +1851,8 @@ fn run(c: &Connection, src: &mut dyn Source, profile: &str, req: &Value) -> Resu
                 k.budget.limit,
                 k.budget.allowed,
                 k.budget.review_budget,
-                k.budget.reason
+                k.budget.reason,
+                k.review_minutes_left
             ]);
             (id.clone(), row)
         })
@@ -1635,237 +2046,22 @@ mod tests {
         );
     }
 
-    /// L2 的逐条 SQL 排队（2026-10-29 搬进常驻会话之前的生产实现，原样保留）：会话实现的对拍基准。每次排队按子树
-    /// 聚合计数、顺着到期索引有界排序取最低、日志整段扫。
+    /// L2 的逐条 SQL 排队（[SqlSource]）：会话实现的对拍基准。
     mod oracle {
         use super::super::*;
 
-        pub(super) const LEARNING_WHERE: &str =
-            "queue IN ('learning', 'relearning') AND COALESCE(due_at, 0) <= ?";
-        pub(super) const LEARNING_ORDER: &str = "COALESCE(due_at, 0), id";
-
-        pub(super) fn tallies_sql(decks: Option<usize>) -> String {
-            let deck_sql =
-                decks.map_or(String::new(), |n| format!(" AND deck_id IN ({})", marks(n)));
-            format!(
-                "SELECT srs_idt(deck_id) AS deck_id, COUNT(*), \
-                 SUM(CASE WHEN {LIVE} AND queue NOT IN ('learning', 'relearning', 'review') THEN 1 ELSE 0 END), \
-                 SUM(CASE WHEN {LIVE} AND queue IN ('learning', 'relearning') AND COALESCE(due_at, 0) <= ? THEN 1 ELSE 0 END), \
-                 SUM(CASE WHEN {LIVE} AND queue = 'review' AND COALESCE(due_day, 0) <= ? THEN 1 ELSE 0 END) \
-                 FROM srs_cards_cache WHERE profile_uid = srs_id(?) AND hidden = 0{deck_sql} GROUP BY deck_id"
-            )
-        }
-
-        pub(super) fn due_sql(decks: usize, exclude: usize) -> String {
-            let not_in = if exclude == 0 {
-                String::new()
-            } else {
-                format!(" AND id NOT IN ({})", marks(exclude))
-            };
-            format!(
-                "SELECT srs_idt(id), last_reviewed_at, stability FROM srs_cards_cache WHERE profile_uid = srs_id(?) AND {LIVE} \
-                 AND deck_id IN ({}) AND queue = 'review' AND COALESCE(due_day, 0) <= ?{not_in} \
-                 ORDER BY 1.0 / (1.0 + (CASE WHEN last_reviewed_at IS NULL THEN 0.0 ELSE (? - last_reviewed_at) / 86400000.0 END) \
-                 / (9.0 * COALESCE(stability, 1.0))), id LIMIT 2",
-                marks(decks),
-            )
-        }
-
-        pub(super) struct SqlSource<'a> {
-            pub c: &'a Connection,
-            pub profile: &'a str,
-            pub today: i64,
-            pub logs: LogState,
-        }
-
-        impl Source for SqlSource<'_> {
-            fn logs(&self) -> &LogState {
-                &self.logs
-            }
-
-            fn tallies(
-                &self,
-                now: i64,
-                decks: Option<&[String]>,
-            ) -> Result<HashMap<String, DeckRaw>, String> {
-                let sql_text = tallies_sql(decks.map(<[String]>::len));
-                let mut args: Vec<Sql> = vec![
-                    Sql::Integer(self.today),
-                    Sql::Integer(self.today),
-                    Sql::Integer(now + LEARN_AHEAD_MS),
-                    Sql::Integer(self.today),
-                    Sql::Integer(self.today),
-                    Sql::Text(self.profile.to_owned()),
-                ];
-                for d in decks.unwrap_or(&[]) {
-                    args.push(Sql::Text(d.clone()));
-                }
-                let mut stmt = self.c.prepare(&sql_text).map_err(sql)?;
-                let mut q = stmt.query(params_from_iter(args)).map_err(sql)?;
-                let mut out = HashMap::new();
-                while let Some(r) = q.next().map_err(sql)? {
-                    out.insert(
-                        r.get::<_, String>(0).map_err(sql)?,
-                        DeckRaw {
-                            total: r.get(1).map_err(sql)?,
-                            new_avail: r.get(2).map_err(sql)?,
-                            learn: r.get(3).map_err(sql)?,
-                            due: r.get(4).map_err(sql)?,
-                        },
-                    );
-                }
-                Ok(out)
-            }
-
-            fn decks_of(
-                &self,
-                ids: &HashSet<String>,
-            ) -> Result<HashMap<String, (String, bool)>, String> {
-                let all: Vec<&String> = ids.iter().collect();
-                let mut out = HashMap::new();
-                for chunk in all.chunks(400) {
-                    let sql_text = format!(
-                        "SELECT srs_idt(id) AS id, srs_idt(deck_id) AS deck_id, hidden FROM srs_cards_cache WHERE id IN ({}) AND +profile_uid = srs_id(?)",
-                        marks(chunk.len())
-                    );
-                    let mut stmt = self.c.prepare(&sql_text).map_err(sql)?;
-                    let mut args: Vec<Sql> =
-                        chunk.iter().map(|s| Sql::Text((*s).clone())).collect();
-                    args.push(Sql::Text(self.profile.to_owned()));
-                    let mut q = stmt.query(params_from_iter(args)).map_err(sql)?;
-                    while let Some(r) = q.next().map_err(sql)? {
-                        out.insert(
-                            r.get::<_, String>(0).map_err(sql)?,
-                            (
-                                r.get::<_, String>(1).map_err(sql)?,
-                                r.get::<_, bool>(2).map_err(sql)?,
-                            ),
-                        );
-                    }
-                }
-                Ok(out)
-            }
-
-            fn first_learning(
-                &self,
-                decks: &[&str],
-                limit: i64,
-                exclude: &[&str],
-            ) -> Result<Option<(String, Option<i64>)>, String> {
-                if decks.is_empty() {
-                    return Ok(None);
-                }
-                let sql_text =
-                    first_sql(decks.len(), LEARNING_WHERE, LEARNING_ORDER, exclude.len());
-                let mut args: Vec<Sql> =
-                    vec![Sql::Text(self.profile.to_owned()), Sql::Integer(self.today)];
-                args.extend(decks.iter().map(|d| Sql::Text((*d).to_owned())));
-                args.push(Sql::Integer(limit));
-                args.extend(exclude.iter().map(|d| Sql::Text((*d).to_owned())));
-                let mut stmt = self.c.prepare(&sql_text).map_err(sql)?;
-                let mut q = stmt.query(params_from_iter(args)).map_err(sql)?;
-                match q.next().map_err(sql)? {
-                    Some(r) => Ok(Some((r.get(0).map_err(sql)?, r.get(1).map_err(sql)?))),
-                    None => Ok(None),
-                }
-            }
-
-            fn first_due(
-                &self,
-                decks: &[&str],
-                order: ReviewOrder,
-                now: i64,
-                exclude: &HashSet<&str>,
-            ) -> Result<Option<DueCand>, String> {
-                if order != ReviewOrder::Retrievability {
-                    return self.first_by_key(decks, order, exclude);
-                }
-                let ex: Vec<&str> = exclude.iter().copied().collect();
-                let sql_text = due_sql(decks.len(), ex.len());
-                let mut args: Vec<Sql> =
-                    vec![Sql::Text(self.profile.to_owned()), Sql::Integer(self.today)];
-                args.extend(decks.iter().map(|d| Sql::Text((*d).to_owned())));
-                args.push(Sql::Integer(self.today));
-                args.extend(ex.iter().map(|d| Sql::Text((*d).to_owned())));
-                args.push(Sql::Integer(now));
-                let mut stmt = self.c.prepare(&sql_text).map_err(sql)?;
-                let mut q = stmt.query(params_from_iter(args)).map_err(sql)?;
-                match q.next().map_err(sql)? {
-                    Some(r) => Ok(Some((
-                        r.get(0).map_err(sql)?,
-                        r.get(1).map_err(sql)?,
-                        r.get(2).map_err(sql)?,
-                    ))),
-                    None => Ok(None),
-                }
-            }
-
-            fn ensure_order(&mut self, _order: ReviewOrder) {}
-        }
-
-        impl SqlSource<'_> {
-            /// R 以外的复习顺序：把全部到期候选读出来（当天哈希在 SQL 里算不了），按（键, id）取最小。
-            pub(super) fn first_by_key(
-                &self,
-                decks: &[&str],
-                order: ReviewOrder,
-                exclude: &HashSet<&str>,
-            ) -> Result<Option<DueCand>, String> {
-                let ex: Vec<&str> = exclude.iter().copied().collect();
-                let sql_text = due_all_sql(decks.len(), ex.len());
-                let mut args: Vec<Sql> =
-                    vec![Sql::Text(self.profile.to_owned()), Sql::Integer(self.today)];
-                args.extend(decks.iter().map(|d| Sql::Text((*d).to_owned())));
-                args.push(Sql::Integer(self.today));
-                args.extend(ex.iter().map(|d| Sql::Text((*d).to_owned())));
-                let mut stmt = self.c.prepare(&sql_text).map_err(sql)?;
-                let mut q = stmt.query(params_from_iter(args)).map_err(sql)?;
-                let mut best: Option<(crate::store::queue::OrdKey, String, DueCand)> = None;
-                while let Some(r) = q.next().map_err(sql)? {
-                    let id: String = r.get(0).map_err(sql)?;
-                    let key = crate::store::queue::order_key(
-                        order,
-                        &id,
-                        self.today,
-                        r.get(3).map_err(sql)?,
-                        r.get(4).map_err(sql)?,
-                        r.get::<_, Option<f64>>(5).map_err(sql)?.map(|d| d as f32),
-                    );
-                    if best.as_ref().is_none_or(|(k, i, _)| (key, &id) < (*k, i)) {
-                        let cand = (id.clone(), r.get(1).map_err(sql)?, r.get(2).map_err(sql)?);
-                        best = Some((key, id, cand));
-                    }
-                }
-                Ok(best.map(|(_, _, c)| c))
-            }
-        }
-
-        /// 子树里全部到期复习候选（不排序）：id、上次作答、稳定度、到期日、间隔、难度。
-        pub(super) fn due_all_sql(decks: usize, exclude: usize) -> String {
-            let not_in = if exclude == 0 {
-                String::new()
-            } else {
-                format!(" AND id NOT IN ({})", marks(exclude))
-            };
-            format!(
-                "SELECT srs_idt(id), last_reviewed_at, stability, due_day, scheduled_days, difficulty FROM srs_cards_cache \
-                 WHERE profile_uid = srs_id(?) AND {LIVE} \
-                 AND deck_id IN ({}) AND queue = 'review' AND COALESCE(due_day, 0) <= ?{not_in}",
-                marks(decks),
-            )
-        }
-
-        /// 用旧实现排一次（每次整段扫日志）。
+        /// 用旧实现排一次（每次整段扫日志；[SqlSource]）。
         pub(super) fn study(c: &Connection, profile: &str, req: &Value) -> Result<Value, String> {
             let (now, day) = when(req)?;
             let today = day.index(now);
+            let tb = P3Tables { c, profile };
             let mut src = SqlSource {
-                c,
-                profile,
+                tb: &tb,
                 today,
                 logs: LogState::scan(c, profile, day, today)?,
             };
-            run(c, &mut src, profile, req)
+            let tree = DeckTree::load(c, profile)?;
+            run(&mut src, tree, req)
         }
     }
 
@@ -1875,6 +2071,8 @@ mod tests {
     fn queue_queries_use_their_indexes() {
         let mut c = rusqlite::Connection::open_in_memory().unwrap();
         crate::store::schema::migrate(&mut c).unwrap();
+        let tb = P3Tables { c: &c, profile: P };
+        let tb: &dyn Tables = &tb;
         let plan = |q: &str| -> String {
             let mut stmt = c.prepare(&format!("EXPLAIN QUERY PLAN {q}")).unwrap();
             let n = stmt.parameter_count();
@@ -1902,13 +2100,27 @@ mod tests {
             for ex in [0, 2] {
                 uses(
                     "new(freq)",
-                    &first_sql(decks, "queue = 'new'", NEW_BY_FREQUENCY, ex),
+                    &first_sql(
+                        tb,
+                        CardIx::NewFreq,
+                        decks,
+                        "queue = 'new'",
+                        NEW_BY_FREQUENCY,
+                        ex,
+                    ),
                     "idx_srs_cards_cache_new_freq",
                     true,
                 );
                 uses(
                     "new(position)",
-                    &first_sql(decks, "queue = 'new'", NEW_BY_POSITION, ex),
+                    &first_sql(
+                        tb,
+                        CardIx::NewPosition,
+                        decks,
+                        "queue = 'new'",
+                        NEW_BY_POSITION,
+                        ex,
+                    ),
                     "idx_srs_cards_cache_new_position",
                     true,
                 );
@@ -2213,9 +2425,9 @@ mod tests {
                 })
             };
             let sql_first = |c: &Connection| {
-                let src = oracle::SqlSource {
-                    c,
-                    profile: P,
+                let tb = P3Tables { c, profile: P };
+                let src = SqlSource {
+                    tb: &tb,
                     today,
                     logs: LogState::default(),
                 };
@@ -2678,7 +2890,7 @@ mod tests {
             core.read_visible(|c| oracle::study(c, P, &req)).unwrap()
         );
         let row = |d: &str| got["counts"][d].clone();
-        // [新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 原因]
+        // [新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 原因, 剩余复习分钟]
         assert_eq!(row("IGN")[2], json!(7), "忽略上限：7 张到期全部计入");
         assert_eq!(
             row("OLD")[2],
@@ -2689,11 +2901,11 @@ mod tests {
         // 没有复习日志：预算 = 10 × 10 = 100；到期 0 → 多出 50%。
         assert_eq!(
             row("BOOST"),
-            json!([15, 0, 0, 30, 10, 15, 100, "increased"])
+            json!([15, 0, 0, 30, 10, 15, 100, "increased", null])
         );
-        assert_eq!(row("OFF"), json!([10, 0, 0, 30, 10, 10, 0, null]));
+        assert_eq!(row("OFF"), json!([10, 0, 0, 30, 10, 10, 0, null, null]));
         // RWKV 牌组：寄存器里的 boost 50% 照存，但不按复习量调整——恒为每日新卡上限、复习预算 0、没有原因。
-        assert_eq!(row("RBOOST"), json!([10, 0, 0, 30, 10, 10, 0, null]));
+        assert_eq!(row("RBOOST"), json!([10, 0, 0, 30, 10, 10, 0, null, null]));
         // 今天已复习过 2 张之后：旧牌组没有剩余额度、不再出复习卡；忽略上限的牌组照出。
         let mut logs = 0i64;
         for d in ["IGN", "OLD"] {
@@ -2755,7 +2967,7 @@ mod tests {
                 core.read_visible(|c| oracle::study(c, P, &req)).unwrap()
             );
             assert_eq!(got["counts"]["MIX"][2], json!(want_due), "{got}");
-            assert_eq!(got["counts"]["MIX"].as_array().unwrap().len(), 8, "{got}");
+            assert_eq!(got["counts"]["MIX"].as_array().unwrap().len(), 9, "{got}");
         }
         // RWKV 牌组不按复习量调整新卡：合格的卡（RWKV 的「今天到期」）不是负荷信号，再多也不缩减 / 暂停新卡。
         // 新卡上限 1：FSRS 下预算 = 10、负荷超过 20 就暂停；RWKV 下恒为 1、复习预算 0。
@@ -2873,17 +3085,17 @@ mod tests {
         };
         let req = json!({"now": now, "utcOff": day.utc_offset_min, "rollover": day.rollover_hour});
         let got = study(&req);
-        // [新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 原因]
+        // [新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 原因, 剩余复习分钟]
         // CAP：25 张到期，今天最多复习 3 张 → 负荷 3 ≤ 预算 10，新卡照常 1 张。
         assert_eq!(
             got["counts"]["CAP"],
-            json!([1, 0, 3, 30, 1, 1, 10, null]),
+            json!([1, 0, 3, 30, 1, 1, 10, null, null]),
             "{got}"
         );
         // FULL：25 张到期都在上限 30 以内 → 负荷 25 > 2 × 10，暂停。
         assert_eq!(
             got["counts"]["FULL"],
-            json!([0, 0, 25, 30, 1, 0, 10, "paused"]),
+            json!([0, 0, 25, 30, 1, 0, 10, "paused", null]),
             "{got}"
         );
         // FULL 复习了 10 张（排到以后）：剩余到期 15，但已复习 10 张照算 → 负荷仍是 25，照旧暂停
@@ -2897,7 +3109,7 @@ mod tests {
         let got = study(&req);
         assert_eq!(
             got["counts"]["FULL"],
-            json!([0, 0, 15, 30, 1, 0, 10, "paused"]),
+            json!([0, 0, 15, 30, 1, 0, 10, "paused", null]),
             "{got}"
         );
         assert_eq!(got["counts"]["CAP"][7], Value::Null, "{got}");
@@ -3060,6 +3272,12 @@ mod tests {
         assert_eq!(due(&got, "UB"), 1, "坏值按次数：{got}");
         assert_eq!(due(&got, "UC"), 3, "卡片数：5 − 2：{got}");
         assert_eq!(due(&got, "UM"), 10, "时长：4 分钟 < 5 分钟，不截：{got}");
+        // 剩余复习分钟（第 9 列）：只有分钟单位有值，其余单位为 null。
+        let minutes = |got: &Value, d: &str| got["counts"][d][8].clone();
+        assert_eq!(minutes(&got, "UM"), json!(1), "5 − 4 = 1 分钟：{got}");
+        for d in ["UR", "UB", "UC"] {
+            assert_eq!(minutes(&got, d), Value::Null, "{d}：{got}");
+        }
         // 出卡与计数一致：次数用完的牌组不再出复习卡。
         let pick = |d: &str| {
             study(&json!({"now": now, "utcOff": 0, "rollover": 4, "deck": d, "pick": true}))["next"]
@@ -3084,6 +3302,7 @@ mod tests {
         assert_eq!(due(&got, "UR"), 0, "{got}");
         assert_eq!(due(&got, "UC"), 2, "{got}");
         assert_eq!(due(&got, "UM"), 0, "时长用满：{got}");
+        assert_eq!(minutes(&got, "UM"), json!(0), "{got}");
         assert!(pick("UR").is_null());
         assert!(pick("UM").is_null());
         // 跨日：已用清零。
@@ -3092,6 +3311,7 @@ mod tests {
         assert_eq!(due(&got, "UR"), 5, "{got}");
         assert_eq!(due(&got, "UC"), 5, "{got}");
         assert_eq!(due(&got, "UM"), 9, "{got}");
+        assert_eq!(minutes(&got, "UM"), json!(5), "{got}");
 
         // 父子牌组：各按自己的单位统计整棵子树。PR（次数，上限 6）下挂 PC（卡片数，上限 100）：子树已用 次数 4 /
         // 卡片 2 → PC 剩 98 张（到期 10 全出），PR 剩 2 次 → 父行 2。PM（分钟，上限 4）下挂 QC（卡片数）：子树用了
@@ -3109,6 +3329,8 @@ mod tests {
         assert_eq!(due(&got, "PR"), 2, "{got}");
         assert_eq!(due(&got, "QC"), 10, "{got}");
         assert_eq!(due(&got, "PM"), 0, "{got}");
+        assert_eq!(minutes(&got, "PM"), json!(0), "整棵子树用了 4 分钟：{got}");
+        assert_eq!(minutes(&got, "QC"), Value::Null, "{got}");
 
         // 分钟单位下的新卡负荷全天同一口径（到期 + 已复习，不截）：25 张 > 2 × 预算 10 → 暂停；时长用满后复习
         // 不再出，但负荷仍是 24 + 1 = 25，暂停不会在当天自己解除、新卡配额仍为 0。
@@ -3176,7 +3398,7 @@ mod tests {
             );
         }
         let got = study(&req);
-        // [新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 原因]：预算 10，负荷 1 → 多出 floor(2 × 0.8) = 1 张；
+        // [新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 原因, 剩余复习分钟]：预算 10，负荷 1 → 多出 floor(2 × 0.8) = 1 张；
         // 负荷若算成 2 − 5 + 1 = −2 会多出 floor(2 × 1.4) = 2 张。
         assert_eq!(got["counts"]["NR"][2], json!(0), "{got}");
         assert_eq!(got["counts"]["NR"][5], json!(2), "{got}");
@@ -3424,7 +3646,7 @@ mod tests {
             got,
             core.read_visible(|c| oracle::study(c, P, &req)).unwrap()
         );
-        // [新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 原因]
+        // [新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 原因, 剩余复习分钟]
         assert_eq!(
             got["counts"]["RC"][2],
             json!(40),

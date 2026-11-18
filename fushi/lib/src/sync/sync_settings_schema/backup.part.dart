@@ -1011,11 +1011,15 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
 /// [onImportSucceeded] 仅在恢复成功后、重启前回调。推荐包用它记录待办教程和
 /// 成功清理凭据；校验失败、取消或恢复失败均不会触发。
 /// [preset] 非 null 时跳过确认框（见 [BackupImportPreset]）；缺省行为不变。
+/// [confirmInitialMode] 是确认框打开时预选的导入方式（[preset] 非 null 时不弹框，
+/// 它不起作用）：缺省「覆盖」保持设置页「导入备份」的既有行为；推荐包传「合并」——
+/// 推荐包只带词典 / 音频资源，照默认点「覆盖」会整库被包里的库替换（BUG-4698）。
 Future<void> runBackupImportFlowForFile({
   required AppModel appModel,
   required String filePath,
   Future<void> Function()? onImportSucceeded,
   BackupImportPreset? preset,
+  BackupImportMode confirmInitialMode = BackupImportMode.overwrite,
 }) async {
   // appModel 驱动全程遮罩，此后不依赖任何页面 `mounted`/context；确认对话框由全局
   // [AppModel.navigatorKey] 宿主弹出。
@@ -1142,6 +1146,7 @@ Future<void> runBackupImportFlowForFile({
           meta,
           mergePreview,
           summary,
+          initialMode: confirmInitialMode,
         );
   if (choice == null) {
     // 用户取消确认 → 彻底退出遮罩态，回到调用方页面（validating 遮罩已退出）。
@@ -1322,20 +1327,43 @@ class _BackupValidatingOverlay {
   }
 }
 
-/// Asks how to apply the backup (TODO-888): OVERWRITE the whole library
-/// (legacy default) or MERGE into the current one. For overwrite, a secondary
-/// switch chooses whether to also pull the backup's settings layer. Returns
-/// the choice, or `null` if the user cancels.
+/// 测试入口：弹出备份导入确认框，返回用户确认时选中的导入方式（取消返回 null）。
+/// 确认框本体私有，经此咬住「打开时预选哪一项」这一交互契约。
+@visibleForTesting
+Future<BackupImportMode?> showBackupImportConfirmDialogForTesting(
+  BuildContext dialogContext,
+  BackupMeta meta, {
+  BackupContentSummary summary = const BackupContentSummary(),
+  BackupImportMode initialMode = BackupImportMode.overwrite,
+}) async {
+  final _BackupImportChoice? choice = await _showBackupImportConfirmDialog(
+    dialogContext,
+    meta,
+    null,
+    summary,
+    initialMode: initialMode,
+  );
+  return choice?.mode;
+}
+
+/// Asks how to apply the backup (TODO-888): OVERWRITE the whole library or
+/// MERGE into the current one. For overwrite, a secondary switch chooses
+/// whether to also pull the backup's settings layer. Returns the choice, or
+/// `null` if the user cancels.
+///
+/// [initialMode] is the option preselected when the dialog opens: the generic
+/// "import backup" row keeps OVERWRITE (Never break userspace — the existing
+/// behavior); the recommended pack opens on MERGE (BUG-4698 / decision pr3449).
 Future<_BackupImportChoice?> _showBackupImportConfirmDialog(
   BuildContext dialogContext,
   BackupMeta meta,
   BackupMergePreview? preview,
-  BackupContentSummary summary,
-) async {
+  BackupContentSummary summary, {
+  BackupImportMode initialMode = BackupImportMode.overwrite,
+}) async {
   final String dateStr = FushiTimeFormat.dayKey(meta.createdAt);
-  // Default: OVERWRITE (Never break userspace — the existing behavior), and
-  // within overwrite, keep this device's settings (importSettings=false).
-  BackupImportMode mode = BackupImportMode.overwrite;
+  // Within overwrite, keep this device's settings (importSettings=false).
+  BackupImportMode mode = initialMode;
   bool importSettings = false;
   // TODO-1358: the selectable content categories this backup actually carries,
   // all ticked by default; unticking one skips restoring it. The set differs

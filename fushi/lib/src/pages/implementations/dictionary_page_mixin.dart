@@ -9,6 +9,7 @@ import 'package:fushi_core/fushi_core.dart'
     show kStatSourceBook, kStatSourceMusic, kStatSourceVideo;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/mining/after_mining_popup_action.dart';
 import 'package:fushi/src/media/types/dictionary_media_type.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi_anki/fushi_anki.dart';
@@ -16,6 +17,8 @@ import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/anki_mined_card_action_sheet.dart';
 import 'package:fushi/src/diagnostics/lookup_perf_trace.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_card_image.dart';
+import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_capture.dart';
+import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_clip.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
@@ -109,15 +112,16 @@ mixin DictionaryPageMixin {
   /// 细分（首页词典 tab、悬浮歌词）可覆写；纯标签，不参与任何判决。
   String get lookupDiagHost => dictionarySourceType;
 
-  /// 本页所属的媒体模块，决定「底部停靠」按模块细分开关听哪一个
-  /// （[AppModel.popupBottomDockedFor]）。默认 `null` = 只听总开关（查词页 /
-  /// 外部弹窗 / 悬浮歌词）；视频页、texthooker 覆写。与 `BaseSourcePageState`
-  /// 的同名钩子对称。
-  ModuleId? get popupDockModule => null;
+  /// 本页所属的功能模块：「底部停靠」按模块细分开关听哪一个
+  /// （[AppModel.popupBottomDockedFor]）、「制卡后行为」听哪一行
+  /// （[afterMiningPopupAction]）。默认 `null` = 停靠听非模块宿主的开关、制卡后行为
+  /// 归查词那行（查词页 / 外部弹窗）；视频页、texthooker、悬浮歌词宿主（按请求来源）
+  /// 覆写。与 `BaseSourcePageState` 的同名钩子对称。
+  ModuleId? get lookupHostModule => null;
 
-  /// 本页查词弹窗实际是否底部停靠（总开关 ∧ [popupDockModule] 的细分开关）。
+  /// 本页查词弹窗实际是否底部停靠（[lookupHostModule] 自己的开关）。
   bool get _popupBottomDocked =>
-      mixinAppModel.popupBottomDockedFor(popupDockModule);
+      mixinAppModel.popupBottomDockedFor(lookupHostModule);
 
   /// BUG-1269：本页的快捷键作用域。非空即启用「弹窗内输入交回宿主」的桥。
   ///
@@ -221,12 +225,22 @@ mixin DictionaryPageMixin {
   get onSentenceContextPreviewToDraft => null;
 
   /// 「高级制卡」对话框里本页面提供的句子 / 音频 / 图片分区（契约见
-  /// [AdvancedMiningCapabilities]）。默认什么都不提供——对话框只有卡组分区。
-  /// 视频页覆写。[matched] 是查到的词在句中的表现形。
+  /// [AdvancedMiningCapabilities]）。默认只在有截屏识字卡图来源（[miningCardImage]，
+  /// 且偏好「截屏识字制卡带截图」开着）时给一个截图裁切分区（反馈 mOe5HjBtuG：像漫画
+  /// 那样调卡图），其余什么都不提供——对话框只有卡组分区。视频 / 漫画等页面覆写。
+  /// [matched] 是查到的词在句中的表现形。
   @protected
   Future<AdvancedMiningSections> buildAdvancedMiningSections({
     required String matched,
-  }) async => AdvancedMiningSections.none;
+  }) async {
+    final ScreenOcrCardImage? source = miningCardImage;
+    if (source == null || !mixinAppModel.prefsRepo.screenOcrCardImage) {
+      return AdvancedMiningSections.none;
+    }
+    return AdvancedMiningSections(
+      mangaImage: screenOcrAdvancedMiningImageSection(source),
+    );
+  }
 
   /// A popup search for [query] found entries ([result]); called once per
   /// search with a result, nested layers included. Default: nothing. The
@@ -241,12 +255,19 @@ mixin DictionaryPageMixin {
   @protected
   bool get advancedMiningDeckChoiceAvailable => true;
 
-  /// 制卡被收下（成功 / 进后台 / 进待发队列）后关不关整个查词弹窗栈。默认读阅读器
-  /// 偏好 `close_popup_after_mining`（用户建议 q16Apecgbg，默认关）。视频页覆写为恒
-  /// true（反馈 OeS0m8tLHc：点「制卡」弹窗立刻关、视频立刻续播，制卡在后台跑）。
+  /// 制卡被收下（成功 / 进后台 / 进待发队列）后查词弹窗怎么处理（拍板台
+  /// 8ldy3d8XFA）：按 [lookupHostModule] 那一行取用户的「制卡后行为」，不属于任何
+  /// 一行的归查词那行。视频模块默认「关闭并续播」，但和别的模块一样听用户的。
   @protected
-  bool get closePopupAfterMining =>
-      ReaderFushiSource.instance.closePopupAfterMining;
+  AfterMiningPopupAction get afterMiningPopupAction => ReaderFushiSource
+      .instance
+      .afterMiningPopupAction(afterMiningPopupModuleFor(lookupHostModule));
+
+  /// 制卡后按「关闭弹窗、不续播」关栈之前调用：撤掉「因查词暂停」的标记、保持暂停，
+  /// 随后的关栈汇聚点（`onPop(0)`）就不会续播。默认无事可做；会因查词暂停播放的
+  /// 宿主（视频页 / 网页视频页 / 悬浮歌词查词宿主）覆写。
+  @protected
+  void dropLookupPauseMark() {}
 
   /// 「制卡前调整·选择句子上下文」里**手改某一句文本**（视频/首页查词车道）：把 [slot]
   /// （上文/当前/下文）第 index 句的文本改成给定文本，写回本表面会话级制卡草稿。
@@ -665,22 +686,67 @@ mixin DictionaryPageMixin {
   @protected
   ScreenOcrCardImage? get miningCardImage => null;
 
-  /// 按 [miningCardImage] 裁出本次制卡的卡图；没有来源 / 偏好关着 / 裁不出返回 null。
-  Future<({String path, Directory dir})?> _prepareMiningCover() async {
+  /// 按 [miningCardImage] 裁出本次制卡的卡图；没有来源 / 偏好关着 / 裁不出 / 高级
+  /// 制卡选了「不要」返回 null。[overrides] 是「高级制卡」对话框的覆盖项（框选 / 打码
+  /// / 不要图，见 [resolveScreenOcrCardImagePlan]），一键「+」为 null。
+  Future<({String path, Directory dir})?> _prepareMiningCover(
+    MiningRequestOverrides? overrides,
+  ) async {
     final ScreenOcrCardImage? source = miningCardImage;
     if (source == null) return null;
     final AppModel model = mixinAppModel;
     if (!model.prefsRepo.screenOcrCardImage) return null;
-    return writeScreenOcrCardImage(source, imageTier: model.miningImageQuality);
+    final ScreenOcrCardImagePlan plan = resolveScreenOcrCardImagePlan(
+      overrides,
+    );
+    switch (plan.kind) {
+      case ScreenOcrCardImageKind.omit:
+        return null;
+      case ScreenOcrCardImageKind.auto:
+        return writeScreenOcrCardImage(
+          source,
+          imageTier: model.miningImageQuality,
+        );
+      case ScreenOcrCardImageKind.crop:
+        return writeScreenOcrCardImage(
+          source,
+          imageTier: model.miningImageQuality,
+          crop: plan.crop,
+          mosaic: plan.mosaic,
+        );
+    }
+  }
+
+  /// 跨应用语音挖掘（拍板 oqk37s3QFL）：应用外查词宿主覆写成「这次查词那一刻落下的
+  /// 最近一段其他 app 声音」（没开缓存 / 不是应用外查词为 null）。制卡时从中截出查词前
+  /// 最后一句语音走 [AnkiMiningContext.sentenceAudioPath]。
+  @protected
+  Future<CrossAppAudioSnapshot?>? get miningAudioSnapshot => null;
+
+  /// 按 [miningAudioSnapshot] 截出本次制卡的句子音频；没有快照 / 截不出返回 null。
+  Future<({String path, Directory dir})?> _prepareMiningSentenceAudio() async {
+    final Future<CrossAppAudioSnapshot?>? pending = miningAudioSnapshot;
+    if (pending == null) return null;
+    final CrossAppAudioSnapshot? snapshot = await pending;
+    if (snapshot == null) return null;
+    return prepareCrossAppSentenceAudio(
+      snapshot,
+      encode: CrossAppAudioCapture.instance.encodeAac,
+    );
   }
 
   Future<MinePopupResult> onMineEntry(Map<String, String> fields) async {
     final repo = ref.read(ankiRepositoryProvider);
-    final ({String path, Directory dir})? cover = await _prepareMiningCover();
+    final ({String path, Directory dir})? cover = await _prepareMiningCover(
+      MiningRequestOverrides.readFrom(fields),
+    );
+    final ({String path, Directory dir})? audio =
+        await _prepareMiningSentenceAudio();
     try {
-      return await _mineEntryWithCover(repo, fields, cover?.path);
+      return await _mineEntryWithCover(repo, fields, cover?.path, audio?.path);
     } finally {
       if (cover != null) unawaited(deleteScreenOcrCardDir(cover.dir));
+      if (audio != null) unawaited(deleteCrossAppAudioDir(audio.dir));
     }
   }
 
@@ -688,11 +754,13 @@ mixin DictionaryPageMixin {
     BaseAnkiRepository repo,
     Map<String, String> fields,
     String? coverPath,
+    String? sentenceAudioPath,
   ) async {
     final CardSourceLink? sourceLink = miningCardSourceLink;
     final miningContext = AnkiMiningContext(
       sentence: fields['sentence'] ?? '',
       coverPath: coverPath,
+      sentenceAudioPath: sentenceAudioPath,
       source: miningSource,
       // 有库内定位（回到出处）时标题取出处的标题；否则取宿主给的来源标题（app 内浏览器
       // = 当前网页标题，其余默认 null）。
@@ -754,11 +822,22 @@ mixin DictionaryPageMixin {
     Map<String, String> fields,
   ) async {
     final repo = ref.read(ankiRepositoryProvider);
-    final ({String path, Directory dir})? cover = await _prepareMiningCover();
+    final ({String path, Directory dir})? cover = await _prepareMiningCover(
+      MiningRequestOverrides.readFrom(fields),
+    );
+    final ({String path, Directory dir})? audio =
+        await _prepareMiningSentenceAudio();
     try {
-      return await _updateEntryWithCover(repo, noteId, fields, cover?.path);
+      return await _updateEntryWithCover(
+        repo,
+        noteId,
+        fields,
+        cover?.path,
+        audio?.path,
+      );
     } finally {
       if (cover != null) unawaited(deleteScreenOcrCardDir(cover.dir));
+      if (audio != null) unawaited(deleteCrossAppAudioDir(audio.dir));
     }
   }
 
@@ -767,10 +846,12 @@ mixin DictionaryPageMixin {
     int noteId,
     Map<String, String> fields,
     String? coverPath,
+    String? sentenceAudioPath,
   ) async {
     final miningContext = AnkiMiningContext(
       sentence: fields['sentence'] ?? '',
       coverPath: coverPath,
+      sentenceAudioPath: sentenceAudioPath,
       source: miningSource,
       documentTitle: miningDocumentTitle,
       sourceUrl: miningSourceUrl,
@@ -1409,7 +1490,10 @@ mixin DictionaryPageMixin {
           onMineEntry: closePopupAfterAcceptedMine(
             (Map<String, String> fields) =>
                 onMineEntry(miningFieldsForLayer(index, controller, fields)),
-            enabled: () => closePopupAfterMining,
+            action: () => afterMiningPopupAction,
+            dropPauseMark: () {
+              if (mounted) dropLookupPauseMark();
+            },
             closeAll: () {
               if (mounted) onPop(0);
             },
