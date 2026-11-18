@@ -3982,3 +3982,56 @@ exit 1；成功 949、失败 9、错误 6、跳过 21，实际执行 964。上�
   分支（暂缓时提前发布 `mergingInto`）、`deferredProfileMerge()` 与 `onAdopted` 文档里讲暂缓的几句；`srs_profile_link.dart` 删了
   `SrsDeferredProfileMerge`、`SrsProfileAdoptDeferred` 两个类型与 linker 接口 / 实现的 `deferredMerge` 方法。任务书一边把这两个
   文件划给同步 / 身份模块，一边要求删 `SrsDeferredProfileMerge` 整条链，而整条链就在这两个文件里，只能这样做。
+
+## 43. 第六波 导入红测试收尾（2026-11-18，分支 `pr/srs-gen4-w6-import-reds`，基于 `pr/srs-gen4-switch` `0bf8472f40`）
+
+导入 / 备份侧剩下的红测试逐条定因，外加第五波 S3 复核的 nit。不升 SCHEMA（仍 40024），不加表 / 索引；存量持久化名不动。
+
+### ① `.apkg` 往返用例多出 `"foreignLog":true`：测试过期
+
+- **定因**：`srs_apkg_stream_roundtrip_test.dart`「导出到文件 → 按文件导入另一份库」逐字段比 A（导出方）与 B（导入方）的日志，
+  B 的每条日志多了出处标记 `foreignLog: true`（§38 ①，Dart `_remapExtLog` 打、内核 `derived_log_hlc` 读）。标记是**导入方
+  这份库**的事实（「这条复习在这里是外来的」，只决定这份库里的派生排序键），导出方自己的原生日志本来就没有；它和已经排除的
+  `hlc` 同类，都是落库方本机的东西。不是回归：卡片行（队列、到期、间隔、reps、最后一条日志）两边逐列相同。
+- **定案**：比较面去掉标记（`_comparableLog`，按 JSON 解析后去掉顶层 `hlc` 与 `srsForeignLogKey`，不再用正则删 `hlc`），
+  标记**另行断言**：A 的日志 0 条带标记、B 的日志条数等于 A 且每条都带。生产代码不动。
+- **变异**：生产侧 `_remapExtLog` 不打标记 → 新断言红（见验证）；比较面不去标记 → 即原来的红。
+
+### ② 备份导入源码守卫 3 条：测试过期
+
+- **定因**：`backup_import_overlay_test.dart` 2 条、`backup_import_streaming_guard_test.dart` 1 条逐字锚
+  `completeBackupImport(t.backup_import_success)`。G11-4（§25）起合并导入里有没并入的复习数据时完成提示换成
+  `t.backup_import_success_srs_declined(...)`（三元二选一，`backup_srs_gen4_guard_test.dart` 钉着），成功出口还在，只是字面变了。
+- **定案**：成功出口改按正则 `completeBackupImport\(\s*[^;]*\bt\.backup_import_success\b[^;]*\);` 匹配——实参里必须有**纯**
+  成功文案（词边界让带后缀的那条不算数）；其余判据（失败走 `failBackupImport`、成功后 1 秒自动重启、失败不自动重启）不变。
+
+### ③ `SrsBackupManifest` 撞「旧 SRS 同步 / 旧定时备份已删」守卫：改名
+
+- **定因**：`srs_sync_v1_removed_guard_test.dart` 禁的是旧备份库（`srs_backup_store`）的符号，G11-4 的备份 v2 清单类恰好
+  也叫 `SrsBackupManifest`。守卫按名字认不出新旧，收窄守卫等于给旧实现复活留口子。
+- **定案**：新类改名 `SrsBackupBundleManifest`（所在文件 `srs_backup_bundle.dart`，与 `kSrsBackupManifestEntry` 等常量同族）；
+  只是 Dart 类型名，不是持久化名（清单条目名 `srs/manifest.json`、键、版本号都不动）。守卫原样不改。
+
+### ④ `backup_srs_gen4_guard_test.dart` 手写注释剥离：改用共享掩码
+
+- `codeLines` 原来丢掉 `trimLeft().startsWith('//')` 的整行（`source_guard_adoption_test` 禁用形态）：块注释、行尾注释放行。
+  改为 `maskComments`（`test/helpers/source_guard.dart`），掩完只剩空白的行不要、行号仍是原文行号；`mergeCalls` 的配平
+  扫描与 `contains('…srsResults =\n')` 判据照旧成立。
+
+### ⑤ 第五波 S3 复核 nit
+
+- **回包 `logHlcs` 的时刻上界没有用例**：`a_foreign_log_from_the_future_does_not_pin_the_schedule` 走的是 `import_drafts`，它
+  不报 `logHlcs`（只有 `apply` 报），里面 `if let Some(replied)` 那段从来没执行过。新用例
+  `a_foreign_log_from_the_future_is_not_derived_in_the_log_hlcs_reply`（`writes_tests.rs`）走 `apply` + `logHlcs: true`：回包
+  不是 `{at}:0:fushi`、物理时刻早于伪造的发生时刻、与随后 `read logs` 的 `hlc` 逐字相同。原用例那段空分支换成「`import_drafts`
+  不报 `logHlcs`」的断言。变异：`cmd/writes.rs` 回包派生的上界传 `i64::MAX` → 新用例红、原用例仍绿（坐实原来没钉住）。
+- **`CACHE_RULES` 2 → 3**：第五波复核给派生加 `op_wall` 上界改了推导口径，但 `0442ce60ac`（`CACHE_RULES` = 2、还没上界）已经推到
+  `pr/srs-gen4-w5-import-write` 上过，按 2 物化过的开发库里带未来时刻的外来日志排在派生位置上。按 `cache.rs` 自己的规则（缓存行
+  变了就 +1）升到 3，开库时整层重建一次，不改真相、不丢卡。`a_cache_built_under_older_rules_is_rebuilt_once_on_open` 的旧值
+  列表加上「上一版口径」（`CACHE_RULES - 1`）。
+
+### 没做 / 交给别人
+
+- 没在真机 / 双设备上验回导与备份还原；证据是上面的 Rust / Dart 用例。
+- Dart 用例经 `heavy.dart` 外包到 dist 机器跑，原生库是 worker 那边的，不是本 worktree 编出的；本分支 Dart
+  侧改动不依赖内核这次的改动（只升了 `CACHE_RULES`，新建库不受影响）。
