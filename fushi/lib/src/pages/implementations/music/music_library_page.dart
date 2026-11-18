@@ -1023,17 +1023,17 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     final Widget sections = _importOpen
         ? _buildImportView()
         : _buildSectionsNavigator(
-      context,
-      snap,
-      // 内容浮在页头大字底下时「继续收听」跟着推荐列表一起滚（交给推荐页当首块），
-      // 不再钉在列表上方。
-      recommendLeading: floats && hero != null
-          ? Padding(
-              padding: EdgeInsets.only(bottom: tokens.spacing.gap * 1.5),
-              child: hero,
-            )
-          : null,
-    );
+            context,
+            snap,
+            // 内容浮在页头大字底下时「继续收听」跟着推荐列表一起滚（交给推荐页当首块），
+            // 不再钉在列表上方。
+            recommendLeading: floats && hero != null
+                ? Padding(
+                    padding: EdgeInsets.only(bottom: tokens.spacing.gap * 1.5),
+                    child: hero,
+                  )
+                : null,
+          );
     return MusicBarReserve(
       child: Focus(
         canRequestFocus: false,
