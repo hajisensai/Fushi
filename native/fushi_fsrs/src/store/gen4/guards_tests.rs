@@ -24,10 +24,19 @@ use super::schema;
 ///
 /// 改表的 PR：升 [schema::SCHEMA]（`schema.rs` 文件头记一句为什么）、在这里追加一条新号与新指纹（失败信息里给出），
 /// 并写好旧库的升级路径。
-const FROZEN: &[(i64, &str)] = &[(
-    40_021,
-    "6299b87ca156012522a800823053f7db38c5807661c3a35ef5a26c9e605abd32",
-)];
+///
+/// 40023（第五波身份收尾的三个归属闸索引）与 40024（第五波重切件根治的 `relay_auth` / `relay_stubs`）是同批分到的号，
+/// 两个分支合流后才有 40024 的完整形状；40023 的形状从没单独进过集成分支，不另记。
+const FROZEN: &[(i64, &str)] = &[
+    (
+        40_021,
+        "6299b87ca156012522a800823053f7db38c5807661c3a35ef5a26c9e605abd32",
+    ),
+    (
+        40_024,
+        "402f6b5cb1cd2e1d847c17b67e5af0dc354d3e915c710cb21279df8b7bf359f3",
+    ),
+];
 
 fn src_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("src")
