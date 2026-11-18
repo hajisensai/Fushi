@@ -8,11 +8,9 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_media_sync.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
-import 'package:fushi_engine/srs/sync2/srs_location_migration.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
@@ -52,10 +50,6 @@ class SrsLocationBackend {
   );
 }
 
-/// 本进程里已经确认旧集合根扫干净的位置（进程重启后的第一轮再扫一遍，接住围栏那一刻还在跑的旧版本晚到的写入）。
-final SrsLocationMigrationMemo srsLocationMigrationMemo =
-    SrsLocationMigrationMemo();
-
 /// 这个 profile 的集合在同步位置上的目录名（`fushi-srs/<dir>/`）：内核 `identity` 回包的 `dir`（设计 §5.1），不再按
 /// profile uid 拼——并入别的集合 / 采用对方集合之后两者不同。
 Future<String> srsLocationDir(SrsDbStore store) async =>
@@ -70,9 +64,8 @@ Future<String> srsLocationDir(SrsDbStore store) async =>
 /// [directoryKey] 就是这个位置的稳定身份（本机按它记每个位置传到了哪）。[publishDeviceInfo] = 本机型号 / 版本 / 平台
 /// 随这一轮的 head 发布。
 ///
-/// 只有协议 1 旧根 `v2/` 的位置内核明确拒绝（D21，`srs_location_protocol1_root`），不再一次性迁移
-/// （[srsPrepareLocation] 按协议 3 的命令写 `v3/`，会拆掉围栏）；v1 媒体搬家同样不跑。[v1MediaMigrations] /
-/// [onV1Bound] 保留参数形状，不使用。
+/// 只有协议 1 旧根 `v2/` 的位置内核明确拒绝（D21，`srs_location_protocol1_root`），不再一次性迁移（以前的
+/// `srsPrepareLocation` 按协议 3 的命令写 `v3/`，会拆掉围栏）；v1 媒体搬家同样不跑，两者的装配已删（第五波）。
 Future<SrsSync2Report> srsRunLocationRound(
   SrsLocationBackend backend,
   SrsDbStore store,
@@ -84,8 +77,6 @@ Future<SrsSync2Report> srsRunLocationRound(
   Future<void> Function(String? keyHex)? beforeUpload,
   bool Function()? shouldStop,
   SrsSyncStepCallback? onStep,
-  SrsV1MediaMigrations? v1MediaMigrations,
-  Future<void> Function()? onV1Bound,
 }) async {
   final String dir = await srsLocationDir(store);
   if (publishDeviceInfo != null) await publishDeviceInfo(store);
@@ -106,29 +97,6 @@ Future<SrsSync2Report> srsRunLocationRound(
   );
   if (r.needsUpgrade) r.error = kSrsSyncNeedsUpgrade;
   return r;
-}
-
-/// 旧根残留没处理成（读失败 / 解不开 / 新根口令问题）：不挡新根，但必须落日志（带原始栈），下一轮再试。
-void srsLogMigrationLeftover(SrsLocationPrepared prepared, String locationId) {
-  final String? leftover = prepared.leftoverError;
-  if (leftover == null) return;
-  engineLog.log(
-    'srsPrepareLocation',
-    StateError('srs v1 leftovers on $locationId: $leftover'),
-    prepared.leftoverStack ?? StackTrace.current,
-  );
-}
-
-/// 旧根媒体迁移删旧文件时逐个出的错：那些文件留着下一次再删，同步照样算成功，但每个错都记日志。
-void srsLogV1MediaReport(SrsV1MediaReport report, String locationId) {
-  for (final (Object e, StackTrace stack) in report.cleanupErrors) {
-    engineLog.log(
-      'srsMigrateV1Media.cleanup',
-      StateError('srs v1 media cleanup on $locationId: $e'),
-      stack,
-    );
-  }
-  report.cleanupErrors.clear();
 }
 
 /// 一轮媒体同步：见 srs_media_sync.dart。[uploadOnly] = 发段之前只传本机的媒体（[srsSyncMedia]）。媒体在哪个根由

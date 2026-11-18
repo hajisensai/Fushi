@@ -322,10 +322,15 @@ void main() {
                 .single['n']!
             as int;
 
+    // 本机写过的操作条数（内核 `status` 的 `nextSeq` − 1，本机日志的长度）。不数 `status` 的 `ops`（日志里还带内容的
+    // 操作行数）：清除在同一事务里把被清除实体更早的操作落成空洞，`ops` 反而变少（srs_profile_ownership_test 同口径）。
+    Future<int> written() async =>
+        ((await s.sync2Status())['nextSeq']! as int) - 1;
+
     final List<String> five = await make(5, 'a');
     final List<String> many = await make(205, 'b');
     final Map<String, _Cost> costs = <String, _Cost>{};
-    final int opsBefore = (await s.sync2Status())['ops']! as int;
+    final int opsBefore = await written();
     // 空的一批：一条命令都不发。
     expect(
       await _cost(s, 'purge(0)', () => srsPurgeNotesNow(s, const <String>[])),
@@ -338,7 +343,7 @@ void main() {
     expect(report.notes, 5);
     expect(purged(), 5);
     expect(
-      (await s.sync2Status())['ops'],
+      await written(),
       opsBefore + 10,
       reason: '每条笔记一条删除 + 一条 Purge，与逐条发相同',
     );
@@ -347,7 +352,7 @@ void main() {
     });
     expect(report.notes, 205);
     expect(purged(), 210);
-    expect((await s.sync2Status())['ops'], opsBefore + 420);
+    expect(await written(), opsBefore + 420);
 
     expect(costs, <String, _Cost>{
       'purge(5)': (statements: 0, core: 1),

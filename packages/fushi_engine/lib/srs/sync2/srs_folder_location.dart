@@ -16,7 +16,6 @@ import 'dart:io';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_media_sync.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
-import 'package:fushi_engine/srs/sync2/srs_location_migration.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:path/path.dart' as p;
@@ -96,13 +95,7 @@ Future<String> srsFolderLocationDir(SrsDbStore store) async =>
 
 /// 一个文件夹位置这一轮的结果（[ops] 里带加密握手的结论：kdf / encryptionEnabled / 口令错误）。
 class SrsFolderSyncReport {
-  SrsFolderSyncReport({
-    this.ops,
-    this.media,
-    this.handshake,
-    this.prepared,
-    this.v1Media,
-  });
+  SrsFolderSyncReport({this.ops, this.media, this.handshake});
 
   /// 操作同步这一轮的结果（只做媒体的位置：握手没过时带着错误，否则为 null）。
   final SrsSync2Report? ops;
@@ -110,12 +103,6 @@ class SrsFolderSyncReport {
 
   /// 只做媒体的位置的 `meta.json` 握手结论（kdf / 本机刚开的加密已写上 / 用没用密钥）。
   final SrsSync2Report? handshake;
-
-  /// 这一轮开头的位置准备 / v1 迁移结论（[srsPrepareLocation]）。
-  final SrsLocationPrepared? prepared;
-
-  /// 这一轮里同步跑完的旧根媒体迁移（没给 [SrsV1MediaMigrations] 时）；交给后台 / 没有残留为 null。
-  final SrsV1MediaReport? v1Media;
 
   /// 这个位置这一轮的加密结论（调度器据此记加密状态、把本机刚开的加密标成已生效）。
   SrsSync2Report? get crypto => ops ?? handshake;
@@ -127,8 +114,7 @@ class SrsFolderSyncReport {
 /// 位置的根一律先走内核 `location_root`（[srsSync4LocationRoot]，同步用途在 [srsSync2Round] 里）：新根 `v4/` 的
 /// meta 与 loc 标记、旧根 `v3/` 的围栏都由它写；判「新集合」只看 `v3/meta.json` 在不在，所以这一轮在它之前不往旧根
 /// 写任何东西。旧根 `v3/` 上的段由一轮同步收进本机承袭日志（旧根接手，G8-7b）；只有协议 1 旧根 `v2/` 的位置内核
-/// 明确拒绝（D21），不再一次性迁移；旧根媒体搬家同样不跑。[migrationMemo] / [v1MediaMigrations] / [onV1Bound] 保留
-/// 参数形状，不使用，[SrsFolderSyncReport.prepared] / `v1Media` 恒为 null。
+/// 明确拒绝（D21），不再一次性迁移；旧根媒体搬家同样不跑（协议 1 位置迁移的装配已删，第五波）。
 /// 媒体按新根 meta 的 `media` 落在旧根（存量集合）或新根（新集合）。
 ///
 /// 进度 / 收手 / 诊断与云盘、互联那条路径（[srsSync2Round]）同一套：[onFetchProgress] / [onUploadStart] /
@@ -140,9 +126,6 @@ Future<SrsFolderSyncReport> srsSyncFolderLocation({
   required SrsDbStore store,
   Directory? mediaRoot,
   SrsLocationKey? key,
-  SrsLocationMigrationMemo? migrationMemo,
-  SrsV1MediaMigrations? v1MediaMigrations,
-  Future<void> Function()? onV1Bound,
   void Function(int done, int total)? onFetchProgress,
   void Function()? onUploadStart,
   void Function()? onMediaStart,

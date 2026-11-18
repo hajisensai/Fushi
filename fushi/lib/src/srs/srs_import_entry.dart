@@ -33,7 +33,7 @@ import 'package:fushi_engine/srs/text/srs_text_import.dart';
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart'
-    show kSrsLocationProtocol1Root;
+    show kSrsLocationNewRootMissing, kSrsLocationProtocol1Root;
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:path_provider/path_provider.dart';
@@ -652,6 +652,8 @@ String srsSyncErrorReason(Object error) => switch (error) {
     t.srs_sync_location_meta_unavailable,
   SrsSyncReportError(message: kSrsLocationProtocol1Root) =>
     t.srs_sync_location_protocol1_root,
+  SrsSyncReportError(message: kSrsLocationNewRootMissing) =>
+    t.srs_sync_location_new_root_missing,
   _ => friendlySyncErrorDetail(error),
 };
 

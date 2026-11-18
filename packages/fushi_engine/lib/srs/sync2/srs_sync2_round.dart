@@ -20,10 +20,9 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
-import 'package:fushi_engine/srs/sync2/srs_location_migration.dart'
-    show kSrsV1MovedToKey, srsDecodeV1Fence, srsEncodeV1Fence;
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync4_steps.dart';
+import 'package:fushi_engine/srs/sync2/srs_v1_fence.dart';
 import 'package:fushi_srs/fushi_srs.dart' show SrsSync2Result;
 
 /// 一轮同步要的内核接口（[SrsDbStore] 实现；测试可替身）。
@@ -85,8 +84,8 @@ const String kSrsSync2OutboxRecut = 'srs outbox batch was re-cut';
 /// 与这里同值但互不联动）。以后升协议只要布局没变，这里保持 3，v3.3.0 读者就能继续和没用到新内容的设备同步。
 ///
 /// 2 = 2026-10-30 断代：集合根从 `v2/` 挪到 `v3/`（srs_location_store.dart [kSrsSync2Folder]），媒体只剩内容寻址；
-/// 协议 1 的位置由一次性迁移搬过来（srs_location_migration.dart），旧根上只留一份 `minReader` = 2 的 `meta.json`
-/// 让旧版本停下。
+/// 协议 1 的位置当时由一次性迁移搬过来（新代已删那份迁移，只有协议 1 旧根的位置一律拒绝，D21），旧根上只留一份
+/// 让旧版本停下的围栏（srs_v1_fence.dart）。
 ///
 /// 3 = 存量重复流收敛（BUG-4005，内核 store/sync2/dedup.rs）：段里出现新种类 `Dedup` 与带副本说明的骨架，协议 2 的
 /// 读者解不开，head 的 `minReader` = 3 让它们停下、报需要升级（[SrsSync2Report.needsUpgrade]）。
@@ -110,6 +109,12 @@ const String kSrs4LocationRefused = 'srs location root refused';
 /// 位置只有协议 1 旧根 `v2/`（内核 `oldroot.rs` `ERR_PROTOCOL1_ROOT`，同一个机读码）：这一轮的 [SrsSync2Report.error]
 /// 正好是它，界面据此给专门的升级提示（先用 3.x 同步一次把位置升级，或换位置；本机卡片不受影响），不当一般错误报。
 const String kSrsLocationProtocol1Root = 'srs_location_protocol1_root';
+
+/// 旧根 `v3/meta.json` 是本版本立的围栏、新根 `v4/` 下却什么都列不到（没有 meta、设备 / 媒体数据、loc 标记；内核
+/// `gen4/cmd/sync.rs` `ERR_NEW_ROOT_MISSING`，同一个机读码）：新根多半被整个删了。不重建（新根原来的媒体根 / `kdf`
+/// 从围栏推不出来），这一轮的 [SrsSync2Report.error] 正好是它，界面据此说明恢复办法——它不像 [kSrsSync2MetaUnavailable]
+/// 那样等下去会自己好。
+const String kSrsLocationNewRootMissing = 'srs_location_new_root_missing';
 
 /// 不是一个同步位置的读（v1 旧根的一次性迁移）：`plan` 记位置上的 head 时用的位置名。
 const String kSrs4NoLocation = 'oldroot';
@@ -174,6 +179,15 @@ class SrsSync2Report {
 
   /// 非致命错误（段损坏 / 签名不符 / 解不开……）：记日志，不打断这一轮。
   final List<String> errors = <String>[];
+
+  /// 本机有内容、但因作者在本机待确认 / 已拒绝而**不替传**的承袭日志的作者（设备 ID，内核 `heritage_plan` 的
+  /// `unvouched`，G10-4）：用户在设备页确认了那台设备，下一轮就补传。没走到承袭上传这一步为 null。只是提示，不算
+  /// 这一轮失败。
+  List<String>? heritageUnvouched;
+
+  /// [heritageUnvouched] 里作者在本机还**待确认**的那部分（内核 `heritage_plan` 的 `pending`；已拒绝的不在里面）。
+  /// 同步页只按它提示「等你确认」：用户有意拒绝的设备不该一直被催着去确认。null 的含义同 [heritageUnvouched]。
+  List<String>? heritagePending;
 
   /// 清位置上本机旧身份的目录时没做成的（[srsSync4SweepFormer]），每项
   /// `<旧身份>: <原因>`。不算这一轮失败、也不算跳过了段（不进 [errors]）：这一轮自己的收发与 head 都已完成，旧
@@ -476,6 +490,24 @@ Future<SrsLocationRoot?> srsSync4LocationRoot({
       ? await protocol1Root?.get('meta.json')
       : null;
   final bool has2 = meta2 != null && srsDecodeV1Fence(meta2) == null;
+  final List<String> locs = <String>[
+    for (final SrsLocationEntry e in await location.list('loc'))
+      if (!e.isFolder) e.name,
+  ];
+  // 新根 meta 读不到（最终一致的网盘暂时列不到 / 被删）而这个集合的新根已经立过：旧根是围栏（围栏只在新根 meta 写好
+  // 之后才写），或新根下已有设备 / 媒体数据 / loc 标记。这时新根原来的 `media` / `kdf` 从别处推不出来（围栏不带
+  // `media`），重建一份会把媒体根改错、把加密位置的 `kdf` 丢掉、在允许同名文件的后端上多出一份 meta：这一轮什么都不写
+  // （与协议 3 的「已有数据却读不到 meta 就不重写」同一条闸）。新根下还列得到东西 → [kSrsSync2MetaUnavailable]（多半
+  // 一时读不到）；只剩围栏 → [kSrsLocationNewRootMissing]（新根多半被整个删了，要用户处理）。围栏也不能当 meta 交给
+  // 握手——那正是绕过这道闸的路。内核 `location_root` 按同一组证据再判一次。
+  final bool v4Data =
+      meta4 == null && (locs.isNotEmpty || await _srsV4HasData(location));
+  if (meta4 == null && (srsIsOldRootFence(meta3) || v4Data)) {
+    report.error = v4Data
+        ? kSrsSync2MetaUnavailable
+        : kSrsLocationNewRootMissing;
+    return null;
+  }
   final _SrsMetaView view = _SrsMetaView(location, meta4 ?? meta3);
   final SrsLocationHandshake hs = await srsLocationHandshake(
     view,
@@ -507,10 +539,8 @@ Future<SrsLocationRoot?> srsSync4LocationRoot({
       'has4': meta4 != null,
       'has3': meta3 != null,
       'has2': has2,
-      'locs': <String>[
-        for (final SrsLocationEntry e in await location.list('loc'))
-          if (!e.isFolder) e.name,
-      ],
+      'v4Data': v4Data,
+      'locs': locs,
       'enableKdf': view.writtenKdf,
     },
     blobs: <Uint8List>[?meta4, ?meta3],
@@ -524,8 +554,11 @@ Future<SrsLocationRoot?> srsSync4LocationRoot({
     // 只有协议 1 旧根：错误就是机读码本身（[kSrsLocationProtocol1Root]），界面按它给专门的升级提示；其余带码的拒绝把
     // 码放在前面。
     final Object? code = root.map['code'];
-    report.error = code == kSrsLocationProtocol1Root
-        ? kSrsLocationProtocol1Root
+    report.error =
+        code == kSrsLocationProtocol1Root || code == kSrsLocationNewRootMissing
+        ? code! as String
+        : code == kSrs4MetaUnavailableCode
+        ? kSrsSync2MetaUnavailable
         : code == null
         ? '$kSrs4LocationRefused: ${root.map['error']}'
         : '$kSrs4LocationRefused: $code: ${root.map['error']}';
@@ -564,6 +597,28 @@ Future<SrsLocationRoot?> srsSync4LocationRoot({
     media: media,
   );
 }
+
+/// 内核 `location_root` 拒绝码：新根 meta 读不到而新根已经立过（旧根是围栏 / 新根下已有数据），不重写
+/// （`gen4/cmd/sync.rs` `ERR_META_UNAVAILABLE`）。
+const String kSrs4MetaUnavailableCode = 'srs_location_meta_unavailable';
+
+/// [bytes]（旧根 `v3/meta.json`）是本版本立的围栏（`moved` = [kSrs4Root]，内核 `gen4/location.rs` `fence3`）。
+/// 解析不了 / 不是 JSON 对象 / 没有 `moved` 的都不算（存量协议 3 的 meta 由内核核对）。
+bool srsIsOldRootFence(Uint8List? bytes) {
+  if (bytes == null) return false;
+  try {
+    final Object? j = jsonDecode(utf8.decode(bytes));
+    return j is Map && j['moved'] == kSrs4Root;
+  } on FormatException {
+    return false;
+  }
+}
+
+/// 新根 [location] 下已经有设备目录或加密媒体：有人在这个新根上同步过（与握手 [srsLocationHandshake] 判「已有数据」
+/// 同一口径；明文媒体目录不算：内容寻址的明文对象可能先于 meta 落在位置上，它也不带 `kdf` / 媒体根的信息）。
+Future<bool> _srsV4HasData(SrsLocationStore location) async =>
+    (await location.list('devices')).isNotEmpty ||
+    (await location.list(kSrsSealedMediaFolder)).isNotEmpty;
 
 /// [srsLocationHandshake] 看到的位置：`meta.json` 是这一轮读到的那份（新根的，没有就是旧根的），写 `meta.json`
 /// 不落盘、只记下要开的 `kdf`（新根 meta 只由内核 `location_root` 写）；别的路径照原位置读。
@@ -606,9 +661,8 @@ class _SrsMetaView implements SrsLocationStore {
 
 /// 一轮的读半边：读 [location] 上全部设备的 head（每台取代号最大的）→ 内核定要拉
 /// 的段 → 分批拉、分批收。结果累加进 [report]。返回 false = 这一轮到此为止：中途收手（[report] 的 error 是
-/// [kSrsSync2Stopped]）或有设备的 head 要求更新的读者（[SrsSync2Report.needsUpgrade]，什么都没收）。v1 位置的
-/// 一次性迁移也用它先把旧根上的段收进本机（srs_location_migration.dart），再补媒体绑定；迁移传 [progressId] = null：
-/// 不按位置记 head / 转发账（旧根不是一个同步位置，记了会清掉同一位置新根的转发记账）。
+/// [kSrsSync2Stopped]）或有设备的 head 要求更新的读者（[SrsSync2Report.needsUpgrade]，什么都没收）。[progressId] = null：
+/// 不按位置记 head / 转发账。
 /// [listed] 给了就记下读 head 时列到的每个设备目录（`devices/<id>` → 文件名）：一轮的作者自检用本机那一份，不再多列一次。
 Future<bool> srsSync2Pull({
   required SrsSync2Host host,

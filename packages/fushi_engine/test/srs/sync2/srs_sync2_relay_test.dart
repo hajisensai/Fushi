@@ -62,6 +62,21 @@ void main() {
     final String fromA = await addNote(a, '雪');
     await laps(3);
     expect(await c.note(fromA), isNotNull, reason: 'C got A\'s note by relay');
+    // B 收下 A 的笔记之后库已非空，在网盘第一次见到的 C 是待确认（K2 首见信任，`gen4/truth/trust.rs`）：只转发受信作者
+    // 的段（`gen4/cmd/sync_relay.rs` `relayable`，Rust 侧同一拓扑的用例 `a_device_on_two_locations_relays_between_them`
+    // 也是先确认）。用户在 B 上确认 C 之后，下一轮起 B 把 C 的段转发到互联。
+    final String cId =
+        (await c.sync2Command(<String, Object?>{
+              'op': 'identity',
+              'now': 0,
+            })).map['device']!
+            as String;
+    final List<Object?> onB = (await b.sync2Status())['devices']! as List;
+    expect(
+      onB.whereType<Map>().where((Map d) => d['device'] == cId).single['trust'],
+      'pending',
+    );
+    await b.sync2Trust(cId, trust: true);
     final String card = (await a.cardsOfNote(fromA)).first.id;
     await a.answer(card, 3);
     final String fromC = await addNote(c, '雨');

@@ -74,11 +74,13 @@ fn a_purge_held_on_the_uploader_stays_held_on_other_devices() {
     assert_eq!(row["trust"], json!("pending"), "{row}");
     assert_eq!(row["heldPurges"], json!(1), "{row}");
     assert_eq!(d_old_len(&a), 4, "a holds OLD's log");
+    let plan = heritage_plan(&a, &loc, T1 + 10);
     assert_eq!(
-        heritage_plan(&a, &loc, T1 + 10)["unvouched"],
+        plan["unvouched"],
         json!([old]),
         "the sync page learns which authors only the old root still has"
     );
+    assert_eq!(plan["pending"], json!([old]), "still waiting for the user");
     assert_eq!(
         upload_heritage(&a, &mut loc, T1 + 10),
         0,
@@ -110,9 +112,40 @@ fn a_purge_held_on_the_uploader_stays_held_on_other_devices() {
 
     // a 确认 OLD：信任变了、承袭指纹跟着变，下一轮补传。
     trust(&a, T1 + 30, &old);
-    assert_eq!(heritage_plan(&a, &loc, T1 + 30)["unvouched"], json!([]));
+    let plan = heritage_plan(&a, &loc, T1 + 30);
+    assert_eq!(plan["unvouched"], json!([]));
+    assert_eq!(plan["pending"], json!([]));
     assert!(upload_heritage(&a, &mut loc, T1 + 30) > 0);
     assert!(heritage_files(&loc) > 0);
+}
+
+/// 用户有意拒绝的承袭作者照样不替传、照样算在 `unvouched` 里（旧根还不能退役），但不在 `pending` 里：同步页只对
+/// 待确认的提示「等你确认」，不会一直催用户去确认一台他拒绝了的设备。
+#[test]
+fn a_rejected_heritage_author_is_unvouched_but_not_pending() {
+    let mut loc = Loc::new();
+    old_root_with(&mut loc, &ops_ending_in_a_purge(4), &[(1, 4)]);
+    let old = id(OLD).text();
+
+    let a = Dev::new("g104hrj");
+    a.write(T1 + 1, N1, "鯨");
+    round(&a, &mut loc, "loc", T1 + 10, Opts::default());
+    let (_, ing) = take_old_root(&a, &loc, T1 + 10);
+    assert_eq!(ing.expect("a scans")["errors"], json!([]));
+    assert_eq!(status_row(&a, &old)["trust"], json!("pending"));
+
+    let (v, _) = cmd(
+        a.h,
+        "trust",
+        T1 + 20,
+        json!({"device": old, "trust": false}),
+        &[],
+    );
+    assert_eq!(v["trusted"], json!(false), "{v}");
+    let plan = heritage_plan(&a, &loc, T1 + 21);
+    assert_eq!(plan["unvouched"], json!([old]), "{plan}");
+    assert_eq!(plan["pending"], json!([]), "{plan}");
+    assert_eq!(upload_heritage(&a, &mut loc, T1 + 21), 0);
 }
 
 /// 混合版本家庭（复核 minor）：用户自己还没升级的 OLD 在 a 上可信（a 捡旧根时库还是空的），a 替它承袭上传。库里有
@@ -403,4 +436,52 @@ fn a_heritage_author_without_a_vouched_key_is_judged_when_its_head_first_arrives
     let row = status_row(&c, &old);
     assert_eq!(row["trust"], json!("pending"), "{row}");
     assert_eq!(row["heldPurges"], json!(1), "the purge is held: {row}");
+}
+
+/// 混合版本家庭（G10-4 残余，第五波按协议 3 口径修）：全新设备 c 同一轮里先收新根（a 的笔记，库从此非空）、再捡旧根，
+/// 旧根上没被任何设备担保的协议 3 作者 OLD（用户自己还没升级的设备）照首次信任——判据是这一轮开始时库是不是空的
+/// （`plan` 按位置记下，`truth/trust.rs` 文件头「这一轮」）。
+#[test]
+fn a_fresh_device_trusts_old_root_authors_first_seen_in_its_first_round() {
+    let mut loc = Loc::new();
+    old_root_with(&mut loc, &ops_ending_in_a_purge(4), &[(1, 4)]);
+    let old = id(OLD).text();
+    let a = Dev::new("g5rfa");
+    a.write(T1 + 1, N1, "鯨");
+    round(&a, &mut loc, "loc", T1 + 2, Opts::default());
+
+    let c = Dev::new("g5rfc");
+    round(&c, &mut loc, "loc", T1 + 3, Opts::default());
+    assert_eq!(
+        c.field(N1),
+        Some(json!("鯨")),
+        "c's library is no longer empty"
+    );
+    let (_, ing) = take_old_root(&c, &loc, T1 + 3);
+    assert_eq!(ing.expect("c scans")["errors"], json!([]));
+    assert_eq!(d_old_len(&c), 4);
+    let row = status_row(&c, &old);
+    assert!(row.get("trust").is_none(), "{row}");
+    assert!(row.get("heldPurges").is_none(), "{row}");
+}
+
+/// 判据按轮记：全新设备 c 第一轮旧根上还没有 OLD；之后的一轮（这一轮开始时库已非空）才第一次见到 OLD，照旧待确认、
+/// 它的清除扣住。
+#[test]
+fn an_old_root_author_first_seen_in_a_later_round_is_pending() {
+    let mut loc = Loc::new();
+    let a = Dev::new("g5rla");
+    a.write(T1 + 1, N1, "鯨");
+    round(&a, &mut loc, "loc", T1 + 2, Opts::default());
+    let c = Dev::new("g5rlc");
+    round(&c, &mut loc, "loc", T1 + 3, Opts::default());
+    let _ = take_old_root(&c, &loc, T1 + 3);
+
+    old_root_with(&mut loc, &ops_ending_in_a_purge(4), &[(1, 4)]);
+    round(&c, &mut loc, "loc", T1 + 4, Opts::default());
+    let (_, ing) = take_old_root(&c, &loc, T1 + 4);
+    assert_eq!(ing.expect("c scans")["errors"], json!([]));
+    let row = status_row(&c, &id(OLD).text());
+    assert_eq!(row["trust"], json!("pending"), "{row}");
+    assert_eq!(row["heldPurges"], json!(1), "{row}");
 }

@@ -727,6 +727,40 @@ void main() {
     expect(r.errors.any((String e) => e.contains('dev-old')), isTrue);
   });
 
+  test('承袭上传不替待确认作者传：回包的 unvouched / pending 进报告，指纹没变（skip）时也带', () async {
+    final _FakeHost skipped = _FakeHost(
+      happy()
+        ..['heritage_plan'] = <SrsSync2Result>[
+          _r(<String, Object?>{
+            'skip': true,
+            'unvouched': <String>['dev-old', 'dev-rejected'],
+            'pending': <String>['dev-old'],
+          }),
+        ],
+    );
+    final SrsSync2Report r = await run(skipped);
+    expect(r.error, isNull);
+    expect(r.heritageUnvouched, <String>['dev-old', 'dev-rejected']);
+    expect(r.heritagePending, <String>['dev-old'], reason: '已拒绝的不催用户确认');
+    expect(skipped.ops(), isNot(contains('heritage_outbox')));
+
+    // 确认之后内核不再列它：报告里是空表（走到了这一步），不是 null。
+    final SrsSync2Report after = await run(
+      _FakeHost(
+        happy()
+          ..['heritage_plan'] = <SrsSync2Result>[
+            _r(<String, Object?>{
+              'skip': true,
+              'unvouched': <String>[],
+              'pending': <String>[],
+            }),
+          ],
+      ),
+    );
+    expect(after.heritageUnvouched, isEmpty);
+    expect(after.heritagePending, isEmpty);
+  });
+
   test('媒体清单：收别的设备的（读不到的标 present=false）；head 之后发本机的、写上再确认', () async {
     v4.files['meta.json'] = _b('{"fmt":"m4"}');
     v4.files['devices/dev-b/mf-000000000001-aa.bin'] = _b('mf-b');

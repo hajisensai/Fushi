@@ -1612,7 +1612,6 @@ const CHANNEL_TRANSPARENT: &[&str] = &[
     "location_sealed",
     "location_seal",
     "channel_settle",
-    "open_v1",
     "plan",
     "ingest_begin",
     "ingest_batch",
@@ -1705,7 +1704,6 @@ const CHANNEL_SETTLES: &[&str] = &[
     "media_hash",
     "media_scan",
     "media_landed",
-    "media_bind_unbound",
     "media_doomed",
     "resolve",
     "trust",
@@ -2064,7 +2062,7 @@ fn sync2_command(
             json!({})
         }
         // 纯加解密（不碰库）：与新代分发器共用 [crypto_command]。
-        "seal" | "open" | "open_v1" | "seal_file" | "open_file" | "derive_key" => {
+        "seal" | "open" | "seal_file" | "open_file" | "derive_key" => {
             crypto_command(op, req, blobs, files)?
         }
         "digest" => match req.get("minIntervalMs").and_then(Value::as_i64) {
@@ -2176,33 +2174,6 @@ fn sync2_command(
             }
             c.sync2_media_landed(profile, s("root")?, &items, i("now")?)?
         }
-        // 迁移 v1 位置时按名字存的旧媒体：名字还没有绑定的绑到它的内容（`items: [{name, sha, size}]`，调用方已按内容算过
-        // sha256）。已经有绑定的不动（不管指向什么）。返回 `{"appended": n, "bound": [名字…]}`。
-        "media_bind_unbound" => {
-            let mut items = Vec::new();
-            for it in req
-                .get("items")
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-            {
-                let name = it
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .ok_or("media_bind_unbound: missing name")?;
-                let sha = it
-                    .get("sha")
-                    .and_then(Value::as_str)
-                    .and_then(super::sync2::media::unhex32)
-                    .ok_or("media_bind_unbound: bad sha")?;
-                let size = it
-                    .get("size")
-                    .and_then(Value::as_i64)
-                    .ok_or("media_bind_unbound: missing size")?;
-                items.push((name.to_owned(), sha, size));
-            }
-            c.sync2_media_bind_unbound(profile, &items, i("now")?)?
-        }
         "media_doomed" => {
             let names = |k: &str| -> Vec<String> {
                 req.get(k)
@@ -2239,7 +2210,7 @@ fn sync2_command(
     })
 }
 
-/// 纯加解密命令（`seal` / `open` / `open_v1` / `seal_file` / `open_file` / `derive_key`）：不碰库、与库代无关，协议 3 与
+/// 纯加解密命令（`seal` / `open` / `seal_file` / `open_file` / `derive_key`）：不碰库、与库代无关，协议 3 与
 /// 新代的分发器共用这一份（交接说明对照表 7.4「S1 原样接」）。
 pub(crate) fn crypto_command(
     op: &str,
@@ -2280,21 +2251,6 @@ pub(crate) fn crypto_command(
                 ));
             }
             json!({})
-        }
-        // v1 位置上按名字存的整份封装（S-9 之前的格式）：只有一次性迁移（srs_location_migration.dart）读它。
-        "open_v1" => {
-            let key = crate::sync2::keys::CollectionKey(
-                key32(&req["key"])?.ok_or("open_v1: missing key")?,
-            );
-            let aad = format!("fushi-srs-media:{}", s("name")?);
-            let input = blobs.first().ok_or("open_v1: missing input")?;
-            match crate::sync2::media_seal::open_v1(&key, input, aad.as_bytes()) {
-                Some(plain) => {
-                    files.push(("plain".to_owned(), plain));
-                    json!({})
-                }
-                None => json!({"failure": "unauthenticated"}),
-            }
         }
         // 文件到文件的流式封 / 解（大媒体不整份进内存；审查 S-9）：返回明文的字节数与 sha256（内容寻址核对用，
         // 不必再读一遍文件）。目标先写同目录临时文件再改名；解不开不留目标。解不开（不是本机读写出错）不算命令失败：

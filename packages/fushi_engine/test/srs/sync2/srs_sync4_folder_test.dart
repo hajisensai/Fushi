@@ -11,6 +11,8 @@ import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart'
+    show kSrsSync2MetaUnavailable;
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart'
     show SrsAssetLocationStore, kSrsSync2Folder, kSrsSync2Namespace;
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
@@ -100,7 +102,6 @@ void main() {
         expect(r.ops?.error, isNull);
         expect(r.ops?.needsUpgrade, isFalse);
         expect(r.ops?.mediaRoot, kSrs4Root);
-        expect(r.prepared, isNull);
       }
     }
     final String dir = await srsFolderLocationDir(a);
@@ -226,6 +227,113 @@ void main() {
     expect(
       Directory(p.join(tmp.path, kSrsSync2Namespace, kProfile)).existsSync(),
       isFalse,
+    );
+  });
+
+  // 审计 R10：新根 `v4/meta.json` 一时读不到（最终一致的网盘 / 被删）而旧根围栏读得到时，以前把围栏当 meta 交给握手、
+  // 内核按围栏重建新根 meta——新集合的媒体根被从 v4 改成 v3（围栏不带 `media`）。现在报 meta 读不到、什么都不写。
+  test('新集合的新根 meta 读不到：不按围栏重写、不算一轮；放回后照常、媒体根仍是 v4', () async {
+    final SrsFolderLocation loc = folder();
+    final SrsDbStore a = await device('a');
+    await addNote(a, '猫');
+    expect((await run(loc, a)).ops?.error, isNull);
+    final String dir = await srsFolderLocationDir(a);
+    final File meta4 = File(
+      p.join(srsFolderNewRoot(loc, dir).path, 'meta.json'),
+    );
+    final File fence = File(
+      p.join(srsFolderCollectionRoot(loc, dir).path, 'meta.json'),
+    );
+    final List<int> original = meta4.readAsBytesSync();
+    final List<int> fenceBytes = fence.readAsBytesSync();
+    meta4.deleteSync();
+    await addNote(a, '犬');
+    final SrsFolderSyncReport r = await run(loc, a);
+    expect(r.ops?.error, kSrsSync2MetaUnavailable);
+    expect(r.ops?.uploaded ?? 0, 0);
+    expect(meta4.existsSync(), isFalse, reason: '新根 meta 不重写');
+    expect(fence.readAsBytesSync(), fenceBytes, reason: '围栏不动');
+    // 放回后照常：媒体根仍是 v4，新根 meta 逐字节没变。
+    meta4.writeAsBytesSync(original);
+    final SrsFolderSyncReport back = await run(loc, a);
+    expect(back.ops?.error, isNull);
+    expect(back.ops?.mediaRoot, kSrs4Root);
+    expect(meta4.readAsBytesSync(), original);
+    expect(
+      readJson(srsFolderNewRoot(loc, dir), 'meta.json')['media'],
+      kSrs4Root,
+    );
+  });
+
+  // 复核：没有围栏这条证据时，新根立过的证据是新根下的数据 / loc 标记。新根 meta 与旧根围栏都读不到时不能按「新集合」
+  // 重建（加密位置会丢 `kdf`、媒体根推不出来）；只剩 loc 标记（设备目录也列不到）时同样不重建。
+  test('新根 meta 与围栏都读不到、新根下还有数据或 loc 标记：不重建；放回后照常', () async {
+    final SrsFolderLocation loc = folder();
+    final SrsDbStore a = await device('a');
+    await addNote(a, '猫');
+    expect((await run(loc, a)).ops?.error, isNull);
+    final String dir = await srsFolderLocationDir(a);
+    final Directory v4 = srsFolderNewRoot(loc, dir);
+    final File meta4 = File(p.join(v4.path, 'meta.json'));
+    final File fence = File(
+      p.join(srsFolderCollectionRoot(loc, dir).path, 'meta.json'),
+    );
+    final List<int> original = meta4.readAsBytesSync();
+    final List<int> fenceBytes = fence.readAsBytesSync();
+    meta4.deleteSync();
+    fence.deleteSync();
+    await addNote(a, '犬');
+    SrsFolderSyncReport r = await run(loc, a);
+    expect(r.ops?.error, kSrsSync2MetaUnavailable);
+    expect(meta4.existsSync(), isFalse, reason: '新根 meta 不重建');
+    expect(fence.existsSync(), isFalse, reason: '围栏也不在这一轮补');
+    // 设备目录也列不到、只剩 loc 标记：照样认得新根立过。
+    final Directory devices = Directory(p.join(v4.path, 'devices'));
+    final Directory parked = Directory(p.join(tmp.path, 'parked_devices'));
+    devices.renameSync(parked.path);
+    expect(Directory(p.join(v4.path, 'loc')).listSync(), isNotEmpty);
+    r = await run(loc, a);
+    expect(r.ops?.error, kSrsSync2MetaUnavailable);
+    expect(meta4.existsSync(), isFalse);
+    expect(devices.existsSync(), isFalse, reason: '这一轮什么都没传');
+    // 放回后照常：媒体根仍是 v4。
+    parked.renameSync(devices.path);
+    meta4.writeAsBytesSync(original);
+    fence.writeAsBytesSync(fenceBytes);
+    final SrsFolderSyncReport back = await run(loc, a);
+    expect(back.ops?.error, isNull);
+    expect(back.ops?.mediaRoot, kSrs4Root);
+    expect(meta4.readAsBytesSync(), original);
+  });
+
+  // 复核：新根 `v4/` 整个被删、只剩围栏时，等下去不会自己好——报专门的码（界面给出恢复办法），不重建；照提示删掉
+  // 旧根的 `meta.json` 后，下一轮按新集合重建，媒体根是 v4，本机的数据重新传上去。
+  test('新根整个被删、只剩围栏：报新根不见了、不重建；删掉围栏后按新集合重建', () async {
+    final SrsFolderLocation loc = folder();
+    final SrsDbStore a = await device('a');
+    await addNote(a, '猫');
+    expect((await run(loc, a)).ops?.error, isNull);
+    final String dir = await srsFolderLocationDir(a);
+    final Directory v4 = srsFolderNewRoot(loc, dir);
+    final File fence = File(
+      p.join(srsFolderCollectionRoot(loc, dir).path, 'meta.json'),
+    );
+    final List<int> fenceBytes = fence.readAsBytesSync();
+    v4.deleteSync(recursive: true);
+    final SrsFolderSyncReport r = await run(loc, a);
+    expect(r.ops?.error, kSrsLocationNewRootMissing);
+    expect(v4.existsSync(), isFalse, reason: '不重建新根');
+    expect(fence.readAsBytesSync(), fenceBytes, reason: '围栏不动');
+    // 用户按提示删掉围栏：按新集合重建。
+    fence.deleteSync();
+    final SrsFolderSyncReport rebuilt = await run(loc, a);
+    expect(rebuilt.ops?.error, isNull);
+    expect(rebuilt.ops?.mediaRoot, kSrs4Root);
+    expect(readJson(v4, 'meta.json')['media'], kSrs4Root);
+    expect(rebuilt.ops?.uploaded ?? 0, greaterThan(0), reason: '本机的数据重新传上去');
+    expect(
+      srsIsOldRootFence(Uint8List.fromList(fence.readAsBytesSync())),
+      isTrue,
     );
   });
 

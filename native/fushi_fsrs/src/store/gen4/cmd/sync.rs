@@ -86,6 +86,14 @@ const KDF_MAX_BYTES: usize = 1024;
 pub const ROOT_OK: &str = "ok";
 pub const ROOT_NEEDS_UPGRADE: &str = "needsUpgrade";
 pub const ROOT_REFUSED: &str = "refused";
+/// [location_root] 的拒绝码：新根 meta 读不到，而这个集合的新根已经立过（旧根是 [fence3] 围栏——围栏只在新根 meta
+/// 写好之后才写——或 Dart 列到新根下已有数据，`v4Data`）。新根原来的 `media` / `kdf` 推不出来（围栏不带 `media`），
+/// 重建会把媒体根改错：不写、这一轮停下，等 meta 读得到（Dart `kSrsSync2MetaUnavailable`）。
+pub const ERR_META_UNAVAILABLE: &str = "srs_location_meta_unavailable";
+/// [location_root] 的拒绝码：旧根是围栏、新根下却什么都列不到（没有 meta、设备 / 媒体数据、loc 标记）——新根多半被
+/// 整个删了（用户 / 网盘），也可能是列目录一时为空。同样不重建（媒体根 / `kdf` 推不出来），但这种状态等下去不会自己
+/// 好：界面给出恢复办法（Dart `kSrsSync2NewRootMissing`，交接第五波同步收尾）。
+pub const ERR_NEW_ROOT_MISSING: &str = "srs_location_new_root_missing";
 
 // ---------------------------------------------------------------------- 小工具
 
@@ -132,6 +140,11 @@ fn me_of(t: &Truth<'_>, col: i64) -> Result<SelfId, String> {
     t.self_identity(col)?.ok_or_else(|| {
         format!("sync: collection {col} has no local identity (call identity first)")
     })
+}
+
+/// 「这一轮开始时库是空的」（`plan` 每轮按位置写 `1` / `0`，`oldroot_ingest` 读；`truth/trust.rs` 文件头）。
+pub(crate) fn round_fresh_key(col: i64, location: &str) -> String {
+    format!("gen4_round_fresh/{col}/{location}")
 }
 
 pub(crate) fn meta_get(t: &Truth<'_>, key: &str) -> Result<Option<String>, String> {
@@ -454,11 +467,13 @@ fn cut(
 
 // ---------------------------------------------------------------------- 1. 位置的根
 
-/// `location_root {profile, location, now, has4, has3, locs, enableKdf?}`，字节块依次是位置上的 `v4/meta.json`（`has4`）、
+/// `location_root {profile, location, now, has4, has3, has2?, v4Data?, locs, enableKdf?}`，字节块依次是位置上的 `v4/meta.json`（`has4`）、
 /// `v3/meta.json`（`has3`）。`locs` = `v4/loc/` 下的文件名。回包 `{state, error?, loc, kdf, media, fresh, ensure}`，要写的
 /// 文件在 [files]（路径相对位置目录，`v4/…` / `v3/…`，按顺序写：先新根、后围栏）；`ensure` 里的路径「不存在才写」
 /// （墓碑 head：内容是目录名的纯函数，每轮覆盖写没有意义）。
 ///
+/// - 新根 meta 读不到、而新根下已有数据（`v4Data`）或 loc 标记：报 [ERR_META_UNAVAILABLE]；新根下什么都没有、旧根是
+///   围栏：报 [ERR_NEW_ROOT_MISSING]。都什么都不写。
 /// - 新根 meta（设计 §4.1）：没有就写 [meta4]（`kdf` 从旧根原样抄；新集合没有旧根时取本机要开的 `enableKdf`）；有就按
 ///   字段核对（[check_meta4]）：要求更新的读者 → `needsUpgrade`，外形不认得 / 集合或媒体根不同 → `refused`，什么都
 ///   不写（不能当成可覆盖重建）。唯一允许的改写：位置上的 meta 没有 `kdf`、本机这一轮要开加密（`enableKdf`）。
@@ -555,6 +570,41 @@ pub fn location_root(
             ));
         }
     }
+    // loc 标记（新根的一部分：总在新根 meta 之后写）。
+    let mut locs: BTreeSet<Id> = req
+        .get("locs")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .filter_map(|n| match parse_v4_path(&format!("{LOC_DIR}/{n}")) {
+            Some(V4File::Loc(id)) => Some(id),
+            _ => None,
+        })
+        .collect();
+    // 新根 meta 读不到而新根已经立过：不按围栏 / 旧根重建（会把新集合的媒体根从 v4 改成 v3、把加密位置的 `kdf` 丢掉）。
+    // 新根立过的证据三样，任一即可：旧根是围栏、Dart 列到新根下有设备 / 媒体数据（`v4Data`）、新根下有 loc 标记（内核
+    // 自己看得到，不全靠 Dart 的判断）。新根下还有东西 → 多半是 meta 一时读不到；新根下什么都列不到、只剩围栏 → 新根
+    // 多半被整个删掉了（也可能是列目录一时为空），这时等下去不会自己好，另给一个码让界面说清楚怎么恢复（交接第五波）。
+    let v4_data = req.get("v4Data") == Some(&Value::Bool(true));
+    let v4_listed = v4_data || !locs.is_empty();
+    if v4.is_none() && (fenced3 || v4_listed) {
+        let mut v = refuse(
+            ROOT_REFUSED,
+            if v4_listed {
+                "v4/meta.json is unavailable but the new root already exists"
+            } else {
+                "v4/ is empty but v3/meta.json is the fence of a new root"
+            }
+            .into(),
+        );
+        v["code"] = json!(if v4_listed {
+            ERR_META_UNAVAILABLE
+        } else {
+            ERR_NEW_ROOT_MISSING
+        });
+        return Ok(v);
+    }
     let media = if v3.is_some() {
         MediaRoot::V3
     } else {
@@ -604,18 +654,6 @@ pub fn location_root(
             (b, kdf)
         }
     };
-    // loc 标记。
-    let mut locs: BTreeSet<Id> = req
-        .get("locs")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-        .filter_map(|n| match parse_v4_path(&format!("{LOC_DIR}/{n}")) {
-            Some(V4File::Loc(id)) => Some(id),
-            _ => None,
-        })
-        .collect();
     if locs.is_empty() {
         let id = Id::new_v7(now.max(0) as u64);
         out_files.push((format!("{NEW_ROOT}/{}", loc_path(&id)), Vec::new()));
@@ -718,6 +756,13 @@ pub fn plan(t: &Truth<'_>, col: i64, req: &Value, heads: &[Vec<u8>]) -> Result<V
     let location = str_req(req, "location")?;
     let now = now_of(req)?;
     let loc = req.get("loc").and_then(Value::as_str);
+    // 这一轮开始时（收任何段之前）库是不是空的：同一轮稍后的旧根接手按它判首次信任（`truth/trust.rs` 文件头）。
+    let fresh = t.library_fresh(col)?;
+    meta_set(
+        t,
+        &round_fresh_key(col, location),
+        if fresh { "1" } else { "0" },
+    )?;
     let me = me_of(t, col)?;
     let (collections, _, _) = collections_of(t, col)?;
     let retired = t.retired(col)?;

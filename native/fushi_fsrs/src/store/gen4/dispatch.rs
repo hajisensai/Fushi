@@ -112,7 +112,7 @@ pub fn wiring(op: &str) -> Option<Wiring> {
         "device_info" | "device_hint" | "local_state_ensure" | "local_anchor"
         | "cache_config_set" | "refresh_caches" | "rebuild_caches" => Wired,
         // 纯加解密（不碰库）
-        "seal" | "open" | "open_v1" | "seal_file" | "open_file" | "derive_key" => Wired,
+        "seal" | "open" | "seal_file" | "open_file" | "derive_key" => Wired,
         // 媒体回收（`cmd/media_gc.rs`）：待回收集合存在本机状态行里，存活引用读缓存层。
         "media_gc_queue" | "media_gc_collect" | "media_live_refs" => Wired,
         // 身份（G9-4，`cmd/identity.rs`）
@@ -157,7 +157,6 @@ pub fn wiring(op: &str) -> Option<Wiring> {
         | "media_hash"
         | "media_scan"
         | "media_landed"
-        | "media_bind_unbound"
         | "media_doomed"
         | "media_manifests"
         | "media_manifest_ingest"
@@ -380,7 +379,7 @@ fn run(
             let depth = c.bulk(req.get("on") == Some(&Value::Bool(true)))?;
             return Ok(json!({"depth": depth}));
         }
-        "seal" | "open" | "open_v1" | "seal_file" | "open_file" | "derive_key" => {
+        "seal" | "open" | "seal_file" | "open_file" | "derive_key" => {
             return crate::store::ffi::crypto_command(op, req, blobs, files);
         }
         // profile 数据（G9-5，`cmd/profile_data.rs`）：不针对单个 profile 的几条。
@@ -775,10 +774,6 @@ fn run(
             let (items, stats) = cmd::media_sync::landed_items(req)?;
             let v =
                 c.write(|t| cmd::media_sync::landed(t, col_of(t, profile)?, &items, &stats, now))?;
-            noted(c, profile, v)
-        }
-        "media_bind_unbound" => {
-            let v = c.write(|t| cmd::media_sync::bind_unbound(t, col_of(t, profile)?, req))?;
             noted(c, profile, v)
         }
         "media_doomed" => read_col(c, profile, |t, col| cmd::media_sync::doomed(t, col, req))?,

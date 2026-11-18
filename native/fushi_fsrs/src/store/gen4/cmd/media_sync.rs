@@ -1,5 +1,5 @@
-//! 媒体同步的命令层（G8-7b；交接说明「G8-7b 同步补全」一节）。协议 3 `store/sync2/media.rs` 的 `media_*` 七条命令的新代
-//! 实现，加上新代才有的媒体清单收发（`media_manifests` / `media_manifest_ingest` / `media_manifest_build` /
+//! 媒体同步的命令层（G8-7b；交接说明「G8-7b 同步补全」一节）。协议 3 `store/sync2/media.rs` 的 `media_*` 六条命令的新代
+//! 实现（协议 3 原有的第七条 `media_bind_unbound` 只给已删的协议 1 位置迁移用，两代都已删掉），加上新代才有的媒体清单收发（`media_manifests` / `media_manifest_ingest` / `media_manifest_build` /
 //! `media_manifest_published`）。存储层全部复用：名字 → 内容的绑定是真相层的 `Media` 操作（派生在 `media_ix`，
 //! `weigh.rs`），本机文件缓存是迁移照搬的 `media_local`，各位置「在不在」是 G8-3 的 `media_at` 与清单（`gen4/media.rs`）。
 //!
@@ -10,7 +10,6 @@
 //! | `media_hash {root, names}` | 读快照 + 锁外读文件 | 本机文件此刻的 (size, mtime, sha256)；`media_local` 里 (size, mtime) 没变的不重算 |
 //! | `media_scan {names, files, now}` | `write` | 每个名字该做什么；需要的绑定（`Media` 操作）同一个事务里写 |
 //! | `media_landed {root, items, now}` | `write` | 下载落地：记成与绑定对齐，没绑定的补绑 |
-//! | `media_bind_unbound {items, now}` | `write` | 只给从没绑过的名字补绑定（不跟任何设备的绑定抢） |
 //! | `media_doomed {expired, live}` | 读 | 过期名字绑定、且不被存活名字绑定的内容 |
 //! | `media_known {location}` | 读 | 一个媒体目录（`<位置>/<目录>#sha256`）的已知内容：`media_at` 与「列举过」 |
 //! | `media_record {location, present, absent, suspect, seeded, now}` | `write_local` | 本机观察写进 `media_at`（待发），HLC 由本机时钟 tick |
@@ -19,7 +18,7 @@
 //! | `media_manifest_build {location, loc, ownGens}` | `write_local` | 本机待发的事实打成下一份清单（预留代号） |
 //! | `media_manifest_published {location}` + 块 | `write_local` | 那份清单写上了：清待发标记、推进本机水位 |
 //!
-//! `media_scan` / `media_landed` / `media_bind_unbound` 落真相（绑定操作），经 `cmd/writes.rs` 的 [write]（本机身份、
+//! `media_scan` / `media_landed` 落真相（绑定操作），经 `cmd/writes.rs` 的 [write]（本机身份、
 //! 规范 ID、派生层收尾）；它们**不推进本机修订号**（协议 3 同样不算改投影的命令：绑定不进 Dart 的任何缓存），所以走
 //! `G4Core::write` 而不是本机写命令的事务。`media_record` 与清单命令只改本机状态（`media_at` / `media_seen` /
 //! `media_listed` / `media_gen`、`self_.hlc`），走 `write_local`。
@@ -366,55 +365,6 @@ pub fn landed_items(
         .map(|(n, _)| stat_file(&root.join(n)))
         .collect();
     Ok((items, stats))
-}
-
-/// `media_bind_unbound {items: [{name, sha, size}], now}`（协议 3 同名命令）：还没有绑定的名字绑到给的内容；已有绑定的
-/// 一概不动。回包 `{"appended": n, "bound": [名字…]}`。
-pub fn bind_unbound(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String> {
-    let now = now_of(req)?;
-    let mut items = Vec::new();
-    for it in req
-        .get("items")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-    {
-        let name = it
-            .get("name")
-            .and_then(Value::as_str)
-            .ok_or("media_bind_unbound: missing name")?;
-        let sha = it
-            .get("sha")
-            .and_then(Value::as_str)
-            .and_then(unhex32)
-            .ok_or("media_bind_unbound: bad sha")?;
-        let size = it
-            .get("size")
-            .and_then(Value::as_i64)
-            .ok_or("media_bind_unbound: missing size")?;
-        items.push((name.to_owned(), sha, size));
-    }
-    write(t, col, |s| {
-        let t = s.t;
-        let mut binds: Vec<(String, [u8; 32], i64)> = Vec::new();
-        for (name, sha, size) in &items {
-            if binding(t, col, name)?.is_none() && !binds.iter().any(|b| &b.0 == name) {
-                binds.push((name.clone(), *sha, *size));
-            }
-        }
-        for (name, sha, size) in &binds {
-            s.land(
-                Body::Media {
-                    name: name.clone(),
-                    sha256: *sha,
-                    size: (*size).max(0) as u64,
-                },
-                now,
-            )?;
-        }
-        let bound: Vec<&str> = binds.iter().map(|b| b.0.as_str()).collect();
-        Ok(json!({"appended": binds.len(), "bound": bound}))
-    })
 }
 
 /// `media_doomed {expired, live}`（协议 3 同名命令）：[expired] 绑定的内容里不被 [live] 任何一个名字绑定的那些。

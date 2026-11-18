@@ -228,38 +228,6 @@ fn media_reconciles_between_two_devices_through_a_folder_location() {
     assert_eq!(doomed["sha"], json!([sha2]));
 }
 
-/// 一个从没绑过的名字补绑；已有绑定的不动。
-#[test]
-fn binding_unbound_names_never_overrides_a_binding() {
-    let a = Dev::new("g87bbu");
-    let sha = "ab".repeat(32);
-    let other = "cd".repeat(32);
-    let (v, _) = cmd(
-        a.h,
-        "media_bind_unbound",
-        T1,
-        json!({"items": [{"name": "y.ogg", "sha": sha, "size": 3}]}),
-        &[],
-    );
-    assert_eq!(v["bound"], json!(["y.ogg"]), "{v}");
-    let (v, _) = cmd(
-        a.h,
-        "media_bind_unbound",
-        T1 + 1,
-        json!({"items": [{"name": "y.ogg", "sha": other, "size": 4}]}),
-        &[],
-    );
-    assert_eq!(v["appended"], json!(0), "{v}");
-    let (s, _) = cmd(
-        a.h,
-        "media_scan",
-        T1 + 2,
-        json!({"names": ["y.ogg"], "files": []}),
-        &[],
-    );
-    assert_eq!(s["items"][0]["sha"], json!(sha));
-}
-
 // ---------------------------------------------------------------------- 旧根接手
 
 pub(super) const OLD: u8 = 0xd7;
