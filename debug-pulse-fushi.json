@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-18T03:53:18Z",
+ "generatedAt": "2026-11-18T07:28:09Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "ea970d0572022c4a601aef7f73accd118f5e8442",
-  "seq": 28911
+  "sha": "8b621f0ed6a94bcc8761e676df99e78173aec335",
+  "seq": 28956
  },
  "builds": [
   {
@@ -136,9 +136,18 @@
   }
  ],
  "pending": {
-  "headSha": "ea970d0572022c4a601aef7f73accd118f5e8442",
-  "headSeq": 28911,
-  "prs": [],
+  "headSha": "8b621f0ed6a94bcc8761e676df99e78173aec335",
+  "headSeq": 28956,
+  "prs": [
+   3687,
+   3671,
+   3676,
+   3723,
+   3566,
+   3605,
+   3557,
+   3554
+  ],
   "direct": [
    {
     "sha": "ea970d0572022c4a601aef7f73accd118f5e8442",
@@ -148,20 +157,60 @@
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "none"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44259022199"
    },
    "windows": {
-    "state": "none"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44259101353"
    },
    "macos": {
-    "state": "none"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44259101353"
    },
    "ios": {
-    "state": "none"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44259101353"
    }
   }
  },
  "prs": {
+  "3554": {
+   "number": 3554,
+   "title": "perf(fushidicts): 词典磁盘格式升级（key.index 键索引 + 预解析 meta 记录）与存量词典后台原地升级",
+   "author": "W1ght",
+   "mergedAt": "2026-11-18T07:26:31Z",
+   "additions": 5288,
+   "deletions": 360,
+   "labels": []
+  },
+  "3557": {
+   "number": 3557,
+   "title": "perf(fushidicts): 只查词频的查询入口，Anki 卡组按词频重排不再解压释义",
+   "author": "W1ght",
+   "mergedAt": "2026-11-18T07:26:37Z",
+   "additions": 5500,
+   "deletions": 365,
+   "labels": []
+  },
+  "3566": {
+   "number": 3566,
+   "title": "fix(srs): 媒体清单已收进度改成按代号的集合（#3478 审查跟进，G8-3）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-18T07:26:54Z",
+   "additions": 198,
+   "deletions": 68,
+   "labels": []
+  },
+  "3605": {
+   "number": 3605,
+   "title": "fix(lookup): 查词模块关闭不再连带关掉全局查词覆盖窗（BUG-4755）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-18T07:26:43Z",
+   "additions": 119,
+   "deletions": 102,
+   "labels": []
+  },
   "3640": {
    "number": 3640,
    "title": "docs(specs): 漫画有声模式设计",
@@ -198,6 +247,24 @@
    "deletions": 25,
    "labels": []
   },
+  "3671": {
+   "number": 3671,
+   "title": "feat(audiobook): schema v159 逐 token 时间随 cue 落库（半句命中可用）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-18T07:27:25Z",
+   "additions": 546,
+   "deletions": 169,
+   "labels": []
+  },
+  "3676": {
+   "number": 3676,
+   "title": "fix(settings): 宽屏设置全平台同壳，去掉平板/Linux 的二级界面",
+   "author": "W1ght",
+   "mergedAt": "2026-11-18T07:27:11Z",
+   "additions": 102,
+   "deletions": 245,
+   "labels": []
+  },
   "3678": {
    "number": 3678,
    "title": "docs(build): quick 改一行重编的分项耗时与链接器结论",
@@ -205,6 +272,15 @@
    "mergedAt": "2026-11-18T02:56:55Z",
    "additions": 14,
    "deletions": 1,
+   "labels": []
+  },
+  "3687": {
+   "number": 3687,
+   "title": "fix(video): 弹幕按身份 key 对位并自成重绘边界，队首出列不再让整屏弹幕重做阴影",
+   "author": "W1ght",
+   "mergedAt": "2026-11-18T07:28:02Z",
+   "additions": 624,
+   "deletions": 45,
    "labels": []
   },
   "3693": {
@@ -421,6 +497,15 @@
    "mergedAt": "2026-11-17T18:40:05Z",
    "additions": 4524,
    "deletions": 237,
+   "labels": []
+  },
+  "3723": {
+   "number": 3723,
+   "title": "feat(home): 默认布局自动补洞 + 最近添加改封面色块",
+   "author": "W1ght",
+   "mergedAt": "2026-11-18T07:27:05Z",
+   "additions": 554,
+   "deletions": 36,
    "labels": []
   },
   "3724": {
