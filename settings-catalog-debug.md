@@ -41,9 +41,9 @@ How to read this:
 | `appearance.eink_full_refresh_interval` | E-ink full refresh | 墨水屏全刷 | Theme | choice | `0`, `1`, `2`, `3`, `5`, `10`, `20` | `0` | While reading novels or manga, do a full e-ink refresh every few page turns to clear ghosting |
 | `appearance.eink_full_refresh_method` | Full refresh method | 全刷方式 | Theme | choice | `auto`, `flash` | `auto` | Auto uses the e-reader's own full refresh when supported (Onyx BOOX, Rockchip-based readers, Nook / Tolino) and briefly flashes the screen black otherwise. Choose Black flash if Auto has no effect on your device. |
 | `appearance.glass_material` | Glass material | 玻璃材质 | Theme | choice | `frosted`, `liquid` | `off` | Frosted blurs whatever is behind a surface; liquid glass adds refraction and highlights where the graphics engine supports it (otherwise it shows as frosted). On Windows 11 and macOS the window background shows the desktop through. Falls back to solid surfaces in e-ink mode and with increased contrast. |
-| `appearance.shell_rail_style` | Sidebar style | 侧栏样式 | Theme | choice | `notch`, `spine` | `notch` |  |
-| `appearance.shell_content_layout` | Library layout | 库页布局 | Theme | choice | `collage`, `grid` | `grid` |  |
-| `appearance.shell_block_arrangement` | Block arrangement | 色块摆放 | Theme | choice | `aligned`, `staggered`, `scattered` | `aligned` | How color blocks sit on library pages. Does not apply to the cover grid. |
+| `appearance.shell_content_layout` | Library layout | 库页布局 | Theme | text | `collage`, `grid` | `collage` |  |
+| `appearance.shell_block_arrangement` | Block arrangement | 色块摆放 | Theme | text | `aligned`, `staggered`, `scattered` | `aligned` | How color blocks sit on library pages. Does not apply to the cover grid. |
+| `appearance.shell_rail_style` | Sidebar style | 侧栏样式 | Theme | text | `notch`, `spine` | `notch` |  |
 | `appearance.shell_smooth_corners` | Smooth corners | 平滑圆角 | Theme | bool |  | `true` | Continuous-curvature corners, like app icons |
 | `appearance.second_screen_mode` | Second screen | 第二块屏幕 | Theme | choice | `auto`, `always`, `off` | `auto` | Show controls and dictionary on a connected second screen, such as the bottom screen of a dual-screen handheld. |
 | `appearance.second_screen_lookup_screen` | Lookups open on | 查词结果显示在 | Theme | choice | `bottom`, `top` | `bottom` | Where words you look up on the main screen show while the second screen is in use |

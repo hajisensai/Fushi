@@ -772,39 +772,9 @@
    "default": "off"
   },
   {
-   "key": "appearance.shell_rail_style",
-   "kind": "value",
-   "type": "choice",
-   "title": {
-    "en": "Sidebar style",
-    "zh-CN": "侧栏样式"
-   },
-   "path": {
-    "en": "Appearance › Theme",
-    "zh-CN": "外观 › 主题"
-   },
-   "options": [
-    {
-     "value": "notch",
-     "label": {
-      "en": "Cutout spine",
-      "zh-CN": "镂空脊"
-     }
-    },
-    {
-     "value": "spine",
-     "label": {
-      "en": "Color spine",
-      "zh-CN": "色脊"
-     }
-    }
-   ],
-   "default": "notch"
-  },
-  {
    "key": "appearance.shell_content_layout",
    "kind": "value",
-   "type": "choice",
+   "type": "text",
    "title": {
     "en": "Library layout",
     "zh-CN": "库页布局"
@@ -816,25 +786,19 @@
    "options": [
     {
      "value": "collage",
-     "label": {
-      "en": "Collage",
-      "zh-CN": "拼贴"
-     }
+     "label": {}
     },
     {
      "value": "grid",
-     "label": {
-      "en": "Cover grid",
-      "zh-CN": "封面网格"
-     }
+     "label": {}
     }
    ],
-   "default": "grid"
+   "default": "collage"
   },
   {
    "key": "appearance.shell_block_arrangement",
    "kind": "value",
-   "type": "choice",
+   "type": "text",
    "title": {
     "en": "Block arrangement",
     "zh-CN": "色块摆放"
@@ -850,27 +814,42 @@
    "options": [
     {
      "value": "aligned",
-     "label": {
-      "en": "Aligned",
-      "zh-CN": "规整"
-     }
+     "label": {}
     },
     {
      "value": "staggered",
-     "label": {
-      "en": "Staggered",
-      "zh-CN": "交错"
-     }
+     "label": {}
     },
     {
      "value": "scattered",
-     "label": {
-      "en": "Scattered",
-      "zh-CN": "散落"
-     }
+     "label": {}
     }
    ],
    "default": "aligned"
+  },
+  {
+   "key": "appearance.shell_rail_style",
+   "kind": "value",
+   "type": "text",
+   "title": {
+    "en": "Sidebar style",
+    "zh-CN": "侧栏样式"
+   },
+   "path": {
+    "en": "Appearance › Theme",
+    "zh-CN": "外观 › 主题"
+   },
+   "options": [
+    {
+     "value": "notch",
+     "label": {}
+    },
+    {
+     "value": "spine",
+     "label": {}
+    }
+   ],
+   "default": "notch"
   },
   {
    "key": "appearance.shell_smooth_corners",
