@@ -44,6 +44,7 @@ import 'package:fushi/src/media/video/underlay_composition.dart'
 import 'package:fushi/src/media/video/web_video_shaders.dart';
 import 'package:fushi/src/media/video/video_shader_tier.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
+import 'package:fushi/src/mining/after_mining_popup_action.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
@@ -55,6 +56,7 @@ import 'package:fushi/src/mining/mining_image_mode_target.dart';
 import 'package:fushi/src/mining/web_mine_clip.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart';
 import 'package:fushi/src/mining/web_mine_idle.dart';
+import 'package:fushi/src/mining/web_mine_queue_run.dart';
 import 'package:fushi/src/mining/web_mine_queue_store.dart';
 import 'package:fushi/src/mining/web_mine_replay.dart';
 import 'package:fushi/src/media/video/web_mine_auto_status.dart';
@@ -560,6 +562,11 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   bool get _isMiningHost =>
       widget.returnHostingAfterMining != null || widget.closeAfterMining;
 
+  /// 本页此刻的播放头是不是用户自己的观看进度。队列重放期间的 seek / 播放是机器驱动；制卡
+  /// 宿主页（[_isMiningHost]）则整页都是：开跑前站点自动播放，跑完到换回原档 / 关页之间停在
+  /// 最后一句重放处。不是用户的播放头就不写续播点、不计观看时长（BUG-4834）。
+  bool get _playheadIsUsers => !_mineRunning && !_isMiningHost;
+
   /// 自动制卡已触发、但还在起音频 / 读队列（[_mineRunning] 尚未置位）时用户回来了：
   /// 开跑那一刻直接让位。
   bool _autoYieldRequested = false;
@@ -593,6 +600,26 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   @override
   String get dictionarySourceType => kStatSourceVideo;
 
+  /// 制卡后「关闭弹窗、不续播」（拍板台 8ldy3d8XFA）：撤掉查词暂停标记，随后
+  /// [_popNestedPopupAt] 关栈时就不续播。
+  @override
+  void dropLookupPauseMark() {
+    _pausedForLookup = false;
+  }
+
+  /// 窗口宿主档：顶层查词窗口里一张新卡被收下（入队 / 落地）后，与应用内弹窗车道
+  /// （`closePopupAfterAcceptedMine`）同一判据处理「制卡后行为」（视频那一行，拍板台
+  /// 8ldy3d8XFA）。关卡走 [GlobalLookupController.dismissDesktopLookup]，原生回报关窗后
+  /// [_onGlobalLookupHidden] 按 [_pausedForLookup] 续播；「关闭、不续播」先撤标记。
+  void _afterGlobalLookupMineAccepted() {
+    if (!mounted) return;
+    applyAfterMiningPopupAction(
+      afterMiningPopupAction,
+      dropPauseMark: dropLookupPauseMark,
+      closeAll: GlobalLookupController.instance.dismissDesktopLookup,
+    );
+  }
+
   /// 查词 / 制卡计数归属 = 观看时长同一身份（时钟 `mediaKey` = [WebVideoFushiPage.bookUid]），
   /// 与本地视频页 `_studyStatsIdentity` 同律；此前未覆写，网页档的查词 / 制卡只进汇总。
   @override
@@ -600,7 +627,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       (bookKey: widget.bookUid, title: _row?.title ?? '');
 
   @override
-  ModuleId? get popupDockModule => ModuleId.video;
+  ModuleId? get lookupHostModule => ModuleId.video;
 
   @override
   ShortcutScope? get dictionaryPopupInputScope => ShortcutScope.video;
@@ -774,8 +801,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     );
     _studyClockGate.dispose();
     _studyAccrualClaim.release();
-    // 后台制卡页的播放全是机器驱动（站点自动播放 + 逐句重放），不是用户的续播点。
-    if (!widget.closeAfterMining) unawaited(_flushPosition());
+    // 机器驱动的播放头不是用户的续播点，[_persistPosition] 自己会挡（[_playheadIsUsers]）。
+    unawaited(_flushPosition());
     final OverlayEntry? entry = _popupOverlayEntry;
     if (entry != null) {
       removeAndDisposeOwnedOverlayEntry(entry);
@@ -944,9 +971,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         playing: state.isPlaying,
         durationMs: state.durationMs,
       );
-      // 队列重放期间的 seek/播放是机器驱动，不算观看进度、不计观看时长；后台制卡页
-      // 整页都是机器驱动（开跑前站点自动播放、跑完到关页之间停在最后一句），同理。
-      if (!_mineRunning && !widget.closeAfterMining) {
+      // 机器驱动的播放头（队列重放期间 / 制卡宿主页全程）不算观看进度、不计观看时长。
+      if (_playheadIsUsers) {
         _maybePersistPosition(pos);
         _syncWatchTracker();
       }
@@ -1116,7 +1142,10 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     unawaited(_persistPosition(posMs));
   }
 
+  /// 续播点写库的唯一出口（每秒一次的 [_maybePersistPosition]、dispose / 切宿主档的
+  /// [_flushPosition] 都经这里），所以「不是用户的播放头不写」只在这里判一次。
   Future<void> _persistPosition(int posMs) async {
+    if (!_playheadIsUsers) return;
     if (posMs < kWebVideoMinPersistPositionMs || _row == null) return;
     final int now = DateTime.now().millisecondsSinceEpoch;
     try {
@@ -1140,7 +1169,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     await _persistPosition(pos);
   }
 
-  /// 每条站点播放快照都过一次（队列重放 / 后台制卡页除外）：按需建 tracker、采样没在
+  /// 每条站点播放快照都过一次（队列重放 / 制卡宿主页除外，见 [_playheadIsUsers]）：按需建 tracker、采样没在
   /// 跑就续上，起不起表交给 [_studyClockGate]。暂停**不**停采样、不停表（2026-11-07：
   /// 暂停查词也是学习时间，挂机由空闲门截断）；播放态经 `onPlayingChanged` 喂门。
   void _syncWatchTracker() {
@@ -1270,6 +1299,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       !_mineRunning &&
       !WebMineIdleScheduler.silentCaptureUnavailable &&
       !_autoGaveUp &&
+      !WebMineIdleGiveUps.instance.isBookGivenUp(widget.bookUid) &&
       _minePending > 0 &&
       _row != null &&
       (_state?.hasVideo ?? false) &&
@@ -1507,23 +1537,27 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     return (source: mix, format: await mix.start());
   }
 
-  /// 队列行属于别的视频（换集后入队的）：先导航过去等画面就绪。
-  Future<bool> _navigateForMining(WebMineQueueRow row) async {
+  /// 队列行属于别的视频（换集后入队的）：先导航过去等画面就绪。没等完就被叫停（用户回来
+  /// 让位 / 手动停止 / 页面卸载）回 [WebMineNavigateOutcome.interrupted]，与等满期限的
+  /// 超时分开——前者不是这一行的错，行要留在待办（BUG-4832）。
+  Future<WebMineNavigateOutcome> _navigateForMining(WebMineQueueRow row) async {
     final InAppWebViewController? web = _web;
-    if (web == null) return false;
+    if (web == null) return WebMineNavigateOutcome.timedOut;
     await web.loadUrl(urlRequest: URLRequest(url: WebUri(row.href)));
     final DateTime until = DateTime.now().add(const Duration(seconds: 30));
     while (DateTime.now().isBefore(until)) {
-      if (!mounted || _mineStopRequested) return false;
+      if (!mounted || _mineStopRequested) {
+        return WebMineNavigateOutcome.interrupted;
+      }
       if (_videoKey == row.videoKey && (_state?.hasVideo ?? false)) {
         // 画面就绪可能早于 onLoadStop；开录前再挂一次（页面侧按 style id 幂等）。
         await _setPlayerChromeHidden(true);
         await _prepareSiteForReplay();
-        return true;
+        return WebMineNavigateOutcome.ready;
       }
       await Future<void>.delayed(const Duration(milliseconds: 250));
     }
-    return false;
+    return WebMineNavigateOutcome.timedOut;
   }
 
   /// 逐句重放落卡。[auto] = 空闲自动制卡：只用静音录音（起不来就整轮放弃）、用户一有
@@ -1537,10 +1571,18 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     if (auto && !widget.idleAutoMining) {
       _autoYieldRequested = false;
     }
-    final List<WebMineQueueRow> rows = await _mineQueue.pending(widget.bookUid);
+    final WebMineIdleGiveUps giveUps = WebMineIdleGiveUps.instance;
+    final List<WebMineQueueRow> queued = await _mineQueue.pending(
+      widget.bookUid,
+    );
     if (!mounted) return;
+    // 自动跑不再去本次空闲里已经到不了的视频（BUG-4832）；用户自己点的照跑。
+    final List<WebMineQueueRow> rows = auto
+        ? giveUps.startable(widget.bookUid, queued)
+        : queued;
     if (rows.isEmpty) {
       if (!auto) FushiToast.show(msg: t.web_video_mine_queue_empty);
+      if (auto) giveUps.settleAfterRound(widget.bookUid, queued);
       _finishMining(auto: auto, status: null);
       return;
     }
@@ -1558,117 +1600,152 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     }
     final LoopbackGalAudioSource loopback = audio.source;
     final PcmFormat? format = audio.format;
-    int ok = 0;
-    int failed = 0;
+    final WebMineQueueTally tally = WebMineQueueTally();
+    WebMineQueueRowsEnd? rowsEnd;
+    bool sawError = false;
+    void onMineError(Object error, StackTrace stack) {
+      sawError = true;
+      ErrorLogService.instance.log('web_video.mineQueue', error, stack);
+    }
+
     _replayOrigin = widget.mineReturnState ?? _currentReturnState();
     _pendingRestore = null;
-    // try 紧跟在采集起好之后：之后任何一步抛出，finally 都会停采集（还原会话音量）、
-    // 复位运行态。
-    try {
-      setState(() {
-        _mineRunning = true;
-        _mineAuto = auto;
-        _mineStopRequested = auto && _autoYieldRequested;
-        _mineProgress = (done: 0, total: rows.length);
-        _autoStatus = WebMineAutoRunning(
-          done: 0,
-          total: rows.length,
-          auto: auto,
-        );
-      });
-      unawaited(_watchTracker?.stop());
-      // 采样已同步停下：计时门再落定一次，时钟读口给 null → 回报 running=false，
-      // 跨面仲裁里的登记随之让出，重放期间浏览器扩展视频照常入账。
-      _studyClockGate.sync();
-      if (_popup.hasVisiblePopup) _popNestedPopupAt(0);
-      // 封面不带站点控制栏（Dart 驱动的 seek/pause 会让控件浮出来）；字幕轨关掉、音轨对齐。
-      await _setPlayerChromeHidden(true);
-      await _prepareSiteForReplay();
-      final String tempDir = (await getTemporaryDirectory()).path;
-      final MiningMediaCompression compression = MiningMediaCompression.resolve(
-        imageTier: _appModel.miningImageQuality,
-        audioTier: _appModel.miningAudioQuality,
-        format: _appModel.videoMiningAnimatedFormat,
-      );
-      // 图片模式按目标模板生效（模板不原样渲染图片字段时片段改动图），录之前定下：
-      // 动图 / 片段模式要在重放期间连续采帧，静图模式只截中点一张。
-      final VideoMiningImageMode imageMode = await resolveTargetMiningImageMode(
-        _appModel.videoMiningImageMode,
-        repo: ref.read(ankiRepositoryProvider),
-      );
-      final WebMineReplayRunner runner = WebMineReplayRunner(
-        host: _WebMineHost(this),
-        captureFrames: !imageMode.isStill,
-        audioSource: format == null ? null : loopback,
-        encodeAudio: (GalAudioSlice slice) => pcmSliceToAacBytes(
-          pcm: slice.pcm,
-          format: slice.format,
-          tempDir: tempDir,
-          outputExtension: immersionMiningAudioExtension(),
-          audioChannels: compression.audioChannels,
-          audioBitrate: compression.audioBitrate,
-        ),
-      );
-      for (final WebMineQueueRow row in rows) {
-        if (!mounted || _mineStopRequested) break;
-        if (row.videoKey != _videoKey && !await _navigateForMining(row)) {
-          await _mineQueue.markFailed(row.id, 'navigate_timeout');
-          failed++;
-        } else {
-          final WebMineReplayCapture cap = await runner.capture(
-            cueStartMs: row.cueStartMs,
-            cueEndMs: row.cueEndMs,
-          );
-          _debugCaptures?.add(cap);
-          final String? error = await _mineQueuedRow(
-            row,
-            cap,
-            compression,
-            tempDir,
-            imageMode,
-          );
-          if (error == null) {
-            ok++;
-          } else {
-            failed++;
-          }
-        }
-        if (mounted) {
-          setState(() {
-            _mineProgress = (done: ok + failed, total: rows.length);
-            _autoStatus = WebMineAutoRunning(
-              done: ok + failed,
-              total: rows.length,
-              auto: auto,
-            );
-          });
-        }
-      }
-    } finally {
-      // 先停采集（native 随即把压低的会话音量还原），再还原站点外观与播放状态。
-      await loopback.stop();
-      await _setPlayerChromeHidden(false);
-      await _setNativeSubtitlesHidden(_hideNativeSubtitles);
-      if (mounted) {
+    // 采集起好之后的每一步都在 [runWebMineQueueRound] 里：哪一步抛出，后面的还原步骤
+    // （停采集 = 还原会话音量、复位运行态）与整轮收尾 [_finishMining] 都照常执行（BUG-4829）。
+    await runWebMineQueueRound(
+      onError: onMineError,
+      body: () async {
         setState(() {
-          _mineRunning = false;
-          _mineAuto = false;
-          _mineProgress = null;
+          _mineRunning = true;
+          _mineAuto = auto;
+          _mineStopRequested = auto && _autoYieldRequested;
+          _mineProgress = (done: 0, total: rows.length);
+          _autoStatus = WebMineAutoRunning(
+            done: 0,
+            total: rows.length,
+            auto: auto,
+          );
         });
-        // 原页：集 / 字幕轨 / 音轨 / 位置原样还回去；交接页把它带回原档（[_finishMining]）。
-        if (widget.returnHostingAfterMining == null &&
-            !widget.closeAfterMining) {
-          _beginRestore(_replayOrigin);
-        }
-        unawaited(_refreshMinePending());
-      }
-    }
+        unawaited(_watchTracker?.stop());
+        // 采样已同步停下：计时门再落定一次，时钟读口给 null → 回报 running=false，
+        // 跨面仲裁里的登记随之让出，重放期间浏览器扩展视频照常入账。
+        _studyClockGate.sync();
+        if (_popup.hasVisiblePopup) _popNestedPopupAt(0);
+        // 封面不带站点控制栏（Dart 驱动的 seek/pause 会让控件浮出来）；字幕轨关掉、音轨对齐。
+        await _setPlayerChromeHidden(true);
+        await _prepareSiteForReplay();
+        final String tempDir = (await getTemporaryDirectory()).path;
+        final MiningMediaCompression compression =
+            MiningMediaCompression.resolve(
+              imageTier: _appModel.miningImageQuality,
+              audioTier: _appModel.miningAudioQuality,
+              format: _appModel.videoMiningAnimatedFormat,
+            );
+        // 图片模式按目标模板生效（模板不原样渲染图片字段时片段改动图），录之前定下：
+        // 动图 / 片段模式要在重放期间连续采帧，静图模式只截中点一张。
+        final VideoMiningImageMode imageMode =
+            await resolveTargetMiningImageMode(
+              _appModel.videoMiningImageMode,
+              repo: ref.read(ankiRepositoryProvider),
+            );
+        final WebMineReplayRunner runner = WebMineReplayRunner(
+          host: _WebMineHost(this),
+          captureFrames: !imageMode.isStill,
+          audioSource: format == null ? null : loopback,
+          encodeAudio: (GalAudioSlice slice) => pcmSliceToAacBytes(
+            pcm: slice.pcm,
+            format: slice.format,
+            tempDir: tempDir,
+            outputExtension: immersionMiningAudioExtension(),
+            audioChannels: compression.audioChannels,
+            audioBitrate: compression.audioBitrate,
+          ),
+        );
+        // 行的先后、失败 / 留待办的判定都在 [runWebMineQueueRows]。
+        rowsEnd = await runWebMineQueueRows(
+          rows: groupWebMineRowsByVideo(rows, currentVideoKey: _videoKey),
+          tally: tally,
+          currentVideoKey: () => _videoKey,
+          shouldStop: () => !mounted || _mineStopRequested,
+          navigate: _navigateForMining,
+          mineRow: (WebMineQueueRow row) async {
+            final WebMineReplayCapture cap = await runner.capture(
+              cueStartMs: row.cueStartMs,
+              cueEndMs: row.cueEndMs,
+            );
+            _debugCaptures?.add(cap);
+            final String? error = await _mineQueuedRow(
+              row,
+              cap,
+              compression,
+              tempDir,
+              imageMode,
+            );
+            return error == null;
+          },
+          markFailed: (WebMineQueueRow row, String error) =>
+              _mineQueue.markFailed(row.id, error),
+          onError: onMineError,
+          onUnreachable: (String videoKey) =>
+              giveUps.giveUpVideo(widget.bookUid, videoKey),
+          onProgress: () {
+            if (!mounted) return;
+            setState(() {
+              _mineProgress = (done: tally.done, total: rows.length);
+              _autoStatus = WebMineAutoRunning(
+                done: tally.done,
+                total: rows.length,
+                auto: auto,
+              );
+            });
+          },
+        );
+      },
+      cleanup: <Future<void> Function()>[
+        // 一句播到一半抛出时站点可能还在播：先停下，否则下一步还原会话音量后会外放。
+        () async {
+          if (sawError) await _pause();
+        },
+        // 先停采集（native 随即把压低的会话音量还原），再还原站点外观与播放状态。
+        loopback.stop,
+        () => _setPlayerChromeHidden(false),
+        () => _setNativeSubtitlesHidden(_hideNativeSubtitles),
+        () async {
+          if (!mounted) return;
+          setState(() {
+            _mineRunning = false;
+            _mineAuto = false;
+            _mineProgress = null;
+          });
+          // 原页：集 / 字幕轨 / 音轨 / 位置原样还回去；交接页把它带回原档（[_finishMining]）。
+          if (widget.returnHostingAfterMining == null &&
+              !widget.closeAfterMining) {
+            _beginRestore(_replayOrigin);
+          }
+          unawaited(_refreshMinePending());
+        },
+        // 自动跑：出了错（准备步骤抛出 / 某一行抛出），或剩下的待办全在到不了的视频上——
+        // 这本书本次空闲不再开跑。用户还没回来，空闲调度几秒后就会原样再撞一次；窗口宿主档
+        // 每撞一次还是一趟整页交接，所以记在进程级的 [WebMineIdleGiveUps] 而不是本页。
+        () async {
+          if (!auto) return;
+          if (rowsEnd == null || rowsEnd == WebMineQueueRowsEnd.rowThrew) {
+            giveUps.giveUpBook(widget.bookUid);
+          } else if (giveUps.unreachableVideos(widget.bookUid).isNotEmpty) {
+            giveUps.settleAfterRound(
+              widget.bookUid,
+              await _mineQueue.pending(widget.bookUid),
+            );
+          }
+        },
+      ],
+    );
     _finishMining(
       auto: auto,
       status: WebMineAutoFinished(
-        ok: ok,
-        failed: failed,
-        remaining: rows.length - ok - failed,
+        ok: tally.ok,
+        failed: tally.failed,
+        remaining: queued.length - tally.done,
         auto: auto,
       ),
     );
@@ -2037,9 +2114,11 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     final VideoBookRow? row = _row;
     if (cue == null || row == null) {
       final MinePopupResult r = await super.onMineEntry(fields);
+      if (updateNoteId == null && r.accepted) _afterGlobalLookupMineAccepted();
       return r.toJson();
     }
     await _enqueueMine(fields, cue, row);
+    if (updateNoteId == null) _afterGlobalLookupMineAccepted();
     return <String, Object?>{
       'ankiConnect': false,
       'message': t.web_video_mine_queued(count: _minePending),
@@ -3565,6 +3644,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         initialTapLookup: _appModel.videoSubtitleListTapLookup,
         onTapLookupChanged: (bool value) =>
             unawaited(_appModel.setVideoSubtitleListTapLookup(value)),
+        initialShowEffects: _appModel.videoSubtitleListShowEffects,
+        onShowEffectsChanged: (bool value) =>
+            unawaited(_appModel.setVideoSubtitleListShowEffects(value)),
         initialFilter: videoSubtitleListFilterFromName(
           _appModel.videoSubtitleListFilter,
         ),

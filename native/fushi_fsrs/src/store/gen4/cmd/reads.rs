@@ -52,7 +52,8 @@ use rusqlite::params;
 use serde_json::{Value, json};
 
 use super::{
-    Cell, Files, Sel, Table, canon_ids, profile_of, ref_of, snapshot, sql_order, with_profile,
+    Cell, Files, Sel, Table, canon_ids, logs_between, profile_of, ref_of, snapshot, sql_order,
+    with_profile,
 };
 use crate::gen4::name::{read_edit_key, write_edit_key};
 use crate::gen4::op::{Body4, KIND_EDIT, KIND_LEGACY_UNKNOWN};
@@ -377,9 +378,11 @@ impl<'t, 'c> Reads<'t, 'c> {
     }
 
     /// 集合里有身份记录的别名类，按成员 ID 的 SQLite 序**逐行**交给 [f]（每个类一次：第一次遇到它的成员时），[f] 回
-    /// `false` 就停。语句沿 `ent_ix` 主键 `(col, id, k)` 顺序走、不排序不物化，停下时只读过前面那几行——`entity_count
-    /// {limit}` 与 `has_user_data` 因此与协议 3 的 `LIMIT` / `EXISTS` 同阶（O(limit) / 碰到第一个就停），不随集合大小涨。
-    /// 去重用的集合只装已经交出去的类。
+    /// `false` 就停。语句不排序不物化，停下时只读过前面那几行：不给种类时沿 `ent_ix` 主键 `(col, id, k)` 顺序走，给了
+    /// 种类时沿部分索引 `ent_kind (col, kind, id) WHERE win = 1` 只走这一种（不先走过别的种类的身份记录）——`entity_count
+    /// {kind?, limit}` 与 `has_user_data` 因此与协议 3 的 `LIMIT` / `EXISTS` 同阶（O(limit) / 碰到第一个就停），不随集合
+    /// 大小涨（`cmd/tests.rs` `keyed_reads_never_walk_the_whole_collection` 钉住给了种类的那条）。去重用的集合只装已经交
+    /// 出去的类。
     fn each_class(
         &self,
         kind: Option<EntKind>,
@@ -391,6 +394,9 @@ impl<'t, 'c> Reads<'t, 'c> {
             let p = q.int(k as i64);
             q.push(&format!(" AND kind = {p}"));
         }
+        // 顺序写明：两条索引（主键 / `ent_kind`）在各自的条件下都按 `id` 交出，不用排序；不写的话不给种类时规划器也
+        // 可以挑 `ent_kind`（覆盖了 `win = 1`），那就成了按 (种类, ID) 交出。
+        q.push(" ORDER BY id");
         let mut stmt = self.t.conn().prepare_cached(&q.sql).map_err(sql)?;
         let mut rows = stmt.query(q.params().as_slice()).map_err(sql)?;
         let mut seen: HashSet<Ref> = HashSet::new();
@@ -934,41 +940,6 @@ impl<'t, 'c> Reads<'t, 'c> {
         Ok(out.encode())
     }
 
-    /// 发生时刻落在 [lo, hi] 的日志：每个规范日志 ID 取操作号最小的一份（`log_ix.win` 的规则搬到类上），交回
-    /// (规范日志 ID, 操作主键, 日志)。
-    fn logs_between(
-        &self,
-        lo: i64,
-        hi: i64,
-        reps: &mut BTreeMap<Ref, (OpId, i64, crate::gen4::op::Log4)>,
-    ) -> Result<(), String> {
-        let rows: Vec<(i64, Ref)> = self
-            .t
-            .conn()
-            .prepare_cached(
-                "SELECT k, id FROM log_ix WHERE col = ?1 AND at BETWEEN ?2 AND ?3 AND win = 1",
-            )
-            .map_err(sql)?
-            .query_map(params![self.col, lo, hi], |r| Ok((r.get(0)?, r.get(1)?)))
-            .map_err(sql)?
-            .collect::<Result<_, _>>()
-            .map_err(sql)?;
-        for (k, id) in rows {
-            let c = self.canon(&id)?;
-            let op = self.t.id_of_key(k)?;
-            if reps.get(&c).is_some_and(|(o, _, _)| *o <= op) {
-                continue;
-            }
-            let Some(e) = self.t.entry_by_key(k)? else {
-                continue;
-            };
-            if let Some(Body4::Log(l)) = body_of(&e) {
-                reps.insert(c, (op, k, l));
-            }
-        }
-        Ok(())
-    }
-
     /// `anki_logs_at {at}`：Anki 导入的评分类日志里发生时刻（= Anki revlog id）落在 `at` 的那些，连同日志所在卡（规范）
     /// 此刻的笔记与可见性（卡没有缓存行时两列为空）。走 `log_at (col, at)` 索引。按 (时刻, 卡, 日志 ID) 排。
     fn anki_logs_at(&mut self, req: &Value) -> Result<Vec<u8>, String> {
@@ -977,7 +948,7 @@ impl<'t, 'c> Reads<'t, 'c> {
         at.dedup();
         let mut reps = BTreeMap::new();
         for a in at {
-            self.logs_between(a, a, &mut reps)?;
+            logs_between(self.t, &self.ix, self.col, a, Some(a), &mut reps)?;
         }
         let mut rows = Vec::new();
         for (id, (_, _, l)) in reps {
@@ -1032,7 +1003,14 @@ impl<'t, 'c> Reads<'t, 'c> {
         let win = need_int(req, "win")?;
         let mut reps = BTreeMap::new();
         for a in at {
-            self.logs_between(a.saturating_sub(win), a.saturating_add(win), &mut reps)?;
+            logs_between(
+                self.t,
+                &self.ix,
+                self.col,
+                a.saturating_sub(win),
+                Some(a.saturating_add(win)),
+                &mut reps,
+            )?;
         }
         let mut rows: Vec<(Ref, String)> = Vec::new();
         // 日志行要的是重放写回 `res` 的那份（协议 3 落库的就是它）：按卡整段重放一次，同一张卡只算一次。

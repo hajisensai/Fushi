@@ -814,7 +814,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   }
 
   @override
-  ModuleId? get popupDockModule => ModuleId.games;
+  ModuleId? get lookupHostModule => ModuleId.games;
 
   /// 「高级制卡」对话框打开时为当前台词冻结的那一帧（对话框里预览 / 打码的就是它）。
   /// 确认制卡且打了码时作为出卡源图交给协调器——预览与出卡同源。下一次开对话框时

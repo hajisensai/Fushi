@@ -289,6 +289,8 @@ Future<void> rehomeDissolvedOrganizerCollections(
         m.mediaType,
         m.entryKey,
         userIntent: false,
+        // 成员搬家：「用户亲手放进来」跟着走（v159）。
+        pinnedByUser: m.pinnedByUser,
       );
     }
     await db.absorbOrganizeIdentity(targetId: target.id, source: d.row);

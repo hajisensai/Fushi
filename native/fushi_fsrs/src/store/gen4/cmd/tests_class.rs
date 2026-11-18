@@ -23,17 +23,17 @@ use crate::store::gen4::truth::{TRUST_PENDING, Truth};
 use crate::sync2::id::{Id, Key};
 use crate::sync2::op::{EntKind, Intent};
 
-const U1: &str = "0192f0aa-0000-7000-8000-00000000000a";
-const U2: &str = "0192f0aa-0000-7000-8000-00000000000b";
-const ANKI_NT: i64 = 1_700_000_000_001;
+pub(super) const U1: &str = "0192f0aa-0000-7000-8000-00000000000a";
+pub(super) const U2: &str = "0192f0aa-0000-7000-8000-00000000000b";
+pub(super) const ANKI_NT: i64 = 1_700_000_000_001;
 const ANKI_REVLOG: i64 = 1_650_000_000_123;
-const DECK: u8 = 0x0d;
+pub(super) const DECK: u8 = 0x0d;
 /// 待裁决的那条笔记。
 const HELD: u8 = 0x4e;
 const P2: &str = "0193a1b2-0000-7000-8000-0000000000f2";
 const ST: i64 = 1_650_000_009_000;
 
-fn entity(kind: EntKind, key: Key, data: Value) -> Body4 {
+pub(super) fn entity(kind: EntKind, key: Key, data: Value) -> Body4 {
     Body4::Entity {
         kind,
         id: key,
@@ -41,7 +41,7 @@ fn entity(kind: EntKind, key: Key, data: Value) -> Body4 {
     }
 }
 
-fn set(kind: EntKind, entity: Key, key: &str, value: Value) -> Body4 {
+pub(super) fn set(kind: EntKind, entity: Key, key: &str, value: Value) -> Body4 {
     Body4::Edit(Edit4 {
         kind,
         entity,
@@ -51,25 +51,25 @@ fn set(kind: EntKind, entity: Key, key: &str, value: Value) -> Body4 {
     })
 }
 
-fn u(i: Id) -> Key {
+pub(super) fn u(i: Id) -> Key {
     Key::Uuid(i)
 }
 
 /// 两份带盐的笔记，连同它们规范的那一套。
-struct Twin {
-    nt: [Id; 2],
-    field: [Id; 2],
-    tmpl: [Id; 2],
-    note: [Id; 2],
-    card: [Id; 2],
-    log: [Id; 2],
-    c_field: Id,
-    c_note: Id,
-    c_card: Id,
-    c_log: Id,
+pub(super) struct Twin {
+    pub(super) nt: [Id; 2],
+    pub(super) field: [Id; 2],
+    pub(super) tmpl: [Id; 2],
+    pub(super) note: [Id; 2],
+    pub(super) card: [Id; 2],
+    pub(super) log: [Id; 2],
+    pub(super) c_field: Id,
+    pub(super) c_note: Id,
+    pub(super) c_card: Id,
+    pub(super) c_log: Id,
 }
 
-fn twin() -> Twin {
+pub(super) fn twin() -> Twin {
     let nt = [
         rules::note_type(Some(U1), ANKI_NT),
         rules::note_type(Some(U2), ANKI_NT),
@@ -134,7 +134,7 @@ fn anki_log(lid: Id, card: Id, st: Option<i64>) -> Body4 {
 }
 
 /// 设备 0xa1 写的身份与定义。
-fn base_ops(w: &Twin) -> Vec<Body4> {
+pub(super) fn base_ops(w: &Twin) -> Vec<Body4> {
     let mut out = vec![
         Body4::salts([U1, U2]).unwrap(),
         entity(
@@ -181,9 +181,14 @@ fn base_ops(w: &Twin) -> Vec<Body4> {
     out
 }
 
+/// [land] 里 0xa1 写完身份与定义之后的那个点 (设备, 最后一个 seq)：在场景上续写、要「见过全部定义」的操作拿它当依赖。
+pub(super) fn base_seen(w: &Twin) -> (u8, u64) {
+    (0xa1, base_ops(w).len() as u64)
+}
+
 /// 灌进集合 [col]：0xa1 的定义，再 0xb1 / 0xb2 互不相见地各改一份的同一字段，0xc1 删待裁决的笔记、0xc2 没见过这条删除
-/// 就改它的字段（删除被扣住）。返回场景。
-fn land(t: &Truth<'_>, col: i64) -> Twin {
+/// 就改它的字段（删除被扣住）。返回场景。`center_tests.rs` 的别名类场景也用它。
+pub(super) fn land(t: &Truth<'_>, col: i64) -> Twin {
     let w = twin();
     let cfg = json!({"defaultDeck": id(DECK).text()}).to_string();
     t.tx(|t| {
@@ -546,7 +551,31 @@ fn stats_requests_are_canonicalized_and_members_resolve_deterministically() {
         assert_eq!(got["decks"], json!([c, "x"]));
         assert_eq!(got["recallDecks"], json!([c]));
         assert_eq!(got["recall"]["ids"], json!([w.c_card.text()]));
+        assert_eq!(got["recall"]["r"], json!([0.3]));
         assert_eq!(got["now"], 1);
+        // `recall.ids` / `recall.r` 撞键与上面的表同一条规则（`canon_keyed`）：规范卡自己给了取它的，否则取成员里 ID
+        // 序最小的那张的；与请求里的先后无关，两个数组仍等长。
+        let (k0, k1, kc) = (w.card[0].text(), w.card[1].text(), w.c_card.text());
+        let recall = |ids: Value, r: Value| -> Value {
+            canon_req(&ix, &json!({"recall": {"ids": ids, "r": r}})).unwrap()["recall"].clone()
+        };
+        let own = json!({"ids": [kc], "r": [0.5]});
+        assert_eq!(recall(json!([k1, kc, k0]), json!([0.3, 0.5, 0.1])), own);
+        assert_eq!(recall(json!([k0, kc, k1]), json!([0.1, 0.5, 0.3])), own);
+        let low = if k0 < k1 { 0.1 } else { 0.3 };
+        let members = json!({"ids": [kc], "r": [low]});
+        assert_eq!(recall(json!([k1, k0]), json!([0.3, 0.1])), members);
+        assert_eq!(recall(json!([k0, k1]), json!([0.1, 0.3])), members);
+        // 同一个原值 ID 出现两次：先按协议 3 `stats::Ctx` 的读法后者盖前者，再按类归一。
+        assert_eq!(
+            recall(json!([k0, k0]), json!([0.1, 0.9])),
+            json!({"ids": [kc], "r": [0.9]})
+        );
+        let low = if k0 < k1 { 0.9 } else { 0.3 };
+        assert_eq!(
+            recall(json!([k0, k1, k0]), json!([0.1, 0.3, 0.9])),
+            json!({"ids": [kc], "r": [low]})
+        );
     });
 }
 
@@ -599,8 +628,9 @@ fn stats_see_one_canonical_card_and_take_member_ids_in_the_request() {
 
 // ---------------------------------------------------------------------- 数字 id
 
-/// 数字 id：规范 ID 的号、别名类成员（换代前带盐的原值 ID）的号都查得到规范 ID；不在这个集合里的号、成员号对应的规范
-/// ID 不在这张表里（笔记的号拿去查卡）都是 null。`notesInfo` 按成员号也给出按类判定的内容。
+/// 数字 id：规范 ID 的号、别名类成员（换代前带盐的原值 ID）的号都查得到规范 ID；从没在操作里出现过的卡（待裁决的
+/// 笔记配带盐模板的那张，协议 3 里有号）的号也查得到；不在这个集合里的号、成员号对应的规范 ID 不在这张表里（笔记的号
+/// 拿去查卡）都是 null。`notesInfo` 按成员号也给出按类判定的内容。
 #[test]
 fn numeric_ids_of_alias_members_resolve_to_the_canonical_row() {
     use super::columns::{anki_notes_info, anki_resolve, card_columns};
@@ -609,14 +639,19 @@ fn numeric_ids_of_alias_members_resolve_to_the_canonical_row() {
         let w = land(t, col);
         let (n0, n1, c) = (w.note[0].text(), w.note[1].text(), w.c_note.text());
         let (k0, kc) = (w.card[0].text(), w.c_card.text());
+        // 待裁决的笔记（ID 不带盐、类里只有它自己）配带盐的模板：协议 3 的卡 ID，从没在操作里出现过。
+        let held = id(HELD);
+        let unseen = rules::card(&held, &w.tmpl[0], 0).text();
+        let c_tmpl = rules::template(&rules::note_type(CANONICAL, ANKI_NT), 0);
+        let held_card = rules::card(&held, &c_tmpl, 0).text();
         let req = json!({
             "notes": [num(&c), num(&n0), num(&n1), num("nope"), num(&kc)],
-            "cards": [num(&kc), num(&k0), num(&n0)],
+            "cards": [num(&kc), num(&k0), num(&n0), num(&unseen)],
         });
         let v = anki_resolve(t, col, &req).unwrap();
         assert_eq!(
             v,
-            json!({"notes": [c, c, c, null, null], "cards": [kc, kc, null]})
+            json!({"notes": [c, c, c, null, null], "cards": [kc, kc, null, held_card]})
         );
         let v = anki_notes_info(t, col, &json!({"notes": [num(&n1), num(&c), 3]})).unwrap();
         let notes = v["notes"].as_array().unwrap();
@@ -646,7 +681,7 @@ fn numeric_ids_of_alias_members_resolve_to_the_canonical_row() {
         let v = anki_resolve(t, col2, &req).unwrap();
         assert_eq!(
             v,
-            json!({"notes": [null, null, null, null, null], "cards": [null, null, null]})
+            json!({"notes": [null, null, null, null, null], "cards": [null, null, null, null]})
         );
         let cols = card_columns(t, col, &json!({"fields": ["id", "note_id", "anki_id"]}));
         assert!(
@@ -662,29 +697,131 @@ fn numeric_ids_of_alias_members_resolve_to_the_canonical_row() {
     });
 }
 
-/// 按号查是索引点查（`notes_anki` / `cards_anki`），不扫整张缓存表；查不到才扫一次别名表的成员。
+/// 随机 ID 的笔记（规范 ID 就是它协议 3 的 ID）类里另有成员（旧并入的兜底副本）时，它配带盐模板的那张从没出现过的
+/// 卡照样查得到号：配卡公式的笔记一边带上规范 ID 自己（`cache.rs` 文件头「表」），不只取出现过的成员。逐条维护与
+/// 重建相同。
 #[test]
-fn numeric_id_lookups_use_the_anki_indexes() {
+fn a_random_note_with_a_fallback_member_keeps_its_unseen_card_number() {
+    use super::columns::anki_resolve;
+    use crate::store::schema::anki_numeric_id as num;
     with(|t, col| {
-        land(t, col);
-        for q in [
-            "SELECT MIN(id) FROM notes WHERE col = ?1 AND anki_id = ?2",
-            "SELECT MIN(id) FROM cards WHERE col = ?1 AND anki_id = ?2",
+        let w = land(t, col);
+        let held = id(HELD);
+        let copy = rules::merge_fallback(U1, &held.text());
+        t.tx(|t| {
+            let mut ix = Index::new(t, col);
+            let body = entity(
+                EntKind::Note,
+                u(copy),
+                json!({"createdAt": 3, "guid": "h", "noteTypeId": w.nt[0].text()}),
+            );
+            native(t, &mut ix, col, &op(0xa3, 1, 500, &[base_seen(&w)], &body));
+            ix.settle()?;
+            assert_eq!(
+                ix.canonical(&crate::store::gen4::derive::Ref::Uuid(copy.0))?,
+                crate::store::gen4::derive::Ref::Uuid(held.0)
+            );
+            Ok(())
+        })
+        .unwrap();
+        assert_rebuild_is_identity(t, col);
+        let unseen = rules::card(&held, &w.tmpl[0], 0).text();
+        let c_tmpl = rules::template(&rules::note_type(CANONICAL, ANKI_NT), 0);
+        let held_card = rules::card(&held, &c_tmpl, 0).text();
+        let req = json!({"notes": [num(&copy.text())], "cards": [num(&unseen)]});
+        assert_eq!(
+            anki_resolve(t, col, &req).unwrap(),
+            json!({"notes": [held.text()], "cards": [held_card]})
+        );
+    });
+}
+
+/// 按号查是索引点查（`notes_anki` / `cards_anki`），不扫整张缓存表；查不到时成员的号是 `anki_members` 的主键点查、
+/// 再点查一次缓存行——不扫别名表、不逐行算号。截下 `anki_resolve` 真正执行的语句（参数已展开）逐条 `EXPLAIN`。
+#[test]
+#[allow(deprecated)]
+fn numeric_id_lookups_use_the_anki_indexes() {
+    use super::columns::anki_resolve;
+    use crate::store::schema::anki_numeric_id as num;
+    thread_local! {
+        static TRACED: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+    }
+    let conn = crate::store::gen4::schema::open_in_memory().unwrap();
+    let t = Truth::new(&conn);
+    let col = crate::store::gen4::truth::tests::bound(&t);
+    let w = land(&t, col);
+    drop(t);
+    let mut conn = conn;
+    conn.trace(Some(|sql: &str| {
+        TRACED.with(|t| t.borrow_mut().push(sql.to_owned()));
+    }));
+    let unseen = rules::card(&id(HELD), &w.tmpl[0], 0).text();
+    let req = json!({
+        "notes": [num(&w.c_note.text()), num(&w.note[0].text()), num("nope")],
+        "cards": [num(&w.c_card.text()), num(&w.card[1].text()), num(&unseen), num("nope")],
+    });
+    {
+        let t = Truth::new(&conn);
+        let v = anki_resolve(&t, col, &req).unwrap();
+        assert!(v["cards"][2].is_string(), "{v}");
+    }
+    conn.trace(None);
+    let stmts: BTreeSet<String> = TRACED.with(|t| t.borrow().iter().cloned().collect());
+    let mut members = 0;
+    let mut bad = Vec::new();
+    for q in &stmts {
+        if !q.trim_start().to_ascii_uppercase().starts_with("SELECT") {
+            continue;
+        }
+        members += usize::from(q.contains("anki_members"));
+        let plan: Vec<String> = conn
+            .prepare(&format!("EXPLAIN QUERY PLAN {q}"))
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(3))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        for step in plan {
+            if step.starts_with("SCAN ")
+                || step.contains("alias_ix")
+                || step.starts_with("SEARCH ") && step.ends_with("(col=?)")
+            {
+                bad.push(format!("{q}\n    {step}"));
+            }
+        }
+    }
+    assert!(members > 0, "the member lookup never ran: {stmts:?}");
+    assert!(bad.is_empty(), "{}", bad.join("\n"));
+}
+
+/// `entity_count {kind?, limit}` / `has_user_data` 逐行走的那条语句（`reads.rs` `each_class`）：给了种类走 `ent_kind`、
+/// 不给走主键，两种都按 `id` 交出、不排序（能数到 `limit` 就停）。
+#[test]
+fn class_walks_stream_in_id_order_by_kind_or_by_key() {
+    with(|t, _| {
+        for (q, args, index) in [
+            (
+                "SELECT DISTINCT id FROM ent_ix WHERE col = ?1 AND win = 1 AND kind = ?2 ORDER BY id",
+                vec![1i64, 2],
+                "ent_kind",
+            ),
+            (
+                "SELECT DISTINCT id FROM ent_ix WHERE col = ?1 AND win = 1 ORDER BY id",
+                vec![1i64],
+                "PRIMARY KEY",
+            ),
         ] {
             let plan: Vec<String> = t
                 .conn()
                 .prepare(&format!("EXPLAIN QUERY PLAN {q}"))
                 .unwrap()
-                .query_map([1i64, 2i64], |r| r.get::<_, String>(3))
+                .query_map(rusqlite::params_from_iter(args), |r| r.get::<_, String>(3))
                 .unwrap()
                 .collect::<Result<_, _>>()
                 .unwrap();
+            assert!(plan.iter().any(|s| s.contains(index)), "{q}: {plan:?}");
             assert!(
-                plan.iter()
-                    .any(|s| s.contains("USING COVERING INDEX notes_anki")
-                        || s.contains("USING COVERING INDEX cards_anki")
-                        || s.contains("USING INDEX notes_anki")
-                        || s.contains("USING INDEX cards_anki")),
+                !plan.iter().any(|s| s.contains("TEMP B-TREE")),
                 "{q}: {plan:?}"
             );
         }
@@ -875,4 +1012,243 @@ fn limited_counts_and_has_user_data_stop_at_the_answer() {
         fb > fs * 10,
         "an unlimited count walks everything: {fs} vs {fb}"
     );
+}
+
+// ---------------------------------------------------------------------- 出卡
+
+/// 出卡（`cmd/study.rs`）按类：同一次 Anki 复习的两份带盐导入在计数上下文里只算一条（最近 30 天、今天已复习的卡与
+/// 作答数），落在规范卡上；请求里按成员卡给的排除与 RWKV 候选都落到规范卡上，候选同一张规范卡只留一份。
+#[test]
+fn study_counts_a_log_class_once_and_takes_member_ids_in_the_request() {
+    use super::study::{log_state, study};
+    use crate::projection::Day;
+    with(|t, col| {
+        let w = land(t, col);
+        let deck = id(DECK).text();
+        let c = w.c_card.text();
+        let now = ANKI_REVLOG + 60_000;
+        let day = Day {
+            utc_offset_min: 0,
+            rollover_hour: 4,
+        };
+        let mut ix = Index::new(t, col);
+        let s = log_state(t, &mut ix, col, day, day.index(now)).unwrap();
+        assert_eq!(s.last30().iter().sum::<i64>(), 1, "{s:?}");
+        assert_eq!(
+            s.reviewed_cards().cloned().collect::<Vec<_>>(),
+            vec![c.clone()]
+        );
+        assert_eq!(s.review_answers(&c), 1);
+        assert_eq!(s.answers().count(), 1);
+
+        let base = json!({"now": now, "utcOff": 0, "rollover": 4, "deck": deck, "pick": true});
+        let plain = study(t, col, &base).unwrap();
+        assert!(t.conn().is_autocommit());
+        let keys: Vec<&String> = plain["counts"].as_object().unwrap().keys().collect();
+        assert_eq!(keys, vec![&deck], "{plain}");
+        assert_eq!(
+            plain["next"],
+            json!(c),
+            "the due review comes first: {plain}"
+        );
+
+        for member in [&w.card[0], &w.card[1]] {
+            let mut req = base.clone();
+            req["exclude"] = json!([member.text()]);
+            let v = study(t, col, &req).unwrap();
+            assert_ne!(
+                v["next"],
+                json!(c),
+                "excluded by member {}: {v}",
+                member.text()
+            );
+            assert_ne!(
+                v["after"],
+                json!(c),
+                "excluded by member {}: {v}",
+                member.text()
+            );
+        }
+
+        let mut req = base.clone();
+        req["rwkv"] = json!({
+            "decks": {deck.as_str(): [0.9, 0, 0, 0]},
+            "cands": [[w.card[0].text(), deck, null, 0.1], [w.card[1].text(), deck, null, 0.2]],
+        });
+        let v = study(t, col, &req).unwrap();
+        assert_eq!(v["eligible"], json!([c]), "{v}");
+        assert_eq!(v["next"], json!(c), "{v}");
+    });
+}
+
+/// 别名类里今天的学习步日志：同一次 Anki 学习的两份带盐导入（各落在一份带盐的卡上），计数上下文里只算一条、
+/// 「今天已引入新卡」落在规范卡上（`res` 取按血统重放写回的那份，按规范日志 ID 对上）。
+#[test]
+fn study_introduces_a_salted_learn_step_once_on_the_canonical_card() {
+    use super::ref_of;
+    use super::study::log_state;
+    use crate::projection::Day;
+    with(|t, col| {
+        let w = land(t, col);
+        let at = ANKI_REVLOG - 60_000;
+        let lid = [
+            rules::imported_revlog(&w.card[0], at),
+            rules::imported_revlog(&w.card[1], at),
+        ];
+        t.tx(|t| {
+            let mut ix = Index::new(t, col);
+            for i in 0..2 {
+                let mut b = anki_log(lid[i], w.card[i], None);
+                if let Body4::Log(l) = &mut b {
+                    l.at = at;
+                    l.anki_id = Some(at);
+                    l.rtype = "learn".into();
+                    l.res = Some(
+                        json!({"queue": "learning", "ivl": 0, "step": 1, "reps": 1, "lapses": 0,
+                               "scheduler": "fushi", "dueAt": at + 600_000})
+                        .to_string(),
+                    );
+                }
+                native(
+                    t,
+                    &mut ix,
+                    col,
+                    &op(0xd1 + i as u8, 1, 500 + i as i64, &[], &b),
+                );
+            }
+            ix.settle()?;
+            Ok(())
+        })
+        .unwrap();
+        let c = w.c_card.text();
+        let day = Day {
+            utc_offset_min: 0,
+            rollover_hour: 4,
+        };
+        let mut ix = Index::new(t, col);
+        // 计数取 `res` 时按规范日志 ID 去重放结果里找：两份成员日志归到的那个规范 ID 必须就在规范卡的重放结果里
+        // （对不上就会退回操作里的原值，重放写回的 `res` 白算）。
+        let canon_log = ix.canon(&ref_of(&lid[1].text())).unwrap();
+        assert_eq!(canon_log, ix.canon(&ref_of(&lid[0].text())).unwrap());
+        let replayed_ids: Vec<String> = ix
+            .replayed_card_logs(&ref_of(&w.card[1].text()))
+            .unwrap()
+            .iter()
+            .map(|x| {
+                serde_json::from_str::<Value>(&x.json).unwrap()["id"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned()
+            })
+            .collect();
+        assert!(
+            replayed_ids.contains(&canon_log.text()),
+            "{} not in {replayed_ids:?}",
+            canon_log.text()
+        );
+        let s = log_state(t, &mut ix, col, day, day.index(ANKI_REVLOG + 60_000)).unwrap();
+        assert_eq!(
+            s.introduced_cards().cloned().collect::<Vec<_>>(),
+            vec![c.clone()],
+            "{s:?}"
+        );
+        // 学习步一条 + 复习一条：两份带盐的各只算一次。
+        assert_eq!(s.answers().count(), 2, "{s:?}");
+        assert_eq!(s.last30().iter().sum::<i64>(), 2, "{s:?}");
+        assert!(s.answers().all(|(x, _)| *x == c), "{s:?}");
+    });
+}
+
+// ---------------------------------------------------------------------- 逐卡重放与训练集、评分预览（G7-4f）
+
+/// 逐卡重放与训练集（`cmd/training.rs`）按类：任何成员卡给的历史都是规范卡的历史，同一次 Anki 复习的两份带盐导入只出一次
+/// （日志 ID 是规范的），一份历史里给了同一个类的几个成员只算一次；RWKV 指纹按日志操作数（两份都数），尾巴只出代表。
+#[test]
+fn training_reads_see_a_log_class_once_through_any_member() {
+    use super::training::{
+        history_states, rwkv_cards, rwkv_log_tail, rwkv_replay, stat_projection,
+    };
+    use crate::projection::Day;
+    use crate::store::projections::RwkvRange;
+    with(|t, col| {
+        let w = land(t, col);
+        let c = w.c_card.text();
+        let (m0, m1) = (w.card[0].text(), w.card[1].text());
+        let one = |g: Vec<String>| history_states(t, col, &[g]).unwrap();
+        let canon = one(vec![c.clone()]);
+        assert_eq!(one(vec![m0.clone()]), canon);
+        assert_eq!(one(vec![m1.clone()]), canon);
+        assert_eq!(one(vec![m0.clone(), m1.clone(), c.clone()]), canon);
+        // 不是空状态：规范卡上有那一次复习。
+        assert_ne!(canon, one(vec!["missing".to_owned()]));
+
+        let (_, rows) = crate::store::rows::decode(
+            &stat_projection(t, col, &[vec![m0.clone(), m1.clone()]]).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        assert_eq!(rows[0][1], rusqlite::types::Value::Text(w.c_log.text()));
+
+        let day = Day {
+            utc_offset_min: 0,
+            rollover_hour: 4,
+        };
+        let word = |b: &[u8], k: usize| i64::from_le_bytes(b[8 * k..8 * k + 8].try_into().unwrap());
+        let cards = rwkv_cards(t, col, &[vec![m1.clone()]], &[1, 2, 3, 4], &day).unwrap();
+        assert_eq!(
+            (word(&cards, 0), word(&cards, 1)),
+            (1, 1),
+            "one group, one kept rating"
+        );
+        assert!(String::from_utf8_lossy(&cards).contains(&w.c_log.text()));
+
+        let replay = rwkv_replay(
+            t,
+            col,
+            &[vec![m0.clone()]],
+            &[1, 2, 3, 4],
+            &day,
+            0,
+            RwkvRange::default(),
+        )
+        .unwrap();
+        // [count, maxRowId, lastAt, n_rows, n_strays, …]：两份导入日志都是落库的操作，行只有一条，没有漏掉的卡。
+        assert_eq!(word(&replay, 0), 2);
+        assert_eq!((word(&replay, 3), word(&replay, 4)), (1, 0));
+
+        let tail = rwkv_log_tail(t, col, 0, true, false).unwrap();
+        assert_eq!((word(&tail, 0), word(&tail, 2), word(&tail, 3)), (2, 2, 1));
+        let s = String::from_utf8_lossy(&tail);
+        assert!(s.contains(&w.c_log.text()) && s.contains(&c), "{s}");
+        assert!(
+            !s.contains(&w.log[0].text()) && !s.contains(&w.log[1].text()),
+            "{s}"
+        );
+        assert!(t.conn().is_autocommit());
+    });
+}
+
+/// 评分预览（`cmd/preview.rs`）按类：用任何成员卡问都是规范卡的预览（重放那一次复习、笔记与牌组是规范 ID）；按成员给的
+/// 笔记先归一。
+#[test]
+fn preview_of_any_member_is_the_preview_of_the_canonical_card() {
+    use super::preview::preview;
+    with(|t, col| {
+        let w = land(t, col);
+        let now = ANKI_REVLOG + 2 * 86_400_000;
+        let canon = preview(t, col, &w.c_card.text(), None, now, 0, 4).unwrap();
+        assert_eq!(canon["note"], json!(w.c_note.text()), "{canon}");
+        assert_eq!(canon["deck"], json!(id(DECK).text()), "{canon}");
+        assert_eq!(canon["current"]["reps"], json!(1), "{canon}");
+        for m in [&w.card[0], &w.card[1]] {
+            assert_eq!(preview(t, col, &m.text(), None, now, 0, 4).unwrap(), canon);
+        }
+        for n in [&w.note[0], &w.note[1]] {
+            assert_eq!(
+                preview(t, col, &w.card[0].text(), Some(&n.text()), now, 0, 4).unwrap(),
+                canon
+            );
+        }
+        assert!(t.conn().is_autocommit());
+    });
 }

@@ -59,6 +59,32 @@ extension _SyncOrchestratorAggregate on SyncOrchestrator {
     }
   }
 
+  /// 互联「来源共享」：把 host 共享给本机（「我的设备」）的服务器来源与插件合并进本机
+  /// （规则见 `interconnect_source_share_sync.dart`）。开关默认开；关掉 = 不发请求。
+  /// 本机没有插件体系（iOS）时只收服务器来源，插件经互联中继用 host 的。
+  Future<void> _syncSourceShareLive(
+    SyncRunReport report,
+    InterconnectSyncBackend backend,
+  ) async {
+    try {
+      final SourceShareResult result = await InterconnectSourceShareSync(
+        _db,
+        pluginStores:
+            sourceSharePluginStores?.call() ?? const <SharedPluginStore>[],
+        // 经偏好缓存写回：别等整轮同步结束才刷新缓存（期间设置页拿旧缓存整表写回会抹掉
+        // 刚收下的条目，下一轮还会被误判成「本机删了」永久退订）。
+        cachedPrefWriter: sourceSharePrefWriter,
+      ).run(backend, await backend.connectedHostIdentity());
+      report.sourcesShared += result.changed;
+      report.sourceShareSignerChanged.addAll(result.signerChanged);
+      for (final String error in result.errors) {
+        report.noteError('source share', error);
+      }
+    } catch (e) {
+      report.noteError('source share live sync', e);
+    }
+  }
+
   /// 互联聚合（统计 + 收藏）live 双向合并（TODO-1056 phase C）。
   ///
   /// 复用 [AggregateSyncService.syncOverClient] 的通道无关核心（materialize 本地 →

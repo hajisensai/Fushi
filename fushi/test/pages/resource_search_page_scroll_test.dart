@@ -104,6 +104,7 @@ List<VideoResourceCandidate> _resources() => <VideoResourceCandidate>[
 const MediaSourceRow _source = MediaSourceRow(
   videoGroupingMode: 'series',
   isPrivate: false,
+  autoScan: false,
   id: 1,
   label: 'videos',
   mediaKind: 'video',

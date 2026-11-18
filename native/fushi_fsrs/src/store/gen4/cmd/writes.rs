@@ -53,9 +53,8 @@ use super::super::schema::sql;
 use super::super::truth::Truth;
 use super::{profile_of, ref_of, with_profile};
 use crate::gen4::translate::native_body4;
-use crate::gen4_ids::rules;
 use crate::registers::{self, StoredEdit};
-use crate::store::caches::{CacheConfig, NoteInfo};
+use crate::store::caches::NoteInfo;
 use crate::store::sync2::config::{self, DeckTree};
 use crate::store::sync2::{body_of_event, canonical};
 use crate::sync2::id::{Id, Key};
@@ -384,73 +383,26 @@ impl<'t, 'c> Session<'t, 'c> {
 
     /// 默认牌组（规范 ID）：缓存配置给了就用它（归一后，与缓存层同一个），否则是规范规则的内置默认牌组（常量）。
     pub(super) fn default_deck(&self) -> Result<String, String> {
-        match self.t.derive_cfg(self.col, CFG_KEY)? {
-            Some(text) => {
-                let v: Value = serde_json::from_str(&text)
-                    .map_err(|e| format!("gen4 write: bad config: {e}"))?;
-                let cfg = CacheConfig::parse(&self.ix.canonical_config(&v)?)?;
-                Ok(cfg.default_deck().to_owned())
-            }
-            None => Ok(rules::builtin_default_deck(rules::CANONICAL).text()),
-        }
+        super::default_deck(self.t, &self.ix, self.col)
     }
 
-    /// 此刻的牌组树（未删除的牌组，ID 是规范 ID）。命令里落过非日志操作就重读。
+    /// 此刻的牌组树（未删除的牌组，ID 是规范 ID；[super::deck_tree]）。命令里落过非日志操作就重读。
     pub(super) fn deck_tree(&mut self) -> Result<&DeckTree, String> {
         if self.tree.is_none() {
             let default = self.default_deck()?;
             let ix = self.settled()?;
-            let ids: Vec<Ref> = {
-                let mut stmt = ix
-                    .t
-                    .conn()
-                    .prepare_cached(
-                        "SELECT DISTINCT id FROM ent_ix WHERE col = ?1 AND kind = ?2 AND win = 1",
-                    )
-                    .map_err(sql)?;
-                let rows = stmt
-                    .query_map(params![ix.col, EntKind::Deck as i64], |r| {
-                        r.get::<_, Ref>(0)
-                    })
-                    .map_err(sql)?;
-                rows.collect::<Result<_, _>>().map_err(sql)?
-            };
-            let mut canon: BTreeSet<Ref> = BTreeSet::new();
-            for id in &ids {
-                canon.insert(ix.canon(id)?);
-            }
-            let mut views = Vec::with_capacity(canon.len());
-            for c in &canon {
-                let Some((kind, _, payload)) = ix.definition(c)? else {
-                    continue;
-                };
-                if kind != EntKind::Deck as i64 {
-                    continue;
-                }
-                let (lines, _) = ix.class_lines(EntKind::Deck, c)?;
-                views.push((
-                    c.text(),
-                    registers::deck_view_of(&payload, &stored(&lines))?,
-                ));
-            }
-            self.tree = Some(DeckTree::of_views(views, default));
+            self.tree = Some(super::deck_tree(ix, default)?);
         }
         Ok(self.tree.as_ref().expect("tree just loaded"))
     }
 
-    /// 卡（规范 ID）的有效牌组（协议 3 `config::card_deck` 同一份规则，[config::card_deck_with]）。
+    /// 卡（规范 ID）的有效牌组（只读规则 [super::card_deck]；读之前先收尾，同 [Session::lines]）。
     pub(super) fn card_deck(&mut self, card: &str, note: Option<&str>) -> Result<String, String> {
         self.deck_tree()?;
         let tree = self.tree.take().expect("tree just loaded");
-        let r = (|| {
-            let note_edits = match note {
-                Some(n) => Some(self.lines(EntKind::Note, n)?),
-                None => None,
-            };
-            config::card_deck_with(&tree, card, note_edits, &mut |c| {
-                self.lines(EntKind::Card, c)
-            })
-        })();
+        let r = self
+            .settled()
+            .and_then(|ix| super::card_deck(ix, &tree, card, note));
         self.tree = Some(tree);
         r
     }

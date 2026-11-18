@@ -136,6 +136,8 @@ void main() {
           'DELETE /api/admin/online/manga-downloads',
           'POST /api/admin/online/manga-downloads/:id/cancel',
           'POST /api/admin/online/manga-downloads/:id/retry',
+          'POST /api/admin/online/manga-downloads/:id/pause',
+          'POST /api/admin/online/manga-downloads/:id/resume',
           'DELETE /api/admin/online/manga-downloads/:id',
           'GET /api/admin/online/episode-downloads',
           'GET /api/admin/online/episode-downloads/:id',

@@ -56,6 +56,7 @@ void main() {
     WidgetTester tester,
     List<InstalledMusicPlugin> plugins, {
     String? stored,
+    bool canInstall = true,
   }) async {
     LocaleSettings.setLocale(AppLocale.en);
     tester.view.devicePixelRatio = 1;
@@ -86,7 +87,10 @@ void main() {
           ),
           home: Scaffold(
             body: SingleChildScrollView(
-              child: MusicLyricsProvidersBody(appModel: app),
+              child: MusicLyricsProvidersBody(
+                appModel: app,
+                canInstall: canInstall,
+              ),
             ),
           ),
         ),
@@ -240,6 +244,20 @@ void main() {
       tester.getTopLeft(find.text('One')).dy,
       lessThan(tester.getTopLeft(more).dy),
     );
+  });
+
+  testWidgets('经互联中继用 host 插件（本机装不了）：能启停，不出安装入口', (WidgetTester tester) async {
+    await build(tester, <InstalledMusicPlugin>[
+      _plugin('a.one', 'One'),
+    ], canInstall: false);
+    expect(find.byType(Switch), findsNWidgets(2));
+    expect(find.text(t.music_lyrics_providers_install_action), findsNothing);
+  });
+
+  testWidgets('中继端没有歌词插件：空态不带安装按钮', (WidgetTester tester) async {
+    await build(tester, const <InstalledMusicPlugin>[], canInstall: false);
+    expect(find.text(t.music_lyrics_providers_empty), findsOneWidget);
+    expect(find.text(t.music_lyrics_providers_install_action), findsNothing);
   });
 
   group('安装确认框的隐私告知', () {

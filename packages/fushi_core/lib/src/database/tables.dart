@@ -1192,6 +1192,13 @@ class MediaSources extends Table {
   /// `deleteMediaSource`）。
   BoolColumn get isPrivate => boolean().withDefault(const Constant(false))();
 
+  /// 自动扫描（schema v157，拍板台 C_8oheua0H / ICOLa6LZLU / enSm2GOuFA）：true =
+  /// app 启动与回到前台时，这个来源按节流间隔自动重扫一次（调度见 fushi
+  /// `source_auto_scan.dart`），扫完照手动「重新扫描」的收尾走（视频来源串联
+  /// 「扫描后自动刮削」）。设备本地配置（来源只存在于本机，不进互联同步）；
+  /// 默认 false，存量来源 false。
+  BoolColumn get autoScan => boolean().withDefault(const Constant(false))();
+
   /// 列表排序权重（同 [BookTags].sortOrder 范式）。
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
 
@@ -1425,6 +1432,12 @@ class MediaCollectionItems extends Table {
 
   /// 合集内序：playlist 的播放顺序 / collection 的展示顺序。
   IntColumn get sortIndex => integer().withDefault(const Constant(0))();
+
+  /// v159：用户亲手放进这个合集（手动加入 / 撤销 AI 的移出）。为 true 时自动路径
+  /// （AI 整理）不得把它移出——「用户否决过移出」记在成员行上、随合集清单同步，
+  /// 换一台设备也成立。单调：自动入口只在新插入时写 false，不把 true 改回 false；
+  /// 跨端合并取或。见 AI 库管家设计稿 §7。
+  BoolColumn get pinnedByUser => boolean().withDefault(const Constant(false))();
 
   /// 复合主键：同一合集内一条目一行（允许跨合集重复）。
   @override
@@ -3658,9 +3671,14 @@ abstract final class MangaDownloadJobStatus {
   static const String done = 'done';
   static const String failed = 'failed';
   static const String cancelled = 'cancelled';
+
+  /// 用户暂停：已落地的页 / `.part` 原样保留，worker 不领取；恢复回 `queued`
+  /// 后从磁盘现状续跑（与 `cancelled` 不同，取消会删半成品）。跨进程重启保持。
+  static const String paused = 'paused';
 }
 
-/// 漫画章节 / mokuro 卷的下载任务队列（schema v103，device-local）。
+/// 漫画章节 / mokuro 卷的下载任务队列（schema v103，device-local；v155 状态值域加
+/// `paused`）。
 ///
 /// 设计稿 `docs/specs/2026-09-12-manga-download-first-design.md` §2.2。
 /// 在线漫画改成「先下载再读」后，每个待下载的章（或 mokuro.moe 卷）在这里占
@@ -3724,7 +3742,7 @@ class MangaDownloadJobs extends Table {
         "AND runtime != '')",
     "CHECK (kind IN ('chapter', 'mokuro_volume'))",
     "CHECK (status IN ('queued', 'running', 'done', 'failed', "
-        "'cancelled'))",
+        "'cancelled', 'paused'))",
     'CHECK (pages_done >= 0 AND pages_total >= 0 '
         'AND pages_done <= pages_total)',
     'CHECK (attempt_count >= 0)',
@@ -3908,6 +3926,35 @@ class MediaPrivacyFlags extends Table {
   IntColumn get privateAt => integer().nullable()();
 
   /// 最近一次取消私密的毫秒戳；NULL = 从没取消过。
+  IntColumn get clearedAt => integer().nullable()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{mediaKind, entryKey};
+}
+
+// ── media_nsfw_flags（v156：作品级「NSFW」标记）────────────────────────
+/// 用户手动把一部作品标成 NSFW（拍板台 w04vrhUAaX：所有媒体都能标是否 NSFW）：
+/// 「模糊 NSFW 封面」开着时库页 / 继续卡等封面消费端把它的封面打模糊，「制卡图片
+/// 也模糊」开着时从它制的卡用模糊后的封面 / 页图。
+///
+/// 与 [MediaPrivacyFlags] 同形、同一套逻辑外键（[mediaKind] = `TagHostKind.dbValue`，
+/// [entryKey]：epub=bookKey / srt=uid / video=bookUid / collection=合集 id 字符串），
+/// 跨端也搭互联标签同步清单（条目上的可选 `nsfw` 字段）。两件事刻意分表：私密管
+/// 出站（排行榜 / Bangumi），NSFW 管显示，两者互不蕴含。游戏不落这张表——游戏早有
+/// 自己的成人向标记（`GalgameCustomData.nsfw` / 刮削 `metadata.nsfw`）。
+///
+/// 一行两只时钟（LWW）：[nsfwAt] = 最近一次标 NSFW，[clearedAt] = 最近一次取消；
+/// NSFW ⇔ nsfwAt 非空且（clearedAt 为空或 nsfwAt > clearedAt），相等取消胜。取消
+/// 不删行（理由同 [MediaPrivacyFlags]）。宿主删除不级联。
+@DataClassName('MediaNsfwFlagRow')
+class MediaNsfwFlags extends Table {
+  TextColumn get mediaKind => text()();
+  TextColumn get entryKey => text()();
+
+  /// 最近一次标 NSFW 的毫秒戳；NULL = 从没标过。
+  IntColumn get nsfwAt => integer().nullable()();
+
+  /// 最近一次取消 NSFW 的毫秒戳；NULL = 从没取消过。
   IntColumn get clearedAt => integer().nullable()();
 
   @override
@@ -4182,8 +4229,15 @@ class MediaLinks extends Table {
   /// 推断置信度 0..1；手动连接为 NULL。
   RealColumn get confidence => real().nullable()();
 
+  /// `confirmed_by == 'user'` 的镜像（存量持久化名冻结：备份合并、旧版同步对端还在
+  /// 读写它）。由 DB 写入口与 [confirmedBy] 一起维护，调用方不单独写。
   BoolColumn get isUserConfirmed =>
       boolean().withDefault(const Constant(false))();
+
+  /// v159：谁让这条连接生效（`MediaLinkConfirmer`）：`user` = 用户手动连接 / 确认；
+  /// `ai` = AI 按门槛直接生效（可撤销，用户确认后升为 `user`）；NULL = 建议。
+  /// 非空即「已生效」，`user` 压过 `ai`。见 AI 库管家设计稿 §5.3。
+  TextColumn get confirmedBy => text().nullable()();
 
   /// 推断理由（AI 的「为什么认为是同一作品」、确定性判据的证据摘要）。
   TextColumn get reason => text().nullable()();

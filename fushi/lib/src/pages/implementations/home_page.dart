@@ -50,6 +50,7 @@ import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
+import 'package:fushi/src/media/source_library/source_auto_scan.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/collections/collection_continue.dart';
@@ -115,6 +116,10 @@ import 'package:fushi/src/pages/implementations/video_discovery_page.dart'
 import 'package:fushi/src/pages/implementations/video_library_shell.dart';
 import 'package:fushi/src/pages/implementations/browse_moved_notice.dart'
     show maybeShowBrowseMovedNotice;
+import 'package:fushi/src/pages/implementations/library_layout_default_notice.dart'
+    show maybeShowLibraryLayoutDefaultNotice;
+import 'package:fushi/src/pages/implementations/overwrite_snapshot_notice.dart'
+    show maybeShowOverwriteSnapshotNotice;
 import 'package:fushi/src/pages/implementations/media_server/media_server_browse_page.dart'
     show MediaServerEntry, pushMediaServerPlayer;
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart'
@@ -202,6 +207,7 @@ import 'package:fushi_core/fushi_core.dart'
         MediaCollectionRow,
         MediaKind,
         MediaSourceRow,
+        SourceLibraryKind,
         VideoBookRow,
         VideoDownloadJobLifecycle,
         VideoDownloadJobRow,
@@ -533,6 +539,13 @@ class _HomePageState extends BasePageState<HomePage>
     },
   );
   bool _videoSourceScrapePanelOpen = false;
+
+  /// 来源「自动扫描」调度（启动 + 回前台，见 [SourceAutoScanScheduler]）。挂在首页：
+  /// 视频来源的扫描要走本页持有的刮削任务控制器门，扫完还要串联自动刮削。
+  late final SourceAutoScanScheduler _sourceAutoScan = SourceAutoScanScheduler(
+    loadCandidates: _loadAutoScanSources,
+    scan: _runAutoSourceScan,
+  );
   VideoDiscoveryService? _videoDiscoveryService;
   VideoDiscoveryController? _videoDiscoveryController;
   String? _videoDiscoveryConfigFingerprint;
@@ -664,6 +677,13 @@ class _HomePageState extends BasePageState<HomePage>
       _onHomeDictionaryTabRequested,
     );
 
+    // 来源自动扫描：首帧后扫一轮到期来源（与下面的新手引导 / 更新弹窗互不阻塞）。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        unawaited(_sourceAutoScan.trigger(SourceAutoScanTrigger.startup));
+      }
+    });
+
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       // 在下面任何分支改写 first_time_setup 之前取：「下载 → 浏览」搬迁提示要据此
@@ -728,6 +748,25 @@ class _HomePageState extends BasePageState<HomePage>
           context: context,
           appModel: appModelNoUpdate,
           freshInstall: freshInstall,
+        );
+      }
+
+      // 库页默认布局改成封面网格：升级上来、没选过布局的用户提醒一次「拼贴仍可选」
+      // （拍板台 pr3454，2026-11-16）。同样排在更新弹窗之前、串行。
+      if (mounted) {
+        await maybeShowLibraryLayoutDefaultNotice(
+          context: context,
+          appModel: appModelNoUpdate,
+          freshInstall: freshInstall,
+        );
+      }
+
+      // 覆盖导入完成后的一次性提示（快照留多久、在哪找回 / 删除）。导入完成时 app
+      // 立刻重启，提示只能在这里补上；与上面的弹框串行，排在更新弹窗之前。
+      if (mounted) {
+        await maybeShowOverwriteSnapshotNotice(
+          context: context,
+          appModel: appModelNoUpdate,
         );
       }
 
@@ -1034,6 +1073,7 @@ class _HomePageState extends BasePageState<HomePage>
 
   @override
   void dispose() {
+    _sourceAutoScan.dispose();
     if (_backdropShellRoute case final Route<Object?> route) {
       setFushiPageRouteModuleShell(route, false);
     }
@@ -1088,6 +1128,8 @@ class _HomePageState extends BasePageState<HomePage>
       // 首页键事件 Focus，导致切窗回来后页级 / 全局快捷键全死，只能重启 app 才靠
       // autofocus 抢回。对齐视频页 [_reclaimVideoFocusIfOwned] 的 resumed 回收范式。
       _reclaimHomeFocusIfOwned();
+      // 回前台扫一轮到期的自动扫描来源（节流挡掉切窗口引起的高频 resumed）。
+      unawaited(_sourceAutoScan.trigger(SourceAutoScanTrigger.resume));
     } else if (AppLifecycleState.detached == state) {
       _videoScrapeRuntime.currentController?.markInterrupted();
     } else if (AppLifecycleState.paused == state) {
@@ -3995,6 +4037,42 @@ class _HomePageState extends BasePageState<HomePage>
       ),
     );
     return (proceed: confirmed == true, grant: confirmed == true);
+  }
+
+  /// 自动扫描的候选：开着开关、所属模块开着；库处于「已迁移只读」时一个都不扫。
+  Future<List<SourceLibraryRow>> _loadAutoScanSources() async {
+    if (appModelNoUpdate.isMigrationReadonly) return const <SourceLibraryRow>[];
+    final ModuleVisibility visibility = appModelNoUpdate.moduleVisibility;
+    return autoScanEligibleSources(
+      await appModelNoUpdate.database.getAutoScanMediaSources(),
+      readonly: appModelNoUpdate.isMigrationReadonly,
+      isModuleEnabled: visibility.isEnabled,
+    );
+  }
+
+  /// 自动扫描一个来源，收尾与来源页「重新扫描」一致；分支（视频门被占延后、只在新增
+  /// 了视频时串联「扫描后自动刮削」）见 [runAutoSourceScan]。
+  Future<SourceAutoScanOutcome> _runAutoSourceScan(SourceLibraryRow source) {
+    final SourceLibraryScanner scanner = SourceLibraryScanner(
+      appModelNoUpdate.database,
+      transcribeAudiobook: source.mediaKind == SourceLibraryKind.book.dbValue
+          ? appModelNoUpdate.folderImportTranscribePort
+          : null,
+    );
+    return runAutoSourceScan(
+      source,
+      scan: () => scanner.scan(source),
+      tryRunVideoScan: _videoSourceScrapeController.tryRunSourceScan,
+      onVideoScanCreated: (SourceScanSummary summary) async {
+        final SourceLibraryRow updated =
+            await appModelNoUpdate.database.getMediaSourceById(source.id) ??
+            source;
+        await _onVideoSourceScanCompleted(updated, summary);
+      },
+      onVideoScanNoNew: () {
+        if (mounted) _notifyVideoLibraryChanged();
+      },
+    );
   }
 
   Future<void> _onVideoSourceScanCompleted(

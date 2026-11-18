@@ -34,6 +34,7 @@ import 'package:http/http.dart' as http;
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/media/video/media_server/media_server_search_match.dart';
+import 'package:fushi/src/sync/launch_item_detail_memo.dart';
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi_engine/media/tracking/remote_anime_link.dart'
@@ -261,6 +262,15 @@ class PlexVideoClient
 
   @override
   RemoteVideoClient get playbackClient => this;
+
+  /// 一次起播内的条目详情短复用（[LaunchItemDetailMemo]）：重开入口的
+  /// [itemDetail]、取流、下默认字幕要的是同一份 `/library/metadata/{id}`。
+  /// [remoteVideoPosition] 要服务器最新断点，不走这里。
+  final LaunchItemDetailMemo<PlexMetadata> _launchDetail =
+      LaunchItemDetailMemo<PlexMetadata>();
+
+  Future<PlexMetadata> _launchMetadata(String id) =>
+      _launchDetail.reuseOrFetch(id, () => api.metadata(id));
 
   // ── PlexMetadata → MediaServerItem 纯函数投影 ─────────────────────────
 
@@ -639,8 +649,17 @@ class PlexVideoClient
   }
 
   @override
-  Future<MediaServerItem> itemDetail(String itemId) async {
-    final PlexMetadata m = await api.metadata(itemId);
+  Future<MediaServerItem> itemDetail(
+    String itemId, {
+    bool forLaunch = false,
+  }) async {
+    // 结果留给紧随其后的取流 / 取字幕复用，见 [_launchDetail]。失败只有重开入口
+    // 那一次（[forLaunch]）才留：详情页取详情失败后点播放，照常重新请求。
+    final PlexMetadata m = await _launchDetail.fetchAndRemember(
+      itemId,
+      () => api.metadata(itemId),
+      keepFailure: forLaunch,
+    );
     final MediaServerItemType? type = mediaServerTypeOf(m);
     if (type == null) {
       throw ArgumentError.value(
@@ -845,7 +864,7 @@ class PlexVideoClient
     int episodeIndex = 0,
   }) async {
     // 每一集都是独立条目，episodeIndex 恒 0。
-    final PlexMetadata m = await api.metadata(id);
+    final PlexMetadata m = await _launchMetadata(id);
     final PlexPart part = _requirePart(m, id);
     final int? duration = m.durationMs ?? m.media.firstOrNull?.durationMs;
     if (duration != null && duration > 0) _durations[id] = duration;
@@ -893,7 +912,7 @@ class PlexVideoClient
     int episodeIndex = 0,
     void Function(double progress)? onProgress,
   }) async {
-    final PlexMetadata m = await api.metadata(id);
+    final PlexMetadata m = await _launchMetadata(id);
     PlexStream? pick;
     if (embeddedStreamIndex == null) {
       pick = _defaultExternalSubtitle(m);

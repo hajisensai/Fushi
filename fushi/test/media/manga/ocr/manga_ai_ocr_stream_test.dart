@@ -363,6 +363,371 @@ void main() {
       isNull,
     );
   });
+
+  group('落盘后的回写攒批（manga-7）', () {
+    const String reply = '{"blocks":[{"id":1,"text":"機嫌の悪い"}]}';
+    const List<String> names = <String>['p1.png', 'p2.png', 'p3.png', 'p4.png'];
+
+    /// 每页一张颜色不同的图（大模型缓存按裁图字节键控，同图会直接命中缓存）。
+    Future<void> writeDistinctPages() async {
+      for (int i = 0; i < names.length; i++) {
+        final img.Image image = img.Image(width: 200, height: 100);
+        img.fill(image, color: img.ColorRgb8(40 * (i + 1), 10, 200));
+        await File(
+          p.join(dir.path, names[i]),
+        ).writeAsBytes(img.encodePng(image));
+      }
+    }
+
+    Future<void> writeBookJson(List<MokuroImage> pages) =>
+        File(mangaJsonPath).writeAsString(
+          jsonEncode(mangaPayloadToJson(MokuroPayload(images: pages))),
+        );
+
+    List<String> diskLines() => <String>[
+      for (final MokuroImage image in readBookJson().images)
+        '${image.url}:${image.blocks.single.lines.single}',
+    ];
+
+    ({MangaAiOcrJobFollower follower, _SteppedClients clients}) stepped({
+      required int flushPageCount,
+      required Duration flushInterval,
+      int? failFrom,
+    }) {
+      final _SteppedClients clients = _SteppedClients(
+        reply,
+        failFrom: failFrom,
+      );
+      return (
+        follower: MangaAiOcrJobFollower(
+          imageDirPath: dir.path,
+          refiner: MangaAiOcrRefiner(
+            provider: provider,
+            mode: MangaAiOcrMode.lowConfidence,
+            clientFactory: clients.next,
+          ),
+          flushPageCount: flushPageCount,
+          flushInterval: flushInterval,
+        ),
+        clients: clients,
+      );
+    }
+
+    /// 在记下「时长为 [interval] 的计时器」的 zone 里跑 [body]：跟随步骤的定时
+    /// 冲刷是它建的唯一一种这个时长的计时器。
+    void trackingFlushTimers(
+      Duration interval,
+      List<Timer> created,
+      void Function() body,
+    ) {
+      runZoned<void>(
+        body,
+        zoneSpecification: ZoneSpecification(
+          createTimer:
+              (
+                Zone self,
+                ZoneDelegate parent,
+                Zone zone,
+                Duration duration,
+                void Function() callback,
+              ) {
+                final Timer timer = parent.createTimer(
+                  zone,
+                  duration,
+                  callback,
+                );
+                if (duration == interval) created.add(timer);
+                return timer;
+              },
+        ),
+      );
+    }
+
+    test('攒够页数才整份读改写一次，收尾冲刷剩下的；补发按盘上序号', () async {
+      await writeDistinctPages();
+      final List<MokuroImage> pages = <MokuroImage>[
+        localPage('p1.png', '一'),
+        localPage('p2.png', '二'),
+        localPage('p3.png', '三'),
+      ];
+      await writeBookJson(pages);
+      final s = stepped(
+        flushPageCount: 2,
+        flushInterval: const Duration(hours: 1),
+      );
+      final List<MangaOcrPageUpdate> updates = <MangaOcrPageUpdate>[];
+      s.follower.updates.listen(updates.add);
+      s.follower.onPersisted(mangaJsonPath, MokuroPayload(images: pages));
+
+      // 第 1 页改好：只进待写批，不写盘、不补发。
+      await s.clients.started(1).timeout(const Duration(seconds: 5));
+      s.clients.release(1);
+      await s.clients.started(2).timeout(const Duration(seconds: 5));
+      expect(diskLines(), <String>['p1.png:一', 'p2.png:二', 'p3.png:三']);
+      expect(updates, isEmpty);
+
+      // 期间盘上页序变了（内容没变）：补发要用盘上的序号。
+      await runExclusiveOnMangaJson<void>(
+        mangaJsonPath,
+        () => writeMangaJsonAtomically(
+          mangaJsonPath,
+          MokuroPayload(images: <MokuroImage>[pages[1], pages[0], pages[2]]),
+        ),
+      );
+
+      // 第 2 页改好：攒够 2 页，一次写进去两页。
+      s.clients.release(2);
+      await s.clients.started(3).timeout(const Duration(seconds: 5));
+      expect(diskLines(), <String>['p2.png:機嫌の悪い', 'p1.png:機嫌の悪い', 'p3.png:三']);
+      await pumpEventQueue();
+      expect(
+        <String>[
+          for (final MangaOcrPageUpdate u in updates)
+            '${u.pageIndex}:${u.page.url}',
+        ],
+        <String>['1:p1.png', '0:p2.png'],
+      );
+
+      // 第 3 页不够一批：收尾冲刷。
+      s.clients.release(3);
+      await s.follower.done.timeout(const Duration(seconds: 5));
+      expect(diskLines().last, 'p3.png:機嫌の悪い');
+      await pumpEventQueue();
+      expect(updates, hasLength(3));
+      expect(updates.last.pageIndex, 2);
+      expect(s.clients.calls, 3);
+    });
+
+    test('凑不够页数：最早一页等满间隔也冲刷，不等下一页的大模型回来', () async {
+      await writeDistinctPages();
+      final List<MokuroImage> pages = <MokuroImage>[
+        localPage('p1.png', '一'),
+        localPage('p2.png', '二'),
+      ];
+      await writeBookJson(pages);
+      final s = stepped(
+        flushPageCount: 100,
+        flushInterval: const Duration(milliseconds: 50),
+      );
+      final List<MangaOcrPageUpdate> updates = <MangaOcrPageUpdate>[];
+      s.follower.updates.listen(updates.add);
+      s.follower.onPersisted(mangaJsonPath, MokuroPayload(images: pages));
+      await s.clients.started(1).timeout(const Duration(seconds: 5));
+      s.clients.release(1);
+      await s.clients.started(2).timeout(const Duration(seconds: 5));
+
+      // 第 2 页的请求一直挂着：第 1 页靠间隔落盘并补发。
+      final Stopwatch waited = Stopwatch()..start();
+      while (updates.isEmpty && waited.elapsed < const Duration(seconds: 5)) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(updates.single.pageIndex, 0);
+      expect(diskLines(), <String>['p1.png:機嫌の悪い', 'p2.png:二']);
+
+      s.clients.release(2);
+      await s.follower.done.timeout(const Duration(seconds: 5));
+      expect(diskLines(), <String>['p1.png:機嫌の悪い', 'p2.png:機嫌の悪い']);
+    });
+
+    test('一批里盘上已变的那页放弃，其余照写；取消后待写批不落盘', () async {
+      await writeDistinctPages();
+      final List<MokuroImage> pages = <MokuroImage>[
+        localPage('p1.png', '一'),
+        localPage('p2.png', '二'),
+        localPage('p3.png', '三'),
+        localPage('p4.png', '四'),
+      ];
+      await writeBookJson(pages);
+      final s = stepped(
+        flushPageCount: 2,
+        flushInterval: const Duration(hours: 1),
+      );
+      final List<MangaOcrPageUpdate> updates = <MangaOcrPageUpdate>[];
+      s.follower.updates.listen(updates.add);
+      final List<Timer> flushTimers = <Timer>[];
+      trackingFlushTimers(
+        const Duration(hours: 1),
+        flushTimers,
+        () =>
+            s.follower.onPersisted(mangaJsonPath, MokuroPayload(images: pages)),
+      );
+      await s.clients.started(1).timeout(const Duration(seconds: 5));
+      s.clients.release(1);
+      await s.clients.started(2).timeout(const Duration(seconds: 5));
+      // 第 1 页在待写期间被别处重新识别过。
+      await runExclusiveOnMangaJson<void>(
+        mangaJsonPath,
+        () => writeMangaJsonAtomically(
+          mangaJsonPath,
+          MokuroPayload(
+            images: <MokuroImage>[
+              localPage('p1.png', '新しい'),
+              pages[1],
+              pages[2],
+              pages[3],
+            ],
+          ),
+        ),
+      );
+      s.clients.release(2);
+      await s.clients.started(3).timeout(const Duration(seconds: 5));
+      expect(diskLines(), <String>[
+        'p1.png:新しい',
+        'p2.png:機嫌の悪い',
+        'p3.png:三',
+        'p4.png:四',
+      ]);
+      await pumpEventQueue();
+      expect(updates.single.pageIndex, 1);
+
+      // 第 3 页改好后进待写批（不够一批），它的定时冲刷已经挂上；此时取消：
+      // 定时冲刷被停掉（不留一个到点再去拿写锁的计时器），也不再写盘。
+      s.clients.release(3);
+      await s.clients.started(4).timeout(const Duration(seconds: 5));
+      expect(flushTimers.where((Timer t) => t.isActive), hasLength(1));
+      await s.follower.cancel();
+      expect(flushTimers.where((Timer t) => t.isActive), isEmpty);
+      await s.follower.done.timeout(const Duration(seconds: 5));
+      await runExclusiveOnMangaJson<void>(mangaJsonPath, () async {});
+      expect(diskLines()[2], 'p3.png:三');
+    });
+
+    // 定时冲刷在途（卡在写锁后面）时收尾：收尾必须等它落盘、补发完才关
+    // updates / 完成 done——不管收尾自己那一批是空的还是又带了一页。
+    for (final bool lastPageRefined in <bool>[false, true]) {
+      test('定时冲刷在途时收尾（最后一页${lastPageRefined ? '改好' : '没改成'}）：'
+          '等在途那批落盘补发完才结束', () async {
+        await writeDistinctPages();
+        final List<MokuroImage> pages = <MokuroImage>[
+          localPage('p1.png', '一'),
+          localPage('p2.png', '二'),
+        ];
+        await writeBookJson(pages);
+        const Duration interval = Duration(milliseconds: 50);
+        final s = stepped(
+          flushPageCount: 100,
+          flushInterval: interval,
+          failFrom: lastPageRefined ? null : 2,
+        );
+        final List<MangaOcrPageUpdate> updates = <MangaOcrPageUpdate>[];
+        bool updatesClosed = false;
+        s.follower.updates.listen(
+          updates.add,
+          onDone: () => updatesClosed = true,
+        );
+        bool done = false;
+        unawaited(s.follower.done.then((_) => done = true));
+
+        // 测试先占住写锁：定时冲刷发出后停在锁后面，稳定地「在途」。
+        final Completer<void> hold = Completer<void>();
+        final Future<void> held = runExclusiveOnMangaJson<void>(
+          mangaJsonPath,
+          () => hold.future,
+        );
+        final List<Timer> flushTimers = <Timer>[];
+        trackingFlushTimers(
+          interval,
+          flushTimers,
+          () => s.follower.onPersisted(
+            mangaJsonPath,
+            MokuroPayload(images: pages),
+          ),
+        );
+        await s.clients.started(1).timeout(const Duration(seconds: 5));
+        s.clients.release(1);
+        await s.clients.started(2).timeout(const Duration(seconds: 5));
+
+        // 最后一页的请求挂着，第 1 页的定时冲刷到点发出（计时器已触发）。
+        final Stopwatch waited = Stopwatch()..start();
+        while ((flushTimers.isEmpty || flushTimers.first.isActive) &&
+            waited.elapsed < const Duration(seconds: 5)) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+        expect(flushTimers, hasLength(1));
+        expect(flushTimers.single.isActive, isFalse);
+
+        // 放行最后一页 → 收尾。在途那批还没落盘：不能结束、不能关 updates。
+        s.clients.release(2);
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+        expect(done, isFalse, reason: '在途的定时冲刷没落盘，收尾不能先结束');
+        expect(updatesClosed, isFalse);
+        expect(updates, isEmpty);
+        expect(diskLines(), <String>['p1.png:一', 'p2.png:二']);
+
+        hold.complete();
+        await held;
+        await s.follower.done.timeout(const Duration(seconds: 5));
+        await pumpEventQueue();
+        expect(diskLines(), <String>[
+          'p1.png:機嫌の悪い',
+          'p2.png:${lastPageRefined ? '機嫌の悪い' : '二'}',
+        ]);
+        expect(<int>[
+          for (final MangaOcrPageUpdate u in updates) u.pageIndex,
+        ], lastPageRefined ? <int>[0, 1] : <int>[0]);
+      });
+    }
+  });
+}
+
+/// 逐个放行的客户端：第 n 次请求挂到 `release(n)` 为止。给了 [failFrom] 时，
+/// 第 [failFrom] 次请求放行后以限流失败（那页换不成），其后的请求立即失败。
+class _SteppedClients {
+  _SteppedClients(this.reply, {this.failFrom});
+
+  final String reply;
+  final int? failFrom;
+  final Map<int, Completer<void>> _started = <int, Completer<void>>{};
+  final Map<int, Completer<void>> _gates = <int, Completer<void>>{};
+  int calls = 0;
+
+  Completer<void> _of(Map<int, Completer<void>> map, int n) =>
+      map.putIfAbsent(n, Completer<void>.new);
+
+  /// 第 [n] 次请求已发出。
+  Future<void> started(int n) => _of(_started, n).future;
+
+  void release(int n) {
+    final Completer<void> gate = _of(_gates, n);
+    if (!gate.isCompleted) gate.complete();
+  }
+
+  AiChatClient next() => _SteppedClient(this);
+}
+
+class _SteppedClient extends AiChatClient {
+  _SteppedClient(this.owner);
+
+  final _SteppedClients owner;
+  final Completer<void> _closed = Completer<void>();
+
+  @override
+  Future<String> complete({
+    required AiProviderConfig provider,
+    required List<AiChatMessage> messages,
+    int maxTokens = 2048,
+  }) async {
+    final int n = owner.calls += 1;
+    final int? failFrom = owner.failFrom;
+    if (failFrom != null && n > failFrom) {
+      throw const AiChatFailure('rate_limited');
+    }
+    owner._of(owner._started, n).complete();
+    await Future.any(<Future<void>>[
+      owner._of(owner._gates, n).future,
+      _closed.future,
+    ]);
+    if (_closed.isCompleted) throw const AiChatFailure('network_error');
+    if (failFrom != null && n >= failFrom) {
+      throw const AiChatFailure('rate_limited');
+    }
+    return owner.reply;
+  }
+
+  @override
+  void close() {
+    if (!_closed.isCompleted) _closed.complete();
+  }
 }
 
 /// 每次请求一个新客户端；请求挂起直到 [releaseAll]，或客户端被关（=中止）。
