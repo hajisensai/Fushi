@@ -3003,7 +3003,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     // inert（所在 tab 被藏起 / 页面失活）时浮层**留在树上、整棵 Offstage**：不画、
     // 不接点击、不持焦点、停动画，但常驻热槽的查词 WebView（BUG-1028）不拆。
     //
-    // BUG-4725：这里曾在 inert 时收成 `SizedBox.shrink()`。热槽开页即 seed、
+    // BUG-4846：这里曾在 inert 时收成 `SizedBox.shrink()`。热槽开页即 seed、
     // `entries` 永不空，于是每次切出游戏 tab 都同步销毁一个 WebView2
     // （`ICoreWebView2Controller::Close()` + `DestroyWindow`），每次切回又冷建一个并
     // 重新装载 popup.html + JS + CSS——实测切回后约 0.3～0.4 s 处 UI 线程被堵
@@ -3019,23 +3019,25 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         enabled: !inert,
         child: ExcludeFocus(
           excluding: inert,
-          child: LookupOverlayNavigator(
-            child: FushiAppUiScaleNeutralizer(
-              child: Theme(
-                data:
-                    _appModel.overrideDictionaryTheme ??
-                    Theme.of(overlayContext),
-                child: Builder(
-                  builder: (BuildContext context) {
-                    if (!mounted) return const SizedBox.shrink();
-                    return Stack(
-                      clipBehavior: Clip.none,
-                      children: _buildPopups(context),
-                    );
-                  },
-                ),
-              ),
-            ),
+          child: _buildPopupOverlayBody(overlayContext),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPopupOverlayBody(BuildContext overlayContext) {
+    return LookupOverlayNavigator(
+      child: FushiAppUiScaleNeutralizer(
+        child: Theme(
+          data: _appModel.overrideDictionaryTheme ?? Theme.of(overlayContext),
+          child: Builder(
+            builder: (BuildContext context) {
+              if (!mounted) return const SizedBox.shrink();
+              return Stack(
+                clipBehavior: Clip.none,
+                children: _buildPopups(context),
+              );
+            },
           ),
         ),
       ),
