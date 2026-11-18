@@ -9,12 +9,13 @@ import 'package:fushi/src/media/manga/library/online_manga_chapter_updates.dart'
 import 'package:fushi/src/media/manga/library/manga_resume_point.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
+import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/manga/mihon/manga_page_provider.dart'
     show mangaImageContentType;
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/media/cover_file_writer.dart'
-    show CoverImageInvalidException, writeCoverBytesAtomically;
+    show CoverImageInvalidException;
 import 'package:fushi_engine/media/manga/manga_storage.dart';
 import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/updates/update_feed_service.dart';
@@ -149,7 +150,10 @@ class OnlineMangaLibraryService {
         }
         final String coverFile = p.join(directory.path, 'cover$extension');
         // 收口再查一次完整性（截断 JPEG/PNG）+ 原子写 + 驱逐解码缓存。
-        await writeCoverBytesAtomically(bytes: bytes, destPath: coverFile);
+        await MediaCoverService.applyCoverBytes(
+          bytes: bytes,
+          destPath: coverFile,
+        );
         coverPath = p.basename(coverFile);
       } on CoverImageInvalidException catch (e) {
         ErrorLogService.instance.logDiagnostic(

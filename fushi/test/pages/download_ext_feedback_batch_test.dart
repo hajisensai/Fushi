@@ -353,7 +353,8 @@ void main() {
       ),
     );
     await tester.tap(find.byTooltip(t.resource_version_show_files));
-    await tester.pump();
+    // 展开走 FushiAnimatedSize 弹簧过渡（#3515），等它落定，组内行才整行可点。
+    await tester.pumpAndSettle();
     final Finder selectAll = find.byKey(
       ValueKey<String>('resource-select-all-${groups.single.key}'),
     );

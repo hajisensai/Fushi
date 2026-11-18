@@ -302,7 +302,8 @@ void main() {
     expect(
       RegExp(
         r'onLongPress:\s*_selectionMode\s*\?\s*null\s*:\s*'
-        r'\(\)\s*=>\s*_showRemoteVideoDialog\(video\)',
+        // #3515 起多传 `selectable:`（合集里的远端卡不可单独勾选）。
+        r'\(\)\s*=>\s*_showRemoteVideoDialog\(\s*video\b',
       ).hasMatch(card),
       isTrue,
       reason:

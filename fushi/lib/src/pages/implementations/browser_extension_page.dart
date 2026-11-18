@@ -687,9 +687,11 @@ class _StatusBlock extends StatelessWidget {
       _LinkState.lost => _CheckMark.fail,
       _ => _CheckMark.pending,
     };
-    final List<Widget> checks = <Widget>[
+    // [actionBelow]：块太窄放不下行尾动作钮时折到文字下面（见 [_CheckTile]）。
+    List<Widget> buildChecks({required bool actionBelow}) => <Widget>[
       _CheckTile(
         colors: colors,
+        actionBelow: actionBelow,
         mark: serverOn ? _CheckMark.ok : _CheckMark.fail,
         icon: serverOn ? FushiIcons.cloud : FushiIcons.cloudOff,
         label: t.browser_extension_check_server,
@@ -766,6 +768,13 @@ class _StatusBlock extends StatelessWidget {
         builder: (BuildContext context, BoxConstraints constraints) {
           final bool narrow = constraints.maxWidth < 560;
           final double pad = narrow ? 20 : 26;
+          // 宽版三块并排：每块宽 = (内容宽 − 两道 8 的缝) / 3。
+          final double tileWidth = narrow
+              ? constraints.maxWidth - pad * 2
+              : (constraints.maxWidth - pad * 2 - 16) / 3;
+          final List<Widget> checks = buildChecks(
+            actionBelow: tileWidth < _kCheckTileInlineActionMinWidth,
+          );
           final Widget glyph = _StatusGlyph(
             link: link,
             colors: colors,
@@ -916,6 +925,7 @@ class _CheckTile extends StatelessWidget {
     required this.label,
     required this.value,
     this.action,
+    this.actionBelow = false,
   });
 
   final FushiCoverBlockColors colors;
@@ -924,6 +934,10 @@ class _CheckTile extends StatelessWidget {
   final String label;
   final String value;
   final Widget? action;
+
+  /// 动作钮折到文字下面（块宽不足 [_kCheckTileInlineActionMinWidth] 时）：行尾
+  /// 放一颗「开启服务」会把文字列挤到十来像素，连小图标都放不下。
+  final bool actionBelow;
 
   @override
   Widget build(BuildContext context) {
@@ -1012,15 +1026,25 @@ class _CheckTile extends StatelessWidget {
                     fontWeight: FontWeight.w700,
                   ),
                 ),
+                if (action != null && actionBelow) ...<Widget>[
+                  const SizedBox(height: 8),
+                  action!,
+                ],
               ],
             ),
           ),
-          if (action != null) ...<Widget>[const SizedBox(width: 8), action!],
+          if (action != null && !actionBelow) ...<Widget>[
+            const SizedBox(width: 8),
+            action!,
+          ],
         ],
       ),
     );
   }
 }
+
+/// [_CheckTile] 行尾放得下动作钮的最小块宽：小于它时动作钮折到文字下面。
+const double _kCheckTileInlineActionMinWidth = 280;
 
 // -----------------------------------------------------------------------------
 // 右栏：试一试 / 版本

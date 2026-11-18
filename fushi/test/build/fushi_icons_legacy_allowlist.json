@@ -104,7 +104,7 @@
  "lib/src/pages/implementations/discovery/discovery_widgets.dart": 2,
  "lib/src/pages/implementations/discovery_source_settings_section.dart": 1,
  "lib/src/pages/implementations/download_backend_setup_dialog.dart": 2,
- "lib/src/pages/implementations/gal_attached_lookup_workbench.dart": 11,
+ "lib/src/pages/implementations/gal_attached_lookup_workbench.dart": 8,
  "lib/src/pages/implementations/gal_capture_setup_dialog.dart": 3,
  "lib/src/pages/implementations/gal_lookup_calibration_canvas.dart": 3,
  "lib/src/pages/implementations/gal_lookup_calibration_number_field.dart": 2,

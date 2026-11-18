@@ -11,6 +11,7 @@ import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
@@ -222,9 +223,9 @@ class ExtensionCatalogActions extends StatelessWidget {
         key: action.key,
         size: FushiButtonSize.s,
         onPressed: action.onPressed,
-        icon: Badge(
+        icon: FushiBadgeControl.count(
           key: ValueKey<String>('${keyPrefix}_update_count'),
-          label: Text('$updateCount'),
+          count: updateCount,
           child: FushiIcon(action.icon),
         ),
         label: Text(action.label),

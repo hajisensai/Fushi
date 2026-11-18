@@ -90,7 +90,7 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               GalWorkbenchSectionHeader(
-                icon: Icons.touch_app_outlined,
+                icon: FushiIcons.touch,
                 title: t.game_lookup_attached_title,
                 trailing: <Widget>[
                   if (riskRequest != null)
@@ -99,10 +99,7 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
                         'game-attached-lookup-accept-risk',
                       ),
                       onPressed: () => _acceptRisk(context, riskRequest),
-                      icon: const FushiIcon(
-                        Icons.warning_amber_rounded,
-                        size: 18,
-                      ),
+                      icon: const FushiIcon(FushiIcons.warning, size: 18),
                       label: Text(t.game_lookup_attached_risk_accept),
                     ),
                   FushiTooltip(
@@ -111,7 +108,7 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
                     child: const Padding(
                       key: ValueKey<String>('game-attached-lookup-details'),
                       padding: EdgeInsets.all(8),
-                      child: FushiIcon(Icons.info_outline, size: 18),
+                      child: FushiIcon(FushiIcons.info, size: 18),
                     ),
                   ),
                 ],
@@ -173,7 +170,7 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
                       icon: Icons.tune_outlined,
                       label: t.game_lookup_attached_mode,
                       value: Text(_modeLabel(mode)),
-                      trailingIcon: Icons.expand_more,
+                      trailingIcon: FushiIcons.expandMore,
                     ),
                   ),
                   // 状态枚举一律本地化（此前 `status.name` 原样上屏，界面上出现
@@ -214,7 +211,7 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
                       filled: false,
                       warning: showThreadRequiredPill,
                       trailingIcon: calibrationExposed && canOpenCalibration
-                          ? Icons.chevron_right
+                          ? FushiIcons.chevronRight
                           : null,
                     ),
                   ),
@@ -238,7 +235,7 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
                             )
                           : null,
                       face: GalWorkbenchCapabilityFace(
-                        icon: Icons.format_quote_outlined,
+                        icon: FushiIcons.quote,
                         label: t.game_lookup_samples_dialogue,
                         value: Text(t.game_lookup_attached_calibrate),
                         filled: false,
@@ -246,7 +243,7 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
                             hasSelectedBodyThread &&
                             controller.executableSha256 != null &&
                             controller.currentClient != null,
-                        trailingIcon: Icons.chevron_right,
+                        trailingIcon: FushiIcons.chevronRight,
                       ),
                     ),
                 ],

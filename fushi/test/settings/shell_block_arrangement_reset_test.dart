@@ -3,6 +3,10 @@
 // 拼贴下的「散落」。PR #3454 把默认布局改成封面网格后，全新安装就被标成已改过，
 // 恢复默认反而把网格下色块分区的摆放写成散落。本文件用真实外观 schema +
 // 真实 ThemeNotifier 走 settingsResetSpecFor 咬住。
+//
+// #3515 起：新安装出厂布局回到拼贴（`ShellContentLayout.defaultLayout`），没选过的
+// 摆放一律规整（C1，`ShellBlockArrangement.defaultFor` 不再按布局区分）。不变式不
+// 变——「已改过」只对照真实生效的默认，切布局不会把没碰过的摆放标成已改过。
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -72,9 +76,10 @@ void main() {
     return ctx;
   }
 
-  testWidgets('全新安装（默认封面网格）：色块摆放不算已改过', (WidgetTester tester) async {
+  testWidgets('全新安装（默认拼贴 + 规整）：色块摆放不算已改过', (WidgetTester tester) async {
     final SettingsContext ctx = await pumpContext(tester);
-    expect(appModel.shellContentLayout, ShellContentLayout.grid);
+    expect(appModel.shellContentLayout, ShellContentLayout.collage);
+    expect(appModel.shellBlockArrangement, ShellBlockArrangement.aligned);
     final SettingsResetSpec? spec = settingsResetSpecFor(
       _arrangementRow(),
       ctx,
@@ -83,17 +88,22 @@ void main() {
     expect(spec!.modified, isFalse);
   });
 
-  testWidgets('只切到拼贴、没碰摆放：跟着走成散落，仍不算已改过', (WidgetTester tester) async {
+  testWidgets('只切布局、没碰摆放：摆放仍是默认规整，不算已改过', (WidgetTester tester) async {
     final SettingsContext ctx = await pumpContext(tester);
+    await tester.runAsync(
+      () => notifier.setShellContentLayout(ShellContentLayout.grid),
+    );
+    expect(appModel.shellBlockArrangement, ShellBlockArrangement.aligned);
+    expect(settingsResetSpecFor(_arrangementRow(), ctx)!.modified, isFalse);
     await tester.runAsync(
       () => notifier.setShellContentLayout(ShellContentLayout.collage),
     );
-    expect(appModel.shellBlockArrangement, ShellBlockArrangement.scattered);
+    expect(appModel.shellBlockArrangement, ShellBlockArrangement.aligned);
     expect(settingsResetSpecFor(_arrangementRow(), ctx)!.modified, isFalse);
   });
 
-  testWidgets('网格下选过交错再恢复默认：回到跟随布局（网格 = 规整），'
-      '之后切拼贴仍跟着走成散落', (WidgetTester tester) async {
+  testWidgets('选过交错再恢复默认：回到未选（规整），'
+      '之后切布局仍是规整', (WidgetTester tester) async {
     final SettingsContext ctx = await pumpContext(tester);
     await tester.runAsync(
       () => notifier.setShellBlockArrangement(ShellBlockArrangement.staggered),
@@ -110,8 +120,9 @@ void main() {
     expect(settingsResetSpecFor(_arrangementRow(), ctx)!.modified, isFalse);
 
     await tester.runAsync(
-      () => notifier.setShellContentLayout(ShellContentLayout.collage),
+      () => notifier.setShellContentLayout(ShellContentLayout.grid),
     );
-    expect(appModel.shellBlockArrangement, ShellBlockArrangement.scattered);
+    expect(appModel.shellBlockArrangement, ShellBlockArrangement.aligned);
+    expect(settingsResetSpecFor(_arrangementRow(), ctx)!.modified, isFalse);
   });
 }

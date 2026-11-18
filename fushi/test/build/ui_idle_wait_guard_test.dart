@@ -24,9 +24,14 @@ const Set<String> _ambientRepeatFiles = <String>{
 /// 随状态存续的循环动画 → 它跟着哪个状态停。新增条目前先想清楚：启动后不经任何用户
 /// 操作就会一直转的，属于上面那一类。
 const Map<String, String> _stateBoundRepeatFiles = <String, String>{
+  'lib/src/media/import/import_glyph.dart': '导入方式图形自转：spinning（导入进行中）为真',
   'lib/src/media/video/video_danmaku_overlay.dart': '弹幕：视频在播且弹幕开着',
   'lib/src/media/video/video_m3e_chrome.dart': '进度条波浪：视频在播',
+  'lib/src/pages/implementations/games/galgame_home_blocks.dart':
+      '「游戏中」chip 呼吸点：游戏处于游玩状态',
   'lib/src/pages/implementations/home_widget_grid.dart': '编辑态抖动：主页小组件在编辑态',
+  'lib/src/pages/implementations/music/music_cd_detail.dart':
+      '唱片慢转：CD 详情面板打开期间（关面板即 dispose）',
   'lib/src/pages/implementations/music/music_lyrics_page.dart': '唱片旋转：音乐在播',
   'lib/src/pages/implementations/shortcut_settings/shortcut_browser.part.dart':
       '录制脉冲：正在录快捷键',
