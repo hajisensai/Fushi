@@ -4,7 +4,7 @@
 //
 // 1. 活代码里没有旧表名：协议 3 的 `sync2_*` 表名（从内核协议 3 存储层的 `CREATE TABLE` 里取，不手抄）不出现在 Dart
 //    生产代码里。`srs_*` 那九张归 srs_store_ownership_guard_test.dart（只放行主库老形态兼容代码）。
-// 2. 每条命令都登记：Dart 发给内核的每个 `'op': '<名字>'` 都在内核的命令登记表里——`store/gen4/dispatch.rs`
+// 2. 每条命令都登记：Dart 发给内核的每个 `'op': <值>`（字面量，条件表达式两侧都算）都在内核的命令登记表里——`store/gen4/dispatch.rs`
 //    `wiring` 里标成 `Wired` 的，或全局入口 `lib.rs` `dispatch` 的臂；登记成 `Removed` 的新代不再接，Dart 发了就是
 //    回退。规划写的是 `store/ops.rs`，它只在没合入的 `pr/srs-ffi-op-meta` 分支上，集成分支上的登记表就是 `wiring`。
 //    只看复习内核的调用面（[_srsSurface]），别的子进程 / 插件协议也用 `'op'` 键。
@@ -124,6 +124,105 @@ bool _srsSurface(String rel, String src) =>
     src.contains('package:fushi_srs/') ||
     src.contains('package:fushi_engine/srs/');
 
+/// 值不是字符串字面量的 `'op'`（`<文件>: <值表达式>` → 为什么不归内核登记表管）。修掉 / 不在了就删条目（死条目同样报错）。
+const Map<String, String> _kOpForwarders = <String, String>{
+  // 互联远端复习的 V2 协议（POST /api/srs/remote2/call）：动词由主机 srs_remote_store_routes.dart → service.call
+  // 按自己的路由处理，不直接进内核 dispatch；动词本身是同文件 _read / _write 调用处的字面量。
+  'fushi/lib/src/srs/srs_remote_store_client.dart: op':
+      'remote store V2 verb, routed by the host service, not a kernel command',
+  // 搜索树 JSON 里属性比较节点（`{'t': 'prop', 'p': …, 'op': <SrsSearchCompare>}`）的比较符，不是命令键。
+  'packages/fushi_srs/lib/src/search/search_kernel.dart: compare.name':
+      'comparison operator of a search tree node, not a command',
+};
+
+/// [src]（已去注释）里每个 `'op': <值>` 的值：取到深度 0 的 `,` 或收尾括号为止（字符串里的不算）；条件表达式
+/// `c ? x : y` 拆成两侧（可嵌套），其余原样（去首尾空白）。
+List<String> _opValueBranches(String src) {
+  final List<String> out = <String>[];
+  for (final RegExpMatch m in RegExp(r'''['"]op['"]\s*:''').allMatches(src)) {
+    int i = m.end;
+    int depth = 0;
+    String? quote;
+    final StringBuffer b = StringBuffer();
+    while (i < src.length) {
+      final String c = src[i];
+      if (quote != null) {
+        b.write(c);
+        if (c == r'\' && i + 1 < src.length) {
+          b.write(src[i + 1]);
+          i += 2;
+          continue;
+        }
+        if (c == quote) quote = null;
+        i++;
+        continue;
+      }
+      if (c == "'" || c == '"') {
+        quote = c;
+      } else if ('([{'.contains(c)) {
+        depth++;
+      } else if (')]}'.contains(c)) {
+        if (depth == 0) break;
+        depth--;
+      } else if (c == ',' && depth == 0) {
+        break;
+      }
+      b.write(c);
+      i++;
+    }
+    out.addAll(_ternaryBranches(b.toString().trim()));
+  }
+  return out;
+}
+
+/// `c ? x : y` → [x, y] 各自再拆；不是条件表达式就是它自己。`??` 与 `?.` 不算。
+List<String> _ternaryBranches(String e) {
+  bool isTernaryMark(int i) =>
+      e[i] == '?' &&
+      (i + 1 >= e.length || (e[i + 1] != '?' && e[i + 1] != '.')) &&
+      (i == 0 || e[i - 1] != '?');
+  int depth = 0;
+  String? quote;
+  int q = -1;
+  int colon = -1;
+  int nest = 0;
+  for (int i = 0; i < e.length; i++) {
+    final String c = e[i];
+    if (quote != null) {
+      if (c == r'\') {
+        i++;
+      } else if (c == quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (c == "'" || c == '"') {
+      quote = c;
+    } else if ('([{'.contains(c)) {
+      depth++;
+    } else if (')]}'.contains(c)) {
+      depth--;
+    } else if (depth == 0 && isTernaryMark(i)) {
+      if (q < 0) {
+        q = i;
+      } else {
+        nest++;
+      }
+    } else if (depth == 0 && c == ':' && q >= 0) {
+      if (nest == 0) {
+        colon = i;
+        break;
+      }
+      nest--;
+    }
+  }
+  if (q < 0 || colon < 0) return <String>[e];
+  return <String>[
+    ..._ternaryBranches(e.substring(q + 1, colon).trim()),
+    ..._ternaryBranches(e.substring(colon + 1).trim()),
+  ];
+}
+
 /// 眼下仍把位置目录名当本机 profile uid 用的地方（文件 → 去掉首尾空白后的整行代码），各自归属待修。修掉就删条目。
 const Map<String, List<String>> _kKnownDirAsUid = <String, List<String>>{
   // 归 G9-5（profile 关联）：清理「本设备换 uid 时离开的旧 uid」孤儿目录。SrsRemoteProfile.uid 是位置目录名；
@@ -180,15 +279,28 @@ void main() {
       containsAll(<String>['version', 'gen4_migrate_run', 'evaluate_tss']),
       reason: 'lib.rs 全局入口解析不对',
     );
-    final RegExp op = RegExp(r'''['"]op['"]\s*:\s*['"]([a-z0-9_]+)['"]''');
     final List<String> offenders = <String>[];
+    final Set<String> forwardersSeen = <String>{};
     int sent = 0;
     for (final File f in files) {
       final String rel = _rel(f);
       final String src = maskComments(f.readAsStringSync());
       if (!_srsSurface(rel, src)) continue;
-      for (final RegExpMatch m in op.allMatches(src)) {
-        final String name = m.group(1)!;
+      for (final String branch in _opValueBranches(src)) {
+        final String? name = RegExp(
+          r'''^['"]([a-z0-9_]+)['"]$''',
+        ).firstMatch(branch)?.group(1);
+        if (name == null) {
+          final String key = '$rel: $branch';
+          if (_kOpForwarders.containsKey(key)) {
+            forwardersSeen.add(key);
+          } else {
+            offenders.add(
+              '$key (not a literal; use a literal or register in _kOpForwarders)',
+            );
+          }
+          continue;
+        }
         final String? w = wiring[name];
         if (w == 'Wired,' || global.contains(name)) {
           sent++;
@@ -201,6 +313,28 @@ void main() {
     }
     expect(sent, greaterThan(100), reason: '命令字面量解析不对');
     expect(offenders, isEmpty);
+    expect(
+      _kOpForwarders.keys.where((String k) => !forwardersSeen.contains(k)),
+      isEmpty,
+      reason: '登记了却已不存在的转发条目',
+    );
+  });
+
+  test('命令值解析：字面量、条件表达式两侧、变量', () {
+    expect(
+      _opValueBranches(
+        "a({'op': 'apply', 'x': 1}); b({\n  'op': existed == null ? 'apply' : 'import_drafts',\n}); "
+        "c({'op': op, 'args': a}); d({\"op\": \"study\"}); e({'op': f(x, y)});",
+      ),
+      <String>[
+        "'apply'",
+        "'apply'",
+        "'import_drafts'",
+        'op',
+        '"study"',
+        'f(x, y)',
+      ],
+    );
   });
 
   test('生产代码里没有把位置目录名当本机 profile uid 的读法', () {
