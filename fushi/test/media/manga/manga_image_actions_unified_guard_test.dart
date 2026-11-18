@@ -30,11 +30,14 @@ void main() {
 
     final String runner = slice(
       source,
-      'Future<void> _runCurrentMangaPageImageAction(ImageAction action)',
-      'Future<void> _setCurrentMangaPageAsCover()',
+      'Future<void> _runMangaPageImageAction(',
+      'Future<void> _setMangaPageAsCover(int pageIndex)',
     );
     expect(runner, contains('await runImageAction(action, file);'));
     expect(runner, isNot(contains('.copy(')), reason: '不得自己复制文件落盘');
+    // BUG-4717（反馈 NfaXdQeLyD）：取右键落点那一页，不是当前跨页主页。
+    expect(runner, contains('await _mangaPageFileAt(pageIndex);'));
+    expect(runner, isNot(contains('_currentMangaPageFile')));
 
     final String menu = slice(
       source,
@@ -50,10 +53,23 @@ void main() {
       reason: '图片项按平台列，与长按面板同一判据',
     );
     expect(menu, contains('imageActionLabel(imageAction)'));
+    // BUG-4717（反馈 NfaXdQeLyD）：双页跨页右键左页却复制出右页。图片项与「设为封面」
+    // 绑 payload 的落点页号，没落在页上就不列，不回落当前页。
+    expect(menu, contains('MangaFushiPage.mangaHitPageIndex('));
+    expect(menu, contains('if (hitPage != null) ...<PopupMenuEntry'));
     expect(
       menu,
-      contains('_runCurrentMangaPageImageAction(action.imageAction!)'),
+      contains('_runMangaPageImageAction(action.imageAction!, hitPage)'),
     );
+    expect(menu, contains('_setMangaPageAsCover(hitPage)'));
+    expect(menu, isNot(contains('_currentMangaPageFile')));
+    final String cover = slice(
+      source,
+      'Future<void> _setMangaPageAsCover(int pageIndex)',
+      'Future<void> _showReaderContextMenu(',
+    );
+    expect(cover, contains('await _mangaPageFileAt(pageIndex);'));
+    expect(cover, isNot(contains('_currentMangaPageFile')));
     expect(menu, isNot(contains('shareImageFile(')));
     expect(menu, isNot(contains('copyImageFileToClipboard(')));
 
@@ -75,9 +91,13 @@ void main() {
     final String handler = slice(
       source,
       'Future<void> _onMangaPageLongPress(String payloadJson)',
-      'Future<void> _runCurrentMangaPageImageAction(',
+      'Future<void> _runMangaPageImageAction(',
     );
-    expect(handler, contains("decoded['page']"));
+    expect(
+      handler,
+      contains('MangaFushiPage.mangaHitPageIndex('),
+      reason: '与右键菜单同一落点页号口径：越界页号不得被夹到首 / 末页',
+    );
     expect(
       handler,
       contains('await _mangaPageFileAt(pageIndex);'),
@@ -110,7 +130,7 @@ void main() {
     final String resolver = slice(
       source,
       '_MangaOcrCopyTexts _ocrCopyTextsAt(',
-      'Future<void> _runCurrentMangaPageImageAction(',
+      'Future<void> _runMangaPageImageAction(',
     );
     // 文本真值在 Dart 侧按页 OCR 块算，与查词 / 朗读同一次分组，不读 DOM 文字。
     expect(resolver, contains('mangaSentenceGroupCopyText(image,'));

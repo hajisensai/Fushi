@@ -20,10 +20,7 @@ void main() {
     'AnkiConnect 大库端到端耗时',
     () async {
       final int notes = int.parse(n!);
-      final BulkFixture f = await BulkFixture.open(
-        notes: notes,
-        background: true,
-      );
+      final BulkFixture f = await BulkFixture.open(notes: notes);
       final SrsAnkiConnectHandler h = SrsAnkiConnectHandler(
         store: () async => f.store,
         instanceId: 'bench',

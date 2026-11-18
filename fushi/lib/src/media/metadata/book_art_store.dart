@@ -22,10 +22,13 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
+import 'package:fushi_engine/foundation/engine_platform_hooks.dart'
+    show evictImageCacheForFile;
+import 'package:fushi_engine/media/cover_file_writer.dart'
+    show writeCoverBytesAtomically;
 import 'package:fushi_engine/media/metadata/book_art/book_art_plan.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/metadata/undo_backup_retention.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
@@ -352,7 +355,7 @@ class BookArtStore extends ChangeNotifier {
     if (coverBytes == null && removeCover) {
       await _deleteCover(bookKey);
     } else if (coverBytes != null) {
-      await MediaCoverService.applyCoverBytes(
+      await writeCoverBytesAtomically(
         bytes: coverBytes,
         destPath: coverPathFor(bookKey),
       );
@@ -387,7 +390,7 @@ class BookArtStore extends ChangeNotifier {
   /// 写横幅文件（同系列共用）。调用方应先 [holdBanner]，记录落盘后再释放。
   Future<void> writeBanner(String bannerKey, List<int> bytes) async {
     await _bannerDir.create(recursive: true);
-    await MediaCoverService.applyCoverBytes(
+    await writeCoverBytesAtomically(
       bytes: bytes,
       destPath: bannerPathFor(bannerKey),
     );
@@ -398,7 +401,7 @@ class BookArtStore extends ChangeNotifier {
     final File cover = File(coverPathFor(bookKey));
     if (cover.existsSync()) {
       await cover.delete();
-      await MediaCoverService.applyCoverRemoval(destPath: cover.path);
+      await evictImageCacheForFile(cover);
     }
     _scanCovers().remove(fileKeyFor(bookKey));
   }
@@ -464,7 +467,7 @@ class BookArtStore extends ChangeNotifier {
         continue;
       }
       await e.delete();
-      await MediaCoverService.applyCoverRemoval(destPath: e.path);
+      await evictImageCacheForFile(e);
       removed++;
     }
     return removed;

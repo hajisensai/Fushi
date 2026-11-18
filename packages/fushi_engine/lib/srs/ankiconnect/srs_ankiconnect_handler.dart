@@ -29,6 +29,7 @@ import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_media.dart';
 import 'package:fushi_engine/srs/srs_browse.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_note_card_gate.dart';
 
 /// 兼容的 AnkiConnect API 版本。
 const int kSrsAnkiConnectVersion = 6;
@@ -984,35 +985,6 @@ class SrsAnkiConnectHandler {
     return checkChildren ? s.tree.subtree(did).toSet() : <String>{did};
   }
 
-  /// 是否至少生成一张非空卡（AnkiConnect：「would make an empty question on all cards」）。
-  static bool _producesCard(SrsNoteTypeView t, Map<String, String> byId) {
-    final Map<String, String> byName = <String, String>{
-      for (final SrsFieldDef f in t.fields) f.name: byId[f.id] ?? '',
-    };
-    if (t.isCloze) {
-      return t.templates.isNotEmpty &&
-          clozeOrdinalsIn(byName.values.join('\n')).isNotEmpty;
-    }
-    final Map<String, String> idToName = <String, String>{
-      for (final SrsFieldDef f in t.fields) f.id: f.name,
-    };
-    for (final SrsTemplateDef tpl in t.templates) {
-      try {
-        if (!isAnkiCardEmpty(
-          questionTemplate: templateIdsToNames(tpl.front, idToName),
-          noteFields: byName,
-          cardOrd: tpl.ord,
-          isCloze: false,
-        )) {
-          return true;
-        }
-      } on Object {
-        return true; // 模板解析失败按「非空」处理，与卡片生成门一致。
-      }
-    }
-    return false;
-  }
-
   Future<int> _addNote(
     _Ctx s,
     Map<String, Object?> note,
@@ -1021,7 +993,7 @@ class SrsAnkiConnectHandler {
     final _PreparedNote prep = await _prepare(s, note);
     final Map<String, String> fields = Map<String, String>.of(prep.fieldsById);
     await _attachNoteMedia(prep.type, fields, note);
-    if (!_producesCard(prep.type, fields)) {
+    if (!srsNoteProducesCard(prep.type, fields)) {
       throw const _AcError(
         'The field values you have provided would make an empty question on all cards.',
       );
@@ -1077,13 +1049,15 @@ class SrsAnkiConnectHandler {
       try {
         final Map<String, String> fields = Map<String, String>.of(r.fieldsById);
         await _attachNoteMedia(r.type, fields, _asNoteMap(raws[i]));
-        if (!_producesCard(r.type, fields)) continue;
+        if (!srsNoteProducesCard(r.type, fields)) continue;
         final String guid = newNoteGuid();
+        final String noteId = s.store.kernelIds.note(guid);
         drafts.addAll(
           s.store.newNoteDrafts(
             noteTypeId: r.type.id,
             fieldsById: fields,
             guid: guid,
+            noteId: noteId,
             deckId: r.deckId,
             tags: r.tags,
             source: SrsSourceRef(SrsSourceKind.web, <String, Object?>{
@@ -1093,7 +1067,7 @@ class SrsAnkiConnectHandler {
           ),
         );
         accepted.add((c, norm));
-        created.add((i, SrsIds.note(s.store.profileUid, guid)));
+        created.add((i, noteId));
       } on Object {
         // 与逐条加一样：这一条算失败（null），不影响别的。
       }

@@ -21,12 +21,12 @@ import 'support/srs_test_storage.dart';
 
 const String _uid = '01928c3e-0000-7000-8000-0000000a5e01';
 
-Future<(SrsDbStore, CountingInterceptor)> _open({
+Future<(SrsDbStore, SrsReadCounter)> _open({
   bool inline = true,
   String? path,
   String? copyFrom,
 }) async {
-  final CountingInterceptor counter = CountingInterceptor();
+  final SrsReadCounter counter = SrsReadCounter();
   final Directory tmp = Directory.systemTemp.createTempSync('srs_ans_');
   if (copyFrom != null) File(copyFrom).copySync('${tmp.path}/srs.db');
   addTearDown(() {
@@ -36,13 +36,8 @@ Future<(SrsDbStore, CountingInterceptor)> _open({
       // 句柄晚释放。
     }
   });
-  final TestSrs srs = await openTestSrsAt(
-    path ?? '${tmp.path}/srs.db',
-    interceptor: counter,
-    inline: inline,
-  );
+  final TestSrs srs = await openTestSrsAt(path ?? '${tmp.path}/srs.db');
   final SrsDbStore store = await SrsDbStore.open(
-    db: srs.db,
     core: srs.core,
     profileUid: _uid,
     deviceId: 'dev',
@@ -79,7 +74,7 @@ typedef _Cost = ({int core, int statements});
 /// 连答 [answers] 张（都按「良好」），返回每次作答的最大开销。每次都核对排出的下一张与重新排队一致。
 Future<_Cost> _answerLoop(
   SrsDbStore store,
-  CountingInterceptor counter,
+  SrsReadCounter counter,
   String deck,
   int answers,
 ) async {
@@ -114,7 +109,7 @@ void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
 
   test('评分 → 下一张：两次内核命令，开销不随库大小增长，排出的下一张与重新排队一致', () async {
-    final (SrsDbStore store, CountingInterceptor counter) = await _open();
+    final (SrsDbStore store, SrsReadCounter counter) = await _open();
     await _import(store, 30);
     final String deck = await _biggestRoot(store);
     final _Cost small = await _answerLoop(store, counter, deck, 5);
@@ -136,7 +131,7 @@ void main() {
     () async {
       final String? cached = Platform.environment['FUSHI_SRS_ANSWER_BENCH_DB'];
       final bool build = cached != null && !File(cached).existsSync();
-      final (SrsDbStore store, CountingInterceptor counter) = await _open(
+      final (SrsDbStore store, SrsReadCounter counter) = await _open(
         inline: false,
         path: build ? cached : null,
         copyFrom: build ? null : cached,

@@ -46,26 +46,35 @@ Future<void> writeSrsExportOptions(
   SrsAnkiExportOptions options,
 ) => prefs.setPref(kSrsExportOptionsPrefKey, jsonEncode(options.toJson()));
 
-/// 弹出选项对话框；取消返回 null。[usesFsrs7] = 导出范围里有 FSRS-7 牌组。
+/// 弹出选项对话框；取消返回 null。[usesFsrs7] = 导出范围里有 FSRS-7 牌组；[deckName] = 只导出
+/// 这个牌组（全名，标题里写明范围），null = 全部牌组。
 Future<SrsAnkiExportOptions?> showSrsExportOptionsDialog({
   required BuildContext context,
   required SrsAnkiExportOptions initial,
   required bool usesFsrs7,
+  String? deckName,
 }) => showAppDialog<SrsAnkiExportOptions>(
   context: context,
-  builder: (BuildContext dialogContext) =>
-      SrsExportOptionsDialog(initial: initial, usesFsrs7: usesFsrs7),
+  builder: (BuildContext dialogContext) => SrsExportOptionsDialog(
+    initial: initial,
+    usesFsrs7: usesFsrs7,
+    deckName: deckName,
+  ),
 );
 
 class SrsExportOptionsDialog extends StatefulWidget {
   const SrsExportOptionsDialog({
     required this.initial,
     required this.usesFsrs7,
+    this.deckName,
     super.key,
   });
 
   final SrsAnkiExportOptions initial;
   final bool usesFsrs7;
+
+  /// 只导出的牌组全名；null = 全部牌组。
+  final String? deckName;
 
   /// 对话框正文宽度（与导入选项对话框同档）。
   static const double contentWidth = 520;
@@ -90,7 +99,12 @@ class _SrsExportOptionsDialogState extends State<SrsExportOptionsDialog> {
         FushiStaggeredEntrance(index: step++, child: child);
     return FushiAlertDialog(
       insetPadding: EdgeInsets.symmetric(horizontal: insetX, vertical: 24),
-      title: Text(t.srs_export_options_title),
+      title: Text(
+        widget.deckName == null
+            ? t.srs_export_options_title
+            : t.srs_export_deck_title(deck: widget.deckName!),
+        key: const ValueKey<String>('srs-export-options-title'),
+      ),
       content: SizedBox(
         width: SrsExportOptionsDialog.contentWidth,
         child: FushiEntranceScope(

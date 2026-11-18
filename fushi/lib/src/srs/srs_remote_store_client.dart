@@ -396,11 +396,11 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
   // ---------------------------------------------------------------- 同步成员
 
   @override
-  String get defaultDeckId => SrsIds.builtinDefaultDeck(profileUid);
+  late final String defaultDeckId = SrsKernelIds(profileUid).defaultDeck;
   @override
-  String get lapisNoteTypeId => srsLapisNoteTypeId(profileUid);
+  late final String lapisNoteTypeId = srsLapisNoteTypeId(profileUid);
   @override
-  String get fushiCardNoteTypeId => srsFushiCardNoteTypeId(profileUid);
+  late final String fushiCardNoteTypeId = srsFushiCardNoteTypeId(profileUid);
   @override
   bool get canSchedule => _canSchedule;
   @override
@@ -581,6 +581,15 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
     final (List<SrsDeckSummary> decks, _RemoteTree entry) = await _summaries();
     return (decks: decks, cache: SrsRemoteWire.deckCache(entry.sources, decks));
   }
+
+  @override
+  Future<Set<String>> limitUnitLegacyDecks() => _read(
+    'limitUnitLegacyDecks',
+    null,
+    (Object? json) => <String>{
+      for (final Object? d in json! as List<Object?>) d! as String,
+    },
+  );
 
   @override
   Future<SrsTodayReviewSummary> todayReviewSummary() =>

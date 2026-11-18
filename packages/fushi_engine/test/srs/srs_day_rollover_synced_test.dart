@@ -31,7 +31,6 @@ void main() {
   }) async {
     final SrsStorage storage = await openTestSrsStorage();
     return SrsDbStore.open(
-      db: storage.db,
       core: storage.core,
       profileUid: _profile,
       deviceId: id,

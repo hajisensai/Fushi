@@ -1,5 +1,7 @@
 import 'package:args/args.dart';
 import 'package:fushi_cli/fushi_cli.dart';
+import 'package:fushi_cli/src/commands/book_metadata_commands.dart'
+    show kBookScrapeSources;
 import 'package:test/test.dart';
 
 CtlCommandGroup _group() =>
@@ -55,6 +57,49 @@ void main() {
       () => _build('search', <String>['x', '--source', 'amazon']),
       _usageError(),
     );
+  });
+
+  test('--source 认 mangabaka 与书目四源：anilist / openbd / ndl / rakuten', () {
+    expect(kBookScrapeSources, <String>[
+      'bangumi',
+      'dlsite',
+      'mangabaka',
+      'anilist',
+      'openbd',
+      'ndl',
+      'rakuten',
+    ]);
+    for (final String source in <String>[
+      'anilist',
+      'openbd',
+      'ndl',
+      'rakuten',
+    ]) {
+      final CtlRequestSpec spec = _build('search', <String>[
+        '9784480432292',
+        '--source',
+        source.toUpperCase(),
+      ]);
+      expect(spec.query, <String, String>{
+        'query': '9784480432292',
+        'source': source,
+      });
+      expect(
+        _build('get', <String>[source, '978-4-480-43229-2']).path,
+        '/api/admin/book/scrape/$source/978-4-480-43229-2',
+      );
+    }
+    final CtlRequestSpec apply = _build('apply', <String>[
+      'book:猫',
+      '99026',
+      '--source',
+      'anilist',
+    ]);
+    expect(apply.body, <String, Object?>{
+      'id': '99026',
+      'source': 'anilist',
+      'fields': <String>['cover'],
+    });
   });
 
   test('get：源 + id 进路径（编码）', () {

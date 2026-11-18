@@ -34,6 +34,7 @@ import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:test/test.dart';
+import 'support/fake_rwkv.dart';
 
 /// 在线字幕来源的设置入口（WebUI「设置」页 / `PUT /api/admin/settings` /
 /// `ctl settings`）：写与 app 同名的偏好键；key / 密码永不回显；留空 = 不改、
@@ -63,6 +64,7 @@ void main() {
     final ServerIdentity identity = await ServerIdentity.loadOrCreate(prefs);
     final ServerPaths paths = ServerPaths(config.dataDir);
     final HeadlessHost host = HeadlessHost(
+      srsRwkvHttpClient: noNetworkHttpClient,
       config: config,
       paths: paths,
       db: db,

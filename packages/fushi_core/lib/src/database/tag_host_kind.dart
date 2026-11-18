@@ -38,6 +38,27 @@ bool isPrivateByClock(MediaPrivacyClock clock) {
   return cleared == null || set > cleared;
 }
 
+/// 一个宿主的「NSFW」标记时钟（[MediaNsfwFlags] 一行；互联标签同步清单条目上的
+/// `nsfw` 载荷）。两只戳都为 null = 从没标过。语义与 [MediaPrivacyClock] 相同。
+typedef MediaNsfwClock = ({int? nsfwAt, int? clearedAt});
+
+/// NSFW ⇔ 标 NSFW 的戳比取消的戳新（相等取消胜）。
+bool isNsfwByClock(MediaNsfwClock clock) {
+  final int? set = clock.nsfwAt;
+  if (set == null) return false;
+  final int? cleared = clock.clearedAt;
+  return cleared == null || set > cleared;
+}
+
+/// 两只 NSFW 时钟逐戳取大（LWW 合并；重放幂等、与顺序无关）。
+MediaNsfwClock mergeNsfwClocks(MediaNsfwClock a, MediaNsfwClock b) {
+  int? maxOf(int? x, int? y) => x == null ? y : (y == null || x >= y ? x : y);
+  return (
+    nsfwAt: maxOf(a.nsfwAt, b.nsfwAt),
+    clearedAt: maxOf(a.clearedAt, b.clearedAt),
+  );
+}
+
 /// 两只私密时钟逐戳取大（LWW 合并；重放幂等、与顺序无关）。
 MediaPrivacyClock mergePrivacyClocks(MediaPrivacyClock a, MediaPrivacyClock b) {
   int? maxOf(int? x, int? y) => x == null ? y : (y == null || x >= y ? x : y);

@@ -54,8 +54,36 @@ class RemoteDiscMenuSource {
   /// 这张盘能不能流式开菜单；不能时给原因（第一期「说明原因」的文案表）。
   RemoteDiscStreamBlock? get streamBlock => remoteDiscStreamBlockFor(manifest);
 
+  /// [readMenuInfo] 的在途读取 / 已读到的结果。
+  Future<BlurayMenuInfo?>? _menuInfo;
+
   /// 读蓝光主索引（与本地 [readBlurayMenuInfo] 同一回退：主索引坏了读 BACKUP）。
-  Future<BlurayMenuInfo?> readMenuInfo() async {
+  ///
+  /// 一次开盘里播放页（判要不要 Java 运行时）和控制器（开菜单）各要一次，拿的是同一个
+  /// 盘源实例：读到的结果记在这里，第二次不再走网络。清单在盘源的一生里不变，所以
+  /// 读到的索引不会过期；读不到（null / 抛错）不记，下次调用重新读。
+  Future<BlurayMenuInfo?> readMenuInfo() {
+    final Future<BlurayMenuInfo?>? known = _menuInfo;
+    if (known != null) return known;
+    late final Future<BlurayMenuInfo?> reading;
+    void forget() {
+      if (identical(_menuInfo, reading)) _menuInfo = null;
+    }
+
+    reading = _readMenuInfoFromShare().then(
+      (BlurayMenuInfo? info) {
+        if (info == null) forget();
+        return info;
+      },
+      onError: (Object error, StackTrace stack) {
+        forget();
+        Error.throwWithStackTrace(error, stack);
+      },
+    );
+    return _menuInfo = reading;
+  }
+
+  Future<BlurayMenuInfo?> _readMenuInfoFromShare() async {
     for (final String relative in const <String>[
       'BDMV/index.bdmv',
       'BDMV/BACKUP/index.bdmv',

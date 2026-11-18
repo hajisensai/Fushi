@@ -9,8 +9,7 @@
 //!
 //! LYS 属性：0–2 主唱（未设 / 左 / 右），3–5 和声（未设 / 左 / 右），6–8 同 0–2；左 = `v1`、
 //! 右 = `v2`。KRC 的 `[language:base64]` 带翻译（type 1）与罗马音（type 0），按行序挂上。
-
-use std::io::Read;
+//! QRC 的 `[kana:…]` 假名注音轨（来源自带）挂成音节 ruby，见 [super::qrc::apply_kana]。
 
 use super::json::{self, Json};
 use super::markup::unescape;
@@ -86,6 +85,7 @@ pub fn unwrap_qrc_xml(text: &str) -> Option<String> {
 pub fn parse(text: &str, flavor: Flavor, duration_ms: Option<i64>) -> Timeline {
     let mut t = Timeline::new(flavor.format_name(), TimingQuality::Syllable);
     let mut krc_lang: Option<Json> = None;
+    let mut qrc_kana: Option<String> = None;
     for raw in text.lines() {
         let l = raw.trim();
         let Some(r) = l.strip_prefix('[') else {
@@ -105,6 +105,7 @@ pub fn parse(text: &str, flavor: Flavor, duration_ms: Option<i64>) -> Timeline {
                         .and_then(|b| String::from_utf8(b).ok())
                         .and_then(|s| json::parse(&s));
                 }
+                "kana" if flavor == Flavor::Qrc => qrc_kana = Some(v.to_owned()),
                 _ => {}
             }
             continue;
@@ -156,6 +157,9 @@ pub fn parse(text: &str, flavor: Flavor, duration_ms: Option<i64>) -> Timeline {
     }
     if let Some(lang) = krc_lang {
         apply_krc_language(&mut t, &lang);
+    }
+    if let Some(kana) = qrc_kana {
+        super::qrc::apply_kana(&mut t, &kana);
     }
     t.finalize(duration_ms);
     t
@@ -269,11 +273,7 @@ pub fn decrypt_krc(b: &[u8]) -> Option<Vec<u8>> {
         .enumerate()
         .map(|(i, &x)| x ^ KRC_KEY[i % 16])
         .collect();
-    let mut out = Vec::new();
-    flate2::read::ZlibDecoder::new(&xored[..])
-        .read_to_end(&mut out)
-        .ok()?;
-    Some(out)
+    super::inflate_bounded(&xored, super::MAX_INFLATED_BYTES)
 }
 
 /// 测试 / 往返用：把明文 KRC 加密成 `krc1` 文件。
@@ -330,6 +330,50 @@ mod tests {
         let enc = encrypt_krc("[1000,500]<0,500,0>a".as_bytes());
         assert!(is_encrypted_krc(&enc));
         assert_eq!(decrypt_krc(&enc).unwrap(), b"[1000,500]<0,500,0>a");
+    }
+
+    #[test]
+    fn krc_decompression_bomb_is_rejected() {
+        // 压缩后只有几 KB，解开超过明文上限：必须拒绝，而不是整份解进内存。
+        let bomb = encrypt_krc(&vec![b'a'; crate::lyrics::MAX_INFLATED_BYTES + 1]);
+        assert!(bomb.len() < 64 * 1024);
+        assert_eq!(decrypt_krc(&bomb), None);
+        assert!(crate::lyrics::parse(&bomb, "krc", None).is_err());
+        let at_limit = encrypt_krc(&vec![b'a'; crate::lyrics::MAX_INFLATED_BYTES]);
+        assert_eq!(
+            decrypt_krc(&at_limit).map(|v| v.len()),
+            Some(crate::lyrics::MAX_INFLATED_BYTES)
+        );
+    }
+
+    #[test]
+    fn qrc_kana_track_becomes_ruby() {
+        let q = "[ti:T]
+[kana:1よ(1000,150)る(1150,150)1か]
+[1000,1000]夜(1000,300)に(1300,200)駆(1500,200)け(1700,300)";
+        let t = parse(q, Flavor::Qrc, None);
+        let got: Vec<(&str, Option<&str>)> = t.lines[0]
+            .syllables
+            .iter()
+            .map(|s| (s.text.as_str(), s.ruby.as_deref()))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                ("夜", Some("よる")),
+                ("に", None),
+                ("駆", Some("か")),
+                ("け", None)
+            ]
+        );
+        // 只认 QRC：别的格式里的同名标签不当注音轨。
+        let y = "[kana:1よる]
+[1000,1000](1000,300,0)夜(1300,700,0)に";
+        assert!(
+            parse(y, Flavor::Yrc, None).lines[0].syllables[0]
+                .ruby
+                .is_none()
+        );
     }
 
     #[test]

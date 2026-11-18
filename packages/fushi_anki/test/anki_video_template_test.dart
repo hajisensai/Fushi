@@ -20,6 +20,15 @@ AnkiNoteTypeDefinition fixture() => const AnkiNoteTypeDefinition(
   ],
 );
 
+/// 模板操作被拒时抛带错误码的类型（文案由 app 侧按码取），不是带英文句子的 StateError。
+Matcher _throwsTemplate(AnkiVideoTemplateErrorCode code) => throwsA(
+  isA<AnkiVideoTemplateException>().having(
+    (AnkiVideoTemplateException error) => error.code,
+    'code',
+    code,
+  ),
+);
+
 class _Composer with AnkiNoteComposer {
   Map<String, String> render(
     String filename, {
@@ -160,7 +169,7 @@ void main() {
             fixture(),
             AnkiVideoTemplateOptions(field: 'Picture', previousFields: history),
           ),
-          throwsArgumentError,
+          _throwsTemplate(AnkiVideoTemplateErrorCode.invalidField),
         );
       }
     },
@@ -187,7 +196,10 @@ void main() {
         readAnkiVideoTemplateRecoveryOptions(edited)!.toJson(),
         options.toJson(),
       );
-      expect(() => applyAnkiVideoTemplate(edited, options), throwsStateError);
+      expect(
+        () => applyAnkiVideoTemplate(edited, options),
+        _throwsTemplate(AnkiVideoTemplateErrorCode.blockEdited),
+      );
       expect(removeAnkiVideoTemplate(edited).toJson(), fixture().toJson());
     },
   );
@@ -203,7 +215,10 @@ void main() {
         json,
       );
       expect(readAnkiVideoTemplateRecoveryOptions(damaged), isNull);
-      expect(() => removeAnkiVideoTemplate(damaged), throwsStateError);
+      expect(
+        () => removeAnkiVideoTemplate(damaged),
+        _throwsTemplate(AnkiVideoTemplateErrorCode.markerIncomplete),
+      );
     }
   });
   test('recovery rejects conflicting metadata between cards', () {
@@ -350,7 +365,7 @@ void main() {
         fixture(),
         const AnkiVideoTemplateOptions(field: 'Missing'),
       ),
-      throwsArgumentError,
+      _throwsTemplate(AnkiVideoTemplateErrorCode.invalidField),
     );
     final Map<String, dynamic> json = fixture().toJson();
     (json['templates'] as List).first['back'] += '<!-- fushi-video:v1:broken';
@@ -359,7 +374,7 @@ void main() {
         AnkiNoteTypeDefinition.fromJson(json),
         const AnkiVideoTemplateOptions(field: 'Picture'),
       ),
-      throwsStateError,
+      _throwsTemplate(AnkiVideoTemplateErrorCode.blockEdited),
     );
   });
   test('video field participates in media upload detection', () {

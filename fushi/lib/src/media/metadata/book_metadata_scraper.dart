@@ -5,11 +5,13 @@
 /// （`filter.type = [1]` 书籍），把「搜书 → 拿封面」这条能力补给书族。动画元数据
 /// 刮削不使用 Bangumi。
 ///
-/// 三个源（[BookScrapeSource]）：Bangumi（中文书 / 轻小说 / 漫画条目最全，免 API key）、
-/// DLsite（同人 / 商业的音声 ASMR、漫画、小说；有声书最常见的来源）与 MangaBaka（漫画 /
-/// 轻小说系列，原图分辨率高、带每卷封面；数据 CC BY-NC-SA 4.0，展示处必须署名）。接口按候选中间
-/// 表示 [BookScrapeCandidate] 设计，再接 Google Books / OpenLibrary 只需加一个映射器，
-/// 传输/落地/UI 不变。
+/// 源（[BookScrapeSource]）：Bangumi（中文书 / 轻小说 / 漫画条目最全，免 API key）、
+/// DLsite（同人 / 商业的音声 ASMR、漫画、小说；有声书最常见的来源）、MangaBaka（漫画 /
+/// 轻小说系列，原图分辨率高、带每卷封面；数据 CC BY-NC-SA 4.0，展示处必须署名），以及书目类四源
+/// （协议层在 `fushi_engine/media/metadata/books/`）：AniList 轻小说（免 key，带横幅图）、
+/// openBD（只按 ISBN）、NDL Search（国立国会図書館，按书名 / ISBN）、楽天ブックス（要用户
+/// 自己的 applicationId + accessKey，设备本地）。接口按候选中间表示
+/// [BookScrapeCandidate] 设计，再接新源只需加一个映射器，传输/落地/UI 不变。
 library;
 
 import 'dart:convert';
@@ -20,6 +22,11 @@ import 'package:fushi_engine/media/metadata/book_art/bangumi_tankobon.dart'
     show seriesFirst;
 import 'package:fushi_engine/media/metadata/book_art/book_art_plan.dart'
     show pickMangaBakaVolumeImages;
+import 'package:fushi_engine/media/metadata/books/anilist_novels.dart';
+import 'package:fushi_engine/media/metadata/books/book_catalog.dart';
+import 'package:fushi_engine/media/metadata/books/ndl_search.dart';
+import 'package:fushi_engine/media/metadata/books/openbd.dart';
+import 'package:fushi_engine/media/metadata/books/rakuten_books.dart';
 import 'package:fushi_engine/media/metadata/dlsite/dlsite_client.dart';
 import 'package:fushi_engine/media/metadata/mangabaka/mangabaka_client.dart';
 import 'package:fushi_engine/media/metadata/mangabaka/mangabaka_models.dart';
@@ -33,12 +40,31 @@ final String kBookScraperUserAgent = fushiUserAgent('book-scraper');
 enum BookScrapeSource {
   bangumi('Bangumi'),
   dlsite('DLsite'),
-  mangabaka('MangaBaka');
+  mangabaka('MangaBaka'),
+  anilist('AniList'),
+  openbd('openBD'),
+  ndl('NDL'),
+  rakuten('楽天ブックス');
 
   const BookScrapeSource(this.label);
 
   /// 品牌名（不进 i18n）。
   final String label;
+
+  /// 只能按 ISBN 查（输入里没有 ISBN 就无从查起）。
+  bool get isbnOnly => this == BookScrapeSource.openbd;
+
+  /// 要用户自己的凭据（没填就不可用）。
+  bool get needsCredentials => this == BookScrapeSource.rakuten;
+
+  /// 按 wire 名（`bangumi` / `dlsite` / `anilist` / `openbd` / `ndl` / `rakuten`）解析。
+  static BookScrapeSource? tryParse(String raw) {
+    final String name = raw.trim().toLowerCase();
+    for (final BookScrapeSource s in values) {
+      if (s.name == name) return s;
+    }
+    return null;
+  }
 }
 
 /// 书族库页（书 / 漫画 / 有声书）接 DLsite 时只要这三类作品；游戏归 galgame 库。
@@ -73,8 +99,41 @@ class BookScrapeCandidate {
     this.year,
     this.summary,
     this.isAdult = false,
+    this.publisher,
+    this.series,
+    this.volume,
+    this.isbn,
+    this.bannerUrl,
+    this.coverHeaders,
     this.pageUrl,
   });
+
+  /// 书目源的 [BookCatalogRecord] → 候选；无封面返回 null。
+  static BookScrapeCandidate? fromCatalog(
+    BookCatalogRecord r,
+    BookScrapeSource source,
+  ) {
+    final String? cover = r.coverUrl;
+    if (cover == null) return null;
+    return BookScrapeCandidate(
+      subjectId: r.id,
+      title: r.title,
+      coverUrl: cover,
+      source: source,
+      originalTitle: r.originalTitle,
+      author: r.author,
+      year: r.year,
+      summary: r.summary,
+      isAdult: r.isAdult,
+      publisher: r.publisher,
+      series: r.series,
+      volume: r.volume,
+      isbn: r.isbn,
+      bannerUrl: r.bannerUrl,
+      coverHeaders: r.coverHeaders,
+      pageUrl: r.pageUrl,
+    );
+  }
 
   /// 源内条目 id：Bangumi subject id（字符串化）/ DLsite 作品编号。
   final String subjectId;
@@ -100,29 +159,60 @@ class BookScrapeCandidate {
   /// 简介摘要（搜索端点提供时）。
   final String? summary;
 
-  /// 源侧明确标成人向（DLsite 年龄分级 / MangaBaka erotica、pornographic）。
+  /// 源侧明确标成人向（DLsite 年龄分级 / MangaBaka erotica、pornographic / AniList isAdult）。
   final bool isAdult;
 
-  /// 源给的条目页（MangaBaka `canonical_url`）；null 时按 id 推。
+  /// 出版社（openBD / NDL / 楽天）。
+  final String? publisher;
+
+  /// 丛书 / 系列名（文库レーベル、楽天 seriesName）。
+  final String? series;
+
+  /// 卷号原文。
+  final String? volume;
+
+  /// ISBN-13（openBD / NDL / 楽天）。
+  final String? isbn;
+
+  /// 横幅 / 背景图（AniList `bannerImage`）。只在候选里带出（CLI / AI 可见），书族
+  /// 目前没有存横幅的位置，写回不落它。
+  final String? bannerUrl;
+
+  /// 取封面必须带的请求头（NDL 缩略图要 Referer）；预览与下载都要带上。
+  final Map<String, String>? coverHeaders;
+
+  /// 源给出的详情页（书目源 / MangaBaka `canonical_url`）；null 时按源规则拼。
   final String? pageUrl;
 
   /// 条目详情页 URL（「查看条目」用）。
-  String get detailUrl => switch (source) {
-    BookScrapeSource.bangumi => 'https://bgm.tv/subject/$subjectId',
-    BookScrapeSource.dlsite =>
-      DlsiteWorkId.tryParse(subjectId)?.pageUrl ??
-          'https://www.dlsite.com/maniax/work/=/product_id/$subjectId.html',
-    BookScrapeSource.mangabaka =>
-      pageUrl ?? 'https://mangabaka.org/manga/$subjectId',
-  };
+  String get detailUrl =>
+      pageUrl ??
+      switch (source) {
+        BookScrapeSource.bangumi => 'https://bgm.tv/subject/$subjectId',
+        BookScrapeSource.dlsite =>
+          DlsiteWorkId.tryParse(subjectId)?.pageUrl ??
+              'https://www.dlsite.com/maniax/work/=/product_id/$subjectId.html',
+        BookScrapeSource.mangabaka => 'https://mangabaka.org/manga/$subjectId',
+        BookScrapeSource.anilist => 'https://anilist.co/manga/$subjectId',
+        BookScrapeSource.openbd => 'https://www.hanmoto.com/bd/isbn/$subjectId',
+        BookScrapeSource.ndl =>
+          'https://ndlsearch.ndl.go.jp/search?cs=bib&isbn=$subjectId',
+        BookScrapeSource.rakuten =>
+          'https://books.rakuten.co.jp/search?sitem=$subjectId',
+      };
 }
 
 /// 书籍封面刮削客户端。构造注入 [http.Client]（默认自建），测试用 mock client。
+///
+/// [rakuten]：楽天ブックス凭据（设备本地设置）；null / 不完整时楽天源抛
+/// [BookScrapeException]。[catalogHttp]：书目四源的传输（测试注入不节流的 mock）。
 class BookMetadataScraper {
   BookMetadataScraper({
     http.Client? client,
     DlsiteClient? dlsiteClient,
     MangaBakaClient? mangaBakaClient,
+    BookCatalogHttp? catalogHttp,
+    this.rakuten,
   }) : _api = BangumiApiClient(
          client: client,
          userAgent: kBookScraperUserAgent,
@@ -132,13 +222,23 @@ class BookMetadataScraper {
        _mangaBaka =
            mangaBakaClient ??
            MangaBakaClient(client: client, userAgent: kBookScraperUserAgent),
-       _ownsMangaBaka = mangaBakaClient == null;
+       _ownsMangaBaka = mangaBakaClient == null,
+       _catalog = catalogHttp ?? BookCatalogHttp(client: client),
+       _ownsCatalog = catalogHttp == null;
 
   final BangumiApiClient _api;
   final DlsiteClient _dlsite;
   final bool _ownsDlsite;
   final MangaBakaClient _mangaBaka;
   final bool _ownsMangaBaka;
+  final BookCatalogHttp _catalog;
+  final bool _ownsCatalog;
+
+  /// 楽天ブックス凭据。
+  final RakutenBooksCredentials? rakuten;
+
+  /// 楽天凭据是否齐全（源选择器据此显示 / 隐藏楽天）。
+  bool get rakutenAvailable => rakuten?.isComplete ?? false;
 
   /// 按 [keyword] 搜书籍条目，返回带封面的候选（最多 [limit] 条）。
   ///
@@ -257,6 +357,106 @@ class BookMetadataScraper {
     return work == null ? null : mapDlsiteWork(work);
   }
 
+  /// AniList 按名搜轻小说（format NOVEL）。
+  Future<List<BookScrapeCandidate>> searchAniList(
+    String keyword, {
+    int limit = 10,
+  }) => _catalogList(
+    BookScrapeSource.anilist,
+    () => AniListNovelClient(_catalog).search(keyword, limit: limit),
+  );
+
+  /// openBD 按 ISBN 查（输入里找不到 ISBN → 空表）。
+  Future<List<BookScrapeCandidate>> searchOpenBd(String keyword) async {
+    final String? isbn = findIsbnIn(keyword);
+    if (isbn == null) return const <BookScrapeCandidate>[];
+    final BookScrapeCandidate? c = await fetchCatalogById(
+      BookScrapeSource.openbd,
+      isbn,
+    );
+    return c == null ? const <BookScrapeCandidate>[] : <BookScrapeCandidate>[c];
+  }
+
+  /// NDL Search 按书名 / ISBN 搜。
+  Future<List<BookScrapeCandidate>> searchNdl(
+    String keyword, {
+    int limit = 20,
+  }) => _catalogList(
+    BookScrapeSource.ndl,
+    () => NdlSearchClient(_catalog).search(keyword, limit: limit),
+  );
+
+  /// 楽天ブックス按书名 / ISBN 搜（凭据不齐抛 [BookScrapeException]）。
+  Future<List<BookScrapeCandidate>> searchRakuten(
+    String keyword, {
+    int limit = 20,
+  }) async {
+    final RakutenBooksClient client = _rakutenClient();
+    return _catalogList(
+      BookScrapeSource.rakuten,
+      () => client.search(keyword, limit: limit),
+    );
+  }
+
+  /// 书目四源按源内 id 直取（AniList media id / 其余 ISBN）。查无此书 / 无封面 → null。
+  Future<BookScrapeCandidate?> fetchCatalogById(
+    BookScrapeSource source,
+    String id,
+  ) async {
+    final BookCatalogRecord? record;
+    try {
+      record = switch (source) {
+        BookScrapeSource.anilist => await AniListNovelClient(
+          _catalog,
+        ).fetchById(id),
+        BookScrapeSource.openbd => await OpenBdClient(_catalog).fetchByIsbn(id),
+        BookScrapeSource.ndl => await NdlSearchClient(_catalog).fetchByIsbn(id),
+        BookScrapeSource.rakuten => await _rakutenClient().fetchByIsbn(id),
+        BookScrapeSource.bangumi ||
+        BookScrapeSource.dlsite ||
+        BookScrapeSource.mangabaka =>
+          throw ArgumentError.value(source, 'source', 'not a catalog source'),
+      };
+    } on BookCatalogException catch (e) {
+      throw BookScrapeException(
+        '${source.label} ${e.message}',
+        statusCode: e.statusCode,
+      );
+    }
+    return record == null
+        ? null
+        : BookScrapeCandidate.fromCatalog(record, source);
+  }
+
+  RakutenBooksClient _rakutenClient() {
+    final RakutenBooksCredentials? creds = rakuten;
+    if (creds == null || !creds.isComplete) {
+      throw const BookScrapeException(
+        'Rakuten Books applicationId / accessKey not configured',
+      );
+    }
+    return RakutenBooksClient(_catalog, creds);
+  }
+
+  Future<List<BookScrapeCandidate>> _catalogList(
+    BookScrapeSource source,
+    Future<List<BookCatalogRecord>> Function() run,
+  ) async {
+    final List<BookCatalogRecord> records;
+    try {
+      records = await run();
+    } on BookCatalogException catch (e) {
+      throw BookScrapeException(
+        '${source.label} search ${e.message}',
+        statusCode: e.statusCode,
+      );
+    }
+    return <BookScrapeCandidate>[
+      for (final BookCatalogRecord r in records)
+        ?BookScrapeCandidate.fromCatalog(r, source),
+    ];
+  }
+
   /// 搜 MangaBaka 系列（漫画 / 轻小说）。候选封面是系列主封面原图；每卷封面见
   /// [fetchMangaBakaVolumeCovers]。失败抛 [BookScrapeException]。
   Future<List<BookScrapeCandidate>> searchMangaBaka(
@@ -339,6 +539,7 @@ class BookMetadataScraper {
     _api.close();
     if (_ownsDlsite) _dlsite.close();
     if (_ownsMangaBaka) _mangaBaka.close();
+    if (_ownsCatalog) _catalog.close();
   }
 }
 

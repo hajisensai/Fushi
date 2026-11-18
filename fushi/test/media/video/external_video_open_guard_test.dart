@@ -35,26 +35,71 @@ void main() {
     return end > start ? src.substring(start, end) : src.substring(start);
   }
 
+  // ab301868cf (music MV "watch in video player") moved the dedup + auto-cover
+  // + insert half out of main.dart's private State method into the shared
+  // `upsertExternalVideoBook` (lib/src/media/video/external_video_ingest.dart)
+  // so the MV entry can reuse it. The invariants are unchanged; pin both
+  // halves: main.dart must delegate to that single entry, and the entry must
+  // still dedup via findByVideoPath before extracting a cover for a new row.
+  String upsertBody() {
+    final String src = File(
+      'lib/src/media/video/external_video_ingest.dart',
+    ).readAsStringSync();
+    const String marker =
+        'Future<ExternalVideoUpsert> upsertExternalVideoBook(';
+    final int start = src.indexOf(marker);
+    expect(
+      start,
+      isNonNegative,
+      reason:
+          'upsertExternalVideoBook must exist in external_video_ingest.dart',
+    );
+    return src.substring(start);
+  }
+
   group('TODO-903 external "open with" video entry', () {
-    test('① extracts a cover for newly-created external video rows', () {
+    test('⓪ the open-with path delegates to the shared ingest entry', () {
       expect(
         openExternalVideoBody(),
-        contains('extractVideoCover('),
+        contains('upsertExternalVideoBook(repo, videoPath)'),
+        reason:
+            'file-open path must go through the single external ingest '
+            'entry (dedup + cover + insert), not re-implement it inline',
+      );
+    });
+
+    test('① extracts a cover for newly-created external video rows', () {
+      final String body = upsertBody();
+      expect(
+        body,
+        contains('await extractVideoCover('),
         reason:
             'file-open path must reuse the import dialog cover extractor '
             'so externally-opened videos are not coverless',
       );
+      expect(
+        body.indexOf('await repo.findByVideoPath('),
+        lessThan(body.indexOf('await extractVideoCover(')),
+        reason:
+            'cover extraction is for newly-created rows only: the dedup '
+            'early-return must run before the extractor',
+      );
     });
 
     test('② dedups by videoPath via the repository single source', () {
-      final String body = openExternalVideoBody();
+      final String body = upsertBody();
       expect(
         body,
-        contains('findByVideoPath('),
+        contains('await repo.findByVideoPath(videoPath)'),
         reason:
             'must reuse the repository videoPath comparison (same source '
             'as isDuplicateVideoPath) to reuse an already-imported bookUid '
             'instead of inserting a second video/ext/<sha1> row',
+      );
+      expect(
+        body.indexOf('await repo.findByVideoPath('),
+        lessThan(body.indexOf('await repo.saveVideoBook(')),
+        reason: 'dedup must happen before inserting a new row',
       );
     });
 

@@ -90,6 +90,8 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
     void Function(BookTagRow tag)? onTagDropped,
     MediaRef? dragMediaRef,
     String? dragLabel,
+    // 可标 NSFW 的本地宿主（远端条目为 null）：封面按「模糊 NSFW 封面」打模糊。
+    MediaNsfwTarget? nsfw,
   }) {
     final bool selected =
         selectionKey != null && _selectedKeys.contains(selectionKey);
@@ -146,7 +148,7 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
               child: ShelfCoverSelection(
                 selectionMode: _selectionMode && selectionKey != null,
                 selected: selected,
-                child: child,
+                child: MediaNsfwCoverScope(target: nsfw, child: child),
               ),
             ),
           ),

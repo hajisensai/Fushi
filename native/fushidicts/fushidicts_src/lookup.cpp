@@ -13,6 +13,7 @@
 #include "scan/ruby_reading.hpp"
 #include "scan/word_scan.hpp"
 #include "text_processor/text_processor.hpp"
+#include "util/pos_required.hpp"
 #include "util/redirect_glossary.hpp"
 
 namespace {
@@ -109,6 +110,55 @@ bool kansai_short_match_wins(std::string_view window, std::size_t short_end,
   return short_trace.empty() && long_end > short_end && has_kansai_rule(long_trace) &&
          protected_structure_follows(window, short_end);
 }
+
+// 上游 hoshidicts ad0be91：还原形相对变体改写了多少个尾部码点——从两串第一个不同的
+// 字节（退回到所在码点的首字节）数到变体末尾。只在尾部追加（食べ → 食べる）算 0。
+// 与 TextVariant::min_rewrite / max_rewrite 比，见 text_processor.hpp。
+size_t rewritten_chars(std::string_view variant, std::string_view deinflected) {
+  auto it = std::ranges::mismatch(variant, deinflected).in1;
+  while (it != variant.begin() && it != variant.end() && (static_cast<unsigned char>(*it) & 0xc0) == 0x80) {
+    --it;
+  }
+  return utf8::distance(it, variant.end());
+}
+
+bool rewrite_allowed(const TextVariant& variant, const DeinflectionResult& deinflection) {
+  const size_t rewritten = rewritten_chars(variant.text, deinflection.text);
+  return rewritten <= variant.max_rewrite && (rewritten == 0 || rewritten >= variant.min_rewrite);
+}
+
+// 词条 rules 里去掉通配 "*" 之后剩下的词性标记。rules 是同一 (expression, reading) 在各
+// 词典里的词性并起来的（query.cpp 的 query_raw 逐本追加）：无词性词典的记录贡献 "*"
+// （见 Deinflector::pos_to_conditions），带词性的词典贡献真词性，所以一条词条可以同时
+// 有两者——「要求词性」的还原只看真词性那部分，不能因为另一本词典给了 "*" 就整条丢掉。
+// 切分口径与 rules_to_conditions 相同：C locale 的六个空白字符。
+std::string explicit_rules(std::string_view rules) {
+  constexpr std::string_view kSpace = " \t\n\v\f\r";
+  std::string out;
+  std::size_t pos = 0;
+  while (true) {
+    const std::size_t begin = rules.find_first_not_of(kSpace, pos);
+    if (begin == std::string_view::npos) return out;
+    std::size_t end = rules.find_first_of(kSpace, begin);
+    if (end == std::string_view::npos) end = rules.size();
+    const std::string_view token = rules.substr(begin, end - begin);
+    if (token != "*") {
+      if (!out.empty()) out += ' ';
+      out += token;
+    }
+    pos = end;
+  }
+}
+
+// 扫描窗口内紧跟在候选 [candidate_bytes] 之后的码点；候选到窗口末尾时为 0。只看窗口内
+// 的文本，理由同 protected_structure_follows。已知限制：候选恰好到窗口末尾（窗口在片假名
+// 词中间截断）时取不到下一个字，片假名词边界保护对这个候选不生效；通常还有更短的候选
+// 兜底，且改成看窗口外会破坏「结果只依赖前 scan_length 个码点」的缓存前提。
+char32_t next_char_in_window(std::string_view window, std::size_t candidate_bytes) {
+  if (candidate_bytes >= window.size()) return 0;
+  auto it = window.begin() + static_cast<std::ptrdiff_t>(candidate_bytes);
+  return utf8::peek_next(it, window.end());
+}
 }
 
 std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int max_results, size_t scan_length,
@@ -123,6 +173,8 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
                                                         options.excluded_dictionaries.end());
   const DictionaryQuery::ExcludedDictNames* excluded = excluded_set.empty() ? nullptr : &excluded_set;
   auto is_excluded = [excluded](std::string_view dict_name) { return excluded && excluded->contains(dict_name); };
+  // 查库上下文：排除集 + 进入时取的联合过滤器快照（整次查词共用一份）。
+  const DictionaryQuery::QueryScope scope = query_.make_scope(excluded);
 
   // BUG-3212：扫描窗口（前 scan_length 个码点）的字节视图，供关西方言保护结构判定。
   std::size_t window_bytes = 0;
@@ -140,12 +192,12 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
   std::unordered_map<std::string, std::vector<std::string>> run_readings_cache;
   std::unordered_map<std::string, std::vector<std::string>> mixed_candidates_cache;
   std::unordered_map<std::string, std::vector<TermResult>> mixed_reading_hits;
-  auto run_readings = [&](const std::string& run) -> std::vector<std::string> {
+  const mixed_orthography::RunReadings run_readings = [&](const std::string& run) -> const std::vector<std::string>& {
     auto [it, inserted] = run_readings_cache.try_emplace(run);
     if (inserted) {
       // 按「多少本词典把它列为该表记的读音」降序：常用读音排前，组合截断时先保留它们。
       std::map<std::string, int> votes;
-      for (const TermResult& term : query_.query_raw(run, excluded)) {
+      for (const TermResult& term : query_.query_raw(run, scope)) {
         if (term.expression == run && !term.reading.empty()) {
           votes[mixed_orthography::to_hiragana(term.reading)] += static_cast<int>(term.glossaries.size());
         }
@@ -161,7 +213,8 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
   // 候选前缀由词边界感知的扫描器生成（对齐 Yomitan searchResolution）：
   // 空格分词语言不在单词中间切断，CJK 仍逐码点。详见 scan/word_scan.hpp。
   for (const std::string& search_str : scan_candidates(lookup_string, scan_length)) {
-    auto processor_results = text_processor::process(search_str, options.chinese_simp_to_trad);
+    auto processor_results = text_processor::process(search_str, options.chinese_simp_to_trad,
+                                                     next_char_in_window(scan_window, search_str.size()));
     for (auto& variant : processor_results) {
       auto deinflection_results = deinflector_.deinflect(variant.text);
 
@@ -245,12 +298,15 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
       // 用一个还原形去查库并并入结果。`query_text` 未必等于 `deinflection.text`
       // ——见下面的谚文重组。
       auto merge_query = [&](const std::string& query_text, const DeinflectionResult& deinflection) {
-        auto terms = query_.query_raw(query_text, excluded);
+        auto terms = query_.query_raw(query_text, scope);
         filter_by_pos(terms, deinflection);
         merge_terms(terms, query_text, deinflection.trace, /*follow=*/true);
       };
 
       for (auto& deinflection : deinflection_results) {
+        // 上游 ad0be91：变形不得跨过预处理删掉的字符、不得只改写片假名词的一截。
+        if (!rewrite_allowed(variant, deinflection)) continue;
+
         // 后处理（Yomitan `textPostprocessors`，本引擎此前完全没有这个阶段）：
         // 韩语的还原是在**兼容字母域**里做的（ko.json 整表这么写，预处理端由
         // text_processor::disassemble_hangul 拆字对齐），而词典索引的键是**预合成
@@ -274,7 +330,7 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
           if (fresh) cand_it->second = mixed_orthography::reading_candidates(deinflection.text, run_readings);
           for (const std::string& candidate : cand_it->second) {
             auto [hit_it, uncached] = mixed_reading_hits.try_emplace(candidate);
-            if (uncached) hit_it->second = query_.query_raw(candidate, excluded);
+            if (uncached) hit_it->second = query_.query_raw(candidate, scope);
             std::vector<TermResult> terms;
             for (const TermResult& term : hit_it->second) {
               if (mixed_orthography::matches_mixed_orthography(deinflection.text, term.expression, term.reading)) {
@@ -291,7 +347,7 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
       // 词典重定向的目标不经词性过滤（Yomitan 给它的 deinflection 不带条件），
       // 也不再跟随第二层。匹配长度仍是本轮 search_str。
       for (auto& [form_of, trace] : redirect_targets) {
-        auto terms = query_.query_raw(form_of, excluded);
+        auto terms = query_.query_raw(form_of, scope);
         merge_terms(terms, form_of, trace, /*follow=*/false);
       }
     }
@@ -347,7 +403,7 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
   // Enriching per (expression, reading) is what query_freq did all along, so
   // the surviving results carry byte-identical frequency data.
   for (auto& r : results) {
-    query_.enrich_freq(r.term, excluded);
+    query_.enrich_freq(r.term, scope);
   }
 
   // 原文振假名一致度每条只算一次（比较器里会被反复比较）。
@@ -473,7 +529,7 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
   // (BUG-1304).
   if (!options.materialize) return results;
   for (auto& r : results) {
-    query_.enrich_pitch(r.term, excluded);
+    query_.enrich_pitch(r.term, scope);
     query_.materialize(r.term);
   }
 
@@ -484,8 +540,17 @@ void Lookup::filter_by_pos(std::vector<TermResult>& terms, const DeinflectionRes
   if (d.conditions == 0) {
     return;
   }
+  // 还原链用过要求词性的规则（ja.json 的歴史的仮名遣い规则，见 util/pos_required.hpp）：
+  // 只认词条自带的真词性，通配 "*" 不算数；其余位照常做词性匹配。
+  const bool requires_pos = (d.conditions & fushi::kRequiresPartOfSpeechBit) != 0;
+  const uint64_t pos_conditions = d.conditions & ~fushi::kRequiresPartOfSpeechBit;
   std::erase_if(terms, [&](const TermResult& term) {
+    if (requires_pos) {
+      const std::string own = explicit_rules(term.rules);
+      if (own.empty()) return true;
+      return pos_conditions != 0 && (deinflector_.rules_to_conditions(own) & pos_conditions) == 0;
+    }
     auto dict_conditions = deinflector_.rules_to_conditions(term.rules);
-    return (dict_conditions & d.conditions) == 0;
+    return (dict_conditions & pos_conditions) == 0;
   });
 }

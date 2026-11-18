@@ -777,8 +777,12 @@ class AnkiConnectService {
 
   /// 读取 [modelName] 的全部卡模板正/反面。AnkiConnect `modelTemplates`
   /// 返回 `{模板名: {Front, Back}}`。
-  Future<List<AnkiCardTemplate>> modelTemplates(String modelName) async {
-    final result = await _request('modelTemplates', {'modelName': modelName});
+  Future<List<AnkiCardTemplate>> modelTemplates(String modelName) async =>
+      _asCardTemplates(
+        await _request('modelTemplates', {'modelName': modelName}),
+      );
+
+  List<AnkiCardTemplate> _asCardTemplates(dynamic result) {
     if (result is! Map) {
       throw AnkiConnectException(
         'Unexpected AnkiConnect response for modelTemplates (expected a map)',
@@ -795,15 +799,56 @@ class AnkiConnectService {
   }
 
   /// 读取 [modelName] 的 styling（CSS）。AnkiConnect `modelStyling` 返回
-  /// `{css: ...}`。
-  Future<String> modelStyling(String modelName) async {
-    final result = await _request('modelStyling', {'modelName': modelName});
+  /// `{"css": "..."}`。
+  Future<String> modelStyling(String modelName) async =>
+      _asModelCss(await _request('modelStyling', {'modelName': modelName}));
+
+  String _asModelCss(dynamic result) {
     if (result is! Map || result['css'] is! String) {
       throw AnkiConnectException(
         'Unexpected AnkiConnect response for modelStyling (expected {css})',
       );
     }
     return result['css'] as String;
+  }
+
+  /// 一次往返读齐 [modelName] 的完整定义（字段 / 卡模板 / CSS）；模型不存在返回 `null`。
+  ///
+  /// 四条只读子 action（`modelNames` + `modelFieldNames` + `modelTemplates` +
+  /// `modelStyling`）打进一个 `multi`：AnkiConnect 的 HTTP 服务是按 25 ms 轮询的
+  /// （见 [kMultiBatchSize]），逐条发就是四次往返；默认「视频片段」模式下每张卡落卡前
+  /// 都要读一遍目标模板，这笔往返排在抽媒体之前。不做缓存——用户可以随时在 Anki 里
+  /// 改模板，Fushi 观察不到。
+  ///
+  /// 模型不存在时后三条在 Anki 那边各自报错，这里不看（与逐条读时「先查名字、
+  /// 没有就返回」同一结果）；模型存在而某条失败，按该条的错误抛。
+  Future<AnkiConnectModelDefinition?> readModelDefinition(
+    String modelName,
+  ) async {
+    final Map<String, dynamic> byModel = <String, dynamic>{
+      'modelName': modelName,
+    };
+    final List<AnkiConnectBatchResult> results =
+        await requestMulti(<AnkiConnectAction>[
+          const AnkiConnectAction('modelNames'),
+          AnkiConnectAction('modelFieldNames', byModel),
+          AnkiConnectAction('modelTemplates', byModel),
+          AnkiConnectAction('modelStyling', byModel),
+        ]);
+    dynamic resultOf(int index) {
+      final AnkiConnectBatchResult item = results[index];
+      if (item.isError) throw AnkiConnectException(item.error!);
+      return item.result;
+    }
+
+    if (!_asStringList(resultOf(0), 'modelNames').contains(modelName)) {
+      return null;
+    }
+    return (
+      fields: _asStringList(resultOf(1), 'modelFieldNames'),
+      templates: _asCardTemplates(resultOf(2)),
+      css: _asModelCss(resultOf(3)),
+    );
   }
 
   /// 覆写 [modelName] 的 styling（CSS）。
@@ -1519,6 +1564,13 @@ class AnkiConnectPreDeliveryException extends http.ClientException {
 
   final Object cause;
 }
+
+/// [AnkiConnectService.readModelDefinition] 的结果：一个笔记类型的字段、卡模板与 CSS。
+typedef AnkiConnectModelDefinition = ({
+  List<String> fields,
+  List<AnkiCardTemplate> templates,
+  String css,
+});
 
 /// 一条待打进 `multi` 的 AnkiConnect action。
 class AnkiConnectAction {

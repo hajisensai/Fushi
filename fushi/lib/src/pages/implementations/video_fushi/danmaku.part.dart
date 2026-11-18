@@ -95,9 +95,10 @@ extension _VideoDanmaku on _VideoFushiPageState {
     }
 
     if (!appModel.videoDanmakuOnlineEnabled) return;
-    // 弹幕指纹读的是媒体文件头 16 MiB：DVD title / 网络流没有这个文件。async：视频
-    // 可能在网络盘上，同步 stat 会冻结 UI isolate（BUG-3756）。
-    if (!await hasLocalMediaFile(videoPath)) return;
+    // 弹幕指纹读的是媒体文件头 16 MiB：原盘成员（蓝光整卷 / 分集、DVD title）/ 网络流
+    // 没有这样一个文件（video_member_file.dart 第 3 种问法）。async：视频可能在网络盘
+    // 上，同步 stat 会冻结 UI isolate（BUG-3756）。
+    if (!await hasLocalSingleMediaFile(videoPath)) return;
     final File file = File(videoPath);
     await _loadOnlineDanmaku(seq, () => dandanplayFileKeyOf(file));
   }

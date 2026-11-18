@@ -72,6 +72,15 @@ void main() {
         isNot(anyOf(contains('<!doctype html'), contains('<html'))),
         reason: '$name 是网页不是许可原文；检查 native/third_party_licenses/ 里对应的来源文件',
       );
+      // BUG-4694：core.symlinks=false 的 git 检出把符号链接写成内容为目标路径的文本，
+      // 生成器若读了它，产物里就是「../LICENSE-MIT」这样一行相对路径。
+      expect(
+        RegExp(r'^\.\.?[/\\]\S+$').hasMatch(text.trim()),
+        isFalse,
+        reason:
+            '$name 只有一行相对路径（${text.trim()}），是 git 符号链接占位文本不是许可原文；'
+            '检查 resolveNativeLicenseSymlink 接线后重跑 $kNativeLicenseRegenerateCommand',
+      );
       expect(
         nativeLicenseFingerprint(text).substring(0, 16),
         name.substring(0, name.length - '.txt'.length),
@@ -126,6 +135,44 @@ void main() {
         }
       }
     }
+  });
+
+  // BUG-4772：发布流程（release-desktop.yml → tools/bundle_7za.ps1）往 Windows 包里放的
+  // 7-Zip（7z.exe + 7z.dll，含 unRAR 派生代码）不是 pub 包带的，以前没进这份清单，开源许可页
+  // 里看不到它。钉住：脚本钉的版本必须有一条对应的 prebuilt 条目，并带上安装包里的 License.txt。
+  test('tools/bundle_7za.ps1 随包的 7-Zip 登记在 prebuilt 里且版本与脚本一致', () {
+    final String script = File('../tools/bundle_7za.ps1').readAsStringSync();
+    final RegExpMatch? pinned = RegExp(
+      r"^\$Version = '([^']+)'",
+      multiLine: true,
+    ).firstMatch(script);
+    expect(pinned, isNotNull, reason: 'tools/bundle_7za.ps1 里找不到 \$Version');
+    final Map<String, dynamic> manifest =
+        jsonDecode(File('../$kNativeLicenseManifestPath').readAsStringSync())
+            as Map<String, dynamic>;
+    final List<Map<String, dynamic>> entries = <Map<String, dynamic>>[
+      for (final dynamic raw in manifest['prebuilt'] as List<dynamic>)
+        if (((raw as Map<String, dynamic>)['component'] as String).contains(
+          'tools/bundle_7za.ps1',
+        ))
+          raw,
+    ];
+    expect(entries, hasLength(1), reason: '7-Zip 没有（或重复）登记在手写清单的 prebuilt 节');
+    final Map<String, dynamic> entry = entries.single;
+    expect(entry['version'], pinned!.group(1), reason: '清单版本与脚本钉的版本不一致');
+    expect(entry['platforms'], <String>['windows']);
+    expect(entry['license'] as String, contains('LGPL-2.1'));
+    expect(entry['license'] as String, contains('unRAR'));
+    final List<String> texts = (entry['texts'] as List<dynamic>).cast<String>();
+    final String licenseTxt = texts.firstWhere(
+      (String t) => t.endsWith('/License.txt'),
+      orElse: () => '',
+    );
+    expect(licenseTxt, isNotEmpty, reason: '缺 7-Zip 安装包里的 License.txt 原文');
+    expect(
+      File('../$licenseTxt').readAsStringSync(),
+      contains('unRAR license restriction'),
+    );
   });
 
   test('包内无许可文件的 crate：pendingUpstreamLicense 与条目一致（并列出待补原文的 crate）', () {

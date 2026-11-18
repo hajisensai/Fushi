@@ -16,6 +16,17 @@ import 'package:fushi/src/ops/op_descriptions_library.dart' show opUndoDisplay;
 /// 两条只读（搜候选、按 id 取详情）+ 一条写回。写回的撤销 = 执行前快照：显示名 /
 /// 作者写回旧值，封面从门面留下的备份拷回（执行前没有 override 封面则清除）。撤销前
 /// 再读一次，这次动过的字段之后被手动改过就报 superseded、不覆盖。
+/// `source` 参数的值域（与 [BookScrapeSource] 的 wire 名一致，守卫测试咬住）。
+const List<String> kBookScrapeSourceNames = <String>[
+  'bangumi',
+  'dlsite',
+  'mangabaka',
+  'anilist',
+  'openbd',
+  'ndl',
+  'rakuten',
+];
+
 List<OpDescription> describeBookMetadataOps(
   OpDescribeKit kit,
 ) => <OpDescription>[
@@ -24,24 +35,27 @@ List<OpDescription> describeBookMetadataOps(
     method: 'GET',
     pattern: kBookMetadataCtlSearch,
     summary:
-        'Search online book metadata candidates (Bangumi books, DLsite '
-        'voice / manga / novel works, or MangaBaka manga / light novel '
-        'series) by title, Bangumi URL, DLsite id or MangaBaka URL / id. '
-        'Returns id, title, author, year and cover URL per candidate. '
-        'MangaBaka data is CC BY-NC-SA 4.0: show "Data from MangaBaka" '
-        'wherever it is displayed.',
+        'Search online book metadata candidates. Sources: bangumi (books), '
+        'dlsite (voice / manga / novel works), mangabaka (manga / light novel '
+        'series), anilist (light novels; also returns a banner image), openbd '
+        '(ISBN lookup only), ndl (National Diet Library, title or ISBN), '
+        'rakuten (Rakuten Books, title or ISBN; only when the user entered '
+        'Rakuten credentials in settings). Returns id, title, author, year, '
+        'publisher, series, ISBN and cover URL per candidate. MangaBaka data '
+        'is CC BY-NC-SA 4.0: show "Data from MangaBaka" wherever it is '
+        'displayed.',
     params: const <OpParam>[
       OpParam.string(
         'query',
         description:
-            'Title, Bangumi subject URL, DLsite work id / URL, or MangaBaka '
-            'series URL / id.',
+            'Title, Bangumi subject URL, DLsite work id / URL, MangaBaka '
+            'series URL / id, AniList URL, or ISBN (required for openbd).',
         required: true,
       ),
       OpParam.string(
         'source',
         description: 'Metadata source; default bangumi.',
-        enumValues: <String>['bangumi', 'dlsite', 'mangabaka'],
+        enumValues: kBookScrapeSourceNames,
       ),
     ],
     availability: kit.whenModule(ModuleId.services),
@@ -54,15 +68,16 @@ List<OpDescription> describeBookMetadataOps(
     params: const <OpParam>[
       OpParam.string(
         'source',
-        description: 'bangumi, dlsite or mangabaka.',
+        description: 'Metadata source.',
         required: true,
         inPath: true,
-        enumValues: <String>['bangumi', 'dlsite', 'mangabaka'],
+        enumValues: kBookScrapeSourceNames,
       ),
       OpParam.string(
         'id',
         description:
-            'Bangumi subject id, DLsite work id (RJ…) or MangaBaka series id.',
+            'Bangumi subject id, DLsite work id (RJ…), MangaBaka series id, '
+            'AniList media id, or ISBN for openbd / ndl / rakuten.',
         required: true,
         inPath: true,
       ),
@@ -119,7 +134,7 @@ List<OpDescription> describeBookMetadataOps(
       OpParam.string(
         'source',
         description: 'Candidate source; default bangumi.',
-        enumValues: <String>['bangumi', 'dlsite', 'mangabaka'],
+        enumValues: kBookScrapeSourceNames,
       ),
       OpParam.stringList(
         'fields',
@@ -131,6 +146,14 @@ List<OpDescription> describeBookMetadataOps(
         description:
             'MangaBaka only: use the Japanese cover of this volume '
             '(book.scrape.volumes) instead of the series cover.',
+      ),
+      OpParam.boolean(
+        'onlyEmpty',
+        description:
+            'Only fill fields that are empty now: skip the title when a '
+            'display-name override exists, the author when one is set, and '
+            'the cover when an override cover exists. Rejected when nothing '
+            'is left to write.',
       ),
     ],
     availability: kit.whenModule(ModuleId.services),

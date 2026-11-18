@@ -277,7 +277,12 @@ void main() {
     );
     expect(attribution, findsNothing);
 
-    await tester.tap(find.text('MangaBaka'));
+    // 源是下拉（七个源分段放不下）：先展开，再点 MangaBaka 那一项。
+    await tester.tap(
+      find.byKey(const ValueKey<String>('book_scrape_source_picker')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('MangaBaka').last);
     await tester.pumpAndSettle();
     expect(find.text('テスト漫画'), findsWidgets);
     expect(attribution, findsOneWidget);

@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -439,6 +441,113 @@ void main() {
       expect(fetched, isEmpty, reason: '判定时取到的字节直接复用');
       await adapter.fetchChapterPage(pages[0]);
       expect(fetched, <String>['p0.jpg']);
+    });
+
+    test('广告候选页有界并发取，完成顺序乱也按页序判定（优化清单 manga-5）', () async {
+      final Map<String, Completer<Uint8List>> pending =
+          <String, Completer<Uint8List>>{};
+      final List<String> started = <String>[];
+      int inFlight = 0;
+      int peak = 0;
+      final List<String> judged = <String>[];
+      final WebComicLibraryAdapter adapter = WebComicLibraryAdapter(
+        adFilterEnabled: () => true,
+        scanner: _FakeScanner(_scan()),
+        rules: () async => WebComicRuleSet.empty,
+        cookies: (Uri _) async => const <WebComicCookie>[],
+        httpGet: (Uri url, Map<String, String> _) async {
+          final String name = url.pathSegments.last;
+          started.add(name);
+          inFlight++;
+          if (inFlight > peak) peak = inFlight;
+          final Completer<Uint8List> completer = Completer<Uint8List>();
+          pending[name] = completer;
+          try {
+            return await completer.future;
+          } finally {
+            inFlight--;
+          }
+        },
+        adDetector: _FakeAdDetector((Uint8List bytes) {
+          judged.add('p${bytes[4]}');
+          return bytes[4] == 14;
+        }),
+        now: () => now,
+      );
+      final OnlineMangaLibraryEntry entry = entryFor(_scan(pages: 15));
+      final Future<List<OnlineMangaPageRef>> resolving = adapter
+          .resolveChapterPages(entry: entry, chapter: entry.chapters[1]);
+
+      // 每一轮把在途的请求按「后发先回」放行；p7 取失败。
+      int answered = 0;
+      while (answered < 10) {
+        await pumpEventQueue();
+        expect(pending, isNotEmpty);
+        final List<String> names = pending.keys.toList().reversed.toList();
+        for (final String name in names) {
+          final Completer<Uint8List> completer = pending.remove(name)!;
+          final int n = int.parse(name.replaceAll(RegExp(r'\D'), ''));
+          if (n == 7) {
+            completer.completeError(const SocketException('boom'));
+          } else {
+            completer.complete(_jpeg(n));
+          }
+          answered++;
+        }
+      }
+      final List<OnlineMangaPageRef> pages = await resolving;
+
+      expect(peak, kWebComicAdProbeConcurrency);
+      expect(started.toSet(), <String>{for (int i = 5; i < 15; i++) 'p$i.jpg'});
+      expect(judged, <String>[
+        for (int i = 5; i < 15; i++)
+          if (i != 7) 'p$i',
+      ], reason: '取失败的页不进判定；其余按页序，verdict 下标才对得上');
+      expect(pages, hasLength(14), reason: '只剔 p14；取失败的 p7 按正文保留');
+      expect(
+        (pages.last as HttpMangaPageRef).url,
+        'https://img.demo.test/p13.jpg',
+      );
+      expect(adapter.prefetchedPageCount, 8, reason: '9 张判定过的页减去 1 张广告');
+    });
+
+    test('预取字节按章清理：只留最近两章，同章重解析整桶换新', () async {
+      final WebComicLibraryAdapter adapter = WebComicLibraryAdapter(
+        adFilterEnabled: () => true,
+        scanner: _FakeScanner(_scan()),
+        rules: () async => WebComicRuleSet.empty,
+        cookies: (Uri _) async => const <WebComicCookie>[],
+        httpGet: (Uri url, Map<String, String> _) async => _jpeg(0),
+        adDetector: _FakeAdDetector((Uint8List _) => false),
+        now: () => now,
+      );
+      Future<List<OnlineMangaPageRef>> open(int chapter) {
+        final OnlineMangaLibraryEntry entry = entryFor(
+          _scan(url: 'https://www.demo.test/c/$chapter', pages: 15),
+        );
+        return adapter.resolveChapterPages(
+          entry: entry,
+          chapter: entry.chapters[1],
+        );
+      }
+
+      final List<OnlineMangaPageRef> first = await open(2);
+      expect(adapter.prefetchedPageCount, 10);
+      // 读走一张 → 少一张；同一章再解析一次 → 整桶换新，不叠加。
+      await adapter.fetchChapterPage(first[14]);
+      expect(adapter.prefetchedPageCount, 9);
+      await open(2);
+      expect(adapter.prefetchedPageCount, 10);
+
+      await open(3);
+      expect(adapter.prefetchedPageCount, 20);
+      await open(4);
+      await open(5);
+      expect(
+        adapter.prefetchedPageCount,
+        10 * kWebComicPrefetchedChapterLimit,
+        reason: '没读完就离开的章不再无限留着整图',
+      );
     });
 
     test('短章（≤3 张）一张都不判', () async {

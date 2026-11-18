@@ -5,13 +5,13 @@
 /// 受「在线服务」模块门约束（[CollectionArtScrape.enabled]）。
 library;
 
+import 'dart:io';
+
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/metadata/book_art_scrape_service.dart';
 import 'package:fushi/src/media/metadata/book_art_store.dart';
-import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
     show showFushiConfirmDialog;
@@ -26,21 +26,36 @@ import 'package:fushi_engine/media/metadata/book_art/book_art_matcher.dart';
 
 /// 书架传给合集详情页的「刮每卷封面」能力。
 class CollectionArtScrape {
-  const CollectionArtScrape({required this.appModel, this.serviceFactory});
+  /// 只收窄依赖（库、缩略图目录、两道门），不收整个 `AppModel`：本类挂在合集
+  /// 详情页上，拿 `AppModel` 会把书图刮削整条链拉进 app 的大导入环。
+  const CollectionArtScrape({
+    required this.database,
+    required this.thumbnailsDirectory,
+    required this.servicesEnabled,
+    required this.migrationReadonly,
+    this.serviceFactory,
+  });
 
-  final AppModel appModel;
+  final FushiDatabase database;
+  final Directory thumbnailsDirectory;
+
+  /// 「在线服务」模块当前是否开着（每次读，跟随设置变化）。
+  final bool Function() servicesEnabled;
+
+  /// 数据是否已迁移到新版、旧版只读。
+  final bool Function() migrationReadonly;
 
   /// 测试接缝：造服务（注入离线 http client）。
   final BookArtScrapeService Function()? serviceFactory;
 
   /// 「在线服务」模块开着才出入口、才发请求。
-  bool get enabled => appModel.moduleVisibility.isEnabled(ModuleId.services);
+  bool get enabled => servicesEnabled();
 
-  BookArtStore get store => BookArtStore.of(appModel.thumbnailsDirectory);
+  BookArtStore get store => BookArtStore.of(thumbnailsDirectory);
 
   BookArtScrapeService _service() =>
       serviceFactory?.call() ??
-      BookArtScrapeService(database: appModel.database, store: store);
+      BookArtScrapeService(database: database, store: store);
 
   /// 合集里有没有本地书（只有书 / 漫画合集出这两个动作）。
   static bool appliesTo(Iterable<MediaCollectionItemRow> rows) =>
@@ -82,7 +97,7 @@ class CollectionArtScrape {
 
   /// 数据已迁移到新版、旧版只读时不写刮削层（与 ops 路由同一道门）。
   bool _readonly() {
-    if (!appModel.isMigrationReadonly) return false;
+    if (!migrationReadonly()) return false;
     FushiToast.show(
       msg: t.migration_readonly_note,
       severity: ToastSeverity.warning,
@@ -106,8 +121,9 @@ class CollectionArtScrape {
     );
     if (!confirmed) return;
     final List<String> keys = <String>[
-      for (final MediaCollectionItemRow r
-          in await appModel.database.getCollectionItems(collectionId))
+      for (final MediaCollectionItemRow r in await database.getCollectionItems(
+        collectionId,
+      ))
         if (r.mediaType == 'epub') r.entryKey,
     ];
     int removed = 0;

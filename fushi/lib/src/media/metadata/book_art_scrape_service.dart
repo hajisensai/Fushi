@@ -40,7 +40,7 @@ import 'package:fushi/src/media/metadata/bangumi_api_client.dart';
 import 'package:fushi/src/media/metadata/book_art_store.dart';
 import 'package:fushi/src/media/metadata/book_metadata_scraper.dart'
     show kBookScraperUserAgent;
-import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/media/sources/book_cover_file_resolver.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 一本书的处理结果。
@@ -1100,7 +1100,7 @@ class BookArtScrapeService {
   /// 再读整个文件（上限 [kBookArtMaxImageBytes] 的 4 倍）。
   Future<({int? area, bool unmeasured})> _localCover(EpubBookRow row) async {
     // 与书架 / 制卡同一份封面解析（声明的封面优先，大小写不敏感回退）。
-    final String? path = ReaderFushiSource.resolveCoverFilePath(
+    final String? path = resolveBookCoverFilePath(
       extractDir: row.extractDir,
       coverPath: row.coverPath,
     );

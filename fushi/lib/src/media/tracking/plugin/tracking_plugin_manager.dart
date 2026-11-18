@@ -503,6 +503,15 @@ class TrackingPluginManager {
     await list();
   }
 
+  /// The installed package [id] packed back into a `.fushiplug` (interconnect
+  /// source share). Only the package directory: storage, credentials and the
+  /// account state live outside it and never leave the device. Null when not
+  /// installed.
+  Future<Uint8List?> exportPackage(String id) async {
+    if (!_idPattern.hasMatch(id)) return null;
+    return packTrackingPluginDirectory(_dirOf(id));
+  }
+
   /// Removes the package, its storage, its credentials and its account state.
   /// Links and queued updates in the database are kept (spec §4).
   /// A built-in bundled package cannot be removed

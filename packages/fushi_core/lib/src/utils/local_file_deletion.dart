@@ -55,9 +55,16 @@ class LocalFileDeleteReport {
 ///   音乐文件夹，`videoPath` 也不该是目录）；
 /// - 不存在的路径既不算删掉也不算失败，直接跳过；
 /// - 单条失败不中断后续，也绝不上抛。
-Future<LocalFileDeleteReport> deleteLocalFiles(Iterable<String> paths) async {
+///
+/// [onPathDone] 每处理完一条路径（删掉 / 跳过 / 失败都算）回调一次，入参是已处理
+/// 条数，给大批量删除的进度条用（35YfcYO-zR）。
+Future<LocalFileDeleteReport> deleteLocalFiles(
+  Iterable<String> paths, {
+  void Function(int done)? onPathDone,
+}) async {
   final List<String> removed = <String>[];
   final List<LocalFileDeleteFailure> failures = <LocalFileDeleteFailure>[];
+  int done = 0;
   for (final String path in paths) {
     try {
       final FileSystemEntityType type = await FileSystemEntity.type(
@@ -74,6 +81,8 @@ Future<LocalFileDeleteReport> deleteLocalFiles(Iterable<String> paths) async {
       removed.add(path);
     } on Object catch (error) {
       failures.add(LocalFileDeleteFailure(path, error));
+    } finally {
+      onPathDone?.call(++done);
     }
   }
   return LocalFileDeleteReport(removed: removed, failures: failures);

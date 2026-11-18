@@ -64,7 +64,10 @@ void main() {
 
     bool changed = false;
     final Future<void> done = CollectionArtScrape(
-      appModel: model,
+      database: db,
+      thumbnailsDirectory: thumbs,
+      servicesEnabled: () => true,
+      migrationReadonly: () => model.isMigrationReadonly,
     ).clear(host, collectionId: 1, onChanged: () => changed = true);
     await tester.pumpAndSettle();
     expect(find.text(t.collection_art_scrape_clear_confirm), findsOneWidget);

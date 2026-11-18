@@ -162,7 +162,6 @@ void main() {
   test('老库（缓存修订号 5、freq_rank 为空）打开时补齐名次', () async {
     final SrsStorage st = await openTestSrsStorage();
     Future<SrsDbStore> openOn() => SrsDbStore.open(
-      db: st.db,
       core: st.core,
       profileUid: kFreqProfile,
       deviceId: 'dev',
