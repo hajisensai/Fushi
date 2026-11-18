@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-18T07:28:09Z",
+ "generatedAt": "2026-11-18T07:28:45Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "8b621f0ed6a94bcc8761e676df99e78173aec335",
-  "seq": 28956
+  "sha": "198c2ae8221cd732a43e43fdb21f50791f3b3bb1",
+  "seq": 28969
  },
  "builds": [
   {
@@ -136,9 +136,11 @@
   }
  ],
  "pending": {
-  "headSha": "8b621f0ed6a94bcc8761e676df99e78173aec335",
-  "headSeq": 28956,
+  "headSha": "198c2ae8221cd732a43e43fdb21f50791f3b3bb1",
+  "headSeq": 28969,
   "prs": [
+   3691,
+   3569,
    3687,
    3671,
    3676,
@@ -158,19 +160,19 @@
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44259022199"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44259169206"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44259101353"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44259169135"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44259101353"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44259169135"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44259101353"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44259169135"
    }
   }
  },
@@ -200,6 +202,15 @@
    "mergedAt": "2026-11-18T07:26:54Z",
    "additions": 198,
    "deletions": 68,
+   "labels": []
+  },
+  "3569": {
+   "number": 3569,
+   "title": "fix(scheduler): 吉祥物光晕开着冷启动时 Windows 鼠标键盘全失灵（BUG-4725）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-18T07:28:18Z",
+   "additions": 419,
+   "deletions": 24,
    "labels": []
   },
   "3605": {
@@ -281,6 +292,15 @@
    "mergedAt": "2026-11-18T07:28:02Z",
    "additions": 624,
    "deletions": 45,
+   "labels": []
+  },
+  "3691": {
+   "number": 3691,
+   "title": "fix(ocr): 本机 Manga CTC 不再把正文短列当注音删、把疏排竖排读成横排（BUG-4797）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-18T07:28:35Z",
+   "additions": 856,
+   "deletions": 47,
    "labels": []
   },
   "3693": {
