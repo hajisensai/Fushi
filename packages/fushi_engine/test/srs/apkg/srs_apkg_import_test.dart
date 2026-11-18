@@ -748,22 +748,92 @@ void main() {
     expect(h.all, hasLength(2));
     expect(h.effective.last.id, mine.id);
     final SrsCardCacheRow after = (await b.cardRow(cardB))!;
+    // 最后一条有效日志仍是本机那条；外来那条排在它前面（reps 数到 2）。卡行的队列 / 到期日 / 间隔都取最后一条有效日志
+    // 的结果，而那条结果是在「前面多了一条外来复习」的历史上重放出来的（设计 §4，与协议 3 同口径），所以到期日和间隔会
+    // 变，不能拿导入前的值比——要比的是「卡行 = 本机那条日志重放后的结果」。复习队列的卡 dueAt 是 null（只有学习队列
+    // 有），之前只比 dueAt 等于什么都没比。
+    expect(h.all.first.id, isNot(mine.id));
+    expect(after.lastLogId, before.lastLogId);
+    expect(after.lastLogId, mine.id);
+    expect(after.reps, 2);
+    final Map<String, Object?> res = h.effective.last.result!.toJson();
     expect(
-      (after.queue, after.dueAt, after.lastLogId),
-      (before.queue, before.dueAt, before.lastLogId),
+      (after.queue, after.dueDay, after.scheduledDays),
+      (res['queue'], res['dueDay'], res['ivl']),
     );
-    // 不比 scheduledDays：历史前面多了一条复习，重放算出的间隔（记忆状态）本来就该变；钉的是「当前排程」——
-    // 队列、到期时刻、最后一条日志仍是本机那条。
-    // 再导一次（更晚的导入时刻）：什么都不变。
+    // 再导一次（更晚的导入时刻）：卡行逐列不变。
     t += 86400000;
     await importInto(b, pkg);
     final SrsCardCacheRow again = (await b.cardRow(cardB))!;
     expect(
-      (again.queue, again.dueAt, again.lastLogId),
-      (before.queue, before.dueAt, before.lastLogId),
+      (
+        again.queue,
+        again.dueDay,
+        again.dueAt,
+        again.scheduledDays,
+        again.reps,
+        again.stability,
+        again.lastLogId,
+      ),
+      (
+        after.queue,
+        after.dueDay,
+        after.dueAt,
+        after.scheduledDays,
+        after.reps,
+        after.stability,
+        after.lastLogId,
+      ),
     );
     expect((await b.history(cardB)).all, hasLength(2));
   });
+
+  test(
+    'fushi-ext 里发生时刻在未来的日志：整张卡记进 futureCards、不恢复（与 revlog 同口径，第五波复核）',
+    () async {
+      final SrsDbStore a = await openTestStore(
+        profileUid: kProfile,
+        deviceId: 'a',
+        now: () => t,
+      );
+      final String noteId = await a.createNote(
+        noteTypeId: a.lapisNoteTypeId,
+        fieldsById: <String, String>{
+          srsLapisFieldId(kProfile, 'Expression'): '泳ぐ',
+        },
+      );
+      final String cardA = (await a.cardsOfNote(noteId)).single.id;
+      t += 60000;
+      await a.answer(cardA, 3);
+      final SrsAnkiPackage p = SrsAnkiPackage.open(
+        await exportAnkiPackage(store: a),
+        zstd: (Uint8List b) => null,
+      );
+      // 只改 fushi-ext 的日志时刻、不改 revlog：伪造包绕不过 revlog 那道未来守卫。
+      final Map<String, Object?> ext = Map<String, Object?>.of(p.fushiExt!);
+      final List<Object?> logs = List<Object?>.of(
+        ext['logs']! as List<Object?>,
+      );
+      expect(logs, hasLength(1));
+      logs[0] = Map<String, Object?>.of(
+        (logs[0]! as Map<Object?, Object?>).cast<String, Object?>(),
+      )..['at'] = t + 1000 * 86400000;
+      ext['logs'] = logs;
+      final Uint8List forged = zipOf(<String, List<int>>{
+        'collection.anki21': p.collectionBytes,
+        'media': utf8.encode('{}'),
+        'fushi-ext': utf8.encode(jsonEncode(ext)),
+      });
+      final SrsDbStore b = await openTestStore(
+        profileUid: kProfile2,
+        deviceId: 'b',
+        now: () => t,
+      );
+      final SrsImportReport rep = await importInto(b, forged);
+      expect(rep.futureCards, <int>[SrsIds.ankiNumericId(cardA)]);
+      expect(rep.fushiLogsRestored, 0);
+    },
+  );
 
   test('Anki 端在导出之后又复习：新 revlog 照常导入并写锚点', () async {
     final SrsDbStore s = await openTestStore(

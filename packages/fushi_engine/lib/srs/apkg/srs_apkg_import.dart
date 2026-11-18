@@ -2140,15 +2140,20 @@ class _Importer {
     ]);
     _importNewPosition(cardId, c, noteExisted: existingHistory != null);
     final (int nowMs, _) = store.now();
-    final int latest = revlogs.isEmpty ? 0 : revlogs.last.id;
+    // fushi-ext 的日志与 revlog 同口径判未来：它的发生时刻决定回导后的排序键（新代内核 `derived_log_hlc`），伪造的
+    // fushi-ext 不能靠只改 ext、不改 revlog 绕过这道守卫。
+    final List<SrsReviewLog> extLogs =
+        _extLogsByCard[c.id] ?? const <SrsReviewLog>[];
+    int latest = revlogs.isEmpty ? 0 : revlogs.last.id;
+    for (final SrsReviewLog l in extLogs) {
+      if (l.occurredAt > latest) latest = l.occurredAt;
+    }
     if (latest > nowMs + srsClockToleranceMs) {
       report.futureCards.add(c.id);
       return;
     }
 
     // fushi-ext：恢复 Fushi 日志；它导出的 revlog 只作校验。
-    final List<SrsReviewLog> extLogs =
-        _extLogsByCard[c.id] ?? const <SrsReviewLog>[];
     final Set<int> extRevlogs = <int>{};
     if (extLogs.isNotEmpty) {
       for (final SrsReviewLog l in extLogs) {

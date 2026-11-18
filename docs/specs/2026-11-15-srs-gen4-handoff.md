@@ -3244,11 +3244,10 @@ profile uid 不变」断言，不分 `bound` / `joined`。
 - **同发生时刻的并列**：外来日志 `{at}:0:fushi` 与本机同毫秒的原生日志靠 `history.rs` 冻结的排序键后几位（counter、writer、
   event_id）定序，各设备算出的相同；不是本波的问题。
 - **测试**：Rust `writes_tests.rs` `a_foreign_native_review_older_than_a_local_one_does_not_reschedule_the_card`（修前红：
-  最后一条有效日志变成外来那条）、`importing_the_same_foreign_logs_twice_changes_nothing`；`sync_tests.rs`
-  `a_foreign_native_log_imported_on_two_devices_keeps_the_local_schedule`（两台设备各导一次，卡行逐列相同、最后一条日志仍是
-  本机那条；修前红）；`anki_import_rules.rs` 单测 `a_marked_foreign_log_sorts_by_when_it_happened`。Dart
-  `srs_apkg_import_test.dart`「回导的外来复习比本机复习早：不改本机当前排程，重导不变」：比的是队列 / 到期时刻 / 最后一条日志
-  ——**不比 `scheduledDays`**：历史前面多了一条复习，重放出来的记忆状态本来就该变，当前排程（由最后一条有效日志定）不变。
+  最后一条有效日志变成外来那条）、`importing_the_same_foreign_logs_twice_changes_nothing`（防回归，不是修前红，见下「复核
+  修复」）；`sync_tests.rs` `a_foreign_native_log_imported_on_two_devices_keeps_the_local_schedule`（两台设备各导一次，卡行
+  逐列相同、最后一条日志仍是本机那条；修前红）；`anki_import_rules.rs` 单测 `a_marked_foreign_log_sorts_by_when_it_happened`。
+  Dart `srs_apkg_import_test.dart`「回导的外来复习比本机复习早」：断言见下「复核修复」第 3 条（原先只比 dueAt 是空比）。
 
 ### ② `.fushisrs` 内核流第 2 版：空洞带区间内部的链值记号（N6）
 
@@ -3279,8 +3278,7 @@ profile uid 不变」断言，不分 `bound` / `joined`。
 
 - **`srs_exclusive_sites_cost_test.dart` 远程作答**：期望（6 条读、2 条命令）量的是 V1 路由；G10-2 起远程复习走 V2，每个
   回包的信封带牌组树标签（`srs_remote_store.dart` `_treeWire`），按结构键缓存，服务的第一次调用取一次 `entity_views`。V2 那一轮
-  这条用例还崩在 ID 口径上，从没重量过。实测冷缓存 4 条读 + 3 条命令，先打一次 `hello` 暖上之后 3 条读 + 2 条命令；用例改为
-  先暖、量作答这一站的稳态开销，读的种类仍钉住 `{edits, entities}`。不是回归。
+  这条用例还崩在 ID 口径上，从没重量过。不是回归。用例冷、热分开钉（复核后改，见下「复核修复」第 4 条）。
 - **`srs_browse_vectors_test.dart`**：fixture 里的卡 / 笔记 ID 是 G9-7 之前的口径，ID 规则换了，向量全错。重新生成前按
   「排序字段 + 牌组 + 笔记类型」把新旧 16 张卡一一对上（无歧义、笔记 / 牌组映射一致）逐项核过：行的其余列除两张复习卡的到期
   天数（重放的 fuzz 以卡 ID 为种子：338→346、344→347）外完全相同；2340 条结果里 396 条不同，**全部**是「同一排序值的两行按 ID
@@ -3296,6 +3294,38 @@ profile uid 不变」断言，不分 `bound` / `joined`。
   成员数)；k 个盐下内置笔记的卡是 (k+1)² 行，只配同盐是 k+1 行。k 实际 1～2，即每卡 4～9 行对 2～3 行，按卡线性。收窄要逐盐
   `rules::note(盐, guid)` 认出笔记成员的盐，换来的只是少几行没有旧号的组合，不做；写在 `cache.rs` 文件头「表」那段。
 
+### 复核修复（2026-11-18）
+
+1. **外来日志派生排序键加上界（major）**：`at` 来自 `.apkg` 的 fushi-ext，不可信；原先无条件派生 `{at}:0:fushi`，一条发生
+   时刻在未来的伪造日志会排在此后本机所有复习之后，把排程钉死在它的结果上（复核实测：未来 1000 天的外来日志 + 之后一条本机
+   复习，最后一条有效日志仍是外来那条）。定案：真正回导的外来日志一定早于载着它的那条操作，`derived_log_hlc` 加参数
+   `op_wall`（那条操作 HLC 的物理时刻，真相里的数据，各设备一致），**只有 `at <= op_wall` 才派生**，否则回落到操作 HLC
+   （即修之前的行为）。`cache.rs` `log_body(l, op_wall)` 从 `log_at` 拿 wall；`cmd/writes.rs` 回包 `logHlcs` 在写下后读
+   操作 HLC 再派生（Anki 来源照旧不读）。Dart 导入器（`srs_apkg_import.dart` 逐卡恢复处）把 fushi-ext 日志的 `occurredAt`
+   与 revlog 同口径纳入未来时刻守卫：超过 `now + srsClockToleranceMs` 整张卡记进 `futureCards`、跳过，伪造包不能只改 ext
+   绕过 revlog 那道守卫。测试：Rust `anki_import_rules.rs` `a_foreign_log_from_after_its_op_does_not_derive`、
+   `writes_tests.rs` `a_foreign_log_from_the_future_does_not_pin_the_schedule`（变异：去掉 `at <= op_wall` 两条都红）；Dart
+   「fushi-ext 里发生时刻在未来的日志：整张卡记进 futureCards、不恢复」（变异：去掉 ext 那段比较即红）。
+2. **幂等用例的说法改实（minor）**：`importing_the_same_foreign_logs_twice_changes_nothing` 去掉派生照样绿——同 ID 日志类
+   的代表取操作号最小的那份（`cache.rs` `log_class_rep`），第二次导入的副本本来当不了代表。注释改为「防回归，不是修前红」。
+3. **卡行的到期日 / 间隔从哪来（nit）**：内核卡片状态（`history.rs` `state_of`、新代经 `sync2/replay.rs` 重放）的队列、
+   `dueDay`、`dueAt`、`scheduledDays` 全部取**最后一条有效日志的结果**；派生日志（评分等）的结果在重放时用前一状态重算。
+   所以外来的更早复习排进来之后，本机那条仍是最后一条，但它的结果是在「前面多一条复习」的历史上重放出的，`dueDay` 与
+   `scheduledDays` 一起变（实测：导入前 dueDay 21069 / ivl 329，导入后 20743 / 3，前面那条外来复习是「忘了」）——这是
+   重放语义（设计 §4，与协议 3 同口径，Rust 用例用 `same_state` 对拍了协议 3），不是「到期与间隔来源不一致」。复习队列的
+   `dueAt` 是 null（只有学习队列有），原先 Dart 用例只比 `dueAt` 等于没比。Dart 用例改为：最后一条日志仍是本机那条、
+   reps = 2（外来那条排在前面）、卡行 (queue, dueDay, scheduledDays) = 本机那条日志重放后的结果、再导一次卡行逐列不变。
+4. **独占站点开销冷 / 热分开钉（nit）**：同一服务第一次作答（冷）实测 4 条读（edits ×2、entities ×2）+ 3 条命令；第二次
+   作答（另一张卡，热）0 条读 + 2 条命令。两者都钉进 `srs_exclusive_sites_cost_test.dart`（冷的读种类钉 `{edits, entities}`，
+   热的钉空集）。上一轮写的「先打 `hello` 暖上后 3 条读 + 2 条命令」量的其实是 hello 之后第一次作答，作答自己那几条读在
+   hello 里取不到；这一轮按实测改。
+5. **空洞记号的信任面（nit，不改代码）**：`truth.rs` `land_void_mark` 在本库不知道那一格链值时信任流里的值，与空洞区间的
+   `chain_after` 同一信任面。后果：用户导入过一份伪造了记号的 `.fushisrs` 之后，再导入同一作者的真实流会因「链值分叉」整笔
+   拒收（拒收是整事务回滚，不丢已有卡片和复习记录）；伪造的记号也会随承袭段转发，对端同样拒收。恢复办法：还原到导入那份
+   伪造流之前的整库备份，或不再导入该作者的流。单个空洞项的记号数只要求小于区间长度，内存占用
+   受文件大小约束，没有另加上限。
+
 ### 没做 / 交给别人
 
 - 本分支没在真机 / 双设备上实测回导与 `.fushisrs` 往返；证据是上面的 Rust / Dart 用例。
+- Dart 回导用例（复核修复第 3 条）的新断言没有对内核做变异实测（要另编一份原生库）；内核那侧的排序由 Rust 用例变异实测过。
