@@ -1,4 +1,4 @@
-## BUG-4762 · 英语查词 My→M、Our→O、One→On 排在原词前面：变形规则不分语言 + 排序先比预处理步数
+## BUG-4845 · 英语查词 My→M、Our→O、One→On 排在原词前面：变形规则不分语言 + 排序先比预处理步数
 - **报告**：2026-11-17（应用内反馈 WIZUEQx1fY）
 - **真实性**：✅ 真 bug，两层根因，均在 native 测试里复现（把修复改回去，`dictionary_language_gate_lookup_test` 排出 `[M <- My /-y] [my <- My]`、`[O <- Our /participle] [our <- Our]`、`[On <- One /plural] [one <- One]`）。
   - 变形规则不分语言：`packages/fushi_dictionary/lib/src/engine/fushidicts.dart:315`（`preloadTransformsFrom`）把 `assets/transforms/manifest.json` 里 19 份变形表全部灌进同一个 `Deinflector`；`native/fushidicts/fushidicts_src/deinflector.cpp:323`（修前 `Deinflector::deinflect`）不带语言，链首 conditions=0 时任何语言的规则都能起手；MDX / StarDict 这类词典的词性是通配 `*`，`filter_by_pos` 拦不住。阿尔巴尼亚语 `sq.json` 的 participle（`-ur → ''`）把 Our 还原成 O，拉丁语 `la.json` 的 plural（`-e → ''`）把 One 还原成 On。`deinflector.cpp:224`（修前）的注释以为「后缀会自然按语言分流」，对共用拉丁字母的语言不成立。
