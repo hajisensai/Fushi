@@ -36,6 +36,15 @@ import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi_engine/media/metadata/dlsite/dlsite_client.dart';
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart';
+import 'package:fushi/src/media/links/media_link_entries.dart'
+    show MediaLinkEntry;
+import 'package:fushi/src/media/links/media_link_inference_host.dart'
+    show mediaLinkInferCallback;
+import 'package:fushi/src/media/links/media_link_opener.dart'
+    show mediaLinkSearchAction, openMediaLinkEntry;
+import 'package:fushi/src/media/links/media_links_section.dart'
+    show showMediaLinksDialog;
+import 'package:fushi/src/media/links/work_kinds_badge.dart';
 import 'package:fushi/src/media/collections/collection_context_dialog.dart';
 import 'package:fushi/src/media/collections/collection_grouping.dart';
 import 'package:fushi/src/media/collections/collection_drag.dart'
@@ -2068,9 +2077,39 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
   }) {
     final MediaCollectionRow? collection = group.collection;
     if (collection == null) {
-      return _buildGameCard(group.coverItem.payload, block: block);
+      final GalgameEntry game = group.coverItem.payload;
+      // 「另有：小说 · 动画」作品角标（AI 库管家 spec §4.3），数据取进程级作品图缓存。
+      return WorkKindsBadgeOverlay.entry(
+        database: _appModel.database,
+        endpoint: (kind: MediaLinkKind.game, key: game.id),
+        enabled: !_reordering,
+        onPressed: _showWorkLinks,
+        child: _buildGameCard(game, block: block),
+      );
     }
-    return _buildCollectionCard(group, collection, block: block);
+    return WorkKindsBadgeOverlay.collection(
+      database: _appModel.database,
+      collectionId: collection.id,
+      enabled: !_reordering,
+      onPressed: _showWorkLinks,
+      child: _buildCollectionCard(group, collection, block: block),
+    );
+  }
+
+  /// 角标点开的「同一作品」弹窗（与书架书卡同一形态；游戏详情页里是常驻区块）。
+  void _showWorkLinks(MediaLinkEndpoint self) {
+    unawaited(
+      showMediaLinksDialog(
+        context: context,
+        database: _appModel.database,
+        self: self,
+        onOpen: (MediaLinkEntry e) =>
+            openMediaLinkEntry(context: context, ref: ref, entry: e),
+        searchActionFor: (MediaLinkKind k) =>
+            mediaLinkSearchAction(context: context, ref: ref, kind: k),
+        onInfer: mediaLinkInferCallback(ref: ref, self: self),
+      ),
+    );
   }
 
   /// 合集长按菜单的封面图源：自设封面 → 组内顺序第一个有封面文件的游戏；都没有

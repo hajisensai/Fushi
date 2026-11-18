@@ -111,6 +111,14 @@ List<OpDescription> describeBookMetadataOps(
         description:
             'What to write back: cover, title, author. Default [cover].',
       ),
+      OpParam.boolean(
+        'onlyEmpty',
+        description:
+            'Only fill fields that are empty now: skip the title when a '
+            'display-name override exists, the author when one is set, and '
+            'the cover when an override cover exists. Rejected when nothing '
+            'is left to write.',
+      ),
     ],
     availability: kit.whenModule(ModuleId.services),
     undo: _applyUndo(kit),
