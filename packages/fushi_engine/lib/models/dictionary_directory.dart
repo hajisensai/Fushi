@@ -31,8 +31,9 @@ enum DictDirDeleteOutcome {
 /// 删除一本词典的磁盘目录。
 ///
 /// 为什么不是一句 `dir.deleteSync(recursive: true)`（BUG-1756）：
-/// 词典加载时 native 引擎把 `hash.table` / `bloom.filter` / `blobs.bin` /
-/// `media.bin` / `media.idx` 全部 `MapViewOfFile` 常驻映射
+/// 词典加载时 native 引擎把索引（`key.index`，旧式词典是 `hash.table` /
+/// `bloom.filter`）、记录文件（`blobs.bin` / `blobs3.bin`）、`media.bin` /
+/// `media.idx` 全部 `MapViewOfFile` 常驻映射
 /// （`native/fushidicts/fushidicts_src/query.cpp` 的 `add_dict` →
 /// `memory/memory.cpp` 的 `map_rd`）。Windows 上只要那份 view 还活着，
 /// `DeleteFileW` 一律返回 ERROR_USER_MAPPED_FILE(1224)，删除必抛

@@ -2472,6 +2472,8 @@
   "dict_update_summary": "$updated đã cập nhật, $current mới nhất, $failed thất bại.",
   "dict_update_tooltip": "Cập nhật từ điển",
   "dict_update_updating": "Đang cập nhật $name…",
+  "dict_upgrade_format_progress": "Upgrading dictionary format ($done/$total)",
+  "dict_upgrade_format_uncancellable": "Upgrading the dictionary format can't be interrupted",
   "dictionaries": "Từ điển",
   "dictionaries_delete_failed": "Không thể xóa từ điển",
   "dictionaries_deleting_data": "Đang xóa dữ liệu từ điển…",

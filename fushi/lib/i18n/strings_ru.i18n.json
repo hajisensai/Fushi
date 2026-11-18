@@ -2472,6 +2472,8 @@
   "dict_update_summary": "Обновлено: $updated, актуально: $current, не удалось: $failed.",
   "dict_update_tooltip": "Обновить словарь",
   "dict_update_updating": "Обновление $name…",
+  "dict_upgrade_format_progress": "Upgrading dictionary format ($done/$total)",
+  "dict_upgrade_format_uncancellable": "Upgrading the dictionary format can't be interrupted",
   "dictionaries": "Словари",
   "dictionaries_delete_failed": "Не удалось удалить словари",
   "dictionaries_deleting_data": "Удаление данных словаря...",

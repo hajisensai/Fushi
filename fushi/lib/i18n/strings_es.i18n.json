@@ -2472,6 +2472,8 @@
   "dict_update_summary": "$updated actualizados, $current al día, $failed fallaron.",
   "dict_update_tooltip": "Actualizar diccionario",
   "dict_update_updating": "Actualizando $name…",
+  "dict_upgrade_format_progress": "Upgrading dictionary format ($done/$total)",
+  "dict_upgrade_format_uncancellable": "Upgrading the dictionary format can't be interrupted",
   "dictionaries": "Diccionarios",
   "dictionaries_delete_failed": "No se pudieron eliminar los diccionarios",
   "dictionaries_deleting_data": "Eliminando datos del diccionario...",

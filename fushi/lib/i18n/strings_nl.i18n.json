@@ -2472,6 +2472,8 @@
   "dict_update_summary": "$updated bijgewerkt, $current up-to-date, $failed mislukt.",
   "dict_update_tooltip": "Woordenboek bijwerken",
   "dict_update_updating": "$name bijwerken…",
+  "dict_upgrade_format_progress": "Upgrading dictionary format ($done/$total)",
+  "dict_upgrade_format_uncancellable": "Upgrading the dictionary format can't be interrupted",
   "dictionaries": "Woordenboeken",
   "dictionaries_delete_failed": "Verwijderen van woordenboeken mislukt",
   "dictionaries_deleting_data": "Woordenboekgegevens verwijderen...",

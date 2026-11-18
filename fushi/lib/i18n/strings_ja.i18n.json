@@ -2472,6 +2472,8 @@
   "dict_update_summary": "$updated 件を更新、$current 件は最新、$failed 件が失敗しました。",
   "dict_update_tooltip": "辞書を更新",
   "dict_update_updating": "$name を更新中…",
+  "dict_upgrade_format_progress": "Upgrading dictionary format ($done/$total)",
+  "dict_upgrade_format_uncancellable": "Upgrading the dictionary format can't be interrupted",
   "dictionaries": "辞書",
   "dictionaries_delete_failed": "辞書の削除に失敗しました",
   "dictionaries_deleting_data": "辞書データを削除中...",

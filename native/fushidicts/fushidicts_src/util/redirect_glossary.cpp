@@ -10,6 +10,7 @@
 #include <tuple>
 #include <unordered_set>
 
+#include "../hash/dict_index.hpp"
 #include "../memory/memory.hpp"
 #include "fs_utf8.hpp"
 
@@ -80,16 +81,6 @@ bool write_flag(const std::string& dict_dir, bool present, uint64_t blobs_size) 
 
 namespace {
 
-// 经 map_rd_shared（BUG-4013）：词典已被引擎装载时复用那份映射，不再为一次扫描另映射一整份 blobs.bin。
-struct Mapped {
-  memory::shared_mapping owner;
-  memory::mapped_file file;
-  explicit Mapped(const std::string& path)
-      : owner(memory::map_rd_shared(path)), file(owner ? *owner : memory::mapped_file{}) {}
-  Mapped(const Mapped&) = delete;
-  Mapped& operator=(const Mapped&) = delete;
-};
-
 template <typename T>
 bool read_at(const memory::blob_file& f, uint64_t pos, T& out) {
   const memory::blob_span span = f.view(pos, sizeof(T));
@@ -101,10 +92,10 @@ bool read_at(const memory::blob_file& f, uint64_t pos, T& out) {
 }  // namespace
 
 std::optional<bool> scan_dict_dir(const std::string& dict_dir) {
-  Mapped hash_table(dict_dir + "/hash.table");
-  // blobs.bin 经 blob_file：32 位进程按窗口映射（BUG-4013），64 位整份映射。
-  const memory::shared_blob_file blobs = memory::open_blob_file(dict_dir + "/blobs.bin");
-  if (!hash_table.file || hash_table.file.size < sizeof(uint32_t) || !blobs) return std::nullopt;
+  // 索引 + 记录文件经 hash::dict_index（key.index 或旧式 hash.table，进程内按文件身份
+  // 共享映射，BUG-4013）；记录文件经 blob_file：32 位进程按窗口映射，64 位整份映射。
+  hash::dict_index index;
+  if (!index.open(dict_dir)) return std::nullopt;
 
   // v2（.fushidicts_2）词典的 term glossary 可能用 dict.zstd 训练字典压缩；与
   // DictionaryQuery::add_dict 同样的挂载条件。
@@ -119,60 +110,47 @@ std::optional<bool> scan_dict_dir(const std::string& dict_dir) {
   std::unique_ptr<ZSTD_DCtx, decltype(&ZSTD_freeDCtx)> dctx(ZSTD_createDCtx(), ZSTD_freeDCtx);
   if (!dctx) return std::nullopt;
 
-  const memory::mapped_file& ht = hash_table.file;
-  const memory::blob_file& bl = *blobs;
-  uint32_t capacity = 0;
-  std::memcpy(&capacity, ht.data, sizeof(uint32_t));
-  const size_t slot_size = sizeof(uint64_t) * 2;  // {hash, offset}
-  const size_t max_slots = (ht.size - sizeof(uint32_t)) / slot_size;
-  if (capacity > max_slots) capacity = static_cast<uint32_t>(max_slots);
+  const memory::blob_file& bl = index.blobs();
 
   // 同一 glossary blob 被多条记录（表记 / 读音两个键、去重后的同释义）共享，只判一次。
   std::unordered_set<uint64_t> seen;
   std::string buf;
-  for (uint32_t i = 0; i < capacity; i++) {
-    const uint64_t slot = sizeof(uint32_t) + static_cast<uint64_t>(i) * slot_size;
-    uint64_t slot_hash = 0;
-    uint64_t bucket = 0;
-    std::memcpy(&slot_hash, ht.data + slot, sizeof(uint64_t));
-    if (slot_hash == 0) continue;
-    std::memcpy(&bucket, ht.data + slot + sizeof(uint64_t), sizeof(uint64_t));
-    uint32_t count = 0;
-    if (!read_at(bl, bucket, count)) continue;
-    for (uint32_t k = 0; k < count; k++) {
-      uint64_t rec = 0;
-      if (!read_at(bl, bucket + sizeof(uint32_t) + static_cast<uint64_t>(k) * sizeof(uint64_t), rec)) break;
+  bool found = false;
+  index.for_each_location([&](hash::location loc) -> bool {
+    hash::for_each_record_offset(bl, loc, [&](uint64_t rec) -> bool {
       // 与 query_raw 逐字段同布局：type, expr, reading, glossary offset/size。
       uint8_t type = 0xff;
-      if (!read_at(bl, rec, type) || type != 0) continue;
+      if (!read_at(bl, rec, type) || type != 0) return true;
       uint64_t pos = rec + 1;
       uint16_t expr_len = 0;
-      if (!read_at(bl, pos, expr_len)) continue;
+      if (!read_at(bl, pos, expr_len)) return true;
       pos += sizeof(uint16_t) + expr_len;
       uint16_t reading_len = 0;
-      if (!read_at(bl, pos, reading_len)) continue;
+      if (!read_at(bl, pos, reading_len)) return true;
       pos += sizeof(uint16_t) + reading_len;
       uint64_t glossary_offset = 0;
       uint32_t glossary_size = 0;
-      if (!read_at(bl, pos, glossary_offset) || !read_at(bl, pos + sizeof(uint64_t), glossary_size)) continue;
+      if (!read_at(bl, pos, glossary_offset) || !read_at(bl, pos + sizeof(uint64_t), glossary_size)) return true;
       // query_raw 不校验 glossary 区间；这里越界的记录在查询期解压同样失败（判否），
       // 跳过即同口径。
-      if (glossary_offset > bl.size() || bl.size() - glossary_offset < glossary_size) continue;
-      if (!seen.insert(glossary_offset).second) continue;
+      if (glossary_offset > bl.size() || bl.size() - glossary_offset < glossary_size) return true;
+      if (!seen.insert(glossary_offset).second) return true;
       const memory::blob_span glossary = bl.view(glossary_offset, glossary_size);
-      if (glossary.size < glossary_size) continue;
+      if (glossary.size < glossary_size) return true;
       const uint8_t* data = glossary.data;
-      if (!may_be_redirect(data, glossary_size)) continue;
+      if (!may_be_redirect(data, glossary_size)) return true;
       const unsigned long long raw_size = ZSTD_getFrameContentSize(data, glossary_size);
       buf.resize(static_cast<size_t>(raw_size));
       const size_t n =
           ZSTD_decompress_usingDDict(dctx.get(), buf.data(), buf.size(), data, glossary_size, ddict.get());
-      if (ZSTD_isError(n)) continue;
+      if (ZSTD_isError(n)) return true;
       buf.resize(n);
-      if (parse(buf).has_value()) return true;
-    }
-  }
-  return false;
+      if (parse(buf).has_value()) found = true;
+      return !found;
+    });
+    return !found;
+  });
+  return found;
 }
 
 }  // namespace fushi::redirect_glossary
