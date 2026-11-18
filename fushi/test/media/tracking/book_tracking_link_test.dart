@@ -638,6 +638,52 @@ void main() {
       expect(other.pushed, isEmpty);
     });
 
+    // BUG-4807：阅读器按这个返回值去重。关联在后台跑，发起它的那次调用还没有
+    // 任何站点入队；把那次当成「已报」，关联失败 / 未命中之后就没人再来问了。
+    test('recordBookProgress settles once the site is linked and queued; a '
+        'site whose kind is off does not keep it open', () async {
+      primary.catalogue.add(_bakeNovel);
+      await insertBook('化物語 第1巻');
+      Future<bool> record() => service.recordBookProgress(
+        bookKey: '化物語 第1巻',
+        completedChapterCount: 10,
+        completed: true,
+      );
+
+      expect(await record(), isFalse, reason: 'the link is still being made');
+      await service.whenBookLinksSettled();
+      await service.syncNow();
+      expect(await mapping(_defaultId, '化物語 第1巻'), isNotNull);
+
+      // `other` is connected but its novel switch is off: nothing to wait for.
+      expect(await record(), isTrue);
+      await service.whenBookLinksSettled();
+      await service.syncNow();
+    });
+
+    test(
+      'recordBookProgress stays unsettled while no site has a link',
+      () async {
+        await insertBook('No Such Title Anywhere');
+        Future<bool> record() => service.recordBookProgress(
+          bookKey: 'No Such Title Anywhere',
+          completedChapterCount: 3,
+          completed: false,
+        );
+
+        expect(await record(), isFalse);
+        await service.whenBookLinksSettled();
+        final int searched = primary.searches.length;
+        expect(searched, greaterThan(0));
+
+        // Inside the miss window: not searched again, and still not settled, so
+        // the reader keeps asking (the search retries once the window passes).
+        expect(await record(), isFalse);
+        await service.whenBookLinksSettled();
+        expect(primary.searches, hasLength(searched));
+      },
+    );
+
     test('the other site links from the id the default site gave', () async {
       await enableOther(TrackingKind.novel);
       primary.catalogue.add(_bakeNovel);

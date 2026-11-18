@@ -416,6 +416,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'last_selected_deck',
   'last_selected_dictionary_format',
   'last_selected_model',
+  // bool（默认 true，所有者 2026-11-18 拍板）：AI 库管家自动路径（入库 / 扫描后去抖
+  // 跑一趟）。开着时取代 library_organize_auto。设备本地（按量计费只对这台设备成立）。
+  'library_curate_auto',
+  // String（JSON）：AI 库管家本机运行记录、增量水位、进度与抑制清单（设备本地）。
+  'library_curate_state',
   // String（JSON：`"<库>.<尺寸档>" → 列数`）：库页「每行数量」，缺省 = 自动
   // （library_grid_columns.dart，BUG-4219）。设备本地。
   'library_grid_columns',

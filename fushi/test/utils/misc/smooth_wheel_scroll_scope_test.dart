@@ -138,7 +138,11 @@ void main() {
     await tick(tester, -120);
     await tester.pumpAndSettle();
 
-    expect(controller.offset, closeTo(mid - 120, 0.001));
+    // 落点对齐物理像素格（BUG-4842）：与「当前视觉位置 − 一档」差不到半个物理像素。
+    final double dpr = tester.view.devicePixelRatio;
+    expect(controller.offset, closeTo(mid - 120, 0.5 / dpr + 1e-9));
+    final double px = controller.offset * dpr;
+    expect((px - px.roundToDouble()).abs(), lessThan(1e-6));
   });
 
   testWidgets('200% 缩放：Windows 默认一档只有 50 逻辑 px，照样补间（BUG-2867）', (
@@ -437,5 +441,22 @@ void main() {
         reason: '${f.path}：滚轮平滑只在 SmoothWheelScrollScope 一处',
       );
     }
+  });
+
+  test('wheel landing offsets snap to the physical pixel grid (BUG-4842)', () {
+    // 1.75 × 界面缩放 1.0051：一档 57.14 逻辑 px 原本落在 100.51 物理 px。
+    const double k = 1.75 * 1.0051;
+    final double snapped = snapScrollOffsetToDevicePixels(
+      100 / 1.75,
+      physicalPixelsPerUnit: k,
+    );
+    final double px = snapped * k;
+    expect((px - px.roundToDouble()).abs(), lessThan(1e-9));
+    expect((px - 100 / 1.75 * k).abs(), lessThanOrEqualTo(0.5));
+    // 拿不到变换（旋转 / 不在树上）时原样返回。
+    expect(
+      snapScrollOffsetToDevicePixels(12.34, physicalPixelsPerUnit: null),
+      12.34,
+    );
   });
 }

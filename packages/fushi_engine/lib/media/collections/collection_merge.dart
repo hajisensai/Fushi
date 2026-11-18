@@ -53,6 +53,8 @@ Future<int> mergeMediaCollectionsInto(
         m.mediaType,
         m.entryKey,
         userIntent: userIntent,
+        // 成员搬家：「用户亲手放进来」跟着走（v159）。
+        pinnedByUser: userIntent || m.pinnedByUser,
       );
     }
     await db.absorbOrganizeIdentity(targetId: targetId, source: source);

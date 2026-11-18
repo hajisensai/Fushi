@@ -30,7 +30,7 @@ const window = {};
 // VN 对象替身：只补 shim 依赖的协作者。屏表用 {start,end} 表示可匹配字符区间；
 // fitScreensToViewport 的替身按 opts.refit 返回「新 CSS 下」的新屏表。
 function makeVn(opts) {
-  const log = {render: [], refits: 0, imageVars: 0, anchors: 0, progressFallback: []};
+  const log = {render: [], refits: 0, imageVars: 0, anchors: 0, progressFallback: [], recentred: 0};
   const vn = {
     log: log,
     screens: opts.screens,
@@ -39,6 +39,9 @@ function makeVn(opts) {
     totalChapterChars: opts.totalChapterChars || 0,
     screenStartCharCount(s) { return s.start; },
     screenEndCharCount(s) { return s.end; },
+    screenStartRawCount(s) { return s.start; },
+    screenEndRawCount(s) { return s.end; },
+    centerScreenInk() { log.recentred++; },
     screenContainsCharOffset(s, t) { return t >= s.start && t < s.end; },
     calculateProgress() { return opts.progress === undefined ? 0.5 : opts.progress; },
     applyImageMaxVars() { log.imageVars++; },
@@ -122,17 +125,68 @@ function makeVn(opts) {
   assert(JSON.stringify(vn.log.render) === '[0]', 'fallback must render a screen');
 }
 
-// ── ④ 无参 refitScreensToCurrentViewport（updatePageSize / setChromeInsets 路径）行为不变 ──
+// ── ④ 无参 refitScreensToCurrentViewport（updatePageSize / setChromeInsets 路径）：
+//      当前屏的内容变了 → 按进度比例选屏并重渲（BUG-1688 行为不变）──
 {
   const vn = makeVn({
     screens: [{start: 0, end: 10}, {start: 10, end: 20}],
     currentScreenIndex: 1,
     totalChapterChars: 20,
-    progress: 0.4
+    progress: 0.4,
+    refit() { return [{start: 0, end: 8}, {start: 8, end: 16}, {start: 16, end: 20}]; }
   });
   vn.refitScreensToCurrentViewport();
   assert(vn.log.progressFallback.length === 1 && vn.log.progressFallback[0] === 0.4,
     'argument-less refit must keep anchoring by progress (BUG-1688 behaviour)');
+  assert(JSON.stringify(vn.log.render) === '[0]', 'a changed current screen must be re-rendered');
+}
+
+// ── ⑤ 无参重切后当前屏还是同一片内容 → 不重渲（renderScreen 会清选区、把逐字显现直接
+//      补完），只认领新下标并补做随盒变化的几何 ──
+{
+  // 屏表没变（挤压态下开关工具栏、盒变了但每屏仍装得下）。
+  const same = makeVn({
+    screens: [{start: 0, end: 10}, {start: 10, end: 20}],
+    currentScreenIndex: 1,
+    totalChapterChars: 20
+  });
+  same.refitScreensToCurrentViewport();
+  assert(same.log.refits === 1, 'the box may have changed, so the table is still recut');
+  assert(same.log.render.length === 0,
+    'an unchanged current screen must not be re-rendered, got ' + JSON.stringify(same.log.render));
+  assert(same.log.progressFallback.length === 0, 'no landing search when the screen is kept');
+  assert(same.currentScreenIndex === 1 && same.log.recentred === 1,
+    'the kept screen is re-centred for the new box');
+
+  // 前面的屏被拆成两屏：当前屏内容没变、下标后移一位。
+  const shifted = makeVn({
+    screens: [{start: 0, end: 10}, {start: 10, end: 20}],
+    currentScreenIndex: 1,
+    totalChapterChars: 20,
+    refit() { return [{start: 0, end: 5}, {start: 5, end: 10}, {start: 10, end: 20}]; }
+  });
+  shifted.refitScreensToCurrentViewport();
+  assert(shifted.log.render.length === 0, 'same slice at a new index must not be re-rendered');
+  assert(shifted.currentScreenIndex === 2,
+    'the kept screen adopts its new index, got ' + shifted.currentScreenIndex);
+
+  // 同 key 的屏不止一个（没有顺序号的零宽屏）→ 认不准，照旧重渲。
+  const ambiguous = makeVn({
+    screens: [{start: 0, end: 10}, {start: 10, end: 10}, {start: 10, end: 10}],
+    currentScreenIndex: 1,
+    totalChapterChars: 10
+  });
+  ambiguous.refitScreensToCurrentViewport();
+  assert(ambiguous.log.render.length === 1, 'an ambiguous slice falls back to re-rendering');
+
+  // 样式重锚（给了偏移）改了 CSS，同一片内容也要重渲。
+  const styled = makeVn({
+    screens: [{start: 0, end: 10}, {start: 10, end: 20}],
+    currentScreenIndex: 1,
+    totalChapterChars: 20
+  });
+  styled.refitScreensToCurrentViewport(10);
+  assert(JSON.stringify(styled.log.render) === '[1]', 'an anchored (style) refit always re-renders');
 }
 
 process.stdout.write('OK');

@@ -35,6 +35,7 @@ class HeavyHistoryEntry {
     required this.ran,
     required this.exitCode,
     this.bookMb,
+    this.staticMb,
     this.peakMb,
   });
 
@@ -56,7 +57,16 @@ class HeavyHistoryEntry {
   final Duration ran;
   final int exitCode;
   final int? bookMb;
+
+  /// What the run's kind and import closure book before any measurement
+  /// (heavy_budget.dart testBookMb / the kind's booking): the class its peak
+  /// is a sample of ([heavyMeasuredBookMb]). Null in lines written before
+  /// bookings were measured; [bookMb] was that value then.
+  final int? staticMb;
   final int? peakMb;
+
+  /// The booking class this run's peak is a sample of.
+  int? get bookingClassMb => staticMb ?? bookMb;
 
   Map<String, Object?> toJson() => <String, Object?>{
     'at': at.toUtc().toIso8601String(),
@@ -67,6 +77,7 @@ class HeavyHistoryEntry {
     'ranS': ran.inSeconds,
     'exit': exitCode,
     if (bookMb != null) 'bookMb': bookMb,
+    if (staticMb != null) 'staticMb': staticMb,
     if (peakMb != null) 'peakMb': peakMb,
   };
 
@@ -100,6 +111,7 @@ class HeavyHistoryEntry {
     if (when == null || place == null) return null;
     final Object? label = j['label'];
     final Object? book = j['bookMb'];
+    final Object? fixed = j['staticMb'];
     final Object? peak = j['peakMb'];
     return HeavyHistoryEntry(
       at: when,
@@ -110,6 +122,7 @@ class HeavyHistoryEntry {
       ran: Duration(seconds: ran),
       exitCode: code,
       bookMb: book is int ? book : null,
+      staticMb: fixed is int ? fixed : null,
       peakMb: peak is int ? peak : null,
     );
   }
@@ -158,6 +171,71 @@ List<HeavyHistoryEntry> readHeavyHistory(
     if (e != null && (since == null || !e.at.isBefore(since))) entries.add(e);
   }
   return entries;
+}
+
+// Bookings measured from this file (2026-11-18). The budget adds up what
+// each run books, so a booking above what the runs use keeps the machine
+// idle while runs queue, and one below it promises memory twice. The fixed
+// numbers went stale both ways: analyze booked 8 GB (the p90 of 11-10) while
+// 202 runs of 11-15..18 peaked at p95 5.6 GB, two of them holding half the
+// 32 GB budget and leaving room for two tests in three slots; a small-closure
+// test booked 4 GB and peaked at p95 5.4 GB, a `dart test` 2 GB against
+// 2.7 GB. A class with enough recent runs here books what they measured.
+
+/// The kinds whose runs of one booking class are alike enough to measure:
+/// a test class is its import-closure bucket and tester count, analyze is
+/// one job. Builds are not (a gradle unit test and a release build book the
+/// same) and keep their ceiling.
+const Set<String> kHeavyMeasuredKinds = <String>{'test', 'analyze'};
+
+/// Fewer measured runs than this in the window: the fixed booking stands.
+const int kHeavyMeasuredMinSamples = 20;
+
+/// Only the newest runs of a class count, and none older than the window.
+const int kHeavyMeasuredMaxSamples = 200;
+const Duration kHeavyMeasuredWindow = Duration(days: 14);
+
+/// A run shorter than this died before it compiled anything; its peak says
+/// nothing about the class.
+const Duration kHeavyMeasuredMinRun = Duration(seconds: 20);
+
+/// What a run of [kind] whose fixed booking is [staticMb] books when the
+/// [history] holds enough runs of that class on this machine: the 95th
+/// percentile of their Job peaks plus a tenth, rounded up to 256 MB, at
+/// least half of [staticMb] and at most the Job ceiling [capMb]. Null (the
+/// fixed booking stands) for other kinds and for a class with fewer than
+/// [kHeavyMeasuredMinSamples] runs since [now] minus [kHeavyMeasuredWindow].
+int? heavyMeasuredBookMb(
+  Iterable<HeavyHistoryEntry> history, {
+  required String kind,
+  required int staticMb,
+  required int capMb,
+  required DateTime now,
+}) {
+  if (!kHeavyMeasuredKinds.contains(kind)) return null;
+  final DateTime since = now.subtract(kHeavyMeasuredWindow);
+  final List<HeavyHistoryEntry> runs = <HeavyHistoryEntry>[
+    for (final HeavyHistoryEntry e in history)
+      if (e.where == HeavyRanWhere.here &&
+          e.kind == kind &&
+          e.bookingClassMb == staticMb &&
+          e.peakMb != null &&
+          e.ran >= kHeavyMeasuredMinRun &&
+          !e.at.isBefore(since) &&
+          e.at.isBefore(now))
+        e,
+  ]..sort((HeavyHistoryEntry a, HeavyHistoryEntry b) => a.at.compareTo(b.at));
+  if (runs.length < kHeavyMeasuredMinSamples) return null;
+  final int from = runs.length > kHeavyMeasuredMaxSamples
+      ? runs.length - kHeavyMeasuredMaxSamples
+      : 0;
+  final int p95 = heavyPercentile(<int>[
+    for (final HeavyHistoryEntry e in runs.skip(from)) e.peakMb!,
+  ], 0.95);
+  final int padded = ((p95 * 11 / 10) / 256).ceil() * 256;
+  final int floor = staticMb ~/ 2;
+  final int ceiling = capMb < floor ? floor : capMb;
+  return padded.clamp(floor, ceiling);
 }
 
 /// Nearest-rank percentile [p] (0..1) of [values]; 0 for none.

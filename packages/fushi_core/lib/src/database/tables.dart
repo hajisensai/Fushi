@@ -1433,6 +1433,12 @@ class MediaCollectionItems extends Table {
   /// 合集内序：playlist 的播放顺序 / collection 的展示顺序。
   IntColumn get sortIndex => integer().withDefault(const Constant(0))();
 
+  /// v159：用户亲手放进这个合集（手动加入 / 撤销 AI 的移出）。为 true 时自动路径
+  /// （AI 整理）不得把它移出——「用户否决过移出」记在成员行上、随合集清单同步，
+  /// 换一台设备也成立。单调：自动入口只在新插入时写 false，不把 true 改回 false；
+  /// 跨端合并取或。见 AI 库管家设计稿 §7。
+  BoolColumn get pinnedByUser => boolean().withDefault(const Constant(false))();
+
   /// 复合主键：同一合集内一条目一行（允许跨合集重复）。
   @override
   Set<Column> get primaryKey => {collectionId, mediaType, entryKey};
@@ -4223,8 +4229,15 @@ class MediaLinks extends Table {
   /// 推断置信度 0..1；手动连接为 NULL。
   RealColumn get confidence => real().nullable()();
 
+  /// `confirmed_by == 'user'` 的镜像（存量持久化名冻结：备份合并、旧版同步对端还在
+  /// 读写它）。由 DB 写入口与 [confirmedBy] 一起维护，调用方不单独写。
   BoolColumn get isUserConfirmed =>
       boolean().withDefault(const Constant(false))();
+
+  /// v159：谁让这条连接生效（`MediaLinkConfirmer`）：`user` = 用户手动连接 / 确认；
+  /// `ai` = AI 按门槛直接生效（可撤销，用户确认后升为 `user`）；NULL = 建议。
+  /// 非空即「已生效」，`user` 压过 `ai`。见 AI 库管家设计稿 §5.3。
+  TextColumn get confirmedBy => text().nullable()();
 
   /// 推断理由（AI 的「为什么认为是同一作品」、确定性判据的证据摘要）。
   TextColumn get reason => text().nullable()();

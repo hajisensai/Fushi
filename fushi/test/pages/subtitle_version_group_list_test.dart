@@ -311,6 +311,8 @@ void main() {
       required List<SubtitleVersionGroup> groups,
       required Set<String> selected,
       required void Function(VideoSubtitleCandidate) onToggle,
+      void Function(VideoSubtitleCandidate)? onPick,
+      int? requestedEpisode,
     }) async {
       tester.view.physicalSize = const Size(1000, 900);
       tester.view.devicePixelRatio = 1.0;
@@ -322,9 +324,9 @@ void main() {
           home: Scaffold(
             body: SubtitleVersionGroupList(
               groups: groups,
-              requestedEpisode: null,
+              requestedEpisode: requestedEpisode,
               busyIdentityKey: null,
-              onPickCandidate: (_) {},
+              onPickCandidate: onPick ?? (_) {},
               selectedIdentityKeys: selected,
               onToggleCandidate: onToggle,
             ),
@@ -409,6 +411,94 @@ void main() {
         ),
       );
       expect(box.value, isTrue);
+    });
+
+    testWidgets('BUG-4802 已有勾选时点文件行只切换勾选，不下载', (WidgetTester tester) async {
+      final List<SubtitleVersionGroup> groups = buildSubtitleVersionGroups(
+        _seasonPack(),
+      );
+      final SubtitleVersionGroup group = groups.firstWhere(
+        (SubtitleVersionGroup g) => g.members.length > 1,
+      );
+      final List<String> toggled = <String>[];
+      final List<String> picked = <String>[];
+      await pumpMultiSelect(
+        tester,
+        groups: groups,
+        selected: <String>{group.members.first.identityKey},
+        onToggle: (VideoSubtitleCandidate c) => toggled.add(c.identityKey),
+        onPick: (VideoSubtitleCandidate c) => picked.add(c.identityKey),
+      );
+      await tester.tap(
+        find.byKey(ValueKey<String>('subtitle-version-${group.key}')),
+      );
+      await tester.pumpAndSettle();
+
+      // 点的是行本身（文件名），不是勾选框：宿主的下载回调会当场关页，手滑一下
+      // 勾选就全丢了。
+      final VideoSubtitleCandidate other = group.members[1];
+      await tester.tap(find.text(other.fileName));
+      await tester.pumpAndSettle();
+      expect(toggled, <String>[other.identityKey]);
+      expect(picked, isEmpty, reason: '多选态下点行不得触发下载');
+    });
+
+    testWidgets('BUG-4802 已有勾选时点卡片只展开，不替用户挑一集下载', (WidgetTester tester) async {
+      final List<SubtitleVersionGroup> groups = buildSubtitleVersionGroups(
+        _seasonPack(),
+      );
+      final SubtitleVersionGroup group = groups.firstWhere(
+        (SubtitleVersionGroup g) => g.members.length > 1,
+      );
+      final List<String> picked = <String>[];
+      await pumpMultiSelect(
+        tester,
+        groups: groups,
+        selected: <String>{group.members.first.identityKey},
+        onToggle: (_) {},
+        onPick: (VideoSubtitleCandidate c) => picked.add(c.identityKey),
+        // 没有勾选时，带目标集点卡片会直接下载第 2 集（见上面的单选用例）。
+        requestedEpisode: 2,
+      );
+      await tester.tap(
+        find.byKey(ValueKey<String>('subtitle-version-${group.key}')),
+      );
+      await tester.pumpAndSettle();
+      expect(picked, isEmpty, reason: '多选态下点卡片不得触发下载');
+      expect(
+        find.byKey(
+          ValueKey<String>('subtitle-file-${group.members[1].identityKey}'),
+        ),
+        findsOneWidget,
+        reason: '卡片展开，逐文件可勾',
+      );
+    });
+
+    testWidgets('没有勾选时点文件行仍是直接下载（单选路径不变）', (WidgetTester tester) async {
+      final List<SubtitleVersionGroup> groups = buildSubtitleVersionGroups(
+        _seasonPack(),
+      );
+      final SubtitleVersionGroup group = groups.firstWhere(
+        (SubtitleVersionGroup g) => g.members.length > 1,
+      );
+      final List<String> toggled = <String>[];
+      final List<String> picked = <String>[];
+      await pumpMultiSelect(
+        tester,
+        groups: groups,
+        selected: const <String>{},
+        onToggle: (VideoSubtitleCandidate c) => toggled.add(c.identityKey),
+        onPick: (VideoSubtitleCandidate c) => picked.add(c.identityKey),
+      );
+      await tester.tap(
+        find.byKey(ValueKey<String>('subtitle-version-${group.key}')),
+      );
+      await tester.pumpAndSettle();
+      final VideoSubtitleCandidate other = group.members[1];
+      await tester.tap(find.text(other.fileName));
+      await tester.pumpAndSettle();
+      expect(picked, <String>[other.identityKey]);
+      expect(toggled, isEmpty);
     });
   });
 }

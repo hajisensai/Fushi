@@ -35,6 +35,8 @@ import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart'
         enumerateMangaPages,
         kMangaOcrOutDirName,
         kMangaOcrOutputFileName;
+import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart'
+    show kMangaOcrSourceModifiedQuery;
 import 'package:fushi/src/sync/interconnect_host_channel.dart';
 import 'package:fushi/src/sync/interconnect_remote_job_poll.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -430,12 +432,19 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
           nextIndex += 1;
           final MangaOcrPageFile page = pages[i];
           final Uint8List bytes = await page.file.readAsBytes();
+          // 源文件修改时间随页带过去：host 的逐页断点缓存按「页名 + 大小 + 修改
+          // 时间」认页，取消后重传同卷靠它命中已识别的页（BUG-4817）。
+          final DateTime modified = await page.file.lastModified();
           _expectJson(
             await _send(
               c,
               'PUT',
               '/api/ocr/job/$id/page/$i',
-              query: <String, String>{'name': page.relativeUrl},
+              query: <String, String>{
+                'name': page.relativeUrl,
+                kMangaOcrSourceModifiedQuery:
+                    '${modified.millisecondsSinceEpoch}',
+              },
               bytes: bytes,
               // 整页字节可重放：写出后断开也可以换同一台 host 的另一条地址重传。
               idempotent: true,

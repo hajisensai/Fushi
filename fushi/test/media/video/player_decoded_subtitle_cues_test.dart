@@ -220,8 +220,17 @@ void main() {
     test('外部换字幕源（setCues）结束回流，迟到的句子不串进新列表', () {
       final int start = src.indexOf('void setCues(List<AudioCue> cues) {');
       final int end = src.indexOf('\n  }\n', start);
+      // setCues 的本体是 _replaceCues（「先播后补」换装要先找回当前句再通知，见
+      // completeEmbeddedTextBridge），回流结束挂在本体上。
+      expect(src.substring(start, end).contains('_replaceCues(cues);'), isTrue);
+      final int replaceAt = src.indexOf(
+        'void _replaceCues(List<AudioCue> cues) {',
+      );
+      expect(replaceAt, greaterThanOrEqualTo(0));
       expect(
-        src.substring(start, end).contains('_stopPlayerDecodedText();'),
+        src
+            .substring(replaceAt, src.indexOf('\n  }\n', replaceAt))
+            .contains('_stopPlayerDecodedText();'),
         isTrue,
       );
     });
