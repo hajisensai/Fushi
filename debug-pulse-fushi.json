@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-18T08:25:32Z",
+ "generatedAt": "2026-11-18T08:38:10Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "568dd53f1aac7fe25c3b9fe5415effb2afdbdd41",
@@ -12,7 +12,7 @@
    "version": "3.3.0",
    "sha": "d2ef711098cb15e7b7bbd3d18a9c840ce408d0fd",
    "unknown": false,
-   "publishedAt": "2026-11-18T08:15:30Z",
+   "publishedAt": "2026-11-18T08:37:54Z",
    "testflight": false,
    "baseSeq": 28910,
    "prs": [
@@ -40,16 +40,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44259200424"
+     "state": "ok"
     },
     "macos": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44259200424"
+     "state": "ok"
     },
     "ios": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44259200424"
+     "state": "ok"
     }
    }
   },
@@ -96,37 +93,6 @@
    "unknown": false,
    "publishedAt": "2026-11-17T21:02:12Z",
    "testflight": true,
-   "baseSeq": 28844,
-   "prs": [],
-   "direct": [
-    {
-     "sha": "2154ab7772f26c223b979acae1434dd52bb069ef",
-     "subject": "test(reader): 方法 × shell 总表登记 VN 专有的 refitScreensToCurrentViewport（#3710 与 #3712 交叉合并漏登记）"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 28844,
-   "version": "3.3.0",
-   "sha": "538601d4d79d3bfa301baeb6b7b45500f6420d0a",
-   "unknown": false,
-   "publishedAt": "2026-11-17T20:08:45Z",
-   "testflight": true,
    "baseSeq": 28650,
    "prs": [
     3721,
@@ -156,6 +122,10 @@
    ],
    "direct": [
     {
+     "sha": "2154ab7772f26c223b979acae1434dd52bb069ef",
+     "subject": "test(reader): 方法 × shell 总表登记 VN 专有的 refitScreensToCurrentViewport（#3710 与 #3712 交叉合并漏登记）"
+    },
+    {
      "sha": "538601d4d79d3bfa301baeb6b7b45500f6420d0a",
      "subject": "docs(bugs): 第二批合并后 settle 撞号（→ BUG-4836～4842）"
     },
@@ -167,8 +137,7 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44150320125"
+     "state": "ok"
     },
     "windows": {
      "state": "ok"
