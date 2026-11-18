@@ -39,6 +39,7 @@ import 'package:fushi/src/epub/book_file_location.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/epub/epub_parser.dart';
+import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi/src/media/manga/book_format_convert.dart';
 import 'package:fushi/src/media/manga/pdf_text_layer_backfill.dart';
 import 'package:fushi_engine/media/manga/manga_archive_importer.dart';
@@ -255,8 +256,12 @@ abstract final class BookFormatRebuild {
     required BookFormat sourceFormat,
     void Function(int done, int total)? onProgress,
   }) async {
-    final Directory staging = await Directory.systemTemp.createTemp(
-      'fushi_book_convert_',
+    // 暂存是书目录的兄弟 `.tmp-*`（生产上就是书库根），不放系统临时目录也不放书目录里面：与书目录同卷，
+    // 逐页栅格化出来的 PNG 移进 `images/` 是 rename（数据根在别的盘时，系统临时目录
+    // 等于每页写两遍）；又不在书目录内，不会和 EPUB 解压树 / 已有 `images/` 撞名；
+    // 被杀留下的残留归导入残留清扫管。
+    final Directory staging = Directory(
+      await EpubStorage.createStagingDirectory(parentDir: p.dirname(bookDir)),
     );
     try {
       switch (sourceFormat) {

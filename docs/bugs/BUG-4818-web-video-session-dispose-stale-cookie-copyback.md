@@ -1,0 +1,6 @@
+## BUG-4818 · 关掉原生播放器网页档时，把内置档罐里的旧 cookie 整批盖回浏览器共享罐
+- **报告**：2026-11-17（网页视频只读补查 gap-webvideo-1，复核 confirmed）
+- **真实性**：✅ 真 bug（按代码路径确证，未在真机复现登出）。`fushi/lib/src/media/video/web_video_session.dart:831-839`（修前）`WebVideoSession.dispose()` 调 `syncWebVideoLoginToBrowser`。这个会话只服务窗口宿主档，而窗口宿主档现在与 app 内浏览器住同一个 cookie 罐（`MangaWebViewEnvironment.obtainWindowedHosting()`）；回抄的来源固定是可捕获档（内置档）的独立罐（同文件 `_syncWebVideoLoginToBrowser`），`copyWebVideoLoginCookies` 对来源里每条 cookie 都 `setCookie`、不比新旧。结果：每关一次原生播放器网页档，就拿内置档罐里上一次开内置档页（多半是上一次制卡重放）时的 cookie 盖掉共享罐里的同名 cookie——在浏览器 / 播放页里换过账号、退出登录、或站点轮换过会话令牌的，都会被改回旧值。来历：BUG-3801 时窗口档还是独立罐，回抄有意义；之后窗口档并进共享罐，函数注释改成了「只在内置档页关掉时调」，这处调用没删。
+- **[x] ① 已修复**（`e40b885fc55`）— 删掉 `WebVideoSession.dispose` 里的回抄（内置档页自己 dispose 时的回抄保留，条件仍是 `!_windowed`）。顺带（gap-webvideo-12）：`copyWebVideoLoginCookies` 为了算「新加了几条」先读一遍目标罐，而返回值全仓无人消费（浏览器侧用 `webBrowserSiteCookieNames` 自己比），预读与返回值一并删，`syncWebVideoLoginToBrowser` 改回 `Future<void>`。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/web_video_mine_queue_guard_test.dart`「BUG-4818」组（源码守卫：`WebVideoSession` 类体内没有回抄 / 复制 cookie 的调用；页面的回抄只在 `!_windowed` 下发起；复制函数不再读目标罐）。会话与 cookie 管理器都要真 WebView2，行为层单测落不了地。
+- **备注**：待真机复测——Windows 上在 app 内浏览器重新登录（或退出登录）Netflix 后，开关一次原生播放器网页档，浏览器里仍是新会话。cookie 逐条串行写的耗时（gap-webvideo-12 的另一半）没量，未改。

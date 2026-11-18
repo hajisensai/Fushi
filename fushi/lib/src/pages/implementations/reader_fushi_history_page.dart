@@ -215,6 +215,7 @@ import 'package:fushi/src/media/links/media_link_opener.dart'
     show mediaLinkSearchAction, openMediaLinkEntry;
 import 'package:fushi/src/media/links/media_links_section.dart'
     show showMediaLinksDialog;
+import 'package:fushi/src/media/links/work_kinds_badge.dart';
 import 'package:fushi/src/media/tracking/book_tracking_dialog.dart';
 
 part 'reader_history/card_widgets.part.dart';
@@ -2761,17 +2762,56 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       }
       final SrtBook? srt = slot.srt;
       if (srt != null) {
-        return _buildSrtCard(
-          srt,
-          epubCoverUri: epubCoverUrisByBookKey[srt.bookKey],
+        return _withWorkKindsBadge(
+          _buildSrtCard(srt, epubCoverUri: epubCoverUrisByBookKey[srt.bookKey]),
+          bookKey: srt.bookKey,
         );
       }
-      return buildMediaItem(slot.epub!);
+      final MediaItem epub = slot.epub!;
+      return _withWorkKindsBadge(
+        buildMediaItem(epub),
+        bookKey: _parseBookKey(epub.mediaIdentifier),
+      );
     }
-    return _buildShelfCollectionCard(
-      group,
-      epubCoverUrisByBookKey,
-      block: block,
+    return WorkKindsBadgeOverlay.collection(
+      database: ref.read(appProvider).database,
+      collectionId: collection.id,
+      enabled: !_selectionMode && !_reordering,
+      onPressed: _showWorkLinks,
+      child: _buildShelfCollectionCard(
+        group,
+        epubCoverUrisByBookKey,
+        block: block,
+      ),
+    );
+  }
+
+  /// 书卡右上角的「另有：漫画 · 动画」角标（AI 库管家 spec §4.3），数据取进程级
+  /// 作品图缓存，不逐卡查库。没有 bookKey（异常行）原样返回。
+  Widget _withWorkKindsBadge(Widget card, {required String? bookKey}) {
+    if (bookKey == null || bookKey.isEmpty) return card;
+    return WorkKindsBadgeOverlay.entry(
+      database: ref.read(appProvider).database,
+      endpoint: (kind: MediaLinkKind.book, key: bookKey),
+      enabled: !_selectionMode && !_reordering,
+      onPressed: _showWorkLinks,
+      child: card,
+    );
+  }
+
+  /// 「同一作品」弹窗（书没有详情页，区块装进弹窗）：书卡菜单与卡片角标共用。
+  void _showWorkLinks(MediaLinkEndpoint self) {
+    unawaited(
+      showMediaLinksDialog(
+        context: context,
+        database: ref.read(appProvider).database,
+        self: self,
+        onOpen: (MediaLinkEntry e) =>
+            openMediaLinkEntry(context: context, ref: ref, entry: e),
+        searchActionFor: (MediaLinkKind k) =>
+            mediaLinkSearchAction(context: context, ref: ref, kind: k),
+        onInfer: mediaLinkInferCallback(ref: ref, self: self),
+      ),
     );
   }
 
@@ -4159,19 +4199,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       DialogListAction(
         label: t.media_link_add,
         icon: FushiIcons.link,
-        onPressed: () => showMediaLinksDialog(
-          context: context,
-          database: appModel.database,
-          self: (kind: MediaLinkKind.book, key: bookKey),
-          onOpen: (MediaLinkEntry e) =>
-              openMediaLinkEntry(context: context, ref: ref, entry: e),
-          searchActionFor: (MediaLinkKind k) =>
-              mediaLinkSearchAction(context: context, ref: ref, kind: k),
-          onInfer: mediaLinkInferCallback(
-            ref: ref,
-            self: (kind: MediaLinkKind.book, key: bookKey),
-          ),
-        ),
+        onPressed: () =>
+            _showWorkLinks((kind: MediaLinkKind.book, key: bookKey)),
       ),
       // 私密：不上传排行榜、不推 Bangumi（本地书 / 漫画没有外部分级可依）。
       DialogListAction(

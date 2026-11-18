@@ -70,10 +70,17 @@ void main() {
     );
     // 自然键幂等 remap（不能按自增 id 直搬）。
     expect(mergeSrc.contains('collection_type'), isTrue);
+    // v159：成员冲突时只把 pinned_by_user 取或（不覆盖本机其余列），仍按复合主键去重。
     expect(
-      mergeSrc.contains('INSERT OR IGNORE INTO media_collection_items'),
+      mergeSrc.contains('INSERT INTO media_collection_items') &&
+          mergeSrc.contains(
+            'ON CONFLICT (collection_id, media_type, entry_key) DO UPDATE SET',
+          ) &&
+          mergeSrc.contains(
+            'pinned_by_user = MAX(pinned_by_user, excluded.pinned_by_user)',
+          ),
       isTrue,
-      reason: '成员按复合主键 INSERT OR IGNORE 去重',
+      reason: '成员按复合主键去重，冲突只把 pinned_by_user 取或',
     );
   });
 
@@ -750,8 +757,11 @@ void main() {
     // 全为远端剧集的合集明明可见却显示「0 集」，与眼前所见割裂（用户实报）。
     // 封面卡形态下同一口径：集数角标必须喂 group.items.length（memberCount），
     // 回退到「只数本地」即转红。
-    final int cardFn = homeSrc.indexOf('Widget _buildCollectionCoverCard(');
-    expect(cardFn, isNonNegative, reason: '缺 _buildCollectionCoverCard');
+    // 卡片本体在 Inner 里（外层只包作品角标），集数口径要查本体。
+    final int cardFn = homeSrc.indexOf(
+      'Widget _buildCollectionCoverCardInner(',
+    );
+    expect(cardFn, isNonNegative, reason: '缺 _buildCollectionCoverCardInner');
     final int cardEnd = homeSrc.indexOf('\n  /// ', cardFn + 1);
     final String cardSrc = homeSrc.substring(
       cardFn,

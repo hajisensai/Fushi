@@ -98,9 +98,19 @@ void main() {
       ),
       isTrue,
     );
+    // 页面侧的 `_recordVideoMineStat` 只是转发：实际写入收口在
+    // `recordVideoMineStat`（video_mine_queue.dart），暂存队列写入 Anki 时记的是同一笔账。
+    expect(
+      containsIdentifierCall(
+        methodBody(src, 'Future<void> _recordVideoMineStat('),
+        'recordVideoMineStat',
+      ),
+      isTrue,
+      reason: '视频页记账必须走与暂存队列共用的 recordVideoMineStat',
+    );
     final String recordBody = methodBody(
-      src,
-      'Future<void> _recordVideoMineStat(',
+      File('lib/src/mining/video_mine_queue.dart').readAsStringSync(),
+      'Future<void> recordVideoMineStat(',
     );
     expect(
       containsIdentifierCall(recordBody, 'recordMiningEvent'),

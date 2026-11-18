@@ -46,8 +46,10 @@ Future<MangaStreamOcrSetup> prepareMangaStreamOcr({
   required Future<bool> Function() confirmLensUpload,
   MangaAiOcrContext? aiContext,
 }) async {
+  // 显式偏好只探那一个引擎；auto 要完整能力表，全探。
   final MangaOcrEngineAvailability availability = await probeMangaOcrEngines(
     engines,
+    only: mangaOcrProbeTargetFor(preference),
   );
   final MangaOcrEngineId? engine = resolveMangaOcrEngine(
     preference: preference,

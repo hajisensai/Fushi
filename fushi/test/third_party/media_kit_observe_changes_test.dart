@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:test/test.dart';
@@ -74,8 +75,112 @@ Future<int> _countCallbacks(File clip, {required bool changesOnly}) async {
   }
 }
 
+/// 等 [condition] 成立，最多 [seconds] 秒；到点仍不成立返回 false。
+Future<bool> _waitFor(bool Function() condition, {int seconds = 5}) async {
+  final Stopwatch sw = Stopwatch()..start();
+  while (!condition()) {
+    if (sw.elapsed > Duration(seconds: seconds)) return false;
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+  }
+  return true;
+}
+
+/// [trackListJson]（`track-list` 的文本形态）里当前选中的字幕轨 id；没有选中的返回 null。
+int? _selectedSubtitleId(String trackListJson) {
+  for (final Object? entry in jsonDecode(trackListJson) as List<Object?>) {
+    final Map<String, Object?> track = entry! as Map<String, Object?>;
+    if (track['type'] == 'sub' && track['selected'] == true) {
+      return track['id'] as int?;
+    }
+  }
+  return null;
+}
+
 void main() {
   final String? libmpv = _libmpvPath();
+
+  // 原盘导航采样只在「轨道变脏」时重读已解析轨道（VideoDiscTrackRefreshGate），脏源是
+  // 比值订阅。字幕切到「无」时 `current-tracks/sub/id` 变为不可用，比值订阅对「变为
+  // 不可用」不回调；`track-list` 的文本形态带每条轨的 selected，属性恒可用，所以它必须
+  // 在脏源里（kVideoDiscResolvedTrackProperties）。这里用真 libmpv 钉住这两点。
+  test(
+    'selection going to "none" reaches a track-list observer, not current-tracks',
+    () async {
+      MediaKit.ensureInitialized(libmpv: libmpv);
+      final Directory dir = Directory.systemTemp.createTempSync(
+        'fushi_observe_track_list_',
+      );
+      final Player player = Player();
+      try {
+        final File clip = await _makeClip(dir);
+        final File srt = File('${dir.path}${Platform.pathSeparator}probe.srt')
+          ..writeAsStringSync('1\n00:00:00,000 --> 00:00:05,000\nprobe\n');
+        final dynamic native = player.platform;
+        await native.setProperty('vo', 'null');
+        await native.setProperty('ao', 'null');
+        await native.setProperty('vid', 'auto');
+        await native.setProperty('pause', 'no');
+        final List<String> trackLists = <String>[];
+        final List<String> subIds = <String>[];
+        await native.observePropertyChanges('track-list', (String v) async {
+          trackLists.add(v);
+        });
+        await native.observePropertyChanges('current-tracks/sub/id', (
+          String v,
+        ) async {
+          subIds.add(v);
+        });
+        await native.command(<String>['loadfile', clip.absolute.path]);
+        expect(
+          await _waitFor(() => trackLists.isNotEmpty),
+          isTrue,
+          reason: '载入后 track-list 应有一次回调',
+        );
+        await native.command(<String>['sub-add', srt.absolute.path, 'select']);
+        expect(
+          await _waitFor(
+            () =>
+                subIds.isNotEmpty &&
+                trackLists.isNotEmpty &&
+                _selectedSubtitleId(trackLists.last) != null,
+          ),
+          isTrue,
+          reason: '选中字幕：两种订阅都该回调 (track-list=$trackLists, sub/id=$subIds)',
+        );
+        final int trackListCalls = trackLists.length;
+        final int subIdCalls = subIds.length;
+
+        await native.setProperty('sid', 'no');
+        expect(
+          await _waitFor(() => trackLists.length > trackListCalls),
+          isTrue,
+          reason: '字幕切到「无」：track-list 的比值订阅必须回调',
+        );
+        expect(_selectedSubtitleId(trackLists.last), isNull);
+        // 再留一段时间给迟到的事件：current-tracks/sub/id 此时不可用，不回调。
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+        // ignore: avoid_print
+        print(
+          '[observe-track-list] track-list calls=${trackLists.length} '
+          'sub/id values=$subIds',
+        );
+        expect(
+          subIds,
+          hasLength(subIdCalls),
+          reason:
+              '比值订阅对「变为不可用」不回调——若这条开始失败，说明补丁语义变了，'
+              '脏源说明要跟着改',
+        );
+      } finally {
+        await player.dispose();
+        dir.deleteSync(recursive: true);
+      }
+    },
+    skip: libmpv == null
+        ? 'Build Windows Debug or set FUSHI_TEST_LIBMPV to libmpv-2.dll'
+        : null,
+    timeout: const Timeout(Duration(seconds: 60)),
+  );
 
   test(
     'observePropertyChanges only fires when the value changes',

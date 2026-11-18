@@ -144,15 +144,15 @@ void main() {
       return f;
     }
 
-    test('torrent 预分配的空洞文件（探测窗全零）-> true', () {
+    test('torrent 预分配的空洞文件（探测窗全零）-> true', () async {
       final File hollow = write(
         'preallocated.m2ts',
         List<int>.filled(kHollowMediaHeaderProbeBytes * 2, 0),
       );
-      expect(hasHollowMediaHeader(hollow.path), isTrue);
+      expect(await hasHollowMediaHeader(hollow.path), isTrue);
     });
 
-    test('已下载完成的 m2ts（192 字节步长的 TS sync）-> false', () {
+    test('已下载完成的 m2ts（192 字节步长的 TS sync）-> false', () async {
       // 真 .m2ts 布局：4 字节 TP_extra_header + 0x47 sync + 187 字节负载。
       final List<int> bytes = <int>[];
       while (bytes.length < kHollowMediaHeaderProbeBytes * 2) {
@@ -160,45 +160,47 @@ void main() {
         bytes.addAll(List<int>.filled(187, 0xFF));
       }
       final File complete = write('downloaded.m2ts', bytes);
-      expect(hasHollowMediaHeader(complete.path), isFalse);
+      expect(await hasHollowMediaHeader(complete.path), isFalse);
     });
 
-    test('内容只在探测窗之后才出现 -> 仍判 true（ffmpeg 此刻同样打不开）', () {
+    test('内容只在探测窗之后才出现 -> 仍判 true（ffmpeg 此刻同样打不开）', () async {
       final List<int> bytes = List<int>.filled(
         kHollowMediaHeaderProbeBytes * 3,
         0,
       );
       bytes[kHollowMediaHeaderProbeBytes + 4] = 0x47;
       final File partial = write('midfile.m2ts', bytes);
-      expect(hasHollowMediaHeader(partial.path), isTrue);
+      expect(await hasHollowMediaHeader(partial.path), isTrue);
     });
 
-    test('短于探测窗的小文件按实际长度判定（不因读不满而误判）', () {
+    test('短于探测窗的小文件按实际长度判定（不因读不满而误判）', () async {
       expect(
-        hasHollowMediaHeader(write('tiny_ok.ts', <int>[0x47, 1, 2]).path),
+        await hasHollowMediaHeader(write('tiny_ok.ts', <int>[0x47, 1, 2]).path),
         isFalse,
       );
       expect(
-        hasHollowMediaHeader(write('tiny_hollow.ts', <int>[0, 0, 0]).path),
+        await hasHollowMediaHeader(
+          write('tiny_hollow.ts', <int>[0, 0, 0]).path,
+        ),
         isTrue,
       );
     });
 
-    test('零长文件 -> true（打得开、内容确实是空的）', () {
+    test('零长文件 -> true（打得开、内容确实是空的）', () async {
       expect(
-        hasHollowMediaHeader(write('empty.mkv', const <int>[]).path),
+        await hasHollowMediaHeader(write('empty.mkv', const <int>[]).path),
         isTrue,
       );
     });
 
-    test('单字节 0x00 -> true', () {
+    test('单字节 0x00 -> true', () async {
       expect(
-        hasHollowMediaHeader(write('one_zero.ts', const <int>[0]).path),
+        await hasHollowMediaHeader(write('one_zero.ts', const <int>[0]).path),
         isTrue,
       );
     });
 
-    test('读不出来 != 空壳：不存在的路径 / 目录 -> false，且各留一条诊断', () {
+    test('读不出来 != 空壳：不存在的路径 / 目录 -> false，且各留一条诊断', () async {
       // BUG-1867 审查：把「打不开」算成空壳，会让所有调用方静默拿到 null——一条
       // 日志都没有，用户主动触发的导入/换封面也查不出为什么没封面。返回 false 是
       // 把这类输入交回下游 ffmpeg，走它自己那条可诊断路径。
@@ -206,11 +208,13 @@ void main() {
       final int diagBefore = ErrorLogService.instance.diagnosticEntries.length;
 
       expect(
-        hasHollowMediaHeader('${tmp.path}${Platform.pathSeparator}nope.mkv'),
+        await hasHollowMediaHeader(
+          '${tmp.path}${Platform.pathSeparator}nope.mkv',
+        ),
         isFalse,
       );
-      // 根本不是普通文件（目录）：openSync 抛，同样按「读不出来」处理。
-      expect(hasHollowMediaHeader(tmp.path), isFalse);
+      // 根本不是普通文件（目录）：open 抛，同样按「读不出来」处理。
+      expect(await hasHollowMediaHeader(tmp.path), isFalse);
 
       final List<ErrorLogEntry> added = ErrorLogService
           .instance
@@ -296,7 +300,7 @@ void main() {
 
     test('空洞拒收是唯一一道门，且在 AppPaths / ffmpeg 之前', () {
       final int gate = source.indexOf(
-        'if (!isRemoteInput && hasHollowMediaHeader(videoPath))',
+        'if (!isRemoteInput && await hasHollowMediaHeader(videoPath))',
       );
       // 抽取器搬进引擎后不认识 app 的 AppPaths，建目录改经 enginePaths 装配点。
       // 仍钉同一条不变式：空洞拒收要排在建目录之前（否则为一个必然失败的输入
@@ -335,7 +339,9 @@ void main() {
     });
 
     test('hasHollowMediaHeader 读失败：记诊断 + 返回 false（不得当成空壳）', () {
-      final int fn = source.indexOf('bool hasHollowMediaHeader(String path)');
+      final int fn = source.indexOf(
+        'Future<bool> hasHollowMediaHeader(String path) async',
+      );
       expect(
         fn,
         greaterThanOrEqualTo(0),
@@ -353,6 +359,19 @@ void main() {
       expect(diag, lessThan(finallyAt), reason: '诊断必须落在 catch 块里');
       expect(ret, greaterThan(diag));
       expect(ret, lessThan(finallyAt), reason: '读失败必须返回 false，不是 true');
+    });
+
+    test('hasHollowMediaHeader 不做同步文件 IO（书架回填在 UI isolate 上调它）', () {
+      final int fn = source.indexOf(
+        'Future<bool> hasHollowMediaHeader(String path) async',
+      );
+      expect(fn, greaterThanOrEqualTo(0));
+      final String body = source.substring(fn, source.indexOf('\n}\n', fn));
+      expect(
+        body,
+        isNot(matches(RegExp(r'\b\w+Sync\('))),
+        reason: 'NAS 休眠 / 网络盘慢时同步 open / read 会逐行卡界面',
+      );
     });
   });
 

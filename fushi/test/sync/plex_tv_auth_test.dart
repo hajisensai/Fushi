@@ -1,6 +1,7 @@
 // plex.tv 账号侧协议（纯 Dart，引擎包）：PIN 建立 / 授权页 URL / 轮询状态机 /
 // resources 解析 / 连接地址排序与可达探测。假 plex.tv 走 MockClient。
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:test/test.dart';
@@ -219,7 +220,7 @@ void main() {
       );
     });
 
-    test('逐条探测，返回第一条可达的；探测抛异常只算不可达', () async {
+    test('并发探测，返回排名最靠前的可达者；探测抛异常只算不可达', () async {
       final List<String> probed = <String>[];
       final String? chosen = await firstReachablePlexConnection(
         const <PlexConnection>[
@@ -235,13 +236,82 @@ void main() {
         },
       );
       expect(chosen, 'c');
-      expect(probed, <String>['a', 'b', 'c']);
+      // 各条同时发起：排在可达者后面的那条也已经探了。
+      expect(probed, <String>['a', 'b', 'c', 'd']);
       expect(
         await firstReachablePlexConnection(const <PlexConnection>[
           PlexConnection(uri: 'x'),
         ], (_) async => false),
         isNull,
       );
+    });
+
+    test('前几条挂着不回时不逐条累加等待：只等到排在可达者前面的都出结果', () async {
+      // gap-remote-6：不在家时局域网地址各自挂满探测超时。假探测用 Completer 模拟
+      // 「挂着」——串行实现会卡在 lan-a 上，永远轮不到 wan。
+      final Map<String, Completer<bool>> pending = <String, Completer<bool>>{
+        for (final String uri in <String>['lan-a', 'lan-b', 'wan', 'relay'])
+          uri: Completer<bool>(),
+      };
+      final List<String> probed = <String>[];
+      String? chosen;
+      bool done = false;
+      final Future<void> run =
+          firstReachablePlexConnection(
+            const <PlexConnection>[
+              PlexConnection(uri: 'lan-a', local: true),
+              PlexConnection(uri: 'lan-b', local: true),
+              PlexConnection(uri: 'wan'),
+              PlexConnection(uri: 'relay', relay: true),
+            ],
+            (String uri) {
+              probed.add(uri);
+              return pending[uri]!.future;
+            },
+          ).then((String? uri) {
+            chosen = uri;
+            done = true;
+          });
+      await pumpEventQueue();
+      expect(probed, <String>['lan-a', 'lan-b', 'wan', 'relay']);
+
+      // 排在后面的先回（relay 最快）：不能抢在排名更靠前的前面定案。
+      pending['relay']!.complete(true);
+      pending['wan']!.complete(true);
+      await pumpEventQueue();
+      expect(done, isFalse, reason: '排在前面的 lan-a / lan-b 还没出结果');
+
+      // 局域网两条到点超时（抛异常 / false 都算不可达）。
+      pending['lan-a']!.completeError(TimeoutException('probe'));
+      pending['lan-b']!.complete(false);
+      await run;
+      expect(chosen, 'wan', reason: '可达的两条里取排名靠前的 wan，不是先回的 relay');
+    });
+
+    test('排名最靠前的那条可达就定案，不等排在后面还挂着的', () async {
+      final Completer<bool> never = Completer<bool>();
+      final String? chosen = await firstReachablePlexConnection(
+        const <PlexConnection>[
+          PlexConnection(uri: 'lan', local: true),
+          PlexConnection(uri: 'wan'),
+        ],
+        (String uri) => uri == 'lan' ? Future<bool>.value(true) : never.future,
+      );
+      expect(chosen, 'lan');
+    });
+
+    test('探测函数同步抛出也只算不可达', () async {
+      final String? chosen = await firstReachablePlexConnection(
+        const <PlexConnection>[
+          PlexConnection(uri: 'bad'),
+          PlexConnection(uri: 'ok'),
+        ],
+        (String uri) {
+          if (uri == 'bad') throw StateError('sync');
+          return Future<bool>.value(true);
+        },
+      );
+      expect(chosen, 'ok');
     });
 
     test('user：id 字符串化，用户名缺省回落 title', () {

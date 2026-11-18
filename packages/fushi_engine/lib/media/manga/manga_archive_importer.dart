@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
+import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/epub/epub_parser.dart';
 import 'package:fushi_engine/epub/epub_series.dart'
     show encodeEpubSeriesMetadata;
@@ -501,8 +502,11 @@ abstract final class MangaArchiveImporter {
     final String extension = p.extension(archivePath).toLowerCase();
     _OpenedArchive? opened;
     _ZipEntryStreamer? streamer;
-    final Directory staging = await Directory.systemTemp.createTemp(
-      'fushi_manga_archive_',
+    // 暂存在书库根下的 `.tmp-*`（BUG-4840），不放系统临时目录：与书目录同卷，页图
+    // 进书目录是 rename 而不是「跨卷拷贝 + 删源」；崩溃留下的残留也归导入残留清扫管
+    // （桌面端系统临时目录里的残留，app 内既看不见也清不掉）。
+    final Directory staging = Directory(
+      await EpubImporter.createStagingDir(db),
     );
     Directory? epubExtraction;
     // 纯图 EPUB 的 OPF 系列声明（见 [MangaImporter.importFromImageFolder] 的
@@ -579,9 +583,7 @@ abstract final class MangaArchiveImporter {
         }
 
         if (extension == '.epub') {
-          epubExtraction = await Directory.systemTemp.createTemp(
-            'fushi_manga_epub_',
-          );
+          epubExtraction = Directory(await EpubImporter.createStagingDir(db));
           // BUG-3845：SVG 内容文档作 spine 的固定版式漫画也要收成页（与
           // [_looksLikeImageEpub] 同一解析口径，判得成就导得进）。
           final EpubBook book = EpubParser.parseSyncFromPath(

@@ -201,11 +201,13 @@ Future<int> enqueueMangaOcrTargets({
   final MangaOcrWizardEngines engines =
       enginesOverride ??
       MangaOcrWizardEngines.resolve(context: context, db: appModel.database);
-  final MangaOcrEngineAvailability availability = await probeMangaOcrEngines(
-    engines,
-  );
   final MangaOcrEnginePreference preference =
       MangaOcrEnginePreferenceKey.fromKey(appModel.mangaOcrEnginePreference);
+  // 本次点名的引擎 / 显式偏好只探那一个；auto 要完整能力表，全探。
+  final MangaOcrEngineAvailability availability = await probeMangaOcrEngines(
+    engines,
+    only: mangaOcrProbeTargetFor(preference, engineChoice: engineChoice),
+  );
   // [engineChoice]：调用方为**本次**点名的引擎（整卷 OCR 向导选引擎同一语义，
   // 不写偏好）；null = 按用户偏好解析。可用性判据两条路一样（isUsable）。
   final MangaOcrEngineId? engine =

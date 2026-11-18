@@ -1324,51 +1324,41 @@ extension _VideoLookupMining on _VideoFushiPageState {
   }
 
   /// 视频制卡的统计记账（= [DictionaryPageMixin.recordMined] 对视频来源的那一次写入），
-  /// 但不经 `ref`：后台落卡时页面可能已经销毁。best-effort，失败吞掉。
+  /// 但不经 `ref`：后台落卡时页面可能已经销毁。实际写入在 [recordVideoMineStat]——
+  /// 暂存队列写入 Anki 时记的是同一笔账，两边共用一份。
   Future<void> _recordVideoMineStat(
     FushiDatabase db,
     ({String bookKey, String title}) identity,
-  ) async {
-    try {
-      await db.recordMiningEvent(
-        bookKey: identity.bookKey,
-        title: identity.title,
-        sourceType: kStatSourceVideo,
-        at: DateTime.now(),
-      );
-    } catch (e, st) {
-      debugPrint('[fushi-stats] video recordMiningEvent failed: $e\n$st');
-    }
-  }
+  ) => recordVideoMineStat(
+    db,
+    bookKey: identity.bookKey,
+    title: identity.title,
+    at: DateTime.now(),
+  );
 
   /// TODO-633: land one mined-sentence history row for a video card. Locator
   /// anchors mirror _toggleFavoriteSentenceForVideo (bookUid + episode +
   /// cue.startMs/duration) so collections reuses _openVideoSentence to jump back.
-  /// Best-effort; failure is swallowed + logged (does not break mining).
+  /// Best-effort; the write (and its failure logging) lives in
+  /// [recordVideoMinedSentence], shared with the staged-queue commit.
   Future<void> _recordMinedSentenceForVideo(
     VideoMiningHistorySnapshot snapshot,
     int? noteId, {
     FushiDatabase? db,
-  }) async {
-    try {
-      await (db ?? appModel.database).addMinedSentence(
-        source: kStatSourceVideo,
-        dateKey: snapshot.dateKey,
-        expression: snapshot.expression,
-        reading: snapshot.reading,
-        glossary: snapshot.glossary,
-        sentence: snapshot.sentence,
-        documentTitle: snapshot.documentTitle,
-        bookKey: snapshot.bookKey,
-        sectionIndex: snapshot.sectionIndex,
-        positionMs: snapshot.positionMs,
-        durationMs: snapshot.durationMs,
-        noteId: noteId,
-      );
-    } catch (e, st) {
-      debugPrint('[fushi-stats] video addMinedSentence failed: $e\n$st');
-    }
-  }
+  }) => recordVideoMinedSentence(
+    db ?? appModel.database,
+    dateKey: snapshot.dateKey,
+    expression: snapshot.expression,
+    reading: snapshot.reading,
+    glossary: snapshot.glossary,
+    sentence: snapshot.sentence,
+    documentTitle: snapshot.documentTitle,
+    bookKey: snapshot.bookKey,
+    sectionIndex: snapshot.sectionIndex,
+    positionMs: snapshot.positionMs,
+    durationMs: snapshot.durationMs,
+    noteId: noteId,
+  );
 }
 
 /// 制卡 ffmpeg 的远端输入是否改走本机中继（与播放器同一条取流路径）。
