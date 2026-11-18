@@ -291,7 +291,10 @@ pub const RULES_KEY: &str = "cacheRules";
 /// - 2（第五波，交接 §38「第五波 导入与写接口」）：回导的外来原生日志（带 `foreignLog` 标记，Dart `_remapExtLog`）的排序键改为
 ///   由发生时刻派生的 HLC（`crate::anki_import_rules::derived_log_hlc`）。之前按导入时刻的操作 HLC 排：更早的外来复习排到
 ///   本机更晚的复习之后、改掉当前排程。
-pub const CACHE_RULES: i64 = 2;
+/// - 3（第六波，交接 §43「第六波 导入红测试收尾」）：同一派生加上界——外来日志的发生时刻晚于载着它的那条操作时不派生、
+///   回落到操作 HLC（第五波复核修复，`derived_log_hlc` 的 `op_wall`）。2 推出时还没有这道上界，按 2 物化过的开发库里
+///   带未来时刻的外来日志排在派生位置上，要重建一次才换成新口径。
+pub const CACHE_RULES: i64 = 3;
 
 /// [Index::log_class_rep] 每个成员一次的点查（走 `log_id (col, id, k)`；查询计划测试用同一份）。
 pub(crate) const LOG_REP_SQL: &str =
