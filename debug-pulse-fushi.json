@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-18T22:01:58Z",
+ "generatedAt": "2026-11-18T22:33:58Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "7aeb1612a3c7fe5706d0c42edcda462546c5ed4c",
-  "seq": 29089
+  "sha": "850f413f5db9a95dafd129e5fd0e9a69472fa70b",
+  "seq": 29091
  },
  "builds": [
   {
@@ -12,8 +12,8 @@
    "version": "3.4.0",
    "sha": "7aeb1612a3c7fe5706d0c42edcda462546c5ed4c",
    "unknown": false,
-   "publishedAt": "2026-11-18T22:01:44Z",
-   "testflight": false,
+   "publishedAt": "2026-11-18T22:33:43Z",
+   "testflight": true,
    "baseSeq": 29087,
    "prs": [
     3747
@@ -25,16 +25,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44394996540"
+     "state": "ok"
     },
     "macos": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44394996540"
+     "state": "ok"
     },
     "ios": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44394996540"
+     "state": "ok"
     }
    }
   },
@@ -73,36 +70,9 @@
    "unknown": false,
    "publishedAt": "2026-11-18T20:33:23Z",
    "testflight": true,
-   "baseSeq": 29083,
-   "prs": [
-    3745
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 29083,
-   "version": "3.4.0",
-   "sha": "f3a2197900bd98c4815e038029f84f43a0f9108a",
-   "unknown": false,
-   "publishedAt": "2026-11-18T19:28:09Z",
-   "testflight": true,
    "baseSeq": 28975,
    "prs": [
+    3745,
     3744,
     3743,
     3515,
@@ -131,8 +101,7 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44362713326"
+     "state": "ok"
     },
     "windows": {
      "state": "ok"
@@ -146,7 +115,29 @@
    }
   }
  ],
- "pending": null,
+ "pending": {
+  "headSha": "850f413f5db9a95dafd129e5fd0e9a69472fa70b",
+  "headSeq": 29091,
+  "prs": [
+   3748
+  ],
+  "direct": [],
+  "truncated": false,
+  "platforms": {
+   "android": {
+    "state": "none"
+   },
+   "windows": {
+    "state": "none"
+   },
+   "macos": {
+    "state": "none"
+   },
+   "ios": {
+    "state": "none"
+   }
+  }
+ },
  "prs": {
   "3467": {
    "number": 3467,
@@ -263,6 +254,15 @@
    "mergedAt": "2026-11-18T20:49:10Z",
    "additions": 88,
    "deletions": 9,
+   "labels": []
+  },
+  "3748": {
+   "number": 3748,
+   "title": "ci(android): Android 冒烟 job 补编 fushi_fsrs",
+   "author": "W1ght",
+   "mergedAt": "2026-11-18T22:13:57Z",
+   "additions": 13,
+   "deletions": 0,
    "labels": []
   }
  }
