@@ -446,11 +446,8 @@ void main() {
       expect(moduleOfShortcutScope(ShortcutScope.webBrowser), isNull);
     });
 
-    test('app 外系统级取词热键跟着 lookup 关——关掉模块不该还能装系统钩子', () {
-      expect(
-        moduleOfShortcutScope(ShortcutScope.globalExternal),
-        ModuleId.lookup,
-      );
+    test('app 外系统级热键恒在——取词是查词能力，查词模块只关查词页（BUG-4846）', () {
+      expect(moduleOfShortcutScope(ShortcutScope.globalExternal), isNull);
     });
 
     test('通用作用域恒在', () {

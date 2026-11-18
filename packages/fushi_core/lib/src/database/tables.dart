@@ -95,6 +95,11 @@ class AudioCues extends Table {
   IntColumn get startMs => integer()();
   IntColumn get endMs => integer()();
   IntColumn get audioFileIndex => integer()();
+
+  /// v160：转录产物的逐 token 发射时间（`{"t":[token...],"o":[相对 startMs 的毫秒...]}`），
+  /// 与本行 cue **重切 / 后处理之后**的边界同步；非转录字幕 / 存量行为 NULL。
+  /// 编解码只在 `AudioCue.fromRow` / `toCompanion`（fushi_audio）。
+  TextColumn get tokenTimingJson => text().nullable()();
 }
 
 // ── srt_books ───────────────────────────────────────────────────────

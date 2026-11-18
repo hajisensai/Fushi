@@ -144,6 +144,11 @@ class DictionaryQuery {
   void query_pitch(std::vector<TermResult>& terms) const;
 
   std::vector<TermResult> query(const std::string& expression) const;
+  // 只要词频的 query()：同一批 (expression, reading) 词条、同样的 rules 与 frequencies，
+  // 但不富化音调、不解压释义——glossaries 与 pitches 恒为空。给「拿一个词形去查它的
+  // 词频」的调用方（Anki 卡组按词频重排：几千张卡各查一次）：释义解压是 query() 的
+  // 大头，而它们一个字也不读。
+  std::vector<TermResult> query_frequencies(const std::string& expression) const;
   std::vector<KanjiResult> query_kanji(const std::string& character) const;
 
   std::vector<char> get_media_file(const std::string& dict_name, const std::string& media_path) const;

@@ -271,6 +271,14 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
     '<documents>/audiobooks/<hash>/ 下的字幕副本绝对路径。',
   ),
 
+  // ── audio_cues ────────────────────────────────────────────────────
+  PathRebaseColumn(
+    'AudioCues',
+    'tokenTimingJson',
+    PathRebaseKind.notAPath,
+    'v160 逐 token 发射时间 JSON（token 文本 + 相对毫秒偏移），无路径。',
+  ),
+
   // ── srt_books ─────────────────────────────────────────────────────
   PathRebaseColumn(
     'SrtBooks',

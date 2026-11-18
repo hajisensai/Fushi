@@ -16,6 +16,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/sync/sync_background_activity.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/scheduling/ambient_ticker.dart';
 
 /// 「吉祥物光晕」开关的运行时真值。持久化在 [ThemeNotifier]（`setMascotGlow`），
 /// 由它在加载 / 改动偏好时发布到这里；画吉祥物的组件拿不到 AppModel，统一监听它。
@@ -82,7 +83,10 @@ class MascotGlow extends StatefulWidget {
   State<MascotGlow> createState() => _MascotGlowState();
 }
 
-class _MascotGlowState extends State<MascotGlow> with TickerProviderStateMixin {
+// 呼吸是永不停止的纯装饰动画，悬浮球常驻时从启动一直挂着帧回调：用 ambient ticker，
+// 不算「有动画在跑」，启动期等空闲的工作才等得到（BUG-4893）。
+class _MascotGlowState extends State<MascotGlow>
+    with AmbientTickerProviderStateMixin {
   AnimationController? _breath;
 
   /// 当前 [_breath] 按哪一档节奏在跑（档位变了要换时长重开）。
