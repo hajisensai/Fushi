@@ -130,7 +130,7 @@ void main() {
       final String helper = maskJsComments(
         methodBody(
           paginated,
-          '_charOffsetAtPoint: function(x, y)',
+          '_charOffsetAtPoint: function(x, y, textOnly)',
           lexicon: SourceLexicon.js,
         ),
       );

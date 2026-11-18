@@ -1,7 +1,7 @@
 /// 在线音源插件曲目下载（docs/specs/2026-10-28-music-plugins.md §5「下载」）：把插件曲目落成
 /// **本地曲目**进曲库，离线可播。
 ///
-/// - 落点：`<documents>/music_downloads/<插件 id>/<专辑名> [<专辑键哈希>]/<碟-曲序> <标题> [<曲目哈希>].<扩展名>`
+/// - 落点：`<下载根>/music/<插件 id>/<专辑名> [<专辑键哈希>]/<碟-曲序> <标题> [<曲目哈希>].<扩展名>`
 ///   （[musicPluginDownloadTarget]）。一张专辑一个目录：目录封面 `cover.<jpg|png|webp>` 只属于这张
 ///   专辑，曲库扫描按目录封面认（native/fushi_music `COVER_STEMS`）。没有专辑的单曲自成一个目录。
 ///   文件名带曲目 id 哈希：同一作品里同名的曲目（ASMR 作品里 mp3 / wav 两套同名文件很常见）不撞。
@@ -40,12 +40,16 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
 import 'package:fushi/src/media/video/online/anime_episode_downloader.dart';
 import 'package:fushi/src/storage/app_paths.dart';
+import 'package:fushi/src/storage/download_layout.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi/src/sync/remote_video_client.dart'
     show RemoteDownloadCancelled;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
-/// `<documents>` 下的下载根目录名（登记在 `AppPaths.fushiOwnedDocumentsEntries`，随数据根迁移）。
+/// **旧**落点 `<documents>/music_downloads` 的目录名（登记在 `AppPaths.fushiOwnedDocumentsEntries`，
+/// 随数据根迁移）。2026-11 起新下载落 `<下载根>/music`（[DownloadLayout.musicRoot]）；旧目录里已下好
+/// 的曲目仍被曲库按绝对路径引用、原地保留，[MusicPluginDownloadService.legacyRoots] 让「已下载」判定
+/// 继续认得它们（否则同一首会被重新下一份到新根）。
 const String kMusicDownloadsDirName = 'music_downloads';
 
 /// 下载中的字节暂存在 `<主名>.download`（下载器在它旁边再派生 `.part` / HLS 断点文件），
@@ -379,6 +383,7 @@ class MusicPluginDownloadService {
   MusicPluginDownloadService({
     required this.downloads,
     required this.root,
+    this.legacyRoots,
     required MusicPluginDownloadStreamFetcher stream,
     required MusicPluginDownloadImporter import,
     MusicPluginDownloadTransfer? transfer,
@@ -402,7 +407,10 @@ class MusicPluginDownloadService {
     required MusicPluginDownloadImporter import,
   }) => MusicPluginDownloadService(
     downloads: downloads,
-    root: () => AppPaths.documentsSubdirectory(kMusicDownloadsDirName),
+    root: () async => Directory((await DownloadRoot.current()).musicRoot),
+    legacyRoots: () async => <Directory>[
+      await AppPaths.documentsSubdirectory(kMusicDownloadsDirName),
+    ],
     stream: (String pluginId, String trackId) => fetchFullMusicPluginStream(
       plugins().source(pluginId),
       trackId,
@@ -413,8 +421,11 @@ class MusicPluginDownloadService {
 
   final InterconnectDownloadManager downloads;
 
-  /// 下载根（`<documents>/music_downloads`）。
+  /// 下载根（`<下载根>/music`）。
   final Future<Directory> Function() root;
+
+  /// 旧下载根（`<documents>/music_downloads`）：只用于「已下载」判定，从不写入。
+  final Future<List<Directory>> Function()? legacyRoots;
 
   final MusicPluginDownloadStreamFetcher _stream;
   final MusicPluginDownloadImporter _import;
@@ -565,7 +576,19 @@ class MusicPluginDownloadService {
       track,
       album: album,
     );
-    final File? existing = await target.existingAudio();
+    File? existing = await target.existingAudio();
+    if (existing == null) {
+      for (final Directory legacy
+          in await legacyRoots?.call() ?? const <Directory>[]) {
+        existing = await musicPluginDownloadTarget(
+          legacy,
+          pluginId,
+          track,
+          album: album,
+        ).existingAudio();
+        if (existing != null) break;
+      }
+    }
     if (existing != null) {
       // 成品在、但可能已被用户从曲库移除：重新登记（同一路径同一 uid，已在库是空操作）。
       await _importOrThrow(existing.path);

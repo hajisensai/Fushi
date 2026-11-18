@@ -7,6 +7,7 @@ import 'dart:typed_data';
 import 'plugin_ffi.dart';
 import 'plugin_models.dart';
 import 'plugin_net_guard.dart';
+import 'plugin_runtime.dart';
 
 /// 插件日志出口（宿主接到 app 日志；插件日志是不可信文本，只当诊断看）。
 typedef MusicPluginLogSink =
@@ -31,7 +32,7 @@ typedef MusicPluginHttpPerformer =
 /// 同一实例的 FFI 调用严格串行（[_pump] 单线推进）；能力调用之间可以交错等待网络。
 /// 运行时被终止（CPU 超预算等）后实例作废：未完成与之后的调用都以 [MusicPluginException] 失败，
 /// 由 [MusicPluginManager] 丢弃并在下次使用时重建。
-class MusicPluginInstance {
+class MusicPluginInstance implements MusicPluginRuntime {
   MusicPluginInstance._({
     required this.info,
     required int handle,
@@ -108,6 +109,7 @@ class MusicPluginInstance {
     );
   }
 
+  @override
   final MusicPluginPackageInfo info;
   int _handle;
 
@@ -140,6 +142,7 @@ class MusicPluginInstance {
   Map<String, String>? _storage;
 
   String get id => info.manifest.id;
+  @override
   bool get isAlive => _fatal == null && _handle != 0;
 
   /// 本实例复用的出站客户端（同一插件连续请求同一主机时复用连接）：每次请求先解析并核对
@@ -160,6 +163,7 @@ class MusicPluginInstance {
   /// 调一个能力。插件抛错 / 返回值无法解析 / 实例被终止都抛 [MusicPluginException]；超过
   /// [timeout]（缺省按能力取 [musicPluginInvokeTimeout]）抛 [MusicPluginTimeoutException]，
   /// 该次调用作废（之后插件再 settle 也只是被丢弃）。
+  @override
   Future<Object?> invoke(
     String method,
     Map<String, Object?> args, {
@@ -200,6 +204,7 @@ class MusicPluginInstance {
 
   /// 按插件网络授权核对登录页 / App 确认链接（与插件自己的请求同一判据）。返回
   /// 「原地址 → 规范化地址」，不在授权内的不出现在结果里。
+  @override
   Map<String, String> checkRequestUrls(Iterable<String> urls) {
     if (!isAlive) return const <String, String>{};
     final List<String> list = urls.toSet().toList();
@@ -233,6 +238,7 @@ class MusicPluginInstance {
   /// 插件交给宿主播放的媒体地址（音频流 / MV）：按授权核对 → 请求头白名单 → 解析并核对主机、
   /// 逐跳跟随重定向（每一跳都按授权核对、解析核对），交回最终地址给播放器。播放器拿到的是
   /// 已经走完重定向的地址；它自己再解析 DNS 的那一步是已知边界（播放器不经本层建连）。
+  @override
   Future<({String url, Map<String, String> headers})> resolveMediaStream(
     String url,
     Map<String, String> headers,
@@ -262,6 +268,7 @@ class MusicPluginInstance {
 
   /// 封面地址批量核对：按授权核对 + 按主机解析核对（每个主机解析一次、并发）。解析失败或落在
   /// 私网的主机下的地址不出现在结果里。封面由图片加载器自己取（含重定向），不逐张探测。
+  @override
   Future<Map<String, String>> checkCoverUrls(Iterable<String> urls) async {
     final Map<String, String> ok = checkMediaUrls(urls);
     final Set<String> hosts = <String>{

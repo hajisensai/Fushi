@@ -177,7 +177,20 @@ enum SystemOcrModelStatus {
   playServicesInvalid,
 
   /// 其它让 Play 服务用不了的情况：系统 OCR 在这台设备上用不了。
-  playServicesUnavailable,
+  playServicesUnavailable;
+
+  /// 这台设备**根本没有可用的 Play 服务**（没装 / 非正版或已损坏 / 其它用不了），
+  /// 不是「装着但停用 / 版本旧 / 正在更新」这类用户点一下就能修好的情况。
+  ///
+  /// 自动选引擎据此跳过系统 OCR（BUG-4705）：Android 的 ML Kit 文字识别是 Play
+  /// 服务里的动态模块，这类设备上每一页都必然失败，自动档不该替用户选一个注定
+  /// 失败的引擎。手动选仍然允许——选中后由引导弹窗说明原因。
+  bool get playServicesAbsent => switch (this) {
+    SystemOcrModelStatus.playServicesMissing ||
+    SystemOcrModelStatus.playServicesInvalid ||
+    SystemOcrModelStatus.playServicesUnavailable => true,
+    _ => false,
+  };
 }
 
 /// `com.google.android.gms.common.ConnectionResult` 里与 Play 服务可用性有关的码。

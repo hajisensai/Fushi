@@ -4,7 +4,7 @@
 
 | 服务 | 应用侧 | 用户侧 |
 |---|---|---|
-| AniDB | 已注册 UDP `fushiplayer` v1，内置非敏感 client/clientver | 本人 AniDB 账号密码；哈希默认关闭 |
+| AniDB | 已注册 UDP `fushiplayer` v1 与 HTTP `fushiplayerhttp` v1，内置非敏感 client/clientver | 本人 AniDB 账号密码；哈希默认关闭 |
 | MAL / Jikan、AniList | 当前公共只读用途无需注册 client | 无需账号或 API key |
 | TMDB | 已核实仓库存在 `TMDB_API_KEY`，发布构建统一注入 | 可以用自己的 key 覆盖，不要求每个用户注册应用 |
 | DanDanPlay | 已核实 `DANDANPLAY_APP_ID`、`DANDANPLAY_APP_SECRET`，发布构建注入 | 一般不需申请个人 API；自建服务按原设置处理 |
@@ -17,6 +17,7 @@ API 登录/服务端可用性与“已配置凭据”不同；界面只说明注
 ## 本轮登记证据
 
 - AniDB 项目：[Fushi / 20715](https://anidb.net/software/20715)。UDP client `fushiplayer`，client ID 29913，version 1（版本记录27688），注册结果明确为 active / official。
+- 2026-11-16：同一项目新增 HTTP client `fushiplayerhttp`，client ID 34980，version 1（版本记录 32304），页面确认 active / official。真实 HTTP anime XML 请求 aid 14591 成功，返回 TV Series、2019-07-07、正片 12 集；该身份回填 `kBundledAniDbHttpClient`，个人账号密码仍只用于 UDP 登录。
 - [旧 AniDB UDP Clients wiki](https://wiki.anidb.net/UDP_Clients) 已废弃，明确要求使用网站客户端登记，不再需要额外编辑 wiki。
 - OpenSubtitles：`FushiPlayer` consumer 175703；免费模式，允许默认匿名下载，未启用开发额度模式。匿名默认额度与个人登录额度不同，应用身份不能代替用户账号。
 - TMDB / DanDanPlay 只核实了 GitHub Actions secret 名称和注入代码，未读取密钥值，也未重复申请。

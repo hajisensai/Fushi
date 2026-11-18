@@ -26,6 +26,7 @@ library;
 
 import 'dart:async';
 
+import 'package:drift/drift.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/video/download/download_confirmed_identity.dart';
@@ -407,13 +408,19 @@ class VideoLibraryScrapeSweep {
     final Set<String> ignoredKeys = await loadIgnoredVideoScrapeWorks(
       _database,
     );
+    // 三张整表与规范身份索引都与来源无关：一轮计划各读一次，所有来源、所有
+    // 作品共用（原先每个来源三次整表读、每部作品 2～2N 次查询）。
+    VideoLibraryPlanSnapshot? snapshot;
+    VideoCanonicalIdentityIndex? identities;
     for (final SourceLibraryRow source in await _localVideoSources()) {
       final VideoSourceScrapeSettingRow? settings = await _database
           .getVideoSourceScrapeSettings(source.id);
       if (settings?.enabled == false) continue;
+      final VideoLibraryPlanSnapshot tables = snapshot ??=
+          await VideoLibraryPlanSnapshot.load(_database);
       final List<VideoSourceScrapeWork> works = await VideoSourceWorkPlanner(
         _database,
-      ).plan(source);
+      ).plan(source, snapshot: tables);
       for (final VideoSourceScrapeWork work in works) {
         // 成员文件全都不在磁盘上的作品不进任何一份清单（BUG-4055）。行与进度
         // 原样保留；文件回来（重新插盘 / 网络盘上线）下一次计划就自然回到队列。
@@ -422,7 +429,9 @@ class VideoLibraryScrapeSweep {
           source: source,
           work: work,
         );
-        if (await _hasCanonicalIdentity(work)) {
+        final VideoCanonicalIdentityIndex index = identities ??=
+            await VideoCanonicalIdentityIndex.load(_database);
+        if (index.hasIdentity(work)) {
           identified.add(entry);
         } else if (ignoredKeys.contains(work.stableKey)) {
           // 已识别的作品照常进 identified（资料刷新 / 哈希补齐不受忽略影响）；
@@ -556,7 +565,15 @@ class VideoLibraryScrapeSweep {
     _sweeping = true;
     _sweepDeferred = false;
     try {
-      final _PlannedWorks planned = await _plannedWorksOrEmpty();
+      final _PlannedWorks planned;
+      try {
+        planned = await _plannedWorks();
+      } catch (error, stack) {
+        // 计划失败 ≠ 「没有待确认作品」：留痕，沿用上一份清单（不拿空清单盖掉
+        // 提醒条），本轮不发批次。
+        engineLog.log('VideoLibraryScrapeSweep.plan', error, stack);
+        return _lastPending;
+      }
       final List<VideoPendingScrapeWork> pending = _lastPending =
           planned.pending;
       if (_isEnabled != null && !_isEnabled()) return pending;
@@ -646,8 +663,10 @@ class VideoLibraryScrapeSweep {
           _ledger.markTransientFailure(transient, _now());
           await _saveLedger();
         }
-      } catch (_) {
-        // 后台静默批次：单轮失败不打扰页面。失败的作品已记账，不反复重试。
+      } catch (error, stack) {
+        // 后台静默批次：单轮失败不打扰页面（不抛、不提示），但原因必须留痕。
+        // 失败的作品已记账，不反复重试。
+        engineLog.log('VideoLibraryScrapeSweep.batch', error, stack);
       }
       return pending;
     } finally {
@@ -675,14 +694,6 @@ class VideoLibraryScrapeSweep {
     await sweepAndListPending();
   }
 
-  Future<_PlannedWorks> _plannedWorksOrEmpty() async {
-    try {
-      return await _plannedWorks();
-    } catch (_) {
-      return const _PlannedWorks();
-    }
-  }
-
   Future<List<SourceLibraryRow>> _localVideoSources() async =>
       (await _database.getMediaSourcesByKind('video'))
           .where((SourceLibraryRow source) => source.transport == 'local')
@@ -708,9 +719,6 @@ class VideoLibraryScrapeSweep {
 
   Future<VideoMetadataWorkRow?> _canonicalWork(VideoSourceScrapeWork work) =>
       canonicalVideoMetadataWork(_database, work);
-
-  Future<bool> _hasCanonicalIdentity(VideoSourceScrapeWork work) =>
-      hasCanonicalVideoMetadataIdentity(_database, work);
 }
 
 /// 计划器作品对应的规范作品行（按合集 id / bookUid 锚定）。
@@ -747,6 +755,68 @@ Future<bool> hasCanonicalVideoMetadataIdentity(
     if (owned == null || !await hasIdentity(owned)) return false;
   }
   return work.members.isNotEmpty;
+}
+
+/// [hasCanonicalVideoMetadataIdentity] 的整库批量版：作品行与「带作品级
+/// provider 身份的作品 id」各读一次，之后逐作品判定不再查库。判据与单作品版
+/// 逐条相同（合集行优先；合集没有作品行时要求每个成员各自有带身份的作品行）。
+///
+/// 只在一轮计划内使用，不跨轮缓存——刮削写身份后下一轮重新读。
+class VideoCanonicalIdentityIndex {
+  VideoCanonicalIdentityIndex._({
+    required Map<int, int> workIdByCollection,
+    required Map<String, int> workIdByBook,
+    required Set<int> identifiedWorkIds,
+  }) : _workIdByCollection = workIdByCollection,
+       _workIdByBook = workIdByBook,
+       _identifiedWorkIds = identifiedWorkIds;
+
+  final Map<int, int> _workIdByCollection;
+  final Map<String, int> _workIdByBook;
+  final Set<int> _identifiedWorkIds;
+
+  static Future<VideoCanonicalIdentityIndex> load(
+    FushiDatabase database,
+  ) async {
+    final Map<int, int> byCollection = <int, int>{};
+    final Map<String, int> byBook = <String, int>{};
+    for (final VideoMetadataWorkRow row
+        in await database.getAllVideoMetadataWorks()) {
+      final int? collectionId = row.collectionId;
+      if (collectionId != null) byCollection[collectionId] = row.id;
+      final String? bookUid = row.bookUid;
+      if (bookUid != null) byBook[bookUid] = row.id;
+    }
+    final $VideoMetadataProviderIdentitiesTable table =
+        database.videoMetadataProviderIdentities;
+    final List<TypedResult> rows =
+        await (database.selectOnly(table, distinct: true)
+              ..addColumns(<Expression<Object>>[table.workId])
+              ..where(table.workId.isNotNull()))
+            .get();
+    return VideoCanonicalIdentityIndex._(
+      workIdByCollection: byCollection,
+      workIdByBook: byBook,
+      identifiedWorkIds: <int>{
+        for (final TypedResult row in rows)
+          if (row.read(table.workId) case final int workId) workId,
+      },
+    );
+  }
+
+  bool hasIdentity(VideoSourceScrapeWork work) {
+    final MediaCollectionRow? collection = work.collection;
+    final int? workId = collection == null
+        ? _workIdByBook[work.members.single.bookUid]
+        : _workIdByCollection[collection.id];
+    if (workId != null) return _identifiedWorkIds.contains(workId);
+    if (collection == null) return false;
+    for (final VideoBookRow member in work.members) {
+      final int? owned = _workIdByBook[member.bookUid];
+      if (owned == null || !_identifiedWorkIds.contains(owned)) return false;
+    }
+    return work.members.isNotEmpty;
+  }
 }
 
 class _PlannedWorks {

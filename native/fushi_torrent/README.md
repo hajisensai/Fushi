@@ -95,7 +95,6 @@ libtorrent 经 **vcpkg** 提供，版本由本目录 `vcpkg.json` 钉死
 
 ```bash
 # 1) 准备 vcpkg（不用装 libtorrent，下一步会按 vcpkg.json 自动装）
-export HTTPS_PROXY=http://127.0.0.1:34151 HTTP_PROXY=http://127.0.0.1:34151
 git clone https://github.com/microsoft/vcpkg <vcpkg>
 <vcpkg>/bootstrap-vcpkg.bat -disableMetrics
 

@@ -42,7 +42,11 @@ bool _srsDeckHasWork(SrsDeckSummary d) => _srsDeckToday(d) > 0 || d.rwkvPending;
 /// 「18 待复习 · 2 学习中 · 4 新词」；RWKV 未就绪时到期一项写「准备中」；全零写「今天已完成」。
 String _srsDeckMeta(SrsDeckSummary d) {
   final List<String> parts = <String>[
-    if (d.reviewCount > 0) t.srs_home_meta_due(n: d.reviewCount),
+    // 分钟单位：到期数是没用满就不截的全部到期卡，改写今天还剩的复习分钟（[SrsReviewCell.byMinutes] 同一口径）。
+    if (d.reviewCount > 0)
+      d.reviewMinutesLeft == null
+          ? t.srs_home_meta_due(n: d.reviewCount)
+          : t.srs_home_meta_due_minutes(n: d.reviewMinutesLeft!),
     if (d.rwkvPending) t.srs_home_meta_pending,
     if (d.learnCount > 0) t.srs_home_meta_learning(n: d.learnCount),
     if (d.newCount > 0) t.srs_home_meta_new(n: d.newCount),
@@ -2005,6 +2009,12 @@ List<PopupMenuEntry<_DeckAction>> _deckMenuItems({
           value: _DeckAction.fillWordAudio,
           child: Text(t.srs_word_audio_backfill_title),
         ),
+        // 只导出这个牌组的子树（拍板台 5h2vW-kVi3）；整库导出仍在牌组列表 ⋯「导出（.apkg）」。
+        PopupMenuItem<_DeckAction>(
+          key: const ValueKey<String>('srs-deck-menu-export'),
+          value: _DeckAction.export,
+          child: Text(t.srs_deck_export),
+        ),
         if (!isDefault)
           PopupMenuItem<_DeckAction>(
             value: _DeckAction.delete,
@@ -2059,6 +2069,9 @@ List<Widget> _srsDeckBanners(
   required VoidCallback onDismissLapisReminder,
   required VoidCallback onStarterPacks,
   required VoidCallback onAddFirst,
+  int legacyLimitUnitDecks = 0,
+  VoidCallback? onKeepLegacyLimitCards,
+  VoidCallback? onAcceptLimitAnswers,
 }) {
   final FushiDesignTokens tokens = FushiDesignTokens.of(context);
   return <Widget>[
@@ -2108,6 +2121,53 @@ List<Widget> _srsDeckBanners(
                     onPressed: onMigrateLapis,
                     icon: const FushiIcon(FushiIcons.swap),
                     label: Text(t.srs_lapis_migration_migrate),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    // 每日上限单位的缺省从「卡片数」改成「作答次数」（拍板台 pr3460）：没写过单位的存量牌组提醒一次，
+    // 「保持按卡片数」写 cards，「按作答次数」写 reviews；不回应时照缺省按作答次数计（[SrsDbStore.limitUnitLegacyDecks]）。
+    if (legacyLimitUnitDecks > 0)
+      FushiCard(
+        key: const ValueKey<String>('srs-limit-unit-notice'),
+        tone: FushiCardTone.primary,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          spacing: tokens.spacing.gap,
+          children: <Widget>[
+            Row(
+              spacing: tokens.spacing.gap * 1.5,
+              children: <Widget>[
+                const FushiIcon(FushiIcons.info),
+                Expanded(
+                  child: Text(
+                    t.srs_limit_unit_notice_title,
+                    style: context.fushiType.titleMediumEmphasized,
+                  ),
+                ),
+              ],
+            ),
+            Text(t.srs_limit_unit_notice_body(n: legacyLimitUnitDecks)),
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: tokens.spacing.gap,
+              runSpacing: tokens.spacing.gap,
+              children: <Widget>[
+                FushiPressScale(
+                  child: FushiTextButton(
+                    key: const ValueKey<String>('srs-limit-unit-keep-cards'),
+                    onPressed: onKeepLegacyLimitCards,
+                    child: Text(t.srs_limit_unit_notice_keep_cards),
+                  ),
+                ),
+                FushiPressScale(
+                  child: FushiFilledButton(
+                    key: const ValueKey<String>('srs-limit-unit-accept'),
+                    onPressed: onAcceptLimitAnswers,
+                    child: Text(t.srs_limit_unit_notice_accept),
                   ),
                 ),
               ],

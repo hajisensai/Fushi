@@ -136,11 +136,10 @@ void main() {
   group('截屏识字制卡带图', () {
     test('识别成功后按选项把定格帧写进缓存；默认开', () {
       final String svc = read('ScreenOcrService.java');
+      // 识别成功的收口（showRecognized：有行、流程未收尾）里定格帧一落定就写缓存。
       expect(
-        svc,
-        contains(
-          'frozenFrame = bitmap;\n                    writeCardFrame(bitmap);',
-        ),
+        body(svc, 'private void showRecognized('),
+        contains('frozenFrame = bitmap;\n        writeCardFrame(bitmap);'),
       );
       expect(
         body(svc, 'private void writeCardFrame('),

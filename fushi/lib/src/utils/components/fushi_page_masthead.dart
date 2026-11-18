@@ -555,12 +555,18 @@ class FushiMastheadSwitch<T extends Object> extends StatelessWidget {
     required this.tabs,
     required this.selected,
     required this.onChanged,
+    this.selectedIsCurrent = true,
     super.key,
   });
 
   final List<LibrarySectionTab<T>> tabs;
   final T selected;
   final ValueChanged<T> onChanged;
+
+  /// false = [selected] 只是视觉锚点，宿主此刻停在不属于任何一项的视图上
+  /// （库页停在导入页时高亮「我的」组）：点中它也要照常回调 [onChanged]，否则
+  /// 那一项看着是选中的、却点不回去（BUG-4706）。默认 true：点当前项不回调。
+  final bool selectedIsCurrent;
 
   @override
   Widget build(BuildContext context) {
@@ -632,7 +638,9 @@ class FushiMastheadSwitch<T extends Object> extends StatelessWidget {
               selected: tabs[i].value == selected,
               style: tabs[i].value == selected ? selectedStyle : idleStyle,
               onTap: () {
-                if (tabs[i].value != selected) onChanged(tabs[i].value);
+                if (!selectedIsCurrent || tabs[i].value != selected) {
+                  onChanged(tabs[i].value);
+                }
               },
             ),
           ],
@@ -719,12 +727,16 @@ class FushiMastheadSegmentedTabs<T extends Object> extends StatefulWidget {
     required this.tabs,
     required this.selected,
     required this.onChanged,
+    this.selectedIsCurrent = true,
     super.key,
   });
 
   final List<LibrarySectionTab<T>> tabs;
   final T selected;
   final ValueChanged<T> onChanged;
+
+  /// 同 [FushiMastheadSwitch.selectedIsCurrent]。
+  final bool selectedIsCurrent;
 
   @override
   State<FushiMastheadSegmentedTabs<T>> createState() =>
@@ -771,7 +783,8 @@ class _FushiMastheadSegmentedTabsState<T extends Object>
             first: i == 0,
             last: i == count - 1,
             onTap: () {
-              if (tabs[i].value != widget.selected) {
+              if (!widget.selectedIsCurrent ||
+                  tabs[i].value != widget.selected) {
                 widget.onChanged(tabs[i].value);
               }
             },

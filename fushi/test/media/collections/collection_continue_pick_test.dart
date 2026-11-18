@@ -90,6 +90,7 @@ void main() {
             mediaType: 'epub',
             entryKey: key,
             sortIndex: 0,
+            pinnedByUser: false,
           ),
           title: key,
           importedAt: 0,

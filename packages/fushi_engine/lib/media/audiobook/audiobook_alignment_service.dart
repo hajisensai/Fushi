@@ -629,59 +629,81 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
   );
 
   // 持久目录音频的唯一写入原语（同步成恰好这一组，幂等、不会先删掉自己的源）。
-  final List<String> persistedAudioPaths =
-      await AudiobookStorage.syncAudioFiles(
-        persistDir,
-        audioPaths,
-        copy: copyAudio,
-        onFile: (String name) {
-          step(AudiobookAlignmentStep.persisting, detail: name);
-          report(0.85, messages._copying(name));
-        },
-      );
+  // 写库是它的 commit：新音频落位之后、旧音频删除之前跑；拷贝或写库任何一步抛错，
+  // 磁盘原样撤回、库也没动（BUG-4810）。
+  final List<String> persistedAudioPaths;
+  try {
+    persistedAudioPaths = await AudiobookStorage.syncAudioFiles(
+      persistDir,
+      audioPaths,
+      copy: copyAudio,
+      onFile: (String name) {
+        step(AudiobookAlignmentStep.persisting, detail: name);
+        report(0.85, messages._copying(name));
+      },
+      commit: (List<String> landedAudio) async {
+        // 单时间轴字幕 + 多个音频文件：按实测时长把 cue 分到各文件（BUG-4279）。
+        // 没传音频（只换字幕）时按这本书现有的音频分。
+        final List<String> cueAudio = landedAudio.isNotEmpty
+            ? landedAudio
+            : <String>[
+                for (final File f in await resolveAudiobookPlaybackFiles(
+                  audioPaths: existing?.audioPaths,
+                  audioRoot: existing?.audioRoot,
+                ))
+                  f.path,
+              ];
+        cues = await splitSingleTimelineCuesAcrossAudioFiles(
+          cues: cues,
+          subtitlePath: persistedSrt,
+          audioPaths: cueAudio,
+        );
 
-  // 单时间轴字幕 + 多个音频文件：按实测时长把 cue 分到各文件（BUG-4279）。没传音频
-  // （只换字幕）时按这本书现有的音频分。
-  final List<String> cueAudio = persistedAudioPaths.isNotEmpty
-      ? persistedAudioPaths
-      : <String>[
-          for (final File f in await resolveAudiobookPlaybackFiles(
-            audioPaths: existing?.audioPaths,
-            audioRoot: existing?.audioRoot,
-          ))
-            f.path,
-        ];
-  cues = await splitSingleTimelineCuesAcrossAudioFiles(
-    cues: cues,
-    subtitlePath: persistedSrt,
-    audioPaths: cueAudio,
-  );
-
-  step(AudiobookAlignmentStep.saving);
-  report(0.9, messages.saving);
-  // 窄写入：一次只说一件事，没有整行入口可以误清别的列（BUG-1678）。
-  await audiobookRepo.replaceAlignment(
-    bookKey: bookKey,
-    format: ext,
-    path: persistedSrt,
-  );
-  if (persistedAudioPaths.isNotEmpty) {
-    await audiobookRepo.replaceAudio(
-      bookKey: bookKey,
-      audioPaths: persistedAudioPaths,
+        step(AudiobookAlignmentStep.saving);
+        report(0.9, messages.saving);
+        // 六次写是一次提交：中途失败不会留下「新字幕路径 + 旧 cue」这类半截状态。
+        await db.transaction(() async {
+          // 窄写入：一次只说一件事，没有整行入口可以误清别的列（BUG-1678）。
+          await audiobookRepo.replaceAlignment(
+            bookKey: bookKey,
+            format: ext,
+            path: persistedSrt,
+          );
+          if (landedAudio.isNotEmpty) {
+            await audiobookRepo.replaceAudio(
+              bookKey: bookKey,
+              audioPaths: landedAudio,
+            );
+          }
+          await audiobookRepo.writeHealth(bookKey: bookKey, health: health);
+          await writeEpubBackedSrtBook(
+            repo: repo,
+            bookKey: bookKey,
+            title: title,
+            author: author,
+            srtPath: persistedSrt,
+            audioPaths: landedAudio,
+          );
+          await audiobookRepo.saveCues(bookKey: bookKey, cues: cues);
+          await audiobookRepo.updateHealthOverlay(
+            bookKey: bookKey,
+            health: health,
+          );
+        });
+      },
     );
+  } catch (_) {
+    // 没提交成：这次新落的字幕副本没有行指着它，收走（源文件本来就在持久目录里
+    // 时 `persistFileWithProgress` 返回的就是它自己，不是副本，不能删）。
+    if (!p.equals(persistedSrt, subtitlePath)) {
+      await deletePersistedSubtitleCopy(
+        persistDir: persistDir,
+        oldPath: persistedSrt,
+        keepPath: previousSrt,
+      );
+    }
+    rethrow;
   }
-  await audiobookRepo.writeHealth(bookKey: bookKey, health: health);
-  await writeEpubBackedSrtBook(
-    repo: repo,
-    bookKey: bookKey,
-    title: title,
-    author: author,
-    srtPath: persistedSrt,
-    audioPaths: persistedAudioPaths,
-  );
-  await audiobookRepo.saveCues(bookKey: bookKey, cues: cues);
-  await audiobookRepo.updateHealthOverlay(bookKey: bookKey, health: health);
   // 换了字幕：旧的持久副本已没有行指着它，删掉。不删的话 `persistFileWithProgress`
   // 撞同名退让成 `<stem> _1.<ext>`，每换一次持久目录里就多一份。排在写库之后：
   // 新副本落库前旧的仍是库里唯一指着的那份。只删持久目录里的（引用的原件不碰）。
@@ -767,15 +789,17 @@ Future<List<String>> replaceAudiobookAudio({
     return result.persistedAudioPaths;
   }
   final Directory persistDir = await AudiobookStorage.ensurePersistDir(bookKey);
-  final List<String> persisted = await AudiobookStorage.syncAudioFiles(
+  // 写库是同步原语的 commit：两行一次提交，抛错则磁盘原样撤回（BUG-4810）。
+  return AudiobookStorage.syncAudioFiles(
     persistDir,
     audioPaths,
     copy: copyAudio,
     onProgress: onProgress,
+    commit: (List<String> persisted) => db.transaction(() async {
+      await audiobookRepo.replaceAudio(bookKey: bookKey, audioPaths: persisted);
+      await SrtBookRepository(
+        db,
+      ).patchByUid(epubBackedSrtBookUid(bookKey), audioPaths: persisted);
+    }),
   );
-  await audiobookRepo.replaceAudio(bookKey: bookKey, audioPaths: persisted);
-  await SrtBookRepository(
-    db,
-  ).patchByUid(epubBackedSrtBookUid(bookKey), audioPaths: persisted);
-  return persisted;
 }

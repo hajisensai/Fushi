@@ -86,4 +86,34 @@ void main() {
       kGoogleLensDisclosureVersion,
     );
   });
+
+  testWidgets('Android 截屏识字：同意框用手机文案（不说显示器），同意记录与桌面截屏共用', (tester) async {
+    final Future<bool> result = await _open(
+      tester,
+      scene: GoogleLensDisclosureScene.mobileScreens,
+    );
+    expect(
+      find.text(t.screen_ocr_google_lens_disclosure_title),
+      findsOneWidget,
+    );
+    expect(
+      find.text(t.screen_ocr_google_lens_disclosure_body_mobile),
+      findsOneWidget,
+    );
+    expect(find.text(t.screen_ocr_google_lens_disclosure_body), findsNothing);
+    expect(
+      t.screen_ocr_google_lens_disclosure_body_mobile,
+      isNot(contains('显示器')),
+    );
+    await tester.tap(find.text(t.manga_google_lens_disclosure_accept));
+    await tester.pumpAndSettle();
+    expect(await result, isTrue);
+    expect(
+      await hasGoogleLensDisclosure(
+        scene: GoogleLensDisclosureScene.desktopScreens,
+      ),
+      isTrue,
+      reason: '同一台设备的应用外截屏：手机上同意过，桌面场景不再重问',
+    );
+  });
 }

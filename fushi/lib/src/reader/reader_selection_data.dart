@@ -25,6 +25,7 @@ class ReaderSelectionData {
     this.carriesLyricsCueContext = false,
     this.lyricsCueContext,
     this.rubySpans = const <FushiRubySpan>[],
+    this.rubySnapTap,
   });
 
   factory ReaderSelectionData.fromJson(Map<String, dynamic> json) {
@@ -56,6 +57,7 @@ class ReaderSelectionData {
       carriesLyricsCueContext: json.containsKey('lyricsCueContext'),
       lyricsCueContext: _readStringKeyedMap(json['lyricsCueContext']),
       rubySpans: FushiRubySpan.listFromWire(json['rubyReadings']),
+      rubySnapTap: RubySnapTap.fromWire(json['rubySnap']),
     );
   }
 
@@ -136,6 +138,33 @@ class ReaderSelectionData {
   /// `buildSelectionPayload` 从 DOM 的 `<ruby>` 读出。查词据此让读音吻合的同长度候选
   /// 排前；旧 payload / 无 ruby 为空。
   final List<FushiRubySpan> rubySpans;
+
+  /// 查词起点被吸附到 `<ruby>` 组首、而被点的字在组内靠后时，从被点字起扫的候选
+  /// （ssJjbvbAbs，`resolveRubySnapSelection` 判定用哪份）。没吸附 / 旧 payload 为 null。
+  final RubySnapTap? rubySnapTap;
+}
+
+/// payload 的 `rubySnap`：[tapIndex] 是被点的字在吸附后 [ReaderSelectionData.text] 里的
+/// **UTF-16** 下标（与查词命中长度 `DictionarySearchResult.bestLength` 同单位），[selection]
+/// 是从被点字起扫的整份选区数据（`fromHover` / `selectedSeq` / `lyricsCueContext` 与外层一致）。
+class RubySnapTap {
+  const RubySnapTap({required this.tapIndex, required this.selection});
+
+  /// 字段缺失 / 类型不对返回 null（当作没有候选，按吸附结果查词）。
+  static RubySnapTap? fromWire(Object? raw) {
+    if (raw is! Map) return null;
+    final Object? index = raw['tapIndex'];
+    final Object? selection = raw['selection'];
+    if (index is! num || index <= 0 || selection is! Map) return null;
+    final ReaderSelectionData data = ReaderSelectionData.fromJson(
+      _readStringKeyedMap(selection)!,
+    );
+    if (data.text.isEmpty) return null;
+    return RubySnapTap(tapIndex: index.toInt(), selection: data);
+  }
+
+  final int tapIndex;
+  final ReaderSelectionData selection;
 }
 
 Map<String, dynamic>? _readStringKeyedMap(Object? raw) {

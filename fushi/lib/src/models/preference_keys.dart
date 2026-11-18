@@ -189,6 +189,18 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'auto_search',
   'auto_search_debounce_delay',
   'auto_update_dictionaries',
+  // bool（默认 false）：从 NSFW 作品制卡时卡上的封面 / 页图用模糊副本。见
+  // media/nsfw/nsfw_card_image.dart。
+  'blur_nsfw_card_images',
+  // bool（默认 true）：NSFW 作品的封面在库页 / 继续卡等处打模糊。见
+  // media/nsfw/nsfw_cover_blur.dart。
+  'blur_nsfw_covers',
+  // string（默认空）：楽天ブックス书籍检索的 accessKey / applicationId（楽天ウェブ
+  // サービス注册应用后拿到）。两者都填了书籍刮削才出现「楽天ブックス」源。凭据 →
+  // 同时登记在 kCredentialPreferenceKeys、PrefRedactionPolicy.sensitiveKeys 与
+  // deviceLocalPrefKeys（不进备份 / 同步 / Profile）。
+  'book_scrape_rakuten_access_key',
+  'book_scrape_rakuten_application_id',
   // bool：「下载」改名「浏览」的一次性搬迁提示已处理（弹过，或判定本安装不需要
   // 弹）。描述本安装的状态，与 first_time_setup 同族、不随 Profile 走。
   'browse_moved_notice_handled',
@@ -362,6 +374,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // shown / hidden}`，缺省 = auto（按面板自己的默认判据）。见
   // models/home_dashboard_panel.dart 的 [HomeDashboardPanel]。随 Profile 走。
   'home_dashboard_panels',
+  // String（JSON，默认空）：首页小组件网格的两份布局 `{"v":1,"compact":[{"k":kind,
+  // "c":列,"r":行},...],"wide":[...]}`（models/home_widget_layout.dart）。键或某份
+  // 布局缺失 = 没编辑过，渲染时由旧键 `home_dashboard_panels` 迁移现算、不落盘。
+  // kind id 与字段冻结。随 Profile 走、进备份 / 同步（同 home_dashboard_panels）。
+  'home_widget_layout',
   // String（JSON map，默认空）：从互联对端下载的有声书「下载时 host 报的内容版本」
   // `{book:<本机 bookKey> | srt:<uid>: {source, rev}}`（sync/remote_audiobook_revision.dart）。
   // 书架据此提示「对端有更新」。设备本地（SyncRepository 的设备本地清单）。
@@ -399,9 +416,18 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'last_selected_deck',
   'last_selected_dictionary_format',
   'last_selected_model',
+  // bool（默认 true，所有者 2026-11-18 拍板）：AI 库管家自动路径（入库 / 扫描后去抖
+  // 跑一趟）。开着时取代 library_organize_auto。设备本地（按量计费只对这台设备成立）。
+  'library_curate_auto',
+  // String（JSON）：AI 库管家本机运行记录、增量水位、进度与抑制清单（设备本地）。
+  'library_curate_state',
   // String（JSON：`"<库>.<尺寸档>" → 列数`）：库页「每行数量」，缺省 = 自动
   // （library_grid_columns.dart，BUG-4219）。设备本地。
   'library_grid_columns',
+  // bool：库页默认布局改成封面网格（2026-11-15）后的一次性「拼贴仍可选」提示已处理
+  // （弹过，或判定本安装不需要弹）。描述本安装的状态，与 first_time_setup 同族、
+  // 不随 Profile 走（library_layout_default_notice.dart）。
+  'library_layout_default_notice_handled',
   // String（JSON 字符串数组）：AI 整理库里本机「允许再次建议」的被拒分组键。拒绝本身
   // 跨端同步（删除哨兵），放行只对点它的设备成立——放行后再建出的同键合集会让这个
   // 分组在每台设备上自然解除拒绝（设备本地）。
@@ -414,6 +440,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'library_organize_auto_since',
   // bool（默认 false）：用户点过 AI 整理的「会发送什么」说明并同意（设备本地）。
   'library_organize_consented',
+  // bool（默认 false）：连续收听提醒开关（反馈 5_mzP54WVx）；int 分钟（15..120，默认
+  // 60）：提醒间隔。普通偏好，随 Profile / 备份走。见 media/listening_reminder.dart。
+  'listening_reminder_enabled',
+  'listening_reminder_minutes',
   'local_audio_db_display_name',
   'local_audio_db_path',
   'local_audio_dbs',
@@ -600,6 +630,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String（默认 'mesh'）：歌词页流体背景算法 pixi / mesh / classic
   // （MusicLyricsBackdropStyle.prefValue）。
   'music_lyrics_backdrop_style',
+  // bool（默认 true）：歌词页 / MV 结构化歌词里非当前行轻模糊；关掉后上下句保持清晰
+  // （学习时要看前后句，GitHub #3354）。设备本地观感偏好（KaraokeLyricsAppearance.blurInactive）。
+  'music_lyrics_blur_inactive',
   // String（默认 'split'）：歌词页布局 split（左封面右歌词）/ stage（歌词居中 +
   // 底部停靠条）/ disc（唱片 + 一行歌词）。设备本地观感偏好。
   'music_lyrics_layout',
@@ -690,11 +723,16 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'page_backdrop_strength',
   'player_hardware_acceleration',
   'popup_auto_expand_dictionaries',
+  // bool（默认 false）：BUG-4713 起只管非模块宿主（查词页 / 外部弹窗 / 悬浮歌词）。
   'popup_bottom_docked',
-  // bool（默认 true）：底部停靠按模块细分，总开关 popup_bottom_docked 之下生效。
+  // bool：底部停靠按模块独立开关。新语义默认 false；旧语义（无下面的
+  // popup_bottom_docked_per_module 标记）默认 true、受 popup_bottom_docked 总开关门控。
   'popup_bottom_docked_books',
   'popup_bottom_docked_games',
   'popup_bottom_docked_manga',
+  // bool（缺省 = 旧语义）：上面几把键的语义版本，见
+  // PreferencesRepository.popupBottomDockedPerModuleKey。
+  'popup_bottom_docked_per_module',
   'popup_bottom_docked_video',
   // bool：查词弹窗释义紧凑排版（对齐 Hoshi Reader Android
   // "Compact Glossaries"）。默认 false。
@@ -1071,6 +1109,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // all / favorites），下次打开恢复（反馈 xlzGuK5YmD）。
   'video_subtitle_list_filter',
   'video_subtitle_list_font_scale_index',
+  // bool（默认 true）：字幕列表是否列出特效字幕（歌词特效 / 屏幕字，判据在 Rust
+  // 字幕解析层 Markup::effect）；关掉后列表只剩普通台词（拍板台 H7r4mf_z2n）。
+  'video_subtitle_list_show_effects',
   // bool（默认 true）：字幕列表里点字幕文字是否查词；关掉后点哪里都只跳到该句
   // （手机上列表旁的查词弹窗太扁，多数人只拿列表跳转，群反馈 GbN9MoKDCQ）。
   'video_subtitle_list_tap_lookup',
@@ -1227,6 +1268,9 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
 /// 🔴 凭据键：值为 base64 敏感凭据，不进日志 / 不进明文导出。
 /// （`media_source_secret_<id>` 前缀族见 [kKnownPreferenceKeyPrefixes]。）
 const Set<String> kCredentialPreferenceKeys = <String>{
+  // 楽天ブックス书籍检索凭据。
+  'book_scrape_rakuten_access_key',
+  'book_scrape_rakuten_application_id',
   // 复习同步 v2 各存储位置的集合密钥（hex）。
   'srs_sync2_location_keys',
   // 每条 AI 提供商记录里带 base64 的 apiKeyB64。

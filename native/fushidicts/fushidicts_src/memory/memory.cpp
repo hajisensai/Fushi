@@ -744,6 +744,34 @@ bool sync_directory(const std::string& dir) {
 #endif
 }
 
+bool remove_file(const std::string& path) {
+#ifdef _WIN32
+  const std::wstring wpath = to_wide(path);
+  HANDLE file = CreateFileW(wpath.c_str(), DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                            OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+  if (file == INVALID_HANDLE_VALUE) {
+    return false;
+  }
+  // FileDispositionInfoEx（= 21）+ DELETE | POSIX_SEMANTICS（Windows 10 1809+）：名字立刻摘掉，
+  // 仍映射着它的视图照常可读——与 POSIX unlink 同语义，也是 MSVC STL std::filesystem::remove
+  // 的做法。自己调而不走 std::filesystem::remove：libc++（llvm-mingw）那边是 DeleteFileW，
+  // 文件还被映射就删不掉，同一份代码在两个工具链上行为不同。旧系统不认 Ex 再退回经典删除。
+  struct {
+    ULONG Flags;
+  } posix_info{0x1 /* DELETE */ | 0x2 /* POSIX_SEMANTICS */};
+  bool ok = SetFileInformationByHandle(file, static_cast<FILE_INFO_BY_HANDLE_CLASS>(21), &posix_info,
+                                       sizeof(posix_info)) != 0;
+  if (!ok) {
+    FILE_DISPOSITION_INFO classic{TRUE};
+    ok = SetFileInformationByHandle(file, FileDispositionInfo, &classic, sizeof(classic)) != 0;
+  }
+  CloseHandle(file);
+  return ok;
+#else
+  return ::unlink(path.c_str()) == 0;
+#endif
+}
+
 file_lock::file_lock(const std::string& path) {
 #ifdef _WIN32
   const std::wstring wpath = to_wide(path);

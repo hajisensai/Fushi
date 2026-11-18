@@ -31,10 +31,10 @@ using hash::key_index;
 // 另一个进程（主进程 / 查词弹窗进程）正在写的那份。与联合过滤器缓存同一口径。
 constexpr std::chrono::minutes kStaleTmpAge{10};
 
-// 尽力删除：删不掉（Windows 上仍被映射 / 已不存在）不是错误，由之后的调用再清。
+// 尽力删除：删不掉（已不存在 / 仍被别的句柄打开）不是错误，由之后的调用再清。仍被映射
+// 的旧文件也删得掉（memory::remove_file 在 Windows 上走 POSIX 语义），映射着它的引擎照常读。
 void remove_if_possible(const std::string& path) {
-  std::error_code ec;
-  std::filesystem::remove(fushi::fs_path(path), ec);
+  (void)memory::remove_file(path);
 }
 
 // 导入完成的标记（query.cpp dict_format_version 同一组名字）的路径；没有 = 不是完整

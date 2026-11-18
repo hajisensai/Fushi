@@ -1,0 +1,84 @@
+# 资源管理器封面缩略图（native/fushi_shell_thumbs，Rust：COM 处理器 DLL + 一次性宿主进程）的
+# **PR 阶段门**。
+#
+# ── 补的是哪个缺口 ────────────────────────────────────────────────────────────────
+#   出包：release-desktop.yml 的 Windows job 用 build_windows_dll.ps1 编出两个产物放进安装包。
+#   但那条只在 push 上跑，PR 阶段没人编它、更没人跑它的测试。本 workflow 在 windows 上：
+#     * `cargo test --release --locked`：封面选取 / epub OPF / 帧协议单测 + 端到端测试——照
+#       资源管理器的调用顺序走 COM（DllGetClassObject → IInitializeWithFile → GetThumbnail），
+#       处理器真的拉起宿主 exe，宿主用**真的** 7z.dll（tools/bundle_7za.ps1 同一份、SHA-256 钉死）
+#       解 rar5 / 7z，用**真的** pdfium.dll（与 app 的 pdfium_dart 同一个 chromium/7811 包、
+#       SHA-256 钉死）渲 pdf。`FUSHI_THUMBS_REQUIRE_DEPS=1`：缺依赖判红，不 skip。
+#     * 测试里还有 tests/registration_contract.rs：fushi.iss 的 CLSID / 注册键与 crate 常量一致，
+#       所以 fushi.iss 与 release-desktop.yml 也在路径门里。
+#
+# ── 退出码纪律 ────────────────────────────────────────────────────────────────────
+# 无 `continue-on-error`；下载失败、哈希不符、测试红都直接判红。
+name: native-shell-thumbs-gate
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: ['main', 'develop']
+    paths:
+      - 'native/fushi_shell_thumbs/**'
+      - 'fushi/windows/installer/fushi.iss'
+      - 'tools/bundle_7za.ps1'
+      - '.github/workflows/release-desktop.yml'
+      - '.github/workflows/native-shell-thumbs-gate.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  windows-tests:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      # 工具链与 release-desktop.yml 的 p2p_rust 同一版本（.github/actions/native-store-names/names.sh）。
+      - name: Set up Rust (fushi_shell_thumbs)
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
+        with:
+          toolchain: '1.95.0'
+          targets: x86_64-pc-windows-msvc
+      - name: Fetch pinned 7-Zip (same as the installer bundle)
+        shell: pwsh
+        run: |
+          $bundle = Join-Path $env:RUNNER_TEMP 'thumbs-deps'
+          New-Item -ItemType Directory -Force -Path $bundle | Out-Null
+          pwsh -NoProfile -ExecutionPolicy Bypass -File tools/bundle_7za.ps1 `
+            -BundleDirectory $bundle -DownloadCache (Join-Path $env:RUNNER_TEMP 'fushi-7za-cache')
+          if ($LASTEXITCODE -ne 0) { throw "bundle_7za.ps1 failed ($LASTEXITCODE)" }
+          "FUSHI_TEST_7Z_DIR=$(Join-Path $bundle '7za')" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Fetch pinned pdfium (same package as pdfium_dart's hook)
+        shell: pwsh
+        run: |
+          $url = 'https://github.com/bblanchon/pdfium-binaries/releases/download/chromium%2F7811/pdfium-win-x64.tgz'
+          $expected = '2E7AF12674AC3716CB0E20369BB9FB269CEADFA2F0B0597097A520E6834175A0'
+          $dir = Join-Path $env:RUNNER_TEMP 'pdfium'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $tgz = Join-Path $dir 'pdfium-win-x64.tgz'
+          Invoke-WebRequest -Uri $url -OutFile $tgz
+          $actual = (Get-FileHash -LiteralPath $tgz -Algorithm SHA256).Hash
+          if ($actual -ne $expected) { throw "pdfium SHA-256 mismatch: expected $expected, got $actual" }
+          tar -xzf $tgz -C $dir bin/pdfium.dll
+          if ($LASTEXITCODE -ne 0) { throw "tar failed ($LASTEXITCODE)" }
+          "FUSHI_TEST_PDFIUM_DLL=$(Join-Path $dir 'bin\pdfium.dll')" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: cargo test --release (fushi_shell_thumbs, real 7z.dll + pdfium.dll)
+        shell: pwsh
+        working-directory: native/fushi_shell_thumbs
+        env:
+          FUSHI_THUMBS_REQUIRE_DEPS: '1'
+        run: |
+          cargo test --release --locked
+          if ($LASTEXITCODE -ne 0) { throw "cargo test failed ($LASTEXITCODE)" }
+      - name: Build release artifacts (same script as release-desktop.yml)
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File native/fushi_shell_thumbs/build_windows_dll.ps1
+          if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 failed ($LASTEXITCODE)" }

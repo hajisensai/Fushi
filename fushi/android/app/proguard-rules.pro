@@ -53,6 +53,9 @@
 # extensions" 区块——Mihon 自己走 -dontobfuscate 全保，Fushi 有混淆，只能逐包 keep。
 # ---------------------------------------------------------------------------
 -keep class eu.kanade.tachiyomi.source.** { *; }
+# extension-lib 1.3+ 宿主 API（上游在 Mihon app 模块，Android 宿主自己声明；BUG-4738）。
+# 宿主自身不调用它，不 keep 会被 R8 整个删掉。
+-keep class eu.kanade.tachiyomi.AppInfo { *; }
 # Aniyomi（视频）扩展的宿主 ABI：与漫画同一条理由，只是包名不同。
 -keep class eu.kanade.tachiyomi.animesource.** { *; }
 -keep class eu.kanade.tachiyomi.network.** { *; }

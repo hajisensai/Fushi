@@ -795,15 +795,11 @@ void test_robustness(const std::string& root, Deinflector& deinflector) {
     }
     expect_same(want, snapshot(*engine, deinflector), "live: the loaded engine is unaffected by the upgrade");
     expect_same(want, snapshot_of(set, deinflector, true), "live: a new engine on the upgraded dicts");
-#ifdef _WIN32
-    // 引擎还映射着旧文件，删不掉，留着。
-    expect(exists(set.term + "/hash.table"), "live (Windows): mapped hash.table survives the upgrade");
-    expect(exists(set.freq + "/blobs.bin"), "live (Windows): mapped blobs.bin survives the rewrite");
-#else
+    // 引擎还映射着旧文件，名字照样立刻摘掉（POSIX unlink；Windows 上是 POSIX 语义删除，
+    // MSVC 与 llvm-mingw 一致），映射着的引擎照常读（上面 "unaffected"）。
     expect(!exists(set.term + "/hash.table") && !exists(set.term + "/bloom.filter"),
-           "live (POSIX): superseded index files are unlinked at once");
-    expect(!exists(set.freq + "/blobs.bin"), "live (POSIX): superseded blobs.bin is unlinked at once");
-#endif
+           "live: superseded index files are unlinked at once");
+    expect(!exists(set.freq + "/blobs.bin"), "live: superseded blobs.bin is unlinked at once");
     // app 的次序：影子引擎先装上升级后的词典，旧引擎再放手，然后补跑一遍清理。清理时
     // 新引擎正开着 key.index / blobs3.bin（Windows 上是只读共享的句柄 / 映射）——旧文件
     // 照样要清得掉。
