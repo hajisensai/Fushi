@@ -18,6 +18,8 @@ import 'package:fushi/src/pages/implementations/ai_mcp_servers_page.dart'
 import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart';
 import 'package:fushi/src/pages/implementations/ai_web_knowledge_sites_section.dart';
 import 'package:fushi/src/pages/implementations/ai_web_search_section.dart';
+import 'package:fushi/src/media/collections/library_organize_runner.dart'
+    show runLibraryCurateInteractive;
 import 'package:fushi/src/pages/implementations/library_organize_history_page.dart';
 import 'package:fushi/src/pages/implementations/torrent_settings_section.dart'
     show kDownloadExecutionHostSettingsItemId;
@@ -391,11 +393,40 @@ SettingsDestination buildAiDestination() {
         summaryBuilder: (SettingsContext c) =>
             _aiSectionModifiedSummary('ai.library_organize', c),
         items: <SettingsItem>[
+          // AI 库管家（spec docs/specs/2026-11-18-ai-library-curator-design.md §9）：
+          // 自动路径默认开（所有者 2026-11-18 拍板；没指派任何 AI 时不发请求，副标题
+          // 写明发送什么、可能计费）。开着时它接管导入后的自动任务，下面旧的「导入后
+          // 自动整理」开关收起来——两套自动任务并成一处，不会对同一批条目重复跑。
+          SettingsSwitchItem(
+            id: 'ai.library_curate_auto',
+            title: t.library_curate_auto_setting,
+            subtitle: t.library_curate_auto_setting_notice,
+            icon: FushiIcons.aiAssistant,
+            value: (SettingsContext c) =>
+                c.appModel.prefsRepo.libraryCurateAuto,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.prefsRepo.setLibraryCurateAuto(value),
+            defaultValue: true,
+          ),
+          SettingsActionItem(
+            id: 'ai.library_curate_run',
+            title: t.library_curate_run_action,
+            icon: FushiIcons.aiAssistant,
+            cli: const SettingsCliAction.unsupported(
+              '命令行整理整个库用 fushi_cli library curate（--estimate 先估算）',
+            ),
+            onTap: (SettingsContext c) => runLibraryCurateInteractive(
+              context: c.context,
+              appModel: c.appModel,
+            ),
+          ),
           SettingsSwitchItem(
             id: 'ai.library_organize_auto',
             title: t.library_organize_auto_setting,
             subtitle: t.library_organize_auto_setting_notice,
             icon: FushiIcons.aiAssistant,
+            visible: (SettingsContext c) =>
+                !c.appModel.prefsRepo.libraryCurateAuto,
             value: (SettingsContext c) =>
                 c.appModel.prefsRepo.libraryOrganizeAuto,
             onChanged: (SettingsContext c, bool value) =>

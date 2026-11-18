@@ -317,9 +317,26 @@ class AdminSrs {
         'reason': 'srs_unavailable',
       }, status: 409);
     }
-    await ctx.updateConfig(next);
-    // 写设备的设置文件，已打开的库的 RWKV 服务当场换成新档位的（不重启）。
-    if (rwkvSize != null) await srs!.setRwkvModelSize(rwkvSize);
+    if (rwkvSize == null) {
+      await ctx.updateConfig(next);
+      return _json(status());
+    }
+    // 先写设备的档位设置文件：写不进去（磁盘满 / 权限）就整次 500、config.yaml 一个字段都不动——
+    // 不能让其它字段已生效、客户端却以为整次失败了。config.yaml 没写进去时把档位写回原值再抛；
+    // 已写盘、只是推给 host 时失败（配置已落地）就不回滚档位，免得档位与已落地的配置分家。
+    final ServerSrs running = srs!;
+    final SrsRwkvModelSize prevSize = running.rwkvModelSize;
+    await running.writeRwkvModelSize(rwkvSize);
+    try {
+      await ctx.updateConfig(next);
+    } catch (_) {
+      if (!identical(ctx.config, next)) {
+        await running.writeRwkvModelSize(prevSize);
+      }
+      rethrow;
+    }
+    // 已打开的库的 RWKV 服务当场换成新档位的（不重启；对齐时按设置文件里的档位）。
+    await running.applyConfig();
     return _json(status());
   }
 

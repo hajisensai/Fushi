@@ -493,6 +493,65 @@ void main() {
     expect(readSrsRwkvModelSize(support), SrsRwkvModelSize.small);
   });
 
+  Future<shelf.Response> rawPut(Map<String, Object?> body) => api.handle(
+    shelf.Request(
+      'PUT',
+      Uri.parse('http://localhost/api/admin/srs'),
+      body: jsonEncode(body),
+    ),
+  );
+
+  test(
+    'PUT 同时给 rwkvModel 与别的字段、档位文件写不进去：整次 500，config.yaml 与内存配置都不动',
+    () async {
+      final Directory support = host.paths.support;
+      final File configFile = File(p.join(tmp.path, 'fushi_server.yaml'));
+      final String configBefore = await configFile.readAsString();
+      final int hourBefore = host.config.srs.rolloverHour;
+      // 档位文件先写临时文件再改名：临时文件的位置被目录占了 = 写入失败（磁盘满 / 权限同一条路）。
+      await Directory(
+        '${srsRwkvModelSizeFile(support).path}.tmp',
+      ).create(recursive: true);
+
+      final shelf.Response r = await rawPut(<String, Object?>{
+        'rolloverHour': hourBefore == 7 ? 8 : 7,
+        'rwkvModel': 'tiny',
+      });
+      expect(r.statusCode, 500, reason: await r.readAsString());
+      expect(host.config.srs.rolloverHour, hourBefore);
+      expect(await configFile.readAsString(), configBefore);
+      expect(readSrsRwkvModelSize(support), SrsRwkvModelSize.small);
+    },
+  );
+
+  test('PUT 带 rwkvModel 与别的字段、config.yaml 写不进去：档位文件写回原值，内存配置也不动', () async {
+    final Directory support = host.paths.support;
+    final File configFile = File(p.join(tmp.path, 'fushi_server.yaml'));
+    Future<Object?> rolloverHourNow() async {
+      final shelf.Response g = await api.handle(
+        shelf.Request('GET', Uri.parse('http://localhost/api/admin/srs')),
+      );
+      final Map<String, Object?> body = Map<String, Object?>.from(
+        jsonDecode(await g.readAsString()) as Map,
+      );
+      return Map<String, Object?>.from(body['config']! as Map)['rolloverHour'];
+    }
+
+    final Object? hourBefore = await rolloverHourNow();
+    // config.yaml 的位置被目录占了：写配置失败。
+    await configFile.delete();
+    await Directory(configFile.path).create();
+
+    final shelf.Response r = await rawPut(<String, Object?>{
+      'rolloverHour': hourBefore == 7 ? 8 : 7,
+      'rwkvModel': 'tiny',
+    });
+    expect(r.statusCode, 500, reason: await r.readAsString());
+    expect(readSrsRwkvModelSize(support), SrsRwkvModelSize.small);
+    // 写盘失败 = 这次改动没落地：admin 内存里的配置（GET 读的那份）不能先换成新的。
+    expect(await rolloverHourNow(), hourBefore);
+  });
+
   test('ServerAgentToolbox：能搜到；写操作记进服务端库、撤销写回；同步没确认拒绝', () async {
     await adminPut(<String, Object?>{
       'addProfiles': <String>[kJa],

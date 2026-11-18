@@ -238,7 +238,8 @@ const int kVideoFrameCoverStepMs = 10000;
 /// 挑帧弹窗：上方预览、下方时间轴滑块 + ±10 秒微调，「用这一帧」返回所选毫秒。
 ///
 /// 预览只在松手（[Slider.onChangeEnd]）或点微调时取：拖动过程中不连发 ffmpeg。
-/// 每次请求带递增序号，晚到的旧结果直接丢弃，预览永远对应最后一次选择。
+/// 取帧单飞：同一时刻最多一个在途请求；在途期间的新选择只记最后一次，在途请求
+/// 回来后丢掉它的结果、改取最后那次，预览永远对应最后一次选择。
 /// 导出 widget 便于测试直接构造。
 class VideoFrameCoverPickerDialog extends StatefulWidget {
   const VideoFrameCoverPickerDialog({
@@ -264,8 +265,16 @@ class _VideoFrameCoverPickerDialogState
   bool _durationFailed = false;
   int _positionMs = 0;
 
-  /// 最近一次发出的预览请求序号；结果序号不等于它就是过期结果。
+  /// 预览请求序号（递增，交给 [VideoFrameCoverPickerDialog.grabPreview] 派生
+  /// 临时文件名）。
   int _requestSeq = 0;
+
+  /// 是否有预览取帧在途。单飞：一次 ffmpeg 抽帧要几百毫秒到几秒，连点微调若每次
+  /// 都新起一个，就是 N 路并发解码（Android 上是 app 进程内的 ffmpeg-kit）。
+  bool _grabInFlight = false;
+
+  /// 在途期间用户又选的位置：只留最后一次，在途请求回来后改取它，中间值丢弃。
+  int? _pendingMs;
 
   /// 当前显示的预览（对应 [_previewMs]）。
   Uint8List? _preview;
@@ -300,27 +309,44 @@ class _VideoFrameCoverPickerDialogState
   }
 
   Future<void> _requestPreview(int atMs) async {
-    final int seq = ++_requestSeq;
     setState(() {
       _loading = true;
       _previewFailed = false;
     });
-    Uint8List? bytes;
-    try {
-      bytes = await widget.grabPreview(atMs, seq);
-    } on Object catch (e, stack) {
-      ErrorLogService.instance.log('video.frameCover.preview', e, stack);
+    if (_grabInFlight) {
+      _pendingMs = atMs;
+      return;
     }
-    if (!mounted || seq != _requestSeq) return;
-    setState(() {
-      _loading = false;
-      if (bytes == null) {
-        _previewFailed = true;
-      } else {
-        _preview = bytes;
-        _previewMs = atMs;
+    _grabInFlight = true;
+    int target = atMs;
+    while (true) {
+      final int seq = ++_requestSeq;
+      Uint8List? bytes;
+      try {
+        bytes = await widget.grabPreview(target, seq);
+      } on Object catch (e, stack) {
+        ErrorLogService.instance.log('video.frameCover.preview', e, stack);
       }
-    });
+      if (!mounted) return;
+      final int? next = _pendingMs;
+      _pendingMs = null;
+      if (next != null && next != target) {
+        // 这次结果已过期：不显示，改取在途期间的最后一次选择。
+        target = next;
+        continue;
+      }
+      _grabInFlight = false;
+      setState(() {
+        _loading = false;
+        if (bytes == null) {
+          _previewFailed = true;
+        } else {
+          _preview = bytes;
+          _previewMs = target;
+        }
+      });
+      return;
+    }
   }
 
   void _seekTo(int ms) {

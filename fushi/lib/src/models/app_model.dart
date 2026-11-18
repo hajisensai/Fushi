@@ -152,6 +152,8 @@ import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_engine/utils/net/app_proxy.dart';
 import 'package:fushi/src/media/collections/library_organize_runner.dart'
     show LibraryOrganizeAutoHost, installLibraryOrganizeAutomatic;
+import 'package:fushi/src/media/library_curate/library_curate_auto.dart'
+    show LibraryCurateAutoHost, installLibraryCurateAutomatic;
 import 'package:fushi/src/media/collections/collection_ai_order.dart'
     show installCollectionAiOrderSettings;
 import 'package:fushi/src/media/override_thumbnail_migration.dart';
@@ -571,6 +573,7 @@ import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/manga_sync_package.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/module_registry.dart' show isAiModuleEnabled;
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/settings/settings_schema.dart'
     show resetSettingsSchemaCache;
@@ -5219,6 +5222,16 @@ class AppModel
           db: _database,
           prefs: _prefsRepo!,
           nameLanguage: () => appLocale.toLanguageTag(),
+        ),
+      );
+      // AI 库管家自动路径（spec 2026-11-18 §9，默认开）：开着时接管上面那套自动
+      // 整理的触发点（scheduleAutomaticLibraryOrganize 内部转交）。编排器经进程级
+      // 操作上下文拿操作目录，根组件登记前那几次触发什么都不做。
+      installLibraryCurateAutomatic(
+        LibraryCurateAutoHost(
+          settings: _prefsRepo!,
+          autoOn: () => _prefsRepo!.libraryCurateAuto,
+          aiModuleEnabled: () => isAiModuleEnabled(moduleVisibility),
         ),
       );
       // Anki 制卡设置的存储换成 Drift（并把 SharedPreferences 旧值一次性搬过来），

@@ -19,8 +19,6 @@
 //!    这是**来源文件自带的注音**（QQ 音乐提供），照原样显示；Fushi 自己不推断任何读音
 //!    （feature-blacklist：禁止自动注音）。注音段数与正文汉字数对不上时整份不挂，宁缺不错位。
 
-use std::io::Read;
-
 use super::model::*;
 
 /// 本地缓存 `.qrc` 的文件头（QMC1 异或后的明文是 `[offset:0]\n`）。
@@ -107,11 +105,7 @@ pub fn decrypt(bytes: &[u8], cipher: Cipher) -> Option<Vec<u8>> {
     for block in data.chunks_exact_mut(8) {
         des.crypt(block);
     }
-    let mut out = Vec::new();
-    flate2::read::ZlibDecoder::new(&data[..])
-        .read_to_end(&mut out)
-        .ok()?;
-    Some(out)
+    super::inflate_bounded(&data, super::MAX_INFLATED_BYTES)
 }
 
 /// 测试 / 往返用：把明文 QRC 加密成 [Cipher::Raw] 密文（zlib → 补零到 8 的倍数 → 3DES）。
@@ -383,13 +377,20 @@ impl TripleDes {
 
 // ───────────────────────────── `[kana:…]` 注音轨 ─────────────────────────────
 
-/// 注音轨按「汉字」计数：CJK 统一表意文字（含扩展 A / B 以后、兼容区）与 `々` `〆`。
+/// 注音轨按「汉字」计数时一定算的字：CJK 统一表意文字（基本区与扩展 A 起各扩展区，到
+/// Unicode 17 的扩展 J U+323B0–3347F 为止）、兼容表意文字（含兼容补充区 U+2F800–2FA1F，
+/// 落在扩展区段内）与叠字符 `々`。
 pub fn is_kanji(c: char) -> bool {
     matches!(
         c as u32,
-        0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xF900..=0xFAFF | 0x20000..=0x3134F
-    ) || matches!(c, '々' | '〆')
+        0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xF900..=0xFAFF | 0x20000..=0x3347F
+    ) || c == '々'
 }
+
+/// 归不归「汉字」随口径而变的字：`〇`（Script=Han、Ideographic）与 `〆`（Ideographic，但
+/// Script=Common）。来源（QQ 音乐）按哪种口径数没有公开约定，[apply_kana] 对每种取舍都做
+/// 完整对齐校验，只采用唯一对得上的那种。
+const AMBIGUOUS_KANJI: [char; 2] = ['〇', '〆'];
 
 /// `[kana:…]` 正文 → (覆盖的汉字数, 读音)。读音里的 `(起,长)` 逐拍时间去掉。格式不对返回 None。
 pub fn parse_kana(tag: &str) -> Option<Vec<(usize, String)>> {
@@ -451,52 +452,81 @@ fn strip_time_groups(s: &str) -> String {
 type Span = (usize, usize, String);
 
 /// 把注音轨挂到音节 ruby 上：汉字段跨音节的并成一个音节，音节里只有一部分是注音段的按字数
-/// 拆开（时间按字数平分）。注音段数与正文汉字对不上（总数不等、一段跨了非汉字或跨行）时
+/// 拆开（时间按字数平分）。[AMBIGUOUS_KANJI] 里每个字算不算汉字的每种取舍各做一次完整
+/// 对齐；没有一种对得上（总数不等、一段跨了非汉字或跨行），或有两种都对得上但挂法不同时，
 /// 什么都不改，返回 false。需在 [Timeline::finalize] 之前调用。
 pub fn apply_kana(t: &mut Timeline, tag: &str) -> bool {
     let Some(groups) = parse_kana(tag) else {
         return false;
     };
-    let total: usize = groups.iter().map(|g| g.0).sum();
-    let kanji: usize = t
-        .lines
-        .iter()
-        .flat_map(|l| l.syllables.iter())
-        .map(|s| s.text.chars().filter(|&c| is_kanji(c)).count())
-        .sum();
-    if total != kanji {
-        return false;
-    }
-    // 先只读地算出每行的注音段，全部对得上才动音节。
-    let mut groups = groups.into_iter();
-    let mut per_line: Vec<Vec<Span>> = Vec::with_capacity(t.lines.len());
-    for line in &t.lines {
-        let chars: Vec<char> = line.syllables.iter().flat_map(|s| s.text.chars()).collect();
-        let mut spans = Vec::new();
-        let mut i = 0;
-        while i < chars.len() {
-            if !is_kanji(chars[i]) {
-                i += 1;
-                continue;
-            }
-            let Some((n, reading)) = groups.next() else {
-                return false;
-            };
-            let end = i + n;
-            if end > chars.len() || !chars[i..end].iter().all(|&c| is_kanji(c)) {
-                return false;
-            }
-            spans.push((i, end, reading));
-            i = end;
+    let mut chosen: Option<Vec<Vec<Span>>> = None;
+    for mask in 0u32..1 << AMBIGUOUS_KANJI.len() {
+        let counts = |c: char| -> bool {
+            is_kanji(c)
+                || AMBIGUOUS_KANJI
+                    .iter()
+                    .enumerate()
+                    .any(|(i, &a)| a == c && mask >> i & 1 == 1)
+        };
+        let Some(plan) = plan_kana(t, &groups, counts) else {
+            continue;
+        };
+        match &chosen {
+            None => chosen = Some(plan),
+            Some(prev) if *prev == plan => {}
+            // 两种口径都对得上却挂法不同：分不出哪种是来源的口径，宁缺不错位。
+            Some(_) => return false,
         }
-        per_line.push(spans);
     }
+    let Some(per_line) = chosen else {
+        return false;
+    };
     for (line, spans) in t.lines.iter_mut().zip(per_line) {
         if !spans.is_empty() {
             attach_spans(line, &spans);
         }
     }
     true
+}
+
+/// 按 `counts` 的汉字口径只读地算出每行的注音段；总数不等、一段跨了非汉字或跨行返回 None。
+fn plan_kana(
+    t: &Timeline,
+    groups: &[(usize, String)],
+    counts: impl Fn(char) -> bool,
+) -> Option<Vec<Vec<Span>>> {
+    let total: usize = groups.iter().map(|g| g.0).sum();
+    let kanji: usize = t
+        .lines
+        .iter()
+        .flat_map(|l| l.syllables.iter())
+        .map(|s| s.text.chars().filter(|&c| counts(c)).count())
+        .sum();
+    if total != kanji {
+        return None;
+    }
+    let mut groups = groups.iter();
+    let mut per_line: Vec<Vec<Span>> = Vec::with_capacity(t.lines.len());
+    for line in &t.lines {
+        let chars: Vec<char> = line.syllables.iter().flat_map(|s| s.text.chars()).collect();
+        let mut spans = Vec::new();
+        let mut i = 0;
+        while i < chars.len() {
+            if !counts(chars[i]) {
+                i += 1;
+                continue;
+            }
+            let (n, reading) = groups.next()?;
+            let end = i + n;
+            if end > chars.len() || !chars[i..end].iter().all(|&c| counts(c)) {
+                return None;
+            }
+            spans.push((i, end, reading.clone()));
+            i = end;
+        }
+        per_line.push(spans);
+    }
+    Some(per_line)
 }
 
 fn attach_spans(line: &mut Line, spans: &[Span]) {
@@ -608,6 +638,23 @@ mod tests {
     }
 
     #[test]
+    fn qrc_decompression_bomb_is_rejected() {
+        // 三种载体都走同一个有上限的解压：超过明文上限一律 None。
+        let plain = vec![b'['; crate::lyrics::MAX_INFLATED_BYTES + 1];
+        let raw = encrypt_raw(&plain);
+        assert!(raw.len() < 64 * 1024);
+        assert_eq!(decrypt(&raw, Cipher::Raw), None);
+        assert_eq!(decrypt(encrypt_hex(&plain).as_bytes(), Cipher::Hex), None);
+        assert_eq!(decrypt(&encrypt_local(&plain), Cipher::Local), None);
+        assert!(crate::lyrics::parse(encrypt_hex(&plain).as_bytes(), "qrc", None).is_err());
+        let at_limit = vec![b'['; crate::lyrics::MAX_INFLATED_BYTES];
+        assert_eq!(
+            decrypt(&encrypt_raw(&at_limit), Cipher::Raw).map(|v| v.len()),
+            Some(crate::lyrics::MAX_INFLATED_BYTES)
+        );
+    }
+
+    #[test]
     fn kana_tag_parses_counts_and_strips_mora_times() {
         assert_eq!(
             parse_kana("1よる1ふ(9201,192)た(9393,258)2あす").unwrap(),
@@ -681,5 +728,88 @@ mod tests {
         assert!(!apply_kana(&mut t2, "2よるか"));
         assert_eq!(t.lines, before);
         assert_eq!(t2.lines, before2);
+    }
+
+    fn texts_and_rubies(t: &Timeline) -> Vec<Vec<(String, Option<String>)>> {
+        t.lines
+            .iter()
+            .map(|l| {
+                l.syllables
+                    .iter()
+                    .map(|s| (s.text.clone(), s.ruby.clone()))
+                    .collect()
+            })
+            .collect()
+    }
+
+    fn one_line(syls: &[(&str, i64, i64)]) -> Timeline {
+        let mut t = Timeline::new("qrc", TimingQuality::Syllable);
+        t.lines.push(qrc_line(syls));
+        t
+    }
+
+    #[test]
+    fn kana_track_counting_ideographic_zero_attaches() {
+        // 来源把 〇 数进汉字：二〇二〇 一段读音。旧口径不认 〇，总数 3 ≠ 5，整首不挂。
+        let mut t = one_line(&[("二〇二〇", 0, 400), ("年", 400, 500), ("に", 500, 600)]);
+        assert!(apply_kana(&mut t, "4にせんにじゅう1ねん"));
+        assert_eq!(
+            texts_and_rubies(&t)[0],
+            vec![
+                ("二〇二〇".into(), Some("にせんにじゅう".into())),
+                ("年".into(), Some("ねん".into())),
+                ("に".into(), None),
+            ]
+        );
+    }
+
+    #[test]
+    fn kana_track_not_counting_shime_mark_attaches() {
+        // 来源不把 〆 数进汉字。旧口径把 〆 算汉字，总数 1 ≠ 2，整首不挂。
+        let mut t = one_line(&[("〆", 0, 100), ("の", 100, 200), ("夜", 200, 300)]);
+        assert!(apply_kana(&mut t, "1よる"));
+        assert_eq!(
+            texts_and_rubies(&t)[0],
+            vec![
+                ("〆".into(), None),
+                ("の".into(), None),
+                ("夜".into(), Some("よる".into())),
+            ]
+        );
+        // 反过来来源数了 〆 也照挂。
+        let mut t = one_line(&[("〆切", 0, 200), ("の", 200, 300)]);
+        assert!(apply_kana(&mut t, "2しめきり"));
+        assert_eq!(
+            texts_and_rubies(&t)[0][0],
+            ("〆切".into(), Some("しめきり".into()))
+        );
+    }
+
+    #[test]
+    fn kana_track_counts_extension_h_ideographs() {
+        // U+31350（CJK 统一表意文字扩展 H）是汉字；旧口径只到 U+3134F，总数 1 ≠ 2。
+        // 兼容补充区（U+2F800–2FA1F）一直在范围内，一并钉住。
+        assert!(is_kanji('\u{2F800}'));
+        // 扩展 J（Unicode 17，U+323B0–3347F）紧接扩展 H，同样一定算汉字。
+        assert!(is_kanji('\u{323B0}'));
+        assert!(is_kanji('\u{33479}'));
+        let mut t = one_line(&[("\u{31350}", 0, 100), ("夜", 100, 200)]);
+        assert!(apply_kana(&mut t, "1あ1よる"));
+        assert_eq!(
+            texts_and_rubies(&t)[0],
+            vec![
+                ("\u{31350}".into(), Some("あ".into())),
+                ("夜".into(), Some("よる".into())),
+            ]
+        );
+    }
+
+    #[test]
+    fn kana_track_ambiguous_between_conventions_changes_nothing() {
+        // 「只数 〇」与「只数 〆」两种口径都对得上但挂法不同：分不出来源口径，不挂。
+        let mut t = one_line(&[("〇", 0, 100), ("夜", 100, 200), ("〆", 200, 300)]);
+        let before = t.lines.clone();
+        assert!(!apply_kana(&mut t, "1あ1い"));
+        assert_eq!(t.lines, before);
     }
 }

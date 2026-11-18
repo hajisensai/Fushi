@@ -295,9 +295,13 @@ void main() {
     '$paginationPath|countCharsBeforeViewportPaged: function(': <String>[
       'fushiStudyUnits',
     ],
-    // 分页 shell（2512）与连续 shell（3080）各一份，两份都自己数。
+    // 分页 shell 转发给 _charOffsetAtPoint（下一条已钉；页首 / 页尾两个 caret 探点共用
+    // 同一份「节点基址 + 节点内学习单位累加」）；连续 shell 自己数。
     '$paginationPath|getFirstVisibleCharOffset: function() {': <String>[
+      '_charOffsetAtPoint',
       'fushiStudyUnits',
+    ],
+    '$paginationPath|_charOffsetAtPoint: function(': <String>[
       'fushiStudyUnits',
     ],
     // 分页版自己数；连续版转发给 collapsedRangeAtCharOffset（下一条已钉）。

@@ -1,5 +1,14 @@
 import 'package:fushi/src/media/privacy/media_privacy_dialog.dart';
 import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
+import 'package:fushi/src/media/links/media_link_entries.dart'
+    show MediaLinkEntry;
+import 'package:fushi/src/media/links/media_link_inference_host.dart'
+    show mediaLinkInferCallback;
+import 'package:fushi/src/media/links/media_link_opener.dart'
+    show mediaLinkSearchAction, openMediaLinkEntry;
+import 'package:fushi/src/media/links/media_links_section.dart'
+    show showMediaLinksDialog;
+import 'package:fushi/src/media/links/work_kinds_badge.dart';
 import 'package:fushi/src/media/nsfw/media_nsfw_dialog.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 
@@ -71,7 +80,7 @@ import 'package:fushi/src/media/video/video_subscription_updates.dart';
 import 'package:fushi/src/media/video/scraper/auto_scrape_service.dart';
 import 'package:fushi_engine/media/video/disc/disc_format.dart';
 import 'package:fushi_engine/media/video/video_duration_probe.dart'
-    show VideoProbeFacts, VideoStreamFacts;
+    show VideoProbeFacts, VideoStreamFacts, probeVideoDurationMs;
 import 'package:fushi_engine/media/video/bluray/bluray_disc.dart'
     show blurayDiscRootForDirectory;
 import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
@@ -373,6 +382,8 @@ class HomeVideoPage extends BaseModuleTabPage {
     this.jellyfinVideoClientLoader,
     this.remoteVideoDownloadDestination,
     this.videoRemoteTargetsLoader,
+    this.frameCoverDurationProbe = probeVideoDurationMs,
+    this.frameCoverGrabber = grabVideoFrameToFile,
     super.key,
   });
 
@@ -432,6 +443,11 @@ class HomeVideoPage extends BaseModuleTabPage {
   /// 测试钩子：注入「可遥控的电脑」探测结果。缺省时生产路径走
   /// [probeVideoRemoteTargets]（已配对、可达、声明 `videoRemoteControlV1`）。
   final Future<List<VideoRemoteTarget>> Function()? videoRemoteTargetsLoader;
+
+  /// 「从视频画面选取封面」的读片长 / 取帧接缝。缺省是生产 ffprobe / ffmpeg 抽帧；
+  /// widget 测试注入假实现，让「菜单入口 → 挑帧 → 手选封面落盘」整条可跑。
+  final VideoFrameDurationProbe frameCoverDurationProbe;
+  final VideoFrameFileGrabber frameCoverGrabber;
 
   /// 测试钩子：强制重查本地视频列表（程序化 seed 视频后让其出现在网格）。
   /// 视频页用 initState 一次性 FutureBuilder + IndexedStack 保活，seed 晚于
@@ -5243,6 +5259,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final bool applied = await pickAndApplyVideoFrameCover(
       context: context,
       videoPath: book.videoPath,
+      probeDurationMs: widget.frameCoverDurationProbe,
+      grabFrame: widget.frameCoverGrabber,
       apply: (String framePath) => MediaCoverService.applyVideoCoverManual(
         repo: widget.repo,
         bookUid: book.bookUid,
@@ -8315,14 +8333,36 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     CollectionGroup<_VideoSlot> group, {
     VideoCardOrientation orientation = VideoCardOrientation.portrait,
     FushiCoverBlockSize? block,
-  }) => MediaNsfwCoverScope(
-    target: MediaNsfwTarget.collection(group.collection!.id),
-    child: _buildCollectionCoverCardInner(
-      group,
-      orientation: orientation,
-      block: block,
+  }) => WorkKindsBadgeOverlay.collection(
+    database: ref.read(appProvider).database,
+    collectionId: group.collection!.id,
+    enabled: !_selectionMode && !_reordering,
+    onPressed: _showWorkLinks,
+    child: MediaNsfwCoverScope(
+      target: MediaNsfwTarget.collection(group.collection!.id),
+      child: _buildCollectionCoverCardInner(
+        group,
+        orientation: orientation,
+        block: block,
+      ),
     ),
   );
+
+  /// 卡片「另有：小说 · 漫画」作品角标点开的「同一作品」弹窗（AI 库管家 spec §4.3）。
+  void _showWorkLinks(MediaLinkEndpoint self) {
+    unawaited(
+      showMediaLinksDialog(
+        context: context,
+        database: ref.read(appProvider).database,
+        self: self,
+        onOpen: (MediaLinkEntry e) =>
+            openMediaLinkEntry(context: context, ref: ref, entry: e),
+        searchActionFor: (MediaLinkKind k) =>
+            mediaLinkSearchAction(context: context, ref: ref, kind: k),
+        onInfer: mediaLinkInferCallback(ref: ref, self: self),
+      ),
+    );
+  }
 
   Widget _buildCollectionCoverCardInner(
     CollectionGroup<_VideoSlot> group, {
@@ -11552,16 +11592,22 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     VoidCallback? onTapOverride,
     ImageProvider? Function()? coverOverride,
     FushiCoverBlockSize? block,
-  }) => MediaNsfwCoverScope(
-    target: MediaNsfwTarget.video(book.bookUid),
-    child: _buildCardInner(
-      book,
-      playlistCollectionId: playlistCollectionId,
-      selectable: selectable,
-      orientation: orientation,
-      onTapOverride: onTapOverride,
-      coverOverride: coverOverride,
-      block: block,
+  }) => WorkKindsBadgeOverlay.entry(
+    database: ref.read(appProvider).database,
+    endpoint: (kind: MediaLinkKind.videoEpisode, key: book.bookUid),
+    enabled: !_selectionMode && !_reordering,
+    onPressed: _showWorkLinks,
+    child: MediaNsfwCoverScope(
+      target: MediaNsfwTarget.video(book.bookUid),
+      child: _buildCardInner(
+        book,
+        playlistCollectionId: playlistCollectionId,
+        selectable: selectable,
+        orientation: orientation,
+        onTapOverride: onTapOverride,
+        coverOverride: coverOverride,
+        block: block,
+      ),
     ),
   );
 
