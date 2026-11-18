@@ -1,6 +1,6 @@
 # Fushi settings reference
 
-> Every setting of the Fushi app (version 3.3.0), generated from the app's own settings schema on each change. 874 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
+> Every setting of the Fushi app (version 3.3.0), generated from the app's own settings schema on each change. 876 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
 
 How to read this:
 
@@ -722,6 +722,8 @@ How to read this:
 | `ai.video_download_bitrate` | Bitrate | 码率偏好 | AI video download | choice | `any`, `high`, `low` | `any` | Estimated from the size per episode; ranks versions that already match the quality and source. |
 | `ai.video_download_skip_extras` | Skip extras | 跳过特典 | AI video download | bool |  | `false` | PV, CM, NCOP/NCED, menus and similar. Applies to every download into a video source: extras inside a torrent are not downloaded, and extras-only releases are never picked. |
 | `ai.video_download_subtitle_language` | Subtitle language | 字幕语言 | AI video download | choice | , `ask`, `original`, `ja`, `zh`, `en`, `ko`, `es`, `pt`, `fr`, `de`, `it`, `ru`, `ar`, `hi`, `th`, `vi`, `id`, `ms`, `tr`, `nl`, `pl`, `uk`, `sv`, `none` |  | Subtitles are always fetched; this decides which language. "Follow the work" uses the work's own language. |
+| `ai.library_curate_auto` | Curate the library automatically | 自动整理整个库 | Library organize | bool |  | `true` | After imports and scans: sort items into collections, identify unscraped videos and link related works across media. Sends titles, authors or brands, years, volume or episode counts and video folder names to the AI providers you assigned (may be billed); a step without an assigned provider sends nothing. Every change can be undone. Turn it on on one device only. |
+| `ai.library_curate_run` | Curate the whole library now | 立即整理整个库 | Library organize | action |  |  |  |
 | `ai.library_organize_auto` | Organize with AI after import | 导入后自动 AI 整理 | Library organize | bool |  | `false` | For new items that rules can't group, the title, author and folder name are sent to your chosen AI provider (may incur charges). Turning this on on one device is enough. |
 | `ai.library_organize_history` | Organize history | 整理记录 | Library organize | action |  |  |  |
 
