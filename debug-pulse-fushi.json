@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-18T08:15:44Z",
+ "generatedAt": "2026-11-18T08:19:56Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "bbe28874095d18b4a41e06cb220d163f0c5e0ea6",
-  "seq": 28995
+  "sha": "bb48140ff562bec0f41cfb6f522cc93225f68022",
+  "seq": 29025
  },
  "builds": [
   {
@@ -183,13 +183,19 @@
   }
  ],
  "pending": {
-  "headSha": "bbe28874095d18b4a41e06cb220d163f0c5e0ea6",
-  "headSeq": 28995,
+  "headSha": "bb48140ff562bec0f41cfb6f522cc93225f68022",
+  "headSeq": 29025,
   "prs": [
+   3534,
+   3672,
    3541,
    3636
   ],
   "direct": [
+   {
+    "sha": "bb48140ff562bec0f41cfb6f522cc93225f68022",
+    "subject": "chore(bugs): settle BUG number collisions on 5c3fe808b"
+   },
    {
     "sha": "bbe28874095d18b4a41e06cb220d163f0c5e0ea6",
     "subject": "chore(bugs): settle BUG number collisions on 5ee474c97"
@@ -202,24 +208,33 @@
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44261225174"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44265688651"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44261225262"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44265688588"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44261225262"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44265688588"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44261225262"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44265688588"
    }
   }
  },
  "prs": {
+  "3534": {
+   "number": 3534,
+   "title": "perf(home): 切 tab 不再连带重建隐藏保活页，查词 / 复习保活，全屏设置不卸载正文（BUG-4725～BUG-4730）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-18T08:17:17Z",
+   "additions": 1862,
+   "deletions": 100,
+   "labels": []
+  },
   "3541": {
    "number": 3541,
    "title": "fix(scrape): 全方括号文件名误判发布组 + AniDB 模糊噪声候选；perf(ai): agent 缓存尾部断点",
@@ -326,6 +341,15 @@
    "mergedAt": "2026-11-18T07:27:25Z",
    "additions": 546,
    "deletions": 169,
+   "labels": []
+  },
+  "3672": {
+   "number": 3672,
+   "title": "fix(home): 首页被播放页盖住时不在后台重载，修从首页打开视频后的播放掉帧（BUG-4791）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-18T08:17:01Z",
+   "additions": 509,
+   "deletions": 27,
    "labels": []
   },
   "3676": {
