@@ -5,6 +5,7 @@ import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart'
     show CollectionMemberVisibility, pickTargetCollectionForMembers;
+import 'package:fushi/src/media/collections/collection_art_scrape.dart';
 import 'package:fushi/src/media/collections/collection_ai_order.dart'
     show CollectionAiClientFactory;
 import 'package:fushi/src/media/collections/collection_detail_hero.dart';
@@ -110,8 +111,13 @@ class MediaCollectionGridDetailPage extends StatefulWidget {
     this.memberCoverOf,
     this.memberNsfwOf,
     this.aiClientFactory,
+    this.artScrape,
     super.key,
   });
+
+  /// 书 / 漫画合集的「获取各卷封面与横幅」「清除已获取的封面」。null = 不提供
+  /// （游戏库等）；合集里没有本地书或「在线服务」模块关着时也不出现。
+  final CollectionArtScrape? artScrape;
 
   final FushiDatabase database;
   final MediaCollectionRow collection;
@@ -755,6 +761,18 @@ class _MediaCollectionGridDetailPageState
               tooltip: t.collection_detail_save_order,
               onTap: () => _saveViewOrder(arranged),
             ),
+          if (_artScrapeAvailable) ...<Widget>[
+            FushiIconButton(
+              icon: FushiIcons.imageSearch,
+              tooltip: t.collection_art_scrape_action,
+              onTap: _scrapeArt,
+            ),
+            FushiIconButton(
+              icon: FushiIcons.deleteSweep,
+              tooltip: t.collection_art_scrape_clear,
+              onTap: _clearArt,
+            ),
+          ],
           FushiIconButton(
             icon: FushiIcons.delete,
             tooltip: t.delete_collection,
@@ -921,6 +939,20 @@ class _MediaCollectionGridDetailPageState
           icon: const FushiIcon(FushiIcons.download),
           onPressed: () => _saveViewOrder(arranged),
         ),
+      if (_artScrapeAvailable) ...<Widget>[
+        FushiIconButtonControl(
+          key: const ValueKey<String>('collection_detail_art_scrape'),
+          tooltip: t.collection_art_scrape_action,
+          icon: const FushiIcon(FushiIcons.imageSearch),
+          onPressed: _scrapeArt,
+        ),
+        FushiIconButtonControl(
+          key: const ValueKey<String>('collection_detail_art_clear'),
+          tooltip: t.collection_art_scrape_clear,
+          icon: const FushiIcon(FushiIcons.deleteSweep),
+          onPressed: _clearArt,
+        ),
+      ],
       FushiIconButtonControl(
         key: const ValueKey<String>('collection_detail_delete'),
         tooltip: t.delete_collection,
@@ -929,6 +961,28 @@ class _MediaCollectionGridDetailPageState
       ),
     ];
   }
+
+  bool get _artScrapeAvailable {
+    final CollectionArtScrape? art = widget.artScrape;
+    return art != null && art.enabled && CollectionArtScrape.appliesTo(_rows);
+  }
+
+  void _afterArtChanged() {
+    widget.onChanged();
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _scrapeArt() => widget.artScrape!.scrape(
+    context,
+    collectionId: widget.collection.id,
+    onChanged: _afterArtChanged,
+  );
+
+  Future<void> _clearArt() => widget.artScrape!.clear(
+    context,
+    collectionId: widget.collection.id,
+    onChanged: _afterArtChanged,
+  );
 
   /// 海报 / 面板取色用的封面：「继续」会打开的那本（与旧 hero 叠层的前排同一
   /// 判据），没有就按合集序第一本有封面的；都没有为 null（面板按合集名折色相）。

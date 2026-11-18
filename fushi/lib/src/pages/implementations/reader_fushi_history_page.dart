@@ -57,6 +57,8 @@ import 'package:fushi/src/media/drag_drop/drop_decision.dart';
 import 'package:fushi/src/media/drag_drop/image_archive_probe.dart';
 import 'package:fushi/src/media/tags/tag_drop.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
+import 'package:fushi/src/media/collections/collection_art_scrape.dart'
+    show CollectionArtScrape;
 import 'package:fushi/src/media/collections/collection_member_view.dart'
     show CollectionMemberInfo, pickContinueIndex;
 import 'package:fushi/src/media/display_title.dart';
@@ -3361,6 +3363,14 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           collectionAiSettings: isAiModuleEnabled(appModel.moduleVisibility)
               ? appModel.prefsRepo
               : null,
+          // 「获取各卷封面与横幅」：只传数据，按钮与结果面板在详情页 / 刮削模块里。
+          artScrape: CollectionArtScrape(
+            database: appModel.database,
+            thumbnailsDirectory: appModel.thumbnailsDirectory,
+            servicesEnabled: () =>
+                appModel.moduleVisibility.isEnabled(ModuleId.services),
+            migrationReadonly: () => appModel.isMigrationReadonly,
+          ),
         ),
       ),
     );

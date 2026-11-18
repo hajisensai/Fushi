@@ -16,6 +16,7 @@ import 'package:fushi/src/media/media_source.dart';
 import 'package:fushi/src/media/metadata/bangumi_api_client.dart'
     show parseBangumiSubjectUrl;
 import 'package:fushi/src/media/metadata/book_metadata_scraper.dart';
+import 'package:fushi/src/media/metadata/undo_backup_retention.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -208,6 +209,8 @@ class BookMetadataScrapeFacade {
         return _scraper.searchNdl(keyword);
       case BookScrapeSource.rakuten:
         return _scraper.searchRakuten(keyword);
+      case BookScrapeSource.mangabaka:
+        return _searchMangaBaka(keyword);
       case BookScrapeSource.bangumi:
         break;
     }
@@ -260,14 +263,57 @@ class BookMetadataScrapeFacade {
     return _scraper.searchDlsite(keyword);
   }
 
-  /// 按源内 id 直取一个候选（Bangumi subject id / DLsite 作品编号 / AniList media id /
-  /// openBD·NDL·楽天的 ISBN）。查无此条 / 无封面返回 null；失败抛 [BookScrapeException]。
+  /// MangaBaka：贴系列页 URL → 直取；纯数字既可能是 id 也可能是书名（《86》）——
+  /// 搜索 + id 直取并列，直取命中置顶；其余按名搜。
+  Future<List<BookScrapeCandidate>> _searchMangaBaka(String keyword) async {
+    final String? id = parseMangaBakaSeriesId(keyword);
+    final bool numeric = RegExp(r'^\d+$').hasMatch(keyword);
+    if (id != null && !numeric) {
+      final BookScrapeCandidate? c = await _scraper.fetchMangaBakaById(id);
+      return c == null
+          ? const <BookScrapeCandidate>[]
+          : <BookScrapeCandidate>[c];
+    }
+    final List<BookScrapeCandidate> searched = await _scraper.searchMangaBaka(
+      keyword,
+    );
+    if (id == null) return searched;
+    BookScrapeCandidate? direct;
+    try {
+      direct = await _scraper.fetchMangaBakaById(id);
+    } on BookScrapeException catch (e) {
+      // 与 Bangumi 数字关键词同口径：第二路尽力而为，主搜索失败仍会冒泡。
+      ErrorLogService.instance.logDiagnostic(
+        'BookMetadataScrapeFacade.fetchMangaBakaById',
+        'numeric keyword direct fetch failed: $e',
+      );
+    }
+    if (direct == null) return searched;
+    final String directId = direct.subjectId;
+    return <BookScrapeCandidate>[
+      direct,
+      ...searched.where((BookScrapeCandidate c) => c.subjectId != directId),
+    ];
+  }
+
+  /// MangaBaka 系列 [seriesId] 的每卷封面（弹窗的卷网格）。
+  Future<List<BookVolumeCover>> volumeCovers(String seriesId) =>
+      _scraper.fetchMangaBakaVolumeCovers(seriesId);
+
+  /// 下载某卷封面到临时文件（失败抛 [ImageDownloadException]）。
+  Future<File> downloadVolumeCover(BookVolumeCover cover) =>
+      _download(cover.url);
+
+  /// 按源内 id 直取一个候选（Bangumi subject id / DLsite 作品编号 / MangaBaka 系列 id /
+  /// AniList media id / openBD·NDL·楽天的 ISBN）。查无此条 / 无封面返回 null；失败抛
+  /// [BookScrapeException]。
   Future<BookScrapeCandidate?> fetchById({
     required BookScrapeSource source,
     required String id,
   }) => switch (source) {
     BookScrapeSource.bangumi => _scraper.fetchById(id.trim()),
     BookScrapeSource.dlsite => _scraper.fetchDlsiteById(id.trim()),
+    BookScrapeSource.mangabaka => _scraper.fetchMangaBakaById(id.trim()),
     BookScrapeSource.anilist ||
     BookScrapeSource.openbd ||
     BookScrapeSource.ndl ||
@@ -458,20 +504,11 @@ class BookMetadataScrapeFacade {
     return path;
   }
 
-  Future<void> _pruneBackups(Directory dir) async {
-    final DateTime cutoff = _now().subtract(backupRetention);
-    await for (final FileSystemEntity e in dir.list()) {
-      if (e is! File) continue;
-      try {
-        if ((await e.lastModified()).isBefore(cutoff)) await e.delete();
-      } on FileSystemException catch (err) {
-        ErrorLogService.instance.logDiagnostic(
-          'BookMetadataScrapeFacade.prune',
-          '$err',
-        );
-      }
-    }
-  }
+  Future<void> _pruneBackups(Directory dir) => pruneUndoBackups(
+    dir,
+    cutoff: _now().subtract(backupRetention),
+    logTag: 'BookMetadataScrapeFacade.prune',
+  );
 
   static Future<void> _deleteQuietly(String path) async {
     try {

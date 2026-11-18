@@ -81,13 +81,17 @@ void main() {
     ),
   );
 
-  test('三条路由齐全', () {
+  test('路由齐全（元数据刮削 + 每卷封面 / 横幅）', () {
     expect(
       <String>[for (final CtlRoute r in routes) '${r.method} ${r.pattern}'],
       <String>[
         'GET /api/admin/book/scrape',
         'GET /api/admin/book/scrape/:source/:id',
+        'GET /api/admin/book/scrape/:source/:id/volumes',
         'POST /api/admin/book/items/:key/scrape',
+        'POST /api/admin/book/collections/:id/scrape-art',
+        'DELETE /api/admin/book/collections/:id/scrape-art',
+        'DELETE /api/admin/book/items/:key/scraped-art',
       ],
     );
   });

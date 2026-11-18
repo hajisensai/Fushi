@@ -110,9 +110,12 @@ String _code(String path) => File(
 ).readAsStringSync().replaceAll(RegExp(r'(^|\s)//.*$', multiLine: true), '');
 
 /// 类体里的公开实例方法名（两格缩进的成员声明，返回 Future / void / 具体类型）。
+///
+/// 泛型实参不许含括号 / `=`：贪婪的 `<.*>` 会一路吃到箭头函数的 `=>`，把
+/// `Future<void> _x(..) => helper(` 里的 `helper` 误认成公开方法。
 List<String> _publicMethods(String body) => <String>[
   for (final RegExpMatch m in RegExp(
-    r'^  (?!static )(?:[A-Z]\w*(?:<.*>)?\??|void)\s+([a-z]\w*)\(',
+    r'^  (?!static )(?:[A-Z]\w*(?:<[^()=\n]*>)?\??|void)\s+([a-z]\w*)\(',
     multiLine: true,
   ).allMatches(body))
     m.group(1)!,
