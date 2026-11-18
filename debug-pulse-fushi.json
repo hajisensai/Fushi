@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-18T02:59:16Z",
+ "generatedAt": "2026-11-18T03:04:05Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "1d3b256ddb4c3417bf1abe6dcf98b280f96429dc",
-  "seq": 28910
+  "sha": "ea970d0572022c4a601aef7f73accd118f5e8442",
+  "seq": 28911
  },
  "builds": [
   {
@@ -130,8 +130,8 @@
   }
  ],
  "pending": {
-  "headSha": "1d3b256ddb4c3417bf1abe6dcf98b280f96429dc",
-  "headSeq": 28910,
+  "headSha": "ea970d0572022c4a601aef7f73accd118f5e8442",
+  "headSeq": 28911,
   "prs": [
    3724,
    3662,
@@ -143,23 +143,28 @@
    3649,
    3656
   ],
-  "direct": [],
+  "direct": [
+   {
+    "sha": "ea970d0572022c4a601aef7f73accd118f5e8442",
+    "subject": "chore(bugs): settle BUG number collisions on 1d3b256dd"
+   }
+  ],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "queued",
+    "state": "building",
     "url": "https://github.com/hajisensai/Fushi/actions/runs/44227142898"
    },
    "windows": {
-    "state": "queued",
+    "state": "building",
     "url": "https://github.com/hajisensai/Fushi/actions/runs/44227142990"
    },
    "macos": {
-    "state": "queued",
+    "state": "building",
     "url": "https://github.com/hajisensai/Fushi/actions/runs/44227142990"
    },
    "ios": {
-    "state": "queued",
+    "state": "building",
     "url": "https://github.com/hajisensai/Fushi/actions/runs/44227142990"
    }
   }
