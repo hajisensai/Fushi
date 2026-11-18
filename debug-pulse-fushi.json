@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-18T13:22:05Z",
+ "generatedAt": "2026-11-18T17:31:38Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "5ebe5543214611908771a25872dc9a9ce4f43f70",
-  "seq": 29071
+  "sha": "2d476f9394ef3c65fa43b5d32753cc6e6067ccc3",
+  "seq": 29079
  },
  "builds": [
   {
@@ -134,7 +134,33 @@
    }
   }
  ],
- "pending": null,
+ "pending": {
+  "headSha": "2d476f9394ef3c65fa43b5d32753cc6e6067ccc3",
+  "headSeq": 29079,
+  "prs": [
+   3515
+  ],
+  "direct": [],
+  "truncated": false,
+  "platforms": {
+   "android": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44359263389"
+   },
+   "windows": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44359263188"
+   },
+   "macos": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44359263188"
+   },
+   "ios": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44359263188"
+   }
+  }
+ },
  "prs": {
   "3467": {
    "number": 3467,
@@ -143,6 +169,15 @@
    "mergedAt": "2026-11-18T08:23:34Z",
    "additions": 12383,
    "deletions": 147,
+   "labels": []
+  },
+  "3515": {
+   "number": 3515,
+   "title": "feat(library): 刮削元数据贯通书/漫画/游戏/合集 + 拼贴打磨",
+   "author": "W1ght",
+   "mergedAt": "2026-11-18T17:29:30Z",
+   "additions": 55431,
+   "deletions": 14610,
    "labels": []
   },
   "3520": {
