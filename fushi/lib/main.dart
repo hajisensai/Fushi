@@ -21,7 +21,6 @@ import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
-import 'package:flutter/scheduler.dart' show Priority, SchedulerBinding;
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_logs/flutter_logs.dart';
@@ -78,6 +77,8 @@ import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart';
 import 'package:fushi/src/utils/misc/hang_watchdog_log.dart';
 import 'package:fushi/src/utils/misc/wgc_capture_log.dart';
 import 'package:fushi/src/utils/rasterized_frame_size_reporter.dart';
+import 'package:fushi/src/utils/scheduling/ambient_ticker.dart'
+    show waitForUiIdle;
 import 'package:fushi/src/utils/settled_theme.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
@@ -773,10 +774,7 @@ void main([List<String> args = const <String>[]]) {
       // 启动即闪退由会话标记另行判定，不靠这一次采样。
       PreviousExitLog.startMemorySampling(
         firstSampleAfter: binding.waitUntilFirstFrameRasterized.then(
-          (_) => SchedulerBinding.instance.scheduleTask<void>(
-            () {},
-            Priority.idle,
-          ),
+          (_) => waitForUiIdle(),
         ),
         probes: const <MemoryProbe>[
           processRssBreakdownProbe,
@@ -925,10 +923,7 @@ void main([List<String> args = const <String>[]]) {
           runWebViewPrewarmWhenIdle(
             firstFrameRasterized:
                 WidgetsBinding.instance.waitUntilFirstFrameRasterized,
-            whenIdle: () => SchedulerBinding.instance.scheduleTask<void>(
-              () {},
-              Priority.idle,
-            ),
+            whenIdle: waitForUiIdle,
             prewarm: () async {
               // 预热持有的是进程级资源（一个 headless WebView = 一个 chromium
               // renderer 子进程），销毁必须有确定终点，不能只挂在 onLoadStop 这条

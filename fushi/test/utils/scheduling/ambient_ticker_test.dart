@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
@@ -103,6 +106,112 @@ void main() {
     FushiWidgetsFlutterBinding.ensureInitialized();
     expect(binding.schedulingStrategy, same(ambientAwareSchedulingStrategy));
   });
+
+  // BUG-4893：「等空闲」本身不能空转。用假调度器数定时器——真 binding 下空转表现为
+  // pump 死循环，只能靠超时发现，数不出「一个都没有」。
+  group('waitForUiIdle', () {
+    test('忙时只挂一个帧后回调，事件循环里一个定时器都没有', () {
+      fakeAsync((FakeAsync async) {
+        final _FakeScheduler scheduler = _FakeScheduler()..transient = 1;
+        bool done = false;
+        unawaited(waitForUiIdle(scheduler: scheduler).then((_) => done = true));
+        for (int frame = 0; frame < 200; frame++) {
+          async.flushMicrotasks();
+          expect(async.pendingTimers, isEmpty, reason: '第 $frame 帧前');
+          expect(scheduler.postFrame, hasLength(1), reason: '第 $frame 帧前');
+          scheduler.drawFrame();
+        }
+        expect(done, isFalse);
+
+        // 动画停了：这一帧画完才发现空闲，再过一轮事件循环完成。
+        scheduler.transient = 0;
+        scheduler.drawFrame();
+        expect(done, isFalse);
+        expect(async.pendingTimers, hasLength(1));
+        async.flushTimers();
+        expect(done, isTrue);
+        expect(scheduler.postFrame, isEmpty);
+        expect(async.pendingTimers, isEmpty);
+      });
+    });
+
+    test('本来就空闲：下一轮事件循环完成，不同步完成、不等帧', () {
+      fakeAsync((FakeAsync async) {
+        final _FakeScheduler scheduler = _FakeScheduler();
+        bool done = false;
+        unawaited(waitForUiIdle(scheduler: scheduler).then((_) => done = true));
+        async.flushMicrotasks();
+        expect(done, isFalse);
+        expect(scheduler.postFrame, isEmpty);
+        async.flushTimers();
+        expect(done, isTrue);
+      });
+    });
+
+    test('完成前那一轮又起了动画：接着等帧，不完成', () {
+      fakeAsync((FakeAsync async) {
+        final _FakeScheduler scheduler = _FakeScheduler();
+        bool done = false;
+        unawaited(waitForUiIdle(scheduler: scheduler).then((_) => done = true));
+        scheduler.transient = 1;
+        async.flushTimers();
+        expect(done, isFalse);
+        expect(async.pendingTimers, isEmpty);
+        expect(scheduler.postFrame, hasLength(1));
+
+        scheduler.transient = 0;
+        scheduler.drawFrame();
+        async.flushTimers();
+        expect(done, isTrue);
+      });
+    });
+
+    testWidgets('真实动画在跑时一直等，撤掉后的那一帧之后完成', (WidgetTester tester) async {
+      await tester.pumpWidget(const _Spinner(ambient: false));
+      bool done = false;
+      unawaited(waitForUiIdle().then((_) => done = true));
+      for (int i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(done, isFalse);
+      }
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(done, isTrue);
+    });
+
+    testWidgets('只有常驻装饰动画在跑：照常完成', (WidgetTester tester) async {
+      await tester.pumpWidget(const _Spinner(ambient: true));
+      expect(binding.transientCallbackCount, greaterThan(0));
+      bool done = false;
+      unawaited(waitForUiIdle().then((_) => done = true));
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(done, isTrue);
+      await tester.pumpWidget(const SizedBox());
+    });
+  });
+}
+
+/// 只实现 [waitForUiIdle] 用到的两个成员；`drawFrame` 模拟一帧收尾时跑帧后回调。
+class _FakeScheduler extends Fake implements SchedulerBinding {
+  int transient = 0;
+  final List<FrameCallback> postFrame = <FrameCallback>[];
+
+  @override
+  int get transientCallbackCount => transient;
+
+  @override
+  void addPostFrameCallback(
+    FrameCallback callback, {
+    String debugLabel = 'callback',
+  }) => postFrame.add(callback);
+
+  void drawFrame() {
+    final List<FrameCallback> callbacks = List<FrameCallback>.of(postFrame);
+    postFrame.clear();
+    for (final FrameCallback callback in callbacks) {
+      callback(Duration.zero);
+    }
+  }
 }
 
 /// 测试用的常驻 repeat 动画；[ambient] 决定走 ambient ticker 还是普通 ticker。
