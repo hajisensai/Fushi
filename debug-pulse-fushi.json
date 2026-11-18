@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-18T07:28:45Z",
+ "generatedAt": "2026-11-18T07:35:03Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "198c2ae8221cd732a43e43fdb21f50791f3b3bb1",
-  "seq": 28969
+  "sha": "265d1d58bfe873e85d51ce1ec8feb3335b042d99",
+  "seq": 28976
  },
  "builds": [
   {
@@ -136,9 +136,10 @@
   }
  ],
  "pending": {
-  "headSha": "198c2ae8221cd732a43e43fdb21f50791f3b3bb1",
-  "headSeq": 28969,
+  "headSha": "265d1d58bfe873e85d51ce1ec8feb3335b042d99",
+  "headSeq": 28976,
   "prs": [
+   3677,
    3691,
    3569,
    3687,
@@ -152,6 +153,10 @@
   ],
   "direct": [
    {
+    "sha": "265d1d58bfe873e85d51ce1ec8feb3335b042d99",
+    "subject": "chore(bugs): settle BUG number collisions on d2ef71109"
+   },
+   {
     "sha": "ea970d0572022c4a601aef7f73accd118f5e8442",
     "subject": "chore(bugs): settle BUG number collisions on 1d3b256dd"
    }
@@ -159,20 +164,20 @@
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44259169206"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44259200627"
    },
    "windows": {
-    "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44259169135"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44259200424"
    },
    "macos": {
-    "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44259169135"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44259200424"
    },
    "ios": {
-    "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44259169135"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44259200424"
    }
   }
  },
@@ -274,6 +279,15 @@
    "mergedAt": "2026-11-18T07:27:11Z",
    "additions": 102,
    "deletions": 245,
+   "labels": []
+  },
+  "3677": {
+   "number": 3677,
+   "title": "fix(collections): 卷号不在书名结尾的分卷也能自动归组（BUG-4793）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-18T07:28:50Z",
+   "additions": 373,
+   "deletions": 41,
    "labels": []
   },
   "3678": {
