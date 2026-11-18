@@ -14,6 +14,25 @@
 //! - `notes(col, id, …)`：列与协议 3 的 `srs_notes_cache` 相同（去掉 `profile_uid`）。ID 列存 [Ref]（规范 UUID 16 字节，
 //!   其余文本）。
 //! - `cards(col, id, …)`：列与 `srs_cards_cache` 相同。行只给「存在的笔记应有的卡」（笔记 × 模板 / cloze 序号）。
+//!   出卡（`cmd/study.rs`）的五个部分索引 `cards_new_position` / `cards_new_freq` / `cards_learning` /
+//!   `cards_review_due` / `cards_tally` 与协议 3 v9 的 `idx_srs_cards_cache_*` 逐列相同（`profile_uid` 换成 `col`）；
+//!   自定义学习「只复习这一作」走 `notes_source`（协议 3 v25 `idx_srs_notes_cache_source`）。
+//! - `anki_members(col, kind, num, canon, note)`：AnkiConnect 数字 id 的成员反查（`cmd/columns.rs` 按号查不到规范 ID
+//!   的号时走它；G7-4g）。`kind` = [EntKind::Note] / [EntKind::Card]，`num` = 成员 ID 的号（`anki_numeric_id`），
+//!   `canon` = 它归到的规范笔记 / 卡（有 `notes` / `cards` 行的那个），`note` = 所属的规范笔记（随笔记的行一起删、
+//!   一起重写，[Index::member_numbers]）。笔记的成员 = 别名类里出现过的成员；卡的成员 = 别名类里出现过的成员，
+//!   **加上从没在操作里出现过的带盐卡**：笔记的成员 × 模板的成员按卡的公式（`gen4_ids::rules::card`）算出来的 ID
+//!   ——协议 3 给从没复习、没改过的卡也发了号（缓存行的 `anki_id`），新代的别名表里没有那个带盐 ID（它只记操作里
+//!   出现过的 ID），号从这里来。每一边都取规范 ID 自己加出现过的成员：随机 ID 的笔记（规范 ID 就是它协议 3 的 ID）配
+//!   带盐的模板、带盐的笔记配内置模板时规范 ID 那一边就是旧号的来源，类里另有成员（随机 ID 笔记的旧并入兜底副本，
+//!   `gen4_ids::alias` 的 `root_fallbacks`）时也不能丢；规范 ID 是新代才有的那种（带盐的类）多出来的组合没有旧号，
+//!   不撞别人的号就无害（与多盐交叉组合是同一类取舍；规范卡自己那个组合不写，它的号在 `cards.anki_id`）。
+//!   行是「别名表 + 应有的卡」的函数，所以落在缓存层、随笔记的行维护（别名表变了的行经 [Index::moved_rows] 牵动
+//!   所属笔记重算），重建同样物化。
+//!   **为什么不在迁移时把协议 3 `srs_cards_cache` 的卡 ID 写进别名表**：别名表是「操作集合 + 盐 + 内置表」的函数
+//!   （`alias.rs` 文件头「证据」），`rebuild_all` 会把迁移另写的行清掉；要写进真相只能给每张没出现过的卡造一条身份
+//!   记录操作（真相多出与卡数同阶的操作，语义摘要与对拍都跟着变）。这里由同一份真相算出同一批号：迁移出来的库上
+//!   协议 3 每张卡的号都查得到（`migrate_tests.rs` `every_protocol_3_card_number_resolves_after_migration`），且可重建。
 //! - `stats(col, at, log, card, …)`：有效复习投影（协议 3 的 `srs_stat_reviews`，列 = `history::StatRow`）。`card` 是
 //!   **归属卡**（`caches::stat_groups`：日志所属的卡可见就是它，否则是继承它历史的可见卡，归属随血统与可见性变），
 //!   按发生时刻聚簇——统计读侧（#3287）那条「全部投影行按时刻
@@ -54,8 +73,18 @@
 //!    重算；写入者归回变了或变动的 ID 多于 [MOVES_IN_PLACE] 时整层重建。别名表还没重算（[Index::hold_aliases]）时缓存
 //!    不动，攒到重算之后的那次收尾。
 //!
-//! 没并起来的：扣住的删除、清除、不可信仍按原值实体判（`class.rs` 文件头「没有并起来的」），类与原值口径的取舍随
-//! G7 接线定。
+//! # 变更记录（`cache_gen` / `cache_log`，G7-4d）
+//!
+//! 常驻的读者（浏览会话 `cmd/browse.rs`）要知道「上次读过之后缓存行变了哪些」。协议 3 靠写连接上的临时触发器记 id；
+//! 这里由刷新自己记：每次收尾里行可能变了的笔记（重算 / 删掉的笔记、写了卡行的卡所属的笔记、别名挪走时被删的旧 ID
+//! 与引用它的行的原值笔记 ID）记成一个新的**代号**（`cache_gen.gen` + 1，`cache_log` 每条笔记一行）；整层重建（
+//! [Index::materialize_caches] 的三条路）把代号 + 1 并把**下限** `floor` 抬到它、清空记录——代号低于下限的读者只能
+//! 整份重读。记录超过 [LOG_KEEP] 行时从代号旧的一头删到剩一半、下限抬到删掉的最大代号（只有比它还旧的读者整份
+//! 重读；`logged` = 记录现有行数）。读者一次要重读多少才改成整份重读由读者自己判。两张表是本机状态（不在 `DERIVED_TABLES`、不参与对拍），
+//! 与缓存行在同一个事务里写，回滚一起回滚。
+//!
+//! 没并起来的：清除、不可信仍按原值实体判（`class.rs` 文件头「没有并起来的」）；扣住按类判（G7-4g，`weigh.rs` 文件头
+//! 「扣住的删除」），状态记在原值写入上，这里按类拼行时原样拿来。
 
 //! # 与协议 3 的差别（都是「协议 3 依赖到达顺序 / 本机状态」）
 //!
@@ -80,8 +109,8 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use rusqlite::params;
 use rusqlite::types::ValueRef;
+use rusqlite::{OptionalExtension, params};
 use serde_json::{Value, json};
 
 use super::derive::{Index, R_LIVE, Ref, Reg, Settled, body_of};
@@ -89,15 +118,17 @@ use super::schema::sql;
 use crate::gen4::heritage::SlotBody;
 use crate::gen4::name::{read_edit_key, write_edit_key};
 use crate::gen4::op::{Body4, Log4};
+use crate::gen4_ids::rules;
 use crate::history::{self, StoredLog};
 use crate::registers::{self, StoredEdit};
 use crate::store::caches::{
     self, AnkiStatKey, CacheConfig, Material, NoteInfo, TypeInfo, add_descendants,
     anki_duplicate_log_ids, card_row, note_row, sorted_ids, stat_groups,
 };
+use crate::store::schema::anki_numeric_id;
 use crate::store::sync2::{canonical, config, group_lineage, log_json, tails_with};
 use crate::sync2::codec::{Reader, Writer};
-use crate::sync2::id::Key;
+use crate::sync2::id::{Id, Key};
 use crate::sync2::op::{EntKind, Intent, LogBody};
 use crate::sync2::replay::{Row, replay};
 
@@ -129,6 +160,8 @@ CREATE INDEX IF NOT EXISTS notes_type ON notes (col, note_type_id);
 CREATE INDEX IF NOT EXISTS notes_deck ON notes (col, deck_id);
 CREATE INDEX IF NOT EXISTS notes_term ON notes (col, term_key);
 CREATE INDEX IF NOT EXISTS notes_pending ON notes (col) WHERE pending_decision = 1;
+CREATE INDEX IF NOT EXISTS notes_anki ON notes (col, anki_id);
+CREATE INDEX IF NOT EXISTS notes_dupe ON notes (col, dupe_norm);
 CREATE TABLE IF NOT EXISTS cards (
   col INTEGER NOT NULL,
   id NOT NULL,
@@ -160,6 +193,26 @@ CREATE TABLE IF NOT EXISTS cards (
 CREATE INDEX IF NOT EXISTS cards_note ON cards (col, note_id);
 CREATE INDEX IF NOT EXISTS cards_deck ON cards (col, deck_id);
 CREATE INDEX IF NOT EXISTS cards_template ON cards (col, template_id);
+CREATE INDEX IF NOT EXISTS cards_anki ON cards (col, anki_id);
+CREATE INDEX IF NOT EXISTS cards_new_position ON cards
+  (col, new_position IS NULL, new_position, note_created_at, id, deck_id, buried_until_day,
+   queue, hidden, suspended, scheduler)
+  WHERE queue = 'new' AND hidden = 0 AND suspended = 0 AND scheduler = 'fushi';
+CREATE INDEX IF NOT EXISTS cards_new_freq ON cards
+  (col, freq_rank IS NULL, freq_rank, new_position IS NULL, new_position, note_created_at, id, deck_id,
+   buried_until_day, queue, hidden, suspended, scheduler)
+  WHERE queue = 'new' AND hidden = 0 AND suspended = 0 AND scheduler = 'fushi';
+CREATE INDEX IF NOT EXISTS cards_learning ON cards
+  (col, COALESCE(due_at, 0), id, deck_id, buried_until_day, due_at, queue, hidden, suspended, scheduler)
+  WHERE queue IN ('learning', 'relearning') AND hidden = 0 AND suspended = 0 AND scheduler = 'fushi';
+CREATE INDEX IF NOT EXISTS cards_review_due ON cards
+  (col, deck_id, COALESCE(due_day, 0), buried_until_day, last_reviewed_at, stability, id, due_at, due_day,
+   queue, hidden, suspended, scheduler)
+  WHERE queue = 'review' AND hidden = 0 AND suspended = 0 AND scheduler = 'fushi';
+CREATE INDEX IF NOT EXISTS cards_tally ON cards
+  (col, deck_id, queue, due_day, due_at, suspended, scheduler, buried_until_day)
+  WHERE hidden = 0;
+CREATE INDEX IF NOT EXISTS notes_source ON notes (col, source_key) WHERE deleted_at IS NULL;
 CREATE TABLE IF NOT EXISTS stats (
   col INTEGER NOT NULL,
   at INTEGER NOT NULL,
@@ -174,12 +227,38 @@ CREATE TABLE IF NOT EXISTS stats (
   PRIMARY KEY (col, at, log)
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS stats_card ON stats (col, card);
+CREATE TABLE IF NOT EXISTS anki_members (
+  col INTEGER NOT NULL,
+  kind INTEGER NOT NULL,
+  num INTEGER NOT NULL,
+  canon NOT NULL,
+  note NOT NULL,
+  PRIMARY KEY (col, kind, num, canon)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS anki_members_note ON anki_members (col, note);
 CREATE INDEX IF NOT EXISTS reg_card_key ON reg_ix (col, key) WHERE ekind = 4;
 CREATE INDEX IF NOT EXISTS log_at ON log_ix (col, at);
+CREATE TABLE IF NOT EXISTS cache_gen (
+  col INTEGER PRIMARY KEY,
+  gen INTEGER NOT NULL,
+  floor INTEGER NOT NULL,
+  logged INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS cache_log (
+  col INTEGER NOT NULL,
+  gen INTEGER NOT NULL,
+  note NOT NULL,
+  PRIMARY KEY (col, gen, note)
+) WITHOUT ROWID;
 ";
 
-/// 缓存层的三张表。
-const TABLES: [&str; 3] = ["notes", "cards", "stats"];
+/// 变更记录（[Index::cache_log_flush]）最多留这么多行；再多就从代号旧的一头删到剩一半、把下限抬到删掉的最大代号。
+/// 这只是给记录本身的存储设上限：读者攒了多少要重读由读者自己判（`cmd/browse.rs` 的 `REFRESH_CAP`，同协议 3 浏览的
+/// `DIRTY_CAP` 按单个会话算），跟得上的读者不会因为别人累计的写入被迫整份重读。
+pub(crate) const LOG_KEEP: i64 = 20_000;
+
+/// 缓存层的表（三张缓存表与数字 id 的成员反查表）。
+const TABLES: [&str; 4] = ["notes", "cards", "stats", "anki_members"];
 
 /// `derive_cfg` 里缓存配置的键。
 pub const CFG_KEY: &str = "caches";
@@ -223,6 +302,10 @@ pub(super) struct LogIn {
     pub(super) json: String,
     pub(super) server_time: Option<i64>,
     intent: Intent,
+    /// 代表这条日志的操作主键（`log_ix.k`；本机落库序另在 `log_seq`，`cmd/training.rs` 文件头「rowid」）。
+    pub(super) k: i64,
+    /// 日志上记的笔记（原值，未归一；协议 3 `sync2_log_meta.note_id`）。用到的地方自己归一，缓存层的重放不付这份代价。
+    pub(super) note: Option<Ref>,
 }
 
 /// 统计去重要跨批看的东西（全量重建时一批一个或几个连通分量）。
@@ -240,9 +323,9 @@ const BATCH: usize = 512;
 
 /// 别名表一次收尾里变了的 ID（连同它们前后的规范 ID）超过这么多就整层重建，不逐个找引用它们的行（[Index::moved_rows]
 /// 每个 ID 扫一遍三张表；盐集合变了这类情形整张别名表都会动）。
-const MOVES_IN_PLACE: usize = 256;
+/// 扣住（`weigh.rs` `weigh_rest`）用同一个阈值：多了就与重建一样看全部有删除的实体。
+pub(super) const MOVES_IN_PLACE: usize = 256;
 
-/// 「前身 → 后继」链接（`historyFrom/` 键、不看值）：按卡按需查，查过的记下。
 /// 一批卡的血统（`Index::lineage`）：卡 ID（文本）→ 活着的修改行 / 重放写回的日志 / 生效的前身 / 后继。
 struct Lineage {
     lines: BTreeMap<String, Vec<(String, Option<i64>)>>,
@@ -251,6 +334,7 @@ struct Lineage {
     succs: HashMap<String, Vec<String>>,
 }
 
+/// 「前身 → 后继」链接（`historyFrom/` 键、不看值）：按卡按需查，查过的记下。
 #[derive(Default)]
 struct Links {
     succ: HashMap<Ref, Vec<Ref>>,
@@ -356,6 +440,8 @@ impl<'t, 'c> Index<'t, 'c> {
         self.dirt = Dirt::default();
         self.alias_moves.clear();
         self.writers_moved = false;
+        self.cache_touched.clear();
+        self.cache_log_flush(true)?;
         let Some(cfg) = self.cache_config()? else {
             return Ok(());
         };
@@ -443,8 +529,9 @@ impl<'t, 'c> Index<'t, 'c> {
         }
         // 别名表变了（`alias.rs` 记的：变了规范 ID 的 ID 与它前后的规范 ID）：按新表的规范 ID 重看，引用过这些 ID 的
         // 行也重看；不再是规范 ID 的那些 ID 名下的行删掉（行只按规范 ID 存）。
+        let mut raw: BTreeSet<Ref> = BTreeSet::new();
         for r in &moves {
-            self.moved_rows(r, &mut notes, &mut cards)?;
+            self.moved_rows(r, &mut notes, &mut cards, &mut raw)?;
             let c = self.canon(r)?;
             notes.insert(c.clone());
             types.insert(c.clone());
@@ -482,10 +569,76 @@ impl<'t, 'c> Index<'t, 'c> {
             }
         }
         // 只当笔记类型看的 ID：不是笔记就从笔记集合里拿掉（没有定义、也没有缓存行的会在笔记那一步自然跳过）。
-        if notes.is_empty() && cards.is_empty() {
+        if !(notes.is_empty() && cards.is_empty()) {
+            self.cache_pass(&cfg, notes, cards, false, out)?;
+        }
+        self.cache_touched.extend(raw);
+        self.cache_log_flush(false)
+    }
+
+    /// 把这一趟记下的笔记（[Index::cache_touched]）写成一个新代号的变更记录（文件头「变更记录」）；[full] = 整层重建：
+    /// 代号 + 1、下限抬到它、清空记录。没有要记的、也不是整层重建 = 什么都不写。在调用方的写事务里。
+    pub(super) fn cache_log_flush(&mut self, full: bool) -> Result<(), String> {
+        let touched = std::mem::take(&mut self.cache_touched);
+        if !full && touched.is_empty() {
             return Ok(());
         }
-        self.cache_pass(&cfg, notes, cards, false, out)
+        let conn = self.t.conn();
+        let (gen, floor, logged): (i64, i64, i64) = conn
+            .prepare_cached("SELECT gen, floor, logged FROM cache_gen WHERE col = ?1")
+            .map_err(sql)?
+            .query_row([self.col], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .optional()
+            .map_err(sql)?
+            .unwrap_or((0, 0, 0));
+        let next = gen + 1;
+        let (floor, logged) = if full {
+            conn.prepare_cached("DELETE FROM cache_log WHERE col = ?1")
+                .map_err(sql)?
+                .execute([self.col])
+                .map_err(sql)?;
+            (next, 0)
+        } else {
+            let mut logged = logged;
+            let mut stmt = conn
+                .prepare_cached(
+                    "INSERT OR IGNORE INTO cache_log (col, gen, note) VALUES (?1, ?2, ?3)",
+                )
+                .map_err(sql)?;
+            for n in &touched {
+                logged += stmt.execute(params![self.col, next, n]).map_err(sql)? as i64;
+            }
+            let mut floor = floor;
+            if logged > LOG_KEEP {
+                // 记录攒多了：从旧的一头删到剩一半，下限抬到删掉的最大代号（文件头「变更记录」）。只有对上的代号比它
+                // 还旧的读者要整份重读；跟得上的读者不受影响。
+                let cut: Option<i64> = conn
+                    .prepare_cached(
+                        "SELECT gen FROM cache_log WHERE col = ?1 ORDER BY gen DESC LIMIT 1 OFFSET ?2",
+                    )
+                    .map_err(sql)?
+                    .query_row(params![self.col, LOG_KEEP / 2], |r| r.get(0))
+                    .optional()
+                    .map_err(sql)?;
+                if let Some(cut) = cut {
+                    let gone = conn
+                        .prepare_cached("DELETE FROM cache_log WHERE col = ?1 AND gen <= ?2")
+                        .map_err(sql)?
+                        .execute(params![self.col, cut])
+                        .map_err(sql)?;
+                    logged -= gone as i64;
+                    floor = floor.max(cut);
+                }
+            }
+            (floor, logged)
+        };
+        conn.prepare_cached(
+            "INSERT OR REPLACE INTO cache_gen (col, gen, floor, logged) VALUES (?1, ?2, ?3, ?4)",
+        )
+        .map_err(sql)?
+        .execute(params![self.col, next, floor, logged])
+        .map_err(sql)?;
+        Ok(())
     }
 
     // ------------------------------------------------------------ 读索引
@@ -537,6 +690,31 @@ impl<'t, 'c> Index<'t, 'c> {
         id: &Ref,
     ) -> Result<(Vec<(String, Option<i64>)>, i64), String> {
         self.class_lines(kind, id)
+    }
+
+    /// 一条笔记（规范 ID [n]）的视图摘要（`caches::NoteInfo`：笔记类型、字段、标签、牌组、删除、出处……）：身份记录
+    /// 的胜者 + 按类判定活着的修改 + 类里各成员的标签并起来判。返回 (身份记录的操作主键, 活着的修改里最大的 HLC 物理
+    /// 时刻, 摘要)。笔记行的物化与读命令（`cmd/columns.rs` 的 `anki_notes_info`）共用这一份。
+    ///
+    /// 不是笔记（只是种类未定的 ID）、身份记录没了、或身份记录不成形（缺 `noteTypeId`、字段类型不对）= None：真相里的
+    /// 操作来自别的设备，一条坏操作不能让整个索引层的收尾失败。协议 3 在这里让整次刷新失败（文件头「与协议 3 的差别」）。
+    pub(super) fn note_info(&mut self, n: &Ref) -> Result<Option<(i64, i64, NoteInfo)>, String> {
+        let def = self
+            .definition(n)?
+            .filter(|(kind, ..)| *kind == EntKind::Note as i64);
+        let Some((_, def_k, payload)) = def else {
+            return Ok(None);
+        };
+        let (lines, edited) = self.live_lines(EntKind::Note, n)?;
+        let stored: Vec<StoredEdit<'_>> =
+            lines.iter().map(|(j, s)| (j.as_str(), *s, None)).collect();
+        let Ok(mut view) = registers::note_view_of(&payload, &stored) else {
+            return Ok(None);
+        };
+        // 协议 3 把 OR-Set 的结果写成一条合成的 `tags` 修改行再交给视图；这里直接给结果，同一个值。类里各成员的
+        // 标签操作并起来判（文件头「别名」第 4 条）。
+        view["t"] = json!(self.class_tags(n)?);
+        Ok(Some((def_k, edited, NoteInfo::of(&n.text(), &view))))
     }
 
     /// 一条笔记（规范 ID）没被清除的标签操作里最大的 HLC 物理时刻（没有 = 0）。
@@ -656,6 +834,7 @@ impl<'t, 'c> Index<'t, 'c> {
             return Err(format!("gen4 cache: log row {k} is not a log"));
         };
         let (server_time, intent) = (l.server_time, l.intent.clone());
+        let note = l.note.as_ref().map(Ref::of);
         let device = e.id.device;
         // 投影行里的 profile 只是协议 3 的分区列，读侧不用；集合内取常量。
         let row = log_json("", &log_body(l), || {
@@ -667,6 +846,8 @@ impl<'t, 'c> Index<'t, 'c> {
             json: canonical(&row),
             server_time,
             intent,
+            k,
+            note,
         })
     }
 
@@ -951,6 +1132,7 @@ impl<'t, 'c> Index<'t, 'c> {
         r: &Ref,
         notes: &mut BTreeSet<Ref>,
         cards: &mut BTreeSet<Ref>,
+        raw: &mut BTreeSet<Ref>,
     ) -> Result<(), String> {
         let conn = self.t.conn();
         let refs = |q: &str| -> Result<Vec<Ref>, String> {
@@ -971,6 +1153,7 @@ impl<'t, 'c> Index<'t, 'c> {
         ] {
             for n in refs(q)? {
                 notes.insert(self.canon(&n)?);
+                raw.insert(n);
             }
         }
         for c in refs("SELECT DISTINCT card FROM stats WHERE col = ?1 AND card = ?2")? {
@@ -999,6 +1182,7 @@ impl<'t, 'c> Index<'t, 'c> {
             }
         }
         if gone {
+            raw.insert(r.clone());
             self.delete_note_rows(r)?;
             for q in [
                 "DELETE FROM cards WHERE col = ?1 AND id = ?2",
@@ -1052,9 +1236,80 @@ impl<'t, 'c> Index<'t, 'c> {
         Ok(caches::type_info_of(&payload, &stored, cfg).ok())
     }
 
+    /// 规范笔记 [n] 在 `anki_members` 里的行（文件头「表」）：先删旧的，再按它现在的别名类与应有的卡 [cards]
+    /// （(规范卡, 规范模板, cloze 序号)）写。[all] = 全量物化（表已空，不删）。
+    fn member_numbers(
+        &self,
+        n: &Ref,
+        cards: &[(Ref, Ref, i64)],
+        all: bool,
+        tmpl_members: &mut HashMap<Ref, Vec<Ref>>,
+    ) -> Result<(), String> {
+        let conn = self.t.conn();
+        if !all {
+            conn.prepare_cached("DELETE FROM anki_members WHERE col = ?1 AND note = ?2")
+                .map_err(sql)?
+                .execute(params![self.col, n])
+                .map_err(sql)?;
+        }
+        let put = |kind: EntKind, member: &Ref, canon: &Ref| -> Result<(), String> {
+            conn.prepare_cached(
+                "INSERT OR IGNORE INTO anki_members (col, kind, num, canon, note) VALUES (?1, ?2, ?3, ?4, ?5)",
+            )
+            .map_err(sql)?
+            .execute(params![
+                self.col,
+                kind as i64,
+                anki_numeric_id(&member.text()),
+                canon,
+                n
+            ])
+            .map_err(sql)?;
+            Ok(())
+        };
+        let note_members = self.aliases_of(n)?;
+        for m in &note_members {
+            put(EntKind::Note, m, n)?;
+        }
+        // 配卡公式的一边：规范 ID 自己加出现过的成员（文件头「表」）。
+        let side = |members: &[Ref], canon: &Ref| -> Vec<Id> {
+            std::iter::once(canon)
+                .chain(members)
+                .filter_map(|r| match r {
+                    Ref::Uuid(b) => Some(Id(*b)),
+                    Ref::Text(_) => None,
+                })
+                .collect()
+        };
+        let notes = side(&note_members, n);
+        for (card, tpl, ord) in cards {
+            if !tmpl_members.contains_key(tpl) {
+                let m = self.aliases_of(tpl)?;
+                tmpl_members.insert(tpl.clone(), m);
+            }
+            let tpls = side(&tmpl_members[tpl], tpl);
+            for a in &notes {
+                for t in &tpls {
+                    let x = Ref::Uuid(rules::card(a, t, *ord).0);
+                    if x != *card {
+                        put(EntKind::Card, &x, card)?;
+                    }
+                }
+            }
+            for m in self.aliases_of(card)? {
+                put(EntKind::Card, &m, card)?;
+            }
+        }
+        Ok(())
+    }
+
     fn delete_note_rows(&self, note: &Ref) -> Result<(), String> {
         let conn = self.t.conn();
         conn.prepare_cached("DELETE FROM notes WHERE col = ?1 AND id = ?2")
+            .map_err(sql)?
+            .execute(params![self.col, note])
+            .map_err(sql)?;
+        conn.prepare_cached("DELETE FROM anki_members WHERE col = ?1 AND note = ?2")
             .map_err(sql)?
             .execute(params![self.col, note])
             .map_err(sql)?;
@@ -1077,8 +1332,10 @@ impl<'t, 'c> Index<'t, 'c> {
     ) -> Result<(), String> {
         // 归回的写入者表在这一趟里不变：按类拼行（`class.rs` [Index::class_lines]）每个实体都要它，读一次。
         self.pass_writers = Some(self.writer_aliases()?);
+        self.pass_rules_begin()?;
         let done = self.cache_pass_with(cfg, notes, cards, all, out);
         self.pass_writers = None;
+        self.pass_rules = None;
         done
     }
 
@@ -1092,6 +1349,11 @@ impl<'t, 'c> Index<'t, 'c> {
     ) -> Result<(), String> {
         let mut plans: HashMap<Ref, Plan> = HashMap::new();
         let mut types: HashMap<Ref, Option<TypeInfo>> = HashMap::new();
+        // 模板的别名类（[Index::member_numbers]）：同一种笔记类型的笔记共用，一趟里只查一次。
+        let mut tmpl_members: HashMap<Ref, Vec<Ref>> = HashMap::new();
+        if !all {
+            self.cache_touched.extend(notes.iter().cloned());
+        }
         for n in &notes {
             let existing: Vec<Ref> = if all {
                 Vec::new()
@@ -1107,31 +1369,12 @@ impl<'t, 'c> Index<'t, 'c> {
                 rows.collect::<Result<_, _>>().map_err(sql)?
             };
             cards.extend(existing.iter().cloned());
-            let def = self
-                .definition(n)?
-                .filter(|(kind, ..)| *kind == EntKind::Note as i64);
-            let Some((_, def_k, payload)) = def else {
-                // 不是笔记（只是种类未定的 ID）、或身份记录没了：没有行。
+            let Some((def_k, edited, info)) = self.note_info(n)? else {
                 if !all {
                     self.delete_note_rows(n)?;
                 }
                 continue;
             };
-            let (lines, edited) = self.live_lines(EntKind::Note, n)?;
-            let stored: Vec<StoredEdit<'_>> =
-                lines.iter().map(|(j, s)| (j.as_str(), *s, None)).collect();
-            // 身份记录不成形（缺 `noteTypeId`、字段类型不对）的笔记没有行：真相里的操作来自别的设备，一条坏操作不能
-            // 让整个索引层的收尾失败。协议 3 在这里让整次刷新失败（文件头「与协议 3 的差别」）。
-            let Ok(mut view) = registers::note_view_of(&payload, &stored) else {
-                if !all {
-                    self.delete_note_rows(n)?;
-                }
-                continue;
-            };
-            // 协议 3 把 OR-Set 的结果写成一条合成的 `tags` 修改行再交给视图；这里直接给结果，同一个值。类里各成员的
-            // 标签操作并起来判（文件头「别名」第 4 条）。
-            view["t"] = json!(self.class_tags(n)?);
-            let info = NoteInfo::of(&n.text(), &view);
             let tref = self.canon(&ref_of(&info.note_type))?;
             if !types.contains_key(&tref) {
                 let ti = self.type_info(&tref, cfg)?;
@@ -1181,6 +1424,12 @@ impl<'t, 'c> Index<'t, 'c> {
                 .map_err(sql)?;
             out.cache_notes += 1;
             let expected: Vec<Ref> = row.expected.iter().map(|e| ref_of(&e.0)).collect();
+            let shape: Vec<(Ref, Ref, i64)> = expected
+                .iter()
+                .zip(&row.expected)
+                .map(|(c, (_, tpl, ord, _))| (c.clone(), ref_of(tpl), *ord))
+                .collect();
+            self.member_numbers(n, &shape, all, &mut tmpl_members)?;
             for c in existing.iter().filter(|c| !expected.contains(c)) {
                 self.t
                     .conn()
@@ -1255,13 +1504,62 @@ impl<'t, 'c> Index<'t, 'c> {
     /// 整个重放一遍再取它那一段。读命令 `logs` / `entity_views` 用（G7-4）。
     pub(super) fn replayed_card_logs(&mut self, card: &Ref) -> Result<Vec<LogIn>, String> {
         let card = self.canon(card)?;
+        Ok(self
+            .replayed_logs(&BTreeSet::from([card.clone()]))?
+            .remove(&card.text())
+            .unwrap_or_default())
+    }
+
+    /// [replayed_card_logs] 的批量版：[cards]（规范 ID）所在的全部 historyFrom 连通分量一起重放一遍，返回分量里**每张**卡
+    /// （规范 ID 文本）的日志（`res` 是重放写回的）。训练集 / 逐卡重放的读命令（`cmd/training.rs`，G7-4f）按批调，
+    /// 不逐卡各重放一次整个分量。
+    pub(super) fn replayed_logs(
+        &mut self,
+        cards: &BTreeSet<Ref>,
+    ) -> Result<HashMap<String, Vec<LogIn>>, String> {
         let mut links = Links::default();
-        let comp: Vec<Ref> = self
-            .link_family(&mut links, &BTreeSet::from([card.clone()]))?
-            .into_iter()
-            .collect();
-        let mut l = self.lineage(&comp)?;
-        Ok(l.logs.remove(&card.text()).unwrap_or_default())
+        let comp: Vec<Ref> = self.link_family(&mut links, cards)?.into_iter().collect();
+        Ok(self.lineage(&comp)?.logs)
+    }
+
+    /// 卡 [tail] 当链尾的归属组（链尾 + 广度优先的全部前身，`group_lineage`）的日志，按组里卡的顺序、各卡按
+    /// (发生时刻, 操作主键)：(投影行 JSON, server_time, 意图)，未经重放写回（重放的输入）。写命令 `sched`（G7-3b，
+    /// `cmd/writes_intent.rs`）据它算这张卡此刻的头状态——协议 3 `store/sync2/mod.rs` `group_of` 的新代版。
+    pub(super) fn group_rows(
+        &mut self,
+        tail: &Ref,
+    ) -> Result<Vec<(String, Option<i64>, Intent)>, String> {
+        Ok(self.group(tail)?.0)
+    }
+
+    /// [group_rows] 连同归属组的笔记（规范 ID）：取链尾自己日志上记的（链尾的日志里最后一条记了笔记的），链尾没有就取
+    /// 前身里第一条记了笔记的——协议 3 `group_of` 的同一条规则（换笔记类型不换笔记）。评分预览（`cmd/preview.rs`）用。
+    #[allow(clippy::type_complexity)]
+    pub(super) fn group(
+        &mut self,
+        tail: &Ref,
+    ) -> Result<(Vec<(String, Option<i64>, Intent)>, Option<String>), String> {
+        let tail = self.canon(tail)?;
+        let lineage = {
+            let mut preds = |c: &str| -> Result<Vec<String>, String> {
+                let (ls, _) = self.live_lines(EntKind::Card, &ref_of(c))?;
+                Ok(config::predecessors(&ls))
+            };
+            group_lineage(&tail.text(), &mut preds)?
+        };
+        let tail_text = tail.text();
+        let mut out = Vec::new();
+        let mut note: Option<Ref> = None;
+        for c in &lineage {
+            for l in self.card_logs(&ref_of(c))? {
+                if l.note.is_some() && (note.is_none() || *c == tail_text) {
+                    note = l.note.clone();
+                }
+                out.push((l.json, l.server_time, l.intent));
+            }
+        }
+        let note = note.map(|n| self.canon(&n).map(|c| c.text())).transpose()?;
+        Ok((out, note))
     }
 
     /// 一批卡（若干个完整的 historyFrom 连通分量）：活着的修改行、生效的前身 / 后继、按链尾重放写回的日志。
@@ -1509,6 +1807,9 @@ impl<'t, 'c> Index<'t, 'c> {
                 ])
                 .map_err(sql)?;
             out.cache_cards += 1;
+            if !all {
+                self.cache_touched.insert(t.note.clone());
+            }
             if !t.hidden {
                 visible.insert(card.clone());
             }
@@ -2363,6 +2664,69 @@ mod tests {
             })
             .unwrap();
             assert_one_canonical_note(t.conn(), &w);
+            assert_rebuild_is_identity(t, col);
+        });
+    }
+
+    /// 带盐的内置笔记类型（Lapis）：字段只在宿主缓存配置的代码默认定义里（没有 `fieldDef/` 修改），字段 ID 只嵌在笔记的
+    /// `f/<字段>` 键里、从不作为实体出现，别名表里没有它。配置按内置规则归一到规范字段 ID，键里的字段 ID 必须按同一份
+    /// 规则归一，笔记行才拿得到字段值（以前键只查别名表、保持带盐 ID，排序字段 / 词条全空，预演对拍报 notes / cards 不同）。
+    #[test]
+    fn salted_builtin_note_fields_reach_the_canonical_note_row() {
+        use crate::gen4_ids::rules;
+        with(|t, col| {
+            let num = rules::builtin_note_type_anki_num("lapis");
+            let nt = rules::note_type(Some(U1), num);
+            let f = rules::field(&nt, rules::builtin_field_anki_num("lapis", "Expression")).text();
+            let tpl =
+                rules::template(&nt, rules::builtin_template_anki_num("lapis", "Card 1")).text();
+            let note = rules::note(Some(U1), "g");
+            let cfg = json!({
+                "defaultDeck": id(DECK).text(),
+                "builtins": {"lapis": {"b": {
+                    "name": "Lapis", "css": "", "termFieldId": f,
+                    "fields": [{"id": f, "name": "Expression", "ord": 0}],
+                    "templates": [{"id": tpl, "name": "Card 1", "ord": 0, "front": "{{Expression}}", "back": ""}],
+                }, "reading": null}},
+            })
+            .to_string();
+            t.tx(|t| t.set_derive_cfg(col, CFG_KEY, Some(&cfg)))
+                .unwrap();
+            let steps = vec![
+                Body4::salts([U1]).unwrap(),
+                entity(
+                    EntKind::Deck,
+                    uuid(DECK),
+                    json!({"createdAt": 1, "builtin": "default"}),
+                ),
+                entity(
+                    EntKind::NoteType,
+                    Key::Uuid(nt),
+                    json!({"createdAt": 1, "ntKind": "standard", "builtin": "lapis", "ankiNum": num}),
+                ),
+                entity(
+                    EntKind::Note,
+                    Key::Uuid(note),
+                    json!({"createdAt": 1, "guid": "g", "noteTypeId": nt.text()}),
+                ),
+                set(
+                    EntKind::Note,
+                    Key::Uuid(note),
+                    &format!("f/{f}"),
+                    json!("猫"),
+                ),
+            ];
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                feed(t, &mut ix, col, 1, &steps);
+                ix.settle()?;
+                Ok(())
+            })
+            .unwrap();
+            assert_eq!(
+                rows(t.conn(), "SELECT id, sort_field FROM notes"),
+                strs(&[[rules::note(rules::CANONICAL, "g").text().as_str(), "猫"]])
+            );
             assert_rebuild_is_identity(t, col);
         });
     }

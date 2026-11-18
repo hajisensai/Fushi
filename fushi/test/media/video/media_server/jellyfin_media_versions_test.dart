@@ -2,6 +2,7 @@
 // 版本解析、记住的选择、选中版本的 MediaSourceId 进 PlaybackInfo / 直出 URL、
 // 字幕轨按选中版本列出、播放页版本菜单（RemoteVideoStreamVariants）。
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -331,6 +332,139 @@ void main() {
         r.client,
       ).remoteVideoStreamUrls('ep2');
       expect(urls.streamUrl, contains('MediaSourceId=ep2-2160'));
+    });
+  });
+
+  group('一次起播内条目详情短复用（video-7 / gap-remote-1）', () {
+    List<http.Request> detailHits(_Router r) => <http.Request>[
+      for (final http.Request req in r.seen)
+        if (req.url.path == '/Users/u1/Items/ep1') req,
+    ];
+    http.Response serve(http.Request req) {
+      if (req.url.path.endsWith('/PlaybackInfo')) return _playbackInfoFor(req);
+      if (req.url.path.contains('/Subtitles/')) {
+        return http.Response('1\n00:00:01,000 --> 00:00:02,000\nhi\n', 200);
+      }
+      return _json(_twoVersionEpisode());
+    }
+
+    test('重开入口 → 取流 → 下字幕只取一次；断点与下一次重开照常重新取', () async {
+      final _Router r = _Router(serve);
+      final JellyfinVideoClient client = _client(r.client);
+      final Directory dir = Directory.systemTemp.createTempSync('jf_sub_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+
+      // buildMediaServerLaunch 的那一次。
+      await client.itemDetail('ep1', forLaunch: true);
+      await client.remoteVideoStreamUrls('ep1');
+      await client.getRemoteVideoSubtitle(
+        'ep1',
+        File('${dir.path}/a.ass'),
+        embeddedStreamIndex: 2,
+      );
+      expect(detailHits(r), hasLength(1));
+
+      // 断点要服务器最新值（LWW），不走复用。
+      await client.remoteVideoPosition('ep1');
+      expect(detailHits(r), hasLength(2));
+
+      // 重开入口再来一次（下一次起播）：要最新断点，重新取。
+      await client.itemDetail('ep1');
+      expect(detailHits(r), hasLength(3));
+    });
+
+    test('取流后换了版本再取字幕：复用同一份详情，但下的是新选中版本的轨', () async {
+      final _Router r = _Router(serve);
+      final JellyfinVideoClient client = _client(r.client);
+      final Directory dir = Directory.systemTemp.createTempSync('jf_sub_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+
+      final RemoteVideoStreamUrls urls = await client.remoteVideoStreamUrls(
+        'ep1',
+      );
+      expect(urls.streamUrl, contains('MediaSourceId=ms-1080'));
+      client.streamVariantIndex = 1;
+
+      // 轨 3 只存在于 2160p 那个文件；按旧版本（1080p）找不到这条轨。
+      await client.getRemoteVideoSubtitle(
+        'ep1',
+        File('${dir.path}/b.srt'),
+        embeddedStreamIndex: 3,
+      );
+      expect(
+        r.seen
+            .where((http.Request q) => q.url.path.contains('/Subtitles/'))
+            .map((http.Request q) => q.url.path),
+        everyElement(contains('/Videos/ep1/ms-2160/Subtitles/3')),
+      );
+      expect(detailHits(r), hasLength(1));
+    });
+
+    test('重开入口取详情失败：取流立刻抛同一个错、不发第二次请求；重试照常重新请求', () async {
+      bool down = true;
+      final _Router r = _Router((http.Request req) {
+        if (down && req.url.path == '/Users/u1/Items/ep1') {
+          throw http.ClientException('connection refused', req.url);
+        }
+        return serve(req);
+      });
+      final JellyfinVideoClient client = _client(r.client);
+
+      Object? launchError;
+      try {
+        await client.itemDetail('ep1', forLaunch: true);
+      } on Object catch (e) {
+        launchError = e;
+      }
+      expect(launchError, isNotNull);
+
+      Object? streamError;
+      try {
+        await client.remoteVideoStreamUrls('ep1');
+      } on Object catch (e) {
+        streamError = e;
+      }
+      expect(streamError, same(launchError), reason: '不重新请求，直接是那一次的错');
+      expect(detailHits(r), hasLength(1));
+
+      // 记下的失败只交出去一次：服务器恢复后重试照常取到。
+      down = false;
+      final RemoteVideoStreamUrls urls = await client.remoteVideoStreamUrls(
+        'ep1',
+      );
+      expect(urls.streamUrl, contains('MediaSourceId=ms-1080'));
+      expect(detailHits(r), hasLength(2));
+    });
+
+    test('详情页取详情失败（不是重开入口）：随后点播放照常重新请求；成功的那份照常留给取流', () async {
+      bool down = true;
+      final _Router r = _Router((http.Request req) {
+        if (down && req.url.path == '/Users/u1/Items/ep1') {
+          throw http.ClientException('connection refused', req.url);
+        }
+        return serve(req);
+      });
+      final JellyfinVideoClient client = _client(r.client);
+      await expectLater(client.itemDetail('ep1'), throwsA(anything));
+
+      // 服务器恢复了：取流不能拿着那次旧错直接失败。
+      down = false;
+      final RemoteVideoStreamUrls urls = await client.remoteVideoStreamUrls(
+        'ep1',
+      );
+      expect(urls.streamUrl, contains('MediaSourceId=ms-1080'));
+      expect(detailHits(r), hasLength(2));
+
+      await client.itemDetail('ep1');
+      await client.remoteVideoStreamUrls('ep1');
+      expect(detailHits(r), hasLength(3));
+    });
+
+    test('起播用的客户端就是浏览器本身（短复用靠同一个实例接上）', () {
+      final JellyfinVideoClient client = _client(
+        _Router((http.Request req) => _json(_twoVersionEpisode())).client,
+      );
+      expect(identical(client.playbackClient, client), isTrue);
     });
   });
 

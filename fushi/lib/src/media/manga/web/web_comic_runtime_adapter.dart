@@ -1,5 +1,8 @@
+import 'dart:collection';
 import 'dart:io';
 import 'dart:typed_data';
+
+import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
@@ -10,6 +13,7 @@ import 'package:fushi/src/media/manga/web/web_comic_site_rule.dart';
 import 'package:fushi/src/media/novel/online/lnreader_fetch_bridge.dart'
     show guardLnReaderConnections, isLnReaderBlockedHost;
 import 'package:fushi/src/models/store_compliance.dart';
+import 'package:fushi/src/utils/misc/bounded_concurrency.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_web_core/fushi_web_core.dart';
@@ -57,8 +61,21 @@ class WebComicLibraryAdapter
   late final ComicAdDetector _detector = _adDetector ?? ComicAdDetector();
   final int Function() _now;
 
-  /// 广告判定时已经取到的页字节（按 URL），被阅读器取走一次即删。
-  final Map<String, Uint8List> _prefetched = <String, Uint8List>{};
+  /// 广告判定时已经取到的页字节：章节页地址 → (图片 URL → 字节)，被取走一次即删。
+  ///
+  /// 适配器是进程级单例，没有「关章」回调：用户开章后没读到末尾就离开，这些整图
+  /// 就没人来取。所以按章分桶、只留最近解析的 [kWebComicPrefetchedChapterLimit]
+  /// 章（阅读器当前章 + 一条并行的下载 / 互联取页），更早的整桶丢掉；被丢的页
+  /// 之后再要就走正常取图，只是多一次请求。
+  final LinkedHashMap<String, Map<String, Uint8List>> _prefetched =
+      LinkedHashMap<String, Map<String, Uint8List>>();
+
+  /// 测试观察口：当前留着的预取字节张数。
+  @visibleForTesting
+  int get prefetchedPageCount => _prefetched.values.fold<int>(
+    0,
+    (int sum, Map<String, Uint8List> bucket) => sum + bucket.length,
+  );
 
   static int _wallClock() => DateTime.now().millisecondsSinceEpoch;
 
@@ -186,24 +203,41 @@ class WebComicLibraryAdapter
       cookies: cookies,
     );
     if (!adFilterEnabled()) return pages;
-    return _dropAdPages(pages);
+    return _dropAdPages(pages, chapterKey: data.url.toString());
   }
 
   Future<List<OnlineMangaPageRef>> _dropAdPages(
-    List<HttpMangaPageRef> pages,
-  ) async {
+    List<HttpMangaPageRef> pages, {
+    required String chapterKey,
+  }) async {
+    final List<int> candidates = _detector.candidateIndices(pages.length);
+    // 候选页有界并发取：串行时开章要等最多 10 张整图一张张下完（单页超时以分钟
+    // 计）。结果按候选下标落位，判定输入与 verdict 的对应关系不随完成顺序变。
+    final List<Uint8List?> bytesByCandidate = List<Uint8List?>.filled(
+      candidates.length,
+      null,
+    );
+    await runBoundedTasks<int>(
+      List<int>.generate(candidates.length, (int i) => i),
+      maxConcurrent: kWebComicAdProbeConcurrency,
+      task: (int slot) async {
+        try {
+          bytesByCandidate[slot] = await _fetch(pages[candidates[slot]]);
+        } on Object {
+          // 取不到的页按正文保留：判广告只许漏判，不许误删。
+        }
+      },
+    );
     final List<HttpMangaPageRef> fetched = <HttpMangaPageRef>[];
     final List<Uint8List> images = <Uint8List>[];
-    for (final int index in _detector.candidateIndices(pages.length)) {
-      final HttpMangaPageRef page = pages[index];
-      try {
-        final Uint8List bytes = await _fetch(page);
-        _prefetched[page.url] = bytes;
-        fetched.add(page);
-        images.add(bytes);
-      } on Object {
-        // 取不到的页按正文保留：判广告只许漏判，不许误删。
-      }
+    final Map<String, Uint8List> bucket = <String, Uint8List>{};
+    for (int slot = 0; slot < candidates.length; slot++) {
+      final Uint8List? bytes = bytesByCandidate[slot];
+      if (bytes == null) continue;
+      final HttpMangaPageRef page = pages[candidates[slot]];
+      fetched.add(page);
+      images.add(bytes);
+      bucket[page.url] = bytes;
     }
     final Set<int> ads = <int>{};
     if (images.isNotEmpty) {
@@ -211,9 +245,10 @@ class WebComicLibraryAdapter
       for (int i = 0; i < fetched.length; i++) {
         if (verdicts[i] != ComicAdVerdict.ad) continue;
         ads.add(fetched[i].index);
-        _prefetched.remove(fetched[i].url);
+        bucket.remove(fetched[i].url);
       }
     }
+    _rememberPrefetched(chapterKey, bucket);
     if (ads.isEmpty) return pages;
     final List<OnlineMangaPageRef> kept = <OnlineMangaPageRef>[];
     for (final HttpMangaPageRef page in pages) {
@@ -236,9 +271,31 @@ class WebComicLibraryAdapter
     if (page is! HttpMangaPageRef) {
       throw ArgumentError.value(page, 'page', 'not a web comic page reference');
     }
-    final Uint8List? cached = _prefetched.remove(page.url);
+    final Uint8List? cached = _takePrefetched(page.url);
     if (cached != null) return cached;
     return _fetch(page);
+  }
+
+  /// 同一章重新解析时整桶换新（旧字节可能对应已过期的签名地址）；超出
+  /// [kWebComicPrefetchedChapterLimit] 的最早一章整桶丢掉。
+  void _rememberPrefetched(String chapterKey, Map<String, Uint8List> bucket) {
+    _prefetched.remove(chapterKey);
+    if (bucket.isEmpty) return;
+    _prefetched[chapterKey] = bucket;
+    while (_prefetched.length > kWebComicPrefetchedChapterLimit) {
+      _prefetched.remove(_prefetched.keys.first);
+    }
+  }
+
+  Uint8List? _takePrefetched(String url) {
+    for (final MapEntry<String, Map<String, Uint8List>> entry
+        in _prefetched.entries) {
+      final Uint8List? bytes = entry.value.remove(url);
+      if (bytes == null) continue;
+      if (entry.value.isEmpty) _prefetched.remove(entry.key);
+      return bytes;
+    }
+    return null;
   }
 
   Future<Uint8List> _fetch(HttpMangaPageRef page) =>
@@ -297,6 +354,13 @@ List<HttpMangaPageRef> buildWebComicPageRefs({
       ),
   ];
 }
+
+/// 广告判定取候选页的并发数：与在线阅读直读并发（`kOnlineMangaPageConcurrency`）
+/// 同档，不对同一图床多开连接。
+const int kWebComicAdProbeConcurrency = 3;
+
+/// 预取字节最多留几章，见 [WebComicLibraryAdapter] 的 `_prefetched`。
+const int kWebComicPrefetchedChapterLimit = 2;
 
 /// 单张漫画页 / 封面的体积上限：远超任何真实漫画页，挡住恶意站点的无限流把内存撑爆。
 const int kWebComicImageMaxBytes = 40 * 1024 * 1024;

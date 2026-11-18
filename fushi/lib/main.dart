@@ -33,6 +33,8 @@ import 'package:window_manager/window_manager.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_capture.dart';
+import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
     show buildFushiFallbackTheme;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -133,6 +135,8 @@ import 'package:fushi/src/media/tracking/page/tracking_page.dart'
 import 'package:fushi/src/media/tracking/page/tracking_page_data.dart'
     show TrackingPageTab;
 import 'package:fushi/src/media/tracking/tracking_auto_link_notice.dart';
+import 'package:fushi/src/media/listening_reminder_app.dart'
+    show listeningReminderProvider;
 import 'package:fushi/src/storage/data_root_migration_view.dart';
 import 'package:fushi/src/startup/loading_watchdog_view.dart';
 import 'package:fushi/src/sync/backup_import_overlay_view.dart';
@@ -163,10 +167,13 @@ import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/platform/source_url_channel.dart';
 import 'package:fushi/src/platform/desktop/desktop_ctl_host.dart';
 import 'package:fushi/src/media/drag_drop/desktop_drop_reinitializer.dart';
+import 'package:fushi/src/media/import/android_open_with.dart';
 import 'package:fushi/src/media/import/external_book.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart'
     show DuplicateChoice;
 import 'package:fushi/src/ops/ctl_library_entries.dart';
+import 'package:fushi/src/media/library_curate/library_curate_host.dart'
+    show registerAppLibraryCurator;
 import 'package:fushi/src/ops/app_op_context.dart';
 import 'package:fushi/src/ops/ctl_library_import.dart';
 import 'package:fushi/src/ops/op_context.dart';
@@ -185,6 +192,7 @@ import 'package:fushi/src/platform/engine_deep_link_route_guard.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/floating_ball/app_floating_ball_host.dart';
+import 'package:fushi/src/reader/eink_full_refresh.dart';
 import 'package:fushi/src/feedback/crash_report.dart';
 import 'package:fushi/src/feedback/feedback_service.dart'
     show feedbackServiceProvider;
@@ -204,17 +212,12 @@ import 'package:fushi_engine/media/video/download/video_download_pipeline_servic
 import 'package:fushi_engine/media/video/external_video.dart';
 import 'package:fushi_engine/srs/srs_op_ledger.dart';
 import 'package:fushi/src/platform/desktop/linux_external_open_channel.dart';
-import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
-import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
-import 'package:fushi_engine/media/video/video_cover_extractor.dart'
-    show extractVideoCover;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
-import 'package:fushi_engine/media/video/video_storage.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
+import 'package:fushi/src/media/video/external_video_ingest.dart';
 import 'package:fushi/src/profile/extension_profile_adapter.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
-import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart'
     show
         BookFormat,
@@ -222,8 +225,7 @@ import 'package:fushi_core/fushi_core.dart'
         FushiDatabaseFailureKind,
         kLegacySchemaBridgeAppVersion,
         kLegacySchemaBridgeReleaseUrl,
-        VideoBookRow,
-        VideoBooksCompanion;
+        VideoBookRow;
 import 'package:fushi/src/media/media_item.dart';
 import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart' show LaunchMode, launchUrl;
@@ -258,21 +260,6 @@ final List<String> _pendingCardSourceUrls = <String>[];
 /// 完成前到达的先暂存，首帧后逐条弹确认框再配对
 /// （docs/specs/2026-09-28-interconnect-remote-reach.md §4）。
 final List<String> _pendingPairLinks = <String>[];
-
-/// 外部打开新视频时的自动封面锁边界。maintenance 已开始时 [action] 仍可按
-/// `allowAutoCover == false` 建立无封面的媒体行，但不得产生自动封面文件。
-Future<T> _runExternalVideoCoverMutation<T>(
-  Future<T> Function(bool allowAutoCover) action,
-) async {
-  final VideoScrapeOperationLease? lease =
-      VideoScrapeOperationGate.tryEnterOperation();
-  if (lease == null) return action(false);
-  try {
-    return await VideoCoverMutationGate.runExclusive<T>(() => action(true));
-  } finally {
-    lease.release();
-  }
-}
 
 /// Single source of truth for the status/navigation bar overlay style.
 ///
@@ -452,6 +439,9 @@ void main([List<String> args = const <String>[]]) {
       // 原生 TtsChannelHandler 只挂在主 Activity 引擎上（popupMain 等副引擎没有）；
       // 单词音频据此改走不申请音频焦点的原生播放器（BUG-3311）。
       TtsChannel.markHostPlaybackRegistered();
+      // 跨应用语音缓存（拍板 oqk37s3QFL）：只有主引擎接原生的录音状态推送（设置页
+      // 开关的值）；引擎重建而前台服务还在录时这里读回「在录」。非 Android 无操作。
+      unawaited(CrossAppAudioCapture.instance.init());
       // 系统「降低透明度」信号（Windows / macOS / iOS），玻璃设计系统据此回退实心。
       StartupTimeline.mark('win-installs');
       unawaited(SystemTransparency.initialize());
@@ -1106,6 +1096,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   bool _isMainIntent = true;
   StreamSubscription? _intentsSubscription;
 
+  /// Android「用其他应用打开」/ 分享进来的书（拍板台 oeJzVRQ9p1）：原生复制好的副本
+  /// 从这里取，走与桌面 open-with 同一条 [_routeExternalBook]。
+  final AndroidOpenWithInbox _openWithInbox = AndroidOpenWithInbox();
+
   /// 守卫：确保外部打开的视频只被打开一次（[build] 可能多次重建）。
   bool _externalVideoHandled = false;
   bool _externalBookHandled = false;
@@ -1367,6 +1361,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       ),
       buildInProcessInvoker: buildInProcessOpInvoker,
     );
+    // AI 库管家：自动路径与设置页经这里拿进程级编排器（它依赖操作上下文，不能由
+    // 大环里的 AppModel 直接 import）。
+    registerAppLibraryCurator();
     if (_isDesktop) {
       unawaited(_startCtlServer());
     }
@@ -1395,6 +1392,15 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         );
         _intentsSubscription = intents.ReceiveIntent.receivedIntentStream
             .listen((intent) => handleIntent(intent: intent, isInitial: false));
+        unawaited(
+          _openWithInbox.start(
+            onBook: _routeExternalBook,
+            onRejected: (String? name) => FushiToast.show(
+              msg: t.external_book_open_failed(name: name ?? '?'),
+              severity: ToastSeverity.error,
+            ),
+          ),
+        );
       });
     }
     if (Platform.isMacOS) {
@@ -1825,6 +1831,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     _sourceUrlSubscription?.cancel();
     _pendingMineArrivals?.cancel();
     _intentsSubscription?.cancel();
+    _openWithInbox.stop();
     _iosUrlSubscription?.cancel();
     _systemColorRefreshDebounce?.cancel();
     _widgetSnapshots.dispose();
@@ -2228,24 +2235,37 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (!isVideo && !isBook) return null;
     if (!File(videoPath).existsSync()) return null;
 
+    if (isBook) {
+      await _routeExternalBook(videoPath);
+      return null;
+    }
     if (!appModel.isInitialised || appModel.navigatorKey.currentState == null) {
       // 首实例尚未就绪：交还首启路径，build 完成后接手打开。
-      if (isBook) {
-        _pendingExternalBookPath = videoPath;
-        _externalBookHandled = false;
-      } else {
-        _pendingExternalVideoPath = videoPath;
-        _externalVideoHandled = false;
-      }
+      _pendingExternalVideoPath = videoPath;
+      _externalVideoHandled = false;
       if (mounted) setState(() {});
       return null;
     }
-    if (isBook) {
-      await _openExternalBook(videoPath);
-    } else {
-      await _openExternalVideo(videoPath);
-    }
+    await _openExternalVideo(videoPath);
     return null;
+  }
+
+  /// 外部交来的书 / 漫画路径（桌面单实例转交、Android「用其他应用打开」）的统一入口：
+  /// app 还没就绪就交还首启路径（[build] 完成后一次性接手），否则直接 [_openExternalBook]。
+  Future<void> _routeExternalBook(String bookPath) async {
+    if (!appModel.isInitialised || appModel.navigatorKey.currentState == null) {
+      // 首启只有一个待打开槽位（与桌面 argv 同一约定）：就绪前又来一本，后到的覆盖
+      // 先到的，被覆盖的若是 Android 副本就顺手删掉。
+      final String? replaced = _pendingExternalBookPath;
+      if (replaced != null && replaced != bookPath) {
+        unawaited(_openWithInbox.release(replaced));
+      }
+      _pendingExternalBookPath = bookPath;
+      _externalBookHandled = false;
+      if (mounted) setState(() {});
+      return;
+    }
+    await _openExternalBook(bookPath);
   }
 
   /// 「从 app 外用 Fushi 打开书 / 漫画」：入库（已在库则复用那一本）→ 打开阅读器。
@@ -2263,13 +2283,18 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   /// 读的是解压后的书目录。同一路径导入进行中再被打开（用户以为没反应又双击一次）
   /// 直接忽略，不并发导入同一个文件。
   Future<void> _openExternalBook(String bookPath) async {
-    if (appModel.navigatorKey.currentState == null) return;
-    final String inFlightKey = p.canonicalize(bookPath);
-    if (!_externalBooksOpening.add(inFlightKey)) return;
     try {
-      await _importAndOpenExternalBook(bookPath);
+      if (appModel.navigatorKey.currentState == null) return;
+      final String inFlightKey = p.canonicalize(bookPath);
+      if (!_externalBooksOpening.add(inFlightKey)) return;
+      try {
+        await _importAndOpenExternalBook(bookPath);
+      } finally {
+        _externalBooksOpening.remove(inFlightKey);
+      }
     } finally {
-      _externalBooksOpening.remove(inFlightKey);
+      // Android 收进来的副本已复制进书库（或导入失败）：删掉缓存副本。别的路径不动。
+      await _openWithInbox.release(bookPath);
     }
   }
 
@@ -2487,76 +2512,12 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
 
     final VideoBookRepository repo = VideoBookRepository(appModel.database);
 
-    String bookUid;
     try {
-      bookUid = await _runExternalVideoCoverMutation((
-        bool allowAutoCover,
-      ) async {
-        // ② 去重：同一物理文件若已库内导入（`video/<basename>` 身份），复用其旧
-        // bookUid，不再派生 `video/ext/<sha1>` 第二身份插第二行。按 videoPath 命中
-        // 走仓库单一真相源 findByVideoPath（与 isDuplicateVideoPath 同比对语义）。
-        final VideoBookRow? sameFile = await repo.findByVideoPath(videoPath);
-        if (sameFile != null) return sameFile.bookUid;
-
-        final String candidateUid = externalVideoBookUid(videoPath);
-        final VideoBookRow? existing = await repo.getByBookUid(candidateUid);
-        if (existing != null) return candidateUid;
-
-        CoverMetaStore? coverMetaStore;
-        String? coverPath;
-        if (allowAutoCover) {
-          try {
-            final CoverMetaStore store = CoverMetaStore(
-              await VideoStorage.coversDir(),
-            );
-            if (await store.allowsAutoFrameWrite(candidateUid)) {
-              coverMetaStore = store;
-              // ① 封面：复用库内导入同款 extractVideoCover（桌面 ffmpeg 抽帧；移动端无
-              // ffmpeg 时返 null 留空占位）。仅新建外部条目时抽一次。
-              coverPath = await extractVideoCover(
-                videoPath: videoPath,
-                bookUid: candidateUid,
-              );
-            }
-          } on Object catch (error) {
-            // provenance 不可读时 fail closed：仍建无封面的媒体行。
-            debugPrint('[Fushi] external video cover admission failed: $error');
-          }
-        }
-        await repo.saveVideoBook(
-          VideoBooksCompanion(
-            bookUid: Value(candidateUid),
-            title: Value(p.basenameWithoutExtension(videoPath)),
-            videoPath: Value(videoPath),
-            coverPath: Value<String?>(coverPath),
-            importedAt: Value(DateTime.now().millisecondsSinceEpoch),
-          ),
-        );
-        if (coverPath != null && coverMetaStore != null) {
-          try {
-            final bool committed = await coverMetaStore.markAutoFrameAfterWrite(
-              candidateUid,
-            );
-            if (!committed) {
-              debugPrint(
-                '[Fushi] external video cover provenance changed during '
-                'automatic write: $candidateUid',
-              );
-            }
-          } on Object catch (error) {
-            debugPrint(
-              '[Fushi] external video cover provenance commit failed: '
-              '$error',
-            );
-          }
-        }
-        return candidateUid;
-      });
+      return (await upsertExternalVideoBook(repo, videoPath)).bookUid;
     } catch (e) {
       debugPrint('[Fushi] external video upsert failed: $e');
       return null;
     }
-    return bookUid;
   }
 
   void _scheduleWindowsUpdateHandoffReconcile() {
@@ -3231,6 +3192,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         PreviousExitLog.markInitialised();
         _listenRemotePush();
         _listenTrackingAutoLinks();
+        // 连续收听提醒：开关关着时只挂一个偏好监听，不起计时器。
+        ref.read(listeningReminderProvider).start();
         unawaited(_checkFeedbackReplies());
         unawaited(
           offerCrashReportAfterStartup(
@@ -3457,7 +3420,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                                     key: feedbackScreenshotBoundaryKey,
                                     // iOS / macOS 的 Live Activity / 菜单栏播放条与小组件按钮
                                     // 回调宿主（其它平台原样透传）；快照走 [WidgetSnapshotSource]。
-                                    child: AppleWidgetsHost(child: child!),
+                                    child: AppleWidgetsHost(
+                                      // NSFW 封面状态（拍板台 w04vrhUAaX）挂在
+                                      // 导航器之上，所有路由 / 对话框都读得到。
+                                      child: MediaNsfwStateHost(child: child!),
+                                    ),
                                   ),
                                   const AppFloatingBallHost(),
                                   const FloatingLyricLookupHost(),
@@ -3465,6 +3432,12 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                                   const GalHookOverlayThemeSync(),
                                   // 状态监测悬浮小窗（默认关）：最上层、整层不吃点击。
                                   const StatusMonitorOverlayHost(),
+                                  // 墨水屏「每 N 页全刷」的黑屏闪刷：最顶层，盖住
+                                  // 悬浮球、状态监测小窗等一切浮层（整屏都要刷），
+                                  // 平时为空且不吃指针。
+                                  EinkFullRefreshHost(
+                                    controller: appModel.einkFullRefresh,
+                                  ),
                                 ],
                               ),
                             ),

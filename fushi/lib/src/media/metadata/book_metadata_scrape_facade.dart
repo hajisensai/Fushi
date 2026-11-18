@@ -451,7 +451,10 @@ class BookMetadataScrapeFacade {
       dir.path,
       '${now.microsecondsSinceEpoch}_${item.mediaIdentifier.hashCode.toUnsigned(32)}',
     );
-    await current.copy(path);
+    final File backup = await current.copy(path);
+    // 复制会沿用源文件的修改时间；保留期按「备份建立时刻」算，所以这里改成现在，
+    // 否则一张 30 天前就在用的旧封面，备份刚建好就会被下一次清理删掉。
+    await backup.setLastModified(now);
     return path;
   }
 

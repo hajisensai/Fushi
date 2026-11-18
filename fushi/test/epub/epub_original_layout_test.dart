@@ -62,6 +62,83 @@ void main() {
       }
     });
 
+    // 反馈 EwmiUOMTS-：英文 EPUB 两项方向元数据都不写，落回全局竖排后拉丁字母
+    // 整行侧躺。只横排书写的语言要由 dc:language 推出横排。
+    test('方向都没声明、语言是只横排书写的文字 → 横排 + 按书写方向翻页', () {
+      for (final String lang in <String>['en', 'en-US', 'FR', 'de_DE', 'eng']) {
+        expect(
+          BookOriginalLayout.resolve(language: lang),
+          const BookOriginalLayout(
+            writingMode: 'horizontal-tb',
+            spreadDirection: 'ltr',
+          ),
+          reason: lang,
+        );
+      }
+      expect(
+        BookOriginalLayout.resolve(language: 'ar'),
+        const BookOriginalLayout(
+          writingMode: 'horizontal-tb',
+          spreadDirection: 'rtl',
+        ),
+      );
+    });
+
+    test('方向都没声明、语言可竖排 / 未声明 / 认不出 → none（交给全局设置）', () {
+      for (final String? lang in <String?>[
+        null,
+        '',
+        'ja',
+        'ja-JP',
+        'zh-Hant',
+        'ko',
+        'jpn',
+        'mn',
+        'und',
+        'mul',
+        'Japanese',
+      ]) {
+        expect(
+          BookOriginalLayout.resolve(language: lang),
+          BookOriginalLayout.none,
+          reason: '$lang',
+        );
+      }
+    });
+
+    test('有方向元数据时语言不改写它', () {
+      // 英文书明确声明竖排：照书。
+      expect(
+        BookOriginalLayout.resolve(
+          primaryWritingMode: 'vertical-rl',
+          language: 'en',
+        ),
+        const BookOriginalLayout(
+          writingMode: 'vertical-rl',
+          spreadDirection: 'rtl',
+        ),
+      );
+      // 只声明 rtl 翻页：照旧按竖排解释，不被语言推断盖掉。
+      expect(
+        BookOriginalLayout.resolve(
+          pageProgressionDirection: 'rtl',
+          language: 'en',
+        ),
+        const BookOriginalLayout(
+          writingMode: 'vertical-rl',
+          spreadDirection: 'rtl',
+        ),
+      );
+      // 阅读器不支持的 vertical-lr：语言不顶替它推横排。
+      expect(
+        BookOriginalLayout.resolve(
+          primaryWritingMode: 'vertical-lr',
+          language: 'en',
+        ),
+        BookOriginalLayout.none,
+      );
+    });
+
     test('page-progression-direction=default 等非法值视同未声明', () {
       expect(
         BookOriginalLayout.resolve(pageProgressionDirection: 'default'),
@@ -129,9 +206,17 @@ void main() {
       }
     });
 
-    EpubBook parse({String spineAttrs = '', String extraMeta = ''}) {
+    EpubBook parse({
+      String spineAttrs = '',
+      String extraMeta = '',
+      String language = 'ja',
+    }) {
       return EpubParser.parseSync(
-        _buildEpub(spineAttrs: spineAttrs, extraMeta: extraMeta),
+        _buildEpub(
+          spineAttrs: spineAttrs,
+          extraMeta: extraMeta,
+          language: language,
+        ),
         extractDir.path,
       );
     }
@@ -196,10 +281,28 @@ void main() {
       expect(book.pageProgressionDirection, isNull);
       expect(book.originalLayout, BookOriginalLayout.none);
     });
+
+    test('英文书什么方向都没写（反馈 EwmiUOMTS-）→ 横排 + ltr', () {
+      final EpubBook book = parse(language: 'en');
+      expect(book.language, 'en');
+      expect(book.pageProgressionDirection, isNull);
+      expect(book.primaryWritingMode, isNull);
+      expect(
+        book.originalLayout,
+        const BookOriginalLayout(
+          writingMode: 'horizontal-tb',
+          spreadDirection: 'ltr',
+        ),
+      );
+    });
   });
 }
 
-Uint8List _buildEpub({required String spineAttrs, required String extraMeta}) {
+Uint8List _buildEpub({
+  required String spineAttrs,
+  required String extraMeta,
+  required String language,
+}) {
   final String opf =
       '<?xml version="1.0" encoding="UTF-8"?>'
       '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" '
@@ -207,7 +310,7 @@ Uint8List _buildEpub({required String spineAttrs, required String extraMeta}) {
       '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'
       '<dc:identifier id="uid">urn:uuid:layout-test</dc:identifier>'
       '<dc:title>テスト</dc:title>'
-      '<dc:language>ja</dc:language>'
+      '<dc:language>$language</dc:language>'
       '$extraMeta'
       '</metadata>'
       '<manifest>'

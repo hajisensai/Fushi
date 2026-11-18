@@ -1,7 +1,6 @@
 ﻿# 构建 Windows x64 版 fushi_compute.dll（纯 Rust，除系统 / VC 运行时外无额外依赖 DLL）。
 #
 # 前提：rustup target add x86_64-pc-windows-msvc（MSVC 工具链）。
-# 访问 crates.io 不稳时先设代理：$env:CARGO_HTTP_PROXY='http://127.0.0.1:34151'
 #
 # 用法：
 #   powershell -ExecutionPolicy Bypass -File native/fushi_compute/build_windows_dll.ps1

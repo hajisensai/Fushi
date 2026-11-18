@@ -747,6 +747,27 @@ Future<void> dismissSrsLapisMigrationReminder(WidgetRef ref) async {
   await app.prefsRepo.setPref(kSrsLapisMigrationReminderPrefKey, false);
 }
 
+/// 回应「每日上限单位改缺省」的提醒（拍板台 pr3460：给旧的提醒，不取消就改成作答次数）：给每个存量牌组
+/// （[SrsDbStore.limitUnitLegacyDecks]）明写 [unit]（「保持按卡片数」= cards，「按作答次数」= reviews）。一次批量写入
+/// （一个事务），写过的牌组不再提醒；修改记录照常同步，别的设备上同一批牌组也不再提醒。
+Future<void> settleSrsLegacyLimitUnit(
+  SrsDbStore store,
+  SrsLimitUnit unit,
+) async {
+  final List<String> decks = (await store.limitUnitLegacyDecks()).toList()
+    ..sort();
+  if (decks.isEmpty) return;
+  await store.editFieldsBatch(<SrsFieldChange>[
+    for (final String d in decks)
+      SrsFieldChange(
+        SrsEntityKind.deck,
+        d,
+        SrsFieldKeys.deckLimitUnit,
+        unit.wire,
+      ),
+  ]);
+}
+
 /// 一个整库计数在某个 store 内容指纹下的结果（[_srsMemoByContent]）。
 class _SrsContentMemo {
   const _SrsContentMemo(this.fingerprint, this.value);
@@ -761,6 +782,9 @@ final Expando<_SrsContentMemo> _lapisPendingMemo = Expando<_SrsContentMemo>(
 final Expando<_SrsContentMemo> _conflictCountMemo = Expando<_SrsContentMemo>(
   'srsConflictCount',
 );
+final Expando<_SrsContentMemo> _limitUnitLegacyMemo = Expando<_SrsContentMemo>(
+  'srsLimitUnitLegacy',
+);
 
 /// 按 [SrsDbStore.contentFingerprint] 复用 [compute] 的结果：指纹没变（这期间只落了复习日志 /
 /// 界面状态类修改记录）时直接给上次的 Future，不再扫库。以前每评一张卡 [srsRevisionProvider]
@@ -768,12 +792,16 @@ final Expando<_SrsContentMemo> _conflictCountMemo = Expando<_SrsContentMemo>(
 ///
 /// 指纹在开始算**之前**取：算的途中有写入落库，存下的是旧指纹，下次照样重算。失败不缓存（原样
 /// 抛给 provider，下次重试）。
+///
+/// [fingerprintOf] 缺省取内容指纹；结果还取决于复习日志的计数要换成能覆盖那部分变化的键（见
+/// [_srsContentAndMergeFingerprint]）。
 Future<int> _srsMemoByContent(
   Expando<_SrsContentMemo> memo,
   SrsDbStore store,
-  Future<int> Function() compute,
-) {
-  final String fingerprint = store.contentFingerprint;
+  Future<int> Function() compute, {
+  String Function(SrsDbStore store)? fingerprintOf,
+}) {
+  final String fingerprint = (fingerprintOf ?? _srsContentFingerprint)(store);
   final _SrsContentMemo? hit = memo[store];
   if (hit != null && hit.fingerprint == fingerprint) return hit.value;
   final Future<int> value = compute();
@@ -787,6 +815,14 @@ Future<int> _srsMemoByContent(
   );
   return value;
 }
+
+String _srsContentFingerprint(SrsDbStore store) => store.contentFingerprint;
+
+/// 内容指纹 + RWKV 整表重查键：内容指纹不随复习日志变（本机评分不让角标重扫），但别的设备的复习日志并进来
+/// （同步合并、导入）也不推进它（store/refresh.rs `Counters::content`）。RWKV 键恰好在每次合并别的设备的事件时
+/// 推进、本机评分时不动，拼上它后「只并进来旧复习日志」也会让按日志算的计数重算。
+String _srsContentAndMergeFingerprint(SrsDbStore store) =>
+    '${store.contentFingerprint}|${store.rwkvScoresKey}';
 
 /// 还能迁到 Fushi 卡片的旧 Lapis 笔记 + 可补迁遗漏字段的笔记，合计（牌组列表的迁移提醒）。
 /// 提醒关着时不算（不为看不见的提示扫库）。内容没变时复用上次结果（[_srsMemoByContent]）。
@@ -812,6 +848,23 @@ final FutureProvider<int> srsLegacyLapisPendingProvider = FutureProvider<int>((
     return pending.migratable + pending.backfill;
   });
 });
+
+/// 每日上限单位改缺省之前就在用、还没写过单位的牌组数（[SrsDbStore.limitUnitLegacyDecks]，牌组页的一次性提醒）。
+/// 复用上次结果（[_srsMemoByContent]）：它只取决于牌组设置与改缺省之前的复习，本机评分只落今天的日志，不会变；
+/// 改缺省之前的复习只可能随别的设备的事件并进来，所以键是内容指纹 + 合并（[_srsContentAndMergeFingerprint]）。
+final FutureProvider<int> srsLimitUnitLegacyCountProvider = FutureProvider<int>(
+  (Ref ref) async {
+    ref.watch(srsRevisionProvider);
+    final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
+    if (store == null) return 0;
+    return _srsMemoByContent(
+      _limitUnitLegacyMemo,
+      store,
+      () async => (await store.limitUnitLegacyDecks()).length,
+      fingerprintOf: _srsContentAndMergeFingerprint,
+    );
+  },
+);
 
 /// 待处理的同步冲突（标志 / 设置类）+ 待裁决笔记，合计（牌组列表顶栏的冲突角标）。
 /// 订阅 [srsRevisionProvider]；与牌组列表各自重读，互不等待。模块关着时为 0。内容没变时复用

@@ -109,4 +109,166 @@ void main() {
     );
     expect(old.existsSync(), isFalse);
   });
+
+  // ── BUG-4810：拷新 → 写库 → 删旧，失败原样撤回 ─────────────────────────
+
+  /// 持久目录的全貌（相对路径 → 内容）。
+  Map<String, String> snapshot(Directory dir) => <String, String>{
+    for (final FileSystemEntity f in dir.listSync(recursive: true))
+      if (f is File)
+        p.relative(f.path, from: dir.path).replaceAll(r'\', '/'): f
+            .readAsStringSync(),
+  };
+
+  File writeFile(String relative, String body) =>
+      File(p.join(tmp.path, 'library', relative))
+        ..parent.createSync(recursive: true)
+        ..writeAsStringSync(body);
+
+  String srt(String text) => '1\n00:00:01,000 --> 00:00:02,000\n$text\n\n';
+
+  /// 让 AIFF 的「拷贝」失败：转码器抛错。
+  void failTranscode() {
+    AudiobookStorage.flacTranscoder = (String src, String dest) async =>
+        throw const FileSystemException('disk full');
+  }
+
+  Future<AudiobookAlignmentResult> align({
+    required String subtitle,
+    required List<String> audio,
+  }) => alignAndPersistAudiobook(
+    db: db,
+    repo: SrtBookRepository(db),
+    audiobookRepo: AudiobookRepository(db),
+    bookKey: 'Book',
+    title: 'Book',
+    subtitlePath: subtitle,
+    audioPaths: audio,
+  );
+
+  test('replaceAudiobookAudio: a copy that fails midway keeps both rows and '
+      'the old audio', () async {
+    final AudiobookRepository abRepo = AudiobookRepository(db);
+    final List<String> first = await replaceAudiobookAudio(
+      db: db,
+      bookKey: 'Book',
+      audioPaths: <String>[writeFile('old.mp3', 'OLD').path],
+    );
+    final Directory persist = await AudiobookStorage.ensurePersistDir('Book');
+    final Map<String, String> before = snapshot(persist);
+    failTranscode();
+    addTearDown(() => AudiobookStorage.flacTranscoder = null);
+
+    await expectLater(
+      replaceAudiobookAudio(
+        db: db,
+        bookKey: 'Book',
+        audioPaths: <String>[
+          writeFile('new1.mp3', 'NEW-1').path,
+          writeFile('new2.aiff', 'NEW-2').path,
+        ],
+      ),
+      throwsA(isA<FileSystemException>()),
+    );
+
+    expect((await abRepo.findByBookKey('Book'))!.audioPaths, first);
+    expect(snapshot(persist), before);
+  });
+
+  test('alignAndPersistAudiobook: a copy that fails midway keeps the old '
+      'subtitle, audio, cues and row', () async {
+    final AudiobookRepository abRepo = AudiobookRepository(db);
+    await align(
+      subtitle: writeFile('book.srt', srt('旧句')).path,
+      audio: <String>[writeFile('old.mp3', 'OLD').path],
+    );
+    final Audiobook before = (await abRepo.findByBookKey('Book'))!;
+    final Directory persist = await AudiobookStorage.ensurePersistDir('Book');
+    final Map<String, String> filesBefore = snapshot(persist);
+    failTranscode();
+    addTearDown(() => AudiobookStorage.flacTranscoder = null);
+
+    await expectLater(
+      align(
+        subtitle: writeFile('v2/book.srt', srt('新句')).path,
+        audio: <String>[
+          writeFile('new1.mp3', 'NEW-1').path,
+          writeFile('new2.aiff', 'NEW-2').path,
+        ],
+      ),
+      throwsA(isA<FileSystemException>()),
+    );
+
+    final Audiobook after = (await abRepo.findByBookKey('Book'))!;
+    expect(after.alignmentPath, before.alignmentPath);
+    expect(after.audioPaths, before.audioPaths);
+    expect(
+      (await abRepo.cuesForBook('Book')).map((AudioCue c) => c.text),
+      <String>['旧句'],
+    );
+    expect(snapshot(persist), filesBefore, reason: '新落的字幕副本与新音频都要收走，旧的原样');
+  });
+
+  test('alignAndPersistAudiobook: the six row writes are one commit, and a '
+      'failed commit rolls the files back', () async {
+    final AudiobookRepository abRepo = AudiobookRepository(db);
+    await align(
+      subtitle: writeFile('book.srt', srt('旧句')).path,
+      audio: <String>[writeFile('old.mp3', 'OLD').path],
+    );
+    final Audiobook before = (await abRepo.findByBookKey('Book'))!;
+    final Directory persist = await AudiobookStorage.ensurePersistDir('Book');
+    final Map<String, String> filesBefore = snapshot(persist);
+    // cue 是第五步：前四步（对齐列、音频列、health、配对行）此时都已写过。
+    await db.customStatement(
+      'CREATE TRIGGER fail_cues BEFORE INSERT ON audio_cues '
+      "BEGIN SELECT RAISE(ABORT, 'injected'); END",
+    );
+
+    await expectLater(
+      align(
+        subtitle: writeFile('v2/book.srt', srt('新句')).path,
+        audio: <String>[writeFile('new.mp3', 'NEW').path],
+      ),
+      throwsA(anything),
+    );
+
+    await db.customStatement('DROP TRIGGER fail_cues');
+    final Audiobook after = (await abRepo.findByBookKey('Book'))!;
+    expect(after.alignmentPath, before.alignmentPath, reason: '前几步的写入必须一起回滚');
+    expect(after.audioPaths, before.audioPaths);
+    expect(
+      (await SrtBookRepository(
+        db,
+      ).findByUid(epubBackedSrtBookUid('Book')))!.srtPath,
+      before.alignmentPath,
+    );
+    expect(
+      (await abRepo.cuesForBook('Book')).map((AudioCue c) => c.text),
+      <String>['旧句'],
+    );
+    expect(snapshot(persist), filesBefore);
+  });
+
+  test('alignAndPersistAudiobook: a successful swap leaves exactly the new '
+      'subtitle and audio', () async {
+    final AudiobookRepository abRepo = AudiobookRepository(db);
+    await align(
+      subtitle: writeFile('book.srt', srt('旧句')).path,
+      audio: <String>[writeFile('01.mp3', 'OLD').path],
+    );
+
+    await align(
+      subtitle: writeFile('v2/book.srt', srt('新句')).path,
+      audio: <String>[writeFile('v2/01.mp3', 'NEW').path],
+    );
+
+    final Audiobook after = (await abRepo.findByBookKey('Book'))!;
+    final Directory persist = await AudiobookStorage.ensurePersistDir('Book');
+    expect(snapshot(persist), <String, String>{
+      p.basename(after.alignmentPath): srt('新句'),
+      '01.mp3': 'NEW',
+    });
+    expect(after.audioPaths!.map(p.basename), <String>['01.mp3']);
+  });
 }

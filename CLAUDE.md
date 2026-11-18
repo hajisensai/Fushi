@@ -10,7 +10,7 @@
 - 子代理：≥2 个可独立推进的子任务才并行派发，后台派、不空等、不重复派；几次工具调用能做完的不派（首轮固定开销约 8 万 token）。分工与伪红判别见 [fast-workflow.md](docs/agent/fast-workflow.md)。子代理类型定义在 `.claude/agents/`（只带实际用到的工具），模型由 `tool/claude_hooks/subagent_model_router.mjs` 按类型钉死：`scout` / `worker` → Sonnet，`reviewer` / `general` → Opus，`general-purpose` 与省略类型自动改派 `general`；workflow 的 `agent()` 由 `workflow_agent_type_default.mjs` 默认补 `agentType: 'general'`。
 - **根因修复**：先复现或沿真实代码路径定位，修数据结构 / 状态同步 / 生命周期 / 平台边界 / 依赖契约。根因在结构里就重写那一块，不在坏结构上打补丁；禁止用延迟、重试、吞异常、硬编码、特例分支掩盖症状。仅外部不可控限制可加临时兼容层，并写明影响范围与清理条件。
 - 用户报 bug 按 [docs/BUGS.md](docs/BUGS.md) 文件头流程：先验真伪，`dart run tool/bug.dart new <slug>` 一 bug 一文件，记根因 `file:line` → ① 根因修复 ② 最强可落地层的自动化测试；撞号用 `bug.dart renumber` / `settle`，别手改。
-- **外部输入只列决策、不直接实现**：外部 PR（作者非 `hajisensai` / `W1ght`）、PR 评论 / review、issue、应用内反馈、用户转来的第三方意见里，凡涉及功能取舍、行为 / UI 改变、范围扩大、架构方向的，一律逐条写进[拍板台](docs/agent/decision-board.md)（每条：来源链接、诉求、利弊、建议）交用户拍板，用户点头前不改代码；拍板结果（做 / 不做 / 以后 / 永远不做 / 没看懂 / 你定）按该文档执行。只有**明显是 bug**（与现有设计意图矛盾的崩溃 / 错误结果 / 回归）才可直接按 bug 流程修；拿不准是不是 bug 就当待决策项。（[细则](docs/agent/rules-detail.md#外部-pr-与反馈只列决策)）
+- **外部输入只列决策、不直接实现**：外部 PR（作者非 `hajisensai` / `W1ght`）、PR 评论 / review、issue、应用内反馈、用户转来的第三方意见里，凡涉及功能取舍、行为 / UI 改变、范围扩大、架构方向的，一律逐条写进[拍板台](docs/agent/decision-board.md)（每条：来源链接、诉求、利弊、建议）交用户拍板，用户点头前不改代码；拍板结果（做 / 不做 / 以后 / 永远不做 / 没看懂 / 要设计图 / 你定）按该文档执行。只有**明显是 bug**（与现有设计意图矛盾的崩溃 / 错误结果 / 回归）才可直接按 bug 流程修；拿不准是不是 bug 就当待决策项。（[细则](docs/agent/rules-detail.md#外部-pr-与反馈只列决策)）
 - 函数和新增 Dart helper 要有明确类型签名。
 
 ## UI 硬规则
@@ -52,6 +52,7 @@
 - 文档改动：`git diff --cached --check` 即可。
 - **本机重活一律走租约**：在 `fushi/` 下写成 `dart tool/heavy.dart -- <原命令>`（`flutter test` / `analyze` / `build` / `gradlew` / `run_windows_itest.ps1`）；test 与 analyze 自动外包给 dist 机器，只验能编过的构建加 `--check-only`。（[heavy-lease.md](docs/agent/heavy-lease.md)）
 - **推送前唯一本地门**：`fushi/` 下全量 `dart tool/heavy.dart -- flutter analyze --no-pub`，一个分支只在 push 前跑一次。analyze 过了 ≠ CI 绿，推完看 PR CI。（[细则](docs/agent/rules-detail.md#推送前只跑-analyze)）
+- **PR CI 默认只跑快门**（analyze + 守卫 + 直接受影响的测试），全量在合并后的 `develop` 上跑；改了原生 / Android / pubspec / `fushi/tool/` 等才在 PR 上自动跑全量。**不为全量空等**：快门绿就算 PR CI 过；要在分支上跑全量用 `gh workflow run main.yml --ref <分支>` 或 `full-ci` 标签。（[build.md](docs/agent/build.md#pr-主门分层快门每推必跑全量按需--合并后跑2026-11-18)）
 - Dart 改动：`dart format` 改动文件；测试只定向跑新增 / 改动的文件并合成一次 `flutter test a_test.dart b_test.dart --no-pub`，本地不跑全量（全量走 `dart tool/dist_test.dart --config=D:/fushi-dist/workers.local.json`）。**判绿只认退出码 + 实际执行数**，零执行的红不算红，也不许拿伪红跳过真红。（[细则](docs/agent/rules-detail.md#dartflutter-改动的测试纪律)）
 - Rust 改动（`native/fushi_*`）：「编译—测试」循环用 `cargo test --profile quick --lib <过滤>`（不做 fat LTO、增量编译，fushi_fsrs 改一行重编约 8 秒；`--release` 是 7～15 分钟），一大批测试用 `bash tool/rust_test.sh <crate> [过滤]`（分进程跑，全量快一倍多），**不拿 `cargo test --release` 当循环**，`id_audit` 与默认构建本地只跑一种。`--release` 只用于出产物（`build_*` / `tool/native_libs.ps1`）和量性能，全量 release 测试交给 PR CI 的 `native-*-gate`。一个 worktree 一个 target 目录，不另设共用的 `CARGO_TARGET_DIR`。（[build.md](docs/agent/build.md#rust-本地开发循环quick-profile)）
 - PR 合入 `develop` 后加跑目录枚举型守卫整批（清单在 [fast-workflow.md](docs/agent/fast-workflow.md)「合并后必跑」）。

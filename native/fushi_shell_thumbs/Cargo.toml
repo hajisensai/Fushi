@@ -1,0 +1,56 @@
+[package]
+name = "fushi_shell_thumbs"
+version = "0.1.0"
+edition = "2021"
+publish = false
+# 依赖一律选可链进 GPL-3.0 app 本体的许可（MIT / Apache-2.0 / BSD / Zlib）。
+license = "GPL-3.0-only"
+
+[lib]
+# cdylib：资源管理器缩略图处理器（COM 进程内服务器，安装器按用户注册，跑在 explorer.exe 里、
+# 只转交路径）。rlib：给宿主进程与 tests/ 用。
+crate-type = ["cdylib", "rlib"]
+
+# 一次性的缩略图宿主进程：真正解析不可信文件（见 src/win/host_client.rs）。
+[[bin]]
+name = "fushi_shell_thumbs_host"
+path = "src/bin/fushi_shell_thumbs_host.rs"
+
+[dependencies]
+# cbz / epub 容器（只开 deflate；MIT）。rar / 7z 不在这里解：走安装目录里随包的 7z.dll。
+zip = { version = "2", default-features = false, features = ["deflate"] }
+# epub 的 container.xml / OPF / XHTML 封面页解析（MIT）。
+quick-xml = "0.42"
+# 封面图解码与缩放（MIT OR Apache-2.0，纯 Rust 解码器）。
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif", "bmp", "tiff"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-core = "0.62"
+windows = { version = "0.62", features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Gdi",
+  "Win32_Security",
+  "Win32_System_Com",
+  "Win32_System_JobObjects",
+  "Win32_System_LibraryLoader",
+  "Win32_System_Pipes",
+  "Win32_System_Threading",
+  "Win32_UI_Shell",
+  "Win32_UI_Shell_PropertiesSystem",
+] }
+
+[dev-dependencies]
+# 测试里手搓 RAR5（store）夹具要算 CRC32（MIT OR Apache-2.0）。
+crc32fast = "1"
+
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+# 必须 unwind：所有 COM 入口用 catch_unwind 把 panic 挡在 FFI 边界内（abort 会拖垮宿主进程）。
+panic = "unwind"
+
+[profile.release.build-override]
+strip = false

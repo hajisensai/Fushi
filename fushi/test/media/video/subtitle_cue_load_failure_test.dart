@@ -129,13 +129,70 @@ void main() {
 
     test('主/副字幕选择都走 loadSubtitleCueResult 而非丢原因的 loadCuesForSource', () {
       expect(
-        'loadSubtitleCueResult(source, videoPath'.allMatches(src).length,
-        2,
-        reason: '主字幕与副字幕两条选择路径都必须保留失败原因',
+        RegExp(
+          r'loadSubtitleCueResult\(\s*source,\s*videoPath',
+        ).allMatches(src).length,
+        4,
+        // 主 / 副各两处：内封分支（不锁菜单、带停止与世代）与外挂分支分开调用。
+        reason: '主字幕与副字幕两条选择路径（内封 / 外挂分支）都必须保留失败原因',
       );
     });
+
+    test('BUG-4838：读视频文件卡住有自己的文案，不再说成「图形或不支持的轨」', () {
+      final int start = src.indexOf('String _subtitleFailureMessage(');
+      final int end = src.indexOf(_methodEnd, start);
+      final String body = src.substring(start, end);
+      final int stalled = body.indexOf(
+        'SubtitleCueLoadFailure.extractionStalled',
+      );
+      expect(stalled, greaterThan(-1));
+      // 这个 case 紧跟的第一条 return 就是卡住文案（没有和别的原因合并到旧文案上）。
+      final String afterStalled = body.substring(stalled);
+      final int firstReturn = afterStalled.indexOf('return ');
+      expect(
+        afterStalled.substring(firstReturn),
+        startsWith('return t.video_subtitle_extract_stalled(label: label);'),
+      );
+    });
+
+    test('BUG-4838：自动加载失败的提示也按原因分流（走 _subtitleFailureMessage）', () {
+      final String page = File(
+        'lib/src/pages/implementations/video_fushi_page.dart',
+      ).readAsStringSync();
+      final int start = page.indexOf('void _handleEmbeddedSubtitleAutoLoad(');
+      expect(start, greaterThan(-1));
+      final String body = page.substring(
+        start,
+        page.indexOf(_methodEnd, start),
+      );
+      expect(body, contains('result.cueFailure'));
+      expect(body, contains('_subtitleFailureMessage(cueFailure, label)'));
+    });
+
+    test('BUG-4838：挂载路径的失败文案穷尽新增的两个原因', () {
+      final String attach = File(
+        'lib/src/media/video/video_subtitle_attach_messages.dart',
+      ).readAsStringSync();
+      expect(attach, contains('SubtitleCueLoadFailure.extractionStalled'));
+      expect(attach, contains('SubtitleCueLoadFailure.extractionCancelled'));
+    });
+  });
+
+  test('BUG-4838：新文案中英文都存在且带 label 占位', () {
+    final Map<String, dynamic> en =
+        jsonDecode(File('lib/i18n/strings.i18n.json').readAsStringSync())
+            as Map<String, dynamic>;
+    final Map<String, dynamic> zh =
+        jsonDecode(File('lib/i18n/strings_zh-CN.i18n.json').readAsStringSync())
+            as Map<String, dynamic>;
+    expect(en['video_subtitle_extract_stalled'], contains(r'$label'));
+    expect(zh['video_subtitle_extract_stalled'], contains(r'$label'));
+    expect(zh['video_subtitle_extract_stalled'], contains('卡住'));
   });
 }
+
+/// 两空格缩进的方法体收尾（State 成员 / 扩展成员）。
+const String _methodEnd = '\n  }\n';
 
 /// 最小 ASS 夹具（与 text_file_io_encoding_test 同构，故意各自持有一份，
 /// 避免跨测试文件的隐式耦合）。

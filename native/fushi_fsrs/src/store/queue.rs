@@ -407,11 +407,8 @@ impl LogState {
         day: Day,
         today: i64,
     ) -> Result<LogState, String> {
-        let mut s = LogState {
-            last30: vec![0; 30],
-            ..LogState::default()
-        };
-        let (from, today_start) = (day_start(&day, today - 29), day_start(&day, today));
+        let mut s = LogState::empty();
+        let (from, today_start) = LogState::window(day, today);
         let mut stmt = c.prepare_cached(LOGS_SQL).map_err(sql)?;
         let mut q = stmt
             .query(rusqlite::params![profile, from, today_start])
@@ -422,6 +419,7 @@ impl LogState {
         Ok(s)
     }
 
+    /// [LOGS_SQL] 的一行记进来；[today_start] = [LogState::window] 的第二项（调用方算一次，不逐行重算）。
     fn fold_row(
         &mut self,
         r: &rusqlite::Row<'_>,
@@ -430,18 +428,72 @@ impl LogState {
         today_start: i64,
     ) -> Result<(), String> {
         let at: i64 = r.get(1).map_err(sql)?;
+        let card: String = r.get(0).map_err(sql)?;
+        let id: String = r.get(4).map_err(sql)?;
+        let duration_ms: Option<i64> = r.get(5).map_err(sql)?;
+        let today_log = at >= today_start;
+        let (review_type, learn_json) = if today_log {
+            (
+                r.get::<_, String>(2).map_err(sql)?,
+                r.get::<_, Option<String>>(3).map_err(sql)?,
+            )
+        } else {
+            (String::new(), None)
+        };
+        self.fold(
+            id,
+            card,
+            at,
+            &review_type,
+            learn_json.as_deref(),
+            duration_ms,
+            day,
+            today,
+            today_start,
+        );
+        Ok(())
+    }
+
+    /// 一个空的计数上下文（最近 30 天全是 0）：调用方再逐条 [LogState::fold]。
+    pub(crate) fn empty() -> LogState {
+        LogState {
+            last30: vec![0; 30],
+            ..LogState::default()
+        }
+    }
+
+    /// 最近 30 天的窗口：(30 天前的日界, 今天的日界)。[LOGS_SQL] 的第 2、3 个参数。
+    pub(crate) fn window(day: Day, today: i64) -> (i64, i64) {
+        (day_start(&day, today - 29), day_start(&day, today))
+    }
+
+    /// 记一条 `kind = 'review'` 的日志（[LOGS_SQL] 的一行，列一一对应）：[review_type] / [learn_json] 只在今天的日志上
+    /// 读（[learn_json] = 今天的学习步日志的行 JSON，看 `res.reps` 是不是 1；别的日志给 None）。新代读命令
+    /// （`store/gen4/cmd/study.rs`）从操作里拼出同样的几列再调这里，计数规则只有这一份。[today_start] =
+    /// [LogState::window] 的第二项（调用方对一整批日志算一次）。
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn fold(
+        &mut self,
+        id: String,
+        card: String,
+        at: i64,
+        review_type: &str,
+        learn_json: Option<&str>,
+        duration_ms: Option<i64>,
+        day: Day,
+        today: i64,
+        today_start: i64,
+    ) {
         let d = day.index(at);
         let slot = d - (today - 29);
         let slot = (0..30).contains(&slot).then_some(slot as usize);
-        let card: String = r.get(0).map_err(sql)?;
-        let id: String = r.get(4).map_err(sql)?;
-        let duration_ms: i64 = r.get::<_, Option<i64>>(5).map_err(sql)?.unwrap_or(0).max(0);
+        let duration_ms = duration_ms.unwrap_or(0).max(0);
         let today_log = at >= today_start;
         let (mut reviewed, mut introduced) = (false, false);
         if today_log {
-            reviewed = r.get::<_, String>(2).map_err(sql)? == "review";
-            if let Some(j) = r.get::<_, Option<String>>(3).map_err(sql)? {
-                let v: Value = serde_json::from_str(&j).unwrap_or(Value::Null);
+            reviewed = review_type == "review";
+            if let Some(j) = learn_json {
+                let v: Value = serde_json::from_str(j).unwrap_or(Value::Null);
                 introduced = v["res"]["reps"].as_f64() == Some(1.0);
             }
         }
@@ -457,7 +509,6 @@ impl LogState {
                 duration_ms,
             },
         );
-        Ok(())
     }
 
     fn apply(&mut self, id: String, f: Fold) {
@@ -520,7 +571,7 @@ impl LogState {
         today: i64,
         ids: &HashSet<String>,
     ) -> Result<(), String> {
-        let (from, today_start) = (day_start(&day, today - 29), day_start(&day, today));
+        let (from, today_start) = LogState::window(day, today);
         let all: Vec<&String> = ids.iter().collect();
         for chunk in all.chunks(CHUNK) {
             for id in chunk {

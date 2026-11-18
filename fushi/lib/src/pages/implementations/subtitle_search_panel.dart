@@ -295,6 +295,18 @@ String describeSubtitleFailure(String baseMessage, Object? error) {
   return t.video_subtitle_error_with_code(msg: message, code: status);
 }
 
+/// 一条字幕下载 / 落盘 / 持久化失败进错误日志。
+///
+/// provider 已归一的失败（401 / 429 / 断网……）是预期内的外部故障，记成诊断信息、
+/// 不计入用户可见的报错数；其余（磁盘、数据库、代码缺陷）按错误记。
+void logSubtitleDownloadFailure(String source, Object error) {
+  if (error is ExternalProviderFailure) {
+    ErrorLogService.instance.logDiagnostic(source, error);
+  } else {
+    ErrorLogService.instance.log(source, error);
+  }
+}
+
 /// 字幕 provider id → 给用户看的名字（未知 id 原样返回）。纯函数。
 String subtitleProviderDisplayName(String providerId) => switch (providerId) {
   'jimaku' => 'Jimaku',
@@ -348,6 +360,7 @@ String uniqueSubtitleDestination(String directory, String fileName) {
 class SubtitleSearchPanel extends StatefulWidget {
   const SubtitleSearchPanel({
     required this.onDownloaded,
+    this.onSubtitleSaved,
     this.onCancel,
     this.showTitle = true,
     required this.initialQuery,
@@ -376,6 +389,15 @@ class SubtitleSearchPanel extends StatefulWidget {
   /// 单选时就是一条。多选时调用方负责「全部登记进字幕轨列表、只应用第一条」——
   /// 单值契约表达不了这件事，所以这里收的是 List。
   final void Function(List<String> paths) onDownloaded;
+
+  /// 多选下载**每落盘一条**就回调一次（绝对路径），早于 [onDownloaded]（BUG-4802）。
+  ///
+  /// 宿主接了它，多选下载部分失败时面板就不再自动关页（[onDownloaded] 不调）：
+  /// 失败原因留在面板里、失败的几条仍勾着可重试，已落盘的由宿主在页面关闭时一并
+  /// 带回——否则「失败 N 条」的提示刚画出来就被关页带走，批量途中离开页面时已下好
+  /// 的几条也成了没人登记的孤儿文件。null = 宿主没有「关页时带回」的出口，部分失败
+  /// 仍走 [onDownloaded]（旧行为）。
+  final void Function(String path)? onSubtitleSaved;
 
   /// 「取消」按钮回调；null = 不渲染取消按钮（宿主自己有返回入口，如 AppBar）。
   final VoidCallback? onCancel;
@@ -474,6 +496,25 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
 
   bool _searching = false;
   bool _searched = false;
+
+  /// 每发起一轮检索（搜索 / 点系列）递增（BUG-4799）。一轮检索里每个 await 之后都
+  /// 要过 [_isCurrentSearch]：被更新的一轮顶掉的旧检索不得再写任何状态——否则先
+  /// 提交、后返回的那一轮会盖掉后提交的结果，列表与输入框对不上。
+  int _searchGeneration = 0;
+
+  bool _isCurrentSearch(int generation) =>
+      mounted && generation == _searchGeneration;
+
+  /// 面板所在的路由（对话框壳 / 全屏工作台页）。
+  ModalRoute<Object?>? _route;
+
+  /// 面板所在的页面是否已经关了（BUG-4802）。
+  ///
+  /// 只看 [mounted] 不够：`Navigator.pop` 当下宿主的 push future 就完成了（宿主此刻
+  /// 读走「已落盘路径」），而 State 要等退场转场（约 300 ms）跑完才 dispose。这段
+  /// 时间里落盘的文件没有人登记，回调宿主的「下载完成」还会 pop 掉底下那一页。
+  /// 路由一被 pop 就不再 [ModalRoute.isActive]，与宿主读结果是同一时刻。
+  bool get _pageClosed => !mounted || !(_route?.isActive ?? true);
 
   /// BUG-1782：上一次 AniList 系列解析**没问上**（网络 / 429 限流），而不是「查无此番」。
   /// 为真时本次结果是纯文本回退搜出来的，可能横跨同系列多季，结果区据此如实告知。
@@ -602,6 +643,12 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _route = ModalRoute.of(context);
+  }
+
+  @override
   void dispose() {
     _apiKeyCtrl.dispose();
     _queryCtrl.dispose();
@@ -628,11 +675,28 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
     // 门槛是「有没有可用的字幕来源」，不是「有没有 Jimaku key」：只配了
     // OpenSubtitles 的用户照样能搜。改动前这里硬卡 Jimaku key，等于把另一路来源
     // 挡在门外。已配来源但 key 填错/失效 → 搜索照跑，按无结果呈现（与既有一致）。
-    if (apiKey.isEmpty && !await _hasConfiguredSubtitleSource()) {
-      _showError(t.video_jimaku_no_key);
+    if (query.isEmpty) {
+      // 没有番名不算发起一轮检索：只在没配来源时照旧提示，不顶掉在途的那一轮。
+      if (apiKey.isEmpty && !await _hasConfiguredSubtitleSource()) {
+        _showError(t.video_jimaku_no_key);
+      }
       return;
     }
-    if (query.isEmpty) return;
+    // 代次在**提交时刻**（任何 await 之前）分配：输入框回车 / 「显示全部集」不看
+    // [_searching]，可以在上一轮还没回来时再进来，新一轮顶掉旧一轮（最后提交的赢），
+    // 旧一轮在下一个 await 之后自行退出。放到下面那次来源探测之后再分配的话，两次
+    // 探测乱序返回时先提交的旧词会拿到更大的代次、反过来赢。
+    final int generation = ++_searchGeneration;
+    if (apiKey.isEmpty && !await _hasConfiguredSubtitleSource()) {
+      if (!_isCurrentSearch(generation)) return;
+      // 这一轮的结论就是「没有来源可问」；被它顶掉的在途一轮不会再收转圈，这里收。
+      setState(() {
+        _searching = false;
+        _error = t.video_jimaku_no_key;
+      });
+      return;
+    }
+    if (!_isCurrentSearch(generation)) return;
     // 集数：空或非法 → null（不传 episode = 现状列全部），保底逻辑见 §1.2。
     final int? episode = int.tryParse(_episodeCtrl.text.trim());
 
@@ -650,6 +714,9 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
       _searched = false;
       _error = null;
       _candidates = const <JimakuCandidate>[];
+      // 勾选跟着结果走（BUG-4802）：上一轮的候选已经不在列表里，留着会让批量栏
+      // 继续显示「已选 N」、点下载下的是看不见的文件。
+      _selectedCandidates.clear();
       if (!sameSeriesQuery) {
         _seriesMatches = const <AniListMedia>[];
         _selectedSeriesId = null;
@@ -662,15 +729,19 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
     // 代理 client 初始化和联网。旧顺序先 await onApiKeyChanged，慢磁盘/数据库下点击后
     // 首帧没有任何反馈，看起来像整块 UI 卡住；这里与 backup import 的重 IO 遮罩采用
     // 同一条 paint-before-work 约束。
-    await WidgetsBinding.instance.endOfFrame;
-    if (!mounted) return;
-    // 只有真改过才写：每次搜索都写一遍会白白重建一次 provider runtime。
-    if (apiKey != widget.initialApiKey.trim()) {
-      await widget.onApiKeyChanged(apiKey);
-    }
-
+    //
+    // 从这里起的每个 await 都在 try 里（BUG-4799）：[_searching] 已经置位，
+    // `onApiKeyChanged`（偏好写 + 下载管线重建）抛错时若不经 finally 复位，搜索钮
+    // 会一直灰到关页。
     AniListClient? anilist;
     try {
+      await WidgetsBinding.instance.endOfFrame;
+      if (!_isCurrentSearch(generation)) return;
+      // 只有真改过才写：每次搜索都写一遍会白白重建一次 provider runtime。
+      if (apiKey != widget.initialApiKey.trim()) {
+        await widget.onApiKeyChanged(apiKey);
+        if (!_isCurrentSearch(generation)) return;
+      }
       // BUG-1842：已经**知道**是哪部番时不再去猜名字。两种「已经知道」：
       // ① 用户自己点过系列 chip 且番名没变（只改了集数）——他明确指定了这一个；
       // ② 用户没手动改过番名，刮削存下的 AniList id 就是当前这部番的确定身份。
@@ -680,11 +751,12 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
           (query == widget.initialQuery.trim() ? widget.seed.anilistId : null);
       if (directSeriesId != null) {
         await _fetchCandidates(
+          generation: generation,
           anilistId: directSeriesId,
           queryFallback: query,
           episode: episode,
         );
-        if (!mounted) return;
+        if (!_isCurrentSearch(generation)) return;
         // 用户手选的系列即便零结果也到此为止——他明确指定了这一个，不该被偷偷换成文本
         // 搜。而刮削推断出的 id 只是「最可能」，零结果时继续往下走文本回退，别让强身份
         // 反倒把回退路堵死。
@@ -692,11 +764,16 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
             pickedSeriesId != null || _candidates.isNotEmpty || _error != null;
         if (settled) return;
       }
-      anilist = AniListClient(client: await _createHttpClient());
+      final http.Client httpClient = await _createHttpClient();
+      if (!_isCurrentSearch(generation)) {
+        httpClient.close();
+        return;
+      }
+      anilist = AniListClient(client: httpClient);
       // ① 先经 AniList 把番名解析成候选系列（romaji/english/native 都能匹上）；存全部
       //   候选供用户消歧，默认取首条（相关度最高）。② AniList 无命中时回退文本直接搜。
       final AniListSearchOutcome outcome = await anilist.searchAnime(query);
-      if (!mounted) return;
+      if (!_isCurrentSearch(generation)) return;
       // BUG-1782：`degraded` 时 media 为空**不代表**查无此番，只代表这次没问上（网络 /
       // 429 限流；放送日历页共用同一个 client 翻页拉 airingSchedules，很容易把配额烧掉）。
       // 此前两种情况共用空列表，回退路径把同系列所有季平铺给用户，且既无提示也无日志——
@@ -731,13 +808,24 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
           ? pickAniListSeriesForSeason(outcome.media, season: season)?.id
           : pickAniListSeriesForSeason(_seriesMatches, season: season)?.id;
       await _fetchCandidates(
+        generation: generation,
         anilistId: resolvedSeriesId,
         queryFallback: query,
         episode: episode,
       );
+    } on Object catch (error, stack) {
+      // provider / AniList 的失败都已归一成返回值，走到这里的是保存 key、建 HTTP
+      // client 这类本地故障：说给用户听 + 进错误日志，而不是只留一个转圈。
+      ErrorLogService.instance.log('SubtitleSearchPanel._search', error, stack);
+      if (_isCurrentSearch(generation)) {
+        _showError(
+          describeSubtitleFailure(t.video_jimaku_search_failed, error),
+        );
+      }
     } finally {
       anilist?.close();
-      if (mounted) setState(() => _searching = false);
+      // 只有仍是最新一轮才收转圈：被顶掉的旧一轮先返回时，新一轮还在路上。
+      if (_isCurrentSearch(generation)) setState(() => _searching = false);
     }
   }
 
@@ -759,27 +847,32 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
   Future<void> _selectSeries(AniListMedia media) async {
     if (_selectedSeriesId == media.id || _searching) return;
     final String apiKey = _apiKeyCtrl.text.trim();
+    // 与 [_search] 同一个代次：点系列也是「发起一轮检索」，同样在提交时刻分配。
+    // 上面已挡掉 [_searching]，此刻没有在途的一轮会被这次递增顶掉。
+    final int generation = ++_searchGeneration;
     if (apiKey.isEmpty && !await _hasConfiguredSubtitleSource()) return;
-    if (!mounted) return;
+    if (!_isCurrentSearch(generation)) return;
     final int? episode = int.tryParse(_episodeCtrl.text.trim());
     setState(() {
       _searching = true;
       _error = null;
       _candidates = const <JimakuCandidate>[];
+      _selectedCandidates.clear();
       // 这一次是用户**自己点的**：后续同番名重搜直接在该系列内重列，零结果也不偷偷
       // 换回文本搜。
       _seriesPickedByUser = true;
     });
-    await WidgetsBinding.instance.endOfFrame;
-    if (!mounted) return;
     try {
+      await WidgetsBinding.instance.endOfFrame;
+      if (!_isCurrentSearch(generation)) return;
       await _fetchCandidates(
+        generation: generation,
         anilistId: media.id,
         queryFallback: _queryCtrl.text.trim(),
         episode: episode,
       );
     } finally {
-      if (mounted) setState(() => _searching = false);
+      if (_isCurrentSearch(generation)) setState(() => _searching = false);
     }
   }
 
@@ -794,15 +887,19 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
   /// 分类固定按 anime 提请求：registry 对 anime 派发 Jimaku + OpenSubtitles，对非
   /// anime 只派 OpenSubtitles。本对话框是从播放页对一个已在看的片子找字幕，缩窄
   /// 分类只会平白丢掉 Jimaku 这一路，不会带来任何正确性。
+  ///
+  /// [generation] 是发起这次检索的那一轮（[_searchGeneration]）：每个 await 之后都
+  /// 校验，已被新一轮顶掉就不再写状态。
   Future<void> _fetchCandidates({
+    required int generation,
     required int? anilistId,
     required String queryFallback,
     required int? episode,
   }) async {
     final VideoSubtitleRegistry? registry = await widget.subtitleRegistry
         ?.call();
+    if (!_isCurrentSearch(generation)) return;
     if (registry == null || registry.providers.isEmpty) {
-      if (!mounted) return;
       // BUG-3000：这里曾只把候选清空、不设错误——没有任何来源可问时页面却显示
       // 「找不到字幕」，像是搜过了而 Jimaku 上没有。要说清是「没问」。
       setState(() {
@@ -825,7 +922,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
     // BUG-1847：手动检索路径此前从不带文件指纹，OpenSubtitles 的 moviehash 精确匹配
     // 分支在播放页永远走不到（只有下载流水线传）。
     final LocalVideoFingerprint? fingerprint = await _fingerprint();
-    if (!mounted) return;
+    if (!_isCurrentSearch(generation)) return;
     {
       final ProviderBatchResult<VideoSubtitleCandidate> result = await registry
           .search(
@@ -874,7 +971,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
       final ExternalProviderFailure? failure = sorted.isEmpty
           ? primarySubtitleFailure(result.failures)
           : null;
-      if (!mounted) return;
+      if (!_isCurrentSearch(generation)) return;
       setState(() {
         _candidates = sorted;
         _searched = true;
@@ -1010,18 +1107,20 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
   /// 限流器、也没有按 Retry-After 等待的代码），并发下载一勾十条就是主动撞配额；
   /// 顺序执行还让「应用第一条」有确定含义。
   ///
-  /// 一条失败不中断整批（某个 provider 挂了不该把其余的也废掉），失败条数汇总到
-  /// 错误提示里；一条都没成功时不回调，避免调用方拿着空列表去「应用第一条」。
+  /// 一条失败不中断整批（某个 provider 挂了不该把其余的也废掉），失败条数与首条
+  /// 失败原因汇总到错误提示里、每条原因进错误日志；一条都没成功时不回调，避免调用方
+  /// 拿着空列表去「应用第一条」。部分失败见 [SubtitleSearchPanel.onSubtitleSaved]。
   Future<void> _downloadSelected() async {
     final VideoSubtitleRegistry? registry = await widget.subtitleRegistry
         ?.call();
-    if (registry == null || _selectedCandidates.isEmpty) return;
+    if (!mounted || registry == null || _selectedCandidates.isEmpty) return;
     final List<VideoSubtitleCandidate> targets =
         List<VideoSubtitleCandidate>.of(_selectedCandidates);
     final List<String> saved = <String>[];
     int failed = 0;
+    Object? firstError;
     for (final VideoSubtitleCandidate source in targets) {
-      if (!mounted) return;
+      if (_pageClosed) return;
       setState(() {
         _busyName = source.fileName;
         _busySourceKey = source.identityKey;
@@ -1033,29 +1132,59 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
           failed++;
           continue;
         }
+        // 批量途中页面已关：没有人再登记这份字幕，不往盘上写（BUG-4802）。此前
+        // 已落盘的几条都经 onSubtitleSaved 交给了宿主。
+        if (_pageClosed) return;
         final Directory dir = Directory(widget.saveDirectory);
         if (!dir.existsSync()) dir.createSync(recursive: true);
-        final String dest = uniqueSubtitleDestination(
-          dir.path,
-          safeSubtitleFileName(download.fileName),
+        final File dest = File(
+          uniqueSubtitleDestination(
+            dir.path,
+            safeSubtitleFileName(download.fileName),
+          ),
         );
-        await File(dest).writeAsBytes(await _alignedBytes(download));
-        saved.add(dest);
+        await dest.writeAsBytes(await _alignedBytes(download));
+        if (_pageClosed) {
+          // 对时间轴 / 写盘期间页面关了：同上，不留没人登记的孤儿文件。
+          await dest.delete();
+          return;
+        }
+        saved.add(dest.path);
+        widget.onSubtitleSaved?.call(dest.path);
+        // 成功的一条取消勾选：部分失败留在面板里时，剩下勾着的就是要重试的。
+        setState(
+          () => _selectedCandidates.removeWhere(
+            (VideoSubtitleCandidate c) => c.identityKey == source.identityKey,
+          ),
+        );
       } on Object catch (error) {
         failed++;
-        debugPrint('[fushi-subtitle] batch download failed: $error');
+        firstError ??= error;
+        logSubtitleDownloadFailure(
+          'SubtitleSearchPanel._downloadSelected',
+          error,
+        );
       }
     }
-    if (!mounted) return;
+    if (_pageClosed) return;
     setState(() {
       _busyName = null;
       _busySourceKey = null;
     });
+    // 与单条下载同一套文案（BUG-1844）：状态码 / key 被拒 / 连不上。
+    final String reason = describeSubtitleFailure(
+      t.video_jimaku_download_failed,
+      firstError,
+    );
     if (saved.isEmpty) {
-      _showError(t.video_jimaku_download_failed);
+      _showError(reason);
       return;
     }
-    if (failed > 0) _showError(t.download_batch_failed(n: failed));
+    if (failed > 0) {
+      _showError('${t.download_batch_failed(n: failed)} · $reason');
+      // 宿主能在关页时带回已落盘的几条 → 不自动关页，让用户看到原因、可重试。
+      if (widget.onSubtitleSaved != null) return;
+    }
     widget.onDownloaded(saved);
   }
 
@@ -1081,17 +1210,26 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
         _showError(t.video_jimaku_download_failed);
         return;
       }
+      // 下载途中页面已关：宿主已经读走了结果，这一条没人登记，不往盘上写。
+      if (_pageClosed) return;
       final Directory dir = Directory(widget.saveDirectory);
       if (!dir.existsSync()) dir.createSync(recursive: true);
       // BUG-1845：文件名来自远端 provider，只取安全叶名——`../` / `..\` 不得逃出
       // [SubtitleSearchPanel.saveDirectory]。
-      final String dest = uniqueSubtitleDestination(
-        dir.path,
-        safeSubtitleFileName(download.fileName),
+      final File dest = File(
+        uniqueSubtitleDestination(
+          dir.path,
+          safeSubtitleFileName(download.fileName),
+        ),
       );
-      await File(dest).writeAsBytes(await _alignedBytes(download));
-      if (!mounted) return;
-      widget.onDownloaded(<String>[dest]);
+      await dest.writeAsBytes(await _alignedBytes(download));
+      if (_pageClosed) {
+        // 写盘期间页面关了：不留孤儿文件，也不再回调——宿主的回调是 `pop`，此时
+        // 弹掉的会是底下那一页。
+        await dest.delete();
+        return;
+      }
+      widget.onDownloaded(<String>[dest.path]);
     } on Object catch (error) {
       // BUG-1844：401（key 过期）/ 429（限流）/ 404（文件下架）对用户是完全不同的三
       // 件事，一律显示「下载失败」等于什么都没说。
@@ -1158,7 +1296,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
   /// 「显示全部集」：清空集数框并重搜（不带 episode），从 Jimaku 启发式误伤里逃生。
   void _showAllEpisodes() {
     _episodeCtrl.clear();
-    _search();
+    unawaited(_search());
   }
 
   /// AniList 系列消歧区：命中 ≥2 个候选番时显示，让用户从罗马音/英文/日文标题里挑对
@@ -1478,6 +1616,60 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
     );
   }
 
+  /// 当前筛选下**看得见**的候选：先按语言（[_selectedLanguage]）、再按类型
+  /// （[_selectedFormat]）、再做关键词二次筛选。三层各自独立、顺序不影响结果集。
+  ///
+  /// 列表渲染与批量栏的全选 / 反选共用这一份（BUG-4802）：全选曾取全量
+  /// [_candidates]，筛到「日语 · ASS」后点全选会把所有语言、所有来源的文件一起
+  /// 勾上——包括按次计配额的 OpenSubtitles。
+  List<JimakuCandidate> _filteredCandidates() => filterByMediaSearch(
+    filterCandidatesByFormat(
+      filterCandidatesByLanguage(_candidates, _selectedLanguage),
+      _selectedFormat,
+    ),
+    _filter,
+    (JimakuCandidate c) => <String>[c.name, c.entryName],
+  );
+
+  /// [_filteredCandidates] 里带真实来源（可勾选、可下载）的那些。
+  List<VideoSubtitleCandidate> _visibleSources() => <VideoSubtitleCandidate>[
+    for (final JimakuCandidate candidate in _filteredCandidates())
+      if (candidate.source != null) candidate.source!,
+  ];
+
+  /// 全选：把当前看得见的全部勾上。筛选只影响显示、不影响已有勾选——之前在别的
+  /// 筛选条件下勾的仍留着（批量栏的计数如实包含它们）。
+  void _selectAllVisible() {
+    setState(() {
+      final Set<String> current = _selectedIdentityKeys;
+      _selectedCandidates.addAll(
+        _visibleSources().where(
+          (VideoSubtitleCandidate c) => !current.contains(c.identityKey),
+        ),
+      );
+    });
+  }
+
+  /// 反选：只在当前看得见的范围内翻转，看不见的勾选原样保留。
+  void _invertVisibleSelection() {
+    setState(() {
+      final List<VideoSubtitleCandidate> visible = _visibleSources();
+      final Set<String> visibleKeys = <String>{
+        for (final VideoSubtitleCandidate c in visible) c.identityKey,
+      };
+      final Set<String> current = _selectedIdentityKeys;
+      _selectedCandidates
+        ..removeWhere(
+          (VideoSubtitleCandidate c) => visibleKeys.contains(c.identityKey),
+        )
+        ..addAll(
+          visible.where(
+            (VideoSubtitleCandidate c) => !current.contains(c.identityKey),
+          ),
+        );
+    });
+  }
+
   /// 结果区正文（宽屏右栏 / 窄屏下段）：搜索中 spinner → 无结果提示（含「显示全部集」
   /// 逃生口）→ 候选列表。列表由外层给定有界高度、内部普通（非 shrinkWrap）ListView
   /// 滚动，保留 BUG-279 不变量。
@@ -1514,16 +1706,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
         ),
       );
     }
-    // 先按语言筛选（_selectedLanguage）、再按类型筛选（_selectedFormat）、再做
-    // 关键词二次筛选。三层各自独立、顺序不影响结果集。
-    final List<JimakuCandidate> filtered = filterByMediaSearch(
-      filterCandidatesByFormat(
-        filterCandidatesByLanguage(_candidates, _selectedLanguage),
-        _selectedFormat,
-      ),
-      _filter,
-      (JimakuCandidate c) => <String>[c.name, c.entryName],
-    );
+    final List<JimakuCandidate> filtered = _filteredCandidates();
     // 版本卡视图（默认）：候选全部带真实来源时按「合集 › 格式+语言+组」聚类，
     // 文件名流水账折进卡内（RSS-Subtitle-Manager 式版本选择器）。测试预置样本
     // （source == null）或用户显式切文件视图时走旧平铺列表。
@@ -1632,28 +1815,8 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
         if (_multiSelecting)
           BatchActionBar(
             selectedCount: _selectedCandidates.length,
-            onSelectAll: () => setState(() {
-              _selectedCandidates
-                ..clear()
-                ..addAll(
-                  _candidates
-                      .map((JimakuCandidate c) => c.source)
-                      .whereType<VideoSubtitleCandidate>(),
-                );
-            }),
-            onInvertSelection: () => setState(() {
-              final Set<String> current = _selectedIdentityKeys;
-              final List<VideoSubtitleCandidate> next =
-                  <VideoSubtitleCandidate>[
-                    for (final JimakuCandidate c in _candidates)
-                      if (c.source != null &&
-                          !current.contains(c.source!.identityKey))
-                        c.source!,
-                  ];
-              _selectedCandidates
-                ..clear()
-                ..addAll(next);
-            }),
+            onSelectAll: _selectAllVisible,
+            onInvertSelection: _invertVisibleSelection,
             actions: <Widget>[
               FushiIconButton(
                 key: const ValueKey<String>('subtitle-batch-download'),

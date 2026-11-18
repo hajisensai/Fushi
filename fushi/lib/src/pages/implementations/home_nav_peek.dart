@@ -7,6 +7,8 @@ import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/sources/manga_fushi_source.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
+import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
+import 'package:fushi_engine/privacy/media_nsfw.dart';
 import 'package:fushi/src/media/video/video_library_overview.dart'
     show formatVideoPosition;
 import 'package:fushi/src/mining/galgame_library.dart';
@@ -197,6 +199,18 @@ AdaptiveNavPeek homeNavPeekFor(
   }
 }
 
+/// 速览卡封面的 NSFW 判定（拍板台 w04vrhUAaX）：「模糊 NSFW 封面」关着恒 false，
+/// 否则按加载这一刻的快照判（速览每次展开都重新加载）。
+Future<bool Function(MediaNsfwTarget target)> _loadNsfwJudge(
+  AppModel appModel,
+) async {
+  if (!appModel.prefsRepo.blurNsfwCovers) return (MediaNsfwTarget _) => false;
+  final MediaNsfwSnapshot snapshot = await MediaNsfwSnapshot.load(
+    appModel.database,
+  );
+  return (MediaNsfwTarget target) => target.resolve(snapshot);
+}
+
 Future<NavPeekFeed> _loadBooks({
   required WidgetRef ref,
   required AppModel appModel,
@@ -223,6 +237,7 @@ Future<NavPeekFeed> _loadBooks({
   }
 
   final _NavPeekCollections collections = await _loadCollections(appModel);
+  final bool Function(MediaNsfwTarget) nsfw = await _loadNsfwJudge(appModel);
   final List<MediaItem> read =
       all
           .where(
@@ -246,6 +261,7 @@ Future<NavPeekFeed> _loadBooks({
     return AdaptiveNavPeekEntry(
       title: collection ?? itemTitle,
       cover: noCover ? null : image,
+      blurCover: nsfw(MediaNsfwTarget.book(keyOf(item))),
       progress: progress,
       subtitle: _peekSubtitle(
         collection == null ? null : itemTitle,
@@ -304,6 +320,7 @@ Future<NavPeekFeed> _loadVideos({
   required BuildContext Function() contextOf,
 }) async {
   final _NavPeekCollections collections = await _loadCollections(appModel);
+  final bool Function(MediaNsfwTarget) nsfw = await _loadNsfwJudge(appModel);
   final List<VideoBookRow> rows =
       (await repo.listForShelf())
           .where((VideoBookRow v) => (v.lastPlayedAt ?? 0) > 0)
@@ -315,11 +332,18 @@ Future<NavPeekFeed> _loadVideos({
   AdaptiveNavPeekEntry entryOf(
     VideoBookRow v, {
     String? collection,
+    int? collectionId,
     ImageProvider? collectionCover,
   }) {
     final String? cover = v.coverPath;
     return AdaptiveNavPeekEntry(
       title: collection ?? v.title,
+      // 这一集自己（含所在 NSFW 合集）；用的是合集封面时再看合集。
+      blurCover:
+          nsfw(MediaNsfwTarget.video(v.bookUid)) ||
+          (collectionCover != null &&
+              collectionId != null &&
+              nsfw(MediaNsfwTarget.collection(collectionId))),
       cover:
           collectionCover ??
           (cover == null || cover.isEmpty || !File(cover).existsSync()
@@ -372,6 +396,7 @@ Future<NavPeekFeed> _loadVideos({
     entry: entryOf(
       unit.item,
       collection: unit.collectionName,
+      collectionId: unit.collectionId,
       collectionCover: unit.collectionId == null
           ? null
           : covers[unit.collectionId],
@@ -390,6 +415,7 @@ Future<NavPeekFeed> _loadGames({
   final List<GalgameEntry> games = appModel.galgameRepo.games.isNotEmpty
       ? appModel.galgameRepo.games
       : await appModel.galgameRepo.load();
+  final bool Function(MediaNsfwTarget) nsfw = await _loadNsfwJudge(appModel);
   final List<GalgameEntry> played =
       games.where((GalgameEntry g) => g.lastPlayedMs > 0).toList()..sort(
         (GalgameEntry a, GalgameEntry b) => b.lastPlayedMs - a.lastPlayedMs,
@@ -403,6 +429,7 @@ Future<NavPeekFeed> _loadGames({
         cover: cover == null || cover.isEmpty || !File(cover).existsSync()
             ? null
             : resolveMediaCoverImage(kind: MediaKind.game, localPath: cover),
+        blurCover: nsfw(MediaNsfwTarget.game(g.id, adult: g.isNsfw)),
         onOpen: open,
       ),
     );
@@ -422,10 +449,12 @@ String? srsNavPeekCountsLabel({
   required int learnCount,
   required int reviewCount,
   bool reviewPending = false,
+  int? reviewMinutesLeft,
 }) {
   final String? review = SrsReviewCell(
     due: reviewCount,
     pending: reviewPending,
+    minutesLeft: reviewMinutesLeft,
   ).label(omitZero: true);
   final List<String> parts = <String>[
     if (newCount > 0) '${t.srs_count_new} $newCount',
@@ -458,6 +487,7 @@ Future<AdaptiveNavPeekData> _loadSrsDecks({
             learnCount: deck.learnCount,
             reviewCount: deck.reviewCount,
             reviewPending: deck.rwkvPending,
+            reviewMinutesLeft: deck.reviewMinutesLeft,
           ) ??
           t.home_srs_panel_done,
       // 有待复习的卡就直接进这个牌组的复习页（同首页复习条）；今天已复习完

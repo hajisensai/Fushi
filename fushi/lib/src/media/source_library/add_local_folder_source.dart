@@ -6,6 +6,7 @@ import 'package:fushi_engine/media/audiobook/book_audiobook_pairing.dart'
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_folder_access.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
+import 'package:fushi/src/media/source_library/source_scan_temp.dart';
 
 /// 把一个**本地文件夹**登记成常驻扫描根并立即扫一遍。
 ///
@@ -170,13 +171,16 @@ Future<SourceScanSummary?> importLocalFolderOnceAt({
       mediaKind: Value(mediaKind),
       transport: const Value('local'),
       rootPath: Value(norm),
-      configJson: sourceConfigValueForBookmark(bookmark),
+      // 带「临时行」标记：进程在扫描中途被杀时 finally 跑不到，下一次进程靠这个
+      // 标记认出并清掉它（[sweepStaleOneShotSources]）。
+      configJson: Value<String?>(oneShotSourceConfig(bookmark)),
       recursive: Value(recursive),
       videoGroupingMode: Value(videoGroupingMode),
       sortOrder: Value(sortOrder),
       createdAt: Value(DateTime.now().millisecondsSinceEpoch),
     ),
   );
+  markOneShotSourceLive(tempId);
   try {
     final SourceLibraryRow? temp = await db.getMediaSourceById(tempId);
     if (temp == null) return null;
@@ -186,8 +190,12 @@ Future<SourceScanSummary?> importLocalFolderOnceAt({
       transcribeAudiobook: transcribeAudiobook,
     ).scan(temp, oneShot: true);
   } finally {
-    await SourceFolderAccess.instance.release(tempId);
-    await db.deleteMediaSource(tempId);
+    try {
+      await SourceFolderAccess.instance.release(tempId);
+      await db.deleteMediaSource(tempId);
+    } finally {
+      markOneShotSourceDone(tempId);
+    }
   }
 }
 

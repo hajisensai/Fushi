@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart' show FushiRubySpan;
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_card_image.dart';
 import 'package:fushi/src/lookup/latin_word_lookup.dart';
 import 'package:fushi/src/lookup/source_line_sentence.dart';
@@ -17,10 +18,16 @@ class FloatingLyricLookupRequest {
     this.selectionRect,
     this.cardImage,
     this.sentence = '',
+    this.hostModule,
   });
 
   final String text;
   final int index;
+
+  /// 这次查词替哪个模块弹（拍板台 8ldy3d8XFA）：音乐桌面歌词 = [ModuleId.music]（它会
+  /// 因查词暂停音乐）；有声书悬浮字幕（app 级、不暂停）/ 悬浮球 / 截屏识字 / 剪贴板等
+  /// 为 null（归查词那行、停靠听非模块宿主开关）。宿主据此决定「制卡后行为」听哪一行。
+  final ModuleId? hostModule;
 
   /// 这次查词出自的那一句原文，制卡时补进基础层的 `{sentence}`（反馈 1Mwaro8UTC）。
   /// 截屏识字 / 拍照查词给被点字所在的那一句，悬浮字幕点字给整行；手动输入 / 剪贴板
@@ -63,6 +70,7 @@ class FloatingLyricLookupNotifier extends ChangeNotifier {
     Rect? selectionRect,
     ScreenOcrCardImage? cardImage,
     String sentence = '',
+    ModuleId? hostModule,
   }) {
     if (text.trim().isEmpty) return;
     _pending = FloatingLyricLookupRequest(
@@ -71,6 +79,7 @@ class FloatingLyricLookupNotifier extends ChangeNotifier {
       selectionRect: selectionRect,
       cardImage: cardImage,
       sentence: sentence.trim(),
+      hostModule: hostModule,
     );
     notifyListeners();
   }
@@ -90,6 +99,15 @@ class FloatingLyricLookupNotifier extends ChangeNotifier {
 
   /// host 在用户关掉最后一层弹窗后调用。
   void notifyLookupClosed() => _closed.fire();
+
+  final _LookupClosedSignal _pauseDropped = _LookupClosedSignal();
+
+  /// 制卡后按「关闭弹窗、不续播」关栈**之前**发出（拍板台 8ldy3d8XFA）：查词暂停方
+  /// （音乐桌面歌词的 `MusicLookupPause`）据此撤掉暂停标记，紧随其后的
+  /// [lookupClosed] 就不续播。
+  Listenable get lookupPauseDropped => _pauseDropped;
+
+  void notifyLookupPauseDropped() => _pauseDropped.fire();
 
   @visibleForTesting
   void debugReset() {
@@ -155,6 +173,18 @@ class _FloatingLyricLookupHostState
 
   @override
   AppModel get mixinAppModel => _appModel;
+
+  /// 最近一次顶层查词的来源模块（[FloatingLyricLookupRequest.hostModule]）：「底部
+  /// 停靠」与「制卡后行为」都听它（拍板台 8ldy3d8XFA）。
+  ModuleId? _hostModule;
+
+  @override
+  ModuleId? get lookupHostModule => _hostModule;
+
+  /// 制卡后「关闭弹窗、不续播」：通知查词暂停方撤标记，随后 [_onPop] 发出的关卡
+  /// 信号就不续播。
+  @override
+  void dropLookupPauseMark() => _notifier.notifyLookupPauseDropped();
 
   /// 最近一次顶层查词带来的卡图来源（截屏识字 / 拍照查词），制卡时裁成卡图；悬浮字幕
   /// 点词的请求不带，会把它清掉。
@@ -226,6 +256,7 @@ class _FloatingLyricLookupHostState
     final String trimmed = req.text.trim();
     if (trimmed.isEmpty) return;
     _cardImage = req.cardImage;
+    _hostModule = req.hostModule;
     _ensureWarmPopup();
     final String word = lookupWordAtIndex(req.text, req.index).trim();
     final String searchTerm = word.isNotEmpty ? word : trimmed;

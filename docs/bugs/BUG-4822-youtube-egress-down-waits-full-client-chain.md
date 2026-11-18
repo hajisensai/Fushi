@@ -1,0 +1,8 @@
+## BUG-4822 · YouTube 出口不通时要把 5 个 client 挨个等满（约 65 秒）才报错
+- **报告**：2026-11-17（用户：小说 / 漫画 / 视频优化清单 gap-remote-5，复核后立项）
+- **真实性**：✅ 真 bug（代码路径 + 算术确认，未在真机复现）。根因：
+  - `packages/fushi_engine/lib/media/video/youtube_source_resolver.dart:787`（修前行号）`_getManifestWithClientFallback` 串行试 5 个 client，任何失败都记下后试下一个，每个 client 上限 `kYoutubePerClientManifestTimeout` = 13 秒（`:707`）。
+  - `packages/fushi_engine/lib/utils/net/app_http.dart:48` 应用默认的连接建立超时是 20 秒，**长于** 13 秒：黑洞出口（SYN 被丢）下每个 client 都先被 13 秒的整体超时掐掉，抛出来的只有 `TimeoutException`，与「连上了但被限流拖住」无从区分，于是 5 × 13 = 65 秒后才报错。（DNS 失败 / 连接被拒是立即失败，不在此列。）
+- **[x] ① 已修复** — 同文件：YouTube 出站的连接建立超时改为 `kYoutubeConnectTimeout` = 10 秒（短于单 client 上限），连接阶段的失败在单 client 窗口内以 `SocketException` 浮出来；新增 `YoutubeProbingHttpClient`（`yt.YoutubeHttpClient` 子类）在 `send` 层按窗口记账「拿到过响应头」与「死在连接层（`SocketException` / `HandshakeException`）」；兜底链每试一个 client 开一个窗口，**连续 `kYoutubeEgressFailureStreakLimit` = 2 个 client 都是「零响应且有连接层失败」即停**。只认连接层失败，**不认** `TimeoutException`——连上后被拖住是某个 client 被限流的常见形态（ios 首流探测在正常网络下就会挂满超时），那种情况照旧把兜底链试完。窗口带代号：单 client 的整体超时不取消 youtube_explode 重试循环里的在途请求，请求在 `send` 进入时记下所属窗口、结束时窗口已换就不记账，上一个 client 迟到的连接失败不会算到下一个 client 头上。提前停抛的仍是 `YoutubeManifestException`，带已试 client 的失败列表，`isTransportFailure` 文案分型不变。黑洞出口下的失败时长由约 65 秒降到约 26 秒（2 × 13 秒）；连接被拒 / DNS 失败由 5 个 client 降到 2 个。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/youtube_manifest_failure_reason_test.dart`（注入假 http：全部连接层失败 → 只试 2 个 client 即停且仍是传输层分型；前两个 client 超时、第三个成功 → 不提前停；连接层失败与有响应的 client 交替 → 连续计数清零；上一个 client 超时后迟到的连接失败落在下一个 client 的窗口里 → 不记账、不提前停；生产工厂 `createYoutubeHttpClient` 的底层 `HttpClient.connectionTimeout` 等于 `kYoutubeConnectTimeout`）。
+- **备注**：真机未复测。待验：断开出口（或把代理指向黑洞地址）后打开一条 YouTube 视频，量从点开到报错的时长；正常网络下回归一条 YouTube 起播，确认没有更早报错。

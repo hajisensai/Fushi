@@ -97,8 +97,10 @@ Future<MangaReaderVolumeOcrOutcome> startMangaReaderVolumeOcr({
     imageDirPath: imageDirPath,
   );
   if (scheduled()) return const MangaReaderVolumeOcrAlreadyScheduled();
+  // 显式偏好只探那一个引擎；auto 要完整能力表，全探。
   final MangaOcrEngineAvailability availability = await probeMangaOcrEngines(
     engines,
+    only: mangaOcrProbeTargetFor(preference),
   );
   final MangaOcrEngineId? engine = resolveMangaOcrEngine(
     preference: preference,

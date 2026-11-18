@@ -1,0 +1,11 @@
+## BUG-4831 · 来源扫描把 ._ 资源叉 / 回收站文件当媒体入库，一个读不了的子目录让整次扫描失败
+- **报告**：2026-11-17（nmv 优化清单 gap-scanner-2，代码路径复核时发现，非用户实报）
+- **真实性**：✅ 真 bug（代码路径确证，未在真机复现）。两处：
+  - **过滤缺失**：扫描归类只看扩展名（修前 `fushi/lib/src/media/source_library/source_library_scanner.dart:751`、`:784`），列目录结果唯一的排除是下载暂存目录（修前 `:636-648`、`:1349`）。macOS 拷到 exFAT / SMB / WebDAV 盘上的 `._01.mkv`（AppleDouble 资源叉）、回收站里的 `$Rxxxx.mkv`、群晖 `@eaDir` 里的缩略图视频都会被当成视频 / 页图入库，得到打不开的条目。
+  - **一个子目录出错即整次失败**：本地列目录是 `await for` 包着 `dir.list(recursive: true)`（修前 `fushi/lib/src/media/source_library/source_file_system.dart:194-220`）。递归流里某个子目录出错是一个 error 事件（SDK `directory_impl.dart` 的 `controller.addError`），`await for` 收到就取消并抛出，落进扫描的总 catch：本轮 0 入库。把盘符（`D:\`）加成来源时 `System Volume Information` 拒绝访问就是这个形状。同目录的游戏扫描器早就是「按层列、子目录出错跳过、根出错才抛」（`game_source_scanner.dart:81-94`）。
+- **[x] ① 根因修复** — `1f9ad3f6a23`：
+  - `excludeSourceJunkEntries` / `isSourceScanJunkPath` 与 `excludeSourceIncomingEntries` 并排，本地与网络来源一起过：扫描根之下任一层目录名在系统目录名单里（`$RECYCLE.BIN`、`System Volume Information`、`@eaDir`、`#recycle`、`.Trashes`、`.Trash-<uid>` 等）或文件名以 `._` 开头的条目丢掉。不一刀切丢 `.` 开头的名字。
+  - 远端纯页图卷的镜像（`_mirrorRemoteMangaPages`）是另一次列目录，同样过 `isSourceScanJunkPath`：卷目录里的 `._001.jpg`、`@eaDir/001.jpg/SYNOPHOTO_THUMB_M.jpg` 不再被当成这一卷的页下载入库。
+  - `LocalSourceFileSystem.listFiles` 改成按层列：子目录 `FileSystemException` 经 `onUnreadableDirectory` 报给扫描器后跳过，根目录出错照常抛。扫描器把跳过的目录（系统目录除外）记进部分失败汇总 `lastScanError`，其余媒体照常入库。
+- **[x] ② 自动化测试** — `fushi/test/media/source_library/source_scan_integrity_test.dart`「系统 / 垃圾条目与读不了的子目录」组：判据纯函数；真实目录实扫（`._`、`$RECYCLE.BIN`、`@eaDir` 不入库）；`IOOverrides` 注入一个 `list()` 报错的子目录，断言其余入库、错误指名；系统目录读不了不算失败；根读不了仍抛。远端页图卷的镜像过滤在 `source_library_scanner_network_test.dart`「SFTP: each direct child image folder becomes one volume…」里（卷目录里放 `._001.png` 与 `@eaDir/…` 缩略图，断言下载数与页数不变）。
+- **备注**：**本地**纯页图卷的页由引擎 `enumerateMangaPages`（`packages/fushi_engine/lib/ocr/manga_ocr_folder_job.dart:201`）自己列目录，不过滤 `._` / `@eaDir`——卷目录里有这类文件时仍会成页；该文件属于别的在途分组（漫画 OCR 管线），本条没有改，留待单独修。音乐（Rust 遍历）与游戏来源各有自己的遍历，不经这里，没有改；网络来源递归列目录遇单个子目录失败的语义没有读、没有改。没有在真机上用真实的 `System Volume Information` / 群晖 NAS 验过（待真机清单）。

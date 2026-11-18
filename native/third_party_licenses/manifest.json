@@ -139,6 +139,14 @@
           "native/third_party_licenses/texts/crates/jni-rs-jni-rs-5ae9458a/LICENSE-MIT"
         ]
       },
+      "lofty@0.22.4": {
+        "upstream": "https://github.com/Serial-ATA/lofty-rs/tree/d9eb83ba614001973f9ba3663c9f3e10dd27a702",
+        "texts": [
+          "native/third_party_licenses/texts/crates/Serial-ATA-lofty-rs-d9eb83ba/LICENSE-APACHE",
+          "native/third_party_licenses/texts/crates/Serial-ATA-lofty-rs-d9eb83ba/LICENSE-MIT"
+        ],
+        "note": "the crate lives in lofty/ of the lofty-rs workspace and ships no license file; the repo-root LICENSE-APACHE / LICENSE-MIT at the published commit (.cargo_vcs_info.json sha1) cover it"
+      },
       "ndk-context@0.1.1": {
         "upstream": "https://github.com/rust-windowing/android-ndk-rs/tree/10f2ba388fca20f7349996ebae26ccda7a6fda5c",
         "texts": [
@@ -217,6 +225,14 @@
         "appendSpdx": true,
         "note": "Upstream LICENSE.md only names the licenses and carries no license body or copyright line; it also notes the crates are derived from Apple SDKs"
       },
+      "ogg_pager@0.7.2": {
+        "upstream": "https://github.com/Serial-ATA/lofty-rs/tree/76ff7093a1f6a98c60297de4695709d04c8c1f47",
+        "texts": [
+          "native/third_party_licenses/texts/crates/Serial-ATA-lofty-rs-76ff7093/LICENSE-APACHE",
+          "native/third_party_licenses/texts/crates/Serial-ATA-lofty-rs-76ff7093/LICENSE-MIT"
+        ],
+        "note": "the crate lives in ogg_pager/ of the lofty-rs workspace and ships no license file; the repo-root LICENSE-APACHE / LICENSE-MIT at the published commit (.cargo_vcs_info.json sha1) cover it"
+      },
       "portmapper@0.19.3": {
         "upstream": "https://github.com/n0-computer/net-tools/tree/0030e57fc70981895bb86212ff0f059cc41c8a4e",
         "texts": [
@@ -231,6 +247,13 @@
           "native/third_party_licenses/texts/crates/garro95-priority-queue-0c76fb8f/MPL-2.0.txt"
         ],
         "note": "Upstream ships only the standard LGPL-3.0 and MPL-2.0 texts, without a project copyright line"
+      },
+      "realfft@3.5.0": {
+        "upstream": "https://github.com/HEnquist/realfft/tree/9fdcf59c60c7ecacbf75774d378a068811a2e6ea",
+        "texts": [
+          "native/third_party_licenses/texts/crates/HEnquist-realfft-9fdcf59c/LICENSE"
+        ],
+        "note": "The published commit d0d4eee0 (.cargo_vcs_info.json sha1) has no license file; upstream first added one in 9fdcf59c (\"Add MIT license file, bump version to 3.5.1\"), whose copyright line dates from 2020 and so covers 3.5.0"
       },
       "rquickjs-core@0.14.0": {
         "upstream": "https://github.com/DelSkayn/rquickjs/tree/d7ef5eeae702fea24c03643064de454f1c1dd4b0",
@@ -253,6 +276,23 @@
           "native/third_party_licenses/texts/crates/rustls-rustls-platform-verifier-252e2516/LICENSE-APACHE",
           "native/third_party_licenses/texts/crates/rustls-rustls-platform-verifier-252e2516/LICENSE-MIT"
         ]
+      },
+      "rusty-chromaprint@0.3.0": {
+        "upstream": "https://github.com/darksv/rusty-chromaprint/tree/97d67dfed02854ac5d5eaa9ac965b9abe3dff690",
+        "texts": [],
+        "note": "Upstream has never had a license file (no commit touches LICENSE*/COPYING* at the repo root or in chromaprint/) and Cargo.toml lists no authors, so no copyright line exists to copy"
+      },
+      "seahash@4.1.0": {
+        "upstream": "https://gitlab.redox-os.org/redox-os/seahash/-/tree/3088c5c912b70b586d27bf553fbe964e025a2c89",
+        "texts": [
+          "native/third_party_licenses/texts/crates/redox-os-seahash-3088c5c9/LICENSE"
+        ],
+        "note": "The v4.1.0 tag (94b632ae, .cargo_vcs_info.json sha1) has no license file; upstream added it in 3088c5c9 (\"fix: add missing MIT license text\"). That file is the MIT body without a copyright line; the crate authors in Cargo.toml are ticki and Tom Almeida"
+      },
+      "selectors@0.38.0": {
+        "upstream": "https://github.com/servo/stylo/tree/572ecba2d1600e7c3d490586692a209faf703baa",
+        "texts": [],
+        "note": "The stylo repository has no license file at the repo root or in selectors/ (none in its history either); every source file carries the MPL-2.0 Exhibit A notice, and MPL-2.0 has no copyright line"
       },
       "unic-char-property@0.9.0": {
         "upstream": "https://github.com/open-i18n/rust-unic/tree/5878605364af97a3358368a6eaef02104af2e016",
@@ -3196,6 +3236,21 @@
       ],
       "source": "APK lib/arm64-v8a/libc++_shared.so 1253544 B, strings contain 'r27-beta1'; text = llvm-project llvmorg-18.1.8 libcxx/LICENSE.TXT (LLVM 18 line used by NDK r27; version approximate)",
       "note": "NDK runtime, not a pub package; pickFirst takes one copy from several native builds, exact origin not located."
+    },
+    {
+      "name": "7-Zip (7z.exe + 7z.dll)",
+      "version": "26.02",
+      "license": "LGPL-2.1-or-later AND LicenseRef-unRAR-restriction AND BSD-3-Clause AND BSD-2-Clause",
+      "component": "tools/bundle_7za.ps1 (release-desktop.yml, not a pub package)",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/7zip-26.02/License.txt",
+        "native/third_party_licenses/texts/7zip-26.02/DOC-copying.txt"
+      ],
+      "source": "tools/bundle_7za.ps1 $Version='26.02', https://github.com/ip7z/7zip/releases/download/26.02/7z2602-x64.exe (sha256 6745fa76dc2ea031596d8678f6f6b99c3c1b435b4164a63485adbbc7b8d82ef0, pinned in the script); License.txt is the file inside that installer (the same file the script copies to {app}\\7za\\License.txt); DOC-copying.txt is raw.githubusercontent.com/ip7z/7zip/26.02/DOC/copying.txt (the GNU LGPL 2.1 text that License.txt refers to)",
+      "note": "Bundled into {app}\\7za\\ on Windows only. Used by the discovery / manga import offline extractor (7z.exe) and loaded by fushi_shell_thumbs_host.exe (7z.dll, native/fushi_shell_thumbs/src/win/sevenzip.rs) for rar / 7z cover thumbnails. 7z.dll contains RAR decompression code derived from unRAR (see the unRAR license restriction in License.txt)."
     }
   ]
 }

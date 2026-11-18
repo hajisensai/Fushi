@@ -18,7 +18,10 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteCollectionMembership, RemoteVideoInfo;
 import 'package:fushi_engine/sync/remote_collection_adoption_service.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_menu_info.dart';
 import 'package:path/path.dart' as p;
+
+import '../media/video/bluray_menu_info_test.dart' show indexFixture;
 
 // 远端原盘第二期 client 侧：共享会话解析、整盘下载（续传 / 取消 / 校验）、落地认领、
 // 按盘分组、流式能力判定与缓冲提示判据。
@@ -441,6 +444,70 @@ void main() {
       );
       expect(await source.readMenuInfo(), isNull);
       expect(read, <String>['BDMV/index.bdmv', 'BDMV/BACKUP/index.bdmv']);
+    });
+
+    test('remote BD index is read once per source: the page and the controller '
+        'share one read; an unreadable index is not remembered', () async {
+      int reads = 0;
+      Uint8List? body = Uint8List(4); // unreadable at first
+      final Completer<void> gate = Completer<void>();
+      final RemoteDiscMenuSource source = RemoteDiscMenuSource(
+        share: RemoteDiscShare(
+          baseUrl: Uri.parse('http://h:1/api/library/disc/t/'),
+          manifest: _manifest(
+            files: const <DiscShareFile>[
+              DiscShareFile(path: 'BDMV/index.bdmv', size: 4, modifiedAt: 0),
+            ],
+          ),
+        ),
+        title: 'Disc',
+        readFile: (String path, int _) async {
+          reads++;
+          await gate.future;
+          return body;
+        },
+      );
+      // Two overlapping callers (page probe + controller open) → one read.
+      final Future<BlurayMenuInfo?> page = source.readMenuInfo();
+      final Future<BlurayMenuInfo?> controller = source.readMenuInfo();
+      gate.complete();
+      expect(await page, isNull);
+      expect(await controller, isNull);
+      expect(reads, 1);
+
+      // A failed read is not remembered: the next call reads again.
+      body = indexFixture();
+      final BlurayMenuInfo? first = await source.readMenuInfo();
+      expect(first, isNotNull);
+      expect(reads, 2);
+
+      // A parsed index is remembered: no further network read.
+      expect(identical(await source.readMenuInfo(), first), isTrue);
+      expect(identical(await source.readMenuInfo(), first), isTrue);
+      expect(reads, 2);
+    });
+
+    test('remote BD index read that throws is not remembered', () async {
+      int reads = 0;
+      final RemoteDiscMenuSource source = RemoteDiscMenuSource(
+        share: RemoteDiscShare(
+          baseUrl: Uri.parse('http://h:1/api/library/disc/t/'),
+          manifest: _manifest(
+            files: const <DiscShareFile>[
+              DiscShareFile(path: 'BDMV/index.bdmv', size: 4, modifiedAt: 0),
+            ],
+          ),
+        ),
+        title: 'Disc',
+        readFile: (String path, int _) async {
+          reads++;
+          if (reads == 1) throw const SocketException('x');
+          return indexFixture();
+        },
+      );
+      await expectLater(source.readMenuInfo(), throwsA(isA<SocketException>()));
+      expect(await source.readMenuInfo(), isNotNull);
+      expect(reads, 2);
     });
   });
 

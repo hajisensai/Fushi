@@ -27,9 +27,17 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 
 class MusicLyricsProvidersBody extends StatefulWidget {
-  const MusicLyricsProvidersBody({super.key, required this.appModel});
+  const MusicLyricsProvidersBody({
+    super.key,
+    required this.appModel,
+    this.canInstall = true,
+  });
 
   final AppModel appModel;
+
+  /// 本机能装插件（[isMusicPluginSourcesAvailable]）。经互联中继用 host 插件的设备（iOS）
+  /// 只能启停 / 排序，不出安装入口。
+  final bool canInstall;
 
   @override
   State<MusicLyricsProvidersBody> createState() =>
@@ -145,20 +153,22 @@ class _MusicLyricsProvidersBodyState extends State<MusicLyricsProvidersBody> {
                 icon: FushiIcons.browserExtension,
                 title: t.music_lyrics_providers_empty,
                 message: t.music_lyrics_providers_empty_hint,
-                action: FushiPressScale(
-                  child: FushiFilledButton.icon(
-                    key: const ValueKey<String>(
-                      'music_lyrics_provider_install',
-                    ),
-                    onPressed: () => unawaited(_install()),
-                    icon: const FushiIcon(FushiIcons.importFile),
-                    label: Text(t.music_lyrics_providers_install_action),
-                  ),
-                ),
+                action: !widget.canInstall
+                    ? null
+                    : FushiPressScale(
+                        child: FushiFilledButton.icon(
+                          key: const ValueKey<String>(
+                            'music_lyrics_provider_install',
+                          ),
+                          onPressed: () => unawaited(_install()),
+                          icon: const FushiIcon(FushiIcons.importFile),
+                          label: Text(t.music_lyrics_providers_install_action),
+                        ),
+                      ),
               ),
             ),
           // 已有插件时也能再装：与空态同一条安装流程。
-          if (entries != null && _hasPlugins(entries))
+          if (widget.canInstall && entries != null && _hasPlugins(entries))
             FushiStaggeredEntrance(
               index: entries.length,
               child: Align(

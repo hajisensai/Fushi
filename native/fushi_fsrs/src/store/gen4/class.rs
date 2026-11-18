@@ -29,10 +29,12 @@
 //!
 //! # 没有并起来的（按原值实体，留在索引层）
 //!
-//! 负状态是索引层按原值实体判的，这里原样拿来：已清除（[super::weigh::S_PURGED]：Purge 点名的是原值实体，清的是
+//! 负状态记在索引层的原值写入上，这里原样拿来：已清除（[super::weigh::S_PURGED]：Purge 点名的是原值实体，清的是
 //! 「作者没见过它」的、这个原值实体上的操作）、扣住的删除（[super::weigh::S_HELD]）、作者不可信（
-//! [super::weigh::S_DISTRUSTED]）。一条 Purge 要不要清掉整个类、一条删除的扣住要不要看全类的并发操作，是 G7
-//! 接线时定的事（G9-2 的缓存层沿用原值口径）（设计 §10 第 19 条同源）；在那之前，按类读与按原值读对这三种状态口径相同。
+//! [super::weigh::S_DISTRUSTED]）。清除与不可信按原值实体判；一条 Purge 要不要清掉整个类仍是接线时定的事（设计
+//! §10 第 19 条同源），在那之前按类读与按原值读对这两种状态口径相同。**扣住按类判**（G7-4g 定，交接说明 §7.6 方案 1）：
+//! 「被见过它的写入盖掉」与「并发的操作」都在全类成员上取（`weigh.rs` 文件头「扣住的删除」），状态仍记在删除落的
+//! 原值成员上——与这里按类读寄存器同一个口径，裁决按规范 ID 写也盖得掉落在带盐成员上的删除。
 //!
 //! # 内嵌的 ID（设计 §5.3「内嵌的 ID 同样过别名表」）
 //!
@@ -50,6 +52,7 @@
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::rc::Rc;
 
 use rusqlite::params;
 use rusqlite::types::ValueRef;
@@ -227,7 +230,7 @@ impl<'t, 'c> Index<'t, 'c> {
         kind: EntKind,
         canon: &Ref,
     ) -> Result<Vec<ClassWinner>, String> {
-        self.class_registers(kind, canon, None)
+        self.class_registers(kind, canon, None, None)
     }
 
     /// 一个别名类里一个寄存器（[canon_key] 是规范键）的生效值；没有写入 = None。
@@ -238,10 +241,48 @@ impl<'t, 'c> Index<'t, 'c> {
         canon_key: &str,
     ) -> Result<Option<String>, String> {
         Ok(self
-            .class_registers(kind, canon, Some(canon_key))?
+            .class_registers(kind, canon, Some(canon_key), None)?
             .into_iter()
             .next()
             .map(|w| w.value))
+    }
+
+    /// [Index::class_value]，但只看 [keep] 留下的写入（按操作主键）：这些写入单独重判一遍取胜者——「只有这些操作时
+    /// 这个寄存器的值」。时间线恢复（`cmd/writes_restore.rs`）求「那一刻的值」用；判定规则与 [Index::class_value]
+    /// 同一份（[Index::judged] 按类）。[keep] 一条都不留 = None。
+    pub(super) fn class_value_in(
+        &mut self,
+        kind: EntKind,
+        canon: &Ref,
+        canon_key: &str,
+        keep: &dyn Fn(i64) -> bool,
+    ) -> Result<Option<String>, String> {
+        Ok(self
+            .class_registers(kind, canon, Some(canon_key), Some(keep))?
+            .into_iter()
+            .next()
+            .map(|w| w.value))
+    }
+
+    /// [Index::class_tags]，但只看 [keep] 留下的标签操作（按操作主键），OR-Set 与顺序提示在这些操作上重判。用途同
+    /// [Index::class_value_in]。
+    pub(super) fn class_tags_in(
+        &mut self,
+        canon: &Ref,
+        keep: &dyn Fn(i64) -> bool,
+    ) -> Result<Vec<String>, String> {
+        self.aliases_settled()?;
+        let mut rows = Vec::new();
+        for m in &self.members(canon)? {
+            rows.extend(self.tags_rows(m)?.into_iter().filter(|r| keep(r.0)));
+        }
+        rows.sort();
+        rows.dedup();
+        let want = self.tag_states(&rows)?;
+        for (row, want) in rows.iter_mut().zip(want) {
+            row.3 = want;
+        }
+        self.current_tags(&rows)
     }
 
     /// 一个别名类（笔记）现在的标签：类内成员的标签操作并起来重判（文件头「标签」），顺序规则同 [Index::tags_of]。
@@ -278,17 +319,7 @@ impl<'t, 'c> Index<'t, 'c> {
     /// 查不到再按规则认内置实体在每个盐下的存量 ID（[builtin_rule_canon]）——否则一个从没被改过的内置模板保持带盐 ID，
     /// 由它派生的应有的卡就不是别名表认的那张规范卡，卡上的日志挂不上来。别的值原样。
     pub fn canonical_config(&self, v: &Value) -> Result<Value, String> {
-        let rules = builtin_rule_canon(&self.salts()?);
-        let text = |s: &str| -> Result<String, String> {
-            let Some(id) = strict_id(s) else {
-                return Ok(s.to_owned());
-            };
-            let canon = self.canonical(&Ref::Uuid(id.0))?;
-            Ok(match (&canon, rules.get(&id.0)) {
-                (Ref::Uuid(c), Some(r)) if *c == id.0 => Id(*r).text(),
-                _ => canon.text(),
-            })
-        };
+        let text = |s: &str| self.canonical_text(s);
         let Value::Object(m) = v else {
             return Ok(v.clone());
         };
@@ -402,9 +433,48 @@ impl<'t, 'c> Index<'t, 'c> {
     /// 文本形式的 ID 的规范形：规范形状的 UUID 过别名表，别的原样。
     fn canonical_text(&self, s: &str) -> Result<String, String> {
         match strict_id(s) {
-            Some(id) => Ok(self.canonical(&Ref::Uuid(id.0))?.text()),
+            Some(id) => Ok(self.canonical_embedded(&id)?.text()),
             None => Ok(s.to_owned()),
         }
+    }
+
+    /// 嵌着的 ID（修改键、修改值、整份 JSON、宿主的缓存配置里的）的规范 ID：先查别名表，表里没有的再按规则认内置实体
+    /// 在每个盐下的存量 ID（[builtin_rule_canon]）。别名表只收在操作里作为实体出现过的 ID，内置笔记类型的字段 ID
+    /// 通常只嵌在笔记的 `f/<字段>` 键里、从不作为实体出现；缓存配置里内置笔记类型的代码默认定义按规则归一，键里的
+    /// 字段 ID 也必须按同一份规则归一，否则带盐的内置笔记（如 Lapis）在缓存层对不上自己的字段、字段值全空。
+    pub(super) fn canonical_embedded(&self, id: &Id) -> Result<Ref, String> {
+        let canon = self.canonical(&Ref::Uuid(id.0))?;
+        if canon == Ref::Uuid(id.0) {
+            if let Some(r) = self.rule_canon()?.get(&id.0) {
+                return Ok(Ref::Uuid(*r));
+            }
+        }
+        Ok(canon)
+    }
+
+    /// 当前盐集合下的内置实体规则表（[builtin_rule_canon]）：物化期间用那一趟缓存的（[Index::pass_rules]），否则按
+    /// 盐集合记住，盐集合变了重算。
+    fn rule_canon(&self) -> Result<Rc<RuleCanon>, String> {
+        if let Some(r) = &self.pass_rules {
+            return Ok(r.clone());
+        }
+        let salts = self.salts()?;
+        let mut memo = self.rule_memo.borrow_mut();
+        if let Some((s, r)) = memo.as_ref() {
+            if *s == salts {
+                return Ok(r.clone());
+            }
+        }
+        let r = Rc::new(builtin_rule_canon(&salts));
+        *memo = Some((salts, r.clone()));
+        Ok(r)
+    }
+
+    /// 一次物化（缓存层一趟、浏览一条命令）开始时把规则表算好记下，结束时清掉（同 [Index::pass_writers]）。
+    pub(super) fn pass_rules_begin(&mut self) -> Result<(), String> {
+        self.pass_rules = None;
+        self.pass_rules = Some(self.rule_canon()?);
+        Ok(())
     }
 
     /// 模板文本里 `{{…fld:<UUID>}}` 的字段 ID 归一：分词与替换都走 `card_cache::ids_to_names`（模板渲染认字段引用的
@@ -444,12 +514,13 @@ impl<'t, 'c> Index<'t, 'c> {
         rows.collect::<Result<_, _>>().map_err(sql)
     }
 
-    /// 类内全部成员的寄存器行按规范键成组再判；[only] = 只要这一个规范键。
+    /// 类内全部成员的寄存器行按规范键成组再判；[only] = 只要这一个规范键；[keep] = 只要这些写入（按操作主键）。
     fn class_registers(
         &mut self,
         kind: EntKind,
         canon: &Ref,
         only: Option<&str>,
+        keep: Option<&dyn Fn(i64) -> bool>,
     ) -> Result<Vec<ClassWinner>, String> {
         self.aliases_settled()?;
         let entity = self.canonical(canon)?.text();
@@ -478,7 +549,7 @@ impl<'t, 'c> Index<'t, 'c> {
                 let text = read_edit_key(&mut Reader::new(&key))
                     .map_err(|e| format!("gen4 index: bad register key: {e}"))?;
                 let ck = self.canonical_key(&text)?;
-                if only.is_some_and(|o| o != ck) {
+                if only.is_some_and(|o| o != ck) || keep.is_some_and(|f| !f(k)) {
                     continue;
                 }
                 groups.entry(ck).or_default().push((k, state));
@@ -1109,11 +1180,14 @@ impl ClassDiffs {
     }
 }
 
+/// 内置实体规则表：存量 ID → 规范 ID（[builtin_rule_canon]）。
+pub(crate) type RuleCanon = HashMap<[u8; 16], [u8; 16]>;
+
 /// 内置实体在每个盐下的存量 ID → 规范 ID：内置笔记类型、它们的字段与模板、内置默认牌组。由规则直接算（规则只在
 /// `gen4_ids::rules` 一处，表在 `gen4_ids::builtins`），与别名表对出现过的那些 ID 的判定相同（resolver 用的是同两份），
 /// 对没在操作里出现过的（别名表不收）也给得出。宿主给的缓存配置（[Index::canonical_config]）与对拍时协议 3 一侧的行
 /// （`compare.rs`）用它。
-pub(crate) fn builtin_rule_canon(salts: &[String]) -> HashMap<[u8; 16], [u8; 16]> {
+pub(crate) fn builtin_rule_canon(salts: &[String]) -> RuleCanon {
     let mut out = HashMap::new();
     let deck = rules::builtin_default_deck(rules::CANONICAL);
     for salt in salts {
