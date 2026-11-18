@@ -376,31 +376,42 @@ class FushiDicts {
   /// 只在「必须马上生效」时用：删词典目录前后（[releaseAllMappings] / BUG-1756，
   /// 文件映射不释放就删不掉文件），以及测试。**写元数据的路径请用 [scheduleTyped]**
   /// ——那条路是逐本触发的，就地重建会把总代价推成 O(N²)。
+  ///
+  /// [termLanguages]：term 词典路径 → 词头语言（BCP-47，见 [termDictLanguagesOf]）。
+  /// 语言是**装载时**交给引擎的属性——标了语言的词典只接受本语言变形表还原出来的
+  /// 词形（英语词典不再被阿尔巴尼亚语的规则查到 Our → O）；查词调用本身不带语言，
+  /// 所以改了某本词典的语言要重新装载（元数据写入本来就会重排期）。不在表里的词典
+  /// 当未标注，行为与此前一致。
   static void initializeTyped({
     List<String> termPaths = const [],
     List<String> freqPaths = const [],
     List<String> pitchPaths = const [],
     List<String> kanjiPaths = const [],
+    Map<String, String> termLanguages = const <String, String>{},
   }) {
     _pending = null;
-    _applyTyped(termPaths, freqPaths, pitchPaths, kanjiPaths);
+    _applyTyped(termPaths, freqPaths, pitchPaths, kanjiPaths, termLanguages);
   }
 
   /// 排期一次引擎重建：只记下目标集合，真正装载推迟到下一次要用引擎时
   /// （[instance] / [dictionaryStyles] / [loadPendingNow]）。见 [_pending]。
   ///
   /// 连续排期只保留最后一次——中间那些集合从来没被任何人观察到，装了也是白装。
+  ///
+  /// [termLanguages] 见 [initializeTyped]。
   static void scheduleTyped({
     List<String> termPaths = const [],
     List<String> freqPaths = const [],
     List<String> pitchPaths = const [],
     List<String> kanjiPaths = const [],
+    Map<String, String> termLanguages = const <String, String>{},
   }) {
     _pending = _PendingDicts(
       termPaths: termPaths,
       freqPaths: freqPaths,
       pitchPaths: pitchPaths,
       kanjiPaths: kanjiPaths,
+      termLanguages: termLanguages,
     );
     _generation++;
   }
@@ -485,7 +496,12 @@ class FushiDicts {
 
       // 让出期间意图变了：丢掉这份成果（连同它持有的文件映射），别把已经过时的
       // 集合盖回引擎上。新意图会由它自己的结算路径装载。
-      if (!await loadAll(pending.termPaths, shadow.addTermDict)) return;
+      if (!await loadAll(
+        pending.termPaths,
+        (String p) => shadow.addTermDict(p, language: pending.termLanguages[p]),
+      )) {
+        return;
+      }
       if (!await loadAll(pending.freqPaths, shadow.addFreqDict)) return;
       if (!await loadAll(pending.pitchPaths, shadow.addPitchDict)) return;
       if (!await loadAll(pending.kanjiPaths, shadow.addKanjiDict)) return;
@@ -530,6 +546,7 @@ class FushiDicts {
       pending.freqPaths,
       pending.pitchPaths,
       pending.kanjiPaths,
+      pending.termLanguages,
     );
   }
 
@@ -537,8 +554,9 @@ class FushiDicts {
     List<String> termPaths,
     List<String> freqPaths,
     List<String> pitchPaths,
-    List<String> kanjiPaths,
-  ) {
+    List<String> kanjiPaths, [
+    Map<String, String> termLanguages = const <String, String>{},
+  ]) {
     // 同步装载同样算一次新意图：进行中的 [loadPendingAsync] 会据此作废自己的成果，
     // 不把过时集合盖回来。
     _generation++;
@@ -546,7 +564,7 @@ class FushiDicts {
     final h = FushiDicts();
     h._loadCachedTransforms();
     for (final p in termPaths) {
-      h.addTermDict(p);
+      h.addTermDict(p, language: termLanguages[p]);
     }
     for (final p in freqPaths) {
       h.addFreqDict(p);
@@ -778,13 +796,23 @@ class FushiDicts {
     }
   }
 
-  void addTermDict(String path) {
+  /// [language]：这本词典词头的语言（BCP-47），null / 空 = 未标注。
+  void addTermDict(String path, {String? language}) {
     _termDictionaryPaths.add(path);
+    final String tag = language?.trim() ?? '';
     final p = path.toNativeUtf8(allocator: calloc);
+    final Pointer<Utf8> l = tag.isEmpty
+        ? nullptr
+        : tag.toNativeUtf8(allocator: calloc);
     try {
-      _bindings!.addTermDict(_handle!, p);
+      if (l == nullptr) {
+        _bindings!.addTermDict(_handle!, p);
+      } else {
+        _bindings!.addTermDictWithLanguage(_handle!, p, l);
+      }
     } finally {
       calloc.free(p);
+      if (l != nullptr) calloc.free(l);
     }
   }
 
@@ -1693,8 +1721,11 @@ class _PendingDicts {
     required this.freqPaths,
     required this.pitchPaths,
     required this.kanjiPaths,
+    this.termLanguages = const <String, String>{},
   });
 
+  /// term 词典路径 → 词头语言，见 [FushiDicts.initializeTyped]。
+  final Map<String, String> termLanguages;
   final List<String> termPaths;
   final List<String> freqPaths;
   final List<String> pitchPaths;
