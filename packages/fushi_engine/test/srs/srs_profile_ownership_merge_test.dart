@@ -86,6 +86,44 @@ void main() {
       SrsFieldKeys.dayRolloverHour,
       9,
     );
+    // 第六波（BUG-4843 残余二）：用 B 的**真实** guid（ID 能按规则重算出来）、只换笔记类型的身份记录，带同批改字段——与 B 的
+    // 定义结构冲突，不写。残余一：牌组身份记录 + 同批改名（名字重算不出这个 ID），以前牌组身份记录不判、替改名作保。
+    await a.writeEdits(
+      <SrsEditSpec>[
+        SrsEditSpec(
+          SrsEntityKind.note,
+          note,
+          SrsFieldKeys.noteField(expression),
+          '被 A 改',
+        ),
+      ],
+      records: <SrsEntityRecord>[
+        SrsEntityRecord(
+          id: note,
+          profileUid: kA,
+          kind: SrsEntityKind.note,
+          payload: <String, Object?>{
+            'noteTypeId': a.fushiCardNoteTypeId,
+            'guid': original.guid,
+            'createdAt': 1,
+          },
+        ),
+      ],
+    );
+    final String deck = await b.createDeck('B 牌组');
+    await a.writeEdits(
+      <SrsEditSpec>[
+        SrsEditSpec(SrsEntityKind.deck, deck, SrsFieldKeys.name, '被 A 改'),
+      ],
+      records: <SrsEntityRecord>[
+        SrsEntityRecord(
+          id: deck,
+          profileUid: kA,
+          kind: SrsEntityKind.deck,
+          payload: const <String, Object?>{'createdAt': 0},
+        ),
+      ],
+    );
     expect(await _ops(a), before, reason: 'A 的日志里不能有指向 B 的实体的操作');
     expect((await b.note(note))!.field(expression), '鳥');
 
@@ -127,6 +165,7 @@ void main() {
     expect(merged.noteTypeId, original.noteTypeId, reason: 'B 的笔记类型不能被换掉');
     expect(merged.guid, original.guid);
     expect((await b2.syncedDayRollover())?.hour, 5, reason: 'B 的翻日时刻');
+    expect((await b2.deckTree())[deck]?.name, 'B 牌组', reason: 'B 的牌组名');
     final SrsCardCacheRow row = (await b2.cardRow(card))!;
     expect(row.flag, 0);
     expect(row.suspended, isFalse);
