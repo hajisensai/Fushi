@@ -6,7 +6,10 @@
 //      设计值附近、与词典次序无关；
 //   2. 缓存文件——落盘后二次装载、坏文件（校验和不符 / 截断 / 魔数错）被拒并重建、
 //      超集缓存可复用、过大的超集不复用、目录不可用时退回堆内；
-//   3. 引擎层——真导入的 term / freq / pitch 词典上，有过滤器与没有过滤器时
+//   2b. key.index 来源——过滤器建在键的 tag 上，从 key.index 枚举出的 tag 与从 hash.table
+//      取的 tag 一样能建；混装两种来源时同样无假阴性、假阳性在设计值附近；
+//   3. 引擎层——真导入的 term / freq / pitch 词典上（新式 key.index 与旧式 hash.table
+//      两种导入各跑一遍），有过滤器与没有过滤器时
 //      Lookup::lookup / DictionaryQuery::query 的结果逐字段相同（含排除词典）；
 //      add_*_dict 之后过滤器作废、新词典立刻查得到；后台构建最终就绪；引擎销毁时
 //      构建线程已收回、不留文件映射。
@@ -19,6 +22,7 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <optional>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -30,8 +34,10 @@
 #include "fushidicts/lookup.hpp"
 #include "fushidicts/query.hpp"
 #include "hash/hash.hpp"
+#include "hash/key_index.hpp"
 #include "hash/union_filter.hpp"
 #include "memory/memory.hpp"
+#include "legacy_index_env.hpp"
 #include "zip_fixture.hpp"
 
 namespace {
@@ -199,6 +205,97 @@ void test_filter_properties() {
   truncated.bytes.resize(sizeof(uint32_t) + 16 * 100 + 7);
   const auto from_truncated = hash::union_filter::build(sources_of({&truncated}));
   expect(from_truncated != nullptr, "truncated table still yields a filter");
+}
+
+// 用同一组键建一份 key.index（offset / single 随便给：过滤器只看 tag）。
+struct FakeKeyIndex {
+  uint64_t identity = 0;
+  std::vector<uint64_t> keys;
+  memory::mapped_file file;
+  hash::key_index index;
+
+  FakeKeyIndex() = default;
+  FakeKeyIndex(const FakeKeyIndex&) = delete;
+  FakeKeyIndex& operator=(const FakeKeyIndex&) = delete;
+  ~FakeKeyIndex() {
+    if (file) memory::unmap_unflushed(file);
+  }
+
+  hash::union_filter::source source() const { return {.identity = identity, .keys = &index}; }
+};
+
+bool make_key_index(const FakeTable& from, const std::string& path, FakeKeyIndex& out) {
+  std::vector<hash::key_index::entry> entries;
+  for (size_t i = 0; i < from.keys.size(); i++) {
+    entries.push_back({.hash = from.keys[i], .offset = i, .single = (i & 1) != 0});
+  }
+  std::filesystem::remove(path);
+  if (!hash::key_index::build_to_file(entries, hash::key_index::blobs_file::original, path)) return false;
+  out.identity = from.identity;
+  out.keys = from.keys;
+  out.file = memory::map_rd(path);
+  return out.file && out.index.load(out.file.data, out.file.size);
+}
+
+void test_key_index_sources(const std::string& root) {
+  KeySequence rng{777};
+  const FakeTable a = make_table(0x5151000000000001ULL, 40000, rng);
+  const FakeTable b = make_table(0x6262000000000002ULL, 30000, rng);
+  const FakeTable c = make_table(0x7373000000000003ULL, 20000, rng);
+  FakeKeyIndex ka;
+  FakeKeyIndex kb;
+  if (!make_key_index(a, root + "/a.index", ka) || !make_key_index(b, root + "/b.index", kb)) {
+    fail("could not build key.index sources");
+    return;
+  }
+  expect(ka.index.num_keys() == a.keys.size(), "key.index source reports its key count");
+
+  // 混装：两本 key.index + 一本旧式 hash.table。
+  const std::vector<hash::union_filter::source> sources = {ka.source(), kb.source(), c.source()};
+  const auto filter = hash::union_filter::build(sources);
+  if (!filter) {
+    fail("build returned null for key.index sources");
+    return;
+  }
+  expect(filter->identities().size() == 3, "mixed sources: every identity listed");
+  for (const FakeKeyIndex* k : {&ka, &kb}) {
+    for (const uint64_t h : k->keys) {
+      if (!hash::union_filter::maybe(filter->at(h), k->identity)) {
+        fail("key.index source: false negative");
+        break;
+      }
+    }
+  }
+  expect_no_false_negatives(*filter, {&c}, "legacy source next to key.index sources");
+
+  size_t false_positives = 0;
+  const size_t trials = 200000;
+  for (size_t i = 0; i < trials; i++) {
+    const auto probe = filter->at(rng());
+    for (const uint64_t id : {ka.identity, kb.identity, c.identity}) {
+      if (hash::union_filter::maybe(probe, id)) ++false_positives;
+    }
+  }
+  const double rate = static_cast<double>(false_positives) / static_cast<double>(trials * 3);
+  if (rate > 0.01) fail("key.index sources: false positive rate too high: " + std::to_string(rate));
+
+  // 同一组键，从 key.index 建与从 hash.table 建：键数估计不同（key.index 有确数）所以块数
+  // 可能不同，但都无假阴性；文件后备的那份也一样。
+  const auto from_table = hash::union_filter::build(sources_of({&a}));
+  const auto from_index = hash::union_filter::open_or_build(std::vector<hash::union_filter::source>{ka.source()},
+                                                            root + "/ki_cache");
+  expect(from_table && from_index && from_index->file_backed(), "single-source filters build");
+  if (from_table && from_index) {
+    for (const uint64_t h : a.keys) {
+      if (!hash::union_filter::maybe(from_table->at(h), a.identity) ||
+          !hash::union_filter::maybe(from_index->at(h), a.identity)) {
+        fail("single-source filter: false negative");
+        break;
+      }
+    }
+    expect(from_index->num_blocks() <= from_table->num_blocks(),
+           "a key.index source sizes the filter from its exact key count");
+  }
 }
 
 void test_cache_file(const std::string& root) {
@@ -430,7 +527,10 @@ bool wait_ready(const DictionaryQuery& query) {
   return true;
 }
 
-void test_engine(const std::string& ja_json, const std::string& root) {
+// [legacy]：词典按旧式导入（hash.table + bloom.filter），否则新式（key.index）。
+void test_engine(const std::string& ja_json, const std::string& root, bool legacy) {
+  std::optional<fushi_test::ScopedLegacyIndex> legacy_scope;
+  if (legacy) legacy_scope.emplace();
   const std::string out_dir = root + "/dicts";
   std::filesystem::remove_all(out_dir);
 
@@ -483,6 +583,11 @@ void test_engine(const std::string& ja_json, const std::string& root) {
   if (main_dict.empty() || second_dict.empty() || third_dict.empty() || freq_dict.empty() || pitch_dict.empty() ||
       late_dict.empty()) {
     return;
+  }
+  for (const std::string& dir : {main_dict, freq_dict, pitch_dict}) {
+    expect(std::filesystem::exists(dir + "/key.index") == !legacy &&
+               std::filesystem::exists(dir + "/hash.table") == legacy,
+           std::string("fixture is in the ") + (legacy ? "legacy" : "key.index") + " layout: " + dir);
   }
 
   const auto load = [&](DictionaryQuery& q) {
@@ -625,7 +730,9 @@ int main(int argc, char** argv) {
 
   test_filter_properties();
   test_cache_file(root);
-  test_engine(ja_json, root);
+  test_key_index_sources(root);
+  test_engine(ja_json, root + "/engine_new", /*legacy=*/false);
+  test_engine(ja_json, root + "/engine_legacy", /*legacy=*/true);
 
   if (g_fail == 0) std::printf("PASS union_filter_test\n");
   return g_fail == 0 ? 0 : 1;

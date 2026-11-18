@@ -86,12 +86,15 @@ void main() {
         FloatingBallGlobalAction.switchProfile,
         FloatingBallGlobalAction.ai,
       });
-      // 查词模块关着：打开查词页与全局查词（含截屏识字的结果卡）都没有入口，只剩
-      // 剪贴板（它在覆盖窗不可用时退回主窗查词弹窗）与同步、切换配置（与查词无关）。
+      // 查词模块关着（BUG-4846）：它只关查词页入口，所以只少「查词」（打开查词页）；
+      // 应用外查词与截屏识字是查词能力、结果在全局查词覆盖窗上，覆盖窗不看这个
+      // 模块，照常可用。
       expect(
         onDesktop(FloatingBallScope.system, lookupModuleEnabled: false),
         <FloatingBallGlobalAction>{
+          FloatingBallGlobalAction.popupLookup,
           FloatingBallGlobalAction.clipboard,
+          FloatingBallGlobalAction.screenOcr,
           FloatingBallGlobalAction.sync,
           FloatingBallGlobalAction.switchProfile,
           FloatingBallGlobalAction.ai,

@@ -390,9 +390,8 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
   }
 
   /// 被关掉的功能模块不出现自己的快捷键分区（见 `module_registry.dart`）。
-  /// 这不只是文案泄露：`globalExternal` 分区一旦可编辑，用户改一次绑定就会
-  /// 让 `GlobalLookupController._onRegistryChanged` **当场**装上 OS 热键与
-  /// native RawInput 鼠标钩子——查词模块关着时装系统级钩子是实打实的越权。
+  /// `globalExternal` 分区不属于任何模块：OS 热键随全局查词覆盖窗按平台能力
+  /// 装上，与查词页开关无关（BUG-4846），所以这里也恒可编辑。
   List<ShortcutScope> _visibleScopes() => <ShortcutScope>[
     for (final ShortcutScope scope in ShortcutScope.values)
       if (isShortcutScopeVisible(scope, appModel.moduleVisibility)) scope,

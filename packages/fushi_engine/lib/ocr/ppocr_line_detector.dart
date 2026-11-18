@@ -406,13 +406,35 @@ class PpOcrLineDetector {
       (await detectLayoutInBlock(page, box)).lines;
 
   /// 同 [detectInBlock]，另带整块倾角（[ppBlockTilt]）。
+  ///
+  /// [stretchX] 不为 1 时先把裁图横向拉伸这么多倍再检测，行框换回原裁图坐标。
+  /// DB 检测器沿空隙小的方向把字连成行：竖排的字距比列距还大时（疏排的竖排、
+  /// 斜体）它连出来的是横行。横向拉宽后列距随之变宽，列就能被连出来——调用方
+  /// 用它给方向存疑的块取第二份证据（见 `CtcColumnOcrRecognizer`）。
   Future<({List<OcrRect> lines, double tilt})> detectLayoutInBlock(
     img.Image page,
-    OcrRect box,
-  ) async {
+    OcrRect box, {
+    double stretchX = 1,
+  }) async {
     final OcrBlockCrop? crop = cropOcrBlock(page, box);
     if (crop == null) return (lines: const <OcrRect>[], tilt: 0.0);
-    final List<PpTextLine> detected = await detect(crop.image);
+    final List<PpTextLine> detected;
+    if (stretchX == 1) {
+      detected = await detect(crop.image);
+    } else {
+      final int width = math.max(1, (crop.image.width * stretchX).round());
+      final img.Image stretched = img.copyResize(
+        crop.image,
+        width: width,
+        height: crop.image.height,
+        interpolation: img.Interpolation.linear,
+      );
+      final double sx = crop.image.width / width;
+      detected = <PpTextLine>[
+        for (final PpTextLine line in await detect(stretched))
+          line.scaled(sx, 1),
+      ];
+    }
     return (
       lines: <OcrRect>[
         for (final PpTextLine line in detected) crop.toPage(line.rect),

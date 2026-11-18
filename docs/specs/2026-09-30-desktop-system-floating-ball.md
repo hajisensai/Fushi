@@ -67,7 +67,7 @@
 ## 设置
 
 - 「应用外显示」开关在 Android / Windows / macOS 可见（iOS 不提供）；桌面文案不提「显示在其他应用上层」权限。
-- 应用外按钮组在桌面可选：`lookup`（唤起主窗并打开查词页）、`popup_lookup`（查前台程序当前选中的文字 = 全局查词热键同一路径）、`clipboard`（查剪贴板文字，卡片锚在球旁）、`screen_ocr`（截屏识字，见下节）、`sync`（唤起主窗并跑一轮手动同步，结果在主窗里给）。拍照查词桌面不提供。`lookup`、`popup_lookup` 与 `screen_ocr` 只在「查词」模块开着时可选、也只在那时下发给原生（模块关着查词页没有入口、全局查词不启动）；模块开关一变，宿主重新同步球的按钮。
+- 应用外按钮组在桌面可选：`lookup`（唤起主窗并打开查词页）、`popup_lookup`（查前台程序当前选中的文字 = 全局查词热键同一路径）、`clipboard`（查剪贴板文字，卡片锚在球旁）、`screen_ocr`（截屏识字，见下节）、`sync`（唤起主窗并跑一轮手动同步，结果在主窗里给）。拍照查词桌面不提供。`lookup` 只在「查词」模块开着时可选、也只在那时下发给原生（模块关着查词页没有入口）；模块开关一变，宿主重新同步球的按钮。`popup_lookup` 与 `screen_ocr` 是查词能力、结果在全局查词覆盖窗上，覆盖窗只按平台能力启动、不看查词模块（BUG-4846），所以它们只受 `GlobalLookupController.isSupported` 约束。
 - 位置偏好：`floating_ball.system_dock` / `floating_ball.system_y`（与应用内球的 `floating_ball.dock` / `floating_ball.y` 分开——两颗球可以同时在）。
 
 ## 截屏识字（2026-10-04 补齐）
@@ -117,7 +117,7 @@
 
 ### Dart 侧
 
-- `screen_ocr` 在桌面应用外球上可选，条件同 `popup_lookup`（查词模块开着：结果要用全局查词卡）。拍照查词桌面仍不提供。
+- `screen_ocr` 在桌面应用外球上可选，条件同 `popup_lookup`（平台有全局查词卡：结果要用它；与查词模块无关，BUG-4846）。拍照查词桌面仍不提供。
 - 点字：`screenOcrHitTest`（scale 1）→ 查 `line.text` 从被点字起的后缀、`sentence = line.text`，`GlobalLookupPhysicalPlacement(anchorScreenRect: 字框 + screen 左上)`。点在行外 → `stopScreenOcr` 并收起查词卡。
 - 开始前先收起已开的查词卡（否则它会被截进图里）。
 

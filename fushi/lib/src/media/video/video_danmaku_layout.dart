@@ -10,12 +10,18 @@ import 'package:fushi/src/media/video/video_danmaku_text_metrics.dart';
 @immutable
 class VideoDanmakuLayoutEntry {
   const VideoDanmakuLayoutEntry({
+    required this.index,
     required this.item,
     required this.lane,
     required this.position,
     required this.width,
     required this.opacity,
   });
+
+  /// 该条弹幕在 `items` 里的下标：同一份弹幕列表内是弹幕的稳定身份，overlay 拿它
+  /// 当 key，让每条弹幕从出生到退场始终由同一组 element / render object 渲染
+  /// （BUG-4852：按位置对位时队首一出列，后面每条都被错配成下一条的文本、重新排版重画）。
+  final int index;
 
   final VideoDanmakuItem item;
 
@@ -169,6 +175,7 @@ class VideoDanmakuLayout {
       };
       entries.add(
         VideoDanmakuLayoutEntry(
+          index: activeItem.index,
           item: activeItem.item,
           lane: row,
           position: Offset(x, row * laneHeight),
