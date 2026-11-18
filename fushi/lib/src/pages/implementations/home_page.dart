@@ -26,7 +26,6 @@ import 'package:fushi/src/onboarding/recommended_pack_download_mini_bar.dart';
 import 'package:fushi/src/onboarding/recommended_pack_tutorial_prompt.dart';
 import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
 import 'package:fushi/src/updates/update_probes.dart';
-import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show
         FushiFloatingChromeInset,
@@ -2081,34 +2080,10 @@ class _HomePageState extends BasePageState<HomePage>
     // Apple：「后台任务」入口进外壳大标题行（[_appleBackgroundTasksAction]）——
     // 只在可见 tab 确有那一行时；首页 / 设置 / 复习没有，仍画右下 FAB。
     _shellFabHostedByBar = _backgroundTasksHostedByChrome();
-    // 自绘标题栏（[FushiDesktopTitleBar.isEnabled]，Windows + macOS）已经把当前
-    // tab 名画在应用顶栏上，主导航 rail 始终可见，再叠一层「隐藏 rail + 页头返回
-    // 箭头」的全屏设置就成了没有来源的第二条返回出口。macOS 现在与 Windows 同壳，
-    // 设置页因此也是「rail 常驻 + 二栏 list-detail」（用户拍板：两端一致）。
-    // Linux、横屏 Android 平板仍走原分支：它们的顶栏没有 tab 名、也没有 rail 常驻
-    // 的保证。
-    if (_visibleTab == HomeTab.settings && !FushiDesktopTitleBar.isEnabled) {
-      // 设置标签（全部设计系统）：隐藏 3 图标侧栏，全屏二栏（内部
-      // MaterialSupportingPaneLayout），左上返回箭头切回来源 tab（参考 Mihon
-      // 宽屏设置）。Cupertino 桌面也走这里——叶子控件保持 Cupertino 皮肤，但外壳
-      // 复用同一 Material 架构；返回出口由 SettingsHomePage 的嵌入页头提供
-      // （BUG-009 R2）。否则会退化成「3 图标 rail + 嵌入式 Cupertino 设置」三栏
-      // 混排、无返回出口、且详情面板溢出。
-      return Scaffold(
-        resizeToAvoidBottomInset: false,
-        body: SafeArea(
-          // 这里曾按 BUG-869 预留一条 macOS 标题栏高度：透明标题栏 +
-          // full-size content view 下交通灯不计入 MediaQuery.padding，会压住返回
-          // 箭头。macOS 改用自绘顶栏后交通灯已被隐藏（`main()` 的
-          // `windowButtonVisibility: false`），且这条分支在 macOS 上根本不再命中
-          // （[FushiDesktopTitleBar.isEnabled] 恒真），预留带随之删除。
-          child: FocusTraversalGroup(
-            child: _buildSettingsTabContent(showBackButton: true),
-          ),
-        ),
-      );
-    }
-
+    // 设置 tab 与其它 tab 同壳：主导航 rail 常驻 + 设置自己的二栏 list-detail，
+    // 全平台一致（用户 2026-11-17：平板 / Linux 宽屏也不再「隐藏 rail + 返回箭头 +
+    // 『设置』大标题」的二级界面，统一成 Windows / macOS 的样子）。切走靠 rail，
+    // 系统返回键由 [HomeSettingsTabContent] 的 PopScope 切回来源 tab。
     final List<HomeTab> tabs = _activeTabs();
     final bool reversed = appModel.reverseNavigationBar;
     final List<AdaptiveNavItem> items = _navItems(tabs);
@@ -4334,7 +4309,7 @@ class _HomePageState extends BasePageState<HomePage>
       HomeTab.settings =>
         // 设置 tab 走侧栏/底栏切回，不显示页头返回箭头；但仍需 PopScope 拦截系统
         // 返回键（否则冒泡到顶层 PopScope = 退出 app，见 BUG-236）。
-        _buildSettingsTabContent(showBackButton: false),
+        _buildSettingsTabContent(),
       HomeTab.books => const HomeReaderPage(),
       HomeTab.manga => const MangaLibraryPage(),
       HomeTab.music => const MusicLibraryPage(),
@@ -4360,13 +4335,10 @@ class _HomePageState extends BasePageState<HomePage>
     );
   }
 
-  /// 设置 tab 的内容外壳。[showBackButton] 为 true 时（宽屏隐藏 3 图标侧栏的全屏
-  /// 设置）显示页头左上返回箭头；为 false 时（移动底栏 / 宽屏侧栏在侧 / Windows 自绘
-  /// 标题栏常驻 rail，可直接切回）不显示箭头，系统返回手势仍由
-  /// [HomeSettingsTabContent] 内的 PopScope 拦截。
-  Widget _buildSettingsTabContent({required bool showBackButton}) {
+  /// 设置 tab 的内容外壳：底栏 / rail 常驻、可直接切回，不画返回箭头；系统返回
+  /// 手势由 [HomeSettingsTabContent] 内的 PopScope 拦截。
+  Widget _buildSettingsTabContent() {
     return HomeSettingsTabContent(
-      showBackButton: showBackButton,
       onReturnToPreviousTab: () => _selectTab(_previousVisibleTab),
     );
   }
@@ -4494,15 +4466,11 @@ class HomeSettingsTabContent extends StatelessWidget {
   const HomeSettingsTabContent({
     super.key,
     required this.onReturnToPreviousTab,
-    this.showBackButton = false,
     this.child,
   });
 
   /// 系统返回键被拦截后调用：切回进入设置前的来源 tab。
   final VoidCallback onReturnToPreviousTab;
-
-  /// 是否在设置页头左侧显示返回箭头（宽屏隐藏图标侧栏的全屏设置场景）。
-  final bool showBackButton;
 
   /// 设置内容；为空时回落到默认的 [FushiSettingsContent]。
   final Widget? child;
@@ -4515,11 +4483,7 @@ class HomeSettingsTabContent extends StatelessWidget {
         if (didPop) return;
         onReturnToPreviousTab();
       },
-      child:
-          child ??
-          FushiSettingsContent(
-            onBack: showBackButton ? onReturnToPreviousTab : null,
-          ),
+      child: child ?? const FushiSettingsContent(),
     );
   }
 }
