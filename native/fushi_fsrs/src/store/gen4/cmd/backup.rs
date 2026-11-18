@@ -46,7 +46,7 @@ use rusqlite::{Connection, OptionalExtension};
 use serde_json::{Value, json};
 
 use super::fushisrs::{Manifest, unconfirmed_identity};
-use super::identity::{Emitting, collection_adopt};
+use super::identity::{Emitting, PendingSelf, collection_adopt_with};
 use crate::store::SrsCore;
 use crate::store::gen4::carry::{legacy_peers, legacy_self};
 use crate::store::gen4::import::{Imported, import_backup};
@@ -58,6 +58,9 @@ use crate::store::sync2::collection_of;
 
 /// 备好的副本在自己的 `srs_meta` 里记的标记（值 = [prepared_marker]）：同一个副本第二次来不再重做。
 pub const PREPARED_KEY: &str = "gen4_backup_prepared";
+
+/// 落库时集合的本机秘密已不是备副本时用的那个（[land]）：整条命令什么都没留，重发即按新的秘密重备。
+pub const LOCAL_IDENTITY_MOVED: &str = "gen4 legacy backup import: the local identity of this profile changed while the copy was being prepared; nothing was written, send the request again";
 
 /// `events` 来源一次 `apply` 的项数。
 pub const APPLY_BATCH: usize = 1000;
@@ -109,10 +112,28 @@ fn p3(core: &SrsCore, req: Value, blobs: Vec<Vec<u8>>) -> Result<Value, String> 
     })
 }
 
-/// 副本标记的值：备的是哪个 profile、从哪份输入（摘要）、哪种来源备出来的。
-fn prepared_marker(profile: &str, digest: &[u8; 32], kind: Kind) -> String {
-    let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
-    format!("{profile}:{}:{hex}", kind.wire())
+/// 副本标记的值：备的是哪个 profile、从哪份输入（摘要）、哪种来源、按哪个本机秘密（[seed_scratch_identity]）备出来的。
+/// 秘密只进它的单向指纹（BLAKE3 派生键），不落原文：副本是临时库，也不该带着本机签名钥匙的种子。秘密变了（profile 还没
+/// 绑定时每次请求现生成的 [PendingSelf]：没确认的那一次与确认后的那一次不同）副本整份重备，副本身份与落库时建的本机
+/// 身份始终同源。
+fn prepared_marker(
+    profile: &str,
+    digest: &[u8; 32],
+    kind: Kind,
+    secret: Option<&[u8; 32]>,
+) -> String {
+    let hex = |b: &[u8]| -> String { b.iter().map(|b| format!("{b:02x}")).collect() };
+    let fp = match secret {
+        Some(s) => {
+            let mut h = blake3::Hasher::new_derive_key(
+                "fushi gen4 legacy backup scratch secret fingerprint 2026-11-18",
+            );
+            h.update(s);
+            hex(&h.finalize().as_bytes()[..16])
+        }
+        None => "-".to_owned(),
+    };
+    format!("{profile}:{}:{}:{fp}", kind.wire(), hex(digest))
 }
 
 /// 副本是不是按 [marker] 备好的（[PREPARED_KEY]）。不是 SQLite 文件 / 没有 `srs_meta` = 没有。
@@ -208,7 +229,7 @@ pub fn prepare(req: &Value, secret: Option<&[u8; 32]>, library: &Path) -> Result
     let db = scratch.join(crate::store::gen4::files::LEGACY_FILE);
     // 输入只读：摘要既是副本标记的一部分，也是副本身份的种子（同一份输入 → 同一个值，与导入几次、几个 profile 无关）。
     let digest = content_digest(&path)?;
-    let marker = prepared_marker(&profile, &digest, kind);
+    let marker = prepared_marker(&profile, &digest, kind, secret);
     if already_prepared(&db, &marker) {
         return Ok(Prepared { kind, db, profile });
     }
@@ -539,6 +560,7 @@ fn imported_json(o: &Imported) -> Value {
 }
 
 /// 落库（模块文件头「落库」）。[t] 在分发器的写事务里；[src] 是备好的副本的读连接（`dryrun::open_legacy`）。
+#[allow(clippy::too_many_arguments)]
 pub fn land(
     t: &Truth<'_>,
     profile: &str,
@@ -546,6 +568,8 @@ pub fn land(
     p: &Prepared,
     src: &Connection,
     anchor: Option<&Value>,
+    pending: Option<&PendingSelf>,
+    secret: Option<&[u8; 32]>,
     col_of: &dyn Fn(&Truth<'_>) -> Result<i64, String>,
 ) -> Result<Emitting, String> {
     let now = req
@@ -592,7 +616,7 @@ pub fn land(
         }
         let mut asks = false;
         let probe: Result<(), String> = t.tx(|t| {
-            let (v, _) = collection_adopt(t, profile, &sub)?;
+            let (v, _) = collection_adopt_with(t, profile, &sub, pending)?;
             asks = v["outcome"] == json!("needsConfirm");
             Err(PREFLIGHT_ROLLBACK.to_owned())
         });
@@ -614,9 +638,17 @@ pub fn land(
     if identity.is_some() {
         return Ok((needs_confirm("identity"), None));
     }
-    let (adopted, changed) = collection_adopt(t, profile, &sub)?;
+    let (adopted, changed) = collection_adopt_with(t, profile, &sub, pending)?;
     if adopted["outcome"] == json!("needsConfirm") {
         return Ok((needs_confirm("join"), None));
+    }
+    // 副本身份是按 [secret] 派生的（[seed_scratch_identity]）；落进来的集合此刻的本机秘密必须就是它。分发器在读快照里定
+    // 秘密、在写锁之外备副本，其间 profile 可能被别的命令绑定并建了身份（打开 profile 的 `identity`、并发的认领）：那时
+    // 照落会让之后第一次合并同一份输入以另一个合成设备再落一遍。在这一笔写事务里核对，对不上整条命令失败（什么都不留），
+    // 调用方重发即按新的本机秘密重备副本。
+    let actual = t.self_identity(col_of(t)?)?.map(|s| s.sk);
+    if actual.as_ref() != secret {
+        return Err(LOCAL_IDENTITY_MOVED.to_owned());
     }
     let wrote = !matches!(adopted["outcome"].as_str(), Some("same" | "alreadyJoined"));
     let got = import_backup(src, &p.profile, t, col_of(t)?)?;

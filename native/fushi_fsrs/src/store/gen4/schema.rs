@@ -64,9 +64,10 @@ use rusqlite::Connection;
 /// （AnkiConnect 数字 id 的成员反查表 `anki_members` 与它按笔记维护用的 `anki_members_note`——`cmd/columns.rs`
 /// 按号点查，不再扫别名表逐个算号，`cache.rs` 文件头「表」；`entity_count {kind, limit}` 按种类数到 `limit` 就停用的
 /// `ent_ix` 部分索引 `ent_kind`，`cmd/reads.rs` `each_class`）；G8-7b 起 `40021`（转发要的作者段原文 `relay_segs`，
-/// [SYNC]，`cmd/sync_relay.rs`；没有显式索引，[PLANNER_STATS] 不变；40020 预分配给同批别的 PR）。整批推送前每个改表的
-/// PR 各自用分到的号。
-pub const SCHEMA: i64 = 40_021;
+/// [SYNC]，`cmd/sync_relay.rs`；没有显式索引，[PLANNER_STATS] 不变；40020 预分配给同批别的 PR）；第五波 G9 身份收尾起
+/// `40023`（实体归属闸 `cmd/writes_owner.rs` 按 ID 跨集合查：`ent_ix` 的 `ent_id`、`alias_ix` 的 `alias_canon_any`、
+/// 缓存层 `cards` 的 `cards_id` 三个索引；40022 预分配给同批别的 PR）。整批推送前每个改表的 PR 各自用分到的号。
+pub const SCHEMA: i64 = 40_023;
 
 /// 新代的号段从这里起：`schema` 小于它的都不是新代库（协议 3 的 1～29 与封存值 39999）。
 pub const GEN_FLOOR: i64 = 40_000;
@@ -371,6 +372,9 @@ CREATE TABLE IF NOT EXISTS ent_ix (
   PRIMARY KEY (col, id, k)
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS ent_kind ON ent_ix (col, kind, id) WHERE win = 1;
+-- 实体归属闸（cmd/writes_owner.rs）：按 ID 问别的集合有没有它的身份记录。部分索引的条件 col > 0 只有归属闸的查询写
+-- （集合号从 1 起，恒成立）：带 col = ? 的既有查询推不出它、用不上这个索引，计划不受影响。
+CREATE INDEX IF NOT EXISTS ent_id ON ent_ix (id) WHERE col > 0;
 CREATE TABLE IF NOT EXISTS reg_ix (
   col INTEGER NOT NULL,
   ekind INTEGER NOT NULL,
@@ -466,6 +470,8 @@ CREATE TABLE IF NOT EXISTS alias_ix (
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS alias_canon ON alias_ix (col, canon, id) WHERE canon != id;
 CREATE INDEX IF NOT EXISTS alias_pool ON alias_ix (col, id) WHERE how >= 3;
+-- 实体归属闸（cmd/writes_owner.rs）：按规范 ID 问别的集合里有没有它的成员（迁移来的带盐存量）。col > 0 同 ent_id。
+CREATE INDEX IF NOT EXISTS alias_canon_any ON alias_ix (canon) WHERE canon != id AND col > 0;
 CREATE TABLE IF NOT EXISTS alias_writer_ix (
   col INTEGER NOT NULL,
   name TEXT NOT NULL,
@@ -608,8 +614,9 @@ pub(crate) fn check_ready(conn: &Connection) -> Result<(), String> {
 /// 平均剩下的行数；`WITHOUT ROWID` 表的主键那一行 `idx` = 表名。量级取样本库，数字只表达形状、不随数据更新：计划因此
 /// 是 schema 的函数，不因某台设备数据多少而变（`tests::lookups_with_a_key_never_walk_the_whole_collection` 钉住）。
 /// 对这个文件跑 `ANALYZE` / `PRAGMA optimize` 会把它们换成随数据变的统计——下次打开时 [install] 会写回来。
-const PLANNER_STATS: [(&str, &str, &str); 42] = [
+const PLANNER_STATS: [(&str, &str, &str); 45] = [
     ("alias_ix", "alias_canon", "1000000 1000000 2 1"),
+    ("alias_ix", "alias_canon_any", "1000000 2"),
     ("alias_ix", "alias_ix", "1000000 1000000 1"),
     ("alias_ix", "alias_pool", "5000 5000 1"),
     ("anki_members", "anki_members", "100000 100000 50000 1 1"),
@@ -618,6 +625,7 @@ const PLANNER_STATS: [(&str, &str, &str); 42] = [
     ("cards", "cards", "100000 100000 1"),
     ("cards", "cards_anki", "100000 100000 1"),
     ("cards", "cards_deck", "100000 100000 5000"),
+    ("cards", "cards_id", "100000 2"),
     ("cards", "cards_learning", "500 500 2 1"),
     ("cards", "cards_new_freq", "30000 30000 15000 2 2 1 1"),
     ("cards", "cards_new_position", "30000 30000 15000 2 1"),
@@ -626,6 +634,7 @@ const PLANNER_STATS: [(&str, &str, &str); 42] = [
     ("cards", "cards_tally", "100000 100000 5000 1500 20"),
     ("cards", "cards_template", "100000 100000 5000"),
     ("dg_ix", "dg_ix", "200000 200000 40000 1"),
+    ("ent_ix", "ent_id", "50000 2"),
     ("ent_ix", "ent_ix", "50000 50000 1 1"),
     ("ent_ix", "ent_kind", "40000 40000 10000 1"),
     ("ent_ops", "ent_ops", "1000000 1000000 500000 20 20 1"),

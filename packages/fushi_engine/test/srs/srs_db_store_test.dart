@@ -1,5 +1,9 @@
+import 'dart:io';
+
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/srs/srs_backup_bundle.dart';
+import 'package:fushi_engine/srs/srs_backup_merge.dart' show SrsBackupProfile;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
@@ -483,19 +487,46 @@ void main() {
       nowMs: () => t,
     );
     final String? oldDevice = a.sync2Device;
-    // 恢复备份：本机状态、缓存表与同步 v2 的本机身份被清空（备份快照剥掉设备本地表，见 SrsCore.snapshotInto）。
-    srsStorage.core.debugExecRaw('DELETE FROM srs_local_state');
-    srsStorage.core.debugExecRaw('DELETE FROM srs_event_local');
-    srsStorage.core.debugExecRaw('DELETE FROM srs_cards_cache');
-    srsStorage.core.debugExecRaw('DELETE FROM srs_notes_cache');
-    srsStorage.core.debugExecRaw('DELETE FROM sync2_self');
-    final SrsDbStore restored = await SrsDbStore.open(
+    // 覆盖恢复（新代，交接 §25 定案 4「空库 + 并入」）：整包备份里的复习部分是按集合的 FSRS4EXP 流（不带签名私钥），
+    // 落进一个空的新代库（[srsLandBackupUnit]，内核 `import` + `collection_adopt`），再按原 profile 打开。以前这里直接
+    // 删协议 3 的本机表模拟「剥掉设备本地表的快照」，新代没有那些表（G11-4 遗留，第五波 G9 身份收尾改写）。
+    final Directory work = Directory.systemTemp.createTempSync('srs_restore_');
+    addTearDown(() {
+      try {
+        work.deleteSync(recursive: true);
+      } on FileSystemException {
+        // 句柄尚未释放；临时目录留给系统清理。
+      }
+    });
+    final SrsBackupManifest manifest = (await srsExportBackupStreams(
       core: srsStorage.core,
+      profiles: const <SrsBackupProfile>[
+        SrsBackupProfile(uid: kProfile, name: 'Default'),
+      ],
+      outDir: work.path,
+      nowMs: t,
+    ))!;
+    final SrsStorage staged = await openTestSrsStorage();
+    final SrsBackupUnit unit = manifest.units.single;
+    final SrsBackupLanded landed = await srsLandBackupUnit(
+      core: staged.core,
+      targetUid: kProfile,
+      file: SrsBackupStreamFile(
+        path: '${work.path}${Platform.pathSeparator}${unit.n}.bin',
+        unit: unit,
+      ),
+      confirmed: true,
+      nowMs: t,
+    );
+    expect(landed.reply['outcome'], 'bound', reason: '${landed.reply}');
+    final SrsDbStore restored = await SrsDbStore.open(
+      core: staged.core,
       profileUid: kProfile,
       deviceId: 'a',
       engine: const _FakeEngine(),
       trustedClock: clock(),
     );
+    expect(restored.sync2Collection, a.sync2Collection);
     // 恢复出来的库是一台新设备（新身份，设计 §7.3 的预防），旧身份按普通远端设备续收，不会分叉。
     expect(restored.sync2Device, isNot(oldDevice));
     expect((await restored.cardRow(cardId))!.reps, 1);

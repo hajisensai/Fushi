@@ -107,6 +107,14 @@ void _sameCollection(_Device a, _Device b) {
   expect(a.store.sync2Dir, b.store.sync2Dir);
 }
 
+/// [s] 现在绑定的集合日志里的 `Join`（内核 `collection_info` 的 `joins`）。
+Future<List<Object?>> _joins(SrsDbStore s) async =>
+    ((await s.sync2Command(<String, Object?>{
+          'op': 'collection_info',
+        })).map['joins']
+        as List<Object?>?) ??
+    const <Object?>[];
+
 /// 位置上目录 [dirName] 里还列着哪些写入者（说明文件所在的设备目录）；目录不在为空。
 Future<List<String>> _writersIn(
   LocalDirectoryAssetStore dir,
@@ -195,6 +203,28 @@ void main() {
     expect(host.store.sync2Dir, host.store.profileUid);
     expect(host.unlinked, isEmpty);
     expect(phone.unlinked, isEmpty);
+  });
+
+  // 规划 §6 合并条件「新设备关联已有集合，结论 bound、不产生 Join」（第五波 G9 身份收尾）：app 里的全新设备开库就写了
+  // 内置种子（`SrsDbStore.ensureBuiltins`），以前「空集合」只认 `Salts`，这样的设备关联已有集合一律 `joined` + `Join`。
+  // 现在与首次信任同一个判据（内核 `library_fresh`）：只有内置种子不算用户内容，换绑过去（`bound`），两边都没有 `Join`。
+  test('全新设备（开库已写内置种子、从没同步过）关联已有集合：bound，两边日志里都没有 Join', () async {
+    final _Device host = await _Device.open('host');
+    final String fromHost = await host.addNote('雪');
+    expect((await host.sync(dir)).error, isNull);
+    final _Device phone = await _Device.open('phone');
+    // D27：换绑只在「本机目录名更大、本机并入对方」的方向上（反方向照设计吸收对方）。profile uid 是 UUIDv7，后开的大。
+    expect(
+      phone.store.sync2Dir!.compareTo(host.store.sync2Dir!),
+      greaterThan(0),
+    );
+    expect(await _joins(phone.store), isEmpty);
+    expect((await phone.sync(dir)).error, isNull);
+    _sameCollection(phone, host);
+    expect(await phone.expressionOf(fromHost), '雪');
+    expect(await _joins(phone.store), isEmpty, reason: 'bound 不写 Join');
+    expect((await host.sync(dir)).error, isNull);
+    expect(await _joins(host.store), isEmpty);
   });
 
   test('两边都有用户笔记：不自动关联、不换任何一边的集合，报告对方 profile 名', () async {

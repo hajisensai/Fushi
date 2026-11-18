@@ -165,7 +165,7 @@ pub fn identity_ensure(t: &Truth<'_>, profile: &str, now: i64) -> Result<Emittin
             Some(b) => b.col,
             None => t.bind(profile, &collection_of(profile), profile)?,
         };
-        ensure_self(t, col, profile, now)?;
+        ensure_self(t, col, profile, now, None)?;
         let after = binding_of(t, col)?;
         let changed = (before.as_ref() != Some(&after)).then(|| BindingChanged {
             profile: profile.to_owned(),
@@ -177,14 +177,67 @@ pub fn identity_ensure(t: &Truth<'_>, profile: &str, now: i64) -> Result<Emittin
     })
 }
 
-/// 集合 [col] 还没有本机身份就建（模块文件头）：随机设备 ID 与签名钥匙，盐集合里没有 [profile] 就在本机原生日志写
-/// 一条 `Salts{profile}`，收尾。返回建没建。
-fn ensure_self(t: &Truth<'_>, col: i64, profile: &str, now: i64) -> Result<bool, String> {
+/// 预先定好的本机身份（设备 ID 与签名钥匙种子）：落库前就要知道本机身份的命令先生成它，绑定那一刻（[collection_adopt_with]
+/// 的 `bound`）照它建，而不是另生成一个。
+///
+/// 用处（第五波 G9 身份收尾，交接 §25「没做」第 1 条）：旧备份读入（`cmd/backup.rs`）的副本身份由「目标集合的本机签名
+/// 钥匙种子 + 输入摘要」派生（`seed_scratch_identity`），同一份输入再导一次才是已有的槽。覆盖还原把复习数据落进一个空库，
+/// profile 在那里还没有绑定、也就没有本机身份：以前副本身份只能随机，绑定在落库事务里才建（随机钥匙），于是还原之后
+/// **第一次**合并同一份旧输入以另一个合成设备再落一遍。现在分发器在备副本之前生成 [PendingSelf]、拿它的种子派生副本身份，
+/// 落库时 profile 按它建本机身份：之后的合并读到的本机秘密就是同一个。
+#[derive(Clone)]
+pub struct PendingSelf {
+    pub(crate) device: Id,
+    pub(crate) seed: [u8; 32],
+}
+
+impl PendingSelf {
+    /// 一个新的（随机设备 ID 与钥匙，与 [ensure_self] 自己建的同一种）。
+    pub fn generate(profile: &str, now: i64) -> PendingSelf {
+        PendingSelf {
+            device: random_device(profile, now),
+            seed: DeviceKey::generate().seed(),
+        }
+    }
+
+    /// 沿用现有签名钥匙种子 [seed]、设备 ID 新生成的一份：profile 已绑定、但认领可能走「空集合可换绑」（`identity.rs`
+    /// `rebind_empty` 丢掉本机的空集合、在对方集合里重建本机身份）的命令用它，换绑之后本机秘密仍是 [seed]。设备 ID 不沿用：
+    /// 被丢掉的空集合导出过的话，它的设备号与序号可能已在别处出现，同一个设备号在新集合里从头记会撞号。钥匙只在本机，
+    /// 空集合从没发布过（`discard.rs` `disposable`），沿用不扩大暴露面。
+    pub fn carrying(profile: &str, now: i64, seed: [u8; 32]) -> PendingSelf {
+        PendingSelf {
+            device: random_device(profile, now),
+            seed,
+        }
+    }
+
+    /// 签名钥匙种子（副本身份的本机秘密）。
+    pub fn seed(&self) -> &[u8; 32] {
+        &self.seed
+    }
+}
+
+/// 集合 [col] 还没有本机身份就建（模块文件头）：随机设备 ID 与签名钥匙（给了 [pending] 就用它），盐集合里没有
+/// [profile] 就在本机原生日志写一条 `Salts{profile}`，收尾。返回建没建。
+fn ensure_self(
+    t: &Truth<'_>,
+    col: i64,
+    profile: &str,
+    now: i64,
+    pending: Option<&PendingSelf>,
+) -> Result<bool, String> {
     if t.self_identity(col)?.is_some() {
         return Ok(false);
     }
-    let key = DeviceKey::generate();
-    t.create_self(col, &random_device(profile, now), &key.seed(), None, now)?;
+    let fresh;
+    let p = match pending {
+        Some(p) => p,
+        None => {
+            fresh = PendingSelf::generate(profile, now);
+            &fresh
+        }
+    };
+    t.create_self(col, &p.device, &p.seed, None, now)?;
     if !binding_of(t, col)?.salts.contains(profile) {
         let mut ix = Index::new(t, col);
         Native::open(t, col)?.write_salts(&mut ix, &BTreeSet::from([profile.to_owned()]), now)?;
@@ -335,6 +388,16 @@ pub fn collection_salts_add(t: &Truth<'_>, col: i64, req: &Value) -> Result<Emit
 /// 位置上读到的 `meta.json` + 盐）声明了身份，按 [adopt_foreign] 认（`confirmed` 缺省 false：没问过用户只会答
 /// `needsConfirm`，BUG-4011 / D25）。结论是 `bound`（profile 还没绑过）时同一个事务里建本机身份（模块文件头）。
 pub fn collection_adopt(t: &Truth<'_>, profile: &str, req: &Value) -> Result<Emitting, String> {
+    collection_adopt_with(t, profile, req, None)
+}
+
+/// [collection_adopt]，`bound` 时本机身份按 [pending] 建（[PendingSelf]；None = 现生成）。
+pub fn collection_adopt_with(
+    t: &Truth<'_>,
+    profile: &str,
+    req: &Value,
+    pending: Option<&PendingSelf>,
+) -> Result<Emitting, String> {
     let foreign = Foreign {
         collection: id_of(req, "collection", "collection_adopt")?,
         dir: str_of(req, "dir", "collection_adopt")?.to_owned(),
@@ -345,7 +408,7 @@ pub fn collection_adopt(t: &Truth<'_>, profile: &str, req: &Value) -> Result<Emi
     t.tx(|t| {
         let out = adopt_foreign(t, profile, &foreign, confirmed, now)?;
         if let AdoptOutcome::Bound { col, carry, .. } = &out {
-            ensure_self(t, *col, profile, now)?;
+            ensure_self(t, *col, profile, now, pending)?;
             carry_salts(t, *col, carry, now)?;
         }
         Ok((outcome_json(&out), out.binding_changed().cloned()))

@@ -293,6 +293,22 @@ fn another_collection_needs_confirmation_and_bad_files_change_nothing() {
     .unwrap();
     // Q 是全新 profile、集合是空集合：G9-5「空集合可换绑」之后确认即换绑到对方（`bound`），不再写 Join。
     assert_eq!(got["outcome"], json!("bound"), "{got}");
+    // 换绑后在对方集合里重建的本机身份沿用原来的钥匙种子（`PendingSelf::carrying`）：副本身份是按它派生的，换个新副本
+    // 目录再读同一份输入全是已有的槽（没有一条以另一个合成设备再落；这一次的结论是 `saltsAdded`，见交接第五波节）。
+    let sc2 = tempdir::new("g114dbqsc2");
+    let again = try_g4(
+        q,
+        Q,
+        "legacy_backup_import",
+        legacy_req(&snap, "db", &sc2.0, json!({"confirmed": true})),
+    )
+    .unwrap();
+    assert_eq!(again["applied"], json!(0), "{again}");
+    assert_eq!(again["counts"]["inserted"], json!(0), "{again}");
+    assert_eq!(
+        again["counts"]["same"], again["counts"]["applied"],
+        "{again}"
+    );
     ffsrs_store_close(q);
 }
 
@@ -526,6 +542,93 @@ fn the_same_v1_events_from_a_fresh_scratch_change_nothing() {
     assert_ne!(devices(&other.0), devices(&dir.0));
     ffsrs_store_close(h2);
     ffsrs_store_close(h);
+}
+
+/// 覆盖还原之后的第一次合并（第五波 G9 身份收尾，交接 §25「没做」）：同一份 v1 事件读进一个**没有任何绑定**的空库
+/// （覆盖还原 = 空库 + 并入），先没确认（`needsConfirm`）、再确认（`bound`），之后换一个新副本目录隔天再读一遍：全是
+/// 已有的槽（`unchanged`）。以前 profile 没绑定时副本身份只能随机、本机身份在落库事务里另随机生成，第二次读入以另一个
+/// 合成设备再落一遍；现在落库前先定好本机身份（`PendingSelf`），副本身份从它派生。
+#[test]
+fn the_first_merge_after_landing_into_an_unbound_profile_changes_nothing() {
+    let m = migrated();
+    let legacy = m.d._dir.0.join("srs.db");
+    let work = tempdir::new("g9n7ev");
+    let jsonl = work.0.join("events.jsonl");
+    std::fs::write(&jsonl, v1_events(&legacy)).unwrap();
+    let land = |h: *mut SrsCoreHandle, scratch: &Path, confirmed: bool, now: i64| {
+        let r = legacy_req(
+            &jsonl,
+            "events",
+            scratch,
+            json!({"confirmed": confirmed, "now": now}),
+        );
+        try_g4(h, P, "legacy_backup_import", r).unwrap()
+    };
+    let dir = tempdir::new("g9n7to");
+    let h = open(&dir.0, 0).unwrap();
+    let s1 = tempdir::new("g9n7s1");
+    let ask = land(h, &s1.0, false, T1);
+    assert_eq!(ask["outcome"], json!("needsConfirm"), "{ask}");
+    let first = land(h, &s1.0, true, T1);
+    assert_eq!(first["outcome"], json!("bound"), "{first}");
+    assert_ne!(first["unchanged"], json!(true), "{first}");
+    try_g4(h, P, "cache_config_set", json!({"caches": cfg()})).unwrap();
+    let before = all_derived(&dir.0);
+    let exported = export_bytes(h, P);
+    let s2 = tempdir::new("g9n7s2");
+    let again = land(h, &s2.0, true, T1 + 86_400_000);
+    assert_eq!(again["unchanged"], json!(true), "{again}");
+    assert_eq!(again["applied"], json!(0), "{again}");
+    assert_eq!(all_derived(&dir.0), before);
+    assert_eq!(export_bytes(h, P), exported);
+    ffsrs_store_close(h);
+}
+
+/// 读快照定好本机秘密（profile 没绑定 → 预先生成的身份）、备好副本之后，落库之前 profile 被别的命令绑定并建了本机身份
+/// （打开 profile 的 `identity`）：落库那一笔核对出本机秘密已经不是备副本用的那个，整条命令失败、什么都不留
+/// （`LOCAL_IDENTITY_MOVED`）。重发按新的秘密重备、落下；之后换新副本目录再读同一份输入全是已有的槽。没有这道核对时副本
+/// 身份按预先生成的秘密派生、实际本机秘密却是并发建的那个，第三次读入会以另一个合成设备再落一遍。
+#[test]
+fn a_local_identity_created_while_the_copy_is_prepared_fails_the_landing() {
+    let m = migrated();
+    let legacy = m.d._dir.0.join("srs.db");
+    let work = tempdir::new("g9idmv");
+    let jsonl = work.0.join("events.jsonl");
+    std::fs::write(&jsonl, v1_events(&legacy)).unwrap();
+    let dir = tempdir::new("g9idmvto");
+    let core = G4Core::open(&dir.0, OpenMode::Primary).unwrap();
+    let req = |scratch: &Path, now: i64| {
+        let mut r = legacy_req(
+            &jsonl,
+            "events",
+            scratch,
+            json!({"confirmed": true, "now": now}),
+        );
+        r["profile"] = json!(P);
+        r
+    };
+    let s1 = tempdir::new("g9idmvs1");
+    let e = crate::store::gen4::dispatch::legacy_backup_import(&core, P, &req(&s1.0, T1), &|c| {
+        c.write(|t| super::identity::identity_ensure(t, P, T1))
+            .map(|_| ())
+    })
+    .unwrap_err();
+    assert_eq!(e, super::backup::LOCAL_IDENTITY_MOVED);
+    let none = |_: &G4Core| Ok(());
+    let landed =
+        crate::store::gen4::dispatch::legacy_backup_import(&core, P, &req(&s1.0, T1), &none)
+            .unwrap();
+    assert_ne!(landed["unchanged"], json!(true), "{landed}");
+    let s2 = tempdir::new("g9idmvs2");
+    let again = crate::store::gen4::dispatch::legacy_backup_import(
+        &core,
+        P,
+        &req(&s2.0, T1 + 86_400_000),
+        &none,
+    )
+    .unwrap();
+    assert_eq!(again["applied"], json!(0), "{again}");
+    assert_eq!(again["unchanged"], json!(true), "{again}");
 }
 
 // ---------------------------------------------------------------------- 身份确认 / 预检 / 不可信输入

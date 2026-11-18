@@ -429,7 +429,7 @@ void main() {
     });
     tearDown(() => root.deleteSync(recursive: true));
 
-    test('发布后列得出名字与有无笔记；说明文件落在同步 v2 的设备目录里', () async {
+    test('发布后列得出名字与有无笔记；说明文件落在新代根 v4/ 的设备目录里（旧根不碰）', () async {
       await srsPublishProfileInfo(
         store,
         profileUid: kOther,
@@ -452,11 +452,62 @@ void main() {
       expect(list.single.hasNotes, isTrue);
       expect(
         File(
-          '${root.path}/$kSrsSync2Namespace/$kOther/$kSrsSync2Folder/devices/'
+          '${root.path}/$kSrsSync2Namespace/$kOther/$kSrs4Root/devices/'
           'host#1/$kSrsProfileInfoName',
         ).existsSync(),
         isTrue,
       );
+      expect(
+        Directory(
+          '${root.path}/$kSrsSync2Namespace/$kOther/$kSrsSync2Folder',
+        ).existsSync(),
+        isFalse,
+      );
+    });
+
+    // 第五波 G9 身份收尾（交接 §34「没做」）：新代全新集合只有 `v4/` 根，说明文件在 `v4/devices/<设备>/`（规划 G-6）。
+    // 列表（WebUI 勾选列表、关联候选）读得出名字、设备名与笔记数；旧根 `v3/devices/` 里协议 3 设备的说明文件照样读，
+    // 同一台设备两边都有只算一个写入者；只有 head 的新代设备目录不算写入者。
+    test('新代全新集合：v4/devices 里的说明文件列得出名字与笔记数，与旧根同名设备只算一次', () async {
+      await srsPublishProfileInfo(
+        store,
+        profileUid: kOther,
+        writerId: 'd4',
+        name: 'Main',
+        hasNotes: true,
+        device: 'Pixel 9',
+        noteCount: 12,
+      );
+      final String ns = await store.ensureNamespace(kSrsSync2Namespace);
+      final String profile = await store.ensureFolder(ns, kOther);
+      final String v4 = await store.ensureFolder(profile, kSrs4Root);
+      await store.ensureFolder(await store.ensureFolder(v4, 'devices'), 'bare');
+      SrsRemoteProfile p = (await srsListRemoteProfiles(store)).single;
+      expect(p.names, <String>{'Main'});
+      expect(p.displayName, 'Main');
+      expect(p.noteCount, 12);
+      expect(p.devices, <String>['Pixel 9']);
+      expect(p.writers, <String>[srsV2WriterName('d4')]);
+      // 协议 3 的设备（旧根）与同一台设备的旧说明文件：都读，写入者不重复。
+      final String v3 = await store.ensureFolder(profile, kSrsSync2Folder);
+      final String v3devices = await store.ensureFolder(v3, 'devices');
+      for (final (String dev, String json) in <(String, String)>[
+        ('d4', '{"v":1,"name":"Main","hasNotes":true,"notes":3}'),
+        ('p3', '{"v":1,"name":"Old","hasNotes":true,"notes":20}'),
+      ]) {
+        final String w = await store.ensureFolder(v3devices, dev);
+        final File f = File('${root.path}/info.json')..writeAsStringSync(json);
+        await store.putAsset(w, kSrsProfileInfoName, f);
+        f.deleteSync();
+      }
+      p = (await srsListRemoteProfiles(store)).single;
+      expect(p.names, <String>{'Main', 'Old'});
+      expect(p.noteCount, 20);
+      expect(p.writers.toSet(), <String>{
+        srsV2WriterName('d4'),
+        srsV2WriterName('p3'),
+      });
+      expect(p.writers.length, 2);
     });
 
     test('新代集合根 v4/ 不是写入者目录（G8-7 起云端会有 fushi-srs/<dir>/v4/）', () async {
@@ -644,6 +695,44 @@ void main() {
         Directory('${root.path}/$kSrsSync2Namespace/$kMine').existsSync(),
         isTrue,
       );
+    });
+
+    // 改绑而旧集合里还有别的设备（`joined` + `rebound`，v4Device 不给）：本机新代设备目录留着（别的设备还要从那里收
+    // 本机之前的段），但本机的说明文件要删——它在 `v4/devices/<本机>/` 里，留着别的设备就一直把旧目录当候选。
+    test('清理不删新代设备目录时也删掉本机的说明文件', () async {
+      await srsPublishProfileInfo(
+        store,
+        profileUid: kMine,
+        writerId: 'me4',
+        name: 'Main',
+        hasNotes: true,
+      );
+      final String ns = await store.ensureNamespace(kSrsSync2Namespace);
+      final String profile = await store.ensureFolder(ns, kMine);
+      final String v4 = await store.ensureFolder(profile, kSrs4Root);
+      final String devices = await store.ensureFolder(v4, 'devices');
+      final String me = await store.ensureFolder(devices, 'me4');
+      final File seg = File('${root.path}/seg.bin')..writeAsStringSync('x');
+      await store.putAsset(me, 'head-000000000001-00000000.json', seg);
+      seg.deleteSync();
+      expect((await srsListRemoteProfiles(store)).single.writers, <String>[
+        srsV2WriterName('me4'),
+      ]);
+      await srsRemoveOwnProfileFolder(
+        store,
+        profileUid: kMine,
+        deviceId: kDevice,
+        v2Device: 'me4',
+      );
+      final String meDir =
+          '${root.path}/$kSrsSync2Namespace/$kMine/$kSrs4Root/devices/me4';
+      expect(Directory(meDir).existsSync(), isTrue);
+      expect(
+        File('$meDir/head-000000000001-00000000.json').existsSync(),
+        isTrue,
+      );
+      expect(File('$meDir/$kSrsProfileInfoName').existsSync(), isFalse);
+      expect((await srsListRemoteProfiles(store)).single.writers, isEmpty);
     });
   });
 }

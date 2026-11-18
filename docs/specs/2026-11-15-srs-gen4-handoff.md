@@ -3315,3 +3315,106 @@ v4 整个删掉 → 新根不见了、不重建，删围栏后重建、媒体根
 
 另：全量 `cargo test --profile quick --lib` 一次里 `store::gen4::files::tests::a_fresh_install_appears_under_the_final_name_only_when_complete`
 红过一次（目录里多出 `SRS4.DB-SHM.tmp`），单跑 3/3 绿，本分支没碰 `files.rs`——高负载下的偶发，留给新代库文件层的所有者看。
+
+## 第五波 G9 身份收尾（2026-11-18，分支 `pr/srs-gen4-w5-identity-tail`，基于 `pr/srs-gen4-switch` `3d78fe51d0`）
+
+审计 G9 项（B1、B7、N7、N11、C11、X1）的六件事，内核 SCHEMA 40021 → 40023（本分支分到的号）。
+
+### 做了什么、取舍
+
+- **① 空集合判据（`962462eafa`）**：`gen4/discard.rs` 的 `disposable` 以前只认「只有 `Salts`」，app 里的全新设备开库就写了内置
+  种子（`SrsDbStore.ensureBuiltins`），关联已有集合一律 `joined` + `Join`。现在与 K2 首见信任共用**同一份**判据
+  `Truth::library_fresh`（`truth/trust.rs`，它顺带补查 `op_forks`），`disposable` 只在它之外再看「别的设备 / 对等方 / 位置游标 /
+  已发布 / 本机日志里有 `Join`」这几条廉价条件（`DISPOSABLE_SQL`）。只有内置种子与盐 = 空，D27 方向上换绑（`bound`）、不写 `Join`。
+  测试：内核 `cmd/profile_data_tests.rs` `a_profile_with_only_builtin_seeds_binds_without_a_join`；Dart 真内核端到端
+  `srs_profile_link_sync_test`「全新设备（开库已写内置种子、从没同步过）关联已有集合：bound，两边日志里都没有 Join」。
+- **② BUG-4836 写入口实体归属闸（`e7ad8988eb`）**：选「写入口设闸」而不是「并入时丢悬空操作」。新文件
+  `gen4/cmd/writes_owner.rs`，唯一判据 `Session::foreign`：一条本机操作指向的实体在库里别的集合有（`ent_ix.id` /
+  `alias_ix.canon` / `cards.id`）、本集合一点痕迹都没有（身份、别名类、卡片行、修改 / 日志 / 标签索引行、同一批要建的实体；
+  先不收尾查，没查到再收尾查一遍）时不写：`apply_in` 那一项 `landed: false` 并把下标放进回包 `foreign`，`purge` 跳过并回
+  `foreign`，`sched` 按「没有这张卡」跳过（撤销计入 `blocked`）。库里只有一个集合时一条查询就放行（`others` 缓存在 `Session`）。
+  - 并集收敛不受影响：闸只决定本机要不要写下一条操作；写下之后的传播 / 收段 / 导入 / 并入语义一个字没改，几台设备的状态仍只由
+    同一份操作集合决定。丢悬空操作的修法要给「并入时不存在」定跨设备一致的判据，还会误丢合法的先写后有。
+  - SCHEMA 40023：三个按 ID 跨集合查的部分索引 `ent_id ON ent_ix(id)`、`alias_canon_any ON alias_ix(canon) WHERE canon != id`、
+    `cards_id ON cards(id)`，都带 `col > 0`——只有归属闸的查询写这个条件，规划器不会拿它们替换既有查询的索引（不带条件时
+    `s1b_statements_use_their_keys` 被 `alias_canon_any` 抢走，加统计也压不住）。`PLANNER_STATS` 补了三行。
+  - 测试：`cmd/writes_owner_tests.rs`（三条，含两条执行计划断言）；engine `srs_profile_ownership_merge_test.dart`（bug 复现：A 写
+    B 的 ID 一条不落 → A 并进 B → B 不变）；`editFields` 别人的笔记回空、批量改卡别人的卡不落。**更正（复核）**：这一版把
+    `srs_profile_ownership_test.dart` 矩阵判据改成「不多于不存在的 ID」并称之为收紧，实际是放宽，盖住了身份记录与 profile 设置
+    两类泄漏；闸也确实漏了这两类。见下面「复核后补修」。
+- **③ 覆盖恢复后第一次合并同一份旧输入多落一份（`e2f517c820`）**：根因是旧备份读入（`legacy_backup_import`）在 profile 还没
+  绑定时先用随机 scratch 身份落库、之后 `collection_adopt` 才生成本机身份，下一次合并同一份输入时 scratch 身份对不上。修法：
+  `cmd/identity.rs` 加 `PendingSelf`（先生成本机设备 ID 与种子），scratch 身份从它派生，`collection_adopt_with` 把它定为本机身份；
+  `cmd/backup.rs` 的 `prepared_marker` 把密钥指纹（blake3 derive-key）算进标记。测试 `cmd/backup_tests.rs`
+  `the_first_merge_after_landing_into_an_unbound_profile_changes_nothing`。
+- **④ 墓碑设备 ID 改向内核要（`cb1d756508`）**：`gen4_ids/derive.rs` 加 `tombstone_device` 一种（`gen4::location::tombstone_device`），
+  Dart `srsTombstoneDevices(dirs)` 一次批量走 `ids`，`srs_profile_link.dart` 不再拿命名空间自己 `uuidV5`。守卫
+  `srs_kernel_ids_guard_test` 转绿。
+- **⑤ `srs_db_store_test`「覆盖恢复备份后：换新化身…」改写成新代**：不再删协议 3 的本机表，改为整包导出
+  （`srsExportBackupStreams`）→ 空的新代库 → `srsLandBackupUnit(confirmed: true)`（`bound`）→ 按原 profile 打开，断言同一个集合。
+- **⑥ 新代全新集合在 WebUI / 关联列表里没有名字与笔记数**：`srsPublishProfileInfo` 改写到 `v4/devices/<设备>/profile.json`
+  （规划 G-6、内核 `gen4/location.rs` 的布局），`srsListRemoteProfiles` 在 `v4/` 根下读各设备的说明文件（只有发布了说明文件的设备
+  算写入者，名字仍是 `srsV2WriterName`），旧根 `v3/devices/` 照旧读（协议 3 设备）。笔记数仍由调用方向内核 `entity_count` 要
+  （`userNoteCount`），Dart 不存镜像。`srsRemoveOwnProfileFolder` 在没有新代设备目录可删时只删本机的说明文件。测试在
+  `srs_profile_link_test.dart`（两条新用例 + 路径断言改为 v4、旧根没有）。
+
+### 变异实测（各自单独改，跑完还原，工作区干净）
+
+- 内核：归属闸恒放行 → `writes_owner_tests` 红；不用 `PendingSelf` → `backup_tests` 新用例红；标记不含密钥指纹 → 红；
+  `disposable` 不看 `library_fresh` / 回到只认 `Salts` → `profile_data_tests` 新用例红。
+- Dart：读端不读 `v4/devices/*/profile.json` → 15 条红；清理不删说明文件 → 1 条红；发布写回旧根 → 1 条红。
+
+### 没做 / 留给后面
+
+- `fushi_server`（headless host）至今不发布 `profile.json`，WebUI 列表里 server 那一端的新代集合仍没有名字 / 笔记数；要接 host
+  钩子，见 `server-parity-gaps.md`，本分支没碰 server。
+- `PendingSelf` 只在 `legacy_backup_import` 遇到未绑定 profile 时生成；同一 profile 若同时有别的路径在建立本机身份（并发的
+  `collection_adopt`），以先提交的为准，scratch 身份可能对不上、下一次合并会再落一份。按现有单写者调度不会并发，未加测试，
+  未实测。（第二轮已修：落库时核对、对不上整条失败，见「复核后补修」。）
+- 闸之前已写下的悬空操作挡不住：新代还没发布、协议 3 有 `ownership.rs` 闸且 ID 带盐，迁移来的日志里没有这种存量。
+
+### 复核后补修（2026-11-18 第二轮）
+
+复核实测出第一版的四个问题，按根因补了：
+
+- **归属闸漏了身份记录与 profile 设置实体（`089ff6b293`）**。身份记录：以前不过闸、还直接进 `Born`，A 写一条 B 的笔记的身份
+  记录（伪造 guid、A 的笔记类型）就落了，同批对这条笔记的修改也借它过闸；并入后 `derive.rs` 的「规范 JSON 最小者胜」可能拿 A 的
+  那份顶掉 B 的。profile 设置实体：不在 `ent_ix` / `alias_ix` / `cards` 留痕迹，A 拿 B 的 uid 改设置照写，并入（盐取并集）后
+  成了 B 的。取舍：
+  - **身份记录不能简单按「别的集合有、本集合没有」拒**：ID 不加盐后，内置笔记类型、默认牌组、按全名派生的牌组、按 guid 派生的
+    笔记在两个集合里天然同 ID——第二个 profile 导入同一个包、导入同一份挖词历史（`srs_mined_history_import.dart` 按内容定 guid、
+    走 `createNote` 即 `apply`）、建同名牌组都会被误拒。所以按种类判：笔记身份记录的 ID 等于 `v5(NS, note/<自己的 guid>)` 的放行，
+    对不上的（随机 guid 新建的、存量带盐的、伪造的）按原判据判；牌组 / 笔记类型的身份记录不判（对它们的修改仍判）；卡片身份记录
+    按原判据判；判身份记录时不拿 `Born` 给它自己作保，只有过了闸的才进 `Born`（`apply_in` 先过一遍身份记录）。
+  - profile 设置实体按协议 3 `ownership.rs` 的口径：ID 是别的集合绑定的 profile uid 或盐、又不是本集合的才拒（`PROFILE_SQL`，
+    `collections` 几行、`json_each(salts)`），规范值 `v5(NS, profile)` 永远放行。
+  - 残留：伪造一条 guid 与 B 的笔记一致、但笔记类型换掉的身份记录仍会过闸——它与「别的集合独立导入同一份内容」在写入口分不出来。
+    正常写入口不会这样写；要彻底防得改并入时同 ID 身份记录的取舍规则，不在本模块。
+- **写入口矩阵判据改回能发现漏闸**：`srs_profile_ownership_test.dart` 按入口断言 A 为别人的 ID 一条都不写（只碰别人 ID 的入口：
+  A 的日志长度不变；同时写自己实体的 `dismissDuplicates 自己的 + 别人的`（实测只有它）：A 的真相里没有指向别人
+  ID 的操作）；远程路由那组断言 0 条。
+- **`sched` 闸补测试**：`writes_owner_tests` `sched_skips_another_collections_cards`（迁移来的集合 + 同库第二个集合：重置 / 改期 /
+  撤销别人的卡，A 的日志不增、撤销计入 `blocked`；对照组陌生的卡照写）。
+- **`PendingSelf` 的 TOCTOU 与换绑（`6797d17551`、`395161488c`）**：分发器在读快照里定副本身份用的本机秘密，落库在之后的写事务里。
+  ① 落库那一笔核对「集合此刻的本机秘密 == 备副本时用的」，对不上整条命令失败、什么都不留（`LOCAL_IDENTITY_MOVED`，重发即按新
+  秘密重备），不再静默落下一份之后会重复的数据。测试 `backup_tests`
+  `a_local_identity_created_while_the_copy_is_prepared_fails_the_landing`（经 `dispatch::legacy_backup_import` 的 `before_land`
+  钩子在备好副本之后插入并发的 `identity`）。② 这道核对顺带暴露了复核说的「绑到别的集合时种子不一致」的真实路径：已绑定的全新
+  profile 读进别的集合的旧备份时走「空集合可换绑」（`rebind_empty`），对方集合里重建的本机身份以前是现生成的钥匙，副本身份却按
+  旧集合的钥匙派生——换绑之后再读同一份输入会以另一个合成设备再落一遍。修法：已绑定时 `PendingSelf::carrying` 沿用现有钥匙种子、
+  设备 ID 照旧新生成（被丢掉的空集合导出过的话，同一设备号从头记会撞号；钥匙只在本机、空集合从没发布过，沿用不扩大暴露面）。
+  测试：`another_collection_needs_confirmation_and_bad_files_change_nothing` 补「换绑后换新副本目录再读：`applied` 0、`inserted` 0」。
+  观察（未查）：这第二次读入的结论是 `saltsAdded`（补写一条 `Salts`），不是 `same`；没有重复数据。
+- 小项：`discard.rs` `DISPOSABLE_SQL` 恢复 `\` 续行（语义不变）。
+
+变异实测（各自单独改、跑完还原、工作区干净）：身份记录恒放行 → `another_collections_identity_records_are_not_written` 红；
+profile 判据恒放行 → `another_collections_profile_settings_are_not_written` 红；内容派生放行关掉 → `another_collections_entities_are_not_written`
+红；`sched` 闸关掉 → `sched_skips_another_collections_cards` 红；落库核对关掉 → `a_local_identity_created_…` 红；`carrying` 换回 None →
+`another_collection_needs_confirmation_…` 红。
+
+没做（归属）：
+
+- `fushi_server` 不发布 `profile.json`：已登记进 `docs/agent/server-parity-gaps.md`「Other known gaps / SRS follow-ups」，归 server
+  模块（要定 server 端的名字来源，笔记数向内核要）。
+- 未绑定时预检与确认两次请求各生成一份 `PendingSelf`，副本整份重备两遍（性能代价，结果正确）；要省得把预先生成的身份跨请求
+  留存，没做。

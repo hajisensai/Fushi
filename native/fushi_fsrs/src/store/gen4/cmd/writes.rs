@@ -30,8 +30,10 @@
 //! - **按规范 ID 写**（D5，规划 §1.5）：输入里的 ID（实体、修改键与值里嵌的 ID、日志的卡 / 笔记 / `revokes`、标签的
 //!   笔记）先按这个集合的别名表归一（`alias.rs` [Index::canonical]，命令开始时已收好的那张表），再写。不做「映射到已
 //!   有别名成员」的过渡层。
-//! - **没有跨 profile 的归属判定**：协议 3 的 `ownership.rs` 防的是「同一个 srs.db 里别的 profile 的实体」（带盐 ID
-//!   撞号）；新代一个集合一个 `col`，所有主键带 `col`，别的集合的实体在这里根本不可见。回包的 `foreign` 恒为空数组。
+//! - **实体归属闸**（BUG-4836，`writes_owner.rs`）：ID 不再加盐，同库别的集合的实体 ID 在这里虽然读不到，写下去却会成为
+//!   悬空操作、等本集合之后并进那个集合时对它生效。调用方给实体 ID 的写命令（`apply_in` / `purge` / `sched`）在写之前
+//!   问 [Session::foreign]：别的集合有、本集合一点痕迹都没有的实体不写（身份记录与 profile 设置实体的判法见
+//!   `writes_owner.rs` 文件头）；`apply` 一族回包的 `foreign` 交回这些项的下标。
 //! - **回包**：命令自己的键之外，[write] 统一补上 `changed`（`[种类, 规范实体 ID]`，碰过的实体）、`purged`（彻底清除的
 //!   实体）、`replayed`（写了日志的卡）、`edits`（`[种类, 实体, 字段键, 设备, 序号, 值]`，撤销据它判断之后有没有
 //!   被别人动过，与协议 3 同形）、`nextSeq`（本机身份日志的下一个 seq）与 `settled`（这条命令里派生层收尾的计数，
@@ -87,6 +89,10 @@ use crate::sync2::op::{Body, EditBody, EntKind, Intent, LogBody};
 use crate::sync2::replay::SNAPSHOT_KEY;
 use crate::sync2::vv::OpId;
 
+#[path = "writes_owner.rs"]
+mod owner;
+pub(super) use owner::Born;
+
 /// 一个实体的修改行（寄存器内核的落库行 JSON + server_time），`registers` 的输入。
 pub(super) type Lines = Vec<(String, Option<i64>)>;
 
@@ -125,6 +131,8 @@ pub struct Session<'t, 'c> {
     entity_writes: Vec<Value>,
     /// 请求带 `editRows: true`：收尾时给 `edits` / `tagWrites` 补上落库修改行（文件头「回包」，[Session::attach_rows]）。
     edit_rows: bool,
+    /// 库里有没有别的集合（实体归属闸 [Session::foreign] 用；None = 还没问过）。
+    others: Option<bool>,
 }
 
 /// 一条写命令（见文件头「一条命令一个事务」）：[f] 在 [Session] 里做命令本体，返回命令自己的回包（JSON 对象）；
@@ -172,6 +180,7 @@ impl<'t, 'c> Session<'t, 'c> {
             log_hlcs: None,
             entity_writes: Vec::new(),
             edit_rows: false,
+            others: None,
         })
     }
 
@@ -755,7 +764,8 @@ fn parse_item(it: &Value) -> Result<Item, String> {
 }
 
 /// `apply` 的本体（协议 3 `apply_local_on` 的新代版），在 [s] 里做；意图命令拼好输入也走这里。回包
-/// `{"landed": [每项落没落], "foreign": []}`，`landed` 与 [items] 等长：`chg` 筛掉的、标签写入展开为空的是 false。
+/// `{"landed": [每项落没落], "foreign": [下标]}`，`landed` 与 [items] 等长：`chg` 筛掉的、标签写入展开为空的、指向别的
+/// 集合的实体的（实体归属闸，`writes_owner.rs`；下标是 [items] 里的位置，进 `foreign`）是 false。
 ///
 /// - `chg`（store/sync2/changing.rs 的判据，[registers::write_is_noop]）：值没变的修改不写；同一批里同一个
 ///   (种类, 实体, 字段键) 按顺序判，后一项比前一项写下的值。
@@ -779,11 +789,35 @@ pub(super) fn apply_in(
         parsed.push(Item { body, ..item });
     }
     let keep = drop_noops(s, &parsed)?;
+    // 实体归属闸（`writes_owner.rs`）：身份记录先各自过闸；过了闸的、这一批要建的实体算本集合的（同批先后到）。
+    let mut entity_foreign = vec![false; parsed.len()];
+    let mut born = Born::new();
+    for (at, item) in parsed.iter().enumerate() {
+        if !keep[at] {
+            continue;
+        }
+        if let Body::Entity { id, .. } = &item.body {
+            if s.foreign_body(&item.body, &Born::new())? {
+                entity_foreign[at] = true;
+            } else {
+                born.insert(id.text());
+            }
+        }
+    }
+    let mut foreign: Vec<usize> = Vec::new();
     // 标签：这一批要碰的笔记此刻的标签（批内写过的按批内的算，见 [expand_tags]）。
     let mut tags_now: HashMap<String, Vec<String>> = HashMap::new();
     let mut landed = vec![false; parsed.len()];
     for (at, item) in parsed.into_iter().enumerate() {
         if !keep[at] {
+            continue;
+        }
+        let theirs = match &item.body {
+            Body::Entity { .. } => entity_foreign[at],
+            b => s.foreign_body(b, &born)?,
+        };
+        if theirs {
+            foreign.push(at);
             continue;
         }
         s.at = opts.origin.of(at);
@@ -828,9 +862,9 @@ pub(super) fn apply_in(
             .filter(|(_, k)| **k)
             .map(|(l, _)| l)
             .collect();
-        return Ok(json!({"landed": landed, "foreign": []}));
+        return Ok(json!({"landed": landed, "foreign": foreign}));
     }
-    Ok(json!({"landed": landed, "foreign": []}))
+    Ok(json!({"landed": landed, "foreign": foreign}))
 }
 
 /// `chg` 筛选（见 [apply_in]）：每项留不留。
@@ -1084,7 +1118,8 @@ pub fn import_drafts(
 }
 
 /// `purge`（彻底清除一批同类实体，协议 3 `local_write_body` 的 `purge` 分支）：每个实体「删除 + 清除」两条操作，按
-/// 输入顺序，一笔落下。[req]：`{"now", "kind", "entities": [...]}`（非空）。不存在 / 已清除过的照常追加（清除幂等）。
+/// 输入顺序，一笔落下。[req]：`{"now", "kind", "entities": [...]}`（非空）。不存在 / 已清除过的照常追加（清除幂等）；
+/// 别的集合的实体（实体归属闸，`writes_owner.rs`）不写，回包 `foreign` 交回它们在 `entities` 里的下标。
 pub fn purge(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String> {
     let now = now_of(req)?;
     let kind = req["kind"].as_str().ok_or("purge: missing kind")?;
@@ -1093,16 +1128,35 @@ pub fn purge(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String> {
         .and_then(Value::as_array)
         .filter(|e| !e.is_empty())
         .ok_or("purge: missing entities")?;
-    let mut bodies = Vec::with_capacity(entities.len() * 2);
+    let mut bodies = Vec::with_capacity(entities.len());
     for e in entities {
         let e = e.as_str().ok_or("purge: entity is not a string")?;
-        bodies.extend(crate::store::sync2::purge_bodies(kind, e, now)?);
+        bodies.push(crate::store::sync2::purge_bodies(kind, e, now)?);
     }
     write(t, col, |s| {
-        for b in bodies {
-            s.land(b, now)?;
+        let mut foreign: Vec<usize> = Vec::new();
+        for (at, pair) in bodies.into_iter().enumerate() {
+            // 归属按归一后的实体判（清除操作体里那一条，删除与清除指向同一个实体）。
+            let canon: Vec<Body> = pair
+                .into_iter()
+                .map(|b| s.canon_body(b))
+                .collect::<Result<_, _>>()?;
+            let mut theirs = false;
+            for b in &canon {
+                if s.foreign_body(b, &Born::new())? {
+                    theirs = true;
+                    break;
+                }
+            }
+            if theirs {
+                foreign.push(at);
+                continue;
+            }
+            for b in canon {
+                s.land(b, now)?;
+            }
         }
-        Ok(json!({}))
+        Ok(json!({"foreign": foreign}))
     })
 }
 

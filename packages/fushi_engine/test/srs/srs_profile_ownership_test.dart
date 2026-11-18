@@ -9,11 +9,11 @@
 //
 // - 读：笔记 / 笔记类型 / 牌组 / 卡片 / 复习历史 / 修改记录 / 修改历史，逐个入口；
 // - 写：SrsDbStore 的每个按 ID 的写入口（改字段、删笔记、卡片标志、手动排程、作答、牌组、彻底清除、合并重复、
-//   笔记类型……）各跑一遍，之后 B 的整份真相与视图逐条不变；A 这边多出的操作与给「哪里都没有的 ID」时一样多。
-//   **这是相对协议 3（BUG-4626）放宽了的判据**：协议 3 在追加前就拒绝（`ownership.rs` 的 foreign），A 一条操作都
-//   不多；新代允许 A 的集合里留下指向 B 的实体 ID 的悬空操作。同库两集合互不影响时没有后果，但 A 并入 B（G9-5 的
-//   collection join = 操作并集，ID 不再按 uid 加盐）之后这些悬空操作会不会对 B 的同一实体生效，要在并入接线后
-//   补一条「A 写 B 的 ID → 并入 → B 不被改」的用例确认（交接 T1 节「待 G9-5 确认」）；
+//   笔记类型……）各跑一遍，之后 B 的整份真相与视图逐条不变；对调用方的结局与给「哪里都没有的 ID」时同一类；A 为 B 的
+//   ID **一条都不写**（只碰 B 的 ID 的入口：A 的日志长度不变；同时写自己实体的入口 [_writesOwnToo]：A 的真相里没有
+//   指向 B 的 ID 的操作）。没人的 ID 照旧落悬空记录，B 的实体 ID 在写入口就被实体归属闸拦下（内核
+//   `gen4/cmd/writes_owner.rs`，BUG-4836：A 的集合之后并进 B 时，悬空操作会对 B 的同名实体生效，所以不能写下）。
+//   并入之后 B 不被改的端到端在 `srs_profile_ownership_merge_test.dart`；
 // - 远程复习的主机路由（srs_remote_store_routes.dart）：点名 A、参数里给 B 的 ID，同样读不到、写不落；
 // - 正常路径：同样的入口对本 profile 自己的 ID 照常生效。
 import 'dart:convert';
@@ -129,6 +129,22 @@ class _Env {
   /// `Truth::advance_purge`），清除一条笔记追加 删除 + 清除 两条、空洞掉它更早的几条，`ops` 反而变少。
   Future<int> ops(String uid) async =>
       ((await _storeOf(uid).sync2Status())['nextSeq']! as int) - 1;
+
+  /// [uid] 的整份真相里指向 [ids] 的操作条数（身份记录看它的 ID、修改记录看实体、复习日志看卡）。数「A 有没有为 B 的
+  /// ID 写下东西」用：同时会写 A 自己实体的入口（[_writesOwnToo]）不能只数 [ops]。
+  Future<int> pointingAt(String uid, Set<String> ids) async {
+    int n = 0;
+    for (final SrsEvent e in await _storeOf(uid).exportAll()) {
+      final String? target = switch (e) {
+        SrsEntityEvent(:final SrsEntityRecord record) => record.id,
+        SrsEditEvent(:final SrsFieldEdit edit) => edit.entityId,
+        SrsLogEvent(:final SrsReviewLog log) => log.cardId,
+        SrsUnknownEvent() => null,
+      };
+      if (target != null && ids.contains(target)) n++;
+    }
+    return n;
+  }
 }
 
 /// 一次调用的结局：正常返回（连同返回值的文本）或抛了哪一类错。
@@ -320,6 +336,13 @@ final Map<String, _Write> _writes = <String, _Write>{
   ),
 };
 
+/// [_writes] 里同时写调用方自己实体的入口：它们给自己的实体写操作是本分（日志会变长），对它们只断言「真相里没有指向
+/// 别人 ID 的操作」（[_Env.pointingAt]），不断言日志长度不变。
+const Set<String> _writesOwnToo = <String>{
+  // 自己那条笔记上照常记「与那条不是重复」（实体是自己的笔记，键里带对方的 ID：`notDup/<对方>`），别人的那条不写。
+  'dismissDuplicates 自己的 + 别人的',
+};
+
 /// 哪里都没有的一组 ID（[n] 区分各用例，免得上一条留下的悬空记录影响下一条）。
 _Target _nowhere(int n) {
   String id(String what) => uuidV5(srsNamespace, 'nowhere/$n/$what');
@@ -479,11 +502,22 @@ void main() {
         final SrsDbStore a = env.a.store;
         final List<String> bBefore = await env.dump(kB);
         final int opsBefore = await env.ops(kA);
+        final int pointingBefore = await env.pointingAt(kA, env.b.ids);
 
         final String got = await _outcome(
           () => w.value(a, env.a, _Target.of(env.b)),
         );
         final int opsForeign = await env.ops(kA) - opsBefore;
+        // 实体归属闸（BUG-4836）：A 为 B 的 ID 一条都不写。只碰 B 的 ID 的入口按日志长度数（彻底清除之类不留在真相
+        // 视图里的也数得到）；同时写 A 自己实体的入口按真相里指向 B 的 ID 的操作数。
+        expect(
+          await env.pointingAt(kA, env.b.ids) - pointingBefore,
+          0,
+          reason: 'A 的真相里多了指向 B 的 ID 的操作（$got）',
+        );
+        if (!_writesOwnToo.contains(w.key)) {
+          expect(opsForeign, 0, reason: 'A 为别人的 ID 写了 $opsForeign 条操作（$got）');
+        }
 
         expect(await env.dump(kB), bBefore, reason: 'B 的真相被动了（$got）');
         // B 的 store 读到的也还是原样。
@@ -501,39 +535,37 @@ void main() {
           reason: 'B 专属的笔记类型还在、没被改名（$got）',
         );
 
-        // 对调用方：与「哪里都没有的 ID」同一类结局（正常返回 / 抛同一类错），A 这边多出的操作也一样多——没人的
-        // ID 照旧落一条悬空记录（记在 A 自己的集合里），B 的 ID 在 A 的集合里就是没人的 ID。不比返回值（返回的是
-        // 那条悬空记录）。上面的写入没动 B，这份库接着用。
+        // 对调用方：与「哪里都没有的 ID」同一类结局（正常返回 / 抛同一类错）。不比返回值（返回的是那条悬空记录）。
+        // 上面的写入没动 B，这份库接着用。
         String kind(String o) => o.startsWith('ok') ? 'ok' : o;
-        final int opsMid = await env.ops(kA);
         final String absent = await _outcome(
           () => w.value(a, env.a, _nowhere(0)),
         );
         expect(kind(got), kind(absent), reason: '别人的 ID：$got；不存在的 ID：$absent');
-        expect(
-          opsForeign,
-          await env.ops(kA) - opsMid,
-          reason: 'A 多写的操作：别人的 ID 与不存在的 ID 不一样多（$got / $absent）',
-        );
         expect(await env.dump(kB), bBefore, reason: 'B 的真相被动了（$absent）');
       });
     }
 
-    test('改别人的字段：返回的与改一个不存在的 ID 相同，B 不变', () async {
+    test('改别人的字段：一条都不落（不存在的 ID 落悬空记录），B 不变', () async {
       final _Env env = await _Env.open();
       final SrsDbStore a = env.a.store;
       final _Side b = env.b;
       final _Target none = _nowhere(1);
       expect(
         (await a.editFields(SrsEntityKind.note, b.note, <String, Object?>{
-          SrsFieldKeys.noteField(b.expression): '被改',
-        }))?.length,
+              SrsFieldKeys.noteField(b.expression): '被改',
+            })) ??
+            const <SrsFieldEdit>[],
+        isEmpty,
+      );
+      expect(
         (await a.editFields(SrsEntityKind.note, none.note, <String, Object?>{
           SrsFieldKeys.noteField(none.expression): '被改',
         }))?.length,
+        1,
       );
       expect((await b.store.note(b.note))!.field(b.expression), '鳥');
-      // 一批里自己的照写；别人的卡与不存在的卡同样处理（要么都落悬空记录、要么都不落），B 的卡不变。
+      // 一批里自己的照写；不存在的卡落悬空记录，别人的卡被实体归属闸拦下（BUG-4836），B 的卡不变。
       final List<SrsFieldEdit> out = await a.editFieldsBatch(<SrsFieldChange>[
         SrsFieldChange(SrsEntityKind.card, b.card, SrsFieldKeys.flag, 3),
         SrsFieldChange(SrsEntityKind.card, none.card, SrsFieldKeys.flag, 3),
@@ -543,7 +575,8 @@ void main() {
         for (final SrsFieldEdit e in out) e.entityId,
       ];
       expect(written, contains(env.a.card));
-      expect(written.contains(b.card), written.contains(none.card));
+      expect(written, contains(none.card));
+      expect(written, isNot(contains(b.card)));
       expect((await a.cardRow(env.a.card))!.flag, 3);
       expect((await b.store.cardRow(b.card))!.flag, 0);
     });
@@ -724,7 +757,7 @@ void main() {
       expect((status, body['error']), (status0, body0['error']));
     });
 
-    test('写：B 的真相逐条不变，A 的结局与多出的操作同给不存在的 ID 时一样', () async {
+    test('写：B 的真相逐条不变，A 的结局同给不存在的 ID 时一样、为 B 的 ID 一条都不写', () async {
       final List<String> bBefore = await env.dump(kB);
       int request = 0;
       Map<String, Map<String, Object?>> writesOn(
@@ -820,7 +853,9 @@ void main() {
         },
         reason: '别人的 ID：$got；不存在的 ID：$absent',
       );
-      expect(foreignOps, absentOps, reason: '$got / $absent');
+      // 这里每个入口只碰 B 的 ID：A 一条都不写（实体归属闸，BUG-4836）；不存在的 ID 照旧落悬空记录。
+      expect(foreignOps, 0, reason: '$got / $absent');
+      expect(absentOps, greaterThan(0), reason: '$absent');
       // 没有一条回 500（内部错误）：要么照「没有这个实体」正常返回，要么是与不存在同样的 4xx。
       expect(
         got.values.where(((int, Object?) r) => r.$1 >= 500),

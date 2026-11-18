@@ -302,6 +302,61 @@ fn local_write(
 
 /// 不经 `Session` 落真相的写（`import`、同步一轮的 `ingest` / `ingest_finish` / `retire` / `rotate`）提交之后：回包里
 /// 命令放的 [Tally]（真有改动时是整份作废）取走、推进进程内刷新计数（`refresh.rs` 文件头「谁推进」）。
+/// `legacy_backup_import`：先在新代库的写锁之外用冻结的协议 3 代码备好副本，再在一个写事务里认领 + 旧备份读入 + 本机
+/// 状态行；绑定变了提交后进回包。Secondary 直接报只读（不白备副本）。[before_land] 在备好副本之后、进写事务之前跑
+/// （分发器给空操作；测试在这里插入并发的写，钉住 `cmd/backup.rs` [cmd::backup::LOCAL_IDENTITY_MOVED] 的核对）。
+pub(crate) fn legacy_backup_import(
+    c: &G4Core,
+    profile: &str,
+    req: &Value,
+    before_land: &dyn Fn(&G4Core) -> Result<(), String>,
+) -> Result<Value, String> {
+    if c.mode() == OpenMode::Secondary {
+        return Err(READ_ONLY.to_owned());
+    }
+    let anchor = crate::store::local_state::anchor_of(req)?;
+    // 副本身份的本机秘密（cmd/backup.rs `seed_scratch_identity`）：一个读快照取目标集合的本机签名钥匙种子。profile 还没
+    // 绑定（覆盖还原的空库）时先定好落库时要建的本机身份（cmd/identity.rs [PendingSelf]），拿它的种子：落库之前就有身份，
+    // 还原之后第一次合并同一份旧输入照样全是已有的槽（第五波 G9 身份收尾）。读快照与落库之间身份若被别的命令建了，落库
+    // 那一笔核对出来、整条命令失败（[cmd::backup::land]）。
+    let bound = c.read(|t| {
+        snapshot(t, |t| match t.binding_of(profile)? {
+            Some(b) => Ok(Some(t.self_identity(b.col)?.map(|s| s.sk))),
+            None => Ok(None),
+        })
+    })?;
+    // 已绑定、已有本机身份：认领若走「空集合可换绑」，对方集合里重建的本机身份沿用现有钥匙种子（[PendingSelf::carrying]），
+    // 否则现生成的钥匙与派生副本身份用的秘密对不上。
+    let now = int_of(req, "now")?;
+    let pending = match bound {
+        None => Some(cmd::identity::PendingSelf::generate(profile, now)),
+        Some(Some(sk)) => Some(cmd::identity::PendingSelf::carrying(profile, now, sk)),
+        Some(None) => None,
+    };
+    let secret = match (&bound, &pending) {
+        (Some(sk), _) => *sk,
+        (None, Some(p)) => Some(*p.seed()),
+        (None, None) => None,
+    };
+    let prepared = cmd::backup::prepare(req, secret.as_ref(), c.dir())?;
+    let src = super::dryrun::open_legacy(&prepared.db)?;
+    before_land(c)?;
+    let v = write_binding(c, |t| {
+        cmd::backup::land(
+            t,
+            profile,
+            req,
+            &prepared,
+            &src,
+            anchor.as_ref(),
+            pending.as_ref(),
+            secret.as_ref(),
+            &|t| col_of(t, profile),
+        )
+    })?;
+    Ok(noted(c, profile, v))
+}
+
 fn noted(c: &G4Core, profile: &str, mut v: Value) -> Value {
     let tally = Tally::take(&mut v);
     c.refresh_note(profile, tally, false);
@@ -625,27 +680,7 @@ fn run(
         }
         // 换代之前的整包备份 / 事件备份（cmd/backup.rs）：先在新代库的写锁之外用冻结的协议 3 代码备好副本，再在一个写事务
         // 里认领 + 旧备份读入 + 本机状态行；绑定变了提交后进回包。Secondary 直接报只读（不白备副本）。
-        "legacy_backup_import" => {
-            if c.mode() == OpenMode::Secondary {
-                return Err(READ_ONLY.to_owned());
-            }
-            let anchor = crate::store::local_state::anchor_of(req)?;
-            // 副本身份的本机秘密（cmd/backup.rs `seed_scratch_identity`）：一个读快照取目标集合的本机签名钥匙种子。
-            let secret = c.read(|t| {
-                snapshot(t, |t| match t.binding_of(profile)? {
-                    Some(b) => Ok(t.self_identity(b.col)?.map(|s| s.sk)),
-                    None => Ok(None),
-                })
-            })?;
-            let prepared = cmd::backup::prepare(req, secret.as_ref(), c.dir())?;
-            let src = super::dryrun::open_legacy(&prepared.db)?;
-            let v = write_binding(c, |t| {
-                cmd::backup::land(t, profile, req, &prepared, &src, anchor.as_ref(), &|t| {
-                    col_of(t, profile)
-                })
-            })?;
-            noted(c, profile, v)
-        }
+        "legacy_backup_import" => legacy_backup_import(c, profile, req, &|_| Ok(()))?,
         // ------------------------------------------------------------ 同步一轮（cmd/sync.rs）
         "location_root" => {
             c.write_local(|t| cmd::sync::location_root(t, col_of(t, profile)?, req, blobs, files))?
