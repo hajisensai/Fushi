@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-18T08:19:56Z",
+ "generatedAt": "2026-11-18T08:25:32Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "bb48140ff562bec0f41cfb6f522cc93225f68022",
-  "seq": 29025
+  "sha": "568dd53f1aac7fe25c3b9fe5415effb2afdbdd41",
+  "seq": 29065
  },
  "builds": [
   {
@@ -183,9 +183,11 @@
   }
  ],
  "pending": {
-  "headSha": "bb48140ff562bec0f41cfb6f522cc93225f68022",
-  "headSeq": 29025,
+  "headSha": "568dd53f1aac7fe25c3b9fe5415effb2afdbdd41",
+  "headSeq": 29065,
   "prs": [
+   3467,
+   3663,
    3534,
    3672,
    3541,
@@ -209,23 +211,32 @@
   "platforms": {
    "android": {
     "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44265688651"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44266580164"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44265688588"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44266580078"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44265688588"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44266580078"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44265688588"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44266580078"
    }
   }
  },
  "prs": {
+  "3467": {
+   "number": 3467,
+   "title": "feat(book): 合集按卷获取高清封面与横幅（MangaBaka 优先、Bangumi 单行本兜底）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-18T08:23:34Z",
+   "additions": 12383,
+   "deletions": 147,
+   "labels": []
+  },
   "3534": {
    "number": 3534,
    "title": "perf(home): 切 tab 不再连带重建隐藏保活页，查词 / 复习保活，全屏设置不卸载正文（BUG-4725～BUG-4730）",
@@ -332,6 +343,15 @@
    "mergedAt": "2026-11-18T02:58:13Z",
    "additions": 3804,
    "deletions": 25,
+   "labels": []
+  },
+  "3663": {
+   "number": 3663,
+   "title": "feat(video): 字幕工作台改全屏并就地运行工具，所有视频来源走完整字幕管线",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-18T08:23:27Z",
+   "additions": 12166,
+   "deletions": 1287,
    "labels": []
   },
   "3671": {
