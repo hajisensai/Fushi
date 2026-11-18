@@ -495,12 +495,13 @@ void main() {
     await _unmount(tester);
   });
 
-  // ── 没有自绘标题栏的平台进设置（BUG-4850）──
+  // ── 进设置不卸载正文（BUG-4850）──
   //
-  // 组件测试环境里 [FushiDesktopTitleBar.isEnabled] 为 false，宽窗进设置走的正是
-  // Linux / 横屏安卓平板那条「摘掉侧栏的全屏设置」分支。
+  // 原先没有自绘标题栏的平台（Linux / 横屏安卓平板）宽窗进设置走「摘掉侧栏的全屏
+  // 设置」分支，正文连同全部保活页被整棵卸载。PR #3676 起设置全平台同壳（rail
+  // 常驻 + 二栏），那条分支已删；这里继续守住「进设置不卸载正文」这条不变式。
 
-  testWidgets('全屏设置只摘侧栏：藏着的保活 tab 不被卸载，返回箭头切回来源 tab', (
+  testWidgets('宽窗进设置：侧栏常驻、藏着的保活 tab 不被卸载，返回切回来源 tab', (
     WidgetTester tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -523,17 +524,10 @@ void main() {
     await _settle(tester);
     expect(
       find.byType(NavRailBrandButton),
-      findsNothing,
-      reason: '前置：没有自绘标题栏时设置是摘掉侧栏的全屏页。',
+      findsOneWidget,
+      reason: '设置与其它 tab 同壳：主导航 rail 常驻（PR #3676）。',
     );
     expect(find.byType(HomeSettingsTabContent), findsOneWidget);
-    expect(
-      tester
-          .widget<HomeSettingsTabContent>(find.byType(HomeSettingsTabContent))
-          .showBackButton,
-      isTrue,
-      reason: '侧栏被摘掉后页头返回箭头是唯一的返回出口。',
-    );
     expect(
       find.byType(HomeDictionaryPage, skipOffstage: false),
       findsOneWidget,

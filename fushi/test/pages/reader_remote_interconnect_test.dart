@@ -747,13 +747,30 @@ void main() {
     );
 
     // 放行有声书下载 → 完成 → 覆盖层清除。
+    //
+    // 等的是**整个下载任务结束**，不是假导入器被调到：导入之后还有一次真 DB
+    // 写（recordRemoteAudiobookPackageDownload），覆盖层要到 _runRemoteBookDownload 的
+    // finally 才清。只等 importedAudiobooks 非空时，机器一慢（CI / 批量跑）就在
+    // 清除前断言，偶发红。
+    final InterconnectDownloadManager manager = ProviderScope.containerOf(
+      tester.element(find.byType(ReaderFushiHistoryPage, skipOffstage: false)),
+    ).read(interconnectDownloadManagerProvider);
     await tester.runAsync(() async {
       audiobookDownloadGate!.complete();
-      for (int i = 0; i < 60; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 25));
-        if (importedAudiobooks.isNotEmpty) break;
+      final Stopwatch watch = Stopwatch()..start();
+      while (watch.elapsed < const Duration(seconds: 15)) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        final Iterable<InterconnectDownloadTask> tasks = manager.tasks.values;
+        if (tasks.isNotEmpty &&
+            tasks.every(
+              (InterconnectDownloadTask task) =>
+                  task.status != InterconnectDownloadStatus.running,
+            )) {
+          break;
+        }
       }
     });
+    expect(importedAudiobooks, hasLength(1));
     await tester.pump();
 
     expect(
