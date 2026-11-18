@@ -3217,7 +3217,7 @@ profile uid 不变」断言，不分 `bound` / `joined`。
   提示」「B 目录的 meta.json 一时读不出：这一轮不算补齐，下一轮发布补上提示」「提示一直写不成：每轮发布都重试，同一个失败只记
   一次日志」。变异实测（各自单独改、跑完 `git restore`，工作区干净）：观察里不含在场目录 → 第一条红（`Actual: <false>`）；不确定也
   记缓存 → 第二、三条红；每次失败都记日志 → 第三条红。
-- **BUG-4626 新代并入场景已正式登记为 BUG-4836**（`docs/bugs/BUG-4836-srs-gen4-dangling-op-joins-into-other-collection.md`）：根因
+- **BUG-4626 新代并入场景已正式登记为 BUG-4843**（`docs/bugs/BUG-4843-srs-gen4-dangling-op-joins-into-other-collection.md`）：根因
   `file:line`（`gen4/cmd/writes.rs:31` / `:886` 写入口不设闸，`gen4/identity.rs:430` / `:572` 并入无条件并集）、两种修法与复现用例
   全文都在 bug 文件里，交 G9 身份 / 设计；本分支仍不改内核。
 
@@ -3328,7 +3328,7 @@ v4 整个删掉 → 新根不见了、不重建，删围栏后重建、媒体根
   已发布 / 本机日志里有 `Join`」这几条廉价条件（`DISPOSABLE_SQL`）。只有内置种子与盐 = 空，D27 方向上换绑（`bound`）、不写 `Join`。
   测试：内核 `cmd/profile_data_tests.rs` `a_profile_with_only_builtin_seeds_binds_without_a_join`；Dart 真内核端到端
   `srs_profile_link_sync_test`「全新设备（开库已写内置种子、从没同步过）关联已有集合：bound，两边日志里都没有 Join」。
-- **② BUG-4836 写入口实体归属闸（`e7ad8988eb`）**：选「写入口设闸」而不是「并入时丢悬空操作」。新文件
+- **② BUG-4843 写入口实体归属闸（`e7ad8988eb`）**：选「写入口设闸」而不是「并入时丢悬空操作」。新文件
   `gen4/cmd/writes_owner.rs`，唯一判据 `Session::foreign`：一条本机操作指向的实体在库里别的集合有（`ent_ix.id` /
   `alias_ix.canon` / `cards.id`）、本集合一点痕迹都没有（身份、别名类、卡片行、修改 / 日志 / 标签索引行、同一批要建的实体；
   先不收尾查，没查到再收尾查一遍）时不写：`apply_in` 那一项 `landed: false` 并把下标放进回包 `foreign`，`purge` 跳过并回

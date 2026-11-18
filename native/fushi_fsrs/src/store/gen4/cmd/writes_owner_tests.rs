@@ -1,4 +1,4 @@
-//! 实体归属闸（`writes_owner.rs`，BUG-4836）：经 C ABI 在一个库里开两个 profile（两个集合）。并入场景的端到端在 Dart
+//! 实体归属闸（`writes_owner.rs`，BUG-4843）：经 C ABI 在一个库里开两个 profile（两个集合）。并入场景的端到端在 Dart
 //! `packages/fushi_engine/test/srs/srs_profile_ownership_merge_test.dart`。
 
 use std::path::Path;
