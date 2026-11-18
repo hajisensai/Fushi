@@ -1,6 +1,6 @@
 # Fushi settings reference
 
-> Every setting of the Fushi app (version 3.3.0), generated from the app's own settings schema on each change. 876 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
+> Every setting of the Fushi app (version 3.3.0), generated from the app's own settings schema on each change. 878 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
 
 How to read this:
 
@@ -743,9 +743,10 @@ How to read this:
 | Key | Name | 名称 | Where | Type | Values | Default | Notes |
 |---|---|---|---|---|---|---|---|
 | `services.subtitle_preferences` | AJATT subtitle library | AJATT 字幕库 | Subtitle sources | bool |  | `true` | Off means the AJATT archive is skipped when searching subtitles. |
-| `services.metadata.anidb_hash_enabled` | Identify files with AniDB ED2K | 通过 AniDB ED2K 识别文件 | Metadata sources › AniDB | bool |  | `false` | Requires an AniDB account and a registered client. Uploads only file size and hash. AniDB UDP login is unencrypted; enable only on a trusted network. |
+| `services.metadata.anidb_hash_enabled` | Identify files with AniDB ED2K | 通过 AniDB ED2K 识别文件 | Metadata sources › AniDB | bool |  | `true` | Requires an AniDB account, its UDP API key and a registered client. Uploads only file size and hash; the UDP login is encrypted. |
 | `services.metadata.anidb_username` | AniDB username | AniDB 用户名 | Metadata sources › AniDB | text |  |  |  |
 | `services.metadata.anidb_password` | AniDB password | AniDB 密码 | Metadata sources › AniDB | secret |  |  | *user only* |
+| `services.metadata.anidb_udp_api_key` | AniDB UDP API key | AniDB UDP API Key | Metadata sources › AniDB | secret |  |  | Set it yourself on AniDB under Profile → Settings → Account → UDP API Key, then enter it here. Fushi uses it to encrypt the login; the key itself is never sent. · *user only* |
 | `services.metadata.anidb_client` | AniDB client name | AniDB 客户端名称 | Metadata sources › AniDB | text |  |  | Fushi includes a registered app client. Leave this blank normally; set a custom registered client only if needed. |
 | `services.metadata.anidb_client_version` | AniDB client version | AniDB 客户端版本 | Metadata sources › AniDB | text |  |  | Only custom clients need their own registered version here. Fushi maintains the default app identity; your personal AniDB login is still required. |
 | `services.metadata.anidb_login_test` | Test AniDB login | 测试 AniDB 登录 | Metadata sources › AniDB | action |  |  | Sends one UDP login with the saved account and client, then logs out. No file is hashed. |
@@ -934,6 +935,7 @@ How to read this:
 | `system.github_sponsors` | Support Fushi on GitHub Sponsors | 通过 GitHub Sponsors 赞助 Fushi | About | action |  |  |  |
 | `system.ko_fi` | Support Fushi on Ko-fi | 在 Ko-fi 上赞助 Fushi | About | action |  |  |  |
 | `system.tmdb_attribution` | TMDB | TMDB | About | custom |  |  | This application uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB. |
+| `system.mangabaka_attribution` | MangaBaka | MangaBaka | About | action |  |  | Manga and light novel series data and covers come from MangaBaka, used under CC BY-NC-SA 4.0. |
 | `system.update.download` | Download | 下载 | App updates | action |  |  |  |
 | `system.update.cancel` | CANCEL | 取消 | App updates | action |  |  |  |
 | `system.update.install` | Installing… | 正在安装… | App updates | action |  |  | *destructive* |

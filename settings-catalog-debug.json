@@ -7,7 +7,7 @@
   "en",
   "zh-CN"
  ],
- "count": 876,
+ "count": 878,
  "settings": [
   {
    "key": "appearance.language",
@@ -11720,10 +11720,10 @@
     "zh-CN": "在线服务 › 资料来源 › AniDB"
    },
    "description": {
-    "en": "Requires an AniDB account and a registered client. Uploads only file size and hash. AniDB UDP login is unencrypted; enable only on a trusted network.",
-    "zh-CN": "需要 AniDB 账号和已注册客户端，仅提交文件大小与哈希。AniDB UDP 登录未加密，请仅在可信网络下开启。"
+    "en": "Requires an AniDB account, its UDP API key and a registered client. Uploads only file size and hash; the UDP login is encrypted.",
+    "zh-CN": "需要 AniDB 账号、该账号的 UDP API Key 和已注册客户端，仅提交文件大小与哈希；UDP 登录全程加密。"
    },
-   "default": false
+   "default": true
   },
   {
    "key": "services.metadata.anidb_username",
@@ -11750,6 +11750,25 @@
    "path": {
     "en": "Online services › Metadata sources › AniDB",
     "zh-CN": "在线服务 › 资料来源 › AniDB"
+   },
+   "secret": true,
+   "userOnly": true
+  },
+  {
+   "key": "services.metadata.anidb_udp_api_key",
+   "kind": "value",
+   "type": "secret",
+   "title": {
+    "en": "AniDB UDP API key",
+    "zh-CN": "AniDB UDP API Key"
+   },
+   "path": {
+    "en": "Online services › Metadata sources › AniDB",
+    "zh-CN": "在线服务 › 资料来源 › AniDB"
+   },
+   "description": {
+    "en": "Set it yourself on AniDB under Profile → Settings → Account → UDP API Key, then enter it here. Fushi uses it to encrypt the login; the key itself is never sent.",
+    "zh-CN": "在 AniDB 个人资料 → 设置 → 账户 → UDP API Key 处自行设定后填入这里。Fushi 用它加密登录，Key 本身不会发出。"
    },
    "secret": true,
    "userOnly": true
@@ -14127,6 +14146,24 @@
     "en": "This application uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB.",
     "zh-CN": "本应用使用 TMDB 及 TMDB API，但未获 TMDB 认可或认证。"
    }
+  },
+  {
+   "key": "system.mangabaka_attribution",
+   "kind": "action",
+   "type": "action",
+   "title": {
+    "en": "MangaBaka",
+    "zh-CN": "MangaBaka"
+   },
+   "path": {
+    "en": "System and about › About",
+    "zh-CN": "系统与关于 › 关于"
+   },
+   "description": {
+    "en": "Manga and light novel series data and covers come from MangaBaka, used under CC BY-NC-SA 4.0.",
+    "zh-CN": "漫画与轻小说的系列资料和封面来自 MangaBaka，按 CC BY-NC-SA 4.0 许可使用。"
+   },
+   "runnable": true
   },
   {
    "key": "card_creation.anki.cli.fetch",
