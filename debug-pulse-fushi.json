@@ -1,12 +1,43 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-18T19:35:19Z",
+ "generatedAt": "2026-11-18T20:14:27Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "9d5f51ca2688b560f22bd8f4012b97e55a63848c",
   "seq": 29085
  },
  "builds": [
+  {
+   "seq": 29085,
+   "version": "3.4.0",
+   "sha": "9d5f51ca2688b560f22bd8f4012b97e55a63848c",
+   "unknown": false,
+   "publishedAt": "2026-11-18T20:14:16Z",
+   "testflight": false,
+   "baseSeq": 29083,
+   "prs": [
+    3745
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44381640231"
+    },
+    "macos": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44381640231"
+    },
+    "ios": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44381640231"
+    }
+   }
+  },
   {
    "seq": 29083,
    "version": "3.4.0",
@@ -69,7 +100,7 @@
    "version": "3.4.0",
    "sha": "5ebe5543214611908771a25872dc9a9ce4f43f70",
    "unknown": false,
-   "publishedAt": "2026-11-18T13:21:48Z",
+   "publishedAt": "2026-11-18T13:21:47Z",
    "testflight": true,
    "baseSeq": 28975,
    "prs": [
@@ -98,7 +129,8 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44304649678"
     },
     "windows": {
      "state": "ok"
@@ -112,33 +144,7 @@
    }
   }
  ],
- "pending": {
-  "headSha": "9d5f51ca2688b560f22bd8f4012b97e55a63848c",
-  "headSeq": 29085,
-  "prs": [
-   3745
-  ],
-  "direct": [],
-  "truncated": false,
-  "platforms": {
-   "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44381640236"
-   },
-   "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44381640231"
-   },
-   "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44381640231"
-   },
-   "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44381640231"
-   }
-  }
- },
+ "pending": null,
  "prs": {
   "3467": {
    "number": 3467,
