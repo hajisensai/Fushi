@@ -9,7 +9,7 @@
 ///   再落新图，`cover_path` 指向新图。
 ///
 /// 快照在执行前抓这三处的原值，封面文件另拷一份备份（备份的修改时间钉成抓快照的
-/// 时刻，BUG-4843：复制会带上原图的修改时间，按修改时间清理的备份目录会把它当成
+/// 时刻，BUG-4844：复制会带上原图的修改时间，按修改时间清理的备份目录会把它当成
 /// 老文件提前删掉）。撤销精确恢复：先前没有该源行就删掉、有就整行写回；两列写回原值；
 /// 封面换过就把备份拷回原路径、删掉这次下载的新图。
 ///
@@ -206,7 +206,7 @@ Future<GalgameScrapeSnapshot> captureGalgameScrapeSnapshot(
       '${now.microsecondsSinceEpoch}_$gameId${p.extension(coverPath!)}',
     );
     await File(coverPath).copy(backup);
-    // BUG-4843：复制带上原图的修改时间；清理按修改时间判年龄，钉成现在。
+    // BUG-4844：复制带上原图的修改时间；清理按修改时间判年龄，钉成现在。
     await File(backup).setLastModified(now);
   }
   return GalgameScrapeSnapshot(

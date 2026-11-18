@@ -151,7 +151,7 @@ void main() {
   test('先前有封面：换了扩展名的新图被删、旧图从备份拷回；备份修改时间是建立时刻', () async {
     final String oldCover = p.join(covers.path, 'g1.png');
     File(oldCover).writeAsStringSync('old-cover');
-    // 原图很老：备份不能继承这个修改时间（BUG-4843）。
+    // 原图很老：备份不能继承这个修改时间（BUG-4844）。
     await File(oldCover).setLastModified(DateTime(2000));
     await db.setGalgameCoverPath('g1', oldCover);
     final DateTime captured = DateTime.now();
