@@ -5,26 +5,19 @@
 /// Fushi 卡片模板 · 正面。
 const String kFushiCardFrontTemplate = r'''<!--
   Fushi 卡片 · 正面。字段名与 Lapis 逐字一致；卡型开关沿用 Lapis 语义（IsSentenceCard /
-  IsWordAndSentenceCard / IsClickCard / IsAudioCard 都为空 = 单词卡）。
+  IsWordAndSentenceCard / IsClickCard / IsAudioCard 都为空 = 单词卡）。四个开关互斥（Lapis 也要求只开一个，
+  编辑页拨开一个会关掉其余三个）；老数据同时开了多个时按 例句 > 单词+例句 > 点击 > 听音 只出一段，
+  与内置复习的 srsFushiFrontKind（fushi/lib/src/srs/srs_fushi_card_plan.dart）同一优先级。
   外观由 Fushi 宿主经 --fushi-srs-* 变量与 fushi-srs-* 类名注入；在 Anki 里没有宿主，按默认外观显示。
 -->
 <div class="fc fc-front" lang="ja">
   {{#FrequencyRank}}<div class="fc-front-freq" data-fc-block="frequency"><span class="fc-chip fc-chip--freq">{{FrequencyRank}}</span></div>{{/FrequencyRank}}
 
   <div class="fc-front-prompt" data-fc-block="prompt">
-  {{^IsSentenceCard}}{{^IsWordAndSentenceCard}}{{^IsClickCard}}{{^IsAudioCard}}
-  <div class="fc-front-term">
-    <div class="fc-term fc-term--hero fc-term--plain">{{Term}}</div>
-    {{#TermFurigana}}<div class="fc-term fc-term--hero fc-term--ruby">{{furigana:TermFurigana}}</div>{{/TermFurigana}}
-    <div class="fc-front-pitch">{{PitchPosition}}</div>
-  </div>
-  {{/IsAudioCard}}{{/IsClickCard}}{{/IsWordAndSentenceCard}}{{/IsSentenceCard}}
-
   {{#IsSentenceCard}}
   <div class="fc-front-sentence">{{kanji:Sentence}}</div>
   {{/IsSentenceCard}}
-
-  {{#IsWordAndSentenceCard}}
+  {{^IsSentenceCard}}{{#IsWordAndSentenceCard}}
   <div class="fc-front-term">
     <div class="fc-term fc-term--hero fc-term--plain">{{Term}}</div>
     {{#TermFurigana}}<div class="fc-term fc-term--hero fc-term--ruby">{{furigana:TermFurigana}}</div>{{/TermFurigana}}
@@ -32,15 +25,13 @@ const String kFushiCardFrontTemplate = r'''<!--
   </div>
   <div class="fc-front-context">{{kanji:Sentence}}</div>
   {{/IsWordAndSentenceCard}}
-
-  {{#IsClickCard}}
+  {{^IsWordAndSentenceCard}}{{#IsClickCard}}
   <div class="fc-click" role="button" tabindex="0">
     <div class="fc-term fc-term--hero fc-click-term">{{Term}}</div>
     <div class="fc-front-sentence fc-click-sentence">{{kanji:Sentence}}</div>
   </div>
   {{/IsClickCard}}
-
-  {{#IsAudioCard}}
+  {{^IsClickCard}}{{#IsAudioCard}}
   <div class="fc-front-audio">
     <div class="fc-front-sentence fc-front-sentence--masked">{{kanji:Sentence}}</div>
     <div class="fc-audio fc-audio--large">
@@ -49,6 +40,13 @@ const String kFushiCardFrontTemplate = r'''<!--
     </div>
   </div>
   {{/IsAudioCard}}
+  {{^IsAudioCard}}
+  <div class="fc-front-term">
+    <div class="fc-term fc-term--hero fc-term--plain">{{Term}}</div>
+    {{#TermFurigana}}<div class="fc-term fc-term--hero fc-term--ruby">{{furigana:TermFurigana}}</div>{{/TermFurigana}}
+    <div class="fc-front-pitch">{{PitchPosition}}</div>
+  </div>
+  {{/IsAudioCard}}{{/IsClickCard}}{{/IsWordAndSentenceCard}}{{/IsSentenceCard}}
   </div>
 
   {{#Hint}}<div class="fc-hint" data-fc-block="hint">{{Hint}}</div>{{/Hint}}

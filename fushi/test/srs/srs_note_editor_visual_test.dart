@@ -651,4 +651,27 @@ void main() {
     expect(await _field(tester, env.store, note, 'IsSentenceCard'), 'x');
     await _unmount(tester);
   });
+
+  // BUG-4698 / issue #3494：四个卡型开关互斥，打开一个就关掉其余（含老数据里同时开着的）。
+  testWidgets('卡型开关字段：打开听音卡会关掉其余卡型开关', (WidgetTester tester) async {
+    final _Env env = await _open(tester);
+    final String note = await _fushiNote(tester, env.store, <String, String>{
+      'Term': '通う',
+      'IsSentenceCard': 'x',
+      'IsClickCard': 'x',
+    });
+    await _pumpEditor(tester, env, note);
+    await tester.tap(_key('srs-note-more-fields'));
+    await _settle(tester, rounds: 6);
+    final Finder toggle = _key('srs-field-toggle-IsAudioCard');
+    await tester.ensureVisible(toggle);
+    await tester.tap(toggle);
+    await _settle(tester, rounds: 4);
+    await _save(tester);
+    expect(await _field(tester, env.store, note, 'IsAudioCard'), 'x');
+    expect(await _field(tester, env.store, note, 'IsSentenceCard'), '');
+    expect(await _field(tester, env.store, note, 'IsWordAndSentenceCard'), '');
+    expect(await _field(tester, env.store, note, 'IsClickCard'), '');
+    await _unmount(tester);
+  });
 }

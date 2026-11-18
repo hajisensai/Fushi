@@ -68,6 +68,19 @@ const List<String> kSrsCardTypeFlagFields = <String>[
 /// 卡型开关写入的值（与 Lapis / Fushi 卡片默认制卡映射一致）。
 const String kSrsCardTypeFlagOn = 'x';
 
+/// 单卡编辑时拨卡型开关 [flag]：四个开关互斥，与 [srsPlanCardType] 同一语义。
+///
+/// 返回要改的开关（字段名 → 新值）：打开 = 写 [kSrsCardTypeFlagOn] 并清空其余三个；
+/// 关掉 = 只清空它自己（老数据同时开着的其它开关不顺手动）。[flag] 不是卡型开关时返回空表。
+Map<String, String> srsCardTypeFlagToggle(String flag, {required bool on}) {
+  if (!kSrsCardTypeFlagFields.contains(flag)) return const <String, String>{};
+  if (!on) return <String, String>{flag: ''};
+  return <String, String>{
+    for (final String f in kSrsCardTypeFlagFields)
+      f: f == flag ? kSrsCardTypeFlagOn : '',
+  };
+}
+
 /// 一个字段的一处修改。
 class SrsNoteFieldChange {
   const SrsNoteFieldChange({

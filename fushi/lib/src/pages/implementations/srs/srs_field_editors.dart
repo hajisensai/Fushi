@@ -229,6 +229,7 @@ class SrsFieldEditor extends ConsumerStatefulWidget {
     required this.name,
     required this.model,
     this.toggle = false,
+    this.onToggle,
     this.css = '',
     this.fushiCard = false,
     this.footer,
@@ -248,6 +249,9 @@ class SrsFieldEditor extends ConsumerStatefulWidget {
 
   /// 这是卡型开关字段（非空 = 开）。
   final bool toggle;
+
+  /// 拨开关时由宿主接管（卡型开关互斥：开一个要关掉其余几个）；null = 只改本字段。
+  final ValueChanged<bool>? onToggle;
 
   /// 笔记类型的 CSS（结构化预览用）。
   final String css;
@@ -636,7 +640,8 @@ class _SrsFieldEditorState extends ConsumerState<SrsFieldEditor> {
           FushiSwitch(
             key: ValueKey<String>('srs-field-toggle-${widget.name}'),
             value: _model.value.trim().isNotEmpty,
-            onChanged: (bool on) => _model.edit(on ? 'x' : ''),
+            onChanged:
+                widget.onToggle ?? (bool on) => _model.edit(on ? 'x' : ''),
           ),
         ],
       );

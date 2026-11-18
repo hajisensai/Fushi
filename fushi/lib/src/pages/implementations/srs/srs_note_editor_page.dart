@@ -27,6 +27,8 @@ import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_note_batch_edit.dart'
+    show srsCardTypeFlagToggle;
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/ai/ai_srs_field_assistant.dart';
@@ -905,6 +907,16 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
     );
   }
 
+  /// 卡型开关互斥（issue #3494）：打开一个就关掉其余三个，与批量「设置卡型」
+  /// （[srsCardTypeFlagToggle] / `srsPlanCardType`）、卡面判定同一语义。
+  void _toggleCardType(SrsNoteTypeView type, String flag, bool on) {
+    srsCardTypeFlagToggle(flag, on: on).forEach((String name, String value) {
+      for (final SrsFieldDef f in type.fields) {
+        if (f.name == name) _fields[f.id]?.edit(value);
+      }
+    });
+  }
+
   Widget _buildField(
     BuildContext context,
     SrsNoteTypeView type,
@@ -960,6 +972,9 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
       headerActions: _fieldActions(type, field),
       model: _fields[field.id]!,
       toggle: builtin && kFushiCardSwitchFields.contains(field.name),
+      onToggle: builtin && kFushiCardSwitchFields.contains(field.name)
+          ? (bool on) => _toggleCardType(type, field.name, on)
+          : null,
       css: type.css,
       fushiCard: type.builtinKey == kSrsBuiltinFushiCardKey,
       footer: conflicts,
