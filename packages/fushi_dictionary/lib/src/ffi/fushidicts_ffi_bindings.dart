@@ -409,6 +409,11 @@ class FushidictsFfiBindings {
           FfiQueryResult Function(Pointer<Void>, Pointer<Utf8>),
           _QueryDart
         >('fushidicts_query');
+    queryFrequencies = _lib
+        .lookupFunction<
+          FfiQueryResult Function(Pointer<Void>, Pointer<Utf8>),
+          _QueryDart
+        >('fushidicts_query_frequencies');
     freeQueryResult = _lib
         .lookupFunction<
           Void Function(Pointer<FfiQueryResult>),
@@ -569,6 +574,10 @@ class FushidictsFfiBindings {
   late final _UnionFilterStateDart unionFilterState;
   late final _LoadTransformsDart loadTransforms;
   late final _QueryDart query;
+
+  /// 只要词频的 [query]：词条的 glossary / pitch 恒为空（原生不富化音调、不解压释义）。
+  /// 结果同样用 [freeQueryResult] 释放。
+  late final _QueryDart queryFrequencies;
   late final _FreeQueryResultDart freeQueryResult;
   late final _LookupDart lookup;
   late final _LookupWithOptionsDart lookupWithOptions;

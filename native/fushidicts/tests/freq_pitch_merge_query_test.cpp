@@ -30,6 +30,11 @@
 // IMPORTANT: distinct dictionaries MUST import to distinct output dirs (each
 // dir owns its own blobs.bin / hash.table); reusing one dir would overwrite.
 //
+//   5. DictionaryQuery::query_frequencies() -- the "I only want the frequencies"
+//      entry point (Anki deck reposition) -- returns the same terms with the
+//      same rules and frequencies as query() at every query site above, and
+//      never carries glossaries or pitches.
+//
 // Usage: freq_pitch_merge_query_test  (no args) -> exit 0 PASS, non-zero FAIL.
 #include <algorithm>
 #include <cstdio>
@@ -117,6 +122,45 @@ std::string import_dict(const std::string& out_root, const char* title,
 //   pitch: two separate pitch records (positions 0 and 2) -> one PitchEntry,
 //          flattened pitch accents [0, 2].
 // ---------------------------------------------------------------------------
+// query_frequencies() must agree with query() on everything it promises (the
+// term set, rules, and every frequency entry / value / display string) and
+// must not hand out glossaries or pitches.
+void expect_frequencies_only(const DictionaryQuery& q, const std::string& expression, const char* where) {
+  const std::vector<TermResult> full = q.query(expression);
+  const std::vector<TermResult> freq = q.query_frequencies(expression);
+  const auto describe = [](const TermResult& t) {
+    std::string out = t.expression + "|" + t.reading + "|" + t.rules;
+    for (const FrequencyEntry& entry : t.frequencies) {
+      out += "|" + entry.dict_name + ":";
+      for (const Frequency& f : entry.frequencies) {
+        out += std::to_string(f.value) + "/" + f.display_value + ",";
+      }
+    }
+    return out;
+  };
+  if (full.size() != freq.size()) {
+    std::fprintf(stderr, "FAIL %s: query_frequencies returned %zu terms, query %zu\n", where, freq.size(),
+                 full.size());
+    ++g_fail;
+    return;
+  }
+  for (size_t i = 0; i < full.size(); i++) {
+    if (describe(full[i]) != describe(freq[i])) {
+      std::fprintf(stderr, "FAIL %s: term %zu differs\n  query:             %s\n  query_frequencies: %s\n", where, i,
+                   describe(full[i]).c_str(), describe(freq[i]).c_str());
+      ++g_fail;
+    }
+    if (!freq[i].glossaries.empty() || !freq[i].pitches.empty()) {
+      std::fprintf(stderr, "FAIL %s: query_frequencies term %zu carries glossaries / pitches\n", where, i);
+      ++g_fail;
+    }
+    if (full[i].glossaries.empty()) {
+      std::fprintf(stderr, "FAIL %s: fixture term %zu has no glossary (the comparison would be vacuous)\n", where, i);
+      ++g_fail;
+    }
+  }
+}
+
 void case_multi_records_same_dict() {
   const std::string out_dir =
       fushi_test::temp_dir() + "/hoshi_merge_multi_out";
@@ -146,6 +190,7 @@ void case_multi_records_same_dict() {
   q.add_pitch_dict(dir);
 
   std::vector<TermResult> terms = q.query(kNeko);
+  expect_frequencies_only(q, kNeko, "query #1");
   if (terms.empty()) {
     fail("case1 query(猫) returned no terms");
     return;
@@ -227,6 +272,7 @@ void case_merge_across_dicts() {
   q.add_pitch_dict(dirB);
 
   std::vector<TermResult> terms = q.query(kNeko);
+  expect_frequencies_only(q, kNeko, "query #2");
   if (terms.empty()) {
     fail("case2 query(猫) returned no terms");
     return;
@@ -318,6 +364,7 @@ void case_path_isolation_and_reading_filter() {
     q.add_freq_dict(dir);
     // deliberately NOT add_pitch_dict
     std::vector<TermResult> terms = q.query(kNeko);
+    expect_frequencies_only(q, kNeko, "query #3");
     if (terms.empty()) {
       fail("case3a query(猫) returned no terms");
     } else {
@@ -345,6 +392,7 @@ void case_path_isolation_and_reading_filter() {
     q.add_pitch_dict(dir);
     // deliberately NOT add_freq_dict
     std::vector<TermResult> terms = q.query(kNeko);
+    expect_frequencies_only(q, kNeko, "query #4");
     if (terms.empty()) {
       fail("case3b query(猫) returned no terms");
     } else {

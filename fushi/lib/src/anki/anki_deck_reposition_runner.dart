@@ -123,10 +123,12 @@ String defaultAnkiFrequencySignature() {
   return FushiDicts.instance.termDictionaryPaths.join('\n');
 }
 
-/// 生产用的引擎查询：引擎没装载时返回空（当作没有词频，而不是崩）。
+/// 生产用的引擎查询：引擎没装载时返回空（当作没有词频，而不是崩）。只取词频
+/// （[FushiDicts.queryFrequencies]）：重排只读 reading 与 frequencies，不让引擎为每张卡
+/// 解压一遍全部词典的释义。
 List<FushiTermResult> defaultAnkiFrequencyLookup(String expression) {
   if (!FushiDicts.isInitialized) return const <FushiTermResult>[];
-  return FushiDicts.instance.query(expression);
+  return FushiDicts.instance.queryFrequencies(expression);
 }
 
 class AnkiDeckRepositionRunner {

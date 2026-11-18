@@ -685,6 +685,18 @@ std::vector<TermResult> DictionaryQuery::query(const std::string& expression) co
   return results;
 }
 
+std::vector<TermResult> DictionaryQuery::query_frequencies(const std::string& expression) const {
+  const QueryScope scope = make_scope();
+  auto results = query_raw(expression, scope);
+  for (auto& term : results) {
+    enrich_freq(term, scope);
+    // query_raw 留下的是没解压的释义引用（词典名 / 标签 + 指向映射的压缩块）；不交出
+    // 「看起来有释义、其实是空串」的条目。
+    term.glossaries.clear();
+  }
+  return results;
+}
+
 std::vector<TermResult> DictionaryQuery::query_raw(const std::string& expression, const QueryScope& scope) const {
   const ExcludedDictNames* excluded = scope.excluded;
   const KeyProbe key(expression, scope.filter);

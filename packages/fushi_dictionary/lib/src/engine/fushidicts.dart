@@ -1020,10 +1020,26 @@ class FushiDicts {
   }
 
   // ── query ───────────────────────────────────────────────────────
-  List<FushiTermResult> query(String expression) {
+  List<FushiTermResult> query(String expression) =>
+      _queryWith(_bindings!.query, expression);
+
+  /// 只要词频的 [query]：同一批 (expression, reading) 词条、同样的 rules 与
+  /// frequencies，但 glossaries 与 pitches 恒为空——原生不富化音调、不解压释义。
+  ///
+  /// 给「拿一个词形去查它的词频」的调用方用（Anki 卡组按词频重排，几千张卡各查一次）。
+  /// 释义解压加上把它拷过 FFI 是 [query] 的大头（真实词典集上平均每个词约 370 KB），
+  /// 这些调用方一个字也不读；实测单次约 0.33 ms → 0.03 ms。
+  List<FushiTermResult> queryFrequencies(String expression) =>
+      _queryWith(_bindings!.queryFrequencies, expression);
+
+  List<FushiTermResult> _queryWith(
+    FfiQueryResult Function(Pointer<Void> handle, Pointer<Utf8> expression)
+    nativeQuery,
+    String expression,
+  ) {
     final ep = expression.toNativeUtf8(allocator: calloc);
     try {
-      final r = _bindings!.query(_handle!, ep);
+      final r = nativeQuery(_handle!, ep);
       final rPtr = calloc<FfiQueryResult>();
       rPtr.ref = r;
       try {

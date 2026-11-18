@@ -14,6 +14,9 @@
 //                          （允许 meta 重写；--upgrade-index-only 只换索引），打印每本的
 //                          结果与耗时、总耗时、升级前后索引文件与记录文件的总字节数。
 //                          **会改写词典目录**，只对副本用。
+//       [--query-compare]  查词之后另量「拿词形查词频」：词表 = 每个查询串的首个命中词条，
+//                          DictionaryQuery::query 对 query_frequencies 各跑 iters 遍，并核对
+//                          两者的词条 / 词频逐项相同（不同则退出码 1）。
 //
 // manifest.tsv：每行 `类型<TAB>词典目录[<TAB>备注]`，类型取 term / frequency / pitch
 // （与 app 的 dictionary_metadata.type 同词），行序 = 注册顺序。
@@ -33,6 +36,7 @@
 #include <iterator>
 #include <numeric>
 #include <string>
+#include <unordered_set>
 #include <string_view>
 #include <vector>
 
@@ -266,6 +270,7 @@ int main(int argc, char** argv) {
   bool use_union = false;
   std::string union_dir;
   int upgrade = 0;  // 0 不升级 / 1 允许 meta 重写 / 2 只换索引
+  bool query_compare = false;
   for (int i = 4; i < argc; i++) {
     const std::string_view arg = argv[i];
     const auto next = [&]() -> const char* { return i + 1 < argc ? argv[++i] : "0"; };
@@ -287,6 +292,8 @@ int main(int argc, char** argv) {
       use_union = true;
       union_dir = next();
       if (union_dir == "mem") union_dir.clear();
+    } else if (arg == "--query-compare") {
+      query_compare = true;
     } else if (arg == "--upgrade") {
       upgrade = 1;
     } else if (arg == "--upgrade-index-only") {
@@ -379,6 +386,64 @@ int main(int argc, char** argv) {
   if (!dump_path.empty()) {
     std::ofstream out(dump_path, std::ios::binary);
     out.write(dump.data(), static_cast<std::streamsize>(dump.size()));
+  }
+
+  if (query_compare) {
+    // 「拿一个词形查它的词频」（Anki 卡组按词频重排）：词表取每个查询串的首个命中词条，
+    // 去重；query() 与 query_frequencies() 各跑 iters 遍，并核对两者的词条与词频逐项相同。
+    std::vector<std::string> words;
+    {
+      std::unordered_set<std::string> seen;
+      for (const std::string& q : queries) {
+        const std::vector<LookupResult> results = lookup.lookup(q, 1, scan_length, options);
+        if (!results.empty() && seen.insert(results[0].term.expression).second) {
+          words.push_back(results[0].term.expression);
+        }
+      }
+    }
+    const auto describe_freq = [](const std::vector<TermResult>& terms) {
+      std::string out;
+      for (const TermResult& t : terms) {
+        out += t.expression + "|" + t.reading + "|" + t.rules + "|";
+        for (const FrequencyEntry& f : t.frequencies) {
+          out += f.dict_name + ":";
+          for (const Frequency& v : f.frequencies) out += std::to_string(v.value) + "/" + v.display_value + ",";
+          out += ";";
+        }
+        out += "\n";
+      }
+      return out;
+    };
+    size_t mismatches = 0;
+    size_t glossary_bytes = 0;
+    for (const std::string& w : words) {
+      const std::vector<TermResult> full = query.query(w);
+      const std::vector<TermResult> freq = query.query_frequencies(w);
+      if (describe_freq(full) != describe_freq(freq)) mismatches++;
+      for (const TermResult& t : full) {
+        for (const GlossaryEntry& g : t.glossaries) glossary_bytes += g.glossary.size();
+      }
+    }
+    std::printf("query-compare: %zu words | mismatches %zu | query() decompresses %.1f KB per word\n", words.size(),
+                mismatches, words.empty() ? 0.0 : glossary_bytes / 1024.0 / words.size());
+    for (int iter = 0; iter < iters; iter++) {
+      std::vector<double> full_us;
+      std::vector<double> freq_us;
+      for (const std::string& w : words) {
+        auto start = Clock::now();
+        const std::vector<TermResult> a = query.query(w);
+        full_us.push_back(elapsed_us(start));
+        start = Clock::now();
+        const std::vector<TermResult> b = query.query_frequencies(w);
+        freq_us.push_back(elapsed_us(start));
+      }
+      char label[48];
+      std::snprintf(label, sizeof(label), "query() iter %d", iter);
+      print_stats(label, summarize(full_us));
+      std::snprintf(label, sizeof(label), "query_frequencies() iter %d", iter);
+      print_stats(label, summarize(freq_us));
+    }
+    return mismatches == 0 ? 0 : 1;
   }
 
   if (stages) {
