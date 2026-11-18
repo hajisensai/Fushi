@@ -1,12 +1,58 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-18T07:36:07Z",
+ "generatedAt": "2026-11-18T08:15:44Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "265d1d58bfe873e85d51ce1ec8feb3335b042d99",
-  "seq": 28976
+  "sha": "bbe28874095d18b4a41e06cb220d163f0c5e0ea6",
+  "seq": 28995
  },
  "builds": [
+  {
+   "seq": 28975,
+   "version": "3.3.0",
+   "sha": "d2ef711098cb15e7b7bbd3d18a9c840ce408d0fd",
+   "unknown": false,
+   "publishedAt": "2026-11-18T08:15:30Z",
+   "testflight": false,
+   "baseSeq": 28910,
+   "prs": [
+    3677,
+    3691,
+    3569,
+    3687,
+    3671,
+    3676,
+    3723,
+    3566,
+    3605,
+    3557,
+    3554
+   ],
+   "direct": [
+    {
+     "sha": "ea970d0572022c4a601aef7f73accd118f5e8442",
+     "subject": "chore(bugs): settle BUG number collisions on 1d3b256dd"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44259200424"
+    },
+    "macos": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44259200424"
+    },
+    "ios": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44259200424"
+    }
+   }
+  },
   {
    "seq": 28910,
    "version": "3.3.0",
@@ -121,7 +167,8 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44150320125"
     },
     "windows": {
      "state": "ok"
@@ -136,52 +183,52 @@
   }
  ],
  "pending": {
-  "headSha": "265d1d58bfe873e85d51ce1ec8feb3335b042d99",
-  "headSeq": 28976,
+  "headSha": "bbe28874095d18b4a41e06cb220d163f0c5e0ea6",
+  "headSeq": 28995,
   "prs": [
-   3677,
-   3691,
-   3569,
-   3687,
-   3671,
-   3676,
-   3723,
-   3566,
-   3605,
-   3557,
-   3554
+   3541,
+   3636
   ],
   "direct": [
    {
-    "sha": "265d1d58bfe873e85d51ce1ec8feb3335b042d99",
-    "subject": "chore(bugs): settle BUG number collisions on d2ef71109"
+    "sha": "bbe28874095d18b4a41e06cb220d163f0c5e0ea6",
+    "subject": "chore(bugs): settle BUG number collisions on 5ee474c97"
    },
    {
-    "sha": "ea970d0572022c4a601aef7f73accd118f5e8442",
-    "subject": "chore(bugs): settle BUG number collisions on 1d3b256dd"
+    "sha": "265d1d58bfe873e85d51ce1ec8feb3335b042d99",
+    "subject": "chore(bugs): settle BUG number collisions on d2ef71109"
    }
   ],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44259200627"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44261225174"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44259200424"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44261225262"
    },
    "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44259200424"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44261225262"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44259200424"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44261225262"
    }
   }
  },
  "prs": {
+  "3541": {
+   "number": 3541,
+   "title": "fix(scrape): 全方括号文件名误判发布组 + AniDB 模糊噪声候选；perf(ai): agent 缓存尾部断点",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-18T07:44:24Z",
+   "additions": 1122,
+   "deletions": 109,
+   "labels": []
+  },
   "3554": {
    "number": 3554,
    "title": "perf(fushidicts): 词典磁盘格式升级（key.index 键索引 + 预解析 meta 记录）与存量词典后台原地升级",
@@ -225,6 +272,15 @@
    "mergedAt": "2026-11-18T07:26:43Z",
    "additions": 119,
    "deletions": 102,
+   "labels": []
+  },
+  "3636": {
+   "number": 3636,
+   "title": "fix(dictionary): 标了语言的词典只接受本语言的变形还原，排序里变形链长先于预处理步数（BUG-4762）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-18T07:40:47Z",
+   "additions": 850,
+   "deletions": 71,
    "labels": []
   },
   "3640": {
