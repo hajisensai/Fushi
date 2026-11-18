@@ -1,0 +1,87 @@
+{
+ "status": 200,
+ "data": {
+  "id": 8940,
+  "state": "active",
+  "merged_with": null,
+  "canonical_url": "https://mangabaka.org/manga/8940/citrus",
+  "title": "Citrus",
+  "native_title": "citrus",
+  "romanized_title": "citrus",
+  "secondary_titles": {
+   "ko": [
+    {
+     "type": "official",
+     "title": "시트러스",
+     "note": null
+    }
+   ]
+  },
+  "cover": {
+   "raw": {
+    "url": "https://images.mangabaka.dev/1/9/b/5/8/e/4/8/2e49/48c9/bf0f/5dd836eb07c5",
+    "size": 483315,
+    "height": 2000,
+    "width": 1434,
+    "format": "jpeg"
+   }
+  },
+  "authors": [
+   "Saburouta"
+  ],
+  "artists": [
+   "Saburouta"
+  ],
+  "year": 2012,
+  "status": "completed",
+  "content_rating": "erotica",
+  "type": "manga",
+  "original_language": "ja",
+  "final_volume": "10",
+  "titles": [
+   {
+    "language": "en",
+    "traits": [
+     "official"
+    ],
+    "title": "citrus",
+    "note": null,
+    "is_primary": true
+   },
+   {
+    "language": "ja",
+    "traits": [
+     "native"
+    ],
+    "title": "citrus",
+    "note": null,
+    "is_primary": true
+   },
+   {
+    "language": "en",
+    "traits": [
+     "alternative"
+    ],
+    "title": "citrus: saburouta presents secret love affair with sister",
+    "note": null,
+    "is_primary": false
+   },
+   {
+    "language": "en",
+    "traits": [],
+    "title": "citrus: secret love affair with sister",
+    "note": null,
+    "is_primary": false
+   },
+   {
+    "language": "ja",
+    "traits": [
+     "native"
+    ],
+    "title": "シトラス",
+    "note": null,
+    "is_primary": false
+   }
+  ]
+ }
+}

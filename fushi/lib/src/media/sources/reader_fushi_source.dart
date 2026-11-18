@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/mining/after_mining_popup_action.dart';
+import 'package:fushi/src/media/sources/book_cover_file_resolver.dart';
 import 'package:fushi/src/media/sources/manga_fushi_source.dart';
 import 'package:fushi/src/media/sources/reader_media_source.dart';
 import 'package:fushi/src/media/sources/reader_pdf_source.dart';
@@ -967,111 +968,28 @@ class ReaderFushiSource extends ReaderMediaSource {
     return null;
   }
 
-  /// Real-filesystem child lister for [resolveCaseInsensitive]. Returns the
-  /// child entity paths of [dir], or an empty list if it is missing/unreadable.
-  static List<String> _listDirEntries(String dir) {
-    final Directory d = Directory(dir);
-    if (!d.existsSync()) return const <String>[];
-    try {
-      return d
-          .listSync(followLinks: false)
-          .map((FileSystemEntity e) => e.path)
-          .toList();
-    } catch (_) {
-      return const <String>[];
-    }
-  }
-
   /// Case-insensitive on-disk resolution of a book cover (TODO-1319 / BUG-612).
-  ///
-  /// Walks each relative candidate in [relPaths] segment by segment under
-  /// [extractDir], matching each segment against the real directory entries
-  /// from [listDir] -- exact case first, then case-insensitively. Returns the
-  /// first candidate that fully resolves to an on-disk path, or null. This lets
-  /// a coverPath whose case was mangled by a case-insensitive host still find
-  /// the case-preserved extracted file on a case-sensitive device.
-  ///
-  /// Pure + injectable ([listDir]) so it is unit-testable with a mock
-  /// filesystem; the instance path wires in [_listDirEntries].
+  /// Implementation lives in the leaf `book_cover_file_resolver.dart` so
+  /// callers outside the reader (book art scraping) can share it without
+  /// pulling this whole source into their import graph.
   @visibleForTesting
   static String? resolveCaseInsensitive({
     required String extractDir,
     required List<String> relPaths,
     required List<String> Function(String dir) listDir,
-  }) {
-    for (final String rel in relPaths) {
-      if (rel.isEmpty || p.isAbsolute(rel)) continue;
-      final List<String> segs = p
-          .split(rel)
-          .where((String s) => s.isNotEmpty && s != '.' && s != '/')
-          .toList();
-      if (segs.isEmpty) continue;
-      String current = extractDir;
-      bool resolvedAll = true;
-      for (final String seg in segs) {
-        final List<String> children = listDir(current);
-        String? match;
-        for (final String child in children) {
-          if (p.basename(child) == seg) {
-            match = child;
-            break;
-          }
-        }
-        if (match == null) {
-          final String segLower = seg.toLowerCase();
-          for (final String child in children) {
-            if (p.basename(child).toLowerCase() == segLower) {
-              match = child;
-              break;
-            }
-          }
-        }
-        if (match == null) {
-          resolvedAll = false;
-          break;
-        }
-        current = match;
-      }
-      if (resolvedAll) return current;
-    }
-    return null;
-  }
+  }) => resolveBookCoverCaseInsensitive(
+    extractDir: extractDir,
+    relPaths: relPaths,
+    listDir: listDir,
+  );
 
-  /// Resolve a book cover to its on-disk **file path** (not a `file://` URL),
-  /// reusing the exact same case-insensitive resolution the library grid uses
-  /// (`_resolveCoverUrl`) so card mining and shelf display agree on which cover
-  /// file to use (TODO-1388 / BUG-703). The declared [coverPath] wins over the
-  /// conventional `cover.jpg/jpeg/png` fallbacks; each candidate is matched
-  /// exact-case-first then case-insensitively against the real extracted files,
-  /// so a coverPath whose case was mangled by a case-insensitive import host
-  /// (Windows/macOS `p.canonicalize` lower-casing, epub_parser _itemRelHref)
-  /// still finds the case-preserved file on a case-sensitive device
-  /// (Android/Linux). Returns null when no candidate resolves to a real file.
-  ///
-  /// Static + wiring the real [_listDirEntries] lister so mining (which only
-  /// had a naive `File(join(extractDir, coverHref)).existsSync()` probe --
-  /// blind to case, hence the missing cover on Android) shares one resolution
-  /// with the grid instead of drifting.
-  ///
-  /// Not `@visibleForTesting`: this is genuine production API consumed by both
-  /// the shelf grid (`_resolveCoverUrl`) and card mining (`mining.part.dart`).
+  /// Resolve a book cover to its on-disk file path; see
+  /// [resolveBookCoverFilePath]. Consumed by the shelf grid
+  /// (`_resolveCoverUrl`) and card mining (`mining.part.dart`).
   static String? resolveCoverFilePath({
     required String extractDir,
     String? coverPath,
-  }) {
-    final String? resolved = resolveCaseInsensitive(
-      extractDir: extractDir,
-      relPaths: <String>[
-        if (coverPath != null && coverPath.isNotEmpty) coverPath,
-        'cover.jpg',
-        'cover.jpeg',
-        'cover.png',
-      ],
-      listDir: _listDirEntries,
-    );
-    if (resolved != null && File(resolved).existsSync()) return resolved;
-    return null;
-  }
+  }) => resolveBookCoverFilePath(extractDir: extractDir, coverPath: coverPath);
 
   /// 删一本书（EPUB / PDF / 漫画 / 字幕书）攒下的统计：「同时删除统计数据」勾选的
   /// 落地，书架单删 / 批删 / 合集连删 / 漫画作品页移出书架共用。

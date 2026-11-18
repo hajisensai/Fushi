@@ -1,0 +1,910 @@
+{
+ "status": 200,
+ "pagination": {
+  "count": 24,
+  "next": "https://api.mangabaka.org/v1/series/search?limit=10&q=citrus&page=2",
+  "previous": null,
+  "page": 1,
+  "limit": 10
+ },
+ "data": [
+  {
+   "id": 7457,
+   "state": "active",
+   "merged_with": null,
+   "canonical_url": "https://mangabaka.org/manga/7457/citrus",
+   "title": "Citrus+",
+   "native_title": "citrus+",
+   "romanized_title": "citrus+",
+   "secondary_titles": {
+    "ko": [
+     {
+      "type": "official",
+      "title": "시트러스 +",
+      "note": null
+     }
+    ]
+   },
+   "cover": {
+    "raw": {
+     "url": "https://images.mangabaka.dev/8/4/b/8/c/f/d/9/6a1d/4207/9b5b/106bcdc3a830",
+     "size": 881035,
+     "height": 2560,
+     "width": 1801,
+     "format": "jpeg"
+    }
+   },
+   "authors": [
+    "Saburouta"
+   ],
+   "artists": [
+    "Saburouta"
+   ],
+   "year": 2018,
+   "status": "releasing",
+   "content_rating": "safe",
+   "type": "manga",
+   "original_language": "ja",
+   "final_volume": "7",
+   "titles": [
+    {
+     "language": "en",
+     "traits": [
+      "official"
+     ],
+     "title": "citrus+",
+     "note": null,
+     "is_primary": true
+    },
+    {
+     "language": "ja",
+     "traits": [
+      "native"
+     ],
+     "title": "citrus+",
+     "note": null,
+     "is_primary": true
+    },
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Citrus Plus",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "ja",
+     "traits": [
+      "native"
+     ],
+     "title": "Citrus+ シトラスプラス",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "ja",
+     "traits": [
+      "native"
+     ],
+     "title": "シトラスプラス",
+     "note": null,
+     "is_primary": false
+    }
+   ]
+  },
+  {
+   "id": 8940,
+   "state": "active",
+   "merged_with": null,
+   "canonical_url": "https://mangabaka.org/manga/8940/citrus",
+   "title": "Citrus",
+   "native_title": "citrus",
+   "romanized_title": "citrus",
+   "secondary_titles": {
+    "ko": [
+     {
+      "type": "official",
+      "title": "시트러스",
+      "note": null
+     }
+    ]
+   },
+   "cover": {
+    "raw": {
+     "url": "https://images.mangabaka.dev/1/9/b/5/8/e/4/8/2e49/48c9/bf0f/5dd836eb07c5",
+     "size": 483315,
+     "height": 2000,
+     "width": 1434,
+     "format": "jpeg"
+    }
+   },
+   "authors": [
+    "Saburouta"
+   ],
+   "artists": [
+    "Saburouta"
+   ],
+   "year": 2012,
+   "status": "completed",
+   "content_rating": "erotica",
+   "type": "manga",
+   "original_language": "ja",
+   "final_volume": "10",
+   "titles": [
+    {
+     "language": "en",
+     "traits": [
+      "official"
+     ],
+     "title": "citrus",
+     "note": null,
+     "is_primary": true
+    },
+    {
+     "language": "ja",
+     "traits": [
+      "native"
+     ],
+     "title": "citrus",
+     "note": null,
+     "is_primary": true
+    },
+    {
+     "language": "en",
+     "traits": [
+      "alternative"
+     ],
+     "title": "citrus: saburouta presents secret love affair with sister",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "en",
+     "traits": [],
+     "title": "citrus: secret love affair with sister",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "ja",
+     "traits": [
+      "native"
+     ],
+     "title": "シトラス",
+     "note": null,
+     "is_primary": false
+    }
+   ]
+  },
+  {
+   "id": 16097,
+   "state": "active",
+   "merged_with": null,
+   "canonical_url": "https://mangabaka.org/manga/16097/Citrus",
+   "title": "Citrus",
+   "native_title": "シトラス",
+   "romanized_title": "Citrus",
+   "secondary_titles": {
+    "unknown": [
+     {
+      "type": "unknown",
+      "title": "Citrus",
+      "note": null
+     },
+     {
+      "type": "unknown",
+      "title": "Citrus (Ayuko)",
+      "note": null
+     },
+     {
+      "type": "unknown",
+      "title": "シトラス",
+      "note": null
+     },
+     {
+      "type": "unknown",
+      "title": "柑橘系青春",
+      "note": null
+     }
+    ]
+   },
+   "cover": {
+    "raw": {
+     "url": "https://s4.anilist.co/file/anilistcdn/media/manga/cover/large/nx76070-LyTZN5RcvbBc.png",
+     "size": 344050,
+     "height": 732,
+     "width": 460,
+     "format": "png"
+    }
+   },
+   "authors": [
+    "Ayuko"
+   ],
+   "artists": [
+    "Ayuko"
+   ],
+   "year": 2010,
+   "status": "completed",
+   "content_rating": "safe",
+   "type": "manga",
+   "original_language": "ja",
+   "final_volume": "2",
+   "titles": [
+    {
+     "language": "ja",
+     "traits": [
+      "native"
+     ],
+     "title": "シトラス",
+     "note": null,
+     "is_primary": true
+    }
+   ]
+  },
+  {
+   "id": 27630,
+   "state": "active",
+   "merged_with": null,
+   "canonical_url": "https://mangabaka.org/manga/27630/Citrus-Special-Anthology-Lovely-Party",
+   "title": "citrus Special Anthology: LOVELY PARTY",
+   "native_title": "citrus Special Anthology: LOVELY PARTY",
+   "romanized_title": "Citrus Comic Anthology: Lovely Party",
+   "secondary_titles": {
+    "unknown": [
+     {
+      "type": "unknown",
+      "title": "Citrus Comic Anthology: Lovely Party",
+      "note": null
+     },
+     {
+      "type": "unknown",
+      "title": "Citrus Special Anthology: Lovely Party",
+      "note": null
+     }
+    ]
+   },
+   "cover": {
+    "raw": {
+     "url": "https://s4.anilist.co/file/anilistcdn/media/manga/cover/large/nx105455-iaussaLUcvTn.png",
+     "size": 425891,
+     "height": 654,
+     "width": 460,
+     "format": "png"
+    }
+   },
+   "authors": [
+    "Ako Katakura",
+    "Aya Oryuu",
+    "Hibiki Aoto",
+    "Kiyoko Iwami",
+    "Kuunerin",
+    "Merryhachi",
+    "Naoko Kodama",
+    "Saburouta",
+    "tMnR",
+    "Yayoi Oosawa",
+    "Yuki Yukio",
+    "Yuuki Gotou"
+   ],
+   "artists": [
+    "Ako Katakura",
+    "Aya Oryuu",
+    "Hibiki Aoto",
+    "Kiyoko Iwami",
+    "Kuunerin",
+    "Merryhachi",
+    "Naoko Kodama",
+    "tMnR",
+    "Yayoi Oosawa",
+    "Yuki Yukio",
+    "Yuuki Gotou"
+   ],
+   "year": 2017,
+   "status": "completed",
+   "content_rating": "safe",
+   "type": "manga",
+   "original_language": "ja",
+   "final_volume": "1",
+   "titles": [
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Citrus Anthology: Lovely Party",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "ja",
+     "traits": [
+      "native"
+     ],
+     "title": "citrus Special Anthology: LOVELY PARTY",
+     "note": null,
+     "is_primary": true
+    },
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Citrus Special Anthology: Lovely Party",
+     "note": null,
+     "is_primary": true
+    },
+    {
+     "language": "ja",
+     "traits": [
+      "native"
+     ],
+     "title": "Citrus 特装版スペシャルアンソロジー Lovely Party",
+     "note": null,
+     "is_primary": false
+    }
+   ]
+  },
+  {
+   "id": 27631,
+   "state": "active",
+   "merged_with": null,
+   "canonical_url": "https://mangabaka.org/manga/27631/Citrus-Comic-Anthology",
+   "title": "Citrus: Comic Anthology",
+   "native_title": "citrus コミックアンソロジー",
+   "romanized_title": "citrus Comic Anthology",
+   "secondary_titles": {
+    "unknown": [
+     {
+      "type": "unknown",
+      "title": "Citrus Comic Anthology",
+      "note": null
+     },
+     {
+      "type": "unknown",
+      "title": "citrus コミックアンソロジー",
+      "note": null
+     }
+    ]
+   },
+   "cover": {
+    "raw": {
+     "url": "https://images.mangabaka.dev/1/d/1/0/a/6/1/b/ccd5/4999/ac56/9aec963802da",
+     "size": 1281547,
+     "height": 2560,
+     "width": 1804,
+     "format": "jpeg"
+    }
+   },
+   "authors": [
+    "Ako Katakura",
+    "Chiri Yuino",
+    "Chisame",
+    "Eku Takeshima",
+    "Haru Hisakawa",
+    "Haruka Kiriyama",
+    "Hibiki Aoto",
+    "Kayako",
+    "Kiyoko Iwami",
+    "Mako Takahashi",
+    "Miyabi Fujieda",
+    "Miyami Oomiya",
+    "Naoko Kodama",
+    "Neji",
+    "Saburouta",
+    "Yayoi Oosawa",
+    "Yuki Yukio",
+    "Yuuki Gotou"
+   ],
+   "artists": [
+    "Ako Katakura",
+    "Benishake",
+    "Chiri Yuino",
+    "Chisame",
+    "Eku Takeshima",
+    "Haru Hisakawa",
+    "Haruka Kiriyama",
+    "Hibiki Aoto",
+    "Kayako",
+    "Kiyoko Iwami",
+    "Mako Takahashi",
+    "Miyabi Fujieda",
+    "Miyami Oomiya",
+    "Naoko Kodama",
+    "Neji",
+    "Yayoi Oosawa",
+    "Yuki Yukio",
+    "Yuuki Gotou"
+   ],
+   "year": 2018,
+   "status": "completed",
+   "content_rating": "safe",
+   "type": "manga",
+   "original_language": "ja",
+   "final_volume": "1",
+   "titles": [
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Citrus Anthology",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Citrus Comic Anthology",
+     "note": null,
+     "is_primary": true
+    },
+    {
+     "language": "ja",
+     "traits": [
+      "native"
+     ],
+     "title": "citrus コミックアンソロジー",
+     "note": null,
+     "is_primary": true
+    }
+   ]
+  },
+  {
+   "id": 171853,
+   "state": "active",
+   "merged_with": null,
+   "canonical_url": "https://mangabaka.org/manga/171853/The-Draft-of-Citrus",
+   "title": "The Draft of Citrus",
+   "native_title": "旋風の橘",
+   "romanized_title": "Kaze no Tachibana",
+   "secondary_titles": {
+    "unknown": [
+     {
+      "type": "unknown",
+      "title": "Citrus in the Wind",
+      "note": null
+     },
+     {
+      "type": "unknown",
+      "title": "Kaze no Tachibana",
+      "note": null
+     },
+     {
+      "type": "unknown",
+      "title": "Senpuu no Tachibana",
+      "note": null
+     },
+     {
+      "type": "unknown",
+      "title": "The Draft of Citrus",
+      "note": null
+     }
+    ]
+   },
+   "cover": {
+    "raw": {
+     "url": "https://s4.anilist.co/file/anilistcdn/media/manga/cover/large/bx142507-GtHp3rhTvW98.jpg",
+     "size": 104518,
+     "height": 723,
+     "width": 460,
+     "format": "jpeg"
+    }
+   },
+   "authors": [
+    "Shinobu Inokuma"
+   ],
+   "artists": [
+    "Shinobu Inokuma"
+   ],
+   "year": 2001,
+   "status": "completed",
+   "content_rating": "safe",
+   "type": "manga",
+   "original_language": "ja",
+   "final_volume": "5",
+   "titles": [
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Citrus in the Wind",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Senpuu no Tachibana",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "en",
+     "traits": [
+      "official"
+     ],
+     "title": "The Draft of Citrus",
+     "note": null,
+     "is_primary": true
+    },
+    {
+     "language": "en",
+     "traits": [],
+     "title": "The Whirlwind of Citrus",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "ja",
+     "traits": [
+      "native"
+     ],
+     "title": "旋風の橘",
+     "note": null,
+     "is_primary": true
+    }
+   ]
+  },
+  {
+   "id": 23144,
+   "state": "active",
+   "merged_with": null,
+   "canonical_url": "https://mangabaka.org/manga/23144/Citrus-Eyes",
+   "title": "Citrus Eyes",
+   "native_title": "シトラス・アイズ",
+   "romanized_title": "Citrus Eyes",
+   "secondary_titles": {
+    "unknown": [
+     {
+      "type": "unknown",
+      "title": "Citrus Eyes",
+      "note": null
+     },
+     {
+      "type": "unknown",
+      "title": "シトラス・アイズ",
+      "note": null
+     }
+    ]
+   },
+   "cover": {
+    "raw": {
+     "url": "https://s4.anilist.co/file/anilistcdn/media/manga/cover/large/bx34370-VF30idl4EzPv.jpg",
+     "size": 120171,
+     "height": 723,
+     "width": 460,
+     "format": "jpeg"
+    }
+   },
+   "authors": [
+    "Kazumi Ooya"
+   ],
+   "artists": [
+    "Kazumi Ooya"
+   ],
+   "year": 2002,
+   "status": "completed",
+   "content_rating": "safe",
+   "type": "manga",
+   "original_language": "ja",
+   "final_volume": "1",
+   "titles": [
+    {
+     "language": "en",
+     "traits": [
+      "official"
+     ],
+     "title": "Citrus Eyes",
+     "note": null,
+     "is_primary": true
+    },
+    {
+     "language": "ja",
+     "traits": [
+      "native"
+     ],
+     "title": "シトラス・アイズ",
+     "note": null,
+     "is_primary": true
+    }
+   ]
+  },
+  {
+   "id": 164977,
+   "state": "active",
+   "merged_with": null,
+   "canonical_url": "https://mangabaka.org/manga/164977/First-Love-Citrus",
+   "title": "Hatsukoi Citrus",
+   "native_title": "初恋シトラス",
+   "romanized_title": "Hatsukoi Citrus",
+   "secondary_titles": {
+    "unknown": [
+     {
+      "type": "unknown",
+      "title": "첫사랑 시트러스",
+      "note": null
+     },
+     {
+      "type": "unknown",
+      "title": "First Love Citrus",
+      "note": null
+     },
+     {
+      "type": "unknown",
+      "title": "Hatsukoi Citrus",
+      "note": null
+     },
+     {
+      "type": "unknown",
+      "title": "初恋シトラス",
+      "note": null
+     }
+    ]
+   },
+   "cover": {
+    "raw": {
+     "url": "https://s4.anilist.co/file/anilistcdn/media/manga/cover/large/bx174700-ZIoHp2qzzRkl.jpg",
+     "size": 88473,
+     "height": 654,
+     "width": 460,
+     "format": "jpeg"
+    }
+   },
+   "authors": [
+    "Natsuwo"
+   ],
+   "artists": [
+    "Natsuwo"
+   ],
+   "year": 2020,
+   "status": "completed",
+   "content_rating": "safe",
+   "type": "manga",
+   "original_language": "ja",
+   "final_volume": "1",
+   "titles": [
+    {
+     "language": "en",
+     "traits": [],
+     "title": "First Love Citrus",
+     "note": null,
+     "is_primary": true
+    },
+    {
+     "language": "ja",
+     "traits": [
+      "native"
+     ],
+     "title": "初恋シトラス",
+     "note": null,
+     "is_primary": true
+    }
+   ]
+  },
+  {
+   "id": 67841,
+   "state": "active",
+   "merged_with": null,
+   "canonical_url": "https://mangabaka.org/manga/67841/Yonshimai-Encount",
+   "title": "Citrus Encount",
+   "native_title": "四姉妹〈しとらす〉エンカウント",
+   "romanized_title": "Citrous Encounter",
+   "secondary_titles": {
+    "ja": [
+     {
+      "type": "native",
+      "title": "四姉妹エンカウント",
+      "note": "Without furigana"
+     }
+    ],
+    "ja-ro": [
+     {
+      "type": "native",
+      "title": "Yonshimai Encount",
+      "note": "Without furigana"
+     },
+     {
+      "type": "alternative",
+      "title": "Citrus Encounter",
+      "note": "Alt. エンカウント"
+     },
+     {
+      "type": "alternative",
+      "title": "Citrous Encounter",
+      "note": "Alt. エンカウント and alt. しとらす"
+     }
+    ]
+   },
+   "cover": {
+    "raw": {
+     "url": "https://images.mangabaka.dev/8/9/d/e/5/c/6/d/40a3/4880/a3a2/7b995aa86fb2",
+     "size": 324188,
+     "height": 1419,
+     "width": 1000,
+     "format": "jpeg"
+    }
+   },
+   "authors": [
+    "Towa Ooshima"
+   ],
+   "artists": [
+    "Towa Ooshima"
+   ],
+   "year": 2009,
+   "status": "completed",
+   "content_rating": "suggestive",
+   "type": "manga",
+   "original_language": "ja",
+   "final_volume": "7",
+   "titles": [
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Shitorasu Encount",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Shitorasu Encounter",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Yonshimai Encount",
+     "note": null,
+     "is_primary": true
+    },
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Yonshimai Encounter",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "ja",
+     "traits": [
+      "native"
+     ],
+     "title": "四姉妹エンカウント",
+     "note": "Without furigana",
+     "is_primary": false
+    },
+    {
+     "language": "ja",
+     "traits": [
+      "native"
+     ],
+     "title": "四姉妹〈しとらす〉エンカウント",
+     "note": null,
+     "is_primary": true
+    }
+   ]
+  },
+  {
+   "id": 171588,
+   "state": "active",
+   "merged_with": null,
+   "canonical_url": "https://mangabaka.org/manga/171588/Omoide-Shower",
+   "title": "Joudou Citrous",
+   "native_title": "情動シトラス",
+   "romanized_title": "Johdoh Citrous",
+   "secondary_titles": {
+    "unknown": [
+     {
+      "type": "unknown",
+      "title": "Johdoh Citrous",
+      "note": null
+     },
+     {
+      "type": "unknown",
+      "title": "Johdoh Citrus",
+      "note": null
+     },
+     {
+      "type": "unknown",
+      "title": "Joudou Citrous",
+      "note": null
+     },
+     {
+      "type": "unknown",
+      "title": "Joudou Citrus",
+      "note": null
+     }
+    ]
+   },
+   "cover": {
+    "raw": {
+     "url": "https://s4.anilist.co/file/anilistcdn/media/manga/cover/large/bx145230-BX4Ajmpf97RF.png",
+     "size": 349336,
+     "height": 651,
+     "width": 460,
+     "format": "png"
+    }
+   },
+   "authors": [
+    "Furatsu"
+   ],
+   "artists": [
+    "Furatsu"
+   ],
+   "year": 2021,
+   "status": "completed",
+   "content_rating": "pornographic",
+   "type": "manga",
+   "original_language": "ja",
+   "final_volume": "1",
+   "titles": [
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Himitsu no Kanbyou",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Hitori yori Futaru?",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Iinkai no Ato ni",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Kanchigai Doutei to Kakure Bitch",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Kouka wa Batsugun da!",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Omoide Shower",
+     "note": null,
+     "is_primary": true
+    },
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Tsuntsun Kanojo no Jijou",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Wakarasete Yaruyo",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Watashi ga Saki ni...",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "ja",
+     "traits": [
+      "native"
+     ],
+     "title": "情動シトラス",
+     "note": null,
+     "is_primary": true
+    }
+   ]
+  }
+ ]
+}

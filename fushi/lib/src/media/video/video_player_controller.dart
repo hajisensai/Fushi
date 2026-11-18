@@ -2659,6 +2659,13 @@ class VideoPlayerController extends ChangeNotifier
     return idx < 0 ? null : idx;
   }
 
+  /// 当前选中音轨的语言标签（libmpv `lang`，如 `jpn`）；跟随默认 / 没有标签时 null。
+  /// 字幕生成把在线流的整集音频拉成单轨副本后，副本里探测不到原流的标签，由它补上。
+  String? get currentAudioLanguage {
+    final String? lang = _player?.state.track.audio.language?.trim();
+    return lang == null || lang.isEmpty ? null : lang;
+  }
+
   /// 真实音轨（去掉 libmpv 的 auto/no 伪轨）条数；未 [load] 时为 0。
   ///
   /// 用作 ffmpeg `-map 0:a:N` 的下标上界（`N < count`）：mpv 把外挂音频也算进

@@ -12,6 +12,8 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:drift/drift.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/video/disc/disc_format.dart'
+    show discRootForMemberPath;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
 import 'package:path/path.dart' as p;
 
@@ -42,6 +44,12 @@ String fallbackSubtitleWorkKey({String? folderPath, required String title}) {
 }
 
 String _sha1(String text) => sha1.convert(utf8.encode(text)).toString();
+
+/// 没有库内身份时按哪个目录兜底作品（[fallbackSubtitleWorkKey] 的 `folderPath`，作品名
+/// 也取它的名字）：原盘成员取盘根（含 `BDMV` / `VIDEO_TS` 的那一层——`BDMV/PLAYLIST`
+/// 是每张盘都同名的盘内结构，拿它的名字当作品名没有意义），其余取视频所在目录。
+String subtitleWorkFolderOf(String videoPath) =>
+    discRootForMemberPath(videoPath) ?? p.dirname(videoPath);
 
 /// 视频成员在 `media_collection_items.media_type` 里的值。
 const String _kVideoMediaType = 'video';

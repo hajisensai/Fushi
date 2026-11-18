@@ -53,6 +53,10 @@ import 'package:fushi_engine/sync/video_metadata_work_target.dart';
 import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_storage.dart';
+import 'package:fushi_engine/media/video/video_local_files.dart'
+    show videoBookDiscTitlePath, videoBookEpisodePath;
+import 'package:fushi_engine/media/video/video_member_file.dart'
+    show hasLocalMediaFile;
 import 'package:fushi_engine/media/video/series_playback_prefs.dart'
     show
         effectiveSeriesAudioTrackId,
@@ -157,6 +161,7 @@ abstract class _LocalLibraryHostBase
         VideoDanmakuKeyHost,
         VideoDiscShareHost,
         VideoClipExportHost,
+        VideoDiscTitleAudioHost,
         AudiobookDelayHost,
         AudiobookSubtitleHost,
         AudiobookContentRevisionHost,

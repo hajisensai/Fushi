@@ -218,7 +218,57 @@
       lzt: v ? lazyTextTracks() : '',
       nfat: v ? netflixAudioTracks() : '',
       blk: v ? playbackBlocker(v) : '',
+      eme: v ? mediaEncrypted(v) : false,
     };
+  }
+  // ── 媒体地址（字幕生成把整集音频拉到本机，Dart 侧 web_video_subtitle_media.dart）──
+  // 站点播放器大多走 MSE：<video>.currentSrc 是 blob:，真正的地址是播放器脚本取的 HLS / DASH 清单。
+  // 清单请求从 Resource Timing 里认（document-start 起观察，buffered 补上观察前的），按当时的
+  // videoKey 归属——SPA 换了视频，上一个视频的清单不能拿来拉这一个的音频。
+  // EME（mediaKeys 已挂 / Netflix）= 加密流，拿到地址也解不出音频，如实上报。
+  var MEDIA_MANIFEST_RE = /\.(m3u8|mpd)(?:[?#]|$)/i;
+  var mediaManifests = [];
+  function noteMediaRequest(name) {
+    var url = String(name || '');
+    if (!/^https?:\/\//i.test(url) || !MEDIA_MANIFEST_RE.test(url)) return;
+    var key = videoKey();
+    for (var i = 0; i < mediaManifests.length; i++) {
+      if (mediaManifests[i].u === url && mediaManifests[i].k === key) return;
+    }
+    mediaManifests.push({ u: url, k: key });
+    if (mediaManifests.length > 40) mediaManifests.shift();
+  }
+  try {
+    if (typeof PerformanceObserver === 'function') {
+      new PerformanceObserver(function (list) {
+        var entries = list.getEntries();
+        for (var i = 0; i < entries.length; i++) noteMediaRequest(entries[i].name);
+      }).observe({ type: 'resource', buffered: true });
+    }
+  } catch (_) {}
+  function mediaEncrypted(v) {
+    if (site() === 'netflix') return true;
+    try { return !!(v && v.mediaKeys); } catch (_) { return false; }
+  }
+  function mediaSource() {
+    var v = video();
+    var key = videoKey();
+    var manifests = [];
+    for (var i = 0; i < mediaManifests.length; i++) {
+      if (mediaManifests[i].k === key) manifests.push(mediaManifests[i].u);
+    }
+    var src = '';
+    try { src = v ? String(v.currentSrc || v.src || '') : ''; } catch (_) {}
+    var ua = '';
+    try { ua = typeof navigator !== 'undefined' ? String(navigator.userAgent || '') : ''; } catch (_) {}
+    return JSON.stringify({
+      href: location.href,
+      ua: ua,
+      hasVideo: !!v,
+      src: src,
+      eme: v ? mediaEncrypted(v) : false,
+      manifests: manifests,
+    });
   }
   // ── 播放被站点打断（P0-3）：「还在看吗？」/ 播放错误页（M7375 之类）/ <video> 自己报错。播放器档
   // 把页面除画面外全部藏起来、WebView 也不收输入，这些站点弹层用户既看不到也点不到——画面停住像
@@ -874,5 +924,7 @@
       return 'ok';
     },
     state: function () { var s = snapshot(); last = s; return JSON.stringify(s); },
+    // 字幕生成要拉整集音频：主视频的直链 / 这个视频的清单请求 / 是否 EME 加密 / UA（见 mediaSource）。
+    mediaSource: mediaSource,
   };
 })();

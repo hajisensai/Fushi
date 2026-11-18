@@ -12,7 +12,7 @@ import 'package:fushi_engine/sync/remote_collection_adoption_service.dart';
 import 'package:fushi_engine/sync/collection_book_identity_index.dart';
 import 'package:fushi_engine/media/collections/collection_cover.dart'
     show collectionOwnCoverCandidates;
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show ValueListenable, kIsWeb;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:transparent_image/transparent_image.dart';
@@ -115,6 +115,7 @@ import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
     show fushiNotificationFromVisibleSubtree;
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
     show FushiShellActionsSlot, FushiShellTitleScope;
+import 'package:fushi/src/utils/components/section_deferred_build.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
     show ShelfCoverFrame, shelfCoverCard;
 import 'package:fushi/src/utils/components/section_swipe_navigator.dart'
@@ -443,7 +444,10 @@ class _HomeAvatarPillState extends ConsumerState<_HomeAvatarPill> {
 /// 书与阅读位置走 Riverpod provider（响应式）；视频 / 统计等本地聚合在
 /// [initState] 一次并发载入，结果按数据库实例做快照（BUG-3034），重建时首帧直接
 /// 用快照渲染。
-class HomeDashboardPage extends BaseModuleTabPage {
+///
+/// 藏在别的 tab 后面时不重建（[SectionDeferredBuild]）：书列表 / 阅读位置这些
+/// 共享 provider 被别的页面失效时，等切回首页再按新值构建一次。
+class HomeDashboardPage extends BaseModuleTabPage with SectionDeferredBuild {
   const HomeDashboardPage({
     super.key,
     required this.videoRepo,
@@ -818,12 +822,29 @@ class _HomeDashboardPageState
 
   /// 首页此刻是否真被看着（所在 tab 可见、没被别的页面盖住）：两种情况 Flutter 都会关掉这里的 TickerMode。
   /// 复习条据此只在看得见时订阅牌组计数（[homeSrsLiveProvider]）。
+  ///
+  /// 订阅 TickerMode 的 notifier 而不是 `TickerMode.valuesOf(context)`：后者让本页
+  /// 的 Element 依赖 TickerMode，每次切走 / 切回都被标脏整页重建一遍，而这里要的
+  /// 只是这一个开关。
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final bool live = TickerMode.valuesOf(context).enabled;
+    final ValueListenable<TickerModeData> values = TickerMode.getValuesNotifier(
+      context,
+    );
+    if (!identical(values, _tickerValues)) {
+      _tickerValues?.removeListener(_syncSrsLive);
+      _tickerValues = values..addListener(_syncSrsLive);
+    }
+    _syncSrsLive();
+  }
+
+  ValueListenable<TickerModeData>? _tickerValues;
+
+  void _syncSrsLive() {
+    final bool live = _tickerValues?.value.enabled ?? true;
     if (ref.read(homeSrsLiveProvider) == live) return;
-    // 依赖变化回调在构建期内，不能当场改 provider。
+    // TickerMode 的通知与依赖变化回调都在构建期内，不能当场改 provider。
     scheduleMicrotask(() {
       if (mounted) ref.read(homeSrsLiveProvider.notifier).state = live;
     });
@@ -925,20 +946,42 @@ class _HomeDashboardPageState
     // 服务器侧的进度在别处（播放页 / 其它设备）会变，切回首页时重拉——经
     // [ServerContinueFeed] 节流，短时间内来回切 tab 不重发请求。
     unawaited(_loadServerContinue());
-    if (_reloadDeferredWhileHidden) {
-      _reloadDeferredWhileHidden = false;
-      _reloadNow();
-      return;
-    }
+    // 有推迟的重载：现在就做，或（Offstage 还没重建时）留给紧随其后的
+    // [onShownToUserAgain]。重载自己会补位远端，不必再单独拉一次。
+    if (_flushDeferredReload() || _reloadDeferredWhileHidden) return;
     unawaited(_loadRemoteDashboardData(skipIfUnchanged: true));
   }
 
-  /// 首页被 Offstage 藏着时到达的数据变更：只记一笔，不在后台重跑整批聚合。
+  /// 首页回到用户眼前（盖在上面的播放页 / 阅读器 / 详情页弹走，或切回首页 tab）：
+  /// 补做不在眼前期间推迟的重载。
+  @override
+  void onShownToUserAgain() {
+    _flushDeferredReload();
+  }
+
+  /// 首页不在用户眼前（[isShownToUser] 为假）时到达的数据变更：只记一笔，不在
+  /// 后台重跑整批聚合。
   ///
-  /// 保活之前首页一切走就 dispose，根本不会在别的 tab 上重查；保活之后若照旧
-  /// 每次写库都重载，用户在书架 / 阅读器里翻页（readerPositions 写入）就会让
-  /// 看不见的首页隔几秒在 UI isolate 上跑一遍全量统计聚合。
+  /// 两种「不在眼前」都要挡：
+  /// - 切到了别的 tab（被 Offstage 藏着）：保活之前首页一切走就 dispose，根本不会
+  ///   在别的 tab 上重查；保活之后若照旧每次写库都重载，用户在书架 / 阅读器里
+  ///   翻页（readerPositions 写入）就会让看不见的首页隔几秒在 UI isolate 上跑
+  ///   一遍全量统计聚合。
+  /// - 被别的页面盖住（BUG-4895）：从首页「继续」点开视频后首页仍是当前 tab。
+  ///   播放断点每秒往 video_books 落一次库（学习时钟每分钟再写一笔
+  ///   study_segments），于是首页每秒整批重查 + 整页 setState 一次，每次占 UI
+  ///   线程几十毫秒；视频纹理的新帧要等 UI 线程排到才上屏，画面就一顿一顿地
+  ///   掉帧（libmpv 自己的丢帧计数是 0）。
   bool _reloadDeferredWhileHidden = false;
+
+  /// 首页回到用户眼前时补做被推迟的重载；没有推迟的、或仍不在眼前就什么都不做。
+  /// 返回是否发起了重载。
+  bool _flushDeferredReload() {
+    if (!_reloadDeferredWhileHidden || !isShownToUser) return false;
+    _reloadDeferredWhileHidden = false;
+    _reloadNow();
+    return true;
+  }
 
   bool get _isVisibleTab => homeShellTabNotifier.value == HomeTab.home;
 
@@ -986,7 +1029,7 @@ class _HomeDashboardPageState
     _reloadDebounce?.cancel();
     _reloadDebounce = Timer(const Duration(milliseconds: 400), () {
       if (!mounted) return;
-      if (!_isVisibleTab) {
+      if (!isShownToUser) {
         _reloadDeferredWhileHidden = true;
         return;
       }
@@ -1033,6 +1076,7 @@ class _HomeDashboardPageState
   void dispose() {
     _reloadDebounce?.cancel();
     _kavitaLifecycle?.dispose();
+    _tickerValues?.removeListener(_syncSrsLive);
     homeShellTabNotifier.removeListener(_onTabForKavita);
     _midnightReload?.cancel();
     unawaited(_dataChangeSub?.cancel());

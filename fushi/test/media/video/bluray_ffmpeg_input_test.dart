@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:test/test.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_angle.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_ffmpeg_input.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/video_clip_exporter.dart';
@@ -309,6 +310,72 @@ void main() {
         prepareBlurayFfmpegArgs(<String>['-i', playlist]),
         throwsA(isA<FileSystemException>()),
       );
+    },
+  );
+
+  test(
+    'multi-angle member reads the current angle clips on the same axis',
+    () async {
+      // 伪造的多角度 title：第 2 段有第 2 个角度（片段 00004），IN/OUT 与第 1 个角度
+      // 共用。按角度成员路径抽取时只换片段文件，时间窗、偏移与过滤器一字不差。
+      await File(
+        p.join(disc.path, 'BDMV', 'STREAM', '00004.m2ts'),
+      ).writeAsBytes(<int>[0]);
+      final String angleTitle = p.join(p.dirname(playlist), '00003.mpls');
+      await File(angleTitle).writeAsBytes(
+        buildMplsFixture(
+          playItems: const <FixturePlayItem>[
+            FixturePlayItem(
+              clipId: '00001',
+              inTimeTicks: 450000,
+              outTimeTicks: 540000,
+            ),
+            FixturePlayItem(
+              clipId: '00002',
+              inTimeTicks: 900000,
+              outTimeTicks: 1035000,
+              angleClipIds: <String>['00004'],
+            ),
+          ],
+        ),
+      );
+      Future<(List<String>, String)> prepare(String input) async {
+        final BlurayFfmpegInput prepared = await prepareBlurayFfmpegArgs(
+          <String>[
+            '-ss',
+            '1.5',
+            '-t',
+            '1',
+            '-i',
+            input,
+            '-vn',
+            '-ac',
+            '1',
+            'out.wav',
+          ],
+        );
+        final String manifest = prepared.args[prepared.args.indexOf('-i') + 1];
+        final String text = await File(manifest).readAsString();
+        final List<String> args = <String>[
+          for (final String arg in prepared.args)
+            if (arg != manifest) arg,
+        ];
+        await prepared.dispose();
+        return (args, text);
+      }
+
+      final (List<String> baseArgs, String baseText) = await prepare(
+        angleTitle,
+      );
+      final (List<String> angleArgs, String angleText) = await prepare(
+        blurayAnglePath(angleTitle, 1),
+      );
+      expect(baseText, contains('00002.m2ts'));
+      expect(angleText, isNot(contains('00002.m2ts')));
+      expect(angleText, contains('00001.m2ts'));
+      expect(angleText, contains('00004.m2ts'));
+      expect(angleText, baseText.replaceAll('00002.m2ts', '00004.m2ts'));
+      expect(angleArgs, baseArgs);
     },
   );
 

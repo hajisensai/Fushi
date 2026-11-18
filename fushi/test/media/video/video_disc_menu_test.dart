@@ -964,4 +964,50 @@ void main() {
       },
     );
   });
+
+  group('extraction path follows the playing angle', () {
+    const String title = '/d/Disc/BDMV/PLAYLIST/00001.mpls';
+
+    test('Blu-ray angle 0 extracts the title itself', () {
+      expect(discExtractionPathForAngle(title, angle: 0, dvd: false), title);
+    });
+
+    test('Blu-ray angles 1-8 extract the angle member path', () {
+      expect(
+        discExtractionPathForAngle(title, angle: 1, dvd: false),
+        '/d/Disc/BDMV/PLAYLIST/00001.a2.mpls',
+      );
+      expect(
+        discExtractionPathForAngle(title, angle: 8, dvd: false),
+        '/d/Disc/BDMV/PLAYLIST/00001.a9.mpls',
+      );
+    });
+
+    test('unreported or impossible Blu-ray angles have no extraction path', () {
+      expect(discExtractionPathForAngle(title, angle: -1, dvd: false), isNull);
+      expect(discExtractionPathForAngle(title, angle: 9, dvd: false), isNull);
+    });
+
+    test(
+      'DVD angle 0 extracts the title, angles 1-8 its angle member path',
+      () {
+        const String dvd = '/d/Disc/VIDEO_TS/TITLE_01.dvdtitle';
+        expect(discExtractionPathForAngle(dvd, angle: 0, dvd: true), dvd);
+        expect(
+          discExtractionPathForAngle(dvd, angle: 1, dvd: true),
+          '/d/Disc/VIDEO_TS/TITLE_01.a2.dvdtitle',
+        );
+        expect(
+          discExtractionPathForAngle(dvd, angle: 8, dvd: true),
+          '/d/Disc/VIDEO_TS/TITLE_01.a9.dvdtitle',
+        );
+      },
+    );
+
+    test('unreported or impossible DVD angles have no extraction path', () {
+      const String dvd = '/d/Disc/VIDEO_TS/TITLE_01.dvdtitle';
+      expect(discExtractionPathForAngle(dvd, angle: -1, dvd: true), isNull);
+      expect(discExtractionPathForAngle(dvd, angle: 9, dvd: true), isNull);
+    });
+  });
 }

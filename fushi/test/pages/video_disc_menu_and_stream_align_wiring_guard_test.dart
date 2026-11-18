@@ -82,7 +82,11 @@ void main() {
       subtitle,
       'Future<List<double>> _loadSubtitleWaveformSegment(',
     );
-    expect(waveform, contains('if (_canResolveSubtitleTimingAudio)'));
+    // 判据是「本机 / host 现成的整集音源」：`_canResolveSubtitleTimingAudio` 自字幕工作台
+    // 起还包含「在线流能把整集音频拉到本机」（转录用），波形若沿用它就会为看一段波形
+    // 去拉整集流音频。
+    expect(waveform, contains('if (_hasLocalOrHostTimingAudio)'));
+    expect(waveform, isNot(contains('_canResolveSubtitleTimingAudio')));
     expect(waveform, contains('_streamAlignAudioSource'));
     expect(
       _member(subtitle, 'Future<List<double>> _extractStreamWaveformSegment('),

@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/lookup/gal_attached_text_controller.dart';
 import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
+import 'package:fushi/src/lookup/lookup_overlay_navigator.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/pages/implementations/gal_attached_lookup_workbench.dart';
 import 'package:fushi/src/pages/implementations/gal_workbench_chrome.dart';
@@ -1061,6 +1062,66 @@ void main() {
       reason:
           'TickerMode changes during build must not synchronously dirty '
           'the root OverlayEntry and corrupt the layout queue',
+    );
+  });
+
+  testWidgets('tab 藏起时查词浮层留在树上只是 Offstage，切回是同一棵子树（BUG-4896）', (
+    WidgetTester tester,
+  ) async {
+    final ValueNotifier<bool> visible = ValueNotifier<bool>(true);
+    addTearDown(visible.dispose);
+    await tester.pumpWidget(
+      _wrapPage(
+        Scaffold(
+          body: ValueListenableBuilder<bool>(
+            valueListenable: visible,
+            builder: (BuildContext context, bool v, _) =>
+                TickerMode(enabled: v, child: const TexthookerPage()),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final dynamic state = tester.state(find.byType(TexthookerPage));
+    state.debugMountPopupOverlayForTesting();
+    await tester.pump();
+
+    // 浮层子树的根（真实运行时常驻热槽的查词 WebView 就挂在它下面）。
+    final Finder onstage = find.byType(LookupOverlayNavigator);
+    final Finder mounted = find.byType(
+      LookupOverlayNavigator,
+      skipOffstage: false,
+    );
+    expect(onstage, findsOneWidget, reason: '前置：可见时浮层在屏上');
+    final State<StatefulWidget> before = tester.state(mounted);
+
+    // 等价于切到别的 home tab（games 被 Offstage 隐藏 + TickerMode off）。
+    visible.value = false;
+    await tester.pump();
+    await tester.pump();
+    expect(onstage, findsNothing, reason: 'tab 藏起时浮层不得留在屏上遮挡新 tab（BUG-953）');
+    expect(
+      mounted,
+      findsOneWidget,
+      reason:
+          '藏起只能 Offstage、不能把子树拆掉：拆掉 = 每次切出游戏 tab 销毁预热好的'
+          '查词 WebView，切回再冷建一个',
+    );
+    expect(
+      identical(tester.state(mounted), before),
+      isTrue,
+      reason: '藏起期间必须是同一个 State',
+    );
+
+    visible.value = true;
+    await tester.pump();
+    await tester.pump();
+    expect(onstage, findsOneWidget, reason: '切回后浮层回到屏上');
+    expect(
+      identical(tester.state(mounted), before),
+      isTrue,
+      reason: '切回必须复用同一棵子树，而不是重建',
     );
   });
 

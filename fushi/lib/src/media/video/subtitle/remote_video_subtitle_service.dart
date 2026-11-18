@@ -5,6 +5,26 @@
 ///   时它直接拒绝（400），报错原样给用户，不在本机悄悄改成不校对。
 /// - 老 host 的 capability 里没有 `video_subtitle`：[RemoteVideoSubtitleJobStatus.unsupported]，
 ///   面板给「host 版本不支持」，不发任务。
+/// - host 播放列表（一行 `video_books` 带 `playlistJson`）的第 N 集：任务带
+///   `episode=N`，host 按集解析那一集的文件、字幕写在那一集旁。老 host 不认 `episode`
+///   （会静默跑第 0 集），所以只有 capability 声明 `acceptsEpisode` 才发；否则
+///   [RemoteVideoSubtitleJobStatus.episodeUnsupported]，不发任务。
+/// - 远端原盘会话的 title（盘在 host 上，本机没有文件）：host 库里有这条 title 的行就按
+///   它的 `videoId` 提交；没有（菜单里的特典等）就用同盘一行当锚点、带 `discTitle`
+///   （相对盘根的 `BDMV/PLAYLIST/<名>.mpls`），host 按（盘, title）定位，产物落 host 的
+///   `disc_out`、随任务产物取回。老 host 不认 `discTitle`（会静默跑锚点那一行），所以
+///   只有 capability 声明 `acceptsDiscTitle` 才发；否则
+///   [RemoteVideoSubtitleJobStatus.discTitleUnsupported]，不发任务。会话正放多角度 title
+///   的非第 1 个角度时 `discTitle` 是角度成员路径（`00001.a2.mpls`），还要 host 声明
+///   `acceptsDiscTitleAngle`（老 host 读不到这个虚拟路径），否则同样
+///   [RemoteVideoSubtitleJobStatus.discTitleUnsupported]。DVD title
+///   （`VIDEO_TS/TITLE_nn.dvdtitle`）要 `acceptsDiscTitleDvd`，它的角度成员路径
+///   （`TITLE_nn.a2.dvdtitle`）再要 `acceptsDiscTitleDvdAngle`，缺哪个都同样不发。
+/// - 从播放页发起的单集带播放器当前音轨（`audioTrack`，0 起的音轨序号 = ffmpeg
+///   `0:a:N`；远端直传播放的就是 host 那份文件 / 那条 title，播放器的音轨序号与 host
+///   ffmpeg 的音频流相对序号同口径），host 识别那条轨。老 host 不认 `audioTrack`（会
+///   静默按识别语言挑），capability 没声明 `acceptsAudioTrack` 时不带它照常发——这是
+///   降级、不是错结果，面板如实提示「将按语言自动选择音轨」。
 /// - 整季（远端合集）：wire 上的远端视频只带合集**名**、不带 host 的合集 id，所以按
 ///   成员逐集提交 `videoId` 任务。host 侧 `SubtitleWorkContextLoader.forBook` 会把合集
 ///   成员解析到同一个作品键（`collection:<host 合集 id>`），各集共用 host 上的同一张
@@ -20,6 +40,12 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_angle.dart'
+    show parseBlurayAnglePath;
+import 'package:fushi_engine/media/video/dvd/dvd_angle.dart'
+    show parseDvdTitleAnglePath;
+import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
+    show isDvdTitlePath;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_host_job_runner.dart'
     show kVideoSubtitleJobKind, kVideoSubtitleSummaryOutput;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart'
@@ -86,10 +112,48 @@ class RemoteVideoSubtitleEpisode {
   const RemoteVideoSubtitleEpisode({
     required this.videoId,
     required this.title,
-  });
+    this.episodeIndex = 0,
+    this.discTitle,
+    this.audioTrack,
+  }) : assert(
+         discTitle == null || episodeIndex == 0,
+         'episodeIndex and discTitle are exclusive',
+       ),
+       assert(audioTrack == null || audioTrack >= 0, 'audioTrack >= 0');
 
   final String videoId;
+
+  /// host 上这一行播放列表的集下标（0 = 主视频 / 单视频），与播放端点的
+  /// `?episode=` 同口径。同一个播放列表的各集共用 [videoId]，靠它区分。
+  final int episodeIndex;
   final String title;
+
+  /// 远端原盘会话：[videoId] 那一行所在蓝光盘上的另一条 title（相对盘根，
+  /// `BDMV/PLAYLIST/<名>.mpls`）；null = 就是 [videoId] 那一行（的第 [episodeIndex] 集）。
+  final String? discTitle;
+
+  /// 从播放页发起时播放器当前的音轨（0 起的音轨序号，ffmpeg `0:a:N`，即
+  /// `VideoPlayerController.currentAudioStreamIndex`）：host 识别这条轨（任务参数
+  /// `audioTrack`）。null = 没有播放上下文（整季 / 合集页）或跟随默认，host 按识别语言挑。
+  final int? audioTrack;
+
+  /// (videoId, 集下标 / 盘上 title) 的稳定标识：任务键、落盘名都按它分。
+  String get key => discTitle != null
+      ? '$videoId@$discTitle'
+      : episodeIndex == 0
+      ? videoId
+      : '$videoId#$episodeIndex';
+
+  /// 这一集是不是 host 上的 ([videoId], [index])（不是盘上另一条 title）。
+  bool matches(String videoId, int index) =>
+      this.videoId == videoId && episodeIndex == index && discTitle == null;
+
+  /// 这一集是不是 host 上 ([videoId], [discTitle]) 那条原盘 title（[discTitle] 为 null
+  /// = [videoId] 那一行本身）。
+  bool matchesDiscTitle(String videoId, String? discTitle) =>
+      this.videoId == videoId &&
+      episodeIndex == 0 &&
+      this.discTitle == discTitle;
 }
 
 /// 一次远端生成的目标。
@@ -110,7 +174,53 @@ class RemoteVideoSubtitleTarget {
   final List<String> skippedExisting;
 
   String get key =>
-      'remote:${episodes.map((RemoteVideoSubtitleEpisode e) => e.videoId).join('|')}';
+      'remote:${episodes.map((RemoteVideoSubtitleEpisode e) => e.key).join('|')}';
+
+  /// 有没有 host 播放列表第 2 集起的集（要 host 声明 `acceptsEpisode`）。
+  bool get needsEpisodeSupport =>
+      episodes.any((RemoteVideoSubtitleEpisode e) => e.episodeIndex > 0);
+
+  /// 有没有要 host 按（盘, title）定位的原盘 title（要 host 声明 `acceptsDiscTitle`）。
+  bool get needsDiscTitleSupport =>
+      episodes.any((RemoteVideoSubtitleEpisode e) => e.discTitle != null);
+
+  /// 有没有按多角度 title 的角度成员路径定位的原盘 title（要 host 声明
+  /// `acceptsDiscTitleAngle`）。
+  bool get needsDiscTitleAngleSupport => episodes.any(
+    (RemoteVideoSubtitleEpisode e) =>
+        e.discTitle != null && parseBlurayAnglePath(e.discTitle!) != null,
+  );
+
+  /// 有没有要 host 识别指定音轨的集（要 host 声明 `acceptsAudioTrack`；不声明时降级成
+  /// 按识别语言挑，不拦任务）。
+  bool get wantsAudioTrack =>
+      episodes.any((RemoteVideoSubtitleEpisode e) => e.audioTrack != null);
+
+  /// 有没有按 DVD title（`VIDEO_TS/TITLE_nn.dvdtitle`）定位的原盘 title（要 host 声明
+  /// `acceptsDiscTitleDvd`）。
+  bool get needsDiscTitleDvdSupport => episodes.any(
+    (RemoteVideoSubtitleEpisode e) =>
+        e.discTitle != null && isDvdTitlePath(e.discTitle!),
+  );
+
+  /// 有没有按 DVD 多角度 title 的角度成员路径（`VIDEO_TS/TITLE_nn.aK.dvdtitle`）定位的
+  /// 原盘 title（要 host 声明 `acceptsDiscTitleDvdAngle`）。
+  bool get needsDiscTitleDvdAngleSupport => episodes.any(
+    (RemoteVideoSubtitleEpisode e) =>
+        e.discTitle != null && parseDvdTitleAnglePath(e.discTitle!) != null,
+  );
+
+  /// host [target] 认不认这个目标里的全部原盘 title 形态（`discTitle` 本身、蓝光角度成员、
+  /// DVD title、DVD 角度成员各要各的能力位）。不认就不发任务
+  /// （[RemoteVideoSubtitleJobStatus.discTitleUnsupported]），面板同一判据。
+  bool discTitlesSupportedBy(HostJobTarget target) =>
+      !(needsDiscTitleSupport && !hostAcceptsVideoSubtitleDiscTitle(target)) &&
+      !(needsDiscTitleAngleSupport &&
+          !hostAcceptsVideoSubtitleDiscTitleAngle(target)) &&
+      !(needsDiscTitleDvdSupport &&
+          !hostAcceptsVideoSubtitleDiscTitleDvd(target)) &&
+      !(needsDiscTitleDvdAngleSupport &&
+          !hostAcceptsVideoSubtitleDiscTitleDvdAngle(target));
 }
 
 /// 远端任务的选项（AI 提供商是 host 自己的，不在这里）。
@@ -140,6 +250,14 @@ enum RemoteVideoSubtitleJobStatus {
 
   /// host 版本不支持 `video_subtitle`。
   unsupported,
+
+  /// host 支持 `video_subtitle`，但版本太老、不认播放列表的集下标（capability 没有
+  /// `acceptsEpisode`）：发过去会静默跑第 1 集，所以不发。
+  episodeUnsupported,
+
+  /// host 支持 `video_subtitle`，但版本太老、不认按（盘, title）定位（capability 没有
+  /// `acceptsDiscTitle`）：发过去会静默跑锚点那一行，所以不发。
+  discTitleUnsupported,
 
   /// 连不上放视频的 host。
   unreachable,
@@ -236,6 +354,51 @@ VideoSubtitleStage? parseRemoteVideoSubtitleStage(String? message) {
   return null;
 }
 
+/// host 的 `video_subtitle` 能力里有没有 `acceptsEpisode`（认播放列表集下标）。老 host
+/// 没有这个位：它不校验未知参数，收到 `episode` 会照第 0 集跑完并把结果当第 N 集回。
+bool hostAcceptsVideoSubtitleEpisode(HostJobTarget target) {
+  final Object? entry = target.capability[kVideoSubtitleJobKind];
+  return entry is Map && entry['acceptsEpisode'] == true;
+}
+
+/// host 的 `video_subtitle` 能力里有没有 `acceptsDiscTitle`（认按盘 + title 定位）。老
+/// host 没有这个位：它不校验未知参数，收到 `discTitle` 会照 `videoId` 那一行跑。
+bool hostAcceptsVideoSubtitleDiscTitle(HostJobTarget target) {
+  final Object? entry = target.capability[kVideoSubtitleJobKind];
+  return entry is Map && entry['acceptsDiscTitle'] == true;
+}
+
+/// host 的 `video_subtitle` 能力里有没有 `acceptsDiscTitleAngle`（`discTitle` 认多角度
+/// title 的角度成员路径 `00001.a2.mpls`）。老 host 没有这个位：它读不到这个虚拟路径。
+bool hostAcceptsVideoSubtitleDiscTitleAngle(HostJobTarget target) {
+  final Object? entry = target.capability[kVideoSubtitleJobKind];
+  return entry is Map && entry['acceptsDiscTitleAngle'] == true;
+}
+
+/// host 的 `video_subtitle` 能力里有没有 `acceptsDiscTitleDvd`（`discTitle` 认 DVD title
+/// `VIDEO_TS/TITLE_nn.dvdtitle`，经 `dvdvideo` demuxer 按 title 读）。老 host 没有这个位：
+/// 它判 DVD title 读不到。
+bool hostAcceptsVideoSubtitleDiscTitleDvd(HostJobTarget target) {
+  final Object? entry = target.capability[kVideoSubtitleJobKind];
+  return entry is Map && entry['acceptsDiscTitleDvd'] == true;
+}
+
+/// host 的 `video_subtitle` 能力里有没有 `acceptsDiscTitleDvdAngle`（`discTitle` 认 DVD
+/// 多角度 title 的角度成员路径 `VIDEO_TS/TITLE_nn.aK.dvdtitle`，按该角度读）。只有
+/// `acceptsDiscTitleDvd` + `acceptsDiscTitleAngle` 的 host 认不出这种形态（只会报找不到）。
+bool hostAcceptsVideoSubtitleDiscTitleDvdAngle(HostJobTarget target) {
+  final Object? entry = target.capability[kVideoSubtitleJobKind];
+  return entry is Map && entry['acceptsDiscTitleDvdAngle'] == true;
+}
+
+/// host 的 `video_subtitle` 能力里有没有 `acceptsAudioTrack`（认 `audioTrack`，识别指定
+/// 音轨）。老 host 没有这个位：它不校验未知参数，收到 `audioTrack` 会静默按识别语言挑，
+/// 所以提交方不带它、并在面板上说明将按语言选轨。
+bool hostAcceptsVideoSubtitleAudioTrack(HostJobTarget target) {
+  final Object? entry = target.capability[kVideoSubtitleJobKind];
+  return entry is Map && entry['acceptsAudioTrack'] == true;
+}
+
 /// host 报错的原话：HTTP 错误体是 `{"error": "..."}` 时取 `error`，否则原样。
 String remoteVideoSubtitleErrorText(Object error) {
   if (error is HostJobRemoteException) {
@@ -320,6 +483,15 @@ class RemoteVideoSubtitleService {
         job._finish(RemoteVideoSubtitleJobStatus.unsupported);
         return;
       }
+      if (job.target.needsEpisodeSupport &&
+          !hostAcceptsVideoSubtitleEpisode(target)) {
+        job._finish(RemoteVideoSubtitleJobStatus.episodeUnsupported);
+        return;
+      }
+      if (!job.target.discTitlesSupportedBy(target)) {
+        job._finish(RemoteVideoSubtitleJobStatus.discTitleUnsupported);
+        return;
+      }
       job.status = RemoteVideoSubtitleJobStatus.running;
       job._changed();
       final Directory root = await _workRoot();
@@ -376,6 +548,11 @@ class RemoteVideoSubtitleService {
       target: target,
       params: <String, Object?>{
         'videoId': e.episode.videoId,
+        if (e.episode.episodeIndex > 0) 'episode': e.episode.episodeIndex,
+        'discTitle': ?e.episode.discTitle,
+        // 老 host 不认（会按语言挑）：不带，降级由面板提示。
+        if (hostAcceptsVideoSubtitleAudioTrack(target))
+          'audioTrack': ?e.episode.audioTrack,
         'proofread': job.options.proofread,
         'segmenter': job.options.segmenter.name,
         'mossBackend': job.options.mossBackend.name,
@@ -460,7 +637,7 @@ class RemoteVideoSubtitleService {
     final Directory dir = await _subtitlesDir();
     await dir.create(recursive: true);
     final String key = sha256
-        .convert(utf8.encode('${target.baseUrl}|${e.episode.videoId}'))
+        .convert(utf8.encode('${target.baseUrl}|${e.episode.key}'))
         .toString()
         .substring(0, 12);
     final File dest = File(
