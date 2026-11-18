@@ -359,6 +359,89 @@ seg1.ts
       expect(isHlsMasterPlaylist(masterSample), isTrue);
     });
   });
+
+  // video-36n：master 的逐行扫描与属性解析全仓只有这一份，画质菜单与选档共用。
+  group('HLS master 单一解析（scanHlsMaster / parseHlsAttributeList）', () {
+    test('属性串：引号内的逗号 / 等号不切分，键大写，值去引号', () {
+      expect(
+        parseHlsAttributeList(
+          'METHOD=AES-128,URI="https://k.example/k?a=1,b=2",iv=0xAB , X="",bare',
+        ),
+        <String, String>{
+          'METHOD': 'AES-128',
+          'URI': 'https://k.example/k?a=1,b=2',
+          'IV': '0xAB',
+          'X': '',
+        },
+      );
+    });
+
+    test('扫描：变体按出现顺序配 URI 原文；I-FRAME 档不算；EXT-X-MEDIA 单列', () {
+      final ({
+        List<HlsMasterVariantEntry> variants,
+        List<Map<String, String>> media,
+      })
+      master = scanHlsMaster(
+        '#EXTM3U\r\n'
+        '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="ja, main",URI="a.m3u8"\r\n'
+        '#EXT-X-STREAM-INF:BANDWIDTH=1000,CODECS="avc1.4d401f,mp4a.40.2"\r\n'
+        '\r\n'
+        '# a comment between tag and uri\r\n'
+        'lo/index.m3u8\r\n'
+        '#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=9,URI="i.m3u8"\r\n'
+        'stray-line-without-stream-inf.ts\r\n'
+        '#EXT-X-STREAM-INF:BANDWIDTH=2000\r\n'
+        'https://cdn.example/hi.m3u8\r\n',
+      );
+      expect(master.variants.map((HlsMasterVariantEntry v) => v.uri), <String>[
+        'lo/index.m3u8',
+        'https://cdn.example/hi.m3u8',
+      ]);
+      expect(
+        master.variants.first.attributes['CODECS'],
+        'avc1.4d401f,mp4a.40.2',
+      );
+      expect(master.media.single['NAME'], 'ja, main');
+      expect(master.media.single['URI'], 'a.m3u8');
+    });
+
+    test('画质菜单与选档对同一份 master 说的是同一批变体', () {
+      // 引号里藏着一个「BANDWIDTH=」：旧的逐属性正则会把它当成真属性，于是选档挑中
+      // 的那一档与画质菜单列出的最高码率不是同一条。
+      const String master =
+          '#EXTM3U\n'
+          '#EXT-X-STREAM-INF:CODECS="avc1,BANDWIDTH=99999999",BANDWIDTH=1000\n'
+          'lo.m3u8\n'
+          '#EXT-X-STREAM-INF:BANDWIDTH=5000,RESOLUTION=1920x1080\n'
+          'hi.m3u8\n';
+      final List<HlsVariant> listed = parseM3u8Master(
+        content: master,
+        baseUrl: 'https://cdn.example/v/master.m3u8',
+      );
+      expect(listed.map((HlsVariant v) => v.bandwidth), <int?>[1000, 5000]);
+      expect(selectHlsMasterVariant(master), 'hi.m3u8');
+      expect(
+        listed
+            .reduce(
+              (HlsVariant a, HlsVariant b) =>
+                  (b.bandwidth ?? 0) > (a.bandwidth ?? 0) ? b : a,
+            )
+            .url,
+        'https://cdn.example/v/hi.m3u8',
+      );
+    });
+
+    test('选档：独立音轨 rendition 的 URI 带引号内逗号也认得出', () {
+      expect(
+        selectHlsMasterVariant(
+          '#EXTM3U\n'
+          '#EXT-X-MEDIA:NAME="a,TYPE=SUBTITLES",TYPE=AUDIO,URI="a.m3u8"\n'
+          '#EXT-X-STREAM-INF:BANDWIDTH=1000\nv.m3u8\n',
+        ),
+        isNull,
+      );
+    });
+  });
   // TODO-1237: m3u8 entry path resolution — backslash / absolute / relative /
   // UNC handled by string shape, host-independent (windows + posix contexts).
   // Backslashes are built via String.fromCharCode(0x5c) so the source carries

@@ -29,8 +29,29 @@ void main() {
   final String corpus = readReaderPageSource();
   final String masked = maskComments(corpus);
 
+  test('_syncPositionFromWebViewProgress 不把旧文档快照写进新章恢复锚', () {
+    // 取样与「JS 往返后换了章 / 重载 / 换了 WebView 就丢」的闸收在共用取样口
+    // `_takeStableProgressSnapshot`（判据由
+    // reader_progress_snapshot_generation_guard_test 钉）；这里只钉退出读经它取样、
+    // 拿到 null 先 return、之后才解析。
+    final String code = maskComments(
+      methodBody(
+        corpus,
+        'Future<void> _syncPositionFromWebViewProgress() async',
+      ),
+    );
+    final int take = code.indexOf('await _takeStableProgressSnapshot(');
+    expect(take, isNonNegative);
+    expect(containsIdentifierCall(code, 'evaluateJavascript'), isFalse);
+    final int nullReturn = code.indexOf('if (result == null) {', take);
+    expect(nullReturn, greaterThan(take));
+    expect(
+      code.indexOf('parseReaderStableProgressDetails(result)'),
+      greaterThan(nullReturn),
+    );
+  });
+
   for (final String method in <String>[
-    'Future<void> _syncPositionFromWebViewProgress() async',
     'Future<void> _reloadWithCurrentSettings() async',
   ]) {
     test('$method 不把旧文档快照写进新章恢复锚', () {
@@ -70,38 +91,53 @@ void main() {
       'Future<void> _refreshProgress() async',
     );
 
+    // 取样与在途闸收在共用取样口 `_takeStableProgressSnapshot`，与退出读共用。
+    final String take = maskComments(
+      methodBody(
+        corpus,
+        'Future<Object?> _takeStableProgressSnapshot(String errorSource) async',
+      ),
+    );
+
     test('跨章 JS 请求捕获发起时的文档身份', () {
-      final String code = maskComments(body);
-      final int request = code.indexOf('await controller.evaluateJavascript(');
+      final int request = take.indexOf('await controller.evaluateJavascript(');
       expect(request, isNonNegative);
       for (final String capture in <String>[
-        'final InAppWebViewController controller = _controller!;',
+        'final InAppWebViewController? controller = _controller;',
         'final int generation = _navigateGeneration;',
         'final int chapter = _currentChapter;',
       ]) {
-        final int at = code.indexOf(capture);
+        final int at = take.indexOf(capture);
         expect(at, isNonNegative);
         expect(at, lessThan(request));
       }
     });
 
     test('旧章晚到结果在解析、图片兜底、记账和保存之前被丢弃', () {
-      final String code = maskComments(body);
-      final int request = code.indexOf('await controller.evaluateJavascript(');
-      final int gate = code.indexOf('if (!mounted ||', request);
+      final int request = take.indexOf('await controller.evaluateJavascript(');
+      final int gate = take.indexOf('if (!mounted ||', request);
       expect(gate, greaterThan(request));
-      final int gateEnd = code.indexOf('}', gate);
-      final String guard = code.substring(gate, gateEnd);
+      final int gateEnd = take.indexOf('}', gate);
+      final String guard = take.substring(gate, gateEnd);
       for (final String rejection in <String>[
         'generation != _navigateGeneration',
         'chapter != _currentChapter',
         '!identical(controller, _controller)',
         '_restoreInFlight',
         // 歌词态在首条门就挡掉了（2026-11-10 独立模式），这道在途闸不重复看。
-        'return;',
+        'return null;',
       ]) {
         expect(guard, contains(rejection));
       }
+      // _refreshProgress：取样口交回 null（被丢弃）先 return，之后才有任何消费。
+      final String code = maskComments(body);
+      final int sample = code.indexOf('await _takeStableProgressSnapshot(');
+      expect(sample, isNonNegative);
+      expect(containsIdentifierCall(code, 'evaluateJavascript'), isFalse);
+      final int discard = code.indexOf('if (result == null) {', sample);
+      expect(discard, greaterThan(sample));
+      final int gateEnd2 = code.indexOf('}', discard);
+      expect(code.substring(discard, gateEnd2), contains('return;'));
       for (final String consumer in <String>[
         'parseReaderStableProgressDetails(result)',
         '_applyImagePageProgressFallback()',
@@ -111,7 +147,7 @@ void main() {
         'arriveReadUnitThroughStartGate(',
         '_debouncedSavePosition(',
       ]) {
-        expect(code.indexOf(consumer), greaterThan(gateEnd));
+        expect(code.indexOf(consumer), greaterThan(gateEnd2));
       }
     });
 
@@ -328,10 +364,17 @@ void main() {
       expect(reset, greaterThan(adopt), reason: '先换口径再清账本');
     });
 
-    test('全语料只有补算落定与「回看转正常阅读」调 reset', () {
+    test('全语料只有补算落定、「回看转正常阅读」与在线书取章换字数调 reset', () {
       // 第二处：卡片来源回看会话（BUG-2503）是隔离回看、不计统计，用户点「继续阅读」
       // 转成正常阅读那一刻清掉回看期间的并集，从下一次采样重新起单元。
-      expect('_readLedger.reset('.allMatches(masked), hasLength(2));
+      // 第三处：在线小说书按需取回一章正文、那一章字数从占位页的换成正文的
+      // （BUG-4807，`_switchOnlineChapterCharCounts`；何时能走到它见
+      // `reader_online_chapter_char_count_test.dart`）。
+      expect('_readLedger.reset('.allMatches(masked), hasLength(3));
+      expect(
+        methodBody(corpus, 'void _switchOnlineChapterCharCounts('),
+        contains('_readLedger.reset();'),
+      );
       final int review = masked.indexOf('void _onSourceReviewChanged() {');
       expect(review, isNonNegative);
       final String body = masked.substring(
@@ -403,7 +446,7 @@ void main() {
       expect(
         containsCodeLine(
           body,
-          'ExitFlushRegistry.instance.defer(_flushPosition);',
+          'ExitFlushRegistry.instance.defer(_flushPositionAndTrackingReport);',
         ),
         isTrue,
         reason: '退出那一刻的位置改为登记到退出汇合点，由退出路径统一 await',

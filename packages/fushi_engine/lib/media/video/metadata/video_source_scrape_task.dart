@@ -702,7 +702,7 @@ class VideoSourceScrapeTaskController extends EngineChangeNotifier {
         VideoScrapeOperationGate.tryEnterOperation();
     if (lease == null) {
       // 资料清理期间整条队列都跑不了，逐条报错比让它们无限期挂着诚实。
-      _failQueuedManualRequests(StateError('视频刮削资料正在清理'));
+      _failQueuedManualRequests(VideoScrapeMaintenanceActiveError());
       return;
     }
     final VideoSourceScrapeManualRequest request = _manualQueue.removeAt(0);
@@ -790,7 +790,7 @@ class VideoSourceScrapeTaskController extends EngineChangeNotifier {
       throw StateError('已有视频来源扫描或刮削任务正在运行');
     }
     final Future<T>? started = tryRunSourceScan(sourceId, operation);
-    if (started == null) throw StateError('视频刮削资料正在清理');
+    if (started == null) throw VideoScrapeMaintenanceActiveError();
     return started;
   }
 
@@ -845,7 +845,9 @@ class VideoSourceScrapeTaskController extends EngineChangeNotifier {
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
     if (lease == null) {
-      return Future<SourceScrapeReport>.error(StateError('视频刮削资料正在清理'));
+      return Future<SourceScrapeReport>.error(
+        VideoScrapeMaintenanceActiveError(),
+      );
     }
     final VideoSourceScrapeCancellationToken token =
         VideoSourceScrapeCancellationToken(
