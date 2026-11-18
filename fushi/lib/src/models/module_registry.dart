@@ -170,7 +170,7 @@ bool isAiModuleEnabled(ModuleVisibility visibility) =>
 /// `null`：取词是查词**能力**（用户拍板「关掉查词模块只关页面入口、查词能力
 /// 全留」），有声书那几条更与 lookup 无关；打开查词页在模块关着时由独立路由
 /// 承载（`home_page.dart` 的 `_revealDictionary`）。此前判 lookup 会让关掉查词页
-/// 的用户连这一分区和 OS 热键一起丢掉（BUG-4755）。
+/// 的用户连这一分区和 OS 热键一起丢掉（BUG-4846）。
 ModuleId? moduleOfShortcutScope(ShortcutScope scope) => switch (scope) {
   ShortcutScope.global => null,
   ShortcutScope.universal => null,

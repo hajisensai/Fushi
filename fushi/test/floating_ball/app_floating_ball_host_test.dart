@@ -915,7 +915,7 @@ void main() {
         await waitFor(() => starts().isNotEmpty);
       });
       await tester.pump();
-      // BUG-4755：查词模块只关查词页入口，覆盖窗上的查词能力不跟着消失。
+      // BUG-4846：查词模块只关查词页入口，覆盖窗上的查词能力不跟着消失。
       expect(startedActions(starts().last), <String>[
         'popup_lookup',
         'clipboard',

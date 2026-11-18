@@ -413,7 +413,7 @@ class GlobalLookupController {
   /// Not gated on the `ModuleId.lookup` module switch: the overlay is the
   /// shared lookup-card surface (galgame in-game lookup, the desktop system
   /// floating ball, app-outside hotkeys), and the lookup module only hides the
-  /// lookup page (BUG-4755). Platform capability is the sole gate, here.
+  /// lookup page (BUG-4846). Platform capability is the sole gate, here.
   ///
   /// The overlay part needs [isSupported]; the app-outside triggers (OS
   /// hotkeys, gamepad route) only need [osHotKeysSupported] — on a Linux

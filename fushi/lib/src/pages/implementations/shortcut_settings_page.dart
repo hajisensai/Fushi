@@ -391,7 +391,7 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
 
   /// 被关掉的功能模块不出现自己的快捷键分区（见 `module_registry.dart`）。
   /// `globalExternal` 分区不属于任何模块：OS 热键随全局查词覆盖窗按平台能力
-  /// 装上，与查词页开关无关（BUG-4755），所以这里也恒可编辑。
+  /// 装上，与查词页开关无关（BUG-4846），所以这里也恒可编辑。
   List<ShortcutScope> _visibleScopes() => <ShortcutScope>[
     for (final ShortcutScope scope in ShortcutScope.values)
       if (isShortcutScopeVisible(scope, appModel.moduleVisibility)) scope,

@@ -90,7 +90,7 @@ void main() {
     final AppModel appModel = AppModel(testPlatformServices())
       ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: storeDir)
       ..wireDatabaseForTesting(db);
-    // 查词模块关着也照装热键：它只关查词页入口（BUG-4755）。
+    // 查词模块关着也照装热键：它只关查词页入口（BUG-4846）。
     await prefs.setModuleEnabled(ModuleId.lookup, false);
     appModel.shortcutRegistry.loadDefaults(TargetPlatform.windows);
 

@@ -1,4 +1,4 @@
-## BUG-4755 · 查词模块关闭时 galgame 查词不弹卡、应用外悬浮球缺截屏识字/应用外查词
+## BUG-4846 · 查词模块关闭时 galgame 查词不弹卡、应用外悬浮球缺截屏识字/应用外查词
 - **报告**：2026-11-17（用户反馈，Windows 3.3.0 正式版；另一位用户诊断日志 `gal-overlay: attachedReady=false lookupSurfaceActive=false ... status=disabled/null`）
 - **真实性**：✅ 真 bug。现象：galgame 游戏内查词 / 应用外查词点了不出卡；设置 → 悬浮球 →「应用外」按钮组里没有「截屏识字」「应用外查词」。该用户侧栏无「查词」——查词模块（`ModuleId.lookup`）关着（首启向导选「只看媒体」或手动关掉）。
   - 设计承诺：查词模块**只关查词页入口、查词能力全留**（用户拍板，`fushi/lib/src/models/module_registry.dart:94`；`onboarding_steps.dart:42`、`ctl_dictionary_routes.dart:32`、`op_descriptions_dictionary.dart:20` 同述）。

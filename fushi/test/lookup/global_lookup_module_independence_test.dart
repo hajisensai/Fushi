@@ -15,7 +15,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
 
-/// BUG-4755：全局查词覆盖窗（查词卡 surface）不跟「查词」模块走。
+/// BUG-4846：全局查词覆盖窗（查词卡 surface）不跟「查词」模块走。
 ///
 /// 查词模块只关查词页入口、查词能力全留（用户拍板）。覆盖窗此前按查词模块门控，
 /// 首启向导选「只看媒体」或手动关掉查词页的用户，galgame 游戏内点词不弹卡

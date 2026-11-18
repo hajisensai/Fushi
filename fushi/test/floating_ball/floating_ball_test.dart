@@ -86,7 +86,7 @@ void main() {
         FloatingBallGlobalAction.switchProfile,
         FloatingBallGlobalAction.ai,
       });
-      // 查词模块关着（BUG-4755）：它只关查词页入口，所以只少「查词」（打开查词页）；
+      // 查词模块关着（BUG-4846）：它只关查词页入口，所以只少「查词」（打开查词页）；
       // 应用外查词与截屏识字是查词能力、结果在全局查词覆盖窗上，覆盖窗不看这个
       // 模块，照常可用。
       expect(
