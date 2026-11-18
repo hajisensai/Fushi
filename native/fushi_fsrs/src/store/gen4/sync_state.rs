@@ -212,6 +212,9 @@ pub(crate) const AUTH_OF_SQL: &str =
 pub(crate) const STUBS_OF_SQL: &str =
     "SELECT stub FROM relay_stubs WHERE k BETWEEN ?1 AND ?2 ORDER BY k";
 
+/// 按主键区间删剔除记录（[Truth::keep_stubs_within]）。
+pub(crate) const STUBS_DROP_SQL: &str = "DELETE FROM relay_stubs WHERE k BETWEEN ?1 AND ?2";
+
 /// 一台设备的等待项数（[Truth::waiting_count]）。
 pub(crate) const WAIT_COUNT_SQL: &str = "SELECT COUNT(*) FROM op_wait WHERE k BETWEEN ?1 AND ?2";
 
@@ -420,6 +423,79 @@ impl<'c> Truth<'c> {
         rows.iter()
             .map(|b| Stub::decode(b).map_err(|e| format!("gen4 store: bad stub: {}", e.0)))
             .collect()
+    }
+
+    /// 删掉作者 [device] 区间 `[first, last]` 的作者签名版本（`cmd/sync_relay.rs` `reclaim_material`：哪个位置都不会再
+    /// 要这一段的重切）。
+    pub(crate) fn drop_author_version(
+        &self,
+        col: i64,
+        device: &Id,
+        first: u64,
+        last: u64,
+    ) -> Result<(), String> {
+        self.write(|| {
+            self.conn()
+                .prepare_cached(
+                    "DELETE FROM relay_auth WHERE col = ?1 AND device = ?2 AND first = ?3 AND last = ?4",
+                )
+                .map_err(sql)?
+                .execute(params![
+                    col,
+                    &device.0[..],
+                    i64_of(first, "seq")?,
+                    i64_of(last, "seq")?
+                ])
+                .map_err(sql)?;
+            Ok(())
+        })
+    }
+
+    /// 设备 [device] 的剔除记录只留 seq 落在 [keep]（闭区间，可乱序、可重叠）里的，其余删掉；返回删了几条。按空白的
+    /// 主键区间整段删（语句数随区间数，不随记录数）。
+    pub(crate) fn keep_stubs_within(
+        &self,
+        col: i64,
+        device: &Id,
+        keep: &[(u64, u64)],
+    ) -> Result<u64, String> {
+        let Some(k) = self.key_of(
+            col,
+            &OpId {
+                device: *device,
+                seq: 1,
+            },
+        )?
+        else {
+            return Ok(0);
+        };
+        let (lo, hi) = super::schema::k_range(super::schema::k_dev(k));
+        let mut spans: Vec<(u64, u64)> = keep.iter().copied().filter(|(a, b)| a <= b).collect();
+        spans.sort_unstable();
+        // 要删的主键区间 = 设备区间减去要留的（合并重叠之后取空白）。
+        let mut gaps: Vec<(i64, i64)> = Vec::new();
+        let mut next = lo;
+        for (a, b) in spans {
+            let (ka, kb) = (
+                lo | i64_of(a, "seq")?.min(hi - lo),
+                lo | i64_of(b, "seq")?.min(hi - lo),
+            );
+            if ka > next {
+                gaps.push((next, ka - 1));
+            }
+            next = next.max(kb.saturating_add(1));
+        }
+        if next <= hi {
+            gaps.push((next, hi));
+        }
+        self.write(|| {
+            let mut n = 0u64;
+            let mut stmt = self.conn().prepare_cached(STUBS_DROP_SQL).map_err(sql)?;
+            for (a, b) in gaps {
+                n += stmt.execute(params![a, b]).map_err(sql)? as u64;
+            }
+            Ok(n)
+        })
     }
 
     // ------------------------------------------------------------ loc_heads

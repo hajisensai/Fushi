@@ -944,3 +944,224 @@ fn a_fence_interrupted_midway_is_completed_by_the_next_device() {
         assert_eq!(d.field(N2), Some(json!("猫")));
     }
 }
+
+/// 第六波：重切材料（`relay_auth` / `relay_stubs`）的回收判据与规模（`cmd/sync_relay.rs` 文件头「重切材料的回收」）。
+mod reclaim {
+    use std::collections::BTreeMap;
+    use std::time::Instant;
+
+    use super::super::sync_relay::{note_head, prune, reclaim_material};
+    use crate::gen4::head::Head4;
+    use crate::gen4::op::Op4;
+    use crate::gen4::op::tests::id;
+    use crate::gen4::recut::Stub;
+    use crate::gen4::segment::NativeHeader;
+    use crate::gen4::{MIN_READER, PROTOCOL};
+    use crate::store::gen4::native::tests::ready;
+    use crate::store::gen4::schema::open_in_memory;
+    use crate::store::gen4::sync_state::AuthorVersion;
+    use crate::store::gen4::truth::Truth;
+    use crate::sync2::id::Id;
+    use crate::sync2::keys::DeviceKey;
+    use crate::sync2::vv::{OpId, Vv};
+
+    const A: u8 = 0x31;
+
+    fn author() -> Id {
+        id(A)
+    }
+
+    /// 作者 a 的一份 head，清单 = [segs]（回收只看清单）。
+    fn head(gen: u64, segs: &[(u64, u64)]) -> Head4 {
+        Head4 {
+            gen,
+            protocol: PROTOCOL,
+            min_reader: MIN_READER,
+            collection: id(0xc0),
+            device: author(),
+            public: DeviceKey::from_seed(&[A; 32]).public(),
+            seq: segs.last().map_or(0, |s| s.1),
+            chain: [0; 32],
+            segs: segs
+                .iter()
+                .map(|(a, b)| (*a, *b, format!("{a:08x}")))
+                .collect(),
+            ack: Vv::new(),
+            digest: "0:0".into(),
+            at_ms: 1_800_000_000_000,
+            name: "a".into(),
+            loc: "loc-1".into(),
+            seal: String::new(),
+            derive: 1,
+            prev: None,
+            ext: None,
+            extra: BTreeMap::new(),
+        }
+    }
+
+    /// 作者签名版本：区间 [first, last]、作者签的空洞 [voids]（签名不验，存取不看）。
+    fn version(first: u64, last: u64, voids: &[(u64, u64)]) -> AuthorVersion {
+        AuthorVersion {
+            header: NativeHeader {
+                encrypted: false,
+                collection: id(0xc0),
+                device: author(),
+                first,
+                last,
+                prev_chain: [0; 32],
+                last_chain: [first as u8; 32],
+            },
+            sig: [1; 64],
+            voids: voids.iter().map(|(s, c)| (*s, *c, [2; 32])).collect(),
+        }
+    }
+
+    fn stub(seq: u64) -> Stub {
+        let base = crate::gen4::segment::tests::ops()[0].clone();
+        let op = Op4 {
+            id: OpId {
+                device: author(),
+                seq,
+            },
+            ..base
+        };
+        Stub::of(
+            &op,
+            OpId {
+                device: id(0x22),
+                seq: 7,
+            },
+        )
+    }
+
+    fn ranges(t: &Truth<'_>, col: i64) -> Vec<(u64, u64)> {
+        t.author_versions_of(col, &author())
+            .unwrap()
+            .iter()
+            .map(|v| (v.header.first, v.header.last))
+            .collect()
+    }
+
+    fn stub_seqs(t: &Truth<'_>, col: i64) -> Vec<u64> {
+        t.stubs_of(col, &author())
+            .unwrap()
+            .iter()
+            .map(|s| s.id().seq)
+            .collect()
+    }
+
+    fn put_relay_row(t: &Truth<'_>, col: i64, first: u64, last: u64) {
+        t.tx(|t| {
+            t.conn()
+                .execute(
+                    "INSERT INTO relay_segs (col, device, first, last, tag, piece) VALUES (?1, ?2, ?3, ?4, 'x', x'00')",
+                    rusqlite::params![col, &author().0[..], first as i64, last as i64],
+                )
+                .map_err(|e| e.to_string())
+        })
+        .unwrap();
+    }
+
+    /// 判据：没记过 head 全留；记下的最新 head 列着的区间、转发缓存里还有件的区间留；其余（作者重切 / 合并掉的旧区间）
+    /// 删。剔除记录只留落在留下的版本里、又不在那个版本作者签的空洞里的。换上更新的 head（`note_head`）就回收。
+    #[test]
+    fn material_is_kept_exactly_where_some_location_can_still_need_it() {
+        let conn = open_in_memory().unwrap();
+        let t = Truth::new(&conn);
+        let col = ready(&t);
+        t.tx(|t| {
+            // 旧清单：[1,4] [5,8] [9,10]；[5,8] 作者签了空洞 seq 6。
+            t.note_author_version(col, &version(1, 4, &[]))?;
+            t.note_author_version(col, &version(5, 8, &[(6, 1)]))?;
+            t.note_author_version(col, &version(9, 10, &[]))?;
+            for s in [2, 6, 7, 9] {
+                t.put_stub(col, &stub(s))?;
+            }
+            Ok(())
+        })
+        .unwrap();
+        // 1：还没记过 head，全留。
+        assert_eq!(
+            t.tx(|t| reclaim_material(t, col, &author(), None)).unwrap(),
+            (0, 0)
+        );
+        assert_eq!(ranges(&t, col).len(), 3);
+        // 作者合并成 [1,8] 再接 [9,10]；[5,8] 那份件还在转发缓存里（原地重切要它）。
+        put_relay_row(&t, col, 5, 8);
+        let h = head(2, &[(1, 8), (9, 10)]);
+        let bytes = h.encode(&DeviceKey::from_seed(&[A; 32])).unwrap();
+        t.tx(|t| note_head(t, col, &h, &bytes)).unwrap();
+        // [1,4] 不在新清单、缓存也没有 → 删；[5,8] 缓存有 → 留；[9,10] 新清单列着 → 留。
+        assert_eq!(ranges(&t, col), vec![(5, 8), (9, 10)]);
+        // seq 2 落在删掉的版本里、seq 6 落在作者空洞里 → 删；7 / 9 留。
+        assert_eq!(stub_seqs(&t, col), vec![7, 9]);
+        // 缓存里的件删了（只同步一个位置时 prune 全删）：只为它留的 [5,8] 跟着回收，seq 7 的剔除记录也走。
+        assert_eq!(t.tx(|t| prune(t, col, &author())).unwrap(), 1);
+        assert_eq!(ranges(&t, col), vec![(9, 10)]);
+        assert_eq!(stub_seqs(&t, col), vec![9]);
+        // 再回收一遍什么都不删。
+        let stored = head(2, &[(1, 8), (9, 10)]);
+        assert_eq!(
+            t.tx(|t| reclaim_material(t, col, &author(), Some(&stored)))
+                .unwrap(),
+            (0, 0)
+        );
+    }
+
+    /// 规模：两万个作者签名版本、四万条剔除记录，作者合并掉一半之后回收一遍：删得对，语句数随区间数（不逐条扫），
+    /// 时间有界；别的作者的剔除记录不碰。
+    #[test]
+    fn reclaiming_at_scale_drops_the_dead_half_without_touching_other_authors() {
+        let conn = open_in_memory().unwrap();
+        let t = Truth::new(&conn);
+        let col = ready(&t);
+        const N: u64 = 20_000;
+        let other = {
+            let base = crate::gen4::segment::tests::ops()[0].clone();
+            Stub::of(
+                &Op4 {
+                    id: OpId {
+                        device: id(0x44),
+                        seq: 3,
+                    },
+                    ..base
+                },
+                OpId {
+                    device: id(0x22),
+                    seq: 7,
+                },
+            )
+        };
+        t.tx(|t| {
+            for i in 0..N {
+                let (a, b) = (2 * i + 1, 2 * i + 2);
+                t.note_author_version(col, &version(a, b, &[(b, 1)]))?;
+                t.put_stub(col, &stub(a))?;
+                t.put_stub(col, &stub(b))?;
+            }
+            t.put_stub(col, &other)
+        })
+        .unwrap();
+        // 新清单只列偶数号版本（奇数号的被作者并掉了）。
+        let segs: Vec<(u64, u64)> = (0..N)
+            .filter(|i| i % 2 == 0)
+            .map(|i| (2 * i + 1, 2 * i + 2))
+            .collect();
+        let h = head(5, &segs);
+        let started = Instant::now();
+        let got = t
+            .tx(|t| reclaim_material(t, col, &author(), Some(&h)))
+            .unwrap();
+        let took = started.elapsed();
+        eprintln!("reclaim {N} versions / {} stubs: {took:?}", 2 * N);
+        // 删一半版本；剩下的版本里第二格是作者空洞，剔除记录只留第一格。
+        assert_eq!(got, (N / 2, 2 * N - N / 2));
+        assert_eq!(ranges(&t, col), segs);
+        assert_eq!(
+            stub_seqs(&t, col),
+            segs.iter().map(|s| s.0).collect::<Vec<_>>()
+        );
+        assert!(t.stub_at(col, &id(0x44), 3).unwrap().is_some());
+        assert!(took.as_secs() < 30, "{took:?}");
+    }
+}
