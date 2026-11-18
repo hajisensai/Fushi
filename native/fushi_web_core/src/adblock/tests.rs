@@ -235,6 +235,73 @@ fn state_persists_and_engine_reloads_from_disk_cache() {
 }
 
 #[test]
+fn load_cached_warms_engine_before_stale_lists_are_refetched() {
+    let dir = TempDir::new("warm");
+    {
+        let core = open(&dir);
+        sync_with(&core, LIST);
+    }
+    advance(MAX_AGE_MS);
+    let core = open(&dir);
+    let ad = "https://ads.example.com/x.js";
+    assert_eq!(
+        core.check(ad, PAGE, PAGE, SCRIPT),
+        CHECK_ALLOW,
+        "cold: no engine"
+    );
+
+    let s = core.load_cached();
+    assert_eq!(s["status"], "ready");
+    assert_eq!(s["fromCache"], true, "deserialized, not recompiled");
+    assert_eq!(core.check(ad, PAGE, PAGE, SCRIPT), CHECK_BLOCK);
+    let cosmetic: Value =
+        serde_json::from_slice(&core.cosmetic("https://example.com/", "")).unwrap();
+    assert!(
+        cosmetic["hideSelectors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s == ".ad-banner"),
+        "{cosmetic}"
+    );
+    // 已暖机：再调什么也不做。
+    assert_eq!(core.load_cached()["status"], "ready");
+
+    // 过期列表照常联网；联网期间引擎一直可用。
+    let plan = core.begin_sync(false);
+    assert_eq!(plan["run"], true);
+    assert_eq!(plan["fetch"][0]["id"], "easylist");
+    assert_eq!(
+        core.load_cached()["status"],
+        "loading",
+        "no-op while syncing"
+    );
+    assert_eq!(core.check(ad, PAGE, PAGE, SCRIPT), CHECK_BLOCK);
+    core.ingest("easylist", 304, &[], None, None, None).unwrap();
+    let s = core.finish_sync();
+    assert_eq!(s["status"], "ready");
+    assert_eq!(s["fromCache"], true, "same key: engine not rebuilt");
+    assert_eq!(core.check(ad, PAGE, PAGE, SCRIPT), CHECK_BLOCK);
+}
+
+#[test]
+fn load_cached_is_a_no_op_without_cache_or_when_disabled() {
+    let dir = TempDir::new("warm_noop");
+    let core = open(&dir);
+    for l in catalog::CATALOG {
+        core.set_list_enabled(l.id, l.id == "easylist");
+    }
+    assert_eq!(core.load_cached()["status"], "idle", "nothing cached yet");
+    sync_with(&core, LIST);
+    drop(core);
+    let core = open(&dir);
+    core.set_enabled(false);
+    assert_eq!(core.load_cached()["status"], "idle", "disabled: not loaded");
+    core.set_enabled(true);
+    assert_eq!(core.load_cached()["status"], "ready");
+}
+
+#[test]
 fn stale_lists_send_conditional_headers_and_304_renews() {
     let dir = TempDir::new("stale");
     let core = open(&dir);

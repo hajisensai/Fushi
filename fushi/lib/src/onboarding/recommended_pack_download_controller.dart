@@ -64,7 +64,7 @@ typedef RecommendedPackDeletionRunner =
 /// 可导入。
 ///
 /// 本 controller **不自己发起导入**：导入走
-/// `importDownloadedRecommendedPack`（恒合并导入，随后重启进程），由发起
+/// `importDownloadedRecommendedPack`（弹确认框、预选合并，导入后重启进程），由发起
 /// 下载的向导（若还活着）或设置里那一行显式触发。
 class RecommendedPackDownloadController {
   RecommendedPackDownloadController({

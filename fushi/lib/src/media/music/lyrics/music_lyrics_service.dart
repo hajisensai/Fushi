@@ -1019,40 +1019,10 @@ class MusicLyricsService {
     MusicPluginLyricsRefFetcher fetch,
     LyricsScriptExpectation? expected,
   ) async {
-    final Map<String, MusicPluginLyricsCandidate> byKey =
-        <String, MusicPluginLyricsCandidate>{};
-    final List<LyricsCandidate> all = await searchWithFallbackQueries(
-      title: track.title,
-      artist: track.artist,
-      durationMs: track.durationMs,
-      run: (String q) async {
-        final List<MusicPluginLyricsCandidate> items = await search(
-          pluginId,
-          track.title,
-          artist: track.artist,
-          album: track.album,
-          durationMs: track.durationMs,
-          query: q,
-        );
-        final List<LyricsCandidate> out = <LyricsCandidate>[];
-        for (final MusicPluginLyricsCandidate c in items) {
-          final String key = jsonEncode(c.ref);
-          byKey[key] = c;
-          out.add(
-            LyricsCandidate(
-              providerId: pluginId,
-              title: c.title,
-              artist: c.artist ?? '',
-              durationMs: c.durationMs,
-              ref: <String, String>{'k': key},
-            ),
-          );
-        }
-        return out;
-      },
-    );
-    final List<LyricsCandidate> ranked = rankLyricsCandidates(
-      all,
+    final List<MusicPluginLyricsCandidate> ranked = await _rankedPluginHits(
+      pluginId,
+      track,
+      search,
       title: track.title,
       artist: track.artist,
       durationMs: track.durationMs,
@@ -1061,11 +1031,8 @@ class MusicLyricsService {
     LyricsParseException? parseError;
     StackTrace? parseStack;
     final int probes = expected == null ? 1 : kPluginLyricsScriptProbeLimit;
-    for (final LyricsCandidate c in ranked.take(probes)) {
-      final MusicPluginLyrics? lyrics = await fetch(
-        pluginId,
-        byKey[c.ref['k']]!.ref,
-      );
+    for (final MusicPluginLyricsCandidate c in ranked.take(probes)) {
+      final MusicPluginLyrics? lyrics = await fetch(pluginId, c.ref);
       if (lyrics?.original == null) continue;
       final ({Uint8List raw, String format, LyricTimeline timeline}) built;
       try {
@@ -1092,6 +1059,62 @@ class MusicLyricsService {
       Error.throwWithStackTrace(parseError, parseStack!);
     }
     return first;
+  }
+
+  /// 在一个歌词插件里按 [title] / [artist] 搜（[searchWithFallbackQueries] 逐级放宽查询词），
+  /// 候选按 [rankLyricsCandidates] 排好返回。自动解析传曲目元数据；用户手动搜索
+  /// （[searchOnline]）传搜索框里的关键词，且 [durationMs] 传 null：用户手动指定的歌常是
+  /// 时长不同的版本（视频带前奏 / 翻唱），不按时长剔除。插件报错原样抛出，由调用方决定
+  /// 跳过与否。
+  Future<List<MusicPluginLyricsCandidate>> _rankedPluginHits(
+    String pluginId,
+    MusicLyricsTrackRef track,
+    MusicPluginLyricsSearcher search, {
+    required String title,
+    required String? artist,
+    required int? durationMs,
+  }) async {
+    final Map<String, MusicPluginLyricsCandidate> byKey =
+        <String, MusicPluginLyricsCandidate>{};
+    final List<LyricsCandidate> all = await searchWithFallbackQueries(
+      title: title,
+      artist: artist,
+      durationMs: durationMs,
+      run: (String q) async {
+        final List<MusicPluginLyricsCandidate> items = await search(
+          pluginId,
+          title,
+          artist: artist,
+          album: track.album,
+          durationMs: durationMs,
+          query: q,
+        );
+        final List<LyricsCandidate> out = <LyricsCandidate>[];
+        for (final MusicPluginLyricsCandidate c in items) {
+          final String key = jsonEncode(c.ref);
+          byKey[key] = c;
+          out.add(
+            LyricsCandidate(
+              providerId: pluginId,
+              title: c.title,
+              artist: c.artist ?? '',
+              durationMs: c.durationMs,
+              ref: <String, String>{'k': key},
+            ),
+          );
+        }
+        return out;
+      },
+    );
+    return <MusicPluginLyricsCandidate>[
+      for (final LyricsCandidate c in rankLyricsCandidates(
+        all,
+        title: title,
+        artist: artist,
+        durationMs: durationMs,
+      ))
+        byKey[c.ref['k']]!,
+    ];
   }
 
   static bool _hasGenerated(MusicLyricRow? row) =>
@@ -1269,37 +1292,134 @@ class MusicLyricsService {
     return out;
   }
 
-  /// 在线模糊搜索（用户点「搜索在线歌词」时）：返回候选，不落库。
+  /// 在线搜索（用户点「搜索在线歌词」时）：返回候选，不落库。
+  ///
+  /// [title] / [artist] 是用户在搜索框里改过的关键词（YouTube 翻唱等标题与歌名对不上时
+  /// 手动找）：null = 用曲目元数据；[artist] 传空串 = 不限艺人。所有在线来源都按同一组
+  /// 关键词搜，来源与顺序同自动解析：来源列表里已启用的 LRCLIB 与歌词插件按用户排序逐个问
+  /// （没装配来源列表时只有 LRCLIB）；每个插件取评分前 [kPluginLyricsScriptProbeLimit] 条——
+  /// 插件候选不带正文，只能逐条取来。
+  ///
+  /// 书写系统与关键词对得上的（原文版）排前，组内保持来源顺序与各来源自己的排序。某个
+  /// 来源出错只跳过它；全部来源都没结果且有来源出错时抛出第一个错误（界面显示错误，而不是
+  /// 「没有候选」）。
   Future<List<MusicLyricsCandidate>> searchOnline(
     MusicLyricsTrackRef track, {
     String? title,
     String? artist,
   }) async {
-    final List<LrclibRecord> records = await _lrclib.search(
-      title: title ?? track.title,
-      artist: artist ?? track.artist,
-      durationMs: track.durationMs,
-    );
-    // 书写系统与曲目元数据对得上的（原文版）排前，组内保持 LRCLIB 排序（有时间的在前、时长近的在前）。
+    final String typedTitle = title?.trim() ?? '';
+    final String effectiveTitle = typedTitle.isEmpty ? track.title : typedTitle;
+    final String? typedArtist = artist?.trim();
+    final String? effectiveArtist = artist == null
+        ? track.artist
+        : (typedArtist!.isEmpty ? null : typedArtist);
     final LyricsScriptExpectation? expected = expectedLyricsScript(
-      title: track.title,
-      artist: track.artist,
+      title: effectiveTitle,
+      artist: effectiveArtist,
       album: track.album,
     );
     final List<MusicLyricsCandidate> matching = <MusicLyricsCandidate>[];
     final List<MusicLyricsCandidate> others = <MusicLyricsCandidate>[];
-    for (final LrclibRecord r in records) {
-      final ({String raw, String format})? best = r.bestLyrics;
-      if (best == null) continue;
-      final Uint8List raw = utf8.encode(best.raw);
-      final MusicLyricsCandidate c = MusicLyricsCandidate(
-        source: MusicLyricsSource.lrclib,
-        label: '${r.trackName} — ${r.artistName}',
-        format: best.format,
-        raw: raw,
-        timeline: await _parse(raw, best.format, track.durationMs),
+    void add(MusicLyricsCandidate c) =>
+        (lyricsScriptMismatches(expected, musicLyricsTimelineText(c.timeline))
+                ? others
+                : matching)
+            .add(c);
+    Object? firstError;
+    StackTrace? firstStack;
+
+    Future<void> searchLrclib() async {
+      for (final LrclibRecord r in await _lrclib.search(
+        title: effectiveTitle,
+        artist: effectiveArtist,
+        durationMs: track.durationMs,
+      )) {
+        final ({String raw, String format})? best = r.bestLyrics;
+        if (best == null) continue;
+        final Uint8List raw = utf8.encode(best.raw);
+        add(
+          MusicLyricsCandidate(
+            source: MusicLyricsSource.lrclib,
+            label: '${r.trackName} — ${r.artistName}',
+            format: best.format,
+            raw: raw,
+            timeline: await _parse(raw, best.format, track.durationMs),
+          ),
+        );
+      }
+    }
+
+    Future<void> searchPlugin(
+      String id,
+      MusicPluginLyricsSearcher search,
+      MusicPluginLyricsRefFetcher fetch,
+    ) async {
+      final List<MusicPluginLyricsCandidate> hits = await _rankedPluginHits(
+        id,
+        track,
+        search,
+        title: effectiveTitle,
+        artist: effectiveArtist,
+        durationMs: null,
       );
-      (lyricsScriptMismatches(expected, best.raw) ? others : matching).add(c);
+      for (final MusicPluginLyricsCandidate hit in hits.take(
+        kPluginLyricsScriptProbeLimit,
+      )) {
+        final MusicPluginLyrics? lyrics = await fetch(id, hit.ref);
+        if (lyrics?.original == null) continue;
+        final ({Uint8List raw, String format, LyricTimeline timeline}) built;
+        try {
+          built = await buildMusicPluginLyrics(
+            lyrics!,
+            track.durationMs,
+            _parse,
+          );
+        } on LyricsParseException {
+          continue;
+        }
+        final String? hitArtist = hit.artist?.trim();
+        add(
+          MusicLyricsCandidate(
+            source: MusicLyricsSource.lyricsPlugin(id),
+            label: hitArtist == null || hitArtist.isEmpty
+                ? hit.title
+                : '${hit.title} — $hitArtist',
+            // 原始各轨不是歌词格式：展示合并后时间轴的格式（与 [localCandidates] 一致）。
+            format: built.format == kMusicPluginLyricsTracksFormat
+                ? built.timeline.format
+                : built.format,
+            raw: built.raw,
+            timeline: built.timeline,
+          ),
+        );
+      }
+    }
+
+    // 与自动解析同一份来源列表（[_onlineSourceOrder]）：用户排的顺序、停用的 LRCLIB /
+    // 插件都照办。
+    final MusicPluginLyricsSearcher? search = _pluginSearch;
+    final MusicPluginLyricsRefFetcher? fetch = _pluginFetch;
+    for (final String id in await _onlineSourceOrder()) {
+      if (id == MusicLyricsSource.lrclib) {
+        try {
+          await searchLrclib();
+        } on Object catch (e, st) {
+          firstError ??= e;
+          firstStack ??= st;
+        }
+      } else if (search != null && fetch != null) {
+        try {
+          await searchPlugin(id, search, fetch);
+        } on MusicPluginException catch (e, st) {
+          firstError ??= e;
+          firstStack ??= st;
+        }
+      }
+    }
+
+    if (matching.isEmpty && others.isEmpty && firstError != null) {
+      Error.throwWithStackTrace(firstError, firstStack!);
     }
     return <MusicLyricsCandidate>[...matching, ...others];
   }

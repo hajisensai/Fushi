@@ -82,13 +82,36 @@ abstract final class MediaLinkSource {
   static const String vndb = 'vndb';
 
   /// Wikidata id 桥接：VN（P3180 VNDB id）经 based on / derivative work 到动画，
-  /// 读出 AniDB anime id（P5646）后对上本地视频（强判据，仍只作建议）。
+  /// 读出 AniDB anime id（P5646）后对上本地视频（强判据：共享外部 id，按 AI 库管家
+  /// 设计稿 §5.2 直接生效）。
   static const String wikidata = 'wikidata';
 
   /// MAL（Jikan）的 Adaptation 关系 + 本地书 ISBN / 标题匹配（中等判据）。
   static const String mal = 'mal';
 
-  /// AI 辅助裁决（一律只作建议）。
+  /// AI 辅助裁决。按 AI 库管家设计稿 §5.2 的门槛：高置信直接生效
+  /// （`confirmed_by = ai`，见 [MediaLinkConfirmer]），其余写成建议或丢弃。
+  static const String ai = 'ai';
+
+  /// 声纹命中：`video_theme_song_spans` 里某曲目在某作品的集里被比对出来（AI 库管家
+  /// 设计稿 §4.4 第 3 条，最强证据，直接生效）。
+  static const String fingerprint = 'fingerprint';
+
+  /// VGMdb 刮削数据（专辑各语言名）里带作品名 + 关键词（§4.4 第 1 / 2 条，建议）。
+  static const String vgmdb = 'vgmdb';
+
+  /// MusicBrainz 刮削数据（release / release group 标题、release group 的
+  /// Soundtrack 类别）里带作品名（§4.4 第 1 / 2 条，建议）。
+  static const String musicbrainz = 'musicbrainz';
+}
+
+/// 谁让一条连接生效（`media_links.confirmed_by`，schema v159）。NULL = 建议。
+/// `user` 压过 `ai`：用户确认过的连接 AI 不改关系、不改方向、不删除。
+abstract final class MediaLinkConfirmer {
+  /// 用户手动连接 / 用户确认。
+  static const String user = 'user';
+
+  /// AI 按门槛直接生效（可撤销；用户确认后升为 [user]）。
   static const String ai = 'ai';
 }
 
@@ -118,7 +141,8 @@ int compareMediaLinkEndpoints(MediaLinkEndpoint a, MediaLinkEndpoint b) {
 
 /// 一行连接的可见状态。
 enum MediaLinkState {
-  /// 已确认（手动连接，或用户确认过的推断）：详情页「同一作品」区块显示。
+  /// 已生效（手动连接、用户确认过的推断，或 AI 按门槛直接生效的连接）：详情页
+  /// 「同一作品」区块显示。谁让它生效看 `confirmed_by`。
   confirmed,
 
   /// 推断建议（未确认）：只在「可能相关」建议卡里出现。

@@ -5,9 +5,10 @@ part of '../video_fushi_page.dart';
 /// 极简 chrome（顶部拖动带 + 退出钮、居中大三键、视频最下方的细进度条）。
 ///
 /// 两种小窗**共用同一个密度档**（[VideoControlsDensity.mini]）却**不共用 chrome
-/// 归属**：桌面小窗里窗口是空的、chrome 得本仓自己画；系统画中画里 Android 会在
-/// 窗口上叠自己的播放控件，本仓再画一套就是两层按钮重影。判据收敛在
-/// [VideoMiniSurface.systemOwnsChrome] 一处，本文件只消费结论。
+/// 归属**：桌面小窗里窗口是空的、chrome 得本仓自己画；系统画中画里按钮由系统画在
+/// 窗口上（画哪些由本仓经 `RemoteAction` 交给它，见
+/// [_buildPictureInPicturePlaybackSync]），本仓在画面里再画一套就是两层按钮重影。
+/// 判据收敛在 [VideoMiniSurface.systemOwnsChrome] 一处，本文件只消费结论。
 ///
 /// iOS **不提供**系统画中画：本仓的画面是 libmpv 渲染进 Flutter texture 的，
 /// iOS 的 `AVPictureInPictureController` 只能挂 `AVPlayerLayer` /
@@ -30,12 +31,18 @@ extension _VideoMiniWindow on _VideoFushiPageState {
 
   /// 当前画面宽高比；尺寸还没解析出来时退回 16:9（两个平台的小窗几何都要它，
   /// 且都不接受 0 / NaN）。
-  double _miniWindowAspectRatio() {
+  double _miniWindowAspectRatio() => _knownVideoAspectRatio() ?? 16 / 9;
+
+  /// 当前画面宽高比；尺寸还没解析出来（刚换集、解码器尚未报尺寸）时为 null。
+  ///
+  /// 与 [_miniWindowAspectRatio] 分开：已经在小窗里时「不知道」不能当成 16:9 用，
+  /// 否则每换一集窗口都先跳一次 16:9 再跳到真实比例。
+  double? _knownVideoAspectRatio() {
     final VideoPlayerController? controller = _controller;
     final int? width = controller?.videoWidth;
     final int? height = controller?.videoHeight;
     if (width == null || height == null || width <= 0 || height <= 0) {
-      return 16 / 9;
+      return null;
     }
     return width / height;
   }
@@ -47,15 +54,22 @@ extension _VideoMiniWindow on _VideoFushiPageState {
   /// 结束 PiP（用户点小窗上的关闭、或系统回收），漏订阅就会让 [_miniSurface] 永远
   /// 卡在 PiP 态、chrome 再也不回来。
   void _initMiniWindowSupport() {
-    if (isDesktopPlatform) {
-      // 本地换集 `pushReplacement`：旧页 dispose 晚于本页 initState。上一集在小窗里
-      // 就把所有权接过来，旧页的 exit 因 owner 不符 no-op，小窗跨集保持（否则每换
-      // 一集——含自动连播——小窗都弹回主窗，而挂角落看番正是小窗的核心场景）。
-      if (DesktopMiniWindowMode.claim(owner: this)) {
-        _miniSurface.value = VideoMiniSurface.desktopMiniWindow;
-      }
-      return;
-    }
+    // 起步表面：本地换集是 `pushReplacement` 的新页，上一集留下的小窗在换页期间
+    // 一直没动，两边都不会补发「已经在小窗里」——只能在这里同步读一次当前值（判据
+    // 见 [videoInitialMiniSurface]）。initState 期，直接写值，不需要 [_rebuild]。
+    _miniSurface.value = videoInitialMiniSurface(
+      // 桌面：旧页 dispose 晚于本页 initState。上一集在小窗里就把所有权接过来，
+      // 旧页的 exit 因 owner 不符 no-op，小窗跨集保持（否则每换一集——含自动
+      // 连播——小窗都弹回主窗，而挂角落看番正是小窗的核心场景）。
+      desktopMiniWindowClaimed:
+          isDesktopPlatform && DesktopMiniWindowMode.claim(owner: this),
+      // 移动端：[AndroidPictureInPicture.modeChanges] 只在翻转时发事件，PiP 里自动
+      // 连播到下一集时系统窗口没动；不读这一次，新页就以 `none` 起步、在 PiP 小窗里
+      // 画出整套常规 chrome，直到用户退出 PiP 都收不到事件（BUG-4804）。必须排在
+      // 下面的订阅之前。
+      pictureInPictureActive:
+          isMobilePlatform && AndroidPictureInPicture.isActive,
+    );
     if (!isMobilePlatform) return;
     _pictureInPictureSub = AndroidPictureInPicture.modeChanges.listen(
       _handlePictureInPictureChanged,
@@ -140,7 +154,14 @@ extension _VideoMiniWindow on _VideoFushiPageState {
     }
     // 移动端：只发请求，**不在这里置位**——真正进没进 PiP 由系统说了算，
     // 状态统一由 [_handlePictureInPictureChanged] 的回程写入。
-    await AndroidPictureInPicture.enter(aspectRatio: aspectRatio);
+    await AndroidPictureInPicture.enter(
+      aspectRatio: aspectRatio,
+      // 小窗上的播放 / 暂停键：系统不会自己给，得随进入参数一起交（之后的图标
+      // 翻转与换集比例由 [_buildPictureInPicturePlaybackSync] 持续同步）。交不交
+      // 只看此刻有没有同步器挂着——没有（原盘菜单阶段 controls 子树被整块替换）就
+      // 交 null、窗口上不出键，免得点了没人接；同步器挂上来时自己会把键补上。
+      controls: AndroidPictureInPicturePlaybackSync.currentControls(),
+    );
   }
 
   /// 退小窗。系统画中画没有「从 app 内退出」的 API（只能由用户或系统结束），
@@ -157,7 +178,10 @@ extension _VideoMiniWindow on _VideoFushiPageState {
     _rebuild(() {});
   }
 
-  /// 换集 / 换源后把小窗几何更新到新画面比例（非小窗态 no-op）。
+  /// 换集 / 换源后把**桌面**小窗几何更新到新画面比例（非桌面小窗态 no-op）。
+  ///
+  /// 系统画中画不走这里：它的比例与按钮图标一起由
+  /// [_buildPictureInPicturePlaybackSync] 同步。
   Future<void> _syncMiniWindowAspectRatio() async {
     if (_miniWindowSurface != VideoMiniSurface.desktopMiniWindow) return;
     await DesktopMiniWindowMode.updateAspectRatio(_miniWindowAspectRatio());
@@ -300,7 +324,12 @@ extension _VideoMiniWindow on _VideoFushiPageState {
   /// 触达面积反而比底栏更大。
   Widget _buildMiniWindowCenterControls(VideoPlayerController controller) {
     final VideoControlsDensitySpec density = _controlsDensity;
-    if (!density.showCenterTransport) return const SizedBox.shrink();
+    if (!density.showCenterTransport) {
+      // 常规档与系统画中画都落在这一支（PiP 下 showCenterTransport 恒 false）：画面
+      // 里不画三键。PiP 里改由系统窗口上的播放 / 暂停键顶上，同步器从常规档起就
+      // 挂着（进 PiP 时才有键可交）。
+      return _buildPictureInPicturePlaybackSync(controller);
+    }
     final ColorScheme cs = _videoChromeColorScheme(context);
     // 与底栏那两个 ±10s 键同一个常量（见 [_buildBottomSlotButton] 的
     // seekBackward / seekForward 分支）：小窗里换个位置，语义必须还是同一个键。
@@ -359,6 +388,28 @@ extension _VideoMiniWindow on _VideoFushiPageState {
           ),
         ),
       ),
+    );
+  }
+
+  /// 把播放器接到系统画中画窗口上：播放态 → 按钮图标，画面比例 → 窗口比例（换集后
+  /// 新页挂载即对齐），窗口上的播放 / 暂停键 → 播放器。
+  ///
+  /// **窗口上有没有这枚键，只取决于这个同步器挂没挂着**（见
+  /// [AndroidPictureInPicturePlaybackSync]）：它在 controls 子树里，播放器没就绪 /
+  /// 加载失败 / 原盘菜单阶段这棵子树不存在，键随之撤掉，不会留一枚点了没人接的键。
+  /// 所以它不看「此刻在不在 PiP 里」——进 PiP 之前就得挂着，进入时才有键可交；不在
+  /// PiP 里时它只是播放器上的一个早退的监听，不发通道调用。桌面不挂（那边的小窗
+  /// chrome 是本仓自绘的）；门用同步可读的平台判据而不是异步探测出来的
+  /// `_pictureInPictureSupported`，免得「探测结果晚到、这棵子树却没重建」时漏挂。
+  /// 动作与画面里那枚居中播放键同一条路（`playOrPause`），不另立语义。
+  Widget _buildPictureInPicturePlaybackSync(VideoPlayerController controller) {
+    if (!isMobilePlatform) return const SizedBox.shrink();
+    return AndroidPictureInPicturePlaybackSync(
+      playback: controller,
+      isPlaying: () => controller.isPlaying,
+      aspectRatio: _knownVideoAspectRatio,
+      playPauseLabel: t.video_bottom_play_pause,
+      onPlayPause: () => unawaited(controller.playOrPause()),
     );
   }
 

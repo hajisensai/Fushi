@@ -2091,6 +2091,11 @@ class ThemeNotifier extends ChangeNotifier {
     _get('shell_content_layout', defaultValue: '') as String,
   );
 
+  /// 显式选过库页布局（落库值非空，含已删的 `blocks`）；false = 跟着
+  /// [ShellContentLayout.defaultLayout] 走。
+  bool get shellContentLayoutChosen =>
+      (_get('shell_content_layout', defaultValue: '') as String).isNotEmpty;
+
   Future<void> setShellContentLayout(ShellContentLayout value) async {
     await _set('shell_content_layout', value.prefValue);
     notifyListeners();

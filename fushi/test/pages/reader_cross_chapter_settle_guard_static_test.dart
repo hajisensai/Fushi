@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-1140 源码守卫：跨章提速的三个确定性结构不许被悄悄退回去。
 ///
 /// 背景：这次提速删掉的是**空等**——两处 `_settleAndNotify` 里回调体为空、只为再拖
@@ -12,9 +14,12 @@ import 'package:test/test.dart';
 ///
 /// 钉三条：
 /// 1. 两处 `_settleAndNotify` 各只剩**一层** `setTimeout`（第二层空等不许回来）。
-/// 2. 分页 shell 的那一层里，落点是**同步写死**再通知的：`setPagePosition` →
-///    `registerSnapScroll` → `notifyRestoreComplete` 顺序在位。这是「Dart 收到通知时
-///    落点已定」的 program-order 保证，不是时间赌——顺序一乱就退化成赌。
+/// 2. 分页 shell 的那一层里，落点是**同步写死**再通知的：`reapplyImageLateAnchor`
+///    （按已登记的语义锚重设落点，BUG-4808）→ `registerSnapScroll` →
+///    `notifyRestoreComplete` 顺序在位。这是「Dart 收到通知时落点已定」的 program-order
+///    保证，不是时间赌——顺序一乱就退化成赌。回调**不得**写回延后之前捕获的像素位置
+///    （迟到图片重锚 / 用户翻页会被盖掉）；行为由
+///    `test/reader/paged_settle_semantic_anchor_behavior_test.dart` 用 Node 真跑钉住。
 /// 3. 延后一帧的收尾块带 `_navigateGeneration` 代际守卫（只有 `mounted` 不够：跨章
 ///    快速连点时旧收尾会把旧章位置写进新导航）。
 void main() {
@@ -61,12 +66,46 @@ void main() {
 
   test('分页 shell 的 settle 是「同步写落点再通知」的顺序（program-order 保证）', () {
     final String src = read('lib/src/reader/reader_pagination_scripts.dart');
-    final String body = settleBodies(src).first;
-    final int setPos = body.indexOf('setPagePosition(');
+    final String body = maskJsComments(settleBodies(src).first);
+    final int setPos = body.indexOf('self.reapplyImageLateAnchor(');
     final int snap = body.indexOf('registerSnapScroll(');
     final int notify = body.indexOf('notifyRestoreComplete(');
-    expect(setPos, greaterThan(-1), reason: 'settle 必须同步重设落点');
+    expect(
+      setPos,
+      greaterThan(-1),
+      reason: 'settle 必须同步重设落点（按已登记的语义锚重算，BUG-4808）',
+    );
     expect(snap, greaterThan(setPos), reason: 'snap 基线须在落点写入之后注册');
+    expect(
+      body.contains('_settleAndNotify: function()'),
+      isTrue,
+      reason:
+          'BUG-4808：settle 不再接收延后之前捕获的 (context, pos)——'
+          '带着像素位置进来，回调就会把它写回去、盖掉这 16ms 内的迟到图片重锚',
+    );
+    expect(
+      body.contains('setPagePosition('),
+      isFalse,
+      reason:
+          'BUG-4808：settle 回调不得直接写像素位置；重设落点只走 '
+          'reapplyImageLateAnchor（锚已清 = 位置已归别人所有，不写）',
+    );
+    expect(
+      body.contains(
+        'if (self.getPagePosition(self.getScrollContext()) !== landed) {',
+      ),
+      isTrue,
+      reason:
+          '语义锚重算只在位置被动过时做：位置原封未动时再从章首走到锚字，是把一次与入口'
+          '落点同量级的全章走查白白排在通知 Dart 之前（跨章耗时回退）。landed 只用于比较',
+    );
+    expect(
+      body.contains(
+        'registerSnapScroll(self.getPagePosition(self.getScrollContext()))',
+      ),
+      isTrue,
+      reason: 'snap 基线取回调执行时的真实位置，不取延后之前读到的值',
+    );
     expect(
       notify,
       greaterThan(snap),

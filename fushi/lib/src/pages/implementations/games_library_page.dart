@@ -6,6 +6,7 @@ import 'package:fushi/src/utils/components/fushi_cover_block.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/media/collections/library_organize_runner.dart';
+import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
 import 'package:fushi/src/media/privacy/media_privacy_dialog.dart';
 import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
@@ -35,6 +36,15 @@ import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi_engine/media/metadata/dlsite/dlsite_client.dart';
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart';
+import 'package:fushi/src/media/links/media_link_entries.dart'
+    show MediaLinkEntry;
+import 'package:fushi/src/media/links/media_link_inference_host.dart'
+    show mediaLinkInferCallback;
+import 'package:fushi/src/media/links/media_link_opener.dart'
+    show mediaLinkSearchAction, openMediaLinkEntry;
+import 'package:fushi/src/media/links/media_links_section.dart'
+    show showMediaLinksDialog;
+import 'package:fushi/src/media/links/work_kinds_badge.dart';
 import 'package:fushi/src/media/collections/collection_context_dialog.dart';
 import 'package:fushi/src/media/collections/collection_grouping.dart';
 import 'package:fushi/src/media/collections/collection_drag.dart'
@@ -633,8 +643,10 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
     await _reload();
   }
 
-  /// 工具条「全部刮削」：按每个游戏当前显示名搜索，只自动应用唯一精确匹配。
-  /// 批量属于自动路径，已有本地/手动封面不覆盖；近似或跨源同名结果留给单卡确认。
+  /// 工具条「全部刮削」：按每个游戏当前显示名搜索，只自动应用每个源内唯一的
+  /// 精确匹配。批量属于自动路径，已有本地/手动封面不覆盖；近似结果、同一个源里的
+  /// 多条同名结果留给单卡确认。不同源各有一条同名是同一部作品（BUG-4727：跨源同名曾被
+  /// 当成歧义，Bangumi 与 VNDB 都收录的作品一律刮不出封面），按源顺序取第一个源。
   Future<void> _scrapeAllGames() async {
     final List<GalgameEntry> games = List<GalgameEntry>.of(_games);
     if (!mounted) return;
@@ -665,6 +677,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
                       if (candidate.nameCn != null) candidate.nameCn!,
                       if (candidate.name != null) candidate.name!,
                     ],
+                    sourceOf: (SourceCandidate candidate) => candidate.source,
                   );
             if (candidate == null) {
               result = candidates.isEmpty
@@ -779,6 +792,13 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
           // 合集头部的成员封面扇形（游戏没有阅读进度，不走 memberInfoOf）。
           memberCoverOf: (String mediaType, String entryKey) =>
               gameCollectionMemberCover(
+                games: _games,
+                mediaType: mediaType,
+                entryKey: entryKey,
+              ),
+          // 头部成员封面的 NSFW 并入游戏自己的成人向标记。
+          memberNsfwOf: (String mediaType, String entryKey) =>
+              gameCollectionMemberNsfw(
                 games: _games,
                 mediaType: mediaType,
                 entryKey: entryKey,
@@ -2057,9 +2077,39 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
   }) {
     final MediaCollectionRow? collection = group.collection;
     if (collection == null) {
-      return _buildGameCard(group.coverItem.payload, block: block);
+      final GalgameEntry game = group.coverItem.payload;
+      // 「另有：小说 · 动画」作品角标（AI 库管家 spec §4.3），数据取进程级作品图缓存。
+      return WorkKindsBadgeOverlay.entry(
+        database: _appModel.database,
+        endpoint: (kind: MediaLinkKind.game, key: game.id),
+        enabled: !_reordering,
+        onPressed: _showWorkLinks,
+        child: _buildGameCard(game, block: block),
+      );
     }
-    return _buildCollectionCard(group, collection, block: block);
+    return WorkKindsBadgeOverlay.collection(
+      database: _appModel.database,
+      collectionId: collection.id,
+      enabled: !_reordering,
+      onPressed: _showWorkLinks,
+      child: _buildCollectionCard(group, collection, block: block),
+    );
+  }
+
+  /// 角标点开的「同一作品」弹窗（与书架书卡同一形态；游戏详情页里是常驻区块）。
+  void _showWorkLinks(MediaLinkEndpoint self) {
+    unawaited(
+      showMediaLinksDialog(
+        context: context,
+        database: _appModel.database,
+        self: self,
+        onOpen: (MediaLinkEntry e) =>
+            openMediaLinkEntry(context: context, ref: ref, entry: e),
+        searchActionFor: (MediaLinkKind k) =>
+            mediaLinkSearchAction(context: context, ref: ref, kind: k),
+        onInfer: mediaLinkInferCallback(ref: ref, self: self),
+      ),
+    );
   }
 
   /// 合集长按菜单的封面图源：自设封面 → 组内顺序第一个有封面文件的游戏；都没有
@@ -2135,17 +2185,28 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
     final String? own = collection.coverPath;
     final bool hasOwnCover =
         own != null && own.isNotEmpty && File(own).existsSync();
+    // NSFW 逐张判定（拍板台 w04vrhUAaX）：合集自设封面按合集，成员封面按成员
+    // （成人向标记或所在 NSFW 合集）。不在卡壳挂合集一层——没标的合集会把其中
+    // 成人向游戏的封面原样露出来。只有最前那张压「已隐藏」图标。
     final List<Widget> covers = <Widget>[
       if (hasOwnCover)
-        ShelfFileCover(
-          path: own,
-          placeholder: const ShelfCoverPlaceholder(
-            icon: FushiIcons.collection,
-            iconSize: 40,
+        MediaNsfwCover(
+          target: MediaNsfwTarget.collection(collection.id),
+          child: ShelfFileCover(
+            path: own,
+            placeholder: const ShelfCoverPlaceholder(
+              icon: FushiIcons.collection,
+              iconSize: 40,
+            ),
           ),
         ),
-      for (final GalgameEntry game in members.take(hasOwnCover ? 3 : 4))
-        GameCoverThumb(game: game),
+      for (final (int i, GalgameEntry game)
+          in members.take(hasOwnCover ? 3 : 4).indexed)
+        MediaNsfwCover(
+          target: MediaNsfwTarget.game(game.id, adult: game.isNsfw),
+          showIcon: !hasOwnCover && i == 0,
+          child: GameCoverThumb(game: game),
+        ),
     ];
     final ({String subtitle, double? progress, bool completed, int seconds})
     meta = galgameCollectionMeta(members);
@@ -2496,6 +2557,24 @@ Widget? gameCollectionMemberCover({
   return null;
 }
 
+/// 游戏合集成员的 NSFW 宿主：成人向标记（编辑页开关 / 刮削）并入合集继承判定。
+/// 游戏不在当前列表里（已删 / 未加载）时只按成员行判定。
+MediaNsfwTarget? gameCollectionMemberNsfw({
+  required List<GalgameEntry> games,
+  required String mediaType,
+  required String entryKey,
+}) {
+  if (MediaKind.tryParse(mediaType) != MediaKind.game) {
+    return MediaNsfwTarget.collectionMember(mediaType, entryKey);
+  }
+  for (final GalgameEntry game in games) {
+    if (game.id == entryKey) {
+      return MediaNsfwTarget.game(game.id, adult: game.isNsfw);
+    }
+  }
+  return MediaNsfwTarget.game(entryKey, adult: false);
+}
+
 /// 游玩状态的用户可读标签（枚举 `.name` 直接上屏是 17 语言用户的灾难）。
 String galgamePlayStatusLabel(GalgamePlayStatus status) => switch (status) {
   GalgamePlayStatus.unset => t.game_status_unset,
@@ -2709,6 +2788,7 @@ class _GameCard extends StatelessWidget {
         cover: _dialogCover(dialogContext),
         coverBackdrop: _dialogCoverBackdrop(),
         coverMaterial: ShelfCoverMaterial.gameCase,
+        nsfw: MediaNsfwTarget.game(game.id, adult: game.isNsfw),
         title: game.displayName,
         showLaunchAction: false,
         quickActions: <DialogQuickAction>[
@@ -2959,7 +3039,9 @@ class _GameCard extends StatelessWidget {
     // 在某张卡上，等于该 tab 里 Y=搜索永久失效。home 组的手柄默认只占 LT/RT/Y，
     // X 是空的；X 的其它绑定都在 reader / video / dictionaryPopup 组，不同组不同
     // 时激活，无遮蔽。
-    return Actions(
+    // NSFW：游戏自己的成人向标记（编辑页开关 / 刮削）或所在 NSFW 合集 → 封面
+    // 按「模糊 NSFW 封面」打模糊（卡内封面框读这一层）。
+    final Widget body = Actions(
       actions: <Type, Action<Intent>>{
         GamepadButtonIntent: GamepadButtonForwardingAction(
           ancestorContext: context,
@@ -3019,6 +3101,10 @@ class _GameCard extends StatelessWidget {
               onSecondaryTap: () => unawaited(_showContextMenu(context)),
               semanticLabel: game.displayName,
             ),
+    );
+    return MediaNsfwCoverScope(
+      target: MediaNsfwTarget.game(game.id, adult: game.isNsfw),
+      child: body,
     );
   }
 

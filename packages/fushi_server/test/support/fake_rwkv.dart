@@ -1,4 +1,5 @@
 // 服务端测试用的 RWKV 替身：后台 runtime 换成按卡给定 R 的假后端，权重「已就绪」不碰网络。
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -154,6 +155,17 @@ class FakeRwkvBackend implements SrsRwkvBackend {
     _scores.clear();
   }
 
+  /// 关闭闸门：设了就让 [close] 挂在这里，直到测试 complete 它（模拟旧服务存快照 / 关 runtime 很慢或挂死）。
+  Completer<void>? closeGate;
+
+  /// [close] 已被调用（不管闸门放没放）。
+  bool closeCalled = false;
+
   @override
-  Future<void> close() async => closed = true;
+  Future<void> close() async {
+    closeCalled = true;
+    final Completer<void>? gate = closeGate;
+    if (gate != null) await gate.future;
+    closed = true;
+  }
 }

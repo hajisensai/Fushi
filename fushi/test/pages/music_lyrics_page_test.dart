@@ -13,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_lyrics_view.dart';
 import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_live.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
@@ -142,6 +143,8 @@ class _LyricsAppModel extends AppModel {
   }) : super(testPlatformServices()) {
     wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: dir);
     wireDatabaseForTesting(db);
+    // 同正式 initialise：偏好变了经 AppModel 转发，watch appProvider 的页面跟着重建。
+    prefs.addListener(notifyListeners);
   }
 
   final FushiDatabase db;
@@ -161,9 +164,23 @@ class _LyricsAppModel extends AppModel {
     showMediaNotification: () => false,
   );
 
+  /// 歌词页发出的 LRCLIB 请求（在线自动解析是关的，只有用户主动搜索会发）。
+  final List<Uri> lrclibCalls = <Uri>[];
+
+  /// 非 null 时 LRCLIB 请求挂在这里直到 complete（测搜索进行中的界面）。
+  Completer<void>? lrclibGate;
+
   late final MusicLyricsService _lyrics = MusicLyricsService(
     database: () => db,
-    lrclib: LrclibClient(transport: (Uri _) async => (status: 404, body: '')),
+    lrclib: LrclibClient(
+      transport: (Uri uri) async {
+        lrclibCalls.add(uri);
+        await lrclibGate?.future;
+        return uri.path == '/api/search'
+            ? (status: 200, body: '[]')
+            : (status: 404, body: '');
+      },
+    ),
     onlineEnabled: () => false,
     readEmbedded: (String _, int? _) async => const <EmbeddedLyrics>[],
     parse: (Uint8List b, String h, int? d) async =>
@@ -365,6 +382,28 @@ void main() {
             )
             as MusicLyricRow;
     expect(row.offsetMs, 100);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  // GitHub #3354：设置 › 音乐 › 「模糊非当前行」接到歌词视图，改了即时生效。
+  testWidgets('「模糊非当前行」偏好接到歌词视图并即时生效', (WidgetTester tester) async {
+    bool viewBlurs() => tester
+        .widget<KaraokeLyricsView>(find.byType(KaraokeLyricsView))
+        .appearance
+        .blurInactive;
+
+    await pumpPage(tester);
+    expect(viewBlurs(), isTrue, reason: '默认开（保持原观感）');
+
+    await tester.runAsync(() => app.setMusicLyricsBlurInactive(false));
+    await tester.pump();
+    expect(viewBlurs(), isFalse);
+    expect(app.prefsRepo.musicLyricsBlurInactive, isFalse);
+
+    await tester.runAsync(() => app.setMusicLyricsBlurInactive(true));
+    await tester.pump();
+    expect(viewBlurs(), isTrue);
 
     await tester.pumpWidget(const SizedBox.shrink());
   });
@@ -851,6 +890,74 @@ void main() {
     );
     await settle(tester);
     expect(find.bySemanticsLabel('ドラマの台詞'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  // 拍板台 D48CgzHUok：「搜索在线歌词」先弹关键词框（默认填曲目元数据），按用户改过的
+  // 标题 / 艺人去搜。
+  testWidgets('搜索在线歌词：关键词框默认填曲目元数据，按改过的关键词搜', (WidgetTester tester) async {
+    await pumpPage(tester);
+    await tester.tap(find.byKey(const ValueKey<String>('music_lyrics_more')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.music_lyrics_search_online));
+    await tester.pumpAndSettle();
+    Finder field(int i) => find.descendant(
+      of: find.byKey(ValueKey<String>('fushi_form_field_$i')),
+      matching: find.byType(EditableText),
+    );
+    expect(tester.widget<EditableText>(field(0)).controller.text, 'Night Run');
+    expect(tester.widget<EditableText>(field(1)).controller.text, 'YOASOBI');
+    expect(app.lrclibCalls, isEmpty, reason: '确认前不搜');
+    await tester.enterText(field(0), '夜に駆ける');
+    await tester.enterText(field(1), '');
+    await tester.tap(find.byKey(const ValueKey<String>('fushi_form_confirm')));
+    await settle(tester);
+    final Uri search = app.lrclibCalls.single;
+    expect(search.path, '/api/search');
+    expect(search.queryParameters['track_name'], '夜に駆ける');
+    expect(search.queryParameters['artist_name'], isNull);
+    expect(find.text(t.music_lyrics_no_candidates), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  // 搜索要串行走 LRCLIB + 各歌词插件，可能好几秒：进行中要有进度，且不能再触发第二次搜索
+  // （否则用户以为没反应重复点，叠出多个候选框）。
+  testWidgets('搜索在线歌词进行中：显示进度，「搜索在线歌词」不能再次触发', (WidgetTester tester) async {
+    app.lrclibGate = Completer<void>();
+    await pumpPage(tester);
+    await tester.tap(find.byKey(const ValueKey<String>('music_lyrics_more')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.music_lyrics_search_online));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey<String>('fushi_form_confirm')));
+    await settle(tester);
+    expect(app.lrclibCalls, hasLength(1));
+    expect(
+      find.byKey(const ValueKey<String>('music_lyrics_online_searching')),
+      findsOneWidget,
+    );
+    expect(find.text(t.music_lyrics_no_candidates), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey<String>('music_lyrics_more')));
+    await settle(tester);
+    await tester.tap(find.text(t.music_lyrics_search_online));
+    await settle(tester);
+    expect(
+      find.byKey(const ValueKey<String>('fushi_form_field_0')),
+      findsNothing,
+      reason: '搜索进行中再点不弹关键词框',
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await settle(tester);
+
+    app.lrclibGate!.complete();
+    await settle(tester);
+    expect(app.lrclibCalls, hasLength(1));
+    expect(
+      find.byKey(const ValueKey<String>('music_lyrics_online_searching')),
+      findsNothing,
+    );
+    expect(find.text(t.music_lyrics_no_candidates), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 

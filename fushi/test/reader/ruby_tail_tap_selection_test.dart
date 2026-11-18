@@ -72,7 +72,7 @@ void main() {
 }
 
 /// 每个 shell 的 check 条数 × 2 个 shell。
-const int _expectedCases = 2 * 10;
+const int _expectedCases = 2 * 27;
 
 String? _resolveNode() {
   final List<String> candidates = Platform.isWindows
