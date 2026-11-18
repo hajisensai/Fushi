@@ -796,6 +796,32 @@ fn an_unchanged_head_commits_nothing() {
     assert_eq!(files.len(), 1);
 }
 
+/// 新代第一次同步成功（`head` 走完）记下时刻，之后的成功不改它：保留副本从这一刻起再留 14 天（`retained.rs`，D32）。
+#[test]
+fn the_first_successful_round_is_recorded_once() {
+    use crate::store::gen4::retained::FIRST_SYNC_KEY;
+    let a = Dev::new("d32first");
+    let mut loc = Loc::new();
+    a.write(T1 + 1, N1, "鯨");
+    let first = |dir: &Path| -> Option<String> {
+        Connection::open_with_flags(dir.join(GEN4_FILE), OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .unwrap()
+            .query_row(
+                "SELECT value FROM srs_meta WHERE key = ?1",
+                [FIRST_SYNC_KEY],
+                |r| r.get(0),
+            )
+            .ok()
+    };
+    assert_eq!(first(&a.dir.0), None);
+    round(&a, &mut loc, "loc", T1 + 10, Opts::default());
+    assert_eq!(first(&a.dir.0), Some((T1 + 10).to_string()));
+    a.write(T1 + 20, N2, "猫");
+    let r = round(&a, &mut loc, "loc", T1 + 30, Opts::default());
+    assert_eq!(r.head["unchanged"], json!(false), "{}", r.head);
+    assert_eq!(first(&a.dir.0), Some((T1 + 10).to_string()));
+}
+
 /// 小段、小批：一台设备写很多条，分多段多批传；另一台收到同样的东西，派生层相同。
 #[test]
 fn small_segments_and_batches_resume_and_converge() {

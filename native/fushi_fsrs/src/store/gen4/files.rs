@@ -157,6 +157,13 @@ pub fn open_gen4(dir: &Path, mode: OpenMode) -> Result<Opened, OpenError> {
                 let mut retained_copy_unreadable = false;
                 if let Some(lock) = GenLock::try_acquire(dir)? {
                     retained_copy_unreadable = finish_seal(dir, &ready)? == Retained::Unreadable;
+                    // 保留副本到期自动删（`retained.rs`，D32）：没做成不挡开库，原因记进库里给设置页 / ctl 看。
+                    if !retained_copy_unreadable {
+                        if let Err(e) = super::retained::sweep(dir, &ready, super::dryrun::now_ms())
+                        {
+                            super::retained::note_error(&ready, &e).map_err(OpenError::Failed)?;
+                        }
+                    }
                     // 迁移在提交点之后崩溃留下的前提补完副本：迁移已经提交，它没有用了。
                     seal::remove_sqlite_files(&dir.join(PREPARE_COPY))
                         .map_err(OpenError::Failed)?;

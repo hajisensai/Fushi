@@ -753,6 +753,8 @@ fn dir_of(req: &Value) -> Result<PathBuf, String> {
 /// - `gen4_migrate_run {dir, caches: {profile: 缓存配置}, now, batch?, runId?}` → `migrate::Outcome::json`
 ///   （`{verdict, ...}`）。几十秒到几分钟，调用方在后台 isolate 调。同一目录在本进程里已经在跑 = `blocked`。
 /// - `gen4_migrate_cancel {dir, runId?}` → `{cancelled}`：叫停（提交点之前有效）；带 `runId` 时早于开跑到达也不丢。
+/// - `gen4_retained_state {dir, now}` / `gen4_retained_delete {dir}`：保留副本（封存的 `srs.db`）的到期状态与立即删除
+///   （`retained.rs`，D32）。删除不可逆，调用方先取得用户确认。
 pub fn global(op: &str, req: &Value) -> Result<Value, String> {
     match op {
         "gen4_migrate_status" => {
@@ -787,6 +789,15 @@ pub fn global(op: &str, req: &Value) -> Result<Value, String> {
                 }
             }
         }
+        "gen4_retained_state" => {
+            let dir = dir_of(req)?;
+            let now = req
+                .get("now")
+                .and_then(Value::as_i64)
+                .ok_or("gen4 retained: missing now")?;
+            super::retained::state(&dir, now)
+        }
+        "gen4_retained_delete" => super::retained::delete(&dir_of(req)?),
         other => Err(format!("gen4: unknown global op {other}")),
     }
 }

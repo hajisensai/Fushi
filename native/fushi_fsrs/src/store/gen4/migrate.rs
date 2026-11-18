@@ -375,14 +375,16 @@ pub fn status(dir: &Path) -> Result<GenState, String> {
             GenState::SealedOldOnly
         });
     }
+    // 报告针对的是不是旁边这份旧库：按身份认（报告的 `legacyIdentity`）。原件没有协议 3 身份时报告里记的是 null，
+    // 与这里的 None 相等也算——认不出「是不是同一份」，但当成「上次失败」只多一次手动重试（恢复页给「重新升级」），
+    // 当成「要迁移」则服务端每次启动都自动重迁、每次再中止（交接 §11 已知项，第五波修）。按内容摘要认要扫整个旧库，
+    // 不能放进 UI isolate 上轮询的状态命令。
     let identity = seal::legacy_identity(&c)?;
     let failed = std::fs::read_to_string(dir.join(REPORT_FILE))
         .ok()
         .and_then(|t| serde_json::from_str::<Value>(&t).ok())
         .is_some_and(|r| {
-            r["verdict"] == "aborted"
-                && identity.is_some()
-                && r["legacyIdentity"].as_str() == identity.as_deref()
+            r["verdict"] == "aborted" && r["legacyIdentity"].as_str() == identity.as_deref()
         });
     Ok(if failed {
         GenState::MigrationFailed
@@ -929,6 +931,8 @@ fn with_snapshot(
         carry_library_meta(origin, &dst)?;
         // 记原件的指纹（没有身份的原件记内容摘要，`files::source_mark`）：补封核对的是原件。
         files::record_migrated_from(&dst, origin)?;
+        // 迁移提交的时刻：从没同步成功过的用户，保留副本按它到期（`retained.rs`，D32）。
+        super::retained::record_migrated_at(&dst, opts.now_ms)?;
         dst.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")
             .map_err(schema::sql)?;
         dst.close().map_err(|(_, e)| schema::sql(e))?;

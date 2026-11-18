@@ -59,6 +59,8 @@ SrsCtlHost serverSrsCtlHost(ServerSrs? Function() srs) => SrsCtlHost(
     final String? uid = target.profile;
     if (uid != null) srs()?.notifyWrite(uid);
   },
+  // 旧版本保留副本（D32）：服务端的复习库目录 = 数据目录的 support（`srs4.db` / 封存的 `srs.db` 所在）。
+  libraryDir: () => srs()?.support.path,
 );
 
 /// 取不到库的拒绝：短码既是 `reason` 也是消息（与 admin_srs.dart 的错误体同形）。

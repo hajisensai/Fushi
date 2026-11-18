@@ -3627,3 +3627,95 @@ profile 判据恒放行 → `another_collections_profile_settings_are_not_writte
   日志截断（换身份）不涉及（本机设备的操作不记剔除记录）。没做的是作者重切 / 合并之后旧区间的 `relay_auth` 行与已不需要
   转发的段的剔除记录：别的位置的 head 可能还列着旧区间，按区间回收要先定「哪些位置还需要」，留给 G8 转发 owner。
 - 发件 `segBytes` 夹紧没有单独测试（要 4 MB 以上的数据，本机内存紧，没写）。
+
+## 第五波 保留副本与清除提示（2026-11-18，分支 `pr/srs-gen4-w5-retain-ui`，基于 `pr/srs-gen4-switch` `3d78fe51d0`）
+
+补规划 §6 K2 新增的两条合并条件与 D32。schema 不变（40021，没有加表 / 索引；新增的只是 `srs_meta` 的三个键），
+`ABI_VERSION` 不变（新增的是两条全局 JSON 命令，经已有的 `ffsrs_call`）。
+
+### 内核（`native/fushi_fsrs/src/store/gen4/retained.rs`，测试 `retained_tests.rs`）
+
+- **到期规则（定案）**：新代**第一次同步成功**之后 14 天；**从没同步成功过**（没有同步位置、或位置一直没跑通）按
+  **迁移提交之后 30 天**——设计 §9 第 3 项「从不同步的保留 30 天」的等价落法，`N = 30`。两个时刻都没有（这一版之前的开发
+  构建迁出来的库）不自动删、只能手动删。第一次同步成功之后到期时刻改按它算（可能晚于「迁移 + 30 天」，例如第 29 天才
+  第一次同步成功 → 第 43 天）：设计的意思是「新代同步跑通之后再留两周退路」，不取两者较早的。
+- **时刻怎么记**：`gen4_migrated_at_ms` 在迁移提交步骤里写进临时文件（随改名一起提交；断点续做与补改名都是同一个文件，
+  所以带着）；`gen4_first_sync_ok_ms` 在 `cmd/sync.rs` `head` 的写事务里 `INSERT OR IGNORE`（走到写 head 就是这一轮在这个
+  位置上成功了，`last_ok` 同一处），只记第一次。没有这一行但 `loc_state.last_ok` 有值的库取其中最早的。
+- **到期自动删**：Primary 打开新代库（`files::open_gen4`，持换代锁，在 `finish_seal` 之后）时，保留副本在、到期了就核对、
+  换墓碑。核对 = `files::open_ready`（已经做过）+ `PRAGMA quick_check` = `ok`；再由 `seal::write_tombstone` 自己核对
+  「是封存进旁边这份新代库的保留副本」。**核对不过不删**；自动删没做成不挡开库，原因记进 `srs_meta.gen4_retained_error`
+  （状态命令报给设置页 / ctl），做成了删掉。保留副本读不了（`retained_copy_unreadable`）时不碰它。
+- **为什么在开库时而不是同步后**：开库在锁里、有核对过的新代库连接，app 与服务端同一处；同步一轮在写连接的事务里，换
+  墓碑要的「本机没有任何连接开着旧库」在那里不好保证。代价：到期之后要等下一次开库（下一次启动）才真正删。
+- **立即删除**：全局命令 `gen4_retained_delete {dir}` → `{deleted, freedBytes}` / `{deleted: false, reason: absent | migrating}`，
+  不看到期，同样的核对，核对不过报错、什么都不动。`gen4_retained_state {dir, now}` → `{copy: sealed|tombstone|absent|other,
+  bytes, migratedAtMs, firstSyncAtMs, dueAtMs, due, error}`，只读（要打开两个 SQLite 文件，Dart 侧在后台 isolate 调，见下文
+  「复核修复」）。看保留副本
+  一律**只读**打开：读写打开会在旁边建 `-wal` / `-shm`、改掉文件状态，让 `RETAINED_UNRELATED_KEY` 的「判过不是迁移来源」
+  失效、每次开库重算整库摘要（第一版就这么踩了，`an_unrelated_older_library_is_digested_once_per_file_state` 红）。
+- **测试时钟**：开库用真实时钟判到期，而测试的迁移时刻 `NOW` 在 2023 年，所以测试里迁移完再 Primary 打开的库都会当场换成
+  墓碑。全量 1398 条照样绿（墓碑同样是 `SEALED_SCHEMA`、旧版本照样拒绝）；要验「没到期不动」的用例先把迁移时刻挪到将来。
+
+### 迁移状态机（§11 已知项）
+
+- 没有协议 3 身份的原件对拍中止后，报告的 `legacyIdentity` 是 null，`migrate::status` 以前要求身份非空才认报告，于是报
+  `needsMigration`，服务端每次启动自动重迁、每次再中止。现在 null 与 null 也算「是这份」→ `migrationFailed`：认不出是不是
+  同一份（没有身份、整库摘要太重不进状态命令），但误判成「上次失败」只多一次手动「重新升级」，反过来是无限重迁。有身份的
+  库不会被 null 身份的报告认走。测试 `prepare_tests.rs` `an_aborted_migration_of_a_library_without_identity_reads_as_failed`。
+- **「迁移中关库之后『开始升级』仍可点」委托描述与代码不符**：§11 已经做了（`SrsGen4MigrationController.canStart` 看
+  `isDatabaseOpen`、`databaseClosing`，页面置灰并显示 `srs_gen4_closing`，`srs_generation_view_test.dart` 覆盖），本分支没再改。
+
+### Dart
+
+- `fushi_srs` `srs_retained_copy.dart`：`SrsRetainedCopyBackend`（`state` / `delete`，后者在后台 isolate），真实实现走
+  `callGlobal`。
+- 设置 › 存储 › 维护「删除旧版本保留副本」（`storage.srs_retained_copy`）：只在本机有封存的保留副本时出现，副标题 = 大小 +
+  到期日（或「删除前一直保留」/ 自动删出错的原因），点了先确认（不可撤销、之后不能退回旧版本、清除过的原文随之消失）再删。
+  控制通道上这一行声明 `unsupported`，指向下面的 ctl 操作。
+- ctl：engine `srs_ctl_routes.dart` 新增 `GET /api/admin/srs/retained` 与 `POST /api/admin/srs/retained/delete`（要
+  `confirm: true`，核对不过回 409 `retained_copy_kept`），描述 `srs.retained.status`（read）/ `srs.retained.delete`
+  （irreversible + userGate `confirm`）在 `srs_ctl_ops.dart`。`SrsCtlHost` 新增 `libraryDir`：app 给 `AppModel.srsStorage.directory`
+  （主库没开好 = null → 422），服务端给 `ServerSrs.support.path`——**服务端 admin 的入口就是同一组路由**（`server.srs.retained.*`，
+  admin API 同路径），不另写一份。
+- 彻底清除（`srs_deck_list_page.dart` 删牌组 → 彻底清除）：本机有保留副本时选项说明换成 `srs_deck_delete_purge_retained_hint`
+  （保留副本里仍有升级前的原文，直到它被删除：到期自动删，或 设置 › 存储 里立即删）；选了彻底清除后再问一次去向：
+  「只彻底清除」/「彻底清除并立即删除保留副本」（后者清除做完再删，结果 toast）；取消 = 整次删除不做。没有保留副本时不问。
+- `SrsDbStore.scrubState()` 读内核 `scrub_state`（走写锁队列，不进 `kSrsSync2LockFreeOps`：那张表有逐项守卫，读一次很便宜）。
+  `SrsScrubErrorNotice`（随复习库修订号重读）放在同步与历史页（云同步说明下面）和牌组列表横幅最前：`error` 非空时显示
+  「清除的内容在磁盘上还没抹干净：<原因>」。
+
+### 复核修复（2026-11-18 第二轮）
+
+- **到期自动删的删前核对补了测试**：`an_expired_copy_is_kept_when_generation_4_fails_its_check_on_open`——迁移时刻设成已到期、
+  新代库多一页没人用的页（打得开、`quick_check` 不过），Primary 开库：副本仍是 `Sealed`，`error` 含 `integrity check`，开库
+  照常。变异：删掉 `sweep` 里的 `verify_gen4(ready)?;` 这条红。
+- **立即删除不再拿新代库的写锁**：以前换上墓碑之后还要 `DELETE` 掉 `gen4_retained_error`，同步正占着写锁时超过 busy timeout
+  就整体报错——ctl 回 409、app toast「没删」，文件其实已经换了。现在 `delete` 只读核对新代库、换墓碑，删成没删成只看墓碑；
+  `gen4_retained_error` 改成「只在副本还是 `Sealed` 时有意义」：`state` 只在那时报它，陈旧的那行由下一次 Primary 开库的
+  `sweep` 删掉（副本不在时）。测试 `deleting_now_succeeds_while_another_connection_holds_the_write_lock`（另一条连接
+  `BEGIN IMMEDIATE` 占着写锁时删 → `deleted: true`；陈旧原因不报；开库后那一行没了）。四处变异（删 sweep 核对 / `delete` 里
+  恢复写库清原因 / 去掉 `state` 的过滤 / 去掉 `sweep` 的清理）各自变红。
+- **状态命令挪到后台 isolate**：`SrsRetainedCopyBackend.state` 改成 `Future`，真实实现跟 `delete` 一样走 `Isolate.run`；app
+  侧新增 `srsRetainedCopyProvider`（`FutureProvider`，随复习库修订号重读，删完调用方 `invalidate`），设置行的 `visible` /
+  副标题 `watch` 它（读好之前行不显示），删牌组 `await` 它。没有实测 UI isolate 上的耗时：既然要开两个 SQLite 文件，直接按
+  「可能 >1 ms」放后台，不再纠结数字。
+- **状态读不了不挡删牌组**：读失败（内核报错）在 provider 里记日志、按「没有保留副本」处理（它只决定提示文字和入口显不显示；
+  删除本身同样会被内核拒绝）。设置页原来各自接异常的代码删掉，统一在 provider。
+- **没有到期时刻的副本**：彻底清除的说明与「只彻底清除」选项的副标题换成「直到你在 设置 › 存储 里删除它（不会自动到期）」
+  （`srs_deck_delete_purge_retained_kept_hint` / `srs_deck_delete_purge_retained_keep_kept_hint`），不再一律写「到期自动删除」。
+- **页面接线测试**：`fushi/test/srs/srs_retained_copy_wiring_test.dart`——真牌组列表上右键删牌组：有副本时彻底清除的说明是
+  保留副本那句，选彻底清除后出第二个对话框，选立即删除 → 执行端被调到、状态重读、牌组没了；状态命令抛错时说明是原来那句、
+  不问去向、删除照常做完；设置 › 存储的 `storage.srs_retained_copy` 行：有副本时可见、副标题是大小 + 到期，点它确认后删、
+  删完行隐藏。
+- 复核里「无身份中止的状态机测试用的是手写报告」没改：真实写报告处（`migrate.rs` `report.insert("legacyIdentity", json!(identity))`）
+  没有身份时就是 null，与手写报告一致。
+
+### 没做 / 归属
+
+- **profile 级删除（`srs_profile_cleanup.dart`）没加保留副本说明**：那条路是本机删数据、先导出 `.fushisrs` 备份当撤销途径，
+  原文本来就留在备份文件里；保留副本说明只加在会同步到各设备的「彻底清除」上。要不要在删 profile 的确认框里也写，交 UI owner。
+- 服务端 WebUI 没加按钮（admin API / ctl / AI 操作目录都有）；`fushi_server ctl srs` 没加专门的子命令（走通用的操作目录）。
+  归 G10 后续。
+- 位置上的旧根（`v3/`）不自动删（设计定案），不在本块。
+- 真机验证按用户 07-29 指令不做。

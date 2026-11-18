@@ -779,6 +779,23 @@ fn a_library_without_identity_is_migrated() {
     assert_eq!(from, crate::store::gen4::files::NO_IDENTITY);
 }
 
+/// 原件没有协议 3 身份时对拍中止：报告的 `legacyIdentity` 是 null，状态命令照样认作「上次迁移失败」（不报「要迁移」
+/// 让服务端每次启动自动重迁、每次再中止）；有身份的库不被一份 null 身份的报告认走。
+#[test]
+fn an_aborted_migration_of_a_library_without_identity_reads_as_failed() {
+    let dir = no_identity_dir("g72b-noid-abort");
+    let aborted =
+        json!({"version": migrate::REPORT_VERSION, "verdict": "aborted", "legacyIdentity": null});
+    std::fs::write(dir.0.join(migrate::REPORT_FILE), aborted.to_string()).unwrap();
+    assert_eq!(status(&dir.0), Ok(GenState::MigrationFailed));
+    // 有身份的库：null 身份的报告不是它的。
+    let Device { core, _dir: other } = crate::store::gen4::dryrun::tests::library("g72b-id-abort");
+    core.close();
+    drop(core);
+    std::fs::write(other.0.join(migrate::REPORT_FILE), aborted.to_string()).unwrap();
+    assert_eq!(status(&other.0), Ok(GenState::NeedsMigration));
+}
+
 /// 没开过协议 3 的库：只有投影表里的牌组与一条复习日志（[P] 下），没有 `sync2_self` 行。
 fn no_identity_dir(tag: &str) -> tempdir::Dir {
     let d = Device::new(tag);

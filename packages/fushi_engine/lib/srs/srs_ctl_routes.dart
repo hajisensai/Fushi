@@ -18,6 +18,9 @@
 /// - 批量改笔记（设置卡型 / 设置字段 / 查找替换）= `srs_note_batch_edit.dart` 的 `srsPlan*` +
 ///   [srsApplyNoteFieldPlan]（浏览页批量菜单）。
 ///
+/// - 旧版本保留副本（迁移后封存的 `srs.db`，D32）= `fushi_srs` 的 [SrsRetainedCopyBackend]（app 设置 › 存储
+///   「删除旧版本保留副本」同一个执行端）：查看到期状态、立即删除。删除不可逆，要 `confirm: true`。
+///
 /// 操作描述与撤销（给 AI 助手的工具集）在 `srs_ctl_ops.dart`。
 library;
 
@@ -51,7 +54,12 @@ class SrsCtlTarget {
 /// 路由与撤销共用的宿主依赖：取库（含宿主自己的门：模块开关、库是否就绪、点名的 profile 有没有提供）、
 /// 写后通知。
 class SrsCtlHost {
-  const SrsCtlHost({required this.open, required this.changed});
+  const SrsCtlHost({
+    required this.open,
+    required this.changed,
+    this.libraryDir,
+    this.retainedCopy = const SrsNativeRetainedCopyBackend(),
+  });
 
   /// 取这次调用作用的库。[profile] = 调用方给的 [kSrsCtlProfileParam]（没给 = null）；撤销时是执行那次
   /// 记进载荷的 [SrsCtlTarget.profile]。不可用时抛 [CtlFailure]。
@@ -59,7 +67,33 @@ class SrsCtlHost {
 
   /// 写完后通知宿主（app：让打开着的复习页面重读；服务端：把这份 profile 发出去）。
   final void Function(SrsCtlTarget target) changed;
+
+  /// 复习库所在目录（`srs4.db` / 保留副本 `srs.db` 所在，迁移与保留副本的全局命令按它）；宿主没有 / 还没就绪 =
+  /// null（保留副本路由回 422）。整个目录一份，与 [kSrsCtlProfileParam] 无关。
+  final String? Function()? libraryDir;
+
+  /// 保留副本命令的执行端（测试换成假的）。
+  final SrsRetainedCopyBackend retainedCopy;
 }
+
+/// 保留副本路由要的目录（宿主没有 → 422）。
+String _retainedDir(SrsCtlHost host) {
+  final String? dir = host.libraryDir?.call();
+  if (dir == null) {
+    throw const CtlFailure.rejected('复习库还没就绪（稍后再试）');
+  }
+  return dir;
+}
+
+Map<String, Object?> _retainedJson(SrsRetainedCopyState s) => <String, Object?>{
+  'copy': s.kind.wire,
+  'bytes': s.bytes,
+  'migratedAtMs': s.migratedAtMs,
+  'firstSyncAtMs': s.firstSyncAtMs,
+  'dueAtMs': s.dueAtMs,
+  'due': s.due,
+  'error': s.error,
+};
 
 /// 这次调用实际打开的那份库（按 [CtlCall] 实例挂，随调用对象回收）：撤销快照从这里取
 /// [SrsCtlTarget.profile]，与路由 handler 用的是同一份。
@@ -76,6 +110,37 @@ String? srsCtlProfileOf(CtlCall call) => _targetByCall[call]?.profile;
 
 /// 路由表本体：宿主依赖按 [host] 注入。
 List<CtlRoute> srsCtlRoutes(SrsCtlHost host) => <CtlRoute>[
+  // 旧版本保留副本（D32）：到期状态。
+  CtlRoute.get('$kSrsCtlRoot/retained', (CtlCall call) async {
+    final String dir = _retainedDir(host);
+    return _retainedJson(
+      await host.retainedCopy.state(
+        dir,
+        nowMs: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+  }),
+  // 立即删除保留副本：不可逆（迁移前的原文随之消失，之后不能再退回旧版本），要用户表态。
+  CtlRoute.post('$kSrsCtlRoot/retained/delete', (CtlCall call) async {
+    final String dir = _retainedDir(host);
+    if (call.optBool('confirm') != true) {
+      throw const CtlFailure.badRequest(
+        '删除旧版本保留副本不可撤销（之后不能再退回旧版本），需要确认（confirm: true / --yes）',
+      );
+    }
+    final SrsRetainedCopyDeletion d;
+    try {
+      d = await host.retainedCopy.delete(dir);
+    } on SrsCoreException catch (e) {
+      // 删前核对不过（新代库打不开 / 完整性核对不过、封存目标不对……）：什么都没动，原因原样报回。
+      throw CtlFailure(409, 'retained_copy_kept', e.message);
+    }
+    return <String, Object?>{
+      'deleted': d.deleted,
+      'freedBytes': d.freedBytes,
+      'reason': d.reason,
+    };
+  }),
   CtlRoute.get('$kSrsCtlRoot/decks', (CtlCall call) async {
     final SrsDbStore store = (await srsCtlOpen(host, call)).store;
     return <String, Object?>{
