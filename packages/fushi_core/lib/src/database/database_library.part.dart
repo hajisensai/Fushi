@@ -2109,6 +2109,8 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     // 见 deleteEpubBook）。
     await removeEntryFromAllCollections(MediaKind.srt, uid);
     await deleteTagAssignmentsForHost(TagHostKind.srt, uid);
+    // v155：单本刮削资料 / 附加图（逻辑外键）同事务清。
+    await _purgeItemScrapeRows(this, MediaKind.srt, <String>[uid]);
     // v137：远端音频绑定同事务清（逻辑外键，没有级联）。
     await (delete(
       remoteAudioBindings,

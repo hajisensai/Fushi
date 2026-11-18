@@ -1,0 +1,8 @@
+## BUG-4862 · CLI 不认 FUSHI_TEST_ROOT，ctl 命令打到用户安装版
+- **报告**：2026-11-16（用户：开发会话里 `FUSHI_TEST_ROOT=D:/hibiki-dev-data fushi_cli library cover book:… <图>` 回报成功，开发实例书架和 `thumbnails/` 都没有变化）
+- **真实性**：✅ 真 bug。根因在 `packages/fushi_cli/lib/src/ctl_cli.dart:195`：`stateDir: resolveCtlStateDir(environment: env, operatingSystem: os)` 没有传 `testRoot`。app 一侧（`fushi/lib/src/platform/desktop/desktop_ctl_host.dart:103-107`）传了 `testRoot: fushiTestRootPath(environment: env)`，所以测试实例把发现文件写到 `<testRoot>/ctl/endpoint.json`；CLI 一侧忽略 `FUSHI_TEST_ROOT`，回落到平台默认 `%LOCALAPPDATA%\Fushi\ctl\endpoint.json`，结果连上的是**用户安装版**（端口 7736，pid 24908，`D:\fushi\Fushi\fushi.exe`），写进的是生产数据根 `D:\文档\thumbnails\`。这和 `packages/fushi_cli/README.md:59-60` 的约定（`FUSHI_CTL_DIR` > `<FUSHI_TEST_ROOT>/ctl` > 平台默认）以及 `ctl_paths.dart` 文档注释第 2 条矛盾。
+  - 证据：FileSystemWatcher 同时监视 `D:\` 和 `C:\`，执行一次复现命令：`D:\hibiki-dev-data` 下没有任何事件；`D:\文档\thumbnails\334972627.tmp.24908.39` 被 rename 成 `334972627`（tmp 名里的 pid 24908 就是安装版）。`cmp D:\文档\thumbnails\334972627 ookami.jpg` 结果完全相同。
+  - 「成功」不是谎报：安装版里确实有同名书、写盘也确实成功，只是写错了实例。
+- **[ ] ① 未修复** — 建议：`ctl_cli.dart:195` 补传 `testRoot: environment['FUSHI_TEST_ROOT']`（与 app 侧同一解析，CLI 只能读环境变量，读不到 dart-define）。另外可以考虑让 CLI 在 `--no-launch` 下把连上的实例 pid 和数据根打到 stderr，或者在 `status` 里回显数据根，避免以后再静默打错实例（这一条属于范围扩大，待拍板）。
+- **[ ] ② 未加自动化测试** — 建议：`packages/fushi_cli/test/` 加一条测试，env 里带 `FUSHI_TEST_ROOT` 运行 `runCtlCli`（或抽出的 stateDir 解析），断言解析到 `<root>/ctl`，并且 app 侧与 CLI 侧在同一 env 下解析结果一致。
+- **备注**：已造成的副作用是用户安装版（生产库）的「狼と香辛料」override 封面在 13:32 被换成 ookami.jpg；`D:\文档\thumbnails\` 里 12:59、13:13 两批文件，推测也是同一会话更早的 CLI 换封面误写进去的（未逐个核对）。

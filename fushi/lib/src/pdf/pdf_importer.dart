@@ -8,10 +8,9 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi_engine/epub/pdf_book_layout.dart';
-import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/pdf/pdf_engine.dart';
 import 'package:fushi_engine/media/cover_file_writer.dart'
-    show CoverImageInvalidException;
+    show CoverImageInvalidException, writeCoverBytesAtomically;
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
@@ -91,7 +90,7 @@ class PdfImporter {
       String? coverRel;
       if (coverPng != null) {
         try {
-          await MediaCoverService.applyCoverBytes(
+          await writeCoverBytesAtomically(
             bytes: coverPng,
             destPath: p.join(bookDir, kCoverFileName),
           );

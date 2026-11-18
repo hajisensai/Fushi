@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/lookup/gal_attached_text_controller.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/lookup/gal_lookup_calibration_draft.dart';
@@ -17,7 +18,6 @@ import 'package:fushi/src/utils/components/fushi_tag.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
@@ -59,192 +59,209 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
         final bool showThreadRequiredPill =
             mode == GalLookupSurfaceMode.attachedOnly && !hasSelectedBodyThread;
 
-        // 2026-10 工作台重做：本行收进页顶「会话状态条」卡片里，作为卡内一行，
-        // 不再自带一条 group 底色横带（卡中卡会多出一道直角色块）。
+        final String profileValue = profile == null || profile.variants.isEmpty
+            ? t.game_lookup_attached_profile_missing
+            : '${t.game_lookup_attached_profile_ready} '
+                  '(${profile.variants.length})';
+        final String detailsMessage = <String>[
+          '${t.game_lookup_attached_native_status}: '
+              '${controller.nativeStatus ?? '—'}',
+          '${t.game_lookup_attached_provider}: '
+              '${galAttachedProviderLabel(providerKind: controller.providerKind, providerId: controller.providerId, providerStatus: controller.providerStatus, fallbackStatus: controller.status, unknownLabel: t.game_lookup_attached_provider_unknown)}',
+          '${t.game_lookup_attached_shield}: '
+              '${_shieldLabel(controller.shieldStatus.conclusion)}',
+          '${t.game_lookup_attached_risk}: '
+              '${riskModeActive
+                  ? t.game_lookup_attached_risk_active
+                  : riskPending
+                  ? t.game_lookup_attached_risk_pending
+                  : t.game_lookup_attached_risk_safe}',
+        ].join('\n');
+
+        // 2026-11 拼贴改版：「游戏内查词」从一行混杂的灰标签改成一组能力小卡——
+        // 分区标题（+ 技术细节信息钮 / 风险确认）下面是等宽小卡：查词模式（点开
+        // 模式菜单）、启用状态（语义色状态签）、校准档案（可校准时点卡直接校准）、
+        // 对话校准。每格都是「小标签 + 当前值」，状态一眼可读、样式统一。
         return Material(
           key: const ValueKey<String>('game-attached-lookup-workbench'),
           type: MaterialType.transparency,
-          child: SizedBox(
-            height: 44,
-            child: Row(
-              children: <Widget>[
-                const SizedBox(width: 8),
-                // M3E 行首形状底：tonal 小圆块承载「游戏内查词」图标，与工作台
-                // 其它分区的行首色块同一语言。
-                FushiTooltip(
-                  message: t.game_lookup_attached_no_ocr,
-                  child: const FushiListLeadingIcon(
-                    Icons.touch_app_outlined,
-                    size: 28,
-                    iconSize: 16,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  t.game_lookup_attached_title,
-                  style: context.fushiType.labelLargeEmphasized,
-                ),
-                if (riskRequest != null) ...<Widget>[
-                  const SizedBox(width: 6),
-                  FushiTextButton.icon(
-                    key: const ValueKey<String>(
-                      'game-attached-lookup-accept-risk',
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              GalWorkbenchSectionHeader(
+                icon: Icons.touch_app_outlined,
+                title: t.game_lookup_attached_title,
+                trailing: <Widget>[
+                  if (riskRequest != null)
+                    FushiTextButton.icon(
+                      key: const ValueKey<String>(
+                        'game-attached-lookup-accept-risk',
+                      ),
+                      onPressed: () => _acceptRisk(context, riskRequest),
+                      icon: const FushiIcon(
+                        Icons.warning_amber_rounded,
+                        size: 18,
+                      ),
+                      label: Text(t.game_lookup_attached_risk_accept),
                     ),
-                    onPressed: () => _acceptRisk(context, riskRequest),
-                    icon: const FushiIcon(
-                      Icons.warning_amber_rounded,
-                      size: 18,
+                  FushiTooltip(
+                    message:
+                        '${t.game_lookup_attached_no_ocr}\n$detailsMessage',
+                    child: const Padding(
+                      key: ValueKey<String>('game-attached-lookup-details'),
+                      padding: EdgeInsets.all(8),
+                      child: FushiIcon(Icons.info_outline, size: 18),
                     ),
-                    label: Text(t.game_lookup_attached_risk_accept),
                   ),
                 ],
-                const SizedBox(width: 8),
-                Expanded(
-                  child: HorizontalDragScrollable(
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: <Widget>[
-                          _WorkbenchPill(
-                            label: t.game_lookup_attached_mode,
-                            value: _modeLabel(mode),
+              ),
+              const SizedBox(height: 4),
+              GalWorkbenchTileGrid(
+                minTileWidth: 140,
+                children: <Widget>[
+                  FushiPopupMenuButton<String>(
+                    key: const ValueKey<String>('game-attached-lookup-mode'),
+                    tooltip: t.game_lookup_attached_mode,
+                    onSelected: (String action) {
+                      if (action.startsWith('mode:')) {
+                        final GalLookupSurfaceMode selected =
+                            GalLookupSurfaceMode.values.firstWhere(
+                              (GalLookupSurfaceMode value) =>
+                                  value.wireName == action.substring(5),
+                            );
+                        unawaited(controller.setMode(selected));
+                      } else if (action == 'calibrate') {
+                        unawaited(_openCalibration(context));
+                      } else if (action == 'clear') {
+                        unawaited(_clearProfile(context));
+                      }
+                    },
+                    itemBuilder: (BuildContext context) =>
+                        <PopupMenuEntry<String>>[
+                          PopupMenuItem<String>(
+                            enabled: false,
+                            child: Text(t.game_lookup_attached_no_ocr),
                           ),
-                          const SizedBox(width: 6),
-                          // 状态枚举一律本地化（此前 `status.name` 原样上屏，界面
-                          // 上出现「状态: disabled」），并按语义着色：可用 = 成功、
-                          // 待处理 = 警告、过渡态 = 强调、其余中性。
-                          GalWorkbenchStatusChip(
-                            key: const ValueKey<String>(
-                              'game-attached-lookup-status',
+                          for (final GalLookupSurfaceMode value
+                              in GalLookupSurfaceMode.values)
+                            CheckedPopupMenuItem<String>(
+                              value: 'mode:${value.wireName}',
+                              checked: value == mode,
+                              enabled: controller.target != null,
+                              child: Text(_modeLabel(value)),
                             ),
-                            icon: galAttachedTextStatusIcon(controller.status),
-                            label: galAttachedTextStatusLabel(
-                              controller.status,
-                            ),
-                            tone: galAttachedTextStatusTone(controller.status),
-                            tooltip: t.game_lookup_attached_status,
-                          ),
-                          const SizedBox(width: 6),
-                          _WorkbenchPill(
-                            label: t.game_lookup_attached_profile,
-                            value: profile == null || profile.variants.isEmpty
-                                ? t.game_lookup_attached_profile_missing
-                                : '${t.game_lookup_attached_profile_ready} '
-                                      '(${profile.variants.length})',
-                          ),
-                          const SizedBox(width: 6),
-                          FushiTooltip(
-                            message: <String>[
-                              '${t.game_lookup_attached_native_status}: '
-                                  '${controller.nativeStatus ?? '—'}',
-                              '${t.game_lookup_attached_provider}: '
-                                  '${galAttachedProviderLabel(providerKind: controller.providerKind, providerId: controller.providerId, providerStatus: controller.providerStatus, fallbackStatus: controller.status, unknownLabel: t.game_lookup_attached_provider_unknown)}',
-                              '${t.game_lookup_attached_shield}: '
-                                  '${_shieldLabel(controller.shieldStatus.conclusion)}',
-                              '${t.game_lookup_attached_risk}: '
-                                  '${riskModeActive
-                                      ? t.game_lookup_attached_risk_active
-                                      : riskPending
-                                      ? t.game_lookup_attached_risk_pending
-                                      : t.game_lookup_attached_risk_safe}',
-                            ].join('\n'),
-                            child: const Padding(
-                              key: ValueKey<String>(
-                                'game-attached-lookup-details',
+                          if (calibrationExposed)
+                            PopupMenuItem<String>(
+                              key: const ValueKey<String>(
+                                'game-attached-lookup-calibrate',
                               ),
-                              padding: EdgeInsets.all(6),
-                              child: FushiIcon(Icons.info_outline, size: 18),
+                              value: 'calibrate',
+                              enabled: canOpenCalibration,
+                              child: Text(t.game_lookup_attached_calibrate),
                             ),
-                          ),
-                          if (showThreadRequiredPill) ...<Widget>[
-                            const SizedBox(width: 6),
-                            _WorkbenchPill(
-                              label: t.game_lookup_attached_calibrate,
-                              value: t.game_lookup_attached_thread_required,
-                              warning: true,
+                          if (profile != null)
+                            PopupMenuItem<String>(
+                              key: const ValueKey<String>(
+                                'game-attached-lookup-clear-profile',
+                              ),
+                              value: 'clear',
+                              child: Text(t.game_lookup_attached_profile_clear),
                             ),
-                          ],
                         ],
+                    child: GalWorkbenchCapabilityFace(
+                      icon: Icons.tune_outlined,
+                      label: t.game_lookup_attached_mode,
+                      value: Text(_modeLabel(mode)),
+                      trailingIcon: Icons.expand_more,
+                    ),
+                  ),
+                  // 状态枚举一律本地化（此前 `status.name` 原样上屏，界面上出现
+                  // 「状态: disabled」），并按语义着色：可用 = 成功、待处理 = 警告、
+                  // 过渡态 = 强调、其余中性。
+                  GalWorkbenchCapabilityFace(
+                    icon: galAttachedTextStatusIcon(controller.status),
+                    label: t.game_lookup_attached_status,
+                    value: Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: GalWorkbenchStatusChip(
+                        key: const ValueKey<String>(
+                          'game-attached-lookup-status',
+                        ),
+                        icon: galAttachedTextStatusIcon(controller.status),
+                        label: galAttachedTextStatusLabel(controller.status),
+                        tone: galAttachedTextStatusTone(controller.status),
+                        tooltip: t.game_lookup_attached_status,
                       ),
                     ),
                   ),
-                ),
-                if (calibrationExposed) ...<Widget>[
-                  FushiIconButtonControl(
-                    key: const ValueKey<String>(
-                      'game-attached-lookup-dialogue-samples',
+                  // 校准档案：能校准时整卡就是校准入口（与模式菜单里的「校准」同一
+                  // 动作），不能校准时只读。
+                  GalWorkbenchCapabilityTile(
+                    focusId: const FushiFocusId(
+                      'game-attached-lookup-profile-tile',
                     ),
-                    tooltip: t.game_lookup_samples_dialogue,
-                    onPressed:
-                        hasSelectedBodyThread &&
-                            controller.executableSha256 != null &&
-                            controller.currentClient != null
-                        ? () => _openSamples(
-                            context,
-                            slot: GalLookupCalibrationSlotV1.dialogue,
-                          )
+                    onTap: calibrationExposed && canOpenCalibration
+                        ? () => unawaited(_openCalibration(context))
                         : null,
-                    icon: const FushiIcon(
-                      Icons.format_quote_outlined,
-                      size: 20,
+                    tooltip: calibrationExposed && canOpenCalibration
+                        ? t.game_lookup_attached_calibrate
+                        : null,
+                    face: GalWorkbenchCapabilityFace(
+                      icon: Icons.straighten_outlined,
+                      label: t.game_lookup_attached_profile,
+                      value: Text(profileValue),
+                      filled: false,
+                      warning: showThreadRequiredPill,
+                      trailingIcon: calibrationExposed && canOpenCalibration
+                          ? Icons.chevron_right
+                          : null,
                     ),
                   ),
+                  if (calibrationExposed)
+                    GalWorkbenchCapabilityTile(
+                      key: const ValueKey<String>(
+                        'game-attached-lookup-dialogue-samples',
+                      ),
+                      focusId: const FushiFocusId(
+                        'game-attached-lookup-dialogue-samples',
+                      ),
+                      onTap:
+                          hasSelectedBodyThread &&
+                              controller.executableSha256 != null &&
+                              controller.currentClient != null
+                          ? () => unawaited(
+                              _openSamples(
+                                context,
+                                slot: GalLookupCalibrationSlotV1.dialogue,
+                              ),
+                            )
+                          : null,
+                      face: GalWorkbenchCapabilityFace(
+                        icon: Icons.format_quote_outlined,
+                        label: t.game_lookup_samples_dialogue,
+                        value: Text(t.game_lookup_attached_calibrate),
+                        filled: false,
+                        enabled:
+                            hasSelectedBodyThread &&
+                            controller.executableSha256 != null &&
+                            controller.currentClient != null,
+                        trailingIcon: Icons.chevron_right,
+                      ),
+                    ),
                 ],
-                FushiPopupMenuButton<String>(
-                  key: const ValueKey<String>('game-attached-lookup-mode'),
-                  tooltip: t.game_lookup_attached_mode,
-                  icon: const FushiIcon(Icons.tune_outlined, size: 20),
-                  onSelected: (String action) {
-                    if (action.startsWith('mode:')) {
-                      final GalLookupSurfaceMode selected = GalLookupSurfaceMode
-                          .values
-                          .firstWhere(
-                            (GalLookupSurfaceMode value) =>
-                                value.wireName == action.substring(5),
-                          );
-                      unawaited(controller.setMode(selected));
-                    } else if (action == 'calibrate') {
-                      unawaited(_openCalibration(context));
-                    } else if (action == 'clear') {
-                      unawaited(_clearProfile(context));
-                    }
-                  },
-                  itemBuilder: (BuildContext context) =>
-                      <PopupMenuEntry<String>>[
-                        PopupMenuItem<String>(
-                          enabled: false,
-                          child: Text(t.game_lookup_attached_no_ocr),
-                        ),
-                        for (final GalLookupSurfaceMode value
-                            in GalLookupSurfaceMode.values)
-                          CheckedPopupMenuItem<String>(
-                            value: 'mode:${value.wireName}',
-                            checked: value == mode,
-                            enabled: controller.target != null,
-                            child: Text(_modeLabel(value)),
-                          ),
-                        if (calibrationExposed)
-                          PopupMenuItem<String>(
-                            key: const ValueKey<String>(
-                              'game-attached-lookup-calibrate',
-                            ),
-                            value: 'calibrate',
-                            enabled: canOpenCalibration,
-                            child: Text(t.game_lookup_attached_calibrate),
-                          ),
-                        if (profile != null)
-                          PopupMenuItem<String>(
-                            key: const ValueKey<String>(
-                              'game-attached-lookup-clear-profile',
-                            ),
-                            value: 'clear',
-                            child: Text(t.game_lookup_attached_profile_clear),
-                          ),
-                      ],
+              ),
+              if (showThreadRequiredPill)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),
+                  child: FushiTagChip(
+                    label:
+                        '${t.game_lookup_attached_calibrate}: '
+                        '${t.game_lookup_attached_thread_required}',
+                    status: FushiStatusTone.warning,
+                  ),
                 ),
-                const SizedBox(width: 2),
-              ],
-            ),
+            ],
           ),
         );
       },
@@ -573,28 +590,6 @@ IconData galAttachedTextStatusIcon(GalAttachedTextStatus status) =>
       GalAttachedTextStatus.disabled => Icons.do_not_disturb_on_outlined,
       GalAttachedTextStatus.suspended => Icons.pause_circle_outline,
     };
-
-class _WorkbenchPill extends StatelessWidget {
-  const _WorkbenchPill({
-    required this.label,
-    required this.value,
-    this.warning = false,
-  });
-
-  final String label;
-  final String value;
-  final bool warning;
-
-  @override
-  Widget build(BuildContext context) {
-    // 警告走共享标签的语义状态（MD3 harmonize 橙淡底 / Apple systemOrange
-    // 淡底 / 墨水屏描边），不再手拼 surface 色调 + 选中描边。
-    return FushiTagChip(
-      label: '$label: $value',
-      status: warning ? FushiStatusTone.warning : null,
-    );
-  }
-}
 
 /// Stable technical provider label. Unknown future ids retain their numbers so
 /// field reports stay actionable without pretending they are recognized.

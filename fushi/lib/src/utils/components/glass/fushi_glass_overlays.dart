@@ -3552,51 +3552,60 @@ class _FushiDropdownMenuState<T> extends State<FushiDropdownMenu<T>> {
       // 下拉自己的输入框，它的横向滚动对页面也没有意义，一并截下。
       // 带标题时装饰整份由 [_md3LabelledDecoration] 给（label / hint / helper /
       // error 都在里面）；DropdownMenu 断言 decorationBuilder 与这四个参数互斥。
+      // 2026-11 M3E：表单式下拉（没有调用方给的 inputDecorationTheme，即不是
+      // 工具条行内档）不带标题也走 M3 填充式装饰；行内档保持原样。
       final DropdownMenuDecorationBuilder? decorationBuilder =
           widget.decorationBuilder ??
-          (widget.label == null ? null : _md3LabelledDecoration);
+          (widget.label == null && widget.inputDecorationTheme != null
+              ? null
+              : _md3LabelledDecoration);
       final bool ownDecoration =
           widget.decorationBuilder == null && decorationBuilder != null;
-      final Widget dropdown = DropdownMenu<T>(
+      // 活动指示线按焦点 / 悬停 / 错误以 FushiMotion 补间（FushiFieldIndicatorHost）。
+      final Widget dropdown = FushiFieldIndicatorHost(
         enabled: widget.enabled,
-        width: widget.width,
-        menuHeight: widget.menuHeight,
-        leadingIcon: widget.leadingIcon,
-        trailingIcon: widget.trailingIcon,
-        showTrailingIcon: widget.showTrailingIcon,
-        trailingIconFocusNode: widget.trailingIconFocusNode,
-        label: ownDecoration ? null : widget.label,
-        hintText: ownDecoration ? null : widget.hintText,
-        helperText: ownDecoration ? null : widget.helperText,
-        errorText: ownDecoration ? null : widget.errorText,
-        selectedTrailingIcon: widget.selectedTrailingIcon,
-        enableFilter: widget.enableFilter,
-        enableSearch: widget.enableSearch,
-        keyboardType: widget.keyboardType,
-        textStyle: widget.textStyle,
-        textAlign: widget.textAlign,
-        inputDecorationTheme: widget.inputDecorationTheme,
-        decorationBuilder: decorationBuilder,
-        menuStyle: widget.menuStyle,
-        controller: widget.controller,
-        initialSelection: widget.initialSelection,
-        onSelected: widget.onSelected,
-        focusNode: widget.focusNode,
-        requestFocusOnTap: widget.requestFocusOnTap,
-        selectOnly: widget.selectOnly,
-        expandedInsets: widget.expandedInsets,
-        filterCallback: widget.filterCallback,
-        searchCallback: widget.searchCallback,
-        alignmentOffset: widget.alignmentOffset,
-        dropdownMenuEntries: widget.dropdownMenuEntries,
-        inputFormatters: widget.inputFormatters,
-        closeBehavior: widget.closeBehavior,
-        maxLines: widget.maxLines,
-        textInputAction: widget.textInputAction,
-        cursorHeight: widget.cursorHeight,
-        restorationId: widget.restorationId,
-        menuController: widget.menuController,
-        scrollPadding: widget.scrollPadding,
+        error: widget.errorText != null,
+        builder: (BuildContext context) => DropdownMenu<T>(
+          enabled: widget.enabled,
+          width: widget.width,
+          menuHeight: widget.menuHeight,
+          leadingIcon: widget.leadingIcon,
+          trailingIcon: widget.trailingIcon,
+          showTrailingIcon: widget.showTrailingIcon,
+          trailingIconFocusNode: widget.trailingIconFocusNode,
+          label: ownDecoration ? null : widget.label,
+          hintText: ownDecoration ? null : widget.hintText,
+          helperText: ownDecoration ? null : widget.helperText,
+          errorText: ownDecoration ? null : widget.errorText,
+          selectedTrailingIcon: widget.selectedTrailingIcon,
+          enableFilter: widget.enableFilter,
+          enableSearch: widget.enableSearch,
+          keyboardType: widget.keyboardType,
+          textStyle: widget.textStyle,
+          textAlign: widget.textAlign,
+          inputDecorationTheme: widget.inputDecorationTheme,
+          decorationBuilder: decorationBuilder,
+          menuStyle: widget.menuStyle,
+          controller: widget.controller,
+          initialSelection: widget.initialSelection,
+          onSelected: widget.onSelected,
+          focusNode: widget.focusNode,
+          requestFocusOnTap: widget.requestFocusOnTap,
+          selectOnly: widget.selectOnly,
+          expandedInsets: widget.expandedInsets,
+          filterCallback: widget.filterCallback,
+          searchCallback: widget.searchCallback,
+          alignmentOffset: widget.alignmentOffset,
+          dropdownMenuEntries: widget.dropdownMenuEntries,
+          inputFormatters: widget.inputFormatters,
+          closeBehavior: widget.closeBehavior,
+          maxLines: widget.maxLines,
+          textInputAction: widget.textInputAction,
+          cursorHeight: widget.cursorHeight,
+          restorationId: widget.restorationId,
+          menuController: widget.menuController,
+          scrollPadding: widget.scrollPadding,
+        ),
       );
       return MenuOverlayScrollBoundary(child: dropdown);
     }
@@ -3990,42 +3999,50 @@ class FushiDropdownButtonFormField<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!isGlassDesign(context)) {
-      return DropdownButtonFormField<T>(
-        items: items,
-        selectedItemBuilder: selectedItemBuilder,
-        initialValue: _initial,
-        hint: hint,
-        disabledHint: disabledHint,
-        onChanged: onChanged,
-        onTap: onTap,
-        elevation: elevation,
-        style: style,
-        icon: icon,
-        iconDisabledColor: iconDisabledColor,
-        iconEnabledColor: iconEnabledColor,
-        iconSize: iconSize,
-        isDense: isDense,
-        isExpanded: isExpanded,
-        itemHeight: itemHeight,
-        focusColor: focusColor,
-        focusNode: focusNode,
-        autofocus: autofocus,
-        dropdownColor: dropdownColor ?? Theme.of(context).popupMenuTheme.color,
-        decoration: fushiMd3FieldDecoration(context, decoration),
-        onSaved: onSaved,
-        validator: validator,
-        errorBuilder: errorBuilder,
-        forceErrorText: forceErrorText,
-        autovalidateMode: autovalidateMode,
-        menuMaxHeight: menuMaxHeight,
-        enableFeedback: enableFeedback,
-        alignment: alignment,
-        borderRadius:
-            borderRadius ?? const BorderRadius.all(Radius.circular(12)),
-        padding: padding,
-        barrierDismissible: barrierDismissible,
-        mouseCursor: mouseCursor,
-        dropdownMenuItemMouseCursor: dropdownMenuItemMouseCursor,
+      return FushiFieldIndicatorHost(
+        enabled: onChanged != null,
+        error:
+            forceErrorText != null ||
+            decoration?.errorText != null ||
+            decoration?.error != null,
+        builder: (BuildContext context) => DropdownButtonFormField<T>(
+          items: items,
+          selectedItemBuilder: selectedItemBuilder,
+          initialValue: _initial,
+          hint: hint,
+          disabledHint: disabledHint,
+          onChanged: onChanged,
+          onTap: onTap,
+          elevation: elevation,
+          style: style,
+          icon: icon,
+          iconDisabledColor: iconDisabledColor,
+          iconEnabledColor: iconEnabledColor,
+          iconSize: iconSize,
+          isDense: isDense,
+          isExpanded: isExpanded,
+          itemHeight: itemHeight,
+          focusColor: focusColor,
+          focusNode: focusNode,
+          autofocus: autofocus,
+          dropdownColor:
+              dropdownColor ?? Theme.of(context).popupMenuTheme.color,
+          decoration: fushiMd3FieldDecoration(context, decoration),
+          onSaved: onSaved,
+          validator: validator,
+          errorBuilder: errorBuilder,
+          forceErrorText: forceErrorText,
+          autovalidateMode: autovalidateMode,
+          menuMaxHeight: menuMaxHeight,
+          enableFeedback: enableFeedback,
+          alignment: alignment,
+          borderRadius:
+              borderRadius ?? const BorderRadius.all(Radius.circular(12)),
+          padding: padding,
+          barrierDismissible: barrierDismissible,
+          mouseCursor: mouseCursor,
+          dropdownMenuItemMouseCursor: dropdownMenuItemMouseCursor,
+        ),
       );
     }
     final ThemeData theme = Theme.of(context);

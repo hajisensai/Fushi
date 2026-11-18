@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/models/home_tab.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart';
 import 'package:fushi/src/utils/components/page_backdrop_layer.dart';
@@ -32,18 +33,39 @@ void main() {
       for (final PageBackdropPreset preset in PageBackdropPreset.values) {
         expect(PageBackdropPreset.fromWire(preset.wire), preset);
       }
-      expect(PageBackdropPreset.fromWire('dots'), PageBackdropPreset.corner);
-      expect(PageBackdropPreset.fromWire(null), PageBackdropPreset.corner);
+      expect(PageBackdropPreset.fromWire('dots'), PageBackdropPreset.mesh);
+      expect(PageBackdropPreset.fromWire(null), PageBackdropPreset.mesh);
       expect(PageBackdropStrength.fromWire('x'), PageBackdropStrength.standard);
       expect(PageBackdropBlur.fromWire('x'), PageBackdropBlur.none);
     });
 
-    test('选了自定义却没有图（换设备 / 文件被删）回落到角落形状', () {
+    test('「角落形状」已删除：默认是柔光晕染，存量旧值读成柔光晕染', () {
+      expect(PageBackdropPreset.defaultPreset, PageBackdropPreset.mesh);
+      expect(const PageBackdropSettings().preset, PageBackdropPreset.mesh);
+      expect(
+        PageBackdropPreset.values.map((PageBackdropPreset p) => p.wire),
+        isNot(contains(kPageBackdropLegacyCornerWire)),
+      );
+      expect(
+        PageBackdropPreset.fromWire(kPageBackdropLegacyCornerWire),
+        PageBackdropPreset.mesh,
+      );
+      // 按模块覆盖里的旧值同样读成柔光晕染，而不是被当成认不出的值丢掉。
+      expect(
+        decodePageBackdropModulePresets('{"books":"corner","music":"arc"}'),
+        <HomeTab, PageBackdropPreset>{
+          HomeTab.books: PageBackdropPreset.mesh,
+          HomeTab.music: PageBackdropPreset.arc,
+        },
+      );
+    });
+
+    test('选了自定义却没有图（换设备 / 文件被删）回落到默认样式', () {
       const PageBackdropSettings noImage = PageBackdropSettings(
         preset: PageBackdropPreset.custom,
       );
       expect(noImage.hasCustomImage, isFalse);
-      expect(noImage.effectivePreset, PageBackdropPreset.corner);
+      expect(noImage.effectivePreset, PageBackdropPreset.mesh);
       expect(noImage.imagePathFor(portrait: false), isNull);
     });
 

@@ -7,9 +7,10 @@ import '../ctl_commands.dart';
 /// 与书架卡「在线刮削封面」弹窗同一套源（Bangumi 书籍条目 / DLsite 音声·漫画·小说 /
 /// MangaBaka 漫画·轻小说系列（数据 CC BY-NC-SA 4.0，展示处须署名）/ AniList 轻小说 /
 /// openBD（只按 ISBN）/ NDL Search / 楽天ブックス（要先在 app 设置里填凭据））：
-/// `search` 搜候选、`get` 按 id 看详情、`apply` 把选中的候选写回某本书（默认只换封面，
+/// `search` 搜候选、`get` 按 id 看详情、`apply` 把选中的候选写回某本书（默认换封面并写条目资料，
 /// `--title` / `--author` 一并写显示名与作者）；`art` / `art-clear` / `art-remove` 刮 / 清合集
 /// 各卷封面与横幅（与封面 override 分开存）。条目键与 `library ls` 一致（`book:` / `srt:`）。
+
 const List<CtlCommandGroup> bookMetadataCommandGroups = <CtlCommandGroup>[
   CtlCommandGroup(
     name: 'book',
@@ -42,7 +43,7 @@ const List<CtlCommandGroup> bookMetadataCommandGroups = <CtlCommandGroup>[
       ),
       CtlCommandSpec(
         name: 'apply',
-        summary: '把候选写回一本书：默认换封面，--title / --author 一并写显示名与作者',
+        summary: '把候选写回一本书：默认换封面 + 条目资料，--title / --author 一并写显示名与作者',
         usage: '<key> <id>',
         configure: _configureApply,
         build: _buildApply,
@@ -135,6 +136,11 @@ void _configureApply(ArgParser parser) {
     ..addFlag('title', negatable: false, help: '同时把候选标题写成显示名（不改原始书名）')
     ..addFlag('author', negatable: false, help: '同时写作者')
     ..addFlag('cover', defaultsTo: true, help: '换封面（--no-cover 只写文字字段）')
+    ..addFlag(
+      'details',
+      defaultsTo: true,
+      help: '写条目资料：简介 / 日期 / 评分 / 类型 / 源给的横版背景（--no-details 不写）',
+    )
     ..addOption('volume', help: '只对 mangabaka：用这一卷的日文封面（见 book volumes）');
 }
 
@@ -148,9 +154,12 @@ CtlRequestSpec _buildApply(CtlCommandContext context) {
     if (context.flag('cover')) 'cover',
     if (context.flag('title')) 'title',
     if (context.flag('author')) 'author',
+    if (context.flag('details')) 'details',
   ];
   if (fields.isEmpty) {
-    throw const CtlUsageError('--no-cover 时至少要给 --title 或 --author');
+    throw const CtlUsageError(
+      '--no-cover --no-details 时至少要给 --title 或 --author',
+    );
   }
   final String? source = _sourceOption(context);
   final String? volumeRaw = context.option('volume');
@@ -214,6 +223,7 @@ String describeBookMetadataField(String field) => switch (field) {
   'cover' => '封面',
   'title' => '显示名',
   'author' => '作者',
+  'details' => '条目资料',
   _ => field,
 };
 

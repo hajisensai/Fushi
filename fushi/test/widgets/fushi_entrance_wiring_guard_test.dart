@@ -140,6 +140,8 @@ void main() {
       'lib/src/pages/implementations/discovery/video_work_acquisition_section.dart',
       // 2026-10-31 AI 助手多会话：会话列表（整页侧栏 / 弹出列表共用）。
       'lib/src/pages/implementations/ai_agent_sessions.dart',
+      // 2026-11-16 书 / 漫画 / 字幕书元数据详情页（视频作品详情同款海报面板）。
+      'lib/src/pages/implementations/book_detail_page.dart',
     ]) {
       final String src = read(path);
       expect(src, contains('FushiEntranceScope('), reason: path);

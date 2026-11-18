@@ -14,6 +14,7 @@ import 'package:fushi_engine/media/video/dvd/dvd_library_title.dart'
     show ensureDvdTitleInLibrary;
 import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
     show isDvdTitlePath;
+import 'package:fushi/src/media/import/import_surface_spec.dart';
 import 'package:fushi/src/media/playback_route_marks.dart';
 import 'package:fushi/src/media/range_playback.dart';
 import 'package:fushi/src/media/video/bluray_disc_menu_input.dart';

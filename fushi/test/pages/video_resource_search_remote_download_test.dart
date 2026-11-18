@@ -157,7 +157,11 @@ void main() {
 
     // 平铺视图里点候选 → 提交按钮亮 → 走远端。
     await tester.tap(
-      find.byKey(const ValueKey<String>('video-resource-flat-toggle')),
+      // 「版本卡 / 全部条目」分段：点「全部条目」那一段。
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('video-resource-flat-toggle')),
+        matching: find.text(t.resource_version_view_flat),
+      ),
     );
     await tester.pumpAndSettle();
     // identityKey 对合法 infoHash 是 `torrent:<hash>`。

@@ -39,6 +39,7 @@ import 'package:fushi/src/pages/implementations/download_backend_setup_dialog.da
 import 'package:fushi/src/pages/implementations/ai_settings_route.dart';
 import 'package:fushi/src/pages/implementations/managed_video_source_prompt.dart';
 import 'package:fushi/src/sync/background_tasks_indicator.dart';
+import 'package:fushi/src/pages/implementations/home_background_tasks_scope.dart';
 import 'package:fushi/src/sync/desktop_foreground_guard.dart';
 import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
 import 'package:fushi/src/anki/anki_view_model.dart'
@@ -113,6 +114,8 @@ import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart
 import 'package:fushi/src/pages/implementations/video_discovery_page.dart'
     show VideoDiscoveryController;
 import 'package:fushi/src/pages/implementations/video_library_shell.dart';
+import 'package:fushi/src/pages/implementations/shell_layout_choice_dialog.dart'
+    show maybeShowShellLayoutChoice;
 import 'package:fushi/src/pages/implementations/browse_moved_notice.dart'
     show maybeShowBrowseMovedNotice;
 import 'package:fushi/src/pages/implementations/library_layout_default_notice.dart'
@@ -200,6 +203,8 @@ import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart'
 import 'package:fushi/src/shortcuts/page_scroll_shortcuts.dart'
     show pageScrollRequestFor;
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/text_field_key_ownership.dart'
+    show keyTypesIntoFocusedTextField;
 import 'package:fushi_core/fushi_core.dart'
     show
         MediaCollectionItemRow,
@@ -739,6 +744,15 @@ class _HomePageState extends BasePageState<HomePage>
         await appModel.setOnboardingCompleted(value: true);
       }
 
+      // 「选一种库页布局」（G1）：升级上来、从没选过库页布局的老用户弹一次（新安装
+      // 在新手引导欢迎页里选，不弹）。与引导 / 搬迁提示 / 更新弹窗串行。
+      if (mounted) {
+        await maybeShowShellLayoutChoice(
+          context: context,
+          appModel: appModelNoUpdate,
+        );
+      }
+
       // 「下载」改名「浏览」：升级前关着下载的用户照旧关着，但一次性告诉他们发现与
       // 在线来源搬到了哪里、在哪里打开（所有者 2026-09-28 拍板）。排在新手引导之后、
       // 更新弹窗之前，与它们串行，不抢同一帧。
@@ -1199,6 +1213,9 @@ class _HomePageState extends BasePageState<HomePage>
           : KeyEventResult.ignored;
     }
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    // 焦点在首页的文本框里（AI 助手块、搜索框）：要打进去的字符归文本框，不按
+    // 首页 / 全局快捷键解析（用户把动作改绑成裸字母时，打字不会触发它）。
+    if (keyTypesIntoFocusedTextField(event)) return KeyEventResult.ignored;
 
     final KeyEventResult focusedGamepadAction =
         dispatchNativeGamepadButtonIntent(event);
@@ -4079,55 +4096,72 @@ class _HomePageState extends BasePageState<HomePage>
     _hiddenTabContent.removeWhere(
       (HomeTab t, Widget _) => !_visitedKeepAliveTabs.contains(t),
     );
-    return Stack(
-      fit: StackFit.expand,
-      children: <Widget>[
-        // 保活 tab：一旦访问过就常驻树中，仅用 Offstage 隐藏未选中者（State 不销毁）。
-        // 隐藏时同步关掉 TickerMode，令其 AnimationController 停走、不与可见 tab 抢帧。
-        for (final HomeTab tab in _keepAliveTabs)
-          if (_visitedKeepAliveTabs.contains(tab))
-            Offstage(
-              key: ValueKey<HomeTab>(tab),
-              offstage: visible != tab,
-              child: TickerMode(
-                enabled: visible == tab,
-                child: DropSurfaceScope(
-                  // Offstage 只关 Flutter 的 hitTest，不影响 desktop_drop——它按
-                  // 全局广播 + 各自 paintBounds 判定，而隐藏的保活 tab 仍以全屏
-                  // 约束布局，于是**每个访问过的 tab 都会收到同一次拖放**。判据与
-                  // 上面 offstage 用的是同一个 `_visibleTab`，保证「看得见的那个」
-                  // 与「接拖放的那个」永远是同一个。
-                  isActive: () => _visibleTab == tab,
-                  // 隐藏 tab 不参与焦点遍历与系统返回（HBK-AUDIT-017）；库页壳里的
-                  // 视图可见性与它取与，外层 tab 藏起时里面的「当前」视图也不拦
-                  // 返回、不持焦点。「切 tab 同时聚焦搜索框」只发生在查词 tab
-                  // （_selectTabFromNav）：它藏着时不消费聚焦请求，等这一层按新的
-                  // 可见性重建之后（后帧）再消费，焦点才不会被 ExcludeFocus 吞掉。
-                  child: SectionVisibilityScope(
-                    visible: visible == tab,
-                    // 藏起的保活 tab 在 rail 展开 / 收起过渡中钉宽、不逐帧重排；
-                    // 可见那一页照常重排（BUG-3447）。
-                    child: NavRailSyncedContent(
-                      hidden: visible != tab,
-                      child: _keepAliveTabContent(tab, visible: visible == tab),
+    // 首页头像外圈画同步状态（设计稿 H3）：数据源与明细入口经这一层往下广播，
+    // 首页因此不再挂右下的「后台任务」FAB（[homeBackgroundTasksOnAvatar]）。
+    return HomeBackgroundTasksScope(
+      listenable: _backgroundTasksListenable,
+      tasks: _backgroundTasks,
+      onOpen: _openBackgroundTasksFromAvatar,
+      child: Stack(
+        fit: StackFit.expand,
+        children: <Widget>[
+          // 保活 tab：一旦访问过就常驻树中，仅用 Offstage 隐藏未选中者（State 不销毁）。
+          // 隐藏时同步关掉 TickerMode，令其 AnimationController 停走、不与可见 tab 抢帧。
+          for (final HomeTab tab in _keepAliveTabs)
+            if (_visitedKeepAliveTabs.contains(tab))
+              Offstage(
+                key: ValueKey<HomeTab>(tab),
+                offstage: visible != tab,
+                child: TickerMode(
+                  enabled: visible == tab,
+                  child: DropSurfaceScope(
+                    // Offstage 只关 Flutter 的 hitTest，不影响 desktop_drop——它按
+                    // 全局广播 + 各自 paintBounds 判定，而隐藏的保活 tab 仍以全屏
+                    // 约束布局，于是**每个访问过的 tab 都会收到同一次拖放**。判据与
+                    // 上面 offstage 用的是同一个 `_visibleTab`，保证「看得见的那个」
+                    // 与「接拖放的那个」永远是同一个。
+                    isActive: () => _visibleTab == tab,
+                    // 隐藏 tab 不参与焦点遍历与系统返回（HBK-AUDIT-017）；库页壳里的
+                    // 视图可见性与它取与，外层 tab 藏起时里面的「当前」视图也不拦
+                    // 返回、不持焦点。「切 tab 同时聚焦搜索框」只发生在查词 tab
+                    // （_selectTabFromNav）：它藏着时不消费聚焦请求，等这一层按新的
+                    // 可见性重建之后（后帧）再消费，焦点才不会被 ExcludeFocus 吞掉。
+                    child: SectionVisibilityScope(
+                      visible: visible == tab,
+                      // 藏起的保活 tab 在 rail 展开 / 收起过渡中钉宽、不逐帧重排；
+                      // 可见那一页照常重排（BUG-3447）。
+                      child: NavRailSyncedContent(
+                        hidden: visible != tab,
+                        child: _keepAliveTabContent(
+                          tab,
+                          visible: visible == tab,
+                        ),
+                      ),
                     ),
                   ),
                 ),
               ),
+          // 非保活 tab：仅在选中时构建、切走即销毁，保留其 initState 挂载语义。
+          if (!_keepAliveTabs.contains(visible))
+            KeyedSubtree(
+              key: ValueKey<HomeTab>(visible),
+              child: _buildTabContent(visible),
             ),
-        // 非保活 tab：仅在选中时构建、切走即销毁，保留其 initState 挂载语义。
-        if (!_keepAliveTabs.contains(visible))
-          KeyedSubtree(
-            key: ValueKey<HomeTab>(visible),
-            child: _buildTabContent(visible),
-          ),
-        // 「后台任务」入口：同步 / 复习同步 / 补刮共用一颗 FAB，外圈一项任务一段
-        // 进度弧（替代此前各库页顶部的两行同步横幅，2026-11-03）。
-        if (_hasBackgroundTasks && !_shellFabHostedByBar)
-          _buildBackgroundTasksFab(),
-      ],
+          // 「后台任务」入口：同步 / 复习同步 / 补刮共用一颗 FAB，外圈一项任务一段
+          // 进度弧（替代此前各库页顶部的两行同步横幅，2026-11-03）。首页由头像
+          // 外圈承载，不挂这颗（它会盖住首页的统计 / 复习卡，H3）。
+          if (_hasBackgroundTasks &&
+              !_shellFabHostedByBar &&
+              !homeBackgroundTasksOnAvatar(visible))
+            _buildBackgroundTasksFab(),
+        ],
+      ),
     );
   }
+
+  /// 首页头像点开的后台任务明细（与 FAB 同一个弹层）。字段引用稳定，
+  /// [HomeBackgroundTasksScope] 不因每次 build 换闭包而通知下游。
+  void _openBackgroundTasksFromAvatar() => unawaited(_openBackgroundTasks());
 
   /// 「后台任务」入口的 FAB 形态（外壳的栏没承载时）。
   ///

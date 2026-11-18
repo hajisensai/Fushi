@@ -1933,7 +1933,16 @@ void srsWarmCardFace({required String css, required List<String> bodies}) {
 /// 时铺它的 surface；跟随 app 主题时与页面背景同色，铺了只会盖住路由层的形状背景。
 /// 原生卡面（`SrsFushiCardView`）与 WebView 外壳共用这一条判据。
 bool srsCardPaintsOwnSurface(SrsCardFace face, SrsCardAppearance appearance) =>
-    face.fushiCard && appearance.colorSource == SrsCardColorSource.custom;
+    srsCardPaintsOwnSurfaceFor(
+      fushiCard: face.fushiCard,
+      appearance: appearance,
+    );
+
+/// [srsCardPaintsOwnSurface] 的同一判据，给还没建 [SrsCardFace] 的调用方（复习页底栏）。
+bool srsCardPaintsOwnSurfaceFor({
+  required bool fushiCard,
+  required SrsCardAppearance appearance,
+}) => fushiCard && appearance.colorSource == SrsCardColorSource.custom;
 
 /// 一面卡在给定主题 / 外观下的外壳文档。外观设置只属于 Fushi 卡片
 /// （[SrsCardFace.fushiCard]）：别的类型拿不到它的变量、类名、字体与自定义配色，按自身

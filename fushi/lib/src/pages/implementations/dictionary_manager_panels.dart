@@ -16,7 +16,6 @@ import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
-import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/fushi_tag.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
@@ -716,63 +715,6 @@ class _DictionaryTypeTile extends StatelessWidget {
                   color: scheme.onSurfaceVariant,
                 ),
               ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// 一本词典都没有时的整页空状态：说明支持的格式，并把「导入」「下载推荐」
-/// 两个入口直接放在眼前（以前空状态只有一句话，入口要去页头找）。
-class DictionaryManagerEmptyState extends StatelessWidget {
-  const DictionaryManagerEmptyState({
-    required this.icon,
-    required this.onImport,
-    required this.onDownload,
-    required this.showDropHint,
-    super.key,
-  });
-
-  final IconData icon;
-  final VoidCallback onImport;
-  final VoidCallback onDownload;
-  final bool showDropHint;
-
-  @override
-  Widget build(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Padding(
-      padding: EdgeInsets.symmetric(
-        vertical: tokens.spacing.section,
-        horizontal: tokens.spacing.page,
-      ),
-      child: FushiPlaceholderMessage(
-        icon: icon,
-        message: t.dictionaries_menu_empty,
-        detail: t.dict_empty_hint,
-        details: <String>[if (showDropHint) t.dict_empty_drop_hint],
-        action: Wrap(
-          alignment: WrapAlignment.center,
-          spacing: tokens.spacing.gap,
-          runSpacing: tokens.spacing.gap,
-          children: <Widget>[
-            FushiPressScale(
-              child: FushiFilledButton.icon(
-                key: const ValueKey<String>('dict-empty-import'),
-                onPressed: onImport,
-                icon: const FushiIcon(Icons.upload_file_outlined, size: 18),
-                label: Text(t.dialog_import_dictionary),
-              ),
-            ),
-            FushiPressScale(
-              child: FushiFilledButton.tonalIcon(
-                key: const ValueKey<String>('dict-empty-download'),
-                onPressed: onDownload,
-                icon: const FushiIcon(Icons.cloud_download_outlined, size: 18),
-                label: Text(t.dict_download_browse),
-              ),
-            ),
           ],
         ),
       ),

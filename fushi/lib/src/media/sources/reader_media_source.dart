@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/widgets.dart';
 
+import 'package:fushi/src/media/display_title_store_series.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/media_source.dart';
 import 'package:fushi/src/media/metadata/book_art_store.dart';
@@ -44,6 +45,13 @@ abstract class ReaderMediaSource extends MediaSource {
     MangaFushiSource.instance,
     ReaderPdfSource.instance,
   ];
+
+  /// 书族显示名出口：用户改过的显示名（override）原样显示；没改过时显示原名，
+  /// 但去掉文件名标题末尾的 `[8 位十六进制]` 哈希后缀与书店系列注记
+  /// `<系列名> (文库名)`（[cleanBookDisplayTitle]，只改显示，`item.title` 本身仍是身份原名）。
+  @override
+  String getDisplayTitleFromMediaItem(MediaItem item) =>
+      getOverrideTitleFromMediaItem(item) ?? cleanBookDisplayTitle(item.title);
 
   /// 「已获取的每卷封面」：三种书共用 `hoshi://book/<bookKey>` 身份，刮削层按
   /// bookKey 存（[BookArtStore]），只查内存索引。字幕书（`fushi://srtbook/`）没有。

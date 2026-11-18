@@ -21,6 +21,7 @@ import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
+import 'package:fushi_engine/media/item_scrape/item_scrape_store.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_theme_host.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_control_layout.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart'
@@ -1185,6 +1186,9 @@ class ReaderFushiSource extends ReaderMediaSource {
         if (bookRow != null && !keepFiles) {
           await EpubStorage.deleteBookDir(bookRow.extractDir);
         }
+        // v155：条目附加图（横版背景 / logo）行已随 deleteEpubBook 同事务删，
+        // 文件在这里按「不再被任何 item_images 行引用」回收。
+        await ItemScrapeStore(db).reclaimUnreferencedFiles();
         // 用户明确勾选后才删原始音频；两条记录可能指向同一批文件，第二次删到的
         // 已不存在，[deleteLocalFiles] 既不计入 removed 也不计入 failures。
         if (deleteLocalFiles) {

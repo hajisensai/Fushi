@@ -1,11 +1,13 @@
 import 'dart:async' show unawaited;
-import 'dart:ui' as ui;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/home_tab.dart' show HomeTab;
+import 'package:fushi/src/models/module_registry.dart' show isHomeTabVisible;
+import 'package:fushi/src/pages/implementations/browse_page.dart'
+    show BrowseNavigationRequest, BrowseTab, externalBrowseRequest;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart' show SourceLibraryKind;
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
@@ -13,10 +15,14 @@ import 'package:fushi/src/ai/ai_media_acquisition_assistant.dart'
     show AiMediaAcquisitionDomain;
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/drag_drop/drop_surface_scope.dart';
-import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_add_flow.dart';
+import 'package:fushi/src/mining/galgame_repository.dart'
+    show GalgameRepository;
+import 'package:fushi/src/media/import/import_collage_page.dart';
+import 'package:fushi/src/media/import/import_surface_spec.dart';
 import 'package:fushi/src/pages/implementations/discovery_ai_acquire_action.dart';
+import 'package:fushi/src/pages/implementations/discovery_manage_sources_action.dart';
 import 'package:fushi/src/pages/implementations/galgame_home_page.dart';
 import 'package:fushi/src/pages/implementations/game_diagnostics_page.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart';
@@ -36,16 +42,11 @@ import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
-import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
-import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
-import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/pages/shared/library_section_tabs.dart';
 import 'package:fushi/src/utils/components/section_swipe_navigator.dart';
@@ -123,7 +124,7 @@ class HomeGamePage extends StatefulWidget {
   static const Key streamKey = ValueKey<String>('game-stream');
 
   /// 「导入」子区「常驻来源」区头的「添加来源」按钮（反馈 9Rm_8JEkGM）。
-  static const Key addSourceKey = ValueKey<String>('game-import-add-source');
+  static const Key addSourceKey = ValueKey<String>('import-sources-add');
 
   /// 库页顶部会话状态带（原两张总览大卡的收敛替身），整条可点进入捕获工作台。
   static const Key captureStatusKey = ValueKey<String>('game-capture-status');
@@ -239,30 +240,6 @@ class _HomeGamePageState extends State<HomeGamePage> {
         ? _beforeImport
         : GameSection.importGames,
   );
-
-  /// 「导入」视图的进行中标记：选文件 / 拖放落库期间拖放区底部亮波浪进度。
-  bool _importBusy = false;
-
-  /// 桌面正拖着文件悬停在导入视图上（[FushiFileDropTarget.onHoverChanged]）：
-  /// 拖拽期间指针 hover 事件不到达，拖放区卡片的放大变色改由这一位驱动。
-  bool _importDragHovering = false;
-
-  void _setImportDragHovering(bool value) {
-    if (!mounted || _importDragHovering == value) return;
-    setState(() => _importDragHovering = value);
-  }
-
-  /// 包住一次导入：期间点亮进度，结束（成功 / 取消 / 抛错）后熄灭。异常照常
-  /// 抛回调用方——拖放路径的唯一错误咽喉在 `FushiFileDropTarget.runDrop`，这里
-  /// 不能吞。
-  Future<void> _trackImport(Future<void> Function() run) async {
-    if (mounted) setState(() => _importBusy = true);
-    try {
-      await run();
-    } finally {
-      if (mounted) setState(() => _importBusy = false);
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -477,8 +454,10 @@ class _HomeGamePageState extends State<HomeGamePage> {
   ///   下沿让位，随收起动画缩到 0。
   Widget _chromeInsetFor(GameSection section, {required Widget child}) =>
       switch (section) {
-        GameSection.dashboard ||
-        GameSection.importGames => FushiFloatingChromeScrollInset(child: child),
+        GameSection.dashboard => FushiFloatingChromeScrollInset(child: child),
+        // [ImportCollagePage] 自己读 [FushiFloatingChromeInset] 加进滚动内边距
+        // （内容从工具区下方起排、往下滚到工具区底下），不能先被 ScrollInset 归零。
+        GameSection.importGames ||
         GameSection.library ||
         GameSection.diagnostics ||
         GameSection.discover => child,
@@ -536,152 +515,86 @@ class _HomeGamePageState extends State<HomeGamePage> {
               domain: AiMediaAcquisitionDomain.game,
               domainLabel: t.nav_game,
             ),
+            onManageSources: discoveryManageSourcesAction(
+              context: context,
+              appModel: ref.read(appProvider),
+            ),
           ),
     );
   }
 
-  /// 游戏「导入」视图：与书 / 漫画 / 视频库页的「导入」视图同构同位——快速导入区
-  /// 收纳单件入口（添加游戏 / 拖 exe），其下「常驻来源」区管理扫描根（反馈
-  /// 9Rm_8JEkGM：区头「添加来源」+ 与其它模块同一个 [MediaSourcesView]）。
+  /// 游戏「导入」视图（导入稿 v2 第二节 5）：与书 / 漫画 / 视频 / 音乐同一套
+  /// [ImportCollagePage]——引导首块 + 两个方式块（添加游戏 / 扫描文件夹），其下
+  /// 「常驻来源」色块区（互联块照旧保留，IM21；扫描根；添加来源直接选目录）。
+  ///
+  /// 拖放只认 .exe（[addGamesFromPaths] → `filterOutDuplicateGameExes` 丢弃文件夹），
+  /// 所以引导首块只说 .exe、格式只有 EXE；「扫描文件夹」只在方式块与添加来源里。
+  /// 整页落点由 [ImportCollagePage] 按 spec.onDrop 装（此前另写的拖放卡与虚线
+  /// 画笔删掉，IM11），外层仍是本页 IndexedStack 的 `DropSurfaceScope` 门。
   Widget _buildImport(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    // 导入页自己接 drop：此前整个游戏域只有**库**页挂了 drop target，而
-    // `DropSurfaceScope` 又按当前 section 过滤，于是站在「导入」页拖 exe 进来
-    // 完全没反应——页面上还写着「也可以把 .exe 拖进来」。
-    return FushiFileDropTarget(
-      debugLabel: 'game-import',
-      onHoverChanged: _setImportDragHovering,
-      // 必须把这个 future 交回去：`FushiFileDropTarget.runDrop` 特意 await 回调，
-      // 那是拖放路径上**唯一**的错误咽喉（否则 repo.load()/addAll() 抛出时异常
-      // 直接漂进 zone，用户看到的只有「拖了没反应」——正是本页要修的症状）。
-      // 包成 unawaited 等于把回调立刻变成 void，await 什么也接不到。
-      // `_trackImport` 只在前后点亮 / 熄灭进度，future 与异常原样交回。
-      onDrop: (List<String> paths, Offset position) => _trackImport(
-        () => addGamesFromPaths(
-          ProviderScope.containerOf(
-            context,
-            listen: false,
-          ).read(appProvider).galgameRepo,
-          paths,
-          onImported: _showLibrary,
+    // IndexedStack 急切构建全部子区，本视图在无 ProviderScope 的 widget 测试里
+    // 也会被 build——容器只在点按 / 落下时解析，构建期零 provider 依赖。
+    GalgameRepository repo() => ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appProvider).galgameRepo;
+    final ImportSurfaceSpec spec = ImportSurfaceSpec(
+      id: 'game',
+      tone: ImportTone.amber,
+      guideIcon: FushiIcons.games,
+      guideTitle: t.import_guide_game_title,
+      guideDescription: t.import_guide_game_desc,
+      methods: <ImportMethod>[
+        ImportMethod(
+          id: 'game-add',
+          kind: ImportMethodKind.primary,
+          icon: FushiIcons.games,
+          label: t.game_add,
+          description: t.import_method_game_add_desc,
+          destination: ImportDestination.pickFile,
+          // 不弹对话框（系统选 exe → 落库）：块上转圈直到落库结束（IM14）。
+          reportsProgress: true,
+          // 导入成功后跳到游戏库：新游戏落在**另一个** section 里，停在导入页
+          // 的话屏幕上什么都不变，成功与失败在观感上一模一样（用户「导成功没
+          // 反应我还以为失败了重试了好几次」）。
+          onTap: () => addGameViaFilePicker(repo(), onImported: _showLibrary),
         ),
-      ),
-      child: DesktopContentLayout(
-        kind: DesktopContentKind.readerShelf,
-        child: Column(
-          children: <Widget>[
-            // 分区页签由外壳浮动工具栏画：主位给零尺寸占位，页头整行零高度。
-            FushiPageHeader.customTitle(
-              title: const SizedBox.shrink(),
-              actions: const <Widget>[],
-            ),
-            Expanded(
-              // M3E 导入视图：区标题 + 一张大圆角虚线拖放区（主按钮「添加游戏」+
-              // 拖放提示 + 导入中波浪进度），错峰进场。
-              // IndexedStack 急切构建：切到导入子区时重开进场窗口。
-              child: FushiEntranceScope(
-                replayKey: _section == GameSection.importGames,
-                // 浮动工具区的让位（[FushiFloatingChromeScrollInset] 交来的
-                // MediaQuery 顶部 padding）加进滚动内边距：内容滚到工具区底下。
-                // 必须在 Builder 里读——本方法拿的是 State 的 context，在让位
-                // 那层之上。
-                child: Builder(
-                  builder: (BuildContext context) => SingleChildScrollView(
-                    padding: EdgeInsets.fromLTRB(
-                      tokens.spacing.page,
-                      8 + MediaQuery.paddingOf(context).top,
-                      tokens.spacing.page,
-                      24,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: <Widget>[
-                        FushiStaggeredEntrance(
-                          index: 0,
-                          child: Text(
-                            t.quick_import_title,
-                            style: context.fushiType.titleLargeEmphasized,
-                          ),
-                        ),
-                        SizedBox(height: tokens.spacing.gap),
-                        FushiStaggeredEntrance(
-                          index: 1,
-                          child: _GameImportDropZone(
-                            busy: _importBusy,
-                            dragHovering: _importDragHovering,
-                            // IndexedStack 急切构建全部子区，本视图在无
-                            // ProviderScope 的 widget 测试里也会被 build——
-                            // 容器只在点按时解析，构建期零 provider 依赖。
-                            // 导入成功后跳到游戏库：新游戏落在**另一个** section
-                            // 里，停在导入页的话屏幕上什么都不变，成功与失败在
-                            // 观感上一模一样（用户「导成功没反应我还以为失败了
-                            // 重试了好几次」）。
-                            onAdd: () => _trackImport(
-                              () => addGameViaFilePicker(
-                                ProviderScope.containerOf(
-                                  context,
-                                  listen: false,
-                                ).read(appProvider).galgameRepo,
-                                onImported: _showLibrary,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 28),
-                        FushiStaggeredEntrance(
-                          index: 2,
-                          child: _buildSourcesSectionHeader(context),
-                        ),
-                        const SizedBox(height: 4),
-                        FushiStaggeredEntrance(
-                          index: 3,
-                          child: Text(
-                            t.game_source_scan_hint,
-                            style: context.fushiType.bodySmall.copyWith(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        FushiStaggeredEntrance(
-                          index: 4,
-                          child: _importVisited
-                              ? _buildSources(context)
-                              : const SizedBox.shrink(),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// 「常驻来源」区头：标题 + 「添加来源」（与书 / 漫画 / 视频「导入」视图同一组件、
-  /// 同一文案；游戏来源只收本地文件夹，`addSource` 直达选目录）。
-  Widget _buildSourcesSectionHeader(BuildContext context) {
-    return Row(
-      children: <Widget>[
-        Expanded(
-          child: Text(
-            t.media_source_section_title,
-            style: context.fushiType.titleLargeEmphasized,
-          ),
-        ),
-        FushiIconButton(
-          key: HomeGamePage.addSourceKey,
-          tooltip: t.media_source_add,
-          label: t.media_source_add,
-          icon: FushiIcons.add,
-          onTap: () => unawaited(_sourcesKey.currentState?.addSource()),
+        ImportMethod(
+          id: 'game-scan-folder',
+          kind: ImportMethodKind.folder,
+          icon: FushiIcons.folder,
+          label: t.import_method_game_scan_folder,
+          description: t.import_method_game_scan_folder_desc,
+          destination: ImportDestination.pickFolder,
+          // 游戏来源只收本地文件夹：`addSource` 直达选目录（IM13 保持原语义）。
+          // 扫描进度画在新来源块上，方式块不转圈。
+          onTap: () async => _sourcesKey.currentState?.addSource(),
         ),
       ],
+      formatGroups: <ImportFormatGroup>[
+        ImportFormatGroup(
+          title: t.nav_game,
+          labels: importFormatLabels(<Iterable<String>>[
+            kGameExecutableExtensions,
+          ]),
+        ),
+      ],
+      // 必须把 future 交回去：`FushiFileDropTarget.runDrop` 特意 await 回调，
+      // 那是拖放路径上**唯一**的错误咽喉（repo.load()/addAll() 抛出时异常不能
+      // 漂进 zone，否则用户看到的只有「拖了没反应」）。
+      onDrop: (List<String> paths, Offset position) =>
+          addGamesFromPaths(repo(), paths, onImported: _showLibrary),
+    );
+    return DesktopContentLayout(
+      kind: DesktopContentKind.readerShelf,
+      child: ImportCollagePage(
+        spec: spec,
+        // 来源列表一挂载就查来源表与各来源计数：访问过导入页才构建。
+        sources: _importVisited
+            ? _buildSources(context)
+            : const SizedBox.shrink(),
+        onAddSource: () => unawaited(_sourcesKey.currentState?.addSource()),
+      ),
     );
   }
 
@@ -693,13 +606,23 @@ class _HomeGamePageState extends State<HomeGamePage> {
     return MediaSourcesView(
       key: _sourcesKey,
       mediaKind: SourceLibraryKind.game.dbValue,
+      presentation: MediaSourcesPresentation.blocks,
+      // 0 引导首块 → 1..2 方式块 → 3 区头 → 来源块。
+      entranceIndexOffset: 4,
+      addSourceHint: t.game_source_scan_hint,
     );
   }
 
+  /// 跳到统一下载中心（浏览 › 下载 › 任务）。写首页监听的
+  /// [externalBrowseRequest]，由首页走它唯一的浏览跳转出口（先判可达、再退回
+  /// 根路由、再切页签），本页不另拼导航。
+  void _openDownloads() {
+    externalBrowseRequest.value = BrowseNavigationRequest(BrowseTab.downloads);
+  }
+
   Widget _buildLibrary(BuildContext context) {
-    // 顶部一条紧凑会话状态带（原两张总览大卡的收敛替身）：只留库页独有
-    // 的会话摘要，整条可点进入捕获工作台。诊断细节（序号缺口 / 端点连通）
-    // 归诊断页，不再挤占库页面积。
+    // 注入 libraryBuilder 的测试宿主用的紧凑会话状态带（原两张总览大卡的收敛
+    // 替身），整条可点进入捕获工作台。生产路径的会话带由库页自己画（见下）。
     final Widget statusStrip = AnimatedBuilder(
       animation: _controller,
       builder: (BuildContext context, Widget? child) {
@@ -751,12 +674,32 @@ class _HomeGamePageState extends State<HomeGamePage> {
             // 生产路径：库页自己把搜索 / 筛选行叠进浮动工具区、主滚动视图消费
             // 让位（本子区在 [build] 里不再整体下移）；状态带作为滚动内容的
             // 第一块，随内容滚到工具区底下。
+            //
+            // 会话带（GA5）：生产路径不再传常驻状态带——Windows 上库页有
+            // sessionController 时自己画会话带，只在有 Hook 会话时出现（游戏名 +
+            // 已抓台词数 + 最新一行），空闲时不占位。
             child: libraryBuilder == null
-                ? GamesLibraryPage(
-                    embedded: true,
-                    sessionController: _controller,
-                    onLaunched: _showMonitor,
-                    header: statusStrip,
+                ? Consumer(
+                    builder: (BuildContext context, WidgetRef ref, Widget? _) {
+                      // 下载块「打开下载 ›」：浏览模块关着就不出这个入口（与视频
+                      // 发现页「查看下载」同一判据），开着走首页统一的浏览跳转出口。
+                      final bool browseReachable = ref.watch(
+                        appProvider.select(
+                          (AppModel model) => isHomeTabVisible(
+                            HomeTab.browse,
+                            model.moduleVisibility,
+                          ),
+                        ),
+                      );
+                      return GamesLibraryPage(
+                        embedded: true,
+                        sessionController: _controller,
+                        onLaunched: _showMonitor,
+                        onOpenDownloads: browseReachable
+                            ? _openDownloads
+                            : null,
+                      );
+                    },
                   )
                 // 测试替身页不认识浮动工具区：状态带 + 替身整体下移让位。
                 : FushiFloatingChromeInsetPadding(
@@ -782,178 +725,6 @@ class _HomeGamePageState extends State<HomeGamePage> {
       ),
     );
   }
-}
-
-/// 游戏「导入」视图的拖放区卡片（M3E）：28 圆角虚线描边 + 饱和容器色块，中间是
-/// 花瓣形状图标、主按钮「添加游戏」与拖放提示，导入进行中底部亮波浪进度。
-///
-/// 拖放命中由外层 [FushiFileDropTarget] 处理；它经 `onHoverChanged` 报出的
-/// 「正拖着文件悬停」由 [dragHovering] 传进来，与指针悬停同款反馈：spring 轻放大
-/// + 描边 / 底色转强调色（拖拽期间 MouseRegion 收不到 hover，只能靠这一位）。
-class _GameImportDropZone extends StatelessWidget {
-  const _GameImportDropZone({
-    required this.busy,
-    required this.onAdd,
-    this.dragHovering = false,
-  });
-
-  final bool busy;
-  final Future<void> Function() onAdd;
-  final bool dragHovering;
-
-  @override
-  Widget build(BuildContext context) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
-    final FushiMotionScheme motion = context.fushiMotion;
-    final bool eink = isEinkTheme(context);
-    final bool apple = isGlassDesign(context);
-    final double radius = apple
-        ? FushiM3eShape.small
-        : FushiM3eShape.containerLarge;
-    // Apple：分组列表的次级底色，悬停 / 拖入时整块淡染强调色（15%）、描边转
-    // 强调色——不借 MD3 的 primaryContainer 色块。
-    final FushiAppleColors? appleColors = apple && !eink
-        ? appleColorsOf(context)
-        : null;
-    return FushiHoverLift(
-      scale: 1.01,
-      forceLifted: dragHovering,
-      builder: (BuildContext context, bool hovering) {
-        final Color fill = eink
-            ? colors.surface
-            : appleColors != null
-            ? (hovering
-                  ? appleColors.accent.withValues(alpha: 0.15)
-                  : appleColors.secondaryGroupedBackground)
-            : hovering
-            ? colors.primaryContainer
-            : colors.surfaceContainerLow;
-        final Color border = eink
-            ? colors.outline
-            : appleColors != null
-            ? (hovering ? appleColors.accent : appleColors.opaqueSeparator)
-            : hovering
-            ? colors.primary
-            : colors.outlineVariant;
-        return AnimatedContainer(
-          duration: motion.effectsDefault.duration,
-          curve: motion.effectsDefault.curve,
-          decoration: BoxDecoration(
-            color: fill,
-            borderRadius: BorderRadius.circular(radius),
-          ),
-          child: CustomPaint(
-            foregroundPainter: _DashedRRectPainter(
-              color: border,
-              radius: radius,
-              // 墨水屏实线：虚线在低刷新灰阶上读成噪点。
-              dashed: !eink,
-            ),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  AnimatedScale(
-                    scale: hovering ? 1.08 : 1,
-                    duration: motion.spatialFast.duration,
-                    curve: motion.spatialFast.curve,
-                    child: const FushiListLeadingIcon(
-                      FushiIcons.games,
-                      shape: FushiLeadingShape.flower,
-                      tone: FushiCardTone.primary,
-                      size: 72,
-                      iconSize: 36,
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  FushiFilledButton.icon(
-                    onPressed: busy ? null : () => onAdd(),
-                    size: FushiButtonSize.m,
-                    icon: const FushiIcon(FushiIcons.add),
-                    label: Text(t.game_add),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    t.game_import_drop_hint,
-                    textAlign: TextAlign.center,
-                    style: context.fushiType.bodyMedium.copyWith(
-                      color: appleColors != null
-                          ? (hovering
-                                ? appleColors.accent
-                                : appleColors.secondaryLabel)
-                          : hovering && !eink
-                          ? colors.onPrimaryContainer
-                          : colors.onSurfaceVariant,
-                    ),
-                  ),
-                  AnimatedSize(
-                    duration: motion.spatialDefault.duration,
-                    curve: motion.spatialDefault.curve,
-                    alignment: Alignment.topCenter,
-                    child: busy
-                        ? const Padding(
-                            padding: EdgeInsets.only(top: 20),
-                            child: FushiLinearProgressIndicator(),
-                          )
-                        : const SizedBox(width: double.infinity),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-/// 拖放区的圆角矩形描边：[dashed] 时画虚线（拖放区的通用视觉语言），否则实线。
-class _DashedRRectPainter extends CustomPainter {
-  const _DashedRRectPainter({
-    required this.color,
-    required this.radius,
-    required this.dashed,
-  });
-
-  final Color color;
-  final double radius;
-  final bool dashed;
-
-  static const double _strokeWidth = 2;
-  static const double _dash = 8;
-  static const double _gap = 6;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final Paint paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = _strokeWidth;
-    final RRect rrect = RRect.fromRectAndRadius(
-      (Offset.zero & size).deflate(_strokeWidth / 2),
-      Radius.circular(radius),
-    );
-    if (!dashed) {
-      canvas.drawRRect(rrect, paint);
-      return;
-    }
-    final Path outline = Path()..addRRect(rrect);
-    for (final ui.PathMetric metric in outline.computeMetrics()) {
-      double distance = 0;
-      while (distance < metric.length) {
-        final double end = (distance + _dash).clamp(0.0, metric.length);
-        canvas.drawPath(metric.extractPath(distance, end), paint);
-        distance += _dash + _gap;
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(_DashedRRectPainter oldDelegate) =>
-      oldDelegate.color != color ||
-      oldDelegate.radius != radius ||
-      oldDelegate.dashed != dashed;
 }
 
 /// 库页顶部的紧凑会话状态带：把此前两张总览大卡（捕获总览 + 诊断总览）收敛成

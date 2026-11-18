@@ -280,14 +280,18 @@ void main() {
     expect(find.text('Japanese only'), findsOneWidget);
     expect(find.text('Multi language'), findsOneWidget);
 
-    // M3E：语言筛选是一排 choice chip（key 沿用旧下拉项的
-    // `mihon_extension_language_<code>`），直接点 JA。
-    final Finder languageChip = find.byKey(
-      const ValueKey<String>('mihon_extension_language_ja'),
+    // 拼贴改版：语言筛选是搜索框旁的下拉胶囊（`mihon_extension_language_filter`），
+    // 菜单项 key 沿用 `mihon_extension_language_<code>`；先开菜单再点 JA。
+    final Finder languageFilter = find.byKey(
+      const ValueKey<String>('mihon_extension_language_filter'),
     );
-    await tester.ensureVisible(languageChip);
+    await tester.ensureVisible(languageFilter);
     await tester.pumpAndSettle();
-    await tester.tap(languageChip);
+    await tester.tap(languageFilter);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('mihon_extension_language_ja')),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Japanese only'), findsOneWidget);

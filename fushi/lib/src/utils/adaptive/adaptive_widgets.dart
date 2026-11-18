@@ -342,13 +342,22 @@ Future<T?> adaptiveModalSheet<T>({
   bool expandable = false,
   bool isDismissible = true,
   bool studyClockTransparent = false,
+  ThemeData? md3Theme,
   bool? useRootNavigator,
 }) {
+  // [md3Theme]：MD3 弹层整体（面板底色 + 内容）换一套主题——导入流程里的弹层
+  // 跟随模块色系（见 importToneThemeOrNull）。只作用于下面的 Material 分支；
+  // Apple / 液态玻璃分支不受影响。
+  //
   // [useRootNavigator]：null = 各形态原有的默认（Cupertino 弹层 / 桌面玻璃 sheet 在
   // root navigator 上，Material 底部 sheet 与宽屏浮动 sheet 在最近的 navigator 上）。
   // true = 一律开在 root navigator 上——调用方的 context 可能在一条 root 路由**下面**
   // 的页面里（视频页开着整页的字幕工作台时起面板），开在最近的 navigator 上会被那条
   // 整页路由挡住。
+  final ThemeData? sheetTheme = md3Theme;
+  Widget themed(Widget child) =>
+      sheetTheme == null ? child : Theme(data: sheetTheme, child: child);
+
   final RouteSettings? routeSettings = studyClockRouteSettings(
     transparent: studyClockTransparent,
   );
@@ -459,9 +468,8 @@ Future<T?> adaptiveModalSheet<T>({
         traversalEdgeBehavior: TraversalEdgeBehavior.closedLoop,
         reduceMotion: noMotion || !fushiMotionEnabled(context),
         settings: routeSettings,
-        builder: (BuildContext sheetContext) => FushiM3eFloatingSheet(
-          frosted: frosted,
-          child: builder(sheetContext),
+        builder: (BuildContext sheetContext) => themed(
+          FushiM3eFloatingSheet(frosted: frosted, child: builder(sheetContext)),
         ),
       ),
     );
@@ -482,13 +490,15 @@ Future<T?> adaptiveModalSheet<T>({
       sheetAnimationStyle: sheetMotion,
       isDismissible: isDismissible,
       enableDrag: isDismissible,
-      builder: (BuildContext sheetContext) => _GlassSheetBody(
-        showDragHandle: showDragHandle,
-        child: FushiM3eSheetBody(
-          showDragHandle: false,
-          expandable: false,
-          dragToDismiss: isDismissible,
-          child: builder(sheetContext),
+      builder: (BuildContext sheetContext) => themed(
+        _GlassSheetBody(
+          showDragHandle: showDragHandle,
+          child: FushiM3eSheetBody(
+            showDragHandle: false,
+            expandable: false,
+            dragToDismiss: isDismissible,
+            child: builder(sheetContext),
+          ),
         ),
       ),
     );
@@ -501,14 +511,17 @@ Future<T?> adaptiveModalSheet<T>({
     useSafeArea: useSafeArea,
     // 拖动条由 [FushiM3eSheetBody] 自绘（同 M3 几何），两档高度要接它的手势。
     showDragHandle: false,
+    backgroundColor: sheetTheme?.colorScheme.surfaceContainerLow,
     sheetAnimationStyle: sheetMotion,
     isDismissible: isDismissible,
     enableDrag: isDismissible,
-    builder: (BuildContext sheetContext) => FushiM3eSheetBody(
-      showDragHandle: showDragHandle,
-      expandable: expandable,
-      dragToDismiss: isDismissible,
-      child: builder(sheetContext),
+    builder: (BuildContext sheetContext) => themed(
+      FushiM3eSheetBody(
+        showDragHandle: showDragHandle,
+        expandable: expandable,
+        dragToDismiss: isDismissible,
+        child: builder(sheetContext),
+      ),
     ),
   );
 }

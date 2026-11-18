@@ -9,6 +9,7 @@ import 'package:fushi/src/ops/op_descriptions_url_import.dart';
 import 'package:fushi/src/ops/op_descriptions_disc.dart';
 import 'package:fushi/src/ops/op_descriptions_media_links.dart';
 import 'package:fushi/src/ops/op_descriptions_book_metadata.dart';
+import 'package:fushi/src/ops/op_descriptions_library_scrape.dart';
 import 'package:fushi/src/ops/op_descriptions_srs.dart';
 import 'package:fushi/src/ops/op_descriptions_music.dart';
 import 'package:fushi/src/ops/op_descriptions_dictionary.dart';
@@ -38,6 +39,7 @@ List<OpDescription> buildAppOpDescriptions(OpDescribeKit kit) =>
       ...describeMusicOps(kit),
       ...describeSrsOps(kit),
       ...describeBookMetadataOps(kit),
+      ...describeLibraryScrapeOps(kit),
       ...describeMediaLinksOps(kit),
       ...describeDiscOps(kit),
       ...describeUrlImportOps(kit),

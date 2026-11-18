@@ -35493,6 +35493,1226 @@ class MediaImagesCompanion extends UpdateCompanion<MediaImageRow> {
   }
 }
 
+class $ItemScrapeMetaTable extends ItemScrapeMeta
+    with TableInfo<$ItemScrapeMetaTable, ItemScrapeMetaRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ItemScrapeMetaTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _mediaTypeMeta = const VerificationMeta(
+    'mediaType',
+  );
+  @override
+  late final GeneratedColumn<String> mediaType = GeneratedColumn<String>(
+    'media_type',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _entryKeyMeta = const VerificationMeta(
+    'entryKey',
+  );
+  @override
+  late final GeneratedColumn<String> entryKey = GeneratedColumn<String>(
+    'entry_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sourceMeta = const VerificationMeta('source');
+  @override
+  late final GeneratedColumn<String> source = GeneratedColumn<String>(
+    'source',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _subjectIdMeta = const VerificationMeta(
+    'subjectId',
+  );
+  @override
+  late final GeneratedColumn<String> subjectId = GeneratedColumn<String>(
+    'subject_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+    'title',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _originalTitleMeta = const VerificationMeta(
+    'originalTitle',
+  );
+  @override
+  late final GeneratedColumn<String> originalTitle = GeneratedColumn<String>(
+    'original_title',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _summaryMeta = const VerificationMeta(
+    'summary',
+  );
+  @override
+  late final GeneratedColumn<String> summary = GeneratedColumn<String>(
+    'summary',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _airDateMeta = const VerificationMeta(
+    'airDate',
+  );
+  @override
+  late final GeneratedColumn<String> airDate = GeneratedColumn<String>(
+    'air_date',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _ratingMeta = const VerificationMeta('rating');
+  @override
+  late final GeneratedColumn<double> rating = GeneratedColumn<double>(
+    'rating',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _ratingCountMeta = const VerificationMeta(
+    'ratingCount',
+  );
+  @override
+  late final GeneratedColumn<int> ratingCount = GeneratedColumn<int>(
+    'rating_count',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _tagsJsonMeta = const VerificationMeta(
+    'tagsJson',
+  );
+  @override
+  late final GeneratedColumn<String> tagsJson = GeneratedColumn<String>(
+    'tags_json',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _detailUrlMeta = const VerificationMeta(
+    'detailUrl',
+  );
+  @override
+  late final GeneratedColumn<String> detailUrl = GeneratedColumn<String>(
+    'detail_url',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _scrapedAtMeta = const VerificationMeta(
+    'scrapedAt',
+  );
+  @override
+  late final GeneratedColumn<int> scrapedAt = GeneratedColumn<int>(
+    'scraped_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    mediaType,
+    entryKey,
+    source,
+    subjectId,
+    title,
+    originalTitle,
+    summary,
+    airDate,
+    rating,
+    ratingCount,
+    tagsJson,
+    detailUrl,
+    scrapedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'item_scrape_meta';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<ItemScrapeMetaRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('media_type')) {
+      context.handle(
+        _mediaTypeMeta,
+        mediaType.isAcceptableOrUnknown(data['media_type']!, _mediaTypeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_mediaTypeMeta);
+    }
+    if (data.containsKey('entry_key')) {
+      context.handle(
+        _entryKeyMeta,
+        entryKey.isAcceptableOrUnknown(data['entry_key']!, _entryKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_entryKeyMeta);
+    }
+    if (data.containsKey('source')) {
+      context.handle(
+        _sourceMeta,
+        source.isAcceptableOrUnknown(data['source']!, _sourceMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sourceMeta);
+    }
+    if (data.containsKey('subject_id')) {
+      context.handle(
+        _subjectIdMeta,
+        subjectId.isAcceptableOrUnknown(data['subject_id']!, _subjectIdMeta),
+      );
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+        _titleMeta,
+        title.isAcceptableOrUnknown(data['title']!, _titleMeta),
+      );
+    }
+    if (data.containsKey('original_title')) {
+      context.handle(
+        _originalTitleMeta,
+        originalTitle.isAcceptableOrUnknown(
+          data['original_title']!,
+          _originalTitleMeta,
+        ),
+      );
+    }
+    if (data.containsKey('summary')) {
+      context.handle(
+        _summaryMeta,
+        summary.isAcceptableOrUnknown(data['summary']!, _summaryMeta),
+      );
+    }
+    if (data.containsKey('air_date')) {
+      context.handle(
+        _airDateMeta,
+        airDate.isAcceptableOrUnknown(data['air_date']!, _airDateMeta),
+      );
+    }
+    if (data.containsKey('rating')) {
+      context.handle(
+        _ratingMeta,
+        rating.isAcceptableOrUnknown(data['rating']!, _ratingMeta),
+      );
+    }
+    if (data.containsKey('rating_count')) {
+      context.handle(
+        _ratingCountMeta,
+        ratingCount.isAcceptableOrUnknown(
+          data['rating_count']!,
+          _ratingCountMeta,
+        ),
+      );
+    }
+    if (data.containsKey('tags_json')) {
+      context.handle(
+        _tagsJsonMeta,
+        tagsJson.isAcceptableOrUnknown(data['tags_json']!, _tagsJsonMeta),
+      );
+    }
+    if (data.containsKey('detail_url')) {
+      context.handle(
+        _detailUrlMeta,
+        detailUrl.isAcceptableOrUnknown(data['detail_url']!, _detailUrlMeta),
+      );
+    }
+    if (data.containsKey('scraped_at')) {
+      context.handle(
+        _scrapedAtMeta,
+        scrapedAt.isAcceptableOrUnknown(data['scraped_at']!, _scrapedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_scrapedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {mediaType, entryKey};
+  @override
+  ItemScrapeMetaRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ItemScrapeMetaRow(
+      mediaType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}media_type'],
+      )!,
+      entryKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}entry_key'],
+      )!,
+      source: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source'],
+      )!,
+      subjectId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}subject_id'],
+      ),
+      title: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}title'],
+      ),
+      originalTitle: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}original_title'],
+      ),
+      summary: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}summary'],
+      ),
+      airDate: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}air_date'],
+      ),
+      rating: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}rating'],
+      ),
+      ratingCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}rating_count'],
+      ),
+      tagsJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}tags_json'],
+      ),
+      detailUrl: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}detail_url'],
+      ),
+      scrapedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}scraped_at'],
+      )!,
+    );
+  }
+
+  @override
+  $ItemScrapeMetaTable createAlias(String alias) {
+    return $ItemScrapeMetaTable(attachedDatabase, alias);
+  }
+}
+
+class ItemScrapeMetaRow extends DataClass
+    implements Insertable<ItemScrapeMetaRow> {
+  /// 宿主种类（`MediaKind.dbValue`：epub / srt / game）。
+  final String mediaType;
+
+  /// 宿主稳定身份（同 [MediaCollectionItems.entryKey] 口径）。
+  final String entryKey;
+
+  /// 来源：书籍刮削源名（`BookScrapeSource.name`：bangumi / dlsite / …）、游戏
+  /// 元数据源 key（bgm / vndb / dlsite），脚本 / 手动写入为 `manual`。
+  final String source;
+
+  /// 源内条目 id；手动写入为 null。
+  final String? subjectId;
+
+  /// 条目主标题（中文优先）；只记事实，不回写书名（显示名覆盖另有存储）。
+  final String? title;
+
+  /// 原名；与 [title] 相同或缺失时为 null。
+  final String? originalTitle;
+
+  /// 简介（含换行）。
+  final String? summary;
+
+  /// 出版 / 发行日期 `YYYY-MM-DD`，允许只到年或年月（与 [CollectionScrapeMeta]
+  /// 同规矩：不凭空补月日）。
+  final String? airDate;
+
+  /// 评分（0~10）与评分人数。
+  final double? rating;
+  final int? ratingCount;
+
+  /// 标签 JSON 数组：`[{"name":"日常","count":1234}]`（按热度降序；与
+  /// [CollectionScrapeMeta.tagsJson] 同形，展示层共用一个解析函数）。
+  final String? tagsJson;
+
+  /// 条目详情页 URL，供「查看条目」跳转。
+  final String? detailUrl;
+
+  /// 本行写入毫秒戳。
+  final int scrapedAt;
+  const ItemScrapeMetaRow({
+    required this.mediaType,
+    required this.entryKey,
+    required this.source,
+    this.subjectId,
+    this.title,
+    this.originalTitle,
+    this.summary,
+    this.airDate,
+    this.rating,
+    this.ratingCount,
+    this.tagsJson,
+    this.detailUrl,
+    required this.scrapedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['media_type'] = Variable<String>(mediaType);
+    map['entry_key'] = Variable<String>(entryKey);
+    map['source'] = Variable<String>(source);
+    if (!nullToAbsent || subjectId != null) {
+      map['subject_id'] = Variable<String>(subjectId);
+    }
+    if (!nullToAbsent || title != null) {
+      map['title'] = Variable<String>(title);
+    }
+    if (!nullToAbsent || originalTitle != null) {
+      map['original_title'] = Variable<String>(originalTitle);
+    }
+    if (!nullToAbsent || summary != null) {
+      map['summary'] = Variable<String>(summary);
+    }
+    if (!nullToAbsent || airDate != null) {
+      map['air_date'] = Variable<String>(airDate);
+    }
+    if (!nullToAbsent || rating != null) {
+      map['rating'] = Variable<double>(rating);
+    }
+    if (!nullToAbsent || ratingCount != null) {
+      map['rating_count'] = Variable<int>(ratingCount);
+    }
+    if (!nullToAbsent || tagsJson != null) {
+      map['tags_json'] = Variable<String>(tagsJson);
+    }
+    if (!nullToAbsent || detailUrl != null) {
+      map['detail_url'] = Variable<String>(detailUrl);
+    }
+    map['scraped_at'] = Variable<int>(scrapedAt);
+    return map;
+  }
+
+  ItemScrapeMetaCompanion toCompanion(bool nullToAbsent) {
+    return ItemScrapeMetaCompanion(
+      mediaType: Value(mediaType),
+      entryKey: Value(entryKey),
+      source: Value(source),
+      subjectId: subjectId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(subjectId),
+      title: title == null && nullToAbsent
+          ? const Value.absent()
+          : Value(title),
+      originalTitle: originalTitle == null && nullToAbsent
+          ? const Value.absent()
+          : Value(originalTitle),
+      summary: summary == null && nullToAbsent
+          ? const Value.absent()
+          : Value(summary),
+      airDate: airDate == null && nullToAbsent
+          ? const Value.absent()
+          : Value(airDate),
+      rating: rating == null && nullToAbsent
+          ? const Value.absent()
+          : Value(rating),
+      ratingCount: ratingCount == null && nullToAbsent
+          ? const Value.absent()
+          : Value(ratingCount),
+      tagsJson: tagsJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(tagsJson),
+      detailUrl: detailUrl == null && nullToAbsent
+          ? const Value.absent()
+          : Value(detailUrl),
+      scrapedAt: Value(scrapedAt),
+    );
+  }
+
+  factory ItemScrapeMetaRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ItemScrapeMetaRow(
+      mediaType: serializer.fromJson<String>(json['mediaType']),
+      entryKey: serializer.fromJson<String>(json['entryKey']),
+      source: serializer.fromJson<String>(json['source']),
+      subjectId: serializer.fromJson<String?>(json['subjectId']),
+      title: serializer.fromJson<String?>(json['title']),
+      originalTitle: serializer.fromJson<String?>(json['originalTitle']),
+      summary: serializer.fromJson<String?>(json['summary']),
+      airDate: serializer.fromJson<String?>(json['airDate']),
+      rating: serializer.fromJson<double?>(json['rating']),
+      ratingCount: serializer.fromJson<int?>(json['ratingCount']),
+      tagsJson: serializer.fromJson<String?>(json['tagsJson']),
+      detailUrl: serializer.fromJson<String?>(json['detailUrl']),
+      scrapedAt: serializer.fromJson<int>(json['scrapedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'mediaType': serializer.toJson<String>(mediaType),
+      'entryKey': serializer.toJson<String>(entryKey),
+      'source': serializer.toJson<String>(source),
+      'subjectId': serializer.toJson<String?>(subjectId),
+      'title': serializer.toJson<String?>(title),
+      'originalTitle': serializer.toJson<String?>(originalTitle),
+      'summary': serializer.toJson<String?>(summary),
+      'airDate': serializer.toJson<String?>(airDate),
+      'rating': serializer.toJson<double?>(rating),
+      'ratingCount': serializer.toJson<int?>(ratingCount),
+      'tagsJson': serializer.toJson<String?>(tagsJson),
+      'detailUrl': serializer.toJson<String?>(detailUrl),
+      'scrapedAt': serializer.toJson<int>(scrapedAt),
+    };
+  }
+
+  ItemScrapeMetaRow copyWith({
+    String? mediaType,
+    String? entryKey,
+    String? source,
+    Value<String?> subjectId = const Value.absent(),
+    Value<String?> title = const Value.absent(),
+    Value<String?> originalTitle = const Value.absent(),
+    Value<String?> summary = const Value.absent(),
+    Value<String?> airDate = const Value.absent(),
+    Value<double?> rating = const Value.absent(),
+    Value<int?> ratingCount = const Value.absent(),
+    Value<String?> tagsJson = const Value.absent(),
+    Value<String?> detailUrl = const Value.absent(),
+    int? scrapedAt,
+  }) => ItemScrapeMetaRow(
+    mediaType: mediaType ?? this.mediaType,
+    entryKey: entryKey ?? this.entryKey,
+    source: source ?? this.source,
+    subjectId: subjectId.present ? subjectId.value : this.subjectId,
+    title: title.present ? title.value : this.title,
+    originalTitle: originalTitle.present
+        ? originalTitle.value
+        : this.originalTitle,
+    summary: summary.present ? summary.value : this.summary,
+    airDate: airDate.present ? airDate.value : this.airDate,
+    rating: rating.present ? rating.value : this.rating,
+    ratingCount: ratingCount.present ? ratingCount.value : this.ratingCount,
+    tagsJson: tagsJson.present ? tagsJson.value : this.tagsJson,
+    detailUrl: detailUrl.present ? detailUrl.value : this.detailUrl,
+    scrapedAt: scrapedAt ?? this.scrapedAt,
+  );
+  ItemScrapeMetaRow copyWithCompanion(ItemScrapeMetaCompanion data) {
+    return ItemScrapeMetaRow(
+      mediaType: data.mediaType.present ? data.mediaType.value : this.mediaType,
+      entryKey: data.entryKey.present ? data.entryKey.value : this.entryKey,
+      source: data.source.present ? data.source.value : this.source,
+      subjectId: data.subjectId.present ? data.subjectId.value : this.subjectId,
+      title: data.title.present ? data.title.value : this.title,
+      originalTitle: data.originalTitle.present
+          ? data.originalTitle.value
+          : this.originalTitle,
+      summary: data.summary.present ? data.summary.value : this.summary,
+      airDate: data.airDate.present ? data.airDate.value : this.airDate,
+      rating: data.rating.present ? data.rating.value : this.rating,
+      ratingCount: data.ratingCount.present
+          ? data.ratingCount.value
+          : this.ratingCount,
+      tagsJson: data.tagsJson.present ? data.tagsJson.value : this.tagsJson,
+      detailUrl: data.detailUrl.present ? data.detailUrl.value : this.detailUrl,
+      scrapedAt: data.scrapedAt.present ? data.scrapedAt.value : this.scrapedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ItemScrapeMetaRow(')
+          ..write('mediaType: $mediaType, ')
+          ..write('entryKey: $entryKey, ')
+          ..write('source: $source, ')
+          ..write('subjectId: $subjectId, ')
+          ..write('title: $title, ')
+          ..write('originalTitle: $originalTitle, ')
+          ..write('summary: $summary, ')
+          ..write('airDate: $airDate, ')
+          ..write('rating: $rating, ')
+          ..write('ratingCount: $ratingCount, ')
+          ..write('tagsJson: $tagsJson, ')
+          ..write('detailUrl: $detailUrl, ')
+          ..write('scrapedAt: $scrapedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    mediaType,
+    entryKey,
+    source,
+    subjectId,
+    title,
+    originalTitle,
+    summary,
+    airDate,
+    rating,
+    ratingCount,
+    tagsJson,
+    detailUrl,
+    scrapedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ItemScrapeMetaRow &&
+          other.mediaType == this.mediaType &&
+          other.entryKey == this.entryKey &&
+          other.source == this.source &&
+          other.subjectId == this.subjectId &&
+          other.title == this.title &&
+          other.originalTitle == this.originalTitle &&
+          other.summary == this.summary &&
+          other.airDate == this.airDate &&
+          other.rating == this.rating &&
+          other.ratingCount == this.ratingCount &&
+          other.tagsJson == this.tagsJson &&
+          other.detailUrl == this.detailUrl &&
+          other.scrapedAt == this.scrapedAt);
+}
+
+class ItemScrapeMetaCompanion extends UpdateCompanion<ItemScrapeMetaRow> {
+  final Value<String> mediaType;
+  final Value<String> entryKey;
+  final Value<String> source;
+  final Value<String?> subjectId;
+  final Value<String?> title;
+  final Value<String?> originalTitle;
+  final Value<String?> summary;
+  final Value<String?> airDate;
+  final Value<double?> rating;
+  final Value<int?> ratingCount;
+  final Value<String?> tagsJson;
+  final Value<String?> detailUrl;
+  final Value<int> scrapedAt;
+  final Value<int> rowid;
+  const ItemScrapeMetaCompanion({
+    this.mediaType = const Value.absent(),
+    this.entryKey = const Value.absent(),
+    this.source = const Value.absent(),
+    this.subjectId = const Value.absent(),
+    this.title = const Value.absent(),
+    this.originalTitle = const Value.absent(),
+    this.summary = const Value.absent(),
+    this.airDate = const Value.absent(),
+    this.rating = const Value.absent(),
+    this.ratingCount = const Value.absent(),
+    this.tagsJson = const Value.absent(),
+    this.detailUrl = const Value.absent(),
+    this.scrapedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  ItemScrapeMetaCompanion.insert({
+    required String mediaType,
+    required String entryKey,
+    required String source,
+    this.subjectId = const Value.absent(),
+    this.title = const Value.absent(),
+    this.originalTitle = const Value.absent(),
+    this.summary = const Value.absent(),
+    this.airDate = const Value.absent(),
+    this.rating = const Value.absent(),
+    this.ratingCount = const Value.absent(),
+    this.tagsJson = const Value.absent(),
+    this.detailUrl = const Value.absent(),
+    required int scrapedAt,
+    this.rowid = const Value.absent(),
+  }) : mediaType = Value(mediaType),
+       entryKey = Value(entryKey),
+       source = Value(source),
+       scrapedAt = Value(scrapedAt);
+  static Insertable<ItemScrapeMetaRow> custom({
+    Expression<String>? mediaType,
+    Expression<String>? entryKey,
+    Expression<String>? source,
+    Expression<String>? subjectId,
+    Expression<String>? title,
+    Expression<String>? originalTitle,
+    Expression<String>? summary,
+    Expression<String>? airDate,
+    Expression<double>? rating,
+    Expression<int>? ratingCount,
+    Expression<String>? tagsJson,
+    Expression<String>? detailUrl,
+    Expression<int>? scrapedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (mediaType != null) 'media_type': mediaType,
+      if (entryKey != null) 'entry_key': entryKey,
+      if (source != null) 'source': source,
+      if (subjectId != null) 'subject_id': subjectId,
+      if (title != null) 'title': title,
+      if (originalTitle != null) 'original_title': originalTitle,
+      if (summary != null) 'summary': summary,
+      if (airDate != null) 'air_date': airDate,
+      if (rating != null) 'rating': rating,
+      if (ratingCount != null) 'rating_count': ratingCount,
+      if (tagsJson != null) 'tags_json': tagsJson,
+      if (detailUrl != null) 'detail_url': detailUrl,
+      if (scrapedAt != null) 'scraped_at': scrapedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  ItemScrapeMetaCompanion copyWith({
+    Value<String>? mediaType,
+    Value<String>? entryKey,
+    Value<String>? source,
+    Value<String?>? subjectId,
+    Value<String?>? title,
+    Value<String?>? originalTitle,
+    Value<String?>? summary,
+    Value<String?>? airDate,
+    Value<double?>? rating,
+    Value<int?>? ratingCount,
+    Value<String?>? tagsJson,
+    Value<String?>? detailUrl,
+    Value<int>? scrapedAt,
+    Value<int>? rowid,
+  }) {
+    return ItemScrapeMetaCompanion(
+      mediaType: mediaType ?? this.mediaType,
+      entryKey: entryKey ?? this.entryKey,
+      source: source ?? this.source,
+      subjectId: subjectId ?? this.subjectId,
+      title: title ?? this.title,
+      originalTitle: originalTitle ?? this.originalTitle,
+      summary: summary ?? this.summary,
+      airDate: airDate ?? this.airDate,
+      rating: rating ?? this.rating,
+      ratingCount: ratingCount ?? this.ratingCount,
+      tagsJson: tagsJson ?? this.tagsJson,
+      detailUrl: detailUrl ?? this.detailUrl,
+      scrapedAt: scrapedAt ?? this.scrapedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (mediaType.present) {
+      map['media_type'] = Variable<String>(mediaType.value);
+    }
+    if (entryKey.present) {
+      map['entry_key'] = Variable<String>(entryKey.value);
+    }
+    if (source.present) {
+      map['source'] = Variable<String>(source.value);
+    }
+    if (subjectId.present) {
+      map['subject_id'] = Variable<String>(subjectId.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (originalTitle.present) {
+      map['original_title'] = Variable<String>(originalTitle.value);
+    }
+    if (summary.present) {
+      map['summary'] = Variable<String>(summary.value);
+    }
+    if (airDate.present) {
+      map['air_date'] = Variable<String>(airDate.value);
+    }
+    if (rating.present) {
+      map['rating'] = Variable<double>(rating.value);
+    }
+    if (ratingCount.present) {
+      map['rating_count'] = Variable<int>(ratingCount.value);
+    }
+    if (tagsJson.present) {
+      map['tags_json'] = Variable<String>(tagsJson.value);
+    }
+    if (detailUrl.present) {
+      map['detail_url'] = Variable<String>(detailUrl.value);
+    }
+    if (scrapedAt.present) {
+      map['scraped_at'] = Variable<int>(scrapedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ItemScrapeMetaCompanion(')
+          ..write('mediaType: $mediaType, ')
+          ..write('entryKey: $entryKey, ')
+          ..write('source: $source, ')
+          ..write('subjectId: $subjectId, ')
+          ..write('title: $title, ')
+          ..write('originalTitle: $originalTitle, ')
+          ..write('summary: $summary, ')
+          ..write('airDate: $airDate, ')
+          ..write('rating: $rating, ')
+          ..write('ratingCount: $ratingCount, ')
+          ..write('tagsJson: $tagsJson, ')
+          ..write('detailUrl: $detailUrl, ')
+          ..write('scrapedAt: $scrapedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $ItemImagesTable extends ItemImages
+    with TableInfo<$ItemImagesTable, ItemImageRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ItemImagesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _mediaTypeMeta = const VerificationMeta(
+    'mediaType',
+  );
+  @override
+  late final GeneratedColumn<String> mediaType = GeneratedColumn<String>(
+    'media_type',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _entryKeyMeta = const VerificationMeta(
+    'entryKey',
+  );
+  @override
+  late final GeneratedColumn<String> entryKey = GeneratedColumn<String>(
+    'entry_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _kindMeta = const VerificationMeta('kind');
+  @override
+  late final GeneratedColumn<String> kind = GeneratedColumn<String>(
+    'kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _positionMeta = const VerificationMeta(
+    'position',
+  );
+  @override
+  late final GeneratedColumn<int> position = GeneratedColumn<int>(
+    'position',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _pathMeta = const VerificationMeta('path');
+  @override
+  late final GeneratedColumn<String> path = GeneratedColumn<String>(
+    'path',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sourceUrlMeta = const VerificationMeta(
+    'sourceUrl',
+  );
+  @override
+  late final GeneratedColumn<String> sourceUrl = GeneratedColumn<String>(
+    'source_url',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    mediaType,
+    entryKey,
+    kind,
+    position,
+    path,
+    sourceUrl,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'item_images';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<ItemImageRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('media_type')) {
+      context.handle(
+        _mediaTypeMeta,
+        mediaType.isAcceptableOrUnknown(data['media_type']!, _mediaTypeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_mediaTypeMeta);
+    }
+    if (data.containsKey('entry_key')) {
+      context.handle(
+        _entryKeyMeta,
+        entryKey.isAcceptableOrUnknown(data['entry_key']!, _entryKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_entryKeyMeta);
+    }
+    if (data.containsKey('kind')) {
+      context.handle(
+        _kindMeta,
+        kind.isAcceptableOrUnknown(data['kind']!, _kindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_kindMeta);
+    }
+    if (data.containsKey('position')) {
+      context.handle(
+        _positionMeta,
+        position.isAcceptableOrUnknown(data['position']!, _positionMeta),
+      );
+    }
+    if (data.containsKey('path')) {
+      context.handle(
+        _pathMeta,
+        path.isAcceptableOrUnknown(data['path']!, _pathMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_pathMeta);
+    }
+    if (data.containsKey('source_url')) {
+      context.handle(
+        _sourceUrlMeta,
+        sourceUrl.isAcceptableOrUnknown(data['source_url']!, _sourceUrlMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {mediaType, entryKey, kind, position};
+  @override
+  ItemImageRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ItemImageRow(
+      mediaType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}media_type'],
+      )!,
+      entryKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}entry_key'],
+      )!,
+      kind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}kind'],
+      )!,
+      position: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}position'],
+      )!,
+      path: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}path'],
+      )!,
+      sourceUrl: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source_url'],
+      ),
+    );
+  }
+
+  @override
+  $ItemImagesTable createAlias(String alias) {
+    return $ItemImagesTable(attachedDatabase, alias);
+  }
+}
+
+class ItemImageRow extends DataClass implements Insertable<ItemImageRow> {
+  /// 宿主种类（`MediaKind.dbValue`），同 [ItemScrapeMeta.mediaType]。
+  final String mediaType;
+
+  /// 宿主稳定身份，同 [ItemScrapeMeta.entryKey]。
+  final String entryKey;
+
+  /// 图种类（`MediaImageKind.dbValue`：backdrop / logo / title_card）。
+  final String kind;
+
+  /// 同宿主同种类内的排序位（仅 backdrop 允许 >0）。
+  final int position;
+
+  /// 本地文件绝对路径。
+  final String path;
+
+  /// 来源远程 URL（重下 / 诊断用；本地文件写入为 null）。
+  final String? sourceUrl;
+  const ItemImageRow({
+    required this.mediaType,
+    required this.entryKey,
+    required this.kind,
+    required this.position,
+    required this.path,
+    this.sourceUrl,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['media_type'] = Variable<String>(mediaType);
+    map['entry_key'] = Variable<String>(entryKey);
+    map['kind'] = Variable<String>(kind);
+    map['position'] = Variable<int>(position);
+    map['path'] = Variable<String>(path);
+    if (!nullToAbsent || sourceUrl != null) {
+      map['source_url'] = Variable<String>(sourceUrl);
+    }
+    return map;
+  }
+
+  ItemImagesCompanion toCompanion(bool nullToAbsent) {
+    return ItemImagesCompanion(
+      mediaType: Value(mediaType),
+      entryKey: Value(entryKey),
+      kind: Value(kind),
+      position: Value(position),
+      path: Value(path),
+      sourceUrl: sourceUrl == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sourceUrl),
+    );
+  }
+
+  factory ItemImageRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ItemImageRow(
+      mediaType: serializer.fromJson<String>(json['mediaType']),
+      entryKey: serializer.fromJson<String>(json['entryKey']),
+      kind: serializer.fromJson<String>(json['kind']),
+      position: serializer.fromJson<int>(json['position']),
+      path: serializer.fromJson<String>(json['path']),
+      sourceUrl: serializer.fromJson<String?>(json['sourceUrl']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'mediaType': serializer.toJson<String>(mediaType),
+      'entryKey': serializer.toJson<String>(entryKey),
+      'kind': serializer.toJson<String>(kind),
+      'position': serializer.toJson<int>(position),
+      'path': serializer.toJson<String>(path),
+      'sourceUrl': serializer.toJson<String?>(sourceUrl),
+    };
+  }
+
+  ItemImageRow copyWith({
+    String? mediaType,
+    String? entryKey,
+    String? kind,
+    int? position,
+    String? path,
+    Value<String?> sourceUrl = const Value.absent(),
+  }) => ItemImageRow(
+    mediaType: mediaType ?? this.mediaType,
+    entryKey: entryKey ?? this.entryKey,
+    kind: kind ?? this.kind,
+    position: position ?? this.position,
+    path: path ?? this.path,
+    sourceUrl: sourceUrl.present ? sourceUrl.value : this.sourceUrl,
+  );
+  ItemImageRow copyWithCompanion(ItemImagesCompanion data) {
+    return ItemImageRow(
+      mediaType: data.mediaType.present ? data.mediaType.value : this.mediaType,
+      entryKey: data.entryKey.present ? data.entryKey.value : this.entryKey,
+      kind: data.kind.present ? data.kind.value : this.kind,
+      position: data.position.present ? data.position.value : this.position,
+      path: data.path.present ? data.path.value : this.path,
+      sourceUrl: data.sourceUrl.present ? data.sourceUrl.value : this.sourceUrl,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ItemImageRow(')
+          ..write('mediaType: $mediaType, ')
+          ..write('entryKey: $entryKey, ')
+          ..write('kind: $kind, ')
+          ..write('position: $position, ')
+          ..write('path: $path, ')
+          ..write('sourceUrl: $sourceUrl')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(mediaType, entryKey, kind, position, path, sourceUrl);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ItemImageRow &&
+          other.mediaType == this.mediaType &&
+          other.entryKey == this.entryKey &&
+          other.kind == this.kind &&
+          other.position == this.position &&
+          other.path == this.path &&
+          other.sourceUrl == this.sourceUrl);
+}
+
+class ItemImagesCompanion extends UpdateCompanion<ItemImageRow> {
+  final Value<String> mediaType;
+  final Value<String> entryKey;
+  final Value<String> kind;
+  final Value<int> position;
+  final Value<String> path;
+  final Value<String?> sourceUrl;
+  final Value<int> rowid;
+  const ItemImagesCompanion({
+    this.mediaType = const Value.absent(),
+    this.entryKey = const Value.absent(),
+    this.kind = const Value.absent(),
+    this.position = const Value.absent(),
+    this.path = const Value.absent(),
+    this.sourceUrl = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  ItemImagesCompanion.insert({
+    required String mediaType,
+    required String entryKey,
+    required String kind,
+    this.position = const Value.absent(),
+    required String path,
+    this.sourceUrl = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : mediaType = Value(mediaType),
+       entryKey = Value(entryKey),
+       kind = Value(kind),
+       path = Value(path);
+  static Insertable<ItemImageRow> custom({
+    Expression<String>? mediaType,
+    Expression<String>? entryKey,
+    Expression<String>? kind,
+    Expression<int>? position,
+    Expression<String>? path,
+    Expression<String>? sourceUrl,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (mediaType != null) 'media_type': mediaType,
+      if (entryKey != null) 'entry_key': entryKey,
+      if (kind != null) 'kind': kind,
+      if (position != null) 'position': position,
+      if (path != null) 'path': path,
+      if (sourceUrl != null) 'source_url': sourceUrl,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  ItemImagesCompanion copyWith({
+    Value<String>? mediaType,
+    Value<String>? entryKey,
+    Value<String>? kind,
+    Value<int>? position,
+    Value<String>? path,
+    Value<String?>? sourceUrl,
+    Value<int>? rowid,
+  }) {
+    return ItemImagesCompanion(
+      mediaType: mediaType ?? this.mediaType,
+      entryKey: entryKey ?? this.entryKey,
+      kind: kind ?? this.kind,
+      position: position ?? this.position,
+      path: path ?? this.path,
+      sourceUrl: sourceUrl ?? this.sourceUrl,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (mediaType.present) {
+      map['media_type'] = Variable<String>(mediaType.value);
+    }
+    if (entryKey.present) {
+      map['entry_key'] = Variable<String>(entryKey.value);
+    }
+    if (kind.present) {
+      map['kind'] = Variable<String>(kind.value);
+    }
+    if (position.present) {
+      map['position'] = Variable<int>(position.value);
+    }
+    if (path.present) {
+      map['path'] = Variable<String>(path.value);
+    }
+    if (sourceUrl.present) {
+      map['source_url'] = Variable<String>(sourceUrl.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ItemImagesCompanion(')
+          ..write('mediaType: $mediaType, ')
+          ..write('entryKey: $entryKey, ')
+          ..write('kind: $kind, ')
+          ..write('position: $position, ')
+          ..write('path: $path, ')
+          ..write('sourceUrl: $sourceUrl, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $VideoMetadataWorksTable extends VideoMetadataWorks
     with TableInfo<$VideoMetadataWorksTable, VideoMetadataWorkRow> {
   @override
@@ -82008,6 +83228,8 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
   late final $CollectionRelationsTable collectionRelations =
       $CollectionRelationsTable(this);
   late final $MediaImagesTable mediaImages = $MediaImagesTable(this);
+  late final $ItemScrapeMetaTable itemScrapeMeta = $ItemScrapeMetaTable(this);
+  late final $ItemImagesTable itemImages = $ItemImagesTable(this);
   late final $VideoMetadataWorksTable videoMetadataWorks =
       $VideoMetadataWorksTable(this);
   late final $VideoMetadataSeasonsTable videoMetadataSeasons =
@@ -82201,6 +83423,8 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     mangaTrustedSigners,
     collectionRelations,
     mediaImages,
+    itemScrapeMeta,
+    itemImages,
     videoMetadataWorks,
     videoMetadataSeasons,
     videoMetadataEpisodes,
@@ -105712,6 +106936,591 @@ typedef $$MediaImagesTableProcessedTableManager =
       (MediaImageRow, $$MediaImagesTableReferences),
       MediaImageRow,
       PrefetchHooks Function({bool collectionId, bool bookUid})
+    >;
+typedef $$ItemScrapeMetaTableCreateCompanionBuilder =
+    ItemScrapeMetaCompanion Function({
+      required String mediaType,
+      required String entryKey,
+      required String source,
+      Value<String?> subjectId,
+      Value<String?> title,
+      Value<String?> originalTitle,
+      Value<String?> summary,
+      Value<String?> airDate,
+      Value<double?> rating,
+      Value<int?> ratingCount,
+      Value<String?> tagsJson,
+      Value<String?> detailUrl,
+      required int scrapedAt,
+      Value<int> rowid,
+    });
+typedef $$ItemScrapeMetaTableUpdateCompanionBuilder =
+    ItemScrapeMetaCompanion Function({
+      Value<String> mediaType,
+      Value<String> entryKey,
+      Value<String> source,
+      Value<String?> subjectId,
+      Value<String?> title,
+      Value<String?> originalTitle,
+      Value<String?> summary,
+      Value<String?> airDate,
+      Value<double?> rating,
+      Value<int?> ratingCount,
+      Value<String?> tagsJson,
+      Value<String?> detailUrl,
+      Value<int> scrapedAt,
+      Value<int> rowid,
+    });
+
+class $$ItemScrapeMetaTableFilterComposer
+    extends Composer<_$FushiDatabase, $ItemScrapeMetaTable> {
+  $$ItemScrapeMetaTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get mediaType => $composableBuilder(
+    column: $table.mediaType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get entryKey => $composableBuilder(
+    column: $table.entryKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get source => $composableBuilder(
+    column: $table.source,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get subjectId => $composableBuilder(
+    column: $table.subjectId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get originalTitle => $composableBuilder(
+    column: $table.originalTitle,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get summary => $composableBuilder(
+    column: $table.summary,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get airDate => $composableBuilder(
+    column: $table.airDate,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get rating => $composableBuilder(
+    column: $table.rating,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get ratingCount => $composableBuilder(
+    column: $table.ratingCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get tagsJson => $composableBuilder(
+    column: $table.tagsJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get detailUrl => $composableBuilder(
+    column: $table.detailUrl,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get scrapedAt => $composableBuilder(
+    column: $table.scrapedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$ItemScrapeMetaTableOrderingComposer
+    extends Composer<_$FushiDatabase, $ItemScrapeMetaTable> {
+  $$ItemScrapeMetaTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get mediaType => $composableBuilder(
+    column: $table.mediaType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get entryKey => $composableBuilder(
+    column: $table.entryKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get source => $composableBuilder(
+    column: $table.source,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get subjectId => $composableBuilder(
+    column: $table.subjectId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get originalTitle => $composableBuilder(
+    column: $table.originalTitle,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get summary => $composableBuilder(
+    column: $table.summary,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get airDate => $composableBuilder(
+    column: $table.airDate,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get rating => $composableBuilder(
+    column: $table.rating,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get ratingCount => $composableBuilder(
+    column: $table.ratingCount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get tagsJson => $composableBuilder(
+    column: $table.tagsJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get detailUrl => $composableBuilder(
+    column: $table.detailUrl,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get scrapedAt => $composableBuilder(
+    column: $table.scrapedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$ItemScrapeMetaTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $ItemScrapeMetaTable> {
+  $$ItemScrapeMetaTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get mediaType =>
+      $composableBuilder(column: $table.mediaType, builder: (column) => column);
+
+  GeneratedColumn<String> get entryKey =>
+      $composableBuilder(column: $table.entryKey, builder: (column) => column);
+
+  GeneratedColumn<String> get source =>
+      $composableBuilder(column: $table.source, builder: (column) => column);
+
+  GeneratedColumn<String> get subjectId =>
+      $composableBuilder(column: $table.subjectId, builder: (column) => column);
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<String> get originalTitle => $composableBuilder(
+    column: $table.originalTitle,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get summary =>
+      $composableBuilder(column: $table.summary, builder: (column) => column);
+
+  GeneratedColumn<String> get airDate =>
+      $composableBuilder(column: $table.airDate, builder: (column) => column);
+
+  GeneratedColumn<double> get rating =>
+      $composableBuilder(column: $table.rating, builder: (column) => column);
+
+  GeneratedColumn<int> get ratingCount => $composableBuilder(
+    column: $table.ratingCount,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get tagsJson =>
+      $composableBuilder(column: $table.tagsJson, builder: (column) => column);
+
+  GeneratedColumn<String> get detailUrl =>
+      $composableBuilder(column: $table.detailUrl, builder: (column) => column);
+
+  GeneratedColumn<int> get scrapedAt =>
+      $composableBuilder(column: $table.scrapedAt, builder: (column) => column);
+}
+
+class $$ItemScrapeMetaTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $ItemScrapeMetaTable,
+          ItemScrapeMetaRow,
+          $$ItemScrapeMetaTableFilterComposer,
+          $$ItemScrapeMetaTableOrderingComposer,
+          $$ItemScrapeMetaTableAnnotationComposer,
+          $$ItemScrapeMetaTableCreateCompanionBuilder,
+          $$ItemScrapeMetaTableUpdateCompanionBuilder,
+          (
+            ItemScrapeMetaRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $ItemScrapeMetaTable,
+              ItemScrapeMetaRow
+            >,
+          ),
+          ItemScrapeMetaRow,
+          PrefetchHooks Function()
+        > {
+  $$ItemScrapeMetaTableTableManager(
+    _$FushiDatabase db,
+    $ItemScrapeMetaTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ItemScrapeMetaTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ItemScrapeMetaTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ItemScrapeMetaTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> mediaType = const Value.absent(),
+                Value<String> entryKey = const Value.absent(),
+                Value<String> source = const Value.absent(),
+                Value<String?> subjectId = const Value.absent(),
+                Value<String?> title = const Value.absent(),
+                Value<String?> originalTitle = const Value.absent(),
+                Value<String?> summary = const Value.absent(),
+                Value<String?> airDate = const Value.absent(),
+                Value<double?> rating = const Value.absent(),
+                Value<int?> ratingCount = const Value.absent(),
+                Value<String?> tagsJson = const Value.absent(),
+                Value<String?> detailUrl = const Value.absent(),
+                Value<int> scrapedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => ItemScrapeMetaCompanion(
+                mediaType: mediaType,
+                entryKey: entryKey,
+                source: source,
+                subjectId: subjectId,
+                title: title,
+                originalTitle: originalTitle,
+                summary: summary,
+                airDate: airDate,
+                rating: rating,
+                ratingCount: ratingCount,
+                tagsJson: tagsJson,
+                detailUrl: detailUrl,
+                scrapedAt: scrapedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String mediaType,
+                required String entryKey,
+                required String source,
+                Value<String?> subjectId = const Value.absent(),
+                Value<String?> title = const Value.absent(),
+                Value<String?> originalTitle = const Value.absent(),
+                Value<String?> summary = const Value.absent(),
+                Value<String?> airDate = const Value.absent(),
+                Value<double?> rating = const Value.absent(),
+                Value<int?> ratingCount = const Value.absent(),
+                Value<String?> tagsJson = const Value.absent(),
+                Value<String?> detailUrl = const Value.absent(),
+                required int scrapedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => ItemScrapeMetaCompanion.insert(
+                mediaType: mediaType,
+                entryKey: entryKey,
+                source: source,
+                subjectId: subjectId,
+                title: title,
+                originalTitle: originalTitle,
+                summary: summary,
+                airDate: airDate,
+                rating: rating,
+                ratingCount: ratingCount,
+                tagsJson: tagsJson,
+                detailUrl: detailUrl,
+                scrapedAt: scrapedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$ItemScrapeMetaTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $ItemScrapeMetaTable,
+      ItemScrapeMetaRow,
+      $$ItemScrapeMetaTableFilterComposer,
+      $$ItemScrapeMetaTableOrderingComposer,
+      $$ItemScrapeMetaTableAnnotationComposer,
+      $$ItemScrapeMetaTableCreateCompanionBuilder,
+      $$ItemScrapeMetaTableUpdateCompanionBuilder,
+      (
+        ItemScrapeMetaRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $ItemScrapeMetaTable,
+          ItemScrapeMetaRow
+        >,
+      ),
+      ItemScrapeMetaRow,
+      PrefetchHooks Function()
+    >;
+typedef $$ItemImagesTableCreateCompanionBuilder =
+    ItemImagesCompanion Function({
+      required String mediaType,
+      required String entryKey,
+      required String kind,
+      Value<int> position,
+      required String path,
+      Value<String?> sourceUrl,
+      Value<int> rowid,
+    });
+typedef $$ItemImagesTableUpdateCompanionBuilder =
+    ItemImagesCompanion Function({
+      Value<String> mediaType,
+      Value<String> entryKey,
+      Value<String> kind,
+      Value<int> position,
+      Value<String> path,
+      Value<String?> sourceUrl,
+      Value<int> rowid,
+    });
+
+class $$ItemImagesTableFilterComposer
+    extends Composer<_$FushiDatabase, $ItemImagesTable> {
+  $$ItemImagesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get mediaType => $composableBuilder(
+    column: $table.mediaType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get entryKey => $composableBuilder(
+    column: $table.entryKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get position => $composableBuilder(
+    column: $table.position,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get path => $composableBuilder(
+    column: $table.path,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sourceUrl => $composableBuilder(
+    column: $table.sourceUrl,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$ItemImagesTableOrderingComposer
+    extends Composer<_$FushiDatabase, $ItemImagesTable> {
+  $$ItemImagesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get mediaType => $composableBuilder(
+    column: $table.mediaType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get entryKey => $composableBuilder(
+    column: $table.entryKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get position => $composableBuilder(
+    column: $table.position,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get path => $composableBuilder(
+    column: $table.path,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sourceUrl => $composableBuilder(
+    column: $table.sourceUrl,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$ItemImagesTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $ItemImagesTable> {
+  $$ItemImagesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get mediaType =>
+      $composableBuilder(column: $table.mediaType, builder: (column) => column);
+
+  GeneratedColumn<String> get entryKey =>
+      $composableBuilder(column: $table.entryKey, builder: (column) => column);
+
+  GeneratedColumn<String> get kind =>
+      $composableBuilder(column: $table.kind, builder: (column) => column);
+
+  GeneratedColumn<int> get position =>
+      $composableBuilder(column: $table.position, builder: (column) => column);
+
+  GeneratedColumn<String> get path =>
+      $composableBuilder(column: $table.path, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceUrl =>
+      $composableBuilder(column: $table.sourceUrl, builder: (column) => column);
+}
+
+class $$ItemImagesTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $ItemImagesTable,
+          ItemImageRow,
+          $$ItemImagesTableFilterComposer,
+          $$ItemImagesTableOrderingComposer,
+          $$ItemImagesTableAnnotationComposer,
+          $$ItemImagesTableCreateCompanionBuilder,
+          $$ItemImagesTableUpdateCompanionBuilder,
+          (
+            ItemImageRow,
+            BaseReferences<_$FushiDatabase, $ItemImagesTable, ItemImageRow>,
+          ),
+          ItemImageRow,
+          PrefetchHooks Function()
+        > {
+  $$ItemImagesTableTableManager(_$FushiDatabase db, $ItemImagesTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ItemImagesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ItemImagesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ItemImagesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> mediaType = const Value.absent(),
+                Value<String> entryKey = const Value.absent(),
+                Value<String> kind = const Value.absent(),
+                Value<int> position = const Value.absent(),
+                Value<String> path = const Value.absent(),
+                Value<String?> sourceUrl = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => ItemImagesCompanion(
+                mediaType: mediaType,
+                entryKey: entryKey,
+                kind: kind,
+                position: position,
+                path: path,
+                sourceUrl: sourceUrl,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String mediaType,
+                required String entryKey,
+                required String kind,
+                Value<int> position = const Value.absent(),
+                required String path,
+                Value<String?> sourceUrl = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => ItemImagesCompanion.insert(
+                mediaType: mediaType,
+                entryKey: entryKey,
+                kind: kind,
+                position: position,
+                path: path,
+                sourceUrl: sourceUrl,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$ItemImagesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $ItemImagesTable,
+      ItemImageRow,
+      $$ItemImagesTableFilterComposer,
+      $$ItemImagesTableOrderingComposer,
+      $$ItemImagesTableAnnotationComposer,
+      $$ItemImagesTableCreateCompanionBuilder,
+      $$ItemImagesTableUpdateCompanionBuilder,
+      (
+        ItemImageRow,
+        BaseReferences<_$FushiDatabase, $ItemImagesTable, ItemImageRow>,
+      ),
+      ItemImageRow,
+      PrefetchHooks Function()
     >;
 typedef $$VideoMetadataWorksTableCreateCompanionBuilder =
     VideoMetadataWorksCompanion Function({
@@ -136507,6 +138316,10 @@ class $FushiDatabaseManager {
       $$CollectionRelationsTableTableManager(_db, _db.collectionRelations);
   $$MediaImagesTableTableManager get mediaImages =>
       $$MediaImagesTableTableManager(_db, _db.mediaImages);
+  $$ItemScrapeMetaTableTableManager get itemScrapeMeta =>
+      $$ItemScrapeMetaTableTableManager(_db, _db.itemScrapeMeta);
+  $$ItemImagesTableTableManager get itemImages =>
+      $$ItemImagesTableTableManager(_db, _db.itemImages);
   $$VideoMetadataWorksTableTableManager get videoMetadataWorks =>
       $$VideoMetadataWorksTableTableManager(_db, _db.videoMetadataWorks);
   $$VideoMetadataSeasonsTableTableManager get videoMetadataSeasons =>

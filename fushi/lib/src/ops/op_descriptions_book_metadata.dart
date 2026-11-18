@@ -116,8 +116,10 @@ List<OpDescription> describeBookMetadataOps(
     pattern: '$kBookMetadataCtlItems/:key/scrape',
     summary:
         'Write a chosen candidate back to a book on the shelf: its cover '
-        '(default), and optionally its title (as a display-name override) '
-        'and author. Same as "match cover online" on the book card.',
+        'and scrape details (summary, date, rating, genres, landscape '
+        'backdrop when the source has one) by default, and optionally its '
+        'title (as a display-name override) and author. Same as "match '
+        'cover online" on the book card.',
     risk: OpRisk.write,
     params: const <OpParam>[
       OpParam.string(
@@ -139,7 +141,8 @@ List<OpDescription> describeBookMetadataOps(
       OpParam.stringList(
         'fields',
         description:
-            'What to write back: cover, title, author. Default [cover].',
+            'What to write back: cover, title, author, details. '
+            'Default [cover, details].',
       ),
       OpParam.number(
         'volume',
@@ -151,9 +154,10 @@ List<OpDescription> describeBookMetadataOps(
         'onlyEmpty',
         description:
             'Only fill fields that are empty now: skip the title when a '
-            'display-name override exists, the author when one is set, and '
-            'the cover when an override cover exists. Rejected when nothing '
-            'is left to write.',
+            'display-name override exists, the author when one is set, the '
+            'cover when an override cover exists, and details when the book '
+            'already has scrape details. Rejected when nothing is left to '
+            'write.',
       ),
     ],
     availability: kit.whenModule(ModuleId.services),

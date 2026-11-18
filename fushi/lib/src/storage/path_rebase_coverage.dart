@@ -667,6 +667,39 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
     PathRebaseKind.notAPath,
     '来源远程 URL（重下/诊断用），不是本机路径。',
   ),
+  // ── item_scrape_meta / item_images（单本书 / 字幕书 / 游戏刮削资料，v155）──
+  PathRebaseColumn(
+    'ItemScrapeMeta',
+    'source',
+    PathRebaseKind.notAPath,
+    '刮削源名（bangumi / dlsite / vndb / manual …），不是路径。',
+  ),
+  PathRebaseColumn(
+    'ItemScrapeMeta',
+    'tagsJson',
+    PathRebaseKind.notAPath,
+    '标签 JSON 数组，无路径。',
+  ),
+  PathRebaseColumn(
+    'ItemScrapeMeta',
+    'detailUrl',
+    PathRebaseKind.notAPath,
+    '远端条目详情页 URL，不是本机路径。',
+  ),
+  PathRebaseColumn(
+    'ItemImages',
+    'path',
+    PathRebaseKind.documentsRooted,
+    'v161 条目附加图落盘位：<documents>/video_covers/items/（与 media_images '
+        '同目录族）→ 不改写 = 换数据根后书架 / 游戏库系列色块的横版背景全部死链，'
+        '静默退回书封摆法（DataRootMigrator._rebaseItemImages）。',
+  ),
+  PathRebaseColumn(
+    'ItemImages',
+    'sourceUrl',
+    PathRebaseKind.notAPath,
+    '来源远程 URL（重下/诊断用），不是本机路径。',
+  ),
 
   // ── collection_relations（合集相关作品边表，schema v66 / TODO-2484）──
   PathRebaseColumn(

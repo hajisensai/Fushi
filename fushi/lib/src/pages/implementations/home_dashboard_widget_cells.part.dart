@@ -54,7 +54,7 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
         books,
         poster,
       ),
-      HomeWidgetKind.tracking => _trackingCell(poster),
+      HomeWidgetKind.tracking => _trackingCell(appModel, books, poster),
       HomeWidgetKind.aiAgent => HomeAiAgentPanel(
         key: const ValueKey<String>('home-ai-agent-card'),
         poster: poster,
@@ -149,6 +149,9 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
               entries.first,
               0,
               FushiCoverBlockSize.hero,
+              // 首页拼贴（BUG-4903）：视频一律竖版海报摆法，没有海报时剧照裁成
+              // 竖版，不整张铺成横版背景（小块里看起来像没封面）。
+              portraitOnly: true,
             );
             final _ContinueSplit split = _continueSplitFor(
               c.biggest,
@@ -293,6 +296,7 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
               entries[i + 1],
               i + 1,
               FushiCoverBlockSize.half,
+              portraitOnly: true,
             ),
           ),
       ],
@@ -355,6 +359,7 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
               entries[i + 1],
               i + 1,
               FushiCoverBlockSize.half,
+              portraitOnly: true,
             ),
           ),
         ),
@@ -1018,7 +1023,6 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
           hueKey: HomeWidgetKind.recentlyAdded.id,
           poster: poster,
           dense: false,
-          watermark: list.isEmpty,
           bare: blocks != null,
           child: list.isEmpty
               ? _widgetEmptyLine(
@@ -1123,14 +1127,35 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
     );
   }
 
-  /// 媒体追踪同步状态（模块门控在可用性判据里；按格子实际大小排版在面板里）。
-  Widget _trackingCell(bool poster) {
+  /// 媒体追踪同步状态（模块门控在可用性判据里）。色块外观且格子够宽够高（宽格、
+  /// 高 ≥ [_trackingPosterMinHeight]）时画拼贴追踪块（[HomeTrackingPoster]，设计
+  /// 稿 H6：按状态取色、待关联数大字兼水印、待关联条目封面扇形叠放、「处理 ›」）；
+  /// 其余（半栏 / 矮格 / 分区卡外观）按格子实际大小排版在 [HomeTrackingPanel] 里。
+  Widget _trackingCell(AppModel appModel, List<MediaItem> books, bool poster) {
     final HomeTrackingSummary summary = HomeTrackingSummary.of(_tracking);
-    return HomeTrackingPanel(
-      key: const ValueKey<String>('home-tracking-card'),
-      summary: summary,
-      onOpen: () => _openTrackingPage(summary),
-      poster: poster,
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints c) {
+        if (poster &&
+            homeWidgetIsWide(c.maxWidth) &&
+            c.maxHeight >=
+                _trackingPosterMinHeight(MediaQuery.textScalerOf(context))) {
+          return KeyedSubtree(
+            key: const ValueKey<String>('home-tracking-card'),
+            child: HomeTrackingPoster(
+              summary: summary,
+              covers: _trackingUnlinkedCovers(appModel, books),
+              onOpen: () => _openTrackingPage(summary),
+              height: c.maxHeight,
+            ),
+          );
+        }
+        return HomeTrackingPanel(
+          key: const ValueKey<String>('home-tracking-card'),
+          summary: summary,
+          onOpen: () => _openTrackingPage(summary),
+          poster: poster,
+        );
+      },
     );
   }
 }
@@ -1196,6 +1221,12 @@ _RecentBlockGrid? _recentBlockGridFor(Size area, int count) {
 /// 分区卡外观主卡旁的封面卡横滑行最高多高；更高就改铺条目小行（封面放大没有意义，
 /// 多列条目更有用）。
 const double _kContinueCoverRowMax = 300;
+
+/// 拼贴追踪块（[HomeTrackingPoster]）至少要多高才不溢出（纯函数）：上下内边距
+/// 32 + 标题行（12 号）+ 大字（34 号）+ chip 行 26 + 余量 8，字号随系统缩放。
+/// 宽网格 2×1（约 104…140）在默认字号的常见桌面宽下放得下，窄网格一行高放不下。
+double _trackingPosterMinHeight(TextScaler scaler) =>
+    32 + scaler.scale(12) * 1.25 + scaler.scale(34) + 26 + 8;
 
 /// 条目小行：行高范围、每列最小宽、间距。
 const double _kMiniRowMin = 52;

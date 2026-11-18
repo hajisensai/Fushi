@@ -157,7 +157,7 @@ List<CtlRoute> buildBookMetadataCtlRoutes(OpContext context) {
       File? cover;
       try {
         // onlyEmpty：只填当前空着的字段（库管家自动写回用）。显示名覆盖 / 作者 /
-        // override 封面都没有「谁设的」标记，有值就一律不碰。
+        // override 封面 / 条目资料都没有「谁设的」标记，有值就一律不碰。
         if (call.optBool('onlyEmpty') ?? false) {
           final BookMetadataState now = await facade.currentState(
             appModel: app(),
@@ -169,6 +169,7 @@ List<CtlRoute> buildBookMetadataCtlRoutes(OpContext context) {
                 (now.overrideTitle ?? '').trim().isNotEmpty,
               BookMetadataField.author => (now.author ?? '').trim().isNotEmpty,
               BookMetadataField.cover => now.coverSha != null,
+              BookMetadataField.details => now.details != null,
             },
           );
           if (fields.isEmpty) {
@@ -208,6 +209,9 @@ List<CtlRoute> buildBookMetadataCtlRoutes(OpContext context) {
               : null,
           author: fields.contains(BookMetadataField.author)
               ? candidate.author
+              : null,
+          details: fields.contains(BookMetadataField.details)
+              ? candidate
               : null,
           keepBackup: true,
         );
@@ -404,6 +408,7 @@ Map<String, BookArtSeriesPin> _pins(CtlCall call) {
     seriesKey: BookArtSeriesPin(source: parsed, id: id),
   };
 }
+
 /// 造门面的工厂（[rakuten] = 本机楽天凭据，路由从设置里读出后传入）。
 typedef BookMetadataFacadeFactory =
     BookMetadataScrapeFacade Function({RakutenBooksCredentials? rakuten});
@@ -493,11 +498,18 @@ BookScrapeSource _source(String? raw) {
 }
 
 Set<BookMetadataField> _fields(List<String> raw) {
-  if (raw.isEmpty) return <BookMetadataField>{BookMetadataField.cover};
+  if (raw.isEmpty) {
+    return <BookMetadataField>{
+      BookMetadataField.cover,
+      BookMetadataField.details,
+    };
+  }
   return <BookMetadataField>{
     for (final String r in raw)
       BookMetadataField.tryParse(r.toLowerCase()) ??
-          (throw CtlFailure.badRequest('fields 只能是 cover / title / author：$r')),
+          (throw CtlFailure.badRequest(
+            'fields 只能是 cover / title / author / details：$r',
+          )),
   };
 }
 

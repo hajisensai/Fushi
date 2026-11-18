@@ -98,7 +98,7 @@ void main() {
     expect(apply.body, <String, Object?>{
       'id': '99026',
       'source': 'anilist',
-      'fields': <String>['cover'],
+      'fields': <String>['cover', 'details'],
     });
   });
 
@@ -110,7 +110,7 @@ void main() {
     expect(() => _build('get', <String>['bangumi']), _usageError());
   });
 
-  test('apply：默认只换封面；--title / --author 追加；--no-cover 要有别的字段', () {
+  test('apply：默认换封面 + 写条目资料；--title / --author 追加；都关掉要有别的字段', () {
     final CtlRequestSpec cover = _build('apply', <String>['book:猫/1', '11']);
     expect(cover.method, 'POST');
     expect(
@@ -119,7 +119,7 @@ void main() {
     );
     expect(cover.body, <String, Object?>{
       'id': '11',
-      'fields': <String>['cover'],
+      'fields': <String>['cover', 'details'],
     });
     final CtlRequestSpec all = _build('apply', <String>[
       'srt:u1',
@@ -129,6 +129,7 @@ void main() {
       '--title',
       '--author',
       '--no-cover',
+      '--no-details',
     ]);
     expect(all.body, <String, Object?>{
       'id': 'RJ01',
@@ -136,7 +137,12 @@ void main() {
       'fields': <String>['title', 'author'],
     });
     expect(
-      () => _build('apply', <String>['book:猫', '11', '--no-cover']),
+      () => _build('apply', <String>[
+        'book:猫',
+        '11',
+        '--no-cover',
+        '--no-details',
+      ]),
       _usageError(),
     );
     expect(() => _build('apply', <String>['video:v', '11']), _usageError());

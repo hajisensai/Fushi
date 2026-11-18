@@ -6,7 +6,8 @@ import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
-    show FushiBadgeControl;
+    show FushiBadgeControl, FushiGroupedListItem;
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/rendering.dart' show OverflowBoxFit, RenderFlex;
@@ -31,11 +32,12 @@ import 'package:fushi/src/utils/components/fushi_haptics.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/media/media_search_text.dart' show matchesMediaSearch;
+import 'package:fushi/src/utils/components/fushi_cover_block.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
-    show ShelfCoverFrame;
+    show shelfCoverCard;
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/components/nsfw_cover_blur.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart'
@@ -1177,99 +1179,103 @@ class _MaterialNavCluster extends StatelessWidget {
                   context,
                   look: look,
                   glassDesign: glassDesign,
-                  child: Padding(
-                    padding: glassDesign
-                        ? EdgeInsets.symmetric(
-                            horizontal: railExtended
-                                ? glassInset
-                                : (kAdaptiveNavRailWidth -
-                                          2 * _kGlassSidebarMargin -
-                                          _kGlassSidebarCollapsedCellWidth) /
-                                      2,
-                            vertical: glassInset,
-                          )
-                        : (notchRail
-                              // 镂空脊：目的地排在「缺口起始边 → 侧栏内缘」这一段里
-                              // 居中 / 铺开，上方多留一点给贴边的菜单钮。
-                              ? EdgeInsetsDirectional.fromSTEB(
-                                  _kRailNotchStart + (railExtended ? 12 : 0),
-                                  18,
-                                  railExtended ? 12 : 0,
-                                  12,
-                                )
-                              : EdgeInsets.symmetric(
-                                  horizontal: railExtended ? 12 : 0,
-                                  vertical: 8,
-                                )),
-                    child: Column(
-                      children: <Widget>[
-                        if (menu != null || brand != null) header,
-                        // 矮窗口下所有 tile 的总高可能超过可用高度：直接放进 Column 会 RenderFlex
-                        // 溢出（左侧导航底部 overflow）。改用 SingleChildScrollView 让 tile 在窗口
-                        // 过矮时滚动。
-                        Expanded(
-                          // 反馈 #ChIDEam2hf：桌面默认会给 SingleChildScrollView 画常驻滚动条，
-                          // 项高只差一点点溢出时就整条竖线立在侧栏上，既多余又难看。侧栏
-                          // 只靠滚轮 / 触摸 / 焦点自动滚入滚动，不画滚动条。
-                          child: ScrollConfiguration(
-                            behavior: ScrollConfiguration.of(
-                              context,
-                            ).copyWith(scrollbars: false),
-                            child: _RailScrollView(
-                              // 侧栏同样只有一枚在项间纵向滑动的指示器（2026-10-06
-                              // 用户「侧边栏也要有切换动画」）：收起 rail 的 56×32
-                              // 药丸、展开 rail 的整行药丸都由它滑过去，选中项超出
-                              // 可视区时自动滚进来。Apple 设计系统的行不登记药丸槽，
-                              // 滑块不画。
-                              child: _SlidingIndicatorScope(
-                                selectedId:
-                                    currentIndex >= 0 &&
-                                        currentIndex < items.length
-                                    ? FushiFocusId('$idPrefix-$currentIndex')
-                                    : null,
-                                // MD3 侧栏是液态墨滴（M3E 组合方案，2026-10-23）：
-                                // 收起态墨滴与落定后的专属形状同为 primary，展开态
-                                // 是 secondaryContainer 整行药丸。
-                                liquid: !glassDesign,
-                                color: isEinkTheme(context)
-                                    ? colors.onSurface
-                                    : (look != null
-                                          ? (railExtended
-                                                ? look.rowFill
-                                                : look.accent.indicator)
-                                          : (railExtended
-                                                ? colors.secondaryContainer
-                                                : colors.primary)),
-                                child: Column(
-                                  children: <Widget>[
-                                    // 镂空脊：首尾留出缺口内凹圆角的高度。
-                                    SizedBox(
-                                      height: notchRail
-                                          ? _kRailNotchFillet + _kRailNotchBleed
-                                          : 8,
-                                    ),
-                                    for (final Widget tile in buildTiles(
-                                      cellWidth: null,
-                                    ))
-                                      Padding(
-                                        padding: EdgeInsets.symmetric(
-                                          vertical: glassDesign ? 1 : 0,
+                  // 面板按当前宽、内容按目标宽（见 [_AnimatedRailWidth]）。
+                  child: _RailTargetWidth(
+                    child: Padding(
+                      padding: glassDesign
+                          ? EdgeInsets.symmetric(
+                              horizontal: railExtended
+                                  ? glassInset
+                                  : (kAdaptiveNavRailWidth -
+                                            2 * _kGlassSidebarMargin -
+                                            _kGlassSidebarCollapsedCellWidth) /
+                                        2,
+                              vertical: glassInset,
+                            )
+                          : (notchRail
+                                // 镂空脊：目的地排在「缺口起始边 → 侧栏内缘」这一段里
+                                // 居中 / 铺开，上方多留一点给贴边的菜单钮。
+                                ? EdgeInsetsDirectional.fromSTEB(
+                                    _kRailNotchStart + (railExtended ? 12 : 0),
+                                    18,
+                                    railExtended ? 12 : 0,
+                                    12,
+                                  )
+                                : EdgeInsets.symmetric(
+                                    horizontal: railExtended ? 12 : 0,
+                                    vertical: 8,
+                                  )),
+                      child: Column(
+                        children: <Widget>[
+                          if (menu != null || brand != null) header,
+                          // 矮窗口下所有 tile 的总高可能超过可用高度：直接放进 Column 会 RenderFlex
+                          // 溢出（左侧导航底部 overflow）。改用 SingleChildScrollView 让 tile 在窗口
+                          // 过矮时滚动。
+                          Expanded(
+                            // 反馈 #ChIDEam2hf：桌面默认会给 SingleChildScrollView 画常驻滚动条，
+                            // 项高只差一点点溢出时就整条竖线立在侧栏上，既多余又难看。侧栏
+                            // 只靠滚轮 / 触摸 / 焦点自动滚入滚动，不画滚动条。
+                            child: ScrollConfiguration(
+                              behavior: ScrollConfiguration.of(
+                                context,
+                              ).copyWith(scrollbars: false),
+                              child: _RailScrollView(
+                                // 侧栏同样只有一枚在项间纵向滑动的指示器（2026-10-06
+                                // 用户「侧边栏也要有切换动画」）：收起 rail 的 56×32
+                                // 药丸、展开 rail 的整行药丸都由它滑过去，选中项超出
+                                // 可视区时自动滚进来。Apple 设计系统的行不登记药丸槽，
+                                // 滑块不画。
+                                child: _SlidingIndicatorScope(
+                                  selectedId:
+                                      currentIndex >= 0 &&
+                                          currentIndex < items.length
+                                      ? FushiFocusId('$idPrefix-$currentIndex')
+                                      : null,
+                                  // MD3 侧栏是液态墨滴（M3E 组合方案，2026-10-23）：
+                                  // 收起态墨滴与落定后的专属形状同为 primary，展开态
+                                  // 是 secondaryContainer 整行药丸。
+                                  liquid: !glassDesign,
+                                  color: isEinkTheme(context)
+                                      ? colors.onSurface
+                                      : (look != null
+                                            ? (railExtended
+                                                  ? look.rowFill
+                                                  : look.accent.indicator)
+                                            : (railExtended
+                                                  ? colors.secondaryContainer
+                                                  : colors.primary)),
+                                  child: Column(
+                                    children: <Widget>[
+                                      // 镂空脊：首尾留出缺口内凹圆角的高度。
+                                      SizedBox(
+                                        height: notchRail
+                                            ? _kRailNotchFillet +
+                                                  _kRailNotchBleed
+                                            : 8,
+                                      ),
+                                      for (final Widget tile in buildTiles(
+                                        cellWidth: null,
+                                      ))
+                                        Padding(
+                                          padding: EdgeInsets.symmetric(
+                                            vertical: glassDesign ? 1 : 0,
+                                          ),
+                                          child: tile,
                                         ),
-                                        child: tile,
-                                      ),
-                                    if (notchRail)
-                                      const SizedBox(
-                                        height:
-                                            _kRailNotchFillet +
-                                            _kRailNotchBleed,
-                                      ),
-                                  ],
+                                      if (notchRail)
+                                        const SizedBox(
+                                          height:
+                                              _kRailNotchFillet +
+                                              _kRailNotchBleed,
+                                        ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -2737,11 +2743,17 @@ class NavRailSyncedContent extends StatelessWidget {
 
 /// rail 宽度在展开 / 收起两态之间按 M3E default spatial 弹簧过渡。
 ///
-/// 结构恒定（SizedBox → ClipRect → OverflowBox）：内容始终按**目标宽**排版、
-/// 由外层裁出当前宽——展开时整行逐渐露出、收起时右侧空白收拢，过渡中不会
-/// 把展开态的行硬压进收起宽度里溢出；静止时 OverflowBox 与外层同宽、不裁剪，
-/// 几何与不包时一致。树结构不随动画增删层级，目的地的焦点目标不会重挂。
-/// 墨水屏 / 减弱动态效果下瞬间到位。
+/// 两层几何分开：**面板**（悬浮面板 / 色脊色块 / 镂空脊色块，连同 SafeArea 与
+/// 悬浮留白）按**当前宽**逐帧排版，右缘始终贴着内容区起始边一起动；面板里的
+/// **内容**（菜单钮、品牌位、目的地）经 [_RailTargetWidth] 按**目标宽**排版、
+/// 由面板裁出当前宽——展开时整行逐渐露出、收起时右侧空白收拢，过渡中不会把
+/// 展开态的行硬压进收起宽度里溢出。
+///
+/// 旧实现把整块面板也放进「按目标宽排版」的 OverflowBox：收起时色块立刻缩到
+/// 收起宽，而占位宽（内容区起始边）还停在弹簧当前值上，二者之间露出一条页面
+/// 底色的竖带，镂空脊的舞台圆角也贴在竖带外侧（BUG-4853）。静止时两层同宽、
+/// 不裁剪，几何与不包时一致。树结构不随动画增删层级，目的地的焦点目标不会
+/// 重挂。墨水屏 / 减弱动态效果下瞬间到位。
 class _AnimatedRailWidth extends StatefulWidget {
   const _AnimatedRailWidth({required this.width, required this.child});
 
@@ -2752,6 +2764,26 @@ class _AnimatedRailWidth extends StatefulWidget {
   State<_AnimatedRailWidth> createState() => _AnimatedRailWidthState();
 }
 
+/// [_AnimatedRailWidth] 当帧的「目标宽 − 当前宽」：rail 在 build 阶段写，面板
+/// 里的 [_RailTargetWidth] 在同一帧随后的 layout 阶段读（与 [_NavRailContentLag]
+/// 同一读写时序）。可变对象而非 Listenable：值变化总伴随外层宽度变化，内层约束
+/// 跟着变，布局必然重跑。
+class _RailWidthLag {
+  double targetExcess = 0;
+}
+
+class _RailWidthLagScope extends InheritedWidget {
+  const _RailWidthLagScope({required this.lag, required super.child});
+
+  final _RailWidthLag lag;
+
+  static _RailWidthLag? _of(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<_RailWidthLagScope>()?.lag;
+
+  @override
+  bool updateShouldNotify(_RailWidthLagScope oldWidget) => lag != oldWidget.lag;
+}
+
 class _AnimatedRailWidthState extends State<_AnimatedRailWidth>
     with SingleTickerProviderStateMixin {
   late final FushiSpring _width = FushiSpring(
@@ -2759,6 +2791,8 @@ class _AnimatedRailWidthState extends State<_AnimatedRailWidth>
     initial: widget.width,
     spring: fushiExpressiveDefaultSpatial,
   );
+
+  final _RailWidthLag _lag = _RailWidthLag();
 
   /// 本次过渡两端里较窄的一端（静止时 = 当前宽）；[NavRailContentSync] 据此让
   /// 藏起的保活子树在整个过渡里保持同一宽度（可见内容照常逐帧跟随，BUG-3447）。
@@ -2784,28 +2818,51 @@ class _AnimatedRailWidthState extends State<_AnimatedRailWidth>
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _width.animation,
-      child: widget.child,
-      builder: (BuildContext context, Widget? child) {
-        final double target = widget.width;
-        final double raw = _width.value;
-        final bool settled = (raw - target).abs() < 0.5;
-        // build 阶段写、内容区在随后的 layout 阶段读：同一帧内 rail 宽与内容
-        // 可用宽同步变化，二者之和恒定。
-        NavRailContentSync._of(context)?._railExcess = settled
-            ? 0
-            : math.max(0.0, raw) - _narrowEnd;
-        return SizedBox(
-          width: settled ? target : math.max(0.0, raw),
-          child: ClipRect(
-            clipBehavior: settled ? Clip.none : Clip.hardEdge,
-            child: OverflowBox(
-              alignment: AlignmentDirectional.centerStart,
-              minWidth: target,
-              maxWidth: target,
-              child: child,
-            ),
+    return _RailWidthLagScope(
+      lag: _lag,
+      child: AnimatedBuilder(
+        animation: _width.animation,
+        child: widget.child,
+        builder: (BuildContext context, Widget? child) {
+          final double target = widget.width;
+          final double raw = _width.value;
+          final bool settled = (raw - target).abs() < 0.5;
+          final double shown = settled ? target : math.max(0.0, raw);
+          // build 阶段写、面板内容与右侧内容区在随后的 layout 阶段读：同一帧内
+          // rail 宽与内容可用宽同步变化，二者之和恒定。
+          NavRailContentSync._of(context)?._railExcess = settled
+              ? 0
+              : shown - _narrowEnd;
+          _lag.targetExcess = target - shown;
+          return SizedBox(width: shown, child: child);
+        },
+      ),
+    );
+  }
+}
+
+/// [_AnimatedRailWidth] 的内容侧：包在 rail 面板**里面**，把面板内容按目标宽
+/// 排版、裁到面板当前宽。静止时（差值 0）与直接放 [child] 几何一致、不裁剪。
+class _RailTargetWidth extends StatelessWidget {
+  const _RailTargetWidth({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double excess = constraints.hasBoundedWidth
+            ? _RailWidthLagScope._of(context)?.targetExcess ?? 0
+            : 0;
+        final double width = math.max(0.0, constraints.maxWidth + excess);
+        return ClipRect(
+          clipBehavior: excess == 0 ? Clip.none : Clip.hardEdge,
+          child: OverflowBox(
+            alignment: AlignmentDirectional.centerStart,
+            minWidth: excess == 0 ? constraints.minWidth : width,
+            maxWidth: excess == 0 ? constraints.maxWidth : width,
+            child: child,
           ),
         );
       },

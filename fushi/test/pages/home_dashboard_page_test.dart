@@ -50,7 +50,8 @@ import 'package:fushi/src/pages/implementations/stat_shared.dart'
 import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart'
     show FushiShellTheme, ShellContentLayout;
-import 'package:flutter/rendering.dart' show RenderParagraph;
+import 'package:flutter/rendering.dart'
+    show RenderClipPath, RenderClipRRect, RenderClipRect, RenderParagraph;
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -330,8 +331,10 @@ void main() {
   /// 书侧装配（「继续」区的书来自 provider，测试直接喂 MediaItem）。
   Widget buildAppWithBooks(
     List<MediaItem> books,
-    Map<String, int> lastReadAt,
-  ) => ProviderScope(
+    Map<String, int> lastReadAt, {
+    void Function(int collectionId, {required bool manga})?
+    openBookCollectionOverride,
+  }) => ProviderScope(
     overrides: <Override>[
       platformServicesProvider.overrideWithValue(platformServices),
       ankiRepositoryProvider.overrideWithValue(ankiRepository),
@@ -342,7 +345,10 @@ void main() {
       child: MaterialApp(
         theme: shellTheme(),
         home: Scaffold(
-          body: HomeDashboardPage(videoRepo: VideoBookRepository(db)),
+          body: HomeDashboardPage(
+            videoRepo: VideoBookRepository(db),
+            openBookCollectionOverride: openBookCollectionOverride,
+          ),
         ),
       ),
     ),
@@ -731,8 +737,8 @@ void main() {
     for (int i = 1; i <= 6; i++) {
       await db.insertEpubBook(
         EpubBooksCompanion.insert(
-          bookKey: '新书$i',
-          title: '新书$i',
+          bookKey: '新书${_seriesFreeSuffix(i)}',
+          title: '新书${_seriesFreeSuffix(i)}',
           epubPath: '/abs/$i.epub',
           extractDir: '/abs/$i',
           chapterCount: 1,
@@ -742,7 +748,13 @@ void main() {
           localAddedAt: Value<int?>(now - (10 - i) * 1000),
         ),
       );
-      books.add(readingBook('新书$i', '新书$i', position: 0));
+      books.add(
+        readingBook(
+          '新书${_seriesFreeSuffix(i)}',
+          '新书${_seriesFreeSuffix(i)}',
+          position: 0,
+        ),
+      );
     }
     await tester.pumpWidget(buildAppWithBooks(books, const <String, int>{}));
     await pumpDashboard(tester);
@@ -751,8 +763,116 @@ void main() {
     expect(
       recentRows(tester).map((({String title, String subtitle}) r) => r.title),
       // 默认 4×2 放得下 6 条以上（连续尺寸：格子越大列得越多，不再固定 4 条）。
-      <String>['新书6', '新书5', '新书4', '新书3', '新书2', '新书1'],
+      <String>['新书F', '新书E', '新书D', '新书C', '新书B', '新书A'],
     );
+  });
+
+  // BUG-4861：色块外观「最近添加」的半高色块外面曾包一层 ClipRect，把块的投影
+  // 齐格子边切成直角矩形（左上角 / 右缘能看到一条直边）。块到格子之间不许有
+  // 任何裁切层，投影要伸进格间距（与「继续」的半高块同口径）。
+  testWidgets('色块「最近添加」：半高色块到格子之间没有裁切层，投影不被切成直角矩形（BUG-4861）', (
+    WidgetTester tester,
+  ) async {
+    dashboardLayout = ShellContentLayout.collage;
+    useSize(tester, const Size(1280, 900));
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final List<MediaItem> books = <MediaItem>[];
+    for (int i = 1; i <= 6; i++) {
+      final String key = '新书${_seriesFreeSuffix(i)}';
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: key,
+          title: key,
+          epubPath: '/abs/$i.epub',
+          extractDir: '/abs/$i',
+          chapterCount: 1,
+          chaptersJson: '[]',
+          importedAt: now - (10 - i) * 1000,
+          localAddedAt: Value<int?>(now - (10 - i) * 1000),
+        ),
+      );
+      books.add(readingBook(key, key, position: 0));
+    }
+    await tester.pumpWidget(buildAppWithBooks(books, const <String, int>{}));
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    final RenderObject tile = tester.renderObject(
+      find.byKey(homeWidgetTileKey(HomeWidgetKind.recentlyAdded)),
+    );
+    final Finder blocks = find.byWidgetPredicate(
+      (Widget w) =>
+          w.key is ValueKey<String> &&
+          (w.key! as ValueKey<String>).value.startsWith('home-recent-block/'),
+    );
+    expect(blocks, findsAtLeastNWidgets(2));
+    for (final Element block in blocks.evaluate()) {
+      final List<String> clips = <String>[];
+      RenderObject? node = block.renderObject?.parent;
+      while (node != null && !identical(node, tile)) {
+        if (node is RenderClipRect ||
+            node is RenderClipRRect ||
+            node is RenderClipPath) {
+          clips.add(node.runtimeType.toString());
+        }
+        node = node.parent;
+      }
+      expect(node, same(tile), reason: '色块应在「最近添加」格子里');
+      expect(clips, isEmpty, reason: '${block.widget.key} 外面有裁切层');
+    }
+  });
+
+  // 设计稿 H8：「最近添加」里同一合集新加的几卷合成一张卡，点开进合集详情页
+  // （而不是只打开其中一卷）；不在合集里、仅按书名系列键归的组仍打开卷号最小的
+  // 一卷（[recentBookGroupTarget] 纯函数测试）。
+  testWidgets('双栏「最近添加」：同合集的系列合并卡点开 = 进该合集', (WidgetTester tester) async {
+    useSize(tester, const Size(1280, 900));
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final int cid = await db.createMediaCollection('某轻小说');
+    final List<MediaItem> books = <MediaItem>[];
+    for (int i = 1; i <= 3; i++) {
+      final String key = '某轻小说 $i';
+      final String uid = await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: key,
+          title: key,
+          epubPath: '/abs/v$i.epub',
+          extractDir: '/abs/v$i',
+          chapterCount: 1,
+          chaptersJson: '[]',
+          importedAt: now - (10 - i) * 1000,
+          localAddedAt: Value<int?>(now - (10 - i) * 1000),
+        ),
+      );
+      await db.addToCollection(cid, MediaKind.epub, uid);
+      books.add(readingBook(key, key, position: 0));
+    }
+    final List<(int, bool)> opened = <(int, bool)>[];
+    await tester.pumpWidget(
+      buildAppWithBooks(
+        books,
+        const <String, int>{},
+        openBookCollectionOverride: (int id, {required bool manga}) =>
+            opened.add((id, manga)),
+      ),
+    );
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    final List<({String title, String subtitle})> recent = recentRows(tester);
+    expect(recent, hasLength(1), reason: '同合集三卷合成一张');
+    expect(
+      recent.single.subtitle,
+      contains(t.home_widget_recent_volume_count(n: 3)),
+    );
+    // 直接调条目小行的点按回调（不用坐标点击）。
+    tester
+        .widget<InkWell>(
+          find.byKey(const ValueKey<String>('home-recent-item/0')),
+        )
+        .onTap!();
+    await tester.pump();
+    expect(opened, <(int, bool)>[(cid, false)]);
   });
 
   testWidgets('双栏「最近添加」按本机拥有时刻排：刚从对端下载的旧书 / 旧视频排最前，'
@@ -765,8 +885,8 @@ void main() {
     for (int i = 1; i <= 4; i++) {
       await db.insertEpubBook(
         EpubBooksCompanion.insert(
-          bookKey: '本地$i',
-          title: '本地$i',
+          bookKey: '本地${_seriesFreeSuffix(i)}',
+          title: '本地${_seriesFreeSuffix(i)}',
           epubPath: '/abs/local$i.epub',
           extractDir: '/abs/local$i',
           chapterCount: 1,
@@ -775,7 +895,13 @@ void main() {
           localAddedAt: Value<int?>(now - (10 - i) * 1000),
         ),
       );
-      books.add(readingBook('本地$i', '本地$i', position: 0));
+      books.add(
+        readingBook(
+          '本地${_seriesFreeSuffix(i)}',
+          '本地${_seriesFreeSuffix(i)}',
+          position: 0,
+        ),
+      );
     }
     // 刚从互联对端下载：importedAt 沿用对端多年前的入库时刻（BUG-3452 /
     // BUG-2463），本机拥有时刻是刚才——与生产落地路径一样经写入单点补齐。
@@ -811,7 +937,7 @@ void main() {
       '对端旧书',
       '对端旧视频',
     }, reason: '按 importedAt 排它们会沉到最后');
-    expect(titles.skip(2), <String>['本地4', '本地3', '本地2', '本地1']);
+    expect(titles.skip(2), <String>['本地D', '本地C', '本地B', '本地A']);
   });
 
   testWidgets('「最近添加」不在窄网格默认模板里；窄网格「继续」2×2 只放主卡，2×3 才挂横滑行', (
@@ -3270,8 +3396,8 @@ void main() {
     for (int i = 1; i <= 16; i++) {
       await db.insertEpubBook(
         EpubBooksCompanion.insert(
-          bookKey: '新书$i',
-          title: '新书$i',
+          bookKey: '新书${_seriesFreeSuffix(i)}',
+          title: '新书${_seriesFreeSuffix(i)}',
           epubPath: '/abs/$i.epub',
           extractDir: '/abs/$i',
           chapterCount: 1,
@@ -3280,7 +3406,13 @@ void main() {
           localAddedAt: Value<int?>(now - i * 1000),
         ),
       );
-      books.add(readingBook('新书$i', '新书$i', position: 0));
+      books.add(
+        readingBook(
+          '新书${_seriesFreeSuffix(i)}',
+          '新书${_seriesFreeSuffix(i)}',
+          position: 0,
+        ),
+      );
     }
     int count(String prefix) {
       int n = 0;
@@ -3379,3 +3511,8 @@ class _NetMountFile implements File {
     throw StateError('unexpected File.${invocation.memberName} on $path');
   }
 }
+
+/// 测试书名的后缀 A、B、C…：「最近添加」把同一系列新加的几卷合成一张卡（拼贴设计稿
+/// H8，按 `parseBookSeriesKey` 认卷号），书名尾巴是数字（「新书1」「新书2」）会被认成
+/// 同一系列的不同卷而合并；只测排序 / 条数的用例用字母后缀，每本各成一张。
+String _seriesFreeSuffix(int i) => String.fromCharCode(0x40 + i);

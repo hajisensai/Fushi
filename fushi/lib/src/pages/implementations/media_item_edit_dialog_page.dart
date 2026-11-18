@@ -163,13 +163,15 @@ class _MediaItemEditDialogPageState
                           widget.item,
                         );
                     if (!mounted) return;
-                    final File? scraped = await showBookCoverScrapeDialog(
+                    // 编辑弹窗只取封面（保存才落地，取消不留副作用）；条目资料
+                    // 走书架卡菜单的「在线刮削封面」（选中即写回）。
+                    final File? scraped = (await showBookCoverScrapeDialog(
                       context: context,
                       initialQuery: query,
                       volume: parseBookSeriesKey(widget.item.title)?.volume,
                       isbn: isbn,
                       rakuten: appModel.bookScrapeRakutenCredentials,
-                    );
+                    ))?.cover;
                     if (scraped != null) {
                       _newFile = scraped;
                       _coverImageProvider = FileImage(scraped);

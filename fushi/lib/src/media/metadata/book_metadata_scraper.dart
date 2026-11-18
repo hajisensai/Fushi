@@ -99,6 +99,11 @@ class BookScrapeCandidate {
     this.year,
     this.summary,
     this.isAdult = false,
+    this.date,
+    this.rating,
+    this.ratingCount,
+    this.tags = const <String>[],
+    this.backdropUrl,
     this.publisher,
     this.series,
     this.volume,
@@ -130,6 +135,7 @@ class BookScrapeCandidate {
       volume: r.volume,
       isbn: r.isbn,
       bannerUrl: r.bannerUrl,
+      backdropUrl: r.bannerUrl,
       coverHeaders: r.coverHeaders,
       pageUrl: r.pageUrl,
     );
@@ -162,6 +168,21 @@ class BookScrapeCandidate {
   /// 源侧明确标成人向（DLsite 年龄分级 / MangaBaka erotica、pornographic / AniList isAdult）。
   final bool isAdult;
 
+  /// 出版 / 发售日期原文（`YYYY-MM-DD`，可只到年或年月）；源没给为 null，此时
+  /// 落库退回 [year]。
+  final String? date;
+
+  /// 评分（已归一到 0~10）与评分人数。
+  final double? rating;
+  final int? ratingCount;
+
+  /// 类型 / 标签名（按源侧热度降序）。
+  final List<String> tags;
+
+  /// 无字横版图 URL（书目源的 AniList `bannerImage`，见 [fromCatalog]）；Bangumi /
+  /// DLsite 不提供，恒为 null。写回时落成条目的横版背景（`item_images` backdrop）。
+  final String? backdropUrl;
+
   /// 出版社（openBD / NDL / 楽天）。
   final String? publisher;
 
@@ -174,8 +195,8 @@ class BookScrapeCandidate {
   /// ISBN-13（openBD / NDL / 楽天）。
   final String? isbn;
 
-  /// 横幅 / 背景图（AniList `bannerImage`）。只在候选里带出（CLI / AI 可见），书族
-  /// 目前没有存横幅的位置，写回不落它。
+  /// 横幅 / 背景图（AniList `bannerImage`）原值，候选里照样带出（CLI / AI 可见）；写回落库
+  /// 走 [backdropUrl]（书目源映射时取同一张）。
   final String? bannerUrl;
 
   /// 取封面必须带的请求头（NDL 缩略图要 Referer）；预览与下载都要带上。
@@ -414,8 +435,11 @@ class BookMetadataScraper {
         BookScrapeSource.rakuten => await _rakutenClient().fetchByIsbn(id),
         BookScrapeSource.bangumi ||
         BookScrapeSource.dlsite ||
-        BookScrapeSource.mangabaka =>
-          throw ArgumentError.value(source, 'source', 'not a catalog source'),
+        BookScrapeSource.mangabaka => throw ArgumentError.value(
+          source,
+          'source',
+          'not a catalog source',
+        ),
       };
     } on BookCatalogException catch (e) {
       throw BookScrapeException(
@@ -618,8 +642,19 @@ BookScrapeCandidate? mapDlsiteWork(DlsiteWork work) {
     year: work.releaseDate?.year,
     summary: work.description,
     isAdult: work.ageCategory?.isAdult ?? false,
+    date: _isoDate(work.releaseDate),
+    // DLsite 评分是 0~5 星，归一到 0~10 与其它源同尺度。
+    rating: work.rating?.average == null ? null : work.rating!.average! * 2,
+    ratingCount: work.rating?.count,
+    tags: work.genres,
   );
 }
+
+String? _isoDate(DateTime? d) => d == null
+    ? null
+    : '${d.year.toString().padLeft(4, '0')}-'
+          '${d.month.toString().padLeft(2, '0')}-'
+          '${d.day.toString().padLeft(2, '0')}';
 
 /// 纯函数：把 Bangumi `/v0/subjects/{id}` **详情**响应体解析为单个候选（id 直连
 /// 改绑映射路径用）。详情响应的 images/name/name_cn/date/summary 字段形态与搜索
@@ -689,7 +724,35 @@ BookScrapeCandidate? mapBookSubject(Map<String, Object?> subject) {
     originalTitle: originalTitle,
     year: _yearFromDate(_nonEmptyString(subject['date'])),
     summary: _nonEmptyString(subject['summary']),
+    date: _nonEmptyString(subject['date']),
+    rating: _bangumiScore(subject['rating']),
+    ratingCount: _bangumiRatingTotal(subject['rating']),
+    tags: _bangumiTagNames(subject['tags']),
   );
+}
+
+double? _bangumiScore(Object? rating) {
+  if (rating is! Map<String, Object?>) return null;
+  final Object? score = rating['score'];
+  return score is num && score > 0 ? score.toDouble() : null;
+}
+
+int? _bangumiRatingTotal(Object? rating) {
+  if (rating is! Map<String, Object?>) return null;
+  final Object? total = rating['total'];
+  return total is num && total > 0 ? total.toInt() : null;
+}
+
+/// Bangumi `tags: [{name, count}]`（已按热度降序）→ 前 10 个名字。
+List<String> _bangumiTagNames(Object? tags) {
+  if (tags is! List<Object?>) return const <String>[];
+  return <String>[
+    for (final Object? tag in tags)
+      if (tag is Map<String, Object?> &&
+          tag['name'] is String &&
+          (tag['name']! as String).trim().isNotEmpty)
+        (tag['name']! as String).trim(),
+  ].take(10).toList(growable: false);
 }
 
 /// 从 `YYYY-MM-DD` 取年份，非法返回 null。

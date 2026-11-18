@@ -7,6 +7,8 @@ import 'package:fushi/src/models/preference_keys.dart'
     show kAnkiSettingsPrefKey, kWorkProfileSessionPrefKey;
 import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart'
     show kPageBackdropDeviceLocalPrefKeys;
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show ShellLayoutInstallDefault;
 import 'package:fushi/src/web_browser/web_browser_prefs.dart';
 import 'package:fushi/src/models/preferences_repository.dart'
     show
@@ -2043,6 +2045,12 @@ class SyncRepository {
     kWorkProfileSessionPrefKey,
     // 库页「每行数量」：合适的列数取决于这台设备的屏幕（BUG-4219）。
     kLibraryGridColumnsPrefKey,
+    // 库页布局出厂判定（G1：新安装 = 拼贴 / 升级上来 = 封面网格 + 待弹选择框）：
+    // 本设备一次性的判定结论。不进 Profile 快照 / 备份 / 设置同步，导入时保留本机
+    // 值——随推荐包或老 Profile 换进来会把新用户重判成老用户（切网格并弹框）。
+    // 有意不放进 [installScopedPrefKeys]：那一类导入时会被清掉、下次启动重判，
+    // 而重判在已有书库的数据上必然得出「升级上来」。
+    ShellLayoutInstallDefault.prefKey,
     // 书架文件夹导入「缺字幕就转录」：几个小时的设备端推理，跑不跑得动是这台设备
     // 的事（手机上开着、恢复到没有 ASR 算力的机器上不该跟着开）。同组的总开关
     // `audiobook_auto_transcribe` 是同步的，这一个有意设成设备本地。

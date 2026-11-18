@@ -73,9 +73,15 @@ import 'package:test/test.dart';
 /// OCR 设置），把 `video_player_controller` 等 13 个视频文件拖进了环。值类型挪到
 /// `manga_stream_ocr_types.dart` 后最大环降到 640，上限随之下调。
 ///
+/// 2026-11-18 合入首页 / 库页重设计（#3515）实测 650：新进环的是本就读 AppModel 的导入页、
+/// 壳布局选择、游戏 / 音乐新组件。同样不调上限，拆掉两条底层边：在线漫画库服务与 PDF 导入
+/// 只用 `MediaCoverService.applyCoverBytes`（引擎 `writeCoverBytesAtomically` 的薄委派），
+/// 却因此 import 了整个封面服务（它读 AppModel），把漫画下载 / 互联 / 同步编排等 20 个文件
+/// 拖进环。改为直接调引擎 writer（封面写盘守卫本就认它为收口）后最大环降到 630。
+///
 /// 红了：新加的 import 把底层模块接到了 UI / AppModel 上。把用到的东西挪到
 /// 更底层的文件，或改用参数 / 回调注入，不要调大上限、不要把文件从目录里豁免。
-const int kMaxCycleFiles = 640;
+const int kMaxCycleFiles = 630;
 
 const String kAppModel = 'lib/src/models/app_model.dart';
 

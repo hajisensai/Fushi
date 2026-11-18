@@ -471,7 +471,7 @@ void main() {
         reason: '旧的 bool「允许音频降级」开关已被三档策略取代',
       );
       // BUG-1191：超分改成**每游戏一档**后，入口挪到了游戏库卡片的右键菜单
-      // （`games_library_page.dart` 的 `_menuItems`）——这里不该再有它。工作台是
+      // （`games/galgame_item_menu.dart` 的 `galgameItemMenuItems`）——这里不该再有它。工作台是
       // 「当前会话」的界面，而档位是「这个游戏」的属性，放这儿只会诱使人以为改的是
       // 全局值。守卫用 `textContaining`：档位后缀（「· 关闭」）变了也照样红。
       expect(
@@ -552,8 +552,13 @@ void main() {
 
   // BUG（反馈 J4GKVdgo2s）：会话卡里的工具组曾是 FushiToolbar(floating: true)——
   // 浮动顶栏 / 底栏用的带投影胶囊，硬塞进卡内的动作行，又被固定 3:2 比例切出的
-  // Flexible 动作区收窄，整组悬在卡片中段、和主操作不在同一视觉层。修复后工具组与
-  // 主操作同一行内联平铺（无浮动胶囊），动作行贴卡片右缘，放不下才收进「⋯」。
+  // Flexible 动作区收窄，整组悬在卡片中段、和主操作不在同一视觉层。
+  //
+  // 2026-11 拼贴改版（PR #3515）后结构换了：起点是状态色块里的两张大动作卡，
+  // 会话工具不再与主操作挤同一行，而是带名称的分区——宽屏（≥
+  // kGalWorkbenchSideColumnBreakpoint）在侧栏里色块正下方，与色块同宽贴齐。
+  // 原「工具组与主操作同一行 / 动作行贴卡片右缘」的断言因此按新布局改写；本 bug
+  // 钉的不变式不变：会话区里没有浮动胶囊工具栏、工具组不悬在半空、没有「⋯」。
   testWidgets(
     'session card tools sit inline with the primary action (J4GKVdgo2s)',
     (WidgetTester tester) async {
@@ -571,19 +576,19 @@ void main() {
       final Finder card = find.byKey(
         const ValueKey<String>('game-session-overview'),
       );
-      final Finder actionRow = find.byKey(
+      final Finder sessionArea = find.byKey(
         const ValueKey<String>('game-session-actions'),
       );
       final Finder tools = find.byKey(
         const ValueKey<String>('game-session-tools'),
       );
-      expect(find.descendant(of: card, matching: actionRow), findsOneWidget);
-      expect(find.descendant(of: actionRow, matching: tools), findsOneWidget);
+      expect(find.descendant(of: sessionArea, matching: card), findsOneWidget);
+      expect(find.descendant(of: sessionArea, matching: tools), findsOneWidget);
 
-      // 卡内不得再有浮动样式的工具栏。
+      // 会话区内不得再有浮动样式的工具栏。
       expect(
         find.descendant(
-          of: card,
+          of: sessionArea,
           matching: find.byWidgetPredicate(
             (Widget w) => w is FushiToolbar && w.floating,
           ),
@@ -591,40 +596,41 @@ void main() {
         findsNothing,
       );
 
-      // 主操作与工具组同一行：都在同一个动作行里，垂直中线对齐。
+      // 主操作在状态色块里，工具组在色块正下方的工具分区里。
       final Finder launch = find.byKey(
         const ValueKey<String>('game-action-launch'),
       );
       final Finder health = find.byKey(
         const ValueKey<String>('game-toolbar-health'),
       );
-      expect(find.descendant(of: actionRow, matching: launch), findsOneWidget);
+      expect(find.descendant(of: card, matching: launch), findsOneWidget);
       expect(find.descendant(of: tools, matching: health), findsOneWidget);
       expect(
-        tester.getCenter(health).dy,
-        moreOrLessEquals(tester.getCenter(launch).dy, epsilon: 0.5),
-        reason: '工具组必须与主操作在同一行，不能换行或浮在卡片上',
-      );
-      expect(
-        tester.getCenter(health).dx,
-        greaterThan(tester.getCenter(launch).dx),
+        tester.getTopLeft(tools).dy,
+        greaterThanOrEqualTo(tester.getBottomLeft(card).dy),
+        reason: '工具分区在状态色块下方，不浮在色块上',
       );
 
-      // 1600 宽放得下：全部平铺，没有「⋯」。
+      // 工具全部带名称平铺，没有「⋯」。
       expect(
         find.byKey(const ValueKey<String>('game-session-tools-more')),
         findsNothing,
       );
 
-      // 动作行贴卡片右缘（卡片右内边距 14），不再悬在卡片中段。
+      // 清空台词也在工具分区里；分区与色块左右贴齐，不悬在中段。
       expect(
         find.descendant(of: tools, matching: find.byIcon(Icons.delete_outline)),
         findsOneWidget,
       );
       expect(
-        tester.getTopRight(card).dx - tester.getTopRight(tools).dx,
+        (tester.getTopRight(card).dx - tester.getTopRight(tools).dx).abs(),
         lessThan(20),
-        reason: '动作行应贴卡片右缘',
+        reason: '工具分区应与状态色块右缘贴齐',
+      );
+      expect(
+        (tester.getTopLeft(card).dx - tester.getTopLeft(tools).dx).abs(),
+        lessThan(20),
+        reason: '工具分区应与状态色块左缘贴齐',
       );
     },
   );
@@ -916,7 +922,11 @@ void main() {
   ) async {
     await tester.binding.setSurfaceSize(const Size(1440, 850));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.pumpWidget(_wrapPage(const TexthookerPage()));
+    // 起点动作卡只在嵌入模式（游戏 › 工作台，唯一的生产入口：HomeGamePage /
+    // GameStreamClientPage）的会话状态块里；独立模式的起点在 AppBar 图标里。
+    await tester.pumpWidget(
+      _wrapPage(const Scaffold(body: TexthookerPage(embedded: true))),
+    );
     await tester.pump();
 
     expect(tester.takeException(), isNull);
@@ -926,14 +936,34 @@ void main() {
     );
     expect(find.text('Tracks for this line'), findsNothing);
     if (Platform.isWindows) {
-      // 未开始捕获：空状态直接给「启动并捕获 / 附着并捕获」。
+      // 未开始捕获：下一步「启动并捕获 / 附着并捕获」必须同屏可点。2026-11 拼贴
+      // 改版（PR #3515）把两个起点做成会话状态色块里的大动作卡，空态只留一句指引、
+      // 不再重复一套同样的按钮（同屏两套会让人困惑），所以这里改钉状态块里的
+      // 起点，并反向钉住空态里不再有重复按钮。
+      final Finder card = find.byKey(
+        const ValueKey<String>('game-session-overview'),
+      );
       expect(
-        find.byKey(const ValueKey<String>('game-empty-launch')),
+        find.descendant(
+          of: card,
+          matching: find.byKey(const ValueKey<String>('game-action-launch')),
+        ),
         findsOneWidget,
       );
       expect(
-        find.byKey(const ValueKey<String>('game-empty-attach')),
+        find.descendant(
+          of: card,
+          matching: find.byKey(const ValueKey<String>('game-action-attach')),
+        ),
         findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('game-empty-launch')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('game-empty-attach')),
+        findsNothing,
       );
     }
   });

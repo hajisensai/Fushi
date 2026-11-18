@@ -822,6 +822,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String：书架「阅读状态」筛选（ShelfReadStatus.name，'' = 全部）。
   'shelf_read_status_filter',
   'shelf_sort_mode',
+  // String：库页布局出厂判定（G1，设备本地——SyncRepository.deviceLocalPrefKeys；
+  // 值 collage / grid_choice_pending / grid，ThemeNotifier 载入偏好时判定一次），
+  // 见 ShellLayoutInstallDefault。
+  'shell_content_layout_install_default',
   'show_expression_tags',
   'show_floating_lyric',
   'show_media_notification',

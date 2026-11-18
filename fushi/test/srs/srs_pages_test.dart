@@ -27,7 +27,6 @@ import 'package:fushi/src/pages/implementations/srs/srs_deck_settings_page.dart'
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_layout_sheet.dart';
-import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
 import 'package:fushi/src/shortcuts/input_binding.dart'
@@ -37,6 +36,8 @@ import 'package:fushi/src/srs/srs_card_autoplay.dart';
 import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_poster_block.dart'
+    show fushiPosterColors, fushiPosterHue;
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -739,7 +740,7 @@ void main() {
         reason: '方案 D：行尾只有三色计数与播放按钮，菜单走右键 / 菜单键 / 右栏「选项」',
       );
       expect(
-        find.byType(SrsCountTriple),
+        find.byType(SrsDeckCountChips),
         findsNWidgets(3),
         reason: '三行各一组计数（空着又没有子牌组的 Default 不显示，见 srsVisibleDecks）',
       );
@@ -1824,14 +1825,14 @@ void main() {
         reason: '第 $depth 层的名字至少留出几个字的宽度（原来三级以下宽度为 0）',
       );
     }
-    // 三色计数列在各层对齐（行尾宽度不随层级变）。
+    // 计数 chip 列在各层对齐（行尾宽度不随层级变，子牌组行嵌在父色块里也一样）。
     final Set<double> rights = <double>{
       for (final String id in ids)
         tester
             .getTopRight(
               find.descendant(
                 of: find.byKey(ValueKey<String>('srs-deck-$id')),
-                matching: find.byType(SrsCountTriple),
+                matching: find.byType(SrsDeckCountChips),
               ),
             )
             .dx,
@@ -1839,6 +1840,120 @@ void main() {
     expect(rights, hasLength(1));
     await _unmount(tester);
   });
+
+  for (final bool apple in <bool>[false, true]) {
+    final String ds = apple ? 'Apple' : 'MD3';
+    testWidgets('[$ds] 牌组列表（拼贴）：每个顶层牌组一块按牌组取色的色块，子牌组嵌在父色块里，'
+        '键盘收起后子行收成 0 高、色块随之变矮', (WidgetTester tester) async {
+      final SrsDbStore store = await _openStore(tester);
+      final String child = (await tester.runAsync(
+        () => store.ensureDeckPath('Parent::Child'),
+      ))!;
+      final String parent = (await tester.runAsync(
+        () async => (await store.deckTree()).parentOf(child)!,
+      ))!;
+      final String solo = (await tester.runAsync(
+        () => store.createDeck('Solo'),
+      ))!;
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: const SrsDeckListPage(),
+        size: const Size(1100, 1600),
+      );
+      Finder band(String id) => find.byKey(ValueKey<String>('srs-band-$id'));
+      Finder row(String id) => find.byKey(ValueKey<String>('srs-deck-$id'));
+
+      expect(band(parent), findsOneWidget, reason: '顶层牌组 Parent 一块色块');
+      expect(band(solo), findsOneWidget, reason: '顶层牌组 Solo 一块色块');
+      expect(band(child), findsNothing, reason: '子牌组不自成色块');
+      expect(
+        find.descendant(of: band(parent), matching: row(child)),
+        findsOneWidget,
+        reason: '子牌组是父色块里的内层行',
+      );
+      expect(
+        find.descendant(of: band(solo), matching: row(child)),
+        findsNothing,
+      );
+
+      // 色块配色与首页拼贴的牌组海报同一套（色相键 srs-deck:<id>）。
+      Color bandColor(String id) =>
+          (tester
+                      .widget<DecoratedBox>(
+                        find
+                            .descendant(
+                              of: band(id),
+                              matching: find.byType(DecoratedBox),
+                            )
+                            .first,
+                      )
+                      .decoration
+                  as ShapeDecoration)
+              .color!;
+      final BuildContext context = tester.element(band(parent));
+      expect(
+        bandColor(parent),
+        fushiPosterColors(
+          context,
+          fushiPosterHue('srs-deck:$parent'),
+        ).container,
+      );
+
+      // 计数是带语义色的 chip（每行一组）。
+      expect(
+        find.descendant(
+          of: row(child),
+          matching: find.byType(SrsDeckCountChips),
+        ),
+        findsOneWidget,
+      );
+
+      // 键盘：焦点落在父牌组行内，← 收起。子行收成 0 高，父色块变矮。
+      final double expandedBand = tester.getSize(band(parent)).height;
+      expect(tester.getSize(row(child)).height, greaterThan(0));
+      final Element toggleElement = tester.element(
+        find.byKey(ValueKey<String>('srs-deck-toggle-$parent')),
+      );
+      final FocusNode rowFocus = FocusManager.instance.rootScope.descendants
+          .firstWhere((FocusNode n) {
+            bool inside = false;
+            n.context?.visitAncestorElements((Element e) {
+              if (identical(e, toggleElement)) {
+                inside = true;
+                return false;
+              }
+              return true;
+            });
+            return inside && n.canRequestFocus;
+          });
+      rowFocus.requestFocus();
+      await tester.pump();
+      await srsUntilStoreWritten(
+        tester,
+        store,
+        () => tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft),
+        settleRounds: _kTreeSettleRounds,
+      );
+      expect(tester.getSize(row(child)).height, 0, reason: '收起后子行消失');
+      expect(
+        tester.getSize(band(parent)).height,
+        lessThan(expandedBand),
+        reason: '色块底在 reveal 外面，随子行一起收矮',
+      );
+      await srsUntilStoreWritten(
+        tester,
+        store,
+        () => tester.sendKeyEvent(LogicalKeyboardKey.arrowRight),
+        settleRounds: _kTreeSettleRounds,
+      );
+      expect(tester.getSize(row(child)).height, greaterThan(0));
+      expect(tester.getSize(band(parent)).height, closeTo(expandedBand, 0.5));
+      expect(tester.takeException(), isNull);
+      await _unmount(tester);
+    });
+  }
 
   group('复习页卡面音频', () {
     Future<String> addWithAudio(

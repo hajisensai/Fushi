@@ -158,16 +158,10 @@ void main() {
     }
 
     await open('srtbook_remote');
-    expect(
-      find.byTooltip(t.srt_book_reimport_subtitle_from_server),
-      findsOneWidget,
-    );
+    expect(find.text(t.srt_book_reimport_subtitle_from_server), findsOneWidget);
 
     await open('srtbook_local');
-    expect(
-      find.byTooltip(t.srt_book_reimport_subtitle_from_server),
-      findsNothing,
-    );
+    expect(find.text(t.srt_book_reimport_subtitle_from_server), findsNothing);
   });
 
   testWidgets('SRT book reimport: import and cancel stay disabled while a '
@@ -217,7 +211,8 @@ void main() {
     }
 
     expect(onPressedOf(t.dialog_import), isNotNull);
-    await tester.tap(find.byTooltip(t.srt_import_pick_subtitle_files));
+    // 字幕格整块可点（2026-11 导入对话框第二版：拼贴小色块，不再有尾部文件夹钮）。
+    await tester.tap(find.text(t.srt_import_pick_subtitle_files));
     await tester.pump();
     // 选择 / 取文件还没完：导入此时开跑，会拿着旧输入、又在选完时被改写。
     expect(onPressedOf(t.dialog_import), isNull);

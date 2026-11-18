@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:cupertino_ui/cupertino_ui.dart';
@@ -7,6 +8,9 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
+    show FushiM3eShape;
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -151,7 +155,21 @@ InputDecoration? fushiMd3FieldDecoration(
   }
   final ColorScheme cs = Theme.of(context).colorScheme;
   final bool search = _isSearchDecoration(decoration);
-  final BorderRadius radius = BorderRadius.circular(search ? 999 : 12);
+  // M3 filled text field：只有上两角圆（extra-small 4），下沿是活动指示线
+  // （静止 1dp onSurfaceVariant、聚焦 2dp primary、错误 error）。搜索框是 M3
+  // search bar（另一种组件），保持全圆胶囊、无指示线。
+  final BorderRadius radius = search
+      ? const BorderRadius.all(Radius.circular(999))
+      : FushiM3eShape.textFieldRadius;
+  // 彩色色块里的字段（[FushiFieldFillScope]）：静止指示线 / 标题 / 尾部图标取
+  // 块的前景色，聚焦仍是主题 primary。
+  final Color? scopedFg = FushiFieldFillScope.foregroundOf(context);
+  // 活动指示线由 [FushiFieldIndicatorHost] 按焦点 / 悬停 / 错误状态以
+  // FushiMotion 时长补间并直接画；没有宿主时按下面各状态的静态描边画。
+  final FushiFieldIndicator? indicator = FushiFieldIndicatorHost.maybeOf(
+    context,
+  );
+  final Color quiet = scopedFg?.withValues(alpha: 0.72) ?? cs.onSurfaceVariant;
   // 带标题（labelText / label）的字段用「填充式」边框：OutlineInputBorder 会把
   // 浮起的标题放在边框线**上**（为描边留缺口），没有可见描边的填充框里，标题就
   // 骑在填充块的上沿、一半露在框外（禁用 / 已有内容的「服务器」「API Key」）。
@@ -163,9 +181,18 @@ InputDecoration? fushiMd3FieldDecoration(
     final BorderSide side = color == null
         ? BorderSide.none
         : BorderSide(color: color, width: width);
-    return labelled && !search
-        ? _FushiFilledFieldBorder(borderRadius: radius, borderSide: side)
-        : OutlineInputBorder(borderRadius: radius, borderSide: side);
+    if (search) {
+      return OutlineInputBorder(borderRadius: radius, borderSide: side);
+    }
+    // 带标题的走非 outline 布局（标题浮在填充块内顶端）；不带标题的保留
+    // outline 布局（尺寸档的单行高 / 竖直居中不变），两者画法一样。
+    return _FushiFilledFieldBorder(
+      borderRadius: radius,
+      borderSide: side,
+      outlineLayout: !labelled,
+      indicator: indicator,
+      error: color == cs.error,
+    );
   }
 
   final EdgeInsetsGeometry? padding = search
@@ -175,23 +202,74 @@ InputDecoration? fushiMd3FieldDecoration(
             : decoration.contentPadding);
   return decoration.copyWith(
     filled: true,
-    fillColor: decoration.fillColor ?? cs.surfaceContainerHigh,
+    fillColor: decoration.fillColor ?? fushiMd3FieldFill(context),
     // M3E 状态层：悬停 8% onSurface 叠在填充上（InputDecorator 把 hoverColor
     // 混进 fillColor），鼠标指上去看得见可输入。
     hoverColor:
         decoration.hoverColor ??
         cs.onSurface.withValues(alpha: kFushiFieldHoverStateOpacity),
-    border: outline(),
-    enabledBorder: outline(),
-    disabledBorder: outline(),
+    border: search ? outline() : outline(quiet, 1),
+    enabledBorder: search ? outline() : outline(quiet, 1),
+    disabledBorder: search
+        ? outline()
+        : outline(cs.onSurface.withValues(alpha: 0.38), 1),
     focusedBorder: outline(cs.primary, 2),
-    errorBorder: outline(cs.error, 1.5),
+    errorBorder: outline(cs.error, search ? 1.5 : 1),
     focusedErrorBorder: outline(cs.error, 2),
-    hintStyle: decoration.hintStyle ?? TextStyle(color: cs.onSurfaceVariant),
-    prefixIconColor: decoration.prefixIconColor ?? cs.onSurfaceVariant,
-    suffixIconColor: decoration.suffixIconColor ?? cs.onSurfaceVariant,
+    labelStyle:
+        decoration.labelStyle ??
+        (scopedFg == null ? null : TextStyle(color: quiet)),
+    hintStyle: decoration.hintStyle ?? TextStyle(color: quiet),
+    prefixIconColor: decoration.prefixIconColor ?? quiet,
+    suffixIconColor: decoration.suffixIconColor ?? quiet,
     contentPadding: padding,
   );
+}
+
+/// MD3 填充式字段的容器色：比所在表面高一级色调，框才看得出来。
+///
+/// 页面 / 卡片上是 surfaceContainerHigh；对话框面板（[FushiDialogScope]，
+/// 面板本身就是 surfaceContainerHigh）里升到 surfaceContainerHighest（M3 filled
+/// text field 规范色）——此前对话框里填充色与面板同色，输入框看上去「无框无底」
+/// 只剩一行浮动标题（导入对话框反馈）。
+///
+/// 祖先有 [FushiFieldFillScope]（彩色色块里的字段）时用它给的底色。
+Color fushiMd3FieldFill(BuildContext context) {
+  final Color? scoped = FushiFieldFillScope.maybeOf(context);
+  if (scoped != null) return scoped;
+  final ColorScheme cs = Theme.of(context).colorScheme;
+  return FushiDialogScope.of(context)
+      ? cs.surfaceContainerHighest
+      : cs.surfaceContainerHigh;
+}
+
+/// 子树里 MD3 填充式字段 / 下拉触发器的底色覆盖（[fushiMd3FieldFill]）：灰底
+/// 压在彩色色块上发脏，色块（导入对话框的 `ImportSectionBlock`）给一档向块色
+/// 偏的底色。只影响字段填充，不改主题。
+class FushiFieldFillScope extends InheritedWidget {
+  const FushiFieldFillScope({
+    required this.color,
+    required super.child,
+    this.foreground,
+    super.key,
+  });
+
+  final Color color;
+
+  /// 块的前景色：静止指示线、标题、尾部图标按它取（压暗 72%）；null = 主题
+  /// onSurfaceVariant。
+  final Color? foreground;
+
+  static Color? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<FushiFieldFillScope>()?.color;
+
+  static Color? foregroundOf(BuildContext context) => context
+      .dependOnInheritedWidgetOfExactType<FushiFieldFillScope>()
+      ?.foreground;
+
+  @override
+  bool updateShouldNotify(FushiFieldFillScope oldWidget) =>
+      oldWidget.color != color || oldWidget.foreground != foreground;
 }
 
 /// 带标题的填充式字段（M3 filled text field）的内边距：浮起标题的顶部留白
@@ -249,34 +327,59 @@ InputDecoration _fushiMd3OutlinedDecoration(
   );
 }
 
-/// MD3 填充式字段的边框：形状是全圆角矩形（填充按它裁），描边画一整圈，
-/// 但 [isOutline] 为 false——InputDecorator 据此把浮起的标题放在填充块内部
-/// 顶端（M3 filled text field），而不是骑在边框线上。见 [fushiMd3FieldDecoration]。
+/// MD3 填充式字段的边框（M3 filled text field）：填充按 [borderRadius] 裁
+/// （上两角圆、下两角方），[borderSide] 只画在下沿当活动指示线。
+///
+/// [outlineLayout] 为 false（带标题的字段）时 [isOutline] 为 false——
+/// InputDecorator 据此把浮起的标题放在填充块内部顶端，而不是骑在边框线上；
+/// 不带标题的字段保持 outline 布局（尺寸档的高度与竖直居中不变）。状态切换
+/// （静止 ↔ 聚焦 ↔ 错误）由 InputDecorator 按 [lerpFrom] / [lerpTo] 补间。
+/// 见 [fushiMd3FieldDecoration]。
 class _FushiFilledFieldBorder extends InputBorder {
   const _FushiFilledFieldBorder({
     required this.borderRadius,
     super.borderSide = BorderSide.none,
+    this.outlineLayout = false,
+    this.indicator,
+    this.error = false,
   });
 
   final BorderRadius borderRadius;
+  final bool outlineLayout;
+
+  /// 宿主的活动指示线（见 [FushiFieldIndicatorHost]）；非 null 时线的颜色 /
+  /// 粗细取它此刻的动画值，不取 [borderSide]（InputDecorator 自带的 167ms
+  /// 边框补间因此不再决定观感）。
+  final FushiFieldIndicator? indicator;
+
+  /// 这是错误态边框（InputDecorator 按校验结果选中）。宿主不知道错误时
+  /// （TextFormField 的 validator）据此直接画错误色。
+  final bool error;
 
   @override
-  bool get isOutline => false;
+  bool get isOutline => outlineLayout;
 
   @override
-  EdgeInsetsGeometry get dimensions => EdgeInsets.all(borderSide.width);
+  EdgeInsetsGeometry get dimensions =>
+      EdgeInsets.only(bottom: borderSide.width);
 
   @override
   _FushiFilledFieldBorder copyWith({BorderSide? borderSide}) =>
       _FushiFilledFieldBorder(
         borderRadius: borderRadius,
         borderSide: borderSide ?? this.borderSide,
+        outlineLayout: outlineLayout,
+        indicator: indicator,
+        error: error,
       );
 
   @override
   ShapeBorder scale(double t) => _FushiFilledFieldBorder(
     borderRadius: borderRadius * t,
     borderSide: borderSide.scale(t),
+    outlineLayout: outlineLayout,
+    indicator: indicator,
+    error: error,
   );
 
   @override
@@ -285,6 +388,9 @@ class _FushiFilledFieldBorder extends InputBorder {
       return _FushiFilledFieldBorder(
         borderRadius: BorderRadius.lerp(a.borderRadius, borderRadius, t)!,
         borderSide: BorderSide.lerp(a.borderSide, borderSide, t),
+        outlineLayout: outlineLayout,
+        indicator: indicator,
+        error: error,
       );
     }
     return super.lerpFrom(a, t);
@@ -296,19 +402,24 @@ class _FushiFilledFieldBorder extends InputBorder {
       return _FushiFilledFieldBorder(
         borderRadius: BorderRadius.lerp(borderRadius, b.borderRadius, t)!,
         borderSide: BorderSide.lerp(borderSide, b.borderSide, t),
+        outlineLayout: outlineLayout,
+        indicator: indicator,
+        error: error,
       );
     }
     return super.lerpTo(b, t);
   }
 
   @override
-  Path getInnerPath(Rect rect, {TextDirection? textDirection}) => Path()
-    ..addRRect(
-      borderRadius
-          .resolve(textDirection)
-          .toRRect(rect)
-          .deflate(borderSide.width),
-    );
+  Path getInnerPath(Rect rect, {TextDirection? textDirection}) =>
+      Path()..addRect(
+        Rect.fromLTRB(
+          rect.left,
+          rect.top,
+          rect.right,
+          math.max(rect.top, rect.bottom - borderSide.width),
+        ),
+      );
 
   @override
   Path getOuterPath(Rect rect, {TextDirection? textDirection}) =>
@@ -323,19 +434,251 @@ class _FushiFilledFieldBorder extends InputBorder {
     double gapPercentage = 0.0,
     TextDirection? textDirection,
   }) {
-    if (borderSide.style == BorderStyle.none || borderSide.width == 0) return;
-    final RRect outer = borderRadius.resolve(textDirection).toRRect(rect);
-    canvas.drawRRect(outer.deflate(borderSide.width / 2), borderSide.toPaint());
+    final FushiFieldIndicator? live = indicator;
+    final BorderSide line = live == null ? borderSide : live.side(error: error);
+    if (line.style == BorderStyle.none || line.width == 0) return;
+    final double y = rect.bottom - line.width / 2;
+    canvas.drawLine(
+      Offset(rect.left, y),
+      Offset(rect.right, y),
+      line.toPaint(),
+    );
   }
 
   @override
   bool operator ==(Object other) =>
       other is _FushiFilledFieldBorder &&
       other.borderSide == borderSide &&
-      other.borderRadius == borderRadius;
+      other.borderRadius == borderRadius &&
+      other.outlineLayout == outlineLayout &&
+      other.indicator == indicator &&
+      other.error == error;
 
   @override
-  int get hashCode => Object.hash(borderSide, borderRadius);
+  int get hashCode =>
+      Object.hash(borderSide, borderRadius, outlineLayout, indicator, error);
+}
+
+/// MD3 填充式字段 / 下拉触发器的活动指示线（M3 filled text field 的下沿线）
+/// 此刻的样子：由 [FushiFieldIndicatorHost] 的动画驱动，填充式边框在 paint 时
+/// 读它。静止 1dp（块里是压暗的块前景色，否则 onSurfaceVariant）、悬停换
+/// onSurface、聚焦 / 展开 2dp primary、错误 error、禁用 onSurface 38%。
+class FushiFieldIndicator {
+  FushiFieldIndicator._(this._focus, this._hover, this._error);
+
+  final Animation<double> _focus;
+  final Animation<double> _hover;
+  final Animation<double> _error;
+
+  Color _rest = const Color(0x00000000);
+  Color _hovered = const Color(0x00000000);
+  Color _active = const Color(0x00000000);
+  Color _errorColor = const Color(0x00000000);
+  Color _disabled = const Color(0x00000000);
+  bool _enabled = true;
+
+  /// 指示线此刻的描边；[error] = 边框自己是错误态（宿主不知道的校验错误）。
+  BorderSide side({bool error = false}) {
+    if (!_enabled) return BorderSide(color: _disabled);
+    final double e = error ? 1 : _error.value;
+    final double f = _focus.value;
+    final Color base = Color.lerp(
+      Color.lerp(_rest, _hovered, _hover.value),
+      _errorColor,
+      e,
+    )!;
+    final Color active = Color.lerp(_active, _errorColor, e)!;
+    return BorderSide(color: Color.lerp(base, active, f)!, width: 1 + f);
+  }
+}
+
+/// 给子树里的 MD3 填充式字段装一条按状态补间的活动指示线（见
+/// [FushiFieldIndicator]）：被动 [Focus] 听子孙焦点、[MouseRegion] 听悬停，
+/// 时长取 [fushiMotionDuration]（减弱动效时直接跳到终态）。[builder] 拿到的
+/// context 在宿主之下，[fushiMd3FieldDecoration] 据此把指示线交给边框。
+///
+/// 只换线的画法，不动布局：浮动标题、命中区、帮助 / 错误文字照旧。[active] =
+/// 外部的「展开」态（下拉菜单打开时与聚焦同一档）。
+class FushiFieldIndicatorHost extends StatefulWidget {
+  const FushiFieldIndicatorHost({
+    required this.builder,
+    this.enabled = true,
+    this.error = false,
+    this.active = false,
+    super.key,
+  });
+
+  final WidgetBuilder builder;
+  final bool enabled;
+  final bool error;
+  final bool active;
+
+  static FushiFieldIndicator? maybeOf(BuildContext context) => context
+      .dependOnInheritedWidgetOfExactType<_FushiFieldIndicatorScope>()
+      ?.indicator;
+
+  @override
+  State<FushiFieldIndicatorHost> createState() =>
+      _FushiFieldIndicatorHostState();
+}
+
+class _FushiFieldIndicatorHostState extends State<FushiFieldIndicatorHost>
+    with TickerProviderStateMixin {
+  late final AnimationController _focus = AnimationController(vsync: this);
+  late final AnimationController _hover = AnimationController(vsync: this);
+  late final AnimationController _error = AnimationController(
+    vsync: this,
+    value: widget.error ? 1 : 0,
+  );
+  late final FushiFieldIndicator _indicator = FushiFieldIndicator._(
+    _focus,
+    _hover,
+    _error,
+  );
+  late final Listenable _repaint = Listenable.merge(<Listenable>[
+    _focus,
+    _hover,
+    _error,
+  ]);
+  bool _hasFocus = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.active) _focus.value = 1;
+  }
+
+  void _drive(AnimationController controller, bool on) {
+    final double target = on ? 1 : 0;
+    if (controller.value == target && !controller.isAnimating) return;
+    final Duration duration = fushiMotionDuration(context, FushiMotion.short);
+    if (duration == Duration.zero) {
+      controller.value = target;
+      return;
+    }
+    controller.animateTo(
+      target,
+      duration: duration,
+      curve: FushiMotion.standard,
+    );
+  }
+
+  @override
+  void didUpdateWidget(FushiFieldIndicatorHost oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.error != widget.error) _drive(_error, widget.error);
+    if (oldWidget.active != widget.active) {
+      _drive(_focus, _hasFocus || widget.active);
+    }
+  }
+
+  @override
+  void dispose() {
+    _focus.dispose();
+    _hover.dispose();
+    _error.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final Color? scopedFg = FushiFieldFillScope.foregroundOf(context);
+    _indicator
+      .._rest = scopedFg?.withValues(alpha: 0.72) ?? cs.onSurfaceVariant
+      .._hovered = scopedFg ?? cs.onSurface
+      .._active = cs.primary
+      .._errorColor = cs.error
+      .._disabled = cs.onSurface.withValues(alpha: 0.38)
+      .._enabled = widget.enabled;
+    return Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      includeSemantics: false,
+      onFocusChange: (bool focused) {
+        _hasFocus = focused;
+        _drive(_focus, focused || widget.active);
+      },
+      child: MouseRegion(
+        opaque: false,
+        hitTestBehavior: HitTestBehavior.translucent,
+        onEnter: (_) => _drive(_hover, true),
+        onExit: (_) => _drive(_hover, false),
+        // 指示线动画每一帧让本子树重画：填充式边框在 InputDecorator 的
+        // paint 里读 [FushiFieldIndicator] 的当前值（两者之间没有重画边界，
+        // TextField 只把 EditableText 隔在 RepaintBoundary 里）。
+        child: CustomPaint(
+          foregroundPainter: _FushiFieldIndicatorRepaint(_repaint),
+          child: _FushiFieldIndicatorScope(
+            indicator: _indicator,
+            child: Builder(builder: widget.builder),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 不经 InputDecorator 的字段式控件（下拉触发器）自己画活动指示线：在
+/// [child] 下沿画 [FushiFieldIndicatorHost] 此刻的线。没有宿主时原样返回。
+class FushiFieldIndicatorLine extends StatelessWidget {
+  const FushiFieldIndicatorLine({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiFieldIndicator? indicator = FushiFieldIndicatorHost.maybeOf(
+      context,
+    );
+    if (indicator == null) return child;
+    return CustomPaint(
+      foregroundPainter: _FushiFieldIndicatorLinePainter(indicator),
+      child: child,
+    );
+  }
+}
+
+class _FushiFieldIndicatorLinePainter extends CustomPainter {
+  _FushiFieldIndicatorLinePainter(this.indicator);
+
+  final FushiFieldIndicator indicator;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final BorderSide line = indicator.side();
+    if (line.width == 0) return;
+    final double y = size.height - line.width / 2;
+    canvas.drawLine(Offset(0, y), Offset(size.width, y), line.toPaint());
+  }
+
+  // 宿主动画每帧让子树重画（见 [FushiFieldIndicatorHost]），值随之更新。
+  @override
+  bool shouldRepaint(_FushiFieldIndicatorLinePainter oldDelegate) =>
+      oldDelegate.indicator != indicator;
+}
+
+class _FushiFieldIndicatorRepaint extends CustomPainter {
+  _FushiFieldIndicatorRepaint(Listenable repaint) : super(repaint: repaint);
+
+  @override
+  void paint(Canvas canvas, Size size) {}
+
+  @override
+  bool shouldRepaint(_FushiFieldIndicatorRepaint oldDelegate) => false;
+}
+
+class _FushiFieldIndicatorScope extends InheritedWidget {
+  const _FushiFieldIndicatorScope({
+    required this.indicator,
+    required super.child,
+  });
+
+  final FushiFieldIndicator indicator;
+
+  @override
+  bool updateShouldNotify(_FushiFieldIndicatorScope oldWidget) =>
+      oldWidget.indicator != indicator;
 }
 
 /// [TextField] 的设计系统分派版。
@@ -493,84 +836,89 @@ class FushiTextFieldControl extends StatelessWidget {
     if (isGlassDesign(context)) {
       return _GlassTextFieldView(config: this);
     }
-    return TextField(
-      groupId: groupId,
-      controller: controller,
-      focusNode: focusNode,
-      undoController: undoController,
-      decoration: fushiMd3FieldDecoration(context, decoration),
-      keyboardType: keyboardType,
-      textInputAction: textInputAction,
-      textCapitalization: textCapitalization,
-      style: style,
-      strutStyle: strutStyle,
-      textAlign: textAlign,
-      textAlignVertical:
-          textAlignVertical ??
-          (maxLines == 1 &&
-                  decoration != null &&
-                  _isSearchDecoration(decoration!)
-              ? TextAlignVertical.center
-              : null),
-      textDirection: textDirection,
-      readOnly: readOnly,
-      toolbarOptions: toolbarOptions,
-      showCursor: showCursor,
-      autofocus: autofocus,
-      statesController: statesController,
-      obscuringCharacter: obscuringCharacter,
-      obscureText: obscureText,
-      autocorrect: autocorrect,
-      smartDashesType: smartDashesType,
-      smartQuotesType: smartQuotesType,
-      enableSuggestions: enableSuggestions,
-      maxLines: maxLines,
-      minLines: minLines,
-      expands: expands,
-      maxLength: maxLength,
-      maxLengthEnforcement: maxLengthEnforcement,
-      onChanged: onChanged,
-      onEditingComplete: onEditingComplete,
-      onSubmitted: onSubmitted,
-      onAppPrivateCommand: onAppPrivateCommand,
-      inputFormatters: inputFormatters,
-      enabled: enabled,
-      ignorePointers: ignorePointers,
-      cursorWidth: cursorWidth,
-      cursorHeight: cursorHeight,
-      cursorRadius: cursorRadius,
-      cursorOpacityAnimates: cursorOpacityAnimates,
-      cursorColor: cursorColor,
-      cursorErrorColor: cursorErrorColor,
-      selectionHeightStyle: selectionHeightStyle,
-      selectionWidthStyle: selectionWidthStyle,
-      keyboardAppearance: keyboardAppearance,
-      scrollPadding: scrollPadding,
-      dragStartBehavior: dragStartBehavior,
-      enableInteractiveSelection: enableInteractiveSelection,
-      selectAllOnFocus: selectAllOnFocus,
-      selectionControls: selectionControls,
-      onTap: onTap,
-      onTapAlwaysCalled: onTapAlwaysCalled,
-      onTapOutside: onTapOutside,
-      onTapUpOutside: onTapUpOutside,
-      mouseCursor: mouseCursor,
-      buildCounter: buildCounter,
-      scrollController: scrollController,
-      scrollPhysics: scrollPhysics,
-      autofillHints: autofillHints,
-      contentInsertionConfiguration: contentInsertionConfiguration,
-      clipBehavior: clipBehavior,
-      restorationId: restorationId,
-      scribbleEnabled: scribbleEnabled,
-      stylusHandwritingEnabled: stylusHandwritingEnabled,
-      enableIMEPersonalizedLearning: enableIMEPersonalizedLearning,
-      enableInlinePrediction: enableInlinePrediction,
-      contextMenuBuilder: contextMenuBuilder,
-      canRequestFocus: canRequestFocus,
-      spellCheckConfiguration: spellCheckConfiguration,
-      magnifierConfiguration: magnifierConfiguration,
-      hintLocales: hintLocales,
+    // MD3：活动指示线按状态以 FushiMotion 补间（FushiFieldIndicatorHost）。
+    return FushiFieldIndicatorHost(
+      enabled: (enabled ?? decoration?.enabled ?? true),
+      error: (decoration?.errorText != null || decoration?.error != null),
+      builder: (BuildContext context) => TextField(
+        groupId: groupId,
+        controller: controller,
+        focusNode: focusNode,
+        undoController: undoController,
+        decoration: fushiMd3FieldDecoration(context, decoration),
+        keyboardType: keyboardType,
+        textInputAction: textInputAction,
+        textCapitalization: textCapitalization,
+        style: style,
+        strutStyle: strutStyle,
+        textAlign: textAlign,
+        textAlignVertical:
+            textAlignVertical ??
+            (maxLines == 1 &&
+                    decoration != null &&
+                    _isSearchDecoration(decoration!)
+                ? TextAlignVertical.center
+                : null),
+        textDirection: textDirection,
+        readOnly: readOnly,
+        toolbarOptions: toolbarOptions,
+        showCursor: showCursor,
+        autofocus: autofocus,
+        statesController: statesController,
+        obscuringCharacter: obscuringCharacter,
+        obscureText: obscureText,
+        autocorrect: autocorrect,
+        smartDashesType: smartDashesType,
+        smartQuotesType: smartQuotesType,
+        enableSuggestions: enableSuggestions,
+        maxLines: maxLines,
+        minLines: minLines,
+        expands: expands,
+        maxLength: maxLength,
+        maxLengthEnforcement: maxLengthEnforcement,
+        onChanged: onChanged,
+        onEditingComplete: onEditingComplete,
+        onSubmitted: onSubmitted,
+        onAppPrivateCommand: onAppPrivateCommand,
+        inputFormatters: inputFormatters,
+        enabled: enabled,
+        ignorePointers: ignorePointers,
+        cursorWidth: cursorWidth,
+        cursorHeight: cursorHeight,
+        cursorRadius: cursorRadius,
+        cursorOpacityAnimates: cursorOpacityAnimates,
+        cursorColor: cursorColor,
+        cursorErrorColor: cursorErrorColor,
+        selectionHeightStyle: selectionHeightStyle,
+        selectionWidthStyle: selectionWidthStyle,
+        keyboardAppearance: keyboardAppearance,
+        scrollPadding: scrollPadding,
+        dragStartBehavior: dragStartBehavior,
+        enableInteractiveSelection: enableInteractiveSelection,
+        selectAllOnFocus: selectAllOnFocus,
+        selectionControls: selectionControls,
+        onTap: onTap,
+        onTapAlwaysCalled: onTapAlwaysCalled,
+        onTapOutside: onTapOutside,
+        onTapUpOutside: onTapUpOutside,
+        mouseCursor: mouseCursor,
+        buildCounter: buildCounter,
+        scrollController: scrollController,
+        scrollPhysics: scrollPhysics,
+        autofillHints: autofillHints,
+        contentInsertionConfiguration: contentInsertionConfiguration,
+        clipBehavior: clipBehavior,
+        restorationId: restorationId,
+        scribbleEnabled: scribbleEnabled,
+        stylusHandwritingEnabled: stylusHandwritingEnabled,
+        enableIMEPersonalizedLearning: enableIMEPersonalizedLearning,
+        enableInlinePrediction: enableInlinePrediction,
+        contextMenuBuilder: contextMenuBuilder,
+        canRequestFocus: canRequestFocus,
+        spellCheckConfiguration: spellCheckConfiguration,
+        magnifierConfiguration: magnifierConfiguration,
+        hintLocales: hintLocales,
+      ),
     );
   }
 }
@@ -1332,89 +1680,97 @@ class FushiTextFormFieldControl extends StatelessWidget {
     if (isGlassDesign(context)) {
       return _GlassTextFormField(config: this);
     }
-    return TextFormField(
-      groupId: groupId,
-      controller: controller,
-      initialValue: initialValue,
-      focusNode: focusNode,
-      forceErrorText: forceErrorText,
-      decoration: fushiMd3FieldDecoration(context, decoration),
-      keyboardType: keyboardType,
-      textCapitalization: textCapitalization,
-      textInputAction: textInputAction,
-      style: style,
-      strutStyle: strutStyle,
-      textDirection: textDirection,
-      textAlign: textAlign,
-      textAlignVertical:
-          textAlignVertical ??
-          (maxLines == 1 &&
-                  decoration != null &&
-                  _isSearchDecoration(decoration!)
-              ? TextAlignVertical.center
-              : null),
-      autofocus: autofocus,
-      readOnly: readOnly,
-      toolbarOptions: toolbarOptions,
-      showCursor: showCursor,
-      obscuringCharacter: obscuringCharacter,
-      obscureText: obscureText,
-      autocorrect: autocorrect,
-      smartDashesType: smartDashesType,
-      smartQuotesType: smartQuotesType,
-      enableSuggestions: enableSuggestions,
-      maxLengthEnforcement: maxLengthEnforcement,
-      maxLines: maxLines,
-      minLines: minLines,
-      expands: expands,
-      maxLength: maxLength,
-      onChanged: onChanged,
-      onTap: onTap,
-      onTapAlwaysCalled: onTapAlwaysCalled,
-      onTapOutside: onTapOutside,
-      onTapUpOutside: onTapUpOutside,
-      onEditingComplete: onEditingComplete,
-      onFieldSubmitted: onFieldSubmitted,
-      onSaved: onSaved,
-      validator: validator,
-      errorBuilder: errorBuilder,
-      inputFormatters: inputFormatters,
-      enabled: enabled,
-      ignorePointers: ignorePointers,
-      cursorWidth: cursorWidth,
-      cursorHeight: cursorHeight,
-      cursorRadius: cursorRadius,
-      cursorColor: cursorColor,
-      cursorErrorColor: cursorErrorColor,
-      keyboardAppearance: keyboardAppearance,
-      scrollPadding: scrollPadding,
-      enableInteractiveSelection: enableInteractiveSelection,
-      selectAllOnFocus: selectAllOnFocus,
-      selectionControls: selectionControls,
-      buildCounter: buildCounter,
-      scrollPhysics: scrollPhysics,
-      autofillHints: autofillHints,
-      autovalidateMode: autovalidateMode,
-      scrollController: scrollController,
-      restorationId: restorationId,
-      enableIMEPersonalizedLearning: enableIMEPersonalizedLearning,
-      mouseCursor: mouseCursor,
-      contextMenuBuilder: contextMenuBuilder,
-      spellCheckConfiguration: spellCheckConfiguration,
-      magnifierConfiguration: magnifierConfiguration,
-      undoController: undoController,
-      onAppPrivateCommand: onAppPrivateCommand,
-      cursorOpacityAnimates: cursorOpacityAnimates,
-      selectionHeightStyle: selectionHeightStyle,
-      selectionWidthStyle: selectionWidthStyle,
-      dragStartBehavior: dragStartBehavior,
-      contentInsertionConfiguration: contentInsertionConfiguration,
-      statesController: statesController,
-      clipBehavior: clipBehavior,
-      scribbleEnabled: scribbleEnabled,
-      stylusHandwritingEnabled: stylusHandwritingEnabled,
-      canRequestFocus: canRequestFocus,
-      hintLocales: hintLocales,
+    // MD3：活动指示线按状态以 FushiMotion 补间（FushiFieldIndicatorHost）。
+    return FushiFieldIndicatorHost(
+      enabled: (enabled ?? decoration?.enabled ?? true),
+      error:
+          (forceErrorText != null ||
+          decoration?.errorText != null ||
+          decoration?.error != null),
+      builder: (BuildContext context) => TextFormField(
+        groupId: groupId,
+        controller: controller,
+        initialValue: initialValue,
+        focusNode: focusNode,
+        forceErrorText: forceErrorText,
+        decoration: fushiMd3FieldDecoration(context, decoration),
+        keyboardType: keyboardType,
+        textCapitalization: textCapitalization,
+        textInputAction: textInputAction,
+        style: style,
+        strutStyle: strutStyle,
+        textDirection: textDirection,
+        textAlign: textAlign,
+        textAlignVertical:
+            textAlignVertical ??
+            (maxLines == 1 &&
+                    decoration != null &&
+                    _isSearchDecoration(decoration!)
+                ? TextAlignVertical.center
+                : null),
+        autofocus: autofocus,
+        readOnly: readOnly,
+        toolbarOptions: toolbarOptions,
+        showCursor: showCursor,
+        obscuringCharacter: obscuringCharacter,
+        obscureText: obscureText,
+        autocorrect: autocorrect,
+        smartDashesType: smartDashesType,
+        smartQuotesType: smartQuotesType,
+        enableSuggestions: enableSuggestions,
+        maxLengthEnforcement: maxLengthEnforcement,
+        maxLines: maxLines,
+        minLines: minLines,
+        expands: expands,
+        maxLength: maxLength,
+        onChanged: onChanged,
+        onTap: onTap,
+        onTapAlwaysCalled: onTapAlwaysCalled,
+        onTapOutside: onTapOutside,
+        onTapUpOutside: onTapUpOutside,
+        onEditingComplete: onEditingComplete,
+        onFieldSubmitted: onFieldSubmitted,
+        onSaved: onSaved,
+        validator: validator,
+        errorBuilder: errorBuilder,
+        inputFormatters: inputFormatters,
+        enabled: enabled,
+        ignorePointers: ignorePointers,
+        cursorWidth: cursorWidth,
+        cursorHeight: cursorHeight,
+        cursorRadius: cursorRadius,
+        cursorColor: cursorColor,
+        cursorErrorColor: cursorErrorColor,
+        keyboardAppearance: keyboardAppearance,
+        scrollPadding: scrollPadding,
+        enableInteractiveSelection: enableInteractiveSelection,
+        selectAllOnFocus: selectAllOnFocus,
+        selectionControls: selectionControls,
+        buildCounter: buildCounter,
+        scrollPhysics: scrollPhysics,
+        autofillHints: autofillHints,
+        autovalidateMode: autovalidateMode,
+        scrollController: scrollController,
+        restorationId: restorationId,
+        enableIMEPersonalizedLearning: enableIMEPersonalizedLearning,
+        mouseCursor: mouseCursor,
+        contextMenuBuilder: contextMenuBuilder,
+        spellCheckConfiguration: spellCheckConfiguration,
+        magnifierConfiguration: magnifierConfiguration,
+        undoController: undoController,
+        onAppPrivateCommand: onAppPrivateCommand,
+        cursorOpacityAnimates: cursorOpacityAnimates,
+        selectionHeightStyle: selectionHeightStyle,
+        selectionWidthStyle: selectionWidthStyle,
+        dragStartBehavior: dragStartBehavior,
+        contentInsertionConfiguration: contentInsertionConfiguration,
+        statesController: statesController,
+        clipBehavior: clipBehavior,
+        scribbleEnabled: scribbleEnabled,
+        stylusHandwritingEnabled: stylusHandwritingEnabled,
+        canRequestFocus: canRequestFocus,
+        hintLocales: hintLocales,
+      ),
     );
   }
 }

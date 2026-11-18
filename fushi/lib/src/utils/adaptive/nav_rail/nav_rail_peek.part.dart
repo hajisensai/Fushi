@@ -10,6 +10,8 @@ class AdaptiveNavPeekEntry {
     this.subtitle,
     this.progress,
     this.icon,
+    this.status,
+    this.statusTone = AdaptiveNavPeekStatusTone.neutral,
     this.blurCover = false,
   });
 
@@ -32,9 +34,18 @@ class AdaptiveNavPeekEntry {
   /// 0..1；null = 没有进度（游戏）。
   final double? progress;
 
+  /// 列表行尾部的状态小签（「42%」「已完成」「需要处理」）；null = 不画。
+  final String? status;
+
+  /// [status] 的语义色。
+  final AdaptiveNavPeekStatusTone statusTone;
+
   /// 点了直接打开这个条目（打开阅读器 / 播放器 / 切到对应库页）。
   final VoidCallback onOpen;
 }
+
+/// 速览条目状态小签的语义色。
+enum AdaptiveNavPeekStatusTone { neutral, active, done, attention, error }
 
 /// 一次速览加载的结果。
 @immutable
@@ -45,6 +56,7 @@ class AdaptiveNavPeekData {
     this.listLayout = false,
     this.resumeLabel,
     this.recentLabel,
+    this.summary,
   });
 
   final AdaptiveNavPeekEntry? resume;
@@ -61,6 +73,9 @@ class AdaptiveNavPeekData {
 
   /// [recent] 上方的小标题；null = 「最近」。
   final String? recentLabel;
+
+  /// 页头标题下的一行概况（「2 个进行中 · 5 个已完成」）；null = 不画。
+  final String? summary;
 
   bool get isEmpty => resume == null && recent.isEmpty;
 }
@@ -454,235 +469,219 @@ class _NavRailPeekContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return FutureBuilder<AdaptiveNavPeekData>(
+      future: data,
+      builder:
+          (BuildContext context, AsyncSnapshot<AdaptiveNavPeekData> snapshot) {
+            final AdaptiveNavPeekData? value = snapshot.data;
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  _header(context, value?.summary),
+                  _body(context, snapshot),
+                ],
+              ),
+            );
+          },
+    );
+  }
+
+  /// 页头：模块形状徽记 + 名称（+ 一行概况）+ 「打开 →」。
+  Widget _header(BuildContext context, String? summary) {
     final ColorScheme colors = Theme.of(context).colorScheme;
     final TextTheme text = Theme.of(context).textTheme;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      padding: const EdgeInsets.fromLTRB(2, 0, 0, 12),
+      child: Row(
         children: <Widget>[
-          Row(
-            children: <Widget>[
-              SizedBox.square(
-                dimension: 22,
-                child: DecoratedBox(
-                  decoration: ShapeDecoration(
-                    color: colors.primary,
-                    shape: MaterialShapeBorder(
-                      shape: shape ?? MaterialShapes.cookie9Sided,
-                    ),
-                  ),
+          SizedBox.square(
+            dimension: 36,
+            child: DecoratedBox(
+              decoration: ShapeDecoration(
+                color: colors.primaryContainer,
+                shape: MaterialShapeBorder(
+                  shape: shape ?? MaterialShapes.cookie9Sided,
                 ),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
+              child: Center(
+                child: FushiIcon(
+                  item.icon,
+                  size: 18,
+                  color: colors.onPrimaryContainer,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
                   item.label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: text.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
-              ),
-              FushiFilledButton.tonal(
-                onPressed: onOpenModule,
-                child: Text(t.nav_peek_open),
-              ),
-            ],
-          ),
-          FutureBuilder<AdaptiveNavPeekData>(
-            future: data,
-            builder:
-                (
-                  BuildContext context,
-                  AsyncSnapshot<AdaptiveNavPeekData> snapshot,
-                ) {
-                  final AdaptiveNavPeekData? value = snapshot.data;
-                  if (value == null) {
-                    return snapshot.hasError
-                        ? const SizedBox(height: 8)
-                        : const Padding(
-                            padding: EdgeInsets.only(top: 16, bottom: 8),
-                            child: FushiLinearProgressIndicator(),
-                          );
-                  }
-                  if (value.isEmpty) {
-                    return Padding(
-                      padding: const EdgeInsets.only(top: 12),
-                      child: Text(
-                        t.home_continue_empty,
-                        style: text.bodyMedium?.copyWith(
-                          color: colors.onSurfaceVariant,
-                        ),
-                      ),
-                    );
-                  }
-                  final Widget body = Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: <Widget>[
-                      if (value.resume case final AdaptiveNavPeekEntry entry)
-                        _NavPeekResume(
-                          entry: entry,
-                          label: value.resumeLabel ?? t.home_continue,
-                          showCover: !value.listLayout,
-                          fallbackIcon: entry.icon ?? item.icon,
-                          onOpen: () => onOpenEntry(entry),
-                        ),
-                      if (value.recent.isNotEmpty) ...<Widget>[
-                        const SizedBox(height: 12),
-                        Text(
-                          value.recentLabel ?? t.nav_peek_recent,
-                          style: text.labelMedium?.copyWith(
+                FushiAnimatedSize(
+                  duration: context.fushiMotion.spatialDefault.duration,
+                  curve: context.fushiMotion.spatialDefault.curve,
+                  alignment: AlignmentDirectional.topStart,
+                  child: summary == null
+                      ? const SizedBox(width: double.infinity)
+                      : Text(
+                          summary,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: text.bodySmall?.copyWith(
                             color: colors.onSurfaceVariant,
                           ),
                         ),
-                        const SizedBox(height: 6),
-                        if (value.listLayout)
-                          for (final AdaptiveNavPeekEntry e in value.recent)
-                            _NavPeekListRow(
-                              entry: e,
-                              fallbackIcon: e.icon ?? item.icon,
-                              onOpen: () => onOpenEntry(e),
-                            )
-                        else
-                          _NavPeekImageAspects(
-                            images: <ImageProvider?>[
-                              for (final AdaptiveNavPeekEntry e in value.recent)
-                                e.cover,
-                            ],
-                            builder:
-                                (
-                                  BuildContext context,
-                                  List<double> aspects,
-                                ) => LayoutBuilder(
-                                  builder: (BuildContext context, BoxConstraints box) {
-                                    final List<List<double>> rows =
-                                        navPeekRecentLayout(
-                                          aspects: aspects,
-                                          maxWidth: box.maxWidth,
-                                        );
-                                    final List<int> starts = <int>[0];
-                                    for (final List<double> row in rows) {
-                                      starts.add(starts.last + row.length);
-                                    }
-                                    return Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      spacing: kNavPeekRecentGap,
-                                      children: <Widget>[
-                                        for (int r = 0; r < rows.length; r++)
-                                          Row(
-                                            spacing: kNavPeekRecentGap,
-                                            children: <Widget>[
-                                              for (
-                                                int j = 0;
-                                                j < rows[r].length;
-                                                j++
-                                              )
-                                                SizedBox(
-                                                  width: rows[r][j],
-                                                  child: _NavPeekRecent(
-                                                    entry: value
-                                                        .recent[starts[r] + j],
-                                                    aspectRatio:
-                                                        aspects[starts[r] + j],
-                                                    fallbackIcon:
-                                                        value
-                                                            .recent[starts[r] +
-                                                                j]
-                                                            .icon ??
-                                                        item.icon,
-                                                    onOpen: () => onOpenEntry(
-                                                      value.recent[starts[r] +
-                                                          j],
-                                                    ),
-                                                  ),
-                                                ),
-                                            ],
-                                          ),
-                                      ],
-                                    );
-                                  },
-                                ),
-                          ),
-                      ],
-                    ],
-                  );
-                  final ShelfCoverMaterial? material = item.peek?.coverMaterial;
-                  return material == null
-                      ? body
-                      : ShelfCoverMaterialScope(
-                          material: material,
-                          child: body,
-                        );
-                },
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          FushiFilledButton.tonal(
+            onPressed: onOpenModule,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              spacing: 4,
+              children: <Widget>[
+                Text(t.nav_peek_open),
+                const FushiIcon(Icons.arrow_forward, size: 16),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
+
+  Widget _body(
+    BuildContext context,
+    AsyncSnapshot<AdaptiveNavPeekData> snapshot,
+  ) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final TextTheme text = Theme.of(context).textTheme;
+    final AdaptiveNavPeekData? value = snapshot.data;
+    if (value == null) {
+      return snapshot.hasError
+          ? const SizedBox(height: 4)
+          : const Padding(
+              padding: EdgeInsets.only(top: 4, bottom: 6),
+              child: FushiLinearProgressIndicator(),
+            );
+    }
+    if (value.isEmpty) {
+      return _NavPeekEmpty(icon: item.icon, label: t.home_continue_empty);
+    }
+    // 主块：「继续」项；没有时把最近的第一项提上来当主块（有封面的目的地），
+    // 卡片总有一个视觉焦点，而不是一格格一样大的小块。
+    final bool promote = value.resume == null && !value.listLayout;
+    final AdaptiveNavPeekEntry? hero =
+        value.resume ?? (promote ? value.recent.first : null);
+    final String heroLabel = value.resume != null
+        ? value.resumeLabel ?? t.home_continue
+        : value.recentLabel ?? t.nav_peek_recent;
+    final List<AdaptiveNavPeekEntry> rest = promote
+        ? value.recent.skip(1).toList()
+        : value.recent;
+    final Widget body = FushiEntranceScope(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          if (hero != null)
+            FushiStaggeredEntrance(
+              index: 0,
+              child: _NavPeekResume(
+                entry: hero,
+                label: heroLabel,
+                showCover: !value.listLayout,
+                fallbackIcon: hero.icon ?? item.icon,
+                onOpen: () => onOpenEntry(hero),
+              ),
+            ),
+          if (rest.isNotEmpty) ...<Widget>[
+            if (!promote)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(4, 12, 4, 6),
+                child: Text(
+                  value.recentLabel ?? t.nav_peek_recent,
+                  style: text.labelMedium?.copyWith(
+                    color: colors.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              )
+            else
+              const SizedBox(height: 8),
+            if (value.listLayout)
+              for (int i = 0; i < rest.length; i++)
+                FushiStaggeredEntrance(
+                  index: i + 1,
+                  child: _NavPeekListRow(
+                    entry: rest[i],
+                    fallbackIcon: rest[i].icon ?? item.icon,
+                    onOpen: () => onOpenEntry(rest[i]),
+                  ),
+                )
+            else
+              _NavPeekCoverList(
+                entries: rest,
+                fallbackIcon: item.icon,
+                onOpen: onOpenEntry,
+              ),
+          ],
+        ],
+      ),
+    );
+    final ShelfCoverMaterial? material = item.peek?.coverMaterial;
+    return material == null
+        ? body
+        : ShelfCoverMaterialScope(material: material, child: body);
+  }
 }
 
-/// 速览卡里的封面：没有封面时画模块图标占位。分区给了材质
-/// （[AdaptiveNavPeek.coverMaterial]）时走材质简化档（圆角 + 内描边 + 轻
-/// 光泽），否则 / 墨水屏下保留 [radius] 圆角框。
-class _NavPeekCover extends StatelessWidget {
-  const _NavPeekCover({
-    required this.image,
-    required this.fallbackIcon,
-    required this.radius,
-    this.aspectRatio = kNavPeekDefaultCoverAspect,
-    this.blur = false,
-  });
+/// 速览卡空态：模块图标浅底 + 一句话（不是一行孤零零的灰字）。
+class _NavPeekEmpty extends StatelessWidget {
+  const _NavPeekEmpty({required this.icon, required this.label});
 
-  final ImageProvider? image;
-
-  /// NSFW 封面打模糊（[AdaptiveNavPeekEntry.blurCover]）。
-  final bool blur;
-  final IconData fallbackIcon;
-  final double radius;
-
-  /// 封面框的宽高比：取封面图自己的比例（[_NavPeekImageAspects]），横版视频
-  /// 缩略图因此整张显示、不被裁成竖版。
-  final double aspectRatio;
+  final IconData icon;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
-    final Widget placeholder = ColoredBox(
-      color: FushiDesignTokens.of(context).surfaces.overlay,
-      child: Center(
-        child: FushiIcon(fallbackIcon, color: colors.onSurfaceVariant),
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: FushiDesignTokens.of(context).surfaces.search,
+        borderRadius: FushiM3eShape.cardRadius,
       ),
-    );
-    final ImageProvider? provider = image;
-    final Widget cover = provider == null
-        ? placeholder
-        : NsfwCoverBlur(
-            blur: blur,
-            showIcon: false,
-            child: Image(
-              image: provider,
-              fit: BoxFit.cover,
-              gaplessPlayback: true,
-              errorBuilder: (_, _, _) => placeholder,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+        child: Row(
+          children: <Widget>[
+            FushiIcon(icon, size: 22, color: colors.onSurfaceVariant),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                label,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
             ),
-          );
-    if (shelfCoverMaterialOf(context) != null) {
-      return AspectRatio(
-        aspectRatio: aspectRatio,
-        child: ShelfCoverFrame(
-          density: ShelfCoverDensity.compact,
-          child: cover,
+          ],
         ),
-      );
-    }
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(radius),
-      child: AspectRatio(aspectRatio: aspectRatio, child: cover),
+      ),
     );
   }
 }
@@ -708,6 +707,20 @@ class _NavPeekResume extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (showCover) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 12),
+        child: SizedBox(
+          height: kNavPeekResumeBlockHeight,
+          child: _NavPeekBlock(
+            entry: entry,
+            eyebrow: label,
+            fallbackIcon: fallbackIcon,
+            onOpen: onOpen,
+          ),
+        ),
+      );
+    }
     final ColorScheme colors = Theme.of(context).colorScheme;
     final TextTheme text = Theme.of(context).textTheme;
     final double? progress = entry.progress;
@@ -725,28 +738,6 @@ class _NavPeekResume extends StatelessWidget {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  if (showCover) ...<Widget>[
-                    _NavPeekImageAspects(
-                      images: <ImageProvider?>[entry.cover],
-                      builder: (BuildContext context, List<double> aspects) {
-                        final double width = navPeekResumeCoverWidth(
-                          aspects.single,
-                        );
-                        return SizedBox(
-                          width: width,
-                          height: kNavPeekResumeCoverHeight,
-                          child: _NavPeekCover(
-                            image: entry.cover,
-                            fallbackIcon: fallbackIcon,
-                            radius: 10,
-                            aspectRatio: width / kNavPeekResumeCoverHeight,
-                            blur: entry.blurCover,
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(width: 12),
-                  ],
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -801,55 +792,319 @@ class _NavPeekResume extends StatelessWidget {
   }
 }
 
-class _NavPeekRecent extends StatelessWidget {
-  const _NavPeekRecent({
+/// 速览卡「继续」色块的高（拼贴半高卡的口径）。
+const double kNavPeekResumeBlockHeight = 128;
+
+/// 速览卡里的一块拼贴色块（与首页 / 库页同一个 [FushiCoverBlock]）：封面按自身
+/// 朝向摆（竖封面立在起始侧、横版缩略图铺在尾侧），底色取封面色相，标题 /
+/// 副行 / 进度画在块里（用户 2026-11-16「侧边栏预览重新设计一下」——原来的
+/// 「灰底列表行 + 一排裸封面」与拼贴改版后的页面不是一套语言）。
+class _NavPeekBlock extends StatelessWidget {
+  const _NavPeekBlock({
     required this.entry,
-    required this.aspectRatio,
+    required this.fallbackIcon,
+    required this.onOpen,
+    this.eyebrow,
+  });
+
+  final AdaptiveNavPeekEntry entry;
+  final IconData fallbackIcon;
+  final VoidCallback onOpen;
+
+  /// 块内标题上方的小字（「继续」）；null = 不画。
+  final String? eyebrow;
+
+  @override
+  Widget build(BuildContext context) {
+    final ImageProvider? cover = entry.cover;
+    return _NavPeekImageAspects(
+      images: <ImageProvider?>[cover],
+      builder: (BuildContext context, List<double> aspects) {
+        final FushiCoverBlockArt art = cover != null && aspects.single > 1.1
+            ? FushiCoverBlockArt.landscape
+            : FushiCoverBlockArt.portrait;
+        final Widget block = FushiCoverBlock(
+          size: FushiCoverBlockSize.half,
+          art: art,
+          title: entry.title,
+          eyebrow: eyebrow,
+          subtitle: entry.subtitle,
+          progress: entry.progress,
+          watermark: true,
+          tintImage: cover,
+          covers: cover == null
+              ? <Widget>[
+                  ColoredBox(
+                    color: FushiDesignTokens.of(context).surfaces.overlay,
+                    child: Center(child: FushiIcon(fallbackIcon)),
+                  ),
+                ]
+              : <Widget>[
+                  NsfwCoverBlur(
+                    blur: entry.blurCover,
+                    showIcon: false,
+                    child: Image(
+                      image: cover,
+                      fit: BoxFit.cover,
+                      gaplessPlayback: true,
+                      excludeFromSemantics: true,
+                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                    ),
+                  ),
+                ],
+        );
+        return LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints c) => FushiHoverLift(
+            builder: (BuildContext _, bool _) => Semantics(
+              button: true,
+              label: entry.title,
+              excludeSemantics: true,
+              child: shelfCoverCard(
+                borderRadius: BorderRadius.circular(
+                  fushiCoverBlockRadius(FushiCoverBlockSize.half, c.maxHeight),
+                ),
+                onTap: onOpen,
+                child: block,
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// 速览卡主块之下的其余条目：M3E 分段分组列表（整行标题、副行、细进度、尾部
+/// 状态签），每行前面是按自身朝向摆的完整封面缩略图——不再是两列只剩封面一角
+/// 与半截标题的小色块（用户 2026-11-16「预览还是有点简陋」：同一部作品的两个
+/// 下载任务在小块里只看得出两张一样的封面）。
+class _NavPeekCoverList extends StatelessWidget {
+  const _NavPeekCoverList({
+    required this.entries,
     required this.fallbackIcon,
     required this.onOpen,
   });
 
-  final AdaptiveNavPeekEntry entry;
-  final double aspectRatio;
+  final List<AdaptiveNavPeekEntry> entries;
   final IconData fallbackIcon;
-  final VoidCallback onOpen;
+  final ValueChanged<AdaptiveNavPeekEntry> onOpen;
 
   @override
   Widget build(BuildContext context) {
-    return FushiTooltip(
-      message: entry.title,
-      child: FushiHoverLift(
-        builder: (BuildContext context, bool _) => FushiPressScale(
-          child: Semantics(
-            button: true,
-            label: entry.title,
-            child: GestureDetector(
-              onTap: onOpen,
-              child: MouseRegion(
-                cursor: SystemMouseCursors.click,
-                // 封面下写上名字：只有封面时看不出最近看的是哪部（2026-10-25
-                // 用户「媒体的话最近看的是什么」）。
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    _NavPeekCover(
-                      image: entry.cover,
-                      fallbackIcon: fallbackIcon,
-                      radius: 10,
-                      aspectRatio: aspectRatio,
-                      blur: entry.blurCover,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      entry.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.labelSmall,
-                    ),
-                  ],
-                ),
+    final List<AdaptiveNavPeekEntry> shown = entries
+        .take(kNavPeekMaxListRows)
+        .toList();
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        for (int i = 0; i < shown.length; i++)
+          FushiStaggeredEntrance(
+            index: i + 1,
+            child: FushiGroupedListItem(
+              index: i,
+              count: shown.length,
+              onTap: () => onOpen(shown[i]),
+              child: _NavPeekCoverRow(
+                entry: shown[i],
+                fallbackIcon: shown[i].icon ?? fallbackIcon,
               ),
             ),
+          ),
+      ],
+    );
+  }
+}
+
+/// 速览卡列表最多几行（主块之外）。
+const int kNavPeekMaxListRows = 4;
+
+/// 列表行缩略图的高。
+const double kNavPeekThumbHeight = 52;
+
+class _NavPeekCoverRow extends StatelessWidget {
+  const _NavPeekCoverRow({required this.entry, required this.fallbackIcon});
+
+  final AdaptiveNavPeekEntry entry;
+  final IconData fallbackIcon;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final TextTheme text = Theme.of(context).textTheme;
+    final double? progress = entry.progress;
+    final bool showProgress = progress != null && progress > 0 && progress < 1;
+    return Semantics(
+      button: true,
+      label: entry.title,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 8, 12, 8),
+        child: Row(
+          children: <Widget>[
+            _NavPeekThumb(
+              cover: entry.cover,
+              fallbackIcon: fallbackIcon,
+              blur: entry.blurCover,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(
+                    entry.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: text.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (entry.subtitle case final String subtitle)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: text.bodySmall?.copyWith(
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  if (showProgress)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: FushiWavyLinearProgress(
+                        value: progress.clamp(0.0, 1.0),
+                        color: colors.primary,
+                        trackColor: FushiDesignTokens.of(
+                          context,
+                        ).surfaces.overlay,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            if (entry.status case final String status) ...<Widget>[
+              const SizedBox(width: 10),
+              _NavPeekStatusChip(label: status, tone: entry.statusTone),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 列表行的封面缩略图：按图自己的朝向（竖海报 2:3 / 横版缩略图 16:9）完整
+/// 显示，不裁成方块。
+class _NavPeekThumb extends StatelessWidget {
+  const _NavPeekThumb({
+    required this.cover,
+    required this.fallbackIcon,
+    this.blur = false,
+  });
+
+  final ImageProvider? cover;
+  final IconData fallbackIcon;
+
+  /// NSFW 封面打模糊（[AdaptiveNavPeekEntry.blurCover]）。
+  final bool blur;
+
+  @override
+  Widget build(BuildContext context) {
+    final ImageProvider? image = cover;
+    final Color placeholder = FushiDesignTokens.of(context).surfaces.overlay;
+    if (image == null) {
+      return SizedBox(
+        width: kNavPeekThumbHeight * kNavPeekDefaultCoverAspect,
+        height: kNavPeekThumbHeight,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: placeholder,
+            borderRadius: FushiM3eShape.smallRadius,
+          ),
+          child: Center(child: FushiIcon(fallbackIcon, size: 18)),
+        ),
+      );
+    }
+    return _NavPeekImageAspects(
+      images: <ImageProvider?>[image],
+      builder: (BuildContext context, List<double> aspects) {
+        final double aspect = aspects.single.clamp(0.5, 16 / 9);
+        return AnimatedContainer(
+          duration: fushiMotionDuration(context, FushiMotion.short),
+          width: kNavPeekThumbHeight * aspect,
+          height: kNavPeekThumbHeight,
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: placeholder,
+            borderRadius: const BorderRadius.all(Radius.circular(8)),
+          ),
+          child: NsfwCoverBlur(
+            blur: blur,
+            showIcon: false,
+            child: Image(
+              image: image,
+              fit: BoxFit.cover,
+              gaplessPlayback: true,
+              excludeFromSemantics: true,
+              errorBuilder: (_, _, _) =>
+                  Center(child: FushiIcon(fallbackIcon, size: 18)),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// 列表行尾部的状态小签（「42%」「已完成」「需要处理」）。
+class _NavPeekStatusChip extends StatelessWidget {
+  const _NavPeekStatusChip({required this.label, required this.tone});
+
+  final String label;
+  final AdaptiveNavPeekStatusTone tone;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final (Color bg, Color fg) = switch (tone) {
+      AdaptiveNavPeekStatusTone.active => (
+        colors.primaryContainer,
+        colors.onPrimaryContainer,
+      ),
+      AdaptiveNavPeekStatusTone.done => (
+        colors.secondaryContainer,
+        colors.onSecondaryContainer,
+      ),
+      AdaptiveNavPeekStatusTone.attention => (
+        colors.tertiaryContainer,
+        colors.onTertiaryContainer,
+      ),
+      AdaptiveNavPeekStatusTone.error => (
+        colors.errorContainer,
+        colors.onErrorContainer,
+      ),
+      AdaptiveNavPeekStatusTone.neutral => (
+        FushiDesignTokens.of(context).surfaces.overlay,
+        colors.onSurfaceVariant,
+      ),
+    };
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: const BorderRadius.all(Radius.circular(999)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        child: Text(
+          label,
+          maxLines: 1,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: fg,
+            fontWeight: FontWeight.w600,
           ),
         ),
       ),
@@ -922,66 +1177,6 @@ class _NavPeekListRow extends StatelessWidget {
 
 /// 速览卡封面的默认宽高比（书封 2:3；封面图还没解出尺寸、或没有封面时用）。
 const double kNavPeekDefaultCoverAspect = 2 / 3;
-
-/// 「最近」一排封面之间的缝。
-const double kNavPeekRecentGap = 8;
-
-/// 「继续」条目封面的固定高度（宽度按封面比例算，见 [navPeekResumeCoverWidth]）。
-const double kNavPeekResumeCoverHeight = 100;
-
-/// 「继续」封面的宽度：固定高 [kNavPeekResumeCoverHeight] 乘封面比例，夹在
-/// 56–180 之间（横版视频缩略图整张显示，又不至于把标题挤没）。
-double navPeekResumeCoverWidth(double aspect) =>
-    (kNavPeekResumeCoverHeight * aspect).clamp(56.0, 180.0).toDouble();
-
-/// 「最近」封面的最低高度：一排挤下去低于它就换成两排（横版视频四张一排只有
-/// 四十来像素高，2026-10-25 用户「预览有点小，视频横屏看着难受」）。
-const double kNavPeekRecentMinHeight = 80;
-
-/// 「最近」封面的排布：返回若干排、每排各封面的宽度（条目按顺序依次填）。
-///
-/// - 所有封面**同一高度**、按各自比例整张显示（横版视频与竖版书封混排也不裁）；
-/// - 先试一排；一排铺满后高度低于 [kNavPeekRecentMinHeight] 就每排少放一张、
-///   依次往下排，直到够高（四张横版视频 → 2 × 2）；
-/// - 高度不超过「4 本竖版书封一排」的高度：条目少时不放大成巨图。
-List<List<double>> navPeekRecentLayout({
-  required List<double> aspects,
-  required double maxWidth,
-}) {
-  if (aspects.isEmpty || maxWidth <= 0) return const <List<double>>[];
-  final double cap =
-      (maxWidth - kNavPeekRecentGap * 3) / 4 / kNavPeekDefaultCoverAspect;
-  // 每排 perRow 张时，所有排共用的高度（各排铺满宽度时高度的最小值）。
-  double heightFor(int perRow) {
-    double height = cap;
-    for (int start = 0; start < aspects.length; start += perRow) {
-      final List<double> row = aspects.sublist(
-        start,
-        math.min(aspects.length, start + perRow),
-      );
-      final double sum = row.fold<double>(0, (double a, double b) => a + b);
-      final double usable = maxWidth - kNavPeekRecentGap * (row.length - 1);
-      height = math.min(height, usable / sum);
-    }
-    return height;
-  }
-
-  int perRow = aspects.length;
-  while (perRow > 1 && heightFor(perRow) < kNavPeekRecentMinHeight) {
-    perRow--;
-  }
-  final double height = heightFor(perRow);
-  return <List<double>>[
-    for (int start = 0; start < aspects.length; start += perRow)
-      <double>[
-        for (final double a in aspects.sublist(
-          start,
-          math.min(aspects.length, start + perRow),
-        ))
-          height * a,
-      ],
-  ];
-}
 
 /// 解出每张封面图自己的宽高比，交给 [builder]；没有封面、还没解出或解码失败
 /// 的位置给 [kNavPeekDefaultCoverAspect]。图换了（数据刷新）就重新解。

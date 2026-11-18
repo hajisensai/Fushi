@@ -1977,6 +1977,106 @@ class MediaImages extends Table {
   ];
 }
 
+// ── item_scrape_meta / item_images（单本书 / 漫画 / 字幕书 / 游戏的刮削资料，v161）──
+// 2026-11-16 所有者：「都接上啊横屏海报都得用」——所有刮削过的条目都要走共享系列
+// 色块（竖版海报斜放 + 无字横版背景图 + 概览 / chip），单本书 / 单本漫画 / 单个游戏
+// 也不例外。此前只有视频（[VideoScrapeMeta] / [MediaImages] 的 bookUid 归属，FK 指向
+// VideoBooks）和合集（[CollectionScrapeMeta] / [MediaImages] 的 collectionId 归属）
+// 有刮削宿主，单本书 / 漫画 / 游戏无处可放。
+//
+// 为什么是新表而不是扩 [MediaImages] / [VideoScrapeMeta]：那两张的归属是**真外键**
+// （删宿主 FK cascade），且 media_images 有「collectionId / bookUid 恰好一个」的
+// CHECK——SQLite 改 CHECK 要整表重建，再加第三种文本归属会把「真外键 + cascade」
+// 的不变量变成「部分行有外键、部分行靠应用清理」。书 / 字幕书 / 游戏三类宿主分在
+// 三张表（epub_books.uid / srt_books.uid / galgames.id），本来就挂不了单一外键。
+//
+// 键与 [MediaCollectionItems] 同一套**逻辑外键**（`MediaKind.dbValue` +
+// entryKey：epub=EpubBooks.uid（漫画 / PDF 同为 EpubBooks 行）/ srt=SrtBooks.uid /
+// game=Galgames.id）：书架 / 游戏库手里本来就有这组身份（合集成员、拖卡 MediaRef
+// 都用它），批量预取后按同一键查，零换算。video 不进本表（视频有自己的规范刮削
+// 宿主），写入口拒收。
+//
+// 与 [CollectionScrapeMeta] 同族：可重建的刮削缓存（删了重刮即回填），空表 = 全部
+// 未刮削（旧库升级后行为与旧版一致）。宿主删除没有 DB cascade——删书 / 删字幕书 /
+// 删游戏的路径在同一事务里显式清行（与 shelf_entries / 合集成员同一处），图片文件
+// 由删除路径按「落在 item_images 目录内」的护栏回收。
+@DataClassName('ItemScrapeMetaRow')
+class ItemScrapeMeta extends Table {
+  /// 宿主种类（`MediaKind.dbValue`：epub / srt / game）。
+  TextColumn get mediaType => text()();
+
+  /// 宿主稳定身份（同 [MediaCollectionItems.entryKey] 口径）。
+  TextColumn get entryKey => text()();
+
+  /// 来源：书籍刮削源名（`BookScrapeSource.name`：bangumi / dlsite / …）、游戏
+  /// 元数据源 key（bgm / vndb / dlsite），脚本 / 手动写入为 `manual`。
+  TextColumn get source => text()();
+
+  /// 源内条目 id；手动写入为 null。
+  TextColumn get subjectId => text().nullable()();
+
+  /// 条目主标题（中文优先）；只记事实，不回写书名（显示名覆盖另有存储）。
+  TextColumn get title => text().nullable()();
+
+  /// 原名；与 [title] 相同或缺失时为 null。
+  TextColumn get originalTitle => text().nullable()();
+
+  /// 简介（含换行）。
+  TextColumn get summary => text().nullable()();
+
+  /// 出版 / 发行日期 `YYYY-MM-DD`，允许只到年或年月（与 [CollectionScrapeMeta]
+  /// 同规矩：不凭空补月日）。
+  TextColumn get airDate => text().nullable()();
+
+  /// 评分（0~10）与评分人数。
+  RealColumn get rating => real().nullable()();
+  IntColumn get ratingCount => integer().nullable()();
+
+  /// 标签 JSON 数组：`[{"name":"日常","count":1234}]`（按热度降序；与
+  /// [CollectionScrapeMeta.tagsJson] 同形，展示层共用一个解析函数）。
+  TextColumn get tagsJson => text().nullable()();
+
+  /// 条目详情页 URL，供「查看条目」跳转。
+  TextColumn get detailUrl => text().nullable()();
+
+  /// 本行写入毫秒戳。
+  IntColumn get scrapedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => {mediaType, entryKey};
+}
+
+/// 单本书 / 漫画 / 字幕书 / 游戏的附加图（横版背景 backdrop / 标题 logo），与
+/// [ItemScrapeMeta] 同一逻辑外键。语义对齐 [MediaImages]（`kind` =
+/// `MediaImageKind.dbValue`，只有 backdrop 允许 position>0），只是归属换成
+/// (mediaType, entryKey)。不进本表的：主封面（书的 override 封面 / 游戏
+/// `galgames.cover_path` 照旧）。文件落 `<documents>/video_covers/items/`
+/// （`VideoStorage.itemImagesDir`，与合集 / 单视频附加图同一目录族：数据根迁移、
+/// 存储占用统计照常覆盖，gcOrphanCovers 不扫子目录）。
+@DataClassName('ItemImageRow')
+class ItemImages extends Table {
+  /// 宿主种类（`MediaKind.dbValue`），同 [ItemScrapeMeta.mediaType]。
+  TextColumn get mediaType => text()();
+
+  /// 宿主稳定身份，同 [ItemScrapeMeta.entryKey]。
+  TextColumn get entryKey => text()();
+
+  /// 图种类（`MediaImageKind.dbValue`：backdrop / logo / title_card）。
+  TextColumn get kind => text()();
+
+  /// 同宿主同种类内的排序位（仅 backdrop 允许 >0）。
+  IntColumn get position => integer().withDefault(const Constant(0))();
+
+  /// 本地文件绝对路径。
+  TextColumn get path => text()();
+
+  /// 来源远程 URL（重下 / 诊断用；本地文件写入为 null）。
+  TextColumn get sourceUrl => text().nullable()();
+
+  @override
+  Set<Column> get primaryKey => {mediaType, entryKey, kind, position};
+}
+
 // ── video_metadata_works（v77：视频规范作品资料）─────────────────────
 // MoviePilot 风格来源刮削的规范宿主。一行是一部作品，归属本地合集（电视剧）或
 // 独立视频（电影）二选一；旧 CollectionScrapeMeta / VideoScrapeMeta 继续作为兼容

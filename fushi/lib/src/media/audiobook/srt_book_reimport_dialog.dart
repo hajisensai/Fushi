@@ -19,23 +19,20 @@ import 'package:fushi/src/pages/implementations/audiobookshelf/audiobookshelf_su
     show chooseAudiobookshelfServerSubtitleFile, orderedServerSubtitles;
 import 'package:fushi/src/pages/implementations/audiobookshelf/audiobookshelf_ui_helpers.dart'
     show audiobookshelfDescribeError;
+import 'package:fushi/src/media/import/import_dialog_blocks.dart';
 import 'package:fushi/src/media/import/import_dialog_frame.dart';
+import 'package:fushi/src/media/import/import_surface_spec.dart';
 import 'package:fushi/src/media/import/import_flow_mixin.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi_engine/media/audiobook/srt_book_reimport.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
-import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
-import 'package:fushi/src/utils/components/fushi_icon_button.dart';
-import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
-import 'package:fushi/src/utils/components/fushi_material_components.dart';
-import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
-import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// 字幕书（`srt_books`）的**重新导入**对话框：一次同时管音频与字幕两半。
@@ -163,12 +160,11 @@ class SrtBookReimportDialogState extends State<SrtBookReimportDialog>
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final FushiTypography type = context.fushiType;
     // 导入进行中禁止返回键 / 点遮罩 / Esc 关闭（HBK-AUDIT-037，见 buildImportPopGuard）。
     return buildImportPopGuard(
       child: ImportDialogFrame(
+        tone: ImportTone.coral,
         title: t.srt_book_reimport,
-        leadingIcon: FushiIcons.audiobook,
         body: FushiEntranceScope(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -176,79 +172,55 @@ class SrtBookReimportDialogState extends State<SrtBookReimportDialog>
             children: <Widget>[
               FushiStaggeredEntrance(
                 index: 0,
-                child: AdaptiveSettingsSection(
+                child: ImportPickTileGrid(
                   children: <Widget>[
-                    FushiFilePickerRow(
+                    ImportPickTile(
+                      tone: ImportTone.coral,
                       title: t.srt_import_pick_audio_files,
                       subtitle: _currentAudioLabel,
                       icon: FushiIcons.audio,
                       enabled: _idle,
                       onTap: _pickAudioFiles,
-                      actions: <Widget>[
-                        FushiIconButton(
-                          icon: FushiIcons.folderOpen,
-                          tooltip: t.srt_import_pick_audio_files,
-                          isWideTapArea: true,
-                          onTap: _idle ? _pickAudioFiles : null,
-                        ),
-                      ],
                     ),
-                    FushiFilePickerRow(
+                    ImportPickTile(
+                      tone: ImportTone.coral,
                       title: t.srt_import_pick_subtitle_files,
                       subtitle: _currentSubtitleLabel,
                       icon: FushiIcons.subtitles,
                       enabled: _idle,
                       onTap: _pickSubtitle,
-                      actions: <Widget>[
-                        if (_serverBinding != null)
-                          FushiIconButton(
-                            icon: FushiIcons.cloudDownload,
-                            tooltip: t.srt_book_reimport_subtitle_from_server,
-                            isWideTapArea: true,
-                            onTap: _idle ? _pickServerSubtitle : null,
-                          ),
-                        FushiIconButton(
-                          icon: FushiIcons.folderOpen,
-                          tooltip: t.srt_import_pick_subtitle_files,
-                          isWideTapArea: true,
-                          onTap: _idle ? _pickSubtitle : null,
-                        ),
-                      ],
+                      // 绑了服务器时有两种来源：带字动作常显（原先只有一枚
+                      // tooltip 图标，触屏上看不出能从服务器取）。
+                      below: _serverBinding == null
+                          ? null
+                          : ImportTileActions(
+                              colors: ImportPickTile.colorsOf(
+                                context,
+                                ImportTone.coral,
+                              ),
+                              actions: <ImportTileAction>[
+                                ImportTileAction(
+                                  icon: FushiIcons.cloudDownload,
+                                  label:
+                                      t.srt_book_reimport_subtitle_from_server,
+                                  enabled: _idle,
+                                  onTap: _pickServerSubtitle,
+                                ),
+                              ],
+                            ),
                     ),
                   ],
                 ),
               ),
               if (_subtitlePath != null && _bodyIsGenerated) ...<Widget>[
                 SizedBox(height: tokens.spacing.gap),
-                // 换字幕会连带重建正文：tertiary tonal 提示色块，不是一行灰字。
+                // 换字幕会连带重建正文：与其它导入对话框同一种提示条。
                 FushiStaggeredEntrance(
                   index: 1,
-                  child: FushiCard(
-                    tone: FushiCardTone.tertiary,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        const FushiIcon(FushiIcons.info, size: 20),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            t.srt_book_reimport_subtitle_hint,
-                            // 色块上的字跟卡片配对前景（fushiType 自带页面前景，
-                            // HBK-AUDIT-022）。
-                            style: type.bodyMedium.copyWith(
-                              color: fushiCardToneColors(
-                                context,
-                                FushiCardTone.tertiary,
-                              )?.onContainer,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                  child: FushiInlineNotice(
+                    message: t.srt_book_reimport_subtitle_hint,
+                    icon: FushiIcons.info,
+                    severity: FushiNoticeSeverity.warning,
                   ),
                 ),
               ],

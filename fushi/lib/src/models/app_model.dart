@@ -125,6 +125,7 @@ import 'package:fushi/src/media/video/video_hdr_output.dart'
     show VideoHdrOutputMode;
 import 'package:fushi/src/media/video/video_screenshot_destination.dart';
 import 'package:fushi/src/pages/implementations/dictionary_dialog_page.dart';
+import 'package:fushi/src/pages/implementations/dictionary_import_action.dart';
 import 'package:fushi/src/pages/implementations/example_sentences_dialog_page.dart';
 import 'package:fushi/src/pages/implementations/open_stash_dialog_page.dart';
 import 'package:fushi/src/pages/implementations/profile_management_page.dart';
@@ -9916,8 +9917,11 @@ class AppModel
 
   /// Show the dictionary menu. This should be callable from many parts of the
   /// app, so it is appropriately handled by the model.
+  ///
+  /// [initialAction]：页面一出现就跑的导入动作（查词主页空态的导入面方式块，IM23）。
   Future<void> showDictionaryMenu({
     List<String> initialImportPaths = const <String>[],
+    DictionaryImportAction? initialAction,
   }) async {
     final ctx = _ctx;
     if (ctx == null) return;
@@ -9925,8 +9929,10 @@ class AppModel
       ctx,
       adaptivePageRoute(
         context: ctx,
-        builder: (context) =>
-            DictionaryDialogPage(initialImportPaths: initialImportPaths),
+        builder: (context) => DictionaryDialogPage(
+          initialImportPaths: initialImportPaths,
+          initialAction: initialAction,
+        ),
       ),
     );
 

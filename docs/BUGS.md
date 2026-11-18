@@ -33,16 +33,34 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4214 条。点号进各自文件。
+> 共 4232 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4904](bugs/BUG-4904-book-series-key-store-annotation.md) | ✅ | ✅ | 书店写法「卷号<系列名> (文库名)」的分卷导入后不归合集 |
+| [BUG-4903](bugs/BUG-4903-home-desktop-continue-cut-edge-title-concat.md) | ✅ | ✅ | 首页（桌面）「继续」右侧卡被窗口切掉一半、标题拼接成「Re：ゼロ…1<Re：…」 |
+| [BUG-4902](bugs/BUG-4902-home-phone-content-covered-by-navbar-sync-fab.md) | ✅ | ✅ | 首页（手机）复习卡被浮动导航栏压住、同步悬浮球盖住内容 |
+| [BUG-4901](bugs/BUG-4901-collage-default-scattered-uneven-gaps.md) | ✅ | ✅ | 拼贴库页色块间距忽大忽小（没选过摆放时默认「散落」） |
+| [BUG-4900](bugs/BUG-4900-collage-backdrop-cropped-hover-clipped.md) | ✅ | ✅ | 拼贴视频块背景剧照被两侧裁掉、悬停放大后右列块被内容区裁切 |
+| [BUG-4899](bugs/BUG-4899-video-tag-chip-drag-reorder-lost.md) | ✅ | ✅ | 视频库标签条拖动排序在桌面鼠标下失效 |
+| [BUG-4898](bugs/BUG-4898-book-title-hash-suffix.md) | ✅ | ✅ | 书架 / 漫画库卡片标题带文件名哈希后缀「[679fb7c9]」 |
+| [BUG-4897](bugs/BUG-4897-library-switch-masthead-stale-frame.md) | ✅ | ✅ | 库页从「在线」切回「书架」：首帧大号页头压在旧滚动位置的内容上，点下去约 0.5 秒才切 |
 | [BUG-4896](bugs/BUG-4896-games-tab-warm-popup-webview-recreated.md) | ✅ | ✅ | 切进 / 切出游戏 tab 每次销毁并冷建查词弹窗 WebView，卡 80～150 ms |
 | [BUG-4895](bugs/BUG-4895-video-stutter-covered-dashboard-reload.md) | ✅ | ✅ | 视频从首页打开后播放掉帧：被播放页盖住的首页仪表盘每秒整批重载一次 |
 | [BUG-4894](bugs/BUG-4894-anidb-all-bracket-fuzzy-candidates.md) | ✅ | ✅ | 全方括号文件名 `[K-ON!][04][BIG5]…` 待确认列表塞满只共享 `kon` 音节的无关作品 |
 | [BUG-4893](bugs/BUG-4893-mascot-glow-starves-windows-input.md) | ✅ | ✅ | 吉祥物光晕开着冷启动：启动期 idle 任务让调度器空转，Windows 鼠标键盘全失灵 |
 | [BUG-4892](bugs/BUG-4892-book-series-volume-not-last-ungrouped.md) | ✅ | ✅ | 卷号后面跟副标题、卷号前夹标签、『』特典册的分卷不归组，整套散在书架上 |
 | [BUG-4891](bugs/BUG-4891-manga-ctc-body-column-dropped-as-ruby.md) | ✅ | ✅ | 本机 Manga CTC 把正文短列当注音删掉、把疏排竖排读成横排（漫画 OCR 丢列与串列乱码） |
+| [BUG-4862](bugs/BUG-4862-cli-ignores-test-root-ctl-dir.md) | 🚧 | 🚧 | CLI 不认 FUSHI_TEST_ROOT，ctl 命令打到用户安装版 |
+| [BUG-4861](bugs/BUG-4861-home-recent-cell-shadow-clipped.md) | ✅ | ✅ | home-recent-cell-shadow-clipped |
+| [BUG-4860](bugs/BUG-4860-collage-remote-cover-shadow-mismatch.md) | ✅ | ✅ | collage-remote-cover-shadow-mismatch |
+| [BUG-4859](bugs/BUG-4859-book-manga-import-view-no-drop-target.md) | 🚧 | 🚧 | 书 / 漫画导入视图画拖放虚线与悬停态，祖先链却没有落点，拖进来什么都不发生（IM2） |
+| [BUG-4858](bugs/BUG-4858-import-network-subtitle-transports-mismatch.md) | ✅ | ✅ | 「添加来源 › 网络」副标题与本域真实可选传输不符（视频写只有 WebDAV，书/漫画/音乐漏 AList、音乐还写了 FTP，IM10） |
+| [BUG-4857](bugs/BUG-4857-video-import-view-no-drop-target.md) | ✅ | ✅ | 视频导入视图画拖放虚线与悬停态，祖先链却没有落点，拖进来什么都不发生（IM2） |
+| [BUG-4856](bugs/BUG-4856-srs-review-bottom-bar-backdrop-cut.md) | ✅ | ✅ | SRS 复习页底栏画不透明底板，页面背景（柔光等）在底部被截成白条 |
+| [BUG-4855](bugs/BUG-4855-shell-rail-preview-overflow.md) | ✅ | ✅ | 外观设置「侧栏样式」两张预览卡画出 OVERFLOWED 红黄条 |
+| [BUG-4854](bugs/BUG-4854-shell-grid-preview-blank.md) | ✅ | ✅ | 外观设置「封面网格」预览卡整块空白 |
+| [BUG-4853](bugs/BUG-4853-rail-collapse-surface-gap.md) | ✅ | ✅ | 侧栏收起过渡中色块与内容区之间露出一条竖带（镂空脊舞台圆角贴在竖带外） |
 | [BUG-4852](bugs/BUG-4852-video-danmaku-per-frame-repaint-blur.md) | ✅ | ✅ | 开弹幕后视频掉帧：弹幕无 key，队首出列让整屏弹幕文本重录、Impeller 模糊阴影全部重做 |
 | [BUG-4851](bugs/BUG-4851-home-tab-switch-hidden-pages-rebuild.md) | ✅ | ✅ | 切 tab 时所有访问过的隐藏保活页跟着重建重排（外壳顶部让位挂在共同祖先上） |
 | [BUG-4850](bugs/BUG-4850-fullscreen-settings-unmounts-home-body.md) | ✅ | ✅ | 没有自绘标题栏的平台进设置，正文连同全部保活 tab 被整棵卸载 |

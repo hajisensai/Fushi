@@ -27,23 +27,27 @@ InputDecoration _decoration(WidgetTester tester) =>
     tester.widget<InputDecorator>(find.byType(InputDecorator)).decoration;
 
 void main() {
-  testWidgets('filled（默认）：填充底、静止无描边、聚焦 2px 主色、悬停 8% 状态层', (
-    WidgetTester tester,
-  ) async {
-    await _pump(tester, const FushiTextField(hintText: 'Name'));
-    final InputDecoration d = _decoration(tester);
-    final ColorScheme cs = Theme.of(
-      tester.element(find.byType(InputDecorator)),
-    ).colorScheme;
-    expect(d.filled, isTrue);
-    expect(d.enabledBorder!.borderSide, BorderSide.none);
-    expect(d.focusedBorder!.borderSide.color, cs.primary);
-    expect(d.focusedBorder!.borderSide.width, 2);
-    expect(
-      d.hoverColor,
-      cs.onSurface.withValues(alpha: kFushiFieldHoverStateOpacity),
-    );
-  });
+  testWidgets(
+    'filled（默认）：M3 填充式——上圆下方、下沿指示线静止 1dp onSurfaceVariant、聚焦 2dp 主色、悬停 8% 状态层',
+    (WidgetTester tester) async {
+      await _pump(tester, const FushiTextField(hintText: 'Name'));
+      final InputDecoration d = _decoration(tester);
+      final ColorScheme cs = Theme.of(
+        tester.element(find.byType(InputDecorator)),
+      ).colorScheme;
+      expect(d.filled, isTrue);
+      expect(d.enabledBorder!.borderSide.color, cs.onSurfaceVariant);
+      expect(d.enabledBorder!.borderSide.width, 1);
+      // 指示线只画在下沿：边框只占底部尺寸。
+      expect(d.enabledBorder!.dimensions, const EdgeInsets.only(bottom: 1));
+      expect(d.focusedBorder!.borderSide.color, cs.primary);
+      expect(d.focusedBorder!.borderSide.width, 2);
+      expect(
+        d.hoverColor,
+        cs.onSurface.withValues(alpha: kFushiFieldHoverStateOpacity),
+      );
+    },
+  );
 
   testWidgets('outlined：透明底 + 1px outline，聚焦 2px 主色，标题骑线', (
     WidgetTester tester,
@@ -167,5 +171,48 @@ void main() {
   testWidgets('禁用态', (WidgetTester tester) async {
     await _pump(tester, const FushiTextField(hintText: 'x', enabled: false));
     expect(tester.widget<TextField>(find.byType(TextField)).enabled, isFalse);
+  });
+
+  testWidgets('活动指示线：聚焦后按 FushiMotion 补间 1dp → 2dp 主色', (
+    WidgetTester tester,
+  ) async {
+    await _pump(tester, const FushiTextField(labelText: 'Title'));
+    final ColorScheme cs = Theme.of(
+      tester.element(find.byType(InputDecorator)),
+    ).colorScheme;
+    BorderSide line() => FushiFieldIndicatorHost.maybeOf(
+      tester.element(find.byType(InputDecorator)),
+    )!.side();
+
+    expect(line().width, 1);
+    expect(line().color, cs.onSurfaceVariant);
+
+    await tester.tap(find.byType(TextField));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 60));
+    // 补间中途：既不是静止 1dp，也还没到聚焦 2dp（不是瞬切）。
+    expect(line().width, inExclusiveRange(1, 2));
+
+    await tester.pumpAndSettle();
+    expect(line().width, 2);
+    expect(line().color, cs.primary);
+  });
+
+  testWidgets('活动指示线：错误态补间到 error 色', (WidgetTester tester) async {
+    await _pump(tester, const FushiTextField(labelText: 'Title'));
+    await _pump(
+      tester,
+      const FushiTextField(labelText: 'Title', errorText: 'Required'),
+    );
+    final ColorScheme cs = Theme.of(
+      tester.element(find.byType(InputDecorator)),
+    ).colorScheme;
+    await tester.pumpAndSettle();
+    expect(
+      FushiFieldIndicatorHost.maybeOf(
+        tester.element(find.byType(InputDecorator)),
+      )!.side().color,
+      cs.error,
+    );
   });
 }

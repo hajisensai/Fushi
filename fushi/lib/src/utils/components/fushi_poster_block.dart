@@ -5,7 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart' show shellShape;
 import 'package:fushi/src/utils/components/fushi_cover_block.dart'
     show FushiCoverBlockColors, FushiCoverBlockSize, fushiCoverBlockShape;
-import 'package:fushi/src/utils/components/fushi_bleed_title.dart';
+import 'package:fushi/src/utils/components/fushi_fit_title.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
@@ -22,7 +22,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 // 与封面色块（`FushiCoverBlock`）同一套配色（[FushiCoverBlockColors.resolve]
 // 的 HSL：只取色相、明度钉死，两套主题下前景都可读），但色相不从封面取，而是
 // 由调用点按稳定的键（牌组 id、词条）折叠出来（[fushiPosterHue]）。左上 / 左下
-// 一行被色块裁掉的 900 字重大字水印；悬停时水印沿 X 滑开、整块抬升
+// 装满半块盒子的 900 字重大字水印（G2：不出血、放不下就不画）；悬停时水印沿 X 滑开、整块抬升
 // （[FushiHoverLift]），时长只取 [FushiMotion]。本组件只管视觉：点按 / 焦点 /
 // 菜单由调用点的原有外壳负责。
 // =============================================================================
@@ -71,7 +71,8 @@ class FushiPosterBlock extends StatelessWidget {
   final double watermarkFontSize;
   final FushiPosterWatermarkEdge watermarkEdge;
 
-  /// 水印起始边的横向偏移（设计稿 `.deck .wm{left:52%}` 这类右移由调用点给）。
+  /// 水印盒子起始边的横向偏移（设计稿 `.deck .wm{left:52%}` 这类右移由调用点给；
+  /// 负值按 0 算——装盒大字不再出血）。
   final double watermarkStart;
 
   /// 固定圆角半径；为空（默认）时按 [blockSize] 档随实际高度取
@@ -160,30 +161,57 @@ class _PosterWatermark extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool top = edge == FushiPosterWatermarkEdge.top;
-    // 起始边按阅读方向：RTL 下水印贴右边、悬停往起始边滑开（整块镜像）。画出来的
-    // 装饰大字（不是 Text）：不进语义、不进文字查找，标题只读一遍。
+    // 装盒大字（设计稿 G2）：整段水印在贴 [edge] 那半块盒子里取放得下的最大字号
+    // （上限 [fontSize]）、可换行、完整显示，连最小字号都放不下就不画——不再出血
+    // 裁成半个字。盒子起始边按阅读方向（EdgeInsetsDirectional），RTL 下贴右边起；
+    // 画出来的装饰大字（不是 Text）：不进语义、不进文字查找，标题只读一遍。
     return Positioned.fill(
       child: TweenAnimationBuilder<double>(
         tween: Tween<double>(end: shifted ? -40 : 0),
         duration: fushiMotionDuration(context, FushiMotion.medium),
         curve: FushiMotion.standard,
         builder: (BuildContext context, double shift, Widget? _) =>
-            DefaultTextStyle.merge(
-              style: Theme.of(context).textTheme.bodyMedium,
-              child: FushiBleedTitle(
-                text: text,
-                textSize: fontSize,
-                color: colors.accent.withValues(alpha: colors.watermarkOpacity),
-                start: start,
-                top: top ? fontSize * 0.02 : null,
-                bottom: top ? null : -fontSize * 0.12,
-                shiftOffset: shift,
-              ),
+            LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints box) {
+                final double h = box.maxHeight.isFinite
+                    ? box.maxHeight
+                    : fontSize * 2;
+                final double minSize = math.min(
+                  fontSize,
+                  math.max(22.0, h * 0.12),
+                );
+                return Padding(
+                  padding: EdgeInsetsDirectional.only(
+                    start: math.max(0.0, start) + _kPosterWatermarkInset,
+                    end: _kPosterWatermarkInset,
+                    top: top ? h * 0.04 : h * 0.38,
+                    bottom: top ? h * 0.38 : h * 0.04,
+                  ),
+                  child: DefaultTextStyle.merge(
+                    style: Theme.of(context).textTheme.bodyMedium,
+                    child: FushiFitTitle(
+                      text: text,
+                      color: colors.accent.withValues(
+                        alpha: colors.watermarkOpacity,
+                      ),
+                      maxSize: fontSize,
+                      minSize: minSize,
+                      align: top
+                          ? FushiFitTitleAlign.top
+                          : FushiFitTitleAlign.bottom,
+                      shift: AlwaysStoppedAnimation<double>(shift),
+                    ),
+                  ),
+                );
+              },
             ),
       ),
     );
   }
 }
+
+/// 水印盒子离色块起始 / 末端边的留白（装盒大字整字落在盒内，不贴边裁切）。
+const double _kPosterWatermarkInset = 14;
 
 /// 色块里的小胶囊（设计稿 `.chip`：实色 = 强调色底；`.chip.g` = 前景色 14% 底）。
 class FushiPosterChip extends StatelessWidget {

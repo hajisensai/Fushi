@@ -159,7 +159,7 @@ void main() {
     );
   });
 
-  test('apply：默认只换封面；--title 写显示名；结果带快照与封面备份', () async {
+  test('apply：默认换封面 + 写条目资料；--title 写显示名；结果带快照与封面备份', () async {
     await seedBook(db, '猫');
     final Map<String, Object?> cover =
         (await call(
@@ -169,8 +169,23 @@ void main() {
               body: <String, Object?>{'id': '11'},
             ))!
             as Map<String, Object?>;
-    expect(cover['applied'], <String>['cover']);
+    expect(cover['applied'], <String>['cover', 'details']);
     expect(((cover['after']! as Map<String, Object?>)['coverSha']), isNotNull);
+    // v155：默认连条目资料一起写（书架系列色块读它），键 = (epub, uid)。
+    final String uid = (await db.resolveEpubBookUid('猫'))!;
+    final ItemScrapeMetaRow meta = (await db.getItemScrapeMeta(
+      MediaKind.epub,
+      uid,
+    ))!;
+    expect(meta.source, 'bangumi');
+    expect(meta.subjectId, '11');
+    expect(meta.airDate, '2010-01-01');
+    expect(meta.detailUrl, 'https://bgm.tv/subject/11');
+    expect(
+      (cover['before']! as Map<String, Object?>)['state'],
+      containsPair('details', null),
+      reason: '撤销快照记下「执行前没有资料」',
+    );
     expect(ref.invalidations, greaterThan(0));
 
     final Map<String, Object?> both =

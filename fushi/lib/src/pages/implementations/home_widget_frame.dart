@@ -2,7 +2,9 @@
 ///
 /// 网格给每块一个固定尺寸的格子；[HomeWidgetFrame] 把格子画成两套外观之一：
 /// - 海报色块（重设计外壳且库页布局不是封面网格，原 `_posterPanels` 那套）：按组件
-///   折叠色相的色块 + 大字水印；
+///   折叠色相的拼贴色块。统计 / 面板块默认不画标题大字水印（拼贴设计稿 G2 / H2 /
+///   H5：水印只给带封面的媒体块）；需要「幽灵大字」的组件（AI 助手的「AI」）经
+///   [HomeWidgetFrame.watermark] 自己给，装进末端半块；
 /// - 分区卡（封面网格布局 / 墨水屏 / 旧外壳，原 `_sectionCard` 那套）：group 底色
 ///   圆角卡，墨水屏补 1px 描边，Apple 用 inset grouped 实色。
 ///
@@ -109,8 +111,9 @@ double homeWidgetLineHeight(BuildContext context, TextStyle style) {
       (resolved.height ?? 1.0);
 }
 
-/// 小组件格子的内边距：窄网格一行高的格子收紧，其余统一 14。
-double homeWidgetFramePadding({required bool dense}) => dense ? 12 : 14;
+/// 小组件格子的内边距：窄网格一行高的格子收紧到 12，其余 16（与拼贴统计块
+/// `HomeStatTile` 同口径）。
+double homeWidgetFramePadding({required bool dense}) => dense ? 12 : 16;
 
 /// 小标题行（图标 + 标题）高度。
 const double kHomeWidgetHeaderHeight = 18;
@@ -136,7 +139,8 @@ class HomeWidgetFrame extends StatelessWidget {
     this.showHeader = true,
     this.attention = false,
     this.semanticLabel,
-    this.watermark = true,
+    this.watermark,
+    this.watermarkStartFactor = 0.5,
     this.bare = false,
   });
 
@@ -160,9 +164,12 @@ class HomeWidgetFrame extends StatelessWidget {
   /// 整块点按目标的读屏标签；null = 由内容文字合成。
   final String? semanticLabel;
 
-  /// false = 色块外观不画标题大水印（内容本身是一排带大字背景的色块时，再压一层
-  /// 水印会和条目文字打架；「最近添加」有内容时）。
-  final bool watermark;
+  /// 海报色块的幽灵大字（如 AI 助手的「AI」）；null = 不画（G2：统计 / 面板块
+  /// 不画标题水印）。分区卡外观忽略。
+  final String? watermark;
+
+  /// [watermark] 从块宽的这个比例处起排（装进末端那半块，不压内容）。
+  final double watermarkStartFactor;
 
   /// true = 不画外框（色块 / 分区卡底都不要），只留小标题行 + 内容直接摆在页面
   /// 底上、四周不留内边距。内容本身就是一排封面色块时用（「最近添加」）：色块
@@ -185,12 +192,20 @@ class HomeWidgetFrame extends StatelessWidget {
     final Color accent = colors?.accent ?? tokens.surfaces.primary;
     final Color headerColor = attention
         ? scheme.error
-        : (colors?.onContainer ?? tokens.type.sectionLabel.color ?? muted);
-    final TextStyle headerStyle = context.fushiType.labelMedium.copyWith(
-      color: headerColor,
-      height: 1.2,
-      fontWeight: FontWeight.w600,
-    );
+        : colors != null
+        ? muted
+        : (tokens.type.sectionLabel.color ?? muted);
+    // 海报色块的小标题与拼贴统计块（`HomeStatTile`）同一套：w700、次要色；分区卡
+    // 外观走排版角色（不写裸字号）。
+    final TextStyle headerStyle = colors != null
+        ? FushiPosterText.meta
+              .on(Theme.of(context).textTheme.bodyMedium ?? const TextStyle())
+              .copyWith(color: headerColor, height: 1.2)
+        : context.fushiType.labelMedium.copyWith(
+            color: headerColor,
+            height: 1.2,
+            fontWeight: FontWeight.w600,
+          );
     final Widget body = HomeWidgetStyle(
       poster: poster,
       colors: colors,
@@ -232,15 +247,30 @@ class HomeWidgetFrame extends StatelessWidget {
 
     final VoidCallback? tap = onTap;
     if (colors != null) {
-      final Widget block = FushiPosterBlock(
-        watermark: watermark ? title : '',
-        colors: colors,
-        watermarkFontSize: dense ? 64 : 96,
-        watermarkEdge: FushiPosterWatermarkEdge.bottom,
-        padding: EdgeInsets.all(pad),
-        hoverEnabled: tap != null,
-        child: body,
-      );
+      final String mark = watermark ?? '';
+      final Widget block = mark.isEmpty
+          ? FushiPosterBlock(
+              watermark: '',
+              colors: colors,
+              padding: EdgeInsets.all(pad),
+              hoverEnabled: tap != null,
+              child: body,
+            )
+          : LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints box) =>
+                  FushiPosterBlock(
+                    watermark: mark,
+                    watermarkEdge: FushiPosterWatermarkEdge.bottom,
+                    watermarkStart: box.maxWidth.isFinite
+                        ? box.maxWidth * watermarkStartFactor
+                        : 0,
+                    watermarkFontSize: dense ? 64 : 90,
+                    colors: colors,
+                    padding: EdgeInsets.all(pad),
+                    hoverEnabled: tap != null,
+                    child: body,
+                  ),
+            );
       if (tap == null) return block;
       return Semantics(
         label: semanticLabel,
@@ -329,10 +359,17 @@ class HomeWidgetFigure extends StatelessWidget {
   Widget build(BuildContext context) {
     final HomeWidgetStyle? style = HomeWidgetStyle.maybeOf(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final Color fg = style?.foreground ?? tokens.surfaces.onSurface;
+    // 海报色块里主数字用强调色、900 字重、收紧字距（拼贴统计块 `HomeStatTile`
+    // 同款）；分区卡外观照旧正文色。
+    final bool poster = style?.poster ?? false;
+    final Color fg = poster
+        ? style!.accent
+        : (style?.foreground ?? tokens.surfaces.onSurface);
     final Color muted = style?.muted ?? tokens.surfaces.onVariant;
     final String? u = unit;
     final FushiTypography type = context.fushiType;
+    final TextStyle role = large ? type.displaySmall : type.headlineMedium;
+    final double size = role.fontSize ?? kDefaultFontSize;
     return FittedBox(
       fit: BoxFit.scaleDown,
       alignment: AlignmentDirectional.centerStart,
@@ -341,9 +378,10 @@ class HomeWidgetFigure extends StatelessWidget {
           children: <InlineSpan>[
             TextSpan(
               text: value,
-              style: (large ? type.displaySmall : type.headlineMedium).copyWith(
-                fontWeight: FontWeight.w800,
-                height: 1.05,
+              style: role.copyWith(
+                fontWeight: poster ? FontWeight.w900 : FontWeight.w800,
+                height: poster ? 1 : 1.05,
+                letterSpacing: poster ? -0.03 * size : null,
                 color: fg,
               ),
             ),

@@ -285,6 +285,9 @@ void main() {
           'lib/src/pages/implementations/tag_picker_page.dart': 1,
           // 配对扫码：相机取景定高画布。
           'lib/src/sync/sync_settings_schema/interconnect_link.part.dart': 1,
+          // FushiToolScaffold 的现行页头形态：工具页正文是定高面板 / 自带滚动的
+          // 分栏（CSS / 模板编辑器、字体浏览），原本就排在工具条下沿以下。
+          'lib/src/utils/components/fushi_material_components.dart': 1,
         };
         final Map<String, int> found = <String, int>{};
         for (final FileSystemEntity entity in Directory(
