@@ -6,6 +6,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_download_progress.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/misc/engine_listenable.dart';
@@ -138,8 +139,8 @@ class VideoBackgroundTasksButton extends StatelessWidget {
               key: const ValueKey<String>('video-background-tasks-button'),
               tooltip: tooltip,
               icon: summary.needsConfirmation
-                  ? Icons.rule_folder_outlined
-                  : Icons.manage_search_outlined,
+                  ? FushiIcons.checklist
+                  : FushiIcons.manageSearch,
               size: 20,
               badge: summary.needsConfirmation && summary.running == 0,
               alwaysVisible: true,

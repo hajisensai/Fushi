@@ -447,14 +447,21 @@ class InstalledOnlineSourceRow extends StatelessWidget {
                 ),
               );
             }
-            // 两层：标题独占文字列整宽；第二层 = 语言 / 扩展名 + 来源偏好 / ⋯；
-            // 开关与把手留在行尾。
+            // 两层：第一层 = 标题 + 开关 / 把手（仍在行尾）；第二层 = 语言 / 扩展名
+            // + 来源偏好 / ⋯。开关不放进 FushiListItem.trailing：那样它会占掉
+            // 两层文字列共同的宽度，360dp 上扩展名被挤到逐字折行、截成「Anime B…」，
+            // 而用户正是靠扩展名认出源。
             return FushiListItem(
               key: rowKey,
               titleMaxLines: 2,
               subtitleMaxLines: 2,
               leading: leading,
-              title: titleWidget,
+              title: Row(
+                children: <Widget>[
+                  Expanded(child: titleWidget),
+                  trailingEnd,
+                ],
+              ),
               subtitle: Row(
                 children: <Widget>[
                   Expanded(child: metaWidget ?? const SizedBox.shrink()),
@@ -466,7 +473,6 @@ class InstalledOnlineSourceRow extends StatelessWidget {
                   ),
                 ],
               ),
-              trailing: trailingEnd,
             );
           },
         ),

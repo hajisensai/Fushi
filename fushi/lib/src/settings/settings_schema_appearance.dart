@@ -326,11 +326,9 @@ SettingsCustomItem _shellBlockArrangementItem() => SettingsCustomItem(
     isModified: (SettingsContext c) =>
         c.appModel.shellBlockArrangement !=
         ShellBlockArrangement.defaultFor(c.appModel.shellContentLayout),
-    reset: (SettingsContext c) => c.appModel
-        .setShellBlockArrangement(
-          ShellBlockArrangement.defaultFor(c.appModel.shellContentLayout),
-        )
-        .then((_) => c.refresh()),
+    // 恢复默认清掉偏好回到「没选过」（BUG-4703），不把此刻布局下的默认值钉死。
+    reset: (SettingsContext c) =>
+        c.appModel.resetShellBlockArrangement().then((_) => c.refresh()),
     currentLabel: (SettingsContext c) =>
         shellBlockArrangementLabel(c.appModel.shellBlockArrangement),
     defaultLabel: (SettingsContext c) => shellBlockArrangementLabel(

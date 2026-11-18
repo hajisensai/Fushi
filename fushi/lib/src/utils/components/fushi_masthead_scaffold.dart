@@ -64,6 +64,9 @@ const double kFushiMastheadBareRowExtent = kMinInteractiveDimension;
 /// `titleRevealOffset` 给定时，页名从该偏移起在这段距离内淡入。
 const double _kTitleRevealDistance = kFushiMastheadBareRowExtent;
 
+/// 页头返回键的图标字号（命中区按它补到 [kMinInteractiveDimension]）。
+const double _kBackIconSize = 24;
+
 /// 页名后的徽标（设置的分类形状图标）：[compact] 窄窗，[progress] 收缩进度。
 typedef FushiMastheadBadgeBuilder =
     Widget Function(BuildContext context, bool compact, double progress);
@@ -182,11 +185,16 @@ class FushiMastheadHeader extends StatelessWidget {
             ? null
             // FushiIconButton（不是裸 FushiIconButtonControl）：在 FushiFocusRoot
             // 下登记成焦点目标，返回键手柄 / 键盘焦点够得到，不只靠触屏或系统返回。
-            // 尺寸取默认，与右侧动作（同为 FushiIconButton）同大。
+            // 命中区保持 48×48（被取代的 AppBar BackButton / IconButton 本就是这么
+            // 大）：默认内边距只有 40，返回键是二级页最常点的钮，不能缩。
             : FushiIconButton(
                 key: backKey,
                 icon: FushiIcons.back,
                 tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+                size: _kBackIconSize,
+                padding: const EdgeInsets.all(
+                  (kMinInteractiveDimension - _kBackIconSize) / 2,
+                ),
                 onTap: onBack,
               ));
     if (titleInBody) return _buildBare(context, tokens, titleBox, lead);

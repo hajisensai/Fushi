@@ -136,7 +136,8 @@ import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/fushi_divider.dart';
-import 'package:fushi/src/utils/misc/platform_utils.dart' show WindowSizeClass;
+import 'package:fushi/src/utils/misc/platform_utils.dart'
+    show HorizontalDragScrollable, WindowSizeClass;
 
 // 游戏进合集（统一媒体库）：mediaType 用 [MediaKind.game]（P5 枚举地基，取代旧
 // 常量 kGameCollectionMediaType）。entryKey = `galgames.id`（添加时刻微秒时间戳
@@ -2475,15 +2476,17 @@ class GameDownloadsBlock extends StatelessWidget {
                 }
                 return SizedBox(
                   height: _itemHeight,
-                  child: ListView.separated(
-                    key: const ValueKey<String>('games_downloads_strip'),
-                    scrollDirection: Axis.horizontal,
-                    itemCount: tasks.length,
-                    separatorBuilder: (BuildContext context, int index) =>
-                        const SizedBox(width: _gap),
-                    itemBuilder: (BuildContext context, int i) => SizedBox(
-                      width: _itemMinWidth,
-                      child: _GameDownloadItem(task: tasks[i]),
+                  child: HorizontalDragScrollable(
+                    child: ListView.separated(
+                      key: const ValueKey<String>('games_downloads_strip'),
+                      scrollDirection: Axis.horizontal,
+                      itemCount: tasks.length,
+                      separatorBuilder: (BuildContext context, int index) =>
+                          const SizedBox(width: _gap),
+                      itemBuilder: (BuildContext context, int i) => SizedBox(
+                        width: _itemMinWidth,
+                        child: _GameDownloadItem(task: tasks[i]),
+                      ),
                     ),
                   ),
                 );

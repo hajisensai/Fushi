@@ -772,6 +772,8 @@ class _DiscFace extends StatelessWidget {
         fit: BoxFit.cover,
         cacheWidth: 1024,
         excludeFromSemantics: true,
+        // 扫描图损坏 / 被删时只剩投影圆，不让解码失败冒成 FlutterError（BUG-2496）。
+        errorBuilder: (_, _, _) => const SizedBox.expand(),
       ),
     ),
   );

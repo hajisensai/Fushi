@@ -175,7 +175,9 @@ void main() {
     // 2026-10 切 tab 卡顿：buildBody 每次 new 页面 widget，Offstage 里看不见的
     // 视频页 / 首页也跟着整页 build。隐藏 tab 必须走缓存，可见 tab 才重建。
     expect(
-      src.contains('_keepAliveTabContent(tab, visible: visible == tab)'),
+      RegExp(
+        r'_keepAliveTabContent\(\s*tab,\s*visible:\s*visible == tab,?\s*\)',
+      ).hasMatch(src),
       isTrue,
       reason: '保活 tab 内容必须经 _keepAliveTabContent 按可见性取缓存',
     );

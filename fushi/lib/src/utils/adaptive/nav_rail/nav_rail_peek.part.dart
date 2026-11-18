@@ -555,7 +555,7 @@ class _NavRailPeekContent extends StatelessWidget {
               spacing: 4,
               children: <Widget>[
                 Text(t.nav_peek_open),
-                const FushiIcon(Icons.arrow_forward, size: 16),
+                const FushiIcon(FushiIcons.forward, size: 16),
               ],
             ),
           ),

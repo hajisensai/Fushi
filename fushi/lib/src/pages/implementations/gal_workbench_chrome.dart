@@ -10,6 +10,7 @@ import 'package:fushi/src/utils/components/fushi_tag.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 捕获工作台（游戏 › 工作台）的布局骨架件：会话状态条里的语义状态 chip、
 /// 选中台词才出现的详情侧板、带下一步操作的空状态。
@@ -389,7 +390,7 @@ class GalWorkbenchStartTile extends StatelessWidget {
               duration: motion.effectsFast.duration,
               curve: motion.effectsFast.curve,
               child: FushiIcon(
-                Icons.arrow_forward_rounded,
+                FushiIcons.forward,
                 size: 20,
                 color: foreground.withValues(alpha: 0.8),
               ),
@@ -444,7 +445,9 @@ class GalWorkbenchSignal extends StatelessWidget {
               switchInCurve: motion.effectsDefault.curve,
               switchOutCurve: motion.effectsFast.curve,
               child: FushiIcon(
-                ready ? Icons.check_circle : Icons.radio_button_unchecked,
+                ready
+                    ? FushiIcons.filled(FushiIcons.success)
+                    : FushiIcons.radioUnchecked,
                 key: ValueKey<bool>(ready),
                 size: 16,
                 color: ready ? foreground : dim,
