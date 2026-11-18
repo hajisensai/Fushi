@@ -640,6 +640,19 @@ void fushidicts_add_term_dict(void* handle, const char* path) {
   });
 }
 
+// 同 fushidicts_add_term_dict，另带这本词典词头的语言（BCP-47 / ISO 639 码；NULL 或
+// 空串 = 未标注，与 fushidicts_add_term_dict 等价）。见 DictionaryQuery::add_term_dict。
+// 语言是装载时的属性：宿主改了某本词典的语言就重装词典集合，查词调用不带语言参数。
+FUSHI_EXPORT
+void fushidicts_add_term_dict_with_language(void* handle, const char* path, const char* language) {
+  ffi_guard_void("fushidicts_add_term_dict_with_language", [&]() {
+    auto* h = static_cast<FushidictsHandle*>(handle);
+    std::unique_lock lock(h->rw);
+    h->query.add_term_dict(path, language ? std::string_view(language) : std::string_view());
+    h->match_cache.clear();
+  });
+}
+
 FUSHI_EXPORT
 void fushidicts_add_freq_dict(void* handle, const char* path) {
   ffi_guard_void("fushidicts_add_freq_dict", [&]() {

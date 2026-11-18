@@ -1,0 +1,18 @@
+## BUG-4845 · 英语查词 My→M、Our→O、One→On 排在原词前面：变形规则不分语言 + 排序先比预处理步数
+- **报告**：2026-11-17（应用内反馈 WIZUEQx1fY）
+- **真实性**：✅ 真 bug，两层根因，均在 native 测试里复现（把修复改回去，`dictionary_language_gate_lookup_test` 排出 `[M <- My /-y] [my <- My]`、`[O <- Our /participle] [our <- Our]`、`[On <- One /plural] [one <- One]`）。
+  - 变形规则不分语言：`packages/fushi_dictionary/lib/src/engine/fushidicts.dart:315`（`preloadTransformsFrom`）把 `assets/transforms/manifest.json` 里 19 份变形表全部灌进同一个 `Deinflector`；`native/fushidicts/fushidicts_src/deinflector.cpp:323`（修前 `Deinflector::deinflect`）不带语言，链首 conditions=0 时任何语言的规则都能起手；MDX / StarDict 这类词典的词性是通配 `*`，`filter_by_pos` 拦不住。阿尔巴尼亚语 `sq.json` 的 participle（`-ur → ''`）把 Our 还原成 O，拉丁语 `la.json` 的 plural（`-e → ''`）把 One 还原成 On。`deinflector.cpp:224`（修前）的注释以为「后缀会自然按语言分流」，对共用拉丁字母的语言不成立。
+  - 排序：`native/fushidicts/fushidicts_src/lookup.cpp:476`（修前比较器）先比预处理步数、再比变形链长（照抄 Yomitan `_sortTermDictionaryEntries`）。My 小写成 my 算 1 步预处理、0 步变形；My 经英语自己的 `-y` 规则（`y → ''`）还原成 M 是 0 步预处理、1 步变形，于是 M 排在 my 前面。Our / One 同理。
+- **[x] ① 已修复**（3759d8a68a）
+  - 规则带语言、一条还原链只用一门语言的规则，`DeinflectionResult::language` 标明是哪门语言（`deinflector.cpp`）。
+  - 词典语言在**装载时**交给引擎：`DictionaryQuery::add_term_dict(path, language)` / FFI `fushidicts_add_term_dict_with_language`，Dart 侧 `FushiDicts.scheduleTyped` / `initializeTyped` 的 `termLanguages`（`termDictLanguagesOf`，用户手动指定的语言优先，其次 `index.json` 的 `sourceLanguage`）。查词调用、查词缓存键、服务端每次请求都不带语言。
+  - 把关在查库层（`lookup.cpp` 的 `scope_for`）：标了语言的词典只接受本语言的还原链，语言不符的词典对这条链整本跳过（复用排除集，rules / score 也不并入）。精确命中照旧查全部启用的词典——不是按语言过滤词典。参与查词的词典全标了语言时，没有词典会接受的语言不再展开还原（纯加速）。
+  - 排序改成变形链长先于预处理步数（`lookup.cpp` 的 `more_direct`）：写法归一后的精确命中排在靠猜的还原形前面；大小写完全一致的命中仍优先（March / march 变形链都是 0，再比步数）。同一词条从两个变体进来时谁留下用同一口径。
+- **[x] ② 已加自动化测试**
+  - `native/fushidicts/tests/dictionary_language_gate_lookup_test.cpp`（ctest，真 en / en_irregular / sq / la 变形表）：排序、标成英语 / 阿尔巴尼亚语 / 中文、标注与未标注词典并存、本次查词排除未标注词典、`Deinflector` 的语言标记与 `allowed_languages`。变异验证：去掉 `scope_for` → D2 红；`more_direct` 改回先比步数 → A1–A3、B5 红。
+  - `packages/fushi_dictionary/test/dictionary_language_gate_native_test.dart`（真原生库，需 `FUSHI_DICTS_LIB`）：`termLanguages` 经 FFI、同步装载与排期装载两条路径。
+  - `fushi/test/models/bucket_dict_paths_test.dart`：`termDictLanguagesOf` 与 `dictPathEntryOf` 的语言取值。
+- **备注**
+  - **未标注语言的词典行为不变**：MDX / StarDict 多半没有语言，它们仍接受任何语言的还原链，Our → O 这条结果还在，只是排到 our 后面。要彻底去掉得在词典管理里给它指定语言；导入时推断语言 / 提示用户标注未做。
+  - 排序调换对日语 / 韩语的影响：native 全量 56 个 ctest（含 ja / ko 的 lookup 测试）通过，没有测试依赖旧顺序；未在真实词典库上做人工比对。
+  - 未做真机验证。

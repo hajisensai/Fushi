@@ -1156,7 +1156,7 @@ class AiChatClient {
       'model': provider.model,
       'max_tokens': maxTokens,
       if (system.isNotEmpty) 'system': _anthropicSystem(messages, system),
-      'messages': _anthropicMessages(messages),
+      'messages': _anthropicMessages(messages, cacheTail: tools.isNotEmpty),
       if (tools.isNotEmpty)
         'tools': <Map<String, Object?>>[
           for (int i = 0; i < tools.length; i++)
@@ -1176,7 +1176,46 @@ class AiChatClient {
   /// Anthropic 的 messages 数组：普通消息形状与以往逐字相同；工具调用回放成
   /// `tool_use` 块；**连续的** tool result 合进同一条 user 消息（Anthropic 要求
   /// user / assistant 严格交替，一轮多个工具调用的结果必须在同一条里回）。
+  ///
+  /// [cacheTail]：给最后一条消息的最后一块挂 `cache_control`（滚动断点）。带工具
+  /// 的请求是 agent 多轮循环：每一步都把整段历史（工具结果动辄数千 token）原样
+  /// 重发，只缓存工具表与 system 时历史部分每步全价重算——实测一次 K-ON 整理
+  /// 会话 61 万输入 token 只有 5 万命中缓存。断点挂在尾部，下一步请求的前缀就是
+  /// 这一步已写入的缓存。一次性请求不挂：没有下一步来读，白付 1.25 倍写入价。
+  /// 断点共 3 个（工具表 / system / 尾部），在 Anthropic 每请求 4 个的上限内。
   static List<Map<String, Object?>> _anthropicMessages(
+    List<AiChatMessage> messages, {
+    bool cacheTail = false,
+  }) {
+    final List<Map<String, Object?>> out = _anthropicMessageList(messages);
+    if (cacheTail && out.isNotEmpty) {
+      final Map<String, Object?> last = out.last;
+      final Object? content = last['content'];
+      const Map<String, String> breakpoint = <String, String>{
+        'type': 'ephemeral',
+      };
+      if (content is String && content.isNotEmpty) {
+        out[out.length - 1] = <String, Object?>{
+          ...last,
+          'content': <Map<String, Object?>>[
+            <String, Object?>{
+              'type': 'text',
+              'text': content,
+              'cache_control': breakpoint,
+            },
+          ],
+        };
+      } else if (content is List<Map<String, Object?>> && content.isNotEmpty) {
+        content[content.length - 1] = <String, Object?>{
+          ...content.last,
+          'cache_control': breakpoint,
+        };
+      }
+    }
+    return out;
+  }
+
+  static List<Map<String, Object?>> _anthropicMessageList(
     List<AiChatMessage> messages,
   ) {
     final List<Map<String, Object?>> out = <Map<String, Object?>>[];

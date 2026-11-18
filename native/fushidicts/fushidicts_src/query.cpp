@@ -5,6 +5,7 @@
 #include <xxh3.h>
 #include <zstd.h>
 
+#include "fushidicts/language_tag.hpp"
 #include "fushidicts/platform.hpp"
 
 #include <algorithm>
@@ -434,7 +435,7 @@ bool scan_term_rules_present(const hash::dict_index& index) {
 
 }  // namespace
 
-void DictionaryQuery::add_dict(const std::string& path, DictionaryType type) {
+void DictionaryQuery::add_dict(const std::string& path, DictionaryType type, std::string_view language) {
   const int version = dict_format_version(path);
   if (version == 0) {
     return;
@@ -522,6 +523,7 @@ void DictionaryQuery::add_dict(const std::string& path, DictionaryType type) {
 
   switch (type) {
     case TERM:
+      dict.language = fushi::primary_language_tag(language);
       term_dicts_.push_back(std::move(dict));
       break;
     case FREQ:
@@ -656,7 +658,9 @@ void DictionaryQuery::prepare_union_filter(const std::string& cache_dir, bool wa
   }
 }
 
-void DictionaryQuery::add_term_dict(const std::string& path) { add_dict(path, DictionaryQuery::DictionaryType::TERM); }
+void DictionaryQuery::add_term_dict(const std::string& path, std::string_view language) {
+  add_dict(path, DictionaryQuery::DictionaryType::TERM, language);
+}
 
 void DictionaryQuery::add_freq_dict(const std::string& path) { add_dict(path, DictionaryQuery::DictionaryType::FREQ); }
 
@@ -705,7 +709,7 @@ std::vector<TermResult> DictionaryQuery::query_raw(const std::string& expression
   // 返回；64 位整份映射时 owner 恒空、不进这里。
   std::vector<std::shared_ptr<const void>> pins;
   for (const auto& [dict, loc] : locate_all(term_dicts_, key, excluded)) {
-    const auto& [name, styles, data] = *dict;
+    const auto& [name, styles, language, data] = *dict;
     const memory::blob_file& blobs = data->index.blobs();
     for_each_record_of_type(blobs, loc, 0, [&](BlobReader& blob, const memory::blob_span& rec) -> bool {
       auto expr_len = blob.read<uint16_t>();
@@ -791,7 +795,7 @@ std::vector<KanjiResult> DictionaryQuery::query_kanji(const std::string& charact
   std::vector<KanjiResult> results;
   const QueryScope scope = make_scope();
   const KeyProbe key(character, scope.filter);
-  for (const auto& [name, styles, data] : kanji_dicts_) {
+  for (const auto& [name, styles, language, data] : kanji_dicts_) {
     const std::optional<location> loc = data->locate(key);
     if (!loc) {
       continue;
@@ -883,7 +887,7 @@ void DictionaryQuery::enrich_freq(TermResult& term, const QueryScope& scope) con
   }
   const KeyProbe key(term.expression, scope.filter);
   for (const auto& [dict, loc] : locate_all(freq_dicts_, key, excluded)) {
-    const auto& [name, styles, data] = *dict;
+    const auto& [name, styles, language, data] = *dict;
     std::vector<Frequency> frequencies;
     for_each_meta_record(data->index.blobs(), loc, term.expression,
                          [&](BlobReader& blob, std::string_view mode, uint8_t type) -> bool {
@@ -922,7 +926,7 @@ void DictionaryQuery::enrich_pitch(TermResult& term, const QueryScope& scope) co
   }
   const KeyProbe key(term.expression, scope.filter);
   for (const auto& [dict, loc] : locate_all(pitch_dicts_, key, excluded)) {
-    const auto& [name, styles, data] = *dict;
+    const auto& [name, styles, language, data] = *dict;
     std::vector<Pitch> pitches;
     std::vector<std::string> transcriptions;
 
@@ -1037,7 +1041,7 @@ void DictionaryQuery::materialize(TermResult& term) const {
 
 std::vector<char> DictionaryQuery::get_media_file(const std::string& dict_name, const std::string& media_path) const {
   const std::string normalized_media_path = fushidicts::normalize_media_path(media_path);
-  for (const auto& [name, styles, data] : term_dicts_) {
+  for (const auto& [name, styles, language, data] : term_dicts_) {
     if (name != dict_name) {
       continue;
     }

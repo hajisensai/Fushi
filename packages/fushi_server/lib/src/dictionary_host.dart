@@ -404,6 +404,7 @@ class ServerDictionaryHost {
           hidden: false,
           metadata: _decodeStringMap(r.metadataJson),
           order: r.order,
+          languageOverride: r.languageOverride,
         ),
       );
     }
@@ -413,6 +414,7 @@ class ServerDictionaryHost {
       freqPaths: b.freq,
       pitchPaths: b.pitch,
       kanjiPaths: b.kanji,
+      termLanguages: termDictLanguagesOf(entries),
     );
     _snapshot = _DictionarySnapshot(
       termOrder: termOrder,
