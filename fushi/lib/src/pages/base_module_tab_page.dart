@@ -21,7 +21,7 @@ import 'package:fushi/src/pages/implementations/home_page.dart';
 ///   [BaseModuleTabPageState.onShownToUserAgain]：「本页此刻真在用户眼前吗」——
 ///   既没被 Offstage 藏着（切到别的 tab），也没被播放页 / 阅读器 / 详情页盖住。
 ///   后台到达的数据信号据此推迟重载，回到眼前时补做（原 home_video_page 的
-///   BUG-3610 样板收口，BUG-4845 起首页也走它）；
+///   BUG-3610 样板收口，BUG-4895 起首页也走它）；
 /// - 经 [BasePageState] 继承 appModel / theme 快捷入口与
 ///   `FushiPagePlaceholders` 的 buildLoading / buildError 骨架占位。
 ///
@@ -114,7 +114,7 @@ abstract class BaseModuleTabPageState<T extends BaseModuleTabPage>
   ///
   /// 不在眼前时，本页的数据监听照常在跑。这时重查聚合 + 整页 setState 用户一帧
   /// 都看不到，却实打实占着 UI isolate——盖在上面的播放页的新视频帧要等 UI 线程
-  /// 排到才能上屏（BUG-4845）。所以后台到达的数据信号一律先问这里：不在眼前就
+  /// 排到才能上屏（BUG-4895）。所以后台到达的数据信号一律先问这里：不在眼前就
   /// 只记一笔，[onTabActivated] / [onShownToUserAgain] 时补做。
   @protected
   bool get isShownToUser =>
