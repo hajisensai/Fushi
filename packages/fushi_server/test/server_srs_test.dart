@@ -5,11 +5,14 @@ import 'dart:io';
 
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_profile_link.dart';
 import 'package:fushi_engine/srs/srs_remote_store.dart';
 import 'package:fushi_engine/srs/srs_remote_store_routes.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/sync2/srs_host_directory.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_runner.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_store.dart'
+    show kSrsSync2Namespace;
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_engine/sync/local_directory_asset_store.dart';
 import 'package:fushi_server/src/config/server_srs_config.dart';
@@ -209,6 +212,115 @@ void main() {
     expect(await srs.onClientWrite('fushi-data/books/whatever.epub'), isEmpty);
     expect(await changed.timeout(const Duration(seconds: 20)), kJa);
     expect(await expressions(srs.storeFor(kJa)!), <String>['飲む']);
+  });
+
+  // 第六波服务端收尾：无头服务端以前不发布 profile 说明文件，只有服务端写过的新代集合在别的设备的关联列表 /
+  // WebUI 里没有名字与笔记数。
+  test('服务端发布自己的 profile 说明文件：笔记数向内核要，名字取管理员起的 / 别的设备报的 / 自己上次发布的', () async {
+    await srs.stop();
+    srs = ServerSrs(
+      rwkvHttpClient: noNetworkHttpClient,
+      support: support,
+      syncData: syncData,
+      deviceId: 'server-device',
+      hostId: kHostId,
+      config: () => config,
+      engine: () => null,
+      deviceName: () => 'NAS',
+    );
+    // 手机只同步、不发布说明文件：位置目录里没有任何名字。
+    final SrsDbStore ja = await phone(kJa, 'phone-ja');
+    await addNote(ja, '食べる');
+    expect((await phoneSync(ja)).error, isNull);
+    config = const ServerSrsConfig(profiles: <String>[kJa]);
+    await srs.start();
+    await srs.syncNow();
+    final SrsDbStore served = srs.storeFor(kJa)!;
+    final String dir = served.sync2Dir!;
+    final String serverWriter = srsV2WriterName(served.sync2Device!);
+    final LocalDirectoryAssetStore assets = LocalDirectoryAssetStore(
+      srs.syncRoot,
+    );
+    Future<SrsRemoteProfile> listed() async => (await srsListRemoteProfiles(
+      assets,
+    )).singleWhere((SrsRemoteProfile r) => r.uid == dir);
+    Future<Map<String, Object?>> ownFile() async {
+      final File f = File(
+        p.join(
+          srs.syncRoot.path,
+          kSrsSync2Namespace,
+          dir,
+          'v4',
+          'devices',
+          served.sync2Device!,
+          kSrsProfileInfoName,
+        ),
+      );
+      return (jsonDecode(await f.readAsString()) as Map)
+          .cast<String, Object?>();
+    }
+
+    // 没有任何名字来源：照样发布（笔记数、有数据、设备名），名字空。
+    SrsRemoteProfile r = await listed();
+    expect(r.writers, contains(serverWriter));
+    expect(r.noteCount, 1);
+    expect(r.hasNotes, isTrue);
+    expect(r.devices, contains('NAS'));
+    expect(r.names, isEmpty);
+    expect(srs.profile(kJa)!.name, '');
+
+    // 服务端自己写了一张：下一轮发布的笔记数跟着内核走。
+    await addNote(served, '飲む');
+    await srs.syncNow(kJa);
+    expect((await ownFile())['notes'], 2);
+
+    // 管理员起名：发布出去，WebUI / 远程复习列表也用它。
+    config = const ServerSrsConfig(
+      profiles: <String>[kJa],
+      profileNames: <String, String>{kJa: '日本語'},
+    );
+    await srs.applyConfig();
+    await srs.syncNow(kJa);
+    expect((await listed()).names, <String>{'日本語'});
+    expect(srs.profile(kJa)!.name, '日本語');
+
+    // 去掉管理员的名字，手机报了名字：取手机报的（不拿自己那份旧名字当来源）。
+    Future<void> phoneNames(String name) => srsPublishProfileInfo(
+      assets,
+      profileUid: kJa,
+      dir: ja.sync2Dir,
+      writerId: ja.sync2Device!,
+      name: name,
+      hasNotes: true,
+    );
+    await phoneNames('Japanese');
+    config = const ServerSrsConfig(profiles: <String>[kJa]);
+    await srs.applyConfig();
+    await srs.syncNow(kJa);
+    expect(srs.profile(kJa)!.name, 'Japanese');
+    expect((await ownFile())['name'], 'Japanese');
+
+    // 手机改名：服务端跟着改。
+    await phoneNames('JP');
+    await addNote(served, '走る');
+    await srs.syncNow(kJa);
+    expect((await ownFile())['name'], 'JP');
+    expect((await listed()).names, <String>{'JP'});
+
+    // 手机离开（删了自己的说明文件）：名字靠服务端上次发布的那份留着。
+    await srsRemoveOwnProfileFolder(
+      assets,
+      profileUid: kJa,
+      dir: ja.sync2Dir,
+      deviceId: 'phone-ja',
+      v2Device: ja.sync2Device,
+    );
+    await srs.applyConfig();
+    await srs.syncNow(kJa);
+    r = await listed();
+    expect(r.writers, <String>[serverWriter]);
+    expect(r.names, <String>{'JP'});
+    expect(srs.profile(kJa)!.name, 'JP');
   });
 
   test('写入按绑定的位置目录找 profile：目录名不当 uid，坏路径与没提供的 profile 不叫醒（G10-4）', () async {

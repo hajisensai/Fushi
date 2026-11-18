@@ -485,6 +485,7 @@ class HeadlessHost {
       config: () => config.srs,
       // 发出了新段：叫醒客户端 `/api/srs/changes` 长轮询（与 app 当 host 同）。
       onPublished: () => _server?.notifySrsChanged(),
+      deviceName: () => config.deviceName,
       rwkvHttpClient: _srsRwkvHttpClient,
     );
     _srs = srs;

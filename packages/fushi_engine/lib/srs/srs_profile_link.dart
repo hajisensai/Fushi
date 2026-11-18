@@ -128,6 +128,7 @@ class SrsRemoteProfile {
     required this.uid,
     required this.writers,
     this.names = const <String>{},
+    this.nameOf = const <String, String>{},
     this.hasNotes,
     this.updatedAt,
     this.devices = const <String>[],
@@ -159,6 +160,11 @@ class SrsRemoteProfile {
 
   /// 各写入者 [kSrsProfileInfoName] 里报的 profile 名（旧版本不写说明文件时为空）。
   final Set<String> names;
+
+  /// 写入者 → 它说明文件里报的 profile 名（只收非空的）。[names] 是它们的并集；要区分「别的设备报的」与「本机自己
+  /// 上次发布的」时用这个（无头服务端发布自己的说明文件时，名字取别的设备报的、没有才沿用自己上次发布的，
+  /// 否则设备改名后服务端会一直把自己那份旧名字当来源）。
+  final Map<String, String> nameOf;
 
   /// 有没有写入者报告过「有用户笔记」；没有任何说明文件时为 null（未知）。
   final bool? hasNotes;
@@ -350,6 +356,7 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
     final AssetEntry p = folders[i];
     final List<String> writers = <String>[];
     final Set<String> names = <String>{};
+    final Map<String, String> nameOf = <String, String>{};
     bool? hasNotes;
     int? updatedAt;
     final List<String> devices = <String>[];
@@ -371,7 +378,10 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
       final int? at = read.$2;
       if (at != null && (updatedAt == null || at > updatedAt!)) updatedAt = at;
       final Object? name = info['name'];
-      if (name is String && name.isNotEmpty) names.add(name);
+      if (name is String && name.isNotEmpty) {
+        names.add(name);
+        nameOf[writer] = name;
+      }
       final Object? notes = info['hasNotes'];
       if (notes is bool) hasNotes = (hasNotes ?? false) || notes;
       final Object? device = info['device'];
@@ -438,6 +448,7 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
         uid: p.name,
         writers: writers,
         names: names,
+        nameOf: nameOf,
         hasNotes: hasNotes,
         updatedAt: updatedAt,
         devices: devices,
