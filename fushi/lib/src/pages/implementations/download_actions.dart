@@ -70,7 +70,9 @@ Future<void> maybeShowTorrentUploadConsent(
   );
   if (appModel.torrentUploadIntroShown ||
       !appModel.isEmbeddedTorrentReady ||
-      config.backend == QbConnectionConfig.backendQbittorrent) {
+      config.backend == QbConnectionConfig.backendQbittorrent ||
+      // 借互联设备的引擎：上传 / 做种由那台设备自己的设置管，本机这份不下发。
+      config.backend == QbConnectionConfig.backendFushiHost) {
     return;
   }
   await showAppDialog<bool>(

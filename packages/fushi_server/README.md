@@ -11,6 +11,7 @@ Fushi 通过「互联」配对后，把这些活丢给它：
 | 截屏识字 | `POST /api/ocr/screen[?region=x,y,w,h]`（能力位 `screenOcrV1`） | body 是一帧截图（JPEG / PNG / WebP），返回逐行文字、行框与逐字框（截图像素坐标）；整帧当文字图走 PP 行检测 + 逐行识别，常驻会话空闲 5 分钟释放。给 Steam Deck 游戏内识字等用，模型同上（`ocr models pull`） |
 | 字幕识别（ASR） | `/api/jobs`（kind=`asr`） | 客户端上传音轨或指定 host 视频，服务端转录成 SRT + token 时间轴 |
 | 代下载 | `/api/downloads` | 内置 libtorrent 引擎或外接 qBittorrent，落 `<data>/documents/downloads` 后自动入库。能力位 `kinds` = `video` / `novel` / `manga` / `audiobook`：非视频整包走引擎发现导入执行器按域入库（小说 EPUB / 文本转 EPUB、漫画 cbz/zip 图包、有声书正文+字幕+音频对齐）。**不收游戏**（服务端没有游戏库，投了 400）；小说包里的 **PDF** 不能导入（要 app 的 pdfrx 栅格化），任务以 `unsupportedOnThisHost` 挡下；cbr / cb7 / rar 需要服务端有 7-Zip（`FUSHI_7ZA` 或 PATH 上的 `7z` / `7za`），否则 `archiveToolMissing` |
+| 借出 BT 引擎 | `/api/torrent-engine` | 已配对设备把本机引擎当自己的**下载后端**用（app「下载后端 = 互联设备」）：任务、整理、入库都在对端，这里只跑 BT。只认已配对设备自己的凭据（共享 token 403）；远程只看得见、改得了经本路由加进来的种子（租约存 `<support>/torrent/peer_leases.json`，并进内置引擎的 resume 保留集合，重启不丢）；保存目录 / 移动目标只能落在本机下载根或 `torrent.peer_roots` 之下 |
 | 内容订阅 | `/api/subscriptions` | 订阅在 host 上创建、由 host 周期检查（用户添加的 BT 站 / Torznab）并投进自己的下载管线；客户端发现页可选「运行在 host」 |
 | 配置文件（Profile）寄存 | `/api/interconnect/profile`（GET / PUT，仅 TLS） | 设备「互联 → 上传配置」把配置方案推到服务端寄存，另一台设备「下载配置」拉走；服务端只寄存不应用。默认关（`profile_transfer`） |
 | 跟随已配对设备登录 Fushi 账户 | `/api/interconnect/leaderboard-link`（POST，仅 TLS） | 标为「我的设备」的已配对设备在本机没有账户时，跟随服务端当前 Profile 的排行榜账户自动登录（服务端代绑对端公钥）。总闸 `leaderboard_link` 默认开，但配对从不自动标「我的设备」，要管理员手动标 |
@@ -161,6 +162,8 @@ torrent:
   engine: "auto"              # auto | embedded | qbittorrent
   # library: "/opt/fushi_server/lib/libfushi_torrent_ffi.so"   # 缺省找 bundle/lib，再找系统路径
   listen: "0.0.0.0:6881,[::]:6881"
+  # peer_roots:                 # 借出引擎时除下载根外允许落盘的目录（绝对路径；典型是挂载进来的 app 媒体库共享）
+  #   - "/mnt/pc-video"
 qbittorrent:                  # engine=qbittorrent 或 auto 无内置库时用
   url: "http://127.0.0.1:8080"
   username: "admin"
@@ -261,6 +264,7 @@ serve 在跑也安全）、复习库 `srs.db` 的一致快照（有才带）、�
 ```
 fushi_server ctl status | logs | p2p
 fushi_server ctl pairing [ls] | revoke <peerId> | owner <peerId> on|off   已配对设备 / 标记「我的设备」
+fushi_server ctl pairing link                                         出一次性配对链接（对端 `fushi_cli peer pair <链接> --yes`）
 fushi_server ctl lib [ls] | add <path> [--kind video|book|manga|audiobook] [--id x] | rm <id> [--purge]
 fushi_server ctl scan [--prune|--no-prune]
 fushi_server ctl dl [ls] | cancel|retry|rm <id> | subtitles <id>（该任务的字幕行：来源 / 语言 / 原文件名 / 落盘路径 / 错误）

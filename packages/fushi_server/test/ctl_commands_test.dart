@@ -113,6 +113,7 @@ void main() {
           <String>['status']: ('GET', '/api/admin/status'),
           <String>['logs']: ('GET', '/api/admin/logs'),
           <String>['pairing']: ('GET', '/api/admin/pairing'),
+          <String>['pairing', 'link']: ('POST', '/api/admin/pairing/link'),
           <String>['pairing', 'revoke', 'peer 1']: (
             'DELETE',
             '/api/admin/pairing/peers/peer%201',
