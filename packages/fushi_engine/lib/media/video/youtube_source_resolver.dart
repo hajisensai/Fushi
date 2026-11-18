@@ -4,7 +4,8 @@
 // ignore_for_file: invalid_use_of_internal_member
 import 'dart:async' show TimeoutException;
 import 'dart:convert' show jsonDecode;
-import 'dart:io' show HandshakeException, HttpException, SocketException;
+import 'dart:io'
+    show HandshakeException, HttpClient, HttpException, SocketException;
 
 import 'package:collection/collection.dart' show mergeSort;
 import 'package:html_unescape/html_unescape.dart';
@@ -39,8 +40,86 @@ import 'package:meta/meta.dart';
 /// （`findProxy` 为 null，连 `HTTPS_PROXY` 都不读），而 youtube.com / googlevideo.com
 /// 在多数用户所在网络需要代理。它的构造函数收一个 `http.Client`，于是这里把应用代理
 /// 出口喂进去；除出口外行为（UA / cookie / 重试）一律沿用上游默认。
-yt.YoutubeHttpClient _createYoutubeHttpClient() =>
-    yt.YoutubeHttpClient(createAppHttpIoClient());
+///
+/// 连接建立超时取 [kYoutubeConnectTimeout]（短于单 client 上限），让「连不上」以
+/// [SocketException] 的形态落到 [YoutubeProbingHttpClient] 的记账里。
+///
+/// [configure] 透传给 [createAppHttpIoClient]，拿到的是**已装好代理与连接超时**的底层
+/// [HttpClient]。生产不传；测试经它读回 `connectionTimeout`，钉住「生产出站真的用了
+/// [kYoutubeConnectTimeout]」——改回应用默认的 20 s 后提前停对黑洞出口整体失效，而
+/// 注入 `MockClient` 的用例看不出来。
+@visibleForTesting
+YoutubeProbingHttpClient createYoutubeHttpClient({
+  void Function(HttpClient client)? configure,
+}) => YoutubeProbingHttpClient(
+  createAppHttpIoClient(
+    connectionTimeout: kYoutubeConnectTimeout,
+    configure: configure,
+  ),
+);
+
+/// YouTube 出站的**连接建立**超时（DNS + TCP + 代理隧道 + TLS 握手）。
+///
+/// 必须**短于** [kYoutubePerClientManifestTimeout]：应用默认的 20 s
+/// （`kAppHttpConnectionTimeout`）比单 client 的 13 s 上限还长，黑洞出口下每个 client 都
+/// 先被 13 s 的整体超时掐掉，留下的只有一个 [TimeoutException]——与「连上了但被
+/// tarpit」无从区分，兜底链只能五个 client 挨个等满（65 s）。取 10 s 后连接阶段的失败在
+/// 单 client 窗口内就以 [SocketException] 浮出来，[_getManifestWithClientFallback] 才能据此
+/// 提前停。正常取流整程实测 1.6～4.5 s，10 s 只给建连已是 2 倍以上余量。
+const Duration kYoutubeConnectTimeout = Duration(seconds: 10);
+
+/// 连续多少个 client 都死在连接层即判「出口不通」、不再试后面的 client。
+const int kYoutubeEgressFailureStreakLimit = 2;
+
+/// 带「出口探针」记账的 [yt.YoutubeHttpClient]：每个经它发出的请求，记下是**拿到了
+/// 响应头**还是**死在连接层**（[SocketException] / [HandshakeException]：DNS 失败、连接
+/// 被拒、连接阶段超时、TLS 握手失败）。
+///
+/// 为什么要在这一层记：youtube_explode 对每个请求内部重试 5 次，单 client 的整体超时
+/// 到点时抛出来的只是 [TimeoutException]，真正的连接层异常被吞在重试循环里，从兜底链
+/// 的 `catch` 里看不出来。
+class YoutubeProbingHttpClient extends yt.YoutubeHttpClient {
+  YoutubeProbingHttpClient(super.httpClient);
+
+  int _windowGeneration = 0;
+  int _windowResponses = 0;
+  int _windowConnectFailures = 0;
+
+  /// 开一个新的记账窗口（兜底链每试一个 client 调一次）。
+  ///
+  /// 窗口带代号：单 client 的整体超时**不会取消** youtube_explode 重试循环里的在途请求，
+  /// 上一个 client 被掐掉之后它的重试还会经本对象继续发。请求在 [send] 进入时记下所属
+  /// 窗口的代号，结束时代号已变就不记账——否则上一个 client 迟到的连接失败会被算到下
+  /// 一个 client 头上，把「连上了但被拖住」的 client 误判成出口不通。
+  void beginEgressWindow() {
+    _windowGeneration++;
+    _windowResponses = 0;
+    _windowConnectFailures = 0;
+  }
+
+  /// 当前窗口内**没有任何请求拿到响应**、且至少一个请求死在连接层——出口不通的信号。
+  ///
+  /// 连上了但对端不回（tarpit / 限流）不算：那种情况没有连接层失败，本值为 false，
+  /// 兜底链照旧往下试。
+  bool get egressUnreachableInWindow =>
+      _windowResponses == 0 && _windowConnectFailures > 0;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    final int generation = _windowGeneration;
+    try {
+      final http.StreamedResponse response = await super.send(request);
+      if (generation == _windowGeneration) _windowResponses++;
+      return response;
+    } on SocketException {
+      if (generation == _windowGeneration) _windowConnectFailures++;
+      rethrow;
+    } on HandshakeException {
+      if (generation == _windowGeneration) _windowConnectFailures++;
+      rethrow;
+    }
+  }
+}
 
 /// YouTube 解析结果：可播放流 URL + 字幕 cue + header + 标题。
 ///
@@ -236,9 +315,7 @@ Future<YoutubeMetadata> resolveYoutubeMetadata(
   // 用完关闭。把「videos.get 拿标题」（需真网络、外部契约）与「缩略图探测」（可离线注入）解耦。
   http.Client? thumbnailProbeClient,
 }) async {
-  final yt.YoutubeExplode client = yt.YoutubeExplode(
-    _createYoutubeHttpClient(),
-  );
+  final yt.YoutubeExplode client = yt.YoutubeExplode(createYoutubeHttpClient());
   try {
     final yt.Video video = await client.videos.get(url).timeout(timeout);
     // TODO-1314（C7）：多分辨率缩略图回退——HEAD 探测 maxres→sd→hq，取首个可用者作导入封面
@@ -289,9 +366,7 @@ Future<List<YoutubeSearchHit>> searchYoutubeVideos(
 }) async {
   final String q = query.trim();
   if (q.isEmpty) return const <YoutubeSearchHit>[];
-  final yt.YoutubeExplode client = yt.YoutubeExplode(
-    _createYoutubeHttpClient(),
-  );
+  final yt.YoutubeExplode client = yt.YoutubeExplode(createYoutubeHttpClient());
   try {
     final yt.VideoSearchList list = await client.search
         .search(q)
@@ -762,9 +837,16 @@ Map<String, String> youtubeStreamReplayHeaders() => <String, String>{
 /// BUG-2946：一律 `requireWatchPage: false`，watch page 不再是全链共用的前置步骤；
 /// [kYoutubeVisitorIdentityClients] 里的 client 改用 [fetchYoutubeVisitorData] 取到的身份
 /// （本次解析只取一次，算进该 client 自己的超时）。全部失败时报错逐 client 列出各自原因。
+///
+/// **出口不通时提前停**：连续 [kYoutubeEgressFailureStreakLimit] 个 client 都是
+/// [YoutubeProbingHttpClient.egressUnreachableInWindow]（一个响应都没拿到、且有请求死在
+/// 连接层）就不再试后面的——出口不通时五个 client 的结局必然相同，此前要等满
+/// 13 s × 5 才报错。只认连接层失败，**不认** [TimeoutException]：连上后被拖住是某个
+/// client 被限流的常见形态（ios 首流探测在正常网络下就会挂满超时），那种情况必须把
+/// 兜底链试完。提前停抛的仍是 [YoutubeManifestException]，带已试 client 的失败列表。
 Future<yt.StreamManifest> _getManifestWithClientFallback(
   yt.YoutubeExplode client,
-  yt.YoutubeHttpClient http,
+  YoutubeProbingHttpClient http,
   yt.VideoId videoId,
   List<yt.YoutubeApiClient> ytClients, {
   Duration perClientTimeout = kYoutubePerClientManifestTimeout,
@@ -784,7 +866,9 @@ Future<yt.StreamManifest> _getManifestWithClientFallback(
       );
 
   final List<YoutubeClientFailure> failures = <YoutubeClientFailure>[];
+  int egressFailureStreak = 0;
   for (final yt.YoutubeApiClient api in ytClients) {
+    http.beginEgressWindow();
     try {
       final yt.StreamManifest manifest = await fetch(
         api,
@@ -796,6 +880,10 @@ Future<yt.StreamManifest> _getManifestWithClientFallback(
       // 兜底 client（非致命）。超时（[TimeoutException]）与其它失败同路径，快速切下一个。
       failures.add(YoutubeClientFailure(youtubeClientName(api), e));
     }
+    egressFailureStreak = http.egressUnreachableInWindow
+        ? egressFailureStreak + 1
+        : 0;
+    if (egressFailureStreak >= kYoutubeEgressFailureStreakLimit) break;
   }
   if (failures.isEmpty) {
     throw StateError('youtube manifest: empty client fallback list');
@@ -877,11 +965,15 @@ Future<yt.StreamManifest> getYoutubeManifestWithClientFallback(
   List<yt.YoutubeApiClient> ytClients, {
   Duration perClientTimeout = kYoutubePerClientManifestTimeout,
 }) async {
-  final yt.YoutubeExplode client = yt.YoutubeExplode(http);
+  // 外面给的是普通 client（测试的 `MockClient` 包装）时套一层探针；记账只看经它发出的请求。
+  final YoutubeProbingHttpClient probing = http is YoutubeProbingHttpClient
+      ? http
+      : YoutubeProbingHttpClient(http);
+  final yt.YoutubeExplode client = yt.YoutubeExplode(probing);
   try {
     return await _getManifestWithClientFallback(
       client,
-      http,
+      probing,
       yt.VideoId(videoId),
       ytClients,
       perClientTimeout: perClientTimeout,
@@ -923,7 +1015,7 @@ Future<YoutubeResolvedSource> resolveYoutubeSource(
   // 非 null 走 [pickVideoStreamForTargetHeight]，可越过默认 1080p 上限到 1440p/4K）。
   int? playbackTargetHeight,
 }) async {
-  final yt.YoutubeHttpClient http = _createYoutubeHttpClient();
+  final YoutubeProbingHttpClient http = createYoutubeHttpClient();
   final yt.YoutubeExplode client = yt.YoutubeExplode(http);
   try {
     // 加超时：YouTube 的 innertube/googlevideo 偶发 tarpit（高频请求被限流时连接不完成），
@@ -981,7 +1073,7 @@ Future<YoutubeAudioStream> resolveYoutubeAudioStream(
   Duration? timeout,
   List<yt.YoutubeApiClient>? ytClients,
 }) async {
-  final yt.YoutubeHttpClient http = _createYoutubeHttpClient();
+  final YoutubeProbingHttpClient http = createYoutubeHttpClient();
   final yt.YoutubeExplode client = yt.YoutubeExplode(http);
   try {
     final yt.StreamManifest manifest = await _getManifestWithClientFallback(
@@ -1020,7 +1112,7 @@ Future<YoutubeAudioStream> resolveYoutubeAudioStream(
 
 Future<YoutubeResolvedSource> _resolveYoutubeSourceInner(
   yt.YoutubeExplode client,
-  yt.YoutubeHttpClient http,
+  YoutubeProbingHttpClient http,
   String url,
   String preferSubtitleLang,
   bool withCaptions,
@@ -1258,7 +1350,7 @@ Future<YoutubeVariantSet> resolveYoutubeVideoVariants(
   // 对齐 ≤目标 的最高档，与初始播放选择一致。
   int? playbackTargetHeight,
 }) async {
-  final yt.YoutubeHttpClient http = _createYoutubeHttpClient();
+  final YoutubeProbingHttpClient http = createYoutubeHttpClient();
   final yt.YoutubeExplode client = yt.YoutubeExplode(http);
   try {
     return await _resolveYoutubeVideoVariantsInner(
@@ -1275,7 +1367,7 @@ Future<YoutubeVariantSet> resolveYoutubeVideoVariants(
 
 Future<YoutubeVariantSet> _resolveYoutubeVideoVariantsInner(
   yt.YoutubeExplode client,
-  yt.YoutubeHttpClient http,
+  YoutubeProbingHttpClient http,
   String url,
   List<yt.YoutubeApiClient> ytClients,
   int? playbackTargetHeight,
@@ -1599,13 +1691,21 @@ Future<List<YoutubeCaptionTrack>> resolveYoutubeCaptionTracks(
 /// IO：懒下载**单条**字幕轨的 cue（track-list-first 的 on-select，TODO-1302）。选中轨才调，
 /// 下载 [YoutubeCaptionTrack.cueDownloadUrl]（fmt=json3 [+ tlang]）→ [parseYoutubeTimedTextToCues]。
 /// best-effort：失败返回空 cue（视频照播、字幕轨行仍在可重试）。
+///
+/// [timeout]：整次下载的上限。此前没有——连上后被 tarpit 时这个 Future 永不完成，选中
+/// 的字幕轨一直停在「加载中」。超时与其它失败同路径（空 cue，可重选重试），`finally` 关
+/// client 取消挂起的请求。[httpClient] 仅供测试注入。
 Future<List<AudioCue>> resolveYoutubeCaptionCues(
   YoutubeCaptionTrack track, {
   required String bookKey,
+  Duration timeout = kYoutubePerClientManifestTimeout,
+  @visibleForTesting yt.YoutubeHttpClient? httpClient,
 }) async {
-  final yt.YoutubeHttpClient http = _createYoutubeHttpClient();
+  final yt.YoutubeHttpClient http = httpClient ?? createYoutubeHttpClient();
   try {
-    final String body = await http.getString(track.cueDownloadUrl);
+    final String body = await http
+        .getString(track.cueDownloadUrl)
+        .timeout(timeout);
     return finishYoutubeCaptionCues(
       parseYoutubeTimedTextToCues(content: body, bookKey: bookKey),
       isAutoGenerated: track.isAutoGenerated,
@@ -1674,15 +1774,21 @@ Future<List<T>> fetchFirstNonEmptyByClient<T>(
 
 /// IO：用**单个** [api] client 取一次字幕轨表（[_fetchCaptionTracks] 的每步）。
 /// best-effort：该 client 失败/无轨返回空表，由调用方决定是否试下一个。
+///
+/// [timeout]：与取流同一个单 client 上限。此前没有——某个 client 连上后被 tarpit 时
+/// 整条字幕链挂死在它身上，后面本来能出轨表的 client 永远轮不到，字幕轨列表永远不出现。
+/// 超时**返回空表**（不抛），[fetchFirstNonEmptyByClient] 照常试下一个。
 Future<List<YoutubeCaptionTrack>> _fetchCaptionTracksWithClient(
   yt.VideoId id,
-  yt.YoutubeApiClient api,
-) async {
-  final yt.YoutubeHttpClient http = _createYoutubeHttpClient();
+  yt.YoutubeApiClient api, {
+  Duration timeout = kYoutubePerClientManifestTimeout,
+  yt.YoutubeHttpClient? httpClient,
+}) async {
+  final yt.YoutubeHttpClient http = httpClient ?? createYoutubeHttpClient();
   try {
     final PlayerResponse response = await VideoController(
       http,
-    ).getPlayerResponse(id, api);
+    ).getPlayerResponse(id, api).timeout(timeout);
     final List<YoutubeCaptionTrack> out = <YoutubeCaptionTrack>[];
     for (final ClosedCaptionTrack t in response.closedCaptionTrack) {
       try {
@@ -1706,6 +1812,20 @@ Future<List<YoutubeCaptionTrack>> _fetchCaptionTracksWithClient(
     http.close();
   }
 }
+
+/// 测试入口：用注入的 [httpClient] 离线驱动单 client 取字幕轨表（超时 → 空表）。
+@visibleForTesting
+Future<List<YoutubeCaptionTrack>> fetchYoutubeCaptionTracksWithClient(
+  String videoId,
+  yt.YoutubeApiClient api, {
+  required yt.YoutubeHttpClient httpClient,
+  Duration timeout = kYoutubePerClientManifestTimeout,
+}) => _fetchCaptionTracksWithClient(
+  yt.VideoId(videoId),
+  api,
+  timeout: timeout,
+  httpClient: httpClient,
+);
 
 /// IO：一次性同步取「最佳单轨」cue（A3 人工>ASR·精确语言选轨；遗留 `withCaptions:true` 同步
 /// 路径用）。track-list-first 的应用内播放器改走 [resolveYoutubeCaptionTracks] +

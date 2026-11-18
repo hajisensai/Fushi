@@ -1209,14 +1209,14 @@ class SyncAssetPackageService {
       'startMs': row.startMs,
       'endMs': row.endMs,
       'audioFileIndex': row.audioFileIndex,
-      // v159 逐 token 时间随 cue 进包（没有就不写键）：接收端不再重匹配，直接落库
+      // v160 逐 token 时间随 cue 进包（没有就不写键）：接收端不再重匹配，直接落库
       // 包里的 cue，不带过去对端就永远没有半句命中能用的时间。
       if (row.tokenTimingJson != null) 'tokenTimingJson': row.tokenTimingJson,
     };
   }
 }
 
-/// manifest 里一条 cue 的逐 token 时间（v159 起导出端写；旧包没有这个键 = null）。
+/// manifest 里一条 cue 的逐 token 时间（v160 起导出端写；旧包没有这个键 = null）。
 /// 先过一遍 [CueTokenTiming.tryParseJson]：坏数据不落库。
 String? _cueTokenTimingJson(Map<String, Object?> cue) =>
     CueTokenTiming.tryParseJson(

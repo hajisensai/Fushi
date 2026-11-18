@@ -2222,6 +2222,9 @@ class SyncRepository {
     'library_organize_auto',
     'library_organize_auto_since',
     'library_organize_consented',
+    // AI 库管家：自动开关与本机运行记录 / 水位——同理只对这台设备成立。
+    'library_curate_auto',
+    'library_curate_state',
     'video_subtitle_segmenter',
     'video_subtitle_moss_backend',
     // 按系列记住的字幕文件夹（0PZAhFd1RO）：值是这台机器上的外部绝对路径，系列键里

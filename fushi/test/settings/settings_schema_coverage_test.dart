@@ -1861,6 +1861,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 新入库的）。
   'ai/Organize with AI after import':
       'test/media/collections/library_organize_runner_test.dart',
+  // AI 库管家自动路径（默认开）：生效点是去抖后的自动路径每次现读开关与各步 AI
+  // 指派（harness 里没有导入、操作上下文与 AI 提供商）。专项测试咬住默认开、没指派
+  // 任何 AI 不调度、开着时接管旧自动整理的触发点，编排逻辑由引擎测试覆盖。
+  'ai/Curate the library automatically':
+      'test/ops/ctl_library_curate_routes_test.dart',
   // 允许已配对设备使用 AI 助手：生效点是互联 host 的 /api/assistant agent 门（harness
   // 里没有互联服务器）。专项测试咬住「关着 → disabled、不建模型」与控制通道写不进去。
   "interconnect/Use this device's AI assistant":

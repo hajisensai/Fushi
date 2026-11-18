@@ -5,9 +5,28 @@ import 'package:path/path.dart' as p;
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
+import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
+import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart'
+    show kSystemOcrEngineSignaturePrefix;
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
+
+/// 用 [GoogleLensPageCache] 格式写逐页缓存的引擎 → 缓存目录名前缀（后接语言）。
+///
+/// 重开书恢复按这张表枚举缓存目录。新增一个写这种逐页缓存的引擎时在这里加
+/// 一行；漏了的后果是该引擎被杀进程 / 取消后的成果重开书读不回来（BUG-4827）。
+/// 前缀都带版本号：换签名作废的旧目录（例如系统 OCR 的 v1）不会被收回来。
+const Map<MangaOcrEngineId, String> kMangaOcrPageJsonCachePrefixes =
+    <MangaOcrEngineId, String>{
+      MangaOcrEngineId.googleLens: kGoogleLensEngineSignaturePrefix,
+      MangaOcrEngineId.systemOcr: kSystemOcrEngineSignaturePrefix,
+    };
+
+/// [directoryName]（`manga_ocr_out/_pages/` 下的子目录名）是不是某个已知引擎的
+/// 逐页 JSON 缓存目录。
+bool isMangaOcrPageJsonCacheDirectory(String directoryName) =>
+    kMangaOcrPageJsonCachePrefixes.values.any(directoryName.startsWith);
 
 /// A non-network reconstruction of the pages already completed by incremental
 /// OCR engines.
@@ -56,16 +75,15 @@ Future<MangaOcrCacheRecovery> recoverCachedMangaOcr({
   final Directory localDirectory = Directory(
     p.join(cacheRoot.path, localSignature),
   );
-  // Lens 签名带语言后缀（`google-lens-v2-niratan-<lang>`），同一卷可能有多个
-  // 语言的缓存目录并存；全部纳入候选，逐页按文件时间取最新。
-  final List<Directory> lensDirectories = cacheRoot.existsSync()
+  // 逐页 JSON 缓存的引擎签名都带语言后缀（`<前缀><lang>`），同一卷可能有多个
+  // 引擎、多个语言的缓存目录并存；全部纳入候选，逐页按文件时间取最新。
+  final List<Directory> pageJsonDirectories = cacheRoot.existsSync()
       ? cacheRoot
             .listSync()
             .whereType<Directory>()
             .where(
-              (Directory directory) => p
-                  .basename(directory.path)
-                  .startsWith(kGoogleLensEngineSignaturePrefix),
+              (Directory directory) =>
+                  isMangaOcrPageJsonCacheDirectory(p.basename(directory.path)),
             )
             .toList(growable: false)
       : const <Directory>[];
@@ -76,8 +94,8 @@ Future<MangaOcrCacheRecovery> recoverCachedMangaOcr({
     ],
     pageFiles: <File>[for (final MangaOcrPageFile page in pages) page.file],
   );
-  final List<GoogleLensPageCache> lensCaches = <GoogleLensPageCache>[
-    for (final Directory directory in lensDirectories)
+  final List<GoogleLensPageCache> pageJsonCaches = <GoogleLensPageCache>[
+    for (final Directory directory in pageJsonDirectories)
       GoogleLensPageCache(directory),
   ];
 
@@ -96,7 +114,7 @@ Future<MangaOcrCacheRecovery> recoverCachedMangaOcr({
     }
 
     final OcrPageResult? local = await localCache.read('manga_ocr', pageIndex);
-    // 候选统一成 (mtime, page) 再取最新，本地/各语言 Lens 缓存无特殊分支。
+    // 候选统一成 (mtime, page) 再取最新，本地 / 各引擎各语言的逐页缓存无特殊分支。
     final List<(DateTime, MokuroImage)> candidates =
         <(DateTime, MokuroImage)>[];
     if (local != null) {
@@ -111,19 +129,16 @@ Future<MangaOcrCacheRecovery> recoverCachedMangaOcr({
         _localPage(pages[pageIndex], local),
       ));
     }
-    for (final GoogleLensPageCache lensCache in lensCaches) {
-      final MokuroImage? lens = await lensCache.read(
-        pageIndex,
-        pages[pageIndex],
-      );
-      if (lens == null) continue;
-      final File lensFile = File(
+    for (final GoogleLensPageCache cache in pageJsonCaches) {
+      final MokuroImage? cached = await cache.read(pageIndex, pages[pageIndex]);
+      if (cached == null) continue;
+      final File cachedFile = File(
         p.join(
-          lensCache.directory.path,
+          cache.directory.path,
           '${pageIndex.toString().padLeft(6, '0')}.json',
         ),
       );
-      candidates.add(((await lensFile.stat()).modified, lens));
+      candidates.add(((await cachedFile.stat()).modified, cached));
     }
     if (candidates.isEmpty) {
       continue;

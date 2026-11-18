@@ -10,7 +10,7 @@ import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 import 'package:test/test.dart';
 
-/// v159：`audio_cues.token_timing_json`——转录产物的逐 token 时间随 cue 落库。
+/// v160：`audio_cues.token_timing_json`——转录产物的逐 token 时间随 cue 落库。
 ///
 /// 此前 `AudioCue.tokenTiming` 是导入时的瞬态字段：重切用完即丢，库里读回的 cue 恒为
 /// null，运行时要按 token 裁半句的功能（漫画台词匹配有声书 cue）因此一句都裁不了。
@@ -27,9 +27,9 @@ void main() {
     ..audioFileIndex = 0
     ..tokenTiming = timing;
 
-  test('v158 → v159 加 token_timing_json；存量 cue 为 NULL，重跑幂等', () async {
+  test('v159 → v160 加 token_timing_json；存量 cue 为 NULL，重跑幂等', () async {
     final Directory dir = Directory.systemTemp.createTempSync(
-      'cue_timing_v159',
+      'cue_timing_v160',
     );
     addTearDown(() => dir.deleteSync(recursive: true));
     final String path = p.join(dir.path, 'test.db');
@@ -44,25 +44,25 @@ void main() {
 
     final sqlite.Database raw = sqlite.sqlite3.open(path);
     raw.execute('ALTER TABLE audio_cues DROP COLUMN token_timing_json');
-    raw.execute('PRAGMA user_version = 158');
+    raw.execute('PRAGMA user_version = 159');
     raw.dispose();
 
     final FushiDatabase migrated = FushiDatabase.atFile(
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 159);
+    expect(migrated.schemaVersion, 160);
     final List<AudioCueRow> rows = await migrated.getCuesForBook('book');
     expect(rows.single.tokenTimingJson, isNull);
     await migrated.close();
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
-    expect(probe.select('PRAGMA user_version').first.values.first, 159);
+    expect(probe.select('PRAGMA user_version').first.values.first, 160);
     probe.execute(
       'UPDATE audio_cues SET token_timing_json = \'{"t":["a"],"o":[5]}\'',
     );
-    // 重跑 v159 步：列已在，不得报错、不得清数据。
-    probe.execute('PRAGMA user_version = 158');
+    // 重跑 v160 步：列已在，不得报错、不得清数据。
+    probe.execute('PRAGMA user_version = 159');
     probe.dispose();
     final FushiDatabase reopened = FushiDatabase.atFile(
       path,

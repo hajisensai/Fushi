@@ -2605,7 +2605,7 @@ class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
   final int endMs;
   final int audioFileIndex;
 
-  /// v159：转录产物的逐 token 发射时间（`{"t":[token...],"o":[相对 startMs 的毫秒...]}`），
+  /// v160：转录产物的逐 token 发射时间（`{"t":[token...],"o":[相对 startMs 的毫秒...]}`），
   /// 与本行 cue **重切 / 后处理之后**的边界同步；非转录字幕 / 存量行为 NULL。
   /// 编解码只在 `AudioCue.fromRow` / `toCompanion`（fushi_audio）。
   final String? tokenTimingJson;
@@ -18467,12 +18467,28 @@ class $MediaCollectionItemsTable extends MediaCollectionItems
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _pinnedByUserMeta = const VerificationMeta(
+    'pinnedByUser',
+  );
+  @override
+  late final GeneratedColumn<bool> pinnedByUser = GeneratedColumn<bool>(
+    'pinned_by_user',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("pinned_by_user" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     collectionId,
     mediaType,
     entryKey,
     sortIndex,
+    pinnedByUser,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -18519,6 +18535,15 @@ class $MediaCollectionItemsTable extends MediaCollectionItems
         sortIndex.isAcceptableOrUnknown(data['sort_index']!, _sortIndexMeta),
       );
     }
+    if (data.containsKey('pinned_by_user')) {
+      context.handle(
+        _pinnedByUserMeta,
+        pinnedByUser.isAcceptableOrUnknown(
+          data['pinned_by_user']!,
+          _pinnedByUserMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -18543,6 +18568,10 @@ class $MediaCollectionItemsTable extends MediaCollectionItems
       sortIndex: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}sort_index'],
+      )!,
+      pinnedByUser: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}pinned_by_user'],
       )!,
     );
   }
@@ -18570,11 +18599,18 @@ class MediaCollectionItemRow extends DataClass
 
   /// 合集内序：playlist 的播放顺序 / collection 的展示顺序。
   final int sortIndex;
+
+  /// v159：用户亲手放进这个合集（手动加入 / 撤销 AI 的移出）。为 true 时自动路径
+  /// （AI 整理）不得把它移出——「用户否决过移出」记在成员行上、随合集清单同步，
+  /// 换一台设备也成立。单调：自动入口只在新插入时写 false，不把 true 改回 false；
+  /// 跨端合并取或。见 AI 库管家设计稿 §7。
+  final bool pinnedByUser;
   const MediaCollectionItemRow({
     required this.collectionId,
     required this.mediaType,
     required this.entryKey,
     required this.sortIndex,
+    required this.pinnedByUser,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -18583,6 +18619,7 @@ class MediaCollectionItemRow extends DataClass
     map['media_type'] = Variable<String>(mediaType);
     map['entry_key'] = Variable<String>(entryKey);
     map['sort_index'] = Variable<int>(sortIndex);
+    map['pinned_by_user'] = Variable<bool>(pinnedByUser);
     return map;
   }
 
@@ -18592,6 +18629,7 @@ class MediaCollectionItemRow extends DataClass
       mediaType: Value(mediaType),
       entryKey: Value(entryKey),
       sortIndex: Value(sortIndex),
+      pinnedByUser: Value(pinnedByUser),
     );
   }
 
@@ -18605,6 +18643,7 @@ class MediaCollectionItemRow extends DataClass
       mediaType: serializer.fromJson<String>(json['mediaType']),
       entryKey: serializer.fromJson<String>(json['entryKey']),
       sortIndex: serializer.fromJson<int>(json['sortIndex']),
+      pinnedByUser: serializer.fromJson<bool>(json['pinnedByUser']),
     );
   }
   @override
@@ -18615,6 +18654,7 @@ class MediaCollectionItemRow extends DataClass
       'mediaType': serializer.toJson<String>(mediaType),
       'entryKey': serializer.toJson<String>(entryKey),
       'sortIndex': serializer.toJson<int>(sortIndex),
+      'pinnedByUser': serializer.toJson<bool>(pinnedByUser),
     };
   }
 
@@ -18623,11 +18663,13 @@ class MediaCollectionItemRow extends DataClass
     String? mediaType,
     String? entryKey,
     int? sortIndex,
+    bool? pinnedByUser,
   }) => MediaCollectionItemRow(
     collectionId: collectionId ?? this.collectionId,
     mediaType: mediaType ?? this.mediaType,
     entryKey: entryKey ?? this.entryKey,
     sortIndex: sortIndex ?? this.sortIndex,
+    pinnedByUser: pinnedByUser ?? this.pinnedByUser,
   );
   MediaCollectionItemRow copyWithCompanion(MediaCollectionItemsCompanion data) {
     return MediaCollectionItemRow(
@@ -18637,6 +18679,9 @@ class MediaCollectionItemRow extends DataClass
       mediaType: data.mediaType.present ? data.mediaType.value : this.mediaType,
       entryKey: data.entryKey.present ? data.entryKey.value : this.entryKey,
       sortIndex: data.sortIndex.present ? data.sortIndex.value : this.sortIndex,
+      pinnedByUser: data.pinnedByUser.present
+          ? data.pinnedByUser.value
+          : this.pinnedByUser,
     );
   }
 
@@ -18646,13 +18691,15 @@ class MediaCollectionItemRow extends DataClass
           ..write('collectionId: $collectionId, ')
           ..write('mediaType: $mediaType, ')
           ..write('entryKey: $entryKey, ')
-          ..write('sortIndex: $sortIndex')
+          ..write('sortIndex: $sortIndex, ')
+          ..write('pinnedByUser: $pinnedByUser')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(collectionId, mediaType, entryKey, sortIndex);
+  int get hashCode =>
+      Object.hash(collectionId, mediaType, entryKey, sortIndex, pinnedByUser);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -18660,7 +18707,8 @@ class MediaCollectionItemRow extends DataClass
           other.collectionId == this.collectionId &&
           other.mediaType == this.mediaType &&
           other.entryKey == this.entryKey &&
-          other.sortIndex == this.sortIndex);
+          other.sortIndex == this.sortIndex &&
+          other.pinnedByUser == this.pinnedByUser);
 }
 
 class MediaCollectionItemsCompanion
@@ -18669,12 +18717,14 @@ class MediaCollectionItemsCompanion
   final Value<String> mediaType;
   final Value<String> entryKey;
   final Value<int> sortIndex;
+  final Value<bool> pinnedByUser;
   final Value<int> rowid;
   const MediaCollectionItemsCompanion({
     this.collectionId = const Value.absent(),
     this.mediaType = const Value.absent(),
     this.entryKey = const Value.absent(),
     this.sortIndex = const Value.absent(),
+    this.pinnedByUser = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   MediaCollectionItemsCompanion.insert({
@@ -18682,6 +18732,7 @@ class MediaCollectionItemsCompanion
     required String mediaType,
     required String entryKey,
     this.sortIndex = const Value.absent(),
+    this.pinnedByUser = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : collectionId = Value(collectionId),
        mediaType = Value(mediaType),
@@ -18691,6 +18742,7 @@ class MediaCollectionItemsCompanion
     Expression<String>? mediaType,
     Expression<String>? entryKey,
     Expression<int>? sortIndex,
+    Expression<bool>? pinnedByUser,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -18698,6 +18750,7 @@ class MediaCollectionItemsCompanion
       if (mediaType != null) 'media_type': mediaType,
       if (entryKey != null) 'entry_key': entryKey,
       if (sortIndex != null) 'sort_index': sortIndex,
+      if (pinnedByUser != null) 'pinned_by_user': pinnedByUser,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -18707,6 +18760,7 @@ class MediaCollectionItemsCompanion
     Value<String>? mediaType,
     Value<String>? entryKey,
     Value<int>? sortIndex,
+    Value<bool>? pinnedByUser,
     Value<int>? rowid,
   }) {
     return MediaCollectionItemsCompanion(
@@ -18714,6 +18768,7 @@ class MediaCollectionItemsCompanion
       mediaType: mediaType ?? this.mediaType,
       entryKey: entryKey ?? this.entryKey,
       sortIndex: sortIndex ?? this.sortIndex,
+      pinnedByUser: pinnedByUser ?? this.pinnedByUser,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -18733,6 +18788,9 @@ class MediaCollectionItemsCompanion
     if (sortIndex.present) {
       map['sort_index'] = Variable<int>(sortIndex.value);
     }
+    if (pinnedByUser.present) {
+      map['pinned_by_user'] = Variable<bool>(pinnedByUser.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -18746,6 +18804,7 @@ class MediaCollectionItemsCompanion
           ..write('mediaType: $mediaType, ')
           ..write('entryKey: $entryKey, ')
           ..write('sortIndex: $sortIndex, ')
+          ..write('pinnedByUser: $pinnedByUser, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -65949,6 +66008,17 @@ class $MediaLinksTable extends MediaLinks
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _confirmedByMeta = const VerificationMeta(
+    'confirmedBy',
+  );
+  @override
+  late final GeneratedColumn<String> confirmedBy = GeneratedColumn<String>(
+    'confirmed_by',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _reasonMeta = const VerificationMeta('reason');
   @override
   late final GeneratedColumn<String> reason = GeneratedColumn<String>(
@@ -66003,6 +66073,7 @@ class $MediaLinksTable extends MediaLinks
     source,
     confidence,
     isUserConfirmed,
+    confirmedBy,
     reason,
     createdAt,
     updatedAt,
@@ -66096,6 +66167,15 @@ class $MediaLinksTable extends MediaLinks
         ),
       );
     }
+    if (data.containsKey('confirmed_by')) {
+      context.handle(
+        _confirmedByMeta,
+        confirmedBy.isAcceptableOrUnknown(
+          data['confirmed_by']!,
+          _confirmedByMeta,
+        ),
+      );
+    }
     if (data.containsKey('reason')) {
       context.handle(
         _reasonMeta,
@@ -66179,6 +66259,10 @@ class $MediaLinksTable extends MediaLinks
         DriftSqlType.bool,
         data['${effectivePrefix}is_user_confirmed'],
       )!,
+      confirmedBy: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}confirmed_by'],
+      ),
       reason: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}reason'],
@@ -66225,7 +66309,15 @@ class MediaLinkRow extends DataClass implements Insertable<MediaLinkRow> {
 
   /// 推断置信度 0..1；手动连接为 NULL。
   final double? confidence;
+
+  /// `confirmed_by == 'user'` 的镜像（存量持久化名冻结：备份合并、旧版同步对端还在
+  /// 读写它）。由 DB 写入口与 [confirmedBy] 一起维护，调用方不单独写。
   final bool isUserConfirmed;
+
+  /// v159：谁让这条连接生效（`MediaLinkConfirmer`）：`user` = 用户手动连接 / 确认；
+  /// `ai` = AI 按门槛直接生效（可撤销，用户确认后升为 `user`）；NULL = 建议。
+  /// 非空即「已生效」，`user` 压过 `ai`。见 AI 库管家设计稿 §5.3。
+  final String? confirmedBy;
 
   /// 推断理由（AI 的「为什么认为是同一作品」、确定性判据的证据摘要）。
   final String? reason;
@@ -66245,6 +66337,7 @@ class MediaLinkRow extends DataClass implements Insertable<MediaLinkRow> {
     required this.source,
     this.confidence,
     required this.isUserConfirmed,
+    this.confirmedBy,
     this.reason,
     required this.createdAt,
     required this.updatedAt,
@@ -66269,6 +66362,9 @@ class MediaLinkRow extends DataClass implements Insertable<MediaLinkRow> {
       map['confidence'] = Variable<double>(confidence);
     }
     map['is_user_confirmed'] = Variable<bool>(isUserConfirmed);
+    if (!nullToAbsent || confirmedBy != null) {
+      map['confirmed_by'] = Variable<String>(confirmedBy);
+    }
     if (!nullToAbsent || reason != null) {
       map['reason'] = Variable<String>(reason);
     }
@@ -66296,6 +66392,9 @@ class MediaLinkRow extends DataClass implements Insertable<MediaLinkRow> {
           ? const Value.absent()
           : Value(confidence),
       isUserConfirmed: Value(isUserConfirmed),
+      confirmedBy: confirmedBy == null && nullToAbsent
+          ? const Value.absent()
+          : Value(confirmedBy),
       reason: reason == null && nullToAbsent
           ? const Value.absent()
           : Value(reason),
@@ -66323,6 +66422,7 @@ class MediaLinkRow extends DataClass implements Insertable<MediaLinkRow> {
       source: serializer.fromJson<String>(json['source']),
       confidence: serializer.fromJson<double?>(json['confidence']),
       isUserConfirmed: serializer.fromJson<bool>(json['isUserConfirmed']),
+      confirmedBy: serializer.fromJson<String?>(json['confirmedBy']),
       reason: serializer.fromJson<String?>(json['reason']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
       updatedAt: serializer.fromJson<int>(json['updatedAt']),
@@ -66343,6 +66443,7 @@ class MediaLinkRow extends DataClass implements Insertable<MediaLinkRow> {
       'source': serializer.toJson<String>(source),
       'confidence': serializer.toJson<double?>(confidence),
       'isUserConfirmed': serializer.toJson<bool>(isUserConfirmed),
+      'confirmedBy': serializer.toJson<String?>(confirmedBy),
       'reason': serializer.toJson<String?>(reason),
       'createdAt': serializer.toJson<int>(createdAt),
       'updatedAt': serializer.toJson<int>(updatedAt),
@@ -66361,6 +66462,7 @@ class MediaLinkRow extends DataClass implements Insertable<MediaLinkRow> {
     String? source,
     Value<double?> confidence = const Value.absent(),
     bool? isUserConfirmed,
+    Value<String?> confirmedBy = const Value.absent(),
     Value<String?> reason = const Value.absent(),
     int? createdAt,
     int? updatedAt,
@@ -66376,6 +66478,7 @@ class MediaLinkRow extends DataClass implements Insertable<MediaLinkRow> {
     source: source ?? this.source,
     confidence: confidence.present ? confidence.value : this.confidence,
     isUserConfirmed: isUserConfirmed ?? this.isUserConfirmed,
+    confirmedBy: confirmedBy.present ? confirmedBy.value : this.confirmedBy,
     reason: reason.present ? reason.value : this.reason,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
@@ -66399,6 +66502,9 @@ class MediaLinkRow extends DataClass implements Insertable<MediaLinkRow> {
       isUserConfirmed: data.isUserConfirmed.present
           ? data.isUserConfirmed.value
           : this.isUserConfirmed,
+      confirmedBy: data.confirmedBy.present
+          ? data.confirmedBy.value
+          : this.confirmedBy,
       reason: data.reason.present ? data.reason.value : this.reason,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
@@ -66419,6 +66525,7 @@ class MediaLinkRow extends DataClass implements Insertable<MediaLinkRow> {
           ..write('source: $source, ')
           ..write('confidence: $confidence, ')
           ..write('isUserConfirmed: $isUserConfirmed, ')
+          ..write('confirmedBy: $confirmedBy, ')
           ..write('reason: $reason, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
@@ -66439,6 +66546,7 @@ class MediaLinkRow extends DataClass implements Insertable<MediaLinkRow> {
     source,
     confidence,
     isUserConfirmed,
+    confirmedBy,
     reason,
     createdAt,
     updatedAt,
@@ -66458,6 +66566,7 @@ class MediaLinkRow extends DataClass implements Insertable<MediaLinkRow> {
           other.source == this.source &&
           other.confidence == this.confidence &&
           other.isUserConfirmed == this.isUserConfirmed &&
+          other.confirmedBy == this.confirmedBy &&
           other.reason == this.reason &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
@@ -66475,6 +66584,7 @@ class MediaLinksCompanion extends UpdateCompanion<MediaLinkRow> {
   final Value<String> source;
   final Value<double?> confidence;
   final Value<bool> isUserConfirmed;
+  final Value<String?> confirmedBy;
   final Value<String?> reason;
   final Value<int> createdAt;
   final Value<int> updatedAt;
@@ -66491,6 +66601,7 @@ class MediaLinksCompanion extends UpdateCompanion<MediaLinkRow> {
     this.source = const Value.absent(),
     this.confidence = const Value.absent(),
     this.isUserConfirmed = const Value.absent(),
+    this.confirmedBy = const Value.absent(),
     this.reason = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
@@ -66508,6 +66619,7 @@ class MediaLinksCompanion extends UpdateCompanion<MediaLinkRow> {
     this.source = const Value.absent(),
     this.confidence = const Value.absent(),
     this.isUserConfirmed = const Value.absent(),
+    this.confirmedBy = const Value.absent(),
     this.reason = const Value.absent(),
     required int createdAt,
     required int updatedAt,
@@ -66531,6 +66643,7 @@ class MediaLinksCompanion extends UpdateCompanion<MediaLinkRow> {
     Expression<String>? source,
     Expression<double>? confidence,
     Expression<bool>? isUserConfirmed,
+    Expression<String>? confirmedBy,
     Expression<String>? reason,
     Expression<int>? createdAt,
     Expression<int>? updatedAt,
@@ -66548,6 +66661,7 @@ class MediaLinksCompanion extends UpdateCompanion<MediaLinkRow> {
       if (source != null) 'source': source,
       if (confidence != null) 'confidence': confidence,
       if (isUserConfirmed != null) 'is_user_confirmed': isUserConfirmed,
+      if (confirmedBy != null) 'confirmed_by': confirmedBy,
       if (reason != null) 'reason': reason,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
@@ -66567,6 +66681,7 @@ class MediaLinksCompanion extends UpdateCompanion<MediaLinkRow> {
     Value<String>? source,
     Value<double?>? confidence,
     Value<bool>? isUserConfirmed,
+    Value<String?>? confirmedBy,
     Value<String?>? reason,
     Value<int>? createdAt,
     Value<int>? updatedAt,
@@ -66584,6 +66699,7 @@ class MediaLinksCompanion extends UpdateCompanion<MediaLinkRow> {
       source: source ?? this.source,
       confidence: confidence ?? this.confidence,
       isUserConfirmed: isUserConfirmed ?? this.isUserConfirmed,
+      confirmedBy: confirmedBy ?? this.confirmedBy,
       reason: reason ?? this.reason,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -66625,6 +66741,9 @@ class MediaLinksCompanion extends UpdateCompanion<MediaLinkRow> {
     if (isUserConfirmed.present) {
       map['is_user_confirmed'] = Variable<bool>(isUserConfirmed.value);
     }
+    if (confirmedBy.present) {
+      map['confirmed_by'] = Variable<String>(confirmedBy.value);
+    }
     if (reason.present) {
       map['reason'] = Variable<String>(reason.value);
     }
@@ -66656,6 +66775,7 @@ class MediaLinksCompanion extends UpdateCompanion<MediaLinkRow> {
           ..write('source: $source, ')
           ..write('confidence: $confidence, ')
           ..write('isUserConfirmed: $isUserConfirmed, ')
+          ..write('confirmedBy: $confirmedBy, ')
           ..write('reason: $reason, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
@@ -95643,6 +95763,7 @@ typedef $$MediaCollectionItemsTableCreateCompanionBuilder =
       required String mediaType,
       required String entryKey,
       Value<int> sortIndex,
+      Value<bool> pinnedByUser,
       Value<int> rowid,
     });
 typedef $$MediaCollectionItemsTableUpdateCompanionBuilder =
@@ -95651,6 +95772,7 @@ typedef $$MediaCollectionItemsTableUpdateCompanionBuilder =
       Value<String> mediaType,
       Value<String> entryKey,
       Value<int> sortIndex,
+      Value<bool> pinnedByUser,
       Value<int> rowid,
     });
 
@@ -95711,6 +95833,11 @@ class $$MediaCollectionItemsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<bool> get pinnedByUser => $composableBuilder(
+    column: $table.pinnedByUser,
+    builder: (column) => ColumnFilters(column),
+  );
+
   $$MediaCollectionsTableFilterComposer get collectionId {
     final $$MediaCollectionsTableFilterComposer composer = $composerBuilder(
       composer: this,
@@ -95759,6 +95886,11 @@ class $$MediaCollectionItemsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<bool> get pinnedByUser => $composableBuilder(
+    column: $table.pinnedByUser,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$MediaCollectionsTableOrderingComposer get collectionId {
     final $$MediaCollectionsTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -95800,6 +95932,11 @@ class $$MediaCollectionItemsTableAnnotationComposer
 
   GeneratedColumn<int> get sortIndex =>
       $composableBuilder(column: $table.sortIndex, builder: (column) => column);
+
+  GeneratedColumn<bool> get pinnedByUser => $composableBuilder(
+    column: $table.pinnedByUser,
+    builder: (column) => column,
+  );
 
   $$MediaCollectionsTableAnnotationComposer get collectionId {
     final $$MediaCollectionsTableAnnotationComposer composer = $composerBuilder(
@@ -95865,12 +96002,14 @@ class $$MediaCollectionItemsTableTableManager
                 Value<String> mediaType = const Value.absent(),
                 Value<String> entryKey = const Value.absent(),
                 Value<int> sortIndex = const Value.absent(),
+                Value<bool> pinnedByUser = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => MediaCollectionItemsCompanion(
                 collectionId: collectionId,
                 mediaType: mediaType,
                 entryKey: entryKey,
                 sortIndex: sortIndex,
+                pinnedByUser: pinnedByUser,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -95879,12 +96018,14 @@ class $$MediaCollectionItemsTableTableManager
                 required String mediaType,
                 required String entryKey,
                 Value<int> sortIndex = const Value.absent(),
+                Value<bool> pinnedByUser = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => MediaCollectionItemsCompanion.insert(
                 collectionId: collectionId,
                 mediaType: mediaType,
                 entryKey: entryKey,
                 sortIndex: sortIndex,
+                pinnedByUser: pinnedByUser,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -128254,6 +128395,7 @@ typedef $$MediaLinksTableCreateCompanionBuilder =
       Value<String> source,
       Value<double?> confidence,
       Value<bool> isUserConfirmed,
+      Value<String?> confirmedBy,
       Value<String?> reason,
       required int createdAt,
       required int updatedAt,
@@ -128272,6 +128414,7 @@ typedef $$MediaLinksTableUpdateCompanionBuilder =
       Value<String> source,
       Value<double?> confidence,
       Value<bool> isUserConfirmed,
+      Value<String?> confirmedBy,
       Value<String?> reason,
       Value<int> createdAt,
       Value<int> updatedAt,
@@ -128335,6 +128478,11 @@ class $$MediaLinksTableFilterComposer
 
   ColumnFilters<bool> get isUserConfirmed => $composableBuilder(
     column: $table.isUserConfirmed,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get confirmedBy => $composableBuilder(
+    column: $table.confirmedBy,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -128418,6 +128566,11 @@ class $$MediaLinksTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get confirmedBy => $composableBuilder(
+    column: $table.confirmedBy,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get reason => $composableBuilder(
     column: $table.reason,
     builder: (column) => ColumnOrderings(column),
@@ -128484,6 +128637,11 @@ class $$MediaLinksTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get confirmedBy => $composableBuilder(
+    column: $table.confirmedBy,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<String> get reason =>
       $composableBuilder(column: $table.reason, builder: (column) => column);
 
@@ -128538,6 +128696,7 @@ class $$MediaLinksTableTableManager
                 Value<String> source = const Value.absent(),
                 Value<double?> confidence = const Value.absent(),
                 Value<bool> isUserConfirmed = const Value.absent(),
+                Value<String?> confirmedBy = const Value.absent(),
                 Value<String?> reason = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
                 Value<int> updatedAt = const Value.absent(),
@@ -128554,6 +128713,7 @@ class $$MediaLinksTableTableManager
                 source: source,
                 confidence: confidence,
                 isUserConfirmed: isUserConfirmed,
+                confirmedBy: confirmedBy,
                 reason: reason,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
@@ -128572,6 +128732,7 @@ class $$MediaLinksTableTableManager
                 Value<String> source = const Value.absent(),
                 Value<double?> confidence = const Value.absent(),
                 Value<bool> isUserConfirmed = const Value.absent(),
+                Value<String?> confirmedBy = const Value.absent(),
                 Value<String?> reason = const Value.absent(),
                 required int createdAt,
                 required int updatedAt,
@@ -128588,6 +128749,7 @@ class $$MediaLinksTableTableManager
                 source: source,
                 confidence: confidence,
                 isUserConfirmed: isUserConfirmed,
+                confirmedBy: confirmedBy,
                 reason: reason,
                 createdAt: createdAt,
                 updatedAt: updatedAt,

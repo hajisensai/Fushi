@@ -1,5 +1,14 @@
 import 'package:fushi/src/media/privacy/media_privacy_dialog.dart';
 import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
+import 'package:fushi/src/media/links/media_link_entries.dart'
+    show MediaLinkEntry;
+import 'package:fushi/src/media/links/media_link_inference_host.dart'
+    show mediaLinkInferCallback;
+import 'package:fushi/src/media/links/media_link_opener.dart'
+    show mediaLinkSearchAction, openMediaLinkEntry;
+import 'package:fushi/src/media/links/media_links_section.dart'
+    show showMediaLinksDialog;
+import 'package:fushi/src/media/links/work_kinds_badge.dart';
 import 'package:fushi/src/media/nsfw/media_nsfw_dialog.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 
@@ -8324,14 +8333,36 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     CollectionGroup<_VideoSlot> group, {
     VideoCardOrientation orientation = VideoCardOrientation.portrait,
     FushiCoverBlockSize? block,
-  }) => MediaNsfwCoverScope(
-    target: MediaNsfwTarget.collection(group.collection!.id),
-    child: _buildCollectionCoverCardInner(
-      group,
-      orientation: orientation,
-      block: block,
+  }) => WorkKindsBadgeOverlay.collection(
+    database: ref.read(appProvider).database,
+    collectionId: group.collection!.id,
+    enabled: !_selectionMode && !_reordering,
+    onPressed: _showWorkLinks,
+    child: MediaNsfwCoverScope(
+      target: MediaNsfwTarget.collection(group.collection!.id),
+      child: _buildCollectionCoverCardInner(
+        group,
+        orientation: orientation,
+        block: block,
+      ),
     ),
   );
+
+  /// 卡片「另有：小说 · 漫画」作品角标点开的「同一作品」弹窗（AI 库管家 spec §4.3）。
+  void _showWorkLinks(MediaLinkEndpoint self) {
+    unawaited(
+      showMediaLinksDialog(
+        context: context,
+        database: ref.read(appProvider).database,
+        self: self,
+        onOpen: (MediaLinkEntry e) =>
+            openMediaLinkEntry(context: context, ref: ref, entry: e),
+        searchActionFor: (MediaLinkKind k) =>
+            mediaLinkSearchAction(context: context, ref: ref, kind: k),
+        onInfer: mediaLinkInferCallback(ref: ref, self: self),
+      ),
+    );
+  }
 
   Widget _buildCollectionCoverCardInner(
     CollectionGroup<_VideoSlot> group, {
@@ -11561,16 +11592,22 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     VoidCallback? onTapOverride,
     ImageProvider? Function()? coverOverride,
     FushiCoverBlockSize? block,
-  }) => MediaNsfwCoverScope(
-    target: MediaNsfwTarget.video(book.bookUid),
-    child: _buildCardInner(
-      book,
-      playlistCollectionId: playlistCollectionId,
-      selectable: selectable,
-      orientation: orientation,
-      onTapOverride: onTapOverride,
-      coverOverride: coverOverride,
-      block: block,
+  }) => WorkKindsBadgeOverlay.entry(
+    database: ref.read(appProvider).database,
+    endpoint: (kind: MediaLinkKind.videoEpisode, key: book.bookUid),
+    enabled: !_selectionMode && !_reordering,
+    onPressed: _showWorkLinks,
+    child: MediaNsfwCoverScope(
+      target: MediaNsfwTarget.video(book.bookUid),
+      child: _buildCardInner(
+        book,
+        playlistCollectionId: playlistCollectionId,
+        selectable: selectable,
+        orientation: orientation,
+        onTapOverride: onTapOverride,
+        coverOverride: coverOverride,
+        block: block,
+      ),
     ),
   );
 
