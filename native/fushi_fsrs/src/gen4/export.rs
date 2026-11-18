@@ -7,13 +7,16 @@
 //! ```text
 //! 整条流 zstd 压缩（单帧、流式）；下面是明文。
 //!
-//! 头    "FSRS4EXP"[8] | ver u8 = 1 | flags u8 = 0 | collection[16] | n_logs uv
+//! 头    "FSRS4EXP"[8] | ver u8（写 2，读 1 或 2）| flags u8 = 0 | collection[16] | n_logs uv
 //! 日志  tag u8，按 tag 不降、同 tag 内按 device 严格升序；原生与承袭的 device 互不相同
 //!   0 原生  device[16] | bytes(public：0 或 32 字节) | count uv（日志覆盖 seq 1..=count）
 //!           | 项 × 若干，首尾相接覆盖 1..=count | tail_chain[32]
 //!           项  tag u8
 //!             0 操作  bytes(协议 4 操作的独立编码：信封 + 操作体，`Op4::encode`)
 //!             3 空洞  n uv（>= 1）| chain_after[32]          相邻两个空洞拒绝（写者合并）
+//!             4 带记号的空洞（ver >= 2）  n uv（>= 2）| chain_after[32] | n_marks uv（>= 1）| (seq uv, chain[32]) × n_marks
+//!                     记号是区间内部（不含区间末）那几格的完整链值：seq 严格升序、落在 [区间首, 区间末) 里。没有记号的
+//!                     空洞只能写成 3（一个值只有一种字节形）
 //!   1 承袭  source[16] | device[16] | count uv（日志槽覆盖 seq 1..=count）| n_forks uv（count 为 0 时必须为 0）
 //!           | n_marks uv | (seq uv, chain[32]) × n_marks    seq 严格升序、1 <= seq <= count
 //!           | (t_version uv, 槽的独立编码 `HeritageSlot::encode`) × (count + n_forks)
@@ -34,7 +37,14 @@
 //! 与协议 3 的导出流（魔数 `FSRS2EXP`，store/sync2/transport.rs）互不误读：魔数不同，协议 3 的读者在魔数处就报
 //! 「not a .fushisrs file」，本读者同样拒绝 `FSRS2EXP`；[sniff] 分得出两者。冻结的协议 3 读入器在 store/gen4/legacy_export.rs。
 //!
-//! 版本号与演进：`ver` 是本文件布局的版本。布局的任何变化都升 `ver`，旧读者对 `ver != 1` 一律拒收（不按已知前缀读）。
+//! 版本号与演进：`ver` 是本文件布局的版本。布局的任何变化都升 `ver`，读者对不认识的 `ver` 一律拒收（不按已知前缀读）。
+//!
+//! - 1（G11-1）：空洞只带区间末的链值。
+//! - 2（第五波，交接「第五波 导入与写接口」节）：加项 4「带记号的空洞」。别的设备的原生日志上分几次清除、合并成一个空洞
+//!   区间时，区间内部原来的区间末链值记成链值记号（`store/gen4/truth.rs` `insert_void_run`，交接 §33），转发按作者的
+//!   切点重切段要用；第 1 版的流带不走它们，从备份 / 导出还原的库遇到切点埋在空洞里的作者段，只能整台不转发。第 2 版的
+//!   写者在空洞内部有记号时写项 4。读者照读第 1 版（没有项 4，项 4 出现即拒）；只认第 1 版的读者（G11 之后、本版之前的
+//!   开发构建）对第 2 版报「unsupported version 2」，不误读。
 
 use std::collections::{HashSet, VecDeque};
 use std::io::Write;
@@ -47,7 +57,10 @@ use crate::sync2::id::Id;
 use crate::sync2::segment::{CHAIN_ZERO, Chain};
 
 pub const EXPORT4_MAGIC: &[u8; 8] = b"FSRS4EXP";
-pub const EXPORT4_VER: u8 = 1;
+/// 写者写的版本（模块文档「版本号与演进」）。
+pub const EXPORT4_VER: u8 = 2;
+/// 读者还认的最旧版本。
+pub const EXPORT4_VER_OLDEST: u8 = 1;
 /// 协议 3 导出流的魔数（只用来嗅探；读它的是 store/gen4/legacy_export.rs）。
 pub const EXPORT1_MAGIC: &[u8; 8] = b"FSRS2EXP";
 /// 压缩级别。压缩输出不是契约（解码方向才是）；换级别不改格式。
@@ -57,6 +70,10 @@ const LOG_NATIVE: u8 = 0;
 const LOG_HERITAGE: u8 = 1;
 const ITEM_OP: u8 = 0;
 const ITEM_VOID: u8 = 3;
+/// 带链值记号的空洞（ver >= 2）。
+const ITEM_VOID_MARKED: u8 = 4;
+/// 项 4 起于这一版。
+const VER_VOID_MARKS: u8 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExportHeader {
@@ -81,6 +98,8 @@ pub enum ExportItem {
     NativeVoid {
         n: u64,
         chain_after: Chain,
+        /// 区间内部（不含区间末）记着的完整链值，seq 升序；第 1 版的流恒为空。
+        marks: Vec<(u64, Chain)>,
     },
     NativeTail(Chain),
     HeritageLog {
@@ -175,6 +194,8 @@ enum Expect {
 
 /// 流的规范形规则：写者每写一项、读者每读一项都过一遍，两侧收的东西完全相同。
 struct Grammar {
+    /// 流的版本（写者是 [EXPORT4_VER]，读者是头里的）。
+    ver: u8,
     logs_left: u64,
     /// 上一条日志的 (tag, device)。
     prev_log: Option<(u8, Id)>,
@@ -187,8 +208,9 @@ fn err<T>(m: impl Into<String>) -> Result<T, String> {
 }
 
 impl Grammar {
-    fn new(logs: u64) -> Grammar {
+    fn new(logs: u64, ver: u8) -> Grammar {
         Grammar {
+            ver,
             logs_left: logs,
             prev_log: None,
             seen: HashSet::new(),
@@ -273,7 +295,11 @@ impl Grammar {
                 *next += 1;
                 *prev_void = false;
             }
-            ExportItem::NativeVoid { n, chain_after } => {
+            ExportItem::NativeVoid {
+                n,
+                chain_after,
+                marks,
+            } => {
                 let Phase::Native {
                     next,
                     last,
@@ -289,6 +315,17 @@ impl Grammar {
                 }
                 if *prev_void {
                     return err("adjacent voids");
+                }
+                if !marks.is_empty() && self.ver < VER_VOID_MARKS {
+                    return err("chain marks inside a void need version 2");
+                }
+                // 记号只在区间内部：[区间首, 区间末)，严格升序。
+                let mut prev = None;
+                for (seq, _) in marks {
+                    if *seq < *next || *seq >= *next + *n - 1 || prev.is_some_and(|p| *seq <= p) {
+                        return err("void marks out of order or outside the run");
+                    }
+                    prev = Some(*seq);
                 }
                 *chain = *chain_after;
                 *next += *n;
@@ -465,7 +502,7 @@ impl<W: Write> Export4Writer<W> {
             .map_err(|e| format!("FSRS4EXP compress: {e}"))?;
         let mut w = Export4Writer {
             out,
-            grammar: Grammar::new(h.logs),
+            grammar: Grammar::new(h.logs, EXPORT4_VER),
             buf: crate::sync2::codec::Writer::new(),
         };
         w.buf.raw(EXPORT4_MAGIC);
@@ -517,10 +554,25 @@ fn write_item(w: &mut crate::sync2::codec::Writer, it: &ExportItem) {
             w.u8(ITEM_OP);
             w.bytes(&op.encode());
         }
-        ExportItem::NativeVoid { n, chain_after } => {
-            w.u8(ITEM_VOID);
+        ExportItem::NativeVoid {
+            n,
+            chain_after,
+            marks,
+        } => {
+            w.u8(if marks.is_empty() {
+                ITEM_VOID
+            } else {
+                ITEM_VOID_MARKED
+            });
             w.uv(*n);
             w.raw(chain_after);
+            if !marks.is_empty() {
+                w.uv(marks.len() as u64);
+                for (seq, c) in marks {
+                    w.uv(*seq);
+                    w.raw(c);
+                }
+            }
         }
         ExportItem::NativeTail(c) => w.raw(c),
         ExportItem::HeritageLog {
@@ -546,6 +598,25 @@ fn write_item(w: &mut crate::sync2::codec::Writer, it: &ExportItem) {
             slot.write(w);
         }
     }
+}
+
+/// 测试用：按第 1 版的布局写一整条流（压缩好）。项里有空洞记号（第 1 版写不出）报错。给「旧版本的流照读」的存储侧
+/// 测试造输入用；产品代码只写当前版本（[Export4Writer]）。
+#[cfg(test)]
+pub(crate) fn encode_version_1(h: &ExportHeader, items: &[ExportItem]) -> Result<Vec<u8>, String> {
+    let mut grammar = Grammar::new(h.logs, EXPORT4_VER_OLDEST);
+    let mut w = crate::sync2::codec::Writer::new();
+    w.raw(EXPORT4_MAGIC);
+    w.u8(EXPORT4_VER_OLDEST);
+    w.u8(0);
+    h.collection.write(&mut w);
+    w.uv(h.logs);
+    for it in items {
+        grammar.step(it)?;
+        write_item(&mut w, it);
+    }
+    grammar.finish()?;
+    zstd::bulk::compress(&w.into_vec(), ZSTD_LEVEL).map_err(|e| e.to_string())
 }
 
 // ---------------------------------------------------------------- 读
@@ -598,7 +669,7 @@ fn read_log(r: &mut Reader<'_>) -> DResult<ExportItem> {
     }
 }
 
-fn read_native_item(r: &mut Reader<'_>) -> DResult<ExportItem> {
+fn read_native_item(r: &mut Reader<'_>, ver: u8) -> DResult<ExportItem> {
     match r.u8()? {
         ITEM_OP => {
             let mut inner = Reader::new(super::bytes_min(r)?);
@@ -611,7 +682,26 @@ fn read_native_item(r: &mut Reader<'_>) -> DResult<ExportItem> {
         ITEM_VOID => Ok(ExportItem::NativeVoid {
             n: uv_min(r)?,
             chain_after: read_chain(r)?,
+            marks: Vec::new(),
         }),
+        ITEM_VOID_MARKED if ver >= VER_VOID_MARKS => {
+            let n = uv_min(r)?;
+            let chain_after = read_chain(r)?;
+            let count = uv_min(r)?;
+            // 至少一个记号（没有记号的空洞只能写成项 3），也不会多过区间内部的格数（语法再逐个核对位置）。
+            if count == 0 || count >= n.max(1) {
+                return Err(DecodeError("void mark count"));
+            }
+            let mut marks = Vec::with_capacity(count.min(1024) as usize);
+            for _ in 0..count {
+                marks.push((uv_min(r)?, read_chain(r)?));
+            }
+            Ok(ExportItem::NativeVoid {
+                n,
+                chain_after,
+                marks,
+            })
+        }
         _ => Err(DecodeError("unknown native item tag")),
     }
 }
@@ -634,7 +724,7 @@ impl<'s, R: std::io::Read> Export4Reader<'s, R> {
             return err("not a protocol 4 operations stream");
         }
         let ver = window.parse(|r| r.u8()).map_err(stream)?;
-        if ver != EXPORT4_VER {
+        if !(EXPORT4_VER_OLDEST..=EXPORT4_VER).contains(&ver) {
             return err(format!("unsupported version {ver}"));
         }
         if window.parse(|r| r.u8()).map_err(stream)? != 0 {
@@ -645,7 +735,7 @@ impl<'s, R: std::io::Read> Export4Reader<'s, R> {
         Ok((
             Export4Reader {
                 window,
-                grammar: Grammar::new(logs),
+                grammar: Grammar::new(logs, ver),
                 failed: false,
             },
             ExportHeader { collection, logs },
@@ -664,6 +754,11 @@ impl<'s, R: std::io::Read> Export4Reader<'s, R> {
         r
     }
 
+    /// 流头里的版本（[EXPORT4_VER_OLDEST]..=[EXPORT4_VER]）。
+    pub fn version(&self) -> u8 {
+        self.grammar.ver
+    }
+
     /// 读窗口当前的容量（测试看内存上界用）。
     #[cfg(test)]
     pub fn window_capacity(&self) -> usize {
@@ -679,7 +774,10 @@ impl<'s, R: std::io::Read> Export4Reader<'s, R> {
                 return Ok(None);
             }
             Expect::Log => self.window.parse(read_log),
-            Expect::NativeItem => self.window.parse(read_native_item),
+            Expect::NativeItem => {
+                let ver = self.grammar.ver;
+                self.window.parse(|r| read_native_item(r, ver))
+            }
             Expect::Tail => self.window.parse(read_chain).map(ExportItem::NativeTail),
             Expect::Mark => self.window.parse(|r| {
                 Ok(ExportItem::Mark {
@@ -758,6 +856,7 @@ mod tests {
             ExportItem::NativeVoid {
                 n: 2,
                 chain_after: void_end,
+                marks: Vec::new(),
             },
             ExportItem::NativeOp(o5),
             ExportItem::NativeTail(chain),
@@ -883,9 +982,14 @@ mod tests {
 
     /// 明文（未压缩）的写法：给手工拼坏字节的测试用。
     fn plain(items: &[ExportItem], logs: u64) -> Vec<u8> {
+        plain_ver(items, logs, EXPORT4_VER)
+    }
+
+    /// [plain]，头里写版本 [ver]（项照当前布局编码；第 1 版的流就是没有项 4 的同一种字节）。
+    fn plain_ver(items: &[ExportItem], logs: u64, ver: u8) -> Vec<u8> {
         let mut w = crate::sync2::codec::Writer::new();
         w.raw(EXPORT4_MAGIC);
-        w.u8(EXPORT4_VER);
+        w.u8(ver);
         w.u8(0);
         coll().write(&mut w);
         w.uv(logs);
@@ -923,6 +1027,12 @@ mod tests {
         golden(
             "export4_header_empty",
             &plain(&[], 0),
+            "46535253344558500200c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c000",
+        );
+        // 第 1 版的头冻结在这里：读者照读（`older_versions_still_read`）。
+        golden(
+            "export4_header_empty_v1",
+            &plain_ver(&[], 0, 1),
             "46535253344558500100c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c000",
         );
         let dev = id(NAT);
@@ -937,6 +1047,7 @@ mod tests {
             ExportItem::NativeVoid {
                 n: 2,
                 chain_after: [0x22; 32],
+                marks: Vec::new(),
             },
             ExportItem::NativeTail([0x22; 32]),
         ];
@@ -976,9 +1087,118 @@ mod tests {
             &plain(&her, 1)[27..],
             "015c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d010101010101010101010101777777777777777777777777777777777777777777777777010d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d01010101010101010103020d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d01f0f0f0f0f0f0f0f003",
         );
+        // 带记号的空洞（项 4，第 2 版）。
+        let marked = marked_native();
+        golden(
+            "export4_native_void_marks",
+            &plain(&marked, 1)[27..],
+            "00a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1000404043333333333333333333333333333333333333333333333333333333333333333020111111111111111111111111111111111111111111111111111111111111111110313131313131313131313131313131313131313131313131313131313131313133333333333333333333333333333333333333333333333333333333333333333",
+        );
         // 冻结的明文能读回同样的项。
         assert_eq!(read_all(&compress(&plain(&nat, 1))).unwrap().1, nat);
         assert_eq!(read_all(&compress(&plain(&her, 1))).unwrap().1, her);
+        assert_eq!(read_all(&compress(&plain(&marked, 1))).unwrap().1, marked);
+    }
+
+    /// 一条原生日志 seq 1..=4 整段是空洞，内部 1、3 两格带记号（区间末 4 的链值是 chain_after）。
+    fn marked_native() -> Vec<ExportItem> {
+        vec![
+            ExportItem::NativeLog {
+                device: id(NAT),
+                public: None,
+                count: 4,
+            },
+            ExportItem::NativeVoid {
+                n: 4,
+                chain_after: [0x33; 32],
+                marks: vec![(1, [0x11; 32]), (3, [0x13; 32])],
+            },
+            ExportItem::NativeTail([0x33; 32]),
+        ]
+    }
+
+    /// 第 1 版的流（空洞只带区间末链值）照读，读出的项与第 2 版写者写的相同；第 1 版里出现项 4 拒收。第 2 版的流对
+    /// 只认第 1 版的读者是「unsupported version 2」（头一个字节就拒，见 [bad_magic_and_unknown_versions_are_rejected]
+    /// 的同一条判断）。
+    #[test]
+    fn older_versions_still_read() {
+        let items = sample();
+        let v1_stream = compress(&plain_ver(&items, 3, 1));
+        let (r, _) = Export4Reader::open(&v1_stream).unwrap();
+        assert_eq!(r.version(), 1);
+        assert_eq!(
+            read_all(&compress(&plain_ver(&items, 3, 1))).unwrap().1,
+            items
+        );
+        // 没有记号时，第 2 版与第 1 版只差头里的版本字节。
+        let (v1, v2) = (plain_ver(&items, 3, 1), plain(&items, 3));
+        assert_eq!((v1[8], v2[8]), (1, 2));
+        assert_eq!(v1[9..], v2[9..]);
+        let e = read_all(&compress(&plain_ver(&marked_native(), 1, 1))).unwrap_err();
+        assert!(e.contains("unknown native item tag"), "{e}");
+        let v2_stream = write_all(&marked_native()).unwrap();
+        let (r, _) = Export4Reader::open(&v2_stream).unwrap();
+        assert_eq!(r.version(), EXPORT4_VER);
+    }
+
+    /// 空洞记号的规则读写两侧相同：越出区间、落在区间末、不升序都拒；项 4 不许零个记号、记号数不许多过区间内部的格数。
+    #[test]
+    fn void_marks_must_sit_inside_their_run() {
+        let with = |marks: Vec<(u64, Chain)>| {
+            let mut items = marked_native();
+            if let ExportItem::NativeVoid { marks: m, .. } = &mut items[1] {
+                *m = marks;
+            }
+            items
+        };
+        for (bad, what) in [
+            (vec![(4, [1; 32])], "at the run end"),
+            (vec![(5, [1; 32])], "past the run"),
+            (vec![(0, [1; 32])], "before the run"),
+            (vec![(2, [1; 32]), (1, [1; 32])], "not ascending"),
+            (vec![(2, [1; 32]), (2, [1; 32])], "repeated"),
+        ] {
+            let items = with(bad);
+            assert!(write_all(&items).is_err(), "writer took {what}");
+            assert!(
+                read_all(&compress(&plain(&items, 1))).is_err(),
+                "reader took {what}"
+            );
+        }
+        // 项 4 带零个记号（手拼）。
+        let mut w = crate::sync2::codec::Writer::new();
+        w.u8(LOG_NATIVE);
+        id(NAT).write(&mut w);
+        w.bytes(&[]);
+        w.uv(4);
+        w.u8(ITEM_VOID_MARKED);
+        w.uv(4);
+        w.raw(&[0x33; 32]);
+        w.uv(0);
+        w.raw(&[0x33; 32]);
+        let mut v = plain(&[], 1);
+        v.extend_from_slice(&w.into_vec());
+        assert!(
+            read_all(&compress(&v))
+                .unwrap_err()
+                .contains("void mark count")
+        );
+        // 一格的空洞没有内部。
+        let one = vec![
+            ExportItem::NativeLog {
+                device: id(NAT),
+                public: None,
+                count: 1,
+            },
+            ExportItem::NativeVoid {
+                n: 1,
+                chain_after: [0x33; 32],
+                marks: vec![(1, [1; 32])],
+            },
+            ExportItem::NativeTail([0x33; 32]),
+        ];
+        assert!(write_all(&one).is_err());
+        assert!(read_all(&compress(&plain(&one, 1))).is_err());
     }
 
     #[test]
@@ -1018,7 +1238,7 @@ mod tests {
         bad[0] = b'X';
         assert!(Export4Reader::open(&compress(&bad)).is_err());
         assert!(sniff(&compress(&bad)).is_err());
-        for ver in [0u8, 2, 255] {
+        for ver in [0u8, 3, 255] {
             let mut v = p.clone();
             v[8] = ver;
             let e = Export4Reader::open(&compress(&v)).err().unwrap();
@@ -1096,10 +1316,12 @@ mod tests {
             ExportItem::NativeVoid {
                 n: 1,
                 chain_after: [1; 32],
+                marks: Vec::new(),
             },
             ExportItem::NativeVoid {
                 n: 2,
                 chain_after: [2; 32],
+                marks: Vec::new(),
             },
             ExportItem::NativeTail([2; 32]),
         ];

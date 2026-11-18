@@ -197,14 +197,9 @@ fn truth_lines(t: &Truth<'_>, col: i64) -> Vec<String> {
             Ok(())
         })
         .unwrap();
+        // 含别的设备的原生日志上、合并空洞时记下的区间内部链值（`Truth::insert_void_run`，交接 §33）：导出流第 2 版
+        // 起随空洞带走（第五波）。
         for (seq, c) in t.marks(col, &d.id).unwrap() {
-            if d.kind == Some(crate::store::gen4::truth::DEV_NATIVE)
-                && void_interior(t, col, &d.id, seq, d.last)
-            {
-                // 别的设备的原生日志上、合并空洞时记下的区间内部链值（`Truth::insert_void_run`，交接 §33）：导出流的
-                // 空洞只带区间末的链值，带不走它们（[void_interior_marks] 单独核对）。
-                continue;
-            }
             out.push(format!("  mark {seq} {c:?}"));
         }
         logs.push((d.id, out));
@@ -299,13 +294,15 @@ fn export_then_import_round_trips_byte_for_byte_and_row_for_row() {
     assert_eq!(rows(&tb, col_b), rows(&ta, col_a));
     assert!(!rows(&tb, col_b).is_empty());
     assert_eq!(truth_lines(&tb, col_b), truth_lines(&ta, col_a));
-    // 唯一带不走的：PEER 的 5、6 两格空洞分两次落、合并时记下的 5 处链值（转发重切用，交接 §33）。导出流的空洞只带
-    // 区间末的链值，导入方只有 6 处的。
+    // PEER 的 5、6 两格空洞分两次落、合并时记下的 5 处链值（转发按作者切点重切用，交接 §33）：第 2 版的流随空洞带走，
+    // 导入方的 `chain_known` 在空洞内部给出同一个值（第 1 版只带区间末 6 处的，5 处是 None → 那位作者整台不转发）。
+    assert_eq!(stats.void_marks, 1);
+    assert_eq!(got.void_marks, 1);
     assert_eq!(void_interior_marks(&ta, col_a, &id(PEER)), vec![5]);
-    assert_eq!(
-        void_interior_marks(&tb, col_b, &id(PEER)),
-        Vec::<u64>::new()
-    );
+    assert_eq!(void_interior_marks(&tb, col_b, &id(PEER)), vec![5]);
+    let at5 = ta.chain_known(col_a, &id(PEER), 5).unwrap();
+    assert!(at5.is_some());
+    assert_eq!(tb.chain_known(col_b, &id(PEER), 5).unwrap(), at5);
     assert_rebuild_is_identity(&tb, col_b);
 
     // 再导一遍：什么都不改。
@@ -319,6 +316,87 @@ fn export_then_import_round_trips_byte_for_byte_and_row_for_row() {
     let own = import_ops(&ta, col_a, &bytes).unwrap();
     assert!(own.unchanged(), "{own:?}");
     assert_eq!(export(&ta, col_a), bytes);
+}
+
+/// 读出一条流的头与全部项。
+fn items_of(
+    bytes: &[u8],
+) -> (
+    crate::gen4::export::ExportHeader,
+    Vec<crate::gen4::export::ExportItem>,
+) {
+    let (mut r, h) = crate::gen4::export::Export4Reader::open(bytes).unwrap();
+    let mut items = Vec::new();
+    while let Some(it) = r.next_item().unwrap() {
+        items.push(it);
+    }
+    (h, items)
+}
+
+/// 第 1 版的流（第五波之前的开发构建导出的，空洞只带区间末链值）照读：真相与第 2 版导入的相同，只是空洞内部的记号
+/// 没有（那一格 `chain_known` 是 None，与改前一样）；再导出写成第 2 版。
+#[test]
+fn a_version_1_stream_still_imports() {
+    use crate::gen4::export::{ExportItem, encode_version_1};
+    let (a_dev, _, _) = pair();
+    let ca = open_in_memory().unwrap();
+    let ta = Truth::new(&ca);
+    let col_a = library(&ta, ME_A, &a_dev);
+    let (h, mut items) = items_of(&export(&ta, col_a));
+    let mut dropped = 0;
+    for it in &mut items {
+        if let ExportItem::NativeVoid { marks, .. } = it {
+            dropped += marks.len();
+            marks.clear();
+        }
+    }
+    assert_eq!(dropped, 1);
+    let v1 = encode_version_1(&h, &items).unwrap();
+    let cb = open_in_memory().unwrap();
+    let tb = Truth::new(&cb);
+    let col_b = fresh(&tb, ME_B);
+    let got = import_ops(&tb, col_b, &v1).unwrap();
+    assert_eq!(got.void_marks, 0);
+    assert_eq!(rows(&tb, col_b), rows(&ta, col_a));
+    assert_eq!(
+        void_interior_marks(&tb, col_b, &id(PEER)),
+        Vec::<u64>::new()
+    );
+    assert_eq!(tb.chain_known(col_b, &id(PEER), 5).unwrap(), None);
+    let again = export(&tb, col_b);
+    let (r, _) = crate::gen4::export::Export4Reader::open(&again).unwrap();
+    assert_eq!(r.version(), crate::gen4::export::EXPORT4_VER);
+    // 之后再导入第 2 版：补上那一个记号，别的什么都不改。
+    let more = import_ops(&tb, col_b, &export(&ta, col_a)).unwrap();
+    assert_eq!(more.void_marks, 1);
+    assert_eq!(truth_lines(&tb, col_b), truth_lines(&ta, col_a));
+}
+
+/// 流里的空洞内部记号与本机已知的链值不同（伪造 / 分叉的流）：与区间末一样整笔拒，什么都不落。
+#[test]
+fn a_void_mark_that_disagrees_with_this_library_is_refused() {
+    use crate::gen4::export::{Export4Writer, ExportItem};
+    let (a_dev, _, _) = pair();
+    let ca = open_in_memory().unwrap();
+    let ta = Truth::new(&ca);
+    let col_a = library(&ta, ME_A, &a_dev);
+    let (h, mut items) = items_of(&export(&ta, col_a));
+    for it in &mut items {
+        if let ExportItem::NativeVoid { marks, .. } = it {
+            for (_, c) in marks.iter_mut() {
+                c[0] ^= 0xff;
+            }
+        }
+    }
+    let mut w = Export4Writer::new(Vec::new(), &h).unwrap();
+    for it in &items {
+        w.item(it).unwrap();
+    }
+    let forged = w.finish().unwrap();
+    let before = dump(&ca, col_a);
+    let e = import_ops(&ta, col_a, &forged).unwrap_err();
+    assert!(e.contains("diverges"), "{e}");
+    assert_eq!(dump(&ca, col_a), before);
 }
 
 /// 两边各有自己的数据：互相导入之后真相相同、派生表逐行相同、导出逐字节相同（并入 = 操作并集）。

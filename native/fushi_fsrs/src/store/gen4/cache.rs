@@ -28,6 +28,11 @@
 //!   带盐的模板、带盐的笔记配内置模板时规范 ID 那一边就是旧号的来源，类里另有成员（随机 ID 笔记的旧并入兜底副本，
 //!   `gen4_ids::alias` 的 `root_fallbacks`）时也不能丢；规范 ID 是新代才有的那种（带盐的类）多出来的组合没有旧号，
 //!   不撞别人的号就无害（与多盐交叉组合是同一类取舍；规范卡自己那个组合不写，它的号在 `cards.anki_id`）。
+//!   **量级（第五波定，不收窄到同盐组合）**：一张卡的行数 = (1 + 笔记成员数) × (1 + 模板成员数)。内置模板的成员
+//!   由笔记类型的成员按盐各算一个，所以 k 个盐（并入过 k 个 profile 的内置笔记类型）下每张内置笔记的卡是
+//!   (k+1)² 行，只配同盐是 k+1 行（加规范自己）；k 实际是 1～2（一个 profile 并入过另一个才是 2），即每卡 4～9 行
+//!   对 2～3 行，库按卡线性，不随别的量放大。收窄要在这里认出笔记成员的盐（逐盐 `rules::note(盐, guid)` 对比），
+//!   换来的只是少几行无旧号的组合，没收益，不做；交叉组合的号是新 UUID 的号，与真实卡撞号的概率同随机 53 位号。
 //!   行是「别名表 + 应有的卡」的函数，所以落在缓存层、随笔记的行维护（别名表变了的行经 [Index::moved_rows] 牵动
 //!   所属笔记重算），重建同样物化。
 //!   **为什么不在迁移时把协议 3 `srs_cards_cache` 的卡 ID 写进别名表**：别名表是「操作集合 + 盐 + 内置表」的函数
@@ -117,7 +122,7 @@ use serde_json::{Value, json};
 use super::class::builtin_template_members;
 use super::derive::{Index, R_LIVE, Ref, Reg, Settled, body_of};
 use super::schema::sql;
-use crate::anki_import_rules::anki_source_hlc;
+use crate::anki_import_rules::derived_log_hlc;
 use crate::gen4::heritage::SlotBody;
 use crate::gen4::name::{read_edit_key, write_edit_key};
 use crate::gen4::op::{Body4, Log4};
@@ -283,7 +288,10 @@ pub const RULES_KEY: &str = "cacheRules";
 /// - 1（K3，交接 §26 C4）：Anki 来源日志的排序键改为来源数据派生的 HLC（[log_body]、`crate::anki_import_rules`）。之前
 ///   新导入的 Anki 日志按操作 HLC 排：同一条 revlog 在血统两张卡上的副本各算一次、更早的 Anki 复习排到原生复习之后
 ///   覆盖当前排程。
-pub const CACHE_RULES: i64 = 1;
+/// - 2（第五波，交接「第五波 导入与写接口」节）：回导的外来原生日志（带 `foreignLog` 标记，Dart `_remapExtLog`）的排序键改为
+///   由发生时刻派生的 HLC（`crate::anki_import_rules::derived_log_hlc`）。之前按导入时刻的操作 HLC 排：更早的外来复习排到
+///   本机更晚的复习之后、改掉当前排程。
+pub const CACHE_RULES: i64 = 2;
 
 /// [Index::log_class_rep] 每个成员一次的点查（走 `log_id (col, id, k)`；查询计划测试用同一份）。
 pub(crate) const LOG_REP_SQL: &str =
@@ -415,13 +423,15 @@ fn ref_of(text: &str) -> Ref {
     Ref::of(&Key::of(text))
 }
 
-fn log_body(l: Log4) -> LogBody {
-    // 承袭的日志带作者给的旧 HLC；原生日志没有，排序键回落到操作自己的 HLC（[Index::log_at]）——Anki 来源的除外：
-    // 它的 HLC 由来源数据派生（铁律 C，`crate::anki_import_rules`）。协议 3 的卡片历史规则（`crate::history`）靠它把
-    // 同一条 revlog 落在血统里几张卡上的副本归成一个事件、把更早的 Anki 复习排在更晚的原生复习之前。
+/// [op_wall]：载着这条日志的操作 HLC 的物理时刻（外来日志派生排序键的上界，[derived_log_hlc]）。
+fn log_body(l: Log4, op_wall: i64) -> LogBody {
+    // 承袭的日志带作者给的旧 HLC；原生日志没有，排序键回落到操作自己的 HLC（[Index::log_at]）——Anki 来源与回导的外来
+    // 原生日志除外：它们的 HLC 由来源数据派生（铁律 C，`crate::anki_import_rules` [derived_log_hlc]）。协议 3 的卡片历史
+    // 规则（`crate::history`）靠它把同一条 revlog 落在血统里几张卡上的副本归成一个事件、把更早的 Anki / 外来复习排在
+    // 更晚的原生复习之前。
     let legacy_hlc = match l.hlc {
         Some(h) => Some(h.text()),
-        None => anki_source_hlc(&l.origin, &l.kind, l.anki_id, l.at),
+        None => derived_log_hlc(&l.origin, &l.kind, l.anki_id, l.at, &l.extra, op_wall),
     };
     LogBody {
         id: l.id,
@@ -913,7 +923,7 @@ impl<'t, 'c> Index<'t, 'c> {
         let seed_card = Ref::of(&l.card).text();
         let device = e.id.device;
         // 投影行里的 profile 只是协议 3 的分区列，读侧不用；集合内取常量。
-        let row = log_json("", &log_body(l), || {
+        let row = log_json("", &log_body(l, wall), || {
             format!("{wall}:{logical}:{}", device.text())
         });
         // 日志 ID、卡、笔记、`revokes` 归一（文件头「别名」第 3 条）：重放与统计读的是规范 ID。

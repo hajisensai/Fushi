@@ -23,6 +23,7 @@ SrsWrittenItem _item(
   bool tags = false,
   String? row,
   int? serverTime,
+  bool superseded = false,
 }) => (
   kind: kind,
   entity: id,
@@ -32,26 +33,30 @@ SrsWrittenItem _item(
   tags: tags,
   row: row,
   serverTime: serverTime,
+  superseded: superseded,
 );
 
 void main() {
   test('editRows replies carry the stored row and server time', () {
     // 请求带 `editRows` 时（native/fushi_fsrs/src/store/gen4/cmd/writes.rs 文件头「回包」修改行）：`edits` 每项后面补
-    // `[行 JSON, 服务器时刻]`，`tagWrites` 每项后面补 `[行 JSON]`；盖掉的那项是 null。
+    // `[行 JSON, 服务器时刻, 被盖掉]`，`tagWrites` 每项后面补 `[行 JSON, 被盖掉]`；被同批后面的写入盖掉的那项行是
+    // null、明确标 true。
     expect(
-      srsWrittenByInput(3, <String, Object?>{
+      srsWrittenByInput(4, <String, Object?>{
         'edits': <Object?>[
-          <Object?>['note', 'A', 'f/x', 'dev', 1, 'v', 0, '{"s":1}', 42],
-          <Object?>['note', 'A', 'f/y', 'dev', 2, 'v', 1, null, null],
+          <Object?>['note', 'A', 'f/x', 'dev', 1, 'v', 0, '{"s":1}', 42, false],
+          <Object?>['note', 'A', 'f/y', 'dev', 2, 'v', 1, null, null, true],
         ],
         'tagWrites': <Object?>[
-          <Object?>[2, 'A', 'dev', 3, '{"f":"tags"}'],
+          <Object?>[2, 'A', 'dev', 3, null, true],
+          <Object?>[3, 'A', 'dev', 4, '{"f":"tags"}', false],
         ],
       }),
       <SrsWrittenItem?>[
         _item('note', 'A', 'f/x', 'dev', 1, row: '{"s":1}', serverTime: 42),
-        _item('note', 'A', 'f/y', 'dev', 2),
-        _item('note', 'A', 'tags', 'dev', 3, tags: true, row: '{"f":"tags"}'),
+        _item('note', 'A', 'f/y', 'dev', 2, superseded: true),
+        _item('note', 'A', 'tags', 'dev', 3, tags: true, superseded: true),
+        _item('note', 'A', 'tags', 'dev', 4, tags: true, row: '{"f":"tags"}'),
       ],
     );
   });

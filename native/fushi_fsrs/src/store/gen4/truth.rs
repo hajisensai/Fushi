@@ -3135,6 +3135,41 @@ impl<'c> Truth<'c> {
         })
     }
 
+    /// 原生日志空洞区间内部的一个链值记号（`.fushisrs` 流第 2 版导入，第五波；导出流见 `store/gen4/export.rs`）：[seq]
+    /// 必须落在 [device] 原生日志里一个空洞区间的内部（不是区间末，那里的链值就是区间自己的），已有记号的不重记，返回
+    /// 记没记。本机自己的日志不记（同 [Truth::insert_void_run]：本机的段按新切点重签，用不着旧切点的链值）。
+    ///
+    /// 记号与区间末的链值一样只能信来源（清除之后没有内容可以重算它），信任面与空洞的 `chain_after` 相同。
+    pub fn land_void_mark(
+        &self,
+        col: i64,
+        device: &Id,
+        seq: u64,
+        chain: &Chain,
+    ) -> Result<bool, String> {
+        self.write(|| {
+            let dev = self
+                .dev_find(col, device)?
+                .ok_or_else(|| format!("gen4 store: no device {device}"))?;
+            if self.dev_row(dev)?.kind != Some(DEV_NATIVE) {
+                return Err(format!("gen4 store: {device} has no native log"));
+            }
+            let inside = self
+                .run_at_or_before(dev, seq)?
+                .is_some_and(|r| r.fps.is_none() && k_seq(r.k) <= seq && r.end() > seq);
+            if !inside {
+                return Err(format!(
+                    "gen4 store: {device}:{seq} is not inside a void run of the native log"
+                ));
+            }
+            if self.is_self_dev(dev)? || self.mark_at(dev, seq)?.is_some() {
+                return Ok(false);
+            }
+            self.put_mark(dev, seq, chain)?;
+            Ok(true)
+        })
+    }
+
     /// 原生日志在 [seq] 处的链值（0 = 链的起点）。空洞区间里只有区间末有链值。
     pub fn chain_at(&self, col: i64, device: &Id, seq: u64) -> Result<Chain, String> {
         if seq == 0 {

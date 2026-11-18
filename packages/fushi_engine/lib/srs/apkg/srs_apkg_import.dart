@@ -2140,15 +2140,20 @@ class _Importer {
     ]);
     _importNewPosition(cardId, c, noteExisted: existingHistory != null);
     final (int nowMs, _) = store.now();
-    final int latest = revlogs.isEmpty ? 0 : revlogs.last.id;
+    // fushi-ext 的日志与 revlog 同口径判未来：它的发生时刻决定回导后的排序键（新代内核 `derived_log_hlc`），伪造的
+    // fushi-ext 不能靠只改 ext、不改 revlog 绕过这道守卫。
+    final List<SrsReviewLog> extLogs =
+        _extLogsByCard[c.id] ?? const <SrsReviewLog>[];
+    int latest = revlogs.isEmpty ? 0 : revlogs.last.id;
+    for (final SrsReviewLog l in extLogs) {
+      if (l.occurredAt > latest) latest = l.occurredAt;
+    }
     if (latest > nowMs + srsClockToleranceMs) {
       report.futureCards.add(c.id);
       return;
     }
 
     // fushi-ext：恢复 Fushi 日志；它导出的 revlog 只作校验。
-    final List<SrsReviewLog> extLogs =
-        _extLogsByCard[c.id] ?? const <SrsReviewLog>[];
     final Set<int> extRevlogs = <int>{};
     if (extLogs.isNotEmpty) {
       for (final SrsReviewLog l in extLogs) {
@@ -2270,8 +2275,11 @@ class _Importer {
     report.anchorsWritten++;
   }
 
+  /// fushi-ext 里的一条日志 → 落到本机卡 [cardId] 上的那条。一律带 [srsForeignLogKey]：它的排序键由发生时刻派生
+  /// （新代内核不收作者 HLC），与导入时刻、导入设备无关。
   SrsReviewLog _remapExtLog(SrsReviewLog l, String cardId) {
-    if (_extSameProfile && l.cardId == cardId) return l;
+    final Map<String, Object?> j = l.toJson()..[srsForeignLogKey] = true;
+    if (_extSameProfile && l.cardId == cardId) return SrsReviewLog.fromJson(j);
     if (_extSameProfile && _extLogCards.containsKey(l.id)) {
       // 同 profile：前身卡的身份在本 profile 下不变，日志原样落回前身卡，再补上前身链接。
       _historyLinks.add(
@@ -2282,9 +2290,8 @@ class _Importer {
           true,
         ),
       );
-      return l;
+      return SrsReviewLog.fromJson(j);
     }
-    final Map<String, Object?> j = l.toJson();
     j['id'] = SrsIds.remappedLog(cardId, l.id);
     if (l.revokesId != null) {
       j['revokes'] = SrsIds.remappedLog(cardId, l.revokesId!);

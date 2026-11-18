@@ -32,6 +32,45 @@ pub fn anki_source_hlc(origin: &str, kind: &str, anki_id: Option<i64>, at: i64) 
     anki_id.map(|id| format!("{id}:0:{ANKI_WRITER}"))
 }
 
+/// 外来原生日志的标记键（日志 JSON 的顶层键，新代落在 `Log4.extra` 里）：Dart 回导 Fushi 导出包恢复的日志
+/// （`srs_apkg_import.dart` `_remapExtLog`）带 `"foreignLog": true`。
+pub const FOREIGN_LOG_KEY: &str = "foreignLog";
+
+/// 日志的派生排序 HLC（新代投影与写回包的唯一入口，`store/gen4/cache.rs` `log_body`、`cmd/writes.rs` `logHlcs`）；
+/// None = 用那条操作自己的 HLC。
+///
+/// - Anki 来源：[anki_source_hlc]；
+/// - 外来原生日志（带 [FOREIGN_LOG_KEY] = true，第五波，交接「第五波 导入与写接口」节）：`{at}:0:fushi`。它是别的设备 /
+///   别的 profile 写的复习，回导时作者 HLC 不进新代的操作（设计 §3.4），按导入那一刻的操作 HLC 排会让更早的复习排到本机
+///   更晚的复习之后、改掉当前排程。发生时刻是来源数据，每台设备、每次导入算出来一样；计数器 0、写入者固定
+///   [FOREIGN_WRITER]（不取 `origin` 原文：它是任意文本，带 `:` 就拼不成 HLC），同一毫秒的两条按日志 ID 定序。
+///   **上界**：`at` 来自导入文件，不可信。真正回导的外来日志一定发生在载着它的那条操作之前，所以只有 `at <= op_wall`
+///   （那条操作 HLC 的物理时刻，真相里的数据、每台设备读到的一样）才派生；`at` 晚于操作的不派生、回落到操作 HLC——否则
+///   一条发生时刻在未来的伪造日志会排在此后本机所有复习之后，把排程钉死在它的结果上（第五波复核）。
+pub fn derived_log_hlc(
+    origin: &str,
+    kind: &str,
+    anki_id: Option<i64>,
+    at: i64,
+    extra: &str,
+    op_wall: i64,
+) -> Option<String> {
+    if origin == ANKI_WRITER {
+        return anki_source_hlc(origin, kind, anki_id, at);
+    }
+    (at <= op_wall && is_foreign_log(extra)).then(|| format!("{at}:0:{FOREIGN_WRITER}"))
+}
+
+/// 外来原生日志派生 HLC 的写入者。
+pub const FOREIGN_WRITER: &str = "fushi";
+
+/// [extra]（日志 JSON 里不认识的键，对象原文）带 [FOREIGN_LOG_KEY] = true。先按子串筛，绝大多数日志不必解析。
+fn is_foreign_log(extra: &str) -> bool {
+    extra.contains(FOREIGN_LOG_KEY)
+        && serde_json::from_str::<serde_json::Value>(extra)
+            .is_ok_and(|v| v.get(FOREIGN_LOG_KEY) == Some(&serde_json::Value::Bool(true)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -63,5 +102,61 @@ mod tests {
         let (r, a) = (revlog.unwrap(), anchor.unwrap());
         let parse = |s: &str| crate::history::parse_hlc(s).map(|(p, c, w)| (p, c, w.to_owned()));
         assert!(parse(&a).unwrap() > parse(&r).unwrap(), "{a} vs {r}");
+    }
+
+    /// 外来原生日志按标记派生 `{at}:0:fushi`（能被卡片历史解析）；没标记、标记不是 true、Anki 来源（照 [anki_source_hlc]）
+    /// 都不走这条。
+    #[test]
+    fn a_marked_foreign_log_sorts_by_when_it_happened() {
+        let at = 1_700_000_000_123;
+        let marked = r#"{"foreignLog":true,"sc":{"x":1}}"#;
+        let got = derived_log_hlc("fushi", "review", None, at, marked, at + 5).unwrap();
+        assert_eq!(got, format!("{at}:0:fushi"));
+        assert_eq!(
+            crate::history::parse_hlc(&got).map(|(p, c, w)| (p, c, w.to_owned())),
+            Ok((at, 0, FOREIGN_WRITER.to_owned()))
+        );
+        // 来源文本带 `:` 也拼得出合法 HLC（写入者固定）。
+        assert_eq!(
+            derived_log_hlc("od:d", "review", None, at, marked, at + 5).as_deref(),
+            Some(got.as_str())
+        );
+        for extra in [
+            "{}",
+            r#"{"foreignLog":false}"#,
+            r#"{"foreignLog":"true"}"#,
+            r#"{"note":"foreignLog"}"#,
+        ] {
+            assert_eq!(
+                derived_log_hlc("fushi", "review", None, at, extra, at + 5),
+                None,
+                "{extra}"
+            );
+        }
+        assert_eq!(
+            derived_log_hlc("anki", "review", Some(at), at + 5, marked, at + 5),
+            anki_source_hlc("anki", "review", Some(at), at + 5)
+        );
+    }
+
+    /// 发生时刻晚于载着它的操作的外来日志不派生（回落到操作 HLC）：`at` 来自导入文件，未来时刻不能把它排到此后本机的
+    /// 复习之后。恰好等于操作时刻的照样派生。
+    #[test]
+    fn a_foreign_log_from_after_its_op_does_not_derive() {
+        let at = 1_700_000_000_123;
+        let marked = r#"{"foreignLog":true}"#;
+        assert_eq!(
+            derived_log_hlc("fushi", "review", None, at, marked, at - 1),
+            None
+        );
+        assert_eq!(
+            derived_log_hlc("fushi", "review", None, at, marked, at),
+            Some(format!("{at}:0:fushi"))
+        );
+        // Anki 来源不受这条约束（另有 futureCards 守卫，派生规则照 [anki_source_hlc]）。
+        assert_eq!(
+            derived_log_hlc("anki", "review", Some(at), at, marked, at - 1),
+            anki_source_hlc("anki", "review", Some(at), at)
+        );
     }
 }

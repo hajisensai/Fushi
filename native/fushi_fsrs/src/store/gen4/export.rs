@@ -6,8 +6,10 @@
 //!
 //! # 写什么（D34）
 //!
-//! - 每条原生日志（含本机的）：从 seq 1 到末尾的每条操作，已清除的区间写成空洞（条数 + 区间末的链值）；相邻的空洞区间
-//!   （分几次清除 / 收到的）合成一个——流的规则是一个值只有一种字节形。日志抬头带作者公钥：本机的从签名钥匙算，
+//! - 每条原生日志（含本机的）：从 seq 1 到末尾的每条操作，已清除的区间写成空洞（条数 + 区间末的链值 + 区间内部记着的
+//!   链值记号，后者是流的第 2 版起才有，第五波）；相邻的空洞区间（分几次清除 / 收到的）合成一个——流的规则是一个值只有
+//!   一种字节形。区间内部的记号（`log_marks` 里 seq 落在 [区间首, 区间末) 的：合并别的设备的空洞时留下的切点链值，以及
+//!   清除之前就记着的定期链值）原样带上，导入方落回同一张表，「导出 → 导入 → 再导出」仍逐字节相等。日志抬头带作者公钥：本机的从签名钥匙算，
 //!   别的设备取 `peers`（没记过 = 空）。
 //! - 每条承袭日志：日志里的槽、每个 seq 后面紧跟分叉的另一支（`op_forks`，链指纹升序），以及记着的完整原链值
 //!   （`log_marks`，之后切承袭段要用）。
@@ -39,6 +41,8 @@ pub struct Exported {
     /// 原生日志里的空洞区间（合并之后）与它们盖住的 seq 数。
     pub void_runs: u64,
     pub voided: u64,
+    /// 空洞区间内部带出去的链值记号。
+    pub void_marks: u64,
     /// 承袭日志里的槽（不含分叉的另一支）。
     pub slots: u64,
     pub forks: u64,
@@ -100,6 +104,8 @@ fn export_in_tx<W: Write>(t: &Truth<'_>, col: i64, out: W) -> Result<(W, Exporte
             public,
             count: d.last,
         })?;
+        // 这条日志上记着的链值（seq 升序）：空洞区间内部的随空洞带出去。
+        let dmarks = t.marks(col, &d.id)?;
         // 正在攒的空洞区间：(第一个 seq, 条数)。
         let mut run: Option<(u64, u64)> = None;
         let flush = |w: &mut Export4Writer<W>,
@@ -114,9 +120,16 @@ fn export_in_tx<W: Write>(t: &Truth<'_>, col: i64, out: W) -> Result<(W, Exporte
                         d.id
                     )
                 })?;
+                let marks: Vec<(u64, Chain)> = dmarks
+                    .iter()
+                    .filter(|(seq, _)| *seq >= start && *seq < end)
+                    .copied()
+                    .collect();
+                n.void_marks += marks.len() as u64;
                 w.item(&ExportItem::NativeVoid {
                     n: len,
                     chain_after,
+                    marks,
                 })?;
                 n.void_runs += 1;
                 n.voided += len;

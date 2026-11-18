@@ -11,6 +11,12 @@ const String srsAnkiWriterId = 'anki';
 Hlc srsImportedRevlogHlc(int ankiRevlogId) =>
     Hlc(ankiRevlogId, 0, srsAnkiWriterId);
 
+/// 回导的外来原生日志（Fushi 导出包 fushi-ext 里别的设备 / profile 写的复习，`srs_apkg_import.dart`
+/// `_remapExtLog`）的标记键：日志 JSON 顶层带 `foreignLog: true`。新代内核不收作者 HLC，按这个标记把它的排序键
+/// 派生成 `(occurredAt, 0, "fushi")`（native/fushi_fsrs/src/anki_import_rules.rs `derived_log_hlc`），不按导入时刻排
+/// ——否则更早的外来复习会排到本机更晚的复习之后、改掉当前排程。
+const String srsForeignLogKey = 'foreignLog';
+
 /// 导入锚点的 HLC：(T, **1**, "anki")。
 ///
 /// 第六轮审查第 5 条（锚点同刻）：锚点时刻 T 就是来源最后一条排程相关 revlog 的时刻，两者物理时间相同、
