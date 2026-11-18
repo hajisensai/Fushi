@@ -406,7 +406,10 @@ class MediaServerLaunchUnavailable implements Exception {
 /// 同一台服务器的配置现建客户端，合集里同一部剧的其它入库行作为连播成员。
 ///
 /// 起播那一条先向服务器取一次详情（服务器端断点 / 带令牌的封面），失败就用规格里
-/// 的快照照常起播。[playlistCollectionId] 为空时只有这一条。
+/// 的快照照常起播。这一次的结果由客户端留给随后的取流 / 取字幕
+/// （`LaunchItemDetailMemo`）：成功则同一份详情不再重取，失败则取流立刻抛同一个
+/// 错——这里不判失败，也就不用分辨「连不上」和「条目不可播」。
+/// [playlistCollectionId] 为空时只有这一条。
 Future<
   ({
     RemoteVideoClient client,
@@ -481,7 +484,10 @@ buildMediaServerLaunch({
   );
   if (startIndex < 0) startIndex = 0;
   try {
-    final MediaServerItem detail = await browser.itemDetail(spec.itemId);
+    final MediaServerItem detail = await browser.itemDetail(
+      spec.itemId,
+      forLaunch: true,
+    );
     if (detail.isPlayable) {
       members[startIndex] = browser.toRemoteVideoInfo(detail);
     }

@@ -29,6 +29,10 @@ import 'package:fushi_engine/sync/sync_manifest_codec.dart';
 /// 标记的两只时钟（`media_privacy_flags`），合并逐戳取大。只有一台设备是排行榜上传
 /// 设备，别处标的私密必须到得了它。加字段不升 [TagManifest.currentVersion]：旧版对端
 /// 只读已知字段、把它当没有；缺这个字段 = 没有私密知识，不是「取消私密」。
+///
+/// 条目上可选的 `nsfw`（`{"set": 毫秒, "cleared": 毫秒}`，v156 起）同理搭载作品级
+/// NSFW 标记的两只时钟（`media_nsfw_flags`）：在一台设备上标的 NSFW，别的设备上
+/// 的封面也要跟着模糊。缺字段 = 没有 NSFW 知识。
 class TagManifest implements CanonicalJsonManifest {
   const TagManifest({
     this.version = currentVersion,
@@ -125,6 +129,7 @@ class TagManifestEntry {
     this.addedAt = const <String, int>{},
     this.tombstones = const <String, int>{},
     this.privacy,
+    this.nsfw,
   });
 
   factory TagManifestEntry.fromJson(Object? json) {
@@ -146,6 +151,7 @@ class TagManifestEntry {
       addedAt: _clockMap(map['added']),
       tombstones: _clockMap(map['removed']),
       privacy: _privacyClock(map['privacy']),
+      nsfw: _nsfwClock(map['nsfw']),
     );
   }
 
@@ -167,6 +173,9 @@ class TagManifestEntry {
   /// 作品级私密标记的时钟；null = 本端对它没有私密知识（从没标过 / 旧版对端）。
   final MediaPrivacyClock? privacy;
 
+  /// 作品级 NSFW 标记的时钟；null = 本端对它没有 NSFW 知识（从没标过 / 旧版对端）。
+  final MediaNsfwClock? nsfw;
+
   Iterable<String> get allKeys => <String>[key, ...aliases];
 
   Map<String, dynamic> toJson() => <String, dynamic>{
@@ -180,6 +189,11 @@ class TagManifestEntry {
         if (p.privateAt != null) 'set': p.privateAt!,
         if (p.clearedAt != null) 'cleared': p.clearedAt!,
       },
+    if (nsfw case final MediaNsfwClock n)
+      'nsfw': <String, int>{
+        if (n.nsfwAt != null) 'set': n.nsfwAt!,
+        if (n.clearedAt != null) 'cleared': n.clearedAt!,
+      },
   };
 
   static int? _stamp(Object? raw) => raw is int && raw >= 0 ? raw : null;
@@ -191,6 +205,15 @@ class TagManifestEntry {
     final int? cleared = _stamp(raw['cleared']);
     if (set == null && cleared == null) return null;
     return (privateAt: set, clearedAt: cleared);
+  }
+
+  /// 两只戳都缺 / 都非法时为 null（等同没有这个字段）。
+  static MediaNsfwClock? _nsfwClock(Object? raw) {
+    if (raw is! Map) return null;
+    final int? set = _stamp(raw['set']);
+    final int? cleared = _stamp(raw['cleared']);
+    if (set == null && cleared == null) return null;
+    return (nsfwAt: set, clearedAt: cleared);
   }
 
   static Map<String, int> _clockMap(Object? raw) {
@@ -236,13 +259,21 @@ Future<TagManifest> loadLocalTagManifest(FushiDatabase db) async {
   ) async {
     final Map<String, MediaPrivacyClock> privacy = await db
         .allPrivacyClocksForKind(kind);
-    for (final String localKey in <String>{...clocks.keys, ...privacy.keys}) {
+    final Map<String, MediaNsfwClock> nsfw = await db.allNsfwClocksForKind(
+      kind,
+    );
+    for (final String localKey in <String>{
+      ...clocks.keys,
+      ...privacy.keys,
+      ...nsfw.keys,
+    }) {
       final TagClockSet? tagClocks = clocks[localKey];
       final MediaPrivacyClock? privacyClock = privacy[localKey];
+      final MediaNsfwClock? nsfwClock = nsfw[localKey];
       final bool hasTags =
           tagClocks != null &&
           (tagClocks.addedAt.isNotEmpty || tagClocks.tombstones.isNotEmpty);
-      if (!hasTags && privacyClock == null) continue;
+      if (!hasTags && privacyClock == null && nsfwClock == null) continue;
       final ({String key, List<String> aliases})? id = identify(localKey);
       if (id == null) continue;
       entries.add(
@@ -253,6 +284,7 @@ Future<TagManifest> loadLocalTagManifest(FushiDatabase db) async {
           addedAt: tagClocks?.addedAt ?? const <String, int>{},
           tombstones: tagClocks?.tombstones ?? const <String, int>{},
           privacy: privacyClock,
+          nsfw: nsfwClock,
         ),
       );
     }
@@ -405,6 +437,11 @@ Future<int> applyTagManifest(FushiDatabase db, TagManifest remote) async {
         didChange = true;
       }
     }
+    if (e.nsfw case final MediaNsfwClock n) {
+      if (await db.mergeRemoteNsfwClock(kind, localKey, n)) {
+        didChange = true;
+      }
+    }
     if (didChange) changed++;
   }
   return changed;
@@ -442,6 +479,7 @@ bool tagManifestCovers(TagManifest remote, TagManifest local) {
       }
     }
     if (!_privacyCovers(r.privacy, l.privacy)) return false;
+    if (!_nsfwCovers(r.nsfw, l.nsfw)) return false;
   }
   return true;
 }
@@ -451,5 +489,13 @@ bool _privacyCovers(MediaPrivacyClock? remote, MediaPrivacyClock? local) {
   if (local == null) return true;
   bool covers(int? r, int? l) => l == null || (r != null && r >= l);
   return covers(remote?.privateAt, local.privateAt) &&
+      covers(remote?.clearedAt, local.clearedAt);
+}
+
+/// 远端 NSFW 时钟逐戳不比本机旧（本机没有 NSFW 知识时恒为 true）。
+bool _nsfwCovers(MediaNsfwClock? remote, MediaNsfwClock? local) {
+  if (local == null) return true;
+  bool covers(int? r, int? l) => l == null || (r != null && r >= l);
+  return covers(remote?.nsfwAt, local.nsfwAt) &&
       covers(remote?.clearedAt, local.clearedAt);
 }

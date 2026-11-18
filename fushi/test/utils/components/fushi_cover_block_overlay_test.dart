@@ -3,7 +3,7 @@ import 'package:fushi/src/utils/adaptive/shell_style.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block.dart';
 import 'package:material_ui/material_ui.dart';
 
-// BUG-4709：封面盖层（远端下载进行中的压暗 + 进度环）曾是姿态变换外的兄弟层
+// BUG-4860：封面盖层（远端下载进行中的压暗 + 进度环）曾是姿态变换外的兄弟层
 // （`Positioned.fromRect(slot.rect)`），封面斜放 / 缩放 / 位移、按圆角裁切，盖层
 // 却画成一块不旋转、直角、错位的暗块。盖层必须与它压着的那张封面同在一个姿态
 // 变换里（书封 / 海报 / 唱片摆法还要同在封面卡的圆角裁切里），四角与封面重合。

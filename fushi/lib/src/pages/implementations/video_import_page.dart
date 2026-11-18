@@ -2,8 +2,8 @@
 /// 共用的 [ImportCollagePage]（引导首块 + 方式块 + 常驻来源色块区）。
 ///
 /// - 方式按规范顺序：导入视频 → 导入文件夹 → IPTV 频道列表 → 网络共享（R8）；
-///   网络说明从 [importNetworkTransportsSummary] 派生（BUG-4707 / IM10）；
-/// - 整页收拖放（BUG-4706 / IM2）：落下交给视频库页现有的分发
+///   网络说明从 [importNetworkTransportsSummary] 派生（BUG-4858 / IM10）；
+/// - 整页收拖放（BUG-4857 / IM2）：落下交给视频库页现有的分发
 ///   （[VideoLibraryDropPort]，`HomeVideoPage._handleVideoDrop`），不另写一份；
 /// - 刮削三件套（整库刮削 / 后台任务 / 清空刮削记录）登记进库页壳浮动顶栏
 ///   （IM18）：Material 平铺前两项、「清空刮削记录」收进 ⋯；Apple 形态三项都在
@@ -25,6 +25,7 @@ import 'package:fushi/src/media/drag_drop/drop_classification.dart'
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart'
     show FileDropCallback;
 import 'package:fushi/src/media/import/import_collage_page.dart';
+import 'package:fushi/src/media/import/import_inbox.dart';
 import 'package:fushi/src/media/import/import_surface_spec.dart';
 import 'package:fushi/src/media/video/iptv_playlist_import_dialog.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
@@ -56,6 +57,7 @@ ImportSurfaceSpec buildVideoImportSpec({
   required Future<void> Function() onAddNetworkSource,
   required bool busy,
   required bool showAudioCdNote,
+  Future<void> Function()? onImportFromInbox,
   FileDropCallback? onDrop,
 }) => ImportSurfaceSpec(
   id: 'video',
@@ -85,6 +87,20 @@ ImportSurfaceSpec buildVideoImportSpec({
       enabled: !busy,
       onTap: onImportFolder,
     ),
+    // iOS「文件」App 收件箱（拍板台 nLXhu0d7gV）：调用方只在有收件箱的平台传入口。
+    if (onImportFromInbox != null)
+      ImportMethod(
+        id: 'inbox',
+        kind: ImportMethodKind.folder,
+        icon: FushiIcons.folderOpen,
+        label: t.media_import_inbox,
+        description: t.media_import_inbox_hint(
+          folder: ImportInbox.folderNameFor('video') ?? '',
+        ),
+        destination: ImportDestination.dialog,
+        enabled: !busy,
+        onTap: onImportFromInbox,
+      ),
     ImportMethod(
       id: 'iptv',
       kind: ImportMethodKind.iptv,
@@ -168,7 +184,7 @@ class VideoImportPage extends ConsumerStatefulWidget {
   /// 导入 / 扫描收尾后通知保活的视频库重读。
   final VoidCallback? onLibraryChanged;
 
-  /// 整页落点（BUG-4706）：壳经 [VideoLibraryDropPort.drop] 转交库页分发；
+  /// 整页落点（BUG-4857）：壳经 [VideoLibraryDropPort.drop] 转交库页分发；
   /// null = 不收拖放（不画虚线、不进拖放态）。
   final FileDropCallback? onDrop;
 
@@ -241,7 +257,14 @@ class _VideoImportPageState extends ConsumerState<VideoImportPage> {
     if (mounted) widget.onLibraryChanged?.call();
   }
 
-  /// 整页落点（BUG-4706）：交给库页分发；拖入文件夹会登记常驻来源，端口等到
+  /// 「从『文件』App 导入」：收 `我的 iPhone › Fushi › 视频子目录` 里的文件（重入保护在
+  /// [MediaSourcesViewState.importFromInbox] 入口）。
+  Future<void> _importFromInbox() async {
+    await _viewKey.currentState?.importFromInbox();
+    if (mounted) widget.onLibraryChanged?.call();
+  }
+
+  /// 整页落点（BUG-4857）：交给库页分发；拖入文件夹会登记常驻来源，端口等到
   /// 落库扫描完才返回，之后重读本页的来源色块（否则新来源要切走再回来才出现）。
   Future<void> _drop(List<String> paths, Offset globalPosition) async {
     final FileDropCallback? onDrop = widget.onDrop;
@@ -295,6 +318,7 @@ class _VideoImportPageState extends ConsumerState<VideoImportPage> {
       onAddNetworkSource: _addNetworkSource,
       busy: busy,
       showAudioCdNote: videoImportFolderShowsAudioCdNote,
+      onImportFromInbox: ImportInbox.isSupported ? _importFromInbox : null,
       onDrop: widget.onDrop == null ? null : _drop,
     );
     return DesktopContentLayout(

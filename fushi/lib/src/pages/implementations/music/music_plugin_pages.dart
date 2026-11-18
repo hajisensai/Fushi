@@ -134,10 +134,14 @@ class _MusicPluginManagementPage extends StatelessWidget {
     context,
     title: t.music_plugins_title,
     // 留白要在脚手架之下量：页头让位（MediaQuery 顶部 padding）只在那里才有。
-    body: Builder(
-      builder: (BuildContext context) => SingleChildScrollView(
-        padding: musicBrowsePagePadding(context),
-        child: MusicPluginSettingsBody(appModel: appModel),
+    // 整个页面体是 .fushiplug 的拖放落点（BUG-4712），与「安装」按钮同一条流程。
+    body: MusicPluginDropTarget(
+      manager: appModel.musicPluginManager,
+      child: Builder(
+        builder: (BuildContext context) => SingleChildScrollView(
+          padding: musicBrowsePagePadding(context),
+          child: MusicPluginSettingsBody(appModel: appModel),
+        ),
       ),
     ),
   );
@@ -2084,6 +2088,14 @@ class _MusicPluginLibrarySectionState
                 }
                 final List<MusicPluginPlaylist>? lists = snap.data;
                 if (lists == null) {
+                  // 经互联中继用的插件（清单里没有 login）：账号在代跑它的那台设备上登录，
+                  // 本机没有插件管理可去。
+                  if (!m.can(MusicPluginCapability.login)) {
+                    return Text(
+                      t.music_plugin_relay_login_hint(name: m.name),
+                      style: context.fushiType.bodySmall,
+                    );
+                  }
                   return Row(
                     children: <Widget>[
                       Expanded(

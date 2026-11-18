@@ -6,7 +6,7 @@ import 'package:fushi/src/media/import/import_surface_spec.dart';
 
 import '../helpers/source_guard.dart';
 
-/// BUG-4707（导入稿 IM10）：「添加来源 › 网络」的说明曾是写死的两条 key——视频
+/// BUG-4858（导入稿 IM10）：「添加来源 › 网络」的说明曾是写死的两条 key——视频
 /// `media_source_network_subtitle_video`「WebDAV 远程库」（实际 SFTP / WebDAV /
 /// AList），书 / 漫画 / 音乐共用 `media_source_network_subtitle`「SFTP / FTP /
 /// WebDAV」（漏 AList，音乐还不支持 FTP）。现在说明从 [importNetworkTransports]

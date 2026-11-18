@@ -130,6 +130,7 @@ enum _DeckAction {
   moveDown,
   settings,
   fillWordAudio,
+  export,
   delete,
 }
 
@@ -330,6 +331,15 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
     if (mounted) bumpSrsRevision(ref);
   }
 
+  /// 回应「每日上限单位改缺省」的提醒：给存量牌组明写 [unit]，再发修订号让列表与提醒重读（[settleSrsLegacyLimitUnit]）。
+  Future<void> _settleLegacyLimitUnit(
+    SrsDbStore store,
+    SrsLimitUnit unit,
+  ) async {
+    await settleSrsLegacyLimitUnit(store, unit);
+    if (mounted) bumpSrsRevision(ref);
+  }
+
   /// 「::」是层级分隔符（导入 / AnkiConnect 按它拆路径），名字里不能出现。
   String? _validateDeckName(String value) =>
       value.contains('::') ? t.srs_deck_name_invalid : null;
@@ -451,6 +461,11 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
         srsRunLogged(
           'SrsDeckList.fillWordAudio',
           () => openSrsWordAudioBackfill(context, ref, deckId: deck.deck.id),
+        );
+      case _DeckAction.export:
+        srsRunLogged(
+          'SrsDeckList.exportDeck',
+          () => openSrsExport(context, ref, deckId: deck.deck.id),
         );
       case _DeckAction.delete:
         srsRunLogged('SrsDeckList.delete', () => _delete(deck));
@@ -984,6 +999,16 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
           () => openSrsStarterPacks(context, ref),
         ),
         onAddFirst: () => srsRunLogged('SrsDeckList.addFirst', _addNote),
+        legacyLimitUnitDecks:
+            ref.watch(srsLimitUnitLegacyCountProvider).valueOrNull ?? 0,
+        onKeepLegacyLimitCards: () => srsRunLogged(
+          'SrsDeckList.limitUnitKeepCards',
+          () => _settleLegacyLimitUnit(list.store, SrsLimitUnit.cards),
+        ),
+        onAcceptLimitAnswers: () => srsRunLogged(
+          'SrsDeckList.limitUnitAcceptAnswers',
+          () => _settleLegacyLimitUnit(list.store, SrsLimitUnit.reviews),
+        ),
       ),
       onFocus: _setFocus,
       onSelect: _select,
@@ -1849,6 +1874,7 @@ class _DeckRow extends StatelessWidget {
                               learnCount: deck.learnCount,
                               reviewCount: deck.reviewCount,
                               reviewPending: deck.rwkvPending,
+                              reviewMinutesLeft: deck.reviewMinutesLeft,
                             ),
                             // 没活时留位不画：各行的三色计数列照样对齐。
                             Visibility(

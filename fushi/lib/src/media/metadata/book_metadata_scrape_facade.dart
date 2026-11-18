@@ -4,6 +4,9 @@ import 'package:crypto/crypto.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/item_scrape/item_scrape_store.dart';
+import 'package:fushi_engine/media/metadata/books/anilist_novels.dart'
+    show parseAniListMediaUrl;
+import 'package:fushi_engine/media/metadata/books/rakuten_books.dart';
 import 'package:fushi_engine/media/metadata/dlsite/dlsite_client.dart';
 import 'package:fushi_engine/media/metadata/image_download.dart';
 import 'package:path/path.dart' as p;
@@ -18,6 +21,10 @@ import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
+/// 封面下载器（测试注入桩）；[headers] 是源要求的额外请求头。
+typedef BookCoverDownloader =
+    Future<File> Function(String url, {Map<String, String>? headers});
+
 /// 书的元数据写回会碰到的字段。
 enum BookMetadataField {
   /// 显示名覆盖（`override_title://`，不改 `epub_books.title`）。
@@ -29,7 +36,7 @@ enum BookMetadataField {
   /// override 封面文件。
   cover,
 
-  /// 条目刮削资料（简介 / 日期 / 评分 / 标签 / 横版背景，v155 `item_scrape_meta`
+  /// 条目刮削资料（简介 / 日期 / 评分 / 标签 / 横版背景，v160 `item_scrape_meta`
   /// + `item_images`）——书架系列色块的数据源。
   details;
 
@@ -152,22 +159,46 @@ class BookMetadataApplyResult {
 ///   没了，撤销无从谈起；
 /// - [currentState] / [restore]：AI 撤销用（执行前快照写回）。
 class BookMetadataScrapeFacade {
-  /// [scraper] 注入时门面不负责关闭它；不注入则按需自建、[close] 时关闭。
+  /// [scraper] 注入时门面不负责关闭它；不注入则按需自建（带上 [rakuten] 凭据）、
+  /// [close] 时关闭。
   BookMetadataScrapeFacade({
     BookMetadataScraper? scraper,
-    Future<File> Function(String url)? downloadImage,
+    BookCoverDownloader? downloadImage,
     DateTime Function() now = DateTime.now,
+    RakutenBooksCredentials? rakuten,
   }) : _injected = scraper,
-       _download = downloadImage ?? downloadImageToTempFile,
-       _now = now;
+       _download = downloadImage ?? _defaultDownload,
+       _now = now,
+       _rakuten = rakuten;
 
   final BookMetadataScraper? _injected;
-  final Future<File> Function(String url) _download;
+  final BookCoverDownloader _download;
   final DateTime Function() _now;
+  final RakutenBooksCredentials? _rakuten;
   BookMetadataScraper? _owned;
 
   BookMetadataScraper get _scraper =>
-      _injected ?? (_owned ??= BookMetadataScraper());
+      _injected ?? (_owned ??= BookMetadataScraper(rakuten: _rakuten));
+
+  static Future<File> _defaultDownload(
+    String url, {
+    Map<String, String>? headers,
+  }) => downloadImageToTempFile(url, headers: headers);
+
+  /// [source] 在当前凭据下能不能用（楽天要 applicationId + accessKey）。
+  bool isSourceAvailable(BookScrapeSource source) =>
+      !source.needsCredentials || _scraper.rakutenAvailable;
+
+  /// [item] 的 ISBN-13（EPUB 导入时从 OPF `dc:identifier` 规范化写进
+  /// `epub_books.isbn`；字幕书 / 漫画 / 没有 ISBN 的书返回 null）。openBD 等按 ISBN
+  /// 查的源用它预填。
+  static Future<String?> isbnForItem(FushiDatabase db, MediaItem item) async {
+    final String? bookKey = ReaderFushiSource.parseBookKey(
+      item.mediaIdentifier,
+    );
+    if (bookKey == null) return null;
+    return (await db.getEpubBook(bookKey))?.isbn;
+  }
 
   /// 备份保留多久（与回收站同口径）；之后的撤销报失败（封面备份已过期）。
   static const Duration backupRetention = Duration(days: 30);
@@ -175,14 +206,39 @@ class BookMetadataScrapeFacade {
   /// 关键词 → 候选。Bangumi：贴条目 URL = 按 id 直取（跳过关键词搜索）；纯数字既
   /// 可能是 id 也可能是书名（如《1984》）——搜索 + id 直取并列，直取命中置顶、按
   /// subjectId 去重；其余走关键词搜索。DLsite：贴作品页 URL / 编号 → 直取；其余按名
-  /// 搜音声 / 漫画 / 小说。失败抛 [BookScrapeException]。
+  /// 搜音声 / 漫画 / 小说。AniList：贴 `anilist.co/manga/<id>` = 按 id 直取，其余按名搜
+  /// 轻小说。openBD：只按输入里的 ISBN 查（没有 ISBN → 空表）。NDL / 楽天：输入里有
+  /// ISBN 按 ISBN，否则按书名。失败抛 [BookScrapeException]。
   Future<List<BookScrapeCandidate>> search({
     required BookScrapeSource source,
     required String query,
   }) async {
     final String keyword = query.trim();
     if (keyword.isEmpty) return const <BookScrapeCandidate>[];
-    if (source == BookScrapeSource.dlsite) return _searchDlsite(keyword);
+    switch (source) {
+      case BookScrapeSource.dlsite:
+        return _searchDlsite(keyword);
+      case BookScrapeSource.anilist:
+        final String? id = parseAniListMediaUrl(keyword);
+        if (id != null) {
+          final BookScrapeCandidate? c = await _scraper.fetchCatalogById(
+            source,
+            id,
+          );
+          return c == null
+              ? const <BookScrapeCandidate>[]
+              : <BookScrapeCandidate>[c];
+        }
+        return _scraper.searchAniList(keyword);
+      case BookScrapeSource.openbd:
+        return _scraper.searchOpenBd(keyword);
+      case BookScrapeSource.ndl:
+        return _scraper.searchNdl(keyword);
+      case BookScrapeSource.rakuten:
+        return _scraper.searchRakuten(keyword);
+      case BookScrapeSource.bangumi:
+        break;
+    }
     final String? mappedSubjectId = parseBangumiSubjectUrl(keyword);
     if (mappedSubjectId != null) {
       final BookScrapeCandidate? candidate = await _scraper.fetchById(
@@ -232,19 +288,24 @@ class BookMetadataScrapeFacade {
     return _scraper.searchDlsite(keyword);
   }
 
-  /// 按源内 id 直取一个候选（Bangumi subject id / DLsite 作品编号）。查无此条 / 无
-  /// 封面返回 null；失败抛 [BookScrapeException]。
+  /// 按源内 id 直取一个候选（Bangumi subject id / DLsite 作品编号 / AniList media id /
+  /// openBD·NDL·楽天的 ISBN）。查无此条 / 无封面返回 null；失败抛 [BookScrapeException]。
   Future<BookScrapeCandidate?> fetchById({
     required BookScrapeSource source,
     required String id,
   }) => switch (source) {
     BookScrapeSource.bangumi => _scraper.fetchById(id.trim()),
     BookScrapeSource.dlsite => _scraper.fetchDlsiteById(id.trim()),
+    BookScrapeSource.anilist ||
+    BookScrapeSource.openbd ||
+    BookScrapeSource.ndl ||
+    BookScrapeSource.rakuten => _scraper.fetchCatalogById(source, id.trim()),
   };
 
-  /// 选中候选后把封面下到临时文件（失败抛 [ImageDownloadException]）。
+  /// 选中候选后把封面下到临时文件（失败抛 [ImageDownloadException]）。源要求的请求头
+  /// （NDL 缩略图的 Referer）一并带上。
   Future<File> downloadCover(BookScrapeCandidate candidate) =>
-      _download(candidate.coverUrl);
+      _download(candidate.coverUrl, headers: candidate.coverHeaders);
 
   /// 把选中的元数据写回 [item]：[title] 非空 → 显示名覆盖；[author] 非 null → 作者
   /// （源不支持改作者时跳过）；[cover] 非 null → override 封面。全部走书架 / 编辑
@@ -500,7 +561,10 @@ class BookMetadataScrapeFacade {
       dir.path,
       '${now.microsecondsSinceEpoch}_${item.mediaIdentifier.hashCode.toUnsigned(32)}',
     );
-    await current.copy(path);
+    final File backup = await current.copy(path);
+    // 复制会沿用源文件的修改时间；保留期按「备份建立时刻」算，所以这里改成现在，
+    // 否则一张 30 天前就在用的旧封面，备份刚建好就会被下一次清理删掉。
+    await backup.setLastModified(now);
     return path;
   }
 

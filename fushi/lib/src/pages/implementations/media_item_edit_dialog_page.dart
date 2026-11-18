@@ -8,6 +8,8 @@ import 'package:fushi/src/media/sources/reader_media_source.dart';
 import 'package:fushi/src/pages/base_page.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/metadata/book_cover_scrape_dialog.dart';
+import 'package:fushi/src/media/metadata/book_metadata_scrape_facade.dart'
+    show BookMetadataScrapeFacade;
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -134,11 +136,19 @@ class _MediaItemEditDialogPageState
                         _nameOverrideController.text.trim().isNotEmpty
                         ? _nameOverrideController.text.trim()
                         : widget.item.title;
+                    final String? isbn =
+                        await BookMetadataScrapeFacade.isbnForItem(
+                          appModel.database,
+                          widget.item,
+                        );
+                    if (!mounted) return;
                     // 编辑弹窗只取封面（保存才落地，取消不留副作用）；条目资料
                     // 走书架卡菜单的「在线刮削封面」（选中即写回）。
                     final File? scraped = (await showBookCoverScrapeDialog(
                       context: context,
                       initialQuery: query,
+                      isbn: isbn,
+                      rakuten: appModel.bookScrapeRakutenCredentials,
                     ))?.cover;
                     if (scraped != null) {
                       _newFile = scraped;

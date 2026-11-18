@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:fake_async/fake_async.dart';
 import 'package:test/test.dart';
 import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi_engine/media/video/scraper/scraper_types.dart';
@@ -10,6 +12,7 @@ void main() {
   late Directory tmp;
 
   setUp(() async {
+    CoverMetaStore.debugResetForTesting();
     tmp = await Directory.systemTemp.createTemp('fushi_cover_meta_');
   });
 
@@ -232,5 +235,57 @@ void main() {
       expect(await store.markAutoFrameAfterWrite('protected'), isFalse);
       expect((await store.get('protected'))!.origin, protectedOrigin);
     }
+  });
+
+  // BUG：CoverMetaStore 按目录共享进程级状态（读缓存 / 在途加载 / 链式写锁）。
+  // 若这些共享 future 是在一个之后不再推进的 Zone（widget 测试的 fakeAsync）里
+  // 创建的，它们的完成要排进那个 Zone 的微任务队列——永远不被冲刷，同目录后来者
+  // await 它就永久挂住。超时只是把「挂住」变成红，不参与被测逻辑。
+  group('发起者 Zone 停摆不拖死同目录后来者', () {
+    const Duration hangGuard = Duration(seconds: 10);
+
+    test('fakeAsync 里发起的首次加载被弃置后，别的 Zone 读 all() 仍完成', () async {
+      await File(metaPath()).writeAsString(
+        jsonEncode(<String, Object?>{
+          'book-1': const CoverMeta(origin: CoverOrigin.manual).toJson(),
+        }),
+      );
+      fakeAsync((FakeAsync async) {
+        unawaited(CoverMetaStore(tmp).all());
+        async.flushMicrotasks();
+      });
+      // 此后那个 fakeAsync Zone 再也不推进。
+
+      final Map<String, CoverMeta> all = await CoverMetaStore(
+        tmp,
+      ).all().timeout(hangGuard);
+      expect(all['book-1']?.origin, CoverOrigin.manual);
+    });
+
+    test('fakeAsync 里发起的写入被弃置后，写锁照常移交且那次写入照常落盘', () async {
+      fakeAsync((FakeAsync async) {
+        unawaited(
+          CoverMetaStore(
+            tmp,
+          ).set('book-a', const CoverMeta(origin: CoverOrigin.manual)),
+        );
+        async.flushMicrotasks();
+      });
+
+      final CoverMetaStore store = CoverMetaStore(tmp);
+      await store
+          .set('book-b', const CoverMeta(origin: CoverOrigin.scraped))
+          .timeout(hangGuard);
+      final Map<String, CoverMeta> all = await store.all().timeout(hangGuard);
+      expect(all['book-a']?.origin, CoverOrigin.manual);
+      expect(all['book-b']?.origin, CoverOrigin.scraped);
+
+      // 落盘顺序仍是发起顺序：新实例冷读文件也看到两条。
+      CoverMetaStore.debugResetForTesting();
+      final Map<String, Object?> onDisk =
+          jsonDecode(await File(metaPath()).readAsString())
+              as Map<String, Object?>;
+      expect(onDisk.keys, containsAll(<String>['book-a', 'book-b']));
+    });
   });
 }

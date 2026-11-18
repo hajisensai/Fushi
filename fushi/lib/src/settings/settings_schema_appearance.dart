@@ -16,6 +16,7 @@ import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/pages/implementations/miscellaneous_settings_page.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/reader/eink_full_refresh.dart';
 import 'package:fushi/src/pages/implementations/home_widget_grid.dart'
     show homeWidgetEditRequested;
 import 'package:fushi/src/models/module_id.dart';
@@ -464,6 +465,61 @@ SettingsDestination buildAppearanceDestination() {
             },
             defaultValue: false,
           ),
+          // 墨水屏「每 N 页全刷」（拍板台 oF0jVdOTIE）：小说三种 view mode 与漫画翻页
+          // 计数，到点做一次全刷清残影。不挂在墨水屏主题开关下面——漫画阅读器有自己
+          // 的墨水屏开关，用墨水屏设备但不开全局黑白主题的人也要能用。设备本地。
+          SettingsSegmentedItem<int>(
+            id: 'appearance.eink_full_refresh_interval',
+            title: t.eink_full_refresh_interval,
+            subtitle: t.eink_full_refresh_interval_hint,
+            icon: FushiIcons.refresh,
+            dropdown: true,
+            options: <SettingsSegmentOption<int>>[
+              for (final int interval in kEinkFullRefreshIntervalChoices)
+                SettingsSegmentOption<int>(
+                  value: interval,
+                  label: einkFullRefreshIntervalLabel(interval),
+                ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.einkFullRefreshInterval,
+            onChanged: (SettingsContext settingsContext, int value) async {
+              await settingsContext.appModel.setEinkFullRefreshInterval(value);
+              settingsContext.refresh();
+            },
+            defaultValue: kEinkFullRefreshIntervalDefault,
+          ),
+          SettingsSegmentedItem<EinkFullRefreshMethod>(
+            id: 'appearance.eink_full_refresh_method',
+            title: t.eink_full_refresh_method,
+            subtitle: t.eink_full_refresh_method_hint,
+            icon: FushiIcons.flash,
+            visible: (SettingsContext settingsContext) =>
+                settingsContext.appModel.einkFullRefreshInterval > 0,
+            options: <SettingsSegmentOption<EinkFullRefreshMethod>>[
+              SettingsSegmentOption<EinkFullRefreshMethod>(
+                value: EinkFullRefreshMethod.auto,
+                label: t.eink_full_refresh_method_auto,
+              ),
+              SettingsSegmentOption<EinkFullRefreshMethod>(
+                value: EinkFullRefreshMethod.flash,
+                label: t.eink_full_refresh_method_flash,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.einkFullRefreshMethod,
+            onChanged:
+                (
+                  SettingsContext settingsContext,
+                  EinkFullRefreshMethod value,
+                ) async {
+                  await settingsContext.appModel.setEinkFullRefreshMethod(
+                    value,
+                  );
+                  settingsContext.refresh();
+                },
+            defaultValue: EinkFullRefreshMethod.auto,
+          ),
           // 玻璃材质档位：只在设计系统选「玻璃」时出现（设计系统行负责开关玻璃，
           // 这里只在毛玻璃 / 液态之间选）。正文、视频画面不变；墨水屏、系统增强
           // 对比度 / 降低透明度下自动回退实心，liquid 在引擎不支持着色器
@@ -712,6 +768,42 @@ SettingsDestination buildAppearanceDestination() {
               await settingsContext.appModel.themeNotifier
                   .setFollowAppIconAccent(value);
               notifyReaderSettingsChanged(settingsContext);
+              settingsContext.refresh();
+            },
+            defaultValue: false,
+          ),
+        ],
+      ),
+      // NSFW 内容（拍板台 w04vrhUAaX）：作品在长按菜单里标 NSFW（游戏用编辑页的
+      // 「成人向」），这里两个开关决定封面 / 制卡图片要不要模糊。
+      SettingsSection(
+        id: 'appearance.section.nsfw',
+        title: t.settings_nsfw_section,
+        items: <SettingsItem>[
+          SettingsSwitchItem(
+            id: 'appearance.nsfw_blur_covers',
+            title: t.settings_nsfw_blur_covers,
+            subtitle: t.settings_nsfw_blur_covers_hint,
+            icon: FushiIcons.visibilityOff,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.prefsRepo.blurNsfwCovers,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.prefsRepo.setBlurNsfwCovers(value);
+              settingsContext.refresh();
+            },
+            defaultValue: true,
+          ),
+          SettingsSwitchItem(
+            id: 'appearance.nsfw_blur_card_images',
+            title: t.settings_nsfw_blur_card_images,
+            subtitle: t.settings_nsfw_blur_card_images_hint,
+            icon: FushiIcons.ankiCard,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.prefsRepo.blurNsfwCardImages,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.prefsRepo.setBlurNsfwCardImages(
+                value,
+              );
               settingsContext.refresh();
             },
             defaultValue: false,
@@ -1112,3 +1204,10 @@ SettingsItem buildControllerLookupStyleItem() {
     defaultValue: ControllerLookupStyle.off,
   );
 }
+
+/// 全刷间隔下拉的选项文案：0 = 关，1 = 每页，其余 = 每 N 页。
+String einkFullRefreshIntervalLabel(int interval) => switch (interval) {
+  <= 0 => t.eink_full_refresh_interval_off,
+  1 => t.eink_full_refresh_interval_every_page,
+  _ => t.eink_full_refresh_interval_every_n_pages(n: interval),
+};

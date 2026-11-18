@@ -682,7 +682,7 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
     'ItemImages',
     'path',
     PathRebaseKind.documentsRooted,
-    'v155 条目附加图落盘位：<documents>/video_covers/items/（与 media_images '
+    'v160 条目附加图落盘位：<documents>/video_covers/items/（与 media_images '
         '同目录族）→ 不改写 = 换数据根后书架 / 游戏库系列色块的横版背景全部死链，'
         '静默退回书封摆法（DataRootMigrator._rebaseItemImages）。',
   ),

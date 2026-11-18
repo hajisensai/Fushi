@@ -718,7 +718,7 @@ String mangaPageDivHtml(
       '$sizingCss'
       'aspect-ratio:${_num(w)}/${_num(h)};">'
       '<div class="manga-source" style="position:absolute;inset:0;container-type:inline-size;">'
-      // fitToDisplay（BUG-4704）：不在 HTML 里写 src，只留 data-src；文档脚本按本页排版
+      // fitToDisplay（BUG-4855）：不在 HTML 里写 src，只留 data-src；文档脚本按本页排版
       // 宽度 × devicePixelRatio 算出需要的像素宽，再把带 `fit=` 的 src 挂上去（_refitPage），
       // 浏览器就不会先把整张原图取来解码一遍。
       '<img ${fitToDisplay ? 'data-src' : 'src'}="${_escapeAttr(imgSrc)}" loading="$loading" '
@@ -800,7 +800,7 @@ String mangaWindowDocument(
   bool enableMouseTextSelection = false,
   // 折叠屏书本姿态：双页之间留出的铰链缝（逻辑像素，见 fushiHingeGutterPx）。0 = 无缝。
   double spreadGutterPx = 0,
-  // BUG-4704：页图按显示尺寸降采样（见 manga_page_fit.dart）。只给 manga.json 带真实
+  // BUG-4855：页图按显示尺寸降采样（见 manga_page_fit.dart）。只给 manga.json 带真实
   // 像素尺寸的页（本地卷 / 已下载章）开：降采样图的 naturalWidth 不再是原图宽，页几何
   // 必须以 manga.json 的尺寸为准。
   bool fitImagesToDisplay = false,
@@ -1065,7 +1065,7 @@ String mangaWindowDocument(
       '<script>$inlineSelectionJs</script>'
       '<script>'
       'window.__mangaDocumentGeneration=$documentGeneration;'
-      '${_mangaGestureJs(isWebtoon: isWebtoon, rtl: rtl, currentSpread: currentSpread, restoreFraction: restoreFraction, zoomPercent: zoomPercent, restZoomPercent: restZoomPercent ?? zoomPercent, zoomMinPercent: zoomMinPercent, zoomMaxPercent: zoomMaxPercent, zoomSensitivity: zoomSensitivity, pageAnimation: pageAnimation, pageAnimationSpeed: pageAnimationSpeed, followDrag: followDrag, tapZonePaging: tapZonePaging, tapZoneLayout: tapZoneLayout, disableZoomOut: disableZoomOut, animateDoubleTap: animateDoubleTap, invertHorizontal: invertHorizontal, invertVertical: invertVertical, invertBoth: invertBoth, doubleTapAnimationMs: doubleTapAnimationMs, splitWidePages: splitWidePages, rotateWidePages: rotateWidePages, autoZoomWidePages: autoZoomWidePages, panWidePages: panWidePages, zoomStartPosition: zoomStartPosition, preferences: preferences, hoverKey: hoverKey, cropBorders: cropBorders, scaleType: scaleType, longStripSidePadding: longStripSidePadding, isVerticalPaged: isVerticalPaged, enableMouseTextSelection: enableMouseTextSelection, fitImagesToDisplay: fitImagesToDisplay)}'
+      '${_mangaGestureJs(isWebtoon: isWebtoon, rtl: rtl, currentSpread: currentSpread, restoreFraction: restoreFraction, zoomPercent: zoomPercent, restZoomPercent: restZoomPercent ?? zoomPercent, zoomMinPercent: zoomMinPercent, zoomMaxPercent: zoomMaxPercent, zoomSensitivity: zoomSensitivity, pageAnimation: pageAnimation, pageAnimationSpeed: pageAnimationSpeed, followDrag: followDrag, tapZonePaging: tapZonePaging, tapZoneLayout: tapZoneLayout, disableZoomOut: disableZoomOut, animateDoubleTap: animateDoubleTap, invertHorizontal: invertHorizontal, invertVertical: invertVertical, invertBoth: invertBoth, doubleTapAnimationMs: doubleTapAnimationMs, splitWidePages: splitWidePages, rotateWidePages: rotateWidePages, autoZoomWidePages: autoZoomWidePages, panWidePages: panWidePages, zoomStartPosition: zoomStartPosition, preferences: preferences, hoverKey: hoverKey, cropBorders: cropBorders, scaleType: scaleType, longStripSidePadding: longStripSidePadding, isVerticalPaged: isVerticalPaged, enableMouseTextSelection: enableMouseTextSelection, fitImagesToDisplay: fitImagesToDisplay, spreadGutterPx: spreadGutterPx)}'
       '</script>'
       '</body></html>';
 }
@@ -1165,6 +1165,7 @@ String _mangaGestureJs({
   bool isVerticalPaged = false,
   bool enableMouseTextSelection = false,
   bool fitImagesToDisplay = false,
+  double spreadGutterPx = 0,
 }) {
   // 点击翻页热区表 → JS 字面量 `[l,t,w,h,forward]` 的逗号串（外层中括号在模板里
   // 补）。几何与阅读方向镜像都在 Dart 侧算完（[mangaTapZones] 有单测），注入的脚本
@@ -1240,11 +1241,14 @@ String _mangaGestureJs({
   var IS_WEBTOON = $isWebtoon;
   // 纵向分页（pagedVertical）走 webtoon 的滚动桥，但相邻翻页要平滑滚动。
   var IS_VERTICAL_PAGED = $isVerticalPaged;
+  // 折叠屏书本姿态的铰链缝（mangaWindowDocument 的 spreadGutterPx）：有缝时双页之间
+  // 本就留空，_layoutSource 不做双页接缝的重叠。
+  var SPREAD_GUTTER = ${spreadGutterPx > 0};
   var PAN_X = 0;
   var PAN_Y = 0;
   // One source transform owns image and OCR geometry. Crop bounds stay in
   // original pixels, so selection, background OCR and captures share a frame.
-  // ── 页图按显示尺寸取图（BUG-4704）──
+  // ── 页图按显示尺寸取图（BUG-4855）──
   // 每页要的源像素宽 = 原图宽 × 排版缩放（_layoutSource 算出的 CSS px / 源 px）×
   // devicePixelRatio × 缩放档，向上取整到 FIT_STEP（拦截器按档缓存，档太碎缓存就没用）。
   // 缩放档只给屏上那一页（跨页模式的当前跨页 / 条漫里与视口相交的页），1 / 2 / 4 / 8：
@@ -1320,6 +1324,18 @@ String _mangaGestureJs({
       var gapped = prevPage &&
           parseFloat(getComputedStyle(prevPage).marginBottom) > 0;
       page.style.marginTop = prevPage && !gapped ? (-1 / dpr) + 'px' : '';
+    }
+    // 双页接缝同理（BUG-4739）：两页并排居中，页宽是小数像素，交界落在物理像素
+    // 中间，跨页中间透出一条竖缝。页宽对齐到物理像素，并让跨页里 DOM 靠后的那页
+    // 向对面页压一个物理像素——margin-inline-start 跟着 .manga-spread 的 direction
+    // 走，RTL / LTR 都朝向对面页。居中偏移本身可能是小数，有这一像素的重叠，交界
+    // 两侧的像素总有一张图整格盖住。折叠屏铰链缝是有意留空的，不压。
+    if (!IS_WEBTOON && slots === 2) {
+      var dprX = window.devicePixelRatio || 1;
+      scaleX = Math.max(1, Math.round(vw * scaleX * dprX)) / dprX / vw;
+      var facing = page.previousElementSibling;
+      page.style.marginInlineStart =
+          facing && !SPREAD_GUTTER ? (-1 / dprX) + 'px' : '';
     }
     page.style.width = (vw * scaleX) + 'px';
     page.style.height = (vh * scaleY) + 'px';
@@ -2290,7 +2306,7 @@ String _mangaGestureJs({
     if (!image) return;
     var apply = function(){
       if (!(image.naturalWidth > 0 && image.naturalHeight > 0)) return;
-      // 降采样图（BUG-4704）的 naturalWidth 是显示尺寸，不是原图宽：页几何留用
+      // 降采样图（BUG-4855）的 naturalWidth 是显示尺寸，不是原图宽：页几何留用
       // manga.json 的真实尺寸，只校宽高比。比例对不上（manga.json 记错了尺寸）就放弃
       // 降采样、换回原图，由下一次 load 按原图的真实尺寸纠正几何。
       if (_isFittedImage(image)) {
@@ -3530,7 +3546,7 @@ String _mangaGestureJs({
               LAST_VISIBLE_PAGES.indexOf(index) < 0;
         });
         LAST_VISIBLE_PAGES = visiblePages;
-        // 放大状态下滚进视口的页换缩放档、滚出去的退回 1 档（BUG-4704）。
+        // 放大状态下滚进视口的页换缩放档、滚出去的退回 1 档（BUG-4855）。
         if (ZOOM > 1.01) _scheduleRefit();
         b.callHandler('onMangaScroll', JSON.stringify({ fraction: fraction, topPage: topPage, visiblePages: visiblePages }));
       }, 120);

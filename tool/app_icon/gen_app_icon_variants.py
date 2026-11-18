@@ -1,18 +1,24 @@
-"""生成应用图标的深色 / 着色 / 单色主题变体（反馈 HsUdOMa5eq）。
+"""生成应用图标的着色 / 单色主题变体，并把深色外观钉成与浅色同一枚图标。
+
+决定 zd158djAtD（维护者 2026-11-16「取消那个变色吧」）撤回了 HsUdOMa5eq 加的深色变体：
+系统切深色模式时图标不再变色，深色外观一律用与浅色完全相同的不透明主图标。
+着色（tinted）/ 主题图标（monochrome）是用户在系统里主动开的模式，保留。
 
 浅色主图标（薰衣草底 + 投影的兔子）保持不变，本脚本只从同一张插画
 tool/app_icon/fushi_bunny_source.png 派生各平台的「系统外观」变体：
 
 - iOS / iPadOS 18+：AppIcon.appiconset 改为 Single Size（Xcode 14+ 由 1024 自动出全尺寸），
-  并加 appearance=luminosity 的 dark（透明底，系统铺深色底）与 tinted（不透明灰度，
-  系统按用户色调着色）两张 1024 图。Apple 只在 Single Size 模式支持外观变体。
+  并加 appearance=luminosity 的 dark（与 Any 逐字节相同的不透明主图标：不透明的
+  dark 图系统原样显示，不会再铺深色底；不写 dark 条目时系统可能自动派生深色版）与
+  tinted（不透明灰度，系统按用户色调着色）两张 1024 图。Apple 只在 Single Size 模式支持外观变体。
 - macOS 26+：Icon Composer 包 macos/Runner/AppIcon.icon（icon.json + Assets/），
-  浅色填充 #E6E2F6、深色填充 system-dark；着色 / 透明外观由系统按图层自动派生。
+  浅色填充 #E6E2F6，dark 外观显式写同一个浅色填充（不写会被系统派生成深色底）；
+  着色 / 透明外观由系统按图层自动派生。
   老 macOS 继续用 Assets.xcassets/AppIcon.appiconset（两者同名 AppIcon，Xcode 26
   在 26+ 取 .icon，旧系统取 appiconset）。
 - Android 13+ 主题图标：drawable/ic_launcher_monochrome.xml（只取 alpha 的单色剪影，
   眼睛镂空），与 ic_launcher_foreground 同构图（108dp 画布、兔子落在 72dp 安全区）。
-  深色模式背景色写在 values-night/colors.xml（手写，不由本脚本生成）。
+  启动器背景色只在 values/colors.xml 定义一次，values-night 不覆盖（深浅色同一枚）。
 
 在仓库根重跑（换 logo 时）：
 
@@ -85,7 +91,11 @@ def tinted_from(bunny: Image.Image) -> Image.Image:
 
 
 def write_ios(bunny: Image.Image) -> None:
-    bunny.save(os.path.join(IOS_SET, IOS_DARK), optimize=True)
+    # 深色外观 = 浅色主图标原样（决定 zd158djAtD）：逐字节复制，保持不透明。
+    with open(os.path.join(IOS_SET, IOS_ANY), "rb") as src:
+        any_bytes = src.read()
+    with open(os.path.join(IOS_SET, IOS_DARK), "wb") as dst:
+        dst.write(any_bytes)
     tinted_from(bunny).save(os.path.join(IOS_SET, IOS_TINTED), optimize=True)
     # 旧 All Sizes 的逐尺寸 PNG：Single Size 下不再引用，留着会让 actool 报
     # unassigned child。只删本 set 里的 Icon-App-*，保留 1024 主图与新变体。
@@ -139,10 +149,12 @@ def write_macos(bunny: Image.Image) -> None:
     os.makedirs(os.path.join(MAC_ICON, "Assets"), exist_ok=True)
     bunny.save(os.path.join(MAC_ICON, "Assets", MAC_LAYER), optimize=True)
     r, g, b = _srgb_to_display_p3(LIGHT_FILL_SRGB)
+    light_fill = {"solid": f"display-p3:{r:.5f},{g:.5f},{b:.5f},1.00000"}
     icon = {
         "fill-specializations": [
-            {"value": {"solid": f"display-p3:{r:.5f},{g:.5f},{b:.5f},1.00000"}},
-            {"appearance": "dark", "value": "system-dark"},
+            {"value": light_fill},
+            # 深色外观沿用浅色填充，图标不随系统深浅色变色（决定 zd158djAtD）。
+            {"appearance": "dark", "value": light_fill},
         ],
         "groups": [
             {

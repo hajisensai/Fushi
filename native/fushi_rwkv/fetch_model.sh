@@ -9,7 +9,6 @@
 # 都不入库。
 #
 # 用法: fetch_model.sh [目标目录]
-#   本机直连 GitHub 不稳时先 export HTTPS_PROXY=http://127.0.0.1:34151（curl 会读它）。
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

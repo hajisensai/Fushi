@@ -8,11 +8,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/mining/after_mining_popup_action.dart';
 import 'package:fushi/src/media/sources/manga_fushi_source.dart';
 import 'package:fushi/src/media/sources/reader_media_source.dart';
 import 'package:fushi/src/media/sources/reader_pdf_source.dart';
 import 'package:fushi_engine/media/media_pref_keys.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/base_page.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
@@ -1795,16 +1797,37 @@ class ReaderFushiSource extends ReaderMediaSource {
     await setPreference<bool>(key: 'dismiss_popup_on_scroll', value: value);
   }
 
-  /// 制卡被收下（成功 / 进待发队列）后关掉整个查词弹窗栈（用户建议 q16Apecgbg：
-  /// 「查词框妨碍阅读」）。默认关闭 = 制卡后弹窗照旧留着（既有行为）。接线在
-  /// `closePopupAfterAcceptedMine`（阅读器 / 有声书 / 走 DictionaryPageMixin 的查词
-  /// 车道共用）。视频播放页不看本开关：制卡后恒关弹窗、续播（反馈 OeS0m8tLHc，见
-  /// `DictionaryPageMixin.closePopupAfterMining` 的覆写）。
-  bool get closePopupAfterMining =>
-      getPreference<bool>(key: 'close_popup_after_mining', defaultValue: false);
+  /// [module] 里制卡被收下后查词弹窗怎么处理（拍板台 8ldy3d8XFA，取代用户建议
+  /// q16Apecgbg 的全局开关）。接线在 `closePopupAfterAcceptedMine`，两条弹窗车道
+  /// （阅读器 base_source_page / DictionaryPageMixin）都按宿主的 `lookupHostModule` 取。
+  ///
+  /// 旧开关 `close_popup_after_mining`（键冻结）只读不写：没选过的模块从它推默认，
+  /// 见 [afterMiningPopupDefault]。
+  AfterMiningPopupAction afterMiningPopupAction(ModuleId module) =>
+      resolveAfterMiningPopupAction(
+        module,
+        stored: readStoredPreference<String>(afterMiningPopupPrefKey(module)),
+        legacyCloseAfterMining: _legacyClosePopupAfterMining,
+      );
 
-  Future<void> setClosePopupAfterMining(bool value) async {
-    await setPreference<bool>(key: 'close_popup_after_mining', value: value);
+  /// [module] 没选过时的出厂默认（设置行的「恢复默认」对照它）。
+  AfterMiningPopupAction afterMiningPopupDefaultFor(ModuleId module) =>
+      afterMiningPopupDefault(
+        module,
+        legacyCloseAfterMining: _legacyClosePopupAfterMining,
+      );
+
+  bool get _legacyClosePopupAfterMining =>
+      readStoredPreference<bool>('close_popup_after_mining') ?? false;
+
+  Future<void> setAfterMiningPopupAction(
+    ModuleId module,
+    AfterMiningPopupAction action,
+  ) async {
+    await setPreference<String>(
+      key: afterMiningPopupPrefKey(module),
+      value: action.wireName,
+    );
   }
 
   /// 鼠标滚轮翻页节流间隔（毫秒），越大翻页越慢。默认 450ms。

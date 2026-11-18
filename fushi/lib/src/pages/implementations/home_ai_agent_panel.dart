@@ -31,6 +31,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart'
     show FushiTextFieldControl;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 
@@ -148,7 +149,6 @@ class HomeAiAgentPanel extends StatelessWidget {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints c) {
         final bool dense = homeWidgetIsDense(c.maxHeight);
-        final double fontSize = dense ? 14 : 16;
         return HomeWidgetFrame(
           key: const ValueKey<String>('home-ai-agent-panel'),
           tapKey: const ValueKey<String>('home-ai-agent-panel-open'),
@@ -177,6 +177,13 @@ class HomeAiAgentPanel extends StatelessWidget {
                   child: _buildInput(context, style, base),
                 );
               }
+              final FushiTypography type = context.fushiType;
+              final TextStyle hintStyle =
+                  (dense ? type.bodyMedium : type.bodyLarge).copyWith(
+                    fontWeight: FontWeight.w700,
+                    height: 1.2,
+                    color: style.accent,
+                  );
               return Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 spacing: 6,
@@ -189,17 +196,11 @@ class HomeAiAgentPanel extends StatelessWidget {
                         // 格子越高放越多行；按行高算，不溢出。
                         maxLines: homeWidgetLinesFor(
                           box.maxHeight,
-                          MediaQuery.textScalerOf(context).scale(fontSize) *
-                              1.2,
+                          homeWidgetLineHeight(context, hintStyle),
                           max: 6,
                         ),
                         overflow: TextOverflow.ellipsis,
-                        style: base.copyWith(
-                          fontSize: fontSize,
-                          fontWeight: FontWeight.w700,
-                          height: 1.2,
-                          color: style.accent,
-                        ),
+                        style: hintStyle,
                       ),
                     ),
                   ),

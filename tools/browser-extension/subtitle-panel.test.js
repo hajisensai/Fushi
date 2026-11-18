@@ -107,6 +107,20 @@ function loadController(options = {}) {
     return response;
   }
 
+  // 异步应答的消息（listener return true、稍后才 sendResponse，如面板制卡入队要等落盘）。
+  // 兑现为 { value: 应答 }——装箱防 Promise 吸收：真 chrome 会把同步回的 Promise 序列化成 {}，
+  // 不会等它兑现，替身也不能替它等。
+  function messageAsync(payload) {
+    return new Promise((resolve) => {
+      for (const listener of runtimeListeners) {
+        let answered = false;
+        const keepOpen = listener(payload, {}, (value) => { answered = true; resolve({ value }); });
+        if (answered || keepOpen === true) return;
+      }
+      resolve({ value: undefined });
+    });
+  }
+
   function fire(type, event) {
     for (const listener of docListeners[type] || []) listener(event);
     return event;
@@ -117,7 +131,7 @@ function loadController(options = {}) {
     for (const listener of storageListeners) listener(changes, 'local');
   }
 
-  return { body, video, windowObject, sent, posted, message, fire, storageChange };
+  return { body, video, windowObject, sent, posted, message, messageAsync, fire, storageChange };
 }
 
 const TRACKS = {
@@ -169,7 +183,7 @@ test('generic seek changes video time while Netflix seek keeps the DRM bridge', 
   assert.strictEqual(netflix.posted[0].ms, 1000);
 });
 
-test('track selection, offset and side-panel cue actions are routed through the content controller', () => {
+test('track selection, offset and side-panel cue actions are routed through the content controller', async () => {
   const harness = loadController({
     hostname: 'www.netflix.com', pathname: '/watch/81001', store: TRACKS,
   });
@@ -183,11 +197,33 @@ test('track selection, offset and side-panel cue actions are routed through the 
   });
   assert.strictEqual(response.ok, true);
   assert.ok(harness.sent.some((entry) => entry.prepareLookup === state.cues[0]));
-  response = harness.message({
+  response = (await harness.messageAsync({
     type: 'fushiSubtitleSidePanelMine', fields: { expression: '今日' }, cue: state.cues[0],
-  });
+  })).value;
   assert.strictEqual(response.ok, true);
   assert.ok(harness.sent.some((entry) => entry.mine && entry.mine.expression === '今日'));
+});
+
+// 反馈 heMh1hn8n4：入队只在真落盘后才 ok（异步）。面板制卡必须等那个结果再回侧栏，
+// 写盘失败要如实回 ok:false，而不是同步回一个还没兑现的 Promise / 冒充成功。
+test('side-panel mine waits for the queue write and passes a persist failure through', async () => {
+  const harness = loadController({
+    hostname: 'www.netflix.com', pathname: '/watch/81001', store: TRACKS,
+  });
+  let release;
+  harness.windowObject.fushiMineFromSidePanel = () =>
+    new Promise((resolve) => { release = resolve; });
+  const pending = harness.messageAsync({
+    type: 'fushiSubtitleSidePanelMine', fields: { expression: '今日' }, cue: null,
+  });
+  let settled = false;
+  pending.then(() => { settled = true; });
+  await new Promise((r) => setImmediate(r));
+  assert.strictEqual(settled, false, '落盘之前不得先回应答');
+  release({ ok: false, reason: 'persist-failed' });
+  const response = (await pending).value;
+  assert.strictEqual(response.ok, false);
+  assert.strictEqual(response.reason, 'persist-failed');
 });
 
 
@@ -220,6 +256,92 @@ test('BUG-2194：占位轨列在已加载轨之后，选中触发 fushiRequestLa
   const en = state.tracks.find((t) => t.lang === 'en (auto)');
   assert.deepStrictEqual([en.pending, en.length], [false, 1]);
   assert.strictEqual(state.cues.length, 1);
+});
+
+// 反馈 0RgCNJFQmJ / GitHub #3401：手动选的轨一直停在「选中加载」。桥取不到时发 cuesFailed，
+// 但扩展面板没有 fushiSubtitlePanelOnTrackFailed 接收端，回执被丢，轮询还每 5 秒重打请求。
+test('#3401：按需取轨失败 → 标 failed 并提示，不再自动重试；用户再次选中才重取；cue 到了清掉失败', () => {
+  const key = 'example.com/video/1|ja';
+  const store = {
+    'example.com/video/1|ar': [{ startMs: 1000, endMs: 2000, text: 'مرحبا' }],
+    [key]: [],
+  };
+  const harness = loadController({ store });
+  harness.windowObject.fushiLazyTracks = { [key]: true };
+  harness.windowObject.fushiTrackLabels = { [key]: '日本語' };
+  const requested = [];
+  harness.windowObject.fushiRequestLazyTrack = (k) => { requested.push(k); return true; };
+  const toasts = [];
+  harness.windowObject.fushiToast = (msg) => toasts.push(msg);
+
+  let state = harness.message({ type: 'fushiSubtitleSidePanelSelectTrack', lang: 'ja' });
+  assert.strictEqual(state.activeLang, 'ja');
+  assert.deepStrictEqual(requested, [key]);
+
+  assert.strictEqual(typeof harness.windowObject.fushiSubtitlePanelOnTrackFailed, 'function',
+    '扩展面板必须接住桥的 cuesFailed 回执');
+  harness.windowObject.fushiSubtitlePanelOnTrackFailed(key, 'no cues');
+  assert.strictEqual(toasts.length, 1, '活动轨取失败要明确提示');
+  assert.ok(toasts[0].includes('日本語'), toasts[0]);
+  state = harness.message({ type: 'fushiSubtitleSidePanelState' });
+  const ja = state.tracks.find((t) => t.lang === 'ja');
+  assert.deepStrictEqual([ja.pending, ja.failed], [true, true]);
+  assert.strictEqual(state.activeLang, 'ja', '不回落到别的轨');
+  assert.strictEqual(requested.length, 1, '失败后轮询不自动重打请求');
+
+  state = harness.message({ type: 'fushiSubtitleSidePanelSelectTrack', lang: 'ja' });
+  assert.strictEqual(requested.length, 2, '用户再次选中 → 立刻重取');
+  assert.strictEqual(state.tracks.find((t) => t.lang === 'ja').failed, false);
+
+  harness.windowObject.fushiSubtitlePanelOnTrackFailed(key, 'no cues');
+  store[key] = [{ startMs: 0, endMs: 900, text: 'こんにちは' }];
+  delete harness.windowObject.fushiLazyTracks[key];
+  harness.windowObject.fushiSubtitlePanelOnCues(key);
+  state = harness.message({ type: 'fushiSubtitleSidePanelState', includeCues: true });
+  const loaded = state.tracks.find((t) => t.lang === 'ja');
+  assert.deepStrictEqual([loaded.pending, loaded.failed, loaded.length], [false, false, 1]);
+  assert.strictEqual(state.cues[0].text, 'こんにちは');
+
+  // 非占位轨（已有 cue / 未登记）的失败回执不作数。
+  harness.windowObject.fushiSubtitlePanelOnTrackFailed('example.com/video/1|ar', 'x');
+  state = harness.message({ type: 'fushiSubtitleSidePanelState' });
+  assert.strictEqual(state.tracks.find((t) => t.lang === 'ar').failed, false);
+});
+
+// 审查 #3487：另外两个重试入口（播放器菜单 fushiSubtitleSelectTrack、手机遥控 selectTrack）
+// 同样清掉失败记录并立刻重取；失败回执的门只认 fushiLazyTracks 的自有键。
+test('#3401：播放器菜单重选失败轨 → 立刻重取；继承属性冒充不了已登记占位轨', () => {
+  const key = 'example.com/video/1|ja';
+  const store = {
+    'example.com/video/1|ar': [{ startMs: 1000, endMs: 2000, text: 'مرحبا' }],
+    [key]: [],
+  };
+  const harness = loadController({ store });
+  harness.windowObject.fushiLazyTracks = { [key]: true };
+  const requested = [];
+  harness.windowObject.fushiRequestLazyTrack = (k) => { requested.push(k); return true; };
+  const toasts = [];
+  harness.windowObject.fushiToast = (msg) => toasts.push(msg);
+
+  harness.message({ type: 'fushiSubtitleSidePanelSelectTrack', lang: 'ja' });
+  assert.strictEqual(requested.length, 1);
+  harness.windowObject.fushiSubtitlePanelOnTrackFailed(key, 'no cues');
+  let state = harness.message({ type: 'fushiSubtitleSidePanelState' });
+  assert.strictEqual(state.tracks.find((t) => t.lang === 'ja').failed, true);
+
+  assert.strictEqual(harness.windowObject.fushiSubtitleSelectTrack('ja'), true);
+  state = harness.message({ type: 'fushiSubtitleSidePanelState' });
+  assert.strictEqual(state.tracks.find((t) => t.lang === 'ja').failed, false, '播放器菜单重选清掉失败');
+  assert.strictEqual(requested.length, 2, '播放器菜单重选 → 立刻重取');
+
+  // 只登记在原型上的 key（页面可伪造 'constructor' 这类继承属性）不算占位轨。
+  const toastsBefore = toasts.length;
+  harness.windowObject.fushiLazyTracks = Object.create({ [key]: true });
+  harness.windowObject.fushiSubtitlePanelOnTrackFailed(key, 'forged');
+  harness.windowObject.fushiSubtitlePanelOnTrackFailed('constructor', 'forged');
+  harness.windowObject.fushiSubtitlePanelOnTrackFailed('__proto__', 'forged');
+  assert.strictEqual(toasts.length, toastsBefore, '继承属性不触发失败提示');
+  assert.strictEqual(({}).polluted, undefined);
 });
 
 

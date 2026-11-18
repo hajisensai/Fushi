@@ -323,6 +323,7 @@ void main() {
                 MediaSourceRow(
                   videoGroupingMode: 'series',
                   isPrivate: false,
+                  autoScan: false,
                   id: 1,
                   label: 'himoto',
                   mediaKind: 'video',
@@ -368,6 +369,7 @@ void main() {
               MediaSourceRow(
                 videoGroupingMode: 'series',
                 isPrivate: false,
+                autoScan: false,
                 id: 1,
                 label: 'himoto',
                 mediaKind: 'video',
@@ -412,6 +414,7 @@ void main() {
               MediaSourceRow(
                 videoGroupingMode: 'series',
                 isPrivate: false,
+                autoScan: false,
                 id: 1,
                 label: 'himoto',
                 mediaKind: 'video',

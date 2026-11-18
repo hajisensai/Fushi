@@ -56,7 +56,7 @@ Map<OrphanBookKind, OrphanBookRegistrar> libraryRecoveryRegistrars() =>
       OrphanBookKind.pdf: PdfImporter.registerExistingBookDir,
     };
 
-/// 设置 › 存储 →「恢复书库」入口（BUG-4701）。
+/// 设置 › 存储 →「恢复书库」入口（BUG-4852）。
 Future<void> openLibraryRecoveryPage(final SettingsContext c) =>
     Navigator.of(c.context).push<void>(
       adaptivePageRoute<void>(
@@ -66,7 +66,7 @@ Future<void> openLibraryRecoveryPage(final SettingsContext c) =>
       ),
     );
 
-/// 「恢复书库」页（BUG-4701）：覆盖导入把书库换掉之后的两条找回路径。
+/// 「恢复书库」页（BUG-4852）：覆盖导入把书库换掉之后的两条找回路径。
 ///
 /// 1. **覆盖导入前的快照**：覆盖导入成功后保留的最近一份整库快照
 ///    （`BackupRestoreService.overwriteSnapshotPath`），可只补缺地把书库行、阅读进度、
@@ -134,29 +134,13 @@ class _LibraryRecoveryPageState extends State<LibraryRecoveryPage> {
   // ── 快照 ────────────────────────────────────────────────────────
 
   Future<void> _restoreSnapshot(OverwriteSnapshotPreview snapshot) async {
-    final List<OverwriteSnapshotBook> noFiles = snapshot.booksWithoutFiles;
+    // 书文件已不在盘上的书恢复时跳过（页面上单独列出），确认框只讲会发生什么。
     final bool confirmed = await showFushiConfirmDialog(
       context: context,
       title: t.storage_recovery_snapshot_restore,
       icon: FushiIcons.restoreBackup,
       confirmLabel: t.storage_recovery_snapshot_restore,
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text(t.storage_recovery_snapshot_confirm_body),
-          if (noFiles.isNotEmpty) ...<Widget>[
-            const SizedBox(height: 12),
-            Text(
-              t.storage_recovery_snapshot_files_missing(
-                titles: noFiles
-                    .map((OverwriteSnapshotBook b) => b.title)
-                    .join('、'),
-              ),
-            ),
-          ],
-        ],
-      ),
+      message: t.storage_recovery_snapshot_confirm_body,
     );
     if (!confirmed || !mounted) return;
     // 与备份导入同一遮罩协议：上遮罩 → 等首帧 → 关库 → 合并 → 重启。
@@ -319,8 +303,8 @@ class _LibraryRecoveryPageState extends State<LibraryRecoveryPage> {
         _hint(t.storage_recovery_snapshot_none),
       ];
     }
-    final bool hasWork =
-        snapshot.missingBooks.isNotEmpty || snapshot.missingVideoCount > 0;
+    final bool hasWork = snapshot.hasRestorableContent;
+    final List<OverwriteSnapshotBook> noFiles = snapshot.booksWithoutFiles;
     return <Widget>[
       _sectionTitle(context, t.storage_recovery_snapshot_section),
       FushiGroupedList(
@@ -329,14 +313,14 @@ class _LibraryRecoveryPageState extends State<LibraryRecoveryPage> {
             leading: const FushiIcon(FushiIcons.history),
             title: Text(
               t.storage_recovery_snapshot_info(
-                time: FushiTimeFormat.dateHourMinute(snapshot.modifiedAt),
+                time: FushiTimeFormat.dateHourMinute(snapshot.createdAt),
                 size: formatStorageBytes(snapshot.sizeBytes),
               ),
             ),
             subtitle: Text(
               hasWork
                   ? t.storage_recovery_snapshot_missing(
-                      books: snapshot.missingBooks.length,
+                      books: snapshot.restorableBooks.length,
                       videos: snapshot.missingVideoCount,
                     )
                   : t.storage_recovery_snapshot_nothing,
@@ -344,6 +328,17 @@ class _LibraryRecoveryPageState extends State<LibraryRecoveryPage> {
           ),
         ],
       ),
+      _hint(
+        t.storage_recovery_snapshot_expires(
+          date: FushiTimeFormat.dayKey(snapshot.expiresAt),
+        ),
+      ),
+      if (noFiles.isNotEmpty)
+        _hint(
+          t.storage_recovery_snapshot_files_missing(
+            titles: noFiles.map((OverwriteSnapshotBook b) => b.title).join('、'),
+          ),
+        ),
       Wrap(
         spacing: 8,
         runSpacing: 8,

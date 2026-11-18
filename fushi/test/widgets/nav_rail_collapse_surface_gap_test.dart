@@ -4,7 +4,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart';
 import 'package:material_ui/material_ui.dart';
 
-/// BUG-4702：侧栏展开 / 收起过渡中，rail 面板（镂空脊色块 / 色脊色块 / 悬浮
+/// BUG-4853：侧栏展开 / 收起过渡中，rail 面板（镂空脊色块 / 色脊色块 / 悬浮
 /// 面板）必须逐帧贴着内容区起始边一起动。旧实现把面板也按**目标宽**排版、只裁
 /// 出当前宽：收起时色块瞬间缩到收起宽，占位宽（内容区起始边）还在弹簧当前值，
 /// 二者之间露出一条页面底色的竖带，镂空脊的舞台圆角贴在竖带外侧。

@@ -13,6 +13,7 @@ library;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 
 import 'package:fushi/src/models/home_widget_layout.dart';
 import 'package:fushi/src/pages/implementations/home_widget_frame.dart';
@@ -197,7 +198,9 @@ class _HomeSrsBody extends StatelessWidget {
     final HomeWidgetStyle style = HomeWidgetStyle.of(context);
     final TextStyle base =
         Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
-    final TextStyle caption = base.copyWith(fontSize: 12, color: style.muted);
+    final TextStyle caption = context.fushiType.bodySmall.copyWith(
+      color: style.muted,
+    );
     final SrsDeckListData? d = data;
     final Duration swap = fushiMotionDuration(context, FushiMotion.short);
 

@@ -12,6 +12,7 @@ import 'package:fushi/src/utils/components/fushi_fit_title.dart';
 import 'package:fushi/src/utils/components/fushi_generated_cover.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/nsfw_cover_blur.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 
@@ -1501,6 +1502,7 @@ class _DiscFace extends StatelessWidget {
 /// 圆角裁切里——整张卡由 [_FushiCoverBlockState._posed] 变换，盖层随封面一起
 /// 旋转 / 缩放 / 位移并按同一圆角裁切（盖层曾是姿态变换外的兄弟层，画成一块
 /// 不旋转的直角暗块）。
+/// 卡壳挂了要模糊的 [ShelfCoverNsfw] 时封面图打模糊（盖层不模糊）。
 class _CoverCard extends StatelessWidget {
   const _CoverCard({required this.radius, required this.child, this.overlay});
 
@@ -1529,7 +1531,10 @@ class _CoverCard extends StatelessWidget {
           children: <Widget>[
             ColoredBox(
               color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              child: child,
+              child: NsfwCoverBlur(
+                blur: ShelfCoverNsfw.blurOf(context),
+                child: child,
+              ),
             ),
             if (overlay != null) Positioned.fill(child: overlay!),
           ],

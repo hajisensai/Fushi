@@ -1184,8 +1184,8 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
                 total: total,
                 name: name,
               ),
-        // 取消闸门由 [MihonManager.installMany] 在每条之间读——正在下载的那一条
-        // 会跑完，不会半途留下残骸。
+        // 取消闸门由 [MihonManager.installMany] 在每条之间读——正在安装的那一条
+        // 会装完；并发窗口里已开下的几条等落地后丢弃、不再安装，不留残骸。
         run: (onProgress, isCancelled) => manager.installMany(
           targets,
           trustSigner: !upgrade,

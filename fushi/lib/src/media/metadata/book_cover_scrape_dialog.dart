@@ -4,13 +4,16 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/metadata/book_metadata_scrape_facade.dart';
 import 'package:fushi/src/media/metadata/book_metadata_scraper.dart';
+import 'package:fushi_engine/media/metadata/books/book_catalog.dart'
+    show findIsbnIn, normalizeIsbn13;
+import 'package:fushi_engine/media/metadata/books/rakuten_books.dart';
 import 'package:fushi_engine/media/metadata/dlsite/dlsite_client.dart';
 import 'package:fushi_engine/media/metadata/image_download.dart';
 import 'package:fushi/src/media/metadata/scrape_cover_preview.dart';
 import 'package:fushi/src/media/metadata/scrape_failure_view.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_dropdown.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
@@ -23,10 +26,13 @@ import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 书籍 / 漫画 / 有声书「在线匹配封面」弹窗（统一刮削 P1b）。
 ///
-/// 两个源用分段切换（[BookScrapeSource]）：Bangumi 书籍条目（`filter.type=[1]`）与 DLsite
-/// 音声 / 漫画 / 小说作品。默认 Bangumi——DLsite 的搜索含成人向作品，不混进普通书搜索；
-/// 预填词里认得出 DLsite 编号时默认切到 DLsite 并只填编号（直取）。选中候选后下载其封面
-/// 到临时文件并经 `Navigator.pop(`[BookCoverScrapeSelection]`)` 连同候选本身返回给调用方（候选解析与下载都经
+/// 源用下拉切换（[BookScrapeSource]，六个源分段放不下）：Bangumi 书籍条目
+/// （`filter.type=[1]`）、DLsite 音声 / 漫画 / 小说作品、AniList 轻小说、openBD（只按
+/// ISBN）、NDL Search、楽天ブックス（要设备本地凭据，没填就不出现在下拉里、下方给提示）。
+/// 默认 Bangumi——DLsite 的搜索含成人向作品，不混进普通书搜索；预填词里认得出 DLsite
+/// 编号时默认切到 DLsite 并只填编号（直取），预填词本身就是 ISBN 时默认 openBD。切到
+/// openBD 而搜索框里没有 ISBN 时，用书本身的 ISBN（[isbn]，EPUB 导入时从 OPF 读出）。
+/// 选中候选后下载其封面到临时文件并经 `Navigator.pop(`[BookCoverScrapeSelection]`)` 连同候选本身返回给调用方（候选解析与下载都经
 /// [BookMetadataScrapeFacade]，书架页的写回也经它）（书籍编辑对话框把它当作新的封面
 /// override，走既有 `setOverrideThumbnailFromMediaItem` 落地——不新增任何存储路径）。
 ///
@@ -34,11 +40,16 @@ import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 Future<BookCoverScrapeSelection?> showBookCoverScrapeDialog({
   required BuildContext context,
   required String initialQuery,
+  String? isbn,
+  RakutenBooksCredentials? rakuten,
 }) {
   return showAppDialog<BookCoverScrapeSelection>(
     context: context,
-    builder: (BuildContext ctx) =>
-        BookCoverScrapeDialog(initialQuery: initialQuery),
+    builder: (BuildContext ctx) => BookCoverScrapeDialog(
+      initialQuery: initialQuery,
+      isbn: isbn,
+      rakuten: rakuten,
+    ),
   );
 }
 
@@ -55,9 +66,17 @@ class BookCoverScrapeDialog extends StatefulWidget {
     super.key,
     required this.initialQuery,
     this.scraperOverride,
+    this.isbn,
+    this.rakuten,
   });
 
   final String initialQuery;
+
+  /// 书本身的 ISBN-13（没有为 null），openBD 预填用。
+  final String? isbn;
+
+  /// 楽天ブックス凭据（设备本地设置；注入 [scraperOverride] 时以 scraper 自带的为准）。
+  final RakutenBooksCredentials? rakuten;
 
   /// 测试注入的 scraper（注入时弹窗不负责关闭它）。
   final BookMetadataScraper? scraperOverride;
@@ -66,14 +85,23 @@ class BookCoverScrapeDialog extends StatefulWidget {
   State<BookCoverScrapeDialog> createState() => _BookCoverScrapeDialogState();
 }
 
-/// 纯函数：弹窗的初始源与搜索词。预填词里带 DLsite 编号 → (DLsite, 编号)；否则
-/// (Bangumi, 原词)。
+/// 纯函数：弹窗的初始源与搜索词。预填词里带 DLsite 编号 → (DLsite, 编号)；预填词
+/// 本身是一个 ISBN → (openBD, ISBN-13)；否则 (Bangumi, 原词)。
 (BookScrapeSource, String) bookScrapeInitialState(String initialQuery) {
   final DlsiteWorkId? id = DlsiteWorkId.findIn(initialQuery);
-  return id == null
-      ? (BookScrapeSource.bangumi, initialQuery)
-      : (BookScrapeSource.dlsite, id.value);
+  if (id != null) return (BookScrapeSource.dlsite, id.value);
+  final String? isbn = normalizeIsbn13(initialQuery);
+  if (isbn != null) return (BookScrapeSource.openbd, isbn);
+  return (BookScrapeSource.bangumi, initialQuery);
 }
+
+/// 纯函数：下拉里列出的源。楽天凭据不齐时不列（下方另给提示）。
+List<BookScrapeSource> bookScrapeSelectableSources({
+  required bool rakutenAvailable,
+}) => <BookScrapeSource>[
+  for (final BookScrapeSource s in BookScrapeSource.values)
+    if (!s.needsCredentials || rakutenAvailable) s,
+];
 
 class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
   late final TextEditingController _queryCtrl;
@@ -94,6 +122,9 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
   /// 正在下载封面的候选（在其「使用」按钮上转圈；null = 无进行中）。
   BookScrapeCandidate? _applyingCandidate;
 
+  /// 当前源只按 ISBN 查、而搜索框里没有 ISBN（结果区给提示，不发请求）。
+  bool _needsIsbn = false;
+
   @override
   void initState() {
     super.initState();
@@ -102,7 +133,8 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
     );
     _source = source;
     _queryCtrl = TextEditingController(text: query);
-    _scraper = widget.scraperOverride ?? BookMetadataScraper();
+    _scraper =
+        widget.scraperOverride ?? BookMetadataScraper(rakuten: widget.rakuten);
     _facade = BookMetadataScrapeFacade(scraper: _scraper);
     // 首帧后按预填标题自动搜一次。
     WidgetsBinding.instance.addPostFrameCallback((_) => _search());
@@ -118,9 +150,19 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
   Future<void> _search() async {
     final String keyword = _queryCtrl.text.trim();
     if (keyword.isEmpty) return;
+    if (_source.isbnOnly && findIsbnIn(keyword) == null) {
+      setState(() {
+        _needsIsbn = true;
+        _searched = false;
+        _results = const <BookScrapeCandidate>[];
+        _searchFailure = null;
+      });
+      return;
+    }
     setState(() {
       _searching = true;
       _searched = true;
+      _needsIsbn = false;
       _searchFailure = null;
     });
     List<BookScrapeCandidate> results = const <BookScrapeCandidate>[];
@@ -155,10 +197,17 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
 
   void _selectSource(BookScrapeSource source) {
     if (source == _source) return;
+    final String? isbn = widget.isbn;
+    if (source.isbnOnly &&
+        isbn != null &&
+        findIsbnIn(_queryCtrl.text) == null) {
+      _queryCtrl.text = isbn;
+    }
     setState(() {
       _source = source;
       _results = const <BookScrapeCandidate>[];
       _searched = false;
+      _needsIsbn = false;
       _searchFailure = null;
     });
     _search();
@@ -204,20 +253,34 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            adaptiveSegmentedButton<BookScrapeSource>(
-              context: context,
-              segments: <ButtonSegment<BookScrapeSource>>[
-                for (final BookScrapeSource s in BookScrapeSource.values)
-                  ButtonSegment<BookScrapeSource>(
-                    value: s,
-                    label: Text(s.label),
+            Row(
+              children: <Widget>[
+                Text(t.book_scrape_source_label),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FushiDropdown<BookScrapeSource>(
+                    key: const ValueKey<String>('book_scrape_source_picker'),
+                    options: bookScrapeSelectableSources(
+                      rakutenAvailable: _scraper.rakutenAvailable,
+                    ),
+                    initialOption: _source,
+                    enabled: !_searching,
+                    generateLabel: (BookScrapeSource s) => s.label,
+                    onChanged: (BookScrapeSource? v) {
+                      if (v != null && !_searching) _selectSource(v);
+                    },
                   ),
+                ),
               ],
-              selected: <BookScrapeSource>{_source},
-              onSelectionChanged: (Set<BookScrapeSource> v) {
-                if (v.isNotEmpty && !_searching) _selectSource(v.first);
-              },
             ),
+            if (!_scraper.rakutenAvailable)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  t.book_scrape_rakuten_unavailable,
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
             const SizedBox(height: 8),
             Row(
               children: <Widget>[
@@ -272,6 +335,11 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
         detail: failure.toString(),
       );
     }
+    if (_needsIsbn) {
+      return Center(
+        child: Text(t.book_scrape_isbn_required, textAlign: TextAlign.center),
+      );
+    }
     if (_searched && _results.isEmpty) {
       return Center(child: Text(t.book_scrape_empty));
     }
@@ -292,6 +360,8 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
       if (candidate.isAdult) 'R18',
       if (candidate.year != null) '${candidate.year}',
       if (candidate.author != null) candidate.author!,
+      if (candidate.publisher != null) candidate.publisher!,
+      if (candidate.series != null) candidate.series!,
       if (candidate.originalTitle != null) candidate.originalTitle!,
     ];
     return Padding(
@@ -299,7 +369,10 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: <Widget>[
-          ScrapeCoverPreview(url: candidate.coverUrl),
+          ScrapeCoverPreview(
+            url: candidate.coverUrl,
+            headers: candidate.coverHeaders,
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Column(

@@ -1,6 +1,9 @@
 /// 视频来源规范刮削协调器：按作品识别、抓取、写 v77/兼容投影并安全导出 NFO/图片。
 library;
 
+export 'package:fushi_engine/media/video/disc/disc_release_set.dart'
+    show stripDiscVolumeMarker;
+
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
@@ -13,8 +16,14 @@ import 'package:fushi_engine/media/video/bluray/bluray_disc.dart'
     show blurayPlaylistLooksEpisodic, kBlurayMaxPlaylistBytes;
 import 'package:fushi_engine/media/video/bluray/bluray_playlist.dart'
     show BlurayPlaylist, parseBlurayPlaylist;
+import 'package:fushi_engine/media/video/bluray/bluray_episode.dart'
+    show isBlurayEpisodePath;
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
     show isBlurayPlaylistPath;
+import 'package:fushi_engine/media/video/disc/disc_format.dart'
+    show discRootForMemberPath;
+import 'package:fushi_engine/media/video/disc/disc_release_set.dart'
+    show isGenericDiscDirectoryName, stripDiscVolumeMarker;
 import 'package:fushi_engine/media/video/metadata/anidb_file_identity_store.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_hash_identity_service.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_udp_file_client.dart';
@@ -1404,7 +1413,7 @@ class VideoSourceScrapeCoordinator
     );
     // 单标题蓝光盘：文件名是播放列表号（`00001.mpls`），按它解出来的「集号」不是
     // 形态证据。看播放列表本身——串着几段时长相近的正片就是剧集盘（只有「全部
-    // 播放」、没有逐集播放列表），否则是电影盘（BUG-4695）。
+    // 播放」、没有逐集播放列表），否则是电影盘（BUG-4846）。
     if (!localWork.isEpisodic && kindEvidence == null) {
       final VideoMetadataMediaKind? discKind = await _blurayTitleKind(
         localWork.members.single.videoPath,
@@ -1711,7 +1720,7 @@ class VideoSourceScrapeCoordinator
         primaryProvider: selectedProvider,
         // `片名 - S00E01.mkv` 这类单文件只凭文件名里的序号猜成剧集，而标题在
         // AniDB 只对得上一部电影：序号是弱证据，标题唯一精确命中是强证据
-        // （BUG-4696）。反方向不成立：电影关键词 / 没有集号都是电影证据，标题
+        // （BUG-4847）。反方向不成立：电影关键词 / 没有集号都是电影证据，标题
         // 只对上 TV 本体时改成剧集会把剧场版绑到 TV 上（BUG-2828）。
         adoptOtherKindAsMovie: kindSource == _MediaKindSource.fileNameEpisode,
       );
@@ -1917,6 +1926,7 @@ class VideoSourceScrapeCoordinator
             localWorkTitle: localWork.title,
             candidates: options,
             aiSuggestion: ai.suggestion,
+            workStableKey: localWork.stableKey,
           ),
         );
       }
@@ -2005,10 +2015,12 @@ class VideoSourceScrapeCoordinator
     final Map<String, int> identifierOffsets = _identifierEpisodeOffsets(
       localWork,
     );
-    Map<String, (int, int)> episodeOverrides = _identifierEpisodeOverrides(
-      localWork,
-      identifierOffsets,
-    );
+    // 按集展开 / 跨盘的原盘作品：集号就是成员在盘合集里的顺序（盘序 × 盘内集序），
+    // 成员文件名（`00001.p03.mpls`）不携带集号。识别词偏移照旧可以再盖上去。
+    Map<String, (int, int)> episodeOverrides = <String, (int, int)>{
+      ...discOrdinalEpisodeOverrides(localWork),
+      ..._identifierEpisodeOverrides(localWork, identifierOffsets),
+    };
     // 多季一张卡（设计稿 B）：MAL 一个 id 只是一季。本地合集含多季（季目录 /
     // 绝对集号）时，用 Fribb 同一 TMDB 剧的季条目序列把各季映射到各自 MAL id
     // 逐季抓分集，绝对集号经 anime-relations 重定向；卡片仍是这一个合集。
@@ -5233,6 +5245,8 @@ class VideoSourceScrapeCoordinator
     String videoPath,
   ) async {
     if (!isBlurayPlaylistPath(videoPath)) return null;
+    // 按集展开出来的分集成员本身就是「剧集盘的一集」。
+    if (isBlurayEpisodePath(videoPath)) return VideoMetadataMediaKind.tv;
     try {
       final File file = File(videoPath);
       if (await file.length() > kBlurayMaxPlaylistBytes) return null;
@@ -5821,7 +5835,7 @@ List<String> videoScrapeTitleCandidates({
   final List<String> directoryDerived;
   final String? discDirectory = _discReleaseDirectoryName(videoPath);
   if (discDirectory != null) {
-    // 原盘标题（BUG-4695）：成员是 `<盘根>/BDMV/PLAYLIST/00001.mpls` /
+    // 原盘标题（BUG-4846）：成员是 `<盘根>/BDMV/PLAYLIST/00001.mpls` /
     // `<盘根>/VIDEO_TS/TITLE_01.dvdtitle`。文件名是播放列表号，父 / 祖父目录是
     // `PLAYLIST` / `BDMV`——照散装文件的取法，拿去搜的是这两个词，换回一屏无关候选。
     // 能当标题的只有盘名（标题名去掉 ` - NN` 序号，再去掉「上巻 / Disc 1」这类
@@ -5864,36 +5878,40 @@ List<String> videoScrapeTitleCandidates({
   ];
 }
 
+/// 按集展开 / 跨盘的原盘剧集作品的集号：`bookUid → (1, 成员序号)`。
+///
+/// 只有「全部播放」的剧集盘按 PlayItem 切成各集后，成员路径是 `00001.p03.mpls`——
+/// 文件名里的数字是播放列表号与 PlayItem 序号，不是集号；同一发布的第二张盘更要接着
+/// 第一张数下去（下巻的第 1 集是全剧第 7 集）。计划器已经把盘合集的成员按合集内顺序
+/// 排好（入库时按盘序 × 盘内集序写进合集），这里照这个顺序编号。
+///
+/// 只作用于「含分集成员、或成员跨多张盘」的盘作品；单张逐集播放列表的盘维持按文件名
+/// 解析的旧行为。不是这种作品返回空表。
+Map<String, (int, int)> discOrdinalEpisodeOverrides(
+  VideoSourceScrapeWork work,
+) {
+  if (!work.isEpisodic) return const <String, (int, int)>{};
+  final Set<String> roots = <String>{};
+  bool anyEpisode = false;
+  for (final VideoBookRow member in work.members) {
+    final String? root = discRootForMemberPath(member.videoPath);
+    if (root == null) return const <String, (int, int)>{};
+    roots.add(root.toLowerCase());
+    anyEpisode = anyEpisode || isBlurayEpisodePath(member.videoPath);
+  }
+  if (!anyEpisode && roots.length < 2) return const <String, (int, int)>{};
+  return <String, (int, int)>{
+    for (int i = 0; i < work.members.length; i++)
+      work.members[i].bookUid: (1, i + 1),
+  };
+}
+
 /// 原盘标题名尾部的序号：多标题盘的 `<盘名> - 02`、特典的 `<盘名> - 00008`。
 final RegExp _discTitleOrdinal = RegExp(r'\s+-\s+\d{2,5}$');
-
-/// 盘名 / 发布目录名尾部的卷标：`上巻` `下巻` `第2巻` `Vol.1` `Disc 2` `BD1`。
-/// `前編` / `後編` 不在内——它们是片名的一部分（`最終楽章 前編`）。
-final RegExp _discVolumeMarker = RegExp(
-  r'[\s　._-]*(?:[上中下][巻卷]|第?\s*\d{1,2}\s*[巻卷]|'
-  r'(?:Vol(?:ume)?\.?|Disc|Disk|BD|DVD)[\s._-]*\d{1,2})$',
-  caseSensitive: false,
-);
-
-/// 只说明「这是第几张盘 / 什么介质」、不带作品名的目录名：`Disc 1` `BD` `BDROM`
-/// `DVD2` `Vol.3` `上巻`。纯数字目录不算（目录 `86` 是番名）。
-final RegExp _genericDiscDirectory = RegExp(
-  r'^(?:(?:BD(?:MV|ROM)?|DVD|BLU-?RAY|UHD|DISC|DISK|VOL(?:UME)?\.?)'
-  r'[\s._-]*\d{0,3}|[上中下][巻卷]|第?\d{1,3}[巻卷])$',
-  caseSensitive: false,
-);
 
 /// 去掉原盘标题名尾部的 ` - NN` 序号，得到盘名。
 String stripDiscTitleOrdinal(String title) =>
     title.trim().replaceFirst(_discTitleOrdinal, '').trim();
-
-/// 去掉盘名尾部的卷标（`魔女の旅々　上巻` → `魔女の旅々`）；整个名字就是卷标时
-/// 原样返回，不给出空标题。
-String stripDiscVolumeMarker(String name) {
-  final String trimmed = name.trim();
-  final String stripped = trimmed.replaceFirst(_discVolumeMarker, '').trim();
-  return stripped.isEmpty ? trimmed : stripped;
-}
 
 /// 去掉整个名字外面包着的一对书名号 / 引号（`『特別編 …』` → `特別編 …`）。
 String _unwrapTitleBrackets(String name) {
@@ -5933,7 +5951,7 @@ String? _discReleaseDirectoryName(String videoPath) {
     index--
   ) {
     final String name = segments[index].trim();
-    if (!_genericDiscDirectory.hasMatch(name)) return name;
+    if (!isGenericDiscDirectoryName(name)) return name;
   }
   return '';
 }

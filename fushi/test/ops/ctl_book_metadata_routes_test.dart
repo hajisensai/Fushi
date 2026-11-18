@@ -4,14 +4,18 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/metadata/books/rakuten_books.dart';
 
 import 'package:fushi/src/media/media_source.dart';
 import 'package:fushi/src/media/metadata/book_metadata_scrape_facade.dart';
+import 'package:fushi/src/media/metadata/book_metadata_scraper.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/ops/ctl_book_metadata_routes.dart';
 import 'package:fushi/src/ops/op_context.dart';
+import 'package:fushi/src/ops/op_descriptions_book_metadata.dart'
+    show kBookScrapeSourceNames;
 
 import 'book_metadata_test_fixture.dart';
 
@@ -36,17 +40,18 @@ void main() {
     model = BookMetaTestModel(db, prefs, thumbs);
     ref = BookMetaRef(model);
     MediaSource.setDatabase(db);
-    bookMetadataFacadeFactory = () => BookMetadataScrapeFacade(
-      scraper: offlineScraper(
-        subjects: <String, Map<String, Object?>>{
-          '11': bangumiSubject('11', 'Yotsuba to!', cn: '四叶妹妹'),
-        },
-        searchHits: <Map<String, Object?>>[
-          bangumiSubject('11', 'Yotsuba to!', cn: '四叶妹妹'),
-        ],
-      ),
-      downloadImage: fakeDownloader(thumbs),
-    );
+    bookMetadataFacadeFactory = ({RakutenBooksCredentials? rakuten}) =>
+        BookMetadataScrapeFacade(
+          scraper: offlineScraper(
+            subjects: <String, Map<String, Object?>>{
+              '11': bangumiSubject('11', 'Yotsuba to!', cn: '四叶妹妹'),
+            },
+            searchHits: <Map<String, Object?>>[
+              bangumiSubject('11', 'Yotsuba to!', cn: '四叶妹妹'),
+            ],
+          ),
+          downloadImage: fakeDownloader(thumbs),
+        );
     routes = buildBookMetadataCtlRoutes(OpContext(ref: ref));
   });
 
@@ -203,6 +208,27 @@ void main() {
     );
   });
 
+  test('apply onlyEmpty：已有 override 封面 / 显示名的字段不覆盖，全被滤掉 → 422', () async {
+    await seedBook(db, '鱼');
+    Future<Object?> apply(List<String> fields) => call(
+      'POST',
+      '$kBookMetadataCtlItems/:key/scrape',
+      params: <String, String>{'key': 'book:鱼'},
+      body: <String, Object?>{'id': '11', 'fields': fields, 'onlyEmpty': true},
+    );
+    // 起初都空：照写。
+    final Map<String, Object?> first =
+        (await apply(<String>['cover']))! as Map<String, Object?>;
+    expect(first['applied'], <String>['cover']);
+    // 已有 override 封面：封面被滤掉，只写显示名。
+    final Map<String, Object?> second =
+        (await apply(<String>['cover', 'title']))! as Map<String, Object?>;
+    expect(second['applied'], <String>['title']);
+    expect(second['requested'], <String>['title']);
+    // 两项都有值了：没东西写。
+    expect(() => apply(<String>['cover', 'title']), _ctlFailure(422));
+  });
+
   test('apply：键不对 400、视频键 422、书不存在 404、候选不存在 404、没给 id 400', () async {
     Future<Object?> apply(String key, Map<String, Object?> body) => call(
       'POST',
@@ -248,5 +274,90 @@ void main() {
       ),
       _ctlFailure(422),
     );
+  });
+
+  test('楽天：设置里没填凭据 → 422，不造门面；填齐后把凭据交给门面', () async {
+    final List<RakutenBooksCredentials?> handed = <RakutenBooksCredentials?>[];
+    final BookMetadataFacadeFactory offline = bookMetadataFacadeFactory;
+    bookMetadataFacadeFactory = ({RakutenBooksCredentials? rakuten}) {
+      handed.add(rakuten);
+      return offline(rakuten: rakuten);
+    };
+    expect(
+      () => call(
+        'GET',
+        kBookMetadataCtlSearch,
+        query: <String, String>{'query': 'x', 'source': 'rakuten'},
+      ),
+      _ctlFailure(422),
+    );
+    expect(
+      () => call(
+        'GET',
+        '$kBookMetadataCtlSearch/:source/:id',
+        params: <String, String>{'source': 'rakuten', 'id': '9784480432292'},
+      ),
+      _ctlFailure(422),
+    );
+    expect(handed, isEmpty);
+
+    await model.prefsRepo.setBookScrapeRakutenApplicationId(' app ');
+    await model.prefsRepo.setBookScrapeRakutenAccessKey('pk_x');
+    // 其余源照常可用，且同样拿到本机凭据（楽天之外忽略）。
+    await call(
+      'GET',
+      kBookMetadataCtlSearch,
+      query: <String, String>{'query': '四叶'},
+    );
+    expect(handed.single?.applicationId, 'app');
+    expect(handed.single?.accessKey, 'pk_x');
+  });
+
+  test('openbd：query 里没有 ISBN → 400', () async {
+    expect(
+      () => call(
+        'GET',
+        kBookMetadataCtlSearch,
+        query: <String, String>{'query': '薬屋のひとりごと', 'source': 'openbd'},
+      ),
+      _ctlFailure(400),
+    );
+  });
+
+  test('新源名都认（大小写不敏感），未知源 400', () async {
+    expect(BookScrapeSource.tryParse('AniList'), BookScrapeSource.anilist);
+    expect(BookScrapeSource.tryParse('ndl'), BookScrapeSource.ndl);
+    expect(BookScrapeSource.tryParse('openbd'), BookScrapeSource.openbd);
+    expect(BookScrapeSource.tryParse('rakuten'), BookScrapeSource.rakuten);
+    expect(BookScrapeSource.tryParse('google'), isNull);
+  });
+
+  test('AI 操作描述的 source 值域与 BookScrapeSource 一致', () {
+    expect(kBookScrapeSourceNames, <String>[
+      for (final BookScrapeSource s in BookScrapeSource.values) s.name,
+    ]);
+  });
+
+  test('候选线上形状带 publisher / series / volume / isbn / bannerUrl', () {
+    final Map<String, Object?> json = bookScrapeCandidateJson(
+      const BookScrapeCandidate(
+        subjectId: '99026',
+        title: '薬屋のひとりごと',
+        coverUrl: 'https://example.test/c.jpg',
+        source: BookScrapeSource.anilist,
+        publisher: 'P',
+        series: 'S',
+        volume: '1',
+        isbn: '9784480432292',
+        bannerUrl: 'https://example.test/b.jpg',
+      ),
+    );
+    expect(json['source'], 'anilist');
+    expect(json['publisher'], 'P');
+    expect(json['series'], 'S');
+    expect(json['volume'], '1');
+    expect(json['isbn'], '9784480432292');
+    expect(json['bannerUrl'], 'https://example.test/b.jpg');
+    expect(json['detailUrl'], 'https://anilist.co/manga/99026');
   });
 }

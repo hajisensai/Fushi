@@ -163,13 +163,15 @@ extension _VideoWebSource on _VideoFushiPageState {
     _customActionBindingsNotifier.value = appModel.videoCustomActionBindings;
     _videoFitMode = appModel.videoFitMode;
     // 浏览器共享的站点设置（广告拦截 / 网页深色 / 网站设置）：与 app 内浏览器同一个服务、同一份
-    // 偏好，见 `web_video_browser_settings.dart`。引擎在后台按需同步（浏览器页打开时同法）。
+    // 偏好，见 `web_video_browser_settings.dart`。与浏览器标签页同法：建 WebView 前先等缓存
+    // 引擎进内存（本地反序列化，不等网络），否则首页子资源请求与 documentStart 取的
+    // cosmetic 都落在空引擎上；联网刷新过期列表留在后台。
     final WebAdblockService adblock = ref.read(webAdblockServiceProvider);
-    unawaited(
-      adblock.ensureLoaded().catchError((Object e, StackTrace s) {
+    void logAdblockError(Object e, StackTrace s) =>
         ErrorLogService.instance.log('VideoFushi.web.adblockLoad', e, s);
-      }),
-    );
+    unawaited(adblock.ensureLoaded().catchError(logAdblockError));
+    await adblock.ensureEngineWarm().catchError(logAdblockError);
+    if (!mounted) return;
     final WebVideoSession session = WebVideoSession(
       bookUid: _activeBookUid,
       pageUrl: row.videoPath,

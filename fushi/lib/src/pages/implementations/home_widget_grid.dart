@@ -39,6 +39,7 @@ import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart'
     show kFushiCoverBlockSpacing;
+import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -200,7 +201,7 @@ class _HomeWidgetGridState extends State<HomeWidgetGrid>
       if (!mounted) return;
       final BuildContext? tile = _tileKeys[kind]?.currentContext;
       if (tile != null) {
-        Scrollable.ensureVisible(
+        FushiFocusScroll.ensureVisible(
           tile,
           duration: fushiMotionDuration(context, FushiMotion.medium),
           curve: FushiMotion.standard,
@@ -1115,9 +1116,9 @@ class _ResizePreview extends StatelessWidget {
           ),
           child: Center(
             child: DecoratedBox(
-              decoration: BoxDecoration(
+              decoration: ShapeDecoration(
                 color: scheme.primary,
-                borderRadius: BorderRadius.circular(999),
+                shape: const StadiumBorder(),
               ),
               child: Padding(
                 padding: const EdgeInsets.symmetric(

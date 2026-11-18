@@ -31,6 +31,40 @@ void main() {
       });
     });
 
+    // rT5chqFYOK：按话发布的漫画「X 第N話 前編 [hash]」每话各占一张卡。
+    test('漫画按话：第N話（可带前編 / 中編 / 後編）归到同一系列，话号不当卷号', () {
+      final Map<String, BookEpisodeNumber> episodes =
+          <String, BookEpisodeNumber>{
+            '十歳の最強魔導師 第1話 前編 [c36675f0]': (number: 1, part: 1),
+            '十歳の最強魔導師 第2話 前編 [0af1bc64]': (number: 2, part: 1),
+            '十歳の最強魔導師 第12話 前編 [64b6baac]': (number: 12, part: 1),
+            '十歳の最強魔導師 第１話 後編': (number: 1, part: 3),
+            '十歳の最強魔導師 第3話・中編': (number: 3, part: 2),
+            '十歳の最強魔導師第4話': (number: 4, part: 0),
+            '十歳の最強魔導師 第5话 后篇': (number: 5, part: 3),
+            // 话号后跟出版标签：同卷号判据先剥一层结尾标签再认。
+            '十歳の最強魔導師 第6話 前編 (少年マガジン)': (number: 6, part: 1),
+            '十歳の最強魔導師 第7話 (少年マガジン) [c36675f0]': (number: 7, part: 0),
+          };
+      episodes.forEach((String title, BookEpisodeNumber episode) {
+        final BookSeriesKey key = parseBookSeriesKey(title)!;
+        expect(key.key, '十歳の最強魔導師', reason: title);
+        expect(key.seriesTitle, '十歳の最強魔導師', reason: title);
+        expect(key.episode, episode, reason: title);
+        expect(key.volume, isNull, reason: '第 N 话不是第 N 卷：$title');
+      });
+      final BookSeriesKey volumed = parseBookSeriesKey('十歳の最強魔導師 第3巻 第12話')!;
+      expect(volumed.key, '十歳の最強魔導師');
+      expect(volumed.volume, 3);
+      expect(volumed.episode, (number: 12, part: 0));
+      // 卷号书名不受影响；目录语境里「第1話」仍是章节目录、不是分卷。
+      expect(parseBookSeriesKey('志乃と恋 第5巻')!.episode, isNull);
+      expect(
+        parseBookVolumeFolderName('第1話', seriesFolderName: '十歳の最強魔導師'),
+        isNull,
+      );
+    });
+
     test('小说：卷号贴在假名后、结尾出版标签、小数卷号', () {
       final Map<String, num?> volumes = <String, num?>{
         '安達としまむら': null,
@@ -188,7 +222,7 @@ void main() {
     });
   });
 
-  // BUG-4701：书店写法「正文 + 卷号<系列名> (文库名)」以前只看最后一个括号
+  // BUG-4852：书店写法「正文 + 卷号<系列名> (文库名)」以前只看最后一个括号
   // `(MF文庫J)`，整串成了系列键，每卷互不相同、导入后不归合集。
   group('parseBookSeriesKey（书店系列注记）', () {
     const String rezero = 'Re：ゼロから始める異世界生活';
@@ -390,6 +424,41 @@ void main() {
         await db.getAllMediaCollections(),
         hasLength(1),
         reason: '单卷作品不建合集',
+      );
+    });
+
+    test('漫画按话「第N話 前編 [hash]」并成一个合集，按话号 → 分段排；规则卷序能定序', () async {
+      final List<String> ordered = <String>[
+        '十歳の最強魔導師 第1話 前編 [c36675f0]',
+        '十歳の最強魔導師 第1話 後編',
+        '十歳の最強魔導師 第2話 前編 [0af1bc64]',
+        '十歳の最強魔導師 第10話 前編',
+        '十歳の最強魔導師 第12話 前編 [64b6baac]',
+      ];
+      final Map<String, String> uidByTitle = <String, String>{};
+      for (final String t in ordered.reversed) {
+        uidByTitle[t] = await addBook(t);
+      }
+
+      final summary = await grouper.groupAll();
+
+      expect(summary.createdCollectionIds, hasLength(1));
+      final MediaCollectionRow collection = (await db.getMediaCollectionById(
+        summary.createdCollectionIds.single,
+      ))!;
+      expect(collection.name, '十歳の最強魔導師');
+      expect(await members(collection.id), ordered);
+
+      final BookSeriesOrder order = await BookSeriesOrder.load(db);
+      expect(
+        order.orderOf(<CollectionMemberKey>[
+          for (final String t in ordered.reversed)
+            (mediaType: MediaKind.epub.dbValue, entryKey: uidByTitle[t]!),
+        ]),
+        <CollectionMemberKey>[
+          for (final String t in ordered)
+            (mediaType: MediaKind.epub.dbValue, entryKey: uidByTitle[t]!),
+        ],
       );
     });
 

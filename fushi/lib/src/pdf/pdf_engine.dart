@@ -166,26 +166,40 @@ class PdfEngine {
     int width,
     int height,
   ) async {
+    // buffer / descriptor / codec / image 四个都是原生对象，各持一份（或引用着）整页
+    // BGRA：一页 1600 宽就是十几 MB。逐页栅格化整本 PDF 时不显式 dispose、只等 GC，
+    // 原生内存会随页数一路涨。按「谁建出来就在谁的 finally 里放」逐层收。
     final ui.ImmutableBuffer buffer = await ui.ImmutableBuffer.fromUint8List(
       bgra,
     );
-    final ui.ImageDescriptor descriptor = ui.ImageDescriptor.raw(
-      buffer,
-      width: width,
-      height: height,
-      pixelFormat: ui.PixelFormat.bgra8888,
-    );
-    final ui.Codec codec = await descriptor.instantiateCodec();
-    final ui.FrameInfo frame = await codec.getNextFrame();
-    final ui.Image image = frame.image;
     try {
-      final ByteData? png = await image.toByteData(
-        format: ui.ImageByteFormat.png,
+      final ui.ImageDescriptor descriptor = ui.ImageDescriptor.raw(
+        buffer,
+        width: width,
+        height: height,
+        pixelFormat: ui.PixelFormat.bgra8888,
       );
-      return png?.buffer.asUint8List();
+      try {
+        final ui.Codec codec = await descriptor.instantiateCodec();
+        try {
+          final ui.FrameInfo frame = await codec.getNextFrame();
+          final ui.Image image = frame.image;
+          try {
+            final ByteData? png = await image.toByteData(
+              format: ui.ImageByteFormat.png,
+            );
+            return png?.buffer.asUint8List();
+          } finally {
+            image.dispose();
+          }
+        } finally {
+          codec.dispose();
+        }
+      } finally {
+        descriptor.dispose();
+      }
     } finally {
-      image.dispose();
-      codec.dispose();
+      buffer.dispose();
     }
   }
 }

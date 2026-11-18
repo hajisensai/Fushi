@@ -39,6 +39,7 @@ import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
     show shelfCoverCard;
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
+import 'package:fushi/src/utils/components/nsfw_cover_blur.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart'
     show
         FushiSpring,
@@ -2750,7 +2751,7 @@ class NavRailSyncedContent extends StatelessWidget {
 ///
 /// 旧实现把整块面板也放进「按目标宽排版」的 OverflowBox：收起时色块立刻缩到
 /// 收起宽，而占位宽（内容区起始边）还停在弹簧当前值上，二者之间露出一条页面
-/// 底色的竖带，镂空脊的舞台圆角也贴在竖带外侧（BUG-4702）。静止时两层同宽、
+/// 底色的竖带，镂空脊的舞台圆角也贴在竖带外侧（BUG-4853）。静止时两层同宽、
 /// 不裁剪，几何与不包时一致。树结构不随动画增删层级，目的地的焦点目标不会
 /// 重挂。墨水屏 / 减弱动态效果下瞬间到位。
 class _AnimatedRailWidth extends StatefulWidget {

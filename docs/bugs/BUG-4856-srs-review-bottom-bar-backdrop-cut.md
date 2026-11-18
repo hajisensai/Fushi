@@ -1,0 +1,6 @@
+## BUG-4856 · SRS 复习页底栏画不透明底板，页面背景（柔光等）在底部被截成白条
+- **报告**：2026-11-15（用户：所有者群截图，Android 竖屏 SRS 复习「显示答案」，背景「柔光晕染」，原话「底部怎么没进去」「左下角」）
+- **真实性**：✅ 真 bug，`upstream/develop` 现状即有。根因 `fushi/lib/src/pages/implementations/srs/srs_review_page.dart:2891-2915`（develop 行号 2904-2906）`_withBottomBarScrim`：原生卡面（Fushi 卡片 / 原生 HTML 卡面）铺在底栏背后滚动，为挡住滚到底栏背后的内容，底栏一律垫「透明 → `colorScheme.surface`（stop 0.3 起不透明）」的底板。卡面跟随 app 配色时本身透明、背后是路由层 `FushiPageBackdrop` 画的页面背景，这块不透明底板把柔光 / 形状 / 自定义图片在底栏上沿约 30% 处一刀截成白条（截图 y≈1640 起整条纯白，左下那团柔光被截断）。另：判据只看 `colorSource == custom`、不看是否 Fushi 卡片，原生 HTML 卡面 + 自定义配色时底板色与卡面实际底色也对不上。
+- **[x] ① 已修复** — 底栏只在卡面自己铺底（`srsCardPaintsOwnSurfaceFor`：Fushi 卡片 + 自定义配色，整面已是卡面底色、页面背景本就被盖住）时垫同色底板；其余情况底栏不画任何底，页面背景铺到屏幕底边，滚到底栏背后的卡面内容改由恒在的 `ClipRect(_SrsBottomCutClipper)` 在底栏上沿裁掉（裁切对释义 WebView 平台视图同样生效；遮罩 / 模糊在 Android HC 与 Apple 上采不到平台视图，不用）。MD3 / Apple、深浅色、各背景预设同一路径。判据抽成 `srs_card_face.dart` 的 `srsCardPaintsOwnSurfaceFor`，`srsCardPaintsOwnSurface` 委托它。提交：未提交（工作区改动，待集成者提交）。
+- **[x] ② 已加自动化测试** — `fushi/test/srs/srs_review_native_card_inset_test.dart`：MD3 / Apple × 浅色 / 深色四种组合下，「显示答案」行与空格翻面后的评分按钮行往上到卡面宿主的祖先链都无不透明底（ColoredBox / DecoratedBox / Material）、卡面裁切高度 = 当前底栏高度；WebView 卡面不裁不垫；自定义配色仍垫同色底板且不裁。
+- **备注**：截图左下悬浮球（应用内球，用户可拖、停靠在左边缘）与「🔊1」重听键左上角有约 20px 重叠。悬浮球没有按页面避让的机制（活动范围只扣系统 inset，位置由用户拖定），不属本 bug 根因，未改；是否要做「页面底栏避让区」属新行为，待所有者拍板。设备肉眼复测原始失败路径待补（本轮无法在不覆盖用户 app 的前提下装到真机）。

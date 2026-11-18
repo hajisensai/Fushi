@@ -82,7 +82,7 @@ void main() {
     return app.path;
   }
 
-  test('BUG-4711：只设 FUSHI_TEST_ROOT 时连 <测试根>/ctl 的实例', () async {
+  test('BUG-4862：只设 FUSHI_TEST_ROOT 时连 <测试根>/ctl 的实例', () async {
     final String testRoot = p.join(root.path, 'test-root');
     final CtlServer server = CtlServer(
       handler: FakeHandler()..initialised = true,

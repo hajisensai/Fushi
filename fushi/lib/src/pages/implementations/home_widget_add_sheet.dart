@@ -14,6 +14,7 @@ import 'package:fushi/src/models/home_widget_layout.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
     show FushiModalSheetFrame, FushiSearchField;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -337,12 +338,11 @@ class _SizeThumb extends StatelessWidget {
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: color.primaryContainer,
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: FushiBorderRadius.chip,
         ),
         child: Text(
           '$size',
-          style: TextStyle(
-            fontSize: 11,
+          style: context.fushiType.labelSmall.copyWith(
             fontWeight: FontWeight.w700,
             color: color.onPrimaryContainer,
           ),

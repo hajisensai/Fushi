@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -1849,6 +1850,9 @@ class _GameCoverArt extends StatelessWidget {
   /// 解码宽度：大卡用默认档，缩略图 / 小封面传 [kActivityCoverDecodePixelWidth]。
   final int decodeWidth;
 
+  /// 本页所有游戏封面（继续卡、最近玩过、动态行缩略图）都经过这里：NSFW
+  /// （成人向标记或所在 NSFW 合集，拍板台 w04vrhUAaX）在这一处统一打模糊。小缩略图
+  /// 不压「已隐藏」图标。
   @override
   Widget build(BuildContext context) {
     final ImageProvider? provider = resolveMediaCoverImage(
@@ -1857,11 +1861,15 @@ class _GameCoverArt extends StatelessWidget {
       decodeWidth: decodeWidth,
     );
     if (provider == null) return _GameCoverPlaceholder(game: game);
-    return Image(
-      image: provider,
-      fit: BoxFit.cover,
-      errorBuilder: (BuildContext context, Object error, StackTrace? stack) =>
-          _GameCoverPlaceholder(game: game),
+    return MediaNsfwCover(
+      target: MediaNsfwTarget.game(game.id, adult: game.isNsfw),
+      showIcon: decodeWidth > kActivityCoverDecodePixelWidth,
+      child: Image(
+        image: provider,
+        fit: BoxFit.cover,
+        errorBuilder: (BuildContext context, Object error, StackTrace? stack) =>
+            _GameCoverPlaceholder(game: game),
+      ),
     );
   }
 }

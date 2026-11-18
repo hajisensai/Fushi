@@ -6,7 +6,7 @@ import '../helpers/source_guard.dart';
 
 /// 书 / 漫画「导入」视图（导入稿 v2）接线守卫。
 ///
-/// - BUG-4708（IM2）：导入视图画着拖放虚线与悬停态，祖先链上却没有
+/// - BUG-4859（IM2）：导入视图画着拖放虚线与悬停态，祖先链上却没有
 ///   `FushiFileDropTarget`；书架 / 漫画库的落点又被壳的 `DropSurfaceScope` 关在
 ///   隐藏视图里，拖进来什么都不发生。现在两页的 spec 都给 `onDrop`，骨架据此整页包
 ///   落点，落下走与书架同一份 `routeReaderShelfDrop`（不另写分发）。
@@ -36,7 +36,7 @@ void main() {
     'lib/src/media/drag_drop/reader_shelf_drop_router.dart',
   );
 
-  group('BUG-4708：书 / 漫画导入视图整页是落点，走书架同一份分发', () {
+  group('BUG-4859：书 / 漫画导入视图整页是落点，走书架同一份分发', () {
     for (final (String name, String source, String mangaOnly)
         in <(String, String, String)>[
           ('book', book, 'mangaOnly: false'),

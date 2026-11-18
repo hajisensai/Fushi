@@ -10,6 +10,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 
 import 'package:fushi/src/media/panorama/panorama_library.dart';
 import 'package:fushi/src/media/panorama/panorama_page.dart';
@@ -80,10 +81,16 @@ class HomePanoramaPanel extends ConsumerWidget {
         child: LayoutBuilder(
           builder: (BuildContext context, BoxConstraints box) {
             final HomeWidgetStyle style = HomeWidgetStyle.of(context);
-            final TextStyle base =
-                Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
-            final TextScaler scaler = MediaQuery.textScalerOf(context);
-            final double statusLine = scaler.scale(16) * 1.25;
+            final FushiTypography type = context.fushiType;
+            final TextStyle statusStyle = type.bodyLarge.copyWith(
+              fontWeight: FontWeight.w700,
+              height: 1.25,
+              color: style.accent,
+            );
+            final double statusLine = homeWidgetLineHeight(
+              context,
+              statusStyle,
+            );
             // 按钮行按剩余高度收内边距（最多默认 8）：半栏 1×1 的窄网格一行高格子
             // 只剩按钮行那么高，也不溢出。
             final double buttonPad = ((box.maxHeight - 20) / 2).clamp(2, 8);
@@ -121,12 +128,7 @@ class HomePanoramaPanel extends ConsumerWidget {
                         max: 6,
                       ),
                       overflow: TextOverflow.ellipsis,
-                      style: base.copyWith(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        height: 1.25,
-                        color: style.accent,
-                      ),
+                      style: statusStyle,
                     ),
                   ),
                 Row(
@@ -141,8 +143,7 @@ class HomePanoramaPanel extends ConsumerWidget {
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: base.copyWith(
-                                fontSize: 12,
+                              style: type.bodySmall.copyWith(
                                 color: style.muted,
                               ),
                             ),

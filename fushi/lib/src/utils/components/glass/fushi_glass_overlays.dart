@@ -11,6 +11,7 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
 import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_compact_landscape.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_menu_presence.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
@@ -74,6 +75,31 @@ const EdgeInsets _kDialogInsetPadding = EdgeInsets.symmetric(
   horizontal: 40,
   vertical: 24,
 );
+
+/// 对话框外边距的单一解析：调用方 > 主题 > Material 默认，横屏矮窗口再经
+/// [fushiCompactLandscapeInset] 收紧（拍板台 MANKlxTTpV：横屏手机上下 24+24 的
+/// 留白吃掉 ~12% 的屏高）。MD3 与 Apple 外壳共用。
+EdgeInsets _resolveDialogInset(BuildContext context, EdgeInsets? insetPadding) {
+  return fushiCompactLandscapeInset(
+    MediaQuery.sizeOf(context),
+    insetPadding ??
+        DialogTheme.of(context).insetPadding ??
+        _kDialogInsetPadding,
+  );
+}
+
+/// MD3 对话框默认约束（[_kMd3DialogConstraints]），横屏矮窗口放宽宽度上限
+/// （[fushiCompactLandscapeConstraints]）；调用方显式给的约束照用。
+BoxConstraints _resolveMd3DialogConstraints(
+  BuildContext context,
+  BoxConstraints? constraints,
+) {
+  return constraints ??
+      fushiCompactLandscapeConstraints(
+        MediaQuery.sizeOf(context),
+        _kMd3DialogConstraints,
+      );
+}
 
 /// 浮层面板（对话框 / 菜单 / 提示条）的玻璃参数。液态档沿用库 Messages
 /// 演示里 `_kMenuGlass` 的 iOS 26 实测值（深色 #262626 @50%、浅色白 @15%、
@@ -356,6 +382,7 @@ class _FushiGlassDialogShell extends StatelessWidget {
     this.insetAnimationDuration = const Duration(milliseconds: 100),
     this.insetAnimationCurve = Curves.decelerate,
     this.fullscreen = false,
+    this.widenInCompactLandscape = true,
   });
 
   final Widget child;
@@ -371,6 +398,10 @@ class _FushiGlassDialogShell extends StatelessWidget {
   final Curve insetAnimationCurve;
   final bool fullscreen;
 
+  /// 横屏矮窗口是否放宽 [defaultConstraints] 的宽度上限。iOS 纯文字 alert 宽度
+  /// 固定（不随窗口伸缩），传 false。
+  final bool widenInCompactLandscape;
+
   @override
   Widget build(BuildContext context) {
     final DialogThemeData dialogTheme = DialogTheme.of(context);
@@ -385,7 +416,15 @@ class _FushiGlassDialogShell extends StatelessWidget {
     }
     final EdgeInsets effectivePadding =
         MediaQuery.viewInsetsOf(context) +
-        (insetPadding ?? dialogTheme.insetPadding ?? _kDialogInsetPadding);
+        _resolveDialogInset(context, insetPadding);
+    final BoxConstraints effectiveConstraints =
+        constraints ??
+        (widenInCompactLandscape
+            ? fushiCompactLandscapeConstraints(
+                MediaQuery.sizeOf(context),
+                defaultConstraints,
+              )
+            : defaultConstraints);
     return Semantics(
       role: semanticsRole,
       child: AnimatedPadding(
@@ -401,7 +440,7 @@ class _FushiGlassDialogShell extends StatelessWidget {
           child: Align(
             alignment: alignment ?? dialogTheme.alignment ?? Alignment.center,
             child: ConstrainedBox(
-              constraints: constraints ?? defaultConstraints,
+              constraints: effectiveConstraints,
               child: surface,
             ),
           ),
@@ -644,13 +683,11 @@ class FushiAlertDialog extends StatelessWidget {
         shadowColor: shadowColor,
         surfaceTintColor: surfaceTintColor,
         semanticLabel: semanticLabel,
-        insetPadding:
-            insetPadding ??
-            const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
+        insetPadding: _resolveDialogInset(context, insetPadding),
         clipBehavior: clipBehavior,
         shape: shape,
         alignment: alignment,
-        constraints: constraints ?? _kMd3DialogConstraints,
+        constraints: _resolveMd3DialogConstraints(context, constraints),
         scrollable: scrollable ?? false,
         scrollController: scrollController,
         actionScrollController: actionScrollController,
@@ -681,11 +718,11 @@ class FushiAlertDialog extends StatelessWidget {
         shadowColor: shadowColor,
         surfaceTintColor: surfaceTintColor,
         semanticLabel: semanticLabel,
-        insetPadding: insetPadding,
+        insetPadding: _resolveDialogInset(context, insetPadding),
         clipBehavior: clipBehavior,
         shape: shape,
         alignment: alignment,
-        constraints: constraints ?? _kMd3DialogConstraints,
+        constraints: _resolveMd3DialogConstraints(context, constraints),
         scrollable: scrollable ?? false,
       );
     }
@@ -862,6 +899,7 @@ class FushiAlertDialog extends StatelessWidget {
         minWidth: _kGlassAlertMinWidth,
         maxWidth: _kGlassAlertMaxWidth,
       ),
+      widenInCompactLandscape: false,
       clipBehavior: clipBehavior,
       semanticsRole: SemanticsRole.alertDialog,
       child: _assemble(head, contentWidget, actionsWidget),
@@ -1008,11 +1046,11 @@ class FushiSimpleDialog extends StatelessWidget {
         shadowColor: shadowColor,
         surfaceTintColor: surfaceTintColor,
         semanticLabel: semanticLabel,
-        insetPadding: insetPadding,
+        insetPadding: _resolveDialogInset(context, insetPadding),
         clipBehavior: clipBehavior,
         shape: shape,
         alignment: alignment,
-        constraints: constraints ?? _kMd3DialogConstraints,
+        constraints: _resolveMd3DialogConstraints(context, constraints),
         children: children,
       );
     }
@@ -1214,7 +1252,7 @@ class FushiDialog extends StatelessWidget {
         surfaceTintColor: surfaceTintColor,
         insetAnimationDuration: insetAnimationDuration,
         insetAnimationCurve: insetAnimationCurve,
-        insetPadding: insetPadding,
+        insetPadding: _resolveDialogInset(context, insetPadding),
         clipBehavior: clipBehavior,
         shape: shape,
         alignment: alignment,

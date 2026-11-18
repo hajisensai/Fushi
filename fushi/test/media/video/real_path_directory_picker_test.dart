@@ -96,7 +96,7 @@ void main() {
       expect(body, isNotEmpty, reason: '来源视图必须保留公开的 addSource 入口');
       expect(body, contains('showImportChoiceDialog<_AddSourceChoice>'));
       expect(body, contains('await addLocalFolder()'));
-      // 网络传输集只在 import_surface_spec.dart 定义一次（BUG-4707 / IM10）。
+      // 网络传输集只在 import_surface_spec.dart 定义一次（BUG-4858 / IM10）。
       expect(
         File(
           'lib/src/media/import/import_surface_spec.dart',

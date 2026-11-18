@@ -281,19 +281,27 @@ class AudiobookRepository {
   /// 关书时先落阅读位置再 flush 音频——若每次 flush 都重盖时间戳，音频进度就永远比
   /// 阅读进度「更新」，开书 LWW 仲裁会被写入顺序而不是用户行为决定（暂停在第 3 章、
   /// 静读到第 10 章关书，重开跳回第 3 章）。
+  ///
+  /// 「比位置 → 写位置 → 写时间戳」在**同一个事务**里（BUG-4825）：同步侧的「比较后
+  /// 写入」（`FushiDatabase.runIfIntPrefUnchanged`）把这两个键当一对读写，这里若是
+  /// 两次独立提交，对端断点就能插进两次写之间——落下「对端的位置 + 本机的时间戳」，
+  /// 进程在两次写之间被杀则是「新位置 + 旧时间戳」，LWW 拿一个不属于这个位置的时刻
+  /// 去比。播放中每个整秒走一次这里，合成一次提交也少一次 fsync 与一次偏好版本号
+  /// 自增。
   Future<void> updatePositionMs({
     required String bookKey,
     required int positionMs,
-  }) async {
+  }) => _db.transaction(() async {
     final String posKey = '$_kPositionMsKeyPrefix$bookKey';
     final int current = await _db.getPrefTyped<int>(posKey, 0);
     if (current == positionMs) return;
-    await _db.setPrefTyped(posKey, positionMs);
-    await _db.setPrefTyped(
-      '$_kPositionAtMsKeyPrefix$bookKey',
-      DateTime.now().millisecondsSinceEpoch,
-    );
-  }
+    await _db.setPrefs(<String, String>{
+      posKey: PrefCodec.encode(positionMs),
+      '$_kPositionAtMsKeyPrefix$bookKey': PrefCodec.encode(
+        DateTime.now().millisecondsSinceEpoch,
+      ),
+    });
+  });
 
   /// BUG-3197：cue 整组换过之后，把 `audiobook_pos_<positionKey>` 存着的全书毫秒
   /// 从 [oldDurationsMs] 编码换算到 [newDurationsMs] 编码（真实时间位置不变，见

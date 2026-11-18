@@ -409,6 +409,10 @@ void main() {
       playlistCollectionId: collection.id,
     );
     expect(identical(launch.client, browser.playbackClient), isTrue);
+    // 重开入口那一次取详情要标明是起播（失败留给取流直接抛，见
+    // LaunchItemDetailMemo）；别处取详情不带这个标记。
+    expect(browser.itemDetailCalls, 1);
+    expect(browser.launchItemDetailCalls, 1);
     expect(launch.members.map((RemoteVideoInfo i) => i.id), <String>[
       'e1',
       'e2',

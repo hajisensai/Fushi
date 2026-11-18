@@ -767,10 +767,10 @@ void main() {
     );
   });
 
-  // BUG-4710：色块外观「最近添加」的半高色块外面曾包一层 ClipRect，把块的投影
+  // BUG-4861：色块外观「最近添加」的半高色块外面曾包一层 ClipRect，把块的投影
   // 齐格子边切成直角矩形（左上角 / 右缘能看到一条直边）。块到格子之间不许有
   // 任何裁切层，投影要伸进格间距（与「继续」的半高块同口径）。
-  testWidgets('色块「最近添加」：半高色块到格子之间没有裁切层，投影不被切成直角矩形（BUG-4710）', (
+  testWidgets('色块「最近添加」：半高色块到格子之间没有裁切层，投影不被切成直角矩形（BUG-4861）', (
     WidgetTester tester,
   ) async {
     dashboardLayout = ShellContentLayout.collage;
@@ -2617,6 +2617,36 @@ void main() {
     expect(onlyHero(tester).title, '继续看的视频');
     await pumpDashboard(tester);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('色块「今日」宽格设了目标：目标进度与今日时长同一行都显示（时长不被目标挤掉）', (
+    WidgetTester tester,
+  ) async {
+    dashboardLayout = ShellContentLayout.collage;
+    useSize(tester, const Size(1280, 900));
+    await appModel.setReadingGoalDailyChars(1000);
+    // 今天读 800 字 / 10 分钟（seedSampleData）。
+    await seedSampleData();
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    final Finder goal = find.descendant(
+      of: find.byKey(studyCardKey),
+      matching: find.text(t.stat_goal_progress(read: 800, goal: 1000)),
+    );
+    final Finder time = find.descendant(
+      of: find.byKey(const ValueKey<String>('home-today-time')),
+      matching: find.text(formatStatTime(600000)),
+    );
+    expect(goal, findsOneWidget);
+    expect(time, findsOneWidget);
+    final RenderParagraph timeText = tester.renderObject<RenderParagraph>(time);
+    expect(timeText.didExceedMaxLines, isFalse);
+    final Rect g = tester.getRect(goal);
+    final Rect tm = tester.getRect(time);
+    expect((g.center.dy - tm.center.dy).abs(), lessThan(4));
+    expect(tm.left, greaterThan(g.right));
   });
 
   testWidgets('今日目标：未设目标只显示设定入口；对话框设 1000 后进度行 = 800/1000', (

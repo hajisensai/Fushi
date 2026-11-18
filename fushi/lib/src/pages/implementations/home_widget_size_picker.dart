@@ -131,7 +131,7 @@ class _HomeWidgetSizePickerState extends State<HomeWidgetSizePicker> {
                   : (belowMin
                         ? outline.withValues(alpha: 0.08)
                         : outline.withValues(alpha: 0.16)),
-              borderRadius: BorderRadius.circular(6),
+              borderRadius: FushiBorderRadius.chip,
               border: Border.all(
                 color: _focused == size
                     ? primary

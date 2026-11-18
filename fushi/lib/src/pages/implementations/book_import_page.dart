@@ -11,6 +11,7 @@ import 'package:fushi/src/media/drag_drop/drop_classification.dart'
     show kDragAudioExtensions, kDragBookExtensions, kDragSubtitleExtensions;
 import 'package:fushi/src/media/drag_drop/reader_shelf_drop_router.dart';
 import 'package:fushi/src/media/import/import_collage_page.dart';
+import 'package:fushi/src/media/import/import_inbox.dart';
 import 'package:fushi/src/media/import/import_surface_spec.dart';
 import 'package:fushi/src/media/import/pasted_text_book_dialog.dart';
 import 'package:fushi/src/media/media_item.dart';
@@ -87,6 +88,13 @@ class _BookImportPageState extends ConsumerState<BookImportPage> {
     _invalidateBookProviders();
   }
 
+  /// 「从『文件』App 导入」：收 `我的 iPhone › Fushi › 书子目录` 里的文件（重入保护在
+  /// [MediaSourcesViewState.importFromInbox] 入口）。
+  Future<void> _importFromInbox() async {
+    await _viewKey.currentState?.importFromInbox();
+    _invalidateBookProviders();
+  }
+
   /// 「粘贴文本」：落成书库里的一本书后直接打开阅读器（反馈 f2k9m1oU0j）。
   Future<void> _readPastedText() async {
     final String? bookKey = await showAppDialog<String>(
@@ -150,6 +158,20 @@ class _BookImportPageState extends ConsumerState<BookImportPage> {
           destination: ImportDestination.choice,
           onTap: _importFolder,
         ),
+        // iOS「文件」App 收件箱（拍板台 nLXhu0d7gV）：其它平台没有收件箱，不放空壳入口。
+        if (ImportInbox.isSupported)
+          ImportMethod(
+            id: 'book-inbox',
+            kind: ImportMethodKind.folder,
+            icon: FushiIcons.folderOpen,
+            label: t.media_import_inbox,
+            description: t.media_import_inbox_hint(
+              folder: ImportInbox.folderNameFor('book') ?? '',
+            ),
+            destination: ImportDestination.dialog,
+            enabled: _viewKey.currentState?.isBusy != true,
+            onTap: _importFromInbox,
+          ),
         ImportMethod(
           id: 'book-paste-text',
           kind: ImportMethodKind.pasteText,

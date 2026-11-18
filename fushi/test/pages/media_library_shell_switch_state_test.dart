@@ -10,7 +10,7 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
         FushiFloatingChromeInset,
         FushiFloatingChromeScope;
 
-/// BUG-4694：库页「书架 / 在线」切换时页头与内容状态错位、点下去要等。
+/// BUG-4845：库页「书架 / 在线」切换时页头与内容状态错位、点下去要等。
 ///
 /// 录屏现象：从「在线」切回滚到中段的「书架」，第一帧是展开的大号页头压在按旧
 /// 滚动位置画的书架内容上，下一帧页头才缩回小号。根因是浮动工具栏状态（显隐 /

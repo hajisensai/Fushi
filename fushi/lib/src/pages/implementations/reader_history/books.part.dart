@@ -76,6 +76,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     );
     return _bookCardShell(
       slotAspectRatio: kShelfBookCardAspectRatio,
+      nsfw: MediaNsfwTarget.srtBook(book.uid),
       cardKey: ValueKey<String>('srt_entry_${book.uid}'),
       focusId: FushiFocusId('${focusIdPrefix}reader-shelf-srt-${book.uid}'),
       selectionKey: selectable ? selKey : null,
@@ -408,6 +409,18 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           MediaRef(kind: MediaKind.srt, entryKey: book.uid),
         ),
       ),
+      // NSFW：「模糊 NSFW 封面」开着时书架封面打模糊（身份 = SrtBooks.uid）。
+      DialogListAction(
+        label: t.media_nsfw_action,
+        icon: FushiIcons.visibilityOff,
+        onPressed: () => showMediaNsfwDialog(
+          context,
+          db: appModel.database,
+          kind: TagHostKind.srt,
+          entryKey: book.uid,
+          title: item.title,
+        ),
+      ),
       // 「重新导入」：音频 + 字幕两半一起换。旧入口叫「导入音频」且只能换音频，
       // 字幕书的字幕在首次导入后全仓无处可换（用户报「有声书没办法重新导入 /
       // 导不了字幕文件」）。对 bookKey 为空的孤儿字幕书同样可见——它们才是最需要
@@ -534,6 +547,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       builder: (ctx) => MediaItemDialogPage(
         item: _srtBookMediaItem(book),
         isHistory: true,
+        nsfw: MediaNsfwTarget.srtBook(book.uid),
         showLaunchAction: false,
         // TODO-1094：SRT 无自选封面且未关联 EPUB 封面时，长按对话框显示与网格
         // `_buildSrtCover` 同判据的占位图标（耳机/字幕），而非整块隐藏封面区。

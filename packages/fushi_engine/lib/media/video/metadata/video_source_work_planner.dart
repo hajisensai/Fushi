@@ -72,20 +72,49 @@ bool videoBookJoinsScrapePlan(VideoBookRow book) =>
     classifyLocalVideoExtra(book.videoPath) == null &&
     !isYtDlpYoutubeDownloadPath(book.videoPath);
 
+/// [VideoSourceWorkPlanner.plan] 要读的三张整表的一次性快照。
+///
+/// 计划只按 `sourceId` 过滤、按合集归组，三张表与来源无关；一轮里要规划多个
+/// 来源的调用方（后台补刮的待确认清单）读一次、每个来源复用，而不是每个来源
+/// 各读三次整表。快照只在一轮计划内有效，不跨轮缓存。
+class VideoLibraryPlanSnapshot {
+  const VideoLibraryPlanSnapshot({
+    required this.books,
+    required this.collectionItems,
+    required this.collections,
+  });
+
+  final List<VideoBookRow> books;
+  final List<MediaCollectionItemRow> collectionItems;
+  final List<MediaCollectionRow> collections;
+
+  static Future<VideoLibraryPlanSnapshot> load(FushiDatabase database) async =>
+      VideoLibraryPlanSnapshot(
+        books: await database.allVideoBooks(),
+        collectionItems: await database.getAllCollectionItems(),
+        collections: await database.getAllMediaCollections(),
+      );
+}
+
 /// 从已入库的 `sourceId` 与合集成员关系生成按作品去重的刮削计划。
 class VideoSourceWorkPlanner {
   const VideoSourceWorkPlanner(this._database);
 
   final FushiDatabase _database;
 
-  Future<List<VideoSourceScrapeWork>> plan(SourceLibraryRow source) async {
+  /// [snapshot] 省略时自己读三张表（单来源调用方）；传入时不再读这三张表。
+  Future<List<VideoSourceScrapeWork>> plan(
+    SourceLibraryRow source, {
+    VideoLibraryPlanSnapshot? snapshot,
+  }) async {
     if (!videoSourcePlansScrapeWorks(source)) {
       return const <VideoSourceScrapeWork>[];
     }
 
-    final List<VideoBookRow> sourceBooks = (await _database.allVideoBooks())
-        .where((VideoBookRow row) => row.sourceId == source.id)
-        .toList();
+    final List<VideoBookRow> sourceBooks =
+        (snapshot?.books ?? await _database.allVideoBooks())
+            .where((VideoBookRow row) => row.sourceId == source.id)
+            .toList();
     if (sourceBooks.isEmpty) return const <VideoSourceScrapeWork>[];
     // 蓝光盘的特典（正片集合之外、远短于正片的标题，以及没被选成标题的播放
     // 列表）：盘名就是片名，各自拿去识别只会把制作特辑认成整部电影。正片不在库时
@@ -94,11 +123,11 @@ class VideoSourceWorkPlanner {
       sourceBooks.map((VideoBookRow row) => row.videoPath),
     );
 
-    final List<MediaCollectionItemRow> allItems = await _database
-        .getAllCollectionItems();
+    final List<MediaCollectionItemRow> allItems =
+        snapshot?.collectionItems ?? await _database.getAllCollectionItems();
     final Map<int, MediaCollectionRow> collections = <int, MediaCollectionRow>{
       for (final MediaCollectionRow row
-          in await _database.getAllMediaCollections())
+          in snapshot?.collections ?? await _database.getAllMediaCollections())
         row.id: row,
     };
     // 目录合集是用户组织容器，切回作品模式后仍保留，但不能充当动画身份。
@@ -169,7 +198,7 @@ class VideoSourceWorkPlanner {
           !await _collectionHasIdentity(collection.id)) {
         // 清单合集装的是几部不同的作品（「剧场版合集」「观看顺序」这类 m3u8：
         // 成员各在自己的作品目录、集位撞车）。把整个合集当一部作品去认，只能
-        // 得到「候选都不像」的待确认；各成员各自识别才对得上（BUG-4696）。合集
+        // 得到「候选都不像」的待确认；各成员各自识别才对得上（BUG-4847）。合集
         // 本身不动，它仍是用户的播放清单。合集上已记着作品身份（用户确认 / 已
         // 刮过）时那份身份优先，不按推断拆开绕过它。
         for (final VideoBookRow book in entry.value) {

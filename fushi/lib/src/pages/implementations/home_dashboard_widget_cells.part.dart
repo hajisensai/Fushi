@@ -149,7 +149,7 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
               entries.first,
               0,
               FushiCoverBlockSize.hero,
-              // 首页拼贴（BUG-4700）：视频一律竖版海报摆法，没有海报时剧照裁成
+              // 首页拼贴（BUG-4851）：视频一律竖版海报摆法，没有海报时剧照裁成
               // 竖版，不整张铺成横版背景（小块里看起来像没封面）。
               portraitOnly: true,
             );
@@ -652,10 +652,13 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
                               .copyWith(color: fg);
                           final TextStyle metaStyle = tokens.type.metadata
                               .copyWith(color: muted);
-                          final TextStyle browStyle = metaStyle.copyWith(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                          );
+                          final TextStyle browStyle = context
+                              .fushiType
+                              .labelSmall
+                              .copyWith(
+                                color: muted,
+                                fontWeight: FontWeight.w600,
+                              );
                           // 按可用高度挑放哪几行（标题优先），整行放得下才放，
                           // 不出半行字；半栏窄格（文字区 < 120）标题放两行。
                           final _MiniTileLines lines = _miniTileLines(
@@ -904,12 +907,22 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
             figure,
             if (!dense) ...<Widget>[
               const SizedBox(height: 4),
+              // 宽格有目标时目标进度与今日时长同一行：时长不让位，目标文字放不下才省略。
               if (goalLine != null && wide)
-                Text(
-                  goalLine,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: caption,
+                Row(
+                  children: <Widget>[
+                    Flexible(
+                      child: Text(
+                        goalLine,
+                        key: const ValueKey<String>('home-today-goal-line'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: caption,
+                      ),
+                    ),
+                    Text(' · ', maxLines: 1, style: caption),
+                    time,
+                  ],
                 )
               else
                 time,

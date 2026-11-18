@@ -10,6 +10,7 @@ import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/import/import_carrier.dart'
     show kMangaCarrierFileExtensions;
 import 'package:fushi/src/media/import/import_collage_page.dart';
+import 'package:fushi/src/media/import/import_inbox.dart';
 import 'package:fushi/src/media/import/import_surface_spec.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart'
     show kMangaImageExtensions;
@@ -81,6 +82,13 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
     _invalidateBookProviders();
   }
 
+  /// 「从『文件』App 导入」：收 `我的 iPhone › Fushi › 漫画子目录` 里的文件（重入保护在
+  /// [MediaSourcesViewState.importFromInbox] 入口）。
+  Future<void> _importFromInbox() async {
+    await _localSourcesKey.currentState?.importFromInbox();
+    _invalidateBookProviders();
+  }
+
   /// 「网络共享」：直接打开网络来源表单。
   Future<void> _addNetworkSource() async {
     await _localSourcesKey.currentState?.addNetworkSource();
@@ -138,6 +146,20 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
           destination: ImportDestination.choice,
           onTap: _importFolder,
         ),
+        // iOS「文件」App 收件箱（拍板台 nLXhu0d7gV）：其它平台没有收件箱，不放空壳入口。
+        if (ImportInbox.isSupported)
+          ImportMethod(
+            id: 'manga-inbox',
+            kind: ImportMethodKind.folder,
+            icon: FushiIcons.folderOpen,
+            label: t.media_import_inbox,
+            description: t.media_import_inbox_hint(
+              folder: ImportInbox.folderNameFor('manga') ?? '',
+            ),
+            destination: ImportDestination.dialog,
+            enabled: _localSourcesKey.currentState?.isBusy != true,
+            onTap: _importFromInbox,
+          ),
         ImportMethod(
           id: 'manga-network',
           kind: ImportMethodKind.network,

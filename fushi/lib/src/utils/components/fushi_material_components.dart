@@ -26,6 +26,7 @@ import 'package:macos_ui/macos_ui.dart'
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_compact_landscape.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/focus/page_scroll_registry.dart';
@@ -2967,12 +2968,20 @@ class FushiDialogFrame extends StatelessWidget {
 
   /// 屏幕越窄，边距越小：320dp 上取 16（与卡片内边距同级），随屏宽线性放大到宽屏
   /// 的 40 为止。用比例而非断点，避免在某个宽度上突然跳变。
-  EdgeInsets _resolveInsetPadding(double screenWidth) {
-    if (insetPadding != null) return insetPadding!;
-    final double horizontal = screenWidth.isFinite
-        ? (screenWidth * 0.05).clamp(16.0, 40.0)
-        : 40.0;
-    return EdgeInsets.symmetric(horizontal: horizontal, vertical: 24);
+  ///
+  /// 横屏矮窗口（横屏手机）再经 [fushiCompactLandscapeInset] 收紧（含调用方显式传的
+  /// 边距），把高度还给内容（拍板台 MANKlxTTpV）。
+  EdgeInsets _resolveInsetPadding(Size screenSize) {
+    final double screenWidth = screenSize.width;
+    final EdgeInsets base =
+        insetPadding ??
+        EdgeInsets.symmetric(
+          horizontal: screenWidth.isFinite
+              ? (screenWidth * 0.05).clamp(16.0, 40.0)
+              : 40.0,
+          vertical: 24,
+        );
+    return fushiCompactLandscapeInset(screenSize, base);
   }
 
   @override
@@ -2981,10 +2990,13 @@ class FushiDialogFrame extends StatelessWidget {
     final Size screenSize = MediaQuery.sizeOf(context);
     final double screenHeight = screenSize.height;
     final Widget padded = Padding(padding: padding, child: child);
+    // 横屏矮窗口：宽度上限放宽、屏高比例封顶取消（见 fushi_compact_landscape.dart）。
     final Widget body = ConstrainedBox(
       constraints: BoxConstraints(
-        maxWidth: maxWidth,
-        maxHeight: screenHeight * maxHeightFactor,
+        maxWidth: fushiCompactLandscapeMaxWidth(screenSize, maxWidth),
+        maxHeight:
+            screenHeight *
+            fushiCompactLandscapeHeightFraction(screenSize, maxHeightFactor),
       ),
       child: scrollable ? SingleChildScrollView(child: padded) : padded,
     );
@@ -2994,7 +3006,7 @@ class FushiDialogFrame extends StatelessWidget {
       // 柔和大阴影，见 [FushiAppleDialogPanel]），面板内是菜单式列表选中。
       return Dialog(
         clipBehavior: Clip.none,
-        insetPadding: _resolveInsetPadding(screenSize.width),
+        insetPadding: _resolveInsetPadding(screenSize),
         backgroundColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,
         shadowColor: Colors.transparent,
@@ -3014,7 +3026,7 @@ class FushiDialogFrame extends StatelessWidget {
     final bool eink = isEinkTheme(context);
     return Dialog(
       clipBehavior: Clip.antiAlias,
-      insetPadding: _resolveInsetPadding(screenSize.width),
+      insetPadding: _resolveInsetPadding(screenSize),
       shape: RoundedRectangleBorder(
         borderRadius: tokens.radii.dialogRadius,
         side: eink
@@ -3743,11 +3755,12 @@ class FushiPageHeader extends StatelessWidget {
   /// 使用时由本页头这一行换。
   final FushiHeaderSearchController? search;
 
-  /// 跟着动作组走的零尺寸菜单锚点（库页「排序」菜单）：叠在动作组右下角，
-  /// 动作画在本行就随本行、登记进外壳浮动工具栏就随那枚胶囊
+  /// 跟着动作组走的常驻菜单锚点（库页「排序」菜单，一律是
+  /// `FushiHeaderMenuAnchor` 或内部画它的组件）：铺满动作组，动作画在本行就
+  /// 随本行、登记进外壳浮动工具栏就随那枚胶囊
   /// （[fushiHeaderActionsWithMenuAnchor]）。动作可能被收进 ⋯，菜单不能挂在
-  /// 某颗按钮上；但也不能锚在页头这一行——动作交给外壳时这一行只剩页签，
-  /// 菜单会弹在按钮下方老远的地方。
+  /// 某颗按钮上；也不能锚在页头这一行——动作交给外壳时这一行只剩页签。弹出
+  /// 位置由 `FushiHeaderMenuController` 按触发控件（按钮或 ⋯）定（BUG-4715）。
   final Widget? menuAnchor;
 
   @override
@@ -4940,8 +4953,8 @@ class FushiShellHeaderActions extends StatefulWidget {
 
   final List<Widget> actions;
 
-  /// 这份动作所属页头的菜单锚点（见 [FushiPageHeader.menuAnchor]）：叠在本
-  /// 动作组右下角，菜单从外壳浮动工具栏的胶囊下方弹出。
+  /// 这份动作所属页头的菜单锚点（见 [FushiPageHeader.menuAnchor]）：铺满本
+  /// 动作组，菜单从外壳浮动工具栏胶囊里的触发按钮下方弹出。
   final Widget? menuAnchor;
 
   /// 这份动作所属页头的可展开搜索（见 [FushiPageHeader.search]）：库页外壳的
@@ -5038,15 +5051,16 @@ class _FushiShellHeaderActionsState extends State<FushiShellHeaderActions> {
   }
 }
 
-/// 把零尺寸菜单锚点 [menuAnchor] 叠在动作组 [actions] 的右下角（RTL 为左下角）：
-/// 菜单从动作组下沿弹出，水平方向由 MenuAnchor 自己夹进屏幕。null 时原样返回。
+/// 把常驻菜单锚点 [menuAnchor]（`FushiHeaderMenuAnchor`）铺满动作组 [actions]：
+/// 锚点在这个坐标系里把锚框挪到触发控件（按钮或 ⋯）上，菜单从触发控件下沿
+/// 弹出（BUG-4715）。null 时原样返回。
 Widget fushiHeaderActionsWithMenuAnchor(Widget actions, Widget? menuAnchor) {
   if (menuAnchor == null) return actions;
   return Stack(
     clipBehavior: Clip.none,
     children: <Widget>[
       actions,
-      PositionedDirectional(end: 0, bottom: 0, child: menuAnchor),
+      Positioned.fill(child: menuAnchor),
     ],
   );
 }

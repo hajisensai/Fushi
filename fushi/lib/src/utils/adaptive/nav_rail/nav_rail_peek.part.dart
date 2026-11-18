@@ -12,9 +12,14 @@ class AdaptiveNavPeekEntry {
     this.icon,
     this.status,
     this.statusTone = AdaptiveNavPeekStatusTone.neutral,
+    this.blurCover = false,
   });
 
   final String title;
+
+  /// 封面要按「模糊 NSFW 封面」打模糊（拍板台 w04vrhUAaX；判定由加载方按快照
+  /// 算好，速览卡本身不认识数据库）。
+  final bool blurCover;
 
   /// 没有封面时（以及列表式一行前面）画的图标；null = 模块图标。设置分类、
   /// 网页这类每行是不同东西的目的地用它区分。
@@ -835,12 +840,16 @@ class _NavPeekBlock extends StatelessWidget {
                   ),
                 ]
               : <Widget>[
-                  Image(
-                    image: cover,
-                    fit: BoxFit.cover,
-                    gaplessPlayback: true,
-                    excludeFromSemantics: true,
-                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                  NsfwCoverBlur(
+                    blur: entry.blurCover,
+                    showIcon: false,
+                    child: Image(
+                      image: cover,
+                      fit: BoxFit.cover,
+                      gaplessPlayback: true,
+                      excludeFromSemantics: true,
+                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                    ),
                   ),
                 ],
         );
@@ -932,7 +941,11 @@ class _NavPeekCoverRow extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(8, 8, 12, 8),
         child: Row(
           children: <Widget>[
-            _NavPeekThumb(cover: entry.cover, fallbackIcon: fallbackIcon),
+            _NavPeekThumb(
+              cover: entry.cover,
+              fallbackIcon: fallbackIcon,
+              blur: entry.blurCover,
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -987,10 +1000,17 @@ class _NavPeekCoverRow extends StatelessWidget {
 /// 列表行的封面缩略图：按图自己的朝向（竖海报 2:3 / 横版缩略图 16:9）完整
 /// 显示，不裁成方块。
 class _NavPeekThumb extends StatelessWidget {
-  const _NavPeekThumb({required this.cover, required this.fallbackIcon});
+  const _NavPeekThumb({
+    required this.cover,
+    required this.fallbackIcon,
+    this.blur = false,
+  });
 
   final ImageProvider? cover;
   final IconData fallbackIcon;
+
+  /// NSFW 封面打模糊（[AdaptiveNavPeekEntry.blurCover]）。
+  final bool blur;
 
   @override
   Widget build(BuildContext context) {
@@ -1022,13 +1042,17 @@ class _NavPeekThumb extends StatelessWidget {
             color: placeholder,
             borderRadius: const BorderRadius.all(Radius.circular(8)),
           ),
-          child: Image(
-            image: image,
-            fit: BoxFit.cover,
-            gaplessPlayback: true,
-            excludeFromSemantics: true,
-            errorBuilder: (_, _, _) =>
-                Center(child: FushiIcon(fallbackIcon, size: 18)),
+          child: NsfwCoverBlur(
+            blur: blur,
+            showIcon: false,
+            child: Image(
+              image: image,
+              fit: BoxFit.cover,
+              gaplessPlayback: true,
+              excludeFromSemantics: true,
+              errorBuilder: (_, _, _) =>
+                  Center(child: FushiIcon(fallbackIcon, size: 18)),
+            ),
           ),
         );
       },

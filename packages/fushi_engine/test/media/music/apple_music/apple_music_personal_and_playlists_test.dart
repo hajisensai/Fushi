@@ -97,7 +97,7 @@ AppleMusicTokenSource _tokens() => AppleMusicTokenSource(
   ),
 );
 
-Future<AppleMusicUserCredentials> _creds() async =>
+Future<AppleMusicUserCredentials> _creds({bool refresh = false}) async =>
     const AppleMusicUserCredentials(developerToken: 'dev', userToken: 'usr');
 
 void main() {

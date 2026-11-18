@@ -112,10 +112,12 @@ jobs:
   # （runner、CC/CXX、apt 依赖）与那个 job 逐字一致：CC/CXX 进了名字的哈希，vcpkg 的 ABI
   # hash 也吃编译器。2026-09-30 起那边不再构建 Linux app，GTK / keybinder / mpv / lzma /
   # clang 这些只给 `flutter build linux` 用的包两边一起删了。
+  # runner 与那边一起钉 ubuntu-22.04（BUG-4843，glibc 基线；名字的哈希吃 ImageOS，两边
+  # 不一致 PR 就永远读不到这里存的件）。gcc-14 走 ubuntu-toolchain-r/test PPA。
   linux:
     needs: changes
     if: needs.changes.outputs.linux == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     timeout-minutes: 90
     env:
       CC: gcc-14
@@ -151,6 +153,7 @@ jobs:
       - name: Install Linux build deps
         if: steps.torrent_store.outputs.hit != 'true' || steps.p2p_store.outputs.hit != 'true' || steps.anki_sync_store.outputs.hit != 'true'
         run: |
+          sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
           sudo apt-get update
           sudo apt-get install -y \
             ninja-build cmake pkg-config \

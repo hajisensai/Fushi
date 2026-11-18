@@ -47,6 +47,7 @@ import 'package:fushi/src/pages/implementations/jimaku_entry_picker.dart'
 import 'package:fushi/src/pages/implementations/subtitle_search_panel.dart'
     show
         describeSubtitleFailure,
+        logSubtitleDownloadFailure,
         kSubtitleNoticeBannerKey,
         primarySubtitleFailure;
 import 'package:fushi/i18n/strings.g.dart';
@@ -56,7 +57,6 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
@@ -1051,8 +1051,9 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
       _notice = null;
       _statusByUid.clear();
     });
+    final List<SubtitleBatchItem> results;
     try {
-      await runSubtitleBatch(
+      results = await runSubtitleBatch(
         registry: registry,
         candidates: candidates,
         targets: _targets(),
@@ -1073,6 +1074,17 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
       );
     } finally {
       if (mounted) setState(() => _running = false);
+    }
+    // 每集的失败原因进错误日志（含持久化抛错——批量把它归到该集、继续下一集）：
+    // 行副标题只放得下一句话，排查要靠这里。面板已关也照记。同一个整季包的失败
+    // 只记一次（挂在它覆盖的第一集上），不逐集重复。
+    for (final SubtitleBatchItem item in subtitleBatchDistinctFailures(
+      results,
+    )) {
+      logSubtitleDownloadFailure(
+        'SubtitleCollectionPanel.batch[EP${item.episode}]',
+        item.error!,
+      );
     }
     if (!mounted) return;
     final int done = _statusByUid.values
@@ -1192,13 +1204,17 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
               _selectedSource?.unsupportedPackFormat;
           return Text(
             unsupported == null
-                ? t.video_jimaku_no_results
+                // 整季包没下下来（401 / 429 / 断网）与「真的没有这一集」是两件事。
+                ? describeSubtitleFailure(t.video_jimaku_no_results, item.error)
                 : t.video_subtitle_archive_pack_unsupported(
                     format: unsupported.label,
                   ),
           );
         case SubtitleBatchStatus.failed:
-          return Text(t.video_jimaku_download_failed);
+          // 与本集面板同一套文案（BUG-1844）：key 被拒 / 连不上 / HTTP 状态码。
+          return Text(
+            describeSubtitleFailure(t.video_jimaku_download_failed, item.error),
+          );
         case SubtitleBatchStatus.downloading:
         case SubtitleBatchStatus.pending:
           return Text(t.video_jimaku_source_loading);
@@ -1440,6 +1456,57 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     ];
   }
 
+  /// 「番剧匹配」：AniList 系列候选，每条一行单选，标题**不限行**按面板宽度换行。
+  ///
+  /// 候选之间只靠标题区分，而同系列各季的 romaji 前缀相同、差别在末尾
+  /// （`… 2nd Season`）。原先画成定宽 chip、单行省略号，几季显示成同一串
+  /// （BUG-4743）；chip 本身也装不下长标题——MD3 `RawChip` 与 Apple 胶囊都把
+  /// label 钉成单行。所以与下方「字幕版本」同构，用分组列表行承载。
+  Widget _buildSeriesMatches(ThemeData theme) {
+    final int count = _seriesMatches.length;
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6, left: 2),
+            child: Text(
+              t.video_jimaku_anime_match,
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          for (int i = 0; i < count; i++)
+            FushiStaggeredEntrance(
+              index: i,
+              child: FushiGroupedListItem(
+                index: i,
+                count: count,
+                child: FushiListItem(
+                  key: ValueKey<String>(
+                    'subtitle-series-${_seriesMatches[i].id}',
+                  ),
+                  density: FushiListDensity.compact,
+                  selected: _selectedSeriesId == _seriesMatches[i].id,
+                  onTap: _resolving || _running
+                      ? null
+                      : () => unawaited(_selectSeries(_seriesMatches[i])),
+                  leading: _selectionMark(
+                    theme,
+                    _selectedSeriesId == _seriesMatches[i].id,
+                  ),
+                  title: Text(_seriesMatches[i].displayTitle),
+                  titleMaxLines: null,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   /// 行首单选标记：选中 = 实心勾，未选 = 空心圆；切换走 effects 短时长交叉淡化。
   Widget _selectionMark(ThemeData theme, bool selected) {
     return AnimatedSwitcher(
@@ -1547,7 +1614,14 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
                                 labelText: t.video_jimaku_query,
                                 isDense: true,
                               ),
-                              onSubmitted: (_) => _resolveSeries(),
+                              // 与右边的按钮同一道闸：批量途中回车重搜会清掉
+                              // 在跑的各集行状态、换掉来源（BUG-4799）。
+                              onSubmitted: (_) {
+                                if (_resolving || _searching || _running) {
+                                  return;
+                                }
+                                unawaited(_resolveSeries());
+                              },
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -1564,24 +1638,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
                         ],
                       ),
                       if (_seriesMatches.length >= 2)
-                        _chipSection(t.video_jimaku_anime_match, <Widget>[
-                          for (final AniListMedia media in _seriesMatches)
-                            ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 260),
-                              child: FushiChoiceChip(
-                                label: Text(
-                                  media.displayTitle,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                tooltip: media.displayTitle,
-                                selected: _selectedSeriesId == media.id,
-                                onSelected: _resolving || _running
-                                    ? null
-                                    : (_) => unawaited(_selectSeries(media)),
-                              ),
-                            ),
-                        ]),
+                        _buildSeriesMatches(theme),
                       _buildVersionPicker(theme),
                       _buildCollectionSettings(theme),
                       const FushiDividerControl(height: 20),

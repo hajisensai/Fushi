@@ -19,11 +19,13 @@ import 'package:transparent_image/transparent_image.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/media_source.dart';
 import 'package:fushi/src/media/sources/manga_fushi_source.dart';
+import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
@@ -3538,7 +3540,47 @@ class _HomeDashboardPageState
   /// 视频走 [_videoCoverImage] 选中的那一张；[videoImage] 是调用方为横竖探测已经
   /// 取好的同一个 provider（传进来才能共用一条解码流），[landscape] = 卡片已按
   /// 横图定成 16:9 横槽。
+  /// 「继续」条目的 NSFW 宿主（远端补位 / 自配服务器条目不可标，恒 null）。
+  MediaNsfwTarget? _continueNsfwTarget(_ContinueEntry entry) {
+    if (entry.remote != null || entry.server != null) return null;
+    if (entry.video case final VideoBookRow video) {
+      return MediaNsfwTarget.video(video.bookUid);
+    }
+    if (entry.game case final GalgameEntry game) {
+      return MediaNsfwTarget.game(game.id, adult: game.isNsfw);
+    }
+    if (entry.book case final MediaItem book) {
+      final String? srtUid = ReaderFushiSource.parseSrtBookUid(
+        book.mediaIdentifier,
+      );
+      if (srtUid != null) return MediaNsfwTarget.srtBook(srtUid);
+      final String? bookKey = ReaderFushiSource.parseBookKey(
+        book.mediaIdentifier,
+      );
+      if (bookKey != null) return MediaNsfwTarget.book(bookKey);
+    }
+    return null;
+  }
+
+  /// 「继续」封面：NSFW 作品按「模糊 NSFW 封面」打模糊（主卡与封面行同一出口）。
   Widget _continueCover(
+    FushiDesignTokens tokens,
+    AppModel appModel,
+    _ContinueEntry entry, {
+    ImageProvider? videoImage,
+    bool landscape = false,
+  }) => MediaNsfwCover(
+    target: _continueNsfwTarget(entry),
+    child: _continueCoverInner(
+      tokens,
+      appModel,
+      entry,
+      videoImage: videoImage,
+      landscape: landscape,
+    ),
+  );
+
+  Widget _continueCoverInner(
     FushiDesignTokens tokens,
     AppModel appModel,
     _ContinueEntry entry, {

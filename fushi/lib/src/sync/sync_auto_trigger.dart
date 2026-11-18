@@ -1529,6 +1529,8 @@ void installCollectionsSyncWatcher({
           db.bookTagMembershipTombstones,
           // 作品私密标记搭标签清单走（排行榜上传设备要尽快知道）。
           db.mediaPrivacyFlags,
+          // 作品 NSFW 标记同样搭标签清单走（别的设备的封面要跟着模糊）。
+          db.mediaNsfwFlags,
           // 作品图谱连接（手动连接 / 确认 / 否决）跟着合集之后同步。
           db.mediaLinks,
         ]),

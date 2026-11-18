@@ -8,7 +8,7 @@ import 'package:fushi_engine/media/manga/manga_storage.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:path/path.dart' as p;
 
-/// 孤儿书目录里能识别出的书类型（BUG-4701）。
+/// 孤儿书目录里能识别出的书类型（BUG-4852）。
 enum OrphanBookKind {
   /// 解压后的 EPUB 树（`META-INF/container.xml`）。
   epub,
@@ -126,7 +126,7 @@ typedef OrphanBookRegistrar =
     });
 
 /// 「可恢复的书」：书库根（`fushi_books`）下有目录、书库里却没有对应行的书，
-/// 重新登记回书库（BUG-4701）。
+/// 重新登记回书库（BUG-4852）。
 ///
 /// 场景：覆盖导入把整个书库换成了别的库（书库行、进度、统计全没），但书文件树
 /// 只有备份里带树时才会被替换，于是本机的书目录原样留在盘上成了孤儿；SRS 卡片
@@ -181,7 +181,12 @@ class OrphanBookRecovery {
   static final RegExp _duplicateSuffix = RegExp(r'~\d+$');
 
   /// 扫描书库根，列出可恢复 / 不可恢复的孤儿目录。点开头的目录（导入暂存
-  /// `.tmp-*`、替换回滚 `.bak-*`、缓存）一律不碰。
+  /// `.tmp-*`、缓存）一律不列。
+  ///
+  /// 列目录之前先收一遍导入残留（[EpubStorage.sweepImportResidue]，BUG-4841）：
+  /// `<书>.bak-<ts>` 不是点开头，不先处置就会被当成一本名叫「xxx.bak-123」的孤儿书
+  /// 列出来；而替换到一半被杀时它是那本书唯一的副本——清扫把它改回原名，随后才能
+  /// 以正确的 bookKey 列为可找回。本进程正在进行的导入的暂存目录清扫不碰。
   Future<OrphanBookScan> scan() async {
     final Directory root = Directory(booksRoot);
     if (!await root.exists()) {
@@ -191,6 +196,10 @@ class OrphanBookRecovery {
       );
     }
     final List<EpubBookMeta> books = await database.getEpubBookMetas();
+    await EpubStorage.sweepImportResidue(
+      booksRoot: booksRoot,
+      liveExtractDirs: books.map((EpubBookMeta b) => b.extractDir),
+    );
     final Set<String> liveKeys = <String>{
       for (final EpubBookMeta b in books) b.bookKey,
     };

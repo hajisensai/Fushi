@@ -9,9 +9,9 @@ import 'package:fushi/src/pages/implementations/video_library_drop_port.dart';
 import '../helpers/source_guard.dart';
 
 /// 视频导入视图（导入稿 v2「3. 视频」）：
-/// - BUG-4706（IM2）：导入视图画着拖放虚线与悬停态，祖先链却没有落点；现在整页
+/// - BUG-4857（IM2）：导入视图画着拖放虚线与悬停态，祖先链却没有落点；现在整页
 ///   落点经 [VideoLibraryDropPort] 交给视频库页现有的分发；
-/// - BUG-4707（IM10）：「网络共享」说明从本域真实传输派生；
+/// - BUG-4858（IM10）：「网络共享」说明从本域真实传输派生；
 /// - IM18：刮削三件套两套设计系统都登记进浮动顶栏。
 Future<void> _noop() async {}
 
@@ -42,14 +42,14 @@ void main() {
       );
     });
 
-    test('BUG-4707：网络说明含本域真实传输（SFTP · WebDAV · AList，无 FTP）', () {
+    test('BUG-4858：网络说明含本域真实传输（SFTP · WebDAV · AList，无 FTP）', () {
       final ImportMethod network = _spec().methods.last;
       expect(network.description, contains('SFTP · WebDAV · AList'));
       expect(network.description, isNot(contains('· FTP')));
       expect(importNetworkTransportsSummary('video'), 'SFTP · WebDAV · AList');
     });
 
-    test('BUG-4706：spec 带落点（整页收拖放）', () {
+    test('BUG-4857：spec 带落点（整页收拖放）', () {
       expect(_spec().onDrop, isNotNull);
     });
 
@@ -79,7 +79,7 @@ void main() {
     });
   });
 
-  group('VideoLibraryDropPort（BUG-4706）', () {
+  group('VideoLibraryDropPort（BUG-4857）', () {
     test('转交给挂上的处理函数；只撤自己挂的那一个', () async {
       final VideoLibraryDropPort port = VideoLibraryDropPort();
       final List<List<String>> got = <List<String>>[];
@@ -116,14 +116,14 @@ void main() {
       ).readAsStringSync(),
     );
 
-    test('BUG-4706：壳把同一个端口交给库页与导入视图', () {
+    test('BUG-4857：壳把同一个端口交给库页与导入视图', () {
       expect(shell, contains('importDropPort: _importDropPort'));
       expect(shell, contains('VideoImportPage('));
       expect(shell, contains('onDrop: _importDropPort.drop'));
       expect(shell, isNot(contains('MediaSourcesPage(')));
     });
 
-    test('BUG-4706：库页挂上的处理不命中视频卡（库页此刻在 Offstage 里）', () {
+    test('BUG-4857：库页挂上的处理不命中视频卡（库页此刻在 Offstage 里）', () {
       expect(
         home,
         contains('widget.importDropPort?.attach(_importSurfaceDrop)'),
@@ -139,7 +139,7 @@ void main() {
       );
     });
 
-    test('BUG-4706：拖入文件夹登记来源后，导入视图的来源色块立即重读', () {
+    test('BUG-4857：拖入文件夹登记来源后，导入视图的来源色块立即重读', () {
       // 库页那一支照旧不等；导入视图那一支等落库扫描完，返回后页面 reload。
       expect(home, contains('awaitSourceChanges: true'));
       expect(

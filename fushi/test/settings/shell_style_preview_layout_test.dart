@@ -1,9 +1,9 @@
 // 外观 › 主题 的外壳样式三行（库页布局 / 色块摆放 / 侧栏样式）与升级弹窗的预览：
 // - 设置页三行是「左标题 + 右紧凑选择块」，桌面下选择块在行尾、每行不高于 ~120dp（所有者反馈
 //   原来的大卡 + 整块实时预览太占位置）；
-// - BUG-4703：封面网格示意的格子在松约束下缩成 0 高、整块空白——这里断言网格单元
+// - BUG-4854：封面网格示意的格子在松约束下缩成 0 高、整块空白——这里断言网格单元
 //   真的有面积；
-// - BUG-4704：侧栏样式示意的几何只按宽度求，宽而矮的盒子里竖向溢出——这里在
+// - BUG-4855：侧栏样式示意的几何只按宽度求，宽而矮的盒子里竖向溢出——这里在
 //   360 / 800 / 1460 三种宽度下收集 FlutterError，必须为空。
 // 选择一律焦点驱动（FocusDriver + Enter），不点坐标。
 import 'package:flutter_test/flutter_test.dart';
@@ -129,8 +129,8 @@ void _expectGridCellsPainted(WidgetTester tester) {
   expect(cells, findsWidgets, reason: '封面网格示意必须画出网格单元');
   for (final Element cell in cells.evaluate()) {
     final Size size = (cell.renderObject! as RenderBox).size;
-    expect(size.width, greaterThan(2), reason: 'BUG-4703：网格单元宽为 0');
-    expect(size.height, greaterThan(2), reason: 'BUG-4703：网格单元高为 0（空白）');
+    expect(size.width, greaterThan(2), reason: 'BUG-4854：网格单元宽为 0');
+    expect(size.height, greaterThan(2), reason: 'BUG-4854：网格单元高为 0（空白）');
   }
 }
 
@@ -224,7 +224,7 @@ void main() {
     expect(tile.properties.label, contains(t.library_layout_grid));
   });
 
-  // BUG-4704 的原始失败形状：侧栏示意放进宽而矮的盒子（旧设置页大卡 ~680 × 58）。
+  // BUG-4855 的原始失败形状：侧栏示意放进宽而矮的盒子（旧设置页大卡 ~680 × 58）。
   for (final Size box in <Size>[
     const Size(680, 58),
     const Size(1400, 40),

@@ -18,7 +18,7 @@ Matcher _ctlFailure(int status) => throwsA(
   isA<CtlFailure>().having((CtlFailure f) => f.status, 'status', status),
 );
 
-/// `library scrape-meta get|set|clear`（v155 条目刮削资料 / 横版背景）的控制通道路由。
+/// `library scrape-meta get|set|clear`（v160 条目刮削资料 / 横版背景）的控制通道路由。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 

@@ -8,6 +8,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
+import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
 import 'package:fushi/src/media/privacy/media_privacy_dialog.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'package:fushi/src/mining/galgame_cover_resolver.dart';
@@ -91,6 +92,7 @@ Future<void> showGalgameItemActionsMenu({
       cover: _dialogCover(dialogContext, game),
       coverBackdrop: _dialogCoverBackdrop(game),
       coverMaterial: ShelfCoverMaterial.gameCase,
+      nsfw: MediaNsfwTarget.game(game.id, adult: game.isNsfw),
       title: game.displayName,
       showLaunchAction: false,
       quickActions: <DialogQuickAction>[

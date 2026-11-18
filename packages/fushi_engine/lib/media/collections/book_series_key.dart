@@ -14,16 +14,68 @@ class BookSeriesKey {
     required this.key,
     required this.seriesTitle,
     required this.volume,
+    this.episode,
   });
 
   /// 比较用的归一化系列键（全角折半角、空白折叠、ASCII 小写）。
   final String key;
 
-  /// 给合集起名用的系列名（原文写法，只去掉卷号、出版标签与 CRC 后缀）。
+  /// 给合集起名用的系列名（原文写法，只去掉卷号、话号、出版标签与 CRC 后缀）。
   final String seriesTitle;
 
   /// 卷号（可带一位小数，如「99.9」）；标题里没有卷号（通常是第 1 卷）为 null。
   final num? volume;
+
+  /// 话号：漫画按话发布时书名结尾的「第N話」（可带「前編 / 中編 / 後編」分段），
+  /// 如「十歳の最強魔導師 第1話 前編 [c36675f0]」→ `(number: 1, part: 1)`；没有
+  /// 话号为 null。
+  ///
+  /// 话号与卷号分开存：卷号会被追踪（按卷推进度）与有声书配对拿去用，第 12 话
+  /// 不是第 12 卷。话号只参与合集内排序（[compareBookSeriesPosition]）。
+  final BookEpisodeNumber? episode;
+}
+
+/// 话号与同话分段：[part] 为 0（无分段）、1（前編）、2（中編）、3（後編）。
+typedef BookEpisodeNumber = ({num number, int part});
+
+/// 同系列两卷在合集里的先后：卷号（无卷号当第 0 卷）→ 话号（无话号当第 0 话）
+/// → 同话分段。相等返回 0，调用方再按书名等兜底。
+int compareBookSeriesPosition(BookSeriesKey a, BookSeriesKey b) =>
+    compareBookSeriesPositionParts(
+      volumeA: a.volume,
+      episodeA: a.episode,
+      volumeB: b.volume,
+      episodeB: b.episode,
+    );
+
+/// [compareBookSeriesPosition] 的拆开版：调用方只存了卷号与话号（AI 合集排序的
+/// 成员）时用，判据只有这一份。
+int compareBookSeriesPositionParts({
+  required num? volumeA,
+  required BookEpisodeNumber? episodeA,
+  required num? volumeB,
+  required BookEpisodeNumber? episodeB,
+}) {
+  final int v = (volumeA ?? 0).compareTo(volumeB ?? 0);
+  if (v != 0) return v;
+  final int e = (episodeA?.number ?? 0).compareTo(episodeB?.number ?? 0);
+  if (e != 0) return e;
+  return (episodeA?.part ?? 0).compareTo(episodeB?.part ?? 0);
+}
+
+/// [key] 在系列里的位置（卷号、话号、分段），供「同系列各卷位置互不重复」判定；
+/// 书名里既无卷号也无话号时 null。
+({num? volume, num? episode, int part})? bookSeriesPosition(
+  BookSeriesKey key,
+) => bookSeriesPositionOf(volume: key.volume, episode: key.episode);
+
+/// [bookSeriesPosition] 的拆开版（同 [compareBookSeriesPositionParts]）。
+({num? volume, num? episode, int part})? bookSeriesPositionOf({
+  required num? volume,
+  required BookEpisodeNumber? episode,
+}) {
+  if (volume == null && episode == null) return null;
+  return (volume: volume, episode: episode?.number, part: episode?.part ?? 0);
 }
 
 /// 发布文件名里的 8 位十六进制 CRC 标签（`志乃と恋 [3574f94a].cbz`，导入时
@@ -47,6 +99,24 @@ final RegExp _volumeSuffix = RegExp(
   r'\s*(?:巻|卷|册|冊)?\s*\)?\s*$',
   caseSensitive: false,
 );
+
+/// 结尾话号：`第1話` / `第1话` / `第12話 前編` / `第3話・後編` / `第2.5話`。只在
+/// [parseBookSeriesKey] 用——目录语境（[parseBookVolumeFolderName]）里「第1話」
+/// 是章节子目录、不是分卷，所以不进共用的 [_volumeSuffix]。只在全角已折半角、
+/// 已去掉 CRC 后缀的串上匹配；话号前必须有分隔或非 ASCII 字符。
+final RegExp _episodeSuffix = RegExp(
+  r'(?:[\s_\-:・]+|(?<=[^\x00-\x7F]))'
+  r'第\s*(\d{1,4}(?:\.\d)?)\s*[話话]'
+  r'(?:[\s_\-:・]*([前中後后])[編编篇])?\s*$',
+);
+
+/// 同话分段字 → [BookEpisodeNumber.part]。
+int _episodePart(String? mark) => switch (mark) {
+  '前' => 1,
+  '中' => 2,
+  '後' || '后' => 3,
+  _ => 0,
+};
 
 /// 结尾的出版 / 版本标签：`(電撃文庫)`、`<上>`、`【特装版】`。
 final RegExp _trailingLabel = RegExp(r'\s*[(\[【<][^()\[\]【】<>]*[)\]】>]\s*$');
@@ -100,6 +170,8 @@ BookSeriesKey? parseBookSeriesKey(String title) {
   if (store != null) return store;
   final BookSeriesKey? labelled = _seriesFromTrailingLabel(title, folded, end);
   if (labelled != null) return labelled;
+  final BookSeriesKey? episodic = _seriesFromEpisodeSuffix(title, folded);
+  if (episodic != null) return episodic;
   final ({int end, num? volume}) split = _splitVolumeSuffix(folded);
   final String key = folded.substring(0, split.end).trim();
   if (key.isEmpty) return null;
@@ -129,6 +201,34 @@ BookSeriesKey? _seriesFromStoreAnnotation(String title) {
     key: _normalizeSeriesKey(_foldWidth(split.series)),
     seriesTitle: split.series,
     volume: volume == null ? null : num.parse(volume.group(1)!),
+  );
+}
+
+/// 书名结尾是话号（[_episodeSuffix]）时的系列身份：系列名取话号前面那段，话号
+/// 前若还有卷号（`X 第3巻 第12話`）照常读成卷号。不是话号形态返回 null。
+///
+/// 按话发布的漫画（「十歳の最強魔導師 第1話 前編 [c36675f0]」）以前整串去掉
+/// CRC 后就当系列名，每话的系列键各不相同，一组都凑不成（rT5chqFYOK）。
+BookSeriesKey? _seriesFromEpisodeSuffix(String title, String folded) {
+  int end = _hashSuffix.firstMatch(folded)?.start ?? folded.length;
+  RegExpMatch? m = _episodeSuffix.firstMatch(folded.substring(0, end));
+  if (m == null) {
+    // 同卷号（[_splitVolumeSuffix]）：话号后跟出版标签时先剥一层再试
+    // （`十歳の最強魔導師 第1話 前編 (少年マガジン)`）。
+    end = _trailingLabel.firstMatch(folded.substring(0, end))?.start ?? end;
+    m = _episodeSuffix.firstMatch(folded.substring(0, end));
+  }
+  if (m == null) return null;
+  final ({int end, num? volume}) split = _splitVolumeSuffix(
+    folded.substring(0, m.start),
+  );
+  final String key = folded.substring(0, split.end).trim();
+  if (key.isEmpty) return null;
+  return BookSeriesKey(
+    key: _normalizeSeriesKey(key),
+    seriesTitle: title.substring(0, split.end).trim(),
+    volume: split.volume,
+    episode: (number: num.parse(m.group(1)!), part: _episodePart(m.group(2))),
   );
 }
 
