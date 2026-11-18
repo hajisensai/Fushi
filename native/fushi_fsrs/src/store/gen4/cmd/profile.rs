@@ -61,6 +61,16 @@ pub fn profile_footprint(t: &Truth<'_>, col: i64) -> Result<Value, String> {
     })
 }
 
+/// `profile_footprint` 按 profile（分发器接的是这一条）：这个 profile 在本机没有集合（从没在新代里打开过、或已经被
+/// `profile_purge` 删掉）= 全 0——库里没有它的任何东西，与 `profile_purge` 对没绑定的 profile 回全 0 同口径。删 profile
+/// 的确认框、删完的核对、存量扫描都要能对这种 profile 数数，不能报「没有集合」让删除走不下去。绑定与计数同一个读快照。
+pub fn profile_footprint_of(t: &Truth<'_>, profile: &str) -> Result<Value, String> {
+    snapshot(t, |t| match t.binding_of(profile)? {
+        Some(b) => profile_footprint(t, b.col),
+        None => Ok(json!({"notes": 0, "cards": 0, "reviews": 0, "rows": 0})),
+    })
+}
+
 /// 复习日志条数：每个规范日志 ID 一条。
 fn reviews(t: &Truth<'_>, col: i64) -> Result<i64, String> {
     let ix = Index::new(t, col);

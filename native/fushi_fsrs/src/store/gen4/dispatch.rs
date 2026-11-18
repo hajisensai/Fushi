@@ -538,7 +538,8 @@ fn run(
             cmd::writes_restore::plan_restore(t, col, req)
         })?,
         "binding_get" => read_col(c, profile, cmd::profile::binding_get)?,
-        "profile_footprint" => read_col(c, profile, cmd::profile::profile_footprint)?,
+        // 没有集合的 profile 数出全 0（不报 has no collection，见 `profile_footprint_of`）。
+        "profile_footprint" => c.read(|t| cmd::profile::profile_footprint_of(t, profile))?,
         "status" => read_col(c, profile, cmd::writes_local::status)?,
         "study" => read_col(c, profile, |t, col| cmd::study::study(t, col, req))?,
         "local_state" => {
