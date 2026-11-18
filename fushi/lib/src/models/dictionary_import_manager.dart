@@ -1086,7 +1086,8 @@ class DictionaryImportManager {
     // .deleteDictionaryMeta] 会触发 _onCacheRebuild，把引擎重载到「不含这本」的
     // 集合，连带释放它常驻的 mmap view；之后目录才删得掉。
     //
-    // 旧实现反着写：先 deleteSync 旧目录，此时引擎还攥着 hash.table / blobs.bin，
+    // 旧实现反着写：先 deleteSync 旧目录，此时引擎还攥着索引（key.index，旧式词典是
+    // hash.table）与记录文件（blobs.bin / blobs3.bin），
     // Windows 上必抛 ERROR_USER_MAPPED_FILE → 整个覆盖导入失败。用户侧表现就是
     // 「词典更新不了，只能每次重新导入」。
     await _dictRepo.deleteDictionaryMeta(name);

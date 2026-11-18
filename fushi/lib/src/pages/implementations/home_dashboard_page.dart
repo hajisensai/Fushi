@@ -501,7 +501,16 @@ class _ContinueEntry {
     this.game,
     this.remote,
     this.server,
+    this.seriesBooks = const <MediaItem>[],
+    this.seriesCount = 0,
   });
+
+  /// 「最近添加」里同一合集的书合成一项时：除 [book]（最新加入的那本）外再画进
+  /// 扇形的几本（按加入时间倒序，最多两本）。其余场景为空。
+  final List<MediaItem> seriesBooks;
+
+  /// 「最近添加」合集项的成员数（书 = 卷数、视频 = 集数）；0 = 散项。
+  final int seriesCount;
 
   /// 所属主合集 id（v68 横版选图链按它取合集附加图组）；null = 散卡。
   final int? collectionId;
@@ -1660,12 +1669,27 @@ class _HomeDashboardPageState
           epubUidByKey,
           completedBookKeys,
         );
-        final List<HomeWidgetItem> items = _widgetItemsFor(appModel, grid);
-        _widgetItemsShown = items;
-        final List<HomeWidgetItem> visible = <HomeWidgetItem>[
+        List<HomeWidgetItem> items = _widgetItemsFor(appModel, grid);
+        List<HomeWidgetItem> visible = <HomeWidgetItem>[
           for (final HomeWidgetItem item in items)
             if (availableKinds.contains(item.kind)) item,
         ];
+        // 默认布局（这份网格没编辑过、也没在编辑）按此刻可见的组件补洞填满；
+        // 自定义过的完全按存档尺寸（用户 2026-11-17）。补出来的尺寸回写进完整列表，
+        // 首次编辑以填满后的样子为起点，进编辑态不会缩回去露出空洞。
+        if (_widgetSessions[grid] == null &&
+            appModel.homeWidgetLayout.itemsFor(grid) == null) {
+          visible = fillHomeWidgetGaps(visible, grid);
+          final Map<HomeWidgetKind, HomeWidgetSize> filled =
+              <HomeWidgetKind, HomeWidgetSize>{
+                for (final HomeWidgetItem e in visible) e.kind: e.size,
+              };
+          items = <HomeWidgetItem>[
+            for (final HomeWidgetItem e in items)
+              e.withSize(filled[e.kind] ?? e.size),
+          ];
+        }
+        _widgetItemsShown = items;
         // 新手引导卡（用户 2026-10-21：跳过了引导 / 还没导入任何东西时，首页常驻
         // 一个回到引导的入口）。排在网格上面、最先进场。
         final Widget? onboardingCard =
@@ -2161,7 +2185,8 @@ class _HomeDashboardPageState
       art: art,
       title: entry.collectionName ?? entry.title,
       covers: <Widget>[cover],
-      tintImage: image ?? fushiCoverImageOf(cover),
+      tintImage:
+          _continueTintImage(appModel, entry) ?? fushiCoverImageOf(cover),
       eyebrow: hero
           ? (recent > 0
                 ? formatActivityRelativeTime(recent, DateTime.now())
@@ -2197,6 +2222,31 @@ class _HomeDashboardPageState
         ),
       ),
     );
+  }
+
+  /// 封面色块取色的图源：直接按条目取封面图（书 = 书架缩略图、视频 = 海报、
+  /// 游戏 = 本地封面）。不能靠 [fushiCoverImageOf] 从封面 widget 里扒——
+  /// [_continueCover] 外面包了 [MediaNsfwCover]，扒不到图就只剩中性灰。NSFW
+  /// 模糊中的条目不取色（色块颜色也会透出封面内容），回落中性色。
+  ImageProvider? _continueTintImage(AppModel appModel, _ContinueEntry entry) {
+    if (mediaNsfwBlurOf(context, _continueNsfwTarget(entry))) return null;
+    if (entry.isVideo) return _videoCoverImage(entry);
+    if (entry.game case final GalgameEntry game) {
+      return resolveMediaCoverImage(
+        kind: MediaKind.game,
+        localPath: game.coverPath,
+        decodeWidth: kLocalCoverDecodePixelWidth,
+      );
+    }
+    if (entry.remote != null || entry.server != null) return null;
+    final MediaItem? book = entry.book;
+    if (book == null) return null;
+    final ImageProvider image = ReaderFushiSource.instance
+        .getDisplayThumbnailFromMediaItem(appModel: appModel, item: book);
+    if (image is MemoryImage && identical(image.bytes, kTransparentImage)) {
+      return null;
+    }
+    return image;
   }
 
   /// 按封面固有朝向给视频条目选摆法（「继续」与「最近添加」色块共用）：竖版
@@ -2961,8 +3011,75 @@ class _HomeDashboardPageState
   /// 「最近添加」条目副行：「类型 · 相对时间」（列表行与色块同一份）。
   String _recentSubtitle(_ContinueEntry e, DateTime now) => <String>[
     if (e.kind case final MediaKind kind) _kindLabel(kind),
+    if (e.seriesCount > 1)
+      e.isVideo
+          ? t.home_widget_recent_episode_count(n: e.seriesCount)
+          : t.home_widget_recent_volume_count(n: e.seriesCount),
     formatActivityRelativeTime(e.recentMs, now),
   ].join(' · ');
+
+  /// 「最近添加」一项的封面色块（用户 2026-11-17：与「继续」卡同一套色块）：底色取
+  /// 封面主色、背景压标题大字；合集项把同合集的另外几本画进扇形，副行带卷数 / 集数。
+  /// 不画进度（刚加进来的东西没有进度可言），点按打开。
+  Widget _recentBlock(
+    FushiDesignTokens tokens,
+    AppModel appModel,
+    _ContinueEntry entry,
+    int index,
+    FushiCoverBlockSize size,
+    DateTime now,
+  ) {
+    final ImageProvider? image = _videoCoverImage(entry);
+    final Widget cover = _continueCover(
+      tokens,
+      appModel,
+      entry,
+      videoImage: image,
+    );
+    final List<Widget> series = <Widget>[
+      for (final MediaItem book in entry.seriesBooks)
+        _continueCover(
+          tokens,
+          appModel,
+          _ContinueEntry(
+            kind: _bookMediaKind(book),
+            title: ReaderFushiSource.instance.getDisplayTitleFromMediaItem(
+              book,
+            ),
+            recentMs: 0,
+            book: book,
+          ),
+        ),
+    ];
+    Widget blockOf(FushiCoverBlockArt art, Widget cover) => FushiCoverBlock(
+      size: size,
+      art: art,
+      title: entry.collectionName ?? entry.title,
+      covers: <Widget>[cover, ...series],
+      tintImage:
+          _continueTintImage(appModel, entry) ?? fushiCoverImageOf(cover),
+      subtitle: _recentSubtitle(entry, now),
+    );
+    final Widget block = _orientedBlock(
+      tokens,
+      appModel,
+      entry,
+      image: image,
+      cover: cover,
+      blockOf: blockOf,
+    );
+    return FushiHoverLift(
+      builder: (BuildContext _, bool _) => shelfCoverCard(
+        key: ValueKey<String>('home-recent-block/$index'),
+        shape: fushiCoverBlockShape(context, size),
+        onTap: () => unawaited(_openContinueEntry(appModel, entry)),
+        child: FushiTooltip(
+          message: _continueDisplayTitle(entry),
+          child: block,
+        ),
+      ),
+    );
+  }
 
   /// 「最近添加」要列的条目（按加入时间倒序、去掉「继续」里已有的、只留模块
   /// 开着的，最多 [_kRecentLimit] 条）。列表卡与色块共用。
@@ -2988,21 +3105,51 @@ class _HomeDashboardPageState
     }
 
     final List<_ContinueEntry> entries = <_ContinueEntry>[];
-    for (final MediaItem item in books) {
-      if (shownBooks.contains(item.mediaIdentifier)) continue;
+    int bookAddedAt(MediaItem item) {
       final String? bookKey = ReaderFushiSource.parseBookKey(
         item.mediaIdentifier,
       );
-      final int addedAt = bookKey == null
-          ? 0
-          : (_epubLocalAddedAtByKey[bookKey] ?? 0);
+      return bookKey == null ? 0 : (_epubLocalAddedAtByKey[bookKey] ?? 0);
+    }
+
+    // 同一主合集的书合成一项（用户 2026-11-17：一排相同系列名的条目没法看）：
+    // 最新加入的那本当主封面 / 点开目标，再带两本画进扇形，副行写卷数。
+    final Map<int, List<MediaItem>> booksByCollection =
+        <int, List<MediaItem>>{};
+    for (final MediaItem item in books) {
+      if (shownBooks.contains(item.mediaIdentifier)) continue;
+      final int addedAt = bookAddedAt(item);
       if (addedAt <= 0) continue;
+      final int? cid = _primaryCollectionByEntry[_bookCollectionKey(item)];
+      if (cid != null) {
+        (booksByCollection[cid] ??= <MediaItem>[]).add(item);
+        continue;
+      }
       entries.add(
         _ContinueEntry(
           kind: _bookMediaKind(item),
           title: ReaderFushiSource.instance.getDisplayTitleFromMediaItem(item),
           recentMs: addedAt,
           book: item,
+        ),
+      );
+    }
+    for (final MapEntry<int, List<MediaItem>> ce in booksByCollection.entries) {
+      final List<MediaItem> members = List<MediaItem>.of(ce.value)
+        ..sort((MediaItem a, MediaItem b) => bookAddedAt(b) - bookAddedAt(a));
+      final MediaItem newest = members.first;
+      entries.add(
+        _ContinueEntry(
+          kind: _bookMediaKind(newest),
+          title: ReaderFushiSource.instance.getDisplayTitleFromMediaItem(
+            newest,
+          ),
+          recentMs: bookAddedAt(newest),
+          collectionName: _collectionNamesById[ce.key],
+          collectionId: ce.key,
+          book: newest,
+          seriesBooks: members.skip(1).take(2).toList(),
+          seriesCount: members.length,
         ),
       );
     }
@@ -3059,6 +3206,7 @@ class _HomeDashboardPageState
           collectionName: _collectionNamesById[ce.key],
           collectionId: ce.key,
           video: first,
+          seriesCount: ce.value.length,
         ),
       );
     }

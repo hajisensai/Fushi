@@ -609,7 +609,7 @@
     "test/lookup/global_lookup_dpi_scale_guard_test.dart": 100,
     "test/lookup/global_lookup_favorite_audio_bridge_guard_test.dart": 100,
     "test/lookup/global_lookup_flaky_popup_guard_test.dart": 100,
-    "test/lookup/global_lookup_follow_module_test.dart": 100,
+    "test/lookup/global_lookup_module_independence_test.dart": 100,
     "test/lookup/global_lookup_geometry_epoch_test.dart": 100,
     "test/lookup/global_lookup_hotkey_guard_test.dart": 100,
     "test/lookup/global_lookup_inapp_isolation_guard_test.dart": 400,

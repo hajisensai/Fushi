@@ -409,6 +409,11 @@ class FushidictsFfiBindings {
           FfiQueryResult Function(Pointer<Void>, Pointer<Utf8>),
           _QueryDart
         >('fushidicts_query');
+    queryFrequencies = _lib
+        .lookupFunction<
+          FfiQueryResult Function(Pointer<Void>, Pointer<Utf8>),
+          _QueryDart
+        >('fushidicts_query_frequencies');
     freeQueryResult = _lib
         .lookupFunction<
           Void Function(Pointer<FfiQueryResult>),
@@ -569,6 +574,10 @@ class FushidictsFfiBindings {
   late final _UnionFilterStateDart unionFilterState;
   late final _LoadTransformsDart loadTransforms;
   late final _QueryDart query;
+
+  /// 只要词频的 [query]：词条的 glossary / pitch 恒为空（原生不富化音调、不解压释义）。
+  /// 结果同样用 [freeQueryResult] 释放。
+  late final _QueryDart queryFrequencies;
   late final _FreeQueryResultDart freeQueryResult;
   late final _LookupDart lookup;
   late final _LookupWithOptionsDart lookupWithOptions;
@@ -606,6 +615,33 @@ EnsureRedirectFlagDart? lookupEnsureRedirectFlag() {
     return _openNativeLib()
         .lookupFunction<_EnsureRedirectFlagNative, EnsureRedirectFlagDart>(
           'fushidicts_ensure_redirect_flag',
+        );
+  } on ArgumentError {
+    return null;
+  }
+}
+
+// ── 存量词典原地升级（按需解析） ───────────────────────────────────
+
+typedef _UpgradeDictionaryNative =
+    Int32 Function(Pointer<Utf8> dictDir, Int32 allowMetaRewrite);
+typedef UpgradeDictionaryDart =
+    int Function(Pointer<Utf8> dictDir, int allowMetaRewrite);
+
+/// `fushidicts_upgrade_dictionary` 的绑定，**用到时才解析**（理由同
+/// [lookupEnsureRedirectFlag]：一次性迁移，随包旧库缺这个导出时只让升级报「不支持」，
+/// 不能连累整套查词绑定在构造时抛）。
+///
+/// 原生语义（`fushidicts/upgrade.hpp`）：把旧式索引换成新索引、纯 freq / pitch / ipa
+/// 词典（`allowMetaRewrite` 非 0 时）顺带预解析记录。只创建新文件再改名提交，引擎正
+/// 装着这本词典时也能调；新索引在下一次装载时生效。返回 0 已是最新（顺带清理遗留
+/// 旧文件）/ 1 已升级 / 2 不适用（保持旧式、照常可用）/ -1 失败（词典原样可用）。
+/// 不需要查询句柄；大词典单本可达秒级，必须放后台 isolate。
+UpgradeDictionaryDart? lookupUpgradeDictionary() {
+  try {
+    return _openNativeLib()
+        .lookupFunction<_UpgradeDictionaryNative, UpgradeDictionaryDart>(
+          'fushidicts_upgrade_dictionary',
         );
   } on ArgumentError {
     return null;

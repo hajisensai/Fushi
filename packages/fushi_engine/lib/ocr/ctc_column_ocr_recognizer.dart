@@ -1,4 +1,5 @@
-/// 漫画逐列 CTC 识别器：块内检出列/行 → 按行长投票定块方向 → 去振假名 → 合并同列
+/// 漫画逐列 CTC 识别器：块内检出列/行 → 按行长投票定块方向（竖长块投出横排时
+/// 横向拉宽重检一次）→ 去振假名（几何 + 墨迹复核）→ 拆掉横跨多列的框 → 合并同列
 /// 碎片 → 阅读序 → 逐列交 CTC 行识别器（竖列先逆时针转 90°，当横行读）→ 逐行
 /// 文本与行框直接交回，不再按字格估算切分（`ocr_line_layout.dart` 的
 /// [layoutOcrTextOnLines] 只服务整块识别的模型）。
@@ -32,6 +33,17 @@ import 'package:fushi_engine/ocr/ocr_ruby_trim.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
 import 'package:fushi_engine/ocr/ppocr_line_detector.dart';
 import 'package:fushi_engine/ocr/ppocr_line_recognizer.dart';
+
+/// 块高达到块宽的这么多倍算「竖长」：竖长的块里投出横排要再取一份证据
+/// （[kOcrOrientationStretch]）。
+///
+/// JMangaBench_Read 前 1,480 框里，竖长块投出横排的 28 例有 25 例是读错的竖排
+/// （逐行读出「しど言 / てんっ / くなた」这样串列的字），占全部字错的四分之一强。
+const double kOcrTallBlockRatio = 1.2;
+
+/// 方向存疑时重新检测用的横向拉伸倍数：把列距拉到明显大于字距。真横排（含
+/// 拉丁文）拉宽后行还是行，投票不变。
+const double kOcrOrientationStretch = 2;
 
 class CtcColumnOcrRecognizer implements LineOcrRecognizer {
   CtcColumnOcrRecognizer({
@@ -69,16 +81,28 @@ class CtcColumnOcrRecognizer implements LineOcrRecognizer {
     List<OcrRect>? lineHints,
   }) async {
     // 调用方给了行框时倾角归调用方（路由层用同一次检测估好再挂回来）。
-    final ({List<OcrRect> lines, double tilt}) layout = lineHints != null
+    ({List<OcrRect> lines, double tilt}) layout = lineHints != null
         ? (lines: lineHints, tilt: 0.0)
         : await _lineDetector.detectLayoutInBlock(page, box);
+    if (lineHints == null &&
+        box.height >= kOcrTallBlockRatio * box.width &&
+        voteOcrLineOrientation(layout.lines) == false) {
+      // 竖长的块却投出了横排：多半是字距比列距大的竖排（疏排、斜体），检测器
+      // 沿小空隙把字连成了横行。横向拉宽再检一次，列能被连出来就按竖排读。
+      final ({List<OcrRect> lines, double tilt}) stretched = await _lineDetector
+          .detectLayoutInBlock(page, box, stretchX: kOcrOrientationStretch);
+      if (voteOcrLineOrientation(stretched.lines) == true) layout = stretched;
+    }
     final List<OcrRect> detected = layout.lines;
     // 方向按检出行长度投票（宽扁的多列竖排常被外形或碎片带偏），没有明确的行时
     // 保持调用方的判断。
     final bool blockVertical = voteOcrLineOrientation(detected) ?? vertical;
     final List<OcrRect> lines = orderOcrLinesForReading(
       mergeOcrLineFragments(
-        dropOcrRubyLines(detected, vertical: blockVertical),
+        absorbOcrCrossLines(
+          dropOcrRubyLinesByInk(page, detected, vertical: blockVertical),
+          vertical: blockVertical,
+        ),
         vertical: blockVertical,
       ),
       vertical: blockVertical,
