@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-18T03:41:44Z",
+ "generatedAt": "2026-11-18T03:53:18Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "ea970d0572022c4a601aef7f73accd118f5e8442",
@@ -12,8 +12,8 @@
    "version": "3.3.0",
    "sha": "1d3b256ddb4c3417bf1abe6dcf98b280f96429dc",
    "unknown": false,
-   "publishedAt": "2026-11-18T03:41:35Z",
-   "testflight": false,
+   "publishedAt": "2026-11-18T03:53:02Z",
+   "testflight": true,
    "baseSeq": 28845,
    "prs": [
     3724,
@@ -33,16 +33,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44227142990"
+     "state": "ok"
     },
     "macos": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44227142990"
+     "state": "ok"
     },
     "ios": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44227142990"
+     "state": "ok"
     }
    }
   },
@@ -125,37 +122,6 @@
    "platforms": {
     "android": {
      "state": "ok"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 28650,
-   "version": "3.3.0",
-   "sha": "0565a15895da1a3328fda8fe47436f0cf182a28c",
-   "unknown": false,
-   "publishedAt": "2026-11-17T19:10:50Z",
-   "testflight": false,
-   "baseSeq": 28638,
-   "prs": [
-    3702,
-    3716,
-    3722
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44144059814"
     },
     "windows": {
      "state": "ok"
@@ -313,15 +279,6 @@
    "deletions": 52,
    "labels": []
   },
-  "3702": {
-   "number": 3702,
-   "title": "perf(manga): 在线漫画开章只等本地就绪、广告候选页有界并发、搜索排队取消",
-   "author": "W1ght",
-   "mergedAt": "2026-11-17T18:05:25Z",
-   "additions": 881,
-   "deletions": 53,
-   "labels": []
-  },
   "3703": {
    "number": 3703,
    "title": "fix(video): HLS 画质探测走应用代理、YouTube 出口不通提前停、字幕下载加超时、中继登记表淘汰",
@@ -439,15 +396,6 @@
    "deletions": 37,
    "labels": []
   },
-  "3716": {
-   "number": 3716,
-   "title": "fix(subtitle): 桌面三端与无头服务端按 CP932 / GBK / EUC-JP / Big5 解非 Unicode 文本（BUG-4798）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-17T17:58:46Z",
-   "additions": 2312,
-   "deletions": 41,
-   "labels": []
-  },
   "3718": {
    "number": 3718,
    "title": "fix(video): 系列墙滚轮每档不再把整屏封面重新离屏烘焙（BUG-4802）",
@@ -473,15 +421,6 @@
    "mergedAt": "2026-11-17T18:40:05Z",
    "additions": 4524,
    "deletions": 237,
-   "labels": []
-  },
-  "3722": {
-   "number": 3722,
-   "title": "docs(plans): 小说 / 漫画 / 视频优化剩余路线图（第 2～7 波，33 组）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-17T17:58:18Z",
-   "additions": 666,
-   "deletions": 0,
    "labels": []
   },
   "3724": {
