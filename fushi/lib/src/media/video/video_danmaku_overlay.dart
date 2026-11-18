@@ -158,7 +158,7 @@ class _VideoDanmakuOverlayState extends State<VideoDanmakuOverlay>
       key: const Key('video-danmaku-ignore-pointer'),
       ignoring: true,
       // 整层自成重绘边界：弹幕每帧都在动，不能连带同一画面上的控制条、遮布、字幕等
-      // 兄弟节点每帧一起重录（BUG-4798）。
+      // 兄弟节点每帧一起重录（BUG-4852）。
       child: RepaintBoundary(
         child: AnimatedBuilder(
           animation: _ticker,
@@ -202,7 +202,7 @@ class _VideoDanmakuOverlayState extends State<VideoDanmakuOverlay>
   ///
   /// key 用弹幕在列表里的下标（[VideoDanmakuLayoutEntry.index]）。修前按位置对位：
   /// 队首一出列，后面每个 element 都被错配成下一条的文本、重新排版重画——同屏七十多条、
-  /// 每秒出列近十条时，几乎每帧都在整屏重做阴影，raster 一帧数百毫秒（BUG-4798）。
+  /// 每秒出列近十条时，几乎每帧都在整屏重做阴影，raster 一帧数百毫秒（BUG-4852）。
   List<Widget> _buildEntries(
     List<VideoDanmakuLayoutEntry> entries,
     VideoDanmakuStyle style,
