@@ -18,6 +18,22 @@
       "installer_sha256": "71b59d654ba9637c62fe0499da6d411bf90d8e95c5933a163dfd1b56444ed1ed"
     },
     {
+      "id": "v3.0.1",
+      "default": false,
+      "role": "规划 D2 点名的协议 2 之前版本（prerelease，2026-10-21）；R0 用它验「不碰 v3 / v4、主库被拒」",
+      "app_version": "3.0.1+1356",
+      "commit": "185dcfdd940226631bbc42069088ae5ae24fdd12",
+      "srs_protocol": "pre-sync2",
+      "has_srs_db": false,
+      "has_folder_location": false,
+      "source": {
+        "kind": "release",
+        "tag": "v3.0.1",
+        "asset": "fushi-3.0.1-windows-setup.exe"
+      },
+      "installer_sha256": "bb565de7094966a6ab60c29367ec25275c3033f4df03e0259d83c6e533fbb495"
+    },
+    {
       "id": "debug-23261-2eb0face",
       "default": true,
       "role": "最后一个只认协议 2 的已发布二进制（当时的 debug-rolling 包，develop 2eb0face）",
@@ -68,9 +84,9 @@
     {
       "id": "v3.3.0",
       "default": true,
-      "role": "最早带协议 3 的正式版 = 当前最新正式版（Latest）",
+      "role": "最早带协议 3 的正式版 = 当前最新正式版（Latest）。2026-11-17 release 资产被 RWKV 热修重建包替换（a2638e03，相对 87f1c450 只改 RWKV 权重下载与 release.yml，SRS 代码不变）；原资产 sha256 734056b8… 已不可下载",
       "app_version": "3.3.0+1368",
-      "commit": "87f1c4500c3dca11bd4c7fe6ebf2ed39a2d93134",
+      "commit": "a2638e03e1bf8a097f942c8cea440264ffe3589e",
       "srs_protocol": "3",
       "has_srs_db": true,
       "has_folder_location": true,
@@ -79,7 +95,7 @@
         "tag": "v3.3.0",
         "asset": "fushi-3.3.0-windows-setup.exe"
       },
-      "installer_sha256": "734056b87f8ebae4fe92f96af5fd93c8840d341d19b269c2c17a3e3ab9c742d5"
+      "installer_sha256": "7fcf9d90c5845038d26c99145fcab6f6d4e306829365ac8dedab225ad32188ee"
     },
     {
       "id": "debug-26834-017cdcf",
