@@ -68,4 +68,48 @@ void main() {
       contains('_exitDiscSession()'),
     );
   });
+
+  // 拍板台 58EoAZOXVN：层级是 正片全屏 → 正片窗口 → 盘菜单 → 详情页。
+  test('back on a title steps to the disc menu, not out of the session', () {
+    final String page = _read(
+      'lib/src/pages/implementations/video_fushi_page.dart',
+    );
+    final String back = _member(page, 'Future<void> _handleBackOrExit() async');
+    final int bar = back.indexOf('_discSessionShowBarOnBack()');
+    final int menu = back.indexOf('_discSessionReturnToMenuOnBack()');
+    final int exit = back.indexOf('_exitVideoPage()');
+    expect(menu, greaterThan(bar));
+    expect(exit, greaterThan(menu), reason: '回菜单这一级必须在退页之前');
+    final String route = _member(
+      part,
+      'DiscSessionBackRoute? _discSessionBackRoute()',
+    );
+    expect(route, contains('onMenu: _discSessionSurfaceActive'));
+    expect(route, contains('_discSessionExitRequested'));
+    expect(
+      route,
+      contains('videoDiscMenuKeyAllowed(state, VideoDiscMenuKey.topMenu)'),
+    );
+    // 回菜单这一级的执行（只有盘拒绝才退会话、在途连按吞掉）由 DiscMenuReturn 持有，
+    // 行为见 disc_session_controls_test.dart 的 DiscMenuReturn 组。
+    final String toMenu = _member(
+      part,
+      'bool _discSessionReturnToMenuOnBack()',
+    );
+    expect(toMenu, contains('_discMenuReturn.handleBack('));
+    expect(toMenu, contains('_discSessionBackRoute()'));
+    expect(toMenu, contains('discMenuKey(VideoDiscMenuKey.topMenu)'));
+    expect(toMenu, contains('onRefused:'));
+    expect(toMenu, contains('_exitDiscSession()'));
+    expect(
+      _member(page, 'final DiscMenuReturn _discMenuReturn'),
+      contains('isRefusal: isVideoDiscMenuCallRefusal'),
+      reason: '暂时性错误不能被当成「盘没有菜单这一级」',
+    );
+    // 全屏路由里的返回只退全屏：正片阶段不得在全屏这一级就回菜单或退会话。
+    final String fullscreen = _read(
+      'lib/src/pages/implementations/video_fushi/fullscreen.part.dart',
+    );
+    expect(fullscreen, isNot(contains('_discSessionReturnToMenuOnBack')));
+  });
 }

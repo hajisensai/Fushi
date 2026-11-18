@@ -127,6 +127,11 @@ class AudioCue {
   /// true)` 产出，其余解析路径默认不产出。
   bool get isRenderOnly => text.isEmpty && markup?.drawing != null;
 
+  /// 特效字幕（歌词特效 / 屏幕字，H7r4mf_z2n）：解析层标出的 [SubtitleMarkup.isEffect]；
+  /// 没有 markup（落库往返、外部转录）恒为 false。手改过的 cue 的 markup 由
+  /// `subtitle_text_override.dart` 沿用原 cue 的标志。
+  bool get isEffect => markup?.isEffect ?? false;
+
   File? resolveAudioFile(List<File> audioFiles) {
     if (audioFileIndex < 0 || audioFileIndex >= audioFiles.length) {
       return null;

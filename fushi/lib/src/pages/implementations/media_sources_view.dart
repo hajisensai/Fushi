@@ -41,6 +41,7 @@ import 'package:fushi/src/media/source_library/game_source_scanner.dart'
 import 'package:fushi/src/media/alist/alist_source_url.dart';
 import 'package:fushi/src/media/source_library/source_folder_access.dart';
 import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
+import 'package:fushi/src/media/source_library/source_auto_scan.dart';
 import 'package:fushi/src/media/source_library/source_library_privacy.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/media/source_library/source_library_removal.dart';
@@ -198,10 +199,12 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     _ => const <String>['sftp', 'ftp', 'webdav', 'alist'],
   };
 
-  /// 页面页头与所有行级 mutation 共用的忙状态。
+  /// 页面页头与所有行级 mutation 共用的忙状态。来源自动扫描（首页调度，
+  /// [sourceScanActivity]）在扫时也算忙：扫描期间不重命名 / 移除 / 改分组。
   bool get isBusy =>
       _inboxImporting ||
       _scanning.isNotEmpty ||
+      !sourceScanActivity.isIdle ||
       _scraping.isNotEmpty ||
       (widget.mediaKind == 'video' &&
           widget.scrapeTaskController?.isBusy == true);
@@ -221,7 +224,39 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     SyncRepository.interconnectEnabledRevision.addListener(
       _onInterconnectEnabledChanged,
     );
+    _observedActiveScans = sourceScanActivity.activeSourceIds;
+    sourceScanActivity.addListener(_onSourceScanActivityChanged);
     _load();
+  }
+
+  /// 上一次看到的 [sourceScanActivity] 快照，用来找出「刚扫完」的来源。
+  Set<int> _observedActiveScans = const <int>{};
+
+  /// 别处（首页的自动扫描）扫本页来源时：行级 loading 跟着亮，扫完重读该行与累计数。
+  void _onSourceScanActivityChanged() {
+    if (!mounted) return;
+    final Set<int> current = sourceScanActivity.activeSourceIds;
+    final Set<int> finished = _observedActiveScans.difference(current);
+    _observedActiveScans = current;
+    setState(() {});
+    for (final int id in finished) {
+      // 本页自己发起的扫描由 [_rescan] 收尾，这里只接别处扫完的。
+      if (_scanning.contains(id)) continue;
+      if (_rows?.any((SourceLibraryRow r) => r.id == id) != true) continue;
+      unawaited(_reloadRow(id));
+    }
+  }
+
+  Future<void> _reloadRow(int id) async {
+    final SourceLibraryRow? updated = await _db.getMediaSourceById(id);
+    if (!mounted || updated == null) return;
+    setState(() {
+      final List<SourceLibraryRow>? rows = _rows;
+      if (rows == null) return;
+      final int idx = rows.indexWhere((SourceLibraryRow r) => r.id == id);
+      if (idx >= 0) rows[idx] = updated;
+    });
+    await _refreshCount(id);
   }
 
   @override
@@ -234,6 +269,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
 
   @override
   void dispose() {
+    sourceScanActivity.removeListener(_onSourceScanActivityChanged);
     widget.scrapeTaskController?.removeListener(_onScrapeTaskChanged);
     if (widget.mediaKind == 'video') {
       videoScrapeCleanupRevision.removeListener(_onVideoScrapeCleanupChanged);
@@ -510,7 +546,8 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     );
     final bool isLocal = row.transport == 'local';
     final bool isVideo = widget.mediaKind == 'video';
-    final bool scanning = _scanning.contains(row.id);
+    final bool scanning =
+        _scanning.contains(row.id) || sourceScanActivity.isScanning(row.id);
     final bool scraping = _isScrapingSource(row.id);
     final bool exporting = _exportingDiagnostics.contains(row.id);
     final bool busy = scanning || scraping || exporting || isBusy;
@@ -555,6 +592,16 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
                   ),
                 ),
         ),
+      // 自动扫描（v157）：启动 / 回前台时按节流自动重扫，全部来源种类都有。
+      _SourceRowMenuAction(
+        key: ValueKey<String>('media_source_auto_scan_${row.id}'),
+        label: row.autoScan
+            ? t.media_source_auto_scan_disable
+            : t.media_source_auto_scan_enable,
+        icon: FushiIcons.schedule,
+        // 只写一列、不碰扫描状态：不随全局忙置灰——慢速网络来源扫描途中也要能关掉。
+        onTap: () => _toggleAutoScan(row),
+      ),
       _SourceRowMenuAction(
         label: t.media_source_open_folder,
         icon: FushiIcons.folderOpen,
@@ -624,6 +671,33 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
+                        ),
+                        // 自动扫描开着：名字后挂一个时钟，淡入淡出。
+                        AnimatedSwitcher(
+                          duration: motion.effectsDefault.duration,
+                          switchInCurve: motion.effectsDefault.curve,
+                          switchOutCurve: motion.effectsDefault.curve,
+                          child: row.autoScan
+                              ? Padding(
+                                  key: ValueKey<String>(
+                                    'media_source_auto_scan_badge_${row.id}',
+                                  ),
+                                  padding: const EdgeInsetsDirectional.only(
+                                    start: 6,
+                                  ),
+                                  child: FushiTooltip(
+                                    message: t.media_source_auto_scan_badge,
+                                    child: Semantics(
+                                      label: t.media_source_auto_scan_badge,
+                                      child: FushiIcon(
+                                        FushiIcons.schedule,
+                                        size: 16,
+                                        color: cs.primary,
+                                      ),
+                                    ),
+                                  ),
+                                )
+                              : const SizedBox.shrink(),
                         ),
                         // 隐私来源：名字后挂一把锁，一眼看出这一行不上排行榜。
                         if (row.isPrivate) ...<Widget>[
@@ -1538,6 +1612,8 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     SourceScanSummary? summary;
     setState(() => _scanning.add(row.id));
     try {
+      // 扫描器自己登记进全局扫描占用表（[sourceScanActivity]，每来源锁）：首页的自动
+      // 扫描看到它在扫就排队，不并发扫。
       Future<SourceScanSummary> scan() => SourceLibraryScanner(
         _db,
         transcribeAudiobook: _bookTranscribePort,
@@ -1598,6 +1674,19 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
       if (mounted) setState(() => _scraping.remove(row.id));
       onLibraryChanged?.call();
     }
+  }
+
+  /// 切换来源的自动扫描开关（v157）。打开时提示何时会扫；扫描本身由首页调度在下一次
+  /// 启动 / 回前台时进行，这里不立即扫（要立刻扫用旁边的「重新扫描」）。
+  Future<void> _toggleAutoScan(SourceLibraryRow row) async {
+    final bool next = !row.autoScan;
+    await _db.updateMediaSourceAutoScan(row.id, next);
+    await _reloadRow(row.id);
+    FushiToast.show(
+      msg: next
+          ? t.media_source_auto_scan_enabled_toast
+          : t.media_source_auto_scan_disabled_toast,
+    );
   }
 
   /// 来源的隐私开关对话框（撤下回调用 initState 捕获的

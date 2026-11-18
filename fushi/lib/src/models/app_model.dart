@@ -152,6 +152,8 @@ import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_engine/utils/net/app_proxy.dart';
 import 'package:fushi/src/media/collections/library_organize_runner.dart'
     show LibraryOrganizeAutoHost, installLibraryOrganizeAutomatic;
+import 'package:fushi/src/media/library_curate/library_curate_auto.dart'
+    show LibraryCurateAutoHost, installLibraryCurateAutomatic;
 import 'package:fushi/src/media/collections/collection_ai_order.dart'
     show installCollectionAiOrderSettings;
 import 'package:fushi/src/media/override_thumbnail_migration.dart';
@@ -300,6 +302,7 @@ import 'package:fushi_engine/utils/net/fake_ip_dns.dart';
 import 'package:fushi_torrent/fushi_torrent.dart' show FtSessionStatus;
 import 'package:fushi_engine/media/torrent/bt_site_config.dart';
 import 'package:fushi_engine/media/torrent/bt_site_legacy_migration.dart';
+import 'package:fushi_engine/media/torrent/bt_site_parser_rule.dart';
 import 'package:fushi_engine/media/torrent/bt_site_probe.dart';
 import 'package:fushi_engine/media/torrent/bt_site_providers.dart';
 import 'package:fushi_engine/media/external_provider.dart';
@@ -570,6 +573,7 @@ import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/manga_sync_package.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/module_registry.dart' show isAiModuleEnabled;
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/settings/settings_schema.dart'
     show resetSettingsSchemaCache;
@@ -2708,6 +2712,10 @@ class AppModel
   bool get musicLyricsLookupPause => prefsRepo.musicLyricsLookupPause;
   Future<void> setMusicLyricsLookupPause(bool value) =>
       prefsRepo.setMusicLyricsLookupPause(value);
+
+  bool get musicLyricsBlurInactive => prefsRepo.musicLyricsBlurInactive;
+  Future<void> setMusicLyricsBlurInactive(bool value) =>
+      prefsRepo.setMusicLyricsBlurInactive(value);
 
   /// 后台响度扫描（缺 ReplayGain 标签的曲目，设计 §7.3）。
   late final MusicLoudnessScanner musicLoudness = MusicLoudnessScanner(
@@ -5127,6 +5135,11 @@ class AppModel
       //    cloud backup backend can now coexist).
       StartupTimeline.mark('db-open+srs-host');
       await BackupRestoreService.recoverPendingRestore(_databaseDirectory.path);
+      // 覆盖导入保留的覆盖前快照过了保留期就删（维护者 2026-11-16 拍板）。放在
+      // recoverPendingRestore 之后：它可能刚把半途中断的覆盖导入收尾、换上新快照。
+      await BackupRestoreService.pruneExpiredOverwriteSnapshot(
+        _databaseDirectory.path,
+      );
 
       // 沙箱重定位自愈：数据根被**平台**挪走后，把库里的绝对路径重基过去。
       //
@@ -5192,6 +5205,16 @@ class AppModel
           db: _database,
           prefs: _prefsRepo!,
           nameLanguage: () => appLocale.toLanguageTag(),
+        ),
+      );
+      // AI 库管家自动路径（spec 2026-11-18 §9，默认开）：开着时接管上面那套自动
+      // 整理的触发点（scheduleAutomaticLibraryOrganize 内部转交）。编排器经进程级
+      // 操作上下文拿操作目录，根组件登记前那几次触发什么都不做。
+      installLibraryCurateAutomatic(
+        LibraryCurateAutoHost(
+          settings: _prefsRepo!,
+          autoOn: () => _prefsRepo!.libraryCurateAuto,
+          aiModuleEnabled: () => isAiModuleEnabled(moduleVisibility),
         ),
       );
       // Anki 制卡设置的存储换成 Drift（并把 SharedPreferences 旧值一次性搬过来），
@@ -6789,6 +6812,13 @@ class AppModel
 
   Future<void> setVideoSubtitleListTapLookup(bool value) =>
       prefsRepo.setVideoSubtitleListTapLookup(value);
+
+  /// 视频字幕列表是否列出特效字幕（H7r4mf_z2n，默认 true）。
+  bool get videoSubtitleListShowEffects =>
+      prefsRepo.videoSubtitleListShowEffects;
+
+  Future<void> setVideoSubtitleListShowEffects(bool value) =>
+      prefsRepo.setVideoSubtitleListShowEffects(value);
 
   /// 视频字幕列表上次打开的页签名（xlzGuK5YmD，`VideoSubtitleListFilter.name`）。
   String get videoSubtitleListFilter => prefsRepo.videoSubtitleListFilter;
@@ -9413,10 +9443,13 @@ class AppModel
   }
 
   /// 自动识别一个 BT 站地址是哪种站点（添加 / 重新检测）。失败抛
-  /// [BtSiteProbeException]，界面只显示中性提示。
+  /// [BtSiteProbeException]，界面只显示中性提示。给了 [parser]（用户导入的解析
+  /// 规则）就不自动识别，改为按规则验证，[cookie] 随请求发给站点。
   Future<BtSiteProbeResult> detectBtSite(
     String url, {
     bool allowInsecureHttp = false,
+    BtSiteParserRule? parser,
+    String cookie = '',
   }) async {
     final http.Client client = await createDownloadHttpClient();
     try {
@@ -9424,6 +9457,8 @@ class AppModel
         url,
         client: client,
         allowInsecureHttp: allowInsecureHttp,
+        parser: parser,
+        cookie: cookie,
       );
     } finally {
       client.close();
@@ -11840,6 +11875,16 @@ class AppModel
   bool get browseMovedNoticeHandled => prefsRepo.browseMovedNoticeHandled;
   Future<void> setBrowseMovedNoticeHandled() =>
       prefsRepo.setBrowseMovedNoticeHandled();
+
+  /// 库页默认改封面网格后的「拼贴仍可选」一次性提示是否已处理
+  /// （见 `library_layout_default_notice.dart`）。
+  bool get libraryLayoutDefaultNoticeHandled =>
+      prefsRepo.libraryLayoutDefaultNoticeHandled;
+  Future<void> setLibraryLayoutDefaultNoticeHandled() =>
+      prefsRepo.setLibraryLayoutDefaultNoticeHandled();
+
+  /// 当前 Profile 是否显式选过库页布局（落库值非空，含已删的 `blocks`）。
+  bool get shellContentLayoutChosen => themeNotifier.shellContentLayoutChosen;
 
   int get maximumTerms => prefsRepo.maximumTerms;
   void setMaximumTerms(int value) => prefsRepo.setMaximumTerms(value);

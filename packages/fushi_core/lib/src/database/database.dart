@@ -926,6 +926,7 @@ void _requireOneVideoMetadataOwner({
     VideoSubtitleGlossaries,
     VideoSubtitleTextOverrides,
     MediaPrivacyFlags,
+    MediaNsfwFlags,
     LibraryOrganizeRuns,
     LibraryOrganizeChanges,
     WebBrowserHistory,
@@ -999,7 +1000,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 155;
+  int get schemaVersion => 159;
 
   /// v125–v128 四步的产物（全部幂等）：SRS 写路径索引、
   /// `collection_member_tombstones.published_at`、`bookmarks.char_offset` /
@@ -3143,6 +3144,57 @@ class FushiDatabase extends _$FushiDatabase
           await customStatement(
             'CREATE INDEX IF NOT EXISTS idx_manga_download_jobs_status_created '
             'ON manga_download_jobs (status, created_at)',
+          );
+        }
+      }
+      if (from < 156) {
+        // v156：作品级「NSFW」标记表 media_nsfw_flags（模糊封面 / 制卡图片，拍板台
+        // w04vrhUAaX）。纯新表、不动数据；幂等守卫同 v122。
+        if (!await _tableExists('media_nsfw_flags')) {
+          await m.createTable(mediaNsfwFlags);
+        }
+      }
+      if (from < 157) {
+        // v157：media_sources.auto_scan——来源的「自动扫描」开关（拍板台
+        // C_8oheua0H / ICOLa6LZLU / enSm2GOuFA）。默认关、存量来源 false；
+        // 设备本地。早期步骤按当前定义建表时已带这一列，按列存在性守卫，幂等。
+        if (await _tableExists('media_sources') &&
+            !await _columnExists('media_sources', 'auto_scan')) {
+          await m.addColumn(mediaSources, mediaSources.autoScan);
+        }
+      }
+      if (from < 158) {
+        // v158：music_tracks.hidden_at——用户「从音乐库移除」本地曲目的墓碑（拍板台
+        // IDeN5PYaI7）：重扫不复活。纯加列、存量 NULL（都没隐藏）；早期步骤（v130
+        // createTable）按当前定义建的表已带这一列，按列存在性守卫，幂等。
+        if (await _tableExists('music_tracks') &&
+            !await _columnExists('music_tracks', 'hidden_at')) {
+          await m.addColumn(musicTracks, musicTracks.hiddenAt);
+        }
+      }
+      if (from < 159) {
+        // v159（AI 库管家设计稿 §5.3 / §7）：
+        // - media_links.confirmed_by——谁让连接生效（user / ai / NULL=建议）。存量
+        //   is_user_confirmed = 1 的行回填 'user'；is_user_confirmed 保留为
+        //   `confirmed_by == 'user'` 的镜像（持久化名冻结，旧对端 / 备份还在读写）。
+        // - media_collection_items.pinned_by_user——用户亲手放进合集的成员，AI 整理
+        //   不再移出。存量行 0（老合集的成员 AI 可以整理一次，用户加回后锁定）。
+        // 早期步骤（v132 createTable）按当前定义建的表已带新列，按列存在性守卫；
+        // 回填只碰 confirmed_by 仍为 NULL 的行，重跑幂等。
+        if (await _tableExists('media_links')) {
+          if (!await _columnExists('media_links', 'confirmed_by')) {
+            await m.addColumn(mediaLinks, mediaLinks.confirmedBy);
+          }
+          await customStatement(
+            "UPDATE media_links SET confirmed_by = 'user' "
+            'WHERE is_user_confirmed = 1 AND confirmed_by IS NULL',
+          );
+        }
+        if (await _tableExists('media_collection_items') &&
+            !await _columnExists('media_collection_items', 'pinned_by_user')) {
+          await m.addColumn(
+            mediaCollectionItems,
+            mediaCollectionItems.pinnedByUser,
           );
         }
       }

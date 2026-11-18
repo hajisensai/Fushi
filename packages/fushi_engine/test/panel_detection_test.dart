@@ -53,6 +53,113 @@ void main() {
     expect(result, hasLength(2));
     expect(result.first.top, 0);
     expect(result.last.bottom, 1);
+    // 两个框上下错开（中心 y 0.25 / 0.75）= 两行：切成通栏横条，不是竖条。
+    for (final PanelRect strip in result) {
+      expect(strip.left, 0);
+      expect(strip.right, 1);
+    }
+    expect(result.first.bottom, closeTo(0.5, 1e-9));
+    expect(result.last.top, result.first.bottom, reason: '两条首尾相接');
+  });
+
+  test('text boxes on one row split a large panel into columns', () {
+    const PanelRect whole = PanelRect(left: 0, top: 0, right: 1, bottom: 1);
+    const List<PanelTextBox> sameRow = <PanelTextBox>[
+      PanelTextBox(
+        rect: PanelRect(left: 0.2, top: 0.4, right: 0.3, bottom: 0.6),
+        score: 0.9,
+      ),
+      PanelTextBox(
+        rect: PanelRect(left: 0.7, top: 0.42, right: 0.8, bottom: 0.62),
+        score: 0.9,
+      ),
+    ];
+    final List<PanelRect> ltr = splitLargePanel(
+      whole,
+      sameRow,
+      direction: PanelReadingDirection.ltr,
+    );
+    expect(ltr, hasLength(2));
+    for (final PanelRect column in ltr) {
+      expect(column.top, 0);
+      expect(column.bottom, 1);
+    }
+    expect(ltr.first.left, 0);
+    expect(ltr.first.right, closeTo(0.5, 1e-9));
+    expect(ltr.last.left, ltr.first.right);
+    expect(ltr.last.right, 1);
+
+    // rtl：先读右边那一列。
+    final List<PanelRect> rtl = splitLargePanel(
+      whole,
+      sameRow,
+      direction: PanelReadingDirection.rtl,
+    );
+    expect(rtl, hasLength(2));
+    expect(rtl.first.centerX, greaterThan(rtl.last.centerX));
+    for (final PanelRect column in rtl) {
+      expect(column.top, 0);
+      expect(column.bottom, 1);
+    }
+  });
+
+  test('rtl columns tile the panel and each holds its own text box', () {
+    // 三个同行文字框：rtl 下旧实现按 x 降序算边界，中间那列宽度为负被丢掉，
+    // 剩下两列还互相重叠。
+    const PanelRect whole = PanelRect(left: 0, top: 0, right: 1, bottom: 1);
+    const List<double> centers = <double>[0.2, 0.5, 0.8];
+    final List<PanelRect> rtl = splitLargePanel(whole, <PanelTextBox>[
+      for (final double x in centers)
+        PanelTextBox(
+          rect: PanelRect(
+            left: x - 0.05,
+            top: 0.4,
+            right: x + 0.05,
+            bottom: 0.6,
+          ),
+          score: 0.9,
+        ),
+    ], direction: PanelReadingDirection.rtl);
+    expect(rtl, hasLength(3));
+    expect(rtl.first.right, 1);
+    expect(rtl.last.left, 0);
+    for (int i = 0; i < rtl.length; i++) {
+      final double center = centers[centers.length - 1 - i];
+      expect(rtl[i].left, lessThan(center));
+      expect(rtl[i].right, greaterThan(center));
+      if (i > 0) expect(rtl[i].right, closeTo(rtl[i - 1].left, 1e-9));
+    }
+  });
+
+  test('three stacked rows split into three contiguous strips', () {
+    const PanelRect whole = PanelRect(left: 0, top: 0, right: 1, bottom: 1);
+    final List<PanelRect> result = splitLargePanel(whole, const <PanelTextBox>[
+      // 第一行两个框（同一行内左右排）不多切一条。
+      PanelTextBox(
+        rect: PanelRect(left: 0.1, top: 0.05, right: 0.2, bottom: 0.15),
+        score: 0.9,
+      ),
+      PanelTextBox(
+        rect: PanelRect(left: 0.8, top: 0.06, right: 0.9, bottom: 0.16),
+        score: 0.9,
+      ),
+      PanelTextBox(
+        rect: PanelRect(left: 0.4, top: 0.45, right: 0.5, bottom: 0.55),
+        score: 0.9,
+      ),
+      PanelTextBox(
+        rect: PanelRect(left: 0.4, top: 0.85, right: 0.5, bottom: 0.95),
+        score: 0.9,
+      ),
+    ], direction: PanelReadingDirection.rtl);
+    expect(result, hasLength(3));
+    expect(result.first.top, 0);
+    expect(result.last.bottom, 1);
+    for (int i = 0; i < result.length; i++) {
+      expect(result[i].left, 0);
+      expect(result[i].right, 1);
+      if (i > 0) expect(result[i].top, result[i - 1].bottom);
+    }
   });
 
   test('merges sidecar blocks without replacing managed URLs', () {

@@ -37,6 +37,7 @@ import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
     show ShelfCoverFrame;
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
+import 'package:fushi/src/utils/components/nsfw_cover_blur.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart'
     show
         FushiSpring,

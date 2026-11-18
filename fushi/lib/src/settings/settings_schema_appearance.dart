@@ -289,7 +289,7 @@ SettingsDestination buildAppearanceDestination() {
             id: 'appearance.eink_full_refresh_interval',
             title: t.eink_full_refresh_interval,
             subtitle: t.eink_full_refresh_interval_hint,
-            icon: Icons.autorenew,
+            icon: FushiIcons.refresh,
             dropdown: true,
             options: <SettingsSegmentOption<int>>[
               for (final int interval in kEinkFullRefreshIntervalChoices)
@@ -310,7 +310,7 @@ SettingsDestination buildAppearanceDestination() {
             id: 'appearance.eink_full_refresh_method',
             title: t.eink_full_refresh_method,
             subtitle: t.eink_full_refresh_method_hint,
-            icon: Icons.flash_on_outlined,
+            icon: FushiIcons.flash,
             visible: (SettingsContext settingsContext) =>
                 settingsContext.appModel.einkFullRefreshInterval > 0,
             options: <SettingsSegmentOption<EinkFullRefreshMethod>>[
@@ -667,6 +667,42 @@ SettingsDestination buildAppearanceDestination() {
               await settingsContext.appModel.themeNotifier
                   .setFollowAppIconAccent(value);
               notifyReaderSettingsChanged(settingsContext);
+              settingsContext.refresh();
+            },
+            defaultValue: false,
+          ),
+        ],
+      ),
+      // NSFW 内容（拍板台 w04vrhUAaX）：作品在长按菜单里标 NSFW（游戏用编辑页的
+      // 「成人向」），这里两个开关决定封面 / 制卡图片要不要模糊。
+      SettingsSection(
+        id: 'appearance.section.nsfw',
+        title: t.settings_nsfw_section,
+        items: <SettingsItem>[
+          SettingsSwitchItem(
+            id: 'appearance.nsfw_blur_covers',
+            title: t.settings_nsfw_blur_covers,
+            subtitle: t.settings_nsfw_blur_covers_hint,
+            icon: FushiIcons.visibilityOff,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.prefsRepo.blurNsfwCovers,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.prefsRepo.setBlurNsfwCovers(value);
+              settingsContext.refresh();
+            },
+            defaultValue: true,
+          ),
+          SettingsSwitchItem(
+            id: 'appearance.nsfw_blur_card_images',
+            title: t.settings_nsfw_blur_card_images,
+            subtitle: t.settings_nsfw_blur_card_images_hint,
+            icon: FushiIcons.ankiCard,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.prefsRepo.blurNsfwCardImages,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.prefsRepo.setBlurNsfwCardImages(
+                value,
+              );
               settingsContext.refresh();
             },
             defaultValue: false,

@@ -396,6 +396,18 @@ SettingsDestination buildMusicDestination() {
               await settingsContext.appModel.setMusicLyricsLookupPause(value);
             },
           ),
+          // 非当前行轻模糊（GitHub #3354：学日语要看清上一句 / 下一句）。高对比度 /
+          // 减弱动态效果下视图本来就不模糊，这里只管用户自己的偏好。
+          SettingsSwitchItem(
+            id: 'music.lyrics_blur_inactive',
+            title: t.music_lyrics_blur_inactive_title,
+            subtitle: t.music_lyrics_blur_inactive_hint,
+            icon: FushiIcons.lyrics,
+            defaultValue: true,
+            value: (SettingsContext c) => c.appModel.musicLyricsBlurInactive,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.setMusicLyricsBlurInactive(value),
+          ),
           SettingsSwitchItem(
             id: 'music.desktop_lyrics',
             title: t.music_desktop_lyrics_title,

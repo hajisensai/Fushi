@@ -131,6 +131,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // music_lyrics_service_test 咬住。
   'music/Online lyrics (LRCLIB)':
       'test/media/music/lyrics/music_lyrics_service_test.dart',
+  // 歌词来源列表里的 LRCLIB 启停（与歌词插件同一份有序列表）：生效点是 MusicLyricsService
+  // 解析时问不问 LRCLIB，harness 没有在播的曲目。停用后不问 LRCLIB 由
+  // music_lyrics_service_plugins_test 咬住，开关写入来源列表偏好由 music_lyrics_providers_test 咬住。
+  'music/LRCLIB':
+      'test/media/music/lyrics/music_lyrics_service_plugins_test.dart + test/pages/music/music_lyrics_providers_test.dart',
   // 查词时暂停：生效点在歌词页查词回调（musicLyricsShouldPauseForLookup）与桌面歌词
   // 点词（MusicLookupPause，music_lookup_pause_test，BUG-4198），harness 设置页两者
   // 都没有；判据由 music_lyrics_page_logic_test 咬住。
@@ -146,6 +151,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'services/Storefront': 'test/media/music/server/music_server_test.dart',
   'music/Pause while looking up words':
       'test/media/music/lyrics/music_lyrics_page_logic_test.dart',
+  // 模糊非当前行：生效点是歌词页 / MV 页里 KaraokeLyricsView 的非焦点行 ImageFilter.blur，
+  // harness 设置页没有在播的曲目与歌词视图。偏好 → 歌词页 appearance.blurInactive 即时
+  // 生效由 music_lyrics_page_test 咬住，blurInactive 开 / 关下非当前行有无模糊层由
+  // karaoke_lyrics_view_test 咬住。
+  'music/Blur surrounding lines': 'test/pages/music_lyrics_page_test.dart',
   // 服务器曲库的码率上限：生效点是播放服务器曲目时向服务器要的流（直出 / 转码），harness
   // 里没有服务器。设置值 → musicServerBitrateLimit → streamFor 的直出 / 转码与信号路径源
   // 属性由 music_server_test 咬住。
@@ -218,6 +228,15 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // theme_app_icon_link_test（发布到全局开关）与 mascot_glow_test（光晕层）咬住。
   'appearance/Mascot glow':
       'test/models/theme_app_icon_link_test.dart + test/utils/components/mascot_glow_test.dart',
+  // NSFW 两个开关（拍板台 w04vrhUAaX）：生效点是库页 / 继续卡的封面框（模糊）与
+  // 制卡时的卡图（模糊副本）——harness 设置页里既没有库页封面也不制卡。封面框读
+  // ShelfCoverNsfw 打模糊、制卡图片开关关 / 开的行为由 media_nsfw_test 咬住。
+  'appearance/Blur NSFW covers': 'test/media/nsfw/media_nsfw_test.dart',
+  'appearance/Blur card images too': 'test/media/nsfw/media_nsfw_test.dart',
+  // 墨水屏每 N 页全刷：生效点是小说三种 view mode 与漫画阅读器的翻页计数和全刷画布，
+  // harness 设置页里没有阅读器。间隔值 → 每 N 次翻页触发一次、0 = 关、阅读器接线由
+  // eink_full_refresh_test 咬住。
+  'appearance/E-ink full refresh': 'test/reader/eink_full_refresh_test.dart',
   // 词典统一 M3E 配色：生效点在查词弹窗 WebView 里的 popup.js / popup.css，
   // harness 没有 WebView。注入接线、默认值与 CSS 层由
   // popup_dict_unified_style_test 咬住。
@@ -400,6 +419,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 连续收听提醒的间隔档位：默认受「连续收听提醒」开关门控 disabled，harness 驱动不动属
   // 预期；生效点（档位改了对正在进行的这一轮立即生效、档位外存值归档）由单测守。
   'general/Remind after': 'test/media/listening_reminder_test.dart',
+  // 连续收听提醒开关本身：生效点是全局收听计时器（开 = 播放中按档位计时到点提醒，
+  // 关 = 停计时清计数），harness 设置页里没有在播的播放器。开 / 关对计时器的效果由
+  // listening_reminder_test 咬住，开关经 enableListeningReminder 接到 AppModel 由
+  // listening_reminder_app_test 咬住。
+  'general/Listening break reminder':
+      'test/media/listening_reminder_test.dart + test/media/listening_reminder_app_test.dart',
   // 句子音频来源：生效点在制卡 ffmpeg 抽音参数（中置声道 pan 滤镜 / 音轨选择）。
   'cardCreation/Sentence audio source':
       'test/mining/sentence_audio_source_test.dart',
@@ -1836,6 +1861,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 新入库的）。
   'ai/Organize with AI after import':
       'test/media/collections/library_organize_runner_test.dart',
+  // AI 库管家自动路径（默认开）：生效点是去抖后的自动路径每次现读开关与各步 AI
+  // 指派（harness 里没有导入、操作上下文与 AI 提供商）。专项测试咬住默认开、没指派
+  // 任何 AI 不调度、开着时接管旧自动整理的触发点，编排逻辑由引擎测试覆盖。
+  'ai/Curate the library automatically':
+      'test/ops/ctl_library_curate_routes_test.dart',
   // 允许已配对设备使用 AI 助手：生效点是互联 host 的 /api/assistant agent 门（harness
   // 里没有互联服务器）。专项测试咬住「关着 → disabled、不建模型」与控制通道写不进去。
   "interconnect/Use this device's AI assistant":

@@ -139,29 +139,24 @@ class SubtitleVersionLanguageProbe {
       <String, SubtitleContentLanguage?>{};
 
   /// 探测 [candidate] 的正文语言；不可用/失败/unknown → null。
+  ///
+  /// 与 [probeUnlabeledVersionLanguages] 同一套失败语义（共用 [_probeOne]）：超限 /
+  /// 解不开 / 判不出是**结论**，进缓存不再重探；下载抛错 / 空字节是暂时性失败，
+  /// **不进缓存**——否则一次网络抖动（或改 key 前的那次 401）会让这个版本在面板
+  /// 关闭前永远没有「正文」标签。
   Future<SubtitleContentLanguage?> probe(
     VideoSubtitleCandidate candidate,
   ) async {
     final String key = candidate.identityKey;
     if (_cache.containsKey(key)) return _cache[key];
-    final int? size = candidate.fileSize;
-    if (size != null && size > maxProbeBytes) {
-      return _cache[key] = null;
-    }
-    try {
-      final VideoSubtitleDownload download = await _download(candidate);
-      if (download.bytes.isEmpty || download.bytes.length > maxProbeBytes) {
-        return _cache[key] = null;
-      }
-      final String text = await decodeTextBytes(download.bytes);
-      final SubtitleContentLanguage detected = detectSubtitleContentLanguage(
-        text,
-      );
-      return _cache[key] = detected == SubtitleContentLanguage.unknown
-          ? null
-          : detected;
-    } on Object {
-      return _cache[key] = null;
-    }
+    final ({bool concluded, SubtitleContentLanguage? language}) result =
+        await _probeOne<VideoSubtitleCandidate>(
+          candidate,
+          fetch: (VideoSubtitleCandidate c) async => (await _download(c)).bytes,
+          sizeOf: (VideoSubtitleCandidate c) => c.fileSize,
+          maxProbeBytes: maxProbeBytes,
+        );
+    if (result.concluded) _cache[key] = result.language;
+    return result.language;
   }
 }

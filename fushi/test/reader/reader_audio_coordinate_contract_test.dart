@@ -68,11 +68,21 @@ void main() {
           source,
           isNot(contains('_findCueForOffset(data.normalizedOffset!')),
         );
-        // 查词 / 选区操作条的 cue 回退共用 chrome.part 的 [_cueForSelectionData]，
-        // 两处都经它取 cue；偏移域在它的函数体里钉（见下）。
-        expect(source, contains('_cueForSelectionData(data)'));
+        // 音频坐标选区在两个文件里都要写：歌词分支在 lookup.part 自己写，正文
+        // 选区在 chrome.part 的共用写点里写。
         expect(source, contains('_cacheMatchableSelection(data)'));
       }
+      // 查词 / 选区操作条的 cue 回退共用 chrome.part 的 [_cueForSelectionData]；
+      // 偏移域在它的函数体里钉（见下）。tap 查词经共用写点
+      // `_applyLookupStateFromSelectionData` 取 cue（BUG-4824），不自己解析。
+      expect(
+        File('${directory}chrome.part.dart').readAsStringSync(),
+        contains('_cueForSelectionData(data)'),
+      );
+      expect(
+        File('${directory}lookup.part.dart').readAsStringSync(),
+        contains('_applyLookupStateFromSelectionData(data);'),
+      );
       final String chrome = File(
         '${directory}chrome.part.dart',
       ).readAsStringSync();

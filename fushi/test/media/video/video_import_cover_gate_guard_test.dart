@@ -36,12 +36,16 @@ void _expectOrdered(String source, List<String> markers) {
 void main() {
   late String dialogSource;
   late String mainSource;
+  late String externalIngestSource;
 
   setUpAll(() {
     dialogSource = File(
       'lib/src/media/video/video_import_dialog.dart',
     ).readAsStringSync();
     mainSource = File('lib/main.dart').readAsStringSync();
+    externalIngestSource = File(
+      'lib/src/media/video/external_video_ingest.dart',
+    ).readAsStringSync();
   });
 
   test('视频导入自动封面统一保持 operation -> mutation 锁顺序', () {
@@ -147,10 +151,11 @@ void main() {
   });
 
   test('系统外部打开的新视频也原子提交自动封面', () {
+    // 入库逻辑在 external_video_ingest.dart（app 外打开与音乐库本地 MV 共用）。
     final String gate = _slice(
-      mainSource,
-      'Future<T> _runExternalVideoCoverMutation<T>(',
-      'SystemUiOverlayStyle fushiSystemOverlayStyle(',
+      externalIngestSource,
+      'Future<T> runExternalVideoCoverMutation<T>(',
+      'Future<ExternalVideoUpsert> upsertExternalVideoBook(',
     );
     _expectOrdered(gate, <String>[
       'VideoScrapeOperationGate.tryEnterOperation()',
@@ -165,8 +170,14 @@ void main() {
       'Future<void> _openExternalVideo(',
       'void _scheduleWindowsUpdateHandoffReconcile()',
     );
-    _expectOrdered(openExternal, <String>[
-      '_runExternalVideoCoverMutation(',
+    expect(openExternal, contains('upsertExternalVideoBook(repo, videoPath)'));
+    final String upsert = externalIngestSource.substring(
+      externalIngestSource.indexOf(
+        'Future<ExternalVideoUpsert> upsertExternalVideoBook(',
+      ),
+    );
+    _expectOrdered(upsert, <String>[
+      'runExternalVideoCoverMutation(',
       'findByVideoPath(',
       'allowsAutoFrameWrite(candidateUid)',
       'extractVideoCover(',

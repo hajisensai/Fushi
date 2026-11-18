@@ -100,10 +100,13 @@ enum PreviousExitKind {
   /// 被厂商系统按应用结束：ColorOS / OxygenOS / realme UI 的 `o-stop`（Android 记成
   /// `OTHER` +「`stop <包名> due to o-stop(<码>)`」，OPlus 框架主动停应用——划掉最近任务、
   /// 一键清理、后台 / 耗电管理），MIUI / HyperOS 的 `SwipeUpClean`（`OTHER` +
-  /// 「`SwipeUpClean`」，在最近任务里上划清掉应用）。平台给了明确原因，不是闪退；真崩溃 /
-  /// ANR 系统另记 `CRASH*` / `ANR`。否则用户每在最近任务里划掉一次（死时界面还在最上层、
-  /// importance=100，或在跑前台服务、importance=125），下次启动都弹「意外退出」（反馈
-  /// HqhXJvwgq3 / lN8b_hBgKD）。
+  /// 「`SwipeUpClean`」，在最近任务里上划清掉应用），MIUI / HyperOS 熄屏耗电检查（`OTHER` +
+  /// 「`ScreenOffCPUCheckKill over … used … (…%) threshold …`」）。平台给了明确原因，不是
+  /// 闪退；真崩溃 / ANR 系统另记 `CRASH*` / `ANR`。否则用户每在最近任务里划掉一次（死时界面
+  /// 还在最上层、importance=100，或在跑前台服务、importance=125），下次启动都弹「意外退出」
+  /// （反馈 HqhXJvwgq3 / lN8b_hBgKD）。耗电检查杀进程说明熄屏时真的在吃 CPU，那条记录按
+  /// [androidExitSevere] 落进用户可见的错误日志，不因为不弹闪退报告就藏起来（反馈
+  /// Z9FwhY9377）。
   vendorStopped,
 
   /// 权限变更时被系统按 uid 结束（Android `PERMISSION_CHANGE`：撤销运行时权限；或
@@ -617,16 +620,35 @@ final RegExp _oplusAppStop = RegExp(
 /// `#hw7f_pogDW` 也是它）。整串锚定，子原因前缀可有可无。
 final RegExp _miuiSwipeUpClean = RegExp(r'^(?:\[[A-Z0-9_ ]+\] )?SwipeUpClean$');
 
+/// MIUI / HyperOS 熄屏 CPU 检查杀进程时写下的 `ApplicationExitInfo` 描述：原因码
+/// `REASON_OTHER`，描述形如 `ScreenOffCPUCheckKill over +25m0s475ms used +45m1s910ms
+/// (180.07031%) threshold 6.0`（熄屏窗口里进程 CPU 占比超过阈值，反馈 Z9FwhY9377）。
+/// 子原因前缀可有可无；只锚定开头的标记词，后面的读数格式随 ROM 版本变，不做要求。
+final RegExp _miuiScreenOffCpuKill = RegExp(
+  r'^(?:\[[A-Z0-9_ ]+\] )?ScreenOffCPUCheckKill(?: .*)?$',
+);
+
 /// 厂商框架结束应用时写在 `OTHER` 描述里的已知形态，命中任一条即
 /// [PreviousExitKind.vendorStopped]。新厂商形态加在这里，不在 [androidExitKind] 里另开分支。
 final List<RegExp> _vendorStopDescriptions = <RegExp>[
   _oplusAppStop,
   _miuiSwipeUpClean,
+  _miuiScreenOffCpuKill,
 ];
 
 /// [description]（已 trim）整串匹配某条厂商停应用形态。
 bool _isVendorStopDescription(String description) =>
     _vendorStopDescriptions.any((RegExp re) => re.hasMatch(description));
+
+/// 这条 Android 退出记录要不要走 `log`（落盘、用户可见）：[kSevereAndroidExitReasons]，
+/// 外加厂商按 CPU 耗电杀进程（MIUI `ScreenOffCPUCheckKill`）——它按
+/// [PreviousExitKind.vendorStopped] 不弹闪退报告，但说明熄屏时真的在吃 CPU，是要查的
+/// 耗电问题，不能只留在诊断段里。
+bool androidExitSevere(String reason, {String? description}) =>
+    kSevereAndroidExitReasons.contains(reason) ||
+    (reason == 'OTHER' &&
+        description != null &&
+        _miuiScreenOffCpuKill.hasMatch(description.trim()));
 
 /// Android 退出原因 → [PreviousExitKind]；包更新 / 权限变更映射成
 /// [PreviousExitKind.appUpdated] / [PreviousExitKind.permissionChanged]（明确的良性原因，
@@ -635,7 +657,7 @@ bool _isVendorStopDescription(String description) =>
 /// 「scheduleCrash for '…' failed」——系统结束了够不着的进程，应用里没崩）返回 null，
 /// 交给会话标记。`OTHER` 只在
 /// [description] 是 AOSP 自己写的 appop 变更杀进程描述时才算权限变更、是 OPlus 的
-/// `o-stop` 停应用描述、MIUI / HyperOS 的 `SwipeUpClean` 时算厂商停止
+/// `o-stop` 停应用描述、MIUI / HyperOS 的 `SwipeUpClean` / 熄屏耗电检查描述时算厂商停止
 /// （[PreviousExitKind.vendorStopped]，见 [_vendorStopDescriptions]），其它照旧 null。
 PreviousExitKind? androidExitKind(String reason, {String? description}) =>
     switch (reason) {
@@ -891,7 +913,10 @@ List<ExitReportEntry> formatAndroidExitReports(
         ExitReportEntry(
           kAndroidExitInfoSource,
           _cap(redactExitReportPaths(b.toString())),
-          severe: kSevereAndroidExitReasons.contains(reason),
+          severe: androidExitSevere(
+            reason,
+            description: description is String ? description : null,
+          ),
           kind: androidExitKind(
             reason,
             description: description is String ? description : null,

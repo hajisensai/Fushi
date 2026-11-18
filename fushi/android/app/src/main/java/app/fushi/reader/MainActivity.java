@@ -281,6 +281,7 @@ public class MainActivity extends AudioServiceActivity {
 
     @Override
     protected void onDestroy() {
+        CrossAppAudioChannel.unregisterMain();
         if (ttsChannelHandler != null) {
             ttsChannelHandler.destroy();
         }
@@ -662,6 +663,8 @@ public class MainActivity extends AudioServiceActivity {
         // 全局悬浮球（系统常驻球 + 截屏 OCR）。传 Activity：申请悬浮窗权限 / 发起截屏确认
         // 都要从 Activity 起，不必再补 NEW_TASK。
         FloatingBallChannel.registerWith(flutterEngine, this);
+        // 跨应用语音缓存（拍板 oqk37s3QFL）：主引擎接管采集服务的状态回调。
+        CrossAppAudioChannel.registerWith(flutterEngine, this, true);
         app.fushi.reader.widgets.WidgetChannel.registerWith(flutterEngine, getApplicationContext());
         // 第二块屏宿主（副屏伴侣 / 串流查词面板）：列显示器、把面板拉到另一块屏上并转发消息与手柄键。
         SecondScreenDisplay.registerWith(flutterEngine, this);

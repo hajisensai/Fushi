@@ -21,6 +21,9 @@ cbc = "0.1"
 # P-256 ECDSA（RFC 6979 确定性 k），Apache-2.0 OR MIT。
 p256 = { version = "0.13", default-features = false, features = ["ecdsa", "std"] }
 crc32fast = "1"
+# legacy_text.rs：Shift_JIS / GBK / EUC-JP / Big5 解码（ZIP 条目名、曲库 ID3 乱码修复共用）。
+# (Apache-2.0 OR MIT) AND BSD-3-Clause，fushi_music 已在用。
+encoding_rs = "0.8"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp", "bmp", "tiff", "tga", "ico", "pnm"] }
 jpeg-encoder = "0.6"
 # image/avif.rs：AV1 解码（dav1d 的纯 Rust 移植，BSD-2-Clause）。关掉默认的 `asm` 特性：asm 要
@@ -43,7 +46,7 @@ regex = "1"
 # 算法归上游 hajisensai/fushi-subtitles（native/asr_cue_post，GPL-3.0，零依赖）；编进本库后由
 # fushi_asr_subtitles 的 AsrCuePostLibrary.fromDynamicLibrary 取用，app 不多带一个原生文件。
 # rev 必须与 pubspec 里 fushi-subtitles 的七处 ref 是同一个 sha（Dart 绑定与 C ABI 同版本）。
-fushi_asr_cue_post = { git = "https://github.com/hajisensai/fushi-subtitles", rev = "6103af012c57189835e7d409122fbd982fa1e294" }
+fushi_asr_cue_post = { git = "https://github.com/hajisensai/fushi-subtitles", rev = "63881fd547769dea3c1a98b34f5519a984dc280e" }
 
 [lints.rust]
 # aes_armv8 / aes_force_soft 是 aes 0.8 的 cfg；src/crypto.rs 用它们在 aarch64 丢 cfg 时 compile_error。

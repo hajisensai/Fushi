@@ -14,11 +14,12 @@ export 'package:fushi/src/media/video/subtitle/subtitle_search_seed.dart'
 export 'package:fushi/src/pages/implementations/subtitle_search_panel.dart';
 
 /// 「自动获取字幕」**对话框壳**：[FushiDialogFrame] 包一层 [SubtitleSearchPanel]，
-/// 下载成功 `pop` 回本地路径、取消 `pop` null。
+/// 下载成功 `pop` 回本地路径、取消 `pop` null。多选下载部分失败时面板留着显示原因
+/// （BUG-4802），此后点「取消」带回已落盘的第一条。
 ///
 /// 播放页/库页已改走全屏 `SubtitleWorkbenchPage`；本壳保留给仍以对话框形态调起的
 /// 调用方与既有 widget 测试（两栏布局 / 滚动 / 路径穿越 / registry 接线等）。
-class JimakuSubtitleDialog extends StatelessWidget {
+class JimakuSubtitleDialog extends StatefulWidget {
   const JimakuSubtitleDialog({
     required this.initialQuery,
     required this.initialApiKey,
@@ -58,6 +59,14 @@ class JimakuSubtitleDialog extends StatelessWidget {
   final bool debugInitialSeriesLookupFailed;
 
   @override
+  State<JimakuSubtitleDialog> createState() => _JimakuSubtitleDialogState();
+}
+
+class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog> {
+  /// 多选下载已落盘、但面板没主动关页的路径（部分失败后留在面板里），按落盘顺序。
+  final List<String> _savedWhileOpen = <String>[];
+
+  @override
   Widget build(BuildContext context) {
     final double viewportWidth = MediaQuery.sizeOf(context).width;
     // scrollable:false：由 maxHeight 给整个对话框有界高度天花板，面板里的 Flexible
@@ -70,25 +79,29 @@ class JimakuSubtitleDialog extends StatelessWidget {
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
       child: SubtitleSearchPanel(
-        initialQuery: initialQuery,
-        initialApiKey: initialApiKey,
-        onApiKeyChanged: onApiKeyChanged,
-        saveDirectory: saveDirectory,
-        subtitleRegistry: subtitleRegistry,
-        initialPreferredLanguage: initialPreferredLanguage,
-        onPreferredLanguageChanged: onPreferredLanguageChanged,
-        httpClientFactory: httpClientFactory,
-        seed: seed,
-        videoPath: videoPath,
-        initialSeason: initialSeason,
-        debugInitialCandidates: debugInitialCandidates,
-        debugInitialSeriesMatches: debugInitialSeriesMatches,
-        debugInitialSeriesLookupFailed: debugInitialSeriesLookupFailed,
+        initialQuery: widget.initialQuery,
+        initialApiKey: widget.initialApiKey,
+        onApiKeyChanged: widget.onApiKeyChanged,
+        saveDirectory: widget.saveDirectory,
+        subtitleRegistry: widget.subtitleRegistry,
+        initialPreferredLanguage: widget.initialPreferredLanguage,
+        onPreferredLanguageChanged: widget.onPreferredLanguageChanged,
+        httpClientFactory: widget.httpClientFactory,
+        seed: widget.seed,
+        videoPath: widget.videoPath,
+        initialSeason: widget.initialSeason,
+        debugInitialCandidates: widget.debugInitialCandidates,
+        debugInitialSeriesMatches: widget.debugInitialSeriesMatches,
+        debugInitialSeriesLookupFailed: widget.debugInitialSeriesLookupFailed,
         // 这个存量对话框壳仍是单值出口（调用方只应用一条）：多选下载时
         // 取第一条，其余已落盘、由字幕轨列表承载。
         onDownloaded: (List<String> paths) =>
             Navigator.pop(context, paths.isEmpty ? null : paths.first),
-        onCancel: () => Navigator.pop(context),
+        onSubtitleSaved: _savedWhileOpen.add,
+        onCancel: () => Navigator.pop(
+          context,
+          _savedWhileOpen.isEmpty ? null : _savedWhileOpen.first,
+        ),
       ),
     );
   }

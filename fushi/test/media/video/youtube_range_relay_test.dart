@@ -411,6 +411,81 @@ void main() {
         isEmpty,
       );
     });
+
+    // video-36h：进程级单例的登记表此前只增不减。
+    String otherUrl(int i) => '${upstream.url}&n=$i';
+
+    test('登记表有上限：超出后淘汰最久没用的，最近用过的留着', () async {
+      final Uri first = relay.register(
+        upstream.url.toString(),
+        const <String, String>{},
+      );
+      final Uri second = relay.register(otherUrl(0), const <String, String>{});
+      // 读一次 first：它变成「最近用过」，second 成了表头。
+      expect((await _get(first, range: 'bytes=0-9')).status, 206);
+      for (int i = 1; i < YoutubeRangeRelay.maxEntries; i++) {
+        relay.register(otherUrl(i), const <String, String>{});
+      }
+      expect(relay.entryCount, YoutubeRangeRelay.maxEntries);
+      expect((await _get(second, range: 'bytes=0-9')).status, 404);
+      expect((await _get(first, range: 'bytes=0-9')).status, 206);
+      // 被淘汰的 URL 再登记是一条新地址，照常可读。
+      final Uri again = relay.register(otherUrl(0), const <String, String>{});
+      expect(again, isNot(second));
+      expect((await _get(again, range: 'bytes=0-9')).status, 206);
+      expect(relay.entryCount, YoutubeRangeRelay.maxEntries);
+    });
+
+    test('重复登记同一 URL 算一次使用，不占新名额', () async {
+      final Uri first = relay.register(
+        upstream.url.toString(),
+        const <String, String>{},
+      );
+      for (int i = 0; i < YoutubeRangeRelay.maxEntries - 1; i++) {
+        relay.register(otherUrl(i), const <String, String>{});
+      }
+      // 表已满、first 在表头；重登记把它挪到末尾，下一条新登记淘汰的是 otherUrl(0)。
+      expect(
+        relay.register(upstream.url.toString(), const <String, String>{}),
+        first,
+      );
+      relay.register(otherUrl(9999), const <String, String>{});
+      expect(relay.entryCount, YoutubeRangeRelay.maxEntries);
+      expect((await _get(first, range: 'bytes=0-9')).status, 206);
+    });
+
+    test('内核正连着的那条不淘汰（哪怕它最久没被登记 / 表已超上限）', () async {
+      await upstream.close();
+      upstream = _FakeGoogleVideo(
+        body,
+        maxChunk: 1 << 20,
+        delay: const Duration(milliseconds: 400),
+      );
+      await upstream.start();
+      final Uri playing = relay.register(
+        upstream.url.toString(),
+        const <String, String>{},
+      );
+      final Future<({int status, Map<String, String> headers, Uint8List body})>
+      inFlight = _get(playing, range: 'bytes=0-9');
+      // 等请求真的进到中继并转给上游（此刻 activeRequests == 1）。
+      while (upstream.seenRanges.isEmpty) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      for (int i = 0; i < YoutubeRangeRelay.maxEntries; i++) {
+        relay.register(otherUrl(i), const <String, String>{});
+      }
+      // 在途那条虽在表头却被跳过，改删下一条空闲的，总数仍压回上限。
+      expect(relay.entryCount, YoutubeRangeRelay.maxEntries);
+      final ({int status, Map<String, String> headers, Uint8List body}) res =
+          await inFlight;
+      expect(res.status, 206);
+      expect(res.body, body.sublist(0, 10));
+      expect(
+        relay.register(upstream.url.toString(), const <String, String>{}),
+        playing,
+      );
+    });
   });
 
   group('UrlStreamVideoClient.remoteVideoStreamUrls', () {

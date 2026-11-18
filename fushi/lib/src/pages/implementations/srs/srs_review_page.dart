@@ -309,6 +309,9 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   int _learnCount = 0;
   int _reviewCount = 0;
 
+  /// 牌组按分钟计复习上限时今天还剩的复习分钟（[SrsDeckSummary.reviewMinutesLeft]），顶栏到期一格显示它。
+  int? _reviewMinutesLeft;
+
   /// 牌组当前的全名（随计数一起现读；复习中在牌组设置里改了名立即换标题）。
   String? _deckTitle;
 
@@ -571,6 +574,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     _newCount = sum?.newCount ?? 0;
     _learnCount = sum?.learnCount ?? 0;
     _reviewCount = sum?.reviewCount ?? 0;
+    _reviewMinutesLeft = sum?.reviewMinutesLeft;
     _deckTitle = sum?.fullName;
   }
 
@@ -1962,7 +1966,12 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       return '${t.srs_custom_study_left} ${custom.left} · '
           '${t.srs_count_learn} ${custom.learn}';
     }
-    final String review = SrsReviewCell(due: _reviewCount).label() ?? '';
+    final String review =
+        SrsReviewCell(
+          due: _reviewCount,
+          minutesLeft: _reviewMinutesLeft,
+        ).label() ??
+        '';
     return '${t.srs_count_new} $_newCount · ${t.srs_count_learn} $_learnCount · '
         '$review';
   }
@@ -2387,6 +2396,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
                   newCount: _newCount,
                   learnCount: _learnCount,
                   reviewCount: _reviewCount,
+                  reviewMinutesLeft: _reviewMinutesLeft,
                   dense: true,
                 )
               : null,

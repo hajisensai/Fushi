@@ -351,7 +351,10 @@ Xcode 变量）。脚本先用 `plutil -convert xml1` 重新序列化（丢掉 X
    `CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements`——**描述文件没授予的 entitlement 签进去，
    codesign 会直接失败**，所以这一步不能写死在工程里。同一机制也管
    `com.apple.developer.kernel.extended-virtual-addressing`（BUG-4013，App ID 勾
-   「Extended Virtual Addressing」后同样要重新生成描述文件；缺失时 CI 打 warning）。守卫：
+   「Extended Virtual Addressing」后同样要重新生成描述文件；缺失时 CI 打 warning）与
+   `com.apple.developer.kernel.increased-memory-limit`（BUG-4758，App ID 勾
+   「Increased Memory Limit」后重新生成描述文件；抬高 jetsam 额度，设备端 ASR 大模型才放得下；
+   缺失时 CI 打 warning，ASR 内存门槛按默认额度判）。守卫：
    `fushi/test/build/ios_entitlements_profile_gating_guard_test.dart`。
 3. Keys → **+** → 勾 **Apple Push Notifications service (APNs)** → 下载 `AuthKey_<KEYID>.p8`
    （**只能下一次**，丢了只能作废重建）。记下 Key ID 与 Team ID（10 位）。一把 Auth Key

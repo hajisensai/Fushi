@@ -44,13 +44,16 @@
 //! 笔记 / 卡片缓存与统计行（`cache.rs`）在索引之上：[Index::settle] 收尾时只重算这一批碰到的，[Index::rebuild_all]
 //! 最后整份物化。
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::rc::Rc;
 
 use rusqlite::params;
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
 use serde_json::{Map, Value, json};
 
 use super::cache::Dirt;
+use super::class::RuleCanon;
 use super::schema::{DERIVED_TABLES, sql};
 use super::truth::{Entry, Head, Truth};
 use super::weigh::{E_LOG, E_MOVE, S_HELD, T_ADD, T_INERT, T_ORDER, T_REMOVE};
@@ -315,6 +318,10 @@ pub struct Index<'t, 'c> {
     pub(super) writers_moved: bool,
     /// 一次缓存层的物化期间缓存的写入者表（`alias_writer_ix`；读的时候索引不变）。
     pub(super) pass_writers: Option<BTreeMap<String, String>>,
+    /// 一次缓存层的物化期间缓存的内置实体规则表（`class.rs` [Index::rule_canon]；读的时候盐集合不变）。
+    pub(super) pass_rules: Option<Rc<RuleCanon>>,
+    /// 物化之外按盐集合记住的同一张表（盐集合变了就重算）。
+    pub(super) rule_memo: RefCell<Option<(Vec<String>, Rc<RuleCanon>)>>,
     /// 缓存层按类拼行时没走捷径、按类重判了的寄存器数（`class.rs` [Index::class_lines]；只增不减，测试与量测读）。
     pub(super) class_judged: u64,
     /// 这一趟缓存刷新里行可能变了的笔记（原值 ID，含被删掉的旧 ID）：收尾时记进缓存层的变更记录（`cache.rs`
@@ -350,6 +357,8 @@ impl<'t, 'c> Index<'t, 'c> {
             alias_moves: BTreeSet::new(),
             writers_moved: false,
             pass_writers: None,
+            pass_rules: None,
+            rule_memo: RefCell::new(None),
             class_judged: 0,
             cache_touched: BTreeSet::new(),
         }
