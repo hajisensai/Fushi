@@ -1950,8 +1950,9 @@ void main() {
       );
     });
 
-    // G8-7c 复核：移除位置要先让内核忘掉、成功了才去掉配置；反过来失败时位置从界面消失、内核状态成了孤儿。
-    test('移除文件夹位置：内核先忘掉、再去掉配置；卡片库不可用时配置不动、报错', () async {
+    // G8-7c 复核 + 第六波：移除位置 = 配置里去掉、同一个事务记进待忘清单；内核由调度器忘掉。复习模块没起 / 卡片库没开
+    // 时移除照样生效，之后补忘；不能出现「配置里没了、内核状态还在、再也没人清」。
+    test('移除文件夹位置：待忘清单里的位置由调度器忘掉、划掉；卡片库没开时留着，之后（或下一轮开头）补忘', () async {
       final Directory folder = Directory.systemTemp.createTempSync(
         'fushi_srs_folder_forget_',
       );
@@ -1960,43 +1961,59 @@ void main() {
         id: 'usb',
         path: folder.path,
       );
-      final SrsSyncScheduler s = scheduler(
-        channels: (Future<void> Function(SyncAssetStore) body) async =>
-            (ran: 0, errors: const <Object>[]),
-        folderLocations: () async => <SrsFolderLocation>[loc],
-      );
+      final List<SrsFolderLocation> config = <SrsFolderLocation>[loc];
+      final Set<String> pending = <String>{};
+      SrsSyncScheduler withStore(Future<SrsDbStore?> Function() readStore) =>
+          SrsSyncScheduler(
+            readStore: readStore,
+            channels: (Future<void> Function(SyncAssetStore) body) async =>
+                (ran: 0, errors: const <Object>[]),
+            directoryKeyOf: (SyncAssetStore b) async => 'k',
+            folderLocations: () async => <SrsFolderLocation>[...config],
+            onDataChanged: () {},
+            onNotice: (SrsSyncNotice _) {},
+            pendingForgets: () => <String>{...pending},
+            onForgotten: (String id) async => pending.remove(id),
+          );
+      // 内核记着这个位置的同步状态（`status` 的 `locations`，不看传没传过东西）。
+      Future<bool> tracked() async {
+        final Object? all = (await store.sync2Status())['locations'];
+        return all is List &&
+            all.any((Object? l) => l is Map && l['location'] == loc.locationId);
+      }
+
+      final SrsSyncScheduler s = withStore(() async => store);
       addTearDown(s.dispose);
       expect((await s.syncFolderLocations()).ran, 1);
+      expect(await tracked(), isTrue);
 
-      // 去掉配置的那一刻，内核里这个位置已经没有任何状态（再忘一次删掉 0 行）。
-      final List<Object?> leftAtDrop = <Object?>[];
-      await s.forgetLocation(
-        loc.locationId,
-        dropFromConfig: () async => leftAtDrop.add(
-          (await srsSync4ForgetLocation(store, loc.locationId))['forgotten'],
-        ),
-      );
-      expect(leftAtDrop, <Object?>[0]);
-
-      // 卡片库没打开：不去掉配置、抛给界面（位置留在列表里，可以再移除一次）。
-      final SrsSyncScheduler closed = SrsSyncScheduler(
-        readStore: () async => null,
-        channels: (Future<void> Function(SyncAssetStore) body) async =>
-            (ran: 0, errors: const <Object>[]),
-        directoryKeyOf: (SyncAssetStore b) async => 'k',
-        onDataChanged: () {},
-        onNotice: (SrsSyncNotice _) {},
-      );
+      // 移除（页面那一步）：配置去掉 + 记进清单。卡片库没开（复习模块没起的等价情形）：什么都不做、不抛，清单留着。
+      config.clear();
+      pending.add(loc.locationId);
+      final SrsSyncScheduler closed = withStore(() async => null);
       addTearDown(closed.dispose);
-      int dropped = 0;
-      await expectLater(
-        closed.forgetLocation(
-          loc.locationId,
-          dropFromConfig: () async => dropped++,
-        ),
-        throwsStateError,
+      await closed.forgetPendingLocations();
+      expect(pending, <String>{loc.locationId});
+      expect(await tracked(), isTrue);
+
+      // 运行时起来：内核忘掉、清单划掉；再忘一次删掉 0 行。
+      await s.forgetPendingLocations();
+      expect(pending, isEmpty);
+      expect(await tracked(), isFalse);
+      expect(
+        (await srsSync4ForgetLocation(store, loc.locationId))['forgotten'],
+        0,
       );
-      expect(dropped, 0);
+
+      // 下一轮开头也补忘：重新加回、同步一轮建出状态，再移除，跑一轮文件夹同步 = 忘掉。
+      config.add(loc);
+      expect((await s.syncFolderLocations()).ran, 1);
+      expect(await tracked(), isTrue);
+      config.clear();
+      pending.add(loc.locationId);
+      expect((await s.syncFolderLocations()).ran, 0);
+      expect(pending, isEmpty);
+      expect(await tracked(), isFalse);
     });
 
     test('文件夹不在（U 盘没插）：记进 folderErrors，不算立即同步失败；插回后清掉', () async {

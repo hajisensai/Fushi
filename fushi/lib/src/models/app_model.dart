@@ -12317,6 +12317,17 @@ class AppModel
   Future<void> setSrsFolderLocations(List<SrsFolderLocation> value) =>
       prefsRepo.setSrsFolderLocations(value);
 
+  /// 移除文件夹位置 [id]：配置里去掉、同一个事务里记进「内核待忘」清单（透传 prefsRepo，见
+  /// [PreferencesRepository.removeSrsFolderLocation]）。
+  Future<void> removeSrsFolderLocation(String id) =>
+      prefsRepo.removeSrsFolderLocation(id);
+
+  /// 移除了、复习内核还没忘掉的位置身份（同步调度器逐个 `location_forget`）。
+  Set<String> get srsPendingLocationForgets =>
+      _prefsRepo?.srsPendingLocationForgets ?? const <String>{};
+  Future<void> markSrsLocationForgotten(String locationId) =>
+      prefsRepo.markSrsLocationForgotten(locationId);
+
   /// 复习同步 v2 里这台设备关掉的通道位置（设备本地；透传 prefsRepo）。
   Set<String> get srsDisabledLocations =>
       _prefsRepo?.srsDisabledLocations ?? const <String>{};

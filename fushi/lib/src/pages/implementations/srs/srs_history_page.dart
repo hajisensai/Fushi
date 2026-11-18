@@ -34,6 +34,7 @@ import 'package:fushi/src/srs/srs_navigation.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/srs/srs_app_runtime.dart';
 import 'package:fushi/src/srs/srs_device_view.dart';
+import 'package:fushi/src/srs/srs_import_entry.dart' show srsNewRootMissingText;
 import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_sync_progress.dart';
 import 'package:fushi/src/srs/srs_sync_progress_ui.dart';
@@ -514,19 +515,21 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
     );
     if (!ok || !mounted) return;
     await _run('removeFolder', () async {
-      Future<void> drop() =>
-          ref.read(appProvider).setSrsFolderLocations(<SrsFolderLocation>[
-            for (final SrsFolderLocation x
-                in ref.read(appProvider).srsFolderLocations)
-              if (x.id != l.id) x,
-          ]);
-      // 内核先忘掉这个位置的同步状态、不再向它转发（`location_forget`），成功了才从配置里去掉；失败时位置留在列表里，
-      // 用户可以再移除一次。位置上的文件与本机卡片不动。
+      // 配置里去掉、同一个事务里记进「内核待忘」清单；内核忘掉这个位置的同步状态、不再向它转发（`location_forget`）
+      // 由同步调度器做——复习模块没起（没有运行时）时等它起来再忘，忘不掉的留在清单里下一轮再来。位置上的文件与本机
+      // 卡片不动。
+      await ref.read(appProvider).removeSrsFolderLocation(l.id);
       final SrsSyncScheduler? sync = ref.read(srsAppRuntimeProvider)?.sync;
-      if (sync == null) {
-        throw StateError('removeFolder: srs runtime unavailable');
+      if (sync != null) {
+        unawaited(
+          sync.forgetPendingLocations().catchError((
+            Object e,
+            StackTrace stack,
+          ) {
+            ErrorLogService.instance.log('SrsHistory.forgetLocation', e, stack);
+          }),
+        );
       }
-      await sync.forgetLocation(l.locationId, dropFromConfig: drop);
     }, failure: t.srs_timeline_location_remove_failed);
   }
 
@@ -736,8 +739,9 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
                 t.srs_sync_location_protocol1_root
               else if (errors[l.id] case SrsSyncReportError(
                 message: kSrsLocationNewRootMissing,
+                :final String? locationDir,
               ))
-                t.srs_sync_location_new_root_missing
+                srsNewRootMissingText(locationDir, folderPath: l.path)
               else if (errors.containsKey(l.id))
                 t.srs_timeline_location_unavailable
               else

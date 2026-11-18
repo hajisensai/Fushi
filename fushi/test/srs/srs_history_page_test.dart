@@ -17,6 +17,7 @@ import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_history_page.dart';
 import 'package:fushi/src/srs/srs_app_runtime.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_retained_copy.dart';
 import 'package:fushi/src/srs/srs_sync_progress.dart';
 import 'package:fushi/src/srs/srs_sync_progress_ui.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -124,6 +125,7 @@ Future<void> _pump(
   required bool apple,
   Size size = const Size(1100, 2400),
   ValueListenable<Set<String>>? heritagePending,
+  List<Override> overrides = const <Override>[],
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -137,6 +139,7 @@ Future<void> _pump(
         srsAppRuntimeProvider.overrideWithValue(null),
         if (heritagePending != null)
           srsHeritagePendingProvider.overrideWithValue(heritagePending),
+        ...overrides,
       ],
       child: TranslationProvider(
         child: MaterialApp(
@@ -357,6 +360,37 @@ void main() {
       await _close(tester, env);
     });
 
+    // 第五波复核遗留：彻底清除的字节层收尾出错（内核 `scrub_state`）时，同步与历史页给出提示；没出错时不显示。
+    testWidgets('[$ds] 清除收尾出错：页上提示原因；没出错时没有提示', (WidgetTester tester) async {
+      final _Env env = await _open(tester);
+      SrsScrubState scrub = (due: true, error: 'database or disk is full');
+      await _pump(
+        tester,
+        env,
+        apple: apple,
+        overrides: <Override>[
+          srsScrubStateProvider.overrideWith((Ref ref) async => scrub),
+        ],
+      );
+      final Finder notice = find.text(
+        t.srs_scrub_error_notice(reason: 'database or disk is full'),
+      );
+      await _pumpUntil(tester, notice);
+      expect(notice, findsOneWidget);
+      // 收尾做完（error 清掉），重读之后提示消失。
+      scrub = (due: false, error: null);
+      ProviderScope.containerOf(
+        tester.element(find.byType(SrsHistoryPage)),
+      ).invalidate(srsScrubStateProvider);
+      await _settle(tester);
+      expect(notice, findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('srs-scrub-error')),
+        findsNothing,
+      );
+      await _close(tester, env);
+    });
+
     testWidgets('[$ds] 没有还原点：显示空状态', (WidgetTester tester) async {
       final _Env env = await _open(tester);
       final List<Map<String, Object?>> before = await _io(
@@ -571,6 +605,14 @@ void main() {
         reason: 'usb removed',
       );
       expect(env.prefs.srsFolderLocations.single.path, nas);
+      // 运行时没起（这里覆盖成 null）：移除照样生效，内核要忘的位置记进待忘清单，等调度器起来再忘。
+      expect(env.prefs.srsPendingLocationForgets, <String>{
+        SrsFolderLocation(id: 'usb', path: usb).locationId,
+      });
+      expect(
+        find.byKey(const ValueKey<String>('srs_timeline_folder_usb')),
+        findsNothing,
+      );
       expect(Directory(usb).existsSync(), isTrue, reason: '移除不删文件');
       await _close(tester, env);
     });

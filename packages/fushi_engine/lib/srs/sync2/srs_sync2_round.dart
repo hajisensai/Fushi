@@ -160,6 +160,10 @@ class SrsSync2Report {
   /// 这个位置这一轮没同步成的原因（调度器据此如实报「未同步」）；null = 成功。
   String? error;
 
+  /// 这一轮所在的集合目录名（`fushi-srs/<它>/`，内核 `identity` 回包的 `dir`；一轮一开头就取，任何 [error] 都在它
+  /// 之后）。界面给恢复办法时要写出真实路径（[kSrsLocationNewRootMissing]：删掉 `fushi-srs/<它>/v3/meta.json`）。
+  String? locationDir;
+
   /// 位置开了加密（`meta.json` 有 `kdf`）时它的参数；UI 让用户输入口令时用同一份盐与参数派生。
   SrsKdf? kdf;
 
@@ -238,6 +242,7 @@ Future<SrsSync2Report> srsSync2Round({
     'op': 'identity',
     'now': nowMs(),
   })).map;
+  report.locationDir = id['dir'] as String?;
   onStep?.call('handshake');
   final SrsLocationRoot? rooted = await srsSync4LocationRoot(
     host: host,
