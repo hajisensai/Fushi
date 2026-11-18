@@ -288,7 +288,7 @@ pub const RULES_KEY: &str = "cacheRules";
 /// - 1（K3，交接 §26 C4）：Anki 来源日志的排序键改为来源数据派生的 HLC（[log_body]、`crate::anki_import_rules`）。之前
 ///   新导入的 Anki 日志按操作 HLC 排：同一条 revlog 在血统两张卡上的副本各算一次、更早的 Anki 复习排到原生复习之后
 ///   覆盖当前排程。
-/// - 2（第五波，交接「第五波 导入与写接口」节）：回导的外来原生日志（带 `foreignLog` 标记，Dart `_remapExtLog`）的排序键改为
+/// - 2（第五波，交接 §38「第五波 导入与写接口」）：回导的外来原生日志（带 `foreignLog` 标记，Dart `_remapExtLog`）的排序键改为
 ///   由发生时刻派生的 HLC（`crate::anki_import_rules::derived_log_hlc`）。之前按导入时刻的操作 HLC 排：更早的外来复习排到
 ///   本机更晚的复习之后、改掉当前排程。
 pub const CACHE_RULES: i64 = 2;

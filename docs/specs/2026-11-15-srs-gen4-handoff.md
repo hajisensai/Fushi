@@ -3316,7 +3316,7 @@ v4 整个删掉 → 新根不见了、不重建，删围栏后重建、媒体根
 另：全量 `cargo test --profile quick --lib` 一次里 `store::gen4::files::tests::a_fresh_install_appears_under_the_final_name_only_when_complete`
 红过一次（目录里多出 `SRS4.DB-SHM.tmp`），单跑 3/3 绿，本分支没碰 `files.rs`——高负载下的偶发，留给新代库文件层的所有者看。
 
-## 第五波 G9 身份收尾（2026-11-18，分支 `pr/srs-gen4-w5-identity-tail`，基于 `pr/srs-gen4-switch` `3d78fe51d0`）
+## 37. 第五波 G9 身份收尾（2026-11-18，分支 `pr/srs-gen4-w5-identity-tail`，基于 `pr/srs-gen4-switch` `3d78fe51d0`）
 
 审计 G9 项（B1、B7、N7、N11、C11、X1）的六件事，内核 SCHEMA 40021 → 40023（本分支分到的号）。
 
@@ -3419,7 +3419,7 @@ profile 判据恒放行 → `another_collections_profile_settings_are_not_writte
 - 未绑定时预检与确认两次请求各生成一份 `PendingSelf`，副本整份重备两遍（性能代价，结果正确）；要省得把预先生成的身份跨请求
   留存，没做。
 
-## 第五波 导入与写接口（2026-11-18，分支 `pr/srs-gen4-w5-import-write`，基于 `pr/srs-gen4-switch` `3d78fe51d0`）
+## 38. 第五波 导入与写接口（2026-11-18，分支 `pr/srs-gen4-w5-import-write`，基于 `pr/srs-gen4-switch` `3d78fe51d0`）
 
 收第五波审计（规划 §6）里归「导入与写接口」的四项：B4 / C13（回导外来原生日志的排序键）、N6（`.fushisrs` 内核流不带空洞内部
 记号）、N13（写回包没标被同批盖掉的项）、R4 之后剩的两条既有红与 K1 两条 nit。不升 SCHEMA（仍 40021），不加表 / 索引；
@@ -3528,7 +3528,7 @@ profile 判据恒放行 → `another_collections_profile_settings_are_not_writte
 - 本分支没在真机 / 双设备上实测回导与 `.fushisrs` 往返；证据是上面的 Rust / Dart 用例。
 - Dart 回导用例（复核修复第 3 条）的新断言没有对内核做变异实测（要另编一份原生库）；内核那侧的排序由 Rust 用例变异实测过。
 
-## 36. 第五波 重切件根治（K2 残余，2026-11-18，分支 `pr/srs-gen4-w5-recut-proof`，基于 `pr/srs-gen4-switch` `3d78fe51d0`）
+## 39. 第五波 重切件根治（K2 残余，2026-11-18，分支 `pr/srs-gen4-w5-recut-proof`，基于 `pr/srs-gen4-switch` `3d78fe51d0`）
 
 §33「转发里的副本」记下的残余风险（受信重切者能换掉空洞之前的操作、链尾只核 4 字节标签）与复核 minor（作者段清单取各位置
 最大代号、而代号与切点按位置各自走，合法的重切件被永远判 `Unlisted`；`Defer::Unlisted` 每轮重拉）在本节根治。§33 里
@@ -3628,7 +3628,7 @@ profile 判据恒放行 → `another_collections_profile_settings_are_not_writte
   转发的段的剔除记录：别的位置的 head 可能还列着旧区间，按区间回收要先定「哪些位置还需要」，留给 G8 转发 owner。
 - 发件 `segBytes` 夹紧没有单独测试（要 4 MB 以上的数据，本机内存紧，没写）。
 
-## 第五波 保留副本与清除提示（2026-11-18，分支 `pr/srs-gen4-w5-retain-ui`，基于 `pr/srs-gen4-switch` `3d78fe51d0`）
+## 40. 第五波 保留副本与清除提示（2026-11-18，分支 `pr/srs-gen4-w5-retain-ui`，基于 `pr/srs-gen4-switch` `3d78fe51d0`）
 
 补规划 §6 K2 新增的两条合并条件与 D32。schema 不变（40021，没有加表 / 索引；新增的只是 `srs_meta` 的三个键），
 `ABI_VERSION` 不变（新增的是两条全局 JSON 命令，经已有的 `ffsrs_call`）。
@@ -3720,7 +3720,7 @@ profile 判据恒放行 → `another_collections_profile_settings_are_not_writte
 - 位置上的旧根（`v3/`）不自动删（设计定案），不在本块。
 - 真机验证按用户 07-29 指令不做。
 
-## 36. 第五波 测试与守卫（2026-11-18，分支 `pr/srs-gen4-w5-tests-guards`，基于 `pr/srs-gen4-switch` `3d78fe51d0`）
+## 41. 第五波 测试与守卫（2026-11-18，分支 `pr/srs-gen4-w5-tests-guards`，基于 `pr/srs-gen4-switch` `3d78fe51d0`）
 
 只补测试、守卫与夹具，没改生产行为；SCHEMA 不变（40021）。生产代码唯一的改动是 `gen4/migrate.rs` 里一个 `#[cfg(test)]`
 钩子（`STAGE_CONN`，暂存库刚打开时交给测试一次，用来注入「写到一半磁盘满」）。
@@ -3871,7 +3871,7 @@ exit 1；成功 949、失败 9、错误 6、跳过 21，实际执行 964。上�
 - `unvouched` 提示（第 8 条）。
 - 第 7 条表里的 14 条非 ENV 红，按归属各自修。
 
-## 36. 第五波 G7-6 删旧投影、协议 3 代码冻结（2026-11-18，分支 `pr/srs-gen4-g7-6-delete-legacy`，基于 `pr/srs-gen4-switch`）
+## 42. 第五波 G7-6 删旧投影、协议 3 代码冻结（2026-11-18，分支 `pr/srs-gen4-g7-6-delete-legacy`，基于 `pr/srs-gen4-switch`）
 
 ### 做了什么（按提交）
 

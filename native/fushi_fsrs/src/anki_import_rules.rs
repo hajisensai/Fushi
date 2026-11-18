@@ -40,7 +40,7 @@ pub const FOREIGN_LOG_KEY: &str = "foreignLog";
 /// None = 用那条操作自己的 HLC。
 ///
 /// - Anki 来源：[anki_source_hlc]；
-/// - 外来原生日志（带 [FOREIGN_LOG_KEY] = true，第五波，交接「第五波 导入与写接口」节）：`{at}:0:fushi`。它是别的设备 /
+/// - 外来原生日志（带 [FOREIGN_LOG_KEY] = true，第五波，交接 §38「第五波 导入与写接口」）：`{at}:0:fushi`。它是别的设备 /
 ///   别的 profile 写的复习，回导时作者 HLC 不进新代的操作（设计 §3.4），按导入那一刻的操作 HLC 排会让更早的复习排到本机
 ///   更晚的复习之后、改掉当前排程。发生时刻是来源数据，每台设备、每次导入算出来一样；计数器 0、写入者固定
 ///   [FOREIGN_WRITER]（不取 `origin` 原文：它是任意文本，带 `:` 就拼不成 HLC），同一毫秒的两条按日志 ID 定序。

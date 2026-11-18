@@ -1,4 +1,4 @@
-// 一次性：生成 srs_p6_vectors_test 用的协议 3 冻结库 fixtures/p6_vectors.db.gz（交接 §36 第 3 条、§32 K1 留的步骤）。
+// 一次性：生成 srs_p6_vectors_test 用的协议 3 冻结库 fixtures/p6_vectors.db.gz（交接 §41 第 3 条、§32 K1 留的步骤）。
 //
 // 必须在 S1 之前最后一个协议 3 提交 5ad47c2edb（S1 合并 c9d7703dd6 的第一父）上跑：另开临时 worktree 检出它，
 // 编出那一版的 fushi_fsrs 原生库，把本文件改名 packages/fushi_engine/test/srs/p6_gen_db_test.dart，在
