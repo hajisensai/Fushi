@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4207 条。点号进各自文件。
+> 共 4208 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4895](bugs/BUG-4895-video-stutter-covered-dashboard-reload.md) | ✅ | ✅ | 视频从首页打开后播放掉帧：被播放页盖住的首页仪表盘每秒整批重载一次 |
 | [BUG-4894](bugs/BUG-4894-anidb-all-bracket-fuzzy-candidates.md) | ✅ | ✅ | 全方括号文件名 `[K-ON!][04][BIG5]…` 待确认列表塞满只共享 `kon` 音节的无关作品 |
 | [BUG-4893](bugs/BUG-4893-mascot-glow-starves-windows-input.md) | ✅ | ✅ | 吉祥物光晕开着冷启动：启动期 idle 任务让调度器空转，Windows 鼠标键盘全失灵 |
 | [BUG-4892](bugs/BUG-4892-book-series-volume-not-last-ungrouped.md) | ✅ | ✅ | 卷号后面跟副标题、卷号前夹标签、『』特典册的分卷不归组，整套散在书架上 |

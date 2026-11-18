@@ -925,20 +925,42 @@ class _HomeDashboardPageState
     // 服务器侧的进度在别处（播放页 / 其它设备）会变，切回首页时重拉——经
     // [ServerContinueFeed] 节流，短时间内来回切 tab 不重发请求。
     unawaited(_loadServerContinue());
-    if (_reloadDeferredWhileHidden) {
-      _reloadDeferredWhileHidden = false;
-      _reloadNow();
-      return;
-    }
+    // 有推迟的重载：现在就做，或（Offstage 还没重建时）留给紧随其后的
+    // [onShownToUserAgain]。重载自己会补位远端，不必再单独拉一次。
+    if (_flushDeferredReload() || _reloadDeferredWhileHidden) return;
     unawaited(_loadRemoteDashboardData(skipIfUnchanged: true));
   }
 
-  /// 首页被 Offstage 藏着时到达的数据变更：只记一笔，不在后台重跑整批聚合。
+  /// 首页回到用户眼前（盖在上面的播放页 / 阅读器 / 详情页弹走，或切回首页 tab）：
+  /// 补做不在眼前期间推迟的重载。
+  @override
+  void onShownToUserAgain() {
+    _flushDeferredReload();
+  }
+
+  /// 首页不在用户眼前（[isShownToUser] 为假）时到达的数据变更：只记一笔，不在
+  /// 后台重跑整批聚合。
   ///
-  /// 保活之前首页一切走就 dispose，根本不会在别的 tab 上重查；保活之后若照旧
-  /// 每次写库都重载，用户在书架 / 阅读器里翻页（readerPositions 写入）就会让
-  /// 看不见的首页隔几秒在 UI isolate 上跑一遍全量统计聚合。
+  /// 两种「不在眼前」都要挡：
+  /// - 切到了别的 tab（被 Offstage 藏着）：保活之前首页一切走就 dispose，根本不会
+  ///   在别的 tab 上重查；保活之后若照旧每次写库都重载，用户在书架 / 阅读器里
+  ///   翻页（readerPositions 写入）就会让看不见的首页隔几秒在 UI isolate 上跑
+  ///   一遍全量统计聚合。
+  /// - 被别的页面盖住（BUG-4895）：从首页「继续」点开视频后首页仍是当前 tab。
+  ///   播放断点每秒往 video_books 落一次库（学习时钟每分钟再写一笔
+  ///   study_segments），于是首页每秒整批重查 + 整页 setState 一次，每次占 UI
+  ///   线程几十毫秒；视频纹理的新帧要等 UI 线程排到才上屏，画面就一顿一顿地
+  ///   掉帧（libmpv 自己的丢帧计数是 0）。
   bool _reloadDeferredWhileHidden = false;
+
+  /// 首页回到用户眼前时补做被推迟的重载；没有推迟的、或仍不在眼前就什么都不做。
+  /// 返回是否发起了重载。
+  bool _flushDeferredReload() {
+    if (!_reloadDeferredWhileHidden || !isShownToUser) return false;
+    _reloadDeferredWhileHidden = false;
+    _reloadNow();
+    return true;
+  }
 
   bool get _isVisibleTab => homeShellTabNotifier.value == HomeTab.home;
 
@@ -986,7 +1008,7 @@ class _HomeDashboardPageState
     _reloadDebounce?.cancel();
     _reloadDebounce = Timer(const Duration(milliseconds: 400), () {
       if (!mounted) return;
-      if (!_isVisibleTab) {
+      if (!isShownToUser) {
         _reloadDeferredWhileHidden = true;
         return;
       }

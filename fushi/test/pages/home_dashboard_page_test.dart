@@ -2898,6 +2898,116 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  group('BUG-4895 · 首页不在用户眼前时不在后台重载', () {
+    /// 播放页 / 阅读器压上来、转场走完：首页所在路由被完全盖住。
+    Future<NavigatorState> coverWithOpaquePage(WidgetTester tester) async {
+      final NavigatorState navigator = tester.state<NavigatorState>(
+        find.byType(Navigator),
+      );
+      unawaited(
+        navigator.push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => const Scaffold(body: Text('player')),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text('player'), findsOneWidget);
+      return navigator;
+    }
+
+    /// 播放中的一次写库（断点每秒写 video_books、学习时钟每分钟写 study_segments）：
+    /// 这里用今天再多 500 字代表——同一张表集、同一条失效通道，且首页上有数字可断言。
+    Future<void> writeMoreStudyToday() => seedLegacyReading(
+      title: '播放中记下的字数',
+      dateKey: FushiTimeFormat.dayKey(DateTime.now()),
+      charsRead: 500,
+      timeMs: 60000,
+    );
+
+    testWidgets('被播放页盖住时到达的统计写入只记一笔；播放页弹走后补做一次重载', (WidgetTester tester) async {
+      useSize(tester, const Size(1280, 900));
+      final HomeTab tabBefore = homeShellTabNotifier.value;
+      addTearDown(() => homeShellTabNotifier.value = tabBefore);
+      homeShellTabNotifier.value = HomeTab.home;
+      await seedSampleData();
+      await tester.pumpWidget(buildApp());
+      await pumpDashboard(tester);
+      expect(find.text(formatStatChars(800)), findsOneWidget);
+
+      final NavigatorState navigator = await coverWithOpaquePage(tester);
+      // 播放中断点每秒一笔：连着写几次，每次都等过 400 ms 防抖。
+      for (int i = 0; i < 3; i++) {
+        await writeMoreStudyToday();
+        await pumpDashboard(tester);
+        await pumpDashboard(tester);
+      }
+      expect(
+        find.text(formatStatChars(800), skipOffstage: false),
+        findsOneWidget,
+        reason: '被盖住期间不重查聚合、不整页 setState，首页还是盖住前的数据',
+      );
+      expect(
+        find.text(formatStatChars(1300), skipOffstage: false),
+        findsNothing,
+      );
+
+      navigator.pop();
+      await tester.pump();
+      await pumpDashboard(tester);
+      await pumpDashboard(tester);
+      await pumpDashboard(tester);
+      expect(
+        find.text(formatStatChars(1300)),
+        findsOneWidget,
+        reason: '回到首页时补做被推迟的重载',
+      );
+      expect(find.text(formatStatChars(800)), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('上面只是对话框（首页还看得见）时照常重载', (WidgetTester tester) async {
+      useSize(tester, const Size(1280, 900));
+      final HomeTab tabBefore = homeShellTabNotifier.value;
+      addTearDown(() => homeShellTabNotifier.value = tabBefore);
+      homeShellTabNotifier.value = HomeTab.home;
+      await seedSampleData();
+      await tester.pumpWidget(buildApp());
+      await pumpDashboard(tester);
+      expect(find.text(formatStatChars(800)), findsOneWidget);
+
+      final NavigatorState navigator = tester.state<NavigatorState>(
+        find.byType(Navigator),
+      );
+      unawaited(
+        showDialog<void>(
+          context: tester.element(find.byType(HomeDashboardPage)),
+          builder: (_) => const Dialog(child: Text('dialog')),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text('dialog'), findsOneWidget);
+
+      await writeMoreStudyToday();
+      await pumpDashboard(tester);
+      await pumpDashboard(tester);
+      await pumpDashboard(tester);
+      expect(
+        find.text(formatStatChars(1300)),
+        findsOneWidget,
+        reason: '对话框不盖住首页，数据变了要当场更新',
+      );
+
+      navigator.pop();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(tester.takeException(), isNull);
+    });
+  });
+
   testWidgets('浮动工具栏：Tab 可达五颗动作按钮（焦点可遍历）', (WidgetTester tester) async {
     useSize(tester, const Size(1280, 900));
     await seedSampleData();
