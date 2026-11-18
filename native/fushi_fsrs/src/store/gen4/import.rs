@@ -42,6 +42,7 @@ use super::ingest::{Settle, ingest_settle};
 use super::legacy::{self, Placement};
 use super::legacy_export::{for_each_v1, v1_collection};
 use super::schema::sql;
+use super::sync_state::AuthorVersion;
 use super::truth::{DEV_HERITAGE, DEV_NATIVE, Peer, PeerPut, Put, Truth};
 use crate::gen4::export::{Export4Reader, ExportHeader, ExportItem, ExportKind, sniff};
 use crate::gen4::heritage::{Fp, HeritageSlot, SlotBody, fingerprint};
@@ -400,6 +401,10 @@ pub struct ImportedOps {
     pub void_marks: u64,
     /// 第一次记下的设备公钥。
     pub peers: u64,
+    /// 记下的转发材料（流的第 3 版）：作者签名版本（含换成空洞更多的那份）与剔除记录。本机状态，不算「改了什么」
+    /// （[ImportedOps::unchanged]）。
+    pub relay_versions: u64,
+    pub relay_stubs: u64,
     /// 收尾时派生层的收法统计。
     pub settled: Settled,
 }
@@ -502,6 +507,8 @@ pub fn import_ops_from<R: Read>(
         let forks = known_forks(t, col)?;
         let mut out = ImportedOps::default();
         let mut native: Option<NativeRun> = None;
+        // 链尾之后的转发材料属于哪台设备（流的第 3 版；刚写完的那条原生日志）。
+        let mut relay_of: Option<Id> = None;
         // 当前承袭日志：(设备, 来源集合, 这条日志的记号)。
         let mut heritage: Option<(Id, Id, Vec<(u64, Chain)>)> = None;
         let finish_heritage = |h: &mut Option<(Id, Id, Vec<(u64, Chain)>)>,
@@ -516,10 +523,7 @@ pub fn import_ops_from<R: Read>(
             }
             Ok(())
         };
-        while let Some(item) = reader
-            .next_item()
-            .map_err(|e| format!("gen4 import: corrupt export ({e})"))?
-        {
+        while let Some(item) = reader.next_item().map_err(|e| stream_refused(&e))? {
             match item {
                 ExportItem::NativeLog {
                     device,
@@ -606,7 +610,30 @@ pub fn import_ops_from<R: Read>(
                     run.next = end + 1;
                     run.chain = chain_after;
                 }
-                ExportItem::NativeTail(_) => native = None,
+                ExportItem::NativeTail(_) => {
+                    relay_of = native.take().map(|r| r.device);
+                }
+                ExportItem::NativeRelay { .. } => {}
+                ExportItem::AuthorVersion { header, sig, voids } => {
+                    // 本机自己的段不记（收段同口径，`receive.rs`）；同一区间只换成作者签的空洞更多的那份。材料不可信：
+                    // 重切时先拿作者公钥核过作者签名才签出（`sync_state.rs` `recut_from_log`）。
+                    let device = relay_of.ok_or("gen4 import: author version outside a native log")?;
+                    if me.is_none_or(|(m, _)| m != device) {
+                        t.note_author_version(col, &AuthorVersion { header, sig, voids })?;
+                        out.relay_versions += 1;
+                    }
+                }
+                ExportItem::Stub(stub) => {
+                    // 只记本机这一格也是空洞的（本机有完整内容的那格用不着剔除记录，也不让文件替本机说它被清除了）。
+                    relay_of.ok_or("gen4 import: stub outside a native log")?;
+                    let id = stub.id();
+                    if t.entry(col, &id)?.is_some_and(|e| e.op().is_none())
+                        && me.is_none_or(|(m, _)| m != id.device)
+                    {
+                        t.put_stub(col, &stub)?;
+                        out.relay_stubs += 1;
+                    }
+                }
                 ExportItem::HeritageLog {
                     source, device, ..
                 } => {
@@ -647,6 +674,15 @@ pub fn import_ops_from<R: Read>(
     })
 }
 
+/// 读流时的拒收理由：一条操作超过载荷上限（[crate::gen4::op::ERR_OP_TOO_LARGE]）单独说清楚（文件本身没坏，是这一条
+/// 太大，Dart 导入页按它给专门的提示），其余按坏流报。两种都是整笔回滚、什么都没导入。
+fn stream_refused(e: &str) -> String {
+    match e.find(crate::gen4::op::ERR_OP_TOO_LARGE) {
+        Some(at) => format!("gen4 import: {}; nothing was imported", &e[at..]),
+        None => format!("gen4 import: corrupt export ({e})"),
+    }
+}
+
 /// 灌入的收尾：从真相整个重建派生层（[Settle::Rebuild]），再把派生层判成「已清除」的操作在真相层落成空洞（同
 /// `cmd/writes.rs` 的 `finish`、`receive.rs` 的收尾，[Index::execute_purges]）。灌进来的 `Purge` 由此在同一个事务里
 /// 生效，不留到下一条写命令；落了空洞的会话提交之后由内核做字节层收尾（`scrub.rs`）。
@@ -680,7 +716,7 @@ pub fn check_ops_stream(bytes: &[u8]) -> Result<ExportHeader, String> {
     let (mut reader, header) = open_ops_stream(bytes)?;
     while reader
         .next_item()
-        .map_err(|e| format!("gen4 import: corrupt export ({e})"))?
+        .map_err(|e| stream_refused(&e))?
         .is_some()
     {}
     Ok(header)
@@ -759,10 +795,7 @@ pub fn own_fork_point<R: Read>(
     let (mut reader, header) = opened;
     let mut scan = ForkScan::new(t, col)?;
     let mut mine: Option<ForkChunk> = None;
-    while let Some(item) = reader
-        .next_item()
-        .map_err(|e| format!("gen4 import: corrupt export ({e})"))?
-    {
+    while let Some(item) = reader.next_item().map_err(|e| stream_refused(&e))? {
         match item {
             ExportItem::NativeLog { device, .. } if device == me.device => {
                 mine = Some(ForkChunk::new());

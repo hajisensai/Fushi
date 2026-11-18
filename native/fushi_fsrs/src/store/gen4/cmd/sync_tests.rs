@@ -887,6 +887,33 @@ fn outbox_clamps_the_segment_target_to_the_cap() {
     assert_eq!(seg_files(&capped), seg_files(&explicit));
 }
 
+/// 本机写入一条载荷超过 `MAX_OP_PAYLOAD` 的改动（字段里塞了 16 MiB 以上的内嵌内容）：写命令报一句看得懂的错
+/// （「一条改动太大」、大小、上限、什么都没存），不崩、不静默丢；什么都没落，之后的正常写入照常。
+#[test]
+fn a_write_over_the_payload_cap_is_refused_readably_and_nothing_lands() {
+    use crate::gen4::op::{ERR_OP_TOO_LARGE, MAX_OP_PAYLOAD};
+    let a = Dev::new("g6big");
+    a.write(T1 + 1, N1, "before");
+    let huge = "x".repeat(MAX_OP_PAYLOAD + 1);
+    let items = vec![json!({"e": edit("note", N1, "f/fa", json!(huge)), "note": N1})];
+    let blob = Value::Array(items).to_string().into_bytes();
+    drop(huge);
+    let e = raw(a.h, &g4req("apply", T1 + 2, json!({})), &[blob]).unwrap_err();
+    assert!(e.contains(ERR_OP_TOO_LARGE), "{}", &e[..e.len().min(300)]);
+    assert!(e.contains("16 MiB limit"), "{}", &e[..e.len().min(300)]);
+    assert!(
+        e.contains("nothing was saved"),
+        "{}",
+        &e[..e.len().min(300)]
+    );
+    assert_eq!(a.field(N1), Some(json!("before")));
+    // 历史里只有之前那一条（没多出半截写入）；之后的写入照常。
+    let hist = g4(a.h, "history", T1, json!({"kind": "note", "entity": N1}));
+    assert_eq!(hist.as_array().unwrap().len(), 1, "{hist}");
+    a.write(T1 + 3, N2, "after");
+    assert_eq!(a.field(N2), Some(json!("after")));
+}
+
 /// 位置上丢了一个已传的段（同步盘丢文件）：下一轮退水位重传，对端照样收齐。
 #[test]
 fn a_lost_segment_is_uploaded_again() {

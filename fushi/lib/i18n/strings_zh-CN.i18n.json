@@ -10322,6 +10322,7 @@
   "srs_timeline_import_foreign_confirm": "这个文件来自另一个复习库。导入会把两个库合并成一个，之后所有设备都按合并后的库同步。",
   "srs_timeline_import_identity_confirm": "这个文件来自本复习库，但会加进 ${salts} 个旧 profile 标识和 ${devices} 台本机还不认识的设备。只有文件确实是你自己的才继续。",
   "srs_timeline_import_invalid": "这不是 Fushi 复习导出文件，或由更新版本生成",
+  "srs_timeline_import_op_too_large": "这个文件里有一条超过 16 MB 的改动（通常是字段里内嵌了图片或文件），无法导入。什么都没有导入。",
   "srs_timeline_import_other_profile": "这个文件属于另一个 profile",
   "srs_timeline_location_add": "添加文件夹",
   "srs_timeline_location_add_any": "添加存储位置",

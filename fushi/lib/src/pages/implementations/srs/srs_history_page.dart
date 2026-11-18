@@ -882,6 +882,8 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
       } on FormatException catch (e) {
         failure = e.message.contains('another profile')
             ? t.srs_timeline_import_other_profile
+            : e.message.startsWith(kSrsOpTooLarge)
+            ? t.srs_timeline_import_op_too_large
             : t.srs_timeline_import_invalid;
         rethrow;
       }

@@ -76,7 +76,7 @@ use crate::gen4::heritage::{Alias, Fp, HeritageSlot, Raw3, SlotBody, fingerprint
 use crate::gen4::name::{read_name, write_name};
 use crate::gen4::op::{
     Body4, Edit4, KIND_EDIT, KIND_JOIN, KIND_SALTS, Op4, chain_next4, native_allowed,
-    purge_targets_v1, purge_unseen_by,
+    payload_within_cap, purge_targets_v1, purge_unseen_by,
 };
 use crate::gen4::recut::Stub;
 use crate::gen4::stamp::HeritageStamp;
@@ -3128,6 +3128,8 @@ impl<'c> Truth<'c> {
     /// 段里声明的链值比。
     pub fn append_native(&self, col: i64, op: &Op4) -> Result<Chain, String> {
         self.write(|| {
+            // 太大的一条先给看得懂的报错（本机写入与导入都经这里；整笔回滚，什么都不落）。
+            payload_within_cap(op).map_err(|m| format!("gen4 store: {m}; nothing was saved"))?;
             native_allowed(op)
                 .map_err(|m| format!("gen4 store: {}:{} {m}", op.id.device, op.id.seq))?;
             if op.hlc.device != op.id.device || op.deps.get(&op.id.device) != 0 {

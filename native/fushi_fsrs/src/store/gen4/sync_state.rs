@@ -204,6 +204,14 @@ pub(crate) const WAIT_RANGE_SQL: &str =
 pub(crate) const WAIT_OP_SQL: &str =
     "SELECT op FROM op_wait WHERE k = ?1 AND prev = ?2 AND chain = ?3";
 
+/// 一台作者的全部作者签名版本（[Truth::author_versions_of]）：主键前缀，按 (first, last)。
+pub(crate) const AUTH_OF_SQL: &str =
+    "SELECT head, sig, voids FROM relay_auth WHERE col = ?1 AND device = ?2 ORDER BY first, last";
+
+/// 一台设备的全部剔除记录（[Truth::stubs_of]）：主键区间，按 seq。
+pub(crate) const STUBS_OF_SQL: &str =
+    "SELECT stub FROM relay_stubs WHERE k BETWEEN ?1 AND ?2 ORDER BY k";
+
 /// 一台设备的等待项数（[Truth::waiting_count]）。
 pub(crate) const WAIT_COUNT_SQL: &str = "SELECT COUNT(*) FROM op_wait WHERE k BETWEEN ?1 AND ?2";
 
@@ -357,6 +365,61 @@ impl<'c> Truth<'c> {
         };
         let stub = Stub::decode(&bytes).map_err(|e| format!("gen4 store: bad stub: {}", e.0))?;
         Ok((stub.id() == id).then_some(stub))
+    }
+
+    /// 记下的作者 [device] 的全部作者签名版本，按 (first, last) 升序（主键前缀；导出与回收用）。
+    pub(crate) fn author_versions_of(
+        &self,
+        col: i64,
+        device: &Id,
+    ) -> Result<Vec<AuthorVersion>, String> {
+        let rows: Vec<(Vec<u8>, Vec<u8>, Vec<u8>)> = {
+            let mut stmt = self.conn().prepare_cached(AUTH_OF_SQL).map_err(sql)?;
+            let rows = stmt
+                .query_map(params![col, &device.0[..]], |r| {
+                    Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+                })
+                .map_err(sql)?;
+            rows.collect::<rusqlite::Result<_>>().map_err(sql)?
+        };
+        rows.into_iter()
+            .map(|(head, sig, voids)| {
+                let mut r = Reader::new(&head);
+                let header = NativeHeader::read(&mut r)
+                    .map_err(|e| format!("gen4 store: bad author version head: {}", e.0))?;
+                Ok(AuthorVersion {
+                    header,
+                    sig: sig
+                        .try_into()
+                        .map_err(|_| "gen4 store: bad author version sig".to_owned())?,
+                    voids: voids_of(&voids)?,
+                })
+            })
+            .collect()
+    }
+
+    /// 记下的设备 [device] 的全部剔除记录，按 seq 升序（`relay_stubs` 主键区间；导出与回收用）。设备在本集合里没有
+    /// 设备行 = 空。
+    pub(crate) fn stubs_of(&self, col: i64, device: &Id) -> Result<Vec<Stub>, String> {
+        let Some(k) = self.key_of(
+            col,
+            &OpId {
+                device: *device,
+                seq: 1,
+            },
+        )?
+        else {
+            return Ok(Vec::new());
+        };
+        let (lo, hi) = super::schema::k_range(super::schema::k_dev(k));
+        let rows: Vec<Vec<u8>> = {
+            let mut stmt = self.conn().prepare_cached(STUBS_OF_SQL).map_err(sql)?;
+            let rows = stmt.query_map(params![lo, hi], |r| r.get(0)).map_err(sql)?;
+            rows.collect::<rusqlite::Result<_>>().map_err(sql)?
+        };
+        rows.iter()
+            .map(|b| Stub::decode(b).map_err(|e| format!("gen4 store: bad stub: {}", e.0)))
+            .collect()
     }
 
     // ------------------------------------------------------------ loc_heads
