@@ -17,10 +17,11 @@ class ServerPeerTorrentEngine implements HostTorrentEngine {
   final ServerDownloadHost _downloads;
 
   @override
-  PeerTorrentLeaseStore get leases => _downloads.peerTorrentLeases;
+  Future<PeerTorrentLeaseStore?> leases() async => _downloads.peerTorrentLeases;
 
   @override
-  HostTorrentPathPolicy get paths => _downloads.peerTorrentPathPolicy();
+  Future<HostTorrentPathPolicy> paths() async =>
+      _downloads.peerTorrentPathPolicy();
 
   @override
   Future<R?> withBackend<R>(
@@ -42,7 +43,7 @@ class ServerPeerTorrentEngine implements HostTorrentEngine {
       features: traits?.features ?? const <String>{},
       pauseControlAvailable: traits?.pause,
       detailAvailable: traits?.detail,
-      allowedRoots: paths.roots,
+      allowedRoots: (await paths()).roots,
     );
   }
 }

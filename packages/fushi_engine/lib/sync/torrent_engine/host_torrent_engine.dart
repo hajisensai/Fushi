@@ -24,6 +24,9 @@ import 'package:fushi_engine/media/torrent/remote_torrent_wire.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:path/path.dart' as p;
 
+/// 远程租约文件名（服务端在 `<support>/torrent/` 下，app 在下载数据根下）。
+const String kPeerTorrentLeaseFileName = 'peer_leases.json';
+
 abstract interface class HostTorrentEngine {
   /// `/api/capabilities.torrentEngine`。
   Future<TorrentEngineCapability> capability();
@@ -32,11 +35,12 @@ abstract interface class HostTorrentEngine {
   /// 后端视图的生命周期（建 / 关）归实现方。
   Future<R?> withBackend<R>(Future<R> Function(TorrentBackend backend) action);
 
-  /// 远程任务的租约。
-  PeerTorrentLeaseStore get leases;
+  /// 远程任务的租约；null = host 此刻还没就绪（例如 app 的下载中心还没起，租约
+  /// 文件的位置都还定不下来），路由回 503。
+  Future<PeerTorrentLeaseStore?> leases();
 
-  /// 远程任务允许落盘的根目录。
-  HostTorrentPathPolicy get paths;
+  /// 远程任务允许落盘的根目录（现算：用户改了下载目录 / 媒体来源即生效）。
+  Future<HostTorrentPathPolicy> paths();
 }
 
 /// 远程任务允许落盘的根目录（host 视角的绝对路径）。
@@ -106,11 +110,19 @@ class PeerTorrentLease {
 ///
 /// 写入串行化：并发的 add / remove 按调用顺序落盘，不会互相覆盖。
 class PeerTorrentLeaseStore {
-  PeerTorrentLeaseStore(this.file, {DateTime Function()? now})
-    : _now = now ?? DateTime.now;
+  PeerTorrentLeaseStore(
+    this.file, {
+    DateTime Function()? now,
+    void Function(Set<String> hashes)? onChanged,
+  }) : _now = now ?? DateTime.now,
+       _onChanged = onChanged;
 
   final File file;
   final DateTime Function() _now;
+
+  /// 每次写盘成功后带着最新的全部 hash 调用：宿主据此立刻更新 resume 保留集合，
+  /// 不等下一轮刷新（其间的周期剪枝会删掉刚交来的远程任务的 resume）。
+  final void Function(Set<String> hashes)? _onChanged;
   Map<String, PeerTorrentLease>? _leases;
   Future<void> _writes = Future<void>.value();
 
@@ -184,6 +196,7 @@ class PeerTorrentLeaseStore {
       final Map<String, PeerTorrentLease> leases = await _load();
       change(leases);
       await _persist(leases);
+      _onChanged?.call(leases.keys.toSet());
     });
     // 一次写失败不能卡死后续写：链上只挂吞掉错误的版本，调用方拿到原 future。
     _writes = next.catchError((Object _) {});

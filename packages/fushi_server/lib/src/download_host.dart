@@ -158,7 +158,7 @@ class ServerDownloadHost implements HostDownloadHost {
   /// 已配对设备借本机引擎下载时登记的种子（`/api/torrent-engine`）。内置引擎的
   /// resume 保留集合 = 本机任务行 ∪ 这些租约，否则重启剪枝会删掉远程任务。
   late final PeerTorrentLeaseStore peerTorrentLeases = PeerTorrentLeaseStore(
-    File(p.join(paths.torrentResume.parent.path, 'peer_leases.json')),
+    File(p.join(paths.torrentResume.parent.path, kPeerTorrentLeaseFileName)),
   );
 
   /// 远程任务允许落盘的根：本机下载根 + `torrent.peer_roots`（典型：挂载进来的

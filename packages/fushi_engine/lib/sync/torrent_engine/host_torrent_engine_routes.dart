@@ -53,6 +53,14 @@ shelf.Response _unavailable() => _json(const <String, Object?>{
   'error': 'no torrent engine is available on this host',
 }, status: 503);
 
+/// host 还没就绪（[HostTorrentEngine.leases] 交 null）：handler 统一回 503。
+class _HostNotReady implements Exception {
+  const _HostNotReady();
+}
+
+Future<PeerTorrentLeaseStore> _leasesOf(HostTorrentEngine engine) async =>
+    await engine.leases() ?? (throw const _HostNotReady());
+
 final RegExp _hashPattern = RegExp(r'^[0-9a-f]{40}$|^[0-9a-f]{64}$');
 
 Future<Map<Object?, Object?>> _body(
@@ -127,7 +135,7 @@ Future<shelf.Response> handleHostTorrentEngineRequest(
         final String hash = seg[1].toLowerCase();
         if (!_hashPattern.hasMatch(hash)) return _bad('malformed torrent id');
         // 租约是远程可见性的唯一判据：host 自己的种子对远程「不存在」。
-        if (!await engine.leases.contains(hash)) {
+        if (!await (await _leasesOf(engine)).contains(hash)) {
           return shelf.Response.notFound('Unknown remote torrent');
         }
         return await _onTorrent(engine, request, method, hash, seg.sublist(2));
@@ -135,6 +143,8 @@ Future<shelf.Response> handleHostTorrentEngineRequest(
     return shelf.Response.notFound('Unknown torrent-engine route');
   } on FormatException catch (e) {
     return _bad(e.message);
+  } on _HostNotReady {
+    return _unavailable();
   }
 }
 
@@ -156,7 +166,7 @@ Future<shelf.Response> _list(
   shelf.Request request,
 ) async {
   final String? category = request.url.queryParameters['category'];
-  final Set<String> leased = await engine.leases.hashes();
+  final Set<String> leased = await (await _leasesOf(engine)).hashes();
   final List<TorrentSnapshot>? all = await engine
       .withBackend<List<TorrentSnapshot>>(
         (TorrentBackend b) => b.listTorrents(
@@ -188,7 +198,7 @@ Future<shelf.Response> _add(
   final String? rawSavePath = _optString(body, 'savePath');
   String? savePath;
   if (rawSavePath != null) {
-    savePath = engine.paths.confine(rawSavePath);
+    savePath = (await engine.paths()).confine(rawSavePath);
     if (savePath == null) {
       return _bad('savePath is outside every directory this host allows');
     }
@@ -249,10 +259,11 @@ Future<shelf.Response> _add(
     };
   }
 
-  final bool alreadyLeased = await engine.leases.contains(hash);
+  final PeerTorrentLeaseStore leases = await _leasesOf(engine);
+  final bool alreadyLeased = await leases.contains(hash);
   // 先登记租约再加：加成功、登记还没落盘时 host 崩溃，种子会在下次剪枝时被删；
   // 反过来最多留一条指向不存在种子的租约（无害，删除时一并清）。
-  if (!alreadyLeased) await engine.leases.add(hash, owner: owner);
+  if (!alreadyLeased) await leases.add(hash, owner: owner);
   final bool? ok = await engine.withBackend<bool>((TorrentBackend b) async {
     if (!alreadyLeased) {
       // host 自己已有同一颗种子：不让远程接管（同管线「不接管已有同 hash 任务」）。
@@ -263,7 +274,7 @@ Future<shelf.Response> _add(
     }
     return add(b);
   });
-  if (ok != true && !alreadyLeased) await engine.leases.remove(hash);
+  if (ok != true && !alreadyLeased) await leases.remove(hash);
   if (ok == null) return _unavailable();
   return _json(<String, Object?>{'ok': ok, 'hash': hash});
 }
@@ -285,7 +296,7 @@ Future<shelf.Response> _onTorrent(
           await b.removeTorrent(hash, deleteFiles: deleteFiles),
     );
     if (ok == null) return _unavailable();
-    if (ok) await engine.leases.remove(hash);
+    if (ok) await (await _leasesOf(engine)).remove(hash);
     return _json(<String, Object?>{'ok': ok});
   }
   if (rest.length != 1) return shelf.Response.notFound('Unknown route');
@@ -360,7 +371,9 @@ Future<shelf.Response> _onTorrent(
       return _json(torrentStorageResultToWire(r));
     case 'move':
       final String? raw = _optString(await _body(request), 'savePath');
-      final String? target = raw == null ? null : engine.paths.confine(raw);
+      final String? target = raw == null
+          ? null
+          : (await engine.paths()).confine(raw);
       if (target == null) {
         return _bad('savePath is outside every directory this host allows');
       }

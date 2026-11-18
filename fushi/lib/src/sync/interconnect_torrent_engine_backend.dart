@@ -117,7 +117,7 @@ class RemoteFushiTorrentBackend
         lastProbeFailure =
             outcome.failure == InterconnectHostFailure.unsupported
             ? 'this device does not lend its torrent engine '
-                  '(update it, or check that it is fushi_server)'
+                  '(update Fushi on it)'
             : 'device unreachable: ${outcome.failure.name}';
       }
     } on Object {

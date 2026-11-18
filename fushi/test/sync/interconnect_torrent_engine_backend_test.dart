@@ -15,6 +15,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/sync/app_peer_torrent_engine.dart';
 import 'package:fushi/src/sync/interconnect_host_channel.dart';
 import 'package:fushi/src/sync/interconnect_torrent_engine_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -54,6 +55,7 @@ class _FakeBackend
         TorrentTrackerMutationBackend {
   final Map<String, _FakeTorrent> torrents = <String, _FakeTorrent>{};
   int addCalls = 0;
+  int closeCalls = 0;
 
   @override
   bool get pauseControlAvailable => true;
@@ -226,17 +228,21 @@ class _FakeBackend
       const TorrentPieceStates(states: <int>[2, 0, 1]);
 
   @override
-  void close() {}
+  void close() => closeCalls++;
 }
 
 class _FakeEngine implements HostTorrentEngine {
-  _FakeEngine(this.backend, this.leases, this.paths);
+  _FakeEngine(this.backend, this._leases, this._paths);
 
   final _FakeBackend backend;
+  final PeerTorrentLeaseStore _leases;
+  final HostTorrentPathPolicy _paths;
+
   @override
-  final PeerTorrentLeaseStore leases;
+  Future<PeerTorrentLeaseStore?> leases() async => _leases;
+
   @override
-  final HostTorrentPathPolicy paths;
+  Future<HostTorrentPathPolicy> paths() async => _paths;
 
   @override
   Future<TorrentEngineCapability> capability() async => TorrentEngineCapability(
@@ -245,7 +251,7 @@ class _FakeEngine implements HostTorrentEngine {
     features: torrentEngineFeaturesOf(backend),
     pauseControlAvailable: true,
     detailAvailable: true,
-    allowedRoots: paths.roots,
+    allowedRoots: _paths.roots,
   );
 
   @override
@@ -276,6 +282,19 @@ String _infoHashOf(Uint8List torrent) {
   return sha1.convert(info).toString();
 }
 
+FushiSyncServer buildServer(HostTorrentEngine engine, String syncDir) =>
+    FushiSyncServer(
+        syncDataDir: syncDir,
+        port: 0,
+        token: _sharedToken,
+        torrentEngine: engine,
+        deviceName: 'VM',
+      )
+      ..hostId = _hostId
+      ..pairedPeerCredentialsProvider = (() async => <String, String>{
+        'pc-device': _peerToken,
+      });
+
 void main() {
   late Directory tmp;
   late FushiDatabase db;
@@ -295,24 +314,24 @@ void main() {
     backend.torrents[_hostOwnHash] = _FakeTorrent(_hostOwnHash, '/host/own');
     allowedRoot = p.join(tmp.path, 'peer-library');
     leases = PeerTorrentLeaseStore(File(p.join(tmp.path, 'leases.json')));
-    server =
-        FushiSyncServer(
-            syncDataDir: p.join(tmp.path, 'sync'),
-            port: 0,
-            token: _sharedToken,
-            torrentEngine: _FakeEngine(
-              backend,
-              leases,
-              HostTorrentPathPolicy(<String>[allowedRoot]),
-            ),
-            deviceName: 'VM',
-          )
-          ..hostId = _hostId
-          ..pairedPeerCredentialsProvider = (() async => <String, String>{
-            'pc-device': _peerToken,
-          });
+    server = buildServer(
+      _FakeEngine(
+        backend,
+        leases,
+        HostTorrentPathPolicy(<String>[allowedRoot]),
+      ),
+      p.join(tmp.path, 'sync'),
+    );
     await server.start();
   });
+
+  /// 换一个引擎实现重起 host（端口重新分配；客户端按新端口登记）。
+  Future<void> restartWith(HostTorrentEngine engine) async {
+    await server.stop();
+    server = buildServer(engine, p.join(tmp.path, 'sync'));
+    await server.start();
+    resetRemoteTorrentEngineCapabilityCache();
+  }
 
   tearDown(() async {
     await server.stop();
@@ -504,5 +523,99 @@ void main() {
     expect(await b.addTorrent(magnet(_hashA), category: 'fushi'), isFalse);
     expect(await b.listTorrents(), isEmpty);
     expect(backend.addCalls, 0);
+  });
+
+  group('app 当 host（AppPeerTorrentEngine）', () {
+    test('下载中心没起（租约位置未定）→ 503、能力报不支持、不建后端', () async {
+      int built = 0;
+      await restartWith(
+        AppPeerTorrentEngine(
+          leases: () => null,
+          roots: () async => <String>[allowedRoot],
+          backend: () {
+            built++;
+            return backend;
+          },
+          traits: () => (backend: 'embedded', pause: true, detail: true),
+        ),
+      );
+      final RemoteFushiTorrentBackend b = await client();
+      final TorrentEngineCapability? cap = await b.refreshCapability();
+      expect(cap?.supported, isFalse);
+      expect(await b.addTorrent(magnet(_hashA), category: 'fushi'), isFalse);
+      expect(await b.listTorrents(), isEmpty);
+      expect(built, 0);
+      expect(backend.addCalls, 0);
+    });
+
+    test('就绪：与服务端同契约，落盘根取本机根，后端每次用完即关', () async {
+      await restartWith(
+        AppPeerTorrentEngine(
+          leases: () => leases,
+          roots: () async => <String>[allowedRoot],
+          backend: () => backend,
+          // 内置引擎没起 session 时详情能力未知：如实报 null。
+          traits: () => (backend: 'embedded', pause: true, detail: null),
+        ),
+      );
+      final RemoteFushiTorrentBackend b = await client();
+      final TorrentEngineCapability? cap = await b.refreshCapability();
+      expect(cap?.supported, isTrue);
+      expect(cap?.backend, 'embedded');
+      expect(cap?.features, kAllTorrentEngineFeatures);
+      expect(cap?.detailAvailable, isNull);
+      expect(b.detailAvailable, isTrue); // 未知按乐观处理
+      expect(cap?.allowedRoots, <String>[p.normalize(allowedRoot)]);
+
+      final String save = p.join(allowedRoot, 'Show');
+      expect(
+        await b.addTorrent(magnet(_hashA), category: 'fushi', savePath: save),
+        isTrue,
+      );
+      expect(await leases.contains(_hashA), isTrue);
+      expect(backend.closeCalls, greaterThan(0));
+      expect(
+        await b.addTorrent(
+          magnet('c' * 40),
+          category: 'fushi',
+          savePath: p.join(tmp.path, 'outside'),
+        ),
+        isFalse,
+      );
+      expect(
+        (await b.listTorrents()).map((TorrentSnapshot t) => t.hash),
+        <String>[_hashA],
+      );
+    });
+
+    test('本机没有可借的后端（例如自己也在借别人的）→ 不支持', () async {
+      await restartWith(
+        AppPeerTorrentEngine(
+          leases: () => leases,
+          roots: () async => <String>[allowedRoot],
+          backend: () => null,
+          traits: () => null,
+        ),
+      );
+      final RemoteFushiTorrentBackend b = await client();
+      expect((await b.refreshCapability())?.supported, isFalse);
+      expect(await b.addTorrent(magnet(_hashA), category: 'fushi'), isFalse);
+    });
+  });
+
+  test('租约变更回调带着全部 hash（宿主据此即时更新 resume 保留集合）', () async {
+    final List<Set<String>> seen = <Set<String>>[];
+    final PeerTorrentLeaseStore store = PeerTorrentLeaseStore(
+      File(p.join(tmp.path, 'cb.json')),
+      onChanged: seen.add,
+    );
+    await store.add(_hashA, owner: 'o');
+    await store.add(_hostOwnHash, owner: 'o');
+    await store.remove(_hashA);
+    expect(seen, <Set<String>>[
+      <String>{_hashA},
+      <String>{_hashA, _hostOwnHash},
+      <String>{_hostOwnHash},
+    ]);
   });
 }
