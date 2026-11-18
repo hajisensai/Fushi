@@ -364,6 +364,19 @@ jobs:
         uses: ./.github/actions/setup-fushi-corpus
         with:
           android-abis: x86_64
+      # SRS 排程内核 fushi_fsrs 同为 app 硬依赖：AppModel 初始化建 SRS 存储时 SrsCoreBindings.load
+      # 找不到 libfushi_fsrs.so 就整轮 init 失败、首页永不就绪（appSmoke 在 x86_64 模拟器上红在
+      # 这里）。产物落 native/fushi_fsrs/prebuilt/android/x86_64/，由 build.gradle 的 jniLibs
+      # copy-if-present 随包。Rust / x86_64-linux-android target / cargo-ndk 已由上面的
+      # setup-fushi-compute 按同一钉版装好，这里只编；冷编约 1 min，不进持久库（同 release.yml 口径）。
+      - name: Build fushi_fsrs (Android x86_64)
+        shell: bash
+        run: |
+          set -euo pipefail
+          toolchain="$(sed -n 's/^P2P_RUST=//p' .github/actions/native-store-names/names.sh)"
+          RUSTUP_TOOLCHAIN="$toolchain" bash native/fushi_fsrs/build_android_so.sh "$ANDROID_NDK_LATEST_HOME" x86_64
+          so=native/fushi_fsrs/prebuilt/android/x86_64/libfushi_fsrs.so
+          test -f "$so" || { echo "::error::missing $so"; exit 1; }
       - name: Run Android comprehensive automation contract
         uses: reactivecircus/android-emulator-runner@v2
         with:
