@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-18T09:45:26Z",
+ "generatedAt": "2026-11-18T12:33:16Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "568dd53f1aac7fe25c3b9fe5415effb2afdbdd41",
-  "seq": 29065
+  "sha": "5ebe5543214611908771a25872dc9a9ce4f43f70",
+  "seq": 29071
  },
  "builds": [
   {
@@ -13,7 +13,7 @@
    "sha": "568dd53f1aac7fe25c3b9fe5415effb2afdbdd41",
    "unknown": false,
    "publishedAt": "2026-11-18T09:45:13Z",
-   "testflight": false,
+   "testflight": true,
    "baseSeq": 28975,
    "prs": [
     3467,
@@ -133,7 +133,33 @@
    }
   }
  ],
- "pending": null,
+ "pending": {
+  "headSha": "5ebe5543214611908771a25872dc9a9ce4f43f70",
+  "headSeq": 29071,
+  "prs": [
+   3520
+  ],
+  "direct": [],
+  "truncated": false,
+  "platforms": {
+   "android": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44304649678"
+   },
+   "windows": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44304650085"
+   },
+   "macos": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44304650085"
+   },
+   "ios": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44304650085"
+   }
+  }
+ },
  "prs": {
   "3467": {
    "number": 3467,
@@ -142,6 +168,15 @@
    "mergedAt": "2026-11-18T08:23:34Z",
    "additions": 12383,
    "deletions": 147,
+   "labels": []
+  },
+  "3520": {
+   "number": 3520,
+   "title": "fix(update): 清单带 dbSchemaVersion 拒绝降 schema；准备 3.4.0 正式版",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-18T12:30:50Z",
+   "additions": 376,
+   "deletions": 4,
    "labels": []
   },
   "3534": {
