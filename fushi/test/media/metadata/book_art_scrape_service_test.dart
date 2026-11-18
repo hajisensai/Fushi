@@ -798,7 +798,8 @@ void main() {
   });
 
   test('全名搜到的都不像：再用去掉副标题的查询搜一次；全名已有像样的就不再搜', () async {
-    const String title = 'テスト漫画 ～ブルー～ 1';
+    // 结尾成对的 ～副标题～ 已由系列键剥掉（BUG-4791），这里用系列键保留、查询再切的冒号副标题。
+    const String title = 'テスト漫画：ブルー 1';
     final String full = parseBookSeriesKey(title)!.seriesTitle;
     expect(full, contains('ブルー'));
     await seed('k1', title);
