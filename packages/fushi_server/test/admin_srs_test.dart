@@ -234,6 +234,46 @@ void main() {
     );
   });
 
+  test(
+    'profile 名字：profileNames 整份替换、写回配置文件；空串 = 不起名；超长 / 控制字符 / 坏 uid 400',
+    () async {
+      var (int code, Map<String, dynamic> st) = await call(
+        'PUT',
+        'srs',
+        <String, Object?>{
+          'addProfiles': <String>[kJa, kZh],
+          'profileNames': <String, String>{kJa: ' 日本語 ', kZh: ''},
+        },
+      );
+      expect(code, 200, reason: '$st');
+      expect((st['config'] as Map)['profileNames'], <String, String>{
+        kJa: '日本語',
+      });
+      expect(
+        (await ServerConfig.load(configFile)).srs.profileNames,
+        <String, String>{kJa: '日本語'},
+        reason: '写回配置文件',
+      );
+
+      for (final Object? bad in <Object?>[
+        <String, String>{kJa: 'x' * 101},
+        <String, String>{kJa: 'a\nb'},
+        <String, String>{'not-a-uid': 'X'},
+        <String>['x'],
+      ]) {
+        (code, st) = await call('PUT', 'srs', <String, Object?>{
+          'profileNames': bad,
+        });
+        expect(code, 400, reason: '$bad');
+      }
+      expect(
+        (await ServerConfig.load(configFile)).srs.profileNames,
+        <String, String>{kJa: '日本語'},
+        reason: '被拒的请求不改配置',
+      );
+    },
+  );
+
   test('参数不对：400；默认那份不在列表里：400', () async {
     expect(
       (await call('PUT', 'srs', <String, Object?>{

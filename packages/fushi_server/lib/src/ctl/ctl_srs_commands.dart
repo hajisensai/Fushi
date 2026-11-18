@@ -6,6 +6,9 @@
 ///
 /// 这里的写操作直接落库、不记撤销（管理员自己敲的命令；可撤销的那条路是已配对设备上的 AI 助手会话）。
 /// 批量改笔记先用 `--dry-run` 预演。
+///
+/// 另有旧版本保留副本（D32）：`srs retained [status]` / `srs retained delete --yes`，端点是同一组 engine 路由的
+/// `/api/admin/srs/retained[/delete]`（不按 profile：整个复习库目录一份）。
 library;
 
 import 'dart:convert';
@@ -32,6 +35,7 @@ const Set<String> kCtlSrsDataActions = <String>{
   'card-type',
   'set-field',
   'find-replace',
+  'retained',
 };
 
 /// 批量设卡型的取值（engine `SrsCardType.wire`；服务端照样会校验）。
@@ -114,8 +118,8 @@ void addCtlSrsOptions(ArgParser parser) {
       abbr: 'y',
       negatable: false,
       help: tr(
-        'srs conflict-keep：确认（这一步不能撤销）',
-        'srs conflict-keep: confirm (this cannot be undone)',
+        'srs conflict-keep / retained delete：确认（这一步不能撤销）',
+        'srs conflict-keep / retained delete: confirm (this cannot be undone)',
       ),
     )
     ..addOption(
@@ -193,6 +197,8 @@ fushi_server ctl srs <动作> [参数] [--srs-profile <uid>]
                                            批量给一个字段设值（省略 --value = 清空）
   find-replace <查找> <替换为> (--note <id>... | --query <搜索>) [--in-field 字段] [--regex] [--ignore-case] [--dry-run]
                                            批量查找替换字段原文
+  retained [status]                        旧版本保留副本（升级时封存的旧库）：大小、到期时间、自动删除的错误
+  retained delete --yes                    立即删除保留副本（不可撤销：之后不能退回旧版本；先核对新库，核对不过不删）
   批量改笔记的 --query 可再配 --field / --deck 收窄；这里的写入不记撤销，先 --dry-run 预演。''',
   '''
 fushi_server ctl srs <action> [args] [--srs-profile <uid>]
@@ -215,6 +221,8 @@ fushi_server ctl srs <action> [args] [--srs-profile <uid>]
                                            Batch-set one field (omit --value to clear it)
   find-replace <find> <replace> (--note <id>... | --query <search>) [--in-field name] [--regex] [--ignore-case] [--dry-run]
                                            Batch find & replace on the raw field text
+  retained [status]                        Old-version retained copy (the old library sealed by the upgrade): size, due date, auto-delete error
+  retained delete --yes                    Delete the retained copy now (cannot be undone: no way back to the old version; the current library is checked first)
   For batch edits --query can be narrowed with --field / --deck; writes here keep no undo record, preview with --dry-run first.''',
 );
 
@@ -392,6 +400,29 @@ CtlSrsRequest? parseCtlSrsDataAction(
         '$_root/conflicts/held/${_seg(id)}/keep',
         body: body(const <String, Object?>{'confirm': true}),
         render: _renderHeld,
+      );
+    case 'retained':
+      final String action = arg(0) ?? 'status';
+      if (action == 'status') {
+        return CtlSrsRequest('GET', '$_root/retained', render: _renderRetained);
+      }
+      if (action != 'delete') {
+        return usage(
+          'srs retained [status] | delete --yes',
+          'srs retained [status] | delete --yes',
+        );
+      }
+      if (!(command['yes'] as bool)) {
+        return usage(
+          '删除保留副本不可撤销（之后不能再退回旧版本，彻底清除过的内容的原文随之消失），确认请加 --yes',
+          'Deleting the retained copy cannot be undone (no way back to the old version; the original text of purged content goes with it); add --yes to confirm',
+        );
+      }
+      return CtlSrsRequest(
+        'POST',
+        '$_root/retained/delete',
+        body: const <String, Object?>{'confirm': true},
+        render: _renderRetainedDelete,
       );
     case 'conflict-resolve':
       final String? kind = arg(0);
@@ -717,6 +748,60 @@ void _renderConflicts(Object? response, StringSink out) {
     parts.add(text.toString());
   }
   out.writeln(parts.isEmpty ? tr('没有冲突', 'No conflicts') : parts.join('\n\n'));
+}
+
+void _renderRetained(Object? response, StringSink out) {
+  if (response is! Map) return _json(response, out);
+  final Object? copy = response['copy'];
+  if (copy != 'sealed') {
+    out.writeln(
+      copy == 'tombstone'
+          ? tr(
+              '保留副本已删除（原位是墓碑）',
+              'The retained copy has been deleted (a tombstone is in its place)',
+            )
+          : tr('没有旧版本保留副本', 'No old-version retained copy'),
+    );
+    return;
+  }
+  final Object? bytes = response['bytes'];
+  final Object? due = response['dueAtMs'];
+  out.writeln(
+    tr('旧版本保留副本：$bytes 字节', 'Old-version retained copy: $bytes bytes'),
+  );
+  out.writeln(
+    due is int
+        ? tr(
+            '到期：${DateTime.fromMillisecondsSinceEpoch(due).toLocal()}（到期后下次开库时自动删除）',
+            'Due: ${DateTime.fromMillisecondsSinceEpoch(due).toLocal()} (deleted automatically at the next library open after that)',
+          )
+        : tr(
+            '不会自动到期（删除前一直保留）',
+            'Never expires on its own (kept until deleted)',
+          ),
+  );
+  final Object? error = response['error'];
+  if (error is String && error.isNotEmpty) {
+    out.writeln(
+      tr('自动删除没做成：$error', 'Automatic deletion did not happen: $error'),
+    );
+  }
+}
+
+void _renderRetainedDelete(Object? response, StringSink out) {
+  if (response is! Map) return _json(response, out);
+  if (response['deleted'] == true) {
+    out.writeln(
+      tr(
+        '已删除保留副本，释放 ${response['freedBytes']} 字节',
+        'Retained copy deleted, ${response['freedBytes']} bytes freed',
+      ),
+    );
+    return;
+  }
+  out.writeln(
+    tr('没有删除：${response['reason']}', 'Nothing deleted: ${response['reason']}'),
+  );
 }
 
 void _renderHeld(Object? response, StringSink out) {

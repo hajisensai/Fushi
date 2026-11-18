@@ -761,5 +761,29 @@ void main() {
       expect(adminWebUiHtml, contains('renderSrsMigration(st.generation)'));
       expect(adminWebUiHtml, contains('<div id="srs-migration"></div>'));
     });
+
+    test('删除保留副本：只在封存副本时出按钮；先危险确认、带 confirm 才发（第六波服务端收尾）', () {
+      final int fn = adminWebUiHtml.indexOf('function renderSrsRetained(');
+      expect(fn, isNonNegative);
+      final String body = adminWebUiHtml.substring(
+        fn,
+        adminWebUiHtml.indexOf('\nlet srsFormKey', fn),
+      );
+      expect(body, contains("if (!r || r.copy !== 'sealed')"));
+      const String send = "post('srs/retained/delete', {confirm: true})";
+      final int call = body.indexOf(send);
+      expect(call, isNonNegative);
+      final int handler = body.lastIndexOf(
+        "\$('#btn-srs-retained-delete').onclick",
+        call,
+      );
+      expect(handler, isNonNegative);
+      final String guardText = body.substring(handler, call);
+      expect(guardText, contains('if (!await ask('));
+      expect(guardText, contains(', true)) return;'), reason: '危险确认');
+      expect(adminWebUiHtml, contains('renderSrsRetained(retained)'));
+      expect(adminWebUiHtml, contains("api('srs/retained').catch(()=>null)"));
+      expect(adminWebUiHtml, contains('<div id="srs-retained"></div>'));
+    });
   });
 }
