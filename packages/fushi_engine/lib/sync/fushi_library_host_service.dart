@@ -350,10 +350,15 @@ abstract interface class VideoSubtitleDefaultHost {
   /// 把 [subtitleFile]（格式 [format]：srt / ass / ssa / vtt）落成视频 [id] 的默认
   /// sidecar 并重解析 cue，返回实际落盘的后缀。未知视频 / 视频无本地文件抛
   /// [StateError]；[format] 不是字幕格式抛 [ArgumentError]。
+  ///
+  /// [episodeIndex]（播放列表下标，与 `?episode=` 同口径）> 0 时落到那一集文件旁
+  /// （capabilities 的 `liveLibrary.videoSubtitleDefaultEpisode`）；那一集不存在 /
+  /// 没有本地文件同样抛 [StateError]。
   Future<String> importDefaultVideoSubtitle(
     File subtitleFile, {
     required String id,
     required String format,
+    int episodeIndex = 0,
   });
 }
 
@@ -3844,6 +3849,53 @@ abstract interface class VideoDiscShareHost {
 
 /// `/api/capabilities` 的 `liveLibrary` 里声明 [VideoClipExportHost] 的能力位。
 const String kVideoClipExportCapability = 'videoClipExport';
+
+/// `/api/capabilities` 的 `liveLibrary` 里声明 [VideoDiscTitleAudioHost] 的能力位：
+/// `clipaudio` 认 `?discTitle=`。老 host 无此字段 → client 不带 `discTitle` 请求（老 host
+/// 不认它，会照 `<id>` 那一行裁，拿回的是另一条 title 的音频）。
+const String kVideoClipAudioDiscTitleCapability = 'videoClipAudioDiscTitle';
+
+/// `/api/capabilities` 的 `liveLibrary` 里声明「`clipaudio?discTitle=` 认多角度 title 的
+/// 角度成员路径（`BDMV/PLAYLIST/00001.a2.mpls`，见 `bluray_angle.dart`）、按该角度裁」的
+/// 能力位。老 host 无此字段 → client 不发角度路径（老 host 认不出这个虚拟路径，只会 404）。
+const String kVideoClipAudioDiscTitleAngleCapability =
+    'videoClipAudioDiscTitleAngle';
+
+/// `/api/capabilities` 的 `liveLibrary` 里声明「`clipaudio?discTitle=` 认 DVD title
+/// （`VIDEO_TS/TITLE_nn.dvdtitle`，`<id>` 是同一张 DVD 上的行）、经 `dvdvideo` demuxer
+/// 按 title 裁」的能力位。老 host 无此字段 → client 不发 DVD title（老 host 判它读不到）。
+const String kVideoClipAudioDiscTitleDvdCapability =
+    'videoClipAudioDiscTitleDvd';
+
+/// `/api/capabilities` 的 `liveLibrary` 里声明「`clipaudio?discTitle=` 认 DVD 多角度 title
+/// 的角度成员路径（`VIDEO_TS/TITLE_nn.aK.dvdtitle`，见 `dvd_angle.dart`）、按该角度裁」的
+/// 能力位。只声明了 [kVideoClipAudioDiscTitleDvdCapability] 与
+/// [kVideoClipAudioDiscTitleAngleCapability] 的 host 认不出这种形态（只会 404）→ client
+/// 不发。
+const String kVideoClipAudioDiscTitleDvdAngleCapability =
+    'videoClipAudioDiscTitleDvdAngle';
+
+/// host 端「按（盘, title）裁音频」的**可选**能力（远端原盘会话：盘在 host 上，会话里
+/// 正在看的 title 可能是库里没有行的特典 / 菜单 title）。与 [VideoClipExportHost] 同范式：
+/// server 用 `is` 探测，不实现 → `clipaudio?discTitle=` 404、能力位
+/// [kVideoClipAudioDiscTitleCapability] 为 false。
+abstract interface class VideoDiscTitleAudioHost {
+  /// 在 host 本地裁出视频 [id] 那一行所在蓝光盘上 [discTitle]（相对盘根，
+  /// `BDMV/PLAYLIST/<名>.mpls`）那条 title 的 `[startMs, endMs)` 音频，返回落在**独立
+  /// 临时目录**里的 aac 文件（调用方读完负责删该目录）。视频未知 / 不是蓝光行 / title
+  /// 不合法或本机读不到 / 区间非法 / ffmpeg 失败 → null。其余参数同
+  /// [FushiLibraryHostService.clipVideoAudio]。
+  Future<File?> clipVideoDiscTitleAudio(
+    String id, {
+    required String discTitle,
+    required int startMs,
+    required int endMs,
+    int? audioStreamIndex,
+    int? audioStreamCount,
+    int audioChannels = 1,
+    String audioBitrate = '64k',
+  });
+}
 
 /// host 端「替 client 裁出视频片段原料」的**可选**能力（反馈 6nBmSBj_2W：互联远端
 /// 视频的片段导出）。

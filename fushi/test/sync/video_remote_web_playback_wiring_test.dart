@@ -60,9 +60,16 @@ void main() {
         remote,
         'Future<VideoRemoteSubtitleApply> _downloadRemoteWebOnlineSubtitle(',
       );
-      expect(body, contains('_webTracks[key] = WebVideoTrack('));
-      expect(body, contains('_selectWebTrack(key);'));
+      // 登记轨的那几行与网页档本机生成 / 手动导入共用 [_selectWebLocalSubtitleTrack]。
+      expect(body, contains('_selectWebLocalSubtitleTrack(path, cues);'));
       expect(body, isNot(contains('setCues(')));
+      final String register = methodBody(
+        webSource,
+        'void _selectWebLocalSubtitleTrack(',
+      );
+      expect(register, contains('_webTracks[key] = WebVideoTrack('));
+      expect(register, contains('_selectWebTrack(key);'));
+      expect(register, isNot(contains('setCues(')));
     });
   });
 

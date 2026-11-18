@@ -13,6 +13,12 @@ import 'package:fushi_engine/media/video/m3u8_playlist.dart' show PlaylistEntry;
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/media/video/scraper/collection_member_policy.dart'
     show multiMemberCollectionIdByVideoUid;
+import 'package:fushi_engine/media/video/disc/disc_format.dart'
+    show isDiscMemberPath;
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_disc_outputs.dart'
+    show deleteVideoSubtitleDiscOutputs;
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart'
+    show videoSubtitleJobsRootUnder;
 import 'package:fushi_engine/media/video/video_local_files.dart';
 import 'package:fushi_engine/media/video/video_path_migration.dart';
 import 'package:fushi_engine/media/video/video_storage.dart';
@@ -1794,6 +1800,49 @@ class VideoBookRepository {
       }
       // 这一本做完才报，最后一本处理完进度才到满（35YfcYO-zR）。
       onProgress?.call(deleted.length + ++cacheDone);
+    }
+    // 与上面各步同一纪律：单独 best-effort，失败记日志、不翻转「行已删」。
+    try {
+      await _reclaimDiscSubtitleOutputs(deleted, others);
+    } catch (e, stack) {
+      engineLog.log('VideoBookRepository.discSubtitleOutputs', e, stack);
+    }
+  }
+
+  /// 原盘成员（蓝光 title / 分集、DVD title）生成过的字幕在任务根的 `disc_out` 里
+  /// （不在盘旁），删行之后没人引用就回收；同一成员仍在幸存行（本体或播放列表）里的
+  /// 保留。只有原盘行才有这些目录，普通视频的字幕在视频旁、随原件删除链走。
+  Future<void> _reclaimDiscSubtitleOutputs(
+    List<_DeletedVideoSnapshot> deleted,
+    List<VideoBookRow> others,
+  ) async {
+    final List<String> members = <String>[
+      for (final _DeletedVideoSnapshot snapshot in deleted)
+        for (final String path in <String>[
+          snapshot.videoPath,
+          ...playlistEntryPaths(snapshot.playlistJson),
+        ])
+          if (isDiscMemberPath(path)) path,
+    ];
+    if (members.isEmpty) return;
+    final Directory jobsRoot = videoSubtitleJobsRootUnder(
+      await enginePaths.supportRootDirectory(),
+    );
+    final List<(String, Object)> failures =
+        await deleteVideoSubtitleDiscOutputs(
+          jobsRoot: jobsRoot,
+          memberPaths: members,
+          keepMemberPaths: <String>{
+            for (final VideoBookRow row in others)
+              for (final String path in <String>[
+                row.videoPath,
+                ...playlistEntryPaths(row.playlistJson),
+              ])
+                if (isDiscMemberPath(path)) path,
+          },
+        );
+    for (final (String path, Object error) in failures) {
+      engineLog.log('VideoBookRepository.discSubtitleOutputs', '$path: $error');
     }
   }
 

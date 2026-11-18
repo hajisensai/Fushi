@@ -33,7 +33,14 @@ import 'package:fushi_core/fushi_core.dart'
         FushiDatabase,
         MediaCollectionItemRow,
         MediaCollectionRow,
-        VideoBookRow;
+        VideoBookRow,
+        platformPathKey;
+import 'package:fushi_engine/media/video/disc/disc_angle.dart'
+    show DiscAngleRef, discAnglePath, parseDiscAnglePath;
+import 'package:fushi_engine/media/video/disc/disc_format.dart'
+    show isDiscMemberPath;
+import 'package:fushi_engine/media/video/strm_file.dart'
+    show lacksLocalMediaFile;
 import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
@@ -65,7 +72,7 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_r
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_duration_probe.dart';
 import 'package:fushi_engine/media/video/video_local_files.dart'
-    show isLocalVideoFilePath, localVideoFileCandidates;
+    show isLocalVideoFilePath, localVideoFileCandidates, playlistEntryPaths;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/i18n/strings.g.dart' show t;
@@ -76,6 +83,7 @@ import 'package:fushi/src/media/video/subtitle/video_subtitle_model_ports.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/video/subtitle/app_video_subtitle_types.dart';
+import 'package:fushi/src/media/video/subtitle/video_stream_subtitle_sink.dart';
 import 'package:fushi/src/media/video/video_playback_remote.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -146,7 +154,8 @@ AppVideoSubtitleService appVideoSubtitleService(AppModel appModel) =>
       ),
     );
 
-/// 视频库落点：产物写在视频旁，登记进 `video_books.subtitleSource`。
+/// 视频库落点：产物按管线默认落点写（视频旁；原盘成员写进任务根下的 `disc_out`，见
+/// [videoSubtitleDiscExportDir]），登记进 `video_books.subtitleSource`。
 class VideoBookSubtitleSink implements AppSubtitleOutputSink {
   const VideoBookSubtitleSink(this.database);
 
@@ -155,6 +164,7 @@ class VideoBookSubtitleSink implements AppSubtitleOutputSink {
   @override
   AppSubtitleTargetDomain get domain => AppSubtitleTargetDomain.video;
 
+  /// null = 管线默认落点（[videoSubtitleDefaultExportDir]）。
   @override
   Directory? exportDirFor(String mediaPath) => null;
 
@@ -169,7 +179,11 @@ class VideoBookSubtitleSink implements AppSubtitleOutputSink {
 
   @override
   String mirrorSubject(AppVideoSubtitleTarget target) =>
-      target.bookUid ?? 'collection:${target.collectionId}';
+      target.bookUid ??
+      (target.collectionId != null
+          ? 'collection:${target.collectionId}'
+          // 没入库的文件（[AppVideoSubtitleService.resolveFile]）：按目标自己的键。
+          : target.key);
 
   /// 生产证据：这一集在库里登记的导入字幕（手动导入、Jimaku 下载、播放时图形字幕
   /// OCR 出的 SRT 都住在 app 文档目录里，扫视频目录扫不到）。
@@ -681,10 +695,12 @@ class AppVideoSubtitleService {
   // ── 目标解析 ────────────────────────────────────────────────────────────
 
   /// 一个视频条目（`video_books.book_uid`）：本体 + 播放列表各集。[videoPath] 非空
-  /// 时只取这一集（视频页的当前集）。
+  /// 时只取这一集（视频页的当前集），[audioTrack] 是播放器当前音轨
+  /// （[AppVideoSubtitleEpisode.audioTrack]）。
   Future<AppVideoSubtitleTarget> resolveBook(
     String bookUid, {
     String? videoPath,
+    int? audioTrack,
   }) async {
     final VideoBookRow? row = await database.getVideoBookByBookUid(bookUid);
     if (row == null) throw AppVideoSubtitleTargetNotFound('book $bookUid');
@@ -696,14 +712,16 @@ class AppVideoSubtitleService {
       episodes,
       unavailable,
       onlyPath: videoPath,
+      audioTrack: videoPath == null ? null : audioTrack,
       replaceSelection: videoPath != null,
     );
     // 播放页的当前路径可能是重定位后的（盘符换了 / 数据根搬了），与库里记的写法
-    // 对不上：文件确实在就照样处理这一集，只是不替这一行登记字幕选择（页面自己选）。
+    // 对不上：本机读得到这一集的媒体就照样处理，只是不替这一行登记字幕选择（页面
+    // 自己选）。
     if (videoPath != null &&
         episodes.isEmpty &&
         isLocalVideoFilePath(videoPath) &&
-        await videoPathFileExists(videoPath)) {
+        await hasLocalMediaFile(videoPath)) {
       unavailable.clear();
       episodes.add(
         AppVideoSubtitleEpisode(
@@ -712,6 +730,7 @@ class AppVideoSubtitleService {
           title: row.title,
           registersSubtitleSource: false,
           contentLanguage: row.language,
+          audioTrack: audioTrack,
         ),
       );
     }
@@ -730,6 +749,113 @@ class AppVideoSubtitleService {
       unavailable: unavailable,
       bookUid: bookUid,
     );
+  }
+
+  /// **没入库**的本机视频文件（直接打开的文件：`video_books` 里没有这一行）。
+  ///
+  /// 管线本身只要本机读得到媒体（[hasLocalMediaFile]：普通文件，或蓝光整卷 / 分集
+  /// `.mpls`）：作品身份按「所在文件夹」兜底（[_fallbackWork]，作品名取文件夹名，原盘
+  /// 取盘根，见 [subtitleWorkFolderOf]）——同一文件夹里的各集因此共用一份专名表与缓存，
+  /// 与入库但没刮削的作品同一口径。产物照样按管线默认落点写；没有库条目可登记字幕选择
+  /// （[AppVideoSubtitleEpisode.bookUid] 为 null，[VideoBookSubtitleSink.register] 不写库），
+  /// 由打开它的页面在任务结束时自己选中。不是本机路径 / 本机读不到时抛
+  /// [AppVideoSubtitleTargetNotFound]。
+  ///
+  /// [audioTrack]：播放器当前音轨（[AppVideoSubtitleEpisode.audioTrack]）。
+  Future<AppVideoSubtitleTarget> resolveFile(
+    String videoPath, {
+    required String title,
+    int? audioTrack,
+  }) async {
+    if (!isLocalVideoFilePath(videoPath) ||
+        !await hasLocalMediaFile(videoPath)) {
+      throw AppVideoSubtitleTargetNotFound('file $videoPath');
+    }
+    final String folderName = p.basename(subtitleWorkFolderOf(videoPath));
+    return AppVideoSubtitleTarget(
+      title: title,
+      work: _fallbackWork(
+        title: folderName.trim().isEmpty ? title : folderName,
+        videoPath: videoPath,
+      ),
+      episodes: <AppVideoSubtitleEpisode>[
+        AppVideoSubtitleEpisode(
+          videoPath: videoPath,
+          title: title,
+          registersSubtitleSource: false,
+          audioTrack: audioTrack,
+        ),
+      ],
+      key: 'file:$videoPath',
+    );
+  }
+
+  /// **非互联的在线流**（在线视频源、粘贴的流 / YouTube、音乐 MV、媒体服务器、云盘流）：
+  /// [audioPath] 是已拉到本机的整集音频副本（`VideoStreamSubtitleAudioStager`），管线照
+  /// 本机文件转写它。
+  ///
+  /// - 作品身份：[workTitle]（来源给的作品名，如在线源的合集名）优先，没有就用 [title]；
+  ///   按作品名兜底（[fallbackSubtitleWorkKey] 不带文件夹），同一部作品的各集共用一份
+  ///   专名表与缓存。
+  /// - 产物落 [exportDir]（app 自有目录，流没有「媒体旁」），不写库；[remember] 把产物
+  ///   记成这一集的字幕选择（远端按集的 prefs），登记后删掉音频副本（[VideoStreamSubtitleSink]）。
+  /// - [frameSource]：AI 校对参考画面从播放中的流里抽（副本只有音频）。
+  /// - [contentLanguage]：当前音轨的语言标签（副本是单轨，探测拿不到原流的标签）。
+  ///
+  /// 副本不在时抛 [AppVideoSubtitleTargetNotFound]。
+  Future<AppVideoSubtitleTarget> resolveStream({
+    required String audioPath,
+    required String title,
+    required String key,
+    required Directory exportDir,
+    String? workTitle,
+    String? contentLanguage,
+    Future<void> Function(String subtitlePath)? remember,
+    SubtitleFrameSource? frameSource,
+  }) async {
+    if (!await File(audioPath).exists()) {
+      throw AppVideoSubtitleTargetNotFound('stream audio $audioPath');
+    }
+    final String work = workTitle?.trim() ?? '';
+    return AppVideoSubtitleTarget(
+      title: title,
+      work: _fallbackWork(title: work.isEmpty ? title : work, videoPath: null),
+      episodes: <AppVideoSubtitleEpisode>[
+        AppVideoSubtitleEpisode(
+          videoPath: audioPath,
+          title: title,
+          registersSubtitleSource: false,
+          contentLanguage: contentLanguage,
+        ),
+      ],
+      sink: VideoStreamSubtitleSink(
+        exportDir: exportDir,
+        stagedAudio: <String>{audioPath},
+        remember: remember,
+      ),
+      frameSource: frameSource,
+      key: 'stream:$key',
+    );
+  }
+
+  /// 播放页正在放的这一集：库里有这一行就按库解析（[resolveBook]），没有（直接打开的
+  /// 文件）就按文件解析（[resolveFile]）——两种都走完整管线。[audioTrack] 是播放器
+  /// 当前音轨：管线识别这条轨，与「仅本机转录」同口径。
+  Future<AppVideoSubtitleTarget> resolvePlaying(
+    String bookUid, {
+    required String videoPath,
+    required String title,
+    int? audioTrack,
+  }) async {
+    try {
+      return await resolveBook(
+        bookUid,
+        videoPath: videoPath,
+        audioTrack: audioTrack,
+      );
+    } on AppVideoSubtitleTargetNotFound {
+      return resolveFile(videoPath, title: title, audioTrack: audioTrack);
+    }
   }
 
   /// 一个合集的全部视频成员（按合集顺序）。
@@ -774,12 +900,10 @@ class AppVideoSubtitleService {
     List<AppVideoSubtitleEpisode> out,
     List<AppVideoSubtitleUnavailable> unavailable, {
     String? onlyPath,
+    int? audioTrack,
     bool replaceSelection = false,
   }) async {
-    final List<String> candidates = localVideoFileCandidates(
-      videoPath: row.videoPath,
-      playlistJson: row.playlistJson,
-    );
+    final List<String> candidates = _pipelineMediaCandidates(row);
     if (candidates.isEmpty) {
       unavailable.add(
         AppVideoSubtitleUnavailable(
@@ -793,14 +917,31 @@ class AppVideoSubtitleService {
       return;
     }
     final bool playlist = candidates.length > 1;
+    // 原盘会话正放着多角度 title 的第 N 个角度时，页面给的是角度成员路径
+    // （蓝光 `00001.a2.mpls` / DVD `TITLE_03.a2.dvdtitle`，见 `disc_angle.dart`）：库身份
+    // 仍是不带角度的那一行，媒体按该角度读——这一集照常登记到这一行，管线抽的是正在播
+    // 的角度。
+    final DiscAngleRef? angle = onlyPath == null
+        ? null
+        : parseDiscAnglePath(onlyPath);
+    final String? onlyMember = angle?.memberPath ?? onlyPath;
     for (final String path in candidates) {
-      if (onlyPath != null && !p.equals(path, onlyPath)) continue;
-      if (!await File(path).exists()) {
+      if (onlyMember != null && !p.equals(path, onlyMember)) continue;
+      final String mediaPath = angle == null
+          ? path
+          : discAnglePath(path, angle.angleIndex);
+      // 「本机能不能读到这一集的媒体」（video_member_file.dart 第 2 种问法）：蓝光分集
+      // 是虚拟路径，裸 `File.exists` 判不了；本地 `.strm` 是文件却没有媒体字节。
+      if (!await hasLocalMediaFile(mediaPath)) {
         unavailable.add(
           AppVideoSubtitleUnavailable(
             bookUid: row.bookUid,
             title: playlist ? p.basenameWithoutExtension(path) : row.title,
-            reason: AppVideoSubtitleUnavailableReason.missingFile,
+            // 原盘成员（DVD title 也是「没有单文件媒体字节」的虚拟路径）读不到就是盘
+            // 不在了，不是远端。
+            reason: lacksLocalMediaFile(path) && !isDiscMemberPath(path)
+                ? AppVideoSubtitleUnavailableReason.remote
+                : AppVideoSubtitleUnavailableReason.missingFile,
           ),
         );
         continue;
@@ -808,14 +949,43 @@ class AppVideoSubtitleService {
       out.add(
         AppVideoSubtitleEpisode(
           bookUid: row.bookUid,
-          videoPath: path,
+          videoPath: mediaPath,
           title: playlist ? p.basenameWithoutExtension(path) : row.title,
           registersSubtitleSource: p.equals(path, row.videoPath) && !playlist,
           replacesSubtitleSelection: replaceSelection,
           contentLanguage: row.language,
+          audioTrack: audioTrack,
         ),
       );
     }
+  }
+
+  /// 一行视频里管线要处理的媒体（按库里的顺序）：本机原始文件（[localVideoFileCandidates]）
+  /// 加上原盘成员（蓝光整卷 / 分集 `.mpls`、DVD title）。后者不算「可删除的原始文件」
+  /// （删除护栏把它排除在外，删它等于拆盘），但它就是这一条的媒体：ffmpeg 经
+  /// `BlurayFfmpegBackend` 按播放列表的片段与 IN/OUT 读、经 `DvdFfmpegBackend` 按 DVD
+  /// title 读（`dvdvideo` demuxer），抽音频、探测、取帧与普通文件同一条路。
+  static List<String> _pipelineMediaCandidates(VideoBookRow row) {
+    final Set<String> files = <String>{
+      for (final String path in localVideoFileCandidates(
+        videoPath: row.videoPath,
+        playlistJson: row.playlistJson,
+      ))
+        platformPathKey(path),
+    };
+    final Set<String> seen = <String>{};
+    final List<String> out = <String>[];
+    for (final String raw in <String>[
+      row.videoPath,
+      ...playlistEntryPaths(row.playlistJson),
+    ]) {
+      final String path = raw.trim();
+      if (!isLocalVideoFilePath(path)) continue;
+      final bool media =
+          isDiscMemberPath(path) || files.contains(platformPathKey(path));
+      if (media && seen.add(platformPathKey(path))) out.add(path);
+    }
+    return out;
   }
 
   SubtitleWorkContext _fallbackWork({
@@ -823,7 +993,7 @@ class AppVideoSubtitleService {
     required String? videoPath,
   }) => SubtitleWorkContext(
     workKey: fallbackSubtitleWorkKey(
-      folderPath: videoPath == null ? null : p.dirname(videoPath),
+      folderPath: videoPath == null ? null : subtitleWorkFolderOf(videoPath),
       title: title.trim().isEmpty ? 'untitled' : title,
     ),
     title: title,
@@ -1011,7 +1181,9 @@ class AppVideoSubtitleService {
     for (final AppVideoSubtitleEpisode e in target.episodes) {
       // 视频旁的字幕在网络盘上时同步 stat 会冻结 UI isolate（BUG-3756）。
       if (target.wholeSeason &&
-          await File(subtitlePathFor(target, e.videoPath, language)).exists()) {
+          await File(
+            _subtitlePathUnder(root, target, e.videoPath, language),
+          ).exists()) {
         continue;
       }
       final Directory dir = Directory(
@@ -1075,13 +1247,24 @@ class AppVideoSubtitleService {
   }
 
   /// 一集的目标字幕路径（`<导出目录>/<媒体名>.<语言>.srt`，导出目录见
-  /// [AppSubtitleOutputSink.exportDirFor]）：与管线 `subtitlePathFor` 同一口径。
-  String subtitlePathFor(
+  /// [AppSubtitleOutputSink.exportDirFor]，null 时是管线默认落点
+  /// [videoSubtitleDefaultExportDir]——原盘成员在任务根下）：与管线 `subtitlePathFor`
+  /// 同一口径。
+  Future<String> subtitlePathFor(
     AppVideoSubtitleTarget target,
     String mediaPath, [
     VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
-  ]) => p.join(
-    _sinkOf(target).exportDirFor(mediaPath)?.path ?? p.dirname(mediaPath),
+  ]) async =>
+      _subtitlePathUnder(await _jobsRoot(), target, mediaPath, language);
+
+  String _subtitlePathUnder(
+    Directory jobsRoot,
+    AppVideoSubtitleTarget target,
+    String mediaPath,
+    VideoSubtitleLanguage language,
+  ) => p.join(
+    _sinkOf(target).exportDirFor(mediaPath)?.path ??
+        videoSubtitleDefaultExportDir(jobsRoot, mediaPath),
     '${p.basenameWithoutExtension(mediaPath)}.${language.tag}.srt',
   );
 
@@ -1092,9 +1275,12 @@ class AppVideoSubtitleService {
     VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
   }) async {
     if (!target.wholeSeason) return const <String>{};
+    final Directory root = await _jobsRoot();
     return <String>{
       for (final AppVideoSubtitleEpisode e in target.episodes)
-        if (await File(subtitlePathFor(target, e.videoPath, language)).exists())
+        if (await File(
+          _subtitlePathUnder(root, target, e.videoPath, language),
+        ).exists())
           e.videoPath,
     };
   }
@@ -1279,7 +1465,9 @@ class AppVideoSubtitleService {
           proofreadConcurrency: provider.batchConcurrency,
           regenerateGlossary: job.options.regenerateGlossary,
           // 画面只发给开了图片输入的提供商：收不了图的端点会整批报错。
-          frames: wantFrames && provider.acceptsImages ? _frameSource : null,
+          frames: wantFrames && provider.acceptsImages
+              ? target.frameSource ?? _frameSource
+              : null,
         );
       }
       final SubtitleEvidenceSource? collected = _evidenceSource == null
@@ -1297,6 +1485,13 @@ class AppVideoSubtitleService {
         language: language,
         ai: aiConfig,
         probeDurationMs: _probeDurationMs,
+        // 播放器当前音轨（[AppVideoSubtitleEpisode.audioTrack]）→ 识别的流序号。
+        resolveAudioStream: (String videoPath, int audioTrack) async =>
+            videoSubtitleAudioStreamForTrack(
+              await _probeAudioTracks(videoPath),
+              audioTrack,
+              language,
+            ),
         // 播放器里对照着的其它语言字幕（工作台交过来的）并进自动收集的证据。
         evidence: collected == null || job.options.pinnedEvidence.isEmpty
             ? collected
@@ -1315,6 +1510,12 @@ class AppVideoSubtitleService {
         wholeSeason: target.wholeSeason && !job.consistencyOnly,
         onProgress: job._onProgress,
         cancel: job._cancel,
+        // 从播放页发起的集识别播放器当前音轨；只重跑写法统一时沿用上次识别的轨。
+        audioTracks: <String, int>{
+          for (final AppVideoSubtitleEpisode e in target.episodes)
+            if (e.audioTrack case final int track) e.videoPath: track,
+        },
+        keepRecordedAudio: job.consistencyOnly,
       );
       job.result = result;
       for (final VideoSubtitleEpisodeResult r in result.episodes) {

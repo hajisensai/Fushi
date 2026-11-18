@@ -443,10 +443,15 @@ extension _FushiSyncServerVideo on FushiSyncServer {
             }
             final VideoSubtitleDefaultHost host =
                 svc as VideoSubtitleDefaultHost;
+            // `?episode=N`：播放列表第 N 集（client 先看
+            // `liveLibrary.videoSubtitleDefaultEpisode` 才带）。
             final String placed = await host.importDefaultVideoSubtitle(
               tmp,
               id: subtitleId,
-              format: p.extension(suffix),
+              // 不能用 p.extension：无语言标记的后缀就是 `.srt` 本身，按文件名规则
+              // 那是「点开头、没有扩展名」，会得到空串而被判成「不是字幕格式」。
+              format: suffix.substring(suffix.lastIndexOf('.') + 1),
+              episodeIndex: _episodeIndexFromRequest(request),
             );
             // 新旧两个名字都回：改名前的 client 只读旧名，读不到会把这次成功的
             // 上传误报成「host 不支持」（见 kLegacyInterconnectHeaderNames）。
@@ -744,16 +749,39 @@ extension _FushiSyncServerVideo on FushiSyncServer {
           int.tryParse(request.url.queryParameters['ac'] ?? '') ?? 1;
       final String audioBitrate =
           request.url.queryParameters['bitrate'] ?? '64k';
-      final File? clip = await svc.clipVideoAudio(
-        clipAudioId,
-        startMs: startMs,
-        endMs: endMs,
-        episodeIndex: episodeIndex,
-        audioStreamIndex: audioStreamIndex,
-        audioStreamCount: audioStreamCount,
-        audioChannels: audioChannels,
-        audioBitrate: audioBitrate,
-      );
+      // `?discTitle=BDMV/PLAYLIST/<名>.mpls`：同一张蓝光盘上的另一条 title（远端原盘
+      // 会话，能力位 [kVideoClipAudioDiscTitleCapability]）。不与 `episode` 同给。
+      final String? discTitle = request.url.queryParameters['discTitle'];
+      final File? clip;
+      if (discTitle != null && discTitle.isNotEmpty) {
+        if (svc is! VideoDiscTitleAudioHost) {
+          return shelf.Response.notFound('Disc title clip unsupported');
+        }
+        if (episodeIndex > 0) {
+          return shelf.Response(400, body: 'episode and discTitle conflict');
+        }
+        clip = await (svc as VideoDiscTitleAudioHost).clipVideoDiscTitleAudio(
+          clipAudioId,
+          discTitle: discTitle,
+          startMs: startMs,
+          endMs: endMs,
+          audioStreamIndex: audioStreamIndex,
+          audioStreamCount: audioStreamCount,
+          audioChannels: audioChannels,
+          audioBitrate: audioBitrate,
+        );
+      } else {
+        clip = await svc.clipVideoAudio(
+          clipAudioId,
+          startMs: startMs,
+          endMs: endMs,
+          episodeIndex: episodeIndex,
+          audioStreamIndex: audioStreamIndex,
+          audioStreamCount: audioStreamCount,
+          audioChannels: audioChannels,
+          audioBitrate: audioBitrate,
+        );
+      }
       if (clip == null) {
         return shelf.Response.notFound('Clip unavailable');
       }

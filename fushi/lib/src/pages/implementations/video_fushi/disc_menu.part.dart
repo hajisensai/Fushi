@@ -69,7 +69,6 @@ extension _VideoDiscMenu on _VideoFushiPageState {
     if (!controller.isBlurayNavigationSession) return true;
     if (controller.discMiningAvailable && !_discLearningBlocked) return true;
     final String message = switch (controller.discMiningUnavailableReason) {
-      'multi-angle-source' => t.video_disc_angle_extraction_unavailable,
       'audio-track-unavailable' => t.video_disc_audio_selection_pending,
       'extraction-source-unavailable' => t.video_clip_export_input_missing,
       'encrypted-extraction-source' => t.video_disc_extraction_unavailable,
@@ -79,6 +78,16 @@ extension _VideoDiscMenu on _VideoFushiPageState {
     };
     _showOsd(message, severity: ToastSeverity.warning);
     return false;
+  }
+
+  /// 生成字幕 / 本机转录要读当前 title 的音轨：远端原盘会话里由放盘的 host 读（当前
+  /// title 能在 host 上定位就放行，见 `_remoteDiscHostTitle`）；其余与制卡抽取同一道闸门
+  /// （[_discExtractionAllowed]，抽不了时说明原因）。
+  bool _discSubtitleAudioAllowed(VideoPlayerController controller) {
+    if (controller.isRemoteDiscSession && _remoteDiscHostTitle() != null) {
+      return true;
+    }
+    return _discExtractionAllowed(controller);
   }
 
   // Pending menus still own input so arrows cannot leak into seek/volume.
@@ -418,6 +427,15 @@ extension _VideoDiscMenu on _VideoFushiPageState {
       // Remote disc: the title is the host's; there is no row to bind here.
       if (controller.isRemoteDiscSession) {
         if (!current()) return;
+        // 换了 title：上一条 title 登记 / 选中的外挂字幕（生成、转录取回的）不属于这一条，
+        // 与本机原盘换 title 同样清掉。
+        _rebuild(() {
+          _currentSubtitleSource = null;
+          _importedSubtitleSources = const <SubtitleSource>[];
+          _subtitleMenuSources = const <SubtitleSource>[];
+          _subtitleMenuSourcesPath = null;
+          _subtitleMenuLoading = false;
+        });
         controller.bindRemoteDiscTitle(expectedGeneration: nativeGeneration);
         return;
       }

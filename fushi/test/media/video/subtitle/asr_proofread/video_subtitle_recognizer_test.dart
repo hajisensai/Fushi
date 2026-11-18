@@ -160,5 +160,65 @@ void main() {
         isNot(videoSubtitleAudioFileName(b)),
       );
     });
+
+    test('给了 streamIndex 就抽那条（不按语言挑、不探测）', () async {
+      final File videoFile = File(p.join(tmp.path, 'ep01.mkv'))
+        ..writeAsBytesSync(<int>[1, 2, 3]);
+      final Directory dir = Directory(p.join(tmp.path, 'jobs', 'x.s1'));
+      await extractVideoSubtitleAudio(
+        videoPath: videoFile.path,
+        workDir: dir,
+        cancel: const SubtitleNeverCancel(),
+        streamIndex: 1,
+      );
+      expect(ffmpeg.runs.single, containsAllInOrder(<String>['-map', '0:1']));
+    });
+
+    test('播放器音轨序号 → 全局流序号；与按语言挑的同一条时归 null', () async {
+      final String path = p.join(tmp.path, 'ep01.mkv');
+      // 第 0 条是英语（流 1），按日语挑的是流 2：换算成 1。
+      expect(
+        await resolveVideoSubtitleAudioStream(
+          videoPath: path,
+          audioTrack: 0,
+          language: VideoSubtitleLanguage.japanese,
+        ),
+        1,
+      );
+      // 第 1 条就是日语那条：与批量按语言挑同一条，共用缓存（null）。
+      expect(
+        await resolveVideoSubtitleAudioStream(
+          videoPath: path,
+          audioTrack: 1,
+          language: VideoSubtitleLanguage.japanese,
+        ),
+        isNull,
+      );
+      // 越界 / 没有播放上下文：按语言挑。
+      expect(
+        await resolveVideoSubtitleAudioStream(
+          videoPath: path,
+          audioTrack: 5,
+          language: VideoSubtitleLanguage.japanese,
+        ),
+        isNull,
+      );
+      expect(
+        await resolveVideoSubtitleAudioStream(
+          videoPath: path,
+          audioTrack: null,
+          language: VideoSubtitleLanguage.japanese,
+        ),
+        isNull,
+      );
+    });
+  });
+
+  test('指定音轨的识别目录在任务目录下、名字带任务目录名（音轨文件名因视频而异）', () {
+    final Directory job = Directory(p.join('jobs', 'abc'));
+    expect(videoSubtitleRecognizeDir(job, null).path, job.path);
+    final Directory s3 = videoSubtitleRecognizeDir(job, 3);
+    expect(s3.path, p.join('jobs', 'abc', 'abc.s3'));
+    expect(videoSubtitleAudioFileName(s3), 'audio_abc.s3.ja.wav');
   });
 }

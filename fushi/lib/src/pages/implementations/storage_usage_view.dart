@@ -445,6 +445,7 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
         StorageCategoryId.videoDownloads: FushiIcons.video,
         StorageCategoryId.covers: FushiIcons.image,
         StorageCategoryId.subtitles: FushiIcons.subtitles,
+        StorageCategoryId.subtitleJobs: FushiIcons.ai,
         StorageCategoryId.shaders: FushiIcons.ai,
         StorageCategoryId.customFonts: FushiIcons.font,
         StorageCategoryId.web: FushiIcons.globe,

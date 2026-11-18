@@ -54,6 +54,13 @@ enum StorageCategoryId {
   /// 字幕副本：`video_subtitles`。
   subtitles,
 
+  /// 字幕生成任务：`<support>/asr_jobs`（[kAsrJobsSupportChild]）。视频 / 音乐字幕管线
+  /// 的任务缓存（识别稿、抽出的音轨、校对批次，删了下次重跑从头来）、上游转录任务，
+  /// 以及原盘字幕产物 `video_subtitles/disc_out` 与音乐字幕产物 `music_subtitles/out`
+  /// ——后两者是库里登记着的字幕，只读展示，随库行删除回收。明细见
+  /// [subtitleJobEntriesSync]。
+  subtitleJobs,
+
   /// 视频着色器与 mpv Lua 脚本：`mpv_shaders`（Anime4K 下载与用户自导入混放）
   /// + `mpv_scripts`（体量极小，不值得独立类目）。
   shaders,
@@ -158,6 +165,9 @@ enum StorageEntryKind {
 /// 快照残留是 [StorageEntryKind.databaseSnapshots] 专用原语、不走裸删）、
 /// other（白名单之外，语义不明）。
 ///
+/// [StorageCategoryId.subtitleJobs] 在内：它的任务缓存是可重跑出来的派生数据；同一
+/// 类目里登记着的字幕产物（[kSubtitleJobOutputDirNames]）另以 readOnly 产出，不能裸删。
+///
 /// [StorageCategoryId.backups] 在内：它产出的
 /// [StorageEntryKind.backupArchives] 聚合项同样接通用文件删除原语，装的是上次导出
 /// 遗留的临时包、无任何 DB 行引用。以前它在事实上可删却不在本集合里，集合的文档
@@ -170,6 +180,7 @@ const Set<StorageCategoryId> kDeletableEntryCategories = <StorageCategoryId>{
   StorageCategoryId.shaders,
   StorageCategoryId.cache,
   StorageCategoryId.backups,
+  StorageCategoryId.subtitleJobs,
 };
 
 /// 明细「可直接删」的 kind —— 与 [kDeletableEntryCategories] 是同一件事的两个面：
@@ -503,6 +514,107 @@ const Map<StorageCategoryId, List<String>> kStorageCategoryDocumentsChildren =
       StorageCategoryId.ocrModels: <String>[],
     };
 
+/// `<support>/asr_jobs`（[StorageCategoryId.subtitleJobs] 的根）：视频字幕管线的任务根
+/// `video_subtitles`（`videoSubtitleJobsRootUnder`）、音乐字幕的 `music_subtitles`、上游
+/// 转录任务都在它下面。
+const String kAsrJobsSupportChild = 'asr_jobs';
+
+/// 字幕管线的任务根（[kAsrJobsSupportChild] 下）：明细按其中每个任务一条展开。
+const Set<String> kSubtitleJobRootNames = <String>{
+  'video_subtitles',
+  'music_subtitles',
+};
+
+/// 任务根下装着**已登记产物**的目录：原盘字幕（`disc_out`，库行的字幕选择指着）与
+/// 音乐字幕（`out`，歌词库登记着）。裸删会留下悬空的字幕选择，所以只读；原盘的随
+/// 库行删除回收（`deleteVideoSubtitleDiscOutputs`）。
+const Set<String> kSubtitleJobOutputDirNames = <String>{'disc_out', 'out'};
+
+/// isolate 入口：字幕生成任务（`<support>/asr_jobs`，[asrJobsRoot]）的明细。
+///
+/// - 任务根（[kSubtitleJobRootNames]）展开一层：每个任务目录一条可删明细，名字取
+///   任务 `state.json` 记的媒体文件名（任务目录名是哈希，给人看没意义），非日语任务
+///   带语言后缀；产物目录（[kSubtitleJobOutputDirNames]）再展开一层、每条只读；
+/// - 其余直接子项（上游转录任务、共用缓存文件）各一条可删明细。
+///
+/// 子项之和 == 整树之和（同 [_childEntriesSync]），类目总量由明细求和得出。
+List<Map<String, Object>> subtitleJobEntriesSync(final String asrJobsRoot) {
+  final List<Map<String, Object>> out = <Map<String, Object>>[];
+  void add(FileSystemEntity e, String label, {required bool readOnly}) =>
+      out.add(<String, Object>{
+        'label': label,
+        'path': e.path,
+        'bytes': directorySizeSync(e.path),
+        'isFile': e is File,
+        'readOnly': readOnly,
+      });
+  for (final FileSystemEntity child in _listOrEmpty(asrJobsRoot)) {
+    final String name = p.basename(child.path);
+    if (child is! Directory || !kSubtitleJobRootNames.contains(name)) {
+      add(child, name, readOnly: false);
+      continue;
+    }
+    for (final FileSystemEntity job in _listOrEmpty(child.path)) {
+      final String jobName = p.basename(job.path);
+      if (job is Directory && kSubtitleJobOutputDirNames.contains(jobName)) {
+        for (final FileSystemEntity output in _listOrEmpty(job.path)) {
+          add(
+            output,
+            '$name/$jobName/${_subtitleOutputLabel(output)}',
+            readOnly: true,
+          );
+        }
+        continue;
+      }
+      add(job, '$name/${_subtitleJobLabel(job)}', readOnly: false);
+    }
+  }
+  return out;
+}
+
+List<FileSystemEntity> _listOrEmpty(final String dir) {
+  try {
+    return Directory(dir).listSync(followLinks: false);
+  } on FileSystemException {
+    // 不存在 / 并发删除 / 无权限：这一层没有明细。
+    return const <FileSystemEntity>[];
+  }
+}
+
+/// 任务目录的显示名：`state.json` 的 `videoPath` 文件名；任务目录名带语言后缀
+/// （`<哈希>.<语言>`）时附上。读不到就用目录名。
+String _subtitleJobLabel(final FileSystemEntity job) {
+  final String name = p.basename(job.path);
+  if (job is! Directory) return name;
+  String? media;
+  try {
+    final Object? state = jsonDecode(
+      File(p.join(job.path, 'state.json')).readAsStringSync(),
+    );
+    if (state is Map && state['videoPath'] is String) {
+      media = p.basename(state['videoPath'] as String);
+    }
+  } on FileSystemException {
+    media = null;
+  } on FormatException {
+    media = null;
+  }
+  if (media == null || media.isEmpty) return name;
+  final int dot = name.indexOf('.');
+  return dot < 0 ? media : '$media (${name.substring(dot + 1)})';
+}
+
+/// 产物目录的显示名：里面第一个字幕文件名（目录名是哈希）；空目录用目录名。
+String _subtitleOutputLabel(final FileSystemEntity output) {
+  final String name = p.basename(output.path);
+  if (output is! Directory) return name;
+  final List<String> files = <String>[
+    for (final FileSystemEntity e in _listOrEmpty(output.path))
+      if (e is File) p.basename(e.path),
+  ]..sort();
+  return files.isEmpty ? name : files.first;
+}
+
 /// `<support>/ocr_models`（[StorageCategoryId.ocrModels] 的根；
 /// 各本机模型落在它下面的兄弟目录，见 `MangaOcrLocalModel.modelsDirectory`）。
 const String kOcrModelsSupportChild = 'ocr_models';
@@ -673,6 +785,8 @@ class StorageUsageService {
           yield await _scanGeneric(id, <String>[
             p.join(support.path, kOcrModelsSupportChild),
           ]);
+        case StorageCategoryId.subtitleJobs:
+          yield await _scanSubtitleJobs(support);
         case StorageCategoryId.cache || StorageCategoryId.backups:
           // 两个类目住在**同一棵**缓存/临时树上，扫一次再按谓词分流。各扫各的就是
           // 起两个 isolate、把整棵树递归 stat 两遍——iOS 上 `Library/Caches` + 沙盒
@@ -965,6 +1079,8 @@ class StorageUsageService {
             raw,
             excludePaths: <String>{
               p.join(support.path, kOcrModelsSupportChild),
+              // 字幕生成任务单列一类（[StorageCategoryId.subtitleJobs]）。
+              p.join(support.path, kAsrJobsSupportChild),
               ...snapshotPaths,
             },
           ),
@@ -1002,6 +1118,37 @@ class StorageUsageService {
           s,
     }.toList()..sort();
     return stems.length == 1 ? stems.single : '{${stems.join(',')}}';
+  }
+
+  /// 字幕生成任务（[subtitleJobEntriesSync]）：任务缓存可删，登记着的产物只读。
+  Future<StorageCategoryUsage> _scanSubtitleJobs(
+    final Directory support,
+  ) async {
+    final String root = p.join(support.path, kAsrJobsSupportChild);
+    final List<Map<String, Object>> raw = await _run(
+      () => subtitleJobEntriesSync(root),
+    );
+    final List<StorageEntryUsage> entries =
+        <StorageEntryUsage>[
+          for (final Map<String, Object> e in raw)
+            StorageEntryUsage(
+              id: e['path'] as String,
+              label: e['label'] as String,
+              bytes: e['bytes'] as int,
+              paths: <String>[e['path'] as String],
+              kind: e['readOnly'] as bool
+                  ? StorageEntryKind.readOnly
+                  : StorageEntryKind.derivedFile,
+            ),
+        ]..sort(
+          (StorageEntryUsage a, StorageEntryUsage b) =>
+              b.bytes.compareTo(a.bytes),
+        );
+    return StorageCategoryUsage(
+      id: StorageCategoryId.subtitleJobs,
+      bytes: _sumBytes(entries),
+      entries: entries,
+    );
   }
 
   /// 通用类目扫描：类目根下每个直接子项一条明细，类目总量 = 明细求和。

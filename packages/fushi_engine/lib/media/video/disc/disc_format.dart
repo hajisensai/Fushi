@@ -21,8 +21,8 @@ import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
 
-import 'package:fushi_engine/media/video/bluray/bluray_episode.dart'
-    show blurayEpisodeBackingPlaylistPath;
+import 'package:fushi_engine/media/video/bluray/bluray_angle.dart'
+    show blurayMemberBackingPlaylistPath;
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
     show blurayDiscRootForPlaylistPath, isBlurayPlaylistPath;
 import 'package:fushi_engine/media/video/disc/disc_image_probe.dart'
@@ -66,7 +66,7 @@ DiscFormat? discFormatHintForMemberPath(String memberPath) {
   return null;
 }
 
-/// 成员路径背后真实存在的文件：蓝光就是 `.mpls` 本身（按集展开的分集路径是虚拟的，
+/// 成员路径背后真实存在的文件：蓝光就是 `.mpls` 本身（按集展开的分集路径、按角度读的角度成员路径是虚拟的，
 /// 换成它切自的那条 `.mpls`）；DVD 是盘的 `VIDEO_TS.IFO`，
 /// 镜像形态是 `.iso` 本身（title 路径是虚拟的）。下游「这一条还在不在」先过它再 `existsSync`。不是原盘
 /// 成员时原样返回 [memberPath]。
@@ -74,7 +74,7 @@ String discMemberBackingFilePath(String memberPath) {
   if (isDvdTitlePath(memberPath)) {
     return dvdTitleBackingFilePath(memberPath) ?? memberPath;
   }
-  return blurayEpisodeBackingPlaylistPath(memberPath);
+  return blurayMemberBackingPlaylistPath(memberPath);
 }
 
 /// 按 `index.bdmv` 头 8 字节定蓝光规格；头不对返回 null。

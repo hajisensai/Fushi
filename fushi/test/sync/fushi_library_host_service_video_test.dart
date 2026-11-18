@@ -908,6 +908,59 @@ void main() {
       );
     });
 
+    test('按（盘, title）裁音频：title 走不出这一行的蓝光盘、读不到就不碰 ffmpeg', () async {
+      final _RecordingFfmpegBackend ffmpeg = _RecordingFfmpegBackend();
+      setFfmpegBackendForTesting(ffmpeg);
+      final Directory playlist = Directory(
+        p.join(tmp.path, 'Show Disc 1', 'BDMV', 'PLAYLIST'),
+      )..createSync(recursive: true);
+      final File main = File(p.join(playlist.path, '00001.mpls'))
+        ..writeAsBytesSync(<int>[1, 2, 3]);
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'disc/main',
+          title: 'Main',
+          videoPath: main.path,
+        ),
+      );
+      final File plain = File(p.join(tmp.path, 'plain.mkv'))
+        ..writeAsBytesSync(<int>[1]);
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/plain',
+          title: 'Plain',
+          videoPath: plain.path,
+        ),
+      );
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      expect(svc, isA<VideoDiscTitleAudioHost>());
+      Future<File?> clip(String id, String title) =>
+          svc.clipVideoDiscTitleAudio(
+            id,
+            discTitle: title,
+            startMs: 0,
+            endMs: 1000,
+          );
+      // 盘上没有这条 title、穿越、不是播放列表、锚点不是蓝光行、未知行。
+      expect(await clip('disc/main', 'BDMV/PLAYLIST/00005.mpls'), isNull);
+      expect(await clip('disc/main', 'BDMV/PLAYLIST/../../x.mpls'), isNull);
+      expect(await clip('disc/main', 'BDMV/STREAM/00001.m2ts'), isNull);
+      expect(await clip('video/plain', 'BDMV/PLAYLIST/00001.mpls'), isNull);
+      expect(await clip('disc/none', 'BDMV/PLAYLIST/00001.mpls'), isNull);
+      expect(ffmpeg.calls, isEmpty, reason: '定位不到 title 时不能拿别的路径去裁');
+      // 区间非法同样不碰 ffmpeg。
+      expect(
+        await svc.clipVideoDiscTitleAudio(
+          'disc/main',
+          discTitle: 'BDMV/PLAYLIST/00001.mpls',
+          startMs: 1000,
+          endMs: 1000,
+        ),
+        isNull,
+      );
+      expect(ffmpeg.calls, isEmpty);
+    });
+
     test(
       '网络流书（Netflix 页 / 直链 / 频道）与 .strm 照常列出但标 peerPlayable=false',
       () async {
@@ -1374,6 +1427,25 @@ void main() {
       expect(() => svc.videoExists('../escape'), throwsA(isA<ArgumentError>()));
     });
   });
+}
+
+/// 只记调用的 ffmpeg 假件（断言「没碰 ffmpeg」用）。
+class _RecordingFfmpegBackend implements FfmpegBackend {
+  final List<List<String>> calls = <List<String>>[];
+
+  @override
+  Future<FfmpegRunResult> run(List<String> args, Duration timeout) async {
+    calls.add(args);
+    return const FfmpegRunResult(returnCode: 1, output: '');
+  }
+
+  @override
+  Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) =>
+      run(args, timeout);
+
+  @override
+  Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
+      run(args, timeout);
 }
 
 class _EmbeddedSubtitleProbeBackend implements FfmpegBackend {

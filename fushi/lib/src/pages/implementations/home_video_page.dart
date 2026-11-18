@@ -180,6 +180,8 @@ import 'package:fushi/src/sync/remote_library_cache.dart';
 import 'package:fushi/src/sync/remote_disc_share.dart';
 import 'package:fushi/src/sync/remote_disc_host_open.dart';
 import 'package:fushi/src/media/video/disc/remote_disc_actions.dart';
+import 'package:fushi/src/media/video/disc/remote_disc_menu_source.dart'
+    show RemoteDiscHostTitle;
 import 'package:fushi/src/media/video/disc/remote_disc_download.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
@@ -11111,9 +11113,30 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           : VideoRemoteClient(repository: repository, peer: peer);
     }
 
+    final InterconnectSyncBackend? interconnect =
+        source is InterconnectSyncBackend ? source : null;
     return RemoteDiscActions(
       openShare: discs.openRemoteDiscShare,
       readFile: discs.readRemoteDiscFile,
+      // 会话里的 title 由 host 本地裁音频（clipaudio；库里没有行的 title 带 discTitle）。
+      fetchTitleAudio: interconnect == null
+          ? null
+          : (
+              RemoteDiscHostTitle title,
+              File dest, {
+              required int startMs,
+              required int endMs,
+              int? audioStreamIndex,
+              int? audioStreamCount,
+            }) => interconnect.getRemoteVideoAudioClip(
+              title.videoId,
+              dest,
+              startMs: startMs,
+              endMs: endMs,
+              discTitle: title.discTitle,
+              audioStreamIndex: audioStreamIndex,
+              audioStreamCount: audioStreamCount,
+            ),
       hostCanOpenDisc: () async {
         final VideoRemoteClient? client = await hostClient();
         return client != null && await hostCanOpenDiscMenu(client);

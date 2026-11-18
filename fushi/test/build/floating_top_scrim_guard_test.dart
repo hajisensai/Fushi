@@ -275,6 +275,8 @@ void main() {
           'lib/src/media/manga/mihon/mihon_web_login_page.dart': 1,
           // app 内浏览器：整页 WebView（同 Mihon 登录页，内容在 WebView 里滚）。
           'lib/src/pages/implementations/fushi_web_browser_page.dart': 1,
+          // 视频字幕工作台（全屏）：定高双栏 / 上下分栏，参考区（表格）与工具栏各自滚动。
+          'lib/src/media/video/subtitle/video_subtitle_studio_page.dart': 1,
           // 字幕工作台：定高面板，顶部控件行固定、列表区各自滚动。
           'lib/src/pages/implementations/subtitle_workbench_page.dart': 1,
           // 文本钩子独立页：定高工作台（会话卡 + 自带滚动的台词面板）。

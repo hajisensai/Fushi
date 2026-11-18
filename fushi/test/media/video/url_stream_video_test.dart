@@ -4,8 +4,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
 import 'package:fushi/src/media/video/url_stream_video.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
+import 'package:fushi/src/media/video/stream_url_resolver.dart';
+import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
-    show YoutubeCaptionTrack;
+    show YoutubeAudioStream, YoutubeCaptionTrack;
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -170,6 +172,58 @@ void main() {
         await c.putRemoteVideoPosition('id', 12345, 999, episodeIndex: 3);
       },
     );
+  });
+
+  group('字幕生成拉整集音频前现取地址（RemoteVideoSubtitleAudioRefresh）', () {
+    test('YouTube：现取 audio-only 流并经本地中继，不沿用起播时的直链', () async {
+      final List<String> resolved = <String>[];
+      final List<String> relayed = <String>[];
+      final UrlStreamVideoClient c = UrlStreamVideoClient(
+        streamUrl:
+            'https://rr1.googlevideo.com/videoplayback?itag=137&expire=1',
+        audioStreamUrl:
+            'https://rr1.googlevideo.com/videoplayback?itag=140&expire=1',
+        youtubeCaptionsUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+        youtubeAudioResolver: (String videoId) async {
+          resolved.add(videoId);
+          return const YoutubeAudioStream(
+            url: 'https://rr2.googlevideo.com/videoplayback?itag=251&expire=9',
+            httpHeaders: <String, String>{'User-Agent': 'ReplayUA'},
+          );
+        },
+        youtubeStreamRelay: (String url, Map<String, String> headers) async {
+          relayed.add('$url|${headers['User-Agent']}');
+          return 'http://127.0.0.1:4000/yt?u=${Uri.encodeComponent(url)}';
+        },
+      );
+      expect(c, isA<RemoteVideoSubtitleAudioRefresh>());
+      final RemoteVideoSubtitleAudio audio = await c.freshSubtitleAudio('id');
+      expect(resolved, <String>['dQw4w9WgXcQ']);
+      expect(relayed, <String>[
+        'https://rr2.googlevideo.com/videoplayback?itag=251&expire=9|ReplayUA',
+      ]);
+      expect(audio.url, startsWith('http://127.0.0.1:4000/yt?u='));
+      expect(audio.audioOnly, isTrue);
+      expect(audio.headers, <String, String>{'User-Agent': 'ReplayUA'});
+    });
+
+    test('直链 / AList：与起播同一条解析（现签临期直链），带上防盗链头', () async {
+      final _CountingResolver resolver = _CountingResolver();
+      final UrlStreamVideoClient c = UrlStreamVideoClient(
+        streamUrl: 'https://alist.test/d/show/ep01.mkv',
+        httpHeaderFields: const <String, String>{
+          'Referer': 'https://alist.test/',
+        },
+        urlResolver: resolver,
+        youtubeStreamRelay: (String url, Map<String, String> _) async => url,
+      );
+      final RemoteVideoSubtitleAudio first = await c.freshSubtitleAudio('id');
+      final RemoteVideoSubtitleAudio second = await c.freshSubtitleAudio('id');
+      expect(first.url, 'https://cdn.alist.test/raw/ep01.mkv?sign=1');
+      expect(second.url, 'https://cdn.alist.test/raw/ep01.mkv?sign=2');
+      expect(first.audioOnly, isFalse);
+      expect(first.headers, <String, String>{'Referer': 'https://alist.test/'});
+    });
   });
 
   group('isKnownWebPageVideoHost / isKnownWebPageVideoUrl (TODO-1000 A1)', () {
@@ -524,4 +578,15 @@ void main() {
       client.close();
     });
   });
+}
+
+/// 每次解析签一个新的临期地址（AList `raw_url`）。
+class _CountingResolver extends StreamUrlResolver {
+  int calls = 0;
+
+  @override
+  Future<String> resolve(String url) async {
+    calls++;
+    return 'https://cdn.alist.test/raw/${url.split('/').last}?sign=$calls';
+  }
 }

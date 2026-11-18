@@ -113,27 +113,39 @@ void main() {
       expect(videoMemberExistsSync(dvdTitlePath(iso, 1)), isTrue);
     });
 
-    test('「有没有可读的媒体文件」：DVD title 没有（不碰文件系统），普通文件看磁盘', () async {
-      final String root = p.join(tmp.path, 'Show');
-      writeTvDvdFixture(root);
-      final String member = dvdTitlePath(root, 2);
-      expect(lacksLocalMediaFile(member), isTrue);
-      expect(hasLocalMediaFileSync(member), isFalse);
-      expect(await hasLocalMediaFile(member), isFalse);
+    test(
+      '「能不能经 ffmpeg 读到媒体」：DVD title 按盘在不在判（dvdvideo demuxer 按 title 读），普通文件看磁盘',
+      () async {
+        final String root = p.join(tmp.path, 'Show');
+        writeTvDvdFixture(root);
+        final String member = dvdTitlePath(root, 2);
+        // 不是装着媒体字节的单文件（按字节读的门仍挡着），但 ffmpeg 读得到。
+        expect(lacksLocalMediaFile(member), isTrue);
+        expect(hasLocalSingleMediaFileSync(member), isFalse);
+        expect(hasLocalMediaFileSync(member), isTrue);
+        expect(await hasLocalMediaFile(member), isTrue);
+        final String iso = p.join(tmp.path, 'Other.iso');
+        expect(hasLocalMediaFileSync(dvdTitlePath(iso, 1)), isFalse);
+        File(iso).writeAsBytesSync(Uint8List(16));
+        expect(await hasLocalMediaFile(dvdTitlePath(iso, 1)), isTrue);
+        File(p.join(root, 'VIDEO_TS', 'VIDEO_TS.IFO')).deleteSync();
+        expect(hasLocalMediaFileSync(member), isFalse, reason: '盘不在了');
+        expect(await hasLocalMediaFile(member), isFalse);
 
-      final String plain = p.join(tmp.path, 'a.mkv');
-      expect(hasLocalMediaFileSync(plain), isFalse);
-      File(plain).writeAsBytesSync(<int>[1]);
-      expect(hasLocalMediaFileSync(plain), isTrue);
-      expect(await videoMemberExists(plain), isTrue);
+        final String plain = p.join(tmp.path, 'a.mkv');
+        expect(hasLocalMediaFileSync(plain), isFalse);
+        File(plain).writeAsBytesSync(<int>[1]);
+        expect(hasLocalMediaFileSync(plain), isTrue);
+        expect(await videoMemberExists(plain), isTrue);
 
-      // 「这个路径本身是不是文件」：本地 .strm 指针是（备份照打包），DVD title 不是。
-      final String strm = p.join(tmp.path, 'channel.strm');
-      File(strm).writeAsStringSync('https://example.invalid/live.m3u8');
-      expect(videoPathFileExistsSync(strm), isTrue);
-      expect(hasLocalMediaFileSync(strm), isFalse);
-      expect(videoPathFileExistsSync(member), isFalse);
-      expect(await videoPathFileExists(member), isFalse);
-    });
+        // 「这个路径本身是不是文件」：本地 .strm 指针是（备份照打包），DVD title 不是。
+        final String strm = p.join(tmp.path, 'channel.strm');
+        File(strm).writeAsStringSync('https://example.invalid/live.m3u8');
+        expect(videoPathFileExistsSync(strm), isTrue);
+        expect(hasLocalMediaFileSync(strm), isFalse);
+        expect(videoPathFileExistsSync(member), isFalse);
+        expect(await videoPathFileExists(member), isFalse);
+      },
+    );
   });
 }

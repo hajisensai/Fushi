@@ -17,25 +17,26 @@
 //      [videoMemberExists] / [videoMemberExistsSync]。原盘成员换成它背后真实存在的那个
 //      文件再判（`discMemberBackingFilePath`）：DVD → `VIDEO_TS.IFO` 或 `.iso`。
 //   2. **本机能不能经 ffmpeg / 原生解码器读到这条的媒体**（抽帧、抽字体、内嵌轨证据、
-//      ASR 解码——都走 `ffmpeg_backend` / `prepareBlurayFfmpegArgs`，蓝光整卷与分集
-//      由它们换成盘上的 m2ts）—— [hasLocalMediaFile] / [hasLocalMediaFileSync]。没有
-//      本机媒体字节的路径（网络流、`.strm`）一律 false；DVD 的媒体要经原生 libdvdnav
-//      按 title 读，ffmpeg 读不了，也是 false。**判真之后不许对这个路径直接
-//      `File(...).length/open/read`**：蓝光分集是虚拟路径，整卷 `.mpls` 只是几百字节的
-//      索引。
+//      ASR 解码——都走 `ffmpeg_backend`：蓝光整卷与分集由 `prepareBlurayFfmpegArgs`
+//      换成盘上的 m2ts，DVD title 由 `DvdFfmpegBackend` 改写成统一 FFmpeg 的
+//      `dvdvideo` demuxer 按 title 读，CSS 由随包 libdvdcss 解）—— [hasLocalMediaFile] /
+//      [hasLocalMediaFileSync]。没有本机媒体字节的路径（网络流、`.strm`）一律 false；DVD
+//      title 按盘（`VIDEO_TS.IFO` / `.iso`）在不在判。**判真之后不许对这个路径直接
+//      `File(...).length/open/read`**：蓝光分集与 DVD title 是虚拟路径，整卷 `.mpls`
+//      只是几百字节的索引。
 //   3. **这个路径本身就是装着全部媒体字节的单文件**（按字节读：互联 / 云上传、
 //      弹幕文件指纹、按文件长度定身份）—— [hasLocalSingleMediaFile] /
 //      [hasLocalSingleMediaFileSync]。原盘成员（蓝光整卷 / 分集、DVD title）一律
 //      false，其余同第 2 种。为真则 `File(path)` 可直接读字节。
 //   4. **这个路径本身是不是一个文件**（把它当文件处理：打进备份包、在它旁边放
 //      sidecar 字幕）—— [videoPathFileExists] / [videoPathFileExistsSync]。本地
-//      `.strm` 指针、蓝光 `.mpls` 是真文件，照常为真；DVD title 与蓝光分集是虚拟路径，
+//      `.strm` 指针、蓝光 `.mpls` 是真文件，照常为真；DVD title 与蓝光分集 / 角度成员是虚拟路径，
 //      为假。
 
 import 'dart:io';
 
-import 'package:fushi_engine/media/video/bluray/bluray_episode.dart'
-    show blurayEpisodeBackingPlaylistPath;
+import 'package:fushi_engine/media/video/bluray/bluray_angle.dart'
+    show blurayMemberBackingPlaylistPath;
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
     show isBlurayPlaylistPath;
 import 'package:fushi_engine/media/video/disc/disc_format.dart'
@@ -77,17 +78,28 @@ Future<bool> videoPathFileExists(String videoPath) async {
 }
 
 /// 本机能否经 ffmpeg / 原生解码器读到 [videoPath] 的媒体（见文件头第 2 种问法）。
-/// 蓝光分集换成它切自的那条 `.mpls` 判存在。判真不代表 `File(videoPath)` 可读字节，
-/// 要按字节读用 [hasLocalSingleMediaFileSync]。
+/// 原盘成员换成它背后真实存在的文件判（[_mediaBackingPath]）。判真不代表
+/// `File(videoPath)` 可读字节，要按字节读用 [hasLocalSingleMediaFileSync]。
 bool hasLocalMediaFileSync(String videoPath) {
-  if (videoPath.isEmpty || lacksLocalMediaFile(videoPath)) return false;
-  return File(blurayEpisodeBackingPlaylistPath(videoPath)).existsSync();
+  final String? backing = _mediaBackingPath(videoPath);
+  return backing != null && File(backing).existsSync();
 }
 
 /// [hasLocalMediaFileSync] 的异步版。
 Future<bool> hasLocalMediaFile(String videoPath) async {
-  if (videoPath.isEmpty || lacksLocalMediaFile(videoPath)) return false;
-  return File(blurayEpisodeBackingPlaylistPath(videoPath)).exists();
+  final String? backing = _mediaBackingPath(videoPath);
+  return backing != null && await File(backing).exists();
+}
+
+/// 第 2 种问法要判存在的那个真实文件：DVD title（虚拟路径，`DvdFfmpegBackend` 按 title
+/// 读）→ 盘的 `VIDEO_TS.IFO` / `.iso`（[discMemberBackingFilePath]，形状不对的 title
+/// 路径换不出盘根，原样返回、判不存在）；蓝光分集 / 角度成员 → 它背后的 `.mpls`；没有
+/// 本机媒体字节的（网络流、`.strm`）→ null。
+String? _mediaBackingPath(String videoPath) {
+  if (videoPath.isEmpty) return null;
+  if (isDvdTitlePath(videoPath)) return discMemberBackingFilePath(videoPath);
+  if (lacksLocalMediaFile(videoPath)) return null;
+  return blurayMemberBackingPlaylistPath(videoPath);
 }
 
 /// 只看路径就能断定 [videoPath] 本身不是装着媒体字节的单文件：网络流、`.strm`、

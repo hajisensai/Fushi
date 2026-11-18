@@ -8,6 +8,8 @@ import 'package:fushi/src/media/video/subtitle/video_subtitle_generate_sheet.dar
 import 'package:fushi/src/media/video/subtitle/video_subtitle_model_ports.dart';
 import 'package:fushi/src/media/video/video_playback_remote.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart'
+    show FushiModalSheetFrame;
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi_asr_core/asr_core.dart' show ModelDownloadEvent;
 import 'package:fushi_core/fushi_core.dart';
@@ -333,6 +335,42 @@ void main() {
       findsOneWidget,
     );
     expect(startPressed(tester), isNotNull);
+  });
+
+  // 字幕工作台把面板直接嵌进工具栏：选项与「开始」都在，但没有弹层外框和「关闭」
+  // 按钮（那里 pop 掉的会是整个工作台），滚动交给外层。
+  testWidgets('嵌入形态：选项与开始按钮照常，没有弹层外框和关闭按钮', (WidgetTester tester) async {
+    tester.view
+      ..physicalSize = const Size(900, 1400)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final _FakePrefs prefs = _FakePrefs();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: VideoSubtitleGenerateSheet(
+              embedded: true,
+              service: buildService(),
+              target: target,
+              prefs: prefs,
+              openAiSettings: (BuildContext _) async {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(FushiModalSheetFrame), findsNothing);
+    expect(find.byType(FushiTextButton), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('video-subtitle-ai-language')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('video-subtitle-ai-start')),
+      findsOneWidget,
+    );
   });
 
   // 反馈 6Tj3ECtB0Q：视频页单集入口合并后，面板里「保存字幕文件」决定走哪条原流程。

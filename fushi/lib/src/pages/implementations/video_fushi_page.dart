@@ -2,6 +2,10 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
 import 'package:fushi_engine/media/video/video_member_file.dart';
+import 'package:fushi_engine/media/video/disc/disc_angle.dart'
+    show discAngleBaseMemberPath;
+import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
+    show isBlurayPlaylistPath;
 import 'package:fushi_engine/media/video/bluray/bluray_remote_title.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_library_title.dart';
 import 'package:fushi_engine/media/video/disc/disc_format.dart'
@@ -146,13 +150,30 @@ import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart'
         AppVideoSubtitleTarget,
         AppVideoSubtitleTargetNotFound,
         appVideoSubtitleService;
-import 'package:fushi/src/media/video/subtitle/video_subtitle_studio_sheet.dart'
+import 'package:fushi/src/media/video/subtitle/video_subtitle_pipeline_gate.dart'
+    show canRunLocalVideoSubtitlePipeline, localVideoSubtitlePipelineMediaPath;
+import 'package:fushi/src/media/video/subtitle/video_stream_subtitle_audio.dart'
+    show
+        VideoStreamSubtitleAudioCancelled,
+        VideoStreamSubtitleAudioInput,
+        VideoStreamSubtitleAudioStaging,
+        VideoStreamSubtitleAudioUnavailable,
+        appVideoStreamSubtitleAudioStager,
+        currentVideoStreamSubtitleAudio,
+        videoStreamSubtitleAudioAvailable,
+        videoStreamSubtitleAudioKey,
+        videoStreamSubtitleExportDirUnder,
+        videoStreamSubtitleFrameSource;
+import 'package:fushi/src/media/video/subtitle/video_stream_subtitle_audio_panel.dart'
+    show VideoStreamSubtitleAudioPanel;
+import 'package:fushi/src/media/video/subtitle/video_subtitle_studio_page.dart'
     show
         VideoSubtitleStudioActions,
         VideoSubtitleStudioAiReference,
         VideoSubtitleStudioFramesProblem,
+        VideoSubtitleStudioNotice,
         VideoSubtitleStudioReference,
-        showVideoSubtitleStudioSheet,
+        openVideoSubtitleStudioPage,
         videoSubtitleStudioEvidenceTrack;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence.dart'
     show SubtitleEvidenceTrack;
@@ -169,6 +190,7 @@ import 'package:fushi_engine/utils/misc/safe_file_name.dart'
 import 'package:fushi/src/media/video/subtitle/video_subtitle_generate_sheet.dart'
     show
         PrefsRepoVideoSubtitleGeneratePrefs,
+        VideoSubtitleGenerateSheet,
         VideoSubtitleInAppTranscribe,
         confirmVideoSubtitleAiFrames,
         showVideoSubtitleGenerateSheet,
@@ -181,10 +203,14 @@ import 'package:fushi/src/media/video/subtitle/remote_video_subtitle_service.dar
         RemoteVideoSubtitleEpisodeProgress,
         RemoteVideoSubtitleJob,
         RemoteVideoSubtitleJobStatus,
+        RemoteVideoSubtitleService,
         RemoteVideoSubtitleTarget,
         appRemoteVideoSubtitleService;
 import 'package:fushi/src/media/video/subtitle/remote_video_subtitle_sheet.dart'
-    show remoteVideoSubtitleEpisodeResultLabel, showRemoteVideoSubtitleSheet;
+    show
+        RemoteVideoSubtitleSheet,
+        remoteVideoSubtitleEpisodeResultLabel,
+        showRemoteVideoSubtitleSheet;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart'
     show VideoSubtitleEpisodeResult;
 import 'package:fushi/src/media/audiobook/audiobook_auto_transcribe.dart'
@@ -239,6 +265,16 @@ import 'package:fushi/src/media/video/web_video_hosting.dart'
 import 'package:fushi/src/media/video/netflix_metadata.dart';
 import 'package:fushi/src/media/video/web_video_platform_player.dart';
 import 'package:fushi/src/media/video/web_video_session.dart';
+import 'package:fushi/src/media/video/web_video_subtitle_media.dart'
+    show
+        WebVideoSubtitleMediaBlock,
+        WebVideoSubtitleMediaBlocked,
+        kWebVideoGeneratedTrackLang,
+        prepareWebVideoSubtitleAudio,
+        webVideoGeneratedSubtitleLanguage,
+        webVideoGeneratedTrackKey,
+        webVideoSubtitleFrameInput,
+        webVideoSubtitlePipelineAvailable;
 import 'package:fushi_engine/sync/immersion_mine_payload.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart'
     show RemoteMineResult;
@@ -479,7 +515,12 @@ import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
         fushiFloatingToolbarPalette,
         kFushiFloatingToolbarEdgeMargin;
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
-    show FushiChoiceOption, showFushiChoiceDialog, showFushiTextInputDialog;
+    show
+        FushiChoiceOption,
+        FushiProgressDialogHandle,
+        showFushiChoiceDialog,
+        showFushiProgressDialog,
+        showFushiTextInputDialog;
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/platform/screen_brightness_controller.dart';
@@ -2450,6 +2491,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 站点当前视频身份（glue 的 `videoKey`；SPA 换集即变）与它名下的字幕轨。
   String _webVideoKey = '';
   final Map<String, WebVideoTrack> _webTracks = <String, WebVideoTrack>{};
+
+  /// 这一集生成的字幕（完整管线产物，登记在这一集的书 `subtitleSource` 上，重进时读回）：
+  /// 作为一条可选轨并进 [_webTracks]（key 见 [webVideoGeneratedTrackKey]），站点换了视频
+  /// key 而仍是这一集时按新 key 重挂。
+  ({String bookUid, String path, List<AudioCue> cues})? _webGeneratedSubtitle;
+
+  /// 已读过生成字幕登记的那一集的书：每集只读一次（换集后重读）。
+  String? _webGeneratedCheckedBookUid;
 
   /// 当前显示的轨（[chooseWebVideoTrackKey] 的结果，每次轨集变化重算）。
   String? _webActiveTrackKey;

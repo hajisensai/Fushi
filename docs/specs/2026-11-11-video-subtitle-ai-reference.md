@@ -107,7 +107,7 @@
 - `asr_transcript_proofreader_test.dart`：转录稿校对的画面与清单、取不到的批、没开时不带。
 - `video_subtitle_host_job_runner_test.dart`：`frames` 参数、`framesAvailable`、只在能收图时带。
 - `video_subtitle_generate_sheet_test.dart`、`remote_video_subtitle_sheet_test.dart`、
-  `video_subtitle_studio_sheet_test.dart`：开关、知情流程（首次说明 / 旧用户补看 / 不发画面）、
+  `video_subtitle_studio_page_test.dart`：开关、知情流程（首次说明 / 旧用户补看 / 不发画面）、
   原因提示、任务选项。
 - `ctl_video_subtitle_routes_test.dart`：`frames` 缺省 / 显式 / 知情。
 - `fushi_server`：`subgen_commands_test.dart`（`images: true` 才带、`--no-frames`）、

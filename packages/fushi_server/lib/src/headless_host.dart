@@ -27,6 +27,8 @@ import 'package:fushi_engine/sync/interconnect_p2p.dart';
 import 'package:fushi_engine/srs/sync2/srs_host_directory.dart'
     show srsHostUploadedSegmentDevice;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/video_local_files.dart'
+    show videoBookDiscTitlePath, videoBookEpisodePath;
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show VideoSubtitleBackfillReport;
@@ -401,6 +403,7 @@ class HeadlessHost {
           pipelineJobsRoot: videoSubtitleJobsRootUnder(paths.support),
           database: () => db,
           resolveVideoPath: _resolveVideoPath,
+          resolveDiscTitlePath: _resolveDiscTitlePath,
           aiSettings: () => ServerAiSettings(() => config.ai),
           mossStatus: (MossBackendPreference backend) =>
               mossProvisionStatus(backend: backend),
@@ -969,13 +972,41 @@ class HeadlessHost {
         enabled: () => config.leaderboardLink,
       );
 
-  /// `asr` 任务的 `videoId` → host 库里的视频文件（分集 0）。
-  Future<String?> _resolveVideoPath(String videoId) async {
+  /// `asr` / `video_subtitle` 任务的 `videoId`（+ 播放列表集下标 [episodeIndex]）→
+  /// host 库里那一集的视频文件；按集取文件与播放端点同一判据（[videoBookEpisodePath]）。
+  Future<String?> _resolveVideoPath(
+    String videoId, {
+    int episodeIndex = 0,
+  }) async {
     final VideoBookRow? row = await VideoBookRepository(
       db,
     ).getByBookUid(videoId);
     if (row == null) return null;
-    return await hasLocalMediaFile(row.videoPath) ? row.videoPath : null;
+    final String? path = videoBookEpisodePath(
+      videoPath: row.videoPath,
+      playlistJson: row.playlistJson,
+      episodeIndex: episodeIndex,
+    );
+    if (path == null) return null;
+    return await hasLocalMediaFile(path) ? path : null;
+  }
+
+  /// host 库里那一行所在蓝光盘上的另一条 title（远端原盘会话里库中没有行的 title）；
+  /// 判据是 [videoBookDiscTitlePath]，与 app 当 host 同一份。
+  Future<String?> _resolveDiscTitlePath(
+    String videoId,
+    String discTitle,
+  ) async {
+    final VideoBookRow? row = await VideoBookRepository(
+      db,
+    ).getByBookUid(videoId);
+    if (row == null) return null;
+    final String? path = videoBookDiscTitlePath(
+      videoPath: row.videoPath,
+      discTitle: discTitle,
+    );
+    if (path == null) return null;
+    return await hasLocalMediaFile(path) ? path : null;
   }
 
   // ── 库服务 ────────────────────────────────────────────────────────────

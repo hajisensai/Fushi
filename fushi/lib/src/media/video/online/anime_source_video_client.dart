@@ -45,7 +45,8 @@ class AnimeSourceVideoClient
         RemoteVideoStreamHeaders,
         RemoteVideoStreamVariants,
         RemoteVideoEpisodeNumber,
-        RemoteVideoCollectionIsWork {
+        RemoteVideoCollectionIsWork,
+        RemoteVideoSubtitleAudioRefresh {
   AnimeSourceVideoClient({
     required this.manager,
     required this.context,
@@ -289,15 +290,19 @@ class AnimeSourceVideoClient
     final String id = episodeVideoId(episode);
     final List<MihonVideo>? cached = _resolvedCandidates[id];
     if (!refresh && cached != null) return cached;
-    final List<MihonVideo> videos = await _runtime.getVideos(
-      context.extension,
-      context.source,
-      episode,
-      preferences: context.preferences,
-    );
+    final List<MihonVideo> videos = await _askExtension(episode);
     _resolvedCandidates[id] = videos;
     return videos;
   }
+
+  /// 向扩展取这一集的候选（不进缓存）。
+  Future<List<MihonVideo>> _askExtension(MihonEpisode episode) =>
+      _runtime.getVideos(
+        context.extension,
+        context.source,
+        episode,
+        preferences: context.preferences,
+      );
 
   /// 为某集钉住一条候选（线路 / 画质）：下一次取该集的流用它，不再走默认策略。
   void pinVideo(MihonEpisode episode, MihonVideo video) {
@@ -587,6 +592,57 @@ class AnimeSourceVideoClient
     await dest.parent.create(recursive: true);
     await dest.writeAsBytes(response.bodyBytes);
     onProgress?.call(1.0);
+  }
+
+  /// 字幕生成拉整集音频前现取地址：与 [downloadRemoteVideo] 一样**重新向扩展取流**
+  /// （签名链接短 TTL，BUG-2617），挑法与起播同一套（钉住的线路 > 扩展排好的默认），
+  /// 但不改当前流（[_currentVideo] 与播放用的请求头保持不动），也不写候选缓存——缓存
+  /// 服务播放页的线路菜单，换成新一轮的候选对象会让菜单认不出当前在放的那一条。
+  ///
+  /// 播放器正从外挂音轨放声音（[currentAudioUrl] 是上一轮那条音轨的地址）时，在新
+  /// 候选里挑同一位置的外挂音轨；否则取流本身（自带音轨）。
+  @override
+  Future<RemoteVideoSubtitleAudio> freshSubtitleAudio(
+    String id, {
+    String? currentAudioUrl,
+  }) async {
+    final MihonEpisode? episode = episodeForVideoId(id);
+    if (episode == null) {
+      throw ArgumentError.value(id, 'id', 'not an episode of this anime');
+    }
+    final MihonVideo? previous = _currentEpisodeId == id ? _currentVideo : null;
+    final List<MihonVideo> candidates = await _askExtension(episode);
+    if (candidates.isEmpty) {
+      throw const MihonRuntimeException(
+        'NO_VIDEOS',
+        'Source did not return any playable video for this episode',
+      );
+    }
+    final MihonVideo chosen =
+        _matchPinned(_pinnedVideos[id], candidates) ??
+        _chooseDefault(candidates);
+    _rejectTorrent(chosen, episode);
+    final Map<String, String> headers = streamHeadersFor(chosen);
+    final int audioIndex = previous == null || currentAudioUrl == null
+        ? -1
+        : externalAudioTracksFor(previous).indexWhere(
+            (RemoteVideoExternalAudioTrack t) => t.url == currentAudioUrl,
+          );
+    final List<RemoteVideoExternalAudioTrack> audio = externalAudioTracksFor(
+      chosen,
+    );
+    // 认不出同一条（扩展这一轮换了音轨表）时取第一条外挂音轨：声音本来就从外挂音轨
+    // 出，流本身多半是 DASH 纯视频。
+    if (currentAudioUrl != null && audio.isNotEmpty) {
+      return RemoteVideoSubtitleAudio(
+        url:
+            audio[audioIndex >= 0 && audioIndex < audio.length ? audioIndex : 0]
+                .url,
+        headers: headers,
+        audioOnly: true,
+      );
+    }
+    return RemoteVideoSubtitleAudio(url: chosen.resolvedUrl, headers: headers);
   }
 
   /// 下载一集到 [dest]：每次（重）跑都**重新向扩展取流**（签名链接短 TTL，重放旧

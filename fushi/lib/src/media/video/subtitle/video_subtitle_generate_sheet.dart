@@ -281,6 +281,9 @@ Future<void> showVideoSubtitleGenerateSheet({
   return adaptiveModalSheet<void>(
     context: context,
     showDragHandle: true,
+    // 与桌面分支（showAppDialog）一致开在 root navigator 上：字幕工作台是 root 上的
+    // 整页，面板从它下面的视频页起，不在 root 上会被整页挡住。
+    useRootNavigator: true,
     builder: build,
   );
 }
@@ -332,7 +335,12 @@ class VideoSubtitleGenerateSheet extends StatefulWidget {
     this.onJobStarted,
     this.onTranscribeInApp,
     this.pinnedEvidence = const <String, List<SubtitleEvidenceTrack>>{},
+    this.embedded = false,
   });
+
+  /// 嵌在别的页面里（字幕工作台的工具栏）：不套弹层外框、没有标题和「关闭」按钮，
+  /// 滚动交给外层。选项、任务卡、开始 / 取消 / 继续与弹层形态完全相同。
+  final bool embedded;
 
   final AppVideoSubtitleService service;
   final AppVideoSubtitleTarget target;
@@ -710,7 +718,8 @@ class _VideoSubtitleGenerateSheetState
     // 转录弹层的 AI 校对同样会带画面（`appAsrProofreadHost` 现读偏好）：先把知情补上。
     await _resolveFrames();
     if (!mounted) return;
-    await Navigator.of(context).maybePop();
+    // 嵌入形态没有自己的路由可关（pop 掉的会是整个工作台）：转录弹层直接盖在上面。
+    if (!widget.embedded) await Navigator.of(context).maybePop();
     transcribe(proofread: proofread);
   }
 
@@ -817,6 +826,27 @@ class _VideoSubtitleGenerateSheetState
         _section(i, parts.length, parts[i].$1, parts[i].$2),
     ];
     final AppVideoSubtitleJob? job = _job;
+    final Widget body = _body(context, tokens, sections, job);
+    final Widget footer = Wrap(
+      alignment: WrapAlignment.end,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: tokens.spacing.gap,
+      runSpacing: tokens.spacing.gap,
+      children: _footerButtons(context),
+    );
+    if (widget.embedded) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          body,
+          Padding(
+            padding: EdgeInsets.only(top: tokens.spacing.rowVertical),
+            child: footer,
+          ),
+        ],
+      );
+    }
     return FushiModalSheetFrame(
       title: _target.wholeSeason
           ? (_target.isMusic
@@ -828,46 +858,49 @@ class _VideoSubtitleGenerateSheetState
       leadingIcon: FushiIcons.subtitles,
       scrollable: true,
       bodyPadding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
-      body: FushiEntranceScope(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            ...sections,
-            FushiAnimatedSize(
-              duration: context.fushiMotion.spatialDefault.duration,
-              curve: context.fushiMotion.spatialDefault.curve,
-              alignment: Alignment.topCenter,
-              child: job == null || !_saveBeside
-                  ? const SizedBox(width: double.infinity)
-                  : Padding(
-                      padding: EdgeInsets.only(top: tokens.spacing.rowVertical),
-                      child: FushiStaggeredEntrance(
-                        index: sections.length,
-                        child: _jobCard(context, job),
-                      ),
+      body: body,
+      footer: footer,
+    );
+  }
+
+  Widget _body(
+    BuildContext context,
+    FushiDesignTokens tokens,
+    List<Widget> sections,
+    AppVideoSubtitleJob? job,
+  ) {
+    return FushiEntranceScope(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          ...sections,
+          FushiAnimatedSize(
+            duration: context.fushiMotion.spatialDefault.duration,
+            curve: context.fushiMotion.spatialDefault.curve,
+            alignment: Alignment.topCenter,
+            child: job == null || !_saveBeside
+                ? const SizedBox(width: double.infinity)
+                : Padding(
+                    padding: EdgeInsets.only(top: tokens.spacing.rowVertical),
+                    child: FushiStaggeredEntrance(
+                      index: sections.length,
+                      child: _jobCard(context, job),
                     ),
-            ),
-            if (_startError != null)
-              Padding(
-                padding: EdgeInsets.only(top: tokens.spacing.gap),
-                child: Text(
-                  _startError!,
-                  key: const ValueKey<String>('video-subtitle-ai-start-error'),
-                  style: tokens.type.metadata.copyWith(
-                    color: Theme.of(context).colorScheme.error,
                   ),
+          ),
+          if (_startError != null)
+            Padding(
+              padding: EdgeInsets.only(top: tokens.spacing.gap),
+              child: Text(
+                _startError!,
+                key: const ValueKey<String>('video-subtitle-ai-start-error'),
+                style: tokens.type.metadata.copyWith(
+                  color: Theme.of(context).colorScheme.error,
                 ),
               ),
-          ],
-        ),
-      ),
-      footer: Wrap(
-        alignment: WrapAlignment.end,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        spacing: tokens.spacing.gap,
-        runSpacing: tokens.spacing.gap,
-        children: _footerButtons(context),
+            ),
+        ],
       ),
     );
   }
@@ -1470,10 +1503,12 @@ class _VideoSubtitleGenerateSheetState
     final bool providerMissing =
         _proofread && _service.proofreadProvider == null;
     final List<Widget> buttons = <Widget>[
-      FushiTextButton(
-        onPressed: () => Navigator.pop(context),
-        child: Text(_running ? t.video_subtitle_ai_hide : t.dialog_close),
-      ),
+      // 嵌在工作台里时没有自己的路由可关：这里 pop 掉的会是整个工作台。
+      if (!widget.embedded)
+        FushiTextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(_running ? t.video_subtitle_ai_hide : t.dialog_close),
+        ),
     ];
     if (!_saveBeside) {
       // 识别模型由转录弹层自己查 / 下，这里不看 modelReady。

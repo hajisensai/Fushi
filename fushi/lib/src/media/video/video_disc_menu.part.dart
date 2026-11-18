@@ -875,15 +875,25 @@ extension VideoDiscMenuController on VideoPlayerController {
     if (!_discIsDvd && source == null) {
       throw const VideoDiscMenuException('playlist-unavailable');
     }
-    final String? extractionError = await _checkDiscExtractionSource(
+    // Extraction reads the angle the player is playing: a multi-angle Blu-ray
+    // title becomes its angle member path (`00001.a2.mpls`), whose clips are the
+    // current angle's and whose IN/OUT axis is the title's; a DVD title becomes
+    // `TITLE_nn.a2.dvdtitle`, read by FFmpeg's dvdvideo with `-angle`. An angle
+    // change invalidates the title, so the next bind re-derives this path.
+    final String? extractionPath = discExtractionPathForAngle(
       playlistPath,
+      angle: _discState?.angle ?? -1,
+      dvd: _discIsDvd,
     );
+    final String? extractionError = extractionPath == null
+        ? 'extraction-source-unavailable'
+        : await _checkDiscExtractionSource(extractionPath);
     if (!_isCurrentLoad(player, token) || generation != _discTitleGeneration) {
       return;
     }
     // libbluray can play decrypted packets while the files on disk remain
     // encrypted. A valid title identity must not authorize raw-file extraction.
-    _videoPath = extractionError != null ? null : playlistPath;
+    _videoPath = extractionError != null ? null : extractionPath;
     _discMiningAvailable = extractionError == null;
     _discExtractionError = extractionError;
     _bookUid = bookUid;
@@ -903,8 +913,10 @@ extension VideoDiscMenuController on VideoPlayerController {
     _notifyDiscMenuChanged();
   }
 
+  /// [playlistPath] is the extraction path from [discExtractionPathForAngle]:
+  /// it already names the current angle, so the Blu-ray clips checked here are
+  /// exactly the ones FFmpeg will read.
   Future<String?> _checkDiscExtractionSource(String playlistPath) async {
-    if (_discState?.angle != 0) return 'multi-angle-source';
     // DVD: FFmpeg's dvdvideo demuxer opens the same title through the shared
     // libdvdread / libdvdcss (DvdFfmpegBackend), so a bound title can be read.
     if (_discIsDvd) return null;

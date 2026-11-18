@@ -238,6 +238,28 @@ class VideoSubtitleAiConfig {
 Directory videoSubtitleJobsRootUnder(Directory supportRoot) =>
     Directory(p.join(supportRoot.path, 'asr_jobs', 'video_subtitles'));
 
+/// 原盘成员（蓝光整卷 / 分集 `.mpls`、DVD title）的默认字幕导出目录：
+/// `<任务根>/disc_out/<videoSubtitleJobId(成员路径)>`。不是原盘成员返回 null。
+///
+/// 原盘的「媒体旁」是盘结构内部（`BDMV/PLAYLIST`）：挂载的 ISO、光驱、只读共享根本
+/// 写不进去，写得进也是往盘结构里塞文件；那里也不是播放页找字幕的地方（原盘会话的
+/// 外挂字幕靠库里登记的 `subtitleSource` 列出）。所以产物一律落在 app 自有目录，按成员
+/// 身份分目录（各盘同名 `00001.mpls` 很常见，同一目录会互相判成「已有同名字幕」）。
+/// app 本机、app / 服务端当 host、服务端 `subgen` 都经 [VideoSubtitlePipeline] 的默认
+/// 落点走这一处。
+Directory? videoSubtitleDiscExportDir(Directory jobsRoot, String mediaPath) =>
+    isDiscMemberPath(mediaPath)
+    ? Directory(
+        p.join(jobsRoot.path, 'disc_out', videoSubtitleJobId(mediaPath)),
+      )
+    : null;
+
+/// 没有指定导出目录时 [mediaPath] 的字幕落在哪：原盘成员 →
+/// [videoSubtitleDiscExportDir]，其余 → 媒体旁。
+String videoSubtitleDefaultExportDir(Directory jobsRoot, String mediaPath) =>
+    videoSubtitleDiscExportDir(jobsRoot, mediaPath)?.path ??
+    p.dirname(mediaPath);
+
 /// 日语任务目录名：`sha1(视频文件名 + '|' + 身份)`。其它语言用
 /// [videoSubtitleJobIdFor]。
 ///
@@ -287,6 +309,23 @@ String videoSubtitleJobIdFor(
   String videoPath,
   VideoSubtitleLanguage language,
 ) => language.jobId(videoSubtitleJobId(videoPath));
+
+/// 从播放器当前音轨换算识别音轨（[resolveVideoSubtitleAudioStream]）：[audioTrack] 是
+/// 0 起的音轨序号，返回全局流序号；与按语言挑的同一条时返回 null。
+typedef VideoSubtitleAudioStreamResolver =
+    Future<int?> Function(String videoPath, int audioTrack);
+
+/// 识别阶段（S1/S2）的工作目录：按语言挑的音轨（[audioStream] 为 null）就是任务目录
+/// [jobDir] 本身（改版前的缓存照用）；指定了音轨的放进 `<任务目录>/<任务目录名>.s<序号>`。
+///
+/// 子目录名带任务目录名：抽出的音轨文件名取工作目录名（[videoSubtitleAudioFileName]），
+/// 上游转录缓存按「音频文件名 + 字节数」认任务——各视频同名会互相拿错转录稿。
+Directory videoSubtitleRecognizeDir(Directory jobDir, int? audioStream) =>
+    audioStream == null
+    ? jobDir
+    : Directory(
+        p.join(jobDir.path, '${p.basename(jobDir.path)}.s$audioStream'),
+      );
 
 /// 各阶段产物的文件名。
 abstract final class VideoSubtitleJobFiles {
@@ -361,10 +400,22 @@ class VideoSubtitlePipeline {
     this.evidence = const SubtitleEvidenceCollector(),
     this.lyricsFinder,
     Future<int?> Function(String videoPath)? probeDurationMs,
+    VideoSubtitleAudioStreamResolver? resolveAudioStream,
     DateTime Function()? clock,
   }) : subtitleSuffix = subtitleSuffix ?? language.tag,
        _probeDurationMs = probeDurationMs ?? probeVideoDurationMs,
+       _resolveAudioStream =
+           resolveAudioStream ?? _defaultAudioStreamResolver(language),
        _clock = clock ?? DateTime.now;
+
+  static VideoSubtitleAudioStreamResolver _defaultAudioStreamResolver(
+    VideoSubtitleLanguage language,
+  ) =>
+      (String videoPath, int audioTrack) => resolveVideoSubtitleAudioStream(
+        videoPath: videoPath,
+        audioTrack: audioTrack,
+        language: language,
+      );
 
   /// [recognizer] 必须是按同一语言建的（`resolveVideoSubtitleRecognizer(language:)`）。
   final VideoSubtitleRecognizer recognizer;
@@ -380,11 +431,12 @@ class VideoSubtitlePipeline {
   /// 输出文件后缀：`<视频名>.<后缀>.srt`；默认 [VideoSubtitleLanguage.tag]。
   final String subtitleSuffix;
 
-  /// 字幕写到哪个目录；null = 视频旁（播放页的 sidecar 探测直接加载）。给了就全部
-  /// 写进这个目录（CLI `--out-dir`：不碰视频目录），已有字幕的判定也看这个目录。
+  /// 字幕写到哪个目录；null = 默认落点（[videoSubtitleDefaultExportDir]：视频旁，播放页
+  /// 的 sidecar 探测直接加载；原盘成员落到任务根下的 `disc_out`）。给了就全部写进这个
+  /// 目录（CLI `--out-dir`：不碰视频目录），已有字幕的判定也看这个目录。
   final Directory? exportDir;
 
-  /// 按媒体路径给导出目录（优先于 [exportDir]；返回 null = 回落 [exportDir] / 媒体旁）。
+  /// 按媒体路径给导出目录（优先于 [exportDir]；返回 null = 回落 [exportDir] / 默认落点）。
   /// 音乐库用它把每个音频的字幕放进应用自有的独立目录：曲库里大量同名 `01.flac`
   /// 写进同一个 [exportDir] 会互相判成「已有同名字幕（非本管线）」。
   final Directory? Function(String mediaPath)? exportDirFor;
@@ -392,7 +444,7 @@ class VideoSubtitlePipeline {
   String _exportDirOf(String mediaPath) =>
       exportDirFor?.call(mediaPath)?.path ??
       exportDir?.path ??
-      p.dirname(mediaPath);
+      videoSubtitleDefaultExportDir(jobsRoot, mediaPath);
 
   /// 样式参考（同一视频已有的 ASS，通常是别的语言）：找得到参考时，SRT 之外再按
   /// 参考的样式 / 位置导出一份 `<视频名>.<后缀>.ass`。生产默认
@@ -409,6 +461,7 @@ class VideoSubtitlePipeline {
   /// 查歌词的后端：给了且开了 AI 才做歌词补齐（S4s）；null = 不补歌词。
   final SubtitleLyricsFinder? lyricsFinder;
   final Future<int?> Function(String videoPath) _probeDurationMs;
+  final VideoSubtitleAudioStreamResolver _resolveAudioStream;
   final DateTime Function() _clock;
 
   /// 目标字幕路径 `<目录>/<视频名>.<后缀>.srt`（目录见 [exportDirFor] / [exportDir]）。
@@ -435,6 +488,10 @@ class VideoSubtitlePipeline {
     p.join(jobsRoot.path, videoSubtitleJobIdFor(videoPath, language)),
   );
 
+  /// [audioTrack]（播放器当前音轨；null = 没有播放上下文）→ 识别音轨（null = 按语言挑）。
+  Future<int?> _audioStreamFor(String videoPath, int? audioTrack) async =>
+      audioTrack == null ? null : _resolveAudioStream(videoPath, audioTrack);
+
   /// [path] 是不是本管线的产物（不能当证据 / 样式参考读回来，否则上次的识别错误会被
   /// 当成人工字幕自我强化）：
   /// * 内容仍是本管线上次写进去的那份（[_JobState.wrote]，哈希对得上）——路径曾是导出、
@@ -456,12 +513,19 @@ class VideoSubtitlePipeline {
   /// 失败时抛出的 [SubtitleAiRequestFailure] / [SubtitleGlossaryValidationFailure] 带着
   /// 这次运行已经花掉的 AI 用量（`usage`）：各阶段自己的账在异常里丢了，这里经
   /// [SubtitleAiSpendingCompleter] 另记一份，失败也如实上报，不显示成 0 次调用。
+  ///
+  /// [audioTracks]：从播放页发起时各集的「播放器当前音轨」（视频路径 → 0 起的音轨
+  /// 序号，ffmpeg `0:a:N`），管线识别那条轨（[resolveVideoSubtitleAudioStream]）；没给的
+  /// 集按识别语言挑。[keepRecordedAudio]：沿用任务目录上次识别用的音轨（只重跑写法
+  /// 统一时不该因为没带音轨就换轨重识别）。
   Future<VideoSubtitlePipelineResult> run({
     required List<String> videoPaths,
     required SubtitleWorkContext work,
     bool wholeSeason = false,
     void Function(VideoSubtitleProgress progress)? onProgress,
     SubtitleCancelToken cancel = const SubtitleNeverCancel(),
+    Map<String, int> audioTracks = const <String, int>{},
+    bool keepRecordedAudio = false,
   }) async {
     final VideoSubtitleAiConfig? config = ai;
     final SubtitleAiSpendingCompleter? spending = config == null
@@ -475,6 +539,8 @@ class VideoSubtitlePipeline {
         onProgress: onProgress,
         cancel: cancel,
         completer: spending,
+        audioTracks: audioTracks,
+        keepRecordedAudio: keepRecordedAudio,
       );
     } on SubtitleAiRequestFailure catch (e, stack) {
       if (spending == null) rethrow;
@@ -492,6 +558,8 @@ class VideoSubtitlePipeline {
     required void Function(VideoSubtitleProgress progress)? onProgress,
     required SubtitleCancelToken cancel,
     required AiTextCompleter? completer,
+    required Map<String, int> audioTracks,
+    required bool keepRecordedAudio,
   }) async {
     void report(
       VideoSubtitleStage stage,
@@ -538,14 +606,29 @@ class VideoSubtitlePipeline {
       if (previousRecognizer != null && previousRecognizer != recognizer.id) {
         await resetVideoSubtitleJobFrom(dir, VideoSubtitleStage.proofread);
       }
+      // 识别哪条音轨：从播放页发起的按播放器当前音轨，其余按识别语言挑（null）。换了
+      // 轨，下游（校对起）都是从另一份稿派生的，同换识别器一样作废；识别稿与抽出的
+      // 音轨按轨分目录（[videoSubtitleRecognizeDir]），换回来还能续用。
+      final int? audioStream = keepRecordedAudio
+          ? state.audioStream
+          : await _audioStreamFor(video, audioTracks[video]);
+      if (state.recognizerId != null && state.audioStream != audioStream) {
+        await resetVideoSubtitleJobFrom(dir, VideoSubtitleStage.proofread);
+      }
+      final Directory recognizeDir = videoSubtitleRecognizeDir(
+        dir,
+        audioStream,
+      );
       final File draftsFile = File(
-        p.join(dir.path, VideoSubtitleJobFiles.drafts(recognizer.id)),
+        p.join(recognizeDir.path, VideoSubtitleJobFiles.drafts(recognizer.id)),
       );
       List<SubtitleDraftCue>? drafts = _readCues(draftsFile);
       if (drafts == null) {
+        await recognizeDir.create(recursive: true);
         drafts = await recognizer.recognize(
           videoPath: video,
-          workDir: dir,
+          workDir: recognizeDir,
+          audioStreamIndex: audioStream,
           cancel: cancel,
           onProgress: (double f, String message) => report(
             VideoSubtitleStage.recognize,
@@ -567,6 +650,7 @@ class VideoSubtitlePipeline {
       state
         ..videoPath = video
         ..recognizerId = recognizer.id
+        ..audioStream = audioStream
         ..durationMs = durationMs;
       await state.save(dir);
 
@@ -1279,6 +1363,7 @@ class _JobState {
         ..recognizerId = decoded['recognizer'] as String?
         ..durationMs = (decoded['durationMs'] as num?)?.round()
         ..evidenceFingerprint = decoded['evidence'] as String?
+        ..audioStream = (decoded['audioStream'] as num?)?.round()
         ..frames = decoded['frames'] as bool?;
       final Object? exports = decoded['exports'];
       if (exports is Map) {
@@ -1295,6 +1380,9 @@ class _JobState {
   String? videoPath;
   String? recognizerId;
   int? durationMs;
+
+  /// 识别稿用的音轨（全局流序号）；null = 按识别语言挑的那条（改版前的任务同此）。
+  int? audioStream;
 
   /// 上一次 S3 用的证据指纹（[subtitleEvidenceFingerprint]；空 = 无证据）。
   String? evidenceFingerprint;
@@ -1318,6 +1406,7 @@ class _JobState {
       'videoPath': videoPath,
       'recognizer': recognizerId,
       'durationMs': durationMs,
+      if (audioStream != null) 'audioStream': audioStream,
       if (evidenceFingerprint != null) 'evidence': evidenceFingerprint,
       if (frames != null) 'frames': frames,
       'exports': exports,
