@@ -19,77 +19,12 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/tts/cast/cast_line_kind.dart';
+import 'package:fushi_engine/tts/cast/cast_voice_assignment.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
 
-/// 一句的类型（决定转场停顿、声音指派与是否合成）。
-enum MangaLineKind {
-  /// 叙述：第三人称旁白、说明框、标题、信件等成段的正式文字。
-  narration('narration'),
-
-  /// 独白字幕（方框里的第一人称内心叙述）。
-  monologue('monologue'),
-
-  /// 心声气泡（云朵状的心里话）。
-  thought('thought'),
-
-  /// 说出口的台词。
-  spoken('spoken'),
-
-  /// 喊。
-  shout('shout'),
-
-  /// 嘟囔（小声自言自语）。
-  mutter('mutter'),
-
-  /// 不读：拟声词、手写旁注、OCR 噪声。
-  skip('skip');
-
-  const MangaLineKind(this.wire);
-
-  /// 持久化 / AI 输出里的名字（冻结，不随 Dart 枚举名改）。
-  final String wire;
-
-  /// 内心类（独白 / 心声 / 嘟囔）：与说出口之间切换时用更长的转场停顿。
-  bool get isInner =>
-      this == MangaLineKind.monologue ||
-      this == MangaLineKind.thought ||
-      this == MangaLineKind.mutter;
-
-  /// 有声音（会进合成与时间表）。
-  bool get isAudible => this != MangaLineKind.skip;
-
-  static MangaLineKind? parse(Object? raw) {
-    for (final MangaLineKind k in values) {
-      if (k.wire == raw) return k;
-    }
-    return null;
-  }
-}
-
-/// 情绪封闭词表（只标注、不参与合成，见设计 §5 末）。
-enum MangaEmotion {
-  neutral('neutral'),
-  joy('joy'),
-  sadness('sadness'),
-  anger('anger'),
-  surprise('surprise'),
-  fear('fear'),
-  disgust('disgust'),
-  embarrassment('embarrassment'),
-  tenderness('tenderness'),
-  tension('tension');
-
-  const MangaEmotion(this.wire);
-
-  final String wire;
-
-  static MangaEmotion? parse(Object? raw) {
-    for (final MangaEmotion e in values) {
-      if (e.wire == raw) return e;
-    }
-    return null;
-  }
-}
+export 'package:fushi_engine/tts/cast/cast_line_kind.dart';
+export 'package:fushi_engine/tts/cast/cast_voice_assignment.dart';
 
 /// 一部作品的音源策略（设计 §9）。
 enum MangaAudioSourcePolicy {
@@ -243,6 +178,8 @@ class MangaScriptLine {
     this.source = TtsCastSource.llm,
     this.confidence,
     this.audio = const MangaSynthesized(),
+    this.voice,
+    this.say,
   }) : blocks = List<int>.unmodifiable(blocks),
        textFixes = Map<int, String>.unmodifiable(
          textFixes ?? const <int, String>{},
@@ -257,12 +194,12 @@ class MangaScriptLine {
   /// 角色名；[kTtsNarrator] = 旁白，[kTtsUnknown] = 不明。
   final String speaker;
 
-  final MangaLineKind kind;
+  final CastLineKind kind;
 
   /// 句后额外停顿（毫秒），叠加在转场基础值之上。
   final int beatMs;
 
-  final MangaEmotion? emotion;
+  final CastEmotion? emotion;
 
   /// 情绪强度 0..100。
   final int? intensity;
@@ -286,18 +223,34 @@ class MangaScriptLine {
 
   final MangaLineAudioSource audio;
 
+  /// 这一句单独指定的声音（「切配置重试」成功后写入，或用户手动指定）；null = 按
+  /// 声音指派表。与小说 `TtsCastLine.voice` 同名。
+  final String? voice;
+
+  /// 手动填写的要念的文字（整句替换 OCR 拼出来的文本）；null = 照 OCR（含
+  /// [textFixes]）。与小说 `TtsCastLine.say` 同名。
+  final String? say;
+
+  /// 稳定的行身份：页 + 块下标（不用行序号——增删句子后序号会整体错位）。
+  /// 音频文件名、未配音账本都按它。
+  String get lineId => 'p${page}b${blocks.join('.')}';
+
   /// 这句实际用的种子。
   int effectiveSeed(int defaultSeed) => seed ?? defaultSeed;
 
   MangaScriptLine copyWith({
     List<int>? blocks,
     String? speaker,
-    MangaLineKind? kind,
+    CastLineKind? kind,
     int? beatMs,
     int? seed,
     Map<int, String>? textFixes,
     TtsCastSource? source,
     MangaLineAudioSource? audio,
+    String? voice,
+    String? say,
+    bool clearVoice = false,
+    bool clearSay = false,
   }) => MangaScriptLine(
     page: page,
     blocks: blocks ?? this.blocks,
@@ -314,6 +267,8 @@ class MangaScriptLine {
     source: source ?? this.source,
     confidence: confidence,
     audio: audio ?? this.audio,
+    voice: clearVoice ? null : voice ?? this.voice,
+    say: clearSay ? null : say ?? this.say,
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -336,6 +291,8 @@ class MangaScriptLine {
     'src': source.name,
     if (confidence != null) 'c': confidence,
     if (audio is! MangaSynthesized) 'audio': audio.toJson(),
+    if (voice != null) 'voice': voice,
+    if (say != null) 'say': say,
   };
 
   /// 宽松解析已落盘的行：结构坏（缺页 / 块 / 说话人、类型不认识）返回 null，
@@ -346,7 +303,7 @@ class MangaScriptLine {
     final Object? page = raw['p'];
     final Object? blocks = raw['b'];
     final Object? speaker = raw['s'];
-    final MangaLineKind? kind = MangaLineKind.parse(raw['k']);
+    final CastLineKind? kind = CastLineKind.parse(raw['k']);
     if (page is! int || page < 0 || blocks is! List || speaker is! String) {
       return null;
     }
@@ -362,7 +319,7 @@ class MangaScriptLine {
       blocks: blockList,
       speaker: speaker,
       kind: kind,
-      emotion: MangaEmotion.parse(raw['e']),
+      emotion: CastEmotion.parse(raw['e']),
     );
   }
 }
@@ -374,8 +331,8 @@ MangaScriptLine mangaLineFromFields(
   required int page,
   required List<int> blocks,
   required String speaker,
-  required MangaLineKind kind,
-  required MangaEmotion? emotion,
+  required CastLineKind kind,
+  required CastEmotion? emotion,
   TtsCastSource? source,
 }) {
   final Object? seed = raw['seed'];
@@ -413,6 +370,12 @@ MangaScriptLine mangaLineFromFields(
             : TtsCastSource.llm),
     confidence: _doubleIn(raw['c'], 0, 1),
     audio: MangaLineAudioSource.fromJson(raw['audio']),
+    voice: raw['voice'] is String && (raw['voice'] as String).isNotEmpty
+        ? raw['voice'] as String
+        : null,
+    say: raw['say'] is String && (raw['say'] as String).trim().isNotEmpty
+        ? raw['say'] as String
+        : null,
   );
 }
 
@@ -464,91 +427,6 @@ class MangaPageDirective {
   }
 }
 
-/// 声音指派表（设计 §5）：作品默认 → 角色 → 角色 × 类型，从粗到细逐级回落；
-/// 「叙述」类不属于任何角色，单独一行。值是声音 id（某份声音预设，或某个声音包的
-/// 某个参考音频组），null = 用当前朗读声音。
-class MangaVoiceAssignment {
-  MangaVoiceAssignment({
-    this.defaultVoice,
-    this.narrationVoice,
-    Map<String, String>? byCharacter,
-    Map<String, Map<MangaLineKind, String>>? byCharacterKind,
-  }) : byCharacter = byCharacter ?? <String, String>{},
-       byCharacterKind =
-           byCharacterKind ?? <String, Map<MangaLineKind, String>>{};
-
-  /// 作品默认声音；null = 当前朗读声音。
-  String? defaultVoice;
-
-  /// 「叙述」类专用声音；null = 回落到 [defaultVoice]。
-  String? narrationVoice;
-
-  /// 角色 → 声音（该角色所有类型）。
-  final Map<String, String> byCharacter;
-
-  /// 角色 × 类型 → 声音（只覆盖某一类）。
-  final Map<String, Map<MangaLineKind, String>> byCharacterKind;
-
-  /// 解析一句该用的声音（纯函数）：叙述类 → 叙述行 → 作品默认；其余 → 角色 × 类型
-  /// → 角色 → 作品默认。返回 null = 用当前朗读声音。
-  String? resolve(String speaker, MangaLineKind kind) {
-    if (kind == MangaLineKind.narration) return narrationVoice ?? defaultVoice;
-    return byCharacterKind[speaker]?[kind] ??
-        byCharacter[speaker] ??
-        defaultVoice;
-  }
-
-  Map<String, Object?> toJson() => <String, Object?>{
-    if (defaultVoice != null) 'default': defaultVoice,
-    if (narrationVoice != null) 'narration': narrationVoice,
-    if (byCharacter.isNotEmpty) 'char': byCharacter,
-    if (byCharacterKind.isNotEmpty)
-      'charKind': <String, Object?>{
-        for (final MapEntry<String, Map<MangaLineKind, String>> e
-            in byCharacterKind.entries)
-          e.key: <String, String>{
-            for (final MapEntry<MangaLineKind, String> k in e.value.entries)
-              k.key.wire: k.value,
-          },
-      },
-  };
-
-  static MangaVoiceAssignment fromJson(Object? raw) {
-    if (raw is! Map) return MangaVoiceAssignment();
-    final Object? byChar = raw['char'];
-    final Object? byCharKind = raw['charKind'];
-    final Map<String, Map<MangaLineKind, String>> kinds =
-        <String, Map<MangaLineKind, String>>{};
-    if (byCharKind is Map) {
-      for (final MapEntry<Object?, Object?> e in byCharKind.entries) {
-        final Object? key = e.key;
-        final Object? inner = e.value;
-        if (key is! String || inner is! Map) continue;
-        final Map<MangaLineKind, String> m = <MangaLineKind, String>{};
-        for (final MapEntry<Object?, Object?> k in inner.entries) {
-          final MangaLineKind? kind = MangaLineKind.parse(k.key);
-          final Object? voice = k.value;
-          if (kind != null && voice is String) m[kind] = voice;
-        }
-        if (m.isNotEmpty) kinds[key] = m;
-      }
-    }
-    final Object? def = raw['default'];
-    final Object? narration = raw['narration'];
-    return MangaVoiceAssignment(
-      defaultVoice: def is String ? def : null,
-      narrationVoice: narration is String ? narration : null,
-      byCharacter: <String, String>{
-        if (byChar is Map)
-          for (final MapEntry<Object?, Object?> e in byChar.entries)
-            if (e.key is String && e.value is String)
-              e.key! as String: e.value! as String,
-      },
-      byCharacterKind: kinds,
-    );
-  }
-}
-
 /// 演出稿与当前 OCR 的关系。
 enum MangaScriptFreshness {
   /// 签名一致（或演出稿里还没有任何行），块下标可直接用。
@@ -579,13 +457,13 @@ class MangaAudioScript {
   MangaAudioScript({
     this.engineSignature,
     this.defaultSeed = 0,
-    MangaVoiceAssignment? voices,
+    CastVoiceAssignment? voices,
     this.sourcePolicy = MangaAudioSourcePolicy.audiobookFirst,
     Map<String, TtsCastCharacter>? roster,
     List<MangaScriptLine>? lines,
     Map<int, MangaPageDirective>? pages,
     Set<int>? annotatedPages,
-  }) : voices = voices ?? MangaVoiceAssignment(),
+  }) : voices = voices ?? CastVoiceAssignment(),
        roster = roster ?? <String, TtsCastCharacter>{},
        lines = lines ?? <MangaScriptLine>[],
        pages = pages ?? <int, MangaPageDirective>{},
@@ -599,7 +477,7 @@ class MangaAudioScript {
   /// 整部作品一个默认种子（设计 §6）。
   int defaultSeed;
 
-  final MangaVoiceAssignment voices;
+  final CastVoiceAssignment voices;
 
   MangaAudioSourcePolicy sourcePolicy;
 
@@ -627,9 +505,32 @@ class MangaAudioScript {
       if (l.kind.isAudible) l,
   ];
 
-  /// 一句该用的声音（见 [MangaVoiceAssignment.resolve]）。
+  /// 这卷所属系列的声音指派（`SeriesCastProfile.voices`，不随本文件落盘）。
+  CastVoiceAssignment? series;
+
+  /// 一句该用的声音：单句指定 → 本卷指派表叠在系列上（见
+  /// [CastVoiceAssignment.resolveOver]）；null = 当前朗读声音。
   String? voiceFor(MangaScriptLine line) =>
-      voices.resolve(line.speaker, line.kind);
+      line.voice ?? voices.resolveOver(line.speaker, line.kind, series);
+
+  /// 「切配置重试」的候选声音（本卷在前、系列在后）。
+  List<String> get retryVoices => voices.retryVoicesOver(series);
+
+  /// 按行身份找行。
+  MangaScriptLine? lineById(String lineId) {
+    for (final MangaScriptLine l in lines) {
+      if (l.lineId == lineId) return l;
+    }
+    return null;
+  }
+
+  /// 替换一行（按行身份）；找不到返回 false。
+  bool replaceLine(String lineId, MangaScriptLine Function(MangaScriptLine) f) {
+    final int i = lines.indexWhere((MangaScriptLine l) => l.lineId == lineId);
+    if (i < 0) return false;
+    lines[i] = f(lines[i]);
+    return true;
+  }
 
   /// 与当前 OCR 签名比对（设计 §1：不一致整卷重新标注，不按坐标迁移）。
   MangaScriptFreshness freshness(String? currentEngineSignature) =>
@@ -733,7 +634,7 @@ class MangaAudioScript {
     return MangaAudioScript(
       engineSignature: signature is String ? signature : null,
       defaultSeed: seed is int ? seed.clamp(0, MangaScriptLimits.maxSeed) : 0,
-      voices: MangaVoiceAssignment.fromJson(raw['voices']),
+      voices: CastVoiceAssignment.fromJson(raw['voices']),
       sourcePolicy: MangaAudioSourcePolicy.parse(raw['policy']),
       roster: <String, TtsCastCharacter>{
         if (roster is List)

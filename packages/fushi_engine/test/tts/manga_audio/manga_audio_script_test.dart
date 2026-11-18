@@ -9,7 +9,7 @@ MangaScriptLine _line(
   int page,
   List<int> blocks, {
   String speaker = 'A',
-  MangaLineKind kind = MangaLineKind.spoken,
+  CastLineKind kind = CastLineKind.spoken,
   TtsCastSource source = TtsCastSource.llm,
 }) => MangaScriptLine(
   page: page,
@@ -23,12 +23,12 @@ MangaAudioScript _fullScript() => MangaAudioScript(
   engineSignature: 'ocr-sig-1',
   defaultSeed: 42,
   sourcePolicy: MangaAudioSourcePolicy.synthOnly,
-  voices: MangaVoiceAssignment(
+  voices: CastVoiceAssignment(
     defaultVoice: 'preset-default',
     narrationVoice: 'preset-narr',
     byCharacter: <String, String>{'A': 'pack-a'},
-    byCharacterKind: <String, Map<MangaLineKind, String>>{
-      'A': <MangaLineKind, String>{MangaLineKind.thought: 'pack-a-inner'},
+    byCharacterKind: <String, Map<CastLineKind, String>>{
+      'A': <CastLineKind, String>{CastLineKind.thought: 'pack-a-inner'},
     },
   ),
   roster: <String, TtsCastCharacter>{
@@ -44,9 +44,9 @@ MangaAudioScript _fullScript() => MangaAudioScript(
       page: 0,
       blocks: <int>[2, 0],
       speaker: 'A',
-      kind: MangaLineKind.thought,
+      kind: CastLineKind.thought,
       beatMs: 250,
-      emotion: MangaEmotion.tension,
+      emotion: CastEmotion.tension,
       intensity: 70,
       rateOffset: -0.1,
       pitchOffset: 2,
@@ -57,8 +57,8 @@ MangaAudioScript _fullScript() => MangaAudioScript(
       confidence: 0.4,
       audio: const MangaAudiobookClip(fileIndex: 3, startMs: 1000, endMs: 2500),
     ),
-    _line(0, <int>[1], speaker: kTtsNarrator, kind: MangaLineKind.narration),
-    _line(2, <int>[0], speaker: kTtsUnknown, kind: MangaLineKind.skip),
+    _line(0, <int>[1], speaker: kTtsNarrator, kind: CastLineKind.narration),
+    _line(2, <int>[0], speaker: kTtsUnknown, kind: CastLineKind.skip),
   ],
   pages: <int, MangaPageDirective>{
     1: const MangaPageDirective(holdMs: 3000),
@@ -79,8 +79,8 @@ void main() {
 
       final MangaScriptLine l0 = back.lines.first;
       expect(l0.blocks, <int>[2, 0]);
-      expect(l0.kind, MangaLineKind.thought);
-      expect(l0.emotion, MangaEmotion.tension);
+      expect(l0.kind, CastLineKind.thought);
+      expect(l0.emotion, CastEmotion.tension);
       expect(l0.intensity, 70);
       expect(l0.seed, 7);
       expect(l0.effectiveSeed(back.defaultSeed), 7);
@@ -97,7 +97,7 @@ void main() {
       expect(back.pages[1]!.holdMs, 3000);
       expect(back.pages[2]!.source, TtsCastSource.user);
       expect(back.roster['A']!.aliases, <String>['a']);
-      expect(back.voices.resolve('A', MangaLineKind.thought), 'pack-a-inner');
+      expect(back.voices.resolve('A', CastLineKind.thought), 'pack-a-inner');
       expect(back.annotatedPages, <int>{0, 1, 2});
     });
 
@@ -319,46 +319,46 @@ void main() {
   });
 
   group('声音解析', () {
-    final MangaVoiceAssignment v = MangaVoiceAssignment(
+    final CastVoiceAssignment v = CastVoiceAssignment(
       defaultVoice: 'def',
       narrationVoice: 'narr',
       byCharacter: <String, String>{'A': 'a', kTtsNarrator: 'nar-char'},
-      byCharacterKind: <String, Map<MangaLineKind, String>>{
-        'A': <MangaLineKind, String>{MangaLineKind.monologue: 'a-inner'},
-        'B': <MangaLineKind, String>{MangaLineKind.shout: 'b-shout'},
+      byCharacterKind: <String, Map<CastLineKind, String>>{
+        'A': <CastLineKind, String>{CastLineKind.monologue: 'a-inner'},
+        'B': <CastLineKind, String>{CastLineKind.shout: 'b-shout'},
       },
     );
 
     test('角色 × 类型优先于角色', () {
-      expect(v.resolve('A', MangaLineKind.monologue), 'a-inner');
+      expect(v.resolve('A', CastLineKind.monologue), 'a-inner');
     });
 
     test('没有类型级指派回落到角色', () {
-      expect(v.resolve('A', MangaLineKind.spoken), 'a');
+      expect(v.resolve('A', CastLineKind.spoken), 'a');
     });
 
     test('角色没有指派回落到作品默认', () {
-      expect(v.resolve('B', MangaLineKind.spoken), 'def');
-      expect(v.resolve('B', MangaLineKind.shout), 'b-shout');
-      expect(v.resolve(kTtsUnknown, MangaLineKind.spoken), 'def');
+      expect(v.resolve('B', CastLineKind.spoken), 'def');
+      expect(v.resolve('B', CastLineKind.shout), 'b-shout');
+      expect(v.resolve(kTtsUnknown, CastLineKind.spoken), 'def');
     });
 
     test('叙述类走单独一行，不受角色指派影响', () {
-      expect(v.resolve('A', MangaLineKind.narration), 'narr');
-      expect(v.resolve(kTtsNarrator, MangaLineKind.narration), 'narr');
-      expect(v.resolve(kTtsNarrator, MangaLineKind.spoken), 'nar-char');
+      expect(v.resolve('A', CastLineKind.narration), 'narr');
+      expect(v.resolve(kTtsNarrator, CastLineKind.narration), 'narr');
+      expect(v.resolve(kTtsNarrator, CastLineKind.spoken), 'nar-char');
     });
 
     test('叙述行未设时回落作品默认；全空返回 null（当前朗读声音）', () {
       expect(
-        MangaVoiceAssignment(
+        CastVoiceAssignment(
           defaultVoice: 'def',
-        ).resolve('A', MangaLineKind.narration),
+        ).resolve('A', CastLineKind.narration),
         'def',
       );
-      expect(MangaVoiceAssignment().resolve('A', MangaLineKind.spoken), isNull);
+      expect(CastVoiceAssignment().resolve('A', CastLineKind.spoken), isNull);
       expect(
-        MangaVoiceAssignment().resolve('A', MangaLineKind.narration),
+        CastVoiceAssignment().resolve('A', CastLineKind.narration),
         isNull,
       );
     });
@@ -366,7 +366,7 @@ void main() {
     test('voiceFor 按行的说话人与类型解析', () {
       final MangaAudioScript s = MangaAudioScript(voices: v);
       expect(
-        s.voiceFor(_line(0, <int>[0], kind: MangaLineKind.monologue)),
+        s.voiceFor(_line(0, <int>[0], kind: CastLineKind.monologue)),
         'a-inner',
       );
     });

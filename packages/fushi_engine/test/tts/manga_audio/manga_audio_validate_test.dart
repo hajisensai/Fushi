@@ -53,7 +53,7 @@ void main() {
       expect(l.page, 2);
       expect(l.blocks, <int>[1, 0]);
       expect(l.beatMs, 0);
-      expect(l.emotion, MangaEmotion.joy);
+      expect(l.emotion, CastEmotion.joy);
       expect(l.intensity, MangaScriptLimits.maxIntensity);
       expect(l.source, TtsCastSource.llm);
       expect(l.seed, 3);
@@ -164,7 +164,7 @@ void main() {
         page: 0,
         blocks: <int>[2, 0, 1],
         speaker: 'A',
-        kind: MangaLineKind.spoken,
+        kind: CastLineKind.spoken,
         textFixes: <int, String>{1: 'なに'},
       );
       expect(resolveMangaLineText(line, blocks), 'たち。かきく、なに');
@@ -175,13 +175,60 @@ void main() {
         page: 0,
         blocks: <int>[0, 9],
         speaker: 'A',
-        kind: MangaLineKind.spoken,
+        kind: CastLineKind.spoken,
       );
       expect(
         resolveMangaLineText(line, <MokuroBlock>[
           _block(<String>['まみ']),
         ]),
         'まみ',
+      );
+    });
+  });
+
+  group('mangaOcrSignature', () {
+    test('engine signature wins', () {
+      expect(
+        mangaOcrSignature(
+          engineSignature: 'lens:ja',
+          pages: <List<MokuroBlock>>[],
+        ),
+        'lens:ja',
+      );
+    });
+
+    test('content signature is stable and changes with text or layout', () {
+      final List<List<MokuroBlock>> a = <List<MokuroBlock>>[
+        <MokuroBlock>[
+          _block(<String>['あ', 'い']),
+        ],
+        <MokuroBlock>[],
+      ];
+      final String sig = mangaOcrSignature(engineSignature: null, pages: a);
+      expect(sig, startsWith('content:'));
+      expect(mangaOcrSignature(engineSignature: '', pages: a), sig);
+      expect(
+        mangaOcrSignature(
+          engineSignature: null,
+          pages: <List<MokuroBlock>>[
+            <MokuroBlock>[
+              _block(<String>['あい']),
+            ],
+            <MokuroBlock>[],
+          ],
+        ),
+        isNot(sig),
+      );
+      expect(
+        mangaOcrSignature(
+          engineSignature: null,
+          pages: <List<MokuroBlock>>[
+            <MokuroBlock>[
+              _block(<String>['あ', 'い']),
+            ],
+          ],
+        ),
+        isNot(sig),
       );
     });
   });

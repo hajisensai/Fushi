@@ -62,26 +62,35 @@ class MangaTimedLine {
     required this.kind,
     required this.durationMs,
     this.beatMs = 0,
+    this.placeholder = false,
   });
 
-  MangaTimedLine.fromScriptLine(MangaScriptLine line, {required int durationMs})
-    : this(
-        page: line.page,
-        speaker: line.speaker,
-        kind: line.kind,
-        durationMs: durationMs,
-        beatMs: line.beatMs,
-      );
+  MangaTimedLine.fromScriptLine(
+    MangaScriptLine line, {
+    required int durationMs,
+    bool placeholder = false,
+  }) : this(
+         page: line.page,
+         speaker: line.speaker,
+         kind: line.kind,
+         durationMs: durationMs,
+         beatMs: line.beatMs,
+         placeholder: placeholder,
+       );
 
   final int page;
   final String speaker;
-  final MangaLineKind kind;
+  final CastLineKind kind;
 
   /// 这句音频的实际时长（裁掉首尾静音后）。
   final int durationMs;
 
   /// 该句的一拍（句后额外停顿）。
   final int beatMs;
+
+  /// 没配上音（见 `cast_line_voicing.dart`）：[durationMs] 是占位静音的估计长度，
+  /// 播放器在这段放静音、照常高亮；补回后换成真音频重算时间表。
+  final bool placeholder;
 }
 
 /// 一个页段：`[startMs, endMs)`。纯听形态下无台词页的页段长度为 0，但仍会产出。
@@ -124,24 +133,30 @@ class MangaLineTiming {
     required this.startMs,
     required this.endMs,
     required this.gapAfterMs,
+    this.placeholder = false,
   });
 
   final int startMs;
   final int endMs;
   final int gapAfterMs;
 
+  /// 这段是占位静音（没配上音的句子）。
+  final bool placeholder;
+
   @override
   bool operator ==(Object other) =>
       other is MangaLineTiming &&
       other.startMs == startMs &&
       other.endMs == endMs &&
-      other.gapAfterMs == gapAfterMs;
+      other.gapAfterMs == gapAfterMs &&
+      other.placeholder == placeholder;
 
   @override
-  int get hashCode => Object.hash(startMs, endMs, gapAfterMs);
+  int get hashCode => Object.hash(startMs, endMs, gapAfterMs, placeholder);
 
   @override
-  String toString() => 'MangaLineTiming($startMs-$endMs +$gapAfterMs)';
+  String toString() =>
+      'MangaLineTiming($startMs-$endMs +$gapAfterMs${placeholder ? ' placeholder' : ''})';
 }
 
 class MangaTimeline {
@@ -263,7 +278,14 @@ MangaTimeline computeMangaTimeline({
       );
       final int start = pos;
       pos += line.durationMs;
-      timings.add(MangaLineTiming(startMs: start, endMs: pos, gapAfterMs: gap));
+      timings.add(
+        MangaLineTiming(
+          startMs: start,
+          endMs: pos,
+          gapAfterMs: gap,
+          placeholder: line.placeholder,
+        ),
+      );
       pos += gap;
       i++;
     }
