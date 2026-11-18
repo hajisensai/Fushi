@@ -4,7 +4,8 @@
 //      且已提取进专用字段的 radical/strokes 键不重复出现在 stats 里。
 //   B) marker 缺失 -> 词典不加载（版本 0 拒载，导入未完成语义不变）。
 //   C) bloom.filter 截断 -> 置空降级（contains 恒真穿透），词典仍可查
-//      （上游 d4183d4 的 size 校验 + fork 的不拒载哲学）。
+//      （上游 d4183d4 的 size 校验 + fork 的不拒载哲学）。新导入写 key.index，不再有
+//      bloom.filter，这一段用旧式导入（FUSHIDICTS_LEGACY_INDEX）造的存量形态词典。
 //   D) term glossary 经 zstd（可能带训练字典 dict.zstd，样本不足时退普通压缩）
 //      往返一致；重开 DictionaryQuery 再验一遍（DDict 加载路径）。
 //
@@ -20,6 +21,7 @@
 #include "fushidicts/importer.hpp"
 #include "fushidicts/lookup.hpp"
 #include "fushidicts/query.hpp"
+#include "legacy_index_env.hpp"
 
 namespace {
 
@@ -234,8 +236,30 @@ int main() {
   }
 
   // ----- C: bloom.filter 截断 -> 置空降级仍可查 -----
+  // 新导入写 key.index、不再有 bloom.filter；这里另导一份旧式（存量形态）的同一本词典。
+  std::string legacy_kanji_path;
+  {
+    const fushi_test::ScopedLegacyIndex legacy;
+    std::vector<ZipFile> files = {
+        {"index.json", index_json("V2KanjiStatsLegacy")},
+        {"kanji_bank_1.json", kanji_bank_stats()},
+    };
+    ImportResult r = dictionary_importer::import(write_zip("kanji_legacy", files), out_dir);
+    if (!r.success) {
+      fail("C: legacy import failed");
+    } else {
+      legacy_kanji_path = out_dir + "/" + r.title;
+      expect_true("C.legacy import writes bloom.filter", fs::is_regular_file(legacy_kanji_path + "/bloom.filter"));
+      expect_true("C.legacy import writes no key.index", !fs::exists(legacy_kanji_path + "/key.index"));
+    }
+  }
   if (!kanji_dict_path.empty()) {
-    const std::string bloom_path = kanji_dict_path + "/bloom.filter";
+    expect_true("A.new import writes key.index", fs::is_regular_file(kanji_dict_path + "/key.index"));
+    expect_true("A.new import writes no hash.table / bloom.filter",
+                !fs::exists(kanji_dict_path + "/hash.table") && !fs::exists(kanji_dict_path + "/bloom.filter"));
+  }
+  if (!legacy_kanji_path.empty()) {
+    const std::string bloom_path = legacy_kanji_path + "/bloom.filter";
     std::vector<char> original;
     {
       std::ifstream in(bloom_path, std::ios::binary);
@@ -251,7 +275,7 @@ int main() {
         out.write(original.data(), static_cast<std::streamsize>(original.size() / 2));
       }
       DictionaryQuery q;
-      q.add_kanji_dict(kanji_dict_path);
+      q.add_kanji_dict(legacy_kanji_path);
       expect_true("C.truncated bloom -> query still works", !q.query_kanji(kHi).empty());
       {
         std::ofstream out(bloom_path, std::ios::binary | std::ios::trunc);

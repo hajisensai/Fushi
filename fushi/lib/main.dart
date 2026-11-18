@@ -21,7 +21,6 @@ import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
-import 'package:flutter/scheduler.dart' show Priority, SchedulerBinding;
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_logs/flutter_logs.dart';
@@ -78,6 +77,8 @@ import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart';
 import 'package:fushi/src/utils/misc/hang_watchdog_log.dart';
 import 'package:fushi/src/utils/misc/wgc_capture_log.dart';
 import 'package:fushi/src/utils/rasterized_frame_size_reporter.dart';
+import 'package:fushi/src/utils/scheduling/ambient_ticker.dart'
+    show waitForUiIdle;
 import 'package:fushi/src/utils/settled_theme.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
@@ -107,9 +108,9 @@ import 'package:fushi/src/shortcuts/global_navigation.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/lookup/lookup_deep_link.dart';
 import 'package:fushi/src/lookup/lookup_overlay_navigator.dart';
+import 'package:fushi/src/lookup/desktop_lookup_startup.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/lookup/gal_hook_overlay_theme_sync.dart';
-import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/startup/desktop_window_placement.dart';
 import 'package:fushi/src/diagnostics/native_heap_probe.dart';
 import 'package:fushi/src/diagnostics/windows_memory_probe.dart';
@@ -773,10 +774,7 @@ void main([List<String> args = const <String>[]]) {
       // 启动即闪退由会话标记另行判定，不靠这一次采样。
       PreviousExitLog.startMemorySampling(
         firstSampleAfter: binding.waitUntilFirstFrameRasterized.then(
-          (_) => SchedulerBinding.instance.scheduleTask<void>(
-            () {},
-            Priority.idle,
-          ),
+          (_) => waitForUiIdle(),
         ),
         probes: const <MemoryProbe>[
           processRssBreakdownProbe,
@@ -925,10 +923,7 @@ void main([List<String> args = const <String>[]]) {
           runWebViewPrewarmWhenIdle(
             firstFrameRasterized:
                 WidgetsBinding.instance.waitUntilFirstFrameRasterized,
-            whenIdle: () => SchedulerBinding.instance.scheduleTask<void>(
-              () {},
-              Priority.idle,
-            ),
+            whenIdle: waitForUiIdle,
             prewarm: () async {
               // 预热持有的是进程级资源（一个 headless WebView = 一个 chromium
               // renderer 子进程），销毁必须有确定终点，不能只挂在 onLoadStop 这条
@@ -982,28 +977,14 @@ void main([List<String> args = const <String>[]]) {
           Future(() async {
             try {
               await WidgetsBinding.instance.endOfFrame;
-              // 两个控制器分属不同模块，各判各的门——**必须写成两条独立的 if**：
-              // 它们此前在同一个 try 里顺序执行，给第一个加 early return 会连带
-              // 跳过 galgame 浮窗（games 与 lookup 正交）。
+              // 全局查词覆盖窗（app 外热键 / 鼠标侧键 / 手柄 / 离屏预热都依附它的
+              // start()）与 galgame 台词浮窗：门控判据见
+              // [startDesktopLookupSurfaces]——覆盖窗只看平台能力，不看查词模块。
               //
               // 「下次启动不再自启」的语义在这里是字面的：两个 start() 都只有单向
-              // 闩（`_started`）、生产路径没有 stop，所以关掉模块要到下次启动才
-              // 真的不装钩子；这正是用户选的「不切断进行中的任务」。
-              final ModuleVisibility modules = appModel.moduleVisibility;
-              // app 外全局取词：OS 级热键 + 鼠标侧键 RawInput + 手柄触发 + 离屏
-              // WebView2 预热，四条通道全部依附于同一次 start()。查词模块关着就
-              // 不往系统里装钩子（快捷键设置页的 globalExternal 分区同步隐藏，见
-              // shortcut_settings_page）；模块门在 followLookupModule 里判，会话
-              // 中途打开模块时它沿同一条 start() 补起。
-              await GlobalLookupController.instance.followLookupModule(
-                appModel,
-              );
-              if (modules.isEnabled(ModuleId.games) &&
-                  GalHookTextOverlayController.isSupported) {
-                await GalHookTextOverlayController.instance.start(
-                  appModel: appModel,
-                );
-              }
+              // 闩（`_started`）、生产路径没有 stop，所以关掉 games 模块要到下次
+              // 启动才真的不装 galgame 钩子；这正是用户选的「不切断进行中的任务」。
+              await startDesktopLookupSurfaces(appModel);
             } catch (e, st) {
               // 🔴 这里以前只有 debugPrint —— release 构建下它**无处可去**。于是这一整段
               // 桌面查词启动链（全局查词覆盖窗 / galgame 台词浮窗）里任何一步抛异常，
