@@ -293,13 +293,6 @@ typedef _SetTempDirDart =
     );
 typedef _CloseC = ffi.Void Function(ffi.Pointer<ffi.Void>);
 typedef _CloseDart = void Function(ffi.Pointer<ffi.Void>);
-typedef _SimpleC =
-    ffi.Int32 Function(
-      ffi.Pointer<ffi.Void>,
-      ffi.Pointer<ffi.Pointer<ffi.Char>>,
-    );
-typedef _SimpleDart =
-    int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Pointer<ffi.Char>>);
 typedef _DiagCountsC =
     ffi.Size Function(ffi.Pointer<ffi.Int64> out, ffi.Size n);
 typedef _DiagCountsDart = int Function(ffi.Pointer<ffi.Int64> out, int n);
@@ -451,24 +444,6 @@ final class SrsCoreBindings {
         'ffsrs_set_temp_dir',
       ),
       close = lib.lookupFunction<_CloseC, _CloseDart>('ffsrs_store_close'),
-      legacyState = lib.lookupFunction<_StateC, _StateDart>(
-        'ffsrs_store_legacy_state',
-      ),
-      legacyBegin = lib.lookupFunction<_SimpleC, _SimpleDart>(
-        'ffsrs_store_legacy_begin',
-      ),
-      legacyPage = lib.lookupFunction<_PageC, _PageDart>(
-        'ffsrs_store_legacy_page',
-      ),
-      legacyCommit = lib.lookupFunction<_SimpleC, _SimpleDart>(
-        'ffsrs_store_legacy_commit',
-      ),
-      legacyAbort = lib.lookupFunction<_SimpleC, _SimpleDart>(
-        'ffsrs_store_legacy_abort',
-      ),
-      legacyMarkNone = lib.lookupFunction<_SimpleC, _SimpleDart>(
-        'ffsrs_store_legacy_mark_none',
-      ),
       snapshot = lib.lookupFunction<_SnapshotC, _SnapshotDart>(
         'ffsrs_store_snapshot',
       ),
@@ -511,12 +486,6 @@ final class SrsCoreBindings {
   final _OpenDart open;
   final _SetTempDirDart setTempDir;
   final _CloseDart close;
-  final _StateDart legacyState;
-  final _SimpleDart legacyBegin;
-  final _PageDart legacyPage;
-  final _SimpleDart legacyCommit;
-  final _SimpleDart legacyAbort;
-  final _SimpleDart legacyMarkNone;
   final _SnapshotDart snapshot;
   final _QueryDart debugQuery;
   final _ExecDart exec;
@@ -797,30 +766,6 @@ final class SrsCore {
     if (isClosed) throw StateError('srs store is closed');
     return _handle;
   }
-
-  /// 旧主库里的 SRS 数据已搬进来（或确认没有）。
-  bool get legacyImported => using((Arena arena) {
-    final ffi.Pointer<ffi.Int32> out = arena();
-    final ffi.Pointer<ffi.Pointer<ffi.Char>> err = arena();
-    err.value = ffi.nullptr;
-    _check(_b, _b.legacyState(_h, out, err), err);
-    return out.value != 0;
-  });
-
-  void legacyBegin() => _simple(_b.legacyBegin);
-  void legacyCommit() => _simple(_b.legacyCommit);
-  void legacyAbort() => _simple(_b.legacyAbort);
-  void legacyMarkNone() => _simple(_b.legacyMarkNone);
-
-  /// 一页旧表行（列序见 store/schema.rs `TABLES`）。
-  void legacyPage(String table, Uint8List page) => using((Arena arena) {
-    final (ffi.Pointer<ffi.Uint8> t, int tn) = _utf8(arena, table);
-    final ffi.Pointer<ffi.Uint8> p = arena(page.isEmpty ? 1 : page.length);
-    p.asTypedListOutOfLine(page.length).setAll(0, page);
-    final ffi.Pointer<ffi.Pointer<ffi.Char>> err = arena();
-    err.value = ffi.nullptr;
-    _check(_b, _b.legacyPage(_h, t, tn, p, page.length, err), err);
-  });
 
   /// `VACUUM INTO` 一份快照到 [path]（必须不存在）。
   void snapshotInto(String path, {required bool stripDeviceLocal}) =>
@@ -1253,12 +1198,6 @@ final class SrsCore {
     p.asTypedListOutOfLine(bytes.length).setAll(0, bytes);
     return p;
   }
-
-  void _simple(_SimpleDart f) => using((Arena arena) {
-    final ffi.Pointer<ffi.Pointer<ffi.Char>> err = arena();
-    err.value = ffi.nullptr;
-    _check(_b, f(_h, err), err);
-  });
 
   static (ffi.Pointer<ffi.Uint8>, int) _utf8(Arena arena, String s) {
     final Uint8List b = utf8.encode(s);

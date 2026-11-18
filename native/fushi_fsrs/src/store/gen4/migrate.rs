@@ -14,7 +14,7 @@
 //! 3. **前提补完**（[Step::Prepare]，G7-2b，`prepare.rs`）：旧库没满足的前提——从没同步过（`migrated_at` 为空、
 //!    旧行还在 `sync2_migrate_queue`）、只在投影表里的 profile（孤儿 uid）、去重作业、收段通道 / 待重放 / 待刷新缓存、
 //!    schema 比这一版的协议 3 旧（v3.3.0 正式版是 26）——先用**冻结的协议 3 代码**（`SrsCore::open` 的升级阶梯与
-//!    `store/ffi.rs` `sync2_dispatch` 的 `migrate` / `dedup` / `replay_pending`）做完。**在原件的副本上做**
+//!    `store/legacy3` `sync2_dispatch` 的 `migrate` / `dedup` / `replay_pending`）做完。**在原件的副本上做**
 //!    （`files::PREPARE_COPY`）：原件的写锁从这一步之前持到封存，原件在提交点之前一个字节不写，不论结局都还能被写它的
 //!    那个协议 3 版本打开；之后的读快照与阶段都开在副本上。什么都不用补的库不拷副本。补不了的（并入做到一半、缺缓存
 //!    配置、库比这一版新、文件坏了）拦下，[BlockCode] 给机器可读的原因。
@@ -80,6 +80,11 @@ use crate::sync2::id::Id;
 
 /// 迁移报告在 profile 目录里的文件名（中止时用户与诊断导出拿它；提交后留着备查）。只有计数与 ID，不含笔记内容。
 pub const REPORT_FILE: &str = "srs4-migration-report.json";
+
+/// 已删的 app 内换代前预演（G7-6 删）留在 profile 目录里的工作目录（名字冻结，旧 `dryrun::rehearsal_dir`）：里面是
+/// `report.json`（只有计数与 ID），进程在预演中途被杀时还可能有临时新库 `gen4-dryrun.db`（旧库内容的副本）。没有别的
+/// 代码会再碰它，迁移拿到换代锁后与前提补完副本一起删掉（[run]），彻底清除不在库外留内容副本。
+pub(crate) const LEFTOVER_REHEARSAL_DIR: &str = "gen4-rehearsal";
 
 /// 报告格式的版本。每个 profile 的报告与预演（`dryrun::REPORT_VERSION`）同形。
 pub const REPORT_VERSION: i64 = 1;
@@ -557,8 +562,11 @@ pub fn run(dir: &Path, opts: Options<'_>) -> Result<Outcome, String> {
     let Some(lock) = GenLock::try_acquire(dir)? else {
         return Ok(blocked(BlockCode::Migrating, BLOCKED_MIGRATING));
     };
-    // 上一次崩溃留下的前提补完副本：不论接下来走哪条路都用不上了（补完每次从原件重拷）。
-    if let Err(e) = seal::remove_sqlite_files(&dir.join(PREPARE_COPY)) {
+    // 上一次崩溃留下的前提补完副本：不论接下来走哪条路都用不上了（补完每次从原件重拷）。已删的换代前预演的工作目录
+    // 同样（[LEFTOVER_REHEARSAL_DIR]）。
+    if let Err(e) = seal::remove_sqlite_files(&dir.join(PREPARE_COPY))
+        .and_then(|()| remove_leftover_rehearsal(dir))
+    {
         drop(lock);
         return Err(e);
     }
@@ -569,6 +577,18 @@ pub fn run(dir: &Path, opts: Options<'_>) -> Result<Outcome, String> {
     };
     drop(lock);
     out
+}
+
+/// 删掉 [LEFTOVER_REHEARSAL_DIR]（不在就算删过）。两处调：迁移拿到换代锁之后（[run]），以及新代库按 Primary 打开时
+/// （kernel.rs `G4Core::open`）——在早期预发布版上已经迁移完、或迁移在拿锁之前就被挡住的用户，不再走 [run] 拿锁
+/// 那一步，预演目录（里面可能有一份旧库内容的副本）要靠开库清掉。
+pub(crate) fn remove_leftover_rehearsal(dir: &Path) -> Result<(), String> {
+    let work = dir.join(LEFTOVER_REHEARSAL_DIR);
+    match std::fs::remove_dir_all(&work) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("gen4 migrate: remove {}: {e}", work.display())),
+    }
 }
 
 /// 封存落了盘、改名没落盘：`srs4.db` 不在，`srs.db` 已封存进 `srs4.db`，旁边的 `srs4.db-migrating` 是一份建好的

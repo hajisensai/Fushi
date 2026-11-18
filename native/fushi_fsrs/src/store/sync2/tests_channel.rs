@@ -724,7 +724,7 @@ fn cmd(d: &Device, req: Value, blobs: Vec<Vec<u8>>) -> Value {
     req["caches"] = cache_config();
     let mut blobs = blobs;
     let mut files = Vec::new();
-    crate::store::ffi::sync2_dispatch(&d.core, &req, &mut blobs, &mut files).unwrap()
+    crate::store::legacy3::sync2_dispatch(&d.core, &req, &mut blobs, &mut files).unwrap()
 }
 
 /// 经生产分发器发一条 v2 命令，期望它失败：返回错误文本。
@@ -732,7 +732,7 @@ fn cmd_err(d: &Device, req: Value) -> String {
     let mut req = req;
     req["profile"] = json!(P);
     let (mut blobs, mut files) = (Vec::new(), Vec::new());
-    crate::store::ffi::sync2_dispatch(&d.core, &req, &mut blobs, &mut files).unwrap_err()
+    crate::store::legacy3::sync2_dispatch(&d.core, &req, &mut blobs, &mut files).unwrap_err()
 }
 
 /// 文件夹里的 head 与段。

@@ -62,10 +62,15 @@ use super::transport::{CommitBudget, defer_cache_refresh, defer_replay};
 use super::{Touched, canonical, snapshots, sql};
 use crate::store::caches::Dirty;
 use crate::store::prof;
+#[cfg(test)]
 use crate::sync2::dvv::Dvv;
 use crate::sync2::hlc::Hlc;
 use crate::sync2::id::Id;
-use crate::sync2::op::{Body, EntKind, LegacyStamp, Op};
+#[cfg(test)]
+#[cfg(test)]
+use crate::sync2::op::LegacyStamp;
+use crate::sync2::op::{Body, EntKind, Op};
+#[cfg(test)]
 use crate::sync2::segment::Chain;
 use crate::sync2::vv::{OpId, Vv};
 
@@ -150,6 +155,7 @@ pub(crate) fn active(c: &Connection, profile: &str) -> Result<bool, String> {
 /// 改过内置牌组名 / 内置笔记类型模板的不算新设备）、内容标记（`builtin`：用户自建的牌组 / 笔记类型没有）。不靠 ID
 /// 清单：内核只知道默认牌组的 ID，内置笔记类型的 ID 只有 Dart 知道，以后加内置类型也不用改这里。第 3 条挡掉不经
 /// 操作日志的投影行（v2 之前的旧库还没迁移）。拿不准的一律不算（只是照旧逐条投递）。
+#[cfg(test)]
 fn fresh(c: &Connection, profile: &str) -> Result<bool, String> {
     if !super::trust::library_fresh(c, profile)? {
         return Ok(false);
@@ -220,6 +226,7 @@ fn fresh(c: &Connection, profile: &str) -> Result<bool, String> {
 /// 收段会话开始（transport.rs `sync2_ingest_begin`；[w] 是写连接，不在调用方的事务里）：通道还在追加阶段（上一个
 /// 会话被打断）就接着追加；没有通道而这个 profile 是新的就开一个；折叠 / 归并 / 逐条做到一半（收尾被打断）先按片
 /// 做完（[settle]，每片一个事务），这次按逐条投递收。返回这个会话走不走通道。
+#[cfg(test)]
 pub(crate) fn begin(
     w: &Connection,
     profile: &str,
@@ -251,6 +258,8 @@ pub(crate) fn begin(
 // ---------------------------------------------------------------- 追加
 
 /// 一台设备的旧修改记录闭包（`sync2_legacy` 一行）在内存里的样子。
+// 换代后（G7-6）收段会话 / 逐条投递只在测试构建里编（协议 3 的对拍语料与迁移夹具），生产构建不构造它。
+#[cfg(test)]
 struct LegacyRow {
     upto: i64,
     d: Dvv,
@@ -258,14 +267,17 @@ struct LegacyRow {
 }
 
 /// 追加阶段的投递（transport.rs `Delivery` 持有，会话跨片复用）：依赖向量行号、旧修改记录闭包的缓存与下一个序号。
+#[cfg(test)]
 pub(crate) struct Append {
     next_rank: i64,
     deps: HashMap<Vec<u8>, i64>,
     legacy: BTreeMap<Id, LegacyRow>,
 }
 
+#[cfg(test)]
 impl Append {
     /// 这个 profile 的通道在追加阶段就载入，否则 None（按逐条投递）。
+    #[cfg(test)]
     pub(crate) fn load(c: &Connection, profile: &str) -> Result<Option<Append>, String> {
         Ok(match boot(c, profile)? {
             Some(b) if b.phase == PHASE_APPEND => Some(Append {
@@ -278,6 +290,7 @@ impl Append {
     }
 
     /// 一条已过链与因果校验的远端操作：写进操作日志，记下投递顺序与它的分区（逐条投递的 `insert_op` + `project`）。
+    #[cfg(test)]
     pub(crate) fn append(
         &mut self,
         c: &Connection,
@@ -354,6 +367,7 @@ impl Append {
     }
 
     /// [super::note_legacy] 同一算法，行在内存里（[Append::checkpoint] 写回）。
+    #[cfg(test)]
     fn note_legacy(
         &mut self,
         c: &Connection,
@@ -385,6 +399,7 @@ impl Append {
     }
 
     /// 一片收尾（与投递同一事务，transport.rs `Delivery::checkpoint`）：旧修改记录闭包与下一个序号写下。
+    #[cfg(test)]
     pub(crate) fn checkpoint(&mut self, c: &Connection, profile: &str) -> Result<(), String> {
         for (device, r) in self.legacy.iter_mut().filter(|(_, r)| r.dirty) {
             c.prepare_cached("INSERT OR REPLACE INTO sync2_legacy (profile_uid, device, upto, ctx) VALUES (srs_id(?1), ?2, ?3, ?4)")
@@ -402,6 +417,7 @@ impl Append {
 }
 
 /// 复杂实体的种子。
+#[cfg(test)]
 fn seed(c: &Connection, profile: &str, kind: &str, entity: &str) -> Result<(), String> {
     c.prepare_cached("INSERT OR IGNORE INTO sync2_boot_complex (profile_uid, kind, entity) VALUES (srs_id(?1), ?2, srs_id(?3))")
         .map_err(sql)?
@@ -412,6 +428,7 @@ fn seed(c: &Connection, profile: &str, kind: &str, entity: &str) -> Result<(), S
 
 /// 折叠分区：同一个实体（寄存器、身份记录）/ 同一条日志的操作总在同一区。FNV-1a，跨版本稳定（分区号在追加时
 /// 写进表里，折叠只读表）。
+#[cfg(test)]
 fn part_of(kind: &str, key: &str) -> i64 {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     for b in kind.bytes().chain(std::iter::once(0)).chain(key.bytes()) {
@@ -1336,6 +1353,7 @@ fn settle_slice(
 }
 
 /// [advance] 交回的投影变化并进调用方这一次的结果（计数相加、集合取并）。
+#[cfg(test)]
 pub(crate) fn absorb(t: &mut Touched, o: Touched) {
     t.marks.notes.extend(o.marks.notes);
     t.marks.cards.extend(o.marks.cards);
@@ -1372,6 +1390,7 @@ impl crate::store::SrsCore {
     }
 
     /// 收段会话开了通道（[begin] 返回真）：之后的命令要先看通道。
+    #[cfg(test)]
     pub(crate) fn note_channel_live(&self) {
         self.channel_live
             .store(true, std::sync::atomic::Ordering::SeqCst);
@@ -1391,6 +1410,7 @@ impl crate::store::SrsCore {
     }
 
     /// 这个 profile 有没有进行中的通道（`identity` 回报给 Dart；诊断 / 测试用）。
+    #[cfg(test)]
     pub(crate) fn sync2_channel_active(&self, profile: &str) -> Result<bool, String> {
         if !self.channel_live.load(std::sync::atomic::Ordering::SeqCst) {
             return Ok(false);
@@ -1435,11 +1455,6 @@ pub(crate) fn sequential<T>(f: impl FnOnce() -> T) -> T {
 #[cfg(test)]
 fn forced_off() -> bool {
     OFF.with(|o| o.get())
-}
-
-#[cfg(not(test))]
-fn forced_off() -> bool {
-    false
 }
 
 #[cfg(test)]

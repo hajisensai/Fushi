@@ -117,7 +117,7 @@ fn cmd(core: &SrsCore, profile: &str, req: Value, blobs: Vec<Vec<u8>>) -> Value 
     req["profile"] = json!(profile);
     req["caches"] = json!({"defaultDeck": super::config::default_deck_id(profile)});
     let (mut blobs, mut files) = (blobs, Vec::new());
-    crate::store::ffi::sync2_dispatch(core, &req, &mut blobs, &mut files).unwrap()
+    crate::store::legacy3::sync2_dispatch(core, &req, &mut blobs, &mut files).unwrap()
 }
 
 /// 新设备经生产的分批会话收完（约 8 MiB 一批，默认时间片）。返回它的状态摘要。

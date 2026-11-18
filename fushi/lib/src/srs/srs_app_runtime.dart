@@ -57,18 +57,8 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_engine/srs/srs_op_ledger.dart';
 
-/// 读当前 profile 正在暂缓的并入（[SrsSyncScheduler.deferredProfileMerge]，状态由引擎的 linker 持有）；模块关着 /
-/// 没有暂缓时得 null。同步状态页每次重读状态时调。单独一个 provider 是让页面测试能注入（运行时整套不在页面测试范围）。
-final Provider<Future<SrsDeferredProfileMerge?> Function()>
-srsDeferredProfileMergeReaderProvider =
-    Provider<Future<SrsDeferredProfileMerge?> Function()>(
-      (Ref ref) =>
-          () async =>
-              ref.read(srsAppRuntimeProvider)?.sync.deferredProfileMerge(),
-    );
-
 /// 本机因作者还待确认而不替传的承袭日志的作者（[SrsSyncScheduler.heritagePending]）；模块关着时是个空集合。同步状态
-/// 页的「旧设备的数据等确认」提示行听它。单独一个 provider 是让页面测试能注入（同 [srsDeferredProfileMergeReaderProvider]）。
+/// 页的「旧设备的数据等确认」提示行听它。单独一个 provider 是让页面测试能注入。
 final Provider<ValueListenable<Set<String>>> srsHeritagePendingProvider =
     Provider<ValueListenable<Set<String>>>(
       (Ref ref) =>
@@ -650,18 +640,11 @@ class SrsAppRuntime {
   String? _deferredConflictKey;
   bool _conflictDialogOpen = false;
 
-  /// 冲突弹窗选定候选后的提示：做完了说已关联；并入暂缓（[SrsProfileAdoptDeferred]）不是失败，说已排队、等撤销
-  /// 记录同步到后自动完成（同步状态页同时显示暂缓状态）。真正的失败由调用方按错误提示。
+  /// 冲突弹窗选定候选后的提示：做完了说已关联。真正的失败由调用方按错误提示。
   static void _showProfileAdoptResult(SrsProfileAdoptResult result) {
     switch (result) {
       case SrsProfileAdopted():
         FushiToast.show(msg: t.srs_sync_profile_conflict_done);
-      case SrsProfileAdoptDeferred():
-        FushiToast.show(
-          msg: t.srs_sync_profile_merge_queued,
-          severity: ToastSeverity.info,
-          toastLength: Toast.LENGTH_LONG,
-        );
     }
   }
 

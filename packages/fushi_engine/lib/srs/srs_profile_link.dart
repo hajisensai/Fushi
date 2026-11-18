@@ -170,7 +170,7 @@ class SrsRemoteProfile {
   final int? noteCount;
 
   /// 写入者 → 它已经选定要并入的 uid（说明文件的 `mergingInto`，[srsPublishProfileInfo]）：那台设备的用户已经决定离开
-  /// 这个 profile，只是并入暂缓（[SrsDeferredProfileMerge]）期间还按这个 uid 同步。[srsDecideProfileLink] 不把这些
+  /// 这个 profile，只是协议 3 的并入暂缓期间还按这个 uid 同步。[srsDecideProfileLink] 不把这些
   /// 写入者算作这个 profile 的成员（BUG-4296）。旧版本不写这个键：空，按以前那样算。
   final Map<String, String> mergingInto;
 
@@ -754,44 +754,17 @@ class SrsProfileLinkOutcome {
   final int localNoteCount;
 }
 
-/// 暂缓中的并入（协议 3 的 BUG-4217）：profile [profileId] 要从 [oldUid] 并入 [newUid]，但旧 profile 里有 undo 撤销的
-/// 日志（[missingRevoked]，旧 ID）还没同步到。新代没有这种暂缓（续做半截并入是一条内核命令，见 srs_profile_merge.dart），
-/// [SrsProfileLinker.deferredMerge] 恒为 null；类型留给调度器与同步状态页，随 profile 关联改走
-/// `collection_adopt` / `collection_join` 时一并删（G9-5 续）。
-class SrsDeferredProfileMerge {
-  const SrsDeferredProfileMerge({
-    required this.profileId,
-    required this.oldUid,
-    required this.newUid,
-    required this.missingRevoked,
-  });
-
-  final int profileId;
-  final String oldUid;
-  final String newUid;
-
-  /// 被撤销、还没收到的日志的旧 ID（排序后）。
-  final List<String> missingRevoked;
-}
-
 /// 用户选定候选之后 [SrsProfileLinker.adopt] 的结果。
 sealed class SrsProfileAdoptResult {
   const SrsProfileAdoptResult(this.store);
 
-  /// 之后继续同步用的 store：改用成功时是按新身份重开的那个，暂缓时是原来那个（旧 uid）。
+  /// 之后继续同步用的 store：按新身份重开的那个。
   final SrsDbStore store;
 }
 
 /// 改用 / 并入做完了。
 final class SrsProfileAdopted extends SrsProfileAdoptResult {
   const SrsProfileAdopted(super.store);
-}
-
-/// 并入暂缓（协议 3）：新代不再产生（见 [SrsDeferredProfileMerge]）。
-final class SrsProfileAdoptDeferred extends SrsProfileAdoptResult {
-  const SrsProfileAdoptDeferred(super.store, this.deferred);
-
-  final SrsDeferredProfileMerge deferred;
 }
 
 /// 同步前的 profile 关联与同步后的说明文件发布（铁律 E，见文件头）。
@@ -820,10 +793,6 @@ abstract interface class SrsProfileLinker {
     SyncAssetStore? within,
     String? directoryKey,
   });
-
-  /// [store] 所属的当前 profile 正在暂缓的并入（协议 3）。新代没有暂缓，生产实现恒为 null（见
-  /// [SrsDeferredProfileMerge]）。
-  Future<SrsDeferredProfileMerge?> deferredMerge(SrsDbStore store);
 
   /// 引擎跑成功之后：在本机写入者目录里写 profile 说明文件（内容没变就不重写），再按本机集合的 `Join` 补写缺的并入
   /// 提示（见文件头「吸收方向的发现」）。
@@ -875,11 +844,6 @@ class SrsDbProfileLinker implements SrsProfileLinker {
   /// 已经记过的续做失败（`profile|旧 uid->新 uid|错误`）：同一个失败每个进程只记一次日志，不每轮刷（标记留着，每一轮
   /// 照样重试；错误变了再记）。
   final Set<String> _resumeFailuresLogged = <String>{};
-
-  /// 新代没有暂缓的并入（见 [SrsDeferredProfileMerge]）：恒为 null。
-  @override
-  Future<SrsDeferredProfileMerge?> deferredMerge(SrsDbStore store) async =>
-      null;
 
   Future<String> _nameOf(String uid) async {
     final QueryRow? row = await db

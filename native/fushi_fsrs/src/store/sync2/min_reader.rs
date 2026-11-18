@@ -10,7 +10,9 @@
 //!
 //! 换身份（分叉收尾）、快照恢复不清这个键：集合里的内容没变，声明不该变低。删 profile 时随 `…/<uid>` 键一起删。
 
-use rusqlite::{Connection, OptionalExtension, params};
+#[cfg(test)]
+use rusqlite::OptionalExtension;
+use rusqlite::{Connection, params};
 
 use crate::store::sync2::sql;
 use crate::sync2::segment::{CONTENT_FLOOR, PROTOCOL};
@@ -20,6 +22,7 @@ fn key(profile: &str) -> String {
 }
 
 /// 本机 head 该写的 `minReader`。
+#[cfg(test)]
 pub(crate) fn declared(c: &Connection, profile: &str) -> Result<u32, String> {
     let v: Option<String> = c
         .prepare_cached("SELECT value FROM srs_meta WHERE key = ?1")

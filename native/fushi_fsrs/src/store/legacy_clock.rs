@@ -91,6 +91,7 @@ fn writer_in(state: &Value, device: &str) -> String {
 }
 
 /// [profile] 的本机旧版写入者 ID（`identity` 回包的 `legacyWriter`）。只读；不看 `hlc`（损坏的时钟不影响认写入者）。
+#[cfg(test)]
 pub(crate) fn writer_of(c: &Connection, profile: &str, device: &str) -> Result<String, String> {
     Ok(writer_in(&read_state(c, profile)?, device))
 }

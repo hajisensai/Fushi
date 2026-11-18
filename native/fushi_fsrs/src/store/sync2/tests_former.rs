@@ -809,7 +809,7 @@ fn cmd(d: &Device, req: Value, blobs: Vec<Vec<u8>>) -> Result<Value, String> {
     req["caches"] = json!({"defaultDeck": super::config::default_deck_id(P)});
     let mut blobs = blobs;
     let mut files = Vec::new();
-    crate::store::ffi::sync2_dispatch(&d.core, &req, &mut blobs, &mut files)
+    crate::store::legacy3::sync2_dispatch(&d.core, &req, &mut blobs, &mut files)
 }
 
 /// FFI 的两条命令：`obsolete` 的回复点名旧身份，`obsolete_former` 收目录列表 + head 字节、回清单。

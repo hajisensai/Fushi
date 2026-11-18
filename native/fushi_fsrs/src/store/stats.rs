@@ -15,6 +15,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+#[cfg(test)]
 use std::sync::{Arc, Mutex};
 
 use rusqlite::Connection;
@@ -119,8 +120,12 @@ struct Rev {
 
 /// 一份原料（某 profile、某一版数据）。
 pub(crate) struct Snapshot {
+    // 缓存命中判据（[SrsCore::stats_snapshot]，协议 3 的原料缓存）：换代后只在测试构建里编（G7-6），新代每条命令现读。
+    #[cfg(test)]
     profile: String,
+    #[cfg(test)]
     key: String,
+    #[cfg(test)]
     gen: u64,
     cards: Vec<Card>,
     extra: Vec<String>,
@@ -158,6 +163,7 @@ fn opt_real(v: ValueRef<'_>) -> Option<f64> {
 impl Snapshot {
     /// 在一个只读快照里读原料：可见卡（`hidden = 0`，`added_at` = 笔记缓存的创建时刻，没有笔记缓存行时用卡片行上
     /// 记的）、出处字典、有效复习投影（按时刻升序）。
+    #[cfg(test)]
     pub(crate) fn load(c: &Connection, profile: &str) -> Result<Snapshot, String> {
         Snapshot::load_with(
             c,
@@ -169,7 +175,6 @@ impl Snapshot {
             "SELECT card_id, occurred_at, utc_offset_min, rating, kind, duration_ms, prev_due_day, maturity_delta \
              FROM srs_stat_reviews WHERE profile_uid = srs_id(?1) ORDER BY occurred_at",
             &profile,
-            profile,
         )
     }
 
@@ -181,7 +186,6 @@ impl Snapshot {
         cards: &str,
         reviews: &str,
         owner: &dyn rusqlite::ToSql,
-        profile: &str,
     ) -> Result<Snapshot, String> {
         let mut stmt = c.prepare_cached(cards).map_err(sql)?;
         let mut it = stmt.query([owner]).map_err(sql)?;
@@ -255,8 +259,11 @@ impl Snapshot {
             });
         }
         Ok(Snapshot {
-            profile: profile.to_owned(),
+            #[cfg(test)]
+            profile: String::new(),
+            #[cfg(test)]
             key: String::new(),
+            #[cfg(test)]
             gen: 0,
             cards,
             extra,
@@ -274,6 +281,8 @@ impl Snapshot {
 /// [SrsCore] 上的统计缓存：最近一份原料 + 写连接上「改过统计原料」的代数。
 #[derive(Default)]
 pub(crate) struct StatsCache {
+    /// 原料缓存：只有协议 3 的统计读命令用，换代后只在测试构建里编（G7-6）；生产构建只剩写入代数。
+    #[cfg(test)]
     snapshot: Mutex<Option<Arc<Snapshot>>>,
     /// 写连接上的触发器（queue.rs `srs_study_touch`：卡片缓存 / 日志 / 笔记缓存 / 笔记修改记录）每记一次 +1，事务
     /// 结束（[StatsCache::settle]）时若期间记过再 +1：读原料前取代数，取到的与缓存上的不同就重读。
@@ -300,12 +309,14 @@ impl StatsCache {
 }
 
 impl SrsCore {
+    #[cfg(test)]
     fn stats_cache(&self) -> &StatsCache {
         &self.study_hub.stats
     }
 
     /// [profile] 的原料：缓存上的那份与 [key]（Dart `SrsDbStore.statsFingerprint`）和写入代数都相同就直接用，否则在
     /// 一个只读快照里重读。代数在开快照之前取：读的途中有写入，下次一定重读。
+    #[cfg(test)]
     pub(crate) fn stats_snapshot(&self, profile: &str, key: &str) -> Result<Arc<Snapshot>, String> {
         let cache = self.stats_cache();
         let gen = cache.gen.load(Ordering::SeqCst);
@@ -319,6 +330,7 @@ impl SrsCore {
             }
         }
         let mut snap = self.read_visible(|c| Snapshot::load(c, profile))?;
+        snap.profile = profile.to_owned();
         snap.key = key.to_owned();
         snap.gen = gen;
         let snap = Arc::new(snap);
@@ -327,6 +339,7 @@ impl SrsCore {
     }
 
     /// 丢掉缓存的原料（profile 切走 / 清除后不再留着它的数据）。
+    #[cfg(test)]
     pub(crate) fn stats_release(&self) {
         *self
             .stats_cache()
@@ -336,6 +349,7 @@ impl SrsCore {
     }
 
     /// `stats_report`：一个范围 + 一个牌组子集的全部聚合值（见 [report]）。
+    #[cfg(test)]
     pub(crate) fn stats_report(&self, profile: &str, req: &Value) -> Result<Value, String> {
         let snap = self.stats_snapshot(
             profile,
@@ -347,6 +361,7 @@ impl SrsCore {
     /// `stats_recall`：RWKV-Instant 排队的复习卡（请求里 `recallDecks` / `recallFallback` 认定的牌组里、复习队列的
     /// 可见卡），按卡片行序：`{cards: [[卡, 笔记, 牌组, 最后一条日志 | null]…]}`。Dart 拿去问 RWKV 此刻的回忆率，再随
     /// `stats_report` 的 `recall` 交回来。
+    #[cfg(test)]
     pub(crate) fn stats_recall(&self, profile: &str, req: &Value) -> Result<Value, String> {
         let snap = self.stats_snapshot(
             profile,
@@ -357,6 +372,7 @@ impl SrsCore {
 
     /// `stats_rows`：归一化之后逐卡 / 逐条的统计视图（与删除前 Dart `SrsStatCard` / `SrsStatReview` /
     /// `SrsStatMaturityEvent` 同一组字段）。只给回归向量（srs_stats_vectors_test）核对归一化本身用；界面不读。
+    #[cfg(test)]
     pub(crate) fn stats_rows(&self, profile: &str, req: &Value) -> Result<Value, String> {
         let snap = self.stats_snapshot(
             profile,

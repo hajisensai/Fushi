@@ -1319,12 +1319,14 @@ pub(crate) struct UndoTarget<'v> {
 pub(crate) struct UndoLive<'e> {
     pub writer: &'e str,
     pub seq: i64,
+    #[cfg(test)]
     ctx: &'e Ctx,
 }
 
 impl UndoLive<'_> {
     /// 这条记录落库的因果上下文含不含 dot `(w, q)`。只有上下文是写入者维护的完整 DVV 时（协议 3 的修改记录）它才
     /// 回答「见没见过」；新代原生写入的投影行只记了别的要输出的行（`store/gen4/derive.rs` `edit_lines_as`），不能拿来问。
+    #[cfg(test)]
     pub(crate) fn ctx_contains(&self, w: &str, q: i64) -> bool {
         self.ctx.contains(w, q)
     }
@@ -1365,6 +1367,7 @@ pub(crate) fn undo_verdict(
                         &UndoLive {
                             writer: &x.writer,
                             seq: x.seq,
+                            #[cfg(test)]
                             ctx: &x.ctx,
                         },
                         o,

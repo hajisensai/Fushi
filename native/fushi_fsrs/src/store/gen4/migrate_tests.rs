@@ -659,6 +659,48 @@ fn an_empty_library_migrates_to_an_empty_one() {
     }
 }
 
+/// 已删的换代前预演（G7-6）在库旁留下的工作目录（临时新库可能含旧库内容的副本）：迁移拿到换代锁就删掉，迁移之后
+/// profile 目录里不再有它；迁移已经提交过、只是重跑（补封 / 补改名）时同样删。
+#[test]
+fn a_leftover_rehearsal_work_dir_is_removed_by_the_migration() {
+    let dir = legacy_dir("g76-rehearsal-left", &|_| {});
+    let leave = |dir: &Path| {
+        let work = dir.join(LEFTOVER_REHEARSAL_DIR);
+        std::fs::create_dir_all(&work).unwrap();
+        std::fs::write(work.join("gen4-dryrun.db"), b"old content copy").unwrap();
+        std::fs::write(work.join("report.json"), b"{}").unwrap();
+    };
+    leave(&dir.0);
+    let out = migrate(&dir.0);
+    assert_eq!(out.verdict(), "committed", "{out:?}");
+    assert!(!dir.0.join(LEFTOVER_REHEARSAL_DIR).exists());
+    leave(&dir.0);
+    let again = migrate(&dir.0);
+    assert_eq!(again.verdict(), "committed", "{again:?}");
+    assert!(!dir.0.join(LEFTOVER_REHEARSAL_DIR).exists());
+}
+
+/// 已经迁移完的库（早期预发布版迁的，不再走迁移拿锁那一步）：库旁残留的预演目录在新代库按 Primary 打开时清掉；
+/// Secondary 打开不动它（不是这个目录的写者）。
+#[test]
+fn a_leftover_rehearsal_work_dir_is_removed_when_the_primary_opens() {
+    use crate::store::gen4::kernel::G4Core;
+    let dir = legacy_dir("g76-rehearsal-open", &|_| {});
+    assert_eq!(migrate(&dir.0).verdict(), "committed");
+    let work = dir.0.join(LEFTOVER_REHEARSAL_DIR);
+    std::fs::create_dir_all(&work).unwrap();
+    std::fs::write(work.join("gen4-dryrun.db"), b"old content copy").unwrap();
+    drop(G4Core::open(&dir.0, OpenMode::Secondary).unwrap());
+    assert!(
+        work.exists(),
+        "a secondary open must not touch the directory"
+    );
+    drop(G4Core::open(&dir.0, OpenMode::Primary).unwrap());
+    assert!(!work.exists());
+    // 没有残留也照常打开。
+    drop(G4Core::open(&dir.0, OpenMode::Primary).unwrap());
+}
+
 /// 预演与迁移走同一套阶段代码：同一份库，预演的每个 profile 报告与迁移的逐项相同（只差新身份那一节与耗时 / 内存）。
 #[test]
 fn the_rehearsal_and_the_migration_run_the_same_stages() {

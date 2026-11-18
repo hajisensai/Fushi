@@ -20,16 +20,22 @@ use std::ops::Bound;
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
+#[cfg(test)]
 use rusqlite::{Connection, params};
-use serde_json::{Value, json};
+use serde_json::Value;
+#[cfg(test)]
+use serde_json::json;
 
+#[cfg(test)]
 use super::caches::{self, CacheConfig};
+#[cfg(test)]
 use super::sync2::transport;
 use crate::card_cache;
 
 /// 本机状态行里的键（内核持有）。
 pub(crate) const KEY: &str = "mediaGc";
 
+#[cfg(test)]
 fn sql(e: rusqlite::Error) -> String {
     e.to_string()
 }
@@ -45,6 +51,7 @@ fn is_bare_file(n: &str) -> bool {
 }
 
 /// 待回收集合（没有本机状态行、没有这个键、行损坏 = 空）。
+#[cfg(test)]
 pub(crate) fn pending(c: &Connection, profile: &str) -> Result<BTreeSet<String>, String> {
     let row: Option<String> = c
         .prepare_cached("SELECT json FROM srs_local_state WHERE profile_uid = srs_id(?1)")
@@ -67,6 +74,7 @@ pub(crate) fn pending(c: &Connection, profile: &str) -> Result<BTreeSet<String>,
 }
 
 /// 写下待回收集合（只动 [KEY] 这一个键）。还没有本机状态行且集合非空时先建行（local_state.rs `ensure_row`）。
+#[cfg(test)]
 fn save(c: &Connection, profile: &str, names: &BTreeSet<String>) -> Result<(), String> {
     if names.is_empty() {
         c.prepare_cached(
@@ -114,6 +122,7 @@ pub(crate) fn add_names(set: &mut BTreeSet<String>, req: &Value) {
 /// - `expiredBefore`：删除时刻不晚于它的已删笔记的 `media_refs`（过了保留期的候选）。
 ///
 /// 是否真删由 [collect] 再扣掉存活引用。回包 `{"pending": [...]}`（三个都不给 = 只读集合）。
+#[cfg(test)]
 pub(crate) fn queue(c: &Connection, profile: &str, req: &Value) -> Result<Value, String> {
     let mut set = pending(c, profile)?;
     let before = set.len();
@@ -152,6 +161,7 @@ pub(crate) fn queue(c: &Connection, profile: &str, req: &Value) -> Result<Value,
 }
 
 /// 存活引用（见模块文档）：[alive_after] = 删除时刻晚于它的已删笔记也算（保留期内恢复笔记媒体还在）。只留裸文件名。
+#[cfg(test)]
 pub(crate) fn live_refs(
     c: &Connection,
     profile: &str,
@@ -202,6 +212,7 @@ pub(crate) fn finish_live_refs(out: &mut BTreeSet<String>, type_texts: &[String]
 /// - 读不到文件信息（不存在等）：移出；
 /// - 修改时间晚于 `freshAfter`（刚写 / 刚复用，引用它的笔记可能还没提交）：留到下一轮；
 /// - 删掉了：计数、移出；删不掉（Windows 上正在播放 / 预览）：留在集合里，下一轮再试。
+#[cfg(test)]
 pub(crate) fn collect(
     c: &Connection,
     profile: &str,
@@ -346,7 +357,8 @@ mod tests {
     fn dispatch(d: &Device, mut req: Value) -> Value {
         req["profile"] = json!(P);
         req["caches"] = json!({"defaultDeck": default_deck()});
-        crate::store::ffi::sync2_dispatch(&d.core, &req, &mut Vec::new(), &mut Vec::new()).unwrap()
+        crate::store::legacy3::sync2_dispatch(&d.core, &req, &mut Vec::new(), &mut Vec::new())
+            .unwrap()
     }
 
     fn apply(d: &Device, now: i64, events: Vec<Value>) -> Value {
@@ -355,7 +367,7 @@ mod tests {
             .map(|e| json!({"e": e, "note": null}))
             .collect();
         let mut blobs = vec![Value::Array(items).to_string().into_bytes()];
-        crate::store::ffi::sync2_dispatch(
+        crate::store::legacy3::sync2_dispatch(
             &d.core,
             &json!({
                 "op": "apply", "profile": P, "now": now, "caches": {"defaultDeck": default_deck()},

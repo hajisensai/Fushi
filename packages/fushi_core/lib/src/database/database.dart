@@ -2560,8 +2560,8 @@ class FushiDatabase extends _$FushiDatabase
           await _ensureProfileUidIndex();
         }
         // srs_* 表从 2026-10-23 起归 Rust 独占的 srs.db（docs/specs/2026-10-23-srs-rust-store.md），
-        // 不再在 Drift 里声明；老库仍按当年的形状建出来，由 SrsDbStore 打开前的一次性搬迁
-        // （fushi_engine srs_legacy_store_migration.dart）搬走后删除。
+        // 不再在 Drift 里声明；老库仍按当年的形状建出来（旧版本的一次性搬迁搬走后删除；新代不搬，
+        // 主库里还有这些表时 SrsStorage.open 明确拒绝，见 fushi_engine srs_storage.dart）。
         await _createLegacySrsTables(kLegacySrsV117Tables);
         await _ensureSrsIndexes();
       }

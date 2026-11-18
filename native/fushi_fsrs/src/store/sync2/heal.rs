@@ -34,17 +34,25 @@
 //! 已知局限：与某对端在组集合 G 上长期修不好（已核实）时，本机这些组之后新出现的错投影不会因该对端而重放（仍可能
 //! 经其他对端的比对、或 G 变化时被修）；上报每个 (对端, G) 只一次。
 
+#[cfg(test)]
 use std::collections::BTreeSet;
 
+#[cfg(test)]
 use rusqlite::{Connection, OptionalExtension, params};
+#[cfg(test)]
 use serde_json::{Value, json};
 
+#[cfg(test)]
 use super::digest::{self, DG_VERSION};
+#[cfg(test)]
 use super::{Local, applied_vv, in_savepoint, replay_cards, sql};
 use crate::store::SrsCore;
+#[cfg(test)]
 use crate::sync2::id::Id;
+#[cfg(test)]
 use crate::sync2::segment::Head;
 
+#[cfg(test)]
 fn meta_get(c: &Connection, key: &str) -> Result<Option<String>, String> {
     c.prepare_cached("SELECT value FROM srs_meta WHERE key = ?1")
         .map_err(sql)?
@@ -53,6 +61,7 @@ fn meta_get(c: &Connection, key: &str) -> Result<Option<String>, String> {
         .map_err(sql)
 }
 
+#[cfg(test)]
 fn meta_set(c: &Connection, key: &str, value: &str) -> Result<(), String> {
     c.prepare_cached("INSERT INTO srs_meta (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
         .map_err(sql)?
@@ -61,19 +70,23 @@ fn meta_set(c: &Connection, key: &str, value: &str) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(test)]
 fn own_dg_key(profile: &str) -> String {
     format!("sync2_digest_dg/{profile}")
 }
 
+#[cfg(test)]
 fn peer_dg_key(profile: &str, device: &Id) -> String {
     format!("sync2_dg_peer/{}/{profile}", device.text())
 }
 
+#[cfg(test)]
 fn heal_key(profile: &str, device: &Id) -> String {
     format!("sync2_heal/{}/{profile}", device.text())
 }
 
 /// 投影还没收齐：有待重放的卡、等因果的缓冲或待刷新的缓存。这时不算摘要、也不比（会比出假的不一致）。
+#[cfg(test)]
 pub(crate) fn unsettled(c: &Connection, profile: &str) -> Result<bool, String> {
     if super::transport::replay_is_pending(c, profile)?
         || super::transport::cache_is_pending(c, profile)?
@@ -89,6 +102,7 @@ pub(crate) fn unsettled(c: &Connection, profile: &str) -> Result<bool, String> {
 }
 
 /// 记下本机摘要（`<根>@<tag>`）、算的时刻与同一次算出的组指纹。
+#[cfg(test)]
 pub(crate) fn store_digest(
     c: &Connection,
     profile: &str,
@@ -111,6 +125,7 @@ pub(crate) fn store_digest(
 }
 
 /// 写 head 时的扩展：本机的组指纹与 head 里的摘要串 [digest] 出自同一次计算时才带上 `dg`。
+#[cfg(test)]
 pub(crate) fn with_dg(
     ext: Option<Value>,
     c: &Connection,
@@ -133,6 +148,7 @@ pub(crate) fn with_dg(
 }
 
 /// 记下别的设备刚收下的 head 里的组指纹（连同它的摘要串：比对时只用与 `sync2_devices.digest` 配对的那份）。
+#[cfg(test)]
 pub(crate) fn record_peer_dg(c: &Connection, profile: &str, h: &Head) -> Result<(), String> {
     let key = peer_dg_key(profile, &h.device);
     let dg = h.ext.as_ref().and_then(|e| e.get("dg"));
@@ -153,6 +169,7 @@ pub(crate) fn record_peer_dg(c: &Connection, profile: &str, h: &Head) -> Result<
 }
 
 /// 忘掉 [device] 的组指纹与去重记录（停用设备时）。
+#[cfg(test)]
 pub(crate) fn forget_peer(c: &Connection, profile: &str, device: &Id) -> Result<(), String> {
     let mut stmt = c
         .prepare_cached("DELETE FROM srs_meta WHERE key = ?1")
@@ -164,6 +181,7 @@ pub(crate) fn forget_peer(c: &Connection, profile: &str, device: &Id) -> Result<
 }
 
 /// 本机这些组的指纹（去重键的一部分）。
+#[cfg(test)]
 fn fp_of(groups: &str, g: &[usize]) -> String {
     let mut h = blake3::Hasher::new();
     for i in g {
@@ -173,6 +191,7 @@ fn fp_of(groups: &str, g: &[usize]) -> String {
 }
 
 /// 本机三张被摘要的表里落在 [g] 组的行数（`e` / `f` / `l`）：上报用。
+#[cfg(test)]
 fn rows_in(c: &Connection, profile: &str, g: &[usize]) -> Result<Value, String> {
     let gs = json!(g).to_string();
     let mut out = serde_json::Map::new();
@@ -198,6 +217,7 @@ fn rows_in(c: &Connection, profile: &str, g: &[usize]) -> Result<Value, String> 
 }
 
 /// 本机日志落在 [g] 组的卡。
+#[cfg(test)]
 fn cards_in(c: &Connection, profile: &str, g: &[usize]) -> Result<BTreeSet<String>, String> {
     c.prepare(&format!(
         "SELECT DISTINCT srs_idt(card_id) AS card_id FROM srs_review_logs WHERE profile_uid = srs_id(?1) \
@@ -213,6 +233,7 @@ fn cards_in(c: &Connection, profile: &str, g: &[usize]) -> Result<BTreeSet<Strin
 
 /// 去重记录。
 #[derive(Debug, Clone, PartialEq)]
+#[cfg(test)]
 struct Rec {
     rules: Option<u32>,
     dgv: Option<u64>,
@@ -221,7 +242,9 @@ struct Rec {
     verified: bool,
 }
 
+#[cfg(test)]
 impl Rec {
+    #[cfg(test)]
     fn parse(s: &str) -> Option<Rec> {
         let v: Value = serde_json::from_str(s).ok()?;
         Some(Rec {
@@ -238,6 +261,7 @@ impl Rec {
         })
     }
 
+    #[cfg(test)]
     fn to_json(&self) -> String {
         json!({
             "rules": self.rules,
@@ -251,6 +275,7 @@ impl Rec {
 }
 
 /// 本机记下的摘要：(根, `@` 之后的 tag, 组指纹)。组指纹与根不配对（不该发生）时为 None。
+#[cfg(test)]
 fn own_digest(
     c: &Connection,
     profile: &str,
@@ -272,6 +297,7 @@ impl SrsCore {
     /// 摘要不一致的自动重建（文件头）。返回 `{"replayed": [重放改写了日志的卡], "healed": [{device, groups, cards}],
     /// "healFailed": [{device, groups, rows: {e, f, l}, app, reason}]}`；改投影（`replayed`），分发器在同一次调用里
     /// 刷新缓存。`healFailed` 每个 (对端, 组集合) 只出现一次，调用方照报即可。
+    #[cfg(test)]
     pub fn sync2_digest_heal(&self, profile: &str, now: i64) -> Result<Value, String> {
         let w = self.writer()?;
         in_savepoint(&w, |c| digest_heal_on(c, profile, now))
@@ -279,7 +305,8 @@ impl SrsCore {
 }
 
 /// [SrsCore::sync2_digest_heal] 的本体：在调用方的写连接、调用方开的 SAVEPOINT 里做（不自己取锁）。分发器把它与缓存
-/// 刷新、本机状态行合进同一个 SAVEPOINT（store/ffi.rs `local_write`）。
+/// 刷新、本机状态行合进同一个 SAVEPOINT（store/legacy3 `local_write`）。
+#[cfg(test)]
 pub(crate) fn digest_heal_on(c: &Connection, profile: &str, now: i64) -> Result<Value, String> {
     let mut replayed: BTreeSet<String> = BTreeSet::new();
     let mut healed: Vec<Value> = Vec::new();

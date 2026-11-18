@@ -11,18 +11,25 @@
 //!
 //! 出错整个回滚：改写、缓存行、游标一起不落，Dart 下次从原游标重来。
 
+#[cfg(test)]
 use std::collections::BTreeSet;
 
+#[cfg(test)]
 use rusqlite::{Connection, OptionalExtension, params};
+#[cfg(test)]
 use serde_json::{Value, json};
 
+#[cfg(test)]
 use super::caches::{self, CacheConfig, Dirty};
+#[cfg(test)]
 use super::sync2::sql;
 
 /// 本机状态行里的去重游标键（Dart 持有的键：Dart 交整行，这里只换它）。
+#[cfg(test)]
 const CURSOR_KEY: &str = crate::store::local_state::STYLE_CURSOR_KEY;
 
 /// 解析请求的 `rows`：`[[rowid, 规范编码], ...]`。
+#[cfg(test)]
 fn parse_rows(req: &Value) -> Result<Vec<(i64, String)>, String> {
     let mut out = Vec::new();
     for r in req
@@ -39,6 +46,7 @@ fn parse_rows(req: &Value) -> Result<Vec<(i64, String)>, String> {
 }
 
 /// 改写 [rows]（本 profile 的笔记修改记录；rowid 已不在的跳过），返回改写过的笔记。
+#[cfg(test)]
 pub(crate) fn rewrite_on(
     c: &Connection,
     profile: &str,
@@ -66,6 +74,7 @@ pub(crate) fn rewrite_on(
 }
 
 /// `edits_rewrite_repr` 命令（见模块文档），在调用方持着的写连接、开好的 SAVEPOINT 里做。
+#[cfg(test)]
 pub(crate) fn command_on(
     c: &Connection,
     profile: &str,
@@ -123,7 +132,7 @@ mod tests {
     fn dispatch(d: &Device, req: Value, blob: Option<String>) -> Result<Value, String> {
         let mut blobs: Vec<Vec<u8>> = blob.into_iter().map(String::into_bytes).collect();
         let mut files = Vec::new();
-        crate::store::ffi::sync2_dispatch(&d.core, &req, &mut blobs, &mut files)
+        crate::store::legacy3::sync2_dispatch(&d.core, &req, &mut blobs, &mut files)
     }
 
     fn add_note(d: &Device) {

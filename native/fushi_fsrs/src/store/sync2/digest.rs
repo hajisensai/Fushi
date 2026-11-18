@@ -33,14 +33,17 @@ pub const BUCKETS: usize = 4096;
 ///
 /// **改了派生规则（重放写回的 `res`、三张投影表的任何一行会变）就必须换前缀并带迁移**，同时改 [DERIVE_RULES]
 /// （测试 `derive_rules_and_prefix_move_together` 钉住两者同值）。
+#[cfg(test)]
 pub const VV_PREFIX: &str = "5:";
 
 /// 派生规则版本：[VV_PREFIX] 的数字部分。同步状态页拿它和对端摘要串里的前缀比（[derive_rules_of]），规则不同的对端
 /// 显示「对方规则 vN」，代替不比对时的沉默。
+#[cfg(test)]
 pub const DERIVE_RULES: u32 = 5;
 
 /// 摘要串（`<根>@<前缀><vv>`）里的派生规则版本：前缀 `N:` → N；`@` 之后没有前缀（最早的格式）→ 1；没有摘要 /
 /// 没有 `@` / 前缀不是数字 → None（不知道，不提示）。
+#[cfg(test)]
 pub fn derive_rules_of(digest: &str) -> Option<u32> {
     let (_, vv) = digest.split_once('@')?;
     if vv.is_empty() {
@@ -266,6 +269,7 @@ impl Deltas {
 }
 
 /// 各桶的值（只列非空桶）：`(桶号, 值 hex, 行数)`。
+#[cfg(test)]
 pub fn buckets(c: &Connection, profile: &str) -> Result<Vec<(i64, String, i64)>, String> {
     c.prepare_cached("SELECT bucket, sum, n FROM sync2_digest_buckets WHERE profile_uid = srs_id(?1) AND n != 0 ORDER BY bucket")
         .map_err(sql)?
@@ -279,11 +283,13 @@ pub fn buckets(c: &Connection, profile: &str) -> Result<Vec<(i64, String, i64)>,
 }
 
 /// 根：全部桶值按桶号顺序（空桶 = 0）接起来 BLAKE3。
+#[cfg(test)]
 pub fn root(c: &Connection, profile: &str) -> Result<String, String> {
     Ok(root_of(&sums(c, profile)?))
 }
 
 /// 全部桶值（按桶号，空桶 = 0）。
+#[cfg(test)]
 fn sums(c: &Connection, profile: &str) -> Result<Vec<Sum>, String> {
     let mut all = vec![[0u64; 4]; BUCKETS];
     let mut stmt = c
@@ -302,6 +308,7 @@ fn sums(c: &Connection, profile: &str) -> Result<Vec<Sum>, String> {
     Ok(all)
 }
 
+#[cfg(test)]
 fn root_of(all: &[Sum]) -> String {
     let mut h = blake3::Hasher::new();
     h.update(b"fushi-srs-digest-v2");
@@ -313,15 +320,20 @@ fn root_of(all: &[Sum]) -> String {
 
 /// 分组指纹的格式版本（head `ext.dg.dgv`）。分组方式（[GROUP_BUCKETS]、组指纹的算法）一改就升它：版本不同的两台
 /// 设备不比组指纹（store/sync2/heal.rs），免得在同一前缀下比出假的「不同组」。
+#[cfg(test)]
 pub const DG_VERSION: u32 = 1;
 /// 每组多少个相邻桶。
+#[cfg(test)]
 pub const GROUP_BUCKETS: usize = 16;
 /// 组数（[BUCKETS] / [GROUP_BUCKETS] = 256）。
+#[cfg(test)]
 pub const GROUPS: usize = BUCKETS / GROUP_BUCKETS;
 /// 一组指纹的十六进制长度（blake3 前 8 字节）。
+#[cfg(test)]
 pub const GROUP_HEX: usize = 16;
 
 /// 各组指纹，按组号接成一串十六进制（[GROUPS] × [GROUP_HEX] 个字符）。
+#[cfg(test)]
 fn groups_of(all: &[Sum]) -> String {
     let mut out = String::with_capacity(GROUPS * GROUP_HEX);
     for g in all.chunks(GROUP_BUCKETS) {
@@ -336,12 +348,14 @@ fn groups_of(all: &[Sum]) -> String {
 }
 
 /// 根与各组指纹（出自同一份桶表读取）。
+#[cfg(test)]
 pub fn root_and_groups(c: &Connection, profile: &str) -> Result<(String, String), String> {
     let all = sums(c, profile)?;
     Ok((root_of(&all), groups_of(&all)))
 }
 
 /// 两串组指纹（[root_and_groups]）里不同的组号。长度不对返回 None。
+#[cfg(test)]
 pub fn differing_groups(a: &str, b: &str) -> Option<Vec<usize>> {
     if a.len() != GROUPS * GROUP_HEX || b.len() != a.len() {
         return None;

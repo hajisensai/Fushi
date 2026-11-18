@@ -432,6 +432,7 @@ CREATE TABLE IF NOT EXISTS sync2_trust_held (
 "#;
 
 /// 登记「位置上缺这个段」的重传（挡 head，[migrate_v23]）：已有的同名改写登记一并升成缺段。
+#[cfg(test)]
 pub const REWRITE_GAP_SQL: &str = "INSERT INTO sync2_rewrites (profile_uid, location, first, restamp) VALUES (srs_id(?1), ?2, ?3, 0) \
      ON CONFLICT(profile_uid, location, first) DO UPDATE SET restamp = 0";
 

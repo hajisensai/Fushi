@@ -72,6 +72,8 @@ use serde_json::{Value, json};
 /// 8：SRS 换代（S1）：删掉 `ffsrs_store_open`（按 `srs.db` 路径打开协议 3 的库），换成 `ffsrs_store_open_mode`（按 profile
 /// 目录打开新代库 `srs4.db`，Primary / Secondary，新返回码 `STORE_NOT_MIGRATED` / `STORE_MIGRATING` /
 /// `STORE_LEGACY_UNMIGRATED`）；`ffsrs_store_sync2` 的命令经新代分发器；迁移的全局命令 `gen4_migrate_*` 走 [dispatch]。
+/// 同列车（G7-6）另删协议 1 主库搬迁的 `ffsrs_store_legacy_abort` / `_begin` / `_commit` / `_mark_none` / `_page` /
+/// `_state`（换代后只报 Unwired）；ABI 8 尚未发布（develop 仍是 7），所以不另升 9，verify_abi.sh 下界同步改 35。
 pub const ABI_VERSION: i32 = 8;
 
 /// 钉定的 fsrs-rs 源码版本，写进参数组的 algorithmRev：crates.io `fsrs = "=7.0.0"` 包内 `.cargo_vcs_info.json`

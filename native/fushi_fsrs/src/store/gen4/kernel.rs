@@ -17,8 +17,7 @@
 //! 关库（[G4Core::close]）：先关读连接池（等借出的放回），再关写连接（最后关的连接把 WAL 并回主文件）。之后经它的命令
 //! 一律报 `CLOSED`（与协议 3 同文，Dart 按它认「已关闭」）。
 //!
-//! 还没有新代实现的 C 直出入口（`ffsrs_store_legacy_*`）在这里有同名方法，报 [unwired] 的「尚未接线」错误——C 入口照常
-//! 解析输入，接线的模块只替换方法体。`ffsrs_store_snapshot` 已接（G11-4，[G4Core::snapshot_into]）。逐卡重放与训练集的 C 入口已接（S1b，`dispatch.rs` 末尾
+//! `ffsrs_store_snapshot` 已接（G11-4，[G4Core::snapshot_into]）。逐卡重放与训练集的 C 入口已接（S1b，`dispatch.rs` 末尾
 //! 「C 直出入口」一节）。
 //!
 //! 迁移（`gen4_migrate_status` / `gen4_migrate_profiles` / `gen4_migrate_run` / `gen4_migrate_cancel`）是不针对已打开库的
@@ -282,6 +281,10 @@ impl G4Core {
                         Ok(false)
                     );
                 }
+                // 已删的换代前预演留在库旁的工作目录（G7-6，`migrate.rs` [super::migrate::LEFTOVER_REHEARSAL_DIR]）：Primary
+                // 是这个目录唯一的写者，幂等删掉。删不掉（文件被别的进程占着、权限）不挡开库：那只是一份过时的副本，与
+                // 用户的卡片无关，因它打不开库才是让用户出问题；下一次 Primary 打开或迁移再删。
+                let _ = super::migrate::remove_leftover_rehearsal(dir);
                 Some(opened.conn)
             }
             OpenMode::Secondary => {
@@ -549,32 +552,6 @@ impl G4Core {
         Ok(0)
     }
 
-    // ------------------------------------------------------------ 还没有新代实现的 C 直出入口（[unwired]）
-
-    pub fn legacy_imported(&self) -> Result<bool, String> {
-        Err(unwired("ffsrs_store_legacy_state", LEGACY_OWNER))
-    }
-
-    pub fn legacy_begin(&self) -> Result<(), String> {
-        Err(unwired("ffsrs_store_legacy_begin", LEGACY_OWNER))
-    }
-
-    pub fn legacy_page(&self, _table: &str, _page: &[u8]) -> Result<usize, String> {
-        Err(unwired("ffsrs_store_legacy_page", LEGACY_OWNER))
-    }
-
-    pub fn legacy_commit(&self) -> Result<(), String> {
-        Err(unwired("ffsrs_store_legacy_commit", LEGACY_OWNER))
-    }
-
-    pub fn legacy_abort(&self) -> Result<(), String> {
-        Err(unwired("ffsrs_store_legacy_abort", LEGACY_OWNER))
-    }
-
-    pub fn legacy_mark_none(&self) -> Result<(), String> {
-        Err(unwired("ffsrs_store_legacy_mark_none", LEGACY_OWNER))
-    }
-
     /// 整库一致快照（`ffsrs_store_snapshot`，G11-4）：把 `srs4.db` `VACUUM INTO` 到 [target]（必须不存在），得到一份
     /// 可以原样当新代库打开的文件（魔数、schema 号、全部真相 / 派生 / 本机状态，含本机签名钥匙）。
     ///
@@ -661,9 +638,6 @@ impl G4Core {
 /// [G4Core::snapshot_into] 收到 `strip_device_local` 时的错误（文档在那里）。
 pub const SNAPSHOT_NO_STRIP: &str = "gen4 snapshot: stripping device-local state is not supported; \
      app backups carry per-collection export streams (`export`), not library snapshots";
-
-/// 协议 1 旧主库搬迁（`ffsrs_store_legacy_*`）：协议 1 旧库按 D21 走只读转译（`gen4/import.rs`），入口由 G7-6 删 / 改。
-const LEGACY_OWNER: &str = "G7-6 (D21: protocol 1 libraries go through gen4/import.rs)";
 
 // ---------------------------------------------------------------------- 全局命令：迁移
 

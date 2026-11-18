@@ -16,8 +16,6 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
-import 'package:fushi_engine/srs/srs_profile_link.dart'
-    show SrsDeferredProfileMerge;
 import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
 import 'package:fushi_engine/srs/sync2/srs_fushisrs.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
@@ -195,10 +193,6 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
   Map<String, Object?> _status = const <String, Object?>{};
   List<SrsCheckpointView> _checkpoints = const <SrsCheckpointView>[];
 
-  /// 当前 profile 正在暂缓的 profile 合并（引擎 linker 持有，[srsDeferredProfileMergeReaderProvider]）；没有为 null。
-  /// 随每轮同步后的重读更新：合并做完就回到 null，状态行自动消失。
-  SrsDeferredProfileMerge? _deferredMerge;
-
   /// 本机设备 ID 与已连 host 的名字（按 hostId）：互联位置的 ID 是 host 设备 ID，显示时换成人读名
   /// （[srsChannelLocationTitle]）。
   String? _ownDeviceId;
@@ -256,12 +250,6 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
         ErrorLogService.instance.log('SrsHistoryPage.reload', e, stack);
       }
     }
-    SrsDeferredProfileMerge? deferredMerge;
-    try {
-      deferredMerge = await ref.read(srsDeferredProfileMergeReaderProvider)();
-    } catch (e, stack) {
-      ErrorLogService.instance.log('SrsHistoryPage.deferredMerge', e, stack);
-    }
     String? ownDeviceId;
     final Map<String, String> hostNames = <String, String>{};
     final AppModel app = ref.read(appProvider);
@@ -281,7 +269,6 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
       _hostNames = hostNames;
       _status = status;
       _checkpoints = checkpoints;
-      _deferredMerge = deferredMerge;
       _loadError = null;
       _loading = false;
     });
@@ -989,7 +976,6 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
     final int unpublished = (_status['unpublished'] as num?)?.toInt() ?? 0;
     final int pending = (_status['pending'] as num?)?.toInt() ?? 0;
     final int ops = (_status['ops'] as num?)?.toInt() ?? 0;
-    final SrsDeferredProfileMerge? deferred = _deferredMerge;
     // 已配对设备（互联 host）报告还没加入复习同步的位置（BUG-4320）：调度器一轮跑完问到的。
     final ValueListenable<Set<String>> peersNotJoined =
         ref.read(srsAppRuntimeProvider)?.sync.peersNotJoined ??
@@ -1050,18 +1036,6 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
                           ),
                         if (heritage.isNotEmpty)
                           srsHeritagePendingRow(heritage),
-                        if (deferred != null)
-                          AdaptiveSettingsRow(
-                            key: const ValueKey<String>(
-                              'srs_timeline_status_merge_deferred',
-                            ),
-                            title: t.srs_timeline_merge_deferred,
-                            subtitle: t.srs_timeline_merge_deferred_hint(
-                              n: deferred.missingRevoked.length,
-                            ),
-                            icon: FushiIcons.merge,
-                            showIcon: true,
-                          ),
                       ],
                     );
                   },
@@ -1189,8 +1163,7 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
       ),
       // 彻底清除的字节层收尾出错（内核 `scrub_state`）：清除的原文还在磁盘上。
       const SrsScrubErrorNotice(),
-      if (_status['enabled'] == true || _deferredMerge != null)
-        _buildStatus(context),
+      if (_status['enabled'] == true) _buildStatus(context),
       if (_status['enabled'] == true && _devices.isNotEmpty)
         _buildDevices(context),
       _buildLocations(context),

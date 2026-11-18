@@ -329,7 +329,7 @@ fn bench_ingest_batches() {
         req["profile"] = json!(P);
         req["caches"] = json!({"defaultDeck": deck});
         let (mut blobs, mut files) = (blobs, Vec::new());
-        crate::store::ffi::sync2_dispatch(&b.core, &req, &mut blobs, &mut files).unwrap()
+        crate::store::legacy3::sync2_dispatch(&b.core, &req, &mut blobs, &mut files).unwrap()
     };
     let begin = cmd(json!({"op": "ingest_begin"}), vec![]);
     println!("INGEST_MEM begin {begin}");

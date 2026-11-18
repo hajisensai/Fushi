@@ -16,7 +16,7 @@
 //! # 备副本（冻结代码，写锁之外）
 //!
 //! [import_backup] 只核对、不代做：旧库必须是用冻结的协议 3 代码备好的（规划 §1.2 缺口 G-10 的 `open_legacy_scratch`）。
-//! 这里就是那一步，与迁移的前提补完（`prepare.rs`）同一串协议 3 命令、同一个分发器（`store/ffi.rs` `sync2_dispatch`）：
+//! 这里就是那一步，与迁移的前提补完（`prepare.rs`）同一串协议 3 命令、同一个分发器（`store/legacy3` `sync2_dispatch`）：
 //! `SrsCore::open`（schema 阶梯）→ `cache_config_set` → `migrate` 到 `done`（建副本自己的身份、旧行包成操作）→（事件来源）
 //! 分批 `apply` 外来已盖戳的事件 → `dedup` → `replay_pending`。全部在副本上做、在新代库的写锁之外做（协议 3 的阶梯与重放
 //! 可能很久），备好之后在副本的 `srs_meta` 记 [PREPARED_KEY]，同一个副本再来一次（预检之后的真导入）直接跳过。
@@ -104,7 +104,7 @@ fn str_of<'v>(req: &'v Value, k: &str) -> Result<&'v str, String> {
 /// 经协议 3 的分发器发一条命令（与旧 app 发的同形，`prepare.rs` 同口径）。
 fn p3(core: &SrsCore, req: Value, blobs: Vec<Vec<u8>>) -> Result<Value, String> {
     let mut blobs = blobs;
-    crate::store::ffi::sync2_dispatch(core, &req, &mut blobs, &mut Vec::new()).map_err(|e| {
+    crate::store::legacy3::dispatch(core, &req, &mut blobs).map_err(|e| {
         format!(
             "gen4 legacy backup import: protocol 3 `{}`: {e}",
             req["op"].as_str().unwrap_or_default()
