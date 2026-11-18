@@ -3982,3 +3982,91 @@ exit 1；成功 949、失败 9、错误 6、跳过 21，实际执行 964。上�
   分支（暂缓时提前发布 `mergingInto`）、`deferredProfileMerge()` 与 `onAdopted` 文档里讲暂缓的几句；`srs_profile_link.dart` 删了
   `SrsDeferredProfileMerge`、`SrsProfileAdoptDeferred` 两个类型与 linker 接口 / 实现的 `deferredMerge` 方法。任务书一边把这两个
   文件划给同步 / 身份模块，一边要求删 `SrsDeferredProfileMerge` 整条链，而整条链就在这两个文件里，只能这样做。
+
+## 43. 第六波 app 侧剩余红与界面接线（2026-11-18，分支 `pr/srs-gen4-w6-app-reds`，基于 `pr/srs-gen4-switch` `0bf8472f40`）
+
+schema 不变（40024，没有加表 / 索引）；`ABI_VERSION` 不变（只改了一条已有命令对没有集合的 profile 的回包）。
+
+### ① 复习首页（手机）找不到牌组行（`srs_pages_test` MD3）
+
+- **真因不是 provider 让列表没渲染**：列表照常渲染，最后一行（`Spark::JP::Vocabulary`）被挤到了屏幕外（412×915，MD3 下行顶在
+  915.4，Apple 下 901 刚好还在屏内，所以只红 MD3）。挤它的是 §40 挂进牌组列表横幅最前的 `SrsScrubErrorNotice`：横幅是
+  `ListView.separated` 的项，没出错时这一项零高度，但照样占一条 `gap * 1.5` 的间距，整棵树往下推了一截。实测：调试打印各行
+  `getRect`（`skipOffstage: false`），四行都在，只有最后一行越界。
+- **修法**：新增 `srsScrubErrorProvider`（`scrub_state` 的 `error`），牌组列表只在出错时把提示挂进横幅；提示组件本身改读同一个
+  provider。同步与历史页的列表不带间距，照旧常挂（零高度不占地方）。
+- 测试：`srs_pages_test` 原用例恢复绿；`srs_retained_copy_wiring_test` 新增「牌组列表：清除收尾出错时横幅提示原因；没出错时
+  不挂提示项」（出错 → 文案在；改成没出错重读 → 文案没了、`srs-scrub-ok` 也不在树里）。
+
+### ② 移除存储位置在没有运行时时抛 `StateError`（`srs_history_page_test` MD3 / Apple）
+
+- **根因**：`de04352167` 把「先 `location_forget` 成功、再改配置」做成一步，要求同步调度器（运行时）此刻在；复习模块没起时
+  `srsAppRuntimeProvider` 是 null，移除直接失败。用户没开复习模块时根本删不掉一个位置。
+- **修法（改契约，不是给测试注入入口）**：移除 = 配置里去掉 + 同一个事务记进「内核待忘」清单（新偏好键
+  `srs_sync2_forget_pending`，JSON 字符串数组，元素是位置身份；设备本地，登记进 `preference_keys.dart` 与
+  `SyncRepository` 的设备本地清单）。`PreferencesRepository.removeSrsFolderLocation` 用 `setPrefs` 一次事务写两个键，
+  所以不会出现「配置没了、清单里也没有」（内核状态成孤儿）或反过来的中间态。
+- 调度器新增 `pendingForgets` / `onForgotten` 两个注入点（运行时接 `AppModel.srsPendingLocationForgets` /
+  `markSrsLocationForgotten`）和 `forgetPendingLocations()`（排进 `_serially`，卡片库没开 = 什么都不做、留给下一次；内核报错
+  抛给调用方）。补忘的时机：运行时 `install()`（复习模块没起时移除的位置，模块一起就忘）、页面移除之后、以及每一轮
+  （通道 / 互联 / 本机目录的 `_syncWithBackend`、文件夹 `_syncFolderLocations`）开头（`_forgetPendingIn`：忘不掉不挡这一轮，
+  清单留着下一轮再来，同一原因只记一次日志）。删掉了 `forgetLocation(locationId, dropFromConfig:)`。
+- 与 `de04352167` 想防的问题对照：那次要防「先去掉配置、再忘失败 → 内核状态孤儿、活跃窗口里继续为它保留转发原文」。现在忘
+  失败时位置留在待忘清单里，下一轮自动再忘，不需要用户「再移除一次」；正在跑的一轮可能按移除前读到的配置把状态行建回来，
+  它跑完之后排在后面的补忘才执行，之后的轮次读到的配置里已经没有它。
+- 测试：`srs_sync_scheduler_test`「移除文件夹位置：待忘清单里的位置由调度器忘掉、划掉；卡片库没开时留着，之后（或下一轮开头）
+  补忘」（以 `status.locations` 判内核还记不记着这个位置）；`srs_history_page_test` 原用例在运行时为 null 时断言配置去掉、
+  待忘清单 = `{folder:usb}`、页面行消失。
+
+### ③ `srs_profile_cleanup_test` 按新代改写；`srs_join_first_test` 定因
+
+- **产品缺陷（顺带修）**：内核 `profile_footprint` 对没有集合的 profile 报 `has no collection`（经 `read_col`）。被删掉的
+  profile、从没在新代里打开过的 profile 都是这样：删 profile 之后的核对、存量扫描对它数数都会抛 `SrsProfileUnboundException`
+  （`deleting the active profile…` 就红在这里）。改成没有集合 = 全 0（`cmd/profile.rs` `profile_footprint_of`，分发器接它），
+  与 `profile_purge` 对没绑定的 profile 回全 0 同口径。Rust 测试 `purge_deletes_only_the_confirmed_collection` 补断言（删掉之后、
+  从没绑定的 R 都是全 0）。
+- 测试改写：规模不再查协议 3 的 `srs_cards_cache` / `srs_review_logs`，卡数按 store 现读、`rows` 按内核 `profile_footprint`；
+  「v1 扫过的库」改成「协议 3 的完成标记（`profile_orphan_sweep_v1` / `_v3`）在新代不算数，再扫一次清掉迁来的无主集合」；
+  「v2 扫过 + `sync2_deps`」改成「只剩本机状态行 `local_state/<uid>` 的无主 uid 清掉、无备份，别的 meta 键与活 profile 不动，
+  幂等」（新代没有 `sync2_deps`）；「半截并入的目标」改用本机状态行。
+- `srs_join_first_test` 2 条：**不是缺陷**。新代加入（`collection_adopt`）按设计不改 profile uid（§35「不再改 profile uid」），
+  测试还在断言协议 3 的「profile uid 收敛到最小」。改成断言同一个集合标识 / 同一个位置目录（两边都空时收敛到目录名小的那个，
+  即较小的 uid）、profile uid 与主库 uid 都不变；第二条额外断言 phone 加入后写的笔记 host 收得到。
+
+### ④ 第五波复核遗留
+
+- **清除提示的 widget 测试**：同步与历史页（`srs_history_page_test`「清除收尾出错：页上提示原因；没出错时没有提示」，MD3 /
+  Apple）与牌组列表横幅（见 ①）各一条。
+- **`srsRetainedCopyProvider`**：改成 `FutureProvider.autoDispose`，不再 watch `srsRevisionProvider`（每次评分 / 编辑 / 同步拉入
+  都跳，以前每跳都起一个后台 isolate 打开两个库文件）。会改变它的事件：复习库换了（watch `srsStoreProvider`：迁移完成、换
+  profile、到期自动删都在开库时）、删除（调用方 invalidate）、第一次同步成功（只改设置行的日期：没人看就释放，下次进设置页
+  现读）。读的过程中 `keepAlive` 撑住，删牌组那条 `read(.future)` 路径照常等到结果。测试（wiring）：修订号跳三次 `state` 只调
+  一次；不看了再看 = 现读一次。
+- **保留副本 ctl 路由的模块门**：`SrsCtlDeps.host` 的 `libraryDir` 改成先过同一道模块门（`requireSrsCtlLibraryDir`），模块关着
+  时 `GET /retained` 与 `POST /retained/delete` 都回 422「复习模块已关闭」、不问库目录、不碰执行端。服务端 admin 没有模块开关，
+  不受影响。测试 `ctl_srs_routes_test`「模块关：保留副本的查看 / 删除也回 422，不碰执行端」。
+- **「新根不见了」写出真实目录名**：`SrsSync2Report` 新增 `locationDir`（一轮开头 `identity` 回包的 `dir`，任何错误都在它之后），
+  `SrsSyncReportError` 带上它；文案 `srs_sync_location_new_root_missing` 改成带 `$path`（`i18n_sync --remove` + `--add`：除 zh-CN
+  外 15 份本来就是英文原文，没有译文被降级），`srsNewRootMissingText`：文件夹位置给磁盘完整路径
+  `<文件夹>/fushi-srs/<目录>/v3/meta.json`，云盘 / 互联给相对路径 `fushi-srs/<目录>/v3/meta.json`。测试：engine
+  `srs_sync4_folder_test`（报告的 `locationDir` 拼出的路径就是围栏文件）、`srs_sync_now_toast_test`（云盘 / 文件夹两种文案）。
+
+### 验证与变异实测
+
+- `cargo fmt --check` 0；`cargo test --profile quick --lib -j 4` 1439 passed / 0 failed / 39 ignored。
+- Dart（dist）：`srs_pages` / `srs_history_page` / `srs_profile_cleanup` / `srs_join_first` / `srs_retained_copy_wiring` /
+  `srs_retained_copy` / `srs_sync_scheduler` / `srs_sync_now_toast` / `ctl_srs_routes` 一批 187 条，唯一的红是清理测试的备份导回
+  （第 2 版 `.fushisrs` 来自另一个复习库要确认，测试补了 `confirmForeign`）；改后 `srs_profile_cleanup` 11 条全绿；engine
+  `srs_sync4_folder_test` 7 条全绿。`flutter analyze --no-pub` 无问题。
+- 变异（一次全加、一批跑，各自变红，还原后工作区干净）：牌组列表恢复常挂提示 → `srs_pages_test` MD3 与 wiring「不挂提示项」红；
+  保留副本 provider 重新 watch 修订号 → wiring「修订号怎么跳都不重读」红；ctl `libraryDir` 不过模块门 → ctl 新用例红；
+  `removeSrsFolderLocation` 不写待忘清单 → 历史页存储位置用例两套红（`Expected: {folder:usb}`）；文件夹一轮开头不补忘 →
+  调度器新用例红；文案目录写回 `<collection>` → toast 新用例红；报告不带 `locationDir` → engine folder 用例红；历史页去掉清除
+  提示 → 历史页新用例两套红；内核 `profile_footprint` 改回 `read_col` → Rust `purge_deletes_only_the_confirmed_collection` 红
+  （`has no collection`）。`srs_join_first` 只改了测试断言（产品没改），没有对应的产品变异。
+
+### 没做 / 归属
+
+- 待忘清单只接了文件夹位置的「移除」（本页唯一的移除入口）；云盘通道 / 互联在各自设置页删除时内核位置状态怎么收，本分支没查、
+  没改（归同步 owner）。
+- 真机验证按用户 07-29 指令不做。
