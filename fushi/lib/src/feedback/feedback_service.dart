@@ -100,7 +100,8 @@ String newFeedbackSubmissionKey([Random? random]) {
 }
 
 /// 提交进行到哪一步（提交页的进度文案）。[videoPrepare] 在发正文之前（转码失败 / 太大
-/// 要在反馈交上去之前告诉用户），[files] 是样本文件，[video] 是最后一步（最大的附件最后传）。
+/// 要在反馈交上去之前告诉用户），[video] 在 [files]（样本文件）之前：两者共用服务端每 IP
+/// 每天的大附件额度，录屏是主证据，先传（BUG-4784）。
 enum FeedbackSubmitStage {
   videoPrepare,
   sending,
@@ -322,8 +323,17 @@ class FeedbackService extends ChangeNotifier {
   Future<void> _load() async {
     _tickets = await (await _storeFor()).read();
     try {
-      final Map<String, Set<String>> pending = await (await _pendingFor())
-          .scan();
+      final FeedbackPendingStore store = await _pendingFor();
+      // 提交（唯一会 copyFile 的路径）都先 await load()，此刻没有复制在跑。清半成品是
+      // 收拾磁盘，和「有哪些待传附件」无关：它失败（文件被占用 / 没权限）只留下不算槽位的
+      // `.part` 等下次启动再清，不能连累下面的 scan，否则这一整次运行里所有待传附件都看不到、
+      // 也没法重试。
+      try {
+        await store.discardInterrupted();
+      } on Object catch (e, st) {
+        ErrorLogService.instance.log('feedback.pending_discard', e, st);
+      }
+      final Map<String, Set<String>> pending = await store.scan();
       _pending
         ..clear()
         ..addAll(pending);
@@ -668,16 +678,10 @@ class FeedbackService extends ChangeNotifier {
         if (gz != null) await _stash(receipt.id, 'log', gz);
       }
     }
-    final List<File> files = draft.files.take(FeedbackLimits.files).toList();
-    if (files.isNotEmpty) onStage?.call(FeedbackSubmitStage.files);
-    for (int i = 0; i < files.length; i++) {
-      final String slot = FeedbackLimits.fileSlot(i);
-      // 同视频：先复制进待传区再传，传失败留着在详情页重试。
-      final bool ok =
-          await _stashFile(receipt.id, slot, files[i]) &&
-          await _uploadPendingLarge(ticket, slot) == _SlotOutcome.uploaded;
-      if (!ok) failed++;
-    }
+    // 视频先于样本文件传：服务端按上传 IP 每天给大附件一份共用的字节额度
+    // （services/leaderboard/src/feedback.js 的 videoBytesPerIpDay，视频与 f0..f2 共用），
+    // 3 个满额样本文件就能吃光它；录屏是复现过程的主证据，不能排在最后被 429 挤掉、
+    // 再等额度恢复时补传窗口（FeedbackLimits.attachWindow）已经过了。
     if (video != null) {
       onStage?.call(FeedbackSubmitStage.video);
       onVideoProgress?.call(0);
@@ -691,6 +695,16 @@ class FeedbackService extends ChangeNotifier {
                 onProgress: (double f) => onVideoProgress?.call(f),
               ) ==
               _SlotOutcome.uploaded;
+      if (!ok) failed++;
+    }
+    final List<File> files = draft.files.take(FeedbackLimits.files).toList();
+    if (files.isNotEmpty) onStage?.call(FeedbackSubmitStage.files);
+    for (int i = 0; i < files.length; i++) {
+      final String slot = FeedbackLimits.fileSlot(i);
+      // 同视频：先复制进待传区再传，传失败留着在详情页重试。
+      final bool ok =
+          await _stashFile(receipt.id, slot, files[i]) &&
+          await _uploadPendingLarge(ticket, slot) == _SlotOutcome.uploaded;
       if (!ok) failed++;
     }
     return FeedbackSubmitResult(ticket, failedAttachments: failed);
@@ -854,6 +868,19 @@ class FeedbackService extends ChangeNotifier {
       _pending[t.id]?.remove(slot);
       return _SlotOutcome.dropped;
     }
+    // 样本文件必须带原文件名（服务端按它的扩展名收文件）。[FeedbackPendingStore.copyFile]
+    // 保证本体在旁注就在；还缺就是待传区被外部动过，编个名字传上去只会被永久拒收，
+    // 白白流量：当损坏丢掉、记日志。
+    final String? fileName = isVideo ? null : await store.nameOf(t.id, slot);
+    if (!isVideo && fileName == null) {
+      ErrorLogService.instance.log(
+        logTag,
+        StateError('pending sample file ${t.id}/$slot has no name sidecar'),
+        StackTrace.current,
+      );
+      await _forgetPendingSlot(store, t.id, slot);
+      return _SlotOutcome.dropped;
+    }
     _SlotOutcome outcome = _SlotOutcome.failed;
     try {
       final int length = await pending.file.length();
@@ -886,7 +913,7 @@ class FeedbackService extends ChangeNotifier {
           t.id,
           t.ticket,
           slot: slot,
-          name: await store.nameOf(t.id, slot) ?? 'file.$slot',
+          name: fileName!,
           body: pending.file.openRead(),
           length: length,
           onProgress: progress,
@@ -908,12 +935,21 @@ class FeedbackService extends ChangeNotifier {
       if (isVideo) _setTransfer(t.id, null);
     }
     if (outcome != _SlotOutcome.failed) {
-      await store.remove(t.id, slot);
-      _pending[t.id]?.remove(slot);
-      if (_pending[t.id]?.isEmpty ?? false) _pending.remove(t.id);
-      notifyListeners();
+      await _forgetPendingSlot(store, t.id, slot);
     }
     return outcome;
+  }
+
+  /// 待传槽位了结（传上去了 / 被拒 / 损坏）：删磁盘文件与旁注，移出 [pendingSlots]。
+  Future<void> _forgetPendingSlot(
+    FeedbackPendingStore store,
+    String id,
+    String slot,
+  ) async {
+    await store.remove(id, slot);
+    _pending[id]?.remove(slot);
+    if (_pending[id]?.isEmpty ?? false) _pending.remove(id);
+    notifyListeners();
   }
 
   /// 把这条反馈所有待传附件再传一遍。服务端同一槽位只收一次（重复传拿到 409
@@ -930,7 +966,17 @@ class FeedbackService extends ChangeNotifier {
     final LeaderboardClient client = _client();
     int uploaded = 0;
     int dropped = 0;
-    final List<String> slots = (_pending[id] ?? <String>{}).toList()..sort();
+    // 视频排第一个，理由同 [_submit]：它和样本文件共用服务端每 IP 每天的大附件额度。
+    final List<String> slots = (_pending[id] ?? <String>{}).toList()
+      ..sort(
+        (String a, String b) => a == b
+            ? 0
+            : a == FeedbackLimits.videoSlot
+            ? -1
+            : b == FeedbackLimits.videoSlot
+            ? 1
+            : a.compareTo(b),
+      );
     for (final String slot in slots) {
       if (slot == FeedbackLimits.videoSlot || FeedbackLimits.isFileSlot(slot)) {
         switch (await _uploadPendingLarge(t, slot)) {
@@ -1143,8 +1189,8 @@ class FeedbackService extends ChangeNotifier {
   }
 
   /// 把另一处数据根（[spoolRoot]，结构同 `<数据根>`）里提交的反馈并进本机清单：回执
-  /// 插到最前（同 id 以 spool 里的为准——那是刚提交的），没传上去的截图 / 日志挪进本机
-  /// 待传区，然后删掉 [spoolRoot]。返回并入的条数。
+  /// 插到最前（同 id 以 spool 里的为准——那是刚提交的），没传上去的附件连同旁注整项
+  /// 并进本机待传区（[FeedbackPendingStore.adoptSlot]），然后删掉 [spoolRoot]。返回并入的条数。
   ///
   /// 用于启动即闪退时的闪退报告（crash_report.dart）：那时数据库还没打开、数据根未解析，
   /// 提交先落在错误日志目录下，初始化完成后由这里接手，反馈中心照常看得到进度、能重试。
@@ -1171,9 +1217,9 @@ class FeedbackService extends ChangeNotifier {
     final Map<String, Set<String>> pending = await from.scan();
     for (final MapEntry<String, Set<String>> e in pending.entries) {
       for (final String slot in e.value) {
-        final Uint8List? bytes = await from.read(e.key, slot);
-        if (bytes == null) continue;
-        await to.put(e.key, slot, bytes);
+        // 整项并入（本体 + `.type` / `.name` 旁注）：只搬字节会让样本文件丢了原文件名、
+        // 上传时被当损坏丢掉，视频丢了 MIME。
+        if (!await to.adoptSlot(from, e.key, slot)) continue;
         (_pending[e.key] ??= <String>{}).add(slot);
       }
     }

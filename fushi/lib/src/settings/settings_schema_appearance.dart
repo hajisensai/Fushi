@@ -310,7 +310,7 @@ SettingsDestination buildAppearanceDestination() {
             id: 'appearance.eink_full_refresh_method',
             title: t.eink_full_refresh_method,
             subtitle: t.eink_full_refresh_method_hint,
-            icon: FushiIcons.brightnessAuto,
+            icon: FushiIcons.flash,
             visible: (SettingsContext settingsContext) =>
                 settingsContext.appModel.einkFullRefreshInterval > 0,
             options: <SettingsSegmentOption<EinkFullRefreshMethod>>[

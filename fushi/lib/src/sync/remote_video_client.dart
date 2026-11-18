@@ -405,11 +405,27 @@ abstract interface class RemoteVideoQualityLimit {
 /// Emby / Plex / 在线源没有这一能力。
 abstract interface class RemoteVideoFingerprintSource {
   /// 视频 [id] 第 [episodeIndex] 集（与 `remoteVideoStreamUrls` 同一下标）的 64 位小写
-  /// hex 指纹。host 不支持（老 host）/ 条目不存在 / 文件取不到返回 null；网络失败抛错。
+  /// hex 指纹。只有 host 不支持这一能力（老 host 没有端点）才返回 null——调用方据此
+  /// 按 bookUid 身份放行。host 有端点却担保不了这份字节（条目 / 文件不在、读不了、
+  /// 回的值不合法）抛 [RemoteVideoFingerprintUnavailable]（BUG-4782）；网络失败抛错。
   Future<String?> fetchRemoteVideoFingerprint(
     String id, {
     int episodeIndex = 0,
   });
+}
+
+/// host 支持字节指纹、但这一次担保不了视频字节（BUG-4782）。与「老 host 不支持」
+/// （null）不同：回跳必须当核验失败，不能按 bookUid 放行。
+final class RemoteVideoFingerprintUnavailable implements Exception {
+  const RemoteVideoFingerprintUnavailable(this.id, this.reason);
+
+  final String id;
+
+  /// host 回的 reason（`not_found` / `unreadable`），或 client 侧判的 `malformed`。
+  final String reason;
+
+  @override
+  String toString() => 'RemoteVideoFingerprintUnavailable: $id ($reason)';
 }
 
 /// [RemoteVideoQualityLimit.qualityPresetIndex] 的「自动」哨兵。

@@ -644,7 +644,7 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('本地曲目列表整行右键：播放 / 曲目详情；不加行尾「⋯」', (WidgetTester tester) async {
+  testWidgets('本地曲目列表整行右键：播放 / 曲目详情；行尾有「⋯」（触屏入口）', (WidgetTester tester) async {
     const MusicTrackRow track = MusicTrackRow(
       trackUid: 'lt1',
       path: '/m/local.flac',
@@ -667,7 +667,7 @@ void main() {
     );
     expect(
       find.byKey(const ValueKey<String>('music-track-menu-lt1')),
-      findsNothing,
+      findsOneWidget,
     );
     await rightClick(
       tester,

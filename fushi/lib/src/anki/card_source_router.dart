@@ -73,8 +73,10 @@ RemoteVideoInfo? findRemoteVideoForCardSource(
 
 /// 远端条目的字节核验（拍板台 IFCPPprIpT）：链接带指纹时，用 host 对同一个文件算的
 /// 指纹比对（与本地卡同口径，防 host 上同名 bookUid 换成了别的片子）。链接不带指纹
-/// （在线内容身份，BUG-3490）或 host 算不出（老 host 无该端点）时按 bookUid 身份放行，
-/// 与此前远端回跳一致。
+/// （在线内容身份，BUG-3490）或 host 不支持指纹（老 host 无该端点）时按 bookUid 身份
+/// 放行，与此前远端回跳一致。新 host 担保不了字节不会走到这里：
+/// [RemoteVideoFingerprintSource.fetchRemoteVideoFingerprint] 抛
+/// `RemoteVideoFingerprintUnavailable`，按取不到来源处理（BUG-4782）。
 bool cardSourceHostFingerprintAccepted({
   required String? linkFingerprint,
   required String? hostFingerprint,
@@ -196,6 +198,82 @@ Future<RemoteCardSourceLookup> resolveRemoteCardSourceVideo(
   }
 }
 
+/// 本机同 uid 视频行的字节核验结果。
+enum CardSourceLocalVideoCheck {
+  /// 本机这份可作卡片来源（字节一致，或链接不带指纹）。
+  verified,
+
+  /// 本机库里没有同 uid 的行。
+  absent,
+
+  /// 有同 uid 的行，但字节与卡片指纹不符。
+  mismatch,
+
+  /// 有同 uid 的行，但读不了它的字节（文件不在 / 不是本地文件 / 算的期间被改写）。
+  unreadable,
+}
+
+/// 核验本机同 uid 的那份视频（[videoPath] 为 null = 本机没有这一行）。视频 uid 由
+/// 文件名派生、跨设备会撞，字节对不上的不是这张卡的来源。BUG-3490：无指纹的链接只
+/// 可能指向在线内容身份（CardSourceLink 校验保证），没有本地字节可比，按库身份放行。
+Future<CardSourceLocalVideoCheck> checkLocalCardSourceVideo({
+  required String? videoPath,
+  required String? linkFingerprint,
+  required VideoSourceFingerprint fingerprints,
+}) async {
+  if (videoPath == null) return CardSourceLocalVideoCheck.absent;
+  if (linkFingerprint == null) return CardSourceLocalVideoCheck.verified;
+  try {
+    return await fingerprints.matches(videoPath, linkFingerprint)
+        ? CardSourceLocalVideoCheck.verified
+        : CardSourceLocalVideoCheck.mismatch;
+  } on Object catch (error, stack) {
+    ErrorLogService.instance.log('card_source.localVideo', error, stack);
+    return CardSourceLocalVideoCheck.unreadable;
+  }
+}
+
+/// 视频卡片回跳的去向。
+enum CardSourceVideoAction {
+  openLocal,
+  openRemote,
+
+  /// 用户在等 host 时取消：静默放弃这次跳转。
+  cancelled,
+
+  /// 提示 `card_source_review_fingerprint_mismatch`。
+  fingerprintMismatch,
+
+  /// 提示 `card_source_review_local_required`。
+  localRequired,
+
+  /// 提示 `card_source_review_media_missing`。
+  mediaMissing,
+}
+
+/// 由本机核验结果 [local] 与去 host 找的结果 [lookup]（本机已核验通过时不去找，为
+/// null）决定视频卡片回跳的去向：本机通过 → 本地播；否则 host 有同一份字节 → 在线播；
+/// 都没有时，任一侧字节不符优先提示「不一致」，其次本机读不了提示「先下载」，最后
+/// 才是「没有来源」。
+CardSourceVideoAction decideCardSourceVideoAction({
+  required CardSourceLocalVideoCheck local,
+  required RemoteCardSourceLookup? lookup,
+}) {
+  if (local == CardSourceLocalVideoCheck.verified) {
+    return CardSourceVideoAction.openLocal;
+  }
+  if (lookup?.cancelled ?? false) return CardSourceVideoAction.cancelled;
+  if (lookup?.value != null) return CardSourceVideoAction.openRemote;
+  if (local == CardSourceLocalVideoCheck.mismatch ||
+      (lookup?.fingerprintMismatch ?? false)) {
+    return CardSourceVideoAction.fingerprintMismatch;
+  }
+  if (local == CardSourceLocalVideoCheck.unreadable) {
+    return CardSourceVideoAction.localRequired;
+  }
+  return CardSourceVideoAction.mediaMissing;
+}
+
 /// Resolve a portable locator through the current library. URLs never supply
 /// paths, remote credentials, or arbitrary routes to the navigation layer.
 Future<void> openCardSource({
@@ -238,47 +316,48 @@ Future<void> _openCardSource({
       ? null
       : await resolveCardSourceBook(app.database, link);
   final VideoBookRepository videos = VideoBookRepository(app.database);
-  VideoBookRow? localVideo = link.kind == CardSourceKind.video
-      ? await videos.getByBookUid(link.uid)
-      : null;
-  // 本机有同 uid 的行时先按字节核验：视频 uid 由文件名派生、跨设备会撞，对不上的不是
-  // 这张卡的来源。BUG-3490：无指纹的链接只可能指向在线内容身份（CardSourceLink 校验
-  // 保证），没有本地字节可比，按库身份直接回看在线播放。
-  bool localMismatch = false;
-  bool localUnreadable = false;
-  if (localVideo != null && link.fingerprint != null) {
-    try {
-      if (!await VideoSourceFingerprint.instance.matches(
-        localVideo.videoPath,
-        link.fingerprint!,
-      )) {
-        localMismatch = true;
-        localVideo = null;
-      }
-    } catch (_) {
-      localUnreadable = true;
-      localVideo = null;
+  VideoBookRow? chosenVideo;
+  RemoteCardSourceVideo? chosenRemote;
+  if (link.kind == CardSourceKind.video) {
+    final VideoBookRow? localRow = await videos.getByBookUid(link.uid);
+    final CardSourceLocalVideoCheck local = await checkLocalCardSourceVideo(
+      videoPath: localRow?.videoPath,
+      linkFingerprint: link.fingerprint,
+      fingerprints: VideoSourceFingerprint.instance,
+    );
+    // 拍板台 IFCPPprIpT：本机没有（或字节对不上）就经互联在 host 上找同一份字节在线播
+    // ——远程播放 host 视频制的卡、以及在别的设备本地制的卡都走这里。
+    final RemoteCardSourceLookup? lookup =
+        local == CardSourceLocalVideoCheck.verified
+        ? null
+        : await resolveRemoteCardSourceVideo(
+            app,
+            ref,
+            link,
+            navigator: navigator,
+          );
+    if (lookup != null && !navigator.mounted) return;
+    switch (decideCardSourceVideoAction(local: local, lookup: lookup)) {
+      case CardSourceVideoAction.openLocal:
+        chosenVideo = localRow;
+      case CardSourceVideoAction.openRemote:
+        chosenRemote = lookup!.value;
+      case CardSourceVideoAction.cancelled:
+        return;
+      case CardSourceVideoAction.fingerprintMismatch:
+        FushiToast.show(msg: t.card_source_review_fingerprint_mismatch);
+        return;
+      case CardSourceVideoAction.localRequired:
+        FushiToast.show(msg: t.card_source_review_local_required);
+        return;
+      case CardSourceVideoAction.mediaMissing:
+        FushiToast.show(msg: t.card_source_review_media_missing);
+        return;
     }
   }
-  final VideoBookRow? video = localVideo;
-  // 拍板台 IFCPPprIpT：本机没有（或字节对不上）就经互联在 host 上找同一份字节在线播
-  // ——远程播放 host 视频制的卡、以及在别的设备本地制的卡都走这里。
-  final RemoteCardSourceLookup? lookup =
-      link.kind == CardSourceKind.video && video == null
-      ? await resolveRemoteCardSourceVideo(app, ref, link, navigator: navigator)
-      : null;
-  if (lookup != null && (lookup.cancelled || !navigator.mounted)) return;
-  final RemoteCardSourceVideo? remote = lookup?.value;
-  if (link.kind == CardSourceKind.video && video == null && remote == null) {
-    FushiToast.show(
-      msg: localMismatch || (lookup?.fingerprintMismatch ?? false)
-          ? t.card_source_review_fingerprint_mismatch
-          : localUnreadable
-          ? t.card_source_review_local_required
-          : t.card_source_review_media_missing,
-    );
-    return;
-  }
+  // 下方路由回调会捕获它们：用 final 副本保住空安全提升。
+  final VideoBookRow? video = chosenVideo;
+  final RemoteCardSourceVideo? remote = chosenRemote;
   if (link.kind != CardSourceKind.video && book == null) {
     FushiToast.show(msg: t.card_source_review_media_missing);
     return;

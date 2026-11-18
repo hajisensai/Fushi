@@ -29,6 +29,7 @@ import 'package:fushi/src/media/video/video_graphic_subtitle_regions.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 退回整条字幕带时，字幕带占视频帧高度的比例（自帧底向上）。
 const double kGraphicSubtitleBandFraction = 0.3;
@@ -139,7 +140,9 @@ class _VideoGraphicSubtitleObscureLayerState
 
   Completer<void>? _regionCancel;
 
-  /// 此刻正在显示的句子的模糊框（画布坐标）。逐帧按播放位置重算，变了才重建。
+  /// 此刻正在显示的句子的模糊框（画布坐标）。播放中逐帧按播放位置重算（[_ticker]），
+  /// 暂停时只在位置真的变了（seek / 逐帧步进，[_onPositionChanged]）或控制器通知
+  /// （调轴等，[_onControllerChanged]）时重算；变了才重建。
   List<Rect> _activeRects = const <Rect>[];
   late final Ticker _ticker = createTicker((_) => _tickRegions());
 
@@ -147,6 +150,7 @@ class _VideoGraphicSubtitleObscureLayerState
   void initState() {
     super.initState();
     widget.controller.addListener(_onControllerChanged);
+    widget.controller.positionMsListenable.addListener(_onPositionChanged);
     widget.regionTrack?.addListener(_onRegionTrackChanged);
     widget.touchControlsVisible?.addListener(_onTouchControlsChanged);
     _syncVisibility();
@@ -158,8 +162,12 @@ class _VideoGraphicSubtitleObscureLayerState
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.controller, widget.controller)) {
       oldWidget.controller.removeListener(_onControllerChanged);
+      oldWidget.controller.positionMsListenable.removeListener(
+        _onPositionChanged,
+      );
       unawaited(oldWidget.controller.setGraphicSubtitleVisible(true));
       widget.controller.addListener(_onControllerChanged);
+      widget.controller.positionMsListenable.addListener(_onPositionChanged);
     }
     if (!identical(oldWidget.regionTrack, widget.regionTrack)) {
       oldWidget.regionTrack?.removeListener(_onRegionTrackChanged);
@@ -183,6 +191,7 @@ class _VideoGraphicSubtitleObscureLayerState
     widget.regionTrack?.removeListener(_onRegionTrackChanged);
     widget.touchControlsVisible?.removeListener(_onTouchControlsChanged);
     widget.controller.removeListener(_onControllerChanged);
+    widget.controller.positionMsListenable.removeListener(_onPositionChanged);
     // 离开（换页 / 关遮蔽层）时把图形字幕还原成可见，不把「隐藏」留在播放器上。
     unawaited(widget.controller.setGraphicSubtitleVisible(true));
     super.dispose();
@@ -218,11 +227,23 @@ class _VideoGraphicSubtitleObscureLayerState
       c.videoPath,
       c.activeGraphicSubtitleTrack,
     );
-    if (key == _lastControllerKey) return;
+    if (key == _lastControllerKey) {
+      // 暂停时没有逐帧重算：不改上面几个量的通知（字幕调轴等）也可能挪了等效位置。
+      if (!_ticker.isActive) _tickRegions();
+      return;
+    }
     _lastControllerKey = key;
     _syncVisibility();
     _syncRegions();
+    // 刚暂停 / 刚换轨：按此刻的位置定一次，之后暂停期间不再逐帧算。
+    _activeRects = _rectsNow();
     if (mounted) setState(() {});
+  }
+
+  /// 暂停时的位置变化（seek / 逐帧步进）：播放中由 [_ticker] 逐帧跟，这里不重复算。
+  void _onPositionChanged() {
+    if (!mounted || _ticker.isActive) return;
+    _tickRegions();
   }
 
   /// 外部时间表到了 / 换了（控制器抽好、从 host 下回来、换轨清空）：改用它或退回自己抽。
@@ -292,7 +313,11 @@ class _VideoGraphicSubtitleObscureLayerState
                 cancel: cancel.future,
               );
     } catch (e, stack) {
-      debugPrint('[graphic-subtitle] region load failed: $e\n$stack');
+      ErrorLogService.instance.log(
+        'video.graphicSubtitleRegions.load',
+        e,
+        stack,
+      );
       track = null;
     }
     if (!mounted || cancel.isCompleted || _regionsFor != request) return;
@@ -318,9 +343,10 @@ class _VideoGraphicSubtitleObscureLayerState
     return regions.blurRectsAt(pos);
   }
 
-  /// 有位图时间表时逐帧跟播放位置；没有时不跑。
+  /// 有位图时间表且在播放时逐帧跟播放位置；没有时间表 / 暂停时不跑——常开的 Ticker
+  /// 会让引擎在暂停时每个 vsync 都排一帧。暂停期间的位置变化走 [_onPositionChanged]。
   void _syncTicker() {
-    final bool want = _regions != null;
+    final bool want = _regions != null && widget.controller.isPlaying;
     if (want && !_ticker.isActive) {
       _ticker.start();
     } else if (!want && _ticker.isActive) {

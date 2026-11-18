@@ -399,9 +399,14 @@ class ServerSrs {
   /// 换 RWKV 模型档位（WebUI / admin API / ctl）：写设置文件，再把各份已打开的库的 RWKV 服务换成新档位的，
   /// 不重启。手改设置文件也会生效：每次对齐配置（含兜底定时器那一次）都按文件里的档位对齐在用的服务。
   Future<void> setRwkvModelSize(SrsRwkvModelSize size) async {
-    await writeSrsRwkvModelSize(support, size);
+    await writeRwkvModelSize(size);
     await applyConfig();
   }
+
+  /// 只写档位设置文件、不对齐在用的服务：admin PUT 要先写它（写不进去就整次失败、配置不动），
+  /// 再改 config.yaml，最后 [applyConfig] 一次。
+  Future<void> writeRwkvModelSize(SrsRwkvModelSize size) =>
+      writeSrsRwkvModelSize(support, size);
 
   SrsStorage? _storage;
   FsrsEngine? _engine;

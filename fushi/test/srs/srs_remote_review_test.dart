@@ -720,6 +720,58 @@ void main() {
       expect(host.writes, greaterThanOrEqualTo(7));
     });
 
+    test(
+      '存量单位牌组（limitUnitLegacyDecks）经远程库往返与主机一致；回应提醒（settleSrsLegacyLimitUnit）写在主机库上',
+      () async {
+        // 测试时钟（2026-10-01）在每日上限单位改缺省之前：这时评的分算「存量牌组」。
+        final _Host legacy = await _openHost(<String>[
+          '犬',
+        ], clock: SrsTestClock());
+        addTearDown(legacy.db.close);
+        final SrsDbStore hostStore = legacy.store;
+        // 模拟加单位设置之前就有的牌组（单位寄存器为空），里面有卡评过分；另一个同样没写单位但没评过分。
+        final String old = await hostStore.createDeck('Old');
+        final String idle = await hostStore.createDeck('Idle');
+        for (final String d in <String>[old, idle]) {
+          await hostStore.editFields(SrsEntityKind.deck, d, <String, Object?>{
+            SrsFieldKeys.deckLimitUnit: null,
+          });
+        }
+        final String inOld = (await hostStore.cardsOfNote(
+          await hostStore.createNote(
+            noteTypeId: hostStore.lapisNoteTypeId,
+            deckId: old,
+            fieldsById: <String, String>{
+              srsLapisFieldId(kSrsTestProfile, 'Expression'): '聞く',
+            },
+          ),
+        )).single.id;
+        final String inDefault = (await hostStore.studyState(
+          hostStore.defaultDeckId,
+        ))!.next!;
+        await hostStore.answer(inOld, 3);
+        await hostStore.answer(inDefault, 3);
+
+        final Set<String> expected = await hostStore.limitUnitLegacyDecks();
+        expect(expected, <String>{hostStore.defaultDeckId, old});
+
+        final SrsRemoteStore remote = await legacy.remote();
+        expect(await remote.limitUnitLegacyDecks(), expected);
+        expect(legacy.ops, contains('limitUnitLegacyDecks'));
+
+        await settleSrsLegacyLimitUnit(remote, SrsLimitUnit.cards);
+        expect(legacy.ops, contains('editFieldsBatch'));
+        final SrsDeckTree tree = await hostStore.deckTree();
+        for (final String d in expected) {
+          expect(tree[d]!.limitUnitSet, isTrue, reason: d);
+          expect(tree[d]!.limitUnit, SrsLimitUnit.cards, reason: d);
+        }
+        expect(tree[idle]!.limitUnitSet, isFalse, reason: '没评过分的不写');
+        expect(await remote.limitUnitLegacyDecks(), isEmpty);
+        expect(await hostStore.limitUnitLegacyDecks(), isEmpty);
+      },
+    );
+
     test('回包丢了用同一请求 id 重发：只记一条日志', () async {
       final SrsRemoteStore remote = await host.remote();
       final String deck = host.store.defaultDeckId;

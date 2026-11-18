@@ -502,54 +502,76 @@ void main() {
     });
 
     for (final AppLocale locale in <AppLocale>[AppLocale.en, AppLocale.zhCn]) {
-      testWidgets('360 宽全屏框选：取景分段文字完整、不溢出（${locale.name}）', (
-        WidgetTester tester,
-      ) async {
-        LocaleSettings.setLocale(locale);
-        addTearDown(() => LocaleSettings.setLocale(AppLocale.en));
-        await open(
-          tester,
-          host.mangaPage(modelAvailable: false),
-          size: const Size(360, 780),
-        );
-        // 图片摘要行在句子区下面，矮屏要先滚到可见再点。
-        await tester.ensureVisible(
-          find.text(t.popup_advanced_mining_image_section),
-        );
-        await tester.pumpAndSettle();
-        await tester.tap(find.text(t.popup_advanced_mining_image_section));
-        await tester.pumpAndSettle();
-        expect(tester.takeException(), isNull, reason: '不许有 RenderFlex 溢出');
-        final Finder bar = find.byType(MangaCropChoiceSegments);
-        expect(bar, findsOneWidget);
-        for (final String label in <String>[
-          t.popup_advanced_mining_crop_whole_page,
-          t.popup_advanced_mining_crop_text_area,
-          t.popup_advanced_mining_crop_custom,
-          t.popup_advanced_mining_image_none,
-        ]) {
-          final Finder text = find.descendant(
-            of: bar,
-            matching: find.text(label),
+      // 截屏识字的截图模式「整页」叫「整张截图」（Whole screenshot），比漫画的
+      // 「Whole page」长，是 360 宽下最容易被截断的那一段，两种模式都要过。
+      for (final AdvancedMiningCropSource source
+          in AdvancedMiningCropSource.values) {
+        testWidgets('360 宽全屏框选：取景分段文字完整、不溢出（${locale.name} · ${source.name}）', (
+          WidgetTester tester,
+        ) async {
+          LocaleSettings.setLocale(locale);
+          addTearDown(() => LocaleSettings.setLocale(AppLocale.en));
+          await open(
+            tester,
+            host.mangaPage(modelAvailable: false, source: source),
+            size: const Size(360, 780),
           );
-          expect(text, findsOneWidget, reason: '「$label」整段文字原样渲染');
-          final RenderParagraph p = tester.renderObject<RenderParagraph>(text);
-          expect(p.didExceedMaxLines, isFalse, reason: '「$label」不得被截断');
-          // FittedBox 缩小后，文字画出来的范围必须落在自己那一段里。
-          final Rect drawn = tester.getRect(text);
-          final Rect seg = tester.getRect(
-            find
-                .ancestor(of: text, matching: find.byType(AnimatedContainer))
-                .first,
+          // 图片摘要行在句子区下面，矮屏要先滚到可见再点。
+          await tester.ensureVisible(
+            find.text(t.popup_advanced_mining_image_section),
           );
-          expect(drawn.left, greaterThanOrEqualTo(seg.left - 0.5));
-          expect(drawn.right, lessThanOrEqualTo(seg.right + 0.5));
-        }
-        expect(
-          find.descendant(of: bar, matching: find.textContaining('…')),
-          findsNothing,
-        );
-      });
+          await tester.pumpAndSettle();
+          await tester.tap(find.text(t.popup_advanced_mining_image_section));
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull, reason: '不许有 RenderFlex 溢出');
+          final Finder bar = find.byType(MangaCropChoiceSegments);
+          expect(bar, findsOneWidget);
+          final bool screenshot = source == AdvancedMiningCropSource.screenshot;
+          expect(
+            find.descendant(
+              of: bar,
+              matching: find.text(
+                screenshot
+                    ? t.popup_advanced_mining_crop_whole_page
+                    : t.popup_advanced_mining_crop_whole_screenshot,
+              ),
+            ),
+            findsNothing,
+          );
+          for (final String label in <String>[
+            if (screenshot)
+              t.popup_advanced_mining_crop_whole_screenshot
+            else
+              t.popup_advanced_mining_crop_whole_page,
+            t.popup_advanced_mining_crop_text_area,
+            t.popup_advanced_mining_crop_custom,
+            t.popup_advanced_mining_image_none,
+          ]) {
+            final Finder text = find.descendant(
+              of: bar,
+              matching: find.text(label),
+            );
+            expect(text, findsOneWidget, reason: '「$label」整段文字原样渲染');
+            final RenderParagraph p = tester.renderObject<RenderParagraph>(
+              text,
+            );
+            expect(p.didExceedMaxLines, isFalse, reason: '「$label」不得被截断');
+            // FittedBox 缩小后，文字画出来的范围必须落在自己那一段里。
+            final Rect drawn = tester.getRect(text);
+            final Rect seg = tester.getRect(
+              find
+                  .ancestor(of: text, matching: find.byType(AnimatedContainer))
+                  .first,
+            );
+            expect(drawn.left, greaterThanOrEqualTo(seg.left - 0.5));
+            expect(drawn.right, lessThanOrEqualTo(seg.right + 0.5));
+          }
+          expect(
+            find.descendant(of: bar, matching: find.textContaining('…')),
+            findsNothing,
+          );
+        });
+      }
     }
 
     testWidgets('BUG-922：矮窗里句子卡仍有真实高度（整块滚动，不塌）', (WidgetTester tester) async {

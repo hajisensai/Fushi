@@ -2,9 +2,12 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/anki/card_source_router.dart';
+import 'package:fushi/src/sync/interconnect_sync_backend.dart'
+    show InterconnectSyncBackend;
 import 'package:fushi/src/sync/remote_video_client.dart'
-    show RemoteVideoFingerprintSource;
+    show RemoteVideoFingerprintSource, RemoteVideoFingerprintUnavailable;
 import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi_engine/media/video/video_source_fingerprint.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo;
 
@@ -187,6 +190,16 @@ void main() {
       expect(host.calls, isEmpty);
     });
 
+    test('BUG-4782：新 host 担保不了字节时抛出、不当老 host 放行', () async {
+      await expectLater(
+        run(
+          link(CardSourceKind.video, 'uid-a'),
+          _FakeFingerprints.unavailable(),
+        ),
+        throwsA(isA<RemoteVideoFingerprintUnavailable>()),
+      );
+    });
+
     test('host 网络失败原样抛出（由调用方记日志按没有来源）', () async {
       await expectLater(
         run(link(CardSourceKind.video, 'uid-a'), _FakeFingerprints.failing()),
@@ -212,15 +225,193 @@ void main() {
     // 合成同一段 work，套可取消的进度反馈；只有「缓存新鲜且不用核验指纹」才直取。
     expect(router, contains('cached && link.fingerprint == null'));
     expect(router, contains('>(navigator: navigator, work: work);'));
-    expect(
-      router,
-      contains('lookup != null && (lookup.cancelled || !navigator.mounted)'),
+    // 回跳去向由 [decideCardSourceVideoAction] 决定（行为见下方「回跳去向」组）。
+    expect(router, contains('decideCardSourceVideoAction(local: local'));
+  });
+
+  group('回跳去向：本机核验 × host 查找', () {
+    final RemoteCardSourceVideo found = (
+      info: const RemoteVideoInfo(id: 'uid-a', title: 'A'),
+      client: InterconnectSyncBackend.withProbe(
+        (String url, String token) async => true,
+      ),
     );
-    // 本地同 uid 但字节对不上时不直接判死，继续去 host 找同一份字节。
-    expect(
-      router,
-      matches(RegExp(r'localMismatch = true;\s+localVideo = null;')),
+    const RemoteCardSourceLookup notFound = (
+      value: null,
+      cancelled: false,
+      fingerprintMismatch: false,
     );
+    const RemoteCardSourceLookup hostMismatch = (
+      value: null,
+      cancelled: false,
+      fingerprintMismatch: true,
+    );
+    const RemoteCardSourceLookup cancelled = (
+      value: null,
+      cancelled: true,
+      fingerprintMismatch: false,
+    );
+    final RemoteCardSourceLookup hostHas = (
+      value: found,
+      cancelled: false,
+      fingerprintMismatch: false,
+    );
+
+    final List<
+      (
+        CardSourceLocalVideoCheck,
+        RemoteCardSourceLookup?,
+        CardSourceVideoAction,
+      )
+    >
+    table =
+        <
+          (
+            CardSourceLocalVideoCheck,
+            RemoteCardSourceLookup?,
+            CardSourceVideoAction,
+          )
+        >[
+          (
+            CardSourceLocalVideoCheck.verified,
+            null,
+            CardSourceVideoAction.openLocal,
+          ),
+          // 本机字节不符：host 有同一份字节就在线播，不直接判死。
+          (
+            CardSourceLocalVideoCheck.mismatch,
+            hostHas,
+            CardSourceVideoAction.openRemote,
+          ),
+          (
+            CardSourceLocalVideoCheck.mismatch,
+            hostMismatch,
+            CardSourceVideoAction.fingerprintMismatch,
+          ),
+          (
+            CardSourceLocalVideoCheck.mismatch,
+            notFound,
+            CardSourceVideoAction.fingerprintMismatch,
+          ),
+          (
+            CardSourceLocalVideoCheck.unreadable,
+            hostHas,
+            CardSourceVideoAction.openRemote,
+          ),
+          (
+            CardSourceLocalVideoCheck.unreadable,
+            hostMismatch,
+            CardSourceVideoAction.fingerprintMismatch,
+          ),
+          (
+            CardSourceLocalVideoCheck.unreadable,
+            notFound,
+            CardSourceVideoAction.localRequired,
+          ),
+          (
+            CardSourceLocalVideoCheck.absent,
+            hostHas,
+            CardSourceVideoAction.openRemote,
+          ),
+          (
+            CardSourceLocalVideoCheck.absent,
+            hostMismatch,
+            CardSourceVideoAction.fingerprintMismatch,
+          ),
+          (
+            CardSourceLocalVideoCheck.absent,
+            notFound,
+            CardSourceVideoAction.mediaMissing,
+          ),
+          // 等 host 时取消：不论本机如何都静默放弃，不弹提示。
+          (
+            CardSourceLocalVideoCheck.mismatch,
+            cancelled,
+            CardSourceVideoAction.cancelled,
+          ),
+          (
+            CardSourceLocalVideoCheck.absent,
+            cancelled,
+            CardSourceVideoAction.cancelled,
+          ),
+        ];
+
+    for (final (
+          CardSourceLocalVideoCheck local,
+          RemoteCardSourceLookup? lookup,
+          CardSourceVideoAction expected,
+        )
+        in table) {
+      final String host = switch (lookup) {
+        null => '未查 host',
+        final RemoteCardSourceLookup l when l.cancelled => '取消',
+        final RemoteCardSourceLookup l when l.value != null => 'host 有',
+        final RemoteCardSourceLookup l when l.fingerprintMismatch =>
+          'host 字节不符',
+        _ => 'host 没有',
+      };
+      test('本机 ${local.name} + $host → ${expected.name}', () {
+        expect(
+          decideCardSourceVideoAction(local: local, lookup: lookup),
+          expected,
+        );
+      });
+    }
+  });
+
+  group('本机同 uid 视频的字节核验', () {
+    late Directory dir;
+    late File file;
+    const String good =
+        '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    final VideoSourceFingerprint hashes = VideoSourceFingerprint(
+      compute: (String absolutePath, FileStat stat) async => good,
+    );
+
+    setUp(() {
+      dir = Directory.systemTemp.createTempSync('card_source_local_');
+      file = File('${dir.path}/ep.mkv')..writeAsBytesSync(<int>[1, 2, 3]);
+    });
+    tearDown(() => dir.deleteSync(recursive: true));
+
+    Future<CardSourceLocalVideoCheck> check(
+      String? path,
+      String? fingerprint,
+    ) => checkLocalCardSourceVideo(
+      videoPath: path,
+      linkFingerprint: fingerprint,
+      fingerprints: hashes,
+    );
+
+    test('本机没有这一行 → absent', () async {
+      expect(await check(null, good), CardSourceLocalVideoCheck.absent);
+    });
+
+    test('字节一致 → verified；不符 → mismatch', () async {
+      expect(await check(file.path, good), CardSourceLocalVideoCheck.verified);
+      expect(
+        await check(file.path, 'f' * 64),
+        CardSourceLocalVideoCheck.mismatch,
+      );
+    });
+
+    test('BUG-3490 无指纹的链接：不比字节直接放行', () async {
+      expect(
+        await check('${dir.path}/missing.mkv', null),
+        CardSourceLocalVideoCheck.verified,
+      );
+    });
+
+    test('文件不在 / 是在线地址 → unreadable', () async {
+      expect(
+        await check('${dir.path}/missing.mkv', good),
+        CardSourceLocalVideoCheck.unreadable,
+      );
+      expect(
+        await check('https://host/ep.mkv', good),
+        CardSourceLocalVideoCheck.unreadable,
+      );
+    });
   });
 
   test('接线：本地没有时走 host 清单，远端复习不按本地指纹判死', () {
@@ -237,11 +428,19 @@ void main() {
 }
 
 class _FakeFingerprints implements RemoteVideoFingerprintSource {
-  _FakeFingerprints(this.fingerprint) : fail = false;
-  _FakeFingerprints.failing() : fingerprint = null, fail = true;
+  _FakeFingerprints(this.fingerprint) : fail = false, unverifiable = false;
+  _FakeFingerprints.failing()
+    : fingerprint = null,
+      fail = true,
+      unverifiable = false;
+  _FakeFingerprints.unavailable()
+    : fingerprint = null,
+      fail = false,
+      unverifiable = true;
 
   final String? fingerprint;
   final bool fail;
+  final bool unverifiable;
   final List<String> calls = <String>[];
 
   @override
@@ -251,6 +450,9 @@ class _FakeFingerprints implements RemoteVideoFingerprintSource {
   }) async {
     calls.add('$id#$episodeIndex');
     if (fail) throw const SocketException('host unreachable');
+    if (unverifiable) {
+      throw RemoteVideoFingerprintUnavailable(id, 'unreadable');
+    }
     return fingerprint;
   }
 }

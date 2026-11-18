@@ -32,6 +32,7 @@ import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart'
     show mangaOcrPageOrder;
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
+import 'package:fushi_engine/utils/misc/atomic_text_file.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
 import 'package:fushi/i18n/strings.g.dart';
 
@@ -265,15 +266,18 @@ Stream<MangaOcrBackgroundEvent> mangaOcrLocalEvents(
           volumeTitle: spec.volumeTitle,
           startPage: spec.startPage,
         );
-  await for (final MangaOcrVolumeEvent event in events) {
+  // 必须 `yield*` 一条流，不能在这里 `await for`：async* 挂在 await for 上时收不到
+  // 取消，要等下一页的进度事件到了、走到下一个 yield 才收尾——取消请求晚一页才
+  // 传到 isolate，它因此还要再多跑一页才退出（BUG-4800）。`yield*` 期间的取消
+  // 直接转给这条流的订阅，取消的 Future（isolate 已退出）也原样传回去。
+  yield* events.asyncMap((MangaOcrVolumeEvent event) async {
     if (event.finished) {
-      yield MangaOcrBackgroundEvent.finished(
+      return MangaOcrBackgroundEvent.finished(
         pagesTotal: event.pagesTotal,
         resultPath: event.mangaJsonPath!,
         external: false,
         acceleration: event.acceleration,
       );
-      continue;
     }
     // 本地引擎从 startPage 旋转处理：完成计数不是页号，页号以事件为准。
     // 只有不报页号的实现（没按起点重排）才退回「第 N 个完成的就是第 N 页」。
@@ -288,14 +292,14 @@ Stream<MangaOcrBackgroundEvent> mangaOcrLocalEvents(
         ).images.single;
       }
     }
-    yield MangaOcrBackgroundEvent.progress(
+    return MangaOcrBackgroundEvent.progress(
       pagesDone: event.pagesDone,
       pagesTotal: event.pagesTotal,
       pageIndex: pageIndex,
       page: page,
       acceleration: event.acceleration,
     );
-  }
+  });
 }
 
 Stream<MangaOcrBackgroundEvent> mangaOcrLensEvents(
@@ -507,15 +511,9 @@ Future<String> writeMangaOcrCachedOutput(
   final File output = File(
     p.join(dir, kMangaOcrOutDirName, kMangaOcrOutputFileName),
   );
-  await output.parent.create(recursive: true);
-  final File temporary = File('${output.path}.tmp');
-  await temporary.writeAsString(
+  await writeTextFileAtomically(
+    output,
     jsonEncode(mangaPayloadToJson(payload)),
-    flush: true,
   );
-  if (output.existsSync()) {
-    await output.delete();
-  }
-  await temporary.rename(output.path);
   return output.path;
 }

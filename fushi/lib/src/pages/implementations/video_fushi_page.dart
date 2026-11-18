@@ -48,7 +48,6 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-import 'package:http/http.dart' as http;
 import 'package:share_plus/share_plus.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/utils/misc/collection_exporter.dart';
@@ -2932,6 +2931,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     onExit: () => unawaited(_exitDiscSession()),
   );
 
+  /// 正片阶段「返回」回盘菜单那一级的执行者：只有盘拒绝菜单调用才落到退出会话，
+  /// 回菜单请求在途时连按的返回直接吞掉（[_discSessionReturnToMenuOnBack]）。
+  final DiscMenuReturn _discMenuReturn = DiscMenuReturn(
+    isRefusal: isVideoDiscMenuCallRefusal,
+  );
+
   /// 原盘画面上同时按下的指针数：两指点击 = 呼出 / 收起控制栏（BD-J 盘拿不到按钮
   /// 几何，单指点击全交给盘）。
   int _discSurfacePointers = 0;
@@ -3468,6 +3473,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 途快速切集时旧的慢加载落地后覆盖新集字幕/视频」（用户报：切到第4集字幕/音画
   /// 对不上，疑似中途切换；本机不可复现，加此守卫兜底竞态）。
   int _episodeLoadSeq = 0;
+
+  /// 本页对内封文本字幕整轨抽取的取消信号，按视频路径分（BUG-4838）：当前集与预热中的
+  /// 下一集各一份。换了视频源时撤掉除新当前集以外的全部，退页时全撤；撤掉只是本页不再
+  /// 等，共享抽取在没有别的等待方时才被强杀（`_ensureAllEmbeddedSubtitlesExtracted`）。
+  final Map<String, Completer<void>> _embeddedSubtitleExtractCancels =
+      <String, Completer<void>>{};
 
   /// 当前播放的视频文件绝对路径（枚举字幕源用）；未 load 时为 null。
   String? _currentVideoPath;
@@ -6045,6 +6056,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         external,
         videoPath,
         _activeBookUid,
+        cancel: _embeddedSubtitleExtractCancelFor(videoPath),
       );
       if (cues.isNotEmpty) {
         return (
@@ -6081,6 +6093,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       chosen,
       videoPath,
       _activeBookUid,
+      cancel: _embeddedSubtitleExtractCancelFor(videoPath),
     );
     if (cues.isEmpty) return null;
     return (
@@ -6369,6 +6382,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 覆盖。字幕源指针常在 setCues 之后才写，那次写入会再触发一次，序号只认最后一次。
       unawaited(_reloadSubtitleTextOverrides());
     };
+    controller.onEmbeddedSubtitleAutoLoadPending =
+        _handleEmbeddedSubtitleAutoLoadPending;
     // TODO-1213：进入「正在缓冲…」阶段——网络流 controller.load 内部连接 + 缓冲最久，
     // 页级 spinner 期间显阶段文案而非裸转圈。纯 UI 状态，不改 load 时序。
     _setLoadingPhase(_VideoLoadPhase.buffering);
@@ -6483,6 +6498,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // isCurrent 丢弃），强杀它在途的抽轨 ffmpeg——否则它在后台把旧文件整个读完，
     // 进度卡与「一次只跑一轨」的闸门一直挂在新视频上。
     if (clipExportSourceChanged) _cancelGraphicSubtitleOcr();
+    // 同理撤掉旧视频的内封文本字幕抽取（BUG-4838）；新当前集（可能正是预热过的
+    // 下一集）的那份保留。
+    if (clipExportSourceChanged) _cancelEmbeddedSubtitleExtracts(videoPath);
     setState(() {
       if (clipExportSourceChanged) _clearClipExportState();
       _controller = controller;
@@ -6561,7 +6579,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // TODO-011: large REMUX containers can spend many seconds demuxing text
       // embedded subtitles on the first switch. Start the shared cache fill
       // only after playback has opened so UI/video startup is not blocked.
-      unawaited(prewarmEmbeddedSubtitleCache(videoPath));
+      unawaited(
+        prewarmEmbeddedSubtitleCache(
+          videoPath,
+          cancel: _embeddedSubtitleExtractCancelFor(videoPath),
+        ),
+      );
       unawaited(_loadDanmakuForVideo(videoPath));
       // 视频内嵌字体（对齐 mpv）：抽 MKV attachment 字体注册进引擎，字幕按 ASS Fontname
       // 命中真实字体。仅本地 + 开「尊重 .ass 样式」时做；远端/无 ffmpeg/无附件静默降级。
@@ -6656,6 +6679,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       pick,
       videoPath,
       bookUid,
+      cancel: _embeddedSubtitleExtractCancelFor(videoPath),
     );
     if (!current() || result.isFailure || result.cues.isEmpty) return;
     controller.setSecondaryCues(result.cues);
@@ -6969,10 +6993,31 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (mounted) nav.pop();
   }
 
+  /// 自动加载挑中的内封文本轨要整轨抽取：显示「正在读取完整字幕」+ 取消入口，并把它
+  /// 标成当前字幕源（播放器此刻已解码这条轨顶着显示，见
+  /// [VideoPlayerController.beginEmbeddedTextBridge]）。
+  void _handleEmbeddedSubtitleAutoLoadPending(SubtitleSource source) {
+    final String? videoPath = _currentVideoPath;
+    if (!mounted || videoPath == null) return;
+    _rebuild(() {
+      _primaryEmbeddedFullLoad = _EmbeddedTextFullLoad(
+        label: source.label,
+        videoPath: videoPath,
+        selectSeq: null,
+      );
+      _currentSubtitleSource = source.toPersistedValue();
+    });
+  }
+
   void _handleEmbeddedSubtitleAutoLoad(
     DefaultEmbeddedSubtitleLoadResult result,
   ) {
     if (!mounted) return;
+    // 自动加载的读取状态到此结束（用户手选的那份 selectSeq 非 null，不归这里清）。
+    if (_primaryEmbeddedFullLoad?.selectSeq == null &&
+        _primaryEmbeddedFullLoad != null) {
+      _rebuild(() => _primaryEmbeddedFullLoad = null);
+    }
     if (result.status == DefaultEmbeddedSubtitleLoadStatus.loaded) {
       final SubtitleSource? source = result.source;
       if (source != null) {
@@ -6991,8 +7036,27 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     }
     if (!result.shouldNotifyFailure) return;
     final String label = result.source?.label ?? t.video_menu_subtitle_track;
+    // 选中轨加载失败按真实原因给文案（BUG-4838：读盘卡住不再说成「图形或不支持的轨」）。
+    final SubtitleCueLoadFailure? cueFailure = result.cueFailure;
+    if (cueFailure == SubtitleCueLoadFailure.extractionCancelled) return;
+    // 完整字幕没读出来，但播放器解码的字幕一直在显示：保留它（对用户最好——字幕没断、
+    // 照样可查词制卡），只说明列表不会补全。不是「加载失败」。
+    if (_controller?.isPlayerDecodedTextSubtitleActive ?? false) {
+      _showOsd(
+        t.video_subtitle_full_load_failed_live(label: label),
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    final String? pending = result.source?.toPersistedValue();
+    if (pending != null && _currentSubtitleSource == pending) {
+      // 读取期间标成了当前源、但播放器也没能解码它：撤回标记，菜单不谎报。
+      _rebuild(() => _currentSubtitleSource = null);
+    }
     _showOsd(
-      t.video_subtitle_load_failed(label: label),
+      cueFailure == null
+          ? t.video_subtitle_load_failed(label: label)
+          : _subtitleFailureMessage(cueFailure, label),
       severity: ToastSeverity.error,
     );
   }
@@ -7054,7 +7118,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final String path = _episodes[cur + 1].path;
     if (path.isEmpty || path == _lastPrewarmedEpisodePath) return;
     _lastPrewarmedEpisodePath = path;
-    unawaited(prewarmEmbeddedSubtitleCache(path));
+    // 下一集的预热排在同一块盘上当前集的读盘之后（background）：两个整片顺序读同时压
+    // 一块慢盘，当前集的字幕更晚出来、播放也跟着卡。换集时还没开始的预热随取消信号撤掉。
+    unawaited(
+      prewarmEmbeddedSubtitleCache(
+        path,
+        cancel: _embeddedSubtitleExtractCancelFor(path),
+        background: true,
+      ),
+    );
   }
 
   String _safeFileName(String input) =>
@@ -7261,6 +7333,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _discBindingGeneration++;
     // 退页即停整轨转文字：强杀在途的抽轨 ffmpeg（否则它会在后台把整个文件读完）。
     _cancelGraphicSubtitleOcr();
+    // 内封文本字幕的整轨抽取同理（BUG-4838）。
+    _cancelEmbeddedSubtitleExtracts();
     _graphicSubtitleOcrJob.dispose();
     _controller?.removeListener(_onDiscNavigationChanged);
     _controller?.removeListener(_onRemoteDiscBufferingChanged);
@@ -12697,6 +12771,18 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 字幕抽取/解析当前是否在进行。状态显示在右侧半透明字幕源面板里，画面仍可见；
   /// 底层 ffmpeg/文件解析 Future 目前没有取消契约，关闭面板只是不再打断观看。
   bool _subtitleLoadingShown = false;
+
+  /// 本地视频内封文本轨正在后台读取完整字幕（整轨抽取，慢盘上一分钟以上）时的状态，
+  /// 主 / 副字幕各一份。它**不锁**字幕菜单（区别于 [_subtitleLoadingShown]）：抽取期间
+  /// 主字幕已由播放器解码顶着显示，用户可以随时取消读取、改选别的轨 / 关字幕 / 选外挂，
+  /// 见 `subtitle.part.dart` 的 [_EmbeddedTextFullLoad]。
+  _EmbeddedTextFullLoad? _primaryEmbeddedFullLoad;
+  _EmbeddedTextFullLoad? _secondaryEmbeddedFullLoad;
+
+  /// 主 / 副字幕「选择」的世代：每次用户选源（含关闭）+1。慢的内封抽取结束时世代变了
+  /// = 期间用户已经另选，结果作废、不覆盖新选择。
+  int _primarySubtitleSelectSeq = 0;
+  int _secondarySubtitleSelectSeq = 0;
 
   /// 正在把图形字幕轨整轨 OCR 成文字字幕（一次只跑一轨）。
   bool _graphicSubtitleOcrRunning = false;

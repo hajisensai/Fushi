@@ -11,7 +11,12 @@ import 'package:fushi_audio/fushi_audio.dart';
 ///
 /// 插件在本平台不可用（桌面三端无联邦实现 → [MissingPluginException]；测试替身
 /// / 未来新平台 → [UnimplementedError]）或原生侧识别失败（[PlatformException]）
-/// 时返回 null，由 `decodeTextBytes` 降级到宽松 UTF-8——与拆分前逐字节一致。
+/// 时返回 null，`decodeTextBytes` 接着走 Rust 计算内核的本地多字节编码识别
+/// （`decodeLegacyText`：Shift_JIS / CP932、GBK、EUC-JP、Big5，五端同一份），
+/// 仍判不出才降级到宽松 UTF-8。
+///
+/// 移动端保留插件并让它先判：它覆盖的编码更多（韩文 EUC-KR、Windows-125x 等），
+/// 而这些编码的字节按 GBK / Big5 读往往零错误，交给 Rust 那一级会被解成汉字乱码。
 Future<String?> pluginCharsetDecode(Uint8List bytes) async {
   try {
     final DecodingResult result = await CharsetDetector.autoDecode(bytes);

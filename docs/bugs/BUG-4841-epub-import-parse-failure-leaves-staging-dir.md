@@ -1,0 +1,16 @@
+## BUG-4841 · EPUB 导入解析失败时书库根下的 .tmp-* 解压目录永久残留，崩溃留下的 .tmp-* / .bak-* 也没人清
+- **报告**：2026-11-17（用户：小说 / 漫画 / 视频优化清单 novel-3，代码复核确认）
+- **真实性**：✅ 真 bug（代码路径确认 + 单测复现）。根因（行号按修复前的 upstream/develop @ 8d58da51da9）：
+  - `packages/fushi_engine/lib/epub/epub_importer.dart:42-46`（`import`）与 `:82-88`（`importFromPath`）：`EpubStorage.bookDirectory(nextTempDirName())` 先建好 `.tmp-<ms>-<seq>`，随后的 `Isolate.run`（解压 + 解析 + 字数统计）在任何 try 之外；唯一的清理在 `_persistParsed` 的 catch（`:204-215`），解析抛出时它根本没被调到。坏包、OPF 解析不出、字数统计抛出，每失败一次就在 `fushi_books/` 下永久留一个解压到一半的目录。同文件 `rebuildExtractedInPlace`（`:356-384`）已经是正确写法。
+  - `packages/fushi_engine/lib/epub/epub_parser.dart:100,113-114` 的 `createdHere` 兜不住：目录已被 `bookDirectory` 预建，恒为 false。
+  - 全仓没有任何地方清 `.tmp-*` / `.bak-*`：孤儿扫描 `fushi/lib/src/storage/orphan_book_recovery.dart:213` 只跳过点开头目录。进程被杀留下的 `.tmp-*` 永远在；`moveExtractedDirIntoPlace`（`epub_importer.dart:457-477`）让位用的 `<书>.bak-<ts>` 若进程死在「旧树改名 bak」与「新树就位」之间，那本书就只剩 bak 这一份，而它不是点开头，「找回书库」会把它当成一本名叫「xxx.bak-123」的书列出来。
+- **[x] ① 已修复** —
+  - 两处 `Isolate.run` 包进 try，失败即删自己的暂存目录（`epub_importer.dart` `import` / `importFromPath`）。
+  - 新增每进程（每书库根）一次的导入残留清扫 `EpubStorage.ensureImportResidueSwept` / `sweepImportResidue`（`packages/fushi_engine/lib/epub/epub_storage.dart`），所有导入入口（EPUB、漫画文件夹 / mokuro / 压缩包）建暂存目录前经 `EpubImporter.createStagingDir` 先等它；「找回书库」扫描前也跑一遍（`orphan_book_recovery.dart` `scan`）。规则：`.tmp-*` 删（本进程自己建的不碰）；`.bak-*` **不盲删**——目标不在就改回目标，目标带未完成标记（拷贝回退拷到一半）就丢掉半成品再改回，目标完整在场才删 bak；活行的目录一律不当残留。
+  - 独立审查后收紧（同一 PR 内）：① 活行判断排在暂存名判断之前，暂存 / bak 只认实际写出的形状（`.tmp-<数字>[-<数字>]`、`.bak-<13 位毫秒戳>`）——书名净化不处理前导点，按前缀认会把一本叫 `.tmp-notes` 的书的目录删掉，书名以 `.bak-2` 结尾的孤儿目录会被当 bak 删 / 改名；② 递归删除改异步 IO（残留可能是几个 GB 的漫画暂存，同步删会卡住 UI isolate），「判定 → 改名」每步仍同步，同进程的多趟清扫排队；③ 半成品目标没删干净就不动 bak，且删半成品时未完成标记最后删——否则删到一半失败的目录会在下一次被当成完整目标，旁边完整的 bak 被删。
+  - 落位的拷贝回退（`rename` 被平台拒绝时）现在带 `.fushi-incomplete` 标记拷，拷完才摘——否则「目标在场」分不清是完整的还是半本，清扫会把旁边完整的 bak 删掉。
+- **[x] ② 已加自动化测试** — `fushi/test/epub/epub_import_dir_ownership_test.dart`：「BUG-4841 解析失败不留暂存目录」两条（非 zip 文件 / 无 container.xml 的 zip，真实导入器 + 真实文件系统）；「BUG-4841 导入残留清扫」十三条（.tmp 删除与本进程暂存豁免、bak 删 / 改回、未完成标记、多份 bak、活行同名目录、无主半成品、活行目录名以 .tmp- 开头不删、非暂存名形状的 .tmp- 目录不删、`.bak-<短数字>` 孤儿不当 bak、两趟清扫并发排队、清扫不同步删、首次导入前自动清扫、拷贝回退不留标记）。`fushi/test/storage/orphan_book_recovery_test.dart`「BUG-4841：替换到一半留下的 .bak-* 先改回原名」。
+- **备注**：
+  - 清扫的触发点是「本进程第一次导入之前」和「打开找回书库」，**不是 app 启动**：启动接线要改 `fushi/lib/src/models/app_model.dart`，该文件当前被多条在途 claim 占着，本轮没碰。后果只是残留多留到下一次导入；要挪到启动，在 `AppModel.initialise` 开库之后调一次 `EpubStorage.ensureImportResidueSwept(...)` 即可（每进程只跑一次，重复调无害）。
+  - `fushi_server` 走同一套引擎导入器，自动获得同样的清扫。
+  - 待补：桌面 / 真机实际导入一本坏 EPUB 后看 `fushi_books/` 无残留。

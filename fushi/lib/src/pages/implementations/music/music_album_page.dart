@@ -11,6 +11,14 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/music/disc/music_disc.dart';
 
+import 'package:fushi/src/media/links/media_link_entries.dart'
+    show MediaLinkEntry;
+import 'package:fushi/src/media/links/media_link_inference_host.dart'
+    show mediaLinkInferCallback;
+import 'package:fushi/src/media/links/media_link_opener.dart'
+    show mediaLinkSearchAction, openMediaLinkEntry;
+import 'package:fushi/src/media/links/media_links_section.dart'
+    show MediaLinksSection;
 import 'package:fushi/src/media/music/asr/music_subtitle_target.dart'
     show MusicSubtitleTargets;
 import 'package:fushi/src/media/music/music_format_badge.dart';
@@ -583,6 +591,20 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
           ),
         ),
       ],
+      // 跨模块「同一作品」（作品图谱 media_links）：专辑 → 动画合集 / 游戏，与曲目
+      // 详情页同一个区块与「查找相关作品」入口。
+      MediaLinksSection(
+        database: ref.read(appProvider).database,
+        self: (kind: MediaLinkKind.musicAlbum, key: album.albumUid),
+        onOpen: (MediaLinkEntry e) =>
+            openMediaLinkEntry(context: context, ref: ref, entry: e),
+        searchActionFor: (MediaLinkKind k) =>
+            mediaLinkSearchAction(context: context, ref: ref, kind: k),
+        onInfer: mediaLinkInferCallback(
+          ref: ref,
+          self: (kind: MediaLinkKind.musicAlbum, key: album.albumUid),
+        ),
+      ),
     ];
 
     final double heroGap = musicDetailHeroGap(context, tokens.spacing.gap);

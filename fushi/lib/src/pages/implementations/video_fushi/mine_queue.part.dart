@@ -27,9 +27,7 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
     }
     try {
       final VideoMineQueue queue = await _videoMineQueue();
-      final int count =
-          (await queue.pending(_activeBookUid)).length +
-          (await queue.failed(_activeBookUid)).length;
+      final int count = await queue.openCount(_activeBookUid);
       if (mounted) _stagedMineCount.value = count;
     } catch (_) {}
   }
@@ -85,6 +83,8 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
     final VideoMineCommitSummary summary = await queue.commitAll(
       bookUid: _activeBookUid,
       repo: repo,
+      // 待制卡列表的「全部写入」：用户明说要写，之前失败的一并重试。
+      retryFailed: true,
       onProgress: onProgress,
     );
     await _refreshStagedMineCount();

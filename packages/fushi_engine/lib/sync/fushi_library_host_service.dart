@@ -78,6 +78,17 @@ const String kVideoSidecarSubtitleQueryParam = 'sidecar';
 /// 并接受 [kVideoSidecarSubtitleQueryParam]（[VideoSidecarSubtitleListHost]）。
 const String kVideoSidecarSubtitlesCapability = 'videoSidecarSubtitles';
 
+/// `/api/library/videos/<id>/fingerprint`：host 有这个端点、却担保不了这份字节时的
+/// 状态码（BUG-4782）。404 只留给「老 host 没有这个端点」，两者必须可区分。响应体
+/// `{"reason": <下面两个之一>}`。
+const int kVideoFingerprintUnavailableStatus = 409;
+
+/// [kVideoFingerprintUnavailableStatus] 的 reason：条目或这一集的文件在 host 上找不到。
+const String kVideoFingerprintReasonNotFound = 'not_found';
+
+/// [kVideoFingerprintUnavailableStatus] 的 reason：文件读不了 / 算的期间被改写。
+const String kVideoFingerprintReasonUnreadable = 'unreadable';
+
 // ── 改名前的旧 header 名（Hibiki → Fushi，2026-10）─────────────────────────────
 //
 // 互联两端可能跑不同版本：改名前的 client / host 只认 `X-Hibiki-*`。旧名照样**发**

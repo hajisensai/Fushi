@@ -596,6 +596,48 @@ void main() {
       },
     );
 
+    // 只有盘拒绝菜单调用（MPV_ERROR_COMMAND）才算「没有菜单这一级」；暂时性状态与
+    // 桥接错误不能被读成这张盘没有菜单（否则正片里按返回会整盘退出）。
+    test('only the disc refusing a menu call counts as a refusal', () async {
+      Object? refused;
+      try {
+        await runCheckedVideoDiscCommand(
+          _Native(_Mpv(kMpvErrorCommand)),
+          videoDiscNavigationCommand('menu'),
+        );
+      } catch (error) {
+        refused = error;
+      }
+      expect(refused, isNotNull);
+      expect(isVideoDiscMenuCallRefusal(refused!), isTrue);
+
+      Object? bridge;
+      try {
+        // media_kit 桥接拿不到整数结果时记为 -1：不是盘的回答。
+        await runCheckedVideoDiscCommand(
+          _Native(_Mpv(-1)),
+          videoDiscNavigationCommand('menu'),
+        );
+      } catch (error) {
+        bridge = error;
+      }
+      expect(bridge, isNotNull);
+      expect(isVideoDiscMenuCallRefusal(bridge!), isFalse);
+
+      for (final String code in <String>[
+        'navigation-initializing',
+        'navigation-not-active',
+        'command-failed:-4',
+      ]) {
+        expect(
+          isVideoDiscMenuCallRefusal(VideoDiscMenuException(code)),
+          isFalse,
+          reason: code,
+        );
+      }
+      expect(isVideoDiscMenuCallRefusal(StateError('x')), isFalse);
+    });
+
     test('keyboard and top/popup actions retain upstream semantics', () {
       for (final String action in <String>[
         'up',
