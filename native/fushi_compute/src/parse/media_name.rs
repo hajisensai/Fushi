@@ -839,11 +839,13 @@ pub fn parse_name(raw: &[u16], env: &ParseEnv) -> ParsedName {
     // 见过标题」被丢掉。上层拿不到干净标题，只能拿整串原名去搜，换回一屏只共享
     // `kon` 音节的模糊候选。此时改把首块当标题再分一趟——仅当这一趟真的认出了
     // 集号才采用：`[标题][集号]` 结构成立；单独一个 `[VCB-Studio]` 目录名不会
-    // 因此被当成番名。
+    // 因此被当成番名。集号必须来自标题之外的块（取标题前的快照里已有）：
+    // `[第01-12话]` 这类单块批量范围在第二趟只会被标题解析拆成「第01」+ 集 12，
+    // 不是 `[标题][集号]`，仍按第一趟。
     let (st, title, title_source, mut before_title) =
         if first.1.is_empty() && first.0.release_group.is_some() && first.0.episode.is_none() {
             let second = classify_and_title(p, &blocks, &outside, false, env);
-            if !second.1.is_empty() && second.0.episode.is_some() {
+            if !second.1.is_empty() && second.3.episode.is_some() {
                 second
             } else {
                 first
@@ -1196,7 +1198,7 @@ mod tests {
     /// `Kono Oto Tomare!` / `Kekkon Yubiwa Monogatari II` 这类噪声候选。
     #[test]
     fn all_bracket_title_then_episode() {
-        let cases: [(&str, &str, Option<i64>, Option<&str>); 5] = [
+        let cases: [(&str, &str, Option<i64>, Option<&str>); 6] = [
             (
                 "[K-ON!][04][BIG5][x264_aac][BDrip_720P].mp4",
                 "K-ON!",
@@ -1219,6 +1221,9 @@ mod tests {
             ),
             // 没有集号佐证时不把孤零零的发布组提成标题。
             ("[VCB-Studio]", "", None, Some("VCB-Studio")),
+            // 单块批量范围：集号只能从这一块的标题解析里拆出来，不是 `[标题][集号]`，
+            // 不能变成标题「第01」+ 集 12（native_media_parse_vectors 语料里的形状）。
+            ("[第01-12话]", "", None, Some("第01-12话")),
         ];
         for (raw, title, episode, group) in cases {
             let r = parse_name(&w(raw), &env());
