@@ -331,6 +331,23 @@ fn a_note_type_of_another_collection_stays_after_the_merge() {
         ],
     );
     refused(&l, &[edit(A, "notetype", &i.nt, "name", json!("被 A 改"))]);
+    // B 的存量笔记类型（随机 ID，不按 Anki 编号派生）：A 抄一份内容逐字相同的记录也自证不了。
+    let legacy = "0193a1b2-0000-7000-8000-00000000c7c7";
+    let v = run(
+        l.h,
+        B,
+        "apply",
+        json!({}),
+        &[nt_record(B, legacy, 4242, "standard", 3)],
+    );
+    assert_eq!(v["foreign"], json!([]), "{v}");
+    refused(
+        &l,
+        &[
+            nt_record(A, legacy, 4242, "standard", 3),
+            edit(A, "notetype", legacy, "name", json!("被 A 改")),
+        ],
+    );
     merged_unchanged(l);
 }
 
