@@ -19,6 +19,7 @@ import 'book_format.dart';
 import 'collection_order.dart';
 import 'collection_organize.dart';
 import 'collection_book_identity.dart';
+import 'db_schema_version.dart';
 import 'epub_book_meta.dart';
 import 'media_kind.dart';
 import 'media_kind_mappings.dart';
@@ -1000,7 +1001,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 160;
+  int get schemaVersion => kFushiDbSchemaVersion;
 
   /// v125–v128 四步的产物（全部幂等）：SRS 写路径索引、
   /// `collection_member_tombstones.published_at`、`bookmarks.char_offset` /
