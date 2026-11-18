@@ -1,12 +1,44 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-18T17:41:09Z",
+ "generatedAt": "2026-11-18T18:17:47Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "e4ac6297540a66fe7e4bfbd27be4352634628193",
-  "seq": 29081
+  "sha": "f3a2197900bd98c4815e038029f84f43a0f9108a",
+  "seq": 29083
  },
  "builds": [
+  {
+   "seq": 29081,
+   "version": "3.4.0",
+   "sha": "e4ac6297540a66fe7e4bfbd27be4352634628193",
+   "unknown": false,
+   "publishedAt": "2026-11-18T18:17:36Z",
+   "testflight": false,
+   "baseSeq": 29071,
+   "prs": [
+    3743,
+    3515
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44360719471"
+    },
+    "macos": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44360719471"
+    },
+    "ios": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44360719471"
+    }
+   }
+  },
   {
    "seq": 29071,
    "version": "3.4.0",
@@ -120,7 +152,8 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44259200627"
     },
     "windows": {
      "state": "ok"
@@ -135,30 +168,29 @@
   }
  ],
  "pending": {
-  "headSha": "e4ac6297540a66fe7e4bfbd27be4352634628193",
-  "headSeq": 29081,
+  "headSha": "f3a2197900bd98c4815e038029f84f43a0f9108a",
+  "headSeq": 29083,
   "prs": [
-   3743,
-   3515
+   3744
   ],
   "direct": [],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44360719615"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44362713326"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44360719471"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44362713448"
    },
    "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44360719471"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44362713448"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44360719471"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44362713448"
    }
   }
  },
@@ -422,6 +454,15 @@
    "mergedAt": "2026-11-18T17:37:22Z",
    "additions": 13,
    "deletions": 12,
+   "labels": []
+  },
+  "3744": {
+   "number": 3744,
+   "title": "test(goldens): 同步与备份页 golden 跟随 #3515 输入框重设计更新",
+   "author": "W1ght",
+   "mergedAt": "2026-11-18T17:48:17Z",
+   "additions": 0,
+   "deletions": 0,
    "labels": []
   }
  }
