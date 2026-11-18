@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-18T02:58:43Z",
+ "generatedAt": "2026-11-18T02:59:16Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "c86dfeb92d6981e53e09911061f77f2033f763cf",
-  "seq": 28871
+  "sha": "1d3b256ddb4c3417bf1abe6dcf98b280f96429dc",
+  "seq": 28910
  },
  "builds": [
   {
@@ -130,9 +130,10 @@
   }
  ],
  "pending": {
-  "headSha": "c86dfeb92d6981e53e09911061f77f2033f763cf",
-  "headSeq": 28871,
+  "headSha": "1d3b256ddb4c3417bf1abe6dcf98b280f96429dc",
+  "headSeq": 28910,
   "prs": [
+   3724,
    3662,
    3737,
    3727,
@@ -147,19 +148,19 @@
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44227057454"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44227142898"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44227057085"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44227142990"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44227057085"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44227142990"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44227057085"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44227142990"
    }
   }
  },
@@ -450,6 +451,15 @@
    "mergedAt": "2026-11-17T17:58:18Z",
    "additions": 666,
    "deletions": 0,
+   "labels": []
+  },
+  "3724": {
+   "number": 3724,
+   "title": "feat(ai): AI 库管家——作品层与关系网、合集归属整理、自动刮削、整趟可撤销",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-18T02:58:58Z",
+   "additions": 22079,
+   "deletions": 686,
    "labels": []
   },
   "3726": {
