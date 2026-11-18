@@ -1,7 +1,9 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:test/test.dart';
 import 'package:fushi_engine/media/audiobook/text_to_epub.dart';
+import 'package:xml/xml.dart';
 
 import '../../helpers/epub_zip_reader.dart';
 
@@ -22,6 +24,47 @@ Future<EpubZipReader> _convertText(
     author: author,
   );
   return EpubZipReader(bytes);
+}
+
+String _textWithBreaks(XmlNode node) {
+  if (node is XmlText) return node.value;
+  if (node is XmlElement && node.name.local == 'br') return '\n';
+  return node.children.map(_textWithBreaks).join();
+}
+
+/// Reads one original paragraph split across bounded XHTML chapters. Artificial
+/// paragraph boundaries add no source text; only original <br/> nodes add LF.
+String _readBoundedChapterText(EpubZipReader reader) {
+  final int chapterCount = reader.names
+      .where((String name) => name.startsWith('OEBPS/chapter-'))
+      .length;
+  expect(chapterCount, greaterThan(1));
+  final StringBuffer text = StringBuffer();
+  for (int i = 1; i <= chapterCount; i++) {
+    final String name = 'OEBPS/chapter-$i.xhtml';
+    final String chapter = reader[name]!;
+    // Exclude the wrapper's opening LF, but retain all body HTML code units,
+    // including the paragraph's trailing LF, when checking the size contract.
+    final String bodyHtml = RegExp(
+      r'<body>\n([\s\S]*?)</body>',
+    ).firstMatch(chapter)!.group(1)!;
+    expect(
+      bodyHtml.length,
+      lessThanOrEqualTo(TextToEpub.kMaxCharsPerChapter),
+      reason: '$name must not contain an oversized body',
+    );
+    // XML parsing catches broken escapes/tags; the decoded text equality also
+    // catches surrogate pairs replaced during the EPUB's UTF-8 encoding.
+    final XmlDocument document = XmlDocument.parse(chapter);
+    final XmlElement body = document.descendants
+        .whereType<XmlElement>()
+        .singleWhere((XmlElement element) => element.name.local == 'body');
+    for (final XmlElement paragraph in body.childElements) {
+      expect(paragraph.name.local, 'p');
+      text.write(_textWithBreaks(paragraph));
+    }
+  }
+  return text.toString();
 }
 
 // ── tests ────────────────────────────────────────────────────────────────────
@@ -163,4 +206,53 @@ void main() {
     expect(chapter, contains('<p>&lt;タグ&gt; &amp; 次</p>'));
     expect(reader['OEBPS/content.opf'], contains('<dc:title>貼り付け</dc:title>'));
   });
+
+  test('750 KiB TXT with only single newlines has bounded chapters', () async {
+    // Each line is 119 UTF-8 bytes; join LFs and the final ASCII byte make
+    // exactly 750 KiB without introducing any blank-line paragraph breaks.
+    final String line = '${'日' * 39}ab';
+    final String content = '${List<String>.filled(6400, line).join('\n')}z';
+    expect(utf8.encode(content).length, 750 * 1024);
+    expect(content, isNot(contains('\n\n')));
+
+    final EpubZipReader reader = await _convertText(tmpDir, content);
+
+    expect(_readBoundedChapterText(reader), content);
+  });
+
+  test('one long paragraph without newlines has bounded chapters', () async {
+    final String content = 'あ' * (TextToEpub.kMaxCharsPerChapter * 3 + 17);
+
+    final EpubZipReader reader = await _convertText(tmpDir, content);
+
+    expect(_readBoundedChapterText(reader), content);
+  });
+
+  test(
+    'chapter boundaries preserve escapes, line breaks and non-BMP text',
+    () async {
+      const String special = '&<>"\'😀𠮷\n続';
+      // Slide the escaped/non-BMP sequence across every possible code-unit
+      // boundary in its HTML representation, including entity, br and surrogate
+      // interiors. The source is one paragraph, so decoded chunks must join
+      // exactly with no added whitespace or replacement characters.
+      for (int offset = 0; offset < 40; offset++) {
+        final String content =
+            '${'あ' * (TextToEpub.kMaxCharsPerChapter - 8 - offset)}'
+            '$special'
+            '${'い' * (TextToEpub.kMaxCharsPerChapter + 17)}';
+        final EpubZipReader reader = await _convertText(
+          tmpDir,
+          content,
+          name: 'boundary-$offset.txt',
+        );
+
+        expect(
+          _readBoundedChapterText(reader),
+          content,
+          reason: 'Boundary offset $offset must preserve all source characters',
+        );
+      }
+    },
+  );
 }

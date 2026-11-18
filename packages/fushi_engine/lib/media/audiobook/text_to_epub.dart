@@ -131,9 +131,36 @@ class TextToEpub {
       if (trimmed.isEmpty) continue;
       // Preserve single newlines as <br/>
       final escaped = _esc(trimmed).replaceAll('\n', '<br/>');
-      buf.write('<p>$escaped</p>\n');
+      for (final String chunk in _splitPlainTextParagraph(escaped)) {
+        buf.write('<p>$chunk</p>\n');
+      }
     }
     return buf.isEmpty ? '<p></p>' : buf.toString();
+  }
+
+  /// Bound even a paragraph with no blank lines before the chapter packer runs.
+  /// Count the generated HTML, including its paragraph wrapper, and keep XML
+  /// entities, line breaks and Unicode code points intact at every boundary.
+  static Iterable<String> _splitPlainTextParagraph(String escaped) sync* {
+    final int maxContentLength = kMaxCharsPerChapter - '<p></p>\n'.length;
+    if (escaped.length <= maxContentLength) {
+      yield escaped;
+      return;
+    }
+
+    final RegExp tokens = RegExp(
+      r'&(?:amp|lt|gt|quot|apos);|<br/>|.',
+      unicode: true,
+      dotAll: true,
+    );
+    int start = 0;
+    for (final RegExpMatch token in tokens.allMatches(escaped)) {
+      if (token.end - start > maxContentLength) {
+        yield escaped.substring(start, token.start);
+        start = token.start;
+      }
+    }
+    if (start < escaped.length) yield escaped.substring(start);
   }
 
   static String _markdownToHtml(String md) {
