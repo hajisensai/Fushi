@@ -171,6 +171,8 @@ import 'package:fushi/src/media/import/external_book.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart'
     show DuplicateChoice;
 import 'package:fushi/src/ops/ctl_library_entries.dart';
+import 'package:fushi/src/media/library_curate/library_curate_host.dart'
+    show registerAppLibraryCurator;
 import 'package:fushi/src/ops/app_op_context.dart';
 import 'package:fushi/src/ops/ctl_library_import.dart';
 import 'package:fushi/src/ops/op_context.dart';
@@ -1364,6 +1366,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       ),
       buildInProcessInvoker: buildInProcessOpInvoker,
     );
+    // AI 库管家：自动路径与设置页经这里拿进程级编排器（它依赖操作上下文，不能由
+    // 大环里的 AppModel 直接 import）。
+    registerAppLibraryCurator();
     if (_isDesktop) {
       unawaited(_startCtlServer());
     }

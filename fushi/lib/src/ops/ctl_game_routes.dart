@@ -326,7 +326,12 @@ abstract interface class GameCtlHost {
   });
 
   /// 详情页 / 库页「使用」候选同一个 [applyGalgameScrapeCandidate]；false = 源上找不到。
-  Future<bool> applyScrape(String gameId, SourceCandidate candidate);
+  /// [replaceExistingCover] = false：已有可用封面时不换（只在没有封面时补图）。
+  Future<bool> applyScrape(
+    String gameId,
+    SourceCandidate candidate, {
+    bool replaceExistingCover = true,
+  });
   Future<List<String>> metadataSources(String gameId);
   Future<void> removeMetadataSource(
     String gameId,
@@ -629,12 +634,16 @@ class _AppGameCtlHost implements GameCtlHost {
   }) => GalgameScrapeController.instance.search(query, sources: sources);
 
   @override
-  Future<bool> applyScrape(String gameId, SourceCandidate candidate) =>
-      applyGalgameScrapeCandidate(
-        repo: _app.galgameRepo,
-        gameId: gameId,
-        candidate: candidate,
-      );
+  Future<bool> applyScrape(
+    String gameId,
+    SourceCandidate candidate, {
+    bool replaceExistingCover = true,
+  }) => applyGalgameScrapeCandidate(
+    repo: _app.galgameRepo,
+    gameId: gameId,
+    candidate: candidate,
+    replaceExistingCover: replaceExistingCover,
+  );
 
   @override
   Future<List<String>> metadataSources(String gameId) async => <String>[
@@ -2377,7 +2386,11 @@ class _GameCtl {
         SourceCandidate(source: source, externalId: externalId);
     final bool applied;
     try {
-      applied = await host.applyScrape(game.id, candidate);
+      applied = await host.applyScrape(
+        game.id,
+        candidate,
+        replaceExistingCover: !(call.optBool('keepCover') ?? false),
+      );
     } on GalgameMetadataException catch (e) {
       throw CtlFailure(502, 'upstream_failed', '资料源请求失败：${e.message}');
     }
@@ -2389,6 +2402,8 @@ class _GameCtl {
       'ok': true,
       'candidate': raw,
       'sources': await host.metadataSources(game.id),
+      // 撤销载荷据此判「之后有没有被改过」（`op_descriptions_games.dart`）。
+      'primarySource': updated.primarySource,
       ..._gameJson(updated),
     };
   }

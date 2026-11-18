@@ -67,7 +67,7 @@ import 'package:fushi/src/media/import/import_carrier.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart'
     show PortraitCoverImage;
-import 'package:fushi/i18n/strings.g.dart' show LocaleSettings;
+import 'package:fushi/i18n/strings.g.dart' show LocaleSettings, t;
 import 'package:fushi/src/media/import/sidecar_finder.dart';
 import 'package:fushi/src/media/manga/import/manga_pdf_importer.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
@@ -99,6 +99,7 @@ import 'package:fushi/src/media/source_library/game_source_scanner.dart';
 import 'package:fushi/src/media/source_library/sftp_stream_source.dart';
 import 'package:fushi/src/media/source_library/source_file_system.dart';
 import 'package:fushi/src/media/source_library/source_library_transports.dart';
+import 'package:fushi/src/media/source_library/source_scan_temp.dart';
 import 'package:fushi/src/media/source_library/source_folder_access.dart';
 import 'package:fushi/src/pdf/pdf_importer.dart';
 import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
@@ -305,6 +306,15 @@ class ScanMangaArchiveItem {
 /// 一卷失败不中断其余卷（与视频分支 BUG-2570 同语义），由
 /// [SourceLibraryScanner.scan] 汇总成一条能照着查的 lastScanError。
 class _MangaVolumeTally {
+  _MangaVolumeTally({this.checkpoint});
+
+  /// 每卷结束后调一次：把这一卷改动的来源索引落盘
+  /// （[_MangaSourceIdentity.checkpoint]）。
+  /// 索引此前只在整轮扫描的 `finally` 里存一次，进程中途被杀（移动端切后台被回收、
+  /// 远端首扫下几个小时被打断）就全丢：下一轮同名卷认不出自己，再导一份
+  /// `Vol 1 (3)`，判过「不是漫画」的包也全部重新下载。
+  final Future<void> Function()? checkpoint;
+
   int imported = 0;
   final List<String> failedPaths = <String>[];
   Object? firstError;
@@ -324,6 +334,21 @@ class _MangaVolumeTally {
       firstError ??= e;
       debugPrint(
         'SourceLibraryScanner manga import failed for $path: $e\n'
+        '$stack',
+      );
+    }
+    await _checkpoint(path);
+  }
+
+  /// 逐卷落盘索引。落盘失败不是这一卷的导入失败（卷的结局上面已经记完，书在库里）：
+  /// 改动还在内存索引里，下一卷的落盘与整轮收尾的那次保存会再写，收尾那次失败照常
+  /// 让整次扫描报错。
+  Future<void> _checkpoint(String path) async {
+    try {
+      await checkpoint?.call();
+    } catch (e, stack) {
+      debugPrint(
+        'SourceLibraryScanner manga index checkpoint failed after $path: $e\n'
         '$stack',
       );
     }
@@ -409,7 +434,27 @@ class _MangaSourceIdentity {
   bool isRejected(String path) =>
       index.isRejected(relOf(path), fingerprintOf(path));
 
-  void reject(String path) => index.reject(relOf(path), fingerprintOf(path));
+  void reject(String path) {
+    index.reject(relOf(path), fingerprintOf(path));
+    _checkpointDue = true;
+  }
+
+  /// 内存里的索引有没有**丢了就找不回来**的未落盘改动：新导入的卷（[record]）与
+  /// 「不是漫画」的结论（[reject]）。
+  ///
+  /// 认领（[policyFor] 把已在库的同名卷记回索引）不算：索引丢了，下一轮按同一条
+  /// 查询原样再认领一遍。索引是整份重写的一条 preferences，把认领也逐卷落盘的话，
+  /// 索引丢失后重扫一个几千卷、全部已在库的来源就是几千次整份重写；认领的改动随
+  /// 下一次落盘或整轮收尾的那次保存一起写。
+  bool _checkpointDue = false;
+
+  /// 有丢不起的改动就落盘（一条 preferences 写入）；没有是空操作——重扫一个全部
+  /// 已入库的来源一次都不写。
+  Future<void> checkpoint() async {
+    if (!_checkpointDue) return;
+    await index.save(db);
+    _checkpointDue = false;
+  }
 
   /// 卷 [path]（拟用标题 [title]）该用的重复处理策略；null = 不导入。
   ///
@@ -455,7 +500,9 @@ class _MangaSourceIdentity {
   /// 卷 [path] 导入成了书 [bookKey]：登记进索引。
   Future<void> record(String path, String bookKey) async {
     final String? uid = await bookUidForKey(db, bookKey);
-    if (uid != null) index.put(relOf(path), uid);
+    if (uid == null) return;
+    index.put(relOf(path), uid);
+    _checkpointDue = true;
   }
 }
 
@@ -576,6 +623,18 @@ class ScanPlan {
   final List<String> ambiguousAudiobookBookPaths;
 }
 
+/// 扫描没有开始的类型化原因（[SourceScanSummary.blocked]）。
+enum SourceScanBlock {
+  /// 视频刮削资料正在清理（[VideoScrapeOperationGate] 的 maintenance 租约被占着），
+  /// 清理结束前视频来源不能扫。
+  videoScrapeMaintenance('video_scrape_maintenance');
+
+  const SourceScanBlock(this.wireValue);
+
+  /// 给 ctl 输出用的稳定标识（不随界面语言变）。
+  final String wireValue;
+}
+
 /// 一次来源扫描的可核对摘要。
 ///
 /// 扫描器仍负责把成功/失败状态写回 `MediaSources`；调用方通过本值决定是否启动
@@ -596,6 +655,7 @@ class SourceScanSummary {
     this.audiobookTranscribeQueuedCount = 0,
     this.ambiguousAudiobookBookPaths = const <String>[],
     this.error,
+    this.blocked,
   });
 
   final int sourceId;
@@ -620,6 +680,10 @@ class SourceScanSummary {
   /// 书籍来源：有声书音频可能属于多本书、放弃配对的书路径。
   final List<String> ambiguousAudiobookBookPaths;
   final String? error;
+
+  /// 扫描**没有开始**的类型化原因（null = 扫描跑了，成败看 [error]）。[error] 此时是
+  /// 给人看的本地化文案；程序（ctl 路由、调用方分支）认这个字段，不去匹配文案。
+  final SourceScanBlock? blocked;
 
   bool get succeeded => error == null;
 }
@@ -646,6 +710,74 @@ List<SourceFileEntry> excludeSourceIncomingEntries(
       )
       .toList(growable: false);
 }
+
+/// 目录名（小写比较）整棵不扫：回收站、系统卷信息、NAS / macOS 的索引与缩略图目录。
+/// 里面的文件要么是别的东西的残骸（回收站里的 `$Rxxxx.mkv`），要么根本不是媒体。
+const Set<String> kSourceScanJunkDirectoryNames = <String>{
+  r'$recycle.bin',
+  'recycler',
+  'system volume information',
+  '@eadir',
+  '#recycle',
+  '@recycle',
+  '@recently-snapshot',
+  '.trash',
+  '.trashes',
+  '.spotlight-v100',
+  '.fseventsd',
+  '.temporaryitems',
+  '.documentrevisions-v100',
+  'lost+found',
+};
+
+/// [path]（[scanRoot] 之下的条目或目录）是不是系统 / 垃圾条目：
+///
+/// - 任一层目录名在 [kSourceScanJunkDirectoryNames] 里，或是 Linux 的 `.Trash-<uid>`；
+/// - 文件名以 `._` 开头——macOS 往 exFAT / SMB / WebDAV 盘上写的 AppleDouble 资源叉，
+///   与正片同名同扩展名（`._01.mkv`），只看扩展名会被当成视频 / 页图入库。
+///
+/// 只看 [scanRoot] **之下**的路径段：用户把回收站本身加成来源是他自己的选择。不一刀切
+/// 丢所有 `.` 开头的名字（`.hidden/` 里放媒体是合法用法）。
+bool isSourceScanJunkPath(
+  String path, {
+  required String scanRoot,
+  required bool isDirectory,
+}) {
+  String norm(String value) => value.replaceAll(r'\', '/');
+  final String root = norm(scanRoot);
+  String rel = norm(path);
+  final String prefix = root.endsWith('/') ? root : '$root/';
+  if (rel.startsWith(prefix)) rel = rel.substring(prefix.length);
+  final List<String> segments = rel
+      .split('/')
+      .where((String s) => s.isNotEmpty)
+      .toList(growable: false);
+  if (segments.isEmpty) return false;
+  final int dirCount = isDirectory ? segments.length : segments.length - 1;
+  for (int i = 0; i < dirCount; i++) {
+    final String name = segments[i].toLowerCase();
+    if (kSourceScanJunkDirectoryNames.contains(name) ||
+        name.startsWith('.trash-')) {
+      return true;
+    }
+  }
+  return !isDirectory && segments.last.startsWith('._');
+}
+
+/// 丢掉列目录结果里的系统 / 垃圾条目（[isSourceScanJunkPath]）。本地与网络来源一起过：
+/// `._` 文件和 `@eaDir` 在 NAS 的 WebDAV / SFTP 来源里同样出现。
+List<SourceFileEntry> excludeSourceJunkEntries(
+  List<SourceFileEntry> entries, {
+  required String scanRoot,
+}) => entries
+    .where(
+      (SourceFileEntry entry) => !isSourceScanJunkPath(
+        entry.path,
+        scanRoot: scanRoot,
+        isDirectory: entry.isDirectory,
+      ),
+    )
+    .toList(growable: false);
 
 /// Pure function: classifies a listed [files] set into a scan plan. No IO.
 ///
@@ -871,6 +1003,18 @@ class _BookImportTally {
   int missingSubtitle = 0;
   int transcribeQueued = 0;
   final List<String> ambiguous;
+
+  /// 导入 / 挂有声书时抛了异常的书（来源路径）与第一个失败原因。
+  final List<String> failedPaths = <String>[];
+  Object? firstError;
+
+  void fail(String path, Object error, StackTrace stack) {
+    failedPaths.add(path);
+    firstError ??= error;
+    debugPrint(
+      'SourceLibraryScanner book import failed for $path: $error\n$stack',
+    );
+  }
 }
 
 class _BookAudiobookPlan {
@@ -1011,9 +1155,15 @@ class SourceLibraryScanner {
 
   /// 从来源行解析文件系统：local → LocalSourceFileSystem；网络 → 解出连接参数
   /// （configJson）+ 凭据（SourceLibraryCredentialStore）构造 NetworkSourceFileSystem。
-  Future<SourceFileSystem> _resolveFileSystem(SourceLibraryRow source) async {
+  Future<SourceFileSystem> _resolveFileSystem(
+    SourceLibraryRow source, {
+    void Function(String dirPath, FileSystemException error)?
+    onUnreadableDirectory,
+  }) async {
     if (source.transport == 'local') {
-      return const LocalSourceFileSystem();
+      return LocalSourceFileSystem(
+        onUnreadableDirectory: onUnreadableDirectory,
+      );
     }
     final SourceLibrarySecret secret = await SourceLibraryCredentialStore(
       _db,
@@ -1071,15 +1221,21 @@ class SourceLibraryScanner {
   }) {
     // 每来源互斥（[sourceScanActivity]）：曲库页重扫、来源页重扫、ctl 路由、自动扫描等
     // 所有入口都经这里，同一来源不会被并发扫；先拿来源锁再拿视频刮削门，不持门等锁。
-    return sourceScanActivity.run(
-      source.id,
-      () => _scanGated(
+    return sourceScanActivity.run(source.id, () async {
+      // 以前的进程在扫描中途被杀留下的东西（「仅此一次」的临时来源行、临时目录）：
+      // 每个库实例清一次，放在来源锁里面——本进程正在跑的那几条不会被当成残留。
+      await sweepSourceScanLeftoversOnce(
+        _db,
+        releaseAccess: _folderAccess.release,
+        keep: <int>{source.id},
+      );
+      return _scanGated(
         source,
         fs: fs,
         restoreDissolvedGroups: restoreDissolvedGroups,
         oneShot: oneShot,
-      ),
-    );
+      );
+    });
   }
 
   Future<SourceScanSummary> _scanGated(
@@ -1100,7 +1256,8 @@ class SourceLibraryScanner {
           mediaKind: source.mediaKind,
           discoveredPaths: const <String>[],
           importedMediaCount: 0,
-          error: '视频刮削资料正在清理',
+          error: t.media_source_scan_blocked_scrape_cleanup,
+          blocked: SourceScanBlock.videoScrapeMaintenance,
         ),
       );
     }
@@ -1298,7 +1455,15 @@ class SourceLibraryScanner {
     if (source.mediaKind == SourceLibraryKind.game.dbValue) {
       return _scanGameSource(source);
     }
-    final SourceFileSystem transportFs = fs ?? await _resolveFileSystem(source);
+    // 列目录时读不了的子目录（本地来源）：跳过它继续扫，收尾时记进部分失败汇总。
+    final List<String> unreadableDirs = <String>[];
+    final SourceFileSystem transportFs =
+        fs ??
+        await _resolveFileSystem(
+          source,
+          onUnreadableDirectory: (String dirPath, FileSystemException _) =>
+              unreadableDirs.add(dirPath),
+        );
     int mediaCount = 0;
     String? scanError;
 
@@ -1346,11 +1511,28 @@ class SourceLibraryScanner {
           : (files: transportFs, scanRoot: source.rootPath);
       final SourceFileSystem files = ns.files;
       final String scanRoot = ns.scanRoot;
-      final List<SourceFileEntry> entries = excludeSourceIncomingEntries(
-        await files.listFiles(source.rootPath, recursive: source.recursive),
-        sourceRoot: source.rootPath,
-        isLocal: files.isLocal,
+      // 系统 / 垃圾条目（回收站、`._` 资源叉、NAS 索引目录）与下载暂存目录在这里一起
+      // 滤掉，后面的归类只看扩展名。
+      final List<SourceFileEntry> entries = excludeSourceJunkEntries(
+        excludeSourceIncomingEntries(
+          await files.listFiles(source.rootPath, recursive: source.recursive),
+          sourceRoot: source.rootPath,
+          isLocal: files.isLocal,
+        ),
+        scanRoot: scanRoot,
       );
+      // 读不了的子目录里，系统目录（`System Volume Information` 等）本来就不扫，不算
+      // 失败；其余的如实报出来——里面的媒体这一轮没进得来。
+      final List<String> skippedDirs = <String>[
+        for (final String dir in unreadableDirs)
+          if (!isSourceScanJunkPath(dir, scanRoot: scanRoot, isDirectory: true))
+            dir,
+      ];
+      if (skippedDirs.isNotEmpty) {
+        partialError =
+            '${skippedDirs.length} folder(s) could not be read and were '
+            'skipped. First: ${skippedDirs.first}';
+      }
       final ScanPlan plan = planScanFromFileList(
         entries,
         mangaRootPath: kind == SourceLibraryKind.manga ? source.rootPath : null,
@@ -1389,6 +1571,15 @@ class SourceLibraryScanner {
           );
           mediaCount = books.imported;
           bookTally = books;
+          // 与视频（BUG-2570）/ 漫画同语义：一本书失败不作废其余的书。
+          if (books.failedPaths.isNotEmpty) {
+            final String note =
+                'Imported ${books.imported} book(s); '
+                '${books.failedPaths.length} failed. First failure: '
+                '${p.basename(books.failedPaths.first)} — '
+                '${books.firstError}';
+            partialError = partialError == null ? note : '$partialError; $note';
+          }
           // 与视频分支对称：入库后把分卷按系列持久归组（BUG-3441）。不留到书架页
           // 打开才归——本机作为互联 host / 合集云同步源时，对端拿到的归属来自这里。
           await BookSeriesGrouper(_db).groupAll();
@@ -1407,11 +1598,12 @@ class SourceLibraryScanner {
           // 汇总成一条能照着查的错误，成功的条目照常计数入库。真正中断扫描的异常
           // 仍走下面的总 catch 覆盖它（那是整次扫描没跑完，比部分失败更严重）。
           if (imported.failedPaths.isNotEmpty) {
-            partialError =
+            final String note =
                 'Imported ${createdVideoPaths.length} video(s); '
                 '${imported.failedPaths.length} failed. First failure: '
                 '${p.basename(imported.failedPaths.first)} — '
                 '${imported.firstError}';
+            partialError = partialError == null ? note : '$partialError; $note';
           }
           // 来源扫描与旧「导入视频文件夹」共用同一套作品/季/集解析规则：散片
           // 保持独立，多集整理为 playlist 合集。先完成逐文件入库，字幕 cue / 封面
@@ -1536,11 +1728,12 @@ class SourceLibraryScanner {
           mediaCount = manga.imported;
           // 与视频分支同语义（BUG-2570）：部分卷失败不作废整批。
           if (manga.failedPaths.isNotEmpty) {
-            partialError =
+            final String note =
                 'Imported ${manga.imported} manga volume(s); '
                 '${manga.failedPaths.length} failed. First failure: '
                 '${p.basename(manga.failedPaths.first)} — '
                 '${manga.firstError}';
+            partialError = partialError == null ? note : '$partialError; $note';
           }
           await BookSeriesGrouper(_db).groupAll();
         case SourceLibraryKind.music:
@@ -1615,68 +1808,83 @@ class SourceLibraryScanner {
     final Set<String> ambiguous = plan.ambiguousAudiobookBookPaths.toSet();
     // R5 候选：导入（或重复跳过）后仍没配上音频的非 PDF 书 → 它在库里的 bookKey。
     final Map<String, String> r5BookKeys = <String, String>{};
-    Directory? epubTmp;
     for (final ScanBookItem item in plan.books) {
-      String? bookKey;
+      // 一本书的失败只作废这本书（与视频 BUG-2570、漫画逐卷记账同语义）。此前循环
+      // 只接重复信号，任何别的异常（坏 EPUB、下载中断）直接跳出：后面的书全不导，
+      // 远端来源的临时目录也不删。
       try {
+        String? bookKey;
         // 网络来源：先把远端书文件下载到临时盘（导入器只吃本地路径）；本地原样。
-        String localBook = item.bookPath;
-        if (!fs.isLocal) {
-          epubTmp ??= Directory.systemTemp.createTempSync('m1c_scan_books_');
-          localBook = await fs.copyToLocal(item.bookPath, epubTmp.path);
+        // 每本书各用一个临时目录、导完即删——整轮共用一个的话，整库的书要在临时盘上
+        // 留到扫描结束。
+        Directory? bookTmp;
+        try {
+          String localBook = item.bookPath;
+          if (!fs.isLocal) {
+            bookTmp = createSourceScanTempDir('m1c_scan_books_');
+            localBook = await fs.copyToLocal(item.bookPath, bookTmp.path);
+          }
+          // DuplicatePolicy.skip() reuses the sanitizeTtuFilename identity key so
+          // a re-scan / same-batch duplicate throws
+          // DuplicateImportCancelledException (caught below) instead of a silent
+          // "X (2)" (BUG-443). The returned bookKey is the audiobook anchor when a
+          // sidecar audio attaches.
+          //
+          // PDF 分流到 [PdfImporter]：同一套 bookKey 身份、同一条 skip 语义、同一张
+          // `EpubBooks` 表，差别只在产物（拷 document.pdf + 栅格化首页当封面）。标题
+          // 取文件名去扩展名——PDF 元数据里的标题不可靠，与单本导入对话框同口径。
+          bookKey = item.isPdf
+              ? await PdfImporter.importFromPath(
+                  db: _db,
+                  filePath: localBook,
+                  fileName: p.basename(item.bookPath),
+                  title: p.basenameWithoutExtension(item.bookPath),
+                  sourceId: source.id,
+                  policy: const DuplicatePolicy.skip(),
+                )
+              : await EpubImporter.importFromPath(
+                  db: _db,
+                  filePath: localBook,
+                  fileName: p.basename(item.bookPath),
+                  sourceId: source.id,
+                  policy: const DuplicatePolicy.skip(),
+                );
+          tally.imported++;
+        } on DuplicateImportCancelledException catch (e) {
+          // TODO-1284：书已导入过。纯重扫时静默跳过是对的（对齐 _importVideos），但若
+          // 首次导入后才把字幕+音频放到书旁边（书当初是按纯 EPUB 导入的），重扫必须
+          // 把它补挂成有声书——否则新增的 .srt/.mp3 被静默忽略。[_attachAudiobook]
+          // 只在该书尚未挂任何有声书时才动手，保证重复重扫幂等、不重跑 matcher、不
+          // 覆盖用户手动重匹配。
+          final String existingKey = sanitizeTtuFilename(e.title);
+          if (await _db.getEpubBook(existingKey) != null) bookKey = existingKey;
+          debugPrint(
+            'SourceLibraryScanner skip duplicate book '
+            '${e.title} (${item.bookPath})',
+          );
+        } finally {
+          _deleteScanTempDir(bookTmp);
         }
-        // DuplicatePolicy.skip() reuses the sanitizeTtuFilename identity key so a
-        // re-scan / same-batch duplicate throws DuplicateImportCancelledException
-        // (caught below) instead of a silent "X (2)" (BUG-443). The returned
-        // bookKey is the audiobook anchor when a sidecar audio attaches.
-        //
-        // PDF 分流到 [PdfImporter]：同一套 bookKey 身份、同一条 skip 语义、同一张
-        // `EpubBooks` 表，差别只在产物（拷 document.pdf + 栅格化首页当封面）。标题
-        // 取文件名去扩展名——PDF 元数据里的标题不可靠，与单本导入对话框同口径。
-        bookKey = item.isPdf
-            ? await PdfImporter.importFromPath(
-                db: _db,
-                filePath: localBook,
-                fileName: p.basename(item.bookPath),
-                title: p.basenameWithoutExtension(item.bookPath),
-                sourceId: source.id,
-                policy: const DuplicatePolicy.skip(),
-              )
-            : await EpubImporter.importFromPath(
-                db: _db,
-                filePath: localBook,
-                fileName: p.basename(item.bookPath),
-                sourceId: source.id,
-                policy: const DuplicatePolicy.skip(),
-              );
-        tally.imported++;
-      } on DuplicateImportCancelledException catch (e) {
-        // TODO-1284：书已导入过。纯重扫时静默跳过是对的（对齐 _importVideos），但若
-        // 首次导入后才把字幕+音频放到书旁边（书当初是按纯 EPUB 导入的），重扫必须
-        // 把它补挂成有声书——否则新增的 .srt/.mp3 被静默忽略。[_attachAudiobook] 只在
-        // 该书尚未挂任何有声书时才动手，保证重复重扫幂等、不重跑 matcher、不覆盖
-        // 用户手动重匹配。
-        final String existingKey = sanitizeTtuFilename(e.title);
-        if (await _db.getEpubBook(existingKey) != null) bookKey = existingKey;
-        debugPrint(
-          'SourceLibraryScanner skip duplicate book '
-          '${e.title} (${item.bookPath})',
+        if (bookKey == null) continue;
+        if (item.audioPaths.isEmpty) {
+          if (!item.isPdf && !ambiguous.contains(item.bookPath)) {
+            r5BookKeys[item.bookPath] = bookKey;
+          }
+          continue;
+        }
+        await _attachAudiobook(
+          item,
+          bookKey: bookKey,
+          fs: fs,
+          hasBookmark: hasBookmark,
+          tally: tally,
         );
+      } catch (e, stack) {
+        tally.fail(item.bookPath, e, stack);
+        // 「这一本坏」才逐本隔离；连接断了就整轮结束——否则剩下的每本书都要各自
+        // 等一次下载失败，期间来源锁一直占着。
+        if (!await _sourceStillReachable(fs, source.rootPath)) rethrow;
       }
-      if (bookKey == null) continue;
-      if (item.audioPaths.isEmpty) {
-        if (!item.isPdf && !ambiguous.contains(item.bookPath)) {
-          r5BookKeys[item.bookPath] = bookKey;
-        }
-        continue;
-      }
-      await _attachAudiobook(
-        item,
-        bookKey: bookKey,
-        fs: fs,
-        hasBookmark: hasBookmark,
-        tally: tally,
-      );
     }
 
     // R5：全部书导入完后统一按 EPUB 元数据标题配一次（结果与处理顺序无关；冲突的
@@ -1697,26 +1905,52 @@ class SourceLibraryScanner {
       final List<String> paired = byTitle.keys.toList()..sort();
       for (final String bookPath in paired) {
         final BookAudiobookPairing pairing = byTitle[bookPath]!;
-        await _attachAudiobook(
-          ScanBookItem(
-            bookPath: bookPath,
-            subtitlePath: pairing.subtitlePath,
-            audioPaths: pairing.audioPaths,
-          ),
-          bookKey: r5BookKeys[bookPath]!,
-          fs: fs,
-          hasBookmark: hasBookmark,
-          tally: tally,
-        );
+        try {
+          await _attachAudiobook(
+            ScanBookItem(
+              bookPath: bookPath,
+              subtitlePath: pairing.subtitlePath,
+              audioPaths: pairing.audioPaths,
+            ),
+            bookKey: r5BookKeys[bookPath]!,
+            fs: fs,
+            hasBookmark: hasBookmark,
+            tally: tally,
+          );
+        } catch (e, stack) {
+          tally.fail(bookPath, e, stack);
+          if (!await _sourceStillReachable(fs, source.rootPath)) rethrow;
+        }
       }
     }
-
-    if (epubTmp != null) {
-      try {
-        epubTmp.deleteSync(recursive: true);
-      } catch (_) {}
-    }
     return tally;
+  }
+
+  /// 一本书失败之后：来源本身还连得上吗？本地来源恒为 true；远端重新列一次来源根
+  /// （不递归，一次请求）——列得出来说明坏的是那本书，列不出来说明连接断了。
+  static Future<bool> _sourceStillReachable(
+    SourceFileSystem fs,
+    String rootPath,
+  ) async {
+    if (fs.isLocal) return true;
+    try {
+      await fs.listFiles(rootPath);
+      return true;
+    } catch (e) {
+      debugPrint('SourceLibraryScanner source unreachable ($rootPath): $e');
+      return false;
+    }
+  }
+
+  /// 删一个扫描临时目录（null / 已不在都算完成）。删不掉（文件被占着）不是这次导入
+  /// 的失败：留在本进程的会话目录里，由 [sweepDeadSourceScanSessions] 之后回收。
+  static void _deleteScanTempDir(Directory? dir) {
+    if (dir == null) return;
+    try {
+      dir.deleteSync(recursive: true);
+    } on FileSystemException catch (e) {
+      debugPrint('SourceLibraryScanner temp dir not deleted (${dir.path}): $e');
+    }
   }
 
   /// 把 [item] 配上的有声书挂到库里的 [bookKey] 上。
@@ -1789,9 +2023,7 @@ class SourceLibraryScanner {
     Future<T> Function(String subtitlePath, List<String> audioPaths) body,
   ) async {
     if (fs.isLocal) return body(item.subtitlePath!, item.audioPaths);
-    final Directory tmp = Directory.systemTemp.createTempSync(
-      'm1c_scan_book_sidecars_',
-    );
+    final Directory tmp = createSourceScanTempDir('m1c_scan_book_sidecars_');
     int slot = 0;
     Future<String> download(String remote) {
       final Directory dir = Directory(p.join(tmp.path, '${slot++}'))
@@ -1838,11 +2070,10 @@ class SourceLibraryScanner {
     SourceFileSystem fs,
     List<SourceFileEntry> entries,
   ) async {
-    final _MangaVolumeTally tally = _MangaVolumeTally();
     if (plan.mangas.isEmpty &&
         plan.mangaArchives.isEmpty &&
         plan.mangaFolders.isEmpty) {
-      return tally;
+      return _MangaVolumeTally();
     }
     final _MangaSourceIdentity identity = await _MangaSourceIdentity.load(
       db: _db,
@@ -1850,6 +2081,11 @@ class SourceLibraryScanner {
       isLocal: fs.isLocal,
       plan: plan,
       entries: entries,
+    );
+    // 每卷结束即落盘索引；末尾的 finally 仍整份存一次（[load] 里的裁剪、认领、
+    // 合订本回收对索引的改动不经逐卷落盘）。
+    final _MangaVolumeTally tally = _MangaVolumeTally(
+      checkpoint: identity.checkpoint,
     );
     try {
       if (fs.isLocal) {
@@ -2160,9 +2396,7 @@ class SourceLibraryScanner {
       );
     }
 
-    final Directory tmp = Directory.systemTemp.createTempSync(
-      'm1c_scan_manga_',
-    );
+    final Directory tmp = createSourceScanTempDir('m1c_scan_manga_');
     try {
       // 逐页镜像，**连页图根一起原样保留**（`<根>/<url>`）：本地导入器对着镜像
       // 目录再解析一次根，两边同一口径，于是镜像布局与远端逐段同构。`..` 段直接
@@ -2229,9 +2463,7 @@ class SourceLibraryScanner {
     final DuplicatePolicy? policy = await id.policyFor(item.mokuroPath, title);
     if (policy == null) return false;
     final String prefix = parentDir.isEmpty ? '' : '$parentDir/';
-    final Directory tmp = Directory.systemTemp.createTempSync(
-      'm1c_scan_manga_legacy_',
-    );
+    final Directory tmp = createSourceScanTempDir('m1c_scan_manga_legacy_');
     try {
       // 标题已按远端路径定好并显式传给导入器，镜像根叫什么不影响身份。
       final Directory root = Directory(p.join(tmp.path, 'volume'))
@@ -2284,9 +2516,7 @@ class SourceLibraryScanner {
     final String title = p.basenameWithoutExtension(sourceEntryBasename(path));
     final DuplicatePolicy? policy = await id.policyFor(path, title);
     if (policy == null) return false;
-    final Directory tmp = Directory.systemTemp.createTempSync(
-      'm1c_scan_manga_archive_',
-    );
+    final Directory tmp = createSourceScanTempDir('m1c_scan_manga_archive_');
     try {
       final String localArchive = await fs.copyToLocal(path, tmp.path);
       final String? sidecar = item.mokuroSidecarPath;
@@ -2325,9 +2555,7 @@ class SourceLibraryScanner {
         item.series?.title ?? sourceEntryBasename(item.folderPath);
     final DuplicatePolicy? policy = await id.policyFor(item.folderPath, title);
     if (policy == null) return false;
-    final Directory tmp = Directory.systemTemp.createTempSync(
-      'm1c_scan_manga_folder_',
-    );
+    final Directory tmp = createSourceScanTempDir('m1c_scan_manga_folder_');
     try {
       final Directory volumeDir = Directory(p.join(tmp.path, 'volume'))
         ..createSync();
@@ -2373,6 +2601,16 @@ class SourceLibraryScanner {
     )) {
       if (e.isDirectory || !e.path.startsWith(prefix)) continue;
       if (!extensions.contains(p.extension(e.name).toLowerCase())) {
+        continue;
+      }
+      // 卷目录里的 `._001.jpg` 资源叉、`@eaDir/001.jpg/SYNOPHOTO_THUMB_M.jpg` 缩略图
+      // 扩展名都对得上，不滤就成了这一卷的页（BUG-4831）。计划阶段滤过一遍，这里是
+      // 另一次列目录。
+      if (isSourceScanJunkPath(
+        e.path,
+        scanRoot: remoteDir,
+        isDirectory: false,
+      )) {
         continue;
       }
       final List<String> segs = e.path
@@ -2475,11 +2713,20 @@ class SourceLibraryScanner {
       Object? firstError;
       for (final ScanVideoItem item in plan.videos) {
         final String normalizedPath = normalizeVideoPath(item.videoPath);
-        // BUG-2979：同名旧行的文件已经不在原处 = 这就是搬走的那个文件。
+        // BUG-2979：同名旧行的文件已经不在原处，**而且有正证据**说明这就是搬走的那个
+        // 文件（[videoRowMoveEvidence]）。光凭「旧文件没了」不算：app 内扫描不回收
+        // 已删文件的行，删掉 A 剧再放进 B 剧的 `01.mkv` 时旧文件同样不在。
         final VideoBookRow? moved = streamInPlace
             ? null
             : rowByUid[singleVideoBookUid(item.videoPath)];
-        if (moved != null && await isVideoRowMovedTo(moved, item.videoPath)) {
+        final VideoMoveEvidence evidence = moved == null
+            ? VideoMoveEvidence.none
+            : await videoRowMoveEvidence(
+                moved,
+                item.videoPath,
+                knownSizeOf: _knownVideoFileSize,
+              );
+        if (moved != null && evidence != VideoMoveEvidence.none) {
           final VideoBookRow? live = rowByPath[normalizedPath];
           if (live == null) {
             // 首次扫到搬家后的文件：原行改指新路径，进度 / 字幕 cue / 标签 /
@@ -2539,9 +2786,7 @@ class SourceLibraryScanner {
             ).toStorageJson();
           } else if (item.subtitlePath != null) {
             final String fmt = _extOf(p.basename(item.subtitlePath!));
-            subtitleTmp ??= Directory.systemTemp.createTempSync(
-              'm1c_scan_subs_',
-            );
+            subtitleTmp ??= createSourceScanTempDir('m1c_scan_subs_');
             final String localSub = await fs.copyToLocal(
               item.subtitlePath!,
               subtitleTmp.path,
@@ -2607,6 +2852,11 @@ class SourceLibraryScanner {
       }
     }
   }
+
+  /// 规格缓存（`video_file_specs`，ffprobe 探过才有行）里记的 [filePath] 的字节数；
+  /// 没探过为 null。
+  Future<int?> _knownVideoFileSize(String filePath) async =>
+      (await _db.videoFileSpec(filePath))?.fileSizeBytes;
 
   /// BUG-2979：把「文件搬走后旧行没认出、又以 `X (2)` 建出的新行」归并成一行。
   ///
@@ -2717,7 +2967,7 @@ class SourceLibraryScanner {
           sourceEntryBasename(item.playlistPath),
         );
 
-        playlistTmp ??= Directory.systemTemp.createTempSync('m1c_scan_pls_');
+        playlistTmp ??= createSourceScanTempDir('m1c_scan_pls_');
         final String localM3u8 = await fs.copyToLocal(
           item.playlistPath,
           playlistTmp.path,
@@ -2955,30 +3205,174 @@ Future<void> applyBlurayDiscCollectionArtwork(
   }
 }
 
-/// BUG-2979：[row] 是不是「被搬到 [newPath] 的那个文件」的旧行。
+/// 「[VideoBookRow] 的文件被搬到了新路径」的正证据。
 ///
-/// 判据全部成立才算：同文件名（bookUid 同源派生，调用方已按它取出 [row]）、
-/// 路径不同、旧行是普通本地文件（不是流媒体 / 播放列表 / URL）、旧文件已不存在，
-/// 而且**旧路径所在的盘还在线**——网络盘 / 移动硬盘没挂上时旧文件当然「不存在」，
-/// 那不是搬家，绝不能把仍然有效的旧行并掉。
+/// 改指（旧行指向新文件）与合并（旧行并进新行再删）用同一道门槛：改指错了同样是把
+/// A 剧的进度 / 字幕 cue / 标签绑到 B 剧的文件上，不比删行轻。
+enum VideoMoveEvidence {
+  /// 没有证据：不是搬家（或判不出来），新文件按新文件入库、旧行不动。
+  none,
+
+  /// 新旧路径的目录尾段连着对得上，而且对上的名字里至少有一个不是通用目录名
+  /// （[isGenericVideoDirectoryName]）：`剧/Season 03/x.mkv` 整棵挪了位置。只对上
+  /// `Season 01` 这种名字不算——`剧A/Season 01/01.mkv` 与 `剧B/Season 01/01.mkv`
+  /// 也长这样。
+  directoryChain,
+
+  /// 旧路径在规格缓存里记过字节数，新文件大小与它相等。
+  sameSize,
+}
+
+/// [name]（一层目录名）是不是哪部剧里都会出现的通用名：季目录（`Season 01` / `S1` /
+/// `第2季` / 纯数字）、分盘分卷（`Disc 1` / `CD2` / `Vol.3`）、特典与原盘结构目录。
+/// 这种名字对得上不说明是同一部作品。
+bool isGenericVideoDirectoryName(String name) {
+  final String n = name.trim().toLowerCase();
+  return _genericVideoDirectoryNames.contains(n) ||
+      _numberedVideoDirectoryName.hasMatch(n);
+}
+
+const Set<String> _genericVideoDirectoryNames = <String>{
+  'specials',
+  'special',
+  'sp',
+  'sps',
+  'extras',
+  'extra',
+  'bonus',
+  'featurettes',
+  'ova',
+  'ovas',
+  'oad',
+  'movie',
+  'movies',
+  'nc',
+  'ncop',
+  'nced',
+  'op',
+  'ed',
+  'pv',
+  'cm',
+  'menu',
+  'trailers',
+  'sample',
+  'samples',
+  'subs',
+  'subtitles',
+  'video',
+  'videos',
+  'bdmv',
+  'stream',
+  'video_ts',
+  '特典',
+  '映像特典',
+  '番外',
+  '正片',
+};
+
+/// `Season 01` / `S1` / `第2季` / `Disc 1` / `Vol.3` / `01` 一类「词 + 序号」目录名。
+final RegExp _numberedVideoDirectoryName = RegExp(
+  r'^(?:season|series|s|disc|disk|cd|dvd|bd|vol|volume|part|第)?'
+  r'[\s._-]*[0-9一二三四五六七八九十]+[\s._-]*(?:季|期|部|卷|巻)?$',
+);
+
+/// BUG-2979 / BUG-4820：[row] 是不是「被搬到 [newPath] 的那个文件」的旧行，证据有多强。
+///
+/// 前提（缺一个就是 [VideoMoveEvidence.none]）：同文件名（bookUid 同源派生，调用方已
+/// 按它取出 [row]）、路径不同、旧行是普通本地文件（不是流媒体 / 播放列表 / URL）、
+/// 旧文件已不存在，而且**旧路径所在的盘还在线**——网络盘 / 移动硬盘没挂上时旧文件
+/// 当然「不存在」，那不是搬家，绝不能把仍然有效的旧行并掉。
+///
+/// 前提全是**反证**：通用文件名（`01.mkv`、`NCOP.mkv`）加上「旧文件没了」在这个 app
+/// 里是常态——扫描有意不回收已删文件的行（BUG-4055）。所以还要一条正证据：
+///
+/// - [knownSizeOf] 给得出旧路径的字节数（规格缓存里探过）→ 只看大小：相等 =
+///   [VideoMoveEvidence.sameSize]，不等 = 不是同一个文件；
+/// - 给不出（没探过）→ 比目录尾段（[_matchedTrailingDirectories]）：连着对上至少两层
+///   （或两边的目录整条都对上），且对上的名字不全是通用目录名 =
+///   [VideoMoveEvidence.directoryChain]。只对上一层不算：`剧A/Season 01/01.mkv` 删掉
+///   后放进 `剧B/Season 01/01.mkv` 也是这个形状（BUG-4820）。没探过规格、目录名又
+///   改了的真搬家因此认不出，回到另建 `X (2)`——宁可漏判，不把进度绑到别的剧上。
 ///
 /// 文件判据 async：扫描跑在 UI isolate，源库常是网络盘（rclone / SMB），同步 stat
 /// 冷目录要数秒、冻结界面与同 isolate 的互联 host（BUG-3756）。
-Future<bool> isVideoRowMovedTo(VideoBookRow row, String newPath) async {
+Future<VideoMoveEvidence> videoRowMoveEvidence(
+  VideoBookRow row,
+  String newPath, {
+  required Future<int?> Function(String oldPath) knownSizeOf,
+}) async {
   final String oldPath = row.videoPath;
-  if (row.playlistJson != null || row.streamSpecJson != null) return false;
-  if (oldPath.contains('://')) return false;
-  if (normalizeVideoPath(oldPath) == normalizeVideoPath(newPath)) return false;
+  if (row.playlistJson != null || row.streamSpecJson != null) {
+    return VideoMoveEvidence.none;
+  }
+  if (oldPath.contains('://')) return VideoMoveEvidence.none;
+  if (normalizeVideoPath(oldPath) == normalizeVideoPath(newPath)) {
+    return VideoMoveEvidence.none;
+  }
   if (_crossPlatformBasename(oldPath).toLowerCase() !=
       _crossPlatformBasename(newPath).toLowerCase()) {
-    return false;
+    return VideoMoveEvidence.none;
   }
-  if (!p.isAbsolute(oldPath)) return false;
+  if (!p.isAbsolute(oldPath)) return VideoMoveEvidence.none;
   final String root = p.rootPrefix(oldPath);
-  if (root.isEmpty || !await Directory(root).exists()) return false;
+  if (root.isEmpty || !await Directory(root).exists()) {
+    return VideoMoveEvidence.none;
+  }
   // 原盘成员按它背后的真实文件判（DVD title 是虚拟路径，裸 File 恒「不存在」）；
   // async：库根常在网络盘上（BUG-3756）。
-  return !await videoMemberExists(oldPath);
+  if (await videoMemberExists(oldPath)) return VideoMoveEvidence.none;
+
+  final int? oldSize = await knownSizeOf(oldPath);
+  if (oldSize != null) {
+    final int? newSize = await _fileSizeOrNull(newPath);
+    return newSize == oldSize
+        ? VideoMoveEvidence.sameSize
+        : VideoMoveEvidence.none;
+  }
+  final List<String> oldDirs = _directoryNames(oldPath);
+  final List<String> newDirs = _directoryNames(newPath);
+  final List<String> matched = _matchedTrailingDirectories(oldDirs, newDirs);
+  final bool wholeChain =
+      matched.isNotEmpty &&
+      matched.length == oldDirs.length &&
+      matched.length == newDirs.length;
+  if (matched.length < 2 && !wholeChain) return VideoMoveEvidence.none;
+  return matched.every(isGenericVideoDirectoryName)
+      ? VideoMoveEvidence.none
+      : VideoMoveEvidence.directoryChain;
+}
+
+/// [a] 与 [b]（[_directoryNames]，由近到远）从最近一层起连着相同的那一段。
+List<String> _matchedTrailingDirectories(List<String> a, List<String> b) {
+  final List<String> matched = <String>[];
+  for (int i = 0; i < a.length && i < b.length && a[i] == b[i]; i++) {
+    matched.add(a[i]);
+  }
+  return matched;
+}
+
+/// [path] 的字节数；读不到（刚被挪走、没权限）为 null。
+Future<int?> _fileSizeOrNull(String path) async {
+  try {
+    return await File(path).length();
+  } on FileSystemException {
+    return null;
+  }
+}
+
+/// [path] 所在的各层目录名，由近到远（小写；Windows 路径不分大小写）。盘符不算
+/// 目录名：`D:\01.mkv` 没有可比的父目录。
+List<String> _directoryNames(String path) {
+  final List<String> segments = path
+      .split(RegExp(r'[\\/]'))
+      .where((String s) => s.isNotEmpty)
+      .toList();
+  if (segments.isEmpty) return const <String>[];
+  segments.removeLast();
+  if (segments.isNotEmpty && segments.first.endsWith(':')) segments.removeAt(0);
+  return <String>[
+    for (final String name in segments.reversed) name.toLowerCase(),
+  ];
 }
 
 String _crossPlatformBasename(String path) {

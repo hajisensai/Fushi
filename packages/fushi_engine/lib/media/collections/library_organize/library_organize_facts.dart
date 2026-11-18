@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:drift/drift.dart' show QueryRow, Variable;
+import 'package:drift/drift.dart';
 
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_library_organize_assistant.dart';
@@ -11,7 +11,7 @@ import 'package:fushi_engine/media/video/video_filename_parser.dart';
 import 'package:fushi_engine/sync/collection_book_identity_index.dart';
 import 'package:path/path.dart' as p;
 
-/// 读一个库页域的整理输入（spec §7.3）：散条目 + 整理器合集里的成员 + 本域合集 +
+/// 读一个库页域的整理输入（spec §7.3）：散条目 + 非目录合集里的成员 + 本域合集 +
 /// 拒绝表 + 已占用的合集名。全部是整表一次读、内存里 join，不逐条查库。
 ///
 /// [onlyEntryKeys]（成员行键 `mediaType NUL entryKey`）：自动整理 / 「整理所选」只把
@@ -45,6 +45,10 @@ Future<LibraryOrganizeFacts> loadLibraryOrganizeFacts(
     );
     (itemsByCollection[i.collectionId] ??= <MediaCollectionItemRow>[]).add(i);
   }
+  final Map<int, Set<String>> aiEvicted = await _aiEvictedMembers(
+    db,
+    allCollections,
+  );
 
   final List<_Candidate> candidates = await switch (domain) {
     CollectionShelfDomain.books ||
@@ -67,7 +71,9 @@ Future<LibraryOrganizeFacts> loadLibraryOrganizeFacts(
           id: row.id,
           name: row.name,
           collectionType: row.collectionType,
-          origin: CollectionOrigin.parse(row.origin),
+          origin: row.sourceFolderPath != null
+              ? CollectionOrigin.folder
+              : CollectionOrigin.parse(row.origin),
           organizeKey: row.organizeKey,
           organizeAliases: decodeOrganizeAliases(row.organizeAliases),
           memberKeys: <String>{
@@ -76,6 +82,13 @@ Future<LibraryOrganizeFacts> loadLibraryOrganizeFacts(
                     const <MediaCollectionItemRow>[])
               '${i.mediaType}\u0000${i.entryKey}',
           },
+          pinnedMemberKeys: <String>{
+            for (final MediaCollectionItemRow i
+                in itemsByCollection[row.id] ??
+                    const <MediaCollectionItemRow>[])
+              if (i.pinnedByUser) '${i.mediaType}\u0000${i.entryKey}',
+          },
+          aiEvictedMemberKeys: aiEvicted[row.id] ?? const <String>{},
           sampleTitles: <String>[
             for (final MediaCollectionItemRow i
                 in (itemsByCollection[row.id] ??
@@ -94,15 +107,14 @@ Future<LibraryOrganizeFacts> loadLibraryOrganizeFacts(
 
   final List<OrganizeEntry> entries = <OrganizeEntry>[];
   for (final _Candidate c in candidates) {
-    final List<int> holders = collectionsOfMember[c.memberKey] ?? const <int>[];
-    final int? managed = holders.isEmpty
-        ? null
-        : <int>[
-            for (final int id in holders)
-              if (factById[id]?.origin.isOrganizerManaged == true) id,
-          ].fold<int?>(null, (int? a, int b) => a == null || b < a ? b : a);
-    // 在用户 / 目录合集里的条目不交给 AI 动（AI 只往用户合集里加散条目）。
-    if (holders.isNotEmpty && managed == null) continue;
+    final List<int> holders = <int>[...?collectionsOfMember[c.memberKey]]
+      ..sort();
+    // 目录合集的成员由磁盘目录决定（设计稿 §7）：在目录合集里的条目不交给 AI 动。
+    if (holders.any((int id) => factById[id]?.isFolder ?? false)) continue;
+    final int? managed = <int>[
+      for (final int id in holders)
+        if (factById[id]?.origin.isOrganizerManaged == true) id,
+    ].fold<int?>(null, (int? a, int b) => a == null || b < a ? b : a);
     if (onlyEntryKeys != null && !onlyEntryKeys.contains(c.memberKey)) {
       continue;
     }
@@ -114,6 +126,7 @@ Future<LibraryOrganizeFacts> loadLibraryOrganizeFacts(
         companions: c.companions,
         externalWorkKey: c.externalWorkKey,
         managedCollectionId: managed,
+        collectionIds: holders,
         item: AiOrganizeItem(
           title: c.item.title,
           creator: c.item.creator,
@@ -155,6 +168,47 @@ Future<LibraryOrganizeFacts> loadLibraryOrganizeFacts(
     rejectedNames: rejectedNames,
     takenNames: taken,
   );
+}
+
+/// 本机整理记录里 AI 移出 / 挪走过的（合集, 成员）对（含已撤销的：撤销 = 用户否决，
+/// 成员行已 pinned；没撤销的 = 已移出过一次）。按记录里的合集自然键对到当前合集 id。
+/// 设计稿 §7「同一对只移出一次」的本机判据；跨端靠成员墓碑（防并回）与 pinned 同步。
+Future<Map<int, Set<String>>> _aiEvictedMembers(
+  FushiDatabase db,
+  List<MediaCollectionRow> collections,
+) async {
+  final Map<String, int> idByNatural = <String, int>{
+    for (final MediaCollectionRow c in collections)
+      '${c.name}\u0000${c.collectionType}': c.id,
+  };
+  final Map<int, Set<String>> out = <int, Set<String>>{};
+  final List<LibraryOrganizeChangeRow> rows = await (db.select(
+    db.libraryOrganizeChanges,
+  )..where((t) => t.kind.isIn(const <String>['evict', 'move']))).get();
+  for (final LibraryOrganizeChangeRow r in rows) {
+    final Object? decoded = _json(r.payloadJson);
+    if (decoded is! Map) continue;
+    String name = r.collectionName;
+    String type = r.collectionType;
+    if (r.kind == 'move') {
+      final Object? from = decoded['from'];
+      if (from is! Map || from['name'] is! String || from['type'] is! String) {
+        continue;
+      }
+      name = from['name'] as String;
+      type = from['type'] as String;
+    }
+    final int? id = idByNatural['$name\u0000$type'];
+    if (id == null) continue;
+    final Object? members = decoded['members'];
+    if (members is! List) continue;
+    for (final Object? m in members) {
+      if (m is Map && m['t'] is String && m['k'] is String) {
+        (out[id] ??= <String>{}).add('${m['t']}\u0000${m['k']}');
+      }
+    }
+  }
+  return out;
 }
 
 /// 内部候选：一个条目在被分类为散 / 整理器成员之前的样子。

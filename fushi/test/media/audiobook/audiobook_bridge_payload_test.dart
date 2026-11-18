@@ -76,4 +76,84 @@ void main() {
       );
     });
   });
+
+  group('sentenceAudioCueIndexFor（章 → 本章句级 cue 的派生索引）', () {
+    AudioCue plain(int i) => AudioCue()
+      ..bookKey = ''
+      ..chapterHref = ''
+      ..sentenceIndex = i
+      ..textFragmentId = '[data-cue-id="$i"]'
+      ..text = 'plain $i'
+      ..startMs = 0
+      ..endMs = 0
+      ..audioFileIndex = 0;
+
+    List<AudioCue> book() => <AudioCue>[
+      _cue(sentenceIndex: 0, section: 2, ns: 0, ne: 5, text: 'さしすせそ'),
+      plain(1),
+      _cue(sentenceIndex: 2, section: 0, ns: 10, ne: 18, text: '吾輩は猫である'),
+      _cue(sentenceIndex: 3, section: 2, ns: 9, ne: 12, text: 'たちつ'),
+      _cue(sentenceIndex: 4, section: 0, ns: 30, ne: 41, text: '名前はまだ無い'),
+    ];
+
+    test('每一章的 payload 与 buildSentenceAudioPayload 逐位相同（含顺序）', () {
+      final List<AudioCue> cues = book();
+      final SentenceAudioCueIndex index =
+          AudiobookBridge.sentenceAudioCueIndexFor(cues);
+      for (final int section in <int>[0, 1, 2, 7]) {
+        expect(
+          index.payloadFor(section),
+          AudiobookBridge.buildSentenceAudioPayload(cues, section),
+          reason: 'section=$section',
+        );
+      }
+      expect(
+        index.payloadFor(2).map((Map<String, dynamic> e) => e['text']),
+        <String>['さしすせそ', 'たちつ'],
+      );
+      expect(index.payloadFor(1), isEmpty);
+      expect(index.hasSentenceAudio, isTrue);
+    });
+
+    test('同一个列表对象只建一次索引；换了列表对象各建各的', () {
+      final List<AudioCue> cues = book();
+      final SentenceAudioCueIndex first =
+          AudiobookBridge.sentenceAudioCueIndexFor(cues);
+      expect(
+        identical(AudiobookBridge.sentenceAudioCueIndexFor(cues), first),
+        isTrue,
+        reason: '每装一章都来取，不能每次重新解码整书',
+      );
+      expect(
+        identical(
+          AudiobookBridge.sentenceAudioCueIndexFor(List<AudioCue>.of(cues)),
+          first,
+        ),
+        isFalse,
+        reason: '索引跟着列表对象走：整书 cue 换了列表就不得沿用旧索引',
+      );
+    });
+
+    test('同一个列表对象长度变了：索引重建，新 cue 进 payload', () {
+      final List<AudioCue> cues = book();
+      final SentenceAudioCueIndex first =
+          AudiobookBridge.sentenceAudioCueIndexFor(cues);
+      expect(first.payloadFor(5), isEmpty);
+      cues.add(_cue(sentenceIndex: 5, section: 5, ns: 0, ne: 3, text: 'なにぬ'));
+      final SentenceAudioCueIndex second =
+          AudiobookBridge.sentenceAudioCueIndexFor(cues);
+      expect(identical(second, first), isFalse);
+      expect(second.payloadFor(5).single['text'], 'なにぬ');
+    });
+
+    test('整书没有一条句级 cue：hasSentenceAudio 为 false，任何章都是空表', () {
+      final SentenceAudioCueIndex index =
+          AudiobookBridge.sentenceAudioCueIndexFor(<AudioCue>[
+            plain(0),
+            plain(1),
+          ]);
+      expect(index.hasSentenceAudio, isFalse);
+      expect(index.payloadFor(0), isEmpty);
+    });
+  });
 }

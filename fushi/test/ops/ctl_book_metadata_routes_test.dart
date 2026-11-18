@@ -193,6 +193,27 @@ void main() {
     );
   });
 
+  test('apply onlyEmpty：已有 override 封面 / 显示名的字段不覆盖，全被滤掉 → 422', () async {
+    await seedBook(db, '鱼');
+    Future<Object?> apply(List<String> fields) => call(
+      'POST',
+      '$kBookMetadataCtlItems/:key/scrape',
+      params: <String, String>{'key': 'book:鱼'},
+      body: <String, Object?>{'id': '11', 'fields': fields, 'onlyEmpty': true},
+    );
+    // 起初都空：照写。
+    final Map<String, Object?> first =
+        (await apply(<String>['cover']))! as Map<String, Object?>;
+    expect(first['applied'], <String>['cover']);
+    // 已有 override 封面：封面被滤掉，只写显示名。
+    final Map<String, Object?> second =
+        (await apply(<String>['cover', 'title']))! as Map<String, Object?>;
+    expect(second['applied'], <String>['title']);
+    expect(second['requested'], <String>['title']);
+    // 两项都有值了：没东西写。
+    expect(() => apply(<String>['cover', 'title']), _ctlFailure(422));
+  });
+
   test('apply：键不对 400、视频键 422、书不存在 404、候选不存在 404、没给 id 400', () async {
     Future<Object?> apply(String key, Map<String, Object?> body) => call(
       'POST',
