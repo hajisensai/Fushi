@@ -106,8 +106,11 @@ final class SrsBackupUnit {
 }
 
 /// `srs/manifest.json`。
-final class SrsBackupManifest {
-  const SrsBackupManifest({required this.exportedAt, required this.units});
+final class SrsBackupBundleManifest {
+  const SrsBackupBundleManifest({
+    required this.exportedAt,
+    required this.units,
+  });
 
   final int exportedAt;
   final List<SrsBackupUnit> units;
@@ -120,7 +123,7 @@ final class SrsBackupManifest {
   };
 
   /// 解析清单（外部数据，逐项校验）。更新版本写的抛 [SrsBackupTooNewException]，坏清单抛 [FormatException]。
-  static SrsBackupManifest parse(List<int> bytes) {
+  static SrsBackupBundleManifest parse(List<int> bytes) {
     if (bytes.length > kSrsBackupManifestMaxBytes) {
       throw const FormatException('srs backup manifest too large');
     }
@@ -193,13 +196,16 @@ final class SrsBackupManifest {
       );
     }
     final Object? at = m['exportedAt'];
-    return SrsBackupManifest(exportedAt: at is int ? at : 0, units: units);
+    return SrsBackupBundleManifest(
+      exportedAt: at is int ? at : 0,
+      units: units,
+    );
   }
 }
 
 /// 把 [core]（本机新代库，Primary）里 [profiles] 中有用户数据的 profile 按集合导出到 [outDir]（`<n>.bin`），回清单；
 /// 一个都没有回 null。还没绑定集合的 profile 跳过（没有数据可导）。导出在后台 isolate 跑（内核在一个读快照里写流）。
-Future<SrsBackupManifest?> srsExportBackupStreams({
+Future<SrsBackupBundleManifest?> srsExportBackupStreams({
   required SrsCore core,
   required List<SrsBackupProfile> profiles,
   required String outDir,
@@ -224,7 +230,7 @@ Future<SrsBackupManifest?> srsExportBackupStreams({
     debugName: 'srs-backup-export',
   );
   if (raw.isEmpty) return null;
-  return SrsBackupManifest(
+  return SrsBackupBundleManifest(
     exportedAt: nowMs,
     units: <SrsBackupUnit>[
       for (final Map<String, Object?> u in raw)

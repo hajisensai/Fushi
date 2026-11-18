@@ -1918,7 +1918,7 @@ class BackupRestoreService {
               false);
       if (mayCarrySrs) {
         final ArchiveFile? m = archive.findFile(kSrsBackupManifestEntry);
-        if (m != null) SrsBackupManifest.parse(m.content as List<int>);
+        if (m != null) SrsBackupBundleManifest.parse(m.content as List<int>);
       }
 
       // 1) Extract the backup DB to a sibling temp file (NEVER overwrite the

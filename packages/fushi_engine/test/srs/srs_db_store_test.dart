@@ -498,7 +498,7 @@ void main() {
         // 句柄尚未释放；临时目录留给系统清理。
       }
     });
-    final SrsBackupManifest manifest = (await srsExportBackupStreams(
+    final SrsBackupBundleManifest manifest = (await srsExportBackupStreams(
       core: srsStorage.core,
       profiles: const <SrsBackupProfile>[
         SrsBackupProfile(uid: kProfile, name: 'Default'),

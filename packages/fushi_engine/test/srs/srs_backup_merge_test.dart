@@ -57,7 +57,7 @@ void main() {
   Future<List<SrsBackupLandUnit>> exportUnits(
     List<SrsBackupProfile> profiles,
   ) async {
-    final SrsBackupManifest? m = await srsExportBackupStreams(
+    final SrsBackupBundleManifest? m = await srsExportBackupStreams(
       core: backupSrs.core,
       profiles: profiles,
       outDir: work.path,
@@ -65,7 +65,7 @@ void main() {
     );
     if (m == null) return const <SrsBackupLandUnit>[];
     // 清单经序列化再解析（与整包备份一致）。
-    final SrsBackupManifest parsed = SrsBackupManifest.parse(
+    final SrsBackupBundleManifest parsed = SrsBackupBundleManifest.parse(
       utf8.encode(jsonEncode(m.toJson())),
     );
     return <SrsBackupLandUnit>[
@@ -91,29 +91,31 @@ void main() {
 
     test('带 magic（v1 .fushisrs 那种头）的拒绝', () {
       expect(
-        () => SrsBackupManifest.parse(bytes(base()..['magic'] = 'FUSHISRS')),
+        () => SrsBackupBundleManifest.parse(
+          bytes(base()..['magic'] = 'FUSHISRS'),
+        ),
         throwsFormatException,
       );
     });
 
     test('更新的版本 / 代号：明确的 TooNew，不按旧格式猜', () {
       expect(
-        () => SrsBackupManifest.parse(bytes(base()..['v'] = 3)),
+        () => SrsBackupBundleManifest.parse(bytes(base()..['v'] = 3)),
         throwsA(isA<SrsBackupTooNewException>()),
       );
       expect(
-        () => SrsBackupManifest.parse(bytes(base()..['gen'] = 5)),
+        () => SrsBackupBundleManifest.parse(bytes(base()..['gen'] = 5)),
         throwsA(isA<SrsBackupTooNewException>()),
       );
     });
 
     test('不是 JSON / 形状不对的拒绝', () {
       expect(
-        () => SrsBackupManifest.parse(utf8.encode('not json')),
+        () => SrsBackupBundleManifest.parse(utf8.encode('not json')),
         throwsFormatException,
       );
       expect(
-        () => SrsBackupManifest.parse(
+        () => SrsBackupBundleManifest.parse(
           bytes(base()..['collections'] = <Object?>['x']),
         ),
         throwsFormatException,
