@@ -12,6 +12,7 @@ library;
 
 import 'package:fushi_core/fushi_core.dart';
 
+import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_action.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/utils/misc/bounded_concurrency.dart';
@@ -55,7 +56,12 @@ class MangaSourceSearchRun {
   List<MihonManga> mihonItems = const <MihonManga>[];
 }
 
-/// 逐源扇出执行器（无 UI 依赖，宿主/运行时注入，可纯 fake 测试）。
+/// 逐源扇出执行器（宿主/运行时注入，可纯 fake 测试）。
+///
+/// 不是无 UI 依赖：Cloudflare 判型用的 `mihonCloudflareChallenge` 目前定义在
+/// widget 文件 `mihon_cloudflare_action.dart` 里，它要认的 `OnlineMangaUnavailable`
+/// 所在的 `online_manga_runtime_adapter.dart` 也 import 了登录页。要在无头环境复用
+/// 本类，得先把这两个类型 / 函数挪到无 UI 文件。
 class MangaGlobalSearchRunner {
   MangaGlobalSearchRunner({required MihonManager? mihonManager})
     : _mihonManager = mihonManager;
@@ -90,6 +96,9 @@ class MangaGlobalSearchRunner {
     bool Function() isCancelled,
     void Function() onRunUpdated,
   ) async {
+    // 排队期间这一轮已被取消（换了关键词 / 离开页面）：还没发出的源不再发。
+    // 已发出的搜索没有请求号，取消不了，只在回来后丢弃结果。
+    if (isCancelled()) return;
     try {
       switch (run.source) {
         case MihonGlobalSource(:final MangaOnlineSourceRow row):
@@ -127,7 +136,10 @@ class MangaGlobalSearchRunner {
     if (!isCancelled()) onRunUpdated();
   }
 
-  /// Cloudflare 保护判型（按错误文案）。
+  /// Cloudflare 保护判型：先按类型（[MihonCloudflareChallengeException] 可能
+  /// 包在阶段 / 运行时异常的 cause 链里，它的文案是 `CLOUDFLARE_CHALLENGE_REQUIRED`，
+  /// 按文案匹配不到），再按文案兜底（扩展自己抛的纯文本错误）。
   static bool isCloudflareError(Object error) =>
+      mihonCloudflareChallenge(error) != null ||
       '$error'.contains('Cloudflare');
 }

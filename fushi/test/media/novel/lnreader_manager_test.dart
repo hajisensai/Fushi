@@ -1,11 +1,94 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 import 'fake_lnreader_runtime.dart';
+
+/// 存在、但读不出来的文件（占用 / 权限 / 磁盘错误）。锁文件、改权限在各平台
+/// 表现不一，所以经 [IOOverrides] 换掉这一个路径的 [File]。
+class _UnreadableFile implements File {
+  _UnreadableFile(this._real);
+
+  final File _real;
+
+  @override
+  String get path => _real.path;
+
+  @override
+  Directory get parent => _real.parent;
+
+  @override
+  Future<bool> exists() => _real.exists();
+
+  @override
+  Future<Uint8List> readAsBytes() async =>
+      throw FileSystemException('Access is denied', path);
+
+  @override
+  Future<String> readAsString({Encoding encoding = utf8}) async =>
+      throw FileSystemException('Access is denied', path);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw UnsupportedError(
+    'unreadable file: ${invocation.memberName} must not be called',
+  );
+}
+
+/// 写不进去的文件（磁盘满 / 占用）：只有写入失败，其余照常。
+class _UnwritableFile implements File {
+  _UnwritableFile(this._real);
+
+  final File _real;
+
+  @override
+  String get path => _real.path;
+
+  @override
+  Directory get parent => _real.parent;
+
+  @override
+  Future<bool> exists() => _real.exists();
+
+  @override
+  Future<File> writeAsString(
+    String contents, {
+    FileMode mode = FileMode.write,
+    Encoding encoding = utf8,
+    bool flush = false,
+  }) async => throw FileSystemException('No space left on device', path);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw UnsupportedError(
+    'unwritable file: ${invocation.memberName} must not be called',
+  );
+}
+
+/// 在 [body] 里，名字以 [suffix] 结尾的文件在 [unreadable] 返回 true 时读不出来。
+Future<T> _withUnreadable<T>(
+  String suffix,
+  bool Function() unreadable,
+  Future<T> Function() body,
+) => IOOverrides.runZoned<Future<T>>(
+  body,
+  createFile: (String path) {
+    final File real = Zone.root.run<File>(() => File(path));
+    return path.endsWith(suffix) && unreadable() ? _UnreadableFile(real) : real;
+  },
+);
+
+const String _installedState =
+    '{"stores":[{"indexUrl":"https://repo.example/plugins.min.json",'
+    '"name":"repo"}],"installed":[{"id":"yomou.syosetu","name":"Syosetu",'
+    '"site":"https://yomou.syosetu.com/","lang":"日本語","version":"1.0.0",'
+    '"url":"","iconUrl":"","storeUrl":"https://repo.example/plugins.min.json",'
+    '"enabled":true,"pinned":false,"sortOrder":0,"installedAt":0}],'
+    '"legacyBuiltinStoreMigrated":true}';
 
 void main() {
   late Directory root;
@@ -390,6 +473,167 @@ void main() {
     await m.initialise();
     expect(m.installed, isEmpty);
     expect(m.stores, isEmpty);
+  });
+
+  group('BUG-4830 读失败不当空', () {
+    test('state.json 读不出来：不进「已加载」、改动被拒、盘上原样；能读了就恢复', () async {
+      final File state = File('${root.path}/state.json');
+      await state.writeAsString(_installedState);
+      bool unreadable = true;
+      await _withUnreadable('state.json', () => unreadable, () async {
+        final LnReaderManager m = manager(FakeLnReaderRuntime());
+        await m.initialise();
+        expect(m.stateError, isA<FileSystemException>());
+        expect(m.installed, isEmpty, reason: '没读到真相，列表只是空占位。');
+        expect(
+          ErrorLogService.instance.entries.map((ErrorLogEntry e) => e.source),
+          contains('LnReaderManager.initialise'),
+        );
+
+        // 修复前：内存里的空状态在这一步整份写回，已装插件与仓库全丢。
+        await expectLater(
+          m.addStore('$base/plugins.min.json'),
+          throwsA(isA<FileSystemException>()),
+        );
+        await expectLater(m.ensureReady(), throwsA(isA<FileSystemException>()));
+        expect(await state.readAsString(), _installedState);
+
+        // 失败不缓存：一次瞬时 IO 错误之后，下一次调用重读。
+        unreadable = false;
+        await m.initialise();
+        expect(m.stateError, isNull);
+        expect(m.installed.single.id, 'yomou.syosetu');
+        expect(
+          m.stores.single.indexUrl,
+          'https://repo.example/plugins.min.json',
+        );
+        await m.setPinned(m.installed.single, true);
+        expect(
+          (jsonDecode(await state.readAsString())
+              as Map<String, Object?>)['installed'],
+          hasLength(1),
+        );
+      });
+    });
+
+    test('读到之后迁移标记写盘失败：重试只补写标记，不重读盘把内存盖回去', () async {
+      // 旧版本的 state.json：没有迁移标记，initialise 读完要补写一次。
+      final String legacyState = _installedState.replaceFirst(
+        ',"legacyBuiltinStoreMigrated":true',
+        '',
+      );
+      expect(legacyState, isNot(contains('legacyBuiltinStoreMigrated')));
+      final File state = File('${root.path}/state.json');
+      await state.writeAsString(legacyState);
+      bool diskFull = true;
+      await IOOverrides.runZoned<Future<void>>(
+        () async {
+          final LnReaderManager m = manager(FakeLnReaderRuntime());
+          await m.initialise();
+          expect(m.installed.single.id, 'yomou.syosetu');
+          expect(m.stateError, isNull, reason: '读到了：stateError 只表示没读到。');
+          expect(await state.readAsString(), legacyState);
+          expect(
+            ErrorLogService.instance.entries.map((ErrorLogEntry e) => e.source),
+            contains('LnReaderManager.initialise'),
+            reason: '写盘失败不无痕。',
+          );
+          // 读到之后内存就是真相，改动不被拒。
+          await expectLater(m.ensureReady(), completes);
+
+          // 盘上的文件此后与内存不同（等价于「用户改动的写盘还在路上」）。修复
+          // 前：失败后的下一次 initialise 整份重读，把内存换回盘上的内容。
+          diskFull = false;
+          await state.writeAsString('{"stores":[],"installed":[]}');
+          await m.initialise();
+          expect(
+            m.installed.single.id,
+            'yomou.syosetu',
+            reason: '重试不重读：内存里的状态不被盘上的旧文件盖掉。',
+          );
+          final Map<String, Object?> written =
+              jsonDecode(await state.readAsString()) as Map<String, Object?>;
+          expect(written[kLnReaderLegacyStoreMigratedKey], isTrue);
+          expect(written['installed'], hasLength(1));
+        },
+        createFile: (String path) {
+          final File real = Zone.root.run<File>(() => File(path));
+          return path.endsWith('.part') && diskFull
+              ? _UnwritableFile(real)
+              : real;
+        },
+      );
+    });
+
+    test('state.json 是坏 JSON：按空起，但原文件先改名留底', () async {
+      final File state = File('${root.path}/state.json');
+      for (final String broken in <String>['{"installed":[{"id":"x"', '[]']) {
+        await state.writeAsString(broken);
+        final LnReaderManager m = manager(FakeLnReaderRuntime());
+        await m.initialise();
+        expect(m.stateError, isNull);
+        expect(m.installed, isEmpty);
+        final File backup = File('${root.path}/state.json.corrupt-42');
+        expect(await backup.readAsString(), broken, reason: '原文件留底，不被覆盖。');
+        expect(state.existsSync(), isFalse);
+
+        await m.addStore('$base/plugins.min.json');
+        expect(state.existsSync(), isTrue);
+        expect(await backup.readAsString(), broken);
+        await state.delete();
+        await backup.delete();
+      }
+    });
+
+    test('插件存储读不出来：这次装载失败，插件不会带着空存储起来', () async {
+      final FakeLnReaderRuntime runtime = FakeLnReaderRuntime();
+      final LnReaderManager m = await ready(runtime: runtime);
+      await m.install(m.available.first);
+      await m.persistStorage('yomou.syosetu', <String, Object?>{'token': 'x'});
+      final File storage = File('${root.path}/storage/yomou.syosetu.json');
+
+      await _withUnreadable('yomou.syosetu.json', () => true, () async {
+        await expectLater(
+          m.load(m.installed.single),
+          throwsA(isA<FileSystemException>()),
+        );
+      });
+      expect(runtime.loaded, isEmpty);
+      expect(await storage.readAsString(), '{"token":"x"}');
+
+      await m.load(m.installed.single);
+      expect(runtime.loadedStorage['yomou.syosetu'], <String, Object?>{
+        'token': 'x',
+      });
+    });
+
+    test('插件存储是坏 JSON：留底后按空装载；清除数据连留底一起删', () async {
+      final FakeLnReaderRuntime runtime = FakeLnReaderRuntime();
+      final LnReaderManager m = await ready(runtime: runtime);
+      await m.install(m.available.first);
+      final File storage = File('${root.path}/storage/yomou.syosetu.json');
+      await storage.create(recursive: true);
+      await storage.writeAsString('{"token":"x"');
+      final File backup = File('${storage.path}.corrupt-42');
+
+      await m.load(m.installed.single);
+      expect(runtime.loadedStorage['yomou.syosetu'], isEmpty);
+      expect(await backup.readAsString(), '{"token":"x"');
+
+      // 另一个插件（id `yomou.syosetu.json.corrupt-x`）的存储文件：文件名以本插件
+      // 的留底前缀开头，但不是留底。
+      final File neighbour = File('${storage.path}.corrupt-x.json');
+      await neighbour.writeAsString('{"token":"other"}');
+
+      await m.clearData(m.installed.single);
+      expect(backup.existsSync(), isFalse, reason: '留底里是同一份登录态。');
+      expect(
+        await neighbour.readAsString(),
+        '{"token":"other"}',
+        reason: '只比前缀会把别的插件的登录态一起删掉。',
+      );
+      expect(storage.existsSync(), isFalse);
+    });
   });
 
   test('索引解析：不是数组直接报错（填成仓库主页地址的常见错误）', () {

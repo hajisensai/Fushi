@@ -110,6 +110,25 @@ List<CtlRoute> buildBookMetadataCtlRoutes(OpContext context) {
       );
       File? cover;
       try {
+        // onlyEmpty：只填当前空着的字段（库管家自动写回用）。显示名覆盖 / 作者 /
+        // override 封面都没有「谁设的」标记，有值就一律不碰。
+        if (call.optBool('onlyEmpty') ?? false) {
+          final BookMetadataState now = await facade.currentState(
+            appModel: app(),
+            item: item,
+          );
+          fields.removeWhere(
+            (BookMetadataField f) => switch (f) {
+              BookMetadataField.title =>
+                (now.overrideTitle ?? '').trim().isNotEmpty,
+              BookMetadataField.author => (now.author ?? '').trim().isNotEmpty,
+              BookMetadataField.cover => now.coverSha != null,
+            },
+          );
+          if (fields.isEmpty) {
+            throw const CtlFailure.rejected('要写的字段都已有值（onlyEmpty），没有可写回的内容');
+          }
+        }
         final BookScrapeCandidate? candidate = await _scrape(
           () => facade.fetchById(source: source, id: id),
         );

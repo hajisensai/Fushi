@@ -118,6 +118,17 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 - **为什么进程内 + 自己的宿主进程**：系统缩略图隔离进程（COM Surrogate）激活不到 HKCU 注册的 CLSID（2026-11-16 实测 `REGDB_E_CLASSNOTREG`），本安装器又是 `PrivilegesRequired=lowest`，所以 `DisableProcessIsolation=1`。explorer 里的 DLL 不解析文件，只把路径交给宿主进程（job 对象限 1 GiB、15 秒超时、普通优先级——低优先级在满载机器上会被饿到超时），宿主用 `{app}\7za\7z.dll`（rar / 7z）和 `{app}\pdfium.dll`（pdf）。升级时被 explorer 占着的旧 DLL 由 `[Code] FushiSetAsideThumbnailHandler` 改名挪开。
 - 本地：`cargo test --profile quick`（端到端测试要 `FUSHI_TEST_7Z_DIR` / `FUSHI_TEST_PDFIUM_DLL`，没给就 SKIP 那几条）；`examples/probe.rs` 对真实文件出 PNG。PR 上 `native-shell-thumbs-gate.yml` 用钉死 SHA-256 的真 7z.dll / pdfium.dll 跑 `cargo test --release --locked`（`FUSHI_THUMBS_REQUIRE_DEPS=1`，缺依赖判红）。
 
+## Android JVM 单测（`fushi/android/app/src/test`）
+
+- CI：`main.yml` 的 `build` job 在 PR 改到 Android / 原生 / 插件 / pubspec（与 R8 校验同一个路径门）时跑
+  `./gradlew :app:testDebugUnitTest`，红就判红；守卫 `fushi/test/build/android_jvm_unit_tests_ci_guard_test.dart`。
+- 本地定向跑（先在 `fushi/` 下 `flutter pub get` + `flutter build apk --config-only` 生成插件注册与
+  `local.properties`），在 `fushi/android/` 下走租约：
+  `dart ../tool/heavy.dart --check-only -- .\gradlew.bat :app:testDebugUnitTest --tests app.fushi.reader.CrossAppAudioPolicyTest`。
+- 测试类路径上的 `android.jar` 全是抛 `Stub!` / "not mocked" 的桩，也没有 Robolectric：要单测的逻辑抽成不碰 Android
+  类的纯 Java（例：`CrossAppAudioPolicy`、`AnkiChannelHandler.runsOnMainThread`），别让被测类的静态初始化里出现
+  `new Handler(Looper.getMainLooper())` 这类调用。
+
 ## Rust 本地开发循环（quick profile）
 
 - **改 Rust 时的「编译—测试」循环一律用 `quick` profile，不用 `--release`**：在 `native/<crate>/` 下
@@ -206,7 +217,20 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
   系统托管、上限随用随涨），单个 rustc 只占约 1.5 GB，大头是别的进程（一个与本仓无关的 Python 推理进程 46 GB、58 个
   claude 进程合计 26 GB）。第三次同样的命令在负载回落后两份库都编过了。处置：先看任务管理器「性能 → 内存 → 已提交」，
   离上限近就等其他重负载结束或调大页面文件再编；同样不加重试。
-- 旧分支 / 还没合到这份配置的 worktree：本机 `~/.cargo/config.toml` 里放同一段 `[profile.quick]` 即可（Windows 开发机已放）；
+- **改一行重编的时间花在哪**（2026-11-17，rustc 1.95，fushi_fsrs `cargo test --profile quick --lib --no-run`，
+  `RUSTC_WORKSPACE_WRAPPER` 给本 crate 加 `-Ztime-passes`，依赖不受影响；机器上同时有别的会话占满 CPU）：rustc 本体每次
+  15～17 秒，其中宏展开（`expand_crate`，整个 crate 每次重做、不走增量）3.3～4.4 秒、codegen 约 2.8 秒、写增量缓存
+  （`serialize_dep_graph`）1.7～2.6 秒、链接（`run_linker`）link.exe 2.0～3.0 秒 / rust-lld 0.9～2.0 秒，其余是类型检查等
+  查询。cargo 自身的空跑开销 0.4～0.5 秒。**端到端计时在这台机器上不可信**：同一操作在别的会话占满 CPU 时 14～50 秒乱跳，
+  比任何配置差异都大，比较配置要看 `-Ztime-passes` 的分项。
+  - **链接器不换**：rust-lld 每次省约 1 秒（约 6%），但链接器只能按 target 配，不能只给 `quick`——会连带改掉出包的
+    cdylib / staticlib 和 CI 的 Windows 构建，收益配不上这个风险。
+  - **Defender 实时扫描在本机是关的，但卡巴斯基（Kaspersky Internet Security 21.x，服务 `AVP21.26`）开着**，它的文件过滤
+    驱动对每次开文件都生效（增量缓存、`.rlib`、链接产物都在其中）。排除目录要在卡巴斯基界面里由机主手动加
+    （worktree 根、`~/.cargo`、`~/.rustup`、各 target 目录），命令行改不了；加了以后用上面的分项方法复测
+    `serialize_dep_graph` / `run_linker` 再下结论。
+- 旧分支 / 还没合到这份配置的 worktree：本机 `~/.cargo/config.toml` 里放同一段 `[profile.quick]` 即可（Windows 开发机
+  2026-11-17 补上——此前文档写「已放」，实际文件不存在，旧分支上 `--profile quick` 会直接报找不到 profile）；
   `[env]` 那一段只能跟仓库走（要按 worktree 解析路径），旧分支没有。
 
 ## 发布通道
@@ -501,6 +525,24 @@ Linux 静态 torrent bridge。规则：
   件上；save 只排在这些校验之后。
 - 守卫 `fushi/test/build/native_store_names_single_source_guard_test.dart` 钉死以上几条（含
   「PR 门 restore 的每个件都有同 runner、同 CC/CXX 的 develop 生产方」）。
+
+## PR 主门分层：快门每推必跑，全量按需 / 合并后跑（2026-11-18）
+
+**起因（实测）**：近 3 天 `main.yml`（Build Android APK）占全仓 runner 分钟的 59%，把并发槽顶满——Linux job 排队 p75 29 分钟、p90 56 分钟；一次 PR 运行真正干活约 50 分钟，墙钟中位数 102 分钟、p90 199 分钟，被后一次 push 取消而白烧 2394 分钟。近 7 天各会话为等 CI 纯空等约 27 小时（平均每次 67 分钟）。而 PR 上这份全量，`develop` 每次 push 的 `release.yml` 本来就再跑一遍。
+
+**现在的形态**（`main.yml` 的 `plan` job 决定，判据写在它的注释里）：
+
+| 层 | 跑什么 | 什么时候 |
+|---|---|---|
+| 快门 | `build`：analyze + JS 测试（`packages/` 有改动时加包测试）；`affected-tests`：目录枚举守卫整批 + 路径字面量点名的守卫 + 直接 import 改动库的测试 + 改动的测试文件 | 进 `develop` 的 PR，每次 push |
+| 全量 | `unit-tests` 4 片 + 包测试 + R8 / JVM 校验 | 改了原生 / Android / 插件集合 / pubspec / `fushi/tool/` / workflow 自身；进 `main` 的 PR；fork PR；带 `full-ci` 标签；手动 dispatch；改动清单取不到 |
+| 合并后 | `release.yml` 的 4 片单测 + analyze + 包测试 | `develop` / `main` 每次 push（一直如此） |
+
+- **要在某条分支上跑全量**：`gh workflow run main.yml --ref <分支>`（结果挂在同一个 head commit 上，PR 页看得到）；或先给 PR 打 `full-ci` 标签再 push（标签在 push 时读，打完标签不会自动重跑）。
+- **快门不是完备的**：只经传递依赖受影响的测试它选不到。回放最近 80 个已合并 PR，按传递 import 闭包选会选中 1400～3000 个测试文件（import 图里有大环），等于全量，所以不做。这类回归在合并后的 `develop` 上由 `release.yml` 暴露，红了按根因修——这正是「批量合并不逐条等 PR CI，合完看 `develop` 尖端」那条规则本来的做法。
+- 选测与本地预检 `fushi/tool/pre_push_check.dart` 是同一份实现：从选测里删一条规则，等于从 PR 门里删。CI 上放开了 hub 上限（本地默认跳过「被 40 个以上测试 import 的库」）。
+- 回放最近 80 个已合并 PR：72 个会触发主门，其中 50 个走快门、22 个走全量。
+- 守卫：`fushi/test/build/pr_tiered_gate_guard_test.dart`（两层互斥、判不出来一律全量、全量 pattern 是 R8 门的超集、合并后的全量兜底还在）。
 
 ## PR 平台 job 的路径门（2026-09-30）
 
