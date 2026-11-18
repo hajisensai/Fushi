@@ -4429,6 +4429,8 @@
   "home_widget_empty": "Aún no hay widgets en tu inicio",
   "home_widget_no_results": "No hay widgets coincidentes",
   "home_widget_recent_empty": "No se ha añadido nada recientemente",
+  "home_widget_recent_episode_count": "$n episodios",
+  "home_widget_recent_volume_count": "$n volúmenes",
   "home_widget_remove": "Quitar widget",
   "home_widget_resize": "Cambiar tamaño",
   "home_widget_restore_default": "Restaurar predeterminado",

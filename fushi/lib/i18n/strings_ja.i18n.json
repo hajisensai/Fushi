@@ -4429,6 +4429,8 @@
   "home_widget_empty": "ホームにウィジェットがまだありません",
   "home_widget_no_results": "一致するウィジェットはありません",
   "home_widget_recent_empty": "最近追加したものはありません",
+  "home_widget_recent_episode_count": "$n 話",
+  "home_widget_recent_volume_count": "$n 巻",
   "home_widget_remove": "ウィジェットを削除",
   "home_widget_resize": "サイズを変更",
   "home_widget_restore_default": "デフォルトに戻す",

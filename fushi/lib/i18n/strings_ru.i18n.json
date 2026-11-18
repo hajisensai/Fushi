@@ -4429,6 +4429,8 @@
   "home_widget_empty": "На главной пока нет виджетов",
   "home_widget_no_results": "Подходящих виджетов нет",
   "home_widget_recent_empty": "Недавно ничего не добавлено",
+  "home_widget_recent_episode_count": "$n эп.",
+  "home_widget_recent_volume_count": "$n т.",
   "home_widget_remove": "Удалить виджет",
   "home_widget_resize": "Изменить размер",
   "home_widget_restore_default": "Восстановить по умолчанию",

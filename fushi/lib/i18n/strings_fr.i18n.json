@@ -4429,6 +4429,8 @@
   "home_widget_empty": "Aucun widget sur l'accueil pour l'instant",
   "home_widget_no_results": "Aucun widget correspondant",
   "home_widget_recent_empty": "Rien ajouté récemment",
+  "home_widget_recent_episode_count": "$n épisodes",
+  "home_widget_recent_volume_count": "$n tomes",
   "home_widget_remove": "Retirer le widget",
   "home_widget_resize": "Changer la taille",
   "home_widget_restore_default": "Rétablir par défaut",
