@@ -33,20 +33,16 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4087 条。点号进各自文件。
+> 共 4206 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4730](bugs/BUG-4730-home-tab-switch-hidden-pages-rebuild.md) | ✅ | ✅ | 切 tab 时所有访问过的隐藏保活页跟着重建重排（外壳顶部让位挂在共同祖先上） |
-| [BUG-4729](bugs/BUG-4729-fullscreen-settings-unmounts-home-body.md) | ✅ | ✅ | 没有自绘标题栏的平台进设置，正文连同全部保活 tab 被整棵卸载 |
-| [BUG-4728](bugs/BUG-4728-lookup-srs-tabs-remount-on-every-entry.md) | ✅ | ✅ | 查词 / 复习 tab 每次切入整页重挂（16～94 ms），查词页还要拆建一次预热的查词 WebView |
-| [BUG-4727](bugs/BUG-4727-hidden-keepalive-pages-rebuild-on-shared-state.md) | ✅ | ✅ | 回首页卡 100 ms：首页失效书列表 provider，藏着的书架与漫画书架各跟着整页重建四次 |
-| [BUG-4726](bugs/BUG-4726-shelf-activation-swaps-remote-future-double-rebuild.md) | ✅ | ✅ | 每次切到书架，书架与藏着的漫画书架各整页重建两次（切回对账无条件换远端 future） |
-| [BUG-4725](bugs/BUG-4725-games-tab-warm-popup-webview-recreated.md) | ✅ | ✅ | 切进 / 切出游戏 tab 每次销毁并冷建查词弹窗 WebView，卡 80～150 ms |
-> 共 4200 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4851](bugs/BUG-4851-home-tab-switch-hidden-pages-rebuild.md) | ✅ | ✅ | 切 tab 时所有访问过的隐藏保活页跟着重建重排（外壳顶部让位挂在共同祖先上） |
+| [BUG-4850](bugs/BUG-4850-fullscreen-settings-unmounts-home-body.md) | ✅ | ✅ | 没有自绘标题栏的平台进设置，正文连同全部保活 tab 被整棵卸载 |
+| [BUG-4849](bugs/BUG-4849-lookup-srs-tabs-remount-on-every-entry.md) | ✅ | ✅ | 查词 / 复习 tab 每次切入整页重挂（16～94 ms），查词页还要拆建一次预热的查词 WebView |
+| [BUG-4848](bugs/BUG-4848-hidden-keepalive-pages-rebuild-on-shared-state.md) | ✅ | ✅ | 回首页卡 100 ms：首页失效书列表 provider，藏着的书架与漫画书架各跟着整页重建四次 |
+| [BUG-4847](bugs/BUG-4847-shelf-activation-swaps-remote-future-double-rebuild.md) | ✅ | ✅ | 每次切到书架，书架与藏着的漫画书架各整页重建两次（切回对账无条件换远端 future） |
+| [BUG-4846](bugs/BUG-4846-games-tab-warm-popup-webview-recreated.md) | ✅ | ✅ | 切进 / 切出游戏 tab 每次销毁并冷建查词弹窗 WebView，卡 80～150 ms |
 | [BUG-4844](bugs/BUG-4844-book-cover-undo-backup-pruned-by-source-mtime.md) | ✅ | ✅ | book-cover-undo-backup-pruned-by-source-mtime |
 | [BUG-4843](bugs/BUG-4843-linux-server-glibc-baseline.md) | ✅ | ✅ | Linux 服务端 CI 包原生库要 GLIBC_2.43，超出 README 声明的 glibc ≥ 2.35 |
 | [BUG-4842](bugs/BUG-4842-series-wall-wheel-scroll-rebake.md) | ✅ | ✅ | 视频系列墙滚轮滚动卡顿：每档滚轮把整屏封面面重新离屏烘焙 |

@@ -1801,7 +1801,7 @@ class _HomePageState extends BasePageState<HomePage>
   ///
   /// 按 **tab 自己**算、由 [_buildTabContent] 在各 tab 的子树里下发
   /// [FushiFloatingChromeInset]，不能按当前可见 tab 算了挂在全部 tab 的共同祖先
-  /// 上（BUG-4730）：那样每次在库页（8）与首页 / 查词 / 复习 / 设置（0）之间切，
+  /// 上（BUG-4851）：那样每次在库页（8）与首页 / 查词 / 复习 / 设置（0）之间切，
   /// 这个值就翻一次，所有访问过的隐藏保活页里读它的浮动工具区、滚动视图、网格
   /// 都跟着在切 tab 的那一帧重建 + 重排。
   double _shellTitleInsetFor(HomeTab tab) {
@@ -2115,7 +2115,7 @@ class _HomePageState extends BasePageState<HomePage>
       // 节点）：设置页由 [buildBody] 照常画出（返回箭头按 [_settingsFullscreen]
       // 开），藏着的保活 tab 留在树上。这里曾直接返回一个只装设置页的 Scaffold，
       // 整棵正文连同全部保活页被卸载——进一次设置，回来每个 tab 都要冷启动、
-      // 远端列表与封面重拉、滚动位置与页内状态全丢（BUG-4729）。
+      // 远端列表与封面重拉、滚动位置与页内状态全丢（BUG-4850）。
       return Scaffold(
         resizeToAvoidBottomInset: false,
         // 这里曾按 BUG-869 预留一条 macOS 标题栏高度：透明标题栏 +
@@ -2514,7 +2514,7 @@ class _HomePageState extends BasePageState<HomePage>
   /// 保活后它自己的表级变更流照常刷新数据；隐藏期间到达的变更推迟到切回时再
   /// 重载（见 `_HomeDashboardPageState._reloadDeferredWhileHidden`）。
   ///
-  /// 查词与复习也保活（BUG-4728）：不保活时每次切入整页从零 inflate + 全量
+  /// 查词与复习也保活（BUG-4849）：不保活时每次切入整页从零 inflate + 全量
   /// 布局（实测首帧 16～27 ms），查词页还要每次冷建一个预热用的查词 WebView、切走
   /// 再销毁（切入后约 0.6 s 处 UI 线程被堵 30～40 ms）。两页原先靠「切入即重挂」
   /// 做的事改成显式的「切入时做」：[HomeDictionaryPage] 藏着时不消费待查词 / 聚焦

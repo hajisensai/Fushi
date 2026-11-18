@@ -70,7 +70,7 @@ void main() {
         contains('!sectionVisible || (!_hasActiveQuery'),
         reason:
             'a hidden keep-alive lookup tab must not intercept system back '
-            '(BUG-4728)',
+            '(BUG-4849)',
       );
       expect(
         src,

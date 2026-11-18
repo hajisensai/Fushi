@@ -410,7 +410,7 @@ void main() {
     expect(find.text('video-上层', skipOffstage: false), findsOneWidget);
     await _unmount(tester);
   });
-  // ── 查词 tab 保活（BUG-4728）──
+  // ── 查词 tab 保活（BUG-4849）──
 
   testWidgets('查词 tab 保活：藏着时不消费待查词，切回同一页才消费', (WidgetTester tester) async {
     final _HomeShellAppModel appModel = await _pumpHome(
@@ -495,7 +495,7 @@ void main() {
     await _unmount(tester);
   });
 
-  // ── 没有自绘标题栏的平台进设置（BUG-4729）──
+  // ── 没有自绘标题栏的平台进设置（BUG-4850）──
   //
   // 组件测试环境里 [FushiDesktopTitleBar.isEnabled] 为 false，宽窗进设置走的正是
   // Linux / 横屏安卓平板那条「摘掉侧栏的全屏设置」分支。

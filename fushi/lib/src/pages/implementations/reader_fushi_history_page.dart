@@ -268,13 +268,13 @@ bool shouldReloadShelfProgressNow({
 ///
 /// 书架与漫画书架共用同一对进度缓存 provider，欠账也只记一份：此前各记各的、
 /// 且都按「书 tab 在前」判，停在漫画 tab 时到达的写入要等切到书 tab 才生效
-/// （BUG-4726）。
+/// （BUG-4847）。
 final StateProvider<bool> _shelfProgressReloadOwedProvider =
     StateProvider<bool>((Ref ref) => false);
 
 /// 藏在别的 tab / 别的库视图后面时不重建（[SectionDeferredBuild]）：首页切回时
 /// 失效书列表 provider，藏着的书架与漫画书架不再各跟着整页重建四次
-/// （BUG-4727），等切回书架再按新值构建一次。
+/// （BUG-4848），等切回书架再按新值构建一次。
 class ReaderFushiHistoryPage extends HistoryReaderPage
     with SectionDeferredBuild {
   const ReaderFushiHistoryPage({
@@ -874,7 +874,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   ///
   /// 书架与漫画书架是同一个 State 类的两个实例、都订阅这一个信号。此前两个实例
   /// 判的都是 `== HomeTab.books`：切到书 tab 时藏着的漫画书架跟着整页重建，而切到
-  /// 漫画 tab 时漫画书架反而不对账（BUG-4726）。
+  /// 漫画 tab 时漫画书架反而不对账（BUG-4847）。
   void _onShellTabActivated() {
     if (!mounted) return;
     final HomeTab active = homeShellTabNotifier.value;
@@ -1353,7 +1353,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
 
   /// 「排序与筛选」菜单的常驻锚点（[FushiPageHeader.menuAnchor]，铺满页头
   /// 动作组）：页头里的排序按钮可能被收进「⋯」，菜单挂在这里才总能打开；弹出
-  /// 位置跟着触发控件（按钮或 ⋯，BUG-4730）。
+  /// 位置跟着触发控件（按钮或 ⋯，BUG-4851）。
   Widget _buildSortMenuAnchor(List<BookTagRow> allTags) {
     return FushiTagFilterBar(
       tags: allTags,

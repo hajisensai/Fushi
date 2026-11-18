@@ -310,7 +310,7 @@ void main() {
     await _unmount(tester);
   });
 
-  testWidgets('BUG-4728 查词页保活：去别的 tab 再点回「查词」，是同一页、清空残留查询并聚焦', (
+  testWidgets('BUG-4849 查词页保活：去别的 tab 再点回「查词」，是同一页、清空残留查询并聚焦', (
     WidgetTester tester,
   ) async {
     tester.view.physicalSize = const Size(400, 900);

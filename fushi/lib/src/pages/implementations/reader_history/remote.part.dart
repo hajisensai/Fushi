@@ -226,7 +226,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
 
   /// 切回本书架所在 tab 时的远端对账（BUG-992）：重算一遍远端态，**内容变了才换上**。
   ///
-  /// BUG-4726：这里曾无条件走 [_refreshRemoteBooks]——换 future 那一下整页重建
+  /// BUG-4847：这里曾无条件走 [_refreshRemoteBooks]——换 future 那一下整页重建
   /// 一遍，future 完成（TTL 内是下一帧）再整页重建一遍，书架网格连同全部卡片每次
   /// 切回都白建两轮（实测两帧 33 + 24 ms）。绝大多数切回远端态一字未变，于是先在
   /// 后台算完、与屏上那份比内容（[_remoteBookStateSignature]），相同就什么都不动。

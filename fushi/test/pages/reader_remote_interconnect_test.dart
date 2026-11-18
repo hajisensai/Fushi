@@ -986,7 +986,7 @@ void main() {
     ),
   );
 
-  testWidgets('BUG-4726: 切回书架 tab 远端态没变时不换 future（书架不跟着整页重建）', (
+  testWidgets('BUG-4847: 切回书架 tab 远端态没变时不换 future（书架不跟着整页重建）', (
     WidgetTester tester,
   ) async {
     homeShellTabNotifier.value = HomeTab.books;
@@ -1013,7 +1013,7 @@ void main() {
     );
   });
 
-  testWidgets('BUG-4726: 切回书架 tab 远端态变了就换上（BUG-992 的对账照旧生效）', (
+  testWidgets('BUG-4847: 切回书架 tab 远端态变了就换上（BUG-992 的对账照旧生效）', (
     WidgetTester tester,
   ) async {
     homeShellTabNotifier.value = HomeTab.books;
@@ -1034,7 +1034,7 @@ void main() {
     expect(remoteCard, findsNothing, reason: '切回书架必须把已落到本机的那本占位卡去掉');
   });
 
-  testWidgets('BUG-4726: 漫画书架按漫画 tab 对账，切到书 tab 不动它', (
+  testWidgets('BUG-4847: 漫画书架按漫画 tab 对账，切到书 tab 不动它', (
     WidgetTester tester,
   ) async {
     remoteClient = _FakeRemoteBookClient(
@@ -1065,7 +1065,7 @@ void main() {
     expect(remoteCard, findsNothing, reason: '切回漫画 tab 才是漫画书架对账的时机');
   });
 
-  testWidgets('BUG-4726: 停在漫画 tab 时到达的进度写入由漫画书架当场重算，不等切到书 tab', (
+  testWidgets('BUG-4847: 停在漫画 tab 时到达的进度写入由漫画书架当场重算，不等切到书 tab', (
     WidgetTester tester,
   ) async {
     homeShellTabNotifier.value = HomeTab.manga;
@@ -1097,7 +1097,7 @@ void main() {
     );
   });
 
-  testWidgets('BUG-4726: 两个书架都不在前台时进度写入只记一笔，切回书架补一次', (
+  testWidgets('BUG-4847: 两个书架都不在前台时进度写入只记一笔，切回书架补一次', (
     WidgetTester tester,
   ) async {
     homeShellTabNotifier.value = HomeTab.books;
@@ -1133,7 +1133,7 @@ void main() {
     expect(booksProviderLoads, before + 1, reason: '欠账只补一次');
   });
 
-  testWidgets('BUG-4727: 藏着的书架不跟着书列表 provider 失效重建，切回才补一次', (
+  testWidgets('BUG-4848: 藏着的书架不跟着书列表 provider 失效重建，切回才补一次', (
     WidgetTester tester,
   ) async {
     homeShellTabNotifier.value = HomeTab.books;
