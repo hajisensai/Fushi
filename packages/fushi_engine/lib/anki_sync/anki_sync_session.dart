@@ -486,6 +486,9 @@ class AnkiSyncSession {
 
   /// 关 helper（立即，不排在长同步后面）。未同步的卡留在日志里，下次打开时还在；
   /// 正在进行的同步随 helper 退出而失败，什么都不会出日志。
+  ///
+  /// 返回前等串行队列里已排上的操作收尾（helper 已退出，它们很快失败）：返回之后
+  /// 不再有操作写日志 / 账号文件，调用方可以立刻删掉或搬走 [root] 目录。
   Future<void> close() async {
     _closed = true;
     _syncTimer?.cancel();
@@ -493,6 +496,7 @@ class AnkiSyncSession {
     _client = null;
     _opened = false;
     await client?.dispose();
+    await _tail;
     await _states.close();
   }
 
