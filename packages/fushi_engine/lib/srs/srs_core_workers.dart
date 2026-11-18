@@ -13,7 +13,7 @@
 ///   （[SrsCoreLane.interactive]）、其余内核命令（[SrsCoreLane.bulk]）、媒体文件加解密 / 哈希
 ///   （[SrsCoreLane.file]，专用 isolate）。一条道满了只排它自己的队，不挡别的道。
 /// - 发送：命令是一个只捕获可发送数据（句柄地址、请求、字节块）的闭包——写成顶层函数造闭包，不捕获
-///   `SrsDbStore`（它带着 Drift 连接与 Future，不可发送）。
+///   `SrsDbStore`（它带着 Future 等不可发送的对象）。
 /// - worker 意外退出（原生崩溃以外的致命错误）：在途命令报错，那个 worker 丢弃，之后按需再起。起 worker 失败：
 ///   那条命令报错，排着的下一条接着去起（全都起不来时排队的命令逐条报错，不会永远挂着）。
 /// - 句柄关闭（[SrsStorage.close] 调 [SrsCoreWorkers.forget]）：各 worker 丢掉为它包的 [SrsCore]，换 profile /
@@ -46,8 +46,8 @@ enum SrsCoreLane {
   /// 媒体文件的流式加解密与哈希（不进写锁，同步时成批并发）。
   file,
 
-  /// Drift 的查询（srs_database_executor.dart 的查询道）：内核只读连接池上并发执行，不进写锁、
-  /// 不排在 Drift 写连接的队列里，也不与上面几条道的长命令互相排队。
+  /// srs.db 的只读查询（内核读命令 `read` / `read_lib`，srs_reads.dart）：内核只读连接池上并发执行，不进写锁、
+  /// 不与上面几条道的长命令互相排队。
   query,
 }
 
@@ -122,30 +122,18 @@ final class SrsCoreWorkers {
   bool debugFailSpawns = false;
 
   /// 在 worker 里对 [address] 的句柄执行 [job]，走 [lane] 那条道。
-  ///
-  /// [onSettled]：这条命令结束（成功、报错、worker 退出、起 worker 失败，每条命令恰好一次）时、在把结果交给
-  /// 调用方之前**同步**调用，跑在池子自己的根 zone 回调里，不经调用方的 zone。调用方要按「命令在途」做簿记
-  /// （如 [SrsReadOnlyExecutor.close] 等在途查询）时用它：调用方的 zone 可能再也不跑微任务（见库注释），挂在返回的
-  /// Future 上的回调就可能永远不来。
   Future<T> run<T>(
     int address,
     SrsCoreJob<T> job, {
     SrsCoreLane lane = SrsCoreLane.bulk,
-    void Function()? onSettled,
   }) {
     final Completer<T> done = Completer<T>();
     _lanes[lane]!.submit(
       _Job<Object?>(
         address,
         job,
-        (Object? value) {
-          onSettled?.call();
-          done.complete(value as T);
-        },
-        (Object error, StackTrace stack) {
-          onSettled?.call();
-          done.completeError(error, stack);
-        },
+        (Object? value) => done.complete(value as T),
+        (Object error, StackTrace stack) => done.completeError(error, stack),
       ),
     );
     return done.future;

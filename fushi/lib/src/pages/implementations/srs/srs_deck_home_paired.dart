@@ -908,8 +908,9 @@ class _PairedDeckActions {
           _DeckAction.moveUp ||
           _DeckAction.moveDown ||
           _DeckAction.fillWordAudio ||
+          _DeckAction.export ||
           _DeckAction.delete:
-        // 远程菜单不出这些项（改主机的牌组结构 / 批量补词音留给主机自己）。
+        // 远程菜单不出这些项（改主机的牌组结构 / 批量补词音 / 导出留给主机自己）。
         break;
     }
   }

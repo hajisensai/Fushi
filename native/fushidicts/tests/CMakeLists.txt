@@ -189,6 +189,18 @@ add_test(NAME ja_kansai_ta_boundary_test
          COMMAND ja_kansai_ta_boundary_test
                  "${FUSHI_ROOT}/../../fushi/assets/transforms/ja.json")
 
+# 2026-11 上游功能同步：片假名中点 / 片假名词边界 / くって / 歴史的仮名遣い / -やしない（真 ja.json）。
+add_executable(ja_upstream_sync_lookup_test
+    "${CMAKE_CURRENT_SOURCE_DIR}/ja_upstream_sync_lookup_test.cpp")
+target_link_libraries(ja_upstream_sync_lookup_test PRIVATE fushidicts)
+target_include_directories(ja_upstream_sync_lookup_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+if(MSVC)
+  target_compile_options(ja_upstream_sync_lookup_test PRIVATE /utf-8 /Zc:__cplusplus /permissive-)
+endif()
+add_test(NAME ja_upstream_sync_lookup_test
+         COMMAND ja_upstream_sync_lookup_test
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/ja.json")
+
 # 批量分词：与旧 Dart 逐位置最长匹配循环（原样转写为参考实现）逐位一致（真 ja.json）。
 add_executable(tokenize_batch_test
     "${CMAKE_CURRENT_SOURCE_DIR}/tokenize_batch_test.cpp")

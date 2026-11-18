@@ -105,6 +105,9 @@ const NOTE_TYPE: i64 = EntKind::NoteType as i64;
 const NOTE: i64 = EntKind::Note as i64;
 const CARD: i64 = EntKind::Card as i64;
 
+/// 字段说明的键前缀（存成文本，不在紧凑键的前缀表里）。
+const FIELD_DESC: &str = "fieldDesc/";
+
 /// 修改键紧凑字节形的 tag（`gen4::name::write_edit_key`）。
 const K_FIELD_DEF: u8 = 2;
 const K_TMPL_DEF: u8 = 3;
@@ -603,7 +606,7 @@ impl Index<'_, '_> {
         Ok(true)
     }
 
-    fn salts(&self) -> Result<Vec<String>, String> {
+    pub(super) fn salts(&self) -> Result<Vec<String>, String> {
         Ok(self
             .t
             .binding(self.col)?
@@ -901,9 +904,77 @@ impl Index<'_, '_> {
             self.alias_dirty = true;
         }
         if self.alias_dirty {
-            return Ok((self.rebuild_aliases()?, false));
+            // 表变了的那几行牵动的 ID 要重看：缓存层按规范 ID 建（`cache.rs`），扣住按别名类判（`weigh.rs`
+            // [Index::weigh_rest]）。后者不论物化没物化缓存都要，所以总是记。
+            self.alias_snapshot()?;
+            let n = self.rebuild_aliases()?;
+            self.alias_diff()?;
+            return Ok((n, false));
         }
         Ok((0, false))
+    }
+
+    /// 整表重算之前把这个集合的别名表抄进连接的临时表（[Index::alias_diff] 用；同一个事务里，回滚一起回滚）。
+    fn alias_snapshot(&self) -> Result<(), String> {
+        let conn = self.t.conn();
+        conn.execute_batch(
+            "CREATE TEMP TABLE IF NOT EXISTS alias_before (id BLOB PRIMARY KEY, canon BLOB NOT NULL) WITHOUT ROWID;
+             CREATE TEMP TABLE IF NOT EXISTS alias_writer_before (name TEXT PRIMARY KEY, origin TEXT NOT NULL) WITHOUT ROWID;
+             DELETE FROM temp.alias_before;
+             DELETE FROM temp.alias_writer_before;",
+        )
+        .map_err(sql)?;
+        conn.prepare_cached(
+            "INSERT INTO temp.alias_before (id, canon) SELECT id, canon FROM main.alias_ix WHERE col = ?1",
+        )
+        .map_err(sql)?
+        .execute([self.col])
+        .map_err(sql)?;
+        conn.prepare_cached(
+            "INSERT INTO temp.alias_writer_before (name, origin) \
+             SELECT name, origin FROM main.alias_writer_ix WHERE col = ?1",
+        )
+        .map_err(sql)?
+        .execute([self.col])
+        .map_err(sql)?;
+        Ok(())
+    }
+
+    /// 重算之后与 [Index::alias_snapshot] 抄下的比：变了的行的 ID 与它前后两个规范 ID 记进 `alias_moves`，归回的
+    /// 写入者有任何一行不同就置 `writers_moved`（缓存层按它们重看，`cache.rs` 文件头「别名」第 5 条）。
+    fn alias_diff(&mut self) -> Result<(), String> {
+        let conn = self.t.conn();
+        let mut moved: Vec<([u8; 16], [u8; 16])> = Vec::new();
+        for q in [
+            "SELECT id, canon FROM temp.alias_before EXCEPT SELECT id, canon FROM main.alias_ix WHERE col = ?1",
+            "SELECT id, canon FROM main.alias_ix WHERE col = ?1 EXCEPT SELECT id, canon FROM temp.alias_before",
+        ] {
+            let mut stmt = conn.prepare_cached(q).map_err(sql)?;
+            let rows = stmt
+                .query_map([self.col], |r| Ok((r.get(0)?, r.get(1)?)))
+                .map_err(sql)?;
+            for row in rows {
+                moved.push(row.map_err(sql)?);
+            }
+        }
+        for (id, canon) in moved {
+            self.alias_moves.insert(Ref::Uuid(id));
+            self.alias_moves.insert(Ref::Uuid(canon));
+        }
+        let writers: i64 = conn
+            .prepare_cached(
+                "SELECT (SELECT COUNT(*) FROM (SELECT name, origin FROM temp.alias_writer_before \
+                 EXCEPT SELECT name, origin FROM main.alias_writer_ix WHERE col = ?1)) \
+                 + (SELECT COUNT(*) FROM (SELECT name, origin FROM main.alias_writer_ix WHERE col = ?1 \
+                 EXCEPT SELECT name, origin FROM temp.alias_writer_before))",
+            )
+            .map_err(sql)?
+            .query_row([self.col], |r| r.get(0))
+            .map_err(sql)?;
+        self.writers_moved |= writers > 0;
+        conn.execute_batch("DELETE FROM temp.alias_before; DELETE FROM temp.alias_writer_before;")
+            .map_err(sql)?;
+        Ok(())
     }
 
     fn stored_canon(&self, id: &Id) -> Result<Option<Id>, String> {
@@ -1100,6 +1171,14 @@ impl Index<'_, '_> {
         // 6. 写这一批自己的行。
         let mut n = 0;
         for x in &own {
+            // 缓存层要重看变了规范 ID 的（与 [Index::alias_diff] 同一个记法）。
+            let before = self.stored_canon(x)?.unwrap_or(*x);
+            let after = aliases.canonical(x);
+            if before != after {
+                self.alias_moves.insert(Ref::Uuid(x.0));
+                self.alias_moves.insert(Ref::Uuid(before.0));
+                self.alias_moves.insert(Ref::Uuid(after.0));
+            }
             conn.prepare_cached("DELETE FROM alias_ix WHERE col = ?1 AND id = ?2")
                 .map_err(sql)?
                 .execute(params![col, x.0.as_slice()])
@@ -1184,33 +1263,47 @@ impl Index<'_, '_> {
     /// [r] 所在的别名类：规范 ID 与出现过的、归到它的全部 ID，升序。
     pub fn members(&self, r: &Ref) -> Result<Vec<Ref>, String> {
         let canon = self.canonical(r)?;
-        let mut out = vec![canon.clone()];
-        if let Ref::Uuid(b) = &canon {
-            let mut stmt = self
-                .t
-                .conn()
-                .prepare_cached(
-                    "SELECT id FROM alias_ix WHERE col = ?1 AND canon = ?2 AND canon != id ORDER BY id",
-                )
-                .map_err(sql)?;
-            let rows = stmt
-                .query_map(params![self.col, b.as_slice()], |r| r.get::<_, Ref>(0))
-                .map_err(sql)?;
-            for row in rows {
-                out.push(row.map_err(sql)?);
-            }
-        }
+        let mut out = self.aliases_of(&canon)?;
+        out.push(canon);
         out.sort();
         Ok(out)
     }
 
-    /// 修改键的规范形：键里嵌着 ID 的（`f/<字段>`、`fieldDef/<…>`……）把那个 ID 换成规范 ID。
+    /// 规范 ID [canon] 的别名类里出现过的、不是它自己的成员（`alias_canon` 索引的一段），按 ID 的 SQLite 序。
+    /// [canon] 必须已是规范 ID（不再归一）；[Index::members] 与缓存层的 `anki_members`（`cache.rs`）共用。
+    pub(super) fn aliases_of(&self, canon: &Ref) -> Result<Vec<Ref>, String> {
+        let Ref::Uuid(b) = canon else {
+            return Ok(Vec::new());
+        };
+        let mut stmt = self
+            .t
+            .conn()
+            .prepare_cached(
+                "SELECT id FROM alias_ix WHERE col = ?1 AND canon = ?2 AND canon != id ORDER BY id",
+            )
+            .map_err(sql)?;
+        let rows = stmt
+            .query_map(params![self.col, b.as_slice()], |r| r.get::<_, Ref>(0))
+            .map_err(sql)?;
+        rows.collect::<Result<_, _>>().map_err(sql)
+    }
+
+    /// 修改键的规范形：键里嵌着 ID 的（`f/<字段>`、`fieldDef/<…>`、`tmplDef/<…>`、`historyFrom/<…>`、
+    /// `fieldDesc/<…>`）把那个 ID 换成规范 ID。`fieldDesc/` 不在紧凑键的前缀表里（`gen4::name`，那张表是存储编码、
+    /// 冻结），按文本认：后面是规范形状的 UUID 才换。
     pub fn canonical_key(&self, key: &str) -> Result<String, String> {
+        if let Some(rest) = key.strip_prefix(FIELD_DESC) {
+            let Some(id) = strict_id(rest) else {
+                return Ok(key.to_owned());
+            };
+            let canon = self.canonical_embedded(&id)?;
+            return Ok(format!("{FIELD_DESC}{}", canon.text()));
+        }
         let bytes = key_bytes(key);
         let (Some(id), true) = (key_id(&bytes), bytes.first() != Some(&0)) else {
             return Ok(key.to_owned());
         };
-        let canon = self.canonical(&Ref::Uuid(id.0))?;
+        let canon = self.canonical_embedded(&id)?;
         Ok(format!("{}{}", &key[..key.len() - 36], canon.text()))
     }
 
@@ -1438,19 +1531,7 @@ pub(crate) mod tests {
     /// 样本库里一个 profile 的盐：它自己的 uid，加上这台设备记着的已退役 uid（G3 探针的同一个口径；迁移时由 G4
     /// 写成一条 Salts 操作）。
     pub(crate) fn sample_salts(src: &rusqlite::Connection, profile: &str) -> Vec<String> {
-        let mut salts: BTreeSet<String> = BTreeSet::from([profile.to_owned()]);
-        let retired: Option<String> = src
-            .query_row(
-                "SELECT value FROM srs_meta WHERE key = 'srs_retired_profile_uids'",
-                [],
-                |r| r.get(0),
-            )
-            .optional()
-            .unwrap();
-        if let Some(list) = retired.and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok()) {
-            salts.extend(list);
-        }
-        salts.into_iter().collect()
+        crate::store::gen4::legacy::salts(src, profile).unwrap()
     }
 
     fn r(id: Id) -> Ref {

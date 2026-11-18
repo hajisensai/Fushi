@@ -2091,6 +2091,11 @@ class ThemeNotifier extends ChangeNotifier {
     _get('shell_content_layout', defaultValue: '') as String,
   );
 
+  /// 显式选过库页布局（落库值非空，含已删的 `blocks`）；false = 跟着
+  /// [ShellContentLayout.defaultLayout] 走。
+  bool get shellContentLayoutChosen =>
+      (_get('shell_content_layout', defaultValue: '') as String).isNotEmpty;
+
   Future<void> setShellContentLayout(ShellContentLayout value) async {
     await _set('shell_content_layout', value.prefValue);
     notifyListeners();
@@ -2114,6 +2119,13 @@ class ThemeNotifier extends ChangeNotifier {
 
   Future<void> setShellBlockArrangement(ShellBlockArrangement value) async {
     await _set('shell_block_arrangement', value.prefValue);
+    notifyListeners();
+  }
+
+  /// 恢复默认：清掉落库的摆放（写空串，[_shellBlockArrangementPref] 读回 null），
+  /// 回到「跟着布局走」，而不是把此刻布局下的默认值钉死。
+  Future<void> resetShellBlockArrangement() async {
+    await _set('shell_block_arrangement', '');
     notifyListeners();
   }
 

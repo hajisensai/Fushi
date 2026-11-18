@@ -34,6 +34,7 @@ class LibraryOrganizeResult {
     required this.requests,
     this.error,
     this.touchedCollectionIds = const <int>{},
+    this.proposals = 0,
   });
 
   final LibraryOrganizeStatus status;
@@ -41,8 +42,11 @@ class LibraryOrganizeResult {
   /// 整理记录里的这一次；没落任何东西时也有（状态写成 skipped / failed）。
   final int runId;
 
-  /// 落了几处改动。
+  /// 落了几处改动（不含待确认建议）。
   final int changes;
+
+  /// 这次新产出的待用户确认的合集级建议数（[loadLibraryOrganizeProposals]）。
+  final int proposals;
   final int requests;
   final String? error;
   final Set<int> touchedCollectionIds;
@@ -101,8 +105,11 @@ class LibraryOrganizeService {
     Set<String>? onlyEntryKeys,
     void Function(int done, int total)? onProgress,
     bool Function()? isCancelled,
+    bool rulesOnly = false,
   }) async {
-    final AiProviderConfig? useProvider = provider;
+    // [rulesOnly]：只跑不花钱的规则那一步（AI 库管家碰到单趟请求上限时用），结论
+    // 与没指派提供商相同（[LibraryOrganizeStatus.noProvider]），错误短码 `rules_only`。
+    final AiProviderConfig? useProvider = rulesOnly ? null : provider;
     final int runId = await db
         .into(db.libraryOrganizeRuns)
         .insert(
@@ -116,6 +123,7 @@ class LibraryOrganizeService {
           ),
         );
     int changes = 0;
+    int proposals = 0;
     int requests = 0;
     int inputTokens = 0;
     int outputTokens = 0;
@@ -123,9 +131,14 @@ class LibraryOrganizeService {
     LibraryOrganizeStatus status = LibraryOrganizeStatus.done;
     String? error;
 
-    Future<int> countChanges() async => (await (db.select(
-      db.libraryOrganizeChanges,
-    )..where((t) => t.runId.equals(runId))).get()).length;
+    Future<int> countChanges() async =>
+        (await (db.select(db.libraryOrganizeChanges)..where(
+                  (t) =>
+                      t.runId.equals(runId) &
+                      t.kind.equals(kLibraryOrganizeProposalKind).not(),
+                ))
+                .get())
+            .length;
 
     try {
       // ① 规则：刮到同一个作品的散条目成组（不花钱，没提供商也做）。
@@ -141,7 +154,7 @@ class LibraryOrganizeService {
       // ② AI。
       if (useProvider == null) {
         status = LibraryOrganizeStatus.noProvider;
-        error = 'provider_not_configured';
+        error = rulesOnly ? 'rules_only' : 'provider_not_configured';
       } else {
         facts = await _facts(domain, onlyEntryKeys);
         final List<List<String>> plan = chunkOrganizeEntries(facts.entries);
@@ -181,17 +194,25 @@ class LibraryOrganizeService {
               );
               continue;
             }
+            final OrganizePlan verdict = planOrganizeReply(
+              facts: facts,
+              chunk: chunk,
+              reply: reply,
+              trigger: trigger,
+              tagPrefix: videoTagPrefix,
+            );
+            // 待确认建议按裁决时刻的合集快照记（自然键），先于落盘：落盘可能合并 /
+            // 移空自删其中的合集。
+            proposals += await recordOrganizeProposals(
+              db,
+              runId: runId,
+              proposals: verdict.proposals,
+            );
             touched.addAll(
               await applyOrganizeActions(
                 db,
                 runId: runId,
-                actions: planFromAiReply(
-                  facts: facts,
-                  chunk: chunk,
-                  reply: reply,
-                  trigger: trigger,
-                  tagPrefix: videoTagPrefix,
-                ),
+                actions: verdict.actions,
               ),
             );
           }
@@ -257,6 +278,7 @@ class LibraryOrganizeService {
       requests: requests,
       error: error,
       touchedCollectionIds: touched,
+      proposals: proposals,
     );
   }
 
@@ -334,8 +356,7 @@ OrganizeChunk? buildOrganizeChunk(
     return OrganizeChunk(entries: entries, collections: facts.collections);
   }
   final Set<int> required = <int>{
-    for (final OrganizeEntry e in entries)
-      if (e.managedCollectionId != null) e.managedCollectionId!,
+    for (final OrganizeEntry e in entries) ...e.memberOf,
   };
   final Set<String> grams = <String>{
     for (final OrganizeEntry e in entries) ..._bigrams(e.item.title),
@@ -397,7 +418,8 @@ AiLibraryOrganizeRequest organizeRequestOf(
           name: chunk.collections[n].name,
           memberCount: chunk.collections[n].memberKeys.length,
           sampleTitles: chunk.collections[n].sampleTitles,
-          userOwned: !chunk.collections[n].origin.isOrganizerManaged,
+          userOwned: chunk.collections[n].origin == CollectionOrigin.user,
+          folder: chunk.collections[n].isFolder,
           organizeKey: chunk.collections[n].organizeKey,
         ),
     ],
@@ -410,9 +432,18 @@ AiLibraryOrganizeRequest organizeRequestOf(
           folder: e.item.folder,
           season: e.item.season,
           episode: e.item.episode,
-          inCollection: e.managedCollectionId == null
-              ? null
-              : cid[e.managedCollectionId],
+          inCollections: <String>[
+            for (final int id in e.memberOf)
+              if (cid[id] case final String c) c,
+          ],
+          pinnedIn: <String>[
+            for (final OrganizeCollectionFact c in chunk.collections)
+              if (c.pinnedMemberKeys.contains(e.memberKey)) cid[c.id]!,
+          ],
+          evictedFrom: <String>[
+            for (final OrganizeCollectionFact c in chunk.collections)
+              if (c.aiEvictedMemberKeys.contains(e.memberKey)) cid[c.id]!,
+          ],
         ),
     ],
   );

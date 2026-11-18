@@ -276,6 +276,41 @@ void main() {
       await pumpEventQueue();
       expect(c.graphicSubtitleTimingCues.single.startMs, 1000);
     });
+
+    test('本地文件也把自己的取消交给 loader；换轨即放弃，拿不到结果不再要第二次（BUG-4803）', () async {
+      final _FakeRegionLoader loader = _FakeRegionLoader();
+      final VideoPlayerController c = VideoPlayerController()
+        ..debugSetGraphicSubtitleActiveForTesting(
+          true,
+          streamIndex: 0,
+          codec: 'hdmv_pgs_subtitle',
+        )
+        ..graphicSubtitleRegionLoader = loader;
+      addTearDown(c.dispose);
+      c.debugSetVideoPathForTesting(r'C:\v\ep01.mkv');
+      c.debugLoadGraphicSubtitleTimingsForTesting(
+        streamIndex: 0,
+        codec: 'hdmv_pgs_subtitle',
+      );
+      expect(loader.cancels, hasLength(1));
+      final Future<void>? cancel = loader.cancels.single;
+      expect(cancel, isNotNull, reason: '本地抽轨必须可取消');
+      bool cancelled = false;
+      unawaited(cancel!.then((_) => cancelled = true));
+      await pumpEventQueue();
+      expect(cancelled, isFalse);
+
+      // 换轨 / 换片的同一个复位：在途抽取随之放弃。
+      c.debugResetGraphicTimingTablesForTesting();
+      await pumpEventQueue();
+      expect(cancelled, isTrue);
+
+      // loader 交回 null（被放弃 / 抽不出来）：不再发第二次请求。
+      loader.completeNull();
+      await pumpEventQueue();
+      expect(loader.cancels, hasLength(1));
+      expect(c.graphicSubtitleTimingCues, isEmpty);
+    });
   });
 }
 
@@ -293,8 +328,14 @@ class _FakeRegionLoader implements GraphicSubtitleRegionLoader {
     final Completer<GraphicSubtitleRegionTrack?> c =
         Completer<GraphicSubtitleRegionTrack?>();
     _pending.add(c);
+    cancels.add(cancel);
     return c.future;
   }
+
+  /// 每次 load 收到的取消信号（按先后）。
+  final List<Future<void>?> cancels = <Future<void>?>[];
+
+  void completeNull() => _pending.removeAt(0).complete(null);
 
   void complete(List<GraphicSubtitleRegion> regions) {
     _pending

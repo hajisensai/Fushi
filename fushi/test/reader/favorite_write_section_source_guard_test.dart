@@ -100,11 +100,18 @@ void main() {
     final String chrome = read(
       'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
     );
-    // 主 onTextSelected 路径 + 歌词 cue 路径都写快照。
+    // 歌词 cue 路径在 lookup.part 自己写快照（章号取自 cue fragment）。
     expect(
-      'x$lookup'.split('_cachedSelectionSectionIndex =').length - 1,
-      greaterThanOrEqualTo(2),
-      reason: 'lookup 主选区路径与歌词 cue 路径都要写 section 快照',
+      lookup,
+      contains('_cachedSelectionSectionIndex = frag.sectionIndex;'),
+      reason: '歌词 cue 路径要写 section 快照',
+    );
+    // 主 onTextSelected 路径经共用写点 `_applyLookupStateFromSelectionData`
+    // （chrome.part，下面那条断言钉的就是它）写快照，不再自己抄一份（BUG-4824）。
+    expect(
+      lookup,
+      contains('_applyLookupStateFromSelectionData(data);'),
+      reason: 'lookup 主选区路径要经共用写点写 section 快照',
     );
     // 原生选区路径（导出/制卡）也写快照。
     expect(

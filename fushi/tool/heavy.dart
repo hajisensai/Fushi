@@ -4,6 +4,9 @@
 //                            [--cap-mb=N] [--here] [--check-only]
 //                            -- <command...>
 //   dart run tool/heavy.dart --status
+//   dart run tool/heavy.dart --stats[=days]    how long runs queued and ran
+//   dart run tool/heavy.dart --replay[=days]   the same runs queued again with
+//                                              fixed and with measured bookings
 //
 //   e.g. dart run tool/heavy.dart -- flutter test test/foo_test.dart --no-pub
 //        dart run tool/heavy.dart -- flutter analyze --no-pub
@@ -65,23 +68,35 @@ import 'dart:io';
 
 import 'test_flow/dist_plan.dart' show kDistOffloadDeclined;
 import 'test_flow/heavy_budget.dart';
+import 'test_flow/heavy_history.dart';
 import 'test_flow/heavy_i18n.dart';
 import 'test_flow/heavy_lease.dart';
 import 'test_flow/heavy_offload.dart';
 import 'test_flow/heavy_offload_rival.dart';
+import 'test_flow/heavy_replay.dart';
 import 'test_flow/heavy_sdk_check.dart';
 import 'test_flow/heavy_test_closure.dart';
 
 Future<void> main(List<String> args) async {
   if (args.contains('--status')) return _status();
+  if (args.isNotEmpty && args.first.startsWith('--stats')) {
+    return _stats(_intArg(args, '--stats=') ?? 7);
+  }
+  if (args.isNotEmpty && args.first.startsWith('--replay')) {
+    return _replay(_intArg(args, '--replay=') ?? 7);
+  }
   final int sep = args.indexOf('--');
   if (sep < 0 || sep == args.length - 1) {
     stderr.writeln(
       'usage: dart run tool/heavy.dart [options] -- <command...>\n'
-      '       dart run tool/heavy.dart --status',
+      '       dart run tool/heavy.dart --status\n'
+      '       dart run tool/heavy.dart --stats[=days]\n'
+      '       dart run tool/heavy.dart --replay[=days]',
     );
     exit(64);
   }
+  // From here to the moment the command runs somewhere is what it queued.
+  final Stopwatch total = Stopwatch()..start();
   final List<String> own = args.sublist(0, sep);
   final String? checkout = locateCheckoutRoot();
   final HeavySdkCheck sdk = checkHeavyCommandSdk(
@@ -102,18 +117,63 @@ Future<void> main(List<String> args) async {
   // dartTestCommandFor). The other machines still get the command as typed.
   final List<String> command = testPlan?.local ?? asTyped;
   final int? capOverride = _intArg(own, '--cap-mb=');
+  // What the kind (a test: what it compiles, heavy_budget.dart testBookMb)
+  // books by itself, and what runs of that class peaked at on this machine
+  // when enough of them are on record (heavy_history.dart
+  // heavyMeasuredBookMb). An explicit --cap-mb books what it asks for.
+  final int staticMb = testPlan?.bookMb ?? classified.bookedMb;
+  final int? measuredMb = capOverride != null
+      ? null
+      : heavyMeasuredBookMb(
+          readHeavyHistory(
+            heavyStateDir(),
+            since: DateTime.now().subtract(kHeavyMeasuredWindow),
+          ),
+          kind: classified.kind.name,
+          staticMb: staticMb,
+          capMb: classified.capMb,
+          now: DateTime.now(),
+        );
+  if (measuredMb != null && measuredMb != staticMb) {
+    stderr.writeln(
+      'heavy: books $measuredMb MB instead of $staticMb MB: what runs of '
+      'this kind peaked at here (p95 + 10%, heavy.dart --stats)',
+    );
+  }
   final HeavyNeed need = HeavyNeed(
     kind: classified.kind,
     capMb: capOverride ?? classified.capMb,
-    // An explicit --cap-mb books what it asks for; a test books from what it
-    // compiles (heavy_budget.dart testBookMb).
-    bookMb: capOverride ?? testPlan?.bookMb ?? classified.bookMb,
+    bookMb: capOverride ?? measuredMb ?? testPlan?.bookMb ?? classified.bookMb,
     worktreeExclusive: classified.worktreeExclusive,
     light: classified.light,
   );
   final int waitMax = _intArg(own, '--wait-max-min=') ?? 0;
   final int maxMinutes = _intArg(own, '--max-minutes=') ?? 120;
   final String label = command.take(3).join(' ');
+  // One line per finished run in the state directory (heavy.dart --stats).
+  void record(HeavyRanWhere where, Duration queued, int code, {int? peakMb}) {
+    appendHeavyHistory(
+      heavyStateDir(),
+      HeavyHistoryEntry(
+        at: DateTime.now(),
+        kind: classified.kind.name,
+        label: label,
+        where: where,
+        queued: queued,
+        ran: total.elapsed - queued,
+        exitCode: code,
+        bookMb: need.bookMb,
+        // The class the peak is a sample of; a --cap-mb run is of none.
+        staticMb:
+            capOverride == null &&
+                kHeavyMeasuredKinds.contains(classified.kind.name)
+            ? staticMb
+            : null,
+        peakMb: peakMb,
+      ),
+    );
+  }
+
   // The same command from the same directory is one run: submitted again
   // while it still queues here, it takes the queued one's place.
   final String runKey = heavyRunKey(
@@ -143,6 +203,7 @@ Future<void> main(List<String> args) async {
     final int code = await _askElsewhere(offload, maxMinutes: maxMinutes);
     switch (heavyOffloadNext(code, offload.plan.kind)) {
       case HeavyOffloadNext.done:
+        record(HeavyRanWhere.elsewhere, Duration.zero, code);
         exit(code);
       case HeavyOffloadNext.runHere:
         _sayRunHere(code, offload.plan.kind);
@@ -231,10 +292,12 @@ Future<void> main(List<String> args) async {
       'heavy: another machine took $label while it queued here; '
       'following that run',
     );
+    final Duration queuedUntilTaken = total.elapsed;
     final int code = await there.follow(maxMinutes: maxMinutes);
     await asking.close();
     switch (heavyOffloadNext(code, target!.plan.kind)) {
       case HeavyOffloadNext.done:
+        record(HeavyRanWhere.elsewhere, queuedUntilTaken, code);
         exit(code);
       case HeavyOffloadNext.runHere:
         _sayRunHere(code, target.plan.kind);
@@ -247,6 +310,7 @@ Future<void> main(List<String> args) async {
     }
   }
   final HeavyLease lease = admitted;
+  final Duration queuedHere = total.elapsed;
 
   final Stopwatch ran = Stopwatch()..start();
   final Process p;
@@ -283,6 +347,7 @@ Future<void> main(List<String> args) async {
   await rival?.close();
 
   final int? peak = job?.peakMb();
+  record(HeavyRanWhere.here, queuedHere, cut ? 124 : code, peakMb: peak);
   stderr.writeln(
     'heavy: $label -> exit $code'
     '${lease.skipReason != null ? ' (no lease: ${lease.skipReason})' : ', slot ${lease.slot}'}'
@@ -382,6 +447,7 @@ HeavyOffloadRival _rivalFor(_OffloadTarget t, {required int maxMinutes}) {
         claim: claim,
         maxMinutes: maxMinutes,
         echo: false,
+        queued: true,
       );
       // One line when the answer changes, not dist_test's whole output.
       unawaited(
@@ -420,11 +486,16 @@ class _DistAttempt implements HeavyOffloadAttempt {
     required HeavyOffloadClaim claim,
     required int maxMinutes,
     required this.echo,
+    this.queued = false,
   }) {
     unawaited(_start(t, claim, maxMinutes));
   }
 
   final bool echo;
+
+  /// Made while the run queues here: it may wait in the workers' own queues
+  /// (heavy_offload.dart kHeavyOffloadQueuedBusyRetries).
+  final bool queued;
   final Stopwatch _age = Stopwatch()..start();
   final Completer<int> _code = Completer<int>();
   Process? _process;
@@ -460,7 +531,9 @@ class _DistAttempt implements HeavyOffloadAttempt {
           // dist_test keeps the deadline itself: it kills the remote run and
           // releases the worker's checkout before exiting 124.
           if (maxMinutes > 0) '--max-minutes=$maxMinutes',
-          ...t.plan.distArgs,
+          ...(queued
+              ? heavyOffloadQueuedArgs(t.plan.distArgs)
+              : t.plan.distArgs),
         ],
         workingDirectory: t.appDir,
         mode: echo ? ProcessStartMode.inheritStdio : ProcessStartMode.normal,
@@ -575,6 +648,76 @@ void _killTree(Process p) {
   } else {
     p.kill(ProcessSignal.sigkill);
   }
+}
+
+/// `--stats[=days]`: how long the runs of the last [days] days queued and
+/// ran, and how many went to another machine (test_flow/heavy_history.dart).
+void _stats(int days) {
+  stdout.write(
+    renderHeavyStats(
+      readHeavyHistory(
+        heavyStateDir(),
+        since: DateTime.now().subtract(Duration(days: days)),
+      ),
+      days: days,
+    ),
+  );
+}
+
+/// `--replay[=days]`: the runs of the last [days] days queued again by the
+/// lease's own rules, once with the bookings fixed per kind and closure and
+/// once with the measured ones (test_flow/heavy_replay.dart says what a
+/// replay leaves out).
+void _replay(int days) {
+  final List<HeavyHistoryEntry> entries = readHeavyHistory(
+    heavyStateDir(),
+    since: DateTime.now().subtract(Duration(days: days)),
+  );
+  if (entries.isEmpty) {
+    stdout.writeln('heavy: no finished run recorded in the last $days day(s)');
+    return;
+  }
+  final MemorySnapshot? m = readMemorySnapshot();
+  final int slots = heavySlotCount(m);
+  final int? budget = heavyBudgetMb(m);
+  if (budget == null) {
+    stdout.writeln(
+      'heavy: no memory budget on this machine; nothing to replay',
+    );
+    return;
+  }
+  final List<int> measured = heavyReplayMeasuredBooks(entries);
+  final Map<HeavyHistoryEntry, int> measuredOf = <HeavyHistoryEntry, int>{
+    for (int i = 0; i < entries.length; i++) entries[i]: measured[i],
+  };
+  stdout
+    ..writeln(
+      'heavy: ${entries.length} run(s) of the last $days day(s) queued again: '
+      '$slots slots, $kLightSlotCount light, $budget MB budget; every run '
+      'takes as long as it did, holders without history are left out',
+    )
+    ..write(
+      renderHeavyReplay(entries, <String, HeavyReplay>{
+        'as recorded': <int, Duration>{
+          for (int i = 0; i < entries.length; i++)
+            if (entries[i].where == HeavyRanWhere.here ||
+                entries[i].queued > Duration.zero)
+              i: entries[i].queued,
+        },
+        'fixed bookings': replayHeavyHistory(
+          entries,
+          slots: slots,
+          budgetMb: budget,
+          bookOf: heavyReplayStaticBook,
+        ),
+        'measured bookings': replayHeavyHistory(
+          entries,
+          slots: slots,
+          budgetMb: budget,
+          bookOf: (HeavyHistoryEntry e) => measuredOf[e]!,
+        ),
+      }),
+    );
 }
 
 void _status() {

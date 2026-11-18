@@ -108,4 +108,65 @@ class ScreenOcrLayoutTest {
         assertEquals("あいう", l.blockText)
         assertEquals(0, l.blockOffset)
     }
+
+    // 决定 4BBSaB12zj：Android 截屏识字跟随引擎设置，本机模型 / Lens 的行从 Dart 回来。
+    @Test
+    fun wireLinesUseDartSegmentsAsGlyphs() {
+        val lines = ScreenOcrLayout.linesFromWire(
+            listOf(
+                mapOf(
+                    "text" to "吾輩は猫",
+                    "rect" to listOf(100, 200, 500, 250),
+                    "vertical" to false,
+                    "segments" to listOf(
+                        listOf(0, 2, 100, 200, 300, 250),
+                        listOf(2, 1, 300, 200, 400, 250),
+                        listOf(3, 1, 400, 200, 500, 250),
+                    ),
+                ),
+            ),
+        )
+        assertEquals(1, lines.size)
+        val l = lines[0]
+        assertEquals("吾輩は猫", l.text)
+        assertEquals(listOf(0, 2, 3), l.glyphs.map { it.start })
+        assertFalse(l.vertical)
+        // 点在「は」的框里 → 字下标 2。
+        assertEquals(2, ScreenOcrLayout.charIndexAt(l, 350, 225))
+        assertEquals("吾輩は猫", l.blockText)
+        assertEquals(0, l.blockOffset)
+    }
+
+    @Test
+    fun wireLinesFallBackToProportionalGlyphsOnBadSegments() {
+        val lines = ScreenOcrLayout.linesFromWire(
+            listOf(
+                mapOf(
+                    "text" to "あいう",
+                    "rect" to listOf(0, 0, 30, 300),
+                    "vertical" to true,
+                    // 乱序：整行不用词框。
+                    "segments" to listOf(
+                        listOf(1, 1, 0, 100, 30, 200),
+                        listOf(0, 1, 0, 0, 30, 100),
+                    ),
+                ),
+                mapOf("text" to "  ", "rect" to listOf(0, 0, 10, 10)),
+                mapOf("text" to "x", "rect" to listOf(10, 10, 10, 20)),
+                mapOf("rect" to listOf(0, 0, 10, 10)),
+                "junk",
+            ),
+        )
+        assertEquals(1, lines.size)
+        val l = lines[0]
+        assertTrue(l.vertical)
+        assertEquals(listOf(0, 1, 2), l.glyphs.map { it.start })
+        assertEquals(1, ScreenOcrLayout.charIndexAt(l, 15, 150))
+    }
+
+    @Test
+    fun wireLinesRejectNonList() {
+        assertTrue(ScreenOcrLayout.linesFromWire(null).isEmpty())
+        assertTrue(ScreenOcrLayout.linesFromWire(mapOf("lines" to 1)).isEmpty())
+    }
 }

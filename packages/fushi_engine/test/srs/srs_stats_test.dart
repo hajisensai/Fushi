@@ -314,7 +314,6 @@ void main() {
       now = jst(2026, 10, 14, 10);
       srsStorage = await openTestSrsStorage();
       store = await SrsDbStore.open(
-        db: srsStorage.db,
         core: srsStorage.core,
         profileUid: kProfile,
         deviceId: 'dev',
@@ -451,6 +450,8 @@ class _Engine implements FsrsEngine {
 
   @override
   String get fsrsRev => 'fake';
+  @override
+  bool isKnownFsrsRev(String rev) => rev == fsrsRev;
   @override
   List<double> defaultParams(SrsAlgorithm a) =>
       List<double>.filled(a.paramCount, 1);

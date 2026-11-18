@@ -15,7 +15,7 @@
 ## 同步基线
 
 - **上游 `origin/main` 当前 tip**（批4 同步参照，2026-08-16）：`8993838`（"train zstd dict on import"）。
-- **2026-11-16 性能批的评估参照 tip**：`34074bd`（只评估了性能提交，功能提交未同步，见「2026-11 性能批」）。
+- **2026-11-16 性能批的评估参照 tip**：`34074bd`（性能提交见「2026-11 性能批」，其中 5 条功能提交见「2026-11 功能同步」，`fcea33f` 在格式批移植，`1c230f3` 未评估）。
 - **Hibiki 批4 同步后所含的上游主线 commit**：截至 `8993838`，但**跳过**了主线上的若干提交（见「批4 明确跳过/暂缓」）。
 - Hibiki 是 hoshidicts 的**深度 fork**：在上游主线 `2dd5199`（"count freq and pitch entries"，2026-05-16）一带分叉后，
   额外吸收了 sibling commit `feb48f5`（"add detected_type to ImportResult"，非 origin/main 主线，分叉自 `2dd5199`），
@@ -88,9 +88,9 @@
 ## 2026-11 性能批：评估上游 `9cabc17`..`c28a687` 的性能提交 + 本地查词提速
 
 上游 tip（评估参照，2026-11-16）：`34074bd`。本批**只评估性能相关提交**；同一区间里的功能
-提交（`30ad52f` 去片假名中点、`1c230f3` 原地增删词典、`ad0be91`
-强调っ / 片假名边界、`3f0c2d9`、`e2a007f` 歴史的仮名遣い、`8e89a5d` -やしない）未评估，留给
-下一次功能同步。
+提交 `30ad52f` 去片假名中点、`3f0c2d9`、`ad0be91` 强调っ / 片假名边界、`e2a007f` 歴史的仮名遣い、
+`8e89a5d` -やしない 见下「2026-11 功能同步」；`fcea33f` 数字串频率已在格式批移植（见下表）；
+`1c230f3` 原地增删词典仍未评估，留给下一次功能同步。
 
 | 上游 commit | 标题 | 处置 | 说明 |
 |---|---|---|---|
@@ -247,6 +247,52 @@ lookup、query、query_kanji 逐字段相同，有无联合过滤器都比；A �
 （新增 key.index 来源与混装来源；引擎层新式 / 旧式各跑一遍），`hash_truncated_table_guard_test`
 （key.index 截断 / 桶数被改 / 全 0xFF 被拒）。以上与受影响的既有测试在
 `FUSHIDICTS_BLOB_WINDOWED=1` 下同样通过。
+
+## 2026-11 功能同步：上游 `30ad52f` / `3f0c2d9` / `ad0be91` / `e2a007f` / `8e89a5d`
+
+评估参照仍是上游 `34074bd`。上游的变形规则写在 `src/deinflector.cpp`（C++），fork 的规则数据在
+`fushi/assets/transforms/ja.json`（导自 Yomitan，与上游规则表大体同源），所以规则类提交是**把上游
+新增的规则逐条并进 ja.json**（插在上游组内的前驱规则之后；新组的说明文字原样照抄，中文译文进
+`fushi/assets/transforms/i18n/zh-CN.json`）。
+
+| 上游 commit | 标题 | 处置 | 说明 |
+|---|---|---|---|
+| `30ad52f` | processor to strip katakana middle dots | **采纳** | `text_processor.cpp strip_middle_dots`，挂在日语链尾（上游链序）。半角 `･` 经链首 NFKC 归一成 `・` 后同样被删。 |
+| `3f0c2d9` | drop middle dots only if they are actually between two characters | **改写移植** | 上游代码只保留串尾的点；fork 按提交说明的意图把串首的点也保留（只删夹在两个字符之间的点），否则从点上开始的查询会把点算进同一词条的匹配长度。 |
+| `ad0be91` | fix: lookup matches misread emphatic っ and katakana boundaries (#37) | **采纳（含一处改写）** | 四件事：① `くって → い`（`-て` 组）进 ja.json；② 变形改写量上限 `max_rewrite`：变形不得跨过原文里的中点 / 被折叠掉的っ（`text_processor.cpp max_rewrite` + `lookup.cpp rewrite_allowed`）；③ 「平假名 + 片假名词」收尾时变形要么整段改写片假名词、要么不动（`min_rewrite`）；④ 结尾落在片假名词中间（下一个码点仍是片假名 / 长音符）时只认原文、不许还原（`process()` 的 `next_char`）。上游这条的主要动机是它自己的 full_collapse（删单个っ）造成的误匹配，fork 自 BUG-1777 起就不挂 full_collapse，那一半问题本来不存在；②在 fork 里只对中点与 `っっ` 折叠生效。改写处：走完都没碰到被删字符时 `max_rewrite` 返回「不限」而非走过的长度——fork 有比原文更长的变体（韩语拆字），照上游写法 ko.json 的长后缀规则会被误杀。`next_char` 只取扫描窗口内的码点（同 BUG-3212 的窗口口径：引擎结果只依赖前 `scan_length` 个码点，与 Dart 侧匹配长度缓存的键一致）。 |
+| `e2a007f` | port 歴史的仮名遣い | **采纳 + 本地限制** | 60 条规则：ワ行五段的は / ひ / ふ / へ 各活用形、`-そう` 的 `さう`、volitional 的 `〜やう / 〜はう / ませう / からう`、`-いる` 的 `ゐる`，新组 `-ふ`。fork 给这 60 条全部打了 `"requiresPartOfSpeech": true`，经它们得到的还原形只对自带词性且匹配的词条成立，见下「本地差异」。 |
+| `8e89a5d` | port -やしない and -やしません | **采纳** | 新组 `-やしない`（conditionsIn `adj-i`）/ `-やしません`（`-ません`），各 17 条。 |
+
+**本地差异：歴史的仮名遣い规则要求词条自带词性（上游无此限制）。** 这批规则的词尾正是现代文最高频的
+助词「へ / は」（`へ → う` imperative、`はず / はない / はぬ → う` 等，conditionsIn 为空）。带词性的
+词典上，conditionsOut（多为五段动词）本来就会被词性过滤挡掉；但 fork 让无词性词典的词条当词性通配
+（MDX / StarDict / DSL 写 `rules = "*"`，整本不带 rules 的 Yomitan 词典读侧把空 rules 当 `*`，
+`Deinflector::pos_to_conditions`），任何还原在它们上都成立，于是 `うちへ` → 宇宙〔うちう〕、`レストランへ`
+在「ラン」处 → 乱右〔らんう〕、`るはず` → るう，按最长匹配优先压过正确的短结果。通配让步对现代活用是
+对的，对罕见正字法的短规则精度代价太大，所以按规则数据收窄：
+- 表示：transforms JSON 的规则级字段 `"requiresPartOfSpeech": true`（ja.json 里恰好是 `e2a007f` 新增的
+  60 条；并入既有组的规则与新组 `-ふ` 一样逐条标，不按组标——`negative` / `volitional` 等组里还有现代规则）。
+- 读取：`deinflector.cpp` 载入时把带标记规则的 conditions_out 或上 `fushi::kRequiresPartOfSpeechBit`
+  （`util/pos_required.hpp`，条件位的最高位，各语言的词性条件从 0 往上分、最多用到二十几位，载入时
+  不再把第 63 位分给词性条件）；递归时这一位沿链传下去（`chain`），判 conditions_in 时先去掉（`admits`）。
+  `lookup.cpp filter_by_pos` 见到这一位就只按词条**自带的真词性**匹配，通配 `*` 不算数（`explicit_rules`）。
+  一条词条的 rules 是同一 (expression, reading) 在各词典里的词性并起来的（`query_raw` 逐本追加），
+  常见词同时在带词性与无词性词典里时是 `"v5 *"`——有真词性且匹配就成立，不因为另一本给了通配而丢掉。
+  链上任何一步用过带标记的规则即适用（`待ってゐる` → `待って` → 待つ 同样要求词性）。
+- 代价：只在无词性词典里出现的词条不再吃歴史仮名还原（装载的词典里只要有一本给它标了词性就照常）；
+  反过来，带词性的词典自己把历史假名词条标成 `v5` 的仍会命中（`散らふ`〔ちらう〕在「こちらへ」的
+  「ち」处、`とう` 在「ことはない」的「と」处），词性过滤挡不住，与上游行为相同。
+
+真实词典集（64 本）前后对比（加了本地限制之后）：`benchmark/corpus_ja.txt` 1143 次查词里 13 次结果有变
+（首条变了 8 次）：11 次是片假名词边界去掉的跨词误配（`所でニャ` → 所で、`はバッテ` → は、`きたレ` →
+きた 等），1 次只是顺序，1 次是 `スマートフォン` 的「ト」处多出带词性的 `トフ` → とう（非首条）；
+不加限制时的歴史仮名误配 `ランへ` → 乱右、`るはず` → るう、`ワフ` → わう 全部消失。专用的歴史仮名 /
+助词语料（640 次）上首条改变 89 次（不加限制 100 次），`言はない` / `歌はう` / `待ってゐる` / `言へば` /
+`思はぬ` / `ませう` 等还原照常，`うちへ` / `どこかへ` / `いいへ` 等助词误配消失。
+
+守卫：`tests/ja_upstream_sync_lookup_test.cpp`（真 ja.json：中点 / 串首串尾点保留 / 变形不跨点 /
+片假名词边界 / 片假名收尾整段改写 / くって / 歴史的仮名遣い / -やしない / 歴史仮名规则在通配词典上不成立、标记沿链传递、真词性与通配并存时按真词性判）+ `tests/text_processor_test.cpp`
+新增的中点与改写上下限用例 + Dart `fushi/test/dictionary/transform_description_i18n_test.dart`（新组说明的中文译文）。
 
 ## TODO-687 批3 移植的上游 commit（IPA 音标支持）
 

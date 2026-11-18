@@ -4,6 +4,113 @@ import 'anki_note_type_definition.dart';
 
 enum AnkiVideoPlacement { picture, bottom }
 
+/// Why a video-template operation was refused or failed.
+///
+/// Codes, not sentences: this package is pure Dart and cannot reach the app's
+/// translations, so the app maps each code to a localized message.
+enum AnkiVideoTemplateErrorCode {
+  /// The selected field is missing, not a plain field name, or the field
+  /// history is inconsistent.
+  invalidField,
+
+  /// A managed marker is incomplete or of an unsupported version; removing it
+  /// would be destructive.
+  markerIncomplete,
+
+  /// The managed block was edited by hand; new settings cannot be applied on
+  /// top of it.
+  blockEdited,
+
+  /// Stray managed markers survive removal of the complete blocks.
+  blockDamaged,
+
+  /// The mining target (backend, endpoint or note type) changed since the
+  /// template was read.
+  targetChanged,
+
+  /// Sentence audio is not mapped exactly once in another field.
+  audioMappingRequired,
+
+  /// The chosen field is mapped to something other than an image / video.
+  fieldHasOtherContent,
+
+  /// Updating an existing adaptation, but its original-mapping backup is gone.
+  applyBackupMissing,
+
+  /// Restoring a template that has no managed video block.
+  noVideoBlock,
+
+  /// Restoring, but no original-mapping backup exists for this backend.
+  restoreBackupMissing,
+
+  /// This connection cannot edit note types (remote mining client).
+  hostOnly,
+
+  /// The definition was not read through this service for the current target.
+  rereadRequired,
+
+  /// The note type changed in Anki since the preview was opened.
+  templateChanged,
+
+  /// The backend refused the template write.
+  writeRejected,
+
+  /// The template read back after writing differs from what was written.
+  writeVerificationFailed,
+
+  /// Field mappings changed while applying.
+  mappingsChanged,
+
+  /// The template changed again while the mappings were being saved.
+  templateChangedDuringApply,
+
+  /// The saved field mappings differ from what was written.
+  mappingVerificationFailed,
+
+  /// The operation failed and so did the automatic rollback. Carries both
+  /// errors in [AnkiVideoTemplateException.cause] /
+  /// [AnkiVideoTemplateException.rollbackCause].
+  rollbackIncomplete,
+
+  /// The template could not be read back to verify a rollback.
+  rollbackUnreadable,
+
+  /// The backend refused the partial-template rollback.
+  rollbackRejected,
+
+  /// The templates read back after rollback differ from the originals.
+  rollbackVerificationFailed,
+}
+
+/// A refused or failed video-template operation, identified by [code].
+class AnkiVideoTemplateException implements Exception {
+  const AnkiVideoTemplateException(this.code, {this.cause, this.rollbackCause});
+
+  final AnkiVideoTemplateErrorCode code;
+
+  /// The error that made the operation fail
+  /// ([AnkiVideoTemplateErrorCode.rollbackIncomplete] only).
+  final Object? cause;
+
+  /// The error that made the automatic rollback fail
+  /// ([AnkiVideoTemplateErrorCode.rollbackIncomplete] only).
+  final Object? rollbackCause;
+
+  /// Developer-facing (logs, ops output). UI shows a localized message by
+  /// [code] instead.
+  @override
+  String toString() {
+    final StringBuffer buffer = StringBuffer(
+      'AnkiVideoTemplateException(${code.name})',
+    );
+    if (cause != null) buffer.write(': $cause');
+    if (rollbackCause != null) {
+      buffer.write('; rollback failed: $rollbackCause');
+    }
+    return buffer.toString();
+  }
+}
+
 /// Settings for the reversible, back-side managed video player.
 class AnkiVideoTemplateOptions {
   const AnkiVideoTemplateOptions({
@@ -72,8 +179,8 @@ AnkiNoteTypeDefinition removeAnkiVideoTemplate(
             (RegExpMatch match) =>
                 match.group(0)!.indexOf(_start, _start.length) != -1,
           )) {
-    throw StateError(
-      'The Fushi video marker is incomplete or unsupported. Restore the template backup before removing video adaptation.',
+    throw const AnkiVideoTemplateException(
+      AnkiVideoTemplateErrorCode.markerIncomplete,
     );
   }
   return remainder;
@@ -88,18 +195,16 @@ AnkiNoteTypeDefinition applyAnkiVideoTemplate(
   AnkiVideoTemplateOptions options,
 ) {
   if (!_validFields(definition, options)) {
-    throw ArgumentError.value(
-      options.field,
-      'field',
-      'Choose an existing plain field name',
+    throw const AnkiVideoTemplateException(
+      AnkiVideoTemplateErrorCode.invalidField,
     );
   }
   if (definition.templates.any(
         (AnkiCardTemplate card) => _hasManagedMarker(card.back),
       ) &&
       readAnkiVideoTemplateOptions(definition) == null) {
-    throw StateError(
-      'The Fushi video block has been edited. Restore video adaptation before applying new settings.',
+    throw const AnkiVideoTemplateException(
+      AnkiVideoTemplateErrorCode.blockEdited,
     );
   }
   final AnkiNoteTypeDefinition clean = removeAnkiVideoTemplate(definition);
@@ -107,8 +212,8 @@ AnkiNoteTypeDefinition applyAnkiVideoTemplate(
     (AnkiCardTemplate card) =>
         card.back.contains(_start) || card.back.contains(_end),
   )) {
-    throw StateError(
-      'A damaged Fushi video block must be restored before updating',
+    throw const AnkiVideoTemplateException(
+      AnkiVideoTemplateErrorCode.blockDamaged,
     );
   }
   return _withBacks(clean, (String back) => back + _managedBlock(options));

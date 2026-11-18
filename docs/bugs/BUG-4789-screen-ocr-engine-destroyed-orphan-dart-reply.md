@@ -1,0 +1,8 @@
+## BUG-4789 · 截屏识字等 Dart 回话时主引擎被销毁，挂起的回话永远不来，流程锁不解、悬浮球一直藏着
+- **报告**：2026-11-17（用户：PR #3615 合入后的遗留缺陷复核——「截屏识字时原生侧等 Dart 回话没有出口」中「主引擎在回话前被销毁」这一条路径）
+- **真实性**：✅ 真 bug（代码路径确认，未在真机复现）。根因：
+  - `fushi/android/app/src/main/java/app/fushi/reader/ScreenOcrService.java:628` `recognize` 经 `FloatingBallChannel.queryScreenOcrEngine` 问 Dart 用哪个引擎、`:731` `sendFrameToDart` 经 `recognizeScreenOcrFrame` 交帧识别，之后只在 `MethodChannel.Result` 回调里推进；等回话期间 `ScreenCaptureRequestActivity` 的流程锁一直持有、悬浮球藏着，只有 `finishFlow` 能解。
+  - `fushi/android/app/src/main/java/app/fushi/reader/FloatingBallChannel.java:138`（修前行号）引擎 `onEngineWillDestroy` 只把 `ocrChannel` 置空，已发出的请求不收尾；Flutter 的 `DartMessenger.pendingReplies`（Flutter 3.47.6 `engine/src/flutter/shell/platform/android/io/flutter/embedding/engine/dart/DartMessenger.java:55`）随引擎丢弃、不回调。主引擎在 Dart 回话前被销毁（系统回收、界面被划掉且引擎未缓存、热重启）→ 回调永不到达 → 流程永久锁住，只能杀进程。
+- **[x] ① 已修复** — 新增 `fushi/android/app/src/main/java/app/fushi/reader/PendingDartReplies.java`：每个引擎一份请求台账，`track` 包住回调（至多完成一次、完成即销账），`abandonAll` 把还挂着的请求按 `ENGINE_DESTROYED` 错误收尾。`FloatingBallChannel.bindOcrChannel` 每绑一个引擎建一份，`onEngineWillDestroy`（`FloatingBallChannel.java:150`，不论是否仍是当前引擎）与 `onPreEngineRestart` 都 `abandonAll`；`queryScreenOcrEngine` / `recognizeScreenOcrFrame` 发请求前登记、`invokeMethod` 当场抛时撤销登记。`ScreenOcrService` 的既有 error 分支照常接住：问引擎失败退回 ML Kit，交帧识别失败走 `onDartUnreachable`（首选引擎退 ML Kit；ML Kit 重试则按模型不可用收尾），流程都能走到 `finishFlow`。
+- **[x] ② 已加自动化测试** — `fushi/android/app/src/test/java/app/fushi/reader/PendingDartRepliesTest.java`（3 条：引擎销毁时挂起请求全部按错误收尾；已回话的不被二次回调、销毁后迟到的回话被忽略；没发出去的请求不回调）。本机用 javac + JUnitCore 跑过 3/3；仓库 CI 目前没有跑 Android JVM 单测的步骤，只能本地 / Gradle 跑。
+- **备注**：同一条遗留项里「等待期间用户没有取消出口」另记 BUG-4790。真机未复测。

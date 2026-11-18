@@ -146,9 +146,13 @@ Future<bool> probePlexConnection(
   }
 }
 
-/// plex.tv 账号授权拿到账号 token 之后：列出账号下的服务器，逐台按连接优先级探测
-/// 第一条可达地址，把可达的存成媒体服务器（设置页 PIN 登录与控制通道共用这一处
-/// 落库）。返回存下的配置；一台都不可达返回空表。
+/// plex.tv 账号授权拿到账号 token 之后：列出账号下的服务器，各台按连接优先级探测
+/// 排名最靠前的可达地址，把可达的存成媒体服务器（设置页 PIN 登录与控制通道共用
+/// 这一处落库）。返回存下的配置；一台都不可达返回空表。
+///
+/// 账号名与服务器清单同时取，各台服务器的探测也同时进行（每台内部各条连接同样
+/// 并发，见 [firstReachablePlexConnection]），总等待约一个探测超时；落库仍按
+/// plex.tv 给出的顺序逐台写。
 Future<List<PlexServerConfig>> savePlexAccountServers(
   SyncRepository repo, {
   required PlexTvApi tv,
@@ -161,24 +165,29 @@ Future<List<PlexServerConfig>> savePlexAccountServers(
   )
   probe,
 }) async {
-  PlexTvUser? user;
-  try {
-    user = await tv.user(accountToken);
-  } catch (_) {
-    // 账号名只用于卡片副标题，查不到不妨碍登录。
-  }
+  // 账号名只用于卡片副标题，查不到不妨碍登录。
+  final Future<PlexTvUser?> userFuture = Future<PlexTvUser?>.sync(
+    () => tv.user(accountToken),
+  ).then<PlexTvUser?>((PlexTvUser? u) => u, onError: (Object _) => null);
   final List<PlexResource> resources = await tv.resources(accountToken);
+  final List<Future<String?>> reachables = <Future<String?>>[
+    for (final PlexResource r in resources)
+      firstReachablePlexConnection(
+        orderPlexConnections(r.connections),
+        (String uri) =>
+            probe(uri, r.accessToken ?? accountToken, r.clientIdentifier),
+      ),
+  ];
+  final PlexTvUser? user = await userFuture;
   final List<PlexServerConfig> saved = <PlexServerConfig>[];
-  for (final PlexResource r in resources) {
+  for (int i = 0; i < resources.length; i++) {
+    final PlexResource r = resources[i];
     final String token = r.accessToken ?? accountToken;
     final List<String> ordered = <String>[
       for (final PlexConnection c in orderPlexConnections(r.connections))
         if (c.uri.isNotEmpty) c.uri,
     ];
-    final String? reachable = await firstReachablePlexConnection(
-      orderPlexConnections(r.connections),
-      (String uri) => probe(uri, token, r.clientIdentifier),
-    );
+    final String? reachable = await reachables[i];
     if (reachable == null || ordered.isEmpty) continue;
     final PlexServerConfig config = PlexServerConfig(
       machineIdentifier: r.clientIdentifier,
