@@ -849,6 +849,44 @@ fn small_segments_and_batches_resume_and_converge() {
     assert_eq!(a.derived(), b.derived());
 }
 
+/// 发件的切段目标（`segBytes`）夹在上限（[SEGMENT_TARGET_BYTES]）以内：调用方给得再大，切出的段也按上限切（读侧
+/// 按 `MAX_BODY_RAW` 拒解压后过大的段，写者不能往上放）。测试钩子把上限调到 300 字节，不造 4 MB 的日志；同样的
+/// 日志不设上限时一段就装下（对照），所以段数多于一说明是夹紧在起作用。
+#[test]
+fn outbox_clamps_the_segment_target_to_the_cap() {
+    let a = Dev::new("g6seg");
+    for i in 0..40 {
+        a.write(T1 + i, [N1, N2, N3][i as usize % 3], &format!("v{i}"));
+    }
+    let seg_files = |loc: &Loc| {
+        names_of(loc, &a.device())
+            .iter()
+            .filter(|n| n.starts_with("seg-"))
+            .count()
+    };
+    let huge = Opts {
+        seg_bytes: Some(u64::MAX / 2),
+        ..Opts::default()
+    };
+    // 对照：上限是默认值时，这点日志一段就装下。
+    let mut plain = Loc::new();
+    round(&a, &mut plain, "loc-a", T1 + 100, huge);
+    assert_eq!(seg_files(&plain), 1);
+    // 上限 300 字节：调用方给的 `segBytes` 再大也按 300 切。
+    super::sync::SEG_CAP_FOR_TEST.with(|c| c.set(Some(300)));
+    let mut capped = Loc::new();
+    round(&a, &mut capped, "loc-b", T1 + 101, huge);
+    super::sync::SEG_CAP_FOR_TEST.with(|c| c.set(None));
+    let small = Opts {
+        seg_bytes: Some(300),
+        ..Opts::default()
+    };
+    let mut explicit = Loc::new();
+    round(&a, &mut explicit, "loc-c", T1 + 102, small);
+    assert!(seg_files(&capped) >= 3, "{}", seg_files(&capped));
+    assert_eq!(seg_files(&capped), seg_files(&explicit));
+}
+
 /// 位置上丢了一个已传的段（同步盘丢文件）：下一轮退水位重传，对端照样收齐。
 #[test]
 fn a_lost_segment_is_uploaded_again() {

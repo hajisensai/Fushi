@@ -1132,6 +1132,22 @@ pub fn ingest_finish(t: &Truth<'_>, col: i64, profile: &str, now: i64) -> Result
 
 // ---------------------------------------------------------------------- 4. 发件
 
+#[cfg(test)]
+thread_local! {
+    /// 测试钩子：本线程上 [outbox] 切段目标的上限（代替 [SEGMENT_TARGET_BYTES]），测夹紧不必造 4 MB 的日志。
+    pub(super) static SEG_CAP_FOR_TEST: std::cell::Cell<Option<u64>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// [outbox] 切段目标（`segBytes`）的上限：[SEGMENT_TARGET_BYTES]（测试可经 [SEG_CAP_FOR_TEST] 调小）。
+fn seg_cap() -> u64 {
+    #[cfg(test)]
+    if let Some(c) = SEG_CAP_FOR_TEST.with(std::cell::Cell::get) {
+        return c;
+    }
+    SEGMENT_TARGET_BYTES
+}
+
 /// `outbox {profile, progress, key?, maxBytes?, segBytes?, present?}`：本机当前身份从已传水位起切出的下一批段（文件在
 /// [files]，路径相对 `v4/`）。回包 `{segments: [[first, last, tag, voids]], upto, more}`。
 ///
@@ -1152,12 +1168,13 @@ pub fn outbox(
         .and_then(Value::as_u64)
         .unwrap_or(OUTBOX_BATCH_BYTES)
         .max(1);
+    let cap = seg_cap();
     let target = req
         .get("segBytes")
         .and_then(Value::as_u64)
-        .unwrap_or(SEGMENT_TARGET_BYTES)
+        .unwrap_or(cap)
         // 不超过默认目标：读侧按 [crate::gen4::segment::MAX_BODY_RAW] 拒解压后过大的段，切段目标不能往上放。
-        .clamp(1, SEGMENT_TARGET_BYTES);
+        .clamp(1, cap);
     let mut out = load_out(t, col, progress, &me.device)?;
     let before = out.clone();
     let last = t.last_of(col, &me.device)?;
