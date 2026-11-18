@@ -294,8 +294,11 @@ bool videoFilenameOrganizeShouldConsultBackend({
   required bool embeddedSessionAlive,
   required bool embeddedHasResumeFiles,
   required String qbBaseUrl,
+  bool remoteHostSelected = false,
 }) {
   if (!downloadsAvailable) return false;
+  // 借互联设备的引擎：种子在对端，本机无从判断有没有，一律问它。
+  if (remoteHostSelected) return true;
   if (embeddedSelected) return embeddedSessionAlive || embeddedHasResumeFiles;
   return qbBaseUrl.trim().isNotEmpty;
 }

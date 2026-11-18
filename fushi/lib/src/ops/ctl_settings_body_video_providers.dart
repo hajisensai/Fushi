@@ -822,7 +822,7 @@ CtlBodyPage _downloadRoutingPage() => CtlBodyPage(
         fields: const <SettingsCliParam>[
           SettingsCliParam(
             'profile',
-            help: '下载后端 profile id；add 时省略 = 用当前 qB 配置推导出的 id',
+            help: '下载后端 profile id；add 时省略 = 用当前后端（互联设备 / 外接 qB）推导出的 id',
             required: false,
           ),
           SettingsCliParam('remote_root', help: '后端看到的远端根路径', required: false),

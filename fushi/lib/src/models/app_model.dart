@@ -415,6 +415,9 @@ import 'package:fushi_engine/media/discovery/import/discovery_engine_importers.d
         isDuplicateDiscoveryAudiobookContent;
 import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
 import 'package:fushi/src/sync/app_download_host.dart';
+import 'package:fushi/src/sync/interconnect_host_channel.dart'
+    show InterconnectHostRef;
+import 'package:fushi/src/sync/interconnect_torrent_engine_backend.dart';
 import 'package:fushi/src/ai/agent/ai_agent_assistant_host.dart'
     show createAppAssistantHost;
 import 'package:fushi/src/sync/backup_service.dart';
@@ -8562,6 +8565,10 @@ class AppModel
     final QbConnectionConfig config = effectiveTorrentConfig(
       qbConnectionConfig,
     );
+    if (config.backend == QbConnectionConfig.backendFushiHost) {
+      // 选了互联设备就只认它：没选定设备 = 没配好，不悄悄退回本机引擎。
+      return config.isConfigured ? QbConnectionConfig.backendFushiHost : null;
+    }
     if (isEmbeddedTorrentReady &&
         config.backend != QbConnectionConfig.backendQbittorrent) {
       return QbConnectionConfig.backendEmbedded;
@@ -8626,6 +8633,9 @@ class AppModel
     );
     if (resolved == QbConnectionConfig.backendEmbedded) {
       return _embeddedTorrentBackendProxy(config);
+    }
+    if (resolved == QbConnectionConfig.backendFushiHost) {
+      return _remoteFushiTorrentBackend(config);
     }
     if (config.baseUrl.trim().isEmpty) return null;
     return QbTorrentBackend(
@@ -8956,6 +8966,7 @@ class AppModel
       embeddedSessionAlive: _embeddedTorrentHost != null,
       embeddedHasResumeFiles: _embeddedTorrentHasResumeFiles(),
       qbBaseUrl: config.baseUrl,
+      remoteHostSelected: config.backend == QbConnectionConfig.backendFushiHost,
     );
     return VideoFilenameOrganizeService(
       database: database,
@@ -9723,6 +9734,21 @@ class AppModel
     );
   }
 
+  /// 「下载后端 = 互联设备」：借那台已配对 host 的 BT 引擎。没选定设备 → null。
+  TorrentBackend? _remoteFushiTorrentBackend(QbConnectionConfig config) {
+    if (!config.isConfigured) return null;
+    return RemoteFushiTorrentBackend(
+      repo: SyncRepository(database),
+      host: InterconnectHostRef.persisted(
+        hostId: config.remoteHostId,
+        anchorUrl: config.remoteHostUrl,
+      ),
+      trackerSubscriptionService: _trackers,
+      autoAddTrackerSubscription: config.autoAddTrackerSubscription,
+      trackerSubscriptionUrl: config.trackerSubscriptionUrl,
+    );
+  }
+
   /// 后端选择：配置选内置且宿主可用 → 内置引擎的共享 session 视图；否则
   /// 外接 qBittorrent（默认 / 内置不可用时的回退）。
   TorrentBackend _torrentBackendFor(QbConnectionConfig config) {
@@ -9732,6 +9758,10 @@ class AppModel
     if (backend == QbConnectionConfig.backendEmbedded) {
       final TorrentBackend? embedded = _embeddedTorrentBackendProxy(config);
       if (embedded != null) return embedded;
+    }
+    if (backend == QbConnectionConfig.backendFushiHost) {
+      final TorrentBackend? remote = _remoteFushiTorrentBackend(config);
+      if (remote != null) return remote;
     }
     return QbTorrentBackend(
       QBittorrentClient(
