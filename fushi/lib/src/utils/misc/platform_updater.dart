@@ -37,6 +37,7 @@ class UpdateAsset {
     this.sizeBytes,
     this.sha256Digest,
     this.version,
+    this.dbSchemaVersion,
   });
 
   factory UpdateAsset.fromReleaseAsset(Map<String, dynamic> asset) {
@@ -46,6 +47,7 @@ class UpdateAsset {
       sizeBytes: _assetSizeBytes(asset['size']),
       sha256Digest: _assetSha256Digest(asset['digest'] ?? asset['sha256']),
       version: _assetVersionStamp(asset['version']),
+      dbSchemaVersion: _assetDbSchemaVersion(asset['dbSchemaVersion']),
     );
   }
 
@@ -63,20 +65,30 @@ class UpdateAsset {
   /// 此印记）→ null，调用方 fail-open 回退顶层 tag（保持旧行为，不因缺印记卡住更新）。
   final String? version;
 
+  /// CI `publish_update_manifest.sh` 写在每个 manifest asset 上的「这个包带的用户库 schema」
+  /// （`kFushiDbSchemaVersion`）。比本机低 = 装上后用户库比程序新、app 拒绝打开，选包时一律
+  /// 跳过（[selectUpdateReleaseForCurrentPlatform]）。非 manifest 来源 / 旧 manifest → null，
+  /// 只按发布序号判先后。
+  final int? dbSchemaVersion;
+
   UpdateAsset copyWith({
     String? name,
     String? url,
     int? sizeBytes,
     String? sha256Digest,
     String? version,
+    int? dbSchemaVersion,
   }) => UpdateAsset(
     name: name ?? this.name,
     url: url ?? this.url,
     sizeBytes: sizeBytes ?? this.sizeBytes,
     sha256Digest: sha256Digest ?? this.sha256Digest,
     version: version ?? this.version,
+    dbSchemaVersion: dbSchemaVersion ?? this.dbSchemaVersion,
   );
 }
+
+int? _assetDbSchemaVersion(Object? raw) => raw is int && raw > 0 ? raw : null;
 
 int? _assetSizeBytes(Object? raw) {
   if (raw is int && raw >= 0) return raw;
