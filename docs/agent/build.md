@@ -526,6 +526,24 @@ Linux 静态 torrent bridge。规则：
 - 守卫 `fushi/test/build/native_store_names_single_source_guard_test.dart` 钉死以上几条（含
   「PR 门 restore 的每个件都有同 runner、同 CC/CXX 的 develop 生产方」）。
 
+## PR 主门分层：快门每推必跑，全量按需 / 合并后跑（2026-11-18）
+
+**起因（实测）**：近 3 天 `main.yml`（Build Android APK）占全仓 runner 分钟的 59%，把并发槽顶满——Linux job 排队 p75 29 分钟、p90 56 分钟；一次 PR 运行真正干活约 50 分钟，墙钟中位数 102 分钟、p90 199 分钟，被后一次 push 取消而白烧 2394 分钟。近 7 天各会话为等 CI 纯空等约 27 小时（平均每次 67 分钟）。而 PR 上这份全量，`develop` 每次 push 的 `release.yml` 本来就再跑一遍。
+
+**现在的形态**（`main.yml` 的 `plan` job 决定，判据写在它的注释里）：
+
+| 层 | 跑什么 | 什么时候 |
+|---|---|---|
+| 快门 | `build`：analyze + JS 测试（`packages/` 有改动时加包测试）；`affected-tests`：目录枚举守卫整批 + 路径字面量点名的守卫 + 直接 import 改动库的测试 + 改动的测试文件 | 进 `develop` 的 PR，每次 push |
+| 全量 | `unit-tests` 4 片 + 包测试 + R8 / JVM 校验 | 改了原生 / Android / 插件集合 / pubspec / `fushi/tool/` / workflow 自身；进 `main` 的 PR；fork PR；带 `full-ci` 标签；手动 dispatch；改动清单取不到 |
+| 合并后 | `release.yml` 的 4 片单测 + analyze + 包测试 | `develop` / `main` 每次 push（一直如此） |
+
+- **要在某条分支上跑全量**：`gh workflow run main.yml --ref <分支>`（结果挂在同一个 head commit 上，PR 页看得到）；或先给 PR 打 `full-ci` 标签再 push（标签在 push 时读，打完标签不会自动重跑）。
+- **快门不是完备的**：只经传递依赖受影响的测试它选不到。回放最近 80 个已合并 PR，按传递 import 闭包选会选中 1400～3000 个测试文件（import 图里有大环），等于全量，所以不做。这类回归在合并后的 `develop` 上由 `release.yml` 暴露，红了按根因修——这正是「批量合并不逐条等 PR CI，合完看 `develop` 尖端」那条规则本来的做法。
+- 选测与本地预检 `fushi/tool/pre_push_check.dart` 是同一份实现：从选测里删一条规则，等于从 PR 门里删。CI 上放开了 hub 上限（本地默认跳过「被 40 个以上测试 import 的库」）。
+- 回放最近 80 个已合并 PR：72 个会触发主门，其中 50 个走快门、22 个走全量。
+- 守卫：`fushi/test/build/pr_tiered_gate_guard_test.dart`（两层互斥、判不出来一律全量、全量 pattern 是 R8 门的超集、合并后的全量兜底还在）。
+
 ## PR 平台 job 的路径门（2026-09-30）
 
 `build-multiplatform.yml` 在 `pull_request` 上先跑一个几秒的 `changes` job：拿 PR merge commit
