@@ -1,7 +1,7 @@
 {
  "schema": 1,
  "app": "Fushi",
- "appVersion": "3.3.0",
+ "appVersion": "3.4.0",
  "source": "https://github.com/hajisensai/Fushi/blob/develop/fushi/test/settings/settings_catalog_export_test.dart",
  "locales": [
   "en",
