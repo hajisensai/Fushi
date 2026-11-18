@@ -371,7 +371,8 @@ void main() {
         offenders.add('$rel:${i + 1}: $line');
       }
     }
-    expect(sources, greaterThan(8), reason: '目录名来源文件解析不对');
+    // 规模哨兵：同步收尾删了协议 1 位置迁移（srs_location_migration.dart），合流后剩 8 个来源文件。
+    expect(sources, greaterThan(7), reason: '目录名来源文件解析不对');
     expect(offenders, isEmpty);
     final List<String> stale = <String>[
       for (final MapEntry<String, List<String>> e in _kKnownDirAsUid.entries)
