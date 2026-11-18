@@ -1314,3 +1314,328 @@ fn an_in_use_preparation_copy_is_not_counted_as_free_space() {
     assert_eq!(reclaimable(&dir.0, PrepCopy::Stale), 1124);
     assert_eq!(reclaimable(&dir.0, PrepCopy::InUse), 100);
 }
+
+/// 第二个 profile（uid 排在 [P] 之后）。
+const Q: &str = "0193a1b2-0000-7000-8000-00000000cafe";
+const QN1: &str = "0193a1b2-0000-7000-8000-0000000000c1";
+const QN2: &str = "0193a1b2-0000-7000-8000-0000000000c2";
+
+fn cfg_of(profile: &str) -> String {
+    json!({"defaultDeck": crate::store::sync2::config::default_deck_id(profile)}).to_string()
+}
+
+/// 两个 profile 的缓存配置。
+fn caches_pq() -> BTreeMap<String, String> {
+    BTreeMap::from([(P.to_owned(), cfg()), (Q.to_owned(), cfg_of(Q))])
+}
+
+/// 在 [core] 里给 [Q] 建与 `dryrun::tests::library` 同形的一份数据：牌组、笔记类型两条模板、两条笔记、一次复习，
+/// 缓存表按 [Q] 的配置建好。同一个 `srs.db` 里两个 profile，迁移时各成一个集合。
+fn add_second_profile(core: &SrsCore) {
+    core.sync2_identity(Q, T0).unwrap();
+    while core.sync2_migrate(Q, T0, None).unwrap()["done"] != json!(true) {}
+    let entity = |id: &str, kind: &str, d: Value| json!({"t": "entity", "x": {"id": id, "p": Q, "k": kind, "d": d}});
+    let edit = |kind: &str, e: &str, key: &str, v: Value| {
+        json!({"t": "edit", "x": {
+            "id": "ignored", "p": Q, "k": kind, "e": e, "f": key, "w": "dart", "s": 1,
+            "ctx": {"vv": {}}, "v": v, "hlc": "0:0:dart", "ts": "anchored"
+        }})
+    };
+    let apply = |now: i64, events: Vec<Value>| {
+        let input: Vec<Value> = events
+            .into_iter()
+            .map(|e| json!({"e": e, "note": "N1"}))
+            .collect();
+        core.sync2_apply_local(Q, now, &Value::Array(input).to_string())
+            .unwrap();
+    };
+    let deck = crate::store::sync2::config::default_deck_id(Q);
+    let tdef = |name: &str, ord: i64| json!({"name": name, "ord": ord, "front": "{{Expression}}"});
+    apply(
+        T0,
+        vec![
+            entity(&deck, "deck", json!({"createdAt": 1, "builtin": "default"})),
+            entity(
+                "NTQ",
+                "notetype",
+                json!({"createdAt": 1, "ntKind": "standard"}),
+            ),
+            edit(
+                "notetype",
+                "NTQ",
+                "fieldDef/fa",
+                json!({"name": "Expression", "ord": 0}),
+            ),
+            edit("notetype", "NTQ", "tmplDef/t1", tdef("A", 0)),
+            edit("notetype", "NTQ", "tmplDef/t2", tdef("B", 1)),
+            entity(
+                QN1,
+                "note",
+                json!({"createdAt": 1, "guid": QN1, "noteTypeId": "NTQ"}),
+            ),
+            edit("note", QN1, "f/fa", json!("鳥")),
+            entity(
+                QN2,
+                "note",
+                json!({"createdAt": 1, "guid": QN2, "noteTypeId": "NTQ"}),
+            ),
+            edit("note", QN2, "f/fa", json!("魚")),
+        ],
+    );
+    let c1 = crate::registers::card_id(QN1, "t1", 0).unwrap();
+    apply(
+        T0 + 10,
+        vec![json!({"t": "log", "x": {
+            "id": "q1", "p": Q, "card": c1, "kind": "review", "rating": 3, "hlc": format!("{}:0:dart", T0 + 10),
+            "at": T0 + 10, "ts": "anchored", "origin": "fushi", "rtype": "learn", "utcOff": 0, "rollover": 4,
+            "fv": 1, "res": {"queue": "new", "ivl": 0, "step": 0, "reps": 0, "lapses": 0, "scheduler": "fushi"}
+        }})],
+    );
+    let parsed =
+        crate::store::caches::CacheConfig::parse(&serde_json::from_str(&cfg_of(Q)).unwrap())
+            .unwrap();
+    let w = core.writer().unwrap();
+    crate::store::sync2::in_savepoint(&w, |c| crate::store::caches::rebuild(c, Q, &parsed))
+        .unwrap();
+}
+
+/// 同机两个 profile、只有第二个对拍不过（设计 §6.3「同机多 profile：逐集合迁移；一个集合对拍不过，整个文件不提交」）：
+/// 整次迁移中止，第一个 profile 的 `pass` 也不提交——没有 `srs4.db`、旧库逐字节不变、还是协议 3 的 schema，两次都一样。
+/// 对照：同一份两 profile 的库不改坏就整份提交，两个 profile 都进了新代库。
+#[test]
+fn one_failing_profile_of_two_keeps_the_whole_file_uncommitted() {
+    let ok = legacy_dir("g72-pq-ok", &add_second_profile);
+    let out = migrate_with(&ok.0, &caches_pq(), &Stop::new(), &mut Vec::new());
+    assert_eq!(out.verdict(), "committed", "{out:?}");
+    let profiles: Vec<String> =
+        Connection::open_with_flags(ok.0.join(GEN4_FILE), OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .unwrap()
+            .prepare("SELECT profile_uid FROM collections ORDER BY profile_uid")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+    assert_eq!(profiles, vec![P.to_owned(), Q.to_owned()]);
+
+    let dir = legacy_dir("g72-pq-abort", &add_second_profile);
+    raw(&dir.0)
+        .execute(
+            "DELETE FROM srs_field_edits WHERE entity_kind = 'note' AND entity_id = srs_id(?1) AND field_key = 'f/fa'",
+            [QN2],
+        )
+        .unwrap();
+    let before = masked(&dir.0);
+    for _ in 0..2 {
+        let out = migrate_with(&dir.0, &caches_pq(), &Stop::new(), &mut Vec::new());
+        let Outcome::Aborted { report, .. } = &out else {
+            panic!("{out:?}")
+        };
+        assert_eq!(report["verdict"], "aborted");
+        let verdicts: Vec<(&str, &str)> = report["profiles"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| {
+                (
+                    p["profile"].as_str().unwrap_or("?"),
+                    p["verdict"].as_str().unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(verdicts, vec![(P, "pass"), (Q, "fail")], "{report:#}");
+        assert!(!dir.0.join(GEN4_FILE).exists());
+        assert_eq!(masked(&dir.0), before);
+        assert_eq!(
+            schema_of(&dir.0),
+            crate::store::schema::SCHEMA_VERSION.to_string()
+        );
+        assert_eq!(status(&dir.0), Ok(GenState::MigrationFailed));
+    }
+}
+
+/// 写临时新库写到一半磁盘满（临时库连接设 `max_page_count`，之后的写入撞上真的 `SQLITE_FULL`）：迁移报错，不当成中止
+/// 也不当成叫停；旧库逐字节不变、还是协议 3 的 schema、仍可迁移（状态 `NeedsMigration`），临时文件与补完副本都清掉。
+/// 去掉限制后重跑照常提交。
+#[test]
+fn a_disk_full_midway_through_staging_leaves_the_library_as_it_was() {
+    // 再加 40 条带长字段的笔记：小夹具的数据装得进建库时就有的根页，写不到「要新页」那一步。
+    let dir = legacy_dir("g72-full", &|core| {
+        let items: Vec<Value> = (0..40)
+            .flat_map(|i| {
+                let id = format!("0193a1b2-0000-7000-8000-0000000f{i:04x}");
+                [
+                    json!({"e": {"t": "entity", "x": {"id": id, "p": P, "k": "note",
+                        "d": {"createdAt": 1, "guid": id, "noteTypeId": "NT"}}}, "note": "N1"}),
+                    json!({"e": {"t": "edit", "x": {
+                        "id": "ignored", "p": P, "k": "note", "e": id, "f": "f/fa", "w": "dart", "s": 1,
+                        "ctx": {"vv": {}}, "v": format!("{i}{}", "語".repeat(1500)), "hlc": "0:0:dart",
+                        "ts": "anchored"
+                    }}, "note": "N1"}),
+                ]
+            })
+            .collect();
+        core.sync2_apply_local(P, T0 + 20, &Value::Array(items).to_string())
+            .unwrap();
+        let parsed =
+            crate::store::caches::CacheConfig::parse(&serde_json::from_str(&cfg()).unwrap())
+                .unwrap();
+        let w = core.writer().unwrap();
+        crate::store::sync2::in_savepoint(&w, |c| crate::store::caches::rebuild(c, P, &parsed))
+            .unwrap();
+    });
+    let before = masked(&dir.0);
+    STAGE_CONN.with(|h| {
+        *h.borrow_mut() = Some(Box::new(|c: &Connection| {
+            let pages: i64 = c.query_row("PRAGMA page_count", [], |r| r.get(0)).unwrap();
+            c.execute_batch(&format!("PRAGMA max_page_count = {pages}"))
+                .unwrap();
+        }));
+    });
+    let mut steps = Vec::new();
+    let out = run(
+        &dir.0,
+        Options {
+            caches: &caches(),
+            batch: 2,
+            now_ms: NOW,
+            stop: &Stop::new(),
+            progress: &mut |s, _, _| {
+                if steps.last() != Some(&s) {
+                    steps.push(s);
+                }
+            },
+            new_device: &fixed_device,
+        },
+    );
+    STAGE_CONN.with(|h| *h.borrow_mut() = None);
+    let err = out.expect_err("a full disk must fail the migration");
+    assert!(err.contains("full"), "{err}");
+    assert!(steps.contains(&Step::Translate), "{steps:?}");
+    assert!(!steps.contains(&Step::Commit), "{steps:?}");
+    assert_eq!(masked(&dir.0), before);
+    assert_eq!(
+        schema_of(&dir.0),
+        crate::store::schema::SCHEMA_VERSION.to_string()
+    );
+    for f in [GEN4_FILE, GEN4_TEMP, PREPARE_COPY] {
+        assert!(!dir.0.join(f).exists(), "{f} left behind");
+    }
+    assert_eq!(status(&dir.0), Ok(GenState::NeedsMigration));
+    assert_eq!(migrate(&dir.0).verdict(), "committed");
+}
+
+fn hex(b: &[u8]) -> String {
+    b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
+/// 迁移完的新代库里不随本机新身份变的部分，一行一项：每个集合的 profile、集合标识、目录名、盐集合、新根 meta 的字节
+/// （`location::meta4`，纯函数）、本机身份的签名钥匙与 `prev`；每台承袭设备（`devs.src` 有值）的来源集合与日志里每个槽的
+/// 规范编码；本机原生日志里每条操作的 (seq, kind, fmt, deps, 载荷)。本机新设备 ID 单独返回。
+fn device_independent(dir: &Path) -> (Vec<String>, Vec<Id>) {
+    use crate::gen4::location::{MediaRoot, meta4};
+    let opened = open_gen4(dir, OpenMode::Primary).unwrap();
+    let t = Truth::new(&opened.conn);
+    let mut out = Vec::new();
+    let mut me_all = Vec::new();
+    for profile in [P, Q] {
+        let b = t.binding_of(profile).unwrap().unwrap();
+        out.push(format!(
+            "{profile}: collection {} dir {} salts {:?}",
+            b.collection.text(),
+            b.dir,
+            b.salts
+        ));
+        out.push(format!(
+            "{profile}: meta4 {}",
+            hex(&meta4(&b.collection, None, MediaRoot::V4).unwrap())
+        ));
+        let me = t.self_identity(b.col).unwrap().unwrap();
+        out.push(format!("{profile}: sk {} prev {:?}", hex(&me.sk), me.prev));
+        me_all.push(me.device);
+        let mut heritage = 0;
+        for d in t.devices(b.col).unwrap() {
+            if d.id == me.device {
+                t.for_each(b.col, &d.id, 1, |e| {
+                    let op = e.op().expect("native log holds whole ops");
+                    out.push(format!(
+                        "{profile}: native {} kind {} fmt {} deps {:?} payload {}",
+                        e.id.seq,
+                        op.kind,
+                        op.fmt,
+                        op.deps,
+                        hex(&op.payload)
+                    ));
+                    Ok(())
+                })
+                .unwrap();
+                continue;
+            }
+            let Some(src) = d.src else { continue };
+            out.push(format!(
+                "{profile}: heritage device {} from {} last {}",
+                d.id.text(),
+                src.text(),
+                d.last
+            ));
+            t.for_each(b.col, &d.id, 1, |e| {
+                let slot = e.slot().expect("a heritage log holds slots");
+                heritage += 1;
+                out.push(format!(
+                    "{profile}: slot {} {}",
+                    e.id.seq,
+                    hex(&slot.encode())
+                ));
+                Ok(())
+            })
+            .unwrap();
+        }
+        assert!(heritage > 0, "{profile}: no heritage slots");
+    }
+    (out, me_all)
+}
+
+/// 设计 §6.3「两台同时升级」：两台设备各自迁移同一份协议 3 库（两个 profile），本机新设备 ID、迁移时刻、批大小都不同；
+/// 转译出的承袭日志逐槽字节相同、集合标识 / 目录名 / 盐集合相同、新根 `meta.json` 字节相同、新身份沿用同一把钥匙且
+/// `prev` 指向同一个旧日志末尾，原生日志（那一条 `Salts`）除作者与时间以外也相同。于是两台谁先上传承袭段都一样
+/// （重叠上传幂等），谁的新根 meta 覆盖谁都一样。
+#[test]
+fn two_devices_upgrading_at_once_translate_the_same_bytes() {
+    const OTHER_DEV: Id = Id([0x4f; 16]);
+    let base = legacy_dir("g72-twin", &add_second_profile);
+    let a = copy_dir(&base.0, "g72-twin-a");
+    let b = copy_dir(&base.0, "g72-twin-b");
+    let out_a = migrate_with(&a.0, &caches_pq(), &Stop::new(), &mut Vec::new());
+    assert_eq!(out_a.verdict(), "committed", "{out_a:?}");
+    let out_b = run(
+        &b.0,
+        Options {
+            caches: &caches_pq(),
+            batch: 3,
+            now_ms: NOW + 1_000,
+            stop: &Stop::new(),
+            progress: &mut |_, _, _| {},
+            new_device: &|_, _| OTHER_DEV,
+        },
+    )
+    .unwrap();
+    assert_eq!(out_b.verdict(), "committed", "{out_b:?}");
+    let (left, devs_a) = device_independent(&a.0);
+    let (right, devs_b) = device_independent(&b.0);
+    assert_eq!(devs_a, vec![NEW_DEV, NEW_DEV]);
+    assert_eq!(devs_b, vec![OTHER_DEV, OTHER_DEV]);
+    assert!(left.iter().any(|l| l.contains(": native ")), "{left:#?}");
+    let diff: Vec<String> = left
+        .iter()
+        .zip(&right)
+        .filter(|(l, r)| l != r)
+        .map(|(l, r)| format!("A {l}\nB {r}"))
+        .collect();
+    assert!(
+        diff.is_empty() && left.len() == right.len(),
+        "two devices migrated the same library differently ({} vs {} lines):\n{}",
+        left.len(),
+        right.len(),
+        diff.join("\n")
+    );
+}

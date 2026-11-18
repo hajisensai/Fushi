@@ -485,6 +485,17 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
+/// 临时新库连接刚建好（schema 已装、还没写任何数据）时的测试注入点：测试借它给这个连接设限（如
+/// `PRAGMA max_page_count`，让之后的写入在中途撞上真的 `SQLITE_FULL`），验证「写到一半出错」时旧库不变、临时件清掉。
+#[cfg(test)]
+pub(crate) type StageConnHook = Box<dyn FnMut(&Connection)>;
+
+#[cfg(test)]
+thread_local! {
+    pub(crate) static STAGE_CONN: std::cell::RefCell<Option<StageConnHook>> =
+        const { std::cell::RefCell::new(None) };
+}
+
 /// 一次迁移要的空间（[check_space] 的 `needed` 去掉 `extra`；测试据此卡边界）。
 #[cfg(test)]
 pub(crate) fn space_needed_for_tests(source: &Path) -> Result<u64, String> {
@@ -875,6 +886,8 @@ fn with_snapshot(
     let staged = (|| -> Result<Staged, String> {
         seal::remove_sqlite_files(&tmp)?;
         let dst = schema::open(&tmp)?;
+        #[cfg(test)]
+        STAGE_CONN.with(|h| h.borrow_mut().as_mut().map(|h| h(&dst)));
         opts.stop.attach(&dst);
         let profiles_json = stage_all(&src, &dst, &profiles, opts)?;
         Ok(Staged { dst, profiles_json })
