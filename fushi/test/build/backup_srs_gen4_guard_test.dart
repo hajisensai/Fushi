@@ -28,8 +28,7 @@ void main() {
   List<(int, String)> codeLines(String path) {
     final File f = File(path);
     expect(f.existsSync(), isTrue, reason: 'missing ${f.absolute.path}');
-    final List<String> lines = maskComments(f.readAsStringSync()).split('
-');
+    final List<String> lines = maskComments(f.readAsStringSync()).split('\n');
     return <(int, String)>[
       for (int i = 0; i < lines.length; i++)
         if (lines[i].trim().isNotEmpty) (i + 1, lines[i].trimRight()),
