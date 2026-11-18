@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-18T20:33:35Z",
+ "generatedAt": "2026-11-18T20:41:34Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "9d5f51ca2688b560f22bd8f4012b97e55a63848c",
-  "seq": 29085
+  "sha": "93afb03494806e72812b73e1304ca5ecb0b63424",
+  "seq": 29087
  },
  "builds": [
   {
@@ -113,7 +113,33 @@
    }
   }
  ],
- "pending": null,
+ "pending": {
+  "headSha": "93afb03494806e72812b73e1304ca5ecb0b63424",
+  "headSeq": 29087,
+  "prs": [
+   3746
+  ],
+  "direct": [],
+  "truncated": false,
+  "platforms": {
+   "android": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44393339727"
+   },
+   "windows": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44393339938"
+   },
+   "macos": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44393339938"
+   },
+   "ios": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44393339938"
+   }
+  }
+ },
  "prs": {
   "3467": {
    "number": 3467,
@@ -212,6 +238,15 @@
    "mergedAt": "2026-11-18T19:32:41Z",
    "additions": 329,
    "deletions": 133,
+   "labels": []
+  },
+  "3746": {
+   "number": 3746,
+   "title": "fix(guards): 封面收口守卫认引擎 writer，import 大环回到 630",
+   "author": "W1ght",
+   "mergedAt": "2026-11-18T20:39:34Z",
+   "additions": 18,
+   "deletions": 14,
    "labels": []
   }
  }
