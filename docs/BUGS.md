@@ -41,6 +41,7 @@
 | [BUG-4852](bugs/BUG-4852-video-danmaku-per-frame-repaint-blur.md) | ✅ | ✅ | 开弹幕后视频掉帧：弹幕无 key，队首出列让整屏弹幕文本重录、Impeller 模糊阴影全部重做 |
 | [BUG-4893](bugs/BUG-4893-mascot-glow-starves-windows-input.md) | ✅ | ✅ | 吉祥物光晕开着冷启动：启动期 idle 任务让调度器空转，Windows 鼠标键盘全失灵 |
 | [BUG-4891](bugs/BUG-4891-manga-ctc-body-column-dropped-as-ruby.md) | ✅ | ✅ | 本机 Manga CTC 把正文短列当注音删掉、把疏排竖排读成横排（漫画 OCR 丢列与串列乱码） |
+| [BUG-4892](bugs/BUG-4892-book-series-volume-not-last-ungrouped.md) | ✅ | ✅ | 卷号后面跟副标题、卷号前夹标签、『』特典册的分卷不归组，整套散在书架上 |
 | [BUG-4844](bugs/BUG-4844-book-cover-undo-backup-pruned-by-source-mtime.md) | ✅ | ✅ | book-cover-undo-backup-pruned-by-source-mtime |
 | [BUG-4843](bugs/BUG-4843-linux-server-glibc-baseline.md) | ✅ | ✅ | Linux 服务端 CI 包原生库要 GLIBC_2.43，超出 README 声明的 glibc ≥ 2.35 |
 | [BUG-4842](bugs/BUG-4842-series-wall-wheel-scroll-rebake.md) | ✅ | ✅ | 视频系列墙滚轮滚动卡顿：每档滚轮把整屏封面面重新离屏烘焙 |

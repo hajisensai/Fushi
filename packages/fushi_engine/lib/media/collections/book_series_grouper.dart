@@ -544,10 +544,9 @@ class BookSeriesOrder {
     }
     // 位置 = 卷号 + 话号 + 同话分段（按话发布的漫画只有话号，见
     // [BookSeriesKey.episode]）。
-    final List<({num? volume, num? episode, int part})?> positions =
-        <({num? volume, num? episode, int part})?>[
-          for (final _Volume v in bySeries[mainKey]!) bookSeriesPosition(v.key),
-        ];
+    final List<BookSeriesPosition?> positions = <BookSeriesPosition?>[
+      for (final _Volume v in bySeries[mainKey]!) bookSeriesPosition(v.key),
+    ];
     if (positions.where((Object? p) => p == null).length > 1) return null;
     if (positions.toSet().length != positions.length) return null;
     return _orderSeriesInPlace(
