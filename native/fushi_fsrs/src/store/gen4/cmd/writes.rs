@@ -96,6 +96,7 @@ use crate::sync2::vv::OpId;
 
 #[path = "writes_owner.rs"]
 mod owner;
+use owner::Batch;
 pub(super) use owner::Born;
 
 /// 一个实体的修改行（寄存器内核的落库行 JSON + server_time），`registers` 的输入。
@@ -830,15 +831,17 @@ pub(super) fn apply_in(
         parsed.push(Item { body, ..item });
     }
     let keep = drop_noops(s, &parsed)?;
-    // 实体归属闸（`writes_owner.rs`）：身份记录先各自过闸；过了闸的、这一批要建的实体算本集合的（同批先后到）。
+    // 实体归属闸（`writes_owner.rs`）：身份记录先各自过闸（牌组按同批的名字 / 父牌组自证）；过了闸的、这一批要建的实体
+    // 算本集合的（同批先后到）。
     let mut entity_foreign = vec![false; parsed.len()];
     let mut born = Born::new();
+    let batch = Batch::of(parsed.iter().map(|i| &i.body));
     for (at, item) in parsed.iter().enumerate() {
         if !keep[at] {
             continue;
         }
-        if let Body::Entity { id, .. } = &item.body {
-            if s.foreign_body(&item.body, &Born::new())? {
+        if let Body::Entity { kind, id, data } = &item.body {
+            if s.foreign_record(*kind, &id.text(), data, &batch)? {
                 entity_foreign[at] = true;
             } else {
                 born.insert(id.text());

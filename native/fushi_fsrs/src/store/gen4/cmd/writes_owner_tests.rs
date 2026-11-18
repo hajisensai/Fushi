@@ -323,3 +323,6 @@ fn owner_statements_use_an_index() {
         );
     }
 }
+
+#[path = "writes_owner_merge_tests.rs"]
+mod merge;
