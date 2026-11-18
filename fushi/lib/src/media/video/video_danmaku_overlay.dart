@@ -66,6 +66,12 @@ class _VideoDanmakuOverlayState extends State<VideoDanmakuOverlay>
   /// 其余弹幕才不会跟着换行。每帧新建实例就丢掉这份记忆，重排立刻回来。
   final VideoDanmakuLayout _layout = VideoDanmakuLayout();
 
+  /// 在场弹幕的文本子树（按 [VideoDanmakuLayoutEntry.index]），见 [_buildEntries]。
+  /// 下标只在同一份 [VideoDanmakuOverlay.items] 内有意义，换列表或字号即整体作废。
+  final Map<int, Widget> _texts = <int, Widget>{};
+  List<VideoDanmakuItem>? _textsItems;
+  double? _textsFontScale;
+
   @override
   void initState() {
     super.initState();
@@ -92,6 +98,7 @@ class _VideoDanmakuOverlayState extends State<VideoDanmakuOverlay>
       // 不在动画时丢弃锚点：下次开启（换视频/重新开弹幕）从真值重新锚定，
       // 不把上个视频的陈旧平滑时钟带过来。
       _anchorRawMs = null;
+      _texts.clear();
     }
   }
 
@@ -150,63 +157,106 @@ class _VideoDanmakuOverlayState extends State<VideoDanmakuOverlay>
     return IgnorePointer(
       key: const Key('video-danmaku-ignore-pointer'),
       ignoring: true,
-      child: AnimatedBuilder(
-        animation: _ticker,
-        builder: (BuildContext context, _) {
-          return LayoutBuilder(
-            builder: (BuildContext context, BoxConstraints constraints) {
-              final VideoDanmakuLayoutSnapshot snapshot = _layout.layout(
-                items: widget.items,
-                positionMs: _smoothPositionMs(),
-                viewportSize: constraints.biggest,
-                maxActive: widget.maxActive,
-                maxLanes: widget.maxLanes,
-                scrollDuration: style.scrollDuration,
-                fixedDuration: style.fixedDuration,
-                fontScale: style.fontScale,
-                areaFraction: style.areaFraction,
-              );
-              if (snapshot.entries.isEmpty) return const SizedBox.expand();
-              return Stack(
-                clipBehavior: Clip.hardEdge,
-                children: <Widget>[
-                  for (final VideoDanmakuLayoutEntry entry in snapshot.entries)
-                    Positioned(
-                      left: entry.position.dx,
-                      top: entry.position.dy,
-                      child: Opacity(
-                        opacity: (entry.opacity * style.opacity)
-                            .clamp(0.0, 1.0)
-                            .toDouble(),
-                        child: _DanmakuText(
-                          entry: entry,
-                          fontScale: style.fontScale,
-                        ),
-                      ),
-                    ),
-                ],
-              );
-            },
-          );
-        },
+      // 整层自成重绘边界：弹幕每帧都在动，不能连带同一画面上的控制条、遮布、字幕等
+      // 兄弟节点每帧一起重录（BUG-4852）。
+      child: RepaintBoundary(
+        child: AnimatedBuilder(
+          animation: _ticker,
+          builder: (BuildContext context, _) {
+            return LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) {
+                final VideoDanmakuLayoutSnapshot snapshot = _layout.layout(
+                  items: widget.items,
+                  positionMs: _smoothPositionMs(),
+                  viewportSize: constraints.biggest,
+                  maxActive: widget.maxActive,
+                  maxLanes: widget.maxLanes,
+                  scrollDuration: style.scrollDuration,
+                  fixedDuration: style.fixedDuration,
+                  fontScale: style.fontScale,
+                  areaFraction: style.areaFraction,
+                );
+                if (snapshot.entries.isEmpty) {
+                  _texts.clear();
+                  return const SizedBox.expand();
+                }
+                return Stack(
+                  clipBehavior: Clip.hardEdge,
+                  children: _buildEntries(snapshot.entries, style),
+                );
+              },
+            );
+          },
+        ),
       ),
     );
+  }
+
+  /// 每条弹幕：位置与透明度每帧变，留在边界**外**；文本自成重绘边界，录好的 picture
+  /// 从出生到退场原样复用，每帧只换图层偏移。（`RenderOpacity` 在可见时本身也是重绘
+  /// 边界，这里显式包一层，让这条性质不依赖透明度取值。）
+  ///
+  /// 文本 picture 重录的代价不只是 Dart 侧 paint：引擎每次 paint 段落都新建
+  /// TextFrame，Impeller 的模糊文字（阴影）缓存以 TextFrame 为键，重录就意味着这条
+  /// 弹幕的两层模糊阴影要重做离屏模糊。
+  ///
+  /// key 用弹幕在列表里的下标（[VideoDanmakuLayoutEntry.index]）。修前按位置对位：
+  /// 队首一出列，后面每个 element 都被错配成下一条的文本、重新排版重画——同屏七十多条、
+  /// 每秒出列近十条时，几乎每帧都在整屏重做阴影，raster 一帧数百毫秒（BUG-4852）。
+  List<Widget> _buildEntries(
+    List<VideoDanmakuLayoutEntry> entries,
+    VideoDanmakuStyle style,
+  ) {
+    if (!identical(_textsItems, widget.items) ||
+        _textsFontScale != style.fontScale) {
+      _texts.clear();
+      _textsItems = widget.items;
+      _textsFontScale = style.fontScale;
+    }
+    final Set<int> live = <int>{};
+    final List<Widget> children = <Widget>[];
+    for (final VideoDanmakuLayoutEntry entry in entries) {
+      live.add(entry.index);
+      children.add(
+        Positioned(
+          key: ValueKey<int>(entry.index),
+          left: entry.position.dx,
+          top: entry.position.dy,
+          child: Opacity(
+            opacity: (entry.opacity * style.opacity).clamp(0.0, 1.0).toDouble(),
+            // 同一条弹幕复用同一个 widget 实例：element 见到同一实例直接跳过整棵
+            // 文本子树的重建与比较。
+            child: _texts.putIfAbsent(
+              entry.index,
+              () => RepaintBoundary(
+                child: _DanmakuText(
+                  item: entry.item,
+                  fontScale: style.fontScale,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    _texts.removeWhere((int index, Widget _) => !live.contains(index));
+    return children;
   }
 }
 
 class _DanmakuText extends StatelessWidget {
-  const _DanmakuText({required this.entry, required this.fontScale});
+  const _DanmakuText({required this.item, required this.fontScale});
 
-  final VideoDanmakuLayoutEntry entry;
+  final VideoDanmakuItem item;
   final double fontScale;
 
   @override
   Widget build(BuildContext context) {
-    final bool fixed = entry.item.mode != VideoDanmakuMode.scroll;
+    final bool fixed = item.mode != VideoDanmakuMode.scroll;
     return FractionalTranslation(
       translation: fixed ? const Offset(-0.5, 0) : Offset.zero,
       child: Text(
-        entry.item.text,
+        item.text,
         maxLines: 1,
         overflow: TextOverflow.visible,
         softWrap: false,
@@ -215,7 +265,7 @@ class _DanmakuText extends StatelessWidget {
         // 弹幕会在还没滑出视口时被判过期而突然消失。
         textScaler: TextScaler.noScaling,
         style: videoDanmakuTextStyle(
-          color: Color(entry.item.colorArgb),
+          color: Color(item.colorArgb),
           fontScale: fontScale,
         ),
       ),

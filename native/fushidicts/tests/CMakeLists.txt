@@ -177,6 +177,22 @@ add_test(NAME en_inflection_lookup_test
                  "${FUSHI_ROOT}/../../fushi/assets/transforms/en.json"
                  "${FUSHI_ROOT}/../../fushi/assets/transforms/en_irregular.json")
 
+# 反馈 WIZUEQx1fY：标了语言的词典只接受本语言变形表的还原链（Our 不再被阿尔巴尼亚语
+# -ur 还原成 O），排序里变形链长先于预处理步数（My 不再排出 M 在 my 前面）。真变形表。
+add_executable(dictionary_language_gate_lookup_test
+    "${CMAKE_CURRENT_SOURCE_DIR}/dictionary_language_gate_lookup_test.cpp")
+target_link_libraries(dictionary_language_gate_lookup_test PRIVATE fushidicts)
+target_include_directories(dictionary_language_gate_lookup_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+if(MSVC)
+  target_compile_options(dictionary_language_gate_lookup_test PRIVATE /utf-8 /Zc:__cplusplus /permissive-)
+endif()
+add_test(NAME dictionary_language_gate_lookup_test
+         COMMAND dictionary_language_gate_lookup_test
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/en.json"
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/en_irregular.json"
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/sq.json"
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/la.json")
+
 # BUG-3212：关西方言「うた → った」不得跨词吞掉「ため / たび」的「た」（真 ja.json）。
 add_executable(ja_kansai_ta_boundary_test
     "${CMAKE_CURRENT_SOURCE_DIR}/ja_kansai_ta_boundary_test.cpp")
@@ -288,6 +304,17 @@ add_test(NAME union_filter_test
          COMMAND union_filter_test
                  "${FUSHI_ROOT}/../../fushi/assets/transforms/ja.json")
 
+# 键索引（hash/key_index.hpp，key.index）：无假阴性、枚举完整、大小在预期内、
+# 装不进 / 坏文件被拒。
+add_executable(key_index_test
+    "${CMAKE_CURRENT_SOURCE_DIR}/key_index_test.cpp")
+target_link_libraries(key_index_test PRIVATE fushidicts)
+target_include_directories(key_index_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${FUSHI_SRC}")
+if(MSVC)
+  target_compile_options(key_index_test PRIVATE /utf-8 /Zc:__cplusplus /permissive-)
+endif()
+add_test(NAME key_index_test COMMAND key_index_test)
+
 # BUG-2853：Yomitan 词典自带变形（`[formOf, [rule...]]` 重定向记录）在 lookup 里被跟随。
 add_executable(yomitan_redirect_lookup_test
     "${CMAKE_CURRENT_SOURCE_DIR}/yomitan_redirect_lookup_test.cpp")
@@ -396,3 +423,20 @@ add_test(NAME decompressor_null_guard_test
 # directories / pre-built zips on argv (no self-contained fixture), so they are
 # NOT auto-registered as no-arg ctest cases. dict_name_uaf_e2e_test below is the
 # self-contained, fixture-driven successor that covers the same BUG-052 path.
+
+# key.index / type 3 meta 记录 / 存量词典原地升级（hash/dict_index.hpp、json/meta_record.hpp、
+# fushidicts/upgrade.hpp）：旧式 / 旧式+升级 / 新式三种状态 lookup、query、query_kanji
+# 逐字段相同（有无联合过滤器、混装）；核对记录上的键（假候选、A 指向 B 的记录）；
+# 升级幂等、遗留临时文件 / 孤儿 blobs3.bin、key.index 损坏回退、引擎装着词典时升级。
+# C ABI 入口 fushidicts_upgrade_dictionary 经真实导出符号调，所以编进 fushidicts_ffi.cpp。
+add_executable(dict_upgrade_test
+    "${CMAKE_CURRENT_SOURCE_DIR}/dict_upgrade_test.cpp"
+    "${FUSHI_ROOT}/fushidicts_ffi.cpp")
+target_link_libraries(dict_upgrade_test PRIVATE fushidicts libzstd_static Threads::Threads)
+target_include_directories(dict_upgrade_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${FUSHI_SRC}")
+if(MSVC)
+  target_compile_options(dict_upgrade_test PRIVATE /utf-8 /Zc:__cplusplus /permissive-)
+endif()
+add_test(NAME dict_upgrade_test
+         COMMAND dict_upgrade_test
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/ja.json")

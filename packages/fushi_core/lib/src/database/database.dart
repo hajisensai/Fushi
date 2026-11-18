@@ -3199,6 +3199,15 @@ class FushiDatabase extends _$FushiDatabase
           );
         }
       }
+      if (from < 160) {
+        // v160：audio_cues.token_timing_json——转录产物的逐 token 时间随 cue 落库，
+        // 运行时（漫画台词半句命中按 token 裁区间）从库里就能取到；此前它是导入时
+        // 的瞬态字段，落库即丢。纯加列、存量 NULL（要重新匹配才有）；按列存在性守卫，幂等。
+        if (await _tableExists('audio_cues') &&
+            !await _columnExists('audio_cues', 'token_timing_json')) {
+          await m.addColumn(audioCues, audioCues.tokenTimingJson);
+        }
+      }
     },
     onCreate: (m) async {
       await m.createAll();

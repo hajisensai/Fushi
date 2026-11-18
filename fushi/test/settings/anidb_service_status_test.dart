@@ -80,6 +80,12 @@ void main() {
     final SettingsContext settingsContext = await pumpContext(tester);
     final SettingsNavigationItem row = aniDbRow();
 
+    // 默认开（UDP 已加密）：没填账号时是「未配置」而不是「已关闭」。
+    expect(
+      row.resolveSubtitle(settingsContext),
+      t.settings_service_not_configured,
+    );
+    await prefs.setPref(kVideoAniDbHashEnabledPref, false);
     expect(row.resolveSubtitle(settingsContext), t.settings_service_disabled);
 
     await prefs.setPref(kVideoAniDbHashEnabledPref, true);
@@ -90,6 +96,7 @@ void main() {
 
     await prefs.setPref(kVideoAniDbUsernamePref, 'tester');
     await prefs.setPref(kVideoAniDbPasswordPref, 'password');
+    await prefs.setPref(kVideoAniDbUdpApiKeyPref, 'udp-key');
     expect(
       row.resolveSubtitle(settingsContext),
       t.settings_service_configured,
@@ -105,6 +112,7 @@ void main() {
     await prefs.setPref(kVideoAniDbHashEnabledPref, true);
     await prefs.setPref(kVideoAniDbUsernamePref, 'tester');
     await prefs.setPref(kVideoAniDbPasswordPref, 'password');
+    await prefs.setPref(kVideoAniDbUdpApiKeyPref, 'udp-key');
     await prefs.setPref(kVideoMetadataAniDbClientNamePref, 'customapp');
 
     expect(
@@ -132,6 +140,7 @@ void main() {
     await prefs.setPref(kVideoAniDbHashEnabledPref, true);
     await prefs.setPref(kVideoAniDbUsernamePref, 'tester');
     await prefs.setPref(kVideoAniDbPasswordPref, 'password');
+    await prefs.setPref(kVideoAniDbUdpApiKeyPref, 'udp-key');
     expect(
       httpRow.resolveSubtitle(settingsContext),
       t.video_anidb_http_api_available(client: 'fushiplayerhttp', version: '1'),

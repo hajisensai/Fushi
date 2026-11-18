@@ -187,6 +187,7 @@ void main() {
             environment: const <String, String>{
               kAniDbUsernameEnv: 'someuser',
               kAniDbPasswordEnv: 'pw',
+              kAniDbUdpApiKeyEnv: 'udp-key',
             },
             identityServiceFactory: (AnidbUdpConfig c, FushiDatabase db) {
               seen = c;
@@ -212,6 +213,7 @@ void main() {
       );
       expect(code, kExitOk, reason: out.toString());
       expect(seen!.username, 'someuser');
+      expect(seen!.apiKey, 'udp-key');
       expect(seen!.clientName, 'fushiplayer');
       expect(seen!.clientName, isNot(contains('shoko')));
       final Map<String, Object?> json =

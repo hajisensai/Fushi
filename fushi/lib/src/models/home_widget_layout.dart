@@ -453,6 +453,106 @@ HomeWidgetPacking packHomeWidgets(List<HomeWidgetItem> items, int columns) {
   return HomeWidgetPacking(placements, occupied.length);
 }
 
+/// 默认布局补洞（用户 2026-11-17：默认布局要填满，自定义过的完全尊重自定义）：
+/// 装箱后留下的空格由相邻组件扩展补上，返回每项的「渲染尺寸」。只给**没编辑过**
+/// 的那份网格用；结果不落盘（首次编辑以它为起点）。
+///
+/// 对每个空格（自上而下、自起始侧到结束侧）依次试：
+/// 1. 正上方的组件列范围恰好落在这一行的空段里 → 它向下长一行；
+/// 2. 否则同一行紧挨在起始侧的组件、整段高度那一列都空 → 它朝结束侧拉宽一列。
+///
+/// 每次扩展都受 [HomeWidgetKind.maxFor] 约束，并且要求按新尺寸重新装箱后**所有
+/// 组件的位置不变、总行数不增**（装箱按顺序找空位，长高 / 拉宽可能把后面的组件
+/// 挤走——那种扩展不做）。补不上的空格留空。
+List<HomeWidgetItem> fillHomeWidgetGaps(
+  List<HomeWidgetItem> items,
+  HomeGridKind grid,
+) {
+  final int columns = grid.columns;
+  List<HomeWidgetItem> current = <HomeWidgetItem>[
+    for (final HomeWidgetItem item in items)
+      item.withSize(
+        HomeWidgetSize(item.size.cols.clamp(1, columns), item.size.rows),
+      ),
+  ];
+  final Set<int> unfillable = <int>{};
+  while (true) {
+    final HomeWidgetPacking packing = packHomeWidgets(current, columns);
+    final List<List<int>> owner = <List<int>>[
+      for (int r = 0; r < packing.rowCount; r++) List<int>.filled(columns, -1),
+    ];
+    for (final HomeWidgetPlacement p in packing.placements) {
+      for (int r = p.row; r < p.row + p.rows; r++) {
+        for (int c = p.col; c < p.col + p.cols; c++) {
+          owner[r][c] = p.index;
+        }
+      }
+    }
+    int? holeRow;
+    int? holeCol;
+    for (int r = 0; r < packing.rowCount && holeRow == null; r++) {
+      for (int c = 0; c < columns; c++) {
+        if (owner[r][c] == -1 && !unfillable.contains(r * columns + c)) {
+          holeRow = r;
+          holeCol = c;
+          break;
+        }
+      }
+    }
+    if (holeRow == null || holeCol == null) return current;
+    final int r = holeRow;
+    final int c = holeCol;
+
+    bool accept(int index, HomeWidgetSize size) {
+      final HomeWidgetItem item = current[index];
+      final HomeWidgetSize max = item.kind.maxFor(grid);
+      if (size.cols > max.cols || size.rows > max.rows) return false;
+      final List<HomeWidgetItem> next = <HomeWidgetItem>[...current]
+        ..[index] = item.withSize(size);
+      final HomeWidgetPacking repacked = packHomeWidgets(next, columns);
+      if (repacked.rowCount > packing.rowCount) return false;
+      for (int i = 0; i < next.length; i++) {
+        final HomeWidgetPlacement a = packing.placements[i];
+        final HomeWidgetPlacement b = repacked.placements[i];
+        if (a.col != b.col || a.row != b.row) return false;
+      }
+      current = next;
+      return true;
+    }
+
+    bool grown = false;
+    // 1. 正上方的组件向下长一行：它整段列宽在第 r 行都得是空的。
+    if (r > 0 && owner[r - 1][c] != -1) {
+      final HomeWidgetPlacement above = packing.placements[owner[r - 1][c]];
+      bool rowFree = above.row + above.rows == r;
+      for (int k = above.col; rowFree && k < above.col + above.cols; k++) {
+        if (owner[r][k] != -1) rowFree = false;
+      }
+      if (rowFree) {
+        grown = accept(
+          above.index,
+          HomeWidgetSize(above.cols, above.item.size.rows + 1),
+        );
+      }
+    }
+    // 2. 同一行起始侧紧挨的组件朝结束侧拉宽一列：它整段高度在第 c 列都得是空的。
+    if (!grown && c > 0 && owner[r][c - 1] != -1) {
+      final HomeWidgetPlacement left = packing.placements[owner[r][c - 1]];
+      bool colFree = left.col + left.cols == c;
+      for (int k = left.row; colFree && k < left.row + left.rows; k++) {
+        if (owner[k][c] != -1) colFree = false;
+      }
+      if (colFree) {
+        grown = accept(
+          left.index,
+          HomeWidgetSize(left.cols + 1, left.item.size.rows),
+        );
+      }
+    }
+    if (!grown) unfillable.add(r * columns + c);
+  }
+}
+
 // ── 编辑操作（全部返回新列表，不改入参） ─────────────────────────────────
 
 /// 追加到末尾（装箱后落到第一个能放下的空位）；同一种组件已在列表里则原样返回。

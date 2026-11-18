@@ -137,7 +137,7 @@ void main() {
       });
 
       test('释放映射要等后台借用归还（BUG-1756）', () async {
-        final File mapped = File('$dictDir/hash.table');
+        final File mapped = File('$dictDir/key.index');
         final List<int> bytes = mapped.readAsBytesSync();
         final Future<Object?> inFlight = FushiDicts.instance
             .tokenizeWithReadingsInBackground(<String>[text]);
@@ -162,7 +162,7 @@ void main() {
       });
 
       test('作用域内排期 + 查词不会把词典装回引擎；作用域结束后照常结算', () async {
-        final File mapped = File('$dictDir/hash.table');
+        final File mapped = File('$dictDir/key.index');
         final List<int> bytes = mapped.readAsBytesSync();
         FushiDicts.initializeTyped(termPaths: <String>[dictDir]);
         final List<int> loaded = FushiDicts.instance.tokenizeLengths(text)!;
@@ -828,7 +828,7 @@ void _backgroundLookupGroup(String? lib, bool haveLib) {
     });
 
     test('释放映射要等后台查词归还句柄（BUG-1756）', () async {
-      final File mapped = File('$dictA/hash.table');
+      final File mapped = File('$dictA/key.index');
       final List<int> bytes = mapped.readAsBytesSync();
       final Future<Object?> inFlight = FushiDicts.instance.lookupInBackground(
         const FushiLookupRequest(text: '食べた', maxResults: 10),

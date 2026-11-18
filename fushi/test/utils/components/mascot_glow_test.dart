@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/mascot_glow.dart';
+import 'package:fushi/src/utils/scheduling/ambient_ticker.dart';
 import 'package:material_ui/material_ui.dart';
 
 /// 吉祥物光晕：开关、忙碌档、减弱动态效果下的行为。
@@ -100,6 +102,31 @@ void main() {
     expect(start, closeTo(kMascotGlowIdle.low, 1e-6));
     await tester.pump(FushiMotion.ambientBreath);
     expect(opacity(), closeTo(kMascotGlowIdle.high, 1e-3));
+  });
+
+  // BUG-4893：悬浮球常驻时呼吸从启动一直在跑。它算进「有动画在跑」的话，启动期等空闲的
+  // 工作永远等不到（改前还会让调度器空转、饿死 Windows 输入）。
+  testWidgets('呼吸是常驻装饰动画：不算真实动画，等空闲照常完成', (WidgetTester tester) async {
+    mascotGlowEnabled.value = true;
+    await tester.pumpWidget(host());
+    expect(tester.binding.transientCallbackCount, 1);
+    expect(AmbientTickers.scheduledFrameCallbackCount, 1);
+    expect(hasRealAnimations(tester.binding), isFalse);
+
+    bool idle = false;
+    unawaited(waitForUiIdle().then((_) => idle = true));
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(idle, isTrue);
+
+    // 忙碌档换节奏后仍是同一个 ambient ticker。
+    busy.value = true;
+    await tester.pump();
+    expect(AmbientTickers.scheduledFrameCallbackCount, 1);
+    expect(hasRealAnimations(tester.binding), isFalse);
+
+    mascotGlowEnabled.value = false;
+    await tester.pump();
+    expect(AmbientTickers.liveCount, 0);
   });
 
   testWidgets('减弱动态效果：静止光晕，不跑 ticker', (WidgetTester tester) async {

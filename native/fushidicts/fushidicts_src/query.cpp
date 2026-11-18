@@ -5,6 +5,7 @@
 #include <xxh3.h>
 #include <zstd.h>
 
+#include "fushidicts/language_tag.hpp"
 #include "fushidicts/platform.hpp"
 
 #include <algorithm>
@@ -24,8 +25,10 @@
 #include <thread>
 #include <vector>
 
+#include "hash/dict_index.hpp"
 #include "hash/hash.hpp"
 #include "hash/union_filter.hpp"
+#include "json/meta_record.hpp"
 #include "json/yomitan_parser.hpp"
 #include "memory/memory.hpp"
 #include "util/fs_utf8.hpp"
@@ -72,99 +75,103 @@ ZSTD_DCtx* thread_dctx() {
   return ctx.get();
 }
 
-// blobs.bin 的读路径是同一条链：hash.table 槽位 → offset 表 [u32 count][u64 x count]
-// → 记录（首字节 = 类型：0 term / 1 meta / 2 kanji）。下面三个遍历器是这条链的唯一实现，
-// query_raw / query_kanji / enrich_freq / enrich_pitch / 两个整本扫描都经它们走，
-// 边界处理（坏 count、截断表、越界记录）只写一次。visit 返回 false = 提前停止。
+// 记录的读路径是同一条链：索引（key.index / hash.table，hash/dict_index.hpp）给出
+// location → single 时就是那条记录，否则是 offset 表 [u32 count][u64 x count] → 记录
+// （首字节 = 类型：0 term / 1 meta 原样 / 2 kanji / 3 meta 预解析）。下面的遍历器是
+// 这条链的唯一实现，query_raw / query_kanji / enrich_freq / enrich_pitch / 整本扫描都经
+// 它们走，边界处理（坏 count、截断表、越界记录）只写一次。visit 返回 false = 提前停止。
 
-// offset 表里的每个记录偏移。
-template <typename Visit>
-void for_each_listed_offset(const memory::blob_file& blobs, uint64_t at, Visit&& visit) {
-  const memory::offset_list list = memory::read_offset_list(blobs, at);
-  if (!list.span) {
-    return;
-  }
-  BlobReader idx(list.span.data, list.span.size);
-  for (uint32_t i = 0; i < list.count; i++) {
-    if (!idx.has(sizeof(uint64_t))) {
-      return;
-    }
-    if (!visit(idx.read<uint64_t>())) {
-      return;
-    }
-  }
-}
+using hash::location;
 
-// offset 表里类型字节等于 want 的记录。visit(blob, rec)：blob 已越过类型字节；rec 的
-// owner 撑着记录所在窗口（32 位窗口映射），要在 visit 之后继续引用记录的调用方自己 pin。
-template <typename Visit>
-void for_each_record_of_type(const memory::blob_file& blobs, uint64_t at, uint8_t want, Visit&& visit) {
-  for_each_listed_offset(blobs, at, [&](uint64_t offset) -> bool {
+// [at] 列出的记录里类型字节满足 [want] 的那些。visit(blob, rec, type)：blob 已越过类型
+// 字节；rec 的 owner 撑着记录所在窗口（32 位窗口映射），要在 visit 之后继续引用记录的
+// 调用方自己 pin。
+template <typename Want, typename Visit>
+void for_each_record_where(const memory::blob_file& blobs, location at, Want&& want, Visit&& visit) {
+  hash::for_each_record_offset(blobs, at, [&](uint64_t offset) -> bool {
     const memory::blob_span rec = blobs.record(offset);
     if (!rec) {
       return true;
     }
     BlobReader blob(rec.data, rec.size);
-    if (blob.read<uint8_t>() != want) {
+    const uint8_t type = blob.read<uint8_t>();
+    if (!want(type)) {
       return true;
     }
-    return visit(blob, rec);
+    return visit(blob, rec, type);
   });
 }
 
-// meta 记录（类型 1，freq / pitch / ipa 共用布局）里 expression 匹配的那些。
-// visit(blob, mode)：blob 停在 mode 之后的 u32 数据长度字段。
 template <typename Visit>
-void for_each_meta_record(const memory::blob_file& blobs, uint64_t at, std::string_view expression, Visit&& visit) {
-  for_each_record_of_type(blobs, at, 1, [&](BlobReader& blob, const memory::blob_span&) -> bool {
-    auto expr_len = blob.read<uint16_t>();
-    std::string_view expr = blob.read_str(expr_len);
-    if (expr != expression) {
-      return true;
-    }
-    auto mode_len = blob.read<uint8_t>();
-    std::string_view mode = blob.read_str(mode_len);
-    return visit(blob, mode);
-  });
+void for_each_record_of_type(const memory::blob_file& blobs, location at, uint8_t want, Visit&& visit) {
+  for_each_record_where(
+      blobs, at, [want](uint8_t type) { return type == want; },
+      [&](BlobReader& blob, const memory::blob_span& rec, uint8_t) -> bool { return visit(blob, rec); });
 }
 
-// hash.table 每个非空槽位指向的 offset 表地址（整本扫描用；查询走 DictionaryData::locate）。
-// 槽位布局与截断口径见 hash::for_each_slot。
+// meta 记录（type 1 原样 / type 3 预解析，json/meta_record.hpp）里 expression 匹配的那些。
+// visit(blob, mode, type)：blob 停在 mode 之后（载荷的开头）。
 template <typename Visit>
-void for_each_hash_bucket(const memory::mapped_file& hash_table, Visit&& visit) {
-  hash::for_each_slot(hash_table.data, hash_table.size,
-                      [&](uint64_t, uint64_t bucket) -> bool { return visit(bucket); });
+void for_each_meta_record(const memory::blob_file& blobs, location at, std::string_view expression, Visit&& visit) {
+  for_each_record_where(
+      blobs, at, [](uint8_t type) { return type == meta_record::kRawType || type == meta_record::kParsedType; },
+      [&](BlobReader& blob, const memory::blob_span&, uint8_t type) -> bool {
+        auto expr_len = blob.read<uint16_t>();
+        std::string_view expr = blob.read_str(expr_len);
+        if (expr != expression) {
+          return true;
+        }
+        auto mode_len = blob.read<uint8_t>();
+        std::string_view mode = blob.read_str(mode_len);
+        return visit(blob, mode, type);
+      });
 }
 
 // 一次查库的键：XXH3 只算一次，逐词典复用（以前每本词典各算一遍）；有联合过滤器时
-// 顺带取好键所在的那一块。
+// 顺带取好键所在的那一块。key 是原文，核对记录时用。
 struct KeyProbe {
+  std::string_view key;
   uint64_t h;
   const hash::union_filter* filter;
   hash::union_filter::probe at;
 
-  KeyProbe(std::string_view key, const std::shared_ptr<const hash::union_filter>& f)
-      : h(XXH3_64bits(key.data(), key.size())), filter(f.get()) {
+  KeyProbe(std::string_view k, const std::shared_ptr<const hash::union_filter>& f)
+      : key(k), h(XXH3_64bits(k.data(), k.size())), filter(f.get()) {
     if (filter) {
       at = filter->at(h);
     }
   }
 };
 
-// [key] 在 [dicts] 里命中的词典及各自的 offset 表地址，按词典顺序、跳过 [excluded]。
+// [key] 在 [dicts] 里命中的词典及各自已核对的 location，按词典顺序、跳过 [excluded]。
 // 逐本 DictionaryData::locate 的等价物，只是分遍走：
 //
-// 命中一本词典要连着读三处互不相邻的内存——hash.table 的槽位、blobs.bin 里的 offset
-// 表、记录本身，三处都是缓存未命中。常用词在几十本词典里都有，逐本走到底就是上百次
-// 未命中一个接一个地等内存。这里每一遍只做一件事并把下一遍要读的地址预取出去，
-// 同一遍里各本词典的未命中同时在路上。全落空的查库（绝大多数）一遍就结束，不分配。
+// 命中一本词典要连着读互不相邻的几处内存——索引的槽位 / 桶、blobs 里的 offset 表（single
+// 时没有这一跳）、记录本身，每处都是缓存未命中。常用词在几十本词典里都有，逐本走到底
+// 就是上百次未命中一个接一个地等内存。这里每一遍只做一件事并把下一遍要读的地址预取
+// 出去，同一遍里各本词典的未命中同时在路上：
+//   1. 过滤（联合过滤器 / 旧式词典自己的 bloom）+ 预取槽位或主桶；
+//   2. 探测：旧式按 64 位哈希找槽位；key.index 读主桶得候选，主桶没有候选而带溢出位
+//      的预取备桶、放到 2b 再读；候选的目标（记录或 offset 表）预取；
+//   3. 读 offset 表、预取表里的记录（窗口映射下不预取记录，核对照常）；
+//   4. 核对记录上的键。主桶的候选全部核对不上而带溢出位时再看备桶（只在 29 位 tag
+//      撞车时发生，同步读即可）——保证无假阴性。
+// 全落空的查库（绝大多数）第一遍就结束，不分配。
 template <typename Dicts, typename Excluded>
 auto locate_all(const Dicts& dicts, const KeyProbe& key, const Excluded* excluded) {
+  using Dict = typename Dicts::value_type;
   struct Hit {
-    const typename Dicts::value_type* dict;
-    uint64_t offset_addr;
+    const Dict* dict;
+    location loc;
+  };
+  struct Pending {
+    const Dict* dict;
+    hash::key_index::candidates c;
+    bool need_alternate = false;  // 主桶没有候选、带溢出位：2b 读备桶
+    bool from_alternate = false;  // c 来自备桶（核对失败不必再看别处）
   };
   std::vector<Hit> hits;
+  std::vector<Pending> pending;
   for (const auto& dict : dicts) {
     if (excluded && excluded->contains(dict.name)) {
       continue;
@@ -172,64 +179,118 @@ auto locate_all(const Dicts& dicts, const KeyProbe& key, const Excluded* exclude
     if (!dict.data->may_contain(key)) {
       continue;
     }
-    dict.data->table.prefetch(key.h);
-    hits.push_back({.dict = &dict, .offset_addr = 0});
-  }
-  size_t live = 0;
-  for (const Hit& hit : hits) {
-    const uint64_t offset_addr = hit.dict->data->table.find(key.h);
-    if (offset_addr == 0) {
-      continue;
+    const hash::dict_index& index = dict.data->index;
+    if (const hash::key_index* keys = index.keys()) {
+      keys->prefetch_primary(key.h);
+    } else {
+      index.table().prefetch(key.h);
     }
-    hit.dict->data->blobs->prefetch(offset_addr);
-    hits[live++] = {.dict = hit.dict, .offset_addr = offset_addr};
+    pending.push_back({.dict = &dict, .c = {}});
   }
-  hits.resize(live);
-  for (const Hit& hit : hits) {
-    const memory::blob_file& blobs = *hit.dict->data->blobs;
+  if (pending.empty()) {
+    return hits;
+  }
+
+  const auto prefetch_targets = [](const Pending& p) {
+    const memory::blob_file& blobs = p.dict->data->index.blobs();
+    for (uint32_t i = 0; i < p.c.count; i++) {
+      blobs.prefetch(p.c.at[i].offset);
+    }
+  };
+
+  // 2. 探测。
+  size_t live = 0;
+  bool any_alternate = false;
+  for (Pending& p : pending) {
+    const hash::dict_index& index = p.dict->data->index;
+    if (const hash::key_index* keys = index.keys()) {
+      p.c = keys->primary(key.h);
+      if (p.c.count == 0) {
+        if (!p.c.more) {
+          continue;
+        }
+        keys->prefetch_alternate(key.h);
+        p.need_alternate = true;
+        any_alternate = true;
+      }
+    } else {
+      const uint64_t offset_addr = index.table().find(key.h);
+      if (offset_addr == 0) {
+        continue;
+      }
+      p.c.count = 1;
+      p.c.at[0] = {.offset = offset_addr, .single = false};
+    }
+    prefetch_targets(p);
+    pending[live++] = p;
+  }
+  pending.resize(live);
+  // 2b. 主桶没有候选的读备桶。
+  if (any_alternate) {
+    live = 0;
+    for (Pending& p : pending) {
+      if (p.need_alternate) {
+        p.c = p.dict->data->index.keys()->alternate(key.h);
+        p.from_alternate = true;
+        if (p.c.count == 0) {
+          continue;
+        }
+        prefetch_targets(p);
+      }
+      pending[live++] = p;
+    }
+    pending.resize(live);
+  }
+
+  // 3. 预取 offset 表里的记录。
+  for (const Pending& p : pending) {
+    const memory::blob_file& blobs = p.dict->data->index.blobs();
     if (blobs.windowed()) {
       continue;
     }
-    for_each_listed_offset(blobs, hit.offset_addr, [&](uint64_t offset) -> bool {
-      blobs.prefetch(offset);
-      return true;
-    });
+    for (uint32_t i = 0; i < p.c.count; i++) {
+      if (p.c.at[i].single) {
+        continue;
+      }
+      hash::for_each_record_offset(blobs, p.c.at[i], [&](uint64_t offset) -> bool {
+        blobs.prefetch(offset);
+        return true;
+      });
+    }
+  }
+
+  // 4. 核对。
+  hits.reserve(pending.size());
+  for (const Pending& p : pending) {
+    const hash::dict_index& index = p.dict->data->index;
+    const auto verified = [&](const hash::key_index::candidates& c) -> std::optional<location> {
+      for (uint32_t i = 0; i < c.count; i++) {
+        if (hash::location_has_key(index.blobs(), c.at[i], key.key)) {
+          return c.at[i];
+        }
+      }
+      return std::nullopt;
+    };
+    std::optional<location> loc = verified(p.c);
+    if (!loc && !p.from_alternate && p.c.more) {
+      loc = verified(index.keys()->alternate(key.h));
+    }
+    if (loc) {
+      hits.push_back({.dict = p.dict, .loc = *loc});
+    }
   }
   return hits;
-}
-
-// 一本词典的身份：联合过滤器按它给每本词典分位（hash/union_filter.hpp），缓存文件
-// 也按它判断「是不是为这套词典建的」。过滤器只依赖 hash.table 里的键集合，所以身份
-// 要做到「键集合变了它就变」：hash.table 的大小 + 修改时间 + 首页内容（capacity 与
-// 最前面两百多个槽位），再加 blobs.bin 的大小——重导 / 更新过的词典这几样至少变一个
-// （导入总是新写文件）。内容没变而身份变了（拷贝后 mtime 不同）只是多重建一次。
-// 不对整张表求哈希：一套词典的 hash.table 合计几百 MB，装载期全读一遍是可感的冷启动 IO。
-uint64_t table_identity(const std::string& table_path, const memory::mapped_file& table, uint64_t blobs_size) {
-  std::error_code ec;
-  const auto mtime = std::filesystem::last_write_time(fushi::fs_path(table_path), ec);
-  const uint64_t fields[4] = {
-      XXH3_64bits(table.data, std::min<size_t>(table.size, 4096)),
-      static_cast<uint64_t>(table.size),
-      ec ? 0 : static_cast<uint64_t>(mtime.time_since_epoch().count()),
-      blobs_size,
-  };
-  return XXH3_64bits(fields, sizeof(fields));
 }
 
 }
 
 struct DictionaryQuery::DictionaryData {
-  hash::linear table;
-  hash::bloom bloom;
-  // 本词典的身份（table_identity），联合过滤器用。
-  uint64_t identity = 0;
+  // 索引（key.index 或旧式 hash.table + bloom.filter）与记录文件，hash/dict_index.hpp。
   // BUG-4013：映射经 map_rd_shared 按文件身份进程内共享——词典重载时 shadow 引擎与
   // 旧引擎 / 后台借用句柄同时在世，私有映射会让整套词典的虚拟地址占用翻倍，iOS 上把
-  // 地址空间吃满后任何分配都 abort。
-  // blobs.bin：64 位整份映射、32 位按窗口映射（memory::blob_file，BUG-4013）。
-  memory::shared_blob_file blobs;
-  memory::shared_mapping hash_table;
-  memory::shared_mapping bloom_filter;
+  // 地址空间吃满后任何分配都 abort。记录文件 64 位整份映射、32 位按窗口映射
+  // （memory::blob_file，BUG-4013）。
+  hash::dict_index index;
   memory::shared_mapping media_index;
   // media.bin 不映射（BUG-4013）：整套词典约 1.6 GB，只在弹窗显示图片 / 播音频时读，
   // 按请求用 file_reader 定位读取。media_size 是装载时的大小，读取时不符即视为文件
@@ -249,17 +310,19 @@ struct DictionaryQuery::DictionaryData {
     ZSTD_freeDDict(zstd_dict);
   }
 
-  // [key] 在本词典里的 offset 表地址，0 = 没有。有联合过滤器时由它判「肯定不在」
-  //（键所在的块已经取好，这里不再碰本词典的任何内存），否则探本词典自己的 bloom；
-  // 两条路径放行之后都走同一个 hash.table 精确探测，结果相同。
-  uint64_t locate(const KeyProbe& key) const { return may_contain(key) ? table.find(key.h) : 0; }
+  // [key] 在本词典里已核对的位置，nullopt = 没有。有联合过滤器时由它判「肯定不在」
+  //（键所在的块已经取好，这里不再碰本词典的任何内存），否则用本词典自己的预筛（旧式
+  // 的 bloom；key.index 没有）；放行之后都走同一个精确探测 + 核对，结果相同。
+  std::optional<location> locate(const KeyProbe& key) const {
+    return may_contain(key) ? index.locate(key.h, key.key) : std::nullopt;
+  }
 
   // [locate] 的前半：false = 肯定不在。
   bool may_contain(const KeyProbe& key) const {
     if (key.filter) {
-      return hash::union_filter::maybe(key.at, identity);
+      return hash::union_filter::maybe(key.at, index.identity());
     }
-    return !table.bloom_rejects(key.h);
+    return index.own_filter_passes(key.h);
   }
 };
 
@@ -347,17 +410,14 @@ int dict_format_version(const std::string& path) {
 }
 
 // 存量词典（term_rules.flag 缺失/失效）一次性扫描：任何 term 记录的 rules 非空即
-// 返回 true。走 hash.table → offset-index → 记录 的同一条路径（与
+// 返回 true。走 索引 → offset-index → 记录 的同一条路径（与
 // probe_dict_content 一样，记录区没有边界元数据、glossary blob 交错，不能顺序扫）。
 // 带词性的词典（日语词典动词/形容词占三成）几个槽位就命中退出；只有真正无词性
 // 的词典才付一次全扫，结果随后被 add_dict 写回 sidecar，下次启动不再扫。
-bool scan_term_rules_present(const memory::mapped_file& hash_table, const memory::blob_file& blobs) {
-  if (!hash_table || hash_table.size < sizeof(uint32_t)) {
-    return true;  // 读不到就按 Yomitan 既有语义走，不放宽过滤。
-  }
+bool scan_term_rules_present(const hash::dict_index& index) {
   bool present = false;
-  for_each_hash_bucket(hash_table, [&](uint64_t bucket) -> bool {
-    for_each_record_of_type(blobs, bucket, 0, [&](BlobReader& blob, const memory::blob_span&) -> bool {
+  index.for_each_location([&](location bucket) -> bool {
+    for_each_record_of_type(index.blobs(), bucket, 0, [&](BlobReader& blob, const memory::blob_span&) -> bool {
       // 与 query_raw 逐字段同布局：expr, reading, glossary offset/size,
       // definition tags, rules。
       (void)blob.read_str(blob.read<uint16_t>());  // expression
@@ -375,7 +435,7 @@ bool scan_term_rules_present(const memory::mapped_file& hash_table, const memory
 
 }  // namespace
 
-void DictionaryQuery::add_dict(const std::string& path, DictionaryType type) {
+void DictionaryQuery::add_dict(const std::string& path, DictionaryType type, std::string_view language) {
   const int version = dict_format_version(path);
   if (version == 0) {
     return;
@@ -411,35 +471,20 @@ void DictionaryQuery::add_dict(const std::string& path, DictionaryType type) {
   dict.data = std::make_unique<DictionaryData>();
   dict.data->version = version;
 
-  dict.data->hash_table = memory::map_rd_shared(path + "/hash.table");
-  if (!dict.data->hash_table) {
+  // 索引 + 记录文件（hash/dict_index.hpp）：key.index 合法就用它，否则旧式
+  // hash.table + bloom.filter。只读，不在这里升级、不写盘（升级是 upgrade.hpp 的事）。
+  if (!dict.data->index.open(path)) {
     return;
   }
-  dict.data->table.load(dict.data->hash_table->data, dict.data->hash_table->size);
-
-  // 上游 d4183d4 删掉了「bloom.filter 缺失时现场重建」的 migration：fork importer
-  // 从第一天就写 bloom.filter，migration 是死代码，且 build_to_file 失败会 throw
-  // 并穿过无 try/catch 的 FFI 入口（上游 TestFlight 崩溃同款路径）。缺失/损坏时
-  // bloom 保持置空（contains 恒真穿透），词典照常可查，只失去 bloom 加速。
-  dict.data->bloom_filter = memory::map_rd_shared(path + "/bloom.filter");
-  if (dict.data->bloom_filter) {
-    dict.data->bloom.load(dict.data->bloom_filter->data, dict.data->bloom_filter->size);
-  }
-  dict.data->table.set_bloom(&dict.data->bloom);
-
-  dict.data->blobs = memory::open_blob_file(path + "/blobs.bin");
-  if (!dict.data->blobs) {
-    return;
-  }
-  dict.data->identity = table_identity(path + "/hash.table", *dict.data->hash_table, dict.data->blobs->size());
 
   // 词性有无（util/term_rules_flag.hpp）：导入端写好的 sidecar 直接读；存量词典
-  // 缺 sidecar 就扫一次记录并回填（回填失败只是下次再扫，不影响本次装载）。
+  // 缺 sidecar 就扫一次记录并回填（回填失败只是下次再扫，不影响本次装载）。sidecar
+  // 里记的是记录文件（blobs.bin / blobs3.bin）的大小。
   if (type == TERM) {
-    const uint64_t blobs_size = dict.data->blobs->size();
+    const uint64_t blobs_size = dict.data->index.blobs().size();
     std::optional<bool> rules_present = fushi::term_rules_flag::read(path, blobs_size);
     if (!rules_present.has_value()) {
-      rules_present = scan_term_rules_present(*dict.data->hash_table, *dict.data->blobs);
+      rules_present = scan_term_rules_present(dict.data->index);
       fushi::term_rules_flag::write(path, *rules_present, blobs_size);
     }
     dict.data->rules_wildcard = !*rules_present;
@@ -478,6 +523,7 @@ void DictionaryQuery::add_dict(const std::string& path, DictionaryType type) {
 
   switch (type) {
     case TERM:
+      dict.language = fushi::primary_language_tag(language);
       term_dicts_.push_back(std::move(dict));
       break;
     case FREQ:
@@ -530,16 +576,23 @@ void DictionaryQuery::prepare_union_filter(const std::string& cache_dir, bool wa
   std::lock_guard<std::mutex> builder_lock(union_builder_->mutex);
   union_builder_->stop_locked();
 
-  // 构建线程自己撑着每本词典的 hash.table 映射（本对象在别的线程上被 add_dict 改动
-  // 也不影响它读到的那批）；本对象析构时由 UnionBuilder 叫停并等它退出。
+  // 构建线程自己撑着每本词典索引文件（key.index / hash.table）的映射，并持有 key_index
+  // 视图的副本（本对象在别的线程上被 add_dict 改动也不影响它读到的那批）；本对象析构
+  // 时由 UnionBuilder 叫停并等它退出。
   struct Input {
     uint64_t identity;
-    memory::shared_mapping table;
+    memory::shared_mapping mapping;
+    std::optional<hash::key_index> keys;
   };
   auto inputs = std::make_shared<std::vector<Input>>();
   for (const auto* dicts : {&term_dicts_, &freq_dicts_, &pitch_dicts_, &kanji_dicts_}) {
     for (const Dictionary& dict : *dicts) {
-      inputs->push_back({dict.data->identity, dict.data->hash_table});
+      const hash::dict_index& index = dict.data->index;
+      std::optional<hash::key_index> keys;
+      if (const hash::key_index* k = index.keys()) {
+        keys = *k;
+      }
+      inputs->push_back({index.identity(), index.index_mapping(), keys});
     }
   }
 
@@ -573,7 +626,12 @@ void DictionaryQuery::prepare_union_filter(const std::string& cache_dir, bool wa
       std::vector<hash::union_filter::source> sources;
       sources.reserve(inputs->size());
       for (const Input& input : *inputs) {
-        sources.push_back({.identity = input.identity, .table = input.table->data, .table_size = input.table->size});
+        if (input.keys) {
+          sources.push_back({.identity = input.identity, .keys = &*input.keys});
+        } else {
+          sources.push_back(
+              {.identity = input.identity, .table = input.mapping->data, .table_size = input.mapping->size});
+        }
       }
       filter = hash::union_filter::open_or_build(sources, cache_dir, cancel.get());
     } catch (const std::exception& e) {
@@ -600,7 +658,9 @@ void DictionaryQuery::prepare_union_filter(const std::string& cache_dir, bool wa
   }
 }
 
-void DictionaryQuery::add_term_dict(const std::string& path) { add_dict(path, DictionaryQuery::DictionaryType::TERM); }
+void DictionaryQuery::add_term_dict(const std::string& path, std::string_view language) {
+  add_dict(path, DictionaryQuery::DictionaryType::TERM, language);
+}
 
 void DictionaryQuery::add_freq_dict(const std::string& path) { add_dict(path, DictionaryQuery::DictionaryType::FREQ); }
 
@@ -629,6 +689,18 @@ std::vector<TermResult> DictionaryQuery::query(const std::string& expression) co
   return results;
 }
 
+std::vector<TermResult> DictionaryQuery::query_frequencies(const std::string& expression) const {
+  const QueryScope scope = make_scope();
+  auto results = query_raw(expression, scope);
+  for (auto& term : results) {
+    enrich_freq(term, scope);
+    // query_raw 留下的是没解压的释义引用（词典名 / 标签 + 指向映射的压缩块）；不交出
+    // 「看起来有释义、其实是空串」的条目。
+    term.glossaries.clear();
+  }
+  return results;
+}
+
 std::vector<TermResult> DictionaryQuery::query_raw(const std::string& expression, const QueryScope& scope) const {
   const ExcludedDictNames* excluded = scope.excluded;
   const KeyProbe key(expression, scope.filter);
@@ -636,9 +708,10 @@ std::vector<TermResult> DictionaryQuery::query_raw(const std::string& expression
   // term_map 的键是指向记录的 string_view：窗口映射（32 位）下要撑住这些窗口到函数
   // 返回；64 位整份映射时 owner 恒空、不进这里。
   std::vector<std::shared_ptr<const void>> pins;
-  for (const auto& [dict, offset_addr] : locate_all(term_dicts_, key, excluded)) {
-    const auto& [name, styles, data] = *dict;
-    for_each_record_of_type(*data->blobs, offset_addr, 0, [&](BlobReader& blob, const memory::blob_span& rec) -> bool {
+  for (const auto& [dict, loc] : locate_all(term_dicts_, key, excluded)) {
+    const auto& [name, styles, language, data] = *dict;
+    const memory::blob_file& blobs = data->index.blobs();
+    for_each_record_of_type(blobs, loc, 0, [&](BlobReader& blob, const memory::blob_span& rec) -> bool {
       auto expr_len = blob.read<uint16_t>();
       std::string_view expr = blob.read_str(expr_len);
 
@@ -677,10 +750,10 @@ std::vector<TermResult> DictionaryQuery::query_raw(const std::string& expression
       entry.dict_name = name;
       entry.definition_tags = definition_tags;
       entry.term_tags = term_tags;
-      memory::blob_span glossary = data->blobs->view(glossary_offset, glossary_size);
+      memory::blob_span glossary = blobs.view(glossary_offset, glossary_size);
       entry.compressed_data = glossary.data;
       entry.compressed_size = static_cast<uint32_t>(glossary.size);
-      entry.compressed_source = data->blobs.get();
+      entry.compressed_source = &blobs;
       entry.compressed_offset = glossary_offset;
       entry.compressed_owner = std::move(glossary.owner);
       entry.zstd_dict = data->zstd_dict;
@@ -722,12 +795,13 @@ std::vector<KanjiResult> DictionaryQuery::query_kanji(const std::string& charact
   std::vector<KanjiResult> results;
   const QueryScope scope = make_scope();
   const KeyProbe key(character, scope.filter);
-  for (const auto& [name, styles, data] : kanji_dicts_) {
-    uint64_t offset_addr = data->locate(key);
-    if (offset_addr == 0) {
+  for (const auto& [name, styles, language, data] : kanji_dicts_) {
+    const std::optional<location> loc = data->locate(key);
+    if (!loc) {
       continue;
     }
-    for_each_record_of_type(*data->blobs, offset_addr, 2, [&](BlobReader& blob, const memory::blob_span&) -> bool {
+    const memory::blob_file& blobs = data->index.blobs();
+    for_each_record_of_type(blobs, *loc, 2, [&](BlobReader& blob, const memory::blob_span&) -> bool {
       auto char_len = blob.read<uint16_t>();
       std::string_view ch = blob.read_str(char_len);
       if (ch != character) {
@@ -774,7 +848,7 @@ std::vector<KanjiResult> DictionaryQuery::query_kanji(const std::string& charact
       }
 
       const memory::blob_span meanings =
-          meanings_size > 0 ? data->blobs->view(meanings_offset, meanings_size) : memory::blob_span{};
+          meanings_size > 0 ? blobs.view(meanings_offset, meanings_size) : memory::blob_span{};
       if (meanings) {
         // kanji meanings 恒为普通 zstd 帧（训练字典只用于 term glossary）。
         std::string joined = decompress_glossary(meanings.data, meanings.size, nullptr);
@@ -812,19 +886,18 @@ void DictionaryQuery::enrich_freq(TermResult& term, const QueryScope& scope) con
     return;
   }
   const KeyProbe key(term.expression, scope.filter);
-  for (const auto& [dict, offset_addr] : locate_all(freq_dicts_, key, excluded)) {
-    const auto& [name, styles, data] = *dict;
+  for (const auto& [dict, loc] : locate_all(freq_dicts_, key, excluded)) {
+    const auto& [name, styles, language, data] = *dict;
     std::vector<Frequency> frequencies;
-    for_each_meta_record(*data->blobs, offset_addr, term.expression, [&](BlobReader& blob, std::string_view mode) -> bool {
+    for_each_meta_record(data->index.blobs(), loc, term.expression,
+                         [&](BlobReader& blob, std::string_view mode, uint8_t type) -> bool {
       if (mode != "freq") {
         return true;
       }
 
-      auto freq_data_size = blob.read<uint32_t>();
-      std::string_view freq_data = blob.read_str(freq_data_size);
-
+      // type 1：载荷是原始 JSON，这里解析；type 3：导入期已解析好（json/meta_record.hpp）。
       ParsedFrequency parsed;
-      if (yomitan_parser::parse_frequency(freq_data, parsed)) {
+      if (meta_record::read_frequency(type, blob.ptr, blob.end, parsed)) {
         if (!parsed.reading.empty() && parsed.reading != term.reading) {
           return true;
         }
@@ -852,8 +925,8 @@ void DictionaryQuery::enrich_pitch(TermResult& term, const QueryScope& scope) co
     return;
   }
   const KeyProbe key(term.expression, scope.filter);
-  for (const auto& [dict, offset_addr] : locate_all(pitch_dicts_, key, excluded)) {
-    const auto& [name, styles, data] = *dict;
+  for (const auto& [dict, loc] : locate_all(pitch_dicts_, key, excluded)) {
+    const auto& [name, styles, language, data] = *dict;
     std::vector<Pitch> pitches;
     std::vector<std::string> transcriptions;
 
@@ -880,7 +953,8 @@ void DictionaryQuery::enrich_pitch(TermResult& term, const QueryScope& scope) co
              a.nasal == b.nasal && a.devoice == b.devoice;
     };
 
-    for_each_meta_record(*data->blobs, offset_addr, term.expression, [&](BlobReader& blob, std::string_view mode) -> bool {
+    for_each_meta_record(data->index.blobs(), loc, term.expression,
+                         [&](BlobReader& blob, std::string_view mode, uint8_t type) -> bool {
       // Both pitch-accent ("pitch") and IPA transcription ("ipa") meta records
       // share this PITCH dict bucket / storage layout (upstream 918744d). The
       // data blob differs only in how the JSON is shaped; parse with the
@@ -888,9 +962,7 @@ void DictionaryQuery::enrich_pitch(TermResult& term, const QueryScope& scope) co
       // skipped.
       ParsedPitch parsed;
       if (mode == "pitch") {
-        auto pitch_data_size = blob.read<uint32_t>();
-        std::string_view pitch_data = blob.read_str(pitch_data_size);
-        if (yomitan_parser::parse_pitch(pitch_data, parsed)) {
+        if (meta_record::read_pitch(type, blob.ptr, blob.end, parsed)) {
           if (!parsed.reading.empty() && parsed.reading != term.reading) {
             return true;
           }
@@ -908,9 +980,7 @@ void DictionaryQuery::enrich_pitch(TermResult& term, const QueryScope& scope) co
           }
         }
       } else if (mode == "ipa") {
-        auto transcriptions_data_size = blob.read<uint32_t>();
-        std::string_view transcriptions_data = blob.read_str(transcriptions_data_size);
-        if (yomitan_parser::parse_ipa(transcriptions_data, parsed)) {
+        if (meta_record::read_ipa(type, blob.ptr, blob.end, parsed)) {
           if (!parsed.reading.empty() && parsed.reading != term.reading) {
             return true;
           }
@@ -971,7 +1041,7 @@ void DictionaryQuery::materialize(TermResult& term) const {
 
 std::vector<char> DictionaryQuery::get_media_file(const std::string& dict_name, const std::string& media_path) const {
   const std::string normalized_media_path = fushidicts::normalize_media_path(media_path);
-  for (const auto& [name, styles, data] : term_dicts_) {
+  for (const auto& [name, styles, language, data] : term_dicts_) {
     if (name != dict_name) {
       continue;
     }
@@ -1060,9 +1130,10 @@ std::vector<std::string> DictionaryQuery::get_freq_dict_order() const {
 }
 
 int ensure_redirect_glossary_flag(const std::string& dir) {
-  std::error_code ec;
-  const uint64_t blobs_size = std::filesystem::file_size(fushi::fs_path(dir + "/blobs.bin"), ec);
-  if (ec) return -1;
+  // sidecar 记的是记录文件（blobs.bin / 升级重写过的 blobs3.bin）的大小。
+  hash::dict_index index;
+  if (!index.open(dir)) return -1;
+  const uint64_t blobs_size = index.blobs().size();
   if (const std::optional<bool> known = fushi::redirect_glossary::read_flag(dir, blobs_size)) {
     return *known ? 1 : 0;
   }
@@ -1074,32 +1145,26 @@ int ensure_redirect_glossary_flag(const std::string& dir) {
 }
 
 // ── dictionary content probe (TODO-622) ─────────────────────────────
-// Walk hash.table buckets -> offset-index -> record type byte. The on-disk
-// format is stable and identical to what query()/query_kanji() consume:
-//   hash.table : [u32 capacity][ slot{u64 hash, u64 offset} x capacity ]
-//                empty slot == hash 0; offset points into the offset-index
-//                region of blobs.bin.
-//   offset-idx : [u32 count][u64 record_offset x count]
-//   record     : first byte = type (0=term, 1=meta, 2=kanji)
+// Walk every index location (key.index slots or hash.table buckets, see
+// hash/dict_index.hpp) -> record(s) -> record type byte. The on-disk format is
+// the one query()/query_kanji() consume:
+//   location   : single -> the record itself; otherwise an offset-index
+//                [u32 count][u64 record_offset x count] in the record file.
+//   record     : first byte = type (0=term, 1/3=meta, 2=kanji)
 // All little-endian (write_val/BlobReader use memcpy). We cannot sequentially
 // scan the record region (no boundary metadata, glossary blobs interleaved),
-// so we must go through the hash table. bloom.filter is not needed here.
+// so we must go through the index.
 int probe_dict_content(const std::string& dir) {
   // map_rd_shared（BUG-4013）：已装载的词典复用引擎那份映射。
-  const memory::shared_mapping hash_owner = memory::map_rd_shared(dir + "/hash.table");
-  if (!hash_owner || hash_owner->size < sizeof(uint32_t)) {
+  hash::dict_index index;
+  if (!index.open(dir)) {
     return 0;
   }
-  const memory::shared_blob_file blobs_owner = memory::open_blob_file(dir + "/blobs.bin");
-  if (!blobs_owner) {
-    return 0;
-  }
-  const memory::mapped_file& hash_table = *hash_owner;
-  const memory::blob_file& blobs = *blobs_owner;
+  const memory::blob_file& blobs = index.blobs();
 
   int mask = 0;
-  for_each_hash_bucket(hash_table, [&](uint64_t bucket) -> bool {
-    for_each_listed_offset(blobs, bucket, [&](uint64_t offset) -> bool {
+  index.for_each_location([&](location bucket) -> bool {
+    hash::for_each_record_offset(blobs, bucket, [&](uint64_t offset) -> bool {
       // Only the type byte is needed: a 1-byte view, not a whole record.
       const memory::blob_span rec = blobs.view(offset, 1);
       if (rec) {

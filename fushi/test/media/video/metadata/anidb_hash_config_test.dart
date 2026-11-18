@@ -21,6 +21,7 @@ void main() {
       await prefs.setPref(kVideoAniDbHashEnabledPref, true);
       await prefs.setPref(kVideoAniDbUsernamePref, ' tester ');
       await prefs.setPref(kVideoAniDbPasswordPref, ' password & 日本語 ');
+      await prefs.setPref(kVideoAniDbUdpApiKeyPref, 'udp-key');
       await prefs.setPref(kVideoMetadataAniDbClientNamePref, ' clientname ');
       await prefs.setPref(kVideoMetadataAniDbClientVersionPref, '3');
       final VideoSourceScrapeGlobalConfig config =
@@ -96,6 +97,7 @@ void main() {
           kVideoAniDbHashEnabledPref: true,
           kVideoAniDbUsernamePref: 'tester',
           kVideoAniDbPasswordPref: 'password',
+          kVideoAniDbUdpApiKeyPref: 'udp-key',
         });
         final VideoSourceScrapeGlobalConfig config = load(prefs);
         expect(config.anidbClientName, 'fushiplayer');
@@ -113,23 +115,32 @@ void main() {
         final Map<String, Map<String, Object>> cases =
             <String, Map<String, Object>>{
               'switch off': <String, Object>{
+                kVideoAniDbHashEnabledPref: false,
                 kVideoAniDbUsernamePref: 'tester',
                 kVideoAniDbPasswordPref: 'password',
+                kVideoAniDbUdpApiKeyPref: 'udp-key',
               },
               'no password': <String, Object>{
                 kVideoAniDbHashEnabledPref: true,
                 kVideoAniDbUsernamePref: 'tester',
               },
+              'no UDP API key (login would be plaintext)': <String, Object>{
+                kVideoAniDbHashEnabledPref: true,
+                kVideoAniDbUsernamePref: 'tester',
+                kVideoAniDbPasswordPref: 'password',
+              },
               'custom client without version': <String, Object>{
                 kVideoAniDbHashEnabledPref: true,
                 kVideoAniDbUsernamePref: 'tester',
                 kVideoAniDbPasswordPref: 'password',
+                kVideoAniDbUdpApiKeyPref: 'udp-key',
                 kVideoMetadataAniDbClientNamePref: 'customapp',
               },
               'custom client name outside [a-z]{4,16}': <String, Object>{
                 kVideoAniDbHashEnabledPref: true,
                 kVideoAniDbUsernamePref: 'tester',
                 kVideoAniDbPasswordPref: 'password',
+                kVideoAniDbUdpApiKeyPref: 'udp-key',
                 kVideoMetadataAniDbClientNamePref: 'My App',
                 kVideoMetadataAniDbClientVersionPref: '2',
               },
@@ -147,6 +158,7 @@ void main() {
         kVideoAniDbHashEnabledPref: true,
         kVideoAniDbUsernamePref: 'tester',
         kVideoAniDbPasswordPref: 'password',
+        kVideoAniDbUdpApiKeyPref: 'udp-key',
         kVideoMetadataAniDbClientNamePref: 'customapp',
         kVideoMetadataAniDbClientVersionPref: '2',
       });
@@ -167,6 +179,7 @@ void main() {
       bool hashEnabled = false,
       String anidbUsername = '',
       String anidbPassword = '',
+      String anidbUdpApiKey = '',
       String locale = 'zh-CN',
       VideoMetadataProviderKind primaryProvider = VideoMetadataProviderKind.mal,
       String identifierWords = '',
@@ -183,6 +196,7 @@ void main() {
       hashEnabled: hashEnabled,
       anidbUsername: anidbUsername,
       anidbPassword: anidbPassword,
+      anidbUdpApiKey: anidbUdpApiKey,
       locale: locale,
       primaryProvider: primaryProvider,
       identifierWords: ScrapeIdentifierWords.parse(
@@ -201,6 +215,7 @@ void main() {
             'hashEnabled': make(hashEnabled: true),
             'anidbUsername': make(anidbUsername: 'shishamo'),
             'anidbPassword': make(anidbPassword: 'secret'),
+            'anidbUdpApiKey': make(anidbUdpApiKey: 'udp-key'),
             'anidbClientName': make(anidbClientName: 'custom'),
             'anidbClientVersion': make(anidbClientVersion: 2),
             // BUG-2623：HTTP 身份与 UDP 身份分开，各自烘进 provider。

@@ -248,10 +248,15 @@ class VideoSourceScrapeConfirmation {
     required this.localWorkTitle,
     required List<VideoSourceScrapeConfirmationCandidate> candidates,
     this.aiSuggestion,
+    this.strictMatches = false,
     this.workStableKey,
   }) : candidates = List<VideoSourceScrapeConfirmationCandidate>.unmodifiable(
          candidates,
        );
+
+  /// 候选都通过了严格匹配门、只是不止一条（见
+  /// `VideoMetadataResolution.strictMatches`）；false = 只是可能的候选。
+  final bool strictMatches;
 
   final int sourceId;
   final String sourceLabel;

@@ -10,6 +10,13 @@
 //       [--stages]         另外单量 文本预处理 / 预处理 + 变形还原 两段
 //       [--dump <文件>]    把每次查词的完整结果写进文件（改引擎前后 diff 用）
 //       [--union <目录>]   先同步准备联合过滤器（目录 = 缓存目录；写 mem = 只在内存建）
+//       [--upgrade]        不查词：对清单里每本词典调 fushidicts::upgrade_dictionary
+//                          （允许 meta 重写；--upgrade-index-only 只换索引），打印每本的
+//                          结果与耗时、总耗时、升级前后索引文件与记录文件的总字节数。
+//                          **会改写词典目录**，只对副本用。
+//       [--query-compare]  查词之后另量「拿词形查词频」：词表 = 每个查询串的首个命中词条，
+//                          DictionaryQuery::query 对 query_frequencies 各跑 iters 遍，并核对
+//                          两者的词条 / 词频逐项相同（不同则退出码 1）。
 //
 // manifest.tsv：每行 `类型<TAB>词典目录[<TAB>备注]`，类型取 term / frequency / pitch
 // （与 app 的 dictionary_metadata.type 同词），行序 = 注册顺序。
@@ -24,16 +31,19 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <numeric>
 #include <string>
+#include <unordered_set>
 #include <string_view>
 #include <vector>
 
 #include "fushidicts/deinflector.hpp"
 #include "fushidicts/lookup.hpp"
 #include "fushidicts/query.hpp"
+#include "fushidicts/upgrade.hpp"
 #include "scan/word_scan.hpp"
 #include "text_processor/text_processor.hpp"
 
@@ -184,13 +194,66 @@ double elapsed_us(Clock::time_point start) {
   return std::chrono::duration<double, std::micro>(Clock::now() - start).count();
 }
 
+// 词典目录里索引文件（key.index + hash.table + bloom.filter）与记录文件（blobs.bin +
+// blobs3.bin）的字节数。
+struct DirBytes {
+  uint64_t index = 0;
+  uint64_t records = 0;
+};
+
+DirBytes dir_bytes(const std::string& dir) {
+  DirBytes out;
+  const auto size_of = [&](const char* name) -> uint64_t {
+    std::error_code ec;
+    const auto n = std::filesystem::file_size(std::filesystem::u8path(dir + "/" + name), ec);
+    return ec ? 0 : static_cast<uint64_t>(n);
+  };
+  out.index = size_of("key.index") + size_of("hash.table") + size_of("bloom.filter");
+  out.records = size_of("blobs.bin") + size_of("blobs3.bin");
+  return out;
+}
+
+int run_upgrade(const std::vector<std::string>& dirs, bool allow_meta_rewrite) {
+  const char* names[] = {"failed", "up-to-date", "upgraded", "not-applicable"};
+  DirBytes before_total;
+  DirBytes after_total;
+  int failures = 0;
+  const auto all_start = Clock::now();
+  for (const std::string& dir : dirs) {
+    const DirBytes before = dir_bytes(dir);
+    const auto start = Clock::now();
+    fushidicts::UpgradeResult r = fushidicts::UpgradeResult::Failed;
+    try {
+      r = fushidicts::upgrade_dictionary(dir, allow_meta_rewrite);
+    } catch (const std::exception& e) {
+      std::fprintf(stderr, "%s: exception %s\n", dir.c_str(), e.what());
+    }
+    const double ms = elapsed_us(start) / 1000.0;
+    const DirBytes after = dir_bytes(dir);
+    if (r == fushidicts::UpgradeResult::Failed) failures++;
+    std::printf("upgrade %-50s %-14s %9.1f ms | index %11llu -> %11llu | records %11llu -> %11llu\n", dir.c_str(),
+                names[static_cast<int>(r) + 1], ms, static_cast<unsigned long long>(before.index),
+                static_cast<unsigned long long>(after.index), static_cast<unsigned long long>(before.records),
+                static_cast<unsigned long long>(after.records));
+    before_total.index += before.index;
+    before_total.records += before.records;
+    after_total.index += after.index;
+    after_total.records += after.records;
+  }
+  std::printf("upgrade total %.1f ms | index bytes %llu -> %llu | record bytes %llu -> %llu | failures %d\n",
+              elapsed_us(all_start) / 1000.0, static_cast<unsigned long long>(before_total.index),
+              static_cast<unsigned long long>(after_total.index), static_cast<unsigned long long>(before_total.records),
+              static_cast<unsigned long long>(after_total.records), failures);
+  return failures == 0 ? 0 : 1;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
   if (argc < 4) {
     std::fprintf(stderr,
                  "usage: %s <manifest.tsv> <transforms dir> <corpus.txt> [--iters N] [--scan N] [--max N] "
-                 "[--window N] [--no-materialize] [--stages] [--dump file] [--union dir|mem]\n",
+                 "[--window N] [--no-materialize] [--stages] [--dump file] [--union dir|mem] [--upgrade|--upgrade-index-only]\n",
                  argv[0]);
     return 1;
   }
@@ -206,6 +269,8 @@ int main(int argc, char** argv) {
   std::string dump_path;
   bool use_union = false;
   std::string union_dir;
+  int upgrade = 0;  // 0 不升级 / 1 允许 meta 重写 / 2 只换索引
+  bool query_compare = false;
   for (int i = 4; i < argc; i++) {
     const std::string_view arg = argv[i];
     const auto next = [&]() -> const char* { return i + 1 < argc ? argv[++i] : "0"; };
@@ -227,7 +292,25 @@ int main(int argc, char** argv) {
       use_union = true;
       union_dir = next();
       if (union_dir == "mem") union_dir.clear();
+    } else if (arg == "--query-compare") {
+      query_compare = true;
+    } else if (arg == "--upgrade") {
+      upgrade = 1;
+    } else if (arg == "--upgrade-index-only") {
+      upgrade = 2;
     }
+  }
+
+  if (upgrade != 0) {
+    std::vector<std::string> dirs;
+    for (const std::string& line : split_lines(read_file(manifest_path))) {
+      const size_t tab = line.find('\t');
+      if (tab == std::string::npos) continue;
+      size_t tab2 = line.find('\t', tab + 1);
+      if (tab2 == std::string::npos) tab2 = line.size();
+      dirs.push_back(line.substr(tab + 1, tab2 - tab - 1));
+    }
+    return run_upgrade(dirs, upgrade == 1);
   }
 
   DictionaryQuery query;
@@ -303,6 +386,64 @@ int main(int argc, char** argv) {
   if (!dump_path.empty()) {
     std::ofstream out(dump_path, std::ios::binary);
     out.write(dump.data(), static_cast<std::streamsize>(dump.size()));
+  }
+
+  if (query_compare) {
+    // 「拿一个词形查它的词频」（Anki 卡组按词频重排）：词表取每个查询串的首个命中词条，
+    // 去重；query() 与 query_frequencies() 各跑 iters 遍，并核对两者的词条与词频逐项相同。
+    std::vector<std::string> words;
+    {
+      std::unordered_set<std::string> seen;
+      for (const std::string& q : queries) {
+        const std::vector<LookupResult> results = lookup.lookup(q, 1, scan_length, options);
+        if (!results.empty() && seen.insert(results[0].term.expression).second) {
+          words.push_back(results[0].term.expression);
+        }
+      }
+    }
+    const auto describe_freq = [](const std::vector<TermResult>& terms) {
+      std::string out;
+      for (const TermResult& t : terms) {
+        out += t.expression + "|" + t.reading + "|" + t.rules + "|";
+        for (const FrequencyEntry& f : t.frequencies) {
+          out += f.dict_name + ":";
+          for (const Frequency& v : f.frequencies) out += std::to_string(v.value) + "/" + v.display_value + ",";
+          out += ";";
+        }
+        out += "\n";
+      }
+      return out;
+    };
+    size_t mismatches = 0;
+    size_t glossary_bytes = 0;
+    for (const std::string& w : words) {
+      const std::vector<TermResult> full = query.query(w);
+      const std::vector<TermResult> freq = query.query_frequencies(w);
+      if (describe_freq(full) != describe_freq(freq)) mismatches++;
+      for (const TermResult& t : full) {
+        for (const GlossaryEntry& g : t.glossaries) glossary_bytes += g.glossary.size();
+      }
+    }
+    std::printf("query-compare: %zu words | mismatches %zu | query() decompresses %.1f KB per word\n", words.size(),
+                mismatches, words.empty() ? 0.0 : glossary_bytes / 1024.0 / words.size());
+    for (int iter = 0; iter < iters; iter++) {
+      std::vector<double> full_us;
+      std::vector<double> freq_us;
+      for (const std::string& w : words) {
+        auto start = Clock::now();
+        const std::vector<TermResult> a = query.query(w);
+        full_us.push_back(elapsed_us(start));
+        start = Clock::now();
+        const std::vector<TermResult> b = query.query_frequencies(w);
+        freq_us.push_back(elapsed_us(start));
+      }
+      char label[48];
+      std::snprintf(label, sizeof(label), "query() iter %d", iter);
+      print_stats(label, summarize(full_us));
+      std::snprintf(label, sizeof(label), "query_frequencies() iter %d", iter);
+      print_stats(label, summarize(freq_us));
+    }
+    return mismatches == 0 ? 0 : 1;
   }
 
   if (stages) {

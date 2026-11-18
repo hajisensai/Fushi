@@ -2006,7 +2006,12 @@ class _DictionaryDialogPageState extends BasePageState {
                   // 导入阶段 cancellable 为 false → 按钮置灰 + 说明为什么停不下来，
                   // 而不是给一个按了没反应的按钮（BUG-1499）。
                   onCancel: cancellable ? controller.requestCancel : null,
-                  cancelDisabledHint: t.dict_download_import_uncancellable,
+                  // message 每次变化都会重建到这里，读 phase 当前值即可。
+                  cancelDisabledHint:
+                      controller.phase.value ==
+                          DictionaryDownloadPhase.upgrading
+                      ? t.dict_upgrade_format_uncancellable
+                      : t.dict_download_import_uncancellable,
                   onHide: () => Navigator.of(ctx).pop(),
                 ),
           ),
