@@ -38,6 +38,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4894](bugs/BUG-4894-anidb-all-bracket-fuzzy-candidates.md) | ✅ | ✅ | 全方括号文件名 `[K-ON!][04][BIG5]…` 待确认列表塞满只共享 `kon` 音节的无关作品 |
 | [BUG-4893](bugs/BUG-4893-mascot-glow-starves-windows-input.md) | ✅ | ✅ | 吉祥物光晕开着冷启动：启动期 idle 任务让调度器空转，Windows 鼠标键盘全失灵 |
 | [BUG-4892](bugs/BUG-4892-book-series-volume-not-last-ungrouped.md) | ✅ | ✅ | 卷号后面跟副标题、卷号前夹标签、『』特典册的分卷不归组，整套散在书架上 |
 | [BUG-4891](bugs/BUG-4891-manga-ctc-body-column-dropped-as-ruby.md) | ✅ | ✅ | 本机 Manga CTC 把正文短列当注音删掉、把疏排竖排读成横排（漫画 OCR 丢列与串列乱码） |

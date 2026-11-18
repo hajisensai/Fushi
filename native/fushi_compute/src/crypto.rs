@@ -241,6 +241,35 @@ pub unsafe extern "C" fn ffc_crypto_aes128_ecb_decrypt(
     })
 }
 
+/// AES-128 ECB 原地加 `len` 字节（16 的倍数，填充由调用方做）。AniDB UDP API 的
+/// `ENCRYPT` 会话用它加密每个请求包（key = MD5(UDP API Key + salt)）。
+///
+/// # Safety
+/// `key` 16 字节可读；`data` 至少 `len` 字节可读写。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_crypto_aes128_ecb_encrypt(
+    key: *const u8,
+    data: *mut u8,
+    len: usize,
+) -> i32 {
+    guard(|| {
+        if key.is_null() || (data.is_null() && len != 0) {
+            return status::NULL_ARGUMENT;
+        }
+        if len % 16 != 0 {
+            return status::INVALID_ARGUMENT;
+        }
+        let key: &[u8; 16] = &*(key as *const [u8; 16]);
+        let aes = Aes128::new(key.into());
+        if len > 0 {
+            for block in std::slice::from_raw_parts_mut(data, len).chunks_exact_mut(16) {
+                aes.encrypt_block(block.into());
+            }
+        }
+        status::OK
+    })
+}
+
 macro_rules! cbc_pkcs7 {
     ($cipher:ty, $key:expr, $iv:expr, $data:expr) => {
         cbc::Decryptor::<$cipher>::new_from_slices($key, $iv)
@@ -369,6 +398,28 @@ mod tests {
             unit[offset + 4] = 0x47;
         }
         unit
+    }
+
+    /// FIPS-197 附录 C.1 的 AES-128 向量；加密后再用既有的解密入口解回原文。
+    #[test]
+    fn ecb_encrypt_matches_fips197_and_round_trips() {
+        let key: [u8; 16] = std::array::from_fn(|i| i as u8);
+        let plain: [u8; 16] = std::array::from_fn(|i| (i as u8) * 0x11);
+        let mut data = [plain, plain].concat();
+        let code = unsafe { ffc_crypto_aes128_ecb_encrypt(key.as_ptr(), data.as_mut_ptr(), 32) };
+        assert_eq!(code, status::OK);
+        let expected: [u8; 16] = [
+            0x69, 0xc4, 0xe0, 0xd8, 0x6a, 0x7b, 0x04, 0x30, 0xd8, 0xcd, 0xb7, 0x80, 0x70, 0xb4,
+            0xc5, 0x5a,
+        ];
+        assert_eq!(data[..16], expected);
+        assert_eq!(data[16..], expected, "ECB：相同明文块得相同密文块");
+        let code = unsafe { ffc_crypto_aes128_ecb_decrypt(key.as_ptr(), data.as_mut_ptr(), 32) };
+        assert_eq!(code, status::OK);
+        assert_eq!(data, [plain, plain].concat());
+        let mut odd = [0u8; 15];
+        let code = unsafe { ffc_crypto_aes128_ecb_encrypt(key.as_ptr(), odd.as_mut_ptr(), 15) };
+        assert_eq!(code, status::INVALID_ARGUMENT);
     }
 
     #[test]
