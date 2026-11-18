@@ -34,8 +34,8 @@ class TorrentEngineCapability {
     required this.supported,
     required this.backend,
     this.features = const <String>{},
-    this.pauseControlAvailable = false,
-    this.detailAvailable = false,
+    this.pauseControlAvailable,
+    this.detailAvailable,
     this.allowedRoots = const <String>[],
   });
 
@@ -50,8 +50,8 @@ class TorrentEngineCapability {
       features: features is List
           ? <String>{for (final Object? f in features) '$f'}
           : const <String>{},
-      pauseControlAvailable: raw['pauseControlAvailable'] == true,
-      detailAvailable: raw['detailAvailable'] == true,
+      pauseControlAvailable: _optionalBool(raw['pauseControlAvailable']),
+      detailAvailable: _optionalBool(raw['detailAvailable']),
       allowedRoots: roots is List
           ? <String>[for (final Object? r in roots) '$r']
           : const <String>[],
@@ -67,11 +67,12 @@ class TorrentEngineCapability {
   /// [TorrentEngineFeature] 子集。
   final Set<String> features;
 
-  /// [TorrentPauseBackend.pauseControlAvailable] 的 host 侧取值。
-  final bool pauseControlAvailable;
+  /// [TorrentPauseBackend.pauseControlAvailable] 的 host 侧取值；null = 未知（host
+  /// 的内置引擎还没起，探测不为了回答它去拉起引擎）。
+  final bool? pauseControlAvailable;
 
-  /// [TorrentDetailBackend.detailAvailable] 的 host 侧取值。
-  final bool detailAvailable;
+  /// [TorrentDetailBackend.detailAvailable] 的 host 侧取值；null 同上。
+  final bool? detailAvailable;
 
   /// host 允许远程任务落盘的根目录（host 视角路径）。保存目录与移动目标必须在
   /// 其中之一下面；client 配路径映射时据此提示「对端那一侧的根」。
@@ -88,6 +89,19 @@ class TorrentEngineCapability {
     'allowedRoots': allowedRoots,
   };
 }
+
+bool? _optionalBool(Object? v) => v is bool ? v : null;
+
+/// 全部可选能力（内置引擎代理与 qb 后端都实现全套；引擎未起时 host 按类型报这一组）。
+const Set<String> kAllTorrentEngineFeatures = <String>{
+  TorrentEngineFeature.removal,
+  TorrentEngineFeature.pause,
+  TorrentEngineFeature.detail,
+  TorrentEngineFeature.metainfo,
+  TorrentEngineFeature.pausedMetainfo,
+  TorrentEngineFeature.trackers,
+  TorrentEngineFeature.bulkPriority,
+};
 
 /// 按后端实现的可选接口列出能力（host 侧装配能力位用）。
 Set<String> torrentEngineFeaturesOf(TorrentBackend backend) => <String>{

@@ -33,22 +33,15 @@ class ServerPeerTorrentEngine implements HostTorrentEngine {
     if (backend == null) {
       return const TorrentEngineCapability(supported: false, backend: 'none');
     }
-    // 能力位按真实后端类型报（建视图不建 session：内置引擎的视图懒开，这里只看类型；
-    // 运行时能力位读宿主探测结果，DLL 过旧时如实报 false）。
-    final ({Set<String> features, bool pause, bool detail})? probed =
-        await _downloads.withPeerBackend(
-          (TorrentBackend b) async => (
-            features: torrentEngineFeaturesOf(b),
-            pause: b is TorrentPauseBackend && b.pauseControlAvailable,
-            detail: b is TorrentDetailBackend && b.detailAvailable,
-          ),
-        );
+    // 只读：不为回答能力探测去拉起内置引擎（见 peerBackendTraits）。
+    final ({Set<String> features, bool? pause, bool? detail})? traits =
+        _downloads.peerBackendTraits();
     return TorrentEngineCapability(
-      supported: probed != null,
+      supported: traits != null,
       backend: backend,
-      features: probed?.features ?? const <String>{},
-      pauseControlAvailable: probed?.pause ?? false,
-      detailAvailable: probed?.detail ?? false,
+      features: traits?.features ?? const <String>{},
+      pauseControlAvailable: traits?.pause,
+      detailAvailable: traits?.detail,
       allowedRoots: paths.roots,
     );
   }

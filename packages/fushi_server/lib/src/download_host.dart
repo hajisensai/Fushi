@@ -27,6 +27,7 @@ import 'package:fushi_engine/media/torrent/embedded_torrent_host_slot.dart';
 import 'package:fushi_engine/media/torrent/embedded_torrent_worker.dart'
     show EmbeddedTorrentHostOpenArgs;
 import 'package:fushi_engine/media/torrent/qb_torrent_backend.dart';
+import 'package:fushi_engine/media/torrent/remote_torrent_wire.dart';
 import 'package:fushi_engine/media/torrent/qbittorrent_client.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
@@ -70,7 +71,9 @@ class ServerDownloadHost implements HostDownloadHost {
     String Function()? subtitleLanguage,
     VideoSubtitleRegistry Function()? subtitleRegistryFactory,
     List<String> Function()? peerTorrentRoots,
-  }) : _subtitleLanguage = subtitleLanguage ?? (() => config.subtitleLanguage),
+    bool Function()? embeddedEngineProbe,
+  }) : _embeddedEngineProbe = embeddedEngineProbe,
+       _subtitleLanguage = subtitleLanguage ?? (() => config.subtitleLanguage),
        _peerTorrentRoots = peerTorrentRoots ?? (() => config.torrentPeerRoots),
        _subtitleSource = PerUseVideoSubtitleRegistrySource(
          subtitleRegistryFactory ?? (() => buildServerSubtitleRegistry(prefs)),
@@ -80,6 +83,9 @@ class ServerDownloadHost implements HostDownloadHost {
 
   /// `torrent.peer_roots`（运行期现读：WebUI / `ctl settings set` 改完即生效）。
   final List<String> Function() _peerTorrentRoots;
+
+  /// 内置引擎可用性探测（测试接缝；默认加载原生库判断，不建 session）。
+  final bool Function()? _embeddedEngineProbe;
   final ServerPaths paths;
   final FushiDatabase db;
   final ServerPrefs prefs;
@@ -188,6 +194,47 @@ class ServerDownloadHost implements HostDownloadHost {
     return null;
   }
 
+  /// 远程引擎能力位的只读快照（`/api/pairing` 的 `torrentEngine` 用）：**不拉起**
+  /// 内置引擎——任何已配对设备探一次能力就在本机起 libtorrent 是不该有的副作用。
+  /// 引擎还没起时按类型报全套能力、运行期能力位报 null（未知；对端乐观处理，真不
+  /// 支持时命令如实回失败）。没有可用后端 → null。
+  ({Set<String> features, bool? pause, bool? detail})? peerBackendTraits() {
+    final TorrentBackend? override = backendOverride;
+    if (override != null) return _traitsOf(override);
+    switch (_resolvedBackend) {
+      case ServerConfig.torrentEngineEmbedded:
+        final EmbeddedTorrentHostClient? host = _embedded.current;
+        if (host == null) {
+          return (
+            features: kAllTorrentEngineFeatures,
+            pause: null,
+            detail: null,
+          );
+        }
+        final TorrentBackend view = host.backendView();
+        try {
+          return _traitsOf(view);
+        } finally {
+          view.close();
+        }
+      case ServerConfig.torrentEngineQbittorrent:
+        return _traitsOf(_qbBackend());
+    }
+    return null;
+  }
+
+  /// 内置引擎 session 是否已起 / 在起（诊断与测试用：能力探测不得改变它）。
+  bool get embeddedEngineActive =>
+      _embedded.current != null || _embedded.isOpening;
+
+  static ({Set<String> features, bool? pause, bool? detail}) _traitsOf(
+    TorrentBackend b,
+  ) => (
+    features: torrentEngineFeaturesOf(b),
+    pause: b is TorrentPauseBackend && b.pauseControlAvailable,
+    detail: b is TorrentDetailBackend && b.detailAvailable,
+  );
+
   TorrentBackend _qbBackend() => _backend ??= QbTorrentBackend(
     QBittorrentClient(
       baseUrl: config.qbittorrentUrl!,
@@ -237,9 +284,9 @@ class ServerDownloadHost implements HostDownloadHost {
   String? _resolveEngine() {
     if (backendOverride != null) return ServerConfig.torrentEngineEmbedded;
     final String want = config.torrentEngine;
-    final bool embeddedOk = EmbeddedTorrentHost.probeAvailable(
-      libraryPath: _torrentLibraryPath,
-    );
+    final bool embeddedOk =
+        _embeddedEngineProbe?.call() ??
+        EmbeddedTorrentHost.probeAvailable(libraryPath: _torrentLibraryPath);
     switch (want) {
       case ServerConfig.torrentEngineEmbedded:
         return embeddedOk ? ServerConfig.torrentEngineEmbedded : null;
