@@ -1261,7 +1261,7 @@ void main() {
     });
   });
 
-  // BUG-4717：只有候选都过了严格匹配门才能说「多个严格匹配」；标题对不上 /
+  // BUG-4894：只有候选都过了严格匹配门才能说「多个严格匹配」；标题对不上 /
   // 只有目录摘要的「可能」候选要说「无法确认」，不能冒充严格匹配。
   for (final bool strict in <bool>[true, false]) {
     testWidgets('confirmation hint reflects strictMatches=$strict', (

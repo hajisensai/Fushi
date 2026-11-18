@@ -12,7 +12,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:test/test.dart';
 
-/// BUG-4717：`[K-ON!][04][BIG5][x264_aac][BDrip_720P]` 的待确认列表里出现
+/// BUG-4894：`[K-ON!][04][BIG5][x264_aac][BDrip_720P]` 的待确认列表里出现
 /// 「この音とまれ!」「この世界の片隅に」「結婚指輪物語II」。
 ///
 /// 两层根因：① 解析器把块外无字的首块 `[K-ON!]` 当发布组，标题为空、集号丢失，

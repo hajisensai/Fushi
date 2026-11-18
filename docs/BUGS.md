@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4074 条。点号进各自文件。
+> 共 4201 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4717](bugs/BUG-4717-anidb-all-bracket-fuzzy-candidates.md) | ✅ | ✅ | 全方括号文件名 `[K-ON!][04][BIG5]…` 待确认列表塞满只共享 `kon` 音节的无关作品 |
-> 共 4200 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4894](bugs/BUG-4894-anidb-all-bracket-fuzzy-candidates.md) | ✅ | ✅ | 全方括号文件名 `[K-ON!][04][BIG5]…` 待确认列表塞满只共享 `kon` 音节的无关作品 |
 | [BUG-4844](bugs/BUG-4844-book-cover-undo-backup-pruned-by-source-mtime.md) | ✅ | ✅ | book-cover-undo-backup-pruned-by-source-mtime |
 | [BUG-4843](bugs/BUG-4843-linux-server-glibc-baseline.md) | ✅ | ✅ | Linux 服务端 CI 包原生库要 GLIBC_2.43，超出 README 声明的 glibc ≥ 2.35 |
 | [BUG-4842](bugs/BUG-4842-series-wall-wheel-scroll-rebake.md) | ✅ | ✅ | 视频系列墙滚轮滚动卡顿：每档滚轮把整屏封面面重新离屏烘焙 |
