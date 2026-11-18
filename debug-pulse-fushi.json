@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-18T17:31:53Z",
+ "generatedAt": "2026-11-18T17:39:53Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "2d476f9394ef3c65fa43b5d32753cc6e6067ccc3",
-  "seq": 29079
+  "sha": "e4ac6297540a66fe7e4bfbd27be4352634628193",
+  "seq": 29081
  },
  "builds": [
   {
@@ -135,9 +135,10 @@
   }
  ],
  "pending": {
-  "headSha": "2d476f9394ef3c65fa43b5d32753cc6e6067ccc3",
-  "headSeq": 29079,
+  "headSha": "e4ac6297540a66fe7e4bfbd27be4352634628193",
+  "headSeq": 29081,
   "prs": [
+   3743,
    3515
   ],
   "direct": [],
@@ -145,19 +146,19 @@
   "platforms": {
    "android": {
     "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44359263389"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44360719615"
    },
    "windows": {
     "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44359263188"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44360719471"
    },
    "macos": {
     "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44359263188"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44360719471"
    },
    "ios": {
     "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44359263188"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44360719471"
    }
   }
  },
@@ -412,6 +413,15 @@
    "mergedAt": "2026-11-18T02:57:12Z",
    "additions": 838,
    "deletions": 4,
+   "labels": []
+  },
+  "3743": {
+   "number": 3743,
+   "title": "fix(ci): 修 develop 尖端 Dart format 与书封刮削用例红",
+   "author": "W1ght",
+   "mergedAt": "2026-11-18T17:37:22Z",
+   "additions": 13,
+   "deletions": 12,
    "labels": []
   }
  }
