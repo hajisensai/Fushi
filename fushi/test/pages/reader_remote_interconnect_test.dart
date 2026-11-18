@@ -23,6 +23,7 @@ import 'package:fushi/src/pages/implementations/media_collection_grid_detail_pag
 import 'package:fushi/src/pages/implementations/series_shelf_card.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block.dart';
+import 'package:fushi/src/utils/components/section_visibility.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/remote_book_client.dart';
@@ -30,6 +31,7 @@ import 'package:fushi/src/sync/remote_library_source.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart' show JapaneseLanguage;
 
 import '../helpers/test_platform_services.dart';
 
@@ -82,8 +84,11 @@ void main() {
   // 网格；拼贴（默认布局）下同一张卡（同一 key、同一手势）的混排与点按下载另由
   // 显式切到 collage 的用例覆盖。
   late ShellContentLayout shelfLayout;
+  // 书列表 provider 被（重新）计算的次数：失效一次 = 多算一次。
+  int booksProviderLoads = 0;
 
   setUp(() async {
+    booksProviderLoads = 0;
     shelfLayout = ShellContentLayout.grid;
     useRealImporter = false;
     failNextAudiobook = false;
@@ -122,9 +127,10 @@ void main() {
   Widget wrapScope(Widget body) => ProviderScope(
     overrides: <Override>[
       appProvider.overrideWith((ref) => appModel),
-      fushiBooksProvider.overrideWith(
-        (ref, language) => Future<List<MediaItem>>.value(const <MediaItem>[]),
-      ),
+      fushiBooksProvider.overrideWith((ref, language) {
+        booksProviderLoads++;
+        return Future<List<MediaItem>>.value(const <MediaItem>[]);
+      }),
       srtBooksProvider.overrideWith(
         (ref) => Future<List<SrtBook>>.value(shelfSrtBooks),
       ),
@@ -741,13 +747,30 @@ void main() {
     );
 
     // 放行有声书下载 → 完成 → 覆盖层清除。
+    //
+    // 等的是**整个下载任务结束**，不是假导入器被调到：导入之后还有一次真 DB
+    // 写（recordRemoteAudiobookPackageDownload），覆盖层要到 _runRemoteBookDownload 的
+    // finally 才清。只等 importedAudiobooks 非空时，机器一慢（CI / 批量跑）就在
+    // 清除前断言，偶发红。
+    final InterconnectDownloadManager manager = ProviderScope.containerOf(
+      tester.element(find.byType(ReaderFushiHistoryPage, skipOffstage: false)),
+    ).read(interconnectDownloadManagerProvider);
     await tester.runAsync(() async {
       audiobookDownloadGate!.complete();
-      for (int i = 0; i < 60; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 25));
-        if (importedAudiobooks.isNotEmpty) break;
+      final Stopwatch watch = Stopwatch()..start();
+      while (watch.elapsed < const Duration(seconds: 15)) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        final Iterable<InterconnectDownloadTask> tasks = manager.tasks.values;
+        if (tasks.isNotEmpty &&
+            tasks.every(
+              (InterconnectDownloadTask task) =>
+                  task.status != InterconnectDownloadStatus.running,
+            )) {
+          break;
+        }
       }
     });
+    expect(importedAudiobooks, hasLength(1));
     await tester.pump();
 
     expect(
@@ -956,6 +979,235 @@ void main() {
       remoteClient.listRemoteBooksCalls,
       1,
       reason: 'BUG-1181/1180：TTL 内切 tab 不得再打一轮网络',
+    );
+  });
+
+  // 书架据远端态画占位卡的那个 FutureBuilder（类型参数是页面私有类，只能按名字找）。
+  final Finder remoteStateBuilder = find.byWidgetPredicate(
+    (Widget widget) =>
+        widget.runtimeType.toString() == 'FutureBuilder<_RemoteBookState?>',
+  );
+  Object? shownRemoteFuture(WidgetTester tester) =>
+      (tester.widget(remoteStateBuilder) as dynamic).future as Object?;
+
+  // 把对端那本书「落到本机」：书架的远端去重按本机 bookKey 命中，占位卡该消失。
+  Future<void> insertLocalTwin(String remoteTitle) => db.insertEpubBook(
+    EpubBooksCompanion.insert(
+      bookKey: sanitizeTtuFilename(remoteTitle),
+      title: remoteTitle,
+      epubPath: '${pathProviderDir.path}/twin.epub',
+      extractDir: pathProviderDir.path,
+      chapterCount: 1,
+      chaptersJson: '["a"]',
+      importedAt: 0,
+    ),
+  );
+
+  testWidgets('BUG-4847: 切回书架 tab 远端态没变时不换 future（书架不跟着整页重建）', (
+    WidgetTester tester,
+  ) async {
+    homeShellTabNotifier.value = HomeTab.books;
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+    final Object? before = shownRemoteFuture(tester);
+    expect(before, isNotNull, reason: '前置：首帧懒加载已发起远端取数');
+
+    homeShellTabNotifier.value = HomeTab.video;
+    await tester.pumpAndSettle();
+    homeShellTabNotifier.value = HomeTab.books;
+    await tester.pumpAndSettle();
+
+    expect(
+      identical(shownRemoteFuture(tester), before),
+      isTrue,
+      reason:
+          '远端态一字未变时切回书架不得换 future：换一次 = 整个书架网格连同全部'
+          '卡片当帧重建一遍、future 完成再重建一遍',
+    );
+    expect(
+      find.byKey(const ValueKey<String>('remote_book_card_Remote_Book')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('BUG-4847: 切回书架 tab 远端态变了就换上（BUG-992 的对账照旧生效）', (
+    WidgetTester tester,
+  ) async {
+    homeShellTabNotifier.value = HomeTab.books;
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+    final Finder remoteCard = find.byKey(
+      const ValueKey<String>('remote_book_card_Remote_Book'),
+    );
+    expect(remoteCard, findsOneWidget);
+
+    homeShellTabNotifier.value = HomeTab.video;
+    await tester.pumpAndSettle();
+    await tester.runAsync(() => insertLocalTwin('Remote Book'));
+    expect(remoteCard, findsOneWidget, reason: '前置：藏着的书架不会自己对账');
+
+    homeShellTabNotifier.value = HomeTab.books;
+    await tester.pumpAndSettle();
+    expect(remoteCard, findsNothing, reason: '切回书架必须把已落到本机的那本占位卡去掉');
+  });
+
+  testWidgets('BUG-4847: 漫画书架按漫画 tab 对账，切到书 tab 不动它', (
+    WidgetTester tester,
+  ) async {
+    remoteClient = _FakeRemoteBookClient(
+      coverPath: remoteBookCover.path,
+      mangaTitle: 'Remote Manga',
+    );
+    homeShellTabNotifier.value = HomeTab.manga;
+    await tester.pumpWidget(buildApp(mangaOnly: true));
+    await tester.pumpAndSettle();
+    final Finder remoteCard = find.byKey(
+      const ValueKey<String>('remote_book_card_Remote_Manga'),
+    );
+    expect(remoteCard, findsOneWidget);
+    final Object? before = shownRemoteFuture(tester);
+
+    await tester.runAsync(() => insertLocalTwin('Remote Manga'));
+    homeShellTabNotifier.value = HomeTab.books;
+    await tester.pumpAndSettle();
+    expect(
+      identical(shownRemoteFuture(tester), before),
+      isTrue,
+      reason: '切到书 tab 时漫画书架是藏着的那一页，不该跟着重取、重建',
+    );
+    expect(remoteCard, findsOneWidget);
+
+    homeShellTabNotifier.value = HomeTab.manga;
+    await tester.pumpAndSettle();
+    expect(remoteCard, findsNothing, reason: '切回漫画 tab 才是漫画书架对账的时机');
+  });
+
+  testWidgets('BUG-4847: 停在漫画 tab 时到达的进度写入由漫画书架当场重算，不等切到书 tab', (
+    WidgetTester tester,
+  ) async {
+    homeShellTabNotifier.value = HomeTab.manga;
+    await tester.pumpWidget(buildApp(mangaOnly: true));
+    await tester.pumpAndSettle();
+    final int before = booksProviderLoads;
+
+    await tester.runAsync(() async {
+      await db.upsertReaderPosition(
+        ReaderPositionsCompanion.insert(
+          bookUid: 'some-manga',
+          sectionIndex: 0,
+          normCharOffset: 0,
+          updatedAt: 1,
+        ),
+      );
+      // 表级变更信号经 drift 的流异步送达。
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+
+    expect(
+      booksProviderLoads,
+      before + 1,
+      reason:
+          '漫画书架正被看着时进度写入必须当场失效书列表缓存——此前两个书架都按'
+          '「书 tab 在前」判，停在漫画 tab 时只记欠账，要切到书 tab 才生效',
+    );
+  });
+
+  testWidgets('BUG-4847: 两个书架都不在前台时进度写入只记一笔，切回书架补一次', (
+    WidgetTester tester,
+  ) async {
+    homeShellTabNotifier.value = HomeTab.books;
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+    homeShellTabNotifier.value = HomeTab.video;
+    await tester.pumpAndSettle();
+    final int before = booksProviderLoads;
+
+    await tester.runAsync(() async {
+      await db.upsertReaderPosition(
+        ReaderPositionsCompanion.insert(
+          bookUid: 'some-book',
+          sectionIndex: 0,
+          normCharOffset: 0,
+          updatedAt: 1,
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+    expect(booksProviderLoads, before, reason: '藏着的书架不跟着重算整个书列表');
+
+    homeShellTabNotifier.value = HomeTab.books;
+    await tester.pumpAndSettle();
+    expect(booksProviderLoads, before + 1, reason: '切回书架时把欠着的那次补上');
+
+    homeShellTabNotifier.value = HomeTab.video;
+    await tester.pumpAndSettle();
+    homeShellTabNotifier.value = HomeTab.books;
+    await tester.pumpAndSettle();
+    expect(booksProviderLoads, before + 1, reason: '欠账只补一次');
+  });
+
+  testWidgets('BUG-4848: 藏着的书架不跟着书列表 provider 失效重建，切回才补一次', (
+    WidgetTester tester,
+  ) async {
+    homeShellTabNotifier.value = HomeTab.books;
+    final ValueNotifier<bool> visible = ValueNotifier<bool>(true);
+    addTearDown(visible.dispose);
+    await tester.pumpWidget(
+      wrapScope(
+        // 与 HomePage 藏保活 tab 同一套：Offstage + SectionVisibilityScope。
+        ValueListenableBuilder<bool>(
+          valueListenable: visible,
+          builder: (BuildContext context, bool shown, Widget? child) =>
+              Offstage(
+                offstage: !shown,
+                child: SectionVisibilityScope(visible: shown, child: child!),
+              ),
+          child: buildPage(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    // 书架 State 每真构建一次，就产出一个新的远端态 FutureBuilder 实例。
+    final Finder shelfBuild = find.byWidgetPredicate(
+      (Widget widget) =>
+          widget.runtimeType.toString() == 'FutureBuilder<_RemoteBookState?>',
+      skipOffstage: false,
+    );
+    final Widget shown = tester.widget(shelfBuild);
+
+    visible.value = false;
+    await tester.pumpAndSettle();
+    expect(
+      identical(tester.widget(shelfBuild), shown),
+      isTrue,
+      reason: '只是被藏起来，不构成重建理由',
+    );
+
+    final ProviderContainer container = ProviderScope.containerOf(
+      tester.element(find.byType(ReaderFushiHistoryPage, skipOffstage: false)),
+    );
+    final int loadsBefore = booksProviderLoads;
+    container.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
+    await tester.pumpAndSettle();
+    expect(booksProviderLoads, loadsBefore + 1, reason: '前置：书列表确实被重算了一遍');
+    expect(
+      identical(tester.widget(shelfBuild), shown),
+      isTrue,
+      reason:
+          '首页切回时会失效书列表 provider；藏着的书架此刻整页重建（实测每次 '
+          '7～30 ms、连着四次）就是用户看到的「回首页卡一下」',
+    );
+
+    visible.value = true;
+    await tester.pumpAndSettle();
+    expect(
+      identical(tester.widget(shelfBuild), shown),
+      isFalse,
+      reason: '切回可见时把欠着的那次构建补上，书架读到的是新值',
     );
   });
 

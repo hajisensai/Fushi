@@ -12,7 +12,7 @@ import 'package:fushi_engine/sync/remote_collection_adoption_service.dart';
 import 'package:fushi_engine/sync/collection_book_identity_index.dart';
 import 'package:fushi_engine/media/collections/collection_cover.dart'
     show collectionOwnCoverCandidates;
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show ValueListenable, kIsWeb;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:transparent_image/transparent_image.dart';
@@ -115,6 +115,7 @@ import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
     show fushiNotificationFromVisibleSubtree;
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
     show FushiShellActionsSlot, FushiShellTitleScope;
+import 'package:fushi/src/utils/components/section_deferred_build.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
     show ShelfCoverFrame, shelfCoverCard;
 import 'package:fushi/src/utils/components/section_swipe_navigator.dart'
@@ -443,7 +444,10 @@ class _HomeAvatarPillState extends ConsumerState<_HomeAvatarPill> {
 /// 书与阅读位置走 Riverpod provider（响应式）；视频 / 统计等本地聚合在
 /// [initState] 一次并发载入，结果按数据库实例做快照（BUG-3034），重建时首帧直接
 /// 用快照渲染。
-class HomeDashboardPage extends BaseModuleTabPage {
+///
+/// 藏在别的 tab 后面时不重建（[SectionDeferredBuild]）：书列表 / 阅读位置这些
+/// 共享 provider 被别的页面失效时，等切回首页再按新值构建一次。
+class HomeDashboardPage extends BaseModuleTabPage with SectionDeferredBuild {
   const HomeDashboardPage({
     super.key,
     required this.videoRepo,
@@ -818,12 +822,29 @@ class _HomeDashboardPageState
 
   /// 首页此刻是否真被看着（所在 tab 可见、没被别的页面盖住）：两种情况 Flutter 都会关掉这里的 TickerMode。
   /// 复习条据此只在看得见时订阅牌组计数（[homeSrsLiveProvider]）。
+  ///
+  /// 订阅 TickerMode 的 notifier 而不是 `TickerMode.valuesOf(context)`：后者让本页
+  /// 的 Element 依赖 TickerMode，每次切走 / 切回都被标脏整页重建一遍，而这里要的
+  /// 只是这一个开关。
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final bool live = TickerMode.valuesOf(context).enabled;
+    final ValueListenable<TickerModeData> values = TickerMode.getValuesNotifier(
+      context,
+    );
+    if (!identical(values, _tickerValues)) {
+      _tickerValues?.removeListener(_syncSrsLive);
+      _tickerValues = values..addListener(_syncSrsLive);
+    }
+    _syncSrsLive();
+  }
+
+  ValueListenable<TickerModeData>? _tickerValues;
+
+  void _syncSrsLive() {
+    final bool live = _tickerValues?.value.enabled ?? true;
     if (ref.read(homeSrsLiveProvider) == live) return;
-    // 依赖变化回调在构建期内，不能当场改 provider。
+    // TickerMode 的通知与依赖变化回调都在构建期内，不能当场改 provider。
     scheduleMicrotask(() {
       if (mounted) ref.read(homeSrsLiveProvider.notifier).state = live;
     });
@@ -1055,6 +1076,7 @@ class _HomeDashboardPageState
   void dispose() {
     _reloadDebounce?.cancel();
     _kavitaLifecycle?.dispose();
+    _tickerValues?.removeListener(_syncSrsLive);
     homeShellTabNotifier.removeListener(_onTabForKavita);
     _midnightReload?.cancel();
     unawaited(_dataChangeSub?.cancel());

@@ -14,6 +14,7 @@ import 'package:fushi/src/pages/implementations/home_dictionary_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
+import 'package:fushi/src/utils/components/nav_rail_brand_button.dart';
 import 'package:fushi/src/utils/misc/update_checker.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -160,7 +161,12 @@ Future<_HomeShellAppModel> _pumpHome(
           prefsRepo: prefsRepo,
           databaseDirectory: tmpDir,
         )
-        ..wireDatabaseForTesting(db);
+        ..wireDatabaseForTesting(db)
+        // 设置页的语言行读 AppModel.locales（late，生产里由 initialise 填）。
+        ..populateLocales()
+        ..populateLanguages()
+        ..populateMediaTypes()
+        ..populateMediaSources();
 
   tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
     const MethodChannel('window_manager'),
@@ -402,6 +408,144 @@ void main() {
       reason: '「已经在查词 tab 上」只有 HomePage 在栈顶时才等于「已经显示出来了」。',
     );
     expect(find.text('video-上层', skipOffstage: false), findsOneWidget);
+    await _unmount(tester);
+  });
+  // ── 查词 tab 保活（BUG-4849）──
+
+  testWidgets('查词 tab 保活：藏着时不消费待查词，切回同一页才消费', (WidgetTester tester) async {
+    final _HomeShellAppModel appModel = await _pumpHome(
+      tester,
+      dictionariesEnabled: true,
+    );
+    HomePage.debugSelectTab!(HomeTab.dictionaries);
+    await _settle(tester);
+    final State<StatefulWidget> before = tester.state(
+      find.byType(HomeDictionaryPage),
+    );
+
+    HomePage.debugSelectTab!(HomeTab.home);
+    await _settle(tester);
+    expect(find.byType(HomeDictionaryPage), findsNothing, reason: '查词页已被藏起。');
+    expect(
+      find.byType(HomeDictionaryPage, skipOffstage: false),
+      findsOneWidget,
+      reason: '查词 tab 保活：切走只是藏起，不销毁。',
+    );
+
+    // 用户在别的 tab 上时来了一条待查词（桌面取词 / 悬浮字幕点词）。
+    DesktopLookupService.instance.triggerLookup(' hiddenword ');
+    await _settle(tester);
+    expect(
+      appModel.searchedTerms,
+      isEmpty,
+      reason: '藏着的查词页不得消费待查词——那等于词被看不见的页面吞掉。',
+    );
+    expect(DesktopLookupService.instance.pendingText, 'hiddenword');
+
+    appModel.requestHomeDictionaryTab();
+    await _settle(tester);
+    expect(
+      identical(tester.state(find.byType(HomeDictionaryPage)), before),
+      isTrue,
+      reason: '切回是同一个 State。',
+    );
+    expect(appModel.searchedTerms, <String>[
+      'hiddenword',
+    ], reason: 'TODO-376：切到查词 tab 必须消费切过来之前排入的待查词。');
+    expect(DesktopLookupService.instance.pendingText, isNull);
+    await _unmount(tester);
+  });
+
+  testWidgets('查词 tab 保活：藏着时有查询也不拦系统返回', (WidgetTester tester) async {
+    await _pumpHome(tester, dictionariesEnabled: true);
+    HomePage.debugSelectTab!(HomeTab.dictionaries);
+    await _settle(tester);
+    await tester.enterText(
+      find.descendant(
+        of: find.byType(HomeDictionaryPage),
+        matching: find.byType(EditableText),
+      ),
+      'abc',
+    );
+    await _settle(tester);
+
+    bool pageCanPop() => tester
+        .widget<PopScope<dynamic>>(
+          find
+              .descendant(
+                of: find.byType(HomeDictionaryPage, skipOffstage: false),
+                matching: find.byWidgetPredicate(
+                  (Widget w) => w is PopScope,
+                  skipOffstage: false,
+                ),
+              )
+              .first,
+        )
+        .canPop;
+
+    expect(pageCanPop(), isFalse, reason: '前置：可见且有查询时返回先清查询。');
+
+    HomePage.debugSelectTab!(HomeTab.home);
+    await _settle(tester);
+    expect(
+      pageCanPop(),
+      isTrue,
+      reason: '藏起的保活查词页不能吃掉用户在别的 tab 上按的返回键（HBK-AUDIT-017）。',
+    );
+    await _unmount(tester);
+  });
+
+  // ── 进设置不卸载正文（BUG-4850）──
+  //
+  // 原先没有自绘标题栏的平台（Linux / 横屏安卓平板）宽窗进设置走「摘掉侧栏的全屏
+  // 设置」分支，正文连同全部保活页被整棵卸载。PR #3676 起设置全平台同壳（rail
+  // 常驻 + 二栏），那条分支已删；这里继续守住「进设置不卸载正文」这条不变式。
+
+  testWidgets('宽窗进设置：侧栏常驻、藏着的保活 tab 不被卸载，返回切回来源 tab', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1200, 800);
+    addTearDown(tester.view.reset);
+
+    await _pumpHome(tester, dictionariesEnabled: true);
+    HomePage.debugSelectTab!(HomeTab.dictionaries);
+    await _settle(tester);
+    expect(
+      find.byType(NavRailBrandButton),
+      findsOneWidget,
+      reason: '前置：宽窗侧栏布局。',
+    );
+    final State<StatefulWidget> before = tester.state(
+      find.byType(HomeDictionaryPage),
+    );
+
+    HomePage.debugSelectTab!(HomeTab.settings);
+    await _settle(tester);
+    expect(
+      find.byType(NavRailBrandButton),
+      findsOneWidget,
+      reason: '设置与其它 tab 同壳：主导航 rail 常驻（PR #3676）。',
+    );
+    expect(find.byType(HomeSettingsTabContent), findsOneWidget);
+    expect(
+      find.byType(HomeDictionaryPage, skipOffstage: false),
+      findsOneWidget,
+      reason:
+          '进设置不得把正文连同保活页整棵卸载——卸载 = 回来每个 tab 冷启动、'
+          '远端列表重拉、页内状态全丢。',
+    );
+
+    tester
+        .widget<HomeSettingsTabContent>(find.byType(HomeSettingsTabContent))
+        .onReturnToPreviousTab();
+    await _settle(tester);
+    expect(find.byType(NavRailBrandButton), findsOneWidget);
+    expect(
+      identical(tester.state(find.byType(HomeDictionaryPage)), before),
+      isTrue,
+      reason: '从设置回来是进设置之前的那一页（同一个 State），不是重新挂载的。',
+    );
     await _unmount(tester);
   });
 }

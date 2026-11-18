@@ -213,13 +213,38 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     }
   }
 
-  /// 非强制的远端书重载：切回书架 tab（BUG-992）、本地有声书列表变动等「可能只是本地
-  /// 变了」的信号走这里。远端清单本身经 [RemoteLibraryCache] 的 TTL 判断是否真要联网，
-  /// 所以切页面不会再变成一轮网络往返（BUG-1180）。要**强制**穿透缓存只有一个入口：
-  /// 用户显式下拉刷新（[_pullToRefreshBooks]）。
+  /// 非强制的远端书重载：本地有声书列表变动、占位卡落地成本地书等「本地确实变了」
+  /// 的事件走这里。远端清单本身经 [RemoteLibraryCache] 的 TTL 判断是否真要联网，
+  /// 所以不会变成一轮网络往返（BUG-1180）。要**强制**穿透缓存只有一个入口：
+  /// 用户显式下拉刷新（[_pullToRefreshBooks]）。切回 tab 的对账不走这里，见
+  /// [_reconcileRemoteBooksOnActivation]。
   void _refreshRemoteBooks() {
     _rebuild(() {
       _remoteBooksFuture = _loadRemoteBooks();
+    });
+  }
+
+  /// 切回本书架所在 tab 时的远端对账（BUG-992）：重算一遍远端态，**内容变了才换上**。
+  ///
+  /// BUG-4847：这里曾无条件走 [_refreshRemoteBooks]——换 future 那一下整页重建
+  /// 一遍，future 完成（TTL 内是下一帧）再整页重建一遍，书架网格连同全部卡片每次
+  /// 切回都白建两轮（实测两帧 33 + 24 ms）。绝大多数切回远端态一字未变，于是先在
+  /// 后台算完、与屏上那份比内容（[_remoteBookStateSignature]），相同就什么都不动。
+  Future<void> _reconcileRemoteBooksOnActivation() async {
+    final Future<_RemoteBookState?>? shownFuture = _remoteBooksFuture;
+    // 首次取数还没发起（书列表未就绪）：交给 build 里那条 `??=`。
+    if (shownFuture == null) return;
+    final Future<_RemoteBookState?> pending = _loadRemoteBooks();
+    final _RemoteBookState? next = await pending;
+    final _RemoteBookState? shown = await shownFuture;
+    if (!mounted) return;
+    // 对账期间别处已经换上了更新的一次取数（下拉刷新、本地变动）：以那一次为准。
+    if (!identical(_remoteBooksFuture, shownFuture)) return;
+    if (_remoteBookStateSignature(shown) == _remoteBookStateSignature(next)) {
+      return;
+    }
+    _rebuild(() {
+      _remoteBooksFuture = pending;
     });
   }
 
@@ -2292,6 +2317,48 @@ class _RemoteBookState {
   /// 任一远端清单（书 / standalone 有声书）拉取失败——下拉刷新失败提示的口径。
   bool get anyFailed => failed || srtFailed;
 }
+
+/// [_RemoteBookState] 的内容签名：两份状态签名相同 ⇔ 书架据它画出来的东西相同。
+/// 每个状态对象只算一次（[_remoteBookStateSignatures]）。
+final Expando<String> _remoteBookStateSignatures = Expando<String>();
+
+String _remoteBookStateSignature(_RemoteBookState? state) {
+  if (state == null) return '';
+  return _remoteBookStateSignatures[state] ??= jsonEncode(<Object?>[
+    state.failed,
+    state.srtFailed,
+    <Object?>[
+      for (final RemoteBookInfo book in state.books) _remoteBookSignature(book),
+    ],
+    <String, Object?>{
+      for (final MapEntry<String, RemoteBookInfo> e
+          in state.audiobookOnly.entries)
+        e.key: _remoteBookSignature(e.value),
+    },
+    <String, Object?>{
+      for (final MapEntry<String, RemoteBookInfo> e
+          in state.audiobookRefetch.entries)
+        e.key: _remoteBookSignature(e.value),
+    },
+    <Object?>[
+      for (final RemoteAudiobookInfo audiobook in state.srtAudiobooks)
+        audiobook.toJson(),
+    ],
+    <String, Object?>{
+      for (final MapEntry<String, RemoteAudiobookInfo> e
+          in state.srtRefetch.entries)
+        e.key: e.value.toJson(),
+    },
+    state.audiobookUpdates.toList()..sort(),
+  ]);
+}
+
+/// 线上字段（[RemoteBookInfo.toJson]）之外，再带上本端解析出的下载身份与封面路径。
+List<Object?> _remoteBookSignature(RemoteBookInfo book) => <Object?>[
+  book.downloadId,
+  book.coverPath,
+  book.toJson(),
+];
 
 /// 有声书下载/导入失败的内部信号：[_downloadRemoteBook] 据此与 EPUB 失败区分，
 /// 弹专用提示而非通用「下载失败」。[cause] 是底层真实异常（已记日志）。

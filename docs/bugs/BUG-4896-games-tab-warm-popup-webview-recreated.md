@@ -1,0 +1,8 @@
+## BUG-4896 · 切进 / 切出游戏 tab 每次销毁并冷建查词弹窗 WebView，卡 80～150 ms
+- **报告**：2026-11-16（用户：转来群反馈录屏「切 tab 变卡了」；录屏里切到「游戏」后指示器变形途中、离开「游戏」起步时各卡一下）
+- **真实性**：✅ 真 bug（Windows profile 构建实测复现，探针 `fushi/integration_test/home_tab_switch_perf_itest.dart`）。每次切到游戏 tab，约 0.3～0.4 s 处 UI 线程被堵 75～154 ms（探针的 2 ms 定时器看门狗量到的是事件循环被堵，不是没人要帧）；那一帧 build 本身只有 5～20 ms。timeline：切入后 ~17 ms `DictionaryPopupWebView` 的 `InAppWebView` / `CustomPlatformView` 被 build，~290 ms 平台视图就绪重建，随后是那段空档。
+  - 根因：`fushi/lib/src/pages/implementations/texthooker_page.dart:2992` 与 `:3002`（修前行号）——工作台开页即 seed 常驻热槽（`:691`，BUG-1028），`entries` 永不空，查词浮层因此一直挂在根 Overlay；而 BUG-953 为了不让浮层跨 tab 遮挡，在所在 tab 被藏起（TickerMode 关）时让 `_buildPopupOverlay` 直接返回 `SizedBox.shrink()`。两条叠在一起：每次切出游戏 tab 都把预热好的 WebView 整个卸载（Windows 上是平台线程同步 `ICoreWebView2Controller::Close()` + `DestroyWindow`），每次切回又冷建一个 WebView2 并重新装载 popup.html + JS + CSS，预热白做。
+  - 与外壳改版（#3397）的关系：改版前一个提交上同样复现（游戏 tab 阻塞 76～104 ms），不是改版引入的回归。
+- **[x] ① 已修复** — `texthooker_page.dart` `_buildPopupOverlay`：inert 时浮层留在树上、整棵 `Offstage` + `TickerMode(false)` + `ExcludeFocus`（不画、不接点击、不持焦点、停动画），祖先结构恒定、只翻参数；WebView 不再随切 tab 拆建。BUG-953 的「不跨 tab 遮挡」照旧成立。提交 `67fae6543a5`。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/texthooker_page_test.dart`「tab 藏起时查词浮层留在树上只是 Offstage，切回是同一棵子树（BUG-4896）」：藏起时浮层不在屏上但仍挂载、State 是同一个，切回复用同一棵子树（把 inert 即 `SizedBox.shrink()` 的旧写法放回去，这条红）。测试里没有热槽，`debugMountPopupOverlayForTesting` 把宿主钉住、不让 `_syncPopupOverlay` 按「栈空」摘掉。
+- **备注**：`home_dictionary_page.dart:2236` 有同一写法（inert 即 `SizedBox.shrink()`），但查词 tab 不保活、切走整页销毁，触发面只剩「被不透明路由盖住再回来」，本次未动、未实测。后续在 BUG-4849 里随查词 tab 保活一并改成了 `Offstage`。
