@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-19T01:18:01Z",
+ "generatedAt": "2026-11-19T09:12:07Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "d85a2a264e6d36174e8687044e9761780128949e",
-  "seq": 29093
+  "sha": "43888a74b698843b8e6e62ad033fa2281be79cc7",
+  "seq": 29096
  },
  "builds": [
   {
@@ -13,7 +13,7 @@
    "sha": "d85a2a264e6d36174e8687044e9761780128949e",
    "unknown": false,
    "publishedAt": "2026-11-19T01:17:45Z",
-   "testflight": false,
+   "testflight": true,
    "baseSeq": 29089,
    "prs": [
     3749,
@@ -117,7 +117,33 @@
    }
   }
  ],
- "pending": null,
+ "pending": {
+  "headSha": "43888a74b698843b8e6e62ad033fa2281be79cc7",
+  "headSeq": 29096,
+  "prs": [
+   3741
+  ],
+  "direct": [],
+  "truncated": false,
+  "platforms": {
+   "android": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44493954591"
+   },
+   "windows": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44493954619"
+   },
+   "macos": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44493954619"
+   },
+   "ios": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44493954619"
+   }
+  }
+ },
  "prs": {
   "3467": {
    "number": 3467,
@@ -189,6 +215,15 @@
    "mergedAt": "2026-11-18T08:17:01Z",
    "additions": 509,
    "deletions": 27,
+   "labels": []
+  },
+  "3741": {
+   "number": 3741,
+   "title": "fix(ci): onnxruntime 改从 NuGet 取（GitHub release 404）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-19T09:10:18Z",
+   "additions": 226,
+   "deletions": 83,
    "labels": []
   },
   "3743": {
