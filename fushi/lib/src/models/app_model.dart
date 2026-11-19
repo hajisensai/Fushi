@@ -419,6 +419,11 @@ import 'package:fushi_engine/media/discovery/import/discovery_engine_importers.d
         isDuplicateDiscoveryAudiobookContent;
 import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
 import 'package:fushi/src/sync/app_download_host.dart';
+import 'package:fushi/src/sync/interconnect_host_channel.dart'
+    show InterconnectHostRef;
+import 'package:fushi/src/sync/app_peer_torrent_engine.dart';
+import 'package:fushi/src/sync/interconnect_torrent_engine_backend.dart';
+import 'package:fushi_engine/sync/torrent_engine/host_torrent_engine.dart';
 import 'package:fushi/src/ai/agent/ai_agent_assistant_host.dart'
     show createAppAssistantHost;
 import 'package:fushi/src/sync/backup_service.dart';
@@ -1177,6 +1182,8 @@ class AppModel
     },
     downloadsFactory: () => appDownloadHost,
     subscriptionsFactory: () => appDownloadHost.subscriptions,
+    // 把本机 BT 引擎借给已配对设备（对端「下载后端 = 互联设备」）。
+    torrentEngineFactory: () => appPeerTorrentEngine,
     // AI 助手会话：手机经互联把「下载 xxx」交给本机，用本机的 AI 指派 / 资源
     // 搜索 / 下载管线办（装配与首页对话页入口同一份）；另有整场 AI 助手会话
     // （feature `agent`，工具集是本机的操作目录，记账与撤销落本机）。
@@ -8000,6 +8007,11 @@ class AppModel
   /// （见 [pruneResumeFiles] 的哨兵与 [startAnimeDownloadService] 的顺序注释）。
   Set<String>? _animeDownloadPlanIds;
 
+  /// 已配对设备借本机引擎下载时登记的种子（`/api/torrent-engine`）。下载中心起来、
+  /// 数据根定下来后才建；并进 [_animeDownloadPlanIds]，否则 resume 剪枝会删掉
+  /// 远程任务、重启后也不续传。
+  PeerTorrentLeaseStore? _peerTorrentLeases;
+
   /// 启动时用户配置的下载目录不可用（不存在且建不出/写不进）时记下原因与路径，
   /// 设置页据此显示警告。**不静默**：回退默认根这件事必须让用户看见。
   DownloadSaveRootIssue? _downloadSaveRootIssue;
@@ -8466,6 +8478,15 @@ class AppModel
       baseDir.path,
       kEmbeddedTorrentFastResumeDirName,
     );
+    // 租约跟 resume 同在下载数据根下（数据根迁移时一起搬）；必须在下面第一次
+    // 刷新计划 id 之前建好，那次刷新的保留集合才含远程任务。
+    final String leaseFile = path.join(baseDir.path, kPeerTorrentLeaseFileName);
+    if (_peerTorrentLeases?.file.path != leaseFile) {
+      _peerTorrentLeases = PeerTorrentLeaseStore(
+        File(leaseFile),
+        onChanged: _onPeerTorrentLeasesChanged,
+      );
+    }
 
     // schema v78 cut-over 必须先于两个 JSON service 的首次 tick。每个 JSON 文件
     // 事务提交后才归档；崩溃重放依靠稳定 legacy id 幂等，不移动字幕 staging。
@@ -8654,6 +8675,10 @@ class AppModel
     final QbConnectionConfig config = effectiveTorrentConfig(
       qbConnectionConfig,
     );
+    if (config.backend == QbConnectionConfig.backendFushiHost) {
+      // 选了互联设备就只认它：没选定设备 = 没配好，不悄悄退回本机引擎。
+      return config.isConfigured ? QbConnectionConfig.backendFushiHost : null;
+    }
     if (isEmbeddedTorrentReady &&
         config.backend != QbConnectionConfig.backendQbittorrent) {
       return QbConnectionConfig.backendEmbedded;
@@ -8747,6 +8772,9 @@ class AppModel
     );
     if (resolved == QbConnectionConfig.backendEmbedded) {
       return _embeddedTorrentBackendProxy(config);
+    }
+    if (resolved == QbConnectionConfig.backendFushiHost) {
+      return _remoteFushiTorrentBackend(config);
     }
     if (config.baseUrl.trim().isEmpty) return null;
     return QbTorrentBackend(
@@ -9077,6 +9105,7 @@ class AppModel
       embeddedSessionAlive: _embeddedTorrentHost != null,
       embeddedHasResumeFiles: _embeddedTorrentHasResumeFiles(),
       qbBaseUrl: config.baseUrl,
+      remoteHostSelected: config.backend == QbConnectionConfig.backendFushiHost,
     );
     return VideoFilenameOrganizeService(
       database: database,
@@ -9123,12 +9152,83 @@ class AppModel
     AnimeDownloadPlanStore store,
   ) async {
     final List<AnimeDownloadPlan> plans = await store.loadAll();
+    final PeerTorrentLeaseStore? leases = _peerTorrentLeases;
     final Set<String> ids = <String>{
       for (final AnimeDownloadPlan plan in plans) plan.id.toLowerCase(),
       ...await loadEmbeddedTorrentResumeIds(database),
+      if (leases != null) ...await leases.hashes(),
     };
     _animeDownloadPlanIds = ids;
     return ids;
+  }
+
+  /// 租约一变就并进保留集合（新租约同步并入，不等下一轮 tick 的刷新——其间的
+  /// 周期 resume 快照会把刚交来的远程任务剪掉）；撤销的租约随后台刷新移出。
+  void _onPeerTorrentLeasesChanged(Set<String> hashes) {
+    final Set<String>? ids = _animeDownloadPlanIds;
+    // null 是「还没加载过」的哨兵，不能被局部集合顶掉（见字段注释）。
+    if (ids != null) _animeDownloadPlanIds = <String>{...ids, ...hashes};
+    final AnimeDownloadPlanStore? store = _animeDownloadPlanStore;
+    if (store != null) unawaited(_refreshAnimeDownloadPlanIds(store));
+  }
+
+  /// 借给已配对设备的 BT 引擎（互联 host 的 `/api/torrent-engine`）。
+  late final AppPeerTorrentEngine appPeerTorrentEngine = AppPeerTorrentEngine(
+    leases: () => _peerTorrentLeases,
+    roots: _peerTorrentRoots,
+    backend: _peerLendableTorrentBackend,
+    traits: _peerLendableTorrentTraits,
+  );
+
+  /// 可借出的本机下载配置：本机自己借别人的引擎（`fushi_host`）时不转借，不做
+  /// 多跳链（对端绕一圈回到这里，租约、路径白名单都对不上）。
+  QbConnectionConfig? _peerLendableTorrentConfig() {
+    final QbConnectionConfig config = effectiveTorrentConfig(
+      prefsRepo.qbConnectionConfig,
+    );
+    final String resolved = config.resolveBackend(
+      embeddedSupported: _supportsEmbeddedTorrent(),
+    );
+    return resolved == QbConnectionConfig.backendFushiHost ? null : config;
+  }
+
+  TorrentBackend? _peerLendableTorrentBackend() {
+    final QbConnectionConfig? config = _peerLendableTorrentConfig();
+    return config == null ? null : _createExactTorrentBackend(config);
+  }
+
+  /// 可借出后端的只读能力（`/api/pairing` 每次探测都问）：**不建 session**。
+  /// 内置引擎的运行期能力位来自 DLL 符号探测，本就不需要 session。
+  ({String backend, bool? pause, bool? detail})? _peerLendableTorrentTraits() {
+    final QbConnectionConfig? config = _peerLendableTorrentConfig();
+    if (config == null) return null;
+    final String resolved = config.resolveBackend(
+      embeddedSupported: _supportsEmbeddedTorrent(),
+    );
+    if (resolved == QbConnectionConfig.backendEmbedded) {
+      final EmbeddedTorrentHostCapabilities? caps =
+          _embeddedTorrentHostCapabilities();
+      if (caps == null) return null;
+      return (
+        backend: resolved,
+        pause: caps.supportsPauseControl,
+        detail: caps.supportsDetailInfo,
+      );
+    }
+    if (config.baseUrl.trim().isEmpty) return null;
+    return (backend: resolved, pause: true, detail: true);
+  }
+
+  /// 远程任务允许落盘的根：本机下载根（当前 + 历史）与本地受管视频来源根——对端
+  /// 把这些目录挂过去、配一条路径映射，下载就直接进本机的库。
+  Future<List<String>> _peerTorrentRoots() async {
+    final TorrentSaveRoots? saveRoots = _embeddedTorrentSaveRoots;
+    return <String>[
+      if (saveRoots != null) ...<String>[saveRoots.active, ...saveRoots.legacy],
+      for (final MediaSourceRow source
+          in await getManagedVideoDownloadSources())
+        source.rootPath,
+    ];
   }
 
   /// 发现页新内容类型（有声书/游戏）种子完成后的入库回调：整包路径交给
@@ -9844,6 +9944,21 @@ class AppModel
     );
   }
 
+  /// 「下载后端 = 互联设备」：借那台已配对 host 的 BT 引擎。没选定设备 → null。
+  TorrentBackend? _remoteFushiTorrentBackend(QbConnectionConfig config) {
+    if (!config.isConfigured) return null;
+    return RemoteFushiTorrentBackend(
+      repo: SyncRepository(database),
+      host: InterconnectHostRef.persisted(
+        hostId: config.remoteHostId,
+        anchorUrl: config.remoteHostUrl,
+      ),
+      trackerSubscriptionService: _trackers,
+      autoAddTrackerSubscription: config.autoAddTrackerSubscription,
+      trackerSubscriptionUrl: config.trackerSubscriptionUrl,
+    );
+  }
+
   /// 后端选择：配置选内置且宿主可用 → 内置引擎的共享 session 视图；否则
   /// 外接 qBittorrent（默认 / 内置不可用时的回退）。
   TorrentBackend _torrentBackendFor(QbConnectionConfig config) {
@@ -9853,6 +9968,10 @@ class AppModel
     if (backend == QbConnectionConfig.backendEmbedded) {
       final TorrentBackend? embedded = _embeddedTorrentBackendProxy(config);
       if (embedded != null) return embedded;
+    }
+    if (backend == QbConnectionConfig.backendFushiHost) {
+      final TorrentBackend? remote = _remoteFushiTorrentBackend(config);
+      if (remote != null) return remote;
     }
     return QbTorrentBackend(
       QBittorrentClient(

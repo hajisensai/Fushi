@@ -592,6 +592,8 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     final Map<String, Object?>? mangaOcr = await _mangaOcrJobs?.capability();
     final Map<String, Object?>? jobs = await _hostJobs?.capability();
     final Map<String, Object?>? downloads = await _downloads?.capability();
+    final Map<String, Object?>? torrentEngine =
+        (await _torrentEngine?.capability())?.toJson();
     final Map<String, Object?>? subscriptions = await _subscriptions
         ?.capability();
     final Map<String, Object?>? assistant = await _assistant?.capability();
@@ -608,6 +610,8 @@ extension _FushiSyncServerPairing on FushiSyncServer {
           ...downloads,
           kHostDownloadDeleteFilesParamCapability: true,
         },
+      // 把本机 BT 引擎借给已配对设备当下载后端（`/api/torrent-engine`）。
+      if (torrentEngine != null) kTorrentEngineCapability: torrentEngine,
       if (subscriptions != null) 'subscriptions': subscriptions,
       if (assistant != null) 'assistant': assistant,
       // 查词 / 制卡 / 查词历史 / 游戏串流：这台 host 是否接了对应 service（老 host

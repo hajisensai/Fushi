@@ -135,6 +135,11 @@ import 'package:fushi/src/media/tracking/page/tracking_page.dart'
 import 'package:fushi/src/media/tracking/page/tracking_page_data.dart'
     show TrackingPageTab;
 import 'package:fushi/src/media/tracking/tracking_auto_link_notice.dart';
+import 'package:fushi/src/updates/app_update_check.dart'
+    show appUpdateChannelOf;
+import 'package:fushi/src/updates/build_listing.dart';
+import 'package:fushi/src/updates/notice_feed.dart';
+import 'package:fushi/src/updates/notice_layer.dart';
 import 'package:fushi/src/media/listening_reminder_app.dart'
     show listeningReminderProvider;
 import 'package:fushi/src/storage/data_root_migration_view.dart';
@@ -1098,6 +1103,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   bool _startupPendingMinesFlushed = false;
   bool _startupFeedbackChecked = false;
 
+  /// 服务端按构建信息下发的通知：初始化完成后的首次根 build 创建（只此一份），首帧后
+  /// [NoticeFeed.start]，[dispose] 释放。[NoticeLayer] 挂在 MaterialApp.builder 里，
+  /// 覆盖所有路由。
+  NoticeFeed? _noticeFeed;
+
   /// Notices for links media tracking made by itself ([TrackingAutoLinkNotices]).
   TrackingAutoLinkNotices? _trackingAutoLinks;
 
@@ -1827,6 +1837,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       unawaited(s.cancel());
     }
     _trackingAutoLinks?.dispose();
+    _noticeFeed?.dispose();
+    _noticeFeed = null;
     _exitRequestListener?.dispose();
     unawaited(_ctlServer?.stop());
     _ctlServer = null;
@@ -3178,6 +3190,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         PreviousExitLog.markInitialised();
         _listenRemotePush();
         _listenTrackingAutoLinks();
+        // 服务端通知：先展示缓存，再后台拉一次（不支持的平台内部直接跳过）。
+        _noticeFeed?.start();
         // 连续收听提醒：开关关着时只挂一个偏好监听，不起计时器。
         ref.read(listeningReminderProvider).start();
         unawaited(_checkFeedbackReplies());
@@ -3241,6 +3255,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     // navigation stack) and only fires on an explicit language change, not on
     // ordinary [notifyListeners] ticks.
     _scheduleInitialThemeAnimationRestore();
+    final NoticeFeed noticeFeed = _noticeFeed ??= NoticeFeed.forFushi(
+      prefs: appModel.prefsRepo,
+      executableVersion: appModel.packageInfo.version,
+      channel: () => appUpdateChannelOf(ref.read(appProvider)).name,
+    );
     final ThemeData lightTheme = appModel.theme;
     final ThemeData darkTheme = appModel.darkTheme;
     return KeyedSubtree(
@@ -3483,7 +3502,16 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                           }
                           navigation = FushiAppUiScale(
                             scale: uiScale,
-                            child: navigation,
+                            // 通知层包住整个 navigator（含全局浮层）：横幅 / 全屏层
+                            // 对压栈出去的页面同样生效；放在全局导航层之外，全屏层
+                            // 拿着焦点时按键不会冒泡到全局快捷键去翻下面的路由。
+                            // 自绘顶栏在更外层，窗口按钮始终可用。
+                            child: NoticeLayer(
+                              feed: noticeFeed,
+                              navigatorKey: appModel.navigatorKey,
+                              localDialog: takeLocalStartupNotice,
+                              child: navigation,
+                            ),
                           );
                           // 自绘顶栏的唯一门控就是这条启动闩（Windows / macOS 由
                           // `main()` 置位）：不再叠一层 `Platform.isWindows`，否则

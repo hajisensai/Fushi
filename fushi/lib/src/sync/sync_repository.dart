@@ -2268,6 +2268,10 @@ class SyncRepository {
     'usage_stats_install_id',
     'usage_stats_install_pow',
     'usage_stats_last_ping_at',
+    // 服务端通知（updates/notice_feed.dart）：缓存的是发给这台设备这份构建的通知，
+    // 已弹过的记录也只对本机有意义。
+    'notices_cache',
+    'notices_seen',
     // 书架「仅从本机移除」的远端书：语义就是只对这台设备成立，随备份漂到另一台
     // 设备会让那边的同一份远端书也莫名消失。
     'hidden_remote_books',

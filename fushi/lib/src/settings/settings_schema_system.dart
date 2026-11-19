@@ -7,6 +7,7 @@ import 'package:fushi/src/pages/implementations/changelog_page.dart';
 import 'package:fushi/src/pages/implementations/crash_dump_page.dart';
 import 'package:fushi/src/pages/implementations/debug_log_page.dart';
 import 'package:fushi/src/pages/implementations/error_log_page.dart';
+import 'package:fushi/src/pages/implementations/free_software_statement_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart';
 import 'package:fushi/src/pages/implementations/shortcut_settings_page.dart';
@@ -835,6 +836,15 @@ SettingsDestination buildSystemDestination() {
                 ),
               ),
             ),
+          ),
+          // 免费与开源声明：GPLv3、官方版本永久免费、付费了怎么办、官方渠道与条款链接。
+          SettingsNavigationItem(
+            id: 'system.free_software_statement',
+            title: t.settings_system_free_software_statement,
+            subtitle: t.settings_system_free_software_statement_hint,
+            icon: FushiIcons.verified,
+            onTap: (SettingsContext c) =>
+                pushSettingsPage(c, (_) => const FreeSoftwareStatementPage()),
           ),
           // TMDB 署名 —— **合约义务，不是可选的致谢**。
           //
