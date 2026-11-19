@@ -1,12 +1,44 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-19T00:24:37Z",
+ "generatedAt": "2026-11-19T01:11:08Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "d85a2a264e6d36174e8687044e9761780128949e",
   "seq": 29093
  },
  "builds": [
+  {
+   "seq": 29093,
+   "version": "3.4.0",
+   "sha": "d85a2a264e6d36174e8687044e9761780128949e",
+   "unknown": false,
+   "publishedAt": "2026-11-19T01:10:58Z",
+   "testflight": false,
+   "baseSeq": 29089,
+   "prs": [
+    3749,
+    3748
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44428462466"
+    },
+    "macos": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44428462466"
+    },
+    "ios": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44428462466"
+    }
+   }
+  },
   {
    "seq": 29089,
    "version": "3.4.0",
@@ -101,7 +133,8 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44381640236"
     },
     "windows": {
      "state": "ok"
@@ -115,34 +148,7 @@
    }
   }
  ],
- "pending": {
-  "headSha": "d85a2a264e6d36174e8687044e9761780128949e",
-  "headSeq": 29093,
-  "prs": [
-   3749,
-   3748
-  ],
-  "direct": [],
-  "truncated": false,
-  "platforms": {
-   "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44428462526"
-   },
-   "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44428462466"
-   },
-   "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44428462466"
-   },
-   "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44428462466"
-   }
-  }
- },
+ "pending": null,
  "prs": {
   "3467": {
    "number": 3467,
