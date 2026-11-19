@@ -592,9 +592,8 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     final Map<String, Object?>? mangaOcr = await _mangaOcrJobs?.capability();
     final Map<String, Object?>? jobs = await _hostJobs?.capability();
     final Map<String, Object?>? downloads = await _downloads?.capability();
-    final Map<String, Object?>? torrentEngine = (await _torrentEngine
-            ?.capability())
-        ?.toJson();
+    final Map<String, Object?>? torrentEngine =
+        (await _torrentEngine?.capability())?.toJson();
     final Map<String, Object?>? subscriptions = await _subscriptions
         ?.capability();
     final Map<String, Object?>? assistant = await _assistant?.capability();

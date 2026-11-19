@@ -567,7 +567,7 @@ class FushiSyncServer {
        _hostJobs = hostJobs,
        _downloads = downloads,
        _torrentEngine = torrentEngine,
-       _assistant =assistant == null ? null : HostAssistantSessions(assistant),
+       _assistant = assistant == null ? null : HostAssistantSessions(assistant),
        _subscriptions = subscriptions,
        _dictionaryMediaProvider = dictionaryMediaProvider,
        _dictionaryStylesProvider = dictionaryStylesProvider,
