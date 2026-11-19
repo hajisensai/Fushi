@@ -3,6 +3,7 @@ package app.fushi.reader
 import android.app.Notification
 import android.content.Context
 import android.os.Build
+import android.os.Bundle
 
 /**
  * 下载进度通知 → Android 16 Live Update（实时通知 / 推广常驻通知）。
@@ -43,8 +44,14 @@ internal object DownloadLiveUpdate {
         if (determinate) style.setProgress(progress)
         val builder = Notification.Builder.recoverBuilder(context, notification)
             .setStyle(style)
-            .setRequestPromotedOngoing(true)
-        shortCriticalText(progress)?.let(builder::setShortCriticalText)
+            // Builder.setRequestPromotedOngoing 是 API 36.1 才进 SDK 的便捷方法，本仓
+            // compileSdk 36 里没有；它做的就是写这个 extra，API 36 系统据此判定推广。
+            // AndroidX NotificationCompat.Builder.setRequestPromotedOngoing 同样写它。
+            .addExtras(Bundle().apply { putBoolean(EXTRA_REQUEST_PROMOTED_ONGOING, true) })
+        shortCriticalText(progress)?.let { text -> builder.setShortCriticalText(text) }
         return builder.build()
     }
+
+    /** `Notification.EXTRA_REQUEST_PROMOTED_ONGOING` 的值（API 36.1 才有该常量）。 */
+    private const val EXTRA_REQUEST_PROMOTED_ONGOING = "android.requestPromotedOngoing"
 }
