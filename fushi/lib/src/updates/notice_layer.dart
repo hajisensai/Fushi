@@ -14,11 +14,13 @@ import 'dart:async';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/updates/notice_feed.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -171,11 +173,12 @@ class _NoticeLayerState extends State<NoticeLayer> {
                 Positioned.fill(
                   child: Column(
                     children: <Widget>[
-                      AnimatedSize(
+                      FushiAnimatedSize(
                         duration: fushiMotionDuration(
                           context,
                           FushiMotion.medium,
                         ),
+                        curve: FushiMotion.standard,
                         alignment: Alignment.topCenter,
                         child: _NoticeBannerStack(notices: banners),
                       ),
@@ -284,7 +287,7 @@ class _NoticeBanner extends StatelessWidget {
                   ),
                   if (url != null) ...<Widget>[
                     const SizedBox(width: 12),
-                    Tooltip(
+                    FushiTooltip(
                       message: t.notice_open_link,
                       child: FushiIcon(FushiIcons.openInNew, color: fg),
                     ),
@@ -309,9 +312,7 @@ class _NoticeDialog extends StatelessWidget {
     final Uri? url = notice.url;
     return FushiAlertDialog(
       title: notice.title.isEmpty ? null : Text(notice.title),
-      content: notice.body.isEmpty
-          ? null
-          : SingleChildScrollView(child: Text(notice.body)),
+      content: notice.body.isEmpty ? null : Text(notice.body),
       actions: <Widget>[
         FushiDialogAction(
           label: t.notice_close,

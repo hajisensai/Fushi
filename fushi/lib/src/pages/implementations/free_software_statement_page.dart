@@ -176,7 +176,7 @@ class _LocalNoticeCard extends StatelessWidget {
           child: Material(
             key: const ValueKey<String>('free-software-local-notice'),
             color: cs.errorContainer,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: tokens.radii.cardRadius,
             clipBehavior: Clip.antiAlias,
             child: InkWell(
               onTap: () => unawaited(openNoticeUrl(text.url)),

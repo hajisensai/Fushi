@@ -16,10 +16,10 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/leaderboard/leaderboard_service.dart';
+import 'package:fushi/src/leaderboard/leaderboard_endpoint.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/updates/build_info.dart';
-import 'package:fushi/src/updates/usage_heartbeat.dart';
+import 'package:fushi/src/updates/usage_heartbeat_platform.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:http/http.dart' as http;
