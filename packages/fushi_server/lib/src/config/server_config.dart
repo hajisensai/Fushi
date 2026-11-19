@@ -150,6 +150,7 @@ class ServerConfig {
     required this.torrentEngine,
     required this.torrentLibraryPath,
     required this.torrentListen,
+    this.torrentPeerRoots = const <String>[],
     this.publicUrls = const <String>[],
     this.trustedProxies = const <String>[],
     this.p2p = false,
@@ -278,6 +279,11 @@ class ServerConfig {
   final String? torrentLibraryPath;
   final String torrentListen;
 
+  /// `torrent.peer_roots`：已配对设备借本机引擎下载（`/api/torrent-engine`）时，
+  /// 除本机下载根外还允许落盘的目录（绝对路径；典型是挂载进来的对端媒体库共享）。
+  /// 空 = 远程任务只能落在本机下载根下。
+  final List<String> torrentPeerRoots;
+
   /// 公网 / 反代 / DDNS 地址，经 `/api/host/addresses` 公布给已配对设备自动学习
   /// （docs/specs/2026-09-28-interconnect-remote-reach.md §1）。
   final List<String> publicUrls;
@@ -367,6 +373,7 @@ class ServerConfig {
     String? torrentEngine,
     String? torrentLibraryPath,
     String? torrentListen,
+    List<String>? torrentPeerRoots,
     List<String>? publicUrls,
     List<String>? trustedProxies,
     bool? p2p,
@@ -406,6 +413,7 @@ class ServerConfig {
     torrentEngine: torrentEngine ?? this.torrentEngine,
     torrentLibraryPath: torrentLibraryPath ?? this.torrentLibraryPath,
     torrentListen: torrentListen ?? this.torrentListen,
+    torrentPeerRoots: torrentPeerRoots ?? this.torrentPeerRoots,
     publicUrls: publicUrls ?? this.publicUrls,
     trustedProxies: trustedProxies ?? this.trustedProxies,
     p2p: p2p ?? this.p2p,
@@ -485,6 +493,10 @@ class ServerConfig {
       torrentEngine: engine,
       torrentLibraryPath: torrentMap['library']?.toString(),
       torrentListen: torrentMap['listen']?.toString() ?? base.torrentListen,
+      torrentPeerRoots: _absolutePaths(
+        _strings(torrentMap['peer_roots']),
+        'torrent.peer_roots',
+      ),
       publicUrls: _strings(map['public_urls']),
       trustedProxies: _trustedProxies(map['trusted_proxies']),
       p2p: _bool(map['p2p']) ?? base.p2p,
@@ -537,6 +549,26 @@ class ServerConfig {
     }
     return entries;
   }
+
+  /// `torrent.peer_roots` 这类目录清单：每条必须是绝对路径（相对路径在服务端没有
+  /// 确定含义，放行等于让远程任务落到工作目录下）。
+  static List<String> _absolutePaths(List<String> entries, String key) {
+    for (final String e in entries) {
+      if (!p.isAbsolute(e)) {
+        throw FormatException(
+          tr(
+            '$key 里只能写绝对路径，实际 "$e"',
+            '$key entries must be absolute paths, got "$e"',
+          ),
+        );
+      }
+    }
+    return entries;
+  }
+
+  /// 供 admin API 复用 [_absolutePaths] 的校验。
+  static List<String> parseTorrentPeerRoots(Object? raw) =>
+      _absolutePaths(_strings(raw), 'torrent.peerRoots');
 
   static List<String> _strings(Object? v) => <String>[
     if (v is List)
@@ -602,6 +634,12 @@ class ServerConfig {
       b.writeln('  library: ${_q(torrentLibraryPath!)}');
     }
     b.writeln('  listen: ${_q(torrentListen)}');
+    if (torrentPeerRoots.isNotEmpty) {
+      b.writeln('  peer_roots:');
+      for (final String r in torrentPeerRoots) {
+        b.writeln('    - ${_q(r)}');
+      }
+    }
     if (qbittorrentUrl != null) {
       b.writeln('qbittorrent:');
       b.writeln('  url: ${_q(qbittorrentUrl!)}');

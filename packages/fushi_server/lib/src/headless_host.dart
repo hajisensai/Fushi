@@ -72,6 +72,7 @@ import 'package:fushi_server/src/dictionary_host.dart';
 import 'package:fushi_server/src/download_host.dart';
 import 'package:fushi_server/src/host_bindings.dart';
 import 'package:fushi_server/src/lan_advertiser.dart';
+import 'package:fushi_server/src/peer_torrent_engine.dart';
 import 'package:fushi_server/src/leaderboard_link_host.dart';
 import 'package:fushi_server/src/profile_hub.dart';
 import 'package:fushi_server/src/remote_mining_host.dart';
@@ -434,6 +435,8 @@ class HeadlessHost {
       // 字幕语言现读配置（WebUI 改完经 applyConfig 进来，下一个任务的字幕阶段生效）。
       subtitleLanguage: () => config.subtitleLanguage,
       subtitleRegistryFactory: _subtitleRegistryFactory,
+      // 远程任务的落盘白名单现读配置：`ctl settings set` 改完下一条命令即生效。
+      peerTorrentRoots: () => config.torrentPeerRoots,
     );
     await downloads.start();
     _downloads = downloads;
@@ -518,6 +521,8 @@ class HeadlessHost {
             ),
             hostJobs: jobs,
             downloads: downloads,
+            // 把本机 BT 引擎借给已配对设备当下载后端（桌面端「下载后端 = 互联设备」）。
+            torrentEngine: ServerPeerTorrentEngine(downloads),
             subscriptions: downloads.subscriptions,
             securityContext: securityContext,
             hostFingerprint: _hostFingerprint,

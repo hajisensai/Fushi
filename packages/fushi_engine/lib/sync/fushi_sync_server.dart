@@ -67,6 +67,10 @@ import 'package:fushi_engine/sync/interconnect_dav_tree_listing.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
 import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
+import 'package:fushi_engine/media/torrent/remote_torrent_wire.dart'
+    show kTorrentEngineCapability, kTorrentEngineRoutePrefix;
+import 'package:fushi_engine/sync/torrent_engine/host_torrent_engine.dart';
+import 'package:fushi_engine/sync/torrent_engine/host_torrent_engine_routes.dart';
 import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
 import 'package:fushi_engine/sync/pairing/fushi_pair_link.dart';
 import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
@@ -528,6 +532,7 @@ class FushiSyncServer {
     HostJobManager? hostJobs,
     HostSubscriptionHost? subscriptions,
     HostDownloadHost? downloads,
+    HostTorrentEngine? torrentEngine,
     HostAssistantProvider? assistant,
     SecurityContext? securityContext,
     String? hostFingerprint,
@@ -561,6 +566,7 @@ class FushiSyncServer {
        _screenOcr = screenOcr,
        _hostJobs = hostJobs,
        _downloads = downloads,
+       _torrentEngine = torrentEngine,
        _assistant = assistant == null ? null : HostAssistantSessions(assistant),
        _subscriptions = subscriptions,
        _dictionaryMediaProvider = dictionaryMediaProvider,
@@ -604,6 +610,10 @@ class FushiSyncServer {
 
   /// 代下载（设计 §3.3）。null = host 不提供，`/api/downloads` 404、能力位无 `downloads`。
   final HostDownloadHost? _downloads;
+
+  /// 把本机 BT 引擎借给已配对设备当下载后端。null = host 不提供，
+  /// `/api/torrent-engine` 404、能力位无 `torrentEngine`。
+  final HostTorrentEngine? _torrentEngine;
 
   /// AI 助手会话（手机把一句话交给电脑的 AI 去办）。null = host 不提供，
   /// `/api/assistant` 404、能力位无 `assistant`。
@@ -1402,6 +1412,30 @@ class FushiSyncServer {
         return shelf.Response.notFound('Host downloads off');
       }
       return handleHostDownloadRequest(downloads, request, method, reqPath);
+    }
+    if (reqPath == kTorrentEngineRoutePrefix ||
+        reqPath.startsWith('$kTorrentEngineRoutePrefix/')) {
+      final HostTorrentEngine? engine = _torrentEngine;
+      if (engine == null) {
+        return shelf.Response.notFound('Host torrent engine off');
+      }
+      // 操纵 host 的下载引擎与磁盘：只认已配对设备自己的凭据，共享 token / legacy
+      // 行都不行（与 AI 中继、视频遥控同一道门）。
+      final String? authorization = request.headers['authorization'];
+      if (!await _validatePeerAuth(authorization)) {
+        return shelf.Response(
+          403,
+          body: '{"error":"paired_peer_required"}',
+          headers: <String, String>{'content-type': 'application/json'},
+        );
+      }
+      return handleHostTorrentEngineRequest(
+        engine,
+        request,
+        method,
+        reqPath,
+        owner: _credentialFingerprint(_basicPassword(authorization!)!),
+      );
     }
     if (reqPath == '/api/assistant' || reqPath.startsWith('/api/assistant/')) {
       final HostAssistantSessions? assistant = _assistant;
