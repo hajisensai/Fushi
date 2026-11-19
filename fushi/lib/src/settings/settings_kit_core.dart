@@ -1636,7 +1636,10 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
     final bool apple = SettingsKitStyle.of(context) == SettingsKitStyle.apple;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Color page = apple
-        ? appleColorsOf(context).groupedBackground
+        ? fushiPageBackgroundColorOr(
+            context,
+            appleColorsOf(context).groupedBackground,
+          )
         : fushiPageBackgroundColor(context);
     final bool canPop =
         widget.showBack && (ModalRoute.of(context)?.canPop ?? false);
