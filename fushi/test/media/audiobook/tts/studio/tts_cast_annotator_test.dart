@@ -4,6 +4,8 @@ import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
 import 'package:fushi_engine/tts/cast/cast_line_direction.dart';
 import 'package:fushi_engine/tts/cast/cast_line_kind.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
+import 'package:fushi_engine/tts/cast/cast_text_substitution.dart';
+import 'package:fushi_engine/tts/cast/cast_prompt_roster.dart';
 
 TtsPlanSentence _s(int section, int matchStart, String text) => TtsPlanSentence(
   section: section,
@@ -42,6 +44,140 @@ const List<TtsCastCharacter> _roster = <TtsCastCharacter>[
 final TtsCastSpeakerIndex _index = TtsCastSpeakerIndex(_roster);
 
 void main() {
+  test('角色表和前文人名都替换，回复恢复原角色及声音', () {
+    const List<TtsCastCharacter> roster = <TtsCastCharacter>[
+      TtsCastCharacter(
+        name: '旧名',
+        aliases: <String>['旧名さん'],
+        description: '穿旧服的旧名',
+        gender: 'female',
+      ),
+    ];
+    const List<CastTextSubstitution> table = <CastTextSubstitution>[
+      CastTextSubstitution(source: '旧名', replacement: '新名'),
+      CastTextSubstitution(source: '旧服', replacement: '制服'),
+    ];
+    final CastPromptRoster view = CastPromptRoster(
+      roster: roster,
+      substitutions: table,
+    );
+    final TtsCastChunk chunk = _chunk(<TtsPlanSentence>[_s(0, 0, '「旧名、旧服だ」')]);
+    final String rosterPrompt = buildTtsRosterUserPrompt(
+      chunk,
+      roster: roster,
+      substitutions: table,
+      promptRoster: view,
+    );
+    final String linesPrompt = buildTtsCastLinesUserPrompt(
+      chunk,
+      roster: roster,
+      substitutions: table,
+      promptRoster: view,
+      recent: <TtsCastRecentLine>[(speaker: '旧名', text: '旧名の旧服')],
+    );
+    for (final String prompt in <String>[rosterPrompt, linesPrompt]) {
+      expect(prompt, isNot(contains('旧名')));
+      expect(prompt, isNot(contains('旧服')));
+      expect(prompt, contains('新名さん'));
+    }
+    expect(rosterPrompt, contains('穿制服的新名'));
+    expect(linesPrompt, contains('新名: 新名の制服'));
+    final TtsCast cast = TtsCast(
+      roster: <String, TtsCastCharacter>{'旧名': roster.single},
+      voices: <String, String>{'旧名': 'voice-old'},
+    );
+    final TtsRosterParseResult rosterReply = parseTtsRosterReply(
+      '[{"op":"update","name":"新名","aliases":["新名さん"]}]',
+      promptRoster: view,
+    )!;
+    applyTtsRosterOps(cast, rosterReply.ops);
+    final TtsCastParseResult reply = parseTtsCastReply(
+      '[{"i":1,"s":"新名さん","c":0.9}]',
+      1,
+      speakers: TtsCastSpeakerIndex(cast.roster.values),
+      promptRoster: view,
+    )!;
+    expect(reply.labels.single.speaker, '旧名');
+    expect(cast.roster.keys, <String>['旧名']);
+    expect(cast.roster['旧名']!.aliases, <String>['旧名さん']);
+    expect(cast.roster['旧名']!.description, '穿旧服的旧名');
+    expect(cast.voiceOf(reply.labels.single.speaker), 'voice-old');
+  });
+
+  test('角色名多对一时按临时ID回写，不会误并角色与声音', () {
+    const List<TtsCastCharacter> roster = <TtsCastCharacter>[
+      TtsCastCharacter(name: '甲'),
+      TtsCastCharacter(name: '乙'),
+    ];
+    const List<CastTextSubstitution> table = <CastTextSubstitution>[
+      CastTextSubstitution(source: '甲', replacement: '同名'),
+      CastTextSubstitution(source: '乙', replacement: '同名'),
+    ];
+    final CastPromptRoster view = CastPromptRoster(
+      roster: roster,
+      substitutions: table,
+    );
+    final TtsCast cast = TtsCast(
+      roster: <String, TtsCastCharacter>{
+        for (final TtsCastCharacter c in roster) c.name: c,
+      },
+      voices: <String, String>{'甲': 'a', '乙': 'b'},
+    );
+    final TtsRosterParseResult ops = parseTtsRosterReply(
+      '[{"op":"update","name":"${view.speakerFor('甲')}"},{"op":"update","name":"同名"}]',
+      promptRoster: view,
+    )!;
+    applyTtsRosterOps(cast, ops.ops);
+    expect(cast.roster.keys, <String>['甲', '乙']);
+    final TtsCastParseResult reply = parseTtsCastReply(
+      '[{"i":1,"s":"${view.speakerFor('甲')}"},{"i":2,"s":"${view.speakerFor('乙')}"},{"i":3,"s":"同名"}]',
+      3,
+      speakers: TtsCastSpeakerIndex(roster),
+      promptRoster: view,
+    )!;
+    expect(reply.labels.map((TtsCastLabel l) => l.speaker), <String>[
+      '甲',
+      '乙',
+      kTtsUnknown,
+    ]);
+    expect(cast.voiceOf(reply.labels[0].speaker), 'a');
+    expect(cast.voiceOf(reply.labels[1].speaker), 'b');
+  });
+
+  test('AI 两遍正文和滚动、前后文都按表替换，不改句子身份', () {
+    const List<CastTextSubstitution> table = <CastTextSubstitution>[
+      CastTextSubstitution(source: 'セーラー服', replacement: '制服'),
+      CastTextSubstitution(source: '服', replacement: 'ふく'),
+      CastTextSubstitution(source: '少女', replacement: '人', enabled: false),
+    ];
+    final TtsPlanSentence sentence = _s(2, 80, '「セーラー服の少女」');
+    final TtsCastChunk chunk = _chunk(
+      <TtsPlanSentence>[sentence],
+      before: <TtsPlanSentence>[_s(2, 0, 'セーラー服の前文')],
+      after: <TtsPlanSentence>[_s(2, 120, 'セーラー服の後文')],
+    );
+    final String rosterPrompt = buildTtsRosterUserPrompt(
+      chunk,
+      roster: _roster,
+      substitutions: table,
+    );
+    final String linesPrompt = buildTtsCastLinesUserPrompt(
+      chunk,
+      roster: _roster,
+      substitutions: table,
+      recent: <TtsCastRecentLine>[(speaker: 'Rem', text: 'セーラー服の前の台詞')],
+    );
+    for (final String prompt in <String>[rosterPrompt, linesPrompt]) {
+      expect(prompt, isNot(contains('セーラー服')));
+      expect(prompt, contains('制服の少女'));
+      expect(prompt, isNot(contains('制ふく')));
+    }
+    expect(linesPrompt, contains('Rem: 制服の前の台詞'));
+    expect(linesPrompt, contains('context: 制服の前文'));
+    expect(linesPrompt, contains('context: 制服の後文'));
+    expect(sentence.text, '「セーラー服の少女」');
+    expect(sentence.matchStart, 80);
+  });
   group('分块', () {
     test('按句数切块，前后带参考上下文', () {
       final List<TtsCastChunk> chunks = chunkTtsCastSection(

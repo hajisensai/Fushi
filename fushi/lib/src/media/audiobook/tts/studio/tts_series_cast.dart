@@ -26,7 +26,7 @@ CastVoicingStore ttsVoicingStoreFor(AppModel appModel) => CastVoicingStore(
 );
 
 /// 制作用的计划：按系列用词替换表改写每句的显示文字（进 cue / SRT / 制卡）与送去合成
-/// 的文字（纯函数）。只在制作流程与补回里用——制作台给 AI 标注的计划照常是原文。
+/// 的文字（纯函数）。只在制作流程与补回里用；AI 标注在构造提示词时替换，不改原计划。
 /// 单句手动填写的念法（`TtsCast.sayFor`）在 `ttsSentenceSpokenText` 里优先，不过表。
 ///
 /// 送去合成的文字可能已被读音词典改写过（ruby 底本换成读音、词典规则）：两者相同时

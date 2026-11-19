@@ -834,7 +834,7 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
     }
   }
 
-  /// 系列用词替换表（只改生成端念的文字与字幕；原文 / AI 标注 / 手填念法不变）。
+  /// 系列用词替换表（用于 AI 标注文字、朗读与字幕；源文件与手填念法不变）。
   Future<void> _editSubstitutions() async {
     final SeriesCastProfile? series = _series;
     if (series == null) return;

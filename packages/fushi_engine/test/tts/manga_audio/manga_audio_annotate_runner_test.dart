@@ -7,6 +7,8 @@ import 'package:fushi_engine/tts/manga_audio/manga_audio_annotate_ledger.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_annotate_runner.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
+import 'package:fushi_engine/tts/cast/cast_text_substitution.dart';
+import 'package:fushi_engine/tts/cast/cast_prompt_roster.dart';
 import 'package:test/test.dart';
 
 MokuroBlock _block(String text) => MokuroBlock(
@@ -78,6 +80,7 @@ MangaAnnotateRunner _runner(
   Map<String, TtsCastCharacter> series = const <String, TtsCastCharacter>{},
   MokuroPayload? payload,
   String providerId = 'prov-a',
+  List<CastTextSubstitution> substitutions = const <CastTextSubstitution>[],
   Set<int> unreadableImages = const <int>{},
   List<String>? log,
 }) => MangaAnnotateRunner(
@@ -85,6 +88,7 @@ MangaAnnotateRunner _runner(
   script: script ?? MangaAudioScript(),
   ledger: ledger ?? MangaAnnotationLedger(),
   seriesRoster: series,
+  substitutions: substitutions,
   ask: ai.ask,
   imageFor: (int page) async =>
       unreadableImages.contains(page) ? null : AiChatImage(bytes: <int>[page]),
@@ -96,6 +100,188 @@ MangaAnnotateRunner _runner(
 );
 
 void main() {
+  test('三遍角色字段和上下文人名替换，旧角色声音和档案身份保留', () async {
+    const TtsCastCharacter character = TtsCastCharacter(
+      name: '旧名',
+      aliases: <String>['旧名さん'],
+      description: '旧名の旧服',
+    );
+    const List<CastTextSubstitution> table = <CastTextSubstitution>[
+      CastTextSubstitution(source: '旧名', replacement: '新名'),
+      CastTextSubstitution(source: '旧服', replacement: '制服'),
+    ];
+    final MangaAudioScript script = MangaAudioScript();
+    script.voices.byCharacter['旧名'] = 'voice-old';
+    final _FakeAi ai = _FakeAi(
+      roster: '{"characters":[{"name":"新名","aliases":["新名さん"]}]}',
+      pageReplies: <int, Object>{
+        0: _pageReply(<Map<String, Object?>>[
+          <String, Object?>{
+            'b': <int>[0],
+            's': '新名',
+            'k': 'spoken',
+          },
+        ]),
+        1: _pageReply(<Map<String, Object?>>[
+          <String, Object?>{
+            'b': <int>[0],
+            's': '新名さん',
+            'k': 'spoken',
+          },
+        ]),
+      },
+      review: '{"edits":[{"id":"p1b0","s":"新名"}]}',
+    );
+    final MangaAnnotateRunner runner = _runner(
+      ai,
+      script: script,
+      series: <String, TtsCastCharacter>{'旧名': character},
+      substitutions: table,
+    );
+    await runner.run(pages: <int>[0, 1]);
+    for (final List<AiChatMessage> call in ai.calls) {
+      expect(call.last.content, isNot(contains('旧名')));
+      expect(call.last.content, isNot(contains('旧服')));
+      expect(call.last.content, contains('新名さん'));
+      expect(call.last.content, contains('新名の制服'));
+    }
+    expect(
+      script.lines.map((MangaScriptLine l) => l.speaker),
+      everyElement('旧名'),
+    );
+    expect(script.lines.map(script.voiceFor), everyElement('voice-old'));
+    expect(script.roster.keys, <String>['旧名']);
+    expect(script.roster['旧名']!.aliases, <String>['旧名さん']);
+    expect(script.roster['旧名']!.description, '旧名の旧服');
+    expect(character.name, '旧名');
+  });
+
+  test('名字替换碰撞时逐页与复核用临时ID恢复各自声音', () async {
+    const Map<String, TtsCastCharacter> series = <String, TtsCastCharacter>{
+      '甲': TtsCastCharacter(name: '甲'),
+      '乙': TtsCastCharacter(name: '乙'),
+    };
+    const List<CastTextSubstitution> table = <CastTextSubstitution>[
+      CastTextSubstitution(source: '甲', replacement: '同名'),
+      CastTextSubstitution(source: '乙', replacement: '同名'),
+    ];
+    final CastPromptRoster view = CastPromptRoster(
+      roster: series.values,
+      substitutions: table,
+    );
+    final MangaAudioScript script = MangaAudioScript();
+    script.voices.byCharacter.addAll(<String, String>{'甲': 'a', '乙': 'b'});
+    final _FakeAi ai = _FakeAi(
+      roster: '{"characters":[]}',
+      pageReplies: <int, Object>{
+        1: _pageReply(<Map<String, Object?>>[
+          <String, Object?>{
+            'b': <int>[0],
+            's': view.speakerFor('甲'),
+            'k': 'spoken',
+          },
+          <String, Object?>{
+            'b': <int>[1],
+            's': view.speakerFor('乙'),
+            'k': 'spoken',
+          },
+        ]),
+      },
+      review:
+          '{"edits":[{"id":"p1b0","s":"${view.speakerFor('甲')}"},{"id":"p1b1","s":"${view.speakerFor('乙')}"}]}',
+    );
+    final MangaAnnotateRunner runner = _runner(
+      ai,
+      script: script,
+      series: series,
+      substitutions: table,
+    );
+    await runner.run(pages: <int>[1], withRoster: false);
+    expect(script.lines.map((MangaScriptLine l) => l.speaker), <String>[
+      '甲',
+      '乙',
+    ]);
+    expect(script.lines.map(script.voiceFor), <String>['a', 'b']);
+    expect(script.roster.keys, <String>['甲', '乙']);
+    for (final List<AiChatMessage> call in ai.calls) {
+      expect(call.last.content, isNot(contains('甲')));
+      expect(call.last.content, isNot(contains('乙')));
+      expect(call.last.content, contains(view.speakerFor('甲')));
+      expect(call.last.content, contains(view.speakerFor('乙')));
+    }
+  });
+
+  test('三遍请求的 OCR、前页与复核过表一次，手填念法保留', () async {
+    const List<CastTextSubstitution> table = <CastTextSubstitution>[
+      CastTextSubstitution(source: 'セーラー服', replacement: '制服'),
+      CastTextSubstitution(source: '服', replacement: 'ふく'),
+    ];
+    final MokuroPayload payload = MokuroPayload(
+      images: <MokuroImage>[
+        for (int i = 0; i < 2; i++)
+          MokuroImage(
+            url: 'p$i.jpg',
+            size: const MokuroSize(100, 100),
+            blocks: <MokuroBlock>[
+              MokuroBlock(
+                rectangle: const MokuroRect.fromLTRB(0, 0, 10, 10),
+                isVertical: true,
+                fontSize: 12,
+                zIndex: 0,
+                lines: <String>['セーラー', '服の子'],
+              ),
+            ],
+          ),
+      ],
+    );
+    final MangaScriptLine manual = MangaScriptLine(
+      page: 0,
+      blocks: <int>[0],
+      speaker: kTtsNarrator,
+      kind: CastLineKind.narration,
+      source: TtsCastSource.user,
+      say: 'セーラー服の手填念法',
+    );
+    final MangaAudioScript script = MangaAudioScript(
+      lines: <MangaScriptLine>[manual],
+    );
+    final String reply = _pageReply(<Map<String, Object?>>[
+      <String, Object?>{
+        'b': <int>[0],
+        's': 'NARRATOR',
+        'k': 'narration',
+      },
+    ]);
+    final _FakeAi ai = _FakeAi(
+      roster: '{"characters":[]}',
+      pageReplies: <int, Object>{0: reply, 1: reply},
+    );
+    final MangaAnnotateRunner runner = _runner(
+      ai,
+      payload: payload,
+      script: script,
+      substitutions: table,
+    );
+    await runner.run(pages: <int>[0, 1]);
+    expect(ai.calls.length, greaterThanOrEqualTo(4));
+    for (final List<AiChatMessage> call in ai.calls) {
+      final String prompt = call.last.content;
+      expect(prompt, isNot(contains('セーラー服の子')));
+      expect(prompt, isNot(contains('制ふく')));
+      expect(prompt, contains('制服の子'));
+    }
+    final String pagePrompt = ai.calls
+        .firstWhere(
+          (List<AiChatMessage> c) => c.last.content.startsWith('[page 2 of'),
+        )
+        .last
+        .content;
+    expect(pagePrompt, contains('セーラー服の手填念法'));
+    final String review = ai.calls.last.last.content;
+    expect(review, contains('セーラー服の手填念法'));
+    expect(payload.images[0].blocks.single.lines.join(), 'セーラー服の子');
+    expect(script.lines.first.say, manual.say);
+  });
   test(
     'three passes: series roster seeds, new names learned, review applied',
     () async {

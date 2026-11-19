@@ -11520,7 +11520,7 @@
   "tts_substitutions_edit": "编辑",
   "tts_substitutions_empty": "还没有替换规则",
   "tts_substitutions_enabled": "启用",
-  "tts_substitutions_hint": "只改本系列生成的朗读与字幕文字；原文与 AI 标注照常用原文，手动填写的念法不替换。",
+  "tts_substitutions_hint": "本系列的 AI 标注文字、上传页图中的对应文字、朗读和字幕都套用替换表；源文件与手动填写的念法不改。",
   "tts_substitutions_none": "无",
   "tts_substitutions_problem_duplicate": "原文写法与前面的规则重复，这条不生效",
   "tts_substitutions_problem_empty": "原文写法为空，这条不生效",

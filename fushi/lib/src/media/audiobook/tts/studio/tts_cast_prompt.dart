@@ -17,6 +17,8 @@ import 'dart:convert';
 
 import 'package:fushi_engine/tts/cast/cast_line_direction.dart';
 import 'package:fushi_engine/tts/cast/cast_line_kind.dart';
+import 'package:fushi_engine/tts/cast/cast_prompt_roster.dart';
+import 'package:fushi_engine/tts/cast/cast_text_substitution.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
 
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
@@ -268,20 +270,27 @@ String _rosterLine(TtsCastCharacter c, {required bool withDescription}) {
 String buildTtsRosterUserPrompt(
   TtsCastChunk chunk, {
   required List<TtsCastCharacter> roster,
+  List<CastTextSubstitution> substitutions = const <CastTextSubstitution>[],
+  CastPromptRoster? promptRoster,
 }) {
+  final CastPromptRoster view =
+      promptRoster ??
+      CastPromptRoster(roster: roster, substitutions: substitutions);
   final StringBuffer b = StringBuffer();
   b.writeln('[current cast list]');
   if (roster.isEmpty) {
     b.writeln('(empty)');
   } else {
-    for (final TtsCastCharacter c in roster.take(kTtsCastMaxRosterInPrompt)) {
+    for (final TtsCastCharacter c in view.characters.take(
+      kTtsCastMaxRosterInPrompt,
+    )) {
       b.writeln(_rosterLine(c, withDescription: true));
     }
   }
   b.writeln();
   b.writeln('[passage]');
   for (final TtsPlanSentence s in chunk.sentences) {
-    b.writeln(_oneLine(s.text));
+    b.writeln(_oneLine(applyCastSubstitutions(s.text, substitutions)));
   }
   b.writeln();
   b.write('Return the JSON array of operations.');
@@ -323,13 +332,21 @@ const Set<String> _kGenders = <String>{'female', 'male'};
 const Set<String> _kAges = <String>{'child', 'teen', 'adult', 'elderly'};
 
 /// 解析第一遍回复。找不到可解析的 JSON 数组返回 null。
-TtsRosterParseResult? parseTtsRosterReply(String reply) {
+TtsRosterParseResult? parseTtsRosterReply(
+  String reply, {
+  CastPromptRoster? promptRoster,
+}) {
   final List<Object?>? array = _firstJsonArray(_stripFences(reply));
   if (array == null) return null;
   final List<TtsRosterOp> ops = <TtsRosterOp>[];
   for (final Object? entry in array) {
     if (entry is! Map) continue;
-    final String? name = _cleanName(entry['name']);
+    final String? rawName = _cleanName(entry['name']);
+    final String? name = rawName == null
+        ? null
+        : promptRoster == null
+        ? rawName
+        : promptRoster.restoreName(rawName);
     if (name == null) continue;
     final TtsRosterOpKind? kind = switch (entry['op']) {
       'add' => TtsRosterOpKind.add,
@@ -339,22 +356,32 @@ TtsRosterParseResult? parseTtsRosterReply(String reply) {
     };
     if (kind == null) continue;
     if (kind == TtsRosterOpKind.merge) {
-      final String? into = _cleanName(entry['into']);
+      final String? rawInto = _cleanName(entry['into']);
+      final String? into = rawInto == null
+          ? null
+          : promptRoster == null
+          ? rawInto
+          : promptRoster.restoreName(rawInto);
       if (into == null || _normName(into) == _normName(name)) continue;
       ops.add(TtsRosterOp(kind: kind, name: name, into: into));
       continue;
     }
     final Object? rawAliases = entry['aliases'];
+    final List<String> aliases = <String>[
+      if (rawAliases is List)
+        for (final Object? a in rawAliases)
+          if (_cleanName(a) case final String alias) alias,
+    ];
+    final List<String> restoredAliases =
+        promptRoster?.restoreAliases(aliases, owner: name) ?? aliases;
     final Set<String> seen = <String>{_normName(name)};
     ops.add(
       TtsRosterOp(
         kind: kind,
         name: name,
         aliases: <String>[
-          if (rawAliases is List)
-            for (final Object? a in rawAliases)
-              if (_cleanName(a) case final String alias)
-                if (seen.add(_normName(alias))) alias,
+          for (final String alias in restoredAliases)
+            if (seen.add(_normName(alias))) alias,
         ],
         gender: _pick(entry['gender'], _kGenders),
         age: _pick(entry['age'], _kAges),
@@ -456,14 +483,21 @@ typedef TtsCastRecentLine = ({String speaker, String text});
 String buildTtsCastLinesUserPrompt(
   TtsCastChunk chunk, {
   required List<TtsCastCharacter> roster,
+  List<CastTextSubstitution> substitutions = const <CastTextSubstitution>[],
+  CastPromptRoster? promptRoster,
   required List<TtsCastRecentLine> recent,
 }) {
+  final CastPromptRoster view =
+      promptRoster ??
+      CastPromptRoster(roster: roster, substitutions: substitutions);
   final StringBuffer b = StringBuffer();
   b.writeln('[cast list]');
   if (roster.isEmpty) {
     b.writeln('(empty: use "unknown" for every dialogue line)');
   } else {
-    for (final TtsCastCharacter c in roster.take(kTtsCastMaxRosterInPrompt)) {
+    for (final TtsCastCharacter c in view.characters.take(
+      kTtsCastMaxRosterInPrompt,
+    )) {
       b.writeln(_rosterLine(c, withDescription: false));
     }
   }
@@ -471,27 +505,36 @@ String buildTtsCastLinesUserPrompt(
   if (recent.isNotEmpty) {
     b.writeln('[already attributed, just before]');
     for (final TtsCastRecentLine r in recent) {
-      final String who = r.speaker == kTtsUnknown ? 'unknown' : r.speaker;
-      b.writeln('$who: ${_oneLine(r.text)}');
+      final String speaker = view.speakerFor(r.speaker);
+      final String who = speaker == kTtsUnknown ? 'unknown' : speaker;
+      b.writeln(
+        '$who: ${_oneLine(applyCastSubstitutions(r.text, substitutions))}',
+      );
     }
     b.writeln();
   }
   if (chunk.before.isNotEmpty) {
     b.writeln('[context before]');
     for (final TtsPlanSentence s in chunk.before) {
-      b.writeln('context: ${_oneLine(s.text)}');
+      b.writeln(
+        'context: ${_oneLine(applyCastSubstitutions(s.text, substitutions))}',
+      );
     }
     b.writeln();
   }
   b.writeln('[lines to label]');
   for (int i = 0; i < chunk.sentences.length; i++) {
-    b.writeln('${i + 1}: ${_oneLine(chunk.sentences[i].text)}');
+    b.writeln(
+      '${i + 1}: ${_oneLine(applyCastSubstitutions(chunk.sentences[i].text, substitutions))}',
+    );
   }
   if (chunk.after.isNotEmpty) {
     b.writeln();
     b.writeln('[context after]');
     for (final TtsPlanSentence s in chunk.after) {
-      b.writeln('context: ${_oneLine(s.text)}');
+      b.writeln(
+        'context: ${_oneLine(applyCastSubstitutions(s.text, substitutions))}',
+      );
     }
   }
   b.writeln();
@@ -537,6 +580,7 @@ TtsCastParseResult? parseTtsCastReply(
   String reply,
   int lineCount, {
   required TtsCastSpeakerIndex speakers,
+  CastPromptRoster? promptRoster,
 }) {
   final List<Object?>? array = _firstJsonArray(_stripFences(reply));
   if (array == null) return null;
@@ -548,7 +592,9 @@ TtsCastParseResult? parseTtsCastReply(
     if (byIndex.containsKey(index)) continue;
     final String? raw = _cleanName(entry['s'], allowReserved: true);
     if (raw == null) continue;
-    final String speaker = speakers.resolve(raw);
+    final String speaker =
+        promptRoster?.canonicalName(raw) ??
+        speakers.resolve(promptRoster?.restoreSpeaker(raw) ?? raw);
     final bool narrator = speaker == kTtsNarrator;
     byIndex[index] = TtsCastLabel(
       index: index,

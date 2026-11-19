@@ -26,6 +26,7 @@ import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
 import 'package:fushi_engine/tts/cast/series_cast.dart';
+import 'package:fushi_engine/tts/cast/cast_text_substitution.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_annotate.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_annotate_ledger.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_annotate_runner.dart';
@@ -36,6 +37,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/audiobook/tts/cast/series_cast_resolver.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_stores.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_substitution_image.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/models/app_model.dart';
 
@@ -152,11 +154,13 @@ Future<({MokuroPayload payload, Map<String, String> files})?> _readVolume(
 }
 
 /// 读第 [page] 页并缩到长边 [kMangaAnnotateImageMaxSide] 的 JPEG；本来就不大于它的
-/// JPEG / PNG / WebP 原样发，其它格式转 JPEG。读不出返回 null（记 `image` 失败）。
+/// JPEG / PNG / WebP 原样发，其它格式转 JPEG。命中替换表的页先重绘文字块再发；
+/// 读不出或替换失败返回 null（记 `image` 失败），不退回含原词的页图。
 Future<AiChatImage?> loadMangaAnnotatePageImage(
   MangaAnnotateVolume volume,
-  int page,
-) async {
+  int page, {
+  List<CastTextSubstitution> substitutions = const <CastTextSubstitution>[],
+}) async {
   if (page < 0 || page >= volume.payload.images.length) return null;
   final MokuroImage image = volume.payload.images[page];
   final File? file = volume.pageFiles[image.url];
@@ -167,6 +171,18 @@ Future<AiChatImage?> loadMangaAnnotatePageImage(
     image.size.height,
   );
   try {
+    if (mangaPageHasSubstitutions(image, substitutions)) {
+      final Uint8List bytes = await file.readAsBytes();
+      final Uint8List? replaced = await prepareMangaSubstitutionImage(
+        bytes: bytes,
+        page: image,
+        substitutions: substitutions,
+        quality: _kAnnotateJpegQuality,
+      );
+      return replaced == null
+          ? null
+          : AiChatImage(bytes: replaced, mimeType: 'image/jpeg');
+    }
     final ({Uint8List bytes, String mime})? out = await Isolate.run(
       () => _preparePageImage(path, target),
     );
@@ -331,23 +347,35 @@ class MangaAudioAnnotateSession {
     AiChatClient client, {
     required bool Function() isCancelled,
     void Function(MangaAnnotatePhase phase, int done, int total)? onProgress,
-  }) => MangaAnnotateRunner(
-    payload: volume.payload,
-    script: script,
-    ledger: ledger,
-    seriesRoster: series?.roster ?? const <String, TtsCastCharacter>{},
-    ask: (List<AiChatMessage> messages) => client.complete(
-      provider: provider,
-      messages: messages,
-      maxTokens: _kAnnotateMaxTokens,
-    ),
-    imageFor: (int page) => loadMangaAnnotatePageImage(volume, page),
-    providerId: provider.id,
-    model: provider.model,
-    checkpoint: save,
-    isCancelled: isCancelled,
-    onProgress: onProgress,
-  );
+  }) {
+    // 同一次运行的文字与页图必须使用同一份表，不能因 checkpoint 后系列快照刷新而漂移。
+    final List<CastTextSubstitution> substitutions =
+        List<CastTextSubstitution>.unmodifiable(
+          series?.substitutions ?? const <CastTextSubstitution>[],
+        );
+    return MangaAnnotateRunner(
+      payload: volume.payload,
+      script: script,
+      ledger: ledger,
+      seriesRoster: series?.roster ?? const <String, TtsCastCharacter>{},
+      substitutions: substitutions,
+      ask: (List<AiChatMessage> messages) => client.complete(
+        provider: provider,
+        messages: messages,
+        maxTokens: _kAnnotateMaxTokens,
+      ),
+      imageFor: (int page) => loadMangaAnnotatePageImage(
+        volume,
+        page,
+        substitutions: substitutions,
+      ),
+      providerId: provider.id,
+      model: provider.model,
+      checkpoint: save,
+      isCancelled: isCancelled,
+      onProgress: onProgress,
+    );
+  }
 
   /// 跑一次标注。OCR 重跑过时先整卷清掉旧锚点（角色表与声音指派保留）。标完把认出
   /// 的人学回系列档案。整次中止（鉴权失败 / 取消）抛 [MangaAnnotateAbort]，已标的页

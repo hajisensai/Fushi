@@ -564,7 +564,7 @@ class MangaAudioScript {
   CastVoiceAssignment? series;
 
   /// 这卷所属系列的用词替换表（`SeriesCastProfile.substitutions`，不随本文件落盘）。
-  /// 只用于生成端实际念的文字与成品 cue 文本；AI 标注、有声书匹配照常看原文，单句
+  /// 用于生成端实际念的文字与成品 cue 文本；AI 标注由 runner 接同一张表，有声书匹配仍看原文。单句
   /// 手动填写的念法（`say`）不替换。
   List<CastTextSubstitution> substitutions = const <CastTextSubstitution>[];
 

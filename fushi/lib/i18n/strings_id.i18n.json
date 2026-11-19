@@ -11520,7 +11520,7 @@
   "tts_substitutions_edit": "Edit",
   "tts_substitutions_empty": "No substitutions yet",
   "tts_substitutions_enabled": "Enabled",
-  "tts_substitutions_hint": "Only changes what this series' generated audio says and its subtitle text. Original text and AI annotation stay as written; manually typed readings are not replaced.",
+  "tts_substitutions_hint": "Applies to AI annotation text, matching text in uploaded manga page images, generated speech and subtitles. Source files and manually typed readings stay unchanged.",
   "tts_substitutions_none": "None",
   "tts_substitutions_problem_duplicate": "Same original text as an earlier rule; this rule is ignored",
   "tts_substitutions_problem_empty": "Original text is empty; this rule is ignored",

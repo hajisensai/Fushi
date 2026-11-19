@@ -98,7 +98,7 @@ Future<MangaAudioVolume?> loadMangaAudioVolume(
   if (seriesKey != null) {
     series = await seriesCastStoreFor(appModel).load(seriesKey);
     script.series = series.voices;
-    // 系列用词替换表只作用于生成端实际念的文字 / cue 文本（不改演出稿、不进 AI）。
+    // 系列用词替换表改生成端实际念的文字 / cue 文本；AI 文字输入另在标注流程替换，不改演出稿。
     script.substitutions = series.substitutions;
     // 合集派生的系列：展示名取合集名快照（档案落盘时一并记下）。
     if (series.title.isEmpty) {

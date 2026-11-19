@@ -18,6 +18,8 @@ import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/tts/cast/series_cast.dart';
+import 'package:fushi_engine/tts/cast/cast_text_substitution.dart';
+import 'package:fushi_engine/tts/cast/cast_prompt_roster.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
 
 import 'package:fushi/src/media/audiobook/tts/cast/series_cast_resolver.dart';
@@ -121,11 +123,25 @@ Future<TtsCast> annotateTtsCast({
         bySection[section]!,
       )) {
         if (isCancelled()) throw const TtsCastAnnotateFailure('cancelled');
+        final CastPromptRoster promptRoster = CastPromptRoster(
+          roster: _orderedRoster(cast),
+          substitutions:
+              series?.substitutions ?? const <CastTextSubstitution>[],
+        );
         final String reply = await ask(
           kTtsRosterSystemPrompt,
-          buildTtsRosterUserPrompt(chunk, roster: _orderedRoster(cast)),
+          buildTtsRosterUserPrompt(
+            chunk,
+            roster: _orderedRoster(cast),
+            promptRoster: promptRoster,
+            substitutions:
+                series?.substitutions ?? const <CastTextSubstitution>[],
+          ),
         );
-        final TtsRosterParseResult? parsed = parseTtsRosterReply(reply);
+        final TtsRosterParseResult? parsed = parseTtsRosterReply(
+          reply,
+          promptRoster: promptRoster,
+        );
         if (parsed == null ||
             parsed.looping ||
             (parsed.ops.isEmpty && parsed.rawCount > 0)) {
@@ -145,6 +161,10 @@ Future<TtsCast> annotateTtsCast({
       final int section = todo[done];
       final List<TtsCastCharacter> roster = _orderedRoster(cast);
       final TtsCastSpeakerIndex index = TtsCastSpeakerIndex(roster);
+      final CastPromptRoster promptRoster = CastPromptRoster(
+        roster: roster,
+        substitutions: series?.substitutions ?? const <CastTextSubstitution>[],
+      );
       final Map<String, TtsCastLine> annotated = <String, TtsCastLine>{};
       List<TtsCastRecentLine> recent = const <TtsCastRecentLine>[];
       for (final TtsCastChunk chunk in chunkTtsCastSection(
@@ -153,12 +173,20 @@ Future<TtsCast> annotateTtsCast({
         if (isCancelled()) throw const TtsCastAnnotateFailure('cancelled');
         final String reply = await ask(
           kTtsCastLinesSystemPrompt,
-          buildTtsCastLinesUserPrompt(chunk, roster: roster, recent: recent),
+          buildTtsCastLinesUserPrompt(
+            chunk,
+            roster: roster,
+            promptRoster: promptRoster,
+            recent: recent,
+            substitutions:
+                series?.substitutions ?? const <CastTextSubstitution>[],
+          ),
         );
         final TtsCastParseResult? parsed = parseTtsCastReply(
           reply,
           chunk.sentences.length,
           speakers: index,
+          promptRoster: promptRoster,
         );
         if (parsed == null ||
             parsed.looping ||
