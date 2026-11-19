@@ -7,7 +7,7 @@
   "en",
   "zh-CN"
  ],
- "count": 878,
+ "count": 879,
  "settings": [
   {
    "key": "appearance.language",
@@ -16664,9 +16664,31 @@
       "en": "External qBittorrent",
       "zh-CN": "外接 qBittorrent"
      }
+    },
+    {
+     "value": "fushi_host",
+     "label": {
+      "en": "Paired device",
+      "zh-CN": "互联设备"
+     }
     }
    ],
    "default": "embedded"
+  },
+  {
+   "key": "downloads.cli.engine_host",
+   "kind": "value",
+   "type": "text",
+   "title": {
+    "en": "Download device",
+    "zh-CN": "下载设备"
+   },
+   "path": {
+    "en": "Downloads",
+    "zh-CN": "下载"
+   },
+   "default": "",
+   "help": "借哪台已配对设备的 BT 引擎（下载后端 = fushi_host 时生效）；填已配对 host 的地址，候选见 `config run downloads.cli.execution_host_candidates`"
   },
   {
    "key": "downloads.cli.save_root",
@@ -17593,7 +17615,7 @@
    "fields": [
     {
      "name": "profile",
-     "help": "下载后端 profile id；add 时省略 = 用当前 qB 配置推导出的 id",
+     "help": "下载后端 profile id；add 时省略 = 用当前后端（互联设备 / 外接 qB）推导出的 id",
      "required": false
     },
     {

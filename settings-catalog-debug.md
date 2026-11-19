@@ -1,6 +1,6 @@
 # Fushi settings reference
 
-> Every setting of the Fushi app (version 3.4.0), generated from the app's own settings schema on each change. 878 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
+> Every setting of the Fushi app (version 3.4.0), generated from the app's own settings schema on each change. 879 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
 
 How to read this:
 
@@ -993,7 +993,8 @@ How to read this:
 |---|---|---|---|---|---|---|---|
 | `downloads.cli.execution_host` | Download on device | 下载执行设备 |  | text |  | `local` | local = 本机；或已配对 host 的地址（候选见 `config run downloads.cli.execution_host_candidates`） |
 | `downloads.cli.execution_host_candidates` | Download on device · candidates | 下载执行设备 · candidates |  | action |  |  |  |
-| `downloads.cli.backend` | Download settings | 下载设置 |  | choice | `embedded`, `qbittorrent` | `embedded` |  |
+| `downloads.cli.backend` | Download settings | 下载设置 |  | choice | `embedded`, `qbittorrent`, `fushi_host` | `embedded` |  |
+| `downloads.cli.engine_host` | Download device | 下载设备 |  | text |  |  | 借哪台已配对设备的 BT 引擎（下载后端 = fushi_host 时生效）；填已配对 host 的地址，候选见 `config run downloads.cli.execution_host_candidates` |
 | `downloads.cli.save_root` | Download folder | 下载目录 |  | text |  |  | 下载目录绝对路径（只影响之后新增的任务）；恢复默认用 config run downloads.cli.save_root_reset |
 | `downloads.cli.save_root_reset` | Restore default | 恢复默认 |  | action |  |  |  |
 | `downloads.cli.save_root_issue` | The configured download folder is unavailable, so the default folder is being used. | 配置的下载目录当前不可用，已回退到默认目录。 |  | status |  |  |  |
