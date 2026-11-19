@@ -1,12 +1,43 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-19T09:12:39Z",
+ "generatedAt": "2026-11-19T09:50:52Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "43888a74b698843b8e6e62ad033fa2281be79cc7",
   "seq": 29096
  },
  "builds": [
+  {
+   "seq": 29096,
+   "version": "3.4.0",
+   "sha": "43888a74b698843b8e6e62ad033fa2281be79cc7",
+   "unknown": false,
+   "publishedAt": "2026-11-19T09:50:41Z",
+   "testflight": false,
+   "baseSeq": 29093,
+   "prs": [
+    3741
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44493954619"
+    },
+    "macos": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44493954619"
+    },
+    "ios": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44493954619"
+    }
+   }
+  },
   {
    "seq": 29093,
    "version": "3.4.0",
@@ -103,7 +134,8 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44393339727"
     },
     "windows": {
      "state": "ok"
@@ -117,33 +149,7 @@
    }
   }
  ],
- "pending": {
-  "headSha": "43888a74b698843b8e6e62ad033fa2281be79cc7",
-  "headSeq": 29096,
-  "prs": [
-   3741
-  ],
-  "direct": [],
-  "truncated": false,
-  "platforms": {
-   "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44493954591"
-   },
-   "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44493954619"
-   },
-   "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44493954619"
-   },
-   "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44493954619"
-   }
-  }
- },
+ "pending": null,
  "prs": {
   "3467": {
    "number": 3467,
