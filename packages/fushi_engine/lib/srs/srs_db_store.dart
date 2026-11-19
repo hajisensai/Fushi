@@ -136,6 +136,7 @@ class SrsDeckSummary {
     this.parentId,
     this.rwkvPending = false,
     this.rwkvScheduled = false,
+    this.reviewMinutesLeft,
   });
 
   final SrsDeckView deck;
@@ -149,6 +150,11 @@ class SrsDeckSummary {
   final int reviewCount;
   final SrsNewCardBudget newBudget;
   final int totalCards;
+
+  /// 牌组按分钟计每日复习上限（[SrsLimitUnit.minutes]）时今天还剩的复习分钟（内核按同一份已用量算，不足一分钟
+  /// 记一分钟，用满为 0）；其余单位 / 这一层忽略复习上限时为 null。分钟单位下 [reviewCount] 是没用满就不截的
+  /// 全部到期 / 合格卡（可能成千），界面的到期一格改显示这个剩余量（[SrsReviewCell]）。
+  final int? reviewMinutesLeft;
 
   /// 子树里有 RWKV 牌组而 RWKV 还没准备好（下载 / 回放 / 出错）：这些牌组的复习卡这一次一张没算进
   /// [reviewCount]（也不出），所以 [reviewCount] 不是「今天没有到期」。界面据此显示「准备中」，不显示 0。
@@ -3551,6 +3557,10 @@ class SrsDbStore implements SrsSync2Host {
         // 最少复习 40）。只在牌组从没写过这一项时写——复活的旧牌组保留原值。
         if (current[SrsFieldKeys.deckRwkvQueue] == null)
           SrsFieldKeys.deckRwkvQueue: SrsRwkvQueueSettings.forNewDeck.toValue(),
+        // 每日上限单位明写缺省的作答次数：没写过单位的只剩加这项设置之前的存量牌组，牌组页只提醒它们
+        // （[SrsDeckView.limitUnitSet]）。同样只在从没写过时写。
+        if (current[SrsFieldKeys.deckLimitUnit] == null)
+          SrsFieldKeys.deckLimitUnit: SrsLimitUnit.reviews.wire,
       }, current: current),
     ]);
     return id;
@@ -4453,7 +4463,7 @@ class SrsDbStore implements SrsSync2Host {
     return d;
   }
 
-  /// 内核的一行计数 `[新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 缩减原因, FSRS 到期?]` → 摘要。内核与 Dart 的牌组树
+  /// 内核的一行计数 `[新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 缩减原因, 剩余复习分钟?]` → 摘要。内核与 Dart 的牌组树
   /// 来自同一份数据；读的间隙恰好新建的牌组内核那边还没有（没有卡），按零计。
   SrsDeckSummary _summaryFrom(
     SrsDeckView d,
@@ -4466,6 +4476,7 @@ class SrsDbStore implements SrsSync2Host {
     int at(int i, int fallback) =>
         (c.length > i ? c[i] as int? : null) ?? fallback;
     final String? reason = c.length > 7 ? c[7] as String? : null;
+    final int? minutesLeft = c.length > 8 ? c[8] as int? : null;
     return SrsDeckSummary(
       deck: d,
       fullName: tree.fullName(d.id),
@@ -4488,6 +4499,7 @@ class SrsDbStore implements SrsSync2Host {
           tree.subtree(d.id).any(rwkvPendingDecks.contains),
       rwkvScheduled:
           rwkvDecks.isNotEmpty && tree.subtree(d.id).any(rwkvDecks.contains),
+      reviewMinutesLeft: minutesLeft,
     );
   }
 
@@ -4620,6 +4632,30 @@ class SrsDbStore implements SrsSync2Host {
       durationMs: row['ms']! as int,
       again: row['again']! as int,
     );
+  }
+
+  /// 每日上限单位改缺省（卡片数 → 作答次数，[kSrsLimitUnitDefaultChangedAtMs]）之前就在用、还没写过单位
+  /// （[SrsDeckView.limitUnitSet]）的牌组：自己或子树里有卡在那之前评过分（它的上限当时按卡片数计过，与上限一样按
+  /// 整棵子树算）。牌组页据此提醒一次；没写过单位但那之前没用过的（新装时的默认牌组等）从没按卡片数计过，不算。
+  Future<Set<String>> limitUnitLegacyDecks() async {
+    final SrsDeckTree tree = await deckTree();
+    final List<SrsDeckView> unset = <SrsDeckView>[
+      for (final SrsDeckView d in tree.decks)
+        if (!d.limitUnitSet) d,
+    ];
+    if (unset.isEmpty) return const <String>{};
+    final Map<String, Object?> row = (await _read(
+      'reviewed_decks',
+      <String, Object?>{'before': kSrsLimitUnitDefaultChangedAtMs},
+    )).json;
+    final Set<String> reviewed = <String>{
+      for (final Object? d in row['decks']! as List<Object?>) d! as String,
+    };
+    if (reviewed.isEmpty) return const <String>{};
+    return <String>{
+      for (final SrsDeckView d in unset)
+        if (tree.subtree(d.id).any(reviewed.contains)) d.id,
+    };
   }
 
   /// 单个牌组（含子树）的计数，与 [deckSummaries] 里同一牌组的那一行相同：

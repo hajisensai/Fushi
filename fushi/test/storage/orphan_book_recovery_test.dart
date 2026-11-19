@@ -112,7 +112,7 @@ void main() {
     );
     Directory(p.join(booksRoot, '空目录')).createSync();
     writeFile(p.join('杂物', 'readme.txt'), 'hello');
-    // 点开头的暂存目录不碰。
+    // 点开头的暂存目录不列（上个进程留下的导入残留，扫描前顺手收掉）。
     writeEpub('.tmp-1-1', 'tmp');
 
     final OrphanBookRecovery recovery = OrphanBookRecovery(
@@ -186,6 +186,33 @@ void main() {
     final OrphanBookScan again = await recovery.scan();
     expect(again.recoverable, isEmpty);
     expect(again.unrecoverable, hasLength(4));
+  });
+
+  test('BUG-4841：替换到一半留下的 .bak-* 先改回原名，再按正确的 bookKey 列出', () async {
+    // 进程死在「旧树改名 bak」与「新树就位」之间：bak 是这本书唯一的副本。
+    writeEpub('被打断的书.bak-1700000000000', '被打断的书');
+    // 新树已就位、bak 只是没删掉：bak 是多余的。
+    writeEpub('换好的书', '换好的书');
+    writeEpub('换好的书.bak-1700000000000', '换好的书');
+
+    final OrphanBookScan scan = await OrphanBookRecovery(
+      database: db,
+      booksRoot: booksRoot,
+      registrars: libraryRecoveryRegistrars(),
+    ).scan();
+
+    expect(
+      scan.recoverable.map((RecoverableOrphanBook b) => b.bookKey).toSet(),
+      <String>{'被打断的书', '换好的书'},
+      reason: '不能把 bak 当成一本名叫「xxx.bak-123」的书列出来',
+    );
+    expect(scan.unrecoverable, isEmpty);
+    expect(
+      Directory(
+        booksRoot,
+      ).listSync().map((FileSystemEntity e) => p.basename(e.path)).toSet(),
+      <String>{'被打断的书', '换好的书'},
+    );
   });
 
   test('numeric directory is accepted when the EPUB title is that number; '

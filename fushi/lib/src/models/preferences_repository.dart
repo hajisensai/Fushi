@@ -106,6 +106,7 @@ import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart'
     show VideoHdrOutputMode, kVideoHdrOutputPref;
 import 'package:fushi/src/media/video/video_control_customization.dart';
+import 'package:fushi/src/reader/eink_full_refresh.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi/src/media/manga/reader/manga_control_layout.dart';
 import 'package:fushi/src/media/video/video_remote_control_layout.dart';
@@ -2341,6 +2342,17 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 视频字幕列表是否列出**特效字幕**（歌词特效 / 屏幕字，拍板台 H7r4mf_z2n），默认
+  /// false（拍板选项 B 原文「默认隐藏特效事件」）。与 [VideoSubtitleJumpPanel] 的
+  /// 「显示特效字幕」切换钮一一对应，跨开关 / 跨重启记住；只影响列表，不影响播放画面上的字幕。
+  bool get videoSubtitleListShowEffects =>
+      getPref('video_subtitle_list_show_effects', defaultValue: false) as bool;
+
+  Future<void> setVideoSubtitleListShowEffects(bool value) async {
+    await setPref('video_subtitle_list_show_effects', value);
+    notifyListeners();
+  }
+
   /// 视频字幕列表上次打开的页签（xlzGuK5YmD）：`VideoSubtitleListFilter.name`
   /// （`all` / `favorites`），默认 `all`。下次打开列表恢复到它，跨开关 / 跨重启记住。
   String get videoSubtitleListFilter =>
@@ -2646,6 +2658,14 @@ class PreferencesRepository extends ChangeNotifier
     }
   }
 
+  /// 互联「来源共享」把 host 的服务器来源合并进本机清单（OPDS / AList / Kavita /
+  /// OpenSubsonic 各一个键）后整份写回：缓存与库同一步更新并通知监听者。只写库的话，
+  /// 整轮同步结束前设置页 setter 会拿旧缓存把刚收下的条目抹掉。
+  Future<void> replaceSharedSourceListPref(String key, String json) async {
+    await setPref(key, json);
+    notifyListeners();
+  }
+
   Future<void> setDiscoveryOpdsServers(
     Iterable<OpdsServerConfig> servers,
   ) async {
@@ -2724,6 +2744,27 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setAudiobookshelfShowInHome(bool value) async {
     await setPref('audiobookshelf_show_in_home', value);
+    notifyListeners();
+  }
+
+  /// 「模糊 NSFW 封面」：标成 NSFW 的作品（`media_nsfw_flags`、NSFW 合集成员、
+  /// 成人向游戏）封面在库页 / 继续卡等处打模糊。默认开——用户标 NSFW 就是为了
+  /// 不露封面；想临时看清再到设置里关。
+  bool get blurNsfwCovers =>
+      getPref('blur_nsfw_covers', defaultValue: true) as bool;
+
+  Future<void> setBlurNsfwCovers(bool value) async {
+    await setPref('blur_nsfw_covers', value);
+    notifyListeners();
+  }
+
+  /// 「制卡图片也模糊」：从 NSFW 作品制卡时，卡上的封面 / 页图用模糊后的副本。
+  /// 默认关：卡里存的是模糊图，以后取消也恢复不了已制的卡（拍板台 w04vrhUAaX 建议）。
+  bool get blurNsfwCardImages =>
+      getPref('blur_nsfw_card_images', defaultValue: false) as bool;
+
+  Future<void> setBlurNsfwCardImages(bool value) async {
+    await setPref('blur_nsfw_card_images', value);
     notifyListeners();
   }
 
@@ -3011,6 +3052,16 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setBrowseMovedNoticeHandled() async {
     await setPref('browse_moved_notice_handled', true);
+  }
+
+  /// 库页默认布局改成封面网格（2026-11-15）后的一次性「拼贴仍可选」提示是否已处理：
+  /// 弹过，或首次启动新版时判定本安装不需要弹（全新安装 / 显式选过布局）。默认 false。
+  bool get libraryLayoutDefaultNoticeHandled =>
+      getPref('library_layout_default_notice_handled', defaultValue: false)
+          as bool;
+
+  Future<void> setLibraryLayoutDefaultNoticeHandled() async {
+    await setPref('library_layout_default_notice_handled', true);
   }
 
   /// 弹幕样式（字号/不透明度/速度/显示区域，JSON；见 [VideoDanmakuStyle]，TODO-1376）。
@@ -5919,6 +5970,16 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 逐字歌词非当前行轻模糊（[KaraokeLyricsAppearance.blurInactive]）。默认开；关掉后
+  /// 上一句 / 下一句保持清晰（GitHub #3354）。
+  bool get musicLyricsBlurInactive =>
+      getPref('music_lyrics_blur_inactive', defaultValue: true) == true;
+
+  Future<void> setMusicLyricsBlurInactive(bool value) async {
+    await setPref('music_lyrics_blur_inactive', value);
+    notifyListeners();
+  }
+
   /// 桌面歌词（设计 §6.2：Android 悬浮窗 / Windows 置顶穿透窗）。默认关。
   bool get musicDesktopLyrics =>
       getPref('music_desktop_lyrics', defaultValue: false) == true;
@@ -7211,6 +7272,27 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// AI 库管家自动路径（spec docs/specs/2026-11-18-ai-library-curator-design.md §9，
+  /// 所有者 2026-11-18 拍板**默认开**）：入库 / 扫描后去抖跑一趟库管家（合集归属 →
+  /// 认身份 → 关系推断 → 作品层）。没给任何一步指派 AI 提供商时不发任何 AI 请求；
+  /// 开着时它取代旧的「导入后自动整理」（[libraryOrganizeAuto] 只在它关掉时生效，
+  /// 两套自动任务不会重复跑）。设备本地。
+  bool get libraryCurateAuto =>
+      getPref('library_curate_auto', defaultValue: true) as bool;
+
+  Future<void> setLibraryCurateAuto(bool value) async {
+    await setPref('library_curate_auto', value);
+    notifyListeners();
+  }
+
+  /// AI 库管家的本机状态（JSON：运行记录、增量水位、进度、抑制清单，见
+  /// `LibraryCurateState`）。设备本地，丢了只是下一趟当首趟全量跑。
+  String get libraryCurateState =>
+      getPref('library_curate_state', defaultValue: '') as String;
+
+  Future<void> setLibraryCurateState(String value) =>
+      setPref('library_curate_state', value);
+
   Future<void> setMangaOnlineCatalogEnabled(bool value) async {
     await setPref('manga_online_catalog_enabled', value);
     notifyListeners();
@@ -7466,6 +7548,43 @@ class PreferencesRepository extends ChangeNotifier
       kStudyIdleTimeoutPrefKey,
       value.clamp(readingIdleTimeoutMinutesMin, readingIdleTimeoutMinutesMax),
     );
+    notifyListeners();
+  }
+
+  /// 墨水屏「每 N 页全刷」的间隔（翻页次数，0 = 关）。与 `eink_mode` 同族：描述的是
+  /// 这台设备的屏幕，不随 Profile 快照（见 ProfileKeys 排除表）。
+  static const String einkFullRefreshIntervalKey = 'eink_full_refresh_interval';
+
+  /// 墨水屏全刷方式（[EinkFullRefreshMethod.storageKey]），设备本地。
+  static const String einkFullRefreshMethodKey = 'eink_full_refresh_method';
+
+  int get einkFullRefreshInterval => normalizeEinkFullRefreshInterval(
+    getPref(
+          einkFullRefreshIntervalKey,
+          defaultValue: kEinkFullRefreshIntervalDefault,
+        )
+        as int,
+  );
+
+  Future<void> setEinkFullRefreshInterval(int value) async {
+    await setPref(
+      einkFullRefreshIntervalKey,
+      normalizeEinkFullRefreshInterval(value),
+    );
+    notifyListeners();
+  }
+
+  EinkFullRefreshMethod get einkFullRefreshMethod =>
+      EinkFullRefreshMethod.fromStorageKey(
+        getPref(
+              einkFullRefreshMethodKey,
+              defaultValue: EinkFullRefreshMethod.auto.storageKey,
+            )
+            as String,
+      );
+
+  Future<void> setEinkFullRefreshMethod(EinkFullRefreshMethod method) async {
+    await setPref(einkFullRefreshMethodKey, method.storageKey);
     notifyListeners();
   }
 

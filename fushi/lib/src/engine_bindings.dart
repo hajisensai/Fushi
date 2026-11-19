@@ -64,9 +64,14 @@ class AppPathsEngineBridge extends EnginePaths {
   /// [tempRootDirectory]——path_provider 在 iOS 上给的是 `Library/Caches`。
   /// 新导入的副本已在落库前挪进 [pickedVideoCopiesDirectory]（基类默认项），
   /// `tmp/` 只为回收修复前落库的存量条目。
+  ///
+  /// iOS「文件」App 收件箱收进来的视频（`<documents>/inbox_imports`，拍板台
+  /// nLXhu0d7gV）同理：用户已经把它交给了 Fushi（收件箱随之清空），删库条目时一并回收，
+  /// 否则「删了视频还占储存」且用户在「文件」App 里也找不到它。
   @override
   Future<List<Directory>> pickerImportCopyDirectories() async => <Directory>[
     if (Platform.isIOS) Directory.systemTemp,
+    if (Platform.isIOS) await AppPaths.inboxImportsDirectory(),
     ...await super.pickerImportCopyDirectories(),
   ];
 }

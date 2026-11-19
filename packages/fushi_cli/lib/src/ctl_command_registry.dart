@@ -1,6 +1,7 @@
 import 'commands/book_metadata_commands.dart';
 import 'commands/data_commands.dart';
 import 'commands/disc_commands.dart';
+import 'commands/feedback_commands.dart';
 import 'commands/dictionary_commands.dart';
 import 'commands/game_commands.dart';
 import 'commands/library_commands.dart';
@@ -32,4 +33,5 @@ const List<CtlCommandGroup> kCtlCommandGroups = <CtlCommandGroup>[
   ...discCommandGroups,
   ...urlImportCommandGroups,
   ...webCommandGroups,
+  ...feedbackCommandGroups,
 ];

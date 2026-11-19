@@ -9,6 +9,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart'
+    show fushiBooksProvider;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart';
 import 'package:fushi/src/onboarding/onboarding_steps.dart';
@@ -102,6 +105,12 @@ Future<_HostAppModel> _pumpWizard(
       overrides: <Override>[
         appProvider.overrideWith((ref) => app),
         platformServicesProvider.overrideWithValue(testPlatformServices()),
+        // 欢迎页的库页布局选择卡（#3515）用书架封面作预览，订阅 fushiBooksProvider；
+        // 真库的 drift 流查询在 fake async 里既取不回来、拆树时又留下零延迟
+        // 定时器。全新安装书架本就是空的。
+        fushiBooksProvider.overrideWith(
+          (ref, language) async => const <MediaItem>[],
+        ),
       ],
       child: TranslationProvider(
         child: MaterialApp(

@@ -186,6 +186,15 @@ Future<bool> applyGalgameScrapeCandidate({
     coverDirectory: coverDirectory,
     replaceExistingCover: replaceExistingCover,
   );
+  // v155：源给了横版截图（VNDB）就落成游戏的横版背景，语义同封面（显式换、自动补）。
+  final String? backdropUrl = draft.backdropUrl;
+  if (backdropUrl != null) {
+    await repo.applyScrapedBackdrop(
+      gameId,
+      backdropUrl,
+      replaceExisting: replaceExistingCover,
+    );
+  }
   return true;
 }
 

@@ -229,10 +229,26 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '允许明文 HTTP（仅受信任局域网）': 'Allow plain HTTP (trusted LAN only)',
   '只填地址即可，添加时会自动检测站点。':
       'An address is enough; the site is detected when you add it.',
+  '解析规则（可选，JSON）': 'Parser rule (optional, JSON)',
+  '登录 Cookie（可选，仅带解析规则的站点）':
+      'Login cookie (optional, only for sites with a parser rule)',
+  '自动检测认不出的站点，可以粘贴它的解析规则（JSON）；需要登录的站再填 Cookie。':
+      "For a site that automatic detection can't recognize, paste its parser "
+      'rule (JSON); add a cookie for sites that need a login.',
+  '解析规则（JSON；清空 = 改回自动检测）':
+      'Parser rule (JSON; clear it to go back to automatic detection)',
+  '新 Cookie（留空不改）': 'New cookie (leave empty to keep the current one)',
   'Torznab（Jackett / Prowlarr）': 'Torznab (Jackett / Prowlarr)',
   '添加 indexer': 'Add indexer',
   '放弃修改': 'Discard changes',
-  '无法识别这个站点': 'Could not recognize this site',
+  '无法识别这个站点：可以粘贴它的解析规则后再添加':
+      'Could not recognize this site; paste a parser rule for it and add it again',
+  '按解析规则打不开站点的搜索页：请检查地址，或登录 Cookie 是否已过期':
+      "The parser rule couldn't load the site's search page; check the address, "
+      'or whether the login cookie has expired',
+  '按解析规则在搜索页上没解析出任何结果：请检查规则里的选择器，或站点是否需要登录 Cookie':
+      "The parser rule found no results on the site's search page; check the "
+      "rule's selectors, or whether the site needs a login cookie",
   '站点响应超时': 'The site timed out',
   '地址无效': 'Invalid address',
   '这是明文 HTTP 地址：请改用 HTTPS，或勾选「允许明文 HTTP」':
@@ -355,6 +371,18 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '本机替已配对设备保管 Fushi 复习的收藏：手机可以远程复习、制卡落到这里，Yomitan 可经下面的 AnkiConnect 往这里加卡。勾选要提供的配置文件（每门语言一份）；不勾选任何一份 = 关闭。同步位置开了端到端加密的配置文件暂不支持。':
       'This server keeps the Fushi review collection for paired devices: phones can review remotely and save cards here, and Yomitan can add cards through the AnkiConnect interface below. Tick the profiles to serve (one per language); none ticked = off. Profiles whose sync location uses end-to-end encryption are not supported yet.',
   '制卡落点': 'Where saved cards go',
+  'RWKV 模型': 'RWKV model',
+  '算法是 RWKV 的牌组用哪个模型排程（整台设备一个设置，各份配置文件共用）。换了当场生效：需要时先下载新权重，没有这一档的快照时按全部复习历史重放一次，期间这些牌组不出复习卡。':
+      'Which model schedules decks that use the RWKV algorithm (one setting for the whole device, shared by all profiles). A change applies at once: the new weights download if needed, and without a saved state for that size the whole review history is replayed once; those decks show no review cards meanwhile.',
+  '使用的模型': 'Model',
+  'Small（默认，准确度最好）': 'Small (default, most accurate)',
+  'Tiny（每张卡省约 30% 内存，准确度略差）':
+      'Tiny (about 30% less memory per card, slightly less accurate)',
+  '已切换 RWKV 模型': 'RWKV model switched',
+  'RWKV 下载权重中': 'RWKV downloading weights',
+  'RWKV 准备中': 'RWKV preparing',
+  'RWKV 就绪': 'RWKV ready',
+  'RWKV 出错': 'RWKV error',
   'AnkiConnect 兼容接口': 'AnkiConnect-compatible interface',
   '默认关闭。只监听本机时可以不设 key；监听局域网地址必须设 key。每份配置文件可以有自己的 key（Yomitan 里一门语言一个 key），共用 key 落到默认那份。':
       'Off by default. A key is optional when listening on this machine only, and required on a LAN address. Each profile can have its own key (one key per language in Yomitan); the shared key goes to the default profile.',

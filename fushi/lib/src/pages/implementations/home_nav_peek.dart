@@ -7,6 +7,8 @@ import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/sources/manga_fushi_source.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
+import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
+import 'package:fushi_engine/privacy/media_nsfw.dart';
 import 'package:fushi/src/media/video/video_library_overview.dart'
     show formatVideoPosition;
 import 'package:fushi/src/mining/galgame_library.dart';
@@ -197,6 +199,18 @@ AdaptiveNavPeek homeNavPeekFor(
   }
 }
 
+/// 速览卡封面的 NSFW 判定（拍板台 w04vrhUAaX）：「模糊 NSFW 封面」关着恒 false，
+/// 否则按加载这一刻的快照判（速览每次展开都重新加载）。
+Future<bool Function(MediaNsfwTarget target)> _loadNsfwJudge(
+  AppModel appModel,
+) async {
+  if (!appModel.prefsRepo.blurNsfwCovers) return (MediaNsfwTarget _) => false;
+  final MediaNsfwSnapshot snapshot = await MediaNsfwSnapshot.load(
+    appModel.database,
+  );
+  return (MediaNsfwTarget target) => target.resolve(snapshot);
+}
+
 Future<NavPeekFeed> _loadBooks({
   required WidgetRef ref,
   required AppModel appModel,
@@ -223,6 +237,7 @@ Future<NavPeekFeed> _loadBooks({
   }
 
   final _NavPeekCollections collections = await _loadCollections(appModel);
+  final bool Function(MediaNsfwTarget) nsfw = await _loadNsfwJudge(appModel);
   final List<MediaItem> read =
       all
           .where(
@@ -246,6 +261,7 @@ Future<NavPeekFeed> _loadBooks({
     return AdaptiveNavPeekEntry(
       title: collection ?? itemTitle,
       cover: noCover ? null : image,
+      blurCover: nsfw(MediaNsfwTarget.book(keyOf(item))),
       progress: progress,
       subtitle: _peekSubtitle(
         collection == null ? null : itemTitle,
@@ -304,6 +320,7 @@ Future<NavPeekFeed> _loadVideos({
   required BuildContext Function() contextOf,
 }) async {
   final _NavPeekCollections collections = await _loadCollections(appModel);
+  final bool Function(MediaNsfwTarget) nsfw = await _loadNsfwJudge(appModel);
   final List<VideoBookRow> rows =
       (await repo.listForShelf())
           .where((VideoBookRow v) => (v.lastPlayedAt ?? 0) > 0)
@@ -315,11 +332,18 @@ Future<NavPeekFeed> _loadVideos({
   AdaptiveNavPeekEntry entryOf(
     VideoBookRow v, {
     String? collection,
+    int? collectionId,
     ImageProvider? collectionCover,
   }) {
     final String? cover = v.coverPath;
     return AdaptiveNavPeekEntry(
       title: collection ?? v.title,
+      // 这一集自己（含所在 NSFW 合集）；用的是合集封面时再看合集。
+      blurCover:
+          nsfw(MediaNsfwTarget.video(v.bookUid)) ||
+          (collectionCover != null &&
+              collectionId != null &&
+              nsfw(MediaNsfwTarget.collection(collectionId))),
       cover:
           collectionCover ??
           (cover == null || cover.isEmpty || !File(cover).existsSync()
@@ -372,6 +396,7 @@ Future<NavPeekFeed> _loadVideos({
     entry: entryOf(
       unit.item,
       collection: unit.collectionName,
+      collectionId: unit.collectionId,
       collectionCover: unit.collectionId == null
           ? null
           : covers[unit.collectionId],
@@ -390,6 +415,7 @@ Future<NavPeekFeed> _loadGames({
   final List<GalgameEntry> games = appModel.galgameRepo.games.isNotEmpty
       ? appModel.galgameRepo.games
       : await appModel.galgameRepo.load();
+  final bool Function(MediaNsfwTarget) nsfw = await _loadNsfwJudge(appModel);
   final List<GalgameEntry> played =
       games.where((GalgameEntry g) => g.lastPlayedMs > 0).toList()..sort(
         (GalgameEntry a, GalgameEntry b) => b.lastPlayedMs - a.lastPlayedMs,
@@ -403,6 +429,7 @@ Future<NavPeekFeed> _loadGames({
         cover: cover == null || cover.isEmpty || !File(cover).existsSync()
             ? null
             : resolveMediaCoverImage(kind: MediaKind.game, localPath: cover),
+        blurCover: nsfw(MediaNsfwTarget.game(g.id, adult: g.isNsfw)),
         onOpen: open,
       ),
     );
@@ -422,10 +449,12 @@ String? srsNavPeekCountsLabel({
   required int learnCount,
   required int reviewCount,
   bool reviewPending = false,
+  int? reviewMinutesLeft,
 }) {
   final String? review = SrsReviewCell(
     due: reviewCount,
     pending: reviewPending,
+    minutesLeft: reviewMinutesLeft,
   ).label(omitZero: true);
   final List<String> parts = <String>[
     if (newCount > 0) '${t.srs_count_new} $newCount',
@@ -458,6 +487,7 @@ Future<AdaptiveNavPeekData> _loadSrsDecks({
             learnCount: deck.learnCount,
             reviewCount: deck.reviewCount,
             reviewPending: deck.rwkvPending,
+            reviewMinutesLeft: deck.reviewMinutesLeft,
           ) ??
           t.home_srs_panel_done,
       // 有待复习的卡就直接进这个牌组的复习页（同首页复习条）；今天已复习完
@@ -507,20 +537,8 @@ Future<AdaptiveNavPeekData> _loadDownloads({
         (VideoDownloadJobRow a, VideoDownloadJobRow b) =>
             b.updatedAt - a.updatedAt,
       );
-  AdaptiveNavPeekEntry entryOf(VideoDownloadJobRow job) {
-    final String? cover = job.coverUrl;
-    final double progress = job.lifecycle == VideoDownloadJobLifecycle.completed
-        ? 1
-        : job.stageProgress.clamp(0.0, 1.0).toDouble();
-    return AdaptiveNavPeekEntry(
-      title: job.title,
-      cover: cover == null || cover.isEmpty ? null : AppHttpImage(cover),
-      progress: progress,
-      subtitle: '${(progress * 100).round()}%',
-      onOpen: openDownloads,
-    );
-  }
-
+  final AdaptiveNavPeekEntry Function(VideoDownloadJobRow job) entryOf =
+      navPeekDownloadEntry(openDownloads);
   final VideoDownloadJobRow? resume = jobs
       .where(
         (VideoDownloadJobRow j) =>
@@ -529,12 +547,80 @@ Future<AdaptiveNavPeekData> _loadDownloads({
       .firstOrNull;
   return AdaptiveNavPeekData(
     resume: resume == null ? null : entryOf(resume),
+    resumeLabel: t.download_task_lifecycle_active,
+    recentLabel: t.nav_downloads,
+    summary: navPeekDownloadSummary(jobs),
     recent: jobs
         .where((VideoDownloadJobRow j) => !identical(j, resume))
         .take(_kPeekRecentCount)
         .map(entryOf)
         .toList(),
   );
+}
+
+/// 下载任务的速览条目：标题是作品名，副行是具体资源名（同一部作品的不同集 /
+/// 版本靠它区分——只有作品名时两条任务看起来是同一项），尾部状态签是进行中的
+/// 百分比或生命周期（已完成 / 需要处理 / 已失败 / 已取消）。
+AdaptiveNavPeekEntry Function(VideoDownloadJobRow job) navPeekDownloadEntry(
+  VoidCallback openDownloads,
+) => (VideoDownloadJobRow job) {
+  final String? cover = job.coverUrl;
+  final bool done = job.lifecycle == VideoDownloadJobLifecycle.completed;
+  final double progress = done
+      ? 1
+      : job.stageProgress.clamp(0.0, 1.0).toDouble();
+  final String? resource = job.resourceTitle?.trim();
+  final (
+    String status,
+    AdaptiveNavPeekStatusTone tone,
+  ) = switch (job.lifecycle) {
+    VideoDownloadJobLifecycle.completed => (
+      t.download_task_lifecycle_completed,
+      AdaptiveNavPeekStatusTone.done,
+    ),
+    VideoDownloadJobLifecycle.needsAttention => (
+      t.download_task_lifecycle_needs_attention,
+      AdaptiveNavPeekStatusTone.attention,
+    ),
+    VideoDownloadJobLifecycle.failed => (
+      t.download_task_lifecycle_failed,
+      AdaptiveNavPeekStatusTone.error,
+    ),
+    VideoDownloadJobLifecycle.cancelled => (
+      t.download_task_lifecycle_cancelled,
+      AdaptiveNavPeekStatusTone.neutral,
+    ),
+    _ => ('${(progress * 100).round()}%', AdaptiveNavPeekStatusTone.active),
+  };
+  return AdaptiveNavPeekEntry(
+    title: job.title,
+    cover: cover == null || cover.isEmpty ? null : AppHttpImage(cover),
+    progress: progress,
+    subtitle: resource == null || resource.isEmpty
+        ? (job.year == null ? null : '${job.year}')
+        : resource,
+    status: status,
+    statusTone: tone,
+    onOpen: openDownloads,
+  );
+};
+
+/// 下载速览页头的概况：「活动 2 · 完成 35」，需要处理 / 失败的有才拼上。
+String? navPeekDownloadSummary(List<VideoDownloadJobRow> jobs) {
+  int count(String lifecycle) =>
+      jobs.where((VideoDownloadJobRow j) => j.lifecycle == lifecycle).length;
+  final int active = count(VideoDownloadJobLifecycle.active);
+  final int attention =
+      count(VideoDownloadJobLifecycle.needsAttention) +
+      count(VideoDownloadJobLifecycle.failed);
+  final int completed = count(VideoDownloadJobLifecycle.completed);
+  if (jobs.isEmpty) return null;
+  return <String>[
+    t.download_summary_active(n: active),
+    if (attention > 0)
+      '${t.download_task_lifecycle_needs_attention} $attention',
+    t.download_summary_completed(n: completed),
+  ].join(' · ');
 }
 
 /// 速览里的一个展示单元：散条目，或一个合集（由它最近的那个成员 [item] 代表，

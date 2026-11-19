@@ -12,7 +12,7 @@ part of '../video_fushi_page.dart';
 ///
 /// 探测（[_detectHlsVariantsForLoad]）在常规载入后异步 fetch master 内容判定；仅网络
 /// `.m3u8`/`.m3u` 直链才 fetch（避开 YouTube/googlevideo 单次 token URL），best-effort：
-/// 失败/超时/非 master 都静默降级为「无画质菜单」，绝不影响播放。
+/// 失败/超时/非 master 都降级为「无画质菜单」，绝不影响播放；失败只落 error_log，不提示。
 extension _VideoQuality on _VideoFushiPageState {
   /// 载入后探测当前流是否为 HLS master（多档画质），填充画质菜单状态。
   ///
@@ -31,27 +31,31 @@ extension _VideoQuality on _VideoFushiPageState {
     if (mediaUri == null || !_looksLikeM3u8Url(mediaUri)) return;
     final Uri? uri = Uri.tryParse(mediaUri);
     if (uri == null || !(uri.isScheme('http') || uri.isScheme('https'))) return;
+    final List<HlsVariant> variants;
     try {
-      final Map<String, String> headers = _streamHttpHeaderFields;
-      final http.Response resp = await http
-          .get(uri, headers: headers.isEmpty ? null : headers)
-          .timeout(const Duration(seconds: 8));
-      if (resp.statusCode != 200) return;
-      final String content = resp.body;
-      if (!isHlsMasterPlaylist(content)) return;
-      final List<HlsVariant> variants = sortedHlsVariantsByQualityDesc(
-        parseM3u8Master(content: content, baseUrl: mediaUri),
+      // 走应用代理出口（BUG-4805）：与播放内核同一条出站路径。
+      variants = await fetchHlsMasterVariants(
+        uri,
+        headers: _streamHttpHeaderFields,
       );
-      if (variants.isEmpty) return;
-      if (seq != _hlsDetectSeq || !mounted) return; // 探测期间换片：丢弃。
-      _rebuild(() {
-        _hlsMasterUri = mediaUri;
-        _hlsVariants = variants;
-        _selectedHlsVariantIndex = -1; // 默认自动（master ABR）。
-      });
-    } catch (_) {
-      // best-effort：网络失败 / 超时 / 解析异常 → 无画质菜单，不影响播放。
+    } on Object catch (error) {
+      // best-effort：网络失败 / 超时 / 非 200 → 无画质菜单，不影响播放、不提示用户；
+      // 但要留痕，否则「画质菜单没出来」无从排查。只记 host 与异常类型——URL 的
+      // query 里常带播放 token，异常正文（ClientException）会把整条 URL 带出来。
+      ErrorLogService.instance.log(
+        'VideoFushi.hlsQualityProbe',
+        'HLS quality probe failed for ${uri.host}: '
+            '${error is HlsMasterProbeStatusException ? error : error.runtimeType}',
+      );
+      return;
     }
+    if (variants.isEmpty) return;
+    if (seq != _hlsDetectSeq || !mounted) return; // 探测期间换片：丢弃。
+    _rebuild(() {
+      _hlsMasterUri = mediaUri;
+      _hlsVariants = variants;
+      _selectedHlsVariantIndex = -1; // 默认自动（master ABR）。
+    });
   }
 
   /// URI 路径是否以 `.m3u8` / `.m3u` 结尾（忽略 query）。只对这类直链探测 HLS，避开

@@ -8,6 +8,7 @@ import 'package:fushi/src/models/dictionary_repository.dart'
     show RemoteDictionary;
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/dictionary_dialog_page.dart';
+import 'package:fushi/src/pages/implementations/dictionary_import_surface.dart';
 import 'package:fushi/src/pages/implementations/dictionary_manager_panels.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -477,15 +478,21 @@ void main() {
       dictionaries: <Dictionary>[],
       platform: TargetPlatform.android,
     );
-    expect(find.byType(DictionaryManagerEmptyState), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey<String>('dict-empty-import')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey<String>('dict-empty-download')),
-      findsOneWidget,
-    );
+    // IM23：与库页导入面同一套引导首块 + 方式块（导入词典 / 导入文件夹词典 /
+    // 下载推荐词典）。文件夹词典的门是 `!Platform.isIOS`（宿主测试机不是 iOS）。
+    expect(find.byType(DictionaryImportEmptySurface), findsOneWidget);
+    expect(find.text(t.dictionaries_menu_empty), findsOneWidget);
+    for (final String id in <String>[
+      'dict-import-files',
+      'dict-import-folder',
+      'dict-download',
+    ]) {
+      expect(
+        find.byKey(ValueKey<String>('import-method-$id')),
+        findsOneWidget,
+        reason: id,
+      );
+    }
     expect(tester.takeException(), isNull);
   });
   // ── 移到第几位 ─────────────────────────────────────────────────────────
@@ -640,6 +647,10 @@ void main() {
     );
     expect(moveButton().enabled, isFalse);
 
+    // PR #3515 后行高 / 页头变高，1280×800 下第六行落在左列视口之外（被批量栏
+    // 上沿裁掉，tap 命中不到）：先把它滚进视口再点。
+    await tester.ensureVisible(find.text('Dict 6'));
+    await _settle(tester);
     await tester.tap(find.text('Dict 6'));
     await _settle(tester);
     expect(moveButton().enabled, isTrue);

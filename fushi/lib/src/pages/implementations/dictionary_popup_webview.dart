@@ -27,6 +27,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.da
 import 'package:fushi/src/pages/implementations/dictionary_popup_resource_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/mining/after_mining_popup_action.dart';
 import 'package:fushi/src/pages/implementations/popup_settings_injection.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi/src/platform/selection_external_actions.dart';
@@ -280,21 +281,29 @@ enum QueuedOverwriteSettled {
   failed,
 }
 
-/// 用户建议 q16Apecgbg：「制卡后关闭查词弹窗」（偏好 `close_popup_after_mining`）。
+/// 「制卡后行为」（拍板台 8ldy3d8XFA，按模块存，见 [AfterMiningPopupAction]）。
 ///
-/// 包住宿主的制卡回调：制卡**落地之后**（[MinePopupResult.accepted]）且开关打开时关掉
-/// 整个弹窗栈。必须等结果回来再关，不能提前：阅读器车道经制卡串行队列入队，草稿 /
-/// 句子上下文要等排到才被读走，提前关栈会把它们清掉（BUG-2627 第二轮）。包装是 async
-/// 函数，首个 await 之前会同步跑完 [mine] 的同步前缀，BUG-2634 依赖的「宿主在首个
-/// await 前读完 payload」时序不变。[enabled] 每次现读，设置改了立即生效。
+/// 包住宿主的制卡回调：制卡**落地之后**（[MinePopupResult.accepted]）按 [action] 经
+/// [applyAfterMiningPopupAction] 处理——要关弹窗就（不续播时先 [dropPauseMark] 撤掉
+/// 「因查词暂停」的标记）调 [closeAll] 关栈，续不续播由关栈汇聚点按标记决定。必须等
+/// 结果回来再关，不能提前：阅读器车道经制卡串行队列入队，草稿 / 句子上下文要等排到才
+/// 被读走，提前关栈会把它们清掉（BUG-2627 第二轮）。包装是 async 函数，首个 await 之前
+/// 会同步跑完 [mine] 的同步前缀，BUG-2634 依赖的「宿主在首个 await 前读完 payload」
+/// 时序不变。[action] 每次现读，设置改了立即生效。
 Future<MinePopupResult> Function(Map<String, String> fields)
 closePopupAfterAcceptedMine(
   Future<MinePopupResult> Function(Map<String, String> fields) mine, {
-  required bool Function() enabled,
+  required AfterMiningPopupAction Function() action,
+  required VoidCallback dropPauseMark,
   required VoidCallback closeAll,
 }) => (Map<String, String> fields) async {
   final MinePopupResult result = await mine(fields);
-  if (result.accepted && enabled()) closeAll();
+  if (!result.accepted) return result;
+  applyAfterMiningPopupAction(
+    action(),
+    dropPauseMark: dropPauseMark,
+    closeAll: closeAll,
+  );
   return result;
 };
 

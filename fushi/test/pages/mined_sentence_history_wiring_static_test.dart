@@ -52,9 +52,20 @@ void main() {
       reason: 'video 成功制卡必须落制卡历史行',
     );
     expect(src, contains('Future<void> _recordMinedSentenceForVideo('));
-    expect(src, contains('addMinedSentence('));
+    // 页面侧只转发：实际写入收口在 `recordVideoMinedSentence`（video_mine_queue.dart），
+    // 暂存队列写入 Anki 时落的是同一行。
     expect(
-      src,
+      methodBody(src, 'Future<void> _recordMinedSentenceForVideo('),
+      contains('recordVideoMinedSentence('),
+      reason: '视频页制卡历史必须走与暂存队列共用的 recordVideoMinedSentence',
+    );
+    final String shared = methodBody(
+      File('lib/src/mining/video_mine_queue.dart').readAsStringSync(),
+      'Future<void> recordVideoMinedSentence(',
+    );
+    expect(shared, contains('addMinedSentence('));
+    expect(
+      shared,
       contains('source: kStatSourceVideo'),
       reason: 'video 制卡历史来源应为视频',
     );

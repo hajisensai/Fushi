@@ -662,6 +662,11 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         // 不认那个 header，会走 live push 的旧路径按 client 报的后缀落盘，
         // `rename` 直接覆盖 host 上同名的旧字幕且不留备份（BUG-2728）。
         'videoSubtitleDefault': _libraryService is VideoSubtitleDefaultHost,
+        // 同一端点带 `?episode=N` 时落到播放列表第 N 集旁。老 host 无此字段 → client
+        // 对第 N 集**不上传**：老 host 不认 `episode`，会把字幕落到第 0 集旁、压掉
+        // 第 0 集的默认字幕。
+        'videoSubtitleDefaultEpisode':
+            _libraryService is VideoSubtitleDefaultHost,
         // `DELETE .../subtitle?which=`（清字幕源 + 备份本视频 sidecar）与
         // `POST .../subtitle/backfill`（立即补字幕）。老 host 无此字段 → 404。
         'videoSubtitleClear': _libraryService is VideoSubtitleClearHost,
@@ -677,6 +682,24 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         // 互联远端片段导出（`GET .../clipvideo`，反馈 6nBmSBj_2W）。老 host 无此字段
         // → client 提示「对端版本过低」，不发请求。
         kVideoClipExportCapability: _libraryService is VideoClipExportHost,
+        // `clipaudio?discTitle=`：按（盘, title）裁音频，远端原盘会话里库中没有行的
+        // title 也能本机转录 / 重定时 / 对轴。老 host 无此字段 → client 不带
+        // `discTitle` 请求（老 host 会照 `<id>` 那一行裁）。
+        kVideoClipAudioDiscTitleCapability:
+            _libraryService is VideoDiscTitleAudioHost,
+        // `clipaudio?discTitle=` 认多角度 title 的角度成员路径（`00001.a2.mpls`），按
+        // 会话里正在播的角度裁。老 host 无此字段 → client 不发角度路径。
+        kVideoClipAudioDiscTitleAngleCapability:
+            _libraryService is VideoDiscTitleAudioHost,
+        // `clipaudio?discTitle=` 认 DVD title（`VIDEO_TS/TITLE_nn.dvdtitle`）。老 host 无此
+        // 字段 → client 不发 DVD title。
+        kVideoClipAudioDiscTitleDvdCapability:
+            _libraryService is VideoDiscTitleAudioHost,
+        // `clipaudio?discTitle=` 认 DVD 多角度 title 的角度成员路径
+        // （`TITLE_nn.aK.dvdtitle`），按会话里正在播的角度裁。老 host 无此字段 → client
+        // 不发 DVD 角度路径。
+        kVideoClipAudioDiscTitleDvdAngleCapability:
+            _libraryService is VideoDiscTitleAudioHost,
         'videoSubtitleBackfill': lib && videoSubtitleBackfill != null,
         // 图形字幕整轨回传（`GET .../graphicsubtitle?embeddedStreamIndex=`）。老 host
         // 无此字段 / 没注入抽取实现 → false，client 不请求、时间表只靠边播边记。
@@ -687,6 +710,10 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         'serviceConfig':
             _securityContext != null &&
             _libraryService is InterconnectServiceConfigHost,
+        // 互联「来源共享」（服务器来源 + 插件包）：必须 TLS，端点另查开关与「我的设备」。
+        kInterconnectSourceShareFeature: _sourceShareAvailable,
+        // 互联「插件中继」（替没有插件运行时的「我的设备」代跑插件）：同来源共享，必须 TLS。
+        kInterconnectPluginRelayFeature: _pluginRelayAvailable,
         // 互联「配置文件」（Profile）双向搬运：与 serviceConfig 同门槛（必须 TLS）。
         // 能力位只说「这台 host 懂这个端点」，不代表此刻允许——端点还会再查一次
         // 用户开关，关着时返回 403，client 如实报错而不是当成不支持。

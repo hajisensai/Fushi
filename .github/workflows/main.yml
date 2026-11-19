@@ -69,6 +69,76 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # PR 主门分层（2026-11-18）。实测近 3 天：本 workflow 占全仓 runner 分钟的 59%，把
+  # 并发槽顶满，Linux job 排队 p75 29 分钟、p90 56 分钟；一次 PR 运行真正干活约 50 分钟，
+  # 墙钟中位数却是 102 分钟（p90 199 分钟），被后一次 push 取消而白烧的还有 2394 分钟。
+  # 而「每个 PR 每次 push 都跑全量」买到的东西，develop 每次 push 的 release.yml 本来就
+  # 再跑一遍（同一套 4 片单测 + analyze + 包测试）。所以 PR 上默认只跑**快门**：
+  #   * build：analyze + JS 测试（+ 包测试，仅当 packages/ 有改动）；
+  #   * affected-tests：目录枚举守卫整批 + 按路径字面量点名的守卫 + 直接 import 改动库的
+  #     测试 + 改动的测试文件（tool/pre_push_check.dart 的选测，本地预检同一套）。
+  # **全量**（unit-tests 4 片 + 包测试 + R8 / JVM）只在下列情况跑：
+  #   * 不是 pull_request 事件：`gh workflow run main.yml --ref <分支>` 就是「在这条分支上
+  #     跑全量」，结果挂在同一个 head commit 上，PR 页看得到；
+  #   * 目标分支不是 develop（进 main 的 PR）、fork PR（选测工具来自 PR 自己的代码，不可信）；
+  #   * PR 带 `full-ci` 标签（push 时读标签；先打标签再推，或打完后手动 dispatch）；
+  #   * 改了选测看不见影响面的东西：原生 / Android / 插件集合 / pubspec / 测试基础设施 /
+  #     workflow 自身（下面的 pattern；它必须是 R8 门 pattern 的超集，守卫
+  #     fushi/test/build/pr_tiered_gate_guard_test.dart）；
+  #   * 改动清单取不到或被截断（fail safe）。
+  # 快门不是完备的：只经传递依赖受影响的测试它选不到（回放最近 80 个已合并 PR，按传递
+  # import 闭包选会选中 1400～3000 个测试文件，等于全量，所以不做）。这类回归由合并后
+  # develop 上的 release.yml 全量兜住，红了按根因修。
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      full: ${{ steps.decide.outputs.full }}
+      packages: ${{ steps.decide.outputs.packages }}
+    steps:
+    - name: Decide fast gate vs full suite
+      id: decide
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        EVENT_NAME: ${{ github.event_name }}
+        BASE_REF: ${{ github.base_ref }}
+        IS_FORK: ${{ github.event.pull_request.head.repo.fork }}
+        HAS_FULL_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'full-ci') }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+      run: |
+        set -euo pipefail
+        full() {
+          echo "full=true" >> "$GITHUB_OUTPUT"
+          echo "packages=true" >> "$GITHUB_OUTPUT"
+          echo "::notice title=Full suite::$1"
+          exit 0
+        }
+        [ "$EVENT_NAME" = "pull_request" ] || full "not a pull_request event ($EVENT_NAME)"
+        [ "$BASE_REF" = "develop" ] || full "base branch is $BASE_REF"
+        [ "$IS_FORK" != "true" ] || full "fork PR"
+        [ "$HAS_FULL_LABEL" != "true" ] || full "full-ci label"
+        if ! changed="$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --jq '.[].filename')"; then
+          full "could not list the changed files of this PR"
+        fi
+        [ -n "$changed" ] || full "empty changed-file list"
+        # The endpoint returns at most 3000 files; a list that long may be cut off.
+        [ "$(wc -l <<< "$changed")" -lt 3000 ] || full "changed-file list may be truncated"
+        pattern='^(fushi/android/|native/|third_party/|ci/|packages/[^/]+/android/|packages/[^/]+/pubspec\.yaml$|fushi/pubspec\.yaml$|pubspec\.yaml$|pubspec\.lock$|tool/vendored_binaries\.(json|py)$|\.github/workflows/main\.yml$|\.github/actions/|tool/|fushi/tool/|fushi/dart_test\.yaml$|fushi/analysis_options\.yaml$|fushi/test/flutter_test_config\.dart$|docs/agent/fast-workflow\.md$)'
+        if hit="$(grep -m1 -E "$pattern" <<< "$changed")"; then
+          full "changed $hit (native / Android / plugin set / test infrastructure)"
+        fi
+        echo "full=false" >> "$GITHUB_OUTPUT"
+        if grep -qE '^packages/' <<< "$changed"; then
+          echo "packages=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "packages=false" >> "$GITHUB_OUTPUT"
+        fi
+        echo "::notice title=Fast gate::affected tests only; the full suite runs on develop after the merge (gh workflow run main.yml --ref <branch> runs it here)"
+
   # 网页内容核心（native/fushi_web_core）Linux .so：packages/fushi_web_core 把原生库当硬依赖
   # （没有「缺库判不可用」的分支，测试找不到库就失败、不 skip），所以 fushi/ 与 packages/ 的
   # 单测 job 都要它。只编一次、以 workflow artifact 交给下游（artifact 不占 Actions 缓存配额）。
@@ -122,7 +192,7 @@ jobs:
         retention-days: 3
 
   build:
-    needs: [web-core-linux, fushidicts-linux]
+    needs: [plan, web-core-linux, fushidicts-linux]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -251,7 +321,10 @@ jobs:
     # Anki 搜索的逐卡求值与 AnkiConnect 查重规范形只有 Rust 实现（native/fushi_fsrs/src/search.rs）：
     # fushi_srs / fushi_engine 的搜索测试要真实 .so，库缺失时直接判红（不 skip）。
     # 用 runner 自带的 stable 工具链（不进持久库，不需要钉版）；冷编约 1 min。
+    # 从这一步到「Run package tests」只为包测试（和 R8 / JVM 校验要的 Android .so）服务：
+    # 快门下 packages/ 没改动就整段跳过（plan 的 packages 输出；全量时恒为 true）。
     - name: Cache Rust build (fushi_fsrs)
+      if: needs.plan.outputs.packages == 'true'
       uses: Swatinem/rust-cache@v2
       with:
         workspaces: native/fushi_fsrs -> target
@@ -262,6 +335,7 @@ jobs:
     # 还带测试专用的原始 SQL 通道（cargo feature raw_sql，Cargo.toml）：fushi_engine 的 test/srs 里几十个文件靠它
     # 直接改库造场景；发布 / 随包构建不带（verify_abi.sh 核对）。
     - name: Build fushi_fsrs (Linux x64, id_audit + raw_sql) for package tests
+      if: needs.plan.outputs.packages == 'true'
       env:
         FUSHI_FSRS_FEATURES: id_audit,raw_sql
       run: |
@@ -272,21 +346,25 @@ jobs:
     # （导出 FUSHI_COMPUTE_LIB），下面的 Android release 验证构建（android-arm64）要 arm64-v8a .so，
     # 否则 build.gradle 的 checkFushiComputeNative 让构建失败。
     - name: Build fushi_compute (Linux .so + Android arm64-v8a)
+      if: needs.plan.outputs.packages == 'true'
       uses: ./.github/actions/setup-fushi-compute
       with:
         android-abis: arm64-v8a
     # RWKV-Instant 排程推理 fushi_rwkv 同为硬依赖（无 Dart 回退）：同样的输入，导出 FUSHI_RWKV_LIB。
     - name: Build fushi_rwkv (Linux .so + Android arm64-v8a)
+      if: needs.plan.outputs.packages == 'true'
       uses: ./.github/actions/setup-fushi-rwkv
       with:
         android-abis: arm64-v8a
     # 音乐胖核心 fushi_music（曲库扫描 / 标签 / CUE）同为 app 硬依赖：与上一步 fushi_rwkv 同一口径。
     - name: Build fushi_music (Linux .so + Android arm64-v8a)
+      if: needs.plan.outputs.packages == 'true'
       uses: ./.github/actions/setup-fushi-music
       with:
         android-abis: arm64-v8a
     # 语料胖核心 fushi_corpus（「我库里的例句」倒排索引）同为 app 硬依赖：与上一步 fushi_corpus 同一口径。
     - name: Build fushi_corpus (Linux .so + Android arm64-v8a)
+      if: needs.plan.outputs.packages == 'true'
       uses: ./.github/actions/setup-fushi-corpus
       with:
         android-abis: arm64-v8a
@@ -294,14 +372,17 @@ jobs:
     # 同一个缓存条目（key 是五个钉死的 SHA-256，与 fetch_model.sh 一致），不另占配额；未命中时
     # fetch_model.sh 按钉死 URL 下载并校验（~13 MB）。
     - name: Restore RWKV weights cache
+      if: needs.plan.outputs.packages == 'true'
       uses: actions/cache/restore@v4
       with:
         path: native/fushi_rwkv/model
         key: fushi-rwkv-model-749ad1ad18d5b6ef8c4185802fa0c1e4a14e67cd7874f3efeaae355fffb1b9ec-b2f335bd712b9d602150201de41ab5a0f0a4c291644705e2aa1ed2a1bf1592c3-c7d8df407966fccd8f98227241816e114ce9ed1dfea799587e481c1d5926a453-77703dd2f2a21a1bcadaedfed1cec93ee0fd6fd6d3c840be221e72b5e1c05066-18de8ae77a1a40986dc432531116dfb009beae2385001ef425389a3ad7919a9e
     - name: Fetch RWKV weights (pinned URL, SHA-256 checked)
+      if: needs.plan.outputs.packages == 'true'
       run: bash native/fushi_rwkv/fetch_model.sh
 
     - name: Run package tests
+      if: needs.plan.outputs.packages == 'true'
       env:
         FUSHI_FSRS_LIB: ${{ github.workspace }}/native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so
         FUSHI_FSRS_ID_AUDIT: '1'
@@ -401,6 +482,22 @@ jobs:
           echo "needed=false" >> "$GITHUB_OUTPUT"
           echo "::notice title=R8 verify skipped::no Android / native / plugin / pubspec change in this PR"
         fi
+
+    # Android JVM 单测（fushi/android/app/src/test：环形缓冲、OCR 版面、AnkiDroid 线程归属……）
+    # 以前没有任何 workflow 执行，flutter build apk 也不跑它们，回归只能等用户撞上。这里跑
+    # :app:testDebugUnitTest，红了整个 job 红（不加 continue-on-error / `|| true`）。
+    # 与 R8 校验同一个路径门：JVM 单测只看 fushi/android/ 与插件集合，Dart-only PR 改不动它们；
+    # workflow_dispatch 上照跑。--config-only 生成 local.properties（gradlew 要 flutter.sdk），
+    # 插件注册由上面的 flutter pub get 生成。-Ptarget-platform=android-arm64：app 的 checkFushi*Native
+    # 硬依赖检查按 target-platform 查 prebuilt/android/<abi>，本 job 上面只编了 arm64 的 .so。守卫：fushi/test/build/android_jvm_unit_tests_ci_guard_test.dart。
+    - name: Android JVM unit tests (:app:testDebugUnitTest)
+      if: github.event_name != 'pull_request' || steps.r8.outputs.needed == 'true'
+      working-directory: fushi
+      run: |
+        set -euo pipefail
+        flutter build apk --config-only
+        cd android
+        ./gradlew :app:testDebugUnitTest -Ptarget-platform=android-arm64 --no-daemon
 
     # 网页内容核心是硬依赖：fushi/android/app/build.gradle 的 requireWebCoreSo 在 release 构建里
     # 逐 ABI 核对 prebuilt/android/<abi>/libfushi_web_core.so，缺就拒绝出包。本验证构建只出
@@ -508,8 +605,10 @@ jobs:
   # 保留的提速是：Rust 测试库由 test-native-linux 只编一次、按实测 suite 耗时
   # （tool/test_flow/suite_timings.json）均衡分片。重新启用前先拿到崩溃的原生栈定根因；
   # 届时 --concurrency=1 与 --max-suites-per-run 的理由见 git 历史（PR #2422）。
+  # 只在全量时跑（plan 的 full 输出，判据见文件顶部 plan job 的注释）；快门跑下面的 affected-tests。
   unit-tests:
-    needs: [web-core-linux, test-native-linux]
+    needs: [plan, web-core-linux, test-native-linux]
+    if: needs.plan.outputs.full == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -680,3 +779,99 @@ jobs:
                         print(event.get('error', ''))
                         print(event.get('stackTrace', ''))
         PY
+
+  # 快门的主应用测试（plan 判 full != true 时代替上面的 unit-tests 矩阵）：目录枚举守卫整批
+  # + 路径字面量点名的守卫 + 直接 import 改动库的测试 + 改动的测试文件。选测与本地预检
+  # tool/pre_push_check.dart 是同一份实现，CI 上的差别只有：
+  #   * --gate=0：runner 独占，不排本机租约；
+  #   * --skip-analyze / --app-tests-only：analyze、包测试、JS 测试由 build job 跑；
+  #   * --hub-limit 放开：本地为了几分钟跑完会跳过「被 40 个以上测试 import 的库」，注明
+  #     「交给 CI 分片」；现在 PR 上没有分片了，这些 importer 必须在这里跑；
+  #   * --batch-size=400：每次 flutter test 调用有 ~80 秒固定开销，CI 上不需要为让出本机
+  #     租约而切小批。
+  # 环境与 unit-tests 同一口径（同一批原生库 artifact、同一份密钥桩），改那边时这里一起改。
+  affected-tests:
+    needs: [plan, web-core-linux, test-native-linux]
+    if: needs.plan.outputs.full != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      FUSHI_WEB_CORE_LIB: ${{ github.workspace }}/native/fushi_web_core/prebuilt/linux-x64/libfushi_web_core.so
+      FUSHI_FSRS_LIB: ${{ github.workspace }}/native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so
+      FUSHI_FSRS_ID_AUDIT: '1'
+      FUSHI_COMPUTE_LIB: ${{ github.workspace }}/native/fushi_compute/prebuilt/linux-x64/libfushi_compute.so
+      FUSHI_RWKV_LIB: ${{ github.workspace }}/native/fushi_rwkv/prebuilt/linux-x64/libfushi_rwkv.so
+      FUSHI_MUSIC_LIB: ${{ github.workspace }}/native/fushi_music/prebuilt/linux-x64/libfushi_music.so
+      FUSHI_CORPUS_LIB: ${{ github.workspace }}/native/fushi_corpus/prebuilt/linux-x64/libfushi_corpus.so
+    steps:
+    - uses: actions/checkout@v6
+    - name: Fetch vendored binaries
+      uses: ./.github/actions/fetch-vendored-binaries
+      with:
+        groups: all
+
+    - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+      with:
+        flutter-version: '3.47.6'
+        cache: true
+    - uses: ./.github/actions/pdfium-hook-cache
+      with:
+        purpose: test
+
+    - name: Provide baked-in secret stubs
+      uses: ./.github/actions/provide-baked-secrets
+      with:
+        google-oauth-client-secret: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+        log-upload-endpoint: ${{ secrets.LOG_UPLOAD_ENDPOINT }}
+        log-upload-token: ${{ secrets.LOG_UPLOAD_TOKEN }}
+        dandanplay-app-id: ${{ secrets.DANDANPLAY_APP_ID }}
+        dandanplay-app-secret: ${{ secrets.DANDANPLAY_APP_SECRET }}
+        tmdb-api-key: ${{ secrets.TMDB_API_KEY }}
+        opensubtitles-api-key: ${{ secrets.OPENSUBTITLES_API_KEY }}
+        acoustid-api-key: ${{ secrets.ACOUSTID_API_KEY }}
+
+    - name: Flutter pub get
+      working-directory: fushi
+      run: flutter pub get --enforce-lockfile
+
+    - name: Apply pub cache patches
+      run: |
+        chmod +x ci/apply-patches.sh
+        bash ci/apply-patches.sh
+    - name: Generate i18n
+      uses: ./.github/actions/gen-i18n
+
+    - name: Fetch fushi_web_core linux-x64 library (hard dependency of the unit tests)
+      uses: actions/download-artifact@v7
+      with:
+        name: fushi-web-core-linux-x64
+        path: native/fushi_web_core/prebuilt/linux-x64
+    - name: Fetch fushi_fsrs + fushi_compute + fushi_rwkv linux-x64 libraries (hard dependencies of the unit tests)
+      uses: actions/download-artifact@v7
+      with:
+        name: fushi-test-native-linux-x64
+        path: native
+
+    # 改动清单取 PR 自己的 diff（与 plan 同一个接口），不取 merge commit 对 base 的 diff：
+    # 后者在 base 前进后会把别人的合并算成「我的改动」。
+    - name: Run affected tests (guards + direct importers of the changed files)
+      working-directory: fushi
+      env:
+        GH_TOKEN: ${{ github.token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+      run: |
+        set -euo pipefail
+        gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --jq '.[].filename' > "$RUNNER_TEMP/changed.txt"
+        dart run tool/pre_push_check.dart --gate=0 --skip-analyze --app-tests-only --hub-limit=1000000 --batch-size=400 --max-minutes=45 "--files-from=$RUNNER_TEMP/changed.txt"
+
+    - name: Upload test event logs
+      if: failure()
+      uses: actions/upload-artifact@v7
+      with:
+        name: affected-test-events
+        path: .codex-test/pre-push
+        if-no-files-found: warn
+        retention-days: 14

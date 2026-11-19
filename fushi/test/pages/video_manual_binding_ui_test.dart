@@ -79,6 +79,7 @@ void main() {
       recursive: true,
       videoGroupingMode: 'series',
       isPrivate: false,
+      autoScan: false,
       sortOrder: 0,
       createdAt: 1,
     );

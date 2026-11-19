@@ -701,8 +701,9 @@ final class FushiRemotePush {
 }
 
 /// MetricKit 崩溃诊断订阅（iOS 14+；本工程最低 15.1，iOS 15 起系统在下次启动后交付上次
-/// 的诊断）。每条 `MXCrashDiagnostic` 的 JSON 落到 `Documents/metrickit/`（与 path_provider
-/// 的 getApplicationDocumentsDirectory 同一目录），由 Dart `previous_exit_log.dart` 摘要
+/// 的诊断）。每条 `MXCrashDiagnostic` 的 JSON 落到 `Library/Application Support/logs/metrickit/`
+/// （与 Dart `AppPaths.diagnosticsDirectory` 同一目录；Documents 是「文件」App 可见的导入收件箱，
+/// 拍板台 nLXhu0d7gV，诊断不能放那里），由 Dart `previous_exit_log.dart` 摘要
 /// （异常类型 / 信号 / 终止原因 / 崩溃线程前若干帧）进错误日志后删除。单条截到 256 KB，
 /// 目录只留最近 10 条，不让诊断无界堆积。
 final class FushiCrashDiagnostics: NSObject, MXMetricManagerSubscriber {
@@ -717,9 +718,12 @@ final class FushiCrashDiagnostics: NSObject, MXMetricManagerSubscriber {
 
   func didReceive(_ payloads: [MXDiagnosticPayload]) {
     guard
-      let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+      let support = FileManager.default.urls(
+        for: .applicationSupportDirectory, in: .userDomainMask
+      ).first
     else { return }
-    let dir = docs.appendingPathComponent("metrickit", isDirectory: true)
+    let dir = support.appendingPathComponent("logs", isDirectory: true)
+      .appendingPathComponent("metrickit", isDirectory: true)
     try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     for payload in payloads {
       for crash in payload.crashDiagnostics ?? [] {

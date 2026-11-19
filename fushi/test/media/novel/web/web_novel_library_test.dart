@@ -14,6 +14,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/novel/online/lnreader_online_book.dart'
     show kLnReaderPendingChapterAttribute, lnReaderOnlineChapterFile;
+import 'package:fushi/src/media/novel/online/online_novel_chapter_loader.dart';
 import 'package:fushi/src/media/novel/web/web_novel_library.dart';
 import 'package:fushi/src/media/novel/web/web_novel_page_fetcher.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -262,7 +263,10 @@ void main() {
       1,
     ).path;
     expect(loader.chapterIndexForFile(placeholder), 1);
-    expect(await loader.ensureLoaded(placeholder), isTrue);
+    final OnlineNovelChapterLoaded? loaded = await loader.ensureLoaded(
+      placeholder,
+    );
+    expect(loaded?.index, 1);
     expect(fetcher.requested, <String>[ch2Url]);
     expect(
       chapterText(row, 1),
@@ -270,9 +274,17 @@ void main() {
     );
     expect(chapterText(row, 1), contains('ゼニスの妊娠がわかった。'));
     // 已是正文：再请求不取。
-    expect(await loader.ensureLoaded(placeholder), isFalse);
+    expect(await loader.ensureLoaded(placeholder), isNull);
 
     row = (await db.getEpubBook(bookKey))!;
+    // 新字数交回调用方（阅读器据此换掉内存里那一章的字数，BUG-4809），与写进
+    // 书行的是同一个数，且不再是占位页的字数。
+    final List<Object?> counts = jsonDecode(row.chaptersJson) as List<Object?>;
+    expect(loaded?.characters, greaterThan(100));
+    expect(
+      loaded?.characters,
+      (counts[1]! as Map<String, Object?>)['characters'],
+    );
     final WebNovelSnapshot snapshot = WebNovelSnapshot.tryParse(
       row.sourceMetadata,
     )!;

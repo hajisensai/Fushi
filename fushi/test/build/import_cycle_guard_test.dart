@@ -66,9 +66,22 @@ import 'package:test/test.dart';
 /// 里（与其它同步路径共用忙闸 / 在飞登记），而 `sync_auto_trigger` 本就在环里，AppModel 又持有
 /// 这个服务，于是 +1 到 646。新进环的是新文件本身，没有把任何既有底层模块接进环。
 ///
+/// 2026-11-17 develop 实测 653（+11 −4）：新进环的多是本就读 AppModel 的 UI / 设置文件
+/// （收听提醒、NSFW 封面、库页恢复 / 覆盖快照提示、来源共享勾选等）。没有按「新文件读 AppModel」
+/// 上调，而是拆掉一条底层边：视频图形字幕 OCR（`graphic_subtitle_ocr`）只用直读 OCR 的值类型
+/// （引擎由调用方注入），却 import 了 `manga_reader_stream_ocr`（它解析引擎要读 AppModel 的
+/// OCR 设置），把 `video_player_controller` 等 13 个视频文件拖进了环。值类型挪到
+/// `manga_stream_ocr_types.dart` 后最大环降到 640，上限随之下调。
+///
+/// 2026-11-18 合入首页 / 库页重设计（#3515）实测 650：新进环的是本就读 AppModel 的导入页、
+/// 壳布局选择、游戏 / 音乐新组件。同样不调上限，拆掉两条底层边：在线漫画库服务与 PDF 导入
+/// 只用 `MediaCoverService.applyCoverBytes`（引擎 `writeCoverBytesAtomically` 的薄委派），
+/// 却因此 import 了整个封面服务（它读 AppModel），把漫画下载 / 互联 / 同步编排等 20 个文件
+/// 拖进环。改为直接调引擎 writer（封面写盘守卫本就认它为收口）后最大环降到 630。
+///
 /// 红了：新加的 import 把底层模块接到了 UI / AppModel 上。把用到的东西挪到
 /// 更底层的文件，或改用参数 / 回调注入，不要调大上限、不要把文件从目录里豁免。
-const int kMaxCycleFiles = 646;
+const int kMaxCycleFiles = 630;
 
 const String kAppModel = 'lib/src/models/app_model.dart';
 

@@ -1121,54 +1121,14 @@ impl SrsCore {
     /// `groups[g]` 是第 g 份历史的血统（自己 + 全部前身的卡 ID）。输出布局同
     /// `history::encode_states`。日志原文与服务器时刻一条 JOIN 取出，不跨 isolate、不回 Dart。
     pub fn history_states(&self, groups: &[Vec<String>]) -> Result<Vec<u8>, String> {
-        let logs = self.writer_logs(groups)?;
-        let empty: Vec<LogRow> = Vec::new();
-        let mut states = Vec::with_capacity(groups.len());
-        for g in groups {
-            let mut stored: Vec<crate::history::StoredLog<'_>> = Vec::new();
-            for c in g {
-                for (j, s, cols) in logs.get(c).unwrap_or(&empty) {
-                    stored.push((j, *s, cols.as_ref()));
-                }
-            }
-            states.push(crate::history::state_from_stored(&stored)?);
-        }
-        Ok(crate::history::encode_states(&states))
+        history_states_of(groups, &self.writer_logs(groups)?)
     }
 
     /// 有效复习投影（`srs_stat_reviews` 的行），同样直读写连接：`groups[g]` 是第 g 个归属组（归属卡在前，
     /// 再列出归它的前身卡），日志合在一起按 [crate::history::stats_from_json] 投影。归属由 Dart 按血统与
-    /// 可见性定（`SrsDbStore._refreshStatProjection`）。
-    ///
-    /// 输出是一页行（`rows::encode`，9 列）：归属组下标, logId, occurredAt, utcOffsetMin, rating|NULL,
-    /// kind, durationMs, prevDueDay|NULL, maturityDelta。
+    /// 可见性定（`SrsDbStore._refreshStatProjection`）。输出见 [stat_projection_of]。
     pub fn stat_projection(&self, groups: &[Vec<String>]) -> Result<Vec<u8>, String> {
-        let logs = self.writer_logs(groups)?;
-        let empty: Vec<LogRow> = Vec::new();
-        let mut out: Vec<Vec<Value>> = Vec::new();
-        let opt = |v: Option<i64>| v.map_or(Value::Null, Value::Integer);
-        for (gi, g) in groups.iter().enumerate() {
-            let mut stored: Vec<crate::history::StoredLog<'_>> = Vec::new();
-            for c in g {
-                for (j, s, cols) in logs.get(c).unwrap_or(&empty) {
-                    stored.push((j, *s, cols.as_ref()));
-                }
-            }
-            for r in crate::history::stats_from_stored(&stored)? {
-                out.push(vec![
-                    Value::Integer(gi as i64),
-                    Value::Text(r.log_id),
-                    Value::Integer(r.occurred_at),
-                    Value::Integer(r.utc_off),
-                    opt(r.rating),
-                    Value::Integer(r.kind),
-                    Value::Integer(r.dur),
-                    opt(r.prev_due_day),
-                    Value::Integer(r.maturity_delta),
-                ]);
-            }
-        }
-        Ok(rows::encode(9, &out))
+        stat_projection_of(groups, &self.writer_logs(groups)?)
     }
 
     /// 这些组里全部卡的日志（[LogRow]：存储值 + 服务器时刻 + 列；写连接，一条 JOIN 按块取）。
@@ -1179,7 +1139,64 @@ impl SrsCore {
         let w = self.writer()?;
         logs_of(&w, groups)
     }
+}
 
+/// [SrsCore::history_states] 的计算：[logs] 是组里各卡的日志（卡 → 行）。协议 3 与新代（`store/gen4/cmd/training.rs`，
+/// 按血统重放写回的日志）共用。
+pub(crate) fn history_states_of(
+    groups: &[Vec<String>],
+    logs: &std::collections::HashMap<String, Vec<LogRow>>,
+) -> Result<Vec<u8>, String> {
+    let empty: Vec<LogRow> = Vec::new();
+    let mut states = Vec::with_capacity(groups.len());
+    for g in groups {
+        let mut stored: Vec<crate::history::StoredLog<'_>> = Vec::new();
+        for c in g {
+            for (j, s, cols) in logs.get(c).unwrap_or(&empty) {
+                stored.push((j, *s, cols.as_ref()));
+            }
+        }
+        states.push(crate::history::state_from_stored(&stored)?);
+    }
+    Ok(crate::history::encode_states(&states))
+}
+
+/// [SrsCore::stat_projection] 的计算（协议 3 与新代共用，[logs] 同 [history_states_of]）。
+///
+/// 输出是一页行（`rows::encode`，9 列）：归属组下标, logId, occurredAt, utcOffsetMin, rating|NULL,
+/// kind, durationMs, prevDueDay|NULL, maturityDelta。
+pub(crate) fn stat_projection_of(
+    groups: &[Vec<String>],
+    logs: &std::collections::HashMap<String, Vec<LogRow>>,
+) -> Result<Vec<u8>, String> {
+    let empty: Vec<LogRow> = Vec::new();
+    let mut out: Vec<Vec<Value>> = Vec::new();
+    let opt = |v: Option<i64>| v.map_or(Value::Null, Value::Integer);
+    for (gi, g) in groups.iter().enumerate() {
+        let mut stored: Vec<crate::history::StoredLog<'_>> = Vec::new();
+        for c in g {
+            for (j, s, cols) in logs.get(c).unwrap_or(&empty) {
+                stored.push((j, *s, cols.as_ref()));
+            }
+        }
+        for r in crate::history::stats_from_stored(&stored)? {
+            out.push(vec![
+                Value::Integer(gi as i64),
+                Value::Text(r.log_id),
+                Value::Integer(r.occurred_at),
+                Value::Integer(r.utc_off),
+                opt(r.rating),
+                Value::Integer(r.kind),
+                Value::Integer(r.dur),
+                opt(r.prev_due_day),
+                Value::Integer(r.maturity_delta),
+            ]);
+        }
+    }
+    Ok(rows::encode(9, &out))
+}
+
+impl SrsCore {
     // ------------------------------------------------------------ 测试 / 诊断
 
     /// 在读连接上跑一条只读 SQL，结果按 [rows] 编码；第一行是列名（文本）。只给测试与诊断用：

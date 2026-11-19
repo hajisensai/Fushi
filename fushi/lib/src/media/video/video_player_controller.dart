@@ -452,6 +452,26 @@ class VideoPlayerController extends ChangeNotifier
   /// 在途整轨抽取的取消信号（网络流抽取读整条流，换轨 / 换片 / 销毁时撤销）。
   Completer<void>? _graphicTimingCancel;
 
+  /// 本次 [load] 自动抽内封**文本**字幕（[_loadEmbeddedSubtitleIfNeeded]）的取消信号：
+  /// 换片（下一次 [load]）/ 释放媒体句柄 / 销毁时完成，撤掉本控制器对共享整轨抽取的
+  /// 占用——没有别的等待方时 ffmpeg 被强杀，不在后台把旧文件读完（BUG-4838）。
+  Completer<void>? _embeddedTextExtractCancel;
+
+  void _cancelEmbeddedTextExtract() {
+    final Completer<void>? cancel = _embeddedTextExtractCancel;
+    _embeddedTextExtractCancel = null;
+    if (cancel != null && !cancel.isCompleted) cancel.complete();
+  }
+
+  /// 用户在字幕面板上取消「读取完整字幕」：撤掉本次 [load] 自动加载对整轨抽取的等待
+  /// （与页面撤掉自己的等待一起，抽取没有别的等待方就被强杀）。已在播放器解码出字的
+  /// 那条轨不受影响（[beginEmbeddedTextBridge]）。
+  void cancelEmbeddedTextAutoLoadExtract() => _cancelEmbeddedTextExtract();
+
+  /// 自动加载（[_loadEmbeddedSubtitleIfNeeded]）挑中的内封文本轨缓存未命中、开始整轨
+  /// 抽取时回调（播放页据此显示「正在读取完整字幕」+ 取消入口、标记当前字幕源）。
+  void Function(SubtitleSource source)? onEmbeddedSubtitleAutoLoadPending;
+
   /// 整轨抽取出的**位图时间表**（与 [_graphicExtractedTimingCues] 同一次结果，任何来源：
   /// 本地文件 / 网络流 / 互联 host 回传的整轨）。换轨 / 换片清空。
   final ValueNotifier<GraphicSubtitleRegionTrack?> _graphicRegionTrack =
@@ -2298,6 +2318,65 @@ class VideoPlayerController extends ChangeNotifier
     unawaited(_playerDecodedTextSub?.cancel());
     _playerDecodedTextSub = null;
     _playerDecodedProvisionalCue = null;
+    // 回流一停，「先播后补」的桥也就断了：之后到的完整 cue 不能再装回来。
+    _embeddedTextBridge = null;
+  }
+
+  /// 本地内封文本轨「先播后补」的桥（[beginEmbeddedTextBridge]）。非 null = 播放器
+  /// 正在解码这条轨顶着，完整 cue 列表到了可以经 [completeEmbeddedTextBridge] 换上；
+  /// 任何换字幕源的动作（[setCues] / 别的选轨 / [load] / [dispose]）都经
+  /// [_stopPlayerDecodedText] 把它清掉。
+  Object? _embeddedTextBridge;
+
+  /// 主字幕换源的世代：每次 [setCues]（换字幕文件 / 关字幕 / 选别的轨 / 换片）+1。
+  /// 后台自动加载据此判「期间用户是否自己换过字幕」（[_loadEmbeddedSubtitleIfNeeded]）。
+  int _cueSourceEpoch = 0;
+
+  /// 本地视频的内封文本轨要整轨抽取（慢盘上一分钟以上）时，先借播放器解码这条轨，
+  /// 文本即时回流成可点 cue（与远端直出容器的 [selectEmbeddedTextTrackViaPlayer]
+  /// 同一条回流：可查词、可制卡，字幕列表边播边累积），抽完再由
+  /// [completeEmbeddedTextBridge] 换成完整列表。播放器本来就在 demux 这个文件，不额外
+  /// 读盘。
+  ///
+  /// [streamIndex] 是 ffmpeg `0:s:N` 的相对序号（与 [SubtitleSource.streamIndex]、
+  /// [selectEmbeddedGraphicTrack] 同义）。返回桥的令牌；选不上（未 load / 轨未就绪 /
+  /// 越界 / 等待期间已换片）返回 null，调用方照旧等完整列表。
+  Future<Object?> beginEmbeddedTextBridge(int streamIndex) async {
+    // 蓝光导航会话里播放器的字幕轨属于当前 title，与 ffmpeg 对整盘文件的相对序号对不上。
+    if (isBlurayNavigationSession) return null;
+    final bool shown = await selectEmbeddedTextTrackViaPlayer(streamIndex);
+    if (!shown || _playerDecodedTextSub == null) return null;
+    final Object token = Object();
+    _embeddedTextBridge = token;
+    return token;
+  }
+
+  /// [token] 这座桥还在（播放器仍在解码那条轨顶着、期间没换过字幕源）。
+  bool isEmbeddedTextBridgeLive(Object token) =>
+      identical(_embeddedTextBridge, token);
+
+  /// 整轨抽取完成：把 [token] 那座桥上边播边累积的 cue 换成完整列表 [cues]，并让
+  /// 播放器停止解码字幕轨。桥已断（期间用户换了源 / 换片）返回 false、什么都不动。
+  ///
+  /// 换装与「按当前位置重算当前句」之间不通知监听者，所以没有一刻是空字幕：
+  /// [_replaceCues] 清空当前句后，[_syncCueForPosition] 立刻按播放位置从完整列表里
+  /// 找回同一句（同一条轨、同一个时间轴，起止与回流的那句一致），之后才通知。完整
+  /// 列表整份替换回流列表，不会出现同一句两份。
+  bool completeEmbeddedTextBridge(Object token, List<AudioCue> cues) {
+    if (!identical(_embeddedTextBridge, token)) return false;
+    final Player? player = _player;
+    _replaceCues(cues);
+    if (player != null) {
+      // 当前句找回时它自己会通知；下面再无条件通知一次，让列表等监听者拿到新列表。
+      _syncCueForPosition(
+        player.state.position.inMilliseconds,
+        persistPosition: false,
+      );
+      // 字幕只由 overlay 画；播放器不必再解码这条轨。
+      unawaited(selectSubtitleTrack(SubtitleTrack.no()));
+    }
+    notifyListeners();
+    return true;
   }
 
   Future<void> _onPlayerDecodedText(
@@ -2580,6 +2659,13 @@ class VideoPlayerController extends ChangeNotifier
     return idx < 0 ? null : idx;
   }
 
+  /// 当前选中音轨的语言标签（libmpv `lang`，如 `jpn`）；跟随默认 / 没有标签时 null。
+  /// 字幕生成把在线流的整集音频拉成单轨副本后，副本里探测不到原流的标签，由它补上。
+  String? get currentAudioLanguage {
+    final String? lang = _player?.state.track.audio.language?.trim();
+    return lang == null || lang.isEmpty ? null : lang;
+  }
+
   /// 真实音轨（去掉 libmpv 的 auto/no 伪轨）条数；未 [load] 时为 0。
   ///
   /// 用作 ffmpeg `-map 0:a:N` 的下标上界（`N < count`）：mpv 把外挂音频也算进
@@ -2597,6 +2683,15 @@ class VideoPlayerController extends ChangeNotifier
   /// 设置 cue 列表：拷贝并按 startMs 升序排序（[JsonAlignmentParser.findCueIndex]
   /// 要求升序），重置当前 cue 状态。
   void setCues(List<AudioCue> cues) {
+    _replaceCues(cues);
+    notifyListeners();
+  }
+
+  /// [setCues] 的本体，不通知监听者：[completeEmbeddedTextBridge] 换装后要先按位置找回
+  /// 当前句再通知，监听者（字幕 overlay / 字幕列表 / 第二屏快照）不会看到中间那个
+  /// 「当前句为空」的状态。
+  void _replaceCues(List<AudioCue> cues) {
+    _cueSourceEpoch++;
     // 外部换字幕源（加载文件 / 关字幕 / 换片 / 选图形轨）一律结束 mpv 解码回流，
     // 否则迟到的 sub-text 会把旧轨的句子插进新 cue 列表。
     _stopPlayerDecodedText();
@@ -2637,7 +2732,6 @@ class VideoPlayerController extends ChangeNotifier
     // 主字幕换了：给 Lua 脚本的镜像轨跟着重挂（没装脚本时零开销）。
     _scheduleLuaSubtitleMirrorSync();
     if (_cues.isNotEmpty) onCuesReplaced?.call(_cues);
-    notifyListeners();
   }
 
   /// 换一份主字幕文本覆盖（用户手改的单条字幕，见 `subtitle_text_override.dart`），
@@ -3295,6 +3389,9 @@ class VideoPlayerController extends ChangeNotifier
       'Provide exactly one of videoFile or mediaUri.',
     );
     final int loadToken = ++_loadToken;
+    // 换片：上一片的内封文本字幕自动抽取作废（BUG-4838），本片另起一个取消信号。
+    _cancelEmbeddedTextExtract();
+    _embeddedTextExtractCancel = Completer<void>();
     // BUG-3767：mpv 不把上一片的 `aid=no` 沿用到新文件，上一片的音频恢复状态作废。
     _audioOutputRecovery.reset();
     // 换片：A-B 端点是旧片的时间轴，作废；有限次数循环数的是旧片那一句，连模式一起关
@@ -4346,10 +4443,12 @@ class VideoPlayerController extends ChangeNotifier
   /// 及 libmpv 正在 demux 播放三方争用磁盘 IO，[probeEmbeddedSubtitleTracks] 可能
   /// 超时返回 0 轨 → `enumerationTimeout`，整条链路当「无内封字幕」处理，用户必须
   /// 退出重开（此时缓存命中 / 争用消退）才出字幕。BUG-303 仅放宽超时窗口未消除
-  /// 时序，故此处对**瞬态失败**（枚举超时 / 失败 / 抽出空 cue——即「本该有字幕但
-  /// 这次没拿到」）等 libmpv 字幕轨真实就绪信号（说明容器字幕区已 demux 进页缓存、
-  /// 三方争用已消退）后**重试一次**，与 BUG-313 章节首载「等就绪信号重读」同构。
-  /// 终态（无内封轨 / 无文本轨 / 文件缺失 / 已加载）不重试。
+  /// 时序，故此处对**瞬态失败**（枚举超时 / 失败——即「本该有字幕但这次没拿到」）
+  /// 等 libmpv 字幕轨真实就绪信号（说明容器字幕区已 demux 进页缓存、三方争用已消退）
+  /// 后**重试一次**，与 BUG-313 章节首载「等就绪信号重读」同构。终态（无内封轨 /
+  /// 无文本轨 / 文件缺失 / 已加载）不重试；选中轨抽取 / 解析失败（`emptyCues`）也不
+  /// 重试——整轨抽取按进度判活，失败已是真失败，重跑只会把整个容器再读一遍（BUG-4838）。
+  /// 抽取带 [_embeddedTextExtractCancel]，换片 / 销毁时撤销。
   Future<void> _loadEmbeddedSubtitleIfNeeded({
     required Player player,
     required int loadToken,
@@ -4364,9 +4463,16 @@ class VideoPlayerController extends ChangeNotifier
     if (videoPath == null) return;
 
     _setSubtitleCuesLoading(true);
+    // 挑中的轨要整轨抽取时先借播放器解码它即时出字（[beginEmbeddedTextBridge]），
+    // 抽完再换成完整列表；抽取失败 / 被取消时播放器解码的字幕继续用。
+    Future<Object?>? bridge;
+    // 换字幕源的世代（[setCues] 每次 +1）：抽取期间用户自己选了别的字幕 / 关了字幕，
+    // 这次自动加载的结果就作废，不能把用户的选择盖掉。没有桥时从现在算起，有桥时从
+    // 桥装好（它自己也经 [setCues] 清了一次 cue）之后算起。
+    int sourceEpoch = _cueSourceEpoch;
     try {
       // 首开瞬态争用重试（TODO-572）：协调器先枚举加载一次，瞬态失败（枚举超时 /
-      // 失败 / 空 cue）时等 libmpv 字幕轨真实就绪后重试一次。换片（含复用同一
+      // 失败）时等 libmpv 字幕轨真实就绪后重试一次。换片（含复用同一
       // player）期间用 player identity + loadToken 双判据丢弃旧结果。
       final DefaultEmbeddedSubtitleLoadResult result =
           await loadDefaultTextEmbeddedSubtitleCuesWithReadinessRetry(
@@ -4375,15 +4481,37 @@ class VideoPlayerController extends ChangeNotifier
             waitForReady: () => _waitUntilSubtitleTracksReady(player),
             isStillCurrent: () => _isCurrentLoad(player, loadToken),
             preferredLanguages: preferredLanguages,
+            cancel: _embeddedTextExtractCancel?.future,
+            onExtractionStarted: (SubtitleSource chosen) {
+              if (!_isCurrentLoad(player, loadToken)) return;
+              final int? streamIndex = chosen.streamIndex;
+              if (bridge != null || streamIndex == null) return;
+              bridge = beginEmbeddedTextBridge(streamIndex).then((
+                Object? token,
+              ) {
+                if (token != null) sourceEpoch = _cueSourceEpoch;
+                return token;
+              });
+              onEmbeddedSubtitleAutoLoadPending?.call(chosen);
+            },
           );
+      final Object? bridgeToken = await bridge;
       if (!_isCurrentLoad(player, loadToken)) return;
+      if (_cueSourceEpoch != sourceEpoch) {
+        debugPrint('[video-embedded-sub] auto load superseded by user choice');
+        return;
+      }
 
       switch (result.status) {
         case DefaultEmbeddedSubtitleLoadStatus.loaded:
           debugPrint(
             '[video-embedded-sub] extracted ${result.cues.length} cues',
           );
-          setCues(result.cues);
+          if (bridgeToken != null) {
+            completeEmbeddedTextBridge(bridgeToken, result.cues);
+          } else {
+            setCues(result.cues);
+          }
           onResult?.call(result);
           return;
         case DefaultEmbeddedSubtitleLoadStatus.noEmbeddedTracks:
@@ -4395,7 +4523,12 @@ class VideoPlayerController extends ChangeNotifier
           onResult?.call(result);
           return;
         case DefaultEmbeddedSubtitleLoadStatus.emptyCues:
-          debugPrint('[video-embedded-sub] parsed 0 cues from embedded track');
+          // 按真实原因写（BUG-4838）：抽取卡住 / 抽取失败 / 读不出 / 解析不出各不相同，
+          // 旧日志一律写「解析出 0 条 cue」，把读盘卡住误导成字幕轨本身是空的。
+          debugPrint(
+            '[video-embedded-sub] embedded track load failed: '
+            '${result.cueFailure?.name ?? 'unknown'}',
+          );
           onResult?.call(result);
           return;
         case DefaultEmbeddedSubtitleLoadStatus.enumerationTimeout:
@@ -5293,6 +5426,14 @@ class VideoPlayerController extends ChangeNotifier
     await _completedSub?.cancel();
     _completedFiredForLoad = false;
     _completedSub = completedStream.listen(_handleCompletedChanged);
+  }
+
+  /// 测试用：把一个（假 [PlatformPlayer] 撑起来的）[Player] 当作本次 [load] 的播放器
+  /// 装上，不走 libmpv 打开流程。
+  @visibleForTesting
+  void debugAttachPlayerForTesting(Player player) {
+    _loadToken++;
+    _player = player;
   }
 
   @visibleForTesting
@@ -6926,6 +7067,7 @@ class VideoPlayerController extends ChangeNotifier
     _graphicLiveObservedPlayer = null;
     _graphicLiveGeneration++;
     _cancelGraphicTimingFetch();
+    _cancelEmbeddedTextExtract();
     unawaited(_discTrackSub?.cancel());
     unawaited(_discTracksSub?.cancel());
     unawaited(_discLogSub?.cancel());
@@ -7054,6 +7196,7 @@ class VideoPlayerController extends ChangeNotifier
     _graphicLiveObservedPlayer = null;
     _graphicLiveGeneration++;
     _cancelGraphicTimingFetch();
+    _cancelEmbeddedTextExtract();
     unawaited(_discTrackSub?.cancel());
     unawaited(_discTracksSub?.cancel());
     unawaited(_discLogSub?.cancel());

@@ -189,6 +189,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'auto_search',
   'auto_search_debounce_delay',
   'auto_update_dictionaries',
+  // bool（默认 false）：从 NSFW 作品制卡时卡上的封面 / 页图用模糊副本。见
+  // media/nsfw/nsfw_card_image.dart。
+  'blur_nsfw_card_images',
+  // bool（默认 true）：NSFW 作品的封面在库页 / 继续卡等处打模糊。见
+  // media/nsfw/nsfw_cover_blur.dart。
+  'blur_nsfw_covers',
   // string（默认空）：楽天ブックス书籍检索的 accessKey / applicationId（楽天ウェブ
   // サービス注册应用后拿到）。两者都填了书籍刮削才出现「楽天ブックス」源。凭据 →
   // 同时登记在 kCredentialPreferenceKeys、PrefRedactionPolicy.sensitiveKeys 与
@@ -410,9 +416,18 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'last_selected_deck',
   'last_selected_dictionary_format',
   'last_selected_model',
+  // bool（默认 true，所有者 2026-11-18 拍板）：AI 库管家自动路径（入库 / 扫描后去抖
+  // 跑一趟）。开着时取代 library_organize_auto。设备本地（按量计费只对这台设备成立）。
+  'library_curate_auto',
+  // String（JSON）：AI 库管家本机运行记录、增量水位、进度与抑制清单（设备本地）。
+  'library_curate_state',
   // String（JSON：`"<库>.<尺寸档>" → 列数`）：库页「每行数量」，缺省 = 自动
   // （library_grid_columns.dart，BUG-4219）。设备本地。
   'library_grid_columns',
+  // bool：库页默认布局改成封面网格（2026-11-15）后的一次性「拼贴仍可选」提示已处理
+  // （弹过，或判定本安装不需要弹）。描述本安装的状态，与 first_time_setup 同族、
+  // 不随 Profile 走（library_layout_default_notice.dart）。
+  'library_layout_default_notice_handled',
   // String（JSON 字符串数组）：AI 整理库里本机「允许再次建议」的被拒分组键。拒绝本身
   // 跨端同步（删除哨兵），放行只对点它的设备成立——放行后再建出的同键合集会让这个
   // 分组在每台设备上自然解除拒绝（设备本地）。
@@ -615,6 +630,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String（默认 'mesh'）：歌词页流体背景算法 pixi / mesh / classic
   // （MusicLyricsBackdropStyle.prefValue）。
   'music_lyrics_backdrop_style',
+  // bool（默认 true）：歌词页 / MV 结构化歌词里非当前行轻模糊；关掉后上下句保持清晰
+  // （学习时要看前后句，GitHub #3354）。设备本地观感偏好（KaraokeLyricsAppearance.blurInactive）。
+  'music_lyrics_blur_inactive',
   // String（默认 'split'）：歌词页布局 split（左封面右歌词）/ stage（歌词居中 +
   // 底部停靠条）/ disc（唱片 + 一行歌词）。设备本地观感偏好。
   'music_lyrics_layout',
@@ -808,6 +826,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String：书架「阅读状态」筛选（ShelfReadStatus.name，'' = 全部）。
   'shelf_read_status_filter',
   'shelf_sort_mode',
+  // String：库页布局出厂判定（G1，设备本地——SyncRepository.deviceLocalPrefKeys；
+  // 值 collage / grid_choice_pending / grid，ThemeNotifier 载入偏好时判定一次），
+  // 见 ShellLayoutInstallDefault。
+  'shell_content_layout_install_default',
   'show_expression_tags',
   'show_floating_lyric',
   'show_media_notification',
@@ -1095,6 +1117,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // all / favorites），下次打开恢复（反馈 xlzGuK5YmD）。
   'video_subtitle_list_filter',
   'video_subtitle_list_font_scale_index',
+  // bool（默认 true）：字幕列表是否列出特效字幕（歌词特效 / 屏幕字，判据在 Rust
+  // 字幕解析层 Markup::effect）；关掉后列表只剩普通台词（拍板台 H7r4mf_z2n）。
+  'video_subtitle_list_show_effects',
   // bool（默认 true）：字幕列表里点字幕文字是否查词；关掉后点哪里都只跳到该句
   // （手机上列表旁的查词弹窗太扁，多数人只拿列表跳转，群反馈 GbN9MoKDCQ）。
   'video_subtitle_list_tap_lookup',

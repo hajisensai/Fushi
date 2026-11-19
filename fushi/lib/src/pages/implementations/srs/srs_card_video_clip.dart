@@ -64,6 +64,13 @@ abstract class SrsCardVideoPlayer {
   /// 视频画面尺寸（像素；宽高都已知且 > 0 时才发）。
   Stream<Size> get videoSizeStream;
 
+  /// [open] 的文件加载不了（0 字节、没有 moov、认不出格式、没有可播的轨）时发一次，
+  /// 带一句原因。这种文件在 media_kit 里 `open` 不抛、`completed` 也不发（BUG-4812）。
+  ///
+  /// **不是**播放器的错误流：那条流里还有非致命的 `error` 级日志（硬解打不开后回退
+  /// 软解、解码器单帧报错），拿它判失败会把能播的片段判死。
+  Stream<String> get loadFailedStream;
+
   /// 此刻是否已播到结尾（点按播放时据此先回到开头）。
   bool get isCompleted;
 
@@ -94,13 +101,42 @@ class _MediaKitSrsCardVideoPlayer implements SrsCardVideoPlayer {
     );
     _subs.add(_player.stream.width.listen((_) => _emitSize()));
     _subs.add(_player.stream.height.listen((_) => _emitSize()));
+    _subs.add(_player.stream.error.listen(_onError));
   }
 
   final Player _player;
   late final VideoController _controller;
   final StreamController<Size> _size = StreamController<Size>.broadcast();
+  final StreamController<String> _loadFailed =
+      StreamController<String>.broadcast();
   final List<StreamSubscription<Object?>> _subs =
       <StreamSubscription<Object?>>[];
+
+  /// 正在加载 / 已加载的文件名（只进诊断日志）。
+  String _name = '';
+
+  /// 最近一条错误日志：加载失败时当原因带出去。
+  String? _lastError;
+  bool _disposed = false;
+
+  NativePlayer? get _native {
+    final PlatformPlayer? platform = _player.platform;
+    return platform is NativePlayer ? platform : null;
+  }
+
+  /// media_kit 的错误流 = mpv 的 `error` 级日志，致命与否混在一起，只记诊断。
+  void _onError(String error) {
+    _lastError = error;
+    ErrorLogService.instance.logDiagnostic(
+      'SrsCardVideoClip.error',
+      'player log: $_name: $error',
+    );
+  }
+
+  void _reportLoadFailed() {
+    if (_disposed || _loadFailed.isClosed) return;
+    _loadFailed.add(_lastError ?? 'player went idle without loading the file');
+  }
 
   void _emitSize() {
     final int w = _player.state.width ?? 0;
@@ -110,8 +146,37 @@ class _MediaKitSrsCardVideoPlayer implements SrsCardVideoPlayer {
     }
   }
 
+  /// 加载失败的判据是 mpv 自己的状态，不是错误日志：加载不了的文件让播放器回到空闲
+  /// （`idle-active` 变回 `yes`）；加载成功的文件有 `keep-open`，播完也不回空闲。
+  ///
+  /// 订阅在发加载命令之前就位并等到它的初值（此刻必为空闲），之后再出现的 `yes` 只可能
+  /// 是这次加载失败。mpv 按「核心采样到的值」去重：失败得极快、核心从没采到过「非空闲」
+  /// 时不会有变化事件，所以加载命令被受理后再读一次——读请求与加载命令走同一条核心
+  /// 队列，这一次要么读到「已回空闲」，要么核心已采到「非空闲」、随后的失败必有事件。
   @override
-  Future<void> open(String path) => _player.open(Media(path), play: false);
+  Future<void> open(String path) async {
+    _name = path.split(RegExp(r'[\\/]')).last;
+    final NativePlayer? native = _native;
+    if (native == null) {
+      await _player.open(Media(path), play: false);
+      return;
+    }
+    final Completer<void> observing = Completer<void>();
+    await native.observePropertyChanges('idle-active', (String value) async {
+      if (!observing.isCompleted) {
+        observing.complete();
+      } else if (value == 'yes') {
+        _reportLoadFailed();
+      }
+    });
+    await observing.future;
+    if (_disposed) return;
+    await _player.open(Media(path), play: false);
+    if (_disposed) return;
+    if (await native.getPropertyAsync('idle-active') == 'yes') {
+      _reportLoadFailed();
+    }
+  }
 
   @override
   Future<void> play() => _player.play();
@@ -134,6 +199,9 @@ class _MediaKitSrsCardVideoPlayer implements SrsCardVideoPlayer {
   Stream<bool> get completedStream => _player.stream.completed;
 
   @override
+  Stream<String> get loadFailedStream => _loadFailed.stream;
+
+  @override
   Stream<Size> get videoSizeStream => _size.stream;
 
   @override
@@ -153,10 +221,12 @@ class _MediaKitSrsCardVideoPlayer implements SrsCardVideoPlayer {
 
   @override
   Future<void> dispose() async {
+    _disposed = true;
     for (final StreamSubscription<Object?> s in _subs) {
       await s.cancel();
     }
     await _size.close();
+    await _loadFailed.close();
     await _player.dispose();
   }
 }
@@ -440,6 +510,11 @@ class _SrsCardVideoClipState extends ConsumerState<SrsCardVideoClip>
             setState(() => _videoSize = size);
           }
         }),
+      )
+      ..add(
+        player.loadFailedStream.listen(
+          (String reason) => _onLoadFailed(name, reason),
+        ),
       );
     setState(() => _available = true);
     try {
@@ -451,16 +526,35 @@ class _SrsCardVideoClipState extends ConsumerState<SrsCardVideoClip>
         'SrsCardVideoClip.open',
         'open failed: $name: $e',
       );
-      _teardown();
-      setState(() {
-        _available = false;
-        _missing = true;
-      });
-      _finishRun(false);
+      _failLoad();
       return null;
     }
     if (!_isCurrent(token)) return null;
     return player;
+  }
+
+  /// 播放器判定这份文件加载不了（0 字节、没有 moov、认不出格式）。media_kit 里这种
+  /// 文件既不让 `open` 抛、也不发 `completed`；不接这条流，等这段片段播完的序列就永远
+  /// 不返回、卡面是一块黑框（BUG-4812）。
+  void _onLoadFailed(String name, String reason) {
+    if (!mounted || _attachedName != name) return;
+    ErrorLogService.instance.logDiagnostic(
+      'SrsCardVideoClip.error',
+      'load failed: $name: $reason',
+    );
+    _failLoad();
+  }
+
+  /// 片段打不开 / 加载不了：释放播放器并撤销登记（序列退回只播音频），作废进行中的
+  /// 序列播放（等待中的以 false 结束，还在起播路上的不再碰已释放的播放器），画占位。
+  void _failLoad() {
+    _interruptRun();
+    _teardown();
+    setState(() {
+      _available = false;
+      _missing = true;
+      _playing = false;
+    });
   }
 
   /// 文件不存在：撤销登记（序列退回只播音频），未完成的序列播放以 false 结束。

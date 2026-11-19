@@ -50,6 +50,14 @@ class ReaderSelectionScripts {
 
   static String clearInvocation() => 'window.fushiSelection.clearSelection()';
 
+  /// ssJjbvbAbs：把选区换成从被点字起扫的那份（ruby 组首查到的词覆盖不到被点的字）。
+  /// [expectedText] 是宿主收到的吸附后 payload.text，JS 选区已换成别的词时拒绝；结果是
+  /// JSON 串 `'true'` / `'false'`（与 [highlightInvocation] 同样经 JSON.stringify，
+  /// 各平台 evaluateJavascript 都回 String）。
+  static String adoptRubySnapTapInvocation(String expectedText) =>
+      'JSON.stringify(window.fushiSelection.adoptRubySnapTap('
+      '${jsonEncode(expectedText)}) === true)';
+
   /// 悬停查词背压的宿主侧显式释放（见 webview.part.dart 的 `_fushiHoverLookup*`）：
   /// onTextSelected 回调处理完一次**悬停**查词（成功、失败、异常都算）后对正文 WebView
   /// eval 这一句，按 payload 里的 `selectedSeq` 释放 JS 侧在等的那一次。不依赖
@@ -3355,10 +3363,10 @@ window.fushiSelection = {
       // (Latin token start / ruby base start) so hovering a different letter of
       // the same word does not enqueue the same lookup.
       var hoverStart = this.selectionStartFor(hit.node, hit.offset);
-      if (hoverStart.node === this.selection.startNode && hoverStart.offset === this.selection.startOffset) return null;
+      if (this.designatesCurrentSelection(hit, hoverStart)) return null;
     }
     var tapStart = this.selectionStartFor(hit.node, hit.offset);
-    if (this.selection && tapStart.node === this.selection.startNode && tapStart.offset === this.selection.startOffset) {
+    if (this.designatesCurrentSelection(hit, tapStart)) {
       // 悬停连续查词（fromHover）命中的还是同一个词：什么都不做，保留当前选区
       // 高亮与弹窗——这是「按住 Shift 一路滑，弹窗跟着光标走」的去重基石。滑过一
       // 个词只查一次，同词内继续移动不重复 fire onTextSelected，不闪、不刷 FFI /
@@ -3386,6 +3394,10 @@ window.fushiSelection = {
   //   起扫——点「衛」只查「衛」，高亮却按整个 <ruby> 元素画（BUG-110 的整元素加类），
   //   查的和亮的不是同一段。吸附后查词从整组开始，与来源振假名排序（rubyReadingSpans
   //   只认完整基字）对齐。多对基字的 ruby（漢<rt>かん</rt>字<rt>じ</rt>）按段吸附。
+  //   吸附结果带 ruby: true。吸附只是「先从组首试」：义训会把两个词标进同一个 ruby
+  //   （じょうろ鼬 / ポットウィーゼル，ssJjbvbAbs），组首查到的词覆盖不到被点的字时，宿主改用
+  //   从被点字起扫的候选（selectFromPosition 记 rubyTapIndex，buildSelectionPayload 带
+  //   rubySnap，宿主判定后调 adoptRubySnapTap）。
   selectionStartFor: function(node, offset) {
     var startNode = node;
     var startOffset = offset;
@@ -3403,10 +3415,61 @@ window.fushiSelection = {
     if (startNode && startNode.nodeType === Node.TEXT_NODE) {
       var segment = this.rubySegmentOf(startNode, new Map());
       if (segment && segment.nodes.length) {
-        return { node: segment.nodes[0], offset: 0 };
+        return { node: segment.nodes[0], offset: 0, ruby: true };
       }
     }
     return { node: startNode, offset: startOffset };
+  },
+  // 点 / 悬停命中 hit（selectionStartFor 归一后的起点 start）是否指向当前选区——同词：点按
+  // toggle 取消、悬停不重复查。非 ruby 命中照旧比归一起点。ruby 命中（ssJjbvbAbs）：起点吸附
+  // 只说明「同一个 ruby 段」，同段里可能有两个词，所以还要求被点的字落在已查到的词里
+  // （matchedRanges）；高亮还没回来（查词在途）时按同段算，避免重复查。
+  designatesCurrentSelection: function(hit, start) {
+    var sel = this.selection;
+    if (!sel) return false;
+    if (!start.ruby) return start.node === sel.startNode && start.offset === sel.startOffset;
+    var origin = sel.rubySnapStart;
+    if (!origin || start.node !== origin.node || start.offset !== origin.offset) return false;
+    if (!sel.matchedRanges) return true;
+    return sel.matchedRanges.some(function(r) {
+      return hit.node === r.node && hit.offset >= r.start && hit.offset < r.end;
+    });
+  },
+  // 吸附到 ruby 组首的选区里被点字的位置不是起点时，返回从被点字起扫的同一份选区
+  // （ranges 去掉被点字之前的部分、text 截掉同样长度）；否则 null。rubyTapIndex 是 text 里
+  // 的 UTF-16 下标，ranges 各段长度之和 = text 长度（selectFromPosition 的扫描口径）。
+  rubyTapSelection: function() {
+    var sel = this.selection;
+    if (!sel || typeof sel.rubyTapIndex !== 'number' || sel.rubyTapIndex <= 0) return null;
+    var skip = sel.rubyTapIndex;
+    var ranges = [];
+    for (var i = 0; i < sel.ranges.length; i++) {
+      var r = sel.ranges[i];
+      var len = r.end - r.start;
+      if (skip >= len) { skip -= len; continue; }
+      ranges.push({ node: r.node, start: r.start + skip, end: r.end });
+      skip = 0;
+    }
+    if (!ranges.length) return null;
+    var tap = {
+      startNode: ranges[0].node,
+      startOffset: ranges[0].start,
+      ranges: ranges,
+      text: sel.text.slice(sel.rubyTapIndex),
+      rubySnapStart: sel.rubySnapStart
+    };
+    if (sel.point) tap.point = sel.point;
+    return tap;
+  },
+  // 宿主判定组首查到的词覆盖不到被点的字（ssJjbvbAbs）后调这里：选区换成从被点字起扫的那份，
+  // 之后的 highlightSelection / 制卡句子都跟随它。expectedText 是宿主收到的 payload.text，
+  // 选区已被新的点击换掉时拒绝（返回 false），不把迟到的判定套到别的词上。
+  adoptRubySnapTap: function(expectedText) {
+    if (!this.selection || this.selection.text !== expectedText) return false;
+    var tap = this.rubyTapSelection();
+    if (!tap) return false;
+    this.selection = tap;
+    return true;
   },
   // BUG-4361（反馈 vXYKPudf7U，承 BUG-4179）：词首回退跨相邻文本节点。词首回退原先只在
   // 命中的文本节点内做，退到偏移 0 就停——漫画 OCR 叠加层每个字格是独立的
@@ -3513,7 +3576,28 @@ window.fushiSelection = {
       }
     }
     if (!text) return null;
-    this.selection = { startNode: startNode, startOffset: startOffset, ranges: ranges, text: text };
+    // ssJjbvbAbs：起点被吸附到 ruby 组首时记下被点字在 text 里的位置（扫描没扫到被点字时不记），
+    // buildSelectionPayload 据此带上从被点字起扫的候选。
+    var rubyTapIndex = null;
+    if (normalizedStart.ruby && (startNode !== node || startOffset !== offset)) {
+      var scanned = 0;
+      for (var ri = 0; ri < ranges.length; ri++) {
+        var rr = ranges[ri];
+        if (rr.node === node && offset >= rr.start && offset < rr.end) {
+          rubyTapIndex = scanned + offset - rr.start;
+          break;
+        }
+        scanned += rr.end - rr.start;
+      }
+    }
+    this.selection = {
+      startNode: startNode,
+      startOffset: startOffset,
+      ranges: ranges,
+      text: text,
+      rubySnapStart: normalizedStart.ruby ? { node: startNode, offset: startOffset } : null,
+      rubyTapIndex: rubyTapIndex
+    };
     // BUG-3665：记下点击点，[highlightSelection] 用它挑出用户点中的那一段字形当锚点。
     if (typeof x === 'number' && typeof y === 'number' && isFinite(x) && isFinite(y)) {
       this.selection.point = { x: x, y: y };
@@ -3614,7 +3698,7 @@ window.fushiSelection = {
     var matchSentence = this.matchableRange(
       sentenceContext.sStartNode, sentenceContext.sStartOffset,
       sentenceContext.sEndNode, sentenceContext.sEndOffset);
-    return {
+    var payload = {
       matchableOffset: match.offset,
       matchableLength: match.length,
       sentenceMatchableOffset: matchSentence.offset,
@@ -3643,6 +3727,29 @@ window.fushiSelection = {
       // (card-image cropping); the viewport rect above cannot provide that.
       mangaSentenceGroup: mangaGroupNumber
     };
+    // ssJjbvbAbs：起点吸附到 ruby 组首、被点的字在后面时，同时带上从被点字起扫的整份 payload
+    // （同一套字段，偏移 / 振假名 / 句子都按那个起点算）与被点字在 text 里的 UTF-16 下标——与宿主
+    // 查词命中长度（DictionarySearchResult.bestLength = matched 的 UTF-16 长度）同单位，扩展区汉字
+    // （𩸽）在前也不会把覆盖判错。宿主先查 text，命中长度覆盖不到 tapIndex 就改用 selection 并调
+    // adoptRubySnapTap。
+    var tapSelection = this.rubyTapSelection();
+    if (tapSelection) {
+      var snapped = this.selection;
+      var tapPayload;
+      this.selection = tapSelection;
+      try {
+        tapPayload = this.buildSelectionPayload(x, y);
+      } finally {
+        this.selection = snapped;
+      }
+      if (tapPayload) {
+        payload.rubySnap = {
+          tapIndex: snapped.rubyTapIndex,
+          selection: tapPayload
+        };
+      }
+    }
+    return payload;
   },
   // Fire onTextSelected for the current this.selection (tap/word lookup path and
   // the caret/keyboard path). Goes straight to the dictionary/mining popup.
@@ -3668,6 +3775,14 @@ window.fushiSelection = {
     var seq = (this.textSelectedSeq || 0) + 1;
     this.textSelectedSeq = seq;
     payload.selectedSeq = seq;
+    // ssJjbvbAbs：宿主采用 ruby 候选（rubySnap.selection）后整份换成它，上面这几个只在外层追加的
+    // 字段也要同步进去，否则采用后悬停被当成明确点击、歌词覆盖层还得再 eval 一次 cue 上下文。
+    var snapSelection = payload.rubySnap && payload.rubySnap.selection;
+    if (snapSelection) {
+      snapSelection.fromHover = payload.fromHover;
+      if ('lyricsCueContext' in payload) snapSelection.lyricsCueContext = payload.lyricsCueContext;
+      snapSelection.selectedSeq = seq;
+    }
     var ack = window.flutter_inappwebview.callHandler('onTextSelected', JSON.stringify(payload));
     this.lastTextSelectedAck = ack;
     return payload.text;
@@ -4474,6 +4589,7 @@ window.fushiSelection = {
       sel.startNode = s.node; sel.startOffset = s.offset;
       if (sel.ranges) sel.ranges = segments(sel.ranges);
       if (sel.matchedRanges) sel.matchedRanges = segments(sel.matchedRanges);
+      if (sel.rubySnapStart) sel.rubySnapStart = point(sel.rubySnapStart.node, sel.rubySnapStart.offset);
     }
     var anchor = this.dragAnchor;
     if (anchor) {
@@ -4506,6 +4622,10 @@ window.fushiSelection = {
       track(sel.startNode, sel.startOffset, function(n, o) { sel.startNode = n; sel.startOffset = o; });
       trackSegments(sel.ranges);
       if (sel.matchedRanges !== sel.ranges) trackSegments(sel.matchedRanges);
+      var snapStart = sel.rubySnapStart;
+      if (snapStart) {
+        track(snapStart.node, snapStart.offset, function(n, o) { snapStart.node = n; snapStart.offset = o; });
+      }
     }
     var anchor = this.dragAnchor;
     if (anchor) {

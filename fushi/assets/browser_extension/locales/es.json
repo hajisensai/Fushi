@@ -293,6 +293,7 @@
   "mine_queued_generate_later": "Pulsa el botón de minado de la extensión para generarlas todas",
   "mine_no_cue": "No se encontró la línea de subtítulo actual, inténtalo en un momento",
   "mine_enqueue_failed": "No se pudo añadir a la cola",
+  "mine_enqueue_context_invalidated": "No se pudo añadir a la cola: la extensión se actualizó, recarga la página (F5) e inténtalo de nuevo",
   "mine_failed": "Error al minar",
   "mine_done": "Tarjeta creada",
   "mine_duplicate_exists": "Ya existe una tarjeta para esta palabra",

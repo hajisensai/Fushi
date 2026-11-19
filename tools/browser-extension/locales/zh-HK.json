@@ -293,6 +293,7 @@
   "mine_queued_generate_later": "點擊擴充功能中的製卡按鈕後統一產生",
   "mine_no_cue": "找不到目前字幕句，請稍後再試",
   "mine_enqueue_failed": "無法加入佇列",
+  "mine_enqueue_context_invalidated": "加入佇列失敗：擴充功能已更新，請重新整理頁面（F5）後再試",
   "mine_failed": "製卡失敗",
   "mine_done": "已建立卡片",
   "mine_duplicate_exists": "此字詞的卡片已存在",

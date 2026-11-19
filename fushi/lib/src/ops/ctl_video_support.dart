@@ -275,6 +275,7 @@ Map<String, Object?> ctlVideoConfirmationJson(
   return <String, Object?>{
     'id': ctlVideoConfirmationId(confirmation),
     'work': confirmation.localWorkTitle,
+    'workId': ?confirmation.workStableKey,
     'sourceId': confirmation.sourceId,
     'source': confirmation.sourceLabel,
     'candidates': <Map<String, Object?>>[
@@ -375,6 +376,7 @@ Future<Map<String, Object?>> answerCtlVideoConfirmation(
       return <String, Object?>{
         'id': id,
         'work': confirmation.localWorkTitle,
+        'workId': ?confirmation.workStableKey,
         'answer': 'skip',
       };
     case CtlVideoPickCandidate(:final int index):
@@ -439,6 +441,7 @@ Map<String, Object?> _answered(
 ) => <String, Object?>{
   'id': id,
   'work': confirmation.localWorkTitle,
+  'workId': ?confirmation.workStableKey,
   'answer': answer,
   'picked': ctlVideoCandidateJson(picked.lookup, picked.work),
 };

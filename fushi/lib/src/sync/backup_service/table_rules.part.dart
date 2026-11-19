@@ -235,6 +235,11 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'media_images': BackupTableRule.rowLevel(
     '随 media_collections / video_books FK cascade',
   ),
+  // v155：单本书 / 字幕书 / 游戏的刮削资料与附加图——与 collection_scrape_meta /
+  // media_images 同族的可重建缓存，宿主是逻辑外键（同 media_privacy_flags），
+  // 被裁剪内容的行按宿主收敛。
+  'item_scrape_meta': BackupTableRule.rowLevel('_stripOrphanUserDataTables'),
+  'item_images': BackupTableRule.rowLevel('_stripOrphanUserDataTables'),
   'media_collection_items': BackupTableRule.rowLevel(
     '_stripOrphanUserDataTables',
   ),
@@ -244,6 +249,8 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   // v122 作品级私密标记：与 tag_assignments 同一套宿主逻辑外键，被裁剪内容的标记
   // 一并收敛掉。
   'media_privacy_flags': BackupTableRule.rowLevel('_stripOrphanUserDataTables'),
+  // v156 作品级 NSFW 标记：同上。
+  'media_nsfw_flags': BackupTableRule.rowLevel('_stripOrphanUserDataTables'),
   'book_tags': BackupTableRule.rowLevel('_stripOrphanUserDataTables'),
   'book_tag_membership_tombstones': BackupTableRule.rowLevel(
     '_stripOrphanUserDataTables',

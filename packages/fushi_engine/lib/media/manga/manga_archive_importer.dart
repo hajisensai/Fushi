@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
+import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/epub/epub_parser.dart';
 import 'package:fushi_engine/epub/epub_series.dart'
     show encodeEpubSeriesMetadata;
@@ -501,8 +502,11 @@ abstract final class MangaArchiveImporter {
     final String extension = p.extension(archivePath).toLowerCase();
     _OpenedArchive? opened;
     _ZipEntryStreamer? streamer;
-    final Directory staging = await Directory.systemTemp.createTemp(
-      'fushi_manga_archive_',
+    // 暂存在书库根下的 `.tmp-*`（BUG-4840），不放系统临时目录：与书目录同卷，页图
+    // 进书目录是 rename 而不是「跨卷拷贝 + 删源」；崩溃留下的残留也归导入残留清扫管
+    // （桌面端系统临时目录里的残留，app 内既看不见也清不掉）。
+    final Directory staging = Directory(
+      await EpubImporter.createStagingDir(db),
     );
     Directory? epubExtraction;
     // 纯图 EPUB 的 OPF 系列声明（见 [MangaImporter.importFromImageFolder] 的
@@ -515,7 +519,7 @@ abstract final class MangaArchiveImporter {
           staging: staging,
         );
       } else {
-        opened = _open(archivePath);
+        opened = _open(archivePath, decodeLegacyNames: true);
         final Archive archive = opened.archive;
         // 中央目录声明的大小只能当**快速预检**：它可以谎报（声明 1 KB、实际
         // inflate 出几 GB）。真正的上限在 [_ZipEntryStreamer] 里按实际解出的
@@ -579,9 +583,7 @@ abstract final class MangaArchiveImporter {
         }
 
         if (extension == '.epub') {
-          epubExtraction = await Directory.systemTemp.createTemp(
-            'fushi_manga_epub_',
-          );
+          epubExtraction = Directory(await EpubImporter.createStagingDir(db));
           // BUG-3845：SVG 内容文档作 spine 的固定版式漫画也要收成页（与
           // [_looksLikeImageEpub] 同一解析口径，判得成就导得进）。
           final EpubBook book = EpubParser.parseSyncFromPath(
@@ -1082,7 +1084,14 @@ abstract final class MangaArchiveImporter {
   /// （[looksLikeImageArchive] / [_looksLikeImageEpub]）只看条目名，且它们在
   /// 对话框里被同步调用、每次选中/拖入都跑；一本 500 MB 的 CBZ 要在 UI isolate
   /// 上白白解压两三次。
-  static _OpenedArchive _open(String archivePath) {
+  ///
+  /// [decodeLegacyNames]：把没带 UTF-8 标志的条目名按真实本地编码重解（见
+  /// [_decodeLegacyNames]）。只有要写盘的导入路径打开：探测（[looksLikeImageArchive] /
+  /// [_looksLikeImageEpub]）也会打开 zip 遍历条目名，但只看扩展名，用逐字节名字即可。
+  static _OpenedArchive _open(
+    String archivePath, {
+    bool decodeLegacyNames = false,
+  }) {
     final File file = File(archivePath);
     if (!file.existsSync()) {
       throw MangaImportException('Manga archive not found: $archivePath');
@@ -1097,6 +1106,9 @@ abstract final class MangaArchiveImporter {
         final InputStreamBase? raw = header.file?.rawContent;
         if (raw != null) headers[raw] = header;
       }
+      if (decodeLegacyNames) {
+        _decodeLegacyNames(file, decoder.directory, archive);
+      }
       return _OpenedArchive(
         archivePath,
         file.lengthSync(),
@@ -1108,6 +1120,149 @@ abstract final class MangaArchiveImporter {
       input.closeSync();
       rethrow;
     }
+  }
+
+  /// 通用位 11（EFS）：置位时条目名按 UTF-8 写。
+  static const int _kZipUtf8NameFlag = 0x800;
+  static const int _kCentralHeaderSignature = 0x02014b50;
+  static const int _kCentralHeaderBytes = 46;
+
+  /// 没带 UTF-8 标志的条目名按打包机器的真实本地编码重解（design-zip-cp932-names）。
+  ///
+  /// 日文 / 中文 Windows 的压缩工具按 Shift_JIS / GBK 写名字、不置通用位 11。archive 3.6.1
+  /// 把这种名字逐字节当 Latin-1 字符存（BUG-4658 的补丁），然后**先**把 `\` 换成 `/`：
+  /// Shift_JIS 第二字节是 0x5C 的字（「表」「ソ」）因此被多切出一级目录；第二字节 0x7C 的
+  /// 字（「ポ」）变成 `|`，Windows 上写盘失败、整本导入不了。
+  ///
+  /// 所以这里不从 `ArchiveFile.name` 反推字节（`\` 与 `/` 已经混在一起），而是从中央目录
+  /// 重新读出每条记录的原始名字字节，整包没带标志的名字一起交给 Rust 内核
+  /// （[LegacyTextDecoder]，与曲库 ID3 乱码修复同一套判据）判编码、解码，再改写条目名。
+  /// 流式解压按中央目录记录的本地头偏移定位条目，不看名字，改名不影响取数据。
+  /// 判不出编码、或中央目录与 archive 解出的记录对不上时什么都不改（维持逐字节行为）。
+  static void _decodeLegacyNames(
+    File file,
+    ZipDirectory directory,
+    Archive archive,
+  ) {
+    final List<ZipFileHeader> fileHeaders = directory.fileHeaders;
+    bool needed = false;
+    for (final ZipFileHeader header in fileHeaders) {
+      if ((header.generalPurposeBitFlag & _kZipUtf8NameFlag) == 0 &&
+          header.filename.codeUnits.any((int c) => c >= 0x80)) {
+        needed = true;
+        break;
+      }
+    }
+    if (!needed) return;
+
+    final List<Uint8List>? rawNames = _readCentralDirectoryNames(
+      file,
+      directory,
+    );
+    if (rawNames == null) return;
+
+    final List<int> legacy = <int>[];
+    for (int i = 0; i < fileHeaders.length; i++) {
+      final ZipFileHeader header = fileHeaders[i];
+      if ((header.generalPurposeBitFlag & _kZipUtf8NameFlag) != 0) continue;
+      final Uint8List raw = rawNames[i];
+      if (!raw.any((int b) => b >= 0x80)) continue;
+      // 与 archive 读出的名字逐条核对：中央目录位置算错（如带前缀数据的自解压包）时
+      // 宁可不改。
+      final String? asUtf8 = _strictUtf8(raw);
+      if ((asUtf8 ?? String.fromCharCodes(raw)) != header.filename) return;
+      // 不带标志但本身是合法 UTF-8 的名字（macOS「压缩」、部分 Linux 工具就这么写）
+      // archive 已经按 UTF-8 解对了，不进 legacy 批：本地编码判据没有排除 UTF-8 的
+      // 维度，送进去会被判成 Shift_JIS 解成乱码，Mokuro 清单的 img_path 也就对不上。
+      if (asUtf8 != null) continue;
+      legacy.add(i);
+    }
+    if (legacy.isEmpty) return;
+
+    final ({LegacyTextEncoding encoding, List<String> texts})? decoded =
+        LegacyTextDecoder.decodeBatch(<Uint8List>[
+          for (final int i in legacy) rawNames[i],
+        ]);
+    if (decoded == null) {
+      engineLog.logDiagnostic(
+        'MangaArchiveImporter',
+        'ZIP ${p.basename(file.path)}: ${legacy.length} entry names without '
+            'the UTF-8 flag, encoding not detected; kept byte-for-byte',
+      );
+      return;
+    }
+
+    final Map<InputStreamBase, ArchiveFile> entries =
+        Map<InputStreamBase, ArchiveFile>.identity();
+    for (final ArchiveFile entry in archive) {
+      final InputStreamBase? raw = entry.rawContent;
+      if (raw != null) entries[raw] = entry;
+    }
+    for (int k = 0; k < legacy.length; k++) {
+      final ZipFileHeader header = fileHeaders[legacy[k]];
+      final InputStreamBase? raw = header.file?.rawContent;
+      final ArchiveFile? entry = raw == null ? null : entries[raw];
+      if (entry == null) continue;
+      entry.name = decoded.texts[k].replaceAll('\\', '/');
+      // 与 ZipDecoder 同一判据：非 Unix 打包的条目靠名字末尾的 `/` 判目录。逐字节名里
+      // 结尾的 0x5C 尾字节曾被当成 `/`。
+      if (header.versionMadeBy >> 8 != 3) {
+        entry.isFile = !entry.name.endsWith('/');
+      }
+    }
+    engineLog.logDiagnostic(
+      'MangaArchiveImporter',
+      'ZIP ${p.basename(file.path)}: ${legacy.length} entry names decoded as '
+          '${decoded.encoding.name}',
+    );
+  }
+
+  /// 严格 UTF-8 解码，解不开返回 null。archive 3.6.1 读名字也是这个口径：解得开就用，
+  /// 否则逐字节转字符。
+  static String? _strictUtf8(Uint8List raw) {
+    try {
+      return utf8.decode(raw);
+    } on FormatException {
+      return null;
+    }
+  }
+
+  /// 中央目录里每条记录的原始名字字节，与 [ZipDirectory.fileHeaders] 同序；结构对不上返回
+  /// null。偏移 / 大小取 archive 解析好的值（已含 ZIP64 EOCD 的真值）。
+  static List<Uint8List>? _readCentralDirectoryNames(
+    File file,
+    ZipDirectory directory,
+  ) {
+    final int count = directory.fileHeaders.length;
+    final int size = directory.centralDirectorySize;
+    final RandomAccessFile handle = file.openSync();
+    final Uint8List bytes;
+    try {
+      handle.setPositionSync(directory.centralDirectoryOffset);
+      bytes = handle.readSync(size);
+    } finally {
+      handle.closeSync();
+    }
+    if (bytes.length != size) return null;
+    final ByteData data = ByteData.sublistView(bytes);
+    final List<Uint8List> names = <Uint8List>[];
+    int offset = 0;
+    for (int i = 0; i < count; i++) {
+      if (offset + _kCentralHeaderBytes > size ||
+          data.getUint32(offset, Endian.little) != _kCentralHeaderSignature) {
+        return null;
+      }
+      final int nameLength = data.getUint16(offset + 28, Endian.little);
+      final int extraLength = data.getUint16(offset + 30, Endian.little);
+      final int commentLength = data.getUint16(offset + 32, Endian.little);
+      final int nameStart = offset + _kCentralHeaderBytes;
+      if (nameStart + nameLength > size) return null;
+      names.add(
+        Uint8List.sublistView(bytes, nameStart, nameStart + nameLength),
+      );
+      offset = nameStart + nameLength + extraLength + commentLength;
+    }
+    return names;
   }
 
   static void _validateEntry(ArchiveFile entry) {

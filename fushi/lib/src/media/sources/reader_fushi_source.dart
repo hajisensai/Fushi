@@ -8,16 +8,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/mining/after_mining_popup_action.dart';
+import 'package:fushi/src/media/sources/book_cover_file_resolver.dart';
 import 'package:fushi/src/media/sources/manga_fushi_source.dart';
 import 'package:fushi/src/media/sources/reader_media_source.dart';
 import 'package:fushi/src/media/sources/reader_pdf_source.dart';
 import 'package:fushi_engine/media/media_pref_keys.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/base_page.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
+import 'package:fushi_engine/media/item_scrape/item_scrape_store.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_theme_host.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_control_layout.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart'
@@ -965,111 +969,28 @@ class ReaderFushiSource extends ReaderMediaSource {
     return null;
   }
 
-  /// Real-filesystem child lister for [resolveCaseInsensitive]. Returns the
-  /// child entity paths of [dir], or an empty list if it is missing/unreadable.
-  static List<String> _listDirEntries(String dir) {
-    final Directory d = Directory(dir);
-    if (!d.existsSync()) return const <String>[];
-    try {
-      return d
-          .listSync(followLinks: false)
-          .map((FileSystemEntity e) => e.path)
-          .toList();
-    } catch (_) {
-      return const <String>[];
-    }
-  }
-
   /// Case-insensitive on-disk resolution of a book cover (TODO-1319 / BUG-612).
-  ///
-  /// Walks each relative candidate in [relPaths] segment by segment under
-  /// [extractDir], matching each segment against the real directory entries
-  /// from [listDir] -- exact case first, then case-insensitively. Returns the
-  /// first candidate that fully resolves to an on-disk path, or null. This lets
-  /// a coverPath whose case was mangled by a case-insensitive host still find
-  /// the case-preserved extracted file on a case-sensitive device.
-  ///
-  /// Pure + injectable ([listDir]) so it is unit-testable with a mock
-  /// filesystem; the instance path wires in [_listDirEntries].
+  /// Implementation lives in the leaf `book_cover_file_resolver.dart` so
+  /// callers outside the reader (book art scraping) can share it without
+  /// pulling this whole source into their import graph.
   @visibleForTesting
   static String? resolveCaseInsensitive({
     required String extractDir,
     required List<String> relPaths,
     required List<String> Function(String dir) listDir,
-  }) {
-    for (final String rel in relPaths) {
-      if (rel.isEmpty || p.isAbsolute(rel)) continue;
-      final List<String> segs = p
-          .split(rel)
-          .where((String s) => s.isNotEmpty && s != '.' && s != '/')
-          .toList();
-      if (segs.isEmpty) continue;
-      String current = extractDir;
-      bool resolvedAll = true;
-      for (final String seg in segs) {
-        final List<String> children = listDir(current);
-        String? match;
-        for (final String child in children) {
-          if (p.basename(child) == seg) {
-            match = child;
-            break;
-          }
-        }
-        if (match == null) {
-          final String segLower = seg.toLowerCase();
-          for (final String child in children) {
-            if (p.basename(child).toLowerCase() == segLower) {
-              match = child;
-              break;
-            }
-          }
-        }
-        if (match == null) {
-          resolvedAll = false;
-          break;
-        }
-        current = match;
-      }
-      if (resolvedAll) return current;
-    }
-    return null;
-  }
+  }) => resolveBookCoverCaseInsensitive(
+    extractDir: extractDir,
+    relPaths: relPaths,
+    listDir: listDir,
+  );
 
-  /// Resolve a book cover to its on-disk **file path** (not a `file://` URL),
-  /// reusing the exact same case-insensitive resolution the library grid uses
-  /// (`_resolveCoverUrl`) so card mining and shelf display agree on which cover
-  /// file to use (TODO-1388 / BUG-703). The declared [coverPath] wins over the
-  /// conventional `cover.jpg/jpeg/png` fallbacks; each candidate is matched
-  /// exact-case-first then case-insensitively against the real extracted files,
-  /// so a coverPath whose case was mangled by a case-insensitive import host
-  /// (Windows/macOS `p.canonicalize` lower-casing, epub_parser _itemRelHref)
-  /// still finds the case-preserved file on a case-sensitive device
-  /// (Android/Linux). Returns null when no candidate resolves to a real file.
-  ///
-  /// Static + wiring the real [_listDirEntries] lister so mining (which only
-  /// had a naive `File(join(extractDir, coverHref)).existsSync()` probe --
-  /// blind to case, hence the missing cover on Android) shares one resolution
-  /// with the grid instead of drifting.
-  ///
-  /// Not `@visibleForTesting`: this is genuine production API consumed by both
-  /// the shelf grid (`_resolveCoverUrl`) and card mining (`mining.part.dart`).
+  /// Resolve a book cover to its on-disk file path; see
+  /// [resolveBookCoverFilePath]. Consumed by the shelf grid
+  /// (`_resolveCoverUrl`) and card mining (`mining.part.dart`).
   static String? resolveCoverFilePath({
     required String extractDir,
     String? coverPath,
-  }) {
-    final String? resolved = resolveCaseInsensitive(
-      extractDir: extractDir,
-      relPaths: <String>[
-        if (coverPath != null && coverPath.isNotEmpty) coverPath,
-        'cover.jpg',
-        'cover.jpeg',
-        'cover.png',
-      ],
-      listDir: _listDirEntries,
-    );
-    if (resolved != null && File(resolved).existsSync()) return resolved;
-    return null;
-  }
+  }) => resolveBookCoverFilePath(extractDir: extractDir, coverPath: coverPath);
 
   /// 删一本书（EPUB / PDF / 漫画 / 字幕书）攒下的统计：「同时删除统计数据」勾选的
   /// 落地，书架单删 / 批删 / 合集连删 / 漫画作品页移出书架共用。
@@ -1265,6 +1186,9 @@ class ReaderFushiSource extends ReaderMediaSource {
         if (bookRow != null && !keepFiles) {
           await EpubStorage.deleteBookDir(bookRow.extractDir);
         }
+        // v155：条目附加图（横版背景 / logo）行已随 deleteEpubBook 同事务删，
+        // 文件在这里按「不再被任何 item_images 行引用」回收。
+        await ItemScrapeStore(db).reclaimUnreferencedFiles();
         // 用户明确勾选后才删原始音频；两条记录可能指向同一批文件，第二次删到的
         // 已不存在，[deleteLocalFiles] 既不计入 removed 也不计入 failures。
         if (deleteLocalFiles) {
@@ -1791,16 +1715,37 @@ class ReaderFushiSource extends ReaderMediaSource {
     await setPreference<bool>(key: 'dismiss_popup_on_scroll', value: value);
   }
 
-  /// 制卡被收下（成功 / 进待发队列）后关掉整个查词弹窗栈（用户建议 q16Apecgbg：
-  /// 「查词框妨碍阅读」）。默认关闭 = 制卡后弹窗照旧留着（既有行为）。接线在
-  /// `closePopupAfterAcceptedMine`（阅读器 / 有声书 / 走 DictionaryPageMixin 的查词
-  /// 车道共用）。视频播放页不看本开关：制卡后恒关弹窗、续播（反馈 OeS0m8tLHc，见
-  /// `DictionaryPageMixin.closePopupAfterMining` 的覆写）。
-  bool get closePopupAfterMining =>
-      getPreference<bool>(key: 'close_popup_after_mining', defaultValue: false);
+  /// [module] 里制卡被收下后查词弹窗怎么处理（拍板台 8ldy3d8XFA，取代用户建议
+  /// q16Apecgbg 的全局开关）。接线在 `closePopupAfterAcceptedMine`，两条弹窗车道
+  /// （阅读器 base_source_page / DictionaryPageMixin）都按宿主的 `lookupHostModule` 取。
+  ///
+  /// 旧开关 `close_popup_after_mining`（键冻结）只读不写：没选过的模块从它推默认，
+  /// 见 [afterMiningPopupDefault]。
+  AfterMiningPopupAction afterMiningPopupAction(ModuleId module) =>
+      resolveAfterMiningPopupAction(
+        module,
+        stored: readStoredPreference<String>(afterMiningPopupPrefKey(module)),
+        legacyCloseAfterMining: _legacyClosePopupAfterMining,
+      );
 
-  Future<void> setClosePopupAfterMining(bool value) async {
-    await setPreference<bool>(key: 'close_popup_after_mining', value: value);
+  /// [module] 没选过时的出厂默认（设置行的「恢复默认」对照它）。
+  AfterMiningPopupAction afterMiningPopupDefaultFor(ModuleId module) =>
+      afterMiningPopupDefault(
+        module,
+        legacyCloseAfterMining: _legacyClosePopupAfterMining,
+      );
+
+  bool get _legacyClosePopupAfterMining =>
+      readStoredPreference<bool>('close_popup_after_mining') ?? false;
+
+  Future<void> setAfterMiningPopupAction(
+    ModuleId module,
+    AfterMiningPopupAction action,
+  ) async {
+    await setPreference<String>(
+      key: afterMiningPopupPrefKey(module),
+      value: action.wireName,
+    );
   }
 
   /// 鼠标滚轮翻页节流间隔（毫秒），越大翻页越慢。默认 450ms。

@@ -246,6 +246,14 @@ extension _ReaderMining on _ReaderFushiPageState {
     final String? displayDocumentTitle = _book == null
         ? null
         : displayTitleForBook(bookKey: widget.bookKey, rawTitle: _book!.title);
+    // NSFW 书 +「制卡图片也模糊」：书封换成模糊副本（失败则不带图，绝不退回原图）。
+    coverPath = await resolveNsfwCardImagePath(
+      db: appModel.database,
+      path: coverPath,
+      blurCardImages: appModel.prefsRepo.blurNsfwCardImages,
+      kind: TagHostKind.epub,
+      entryKey: widget.bookKey,
+    );
     final AnkiMiningContext miningContext = AnkiMiningContext(
       sourceLink: sourceLink,
       sentence: sentence,
@@ -658,11 +666,15 @@ extension _ReaderMining on _ReaderFushiPageState {
       return null;
     }
 
-    // BUG-405：复用 AudiobookBridge.buildSasayakiPayload，与 playback 桥接路径共用
+    // BUG-405：与 playback 桥接路径（AudiobookBridge.buildSentenceAudioPayload）共用
     // 同一份必含 cue 原文 text 的 payload 契约 —— JS collectSasayakiCueRanges 靠
     // cue.text 在实时 DOM 就近重定位高亮（BUG-060/300），缺 text 会落空。
+    // 取本章 payload 走挂在整书 cue 列表上的派生索引：整书只解码一次，不再每装一章
+    // 把全书 cue 逐条解码再按章过滤；索引随 _cachedAllCues 那个列表对象一起失效。
     final List<Map<String, dynamic>> payload =
-        AudiobookBridge.buildSentenceAudioPayload(allCues, _currentChapter);
+        AudiobookBridge.sentenceAudioCueIndexFor(
+          allCues,
+        ).payloadFor(_currentChapter);
     // BUG-366/TODO-630 诊断：sasayaki 书最终送进 WebView 的 payload 条数。
     // payloadLen=0 表示当前章无命中 cue（applySasayakiCues 不会被调用）。
     debugPrint(

@@ -25,7 +25,9 @@ import 'package:fushi/src/media/audiobook/subtitle_rematch.dart';
 import 'package:fushi_engine/media/audiobook/text_to_epub.dart';
 import 'package:fushi/src/media/import/audiobook_health_summary.dart';
 import 'package:fushi/src/media/import/import_carrier.dart';
+import 'package:fushi/src/media/import/import_dialog_blocks.dart';
 import 'package:fushi/src/media/import/import_dialog_frame.dart';
+import 'package:fushi/src/media/import/import_surface_spec.dart';
 import 'package:fushi/src/media/import/import_flow_mixin.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/import/sidecar_finder.dart';
@@ -42,11 +44,11 @@ import 'package:fushi/src/media/manga/manga_import_dialog.dart';
 import 'package:fushi/src/media/manga/manga_module.dart';
 import 'package:fushi/src/pdf/pdf_importer.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/cover_image.dart' show resizedFileImage;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
-import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
@@ -89,6 +91,7 @@ class BookImportDialog extends StatefulWidget {
     this.initialAudioPaths,
     this.imageArchiveProbe,
     this.requireBook = false,
+    this.pickAudioFirst = false,
     super.key,
   });
 
@@ -119,6 +122,11 @@ class BookImportDialog extends StatefulWidget {
   /// 落进字幕书分支，就会悄悄再生成一本与原书一模一样的字幕书。为真时没选书就
   /// 先弹书籍选择器，选了才继续。
   final bool requireBook;
+
+  /// 从导入页「有声书」方式块打开（导入稿 IM15）：对话框一出现就弹音频选择器，
+  /// 选完的音频进音频行，字幕 / 转录照常由「只选了音频」提示与导入校验引导补上。
+  /// 只是同一个对话框的另一个起点，不另开有声书专用流程。
+  final bool pickAudioFirst;
   @override
   State<BookImportDialog> createState() => _BookImportDialogState();
 }
@@ -132,6 +140,9 @@ class _BookImportDialogState extends State<BookImportDialog>
   /// TODO-1362）。用户在标题框手打即置 [ImportTitleSource.user]，此后自动派生不再
   /// 覆盖；同来源重选（如再点一次「选书」换一本）刷新为新书名。
   ImportTitleSource _titleSource = ImportTitleSource.none;
+
+  /// 作者框当前内容是否由音频标签自动填入（框下写明来源；用户一改即清）。
+  bool _authorAutoFilled = false;
 
   String? _epubPath;
   String? _subtitlePath;
@@ -240,6 +251,11 @@ class _BookImportDialogState extends State<BookImportDialog>
         _tryExtractAudioMetadata();
       });
     }
+    if (widget.pickAudioFirst) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_pickAudio());
+      });
+    }
   }
 
   @override
@@ -259,6 +275,7 @@ class _BookImportDialogState extends State<BookImportDialog>
         onDrop: _handleDialogDrop,
         child: BookImportDialogFrame(
           title: t.srt_import,
+          subtitle: t.srt_import_hint_epub_or_srt,
           content: _buildForm(),
           actions: [
             // 漫画入口（「OCR 导入漫画」/「在线目录」）均已移出书籍导入框：
@@ -398,11 +415,13 @@ class _BookImportDialogState extends State<BookImportDialog>
   }
 
   Widget _buildForm() {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final bool hasBook = _epubPath != null;
     int step = 0;
-    // M3E 分步：拖放区卡（选主文件）→ 文件分段卡 → 书名 / 作者 → 匹配选项
-    // 分段卡 → 进度卡。首屏错峰进场（FushiEntranceScope 窗口外挂载的块瞬时出现）。
+    // 自上而下（2026-11 导入对话框统一）：
+    // 一个对话框只用一个模块色系（书 = coral）：
+    // ① 书籍文件主色块（模块色反色，同外层「导入书」块），也是拖放落点；
+    // ② 封面 / 字幕 / 音频三格同色系小色块；
+    // ③ 书名 / 作者：同色系表单色块里的 M3 填充式字段；
+    // ④ 只选了音频的引导、引用原文件开关、匹配选项、进度卡。首屏错峰进场。
     Widget stagger(Widget child) =>
         FushiStaggeredEntrance(index: step++, child: child);
     return FushiEntranceScope(
@@ -410,29 +429,22 @@ class _BookImportDialogState extends State<BookImportDialog>
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          stagger(_epubRow()),
+          const SizedBox(height: importDialogRhythm),
+          // 音频 → 字幕 → 封面：转录依赖音频，依赖关系从左往右读。
           stagger(
-            ImportDropZoneCard(
-              icon: FushiIcons.importFile,
-              title: hasBook
-                  ? (_epubName ?? p.basename(_epubPath!))
-                  : t.srt_import_hint_epub_or_srt,
-              subtitle: hasBook ? t.srt_import_pick_epub : null,
-              selected: hasBook,
-              onTap: importing ? null : () => _pickEpub(),
+            ImportPickTileGrid(
+              children: <Widget>[_audioRow(), _subtitleRow(), _coverRow()],
             ),
           ),
-          SizedBox(height: tokens.spacing.rowVertical),
-          stagger(
-            AdaptiveSettingsSection(
-              children: [_epubRow(), _subtitleRow(), _audioRow(), _coverRow()],
-            ),
-          ),
+          const SizedBox(height: importDialogRhythm),
+          stagger(_bookDetails()),
           if (_audioOnlyHint != AudioOnlyImportHint.none) ...[
-            SizedBox(height: tokens.spacing.gap),
+            const SizedBox(height: importDialogRhythm),
             stagger(_audioOnlyNotice(_audioOnlyHint)),
           ],
           if (isDesktopPlatform && _audioPaths.isNotEmpty) ...[
-            SizedBox(height: tokens.spacing.gap),
+            const SizedBox(height: importDialogRhythm),
             stagger(
               AdaptiveSettingsSection(
                 children: [
@@ -447,26 +459,8 @@ class _BookImportDialogState extends State<BookImportDialog>
               ),
             ),
           ],
-          SizedBox(height: tokens.spacing.rowVertical),
-          stagger(
-            FushiTextField(
-              controller: _titleCtrl,
-              labelText: t.srt_import_title_hint,
-              // 用户一旦在标题框手打即锁定来源为 user，此后重选文件不再覆盖（TODO-1362）。
-              // Flutter 不会为程序化的 controller.text= 触发 onChanged，故仅真实用户输入
-              // （含屏幕键盘/粘贴，经 FushiTextField 转发）才置 user。
-              onChanged: (String _) => _titleSource = ImportTitleSource.user,
-            ),
-          ),
-          SizedBox(height: tokens.spacing.gap),
-          stagger(
-            FushiTextField(
-              controller: _authorCtrl,
-              labelText: t.srt_import_author_hint,
-            ),
-          ),
           if (_willRunMatcher) ...[
-            SizedBox(height: tokens.spacing.rowVertical),
+            const SizedBox(height: importDialogRhythm),
             stagger(
               ImportMatchOptionsCard(
                 autoToggle: AdaptiveSettingsSwitchRow(
@@ -495,7 +489,7 @@ class _BookImportDialogState extends State<BookImportDialog>
             ),
           ],
           if (importing) ...[
-            SizedBox(height: tokens.spacing.card),
+            const SizedBox(height: importDialogRhythm),
             ImportProgressCard(progress: progress, message: progressMsg),
           ],
         ],
@@ -535,72 +529,133 @@ class _BookImportDialogState extends State<BookImportDialog>
     );
   }
 
+  /// ① 书籍文件主色块：未选时标题是动作、副行是格式行；已选时标题是文件名
+  /// （可清除）。
   Widget _epubRow() {
-    return FushiFilePickerRow(
-      enabled: !importing,
-      title: t.srt_import_pick_epub,
-      subtitle: _epubPath == null ? null : _epubName ?? p.basename(_epubPath!),
+    final String? path = _epubPath;
+    return ImportPickBlock(
+      key: ValueKey<String>(
+        path == null ? 'book-import-pick-block' : 'book-import-selected-card',
+      ),
+      tone: ImportTone.coral,
       icon: FushiIcons.books,
-      onTap: () => _pickEpub(),
-      actions: [
-        FushiIconButton(
-          icon: FushiIcons.folderOpen,
-          tooltip: t.srt_import_pick_epub,
-          isWideTapArea: true,
+      title: path == null
+          ? t.srt_import_pick_epub
+          : (_epubName ?? p.basename(path)),
+      subtitle: path == null ? _bookFormatsLine : t.srt_import_pick_epub,
+      dropHint: t.book_import_drop_hint,
+      selected: path != null,
+      enabled: !importing,
+      onTap: _pickEpub,
+      onClear: () => setState(() {
+        _epubPath = null;
+        _epubName = null;
+      }),
+    );
+  }
+
+  /// 书籍文件行的格式行：「支持 n 种格式 · EPUB · PDF · TXT …」。漫画载体
+  /// （mokuro / cbz / zip）虽在选择器里，选中后转交漫画流程，不算书籍格式。
+  String get _bookFormatsLine {
+    final List<String> formats = <String>[
+      'epub',
+      'pdf',
+      ...TextToEpub.supportedExtensions,
+    ];
+    final String head = formats
+        .take(3)
+        .map((String e) => e.toUpperCase())
+        .join(' · ');
+    return '${t.import_formats_supported_count(n: formats.length)} · $head …';
+  }
+
+  /// ② 书名 / 作者：M3E 填充式字段。自动填入的字段在 helper 行写明来源。
+  Widget _bookDetails() {
+    final String? titleNote = _titleCtrl.text.trim().isEmpty
+        ? null
+        : switch (_titleSource) {
+            ImportTitleSource.epub => t.book_import_field_from_book,
+            ImportTitleSource.subtitle => t.book_import_field_from_subtitle,
+            ImportTitleSource.metadata => t.book_import_field_from_audio,
+            ImportTitleSource.none || ImportTitleSource.user => null,
+          };
+    // 与上面的选择块同一色系的表单色块（字段填充 / 指示线取块色）。
+    return ImportSectionBlock(
+      tone: ImportTone.coral,
+      children: <Widget>[
+        FushiTextField(
+          controller: _titleCtrl,
+          labelText: t.srt_import_title_hint,
+          helperText: titleNote,
           enabled: !importing,
-          onTap: _pickEpub,
+          // 用户一旦在标题框手打即锁定来源为 user，此后重选文件不再覆盖（TODO-1362）。
+          // Flutter 不会为程序化的 controller.text= 触发 onChanged，故仅真实用户输入
+          // （含屏幕键盘/粘贴，经 FushiTextField 转发）才置 user。
+          onChanged: (String _) {
+            if (_titleSource != ImportTitleSource.user) {
+              setState(() => _titleSource = ImportTitleSource.user);
+            }
+          },
+        ),
+        FushiTextField(
+          controller: _authorCtrl,
+          labelText: t.srt_import_author_hint,
+          helperText: _authorAutoFilled ? t.book_import_field_from_audio : null,
+          enabled: !importing,
+          onChanged: (String _) {
+            if (_authorAutoFilled) setState(() => _authorAutoFilled = false);
+          },
         ),
       ],
     );
   }
 
   Widget _subtitleRow() {
-    return FushiFilePickerRow(
-      enabled: !importing,
-      title: t.srt_import_pick_subtitle_files,
-      subtitle: _subtitlePath == null
-          ? null
-          : _subtitleName ?? p.basename(_subtitlePath!),
+    final String? path = _subtitlePath;
+    // 转录回填的显示名固定是结果名（见 _transcribeSubtitleFromAudio）。
+    final bool transcribed =
+        path != null && _subtitleName == t.audiobook_transcribe_result_name;
+    return ImportPickTile(
+      tone: ImportTone.coral,
       icon: FushiIcons.subtitles,
-      onTap: _onSubtitleRowTap,
+      title: t.srt_import_pick_subtitle_files,
+      // 未选时副行说明这一格能做什么（能转录的平台点明麦克风钮的意思）；
+      // 已选时是文件名（转录回填的显示名固定是结果名）。
+      subtitle: path == null
+          ? (isAsrSupported
+                ? t.book_import_subtitle_row_hint
+                : t.book_import_subtitle_row_hint_plain)
+          : _subtitleName ?? p.basename(path),
+      selected: path != null,
+      enabled: !importing,
+      droppable: true,
+      // 点格子本身 = 选文件；转录是下方常显的带字动作（用户 2026-11：「这样
+      // 看不出能够转录」——原先只是右上角一枚靠 tooltip 解释的图标）。
+      onTap: _pickSubtitle,
+      onClear: () => setState(() {
+        _subtitlePath = null;
+        _subtitleName = null;
+      }),
+      // 点格子本身 = 选文件（标题就写着「选择字幕文件」）；转录是格内唯一的
+      // 额外来源，一枚带字小片（不再「本地文件 / 转录」两枚竖叠撑高整排）。
       below: !isAsrSupported
           ? null
-          : SubtitleSourceSegments(
-              // 转录回填的字幕显示名固定是结果名（见 _transcribeSubtitleFromAudio），
-              // 其余来源（选文件 / 同目录带入 / 拖入）都是本地文件。
-              current: _subtitlePath == null
-                  ? null
-                  : _subtitleName == t.audiobook_transcribe_result_name
-                  ? SubtitleSourceChoice.transcribe
-                  : SubtitleSourceChoice.pickFile,
-              enabled: !importing,
-              onChoose: (SubtitleSourceChoice choice) => unawaited(
-                choice == SubtitleSourceChoice.transcribe
-                    ? _transcribeSubtitleFromAudio()
-                    : _pickSubtitle(),
-              ),
+          : ImportTileActions(
+              colors: ImportPickTile.colorsOf(context, ImportTone.coral),
+              // 转录要先有音频：不藏按钮，置灰并用一行小字写出原因。
+              note: _audioPaths.isEmpty
+                  ? t.audiobook_transcribe_needs_audio
+                  : null,
+              actions: <ImportTileAction>[
+                ImportTileAction(
+                  icon: FushiIcons.voice,
+                  label: t.import_subtitle_source_transcribe,
+                  selected: transcribed,
+                  enabled: !importing && _audioPaths.isNotEmpty,
+                  onTap: _transcribeSubtitleFromAudio,
+                ),
+              ],
             ),
-      actions: [
-        if (_subtitlePath != null)
-          FushiIconButton(
-            icon: FushiIcons.close,
-            tooltip: t.dialog_clear,
-            isWideTapArea: true,
-            enabled: !importing,
-            onTap: () async => setState(() {
-              _subtitlePath = null;
-              _subtitleName = null;
-            }),
-          ),
-        if (!isAsrSupported)
-          FushiIconButton(
-            icon: FushiIcons.folderOpen,
-            tooltip: t.srt_import_pick_subtitle_files,
-            isWideTapArea: true,
-            enabled: !importing,
-            onTap: _pickSubtitle,
-          ),
-      ],
     );
   }
 
@@ -690,6 +745,7 @@ class _BookImportDialogState extends State<BookImportDialog>
     final AsrLanguage? languageHint = await _asrLanguageHintFromPendingBook();
     if (!mounted) return;
     final String? srtPath = await showAsrTranscribeSheet(
+      tone: ImportTone.coral,
       context: context,
       audioPaths: List<String>.of(_audioPaths),
       languageHint: languageHint,
@@ -704,36 +760,23 @@ class _BookImportDialogState extends State<BookImportDialog>
   }
 
   Widget _audioRow() {
-    return FushiFilePickerRow(
-      enabled: !importing,
+    return ImportPickTile(
+      tone: ImportTone.coral,
+      icon: FushiIcons.audio,
       title: t.srt_import_pick_audio_files,
       subtitle: _audioPaths.isEmpty
-          ? null
+          ? t.book_import_audio_row_hint
           : _audioPaths.length == 1
           ? p.basename(_audioPaths.first)
           : t.file_count(count: _audioPaths.length),
-      icon: FushiIcons.audio,
+      selected: _audioPaths.isNotEmpty,
+      enabled: !importing,
+      droppable: true,
       onTap: _pickAudio,
-      actions: [
-        if (_audioPaths.isNotEmpty)
-          FushiIconButton(
-            icon: FushiIcons.close,
-            tooltip: t.dialog_clear,
-            isWideTapArea: true,
-            enabled: !importing,
-            onTap: () async => setState(() {
-              _audioPaths = [];
-              _audioCoverPath = null;
-            }),
-          ),
-        FushiIconButton(
-          icon: FushiIcons.folderOpen,
-          tooltip: t.srt_import_pick_audio_files,
-          isWideTapArea: true,
-          enabled: !importing,
-          onTap: _pickAudio,
-        ),
-      ],
+      onClear: () => setState(() {
+        _audioPaths = [];
+        _audioCoverPath = null;
+      }),
     );
   }
 
@@ -962,7 +1005,10 @@ class _BookImportDialogState extends State<BookImportDialog>
           if (meta.title != null) {
             _autoFillTitle(meta.title!, ImportTitleSource.metadata);
           }
-          if (fillAuthor) _authorCtrl.text = meta.author!;
+          if (fillAuthor) {
+            _authorCtrl.text = meta.author!;
+            _authorAutoFilled = true;
+          }
         });
       }
       // 找到首个含可用 tag 的文件即停（多文件有声书用第一段的容器 tag）。
@@ -970,34 +1016,30 @@ class _BookImportDialogState extends State<BookImportDialog>
     }
   }
 
+  /// 封面格：手选封面优先，其次音频内嵌封面（副行「取自音频」）；有封面时
+  /// glyph 位换成缩略图。
   Widget _coverRow() {
     final String? effectiveCover = _coverPath ?? _audioCoverPath;
-    return FushiFilePickerRow(
-      enabled: !importing,
+    final bool fromAudio = _coverPath == null && _audioCoverPath != null;
+    return ImportPickTile(
+      tone: ImportTone.coral,
+      icon: FushiIcons.addImage,
       title: t.srt_import_pick_cover,
-      subtitle: effectiveCover == null ? null : p.basename(effectiveCover),
-      icon: FushiIcons.image,
+      subtitle: effectiveCover == null
+          ? t.book_import_cover_row_hint
+          : (fromAudio
+                ? t.book_import_cover_from_audio
+                : p.basename(effectiveCover)),
+      thumbnail: effectiveCover == null
+          ? null
+          : ImportCoverThumbnail(path: effectiveCover),
+      selected: effectiveCover != null,
+      enabled: !importing,
       onTap: _pickCover,
-      actions: [
-        if (effectiveCover != null)
-          FushiIconButton(
-            icon: FushiIcons.close,
-            tooltip: t.dialog_clear,
-            isWideTapArea: true,
-            enabled: !importing,
-            onTap: () async => setState(() {
-              _coverPath = null;
-              _audioCoverPath = null;
-            }),
-          ),
-        FushiIconButton(
-          icon: FushiIcons.folderOpen,
-          tooltip: t.srt_import_pick_cover,
-          isWideTapArea: true,
-          enabled: !importing,
-          onTap: _pickCover,
-        ),
-      ],
+      onClear: () => setState(() {
+        _coverPath = null;
+        _audioCoverPath = null;
+      }),
     );
   }
 
@@ -1402,22 +1444,29 @@ class BookImportDialogFrame extends StatelessWidget {
     required this.title,
     required this.content,
     required this.actions,
+    this.subtitle,
     super.key,
   });
 
   /// 2026-10 体验优化：标题交给 [ImportDialogFrame] 的固定页头（与有声书导入
   /// 一致），不再塞进可滚动 body——此前表单一长，标题就跟着滚出视口。
   final String title;
+
+  /// 标题下的一行说明（对话框 supporting text）。
+  final String? subtitle;
   final Widget content;
   final List<Widget> actions;
 
   @override
   Widget build(BuildContext context) {
+    // 宽屏放宽到 600：文件组的副行（格式行 / 文件名）不必折行。
     return ImportDialogFrame(
-      leadingIcon: FushiIcons.libraryAdd,
+      tone: ImportTone.coral,
       title: title,
+      subtitle: subtitle,
       body: content,
       actions: actions,
+      maxWidth: 600,
     );
   }
 }
@@ -1472,102 +1521,48 @@ Future<String?> readEpubTitleInBackground(String path) =>
   return (text: currentText, source: currentSource);
 }
 
-/// 导入对话框顶部的拖放区卡（M3E）：未选主文件时是描边卡 + 饼干形图标徽标 +
-/// 提示语，点按即打开选择器（桌面也可直接把文件拖进整个对话框）；选中后变成
-/// primaryContainer 饱和色块并显示所选文件名，图标徽标弹簧换成对勾。
-///
-/// 书籍 / 有声书导入框共用（[AudiobookImportDialog] 也从这里取）。
-///
-/// 桌面正拖着文件悬停在对话框上时（[FushiFileDropTarget.dragHoveringOf]）卡片
-/// spring 轻放大并亮成 primary 色块，告诉用户「松手就收」。
-class ImportDropZoneCard extends StatelessWidget {
-  const ImportDropZoneCard({
-    required this.icon,
-    required this.title,
-    this.subtitle,
-    this.selected = false,
-    this.onTap,
-    super.key,
-  });
+/// 文件选择行行首的封面缩略图（2:3，小圆角）：换图时淡入切换，解码失败回退
+/// 成图标占位。
+class ImportCoverThumbnail extends StatelessWidget {
+  const ImportCoverThumbnail({required this.path, super.key});
 
-  final IconData icon;
-  final String title;
-  final String? subtitle;
-
-  /// 主文件已选：卡片转饱和色块、徽标换成对勾。
-  final bool selected;
-  final VoidCallback? onTap;
+  final String path;
 
   @override
   Widget build(BuildContext context) {
-    final FushiTypography type = context.fushiType;
     final FushiMotionScheme motion = context.fushiMotion;
-    final String? sub = subtitle;
-    final bool dragging = FushiFileDropTarget.dragHoveringOf(context);
-    final bool lit = selected || dragging;
-    final FushiCardTone tone = lit
-        ? FushiCardTone.primary
-        : FushiCardTone.neutral;
-    // 点亮成色块时字跟卡片配对前景（fushiType 自带页面前景，HBK-AUDIT-022）；
-    // 中性时为 null，copyWith 保持原色。
-    final Color? onCard = fushiCardToneColors(context, tone)?.onContainer;
-    return AnimatedScale(
-      scale: dragging ? 1.02 : 1,
-      duration: motion.spatialFast.duration,
-      curve: motion.spatialFast.curve,
-      child: FushiCard(
-        variant: lit ? FushiCardVariant.filled : FushiCardVariant.outlined,
-        tone: tone,
-        onTap: onTap,
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-        child: Row(
-          children: <Widget>[
-            AnimatedSwitcher(
-              duration: motion.spatialDefault.duration,
-              switchInCurve: motion.spatialDefault.curve,
-              switchOutCurve: motion.effectsFast.curve,
-              // 默认的淡入转场会把 spatial 弹簧的过冲直接喂给透明度。
-              transitionBuilder: (Widget child, Animation<double> animation) =>
-                  FadeTransition(
-                    opacity: fushiUnitClamped(animation),
-                    child: child,
-                  ),
-              child: FushiDialogHeroIcon(
-                key: ValueKey<bool>(selected),
-                icon: selected ? FushiIcons.success : icon,
-                tone: lit ? FushiHeroTone.primary : FushiHeroTone.neutral,
-                size: 56,
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return ClipRRect(
+      borderRadius: FushiM3eShape.smallRadius,
+      child: SizedBox(
+        width: 34,
+        height: 48,
+        child: AnimatedSwitcher(
+          duration: motion.effectsDefault.duration,
+          switchInCurve: motion.effectsDefault.curve,
+          switchOutCurve: motion.effectsFast.curve,
+          transitionBuilder: (Widget child, Animation<double> animation) =>
+              FadeTransition(
+                opacity: fushiUnitClamped(animation),
+                child: child,
               ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    title,
-                    style: type.titleMediumEmphasized.copyWith(color: onCard),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  if (sub != null && sub.isNotEmpty) ...<Widget>[
-                    const SizedBox(height: 4),
-                    Text(
-                      sub,
-                      style: type.bodyMedium.copyWith(color: onCard),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+          child: Image(
+            key: ValueKey<String>(path),
+            image: resizedFileImage(File(path)),
+            fit: BoxFit.cover,
+            width: 34,
+            height: 48,
+            errorBuilder: (BuildContext _, Object _, StackTrace? _) =>
+                ColoredBox(
+                  color: tokens.surfaces.group,
+                  child: Center(
+                    child: FushiIcon(
+                      FushiIcons.image,
+                      color: tokens.surfaces.onVariant,
                     ),
-                  ],
-                ],
-              ),
-            ),
-            if (onTap != null) ...<Widget>[
-              const SizedBox(width: 8),
-              const FushiIcon(FushiIcons.chevronRight),
-            ],
-          ],
+                  ),
+                ),
+          ),
         ),
       ),
     );

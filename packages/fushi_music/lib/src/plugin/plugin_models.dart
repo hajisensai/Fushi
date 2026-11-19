@@ -192,6 +192,44 @@ class MusicPluginManifest {
 
   bool can(MusicPluginCapability c) => capabilities.contains(c.wire);
 
+  /// 与 [fromJson] 对称（互联中继把 host 上的清单交给没有插件运行时的设备）。
+  Map<String, Object?> toJson() => <String, Object?>{
+    'kind': kind,
+    'tracking': ?tracking,
+    'id': id,
+    'name': name,
+    'version': version,
+    'api': api,
+    'capabilities': capabilities,
+    'searchTypes': searchTypes,
+    'permissions': permissions,
+    'network': <String, Object?>{'domains': networkDomains},
+    'author': ?author,
+    'description': ?description,
+    'homepage': ?homepage,
+  };
+
+  /// 去掉 [excluded] 这几项能力后的清单（其余原样）。
+  MusicPluginManifest withoutCapabilities(Set<String> excluded) =>
+      MusicPluginManifest(
+        kind: kind,
+        tracking: tracking,
+        id: id,
+        name: name,
+        version: version,
+        api: api,
+        capabilities: <String>[
+          for (final String c in capabilities)
+            if (!excluded.contains(c)) c,
+        ],
+        searchTypes: searchTypes,
+        permissions: permissions,
+        networkDomains: networkDomains,
+        author: author,
+        description: description,
+        homepage: homepage,
+      );
+
   /// 声明了歌词来源能力（`lyricsSearch` + `lyricsFetch`，Rust 侧保证成对）。
   bool get providesLyricsSource =>
       can(MusicPluginCapability.lyricsSearch) &&
@@ -303,6 +341,14 @@ class MusicPluginPackageInfo {
         signer: _str(j['signer']),
         files: _strings(j['files']),
       );
+
+  /// 与 [fromJson] 对称（互联中继目录用）。
+  Map<String, Object?> toJson() => <String, Object?>{
+    'manifest': manifest.toJson(),
+    'digest': digest,
+    'signer': ?signer,
+    'files': files,
+  };
 
   final MusicPluginManifest manifest;
 

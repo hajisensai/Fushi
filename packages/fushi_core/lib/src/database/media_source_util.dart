@@ -79,7 +79,16 @@ const Set<String> kSourceConfigAllowedKeys = <String>{
   // AList / OpenList 站点根（`https://od.example.com`）；非敏感，条目地址由它派生。
   'baseUrl',
   kSourceConfigIosBookmarkKey,
+  kSourceConfigOneShotKey,
 };
+
+/// 「导入文件夹（仅此一次）」的临时来源行在 configJson 里的标记键（值恒为 true）。
+///
+/// 临时行是一条普通来源行，扫完由 `finally` 删；进程在扫描中途被杀时它会留成一条
+/// 用户没加过的常驻来源。带上这个标记，下一次进程就能认出并清掉。进白名单是因为
+/// iOS 上刷新书签会把整份 configJson 经 [encodeSourceConfig] 重写一遍，不在白名单
+/// 里的键会被丢掉。
+const String kSourceConfigOneShotKey = 'oneShot';
 
 /// iOS 本地来源的安全作用域书签（`URL.bookmarkData()` 的 base64）所在的 configJson 键。
 ///

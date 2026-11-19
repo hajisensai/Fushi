@@ -29,7 +29,7 @@ import 'package:fushi_engine/media/audiobook/book_audiobook_pairing.dart'
 import 'package:fushi/src/media/source_library/source_folder_access.dart'
     show sourceConfigValueForBookmark;
 import 'package:fushi_engine/media/source_library/book_library_prune.dart'
-    show BookSourceIndex;
+    show BookSourceIndex, bookSourceScanIndexPrefKey;
 import 'package:fushi_engine/media/manga/manga_archive_importer.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi/src/media/music/music_audio_intake.dart';
@@ -884,7 +884,10 @@ void main() {
         ).scan(source);
 
         expect(summary.succeeded, isFalse);
-        expect(summary.error, contains('正在清理'));
+        // 类型化原因给程序认，`error` 是本地化文案（测试里是基准语言）。
+        expect(summary.blocked, SourceScanBlock.videoScrapeMaintenance);
+        expect(summary.error, isNotEmpty);
+        expect(summary.error, isNot(contains('正在清理')));
         expect(summary.discoveredPaths, isEmpty);
         expect(await repo.listAll(), isEmpty);
         expect(await db.getAllVideoMetadataWorks(), isEmpty);
@@ -2841,6 +2844,125 @@ Attributes = A
       expect(again.error, isNull);
       expect(again.importedMediaCount, 0);
       expect(await db.getAllEpubBooks(), hasLength(2));
+    });
+
+    // BUG-4833：索引此前只在整轮扫描的 finally 里落盘。进程在扫描中途被杀（移动端
+    // 切后台被回收、远端首扫被打断）索引就没了；下一轮 SeriesA 认领 `Vol 1`，SeriesB
+    // 的同名卷被判成「被本来源另一个在场文件占着」，再导一份 `Vol 1 (3)`。
+    test('索引逐卷落盘：扫到第三卷时进程被杀，重扫仍是两本、不出 Vol 1 (3)', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      for (final String series in <String>['SeriesA', 'SeriesB']) {
+        File(p.join(tmp.path, series, 'Vol 1.cbz'))
+          ..parent.createSync(recursive: true)
+          ..writeAsBytesSync(pagesZip(<String>['001.png']));
+      }
+      // 第三卷走 7z 解包（测试替身）：轮到它时前两卷已经导完，这一刻就是「进程被杀」
+      // 的时间点——记下此时库里**已经落盘**的索引。
+      File(p.join(tmp.path, 'SeriesC', 'Vol 9.rar'))
+        ..parent.createSync(recursive: true)
+        ..writeAsBytesSync(<int>[0x52, 0x61, 0x72, 0x21]);
+      final SourceLibraryRow source = await mangaSource(db);
+      final String indexKey = bookSourceScanIndexPrefKey(source.id);
+      bool killed = false;
+      String? indexAtKill;
+      final MangaSevenZipExtractor extractor = MangaSevenZipExtractor(
+        sevenZipOverride: 'fake-7z',
+        runProcess: (String executable, List<String> arguments) async {
+          if (!killed) {
+            killed = true;
+            indexAtKill = await db.getPref(indexKey);
+          }
+          return ProcessResult(1, 2, '', 'killed');
+        },
+      );
+
+      await SourceLibraryScanner(
+        db,
+        transcribeAudiobook: null,
+        mangaSevenZipExtractor: extractor,
+      ).scan(source);
+
+      expect(killed, isTrue);
+      expect(
+        indexAtKill,
+        isNotNull,
+        reason: '前两卷导完时索引必须已经在库里，不能等整轮扫描的 finally',
+      );
+      expect(
+        (await db.getAllEpubBooks()).map((EpubBookRow b) => b.title).toSet(),
+        <String>{'Vol 1', 'Vol 1 (2)'},
+      );
+
+      // 还原成「被杀那一刻」的落盘状态，再扫一遍。
+      await db.setPref(indexKey, indexAtKill!);
+      File(p.join(tmp.path, 'SeriesC', 'Vol 9.rar')).deleteSync();
+      final SourceScanSummary again = await SourceLibraryScanner(
+        db,
+        transcribeAudiobook: null,
+      ).scan((await db.getMediaSourceById(source.id))!);
+
+      expect(again.error, isNull);
+      expect(again.importedMediaCount, 0);
+      expect(
+        (await db.getAllEpubBooks()).map((EpubBookRow b) => b.title).toSet(),
+        <String>{'Vol 1', 'Vol 1 (2)'},
+        reason: '索引丢了才会再导出一份 Vol 1 (3)',
+      );
+    });
+
+    // 索引是整份重写的一条 preferences。认领（已在库的卷记回索引）丢了能原样重做，
+    // 不逐卷落盘——否则索引丢失后重扫一个几千卷、全部已在库的来源就是几千次整份重写。
+    test('索引丢失后重扫：认领不逐卷落盘，整轮结束时一次写回', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      for (final String rel in <String>[
+        'SeriesA/Vol 1.cbz',
+        'SeriesB/Vol 2.cbz',
+      ]) {
+        File(p.joinAll(<String>[tmp.path, ...rel.split('/')]))
+          ..parent.createSync(recursive: true)
+          ..writeAsBytesSync(pagesZip(<String>['001.png']));
+      }
+      final SourceLibraryRow source = await mangaSource(db);
+      await SourceLibraryScanner(db, transcribeAudiobook: null).scan(source);
+      expect(await db.getAllEpubBooks(), hasLength(2));
+      final String indexKey = bookSourceScanIndexPrefKey(source.id);
+      expect(await db.getPref(indexKey), isNotNull);
+
+      // 索引丢了；第三卷走 7z（测试替身），轮到它时前两卷已经认领完。
+      await BookSourceIndex.clear(db, source.id);
+      File(p.join(tmp.path, 'SeriesC', 'Vol 9.rar'))
+        ..parent.createSync(recursive: true)
+        ..writeAsBytesSync(<int>[0x52, 0x61, 0x72, 0x21]);
+      bool reached = false;
+      String? indexAfterClaims;
+      final MangaSevenZipExtractor extractor = MangaSevenZipExtractor(
+        sevenZipOverride: 'fake-7z',
+        runProcess: (String executable, List<String> arguments) async {
+          if (!reached) {
+            reached = true;
+            indexAfterClaims = await db.getPref(indexKey);
+          }
+          return ProcessResult(1, 2, '', 'broken archive');
+        },
+      );
+
+      final SourceScanSummary again = await SourceLibraryScanner(
+        db,
+        transcribeAudiobook: null,
+        mangaSevenZipExtractor: extractor,
+      ).scan((await db.getMediaSourceById(source.id))!);
+
+      expect(reached, isTrue);
+      expect(indexAfterClaims, isNull, reason: '两卷认领期间不该有任何一次索引写入');
+      expect(again.importedMediaCount, 0);
+      expect(await db.getAllEpubBooks(), hasLength(2), reason: '认领，不重导');
+      expect(
+        (await BookSourceIndex.load(db, source.id)).uids,
+        hasLength(2),
+        reason: '认领的两卷随整轮收尾的保存写回',
+      );
     });
 
     test('手动导入的同名漫画不被来源抢走：来源卷按重复跳过、手动那本仍无来源', () async {

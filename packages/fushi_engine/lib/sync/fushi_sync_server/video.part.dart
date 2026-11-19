@@ -443,10 +443,15 @@ extension _FushiSyncServerVideo on FushiSyncServer {
             }
             final VideoSubtitleDefaultHost host =
                 svc as VideoSubtitleDefaultHost;
+            // `?episode=N`：播放列表第 N 集（client 先看
+            // `liveLibrary.videoSubtitleDefaultEpisode` 才带）。
             final String placed = await host.importDefaultVideoSubtitle(
               tmp,
               id: subtitleId,
-              format: p.extension(suffix),
+              // 不能用 p.extension：无语言标记的后缀就是 `.srt` 本身，按文件名规则
+              // 那是「点开头、没有扩展名」，会得到空串而被判成「不是字幕格式」。
+              format: suffix.substring(suffix.lastIndexOf('.') + 1),
+              episodeIndex: _episodeIndexFromRequest(request),
             );
             // 新旧两个名字都回：改名前的 client 只读旧名，读不到会把这次成功的
             // 上传误报成「host 不支持」（见 kLegacyInterconnectHeaderNames）。
@@ -684,6 +689,37 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       }
     }
 
+    // GET /api/library/videos/<id>/fingerprint?episode=N — 卡片来源的字节身份（拍板台
+    // IFCPPprIpT）。client 远程播放 host 的视频制卡时没有本地文件可算指纹，由 host 对
+    // 它要串流的同一个文件（与 `/streamurl` 同一个 resolveVideoFile）算全文件 SHA-256，
+    // 与本地播放制卡的 [VideoSourceFingerprint] 同一口径，卡片因此能跨设备回跳并核验。
+    // 需 Basic 鉴权（不在 /stream 豁免名单）。老 host 无此分支 → 兜底 404，client 当作
+    // 「host 不支持指纹」（制卡不带链接 / 回跳按 bookUid 放行），与此前行为一致。
+    // 新 host 有这个端点、却担保不了这份字节（条目 / 文件不在、算的期间被改写）时回
+    // [kVideoFingerprintUnavailableStatus] + JSON reason，绝不回 404——否则 client 会把它
+    // 当成老 host 放行、绕过字节核验（BUG-4782）。
+    final String? fingerprintId = _extractVideoId(reqPath, 'fingerprint');
+    if (fingerprintId != null) {
+      if (method != 'GET') return shelf.Response(405);
+      final File? file = await svc.resolveVideoFile(
+        fingerprintId,
+        episodeIndex: _episodeIndexFromRequest(request),
+      );
+      if (file == null) {
+        return _videoFingerprintUnavailable(kVideoFingerprintReasonNotFound);
+      }
+      try {
+        final String digest = await VideoSourceFingerprint.instance.fingerprint(
+          file.path,
+        );
+        return jsonResponse(<String, Object?>{'fingerprint': digest});
+      } on FileSystemException catch (error, stack) {
+        // 文件不在 / 算指纹期间被改写：没有可担保的身份。
+        engineLog.log('video.fingerprint', error, stack);
+        return _videoFingerprintUnavailable(kVideoFingerprintReasonUnreadable);
+      }
+    }
+
     // GET /api/library/videos/<id>/clipaudio?startMs=&endMs=&episode=&audioStreamIndex=
     //     &audioStreamCount=&ac=&bitrate= — BUG-1004：host 端本地裁 mining 句子音频段并回传。
     // 需 Basic 鉴权（中间件已处理，clipaudio 不在 /stream 豁免名单）。client ffmpeg 打不开
@@ -713,16 +749,39 @@ extension _FushiSyncServerVideo on FushiSyncServer {
           int.tryParse(request.url.queryParameters['ac'] ?? '') ?? 1;
       final String audioBitrate =
           request.url.queryParameters['bitrate'] ?? '64k';
-      final File? clip = await svc.clipVideoAudio(
-        clipAudioId,
-        startMs: startMs,
-        endMs: endMs,
-        episodeIndex: episodeIndex,
-        audioStreamIndex: audioStreamIndex,
-        audioStreamCount: audioStreamCount,
-        audioChannels: audioChannels,
-        audioBitrate: audioBitrate,
-      );
+      // `?discTitle=BDMV/PLAYLIST/<名>.mpls`：同一张蓝光盘上的另一条 title（远端原盘
+      // 会话，能力位 [kVideoClipAudioDiscTitleCapability]）。不与 `episode` 同给。
+      final String? discTitle = request.url.queryParameters['discTitle'];
+      final File? clip;
+      if (discTitle != null && discTitle.isNotEmpty) {
+        if (svc is! VideoDiscTitleAudioHost) {
+          return shelf.Response.notFound('Disc title clip unsupported');
+        }
+        if (episodeIndex > 0) {
+          return shelf.Response(400, body: 'episode and discTitle conflict');
+        }
+        clip = await (svc as VideoDiscTitleAudioHost).clipVideoDiscTitleAudio(
+          clipAudioId,
+          discTitle: discTitle,
+          startMs: startMs,
+          endMs: endMs,
+          audioStreamIndex: audioStreamIndex,
+          audioStreamCount: audioStreamCount,
+          audioChannels: audioChannels,
+          audioBitrate: audioBitrate,
+        );
+      } else {
+        clip = await svc.clipVideoAudio(
+          clipAudioId,
+          startMs: startMs,
+          endMs: endMs,
+          episodeIndex: episodeIndex,
+          audioStreamIndex: audioStreamIndex,
+          audioStreamCount: audioStreamCount,
+          audioChannels: audioChannels,
+          audioBitrate: audioBitrate,
+        );
+      }
       if (clip == null) {
         return shelf.Response.notFound('Clip unavailable');
       }
@@ -1543,6 +1602,13 @@ int _episodeIndexFromRequest(shelf.Request request) {
   if (n == null || n < 0) return 0;
   return n;
 }
+
+/// `/fingerprint` 担保不了字节时的应答（BUG-4782）：不是 404，免得 client 当成老 host。
+shelf.Response _videoFingerprintUnavailable(String reason) => shelf.Response(
+  kVideoFingerprintUnavailableStatus,
+  body: jsonEncode(<String, String>{'reason': reason}),
+  headers: <String, String>{'Content-Type': 'application/json'},
+);
 
 /// 裸视频 id（`/api/library/videos/<id>`，**无** suffix）的提取 + 穿越校验。
 ///

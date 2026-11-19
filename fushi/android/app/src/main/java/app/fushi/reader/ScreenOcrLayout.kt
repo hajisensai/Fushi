@@ -217,4 +217,58 @@ object ScreenOcrLayout {
 
     private fun distanceToBox(x: Int, y: Int, l: Int, t: Int, r: Int, b: Int): Int =
         max(axisDistance(x, l, r), axisDistance(y, t, b))
+
+    /**
+     * Dart 侧识别器（本机模型 / Google Lens，决定 4BBSaB12zj）回来的行 → 选取层的行。
+     *
+     * 每项 `{text, rect: [l, t, r, b], vertical, segments: [[start, length, l, t, r, b]…]}`
+     * （Dart `screenOcrLinesToNative`），坐标是定格帧像素。词框必须按行内顺序、互不
+     * 重叠、落在行文本里，否则整行不用词框、退回 [proportionalGlyphs]——宁可等分，
+     * 也不能让点字定位到错字。没有块信息：每行自成一块（[Line.blockText] = 本行）。
+     * 形状不对的项跳过。
+     */
+    @JvmStatic
+    fun linesFromWire(raw: Any?): List<Line> {
+        if (raw !is List<*>) return emptyList()
+        val out = ArrayList<Line>(raw.size)
+        for (item in raw) {
+            val map = item as? Map<*, *> ?: continue
+            val text = map["text"] as? String ?: continue
+            if (text.isBlank()) continue
+            val rect = intsOf(map["rect"], 4) ?: continue
+            if (rect[2] <= rect[0] || rect[3] <= rect[1]) continue
+            val vertical = map["vertical"] == true
+            val glyphs = segmentGlyphs(map["segments"], text)
+                ?: proportionalGlyphs(text, rect[0], rect[1], rect[2], rect[3], vertical)
+            out.add(Line(text, rect[0], rect[1], rect[2], rect[3], glyphs, vertical))
+        }
+        return out
+    }
+
+    /** 词框表 → 字框；空表或任何一项不合规返回 null（调用方退回等分）。 */
+    private fun segmentGlyphs(raw: Any?, text: String): List<Glyph>? {
+        if (raw !is List<*> || raw.isEmpty()) return null
+        val out = ArrayList<Glyph>(raw.size)
+        var cursor = 0
+        for (item in raw) {
+            val v = intsOf(item, 6) ?: return null
+            val start = v[0]
+            val end = v[0] + v[1]
+            if (start < cursor || end <= start || end > text.length) return null
+            if (v[4] <= v[2] || v[5] <= v[3]) return null
+            out.add(Glyph(start, end, v[2], v[3], v[4], v[5]))
+            cursor = end
+        }
+        return out
+    }
+
+    private fun intsOf(raw: Any?, size: Int): IntArray? {
+        if (raw !is List<*> || raw.size != size) return null
+        val out = IntArray(size)
+        for (i in 0 until size) {
+            val n = raw[i] as? Number ?: return null
+            out[i] = n.toInt()
+        }
+        return out
+    }
 }

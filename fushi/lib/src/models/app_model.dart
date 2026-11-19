@@ -14,6 +14,7 @@ import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/corpus/library_corpus_service.dart';
 import 'package:fushi/src/leaderboard/leaderboard_paired_login.dart';
 import 'package:fushi/src/media/library_finish_marks.dart';
+import 'package:fushi/src/media/import/import_inbox.dart';
 import 'package:fushi/src/media/source_library/source_folder_access.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart'
     show applyBlurayDiscCollectionArtwork;
@@ -36,6 +37,8 @@ import 'package:fushi_engine/media/video/media_server_video_path.dart'
 import 'package:fushi_engine/media/video/media_server/media_server_client_identity.dart'
     show mediaServerClientIdentity, resolveMediaServerClientIdentity;
 import 'package:fushi_engine/media/video/video_member_file.dart';
+import 'package:fushi_engine/media/video/video_local_files.dart'
+    show videoBookDiscTitlePath, videoBookEpisodePath;
 import 'package:fushi_engine/media/video/video_storage.dart' show VideoStorage;
 import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
     show YoutubeManifestException;
@@ -122,6 +125,7 @@ import 'package:fushi/src/media/video/video_hdr_output.dart'
     show VideoHdrOutputMode;
 import 'package:fushi/src/media/video/video_screenshot_destination.dart';
 import 'package:fushi/src/pages/implementations/dictionary_dialog_page.dart';
+import 'package:fushi/src/pages/implementations/dictionary_import_action.dart';
 import 'package:fushi/src/pages/implementations/example_sentences_dialog_page.dart';
 import 'package:fushi/src/pages/implementations/open_stash_dialog_page.dart';
 import 'package:fushi/src/pages/implementations/profile_management_page.dart';
@@ -151,6 +155,8 @@ import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_engine/utils/net/app_proxy.dart';
 import 'package:fushi/src/media/collections/library_organize_runner.dart'
     show LibraryOrganizeAutoHost, installLibraryOrganizeAutomatic;
+import 'package:fushi/src/media/library_curate/library_curate_auto.dart'
+    show LibraryCurateAutoHost, installLibraryCurateAutomatic;
 import 'package:fushi/src/media/collections/collection_ai_order.dart'
     show installCollectionAiOrderSettings;
 import 'package:fushi/src/media/override_thumbnail_migration.dart';
@@ -158,6 +164,7 @@ import 'package:fushi_engine/ai/ai_video_search_assistant.dart';
 import 'package:fushi_engine/ai/ai_relay.dart' show aiRelayTransport;
 import 'package:fushi/src/ai/ai_interconnect_relay.dart';
 import 'package:fushi/src/models/dictionary_download_controller.dart';
+import 'package:fushi/src/models/dictionary_format_upgrade.dart';
 import 'package:fushi/src/models/dictionary_download_resume.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
 import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
@@ -216,6 +223,7 @@ import 'package:fushi/src/dictionary/dict_resource_materializer.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/dictionary/transform_description_locale.dart';
 import 'package:fushi/src/reader/dictionary_style_css.dart';
+import 'package:fushi/src/reader/eink_full_refresh.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi/src/media/manga/reader/manga_control_layout.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
@@ -298,6 +306,7 @@ import 'package:fushi_engine/utils/net/fake_ip_dns.dart';
 import 'package:fushi_torrent/fushi_torrent.dart' show FtSessionStatus;
 import 'package:fushi_engine/media/torrent/bt_site_config.dart';
 import 'package:fushi_engine/media/torrent/bt_site_legacy_migration.dart';
+import 'package:fushi_engine/media/torrent/bt_site_parser_rule.dart';
 import 'package:fushi_engine/media/torrent/bt_site_probe.dart';
 import 'package:fushi_engine/media/torrent/bt_site_providers.dart';
 import 'package:fushi_engine/media/external_provider.dart';
@@ -424,6 +433,9 @@ import 'package:fushi_engine/sync/host_jobs/host_job_runner.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/fushi_api_access_policy.dart';
 import 'package:fushi/src/sync/fushi_server_controller.dart';
+import 'package:fushi/src/sync/interconnect_source_share_kinds.dart';
+import 'package:fushi/src/sync/interconnect_source_share_sync.dart'
+    show AppInterconnectSourceShareHost;
 import 'package:fushi/src/sync/game_stream_library_host.dart';
 import 'package:fushi/src/sync/game_stream_mining.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
@@ -492,6 +504,8 @@ import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
 import 'package:fushi_music/fushi_music.dart'
     show InstalledMusicPlugin, MusicPluginManager, MusicPluginQuality;
 import 'package:fushi/src/media/music/plugin/music_plugin_gate.dart';
+import 'package:fushi/src/media/music/plugin/music_plugin_relay_client.dart';
+import 'package:fushi/src/media/music/plugin/music_plugin_relay_host.dart';
 import 'package:fushi/src/media/favorites/web_video_favorite.dart'
     show ExtensionVideoFavoriteRequest, handleExtensionVideoFavorite;
 import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
@@ -563,6 +577,7 @@ import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/manga_sync_package.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/module_registry.dart' show isAiModuleEnabled;
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/settings/settings_schema.dart'
     show resetSettingsSchemaCache;
@@ -865,14 +880,33 @@ class _LocalDictionaryLookup {
   final bool isTerminal;
 }
 
-/// 从 `blobs.bin` 头部字节解码词典实际类型（freq/pitch），供 term 词典的类型回填迁移。
+/// 词典目录里装记录的文件，按优先级：导入写的 `blobs.bin`，没有时是存量升级把纯
+/// freq / pitch / ipa 词典的记录重写进去的 `blobs3.bin`（升级提交后 `blobs.bin` 被删；
+/// Windows 上删不掉时两份并存，内容是同一本词典，取哪份结论都一样）。
+const List<String> kDictRecordFileNames = <String>['blobs.bin', 'blobs3.bin'];
+
+/// [dictDir] 里现存的记录文件（见 [kDictRecordFileNames]），都没有时为 null。
+/// 「记录文件是哪一个」只在这里判一次。
+@visibleForTesting
+File? dictRecordFileIn(String dictDir) {
+  for (final String name in kDictRecordFileNames) {
+    final File file = File(path.join(dictDir, name));
+    if (file.existsSync()) return file;
+  }
+  return null;
+}
+
+/// 从记录文件（[dictRecordFileIn]）头部字节解码词典实际类型（freq/pitch），供 term
+/// 词典的类型回填迁移。
 /// 此前解析与 `RandomAccessFile` 的分次读/定位深交织（[AppModel._migrateDictionaryTypes]），
 /// 无法单测（依赖真文件）。纯逻辑吃**已读入的字节**（调用方负责打开/读盘/关闭），按
 /// 相同偏移解析，返回检测到的类型；非 freq/pitch 或头部不合法返回 `null`（调用方
 /// `continue` 跳过该词典，保持 term 类型不动）。
 ///
 /// 布局（与原 raf 逐次读逐字对齐）：
-/// - `bytes[0]` 必须是标志 `0x01`，否则 `null`；
+/// - `bytes[0]` 是记录类型，必须是 meta 记录：`0x01`（原样 JSON）或 `0x03`（预解析，
+///   新导入 / 存量升级后的纯 freq / pitch / ipa 词典）。两者前缀相同（
+///   `native/fushidicts/fushidicts_src/json/meta_record.hpp`），否则 `null`；
 /// - `bytes[1] | (bytes[2] << 8)` 是 exprLen（小端 16 位）；
 /// - modeLen 在偏移 `3 + exprLen` 处单字节，越界或 `0` 返回 `null`；
 /// - mode 串是其后**至多** `modeLen` 字节（`String.fromCharCodes`）。原逻辑用
@@ -882,7 +916,7 @@ class _LocalDictionaryLookup {
 @visibleForTesting
 DictionaryType? decodeDictTypeFromBlobHeader(List<int> bytes) {
   if (bytes.length < 4) return null;
-  if (bytes[0] != 0x01) return null;
+  if (bytes[0] != 0x01 && bytes[0] != 0x03) return null;
 
   final exprLen = bytes[1] | (bytes[2] << 8);
   final modeLenIndex = 3 + exprLen;
@@ -1132,6 +1166,7 @@ class AppModel
             ),
             database: () => database,
             resolveVideoPath: _resolveHostVideoPath,
+            resolveDiscTitlePath: _resolveHostDiscTitlePath,
             aiSettings: () => prefsRepo,
             mossStatus: appMossProvisionStatus,
           ),
@@ -1188,6 +1223,29 @@ class AppModel
         ).read(leaderboardServiceProvider);
       },
     ),
+    // 互联「来源共享」：服务器来源与插件包只发给本机主人标过「我的设备」的 peer。
+    sourceShareHost: () => AppInterconnectSourceShareHost(
+      db: database,
+      enabled: () =>
+          SyncRepository(database).isInterconnectSourceShareHostEnabled(),
+      isOwnerDevicePeer: (String token) =>
+          SyncRepository(database).isOwnerDevicePeerToken(token),
+      pluginStores: sourceSharePluginStoresOf,
+    ),
+    // 互联「插件中继」：替没有插件运行时的「我的设备」代跑本机插件。本机自己跑不了插件
+    // （合规门 / 原生库）时不接线；开关与「我的设备」判据同来源共享，按请求现读。
+    pluginRelayHost: () => isMusicPluginSourcesAvailable
+        ? AppMusicPluginRelayHost(
+            manager: () => musicPluginManager,
+            enabled: () =>
+                SyncRepository(database).isInterconnectSourceShareHostEnabled(),
+            isOwnerDevicePeer: (String token) =>
+                SyncRepository(database).isOwnerDevicePeerToken(token),
+            httpClientFactory: createAppHttpClient,
+            sharedItems: () =>
+                SyncRepository(database).getInterconnectSourceShareHostItems(),
+          )
+        : null,
     libraryServiceFactory: () => LocalLibraryHostService(
       db: database,
       dictionaryResourceRoot: dictionaryResourceDirectory,
@@ -1547,7 +1605,10 @@ class AppModel
       _mediaTrackingService?.notifyStatusChanged();
     }
 
-    if (report.settingsImported > 0 && report.serviceConfigsImported == 0) {
+    // 来源共享收下的服务器来源同样落在偏好里（OPDS / AList / Kavita / OpenSubsonic 清单），
+    // 读的是偏好缓存；插件管理器自己发变更事件，不需要这里管。
+    if ((report.settingsImported > 0 || report.sourcesShared > 0) &&
+        report.serviceConfigsImported == 0) {
       // 「同步设置」（AWp-0BtDDv）写进了别的设备的设置：偏好缓存、各媒体源设置、
       // 主题、快捷键都要从 DB 重读，否则要等下次冷启动才生效。
       await refreshPrefCache();
@@ -2311,7 +2372,7 @@ class AppModel
   /// 学习统计写入面）。三者共用同一个引擎，所以在一处一起建。
   MusicSession _createMusicSession() {
     // 插件曲目在 mpv 后端打开时才取流：装配点先于任何播放装好（管理器仍按需懒建）。
-    if (isMusicPluginSourcesAvailable) {
+    if (isMusicPluginSourcesUsable) {
       musicPluginPlaybackHost = MusicPluginPlaybackHost(
         manager: () => musicPluginManager,
         quality: (String path) => isPreferencesReady
@@ -2358,7 +2419,7 @@ class AppModel
           ? prefsRepo.musicResumeMode
           : MusicResumeMode.longTracks,
       // 歌曲收藏 = 平台账号的「喜欢」（插件 `like`）：首次被问到才拉喜欢集合。
-      favorites: _musicFavorites = isMusicPluginSourcesAvailable
+      favorites: _musicFavorites = isMusicPluginSourcesUsable
           ? MusicPluginFavorites(
               MusicPluginManagerLikeHost(() => musicPluginManager),
               onError: (Object e, StackTrace st) =>
@@ -2395,6 +2456,10 @@ class AppModel
     FloatingLyricLookupNotifier.instance.lookupClosed.addListener(
       lookupPause.lookupClosed,
     );
+    // 制卡后「关闭弹窗、不续播」（拍板台 8ldy3d8XFA）：宿主关栈前先撤暂停标记。
+    FloatingLyricLookupNotifier.instance.lookupPauseDropped.addListener(
+      lookupPause.dropPauseMark,
+    );
     final MusicLyricsLive live = MusicLyricsLive(
       engine: engine,
       service: musicLyrics,
@@ -2425,6 +2490,7 @@ class AppModel
               // 反馈 1Mwaro8UTC：与全局查词卡同口径（floating_lyric_lookup_routing），
               // 制卡例句取被点的这一整行。
               sentence: text,
+              hostModule: ModuleId.music,
             );
           }());
         },
@@ -2541,11 +2607,11 @@ class AppModel
           path: path,
         ),
     onlineEnabled: () => isDatabaseReady && prefsRepo.musicLyricsOnline,
-    pluginLyrics: isMusicPluginSourcesAvailable
+    pluginLyrics: isMusicPluginSourcesUsable
         ? (String pluginId, String trackId) =>
               musicPluginManager.source(pluginId).lyrics(trackId)
         : null,
-    pluginSearch: isMusicPluginSourcesAvailable
+    pluginSearch: isMusicPluginSourcesUsable
         ? (
             String pluginId,
             String title, {
@@ -2563,11 +2629,11 @@ class AppModel
                 query: query,
               )
         : null,
-    pluginFetch: isMusicPluginSourcesAvailable
+    pluginFetch: isMusicPluginSourcesUsable
         ? (String pluginId, Object ref) =>
               musicPluginManager.source(pluginId).lyricsFetch(ref)
         : null,
-    providers: isMusicPluginSourcesAvailable
+    providers: isMusicPluginSourcesUsable
         ? () async => enabledLyricsProviderIds(
             mergeLyricsSourceList(
               parseLyricsProviders(prefsRepo.musicLyricsProvidersRaw),
@@ -2584,9 +2650,22 @@ class AppModel
   /// 在线音源插件管理器（docs/specs/2026-10-28-music-plugins.md）：插件包与插件存储都在
   /// `<数据库目录>/music_plugins/`，不进 Drift。按首次访问懒建；没过
   /// [isMusicPluginSourcesAvailable] 的平台别来取。
+  /// 本机此刻能装 / 能共享插件包的插件体系（互联「来源共享」用）：音乐插件看合规门与
+  /// 原生库（iOS 没有，经互联中继用对端的插件）；追踪插件看管理器建没建（门同理）。
+  List<SharedPluginStore> sourceSharePluginStoresOf() => <SharedPluginStore>[
+    if (isMusicPluginSourcesAvailable)
+      MusicSharedPluginStore(musicPluginManager),
+    if (_trackingPluginManager case final TrackingPluginManager tracking)
+      TrackingSharedPluginStore(tracking),
+  ];
+
   MusicPluginManager? _musicPluginManager;
   MusicPluginManager get musicPluginManager =>
       _musicPluginManager ??= _createMusicPluginManager();
+
+  /// 本机没有插件运行时时经互联用「我的设备」host 上的插件（[isMusicPluginRelayClient]）；
+  /// 随管理器懒建，其余平台为 null。
+  InterconnectMusicPluginRelay? _musicPluginRelay;
 
   /// 插件账号登录 / 退出后调：收藏（平台「喜欢」）缓存按新账号重拉。
   void onMusicPluginAccountChanged(String pluginId) {
@@ -2609,6 +2688,21 @@ class AppModel
       // 插件日志是不可信文本：只进诊断日志，不进界面。
       log: (String id, String level, String message) =>
           debugPrint('[music-plugin] $id $level: $message'),
+      // 插件中继（拍板台 wOMR4_Er7s 方案 b）：互联开着、「接收共享来源」开着时，问已配对
+      // host 要它们愿意代跑的插件。
+      relay: _musicPluginRelay = isMusicPluginRelayClient
+          ? InterconnectMusicPluginRelay(
+              transport: InterconnectMusicPluginRelayTransport(
+                () => SyncRepository(database),
+              ),
+              enabled: () async {
+                if (!isDatabaseReady) return false;
+                final SyncRepository repo = SyncRepository(database);
+                return await repo.isInterconnectEnabled() &&
+                    await repo.isInterconnectSourceShareEnabled();
+              },
+            )
+          : null,
     );
     // 装卸 / 启停插件：收藏缓存跟着重拉（还没被问到过的不拉，首次读时自己会拉）。
     manager.changes.listen((_) {
@@ -2642,6 +2736,10 @@ class AppModel
   bool get musicLyricsLookupPause => prefsRepo.musicLyricsLookupPause;
   Future<void> setMusicLyricsLookupPause(bool value) =>
       prefsRepo.setMusicLyricsLookupPause(value);
+
+  bool get musicLyricsBlurInactive => prefsRepo.musicLyricsBlurInactive;
+  Future<void> setMusicLyricsBlurInactive(bool value) =>
+      prefsRepo.setMusicLyricsBlurInactive(value);
 
   /// 后台响度扫描（缺 ReplayGain 标签的曲目，设计 §7.3）。
   late final MusicLoudnessScanner musicLoudness = MusicLoudnessScanner(
@@ -3685,8 +3783,8 @@ class AppModel
       if (d.type != DictionaryType.term) continue;
       _dictTypeProbeAttempted.add(probeDir);
 
-      final blobsFile = File(path.join(probeDir, 'blobs.bin'));
-      if (!blobsFile.existsSync()) continue;
+      final File? blobsFile = dictRecordFileIn(probeDir);
+      if (blobsFile == null) continue;
 
       final raf = blobsFile.openSync();
       DictionaryType? detected;
@@ -3811,6 +3909,7 @@ class AppModel
           hidden: states[i].hidden,
           metadata: states[i].metadata,
           order: d.order,
+          languageOverride: d.languageOverride,
         ),
       );
     }
@@ -3818,6 +3917,7 @@ class AppModel
     // 类型自愈每本、隐藏/折叠/语言开关），就地重建会把总代价推成 O(N²)。真正的
     // 装载推迟到下次要用引擎时，批量写入期间的 N 次排期塌成 1 次装载。
     final b = bucketDictPaths(entries);
+    final Map<String, String> termLanguages = termDictLanguagesOf(entries);
     dictRepo.noteEngineTermDictionaries(<String>[
       for (final String p in b.term) path.basename(p),
     ]);
@@ -3826,8 +3926,10 @@ class AppModel
       freqPaths: b.freq,
       pitchPaths: b.pitch,
       kanjiPaths: b.kanji,
+      termLanguages: termLanguages,
     );
     _lastScheduledDictBuckets = b;
+    _lastScheduledTermLanguages = termLanguages;
   }
 
   /// 最近一次排期给引擎的分桶结果（两条装载路径排期时都记下）。
@@ -3844,7 +3946,12 @@ class AppModel
   })?
   _lastScheduledDictBuckets;
 
-  /// [b] 与 [_lastScheduledDictBuckets] 逐桶相同（同序同路径）。
+  /// 最近一次排期时随 term 桶交给引擎的词典语言（[termDictLanguagesOf]）。语言是装载
+  /// 时的属性，变了就得重装，所以与分桶一起比较。
+  Map<String, String> _lastScheduledTermLanguages = const <String, String>{};
+
+  /// [b] 与 [_lastScheduledDictBuckets] 逐桶相同（同序同路径），且 term 词典的语言
+  /// [termLanguages] 也没变。
   bool _sameAsLastScheduledDictBuckets(
     ({
       List<String> term,
@@ -3853,13 +3960,15 @@ class AppModel
       List<String> kanji,
     })
     b,
+    Map<String, String> termLanguages,
   ) {
     final last = _lastScheduledDictBuckets;
     return last != null &&
         _samePaths(last.term, b.term) &&
         _samePaths(last.freq, b.freq) &&
         _samePaths(last.pitch, b.pitch) &&
-        _samePaths(last.kanji, b.kanji);
+        _samePaths(last.kanji, b.kanji) &&
+        mapEquals(_lastScheduledTermLanguages, termLanguages);
   }
 
   static bool _samePaths(List<String> a, List<String> b) {
@@ -3998,6 +4107,58 @@ class AppModel
     }
   }
 
+  /// 本进程是否已经跑过一轮 [_upgradeDictionaryFormats]。
+  bool _dictFormatUpgradeStarted = false;
+
+  /// 启动期（首帧之后）的词典维护：先把存量词典原地升级到新磁盘格式，再补写
+  /// redirect 标记。串行：两者都逐本整本读词典，并发只会互相抢 IO；升级在前，补写
+  /// 标记时读到的就是升级后的记录文件。只挂在主进程 init 路径上（查词弹窗进程不跑）。
+  Future<void> _runDictionaryStartupMaintenance() async {
+    await WidgetsBinding.instance.endOfFrame;
+    await _upgradeDictionaryFormats();
+    await _migrateDictionaryRedirectFlags();
+  }
+
+  /// 存量词典原地升级到当前磁盘格式（[FushiDicts.upgradeDictionaryFormats]），编排见
+  /// [DictionaryFormatUpgradeCoordinator]：先不占词典写锁逐本静默检查（常态启动到此
+  /// 为止，不挡下载 / 自动更新）；确有词典要升级才占写锁、亮状态行做完剩下的，升级过
+  /// 就异步重载引擎让新格式生效、重载后静默补跑一遍清旧文件。失败 / 不适用只记日志
+  /// （词典仍按旧格式可用），下次启动再试。本进程只跑一次。
+  Future<void> _upgradeDictionaryFormats() async {
+    if (_dictFormatUpgradeStarted) return;
+    _dictFormatUpgradeStarted = true;
+    try {
+      final DictionaryFormatUpgradeRun result =
+          await DictionaryFormatUpgradeCoordinator(
+            controller: dictionaryDownloadController,
+            dictDirs: () => <String>[
+              for (final Dictionary d in dictRepo.dictionaries)
+                path.join(dictionaryResourceDirectory.path, d.name),
+            ],
+            upgrade: FushiDicts.upgradeDictionaryFormats,
+            reload: _rebuildDictPathsCacheAsync,
+            settleOldEngine: FushiDicts.whenBackgroundBorrowsSettled,
+            message: (int done, int total) =>
+                t.dict_upgrade_format_progress(done: done, total: total),
+            log: (String tag, Object info) =>
+                ErrorLogService.instance.log(tag, info),
+          ).run();
+      final FushiDictUpgradeReport? first = result.first;
+      if (first != null && first.anyUpgraded) {
+        debugPrint(
+          '[Fushi] dictionary format upgraded: '
+          '${first.upgraded.map(path.basename).join(', ')}',
+        );
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        DictionaryFormatUpgradeCoordinator.logTag,
+        e,
+        stack,
+      );
+    }
+  }
+
   /// 给存量释义词典补写 `redirect_glossary.flag`（[FushiDicts.ensureRedirectFlags]）。
   ///
   /// 装载只读这份标记、不扫描（扫描是整本、单本最多约 1 s）；缺标记的旧词典在查词时
@@ -4009,7 +4170,6 @@ class AppModel
     if (_redirectFlagsMigrated) return;
     _redirectFlagsMigrated = true;
     try {
-      await WidgetsBinding.instance.endOfFrame;
       final List<String> dirs = <String>[
         for (final Dictionary d in dictRepo.dictionaries)
           if (d.type == DictionaryType.term)
@@ -4136,10 +4296,14 @@ class AppModel
           hidden: states[i].hidden,
           metadata: states[i].metadata,
           order: dictList[i].order,
+          languageOverride: dictList[i].languageOverride,
         ),
     ];
     final b = bucketDictPaths(entries);
-    if (onlyIfChanged && _sameAsLastScheduledDictBuckets(b)) return false;
+    final Map<String, String> termLanguages = termDictLanguagesOf(entries);
+    if (onlyIfChanged && _sameAsLastScheduledDictBuckets(b, termLanguages)) {
+      return false;
+    }
     dictRepo.noteEngineTermDictionaries(<String>[
       for (final String p in b.term) path.basename(p),
     ]);
@@ -4148,8 +4312,10 @@ class AppModel
       freqPaths: b.freq,
       pitchPaths: b.pitch,
       kanjiPaths: b.kanji,
+      termLanguages: termLanguages,
     );
     _lastScheduledDictBuckets = b;
+    _lastScheduledTermLanguages = termLanguages;
     return true;
   }
 
@@ -4951,6 +5117,29 @@ class AppModel
     // TODO-935 E0：三个数据根经唯一入口 [AppPaths] 解析（内部已honor测试分支
     // [fushiTestDirectory]，故行为与旧的 test/production 双分支逐字节等价）。
     _appPaths = await AppPaths.resolve();
+    // 拍板台 nLXhu0d7gV：iOS 书库搬出 Documents 时搬不动的条目要能被看见（下次启动重试）。
+    for (final String failure in AppPaths.iosDocumentsVacateFailures) {
+      ErrorLogService.instance.log(
+        'AppPaths.iosDocumentsVacateFailed',
+        failure,
+      );
+    }
+    // iOS 收件箱的分类子目录（「文件」App 里的 Books / Video / Manga）开机即建好，
+    // 用户第一次打开「我的 iPhone › Fushi」就知道往哪拖。best-effort：建不出来只是
+    // 少了引导，导入时会再建。
+    if (ImportInbox.isSupported) {
+      unawaited(
+        ImportInbox.ensureKindFolders(
+          await AppPaths.importInboxDirectory(),
+        ).catchError((Object e, StackTrace stack) {
+          ErrorLogService.instance.log(
+            'ImportInbox.ensureKindFolders',
+            e,
+            stack,
+          );
+        }),
+      );
+    }
     // TODO-1236：把上游 `fushi_audio` 的有声书持久根解析接到 `AppPaths`（它无法 import
     // AppPaths）。这样桌面自定义数据根生效后，有声书新导入落数据根下的 `audiobooks/`
     // （与 TODO-1226 迁移白名单一致），而不是落回平台 Documents。
@@ -5038,6 +5227,11 @@ class AppModel
       //    cloud backup backend can now coexist).
       StartupTimeline.mark('db-open+srs-host');
       await BackupRestoreService.recoverPendingRestore(_databaseDirectory.path);
+      // 覆盖导入保留的覆盖前快照过了保留期就删（维护者 2026-11-16 拍板）。放在
+      // recoverPendingRestore 之后：它可能刚把半途中断的覆盖导入收尾、换上新快照。
+      await BackupRestoreService.pruneExpiredOverwriteSnapshot(
+        _databaseDirectory.path,
+      );
 
       // 沙箱重定位自愈：数据根被**平台**挪走后，把库里的绝对路径重基过去。
       //
@@ -5103,6 +5297,16 @@ class AppModel
           db: _database,
           prefs: _prefsRepo!,
           nameLanguage: () => appLocale.toLanguageTag(),
+        ),
+      );
+      // AI 库管家自动路径（spec 2026-11-18 §9，默认开）：开着时接管上面那套自动
+      // 整理的触发点（scheduleAutomaticLibraryOrganize 内部转交）。编排器经进程级
+      // 操作上下文拿操作目录，根组件登记前那几次触发什么都不做。
+      installLibraryCurateAutomatic(
+        LibraryCurateAutoHost(
+          settings: _prefsRepo!,
+          autoOn: () => _prefsRepo!.libraryCurateAuto,
+          aiModuleEnabled: () => isAiModuleEnabled(moduleVisibility),
         ),
       );
       // Anki 制卡设置的存储换成 Drift（并把 SharedPreferences 旧值一次性搬过来），
@@ -5201,6 +5405,9 @@ class AppModel
       _mediaTrackingService?.dispose();
       _mediaTrackingService = _buildMediaTrackingService();
       _startTrackingPlugins();
+      // 互联「来源共享」收插件时用的本机插件体系（同步编排在别处建，经全局装配点取）。
+      sourceSharePluginStores = sourceSharePluginStoresOf;
+      sourceSharePrefWriter = prefsRepo.replaceSharedSourceListPref;
       // Media tracking module: decided once from existing sign-ins (before
       // the first sync asks the switch).
       await prefsRepo.settleTrackingModuleInstallDefault(
@@ -5442,7 +5649,7 @@ class AppModel
       );
       StartupTimeline.mark('shortcuts');
       unawaited(_warmUpSearchAfterFirstFrame());
-      unawaited(_migrateDictionaryRedirectFlags());
+      unawaited(_runDictionaryStartupMaintenance());
       // 曲库歌词搜索的本机语料库：延后打开、清掉已下架「我库里的例句」留下的书 / 视频 /
       // 游戏文档（反馈 4S2_J80DfK），再对账歌词、订阅歌词表做增量。
       LibraryCorpusService.instance.start(
@@ -6053,6 +6260,28 @@ class AppModel
   /// 墨水屏模式（E-ink）：全局纯黑白主题 + 关动画 + 阅读器/弹窗高对比。
   bool get einkMode => themeNotifier.einkMode;
   Future<void> setEinkMode(bool value) => themeNotifier.setEinkMode(value);
+
+  /// 墨水屏「每 N 页全刷」间隔（0 = 关）。偏好层未就绪（精简初始化 / 测试
+  /// harness）时回落「关」——阅读器翻页计数绝不能因为偏好没加载而崩。
+  int get einkFullRefreshInterval =>
+      _prefsRepo?.einkFullRefreshInterval ?? kEinkFullRefreshIntervalDefault;
+  Future<void> setEinkFullRefreshInterval(int value) =>
+      prefsRepo.setEinkFullRefreshInterval(value);
+
+  /// 墨水屏全刷方式（自动 = 设备厂商全刷优先，否则黑屏闪刷）。
+  EinkFullRefreshMethod get einkFullRefreshMethod =>
+      _prefsRepo?.einkFullRefreshMethod ?? EinkFullRefreshMethod.auto;
+  Future<void> setEinkFullRefreshMethod(EinkFullRefreshMethod method) =>
+      prefsRepo.setEinkFullRefreshMethod(method);
+
+  /// 全 app 唯一的全刷计数器：小说 / 漫画阅读器翻页时调 `notePageTurn`，根
+  /// Stack 顶层的 [EinkFullRefreshHost] 画黑屏闪刷。设置每次翻页现读。
+  late final EinkFullRefreshController einkFullRefresh =
+      EinkFullRefreshController(
+        settings: () =>
+            (interval: einkFullRefreshInterval, method: einkFullRefreshMethod),
+        device: AndroidEinkRefresh.instance,
+      );
 
   /// 功能层表面材质（导航 / 底部弹层 / 对话框的毛玻璃），与颜色主题正交。
   FushiGlassMaterial get glassMaterial => themeNotifier.glassMaterial;
@@ -6675,6 +6904,13 @@ class AppModel
 
   Future<void> setVideoSubtitleListTapLookup(bool value) =>
       prefsRepo.setVideoSubtitleListTapLookup(value);
+
+  /// 视频字幕列表是否列出特效字幕（H7r4mf_z2n，默认 true）。
+  bool get videoSubtitleListShowEffects =>
+      prefsRepo.videoSubtitleListShowEffects;
+
+  Future<void> setVideoSubtitleListShowEffects(bool value) =>
+      prefsRepo.setVideoSubtitleListShowEffects(value);
 
   /// 视频字幕列表上次打开的页签名（xlzGuK5YmD，`VideoSubtitleListFilter.name`）。
   String get videoSubtitleListFilter => prefsRepo.videoSubtitleListFilter;
@@ -8451,14 +8687,43 @@ class AppModel
     return sources.firstOrNull?.id;
   }
 
-  /// `/api/jobs` ASR 任务的 `videoId` → 本机视频文件（host 库）。
-  Future<String?> _resolveHostVideoPath(String videoId) async {
+  /// `/api/jobs` ASR / 字幕任务的 `videoId`（+ 播放列表集下标 [episodeIndex]）→ 本机
+  /// 视频文件（host 库）。按集取文件与播放端点同一判据（[videoBookEpisodePath]）。
+  Future<String?> _resolveHostVideoPath(
+    String videoId, {
+    int episodeIndex = 0,
+  }) async {
     final VideoBookRow? row = await VideoBookRepository(
       database,
     ).getByBookUid(videoId);
     if (row == null) return null;
-    // ASR 要读媒体字节：DVD title / 网络流 / .strm 没有本地媒体文件。
-    return await hasLocalMediaFile(row.videoPath) ? row.videoPath : null;
+    final String? path = videoBookEpisodePath(
+      videoPath: row.videoPath,
+      playlistJson: row.playlistJson,
+      episodeIndex: episodeIndex,
+    );
+    if (path == null) return null;
+    // ASR 要本机读得到媒体（网络流 / .strm 没有）；DVD title 经 dvdvideo demuxer 读。
+    return await hasLocalMediaFile(path) ? path : null;
+  }
+
+  /// `/api/jobs` 字幕任务的 (`videoId`, `discTitle`) → 那一行所在蓝光盘上那条 title 的
+  /// 成员路径（远端原盘会话里库中没有行的 title）。判据是 [videoBookDiscTitlePath]，
+  /// 与 fushi_server 同一份。
+  Future<String?> _resolveHostDiscTitlePath(
+    String videoId,
+    String discTitle,
+  ) async {
+    final VideoBookRow? row = await VideoBookRepository(
+      database,
+    ).getByBookUid(videoId);
+    if (row == null) return null;
+    final String? path = videoBookDiscTitlePath(
+      videoPath: row.videoPath,
+      discTitle: discTitle,
+    );
+    if (path == null) return null;
+    return await hasLocalMediaFile(path) ? path : null;
   }
 
   /// 只暴露当前设备可访问的本地受管视频来源，供发现页新任务/订阅选择。
@@ -9299,10 +9564,13 @@ class AppModel
   }
 
   /// 自动识别一个 BT 站地址是哪种站点（添加 / 重新检测）。失败抛
-  /// [BtSiteProbeException]，界面只显示中性提示。
+  /// [BtSiteProbeException]，界面只显示中性提示。给了 [parser]（用户导入的解析
+  /// 规则）就不自动识别，改为按规则验证，[cookie] 随请求发给站点。
   Future<BtSiteProbeResult> detectBtSite(
     String url, {
     bool allowInsecureHttp = false,
+    BtSiteParserRule? parser,
+    String cookie = '',
   }) async {
     final http.Client client = await createDownloadHttpClient();
     try {
@@ -9310,6 +9578,8 @@ class AppModel
         url,
         client: client,
         allowInsecureHttp: allowInsecureHttp,
+        parser: parser,
+        cookie: cookie,
       );
     } finally {
       client.close();
@@ -9647,8 +9917,11 @@ class AppModel
 
   /// Show the dictionary menu. This should be callable from many parts of the
   /// app, so it is appropriately handled by the model.
+  ///
+  /// [initialAction]：页面一出现就跑的导入动作（查词主页空态的导入面方式块，IM23）。
   Future<void> showDictionaryMenu({
     List<String> initialImportPaths = const <String>[],
+    DictionaryImportAction? initialAction,
   }) async {
     final ctx = _ctx;
     if (ctx == null) return;
@@ -9656,8 +9929,10 @@ class AppModel
       ctx,
       adaptivePageRoute(
         context: ctx,
-        builder: (context) =>
-            DictionaryDialogPage(initialImportPaths: initialImportPaths),
+        builder: (context) => DictionaryDialogPage(
+          initialImportPaths: initialImportPaths,
+          initialAction: initialAction,
+        ),
       ),
     );
 
@@ -11727,6 +12002,16 @@ class AppModel
   Future<void> setBrowseMovedNoticeHandled() =>
       prefsRepo.setBrowseMovedNoticeHandled();
 
+  /// 库页默认改封面网格后的「拼贴仍可选」一次性提示是否已处理
+  /// （见 `library_layout_default_notice.dart`）。
+  bool get libraryLayoutDefaultNoticeHandled =>
+      prefsRepo.libraryLayoutDefaultNoticeHandled;
+  Future<void> setLibraryLayoutDefaultNoticeHandled() =>
+      prefsRepo.setLibraryLayoutDefaultNoticeHandled();
+
+  /// 当前 Profile 是否显式选过库页布局（落库值非空，含已删的 `blocks`）。
+  bool get shellContentLayoutChosen => themeNotifier.shellContentLayoutChosen;
+
   int get maximumTerms => prefsRepo.maximumTerms;
   void setMaximumTerms(int value) => prefsRepo.setMaximumTerms(value);
 
@@ -11947,6 +12232,8 @@ class AppModel
     _lnReaderManager = null;
     unawaited(_musicPluginManager?.dispose());
     _musicPluginManager = null;
+    _musicPluginRelay?.dispose();
+    _musicPluginRelay = null;
     _trackingPluginManager?.changes.removeListener(_applyTrackingProviders);
     unawaited(_trackingPluginManager?.dispose());
     _trackingPluginManager = null;

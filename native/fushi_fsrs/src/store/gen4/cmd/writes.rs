@@ -396,19 +396,13 @@ impl<'t, 'c> Session<'t, 'c> {
         Ok(self.tree.as_ref().expect("tree just loaded"))
     }
 
-    /// 卡（规范 ID）的有效牌组（协议 3 `config::card_deck` 同一份规则，[config::card_deck_with]）。
+    /// 卡（规范 ID）的有效牌组（只读规则 [super::card_deck]；读之前先收尾，同 [Session::lines]）。
     pub(super) fn card_deck(&mut self, card: &str, note: Option<&str>) -> Result<String, String> {
         self.deck_tree()?;
         let tree = self.tree.take().expect("tree just loaded");
-        let r = (|| {
-            let note_edits = match note {
-                Some(n) => Some(self.lines(EntKind::Note, n)?),
-                None => None,
-            };
-            config::card_deck_with(&tree, card, note_edits, &mut |c| {
-                self.lines(EntKind::Card, c)
-            })
-        })();
+        let r = self
+            .settled()
+            .and_then(|ix| super::card_deck(ix, &tree, card, note));
         self.tree = Some(tree);
         r
     }

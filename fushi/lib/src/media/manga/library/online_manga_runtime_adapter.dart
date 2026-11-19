@@ -396,8 +396,8 @@ class MihonLibraryAdapter
   ///
   /// 这不是优化，是正确性：`_sourceRow` 要求该源已在库里登记且启用，而**预览态**
   /// （`MihonPreviewTarget`，试用一个还没安装的扩展）根本没有库行——现解析必然抛
-  /// SOURCE_DISABLED。此外现解析还会走 `manager.initialise()`，把一次纯展示变成
-  /// 一趟可能很慢、甚至挂住的初始化。
+  /// SOURCE_DISABLED。此外现解析还要等 manager 的本地就绪段（读库），纯展示
+  /// 用不着。
   final MihonSourceContext? presetContext;
 
   @override
@@ -781,7 +781,10 @@ class MihonLibraryAdapter
     // `MihonRuntimeFactory.create` 成功后才会有 manager），它的存在就是能力证明；
     // 在这里再问一遍 `Platform` 只会把注入了 runtime 的用例在 Linux CI 上误判成
     // platformUnsupported（develop@4846ea1 的 mihon_language_scope_test 红）。
-    await manager.initialise();
+    // 只等本地就绪段：[MihonManager.contextForSource] 只用已装扩展与库里的源
+    // 偏好，不需要仓库目录。等完整 `initialise()` 会让冷启动后第一次开在线章
+    // 陪着等仓库索引 + 下载量的网络请求（仓库多 / 连不上时以分钟计）。
+    await manager.ensureLocalReady();
     final MangaOnlineSourceRow row = _sourceRow(entry);
     try {
       return await manager.contextForSource(row);

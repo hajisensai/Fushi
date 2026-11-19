@@ -279,14 +279,44 @@ class SrtBookRepository {
     );
     final String? previousRoot = book.audioRoot;
     // 持久目录音频的唯一写入原语（同步成恰好这一组，幂等、不会先删掉自己的源）。
+    // 写库是它的 commit：新文件落位之后、旧文件删除之前跑，抛错则磁盘原样撤回
+    // （BUG-4810）。行与播放进度同一个事务，不会落下「新音频 + 旧时间轴的进度」。
     final List<String> persisted = await AudiobookStorage.syncAudioFiles(
       persistDir,
       pickedPaths,
       copy: copy,
       onProgress: onProgress,
+      commit: (List<String> landed) => _db.transaction(
+        () => _commitReplacedAudio(
+          book: book,
+          previousAudio: previousAudio,
+          previousRoot: previousRoot,
+          persisted: landed,
+        ),
+      ),
     );
 
-    book.audioPaths = persisted;
+    // TODO-1032 PR2：愈合旧数据。PR1 把 SRT 书音频归一到 SrtBooks.audioPaths，但
+    // 旧版书架「导入音频」曾对同一本 EPUB 配对 SRT 书落过一条 **Audiobooks** 脏行
+    // （audioOnly 导入，无对齐字幕）。读取端 AudiobookSessionLauncher.resolve 先查
+    // Audiobooks 再回退 SrtBooks，那条脏行存在时永远优先返回旧/错音频 → 用户在
+    // SrtBooks 重新定位的正确音频被无视（「重新导入后音频不对」根因）。
+    // 写入非空音频后删除这条脏行，让 resolve 落到 SrtBook 正确音频。排在换音频的
+    // 事务之外：它要删脏行的持久目录，磁盘操作回滚不了。
+    await _healDirtyAudiobookRow(book);
+
+    return persisted;
+  }
+
+  /// [replaceAudio] 的写库段：行上的音频两列 + 作废与旧时间轴绑定的播放进度。
+  Future<void> _commitReplacedAudio({
+    required SrtBook book,
+    required List<String> previousAudio,
+    required String? previousRoot,
+    required List<String> persisted,
+  }) async {
+    final String uid = book.uid;
+    book.audioPaths = List<String>.from(persisted);
     book.audioRoot = null;
     await save(book);
 
@@ -310,16 +340,6 @@ class SrtBookRepository {
         _db,
       ).updatePositionMs(bookKey: uid, positionMs: 0);
     }
-
-    // TODO-1032 PR2：愈合旧数据。PR1 把 SRT 书音频归一到 SrtBooks.audioPaths，但
-    // 旧版书架「导入音频」曾对同一本 EPUB 配对 SRT 书落过一条 **Audiobooks** 脏行
-    // （audioOnly 导入，无对齐字幕）。读取端 AudiobookSessionLauncher.resolve 先查
-    // Audiobooks 再回退 SrtBooks，那条脏行存在时永远优先返回旧/错音频 → 用户在
-    // SrtBooks 重新定位的正确音频被无视（「重新导入后音频不对」根因）。
-    // 写入非空音频后删除这条脏行，让 resolve 落到 SrtBook 正确音频。
-    await _healDirtyAudiobookRow(book);
-
-    return persisted;
   }
 
   Future<bool> _positionSurvivesAudioChange({

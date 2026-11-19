@@ -7,9 +7,19 @@
 // 无限空转：每圈一条自发消息，Windows 嵌入层每条都 `PostMessage(WM_NULL)` 唤醒主线程，
 // `GetMessage` 先取 posted 消息，鼠标键盘永远排不上——整机输入全失灵。
 //
-// 修法：常驻装饰动画用 [AmbientTickerProviderStateMixin] 建 ticker，登记进
-// [AmbientTickers]；[ambientAwareSchedulingStrategy] 计「忙」时把这些 ticker 挂着的帧回调
-// 减掉。「空闲」恢复原意——没有真实动画（入场 / 转场 / 交互动效）在跑。
+// 修法分两层：
+//
+// 1. 「空闲」的定义：常驻装饰动画用 [AmbientTickerProviderStateMixin] 建 ticker，登记进
+//    [AmbientTickers]；计「忙」时把这些 ticker 挂着的帧回调减掉（[hasRealAnimations]）。
+//    「空闲」恢复原意——没有真实动画（入场 / 转场 / 交互动效）在跑。
+// 2. 「等空闲」的方式（BUG-4893）：只登记还不够——漏登记一个常驻动画（吉祥物光晕就漏了），
+//    或者一个真实动画跑得久（不定态进度条），`scheduleTask` 的 idle 任务照样空转到它结束，
+//    这段时间输入全丢。所以本仓自己的「等空闲」一律走 [waitForUiIdle]：忙时挂一个帧后回调
+//    等下一帧再看，等待期间不往事件循环里投任何东西。`lib` 下禁止再调
+//    `SchedulerBinding.scheduleTask`（守卫 `test/build/ui_idle_wait_guard_test.dart`）。
+//    [ambientAwareSchedulingStrategy] 仍装着，管框架 / 三方包自己排的任务。
+
+import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
@@ -38,11 +48,52 @@ bool ambientAwareSchedulingStrategy({
   required int priority,
   required SchedulerBinding scheduler,
 }) {
-  final int realAnimations =
-      scheduler.transientCallbackCount -
-      AmbientTickers.scheduledFrameCallbackCount;
-  if (realAnimations > 0) return priority >= Priority.animation.value;
+  if (hasRealAnimations(scheduler)) {
+    return priority >= Priority.animation.value;
+  }
   return true;
+}
+
+/// 有没有真实动画（常驻装饰 ticker 不算）挂着帧回调。
+bool hasRealAnimations(SchedulerBinding scheduler) =>
+    scheduler.transientCallbackCount -
+        AmbientTickers.scheduledFrameCallbackCount >
+    0;
+
+/// 等到 UI 空闲（[hasRealAnimations] 为 false）再完成，供「首屏入场动效跑完再做」的
+/// 启动期后台工作用。
+///
+/// 与 `SchedulerBinding.scheduleTask(..., Priority.idle)` 等的是同一个条件，区别在怎么等：
+/// 后者忙时用零延迟定时器一圈圈重排自己（BUG-4387 / BUG-4893 的空转），这里忙时只挂一个
+/// 帧后回调——有动画挂着帧回调就必然有下一帧，那一帧画完再看一次；等待期间事件循环是
+/// 空的，输入照常处理。
+///
+/// 完成发生在独立的一轮事件循环里（不在帧的收尾阶段里同步跑调用方的后续工作），且那一刻
+/// 仍然空闲；中途又起了动画就接着等。
+Future<void> waitForUiIdle({SchedulerBinding? scheduler}) {
+  final SchedulerBinding binding = scheduler ?? SchedulerBinding.instance;
+  final Completer<void> done = Completer<void>();
+  late final void Function() check;
+  void confirm() {
+    if (hasRealAnimations(binding)) {
+      check();
+    } else {
+      done.complete();
+    }
+  }
+
+  check = () {
+    if (hasRealAnimations(binding)) {
+      binding.addPostFrameCallback(
+        (Duration _) => check(),
+        debugLabel: 'waitForUiIdle',
+      );
+    } else {
+      Timer.run(confirm);
+    }
+  };
+  check();
+  return done.future;
 }
 
 class _AmbientTicker extends Ticker {

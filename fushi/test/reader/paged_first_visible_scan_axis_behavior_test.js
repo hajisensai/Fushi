@@ -22,8 +22,13 @@
 //      rejects previous / next page offsets;
 //   3. `getLastVisibleCharOffset(start)` returns -1 for an off-page start (so the
 //      Dart side does not arrive) and the page end for an on-page start;
-//   4. `getFirstVisibleCharOffset` with a caret on an element (illustration)
-//      takes the geometric scan instead of the element subtree's first text;
+//   4. `getFirstVisibleCharOffset` takes the geometric scan on each of its three
+//      failure exits — caret null, caret on an element (illustration; never the
+//      element subtree's first text), caret on a text node that has no base
+//      offset even after a rebuild — and counts study units from the node base
+//      when the caret does land in indexed text. These are the behaviors the old
+//      "exactly three inline fallback returns" source guard stood in for; with
+//      them pinned here the function forwards to `_charOffsetAtPoint`;
 //   5. `fushiProgressDetails` does not let the atEnd clamp bypass the -1.
 //
 // Run: node fushi/test/reader/paged_first_visible_scan_axis_behavior_test.js <payload.json>
@@ -151,6 +156,8 @@ for (const vertical of [true, false]) {
   assert.strictEqual(reader.charOffsetOnCurrentPage(40), false, label + ': offset past chapter end rejected');
 
   // 3. getLastVisibleCharOffset(start): off-page start → -1; on-page start → page end.
+  const realCharOffsetAtPoint = reader._charOffsetAtPoint;
+  const realCaretCharCoversPoint = reader._caretCharCoversPoint;
   reader._charOffsetAtPoint = () => ({ offset: 31, node: nodes[2], index: 11 });
   reader._caretCharCoversPoint = () => true;
   assert.strictEqual(reader.getLastVisibleCharOffset(0), -1,
@@ -182,13 +189,76 @@ for (const vertical of [true, false]) {
   }
   reader.createWalker = () => { let i = -1; return { nextNode() { i++; return nodes[i] || null; } }; };
 
-  // 4. caret on an element (illustration <p><img>) → geometric scan, not the
-  //    element subtree's first text node + child index.
-  document.caretRangeFromPoint = () => ({ startContainer: { nodeType: 1, childNodes: [] }, startOffset: 3 });
+  // 4. getFirstVisibleCharOffset: the three failure exits and the success path,
+  //    against the production caret helper (the stubs above are for step 3 only).
+  reader._charOffsetAtPoint = realCharOffsetAtPoint;
+  reader._caretCharCoversPoint = realCaretCharCoversPoint;
+  const probes = [];
+  const caretAt = (value) => {
+    document.caretRangeFromPoint = (x, y) => { probes.push([x, y]); return value; };
+  };
+  // 4a. caret on an element (illustration <p><img>) → geometric scan, not the
+  //     element subtree's first text node + child index. The element's subtree
+  //     does hold text (chapter container): taking its first text node would
+  //     report an offset near the chapter start.
+  let subtreeWalks = 0;
+  const flatWalker = reader.createWalker;
+  reader.createWalker = (root) => {
+    if (root) subtreeWalks++;
+    return flatWalker();
+  };
+  caretAt({ startContainer: { nodeType: 1, childNodes: [] }, startOffset: 3 });
   assert.strictEqual(reader.getFirstVisibleCharOffset(), 15,
     label + ': element caret must fall back to the geometric scan');
-  document.caretRangeFromPoint = () => null;
+  assert.strictEqual(subtreeWalks, 0,
+    label + ': element caret must not resolve to the first text node of the element subtree');
+  reader.createWalker = flatWalker;
+  // The probe is the page-top corner in body-relative coordinates.
+  assert.deepStrictEqual(probes.at(-1),
+    vertical ? [CLIENT_W - PR - 2, PT + 2] : [PL + 2, PT + 2],
+    label + ': page-top caret probe corner');
+  // 4b. caret failed outright.
+  caretAt(null);
   assert.strictEqual(reader.getFirstVisibleCharOffset(), 15, label + ': null caret must fall back to the geometric scan');
+  caretAt({ startContainer: null, startOffset: 0 });
+  assert.strictEqual(reader.getFirstVisibleCharOffset(), 15,
+    label + ': a caret without a container must fall back to the geometric scan');
+  // 4c. caret on a text node the offset index does not know, even after a
+  //     rebuild (e.g. ruby annotation text the walker rejects).
+  const unindexed = textNode('ふりがな', () => 1, vertical);
+  let rebuilds = 0;
+  const realBuildNodeOffsets = reader.buildNodeOffsets;
+  reader.buildNodeOffsets = function() { rebuilds++; return realBuildNodeOffsets.call(this); };
+  caretAt({ startContainer: unindexed, startOffset: 2 });
+  assert.strictEqual(reader.getFirstVisibleCharOffset(), 15,
+    label + ': a text node with no base offset must fall back to the geometric scan');
+  assert.strictEqual(rebuilds, 1, label + ': the base offset is looked up again after one index rebuild');
+  // 4d. success: node base offset + study units before the caret. The index was
+  //     just rebuilt, so no further rebuild happens.
+  caretAt({ startContainer: nodes[1], startOffset: 5 });
+  assert.strictEqual(reader.getFirstVisibleCharOffset(), 15, label + ': caret at the page-first char');
+  caretAt({ startContainer: nodes[2], startOffset: 3 });
+  assert.strictEqual(reader.getFirstVisibleCharOffset(), 23, label + ': caret inside the third node');
+  caretAt({ startContainer: nodes[2], startOffset: 99 });
+  assert.strictEqual(reader.getFirstVisibleCharOffset(), 32,
+    label + ': a caret offset past the node end is clamped to the node length');
+  assert.strictEqual(rebuilds, 1, label + ': indexed nodes need no rebuild');
+  // A stale index (DOM changed since it was built) is rebuilt once and then hits.
+  reader.nodeStartOffsets = new WeakMap();
+  caretAt({ startContainer: nodes[2], startOffset: 3 });
+  assert.strictEqual(reader.getFirstVisibleCharOffset(), 23, label + ': stale index is rebuilt, then the caret resolves');
+  assert.strictEqual(rebuilds, 2);
+  reader.buildNodeOffsets = realBuildNodeOffsets;
+  // The page-end probe keeps the lenient element handling (first text node of
+  // the element subtree); only the page-top probe treats elements as failure.
+  reader.createWalker = (root) => (root ? { nextNode: (() => { let d = false; return () => (d ? null : (d = true, nodes[3])); })() } : flatWalker());
+  caretAt({ startContainer: { nodeType: 1, childNodes: [] }, startOffset: 0 });
+  assert.deepStrictEqual(reader._charOffsetAtPoint(1, 1).offset, 32,
+    label + ': lenient caret helper resolves an element to its first text node');
+  assert.strictEqual(reader._charOffsetAtPoint(1, 1, true), null,
+    label + ': textOnly caret helper reports an element as failure');
+  reader.createWalker = flatWalker;
+  document.caretRangeFromPoint = () => null;
 }
 
 // 5. fushiProgressDetails assembly: -1 from getLastVisibleCharOffset survives atEnd.

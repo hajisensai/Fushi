@@ -42,6 +42,7 @@ void main() {
       await preferences.setPref(kVideoAniDbUsernamePref, 'tester');
       expect(shouldShowVideoOnlineServicesReminder(preferences), isTrue);
       await preferences.setPref(kVideoAniDbPasswordPref, 'password');
+      await preferences.setPref(kVideoAniDbUdpApiKeyPref, 'udp-key');
       expect(shouldShowVideoOnlineServicesReminder(preferences), isTrue);
       await preferences.setJimakuApiKey('jimaku-key');
       expect(shouldShowVideoOnlineServicesReminder(preferences), isTrue);
@@ -72,6 +73,7 @@ void main() {
       await preferences.setPref(kVideoAniDbHashEnabledPref, true);
       await preferences.setPref(kVideoAniDbUsernamePref, 'tester');
       await preferences.setPref(kVideoAniDbPasswordPref, 'password');
+      await preferences.setPref(kVideoAniDbUdpApiKeyPref, 'udp-key');
       await preferences.setJimakuApiKey('jimaku-key');
       await preferences.setVideoSubtitleOpenSubtitlesConfig(
         OpenSubtitlesConfig(apiKey: 'subtitle-key'),
@@ -98,6 +100,7 @@ void main() {
       await preferences.setPref(kVideoAniDbHashEnabledPref, true);
       await preferences.setPref(kVideoAniDbUsernamePref, 'tester');
       await preferences.setPref(kVideoAniDbPasswordPref, ' password ');
+      await preferences.setPref(kVideoAniDbUdpApiKeyPref, 'udp-key');
       await preferences.setJimakuApiKey('jimaku-key');
       await preferences.setVideoSubtitleOpenSubtitlesConfig(
         OpenSubtitlesConfig(apiKey: 'subtitle-key'),
@@ -215,6 +218,7 @@ void main() {
             onOpenSettings: () async {
               await preferences.setPref(kVideoAniDbUsernamePref, 'tester');
               await preferences.setPref(kVideoAniDbPasswordPref, 'password');
+              await preferences.setPref(kVideoAniDbUdpApiKeyPref, 'udp-key');
               await preferences.setPref(kVideoAniDbHashEnabledPref, true);
               await preferences.setJimakuApiKey('jimaku-key');
               await preferences.setVideoSubtitleOpenSubtitlesConfig(

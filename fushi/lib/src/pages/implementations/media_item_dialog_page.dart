@@ -10,6 +10,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:transparent_image/transparent_image.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/media_source.dart';
+import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
 import 'package:fushi/src/media/types/reader_media_type.dart';
 import 'package:fushi/src/pages/base_page.dart';
 import 'package:fushi/src/pages/implementations/media_item_edit_dialog_page.dart';
@@ -153,6 +154,7 @@ class MediaItemDialogPage extends BasePage {
     this.extraActions,
     this.showLaunchAction = true,
     this.coverFallbackIcon,
+    this.nsfw,
     super.key,
   });
 
@@ -166,6 +168,9 @@ class MediaItemDialogPage extends BasePage {
   /// 供 SRT/字幕卡与网格 `_buildSrtCover` 的占位判据统一；其它来源不传（保持
   /// 「无封面则不渲染封面块」的既有行为）。
   final IconData? coverFallbackIcon;
+
+  /// 条目的 NSFW 宿主（见 [MediaItemDialogFrame.nsfw]）；null = 不可标的条目。
+  final MediaNsfwTarget? nsfw;
 
   @override
   BasePageState createState() => _MediaItemDialogPageState();
@@ -260,6 +265,7 @@ class _MediaItemDialogPageState extends BasePageState<MediaItemDialogPage> {
         : (fallbackIcon != null ? _buildFallbackCover(fallbackIcon) : null);
     return MediaItemDialogFrame(
       cover: cover,
+      nsfw: widget.nsfw,
       title: displayTitle,
       author: hasAuthor ? author : null,
       showLaunchAction: widget.showLaunchAction,
@@ -472,12 +478,18 @@ class MediaItemDialogFrame extends StatelessWidget {
     this.dangerActions = const [],
     this.coverBackdrop,
     this.coverMaterial,
+    this.nsfw,
     super.key,
   });
 
   /// 封面 widget（调用方自己负责 `BoxFit.contain` 与解码失败兜底）。本骨架把它
   /// 放进按宽高比定尺寸的封面卡里，所以 contain 恰好铺满、不留边。
   final Widget? cover;
+
+  /// 条目的 NSFW 宿主（拍板台 w04vrhUAaX）：它是 NSFW 且「模糊 NSFW 封面」开着时
+  /// 头部封面与库页卡一样打模糊——长按菜单是标 NSFW 的入口，不能在这里露原图。
+  /// null = 不可标的条目（远端 / 词典历史等），封面原样。
+  final MediaNsfwTarget? nsfw;
 
   /// 封面图源：只用来探测封面宽高比（横版视频封面与竖版书封排法不同）。
   ///
@@ -603,6 +615,7 @@ class MediaItemDialogFrame extends StatelessWidget {
     dangerActions: dangerActions,
     coverBackdrop: coverBackdrop,
     coverMaterial: coverMaterial,
+    nsfw: nsfw,
   );
 
   @override
@@ -688,11 +701,19 @@ class MediaItemDialogFrame extends StatelessWidget {
         ? BorderRadius.all(Radius.circular(radius))
         : shelfMaterialRadius(material);
     // 前景封面只画这一次（材质 / 旧卡共用）：外层再决定材质框还是圆角投影卡。
-    final Widget front = ClipRRect(
+    final Widget clipped = ClipRRect(
       borderRadius: borderRadius,
       clipBehavior: Clip.antiAlias,
       child: cover!,
     );
+    // NSFW 条目（拍板台 w04vrhUAaX）：前景封面按「模糊 NSFW 封面」打模糊。
+    final Widget front = switch (nsfw) {
+      final MediaNsfwTarget target => MediaNsfwCover(
+        target: target,
+        child: clipped,
+      ),
+      null => clipped,
+    };
     final Widget card;
     if (material != null) {
       // 材质封面：外轮廓 / 投影 / 光泽全归 [ShelfCoverFrame]，不再叠本卡的

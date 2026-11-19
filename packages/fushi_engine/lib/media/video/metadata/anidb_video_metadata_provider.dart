@@ -32,6 +32,13 @@ class AniDbBannedException extends VideoMetadataNetworkException {
   const AniDbBannedException(super.message);
 }
 
+/// 自动识别里，AniDB 目录**模糊**命中至少要这么像才进待确认候选。
+///
+/// 实测（真实 anime-titles 目录）：同作品的模糊命中在 0.67 以上（`K-ON! 04` →
+/// `K-On!` 0.80、`Eiga K-On!` 0.67），只共享一个音节的噪声在 0.62 以下（`Kanon
+/// \`06` 0.62、`konobi` 0.50、`Kono Oto Tomare!` 0.31）。精确 / 前缀命中不受此限。
+const double kAniDbReviewMinFuzzySimilarity = 0.65;
+
 typedef AniDbProviderNow = DateTime Function();
 typedef AniDbProviderSleep = Future<void> Function(Duration duration);
 
@@ -91,6 +98,24 @@ class AniDbVideoMetadataProvider
   static const Duration _banCooldown = Duration(hours: 24);
   static const Duration _animeCacheTtl = Duration(hours: 24);
   static const String catalogOnlyPayloadKey = 'anidbCatalogOnly';
+
+  /// 标题目录搜索命中的证据（[search] 产出的摘要才带）：只有 3-gram 模糊命中、
+  /// 相似度还低于 [kAniDbReviewMinFuzzySimilarity] 的条目是噪声。
+  static const String catalogFuzzySimilarityPayloadKey =
+      'anidbCatalogFuzzySimilarity';
+
+  /// 这条 [search] 摘要是不是低相似度的模糊目录命中。
+  ///
+  /// 目录搜索在精确 / 前缀都落空时退到 3-gram 模糊召回（下限 0.2）：整串原始
+  /// 文件名 `[K-ON!][04][BIG5][x264_aac][BDrip_720P]` 会召回 `Kono Oto
+  /// Tomare!`、`Kekkon Yubiwa Monogatari II` 这类只共享 `kon` 的作品（0.28～
+  /// 0.33）。手动搜索保留它们供用户翻找；自动识别不能把它们当待确认候选。
+  static bool isWeakCatalogMatch(VideoMetadataWork work) {
+    final Object? similarity =
+        work.rawPayload?[catalogFuzzySimilarityPayloadKey];
+    return similarity is num && similarity < kAniDbReviewMinFuzzySimilarity;
+  }
+
   static final AniDbTitleCatalog _sharedTitleCatalog = AniDbTitleCatalog();
   // AniDB throttling belongs to the endpoint, not to one configured client
   // identity. Old/new settings can briefly coexist during a coordinator swap;
@@ -163,10 +188,9 @@ class AniDbVideoMetadataProvider
       return 'AniDB 已封禁本客户端，约 ${ban.inMinutes} 分钟后解除';
     }
     if (!_hasHttpClientIdentity) {
-      // 随包配置就落在这里：内置 `fushiplayer` 只登记了 UDP，HTTP 身份为空，
-      // 请求根本没发（BUG-2623 根治），不是被 AniDB 拒绝。
+      // 身份缺失时请求根本没发（BUG-2623），不是被 AniDB 拒绝。
       return '未配置已登记的 AniDB HTTP 客户端身份'
-          '（内置客户端只登记了 UDP，仅 UDP 哈希识别与离线标题目录可用）';
+          '（HTTP 详情不可用，仍可使用 UDP 哈希识别与离线标题目录）';
     }
     final String? lastError = _lastAnimeXmlError;
     return lastError == null ? 'anime XML 未取到' : 'anime XML 请求失败：$lastError';
@@ -206,6 +230,9 @@ class AniDbVideoMetadataProvider
           match.record,
           request.mediaKind,
           matchedTitle: match.matchedTitle,
+          fuzzySimilarity: match.kind == AniDbTitleMatchKind.similar
+              ? match.similarity
+              : null,
         ),
     ];
   }
@@ -800,6 +827,7 @@ class AniDbVideoMetadataProvider
     AniDbTitleRecord record,
     VideoMetadataMediaKind kind, {
     AniDbTitle? matchedTitle,
+    double? fuzzySimilarity,
   }) {
     final _SelectedTitles selected = _selectTitles(record);
     final List<String> aliases = metadataUniqueStrings(<String?>[
@@ -823,7 +851,11 @@ class AniDbVideoMetadataProvider
           isDefault: true,
         ),
       ],
-      rawPayload: const <String, Object?>{catalogOnlyPayloadKey: true},
+      rawPayload: <String, Object?>{
+        catalogOnlyPayloadKey: true,
+        if (fuzzySimilarity != null)
+          catalogFuzzySimilarityPayloadKey: fuzzySimilarity,
+      },
     );
   }
 

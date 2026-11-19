@@ -40,12 +40,12 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 155);
+    expect(migrated.schemaVersion, 161);
     await migrated.setMediaPrivate(TagHostKind.epub, 'book-a', true, at: 10);
     await migrated.close();
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
-    expect(probe.select('PRAGMA user_version').first.values.first, 155);
+    expect(probe.select('PRAGMA user_version').first.values.first, 161);
     expect(columnsOf(probe, 'media_privacy_flags'), <String>{
       'media_kind',
       'entry_key',

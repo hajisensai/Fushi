@@ -20,6 +20,7 @@ import 'package:fushi/src/media/video/video_library_delete.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/ops/ctl_library_curate_routes.dart';
 import 'package:fushi/src/ops/ctl_library_organize_routes.dart';
 import 'package:fushi/src/pages/implementations/galgame_detail_page.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
@@ -29,6 +30,7 @@ import 'package:fushi/src/ops/ctl_audiobook_routes.dart';
 import 'package:fushi/src/ops/ctl_library_entries.dart';
 import 'package:fushi/src/ops/ctl_library_import.dart';
 import 'package:fushi/src/ops/ctl_library_manage_routes.dart';
+import 'package:fushi/src/ops/ctl_library_scrape_routes.dart';
 import 'package:fushi/src/ops/ctl_manga_ocr_routes.dart';
 import 'package:fushi/src/ops/ctl_reader_routes.dart';
 import 'package:fushi/src/ops/op_context.dart';
@@ -63,11 +65,15 @@ List<CtlRoute> buildLibraryCtlRoutes(OpContext context) {
     // 书架管理（合集 / 标签 / 书签 / 收藏句 / 改名 / 封面 / 读完 / 重置 / 来源增删改）、
     // 阅读会话遥控、有声书、漫画 OCR：各自一个文件，路径同在 library 前缀下。
     ...buildLibraryManageCtlRoutes(context),
+    // v161 条目刮削资料 / 横版背景（CLI `library scrape-meta`）。
+    ...buildLibraryScrapeCtlRoutes(context),
     ...buildReaderCtlRoutes(context),
     ...buildAudiobookCtlRoutes(context),
     ...buildMangaOcrCtlRoutes(context),
     // AI 整理库（CLI `library organize` / `organize-history` / `organize-undo`）。
     ...buildLibraryOrganizeCtlRoutes(context),
+    // AI 库管家（CLI `library curate` / `curate-*`，spec 2026-11-18）。
+    ...buildLibraryCurateCtlRoutes(context),
   ];
 }
 
@@ -951,21 +957,27 @@ class _LibraryCtlHandlers {
         .toList(growable: false);
   }
 
-  Map<String, Object?> _sourceJson(MediaSourceRow row) => <String, Object?>{
-    'id': row.id,
-    'label': row.label,
-    'kind': row.mediaKind,
-    'transport': row.transport,
-    'path': row.rootPath,
-    'mediaCount': row.mediaCount,
-    if (row.lastScannedAt != null)
-      'lastScannedAt': row.lastScannedAt!.millisecondsSinceEpoch,
-    if (row.lastScanError != null) 'lastScanError': row.lastScanError,
-  };
+  /// `mediaCount` 是列的原值 = **上次扫描新增**的条目数（重扫一个早已全部入库的
+  /// 来源后是 0），不是这个来源有多少东西；后者是 `totalCount`（与来源页显示的
+  /// 累计数同一条查询）。
+  Future<Map<String, Object?>> _sourceJson(MediaSourceRow row) async =>
+      <String, Object?>{
+        'id': row.id,
+        'label': row.label,
+        'kind': row.mediaKind,
+        'transport': row.transport,
+        'path': row.rootPath,
+        'mediaCount': row.mediaCount,
+        'totalCount': await _db.countMediaBySourceId(row.id, row.mediaKind),
+        if (row.lastScannedAt != null)
+          'lastScannedAt': row.lastScannedAt!.millisecondsSinceEpoch,
+        if (row.lastScanError != null) 'lastScanError': row.lastScanError,
+      };
 
   Future<Object?> listSources(CtlCall call) async => <String, Object?>{
     'sources': <Object?>[
-      for (final MediaSourceRow row in await _sources(call)) _sourceJson(row),
+      for (final MediaSourceRow row in await _sources(call))
+        await _sourceJson(row),
     ],
   };
 
@@ -1001,6 +1013,8 @@ class _LibraryCtlHandlers {
         if (summary.createdVideoUids.isNotEmpty)
           'createdVideos': summary.createdVideoUids.length,
         if (summary.error != null) 'error': summary.error,
+        // 扫描没开始的类型化原因（`error` 是随界面语言变的文案，程序认这个）。
+        if (summary.blocked != null) 'blocked': summary.blocked!.wireValue,
       });
     }
     _refreshShelf();

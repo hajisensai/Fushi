@@ -27,6 +27,14 @@
 //!   而实体上有与它并发的别的操作（不带旧戳的修改、标签操作、日志、挪进来的卡、生效的清除；已清除的不算）→ 扣住
 //!   （[S_HELD]），等用户裁决（裁决 = 再写一条见过它的 `deleted`）。扣住的删除自己不生效（不当胜者、不算活着），
 //!   但它见过的写入照样被它盖掉（`derive.rs` `judge`）：扣住是「这条删除等人裁决」，不是「当它没写过」。
+//!   **按别名类判**（G7-4g，交接说明 §7.6 方案 1）：「同一个寄存器上见过它的写入」取全类成员（规范 ID 与归到它的
+//!   全部 ID，`alias.rs` [Index::members]）的 `deleted`，「实体上的并发操作」取全类成员上的——裁决按规范 ID 写
+//!   （`cmd/writes.rs` `resolve` 经 `canon_body`），删除却可能落在带盐成员上；只看原值成员的话裁决盖不掉它、类里
+//!   别的成员上的并发修改也不算。状态与 `hold_ix` 的行仍记在删除落的那个原值成员名下。所以扣住在别名表重算**之后**
+//!   判（[Index::weigh_rest]；别名表只看清除状态，清除在它之前，[Index::weigh_purged]），别名表变了的行牵动的类
+//!   （`alias_moves`）一并重看：别名迟到（先按原值判过、后来才并类）时逐条维护与重建相同（只看类里有删除的；变动
+//!   多于 `cache.rs` 的 `MOVES_IN_PLACE` 时与重建一样看全部有删除的实体）。并发操作按操作计数：
+//!   同一次 Anki 复习的两份带盐日志算两条（只影响 `others` 的数，不影响扣不扣住）。
 //! - **信任**：本机还没信任的设备（`trust` 表，本机状态）写的删除（`deleted` 上值是整数的写入，带不带旧戳都算）与
 //!   Purge 不执行（[S_DISTRUSTED]），它写的 Salts / Join 里的盐不算进盐集合（`alias.rs`）。它别的操作照常。
 //!   信任状态变了调 [Index::trust_changed]。
@@ -46,6 +54,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use rusqlite::params;
 use serde_json::Value;
 
+use super::cache::MOVES_IN_PLACE;
 use super::derive::{Index, R_DOMINATED, R_LIVE, R_WINNER, Ref, Reg, Settled, body_of};
 use super::schema::sql;
 use super::truth::Head;
@@ -309,8 +318,9 @@ impl<'t, 'c> Index<'t, 'c> {
 
     // ------------------------------------------------------------ 收尾
 
-    /// 清除、扣住、标签、媒体各自重看该看的（[bulk] = 重建：全部）。动了的寄存器记进 `self.regs`，由调用方接着判。
-    pub(super) fn weigh(&mut self, bulk: bool, out: &mut Settled) -> Result<(), String> {
+    /// 收尾的前一半：清除（[bulk] = 重建：全部）。动了的寄存器记进 `self.regs`。返回信任状态变没变过（后一半
+    /// [Index::weigh_rest] 要它）。别名表的证据看清除状态（`alias.rs` 文件头「证据」），所以它在别名表重算之前。
+    pub(super) fn weigh_purged(&mut self, bulk: bool, out: &mut Settled) -> Result<bool, String> {
         self.heads.clear();
         let trust = std::mem::take(&mut self.trust_changed);
         if trust {
@@ -318,15 +328,59 @@ impl<'t, 'c> Index<'t, 'c> {
         }
         let purges = std::mem::take(&mut self.purge_changed);
         out.purged += self.weigh_purges(bulk || purges || trust)?;
+        Ok(trust)
+    }
+
+    /// 收尾的后一半：扣住、标签、媒体各自重看该看的（[bulk] = 重建：全部；[trust] = 信任状态变过：删除全部重看）。
+    /// 在别名表重算**之后**调：扣住按别名类判（文件头「扣住的删除」），要用这一批之后的类。动了的寄存器记进
+    /// `self.regs`，由调用方接着判。
+    pub(super) fn weigh_rest(
+        &mut self,
+        bulk: bool,
+        trust: bool,
+        out: &mut Settled,
+    ) -> Result<(), String> {
         let mut ents = std::mem::take(&mut self.touched);
         self.dirt.entities.extend(ents.iter().cloned());
-        if bulk || trust {
+        // 别名表变了的行（`alias.rs` 记的 `alias_moves`：变了规范 ID 的 ID 与它前后的规范 ID）：类的成员变了，
+        // 类里的删除要按新的类重看——别名迟到（先扣住、后来才并类）时逐条维护才与重建相同。变动的 ID 多于
+        // [MOVES_IN_PLACE]（盐集合变了这类情形，成千上万个带盐 ID 一起换规范 ID）时与重建一样把有删除的实体全看一遍，
+        // 不逐个类问（与缓存层同一个阈值，`cache.rs` `refresh_caches`）。
+        let moved: Vec<Ref> = if bulk || trust || self.alias_moves.len() > MOVES_IN_PLACE {
             ents.extend(self.deleted_entities()?);
-        }
-        for (ekind, ent) in &ents {
-            if self.weigh_holds(*ekind, ent)? {
-                out.holds += 1;
+            Vec::new()
+        } else {
+            self.alias_moves.iter().cloned().collect()
+        };
+        let mut classes: BTreeMap<(i64, Ref), Vec<Ref>> = BTreeMap::new();
+        for (ekind, ent) in ents {
+            let canon = self.canonical(&ent)?;
+            if !classes.contains_key(&(ekind, canon.clone())) {
+                let members = self.members(&canon)?;
+                classes.insert((ekind, canon), members);
             }
+        }
+        // 变动的 ID 不带种类：每个类取一次成员，只重看类里（任一成员上，不只是变动的那个——删除可能落在类里没变动的
+        // 第三个成员上）有 `deleted` 写入或 `hold_ix` 行的种类；都没有的种类 [Index::weigh_holds] 什么也不做。
+        let mut seen: BTreeSet<Ref> = BTreeSet::new();
+        for r in moved {
+            let canon = self.canonical(&r)?;
+            if !seen.insert(canon.clone()) {
+                continue;
+            }
+            let members = self.members(&canon)?;
+            for kind in EntKind::ALL {
+                let ekind = kind as i64;
+                if classes.contains_key(&(ekind, canon.clone()))
+                    || !self.has_deletes(ekind, &members)?
+                {
+                    continue;
+                }
+                classes.insert((ekind, canon.clone()), members.clone());
+            }
+        }
+        for ((ekind, _), members) in &classes {
+            out.holds += self.weigh_holds(*ekind, members)?;
         }
         self.touched.clear();
         let mut notes = std::mem::take(&mut self.notes);
@@ -362,6 +416,33 @@ impl<'t, 'c> Index<'t, 'c> {
             })
             .map_err(sql)?;
         rows.collect::<Result<_, _>>().map_err(sql)
+    }
+
+    /// 类 [members] 的种类 [ekind] 上有没有要 [Index::weigh_holds] 重看的东西：任一成员的 `deleted` 有写入，或有
+    /// `hold_ix` 行（两条都是主键前缀点查）。
+    fn has_deletes(&self, ekind: i64, members: &[Ref]) -> Result<bool, String> {
+        let conn = self.t.conn();
+        let key = key_bytes("deleted");
+        for m in members {
+            let reg = conn
+                .prepare_cached(
+                    "SELECT EXISTS (SELECT 1 FROM reg_ix WHERE col = ?1 AND ekind = ?2 AND ent = ?3 AND key = ?4)",
+                )
+                .map_err(sql)?
+                .query_row(params![self.col, ekind, m, key], |r| r.get::<_, bool>(0))
+                .map_err(sql)?;
+            let held = conn
+                .prepare_cached(
+                    "SELECT EXISTS (SELECT 1 FROM hold_ix WHERE col = ?1 AND ekind = ?2 AND ent = ?3)",
+                )
+                .map_err(sql)?
+                .query_row(params![self.col, ekind, m], |r| r.get::<_, bool>(0))
+                .map_err(sql)?;
+            if reg || held {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     /// 标签状态不是插入时的默认值就能定的笔记：有删除，或顺序提示不止一条。
@@ -692,9 +773,13 @@ impl<'t, 'c> Index<'t, 'c> {
         Ok(out)
     }
 
-    /// 重看一个实体上的删除：哪些因作者不可信而不执行，哪些被并发的改动扣住。返回它有没有 `deleted` 写入。
-    fn weigh_holds(&mut self, ekind: i64, ent: &Ref) -> Result<bool, String> {
+    /// 重看一个别名类（[members]：规范 ID 与归到它的全部成员，`alias.rs` [Index::members]）上的删除：哪些因作者
+    /// 不可信而不执行，哪些被并发的改动扣住。「被见过它的写入盖掉」与「并发的操作」都在全类成员上取（文件头「扣住的
+    /// 删除」）；状态与 `hold_ix` 的行仍记在删除自己落的那个原值成员名下。返回类里有 `deleted` 写入的成员数。
+    fn weigh_holds(&mut self, ekind: i64, members: &[Ref]) -> Result<u64, String> {
         struct Write {
+            /// 落在哪个成员上（[regs] 的下标）。
+            m: usize,
             k: i64,
             state: i64,
             head: Head,
@@ -702,40 +787,52 @@ impl<'t, 'c> Index<'t, 'c> {
             delete: bool,
             distrusted: bool,
         }
-        let reg = Reg {
-            ekind,
-            ent: ent.clone(),
-            key: key_bytes("deleted"),
-        };
-        let rows = self.reg_rows(&reg)?;
-        let conn = self.t.conn();
-        conn.prepare_cached("DELETE FROM hold_ix WHERE col = ?1 AND ekind = ?2 AND ent = ?3")
-            .map_err(sql)?
-            .execute(params![self.col, ekind, ent])
-            .map_err(sql)?;
-        if rows.is_empty() {
-            return Ok(false);
+        let t = self.t;
+        let conn = t.conn();
+        let regs: Vec<Reg> = members
+            .iter()
+            .map(|m| Reg {
+                ekind,
+                ent: m.clone(),
+                key: key_bytes("deleted"),
+            })
+            .collect();
+        let mut writes = Vec::new();
+        let mut with_deletes = 0u64;
+        for (m, reg) in regs.iter().enumerate() {
+            conn.prepare_cached("DELETE FROM hold_ix WHERE col = ?1 AND ekind = ?2 AND ent = ?3")
+                .map_err(sql)?
+                .execute(params![self.col, ekind, reg.ent])
+                .map_err(sql)?;
+            let rows = self.reg_rows(reg)?;
+            if !rows.is_empty() {
+                with_deletes += 1;
+            }
+            for (k, state) in rows {
+                let ed = self.edit_at(k)?;
+                let head = self.head(k)?;
+                let number = serde_json::from_str::<Value>(&ed.value).is_ok_and(|v| v.is_i64());
+                let distrusted = number && self.distrusts(&head.id.device)?;
+                writes.push(Write {
+                    m,
+                    k,
+                    state,
+                    head,
+                    delete: number && ed.stamp.is_none() && !distrusted,
+                    distrusted,
+                });
+            }
         }
-        let mut writes = Vec::with_capacity(rows.len());
-        for &(k, state) in &rows {
-            let ed = self.edit_at(k)?;
-            let head = self.head(k)?;
-            let number = serde_json::from_str::<Value>(&ed.value).is_ok_and(|v| v.is_i64());
-            let distrusted = number && self.distrusts(&head.id.device)?;
-            writes.push(Write {
-                k,
-                state,
-                head,
-                delete: number && ed.stamp.is_none() && !distrusted,
-                distrusted,
-            });
+        if writes.is_empty() {
+            return Ok(0);
         }
-        let others = if writes.iter().any(|w| w.delete) {
-            self.others_of(ekind, ent)?
-        } else {
-            Vec::new()
-        };
-        let mut changed = false;
+        let mut others = Vec::new();
+        if writes.iter().any(|w| w.delete) {
+            for m in members {
+                others.extend(self.others_of(ekind, m)?);
+            }
+        }
+        let mut changed = vec![false; regs.len()];
         for d in &writes {
             let mut want = if d.state < R_DOMINATED {
                 R_DOMINATED
@@ -745,7 +842,8 @@ impl<'t, 'c> Index<'t, 'c> {
             if d.distrusted {
                 want = S_DISTRUSTED;
             } else if d.delete {
-                // 被同一个寄存器上见过它的写入（恢复 / 再删）盖掉了：不是冲突——裁决之后就是这样。
+                // 被同一个寄存器（全类成员的 `deleted`）上见过它的写入（恢复 / 再删）盖掉了：不是冲突——裁决之后就是
+                // 这样。裁决按规范 ID 写（`cmd/writes.rs` `resolve`），删除可能落在带盐成员上，所以要看全类。
                 let settled = writes
                     .iter()
                     .any(|w| !w.distrusted && w.k != d.k && w.head.saw(&d.head.id));
@@ -763,19 +861,29 @@ impl<'t, 'c> Index<'t, 'c> {
                         "INSERT INTO hold_ix (col, ekind, ent, k, edits, reviews, moves) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                     )
                     .map_err(sql)?
-                    .execute(params![self.col, ekind, ent, d.k, counts[0], counts[1], counts[2]])
+                    .execute(params![
+                        self.col,
+                        ekind,
+                        regs[d.m].ent,
+                        d.k,
+                        counts[0],
+                        counts[1],
+                        counts[2]
+                    ])
                     .map_err(sql)?;
                 }
             }
             if want != d.state {
-                self.set_reg_state(&reg, d.k, want)?;
-                changed = true;
+                self.set_reg_state(&regs[d.m], d.k, want)?;
+                changed[d.m] = true;
             }
         }
-        if changed {
-            self.regs.insert(reg);
+        for (reg, changed) in regs.into_iter().zip(changed) {
+            if changed {
+                self.regs.insert(reg);
+            }
         }
-        Ok(true)
+        Ok(with_deletes)
     }
 
     /// 被扣住、等用户裁决的删除，按 (实体种类, 实体, 操作) 序。

@@ -378,9 +378,11 @@ impl<'t, 'c> Reads<'t, 'c> {
     }
 
     /// 集合里有身份记录的别名类，按成员 ID 的 SQLite 序**逐行**交给 [f]（每个类一次：第一次遇到它的成员时），[f] 回
-    /// `false` 就停。语句沿 `ent_ix` 主键 `(col, id, k)` 顺序走、不排序不物化，停下时只读过前面那几行——`entity_count
-    /// {limit}` 与 `has_user_data` 因此与协议 3 的 `LIMIT` / `EXISTS` 同阶（O(limit) / 碰到第一个就停），不随集合大小涨。
-    /// 去重用的集合只装已经交出去的类。
+    /// `false` 就停。语句不排序不物化，停下时只读过前面那几行：不给种类时沿 `ent_ix` 主键 `(col, id, k)` 顺序走，给了
+    /// 种类时沿部分索引 `ent_kind (col, kind, id) WHERE win = 1` 只走这一种（不先走过别的种类的身份记录）——`entity_count
+    /// {kind?, limit}` 与 `has_user_data` 因此与协议 3 的 `LIMIT` / `EXISTS` 同阶（O(limit) / 碰到第一个就停），不随集合
+    /// 大小涨（`cmd/tests.rs` `keyed_reads_never_walk_the_whole_collection` 钉住给了种类的那条）。去重用的集合只装已经交
+    /// 出去的类。
     fn each_class(
         &self,
         kind: Option<EntKind>,
@@ -392,6 +394,9 @@ impl<'t, 'c> Reads<'t, 'c> {
             let p = q.int(k as i64);
             q.push(&format!(" AND kind = {p}"));
         }
+        // 顺序写明：两条索引（主键 / `ent_kind`）在各自的条件下都按 `id` 交出，不用排序；不写的话不给种类时规划器也
+        // 可以挑 `ent_kind`（覆盖了 `win = 1`），那就成了按 (种类, ID) 交出。
+        q.push(" ORDER BY id");
         let mut stmt = self.t.conn().prepare_cached(&q.sql).map_err(sql)?;
         let mut rows = stmt.query(q.params().as_slice()).map_err(sql)?;
         let mut seen: HashSet<Ref> = HashSet::new();

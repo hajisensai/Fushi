@@ -29,6 +29,7 @@ pub mod font;
 pub mod galcal;
 pub mod hash;
 pub mod image;
+pub mod legacy_text;
 pub mod ocr;
 pub mod pano;
 pub mod parse;

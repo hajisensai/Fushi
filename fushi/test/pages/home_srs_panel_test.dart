@@ -473,10 +473,10 @@ void main() {
         for (final SrsDeckSummary d in decks.where(
           (SrsDeckSummary d) => d.depth == 0,
         )) {
-          final SrsCountTriple row = tester.widget<SrsCountTriple>(
+          final SrsDeckCountChips row = tester.widget<SrsDeckCountChips>(
             find.descendant(
               of: find.byKey(ValueKey<String>('srs-deck-${d.deck.id}')),
-              matching: find.byType(SrsCountTriple),
+              matching: find.byType(SrsDeckCountChips),
             ),
           );
           sumNew += row.newCount;

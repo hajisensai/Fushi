@@ -422,7 +422,10 @@ List<OpDescription> _describeItemOps(OpDescribeKit kit) => <OpDescription>[
     pattern: '$_root/scan',
     summary:
         'Rescan source libraries (folders) for new / changed media, like the '
-        'source page "Rescan" button. Does not auto-scrape videos.',
+        'source page "Rescan" button. Does not auto-scrape videos. Each result '
+        'has imported = items newly added by this scan; blocked = '
+        '"video_scrape_maintenance" means the scan did not start because video '
+        'scrape data is being cleaned up (retry later).',
     risk: OpRisk.irreversible,
     params: <OpParam>[
       OpParam.integer(
@@ -1269,8 +1272,9 @@ List<OpDescription> _describeSourceOps(OpDescribeKit kit) => <OpDescription>[
     method: 'GET',
     pattern: _sources,
     summary:
-        'List source libraries (scanned folders): id, label, kind, path, media '
-        'count, last scan.',
+        'List source libraries (scanned folders): id, label, kind, path, last '
+        'scan. totalCount = items the source owns now; mediaCount = items the '
+        'last scan newly imported (0 after a rescan that found nothing new).',
     params: <OpParam>[
       OpParam.string(
         'kind',
@@ -1796,6 +1800,23 @@ List<OpDescription> _describeOrganizeOps(OpDescribeKit kit) => <OpDescription>[
         required: true,
         enumValues: <String>['books', 'manga', 'video', 'games'],
       ),
+      OpParam.string(
+        'trigger',
+        description:
+            'manual (default; medium-confidence moves apply) or auto (only '
+            'high-confidence changes, as the background library curator).',
+        enumValues: <String>['manual', 'auto'],
+      ),
+      OpParam.stringList(
+        'entryKeys',
+        description:
+            'Only organize these member entries (default: the whole page).',
+      ),
+      OpParam.boolean(
+        'rulesOnly',
+        description:
+            'Only the free rule-based grouping; sends nothing to the LLM.',
+      ),
       OpParam.userGate(
         'yes',
         description: 'User agreed to send library metadata to the AI provider.',
@@ -1840,6 +1861,54 @@ List<OpDescription> _describeOrganizeOps(OpDescribeKit kit) => <OpDescription>[
       OpParam.string(
         'id',
         description: 'Run id from library.organize.history.',
+        required: true,
+        inPath: true,
+      ),
+    ],
+  ),
+  const OpDescription(
+    id: 'library.organize.proposals',
+    method: 'GET',
+    pattern: '$_organize/proposals',
+    summary:
+        'AI-organize suggestions waiting for the user: merging or renaming '
+        "the user's own collections (never applied automatically).",
+    params: <OpParam>[
+      OpParam.boolean(
+        'all',
+        description: 'Also list accepted / rejected / stale suggestions.',
+      ),
+    ],
+  ),
+  const OpDescription(
+    id: 'library.organize.proposal.accept',
+    method: 'POST',
+    pattern: '$_organize/proposals/:id/accept',
+    summary:
+        'Apply one pending suggestion as the user (merge or rename the '
+        "user's collections). Not part of organize undo.",
+    risk: OpRisk.irreversible,
+    params: <OpParam>[
+      OpParam.string(
+        'id',
+        description: 'Suggestion id from library.organize.proposals.',
+        required: true,
+        inPath: true,
+      ),
+    ],
+  ),
+  const OpDescription(
+    id: 'library.organize.proposal.reject',
+    method: 'POST',
+    pattern: '$_organize/proposals/:id/reject',
+    summary:
+        'Reject one pending suggestion; the same suggestion is not offered '
+        'again.',
+    risk: OpRisk.irreversible,
+    params: <OpParam>[
+      OpParam.string(
+        'id',
+        description: 'Suggestion id from library.organize.proposals.',
         required: true,
         inPath: true,
       ),

@@ -28,6 +28,8 @@ import 'package:fushi/src/media/video/web_video_login_migration.dart';
 import 'package:fushi/src/media/video/underlay_composition.dart'
     show UnderlayInputExclusion, underlayInputExclusions;
 import 'package:fushi/src/media/video/web_video_shaders.dart';
+import 'package:fushi/src/media/video/web_video_subtitle_media.dart'
+    show webVideoCookieHeader;
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
@@ -181,10 +183,10 @@ const List<Future<WebViewEnvironment?> Function()> kWebVideoLoginCookieSources =
 /// 可捕获档是独立 cookie 罐（`--disable-direct-composition` 与共享罐参数不同 → 独立 user data
 /// folder）：把 [sources]（默认 [kWebVideoLoginCookieSources]）里已登录的站点 cookie 复制到
 /// [to]，用户不用登录两次。目标是共享罐（浏览器 / 窗口宿主档）时不要调——同一个罐。
-/// 尽力而为：单个来源失败只记日志、不挡其它来源（最坏是站点要求登录）。返回 [to] 里原本
-/// 没有、这次新加上的 cookie 名数（> 0 通常意味着目标从未登录变成已登录，调用方据此决定
-/// 要不要刷新已打开的页面）。
-Future<int> copyWebVideoLoginCookies({
+/// 尽力而为：单个来源失败只记日志、不挡其它来源（最坏是站点要求登录）。不回报「新加了几条」：
+/// 没有调用方用得上（浏览器侧自己比 cookie 名集合，见 [webBrowserSiteCookieNames]），为它预读
+/// 一遍目标罐只是白走一次平台通道。
+Future<void> copyWebVideoLoginCookies({
   required Uri uri,
   required WebViewEnvironment to,
   List<Future<WebViewEnvironment?> Function()> sources =
@@ -192,15 +194,6 @@ Future<int> copyWebVideoLoginCookies({
 }) async {
   final WebUri url = WebUri('${uri.scheme}://${uri.host}/');
   final CookieManager dst = CookieManager.instance(webViewEnvironment: to);
-  final Set<String> existing = <String>{};
-  try {
-    for (final Cookie c in await dst.getCookies(url: url)) {
-      existing.add(c.name);
-    }
-  } catch (e) {
-    ErrorLogService.instance.log('web_video', 'cookie read: $e');
-  }
-  final Set<String> added = <String>{};
   for (final Future<WebViewEnvironment?> Function() source in sources) {
     try {
       final WebViewEnvironment? from = await source();
@@ -210,7 +203,7 @@ Future<int> copyWebVideoLoginCookies({
         webViewEnvironment: from,
       ).getCookies(url: url);
       for (final Cookie c in cookies) {
-        final bool ok = await dst.setCookie(
+        await dst.setCookie(
           url: url,
           name: c.name,
           value: c.value.toString(),
@@ -221,24 +214,22 @@ Future<int> copyWebVideoLoginCookies({
           isSecure: c.isSecure,
           isHttpOnly: c.isHttpOnly,
         );
-        if (ok && !existing.contains(c.name)) added.add(c.name);
       }
     } catch (e) {
       ErrorLogService.instance.log('web_video', 'cookie copy: $e');
     }
   }
-  return added.length;
 }
 
 /// 反方向：可捕获档（内置档）页里的站点登录态抄回共享 cookie 罐（[MangaWebViewEnvironment]）。
 /// 用户也会在内置档页里登录；不抄回去的话浏览器与原生播放器页看同一个站点还是未登录
 /// （BUG-3801）。**只在内置档页关掉时调**：窗口宿主档就住在共享罐里，没东西可抄，抄可捕获档
-/// 反而会拿它开页时的旧值盖掉共享罐里的新值。返回共享罐新加的 cookie 名数（见
-/// [copyWebVideoLoginCookies]）。非 Windows / 共享环境建不出来时返回 0。
-Future<int> syncWebVideoLoginToBrowser(Uri uri) {
+/// 反而会拿它开页时的旧值盖掉共享罐里的新值（BUG-4818：[WebVideoSession.dispose] 曾经也调）。
+/// 非 Windows / 共享环境建不出来时什么都不做。
+Future<void> syncWebVideoLoginToBrowser(Uri uri) {
   final String host = uri.host.toLowerCase();
-  if (host.isEmpty) return Future<int>.value(0);
-  final Future<int> started = _syncWebVideoLoginToBrowser(uri);
+  if (host.isEmpty) return Future<void>.value();
+  final Future<void> started = _syncWebVideoLoginToBrowser(uri);
   final Future<void> settled = started.then<void>((_) {}, onError: (_) {});
   _browserLoginSyncs[host] = settled;
   unawaited(
@@ -251,7 +242,7 @@ Future<int> syncWebVideoLoginToBrowser(Uri uri) {
   return started;
 }
 
-/// 每个 host 正在进行的 [syncWebVideoLoginToBrowser]（播放页 dispose 发起的那次）。
+/// 每个 host 正在进行的 [syncWebVideoLoginToBrowser]（内置档页 dispose 发起的那次）。
 final Map<String, Future<void>> _browserLoginSyncs = <String, Future<void>>{};
 
 /// 等 [uri] 这个站点正在进行的回抄完成（没有就立刻完成）：浏览器标签页回到前台时先等它，
@@ -275,16 +266,16 @@ Future<Set<String>> webBrowserSiteCookieNames(Uri uri) async {
   }
 }
 
-Future<int> _syncWebVideoLoginToBrowser(Uri uri) async {
+Future<void> _syncWebVideoLoginToBrowser(Uri uri) async {
   final WebViewEnvironment? browser;
   try {
     browser = await MangaWebViewEnvironment.obtain();
   } catch (e) {
     ErrorLogService.instance.log('web_video', 'browser env: $e');
-    return 0;
+    return;
   }
-  if (browser == null) return 0;
-  return copyWebVideoLoginCookies(
+  if (browser == null) return;
+  await copyWebVideoLoginCookies(
     uri: uri,
     to: browser,
     sources: const <Future<WebViewEnvironment?> Function()>[
@@ -421,7 +412,7 @@ class WebVideoSession {
   bool _playerMode = false;
 
   /// 主框架当前地址（空 = 还没导航）。播放器层只当播放器：唯一的消费者是「离开观看页就回
-  /// 浏览器」（`web_source.part.dart` `_onWebNav`），以及进程重建 / 抄登录要回到的地址。
+  /// 浏览器」（`web_source.part.dart` `_onWebNav`），以及进程重建要回到的地址。
   final ValueNotifier<String> mainFrameUrl = ValueNotifier<String>('');
 
   /// WebView2 子窗口当前是否收输入；null = 新建的 WebView 还没同步过。
@@ -597,6 +588,18 @@ class WebVideoSession {
       );
       return null;
     }
+  }
+
+  /// 页面里这个 WebView 读 [url] 时会带的 Cookie（本会话的 WebView 环境就是站点登录态所在的
+  /// cookie 罐），拼成 `Cookie` 请求头的值；没有 cookie 为空串。字幕生成在 app 外（ffmpeg）
+  /// 拉站点媒体时带上它，与页面自己的请求同一身份。读不出来时抛错（由调用方报给用户）。
+  Future<String> cookieHeaderFor(String url) async {
+    final List<Cookie> cookies = await CookieManager.instance(
+      webViewEnvironment: _environment,
+    ).getCookies(url: WebUri(url));
+    return webVideoCookieHeader(<(String, String)>[
+      for (final Cookie c in cookies) (c.name, '${c.value ?? ''}'),
+    ]);
   }
 
   /// 原样求值（诊断 / 集成测试读页面状态），返回结果的字符串形式。
@@ -828,15 +831,9 @@ class WebVideoSession {
   }
 
   void dispose() {
-    // 播放页里登录的站点会话抄回 app 内浏览器（登录入口主要在浏览器，BUG-3801）。
-    if (!_disposed && isReady) {
-      final String current = mainFrameUrl.value;
-      unawaited(
-        syncWebVideoLoginToBrowser(
-          Uri.parse(current.isNotEmpty ? current : pageUrl),
-        ),
-      );
-    }
+    // 不抄登录态：本会话的窗口宿主档就住在共享 cookie 罐里（与 app 内浏览器同一个罐），在这里
+    // 登录 / 退出登录浏览器当场可见。BUG-4818：从前这里把可捕获档罐（内置档）的 cookie 抄进
+    // 共享罐，那是上一次开内置档页时的旧值，会盖掉共享罐里更新的会话。
     _disposed = true;
     browserPrefs?.removeListener(_onBrowserPrefsChanged);
     mainFrameUrl.dispose();

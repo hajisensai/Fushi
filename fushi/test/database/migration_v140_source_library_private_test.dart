@@ -47,7 +47,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 155);
+    expect(migrated.schemaVersion, 161);
     final MediaSourceRow row = await migrated
         .select(migrated.mediaSources)
         .getSingle();
@@ -68,7 +68,7 @@ void main() {
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
-    expect(probe.select('PRAGMA user_version').first.values.first, 155);
+    expect(probe.select('PRAGMA user_version').first.values.first, 161);
     expect(columnsOf(probe), contains('is_private'));
   });
 
@@ -92,7 +92,7 @@ void main() {
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
-    expect(probe.select('PRAGMA user_version').first.values.first, 155);
+    expect(probe.select('PRAGMA user_version').first.values.first, 161);
     expect(columnsOf(probe), contains('is_private'));
   });
 }

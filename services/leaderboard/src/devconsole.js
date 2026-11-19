@@ -5,7 +5,8 @@
 //   POST /dev/login  {email,code} 验码 → 账户 role 必须是 dev → 写会话 Cookie
 //   POST /dev/logout
 //   GET  /dev/f/:id               详情：正文、设备信息、截图、日志、时间线、修复 commit 与各通道发布版本（只读）、处理表单
-//   GET  /dev/f/:id/a/:slot       附件（日志 ?view=text 解压成文本；视频 v0 支持 Range，?download=1 下载）
+//   GET  /dev/f/:id/a/:slot       附件（日志 ?view=text 解压成文本；视频 v0 支持 Range，?download=1 下载；
+//                                 样本文件 f0..f2 一律作附件下载，文本类 ?view=text 以纯文本查看）
 //   POST /dev/f/:id  {status,reply}
 //   GET  /dev/project             项目数据：GitHub star / fork / Release 下载与官网访问量的每日快照（project_stats.js）
 //   POST /dev/project/refresh     立即重新取一遍外部数据（不等定时任务的节流间隔）
@@ -16,6 +17,8 @@
 //   GET  /dev/decisions           拍板台：AI 代理写入的待拍事项（decisions.js）
 //   GET  /dev/decisions.json      拍板台同步（?sig= 没变回 {same:true}）
 //   GET  /dev/decisions.js        拍板台客户端脚本（decisions_client.js）
+//   POST /dev/d/:id/files         拍板台网页上传附件（multipart file，可多个；拖放 / 粘贴 / 选文件）
+//   GET  /dev/d/:id/f/:n          拍板台附件（设计图 html / md / 图片；CSP sandbox，见 decisions.js）
 //   POST /dev/d/:id  {v,text,back} 拍板并 / 或留言（Accept: application/json → 回新卡片 JSON，不跳转）
 //
 // 安全：页面默认无脚本（CSP script-src 为 none），只有拍板台放行本站脚本 /dev/decisions.js；会话 Cookie HttpOnly + Secure + SameSite=Strict，
@@ -25,6 +28,7 @@
 import { HttpError, hex, json, sha256 } from './util.js';
 import { consumeCode, requestCode, resolveEmailAccount } from './email.js';
 import { esc } from './pages.js';
+import { FILE_EXTENSIONS } from './feedback_files.js';
 import {
   STATUSES,
   attachmentResponse,
@@ -40,7 +44,7 @@ import { PING_PLATFORMS, loadInstallStats, refreshInstallStatsSnapshot, versionI
 import { RELEASE_PLATFORMS, projectStats, refreshProjectStats } from './project_stats.js';
 import {
   DECISIONS_STYLE, DECISION_LIMITS, decisionItem, decisionStageParam, decisionsPayload, decisionsSig, getDecision,
-  listDecisions, renderDecisions, submitDecision,
+  DECISION_UPLOAD_BODY_MAX, ORIGINAL_IMAGE_ORIGINS, decisionFileResponse, uploadDecisionFiles, listDecisions, renderDecisions, submitDecision,
 } from './decisions.js';
 import { DECISIONS_CLIENT_JS } from './decisions_client.js';
 import { NOTICE_LIMITS, listKnown, listRules, seenSummary } from './notices.js';
@@ -87,7 +91,8 @@ const CSP = [
 ].join('; ');
 
 /** 拍板台页面放行本站脚本与 fetch，其余照旧。 */
-const DECISIONS_CSP = CSP.replace("default-src 'none'", "default-src 'none'; script-src 'self'; connect-src 'self'");
+const DECISIONS_CSP = CSP.replace("default-src 'none'", "default-src 'none'; script-src 'self'; connect-src 'self'")
+  .replace("img-src 'self'", `img-src 'self' ${ORIGINAL_IMAGE_ORIGINS.join(' ')}; frame-src 'self'`);
 
 /** 脚本内容的短哈希，拼进 URL 防缓存旧版。 */
 function shortHash(text) {
@@ -781,6 +786,16 @@ async function detailPage(env, id, dev) {
     ? `<h2>视频</h2><div class="card"><video controls preload="metadata" src="/dev/f/${esc(f.id)}/a/${esc(video.slot)}"></video>
 <p><a href="/dev/f/${esc(f.id)}/a/${esc(video.slot)}?download=1">下载视频（${esc(fmtBytes(video.bytes))}）</a></p></div>`
     : '';
+  // 样本文件（f0..f2）：不可信文件，只给下载链接（服务端一律作附件下发、不渲染）；文本类可纯文本查看。
+  const files = f.attachments.filter((a) => a.kind === 'file').map((a) => {
+    const href = `/dev/f/${esc(f.id)}/a/${esc(a.slot)}`;
+    const ext = String(a.name || '').split('.').pop().toLowerCase();
+    const text = FILE_EXTENSIONS[ext] === 'text' ? ` · <a href="${href}?view=text">查看文本</a>` : '';
+    return `<li>${esc(a.name || a.slot)} <span class="muted">(${esc(fmtBytes(a.bytes))})</span> · <a href="${href}">下载</a>${text}</li>`;
+  }).join('');
+  const filesBlock = files
+    ? `<h2>样本文件 <span class="muted">（用户上传的不可信文件：下载后隔离处理，不要直接运行或用会执行脚本的程序打开）</span></h2><div class="card"><ul>${files}</ul></div>`
+    : '';
   const log = f.attachments.find((a) => a.kind === 'log');
   const logLinks = log
     ? `<p><a href="/dev/f/${esc(f.id)}/a/log?view=text">查看日志</a> · <a href="/dev/f/${esc(f.id)}/a/log">下载 .gz</a> <span class="muted">(${esc(fmtBytes(log.bytes))})</span></p>`
@@ -823,6 +838,7 @@ ${f.devNoteAt ? `<p class="muted">上次保存 ${esc(fmtTime(f.devNoteAt))}</p>`
 <div class="card"><div class="body">${esc(f.body)}</div></div>
 ${shots ? `<h2>截图</h2><div class="shots">${shots}</div>` : ''}
 ${videoBlock}
+${filesBlock}
 <h2>日志</h2>${logLinks}
 <h2>服务端记录</h2><div class="card"><table>${origin}</table></div>
 ${meta ? `<h2>设备信息（客户端自报）</h2><div class="card"><table>${meta}</table></div>` : ''}
@@ -975,6 +991,24 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
         'X-Content-Type-Options': 'nosniff',
       },
     });
+  }
+  if (method === 'GET' && (m = /^\/dev\/d\/([A-Za-z0-9_-]{1,40})\/f\/(\d{1,2})$/.exec(path))) {
+    return decisionFileResponse(env, m[1], Number(m[2]));
+  }
+  if (method === 'POST' && (m = /^\/dev\/d\/([A-Za-z0-9_-]{1,40})\/files$/.exec(path))) {
+    if (Number(request.headers.get('Content-Length') || '0') > DECISION_UPLOAD_BODY_MAX) throw new HttpError(413, 'file_too_large');
+    let form;
+    try {
+      form = await request.formData();
+    } catch {
+      throw new HttpError(400, 'bad_upload');
+    }
+    await uploadDecisionFiles(env, dev, m[1], form.getAll('file'), now);
+    if ((request.headers.get('Accept') || '').includes('application/json')) {
+      const [row, sig] = await Promise.all([getDecision(env, m[1]), decisionsSig(env)]);
+      return json({ item: decisionItem(row), sig }, 200, { 'Cache-Control': 'no-store' });
+    }
+    return redirect(`/dev/decisions?stage=${decisionStageParam(form.get('back'))}#d-${m[1]}`);
   }
   if (method === 'POST' && (m = /^\/dev\/d\/([A-Za-z0-9_-]{1,40})$/.exec(path))) {
     const form = await readForm(request, formLimit(DECISION_LIMITS.noteMax));

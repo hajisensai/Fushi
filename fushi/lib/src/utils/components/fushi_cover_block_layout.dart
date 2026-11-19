@@ -6,6 +6,8 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/adaptive/shell_style.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block.dart';
+import 'package:fushi/src/utils/components/fushi_hover_lift.dart'
+    show kFushiHoverLiftOverflow;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/section_swipe_navigator.dart'
@@ -24,6 +26,11 @@ import 'package:fushi/src/utils/misc/platform_utils.dart'
 // - collage：第一项是加大块（高 264，占约 2/3 行宽；整行超过 1500 时最多一半），
 //   旁边每列叠两张半高卡（宽行只第一列是半高叠，再往右是与大块同高的普通块）；
 //   其余按等尺寸排。
+// - collage + `uniformAfterHero`（音乐曲库，设计稿 M2）：只有首块加大（占 2 列 ×
+//   2 行），其余全是等尺寸块，先填满首块旁边的列、再按等尺寸往下排，网格不出洞。
+//
+// 规整摆放下相邻块的间距处处等于 `spacing`（行内、半高叠内、行与行之间同一个
+// 值）；悬停放大溢出由 [computeFushiCoverBlockPlacement] 在两侧留边，不靠缩间距。
 //
 // 几何是纯函数（[computeFushiCoverBlockPlan]），sliver 只按行懒构建；方向键导航
 // 走 Flutter 的几何焦点遍历，不依赖列数。
@@ -144,6 +151,11 @@ List<double> _justifiedWidths(
 /// ——放到「再放一块要压缩得比不放要拉伸得更多」为止，再整行等比缩放铺满（末行放得下时
 /// 不拉宽）。拼贴头部右侧的列（半高叠取其中较宽者）同样两端对齐。不给时与原来
 /// 一样：所有条目按 [targetWidth] 等宽分栏。
+///
+/// [uniformAfterHero]（只在 [layout] 为 collage、且不给 [narrowTargetWidth] 时
+/// 生效）：首块是占 2 列 × 2 行的加大块，其余全是等尺寸块——首块旁边的列排两行
+/// 等尺寸块，之后按等尺寸逐行排（设计稿 M2「只有首块加大，其余等尺寸」）。不足
+/// 3 列时首块独占一行（拼贴首块高），其余照常。
 List<FushiCoverBlockRow> computeFushiCoverBlockPlan({
   required double width,
   required int itemCount,
@@ -152,9 +164,20 @@ List<FushiCoverBlockRow> computeFushiCoverBlockPlan({
   double spacing = kFushiCoverBlockSpacing,
   double? narrowTargetWidth,
   FushiCoverBlockWideOf? isWideItem,
+  bool uniformAfterHero = false,
 }) {
   final List<FushiCoverBlockRow> rows = <FushiCoverBlockRow>[];
   if (itemCount <= 0 || width <= 0) return rows;
+  if (uniformAfterHero &&
+      layout == ShellContentLayout.collage &&
+      narrowTargetWidth == null) {
+    return _uniformAfterHeroPlan(
+      width: width,
+      itemCount: itemCount,
+      targetWidth: targetWidth,
+      spacing: spacing,
+    );
+  }
   final double? narrow = narrowTargetWidth;
   double naturalOf(int index) => narrow == null
       ? targetWidth
@@ -332,6 +355,177 @@ List<FushiCoverBlockRow> computeFushiCoverBlockPlan({
   return rows;
 }
 
+/// [computeFushiCoverBlockPlan] 的 `uniformAfterHero` 排法。
+List<FushiCoverBlockRow> _uniformAfterHeroPlan({
+  required double width,
+  required int itemCount,
+  required double targetWidth,
+  required double spacing,
+}) {
+  final List<FushiCoverBlockRow> rows = <FushiCoverBlockRow>[];
+  final int columns = fushiCoverBlockColumns(width, targetWidth, spacing);
+  final bool compact = columns == 1;
+  final double blockHeight = compact
+      ? kFushiCoverBlockHeightCompact
+      : kFushiCoverBlockHeight;
+  final double blockWidth = (width - (columns - 1) * spacing) / columns;
+  int next = 0;
+  // 等尺寸块的一整行，从第 [startColumn] 列起。
+  List<FushiCoverBlockCell> fillRow(int startColumn, double top) {
+    final List<FushiCoverBlockCell> cells = <FushiCoverBlockCell>[];
+    for (int c = startColumn; c < columns && next < itemCount; c++) {
+      cells.add(
+        FushiCoverBlockCell(
+          index: next++,
+          size: FushiCoverBlockSize.regular,
+          rect: Rect.fromLTWH(
+            c * (blockWidth + spacing),
+            top,
+            blockWidth,
+            blockHeight,
+          ),
+        ),
+      );
+    }
+    return cells;
+  }
+
+  if (columns < 3) {
+    final double heroHeight = compact
+        ? kFushiCoverBlockHeroHeightCompact
+        : kFushiCoverBlockHeroHeight;
+    rows.add(
+      FushiCoverBlockRow(
+        height: heroHeight,
+        cells: <FushiCoverBlockCell>[
+          FushiCoverBlockCell(
+            index: next++,
+            size: FushiCoverBlockSize.hero,
+            rect: Rect.fromLTWH(0, 0, width, heroHeight),
+          ),
+        ],
+      ),
+    );
+  } else {
+    // 首块占 2 列；旁边 columns − 2 列。条目只够旁边排一行时首块也只占一行高，
+    // 不在第二行留洞。
+    final int beside = columns - 2;
+    final int bandRows = itemCount - 1 > beside ? 2 : 1;
+    final double bandHeight = bandRows * blockHeight + (bandRows - 1) * spacing;
+    final List<FushiCoverBlockCell> cells = <FushiCoverBlockCell>[
+      FushiCoverBlockCell(
+        index: next++,
+        size: FushiCoverBlockSize.hero,
+        rect: Rect.fromLTWH(0, 0, blockWidth * 2 + spacing, bandHeight),
+      ),
+    ];
+    for (int r = 0; r < bandRows; r++) {
+      cells.addAll(fillRow(2, r * (blockHeight + spacing)));
+    }
+    rows.add(FushiCoverBlockRow(height: bandHeight, cells: cells));
+  }
+  while (next < itemCount) {
+    rows.add(FushiCoverBlockRow(height: blockHeight, cells: fillRow(0, 0)));
+  }
+  return rows;
+}
+
+/// 摆好、留出悬停余量的布局（[computeFushiCoverBlockPlacement] 给出）。
+@immutable
+class FushiCoverBlockPlacement {
+  const FushiCoverBlockPlacement({required this.rows, required this.inset});
+
+  /// 各行；格子的 `rect.left` 已含 [inset]（起始边量起，直接按它摆）。
+  final List<FushiCoverBlockRow> rows;
+
+  /// 两侧各留的边（逻辑像素）。
+  final double inset;
+}
+
+/// 贴着行两端的格子悬停放大后单侧溢出的最大量（[kFushiHoverLiftOverflow]：两套
+/// 设计系统里较大的放大倍数）。
+double _edgeHoverOverflow(List<FushiCoverBlockRow> rows, double width) {
+  double overflow = 0;
+  for (final FushiCoverBlockRow row in rows) {
+    for (final FushiCoverBlockCell cell in row.cells) {
+      if (cell.rect.left <= 0.5 || cell.rect.right >= width - 0.5) {
+        overflow = math.max(
+          overflow,
+          cell.rect.width * kFushiHoverLiftOverflow,
+        );
+      }
+    }
+  }
+  return overflow;
+}
+
+/// [computeFushiCoverBlockPlan] 加悬停余量：库页卡片的悬停抬升（`FushiHoverLift`
+/// 以格子中心放大）会让贴行首 / 行尾的块越出 sliver 的横向范围，被滚动视口裁掉
+/// 一条（设计稿 V1：「右列块悬停放大后超出内容区被裁」——裁切发生在页面
+/// `CustomScrollView` 的视口矩形，左右只有页边距那 12）。这里在两侧各留出边缘块
+/// 的放大溢出量，再把行宽缩进去排：放大后的块整块留在 [width] 之内，块与块之间的
+/// 间距不变。留边会让列宽变窄，按新宽度重算到稳定（列数变了就再量一次）。
+///
+/// [hoverBleed]：块外两侧本来就有、放大后可以越进去的空白（调用点 sliver 外的
+/// 页边距）。只有溢出量超出它的那部分才往行里留边——否则行首 / 行尾的块会比页边
+/// 再缩进一截，与页面其它内容的左右竖线对不齐（合集详情色块成员墙，2026-11-16）。
+///
+/// [SliverFushiCoverBlocks] / [FushiCoverBlocks] 都按它摆；在外面按行数算容量的
+/// 调用点（「前 N 行放得下几块」）也要用它，几何才与真正摆出来的一致。
+FushiCoverBlockPlacement computeFushiCoverBlockPlacement({
+  required double width,
+  required int itemCount,
+  required ShellContentLayout? layout,
+  required double targetWidth,
+  double spacing = kFushiCoverBlockSpacing,
+  double? narrowTargetWidth,
+  FushiCoverBlockWideOf? isWideItem,
+  bool uniformAfterHero = false,
+  double hoverBleed = 0,
+}) {
+  List<FushiCoverBlockRow> plan(double w) => computeFushiCoverBlockPlan(
+    width: w,
+    itemCount: itemCount,
+    layout: layout,
+    targetWidth: targetWidth,
+    spacing: spacing,
+    narrowTargetWidth: narrowTargetWidth,
+    isWideItem: isWideItem,
+    uniformAfterHero: uniformAfterHero,
+  );
+  double inset = 0;
+  List<FushiCoverBlockRow> rows = plan(width);
+  // 留边只会让块变窄（溢出变小），除非列数随之减少、块又变宽。inset 只增不减、
+  // 列数只减不增，几轮内必然收敛；上限按列数可能的减少次数留足。
+  for (int pass = 0; pass < 8; pass++) {
+    final double need = _edgeHoverOverflow(
+      rows,
+      width - inset * 2,
+    ).ceilToDouble();
+    if (need <= inset + hoverBleed) break;
+    inset = need - hoverBleed;
+    rows = plan(math.max(0, width - inset * 2));
+  }
+  if (inset == 0) return FushiCoverBlockPlacement(rows: rows, inset: 0);
+  return FushiCoverBlockPlacement(
+    inset: inset,
+    rows: <FushiCoverBlockRow>[
+      for (final FushiCoverBlockRow row in rows)
+        FushiCoverBlockRow(
+          height: row.height,
+          cells: <FushiCoverBlockCell>[
+            for (final FushiCoverBlockCell cell in row.cells)
+              FushiCoverBlockCell(
+                index: cell.index,
+                size: cell.size,
+                rect: cell.rect.translate(inset, 0),
+              ),
+          ],
+        ),
+    ],
+  );
+}
+
 /// 一块色块的摆放姿态：位移（逻辑像素）与旋转（度）。
 typedef FushiCoverBlockPose = ({double dx, double dy, double rotation});
 
@@ -459,11 +653,20 @@ class SliverFushiCoverBlocks extends StatelessWidget {
     this.narrowTargetWidth,
     this.isWideItem,
     this.layout,
+    this.uniformAfterHero = false,
+    this.hoverBleed = 0,
     super.key,
   });
 
+  /// 调用点 sliver 外两侧的页边距：悬停放大可以越进去，不再往行里额外留边
+  /// （见 [computeFushiCoverBlockPlacement]）。
+  final double hoverBleed;
+
   /// [ShellContentLayout.collage] = 拼贴；null = 等尺寸色块。
   final ShellContentLayout? layout;
+
+  /// 拼贴下只有首块加大、其余等尺寸（见 [computeFushiCoverBlockPlan]）。
+  final bool uniformAfterHero;
   final int itemCount;
   final FushiCoverBlockItemBuilder itemBuilder;
 
@@ -484,7 +687,7 @@ class SliverFushiCoverBlocks extends StatelessWidget {
     final ShellBlockArrangement arrangement = shellBlockArrangementOf(context);
     return SliverLayoutBuilder(
       builder: (BuildContext context, SliverConstraints constraints) {
-        final List<FushiCoverBlockRow> plan = computeFushiCoverBlockPlan(
+        final List<FushiCoverBlockRow> plan = computeFushiCoverBlockPlacement(
           width: constraints.crossAxisExtent,
           itemCount: itemCount,
           layout: layout,
@@ -492,7 +695,9 @@ class SliverFushiCoverBlocks extends StatelessWidget {
           spacing: spacing,
           narrowTargetWidth: narrowTargetWidth,
           isWideItem: isWideItem,
-        );
+          uniformAfterHero: uniformAfterHero,
+          hoverBleed: hoverBleed,
+        ).rows;
         final int? cap = maxRows;
         final List<FushiCoverBlockRow> rows = cap == null
             ? plan
@@ -863,14 +1068,17 @@ double fushiCoverBlockFirstRowHeight({
   required ShellContentLayout? layout,
   double targetWidth = kFushiCoverBlockTargetWidthMedia,
   double spacing = kFushiCoverBlockSpacing,
+  bool uniformAfterHero = false,
 }) {
-  final List<FushiCoverBlockRow> rows = computeFushiCoverBlockPlan(
+  // uniformAfterHero 的首行高取决于条目够不够填首块旁两行：骨架按填满算。
+  final List<FushiCoverBlockRow> rows = computeFushiCoverBlockPlacement(
     width: width,
-    itemCount: 1,
+    itemCount: uniformAfterHero ? 64 : 1,
     layout: layout,
     targetWidth: targetWidth,
     spacing: spacing,
-  );
+    uniformAfterHero: uniformAfterHero,
+  ).rows;
   return rows.isEmpty ? 0 : rows.first.height;
 }
 
@@ -884,11 +1092,15 @@ class FushiCoverBlocks extends StatelessWidget {
     this.targetWidth = kFushiCoverBlockTargetWidthMedia,
     this.spacing = kFushiCoverBlockSpacing,
     this.staggerEntrance = true,
+    this.uniformAfterHero = false,
     super.key,
   });
 
   /// [ShellContentLayout.collage] = 拼贴；null = 等尺寸色块。
   final ShellContentLayout? layout;
+
+  /// 拼贴下只有首块加大、其余等尺寸（见 [computeFushiCoverBlockPlan]）。
+  final bool uniformAfterHero;
   final int itemCount;
   final FushiCoverBlockItemBuilder itemBuilder;
   final double targetWidth;
@@ -902,13 +1114,14 @@ class FushiCoverBlocks extends StatelessWidget {
     final ShellBlockArrangement arrangement = shellBlockArrangementOf(context);
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        final List<FushiCoverBlockRow> rows = computeFushiCoverBlockPlan(
+        final List<FushiCoverBlockRow> rows = computeFushiCoverBlockPlacement(
           width: constraints.maxWidth,
           itemCount: itemCount,
           layout: layout,
           targetWidth: targetWidth,
           spacing: spacing,
-        );
+          uniformAfterHero: uniformAfterHero,
+        ).rows;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,

@@ -426,8 +426,10 @@ WebNovelChapterLoader? webNovelChapterLoaderFor({
 /// 插图写回解压树、把新快照写回书行。spine 不在这里改（阅读器正开着这本书）：新的
 /// 「下一章」占位在下次开书时由 [WebNovelLibrary.ensureTrailingPlaceholder] 补上。
 ///
-/// 同一章并发请求只取一次；不同章串行取。
-class WebNovelChapterLoader implements OnlineNovelChapterLoader {
+/// 同一章并发请求只取一次；不同章串行取（骨架见
+/// [SerialOnlineNovelChapterLoader]）。不预取：每取一页要起一个无界面 WebView，
+/// 目标地址又靠上一章 ingest 出来的 `tailNext`，提前取既贵又会改快照。
+class WebNovelChapterLoader extends SerialOnlineNovelChapterLoader {
   WebNovelChapterLoader({
     required this.database,
     required this.library,
@@ -441,68 +443,31 @@ class WebNovelChapterLoader implements OnlineNovelChapterLoader {
   final WebNovelLibrary library;
   final WebNovelPageFetcher fetcher;
   final String bookKey;
+  @override
   final String extractDir;
   final FushiWebCoreLibrary? _core;
 
-  final Map<int, Future<bool>> _inflight = <int, Future<bool>>{};
-  Future<void> _queue = Future<void>.value();
-
-  /// 排队中的取章全部结束。
-  @visibleForTesting
-  Future<void> whenIdle() async {
-    Future<void> seen;
-    do {
-      seen = _queue;
-      await seen;
-    } while (!identical(seen, _queue));
-  }
-
   @override
-  int? chapterIndexForFile(String filePath) {
-    final String relative = p
-        .relative(p.normalize(filePath), from: p.normalize(extractDir))
-        .replaceAll(r'\', '/');
-    final RegExpMatch? match = RegExp(
-      r'^OEBPS/chapter-(\d+)\.xhtml$',
-    ).firstMatch(relative);
-    if (match == null) return null;
-    final int index = int.parse(match.group(1)!) - 1;
-    return index < 0 ? null : index;
-  }
-
-  @override
-  Future<bool> ensureLoaded(String filePath) {
+  Future<OnlineNovelChapterLoaded?> ensureLoaded(String filePath) {
     final int? index = chapterIndexForFile(filePath);
-    if (index == null) return Future<bool>.value(false);
-    final Future<bool>? running = _inflight[index];
-    if (running != null) return running;
-    final Completer<bool> completer = Completer<bool>();
-    _inflight[index] = completer.future;
-    _queue = _queue.then((_) async {
-      try {
-        completer.complete(await _load(index));
-      } on Object catch (error, stack) {
-        completer.completeError(error, stack);
-      } finally {
-        _inflight.remove(index);
-      }
-    });
-    return completer.future;
+    if (index == null) return Future<OnlineNovelChapterLoaded?>.value();
+    return ensureChapter(index);
   }
 
-  Future<bool> _load(int index) async {
+  @override
+  Future<OnlineNovelChapterLoaded?> loadChapter(int index) async {
     final File file = lnReaderOnlineChapterFile(extractDir, index);
-    if (!file.existsSync()) return false;
+    if (!file.existsSync()) return null;
     if (!(await file.readAsString()).contains(
       kLnReaderPendingChapterAttribute,
     )) {
-      return false;
+      return null;
     }
     final EpubBookRow? row = await database.getEpubBook(bookKey);
     final WebNovelSnapshot? snapshot = WebNovelSnapshot.tryParse(
       row?.sourceMetadata,
     );
-    if (row == null || snapshot == null) return false;
+    if (row == null || snapshot == null) return null;
     final String? target = index < snapshot.chapters.length
         ? snapshot.chapters[index].url
         : (index == snapshot.chapters.length ? snapshot.tailNext : null);
@@ -533,15 +498,15 @@ class WebNovelChapterLoader implements OnlineNovelChapterLoader {
     // 为准再核一次，对不上就放弃这次结果。
     final EpubBookRow? current = await database.getEpubBook(bookKey);
     if (current == null || current.sourceMetadata != snapshot.raw) {
-      return false;
+      return null;
     }
     for (final LnReaderEpubImage image in content.images) {
-      await _writeAtomically(
+      await writeAtomically(
         File(p.join(extractDir, 'OEBPS', image.fileName)),
         image.bytes,
       );
     }
-    await _writeAtomically(
+    await writeAtomically(
       file,
       utf8.encode(
         LnReaderEpubAssembler.chapterXhtml(
@@ -561,14 +526,21 @@ class WebNovelChapterLoader implements OnlineNovelChapterLoader {
       chapterCount: reparsed.chapterCount,
       chaptersJson: reparsed.chaptersJson,
     );
-    return true;
+    return OnlineNovelChapterLoaded(
+      index: index,
+      characters: _chapterCharacters(reparsed.chaptersJson, index),
+    );
   }
 
-  static Future<void> _writeAtomically(File target, List<int> bytes) async {
-    await target.parent.create(recursive: true);
-    final File temp = File('${target.path}.part');
-    await temp.writeAsBytes(bytes, flush: true);
-    await temp.rename(target.path);
+  /// 重解析出的 `chaptersJson` 里第 [index] 章的字数（阅读器据此换掉内存里那
+  /// 一章的字数）；条目缺失 / 形状不对返回 null。
+  static int? _chapterCharacters(String chaptersJson, int index) {
+    final Object? decoded = jsonDecode(chaptersJson);
+    if (decoded is! List<Object?> || index >= decoded.length) return null;
+    final Object? entry = decoded[index];
+    if (entry is! Map<String, Object?>) return null;
+    final Object? characters = entry['characters'];
+    return characters is int && characters >= 0 ? characters : null;
   }
 }
 

@@ -145,7 +145,7 @@ class OverwriteSnapshotPreview {
   const OverwriteSnapshotPreview({
     required this.path,
     required this.sizeBytes,
-    required this.modifiedAt,
+    required this.createdAt,
     required this.missingBooks,
     required this.missingVideoCount,
   });
@@ -153,20 +153,36 @@ class OverwriteSnapshotPreview {
   final String path;
   final int sizeBytes;
 
-  /// 快照文件的修改时刻（= 被覆盖前主库最后一次写入，约等于覆盖导入的时刻）。
-  final DateTime modifiedAt;
+  /// 覆盖导入完成的时刻（保留期起点，读自起点记录而不是快照文件的修改时刻）。
+  final DateTime createdAt;
 
-  /// 快照里有、当前库没有（也没被删除墓碑挡住）的书。
+  /// 快照里有、当前库没有（也没被删除墓碑挡住）的书，含书文件已不在盘上的。
   final List<OverwriteSnapshotBook> missingBooks;
 
   /// 快照里有、当前库没有、且本机还能播放的视频条数。
   final int missingVideoCount;
 
-  /// 书文件已不在盘上的书（恢复后书库行回来了，但打不开，需要重新导入）。
+  /// 到这一刻快照会在启动时被自动删除
+  /// （`BackupRestoreService.overwriteSnapshotRetention`）。
+  DateTime get expiresAt =>
+      BackupRestoreService.overwriteSnapshotExpiresAt(createdAt);
+
+  /// 恢复时真正会补回来的书（书文件还在盘上）。
+  List<OverwriteSnapshotBook> get restorableBooks => <OverwriteSnapshotBook>[
+    for (final OverwriteSnapshotBook b in missingBooks)
+      if (b.filesPresent) b,
+  ];
+
+  /// 书文件已不在盘上的书：恢复时**跳过**（插回来只是打不开的空壳），
+  /// 界面列出书名、提示重新导入。
   List<OverwriteSnapshotBook> get booksWithoutFiles => <OverwriteSnapshotBook>[
     for (final OverwriteSnapshotBook b in missingBooks)
       if (!b.filesPresent) b,
   ];
+
+  /// 从快照恢复会不会补回任何书 / 视频。
+  bool get hasRestorableContent =>
+      restorableBooks.isNotEmpty || missingVideoCount > 0;
 }
 
 /// 覆盖前快照里的一本书。
@@ -2014,6 +2030,37 @@ class BackupService {
       // 内容的标记）。
       await db.customStatement(
         'DELETE FROM media_privacy_flags WHERE '
+        "(media_kind = 'epub' AND entry_key NOT IN "
+        '(SELECT book_key FROM epub_books)) '
+        "OR (media_kind = 'srt' AND entry_key NOT IN "
+        '(SELECT uid FROM srt_books)) '
+        "OR (media_kind = 'video' AND entry_key NOT IN "
+        '(SELECT book_uid FROM video_books)) '
+        "OR (media_kind = 'collection' AND entry_key NOT IN "
+        '(SELECT CAST(id AS TEXT) FROM media_collections)) '
+        "OR (media_kind = 'game' AND entry_key NOT IN "
+        '(SELECT id FROM galgames))',
+      );
+      // v161 条目刮削资料 / 附加图：键与合集成员同一套（epub=uid / srt=uid /
+      // game=galgames.id），宿主不在本份导出里的行一并收敛。
+      for (final String table in const <String>[
+        'item_scrape_meta',
+        'item_images',
+      ]) {
+        await db.customStatement(
+          'DELETE FROM $table WHERE '
+          "(media_type = 'epub' AND entry_key NOT IN "
+          '(SELECT uid FROM epub_books)) '
+          "OR (media_type = 'srt' AND entry_key NOT IN "
+          '(SELECT uid FROM srt_books)) '
+          "OR (media_type = 'game' AND entry_key NOT IN "
+          '(SELECT id FROM galgames))',
+        );
+      }
+
+      // v156 NSFW 标记：同一套宿主逻辑外键，同口径收敛。
+      await db.customStatement(
+        'DELETE FROM media_nsfw_flags WHERE '
         "(media_kind = 'epub' AND entry_key NOT IN "
         '(SELECT book_key FROM epub_books)) '
         "OR (media_kind = 'srt' AND entry_key NOT IN "

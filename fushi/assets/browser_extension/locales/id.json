@@ -293,6 +293,7 @@
   "mine_queued_generate_later": "Klik tombol penambangan di ekstensi untuk membuat semuanya",
   "mine_no_cue": "Baris subtitel saat ini tidak ditemukan, coba lagi sebentar lagi",
   "mine_enqueue_failed": "Tidak dapat menambahkan ke antrean",
+  "mine_enqueue_context_invalidated": "Gagal menambahkan ke antrean: ekstensi telah diperbarui, muat ulang halaman (F5) lalu coba lagi",
   "mine_failed": "Penambangan gagal",
   "mine_done": "Kartu dibuat",
   "mine_duplicate_exists": "Kartu untuk kata ini sudah ada",

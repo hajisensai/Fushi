@@ -564,6 +564,23 @@ mixin _FushiDbPrefsMedia
 
   Future<List<VideoBookRow>> allVideoBooks() => select(videoBooks).get();
 
+  /// 按一批 bookUid 取行（`IN` 分块；不存在的 uid 不在结果里，顺序不保证）。
+  /// 批量操作取删前快照用，代替逐条 [getVideoBookByBookUid]（BUG-4748）。
+  Future<List<VideoBookRow>> getVideoBooksByBookUids(
+    Iterable<String> bookUids,
+  ) async {
+    final List<VideoBookRow> rows = <VideoBookRow>[];
+    for (final List<String> chunk in _chunkForSqlVariables<String>(
+      bookUids.toSet().toList(growable: false),
+      _kVideoDeleteChunkSize,
+    )) {
+      rows.addAll(
+        await (select(videoBooks)..where((t) => t.bookUid.isIn(chunk))).get(),
+      );
+    }
+    return rows;
+  }
+
   /// 仅在视频尚未归属来源时回填 [sourceId]。
   ///
   /// 来源重扫复用手动导入的同路径视频时使用。只写 `source_id`，避免以整行 upsert

@@ -1,0 +1,17 @@
+## BUG-4817 · 互联主机代跑 OCR：取消后重传同卷，保留的逐页断点缓存一页也命中不了
+- **报告**：2026-11-17（用户：小说 / 漫画 / 视频优化清单 manga-8「互联主机端同卷断点续传永远不命中」，代码复核确认）
+- **真实性**：✅ 真 bug（代码路径确认 + 测试复现）。设计意图是续传：取消只删页图、保留 `manga_ocr_out/`（`packages/fushi_engine/lib/sync/fushi_manga_ocr_host.dart` `cancelAndCleanup` 的注释「保留逐页断点缓存使同卷重传后续传」），同卷新任务也落回同一个 `vol_<slug>` 目录。但缓存从来对不上：
+  - 逐页缓存按「页名 + 大小 + 修改时间」认页：`packages/fushi_engine/lib/ocr/manga_ocr_folder_job.dart:277-279`（读）、`:311-313`（写）记的都是页图当前的 `stat`。
+  - 上传是新写文件：修复前 `fushi_manga_ocr_host.dart` `uploadPage` 只有 `dest.writeAsBytes(bytes, flush: true)`（现 `:281`），页图的修改时间是 **host 落盘那一刻**；取消又把页图删掉，重传必然是另一个时刻。
+  - 结果：页名、大小都对得上，只有修改时间永远不同 → 重传后整卷重新识别，保留的缓存只占磁盘。
+  - 原有测试「keeps checkpoint cache for resume」只断言缓存文件还在、新任务落回同一目录（缓存文件是 `createSync` 的空文件、服务是 fake），没有任何断言证明缓存真被命中，所以缺口一直没被发现。
+- **[x] ① 已修复**（ac32b72ce5c）— 上传带上源文件的修改时间，host 落盘后把页图的修改时间设成它（缓存格式、缓存键、协议的其余部分都不动）：
+  - 客户端 `fushi/lib/src/sync/interconnect_manga_ocr_client.dart:434-447`：逐页 PUT 多带可选 query `mtime=<源文件修改时间，Unix 毫秒>`。
+  - host `packages/fushi_engine/lib/sync/fushi_manga_ocr_host.dart`：路由用 `parseMangaOcrSourceModified` 解析（缺省 / 非整数 / 越界一律当没带），`uploadPage(sourceModified:)` 落盘后 `setLastModified`（`:284`）。
+  - 设修改时间只为续传、页图此时已写好：文件系统不收这个时间（FAT / exFAT 可表示范围窄）或页图在两步之间被取消删掉时只接 `FileSystemException`，这一页保持落盘时间（不续传），上传照常成功（5883c863d8a）。
+  - 兼容：老客户端不带 `mtime` → 行为与修复前完全一样；新客户端对老 host → 多出来的 query 被忽略。
+  - 范围说明：只省**识别**，不省**上传**（取消仍删页图）。清单原方向「客户端附内容哈希、主机跳过上传、缓存改按内容键」要动协议、与「取消即删页图」冲突、还会让本机所有用户现有的逐页缓存失效（本地 OCR 与主机共用 `MangaOcrFilePageCache`），不在本条范围。
+- **[x] ② 已加自动化测试** —
+  - `fushi/test/sync/interconnect_manga_ocr_client_test.dart`「re-running the same volume hits the host per-page cache (source mtime travels)」：真客户端 → 真 `FushiSyncServer`，host 服务用**真的** `MangaOcrFilePageCache`；同卷跑第二遍三页全部命中、零重新识别；源文件改过修改时间的那页照常重新识别。
+  - `fushi/test/sync/fushi_sync_server_manga_ocr_test.dart`「page upload stamps the source mtime so the checkpoint cache hits after re-upload」：HTTP 层带 `mtime` 上传 → 页图修改时间等于源时间；取消（页图删、缓存留）后重传同页 → 真缓存命中；`mtime` 变了不命中；不带 `mtime` 行为不变。另一条钉 `mtime` 解析的非法值；「page upload still succeeds when the file system rejects the source mtime」钉设修改时间失败不算上传失败。
+- **备注**：两台真设备互联「取消后重传同卷，看主机是否跳过已识别页」尚未实测（本轮多组并发共用设备，未做），待补。文件系统的修改时间精度不影响判定：缓存写入和读取比的都是 host 上同一个文件的 `stat`，`setLastModified` 的取整在两次上传间是确定的。

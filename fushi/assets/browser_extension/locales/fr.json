@@ -293,6 +293,7 @@
   "mine_queued_generate_later": "Cliquez sur le bouton de minage de l’extension pour toutes les générer",
   "mine_no_cue": "Aucune ligne de sous-titre en cours trouvée, réessayez dans un instant",
   "mine_enqueue_failed": "Impossible d’ajouter à la file",
+  "mine_enqueue_context_invalidated": "Impossible d'ajouter à la file : l'extension a été mise à jour, rechargez la page (F5) et réessayez",
   "mine_failed": "Échec du minage",
   "mine_done": "Carte créée",
   "mine_duplicate_exists": "Une carte existe déjà pour ce mot",

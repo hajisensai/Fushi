@@ -3,6 +3,18 @@
 // （extension 方案在此翻车过）；私有 mixin 不进公共 API 面。
 part of 'database.dart';
 
+/// [FushiDatabase.removeFromCollectionAutomatically] 的结果。
+enum CollectionAutoRemoveResult {
+  /// 已移出（写了成员墓碑，合集所有权不变）。
+  removed,
+
+  /// 成员行是用户亲手放进来的（`pinned_by_user`），拒绝移出。
+  pinned,
+
+  /// 不是这个合集的成员，什么也没做。
+  notMember,
+}
+
 mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
   // ── media_sources ───────────────────────────────────────────────
   // TODO-817：网络/本地来源库 CRUD。configJson 绝不裸存明文密码（本地恒 NULL，
@@ -274,6 +286,23 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
       (update(mediaSources)..where((t) => t.id.equals(id))).write(
         MediaSourcesCompanion(isPrivate: Value(isPrivate)),
       );
+
+  /// 设置来源的自动扫描开关（v157，`media_sources.auto_scan`）。只写这一列。
+  Future<void> updateMediaSourceAutoScan(int id, bool autoScan) =>
+      (update(mediaSources)..where((t) => t.id.equals(id))).write(
+        MediaSourcesCompanion(autoScan: Value(autoScan)),
+      );
+
+  /// 开着自动扫描的来源（启动 / 回前台的自动扫描调度读它），按来源页同一顺序
+  /// （sortOrder, id）。
+  Future<List<MediaSourceRow>> getAutoScanMediaSources() =>
+      (select(mediaSources)
+            ..where((t) => t.autoScan.equals(true))
+            ..orderBy([
+              (t) => OrderingTerm(expression: t.sortOrder),
+              (t) => OrderingTerm(expression: t.id),
+            ]))
+          .get();
 
   /// 开着隐私开关的来源 id（排行榜 / Bangumi 等出站路径的私密判定读它）。
   Future<Set<int>> privateMediaSourceIds() async => <int>{
@@ -1379,6 +1408,8 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
           mediaType: mediaType.dbValue,
           entryKey: targetKey,
           sortIndex: Value(index),
+          // 远端占位行换成本机键：「用户亲手放进来」跟着搬（v159）。
+          pinnedByUser: Value<bool>(placeholder?.pinnedByUser ?? false),
         ),
         mode: InsertMode.insertOrIgnore,
       );
@@ -1416,13 +1447,21 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
   /// [addToCollection] 的裸串版：合集合并/转移把**现有成员行原样搬家**时用——
   /// 行值可能是对端未来新增的未知种类（或旧值域残留），tryParse 丢弃会静默丢
   /// 成员（Never break userspace）。新增本机成员一律走类型化 [addToCollection]。
+  ///
+  /// [pinnedByUser]（v159，缺省跟随 [userIntent]）：成员行记成「用户亲手放进来」，
+  /// AI 整理不再移出（[removeFromCollectionAutomatically]）。只升不降：传 false 时
+  /// 新插入的行为 0，已是 1 的行不改回 0。整理撤销「移出」传 `userIntent: false,
+  /// pinnedByUser: true`（用户否决了这次移出，但不接手合集所有权）；合并 / 收敛把
+  /// 成员搬家时传源行的值。
   Future<void> addToCollectionRaw(
     int collectionId,
     String mediaType,
     String entryKey, {
     bool userIntent = true,
+    bool? pinnedByUser,
   }) => transaction(() async {
     if (userIntent) await _claimCollectionForUser(collectionId);
+    final bool pin = pinnedByUser ?? userIntent;
     final int next = await _nextCollectionSortIndex(collectionId);
     await into(mediaCollectionItems).insert(
       MediaCollectionItemsCompanion.insert(
@@ -1430,9 +1469,24 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
         mediaType: mediaType,
         entryKey: entryKey,
         sortIndex: Value(next),
+        pinnedByUser: Value<bool>(pin),
       ),
       mode: InsertMode.insertOrIgnore,
     );
+    if (pin) {
+      await (update(mediaCollectionItems)..where(
+            (t) =>
+                t.collectionId.equals(collectionId) &
+                t.mediaType.equals(mediaType) &
+                t.entryKey.equals(entryKey) &
+                t.pinnedByUser.equals(false),
+          ))
+          .write(
+            const MediaCollectionItemsCompanion(
+              pinnedByUser: Value<bool>(true),
+            ),
+          );
+    }
     final MediaCollectionRow? col = await getMediaCollectionById(collectionId);
     if (col != null) {
       await deleteCollectionMemberTombstone(
@@ -1568,6 +1622,38 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     entryKey,
     userIntent: userIntent,
   );
+
+  /// 自动路径（AI 整理）移出一个成员（AI 库管家设计稿 §7）。成员行
+  /// `pinned_by_user == 1`（用户亲手放进来 / 撤销过 AI 的移出）→ 拒绝，返回
+  /// [CollectionAutoRemoveResult.pinned]；不是成员 → [CollectionAutoRemoveResult.
+  /// notMember]；否则按 [removeFromCollectionRaw]（`userIntent: false`）移出：写成员
+  /// 墓碑（防同步把它并回来）、**不改合集所有权**（不把 `origin` 转成 `user`，见
+  /// `docs/specs/2026-10-20-ai-library-organize-design.md` §5.1）。移空自删沿用
+  /// [removeFromCollectionRaw] 的语义（合集清单里 0 成员的活合集会被各端同步删掉，
+  /// 本机单独保留空壳也留不住）。
+  Future<CollectionAutoRemoveResult> removeFromCollectionAutomatically(
+    int collectionId,
+    String mediaType,
+    String entryKey,
+  ) => transaction(() async {
+    final MediaCollectionItemRow? row =
+        await (select(mediaCollectionItems)..where(
+              (t) =>
+                  t.collectionId.equals(collectionId) &
+                  t.mediaType.equals(mediaType) &
+                  t.entryKey.equals(entryKey),
+            ))
+            .getSingleOrNull();
+    if (row == null) return CollectionAutoRemoveResult.notMember;
+    if (row.pinnedByUser) return CollectionAutoRemoveResult.pinned;
+    await removeFromCollectionRaw(
+      collectionId,
+      mediaType,
+      entryKey,
+      userIntent: false,
+    );
+    return CollectionAutoRemoveResult.removed;
+  });
 
   /// [removeFromCollection] 的裸串版：详情页按现有成员行移出时，行值可能是对端
   /// 未来新增的未知种类——必须能原样移出，tryParse 丢弃会让该成员永远移不掉。
@@ -1868,17 +1954,28 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
 
   /// 同步应用端专用：按显式 sortIndex upsert 一条成员行（不走尾插、不清墓碑——
   /// 墓碑状态由清单镜像 [replaceCollectionTombstonesFor] 统一处理）。
+  ///
+  /// [pinnedByUser]（v159）与本机已有值取或：清单说了 1 就升到 1，清单没说（0 /
+  /// 旧对端缺字段）不把本机的 1 改回 0。
   Future<void> upsertCollectionItemAt(
     int collectionId,
     String mediaType,
     String entryKey,
-    int sortIndex,
-  ) => into(mediaCollectionItems).insertOnConflictUpdate(
+    int sortIndex, {
+    bool pinnedByUser = false,
+  }) => into(mediaCollectionItems).insert(
     MediaCollectionItemsCompanion.insert(
       collectionId: collectionId,
       mediaType: mediaType,
       entryKey: entryKey,
       sortIndex: Value(sortIndex),
+      pinnedByUser: Value<bool>(pinnedByUser),
+    ),
+    onConflict: DoUpdate(
+      (old) => MediaCollectionItemsCompanion.custom(
+        sortIndex: Variable<int>(sortIndex),
+        pinnedByUser: old.pinnedByUser | Variable<bool>(pinnedByUser),
+      ),
     ),
   );
 
@@ -2012,6 +2109,8 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     // 见 deleteEpubBook）。
     await removeEntryFromAllCollections(MediaKind.srt, uid);
     await deleteTagAssignmentsForHost(TagHostKind.srt, uid);
+    // v155：单本刮削资料 / 附加图（逻辑外键）同事务清。
+    await _purgeItemScrapeRows(this, MediaKind.srt, <String>[uid]);
     // v137：远端音频绑定同事务清（逻辑外键，没有级联）。
     await (delete(
       remoteAudioBindings,

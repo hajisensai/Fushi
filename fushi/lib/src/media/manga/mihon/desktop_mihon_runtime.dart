@@ -25,17 +25,18 @@ const int kMihonSourceImageMaxBytes = 32 * 1024 * 1024;
 ///
 /// [Stream.timeout] 会在每个数据块到达后重置计时器，所以慢速但仍在持续返回数据的
 /// 图片不会像旧的整请求 45 秒超时那样被中途切断；真正连续 90 秒没有任何数据时
-/// 仍会退出。大小上限避免异常扩展让预览封面无限占用内存。
+/// 仍会退出。大小上限避免异常扩展让预览封面无限占用内存；[maxBytes] 传 null
+/// 表示不设上限（漫画页图沿用原来不限大小的行为）。
 Future<Uint8List> readMihonSourceImageBytes(
   Stream<List<int>> stream, {
   Duration idleTimeout = kMihonSourceImageIdleTimeout,
-  int maxBytes = kMihonSourceImageMaxBytes,
+  int? maxBytes = kMihonSourceImageMaxBytes,
 }) async {
   final BytesBuilder builder = BytesBuilder(copy: false);
   int length = 0;
   await for (final List<int> chunk in stream.timeout(idleTimeout)) {
     length += chunk.length;
-    if (length > maxBytes) {
+    if (maxBytes != null && length > maxBytes) {
       throw const MihonRuntimeException(
         'IMAGE_TOO_LARGE',
         'Mihon source image exceeds the 32 MiB limit',
@@ -44,6 +45,48 @@ Future<Uint8List> readMihonSourceImageBytes(
     builder.add(chunk);
   }
   return builder.takeBytes();
+}
+
+/// 从 sidecar 的本地图片代理取一张漫画页。
+///
+/// 超时形状与封面相同（BUG-2450 第 4 点）：[headerTimeout] 内要等到响应头，之后按
+/// 「连续 [idleTimeout] 没有任何数据」计时。取消仍靠调用方关掉 [client]。
+///
+/// **在现在的 sidecar 上这等于整请求上限 [headerTimeout]**：sidecar 把上游图片
+/// 整张读进内存后才回响应头（`MihonImageProxy.fetch` 的 `body.bytes()` +
+/// `ImageProxyHandler` 的定长响应），所以上游的慢全落在等响应头这一段，空闲计时
+/// 只管得到回环上那段内存拷贝。实际变化只是上限从旧的 45 秒放宽到 90 秒；
+/// 「慢速但一直在出数据的大图不被砍」要等 sidecar 改成流式回传才成立。
+Future<Uint8List> fetchMihonPageImageBytes(
+  http.Client client,
+  Uri url, {
+  required Map<String, String> headers,
+  Duration headerTimeout = kMihonSourceImageHeaderTimeout,
+  Duration idleTimeout = kMihonSourceImageIdleTimeout,
+}) async {
+  final http.Request request = http.Request('GET', url)
+    ..headers.addAll(headers);
+  final http.StreamedResponse response = await client
+      .send(request)
+      .timeout(headerTimeout);
+  if (response.statusCode != HttpStatus.ok) {
+    throw MihonRuntimeException(
+      'IMAGE_HTTP_${response.statusCode}',
+      'Mihon image proxy request failed',
+    );
+  }
+  final Uint8List bytes = await readMihonSourceImageBytes(
+    response.stream,
+    idleTimeout: idleTimeout,
+    maxBytes: null,
+  );
+  if (bytes.isEmpty) {
+    throw const MihonRuntimeException(
+      'EMPTY_IMAGE',
+      'Mihon source returned an empty image',
+    );
+  }
+  return bytes;
 }
 
 class DesktopMihonRuntime extends MihonBridgeRuntime
@@ -283,22 +326,11 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     replaced?.close();
     _imageClients[requestId] = imageClient;
     try {
-      final http.Response response = await imageClient
-          .get(requested, headers: _headers)
-          .timeout(const Duration(seconds: 45));
-      if (response.statusCode != HttpStatus.ok) {
-        throw MihonRuntimeException(
-          'IMAGE_HTTP_${response.statusCode}',
-          'Mihon image proxy request failed',
-        );
-      }
-      if (response.bodyBytes.isEmpty) {
-        throw const MihonRuntimeException(
-          'EMPTY_IMAGE',
-          'Mihon source returned an empty image',
-        );
-      }
-      return response.bodyBytes;
+      return await fetchMihonPageImageBytes(
+        imageClient,
+        requested,
+        headers: _headers,
+      );
     } finally {
       if (identical(_imageClients[requestId], imageClient)) {
         _imageClients.remove(requestId);

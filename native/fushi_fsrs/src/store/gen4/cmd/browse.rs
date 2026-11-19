@@ -68,7 +68,7 @@ use std::collections::{HashMap, HashSet};
 use rusqlite::OptionalExtension;
 use serde_json::Value;
 
-use super::columns::{Members, Table, resolve};
+use super::columns::{Table, resolve};
 use super::{Files, Sel, canon_keyed, ref_of, snapshot};
 use crate::registers::StoredEdit;
 use crate::store::browse::{self, Card, Note, Sessions, Source, card_of, note_of};
@@ -192,8 +192,10 @@ impl Source for G4<'_, '_> {
         // 归回的写入者表在这一条命令里不变（同一个读快照）：按类拼行每条笔记都要它，读一次（同 `cache.rs` 的
         // `cache_pass`），不让每条笔记各读一遍整张表。
         ix.pass_writers = Some(ix.writer_aliases()?);
+        ix.pass_rules_begin()?;
         let done = edits_with(&mut ix, notes, keys, sink);
         ix.pass_writers = None;
+        ix.pass_rules = None;
         done
     }
 
@@ -481,12 +483,11 @@ pub(super) fn canon_req(src: &G4<'_, '_>, op: &str, req: &Value) -> Result<Value
     }
     drop(ix);
     if let Some(node) = obj.get_mut("node") {
-        canon_numbers(src, node, &mut Members::default())?;
+        canon_numbers(src, node)?;
     }
     if let Some(Value::Array(nodes)) = obj.get_mut("nodes") {
-        let mut members = Members::default();
         for node in nodes.iter_mut() {
-            canon_numbers(src, node, &mut members)?;
+            canon_numbers(src, node)?;
         }
     }
     Ok(out)
@@ -494,7 +495,7 @@ pub(super) fn canon_req(src: &G4<'_, '_>, op: &str, req: &Value) -> Result<Value
 
 /// 语法树里 `nid:` / `cid:` 的数字 id：认别名类成员的号（换成规范 ID 的号，`columns.rs` 同一个反查）；查不到的原样
 /// （照样什么都不命中）。
-fn canon_numbers(src: &G4<'_, '_>, node: &mut Value, members: &mut Members) -> Result<(), String> {
+fn canon_numbers(src: &G4<'_, '_>, node: &mut Value) -> Result<(), String> {
     let table = match node.get("t").and_then(Value::as_str) {
         Some("nid") => Some(Table::Notes),
         Some("cid") => Some(Table::Cards),
@@ -504,7 +505,7 @@ fn canon_numbers(src: &G4<'_, '_>, node: &mut Value, members: &mut Members) -> R
         if let Some(Value::Array(xs)) = node.get_mut("v") {
             for x in xs.iter_mut() {
                 if let Some(n) = x.as_i64() {
-                    if let Some(r) = resolve(src.t, src.col, table, members, n)? {
+                    if let Some(r) = resolve(src.t, src.col, table, n)? {
                         *x = Value::from(anki_numeric_id(&r.text()));
                     }
                 }
@@ -515,10 +516,10 @@ fn canon_numbers(src: &G4<'_, '_>, node: &mut Value, members: &mut Members) -> R
     match node.get_mut("c") {
         Some(Value::Array(kids)) => {
             for k in kids.iter_mut() {
-                canon_numbers(src, k, members)?;
+                canon_numbers(src, k)?;
             }
         }
-        Some(k @ Value::Object(_)) => canon_numbers(src, k, members)?,
+        Some(k @ Value::Object(_)) => canon_numbers(src, k)?,
         _ => {}
     }
     Ok(())

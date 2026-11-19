@@ -16,7 +16,7 @@
 /// `margin-block-start` 抵消到 0，所以写入变量不会让行盒 / 分页几何变化。
 ///
 /// 只在 Apple 注音规则打出的 `--fushi-ruby-snap: 1` 标记存在时工作（Blink 注音本就贴
-/// 基字）。触发：安装时、字体就绪、`document.fonts` 每次加载完成、`#fushi-reader-style`
+/// 基字；没有标记时第一次量就落定，不再随 `body` 增删重排帧）。触发：安装时、字体就绪、`document.fonts` 每次加载完成、`#fushi-reader-style`
 /// 内容被实时换掉（改字体 / 字号走这条）；在为当前字体量成功之前，`body` 子树的节点
 /// 增删也会再量（BUG-2810：VN 的 `body` 只放当前屏，开书那屏常常没有注音）。
 ///
@@ -36,6 +36,12 @@ const String kReaderRubyMetricsJs = r'''
   // 没有注音；只在安装 / 字体 / 样式时量一次就永远写不进变量，注音落回缺省拉力。
   // 所以挂着这个标记时，body 子树的节点增删（换屏、换章、懒加载）都再量一次。
   var pending = true;
+  // `--fushi-ruby-snap` 开关的读数：null = 这一轮（安装 / 换字体 / 换样式之后）还没读。
+  // 只有 Apple 端的阅读器样式打这个标记；Blink 上它永远不是 1，量不出东西也就永远等不到
+  // 「量成功」，pending 一直挂着，body 每次节点增删（VN 每次换屏、每次高亮包裹）都白排一帧
+  // 去数 ruby。所以读到「没有标记」且阅读器样式表已在文档里（读数作数）时直接落定；
+  // 换样式 / 换字体走 remeasure，会重新挂起并重读。
+  var snap = null;
   function inkCenterAboveBaseline(font) {
     try {
       var ctx = document.createElement('canvas').getContext('2d');
@@ -93,10 +99,16 @@ const String kReaderRubyMetricsJs = r'''
     scheduled = false;
     var root = document.documentElement;
     if (!root || !document.body) return;
-    // 先做最便宜的判断：body 里一颗 ruby 都没有就不碰样式 / 布局（pending 期间每次
-    // 节点增删都会走到这里）。
+    if (snap === null) {
+      snap = getComputedStyle(root).getPropertyValue('--fushi-ruby-snap').trim() === '1';
+    }
+    if (!snap) {
+      if (document.getElementById('fushi-reader-style')) pending = false;
+      else snap = null;
+      return;
+    }
+    // 标记在：body 里一颗 ruby 都没有就不碰布局（pending 期间每次节点增删都会走到这里）。
     if (!document.body.getElementsByTagName('ruby').length) return;
-    if (getComputedStyle(root).getPropertyValue('--fushi-ruby-snap').trim() !== '1') return;
     var p = probeRuby();
     if (!p) return;
     var br = p.baseRect;
@@ -139,6 +151,7 @@ const String kReaderRubyMetricsJs = r'''
   // 字体 / 样式变了：旧值不再可信，重新挂起直到量成功。
   function remeasure() {
     pending = true;
+    snap = null;
     schedule();
   }
   window.__fushiRubyMetrics = { measure: measure, schedule: remeasure };

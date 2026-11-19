@@ -137,10 +137,10 @@
 | `migrate` | 写 | `sync2/mod.rs` `sync2_migrate`（v1→v2） | 不需要（`gen4/migrate.rs` 是协议 3→4 的另一件事） | G7-6 删 |
 | `replay_all` | 写 | `sync2/mod.rs` | 不需要（派生层是真相的纯函数） | G7-6 删 |
 | `study` | 读 | `study.rs` `SrsCore::study` | 缺 | **G7-4c**（学习 / 出卡） |
-| `preview` | 读 | `sync2/mod.rs` `sync2_preview` | 缺 | **G7-4c**（评分预览在作答路径上）。要先把 `cmd/writes.rs` 里 `Session` 的 `deck_tree` / `default_deck` / `card_deck` 抽成只读可用的函数（`study` 的牌组计数同样要），与 `study` 一个 PR 做，避免两处各改一遍 `writes.rs`。**待协调方确认 G7-4c 接收**（任务书原把它列在 G7-4e；G7-4c 不收就另派） |
+| `preview` | 读 | `sync2/mod.rs` `sync2_preview`（计算与回包抽成 `preview_of`，连接级 `preview_on`） | `cmd/preview.rs:preview` | **G7-4f 已补**。牌组树 / 默认牌组 / 卡的有效牌组都是 `cmd/mod.rs` 的只读函数（`deck_tree` / `default_deck` / `card_deck`；`Session::card_deck` 改为先收尾再调它）；归属组日志与笔记取 `cache.rs:Index::group`（写命令 `sched` 同一份）。卡与笔记先归一，回包 ID 是规范 ID。已知差别：协议 3 `group_of` 读链尾日志不带 `ORDER BY`（`idx_srs_review_logs_card` 上的 rowid 序 = 落库序），「链尾最后一条记了笔记的」在新代按 (发生时刻, 操作主键) 取；只在链尾晚到的旧日志记了另一个笔记时两边可能不同，新代的序与时间一致，不改 |
 | `read` | 读 | `reads.rs` `run`（27 个查询名） | `cmd/reads.rs:run`（同 27 个，逐名核过） | G7-4 已有；S1 接线 |
 | `card_columns` | 读 | `bulk.rs` `card_columns` | `cmd/columns.rs:card_columns` | G7-4b 已有 |
-| `anki_resolve` / `anki_notes_info` | 读 | `bulk.rs` | `cmd/columns.rs:anki_resolve` / `anki_notes_info` | G7-4b 已有 |
+| `anki_resolve` / `anki_notes_info` | 读 | `bulk.rs` | `cmd/columns.rs:anki_resolve` / `anki_notes_info` | G7-4b 已有；G7-4g 成员号改按缓存层反查表 `anki_members` 点查，从没出现在操作里的带盐卡的号也查得到（schema 40019） |
 | `stats_report` / `stats_recall` / `stats_rows` | 读 | `stats.rs` | `cmd/stats.rs:stats_report` / `stats_recall` / `stats_rows` | G7-4b 已有；原料缓存（协议 3 `StatsCache`）归 S1 命令层，未命中时调 `cmd/stats.rs:snapshot_of` |
 | `stats_release` | 无 | `stats.rs` `stats_release` | 缺（随缓存） | S1 |
 | `browse_query` / `browse_rows` / `browse_ids` / `browse_targets` / `browse_close` / `browse_stats` / `browse_counts` / `browse_sources` / `anki_find` / `anki_dupes` / `anki_tags` | 读（常驻会话） | `browse.rs` `SrsCore::browse` | 缺 | **G7-4d** |
@@ -175,25 +175,31 @@
 | `ffsrs_store_open` / `ffsrs_store_close` | — | `store/mod.rs` `SrsCore` | `gen4/files.rs:open_gen4`（G7-1 的 C 入口另有） | S1（规划：删 `ffsrs_store_open`） |
 | `ffsrs_store_snapshot` / `ffsrs_store_debug_query` / `ffsrs_store_exec` / `ffsrs_store_exec_batch` / `ffsrs_store_in_transaction` / `ffsrs_store_read_concurrency` / `ffsrs_store_diag_counts` | 读写 | `ffi.rs` 原始通道 / 诊断 | 缺 | S1（原始通道 cargo feature，#3392；新代只留诊断需要的） |
 | `ffsrs_store_legacy_state` / `_begin` / `_page` / `_commit` / `_abort` / `_mark_none` | 写 | `store/mod.rs` 旧库搬迁 | 不需要（协议 1 旧库走 D21 只读转译） | G7-6 删（或 D21 定后改走 `gen4/import.rs:import_v1`） |
-| `ffsrs_store_history_states` / `ffsrs_store_stat_projection` | 读 | `history.rs` / `projection.rs` 按血统重放 | 缺 | 建议 G7-4c（学习 / 统计侧的逐卡重放；规划未点名，G7-4c 不收则归 S1） |
-| `ffsrs_store_optimizer_items` / `ffsrs_store_calibration_items` / `ffsrs_store_rwkv_rows` / `ffsrs_store_rwkv_log_tail` | 读 | `calibration.rs` / 优化器 / RWKV 训练集 | 缺 | 同上：训练集读血统日志，新代按 `cache.rs:replayed_card_logs` 取日志即可 |
+| `ffsrs_store_history_states` / `ffsrs_store_stat_projection` | 读 | `store/mod.rs` `SrsCore::history_states` / `stat_projection`（计算抽成 `history_states_of` / `stat_projection_of`） | `cmd/training.rs:history_states` / `stat_projection` | **G7-4f 已补**。日志取 `cache.rs:Index::replayed_logs`（`replayed_card_logs` 的批量版，按连通分量重放），一份历史里同一张规范卡只算一次。S1：C 入口照旧解码两列页，按集合号调这里 |
+| `ffsrs_store_optimizer_items` / `ffsrs_store_calibration_items` / `ffsrs_store_rwkv_rows` / `ffsrs_store_rwkv_log_tail` | 读 | `store/projections.rs` `SrsCore::optimizer_items` / `calibration_items` / `rwkv_cards` / `rwkv_replay` / `rwkv_log_tail`（计算抽成 `*_of` / `ReplayScan` / `rwkv_log_tail_of`，取数抽成连接级 `training_groups_on` / `rwkv_scan_on` / `rwkv_log_tail_on`） | `cmd/training.rs:optimizer_items` / `calibration_items` / `rwkv_cards`（`rwkv_rows` 模式 0）/ `rwkv_replay`（模式 1，profile 换成集合号）/ `rwkv_log_tail` | **G7-4f 已补**，输出逐字节同协议 3。**游标换了**：协议 3 的 rowid（本机落库序）在新代是本机状态表 `log_seq`（schema 40018，`derive.rs` 随 `log_ix` 逐条维护、整层重建保留序号）——操作主键 `k` = 设备下标 × 2^40 + seq，不随落库单调，不能当游标。指纹按日志操作数；尾巴每个规范日志 ID 只出代表。**落库序从 `derive.rs:SEQ_BASE`（2^40）+ 1 起**：RWKV 状态机（`fushi_rwkv` `sched/machine.rs`）判主快照 / 检查点只看 (行数, 最大 rowid)、没有库代标记，若两代都从 1 起编号，协议 3 留下的检查点会因条数相同通过 `count - tailRows` 核对（两边同一前缀圈进的日志并不相同），RWKV 状态静默缺评分；起点错开后两代游标空间不相交，旧主快照指纹必不相等、旧检查点必被拒，第一次对齐必然全量重放（`training_tests.rs:protocol_3_checkpoints_and_fingerprints_never_fit_the_new_library`），S1 换代**不必**删 RWKV 快照目录。`rwkv_log_tail` 带行时每行尾巴 5～8 次点查，只适合增量尾巴（调用方传上次的最大序号）|
 | `ffsrs_set_temp_dir` | — | `ffi.rs` | 不需要（与库代无关） | S1 原样保留 |
 | `ffsrs_store_sync2` | — | `ffi.rs` 分发器入口 | — | S1：本表全部命令的入口 |
 
-### 7.6 已知缺口：带盐成员上被扣住的删除，`resolve` 之后扣不掉（归 S1 / G7 接线）
+### 7.6 带盐成员上被扣住的删除，`resolve` 之后扣不掉（**已修**，G7-4g，按方案 1）
 
-G7-4e 复核补测试时发现（`cmd/center_tests.rs` `conflicts_name_a_salted_member_by_its_class`）：删除落在别名类的某个
-带盐成员上、被并发修改扣住时，`conflicts` 按规范号列出它，`resolve` 用列出的 ID 也找得到；但 `resolve` 写下的恢复 /
-再删经 `Session::land` → `canon_body` 换成了**规范号**，而扣住是 `weigh.rs` `weigh_holds` 按**原值成员**的 `deleted`
-寄存器判的（「见过这条删除的同寄存器写入」与「并发操作」都只看这个成员）。规范号上的写入不在那个寄存器里，于是
-`hold_ix` 那一行一直在，冲突中心反复列出同一条冲突（单成员的类不受影响：规范号就是原值号）。连带：`others`
-只数同一成员上的并发修改，类里别的成员上的并发修改不算。
+原缺口（G7-4e 复核补测试时发现）：删除落在别名类的某个带盐成员上、被并发修改扣住时，`resolve` 写下的恢复 / 再删
+经 `Session::land` → `canon_body` 换成了**规范号**，而 `weigh.rs` `weigh_holds` 只按**原值成员**的 `deleted` 寄存器
+判「已被见过它的写入盖掉」，于是 `hold_ix` 那一行一直在、冲突中心反复列出同一条冲突；`others` 也只数同一成员上的
+并发修改。
 
-这正是 `class.rs` 文件头「没有并起来的」一节留给「G7 接线时定」的事（扣住的删除要不要看全类的并发操作，设计 §10
-第 19 条同源）。接线前不影响用户（新代命令还没有调用方）。S1 接线前要二选一并补测试：
+修法（方案 1，扣住按类判）：`weigh_holds` 一次看一个别名类（`alias.rs` `Index::members`），「被见过它的写入盖掉」取
+全类成员的 `deleted`，`others_of` 取全类成员上的并发操作；状态与 `hold_ix` 的行仍按删除落的原值成员存。为此收尾
+顺序改成「清除 → 盐 / 别名表 → 扣住 / 标签 / 媒体 → 寄存器判定 → …」（`derive.rs` `settle` / `rebuild_all`；别名表只看
+清除状态，不看扣住与判定），别名表整表重算时总是记下变了的行（`alias_moves`，原先只有物化了缓存的集合才记），
+它们牵动的类在同一次收尾里重看——别名迟到（先扣住、后来才并类，或清除让证据变少、类拆开，设计 §10 第 19 条）
+时逐条维护与重建相同。测试：`cmd/center_tests.rs` `conflicts_name_a_salted_member_by_its_class`（裁决后消失、
+类内别的成员上的并发修改计入 `others`、重建相同）、`a_late_alias_holds_the_delete_by_its_class_and_rebuilds_the_same`
+（盐后到 / 先到两种到达顺序结果相同、每步重建相同）。
 
-1. 扣住按类判：`weigh_holds` 的「已被见过它的写入盖掉」与 `others_of` 都在全类成员的寄存器上取（写到规范号上的
-   写入要触发重看各成员的 `deleted`），`hold_ix` 仍按原值行存；或
-2. `resolve` 对被扣住的删除按 `Hold.entity` 的原值成员写（绕开 `canon_body`），与扣住的口径一致。
+复核补（G7-4g 复核）：变动牵动的类只重看类里任一成员（不只是变动的那个——删除可能落在类里没变动的成员上）有
+`deleted` 写入或 `hold_ix` 行的种类；变动的 ID 多于缓存层的 `MOVES_IN_PLACE`（新盐一到成千上万个带盐 ID 一起换规范
+ID）时与重建一样看全部有删除的实体，不逐类点查。测试 `a_late_member_holds_a_delete_on_a_member_that_did_not_move`、
+`a_late_alias_moving_many_ids_still_holds_the_delete`（增量 == 重建）。
 
-倾向 1（与寄存器、标签按类读同一个口径；2 会让「新写一律规范号」多一个例外）。
+清除（Purge）与作者不可信仍按原值实体判；一条 Purge 要不要清掉整个类仍归 S1 / G7 接线定（`class.rs` 文件头
+「没有并起来的」）。

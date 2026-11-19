@@ -874,6 +874,22 @@ SettingsDestination buildSystemDestination() {
             icon: FushiIcons.video,
             builder: _buildTmdbAttributionRow,
           ),
+          // MangaBaka 署名：书 / 漫画的系列资料与每卷封面来自 MangaBaka（CC BY-NC-SA
+          // 4.0），许可要求可见署名并链接来源。展示 MangaBaka 图的地方（刮削弹窗、
+          // 合集刮削结果、书的编辑页）另有就地署名；这里是常驻的总署名。
+          SettingsActionItem(
+            id: 'system.mangabaka_attribution',
+            title: 'MangaBaka',
+            subtitle: t.about_mangabaka_attribution,
+            icon: FushiIcons.books,
+            cli: const SettingsCliAction.tap(),
+            onTap: (_) async {
+              await launchUrl(
+                Uri.parse('https://mangabaka.org/'),
+                mode: LaunchMode.externalApplication,
+              );
+            },
+          ),
         ],
       ),
     ],

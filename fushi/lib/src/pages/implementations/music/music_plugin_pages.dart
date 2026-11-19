@@ -1094,20 +1094,21 @@ bool musicRecommendPosterMode(BuildContext context) =>
 /// 推荐页歌单 / 专辑栏目在色块版式下最多排几行（其余进「查看全部」）。
 const int kMusicRecommendShelfRows = 2;
 
-/// [width] 宽、[layout] 布局（null = 等尺寸色块）下前 [rows] 行能放下几块色块（[computeFushiCoverBlockPlan]
-/// 同一份几何，目标块宽取音乐的 [kFushiCoverBlockTargetWidthMedia]）。
+/// [width] 宽、[layout] 布局（null = 等尺寸色块）下前 [rows] 行能放下几块色块（与
+/// [SliverFushiCoverBlocks] 同一份 [computeFushiCoverBlockPlacement] 几何——含两侧悬停
+/// 余量，目标块宽取音乐的 [kFushiCoverBlockTargetWidthMedia]）。
 int musicCoverBlockRowCapacity({
   required double width,
   required int itemCount,
   required ShellContentLayout? layout,
   required int rows,
 }) =>
-    computeFushiCoverBlockPlan(
+    computeFushiCoverBlockPlacement(
           width: width,
           itemCount: itemCount,
           layout: layout,
           targetWidth: kFushiCoverBlockTargetWidthMedia,
-        )
+        ).rows
         .take(rows)
         .fold<int>(0, (int n, FushiCoverBlockRow row) => n + row.cells.length);
 
@@ -2087,6 +2088,14 @@ class _MusicPluginLibrarySectionState
                 }
                 final List<MusicPluginPlaylist>? lists = snap.data;
                 if (lists == null) {
+                  // 经互联中继用的插件（清单里没有 login）：账号在代跑它的那台设备上登录，
+                  // 本机没有插件管理可去。
+                  if (!m.can(MusicPluginCapability.login)) {
+                    return Text(
+                      t.music_plugin_relay_login_hint(name: m.name),
+                      style: context.fushiType.bodySmall,
+                    );
+                  }
                   return Row(
                     children: <Widget>[
                       Expanded(

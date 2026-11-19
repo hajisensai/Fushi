@@ -1,7 +1,8 @@
 // 反馈 XFsZIWYbr8：手机竖屏上资源搜索页 / 番剧下载选种页的结果区太扁——
 // 查询 / 筛选头部固定在上方，结果只能在中间一条窄缝里滚。
 // 契约：窄屏（< 600）结果列表与头部同属一个滚动视图（结果视口吃满头部以下的屏幕），
-// 上滑时头部随结果滚走；宽屏头部固定在滚动区外只滚结果。资源搜索页的顶栏标题保持原位不动。
+// 上滑时头部随结果滚走；宽屏头部固定在滚动区外只滚结果。资源搜索页的页头大字与其它
+// 二级页一样随结果滚动收缩，把屏幕继续让给结果（不再截住滚动通知钉死页名）。
 import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
@@ -16,6 +17,8 @@ import 'package:fushi/src/media/video/anilist_client.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_acquisition_dialogs.dart';
+import 'package:fushi/src/utils/components/fushi_masthead_scaffold.dart'
+    show FushiMastheadHeader;
 import 'package:fushi_core/fushi_core.dart' show MediaSourceRow;
 import 'package:fushi_engine/media/torrent/bt_site_config.dart';
 import 'package:fushi_engine/media/external_provider.dart';
@@ -104,6 +107,7 @@ List<VideoResourceCandidate> _resources() => <VideoResourceCandidate>[
 const MediaSourceRow _source = MediaSourceRow(
   videoGroupingMode: 'series',
   isPrivate: false,
+  autoScan: false,
   id: 1,
   label: 'videos',
   mediaKind: 'video',
@@ -171,7 +175,7 @@ Future<void> _pumpAnimeTorrentStage(WidgetTester tester) async {
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
 
-  testWidgets('资源搜索页：结果与头部同滚，结果视口吃满屏幕，顶栏不动', (WidgetTester tester) async {
+  testWidgets('资源搜索页：结果与头部同滚，结果视口吃满屏幕，页头随滚动收缩', (WidgetTester tester) async {
     _usePhoneView(tester);
     await tester.pumpWidget(
       TranslationProvider(
@@ -221,9 +225,21 @@ void main() {
       reason: '结果视口应是顶栏与底部提交区之间的整块区域，而不是头部下方的残余',
     );
 
-    final Finder title = find.text(t.video_discovery_resource_search);
-    final Rect titleBefore = tester.getRect(title);
+    final Finder masthead = find.byType(FushiMastheadHeader);
+    expect(
+      find.descendant(
+        of: masthead,
+        matching: find.text(t.video_discovery_resource_search),
+      ),
+      findsOneWidget,
+    );
+    final double mastheadBottomBefore = tester.getRect(masthead).bottom;
     final double queryTopBefore = tester.getTopLeft(query).dy;
+    expect(
+      queryTopBefore,
+      greaterThanOrEqualTo(mastheadBottomBefore),
+      reason: '静止时查询头部排在页头下沿以下，不被页头盖住',
+    );
 
     await tester.drag(scroll, const Offset(0, -500));
     await tester.pumpAndSettle();
@@ -232,15 +248,18 @@ void main() {
       Scrollable.of(tester.element(firstCard)).position.pixels,
       greaterThan(0),
     );
-    // 头部（搜索框）随结果滚走，顶栏标题原地不动（不随滚动收起，见
-    // VideoDiscoveryResourceSearchPage 的 notificationPredicate）。
+    // 头部（搜索框）随结果滚走，页头大字随滚动收缩、让出更多屏幕给结果。
     expect(
       query.evaluate().isEmpty ||
           tester.getTopLeft(query).dy < queryTopBefore - 200,
       isTrue,
       reason: '查询头部应随结果一起上滑让出屏幕',
     );
-    expect(tester.getRect(title), titleBefore);
+    expect(
+      tester.getRect(masthead).bottom,
+      lessThan(mastheadBottomBefore),
+      reason: '页头大字应随结果滚动收缩（反馈 XFsZIWYbr8：把屏幕让给结果）',
+    );
     expect(
       find.byKey(const ValueKey<String>('video-resource-submit')),
       findsOneWidget,
@@ -291,6 +310,40 @@ void main() {
       findsNothing,
       reason: '宽屏搜索头应在滚动视图之外',
     );
+    // 宽屏查询 / 筛选条钉进页头大字的下一行：与页名同属一块吸顶面（滚动后
+    // 一起垫页头底板），结果从它底下滑过，而不是排在一条固定头部下面被硬切。
+    final Finder masthead = find.byType(FushiMastheadHeader);
+    expect(find.descendant(of: masthead, matching: query), findsOneWidget);
+    // 来源标签 / 视图切换随结果同滚（不钉、也不会在滚动中突然消失）。
+    expect(
+      find.descendant(
+        of: scroll,
+        matching: find.byKey(
+          const ValueKey<String>('video-resource-flat-toggle'),
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: scroll,
+        matching: find.byKey(
+          const ValueKey<String>('video-resource-source-tags'),
+        ),
+      ),
+      findsOneWidget,
+    );
+    Finder edgeFade() => find.descendant(
+      of: masthead,
+      matching: find.byWidgetPredicate(
+        (Widget w) =>
+            w is DecoratedBox &&
+            w.decoration is BoxDecoration &&
+            (w.decoration as BoxDecoration).gradient is LinearGradient,
+      ),
+    );
+    expect(edgeFade(), findsNothing, reason: '静止在顶部时钉住条下沿不画渐隐边');
+    final double mastheadBottomBefore = tester.getRect(masthead).bottom;
     final double queryTopBefore = tester.getTopLeft(query).dy;
 
     await tester.drag(scroll, const Offset(0, -500));
@@ -301,8 +354,16 @@ void main() {
       greaterThan(0),
       reason: '结果应当滚动了',
     );
-    expect(query, findsOneWidget);
-    expect(tester.getTopLeft(query).dy, queryTopBefore);
+    expect(query, findsOneWidget, reason: '查询条钉住，不随结果滚走');
+    final double shrink =
+        mastheadBottomBefore - tester.getRect(masthead).bottom;
+    expect(shrink, greaterThan(0), reason: '页名随结果滚动连续收缩');
+    expect(
+      tester.getTopLeft(query).dy,
+      moreOrLessEquals(queryTopBefore - shrink),
+      reason: '查询条只跟着页名收缩上移，仍贴在页头里',
+    );
+    expect(edgeFade(), findsOneWidget, reason: '滚动后钉住条下沿出现渐隐边');
   });
 
   testWidgets('番剧下载选种段：种子列表与查询 / 筛选头部同滚', (WidgetTester tester) async {

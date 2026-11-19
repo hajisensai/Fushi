@@ -522,11 +522,13 @@ void main() {
   group('installMany', () {
     late List<String> requested;
     late MockClient httpClient;
-    late int lastDownloadedApk;
+    late int apkInFlight;
+    late int maxApkInFlight;
 
     Future<void> useBulkRepository({
       int count = 3,
       Set<String> brokenApks = const <String>{},
+      Duration apkLatency = Duration.zero,
     }) async {
       await database.upsertMangaExtensionStore(
         MangaExtensionStoresCompanion.insert(
@@ -538,9 +540,8 @@ void main() {
       );
       manager.dispose();
       requested = <String>[];
-      // staged APK 的文件名是 `extension-<sha>.apk.part`，不带包名——inspect 的
-      // fake 只能靠「刚下载的是哪一条」来还原身份，安装是串行的所以够用。
-      lastDownloadedApk = 0;
+      apkInFlight = 0;
+      maxApkInFlight = 0;
       httpClient = MockClient((http.Request request) async {
         requested.add(request.url.toString());
         if (request.url.path.endsWith('/index.json')) {
@@ -554,15 +555,22 @@ void main() {
         final RegExp apkPattern = RegExp(r'/apk/bulk(\d+)\.apk$');
         final RegExpMatch? match = apkPattern.firstMatch(request.url.path);
         if (match != null) {
-          lastDownloadedApk = int.parse(match.group(1)!);
+          final int index = int.parse(match.group(1)!);
+          // 量同时在下的条数：让每条下载真的「在途」一小段时间，串行实现
+          // 的峰值就是 1。
+          apkInFlight++;
+          if (apkInFlight > maxApkInFlight) maxApkInFlight = apkInFlight;
+          await Future<void>.delayed(apkLatency);
+          apkInFlight--;
           // 每条的字节都不同：内容相同会算出同一个 sha，整批共用一个
-          // `extension-<sha>.apk.part`，测的就不是批量了。
+          // `extension-<sha>.apk.part`，测的就不是批量了。末字节就是序号，
+          // inspect 的 fake 靠它还原身份（下载是并发的，不能靠「刚下的是哪条」）。
           return http.Response.bytes(<int>[
             0x50,
             0x4b,
             0x03,
             0x04,
-            lastDownloadedApk,
+            index,
           ], HttpStatus.ok);
         }
         return http.Response('', HttpStatus.notFound);
@@ -575,7 +583,7 @@ void main() {
       );
       await manager.initialise();
       runtime.inspectionResolver = (String apkPath) {
-        final int index = lastDownloadedApk;
+        final int index = File(apkPath).readAsBytesSync().last;
         return MihonExtensionInspection(
           packageName: 'org.example.bulk$index',
           name: 'Bulk $index',
@@ -822,6 +830,66 @@ void main() {
       expect(seen, 1);
       expect(report.installed, <String>['org.example.bulk0']);
       expect(report.attempted, 1);
+      // 并发窗口里已经开下的 bulk1 / bulk2 被丢弃：不装、互斥放掉、不留残骸。
+      expect(
+        (await database.getMangaExtensions())
+            .map((MangaExtensionRow row) => row.packageName)
+            .toList(),
+        <String>['org.example.bulk0'],
+      );
+      for (int index = 0; index < 3; index++) {
+        expect(
+          manager.isExtensionActionBusy('org.example.bulk$index'),
+          isFalse,
+          reason: 'bulk$index 的互斥必须在 installMany 返回前放掉',
+        );
+      }
+      final Directory tmp = Directory('${root.path}/tmp');
+      expect(
+        tmp.existsSync()
+            ? tmp
+                  .listSync()
+                  .where((FileSystemEntity e) => e.path.endsWith('.apk.part'))
+                  .toList()
+            : <FileSystemEntity>[],
+        isEmpty,
+      );
+    });
+
+    test('APK 有限并发下载：同时在下的不超过上限，安装仍按请求顺序串行', () async {
+      await useBulkRepository(
+        count: 7,
+        apkLatency: const Duration(milliseconds: 30),
+      );
+      final List<String> progressOrder = <String>[];
+
+      final MihonBulkInstallReport report = await manager.installMany(
+        <MihonAvailableExtension>[
+          for (int index = 0; index < 7; index++) _bulkSnapshot(index),
+        ],
+        trustSigner: true,
+        onProgress: (int done, int total, MihonAvailableExtension current) =>
+            progressOrder.add(current.packageName),
+      );
+
+      expect(report.failed, isEmpty, reason: '${report.failed}');
+      final List<String> expected = <String>[
+        for (int index = 0; index < 7; index++) 'org.example.bulk$index',
+      ];
+      expect(report.installed, expected);
+      expect(progressOrder, expected);
+      expect(
+        maxApkInFlight,
+        mihonBulkDownloadConcurrency,
+        reason: '逐个串行下载时峰值是 1；并发窗口必须真的打满、且不越界',
+      );
+      expect(runtime.invalidatedBatches, <List<String>>[expected]);
+      for (int index = 0; index < 7; index++) {
+        expect(
+          manager.isExtensionActionBusy('org.example.bulk$index'),
+          isFalse,
+        );
+      }
     });
   });
 

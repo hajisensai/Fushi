@@ -217,8 +217,15 @@ class AudiobookPlayerController extends ChangeNotifier {
   List<AudioCue> _chapterCues = [];
 
   /// 与 [_chapterCues] 同序的播放顺序视图（章尾未匹配 cue 的跨章判据
-  /// [unmatchedCueCrossChapterTargetForTesting] 要的是播放邻居）。
+  /// [unmatchedCueCrossChapterTargetForTesting] 要的是播放邻居）。与 [_chapterCues]
+  /// 是同一个列表对象：两者都只读，排一次就够。
   List<AudioCue> _playbackOrderedCues = const <AudioCue>[];
+
+  /// [_chapterCues] 是由哪一个列表对象、在它多长的时候排出来的。reader 每装一章
+  /// 文档都把同一份整书 cue 再灌一遍；列表对象与长度都没变时不必再复制、再排序
+  /// （[setChapterCues]）。只认「对象 + 长度」：调用方要换成员就传新列表。
+  List<AudioCue>? _chapterCuesSource;
+  int _chapterCuesSourceLength = -1;
 
   /// 外部只读快照，供按 textFragmentId 查找 cue。
   List<AudioCue> get chapterCuesSnapshot => _chapterCues;
@@ -226,6 +233,11 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 全书 cue（供收藏句子跨章匹配），setAllBookCues 设定。
   List<AudioCue> _allBookCues = [];
   Map<int, int> _allBookCueIdToIndex = {};
+
+  /// [_allBookCues] / [_allBookCueIdToIndex] 的来源列表对象与当时的长度，口径同
+  /// [_chapterCuesSource]（[setAllBookCues]）。
+  List<AudioCue>? _allBookCuesSource;
+  int _allBookCuesSourceLength = -1;
   List<AudioCue> get allBookCuesSnapshot => _allBookCues;
 
   /// 每个音频文件的时长（毫秒），下标 = audioFileIndex。由对齐 cue 的
@@ -1433,8 +1445,20 @@ class AudiobookPlayerController extends ChangeNotifier {
       return a.startMs.compareTo(b.startMs);
     }
 
-    _chapterCues = List<AudioCue>.from(cues)..sort(playbackOrder);
-    _playbackOrderedCues = List<AudioCue>.from(cues)..sort(playbackOrder);
+    // 同一个列表对象原样再灌一遍（reader 每装一章文档都这么做）：排好的副本仍然
+    // 有效，只跳过「复制 + 排序」。下面的守卫期下标重映射、当前句身份保留、按位置
+    // 重算与通知一步都不省——它们取决于播放器此刻的状态，不取决于列表换没换。
+    final bool sameList =
+        identical(cues, _chapterCuesSource) &&
+        cues.length == _chapterCuesSourceLength;
+    if (!sameList) {
+      final List<AudioCue> ordered = List<AudioCue>.from(cues)
+        ..sort(playbackOrder);
+      _chapterCues = ordered;
+      _playbackOrderedCues = ordered;
+      _chapterCuesSource = cues;
+      _chapterCuesSourceLength = cues.length;
+    }
     // 跨章守卫期间只替换 cue 列表，不清 _currentCue 也不重算——
     // 否则 _updateCurrentCue 被 guard 挡住，_currentCue 卡 null，
     // 守卫放下后第一次 tick 会匹配到 cue[0] 导致进度清零。
@@ -1485,13 +1509,24 @@ class AudiobookPlayerController extends ChangeNotifier {
         previousPlaybackIdx >= 0 && previousPlaybackIdx < _allBookCues.length
         ? _allBookCues[previousPlaybackIdx]
         : null;
-    _allBookCues = List<AudioCue>.from(cues);
-    final Map<int, int> idMap = <int, int>{};
-    for (int i = 0; i < _allBookCues.length; i++) {
-      final int? id = _allBookCues[i].id;
-      if (id != null) idMap[id] = i;
+    // 同一个列表对象原样再灌一遍：副本与 id 索引仍然有效，只跳过「复制 + 建索引」；
+    // 播放句身份映射与文件时长重算照跑（TTS 朗读会就地改 cue 的 endMs）。
+    final bool sameList =
+        identical(cues, _allBookCuesSource) &&
+        cues.length == _allBookCuesSourceLength;
+    if (!sameList) {
+      final List<AudioCue> copy = List<AudioCue>.from(cues);
+      final Map<int, int> rebuilt = <int, int>{};
+      for (int i = 0; i < copy.length; i++) {
+        final int? id = copy[i].id;
+        if (id != null) rebuilt[id] = i;
+      }
+      _allBookCues = copy;
+      _allBookCueIdToIndex = rebuilt;
+      _allBookCuesSource = cues;
+      _allBookCuesSourceLength = cues.length;
     }
-    _allBookCueIdToIndex = idMap;
+    final Map<int, int> idMap = _allBookCueIdToIndex;
     // 播放所在句按身份映射进新列表（BUG-4202）。reader 每装一章都重灌同一份整书
     // cue，跨章过渡期间（[_chapterTransition] 仍竖着）装章正好落在这里：旧码直接置
     // -1，[lyricsCueAllBookIdx] 退回冻结的正文跟随句，歌词高亮往回跳一下、下一个

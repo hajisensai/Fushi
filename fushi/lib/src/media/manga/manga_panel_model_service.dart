@@ -73,8 +73,16 @@ Future<MangaPanelModelStatus> mangaPanelModelStatus() async {
   );
 }
 
+/// 模型下载时等响应头、以及两个数据块之间允许的最长停顿（整体不设限）。
+const Duration kMangaPanelModelStallTimeout = Duration(seconds: 30);
+
+/// 下载分镜模型，逐块产出已收字节数。
+///
+/// 连接卡住（[stallTimeout] 内一个字节都没来）以 [TimeoutException] 结束并断开
+/// 连接，不让设置页永远停在「下载中」。任何失败都删掉 `.part`。
 Stream<int> downloadMangaPanelModel({
   HttpClient Function()? clientFactory,
+  Duration stallTimeout = kMangaPanelModelStallTimeout,
 }) async* {
   if (!kMangaPanelModelManifest.isVerified) {
     throw StateError('panel model manifest has no verified release digest');
@@ -92,15 +100,16 @@ Stream<int> downloadMangaPanelModel({
     );
     request.headers.set(HttpHeaders.acceptHeader, 'application/octet-stream');
     final HttpClientResponse response = await request.close().timeout(
-      const Duration(seconds: 30),
+      stallTimeout,
     );
     if (response.statusCode != HttpStatus.ok) {
       throw HttpException('model download HTTP ${response.statusCode}');
     }
     IOSink? sink = part.openWrite();
+    bool verified = false;
     try {
       int received = 0;
-      await for (final List<int> chunk in response) {
+      await for (final List<int> chunk in response.timeout(stallTimeout)) {
         received += chunk.length;
         if (received > kMangaPanelModelManifest.bytes!) {
           throw StateError('model exceeds manifest size');
@@ -114,8 +123,10 @@ Stream<int> downloadMangaPanelModel({
           await _sha256(part) != kMangaPanelModelManifest.sha256) {
         throw StateError('downloaded panel model failed manifest validation');
       }
+      verified = true;
     } finally {
       await sink?.close();
+      if (!verified && await part.exists()) await part.delete();
     }
     // A retry may be replacing a corrupt file. Windows rename does not replace
     // an existing target, so remove only this verified-path target immediately

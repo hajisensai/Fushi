@@ -147,9 +147,13 @@ void main() {
       expect(find.text(t.browser_extension_enable_server_first), findsNothing);
       // 「完成」文案只在最后一步（验证连接）展开后出现一次。
       expect(find.text(t.browser_extension_step_done_auto), findsNothing);
-      await tester.tap(
-        find.byKey(const ValueKey<String>('browser-extension-step-4')),
+      // #3515 的状态块 + 三格检查让步骤列表变长，第 5 步落到 800×600 视口外。
+      final Finder step5 = find.byKey(
+        const ValueKey<String>('browser-extension-step-4'),
       );
+      await tester.ensureVisible(step5);
+      await tester.pumpAndSettle();
+      await tester.tap(step5);
       await tester.pumpAndSettle();
       expect(find.text(t.browser_extension_step_done_auto), findsOneWidget);
     },

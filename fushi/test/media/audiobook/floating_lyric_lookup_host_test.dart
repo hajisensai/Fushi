@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 
@@ -60,6 +61,13 @@ void main() {
     expect(notifier.pending, isNotNull);
     expect(notifier.pending?.text, '日本語');
     expect(notifier.pending?.index, 1);
+  });
+
+  test('requestLookup carries the source module (8ldy3d8XFA)', () {
+    notifier.requestLookup('歌詞', 0, hostModule: ModuleId.music);
+    expect(notifier.consume()?.hostModule, ModuleId.music);
+    notifier.requestLookup('言葉', 0);
+    expect(notifier.consume()?.hostModule, isNull);
   });
 
   test('requestLookup ignores blank text (no notify, no pending)', () {

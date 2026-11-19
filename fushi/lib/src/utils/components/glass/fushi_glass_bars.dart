@@ -11,7 +11,17 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiTopFadeScrim, kFushiTopFadeExtent, kFushiTopScrimOverlayOpacity;
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart'
+    show FushiShellHeaderActions, fushiHeaderTitleFloor;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
+    show
+        FushiMastheadActionGroup,
+        FushiMastheadRole,
+        FushiMastheadScope,
+        fushiMastheadCompact,
+        fushiMastheadTitleStyle,
+        kFushiMastheadActionExtent;
 import 'package:fushi/src/utils/components/fushi_segment_widths.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart';
@@ -445,14 +455,17 @@ class FushiAppBar extends StatelessWidget implements PreferredSizeWidget {
   Size get preferredSize =>
       AppBar(toolbarHeight: toolbarHeight, bottom: bottom).preferredSize;
 
-  /// Material（M3E）下是否画成悬浮胶囊顶栏：调用方自带 [flexibleSpace]（hero
+  /// Material（M3E）下是否画成悬浮页头行：调用方自带 [flexibleSpace]（hero
   /// 背景图等）时保留原形态——那种栏本身就是页面的一部分，不是工具栏。
   bool get _floatingMaterial => flexibleSpace == null;
 
   @override
   Widget build(BuildContext context) {
     final bool glass = isGlassDesign(context);
-    final bool floating = !glass && _floatingMaterial;
+    // 墨水屏不走悬浮页头（滚动逐帧收缩 + 模糊底板在墨水屏上只会残影、拖慢
+    // 刷新），与 FushiPageScaffold / FushiToolScaffold 在墨水屏下回落旧页头
+    // 同一口径：画静态 AppBar。
+    final bool floating = !glass && _floatingMaterial && !isEinkTheme(context);
     // 结构恒定：两套设计系统都包同一层返回键图标主题 + scroll edge 观察层 +
     // 悬浮收起层，只换参数。
     return _BackIconTheme(
@@ -484,7 +497,7 @@ class FushiAppBar extends StatelessWidget implements PreferredSizeWidget {
     ValueListenable<bool> scrolledUnder,
   ) {
     if (floating != null) {
-      return _buildFloating(context, floating, scrolledUnder);
+      return _buildFloating(context, scrolledUnder);
     }
     return AppBar(
       leading: glass
@@ -542,18 +555,22 @@ class FushiAppBar extends StatelessWidget implements PreferredSizeWidget {
     );
   }
 
-  /// M3E 悬浮顶栏（2026-10-05「全部用浮动工具栏统一」）：栏本身透明无阴影，
-  /// 返回 / 关闭 / 抽屉键是一枚圆形悬浮胶囊，标题是一枚标题胶囊，actions
-  /// 收进一枚按钮组胶囊；内容往下滚时标题与动作收起、往回滚时弹回（返回键
-  /// 常驻）。子组件原样挂进胶囊，key / 焦点 / 菜单锚点不变。
+  /// M3E 悬浮顶栏 = 二级页的现行页头（2026-11-15 所有者「二级页还是胶囊」）：
+  /// 与 `FushiMastheadScaffold` 同一行——返回键是页头大字口径的裸图标按钮
+  /// （[FushiMastheadActionGroup]），页名是收起字号的页头大字（不装标题胶囊），
+  /// 动作平铺成裸图标、放不下按优先级收进「⋯」（[FushiShellHeaderActions] 的
+  /// 页头大字口径）。栏本身透明无阴影；内容滚到栏下时只靠共享渐隐遮罩保证
+  /// 可读性。子组件原样挂进行里，key / 焦点 / 菜单锚点不变。
+  ///
+  /// 栏高仍是 AppBar 的 toolbarHeight（[preferredSize] 不变，Scaffold 让位不变），
+  /// 页名取页头大字的收起字号，放得进 56 的工具栏。
   Widget _buildFloating(
     BuildContext context,
-    FushiScrollAwayController chrome,
     ValueListenable<bool> scrolledUnder,
   ) {
-    final Widget? resolvedLeading = leading != null
-        ? fushiFloatingLeading(leading)
-        : (automaticallyImplyLeading ? _impliedM3eLeading(context) : null);
+    final Widget? resolvedLeading =
+        leading ??
+        (automaticallyImplyLeading ? _impliedM3eLeading(context) : null);
     List<Widget>? resolvedActions = actions;
     if ((resolvedActions == null || resolvedActions.isEmpty) &&
         automaticallyImplyActions &&
@@ -566,36 +583,68 @@ class FushiAppBar extends StatelessWidget implements PreferredSizeWidget {
         ),
       ];
     }
-    final List<Widget>? finalActions = resolvedActions;
-    final bool desktop = _isDesktopBar(context);
-    final double edge = desktop ? 12 : 16;
-    final Widget bar = AppBar(
-      leading: resolvedLeading == null
-          ? null
-          : Align(
-              alignment: AlignmentDirectional.centerEnd,
-              child: resolvedLeading,
-            ),
-      automaticallyImplyLeading: false,
-      title: _floatingTitleCapsule(title, chrome),
-      actions: finalActions == null || finalActions.isEmpty
-          ? null
-          : <Widget>[
-              Center(
-                child: Padding(
-                  padding: EdgeInsetsDirectional.only(end: edge),
-                  child: FushiScrollAwayChrome(
-                    controller: chrome,
-                    child: FushiPageChromeCapsule(
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: finalActions,
-                      ),
-                    ),
-                  ),
+    // 调用方为旧胶囊行手写的间隔（无子 SizedBox）去掉：页头大字动作组给每项
+    // 至少一颗按钮宽（[kFushiMastheadActionExtent]）并自带间隙，留着它们会各
+    // 撑出一段 48 宽的空槽（标定对话框「采样 / 删除 / 应用 / 关闭」之间）。
+    final List<Widget> finalActions = <Widget>[
+      for (final Widget action in resolvedActions ?? const <Widget>[])
+        if (!(action is SizedBox && action.child == null)) action,
+    ];
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final Widget? currentTitle = title;
+    final Widget? titleBox = currentTitle == null
+        ? null
+        : _FushiMastheadBarTitle(
+            style: titleTextStyle,
+            header: !excludeHeaderSemantics,
+            child: currentTitle,
+          );
+    final Widget row = Padding(
+      padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final double leadWidth = resolvedLeading == null
+              ? 0
+              : kFushiMastheadActionExtent + 14;
+          final double budget = math.max(
+            0,
+            constraints.maxWidth -
+                leadWidth -
+                14 -
+                fushiHeaderTitleFloor(context, constraints.maxWidth),
+          );
+          return Row(
+            children: <Widget>[
+              if (resolvedLeading != null) ...<Widget>[
+                FushiMastheadActionGroup(items: <Widget>[resolvedLeading]),
+                const SizedBox(width: 14),
+              ],
+              Expanded(
+                child: Align(
+                  alignment: centerTitle ?? false
+                      ? Alignment.center
+                      : AlignmentDirectional.centerStart,
+                  child: titleBox ?? const SizedBox.shrink(),
                 ),
               ),
+              if (finalActions.isNotEmpty) ...<Widget>[
+                const SizedBox(width: 14),
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: budget),
+                  child: FushiMastheadScope(
+                    role: FushiMastheadRole.primary,
+                    child: FushiShellHeaderActions(actions: finalActions),
+                  ),
+                ),
+              ],
             ],
+          );
+        },
+      ),
+    );
+    final Widget bar = AppBar(
+      automaticallyImplyLeading: false,
+      title: row,
       automaticallyImplyActions: false,
       bottom: bottom,
       elevation: 0,
@@ -604,28 +653,25 @@ class FushiAppBar extends StatelessWidget implements PreferredSizeWidget {
       shadowColor: Colors.transparent,
       surfaceTintColor: Colors.transparent,
       shape: shape,
-      // 透明：页面底色直接透上来，栏上只剩几颗悬浮胶囊。
+      // 透明：页面底色直接透上来，栏上不垫任何胶囊。
       backgroundColor: backgroundColor ?? Colors.transparent,
       foregroundColor: foregroundColor,
       iconTheme: iconTheme,
       actionsIconTheme: actionsIconTheme,
       primary: primary,
-      centerTitle: centerTitle ?? false,
-      excludeHeaderSemantics: excludeHeaderSemantics,
-      titleSpacing: titleSpacing ?? 8,
+      centerTitle: false,
+      // 整行（返回 / 页名 / 动作）进了 title 槽：页名自己标 header 语义
+      // （[_FushiMastheadBarTitle]），不让 AppBar 把整行标成标题。
+      excludeHeaderSemantics: true,
+      titleSpacing: 0,
       toolbarOpacity: toolbarOpacity,
       bottomOpacity: bottomOpacity,
       toolbarHeight: toolbarHeight,
-      leadingWidth: leadingWidth ?? (kFushiPageChromeExtent + edge),
       toolbarTextStyle: toolbarTextStyle,
-      titleTextStyle: titleTextStyle,
       systemOverlayStyle: systemOverlayStyle,
       forceMaterialTransparency: forceMaterialTransparency,
       useDefaultSemanticsOrder: useDefaultSemanticsOrder,
-      // AppBar 默认用 Clip.hardEdge 把工具栏裁在 toolbarHeight 里；悬浮胶囊与
-      // 返回圆正好占满这 56（[kFushiPageChromeExtent]），它们的悬浮投影（向下
-      // 3 + 模糊 8）落在栏外，被裁掉就成了「胶囊 / 返回圆底边被一刀切平」。
-      // 栏本身透明无底，不裁也不会有内容溢出可见。
+      // 按钮的悬停 / 焦点高亮可能略出工具栏，栏本身透明无底，不裁。
       clipBehavior: clipBehavior ?? Clip.none,
       actionsPadding: actionsPadding,
       animateColor: animateColor,
@@ -705,79 +751,63 @@ class FushiAppBar extends StatelessWidget implements PreferredSizeWidget {
   }
 }
 
-/// 悬浮顶栏的标题胶囊。标题为空（null / 空串 [Text] / 零尺寸占位）时不画胶囊——
-/// 否则返回键旁会留一颗空胶囊（合集详情页把标题交给 hero）。标题外层若是
-/// [AnimatedOpacity] / [Opacity]（「hero 滚出视野后才淡入标题」），把透明度提到
-/// 胶囊**外面**，整颗胶囊随标题一起淡入淡出，而不是只淡文字、空壳常驻。
-Widget? _floatingTitleCapsule(Widget? title, FushiScrollAwayController chrome) {
-  if (title == null || _isEmptyTitle(title)) return null;
-  Widget capsule(Widget inner) => FushiScrollAwayChrome(
-    controller: chrome,
-    child: FushiPageChromeTitle(title: inner),
-  );
-  final Widget current = title;
-  if (current is AnimatedOpacity && current.child != null) {
-    if (_isEmptyTitle(current.child!)) return null;
-    return IgnorePointer(
-      ignoring: current.opacity == 0,
-      child: AnimatedOpacity(
-        opacity: current.opacity,
-        duration: current.duration,
-        curve: current.curve,
-        alwaysIncludeSemantics: current.alwaysIncludeSemantics,
-        child: capsule(current.child!),
-      ),
-    );
-  }
-  if (current is Opacity && current.child != null) {
-    if (_isEmptyTitle(current.child!)) return null;
-    return IgnorePointer(
-      ignoring: current.opacity == 0,
-      child: Opacity(
-        opacity: current.opacity,
-        alwaysIncludeSemantics: current.alwaysIncludeSemantics,
-        child: capsule(current.child!),
-      ),
-    );
-  }
-  return capsule(current);
-}
+/// [FushiAppBar] M3E 顶栏的页名：页头大字的收起字号（窄窗 28 / 宽窗 36，与
+/// `FushiMastheadHeader` 收缩到底时同一字号），单行省略。调用方给的
+/// [style] 叠在上面。字号随系统字体缩放，但封顶到放得进工具栏（
+/// [kToolbarHeight]）的一行，不撑高、不溢出栏。
+class _FushiMastheadBarTitle extends StatelessWidget {
+  const _FushiMastheadBarTitle({
+    required this.child,
+    required this.header,
+    this.style,
+  });
 
-/// 标题 widget 是否「什么都不显示」：空串 / 纯空白的 [Text]、无子的零尺寸
-/// [SizedBox]。
-bool _isEmptyTitle(Widget title) {
-  if (title is Text) {
-    final String? data = title.data;
-    if (data != null) return data.trim().isEmpty;
-    final String? rich = title.textSpan?.toPlainText();
-    return rich != null && rich.trim().isEmpty;
+  final Widget child;
+  final bool header;
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool compact = fushiMastheadCompact(context);
+    final double size = compact ? 28 : 36;
+    final TextStyle base = fushiMastheadTitleStyle(
+      context,
+      compact: compact,
+    ).copyWith(fontSize: size, letterSpacing: -0.045 * size, height: 1.1);
+    final TextStyle resolved = style == null ? base : base.merge(style);
+    final double lineHeight =
+        (resolved.fontSize ?? size) * (resolved.height ?? 1.1);
+    return Semantics(
+      header: header,
+      child: MediaQuery.withClampedTextScaling(
+        maxScaleFactor: math.max(1, kToolbarHeight / lineHeight),
+        child: DefaultTextStyle.merge(
+          style: resolved,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          child: child,
+        ),
+      ),
+    );
   }
-  if (title is SizedBox) {
-    return title.child == null && (title.width == 0 || title.height == 0);
-  }
-  return false;
 }
 
 /// 与框架 AppBar 同一判据推出 M3E 悬浮顶栏的隐含 leading（抽屉键 / 关闭键 /
-/// 返回键），装进圆形悬浮胶囊。推不出时返回 null。
+/// 返回键），裸图标按钮（现行页头不垫圆胶囊）。推不出时返回 null。
 Widget? _impliedM3eLeading(BuildContext context) {
   final ScaffoldState? scaffold = Scaffold.maybeOf(context);
   final ModalRoute<dynamic>? parentRoute = ModalRoute.of(context);
   if (scaffold?.hasDrawer ?? false) {
-    return FushiPageChromeCircle(
-      child: IconButton(
-        icon: const Icon(FushiIcons.menu),
-        tooltip: MaterialLocalizations.of(context).openAppDrawerTooltip,
-        onPressed: () => Scaffold.of(context).openDrawer(),
-      ),
+    return IconButton(
+      icon: const Icon(FushiIcons.menu),
+      tooltip: MaterialLocalizations.of(context).openAppDrawerTooltip,
+      onPressed: () => Scaffold.of(context).openDrawer(),
     );
   }
   if (parentRoute?.impliesAppBarDismissal ?? false) {
     final bool useCloseButton =
         parentRoute is PageRoute<dynamic> && parentRoute.fullscreenDialog;
-    return FushiPageChromeCircle(
-      child: useCloseButton ? const CloseButton() : const BackButton(),
-    );
+    return useCloseButton ? const CloseButton() : const BackButton();
   }
   return null;
 }

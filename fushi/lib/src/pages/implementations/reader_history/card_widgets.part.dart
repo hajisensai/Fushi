@@ -90,6 +90,8 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
     void Function(BookTagRow tag)? onTagDropped,
     MediaRef? dragMediaRef,
     String? dragLabel,
+    // 可标 NSFW 的本地宿主（远端条目为 null）：封面按「模糊 NSFW 封面」打模糊。
+    MediaNsfwTarget? nsfw,
   }) {
     final bool selected =
         selectionKey != null && _selectedKeys.contains(selectionKey);
@@ -146,7 +148,7 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
               child: ShelfCoverSelection(
                 selectionMode: _selectionMode && selectionKey != null,
                 selected: selected,
-                child: child,
+                child: MediaNsfwCoverScope(target: nsfw, child: child),
               ),
             ),
           ),
@@ -215,7 +217,9 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
   /// 加载遮罩（[loadingOverlay]，BUG-990 / 远端下载进行中）。
   ///
   /// [byline]（作者）与 [continuesOnTap]（点卡 = 接着读，色块拼贴首块据此画
-  /// 「继续」按钮外观）只在封面色块卡上用；原网格卡的文字块不变。
+  /// 「继续」按钮外观）只在封面色块卡上用；原网格卡的文字块不变。[series]
+  /// 非 null（单本有刮削资料 / 横版背景图）时色块换系列色块：[cover] 当竖版
+  /// 海报斜放、背景图铺尾侧、概览 / chip 来自刮削资料。
   Widget _bookCardLayout({
     required String title,
     required Widget cover,
@@ -224,6 +228,7 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
     Widget? loadingOverlay,
     String? byline,
     bool continuesOnTap = false,
+    FushiSeriesMeta? series,
   }) {
     final Widget metaBlock = ShelfCardMeta(
       title: title,
@@ -253,6 +258,7 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
             coverOverlay: loadingOverlay,
             byline: byline,
             continuesOnTap: continuesOnTap,
+            series: series,
           );
         }
         return _bookCardGridLayout(

@@ -15,11 +15,14 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:path/path.dart' as p;
 
-HostJobTarget hostTarget(List<String> kinds) => HostJobTarget(
+HostJobTarget hostTarget(
+  List<String> kinds, {
+  Map<String, Object?> capability = const <String, Object?>{},
+}) => HostJobTarget(
   baseUrl: 'http://host-a.invalid:8080',
   deviceName: 'Desk PC',
   kinds: kinds,
-  capability: const <String, Object?>{},
+  capability: capability,
 );
 
 /// host 替身：每次 [run] 按脚本推进一集。
@@ -178,6 +181,478 @@ void main() {
     expect(job.episodes.single.status, 'exported');
     expect(svc.latestJobFor(single), same(job));
     expect(svc.activeJob, isNull);
+  });
+
+  group('host 播放列表第 2 集起（集下标 > 0）', () {
+    const RemoteVideoSubtitleTarget episode2 = RemoteVideoSubtitleTarget(
+      title: 'K-ON 02',
+      episodes: <RemoteVideoSubtitleEpisode>[
+        RemoteVideoSubtitleEpisode(
+          videoId: 'v1',
+          episodeIndex: 1,
+          title: 'K-ON 02',
+        ),
+      ],
+    );
+
+    test(
+      '老 host（capability 没有 acceptsEpisode）：episodeUnsupported，不提交任务',
+      () async {
+        final FakeHostPort host = FakeHostPort(
+          target: hostTarget(
+            <String>['video_subtitle'],
+            capability: const <String, Object?>{
+              'video_subtitle': <String, Object?>{'acceptsVideoId': true},
+            },
+          ),
+          script: exportEpisode,
+        );
+        final RemoteVideoSubtitleJob job = service(
+          host,
+        ).start(episode2, const RemoteVideoSubtitleOptions());
+        await job.done;
+        expect(job.status, RemoteVideoSubtitleJobStatus.episodeUnsupported);
+        expect(host.submitted, isEmpty, reason: '老 host 会静默跑第 1 集，一个任务都不能发');
+      },
+    );
+
+    test('老 host 上的第 1 集照常提交，不带 episode', () async {
+      final FakeHostPort host = FakeHostPort(
+        target: hostTarget(<String>['video_subtitle']),
+        script: exportEpisode,
+      );
+      final RemoteVideoSubtitleJob job = service(
+        host,
+      ).start(single, const RemoteVideoSubtitleOptions());
+      await job.done;
+      expect(job.status, RemoteVideoSubtitleJobStatus.succeeded);
+      expect(host.submitted.single.containsKey('episode'), isFalse);
+    });
+
+    test('新 host：参数带 episode；同一 videoId 的各集任务键与落盘名互不相同', () async {
+      final FakeHostPort host = FakeHostPort(
+        target: hostTarget(
+          <String>['video_subtitle'],
+          capability: const <String, Object?>{
+            'video_subtitle': <String, Object?>{'acceptsEpisode': true},
+          },
+        ),
+        script: exportEpisode,
+      );
+      final RemoteVideoSubtitleService svc = service(host);
+      final RemoteVideoSubtitleJob first = svc.start(
+        single,
+        const RemoteVideoSubtitleOptions(),
+      );
+      await first.done;
+      final RemoteVideoSubtitleJob second = svc.start(
+        episode2,
+        const RemoteVideoSubtitleOptions(),
+      );
+      await second.done;
+      expect(second.status, RemoteVideoSubtitleJobStatus.succeeded);
+      expect(host.submitted.last, <String, Object?>{
+        'videoId': 'v1',
+        'episode': 1,
+        'proofread': false,
+        'segmenter': 'auto',
+        'mossBackend': 'auto',
+      });
+      expect(single.key, isNot(episode2.key));
+      expect(svc.latestJobFor(single), same(first));
+      expect(svc.latestJobFor(episode2), same(second));
+      final File a = first.episodes.single.subtitle!;
+      final File b = second.episodes.single.subtitle!;
+      expect(a.path, isNot(b.path), reason: '第 2 集取回的字幕不能覆盖第 1 集的');
+      expect(a.existsSync(), isTrue);
+      expect(b.existsSync(), isTrue);
+      expect(second.episodes.single.episode.matches('v1', 1), isTrue);
+      expect(second.episodes.single.episode.matches('v1', 0), isFalse);
+    });
+  });
+
+  group('远端原盘会话的 title', () {
+    const RemoteVideoSubtitleTarget mainTitle = RemoteVideoSubtitleTarget(
+      title: 'Disc · 00001',
+      episodes: <RemoteVideoSubtitleEpisode>[
+        RemoteVideoSubtitleEpisode(videoId: 'disc-main', title: 'Disc · 00001'),
+      ],
+    );
+    const RemoteVideoSubtitleTarget bonus = RemoteVideoSubtitleTarget(
+      title: 'Disc · 00005',
+      episodes: <RemoteVideoSubtitleEpisode>[
+        RemoteVideoSubtitleEpisode(
+          videoId: 'disc-main',
+          discTitle: 'BDMV/PLAYLIST/00005.mpls',
+          title: 'Disc · 00005',
+        ),
+      ],
+    );
+
+    test('老 host（没有 acceptsDiscTitle）：discTitleUnsupported，不提交任务', () async {
+      final FakeHostPort host = FakeHostPort(
+        target: hostTarget(
+          <String>['video_subtitle'],
+          capability: const <String, Object?>{
+            'video_subtitle': <String, Object?>{'acceptsEpisode': true},
+          },
+        ),
+        script: exportEpisode,
+      );
+      final RemoteVideoSubtitleJob job = service(
+        host,
+      ).start(bonus, const RemoteVideoSubtitleOptions());
+      await job.done;
+      expect(job.status, RemoteVideoSubtitleJobStatus.discTitleUnsupported);
+      expect(host.submitted, isEmpty, reason: '老 host 会静默跑锚点那一行');
+    });
+
+    test('DVD title：host 没声明 acceptsDiscTitleDvd 不发，声明了才带 DVD title', () async {
+      const RemoteVideoSubtitleTarget dvd = RemoteVideoSubtitleTarget(
+        title: 'DVD · TITLE_02',
+        episodes: <RemoteVideoSubtitleEpisode>[
+          RemoteVideoSubtitleEpisode(
+            videoId: 'dvd-main',
+            discTitle: 'VIDEO_TS/TITLE_02.dvdtitle',
+            title: 'DVD · TITLE_02',
+          ),
+        ],
+      );
+      expect(dvd.needsDiscTitleDvdSupport, isTrue);
+      expect(bonus.needsDiscTitleDvdSupport, isFalse);
+      final FakeHostPort old = FakeHostPort(
+        target: hostTarget(
+          <String>['video_subtitle'],
+          capability: const <String, Object?>{
+            'video_subtitle': <String, Object?>{
+              'acceptsDiscTitle': true,
+              'acceptsDiscTitleAngle': true,
+            },
+          },
+        ),
+        script: exportEpisode,
+      );
+      final RemoteVideoSubtitleJob rejected = service(
+        old,
+      ).start(dvd, const RemoteVideoSubtitleOptions());
+      await rejected.done;
+      expect(
+        rejected.status,
+        RemoteVideoSubtitleJobStatus.discTitleUnsupported,
+      );
+      expect(old.submitted, isEmpty, reason: '老 host 判 DVD title 读不到');
+
+      final FakeHostPort host = FakeHostPort(
+        target: hostTarget(
+          <String>['video_subtitle'],
+          capability: const <String, Object?>{
+            'video_subtitle': <String, Object?>{
+              'acceptsDiscTitle': true,
+              'acceptsDiscTitleDvd': true,
+            },
+          },
+        ),
+        script: exportEpisode,
+      );
+      final RemoteVideoSubtitleJob job = service(
+        host,
+      ).start(dvd, const RemoteVideoSubtitleOptions());
+      await job.done;
+      expect(job.status, RemoteVideoSubtitleJobStatus.succeeded);
+      expect(host.submitted.single['discTitle'], 'VIDEO_TS/TITLE_02.dvdtitle');
+    });
+
+    test(
+      'DVD 多角度 title：host 没声明 acceptsDiscTitleDvdAngle 不发，声明了才带角度成员路径',
+      () async {
+        const RemoteVideoSubtitleTarget dvdAngle = RemoteVideoSubtitleTarget(
+          title: 'DVD · TITLE_02',
+          episodes: <RemoteVideoSubtitleEpisode>[
+            RemoteVideoSubtitleEpisode(
+              videoId: 'dvd-main',
+              discTitle: 'VIDEO_TS/TITLE_02.a2.dvdtitle',
+              title: 'DVD · TITLE_02',
+            ),
+          ],
+        );
+        expect(dvdAngle.needsDiscTitleDvdSupport, isTrue);
+        expect(dvdAngle.needsDiscTitleDvdAngleSupport, isTrue);
+        expect(dvdAngle.needsDiscTitleAngleSupport, isFalse);
+        expect(bonus.needsDiscTitleDvdAngleSupport, isFalse);
+        // 上一版 host：DVD title 与蓝光角度都认，但认不出 DVD 角度成员路径。
+        final HostJobTarget oldTarget = hostTarget(
+          <String>['video_subtitle'],
+          capability: const <String, Object?>{
+            'video_subtitle': <String, Object?>{
+              'acceptsDiscTitle': true,
+              'acceptsDiscTitleAngle': true,
+              'acceptsDiscTitleDvd': true,
+            },
+          },
+        );
+        expect(dvdAngle.discTitlesSupportedBy(oldTarget), isFalse);
+        final FakeHostPort old = FakeHostPort(
+          target: oldTarget,
+          script: exportEpisode,
+        );
+        final RemoteVideoSubtitleJob rejected = service(
+          old,
+        ).start(dvdAngle, const RemoteVideoSubtitleOptions());
+        await rejected.done;
+        expect(
+          rejected.status,
+          RemoteVideoSubtitleJobStatus.discTitleUnsupported,
+        );
+        expect(old.submitted, isEmpty, reason: '老 host 认不出 DVD 角度成员路径');
+
+        final HostJobTarget newTarget = hostTarget(
+          <String>['video_subtitle'],
+          capability: const <String, Object?>{
+            'video_subtitle': <String, Object?>{
+              'acceptsDiscTitle': true,
+              'acceptsDiscTitleDvd': true,
+              'acceptsDiscTitleDvdAngle': true,
+            },
+          },
+        );
+        expect(dvdAngle.discTitlesSupportedBy(newTarget), isTrue);
+        final FakeHostPort host = FakeHostPort(
+          target: newTarget,
+          script: exportEpisode,
+        );
+        final RemoteVideoSubtitleJob job = service(
+          host,
+        ).start(dvdAngle, const RemoteVideoSubtitleOptions());
+        await job.done;
+        expect(job.status, RemoteVideoSubtitleJobStatus.succeeded);
+        expect(
+          host.submitted.single['discTitle'],
+          'VIDEO_TS/TITLE_02.a2.dvdtitle',
+        );
+      },
+    );
+
+    test('多角度 title：host 没声明 acceptsDiscTitleAngle 不发，声明了才带角度成员路径', () async {
+      const RemoteVideoSubtitleTarget angle = RemoteVideoSubtitleTarget(
+        title: 'Disc · 00001',
+        episodes: <RemoteVideoSubtitleEpisode>[
+          RemoteVideoSubtitleEpisode(
+            videoId: 'disc-main',
+            discTitle: 'BDMV/PLAYLIST/00001.a2.mpls',
+            title: 'Disc · 00001',
+          ),
+        ],
+      );
+      expect(angle.needsDiscTitleAngleSupport, isTrue);
+      expect(bonus.needsDiscTitleAngleSupport, isFalse);
+      final FakeHostPort old = FakeHostPort(
+        target: hostTarget(
+          <String>['video_subtitle'],
+          capability: const <String, Object?>{
+            'video_subtitle': <String, Object?>{'acceptsDiscTitle': true},
+          },
+        ),
+        script: exportEpisode,
+      );
+      final RemoteVideoSubtitleJob rejected = service(
+        old,
+      ).start(angle, const RemoteVideoSubtitleOptions());
+      await rejected.done;
+      expect(
+        rejected.status,
+        RemoteVideoSubtitleJobStatus.discTitleUnsupported,
+      );
+      expect(old.submitted, isEmpty, reason: '老 host 读不到角度成员路径');
+
+      final FakeHostPort host = FakeHostPort(
+        target: hostTarget(
+          <String>['video_subtitle'],
+          capability: const <String, Object?>{
+            'video_subtitle': <String, Object?>{
+              'acceptsDiscTitle': true,
+              'acceptsDiscTitleAngle': true,
+            },
+          },
+        ),
+        script: exportEpisode,
+      );
+      final RemoteVideoSubtitleJob job = service(
+        host,
+      ).start(angle, const RemoteVideoSubtitleOptions());
+      await job.done;
+      expect(job.status, RemoteVideoSubtitleJobStatus.succeeded);
+      expect(host.submitted.single['discTitle'], 'BDMV/PLAYLIST/00001.a2.mpls');
+      expect(
+        job.episodes.single.episode.matchesDiscTitle(
+          'disc-main',
+          'BDMV/PLAYLIST/00001.a2.mpls',
+        ),
+        isTrue,
+      );
+    });
+
+    test('库里有行的 title 在老 host 上照常提交，不带 discTitle', () async {
+      final FakeHostPort host = FakeHostPort(
+        target: hostTarget(<String>['video_subtitle']),
+        script: exportEpisode,
+      );
+      final RemoteVideoSubtitleJob job = service(
+        host,
+      ).start(mainTitle, const RemoteVideoSubtitleOptions());
+      await job.done;
+      expect(job.status, RemoteVideoSubtitleJobStatus.succeeded);
+      expect(host.submitted.single.containsKey('discTitle'), isFalse);
+      expect(
+        job.episodes.single.episode.matchesDiscTitle('disc-main', null),
+        isTrue,
+      );
+    });
+
+    test('新 host：参数带 discTitle；与锚点行的任务键、落盘名互不相同', () async {
+      final FakeHostPort host = FakeHostPort(
+        target: hostTarget(
+          <String>['video_subtitle'],
+          capability: const <String, Object?>{
+            'video_subtitle': <String, Object?>{'acceptsDiscTitle': true},
+          },
+        ),
+        script: exportEpisode,
+      );
+      final RemoteVideoSubtitleService svc = service(host);
+      final RemoteVideoSubtitleJob first = svc.start(
+        mainTitle,
+        const RemoteVideoSubtitleOptions(),
+      );
+      await first.done;
+      final RemoteVideoSubtitleJob second = svc.start(
+        bonus,
+        const RemoteVideoSubtitleOptions(),
+      );
+      await second.done;
+      expect(second.status, RemoteVideoSubtitleJobStatus.succeeded);
+      expect(host.submitted.last, <String, Object?>{
+        'videoId': 'disc-main',
+        'discTitle': 'BDMV/PLAYLIST/00005.mpls',
+        'proofread': false,
+        'segmenter': 'auto',
+        'mossBackend': 'auto',
+      });
+      expect(mainTitle.key, isNot(bonus.key));
+      expect(svc.latestJobFor(bonus), same(second));
+      final File a = first.episodes.single.subtitle!;
+      final File b = second.episodes.single.subtitle!;
+      expect(a.path, isNot(b.path), reason: '特典 title 取回的字幕不能覆盖正片的');
+      final RemoteVideoSubtitleEpisode e = second.episodes.single.episode;
+      expect(
+        e.matchesDiscTitle('disc-main', 'BDMV/PLAYLIST/00005.mpls'),
+        isTrue,
+      );
+      expect(e.matchesDiscTitle('disc-main', null), isFalse);
+      expect(e.matches('disc-main', 0), isFalse, reason: '不能当成锚点那一行');
+    });
+  });
+
+  group('播放器当前音轨（audioTrack）', () {
+    const RemoteVideoSubtitleTarget episodeTrack = RemoteVideoSubtitleTarget(
+      title: 'K-ON 02',
+      episodes: <RemoteVideoSubtitleEpisode>[
+        RemoteVideoSubtitleEpisode(
+          videoId: 'v1',
+          episodeIndex: 1,
+          title: 'K-ON 02',
+          audioTrack: 1,
+        ),
+      ],
+    );
+    const RemoteVideoSubtitleTarget discTrack = RemoteVideoSubtitleTarget(
+      title: 'Disc · 00005',
+      episodes: <RemoteVideoSubtitleEpisode>[
+        RemoteVideoSubtitleEpisode(
+          videoId: 'disc-main',
+          discTitle: 'BDMV/PLAYLIST/00005.mpls',
+          title: 'Disc · 00005',
+          audioTrack: 2,
+        ),
+      ],
+    );
+
+    test(
+      '新 host（acceptsAudioTrack）：参数带 audioTrack，可与 episode / discTitle 组合',
+      () async {
+        final FakeHostPort host = FakeHostPort(
+          target: hostTarget(
+            <String>['video_subtitle'],
+            capability: const <String, Object?>{
+              'video_subtitle': <String, Object?>{
+                'acceptsEpisode': true,
+                'acceptsDiscTitle': true,
+                'acceptsAudioTrack': true,
+              },
+            },
+          ),
+          script: exportEpisode,
+        );
+        final RemoteVideoSubtitleService svc = service(host);
+        expect(episodeTrack.wantsAudioTrack, isTrue);
+        expect(single.wantsAudioTrack, isFalse);
+        await svc.start(episodeTrack, const RemoteVideoSubtitleOptions()).done;
+        final RemoteVideoSubtitleJob disc = svc.start(
+          discTrack,
+          const RemoteVideoSubtitleOptions(),
+        );
+        await disc.done;
+        expect(disc.status, RemoteVideoSubtitleJobStatus.succeeded);
+        expect(host.submitted.first['episode'], 1);
+        expect(host.submitted.first['audioTrack'], 1);
+        expect(host.submitted.last, <String, Object?>{
+          'videoId': 'disc-main',
+          'discTitle': 'BDMV/PLAYLIST/00005.mpls',
+          'audioTrack': 2,
+          'proofread': false,
+          'segmenter': 'auto',
+          'mossBackend': 'auto',
+        });
+      },
+    );
+
+    test(
+      '老 host（没有 acceptsAudioTrack）：照常提交、不带 audioTrack（按语言挑，降级不拦）',
+      () async {
+        final FakeHostPort host = FakeHostPort(
+          target: hostTarget(
+            <String>['video_subtitle'],
+            capability: const <String, Object?>{
+              'video_subtitle': <String, Object?>{'acceptsEpisode': true},
+            },
+          ),
+          script: exportEpisode,
+        );
+        final RemoteVideoSubtitleJob job = service(
+          host,
+        ).start(episodeTrack, const RemoteVideoSubtitleOptions());
+        await job.done;
+        expect(job.status, RemoteVideoSubtitleJobStatus.succeeded);
+        expect(host.submitted.single['episode'], 1);
+        expect(host.submitted.single.containsKey('audioTrack'), isFalse);
+        expect(hostAcceptsVideoSubtitleAudioTrack(host.target!), isFalse);
+      },
+    );
+
+    test('没有播放上下文（audioTrack 为 null）：新 host 上也不带', () async {
+      final FakeHostPort host = FakeHostPort(
+        target: hostTarget(
+          <String>['video_subtitle'],
+          capability: const <String, Object?>{
+            'video_subtitle': <String, Object?>{'acceptsAudioTrack': true},
+          },
+        ),
+        script: exportEpisode,
+      );
+      await service(
+        host,
+      ).start(single, const RemoteVideoSubtitleOptions()).done;
+      expect(host.submitted.single.containsKey('audioTrack'), isFalse);
+    });
   });
 
   test('host 另出了套样式的 ASS：取回 ASS 而不是 SRT', () async {

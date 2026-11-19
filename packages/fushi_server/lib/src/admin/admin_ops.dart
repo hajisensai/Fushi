@@ -290,7 +290,7 @@ Object? srsAgentView(Object? result) {
 }
 
 /// 当前复习配置（`GET /api/admin/srs` 的 `config` 段：profiles / defaultProfile /
-/// rolloverHour / miningTarget / miningDecks）。
+/// rolloverHour / miningTarget / miningDecks / rwkvModel）。
 Future<Map<String, Object?>> _srsConfig(AdminDispatch dispatch) async {
   final Object? config = (await _getMap(dispatch, _kSrsPath))['config'];
   return config is Map
@@ -1061,7 +1061,7 @@ Future<Object?> _srsSetDeck(AdminDispatch dispatch, String uid, String deck) =>
     );
   }
 
-  /// 单个标量配置（miningTarget / rolloverHour）的撤销：执行前记旧值，撤销时当前值
+  /// 单个标量配置（miningTarget / rolloverHour / rwkvModel）的撤销：执行前记旧值，撤销时当前值
   /// 已不是这次写进去的就报 superseded。
   OpUndo srsScalarUndo(String key) => OpUndo(
     capture: (CtlCall call) async => <String, Object?>{
@@ -1180,6 +1180,26 @@ Future<Object?> _srsSetDeck(AdminDispatch dispatch, String uid, String deck) =>
         ),
       ],
       undo: srsScalarUndo('rolloverHour'),
+    ),
+    addRoute: false,
+  );
+  op(
+    OpDescription(
+      id: 'server.srs.rwkv-model.set',
+      method: 'PUT',
+      pattern: _kSrsPath,
+      summary:
+          'Choose the RWKV scheduling model size for this whole device: small (default, best accuracy) or tiny (about 30% less memory per card, slightly less accurate). Takes effect at once: the new weights download if needed and RWKV decks wait until the model has caught up. Undo restores the previous size.',
+      risk: OpRisk.write,
+      params: const <OpParam>[
+        OpParam.string(
+          'rwkvModel',
+          description: 'small or tiny.',
+          required: true,
+          enumValues: <String>['small', 'tiny'],
+        ),
+      ],
+      undo: srsScalarUndo('rwkvModel'),
     ),
     addRoute: false,
   );

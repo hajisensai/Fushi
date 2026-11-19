@@ -11,17 +11,18 @@ import 'package:fushi/src/models/home_tab.dart';
 /// `fushi/build/library_material_design/backdrop_presets.html`（本地，不入库）。
 ///
 /// 持久化值（[wire]）冻结，改名等于数据迁移。
+///
+/// 2026-11-15 所有者拍板：删掉「角落形状」（旧 wire `corner`），默认改为
+/// [mesh]（柔光晕染）。存量偏好 / Profile / 同步 / 备份里的 `corner` 不改写，
+/// 读取侧经 [fromWire] / [decodePageBackdropModulePresets] 解析为 [mesh]。
 enum PageBackdropPreset {
-  /// 角落三块形状（10-25 定版，默认）。
-  corner('corner'),
-
   /// 纯色：只有页面底色，不画装饰。
   plain('plain'),
 
   /// 十几块小号 M3E 形状散在整页。
   confetti('confetti'),
 
-  /// 三团柔和的径向渐变色斑。
+  /// 三团柔和的径向渐变色斑（柔光晕染，默认）。
   mesh('mesh'),
 
   /// 右上巨大圆弧 + 同心细环 + 左下 sunny 形状。
@@ -40,13 +41,15 @@ enum PageBackdropPreset {
 
   final String wire;
 
-  static PageBackdropPreset fromWire(Object? raw) {
-    for (final PageBackdropPreset preset in values) {
-      if (preset.wire == raw) return preset;
-    }
-    return PageBackdropPreset.corner;
-  }
+  /// 新装 / 恢复默认 / 认不出的旧值都落到这里。
+  static const PageBackdropPreset defaultPreset = PageBackdropPreset.mesh;
+
+  static PageBackdropPreset fromWire(Object? raw) =>
+      _presetFromWireOrNull(raw) ?? defaultPreset;
 }
+
+/// 已删除的「角落形状」预设的旧 wire：存量数据里仍可能出现，读取时解析为默认。
+const String kPageBackdropLegacyCornerWire = 'corner';
 
 /// 形状类预设的浓淡（乘在各形状的不透明度上）。
 enum PageBackdropStrength {
@@ -129,7 +132,7 @@ const List<String> kPageBackdropDeviceLocalPrefKeys = <String>[
 @immutable
 class PageBackdropSettings {
   const PageBackdropSettings({
-    this.preset = PageBackdropPreset.corner,
+    this.preset = PageBackdropPreset.defaultPreset,
     this.strength = PageBackdropStrength.standard,
     this.motion = false,
     this.landscapeImagePath,
@@ -164,10 +167,10 @@ class PageBackdropSettings {
     return landscapeImagePath;
   }
 
-  /// 实际要画的样式：选了自定义但图片不在（换了设备、文件被删）时回落到默认形状。
+  /// 实际要画的样式：选了自定义但图片不在（换了设备、文件被删）时回落到默认样式。
   PageBackdropPreset get effectivePreset =>
       preset == PageBackdropPreset.custom && !hasCustomImage
-      ? PageBackdropPreset.corner
+      ? PageBackdropPreset.defaultPreset
       : preset;
 
   PageBackdropSettings copyWith({
@@ -321,7 +324,7 @@ PageBackdropSettings resolvePageBackdropSettings(
 }
 
 /// 解析 [kPageBackdropModulePresetsPrefKey] 的值：坏 JSON / 认不出的模块或预设
-/// 一律跳过（等于那个模块跟随全局）。
+/// 一律跳过（等于那个模块跟随全局）；已删除的「角落形状」旧值解析为默认预设。
 Map<HomeTab, PageBackdropPreset> decodePageBackdropModulePresets(Object? raw) {
   final Map<String, Object?> json = _decodeJsonObject(raw);
   final Map<HomeTab, PageBackdropPreset> out = <HomeTab, PageBackdropPreset>{};
@@ -388,7 +391,10 @@ Map<String, Object?> _decodeJsonObject(Object? raw) {
   return decoded is Map<String, Object?> ? decoded : const <String, Object?>{};
 }
 
-PageBackdropPreset? _presetFromWireOrNull(String raw) {
+PageBackdropPreset? _presetFromWireOrNull(Object? raw) {
+  if (raw == kPageBackdropLegacyCornerWire) {
+    return PageBackdropPreset.defaultPreset;
+  }
   for (final PageBackdropPreset preset in PageBackdropPreset.values) {
     if (preset.wire == raw) return preset;
   }

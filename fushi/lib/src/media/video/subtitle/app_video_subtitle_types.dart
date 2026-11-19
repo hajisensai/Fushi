@@ -8,6 +8,8 @@ library;
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show immutable;
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_frame_reference.dart'
+    show SubtitleFrameSource;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart'
     show SubtitleWorkContext;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart'
@@ -26,7 +28,13 @@ class AppVideoSubtitleEpisode {
     this.registersSubtitleSource = true,
     this.replacesSubtitleSelection = false,
     this.contentLanguage,
+    this.audioTrack,
   });
+
+  /// 从播放页发起时播放器当前的音轨（0 起的音轨序号，ffmpeg `0:a:N`，即
+  /// `VideoPlayerController.currentAudioStreamIndex`）：管线识别这条轨，与「仅本机转录」
+  /// 同口径。null = 没有播放上下文（批量 / CLI）或跟随默认，按识别语言挑。
+  final int? audioTrack;
 
   /// 视频库条目（`video_books.book_uid`）；音乐目标为 null（曲目归属由
   /// [AppSubtitleOutputSink] 按 [videoPath] 自己记）。
@@ -82,6 +90,7 @@ class AppVideoSubtitleTarget {
     this.bookUid,
     this.sink,
     this.trackCounts,
+    this.frameSource,
     bool? wholeSeason,
     String? key,
   }) : _wholeSeason = wholeSeason,
@@ -104,6 +113,10 @@ class AppVideoSubtitleTarget {
 
   /// 产物落点；null = 视频库（[VideoBookSubtitleSink]，登记 `video_books.subtitleSource`）。
   final AppSubtitleOutputSink? sink;
+
+  /// AI 校对「参考画面」的取帧；null = 服务的默认取帧（从 [episodes] 的本机媒体文件
+  /// 抽）。在线流的输入是拉到本机的纯音频副本，画面要从播放中的流里抽，由调用方给。
+  final SubtitleFrameSource? frameSource;
 
   final bool? _wholeSeason;
   final String? _key;

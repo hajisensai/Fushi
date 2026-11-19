@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/download/video_resource_version_groups.dart';
@@ -9,6 +10,8 @@ import 'package:fushi/src/media/video/episode_span_format.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
 
@@ -119,8 +122,12 @@ class _VideoResourceVersionGroupListState
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    Widget item(BuildContext context, int index) =>
-        _buildCard(theme, widget.groups[index]);
+    // 版本卡错峰进场（宿主页在结果外包了 FushiEntranceScope，只有新一批结果
+    // 的首屏淡入上移，滚动带出的卡直接出现）。
+    final NullableIndexedWidgetBuilder item = fushiStaggeredItemBuilder(
+      (BuildContext context, int index) =>
+          _buildCard(context, theme, widget.groups[index]),
+    );
     Widget separator(BuildContext _, int __) => const SizedBox(height: 8);
     const Key key = ValueKey<String>('video-resource-version-groups');
     if (widget.sliver) {
@@ -139,7 +146,11 @@ class _VideoResourceVersionGroupListState
     );
   }
 
-  Widget _buildCard(ThemeData theme, VideoResourceVersionGroup group) {
+  Widget _buildCard(
+    BuildContext context,
+    ThemeData theme,
+    VideoResourceVersionGroup group,
+  ) {
     final bool expanded = _expanded.contains(group.key);
     final int selectedInGroup = _selectedCountIn(group);
     final bool containsSelection = selectedInGroup > 0;
@@ -148,79 +159,85 @@ class _VideoResourceVersionGroupListState
       padding: const EdgeInsets.all(12),
       selected: containsSelection,
       onTap: widget.onSelect == null ? null : () => _onCardTap(group),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              FushiIcon(
-                group.trusted
-                    ? Icons.verified_rounded
-                    : Icons.cloud_download_outlined,
-                size: 20,
-                color: group.trusted
-                    ? theme.colorScheme.primary
-                    : theme.colorScheme.onSurfaceVariant,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      group.labelParts.join(' · '),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleSmall,
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      group.representative.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      _metaLine(group),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
+      // 展开 / 收起组内文件时卡片高度随 M3E 弹簧过渡，不再一帧跳变。
+      child: FushiAnimatedSize(
+        duration: fushiMotionDuration(context, FushiMotion.medium),
+        curve: FushiMotion.standard,
+        alignment: AlignmentDirectional.topCenter,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                FushiIcon(
+                  group.trusted
+                      ? Icons.verified_rounded
+                      : Icons.cloud_download_outlined,
+                  size: 20,
+                  color: group.trusted
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.onSurfaceVariant,
                 ),
-              ),
-              const SizedBox(width: 8),
-              if (group.batchCount > 0)
-                Padding(
-                  padding: const EdgeInsets.only(right: 4),
-                  child: FushiTagChip(
-                    label: t.resource_version_batch,
-                    tone: FushiTagChipTone.surface,
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        group.labelParts.join(' · '),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleSmall,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        group.representative.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _metaLine(group),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              FushiIconButton(
-                icon: expanded ? Icons.expand_less : Icons.expand_more,
-                tooltip: t.resource_version_show_files,
-                onTap: () => _toggleExpanded(group.key),
-              ),
+                const SizedBox(width: 8),
+                if (group.batchCount > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: FushiTagChip(
+                      label: t.resource_version_batch,
+                      tone: FushiTagChipTone.surface,
+                    ),
+                  ),
+                FushiIconButton(
+                  icon: expanded ? Icons.expand_less : Icons.expand_more,
+                  tooltip: t.resource_version_show_files,
+                  onTap: () => _toggleExpanded(group.key),
+                ),
+              ],
+            ),
+            if (expanded) ...<Widget>[
+              const SizedBox(height: 4),
+              if (widget.multiSelect &&
+                  widget.onSetGroupSelected != null &&
+                  group.members.length > 1)
+                _buildSelectAllRow(group),
+              for (final VideoResourceCandidate member in group.members)
+                _buildMemberRow(theme, member),
             ],
-          ),
-          if (expanded) ...<Widget>[
-            const SizedBox(height: 4),
-            if (widget.multiSelect &&
-                widget.onSetGroupSelected != null &&
-                group.members.length > 1)
-              _buildSelectAllRow(group),
-            for (final VideoResourceCandidate member in group.members)
-              _buildMemberRow(theme, member),
           ],
-        ],
+        ),
       ),
     );
   }

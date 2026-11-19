@@ -69,7 +69,6 @@ extension _VideoDiscMenu on _VideoFushiPageState {
     if (!controller.isBlurayNavigationSession) return true;
     if (controller.discMiningAvailable && !_discLearningBlocked) return true;
     final String message = switch (controller.discMiningUnavailableReason) {
-      'multi-angle-source' => t.video_disc_angle_extraction_unavailable,
       'audio-track-unavailable' => t.video_disc_audio_selection_pending,
       'extraction-source-unavailable' => t.video_clip_export_input_missing,
       'encrypted-extraction-source' => t.video_disc_extraction_unavailable,
@@ -79,6 +78,16 @@ extension _VideoDiscMenu on _VideoFushiPageState {
     };
     _showOsd(message, severity: ToastSeverity.warning);
     return false;
+  }
+
+  /// 生成字幕 / 本机转录要读当前 title 的音轨：远端原盘会话里由放盘的 host 读（当前
+  /// title 能在 host 上定位就放行，见 `_remoteDiscHostTitle`）；其余与制卡抽取同一道闸门
+  /// （[_discExtractionAllowed]，抽不了时说明原因）。
+  bool _discSubtitleAudioAllowed(VideoPlayerController controller) {
+    if (controller.isRemoteDiscSession && _remoteDiscHostTitle() != null) {
+      return true;
+    }
+    return _discExtractionAllowed(controller);
   }
 
   // Pending menus still own input so arrows cannot leak into seek/volume.
@@ -197,16 +206,67 @@ extension _VideoDiscMenu on _VideoFushiPageState {
       !isMobilePlatform &&
       appModel.videoDiscAutoFullscreen;
 
-  /// 「返回」在原盘会话里的第一步（页面浮层已由调用方先关）：控制栏收着就只把它呼出来
-  /// 并返回 true；开着返回 false，调用方照常退出。
-  bool _discSessionShowBarOnBack() {
-    if (!_discSessionSurfaceActive || _discSessionExitRequested) return false;
-    if (resolveDiscSessionBack(barVisible: _discMenuChromeVisible.value) !=
-        DiscSessionBackRoute.showBar) {
-      return false;
+  /// 原盘会话里「返回」此刻落在哪一级（页面浮层、全屏已由调用方先处理）；不是原盘会话
+  /// 或已在退出时为 null。层级：正片全屏 → 正片窗口 → 盘自己的菜单 → 详情页。
+  DiscSessionBackRoute? _discSessionBackRoute() {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null ||
+        !controller.isBlurayNavigationSession ||
+        _discSessionExitRequested) {
+      return null;
     }
+    final VideoDiscNavigationState? state = controller.discNavigationState;
+    return resolveDiscSessionBack(
+      onMenu: _discSessionSurfaceActive,
+      barVisible: _discMenuChromeVisible.value,
+      menuCallAllowed:
+          controller.discNavigationSupported &&
+          !controller.discMenuEntryPending &&
+          state != null &&
+          videoDiscMenuKeyAllowed(state, VideoDiscMenuKey.topMenu),
+    );
+  }
+
+  /// 「返回」在原盘菜单阶段的第一步：控制栏收着就只把它呼出来并返回 true；开着返回
+  /// false，调用方照常退出。正片阶段不在这里处理——全屏路由里的返回先退全屏
+  /// （[_exitVideoFullscreenOnBack]），窗口里才由 [_discSessionReturnToMenuOnBack] 回菜单。
+  bool _discSessionShowBarOnBack() {
+    if (_discSessionBackRoute() != DiscSessionBackRoute.showBar) return false;
     _pokeDiscMenuChrome();
     return true;
+  }
+
+  /// 「返回」在正片阶段（窗口里）的一级：回到盘自己的菜单，而不是退出整个原盘会话
+  /// ——正片是从盘菜单进来的，它的上一级就是盘菜单（拍板台 58EoAZOXVN）。盘不允许
+  /// 调菜单（UO 屏蔽 / 没有顶层菜单）时没有这一级，返回 false 由调用方退出会话。
+  /// 回菜单请求在途时再按返回直接吞掉，不重复发 topMenu。
+  bool _discSessionReturnToMenuOnBack() {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return false;
+    bool current() => mounted && identical(_controller, controller);
+    return _discMenuReturn.handleBack(
+      _discSessionBackRoute(),
+      send: () => controller.discMenuKey(VideoDiscMenuKey.topMenu),
+      // 快照说允许、盘却拒了这次菜单调用：这张盘此刻没有菜单这一级可回，按层级
+      // 表的下一级退出会话（与 [resolveDiscSessionBack] 的 menuCallAllowed=false 同义）。
+      onRefused: () async {
+        ErrorLogService.instance.logDiagnostic(
+          'VideoDiscMenu.backToMenu',
+          'disc refused the top-menu call; leaving the session',
+        );
+        if (current()) await _exitDiscSession();
+      },
+      // 菜单还在初始化、会话此刻不可发、桥接 / mpv 出错：都不是盘的回答，留在正片。
+      onFailed: (Object error, StackTrace stack) {
+        ErrorLogService.instance.log('VideoDiscMenu.backToMenu', error, stack);
+        if (current()) {
+          _showOsd(
+            t.video_disc_navigation_failed,
+            severity: ToastSeverity.error,
+          );
+        }
+      },
+    );
   }
 
   /// Esc / 手柄 B 短按：先关页面浮层，再按控制栏状态呼出或退出。
@@ -367,6 +427,15 @@ extension _VideoDiscMenu on _VideoFushiPageState {
       // Remote disc: the title is the host's; there is no row to bind here.
       if (controller.isRemoteDiscSession) {
         if (!current()) return;
+        // 换了 title：上一条 title 登记 / 选中的外挂字幕（生成、转录取回的）不属于这一条，
+        // 与本机原盘换 title 同样清掉。
+        _rebuild(() {
+          _currentSubtitleSource = null;
+          _importedSubtitleSources = const <SubtitleSource>[];
+          _subtitleMenuSources = const <SubtitleSource>[];
+          _subtitleMenuSourcesPath = null;
+          _subtitleMenuLoading = false;
+        });
         controller.bindRemoteDiscTitle(expectedGeneration: nativeGeneration);
         return;
       }

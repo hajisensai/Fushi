@@ -175,9 +175,10 @@ Future<void> saveAsrModelCatalog(AsrModelCatalog catalog) async {
 /// - 视频（动画 / 影视 / 带 BGM 的音源）必须传 mixedAudio：日语会换成 Parakeet
 ///   并走无 VAD 滑窗——2026-10-15 在 8 集动画上读音 CER 20.7% → 13.9%。
 ///
-/// 返回的是 [MemoryGatedAsrTranscriptionService]：Android 上 `start` 前先按设备
-/// 可用内存判模型跑不跑得动，跑不动抛 [AsrInsufficientMemoryException]（反馈
-/// jbTZ4GIEyU：低内存机转录被系统杀）。所有生产入口都经这里，门槛只此一处。
+/// 返回的是 [MemoryGatedAsrTranscriptionService]：Android / iOS 上 `start` 前先按
+/// 设备可用内存（Android `/proc`、iOS jetsam 额度）判模型跑不跑得动，跑不动抛
+/// [AsrInsufficientMemoryException]（反馈 jbTZ4GIEyU / EnDAyv9ouF：手机转录被系统
+/// 杀）。所有生产入口都经这里，门槛只此一处。
 asr.AsrTranscriptionService createAsrTranscriptionService({
   asr.AsrAudioProfile audioProfile = asr.AsrAudioProfile.cleanSpeech,
 }) => MemoryGatedAsrTranscriptionService(

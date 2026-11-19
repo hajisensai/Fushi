@@ -255,8 +255,8 @@ bool get floatingBallSystemBallSupported =>
       isDesktop: isDesktopSystemBallPlatform,
     );
 
-/// 应用外球上有没有这颗全局按钮（桌面另有一套、并受查词模块开关约束，见
-/// [FloatingBallGlobalAction.availableIn]）。
+/// 应用外球上有没有这颗全局按钮（桌面另有一套，「打开查词页」受查词模块开关
+/// 约束，见 [FloatingBallGlobalAction.availableIn]）。
 bool floatingBallSystemActionAvailable(
   FloatingBallGlobalAction action, {
   required bool lookupModuleEnabled,
@@ -274,7 +274,7 @@ bool floatingBallSystemActionAvailable(
 class DesktopSystemBallActionTarget {
   const DesktopSystemBallActionTarget();
 
-  /// 全局查词覆盖窗此刻能不能接查词（查词模块开着且启动过）。
+  /// 全局查词覆盖窗此刻能不能接查词（平台支持且启动过）。
   bool get overlayLookupAvailable =>
       GlobalLookupController.instance.isAvailable;
 
@@ -319,16 +319,18 @@ class DesktopSystemBallActionTarget {
   Future<bool> localModelReady(SystemOcrPlatform Function() localModel) =>
       localModel().isAvailable();
 
-  /// 本设备是否已同意把截屏发给 Google Lens（[GoogleLensDisclosureScene.desktopScreens]）。
-  Future<bool> hasLensConsent() =>
-      hasGoogleLensDisclosure(scene: GoogleLensDisclosureScene.desktopScreens);
+  /// 本设备是否已同意把截屏发给 Google Lens。[scene] 是桌面冻结层
+  /// （[GoogleLensDisclosureScene.desktopScreens]）或 Android 悬浮球
+  /// （[GoogleLensDisclosureScene.mobileScreens]），两者共用一份同意记录。
+  Future<bool> hasLensConsent({required GoogleLensDisclosureScene scene}) =>
+      hasGoogleLensDisclosure(scene: scene);
 
-  /// 弹截屏上传 Google Lens 的同意框（在主窗里）。
-  Future<bool> askLensConsent(BuildContext context) =>
-      ensureGoogleLensDisclosure(
-        context,
-        scene: GoogleLensDisclosureScene.desktopScreens,
-      );
+  /// 弹截屏上传 Google Lens 的同意框（在主窗里）；[scene] 决定文案（桌面说显示器、
+  /// 手机说屏幕）。
+  Future<bool> askLensConsent(
+    BuildContext context, {
+    required GoogleLensDisclosureScene scene,
+  }) => ensureGoogleLensDisclosure(context, scene: scene);
 
   Future<void> bringMainWindowToFront() =>
       DesktopLookupService.instance.bringMainWindowToFront();
@@ -521,6 +523,15 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
               await _current?._systemBallSwitchProfileTo(id) ??
               t.floating_ball_profile_switch_failed,
           onOpenSystemOcrSetup: () => pendingSystemOcrSetup.value = true,
+          // 没有宿主时回 null：原生退回设备自带（ML Kit）。
+          onScreenOcrEngine: () async => _current?._androidScreenOcrEngine(),
+          onRecognizeScreenOcrFrame:
+              (Uint8List png, String engine, {required bool fallback}) async =>
+                  _current?._androidRecognizeScreenOcrFrame(
+                    png,
+                    engine,
+                    fallback: fallback,
+                  ),
           onSystemBallClosedByUser: () => _current?._onSystemBallClosedByUser(),
           onSystemBallAction: (String id, Rect? anchor) =>
               _current?._onDesktopSystemBallAction(id, anchor),
@@ -948,9 +959,8 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
         ref.read(appProvider).requestHomeDictionaryTab(focusSearch: true);
       case 'popup_lookup':
         // 查前台程序当前选中的文字：点球不激活 Fushi，前台还是那个程序。按钮只在
-        // 查词模块开着时下发，而模块一开覆盖窗就起（含会话中途打开，见
-        // [GlobalLookupController.followLookupModule]）；走到 else 是真异常，
-        // 记一笔而不是静默。
+        // 平台支持覆盖窗时下发，而覆盖窗在启动链里按平台能力无条件起（见
+        // `startDesktopLookupSurfaces`）；走到 else 是真异常，记一笔而不是静默。
         if (target.overlayLookupAvailable) {
           await target.lookupSelection();
         } else {
@@ -1032,7 +1042,9 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     final ScreenOcrEngine engineKind = await _resolveScreenOcrEngine(target);
     if (!mounted) return;
     if (engineKind == ScreenOcrEngine.googleLens &&
-        !await target.hasLensConsent()) {
+        !await target.hasLensConsent(
+          scene: GoogleLensDisclosureScene.desktopScreens,
+        )) {
       await _askScreenOcrLensConsent(target);
       return;
     }
@@ -1158,6 +1170,82 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     );
   }
 
+  /// Android 截屏 OCR 截到帧后来问这次用哪个引擎（决定 4BBSaB12zj：Android 截屏识字
+  /// 也跟随截屏识字引擎设置，默认跟随全局 OCR 引擎）。设备自带（ML Kit）回
+  /// `{engine: 'systemOcr'}`，由原生自己识别；本机模型 / Lens 回对应名字，原生再把
+  /// 定格帧交回来（[_androidRecognizeScreenOcrFrame]）。Lens 还没同意上传时这次不截：
+  /// 回提示文案、让原生把 Fushi 拉到前台，同意框在那里等着，同意后再点一次。
+  Future<Map<String, Object?>> _androidScreenOcrEngine() async {
+    final DesktopSystemBallActionTarget target = desktopSystemBallActionTarget;
+    final ScreenOcrEngine engine = await _resolveScreenOcrEngine(target);
+    if (engine == ScreenOcrEngine.googleLens &&
+        !await target.hasLensConsent(
+          scene: GoogleLensDisclosureScene.mobileScreens,
+        )) {
+      // 手机上没有「显示器」：同意框用手机文案，同意记录与桌面共用。
+      if (mounted) {
+        unawaited(
+          target.askLensConsent(
+            context,
+            scene: GoogleLensDisclosureScene.mobileScreens,
+          ),
+        );
+      }
+      return <String, Object?>{
+        'message': t.floating_ball_ocr_lens_consent_needed,
+        'openApp': true,
+      };
+    }
+    return <String, Object?>{'engine': engine.name};
+  }
+
+  /// Android 截屏 OCR 的定格帧交给 Dart 侧识别器（本机模型 / Lens）。
+  ///
+  /// [fallback]：设备自带 OCR（ML Kit）报模型不可用时原生退到本机模型再试一次
+  /// （BUG-4508：有的机型 Play 服务报模块就绪、动态模块却加载失败）；本机模型也没
+  /// 就绪时回 `{unavailable: true}`，原生照旧弹系统 OCR 模型配置。
+  Future<Map<String, Object?>> _androidRecognizeScreenOcrFrame(
+    Uint8List png,
+    String engineName, {
+    required bool fallback,
+  }) async {
+    final DesktopSystemBallActionTarget target = desktopSystemBallActionTarget;
+    final ScreenOcrEngine? engine = ScreenOcrEngine.values
+        .asNameMap()[engineName];
+    if (engine == null) {
+      return <String, Object?>{'message': t.floating_ball_ocr_failed};
+    }
+    if (fallback && !await target.localModelReady(_localScreenOcr)) {
+      return const <String, Object?>{'unavailable': true};
+    }
+    final Stopwatch clock = Stopwatch()..start();
+    try {
+      final SystemOcrPageResult result = await target.recognize(
+        png,
+        language: _ocrLanguage,
+        engine: _screenOcrRecognizer(engine),
+      );
+      ErrorLogService.instance.logDiagnostic(
+        'floating_ball.screen_ocr_timing',
+        'engine=${engine.name} fallback=$fallback '
+            'recognize=${clock.elapsedMilliseconds}ms '
+            'image=${result.imageWidth}x${result.imageHeight} '
+            'png=${png.length}B lines=${result.lines.length}',
+      );
+      return <String, Object?>{'lines': screenOcrLinesToNative(result.lines)};
+    } on SystemOcrUnavailableException catch (error) {
+      if (fallback) return const <String, Object?>{'unavailable': true};
+      return <String, Object?>{
+        'message': error.reason == kSystemOcrModelUnavailableReason
+            ? t.floating_ball_ocr_model_missing
+            : t.floating_ball_ocr_failed,
+      };
+    } catch (error, stack) {
+      ErrorLogService.instance.log('floating_ball.screen_ocr', error, stack);
+      return <String, Object?>{'message': t.floating_ball_ocr_failed};
+    }
+  }
+
   /// 解析出的引擎 → 识别器。
   SystemOcrPlatform _screenOcrRecognizer(ScreenOcrEngine engine) =>
       switch (engine) {
@@ -1183,7 +1271,10 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
   ) async {
     await target.bringMainWindowToFront();
     if (!mounted) return;
-    await target.askLensConsent(context);
+    await target.askLensConsent(
+      context,
+      scene: GoogleLensDisclosureScene.desktopScreens,
+    );
   }
 
   /// 截屏识字的本机 OCR（[LocalScreenOcr]）。用户换了本机模型时服务实例跟着换

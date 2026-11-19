@@ -1375,6 +1375,60 @@ void main() {
     },
   );
 
+  test('merge does NOT bring back a deleted book\'s audiobook positions '
+      '(audiobook_pos_<bookKey> / _at_ twin / subtitle-book uid key)', () async {
+    final curDir = await _tempDir('mg_cur_');
+    addTearDown(() => cleanupTempDir(curDir));
+    final cur = FushiDatabase(curDir.path);
+    await cur.insertEpubBook(_book('deleted-book'));
+    await cur.deleteEpubBook('deleted-book', tombstone: true);
+    await cur.close();
+
+    final srcDir = await _tempDir('mg_src_');
+    addTearDown(() => cleanupTempDir(srcDir));
+    final src = FushiDatabase(srcDir.path);
+    await src.insertEpubBook(_book('deleted-book'));
+    await src.insertEpubBook(_book('new-book'));
+    // 字幕书的进度键是 `audiobook_pos_<srt uid>`，挂在它的 book_key 上。
+    await src.upsertSrtBook(
+      SrtBooksCompanion.insert(
+        uid: 'srtbook_epub_deleted-book',
+        title: 'deleted-book',
+        srtPath: '/fake/deleted-book.srt',
+        importedAt: _now(),
+        bookKey: const Value<String>('deleted-book'),
+      ),
+    );
+    await src.setPref('audiobook_pos_deleted-book', '1234');
+    await src.setPref('audiobook_pos_at_deleted-book', '99');
+    await src.setPref('audiobook_pos_srtbook_epub_deleted-book', '77');
+    await src.setPref('audiobook_pos_new-book', '55');
+    await src.setPref('audiobook_pos_at_new-book', '66');
+    final zipDir = await _tempDir('mg_zip_');
+    addTearDown(() => cleanupTempDir(zipDir));
+    final zip = p.join(zipDir.path, 'b.zip');
+    await _exportZip(src, srcDir.path, zip);
+    await src.close();
+
+    await BackupRestoreService.mergeRestoreBackup(
+      dbDirectory: curDir.path,
+      zipPath: zip,
+    );
+
+    final after = FushiDatabase(curDir.path);
+    addTearDown(after.close);
+    final rows = await after
+        .customSelect(
+          "SELECT \"key\" FROM preferences WHERE \"key\" LIKE 'audiobook_pos_%'",
+        )
+        .get();
+    expect(rows.map((QueryRow r) => r.read<String>('key')).toSet(), <String>{
+      'audiobook_pos_new-book',
+      'audiobook_pos_at_new-book',
+    });
+    expect(await after.getPref('audiobook_pos_new-book'), '55');
+  });
+
   test('re-adding a deleted book clears its tombstone', () async {
     final curDir = await _tempDir('mg_cur_');
     addTearDown(() => cleanupTempDir(curDir));

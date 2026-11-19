@@ -182,6 +182,7 @@ pub(crate) fn run(
         "anki_logs_at" => single(files, anki_logs_at(c, profile, req)?),
         "native_logs_near" => single(files, native_logs_near(c, profile, req)?),
         "today_reviews" => today_reviews(c, profile, req)?,
+        "reviewed_decks" => json!({"decks": reviewed_decks(c, profile, req)?}),
         "review_grid" => single(files, review_grid(c, profile, req)?),
         "server_times" => single(files, server_times(c, profile, req)?),
         "cards" => single(files, cards(c, profile, req)?),
@@ -567,6 +568,23 @@ fn today_reviews(c: &Connection, profile: &str, req: &Value) -> Result<Value, St
         }))
     })
     .map_err(sql)
+}
+
+/// `reviewed_decks {before}`：有效复习投影里在 `before` 之前评过分的卡**现在**所在的牌组（去重、升序）。Dart 拿它判
+/// 「每日上限单位」改缺省之前就在用的存量牌组（`srsLimitUnitLegacyDecks`）：那之前的复习按旧口径（卡片数）计过上限。
+fn reviewed_decks(c: &Connection, profile: &str, req: &Value) -> Result<Vec<String>, String> {
+    let before = need_int(req, "before")?;
+    let mut stmt = c
+        .prepare_cached(
+            "SELECT DISTINCT srs_idt(k.deck_id) AS d FROM srs_stat_reviews s              JOIN srs_cards_cache k ON k.id = s.card_id AND k.profile_uid = s.profile_uid              WHERE s.profile_uid = srs_id(?1) AND s.rating IS NOT NULL AND s.occurred_at < ?2 ORDER BY d",
+        )
+        .map_err(sql)?;
+    let rows = stmt
+        .query_map(rusqlite::params![profile, before], |r| {
+            r.get::<_, String>(0)
+        })
+        .map_err(sql)?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(sql)
 }
 
 /// `review_grid {resetMs}`：评分复习按（统计日, 小时）聚合的时长（`day` 纪元起的天数, `hour`, `ms`, `last` 最后

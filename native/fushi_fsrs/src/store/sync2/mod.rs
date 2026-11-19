@@ -2592,61 +2592,108 @@ impl SrsCore {
         utc_off: i64,
         rollover: i64,
     ) -> Result<Value, String> {
-        self.read_visible(|c| {
-            let tree = config::DeckTree::load(c, profile)?;
-            // 别的 profile 的卡按「没有这张卡」算（ownership.rs）：不读它的笔记与日志，回包与不存在的卡同形。
-            let foreign = ownership::foreign(c, profile, EntKind::Card, card)?;
-            let note = if foreign { None } else { note };
-            // 调用方没给笔记（作答路径不再先读一遍卡片缓存行）：按缓存行补上，结果里交回（落日志时要带上）。
-            let looked_up: Option<String> = match note {
-                Some(_) => None,
-                None if foreign => None,
-                None => c
-                    .prepare_cached("SELECT srs_idt(note_id) AS note_id FROM srs_cards_cache WHERE id = srs_id(?1)")
-                    .map_err(sql)?
-                    .query_row([card], |r| r.get(0))
-                    .optional()
-                    .map_err(sql)?,
-            };
-            let note = note.or(looked_up.as_deref());
-            let Group { rows, note: group_note } = if foreign {
-                Group { rows: Vec::new(), note: None }
-            } else {
-                group_of(c, card, note)?
-            };
-            // 此刻的生效配置：预览的是「现在作答」，作答落库时 `sc` 记下的也是这一份（[stamp_config]）。
-            let deck = if rows.is_empty() && note.is_none() { None } else { Some(config::card_deck(c, &tree, card, group_note.as_deref())?) };
-            let cfg = match &deck {
-                None => crate::sync2::sched::Config::default(),
-                Some(d) => tree.config(d),
-            };
-            let input: Vec<Row<'_>> = rows.iter().map(|(_, j, s, i, _)| Row { json: j, server_time: *s, intent: i.clone() }).collect();
-            let day = crate::projection::Day { utc_offset_min: utc_off, rollover_hour: rollover };
-            let (cur, mem, plan) = replay::preview(&input, &cfg, card, now, &day)?;
-            let f = crate::sync2::sched::f32_json;
-            Ok(json!({
-                "note": note,
-                "deck": deck,
-                "current": cur.to_json(),
-                "memoryBefore": mem.map(|m| json!({"s": f(m.s), "d": f(m.d), "sf": f(m.sf)})),
-                "plan": plan.iter().map(|s| s.to_json()).collect::<Vec<_>>(),
-                // 实际生效的参数（牌组没定参数 = 该算法默认参数；与旧 Dart `schedulingConfig(defaultsOf:)` 同口径，
-                // 日志的 `params` 出处哈希按它算）。
-                "params": if cfg.params.is_empty() {
-                    crate::sync2::fsrs_det::Model::defaults(cfg.alg.version()).to_vec()
-                } else {
-                    cfg.params.clone()
-                }
-                .iter()
-                .map(|p| f(*p))
-                .collect::<Vec<_>>(),
-                "memoryAlgorithm": match cfg.alg {
-                    crate::sync2::sched::MemAlg::Fsrs6 => "fsrs6",
-                    crate::sync2::sched::MemAlg::Fsrs7 => "fsrs7",
-                },
-            }))
-        })
+        self.read_visible(|c| preview_on(c, profile, card, note, now, utc_off, rollover))
     }
+}
+
+/// [SrsCore::sync2_preview] 在连接 [c] 上（调用方负责快照；对拍测试在写连接的 SAVEPOINT 里调）。
+pub(crate) fn preview_on(
+    c: &Connection,
+    profile: &str,
+    card: &str,
+    note: Option<&str>,
+    now: i64,
+    utc_off: i64,
+    rollover: i64,
+) -> Result<Value, String> {
+    let tree = config::DeckTree::load(c, profile)?;
+    // 别的 profile 的卡按「没有这张卡」算（ownership.rs）：不读它的笔记与日志，回包与不存在的卡同形。
+    let foreign = ownership::foreign(c, profile, EntKind::Card, card)?;
+    let note = if foreign { None } else { note };
+    // 调用方没给笔记（作答路径不再先读一遍卡片缓存行）：按缓存行补上，结果里交回（落日志时要带上）。
+    let looked_up: Option<String> = match note {
+        Some(_) => None,
+        None if foreign => None,
+        None => c
+            .prepare_cached(
+                "SELECT srs_idt(note_id) AS note_id FROM srs_cards_cache WHERE id = srs_id(?1)",
+            )
+            .map_err(sql)?
+            .query_row([card], |r| r.get(0))
+            .optional()
+            .map_err(sql)?,
+    };
+    let note = note.or(looked_up.as_deref());
+    let Group {
+        rows,
+        note: group_note,
+    } = if foreign {
+        Group {
+            rows: Vec::new(),
+            note: None,
+        }
+    } else {
+        group_of(c, card, note)?
+    };
+    let deck = if rows.is_empty() && note.is_none() {
+        None
+    } else {
+        Some(config::card_deck(c, &tree, card, group_note.as_deref())?)
+    };
+    let input: Vec<Row<'_>> = rows
+        .iter()
+        .map(|(_, j, s, i, _)| Row {
+            json: j,
+            server_time: *s,
+            intent: i.clone(),
+        })
+        .collect();
+    let day = crate::projection::Day {
+        utc_offset_min: utc_off,
+        rollover_hour: rollover,
+    };
+    preview_of(&tree, note, deck, &input, card, now, &day)
+}
+
+/// 评分预览的结果（[SrsCore::sync2_preview] 的计算与回包，协议 3 与新代 `store/gen4/cmd/preview.rs` 共用）：[deck] =
+/// 卡的有效牌组（None = 用默认配置），[rows] = 归属组的全部日志行，[note] 原样交回。
+pub(crate) fn preview_of(
+    tree: &config::DeckTree,
+    note: Option<&str>,
+    deck: Option<String>,
+    rows: &[Row<'_>],
+    card: &str,
+    now: i64,
+    day: &crate::projection::Day,
+) -> Result<Value, String> {
+    // 此刻的生效配置：预览的是「现在作答」，作答落库时 `sc` 记下的也是这一份（[stamp_config]）。
+    let cfg = match &deck {
+        None => crate::sync2::sched::Config::default(),
+        Some(d) => tree.config(d),
+    };
+    let (cur, mem, plan) = replay::preview(rows, &cfg, card, now, day)?;
+    let f = crate::sync2::sched::f32_json;
+    Ok(json!({
+        "note": note,
+        "deck": deck,
+        "current": cur.to_json(),
+        "memoryBefore": mem.map(|m| json!({"s": f(m.s), "d": f(m.d), "sf": f(m.sf)})),
+        "plan": plan.iter().map(|s| s.to_json()).collect::<Vec<_>>(),
+        // 实际生效的参数（牌组没定参数 = 该算法默认参数；与旧 Dart `schedulingConfig(defaultsOf:)` 同口径，
+        // 日志的 `params` 出处哈希按它算）。
+        "params": if cfg.params.is_empty() {
+            crate::sync2::fsrs_det::Model::defaults(cfg.alg.version()).to_vec()
+        } else {
+            cfg.params.clone()
+        }
+        .iter()
+        .map(|p| f(*p))
+        .collect::<Vec<_>>(),
+        "memoryAlgorithm": match cfg.alg {
+            crate::sync2::sched::MemAlg::Fsrs6 => "fsrs6",
+            crate::sync2::sched::MemAlg::Fsrs7 => "fsrs7",
+        },
+    }))
 }
 
 /// 本机新写的派生日志记下此刻的生效配置（重放按它算，改配置不追溯；replay.rs 文件头）。外来、已盖戳的日志保留它

@@ -4,7 +4,10 @@
 // - 服务端 RWKV 没就绪（下不到权重）时 RWKV 牌组的复习卡一张不出、标 rwkvPending，**不**退回按 FSRS-7 存下的
 //   到期日出卡；远程复习的信封带准备状态与错误，客户端经 `rwkvStart` 让主机重试；
 // - 关库顺序：先关 RWKV（存快照、关后台 runtime）再退役库；
-// - 模型档位与 app 同一个设置文件（`<support>/srs_rwkv/model_size`）：选了 Tiny，服务端加载 sm101、快照进 Tiny 的目录。
+// - 模型档位与 app 同一个设置文件（`<support>/srs_rwkv/model_size`）：选了 Tiny，服务端加载 sm101、快照进 Tiny 的目录；
+//   WebUI / admin API 换档位当场生效，手改文件在下一次对齐配置时生效；
+// - 同一份快照的新服务等上一个服务关完（存好快照）才起内核（快速来回切档位不让两个内核同时碰一个快照）。
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -242,6 +245,185 @@ void main() {
       File(p.join(srsRwkvStateDir(support).path, snap)).existsSync(),
       isFalse,
     );
+  });
+
+  test('换档位当场生效（WebUI / admin API 走 setRwkvModelSize）：旧档位的服务关掉存快照、换成新档位的；'
+      '手改设置文件在下一次对齐配置时生效，换回去恢复该档的快照而不全量重放（PR #3463 拍板）', () async {
+    final List<int> clock = <int>[
+      DateTime.now().millisecondsSinceEpoch - 2 * _dayMs,
+    ];
+    markRwkvWeightsReady(support);
+    markRwkvWeightsReady(support, size: SrsRwkvModelSize.tiny);
+    final List<String> opened = <String>[];
+    final List<FakeRwkvBackend> backends = <FakeRwkvBackend>[];
+    final ServerSrs host = srs = ServerSrs(
+      support: support,
+      syncData: syncData,
+      deviceId: 'server-device',
+      hostId: kHostId,
+      config: () => const ServerSrsConfig(profiles: <String>[kJa]),
+      rwkvHttpClient: noNetworkHttpClient,
+      rwkvBackend: (File weights) async {
+        opened.add(p.basename(weights.path));
+        final FakeRwkvBackend b = FakeRwkvBackend();
+        backends.add(b);
+        return b;
+      },
+    );
+    final SrsDbStore app = await phone('phone-a', clock);
+    await seed(app, 3, clock);
+    expect((await phoneSync(app)).error, isNull);
+    await host.start();
+    await host.syncNow();
+    bool ready() => host.profile(kJa)!.rwkvStatus?.phase == SrsRwkvPhase.ready;
+    await until(ready, 'small ready');
+    expect(opened, <String>[kSrsRwkvSmallWeightsName]);
+    expect(host.rwkvModelSize, SrsRwkvModelSize.small);
+    final SrsDbStore served = host.storeFor(kJa)!;
+    final Object? before = served.rwkv;
+
+    await host.setRwkvModelSize(SrsRwkvModelSize.tiny);
+    expect(readSrsRwkvModelSize(support), SrsRwkvModelSize.tiny);
+    expect(host.rwkvModelSize, SrsRwkvModelSize.tiny);
+    expect(identical(served.rwkv, before), isFalse, reason: '换成了新服务，不重启');
+    expect((served.rwkv! as SrsRwkvService).models.size, SrsRwkvModelSize.tiny);
+    expect(backends.first.closed, isTrue, reason: '旧档位的服务先关');
+    await until(ready, 'tiny ready');
+    expect(opened, <String>[kSrsRwkvSmallWeightsName, kSrsRwkvTinyWeightsName]);
+    const String snap = 'rwkv-$kJa-small-int4.snap';
+    expect(
+      File(p.join(srsRwkvStateDir(support).path, snap)).existsSync(),
+      isTrue,
+      reason: '旧档位关掉时存了快照',
+    );
+    // 喂进 runtime 的历史行（整块回放的尾巴走 append，见 SrsRwkvService.journalSeed）。
+    int fed(FakeRwkvBackend b) => b.replayedRows + b.appendedRows;
+    expect(fed(backends[1]), 3, reason: 'Tiny 没有快照：按全部历史重放');
+
+    // 不经 WebUI、直接改设置文件：下一次对齐配置（改任何复习配置 / 兜底定时器）时换过去。
+    await writeSrsRwkvModelSize(support, SrsRwkvModelSize.small);
+    await host.applyConfig();
+    expect(
+      (served.rwkv! as SrsRwkvService).models.size,
+      SrsRwkvModelSize.small,
+    );
+    await until(ready, 'small ready again');
+    expect(opened, <String>[
+      kSrsRwkvSmallWeightsName,
+      kSrsRwkvTinyWeightsName,
+      kSrsRwkvSmallWeightsName,
+    ]);
+    expect(fed(backends.last), 0, reason: '恢复 Small 的快照，不全量重放');
+    expect(
+      File(
+        p.join(srsRwkvStateDir(support, SrsRwkvModelSize.tiny).path, snap),
+      ).existsSync(),
+      isTrue,
+    );
+  });
+
+  test('同一份快照的上一个服务还在关时，新服务等它关完（快照存好）才起内核：恢复刚存的快照而不是全量重放，'
+      '两个内核不同时碰一个快照文件（PR #3463 审查：快速来回切档位）', () async {
+    final List<int> clock = <int>[
+      DateTime.now().millisecondsSinceEpoch - 2 * _dayMs,
+    ];
+    final SrsDbStore s = await phone('phone-a', clock);
+    await seed(s, 3, clock);
+    final Directory device = Directory(p.join(tmp.path, 'device'))
+      ..createSync();
+    markRwkvWeightsReady(device);
+    final FakeRwkvBackend first = FakeRwkvBackend();
+    final SrsRwkvService a = srsAttachRwkv(
+      s,
+      support: device,
+      createClient: noNetworkHttpClient,
+      openBackend: (File _) async => first,
+    );
+    await a.start();
+    await until(() => a.status.phase == SrsRwkvPhase.ready, 'first ready');
+    expect(first.replayedRows + first.appendedRows, 3);
+
+    // 宿主不等旧服务关完就建新服务（app 换档位时 provider 的 onDispose 不 await close）。旧服务关 runtime
+    // 挂在闸门上：顺序由闸门钉死，不靠两个 isolate 谁快谁慢。
+    final Completer<void> gate = first.closeGate = Completer<void>();
+    final Future<void> closing = a.close();
+    await until(() => first.closeCalled, 'first close reached the runtime');
+    final FakeRwkvBackend second = FakeRwkvBackend();
+    bool? firstClosedWhenOpened;
+    final SrsRwkvService b = srsAttachRwkv(
+      s,
+      support: device,
+      createClient: noNetworkHttpClient,
+      openBackend: (File _) async {
+        firstClosedWhenOpened = first.closed;
+        return second;
+      },
+    );
+    try {
+      final Future<void> starting = b.start();
+      // 给新服务足够时间起 isolate、打开 runtime（没有交接时它会在这段时间里打开）。
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      expect(firstClosedWhenOpened, isNull, reason: '上一个服务没关完时不起内核');
+      gate.complete();
+      await starting;
+      await until(() => b.status.phase == SrsRwkvPhase.ready, 'second ready');
+      await closing;
+      expect(firstClosedWhenOpened, isTrue, reason: '上一个服务关完才起内核');
+      expect(
+        second.replayedRows + second.appendedRows,
+        0,
+        reason: '恢复的是上一个服务关闭时存的快照',
+      );
+    } finally {
+      await b.close();
+    }
+  });
+
+  test('上一个服务关不完（runtime 挂住）时，排在后面的服务照样能关：交接只挡起内核、不挡关闭，'
+      '不把宿主换档位 / 关库的串行队列拖住', () async {
+    final List<int> clock = <int>[
+      DateTime.now().millisecondsSinceEpoch - 2 * _dayMs,
+    ];
+    final SrsDbStore s = await phone('phone-a', clock);
+    await seed(s, 3, clock);
+    final Directory device = Directory(p.join(tmp.path, 'device'))
+      ..createSync();
+    markRwkvWeightsReady(device);
+    final FakeRwkvBackend first = FakeRwkvBackend();
+    final SrsRwkvService a = srsAttachRwkv(
+      s,
+      support: device,
+      createClient: noNetworkHttpClient,
+      openBackend: (File _) async => first,
+    );
+    await a.start();
+    await until(() => a.status.phase == SrsRwkvPhase.ready, 'first ready');
+    final Completer<void> gate = first.closeGate = Completer<void>();
+    final Future<void> closingA = a.close();
+    await until(() => first.closeCalled, 'first close reached the runtime');
+
+    bool secondOpened = false;
+    final SrsRwkvService b = srsAttachRwkv(
+      s,
+      support: device,
+      createClient: noNetworkHttpClient,
+      openBackend: (File _) async {
+        secondOpened = true;
+        return FakeRwkvBackend();
+      },
+    );
+    final Future<void> startingB = b.start();
+    bool closedB = false;
+    final Future<void> closingB = b.close().then((_) => closedB = true);
+    await until(() => closedB, 'second close while first is stuck');
+    await startingB;
+    expect(secondOpened, isFalse, reason: '关了的服务不再起内核');
+    expect(b.ready, isFalse);
+
+    gate.complete();
+    await closingA;
+    await closingB;
+    expect(first.closed, isTrue);
   });
 
   test('服务端 RWKV 没就绪：RWKV 牌组的复习卡不出、标 rwkvPending，不退回 FSRS-7 的到期日；'

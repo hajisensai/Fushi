@@ -87,8 +87,18 @@ class YoutubeRangeRelay {
     return relay;
   }
 
+  /// 登记表上限（video-36h）。一次 YouTube 播放登记 2 条（画面 + 音轨），换画质再加
+  /// 1～2 条；64 条容得下一个页面生命周期里所有还可能被内核回头读的地址。
+  static const int maxEntries = 64;
+
   final HttpServer _server;
+
+  /// token → 登记项。**插入序 = 最近使用序**（[register] 与每次 [_serve] 命中都把该项
+  /// 挪到末尾），所以表头恒是最久没被碰过的那条。
   final Map<String, _RelayEntry> _entries = <String, _RelayEntry>{};
+
+  /// 上游 URL → token。同一 URL 重复登记靠它 O(1) 复用，不再线性扫全表。
+  final Map<String, String> _tokenByUpstream = <String, String>{};
   final Random _random = Random.secure();
   final HttpClient _upstream = createAppHttpClient()..autoUncompress = false;
   bool _closed = false;
@@ -98,20 +108,55 @@ class YoutubeRangeRelay {
   int get port => _server.port;
 
   /// 登记一条上游流，返回交给播放内核的本地地址。同一 URL 重复登记复用同一 token。
+  ///
+  /// 表满（[maxEntries]）时淘汰最久没用的那条（video-36h：进程级单例此前只增不减，
+  /// 每开一个视频 / 换一次画质就永久留一条）。**内核正连着的那条不淘汰**：在途请求数
+  /// 非零的项跳过，哪怕因此暂时超过上限——删掉它，暂停中的视频下一次 seek 就是 404。
   Uri register(String upstreamUrl, Map<String, String> headers) {
-    for (final MapEntry<String, _RelayEntry> e in _entries.entries) {
-      if (e.value.upstream.toString() == upstreamUrl) {
-        return _localUri(e.key);
-      }
+    final String? known = _tokenByUpstream[upstreamUrl];
+    if (known != null) {
+      _touch(known);
+      return _localUri(known);
     }
     final String token = base64Url.encode(
       List<int>.generate(18, (int _) => _random.nextInt(256)),
     );
     _entries[token] = _RelayEntry(
+      upstreamUrl: upstreamUrl,
       upstream: Uri.parse(upstreamUrl),
       headers: Map<String, String>.unmodifiable(headers),
     );
+    _tokenByUpstream[upstreamUrl] = token;
+    _evictIdleOverflow();
     return _localUri(token);
+  }
+
+  /// 当前登记条数（测试断言淘汰用）。
+  @visibleForTesting
+  int get entryCount => _entries.length;
+
+  /// 把 [token] 挪到最近使用序的末尾。
+  _RelayEntry? _touch(String token) {
+    final _RelayEntry? entry = _entries.remove(token);
+    if (entry != null) _entries[token] = entry;
+    return entry;
+  }
+
+  /// 超出 [maxEntries] 时从最久没用的一端删，跳过有在途请求的项。
+  void _evictIdleOverflow() {
+    int overflow = _entries.length - maxEntries;
+    if (overflow <= 0) return;
+    final List<String> victims = <String>[];
+    for (final MapEntry<String, _RelayEntry> e in _entries.entries) {
+      if (overflow == 0) break;
+      if (e.value.activeRequests > 0) continue;
+      victims.add(e.key);
+      overflow--;
+    }
+    for (final String token in victims) {
+      final _RelayEntry? entry = _entries.remove(token);
+      if (entry != null) _tokenByUpstream.remove(entry.upstreamUrl);
+    }
   }
 
   Uri _localUri(String token) => Uri(
@@ -132,7 +177,7 @@ class YoutubeRangeRelay {
     try {
       final List<String> segments = request.uri.pathSegments;
       final _RelayEntry? entry = segments.length == 2 && segments.first == 'yt'
-          ? _entries[segments.last]
+          ? _touch(segments.last)
           : null;
       if (entry == null) {
         response.statusCode = HttpStatus.notFound;
@@ -152,7 +197,12 @@ class YoutubeRangeRelay {
         await response.close();
         return;
       }
-      await _stream(request, entry, range);
+      entry.activeRequests++;
+      try {
+        await _stream(request, entry, range);
+      } finally {
+        entry.activeRequests--;
+      }
     } on Object catch (error) {
       debugPrint('[youtube-relay] ${request.method} failed: $error');
       await _abort(response);
@@ -321,10 +371,19 @@ class YoutubeRangeRelay {
 }
 
 class _RelayEntry {
-  const _RelayEntry({required this.upstream, required this.headers});
+  _RelayEntry({
+    required this.upstreamUrl,
+    required this.upstream,
+    required this.headers,
+  });
 
+  /// 登记时的原始 URL 字符串（[YoutubeRangeRelay._tokenByUpstream] 的键）。
+  final String upstreamUrl;
   final Uri upstream;
   final Map<String, String> headers;
+
+  /// 内核正连着本条的请求数。非零 = 正在播放 / 正在被 ffmpeg 读，不可淘汰。
+  int activeRequests = 0;
 }
 
 /// 纯函数：解析内核发来的 `Range` 头。null/空 → 从 0 起到末尾；`bytes=a-` → a 起到末尾；

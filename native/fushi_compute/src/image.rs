@@ -2448,7 +2448,10 @@ mod tests {
     #[test]
     fn fit_jpeg_downscales_grayscale_to_single_channel_jpeg() {
         let src = image::GrayImage::from_fn(400, 600, |x, y| image::Luma([((x + y) % 256) as u8]));
-        let png = encode(image::DynamicImage::ImageLuma8(src), image::ImageFormat::Png);
+        let png = encode(
+            image::DynamicImage::ImageLuma8(src),
+            image::ImageFormat::Png,
+        );
         let jpeg = fit_jpeg(&png, 200, 300, 90).unwrap();
         let out = image::load_from_memory_with_format(&jpeg, image::ImageFormat::Jpeg).unwrap();
         assert_eq!((out.width(), out.height()), (200, 300));
@@ -2471,12 +2474,21 @@ mod tests {
     #[test]
     fn fit_jpeg_refuses_upscale_alpha_and_garbage() {
         let src = image::GrayImage::new(40, 40);
-        let png = encode(image::DynamicImage::ImageLuma8(src), image::ImageFormat::Png);
+        let png = encode(
+            image::DynamicImage::ImageLuma8(src),
+            image::ImageFormat::Png,
+        );
         assert_eq!(fit_jpeg(&png, 41, 40, 90), Err(status::INVALID_ARGUMENT));
         let rgba = image::RgbaImage::new(40, 40);
-        let png = encode(image::DynamicImage::ImageRgba8(rgba), image::ImageFormat::Png);
+        let png = encode(
+            image::DynamicImage::ImageRgba8(rgba),
+            image::ImageFormat::Png,
+        );
         assert_eq!(fit_jpeg(&png, 20, 20, 90), Err(status::BAD_INPUT));
-        assert_eq!(fit_jpeg(b"not an image", 20, 20, 90), Err(status::BAD_INPUT));
+        assert_eq!(
+            fit_jpeg(b"not an image", 20, 20, 90),
+            Err(status::BAD_INPUT)
+        );
     }
 
     #[test]

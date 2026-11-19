@@ -81,7 +81,7 @@ import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart'
-    show SrsCardAppearance, SrsCardColorSource, srsCardColorScheme;
+    show SrsCardAppearance, srsCardColorScheme;
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
 import 'package:fushi/src/srs/srs_fushi_card_media.dart';
 import 'package:fushi/src/srs/srs_card_face_route.dart';
@@ -308,6 +308,9 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   int _newCount = 0;
   int _learnCount = 0;
   int _reviewCount = 0;
+
+  /// 牌组按分钟计复习上限时今天还剩的复习分钟（[SrsDeckSummary.reviewMinutesLeft]），顶栏到期一格显示它。
+  int? _reviewMinutesLeft;
 
   /// 牌组当前的全名（随计数一起现读；复习中在牌组设置里改了名立即换标题）。
   String? _deckTitle;
@@ -571,6 +574,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     _newCount = sum?.newCount ?? 0;
     _learnCount = sum?.learnCount ?? 0;
     _reviewCount = sum?.reviewCount ?? 0;
+    _reviewMinutesLeft = sum?.reviewMinutesLeft;
     _deckTitle = sum?.fullName;
   }
 
@@ -1962,7 +1966,12 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       return '${t.srs_custom_study_left} ${custom.left} · '
           '${t.srs_count_learn} ${custom.learn}';
     }
-    final String review = SrsReviewCell(due: _reviewCount).label() ?? '';
+    final String review =
+        SrsReviewCell(
+          due: _reviewCount,
+          minutesLeft: _reviewMinutesLeft,
+        ).label() ??
+        '';
     return '${t.srs_count_new} $_newCount · ${t.srs_count_learn} $_learnCount · '
         '$review';
   }
@@ -2374,6 +2383,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         onKeyEvent: _onKey,
         child: FushiPageScaffold(
           title: _title,
+          masthead: false,
           header: floating
               ? const SizedBox.shrink()
               : (apple ? null : _buildTopBar(context)),
@@ -2387,6 +2397,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
                   newCount: _newCount,
                   learnCount: _learnCount,
                   reviewCount: _reviewCount,
+                  reviewMinutesLeft: _reviewMinutesLeft,
                   dense: true,
                 )
               : null,
@@ -2761,6 +2772,16 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     // WebView 卡面滚不到底栏下面，停在底栏上沿（与顶端让位浮动页头同一口径，见
     // [_cardScrollsUnderHeader]）。
     final bool underBar = _nativeFace(rendered);
+    // 卡面自己铺底（Fushi 卡片自定义配色）时整面都是卡面底色，底栏垫同色底板接得上；
+    // 否则卡面透明、背后是路由层的页面背景（柔光 / 形状 / 自定义图片）——底栏一律不画
+    // 底，卡面内容在底栏上沿裁掉，页面背景完整铺到屏幕底边（见 [_withBottomBarScrim]）。
+    final bool ownSurface =
+        underBar &&
+        srsCardPaintsOwnSurfaceFor(
+          fushiCard: detail?.noteType.builtinKey == kSrsBuiltinFushiCardKey,
+          appearance: ref.watch(srsCardAppearanceProvider),
+        );
+    final double barCut = underBar && !ownSurface ? _bottomBarHeight : 0;
     final Widget cardFace = _cardFace(
       context,
       detail: detail,
@@ -2807,8 +2828,14 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
                 child: Stack(
                   fit: StackFit.passthrough,
                   children: <Widget>[
-                    // 结构恒定：没在滑时位移为零，卡面平台视图不因手势重挂。
-                    SrsSwipeFollow(hint: _swipeHint, child: cardFace),
+                    // 结构恒定：没在滑时位移为零，卡面平台视图不因手势重挂；裁切层恒在、
+                    // 只换裁切高度（同样不重挂）。裁在滑动位移外面：底栏上沿固定不动。
+                    ClipRect(
+                      key: const ValueKey<String>('srs-card-under-bar-clip'),
+                      clipper: _SrsBottomCutClipper(barCut),
+                      clipBehavior: barCut > 0 ? Clip.hardEdge : Clip.none,
+                      child: SrsSwipeFollow(hint: _swipeHint, child: cardFace),
+                    ),
                     SrsSwipeHintBadge(hint: _swipeHint),
                     SrsRatedFeedbackChip(
                       // 原生卡面铺在底栏背后：提示抬到底栏上沿，不被底栏盖住。
@@ -2852,7 +2879,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
                 onHeight: _onBottomBarHeight,
                 child: _withBottomBarScrim(
                   context,
-                  underBar: underBar,
+                  ownSurface: ownSurface,
                   child: SafeArea(
                     top: false,
                     child: Padding(
@@ -2887,21 +2914,25 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     );
   }
 
-  /// 原生 Fushi 卡面铺在底栏背后滚动：底栏垫一层由透明渐变到卡面底色的底板，滚到底栏
-  /// 下面的释义 / 来源不再从评分按钮之间透出来、跟按钮文字叠在一起（手机上评分按钮
-  /// 占满整行，透出来的字尤其乱）。整面 WebView 卡面停在底栏上沿，不需要底板。
+  /// 底栏的底板：只在卡面自己铺底（Fushi 卡片自定义配色，[srsCardPaintsOwnSurface]）时垫，
+  /// 由透明渐变到卡面底色——那时整面都是卡面底色、页面背景本就被盖住，底板与背后同色。
+  ///
+  /// 其余情况（卡面透明、透出路由层页面背景）底栏不画任何底：以前一律垫「透明→
+  /// `colorScheme.surface`」的不透明底板，柔光 / 形状 / 自定义图片背景在底栏上沿被一刀
+  /// 截成白条（BUG：所有者截图「底部怎么没进去」）。滚到底栏背后的内容改由卡面在底栏
+  /// 上沿裁掉（[_SrsBottomCutClipper]），不从评分按钮之间透出来；裁切对释义 WebView 平台
+  /// 视图同样生效（遮罩 / 模糊在 Android HC 与 Apple 上采不到平台视图）。
   Widget _withBottomBarScrim(
     BuildContext context, {
-    required bool underBar,
+    required bool ownSurface,
     required Widget child,
   }) {
-    if (!underBar) return child;
+    if (!ownSurface) return child;
     final SrsCardAppearance appearance = ref.watch(srsCardAppearanceProvider);
-    final ColorScheme app = Theme.of(context).colorScheme;
-    // 与卡面同一判据：自定义配色时卡面自己铺底（卡面配色的 surface），否则透出页面底色。
-    final Color surface = appearance.colorSource == SrsCardColorSource.custom
-        ? srsCardColorScheme(appearance, app).surface
-        : app.surface;
+    final Color surface = srsCardColorScheme(
+      appearance,
+      Theme.of(context).colorScheme,
+    ).surface;
     return DecoratedBox(
       key: const ValueKey<String>('srs-review-bottom-bar-scrim'),
       decoration: BoxDecoration(
@@ -3296,6 +3327,25 @@ class SrsRatingButton extends StatelessWidget {
       child: FushiTooltip(message: tooltip, child: button),
     );
   }
+}
+
+/// 卡面裁到底栏上沿：底部裁掉 [cut]（0 = 不裁），左右与顶端放宽，不裁横向滑动位移与
+/// 页头底下的内容。
+class _SrsBottomCutClipper extends CustomClipper<Rect> {
+  const _SrsBottomCutClipper(this.cut);
+
+  final double cut;
+
+  @override
+  Rect getClip(Size size) => Rect.fromLTRB(
+    -size.width,
+    -size.height,
+    size.width * 2,
+    math.max(0, size.height - cut),
+  );
+
+  @override
+  bool shouldReclip(_SrsBottomCutClipper oldClipper) => oldClipper.cut != cut;
 }
 
 /// 布局后回报子树高度（变了才报，排在本帧绘制之后）：复习页据此给浮动底栏让位。

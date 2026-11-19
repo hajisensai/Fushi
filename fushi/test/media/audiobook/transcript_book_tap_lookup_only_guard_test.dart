@@ -121,20 +121,34 @@ void main() {
         reason: '解析不到句子必须提示，不得静默无反应',
       );
 
+      // 查词状态只有一个写点 `_applyLookupStateFromSelectionData`（BUG-4824），
+      // cue 解析在它里面；拖选 / 原生选区经 `_fillLookupStateFromSelectionData`、
+      // tap 查词直接调它。
+      final String apply = slice(
+        chrome,
+        'void _applyLookupStateFromSelectionData(ReaderSelectionData data) {',
+        '_cachedSelectionRange =',
+      );
+      expect(apply, contains('_lookupCue = _cueForSelectionData(data);'));
       final String fill = slice(
         chrome,
         'Future<void> _fillLookupStateFromSelectionData(',
-        '_cachedSelectionRange =',
+        '\n  }\n',
       );
-      expect(fill, contains('_lookupCue = _cueForSelectionData(data);'));
+      expect(fill, contains('_applyLookupStateFromSelectionData(data);'));
 
       final String tapLookup = read(
         'lib/src/pages/implementations/reader_fushi/lookup.part.dart',
       );
       expect(
         tapLookup,
-        contains('_lookupCue = _cueForSelectionData(data);'),
+        contains('_applyLookupStateFromSelectionData(data);'),
         reason: 'tap 查词也必须走同一份 cue 解析，不得再各写一份三级回退',
+      );
+      expect(
+        tapLookup,
+        isNot(contains('_cueForSelectionData(data)')),
+        reason: 'tap 查词不得绕开共用写点自己解析 cue',
       );
 
       final String resolve = slice(

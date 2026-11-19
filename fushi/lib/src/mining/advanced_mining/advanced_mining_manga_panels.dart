@@ -39,7 +39,10 @@ Size mangaPageSizeOf(AdvancedMiningController c) =>
 
 /// 摘要行里的取景说明：`所在分镜 · 输出 820×934`。
 String mangaCropSummary(AdvancedMiningController c) {
-  final String label = mangaCropChoiceLabel(c.cropChoice);
+  final String label = mangaCropChoiceLabel(
+    c.cropChoice,
+    screenshot: c.cropsScreenshot,
+  );
   final Rect? rect = c.cropRect;
   if (rect == null) return label;
   final ({int width, int height}) px = cropOutputPixels(
@@ -165,7 +168,9 @@ class MangaCropWorkspace extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         if (header != null) ...<Widget>[header!, const SizedBox(height: 10)],
-        if (!c.panelModelAvailable && !c.mangaLoading) ...<Widget>[
+        if (!c.cropsScreenshot &&
+            !c.panelModelAvailable &&
+            !c.mangaLoading) ...<Widget>[
           MangaPanelModelNotice(controller: c),
           const SizedBox(height: 10),
         ],
@@ -192,7 +197,7 @@ class MangaCropWorkspace extends StatelessWidget {
           ),
           const SizedBox(height: 8),
         ],
-        _MangaCropLegend(touch: touch),
+        _MangaCropLegend(touch: touch, panels: !c.cropsScreenshot),
       ],
     );
   }
@@ -215,7 +220,10 @@ class MangaCropChoiceChips extends StatelessWidget {
         for (final MangaCropChoice choice in MangaCropChoice.values)
           if (c.isCropChoiceAvailable(choice))
             AdvancedMiningChoiceChip(
-              label: mangaCropChoiceLabel(choice),
+              label: mangaCropChoiceLabel(
+                choice,
+                screenshot: c.cropsScreenshot,
+              ),
               selected: c.cropChoice == choice,
               onSelected: c.locked || c.mangaLoading
                   ? null
@@ -227,9 +235,12 @@ class MangaCropChoiceChips extends StatelessWidget {
 }
 
 class _MangaCropLegend extends StatelessWidget {
-  const _MangaCropLegend({required this.touch});
+  const _MangaCropLegend({required this.touch, required this.panels});
 
   final bool touch;
+
+  /// 有分镜（漫画页）才画「检测到的分镜」图例、提示里才提 Tab 切分镜。
+  final bool panels;
 
   @override
   Widget build(BuildContext context) {
@@ -242,22 +253,23 @@ class _MangaCropLegend extends StatelessWidget {
       runSpacing: 4,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: <Widget>[
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Container(
-              width: 14,
-              height: 0,
-              decoration: BoxDecoration(
-                border: Border(
-                  top: BorderSide(color: scheme.primary, width: 1.5),
+        if (panels)
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Container(
+                width: 14,
+                height: 0,
+                decoration: BoxDecoration(
+                  border: Border(
+                    top: BorderSide(color: scheme.primary, width: 1.5),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 6),
-            Text(t.popup_advanced_mining_crop_legend_panels, style: style),
-          ],
-        ),
+              const SizedBox(width: 6),
+              Text(t.popup_advanced_mining_crop_legend_panels, style: style),
+            ],
+          ),
         Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
@@ -273,7 +285,12 @@ class _MangaCropLegend extends StatelessWidget {
             Text(t.popup_advanced_mining_crop_legend_text, style: style),
           ],
         ),
-        Text(t.popup_advanced_mining_crop_hint, style: style),
+        Text(
+          panels
+              ? t.popup_advanced_mining_crop_hint
+              : t.popup_advanced_mining_crop_hint_no_panels,
+          style: style,
+        ),
       ],
     );
   }
@@ -547,6 +564,7 @@ class _MangaCropFullscreenPageState extends State<MangaCropFullscreenPage> {
                     choices: segments,
                     selected: c.cropChoice,
                     onSelected: c.locked ? null : c.selectCropChoice,
+                    screenshot: c.cropsScreenshot,
                   ),
                 ],
               ),
@@ -572,7 +590,11 @@ class MangaCropChoiceSegments extends StatelessWidget {
     required this.choices,
     required this.selected,
     required this.onSelected,
+    this.screenshot = false,
   });
+
+  /// 框的是截屏识字的截图（「整页」叫「整张截图」）。
+  final bool screenshot;
 
   /// 段高与轨道内边距：与共享胶囊分段同一几何。
   static const double segmentHeight = FushiPillSegmentedButton.segmentHeight;
@@ -633,7 +655,7 @@ class MangaCropChoiceSegments extends StatelessWidget {
               child: FittedBox(
                 fit: BoxFit.scaleDown,
                 child: Text(
-                  mangaCropChoiceLabel(choice),
+                  mangaCropChoiceLabel(choice, screenshot: screenshot),
                   maxLines: 1,
                   softWrap: false,
                   style: base.copyWith(

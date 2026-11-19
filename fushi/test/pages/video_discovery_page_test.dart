@@ -154,6 +154,122 @@ void main() {
     expect(opened, 1);
   });
 
+  // 设计稿「视频发现」DI15：有页头时「AI 下载」平铺在页头；没有页头（embedded
+  // 于下载页）时退回搜索行——两处只出现一处，入口不丢。
+  testWidgets('AI 入口：embedded 无页头时留在搜索行', (WidgetTester tester) async {
+    final _FakeDiscoveryController controller = _FakeDiscoveryController(
+      (_) async => _result(<discovery.VideoDiscoveryItem>[]),
+    );
+    await tester.pumpWidget(
+      _harness(
+        controller,
+        embedded: true,
+        actions: VideoDiscoveryActions(onAiAcquire: (_) {}),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('video-discovery-ai-acquire')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('video-discovery-more')),
+      findsNothing,
+      reason: 'embedded 不渲染页头，「⋯」随页头一起不在',
+    );
+  });
+
+  // DI10：页头「下载中心」只在有后台任务时出现；宿主给不出任务信号（null）时
+  // 照旧常驻，判断不了就不藏入口。
+  testWidgets('下载中心按钮跟随任务信号显隐，无信号时常驻', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final _FakeDiscoveryController controller = _FakeDiscoveryController(
+      (_) async => _result(<discovery.VideoDiscoveryItem>[]),
+    );
+    const ValueKey<String> downloadsKey = ValueKey<String>(
+      'video-discovery-open-downloads',
+    );
+
+    await tester.pumpWidget(
+      _harness(
+        controller,
+        actions: VideoDiscoveryActions(onOpenDownloads: () {}),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(downloadsKey), findsOneWidget);
+
+    final ValueNotifier<bool> active = ValueNotifier<bool>(false);
+    addTearDown(active.dispose);
+    await tester.pumpWidget(
+      _harness(
+        controller,
+        actions: VideoDiscoveryActions(
+          onOpenDownloads: () {},
+          downloadTasksActive: active,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(downloadsKey), findsNothing);
+
+    active.value = true;
+    await tester.pumpAndSettle();
+    expect(find.byKey(downloadsKey), findsOneWidget);
+
+    active.value = false;
+    await tester.pumpAndSettle();
+    expect(find.byKey(downloadsKey), findsNothing);
+  });
+
+  // DI15：刷新收进页头「⋯」。焦点驱动：聚焦「⋯」回车打开菜单，聚焦「刷新」
+  // 回车，发现页重新加载一轮。
+  testWidgets('页头「⋯」里的刷新重新加载发现页', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final _FakeDiscoveryController controller = _FakeDiscoveryController(
+      (_) async =>
+          _result(<discovery.VideoDiscoveryItem>[_item('refresh-1', '刷新作品')]),
+    );
+    await tester.pumpWidget(_harness(controller));
+    await tester.pumpAndSettle();
+    final int before = controller.requests.length;
+    expect(before, greaterThan(0));
+
+    final Finder more = find.byKey(
+      const ValueKey<String>('video-discovery-more'),
+    );
+    expect(more, findsOneWidget);
+    Focus.of(
+      tester.element(
+        find.descendant(of: more, matching: find.byType(Icon)).first,
+      ),
+    ).requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+
+    final Finder refresh = find.byKey(
+      const ValueKey<String>('video-discovery-refresh'),
+    );
+    expect(refresh, findsOneWidget);
+    Focus.of(
+      tester.element(
+        find.descendant(of: refresh, matching: find.byType(Text)).first,
+      ),
+    ).requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+
+    expect(controller.requests.length, greaterThan(before));
+  });
+
   // 2026-10-20：放送日历不再是页头 / 搜索行上的图标按钮（用户：「藏太深了」），
   // 改成正文里的「今日放送」小模块。旧按钮必须彻底消失；三种宽度、embedded 与否
   // 模块都在，标题行 /「查看全部」是进完整日历的入口，内容只列**今天**播出的番。
@@ -1033,6 +1149,11 @@ void main() {
       find.byType(PortraitCoverImage).first,
     );
     expect(cover.image, isA<CachedNetworkImageProvider>());
+    // 结果卡按封面取色（FushiCoverBlock → 进程级 coverColorSchemeCache →
+    // extractImageProviderSeedArgb 给图片加载挂 10 秒超时）。远端封面在 fakeAsync
+    // 里加载不完；这条取色请求属于进程级缓存、按设计不随页面销毁，把 10 秒走完
+    // （超时落 null），免得定时器挂到 widget 树销毁之后（同 collection_detail_focus_id_test）。
+    await tester.pump(const Duration(seconds: 11));
   });
 
   testWidgets('部分来源失败保留结果并展示来源警告', (WidgetTester tester) async {

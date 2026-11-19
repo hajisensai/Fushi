@@ -15,6 +15,7 @@ import 'package:fushi_engine/asr/asr_host_job_runner.dart'
     show parseAsrAudioProfile;
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/media/torrent/bt_site_config.dart';
+import 'package:fushi_engine/media/torrent/bt_site_parser_rule.dart';
 import 'package:fushi_engine/media/torrent/bt_site_probe.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart'
     show TorznabIndexerConfig;
@@ -1077,8 +1078,14 @@ class AdminApi {
       BtSiteProbeError.invalidUrl => 'Invalid site address',
       BtSiteProbeError.insecureHttp =>
         'Plain HTTP is not allowed for this address; use HTTPS or allow plain HTTP',
-      BtSiteProbeError.unrecognized => 'Unable to recognize this site',
+      BtSiteProbeError.unrecognized =>
+        'Unable to recognize this site; add a parser rule for it',
       BtSiteProbeError.timedOut => 'The site did not respond in time',
+      BtSiteProbeError.ruleRequestFailed =>
+        "The parser rule could not load the site's search page "
+            '(check the address or the login cookie)',
+      BtSiteProbeError.ruleMatchedNothing =>
+        "The parser rule found no results on the site's search page",
     },
     'reason': error.name,
   }, status: 422);
@@ -1086,6 +1093,8 @@ class AdminApi {
   Future<BtSiteProbeResult> _probe(
     String url, {
     required bool allowInsecureHttp,
+    BtSiteParserRule? parser,
+    String cookie = '',
   }) async {
     final http.Client client = _btSiteProbeClient();
     try {
@@ -1093,6 +1102,8 @@ class AdminApi {
         url,
         client: client,
         allowInsecureHttp: allowInsecureHttp,
+        parser: parser,
+        cookie: cookie,
       );
     } finally {
       client.close();
@@ -1110,6 +1121,15 @@ class AdminApi {
     return v;
   }
 
+  /// `parser`：省略 = null（新增时自动识别）；对象或 JSON 文本 = 解析规则；畸形抛
+  /// [FormatException]（→ 400）。
+  static BtSiteParserRule? _optionalParser(Map<String, dynamic> body) {
+    final Object? raw = body['parser'];
+    if (raw == null) return null;
+    if (raw is String && raw.trim().isEmpty) return null;
+    return BtSiteParserRule.fromJson(raw);
+  }
+
   static bool? _optionalBool(Map<String, dynamic> body, String key) {
     final Object? v = body[key];
     if (v == null) return null;
@@ -1117,8 +1137,9 @@ class AdminApi {
     return v;
   }
 
-  /// `POST bt-sites {url, name?, domains?, enabled?, allowInsecureHttp?}`：先探测，认得出
-  /// 才保存；`domains` 省略 = 全部媒体域。
+  /// `POST bt-sites {url, name?, domains?, enabled?, allowInsecureHttp?, parser?, cookie?}`：
+  /// 先探测，认得出才保存；`domains` 省略 = 全部媒体域。带 `parser`（用户导入的
+  /// 解析规则）就不自动识别，按规则验证；`cookie` 只对带规则的站点生效。
   Future<shelf.Response> _addBtSite(Map<String, dynamic> body) async {
     final String url = (_optionalString(body, 'url') ?? '').trim();
     if (url.isEmpty) throw const FormatException('url is required');
@@ -1129,9 +1150,16 @@ class AdminApi {
     final bool enabled = _optionalBool(body, 'enabled') ?? true;
     final bool allowInsecureHttp =
         _optionalBool(body, 'allowInsecureHttp') ?? false;
+    final BtSiteParserRule? parser = _optionalParser(body);
+    final String cookie = (_optionalString(body, 'cookie') ?? '').trim();
     final BtSiteProbeResult probe;
     try {
-      probe = await _probe(url, allowInsecureHttp: allowInsecureHttp);
+      probe = await _probe(
+        url,
+        allowInsecureHttp: allowInsecureHttp,
+        parser: parser,
+        cookie: cookie,
+      );
     } on BtSiteProbeException catch (e) {
       return _probeFailed(e.error);
     }
@@ -1141,6 +1169,7 @@ class AdminApi {
       domains: domains,
       enabled: enabled,
       allowInsecureHttp: allowInsecureHttp,
+      cookie: cookie,
     );
     await _serialBtSites(() async {
       final List<BtSiteConfig> sites = readBtSiteConfigs(ctx.host.prefs);
@@ -1167,8 +1196,9 @@ class AdminApi {
     ]);
   });
 
-  /// `PUT bt-sites/<id> {name?, domains?, enabled?, allowInsecureHttp?, url?}`：只改带了的
-  /// 字段。带非空 `url`（用户换了地址）就重新探测，认得出才保存。
+  /// `PUT bt-sites/<id> {name?, domains?, enabled?, allowInsecureHttp?, url?, parser?, cookie?}`：
+  /// 只改带了的字段。带非空 `url`（用户换了地址）、`parser`（空串 = 去掉规则改回
+  /// 自动识别）或 `cookie` 就重新探测 / 验证，通过才保存。
   Future<shelf.Response> _updateBtSite(
     String id,
     Map<String, dynamic> body,
@@ -1183,11 +1213,22 @@ class AdminApi {
       final bool allowInsecureHttp =
           _optionalBool(body, 'allowInsecureHttp') ?? current.allowInsecureHttp;
       final String url = (_optionalString(body, 'url') ?? '').trim();
+      final bool parserChanged = body.containsKey('parser');
+      final BtSiteParserRule? parser = parserChanged
+          ? _optionalParser(body)
+          : current.parser;
+      final String cookie =
+          _optionalString(body, 'cookie')?.trim() ?? current.cookie;
       final BtSiteConfig next;
-      if (url.isNotEmpty) {
+      if (url.isNotEmpty || parserChanged || cookie != current.cookie) {
         final BtSiteProbeResult probe;
         try {
-          probe = await _probe(url, allowInsecureHttp: allowInsecureHttp);
+          probe = await _probe(
+            url.isNotEmpty ? url : current.baseUrl.toString(),
+            allowInsecureHttp: allowInsecureHttp,
+            parser: parser,
+            cookie: cookie,
+          );
         } on BtSiteProbeException catch (e) {
           return _probeFailed(e.error);
         }
@@ -1197,6 +1238,7 @@ class AdminApi {
           domains: domains ?? current.domains,
           enabled: enabled ?? current.enabled,
           allowInsecureHttp: allowInsecureHttp,
+          cookie: cookie,
         );
       } else {
         // 关掉明文放行而地址仍是明文 → 构造期 ArgumentError → 400，不落库。
@@ -1224,6 +1266,8 @@ class AdminApi {
         probe = await _probe(
           current.baseUrl.toString(),
           allowInsecureHttp: current.allowInsecureHttp,
+          parser: current.parser,
+          cookie: current.cookie,
         );
       } on BtSiteProbeException catch (e) {
         return _probeFailed(e.error);
@@ -1235,6 +1279,7 @@ class AdminApi {
           domains: current.domains,
           enabled: current.enabled,
           allowInsecureHttp: current.allowInsecureHttp,
+          cookie: current.cookie,
         ),
       );
       await _btSitesChanged();

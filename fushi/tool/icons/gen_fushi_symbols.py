@@ -58,6 +58,7 @@ SYMBOLS: list[tuple[str, str, str | None, str | None, str]] = [
     ("audiobook", "headphones", "headphones_outlined", "headphones", "有声书 / 听力"),
     ("dictionary", "dictionary", "library_books_outlined", "library_books", "词典"),
     ("subtitles", "subtitles", "subtitles_outlined", "subtitles", "字幕"),
+    ("transcribe", "transcribe", "transcribe_outlined", "transcribe", "生成字幕 / 字幕工作台（语音转文字）"),
     ("collection", "collections_bookmark", "collections_bookmark_outlined", "collections_bookmark", "合集"),
     ("tag", "sell", "sell_outlined", "sell", "标签"),
     ("statistics", "insights", "insights_outlined", "insights", "统计"),
@@ -186,6 +187,7 @@ SYMBOLS: list[tuple[str, str, str | None, str | None, str]] = [
     ("darkMode", "dark_mode", "dark_mode_outlined", "dark_mode", "深色"),
     ("lightMode", "light_mode", "light_mode_outlined", "light_mode", "浅色"),
     ("brightnessAuto", "brightness_6", "brightness_6_outlined", "brightness_6", "跟随系统明暗"),
+    ("flash", "flash_on", "flash_on_outlined", "flash_on", "闪电 / 闪刷（墨水屏全刷方式）"),
     ("ai", "auto_awesome", "auto_awesome_outlined", "auto_awesome", "AI / 智能"),
     ("barChart", "bar_chart", "bar_chart", "bar_chart", "柱状图"),
     ("widgets", "widgets", "widgets_outlined", "widgets", "组件 / 模块"),
@@ -351,6 +353,10 @@ SYMBOLS: list[tuple[str, str, str | None, str | None, str]] = [
 # （线框, 实心）。
 APPLE_OVERRIDES: dict[str, tuple[str, str]] = {
     "pageBackdrop": ("rectangle_stack", "rectangle_stack_fill"),
+    # 旧映射表里没有 flash_on（只有 bolt 系列），SF 风格对应字形就是 bolt。
+    "flash": ("bolt", "bolt_fill"),
+    # 旧映射表里没有 transcribe；SF 风格取「字幕气泡」。
+    "transcribe": ("captions_bubble", "captions_bubble_fill"),
     "opacity": ("drop", "drop_fill"),
     "subtitleMask": ("rectangle", "rectangle_fill"),
     "scrim": ("circle_lefthalf_fill", "circle_lefthalf_fill"),

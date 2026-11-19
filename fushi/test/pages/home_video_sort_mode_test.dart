@@ -15,7 +15,6 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
-import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -182,9 +181,14 @@ void main() {
     ], reason: '默认「最近观看」：有观看痕迹者最前，其余退导入时间倒序');
 
     // 切「名称」：natural 序 → 第9话 < 第10话 < Beta。
-    await tester.tap(find.byIcon(FushiIcons.sort));
+    // 设计稿 #video V2：排序并进「筛选与排序」面板（排序方式在最前）。
+    await tester.tap(
+      find.byKey(const ValueKey<String>('video-library-filter-button')),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text(t.sort_title).last);
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
     expect(cardOrder(tester, allTitles), <String>[
       'Alpha 第9话',
@@ -194,9 +198,14 @@ void main() {
     expect(prefs.videoSortModeName, 'title', reason: '选择必须写穿偏好');
 
     // 切「导入时间」：新导入在前。
-    await tester.tap(find.byIcon(FushiIcons.sort));
+    // 设计稿 #video V2：排序并进「筛选与排序」面板（排序方式在最前）。
+    await tester.tap(
+      find.byKey(const ValueKey<String>('video-library-filter-button')),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text(t.sort_imported).last);
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
     expect(cardOrder(tester, allTitles), <String>[
       'Alpha 第10话',

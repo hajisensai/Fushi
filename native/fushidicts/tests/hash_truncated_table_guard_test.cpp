@@ -31,11 +31,13 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "fushidicts/importer.hpp"
 #include "fushidicts/query.hpp"
+#include "legacy_index_env.hpp"
 #include "zip_fixture.hpp"
 
 namespace {
@@ -60,7 +62,11 @@ std::string term_bank_neko() {
 }
 
 // Import the fixture into its own directory and return the dictionary path.
-std::string import_fixture(const std::string& tag) {
+// [legacy]: the pre-key.index layout (hash.table + bloom.filter), which is what
+// cases 1-3 damage; otherwise the current layout (key.index).
+std::string import_fixture(const std::string& tag, bool legacy = true) {
+  std::optional<fushi_test::ScopedLegacyIndex> legacy_scope;
+  if (legacy) legacy_scope.emplace();
   const std::string out_dir = fushi_test::temp_dir() + "/hoshi_hashguard_" + tag;
   std::error_code ec;
   std::filesystem::remove_all(out_dir, ec);
@@ -161,10 +167,70 @@ int main() {
     }
   }
 
+  // 5. key.index (the current layout) damaged the same ways: truncated (fails
+  //    its size check -> not used), bucket count stomped (same), every bucket
+  //    word / offset stomped to 0xFF (each slot claims to hold the key at an
+  //    offset far past the end of blobs.bin -- the record check must reject it
+  //    without reading out of bounds). With no legacy files to fall back to the
+  //    dictionary simply finds nothing; it must not hang or crash.
+  {
+    const std::string dict_path = import_fixture("keyindex_truncated", /*legacy=*/false);
+    if (!dict_path.empty()) {
+      const std::string index = dict_path + "/key.index";
+      std::error_code ec;
+      const auto original = std::filesystem::file_size(index, ec);
+      if (ec || original <= 64) {
+        fail("fixture key.index missing or unexpectedly small");
+      } else {
+        std::filesystem::resize_file(index, original - 32, ec);
+        query_must_not_hang_or_crash("truncated key.index", dict_path);
+      }
+    }
+  }
+  {
+    const std::string dict_path = import_fixture("keyindex_buckets", /*legacy=*/false);
+    if (!dict_path.empty()) {
+      const std::string index = dict_path + "/key.index";
+      std::fstream f(index, std::ios::binary | std::ios::in | std::ios::out);
+      if (!f) {
+        fail("could not open key.index for patching");
+      } else {
+        const std::uint64_t huge = 0xFFFFFFFFull;
+        f.seekp(16);  // num_buckets
+        f.write(reinterpret_cast<const char*>(&huge), sizeof(huge));
+        f.close();
+        query_must_not_hang_or_crash("num_buckets=0xFFFFFFFF key.index", dict_path);
+      }
+    }
+  }
+  {
+    const std::string dict_path = import_fixture("keyindex_garbage", /*legacy=*/false);
+    if (!dict_path.empty()) {
+      const std::string index = dict_path + "/key.index";
+      std::error_code ec;
+      const auto size = std::filesystem::file_size(index, ec);
+      std::fstream f(index, std::ios::binary | std::ios::in | std::ios::out);
+      if (ec || !f || size <= 64) {
+        fail("could not open key.index for patching");
+      } else {
+        const std::string ones(static_cast<size_t>(size - 64), static_cast<char>(0xFF));
+        f.seekp(64);
+        f.write(ones.data(), static_cast<std::streamsize>(ones.size()));
+        f.close();
+        DictionaryQuery q;
+        q.add_term_dict(dict_path);
+        if (!q.query(kNeko).empty()) {
+          fail("garbage key.index slots must not resolve to a record");
+        }
+        query_must_not_hang_or_crash("all-0xFF key.index buckets", dict_path);
+      }
+    }
+  }
+
   // 4. Sanity: an undamaged copy still resolves the term, so the clamping did
   //    not simply break every lookup.
-  {
-    const std::string dict_path = import_fixture("intact");
+  for (const bool legacy : {true, false}) {
+    const std::string dict_path = import_fixture(legacy ? "intact" : "intact_keyindex", legacy);
     if (!dict_path.empty()) {
       DictionaryQuery q;
       q.add_term_dict(dict_path);

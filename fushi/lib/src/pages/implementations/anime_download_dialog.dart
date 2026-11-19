@@ -1,6 +1,7 @@
 import 'dart:async' show unawaited;
 import 'dart:math' as math;
 
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/media/downloads/download_execution_target.dart'
@@ -141,6 +142,19 @@ int compareNyaaTorrents(TorrentSortKey key, NyaaTorrent a, NyaaTorrent b) {
           b.pubDate ?? DateTime.fromMillisecondsSinceEpoch(0);
       return bDate.compareTo(aDate);
   }
+}
+
+/// 「复制下载链接」给出的链接（拍板台 cxBASRELn9：交给外部离线下载 / 其他客户端）。
+///
+/// 有合法 infoHash 时给磁力链接（[NyaaTorrent.magnet]，与推送路径交给后端的是
+/// 同一串），离线下载服务普遍只认磁力；RSS 缺 / 坏 infoHash 时 magnet 会是
+/// `btih:` 空值的废串，此时退回站点的 `.torrent` 地址；两者都没有返回 null
+/// （不出复制入口）。纯函数，便于单测。
+String? torrentCopyableLink(NyaaTorrent torrent) {
+  final String hash = torrent.infoHash.trim();
+  if (RegExp(r'^[0-9a-fA-F]{40}$').hasMatch(hash)) return torrent.magnet;
+  final String url = torrent.torrentUrl.trim();
+  return url.isEmpty ? null : url;
 }
 
 /// 手动字幕搜索框的标题候选（罗马字优先 → 日文原名 → 英文；去空、去重，保序）。
@@ -529,6 +543,31 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(FushiSnackBar(content: Text(message)));
+  }
+
+  /// 把种子的下载链接（见 [torrentCopyableLink]）放进剪贴板。
+  ///
+  /// 不过 P2P 首用说明（[confirmP2pDownloadNotice]）：那份说明讲的是「本 app
+  /// 加入 swarm 收发数据会暴露 IP / 上传」，复制只是把一串文本交给用户，app
+  /// 自己不连任何 peer；用户拿去哪个客户端用，由那个客户端负责提示。
+  Future<void> _copyTorrentLink(String link) async {
+    await Clipboard.setData(ClipboardData(text: link));
+    FushiToast.show(
+      msg: t.copied_to_clipboard,
+      severity: ToastSeverity.success,
+    );
+  }
+
+  /// 复制下载链接按钮；拿不到链接时返回 null（不画禁用钮占位）。
+  Widget? _copyTorrentLinkButton(NyaaTorrent torrent, {Key? key}) {
+    final String? link = torrentCopyableLink(torrent);
+    if (link == null) return null;
+    return FushiIconButtonControl(
+      key: key,
+      tooltip: t.anime_download_copy_link,
+      icon: const FushiIcon(FushiIcons.copy, size: 20),
+      onPressed: () => unawaited(_copyTorrentLink(link)),
+    );
   }
 
   // ---------------------------------------------------------------- 阶段 1
@@ -2197,6 +2236,13 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
                 titleMaxLines: 2,
                 subtitleMaxLines: 4,
                 title: Text(torrent.title),
+                // 复制下载链接：不必先点进确认页，直接交给外部离线下载。
+                trailing: _copyTorrentLinkButton(
+                  torrent,
+                  key: ValueKey<String>(
+                    'anime-download-copy-link-${torrent.infoHash}-$i',
+                  ),
+                ),
                 subtitle: Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: Wrap(
@@ -2307,6 +2353,10 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
                 overflow: TextOverflow.ellipsis,
                 style: context.fushiType.titleMediumEmphasized,
               ),
+            ),
+            ?_copyTorrentLinkButton(
+              torrent,
+              key: const ValueKey<String>('anime-download-confirm-copy-link'),
             ),
           ],
         ),

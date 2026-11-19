@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show BooleanExpressionOperators, OrderingTerm;
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:fushi/src/mining/web_mine_queue_store.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -58,11 +59,14 @@ class VideoMineQueue {
       final Directory dir = bundleDir(id);
       await dir.create(recursive: true);
       final String? cover = await _copyInto(dir, context.coverPath, 'cover');
-      final String? audio = await _copyInto(
-        dir,
-        context.sentenceAudioPath,
-        'audio',
-      );
+      // 音画同步片段把同一个文件既当画面又当句子音频（引擎里 `audioPath = coverPath`）。
+      // 那就只拷一份，两个名字指向它：写入时 context 的两条路径仍然相同，与即时制卡
+      // 交给仓库的形状一致，也不必把几 MB 的片段在盘上放两遍。
+      final String? audio =
+          cover != null &&
+              _samePath(context.coverPath, context.sentenceAudioPath)
+          ? cover
+          : await _copyInto(dir, context.sentenceAudioPath, 'audio');
       final VideoMineStagedMeta stored = meta.copyWith(
         coverFile: cover,
         audioFile: audio,
@@ -82,6 +86,15 @@ class VideoMineQueue {
   /// 某本书（视频）还没写入的暂存卡，按点击顺序。
   Future<List<WebMineQueueRow>> pending(String bookUid) =>
       _store.pending(bookUid);
+
+  /// 还留在列表里的张数（待写入 + 写入失败），角标用。只数不读行。
+  ///
+  /// 播放页一打开就会问这个数，所以旧版本留下的完成行也在这里收一次
+  /// （[WebMineQueueStore.sweepLegacyDone]，每个库只做一遍）。
+  Future<int> openCount(String bookUid) async {
+    await _store.sweepLegacyDone();
+    return _store.openCount(bookUid);
+  }
 
   /// 写入失败的暂存卡（Anki 没开 / 重复 等），供列表展示与重试。
   Future<List<WebMineQueueRow>> failed(String bookUid) async {
@@ -106,11 +119,17 @@ class VideoMineQueue {
     } catch (_) {}
   }
 
-  /// 把 [bookUid] 下全部待写入（含之前失败的）暂存卡写进 Anki，按点击顺序串行。
+  /// 把 [bookUid] 下的暂存卡写进 Anki，按点击顺序串行。
+  ///
+  /// [retryFailed] 决定之前写入失败的行要不要重新排进这一批，**由入口说了算**：
+  /// - 用户在待制卡列表里点「全部写入」（或经 `video mine-send`）= 明说要重试，传 `true`；
+  /// - 离开播放页时的自动写入传 `false`，只写还没试过的。失败行里有永久性的（重复卡、
+  ///   暂存媒体没了），自动重试只会每次退出都把它们再跑一遍、再报一次失败（BUG-4813）；
+  ///   它们留在列表里，等用户看到原因后自己重试或丢弃。
   ///
   /// 每张：用暂存的媒体组 context → [BaseAnkiRepository.mineEntry] → 成功记统计与制卡
-  /// 历史、删暂存；失败标 failed 留着（下次可重试），原因写进行里。暂存媒体丢了的行
-  /// 同样标 failed——没有媒体就不建空壳卡（与引擎「无音频中止」同一纪律）。
+  /// 历史、删行与暂存；失败标 failed 留着，原因写进行里。暂存媒体丢了的行同样标
+  /// failed——没有媒体就不建空壳卡（与引擎「无音频中止」同一纪律）。
   ///
   /// 同一 [bookUid] 的写入在进程内**串行**：列表弹窗的「全部写入」与退出页面时的
   /// 后台写入可能同时触发，两边若各自读到同一批 pending 行，就会把同一张卡写两遍，
@@ -120,6 +139,7 @@ class VideoMineQueue {
   Future<VideoMineCommitSummary> commitAll({
     required String bookUid,
     required BaseAnkiRepository repo,
+    required bool retryFailed,
     void Function(int done, int total)? onProgress,
     DateTime Function() now = DateTime.now,
   }) async {
@@ -131,6 +151,7 @@ class VideoMineQueue {
       return await _commitAllLocked(
         bookUid: bookUid,
         repo: repo,
+        retryFailed: retryFailed,
         onProgress: onProgress,
         now: now,
       );
@@ -150,10 +171,11 @@ class VideoMineQueue {
   Future<VideoMineCommitSummary> _commitAllLocked({
     required String bookUid,
     required BaseAnkiRepository repo,
+    required bool retryFailed,
     void Function(int done, int total)? onProgress,
     required DateTime Function() now,
   }) async {
-    await _store.requeueFailed(bookUid);
+    if (retryFailed) await _store.requeueFailed(bookUid);
     final List<WebMineQueueRow> rows = await _store.pending(bookUid);
     int succeeded = 0;
     final List<String> failures = <String>[];
@@ -238,7 +260,8 @@ class VideoMineQueue {
       return (reason, null);
     }
     await _recordLanded(meta, fields, row.sentence, outcome.noteId, now());
-    await _store.markDone(row.id, noteId: outcome.noteId);
+    // 写完即出表（行与暂存媒体一起）：完成行没有读取方，见 [WebMineQueueStore.markDone]。
+    await _store.markDone(row.id);
     try {
       if (dir.existsSync()) await dir.delete(recursive: true);
     } catch (_) {}
@@ -246,7 +269,7 @@ class VideoMineQueue {
     return (null, notice == null || notice.isEmpty ? null : notice);
   }
 
-  /// 与视频页即时制卡成功时同两笔账：制卡统计（按书）+ 制卡历史（可回跳）。best-effort。
+  /// 与视频页即时制卡成功时同两笔账：制卡统计（按书）+ 制卡历史（可回跳）。
   Future<void> _recordLanded(
     VideoMineStagedMeta meta,
     Map<String, String> fields,
@@ -254,31 +277,27 @@ class VideoMineQueue {
     int? noteId,
     DateTime at,
   ) async {
-    try {
-      await db.recordMiningEvent(
-        bookKey: meta.statBookKey,
-        title: meta.statTitle ?? '',
-        sourceType: kStatSourceVideo,
-        at: at,
-      );
-    } catch (_) {}
+    await recordVideoMineStat(
+      db,
+      bookKey: meta.statBookKey,
+      title: meta.statTitle ?? '',
+      at: at,
+    );
     if (!meta.recordHistory) return;
-    try {
-      await db.addMinedSentence(
-        source: kStatSourceVideo,
-        dateKey: meta.historyDateKey,
-        expression: fields['expression'] ?? '',
-        reading: fields['reading'] ?? '',
-        glossary: fields['glossary'] ?? '',
-        sentence: sentence,
-        documentTitle: meta.historyDocumentTitle,
-        bookKey: meta.historyBookKey,
-        sectionIndex: meta.historySectionIndex,
-        positionMs: meta.historyCueStartMs,
-        durationMs: meta.historyCueLengthMs,
-        noteId: noteId,
-      );
-    } catch (_) {}
+    await recordVideoMinedSentence(
+      db,
+      dateKey: meta.historyDateKey,
+      expression: fields['expression'] ?? '',
+      reading: fields['reading'] ?? '',
+      glossary: fields['glossary'] ?? '',
+      sentence: sentence,
+      documentTitle: meta.historyDocumentTitle,
+      bookKey: meta.historyBookKey,
+      sectionIndex: meta.historySectionIndex,
+      positionMs: meta.historyCueStartMs,
+      durationMs: meta.historyCueLengthMs,
+      noteId: noteId,
+    );
   }
 
   Future<VideoMineStagedMeta?> _readMeta(Directory dir) async {
@@ -299,6 +318,9 @@ class VideoMineQueue {
     }
   }
 
+  static bool _samePath(String? a, String? b) =>
+      a != null && b != null && p.equals(a, b);
+
   static Future<String?> _copyInto(
     Directory dir,
     String? source,
@@ -311,6 +333,64 @@ class VideoMineQueue {
     final String name = '$stem$ext';
     await file.copy(p.join(dir.path, name));
     return name;
+  }
+}
+
+/// 视频制卡落进 Anki 之后的统计记账（按来源 + 按书），即时制卡与暂存队列写入共用。
+///
+/// 只吃 [FushiDatabase]，不经 `ref` / `context`：在线视频的卡可能在播放页销毁之后才在
+/// 后台落地。best-effort——卡已经进了 Anki，记账失败不能反过来把制卡报成失败，只留日志。
+Future<void> recordVideoMineStat(
+  FushiDatabase db, {
+  required String? bookKey,
+  required String title,
+  required DateTime at,
+}) async {
+  try {
+    await db.recordMiningEvent(
+      bookKey: bookKey,
+      title: title,
+      sourceType: kStatSourceVideo,
+      at: at,
+    );
+  } catch (e, st) {
+    debugPrint('[fushi-stats] video recordMiningEvent failed: $e\n$st');
+  }
+}
+
+/// 视频制卡的制卡历史行（收藏页据此回跳到那一句），与 [recordVideoMineStat] 同一纪律：
+/// 只吃 [FushiDatabase]、best-effort、失败留日志。
+Future<void> recordVideoMinedSentence(
+  FushiDatabase db, {
+  required String dateKey,
+  required String expression,
+  required String reading,
+  required String glossary,
+  required String sentence,
+  required String? documentTitle,
+  required String? bookKey,
+  required int? sectionIndex,
+  required int? positionMs,
+  required int? durationMs,
+  required int? noteId,
+}) async {
+  try {
+    await db.addMinedSentence(
+      source: kStatSourceVideo,
+      dateKey: dateKey,
+      expression: expression,
+      reading: reading,
+      glossary: glossary,
+      sentence: sentence,
+      documentTitle: documentTitle,
+      bookKey: bookKey,
+      sectionIndex: sectionIndex,
+      positionMs: positionMs,
+      durationMs: durationMs,
+      noteId: noteId,
+    );
+  } catch (e, st) {
+    debugPrint('[fushi-stats] video addMinedSentence failed: $e\n$st');
   }
 }
 

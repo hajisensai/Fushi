@@ -2,6 +2,10 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
 import 'package:fushi_engine/media/video/video_member_file.dart';
+import 'package:fushi_engine/media/video/disc/disc_angle.dart'
+    show discAngleBaseMemberPath;
+import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
+    show isBlurayPlaylistPath;
 import 'package:fushi_engine/media/video/bluray/bluray_remote_title.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_library_title.dart';
 import 'package:fushi_engine/media/video/disc/disc_format.dart'
@@ -10,6 +14,7 @@ import 'package:fushi_engine/media/video/dvd/dvd_library_title.dart'
     show ensureDvdTitleInLibrary;
 import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
     show isDvdTitlePath;
+import 'package:fushi/src/media/import/import_surface_spec.dart';
 import 'package:fushi/src/media/playback_route_marks.dart';
 import 'package:fushi/src/media/range_playback.dart';
 import 'package:fushi/src/media/video/bluray_disc_menu_input.dart';
@@ -44,7 +49,6 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-import 'package:http/http.dart' as http;
 import 'package:share_plus/share_plus.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/utils/misc/collection_exporter.dart';
@@ -109,7 +113,7 @@ import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/media/video/media_server/media_server_library.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/media/video/media_server_video_path.dart';
-import 'package:fushi/src/media/video/video_source_fingerprint.dart';
+import 'package:fushi_engine/media/video/video_source_fingerprint.dart';
 import 'package:fushi/src/media/video/danmaku_manual_match_panel.dart';
 import 'package:fushi/src/media/source_library/source_stream_headers.dart';
 import 'package:fushi/src/media/source_library/source_folder_access.dart';
@@ -147,13 +151,30 @@ import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart'
         AppVideoSubtitleTarget,
         AppVideoSubtitleTargetNotFound,
         appVideoSubtitleService;
-import 'package:fushi/src/media/video/subtitle/video_subtitle_studio_sheet.dart'
+import 'package:fushi/src/media/video/subtitle/video_subtitle_pipeline_gate.dart'
+    show canRunLocalVideoSubtitlePipeline, localVideoSubtitlePipelineMediaPath;
+import 'package:fushi/src/media/video/subtitle/video_stream_subtitle_audio.dart'
+    show
+        VideoStreamSubtitleAudioCancelled,
+        VideoStreamSubtitleAudioInput,
+        VideoStreamSubtitleAudioStaging,
+        VideoStreamSubtitleAudioUnavailable,
+        appVideoStreamSubtitleAudioStager,
+        currentVideoStreamSubtitleAudio,
+        videoStreamSubtitleAudioAvailable,
+        videoStreamSubtitleAudioKey,
+        videoStreamSubtitleExportDirUnder,
+        videoStreamSubtitleFrameSource;
+import 'package:fushi/src/media/video/subtitle/video_stream_subtitle_audio_panel.dart'
+    show VideoStreamSubtitleAudioPanel;
+import 'package:fushi/src/media/video/subtitle/video_subtitle_studio_page.dart'
     show
         VideoSubtitleStudioActions,
         VideoSubtitleStudioAiReference,
         VideoSubtitleStudioFramesProblem,
+        VideoSubtitleStudioNotice,
         VideoSubtitleStudioReference,
-        showVideoSubtitleStudioSheet,
+        openVideoSubtitleStudioPage,
         videoSubtitleStudioEvidenceTrack;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence.dart'
     show SubtitleEvidenceTrack;
@@ -170,6 +191,7 @@ import 'package:fushi_engine/utils/misc/safe_file_name.dart'
 import 'package:fushi/src/media/video/subtitle/video_subtitle_generate_sheet.dart'
     show
         PrefsRepoVideoSubtitleGeneratePrefs,
+        VideoSubtitleGenerateSheet,
         VideoSubtitleInAppTranscribe,
         confirmVideoSubtitleAiFrames,
         showVideoSubtitleGenerateSheet,
@@ -182,10 +204,14 @@ import 'package:fushi/src/media/video/subtitle/remote_video_subtitle_service.dar
         RemoteVideoSubtitleEpisodeProgress,
         RemoteVideoSubtitleJob,
         RemoteVideoSubtitleJobStatus,
+        RemoteVideoSubtitleService,
         RemoteVideoSubtitleTarget,
         appRemoteVideoSubtitleService;
 import 'package:fushi/src/media/video/subtitle/remote_video_subtitle_sheet.dart'
-    show remoteVideoSubtitleEpisodeResultLabel, showRemoteVideoSubtitleSheet;
+    show
+        RemoteVideoSubtitleSheet,
+        remoteVideoSubtitleEpisodeResultLabel,
+        showRemoteVideoSubtitleSheet;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart'
     show VideoSubtitleEpisodeResult;
 import 'package:fushi/src/media/audiobook/audiobook_auto_transcribe.dart'
@@ -240,6 +266,16 @@ import 'package:fushi/src/media/video/web_video_hosting.dart'
 import 'package:fushi/src/media/video/netflix_metadata.dart';
 import 'package:fushi/src/media/video/web_video_platform_player.dart';
 import 'package:fushi/src/media/video/web_video_session.dart';
+import 'package:fushi/src/media/video/web_video_subtitle_media.dart'
+    show
+        WebVideoSubtitleMediaBlock,
+        WebVideoSubtitleMediaBlocked,
+        kWebVideoGeneratedTrackLang,
+        prepareWebVideoSubtitleAudio,
+        webVideoGeneratedSubtitleLanguage,
+        webVideoGeneratedTrackKey,
+        webVideoSubtitleFrameInput,
+        webVideoSubtitlePipelineAvailable;
 import 'package:fushi_engine/sync/immersion_mine_payload.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart'
     show RemoteMineResult;
@@ -480,7 +516,12 @@ import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
         fushiFloatingToolbarPalette,
         kFushiFloatingToolbarEdgeMargin;
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
-    show FushiChoiceOption, showFushiChoiceDialog, showFushiTextInputDialog;
+    show
+        FushiChoiceOption,
+        FushiProgressDialogHandle,
+        showFushiChoiceDialog,
+        showFushiProgressDialog,
+        showFushiTextInputDialog;
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/platform/screen_brightness_controller.dart';
@@ -2452,6 +2493,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   String _webVideoKey = '';
   final Map<String, WebVideoTrack> _webTracks = <String, WebVideoTrack>{};
 
+  /// 这一集生成的字幕（完整管线产物，登记在这一集的书 `subtitleSource` 上，重进时读回）：
+  /// 作为一条可选轨并进 [_webTracks]（key 见 [webVideoGeneratedTrackKey]），站点换了视频
+  /// key 而仍是这一集时按新 key 重挂。
+  ({String bookUid, String path, List<AudioCue> cues})? _webGeneratedSubtitle;
+
+  /// 已读过生成字幕登记的那一集的书：每集只读一次（换集后重读）。
+  String? _webGeneratedCheckedBookUid;
+
   /// 当前显示的轨（[chooseWebVideoTrackKey] 的结果，每次轨集变化重算）。
   String? _webActiveTrackKey;
 
@@ -2881,6 +2930,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 按满直接 [_exitDiscSession]，按住期间画圆环进度。
   late final DiscExitHold _discExitHold = DiscExitHold(
     onExit: () => unawaited(_exitDiscSession()),
+  );
+
+  /// 正片阶段「返回」回盘菜单那一级的执行者：只有盘拒绝菜单调用才落到退出会话，
+  /// 回菜单请求在途时连按的返回直接吞掉（[_discSessionReturnToMenuOnBack]）。
+  final DiscMenuReturn _discMenuReturn = DiscMenuReturn(
+    isRefusal: isVideoDiscMenuCallRefusal,
   );
 
   /// 原盘画面上同时按下的指针数：两指点击 = 呼出 / 收起控制栏（BD-J 盘拿不到按钮
@@ -3335,7 +3390,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   String get dictionarySourceType => kStatSourceVideo;
 
   @override
-  ModuleId? get popupDockModule => ModuleId.video;
+  ModuleId? get lookupHostModule => ModuleId.video;
 
   /// TODO-1204：查词 / 制卡计数归属本视频——[title] 用 [_title]（剧集标题，与
   /// 视频统计 tile 的身份分组键对齐），[bookKey] 存
@@ -3419,6 +3474,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 途快速切集时旧的慢加载落地后覆盖新集字幕/视频」（用户报：切到第4集字幕/音画
   /// 对不上，疑似中途切换；本机不可复现，加此守卫兜底竞态）。
   int _episodeLoadSeq = 0;
+
+  /// 本页对内封文本字幕整轨抽取的取消信号，按视频路径分（BUG-4838）：当前集与预热中的
+  /// 下一集各一份。换了视频源时撤掉除新当前集以外的全部，退页时全撤；撤掉只是本页不再
+  /// 等，共享抽取在没有别的等待方时才被强杀（`_ensureAllEmbeddedSubtitlesExtracted`）。
+  final Map<String, Completer<void>> _embeddedSubtitleExtractCancels =
+      <String, Completer<void>>{};
 
   /// 当前播放的视频文件绝对路径（枚举字幕源用）；未 load 时为 null。
   String? _currentVideoPath;
@@ -5996,6 +6057,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         external,
         videoPath,
         _activeBookUid,
+        cancel: _embeddedSubtitleExtractCancelFor(videoPath),
       );
       if (cues.isNotEmpty) {
         return (
@@ -6032,6 +6094,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       chosen,
       videoPath,
       _activeBookUid,
+      cancel: _embeddedSubtitleExtractCancelFor(videoPath),
     );
     if (cues.isEmpty) return null;
     return (
@@ -6230,8 +6293,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // The locator describes exact bytes, not merely a same-named library row.
     // Manual cross-episode navigation retains the session, without reusing the
     // original episode's locator or fingerprint for the newly selected file.
-    // 远端条目（互联 host）的字节在 host 上，本机没有文件可比指纹：身份由 host 的
-    // bookUid 担保（见 card_source_router 的远端分支），不在这里按本地指纹判死。
+    // 远端条目（互联 host）的字节在 host 上，本机没有文件可比指纹：回跳前已由 host
+    // 对原文件算指纹核验过（见 card_source_router 的 resolveRemoteCardSourceVideo），
+    // 不在这里按本地指纹判死。
     final CardSourceLink? source = _isRemote ? null : widget.sourceReview;
     // 无指纹的链接是在线内容身份（BUG-3490），身份由库 uid 担保。
     if (source != null && source.fingerprint != null) {
@@ -6319,6 +6383,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 覆盖。字幕源指针常在 setCues 之后才写，那次写入会再触发一次，序号只认最后一次。
       unawaited(_reloadSubtitleTextOverrides());
     };
+    controller.onEmbeddedSubtitleAutoLoadPending =
+        _handleEmbeddedSubtitleAutoLoadPending;
     // TODO-1213：进入「正在缓冲…」阶段——网络流 controller.load 内部连接 + 缓冲最久，
     // 页级 spinner 期间显阶段文案而非裸转圈。纯 UI 状态，不改 load 时序。
     _setLoadingPhase(_VideoLoadPhase.buffering);
@@ -6433,6 +6499,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // isCurrent 丢弃），强杀它在途的抽轨 ffmpeg——否则它在后台把旧文件整个读完，
     // 进度卡与「一次只跑一轨」的闸门一直挂在新视频上。
     if (clipExportSourceChanged) _cancelGraphicSubtitleOcr();
+    // 同理撤掉旧视频的内封文本字幕抽取（BUG-4838）；新当前集（可能正是预热过的
+    // 下一集）的那份保留。
+    if (clipExportSourceChanged) _cancelEmbeddedSubtitleExtracts(videoPath);
     setState(() {
       if (clipExportSourceChanged) _clearClipExportState();
       _controller = controller;
@@ -6511,7 +6580,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // TODO-011: large REMUX containers can spend many seconds demuxing text
       // embedded subtitles on the first switch. Start the shared cache fill
       // only after playback has opened so UI/video startup is not blocked.
-      unawaited(prewarmEmbeddedSubtitleCache(videoPath));
+      unawaited(
+        prewarmEmbeddedSubtitleCache(
+          videoPath,
+          cancel: _embeddedSubtitleExtractCancelFor(videoPath),
+        ),
+      );
       unawaited(_loadDanmakuForVideo(videoPath));
       // 视频内嵌字体（对齐 mpv）：抽 MKV attachment 字体注册进引擎，字幕按 ASS Fontname
       // 命中真实字体。仅本地 + 开「尊重 .ass 样式」时做；远端/无 ffmpeg/无附件静默降级。
@@ -6606,6 +6680,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       pick,
       videoPath,
       bookUid,
+      cancel: _embeddedSubtitleExtractCancelFor(videoPath),
     );
     if (!current() || result.isFailure || result.cues.isEmpty) return;
     controller.setSecondaryCues(result.cues);
@@ -6919,10 +6994,31 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (mounted) nav.pop();
   }
 
+  /// 自动加载挑中的内封文本轨要整轨抽取：显示「正在读取完整字幕」+ 取消入口，并把它
+  /// 标成当前字幕源（播放器此刻已解码这条轨顶着显示，见
+  /// [VideoPlayerController.beginEmbeddedTextBridge]）。
+  void _handleEmbeddedSubtitleAutoLoadPending(SubtitleSource source) {
+    final String? videoPath = _currentVideoPath;
+    if (!mounted || videoPath == null) return;
+    _rebuild(() {
+      _primaryEmbeddedFullLoad = _EmbeddedTextFullLoad(
+        label: source.label,
+        videoPath: videoPath,
+        selectSeq: null,
+      );
+      _currentSubtitleSource = source.toPersistedValue();
+    });
+  }
+
   void _handleEmbeddedSubtitleAutoLoad(
     DefaultEmbeddedSubtitleLoadResult result,
   ) {
     if (!mounted) return;
+    // 自动加载的读取状态到此结束（用户手选的那份 selectSeq 非 null，不归这里清）。
+    if (_primaryEmbeddedFullLoad?.selectSeq == null &&
+        _primaryEmbeddedFullLoad != null) {
+      _rebuild(() => _primaryEmbeddedFullLoad = null);
+    }
     if (result.status == DefaultEmbeddedSubtitleLoadStatus.loaded) {
       final SubtitleSource? source = result.source;
       if (source != null) {
@@ -6941,8 +7037,27 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     }
     if (!result.shouldNotifyFailure) return;
     final String label = result.source?.label ?? t.video_menu_subtitle_track;
+    // 选中轨加载失败按真实原因给文案（BUG-4838：读盘卡住不再说成「图形或不支持的轨」）。
+    final SubtitleCueLoadFailure? cueFailure = result.cueFailure;
+    if (cueFailure == SubtitleCueLoadFailure.extractionCancelled) return;
+    // 完整字幕没读出来，但播放器解码的字幕一直在显示：保留它（对用户最好——字幕没断、
+    // 照样可查词制卡），只说明列表不会补全。不是「加载失败」。
+    if (_controller?.isPlayerDecodedTextSubtitleActive ?? false) {
+      _showOsd(
+        t.video_subtitle_full_load_failed_live(label: label),
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    final String? pending = result.source?.toPersistedValue();
+    if (pending != null && _currentSubtitleSource == pending) {
+      // 读取期间标成了当前源、但播放器也没能解码它：撤回标记，菜单不谎报。
+      _rebuild(() => _currentSubtitleSource = null);
+    }
     _showOsd(
-      t.video_subtitle_load_failed(label: label),
+      cueFailure == null
+          ? t.video_subtitle_load_failed(label: label)
+          : _subtitleFailureMessage(cueFailure, label),
       severity: ToastSeverity.error,
     );
   }
@@ -7004,7 +7119,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final String path = _episodes[cur + 1].path;
     if (path.isEmpty || path == _lastPrewarmedEpisodePath) return;
     _lastPrewarmedEpisodePath = path;
-    unawaited(prewarmEmbeddedSubtitleCache(path));
+    // 下一集的预热排在同一块盘上当前集的读盘之后（background）：两个整片顺序读同时压
+    // 一块慢盘，当前集的字幕更晚出来、播放也跟着卡。换集时还没开始的预热随取消信号撤掉。
+    unawaited(
+      prewarmEmbeddedSubtitleCache(
+        path,
+        cancel: _embeddedSubtitleExtractCancelFor(path),
+        background: true,
+      ),
+    );
   }
 
   String _safeFileName(String input) =>
@@ -7211,6 +7334,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _discBindingGeneration++;
     // 退页即停整轨转文字：强杀在途的抽轨 ffmpeg（否则它会在后台把整个文件读完）。
     _cancelGraphicSubtitleOcr();
+    // 内封文本字幕的整轨抽取同理（BUG-4838）。
+    _cancelEmbeddedSubtitleExtracts();
     _graphicSubtitleOcrJob.dispose();
     _controller?.removeListener(_onDiscNavigationChanged);
     _controller?.removeListener(_onRemoteDiscBufferingChanged);
@@ -8554,12 +8679,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   Future<MinePopupResult> onMineEntry(Map<String, String> fields) =>
       _onMineEntryImpl(fields);
 
-  /// 反馈 OeS0m8tLHc：查词弹窗点「制卡」→ 弹窗立刻关、视频立刻续播（关栈走
-  /// [_popNestedPopupAt]，按 [_pausedForLookup] 恢复），卡在后台落地（本地视频也是，
-  /// 见 [resolveVideoMineDispatch]），结局由 OSD 报告、失败的结果卡带「重试」。
-  /// 视频车道因此不再看「制卡后关闭查词弹窗」偏好，也不再等卡落地才关。
+  /// 制卡后「关闭弹窗、不续播」（拍板台 8ldy3d8XFA）：撤掉查词暂停标记，随后
+  /// [_popNestedPopupAt] 关栈时就不续播。卡照旧在后台落地（反馈 OeS0m8tLHc，见
+  /// [resolveVideoMineDispatch]），弹窗关不关、续不续播由视频模块的「制卡后行为」定，
+  /// 默认「关闭并续播」。
   @override
-  bool get closePopupAfterMining => true;
+  void dropLookupPauseMark() {
+    _pausedForLookup = false;
+  }
 
   /// mixin 的纯字段制卡 / 覆盖（不带视频媒体）。网页档没有锚点 cue 时的退路：extension
   /// 里调不到 `super`，经这两个转发器。
@@ -8631,8 +8758,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 键盘 / 系统返回 / 手柄三条输入通道共用同一份语义，不再各写一份。
   Future<void> _handleBackOrExit() async {
     if (_dismissTopForegroundLayer()) return;
-    // 原盘会话：控制栏收着时「返回」只把它呼出来，开着时才真退出（回详情页）。
+    // 原盘会话：菜单阶段控制栏收着时「返回」只把它呼出来，开着时才真退出（回详情页）；
+    // 正片阶段「返回」回盘菜单，不退整个会话（全屏那一级在全屏路由里先退过了）。
     if (_discSessionShowBarOnBack()) return;
+    if (_discSessionReturnToMenuOnBack()) return;
     _exitVideoPage();
   }
 
@@ -12643,6 +12772,18 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 字幕抽取/解析当前是否在进行。状态显示在右侧半透明字幕源面板里，画面仍可见；
   /// 底层 ffmpeg/文件解析 Future 目前没有取消契约，关闭面板只是不再打断观看。
   bool _subtitleLoadingShown = false;
+
+  /// 本地视频内封文本轨正在后台读取完整字幕（整轨抽取，慢盘上一分钟以上）时的状态，
+  /// 主 / 副字幕各一份。它**不锁**字幕菜单（区别于 [_subtitleLoadingShown]）：抽取期间
+  /// 主字幕已由播放器解码顶着显示，用户可以随时取消读取、改选别的轨 / 关字幕 / 选外挂，
+  /// 见 `subtitle.part.dart` 的 [_EmbeddedTextFullLoad]。
+  _EmbeddedTextFullLoad? _primaryEmbeddedFullLoad;
+  _EmbeddedTextFullLoad? _secondaryEmbeddedFullLoad;
+
+  /// 主 / 副字幕「选择」的世代：每次用户选源（含关闭）+1。慢的内封抽取结束时世代变了
+  /// = 期间用户已经另选，结果作废、不覆盖新选择。
+  int _primarySubtitleSelectSeq = 0;
+  int _secondarySubtitleSelectSeq = 0;
 
   /// 正在把图形字幕轨整轨 OCR 成文字字幕（一次只跑一轨）。
   bool _graphicSubtitleOcrRunning = false;

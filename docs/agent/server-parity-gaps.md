@@ -22,6 +22,8 @@ checking parity. Hooks the server leaves null today:
 | `srsRemoteStoreProvider`, `onClientWrite`, `onClientUpload` | Remote review, host-side SRS sync, AnkiConnect and mining into review | Wired (`server_srs.dart`, spec `docs/specs/2026-11-05-server-srs-design.md`). Off until the admin picks which synced profiles to serve. See "SRS follow-ups" below. |
 | `videoRemoteService`, `gameStreamService` | Remote playback and game streaming are off | Not applicable: both need a display or a running game. |
 | `LocalLibraryHostService.onlineMangaReader` | Online-manga chapters that weren't downloaded aren't served | Not applicable: the server has no online-source runtime. |
+| `sourceShareHost` | `/api/interconnect/source-share*` answers 404: paired devices don't receive the server's user-configured servers or plugins | Not wired: the server has no OPDS / AList / Kavita / Subsonic / media-server lists or plugin hosts to share (spec `docs/specs/2026-11-16-interconnect-source-share.md`). |
+| `pluginRelayHost` | `/api/interconnect/plugin-relay*` answers 404 and `pluginRelay` is not declared: devices without a plugin runtime (iOS) can't use plugins through the server | Not wired: the server has no music plugin manager (spec `docs/specs/2026-11-16-interconnect-source-share.md` §5). |
 
 The other hooks are wired on both sides: pairing, peer tokens, `hostId`, public URLs, P2P,
 graphic-subtitle export, `videoSubtitleBackfill`, `leaderboardLinkHost` (owner devices
@@ -118,15 +120,18 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
     Conflict Center. Trusting a device in the app still does not reach the server's srs.db
     (trust is local per replica, by design).
   - RWKV scheduling runs on the server since 2026-11-11 (spec addendum), through the same
-    `srsAttachRwkv` as the app. Still open: the WebUI does not show the per-profile `rwkv` /
-    `rwkvError` status that `ServerSrsProfile.toJson` now reports, and there is no setting for
-    the native thread count (it uses all cores, like the app).
+    `srsAttachRwkv` as the app. The model size (Small sm98 / Tiny sm101) is chosen in the WebUI
+    ("RWKV model"), `PUT /api/admin/srs {rwkvModel}` or the undoable `server.srs.rwkv-model.set`
+    op; it writes the device file `<support>/srs_rwkv/model_size` and swaps the open profiles'
+    RWKV services on the spot (every config reconcile re-reads the file, so hand edits apply
+    too). The WebUI profile table shows each profile's `rwkv` / `rwkvError`. Still open: no
+    setting for the native thread count (it uses all cores, like the app).
   - The FSRS optimizer is not run on the server yet (spec §4.6). `SrsOptimizationScheduler`
     already lives in the engine; the server's collections pick up parameters optimized on
     other devices through the normal sync.
   - The server op catalog (`admin_ops.dart`) describes `server.srs.status`, `.profiles`,
-    `.devices` (read only), `.sync` (irreversible, user confirms), `.mining-target.set`, `.mining-deck.set` and
-    `.rollover-hour.set` (undoable). Left out on purpose: the AnkiConnect settings (keys are
+    `.devices` (read only), `.sync` (irreversible, user confirms), `.mining-target.set`, `.mining-deck.set`,
+    `.rollover-hour.set` and `.rwkv-model.set` (undoable). Left out on purpose: the AnkiConnect settings (keys are
     credentials, bind / port are listen settings; the status the AI sees is cut down to
     enabled / listening / last error), and choosing which profiles are served or the default
     one (spec §9: an owner decision, not something a paired device's AI session changes), and
@@ -199,3 +204,9 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
   recorded in `media_sources` with `mediaKind = 'audiobook'`. This value is server-only:
   it is not in the shared `SourceLibraryKind` enum, because adding it would touch every
   exhaustive switch in the app.
+- **AI library curator** (`docs/specs/2026-11-18-ai-library-curator-design.md` §14.2): the server
+  has no `ai.library_curate`. The curator runs every write through the op catalog, and the
+  server catalog (`admin_ops.dart` / `ServerAgentToolbox`) only has `server.*` ops: none of
+  `library.organize.run`, the scrape claims or `links.infer`. Link inference also depends on the
+  app-only snapshot loader in `fushi/lib/src/media/links/media_link_inference_host.dart`. Needed
+  first: an undoable server `library.organize.run` and a host hook for link inference.

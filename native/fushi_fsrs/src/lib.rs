@@ -43,6 +43,7 @@ pub mod search;
 pub mod store;
 pub mod style_dedup;
 pub mod sync2;
+pub mod text_import;
 
 /// 协议 4 的规范 ID 与别名规则；Dart 经 `ffsrs_call` 的 `ids` 向它要 ID（见模块说明）。
 pub mod gen4_ids;
@@ -279,6 +280,8 @@ fn dispatch(req: &Value) -> Result<Value, String> {
         })),
         // 根上的 ID 与同步目录名（gen4_ids/derive.rs）。
         "ids" => gen4_ids::derive::derive(req),
+        // 复习卡文本导入（CSV / TSV / TXT）的解析：一次读完整个文件（text_import.rs）。
+        "text_import_parse" => text_import::dispatch(req),
         "defaults" => {
             let algorithm = Algorithm::parse(str_field(req, "algorithm")?)?;
             Ok(json!({ "params": algorithm.defaults(), "count": algorithm.param_len() }))

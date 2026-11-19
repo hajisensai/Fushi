@@ -6,20 +6,20 @@
 //! - **ID**：行里、回包里都是规范 ID（缓存层按规范 ID 物化）。
 //! - **数字 id**（D24「数字句柄」）：对外给的是**规范 ID 的号**（`hash53("anki-id/" + 规范 ID)`，缓存行的 `anki_id`
 //!   列，按 `notes_anki` / `cards_anki` 索引点查）。按号查找时也认**别名类里成员的号**——换代前 AnkiConnect 客户端记下的
-//!   是带盐的原值 ID 的号，换代后照样查得到（[Members]：按号查不到缓存行时，把这个集合别名表里的成员逐个算号，一条命令
-//!   只算一次）。认不到的成员：从没在任何操作里出现过的带盐卡（从没复习、没改过的卡在协议 3 里有缓存行与号，新代里只有
-//!   规范卡，别名表里没有那个带盐 ID）——它的号查不到，回 null，同「查不到」。
+//!   是带盐的原值 ID 的号，换代后照样查得到（[resolve]：按号查不到缓存行时，按号点查缓存层的成员反查表
+//!   `anki_members`——别名类里出现过的成员，加上从没在任何操作里出现过的带盐卡：从没复习、没改过的卡在协议 3 里有
+//!   缓存行与号，新代的别名表里没有那个带盐 ID，反查表由笔记 × 模板的成员按卡的公式算出来，`cache.rs` 文件头「表」）。
 //! - **顺序**：`card_columns` 按卡 ID（协议 3 依查询计划）；`anki_notes_info` 每条笔记的可见卡按卡 ID（协议 3 依计划，
 //!   Dart 拿到后按模板序自己排），字段按规范修改键（`f/<字段>`）的序——协议 3 是修改记录的落库序；寄存器视图每个字段
 //!   只出一项，Dart（`SrsAnkiNoteInfo`）按字段 ID 建表，顺序没有语义。
 //!
 //! # 代价
 //!
-//! `card_columns` 一次顺序扫（同协议 3）。按号查：命中缓存行是一次索引点查（同协议 3 v13）；落空时多一次别名表成员的
-//! 顺序扫（`alias_canon` 部分索引，规范 ID 不是它自己的那些行）加逐个算 SHA-256——只在请求里有查不到的号时发生，一条
-//! 命令至多一次。`anki_notes_info` 每条笔记按类重判一次活着的修改（与缓存层物化同一份 `Index::note_info`）。
+//! `card_columns` 一次顺序扫（同协议 3）。按号查：命中缓存行是一次索引点查（同协议 3 v13）；落空时多一次
+//! `anki_members` 主键点查与一次缓存行点查，不扫表、不算哈希（号在物化时算好）。`anki_notes_info` 每条笔记按类重判一次
+//! 活着的修改（与缓存层物化同一份 `Index::note_info`）。
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use rusqlite::{OptionalExtension, params};
 use serde_json::{Value, json};
@@ -29,7 +29,7 @@ use crate::store::bulk::CARD_COLUMNS;
 use crate::store::gen4::derive::{Index, Ref};
 use crate::store::gen4::schema::sql;
 use crate::store::gen4::truth::Truth;
-use crate::store::schema::anki_numeric_id;
+use crate::sync2::op::EntKind;
 
 /// `card_columns {fields?, visibleOnly?}`：这个集合的卡片缓存行（含隐藏；`visibleOnly` 为真只要可见的）按列交回，列见
 /// `bulk::CARD_COLUMNS`（缺省全部）。按卡 ID 排。
@@ -83,36 +83,26 @@ impl Table {
             Table::Cards => "SELECT 1 FROM cards WHERE col = ?1 AND id = ?2",
         }
     }
+
+    /// `anki_members.kind`。
+    fn kind(self) -> EntKind {
+        match self {
+            Table::Notes => EntKind::Note,
+            Table::Cards => EntKind::Card,
+        }
+    }
 }
 
-/// 别名类成员的号 → 规范 ID（一个号撞上几个成员时取规范 ID 的 SQLite 序最小的）。按需建、一条命令建一次。
-#[derive(Default)]
-pub(super) struct Members(Option<HashMap<i64, Ref>>);
-
-impl Members {
-    fn get(&mut self, t: &Truth<'_>, col: i64, num: i64) -> Result<Option<Ref>, String> {
-        if self.0.is_none() {
-            let mut map: HashMap<i64, Ref> = HashMap::new();
-            let mut stmt = t
-                .conn()
-                .prepare_cached("SELECT id, canon FROM alias_ix WHERE col = ?1 AND canon != id")
-                .map_err(sql)?;
-            let mut rows = stmt.query([col]).map_err(sql)?;
-            while let Some(r) = rows.next().map_err(sql)? {
-                let (id, canon): (Ref, Ref) = (r.get(0).map_err(sql)?, r.get(1).map_err(sql)?);
-                let n = anki_numeric_id(&id.text());
-                let keep = match map.get(&n) {
-                    Some(had) => super::sql_order(&canon) < super::sql_order(had),
-                    None => true,
-                };
-                if keep {
-                    map.insert(n, canon);
-                }
-            }
-            self.0 = Some(map);
-        }
-        Ok(self.0.as_ref().and_then(|m| m.get(&num)).cloned())
-    }
+/// 成员的号 [num] 归到的规范 ID（`anki_members`；一个号撞上几个成员时取规范 ID 的 SQLite 序最小的：主键序的第一行）。
+fn member(t: &Truth<'_>, col: i64, table: Table, num: i64) -> Result<Option<Ref>, String> {
+    t.conn()
+        .prepare_cached(
+            "SELECT canon FROM anki_members WHERE col = ?1 AND kind = ?2 AND num = ?3 ORDER BY canon LIMIT 1",
+        )
+        .map_err(sql)?
+        .query_row(params![col, table.kind() as i64, num], |r| r.get(0))
+        .optional()
+        .map_err(sql)
 }
 
 /// 数字 id [num] 在 [table] 里的行（规范 ID）：先按规范 ID 的号点查，查不到再认成员的号（文件头「数字 id」）。
@@ -120,7 +110,6 @@ pub(super) fn resolve(
     t: &Truth<'_>,
     col: i64,
     table: Table,
-    members: &mut Members,
     num: i64,
 ) -> Result<Option<Ref>, String> {
     let hit: Option<Ref> = t
@@ -132,7 +121,7 @@ pub(super) fn resolve(
     if hit.is_some() {
         return Ok(hit);
     }
-    let Some(canon) = members.get(t, col, num)? else {
+    let Some(canon) = member(t, col, table, num)? else {
         return Ok(None);
     };
     let has = t
@@ -149,7 +138,6 @@ pub(super) fn resolve(
 /// `anki_resolve {notes?, cards?}`：AnkiConnect 数字 id → 规范 ID（两组，与请求等长，查不到 = null）。
 pub fn anki_resolve(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String> {
     snapshot(t, |t| {
-        let mut members = Members::default();
         let mut out = serde_json::Map::new();
         for (key, table) in [("notes", Table::Notes), ("cards", Table::Cards)] {
             let Some(xs) = req.get(key).and_then(Value::as_array) else {
@@ -158,7 +146,7 @@ pub fn anki_resolve(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, Strin
             let mut ids = Vec::with_capacity(xs.len());
             for x in xs {
                 let id = match x.as_i64() {
-                    Some(n) => resolve(t, col, table, &mut members, n)?,
+                    Some(n) => resolve(t, col, table, n)?,
                     None => None,
                 };
                 ids.push(id.map_or(Value::Null, |r| Value::String(r.text())));
@@ -179,13 +167,12 @@ pub fn anki_notes_info(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, St
             .and_then(Value::as_array)
             .map(|a| a.iter().map(Value::as_i64).collect())
             .unwrap_or_default();
-        let mut members = Members::default();
         let mut ix = Index::new(t, col);
         let mut infos: BTreeMap<Ref, Value> = BTreeMap::new();
         let mut out = Vec::with_capacity(nums.len());
         for n in nums {
             let Some(id) = (match n {
-                Some(n) => resolve(t, col, Table::Notes, &mut members, n)?,
+                Some(n) => resolve(t, col, Table::Notes, n)?,
                 None => None,
             }) else {
                 out.push(Value::Null);

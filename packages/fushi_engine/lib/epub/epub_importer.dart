@@ -19,14 +19,26 @@ import 'package:meta/meta.dart';
 class EpubImporter {
   EpubImporter._();
 
-  static int _tempSeq = 0;
-
   /// 解包临时目录名（BUG-3337）。只用毫秒戳时，同一毫秒起跑的两次导入（同时
   /// 下载多本对端书、几本几乎同时落地）会解进**同一个** `.tmp-<ms>`，互相覆盖
-  /// 解包内容再各自搬走。进程内单调序号保证并发导入各占一个目录。
+  /// 解包内容再各自搬走。进程内单调序号保证并发导入各占一个目录。实现在
+  /// [EpubStorage.nextStagingDirName]（漫画导入共用同一个序号）。
   @visibleForTesting
-  static String nextTempDirName() =>
-      '.tmp-${DateTime.now().millisecondsSinceEpoch}-${_tempSeq++}';
+  static String nextTempDirName() => EpubStorage.nextStagingDirName();
+
+  /// 建本次导入独占的暂存目录（书库根下的 `.tmp-*`）。先等「上个进程的导入残留」
+  /// 清扫跑完（每进程一次，BUG-4841）再建。
+  ///
+  /// 公开给漫画导入（`MangaImporter` / `MangaArchiveImporter`）共用：所有「往书库根
+  /// 落一本书」的入口走同一种暂存 + 同一把落位锁。
+  static Future<String> createStagingDir(FushiDatabase db) async {
+    await EpubStorage.ensureImportResidueSwept(
+      () async => <String>[
+        for (final EpubBookMeta b in await db.getEpubBookMetas()) b.extractDir,
+      ],
+    );
+    return EpubStorage.createStagingDirectory();
+  }
 
   /// Import an EPUB file into the database.
   ///
@@ -39,11 +51,19 @@ class EpubImporter {
     required String fileName,
     DuplicatePolicy policy = const DuplicatePolicy.suffix(),
   }) async {
-    final String tempDir = await EpubStorage.bookDirectory(nextTempDirName());
+    final String tempDir = await createStagingDir(db);
 
-    final _ParseResult result = await Isolate.run(
-      () => _parseInIsolate(_ParseArgs(bytes: bytes, extractDir: tempDir)),
-    );
+    // 解析失败（坏包、OPF 解析不出、字数统计抛出）时 [_persistParsed] 根本没被调到，
+    // 它的清理也就轮不到：暂存目录必须在这里自己收（BUG-4841）。
+    final _ParseResult result;
+    try {
+      result = await Isolate.run(
+        () => _parseInIsolate(_ParseArgs(bytes: bytes, extractDir: tempDir)),
+      );
+    } catch (_) {
+      _tryDeleteDir(tempDir);
+      rethrow;
+    }
     return _persistParsed(
       db: db,
       result: result,
@@ -79,13 +99,20 @@ class EpubImporter {
     DuplicatePolicy policy = const DuplicatePolicy.suffix(),
     int? sourceId,
   }) async {
-    final String tempDir = await EpubStorage.bookDirectory(nextTempDirName());
+    final String tempDir = await createStagingDir(db);
 
-    final _ParseResult result = await Isolate.run(
-      () => _parseFromPathInIsolate(
-        _ParseArgsFromPath(filePath: filePath, extractDir: tempDir),
-      ),
-    );
+    // 同 [import]：解析失败时暂存目录在这里收（BUG-4841）。
+    final _ParseResult result;
+    try {
+      result = await Isolate.run(
+        () => _parseFromPathInIsolate(
+          _ParseArgsFromPath(filePath: filePath, extractDir: tempDir),
+        ),
+      );
+    } catch (_) {
+      _tryDeleteDir(tempDir);
+      rethrow;
+    }
     return _persistParsed(
       db: db,
       result: result,
@@ -124,63 +151,75 @@ class EpubImporter {
           ? p.basenameWithoutExtension(fileName)
           : book.title;
 
-      // 瘦投影：重复检查只要 title（+ 下面的 extractDir），不拉整库章节 JSON。
-      final List<EpubBookMeta> existingBooks = await db.getEpubBookMetas();
-      final String storedTitle = await resolveDuplicateTitle(
-        existingTitles: existingBooks.map((EpubBookMeta b) => b.title).toList(),
+      // 书名定夺 + 落位 + 插行走 [placeUnderResolvedTitle]：同名询问在锁外，
+      // 「重取快照 → 挪目录 → 插行」在落位锁内一次做完（BUG-4837）。
+      final ({String storedTitle, String bookKey, int importedAtMs})
+      placed = await placeUnderResolvedTitle(
+        db: db,
         proposedTitle: resolvedTitle,
         policy: policy,
+        place:
+            (
+              String storedTitle,
+              String bookKey,
+              List<EpubBookMeta> liveBooks,
+            ) async {
+              // Move the freshly-extracted temp dir to the key-named
+              // directory.
+              //
+              // BUG-564: the target dir may already exist on disk even
+              // though no live row owns the key: a crashed import or a
+              // failed post-delete disk cleanup leaves an orphan dir, and
+              // Linux rename(2) onto a non-empty target throws ENOTEMPTY
+              // (errno 39) -- e.g. re-downloading a remote book whose
+              // previous copy left a stale folder. Resolved by
+              // [EpubStorage.moveDirIntoPlace] (atomic replace with .bak
+              // rollback; directories owned by a live row are never
+              // touched).
+              final String realDir = await EpubStorage.bookPath(bookKey);
+              final Directory srcDir = Directory(tempDir);
+              if (realDir == tempDir) {
+                // Already in place (the key equals the staging name).
+              } else if (srcDir.existsSync()) {
+                try {
+                  extractDir = EpubStorage.moveDirIntoPlace(
+                    srcDir: srcDir,
+                    targetDir: realDir,
+                    liveExtractDirs: liveBooks.map(
+                      (EpubBookMeta b) => b.extractDir,
+                    ),
+                  );
+                } catch (e) {
+                  engineLog.log('EpubImporter.rename', e, StackTrace.current);
+                  rethrow;
+                }
+              } else {
+                extractDir = realDir;
+              }
+
+              final int importedAtMs = DateTime.now().millisecondsSinceEpoch;
+              insertedKey = await db.insertEpubBook(
+                bookRowFor(
+                  book: book,
+                  characterCounts: characterCounts,
+                  bookKey: bookKey,
+                  title: storedTitle,
+                  epubPath: fileName,
+                  extractDir: extractDir,
+                  importedAt: importedAtMs,
+                  sourceId: sourceId,
+                ),
+              );
+              return (
+                storedTitle: storedTitle,
+                bookKey: bookKey,
+                importedAtMs: importedAtMs,
+              );
+            },
       );
-
-      // bookKey is the EpubBooks primary key (= sanitized stored title). It is
-      // unique by construction (resolveDuplicateTitle guarantees no two
-      // local books share a sanitized key).
-      final String bookKey = sanitizeTtuFilename(storedTitle);
-
-      // Move the freshly-extracted temp dir to the key-named directory.
-      //
-      // BUG-564: the target dir may already exist on disk even though no live
-      // row owns the key (resolveDuplicateTitle guarantees key uniqueness
-      // against live rows): a crashed import or a failed post-delete disk
-      // cleanup leaves an orphan dir, and Linux rename(2) onto a non-empty
-      // target throws ENOTEMPTY (errno 39) -- e.g. re-downloading a remote
-      // book whose previous copy left a stale folder. Resolved by
-      // [moveExtractedDirIntoPlace] (atomic replace with .bak rollback;
-      // directories owned by a live row are never touched).
-      final String realDir = await EpubStorage.bookPath(bookKey);
-      if (realDir != tempDir) {
-        final Directory srcDir = Directory(tempDir);
-        if (srcDir.existsSync()) {
-          try {
-            extractDir = moveExtractedDirIntoPlace(
-              srcDir: srcDir,
-              targetDir: realDir,
-              liveExtractDirs: existingBooks.map(
-                (EpubBookMeta b) => b.extractDir,
-              ),
-            );
-          } catch (e) {
-            engineLog.log('EpubImporter.rename', e, StackTrace.current);
-            rethrow;
-          }
-        } else {
-          extractDir = realDir;
-        }
-      }
-
-      final int importedAtMs = DateTime.now().millisecondsSinceEpoch;
-      insertedKey = await db.insertEpubBook(
-        bookRowFor(
-          book: book,
-          characterCounts: characterCounts,
-          bookKey: bookKey,
-          title: storedTitle,
-          epubPath: fileName,
-          extractDir: extractDir,
-          importedAt: importedAtMs,
-          sourceId: sourceId,
-        ),
-      );
+      final String storedTitle = placed.storedTitle;
+      final String bookKey = placed.bookKey;
+      final int importedAtMs = placed.importedAtMs;
 
       // v49：导入一本书写一条「added」活动事件，喂首页 Activity 时间轴。放用户导入
       // 管线（本方法），云同步/备份 MERGE 直接插行不经此路 → 不刷屏。best-effort，
@@ -200,11 +239,12 @@ class EpubImporter {
         engineLog.log('EpubImporter.addActivityEvent', e, StackTrace.current);
       }
 
-      return insertedKey;
+      return bookKey;
     } catch (e) {
-      if (insertedKey != null) {
+      final String? inserted = insertedKey;
+      if (inserted != null) {
         try {
-          await db.deleteEpubBook(insertedKey);
+          await db.deleteEpubBook(inserted);
         } catch (e, stack) {
           engineLog.log('EpubImporter.rollbackDelete', e, stack);
         }
@@ -212,6 +252,58 @@ class EpubImporter {
       _tryDeleteDir(extractDir);
       _tryDeleteDir(tempDir);
       rethrow;
+    }
+  }
+
+  /// 「定书名 → 落位 → 插行」的**唯一**编排，EPUB 与漫画导入共用（BUG-4837 /
+  /// BUG-4840）。
+  ///
+  /// 1. 锁外：取书库快照，按 [policy] 解决同名（[DuplicatePolicy.ask] 会停在用户
+  ///    对话框上，所以这一步绝不能持锁）；随后跑一次 [stage]（调用方把内容备进自己
+  ///    的暂存目录，要求幂等——极少数情况下会被再调一次）。
+  /// 2. 持 [EpubStorage.withBookPlacementLock]：**重取**快照；定下的书名键若在这
+  ///    期间被别的导入占了，放锁回到第 1 步按同一 [policy] 重新定夺（跳过 / 再问 /
+  ///    再加后缀）；没被占就调 [place]，由它「挪目录 → 插行」。[place] 拿到的
+  ///    `liveBooks` 是锁内的新快照，目录归属只能按它判。
+  ///
+  /// 判「被占」与 [resolveDuplicateTitle] 用同一口径（净化后的标题），所以回到第 1 步
+  /// 必然得到一个不同的结论，不会原地打转。
+  static Future<T> placeUnderResolvedTitle<T>({
+    required FushiDatabase db,
+    required String proposedTitle,
+    required DuplicatePolicy policy,
+    required Future<T> Function(
+      String storedTitle,
+      String bookKey,
+      List<EpubBookMeta> liveBooks,
+    )
+    place,
+    Future<void> Function()? stage,
+  }) async {
+    while (true) {
+      // 瘦投影：重复检查只要 title（+ 落位时的 extractDir），不拉整库章节 JSON。
+      final List<EpubBookMeta> existingBooks = await db.getEpubBookMetas();
+      final String storedTitle = await resolveDuplicateTitle(
+        existingTitles: existingBooks.map((EpubBookMeta b) => b.title).toList(),
+        proposedTitle: proposedTitle,
+        policy: policy,
+      );
+      // bookKey is the EpubBooks primary key (= sanitized stored title). It is
+      // unique by construction (resolveDuplicateTitle guarantees no two local
+      // books share a sanitized key).
+      final String bookKey = sanitizeTtuFilename(storedTitle);
+      await stage?.call();
+      final ({T value})? placed = await EpubStorage.withBookPlacementLock(
+        () async {
+          final List<EpubBookMeta> liveBooks = await db.getEpubBookMetas();
+          final bool taken = liveBooks.any(
+            (EpubBookMeta b) => sanitizeTtuFilename(b.title) == bookKey,
+          );
+          if (taken) return null;
+          return (value: await place(storedTitle, bookKey, liveBooks));
+        },
+      );
+      if (placed != null) return placed.value;
     }
   }
 
@@ -287,22 +379,31 @@ class EpubImporter {
     required String title,
     required String extractDir,
   }) async {
-    final _ParseResult result = await Isolate.run(
-      () => _reparseExtractedInIsolate(extractDir),
-    );
-    return db.insertEpubBook(
-      bookRowFor(
-        book: result.book,
-        characterCounts: result.characterCounts,
-        bookKey: bookKey,
-        title: title,
-        // 原导入文件名已不可知；这一列对 EPUB 只作展示 / 导出文件名用。
-        epubPath: '${p.basename(extractDir)}.epub',
-        extractDir: extractDir,
-        importedAt: DateTime.now().millisecondsSinceEpoch,
+    final _ParseResult result = await _reparseExtracted(extractDir);
+    // 插行持落位锁：导入在锁内按快照判「这个目录有没有活行」，登记若在它的快照与
+    // 挪目录之间插进来，导入会把刚登记的书目录当无主的换掉（BUG-4837）。
+    return EpubStorage.withBookPlacementLock(
+      () => db.insertEpubBook(
+        bookRowFor(
+          book: result.book,
+          characterCounts: result.characterCounts,
+          bookKey: bookKey,
+          title: title,
+          // 原导入文件名已不可知；这一列对 EPUB 只作展示 / 导出文件名用。
+          epubPath: '${p.basename(extractDir)}.epub',
+          extractDir: extractDir,
+          importedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
       ),
     );
   }
+
+  /// 在 isolate 里重新解析已解压的书目录。单独成一个只收 [extractDir] 的函数，是
+  /// 为了让送进 isolate 的闭包只捕获这一个字符串：调用方函数里只要还有别的闭包捕获
+  /// 了库句柄（[registerExtractedBook] 持锁插行的那个），同一函数里的 `Isolate.run`
+  /// 闭包就会连带把它带进消息，直接报 unsendable。
+  static Future<_ParseResult> _reparseExtracted(String extractDir) =>
+      Isolate.run(() => _reparseExtractedInIsolate(extractDir));
 
   /// 只读解析已解压 EPUB 目录的标题（OPF `dc:title`），在 isolate 里跑。孤儿目录
   /// 扫描用它判断「纯数字 / `~n` 后缀」这类可疑目录名是不是真的 bookKey。
@@ -353,7 +454,8 @@ class EpubImporter {
     required String epubFilePath,
     required String extractDir,
   }) async {
-    final String tempDir = await EpubStorage.bookDirectory(nextTempDirName());
+    // 这里没有库句柄，不触发残留清扫；本进程建的暂存目录清扫认得出、不会碰。
+    final String tempDir = await EpubStorage.createStagingDirectory();
     try {
       final _ParseResult result = await Isolate.run(
         () => _parseFromPathInIsolate(
@@ -367,11 +469,14 @@ class EpubImporter {
       );
       // liveExtractDirs 传空 = 允许覆盖目标目录：这里的目标正是本书自己的解压树，
       // 覆盖它就是本方法的全部意图（导入路径传 live 列表是为了不撞**别的**书）。
-      moveExtractedDirIntoPlace(
-        srcDir: Directory(tempDir),
-        targetDir: extractDir,
-        liveExtractDirs: const <String>[],
-      );
+      // 持落位锁：与并发导入的「判归属 → 挪目录」串行。
+      await EpubStorage.withBookPlacementLock(() async {
+        EpubStorage.moveDirIntoPlace(
+          srcDir: Directory(tempDir),
+          targetDir: extractDir,
+          liveExtractDirs: const <String>[],
+        );
+      });
       return (
         chapterCount: result.book.chapters.length,
         chaptersJson: chaptersJson,
@@ -392,9 +497,7 @@ class EpubImporter {
   /// 放 isolate（与导入同款 [compute]），不卡 UI。
   static Future<({int chapterCount, String chaptersJson, String? coverPath})>
   reparseExtractedBook(String extractDir) async {
-    final _ParseResult result = await Isolate.run(
-      () => _reparseExtractedInIsolate(extractDir),
-    );
+    final _ParseResult result = await _reparseExtracted(extractDir);
     return (
       chapterCount: result.book.chapters.length,
       chaptersJson: buildChaptersJson(result.book, result.characterCounts),
@@ -402,138 +505,20 @@ class EpubImporter {
     );
   }
 
-  /// Move the freshly-extracted [srcDir] to [targetDir]; returns the
-  /// directory that finally holds the content (stored as `extract_dir`).
-  ///
-  /// [targetDir] may already exist on disk (BUG-564). Semantics:
-  /// - target missing -> move [srcDir] into place (the normal path);
-  /// - target listed in [liveExtractDirs] (some live book's `extract_dir`
-  ///   points at it -- the column, not the folder name, is the truth for
-  ///   existing books) -> never touch it; the new book moves to a unique
-  ///   sibling `<targetDir>~<n>` instead;
-  /// - target exists but is unowned (leftover of a crashed import / a failed
-  ///   post-delete disk cleanup) -> atomic replace: rename it aside to a
-  ///   `.bak-<ts>` sibling, move [srcDir] into place, then delete the .bak.
-  ///   If the move fails the .bak is renamed back (rollback), so the previous
-  ///   content is never lost mid-way. Never delete-then-rename directly: a
-  ///   crash in between would lose both copies.
-  ///
-  /// TODO-1286: every `.tmp-<ts>` -> destination move goes through
-  /// [_moveDirInto], which falls back to a recursive copy+delete when the
-  /// platform rejects `rename(2)`. Android's app-storage layer (fuse/sdcardfs
-  /// and custom data roots on removable volumes) can reject a directory rename
-  /// even for a vacated same-parent sibling (`FileSystemException: Rename
-  /// failed, path = '.../fushi_books/.tmp-<ts>'`); a bare `renameSync` there
-  /// aborts the whole remote-book download, so the audiobook never downloads
-  /// and the shelf/sync marker never updates. Copy+delete is the portable move
-  /// primitive and cannot fail with ENOTEMPTY/ENOTDIR/EXDEV the way rename can.
+  /// 书目录落位。实现已提到 [EpubStorage.moveDirIntoPlace]（漫画导入共用同一个
+  /// 落位原语，BUG-4840），语义见那里；这里保留原名给既有调用方与测试。
   @visibleForTesting
   static String moveExtractedDirIntoPlace({
     required Directory srcDir,
     required String targetDir,
     required Iterable<String> liveExtractDirs,
     bool forceCopyFallback = false,
-  }) {
-    final Directory target = Directory(targetDir);
-    if (!target.existsSync()) {
-      _moveDirInto(srcDir, targetDir, forceCopy: forceCopyFallback);
-      return targetDir;
-    }
-
-    final String canonicalTarget = p.canonicalize(targetDir);
-    final bool owned = liveExtractDirs.any(
-      (String dir) => dir.isNotEmpty && p.canonicalize(dir) == canonicalTarget,
-    );
-    if (owned) {
-      for (int i = 2; ; i++) {
-        final String alt = '$targetDir~$i';
-        if (!Directory(alt).existsSync()) {
-          _moveDirInto(srcDir, alt, forceCopy: forceCopyFallback);
-          return alt;
-        }
-      }
-    }
-
-    final String bak =
-        '$targetDir.bak-${DateTime.now().millisecondsSinceEpoch}';
-    target.renameSync(bak);
-    try {
-      _moveDirInto(srcDir, targetDir, forceCopy: forceCopyFallback);
-    } catch (_) {
-      // [_moveDirInto] cleans up any partial destination on failure, so the
-      // target path is clean here and the .bak restore lands on empty ground.
-      try {
-        Directory(bak).renameSync(targetDir);
-      } catch (rollbackError, stack) {
-        engineLog.log('EpubImporter.replaceRollback', rollbackError, stack);
-      }
-      rethrow;
-    }
-    try {
-      Directory(bak).deleteSync(recursive: true);
-    } catch (e, stack) {
-      // A leftover .bak dir is inert (never a future rename target); log it.
-      engineLog.log('EpubImporter.deleteBak', e, stack);
-    }
-    return targetDir;
-  }
-
-  /// Move [src] to [dest] (which MUST NOT exist). Tries `rename(2)` first and,
-  /// when the platform rejects it (`FileSystemException`), falls back to a
-  /// recursive copy + delete of the source. On a mid-copy failure the partial
-  /// [dest] is removed so callers can safely roll back onto a clean path.
-  ///
-  /// [forceCopy] is a test seam: when true the rename attempt is skipped and
-  /// the copy+delete branch is exercised deterministically (real `rename(2)`
-  /// failures are not portably reproducible in unit tests).
-  static void _moveDirInto(
-    Directory src,
-    String dest, {
-    bool forceCopy = false,
-  }) {
-    if (!forceCopy) {
-      try {
-        src.renameSync(dest);
-        return;
-      } on FileSystemException catch (e) {
-        // Rename rejected (Android fuse/sdcardfs, custom data root on another
-        // volume, or a residual target): fall through to copy+delete.
-        engineLog.log(
-          'EpubImporter.moveDirCopyFallback',
-          e,
-          StackTrace.current,
-        );
-      }
-    }
-    final Directory destDir = Directory(dest);
-    try {
-      _copyDirSync(src, destDir);
-      src.deleteSync(recursive: true);
-    } catch (_) {
-      // Remove the partially-copied destination so callers see a clean path.
-      try {
-        if (destDir.existsSync()) destDir.deleteSync(recursive: true);
-      } catch (cleanupError, stack) {
-        engineLog.log('EpubImporter.moveDirCleanup', cleanupError, stack);
-      }
-      rethrow;
-    }
-  }
-
-  /// Recursively copy the contents of [src] into [dest] (created if missing).
-  /// EPUB extraction produces only regular files and directories; any other
-  /// entity type (e.g. a symlink) is skipped rather than followed.
-  static void _copyDirSync(Directory src, Directory dest) {
-    dest.createSync(recursive: true);
-    for (final FileSystemEntity entity in src.listSync(followLinks: false)) {
-      final String destPath = p.join(dest.path, p.basename(entity.path));
-      if (entity is Directory) {
-        _copyDirSync(entity, Directory(destPath));
-      } else if (entity is File) {
-        entity.copySync(destPath);
-      }
-    }
-  }
+  }) => EpubStorage.moveDirIntoPlace(
+    srcDir: srcDir,
+    targetDir: targetDir,
+    liveExtractDirs: liveExtractDirs,
+    forceCopyFallback: forceCopyFallback,
+  );
 
   static void _tryDeleteDir(String path) {
     final Directory dir = Directory(path);

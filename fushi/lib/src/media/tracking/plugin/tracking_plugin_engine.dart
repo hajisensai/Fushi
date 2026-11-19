@@ -65,6 +65,12 @@ abstract interface class TrackingPluginEngine {
   Future<void> clearCredentials(String rootDir, String pluginId);
 }
 
+/// The installed plugin directory [dir] packed back into a `.fushiplug`
+/// (interconnect source share): only the package files, never storage,
+/// credentials or account state. Null when [dir] holds no package.
+Future<Uint8List?> packTrackingPluginDirectory(Directory dir) =>
+    packInstalledPluginDirectory(dir);
+
 /// A running plugin.
 abstract interface class TrackingPluginRuntime {
   TrackingPluginInfo get info;

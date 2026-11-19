@@ -38,7 +38,7 @@ fushi_server/
 
 解压到任意目录即可（例 `/opt/fushi_server`）。**目标机运行期依赖**：
 
-- Linux：glibc ≥ 2.35（Debian 12 / Ubuntu 22.04 及以后）。内置 torrent 引擎与 onnxruntime 都随包、静态，不用装 `libtorrent-rasterbar` / `libssl`。
+- Linux：glibc ≥ 2.35（Debian 12 / Ubuntu 22.04 及以后）。内置 torrent 引擎与 onnxruntime 都随包、静态，不用装 `libtorrent-rasterbar` / `libssl`。CI 产物（`build-multiplatform.yml`）与正式发布包（`release-server.yml`）都在 ubuntu-22.04 上编，出包前 `.github/scripts/check_glibc_baseline.sh` 对 bundle 里每个 ELF 跑 `objdump -T`，要求的 GLIBC_ 版本超过这里写的基线就判红（基线数字只在该脚本与本句两处，改一处必须改另一处）。
 - `ffmpeg` / `ffprobe`：视频封面抽帧、ASR 音轨解码、下载后转封装。不在 PATH 时在配置里写 `ffmpeg:` / `ffprobe:` 路径（直接生效，不需要环境变量；`FUSHI_FFMPEG` 仍认，配置优先）。
 - 局域网自动发现（可选）：`avahi-utils`（有 `avahi-publish` 就广播 `_fushi-sync._tcp`；没有也能手输地址配对）。
 
@@ -602,12 +602,14 @@ Anki 不可达 / 开了「批量制卡」的卡进待发队列，同步时经互
 - **RWKV 调度**：算法是 RWKV 的牌组在服务端与在 app 上同一个出卡口径（按 RWKV 回忆率出卡），用随包的
   `libfushi_rwkv`（`FUSHI_RWKV_LIB` → `bin/../lib/`）。第一次用到时下载权重（436 KB，走全局代理设置）到
   `<data>/support/srs_rwkv/models/`；不能出网的机器把 `sm98_weights.int8.bin` 手动放进这个目录即可（校验通过
-  就用）。状态快照在 `<data>/support/srs_rwkv/state/`。模型档位与 app 同一个设置文件
-  `<data>/support/srs_rwkv/model_size`：内容写 `tiny` 改用省内存的 Tiny 模型 sm101（权重 `sm101_weights.int8.bin`，
-  409 KB；每卡状态约小 30%，准确度略差；快照在 `state-tiny/`），缺省或其他内容是默认的 Small（sm98）；改完重启
-  服务端生效，首次会下载权重并全量重放一次。**RWKV 没准备好（权重没下到 / 正在回放历史 / 出错）时这些
-  牌组不出复习卡**，远程复习页显示「准备中」或错误与「重试」，不会退回按 FSRS 的到期日出卡；各份配置文件的状态
-  里有 `rwkv` 一项。`libfushi_rwkv` 是 AGPL-3.0-or-later：对外提供服务且改过这个库的运营者要向用户提供改动后的
+  就用）。状态快照在 `<data>/support/srs_rwkv/state/`。**模型档位**在 WebUI「复习 → RWKV 模型」里选
+  （也可 `PUT /api/admin/srs {"rwkvModel":"tiny"}` 或 `fushi-server ctl srs config '{"rwkvModel":"tiny"}'`）：
+  Tiny 是省内存的 sm101（权重 `sm101_weights.int8.bin`，409 KB；每卡状态约小 30%，准确度略差；快照在
+  `state-tiny/`），默认是 Small（sm98）。选了当场生效，不用重启：首次会下载新权重，没有该档快照时全量重放一次。
+  档位存在整台设备的设置文件 `<data>/support/srs_rwkv/model_size`（与 app 同一个文件、同一套读法），手改这个文件
+  也会在下一次对齐配置（改任何复习配置，或兜底定时器）时生效。**RWKV 没准备好（权重没下到 / 正在回放历史 /
+  出错）时这些牌组不出复习卡**，远程复习页显示「准备中」或错误与「重试」，不会退回按 FSRS 的到期日出卡；WebUI
+  的配置文件状态与 admin API 各份配置文件的状态里有 `rwkv` 一项。`libfushi_rwkv` 是 AGPL-3.0-or-later：对外提供服务且改过这个库的运营者要向用户提供改动后的
   源码（未改动的源码就在本仓库）。
 - 数据在 `<data>/support/srs.db` 与 `<data>/support/srs_media/<uid>/`，整机备份会带上 `srs.db` 的一致快照。
 - **限制（v1）：同步位置开了端到端加密的配置文件不支持。** 这份配置文件显示「同步位置已加密」，服务端不同步它、
@@ -625,7 +627,7 @@ DB 的 `dictionary_history` / `search_history_items`）。`/api/capabilities` �
   Linux 自编：`CC=gcc-14 CXX=g++-14 bash native/fushidicts/build_linux_so.sh`，产物
   `native/fushidicts/prebuilt/linux-x64/libfushidicts_ffi.so`（静态链 libstdc++，只动态依赖 glibc；需要支持
   `std::ranges::to` 的编译器，即 GCC 14+，GCC 13 编不过）。CI 的 `build-multiplatform.yml` linux-server 产物与正式发布包
-  （`release-server.yml`，ubuntu-22.04，GCC 14 PPA 编译并断言 glibc ≤ 2.35）都已随包这份 .so 与变形表；
+  （`release-server.yml`）都在 ubuntu-22.04 上用 GCC 14 PPA 编译、出包前统一核 glibc 基线，都已随包这份 .so 与变形表；
   Windows 发布包随包 MSVC 编的 `lib/fushidicts_ffi.dll` 与同一份变形表（自编：`cmake -S native/fushidicts -B <短路径>
   -G "Visual Studio 17 2022" -A x64` 后 `cmake --build <短路径> --config Release --target fushidicts_ffi`）。
 - 去屈折变形表：`FUSHI_TRANSFORMS_DIR` → `bin/../share/fushi/transforms/` → `bin/transforms/`（目录里要有
@@ -648,7 +650,7 @@ helper，或者提供了复习库时接线：落到上面「Anki 落地」的同
 
 随包的是 CPU 版 onnxruntime。要 NVIDIA 加速：
 
-1. 从 [onnxruntime releases](https://github.com/microsoft/onnxruntime/releases) 下 `onnxruntime-linux-x64-gpu-1.22.0.tgz`（版本必须 ≥ 1.22，asr_onnx_ffi 要 API 22），解压到例如 `/opt/ort-gpu`。
+1. 从 NuGet 下官方 GPU 包 [`Microsoft.ML.OnnxRuntime.Gpu.Linux` 1.22.0](https://www.nuget.org/packages/Microsoft.ML.OnnxRuntime.Gpu.Linux/1.22.0)（版本必须 ≥ 1.22，asr_onnx_ffi 要 API 22；`github.com/microsoft/onnxruntime` 的 release 自 2026-11-17 起 404），nupkg 就是 zip，把 `runtimes/linux-x64/native/` 下的 `.so` 全部解压到例如 `/opt/ort-gpu/lib`。
 2. 装匹配的 CUDA 12.x + cuDNN 9，确保 `libcudart`、`libcudnn` 在 `LD_LIBRARY_PATH`（GPU 包里的 `libonnxruntime_providers_cuda.so` 要能被 dlopen）。
 3. 配置 `onnxruntime_library: "/opt/ort-gpu/lib/libonnxruntime.so"`，重启。`fushi_server models status` 的 provider 列会显示 `cuda`；探测失败自动退回 CPU（日志里有原因）。
 

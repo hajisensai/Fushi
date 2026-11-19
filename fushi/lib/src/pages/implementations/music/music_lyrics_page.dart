@@ -68,6 +68,7 @@ import 'package:fushi/src/media/playback_route_marks.dart';
 import 'package:fushi/src/media/shared/lyrics_shell/lyrics_shell_layout.dart';
 import 'package:fushi/src/mining/immersion_mining_engine.dart'
     show RemoteAudioMaterializer;
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
     show rethemeFushiWithScheme;
 import 'package:fushi/src/pages/base_source_page.dart';
@@ -680,6 +681,11 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     _releaseLookupPause(resume: resume);
   }
 
+  /// 制卡后「关闭弹窗、不续播」（拍板台 8ldy3d8XFA）：撤掉查词暂停标记，随后的
+  /// [clearDictionaryResult] 就不续播。
+  @override
+  void dropLookupPauseMark() => _releaseLookupPause(resume: false);
+
   void _releaseLookupPause({required bool resume}) {
     if (!_pausedForLookup) return;
     _pausedForLookup = false;
@@ -690,6 +696,11 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
 
   @override
   String get dictionarySourceType => kStatSourceMusic;
+
+  /// 「制卡后行为」听音乐那一行（拍板台 8ldy3d8XFA）。音乐不在「底部停靠」的细分
+  /// 模块里，停靠照旧只听总开关。
+  @override
+  ModuleId? get lookupHostModule => ModuleId.music;
 
   @override
   ({String? bookKey, String? title})? get lookupBookIdentity {
@@ -2398,6 +2409,9 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       isSeekPointer: (int buttons) =>
           isMusicLyricsSeekPointer(appModel.shortcutRegistry, buttons),
       cursor: _lookupCursor,
+      appearance: KaraokeLyricsAppearance(
+        blurInactive: appModel.musicLyricsBlurInactive,
+      ),
     );
     // 字幕组特效 ASS：结构化会丢特效，提示去卡拉 OK 字幕页原样渲染（§6.3）。
     return Column(

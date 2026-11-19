@@ -34,6 +34,9 @@ public final class ChannelNames {
     // 系统画中画（PiP）：视频页把 Activity 缩成系统小窗。只有 Android 有原生侧，
     // 其余平台上 Dart 门面恒答「不支持」。实现见 PictureInPictureChannelHandler。
     public static final String PICTURE_IN_PICTURE = PREFIX + "/picture_in_picture";
+    // 墨水屏全刷：反射探测厂商 EPD 控制器（Onyx / 瑞芯微 / NTX）请求一次全刷。
+    // 实现见 EinkRefreshChannel，Dart 门面 android_eink_refresh.dart。
+    public static final String EINK_REFRESH = PREFIX + "/eink_refresh";
     // 互联下载保活：下载进行期间挂 dataSync 前台服务 + 进度通知，防止切走后进程被杀。
     // 实现见 DownloadKeepAliveService，Dart 门面 android_download_keep_alive.dart。
     public static final String DOWNLOAD_KEEP_ALIVE = PREFIX + "/download_keep_alive";
@@ -61,6 +64,9 @@ public final class ChannelNames {
     // 反馈回复后台检查（反馈 yjn-3h8B-7）：主引擎上排 / 撤纯原生的 FeedbackReplyWorker
     // （feedback/FeedbackReplyWorkChannel.kt），Dart 门面 feedback_reply_background.dart。
     public static final String FEEDBACK_REPLY_WORK = PREFIX + "/feedback_reply_work";
+    // 「用其他应用打开」/ 分享进来的书 / 漫画文件（拍板台 oeJzVRQ9p1）：原生把 content://
+    // 复制进缓存，Dart 取走后入库。实现见 OpenWithChannel，Dart 门面 android_open_with.dart。
+    public static final String OPEN_WITH = PREFIX + "/open_with";
     // Android 文件分享（BUG-4740）：share_plus 在主线程整份拷贝文件会 ANR，Android 的
     // 文件分享改走这条。实现见 FushiShareChannel.kt，Dart 门面 fushi_share.dart。
     public static final String SHARE = PREFIX + "/share";

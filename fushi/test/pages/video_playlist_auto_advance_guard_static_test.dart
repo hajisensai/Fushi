@@ -182,9 +182,12 @@ void main() {
       // 以调用行本身作尾界标。
       '    _ensureWatchTracker(controller, title);',
     );
-    final int currentAt = fn.indexOf(
-      'unawaited(prewarmEmbeddedSubtitleCache(videoPath));',
-    );
+    // BUG-4838：调用多了取消信号参数，按调用形状（不看换行）找。
+    final int currentAt =
+        RegExp(
+          r'unawaited\(\s*prewarmEmbeddedSubtitleCache\(\s*videoPath,',
+        ).firstMatch(fn)?.start ??
+        -1;
     final int nextAt = fn.indexOf('_prewarmNextEpisodeSubtitleCache();');
 
     expect(currentAt, greaterThan(-1));

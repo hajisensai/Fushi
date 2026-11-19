@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_cli/fushi_cli.dart';
@@ -197,7 +198,7 @@ void main() {
     );
   });
 
-  test('infer：回本轮新增的建议与是否走了 AI；音乐端点没有推断来源 422', () async {
+  test('infer：回本轮新增的建议与是否走了 AI', () async {
     mediaLinkInferOverride = (OpContext _, MediaLinkEndpoint self) => () async {
       await suggest();
       return 1;
@@ -212,27 +213,60 @@ void main() {
     expect(got['added'], 1);
     expect(got['ai'], isFalse);
     expect(got['suggestions'], hasLength(1));
+  });
 
-    mediaLinkInferOverride = (OpContext _, MediaLinkEndpoint self) => null;
+  test('infer：音乐专辑走真实推断，找到所属动画（关键词 → 原声建议，不联网）', () async {
+    final int cid = await db.createMediaCollection('ゆるキャン△');
+    await db
+        .into(db.videoMetadataWorks)
+        .insert(
+          VideoMetadataWorksCompanion.insert(
+            collectionId: Value<int?>(cid),
+            mediaType: 'tv',
+            title: 'ゆるキャン△',
+            updatedAt: 1,
+          ),
+        );
+    await db
+        .into(db.musicAlbums)
+        .insert(
+          MusicAlbumsCompanion.insert(
+            albumUid: 'a1',
+            title: 'TVアニメ「ゆるキャン△」オリジナル・サウンドトラック',
+            addedAt: 1,
+            updatedAt: 1,
+          ),
+        );
     await db
         .into(db.musicTracks)
         .insert(
           MusicTracksCompanion.insert(
             trackUid: 't1',
             path: '/m/t1.flac',
-            title: 'OP',
+            title: 'Sea, Sky, Lake',
+            albumUid: const Value<String?>('a1'),
             fileMtimeAt: 1,
             fileSize: 1,
             addedAt: 1,
           ),
         );
+    final Map<String, Object?> got =
+        (await call(
+              'POST',
+              '$kMediaLinksCtlRoot/:endpoint/infer',
+              params: self('music_album:a1'),
+            ))!
+            as Map<String, Object?>;
+    expect(got['added'], 1);
+    expect(got['ai'], isFalse);
+    final Map<String, Object?> link =
+        (got['suggestions']! as List<Object?>).single! as Map<String, Object?>;
+    expect(link['relation'], MediaLinkRelation.soundtrack.dbValue);
+    expect(link['state'], MediaLinkState.suggested.name);
+    expect(link['otherIs'], 'to');
     expect(
-      () => call(
-        'POST',
-        '$kMediaLinksCtlRoot/:endpoint/infer',
-        params: self('music_track:t1'),
-      ),
-      _ctlFailure(422),
+      (link['other']! as Map<String, Object?>)['endpoint'],
+      'video_collection:${collectionTagEntryKey(cid)}',
     );
   });
 

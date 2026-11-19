@@ -23,6 +23,7 @@ import 'package:fushi/src/lookup/popup_ui_scale.dart';
 import 'package:fushi/src/lookup/lookup_ime_channel.dart';
 import 'package:fushi/src/lookup/selection_capture_ffi.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
+import 'package:fushi/src/mining/after_mining_popup_action.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart'
     show isSettingsDestinationVisible;
@@ -54,6 +55,94 @@ void _showSettingsSnackBar(SettingsContext settingsContext, String message) {
   final BuildContext ctx = settingsContext.context;
   if (!ctx.mounted) return;
   ScaffoldMessenger.of(ctx).showSnackBar(FushiSnackBar(content: Text(message)));
+}
+
+/// 「制卡后行为」在单个模块里的单选（拍板台 8ldy3d8XFA，见 [AfterMiningPopupAction]）。
+/// 小说那行进书内快捷设置，视频那行进播放器快捷设置；查词那行兜住所有不属于其余
+/// 模块的查词宿主，恒显示。制卡模块关掉时整组隐藏（没有制卡就没有「制卡后」）。
+SettingsSegmentedItem<AfterMiningPopupAction> _afterMiningPopupItem(
+  ModuleId module,
+) {
+  // 图标取各模块底栏 tab 的同一真值（homeNavItemFor）。
+  final ({String id, String title, IconData icon}) identity = switch (module) {
+    ModuleId.books => (
+      id: 'books',
+      title: t.lookup_after_mining_books,
+      icon: homeNavItemFor(HomeTab.books).icon,
+    ),
+    ModuleId.manga => (
+      id: 'manga',
+      title: t.lookup_after_mining_manga,
+      icon: homeNavItemFor(HomeTab.manga).icon,
+    ),
+    ModuleId.video => (
+      id: 'video',
+      title: t.lookup_after_mining_video,
+      icon: homeNavItemFor(HomeTab.video).icon,
+    ),
+    ModuleId.music => (
+      id: 'music',
+      title: t.lookup_after_mining_music,
+      icon: homeNavItemFor(HomeTab.music).icon,
+    ),
+    ModuleId.games => (
+      id: 'games',
+      title: t.lookup_after_mining_games,
+      icon: homeNavItemFor(HomeTab.games).icon,
+    ),
+    ModuleId.lookup => (
+      id: 'lookup',
+      title: t.lookup_after_mining_lookup,
+      icon: homeNavItemFor(HomeTab.dictionaries).icon,
+    ),
+    _ => throw StateError('$module 没有「制卡后行为」那一行'),
+  };
+  final List<AfterMiningPopupAction> actions = afterMiningPopupOptions(module);
+  return SettingsSegmentedItem<AfterMiningPopupAction>(
+    id: 'lookup.after_mining_popup.${identity.id}',
+    title: identity.title,
+    subtitle: afterMiningPopupModuleHasPlayback(module)
+        ? t.lookup_after_mining_hint_playback
+        : t.lookup_after_mining_hint,
+    icon: identity.icon,
+    dropdown: true,
+    reader: module == ModuleId.books
+        ? const ReaderPlacement(group: ReaderGroup.lookup, order: 25)
+        : null,
+    video: module == ModuleId.video
+        ? const VideoPlacement(group: VideoGroup.controls, order: 40)
+        : null,
+    visible: (SettingsContext settingsContext) {
+      final ModuleVisibility modules =
+          settingsContext.appModel.moduleVisibility;
+      return modules.isEnabled(ModuleId.cardCreation) &&
+          (module == ModuleId.lookup || modules.isEnabled(module));
+    },
+    options: <SettingsSegmentOption<AfterMiningPopupAction>>[
+      for (final AfterMiningPopupAction action in actions)
+        SettingsSegmentOption<AfterMiningPopupAction>(
+          value: action,
+          label: switch (action) {
+            AfterMiningPopupAction.keepOpen => t.lookup_after_mining_keep_open,
+            AfterMiningPopupAction.close => t.lookup_after_mining_close,
+            AfterMiningPopupAction.closeAndResume =>
+              t.lookup_after_mining_close_resume,
+          },
+        ),
+    ],
+    selected: (SettingsContext settingsContext) =>
+        settingsContext.readerSource.afterMiningPopupAction(module),
+    onChanged:
+        (SettingsContext settingsContext, AfterMiningPopupAction value) async {
+          await settingsContext.readerSource.setAfterMiningPopupAction(
+            module,
+            value,
+          );
+          notifyReaderSettingsChanged(settingsContext);
+        },
+    defaultValueBuilder: (SettingsContext settingsContext) =>
+        settingsContext.readerSource.afterMiningPopupDefaultFor(module),
+  );
 }
 
 /// 「底部停靠」在单个媒体模块里是否启用的子开关（[AppModel.popupBottomDockedIn]）。
@@ -427,24 +516,10 @@ SettingsDestination _buildLookupPopupDestination() {
             },
             defaultValue: true,
           ),
-          // 用户建议 q16Apecgbg（2026-10-13）：制卡后查词弹窗直接消失，不再挡住正文。
-          // 默认关 = 制卡后弹窗照旧留着（既有行为）。
-          SettingsSwitchItem(
-            id: 'reading_controls.close_popup_after_mining',
-            title: t.lookup_popup_close_after_mining,
-            subtitle: t.lookup_popup_close_after_mining_hint,
-            icon: Icons.playlist_add_check_outlined,
-            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 25),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.readerSource.closePopupAfterMining,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.readerSource.setClosePopupAfterMining(
-                value,
-              );
-              notifyReaderSettingsChanged(settingsContext);
-            },
-            defaultValue: false,
-          ),
+          // 拍板台 8ldy3d8XFA（取代用户建议 q16Apecgbg 的全局开关）：「制卡后行为」
+          // 按模块各一行。阅读那行进阅读器面板，视频那行进视频面板。
+          for (final ModuleId module in kAfterMiningPopupModules)
+            _afterMiningPopupItem(module),
         ],
       ),
     ],

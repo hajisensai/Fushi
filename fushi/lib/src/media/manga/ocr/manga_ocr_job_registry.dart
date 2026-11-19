@@ -62,6 +62,7 @@ class MangaOcrRunningJob {
   bool _cancelled = false;
   bool _ended = false;
   final Completer<void> _endedCompleter = Completer<void>();
+  final Completer<void> _stoppedCompleter = Completer<void>();
 
   String get bookKey => job.bookKey;
 
@@ -78,15 +79,28 @@ class MangaOcrRunningJob {
   /// 底层任务已结束（完成、失败或取消）。
   bool get isEnded => _ended;
 
-  /// 结束时完成（完成 / 失败 / 取消一律正常完成，不带错误）：排队等同书上一个
-  /// 任务的调用方只关心「轮到我了没」。
+  /// 结束时完成（完成 / 失败 / 取消一律正常完成，不带错误）。这是给界面看的
+  /// 「任务没了」：用户取消后立即完成，**不代表执行器已经停下**——决定何时再起
+  /// 任务要等 [whenStopped]。
   Future<void> get whenEnded => _endedCompleter.future;
+
+  /// 执行器真正停下时完成（不带错误）：本地模型 = 整卷 isolate 已关掉推理会话
+  /// 并退出，那套模型的内存到这时才放掉（BUG-4800）。
+  ///
+  /// 自然结束（完成 / 失败）时与 [whenEnded] 同时完成——底层流收尾本身就在执行
+  /// 器停下之后。用户取消时晚于 [whenEnded]：取消请求在页边界才生效，当前页还
+  /// 要跑完。注册表的全局名额与同书队列等的是它。
+  Future<void> get whenStopped => _stoppedCompleter.future;
+
+  /// 执行器是否已经真正停下（[whenStopped] 已完成）。
+  bool get isStopped => _stoppedCompleter.isCompleted;
 
   /// 广播给观察者的事件流：与底层流同序，finished 事件在落盘**之后**才转发。
   ///
   /// 有跟随步骤（[MangaOcrBackgroundJob.follower]，大模型重读）时，它改好的页
-  /// 以带页的 progress 事件插进来——任务结束（[whenEnded]，名额已释放）之后也
-  /// 可能还有，流要等跟随步骤做完才关。
+  /// 以带页的 progress 事件插进来——任务结束（[whenEnded]）之后也可能还有，流要
+  /// 等跟随步骤做完才关。名额此时还没还的只有用户取消这一种（等 [whenStopped]），
+  /// 而取消会先停掉跟随步骤。
   Stream<MangaOcrBackgroundEvent> get events => _observers.stream;
 
   MangaOcrJobFollower? get _follower => job.follower;
@@ -118,13 +132,34 @@ class MangaOcrRunningJob {
       _sessions.any((MangaReaderSession s) => identical(s, session));
 
   /// 用户主动取消：真停底层任务（各执行器既有的取消语义），并释放会话。
+  ///
+  /// 取消请求发出后**立即返回，不等执行器停下**：删书、切 Profile、退出 app 都
+  /// await 这里，本地模型要跑完当前页才退出，原生推理卡住时不能把这些流程一起
+  /// 挂住。执行器何时真正停下看 [whenStopped]。
   Future<void> cancel() async {
     await _cancelFollower();
     if (_ended) return;
     _cancelled = true;
-    await _source?.cancel();
+    final Future<void>? stopping = _source?.cancel();
     _source = null;
+    unawaited(_completeStoppedAfter(stopping));
     await _end();
+  }
+
+  /// 底层订阅的取消 Future 完成 = 执行器已停下（`MangaOcrService.ocrFolder` 的
+  /// 契约）。执行器收尾抛的错记日志：不管它怎么收场，[whenStopped] 都得完成，
+  /// 否则名额永远还不回去。
+  Future<void> _completeStoppedAfter(Future<void>? stopping) async {
+    try {
+      await stopping;
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'MangaOcrJobRegistry.stopSource',
+        error,
+        stack,
+      );
+    }
+    if (!_stoppedCompleter.isCompleted) _stoppedCompleter.complete();
   }
 
   /// 停掉跟随步骤（任务已结束、它还在收尾时也有效）。
@@ -148,6 +183,11 @@ class MangaOcrRunningJob {
     }
     _sessions.clear();
     if (!_endedCompleter.isCompleted) _endedCompleter.complete();
+    // 自然结束：底层流已经收尾，执行器早就停了。用户取消的由 [cancel] 等订阅的
+    // 取消 Future。
+    if (!_cancelled && !_stoppedCompleter.isCompleted) {
+      _stoppedCompleter.complete();
+    }
     // 观察者流等跟随步骤收完尾再关（没有跟随步骤时立即关）。
     final Future<void> followerDone = _follower?.done ?? Future<void>.value();
     unawaited(
@@ -328,6 +368,34 @@ class MangaOcrJobRegistry {
   /// 按 bookKey 的排队链尾（[enqueue] 用）；链上没人时不留条目。
   final Map<String, Future<void>> _queues = <String, Future<void>>{};
 
+  /// 已被取消 / 暂停、执行器还没真正停下的任务，按 bookKey（值在它们全部停下时
+  /// 完成）。这些任务已经不在 [_jobs] 里，同书的下一个任务要靠这里才等得到它们
+  /// （BUG-4800）；全部停下后不留条目。
+  final Map<String, Future<void>> _stopping = <String, Future<void>>{};
+
+  /// 真停 [running]：取消请求发出后立即返回，「它真正停下」记到本书名下，供
+  /// [enqueue] 排在它后面。
+  Future<void> _stop(MangaOcrRunningJob running) async {
+    if (!running.isStopped) {
+      // 先登记再取消：取消里有 await（先停跟随步骤），期间「继续」就可能把同书
+      // 的任务重新排上。
+      final String bookKey = running.bookKey;
+      final Future<void>? earlier = _stopping[bookKey];
+      final Future<void> stopped = earlier == null
+          ? running.whenStopped
+          : earlier.then((_) => running.whenStopped);
+      _stopping[bookKey] = stopped;
+      unawaited(
+        stopped.whenComplete(() {
+          if (identical(_stopping[bookKey], stopped)) {
+            _stopping.remove(bookKey);
+          }
+        }),
+      );
+    }
+    await running.cancel();
+  }
+
   /// 按 bookKey 排着队、还没轮到的任务，按入队序。作品页据此给章节行标「等待
   /// 识别」（BUG-2481，经 [queuedDirectories]）；管理页据此列排队行并可暂停。
   final Map<String, List<_QueuedJob>> _queued = <String, List<_QueuedJob>>{};
@@ -476,13 +544,23 @@ class MangaOcrJobRegistry {
   ///
   /// 轮到本书之后还要等一个全局名额（[resolveMangaOcrJobConcurrency]）；等名额
   /// 期间仍算「排队中」（[queuedDirectories] 里有它）。
+  ///
+  /// 「上一个结束」与「名额还回来」都以执行器真正停下为准
+  /// （[MangaOcrRunningJob.whenStopped]），不是用户点了取消 / 暂停的那一刻：
+  /// 被取消的本地任务要跑完当前页才退出 isolate，在那之前它的整套模型还在内存
+  /// 里。提前放行的话，手机「只跑 1 卷」在这段时间里就是两套模型同时在跑，新
+  /// 任务补的第一个缺页还正好是旧任务在收尾的那一页（BUG-4800）。
   Future<MangaOcrRunningJob?> enqueue({
     required MangaOcrBackgroundJob job,
     required String mangaJsonPath,
   }) {
     final String bookKey = job.bookKey;
-    final Future<void> previous =
-        _queues[bookKey] ?? _jobs[bookKey]?.whenEnded ?? Future<void>.value();
+    final Future<void> turn =
+        _queues[bookKey] ?? _jobs[bookKey]?.whenStopped ?? Future<void>.value();
+    final Future<void>? stopping = _stopping[bookKey];
+    final Future<void> previous = stopping == null
+        ? turn
+        : turn.then((_) => stopping);
     final Completer<MangaOcrRunningJob?> started =
         Completer<MangaOcrRunningJob?>();
     final _QueuedJob entry = _QueuedJob(job, mangaJsonPath);
@@ -509,7 +587,9 @@ class MangaOcrJobRegistry {
           mangaJsonPath: mangaJsonPath,
         );
         started.complete(running);
-        await running.whenEnded;
+        // 名额占到执行器真正停下：用户取消 / 暂停只是让它停，停下之前模型还在
+        // 内存里。
+        await running.whenStopped;
       } finally {
         _releaseSlot();
       }
@@ -536,7 +616,7 @@ class MangaOcrJobRegistry {
     final MangaOcrRunningJob? running = _jobs.remove(bookKey);
     if (running == null && !hadQueued && !hadPaused) return;
     _notifyChanged();
-    await running?.cancel();
+    if (running != null) await _stop(running);
   }
 
   /// 退出 app / 切换 Profile 等整体拆栈：把所有任务真停掉。
@@ -556,15 +636,16 @@ class MangaOcrJobRegistry {
     _paused.clear();
     if (hadAny) _notifyChanged();
     for (final MangaOcrRunningJob running in jobs) {
-      await running.cancel();
+      await _stop(running);
     }
   }
 
   /// 暂停 [bookKey] 在 [directory] 上的任务（OCR 任务管理页，反馈 iuv4-jWC8S）。
   ///
   /// - 排队中：从队列摘下（排队链轮到它时发现不在队里就跳过），原任务留着继续用；
-  /// - 运行中：真停（各执行器在页边界停、逐页缓存保留），释放全局名额让下一个
-  ///   排队者开跑；记下 [MangaOcrBackgroundJob.resume] 重建口，[resume] 时才重建。
+  /// - 运行中：真停（各执行器在页边界停、逐页缓存保留），执行器停下后释放全局
+  ///   名额让下一个排队者开跑；记下 [MangaOcrBackgroundJob.resume] 重建口，
+  ///   [resume] 时才重建。
   ///
   /// 本书其它排队的章不受影响。没有匹配的任务、或运行中的任务不支持暂停时返回
   /// false。
@@ -602,12 +683,13 @@ class MangaOcrJobRegistry {
       ),
     );
     _notifyChanged();
-    await running.cancel();
+    await _stop(running);
     return true;
   }
 
   /// 继续一个已暂停的任务：重新经 [enqueue] 排到本书队尾（同书 FIFO + 全局名额
-  /// 照旧）。没有匹配的暂停项返回 false。
+  /// 照旧）。暂停后立刻继续时，刚停的那个执行器可能还在收尾：新任务排在它真正
+  /// 停下之后才开跑。没有匹配的暂停项返回 false。
   bool resume(String bookKey, String directory) {
     final int index = _paused.indexWhere(
       (_PausedJob paused) =>
@@ -730,10 +812,11 @@ class MangaOcrJobRegistry {
     if (resultPath == null) {
       throw StateError('OCR finished without a result path');
     }
+    // 整卷产物几 MB：读进来以后的解析放后台 isolate，不占 UI isolate。
     final String source = await File(resultPath).readAsString();
     final MokuroPayload local = event.external
-        ? parseMokuro(source)
-        : parseMangaJson(source);
+        ? await parseMokuroOffUi(source)
+        : await parseMangaJsonOffUi(source);
     if (local.images.isEmpty) {
       throw StateError('OCR result has no pages');
     }
