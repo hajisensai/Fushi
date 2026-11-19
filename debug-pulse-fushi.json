@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-19T14:03:33Z",
+ "generatedAt": "2026-11-19T15:01:15Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "6dd38cb92db8a3daffbbfefe5fccfa77fdfe966a",
@@ -12,8 +12,8 @@
    "version": "3.4.0",
    "sha": "6dd38cb92db8a3daffbbfefe5fccfa77fdfe966a",
    "unknown": false,
-   "publishedAt": "2026-11-19T14:03:23Z",
-   "testflight": false,
+   "publishedAt": "2026-11-19T15:01:01Z",
+   "testflight": true,
    "baseSeq": 29116,
    "prs": [
     3681
