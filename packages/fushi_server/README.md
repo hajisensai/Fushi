@@ -650,7 +650,7 @@ helper，或者提供了复习库时接线：落到上面「Anki 落地」的同
 
 随包的是 CPU 版 onnxruntime。要 NVIDIA 加速：
 
-1. 从 [onnxruntime releases](https://github.com/microsoft/onnxruntime/releases) 下 `onnxruntime-linux-x64-gpu-1.22.0.tgz`（版本必须 ≥ 1.22，asr_onnx_ffi 要 API 22），解压到例如 `/opt/ort-gpu`。
+1. 从 NuGet 下官方 GPU 包 [`Microsoft.ML.OnnxRuntime.Gpu.Linux` 1.22.0](https://www.nuget.org/packages/Microsoft.ML.OnnxRuntime.Gpu.Linux/1.22.0)（版本必须 ≥ 1.22，asr_onnx_ffi 要 API 22；`github.com/microsoft/onnxruntime` 的 release 自 2026-11-17 起 404），nupkg 就是 zip，把 `runtimes/linux-x64/native/` 下的 `.so` 全部解压到例如 `/opt/ort-gpu/lib`。
 2. 装匹配的 CUDA 12.x + cuDNN 9，确保 `libcudart`、`libcudnn` 在 `LD_LIBRARY_PATH`（GPU 包里的 `libonnxruntime_providers_cuda.so` 要能被 dlopen）。
 3. 配置 `onnxruntime_library: "/opt/ort-gpu/lib/libonnxruntime.so"`，重启。`fushi_server models status` 的 provider 列会显示 `cuda`；探测失败自动退回 CPU（日志里有原因）。
 

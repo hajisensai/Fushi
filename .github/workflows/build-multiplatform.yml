@@ -63,6 +63,7 @@ on:
       - '.github/actions/setup-fushi-rwkv/**'
       - '.github/scripts/verify_torrent_abi.sh'
       - '.github/scripts/check_glibc_baseline.sh'
+      - '.github/scripts/fetch_onnxruntime_nuget.py'
       - 'pubspec.yaml'
       - 'pubspec.lock'
       # 这份清单只是整条 workflow 的粗门；PR 上每个 job 开不开由 changes job 按实际改动
@@ -169,7 +170,7 @@ jobs:
           windows_only='^(fushi/windows/|packages/(flutter_inappwebview_windows|gamepads_windows)/|packages/[^/]+/windows/|native/(fushi_torrent|galgame_hook|fushi_anki_sync)/|packages/fushi_torrent/|third_party/([^/]+/windows/|[^/]*windows[^/]*/|libplacebo-win/|m_extension_server/|jogamp/)|tool/mihon/|tool/engine_overlay\.ps1$|tools/(build_magpie_slim|bundle_7za)\.ps1$|\.github/actions/(setup-fushi-anki-sync|flutter-engine-overlay)/)'
           macos_only='^(fushi/(macos|apple)/|packages/[^/]+/(macos|darwin)/|native/(fushi_anki_sync|fushi_torrent)/|packages/fushi_torrent/|\.github/scripts/verify_torrent_abi\.sh$|third_party/([^/]+/(macos|darwin)/|[^/]*macos[^/]*/|m_extension_server/|jogamp/)|tool/mihon/|\.github/actions/setup-fushi-anki-sync/)'
           ios_only='^(fushi/(ios|apple)/|native/fushi_ios_umbrella/|packages/[^/]+/(ios|darwin)/|third_party/([^/]+/(ios|darwin)/|[^/]*ios[^/]*/))'
-          server_only='^(pubspec\.(yaml|lock)$|ci/|packages/(fushi_server|fushi_engine|fushi_core|fushi_anki|fushi_audio|fushi_dictionary|fushi_platform|fushi_torrent|fushi_p2p|fushi_srs|fushi_compute|fushi_rwkv)/|native/(fushi_torrent|fushi_p2p|fushi_fsrs|fushi_compute|fushi_rwkv|fushi_anki_sync|fushidicts)/|fushi/assets/transforms/|\.github/workflows/build-multiplatform\.yml$|\.github/actions/(native-artifact-store|native-store-names|pdfium-hook-cache|setup-fushi-anki-sync)/|\.github/scripts/verify_torrent_abi\.sh$|\.github/scripts/check_glibc_baseline\.sh$)'
+          server_only='^(pubspec\.(yaml|lock)$|ci/|packages/(fushi_server|fushi_engine|fushi_core|fushi_anki|fushi_audio|fushi_dictionary|fushi_platform|fushi_torrent|fushi_p2p|fushi_srs|fushi_compute|fushi_rwkv)/|native/(fushi_torrent|fushi_p2p|fushi_fsrs|fushi_compute|fushi_rwkv|fushi_anki_sync|fushidicts)/|fushi/assets/transforms/|\.github/workflows/build-multiplatform\.yml$|\.github/actions/(native-artifact-store|native-store-names|pdfium-hook-cache|setup-fushi-anki-sync)/|\.github/scripts/verify_torrent_abi\.sh$|\.github/scripts/check_glibc_baseline\.sh$|\.github/scripts/fetch_onnxruntime_nuget\.py$)'
 
           # route <output> <正则变量名...>：清单里任一路径命中这些正则之一即开。
           route() {
@@ -799,11 +800,10 @@ jobs:
         run: |
           set -euo pipefail
           ORT_VERSION=1.22.0
-          curl -fsSL --retry 3 -o "$RUNNER_TEMP/ort.tgz" \
-            "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz"
-          tar -xzf "$RUNNER_TEMP/ort.tgz" -C "$RUNNER_TEMP"
-          cp -a "$RUNNER_TEMP/onnxruntime-linux-x64-${ORT_VERSION}/lib/"libonnxruntime.so* \
-            build/fushi_server_linux/bundle/lib/
+          # github.com/microsoft/onnxruntime（仓库与全部 release）自 2026-11-17 起 404，
+          # 改从 NuGet 官方包 Microsoft.ML.OnnxRuntime 取，nupkg 与 .so 均钉 sha256。
+          python3 .github/scripts/fetch_onnxruntime_nuget.py "$ORT_VERSION" linux-x64 \
+            build/fushi_server_linux/bundle/lib
           ls -la build/fushi_server_linux/bundle/lib
       # (d) 词典引擎 libfushidicts_ffi.so：服务端按 `<exe>/../lib/libfushidicts_ffi.so` 定位
       #     （dictionary_host.dart 的 resolveFushiDictsLibraryPath）。脚本用 job 级 CC/CXX

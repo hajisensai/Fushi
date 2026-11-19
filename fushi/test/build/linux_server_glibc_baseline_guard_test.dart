@@ -80,12 +80,12 @@ void main() {
       'build-multiplatform.yml': <String>[
         'native/fushi_anki_sync/build.sh --debug --install-dir',
         'cp native/fushidicts/prebuilt/linux-x64/libfushidicts_ffi.so',
-        'libonnxruntime.so* \\',
+        'fetch_onnxruntime_nuget.py "\$ORT_VERSION" linux-x64',
       ],
       'release-server.yml': <String>[
         'native/fushi_anki_sync/build.sh --install-dir',
         'cp native/fushidicts/prebuilt/linux-x64/libfushidicts_ffi.so',
-        'libonnxruntime.so* build/fushi_server_linux/bundle/lib/',
+        'fetch_onnxruntime_nuget.py "\$ORT_VERSION" linux-x64',
       ],
     };
     const Map<String, String> after = <String, String>{
