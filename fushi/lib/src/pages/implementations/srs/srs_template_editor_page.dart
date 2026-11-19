@@ -678,6 +678,8 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
             scene: AiPromptScene.srsTemplate,
             controller: controller,
             showLabel: true,
+            storeOf: () =>
+                ProviderScope.containerOf(context).read(appProvider).prefsRepo,
           ),
     );
     if (request == null || request.trim().isEmpty || !mounted) return;

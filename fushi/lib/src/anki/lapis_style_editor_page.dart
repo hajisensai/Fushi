@@ -108,6 +108,7 @@ class LapisStyleEditorPage extends StatefulWidget {
     this.resolveAiProvider,
     this.aiClientFactory,
     this.aiEnabled = true,
+    this.savedPromptStoreOf,
     super.key,
   });
 
@@ -144,6 +145,10 @@ class LapisStyleEditorPage extends StatefulWidget {
   /// 「让 AI 帮忙」区是否出现。调用方按 AI 模块开关（`isAiModuleEnabled`）求值后
   /// 传入——本页零 Riverpod 依赖，不自己读 AppModel；false 时整段不渲染。
   final bool aiEnabled;
+
+  /// 「已保存的提示词」的存取（生产 = 应用偏好仓库，由调用方传入，理由同
+  /// [aiEnabled]）；null = 不显示该按钮。
+  final AiSavedPromptStore Function()? savedPromptStoreOf;
 
   @visibleForTesting
   final LapisStyleAiClientFactory? aiClientFactory;
@@ -368,12 +373,15 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
                   _aiBusy ? t.ai_assist_working : t.ai_assist_generate,
                 ),
               ),
-              AiSavedPromptButton(
-                scene: AiPromptScene.lapisStyle,
-                controller: _aiRequestController,
-                enabled: !_aiBusy,
-                showLabel: true,
-              ),
+              if (widget.savedPromptStoreOf
+                  case final AiSavedPromptStore Function() savedPromptStoreOf)
+                AiSavedPromptButton(
+                  scene: AiPromptScene.lapisStyle,
+                  controller: _aiRequestController,
+                  enabled: !_aiBusy,
+                  showLabel: true,
+                  storeOf: savedPromptStoreOf,
+                ),
             ],
           ),
           if (_aiMessage != null) ...<Widget>[

@@ -16,8 +16,8 @@ import 'package:fushi_engine/tts/render/tts_render_queue.dart'
     show TtsRenderCancelToken, TtsRenderCancelled;
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/audiobook/tts/studio/audio_production_host.dart';
 import 'package:fushi/src/media/manga/audio/manga_drama_track_service.dart';
-import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// 实际跑流水线的函数（生产 = `MangaDramaTrackService.run`；测试注入假实现）。
@@ -204,6 +204,6 @@ final Expando<MangaDramaTrackTasks> _registries = Expando<MangaDramaTrackTasks>(
   'MangaDramaTrackTasks',
 );
 
-/// 每个 [AppModel] 一张表，结束时弹全局 toast。
-MangaDramaTrackTasks mangaDramaTrackTasksFor(AppModel appModel) =>
+/// 每个 `AppModel` 一张表，结束时弹全局 toast。
+MangaDramaTrackTasks mangaDramaTrackTasksFor(AudioProductionHost appModel) =>
     _registries[appModel] ??= MangaDramaTrackTasks(onSettled: _toastSettled);

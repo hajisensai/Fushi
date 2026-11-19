@@ -36,10 +36,10 @@ import 'package:fushi_engine/tts/render/tts_cast.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/audiobook/tts/cast/series_cast_resolver.dart';
+import 'package:fushi/src/media/audiobook/tts/studio/audio_production_host.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_stores.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_substitution_image.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
-import 'package:fushi/src/models/app_model.dart';
 
 /// 单页回复的输出上限：一页几十句全是台词约 2k token，给推理模型的思考留余量。
 const int _kAnnotateMaxTokens = 8192;
@@ -58,8 +58,9 @@ class MangaAudioAnnotateError implements Exception {
 }
 
 /// 用户能选的提供商（配全且启用），按设置里的顺序——「切配置重试」从这里挑。
-List<AiProviderConfig> mangaAudioUsableProviders(AppModel appModel) =>
-    appModel.isPreferencesReady
+List<AiProviderConfig> mangaAudioUsableProviders(
+  AudioProductionHost appModel,
+) => appModel.isPreferencesReady
     ? <AiProviderConfig>[
         for (final AiProviderConfig c in appModel.prefsRepo.aiProviders)
           if (c.isUsable) c,
@@ -68,7 +69,7 @@ List<AiProviderConfig> mangaAudioUsableProviders(AppModel appModel) =>
 
 /// 本次用哪家：[providerId] 指定（切配置重试）就用它（必须可用）；否则按功能指派。
 AiProviderConfig? resolveMangaAudioProvider(
-  AppModel appModel, {
+  AudioProductionHost appModel, {
   String? providerId,
 }) {
   if (!appModel.isPreferencesReady) return null;
@@ -106,7 +107,7 @@ class MangaAnnotateVolume {
 
 /// 读一卷；不是本地漫画卷 / 没识别过 / 读不出时抛 [MangaAudioAnnotateError]。
 Future<MangaAnnotateVolume> loadMangaAnnotateVolume(
-  AppModel appModel,
+  AudioProductionHost appModel,
   String bookKey,
 ) async {
   final EpubBookRow? row = await appModel.database.getEpubBook(bookKey);
@@ -232,7 +233,7 @@ class MangaAudioAnnotateSession {
     required this.series,
   });
 
-  final AppModel appModel;
+  final AudioProductionHost appModel;
   final MangaAnnotateVolume volume;
   final MangaAudioScript script;
   final MangaAnnotationLedger ledger;
@@ -258,7 +259,7 @@ class MangaAudioAnnotateSession {
   String get bookKey => volume.bookKey;
 
   static Future<MangaAudioAnnotateSession> open(
-    AppModel appModel,
+    AudioProductionHost appModel,
     String bookKey,
   ) async {
     final MangaAnnotateVolume volume = await loadMangaAnnotateVolume(
@@ -508,7 +509,7 @@ class MangaAudioAnnotateSession {
 /// 系列的成员卷（按标注顺序 = [seriesMemberBooks] 的系列顺序，与生成、小说按系列跑
 /// 同一份）。只收漫画格式的书；在线卷由标注会话自己报「暂不支持」。
 Future<List<EpubBookRow>> mangaSeriesVolumes(
-  AppModel appModel,
+  AudioProductionHost appModel,
   String seriesKey,
 ) async => <EpubBookRow>[
   for (final String key in await seriesMemberBooks(appModel, seriesKey))

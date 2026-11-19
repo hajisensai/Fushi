@@ -13,6 +13,7 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/manga/audio/manga_audiobook_source.dart';
 import 'package:fushi/src/media/manga/audio/manga_drama_track_page.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -54,7 +55,10 @@ abstract interface class MangaAudiobookSourceBackend {
 /// 生产实现：转给 [MangaAudiobookSourceService]，匹配放后台 isolate。
 class AppMangaAudiobookSourceBackend implements MangaAudiobookSourceBackend {
   AppMangaAudiobookSourceBackend(AppModel appModel)
-    : _service = MangaAudiobookSourceService(appModel);
+    : _service = MangaAudiobookSourceService(
+        appModel,
+        bookTitle: _displayTitle,
+      );
 
   final MangaAudiobookSourceService _service;
 
@@ -686,3 +690,7 @@ String formatMangaClipDuration(int ms) {
   if (h > 0) return '$h:${m.toString().padLeft(2, '0')}:$ss';
   return '$m:$ss';
 }
+
+/// 生产用的书展示名（带用户改名覆盖、去哈希）。
+String _displayTitle(String bookKey, String rawTitle) =>
+    displayTitleForBook(bookKey: bookKey, rawTitle: rawTitle);

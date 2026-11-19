@@ -13,32 +13,32 @@ import 'package:fushi_engine/tts/manga_audio/manga_audio_annotate_ledger.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart';
 import 'package:path/path.dart' as p;
+import 'package:fushi/src/media/audiobook/tts/studio/audio_production_host.dart';
 
-import 'package:fushi/src/models/app_model.dart';
-
-Directory _castDir(AppModel appModel) =>
+Directory _castDir(AudioProductionHost appModel) =>
     Directory(p.join(appModel.databaseDirectory.path, 'tts_cast'));
 
 /// 每卷演出稿：`<db>/tts_cast/<sha1>.manga-script.json`。
-MangaAudioScriptStore mangaAudioScriptStoreFor(AppModel appModel) =>
+MangaAudioScriptStore mangaAudioScriptStoreFor(AudioProductionHost appModel) =>
     MangaAudioScriptStore(_castDir(appModel));
 
 /// 标注失败账本：`<db>/tts_cast/<sha1>.manga-annotate.json`。
-MangaAnnotationLedgerStore mangaAnnotationLedgerStoreFor(AppModel appModel) =>
-    MangaAnnotationLedgerStore(_castDir(appModel));
+MangaAnnotationLedgerStore mangaAnnotationLedgerStoreFor(
+  AudioProductionHost appModel,
+) => MangaAnnotationLedgerStore(_castDir(appModel));
 
 /// 成品根目录。
-Directory mangaAudioRoot(AppModel appModel) =>
+Directory mangaAudioRoot(AudioProductionHost appModel) =>
     Directory(p.join(appModel.databaseDirectory.path, 'manga_audio'));
 
 /// 一卷的成品清单文件。
-File mangaRenderManifestFile(AppModel appModel, String bookKey) =>
+File mangaRenderManifestFile(AudioProductionHost appModel, String bookKey) =>
     MangaRenderManifest.fileFor(mangaAudioRoot(appModel), bookKey);
 
 /// 广播剧 / 动画音轨成品根目录。
-Directory mangaDramaRoot(AppModel appModel) =>
+Directory mangaDramaRoot(AudioProductionHost appModel) =>
     Directory(p.join(appModel.databaseDirectory.path, 'manga_drama'));
 
 /// 一卷的广播剧成品清单文件。
-File mangaDramaManifestFile(AppModel appModel, String bookKey) =>
+File mangaDramaManifestFile(AudioProductionHost appModel, String bookKey) =>
     MangaRenderManifest.fileFor(mangaDramaRoot(appModel), bookKey);

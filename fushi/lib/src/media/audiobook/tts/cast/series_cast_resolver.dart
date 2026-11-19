@@ -15,8 +15,7 @@ import 'dart:io';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/tts/cast/series_cast.dart';
 import 'package:path/path.dart' as p;
-
-import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/media/audiobook/tts/studio/audio_production_host.dart';
 
 /// 合集推断出的系列身份前缀。
 const String kSeriesKeyCollectionPrefix = 'collection:';
@@ -25,17 +24,20 @@ const String kSeriesKeyCollectionPrefix = 'collection:';
 const String kSeriesKeyStandalone = 'standalone:';
 
 /// 系列档案存储：`<db>/tts_cast/`。
-SeriesCastStore seriesCastStoreFor(AppModel appModel) => SeriesCastStore(
-  Directory(p.join(appModel.databaseDirectory.path, 'tts_cast')),
-);
+SeriesCastStore seriesCastStoreFor(AudioProductionHost appModel) =>
+    SeriesCastStore(
+      Directory(p.join(appModel.databaseDirectory.path, 'tts_cast')),
+    );
 
 /// [bookKey] 所属的系列身份；null = 不属于任何系列。
-Future<String?> resolveSeriesKey(AppModel appModel, String bookKey) =>
-    resolveSeriesKeyIn(
-      appModel.database,
-      seriesCastStoreFor(appModel),
-      bookKey,
-    );
+Future<String?> resolveSeriesKey(
+  AudioProductionHost appModel,
+  String bookKey,
+) => resolveSeriesKeyIn(
+  appModel.database,
+  seriesCastStoreFor(appModel),
+  bookKey,
+);
 
 /// [resolveSeriesKey] 的本体（只依赖数据库与档案存储，测试直接调）。
 Future<String?> resolveSeriesKeyIn(
@@ -79,12 +81,14 @@ Future<int?> _firstCollectionOf(FushiDatabase db, String bookKey) async {
 /// 系列成员书（bookKey），按系列顺序：合集推断的系列先按合集内顺序（成员键 uid /
 /// bookKey 都认），再接档案里显式关联的成员；显式关联到别的系列 / 显式不归入的书
 /// 剔掉，不在书库的剔掉。小说「按系列跑」、漫画按系列标注与生成共用这一份顺序。
-Future<List<String>> seriesMemberBooks(AppModel appModel, String seriesKey) =>
-    seriesMemberBooksIn(
-      appModel.database,
-      seriesCastStoreFor(appModel),
-      seriesKey,
-    );
+Future<List<String>> seriesMemberBooks(
+  AudioProductionHost appModel,
+  String seriesKey,
+) => seriesMemberBooksIn(
+  appModel.database,
+  seriesCastStoreFor(appModel),
+  seriesKey,
+);
 
 /// [seriesMemberBooks] 的本体（只依赖数据库与档案存储，测试直接调）。
 Future<List<String>> seriesMemberBooksIn(

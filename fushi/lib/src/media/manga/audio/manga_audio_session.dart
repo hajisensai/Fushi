@@ -16,8 +16,7 @@ import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
 
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
-import 'package:fushi/src/media/audiobook/audiobook_session_launcher.dart'
-    show AudiobookSessionStartRequest;
+import 'package:fushi/src/media/audiobook/audiobook_session_start_request.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_library.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_playback_driver.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_playback_plan.dart';

@@ -20,8 +20,8 @@ import 'package:fushi_engine/tts/manga_audio/manga_audio_annotate_runner.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/ai/ai_failure_text.dart';
 import 'package:fushi/src/ai/ai_manga_audio_assistant.dart';
+import 'package:fushi/src/media/audiobook/tts/studio/audio_production_host.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_annotate_flow.dart';
-import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
@@ -285,7 +285,7 @@ class MangaAnnotateTasks extends ChangeNotifier {
 
 /// 应用里的真实运行体：每次开一份新会话（读盘上最新的演出稿与账本），跑完随会话落盘。
 Future<MangaAnnotateRunSummary> runMangaAnnotateRequest(
-  AppModel appModel,
+  AudioProductionHost appModel,
   MangaAnnotateRequest request,
   MangaAnnotateTaskSink sink,
   bool Function() isCancelled,
@@ -361,7 +361,7 @@ final Expando<MangaAnnotateTasks> _registries = Expando<MangaAnnotateTasks>(
 );
 
 /// 这个应用（[appModel]）的漫画标注任务表；结束时弹全局 toast。
-MangaAnnotateTasks mangaAnnotateTasksFor(AppModel appModel) =>
+MangaAnnotateTasks mangaAnnotateTasksFor(AudioProductionHost appModel) =>
     _registries[appModel] ??= MangaAnnotateTasks(
       runner:
           (

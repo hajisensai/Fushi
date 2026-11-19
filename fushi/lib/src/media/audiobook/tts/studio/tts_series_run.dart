@@ -19,6 +19,7 @@ import 'package:fushi_engine/tts/render/tts_render_queue.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/ai/ai_manga_audio_assistant.dart';
+import 'package:fushi/src/media/audiobook/tts/studio/audio_production_host.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_annotate_tasks.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_render_service.dart';
 
@@ -26,7 +27,6 @@ import 'package:fushi/src/media/audiobook/tts/studio/tts_cast_annotator.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_service.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
-import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 按系列跑做哪几步。
@@ -79,7 +79,7 @@ class TtsSeriesRun extends ChangeNotifier {
 
   /// 开始一次按系列跑；已有在跑的直接返回那个。
   static TtsSeriesRun start({
-    required AppModel appModel,
+    required AudioProductionHost appModel,
     required String seriesKey,
     required List<String> books,
     required TtsSeriesRunMode mode,
@@ -101,7 +101,7 @@ class TtsSeriesRun extends ChangeNotifier {
     return run;
   }
 
-  final AppModel appModel;
+  final AudioProductionHost appModel;
   final String seriesKey;
   final List<String> books;
   final TtsSeriesRunMode mode;

@@ -67,6 +67,7 @@ import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/asr_host/asr_host.dart';
+import 'package:fushi/src/media/audiobook/tts/studio/audio_production_host.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_render_encode.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_render_mix.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_render_unvoiced.dart';
@@ -78,7 +79,6 @@ import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
 import 'package:fushi/src/media/audiobook/tts/irodori_voice_packs.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_render_service.dart';
-import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 入库后持久目录里的单时间轴字幕文件名。
@@ -98,7 +98,7 @@ typedef _SentenceVoice = ({
 class AppTtsRenderRunner implements TtsRenderRunner {
   AppTtsRenderRunner({required this.appModel});
 
-  final AppModel appModel;
+  final AudioProductionHost appModel;
 
   @override
   Future<({bool verified, List<TtsRenderFlag> flags})> run(

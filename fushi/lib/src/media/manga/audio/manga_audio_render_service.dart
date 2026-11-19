@@ -30,13 +30,13 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/audiobook/tts/cast/series_cast_resolver.dart';
 import 'package:fushi/src/media/audiobook/tts/irodori_voice_packs.dart';
+import 'package:fushi/src/media/audiobook/tts/studio/audio_production_host.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_series_cast.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_library.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_render_backend.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_stores.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
-import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 是不是能做漫画有声的本地漫画卷（在线作品的章目录不支持，与「未下载不识别」一致）。
@@ -76,7 +76,7 @@ class MangaAudioVolume {
 
 /// 载入一卷；不是本地漫画卷 / `manga.json` 读不出 → null。
 Future<MangaAudioVolume?> loadMangaAudioVolume(
-  AppModel appModel,
+  AudioProductionHost appModel,
   String bookKey,
 ) async {
   final EpubBookRow? row = await appModel.database.getEpubBook(bookKey);
@@ -129,7 +129,7 @@ String? mangaRenderBlocker(MangaAudioVolume volume) {
 }
 
 Future<AppMangaRenderBackend> _backendFor(
-  AppModel appModel,
+  AudioProductionHost appModel,
   MangaAudioScript script,
 ) async {
   final TtsServices tts = TtsServices.of(appModel.prefsRepo);
@@ -155,7 +155,7 @@ Future<AppMangaRenderBackend> _backendFor(
 }
 
 MangaAudioRenderer _rendererFor(
-  AppModel appModel,
+  AudioProductionHost appModel,
   String bookKey,
   MangaRenderBackend backend,
 ) => MangaAudioRenderer(
@@ -175,7 +175,7 @@ Future<void> _ensureFfmpeg(FfmpegBackend backend) async {
 /// 一句失败不让任务失败（占位 + 记账）；整卷级问题（不是漫画卷、演出稿过期、没生成过
 /// 却要补回、ffmpeg 不可用）抛 [TtsRenderFailure]。
 Future<({bool verified, List<TtsRenderFlag> flags})> runMangaRenderJob(
-  AppModel appModel,
+  AudioProductionHost appModel,
   TtsRenderJob job, {
   required TtsRenderProgress onProgress,
   required TtsRenderCancelToken cancel,
@@ -286,7 +286,7 @@ Future<({bool verified, List<TtsRenderFlag> flags})> runMangaRenderJob(
 /// 单句换种子重生成（不经队列：一句、要立刻试听）。失败抛 [MangaLineFailure] /
 /// [TtsRenderFailure]。
 Future<MangaRegenerateCandidate> regenerateMangaLine(
-  AppModel appModel, {
+  AudioProductionHost appModel, {
   required MangaAudioVolume volume,
   required String lineId,
   required int seed,
@@ -314,7 +314,7 @@ Future<MangaRegenerateCandidate> regenerateMangaLine(
 
 /// 候选文件的绝对路径（试听用）。
 String mangaCandidatePath(
-  AppModel appModel,
+  AudioProductionHost appModel,
   String bookKey,
   MangaRegenerateCandidate candidate,
 ) => p.join(
@@ -324,7 +324,7 @@ String mangaCandidatePath(
 
 /// 保留候选：清单 / 演出稿 / 账本落盘，重新入库。返回 false = 这句已不在清单里。
 Future<bool> keepMangaCandidate(
-  AppModel appModel, {
+  AudioProductionHost appModel, {
   required MangaAudioVolume volume,
   required MangaRegenerateCandidate candidate,
 }) async {
@@ -365,7 +365,7 @@ Future<bool> keepMangaCandidate(
 
 /// 撤回候选。
 Future<void> discardMangaCandidate(
-  AppModel appModel,
+  AudioProductionHost appModel,
   String bookKey,
   MangaRegenerateCandidate candidate,
 ) => MangaAudioRenderer(
@@ -410,7 +410,7 @@ class _NoBackend implements MangaRenderBackend {
 /// 系列里的卷，按阅读顺序：合集派生的系列先按合集内顺序，再补上显式关联进来的卷；
 /// 只列还在书架上的本地漫画卷。
 Future<List<String>> mangaSeriesVolumeKeys(
-  AppModel appModel,
+  AudioProductionHost appModel,
   String seriesKey,
 ) => mangaSeriesVolumeKeysIn(
   appModel.database,
@@ -437,7 +437,7 @@ Future<List<String>> mangaSeriesVolumeKeysIn(
 /// [edit] 是这次的改动：写系列时在最新的系列档案上重做一次（[SeriesCastStore.update]
 /// 串行读-改-写），本卷手里的旧拷贝随后换成存盘后的档案。
 Future<void> saveMangaVoiceAssignment(
-  AppModel appModel,
+  AudioProductionHost appModel,
   MangaAudioVolume volume, {
   required bool seriesLevel,
   required void Function(CastVoiceAssignment target) edit,

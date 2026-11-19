@@ -1,7 +1,10 @@
+export 'package:fushi/src/media/audiobook/audiobook_session_start_request.dart';
+
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
+import 'package:fushi/src/media/audiobook/audiobook_session_start_request.dart';
 import 'package:fushi/src/media/audiobook/remote/audiobook_remote_playback.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_library.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_session.dart';
@@ -357,36 +360,4 @@ class _SessionSource {
 
   /// 非空 = 音频在服务器上流式播放，[audioFiles] 是占位文件。
   final AudiobookRemotePlayback? remote;
-}
-
-class AudiobookSessionStartRequest {
-  const AudiobookSessionStartRequest({
-    required this.info,
-    required this.audioFiles,
-    required this.prefs,
-    required this.persist,
-    this.cues = const <AudioCue>[],
-    this.remote,
-    this.companion,
-  });
-
-  final SessionBookInfo info;
-  final List<File> audioFiles;
-  final SessionPrefs prefs;
-  final SessionPersistCallbacks persist;
-
-  /// 非空 = 远端（流式）书：[audioFiles] 是占位文件，播放与制卡取音频走它。起会话时
-  /// 原样传给 `AudiobookSession.start(remote:)`。
-  final AudiobookRemotePlayback? remote;
-
-  /// 随会话同生共死的伴随对象工厂（漫画有声的句序驱动）。起会话时原样传给
-  /// `AudiobookSession.start(companion:)`。
-  final AudiobookSessionCompanionFactory? companion;
-
-  bool get isSrtBookSource => info.isSrtBookSource;
-
-  /// 全书对齐 cue（扁平，无章节上下文）。供后台听书 [AudiobookSession.start] 在无
-  /// reader 时灌进控制器，让 currentCue 在 load 后即可解析（悬浮窗有字）。reader 在场
-  /// 时 reader 仍会按章节重新 setChapterCues，覆盖此扁平列表，行为不变。
-  final List<AudioCue> cues;
 }

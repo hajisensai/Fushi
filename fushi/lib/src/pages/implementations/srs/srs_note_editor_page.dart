@@ -843,6 +843,7 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
       fieldLabel: catalog.srsFieldDisplayName(field),
       fieldName: field.name,
       current: model.value,
+      promptStore: ref.read(appProvider).prefsRepo,
       run: (AiSrsFieldTask task, String instruction) async {
         final AiChatClient client = AiChatClient();
         try {

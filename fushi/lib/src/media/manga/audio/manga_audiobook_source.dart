@@ -28,9 +28,8 @@ import 'package:fushi_engine/tts/manga_audio/manga_audiobook_match.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/audiobook/tts/cast/series_cast_resolver.dart';
-import 'package:fushi/src/media/display_title.dart';
+import 'package:fushi/src/media/audiobook/tts/studio/audio_production_host.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_stores.dart';
-import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 能当音源的一本书。
@@ -96,18 +95,27 @@ bool attachTokenTimingIfAligned(List<AudioCue> stored, List<AudioCue> parsed) {
 }
 
 /// 后台 isolate 跑匹配（归一化走 FFI，工作 isolate 自己加载原生库）。顶层函数：闭包
-/// 只捕获两份纯数据，不会把 [AppModel] 之类带进 isolate 消息。
+/// 只捕获两份纯数据，不会把 `AppModel` 之类带进 isolate 消息。
 Future<MangaAudiobookMatchResult> matchMangaAudiobookInBackground(
   List<MangaAudiobookQueryLine> lines,
   List<MangaAudiobookCue> corpus,
 ) =>
     Isolate.run(() => matchMangaLinesToAudiobook(lines: lines, corpus: corpus));
 
-/// 读写入口（生产用 [AppModel]）。
-class MangaAudiobookSourceService {
-  MangaAudiobookSourceService(this.appModel);
+/// 按 bookKey 与库里的原始标题给出展示名。
+typedef MangaBookTitleResolver =
+    String Function(String bookKey, String rawTitle);
 
-  final AppModel appModel;
+/// 读写入口（生产用 `AppModel`）。
+class MangaAudiobookSourceService {
+  MangaAudiobookSourceService(this.appModel, {required this.bookTitle});
+
+  final AudioProductionHost appModel;
+
+  /// 书的展示名（生产用 `display_title.dart` 的 `displayTitleForBook`：带用户改名
+  /// 覆盖、去哈希）。注入而不直接 import：那份实现要读书族源，会把本服务拖进
+  /// import 大环。
+  final MangaBookTitleResolver bookTitle;
 
   FushiDatabase get _db => appModel.database;
 
@@ -131,9 +139,7 @@ class MangaAudiobookSourceService {
       out.add(
         MangaAudiobookCandidate(
           bookKey: e.key,
-          title: row == null
-              ? e.key
-              : displayTitleForBook(bookKey: row.bookKey, rawTitle: row.title),
+          title: row == null ? e.key : bookTitle(row.bookKey, row.title),
         ),
       );
     }

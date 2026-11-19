@@ -36,13 +36,13 @@ import 'package:fushi_engine/tts/render/tts_render_queue.dart'
     show TtsRenderCancelled, TtsRenderCancelToken;
 
 import 'package:fushi/src/asr_host/asr_host.dart';
+import 'package:fushi/src/media/audiobook/tts/studio/audio_production_host.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_render_mix.dart'
     show readMp4PresentationDurationMs;
 import 'package:fushi/src/media/manga/audio/manga_audio_library.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_render_backend.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_stores.dart';
 import 'package:fushi/src/media/manga/audio/manga_audiobook_source.dart';
-import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 匹配单元取自哪里。
@@ -212,12 +212,14 @@ MangaDramaTranscriber appMangaDramaTranscriber({
   };
 }
 
-/// 读写入口（生产用 [AppModel]）。
+/// 读写入口（生产用 `AppModel`）。
 class MangaDramaTrackService {
-  MangaDramaTrackService(this.appModel)
-    : _source = MangaAudiobookSourceService(appModel);
+  MangaDramaTrackService(
+    this.appModel, {
+    required MangaBookTitleResolver bookTitle,
+  }) : _source = MangaAudiobookSourceService(appModel, bookTitle: bookTitle);
 
-  final AppModel appModel;
+  final AudioProductionHost appModel;
   final MangaAudiobookSourceService _source;
 
   /// 本卷的匹配输入；本地卷没有可用 OCR（在线作品、还没识别、`manga.json` 坏了）

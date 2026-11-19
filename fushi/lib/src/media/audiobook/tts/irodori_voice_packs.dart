@@ -13,23 +13,25 @@ import 'package:fushi_engine/tts/local/irodori_voice_pack_provider.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/media/audiobook/tts/studio/audio_production_host.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
-import 'package:fushi/src/models/app_model.dart';
 
 /// 声音包清单（设备本地：里面是本机的 adapter / 参考音频路径）。
-IrodoriVoicePackStore irodoriVoicePackStoreFor(AppModel appModel) =>
+IrodoriVoicePackStore irodoriVoicePackStoreFor(AudioProductionHost appModel) =>
     IrodoriVoicePackStore(
       File(p.join(appModel.databaseDirectory.path, 'tts_voice_packs.json')),
     );
 
 /// 制作侧可选的全部声音：声音预设在前，声音包（桌面端才有）在后。
-List<TtsVoicePreset> ttsProductionPresets(TtsServices tts, AppModel appModel) =>
-    ttsProductionPresetsFrom(
-      presets: tts.store.loadPresets(),
-      packs: IrodoriLocalEngine.platformSupported
-          ? irodoriVoicePackStoreFor(appModel).load()
-          : const <IrodoriVoicePack>[],
-    );
+List<TtsVoicePreset> ttsProductionPresets(
+  TtsServices tts,
+  AudioProductionHost appModel,
+) => ttsProductionPresetsFrom(
+  presets: tts.store.loadPresets(),
+  packs: IrodoriLocalEngine.platformSupported
+      ? irodoriVoicePackStoreFor(appModel).load()
+      : const <IrodoriVoicePack>[],
+);
 
 /// [ttsProductionPresets] 的纯函数部分（测试直接调）。
 List<TtsVoicePreset> ttsProductionPresetsFrom({

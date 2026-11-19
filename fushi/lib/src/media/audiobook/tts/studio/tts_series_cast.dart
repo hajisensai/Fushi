@@ -16,14 +16,15 @@ import 'package:fushi_engine/tts/render/tts_cast.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/audiobook/tts/cast/series_cast_resolver.dart';
+import 'package:fushi/src/media/audiobook/tts/studio/audio_production_host.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_service.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
-import 'package:fushi/src/models/app_model.dart';
 
 /// 每本书的未配音账本：`<db>/tts_cast/<sha1>.voicing.json`。
-CastVoicingStore ttsVoicingStoreFor(AppModel appModel) => CastVoicingStore(
-  Directory(p.join(appModel.databaseDirectory.path, 'tts_cast')),
-);
+CastVoicingStore ttsVoicingStoreFor(AudioProductionHost appModel) =>
+    CastVoicingStore(
+      Directory(p.join(appModel.databaseDirectory.path, 'tts_cast')),
+    );
 
 /// 制作用的计划：按系列用词替换表改写每句的显示文字（进 cue / SRT / 制卡）与送去合成
 /// 的文字（纯函数）。只在制作流程与补回里用；AI 标注在构造提示词时替换，不改原计划。
@@ -70,7 +71,7 @@ typedef TtsCastBundle = ({TtsCast cast, SeriesCastProfile? series});
 
 /// 读选角表并挂上系列声音（[TtsCast.series]）。系列档案读不出时按没有系列处理。
 Future<TtsCastBundle> loadTtsCastBundle(
-  AppModel appModel,
+  AudioProductionHost appModel,
   String bookKey,
 ) async {
   final TtsCast cast = await ttsCastStoreFor(appModel).load(bookKey);
@@ -84,7 +85,7 @@ Future<TtsCastBundle> loadTtsCastBundle(
 
 /// [bookKey] 所属系列的档案；合集推断的系列首次读到时补上展示名。
 Future<SeriesCastProfile?> loadTtsSeriesProfile(
-  AppModel appModel,
+  AudioProductionHost appModel,
   String bookKey,
 ) async {
   final String? key = await resolveSeriesKey(appModel, bookKey);
@@ -99,7 +100,10 @@ Future<SeriesCastProfile?> loadTtsSeriesProfile(
 }
 
 /// 系列展示名：合集推断的取合集名，其余用身份本身。
-Future<String> ttsSeriesTitle(AppModel appModel, String seriesKey) async {
+Future<String> ttsSeriesTitle(
+  AudioProductionHost appModel,
+  String seriesKey,
+) async {
   final int? id = seriesCollectionId(seriesKey);
   if (id == null) return seriesKey;
   final MediaCollectionRow? row = await appModel.database
@@ -109,7 +113,7 @@ Future<String> ttsSeriesTitle(AppModel appModel, String seriesKey) async {
 
 /// 可以把书关联过去的系列：书架域的合集（`collection:<id>`）。
 Future<List<({String key, String title})>> ttsSeriesCandidates(
-  AppModel appModel,
+  AudioProductionHost appModel,
 ) async => <({String key, String title})>[
   for (final MediaCollectionRow c
       in await appModel.database.getMediaCollectionsInDomain(
@@ -121,7 +125,7 @@ Future<List<({String key, String title})>> ttsSeriesCandidates(
 
 /// 系列成员书（bookKey），按系列顺序（[seriesMemberBooks]）。
 Future<List<String>> ttsSeriesMemberBooks(
-  AppModel appModel,
+  AudioProductionHost appModel,
   SeriesCastProfile profile,
 ) => seriesMemberBooks(appModel, profile.seriesKey);
 

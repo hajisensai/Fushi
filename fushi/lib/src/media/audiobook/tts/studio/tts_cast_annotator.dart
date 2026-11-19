@@ -23,11 +23,11 @@ import 'package:fushi_engine/tts/cast/cast_prompt_roster.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
 
 import 'package:fushi/src/media/audiobook/tts/cast/series_cast_resolver.dart';
+import 'package:fushi/src/media/audiobook/tts/studio/audio_production_host.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_cast_prompt.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_series_cast.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_service.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
-import 'package:fushi/src/models/app_model.dart';
 
 /// 单块回复的输出上限：100 句全是台词时约 4k token，给推理模型的思考留余量。
 const int _kAnnotateMaxTokens = 8192;
@@ -55,7 +55,7 @@ class TtsCastAnnotateFailure implements Exception {
 /// [onProgress] = 两遍都完成的章数 / 待标章数；[onPhase] = 当前阶段
 /// （[kTtsCastPhaseRoster] / [kTtsCastPhaseLines]）内完成的章数 / 待标章数。
 Future<TtsCast> annotateTtsCast({
-  required AppModel appModel,
+  required AudioProductionHost appModel,
   required String bookKey,
   required TtsBookPlan plan,
   Set<int> sections = const <int>{},

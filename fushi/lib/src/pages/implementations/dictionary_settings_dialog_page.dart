@@ -1015,6 +1015,9 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
               scene: AiPromptScene.dictStyle,
               controller: _aiRequestController,
               enabled: !_aiBusy && !_isSaving,
+              storeOf: () => ProviderScope.containerOf(
+                context,
+              ).read(appProvider).prefsRepo,
             ),
             SizedBox(width: tokens.spacing.gap),
             FushiFilledButton.icon(

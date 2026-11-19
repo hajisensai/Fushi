@@ -25,13 +25,13 @@ import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
 
 import 'package:fushi/src/media/audiobook/tts/irodori_voice_packs.dart';
+import 'package:fushi/src/media/audiobook/tts/studio/audio_production_host.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_render_unvoiced.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_render_voices.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_series_cast.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_service.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
-import 'package:fushi/src/models/app_model.dart';
 
 enum TtsBackfillStrategy {
   /// 换配置重试（下一个候选声音）。
@@ -206,7 +206,7 @@ class TtsBackfillFailure implements Exception {
 
 /// 补回 [requests]，见库注释。[onProgress] = 已试句数 / 待试句数。
 Future<TtsBackfillResult> backfillTtsUnvoiced({
-  required AppModel appModel,
+  required AudioProductionHost appModel,
   required String bookKey,
   required List<TtsBackfillRequest> requests,
   void Function(int done, int total)? onProgress,

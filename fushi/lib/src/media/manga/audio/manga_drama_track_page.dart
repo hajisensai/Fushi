@@ -19,6 +19,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart'
     show pickRealFilePaths;
 import 'package:fushi/src/media/manga/audio/manga_drama_track_service.dart';
@@ -73,7 +74,7 @@ abstract interface class MangaDramaTrackBackend {
 
 class AppMangaDramaTrackBackend implements MangaDramaTrackBackend {
   AppMangaDramaTrackBackend(this.appModel)
-    : _service = MangaDramaTrackService(appModel);
+    : _service = MangaDramaTrackService(appModel, bookTitle: _displayTitle);
 
   final AppModel appModel;
   final MangaDramaTrackService _service;
@@ -571,3 +572,7 @@ class _MangaDramaTrackPanelState extends State<MangaDramaTrackPanel> {
     ),
   );
 }
+
+/// 生产用的书展示名（带用户改名覆盖、去哈希）。
+String _displayTitle(String bookKey, String rawTitle) =>
+    displayTitleForBook(bookKey: bookKey, rawTitle: rawTitle);
