@@ -8,6 +8,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_library.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
@@ -34,8 +35,10 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 };
 
 Future<void> pickAndImportMangaAudio(FushiDatabase db, String bookKey) async {
-  final FilePickerResult? picked = await FilePicker.platform.pickFiles(
-    type: FileType.custom,
+  // 清单当场读完写进库，不长期引用路径；按扩展名选走统一入口（安卓 SAF 不认
+  // 扩展名过滤时自动降级成 any + Dart 端校验）。
+  final FilePickerResult? picked = await pickFilesByExtensions(
+    context: null,
     allowedExtensions: const <String>['json'],
   );
   final String? path = picked?.files.single.path;

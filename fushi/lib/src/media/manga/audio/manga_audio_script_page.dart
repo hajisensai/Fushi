@@ -33,6 +33,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
@@ -876,7 +877,7 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
                       title: mangaAudioErrorText(_loadError!),
                     )
                   else
-                    const Center(child: CircularProgressIndicator()),
+                    const Center(child: FushiCircularProgressIndicator()),
                 ],
               );
             }

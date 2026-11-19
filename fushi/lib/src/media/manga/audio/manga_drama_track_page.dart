@@ -25,6 +25,7 @@ import 'package:fushi/src/media/manga/audio/manga_drama_track_service.dart';
 import 'package:fushi/src/media/manga/audio/manga_drama_track_tasks.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -60,7 +61,7 @@ abstract interface class MangaDramaTrackBackend {
   Future<MangaDramaVolume?> loadVolume(String bookKey);
 
   /// 选文件（按选择顺序）；取消返回空列表。
-  Future<List<String>> pickFiles(BuildContext context);
+  Future<List<String>> pickAudioFiles(BuildContext context);
 
   Future<MangaDramaOutcome> run({
     required MangaDramaVolume volume,
@@ -82,11 +83,12 @@ class AppMangaDramaTrackBackend implements MangaDramaTrackBackend {
       _service.loadVolume(bookKey);
 
   @override
-  Future<List<String>> pickFiles(BuildContext context) => pickRealFilePaths(
-    context: context,
-    appModel: appModel,
-    allowedExtensions: kMangaDramaFileExtensions,
-  );
+  Future<List<String>> pickAudioFiles(BuildContext context) =>
+      pickRealFilePaths(
+        context: context,
+        appModel: appModel,
+        allowedExtensions: kMangaDramaFileExtensions,
+      );
 
   @override
   Future<MangaDramaOutcome> run({
@@ -259,7 +261,7 @@ class _MangaDramaTrackPanelState extends State<MangaDramaTrackPanel> {
 
   Future<void> _add() async {
     if (_running) return;
-    final List<String> picked = await widget.backend.pickFiles(context);
+    final List<String> picked = await widget.backend.pickAudioFiles(context);
     if (!mounted || picked.isEmpty) return;
     _setFiles(<String>[
       ..._files,
@@ -407,8 +409,9 @@ class _MangaDramaTrackPanelState extends State<MangaDramaTrackPanel> {
             onTap: () => unawaited(_add()),
           ),
         ),
-        AnimatedSize(
+        FushiAnimatedSize(
           duration: fushiMotionDuration(context, FushiMotion.short),
+          curve: FushiMotion.standard,
           alignment: Alignment.topCenter,
           child: _files.isEmpty
               ? Padding(

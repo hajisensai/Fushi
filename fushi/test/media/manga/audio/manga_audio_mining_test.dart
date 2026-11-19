@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_library.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_mining.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';

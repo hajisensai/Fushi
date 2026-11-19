@@ -19,6 +19,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/tts/irodori_voice_packs.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_local_log_dialog.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -34,11 +35,9 @@ import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 打开声音包页。
 Future<void> openIrodoriVoicePackPage(
@@ -84,33 +83,7 @@ Future<void> _showLines(
   BuildContext context,
   String title,
   List<String> lines,
-) => showAppDialog<void>(
-  context: context,
-  builder: (BuildContext dialogContext) => FushiAlertDialog(
-    title: Text(title),
-    content: SizedBox(
-      width: 560,
-      height: 360,
-      child: SingleChildScrollView(
-        reverse: true,
-        child: SelectableText(
-          lines.isEmpty ? t.audiobook_tts_local_log_empty : lines.join('\n'),
-          style: Theme.of(
-            dialogContext,
-          ).textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
-        ),
-      ),
-    ),
-    actions: <Widget>[
-      FushiDialogAction(
-        label: t.dialog_ok,
-        kind: FushiDialogActionKind.primary,
-        autofocus: true,
-        onPressed: () => Navigator.of(dialogContext).pop(),
-      ),
-    ],
-  ),
-);
+) => showTtsLocalLogDialog(context, title: title, lines: lines);
 
 /// 列表页与编辑页共用的骨架：设置风格滚动列表，分组错峰进场。
 Widget _packScaffold({

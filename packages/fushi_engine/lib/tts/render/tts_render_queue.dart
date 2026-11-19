@@ -232,47 +232,51 @@ class TtsRenderJob {
     final Object? flags = json['flags'];
     final Object? lines = json['lines'];
     return TtsRenderJob(
-      id: json['id']! as String,
-      bookKey: json['bookKey']! as String,
-      title: (json['title'] as String?) ?? '',
-      presetId: (json['presetId'] as String?) ?? '',
-      kind: byName(
-        TtsRenderJobKind.values,
-        json['kind'],
-        TtsRenderJobKind.book,
-      ),
-      lineRequests: <TtsRenderLineRequest>[
-        if (lines is List)
-          for (final Object? l in lines)
-            if (TtsRenderLineRequest.fromJson(l)
-                case final TtsRenderLineRequest r)
-              r,
-      ],
-      sections: ints(json['sections']),
-      verify: json['verify'] == true,
-      regenerate: ints(json['regenerate']),
-      pausePreset: (json['pause'] as String?) ?? 'standard',
-      normalizeLoudness: json['loudnorm'] != false,
-      createdAt: (json['createdAt'] as int?) ?? 0,
-      updatedAt: (json['updatedAt'] as int?) ?? 0,
-      status: byName(
-        TtsRenderJobStatus.values,
-        json['status'],
-        TtsRenderJobStatus.failed,
-      ),
-      phase: phase == null
-          ? null
-          : byName(TtsRenderJobPhase.values, phase, TtsRenderJobPhase.planning),
-      done: (json['done'] as int?) ?? 0,
-      total: (json['total'] as int?) ?? 0,
-      error: json['error'] as String?,
-      flags: <TtsRenderFlag>[
-        if (flags is List)
-          for (final Object? f in flags)
-            if (TtsRenderFlag.fromJson(f) case final TtsRenderFlag flag) flag,
-      ],
-      verified: json['verified'] == true,
-    )
+        id: json['id']! as String,
+        bookKey: json['bookKey']! as String,
+        title: (json['title'] as String?) ?? '',
+        presetId: (json['presetId'] as String?) ?? '',
+        kind: byName(
+          TtsRenderJobKind.values,
+          json['kind'],
+          TtsRenderJobKind.book,
+        ),
+        lineRequests: <TtsRenderLineRequest>[
+          if (lines is List)
+            for (final Object? l in lines)
+              if (TtsRenderLineRequest.fromJson(l)
+                  case final TtsRenderLineRequest r)
+                r,
+        ],
+        sections: ints(json['sections']),
+        verify: json['verify'] == true,
+        regenerate: ints(json['regenerate']),
+        pausePreset: (json['pause'] as String?) ?? 'standard',
+        normalizeLoudness: json['loudnorm'] != false,
+        createdAt: (json['createdAt'] as int?) ?? 0,
+        updatedAt: (json['updatedAt'] as int?) ?? 0,
+        status: byName(
+          TtsRenderJobStatus.values,
+          json['status'],
+          TtsRenderJobStatus.failed,
+        ),
+        phase: phase == null
+            ? null
+            : byName(
+                TtsRenderJobPhase.values,
+                phase,
+                TtsRenderJobPhase.planning,
+              ),
+        done: (json['done'] as int?) ?? 0,
+        total: (json['total'] as int?) ?? 0,
+        error: json['error'] as String?,
+        flags: <TtsRenderFlag>[
+          if (flags is List)
+            for (final Object? f in flags)
+              if (TtsRenderFlag.fromJson(f) case final TtsRenderFlag flag) flag,
+        ],
+        verified: json['verified'] == true,
+      )
       ..loudnessSkipped = json['loudnessSkipped'] == true
       ..unvoiced = json['unvoiced'] is int ? json['unvoiced']! as int : 0;
   }

@@ -90,7 +90,7 @@ class _FakeBackend implements MangaDramaTrackBackend {
   Future<MangaDramaVolume?> loadVolume(String bookKey) async => volume;
 
   @override
-  Future<List<String>> pickFiles(BuildContext context) async =>
+  Future<List<String>> pickAudioFiles(BuildContext context) async =>
       _pickIndex < picks.length ? picks[_pickIndex++] : const <String>[];
 
   @override

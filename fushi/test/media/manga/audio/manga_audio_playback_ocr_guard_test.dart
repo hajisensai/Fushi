@@ -6,7 +6,7 @@
 // 播放中 OCR 落定 / 整卷完成 / 缓存补回）都走这一判据，而不是只核页数。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_library.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';

@@ -1157,6 +1157,14 @@ class AnotherPopupPart {
       // `MokuroBlock.fontSize` 与 mokuro_payload / manga_ocr_folder_job 里被
       // 豁免的是同一个数据字段（气泡文字尺寸，落盘给 overlay 用），文件本身
       // 零 UI。属既有 reviewed 豁免类跟随新生产者，不是放宽判据。
+      // #3717 用词替换的上传页图：按 OCR 块的 MokuroBlock.fontSize（乘页图缩放）
+      // 把替换文字用 dart:ui Paragraph 重绘进发给 AI 的 JPEG 副本。字号来自 OCR
+      // 几何、画在漫画页像素上，是内容而不是界面排版；文件零 Widget。与上面
+      // manga.json 生产者同一 fontSize 数据字段的消费端。
+      'lib/src/media/manga/audio/manga_audio_substitution_image.dart':
+          'Repaints substituted text onto the manga page JPEG sent to the AI, '
+          'sized from the OCR block MokuroBlock.fontSize scaled to the page '
+          'image; page-pixel content, no Flutter widget typography.',
       'lib/src/media/manga/ocr/google_lens_ocr_service.dart':
           'Writes the MokuroBlock.fontSize data field for Lens-produced '
           'manga.json blocks; pure data layer, no UI typography.',
@@ -1461,6 +1469,9 @@ class AnotherPopupPart {
         'fontSize:',
       },
       'lib/src/media/video/video_clip_subtitle_image.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/media/manga/audio/manga_audio_substitution_image.dart': <String>{
         'fontSize:',
       },
       'lib/src/media/manga/ocr/google_lens_ocr_service.dart': <String>{

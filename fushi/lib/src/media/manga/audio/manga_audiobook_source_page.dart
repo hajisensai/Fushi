@@ -17,6 +17,7 @@ import 'package:fushi/src/media/manga/audio/manga_audiobook_source.dart';
 import 'package:fushi/src/media/manga/audio/manga_drama_track_page.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -422,8 +423,9 @@ class _MangaAudiobookSourcePanelState extends State<MangaAudiobookSourcePanel> {
             onTap: () => unawaited(_add()),
           ),
         ),
-        AnimatedSize(
+        FushiAnimatedSize(
           duration: fushiMotionDuration(context, FushiMotion.short),
+          curve: FushiMotion.standard,
           alignment: Alignment.topCenter,
           child: _sources.isEmpty
               ? Padding(

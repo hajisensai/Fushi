@@ -26,6 +26,7 @@ import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
@@ -429,7 +430,7 @@ class _MangaAudioPlaybackBarState extends State<MangaAudioPlaybackBar> {
             Expanded(
               child: Semantics(
                 label: t.manga_audio_progress,
-                child: Slider(
+                child: FushiSlider(
                   key: const ValueKey<String>('manga_audio_progress'),
                   value: fraction,
                   onChanged: total <= 0

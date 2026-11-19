@@ -97,49 +97,52 @@ void main() {
       expect((await store.load('collection:1')).members, <String>['vol2b']);
     });
 
-    test('update serializes concurrent writers across store instances', () async {
-      // 制作台、按系列跑、漫画制作台各自拿着旧拷贝：都经 update 改，谁也不覆盖谁。
-      final SeriesCastStore a = SeriesCastStore(dir);
-      final SeriesCastStore b = SeriesCastStore(dir);
-      await a.save(SeriesCastProfile(seriesKey: 'collection:9'));
-      final Completer<void> gate = Completer<void>();
-      final Future<SeriesCastProfile> slow = a.update('collection:9', (
-        SeriesCastProfile p,
-      ) async {
-        await gate.future;
-        p.voices.byCharacter['A'] = 'va';
-      });
-      final Future<SeriesCastProfile> fast = b.update(
-        'collection:9',
-        (SeriesCastProfile p) => p.learnRoster(const <TtsCastCharacter>[
-          TtsCastCharacter(name: '宮城'),
-        ]),
-      );
-      final Future<void> link = b.link('vol1', 'collection:9');
-      gate.complete();
-      await Future.wait(<Future<Object?>>[slow, fast, link]);
-      final SeriesCastProfile back = await a.load('collection:9');
-      expect(back.voices.byCharacter['A'], 'va');
-      expect(back.roster.keys, <String>['宮城']);
-      expect(back.members, <String>['vol1']);
-      expect((await fast).voices.byCharacter['A'], 'va');
-
-      // mutate 抛异常：不存盘，后续写入照常排队。
-      await expectLater(
-        a.update('collection:9', (SeriesCastProfile p) {
-          p.voices.byCharacter['A'] = 'broken';
-          throw StateError('boom');
-        }),
-        throwsStateError,
-      );
-      expect(
-        (await b.update(
+    test(
+      'update serializes concurrent writers across store instances',
+      () async {
+        // 制作台、按系列跑、漫画制作台各自拿着旧拷贝：都经 update 改，谁也不覆盖谁。
+        final SeriesCastStore a = SeriesCastStore(dir);
+        final SeriesCastStore b = SeriesCastStore(dir);
+        await a.save(SeriesCastProfile(seriesKey: 'collection:9'));
+        final Completer<void> gate = Completer<void>();
+        final Future<SeriesCastProfile> slow = a.update('collection:9', (
+          SeriesCastProfile p,
+        ) async {
+          await gate.future;
+          p.voices.byCharacter['A'] = 'va';
+        });
+        final Future<SeriesCastProfile> fast = b.update(
           'collection:9',
-          (SeriesCastProfile p) => p.title = 'T',
-        )).voices.byCharacter['A'],
-        'va',
-      );
-    });
+          (SeriesCastProfile p) => p.learnRoster(const <TtsCastCharacter>[
+            TtsCastCharacter(name: '宮城'),
+          ]),
+        );
+        final Future<void> link = b.link('vol1', 'collection:9');
+        gate.complete();
+        await Future.wait(<Future<Object?>>[slow, fast, link]);
+        final SeriesCastProfile back = await a.load('collection:9');
+        expect(back.voices.byCharacter['A'], 'va');
+        expect(back.roster.keys, <String>['宮城']);
+        expect(back.members, <String>['vol1']);
+        expect((await fast).voices.byCharacter['A'], 'va');
+
+        // mutate 抛异常：不存盘，后续写入照常排队。
+        await expectLater(
+          a.update('collection:9', (SeriesCastProfile p) {
+            p.voices.byCharacter['A'] = 'broken';
+            throw StateError('boom');
+          }),
+          throwsStateError,
+        );
+        expect(
+          (await b.update(
+            'collection:9',
+            (SeriesCastProfile p) => p.title = 'T',
+          )).voices.byCharacter['A'],
+          'va',
+        );
+      },
+    );
 
     test('corrupt profile is moved aside', () async {
       final SeriesCastStore store = SeriesCastStore(dir);
