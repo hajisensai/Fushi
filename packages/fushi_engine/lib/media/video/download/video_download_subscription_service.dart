@@ -41,10 +41,58 @@ const int _subscriptionResourceMaxPages = 20;
 /// 按一次会把 `attemptCount` 清零，自动预算随之恢复。
 const int kVideoDownloadSubscriptionAutoRetryBudget = 3;
 
-class VideoDownloadSubscriptionConfigurationError implements Exception {
-  const VideoDownloadSubscriptionConfigurationError(this.message);
+/// 订阅配置错误的稳定分类。
+///
+/// [message] 是落进订阅行 `lastError` 的英文诊断串（已持久化的旧行里就是这些
+/// 原文，**冻结不改**）；UI 用 [fromLastError] 认回分类再给本地化文案，不把
+/// 英文串直接摆给用户。
+enum VideoDownloadSubscriptionConfigIssue {
+  invalidMode('The subscription mode is invalid'),
+  targetSourceUnavailable('The subscription target source is unavailable'),
+  backendBindingIncomplete(
+    'The subscription download backend binding is incomplete',
+  ),
+  legacyOrganization(
+    'Legacy organization subscriptions require the legacy scheduler',
+  ),
+  providerNotConfigured(
+    'The selected resource provider is not configured on this device',
+  ),
+  invalidVersionFilter('The subscription version filter is invalid'),
+  nonStrictVersionFilter('The subscription version filter must remain strict'),
+  nyaaRulesIncomplete(
+    'Nyaa subscriptions require release group, resolution, and trust rules',
+  ),
+  torznabRulesMissing(
+    'Torznab subscriptions require at least one strict version rule',
+  ),
+  invalidMediaKind('The subscription media kind is invalid'),
+  invalidSubtitlePolicy('The subscription subtitle policy is invalid'),
+  btSiteMissing(kVideoSubscriptionBtSiteMissingError);
+
+  const VideoDownloadSubscriptionConfigIssue(this.message);
 
   final String message;
+
+  /// 订阅行 `lastError` 对应的配置错误分类；不是配置错误（来源站失败等）时 null。
+  static VideoDownloadSubscriptionConfigIssue? fromLastError(
+    String? lastError,
+  ) {
+    final String? value = lastError?.trim();
+    if (value == null || value.isEmpty) return null;
+    for (final VideoDownloadSubscriptionConfigIssue issue in values) {
+      if (issue.message == value) return issue;
+    }
+    return null;
+  }
+}
+
+class VideoDownloadSubscriptionConfigurationError implements Exception {
+  const VideoDownloadSubscriptionConfigurationError(this.issue);
+
+  final VideoDownloadSubscriptionConfigIssue issue;
+
+  String get message => issue.message;
 
   @override
   String toString() => message;
@@ -54,6 +102,10 @@ class VideoDownloadSubscriptionConfigurationError implements Exception {
 /// [isVideoSubscriptionBtSiteMissingError] 认它并显示「请先添加 BT 站」入口）。
 const String kVideoSubscriptionBtSiteMissingError =
     'bt-site-missing: no enabled BT site covers this subscription';
+
+/// 订阅检查因未分类的异常失败时落在 `lastError` 上的固定文案（不透出异常原文；
+/// UI 认它给本地化的「检查失败」）。
+const String kVideoSubscriptionCheckFailedError = 'subscription check failed';
 
 /// 订阅行的 `lastError` 是不是「没有可用的 BT 站」。
 bool isVideoSubscriptionBtSiteMissingError(String? lastError) =>
@@ -66,7 +118,7 @@ bool isVideoSubscriptionBtSiteMissingError(String? lastError) =>
 class VideoDownloadSubscriptionBtSiteMissing
     extends VideoDownloadSubscriptionConfigurationError {
   const VideoDownloadSubscriptionBtSiteMissing()
-    : super(kVideoSubscriptionBtSiteMissingError);
+    : super(VideoDownloadSubscriptionConfigIssue.btSiteMissing);
 }
 
 /// v78 订阅调度器。
@@ -458,7 +510,7 @@ class VideoDownloadSubscriptionService {
         throw const VideoDownloadSubscriptionBtSiteMissing();
       }
       throw const VideoDownloadSubscriptionConfigurationError(
-        'The selected resource provider is not configured on this device',
+        VideoDownloadSubscriptionConfigIssue.providerNotConfigured,
       );
     }
     // BT 站订阅按「解析到的那个站」认候选；其余（Torznab 的 `torznab:<indexer>`）
@@ -925,23 +977,23 @@ class VideoDownloadSubscriptionService {
   void _validateSubscription(VideoDownloadSubscriptionRow subscription) {
     if (subscription.mode != 'oneShot' && subscription.mode != 'ongoing') {
       throw const VideoDownloadSubscriptionConfigurationError(
-        'The subscription mode is invalid',
+        VideoDownloadSubscriptionConfigIssue.invalidMode,
       );
     }
     if (subscription.targetSourceId == null) {
       throw const VideoDownloadSubscriptionConfigurationError(
-        'The subscription target source is unavailable',
+        VideoDownloadSubscriptionConfigIssue.targetSourceUnavailable,
       );
     }
     if (subscription.backendProfileId?.trim().isEmpty != false ||
         subscription.category?.trim().isEmpty != false) {
       throw const VideoDownloadSubscriptionConfigurationError(
-        'The subscription download backend binding is incomplete',
+        VideoDownloadSubscriptionConfigIssue.backendBindingIncomplete,
       );
     }
     if (subscription.organizationPolicy != 'library') {
       throw const VideoDownloadSubscriptionConfigurationError(
-        'Legacy organization subscriptions require the legacy scheduler',
+        VideoDownloadSubscriptionConfigIssue.legacyOrganization,
       );
     }
     _mediaKind(subscription.mediaKind);
@@ -1062,17 +1114,17 @@ class _SubscriptionFilter {
       decoded = jsonDecode(raw);
     } on FormatException {
       throw const VideoDownloadSubscriptionConfigurationError(
-        'The subscription version filter is invalid',
+        VideoDownloadSubscriptionConfigIssue.invalidVersionFilter,
       );
     }
     if (decoded is! Map<String, dynamic>) {
       throw const VideoDownloadSubscriptionConfigurationError(
-        'The subscription version filter is invalid',
+        VideoDownloadSubscriptionConfigIssue.invalidVersionFilter,
       );
     }
     if (decoded.containsKey('strict') && decoded['strict'] != true) {
       throw const VideoDownloadSubscriptionConfigurationError(
-        'The subscription version filter must remain strict',
+        VideoDownloadSubscriptionConfigIssue.nonStrictVersionFilter,
       );
     }
     final List<String> releaseGroups = _filterValues(decoded, 'releaseGroup');
@@ -1105,7 +1157,7 @@ class _SubscriptionFilter {
             (resolutions.isEmpty && qualities.isEmpty) ||
             (trusted == null && trustedOnly == null))) {
       throw const VideoDownloadSubscriptionConfigurationError(
-        'Nyaa subscriptions require release group, resolution, and trust rules',
+        VideoDownloadSubscriptionConfigIssue.nyaaRulesIncomplete,
       );
     }
     if (providerBase == 'torznab' &&
@@ -1116,7 +1168,7 @@ class _SubscriptionFilter {
         codecs.isEmpty &&
         languages.isEmpty) {
       throw const VideoDownloadSubscriptionConfigurationError(
-        'Torznab subscriptions require at least one strict version rule',
+        VideoDownloadSubscriptionConfigIssue.torznabRulesMissing,
       );
     }
     return _SubscriptionFilter(
@@ -1250,7 +1302,7 @@ VideoMetadataMediaKind _mediaKind(String raw) {
     if (value.name == raw) return value;
   }
   throw const VideoDownloadSubscriptionConfigurationError(
-    'The subscription media kind is invalid',
+    VideoDownloadSubscriptionConfigIssue.invalidMediaKind,
   );
 }
 
@@ -1275,7 +1327,7 @@ VideoDownloadSubtitlePolicy _subtitlePolicy(String raw) {
     if (value.name == raw) return value;
   }
   throw const VideoDownloadSubscriptionConfigurationError(
-    'The subscription subtitle policy is invalid',
+    VideoDownloadSubscriptionConfigIssue.invalidSubtitlePolicy,
   );
 }
 
@@ -1417,13 +1469,13 @@ List<String> _filterValues(Map<String, dynamic> raw, String key) {
       : value is String
       ? <Object?>[value]
       : throw const VideoDownloadSubscriptionConfigurationError(
-          'The subscription version filter is invalid',
+          VideoDownloadSubscriptionConfigIssue.invalidVersionFilter,
         );
   final List<String> result = <String>[];
   for (final Object? item in values) {
     if (item is! String || item.trim().isEmpty) {
       throw const VideoDownloadSubscriptionConfigurationError(
-        'The subscription version filter is invalid',
+        VideoDownloadSubscriptionConfigIssue.invalidVersionFilter,
       );
     }
     result.add(item.trim());
@@ -1443,7 +1495,7 @@ bool? _optionalBool(Map<String, dynamic> raw, String key) {
   final Object value = raw[key]!;
   if (value is bool) return value;
   throw const VideoDownloadSubscriptionConfigurationError(
-    'The subscription version filter is invalid',
+    VideoDownloadSubscriptionConfigIssue.invalidVersionFilter,
   );
 }
 
@@ -1501,7 +1553,7 @@ String _safeSubscriptionError(Object error) {
     final String message = redactCredentialsInText(error.message);
     return '$provider ${error.kind.name}: $message';
   }
-  return 'subscription check failed';
+  return kVideoSubscriptionCheckFailedError;
 }
 
 Never _throwSubscriptionError(Object error) {

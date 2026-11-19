@@ -100,7 +100,8 @@ String newFeedbackSubmissionKey([Random? random]) {
 }
 
 /// 提交进行到哪一步（提交页的进度文案）。[videoPrepare] 在发正文之前（转码失败 / 太大
-/// 要在反馈交上去之前告诉用户），[files] 是样本文件，[video] 是最后一步（最大的附件最后传）。
+/// 要在反馈交上去之前告诉用户），[video] 在 [files]（样本文件）之前：两者共用服务端每 IP
+/// 每天的大附件额度，录屏是主证据，先传（BUG-4784）。
 enum FeedbackSubmitStage {
   videoPrepare,
   sending,
@@ -323,8 +324,15 @@ class FeedbackService extends ChangeNotifier {
     _tickets = await (await _storeFor()).read();
     try {
       final FeedbackPendingStore store = await _pendingFor();
-      // 提交（唯一会 copyFile 的路径）都先 await load()，此刻没有复制在跑。
-      await store.discardInterrupted();
+      // 提交（唯一会 copyFile 的路径）都先 await load()，此刻没有复制在跑。清半成品是
+      // 收拾磁盘，和「有哪些待传附件」无关：它失败（文件被占用 / 没权限）只留下不算槽位的
+      // `.part` 等下次启动再清，不能连累下面的 scan，否则这一整次运行里所有待传附件都看不到、
+      // 也没法重试。
+      try {
+        await store.discardInterrupted();
+      } on Object catch (e, st) {
+        ErrorLogService.instance.log('feedback.pending_discard', e, st);
+      }
       final Map<String, Set<String>> pending = await store.scan();
       _pending
         ..clear()
@@ -1181,8 +1189,8 @@ class FeedbackService extends ChangeNotifier {
   }
 
   /// 把另一处数据根（[spoolRoot]，结构同 `<数据根>`）里提交的反馈并进本机清单：回执
-  /// 插到最前（同 id 以 spool 里的为准——那是刚提交的），没传上去的截图 / 日志挪进本机
-  /// 待传区，然后删掉 [spoolRoot]。返回并入的条数。
+  /// 插到最前（同 id 以 spool 里的为准——那是刚提交的），没传上去的附件连同旁注整项
+  /// 并进本机待传区（[FeedbackPendingStore.adoptSlot]），然后删掉 [spoolRoot]。返回并入的条数。
   ///
   /// 用于启动即闪退时的闪退报告（crash_report.dart）：那时数据库还没打开、数据根未解析，
   /// 提交先落在错误日志目录下，初始化完成后由这里接手，反馈中心照常看得到进度、能重试。
@@ -1209,9 +1217,9 @@ class FeedbackService extends ChangeNotifier {
     final Map<String, Set<String>> pending = await from.scan();
     for (final MapEntry<String, Set<String>> e in pending.entries) {
       for (final String slot in e.value) {
-        final Uint8List? bytes = await from.read(e.key, slot);
-        if (bytes == null) continue;
-        await to.put(e.key, slot, bytes);
+        // 整项并入（本体 + `.type` / `.name` 旁注）：只搬字节会让样本文件丢了原文件名、
+        // 上传时被当损坏丢掉，视频丢了 MIME。
+        if (!await to.adoptSlot(from, e.key, slot)) continue;
         (_pending[e.key] ??= <String>{}).add(slot);
       }
     }

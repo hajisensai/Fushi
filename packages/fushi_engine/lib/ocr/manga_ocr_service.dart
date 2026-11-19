@@ -37,6 +37,13 @@ abstract class MangaOcrService {
   /// 的实现（远端 / 外部 CLI）可以忽略它；按序处理的实现必须在逐页事件里如实
   /// 给出 [MangaOcrVolumeEvent.pageIndex]——完成计数不再等于页号 + 1。
   /// 产物 manga.json 的内容与页序与起点无关。
+  ///
+  /// 取消订阅的 Future（`StreamSubscription.cancel()` 的返回值）**在执行体真正
+  /// 停下之后才完成**：本地实现是整卷 isolate 已关掉推理会话并退出。取消请求
+  /// 本身在页边界生效，当前页还要跑完，所以这个 Future 可能晚几秒；它是「这份
+  /// 模型内存已经放掉、可以再起一个任务」的唯一信号（BUG-4800）。不想被它拖住
+  /// 的调用方（界面上的取消按钮）不要 await，只在决定何时再起任务的地方等。
+  /// 没有可等的执行体的实现（在途的一次 HTTP / 平台调用）立即完成。
   Stream<MangaOcrVolumeEvent> ocrFolder({
     required String imageDirPath,
     String? volumeTitle,

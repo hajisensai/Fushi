@@ -4,6 +4,9 @@ import 'dart:typed_data';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/mihon/desktop_mihon_runtime.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 void main() {
   test('source image timeout is extended beyond the old fixed 45 seconds', () {
@@ -105,6 +108,162 @@ void main() {
       await expectLater(reading, throwsA(isA<TimeoutException>()));
     },
   );
+
+  // BUG-2450 第 4 点：漫画页图原来是从请求开始固定 45 秒的整请求超时。
+  group('page image (fetchMihonPageImageBytes)', () {
+    const Duration headerTimeout = Duration(milliseconds: 500);
+    const Duration idleTimeout = Duration(milliseconds: 500);
+    final Uri url = Uri.parse('http://127.0.0.1:1/image/1');
+
+    test('慢速但持续出数据的页图不被整请求计时砍掉；请求头原样带上', () async {
+      const Duration gap = Duration(milliseconds: 400);
+      final FakeAsync fake = FakeAsync();
+      final StreamController<List<int>> body = StreamController<List<int>>();
+      http.BaseRequest? seen;
+      Uint8List? result;
+      Object? error;
+      fake.run((FakeAsync async) {
+        final MockClient client = MockClient.streaming((
+          http.BaseRequest request,
+          http.ByteStream _,
+        ) async {
+          seen = request;
+          return http.StreamedResponse(body.stream, 200);
+        });
+        fetchMihonPageImageBytes(
+          client,
+          url,
+          headers: const <String, String>{'Authorization': 'Bearer t'},
+          headerTimeout: headerTimeout,
+          idleTimeout: idleTimeout,
+        ).then(
+          (Uint8List bytes) => result = bytes,
+          onError: (Object e) {
+            error = e;
+          },
+        );
+        async.flushMicrotasks();
+        for (int i = 0; i < 4; i++) {
+          body.add(<int>[i]);
+          async.elapse(gap);
+        }
+        expect(error, isNull, reason: '累计 1600ms 超过三个超时窗口，但每块都在续期');
+        body.close();
+      });
+      await _drainUntil(fake, () => result != null || error != null);
+
+      expect(error, isNull);
+      expect(result, Uint8List.fromList(<int>[0, 1, 2, 3]));
+      expect(seen!.method, 'GET');
+      expect(seen!.url, url);
+      expect(seen!.headers['Authorization'], 'Bearer t');
+    });
+
+    test('响应头迟迟不来按首响应超时失败', () async {
+      final FakeAsync fake = FakeAsync();
+      final Completer<http.StreamedResponse> never =
+          Completer<http.StreamedResponse>();
+      Object? error;
+      fake.run((FakeAsync async) {
+        final MockClient client = MockClient.streaming(
+          (http.BaseRequest _, http.ByteStream _) => never.future,
+        );
+        fetchMihonPageImageBytes(
+          client,
+          url,
+          headers: const <String, String>{},
+          headerTimeout: headerTimeout,
+          idleTimeout: idleTimeout,
+        ).then(
+          (_) {},
+          onError: (Object e) {
+            error = e;
+          },
+        );
+        async.elapse(headerTimeout - const Duration(milliseconds: 1));
+        expect(error, isNull);
+        async.elapse(const Duration(milliseconds: 1));
+      });
+      await _drainUntil(fake, () => error != null);
+      expect(error, isA<TimeoutException>());
+    });
+
+    test('出过数据后连续一个窗口没动静仍然超时', () async {
+      final FakeAsync fake = FakeAsync();
+      final StreamController<List<int>> body = StreamController<List<int>>();
+      addTearDown(body.close);
+      Object? error;
+      fake.run((FakeAsync async) {
+        final MockClient client = MockClient.streaming(
+          (http.BaseRequest _, http.ByteStream _) async =>
+              http.StreamedResponse(body.stream, 200),
+        );
+        fetchMihonPageImageBytes(
+          client,
+          url,
+          headers: const <String, String>{},
+          headerTimeout: headerTimeout,
+          idleTimeout: idleTimeout,
+        ).then(
+          (_) {},
+          onError: (Object e) {
+            error = e;
+          },
+        );
+        async.flushMicrotasks();
+        body.add(<int>[1]);
+        async.elapse(idleTimeout + const Duration(milliseconds: 1));
+      });
+      await _drainUntil(fake, () => error != null);
+      expect(error, isA<TimeoutException>());
+    });
+
+    test('非 200 与空响应体保留原错误码', () async {
+      Future<Uint8List> fetch(int status, List<int> bytes) =>
+          fetchMihonPageImageBytes(
+            MockClient(
+              (http.Request _) async => http.Response.bytes(bytes, status),
+            ),
+            url,
+            headers: const <String, String>{},
+          );
+      await expectLater(
+        fetch(503, <int>[1]),
+        throwsA(
+          isA<MihonRuntimeException>().having(
+            (MihonRuntimeException e) => e.code,
+            'code',
+            'IMAGE_HTTP_503',
+          ),
+        ),
+      );
+      await expectLater(
+        fetch(200, <int>[]),
+        throwsA(
+          isA<MihonRuntimeException>().having(
+            (MihonRuntimeException e) => e.code,
+            'code',
+            'EMPTY_IMAGE',
+          ),
+        ),
+      );
+    });
+
+    test('页图不套封面的 32 MiB 上限', () async {
+      final Uint8List bytes = await readMihonSourceImageBytes(
+        Stream<List<int>>.value(<int>[1, 2, 3]),
+        maxBytes: null,
+      );
+      expect(bytes, hasLength(3));
+      await expectLater(
+        readMihonSourceImageBytes(
+          Stream<List<int>>.value(<int>[1, 2, 3]),
+          maxBytes: 2,
+        ),
+        throwsA(isA<MihonRuntimeException>()),
+      );
+    });
+  });
 }
 
 /// 把 fake-async 下已经能进行的异步收尾全部跑完（不推进虚拟时间）。

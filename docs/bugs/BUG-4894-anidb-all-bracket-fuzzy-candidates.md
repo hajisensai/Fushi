@@ -1,0 +1,8 @@
+## BUG-4894 · 全方括号文件名 `[K-ON!][04][BIG5]…` 待确认列表塞满只共享 `kon` 音节的无关作品
+- **报告**：2026-11-16（用户：平板截图，`[K-ON!][04][BIG5][x264_aac][BDrip_720P]` 的待确认候选是「映画 けいおん! / この音とまれ! (2019) / この世界の片隅に / 結婚指輪物語II」，提示却写「找到多个严格匹配结果」）
+- **真实性**：✅ 真 bug。用本机真实 `anidb-anime-titles.xml` 复现：整串原名归一化为 `k on 04 big5 x264 aac bdrip 720p`，目录搜索返回的前四名正是 8280（0.33）/ 14553（0.31）/ 9376（0.28）/ 18559（0.28），全是 `Similar`。两层根因：
+  1. `native/fushi_compute/src/parse/media_name.rs` `classify_block` ⑧：块外无字时首块一律当发布组，`[K-ON!]` 成了 release group，标题为空；其后 `[04]` 因「还没见过标题」不算集号。上层（`videoScrapeTitleCandidates`）拿不到干净标题 `K-ON!`（它在目录里精确命中 6257 / 7307），只剩整串原名可搜。
+  2. `packages/fushi_engine/lib/media/video/metadata/video_metadata_resolver.dart` AniDB 分支：目录摘要标题不符时无条件 `reviewCandidates.putIfAbsent`，而目录搜索在精确 / 前缀落空时退到 3-gram 模糊召回、下限只有 0.2（`catalog.rs` `search`），噪声原样进了待确认。AniDB HTTP 详情不可用（随包 `fushiplayer` 只登记了 UDP，BUG-2623）时没有类型 / 年份门再挡一道。
+- **[x] ① 已修复** — 解析器：第一趟无标题、首块被当发布组且没认出集号时，把首块当标题再分一趟，**仅当这一趟在标题之外的块里认出集号**（`[第01-12话]` 这类单块批量范围不算，否则会被拆成标题「第01」+ 集 12，`native_media_parse_vectors_test` 的冻结指纹就是这样红的）才采用（单独 `[VCB-Studio]` 目录名不受影响）。resolver：AniDB 目录模糊命中相似度 < `kAniDbReviewMinFuzzySimilarity`（0.65，真实目录实测同作品 ≥ 0.67、噪声 ≤ 0.62）不进待确认；手动搜索面不变。
+- **[x] ② 已加自动化测试** — `native/fushi_compute/src/parse/media_name.rs` `all_bracket_title_then_episode`；`fushi/test/media/video/metadata/anidb_all_bracket_fuzzy_candidates_test.dart`（真解析器 → 标题候选 → resolver，断言 6257 / 7307 在、14553 / 9376 / 18559 不在）。
+- **备注**：确认框文案已按歧义来由区分：`VideoMetadataResolution.strictMatches`（只有候选都过严格门才为真）随确认请求带到 UI，真严格歧义仍说「找到多个严格匹配结果」，其余说「找到了一些可能的作品，但无法确认是哪一部」（新 key `video_source_scrape_confirmation_review_hint`，测试见 `video_source_scrape_ui_test.dart`）。平板真机未复测（修复在纯解析 / 匹配层，已用真实目录数据复现与验证）。

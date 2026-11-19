@@ -47,6 +47,7 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
         RemoteVideoEmbeddedSubtitleTrack,
         RemoteVideoInfo,
         RemoteVideoStreamUrls;
+import 'package:fushi/src/sync/launch_item_detail_memo.dart';
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi_engine/media/tracking/remote_anime_link.dart'
@@ -2509,6 +2510,18 @@ class JellyfinVideoClient
     return index <= 0 ? item : item.withMediaSource(item.mediaSources[index]);
   }
 
+  /// 一次起播内的条目详情短复用（[LaunchItemDetailMemo]）：重开入口的
+  /// [itemDetail]、取流、下默认字幕要的是同一份 `/Users/{uid}/Items/{id}`。
+  /// [playbackClient] 必须是本对象——换成别的实例这一格就接不上了。
+  /// 存的是服务器原样的条目，版本由读出的一方各自过 [_withChosenVersion]——换了
+  /// 版本再取字幕，拿到的仍是当下选中的版本。[remoteVideoPosition] 要服务器最新
+  /// 断点，不走这里。
+  final LaunchItemDetailMemo<JellyfinItem> _launchDetail =
+      LaunchItemDetailMemo<JellyfinItem>();
+
+  Future<JellyfinItem> _launchItemDetail(String id) => _launchDetail
+      .reuseOrFetch(id, () => api.itemDetail(userId: userId, itemId: id));
+
   /// 最近一次取流的条目（已换成选中版本）：播放页「画质」菜单里的版本列表以它
   /// 为准（[RemoteVideoStreamVariants] 契约：以当前已取流的那一集为准）。
   JellyfinItem? _streamItem;
@@ -3251,12 +3264,18 @@ class JellyfinVideoClient
   }
 
   @override
-  Future<MediaServerItem> itemDetail(String itemId) async {
+  Future<MediaServerItem> itemDetail(
+    String itemId, {
+    bool forLaunch = false,
+  }) async {
     // `/Users/{uid}/Items/{id}` 不看 Fields、全量返回（Overview / Genres /
-    // MediaSources 都在），与播放路径用的是同一发请求，不另加参数。
-    final JellyfinItem item = await api.itemDetail(
-      userId: userId,
-      itemId: itemId,
+    // MediaSources 都在），与播放路径用的是同一发请求，不另加参数——所以结果
+    // 留给紧随其后的取流 / 取字幕复用，见 [_launchDetail]。失败只有重开入口那
+    // 一次（[forLaunch]）才留：详情页取详情失败后点播放，照常重新请求。
+    final JellyfinItem item = await _launchDetail.fetchAndRemember(
+      itemId,
+      () => api.itemDetail(userId: userId, itemId: itemId),
+      keepFailure: forLaunch,
     );
     final MediaServerItemType? type = mediaServerTypeOf(item);
     if (type == null) {
@@ -3633,9 +3652,7 @@ class JellyfinVideoClient
     // Jellyfin 的每一集都是独立条目，episodeIndex 恒 0（多集语义不适用）。
     // 多版本条目换成用户选的版本：MediaSourceId（PlaybackInfo / 直出 URL）、字幕轨
     // 与杜比视界判定都随之走那条源（各版本的流表各不相同）。
-    final JellyfinItem item = _withChosenVersion(
-      await api.itemDetail(userId: userId, itemId: id),
-    );
+    final JellyfinItem item = _withChosenVersion(await _launchItemDetail(id));
     _streamItem = item;
     final String? mediaSourceId = item.mediaSourceId;
     final ({String streamUrl, JellyfinPlaybackSession? session}) playback =
@@ -3731,9 +3748,8 @@ class JellyfinVideoClient
     void Function(double progress)? onProgress,
   }) async {
     // 字幕轨号属于某一个版本：必须与取流时同一个版本，否则下的是别的文件的轨。
-    final JellyfinItem item = _withChosenVersion(
-      await api.itemDetail(userId: userId, itemId: id),
-    );
+    // 复用的是原样条目，版本在这里按当下的选择重新套一遍。
+    final JellyfinItem item = _withChosenVersion(await _launchItemDetail(id));
     final String? mediaSourceId = item.mediaSourceId;
     if (mediaSourceId == null) {
       throw const FileSystemException('Jellyfin item has no media source');

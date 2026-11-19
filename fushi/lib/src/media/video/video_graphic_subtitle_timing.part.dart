@@ -407,22 +407,15 @@ extension VideoGraphicSubtitleTimingController on VideoPlayerController {
               input: input.input,
               track: (streamIndex: input.streamIndex, codec: input.codec),
             );
-        if (request == null) return null;
-        // 本地抽轨不挂 [cancel]：它是与模糊遮蔽层共享的在途任务，这里撤销会连带撤掉
-        // 遮蔽层那一份。网络流抽取要读整条流，换轨 / 换片 / 离开图形模式必须撤销。
-        final Future<void>? fetchCancel = input.input.isRemote ? cancel : null;
-        GraphicSubtitleRegionTrack? track;
-        // 与模糊遮蔽层共用一次抽轨；遮蔽层先发起又中途取消（换轨 / 卸载）时这里也会
-        // 拿到 null——仍是当前轨就自己再要一次。
-        for (int attempt = 0; attempt < 2 && track == null; attempt++) {
-          if (stale()) return null;
-          track = await graphicSubtitleRegionLoader.load(
-            request,
-            fallbackCanvas: fallbackCanvas,
-            cancel: fetchCancel,
-          );
-        }
-        return track;
+        if (request == null || stale()) return null;
+        // 与模糊遮蔽层共用一次抽轨，各自挂自己的 [cancel]：loader 按等待者计数，
+        // 这里放弃（换轨 / 换片 / 离开图形模式）只退出自己这一份，遮蔽层放弃也不会让
+        // 这里拿到 null；两边都放弃了抽轨进程才被杀。
+        return graphicSubtitleRegionLoader.load(
+          request,
+          fallbackCanvas: fallbackCanvas,
+          cancel: cancel,
+        );
       case GraphicSubtitleTimingHostTrack():
         final GraphicSubtitleHostTrackFiles? files = await input.download();
         if (files == null) return null;
@@ -485,7 +478,11 @@ extension VideoGraphicSubtitleTimingController on VideoPlayerController {
           stale: stale,
         );
       } catch (error, stack) {
-        debugPrint('[fushi] graphic subtitle timings failed: $error\n$stack');
+        ErrorLogService.instance.log(
+          'video.graphicSubtitleTimings.load',
+          error,
+          stack,
+        );
         return;
       } finally {
         if (identical(_graphicTimingCancel, cancel)) {

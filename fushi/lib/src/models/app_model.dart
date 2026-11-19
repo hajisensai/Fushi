@@ -37,6 +37,8 @@ import 'package:fushi_engine/media/video/media_server_video_path.dart'
 import 'package:fushi_engine/media/video/media_server/media_server_client_identity.dart'
     show mediaServerClientIdentity, resolveMediaServerClientIdentity;
 import 'package:fushi_engine/media/video/video_member_file.dart';
+import 'package:fushi_engine/media/video/video_local_files.dart'
+    show videoBookDiscTitlePath, videoBookEpisodePath;
 import 'package:fushi_engine/media/video/video_storage.dart' show VideoStorage;
 import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
     show YoutubeManifestException;
@@ -123,6 +125,7 @@ import 'package:fushi/src/media/video/video_hdr_output.dart'
     show VideoHdrOutputMode;
 import 'package:fushi/src/media/video/video_screenshot_destination.dart';
 import 'package:fushi/src/pages/implementations/dictionary_dialog_page.dart';
+import 'package:fushi/src/pages/implementations/dictionary_import_action.dart';
 import 'package:fushi/src/pages/implementations/example_sentences_dialog_page.dart';
 import 'package:fushi/src/pages/implementations/open_stash_dialog_page.dart';
 import 'package:fushi/src/pages/implementations/profile_management_page.dart';
@@ -152,6 +155,8 @@ import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_engine/utils/net/app_proxy.dart';
 import 'package:fushi/src/media/collections/library_organize_runner.dart'
     show LibraryOrganizeAutoHost, installLibraryOrganizeAutomatic;
+import 'package:fushi/src/media/library_curate/library_curate_auto.dart'
+    show LibraryCurateAutoHost, installLibraryCurateAutomatic;
 import 'package:fushi/src/media/collections/collection_ai_order.dart'
     show installCollectionAiOrderSettings;
 import 'package:fushi/src/media/override_thumbnail_migration.dart';
@@ -159,6 +164,7 @@ import 'package:fushi_engine/ai/ai_video_search_assistant.dart';
 import 'package:fushi_engine/ai/ai_relay.dart' show aiRelayTransport;
 import 'package:fushi/src/ai/ai_interconnect_relay.dart';
 import 'package:fushi/src/models/dictionary_download_controller.dart';
+import 'package:fushi/src/models/dictionary_format_upgrade.dart';
 import 'package:fushi/src/models/dictionary_download_resume.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
 import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
@@ -571,6 +577,7 @@ import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/manga_sync_package.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/module_registry.dart' show isAiModuleEnabled;
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/settings/settings_schema.dart'
     show resetSettingsSchemaCache;
@@ -873,14 +880,33 @@ class _LocalDictionaryLookup {
   final bool isTerminal;
 }
 
-/// 从 `blobs.bin` 头部字节解码词典实际类型（freq/pitch），供 term 词典的类型回填迁移。
+/// 词典目录里装记录的文件，按优先级：导入写的 `blobs.bin`，没有时是存量升级把纯
+/// freq / pitch / ipa 词典的记录重写进去的 `blobs3.bin`（升级提交后 `blobs.bin` 被删；
+/// Windows 上删不掉时两份并存，内容是同一本词典，取哪份结论都一样）。
+const List<String> kDictRecordFileNames = <String>['blobs.bin', 'blobs3.bin'];
+
+/// [dictDir] 里现存的记录文件（见 [kDictRecordFileNames]），都没有时为 null。
+/// 「记录文件是哪一个」只在这里判一次。
+@visibleForTesting
+File? dictRecordFileIn(String dictDir) {
+  for (final String name in kDictRecordFileNames) {
+    final File file = File(path.join(dictDir, name));
+    if (file.existsSync()) return file;
+  }
+  return null;
+}
+
+/// 从记录文件（[dictRecordFileIn]）头部字节解码词典实际类型（freq/pitch），供 term
+/// 词典的类型回填迁移。
 /// 此前解析与 `RandomAccessFile` 的分次读/定位深交织（[AppModel._migrateDictionaryTypes]），
 /// 无法单测（依赖真文件）。纯逻辑吃**已读入的字节**（调用方负责打开/读盘/关闭），按
 /// 相同偏移解析，返回检测到的类型；非 freq/pitch 或头部不合法返回 `null`（调用方
 /// `continue` 跳过该词典，保持 term 类型不动）。
 ///
 /// 布局（与原 raf 逐次读逐字对齐）：
-/// - `bytes[0]` 必须是标志 `0x01`，否则 `null`；
+/// - `bytes[0]` 是记录类型，必须是 meta 记录：`0x01`（原样 JSON）或 `0x03`（预解析，
+///   新导入 / 存量升级后的纯 freq / pitch / ipa 词典）。两者前缀相同（
+///   `native/fushidicts/fushidicts_src/json/meta_record.hpp`），否则 `null`；
 /// - `bytes[1] | (bytes[2] << 8)` 是 exprLen（小端 16 位）；
 /// - modeLen 在偏移 `3 + exprLen` 处单字节，越界或 `0` 返回 `null`；
 /// - mode 串是其后**至多** `modeLen` 字节（`String.fromCharCodes`）。原逻辑用
@@ -890,7 +916,7 @@ class _LocalDictionaryLookup {
 @visibleForTesting
 DictionaryType? decodeDictTypeFromBlobHeader(List<int> bytes) {
   if (bytes.length < 4) return null;
-  if (bytes[0] != 0x01) return null;
+  if (bytes[0] != 0x01 && bytes[0] != 0x03) return null;
 
   final exprLen = bytes[1] | (bytes[2] << 8);
   final modeLenIndex = 3 + exprLen;
@@ -1140,6 +1166,7 @@ class AppModel
             ),
             database: () => database,
             resolveVideoPath: _resolveHostVideoPath,
+            resolveDiscTitlePath: _resolveHostDiscTitlePath,
             aiSettings: () => prefsRepo,
             mossStatus: appMossProvisionStatus,
           ),
@@ -3756,8 +3783,8 @@ class AppModel
       if (d.type != DictionaryType.term) continue;
       _dictTypeProbeAttempted.add(probeDir);
 
-      final blobsFile = File(path.join(probeDir, 'blobs.bin'));
-      if (!blobsFile.existsSync()) continue;
+      final File? blobsFile = dictRecordFileIn(probeDir);
+      if (blobsFile == null) continue;
 
       final raf = blobsFile.openSync();
       DictionaryType? detected;
@@ -3882,6 +3909,7 @@ class AppModel
           hidden: states[i].hidden,
           metadata: states[i].metadata,
           order: d.order,
+          languageOverride: d.languageOverride,
         ),
       );
     }
@@ -3889,6 +3917,7 @@ class AppModel
     // 类型自愈每本、隐藏/折叠/语言开关），就地重建会把总代价推成 O(N²)。真正的
     // 装载推迟到下次要用引擎时，批量写入期间的 N 次排期塌成 1 次装载。
     final b = bucketDictPaths(entries);
+    final Map<String, String> termLanguages = termDictLanguagesOf(entries);
     dictRepo.noteEngineTermDictionaries(<String>[
       for (final String p in b.term) path.basename(p),
     ]);
@@ -3897,8 +3926,10 @@ class AppModel
       freqPaths: b.freq,
       pitchPaths: b.pitch,
       kanjiPaths: b.kanji,
+      termLanguages: termLanguages,
     );
     _lastScheduledDictBuckets = b;
+    _lastScheduledTermLanguages = termLanguages;
   }
 
   /// 最近一次排期给引擎的分桶结果（两条装载路径排期时都记下）。
@@ -3915,7 +3946,12 @@ class AppModel
   })?
   _lastScheduledDictBuckets;
 
-  /// [b] 与 [_lastScheduledDictBuckets] 逐桶相同（同序同路径）。
+  /// 最近一次排期时随 term 桶交给引擎的词典语言（[termDictLanguagesOf]）。语言是装载
+  /// 时的属性，变了就得重装，所以与分桶一起比较。
+  Map<String, String> _lastScheduledTermLanguages = const <String, String>{};
+
+  /// [b] 与 [_lastScheduledDictBuckets] 逐桶相同（同序同路径），且 term 词典的语言
+  /// [termLanguages] 也没变。
   bool _sameAsLastScheduledDictBuckets(
     ({
       List<String> term,
@@ -3924,13 +3960,15 @@ class AppModel
       List<String> kanji,
     })
     b,
+    Map<String, String> termLanguages,
   ) {
     final last = _lastScheduledDictBuckets;
     return last != null &&
         _samePaths(last.term, b.term) &&
         _samePaths(last.freq, b.freq) &&
         _samePaths(last.pitch, b.pitch) &&
-        _samePaths(last.kanji, b.kanji);
+        _samePaths(last.kanji, b.kanji) &&
+        mapEquals(_lastScheduledTermLanguages, termLanguages);
   }
 
   static bool _samePaths(List<String> a, List<String> b) {
@@ -4069,6 +4107,58 @@ class AppModel
     }
   }
 
+  /// 本进程是否已经跑过一轮 [_upgradeDictionaryFormats]。
+  bool _dictFormatUpgradeStarted = false;
+
+  /// 启动期（首帧之后）的词典维护：先把存量词典原地升级到新磁盘格式，再补写
+  /// redirect 标记。串行：两者都逐本整本读词典，并发只会互相抢 IO；升级在前，补写
+  /// 标记时读到的就是升级后的记录文件。只挂在主进程 init 路径上（查词弹窗进程不跑）。
+  Future<void> _runDictionaryStartupMaintenance() async {
+    await WidgetsBinding.instance.endOfFrame;
+    await _upgradeDictionaryFormats();
+    await _migrateDictionaryRedirectFlags();
+  }
+
+  /// 存量词典原地升级到当前磁盘格式（[FushiDicts.upgradeDictionaryFormats]），编排见
+  /// [DictionaryFormatUpgradeCoordinator]：先不占词典写锁逐本静默检查（常态启动到此
+  /// 为止，不挡下载 / 自动更新）；确有词典要升级才占写锁、亮状态行做完剩下的，升级过
+  /// 就异步重载引擎让新格式生效、重载后静默补跑一遍清旧文件。失败 / 不适用只记日志
+  /// （词典仍按旧格式可用），下次启动再试。本进程只跑一次。
+  Future<void> _upgradeDictionaryFormats() async {
+    if (_dictFormatUpgradeStarted) return;
+    _dictFormatUpgradeStarted = true;
+    try {
+      final DictionaryFormatUpgradeRun result =
+          await DictionaryFormatUpgradeCoordinator(
+            controller: dictionaryDownloadController,
+            dictDirs: () => <String>[
+              for (final Dictionary d in dictRepo.dictionaries)
+                path.join(dictionaryResourceDirectory.path, d.name),
+            ],
+            upgrade: FushiDicts.upgradeDictionaryFormats,
+            reload: _rebuildDictPathsCacheAsync,
+            settleOldEngine: FushiDicts.whenBackgroundBorrowsSettled,
+            message: (int done, int total) =>
+                t.dict_upgrade_format_progress(done: done, total: total),
+            log: (String tag, Object info) =>
+                ErrorLogService.instance.log(tag, info),
+          ).run();
+      final FushiDictUpgradeReport? first = result.first;
+      if (first != null && first.anyUpgraded) {
+        debugPrint(
+          '[Fushi] dictionary format upgraded: '
+          '${first.upgraded.map(path.basename).join(', ')}',
+        );
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        DictionaryFormatUpgradeCoordinator.logTag,
+        e,
+        stack,
+      );
+    }
+  }
+
   /// 给存量释义词典补写 `redirect_glossary.flag`（[FushiDicts.ensureRedirectFlags]）。
   ///
   /// 装载只读这份标记、不扫描（扫描是整本、单本最多约 1 s）；缺标记的旧词典在查词时
@@ -4080,7 +4170,6 @@ class AppModel
     if (_redirectFlagsMigrated) return;
     _redirectFlagsMigrated = true;
     try {
-      await WidgetsBinding.instance.endOfFrame;
       final List<String> dirs = <String>[
         for (final Dictionary d in dictRepo.dictionaries)
           if (d.type == DictionaryType.term)
@@ -4207,10 +4296,14 @@ class AppModel
           hidden: states[i].hidden,
           metadata: states[i].metadata,
           order: dictList[i].order,
+          languageOverride: dictList[i].languageOverride,
         ),
     ];
     final b = bucketDictPaths(entries);
-    if (onlyIfChanged && _sameAsLastScheduledDictBuckets(b)) return false;
+    final Map<String, String> termLanguages = termDictLanguagesOf(entries);
+    if (onlyIfChanged && _sameAsLastScheduledDictBuckets(b, termLanguages)) {
+      return false;
+    }
     dictRepo.noteEngineTermDictionaries(<String>[
       for (final String p in b.term) path.basename(p),
     ]);
@@ -4219,8 +4312,10 @@ class AppModel
       freqPaths: b.freq,
       pitchPaths: b.pitch,
       kanjiPaths: b.kanji,
+      termLanguages: termLanguages,
     );
     _lastScheduledDictBuckets = b;
+    _lastScheduledTermLanguages = termLanguages;
     return true;
   }
 
@@ -5204,6 +5299,16 @@ class AppModel
           nameLanguage: () => appLocale.toLanguageTag(),
         ),
       );
+      // AI 库管家自动路径（spec 2026-11-18 §9，默认开）：开着时接管上面那套自动
+      // 整理的触发点（scheduleAutomaticLibraryOrganize 内部转交）。编排器经进程级
+      // 操作上下文拿操作目录，根组件登记前那几次触发什么都不做。
+      installLibraryCurateAutomatic(
+        LibraryCurateAutoHost(
+          settings: _prefsRepo!,
+          autoOn: () => _prefsRepo!.libraryCurateAuto,
+          aiModuleEnabled: () => isAiModuleEnabled(moduleVisibility),
+        ),
+      );
       // Anki 制卡设置的存储换成 Drift（并把 SharedPreferences 旧值一次性搬过来），
       // 再做依赖它的后端选择（[PlatformServices.init] 读设置选 AnkiConnect / 同步
       // 客户端）。两步都必须早于下面任何 loadSettings（ensureDefaultProfile 会快照
@@ -5544,7 +5649,7 @@ class AppModel
       );
       StartupTimeline.mark('shortcuts');
       unawaited(_warmUpSearchAfterFirstFrame());
-      unawaited(_migrateDictionaryRedirectFlags());
+      unawaited(_runDictionaryStartupMaintenance());
       // 曲库歌词搜索的本机语料库：延后打开、清掉已下架「我库里的例句」留下的书 / 视频 /
       // 游戏文档（反馈 4S2_J80DfK），再对账歌词、订阅歌词表做增量。
       LibraryCorpusService.instance.start(
@@ -8582,14 +8687,43 @@ class AppModel
     return sources.firstOrNull?.id;
   }
 
-  /// `/api/jobs` ASR 任务的 `videoId` → 本机视频文件（host 库）。
-  Future<String?> _resolveHostVideoPath(String videoId) async {
+  /// `/api/jobs` ASR / 字幕任务的 `videoId`（+ 播放列表集下标 [episodeIndex]）→ 本机
+  /// 视频文件（host 库）。按集取文件与播放端点同一判据（[videoBookEpisodePath]）。
+  Future<String?> _resolveHostVideoPath(
+    String videoId, {
+    int episodeIndex = 0,
+  }) async {
     final VideoBookRow? row = await VideoBookRepository(
       database,
     ).getByBookUid(videoId);
     if (row == null) return null;
-    // ASR 要读媒体字节：DVD title / 网络流 / .strm 没有本地媒体文件。
-    return await hasLocalMediaFile(row.videoPath) ? row.videoPath : null;
+    final String? path = videoBookEpisodePath(
+      videoPath: row.videoPath,
+      playlistJson: row.playlistJson,
+      episodeIndex: episodeIndex,
+    );
+    if (path == null) return null;
+    // ASR 要本机读得到媒体（网络流 / .strm 没有）；DVD title 经 dvdvideo demuxer 读。
+    return await hasLocalMediaFile(path) ? path : null;
+  }
+
+  /// `/api/jobs` 字幕任务的 (`videoId`, `discTitle`) → 那一行所在蓝光盘上那条 title 的
+  /// 成员路径（远端原盘会话里库中没有行的 title）。判据是 [videoBookDiscTitlePath]，
+  /// 与 fushi_server 同一份。
+  Future<String?> _resolveHostDiscTitlePath(
+    String videoId,
+    String discTitle,
+  ) async {
+    final VideoBookRow? row = await VideoBookRepository(
+      database,
+    ).getByBookUid(videoId);
+    if (row == null) return null;
+    final String? path = videoBookDiscTitlePath(
+      videoPath: row.videoPath,
+      discTitle: discTitle,
+    );
+    if (path == null) return null;
+    return await hasLocalMediaFile(path) ? path : null;
   }
 
   /// 只暴露当前设备可访问的本地受管视频来源，供发现页新任务/订阅选择。
@@ -9783,8 +9917,11 @@ class AppModel
 
   /// Show the dictionary menu. This should be callable from many parts of the
   /// app, so it is appropriately handled by the model.
+  ///
+  /// [initialAction]：页面一出现就跑的导入动作（查词主页空态的导入面方式块，IM23）。
   Future<void> showDictionaryMenu({
     List<String> initialImportPaths = const <String>[],
+    DictionaryImportAction? initialAction,
   }) async {
     final ctx = _ctx;
     if (ctx == null) return;
@@ -9792,8 +9929,10 @@ class AppModel
       ctx,
       adaptivePageRoute(
         context: ctx,
-        builder: (context) =>
-            DictionaryDialogPage(initialImportPaths: initialImportPaths),
+        builder: (context) => DictionaryDialogPage(
+          initialImportPaths: initialImportPaths,
+          initialAction: initialAction,
+        ),
       ),
     );
 

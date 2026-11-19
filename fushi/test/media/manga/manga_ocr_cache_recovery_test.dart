@@ -5,6 +5,7 @@ import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_cache_recovery.dart';
+import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
 import 'package:path/path.dart' as p;
@@ -129,6 +130,72 @@ void main() {
     },
   );
 
+  // BUG-4827：系统 OCR 与 Lens 同格式同根写逐页缓存，被杀进程 / 取消后重开书
+  // 只能靠这份缓存读回已识别的页。
+  test('recovers pages cached by a system OCR run', () async {
+    final GoogleLensPageCache system = _pageJsonCache(
+      temporary,
+      systemOcrEngineSignature('ja'),
+    );
+    await system.write(1, pages[1], _page(pages[1].relativeUrl, 'システム'));
+
+    final MangaOcrCacheRecovery recovery = await recoverCachedMangaOcr(
+      managedDirectory: temporary.path,
+      basePayload: MokuroPayload(
+        images: <MokuroImage>[
+          for (final MangaOcrPageFile page in pages)
+            _page(page.relativeUrl, ''),
+        ],
+      ),
+      localEngineSignature: kLocalMangaOcrEngineSignature,
+    );
+
+    expect(recovery.recoveredPageIndices, <int>[1]);
+    expect(recovery.payload.images[1].blocks.single.lines, <String>['システム']);
+  });
+
+  // 前缀带版本：v1 是 BUG-2767 换签名作废的旧结果，不得被恢复回来。
+  test('retired system OCR v1 cache is not recovered', () async {
+    for (final String retired in <String>[
+      'system_ocr_ja',
+      'system_ocr_v1_ja',
+    ]) {
+      await _pageJsonCache(
+        temporary,
+        retired,
+      ).write(0, pages[0], _page(pages[0].relativeUrl, '旧版'));
+    }
+
+    final MangaOcrCacheRecovery recovery = await recoverCachedMangaOcr(
+      managedDirectory: temporary.path,
+      basePayload: MokuroPayload(
+        images: <MokuroImage>[
+          for (final MangaOcrPageFile page in pages)
+            _page(page.relativeUrl, ''),
+        ],
+      ),
+      localEngineSignature: kLocalMangaOcrEngineSignature,
+    );
+
+    expect(recovery.recoveredPageIndices, isEmpty);
+  });
+
+  test('page-json cache prefix table covers every engine that writes one', () {
+    expect(
+      isMangaOcrPageJsonCacheDirectory(googleLensEngineSignature('en')),
+      isTrue,
+    );
+    expect(
+      isMangaOcrPageJsonCacheDirectory(systemOcrEngineSignature('zh')),
+      isTrue,
+    );
+    expect(
+      isMangaOcrPageJsonCacheDirectory(kLocalMangaOcrEngineSignature),
+      isFalse,
+      reason: '本地模型是另一种缓存格式，走 MangaOcrFilePageCache',
+    );
+  });
+
   test('recovers pages cached by a non-Japanese Lens run', () async {
     final GoogleLensPageCache lens = _lensCache(temporary, language: 'en');
     await lens.write(0, pages[0], _page(pages[0].relativeUrl, 'Hello world'));
@@ -172,13 +239,16 @@ MangaOcrFilePageCache _localCache(
 );
 
 GoogleLensPageCache _lensCache(Directory root, {String language = 'ja'}) =>
+    _pageJsonCache(root, googleLensEngineSignature(language));
+
+GoogleLensPageCache _pageJsonCache(Directory root, String signature) =>
     GoogleLensPageCache(
       Directory(
         p.join(
           root.path,
           kMangaOcrOutDirName,
           kMangaOcrPagesCacheDirName,
-          googleLensEngineSignature(language),
+          signature,
         ),
       ),
     );

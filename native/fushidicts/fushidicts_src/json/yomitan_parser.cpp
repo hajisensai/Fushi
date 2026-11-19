@@ -230,6 +230,10 @@ bool yomitan_parser::parse_frequency(std::string_view content, ParsedFrequency& 
 
   int val;
   error = glz::read_json(val, content);
+  if (error) {
+    // 上游 fcea33f：有的频率词典把数值写成数字串（["語","freq","123"]），此前整条被丢。
+    error = glz::read<glz::opt_on<glz::opts{}, glz::quoted_num_opt_tag{}>()>(val, content);
+  }
   if (!error) {
     out.value = val;
     out.display_value = std::to_string(val);

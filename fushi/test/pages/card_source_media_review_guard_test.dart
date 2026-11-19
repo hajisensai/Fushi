@@ -392,11 +392,15 @@ void main() {
       contains('CardSourceLink.isContentAddressedVideoUid(sourceUid)'),
     );
     // 本地字节核验只在链接带指纹时做（拍板台 IFCPPprIpT 把它挪到远端回退之前）；
-    // 无指纹的在线内容链接跳过本地字节核验。
+    // 无指纹的在线内容链接跳过本地字节核验。核验收进了 checkLocalCardSourceVideo
+    // （行为由 card_source_remote_video_test 覆盖），这里只锁接线没被绕开。
     expect(
       router,
-      contains('if (localVideo != null && link.fingerprint != null) {'),
+      contains(
+        'if (linkFingerprint == null) return CardSourceLocalVideoCheck.verified;',
+      ),
     );
+    expect(router, contains('linkFingerprint: link.fingerprint,'));
     expect(
       video,
       contains('if (source != null && source.fingerprint != null) {'),

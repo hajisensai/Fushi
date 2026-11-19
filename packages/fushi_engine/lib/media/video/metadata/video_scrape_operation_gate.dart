@@ -36,6 +36,15 @@ abstract final class VideoScrapeOperationGate {
   }
 }
 
+/// 普通动作拿不到 lease：刮削资料正在清理（maintenance 持有中）。
+///
+/// 类型化是为了让 app 层按类型出本地化文案——引擎不能引 app 的 i18n。它仍是
+/// [StateError]（既有调用方按 `StateError` 接的不受影响），[message] 是给日志看的
+/// 兜底文案，不是界面文案的来源。
+class VideoScrapeMaintenanceActiveError extends StateError {
+  VideoScrapeMaintenanceActiveError() : super('视频刮削资料正在清理');
+}
+
 class VideoScrapeOperationLease {
   VideoScrapeOperationLease._({required bool maintenance})
     : _maintenance = maintenance;

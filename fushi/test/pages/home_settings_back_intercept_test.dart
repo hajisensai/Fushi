@@ -78,14 +78,13 @@ void main() {
     );
   });
 
-  testWidgets('showBackButton 为 false 时不显示页头返回箭头（移动底栏 / 宽屏侧栏在侧）', (
+  testWidgets('设置 tab 外壳不画返回箭头（底栏 / rail 常驻可切走），系统返回仍被拦截', (
     WidgetTester tester,
   ) async {
     int returnCalls = 0;
     await tester.pumpWidget(
       MaterialApp(
         home: HomeSettingsTabContent(
-          showBackButton: false,
           onReturnToPreviousTab: () => returnCalls++,
           child: const Text('settings-body'),
         ),

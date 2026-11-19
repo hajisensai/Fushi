@@ -22,11 +22,13 @@ import 'package:fushi/src/lookup/lookup_audio_playback.dart'
     show lookupEntryMatchedText;
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
+import 'package:fushi/src/pages/implementations/dictionary_import_surface.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/pages/implementations/lookup_history_row.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
@@ -35,6 +37,7 @@ import 'package:fushi/src/sync/manual_sync_ui.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
 import 'package:fushi/src/utils/components/clipboard_lookup_text_panel.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/section_visibility.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/overlay_entry_lifecycle.dart';
 import 'package:fushi/src/utils/components/fushi_deferred_loading.dart';
@@ -51,9 +54,6 @@ import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/fushi_tag.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart'
     show shellRedesignActive;
-import 'package:fushi/src/utils/components/fushi_cover_block.dart'
-    show FushiCoverBlockColors, FushiCoverBlockSize, fushiCoverBlockShape;
-import 'package:fushi/src/utils/components/fushi_poster_block.dart';
 import 'package:fushi/src/utils/components/fushi_static_masthead.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
@@ -136,9 +136,6 @@ enum DictionaryFocusIntent {
 /// 搜索区建议面板最多列几条最近搜索（MD3 chip）。
 const int _kRecentSearchLimit = 8;
 
-/// M3E 最近搜索 chip 高度（suggestion chip 32）。
-const double _kRecentChipHeight = 32;
-
 /// Apple 建议面板是 inset grouped 行，比 chip 占高，只列这么多条。
 const int _kRecentSearchAppleRows = 5;
 
@@ -219,6 +216,16 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   /// Overlay 仍可能同帧重建 [_buildPopupOverlay] → 读已失效 State 的 appModel/Theme 红屏；
   /// 置位后 builder 一律空渲染。
   bool _overlayInert = false;
+
+  /// State 正被摘下（切模块销毁 / GlobalKey 换父节点途中）：根 Overlay 的浮层
+  /// 这时不能再读本 State，空渲染兜底（BUG-121）。与 [_overlayInert] 分开——
+  /// 后者只是「此刻不在屏上」，浮层要留在树上。
+  bool _deactivated = false;
+
+  /// 本页所在的保活 tab 此刻是否是当前 tab（[SectionVisibility]；不在首页外壳里
+  /// ——独立查词路由、新手引导——恒为 true）。藏着时不消费待查词与聚焦请求，
+  /// 变成可见后再消费（见 [didChangeDependencies]）。
+  bool _sectionVisible = true;
   bool _popupOverlayRebuildScheduled = false;
 
   bool _isSearching = false;
@@ -383,6 +390,10 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     final ValueNotifier<DictionaryFocusRequest?>? signal = widget.focusSignal;
     final DictionaryFocusRequest? request = signal?.value;
     if (signal == null || request == null) return;
+    // 所在保活 tab 还藏着：请求留着，变成可见后由 [didChangeDependencies] 再消费。
+    // 「点导航切到查词」是先切 tab 再发请求，请求到达时本页还没按新的可见性重建，
+    // 外层的 ExcludeFocus 仍在——这时聚焦会被吞掉。
+    if (!_sectionVisible) return;
     // 被全屏路由（阅读器 / 播放器）压在底下的 tab 承载不消费：同一个 focusSignal
     // 此刻还有另一个消费者——HomePage 为「被遮住」推的独立查词路由（同一个
     // HomeDictionaryPage、同一条信号）。底下这份先监听、先抢走请求，往看不见的
@@ -445,6 +456,10 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   }
 
   void _onDesktopLookupPending() {
+    // 所在保活 tab 藏着时不消费（与「本页还没挂载」同义）：待查词留给把查词页
+    // 显示出来的那条路——切到本 tab 后由 [didChangeDependencies] 消费，或 HomePage
+    // 被遮住时推出来的独立查词路由在挂载后消费。
+    if (!_sectionVisible) return;
     final DesktopLookupRequest? request =
         DesktopLookupService.instance.pendingRequest;
     if (request == null) return;
@@ -602,6 +617,21 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
       _overlayInert = nextInert;
       _schedulePopupOverlayRebuild();
     }
+    // 保活 tab 由藏转显：补做「切入查词页」时要做的事——消费切过来之前排入的
+    // 待查词（TODO-376）与聚焦请求。本页不保活时这两件事靠每次切入重新挂载、在
+    // initState 的后帧回调里做；现在是同一条路换了个触发点。排后帧：外层分区此刻
+    // 才开始按新的可见性重建，同步聚焦会被它的 ExcludeFocus 吞掉。
+    final bool visible = SectionVisibility.of(context);
+    if (visible != _sectionVisible) {
+      _sectionVisible = visible;
+      if (visible) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || !_sectionVisible) return;
+          _onDesktopLookupPending();
+          _consumeFocusRequest();
+        });
+      }
+    }
   }
 
   void _schedulePopupOverlayRebuild() {
@@ -620,7 +650,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   /// 当帧根 Overlay 仍可能重建 entry → 读失效 State 红屏；置位让 builder 空渲染。
   @override
   void deactivate() {
-    _overlayInert = true;
+    _deactivated = true;
     super.deactivate();
   }
 
@@ -628,7 +658,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   void activate() {
     super.activate();
     // GlobalKey 重挂等重新激活：恢复正常渲染，下次 build 的 _syncPopupOverlay 重建浮层。
-    _overlayInert = false;
+    _deactivated = false;
   }
 
   bool get _hasActiveQuery => _controller.text.isNotEmpty;
@@ -757,11 +787,14 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   }
 
   Widget _buildPage(BuildContext context) {
+    // 所在保活 tab 藏着时不参与系统返回：看不见的页面不能吃掉用户的返回键，也
+    // 不能在背后清自己的查询（HBK-AUDIT-017，与 [SectionPopScope] 同一判据）。
+    final bool sectionVisible = SectionVisibility.of(context);
     return PopScope(
       // TODO-931：常驻热槽永远占着 entries[0]，返回判据改用 hasVisiblePopup（隐藏热槽不拦返回）。
-      canPop: !_hasActiveQuery && !_popup.hasVisiblePopup,
+      canPop: !sectionVisible || (!_hasActiveQuery && !_popup.hasVisiblePopup),
       onPopInvokedWithResult: (didPop, _) {
-        if (didPop) return;
+        if (didPop || !sectionVisible) return;
         if (_popup.hasVisiblePopup) {
           _popNestedPopupAt(_popup.lastVisibleIndex);
         } else if (_hasActiveQuery) {
@@ -901,11 +934,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                   message: t.floating_ball_lookup_hint,
                 ),
               )
-            : _LookupIdleState(
-                recents: _recentSearches().take(6).toList(growable: false),
-                onLookupClipboard: _lookupClipboard,
-                onPickRecent: _search,
-              ),
+            : _LookupIdleState(onLookupClipboard: _lookupClipboard),
       ),
     );
   }
@@ -1216,25 +1245,29 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
 
   Widget _buildPlaceholder() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final noDictionaries = appModel.dictionaries.isEmpty;
-    final Widget content = Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        FushiPlaceholderMessage(
-          icon: mediaType.outlinedIcon,
-          message: noDictionaries
-              ? t.dictionaries_menu_empty
-              : t.info_empty_home_tab,
+    final bool noDictionaries = appModel.dictionaries.isEmpty;
+    // 一本词典都没有：与库页导入面同一套引导首块 + 方式块（IM23，与词典管理页空态
+    // 共用 [DictionaryImportEmptySurface]）。方式块推进词典管理页并让它跑对应的
+    // 那条导入流程（实现只有管理页一份）；整页拖放已由本页外层落点接住。
+    if (noDictionaries) {
+      return SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.fromLTRB(
+          tokens.spacing.page,
+          tokens.spacing.gap,
+          tokens.spacing.page,
+          tokens.spacing.page,
         ),
-        if (noDictionaries) ...[
-          SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
-          FushiFilledButton.icon(
-            icon: const FushiIcon(FushiIcons.readingMode, size: 18),
-            label: Text(t.dialog_import_dictionary),
-            onPressed: appModel.showDictionaryMenu,
-          ),
-        ],
-      ],
+        child: DictionaryImportEmptySurface(
+          key: const ValueKey<String>('home_dictionary_import_surface'),
+          onAction: (DictionaryImportAction action) =>
+              appModel.showDictionaryMenu(initialAction: action),
+        ),
+      );
+    }
+    final Widget content = FushiPlaceholderMessage(
+      icon: mediaType.outlinedIcon,
+      message: t.info_empty_home_tab,
     );
     // 空态也要能下拉同步——RefreshIndicator 需要一个真实 Scrollable 后代，裸 Center
     // 没有滚动就吃不到下拉手势。撑到 minHeight = 视口高度既保住原来的垂直居中，又让
@@ -1488,7 +1521,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     final bool glass = isGlassDesign(context);
     final int count = historyResults.length;
     if (shellRedesignActive(context)) {
-      return _buildDictionaryHistoryBlocks(historyResults);
+      return _buildDictionaryHistoryCollageRows(historyResults);
     }
     // 进场窗口：历史屏每次挂载（首开 / 清空查询退回 / 宽窄切换）首屏行错峰淡入，
     // 滚动带出来的行瞬间出现。
@@ -1611,93 +1644,84 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     );
   }
 
-  /// 重设计外壳的查词历史（设计稿查词页 `sec('最近查过','HISTORY')` + `.box.word`）：
-  /// 每条历史一块按词取色的小色块——上面是词形 / 读音小字，正中查过的词大字，
-  /// 下面命中词典数 chip，读音大字水印压在底边。点按 = 回看这条（与列表行同一
-  /// 路径），悬停 / 聚焦露出「⋯」（收藏 / 移出历史），当前右栏那条描边选中。
-  /// 数据、滚动控制器、下拉同步与列表形态相同，只换视觉；稿里的「N 次」查询次数
-  /// 历史里没有，换成命中词典数。
-  Widget _buildDictionaryHistoryBlocks(List<DictionarySearchResult> results) {
+  /// 重设计外壳的查词历史（设计稿 #lookup L1）：一条历史一行
+  /// [LookupHistoryCollageRow]——左侧按词取色的色条、完整词形（不截断）、历史
+  /// 结果里本来就存的写法 / 读音、行尾命中词典数，无水印。旧版窄栏里 2 列大色块
+  /// 把词截成「やめ…」，读不出内容。点按 = 回看这条（与墨水屏列表同一路径），
+  /// 悬停 / 聚焦露出「⋯」（收藏 / 移出历史），当前右栏那条标为选中。宽屏左栏与
+  /// 窄屏单栏共用这一份；数据、滚动控制器、下拉同步不变。
+  Widget _buildDictionaryHistoryCollageRows(
+    List<DictionarySearchResult> results,
+  ) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return FushiEntranceScope(
-      child: CustomScrollView(
+      child: ListView.builder(
+        padding: EdgeInsets.only(
+          top: tokens.spacing.gap / 2,
+          bottom: tokens.spacing.page,
+        ),
+        // 历史只有一两条、撑不满一屏时，默认 physics 不可滚 → 下拉同步吃不到手势。
         physics: const AlwaysScrollableScrollPhysics(),
         controller: DictionaryMediaType.instance.scrollController,
-        slivers: <Widget>[
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.only(top: tokens.spacing.gap / 2),
-              child: _buildSectionTitle(t.lookup_history_title),
-            ),
-          ),
-          SliverPadding(
+        // 第 0 项是分组标题「查词历史」，其后才是历史行。
+        itemCount: results.length + 1,
+        itemBuilder: fushiStaggeredItemBuilder((
+          BuildContext context,
+          int index,
+        ) {
+          if (index == 0) return _buildSectionTitle(t.lookup_history_title);
+          final int row = index - 1;
+          final DictionarySearchResult result = results[row];
+          final String searchTerm = result.searchTerm.trim();
+          final DictionaryEntry first = result.entries.first;
+          final String word = first.word;
+          final String reading = first.reading;
+          final bool hasWordInfo = word.isNotEmpty && word != searchTerm;
+          final bool hasReading =
+              reading.isNotEmpty && reading != word && reading != searchTerm;
+          return Padding(
             padding: EdgeInsets.fromLTRB(
               tokens.spacing.page,
-              tokens.spacing.gap / 2,
+              0,
               tokens.spacing.page,
-              tokens.spacing.page,
+              2,
             ),
-            sliver: SliverGrid(
-              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 200,
-                mainAxisExtent: 150,
-                mainAxisSpacing: 14,
-                crossAxisSpacing: 14,
+            child: LookupHistoryCollageRow(
+              key: ValueKey<String>(
+                'home_dictionary_history_${row}_$searchTerm',
               ),
-              delegate: SliverChildBuilderDelegate(
-                fushiStaggeredItemBuilder((BuildContext context, int index) {
-                  final DictionarySearchResult result = results[index];
-                  final String searchTerm = result.searchTerm.trim();
-                  final first = result.entries.first;
-                  final String word = first.word;
-                  final String reading = first.reading;
-                  final bool hasWordInfo =
-                      word.isNotEmpty && word != searchTerm;
-                  final bool hasReading =
-                      reading.isNotEmpty &&
-                      reading != word &&
-                      reading != searchTerm;
-                  return _LookupWordBlock(
-                    key: ValueKey<String>(
-                      'home_dictionary_history_${index}_$searchTerm',
-                    ),
-                    term: searchTerm.replaceAll('\n', ' '),
-                    subtitle: hasWordInfo || hasReading
-                        ? <String>[
-                            if (hasWordInfo) word,
-                            if (hasReading) reading,
-                          ].join('  ')
-                        : null,
-                    watermark: hasReading ? reading : searchTerm,
-                    dictionaryCount: result.entries
-                        .map((e) => e.dictionaryName)
-                        .toSet()
-                        .length,
-                    selected: _hasActiveQuery && _lastQuery == searchTerm,
-                    onOpen: () {
-                      _controller.text = searchTerm;
-                      _controller.selection = TextSelection.collapsed(
-                        offset: searchTerm.length,
-                      );
-                      _showCachedResult(result);
-                    },
-                    onFavorite: () => unawaited(
-                      onFavoriteEntry(<String, String>{
-                        'expression': word.isNotEmpty ? word : searchTerm,
-                        'reading': reading,
-                        'glossary': first.plainMeaning,
-                      }),
-                    ),
-                    onRemove: () => appModel.removeFromDictionaryHistory(
-                      searchTerm: result.searchTerm,
-                    ),
-                  );
+              term: searchTerm.replaceAll('\n', ' '),
+              subtitle: hasWordInfo || hasReading
+                  ? <String>[
+                      if (hasWordInfo) word,
+                      if (hasReading) reading,
+                    ].join('・')
+                  : null,
+              dictionaryCount: result.entries
+                  .map((DictionaryEntry e) => e.dictionaryName)
+                  .toSet()
+                  .length,
+              selected: _hasActiveQuery && _lastQuery == searchTerm,
+              onOpen: () {
+                _controller.text = searchTerm;
+                _controller.selection = TextSelection.collapsed(
+                  offset: searchTerm.length,
+                );
+                _showCachedResult(result);
+              },
+              onFavorite: () => unawaited(
+                onFavoriteEntry(<String, String>{
+                  'expression': word.isNotEmpty ? word : searchTerm,
+                  'reading': reading,
+                  'glossary': first.plainMeaning,
                 }),
-                childCount: results.length,
+              ),
+              onRemove: () => appModel.removeFromDictionaryHistory(
+                searchTerm: result.searchTerm,
               ),
             ),
-          ),
-        ],
+          );
+        }),
       ),
     );
   }
@@ -2233,15 +2257,36 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     // 切 tab 销毁本页当帧根 Overlay 仍会重建本 entry——彼时读失效 State 的 appModel/Theme
     // 会红屏（BUG-121）。State 失效 / 销毁期标志置位则空渲染兜底；Theme 用 entry 自己的
     // overlayContext（与本 entry 同寿命）而非更短命的 State context。
-    if (!mounted || _overlayInert) return const SizedBox.shrink();
+    if (!mounted || _deactivated) return const SizedBox.shrink();
+    // inert（所在保活 tab 被藏起 / 被不透明路由盖住）时浮层**留在树上、整棵
+    // Offstage**：不画、不接点击、不持焦点、停动画，但常驻热槽的查词 WebView
+    // （TODO-931）不拆。这里曾在 inert 时收成 `SizedBox.shrink()`——热槽开页即
+    // seed、`entries` 永不空，于是每次切出查词 tab / 每推一个整页上来都销毁预热
+    // 好的 WebView，回来再冷建一个并重新装载 popup.html + JS + CSS
+    // （BUG-4849，与游戏工作台 BUG-4896 同一个坑）。祖先结构恒定、只翻
+    // `offstage` 参数（平台视图上方的祖先在层的生命周期内不能增删）。
+    final bool inert = _overlayInert;
     // BUG-2953：浮层自带导航层，弹窗里唤出的菜单画在浮层之上（见 LookupOverlayNavigator）。
+    return Offstage(
+      offstage: inert,
+      child: TickerMode(
+        enabled: !inert,
+        child: ExcludeFocus(
+          excluding: inert,
+          child: _buildPopupOverlayBody(overlayContext),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPopupOverlayBody(BuildContext overlayContext) {
     return LookupOverlayNavigator(
       child: FushiAppUiScaleNeutralizer(
         child: Theme(
           data: appModel.overrideDictionaryTheme ?? Theme.of(overlayContext),
           child: LayoutBuilder(
             builder: (BuildContext context, BoxConstraints constraints) {
-              if (!mounted || _overlayInert) return const SizedBox.shrink();
+              if (!mounted || _deactivated) return const SizedBox.shrink();
               final Size screen = Size(
                 constraints.maxWidth,
                 constraints.maxHeight,
@@ -2560,58 +2605,6 @@ class _SearchFocusLift extends StatelessWidget {
   }
 }
 
-/// M3E 最近搜索 chip：空态里的最近词快捷入口，整枚点击即可查词。
-class _RecentSearchChip extends StatelessWidget {
-  const _RecentSearchChip({required this.label, required this.onTap});
-
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
-    final TextTheme tt = Theme.of(context).textTheme;
-    const BorderRadius radius = BorderRadius.all(Radius.circular(8));
-    return Material(
-      color: Colors.transparent,
-      shape: RoundedRectangleBorder(
-        borderRadius: radius,
-        side: BorderSide(color: cs.outlineVariant),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: radius,
-        child: SizedBox(
-          height: _kRecentChipHeight,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              const SizedBox(width: 12),
-              FushiIcon(
-                FushiIcons.history,
-                size: 18,
-                color: cs.onSurfaceVariant,
-              ),
-              const SizedBox(width: 8),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 160),
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: tt.labelLarge?.copyWith(color: cs.onSurface),
-                ),
-              ),
-              const SizedBox(width: 12),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 /// M3E 查词历史行：titleMedium 词 + bodySmall 读音、行尾
 /// tonal 计数胶囊；悬停 / 焦点时露出「⋯」菜单（收藏 / 移出历史）。行点击、状态层、
 /// 选中色块与形变由外层 [FushiGroupedListItem] 负责。
@@ -2730,185 +2723,13 @@ class _LookupHistoryRowState extends State<_LookupHistoryRow> {
   }
 }
 
-/// 查词历史的一块色块（重设计外壳，见 `_buildDictionaryHistoryBlocks`）。
-class _LookupWordBlock extends StatefulWidget {
-  const _LookupWordBlock({
-    super.key,
-    required this.term,
-    required this.subtitle,
-    required this.watermark,
-    required this.dictionaryCount,
-    required this.selected,
-    required this.onOpen,
-    required this.onFavorite,
-    required this.onRemove,
-  });
-
-  final String term;
-  final String? subtitle;
-  final String watermark;
-  final int dictionaryCount;
-  final bool selected;
-  final VoidCallback onOpen;
-  final VoidCallback onFavorite;
-  final VoidCallback onRemove;
-
-  @override
-  State<_LookupWordBlock> createState() => _LookupWordBlockState();
-}
-
-class _LookupWordBlockState extends State<_LookupWordBlock> {
-  bool _hovered = false;
-  bool _focused = false;
-  bool _menuFocused = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final FushiCoverBlockColors colors = fushiPosterColors(
-      context,
-      fushiPosterHue(widget.term),
-    );
-    final TextStyle base =
-        Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
-    final Duration duration = fushiMotionDuration(context, FushiMotion.short);
-    final bool reveal = _hovered || _focused || _menuFocused;
-    final bool ring = widget.selected || _focused;
-    final String? subtitle = widget.subtitle;
-    // 与里面的海报色块同一个外形（半高档：26），焦点环 / 水波沿同一条边。
-    final OutlinedBorder shape = fushiCoverBlockShape(
-      context,
-      FushiCoverBlockSize.half,
-    );
-    // 「⋯」始终挂在树里（菜单打开期间按钮不能被卸载），只按悬停 / 焦点换透明度。
-    final Widget menu = Focus(
-      canRequestFocus: false,
-      skipTraversal: true,
-      onFocusChange: (bool focused) {
-        if (focused != _menuFocused) setState(() => _menuFocused = focused);
-      },
-      child: AnimatedOpacity(
-        duration: duration,
-        curve: FushiMotion.standard,
-        opacity: reveal ? 1 : 0,
-        child: FushiOverflowMenu<String>(
-          tooltip: t.lookup_history_more,
-          icon: FushiIcons.moreHoriz,
-          iconSize: 20,
-          items: <PopupMenuEntry<String>>[
-            PopupMenuItem<String>(
-              value: 'favorite',
-              child: Text(t.lookup_history_favorite),
-            ),
-            PopupMenuItem<String>(
-              value: 'remove',
-              child: Text(t.lookup_history_remove),
-            ),
-          ],
-          onSelected: (String value) {
-            if (value == 'favorite') {
-              widget.onFavorite();
-            } else if (value == 'remove') {
-              widget.onRemove();
-            }
-          },
-        ),
-      ),
-    );
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: Semantics(
-        selected: widget.selected,
-        child: FushiPressScale(
-          child: InkWell(
-            onTap: widget.onOpen,
-            onFocusChange: (bool focused) {
-              if (focused != _focused) setState(() => _focused = focused);
-            },
-            customBorder: shape,
-            overlayColor: const WidgetStatePropertyAll<Color>(
-              Colors.transparent,
-            ),
-            child: AnimatedContainer(
-              duration: duration,
-              curve: FushiMotion.standard,
-              foregroundDecoration: ShapeDecoration(
-                shape: shape.copyWith(
-                  side: BorderSide(
-                    color: ring ? colors.accent : Colors.transparent,
-                    width: 3,
-                  ),
-                ),
-              ),
-              child: FushiPosterBlock(
-                watermark: widget.watermark,
-                colors: colors,
-                watermarkFontSize: 72,
-                watermarkEdge: FushiPosterWatermarkEdge.bottom,
-                blockSize: FushiCoverBlockSize.half,
-                padding: const EdgeInsetsDirectional.fromSTEB(18, 8, 6, 14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: <Widget>[
-                    Row(
-                      children: <Widget>[
-                        Expanded(
-                          child: Text(
-                            subtitle ?? '',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: FushiPosterText.meta
-                                .on(base)
-                                .copyWith(
-                                  color: colors.onContainer.withValues(
-                                    alpha: 0.8,
-                                  ),
-                                ),
-                          ),
-                        ),
-                        menu,
-                      ],
-                    ),
-                    Padding(
-                      padding: const EdgeInsetsDirectional.only(end: 12),
-                      child: Text(
-                        widget.term,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: FushiPosterText.term
-                            .on(base)
-                            .copyWith(color: colors.accent),
-                      ),
-                    ),
-                    FushiPosterChip(
-                      colors: colors,
-                      icon: FushiIcons.dictionary,
-                      label: '${widget.dictionaryCount}',
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 /// 宽屏右栏还没有查询时的 M3E 空态：花形色块图标弹入、标题 + 提示、「粘贴剪贴板
-/// 查词」tonal 按钮，以及几个最近词 chip 快捷入口。各块错峰进场。
+/// 查词」tonal 按钮，各块错峰进场。最近查过的词只在左栏历史里列（设计稿 #lookup
+/// L1：这里再放一排「最近」chip 与左栏重复）。
 class _LookupIdleState extends StatelessWidget {
-  const _LookupIdleState({
-    required this.recents,
-    required this.onLookupClipboard,
-    required this.onPickRecent,
-  });
+  const _LookupIdleState({required this.onLookupClipboard});
 
-  final List<String> recents;
   final Future<void> Function() onLookupClipboard;
-  final void Function(String term) onPickRecent;
 
   @override
   Widget build(BuildContext context) {
@@ -2954,24 +2775,6 @@ class _LookupIdleState extends StatelessWidget {
         icon: const FushiIcon(FushiIcons.paste, size: 18),
         label: Text(t.floating_ball_action_clipboard),
       ),
-      if (recents.isNotEmpty) ...<Widget>[
-        const SizedBox(height: 24),
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 480),
-          child: Wrap(
-            alignment: WrapAlignment.center,
-            spacing: 8,
-            runSpacing: 8,
-            children: <Widget>[
-              for (final String term in recents)
-                _RecentSearchChip(
-                  label: term.replaceAll('\n', ' '),
-                  onTap: () => onPickRecent(term),
-                ),
-            ],
-          ),
-        ),
-      ],
     ];
     return FushiEntranceScope(
       child: Center(

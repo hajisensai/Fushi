@@ -67,13 +67,13 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 158);
+    expect(migrated.schemaVersion, 161);
     await saveSession(migrated, 's1', 10);
     final int actionId = await migrated.insertAiAgentAction(action('s1', 11));
     await migrated.close();
 
     raw = sqlite.sqlite3.open(path);
-    expect(raw.select('PRAGMA user_version').first.values.first, 158);
+    expect(raw.select('PRAGMA user_version').first.values.first, 161);
     for (final String t in tables) {
       expect(tableExists(raw, t), isTrue, reason: t);
     }

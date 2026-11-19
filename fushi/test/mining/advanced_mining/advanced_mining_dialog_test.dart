@@ -16,7 +16,6 @@ import 'package:fushi/src/mining/advanced_mining/advanced_mining_sections.dart'
 import 'package:fushi/src/mining/advanced_mining/manga_crop_selector.dart';
 import 'package:fushi/src/stats/study_cover_tracker.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
-import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
@@ -475,19 +474,17 @@ void main() {
         find.text(t.popup_advanced_mining_crop_page_title),
         findsOneWidget,
       );
-      // BUG-3410：「完成」在顶栏动作胶囊里水平居中，不能被页面自带的尾部
-      // Padding 挤到左边。
+      // BUG-3410：「完成」贴顶栏行尾（只隔页边距），不能被页面自带的尾部
+      // Padding 挤到左边。2026-11-15 起顶栏是现行页头的一行（不装动作胶囊）。
       final Finder done = find.text(t.popup_advanced_mining_crop_done);
       final Rect doneButton = tester.getRect(
         find.ancestor(of: done, matching: find.byType(FushiFilledButton)),
       );
-      final Rect capsule = tester.getRect(
-        find.ancestor(of: done, matching: find.byType(FushiPageChromeCapsule)),
+      final Rect bar = tester.getRect(
+        find.ancestor(of: done, matching: find.byType(AppBar)),
       );
-      expect(
-        doneButton.left - capsule.left,
-        moreOrLessEquals(capsule.right - doneButton.right, epsilon: 0.5),
-      );
+      expect(doneButton.right, lessThanOrEqualTo(bar.right));
+      expect(bar.right - doneButton.right, lessThanOrEqualTo(24.5));
       await tester.tap(find.text(t.popup_advanced_mining_crop_whole_page).last);
       await tester.pumpAndSettle();
       await tester.tap(find.text(t.popup_advanced_mining_crop_done));

@@ -123,11 +123,13 @@ void main() {
       );
       expect(
         n.contains(
-          'this.contentFirstPageScroll(ctx0)); } return; } var walker = this.createWalker();',
+          'this.contentFirstPageScroll(ctx0)); } return; } '
+          'var located = this.textNodeAtCharOffset(charOffset);',
         ),
         isTrue,
         reason:
-            '分页 <=0 无 hint 落 contentFirstPageScroll（章首含前导），且 return 在 walker 之前——'
+            '分页 <=0 无 hint 落 contentFirstPageScroll（章首含前导），且 return 在走查'
+            '（textNodeAtCharOffset）之前——'
             '绝不让 <=0 掉进走查按字符页跳（越过前导）',
       );
     },

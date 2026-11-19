@@ -47,6 +47,7 @@ import 'package:fushi/src/pages/implementations/jimaku_entry_picker.dart'
 import 'package:fushi/src/pages/implementations/subtitle_search_panel.dart'
     show
         describeSubtitleFailure,
+        logSubtitleDownloadFailure,
         kSubtitleNoticeBannerKey,
         primarySubtitleFailure;
 import 'package:fushi/i18n/strings.g.dart';
@@ -1050,8 +1051,9 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
       _notice = null;
       _statusByUid.clear();
     });
+    final List<SubtitleBatchItem> results;
     try {
-      await runSubtitleBatch(
+      results = await runSubtitleBatch(
         registry: registry,
         candidates: candidates,
         targets: _targets(),
@@ -1072,6 +1074,17 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
       );
     } finally {
       if (mounted) setState(() => _running = false);
+    }
+    // 每集的失败原因进错误日志（含持久化抛错——批量把它归到该集、继续下一集）：
+    // 行副标题只放得下一句话，排查要靠这里。面板已关也照记。同一个整季包的失败
+    // 只记一次（挂在它覆盖的第一集上），不逐集重复。
+    for (final SubtitleBatchItem item in subtitleBatchDistinctFailures(
+      results,
+    )) {
+      logSubtitleDownloadFailure(
+        'SubtitleCollectionPanel.batch[EP${item.episode}]',
+        item.error!,
+      );
     }
     if (!mounted) return;
     final int done = _statusByUid.values
@@ -1191,13 +1204,17 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
               _selectedSource?.unsupportedPackFormat;
           return Text(
             unsupported == null
-                ? t.video_jimaku_no_results
+                // 整季包没下下来（401 / 429 / 断网）与「真的没有这一集」是两件事。
+                ? describeSubtitleFailure(t.video_jimaku_no_results, item.error)
                 : t.video_subtitle_archive_pack_unsupported(
                     format: unsupported.label,
                   ),
           );
         case SubtitleBatchStatus.failed:
-          return Text(t.video_jimaku_download_failed);
+          // 与本集面板同一套文案（BUG-1844）：key 被拒 / 连不上 / HTTP 状态码。
+          return Text(
+            describeSubtitleFailure(t.video_jimaku_download_failed, item.error),
+          );
         case SubtitleBatchStatus.downloading:
         case SubtitleBatchStatus.pending:
           return Text(t.video_jimaku_source_loading);
@@ -1597,7 +1614,14 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
                                 labelText: t.video_jimaku_query,
                                 isDense: true,
                               ),
-                              onSubmitted: (_) => _resolveSeries(),
+                              // 与右边的按钮同一道闸：批量途中回车重搜会清掉
+                              // 在跑的各集行状态、换掉来源（BUG-4799）。
+                              onSubmitted: (_) {
+                                if (_resolving || _searching || _running) {
+                                  return;
+                                }
+                                unawaited(_resolveSeries());
+                              },
                             ),
                           ),
                           const SizedBox(width: 8),

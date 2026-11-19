@@ -62,6 +62,8 @@ on:
       - '.github/actions/setup-fushi-compute/**'
       - '.github/actions/setup-fushi-rwkv/**'
       - '.github/scripts/verify_torrent_abi.sh'
+      - '.github/scripts/check_glibc_baseline.sh'
+      - '.github/scripts/fetch_onnxruntime_nuget.py'
       - 'pubspec.yaml'
       - 'pubspec.lock'
       # 这份清单只是整条 workflow 的粗门；PR 上每个 job 开不开由 changes job 按实际改动
@@ -168,7 +170,7 @@ jobs:
           windows_only='^(fushi/windows/|packages/(flutter_inappwebview_windows|gamepads_windows)/|packages/[^/]+/windows/|native/(fushi_torrent|galgame_hook|fushi_anki_sync)/|packages/fushi_torrent/|third_party/([^/]+/windows/|[^/]*windows[^/]*/|libplacebo-win/|m_extension_server/|jogamp/)|tool/mihon/|tool/engine_overlay\.ps1$|tools/(build_magpie_slim|bundle_7za)\.ps1$|\.github/actions/(setup-fushi-anki-sync|flutter-engine-overlay)/)'
           macos_only='^(fushi/(macos|apple)/|packages/[^/]+/(macos|darwin)/|native/(fushi_anki_sync|fushi_torrent)/|packages/fushi_torrent/|\.github/scripts/verify_torrent_abi\.sh$|third_party/([^/]+/(macos|darwin)/|[^/]*macos[^/]*/|m_extension_server/|jogamp/)|tool/mihon/|\.github/actions/setup-fushi-anki-sync/)'
           ios_only='^(fushi/(ios|apple)/|native/fushi_ios_umbrella/|packages/[^/]+/(ios|darwin)/|third_party/([^/]+/(ios|darwin)/|[^/]*ios[^/]*/))'
-          server_only='^(pubspec\.(yaml|lock)$|ci/|packages/(fushi_server|fushi_engine|fushi_core|fushi_anki|fushi_audio|fushi_dictionary|fushi_platform|fushi_torrent|fushi_p2p|fushi_srs|fushi_compute|fushi_rwkv)/|native/(fushi_torrent|fushi_p2p|fushi_fsrs|fushi_compute|fushi_rwkv|fushi_anki_sync|fushidicts)/|fushi/assets/transforms/|\.github/workflows/build-multiplatform\.yml$|\.github/actions/(native-artifact-store|native-store-names|pdfium-hook-cache|setup-fushi-anki-sync)/|\.github/scripts/verify_torrent_abi\.sh$)'
+          server_only='^(pubspec\.(yaml|lock)$|ci/|packages/(fushi_server|fushi_engine|fushi_core|fushi_anki|fushi_audio|fushi_dictionary|fushi_platform|fushi_torrent|fushi_p2p|fushi_srs|fushi_compute|fushi_rwkv)/|native/(fushi_torrent|fushi_p2p|fushi_fsrs|fushi_compute|fushi_rwkv|fushi_anki_sync|fushidicts)/|fushi/assets/transforms/|\.github/workflows/build-multiplatform\.yml$|\.github/actions/(native-artifact-store|native-store-names|pdfium-hook-cache|setup-fushi-anki-sync)/|\.github/scripts/verify_torrent_abi\.sh$|\.github/scripts/check_glibc_baseline\.sh$|\.github/scripts/fetch_onnxruntime_nuget\.py$)'
 
           # route <output> <正则变量名...>：清单里任一路径命中这些正则之一即开。
           route() {
@@ -363,6 +365,19 @@ jobs:
         uses: ./.github/actions/setup-fushi-corpus
         with:
           android-abis: x86_64
+      # SRS 排程内核 fushi_fsrs 同为 app 硬依赖：AppModel 初始化建 SRS 存储时 SrsCoreBindings.load
+      # 找不到 libfushi_fsrs.so 就整轮 init 失败、首页永不就绪（appSmoke 在 x86_64 模拟器上红在
+      # 这里）。产物落 native/fushi_fsrs/prebuilt/android/x86_64/，由 build.gradle 的 jniLibs
+      # copy-if-present 随包。Rust / x86_64-linux-android target / cargo-ndk 已由上面的
+      # setup-fushi-compute 按同一钉版装好，这里只编；冷编约 1 min，不进持久库（同 release.yml 口径）。
+      - name: Build fushi_fsrs (Android x86_64)
+        shell: bash
+        run: |
+          set -euo pipefail
+          toolchain="$(sed -n 's/^P2P_RUST=//p' .github/actions/native-store-names/names.sh)"
+          RUSTUP_TOOLCHAIN="$toolchain" bash native/fushi_fsrs/build_android_so.sh "$ANDROID_NDK_LATEST_HOME" x86_64
+          so=native/fushi_fsrs/prebuilt/android/x86_64/libfushi_fsrs.so
+          test -f "$so" || { echo "::error::missing $so"; exit 1; }
       - name: Run Android comprehensive automation contract
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -407,11 +422,18 @@ jobs:
   # 持久库基建 / 本文件 / 依赖锁 / ci 补丁）；push / 手动 dispatch 照旧整轮。
   # job 级 CC/CXX 与 native-cache-warm.yml 的 linux job 逐字一致：它们进了持久库名字的
   # 哈希，PR 读的三份件（torrent / p2p / anki-sync debug）由那边在 develop 上预存。
+  #
+  # runner 钉 ubuntu-22.04（glibc 2.35）而不是 latest（BUG-4843）：bundle 里除 glibc 全是
+  # 静态链 / 随包的，构建机的 glibc 就是产物的最低要求。ubuntu-latest 换到 26.04 后
+  # libfushi_compute.so 要 GLIBC_2.43、torrent / fushidicts 要 GLIBC_2.38，README 写的
+  # glibc ≥ 2.35 落空（Debian 13 上 serve 直接起不来）。与 release-server.yml linux job 同一
+  # 镜像；上传前 .github/scripts/check_glibc_baseline.sh 对整个 bundle 的每个 ELF 核一遍。
+  # 换镜像会让持久库与 vcpkg 缓存整轮 miss，torrent 冷编约 40 分钟，所以超时给 90。
   linux-server:
     needs: changes
     if: needs.changes.outputs.server == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
     permissions:
       contents: read
       # native-artifact-store 按名字查 / 下载本仓历史 run 的产物。
@@ -433,8 +455,11 @@ jobs:
           platform: linux
       # 只剩服务端原生库要的工具：vcpkg（cmake + ninja + pkg-config）按 job 级 CC/CXX
       # 用 gcc-14 编静态 torrent bridge；fushidicts 的 .so 也用同一套 gcc-14 / cmake / ninja。apt 清单与 native-cache-warm.yml linux job 一致。
+      # ubuntu-22.04 系统源只到 gcc-12，gcc-14 从 ubuntu-toolchain-r/test PPA 装（同
+      # release-server.yml）；libstdc++ / libgcc 都静态链进产物，目标机不需要这个 PPA。
       - name: Install Linux build deps
         run: |
+          sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
           sudo apt-get update
           sudo apt-get install -y \
             ninja-build cmake pkg-config \
@@ -775,11 +800,10 @@ jobs:
         run: |
           set -euo pipefail
           ORT_VERSION=1.22.0
-          curl -fsSL --retry 3 -o "$RUNNER_TEMP/ort.tgz" \
-            "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz"
-          tar -xzf "$RUNNER_TEMP/ort.tgz" -C "$RUNNER_TEMP"
-          cp -a "$RUNNER_TEMP/onnxruntime-linux-x64-${ORT_VERSION}/lib/"libonnxruntime.so* \
-            build/fushi_server_linux/bundle/lib/
+          # github.com/microsoft/onnxruntime（仓库与全部 release）自 2026-11-17 起 404，
+          # 改从 NuGet 官方包 Microsoft.ML.OnnxRuntime 取，nupkg 与 .so 均钉 sha256。
+          python3 .github/scripts/fetch_onnxruntime_nuget.py "$ORT_VERSION" linux-x64 \
+            build/fushi_server_linux/bundle/lib
           ls -la build/fushi_server_linux/bundle/lib
       # (d) 词典引擎 libfushidicts_ffi.so：服务端按 `<exe>/../lib/libfushidicts_ffi.so` 定位
       #     （dictionary_host.dart 的 resolveFushiDictsLibraryPath）。脚本用 job 级 CC/CXX
@@ -905,6 +929,11 @@ jobs:
             || { echo "::error::lookup of 食べた did not deinflect to 食べる (transforms not bundled?)"; echo "$lookup"; cat "$cfg/serve.log"; exit 1; }
           kill $pid; wait $pid || true
           cat "$cfg/serve.log"
+      # README 声明的 glibc 基线（BUG-4843）：bundle 里每个 ELF 的最大 GLIBC_ 符号版本都不得
+      # 超过它，超了就判红，不上传一个在声明支持的发行版上起不来的包。
+      - name: Verify glibc baseline of bundled ELFs
+        shell: bash
+        run: bash .github/scripts/check_glibc_baseline.sh build/fushi_server_linux/bundle
       - name: Upload fushi_server (Linux)
         uses: actions/upload-artifact@v7
         with:

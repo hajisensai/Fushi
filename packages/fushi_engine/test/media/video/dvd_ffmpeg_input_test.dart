@@ -5,6 +5,7 @@ library;
 
 import 'dart:io';
 
+import 'package:fushi_engine/media/video/dvd/dvd_angle.dart';
 import 'package:fushi_engine/media/video/dvd/dvd_ffmpeg_input.dart';
 import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart';
 import 'package:path/path.dart' as p;
@@ -67,6 +68,41 @@ void main() {
         prepareDvdFfmpegArgs(<String>['-i', folder, 'o.png']).sublist(0, 4),
         <String>['-f', 'dvdvideo', '-title', '3'],
       );
+    });
+
+    test('an angle member path reads that angle (-angle is 1-based)', () {
+      // dvd_angle.dart: angle index 1 (the second angle) is `.a2`, and
+      // dvdvideo's -angle counts from 1 like libdvdnav.
+      final String folder = dvdTitlePath('/discs/show', 3);
+      final String angle2 = dvdTitleAnglePath(folder, 1);
+      final DvdTitleInput input = parseDvdTitleInput(angle2)!;
+      expect(input.title, 3);
+      expect(input.angle, 2);
+      expect(input.demuxerPath, p.normalize('/discs/show'));
+      expect(
+        prepareDvdFfmpegArgs(<String>['-ss', '5', '-i', angle2, 'o.png']),
+        <String>[
+          '-ss',
+          '5',
+          '-f',
+          'dvdvideo',
+          '-title',
+          '3',
+          '-angle',
+          '2',
+          '-i',
+          p.normalize('/discs/show'),
+          'o.png',
+        ],
+      );
+      final DvdTitleInput iso = parseDvdTitleInput(
+        dvdTitleAnglePath(dvdTitlePath('/isos/show.iso', 12), 8),
+      )!;
+      expect(iso.angle, 9);
+      expect(iso.demuxerPath, p.normalize('/isos/show.iso'));
+      // The default angle stays the plain title path with no -angle option.
+      expect(dvdTitleAnglePath(folder, 0), folder);
+      expect(parseDvdTitleInput(folder)!.angle, isNull);
     });
 
     test('ordinary paths and URLs are not DVD titles', () {

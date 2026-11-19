@@ -298,16 +298,14 @@ jobs:
           cp native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so build/fushi_server_linux/bundle/lib/
           cp native/fushi_compute/prebuilt/linux-x64/libfushi_compute.so build/fushi_server_linux/bundle/lib/
           cp native/fushi_rwkv/prebuilt/linux-x64/libfushi_rwkv.so build/fushi_server_linux/bundle/lib/
-          curl -fsSL --retry 3 -o "$RUNNER_TEMP/ort.tgz" \
-            "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz"
-          tar -xzf "$RUNNER_TEMP/ort.tgz" -C "$RUNNER_TEMP"
-          cp -a "$RUNNER_TEMP/onnxruntime-linux-x64-${ORT_VERSION}/lib/"libonnxruntime.so* build/fushi_server_linux/bundle/lib/
+          # microsoft/onnxruntime 的 GitHub release 自 2026-11-17 起 404，改走 NuGet（钉 sha256）。
+          python3 .github/scripts/fetch_onnxruntime_nuget.py "$ORT_VERSION" linux-x64 build/fushi_server_linux/bundle/lib
           ls -la build/fushi_server_linux/bundle/bin build/fushi_server_linux/bundle/lib
       # 词典引擎 libfushidicts_ffi.so：服务端查词按 bin/../lib/ 定位、变形表按
       # bin/../share/fushi/transforms 定位。fushidicts 要 C++23（std::ranges::to 等），
       # 下限 GCC 14；ubuntu-22.04 系统源只到 gcc-12，所以从 ubuntu-toolchain-r/test PPA
       # 装 g++-14。libstdc++ / libgcc 静态链进 .so，目标机不需要这个 PPA 的运行库；
-      # 下面断言产物的 GLIBC 符号版本不超过 2.35，守住本 job 承诺的 glibc 下限。
+      # glibc 下限由冒烟前「Verify glibc baseline」一步对整个 bundle 统一核（BUG-4843）。
       # 失败口径同 torrent bridge：构建失败即 job 失败，不发缺查词能力的服务端包。
       - name: Install gcc-14 (ubuntu-toolchain-r/test PPA)
         shell: bash
@@ -328,11 +326,6 @@ jobs:
           lib=build/fushi_server_linux/bundle/lib/libfushidicts_ffi.so
           mkdir -p "$(dirname "$lib")"
           cp native/fushidicts/prebuilt/linux-x64/libfushidicts_ffi.so "$lib"
-          max_glibc="$(objdump -T "$lib" | grep -o 'GLIBC_[0-9.]*' | sed 's/GLIBC_//' | sort -V | tail -n 1)"
-          echo "libfushidicts_ffi.so requires glibc >= $max_glibc"
-          if [ "$(printf '%s\n' "$max_glibc" 2.35 | sort -V | tail -n 1)" != "2.35" ]; then
-            echo "::error::libfushidicts_ffi.so needs glibc $max_glibc (> 2.35)"; exit 1
-          fi
           DICTS_LIB="$lib" python3 - <<'PY'
           import ctypes
           import os
@@ -361,6 +354,11 @@ jobs:
         run: |
           set -euo pipefail
           bash native/fushi_anki_sync/build.sh --install-dir build/fushi_server_linux/bundle/bin
+      # README 声明的 glibc 基线（BUG-4843）：bundle 里每个 ELF（含 fushi-anki-sync、
+      # onnxruntime、sqlite3 native asset）的最大 GLIBC_ 符号版本都不得超过它，超了不发版。
+      - name: Verify glibc baseline of bundled ELFs
+        shell: bash
+        run: bash .github/scripts/check_glibc_baseline.sh build/fushi_server_linux/bundle
       - name: Smoke (serve + embedded engine + models)
         shell: bash
         run: |
@@ -598,10 +596,9 @@ jobs:
           Copy-Item native/fushi_fsrs/prebuilt/windows-x64/fushi_fsrs.dll $lib -Force
           Copy-Item native/fushi_compute/prebuilt/windows-x64/fushi_compute.dll $lib -Force
           Copy-Item native/fushi_rwkv/prebuilt/windows-x64/fushi_rwkv.dll $lib -Force
-          $zip = "$env:RUNNER_TEMP/ort.zip"
-          Invoke-WebRequest -Uri "https://github.com/microsoft/onnxruntime/releases/download/v$env:ORT_VERSION/onnxruntime-win-x64-$env:ORT_VERSION.zip" -OutFile $zip
-          Expand-Archive -Path $zip -DestinationPath "$env:RUNNER_TEMP/ort" -Force
-          Copy-Item "$env:RUNNER_TEMP/ort/onnxruntime-win-x64-$env:ORT_VERSION/lib/onnxruntime.dll" $lib -Force
+          # microsoft/onnxruntime 的 GitHub release 自 2026-11-17 起 404，改走 NuGet（钉 sha256）。
+          python .github/scripts/fetch_onnxruntime_nuget.py $env:ORT_VERSION win-x64 $lib
+          if ($LASTEXITCODE -ne 0) { throw "fetch onnxruntime failed" }
           Get-ChildItem build/fushi_server_win/bundle -Recurse | Select-Object FullName, Length
       # 词典引擎 fushidicts_ffi.dll：同 linux job，服务端查词按 bin/../lib/ 定位、变形表按
       # bin/../share/fushi/transforms 定位。此前 Windows 包漏了这一步，互联查词在 Windows

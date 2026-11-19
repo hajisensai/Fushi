@@ -1,6 +1,12 @@
 ## BUG-1851 · auto 引擎偏好下区域重识别可能与整卷用不同引擎，页内混引擎且 ocr 元数据仍写旧引擎
 - **报告**：2026-08-25（用户：代码审查，PR #1000 随批发现）
-- **真实性**：✅ 真 bug（未修）。根因 `fushi/lib/src/media/manga/ocr/manga_ocr_auto_start.dart:191`
+- **状态**：作废（2026-11-17）。这条依赖的区域重识别功能已按产品决策整体移除
+  （BUG-2461，提交 `350b9f2b2ae`）：下文的根因行 `manga_ocr_auto_start.dart:191` 与
+  `replaceMangaBlocksInRegion` 都不存在了，「区域替换造成同页混引擎」的入口没有了，不再修。
+  它担心的那类后果换了入口后仍在的部分——「只补缺页」把别的引擎的页冒名收下——由
+  BUG-4815 处理。另：下文提的修法「把 `hasExistingMetadata` 透进去」本身不成立，该参数为
+  true 时 `resolveMangaOcrEngine` 直接返回 null（表示不需要 OCR）。以下为当时的原始记录。
+- **真实性**：✅ 当时属实（功能移除前）。根因 `fushi/lib/src/media/manga/ocr/manga_ocr_auto_start.dart:191`
   —— `startMangaOcrWithPreferredEngine` 里 `resolveMangaOcrEngine(..., hasExistingMetadata: false)`
   是**硬编码**的，调用方无法告诉它「这本书已经有 OCR 元数据、是哪个引擎跑的」。
 
@@ -18,11 +24,5 @@
   一直是这个行为。PR #1000 让它第一次发生在**页内**（区域替换会删掉旧块再插新块），
   所以同页混引擎从此肉眼可见。
 
-- **[ ] ① 未修复** — 正解是把「本书已有元数据的引擎」透进 `startMangaOcrWithPreferredEngine`
-  （加一个 `existingEngine`/`hasExistingMetadata` 入参，由调用方从 `payload.ocr` 取），
-  让 `resolveMangaOcrEngine` 在 `auto` 下优先复用同源引擎；同源引擎不可用时要么明确告知
-  用户「会与整卷不同源」，要么在替换后更新 `ocr` 元数据为 `mixed`。这动的是整卷 / 点击 /
-  区域三个入口的共同契约，超出 PR #1000 的爆炸半径，单独一批做。
-- **[ ] ② 未加自动化测试** — 修的时候在 `manga_ocr_auto_start` 层加：「有 local_onnx 元数据
-  + ONNX 不可用 + 偏好 auto ⇒ 不静默换 systemOcr」。
-- **备注**：审查意见原文见 PR #1000 的「建议同批」第 2 条。
+- **备注**：审查意见原文见 PR #1000 的「建议同批」第 2 条。原记录里的修复方案与测试方案随功能
+  移除一并作废，不再列待办。

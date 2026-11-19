@@ -2831,7 +2831,8 @@ class BackupRestoreService {
     void Function(int deltaBytes)? onBytes,
   }) async {
     final Directory targetRoot = Directory(dictionaryResourceDirectory);
-    // 引擎常驻映射着每本词典的 hash.table / blobs.bin（native map_rd）；Windows 上
+    // 引擎常驻映射着每本词典的索引与记录文件（key.index / blobs.bin 等，native
+    // map_rd）；Windows 上
     // 只要 view 还活着，删资源根一律 ERROR_USER_MAPPED_FILE，整个恢复流程就断在
     // 这一行（BUG-1756）。恢复流程收尾必定重启 app（backupImportRestart），故这里
     // 把引擎清空不需要再装回来。删 + 解压整段在映射释放的作用域里：作用域先等

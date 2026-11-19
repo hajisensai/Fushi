@@ -8,9 +8,16 @@
 /// - 任务进行中，带页的进度进一条**顺序**队列送大模型（读者先看到本地结果），
 ///   读完从 [MangaOcrJobFollower.updates] 补发同一页；
 /// - finished 立即落盘（注册表只同步并入已改好的页），名额随任务结束释放；
-/// - 落盘后剩下的页在任务之外继续送，每改好一页经 `runExclusiveOnMangaJson`
-///   读改写书根 manga.json——只在盘上那页仍是我们重读的那份本地结果时才替换
-///   （期间整卷被重新识别过就放弃，不拿旧页的重读覆盖新结果），再补发该页。
+/// - 落盘后剩下的页在任务之外继续送，改好的页**攒批**后经
+///   `runExclusiveOnMangaJson` 读改写书根 manga.json——只在盘上那页仍是我们重读的
+///   那份本地结果时才替换（期间整卷被重新识别过就放弃，不拿旧页的重读覆盖新
+///   结果），落盘后按盘上序号补发这些页。
+///
+/// 攒批（[kMangaAiOcrFlushPageCount] 页或 [kMangaAiOcrFlushInterval]，先到先写，
+/// 收尾冲刷）：每次回写都是「整份读 + 解析 + 整份编码 + 原子写」，逐页写的总量随
+/// 页数平方增长（实测 200 页 × 15 块的卷：书根 manga.json 约 0.64 MB，逐页写 200
+/// 次累计 129 MB、单次平均 48 ms 压在调用 isolate 上；16 页一批是 13 次、约 8 MB）。
+/// 冲刷前进程被杀不丢钱：大模型结果有自己的逐页缓存，重跑同卷从缓存回放。
 ///
 /// 任何失败（网络、鉴权、回复不合格、读图失败）都保留本地结果，只记一条日志。
 library;
@@ -32,6 +39,17 @@ import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
 /// 签名（没换成任何块时为 null）。
 typedef _PageRecord = ({String base, String? result, MokuroImage? better});
 
+/// 落盘后改好、等着并进书根 manga.json 的一页：[base] 是送去重读的那份本地页的
+/// 签名（写锁里拿它核对盘上那页没变）。
+typedef _PendingWrite = ({String url, String base, MokuroImage better});
+
+/// 落盘后的回写攒到这么多页就冲刷一次。
+const int kMangaAiOcrFlushPageCount = 16;
+
+/// 最早一页攒了这么久还没凑够页数也冲刷（大模型慢 / 被限流时，改好的页不无限
+/// 等下一页回来）。
+const Duration kMangaAiOcrFlushInterval = Duration(seconds: 15);
+
 /// 整卷任务的大模型跟随步骤。一个任务一个实例。
 class MangaAiOcrJobFollower implements MangaOcrJobFollower {
   MangaAiOcrJobFollower({
@@ -39,7 +57,10 @@ class MangaAiOcrJobFollower implements MangaOcrJobFollower {
     required MangaAiOcrRefiner refiner,
     MangaAiOcrCache? cache,
     this.discardCache = false,
-  }) : _refiner = refiner,
+    this.flushPageCount = kMangaAiOcrFlushPageCount,
+    this.flushInterval = kMangaAiOcrFlushInterval,
+  }) : assert(flushPageCount > 0),
+       _refiner = refiner,
        _cache =
            cache ?? MangaAiOcrCache.forVolume(imageDirPath, refiner.provider);
 
@@ -48,6 +69,11 @@ class MangaAiOcrJobFollower implements MangaOcrJobFollower {
 
   /// 整卷「重新识别」：开工前清掉本提供商的大模型缓存，让模型真的重读一遍。
   final bool discardCache;
+
+  /// 落盘后的回写攒批门槛：攒够 [flushPageCount] 页、或最早一页等了
+  /// [flushInterval]，先到先冲刷；全部页送完时无条件冲刷。
+  final int flushPageCount;
+  final Duration flushInterval;
 
   final MangaAiOcrRefiner _refiner;
   final MangaAiOcrCache _cache;
@@ -65,6 +91,15 @@ class MangaAiOcrJobFollower implements MangaOcrJobFollower {
 
   /// [mergeInto] 已被调用：此后改好的页不会再随 finished 落盘，得自己读改写。
   bool _mergeTaken = false;
+
+  /// 落盘后改好、还没并进书根 manga.json 的页（按改好的先后）。
+  List<_PendingWrite> _pending = <_PendingWrite>[];
+
+  /// 最早一页待写满 [flushInterval] 时冲刷；[_pending] 为空时没有计时器。
+  Timer? _flushTimer;
+
+  /// 已发出的冲刷链尾：收尾要等它们全部落盘、补发完才关 [updates]。
+  Future<void> _flushTail = Future<void>.value();
 
   /// [onPersisted] 交来的书根 manga.json；取消时以 null 完成。
   final Completer<String?> _persistedPath = Completer<String?>();
@@ -108,18 +143,25 @@ class MangaAiOcrJobFollower implements MangaOcrJobFollower {
     for (final MokuroImage page in payload.images) {
       _enqueue(() => _refineAndPublish(page));
     }
-    _enqueue(() async => _finish());
+    _enqueue(() async {
+      await _flushPending(mangaJsonPath);
+      _finish();
+    });
   }
 
   @override
   Future<void> cancel() async {
     if (_cancelled) return;
     _cancelled = true;
+    // 待写批直接丢（重跑从大模型逐页缓存回放）；定时冲刷由 [_finish] 停掉。
+    _pending = <_PendingWrite>[];
     _refiner.cancel();
     _finish();
   }
 
   void _finish() {
+    _flushTimer?.cancel();
+    _flushTimer = null;
     if (!_persistedPath.isCompleted) _persistedPath.complete(null);
     if (!_done.isCompleted) _done.complete();
     if (!_updates.isClosed) unawaited(_updates.close());
@@ -192,8 +234,9 @@ class MangaAiOcrJobFollower implements MangaOcrJobFollower {
   }
 
   /// 重读一页并交出去：finished 落盘前改好的直接补发（[mergeInto] 会把它并进
-  /// 整卷结果）；落盘之后改好的先在写锁里核对盘上仍是这份本地页、替换落盘，再
-  /// 按它在盘上的序号补发。[pageIndex] 是任务进度给的页号（落盘后的页为 null）。
+  /// 整卷结果）；落盘之后改好的进待写批，攒够了（或等久了、或全部送完）在写锁里
+  /// 核对盘上仍是这份本地页、替换落盘，再按它在盘上的序号补发。[pageIndex] 是
+  /// 任务进度给的页号（落盘后的页为 null）。
   Future<void> _refineAndPublish(MokuroImage page, {int? pageIndex}) async {
     final MokuroImage? better = await _refine(page);
     if (better == null || _cancelled) return;
@@ -203,34 +246,77 @@ class MangaAiOcrJobFollower implements MangaOcrJobFollower {
     }
     final String? mangaJsonPath = await _persistedPath.future;
     if (mangaJsonPath == null || _cancelled) return;
-    final int? index = await _writeIfUnchanged(mangaJsonPath, page, better);
-    if (index != null) _emit(index, better);
+    _pending.add((url: page.url, base: _signature(page), better: better));
+    if (_pending.length >= flushPageCount) {
+      await _flushPending(mangaJsonPath);
+      return;
+    }
+    _flushTimer ??= Timer(flushInterval, () {
+      _flushTimer = null;
+      unawaited(_flushPending(mangaJsonPath));
+    });
   }
 
-  /// 读改写书根 manga.json：盘上 [local] 那页没变才换成 [better]，返回它的序号。
-  Future<int?> _writeIfUnchanged(
-    String mangaJsonPath,
-    MokuroImage local,
-    MokuroImage better,
-  ) {
-    final String base = _signature(local);
-    return runExclusiveOnMangaJson<int?>(mangaJsonPath, () async {
-      if (_cancelled) return null;
-      final File file = File(mangaJsonPath);
-      if (!await file.exists()) return null;
-      final MokuroPayload current = parseMangaJson(await file.readAsString());
-      final int index = current.images.indexWhere(
-        (MokuroImage image) => image.url == local.url,
-      );
-      if (index < 0 || _signature(current.images[index]) != base) return null;
-      final List<MokuroImage> images = List<MokuroImage>.of(current.images);
-      images[index] = better;
-      await writeMangaJsonAtomically(
-        mangaJsonPath,
-        MokuroPayload(images: images, ocr: current.ocr),
-      );
-      return index;
+  /// 把待写批一次并进书根 manga.json 并补发；返回的 Future 在**此前发出的全部**
+  /// 冲刷都落定后完成。写失败只记日志（这批页保留本地结果，与逐页写时一致），
+  /// 不毒化后续冲刷。
+  Future<void> _flushPending(String mangaJsonPath) {
+    _flushTimer?.cancel();
+    _flushTimer = null;
+    final List<_PendingWrite> batch = _pending;
+    if (batch.isEmpty) return _flushTail;
+    _pending = <_PendingWrite>[];
+    return _flushTail = _flushTail.then((_) async {
+      try {
+        final List<MangaOcrPageUpdate> written = await _writeUnchanged(
+          mangaJsonPath,
+          batch,
+        );
+        for (final MangaOcrPageUpdate update in written) {
+          _emit(update.pageIndex, update.page);
+        }
+      } on Object catch (error, stack) {
+        _logOnce(error, stack);
+      }
     });
+  }
+
+  /// 一次读改写书根 manga.json：[batch] 里盘上那页没变的才换成改写页，返回实际
+  /// 换上的页及其**盘上**序号（一页都没换就不写）。
+  Future<List<MangaOcrPageUpdate>> _writeUnchanged(
+    String mangaJsonPath,
+    List<_PendingWrite> batch,
+  ) {
+    return runExclusiveOnMangaJson<List<MangaOcrPageUpdate>>(
+      mangaJsonPath,
+      () async {
+        const List<MangaOcrPageUpdate> none = <MangaOcrPageUpdate>[];
+        if (_cancelled) return none;
+        final File file = File(mangaJsonPath);
+        if (!await file.exists()) return none;
+        final MokuroPayload current = parseMangaJson(await file.readAsString());
+        final Map<String, int> indexByUrl = <String, int>{
+          for (int i = 0; i < current.images.length; i++)
+            current.images[i].url: i,
+        };
+        final List<MokuroImage> images = List<MokuroImage>.of(current.images);
+        final List<MangaOcrPageUpdate> written = <MangaOcrPageUpdate>[];
+        for (final _PendingWrite pending in batch) {
+          final int? index = indexByUrl[pending.url];
+          if (index == null || _signature(images[index]) != pending.base) {
+            continue;
+          }
+          images[index] = pending.better;
+          written.add((pageIndex: index, page: pending.better));
+        }
+        if (written.isEmpty) return none;
+        await writeMangaJsonAtomically(
+          mangaJsonPath,
+          MokuroPayload(images: images, ocr: current.ocr),
+        );
+        return written;
+      },
+    );
   }
 
   /// 重读没成：限流 / 网络 / 5xx 是预期降级（保留本地文字，客户端已按提供商退避），

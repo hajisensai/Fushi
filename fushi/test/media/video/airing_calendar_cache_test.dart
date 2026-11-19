@@ -53,6 +53,7 @@ void main() {
               romaji: 'Frieren',
               native: '葬送のフリーレン',
               coverUrl: 'https://x/c.png',
+              bannerUrl: 'https://x/b.jpg',
               format: 'TV',
             ),
           ),
@@ -71,6 +72,11 @@ void main() {
       expect(episode.media.displayTitle, 'Frieren');
       expect(episode.media.native, '葬送のフリーレン');
       expect(episode.media.coverUrl, 'https://x/c.png');
+      expect(
+        episode.media.bannerUrl,
+        'https://x/b.jpg',
+        reason: '横幅是日历色块的尾侧剧照，缓存丢字段会让命中缓存时剧照消失',
+      );
       expect(
         episode.media.format,
         'TV',

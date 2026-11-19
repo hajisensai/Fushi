@@ -1142,7 +1142,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
       );
       if (rendered == null) return null;
       try {
-        return await _bgraToPng(
+        return await PdfEngine.bgraToPng(
           rendered.pixels,
           rendered.width,
           rendered.height,
@@ -1153,34 +1153,6 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderPdfPage.renderPage', e, stack);
       return null;
-    }
-  }
-
-  static Future<Uint8List?> _bgraToPng(
-    Uint8List bgra,
-    int width,
-    int height,
-  ) async {
-    final ui.ImmutableBuffer buffer = await ui.ImmutableBuffer.fromUint8List(
-      bgra,
-    );
-    final ui.ImageDescriptor descriptor = ui.ImageDescriptor.raw(
-      buffer,
-      width: width,
-      height: height,
-      pixelFormat: ui.PixelFormat.bgra8888,
-    );
-    final ui.Codec codec = await descriptor.instantiateCodec();
-    final ui.FrameInfo frame = await codec.getNextFrame();
-    final ui.Image image = frame.image;
-    try {
-      final ByteData? png = await image.toByteData(
-        format: ui.ImageByteFormat.png,
-      );
-      return png?.buffer.asUint8List();
-    } finally {
-      image.dispose();
-      codec.dispose();
     }
   }
 

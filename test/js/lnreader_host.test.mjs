@@ -24,8 +24,10 @@ function createHost(routes) {
     XMLSerializer: dom.window.XMLSerializer,
   });
   ctx.globalThis = ctx;
-  ctx.__fushiLnReaderBridge = {
-    async fetch(request) {
+  // 宿主只认 Dart 运行时注册的两个 handler（`fushiLnFetch` / `fushiLnStorage`），
+  // 没有别的可替换入口：测试从同一个口进，载荷形状就是真实过桥的形状。
+  const handlers = {
+    async fushiLnFetch(request) {
       requests.push(request);
       const entry = routes[request.url];
       // 路由可以是函数：按请求（方法 / 请求体）动态应答，如 POST GraphQL。
@@ -39,10 +41,13 @@ function createHost(routes) {
         body: body.toString('base64'),
       };
     },
-    persistStorage(id, data) {
+    fushiLnStorage({ id, data }) {
       persisted.push({ id, data: JSON.parse(JSON.stringify(data)) });
       return Promise.resolve(true);
     },
+  };
+  ctx.flutter_inappwebview = {
+    callHandler: (name, payload) => handlers[name](payload),
   };
   vm.runInContext(fs.readFileSync(path.join(assets, 'lnreader_libs.js'), 'utf8'), ctx);
   vm.runInContext(fs.readFileSync(path.join(assets, 'lnreader_host.js'), 'utf8'), ctx);

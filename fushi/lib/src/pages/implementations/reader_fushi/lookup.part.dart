@@ -330,22 +330,24 @@ extension _ReaderLookup on _ReaderFushiPageState {
     // 合成有声书 / 竖排空段 DOM 等模式可能回空（即便 JS 已有块级 textContent 兜底），
     // 而 data.text 由本方法开头 `if (data.text.isEmpty) return;` 守卫保证非空。空 sentence
     // 时退回选中的词，杜绝收藏读点（chrome.part.dart）误报「未选择句子」。
-    final String sentenceText =
-        ReaderSelectionScripts.resolveCurrentSentenceText(
-          data.sentence,
-          data.text,
-        );
-    appModel.currentMediaSource?.setCurrentSentence(
-      selection: FushiTextSelection(text: sentenceText),
-    );
-    _cachedSentenceOffset = data.sentenceOffset;
-
     if (_lyricsMode) {
+      appModel.currentMediaSource?.setCurrentSentence(
+        selection: FushiTextSelection(
+          text: ReaderSelectionScripts.resolveCurrentSentenceText(
+            data.sentence,
+            data.text,
+          ),
+        ),
+      );
+      _cachedSentenceOffset = data.sentenceOffset;
       _cacheMatchableSelection(data);
       _cachedSelectionRange = null;
       _cachedSentenceRange = null;
       _cachedSelectionSectionIndex = null;
       _lookupCue = null;
+      // 歌词点词不带插图：上一次正文原生选区抽出的图不属于这次查词，留着会被
+      // 片段导出渲进这张卡。
+      _resetSelectionImages();
       try {
         // TODO-678（BUG-005 同根因）：把歌词 cue context 的 evaluateJavascript 纳入
         // try —— 半销毁 WebView 上它抛 MissingPluginException，此前 eval 在 try 之外
@@ -424,7 +426,13 @@ extension _ReaderLookup on _ReaderFushiPageState {
     // ③ 仍无命中再退到句子文本匹配（见下方 _findCueForSentence）。
     // 与选区操作条「从此句播放」/ 查词状态填充共用 [_cueForSelectionData]，三条路径对
     // 同一处选区永远认同一句。
-    _lookupCue = _cueForSelectionData(data);
+    //
+    // BUG-4824：整组选区状态（句子、句偏移、cue、选区 / 句子范围、所属章号）在
+    // `await` 查词**之前**一次写齐，写点是与拖选菜单 / 原生选区共用的
+    // [_applyLookupStateFromSelectionData]。原先范围与章号写在 await 之后：查词在飞时
+    // 是「新句子 + 新 cue + 旧选区范围」，连点两个词时先点那次的尾段还会在后点那次
+    // 之后落下，留下与弹窗不符的范围（收藏 / 制卡 / 导出都读它）。
+    _applyLookupStateFromSelectionData(data);
     if (_pausedForLookup) _lookupRestartCue = _lookupCue;
     _syncCueSentence();
 
@@ -434,27 +442,6 @@ extension _ReaderLookup on _ReaderFushiPageState {
       origin: _lookupOriginOf(data),
       rubySpans: data.rubySpans,
     );
-    _cacheMatchableSelection(data);
-    if (data.normalizedOffset != null && data.normalizedLength != null) {
-      _cachedSelectionRange = (
-        offset: data.normalizedOffset!,
-        length: data.normalizedLength!,
-        text: data.text,
-      );
-    } else {
-      _cachedSelectionRange = null;
-    }
-    if (data.sentenceNormalizedOffset != null &&
-        data.sentenceNormalizedLength != null) {
-      _cachedSentenceRange = (
-        offset: data.sentenceNormalizedOffset!,
-        length: data.sentenceNormalizedLength!,
-      );
-    } else {
-      _cachedSentenceRange = null;
-    }
-    // BUG-492：选区时刻锁定所属章号，供收藏 / 制卡写入用（详见 _cachedSelectionSectionIndex）。
-    _cachedSelectionSectionIndex = _lookupSectionIndex;
     _checkFavoriteStatus();
   }
 

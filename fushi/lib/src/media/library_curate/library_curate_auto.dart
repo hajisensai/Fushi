@@ -1,0 +1,124 @@
+/// AI 库管家的自动路径（spec `docs/specs/2026-11-18-ai-library-curator-design.md` §9）：
+/// 入库 / 扫描后去抖跑一趟。
+///
+/// **这是 import 叶子**：只依赖引擎，不 import `package:fushi` 的任何文件——
+/// `AppModel` 与库整理 runner（都在 app 的 import 大环里）要 import 它，它再往回
+/// 依赖就会把自己拖进大环（`test/build/import_cycle_guard_test.dart`）。编排器本身
+/// （要用操作目录、AI 工具箱）由 `library_curate_host.dart` 组装，经
+/// [registerLibraryCuratorProvider] 在根组件登记操作上下文时注入进来。
+library;
+
+import 'dart:async';
+
+import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:fushi_engine/ai/ai_library_organize_assistant.dart';
+import 'package:fushi_engine/ai/ai_media_link_assistant.dart';
+import 'package:fushi_engine/ai/ai_settings.dart';
+import 'package:fushi_engine/ai/ai_video_identity_assistant.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
+import 'package:fushi_engine/media/library_curate/library_curator.dart';
+
+/// 各步自己的 AI 指派此刻是否可用（AI 模块关了全按没指派算）。
+LibraryCurateAiAvailability libraryCurateAiOf(
+  AiSettingsSource prefs, {
+  required bool aiModuleEnabled,
+}) => aiModuleEnabled
+    ? (
+        organize: resolveLibraryOrganizeAiProvider(prefs) != null,
+        videoIdentify:
+            PreferencesAiVideoIdentityAdvisor(prefs).capabilityKey != null,
+        mediaLinks: resolveMediaLinkAiProvider(prefs) != null,
+      )
+    : kLibraryCurateNoAi;
+
+LibraryCurator? Function()? _curatorProvider;
+
+/// 根组件登记操作上下文时注入「拿进程级编排器」的函数（`main.dart`）。
+void registerLibraryCuratorProvider(LibraryCurator? Function()? provider) =>
+    _curatorProvider = provider;
+
+/// 进程级编排器；根组件还没登记时为 null。
+LibraryCurator? appLibraryCurator() => _curatorProvider?.call();
+
+/// 自动路径的装配（主进程 `AppModel.initialise()` 里装一次；弹窗 / 悬浮词典进程
+/// 不装 = 自动路径什么都不做）。
+class LibraryCurateAutoHost {
+  const LibraryCurateAutoHost({
+    required this.settings,
+    required this.autoOn,
+    required this.aiModuleEnabled,
+    this.curator = appLibraryCurator,
+  });
+
+  /// AI 指派（偏好仓库）。
+  final AiSettingsSource settings;
+
+  /// 偏好 `library_curate_auto`（默认开）。
+  final bool Function() autoOn;
+  final bool Function() aiModuleEnabled;
+
+  /// 拿编排器（为 null：这一次不跑）。
+  final LibraryCurator? Function() curator;
+}
+
+LibraryCurateAutoHost? _autoHost;
+Timer? _debounce;
+
+/// 去抖：连续导入 / 扫描合成一趟（与旧的自动整理同一形态）。
+const Duration kLibraryCurateAutoDebounce = Duration(seconds: 30);
+
+void installLibraryCurateAutomatic(LibraryCurateAutoHost? host) {
+  _autoHost = host;
+  _debounce?.cancel();
+  _debounce = null;
+}
+
+/// 自动路径此刻接管入库后的自动任务吗：装了宿主且开关开着（默认开）。接管时旧的
+/// 「导入后自动整理」不再单独跑——库管家第一阶段就是同一个整理（两套自动任务不
+/// 重复跑）。
+bool libraryCurateAutoOwnsTriggers() =>
+    _autoHost != null && _autoHost!.autoOn();
+
+/// spec §9：默认开只对已经配了提供商的用户生效——三步一个 AI 都没指派时自动路径
+/// 什么都不跑。
+bool _autoEnabled(LibraryCurateAutoHost? host) {
+  if (host == null || !host.autoOn()) return false;
+  final LibraryCurateAiAvailability ai = libraryCurateAiOf(
+    host.settings,
+    aiModuleEnabled: host.aiModuleEnabled(),
+  );
+  return ai.organize || ai.videoIdentify || ai.mediaLinks;
+}
+
+/// 入库 / 来源扫描 / 库页加载后调：去抖后跑一趟（只看上一趟之后的新条目）。不阻塞
+/// 调用方。
+void scheduleAutomaticLibraryCurate() {
+  if (!_autoEnabled(_autoHost)) return;
+  _debounce?.cancel();
+  _debounce = Timer(
+    kLibraryCurateAutoDebounce,
+    () => unawaited(runAutomaticLibraryCurate()),
+  );
+}
+
+/// 跑一趟自动路径（去抖到点后调；测试直接调）。已有一趟在跑 / 门不开 / 编排器还
+/// 拿不到时什么都不做，返回 null。失败只记日志（自动路径没人看着）。
+@visibleForTesting
+Future<LibraryCurateRun?> runAutomaticLibraryCurate() async {
+  _debounce = null;
+  final LibraryCurateAutoHost? host = _autoHost;
+  if (!_autoEnabled(host)) return null;
+  final LibraryCurator? curator = host!.curator();
+  if (curator == null || curator.isRunning) return null;
+  try {
+    return await curator.run(trigger: LibraryCurateTrigger.auto);
+  } on LibraryCurateBusy {
+    return null;
+  } on Object catch (error, stack) {
+    engineLog.log('libraryCurate.automatic', error, stack);
+    return null;
+  }
+}
+
+@visibleForTesting
+bool get debugLibraryCurateAutoScheduled => _debounce != null;

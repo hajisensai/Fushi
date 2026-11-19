@@ -121,20 +121,120 @@ void main() {
       expect(parseBookSeriesKey('安達としまむら (安達としまむら)')!.key, '安達としまむら');
     });
 
-    test('合集名保留原文写法；书名本身的数字不被当卷号吃掉', () {
-      final BookSeriesKey shuu = parseBookSeriesKey(
-        '週に一度クラスメイトを買う話 ～ふたりの時間、言い訳の五千円～　1',
+    // 用户书架实报（2026-11-17 截图）：小说「週に一度クラスメイトを買う話」十卷 + 九本
+    // BOOK☆WALKER 特典册全部散成单卡——卷号后面跟着副标题、中途换副标题、特典册
+    // 整个书名包在『』里，旧的「只认结尾卷号」每卷系列键各不相同。
+    test('卷号后跟成对副标题、中途换副标题、无卷号的第 1 卷：同一系列', () {
+      final Map<String, num?> volumes = <String, num?>{
+        '週に一度クラスメイトを買う話　～ふたりの時間、言い訳の五千円～': null,
+        '週に一度クラスメイトを買う話２　～ふたりの時間、言い訳の五千円～': 2,
+        '週に一度クラスメイトを買う話４　～ふたりの時間、言い訳の五千円～': 4,
+        '週に一度クラスメイトを買う話５　～ふたりの秘密は一つ屋根の下～': 5,
+        '週に一度クラスメイトを買う話10　～ふたりの秘密は一つ屋根の下～': 10,
+        // 漫画版：副标题在卷号前，卷号后还有出版标签与 CRC。
+        '週に一度クラスメイトを買う話 ～ふたりの時間、言い訳の五千円～ 1 '
+                '(ヤングチャンピオン・コミックス) [31aa2836]':
+            1,
+        '週に一度クラスメイトを買う話 ～ふたりの時間、言い訳の五千円～ 2 [e0914585]': 2,
+      };
+      volumes.forEach((String title, num? volume) {
+        final BookSeriesKey key = parseBookSeriesKey(title)!;
+        expect(key.key, '週に一度クラスメイトを買う話', reason: title);
+        expect(key.seriesTitle, '週に一度クラスメイトを買う話', reason: title);
+        expect(key.volume, volume, reason: title);
+        expect(key.bonus, isFalse, reason: title);
+      });
+      // 别的成对定界符；副标题剥到系列名为空就不剥。
+      expect(parseBookSeriesKey('百合魔導人形　～夢見る少女のハーレムクエスト～')!.key, '百合魔導人形');
+      expect(
+        parseBookSeriesKey('魔法少女ノ魔女裁判 クリエイターズアートブック -虚実- [8a0798fd]')!.key,
+        parseBookSeriesKey('魔法少女ノ魔女裁判 クリエイターズアートブック -表裏- [e10d3888]')!.key,
+      );
+      expect(parseBookSeriesKey('～仮題～')!.key, '~仮題~');
+      // slug 里的连字符不是副标题定界符。
+      expect(
+        parseBookSeriesKey('Karakai-Jouzu-Takagi-san')!.key,
+        'karakai-jouzu-takagi-san',
+      );
+    });
+
+    test('『正篇』+ 店铺特典后缀是正篇的特典册：同系列同卷号，排在正篇之后', () {
+      const String suffix = 'BOOK☆WALKER限定書き下ろしショートストーリー';
+      final BookSeriesKey ss = parseBookSeriesKey(
+        '『週に一度クラスメイトを買う話１０　～ふたりの秘密は一つ屋根の下～』$suffix',
       )!;
-      expect(shuu.volume, 1);
-      expect(
-        shuu.seriesTitle,
-        '週に一度クラスメイトを買う話 ～ふたりの時間、言い訳の五千円～',
-        reason: '合集名保留原文的全角 ～，只有比较键折半角',
-      );
-      expect(
-        shuu.key,
-        parseBookSeriesKey('週に一度クラスメイトを買う話 ~ふたりの時間、言い訳の五千円~ 2')!.key,
-      );
+      expect(ss.key, '週に一度クラスメイトを買う話');
+      expect(ss.seriesTitle, '週に一度クラスメイトを買う話');
+      expect(ss.volume, 10);
+      expect(ss.bonus, isTrue);
+      final BookSeriesKey main = parseBookSeriesKey(
+        '週に一度クラスメイトを買う話10　～ふたりの秘密は一つ屋根の下～',
+      )!;
+      expect(compareBookSeriesPosition(main, ss), lessThan(0));
+      expect(bookSeriesPosition(main), isNot(bookSeriesPosition(ss)));
+      // 无卷号的单本 + 它的特典册：同系列，位置各不相同。
+      final BookSeriesKey enman = parseBookSeriesKey('円満家庭の人妻が娘の友達にドはまりする話')!;
+      final BookSeriesKey enmanSs = parseBookSeriesKey(
+        '『円満家庭の人妻が娘の友達にドはまりする話』$suffix',
+      )!;
+      expect(enmanSs.key, enman.key);
+      expect(enmanSs.bonus, isTrue);
+      expect(bookSeriesPosition(enman), isNull);
+      expect(bookSeriesPosition(enmanSs), isNotNull);
+      // 只是被引号包着（后面没有后缀）不算特典册；引号不闭合按普通书名。
+      expect(parseBookSeriesKey('『志乃と恋』 ２')!.bonus, isFalse);
+      expect(parseBookSeriesKey('『志乃と恋 ２』')!.volume, 2);
+      expect(parseBookSeriesKey('『志乃と恋 ２')!.key, '『志乃と恋');
+    });
+
+    test('卷号前后夹着标签：标签不进系列键', () {
+      final Map<String, num?> volumes = <String, num?>{
+        '魔法少女にあこがれて (2) [6dbad9ae]': 2,
+        '魔法少女にあこがれて【電子限定特典付き】 (1) [9fb54b5c]': 1,
+        '魔法少女にあこがれて【特典コラボペーパー付き 】 (9) [9e24ed4f]': 9,
+        '魔法少女にあこがれて 3【電子限定特典付き】': 3,
+        '魔法少女にあこがれて (電撃コミックス) 4 【特装版】': 4,
+      };
+      volumes.forEach((String title, num? volume) {
+        final BookSeriesKey key = parseBookSeriesKey(title)!;
+        expect(key.key, '魔法少女にあこがれて', reason: title);
+        expect(key.seriesTitle, '魔法少女にあこがれて', reason: title);
+        expect(key.volume, volume, reason: title);
+      });
+      // 整个书名就是一个标签：不剥成空。
+      expect(parseBookSeriesKey('(仮)')!.key, '(仮)');
+    });
+
+    test('卷号夹在系列名与自由副标题之间', () {
+      final Map<String, (String, num)> cases = <String, (String, num)>{
+        'ソードアート・オンライン3 フェアリィ・ダンス': ('ソードアート・オンライン', 3),
+        'ソードアート・オンライン 4 フェアリィ・ダンス (電撃文庫)': ('ソードアート・オンライン', 4),
+        '魔法科高校の劣等生(3) 九校戦編<上>': ('魔法科高校の劣等生', 3),
+        'Overlord 3 The Bloody Valkyrie': ('overlord', 3),
+      };
+      cases.forEach((String title, (String, num) expected) {
+        final BookSeriesKey key = parseBookSeriesKey(title)!;
+        expect(key.key, expected.$1, reason: title);
+        expect(key.volume, expected.$2, reason: title);
+      });
+      // 反例：书名开头的数字、字母贴数字、数字后不是空白、四位年份 / 型号。
+      for (final String title in <String>[
+        '3月のライオン 前編',
+        '86 エイティシックス',
+        'Catch22 Revisited',
+        '名探偵コナン 100万ドルの五稜星',
+        '機動戦士ガンダム 0083 STARDUST MEMORY',
+        'Title 2-02 extra',
+      ]) {
+        expect(parseBookSeriesKey(title)!.volume, isNull, reason: title);
+      }
+    });
+
+    test('合集名保留原文写法；书名本身的数字不被当卷号吃掉', () {
+      final BookSeriesKey fullWidth = parseBookSeriesKey('Ｒｅ：ゼロ！　１')!;
+      expect(fullWidth.volume, 1);
+      expect(fullWidth.seriesTitle, 'Ｒｅ：ゼロ！', reason: '合集名保留原文的全角写法，只有比较键折半角');
+      expect(fullWidth.key, parseBookSeriesKey('Re:ゼロ! 2')!.key);
       expect(parseBookSeriesKey('86')!.volume, isNull);
       expect(parseBookSeriesKey('86─エイティシックス─')!.volume, isNull);
       expect(parseBookSeriesKey('3月のライオン')!.volume, isNull);
@@ -219,6 +319,75 @@ void main() {
       expect(readableSeriesTitle('86'), '86');
       expect(readableSeriesTitle('2-0-1'), '2-0-1');
       expect(readableSeriesTitle('ONE PIECE'), 'ONE PIECE');
+    });
+  });
+
+  // BUG-4904：书店写法「正文 + 卷号<系列名> (文库名)」以前只看最后一个括号
+  // `(MF文庫J)`，整串成了系列键，每卷互不相同、导入后不归合集。
+  group('parseBookSeriesKey（书店系列注记）', () {
+    const String rezero = 'Re：ゼロから始める異世界生活';
+
+    test('用户实报书名：系列名取尖括号里的写法，卷号从正文末尾读', () {
+      for (final int n in <int>[1, 2, 13]) {
+        final BookSeriesKey key = parseBookSeriesKey(
+          '$rezero $n<$rezero> (MF文庫J)',
+        )!;
+        expect(key.key, 're:ゼロから始める異世界生活');
+        expect(key.seriesTitle, rezero, reason: '合集名保留原文全角冒号');
+        expect(key.volume, n);
+      }
+      expect(
+        sharedBookSeriesKey(<String>[
+          '$rezero 1<$rezero> (MF文庫J)',
+          '$rezero 2<$rezero> (MF文庫J)',
+          '$rezero 3<$rezero>',
+        ]),
+        're:ゼロから始める異世界生活',
+      );
+    });
+
+    test('与不带注记的普通卷名同键，同一部可以混着归组', () {
+      expect(
+        parseBookSeriesKey('$rezero 4<$rezero> (MF文庫J)')!.key,
+        parseBookSeriesKey('$rezero 5')!.key,
+      );
+    });
+
+    test('全角括号 / 卷号贴假名 / 外传无卷号 / CRC 后缀', () {
+      final BookSeriesKey adachi = parseBookSeriesKey(
+        '安達としまむら10＜安達としまむら＞（電撃文庫）',
+      )!;
+      expect(adachi.key, '安達としまむら');
+      expect(adachi.volume, 10);
+      final BookSeriesKey ex = parseBookSeriesKey(
+        '$rezero Ex 獅子王の見た夢<$rezero> (MF文庫J)',
+      )!;
+      expect(ex.key, 're:ゼロから始める異世界生活');
+      expect(ex.volume, isNull);
+      final BookSeriesKey hashed = parseBookSeriesKey(
+        '$rezero 6<$rezero> (MF文庫J) [3574f94a]',
+      )!;
+      expect(hashed.key, 're:ゼロから始める異世界生活');
+      expect(hashed.volume, 6);
+    });
+
+    test('不是书店注记的写法不误伤', () {
+      // 单字分卷标签。
+      expect(parseBookSeriesKey('上野さんは不器用<上>')!.key, '上野さんは不器用');
+      // 标签不是正文前缀：照旧当出版 / 版本标签，不拿标签当系列名。键与卷号交给
+      // 常规文法（BUG-4892 起结尾标签 / 卷号层层剥），注记判据不插手。
+      final BookSeriesKey limited = parseBookSeriesKey('タイトル 2<限定版> (電撃文庫)')!;
+      expect(limited.key, 'タイトル');
+      expect(limited.volume, 2);
+      // 尖括号里是别的作品名：不能并进那个系列。
+      final BookSeriesKey shana = parseBookSeriesKey('灼眼のシャナ 3<とらドラ!> (電撃文庫)')!;
+      expect(shana.key, '灼眼のシャナ');
+      expect(shana.key, isNot(parseBookSeriesKey('とらドラ! 1')!.key));
+      // 只有文库标签：同文库不同作品不并组。
+      expect(
+        parseBookSeriesKey('とらドラ! (電撃文庫)')!.key,
+        isNot(parseBookSeriesKey('灼眼のシャナ (電撃文庫)')!.key),
+      );
     });
   });
 
@@ -324,6 +493,74 @@ void main() {
       // 幂等：再跑一次不新建、不改动。
       final again = await grouper.groupAll();
       expect(again.createdCollectionIds, isEmpty);
+    });
+
+    // 用户书架实报（2026-11-17 截图）：这十九本以前是十九张散卡。
+    test('副标题各异的正篇 + 『』特典册收进同一个合集，特典册排在同卷正篇之后', () async {
+      const String a = '～ふたりの時間、言い訳の五千円～';
+      const String b = '～ふたりの秘密は一つ屋根の下～';
+      const String ss = 'BOOK☆WALKER限定書き下ろしショートストーリー';
+      const String s = '週に一度クラスメイトを買う話';
+      final List<String> expected = <String>[
+        '$s　$a',
+        '$s２　$a',
+        '『$s２　$a』$ss',
+        '$s３　$a',
+        '『$s３　$a』$ss',
+        '$s５　$b',
+        '『$s５　$b』$ss',
+        '${s}10　$b',
+        '『$s１０　$b』$ss',
+      ];
+      // 乱序导入。
+      for (final String title in expected.reversed) {
+        await addBook(title, format: 'epub');
+      }
+      await addBook('円満家庭の人妻が娘の友達にドはまりする話', format: 'epub');
+      await addBook('『円満家庭の人妻が娘の友達にドはまりする話』$ss', format: 'epub');
+      // 同名漫画版在另一个书架，不混进小说合集。
+      await addBook('$s $a 1 (ヤングチャンピオン・コミックス) [31aa2836]');
+      await addBook('$s $a 2 [e0914585]');
+
+      final summary = await grouper.groupAll();
+
+      final Map<String, List<String>> byName = <String, List<String>>{};
+      for (final int id in summary.createdCollectionIds) {
+        final String name = (await db.getMediaCollectionById(id))!.name;
+        byName.putIfAbsent(name, () => <String>[]).addAll(await members(id));
+      }
+      expect(byName.keys.toSet(), <String>{s, '円満家庭の人妻が娘の友達にドはまりする話'});
+      // 小说与漫画同名：同名 playlist 复用，两个书架各自的卷都在里面；小说卷按卷序、
+      // 特典册紧跟同卷正篇。
+      final List<String> novels = byName[s]!
+          .where((String t) => !t.contains('['))
+          .toList();
+      expect(novels, expected);
+      expect(byName['円満家庭の人妻が娘の友達にドはまりする話'], <String>[
+        '円満家庭の人妻が娘の友達にドはまりする話',
+        '『円満家庭の人妻が娘の友達にドはまりする話』$ss',
+      ]);
+      final again = await grouper.groupAll();
+      expect(again.createdCollectionIds, isEmpty);
+      expect(again.updatedCollectionIds, isEmpty);
+    });
+
+    test('卷号前夹着特典标签的卷并进已有系列合集', () async {
+      await addBook('魔法少女にあこがれて (2) [6dbad9ae]');
+      await addBook('魔法少女にあこがれて (3) [7e9a233f]');
+      final int id = (await grouper.groupAll()).createdCollectionIds.single;
+      await addBook('魔法少女にあこがれて【電子限定特典付き】 (1) [9fb54b5c]');
+      await addBook('魔法少女にあこがれて【特典コラボペーパー付き 】 (9) [9e24ed4f]');
+
+      final summary = await grouper.groupAll();
+
+      expect(summary.createdCollectionIds, isEmpty);
+      expect(await members(id), <String>[
+        '魔法少女にあこがれて【電子限定特典付き】 (1) [9fb54b5c]',
+        '魔法少女にあこがれて (2) [6dbad9ae]',
+        '魔法少女にあこがれて (3) [7e9a233f]',
+        '魔法少女にあこがれて【特典コラボペーパー付き 】 (9) [9e24ed4f]',
+      ]);
     });
 
     test('漫画四卷叠成一个 playlist 合集，按卷号排；在线漫画与单卷不进', () async {

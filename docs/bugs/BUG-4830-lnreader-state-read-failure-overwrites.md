@@ -1,0 +1,19 @@
+## BUG-4830 · LNReader 的 state.json / 插件存储读失败被当成空，下一次写盘把已装插件、仓库和登录态整份盖掉
+- **报告**：2026-11-17（用户：小说 / 漫画 / 视频优化清单 novel-5，代码复核确认）
+- **真实性**：✅ 真 bug（代码路径确认 + 单测复现，未在真机复现）。根因（修前行号，基准 `8d58da51da9`）：
+  - `fushi/lib/src/media/novel/online/lnreader_manager.dart:184` `_readState` 用一个 `on Object` 把「文件读不出来」（占用 / 权限 / 磁盘错误）和「文件是坏 JSON」一起当成空状态返回。前者文件多半完好，但内存里从此是空列表；之后任何一次改动（加仓库、启停、排序、安装）都经 `:200` `_writeState` 把空快照整份写回——已装插件与用户仓库全丢。读失败后若迁移补出了仓库，`:177` 在初始化里当场就写。
+  - `:589` `_readStorage` 同款：读不出来返回空，插件带着空存储装载，它第一次 `storage.set` 经 `:606` `persistStorage` 把盘上的登录态 / token 整份覆盖。
+  - 坏 JSON 按空起是刻意设计（坏文件不该让整个小说源功能进不去），但原文件随后被静默覆盖，没有留底。
+  - `:149` `initialise()` 是 `_initialising ??= _initialise()`：`_initialise` 一旦抛（例如迁移标记写盘失败），失败的 Future 被永久缓存，本次进程再也进不去。
+- **[x] ① 已修复**（`86b31437bce`）— `lnreader_manager.dart`：
+  - `_readJsonObject`（`:235`，state 与插件存储共用）把三种结果分开：不存在 → 空；读不出来 → 抛；读出来但不是 JSON 对象 → 先改名成 `<原名>.corrupt-<时间戳>` 留底（`_quarantine` `:263`，留底失败同样抛）再按空起。
+  - 新增 `_stateLoaded`：只有真读到盘上状态才置位；`_writeState` 未置位直接拒写。所有会写 `state.json` 的入口（加 / 改 / 删仓库、安装、卸载、启停、置顶、移动、重排）先过 `ensureReady()`（`:184`）——没读到真相就把那次读盘错误原样抛给调用方。
+  - `initialise()`（`:166`）不再缓存失败：失败记进 `stateError`、写错误日志、`_initialising` 清回 null，下一次调用重读。它本身不抛（页面是 fire-and-forget 调的）。
+  - 插件装载（`:693`）读存储失败就让这次 `load` 失败，插件不会带着空存储起来。
+  - `clearData` / `uninstall(clearData: true)` 连存储的坏文件留底一起删（留底里是同一份登录态）。
+  - 审查修正（`95339b65f42`）：盘上状态**只读一次**。原先「失败不缓存、下次重读」连读到之后的失败（迁移标记写盘）也整份重读，会拿盘上的旧文件盖掉内存里用户刚做的改动；现在读到之后的重试只补写迁移标记（`_migrationMarkerPending`），`stateError` 只表示「没读到」。留底匹配从「前缀」收紧成「前缀 + 纯数字时间戳」，清数据不再误删文件名以该前缀开头的别的插件存储。
+- **[x] ② 已加自动化测试** — `fushi/test/media/novel/lnreader_manager_test.dart` 的「BUG-4830 读失败不当空」组 5 条（经 `IOOverrides` 让指定文件读不出来，不依赖平台的锁 / 权限语义）：state 读不出来时不进已加载、改动被拒、盘上原样、能读后恢复；坏 JSON（含顶层不是对象）留底后按空起；插件存储读不出来时装载失败且文件原样；坏存储留底后按空装载、清除数据连留底一起删（且不碰文件名同前缀的别的插件存储）；读到之后迁移标记写盘失败，重试不重读、只补写标记。
+- **备注**：
+  - `initialise()` 不抛是为了不动不在本次范围的调用方（`lnreader_installed_sources_section.dart:71` 的 `.whenComplete`、`app_model.dart` 的 `unawaited`）。读失败时这两处界面显示的仍是空列表（只是不会再写坏盘），没有专门的「读取失败」提示——加提示要新文案，属于 UI 改变，未做。
+  - `lnreader_online_book.dart` 的 `_load` 在 `manager.initialise()` 之后按 `installed` 找插件；读失败时它会报「插件缺失」而不是读盘错误。那个文件归并发的 `pr/online-novel-loader`，本次没碰；合入后把那一处换成 `ensureReady()` 即可报出真实原因。
+  - 留底文件不自动清理（坏文件是罕见事件，每次一份）。

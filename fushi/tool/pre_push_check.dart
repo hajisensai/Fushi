@@ -7,7 +7,14 @@
 //                                     [--gate=1] [--gate-timeout-min=0]
 //                                     [--no-lease] [--max-minutes=90]
 //                                     [--allow-flutter-mismatch]
+//                                     [--app-tests-only] [--hub-limit=40]
 //                                     [--files <paths...> | --files-from=<list>]
+//
+// Also the PR fast gate (main.yml's affected-tests job, 2026-11-18): there it
+// runs with --gate=0 --skip-analyze --app-tests-only and --hub-limit lifted,
+// because a PR to develop no longer runs the sharded suite (that runs on
+// develop after the merge, and on demand). The selection below is therefore
+// what stands between a PR and develop: a rule dropped here is dropped there.
 //
 // Resource budget (2026-09-30: three agents running this at once took a 32 GB
 // machine down to ~1 GB free; one run was 4-6 GB because `flutter test` ran at
@@ -407,15 +414,21 @@ Future<void> main(List<String> args) async {
     ...byHelper,
     ...byImport,
   }.toList()..sort();
-  final List<String> packages =
-      changedTestablePackages(changed)
-          .where((String p) => Directory('$root/packages/$p/test').existsSync())
-          .toList()
-        ..sort();
+  // --app-tests-only: the caller runs package tests and the JS suites itself
+  // (main.yml's affected-tests job: its build job has the libraries they need).
+  final bool appTestsOnly = args.contains('--app-tests-only');
+  final List<String> packages = appTestsOnly
+      ? <String>[]
+      : (changedTestablePackages(changed)
+            .where(
+              (String p) => Directory('$root/packages/$p/test').existsSync(),
+            )
+            .toList()
+          ..sort());
   final List<String> analyzePackages = changedTestablePackages(
     changed,
   ).where(kSeparatelyAnalyzedPackages.contains).toList()..sort();
-  final bool js = touchesJsSuites(changed);
+  final bool js = !appTestsOnly && touchesJsSuites(changed);
 
   stdout
     ..writeln(

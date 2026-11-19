@@ -77,7 +77,11 @@ List<String> findByteReadsAfterMediaCheck(String source) {
     final int end = m.end + _byteReadWindow < code.length
         ? m.end + _byteReadWindow
         : code.length;
-    final RegExp read = RegExp('File\\(\\s*${RegExp.escape(expr)}\\s*\\)');
+    // `File(` 前面不能紧挨标识符字符：判真之后对同一路径再问别的判据
+    // （`hasLocalMediaFile(path)` / `lacksLocalMediaFile(path)`）不是按字节读。
+    final RegExp read = RegExp(
+      '(?<!\\w)File\\(\\s*${RegExp.escape(expr)}\\s*\\)',
+    );
     final Match? hit = read.firstMatch(code.substring(m.end, end));
     if (hit != null) hits.add('${m.group(0)} … ${hit.group(0)}');
   }
@@ -107,6 +111,17 @@ void main() {
         'if (!await hasLocalMediaFile(videoPath)) return;\n'
         'final File frame = File(produced);\n'
         '// 反例：hasLocalMediaFile(videoPath) 之后 File(videoPath).length()',
+      ),
+      isEmpty,
+    );
+    // 判真之后对同一路径再问别的判据（函数名以 File 结尾）不是按字节读。
+    expect(
+      findByteReadsAfterMediaCheck(
+        'if (!await hasLocalMediaFile(path)) {\n'
+        '  reason = lacksLocalMediaFile(path);\n'
+        '}\n'
+        'if (await hasLocalMediaFile(videoPath)) {}\n'
+        'if (!await hasLocalMediaFile(videoPath)) throw x;',
       ),
       isEmpty,
     );

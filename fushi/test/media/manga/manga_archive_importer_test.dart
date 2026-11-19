@@ -94,7 +94,7 @@ void main() {
           ),
         ]),
       );
-      final Set<String> stagingBefore = _mangaStagingDirs();
+      final Set<String> stagingBefore = _mangaStagingDirs(app);
       final int rssBefore = ProcessInfo.currentRss;
       final int peakBefore = ProcessInfo.maxRss;
 
@@ -117,7 +117,7 @@ void main() {
             '$peakBefore) while rejecting the bomb',
       );
       expect(
-        _mangaStagingDirs().difference(stagingBefore),
+        _mangaStagingDirs(app).difference(stagingBefore),
         isEmpty,
         reason: '中止后 staging（含写了一半的页）必须删掉',
       );
@@ -205,7 +205,7 @@ void main() {
           ),
         ]),
       );
-      final Set<String> stagingBefore = _mangaStagingDirs();
+      final Set<String> stagingBefore = _mangaStagingDirs(app);
 
       await expectLater(
         MangaArchiveImporter.importArchive(
@@ -223,7 +223,7 @@ void main() {
           ),
         ),
       );
-      expect(_mangaStagingDirs().difference(stagingBefore), isEmpty);
+      expect(_mangaStagingDirs(app).difference(stagingBefore), isEmpty);
       expect(await db.getAllEpubBooks(), isEmpty);
     });
 
@@ -564,7 +564,7 @@ void main() {
       ];
       final String path = p.join(root.path, 'declared_bomb.cbz');
       File(path).writeAsBytesSync(_buildRawZip(entries));
-      final Set<String> stagingBefore = _mangaStagingDirs();
+      final Set<String> stagingBefore = _mangaStagingDirs(app);
 
       await expectLater(
         MangaArchiveImporter.importArchive(db: db, archivePath: path),
@@ -576,7 +576,7 @@ void main() {
           ),
         ),
       );
-      expect(_mangaStagingDirs().difference(stagingBefore), isEmpty);
+      expect(_mangaStagingDirs(app).difference(stagingBefore), isEmpty);
       expect(await db.getAllEpubBooks(), isEmpty);
     });
   });
@@ -1009,13 +1009,24 @@ String _writeArchive(
   return path;
 }
 
-/// 系统临时目录里导入器的 staging 目录名（`fushi_manga_archive_*`）。
-Set<String> _mangaStagingDirs() => Directory.systemTemp
-    .listSync(followLinks: false)
-    .whereType<Directory>()
-    .map((Directory dir) => p.basename(dir.path))
-    .where((String name) => name.startsWith('fushi_manga_archive_'))
-    .toSet();
+/// 导入器留下的 staging 目录名。BUG-4840 起 staging 是书库根（[app] 下的
+/// `fushi_books`）里的 `.tmp-*`；系统临时目录里的旧名 `fushi_manga_archive_*` 一并
+/// 盯着——哪天有人把 staging 挪回去，残留也照样被抓到。
+Set<String> _mangaStagingDirs(Directory app) {
+  final Directory booksRoot = Directory(p.join(app.path, 'fushi_books'));
+  return <String>{
+    if (booksRoot.existsSync())
+      for (final Directory dir
+          in booksRoot.listSync(followLinks: false).whereType<Directory>())
+        if (p.basename(dir.path).startsWith(EpubStorage.kStagingDirPrefix))
+          dir.path,
+    for (final Directory dir
+        in Directory.systemTemp
+            .listSync(followLinks: false)
+            .whereType<Directory>())
+      if (p.basename(dir.path).startsWith('fushi_manga_archive_')) dir.path,
+  };
+}
 
 /// raw deflate（zip method 8 的数据格式）。
 Uint8List _deflate(List<int> bytes) =>

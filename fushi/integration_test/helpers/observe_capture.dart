@@ -114,7 +114,10 @@ Future<ObserveShot> captureFlutterFrame(
   await tester.pumpAndSettle();
   try {
     final RenderView view = tester.binding.renderViews.first;
-    final OffsetLayer? layer = view.debugLayer as OffsetLayer?;
+    // [RenderView.debugLayer] 只在 debug 构建有值；profile 探针读 [RenderObject.layer]
+    // （同一个根图层，只是标了 @protected）。
+    // ignore: invalid_use_of_protected_member
+    final OffsetLayer? layer = view.layer as OffsetLayer?;
     if (layer == null) {
       return ObserveShot(
         name: name,

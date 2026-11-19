@@ -1074,6 +1074,7 @@ class DataRootMigrator {
       await _rebaseCollectionScrapeMeta(db, docs);
       await _rebaseCollectionRelations(db, docs);
       await _rebaseMediaImages(db, docs);
+      await _rebaseItemImages(db, docs);
       await _rebaseVideoMetadataExtras(db, docs);
       await _rebaseVideoDownloadJobs(db, docs);
       await _rebaseVideoDownloadJobFiles(db, docs);
@@ -1352,6 +1353,25 @@ class DataRootMigrator {
       await db.customStatement(
         'UPDATE media_images SET path = ? WHERE id = ?',
         <Object?>[newPath, row.id],
+      );
+    }
+  }
+
+  /// item_images：path（v161 单本书 / 字幕书 / 游戏附加图：
+  /// `<documents>/video_covers/items/`，与 media_images 同目录族）。不改写 = 换
+  /// 数据根后书架 / 游戏库系列色块的横版背景全部变死链、静默退回书封摆法。
+  /// media_type / entry_key / kind / source_url 不是本机路径，绝不改写。
+  static Future<void> _rebaseItemImages(
+    FushiDatabase db,
+    DocumentsPathRebaser docs,
+  ) async {
+    for (final ItemImageRow row in await db.getAllItemImages()) {
+      final String? newPath = docs.rebaseNullable(row.path);
+      if (newPath == null || newPath == row.path) continue;
+      await db.customStatement(
+        'UPDATE item_images SET path = ? WHERE media_type = ? '
+        'AND entry_key = ? AND kind = ? AND position = ?',
+        <Object?>[newPath, row.mediaType, row.entryKey, row.kind, row.position],
       );
     }
   }

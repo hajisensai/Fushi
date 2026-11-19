@@ -547,6 +547,7 @@ class FushiFloatingChromeOverlay extends StatefulWidget {
     this.nestedGap = kFushiFloatingChromeGap,
     this.opaqueChrome = false,
     this.masthead = false,
+    this.mastheadPinnedCollapsed = false,
     super.key,
   });
 
@@ -560,6 +561,12 @@ class FushiFloatingChromeOverlay extends StatefulWidget {
   /// （[FushiMastheadPanel]：90% 页面底色 + 高斯模糊，随滚动进度渐入）。只在
   /// 重设计外壳生效时（[shellRedesignActive]）起作用，否则与 false 完全一致。
   final bool masthead;
+
+  /// 页头大字钉在收起态（只在 [masthead] 生效的最外层有意义）：大字行的收缩
+  /// 进度恒为 1（字号与库页顶栏折叠后一致），版面高度同步取收起态——让给正文的
+  /// 顶部空间就是收起态高度，正文不空一截。页头底板仍按真实滚动渐入（未滚动
+  /// 不画）。首页手机用；默认 false，其他页面行为不变。
+  final bool mastheadPinnedCollapsed;
 
   /// 嵌套时本层与上一层之间的间距（本层为空时不算）。默认
   /// [kFushiFloatingChromeGap]；库页的二级下划线页签没有底色、自带行内留白，
@@ -886,6 +893,7 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
                         child: _FushiMastheadHost(
                           overlay: this,
                           scrollOffset: controller.mastheadScrollOffset,
+                          pinnedCollapsed: widget.mastheadPinnedCollapsed,
                           child: widget.chrome,
                         ),
                       ))
@@ -942,14 +950,17 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
             final FushiMastheadGeometry? geometry = mastheadStack
                 ? _root._mastheadGeometry
                 : null;
-            final double mastheadProgress = geometry == null
+            // 底板渐入只认真实滚动；大字行收缩认生效进度（钉在收起态时恒为
+            // 1，版面本就是收起态，collapse 归零）。
+            final double scrollProgress = geometry == null
                 ? 0
                 : fushiMastheadProgressOf(
                     compact: geometry.compact,
                     motionEnabled: fushiExpressiveMotionEnabled(context),
                     offset: controller.mastheadScrollOffset.value,
                   );
-            final double collapse = geometry?.collapseAt(mastheadProgress) ?? 0;
+            final double collapse =
+                geometry?.collapseAt(geometry.progressFor(scrollProgress)) ?? 0;
             // 页头底板向上铺进外壳吃掉的顶部安全区（桌面自绘标题行 / 手机
             // 状态栏），一直铺到窗口上沿：只扩绘制，不改版面与让位。
             final double bleed = mastheadStack && !nested
@@ -1029,7 +1040,11 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
                           opacity: nested ? 1 : shown,
                           child: FushiMastheadPanel(
                             height: scrimSeam - scrimTop + bleed,
-                            progress: mastheadProgress,
+                            progress: scrollProgress,
+                            // 页头与嵌套工具行（标签条）是同一块吸顶面（设计稿
+                            // V3）：只有根层开背景模糊，嵌套层画不透明同色填充
+                            // 接在下面，两块磨砂不在接缝处叠出分隔线。
+                            backdropBlur: !nested,
                           ),
                         )
                       : AnimatedOpacity(
@@ -1887,6 +1902,7 @@ class _FushiFloatingChromeBarState extends State<FushiFloatingChromeBar> {
                       titleBaseline: titleBaseline,
                       switchBaseline: switchBaseline,
                       scrollOffset: host?.scrollOffset,
+                      pinnedCollapsed: host?.pinnedCollapsed ?? false,
                       motionEnabled: fushiExpressiveMotionEnabled(context),
                       onGeometry: host == null ? null : _onMastheadGeometry,
                       children: <Widget>[
@@ -2122,6 +2138,7 @@ class _MastheadLayout extends MultiChildRenderObjectWidget {
     required this.titleBaseline,
     required this.switchBaseline,
     required this.scrollOffset,
+    required this.pinnedCollapsed,
     required this.motionEnabled,
     required this.onGeometry,
     required super.children,
@@ -2135,6 +2152,9 @@ class _MastheadLayout extends MultiChildRenderObjectWidget {
   final double titleBaseline;
   final double switchBaseline;
   final ValueListenable<double>? scrollOffset;
+
+  /// 钉在收起态（[FushiFloatingChromeOverlay.mastheadPinnedCollapsed]）。
+  final bool pinnedCollapsed;
   final bool motionEnabled;
   final ValueChanged<FushiMastheadGeometry>? onGeometry;
 
@@ -2147,6 +2167,7 @@ class _MastheadLayout extends MultiChildRenderObjectWidget {
         titleBaseline: titleBaseline,
         switchBaseline: switchBaseline,
         scrollOffset: scrollOffset,
+        pinnedCollapsed: pinnedCollapsed,
         motionEnabled: motionEnabled,
         onGeometry: onGeometry,
       );
@@ -2163,6 +2184,7 @@ class _MastheadLayout extends MultiChildRenderObjectWidget {
       ..titleBaseline = titleBaseline
       ..switchBaseline = switchBaseline
       ..scrollOffset = scrollOffset
+      ..pinnedCollapsed = pinnedCollapsed
       ..motionEnabled = motionEnabled
       ..onGeometry = onGeometry;
   }
@@ -2196,9 +2218,11 @@ class _RenderMastheadLayout extends RenderBox
     required double titleBaseline,
     required double switchBaseline,
     required ValueListenable<double>? scrollOffset,
+    required bool pinnedCollapsed,
     required bool motionEnabled,
     required this.onGeometry,
   }) : _compact = compact,
+       _pinnedCollapsed = pinnedCollapsed,
        _minActionsExtent = minActionsExtent,
        _textDirection = textDirection,
        _titleBaseline = titleBaseline,
@@ -2259,6 +2283,16 @@ class _RenderMastheadLayout extends RenderBox
     _onScroll();
   }
 
+  bool get pinnedCollapsed => _pinnedCollapsed;
+  bool _pinnedCollapsed;
+  set pinnedCollapsed(bool value) {
+    if (value == _pinnedCollapsed) return;
+    _pinnedCollapsed = value;
+    // 版面高度随之换档（展开态 <-> 收起态）。
+    markNeedsLayout();
+    markNeedsSemanticsUpdate();
+  }
+
   bool get motionEnabled => _motionEnabled;
   bool _motionEnabled;
   set motionEnabled(bool value) {
@@ -2277,6 +2311,7 @@ class _RenderMastheadLayout extends RenderBox
       );
 
   double get _progress {
+    if (_pinnedCollapsed) return 1;
     final ValueListenable<double>? offset = _scrollOffset;
     if (offset == null) return 0;
     return fushiMastheadProgressOf(
@@ -2464,6 +2499,7 @@ class _RenderMastheadLayout extends RenderBox
         actions: c[_kSlotActions].hasSize ? c[_kSlotActions].size : Size.zero,
         primary: c[_kSlotPrimary].size,
         secondary: c[_kSlotSecondary].size,
+        pinnedCollapsed: _pinnedCollapsed,
       );
 
   /// 进度 [p] 下每段的绘制变换（平移到位 + 以左上角缩放），按槽位排。
@@ -2510,7 +2546,7 @@ class _RenderMastheadLayout extends RenderBox
       cursor = g.leading.width + FushiMastheadGeometry.leadingGap;
     }
     final double sT = g.titleScaleAt(p);
-    place(_kSlotTitle, cursor, rowBottom, sT);
+    place(_kSlotTitle, cursor, rowBottom - g.titleLiftAt(p), sT);
     cursor += g.title.width * sT;
     if (g.badge.width > 0) {
       cursor += g.titleBadgeGap;
@@ -2525,8 +2561,9 @@ class _RenderMastheadLayout extends RenderBox
       rowBottom - g.switchBottomLiftAt(p),
       g.switchScaleAt(p),
     );
-    final double primaryX = w - g.primary.width;
-    place(_kSlotPrimary, primaryX, actionBottom, 1);
+    final double sP = g.primaryScaleAt(p);
+    final double primaryX = w - g.primary.width * sP;
+    place(_kSlotPrimary, primaryX, actionBottom, sP);
     place(
       _kSlotActions,
       primaryX -
@@ -2608,14 +2645,19 @@ class _FushiMastheadHost extends InheritedWidget {
   const _FushiMastheadHost({
     required this.overlay,
     required this.scrollOffset,
+    required this.pinnedCollapsed,
     required super.child,
   });
 
   final _FushiFloatingChromeOverlayState overlay;
   final ValueListenable<double> scrollOffset;
 
+  /// 大字行钉在收起态（[FushiFloatingChromeOverlay.mastheadPinnedCollapsed]）。
+  final bool pinnedCollapsed;
+
   @override
   bool updateShouldNotify(_FushiMastheadHost oldWidget) =>
       !identical(overlay, oldWidget.overlay) ||
-      !identical(scrollOffset, oldWidget.scrollOffset);
+      !identical(scrollOffset, oldWidget.scrollOffset) ||
+      pinnedCollapsed != oldWidget.pinnedCollapsed;
 }

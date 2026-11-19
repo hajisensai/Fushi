@@ -3,6 +3,7 @@ import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart' show RenderParagraph;
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -15,9 +16,12 @@ import 'package:fushi/src/media/discovery/media_discovery_source.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/pages/implementations/discovery/discovery_source_block.dart';
 import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import '../helpers/source_guard.dart';
 import '../helpers/test_platform_services.dart';
 import '../torrent/nyaa_html_fixture.dart';
@@ -274,7 +278,7 @@ void main() {
     );
   });
 
-  testWidgets('来源卡片标出能力：目录型「可浏览」、搜索型「仅搜索」', (WidgetTester tester) async {
+  testWidgets('来源块标出能力 chip：目录型「可浏览」、搜索型「仅搜索」', (WidgetTester tester) async {
     await pumpPage(tester);
 
     expect(
@@ -282,7 +286,11 @@ void main() {
         of: find.byKey(
           const ValueKey<String>('discovery_source_pick_browsable'),
         ),
-        matching: find.text(t.discovery_source_capability_browsable),
+        // 只认 chip：本测试的来源名也叫 'Browsable'，与英文 chip 文案同字。
+        matching: find.widgetWithText(
+          DiscoverySourceChip,
+          t.discovery_source_chip_browsable,
+        ),
       ),
       findsOneWidget,
     );
@@ -291,7 +299,7 @@ void main() {
         of: find.byKey(
           const ValueKey<String>('discovery_source_pick_search-only'),
         ),
-        matching: find.text(t.discovery_source_capability_search_only),
+        matching: find.text(t.discovery_source_chip_search_only),
       ),
       findsOneWidget,
     );
@@ -342,7 +350,13 @@ void main() {
       ),
       findsOneWidget,
     );
-    // 非种子源：做种 / 疑似漫画 / Nyaa 过滤三组控件一个都不该凭空出现。
+    // 非种子源：「⋯」里做种 / 疑似漫画 / Nyaa 过滤三组一个都不该凭空出现。
+    await tester.tap(find.byKey(const ValueKey<String>('discovery_more_menu')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('discovery_refresh')),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const ValueKey<String>('discovery_filter_hide_zero_seeders')),
       findsNothing,
@@ -450,7 +464,11 @@ void main() {
 
     final Finder download = find.descendant(
       of: row,
-      matching: find.byIcon(Icons.download_outlined),
+      // 下载键改走设计系统按钮（FushiIconButton + FushiIcons.download），
+      // 不再是 Material IconButton + Icons.download_outlined。
+      matching: find.byWidgetPredicate(
+        (Widget w) => w is FushiIconButton && w.icon == FushiIcons.download,
+      ),
     );
     // 取消：不入队。
     await tester.tap(download);
@@ -825,18 +843,22 @@ void main() {
     );
     ScrollPosition position() => tester
         .state<ScrollableState>(
-          find.descendant(of: results, matching: find.byType(Scrollable)),
+          find.descendant(of: results, matching: find.byType(Scrollable)).first,
         )
         .position;
 
-    await tester.drag(results, const Offset(0, -400));
-    await tester.pumpAndSettle();
-    expect(position().pixels, greaterThan(0));
-
+    // PR #3515 起搜索行是同一滚动视图的第一行、随内容滚走：先在顶部输入关键词
+    // （停顿后自动搜一轮），再把结果滚下去，最后提交新一轮搜索——输入框仍持焦，
+    // 提交不需要它在视口里。
     await tester.enterText(
       find.byKey(const ValueKey<String>('discovery_search_field')),
       'paged',
     );
+    await tester.pumpAndSettle(const Duration(milliseconds: 400));
+    await tester.drag(results, const Offset(0, -400));
+    await tester.pumpAndSettle();
+    expect(position().pixels, greaterThan(0));
+
     await tester.testTextInput.receiveAction(TextInputAction.search);
     await tester.pumpAndSettle();
     expect(find.text('paged-1-0'), findsOneWidget);
@@ -971,6 +993,16 @@ void main() {
 
     Finder item(String title) => find.widgetWithText(FushiListItem, title);
 
+    /// 打开「⋯」并点其中一项（做种 / 疑似漫画 / Nyaa 过滤都收在「⋯」里）。
+    Future<void> pickMenuItem(WidgetTester tester, String key) async {
+      await tester.tap(
+        find.byKey(const ValueKey<String>('discovery_more_menu')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(ValueKey<String>(key)));
+      await tester.pumpAndSettle();
+    }
+
     /// 从 Drift 重新装一份仓库读回：证明是写穿到库，不是页面局部状态。
     Future<PreferencesRepository> reloadPrefs() async {
       final PreferencesRepository fresh = PreferencesRepository(db);
@@ -1030,27 +1062,26 @@ void main() {
         find.byKey(const ValueKey<String>('discovery_badge_remake')),
         findsOneWidget,
       );
-      // 两个 chip 默认选中；偏好默认值也是开。
-      expect(
-        tester
-            .widget<FushiSelectableChip>(
-              find.byKey(
-                const ValueKey<String>('discovery_filter_hide_zero_seeders'),
-              ),
-            )
-            .selected,
-        isTrue,
+      // 「⋯」里两个开关默认选中；偏好默认值也是开。
+      await tester.tap(
+        find.byKey(const ValueKey<String>('discovery_more_menu')),
       );
-      expect(
-        tester
-            .widget<FushiSelectableChip>(
-              find.byKey(
-                const ValueKey<String>('discovery_filter_hide_suspected_manga'),
-              ),
-            )
-            .selected,
-        isTrue,
-      );
+      await tester.pumpAndSettle();
+      for (final String key in <String>[
+        'discovery_filter_hide_zero_seeders',
+        'discovery_filter_hide_suspected_manga',
+      ]) {
+        expect(
+          tester
+              .widget<FushiPopupMenuItem<VoidCallback>>(
+                find.byKey(ValueKey<String>(key)),
+              )
+              .selected,
+          isTrue,
+        );
+      }
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
       expect(prefs.discoveryHideZeroSeeders, isTrue);
       expect(prefs.discoveryHideSuspectedManga, isTrue);
 
@@ -1099,16 +1130,11 @@ void main() {
 
     testWidgets('两个开关写穿偏好并即时生效，切换不重新请求', (WidgetTester tester) async {
       await searchNyaa(tester);
-      final Finder zeroChip = find.byKey(
-        const ValueKey<String>('discovery_filter_hide_zero_seeders'),
-      );
-      final Finder mangaChip = find.byKey(
-        const ValueKey<String>('discovery_filter_hide_suspected_manga'),
-      );
+      const String zeroItem = 'discovery_filter_hide_zero_seeders';
+      const String mangaItem = 'discovery_filter_hide_suspected_manga';
 
       // 关「隐藏无人做种」：死种出现（灰显），疑似漫画仍藏，计数行只剩漫画。
-      await tester.tap(zeroChip);
-      await tester.pumpAndSettle();
+      await pickMenuItem(tester, zeroItem);
       expect(prefs.discoveryHideZeroSeeders, isFalse);
       expect((await reloadPrefs()).discoveryHideZeroSeeders, isFalse);
       expect(item('Dead Novel v01 EPUB'), findsOneWidget);
@@ -1123,8 +1149,7 @@ void main() {
       );
 
       // 关「隐藏疑似漫画」：全部可见，计数行消失。
-      await tester.tap(mangaChip);
-      await tester.pumpAndSettle();
+      await pickMenuItem(tester, mangaItem);
       expect(prefs.discoveryHideSuspectedManga, isFalse);
       expect((await reloadPrefs()).discoveryHideSuspectedManga, isFalse);
       expect(item('Sousou no Frieren v01-14 (Digital) (1r0n)'), findsOneWidget);
@@ -1134,8 +1159,7 @@ void main() {
       );
 
       // 再开回「隐藏无人做种」：死种重新藏起。
-      await tester.tap(zeroChip);
-      await tester.pumpAndSettle();
+      await pickMenuItem(tester, zeroItem);
       expect(prefs.discoveryHideZeroSeeders, isTrue);
       expect(item('Dead Novel v01 EPUB'), findsNothing);
 
@@ -1144,56 +1168,42 @@ void main() {
 
     testWidgets('Nyaa 过滤三态写穿偏好、透传 f 并重新请求', (WidgetTester tester) async {
       await searchNyaa(tester);
-      for (final NyaaQualityFilter f in NyaaQualityFilter.values) {
-        expect(
-          find.byKey(ValueKey<String>('discovery_nyaa_filter_${f.index}')),
-          findsOneWidget,
+      Future<bool> selected(int index) async {
+        await tester.tap(
+          find.byKey(const ValueKey<String>('discovery_more_menu')),
         );
+        await tester.pumpAndSettle();
+        final bool value = tester
+            .widget<FushiPopupMenuItem<VoidCallback>>(
+              find.byKey(ValueKey<String>('discovery_nyaa_filter_$index')),
+            )
+            .selected;
+        // 关菜单（Esc），不选任何项。
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        return value;
       }
-      FushiSelectableChip chip(int index) => tester.widget<FushiSelectableChip>(
-        find.byKey(ValueKey<String>('discovery_nyaa_filter_$index')),
-      );
-      expect(chip(0).selected, isTrue);
+
+      expect(await selected(0), isTrue);
       expect(prefs.discoveryNyaaQualityFilter, 0);
       expect(requests.last.queryParameters['f'], '0');
 
-      // 筛选行是单行横滑（四个域发现页同一口径），尾部的 chip 可能在屏外。
-      await tester.ensureVisible(
-        find.byKey(const ValueKey<String>('discovery_nyaa_filter_2')),
-      );
-      await tester.tap(
-        find.byKey(const ValueKey<String>('discovery_nyaa_filter_2')),
-      );
-      await tester.pumpAndSettle();
+      await pickMenuItem(tester, 'discovery_nyaa_filter_2');
       expect(prefs.discoveryNyaaQualityFilter, 2);
       expect((await reloadPrefs()).discoveryNyaaQualityFilter, 2);
-      expect(chip(2).selected, isTrue);
-      expect(chip(0).selected, isFalse);
+      expect(await selected(2), isTrue);
+      expect(await selected(0), isFalse);
       // 服务端参数：必须重新请求且带 f=2。
       expect(requests, hasLength(2));
       expect(requests.last.queryParameters['f'], '2');
 
-      // 筛选行是单行横滑（四个域发现页同一口径），尾部的 chip 可能在屏外。
-      await tester.ensureVisible(
-        find.byKey(const ValueKey<String>('discovery_nyaa_filter_1')),
-      );
-      await tester.tap(
-        find.byKey(const ValueKey<String>('discovery_nyaa_filter_1')),
-      );
-      await tester.pumpAndSettle();
+      await pickMenuItem(tester, 'discovery_nyaa_filter_1');
       expect(prefs.discoveryNyaaQualityFilter, 1);
       expect(requests, hasLength(3));
       expect(requests.last.queryParameters['f'], '1');
 
       // 点已选中的档不重复请求。
-      // 筛选行是单行横滑（四个域发现页同一口径），尾部的 chip 可能在屏外。
-      await tester.ensureVisible(
-        find.byKey(const ValueKey<String>('discovery_nyaa_filter_1')),
-      );
-      await tester.tap(
-        find.byKey(const ValueKey<String>('discovery_nyaa_filter_1')),
-      );
-      await tester.pumpAndSettle();
+      await pickMenuItem(tester, 'discovery_nyaa_filter_1');
       expect(requests, hasLength(3));
     });
 

@@ -1699,9 +1699,11 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     }
     final VideoBookRepository repo = VideoBookRepository(widget.database);
     int added = 0;
+    // 整表只读一次建查表，不逐个文件 findByVideoPath（每次都整表读 + 逐行归一）。
+    VideoPathIndex index = await repo.videoPathIndex();
     for (final String video in files.videos) {
       if (!mounted) return;
-      String? bookUid = (await repo.findByVideoPath(video))?.bookUid;
+      String? bookUid = index.find(video)?.bookUid;
       if (bookUid == null) {
         if (!mounted) return;
         final String? subtitle = files.videos.length == 1
@@ -1715,6 +1717,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             initialSubtitlePath: subtitle,
           ),
         );
+        // 导入对话框开着的那段时间库可能变了（刚导入的这一行、同一批里重复
+        // 拖入的同一文件）：对话框之后重建，后面的文件照新库判重。
+        index = await repo.videoPathIndex();
       }
       if (bookUid == null) continue;
       final CollectionAddOutcome outcome = await addMediaRefToCollection(

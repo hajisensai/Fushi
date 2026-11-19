@@ -131,8 +131,11 @@ public class CrossAppAudioRequestActivity extends Activity {
 
     @Override
     protected void onDestroy() {
-        // 没拿到结果就被销毁（系统回收、被别的方式打断）：别让 Dart 一直等。
-        if (owesResult && isFinishing()) {
+        // 没拿到结果就被销毁（系统回收、从最近任务划掉、被别的方式打断）：别让 Dart 一直等。
+        // 只有配置变更重建才接着等；判据不能用 isFinishing()——非 finishing 的销毁之后
+        // Activity 未必重建，pendingStart 会永远挂着（BUG-4792）。
+        if (CrossAppAudioPolicy.releasesPendingStartOnDestroy(
+                owesResult, isChangingConfigurations())) {
             owesResult = false;
             CrossAppAudioChannel.completeStart(false, "denied");
         }

@@ -14,6 +14,8 @@ import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show ShellLayoutInstallDefault;
 import 'package:fushi/src/utils/system_transparency.dart';
 
 FushiDatabase _testDb() {
@@ -739,7 +741,9 @@ void main() {
       final String hiddenRaw = PrefCodec.encode('macos');
       final String materialRaw = PrefCodec.encode('material');
       await db.setPref('design_system', hiddenRaw);
-      final Map<String, String> staleSnapshot = await db.getAllPrefs();
+      final Map<String, String> staleSnapshot = _withSettledLayoutInstall(
+        await db.getAllPrefs(),
+      );
 
       // 模拟另一进程在本进程拿到旧 snapshot 后已选择 material。
       await db.setPref('design_system', materialRaw);
@@ -850,8 +854,9 @@ void main() {
           'design_system',
           PrefCodec.encode('cupertino'),
         );
-        final Map<String, String> staleSnapshot = await processADb
-            .getAllPrefs();
+        final Map<String, String> staleSnapshot = _withSettledLayoutInstall(
+          await processADb.getAllPrefs(),
+        );
         final Future<void> delayedMigration = () async {
           await releaseStaleSnapshot.future;
           processANotifier.loadFromPrefsSnapshot(staleSnapshot);
@@ -892,7 +897,9 @@ void main() {
       () async {
         final String hiddenRaw = PrefCodec.encode('cupertino');
         await db.setPref('design_system', hiddenRaw);
-        final Map<String, String> staleSnapshot = await db.getAllPrefs();
+        final Map<String, String> staleSnapshot = _withSettledLayoutInstall(
+          await db.getAllPrefs(),
+        );
 
         notifier.loadFromPrefsSnapshot(staleSnapshot);
         await pumpEventQueue(times: 10);
@@ -1360,3 +1367,13 @@ void main() {
     );
   });
 }
+
+/// 快照里带上已判定的库页布局出厂值（#3515）：否则载入时那次一次性判定落盘也会
+/// bump `prefs_version`，与本组要钉的 design_system CAS 计数混在一起。
+Map<String, String> _withSettledLayoutInstall(Map<String, String> prefs) =>
+    <String, String>{
+      ...prefs,
+      ShellLayoutInstallDefault.prefKey: PrefCodec.encode(
+        ShellLayoutInstallDefault.fresh.prefValue,
+      ),
+    };

@@ -12,6 +12,7 @@ import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_media_link_assistant.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/media/links/media_link_inference.dart';
+import 'package:fushi_engine/media/links/music_link_inference.dart';
 import 'package:fushi_engine/media/links/wikidata_anime_bridge.dart';
 import 'package:fushi_engine/media/video/metadata/mal_video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart'
@@ -30,16 +31,26 @@ typedef WikidataAnimeLookup =
 
 /// 本机全部可参与推断的条目（一次推断内复用）。外部 id 只收已在用的视频身份
 /// （mal / anidb / tmdb）与游戏的 vndb；**不收 Bangumi**（所有者 2026-10-24 拍板）。
+/// [music] 是曲库、刮削结果与声纹缓存（音乐 ↔ 作品推断用，见
+/// `music_link_inference.dart`）。
 class MediaLinkLibrarySnapshot {
   const MediaLinkLibrarySnapshot({
     required this.books,
     required this.videos,
     required this.games,
+    this.music = MusicLinkLibrary.empty,
   });
 
   final List<MediaLinkSubject> books;
   final List<MediaLinkSubject> videos;
   final List<MediaLinkSubject> games;
+  final MusicLinkLibrary music;
+
+  /// 音乐候选可落的作品（视频合集 / 游戏；单集只作声纹命中的兜底端点）。
+  List<MediaLinkSubject> get musicTargets => <MediaLinkSubject>[
+    ...videos,
+    ...games,
+  ];
 
   static const Set<String> _videoProviders = <String>{'mal', 'anidb', 'tmdb'};
 
@@ -144,7 +155,12 @@ class MediaLinkLibrarySnapshot {
         ),
       );
     }
-    return MediaLinkLibrarySnapshot(books: books, videos: videos, games: games);
+    return MediaLinkLibrarySnapshot(
+      books: books,
+      videos: videos,
+      games: games,
+      music: await loadMusicLinkLibrary(db),
+    );
   }
 
   MediaLinkSubject? find(MediaLinkEndpoint e) {
@@ -166,9 +182,30 @@ Future<List<MediaLinkCandidate>> collectMediaLinkCandidates({
   required MalSourceMaterialFetcher fetchMalSourceMaterial,
   required WikidataAnimeLookup lookupWikidataAnime,
 }) async {
+  if (self.kind == MediaLinkKind.musicAlbum ||
+      self.kind == MediaLinkKind.musicTrack) {
+    // 音乐 → 作品：声纹命中 / 刮削名与本地名带作品名 + 关键词（不联网）。
+    return <MediaLinkCandidate>[
+      for (final MediaLinkCandidate c in collectMusicLinkCandidates(
+        music: library.music,
+        works: library.musicTargets,
+      ))
+        if (c.from.endpoint == self) c,
+    ];
+  }
   final MediaLinkSubject? subject = library.find(self);
   if (subject == null) return const <MediaLinkCandidate>[];
-  final List<MediaLinkCandidate> out = <MediaLinkCandidate>[];
+  final List<MediaLinkCandidate> out = <MediaLinkCandidate>[
+    // 从作品一侧看：连到它的原声 / 主题曲（声纹命中在前）。
+    if (self.kind == MediaLinkKind.videoCollection ||
+        self.kind == MediaLinkKind.videoEpisode ||
+        self.kind == MediaLinkKind.game)
+      for (final MediaLinkCandidate c in collectMusicLinkCandidates(
+        music: library.music,
+        works: library.musicTargets,
+      ))
+        if (c.to.endpoint == self) c,
+  ];
   switch (self.kind) {
     case MediaLinkKind.videoCollection:
     case MediaLinkKind.videoEpisode:
@@ -254,15 +291,14 @@ Future<List<MediaLinkCandidate>> collectMediaLinkCandidates({
       );
     case MediaLinkKind.musicAlbum:
     case MediaLinkKind.musicTrack:
-      // VGMdb / MusicBrainz 关系与声纹比对依赖音乐模块（专辑 / 曲目表与 Rust
-      // chromaprint），音乐模块落地前没有候选来源。
-      break;
+      break; // 上面已处理。
   }
   return out;
 }
 
-/// 跑一轮以 [self] 为中心的推断并写成建议，返回新增建议数。AI 已指派（且 AI 模块
-/// 开着）时候选先经 AI 裁决；AI 失败提示用户并退回只写确定性建议。
+/// 跑一轮以 [self] 为中心的推断（用户手动触发：[MediaLinkInferenceTrigger.manual]
+/// 门槛），返回新写入的连接数（直接生效 + 建议）。AI 已指派（且 AI 模块开着）时
+/// 候选先经 AI 裁决；AI 失败提示用户并退回只跑确定性规则。
 Future<int> runMediaLinkInference({
   required FushiDatabase db,
   required MediaLinkEndpoint self,
@@ -284,8 +320,9 @@ Future<int> runMediaLinkInference({
       return (await applyMediaLinkCandidates(
         db: db,
         candidates: candidates,
+        trigger: MediaLinkInferenceTrigger.manual,
         judge: judge,
-      )).proposed;
+      )).written;
     } on AiChatFailure {
       FushiToast.show(
         msg: t.media_link_infer_ai_failed,
@@ -296,19 +333,38 @@ Future<int> runMediaLinkInference({
   return (await applyMediaLinkCandidates(
     db: db,
     candidates: candidates,
-  )).proposed;
+    trigger: MediaLinkInferenceTrigger.manual,
+  )).written;
 }
 
-/// 详情页「查找相关作品」按钮的回调（[MediaLinksSection.onInfer]）。音乐端点没有
-/// 推断来源，返回 null（不显示按钮）。
+/// 全库批量推断音乐 ↔ 作品关系（库管家编排的入口；默认按自动路径门槛：声纹命中
+/// 直接生效，标题 + 关键词写建议或经 AI 裁决）。只读本机数据，不联网；[judge] 为
+/// null 时不发任何 AI 请求。AI 失败照常抛给调用方。返回逐条写入清单，
+/// [revertMusicLinkBatch] 整批撤销。
+Future<MusicLinkBatchResult> runMusicMediaLinkBatchInference({
+  required FushiDatabase db,
+  MediaLinkInferenceTrigger trigger = MediaLinkInferenceTrigger.automatic,
+  MediaLinkJudge? judge,
+}) async {
+  final MediaLinkLibrarySnapshot library = await MediaLinkLibrarySnapshot.load(
+    db,
+  );
+  if (library.music.isEmpty) return MusicLinkBatchResult.empty;
+  return inferMusicMediaLinks(
+    db: db,
+    music: library.music,
+    works: library.musicTargets,
+    trigger: trigger,
+    judge: judge,
+  );
+}
+
+/// 详情页「查找相关作品」按钮的回调（[MediaLinksSection.onInfer]）。音乐端点只用
+/// 本机刮削数据与声纹缓存（不查 MAL / Wikidata）。
 Future<int> Function()? mediaLinkInferCallback({
   required WidgetRef ref,
   required MediaLinkEndpoint self,
 }) {
-  if (self.kind == MediaLinkKind.musicAlbum ||
-      self.kind == MediaLinkKind.musicTrack) {
-    return null;
-  }
   return () async {
     final AppModel appModel = ref.read(appProvider);
     final AiProviderConfig? provider =

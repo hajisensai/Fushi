@@ -504,7 +504,8 @@ for (const writingMode of ['horizontal-tb', 'vertical-rl', 'vertical-lr']) {
         const f = fixture({continuous: false, writingMode}); const ctx = f.paged(100);
         for (const name of ['contentFirstPageScroll', 'contentLastPageScroll', 'alignToPage',
           'scrollToProgressPaged', 'scrollToCharOffset', 'alignToFragmentTarget',
-          '_alignRangeToPage', '_settleAndNotify', 'turnSpan', 'pagedAxisOf'])
+          '_alignRangeToPage', '_realignRevealTarget', '_settleAndNotify',
+          'registerImageLateAnchor', 'reapplyImageLateAnchor', 'turnSpan', 'pagedAxisOf'])
           f.reader[name] = f.fn('pagination', name);
         // Geometry only: the target is on the preceding page; all navigation,
         // landing, drag validity and cleanup are the current production methods.
@@ -518,7 +519,12 @@ for (const writingMode of ['horizontal-tb', 'vertical-rl', 'vertical-lr']) {
         if (entry === 'fragment') assert.equal(f.reader.alignToFragmentTarget('target'), true);
         if (entry === 'range') assert.equal(f.reader._alignRangeToPage({}), true);
         if (entry === 'settle') {
-          f.reader._settleAndNotify(ctx, 0); preserved(f);
+          // BUG-4808：settle 不再写回捕获的像素位置，而是在位置被动过时按已登记的语义锚
+          // 重设落点。这里登记章首锚（前一页），窗口内 reflow 把 scroll 挪走（直接写滚动
+          // 容器，不经任何记账），定时器回调经 reapplyImageLateAnchor 真的换页。
+          f.reader.registerImageLateAnchor({progress: 0});
+          f.reader._settleAndNotify(); preserved(f);
+          f.body.scrollLeft = f.body.scrollTop = 200;
           assert.equal(f.timers.length, 1); f.timers.shift()();
         }
         assert.equal(f.reader.getPagePosition(ctx), 0); cleared(f);
@@ -527,7 +533,7 @@ for (const writingMode of ['horizontal-tb', 'vertical-rl', 'vertical-lr']) {
         if (entry === 'range') {
           assert.equal(f.frames.length, 1); f.frames.shift()();
         }
-        f.reader._settleAndNotify(ctx, 0); f.timers.shift()();
+        f.reader._settleAndNotify(); f.timers.shift()();
         assert(f.selection.selection); assert.equal(f.stats.clear, 1);
       });
     }

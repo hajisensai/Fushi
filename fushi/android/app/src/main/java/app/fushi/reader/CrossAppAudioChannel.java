@@ -44,6 +44,8 @@ final class CrossAppAudioChannel {
     private static final int AAC_BIT_RATE = 64_000;
 
     private static final ExecutorService ENCODER = Executors.newSingleThreadExecutor();
+    /** status / stop / snapshot 的跨进程 RPC（BUG-4791）；与编码分开，快照不排在编码后面。 */
+    private static final ExecutorService PROVIDER_IO = Executors.newSingleThreadExecutor();
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
 
     /** 主引擎的通道（推 onState 用）；查词窗进程里为 null。主线程读写。 */
@@ -62,36 +64,35 @@ final class CrossAppAudioChannel {
         MethodChannel channel =
                 new MethodChannel(engine.getDartExecutor().getBinaryMessenger(), CHANNEL);
         channel.setMethodCallHandler((call, result) -> {
-            switch (call.method) {
+            final String method = call.method;
+            if (CrossAppAudioPolicy.callsProviderOffMain(method)) {
+                // 跨进程 RPC（+ snapshot 在 Provider 端的同步写盘）不压在平台主线程上
+                // （BUG-4791）。单线程执行器保证 RPC 按 Dart 发出的顺序到达 Provider。
+                final Integer backMs = call.argument("backMs");
+                PROVIDER_IO.execute(() -> {
+                    final Object value;
+                    try {
+                        value = runProviderCall(app, method, backMs);
+                    } catch (RuntimeException e) {
+                        // 平台主线程上 Flutter 的 IncomingMethodCallHandler 会把 RuntimeException
+                        // 回成 error；挪到执行器后这层兜底没了，未捕获异常会杀掉整个进程（查词窗
+                        // 进程连同窗口），Dart 的 Future 也永远不完成。这里照原语义回 error。
+                        Log.e(TAG, "cross-app audio " + method + " failed", e);
+                        MAIN.post(() -> result.error(
+                                "CROSS_APP_AUDIO_ERROR", String.valueOf(e.getMessage()), null));
+                        return;
+                    }
+                    MAIN.post(() -> result.success(value));
+                });
+                return;
+            }
+            switch (method) {
                 case "isSupported":
                     result.success(Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q);
                     return;
-                case "status": {
-                    Bundle out = callProvider(app, CrossAppAudioProvider.METHOD_STATUS, null);
-                    result.success(out != null && out.getBoolean("running", false));
-                    return;
-                }
                 case "start":
                     start(app, call.argument("labels"), result);
                     return;
-                case "stop":
-                    callProvider(app, CrossAppAudioProvider.METHOD_STOP, null);
-                    result.success(null);
-                    return;
-                case "snapshot": {
-                    if (!CrossAppAudioProvider.capturingMarker(app).exists()) {
-                        // 没在录：不发 RPC，免得把没在跑的主进程拉起来。
-                        result.success(null);
-                        return;
-                    }
-                    Integer backMs = call.argument("backMs");
-                    Bundle out = callProvider(app, CrossAppAudioProvider.METHOD_SNAPSHOT,
-                            String.valueOf(backMs == null ? 0 : backMs));
-                    result.success(out == null || out.getString("path") == null
-                            ? null
-                            : snapshotMap(out));
-                    return;
-                }
                 case "encodeAac":
                     encodeAac(call.argument("pcm"), call.argument("sampleRate"),
                             call.argument("channels"), call.argument("outputPath"), result);
@@ -165,6 +166,36 @@ final class CrossAppAudioChannel {
         out.put("bitsPerSample", bundle.getInt("bitsPerSample"));
         out.put("isFloat", false);
         return out;
+    }
+
+    /**
+     * 后台线程上执行一次 {@link CrossAppAudioPolicy#callsProviderOffMain} 判为真的方法，
+     * 返回要回给 Dart 的值。
+     */
+    @Nullable
+    private static Object runProviderCall(@NonNull Context app, @NonNull String method,
+            @Nullable Integer backMs) {
+        switch (method) {
+            case CrossAppAudioPolicy.METHOD_STATUS: {
+                Bundle out = callProvider(app, CrossAppAudioProvider.METHOD_STATUS, null);
+                return out != null && out.getBoolean("running", false);
+            }
+            case CrossAppAudioPolicy.METHOD_STOP:
+                callProvider(app, CrossAppAudioProvider.METHOD_STOP, null);
+                return null;
+            case CrossAppAudioPolicy.METHOD_SNAPSHOT: {
+                if (!CrossAppAudioProvider.capturingMarker(app).exists()) {
+                    // 没在录：不发 RPC，免得把没在跑的主进程拉起来。
+                    return null;
+                }
+                Bundle out = callProvider(app, CrossAppAudioProvider.METHOD_SNAPSHOT,
+                        String.valueOf(backMs == null ? 0 : backMs));
+                return out == null || out.getString("path") == null ? null : snapshotMap(out);
+            }
+            default:
+                // 判定与这里的分支必须一一对应；漏一个是编程错误，不静默回 null。
+                throw new IllegalStateException("not a provider call: " + method);
+        }
     }
 
     @Nullable

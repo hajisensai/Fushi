@@ -698,6 +698,12 @@ void main() {
       final int beforeCancel = interrupted.requestSizes.length;
       expect(beforeCancel, greaterThan(0));
       expect(beforeCancel, lessThan(3), reason: '取消要真的止住后面的页');
+      // BUG-4815：取消不落整卷产物。半卷的 manga_ocr_out/manga.json 是一份「空页
+      // 占位 + system_ocr 署名」的假整卷，后来的引擎会把它当成已有结果。
+      final File output = File(
+        p.join(dir.path, kMangaOcrOutDirName, kMangaOcrOutputFileName),
+      );
+      expect(output.existsSync(), isFalse, reason: '取消后不得写出半卷整卷产物');
 
       final _FakePlatform resumed = platformWithText();
       await SystemOcrMangaService(
@@ -707,13 +713,16 @@ void main() {
       // 两次加起来正好识别三页：取消掉的那部分成果留在 per-page 缓存里，
       // 重跑只补没跑过的，没有一页被白识别两次。
       expect(beforeCancel + resumed.requestSizes.length, 3);
-      final File output = File(
-        p.join(dir.path, kMangaOcrOutDirName, kMangaOcrOutputFileName),
-      );
       expect(output.existsSync(), isTrue);
       final Map<String, Object?> decoded =
           jsonDecode(output.readAsStringSync()) as Map<String, Object?>;
       expect(decoded['pages'], isA<List<Object?>>());
+      // 完整跑完的产物每一页都是真识别结果，没有空占位页。
+      final MokuroPayload payload = parseMangaJson(output.readAsStringSync());
+      expect(payload.images, hasLength(3));
+      for (final MokuroImage image in payload.images) {
+        expect(image.blocks, isNotEmpty);
+      }
     });
 
     test('空图片目录报错，而不是产出一份空 manga.json', () async {

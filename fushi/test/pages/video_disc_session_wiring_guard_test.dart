@@ -90,8 +90,22 @@ void main() {
       route,
       contains('videoDiscMenuKeyAllowed(state, VideoDiscMenuKey.topMenu)'),
     );
-    final String toMenu = _member(part, 'Future<void> _returnToDiscMenu()');
+    // 回菜单这一级的执行（只有盘拒绝才退会话、在途连按吞掉）由 DiscMenuReturn 持有，
+    // 行为见 disc_session_controls_test.dart 的 DiscMenuReturn 组。
+    final String toMenu = _member(
+      part,
+      'bool _discSessionReturnToMenuOnBack()',
+    );
+    expect(toMenu, contains('_discMenuReturn.handleBack('));
+    expect(toMenu, contains('_discSessionBackRoute()'));
     expect(toMenu, contains('discMenuKey(VideoDiscMenuKey.topMenu)'));
+    expect(toMenu, contains('onRefused:'));
+    expect(toMenu, contains('_exitDiscSession()'));
+    expect(
+      _member(page, 'final DiscMenuReturn _discMenuReturn'),
+      contains('isRefusal: isVideoDiscMenuCallRefusal'),
+      reason: '暂时性错误不能被当成「盘没有菜单这一级」',
+    );
     // 全屏路由里的返回只退全屏：正片阶段不得在全屏这一级就回菜单或退会话。
     final String fullscreen = _read(
       'lib/src/pages/implementations/video_fushi/fullscreen.part.dart',

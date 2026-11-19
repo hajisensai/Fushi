@@ -238,7 +238,11 @@ List<PanelRect> splitLargePanel(
         break;
       }
     }
-    (row ??= <PanelTextBox>[]).add(box);
+    if (row == null) {
+      row = <PanelTextBox>[];
+      rows.add(row);
+    }
+    row.add(box);
   }
   if (rows.length >= 2) {
     rows.sort(
@@ -269,10 +273,10 @@ List<PanelRect> splitLargePanel(
     return strips.length >= 2 ? strips : <PanelRect>[bounded];
   }
 
+  // 列边界一律按 x 升序算（相邻两个中心的中点），阅读方向只决定输出顺序。
   inside.sort(
-    (PanelTextBox a, PanelTextBox b) => direction == PanelReadingDirection.rtl
-        ? b.rect.centerX.compareTo(a.rect.centerX)
-        : a.rect.centerX.compareTo(b.rect.centerX),
+    (PanelTextBox a, PanelTextBox b) =>
+        a.rect.centerX.compareTo(b.rect.centerX),
   );
   final List<PanelRect> columns = <PanelRect>[];
   for (int i = 0; i < inside.length; i++) {
@@ -295,7 +299,10 @@ List<PanelRect> splitLargePanel(
       );
     }
   }
-  return columns.length >= 2 ? columns : <PanelRect>[bounded];
+  if (columns.length < 2) return <PanelRect>[bounded];
+  return direction == PanelReadingDirection.rtl
+      ? columns.reversed.toList()
+      : columns;
 }
 
 double _rowCenter(List<PanelTextBox> row) =>

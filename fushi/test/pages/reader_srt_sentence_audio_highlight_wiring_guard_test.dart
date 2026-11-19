@@ -58,15 +58,15 @@ void main() {
     );
   });
 
-  test(
-    '_prepareSentenceAudioCuesJson 仍复用 buildSentenceAudioPayload（BUG-300 契约不回退）',
-    () {
-      expect(
-        prepBody.contains('AudiobookBridge.buildSentenceAudioPayload('),
-        isTrue,
-      );
-    },
-  );
+  test('_prepareSentenceAudioCuesJson 仍走桥接层的 payload 构造（BUG-300 契约不回退）', () {
+    // 经整书 cue 的派生索引取本章 payload；它与 buildSentenceAudioPayload 共用同一个
+    // 单条构造函数（契约由 reader_sentence_audio_payload_source_guard_test 钉住）。
+    expect(
+      prepBody.contains('AudiobookBridge.sentenceAudioCueIndexFor('),
+      isTrue,
+    );
+    expect(prepBody.contains('payload.add(<String, dynamic>{'), isFalse);
+  });
 
   test('_loadHighlightCues 同时覆盖 SRT 与 Audiobook 两个 cue 源', () {
     final int loadStart = readerSrc.indexOf('_loadHighlightCues() async {');

@@ -1323,6 +1323,54 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     _initialFragment = next.fragment;
   }
 
+  /// 进度快照的**唯一取样口**：向当前 WebView 要一次 `stableProgressInvocation`，
+  /// 并在 JS 往返之后判这份快照还作不作数。[_refreshProgress]（实时采样）与
+  /// [_syncPositionFromWebViewProgress]（退出 / 切后台的实时读）都只经这里取样——
+  /// 判据只有这一份，不会再出现「只补了一个入口、另一条路照样污染恢复锚」。
+  ///
+  /// 返回 `null` = 没有可用的快照，调用方什么都不得写。三种来源：
+  /// - `evaluateJavascript` 抛错（renderer 死亡 / WebView 半销毁；已按 [errorSource]
+  ///   记 `ErrorLogService`，不吞成静默）；
+  /// - 快照被下面的闸丢弃；
+  /// - JS 自己回 `null`（重锚在飞 / 尚未 settle，瞬态）。
+  ///
+  /// 入口前置条件（歌词态、内容是否就绪）各调用方不同，仍由调用方自己判；这里只管
+  /// 「取样之后」那一半。
+  Future<Object?> _takeStableProgressSnapshot(String errorSource) async {
+    final InAppWebViewController? controller = _controller;
+    if (controller == null) return null;
+    final int generation = _navigateGeneration;
+    final int chapter = _currentChapter;
+    final Object? result;
+    try {
+      result = await controller.evaluateJavascript(
+        source: ReaderPaginationScripts.stableProgressInvocation(),
+      );
+    } catch (e, stack) {
+      // TODO-2603：renderer 死亡 / WebView 半销毁后 evaluateJavascript 抛
+      // PlatformException（或在报废 controller 上永不完成）。取样由 10s 轮询、
+      // scroll 回传、恢复完成与退出读驱动，裸 await 会把异常抛成**未捕获异步错误**
+      // （换 key 重建那一瞬每条在飞路径各一次）。此处尚未改任何进度状态，安全
+      // no-op 返回；与 reloadWithCurrentSettings 同一 fail-open 范式：不吞成静默，
+      // 补 ErrorLogService.log。
+      ErrorLogService.instance.log(errorSource, e, stack);
+      return null;
+    }
+    // JS 往返期间可能已经翻章、重载或替换 WebView。旧文档的章内偏移不能
+    // 按新章的累计字数入账，也不能覆盖新章恢复锚/落库位置。代际同时拦住
+    // A → B → A 和同章重载，不能只检查章号或此刻是否仍在恢复。
+    // BUG-2399：内容还没就绪时晚到的快照同样不得写进恢复锚。
+    if (!mounted ||
+        generation != _navigateGeneration ||
+        chapter != _currentChapter ||
+        !identical(controller, _controller) ||
+        _restoreInFlight ||
+        !_readerContentReady) {
+      return null;
+    }
+    return result;
+  }
+
   Future<void> _refreshProgress() async {
     // BUG-2207：恢复在飞（含 _reloadWithCurrentSettings 的整章重载）期间不采样——
     // 10s 轮询不受 readerScrollProgressRefreshAllowed 门控，重载中 JS 的瞬态 atEnd /
@@ -1333,62 +1381,24 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     // （`_settleLyricsCue`），正文停在进歌词那一刻的页上。10s 轮询与补刷 Timer 不看
     // 歌词态，这里统一挡住——否则正文那页会和当前句轮流 arrive，账本来回撤回 / 入账。
     if (_controller == null || _restoreInFlight || _lyricsMode) return;
-    final InAppWebViewController controller = _controller!;
-    final int generation = _navigateGeneration;
-    final int chapter = _currentChapter;
-    final dynamic result;
-    try {
-      result = await controller.evaluateJavascript(
-        source: ReaderPaginationScripts.stableProgressInvocation(),
-      );
-    } catch (e, stack) {
-      // TODO-2603：renderer 死亡 / WebView 半销毁后 evaluateJavascript 抛
-      // PlatformException（或在报废 controller 上永不完成）。本方法由 10s 轮询、
-      // scroll 回传与恢复完成三条路驱动，裸 await 会把异常抛成**未捕获异步错误**
-      // （换 key 重建那一瞬每条在飞路径各一次）。此处尚未改任何进度状态，安全
-      // no-op 返回；与 reloadWithCurrentSettings / _syncPositionFromWebViewProgress
-      // 同一 fail-open 范式：不吞成静默，补 ErrorLogService.log。
-      ErrorLogService.instance.log(
-        'ReaderFushi._refreshProgress.eval',
-        e,
-        stack,
-      );
-      return;
-    }
-    // JS 往返期间可能已经翻章、重载或替换 WebView。旧文档的章内偏移不能
-    // 按新章的累计字数入账，也不能覆盖新章恢复锚/落库位置。代际同时拦住
-    // A → B → A 和同章重载，不能只检查章号或此刻是否仍在恢复。
-    // BUG-2399：内容还没就绪时晚到的快照同样不得写进恢复锚。这道闸有**两个入口**
-    // （本方法与 [_syncPositionFromWebViewProgress]），判据必须两处一致——只补一处
-    // 等于这条路照样能污染，守卫 reader_progress_snapshot_generation_guard 也正是
-    // 按同一份清单扫这两个方法的。
-    if (!mounted ||
-        generation != _navigateGeneration ||
-        chapter != _currentChapter ||
-        !identical(controller, _controller) ||
-        _restoreInFlight ||
-        !_readerContentReady) {
-      return;
-    }
+    // 取样 + 「JS 往返期间换了章 / 重载 / 换了 WebView 就丢」的闸都在
+    // [_takeStableProgressSnapshot]，与退出读共用同一份判据。
+    final Object? result = await _takeStableProgressSnapshot(
+      'ReaderFushi._refreshProgress.eval',
+    );
     // 采样在飞期间进了歌词模式：正文这页已在进歌词那一刻结算，位置 / 账本此后归
     // 当前句，晚到的正文快照不得再 arrive。
     if (_lyricsMode) return;
     if (result == null) {
-      // BUG-493：null = JS stableProgressInvocation 早退（重锚在飞 _reanchorPending / 尚未
-      // settle）。这是**瞬态**：JS 侧清旗已单点化（_sharedJs 的 _setReanchorPending），
-      // true→false 转换时经 onReanchorSettled 事件（webview.part.dart 注册）通知 Dart 补刷
-      // 一次进度——事件驱动替代旧的 120ms×8 轮询重试，覆盖所有清旗路径。此处直接早退等
-      // 事件即可；图片/封面章的 null 走空串→snapshot==null 分支由
-      // _applyImagePageProgressFallback 兜底显示。
-      return;
-    }
-    // await 期间可能已经换章、重载或重建 WebView。旧快照不能套新章坐标，
-    // 也不能写回恢复锚或把导航中的视口计入阅读账本。
-    if (!mounted ||
-        _controller != controller ||
-        _navigateGeneration != generation ||
-        _currentChapter != chapter ||
-        _restoreInFlight) {
+      // 两种来源，都什么也不写：
+      // ① 快照被 [_takeStableProgressSnapshot] 的闸丢弃，或 evaluateJavascript 抛错
+      //    （那边已记日志）；
+      // ② BUG-493：JS stableProgressInvocation 早退（重锚在飞 _reanchorPending / 尚未
+      //    settle）。这是**瞬态**：JS 侧清旗已单点化（_sharedJs 的 _setReanchorPending），
+      //    true→false 转换时经 onReanchorSettled 事件（webview.part.dart 注册）通知 Dart
+      //    补刷一次进度——事件驱动替代旧的 120ms×8 轮询重试，覆盖所有清旗路径。此处直接
+      //    早退等事件即可；图片/封面章的 null 走空串→snapshot==null 分支由
+      //    _applyImagePageProgressFallback 兜底显示。
       return;
     }
     final ReaderStableProgressDetails? snapshot =
@@ -1545,30 +1555,12 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       return;
     }
 
-    final InAppWebViewController controller = _controller!;
-    final int generation = _navigateGeneration;
-    final int chapter = _currentChapter;
-    final dynamic result;
-    try {
-      result = await controller.evaluateJavascript(
-        source: ReaderPaginationScripts.stableProgressInvocation(),
-      );
-    } catch (e, stack) {
-      ErrorLogService.instance.log(
-        'ReaderFushi.syncPositionFromWebViewProgress.eval',
-        e,
-        stack,
-      );
-      debugPrint('[ReaderFushi] syncPositionFromWebViewProgress failed: $e');
-      return;
-    }
-    // 退出/后台刷新同样不能把旧文档快照写进新章节的恢复锚。
-    if (!mounted ||
-        generation != _navigateGeneration ||
-        chapter != _currentChapter ||
-        !identical(controller, _controller) ||
-        _restoreInFlight ||
-        !_readerContentReady) {
+    // 退出/后台刷新同样不能把旧文档快照写进新章节的恢复锚：取样与丢弃判据在
+    // [_takeStableProgressSnapshot]，与 [_refreshProgress] 共用同一份。
+    final Object? result = await _takeStableProgressSnapshot(
+      'ReaderFushi.syncPositionFromWebViewProgress.eval',
+    );
+    if (result == null) {
       return;
     }
 
@@ -1706,10 +1698,22 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       );
     }
     if (!appModel.isMediaTrackingOn) return;
-    await appModel.mediaTrackingService.recordBookProgress(
-      bookKey: widget.bookKey,
-      completedChapterCount: section + (progress >= 0.999 ? 1 : 0),
+    // BUG-4807：追踪上报不在位置落库的等待链上。它要查库，未映射的书还会内联一次
+    // 站点搜索，耗时没有上界；而本方法被退出 flush 逐层 await（返回键等着它）。
+    // 「读完」写库在上面、仍被等待；这里只发起上报，同一份进度落定后不再报；没落定
+    // （服务回 false：没映射上、搜索失败、入队失败）或抛错的，下次落库再报（见
+    // [ReaderTrackingProgressReporter]）。服务是 app 级单例，页面销毁不影响已发起的
+    // 上报。
+    final int completedChapterCount = section + (progress >= 0.999 ? 1 : 0);
+    _trackingProgressReporter.report(
+      completedChapterCount: completedChapterCount,
       completed: completed,
+      // [send] 在 report 里同步起跑，此刻页面还活着，取 appModel / widget 是安全的。
+      send: () => appModel.mediaTrackingService.recordBookProgress(
+        bookKey: widget.bookKey,
+        completedChapterCount: completedChapterCount,
+        completed: completed,
+      ),
     );
   }
 
@@ -1852,6 +1856,19 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     // 退出 / 退后台不是翻走：站着的那页不结算（`ReadUnitLedger` 类文档），只写穿时钟。
     await _flushReadingStats();
     await _audiobookController?.flushPosition();
+    // BUG-4807：追踪上报不在位置落库的等待链上，但进程要走了——把刚发起的那次
+    // 等完，否则这次阅读的进度要到下次开书才报得出去。放在本地写穿之后：慢网不
+    // 拖累位置 / 统计 / 有声书位置落盘；整个回调仍受 ExitFlushRegistry 的超时约束。
+    await _trackingProgressReporter.whenSettled();
+  }
+
+  /// 页面销毁时交给 [ExitFlushRegistry.defer] 的那一笔：位置落库，再把在途的追踪
+  /// 上报等完（BUG-4807）。关书后页面自己的退出回调已注销，返回键也不等上报；
+  /// 没有这一段，「读完最后一章 → 返回 → 立刻关 app」时还在搜索映射的那次上报
+  /// 就没人等了，要到这本书下次打开才补。上报排在落库之后，慢网不拖累位置落盘。
+  Future<void> _flushPositionAndTrackingReport() async {
+    await _flushPosition();
+    await _trackingProgressReporter.whenSettled();
   }
 
   Future<void> _flushPosition() async {

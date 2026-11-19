@@ -1,12 +1,13 @@
 // BUG-2496：四处绕过封面收口的直写（书 override 缩略图 / 字幕书封面 / PDF 首页封面
-// / 在线漫画封面）改走 MediaCoverService.applyCoverFile / applyCoverBytes，由收口
+// / 在线漫画封面）改走封面收口（MediaCoverService.applyCover* 或其背后的引擎 writer），由收口
 // 校验「完整可解码图片」后原子写 + 驱逐；封面坏了记诊断、coverPath 留空，不让导入 /
 // 保存整体失败。
 //
 // 这四个文件的封面目的地都不在 media_cover_write_guard_test 的 kCoverDestMarker
 // 派生标记里（thumbnails/ 的 hashCode 文件名、persistDir/cover.*、书目录 cover.png、
 // 漫画目录 cover.*），那条守卫结构上扫不到它们——所以这里按文件逐条钉死：
-//   ① 文件里必须经 MediaCoverService.applyCover* 落盘；
+//   ① 文件里必须经收口落盘（MediaCoverService.applyCover* 或引擎 writeCoverBytesAtomically /
+//      copyCoverFileAtomically）；
 //   ② 必须显式 catch CoverImageInvalidException（封面失败不得炸主流程）；
 //   ③ 裸写调用是封闭集合：只剩「非封面资产」那几处，每处按同行锚点登记，
 //      多一处（新的裸写封面）或少一处（登记过期）都红。
@@ -19,6 +20,14 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
+
+/// 封面收口：`MediaCoverService.applyCover*` 只是引擎 `cover_file_writer` 的薄委派，
+/// 校验可解码 + 原子写 + 驱逐（经 evictImageCacheForFile 钩子）都在引擎 writer 里，
+/// 两种写法是同一个收口。底层文件直接调引擎 writer，免得为一行委派 import 读
+/// AppModel 的 `media_cover_service`、把自己拖进 import 大环（import_cycle_guard_test）。
+final RegExp kCoverSink = RegExp(
+  r'MediaCoverService\.applyCover|writeCoverBytesAtomically\(|copyCoverFileAtomically\(',
+);
 
 /// 裸写调用（对文件的写 / 拷 / 同步拷）。
 final RegExp kRawWrite = RegExp(r'writeAsBytes\(|\.copy\(|copySync\(');
@@ -46,10 +55,10 @@ void main() {
         masked = maskComments(file.readAsStringSync());
       });
 
-      test('封面落盘经 MediaCoverService.applyCover*', () {
+      test('封面落盘经收口（MediaCoverService.applyCover* 或引擎 writer）', () {
         expect(
-          masked,
-          contains('MediaCoverService.applyCover'),
+          kCoverSink.hasMatch(masked),
+          isTrue,
           reason: '封面必须走收口（校验可解码 + 原子写 + 驱逐），不得裸写',
         );
       });

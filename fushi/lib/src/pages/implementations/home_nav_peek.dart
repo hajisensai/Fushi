@@ -537,20 +537,8 @@ Future<AdaptiveNavPeekData> _loadDownloads({
         (VideoDownloadJobRow a, VideoDownloadJobRow b) =>
             b.updatedAt - a.updatedAt,
       );
-  AdaptiveNavPeekEntry entryOf(VideoDownloadJobRow job) {
-    final String? cover = job.coverUrl;
-    final double progress = job.lifecycle == VideoDownloadJobLifecycle.completed
-        ? 1
-        : job.stageProgress.clamp(0.0, 1.0).toDouble();
-    return AdaptiveNavPeekEntry(
-      title: job.title,
-      cover: cover == null || cover.isEmpty ? null : AppHttpImage(cover),
-      progress: progress,
-      subtitle: '${(progress * 100).round()}%',
-      onOpen: openDownloads,
-    );
-  }
-
+  final AdaptiveNavPeekEntry Function(VideoDownloadJobRow job) entryOf =
+      navPeekDownloadEntry(openDownloads);
   final VideoDownloadJobRow? resume = jobs
       .where(
         (VideoDownloadJobRow j) =>
@@ -559,12 +547,80 @@ Future<AdaptiveNavPeekData> _loadDownloads({
       .firstOrNull;
   return AdaptiveNavPeekData(
     resume: resume == null ? null : entryOf(resume),
+    resumeLabel: t.download_task_lifecycle_active,
+    recentLabel: t.nav_downloads,
+    summary: navPeekDownloadSummary(jobs),
     recent: jobs
         .where((VideoDownloadJobRow j) => !identical(j, resume))
         .take(_kPeekRecentCount)
         .map(entryOf)
         .toList(),
   );
+}
+
+/// 下载任务的速览条目：标题是作品名，副行是具体资源名（同一部作品的不同集 /
+/// 版本靠它区分——只有作品名时两条任务看起来是同一项），尾部状态签是进行中的
+/// 百分比或生命周期（已完成 / 需要处理 / 已失败 / 已取消）。
+AdaptiveNavPeekEntry Function(VideoDownloadJobRow job) navPeekDownloadEntry(
+  VoidCallback openDownloads,
+) => (VideoDownloadJobRow job) {
+  final String? cover = job.coverUrl;
+  final bool done = job.lifecycle == VideoDownloadJobLifecycle.completed;
+  final double progress = done
+      ? 1
+      : job.stageProgress.clamp(0.0, 1.0).toDouble();
+  final String? resource = job.resourceTitle?.trim();
+  final (
+    String status,
+    AdaptiveNavPeekStatusTone tone,
+  ) = switch (job.lifecycle) {
+    VideoDownloadJobLifecycle.completed => (
+      t.download_task_lifecycle_completed,
+      AdaptiveNavPeekStatusTone.done,
+    ),
+    VideoDownloadJobLifecycle.needsAttention => (
+      t.download_task_lifecycle_needs_attention,
+      AdaptiveNavPeekStatusTone.attention,
+    ),
+    VideoDownloadJobLifecycle.failed => (
+      t.download_task_lifecycle_failed,
+      AdaptiveNavPeekStatusTone.error,
+    ),
+    VideoDownloadJobLifecycle.cancelled => (
+      t.download_task_lifecycle_cancelled,
+      AdaptiveNavPeekStatusTone.neutral,
+    ),
+    _ => ('${(progress * 100).round()}%', AdaptiveNavPeekStatusTone.active),
+  };
+  return AdaptiveNavPeekEntry(
+    title: job.title,
+    cover: cover == null || cover.isEmpty ? null : AppHttpImage(cover),
+    progress: progress,
+    subtitle: resource == null || resource.isEmpty
+        ? (job.year == null ? null : '${job.year}')
+        : resource,
+    status: status,
+    statusTone: tone,
+    onOpen: openDownloads,
+  );
+};
+
+/// 下载速览页头的概况：「活动 2 · 完成 35」，需要处理 / 失败的有才拼上。
+String? navPeekDownloadSummary(List<VideoDownloadJobRow> jobs) {
+  int count(String lifecycle) =>
+      jobs.where((VideoDownloadJobRow j) => j.lifecycle == lifecycle).length;
+  final int active = count(VideoDownloadJobLifecycle.active);
+  final int attention =
+      count(VideoDownloadJobLifecycle.needsAttention) +
+      count(VideoDownloadJobLifecycle.failed);
+  final int completed = count(VideoDownloadJobLifecycle.completed);
+  if (jobs.isEmpty) return null;
+  return <String>[
+    t.download_summary_active(n: active),
+    if (attention > 0)
+      '${t.download_task_lifecycle_needs_attention} $attention',
+    t.download_summary_completed(n: completed),
+  ].join(' · ');
 }
 
 /// 速览里的一个展示单元：散条目，或一个合集（由它最近的那个成员 [item] 代表，

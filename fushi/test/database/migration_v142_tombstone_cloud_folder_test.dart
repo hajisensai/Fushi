@@ -68,7 +68,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 158);
+    expect(migrated.schemaVersion, 161);
     final List<SyncDeletionTombstoneRow> rows = await migrated
         .getSyncDeletionTombstonesOfType(SyncTombstoneKind.book.dbValue);
     expect(rows, hasLength(2));
@@ -103,7 +103,7 @@ void main() {
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
-    expect(probe.select('PRAGMA user_version').first.values.first, 158);
+    expect(probe.select('PRAGMA user_version').first.values.first, 161);
     expect(
       columnsOf(probe),
       containsAll(<String>['cloud_folder_name', 'cloud_folder_state']),
@@ -139,6 +139,6 @@ void main() {
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
-    expect(probe.select('PRAGMA user_version').first.values.first, 158);
+    expect(probe.select('PRAGMA user_version').first.values.first, 161);
   });
 }

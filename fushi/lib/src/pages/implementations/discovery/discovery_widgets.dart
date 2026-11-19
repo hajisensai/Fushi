@@ -1,4 +1,4 @@
-/// 发现页共享交互件：搜索防抖、滚到底自动翻页、来源失败横幅、横滑行。
+/// 发现页共享交互件：搜索防抖、滚到底自动翻页、来源失败横幅、横滑媒体块行。
 ///
 /// 口径以视频发现页（`video_discovery_page.dart`）为准——那一页的交互是 2026-09 用户
 /// 拍板的「发现页该有的样子」（`docs/specs/2026-09-27-browse-module.md` 阶段 3）。
@@ -10,8 +10,12 @@ library;
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/src/utils/components/fushi_horizontal_edge_fade.dart';
+import 'package:fushi/src/utils/components/fushi_cover_block.dart'
+    show FushiCoverBlockSize;
+import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart'
+    show FushiCoverBlockStrip;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -22,7 +26,6 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_section_title.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
-import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 import 'package:fushi/src/pages/implementations/discovery/discovery_layout.dart';
 
@@ -175,21 +178,21 @@ class DiscoveryLoadMoreFooter extends StatelessWidget {
   }
 }
 
-/// 一条带标题的横滑卡片行（「热门」「本季新番」「某来源热门」）。
+/// 一条带标题的横滑媒体块行（「热门」「本季新番」「某来源热门」「相关作品」）。
 ///
 /// 行头是统一的 [FushiSectionTitle]（MD3 titleLarge w600 / Apple Title 2 粗体），
-/// 尾部依次是加载小转圈与 [trailing]（一般是 [DiscoveryViewAllButton]）。
+/// 尾部依次是加载小转圈与 [trailing]（一般是 [DiscoveryViewAllButton]）。条目是
+/// 等尺寸媒体块（[DiscoveryCoverCard]），横滑条复用拼贴版式的
+/// [FushiCoverBlockStrip]（单行整块排法：桌面鼠标可横拖、视口向四周外扩出悬停
+/// 放大与投影的余量、每格错峰进场），与库页「继续」横滑行同一套滚动件。
 ///
-/// [loading] 为真时卡片条画 [DiscoverySkeletonCard] 骨架、**照样占住行高**：加载
-/// 完成那一刻不会凭空插入一整条卡片高度把下方内容整体顶下去（漫画来源行的既有
+/// [loading] 为真时画 [DiscoverySkeletonCard] 骨架、**照样占住行高**：加载完成
+/// 那一刻不会凭空插入一整条卡片高度把下方内容整体顶下去（漫画来源行的既有
 /// 纪律）。行高 = [height]，缺省按 [itemWidth] + [shape] 用
 /// [DiscoveryCoverCard.extentFor] 实测（大字体不溢出，BUG-1527）。
 ///
-/// 键盘 / 手柄：卡片是 [FushiCard] 焦点停靠点，左右方向键在行内移动，全局焦点环
-/// 负责把落到屏外的卡滚进来。
-///
-/// 桌面端默认 dragDevices 不含 mouse，横滑行必须包 [HorizontalDragScrollable]
-/// （`horizontal_drag_scroll_guard_test.dart` 守的就是这一条）。
+/// 键盘 / 手柄：块是 [FushiCard] 焦点停靠点，左右方向键在行内移动，全局焦点环
+/// 负责把落到屏外的块滚进来。
 class DiscoveryShelf extends StatelessWidget {
   const DiscoveryShelf({
     required this.title,
@@ -209,16 +212,16 @@ class DiscoveryShelf extends StatelessWidget {
   final int itemCount;
   final IndexedWidgetBuilder itemBuilder;
 
-  /// 卡片条高度（不含行头）；null = 按 [itemWidth] / [shape] 实测。
+  /// 块高；null = 按 [itemWidth] / [shape] 实测。
   final double? height;
 
-  /// 单张卡片宽度。
+  /// 单块宽度。
   final double itemWidth;
 
-  /// 卡片封面槽向（决定缺省行高与骨架形状）。
+  /// 封面槽向（决定缺省行高与骨架形状）。
   final DiscoveryCoverShape shape;
 
-  /// 卡片标题行数（参与缺省行高计算）。
+  /// 块标题常规行数（参与缺省行高计算）。
   final int titleMaxLines;
 
   final bool loading;
@@ -242,25 +245,55 @@ class DiscoveryShelf extends StatelessWidget {
           shape: shape,
           titleMaxLines: titleMaxLines,
         );
-    // 悬停抬升（[FushiHoverLift]）放大的卡与加深的投影要有地方画：视口上下各
-    // 留 [headroom]，行高随之加两份（与媒体服务器横滚行同一口径）。
-    final double headroom = discoveryShelfLiftHeadroom(cardHeight);
-    final double stripHeight = cardHeight + headroom * 2;
-    final EdgeInsets stripPadding = EdgeInsets.symmetric(
-      horizontal: tokens.spacing.page,
-      vertical: headroom,
-    );
+    final double spacing = tokens.spacing.card;
+    final Widget strip = loading
+        // 骨架不可滚、不可聚焦：只占形状，数据一到原地换成真块。
+        ? SizedBox(
+            height: cardHeight,
+            child: ClipRect(
+              child: OverflowBox(
+                alignment: AlignmentDirectional.topStart,
+                maxWidth: double.infinity,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    for (int i = 0; i < 8; i++) ...<Widget>[
+                      if (i > 0) SizedBox(width: spacing),
+                      SizedBox(
+                        width: itemWidth,
+                        child: DiscoverySkeletonCard(shape: shape),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          )
+        // PageStorageKey 挂在横滑条外层：同页多条行各自记住横向滚动位置。
+        : KeyedSubtree(
+            key: storage == null ? null : PageStorageKey<String>(storage),
+            child: FushiCoverBlockStrip(
+              leadingHero: false,
+              rowSize: FushiCoverBlockSize.regular,
+              spacing: spacing,
+              tileWidth: itemWidth,
+              tileHeight: cardHeight,
+              itemCount: itemCount,
+              itemBuilder:
+                  (BuildContext context, int index, FushiCoverBlockSize _) =>
+                      itemBuilder(context, index),
+            ),
+          );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         FushiSectionTitle(
           title,
-          // 卡片条上下已有悬停留白：行头的上下间距扣掉它，节奏不变。
           padding: EdgeInsets.fromLTRB(
             tokens.spacing.page,
-            (tokens.spacing.section - headroom).clamp(0, double.infinity),
+            tokens.spacing.section,
             tokens.spacing.page,
-            (tokens.spacing.gap - headroom).clamp(0, double.infinity),
+            tokens.spacing.gap,
           ),
           trailing: !loading && trailingWidget == null
               ? null
@@ -282,50 +315,9 @@ class DiscoveryShelf extends StatelessWidget {
                   ],
                 ),
         ),
-        SizedBox(
-          height: stripHeight,
-          child: loading
-              // 骨架不可滚、不可聚焦：只占形状，数据一到原地换成真卡。
-              ? ClipRect(
-                  child: OverflowBox(
-                    alignment: AlignmentDirectional.topStart,
-                    maxWidth: double.infinity,
-                    child: Padding(
-                      padding: stripPadding,
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          for (int i = 0; i < 8; i++) ...<Widget>[
-                            if (i > 0) SizedBox(width: tokens.spacing.card),
-                            SizedBox(
-                              width: itemWidth,
-                              child: DiscoverySkeletonCard(shape: shape),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-                )
-              : FushiHorizontalEdgeFade(
-                  child: HorizontalDragScrollable(
-                    child: ListView.separated(
-                      key: storage == null
-                          ? null
-                          : PageStorageKey<String>(storage),
-                      padding: stripPadding,
-                      scrollDirection: Axis.horizontal,
-                      itemCount: itemCount,
-                      separatorBuilder: (BuildContext context, int index) =>
-                          SizedBox(width: tokens.spacing.card),
-                      itemBuilder: (BuildContext context, int index) =>
-                          SizedBox(
-                            width: itemWidth,
-                            child: itemBuilder(context, index),
-                          ),
-                    ),
-                  ),
-                ),
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+          child: strip,
         ),
       ],
     );
@@ -339,14 +331,30 @@ class DiscoveryAiAcquireButton extends StatelessWidget {
 
   final VoidCallback onPressed;
 
+  /// 窄于它时只留图标（文字进 tooltip），免得把单行搜索头挤断。
+  static const double _kLabelMinWidth = 600;
+
   @override
-  Widget build(BuildContext context) => FushiIconButtonControl.filledTonal(
-    constraints: const BoxConstraints(
-      minWidth: kFushiSearchFieldHeight,
-      minHeight: kFushiSearchFieldHeight,
-    ),
-    tooltip: t.ai_media_acquire_entry,
-    onPressed: onPressed,
-    icon: const FushiIcon(Icons.auto_awesome_outlined),
-  );
+  Widget build(BuildContext context) {
+    if (MediaQuery.sizeOf(context).width < _kLabelMinWidth) {
+      return FushiIconButtonControl.filledTonal(
+        constraints: const BoxConstraints(
+          minWidth: kFushiSearchFieldHeight,
+          minHeight: kFushiSearchFieldHeight,
+        ),
+        tooltip: t.discovery_ai_acquire_label,
+        onPressed: onPressed,
+        icon: const FushiIcon(FushiIcons.ai),
+      );
+    }
+    // 设计稿：带文字的「AI 找资源」（与搜索框同高的 tonal 胶囊）。
+    return SizedBox(
+      height: kFushiSearchFieldHeight,
+      child: FushiFilledButton.tonalIcon(
+        onPressed: onPressed,
+        icon: const FushiIcon(FushiIcons.ai),
+        label: Text(t.discovery_ai_acquire_label),
+      ),
+    );
+  }
 }

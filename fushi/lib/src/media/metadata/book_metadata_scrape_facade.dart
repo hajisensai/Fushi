@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/item_scrape/item_scrape_store.dart';
 import 'package:fushi_engine/media/metadata/books/anilist_novels.dart'
     show parseAniListMediaUrl;
 import 'package:fushi_engine/media/metadata/books/rakuten_books.dart';
@@ -16,6 +17,7 @@ import 'package:fushi/src/media/media_source.dart';
 import 'package:fushi/src/media/metadata/bangumi_api_client.dart'
     show parseBangumiSubjectUrl;
 import 'package:fushi/src/media/metadata/book_metadata_scraper.dart';
+import 'package:fushi/src/media/metadata/undo_backup_retention.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -33,7 +35,11 @@ enum BookMetadataField {
   author,
 
   /// override 封面文件。
-  cover;
+  cover,
+
+  /// 条目刮削资料（简介 / 日期 / 评分 / 标签 / 横版背景，v161 `item_scrape_meta`
+  /// + `item_images`）——书架系列色块的数据源。
+  details;
 
   static BookMetadataField? tryParse(String raw) {
     for (final BookMetadataField f in values) {
@@ -45,13 +51,21 @@ enum BookMetadataField {
 
 /// 一本书当前的元数据（显示名覆盖 / 作者 / override 封面内容摘要）。可 JSON 往返。
 class BookMetadataState {
-  const BookMetadataState({this.overrideTitle, this.author, this.coverSha});
+  const BookMetadataState({
+    this.overrideTitle,
+    this.author,
+    this.coverSha,
+    this.details,
+  });
 
   factory BookMetadataState.fromJson(Map<String, Object?> json) =>
       BookMetadataState(
         overrideTitle: json['overrideTitle'] as String?,
         author: json['author'] as String?,
         coverSha: json['coverSha'] as String?,
+        details: json['details'] == null
+            ? null
+            : Map<String, Object?>.from(json['details']! as Map),
       );
 
   /// 显示名覆盖；null = 没改过名（显示原始书名）。
@@ -61,6 +75,9 @@ class BookMetadataState {
   /// override 封面文件的 sha256；null = 没有 override 封面（显示源默认封面）。
   final String? coverSha;
 
+  /// 条目刮削资料（[itemScrapeDetailsToJson] 形状，不含写入时刻）；null = 没有。
+  final Map<String, Object?>? details;
+
   /// 只取 [fields] 那几项（判「之后被手动改过」时只比这次动过的字段）。
   Map<String, Object?> project(Iterable<BookMetadataField> fields) =>
       <String, Object?>{
@@ -69,6 +86,7 @@ class BookMetadataState {
             BookMetadataField.title => overrideTitle,
             BookMetadataField.author => author,
             BookMetadataField.cover => coverSha,
+            BookMetadataField.details => details,
           },
       };
 
@@ -76,12 +94,17 @@ class BookMetadataState {
     'overrideTitle': overrideTitle,
     'author': author,
     'coverSha': coverSha,
+    'details': details,
   };
 }
 
 /// 写回前的快照：[state] + 被替换前那张 override 封面的备份文件（可恢复）。
 class BookMetadataSnapshot {
-  const BookMetadataSnapshot({required this.state, this.coverBackupPath});
+  const BookMetadataSnapshot({
+    required this.state,
+    this.coverBackupPath,
+    this.hadBackdrop = false,
+  });
 
   factory BookMetadataSnapshot.fromJson(Map<String, Object?> json) =>
       BookMetadataSnapshot(
@@ -89,6 +112,7 @@ class BookMetadataSnapshot {
           Map<String, Object?>.from(json['state'] as Map? ?? const {}),
         ),
         coverBackupPath: json['coverBackupPath'] as String?,
+        hadBackdrop: json['hadBackdrop'] == true,
       );
 
   final BookMetadataState state;
@@ -96,9 +120,14 @@ class BookMetadataSnapshot {
   /// 执行前有 override 封面且要求留备份时，那张图的备份路径。
   final String? coverBackupPath;
 
+  /// 执行前条目已有横版背景（有则撤销不清背景——旧图已被同路径覆盖，无从恢复；
+  /// 没有则撤销连这次写入的背景一起清掉）。
+  final bool hadBackdrop;
+
   Map<String, Object?> toJson() => <String, Object?>{
     'state': state.toJson(),
     'coverBackupPath': coverBackupPath,
+    'hadBackdrop': hadBackdrop,
   };
 }
 
@@ -208,6 +237,8 @@ class BookMetadataScrapeFacade {
         return _scraper.searchNdl(keyword);
       case BookScrapeSource.rakuten:
         return _scraper.searchRakuten(keyword);
+      case BookScrapeSource.mangabaka:
+        return _searchMangaBaka(keyword);
       case BookScrapeSource.bangumi:
         break;
     }
@@ -260,14 +291,57 @@ class BookMetadataScrapeFacade {
     return _scraper.searchDlsite(keyword);
   }
 
-  /// 按源内 id 直取一个候选（Bangumi subject id / DLsite 作品编号 / AniList media id /
-  /// openBD·NDL·楽天的 ISBN）。查无此条 / 无封面返回 null；失败抛 [BookScrapeException]。
+  /// MangaBaka：贴系列页 URL → 直取；纯数字既可能是 id 也可能是书名（《86》）——
+  /// 搜索 + id 直取并列，直取命中置顶；其余按名搜。
+  Future<List<BookScrapeCandidate>> _searchMangaBaka(String keyword) async {
+    final String? id = parseMangaBakaSeriesId(keyword);
+    final bool numeric = RegExp(r'^\d+$').hasMatch(keyword);
+    if (id != null && !numeric) {
+      final BookScrapeCandidate? c = await _scraper.fetchMangaBakaById(id);
+      return c == null
+          ? const <BookScrapeCandidate>[]
+          : <BookScrapeCandidate>[c];
+    }
+    final List<BookScrapeCandidate> searched = await _scraper.searchMangaBaka(
+      keyword,
+    );
+    if (id == null) return searched;
+    BookScrapeCandidate? direct;
+    try {
+      direct = await _scraper.fetchMangaBakaById(id);
+    } on BookScrapeException catch (e) {
+      // 与 Bangumi 数字关键词同口径：第二路尽力而为，主搜索失败仍会冒泡。
+      ErrorLogService.instance.logDiagnostic(
+        'BookMetadataScrapeFacade.fetchMangaBakaById',
+        'numeric keyword direct fetch failed: $e',
+      );
+    }
+    if (direct == null) return searched;
+    final String directId = direct.subjectId;
+    return <BookScrapeCandidate>[
+      direct,
+      ...searched.where((BookScrapeCandidate c) => c.subjectId != directId),
+    ];
+  }
+
+  /// MangaBaka 系列 [seriesId] 的每卷封面（弹窗的卷网格）。
+  Future<List<BookVolumeCover>> volumeCovers(String seriesId) =>
+      _scraper.fetchMangaBakaVolumeCovers(seriesId);
+
+  /// 下载某卷封面到临时文件（失败抛 [ImageDownloadException]）。
+  Future<File> downloadVolumeCover(BookVolumeCover cover) =>
+      _download(cover.url);
+
+  /// 按源内 id 直取一个候选（Bangumi subject id / DLsite 作品编号 / MangaBaka 系列 id /
+  /// AniList media id / openBD·NDL·楽天的 ISBN）。查无此条 / 无封面返回 null；失败抛
+  /// [BookScrapeException]。
   Future<BookScrapeCandidate?> fetchById({
     required BookScrapeSource source,
     required String id,
   }) => switch (source) {
     BookScrapeSource.bangumi => _scraper.fetchById(id.trim()),
     BookScrapeSource.dlsite => _scraper.fetchDlsiteById(id.trim()),
+    BookScrapeSource.mangabaka => _scraper.fetchMangaBakaById(id.trim()),
     BookScrapeSource.anilist ||
     BookScrapeSource.openbd ||
     BookScrapeSource.ndl ||
@@ -291,6 +365,8 @@ class BookMetadataScrapeFacade {
     File? cover,
     String? title,
     String? author,
+    BookScrapeCandidate? details,
+    File? backdrop,
     bool keepBackup = false,
   }) async {
     final MediaSource source = item.getMediaSource(appModel: appModel);
@@ -298,6 +374,16 @@ class BookMetadataScrapeFacade {
       appModel: appModel,
       item: item,
     );
+    final ItemScrapeKey? itemKey = await itemScrapeKeyForBook(
+      appModel.database,
+      item,
+    );
+    final bool hadBackdrop =
+        itemKey != null &&
+        (await appModel.database.getItemImages(
+          itemKey.mediaType,
+          itemKey.entryKey,
+        )).any((ItemImageRow r) => r.kind == MediaImageKind.backdrop.dbValue);
     String? backupPath;
     if (cover != null && keepBackup && beforeState.coverSha != null) {
       backupPath = await _backupCover(appModel, source, item);
@@ -336,10 +422,40 @@ class BookMetadataScrapeFacade {
         backupPath = null;
       }
     }
+    if (details != null && itemKey != null) {
+      // 资料先落（简介 / 评分 / 标签本身就够画系列色块）；横版图下载失败只记日志，
+      // 不让整次写回失败——封面 / 书名已经写进去了。
+      final ItemScrapeStore store = _itemStore(appModel.database);
+      await store.writeMeta(itemKey, itemScrapeDetailsOfCandidate(details));
+      try {
+        if (backdrop != null) {
+          await store.setImageFromFile(
+            itemKey,
+            MediaImageKind.backdrop,
+            backdrop,
+            sourceUrl: details.backdropUrl,
+          );
+        } else if (details.backdropUrl != null) {
+          await store.setImageFromUrl(
+            itemKey,
+            MediaImageKind.backdrop,
+            details.backdropUrl!,
+          );
+        }
+      } catch (e, stack) {
+        ErrorLogService.instance.log(
+          'BookMetadataScrapeFacade.backdrop',
+          e,
+          stack,
+        );
+      }
+      applied.add(BookMetadataField.details);
+    }
     return BookMetadataApplyResult(
       before: BookMetadataSnapshot(
         state: beforeState,
         coverBackupPath: backupPath,
+        hadBackdrop: hadBackdrop,
       ),
       after: await currentState(appModel: appModel, item: item),
       applied: applied,
@@ -357,10 +473,23 @@ class BookMetadataScrapeFacade {
       appModel: appModel,
       item: item,
     );
+    final ItemScrapeKey? itemKey = await itemScrapeKeyForBook(
+      appModel.database,
+      item,
+    );
+    final ItemScrapeMetaRow? meta = itemKey == null
+        ? null
+        : await appModel.database.getItemScrapeMeta(
+            itemKey.mediaType,
+            itemKey.entryKey,
+          );
     return BookMetadataState(
       overrideTitle: source.getOverrideTitleFromMediaItem(item),
       author: await _author(appModel.database, item),
       coverSha: cover == null ? null : await _sha(cover),
+      details: meta == null
+          ? null
+          : itemScrapeDetailsToJson(ItemScrapeDetails.fromRow(meta)),
     );
   }
 
@@ -410,7 +539,34 @@ class BookMetadataScrapeFacade {
         author: snapshot.state.author,
       );
     }
+    if (fields.contains(BookMetadataField.details)) {
+      final ItemScrapeKey? itemKey = await itemScrapeKeyForBook(
+        appModel.database,
+        item,
+      );
+      if (itemKey != null) {
+        final Map<String, Object?>? previous = snapshot.state.details;
+        if (previous == null) {
+          await appModel.database.deleteItemScrapeMeta(
+            itemKey.mediaType,
+            itemKey.entryKey,
+          );
+        } else {
+          await _itemStore(
+            appModel.database,
+          ).writeMeta(itemKey, itemScrapeDetailsFromJson(previous));
+        }
+        if (!snapshot.hadBackdrop) {
+          await _itemStore(
+            appModel.database,
+          ).clearImage(itemKey, MediaImageKind.backdrop);
+        }
+      }
+    }
   }
+
+  ItemScrapeStore _itemStore(FushiDatabase db) =>
+      ItemScrapeStore(db, downloadImage: _download, now: _now);
 
   /// 关闭自建的 scraper（注入的不关）。
   void close() {
@@ -451,24 +607,18 @@ class BookMetadataScrapeFacade {
       dir.path,
       '${now.microsecondsSinceEpoch}_${item.mediaIdentifier.hashCode.toUnsigned(32)}',
     );
-    await current.copy(path);
+    final File backup = await current.copy(path);
+    // 复制会沿用源文件的修改时间；保留期按「备份建立时刻」算，所以这里改成现在，
+    // 否则一张 30 天前就在用的旧封面，备份刚建好就会被下一次清理删掉。
+    await backup.setLastModified(now);
     return path;
   }
 
-  Future<void> _pruneBackups(Directory dir) async {
-    final DateTime cutoff = _now().subtract(backupRetention);
-    await for (final FileSystemEntity e in dir.list()) {
-      if (e is! File) continue;
-      try {
-        if ((await e.lastModified()).isBefore(cutoff)) await e.delete();
-      } on FileSystemException catch (err) {
-        ErrorLogService.instance.logDiagnostic(
-          'BookMetadataScrapeFacade.prune',
-          '$err',
-        );
-      }
-    }
-  }
+  Future<void> _pruneBackups(Directory dir) => pruneUndoBackups(
+    dir,
+    cutoff: _now().subtract(backupRetention),
+    logTag: 'BookMetadataScrapeFacade.prune',
+  );
 
   static Future<void> _deleteQuietly(String path) async {
     try {
@@ -485,3 +635,74 @@ class BookMetadataScrapeFacade {
   static Future<String> _sha(File file) async =>
       sha256.convert(await file.readAsBytes()).toString();
 }
+
+/// 书架条目（[MediaItem]）在 `item_scrape_meta` / `item_images` 里的身份：EPUB /
+/// 漫画 / PDF = `(epub, EpubBooks.uid)`，独立字幕书 = `(srt, SrtBooks.uid)`（与合集
+/// 成员同一口径）。认不出（书行已删 / uid 为空）为 null。
+Future<ItemScrapeKey?> itemScrapeKeyForBook(
+  FushiDatabase db,
+  MediaItem item,
+) async {
+  final String? bookKey = ReaderFushiSource.parseBookKey(item.mediaIdentifier);
+  if (bookKey != null) {
+    final String? uid = await db.resolveEpubBookUid(bookKey);
+    return uid == null || uid.isEmpty
+        ? null
+        : ItemScrapeKey(MediaKind.epub, uid);
+  }
+  final String? srtUid = ReaderFushiSource.parseSrtBookUid(
+    item.mediaIdentifier,
+  );
+  if (srtUid != null && srtUid.isNotEmpty) {
+    return ItemScrapeKey(MediaKind.srt, srtUid);
+  }
+  return null;
+}
+
+/// 书籍刮削候选 → 与媒体无关的条目资料（日期优先源侧原文，退回年份）。
+ItemScrapeDetails itemScrapeDetailsOfCandidate(BookScrapeCandidate c) =>
+    ItemScrapeDetails(
+      source: c.source.name,
+      subjectId: c.subjectId,
+      title: c.title,
+      originalTitle: c.originalTitle,
+      summary: c.summary,
+      airDate: c.date ?? c.year?.toString(),
+      rating: c.rating,
+      ratingCount: c.ratingCount,
+      tags: c.tags,
+      detailUrl: c.detailUrl,
+    );
+
+/// [ItemScrapeDetails] ↔ JSON（撤销快照用；不含写入时刻）。
+Map<String, Object?> itemScrapeDetailsToJson(ItemScrapeDetails d) =>
+    <String, Object?>{
+      'source': d.source,
+      'subjectId': d.subjectId,
+      'title': d.title,
+      'originalTitle': d.originalTitle,
+      'summary': d.summary,
+      'airDate': d.airDate,
+      'rating': d.rating,
+      'ratingCount': d.ratingCount,
+      'tags': d.tags,
+      'detailUrl': d.detailUrl,
+    };
+
+ItemScrapeDetails itemScrapeDetailsFromJson(Map<String, Object?> json) =>
+    ItemScrapeDetails(
+      source: json['source'] as String? ?? ItemScrapeStore.manualSource,
+      subjectId: json['subjectId'] as String?,
+      title: json['title'] as String?,
+      originalTitle: json['originalTitle'] as String?,
+      summary: json['summary'] as String?,
+      airDate: json['airDate'] as String?,
+      rating: (json['rating'] as num?)?.toDouble(),
+      ratingCount: (json['ratingCount'] as num?)?.toInt(),
+      tags: <String>[
+        for (final Object? t
+            in (json['tags'] as List<Object?>? ?? const <Object?>[]))
+          if (t is String) t,
+      ],
+      detailUrl: json['detailUrl'] as String?,
+    );

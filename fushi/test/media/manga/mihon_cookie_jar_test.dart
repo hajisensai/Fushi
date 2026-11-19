@@ -51,6 +51,35 @@ void main() {
       );
     });
 
+    test('Secure 的 cookie 只发给 https，明文请求不带', () async {
+      final MihonCookieJar store = jar();
+      await store.replaceForHost('bookwalker.jp', <MangaCookie>[
+        const MangaCookie(
+          name: 'session',
+          value: 'abc',
+          domain: 'bookwalker.jp',
+          secure: true,
+        ),
+        cookie('theme', value: 'dark'),
+      ]);
+
+      expect(
+        store.cookieHeaderFor(Uri.parse('https://bookwalker.jp/a.png')),
+        'session=abc; theme=dark',
+      );
+      expect(
+        store.cookieHeaderFor(Uri.parse('http://bookwalker.jp/a.png')),
+        'theme=dark',
+        reason: '标了 Secure 的登录会话不能随明文请求发出去。',
+      );
+      expect(
+        store
+            .cookiesFor(Uri.parse('http://img.bookwalker.jp/a.png'))
+            .map((MangaCookie c) => c.name),
+        <String>['theme'],
+      );
+    });
+
     test('父域 cookie 对子域生效，无关站点不串味', () async {
       final MihonCookieJar store = jar();
       await store.replaceForHost('bookwalker.jp', <MangaCookie>[

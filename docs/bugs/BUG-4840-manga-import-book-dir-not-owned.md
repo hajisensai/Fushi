@@ -1,0 +1,18 @@
+## BUG-4840 · 漫画导入直接往书目录里写、失败回滚无条件删目录：会删掉同名并发导入或孤儿书的目录；暂存在系统临时目录
+- **报告**：2026-11-17（用户：小说 / 漫画 / 视频优化清单 manga-11 + gap-mangamisc-9，代码复核确认）
+- **真实性**：✅ 真 bug（代码路径确认 + 单测复现；并发频率未实测）。根因（行号按修复前的 upstream/develop @ 8d58da51da9）：
+  - `packages/fushi_engine/lib/media/manga/manga_importer.dart:461-462`：`MangaStorage.bookDirectory(bookKey)` →`packages/fushi_engine/lib/epub/epub_storage.dart:44-52` 存在即复用。页图与 `manga.json` 直接往 `<fushi_books>/<bookKey>/` 里写（`copyMangaArtifacts`，`:226-274`）。
+  - `:511-527`：任何失败都 `dir.deleteSync(recursive: true)`，不管这个目录是不是本次导入建的。
+  - 后果一：两次同名导入并发（来源库后台扫描 × 手动导入 / 拖放 / 操作目录），查重只比库里已有的标题，双方都往同一个目录写；输家插行主键冲突后把整个目录删掉——赢家的行指向空目录，而且在那之前输家已经用自己的页图和 `manga.json` 覆盖过赢家的文件。
+  - 后果二：崩溃留下的同 key 孤儿目录是「找回书库」可恢复的资产（BUG-4701）；新导入往里混写，失败时整个删掉。
+  - 暂存：`packages/fushi_engine/lib/media/manga/manga_archive_importer.dart:504-506`（压缩包 staging）、`:582-584`（纯图 EPUB 解压）、`fushi/lib/src/media/manga/book_format_rebuild.dart:258-260`（PDF / EPUB 转漫画）都建在 `Directory.systemTemp`：数据根在别的盘时页图进书目录由 rename 退成「拷贝 + 删源」，等于写两遍；崩溃残留在桌面端 app 内看不见也清不掉（`storage_usage_service.dart` 的 `sharedTempDesktop` 返回空）。
+- **[x] ① 已修复** —
+  - `MangaImporter._copyAndInsert` 改用 EPUB 那一套：页图 + `manga.json` 先备进书库根下本次独占的 `.tmp-*`（`EpubImporter.createStagingDir`），再经 `EpubImporter.placeUnderResolvedTitle` 在落位锁内「重取快照 → `EpubStorage.moveDirIntoPlace` → 插行」。活行占着的目录绝不碰（改落 `~n`）；无主的同名目录沿用 EPUB 的既有取舍（BUG-564）带 `.bak` 回滚整体替换，不混写。回滚只删本次自己建的：暂存目录，和已落位而行没插成的目录。
+  - 落位原语从 `EpubImporter.moveExtractedDirIntoPlace` 提到 `EpubStorage.moveDirIntoPlace`，EPUB 与漫画共用一份（原名留作转发）。
+  - 压缩包 staging 与纯图 EPUB 解压目录改建在书库根下的 `.tmp-*`；格式转换的暂存改成书目录的兄弟 `.tmp-*`（`EpubStorage.createStagingDirectory(parentDir:)`）。都与书目录同卷，残留归 BUG-4800 的清扫管。
+  - `PdfEngine.bgraToPng`（`fushi/lib/src/pdf/pdf_engine.dart`）补上 `ImmutableBuffer` / `ImageDescriptor` 的 dispose；`reader_pdf_page.dart` 里那份同名私有实现删掉、改调它。
+- **[x] ② 已加自动化测试** — `fushi/test/media/manga/manga_import_dir_ownership_test.dart` 七条：并发同名（suffix / skip）、拷图期间书目录尚不存在而页图在 `.tmp-*` 里、拷图中途失败不留目录不留行、失败时同名孤儿目录原封不动、成功时孤儿目录被整体替换不混写、插行失败的回滚不动活行占着的目录。`fushi/test/media/manga/manga_archive_importer_test.dart` 的 staging 残留断言改盯书库根下的 `.tmp-*`（同时仍盯系统临时目录的旧名）；`fushi/test/media/manga/book_format_rebuild_test.dart`「PDF 转成漫画」加断言：暂存是书目录的兄弟 `.tmp-*`、转化完即删。
+- **备注**：
+  - `MangaArchiveImporter._looksLikeImageEpub` 的定性探测（`manga_archive_importer.dart` 的 `fushi_manga_epub_probe_`）仍在系统临时目录：它是同步函数、用完即删、不落书，归「定性改异步」那一条处理，本轮没动。
+  - `bgraToPng` 的内存影响未实测（需要真 PDFium 逐页栅格化一本 300 页 PDF 看 RSS）；补 dispose 是按 `dart:ui` 的 API 契约做的，不依赖测量结论。「转化中途被杀留下一本 PDF 书」按复核意见不做。
+  - 待补：桌面 / 真机实际导入漫画压缩包、PDF 转漫画各一次，看书库根无 `.tmp-*` 残留、系统临时目录无 `fushi_manga_archive_*`。

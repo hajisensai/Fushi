@@ -131,6 +131,30 @@ describe('/dev/decisions', () => {
     expect(todo.data).toContain('现在按整部缓存');
   });
 
+  it('要设计图 → 等解释栏标「等 Claude 画设计图」；附图并留言后回到待拍', async () => {
+    const env = makeEnv();
+    env.DB.raw.exec(addSql(ITEMS, NOW - 10).sql);
+    const s = await devSession(env);
+    const before = (await page(env, s, 'todo')).data;
+    expect(before).toContain('value="mockup"');
+    expect(before).toContain('data-key="d"');
+    const r = await submit(env, s, 'pr3162a', { v: 'mockup', text: '两种缓存的设置页各画一张' });
+    expect(r.status).toBe(303);
+    expect(row(env, 'pr3162a').verdict).toBe('mockup');
+    const waiting = (await page(env, s, 'explain')).data;
+    expect(waiting).toContain('等 Claude 画设计图');
+    expect(waiting).toContain('想看哪部分的设计图');
+    env.DB.raw.prepare('UPDATE decisions SET files = ? WHERE id = ?').run(JSON.stringify([
+      { name: 'a-整部.html', type: 'text/html', key: 'decisions/pr3162a/1-a.html', bytes: 9 },
+    ]), 'pr3162a');
+    env.DB.raw.exec(noteSql('pr3162a', 'a 是整部缓存的设置页', NOW + 60000));
+    const todo = (await page(env, s, 'todo')).data;
+    expect(todo).toContain('设计图已附上，请重拍');
+    expect(todo).toContain('<iframe src="/dev/d/pr3162a/f/0"');
+    expect(parseArgs(['verdict', 'pr3162a', 'mockup']).rest).toEqual(['mockup']);
+    expect(() => verdictSql('pr3162a', 'mockup', NOW)).not.toThrow();
+  });
+
   it('多方案：选项按钮、拒绝不存在的方案与「做」', async () => {
     const env = makeEnv();
     env.DB.raw.exec(addSql(ITEMS, NOW - 10).sql);
