@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-18T22:33:58Z",
+ "generatedAt": "2026-11-19T00:24:16Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "850f413f5db9a95dafd129e5fd0e9a69472fa70b",
-  "seq": 29091
+  "sha": "d85a2a264e6d36174e8687044e9761780128949e",
+  "seq": 29093
  },
  "builds": [
   {
@@ -116,25 +116,30 @@
   }
  ],
  "pending": {
-  "headSha": "850f413f5db9a95dafd129e5fd0e9a69472fa70b",
-  "headSeq": 29091,
+  "headSha": "d85a2a264e6d36174e8687044e9761780128949e",
+  "headSeq": 29093,
   "prs": [
+   3749,
    3748
   ],
   "direct": [],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44428462526"
    },
    "windows": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44428462466"
    },
    "macos": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44428462466"
    },
    "ios": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44428462466"
    }
   }
  },
@@ -263,6 +268,15 @@
    "mergedAt": "2026-11-18T22:13:57Z",
    "additions": 13,
    "deletions": 0,
+   "labels": []
+  },
+  "3749": {
+   "number": 3749,
+   "title": "fix(nav): 底栏胶囊自成焦点遍历组，修 Android 窄屏 Tab 在末几格与 FAB 间打转",
+   "author": "W1ght",
+   "mergedAt": "2026-11-19T00:22:20Z",
+   "additions": 375,
+   "deletions": 102,
    "labels": []
   }
  }
