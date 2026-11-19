@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-19T10:07:38Z",
+ "generatedAt": "2026-11-19T10:15:16Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "43888a74b698843b8e6e62ad033fa2281be79cc7",
-  "seq": 29096
+  "sha": "37ba84838174da18e53f6f3d172748bf25501ff7",
+  "seq": 29104
  },
  "builds": [
   {
@@ -93,7 +93,33 @@
    }
   }
  ],
- "pending": null,
+ "pending": {
+  "headSha": "37ba84838174da18e53f6f3d172748bf25501ff7",
+  "headSeq": 29104,
+  "prs": [
+   3742
+  ],
+  "direct": [],
+  "truncated": false,
+  "platforms": {
+   "android": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44503481993"
+   },
+   "windows": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44503482053"
+   },
+   "macos": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44503482053"
+   },
+   "ios": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44503482053"
+   }
+  }
+ },
  "prs": {
   "3741": {
    "number": 3741,
@@ -102,6 +128,15 @@
    "mergedAt": "2026-11-19T09:10:18Z",
    "additions": 226,
    "deletions": 83,
+   "labels": []
+  },
+  "3742": {
+   "number": 3742,
+   "title": "feat(torrent-engine): 下载后端可选「互联设备」，BT 借已配对设备（fushi_server 或 app）的引擎跑",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-19T10:12:27Z",
+   "additions": 3133,
+   "deletions": 33,
    "labels": []
   },
   "3747": {
