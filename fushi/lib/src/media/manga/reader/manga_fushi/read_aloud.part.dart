@@ -373,6 +373,7 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
     final MangaAudioPlaybackDriver? driver = audio;
     if (driver == null) return;
     audio = null;
+    _lookupPause.drop();
     _session.removeListener(_onSessionChanged);
     _session.detachReader(_audioView);
     if (!driver.isDisposed) driver.detachHost(this);
@@ -392,8 +393,31 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
     }
   }
 
+  // ── 查词暂停 ────────────────────────────────────────────────────────
+
+  /// 查词按住播放的标记（BUG-4907，见 [MangaLookupPause]）。
+  final MangaLookupPause _lookupPause = MangaLookupPause();
+
+  /// 眼前在用的音源：成品音频优先（两者不会同时在），否则现场合成。
+  MangaLookupPausable? get _lookupPlayback {
+    final MangaAudioPlaybackDriver? driver = audio;
+    if (driver != null) return _DriverLookupPausable(driver);
+    final MangaReadAloudController? c = controller;
+    return c == null ? null : _ControllerLookupPausable(c);
+  }
+
+  /// 查词弹窗出现（每层弹窗渲染都会来，幂等）。
+  void pauseForLookup() => _lookupPause.lookupOpened(
+    _lookupPlayback,
+    enabled: ReaderFushiSource.instance.pauseOnLookup,
+  );
+
+  /// 查词弹窗整栈关闭。
+  void resumeAfterLookup() => _lookupPause.lookupClosed(_lookupPlayback);
+
   /// 停掉成品音频的会话（不是暂停：播放条的「停止」与工具栏再点一次）。
   void stopAudio() {
+    _lookupPause.drop();
     _detachAudio();
     unawaited(_session.stop());
     unawaited(clearHighlight());
@@ -507,7 +531,10 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
     if (rebuild) _rebuild();
   }
 
-  void stop() => controller?.stop();
+  void stop() {
+    _lookupPause.drop();
+    controller?.stop();
+  }
 
   void pause() => controller?.pause();
 
@@ -565,6 +592,49 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
     if (c == null) return;
     c.removeListener(_onControllerChanged);
     c.dispose();
+  }
+}
+
+/// 成品音频驱动的查词按住适配。
+class _DriverLookupPausable implements MangaLookupPausable {
+  _DriverLookupPausable(this._d);
+
+  final MangaAudioPlaybackDriver _d;
+
+  @override
+  bool get isRunning => !_d.isDisposed && _d.isPlaying;
+
+  @override
+  void pause() => unawaited(_d.pause());
+
+  @override
+  void resume() {
+    if (!_d.isDisposed && !_d.isPlaying) unawaited(_d.play());
+  }
+}
+
+/// 现场合成控制器的查词按住适配：等页文字 / 合成中也算在播（暂停后从当前句重读）。
+class _ControllerLookupPausable implements MangaLookupPausable {
+  _ControllerLookupPausable(this._c);
+
+  final MangaReadAloudController _c;
+
+  @override
+  bool get isRunning =>
+      _c.isActive &&
+      switch (_c.state) {
+        MangaReadAloudState.preparingText ||
+        MangaReadAloudState.synthesizing ||
+        MangaReadAloudState.playing => true,
+        _ => false,
+      };
+
+  @override
+  void pause() => _c.pause();
+
+  @override
+  void resume() {
+    if (_c.state == MangaReadAloudState.paused) _c.resume();
   }
 }
 

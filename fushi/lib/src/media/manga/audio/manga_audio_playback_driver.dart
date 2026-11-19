@@ -62,6 +62,17 @@ class MangaAudioPlaybackDriver extends ChangeNotifier
   /// 纯听形态下已经为它发过跳转的条目（跳转在途时位置流还会报旧位置，不重复跳）。
   int _skippedFrom = -1;
 
+  /// 在途的显式跳转（翻页重定位 / 上下句 / 拖进度）的目标毫秒，落地后为 null。
+  ///
+  /// 成品音频每句一个文件，跳转几乎都跨文件：播放器要换源，落地前它仍按旧文件报位置
+  /// 并继续往下播。这期间若照常按位置流显示，旧位置一跨进下一句就 `show(旧页)`，把
+  /// 用户刚翻走的阅读器拉回去，落地后再翻过来（BUG-4906）。所以在途期间只刷新播放条，
+  /// 不显示、不翻页、不做纯听跳过；位置先一步落到目标条目上也算落地。
+  int? _seekTarget;
+
+  /// 每次显式跳转 +1：先发的跳转晚完成时不能清掉后发的那次在途标记。
+  int _seekGeneration = 0;
+
   MangaRenderManifest get manifest => plan.manifest;
   MangaAudioPlayerPort get player => _player;
 
@@ -76,7 +87,9 @@ class MangaAudioPlaybackDriver extends ChangeNotifier
   bool get isDisposed => _disposed;
   bool get hasHost => _host != null;
   bool get isPlaying => _player.isPlaying;
-  int get positionMs => _player.positionMs;
+
+  /// 播放条显示的位置：跳转在途时显示目标（播放器还在报旧位置）。
+  int get positionMs => _seekTarget ?? _player.positionMs;
   int get totalMs => plan.totalMs;
   double get speed => _player.speed;
 
@@ -91,7 +104,7 @@ class MangaAudioPlaybackDriver extends ChangeNotifier
   }
 
   /// 正在播的页（页段语义）。
-  int get currentPage => currentItem?.page ?? plan.pageAt(_player.positionMs);
+  int get currentPage => currentItem?.page ?? plan.pageAt(positionMs);
 
   // ── 阅读器接入 ──────────────────────────────────────────────────────
 
@@ -157,12 +170,12 @@ class MangaAudioPlaybackDriver extends ChangeNotifier
   Future<void> pause() => _player.pause();
 
   Future<void> next() async {
-    final int? target = plan.nextLineStartMs(_player.positionMs);
+    // 从 [positionMs] 算：连按时第二下接着上一下在途的目标走。
+    final int? target = plan.nextLineStartMs(positionMs);
     if (target != null) await _seek(target);
   }
 
-  Future<void> previous() =>
-      _seek(plan.previousLineStartMs(_player.positionMs));
+  Future<void> previous() => _seek(plan.previousLineStartMs(positionMs));
 
   /// 拖进度条。
   Future<void> seekTo(int ms) => _seek(ms.clamp(0, plan.totalMs));
@@ -180,7 +193,13 @@ class MangaAudioPlaybackDriver extends ChangeNotifier
 
   Future<void> _seek(int ms) async {
     _skippedFrom = -1;
-    await _player.seekMs(ms);
+    final int generation = ++_seekGeneration;
+    _seekTarget = ms;
+    try {
+      await _player.seekMs(ms);
+    } finally {
+      if (generation == _seekGeneration) _seekTarget = null;
+    }
     _sync();
   }
 
@@ -193,6 +212,15 @@ class MangaAudioPlaybackDriver extends ChangeNotifier
     final int pos = _player.positionMs;
     final int index = plan.itemIndexAt(pos);
     if (index < 0) return;
+    final int? seeking = _seekTarget;
+    if (seeking != null) {
+      if (index != plan.itemIndexAt(seeking)) {
+        // 跳转在途、播放器还在报旧位置（见 [_seekTarget]）：只刷新播放条。
+        notifyListeners();
+        return;
+      }
+      _seekTarget = null;
+    }
     if (mode == MangaPlaybackMode.listenOnly && _player.isPlaying) {
       final int? target = plan.listenOnlySkipTarget(index);
       if (target != null) {

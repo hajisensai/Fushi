@@ -84,6 +84,7 @@ import 'package:fushi/src/media/manga/reader/manga_reader_auto_ocr.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_stream_ocr.dart';
 import 'package:fushi/src/media/manga/reader/manga_read_aloud_bar.dart';
 import 'package:fushi/src/media/manga/reader/manga_read_aloud_controller.dart';
+import 'package:fushi/src/media/manga/reader/manga_lookup_pause.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_library.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_mining.dart';
 import 'package:fushi/src/utils/misc/tts_channel.dart';
@@ -4440,6 +4441,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     super.onDictionaryPopupRendered(index);
     _readerLookupOpen = true;
     unawaited(_syncAutoScrollPause());
+    _readAloud.pauseForLookup();
     _focusOwnership.reclaim(FocusReclaimCause.popupRendered);
   }
 
@@ -4451,6 +4453,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     super.onAllPopupsDismissed();
     _readerLookupOpen = false;
     unawaited(_syncAutoScrollPause());
+    _readAloud.resumeAfterLookup();
     _focusOwnership.reclaim(FocusReclaimCause.popupDismissed);
     unawaited(_clearMangaSelectionHighlight());
   }
@@ -6473,6 +6476,24 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   """,
       );
 
+  /// 播放卡按钮提示里括注的快捷键（`暂停 (K)`）：桌面才挂，取各动作的第一个键盘
+  /// 绑定，跟着用户在快捷键设置里的改动走。
+  MangaPlaybackKeyHints get _readAloudKeyHints {
+    String? keyOf(ShortcutAction action) {
+      if (!isDesktopPlatform) return null;
+      final List<InputBinding> keys = appModel.shortcutRegistry
+          .bindingsFor(action)
+          .keyboardBindings;
+      return keys.isEmpty ? null : keys.first.displayLabel;
+    }
+
+    return MangaPlaybackKeyHints(
+      playPause: keyOf(ShortcutAction.mangaAudioPlayPause),
+      previous: keyOf(ShortcutAction.mangaAudioPreviousLine),
+      next: keyOf(ShortcutAction.mangaAudioNextLine),
+    );
+  }
+
   Future<void> _syncAutoScrollPause() async {
     if (!mounted) return;
     await _controller?.evaluateJavascript(
@@ -7436,8 +7457,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                       ),
                     ),
                   ),
-                  // 漫画朗读播放条：不受 chrome 显隐门控（隐藏界面读漫画时也要能
-                  // 暂停 / 停止），chrome 显示时让到底部 chrome 上方。
+                  // 漫画朗读播放卡：跟界面一起显隐（用户 2026-11-20：隐藏界面时
+                  // 卡片不该还挡在画面上；音频照常播，暂停 / 上下句用快捷键或唤出
+                  // 界面），显示时让到底部 chrome 上方。
                   if (_readAloud.controller
                       case final MangaReadAloudController readAloud)
                     Positioned(
@@ -7453,10 +7475,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                         builder: (BuildContext context, Widget? _) =>
                             MangaChromeReveal(
                               fromTop: false,
-                              visible: readAloud.isActive,
+                              visible: readAloud.isActive && _chromeVisible,
                               child: Center(
                                 child: MangaReadAloudBar(
                                   controller: readAloud,
+                                  keyHints: _readAloudKeyHints,
                                   onVoice: () =>
                                       unawaited(_readAloud.switchVoice()),
                                 ),
@@ -7464,7 +7487,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                             ),
                       ),
                     ),
-                  // 漫画有声（成品音频）播放条：同上，不受 chrome 显隐门控。
+                  // 漫画有声（成品音频）播放卡：同上，跟界面一起显隐。
                   if (_readAloud.audio
                       case final MangaAudioPlaybackDriver audio)
                     Positioned(
@@ -7477,11 +7500,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                               : kMangaChromeBottomGap),
                       child: MangaChromeReveal(
                         fromTop: false,
-                        visible: true,
+                        visible: _chromeVisible,
                         child: Center(
                           child: MangaAudioPlaybackBar(
                             key: ValueKey<MangaAudioPlaybackDriver>(audio),
                             driver: audio,
+                            keyHints: _readAloudKeyHints,
                             onStop: _readAloud.stopAudio,
                           ),
                         ),
