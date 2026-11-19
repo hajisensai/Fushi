@@ -692,6 +692,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'network_proxy_p2p_mode',
   'network_proxy_password',
   'network_proxy_username',
+  // 服务端通知（updates/notice_feed.dart），设备本地：上次成功响应里的通知（JSON 数组
+  // 字符串）、已弹过的对话框级通知 id（JSON 数组字符串）。
+  'notices_cache',
+  'notices_seen',
   'onboarding_completed',
   // bool：新手引导是否**走完**（点了最后一步的「开始使用」；跳过 / 返回不算）。
   // 缺省 true（老安装不受影响），全新安装首帧写 false。与 onboarding_completed

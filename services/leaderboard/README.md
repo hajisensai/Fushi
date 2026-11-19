@@ -87,6 +87,7 @@ dashboard 的 Email Sending 里 Onboard 发件域名），否则用 Resend（`wr
 > `0018_project_stats.sql`（新表 `repo_daily` / `site_daily` / `project_meta`，处理台 `/dev/project`）：没迁移就部署时定时任务的最后一步与 `/dev/project` 会 500（其余接口不受影响）——**先迁移**。纯新表。
 > `0020_decisions.sql`（新表 `decisions` / `decision_notes`，处理台 `/dev/decisions`）：没迁移就部署时只有 `/dev/decisions` 与拍板提交会 500（其余接口不受影响）。纯新表。
 > `0021_install_stats_snapshot.sql`（新表 `install_stats_snapshot`，处理台 `/dev/stats` / `/dev/stats.json` / `/dev/project` 改读安装统计快照）：没迁移就部署时这三页与定时任务的快照一步会 500（其余接口不受影响）——**先迁移**。纯新表。
+> `0022_notices.sql`（新表 `notice_rules` / `notice_known_h` / `notice_seen`，`POST /v1/notices`、`/admin/api/notices/**`、处理台 `/dev/notices`，src/notices.js）：没迁移就部署时这几个接口与定时任务的计数清理一步会 500（定时任务后面的步骤随之不跑）——**先迁移**。纯新表。
 > `0009_feedback_release.sql`（修复 / 发布追踪列）同理：处理台列表显式选 `fix_*` 列，`/v1/ci/feedback/**` 也读写这些列，没迁移就部署时都会 500（反馈人接口 `SELECT *` 不受影响，`fix` 恒为 null）。
 
 部署后还要知道的：
