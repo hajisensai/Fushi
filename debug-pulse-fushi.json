@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-19T09:50:52Z",
+ "generatedAt": "2026-11-19T10:07:38Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "43888a74b698843b8e6e62ad033fa2281be79cc7",
@@ -12,8 +12,8 @@
    "version": "3.4.0",
    "sha": "43888a74b698843b8e6e62ad033fa2281be79cc7",
    "unknown": false,
-   "publishedAt": "2026-11-19T09:50:41Z",
-   "testflight": false,
+   "publishedAt": "2026-11-19T10:07:24Z",
+   "testflight": true,
    "baseSeq": 29093,
    "prs": [
     3741
@@ -25,16 +25,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44493954619"
+     "state": "ok"
     },
     "macos": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44493954619"
+     "state": "ok"
     },
     "ios": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44493954619"
+     "state": "ok"
     }
    }
   },
@@ -94,135 +91,10 @@
      "state": "ok"
     }
    }
-  },
-  {
-   "seq": 29087,
-   "version": "3.4.0",
-   "sha": "93afb03494806e72812b73e1304ca5ecb0b63424",
-   "unknown": false,
-   "publishedAt": "2026-11-18T21:35:24Z",
-   "testflight": true,
-   "baseSeq": 28975,
-   "prs": [
-    3746,
-    3745,
-    3744,
-    3743,
-    3515,
-    3520,
-    3467,
-    3663,
-    3534,
-    3672,
-    3541,
-    3636
-   ],
-   "direct": [
-    {
-     "sha": "bb48140ff562bec0f41cfb6f522cc93225f68022",
-     "subject": "chore(bugs): settle BUG number collisions on 5c3fe808b"
-    },
-    {
-     "sha": "bbe28874095d18b4a41e06cb220d163f0c5e0ea6",
-     "subject": "chore(bugs): settle BUG number collisions on 5ee474c97"
-    },
-    {
-     "sha": "265d1d58bfe873e85d51ce1ec8feb3335b042d99",
-     "subject": "chore(bugs): settle BUG number collisions on d2ef71109"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44393339727"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
   }
  ],
  "pending": null,
  "prs": {
-  "3467": {
-   "number": 3467,
-   "title": "feat(book): 合集按卷获取高清封面与横幅（MangaBaka 优先、Bangumi 单行本兜底）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-18T08:23:34Z",
-   "additions": 12383,
-   "deletions": 147,
-   "labels": []
-  },
-  "3515": {
-   "number": 3515,
-   "title": "feat(library): 刮削元数据贯通书/漫画/游戏/合集 + 拼贴打磨",
-   "author": "W1ght",
-   "mergedAt": "2026-11-18T17:29:30Z",
-   "additions": 55431,
-   "deletions": 14610,
-   "labels": []
-  },
-  "3520": {
-   "number": 3520,
-   "title": "fix(update): 清单带 dbSchemaVersion 拒绝降 schema；准备 3.4.0 正式版",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-18T12:30:50Z",
-   "additions": 376,
-   "deletions": 4,
-   "labels": []
-  },
-  "3534": {
-   "number": 3534,
-   "title": "perf(home): 切 tab 不再连带重建隐藏保活页，查词 / 复习保活，全屏设置不卸载正文（BUG-4725～BUG-4730）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-18T08:17:17Z",
-   "additions": 1862,
-   "deletions": 100,
-   "labels": []
-  },
-  "3541": {
-   "number": 3541,
-   "title": "fix(scrape): 全方括号文件名误判发布组 + AniDB 模糊噪声候选；perf(ai): agent 缓存尾部断点",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-18T07:44:24Z",
-   "additions": 1122,
-   "deletions": 109,
-   "labels": []
-  },
-  "3636": {
-   "number": 3636,
-   "title": "fix(dictionary): 标了语言的词典只接受本语言的变形还原，排序里变形链长先于预处理步数（BUG-4762）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-18T07:40:47Z",
-   "additions": 850,
-   "deletions": 71,
-   "labels": []
-  },
-  "3663": {
-   "number": 3663,
-   "title": "feat(video): 字幕工作台改全屏并就地运行工具，所有视频来源走完整字幕管线",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-18T08:23:27Z",
-   "additions": 12166,
-   "deletions": 1287,
-   "labels": []
-  },
-  "3672": {
-   "number": 3672,
-   "title": "fix(home): 首页被播放页盖住时不在后台重载，修从首页打开视频后的播放掉帧（BUG-4791）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-18T08:17:01Z",
-   "additions": 509,
-   "deletions": 27,
-   "labels": []
-  },
   "3741": {
    "number": 3741,
    "title": "fix(ci): onnxruntime 改从 NuGet 取（GitHub release 404）",
@@ -230,42 +102,6 @@
    "mergedAt": "2026-11-19T09:10:18Z",
    "additions": 226,
    "deletions": 83,
-   "labels": []
-  },
-  "3743": {
-   "number": 3743,
-   "title": "fix(ci): 修 develop 尖端 Dart format 与书封刮削用例红",
-   "author": "W1ght",
-   "mergedAt": "2026-11-18T17:37:22Z",
-   "additions": 13,
-   "deletions": 12,
-   "labels": []
-  },
-  "3744": {
-   "number": 3744,
-   "title": "test(goldens): 同步与备份页 golden 跟随 #3515 输入框重设计更新",
-   "author": "W1ght",
-   "mergedAt": "2026-11-18T17:48:17Z",
-   "additions": 0,
-   "deletions": 0,
-   "labels": []
-  },
-  "3745": {
-   "number": 3745,
-   "title": "fix(develop): 修 #3515 合入后 develop 尖端约 30 个单测红",
-   "author": "W1ght",
-   "mergedAt": "2026-11-18T19:32:41Z",
-   "additions": 329,
-   "deletions": 133,
-   "labels": []
-  },
-  "3746": {
-   "number": 3746,
-   "title": "fix(guards): 封面收口守卫认引擎 writer，import 大环回到 630",
-   "author": "W1ght",
-   "mergedAt": "2026-11-18T20:39:34Z",
-   "additions": 18,
-   "deletions": 14,
    "labels": []
   },
   "3747": {
