@@ -427,6 +427,28 @@ void main() {
       expect(player.pos, plan.totalMs);
       expect(driver.skipLine(-1), isTrue);
     });
+
+    test('查后从句首重播：指定句 / 当前页刚读过的句 / 本页还没读到句子原地播（BUG-4909）', () async {
+      // 边看边听（挂着可见的阅读器）：纯听形态起播会照设计跳过页停留，混进 seeks。
+      driver.attachHost(_Host(pairs: true), visible: true);
+      player.at(plan.lineStartMs(1) + 300);
+      await driver.playFromLine(0);
+      expect(player.pos, plan.lineStartMs(0));
+      expect(player.playing, isTrue);
+
+      player.playing = false;
+      player.at(plan.lineStartMs(1) + 300);
+      await driver.playFromLine(null);
+      expect(player.pos, plan.lineStartMs(1), reason: '当前句句首');
+
+      // 第 1 页无台词（页停留里）：往回找会跨到第 0 页，不为重播把读者拉回上一页。
+      player.playing = false;
+      player.seeks.clear();
+      player.at(plan.pageStartMs(1) + 10);
+      await driver.playFromLine(null);
+      expect(player.seeks, isEmpty);
+      expect(player.playing, isTrue);
+    });
   });
 
   group('入库与后台入口', () {

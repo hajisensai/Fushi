@@ -180,6 +180,31 @@ class MangaAudioPlaybackDriver extends ChangeNotifier
   /// 拖进度条。
   Future<void> seekTo(int ms) => _seek(ms.clamp(0, plan.totalMs));
 
+  /// 从第 [lineIndex] 句句首接着播（查词后从句首重播，BUG-4909）；为 null 时从当前句
+  /// 句首——停在句间停顿 / 页停留里就是本页刚读过的那句，本页还没读到句子则原地播，
+  /// 不为「重播」把读者拉回上一页。
+  Future<void> playFromLine(int? lineIndex) async {
+    final int? target = lineIndex ?? _currentLineOnPage();
+    if (target != null && target >= 0 && target < manifest.lines.length) {
+      await _seek(plan.lineStartMs(target));
+    }
+    if (_disposed) return;
+    await _player.play();
+  }
+
+  /// 当前页上、[positionMs] 处或之前最近的一句。
+  int? _currentLineOnPage() {
+    final int from = plan.itemIndexAt(positionMs);
+    if (from < 0) return null;
+    final int page = plan.items[from].page;
+    for (int i = from; i >= 0; i--) {
+      final MangaAudioItem item = plan.items[i];
+      if (item.page != page) return null;
+      if (item.isLine) return item.lineIndex;
+    }
+    return null;
+  }
+
   Future<void> setSpeed(double value) async {
     await _player.setSpeed(value);
     if (!_disposed) notifyListeners();

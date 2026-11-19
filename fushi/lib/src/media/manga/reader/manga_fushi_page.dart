@@ -4441,7 +4441,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     super.onDictionaryPopupRendered(index);
     _readerLookupOpen = true;
     unawaited(_syncAutoScrollPause());
-    _readAloud.pauseForLookup();
+    _readAloud.lookupOpened(MangaLookupSource.page);
     _focusOwnership.reclaim(FocusReclaimCause.popupRendered);
   }
 
@@ -4453,7 +4453,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     super.onAllPopupsDismissed();
     _readerLookupOpen = false;
     unawaited(_syncAutoScrollPause());
-    _readAloud.resumeAfterLookup();
+    _readAloud.lookupClosed(MangaLookupSource.page, resume: true);
     _focusOwnership.reclaim(FocusReclaimCause.popupDismissed);
     unawaited(_clearMangaSelectionHighlight());
   }
@@ -5401,6 +5401,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (!mounted) return;
     _miningTextRect = _sentenceRectOf(data);
     _miningSentenceBlocks = _sentenceBlocksOf(data);
+    // 查后从句首重播要知道查的是哪句（弹窗或副屏随后打开时认领，BUG-4909）。
+    _readAloud.noteLookupSentence(_miningSentenceBlocks);
     final Size screen = MediaQuery.of(context).size;
     await dispatchMangaSelection(
       data,
