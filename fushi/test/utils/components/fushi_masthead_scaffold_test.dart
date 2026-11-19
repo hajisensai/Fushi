@@ -80,6 +80,37 @@ void main() {
     expect(panel.progress, greaterThan(0));
   });
 
+  testWidgets('手机窄窗：长页名先缩小到放得下，不省略成「Read…」', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(380, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    const String title = 'Reading';
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(useMaterial3: true),
+        home: FushiMastheadScaffold(
+          title: title,
+          actions: <Widget>[
+            FushiIconButtonControl(
+              tooltip: 'Search',
+              onPressed: () {},
+              icon: const FushiIcon(FushiIcons.search),
+            ),
+          ],
+          body: const SizedBox.expand(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final RenderParagraph paragraph = tester.renderObject(find.text(title));
+    // 整个页名排得下（没被省略号截断）……
+    expect(paragraph.didExceedMaxLines, isFalse);
+    // ……是靠缩小字号，不是画出页头：缩放后的页名在屏幕内、比满字号窄。
+    final Rect rect = tester.getRect(find.text(title));
+    expect(rect.right, lessThanOrEqualTo(380));
+    expect(rect.width, lessThan(paragraph.size.width));
+  });
+
   testWidgets('titleInBody：页名在主滚动越过 titleRevealOffset 后才淡入', (
     WidgetTester tester,
   ) async {

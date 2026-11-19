@@ -152,21 +152,27 @@ class FushiMastheadHeader extends StatelessWidget {
         (titleStyle.height ?? 1);
     final Widget titleBox = LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        // 只占页名实际（缩放后）的宽：徽标紧跟在页名后面；放不下时省略。
+        // 只占页名实际（缩放后）的宽：徽标紧跟在页名后面。放不下时先整体缩小
+        // 到放得下（最小到收起态字号），仍放不下才省略——手机上「阅读器」这类
+        // 长页名按 46 排只剩「Read…」（2026-11-19 用户）。
         final double natural =
             fushiMastheadTextWidth(context, title, titleStyle) + 1;
-        final double width = math.min(constraints.maxWidth, natural * scale);
+        final double fitScale = math.min(
+          scale,
+          math.max(collapsed, constraints.maxWidth / natural),
+        );
+        final double width = math.min(constraints.maxWidth, natural * fitScale);
         return SizedBox(
           width: width,
-          height: lineHeight * scale,
+          height: lineHeight * fitScale,
           child: OverflowBox(
             alignment: AlignmentDirectional.bottomStart,
             minWidth: 0,
-            maxWidth: width / scale,
+            maxWidth: width / fitScale,
             minHeight: 0,
             maxHeight: lineHeight,
             child: Transform.scale(
-              scale: scale,
+              scale: fitScale,
               alignment: AlignmentDirectional.bottomStart.resolve(
                 Directionality.of(context),
               ),
