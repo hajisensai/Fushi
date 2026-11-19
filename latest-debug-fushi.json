@@ -33,8 +33,8 @@
       "releaseSequence": 29190,
       "tag": "v3.4.0-debug.29190+6dd38cb",
       "version": "3.4.0-debug.29190",
-      "size": 288048906,
-      "sha256": "c5c6cca0233deb434bfa200432088fc71674384ee9f8143c94175102622d114b",
+      "size": 287838216,
+      "sha256": "8dfbea0f0aa2cba9589c7d0e2dd22157856afbe86edaf7dc0d9556784457334f",
       "dbSchemaVersion": 161
     },
     {
@@ -43,8 +43,8 @@
       "releaseSequence": 29190,
       "tag": "v3.4.0-debug.29190+6dd38cb",
       "version": "3.4.0-debug.29190",
-      "size": 273196166,
-      "sha256": "266424dc36ab033c66c396e70c10d7c52589be2584f507f9c058dd2f7834b891",
+      "size": 273196863,
+      "sha256": "633be0259e8a590445567867381befc1e1af5cdc16d5cff755c67edaee57f839",
       "dbSchemaVersion": 161
     },
     {
