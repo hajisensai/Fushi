@@ -2855,6 +2855,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           ),
           resolveAiProvider: _resolveTextProcessAiProvider,
           aiEnabled: isAiModuleEnabled(_appModel.moduleVisibility),
+          savedPromptStoreOf: () => _appModel.prefsRepo,
           onSave: (GalTextProcessPipeline pipeline) =>
               unawaited(_session.setTextProcessPipeline(pipeline)),
         ),

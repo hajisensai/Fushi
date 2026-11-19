@@ -609,6 +609,8 @@ import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/stats/reader_study_clock_start_mode.dart';
 import 'package:fushi/src/stats/study_goal_period.dart';
+import 'package:fushi/src/media/audiobook/tts/studio/audio_production_host.dart';
+import 'package:fushi/src/media/import/external_storage_access.dart';
 export 'package:fushi/src/stats/study_goal_period.dart' show StudyGoalPeriod;
 
 export 'package:fushi/src/models/local_audio_manager.dart'
@@ -980,7 +982,11 @@ class HomeDictionaryTabRequest {
 /// especially for preferences that persist across application restarts.
 class AppModel
     with ChangeNotifier
-    implements MusicAudioEffectsHost, MusicPluginQualityHost {
+    implements
+        MusicAudioEffectsHost,
+        MusicPluginQualityHost,
+        AudioProductionHost,
+        ExternalStorageAccess {
   /// Platform-specific service implementations, injected at construction.
   final PlatformServices platformServices;
 
@@ -1748,8 +1754,10 @@ class AppModel
 
   /// Preference management, extracted from AppModel for testability.
   PreferencesRepository? _prefsRepo;
+  @override
   PreferencesRepository get prefsRepo => _prefsRepo!;
 
+  @override
   bool get isPreferencesReady => _prefsRepo != null;
 
   /// v101 统一更新提醒。懒建：四个投递方（番剧订阅检查、漫画库刷新、扩展检查、
@@ -2297,6 +2305,7 @@ class AppModel
   /// 进程级常驻有声书会话（TODO-291 阶段2）：唯一持有 AudiobookPlayerController +
   /// 当前书元数据，常驻执行 cue→悬浮窗/媒体通知/位置落库同步，脱离 reader 页生命周期。
   /// reader 在场时经 [AudiobookSession.attachReader] 注册 WebView 侧回调。
+  @override
   late final AudiobookSession audiobookSession =
       AudiobookSession(
           audioHandler: () => audioCtrl.audioHandler,
@@ -3502,6 +3511,7 @@ class AppModel
   late Directory _appDirectory;
 
   /// Directory where database data is persisted.
+  @override
   Directory get databaseDirectory => _databaseDirectory;
   late Directory _databaseDirectory;
 
@@ -11022,6 +11032,7 @@ class AppModel
   /// 早退门同样只看存储：旧版的 `&& hasCameraPermission()` 在安卓上恒为 false
   /// （CAMERA 未在 manifest 声明 → permission_handler 直接判 denied），使得存储已授权时
   /// 也永远走不进早退分支。
+  @override
   Future<void> requestExternalStoragePermissions() async {
     if (await platformServices.permission.hasExternalStoragePermission()) {
       return;
@@ -11037,6 +11048,11 @@ class AppModel
 
     await platformServices.permission.requestExternalStoragePermission();
   }
+
+  /// 当前是否已有全文件访问权限（[ExternalStorageAccess]，真实路径选择器用）。
+  @override
+  Future<bool> hasExternalStoragePermission() =>
+      platformServices.permission.hasExternalStoragePermission();
 
   // ── Anki integration (delegated to AnkiIntegration) ─────────────────
 
@@ -11771,6 +11787,7 @@ class AppModel
         // 灌全书 cue：后台听书无 reader 喂 cue，否则悬浮窗推空串（TODO-354 根因②）。
         cues: req.cues,
         remote: req.remote,
+        companion: req.companion,
       );
       if (controller == null) return BackgroundListenResult.loadFailed;
     } catch (e, stack) {
@@ -12151,6 +12168,7 @@ class AppModel
   bool get isDatabaseOpen => _isInitialised;
 
   /// Direct access to the Drift database instance.
+  @override
   FushiDatabase get database => _database;
 
   /// Close the database and notify listeners, without exiting the app.

@@ -28,6 +28,45 @@ Directory ttsRenderJobWorkDir(Directory workRoot, String jobId) =>
 
 enum TtsRenderJobStatus { queued, running, done, failed, cancelled }
 
+/// 任务来源：小说整本（EPUB 正文 → 按章 m4a）或漫画一卷（演出稿 → 每句一段音频 +
+/// 成品清单，见 `manga_audio_renderer.dart`）。清单里缺省 = [book]（旧任务）。
+enum TtsRenderJobKind { book, manga }
+
+/// 补回一句未配音的台词（漫画按 `lineId` = `p<页>b<块…>`；小说可按行键）。
+/// 三种补法可以叠用：换重试候选里的下一个声音、手动指定声音、手动填写要念的文字。
+class TtsRenderLineRequest {
+  const TtsRenderLineRequest({
+    required this.lineId,
+    this.voice,
+    this.say,
+    this.nextRetryVoice = false,
+  });
+
+  final String lineId;
+  final String? voice;
+  final String? say;
+  final bool nextRetryVoice;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'id': lineId,
+    if (voice != null) 'v': voice,
+    if (say != null) 'say': say,
+    if (nextRetryVoice) 'next': true,
+  };
+
+  static TtsRenderLineRequest? fromJson(Object? raw) {
+    if (raw is! Map || raw['id'] is! String) return null;
+    final Object? v = raw['v'];
+    final Object? say = raw['say'];
+    return TtsRenderLineRequest(
+      lineId: raw['id'] as String,
+      voice: v is String && v.isNotEmpty ? v : null,
+      say: say is String ? say : null,
+      nextRetryVoice: raw['next'] == true,
+    );
+  }
+}
+
 enum TtsRenderJobPhase {
   planning,
   synthesizing,
@@ -77,6 +116,8 @@ class TtsRenderJob {
     required this.verify,
     required this.createdAt,
     required this.updatedAt,
+    this.kind = TtsRenderJobKind.book,
+    this.lineRequests = const <TtsRenderLineRequest>[],
     this.regenerate = const <int>[],
     this.pausePreset = 'standard',
     this.normalizeLoudness = true,
@@ -96,6 +137,11 @@ class TtsRenderJob {
   /// 用哪份声音预设（运行时按 id 取，凭据不进任务清单）。
   final String presetId;
 
+  final TtsRenderJobKind kind;
+
+  /// 非空 = 这是一次「补回」：只重合成这些句子（漫画），不跑整卷。
+  final List<TtsRenderLineRequest> lineRequests;
+
   /// 要制作的章节下标（EPUB spine）。空 = 全书。
   final List<int> sections;
 
@@ -113,6 +159,10 @@ class TtsRenderJob {
 
   /// 要求了响度归一化但本机 ffmpeg 不支持而跳过（UI 提示，不算失败）。
   bool loudnessSkipped = false;
+
+  /// 合成失败、成品里先放了占位静音的句数（记在这本书的未配音账本里，可以补回）。
+  /// 不算任务失败。
+  int unvoiced = 0;
 
   final int createdAt;
   int updatedAt;
@@ -142,12 +192,18 @@ class TtsRenderJob {
     'bookKey': bookKey,
     'title': title,
     'presetId': presetId,
+    if (kind != TtsRenderJobKind.book) 'kind': kind.name,
+    if (lineRequests.isNotEmpty)
+      'lines': <Object?>[
+        for (final TtsRenderLineRequest r in lineRequests) r.toJson(),
+      ],
     'sections': sections,
     'verify': verify,
     'regenerate': regenerate,
     'pause': pausePreset,
     'loudnorm': normalizeLoudness,
     'loudnessSkipped': loudnessSkipped,
+    if (unvoiced > 0) 'unvoiced': unvoiced,
     'createdAt': createdAt,
     'updatedAt': updatedAt,
     'status': status.name,
@@ -174,36 +230,55 @@ class TtsRenderJob {
 
     final Object? phase = json['phase'];
     final Object? flags = json['flags'];
+    final Object? lines = json['lines'];
     return TtsRenderJob(
-      id: json['id']! as String,
-      bookKey: json['bookKey']! as String,
-      title: (json['title'] as String?) ?? '',
-      presetId: (json['presetId'] as String?) ?? '',
-      sections: ints(json['sections']),
-      verify: json['verify'] == true,
-      regenerate: ints(json['regenerate']),
-      pausePreset: (json['pause'] as String?) ?? 'standard',
-      normalizeLoudness: json['loudnorm'] != false,
-      createdAt: (json['createdAt'] as int?) ?? 0,
-      updatedAt: (json['updatedAt'] as int?) ?? 0,
-      status: byName(
-        TtsRenderJobStatus.values,
-        json['status'],
-        TtsRenderJobStatus.failed,
-      ),
-      phase: phase == null
-          ? null
-          : byName(TtsRenderJobPhase.values, phase, TtsRenderJobPhase.planning),
-      done: (json['done'] as int?) ?? 0,
-      total: (json['total'] as int?) ?? 0,
-      error: json['error'] as String?,
-      flags: <TtsRenderFlag>[
-        if (flags is List)
-          for (final Object? f in flags)
-            if (TtsRenderFlag.fromJson(f) case final TtsRenderFlag flag) flag,
-      ],
-      verified: json['verified'] == true,
-    )..loudnessSkipped = json['loudnessSkipped'] == true;
+        id: json['id']! as String,
+        bookKey: json['bookKey']! as String,
+        title: (json['title'] as String?) ?? '',
+        presetId: (json['presetId'] as String?) ?? '',
+        kind: byName(
+          TtsRenderJobKind.values,
+          json['kind'],
+          TtsRenderJobKind.book,
+        ),
+        lineRequests: <TtsRenderLineRequest>[
+          if (lines is List)
+            for (final Object? l in lines)
+              if (TtsRenderLineRequest.fromJson(l)
+                  case final TtsRenderLineRequest r)
+                r,
+        ],
+        sections: ints(json['sections']),
+        verify: json['verify'] == true,
+        regenerate: ints(json['regenerate']),
+        pausePreset: (json['pause'] as String?) ?? 'standard',
+        normalizeLoudness: json['loudnorm'] != false,
+        createdAt: (json['createdAt'] as int?) ?? 0,
+        updatedAt: (json['updatedAt'] as int?) ?? 0,
+        status: byName(
+          TtsRenderJobStatus.values,
+          json['status'],
+          TtsRenderJobStatus.failed,
+        ),
+        phase: phase == null
+            ? null
+            : byName(
+                TtsRenderJobPhase.values,
+                phase,
+                TtsRenderJobPhase.planning,
+              ),
+        done: (json['done'] as int?) ?? 0,
+        total: (json['total'] as int?) ?? 0,
+        error: json['error'] as String?,
+        flags: <TtsRenderFlag>[
+          if (flags is List)
+            for (final Object? f in flags)
+              if (TtsRenderFlag.fromJson(f) case final TtsRenderFlag flag) flag,
+        ],
+        verified: json['verified'] == true,
+      )
+      ..loudnessSkipped = json['loudnessSkipped'] == true
+      ..unvoiced = json['unvoiced'] is int ? json['unvoiced']! as int : 0;
   }
 }
 
@@ -367,6 +442,8 @@ class TtsRenderQueue extends EngineChangeNotifier {
     required String bookKey,
     required String title,
     required String presetId,
+    TtsRenderJobKind kind = TtsRenderJobKind.book,
+    List<TtsRenderLineRequest> lineRequests = const <TtsRenderLineRequest>[],
     List<int> sections = const <int>[],
     bool verify = false,
     List<int> regenerate = const <int>[],
@@ -383,6 +460,8 @@ class TtsRenderQueue extends EngineChangeNotifier {
       bookKey: bookKey,
       title: title,
       presetId: presetId,
+      kind: kind,
+      lineRequests: List<TtsRenderLineRequest>.unmodifiable(lineRequests),
       sections: List<int>.unmodifiable(sections),
       verify: verify,
       regenerate: List<int>.unmodifiable(regenerate),
@@ -481,6 +560,7 @@ class TtsRenderQueue extends EngineChangeNotifier {
       ..done = 0
       ..total = 0
       ..error = null
+      ..unvoiced = 0
       ..updatedAt = _now().millisecondsSinceEpoch;
     await _persist();
     notifyListeners();

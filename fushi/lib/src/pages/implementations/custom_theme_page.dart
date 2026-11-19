@@ -831,6 +831,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
                   scene: AiPromptScene.theme,
                   controller: _aiRequestController,
                   enabled: !_aiBusy,
+                  storeOf: () => appModel.prefsRepo,
                 ),
                 SizedBox(width: gap),
                 FushiFilledButton.icon(

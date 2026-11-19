@@ -16,8 +16,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/manga/audio/manga_audiobook_source_page.dart';
+import 'package:fushi/src/media/manga/audio/manga_drama_track_page.dart';
 import 'package:fushi/src/media/manga/download/manga_download_service.dart';
 import 'package:fushi/src/media/manga/download/online_manga_download_gate.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_studio_page.dart';
 import 'package:fushi/src/media/manga/library/manga_book_ocr.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_list.dart';
 import 'package:fushi/src/media/manga/library/manga_series_download_banner.dart';
@@ -2922,7 +2925,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   }
 
   /// 「⋯」：在网站打开、刷新章节、新章自动下载（订阅中）、下载后自动识别、
-  /// 识别全部已下载、OCR 设置（在库）。
+  /// 识别全部已下载、OCR 设置（在库）；本地卷是管理本卷、有声书音源。
   List<MediaDetailMenuItem> _buildMoreItems() {
     if (_isLocal) {
       final Future<void> Function()? showShelfMenu = switch (widget.target) {
@@ -2934,7 +2937,23 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       // 取消），按钮置灰不重复排。各项图标互不相同（管理本卷不再借 OCR 设置的
       // 滑杆图标）。
       final bool ocrScheduled = _ocrJob != null || _ocrQueued.isNotEmpty;
+      final String? bookKey = _bookKey;
+      final AppModel? appModel = _appModelOrNull;
       return <MediaDetailMenuItem>[
+        if (bookKey != null && appModel != null)
+          MediaDetailMenuItem(
+            key: const ValueKey<String>('manga_series_audio_studio'),
+            icon: FushiIcons.voice,
+            label: t.manga_audio_studio_title,
+            enabled: !_busy,
+            onSelected: () => unawaited(
+              openMangaAudioStudioPage(
+                context,
+                appModel: appModel,
+                bookKey: bookKey,
+              ),
+            ),
+          ),
         MediaDetailMenuItem(
           key: const ValueKey<String>('manga_series_ocr_volume'),
           icon: FushiIcons.ocr,
@@ -2957,6 +2976,25 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
             label: t.manga_series_manage_volume,
             enabled: !_busy,
             onSelected: () => unawaited(_openShelfMenu(showShelfMenu)),
+          ),
+        // 有声书音源（设计 §9）：只给本地卷——演出稿的页下标以整卷 `manga.json` 为
+        // 坐标，在线作品按章各一份，没有统一的页坐标。
+        if (_bookKey != null && _appModelOrNull != null)
+          MediaDetailMenuItem(
+            key: const ValueKey<String>('manga_series_audiobook_source'),
+            icon: FushiIcons.audiobook,
+            label: t.manga_audio_source_title,
+            enabled: !_busy,
+            onSelected: () => unawaited(_openAudiobookSource()),
+          ),
+        // 广播剧 / 动画音轨（设计 §9 末段）：同上，只给本地卷。
+        if (_bookKey != null && _appModelOrNull != null)
+          MediaDetailMenuItem(
+            key: const ValueKey<String>('manga_series_drama_track'),
+            icon: FushiIcons.mic,
+            label: t.manga_audio_drama_title,
+            enabled: !_busy,
+            onSelected: () => unawaited(_openDramaTrack()),
           ),
       ];
     }
@@ -3025,6 +3063,28 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   Future<void> _openOcrSettings() async {
     await MangaOcrSettingsPage.push(context);
     if (mounted) setState(() {});
+  }
+
+  Future<void> _openAudiobookSource() async {
+    final String? bookKey = _bookKey;
+    final AppModel? appModel = _appModelOrNull;
+    if (bookKey == null || appModel == null) return;
+    await MangaAudiobookSourcePage.push(
+      context,
+      appModel: appModel,
+      bookKey: bookKey,
+    );
+  }
+
+  Future<void> _openDramaTrack() async {
+    final String? bookKey = _bookKey;
+    final AppModel? appModel = _appModelOrNull;
+    if (bookKey == null || appModel == null) return;
+    await MangaDramaTrackPage.push(
+      context,
+      appModel: appModel,
+      bookKey: bookKey,
+    );
   }
 
   /// 挂刮削资料：首读一次，之后资料表 / 附加图一变就重读。没有 uid 的旧行没有

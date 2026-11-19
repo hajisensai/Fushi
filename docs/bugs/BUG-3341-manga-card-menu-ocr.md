@@ -4,3 +4,4 @@
 - **[x] ① 已修复** — 新增共享路径 `fushi/lib/src/media/manga/library/manga_book_ocr.dart`（`pendingMangaOcrTargets`：在线作品 = 已下载且未识别的章，本地卷 = 未识别的卷；`enqueueMangaOcrTargets`：解析引擎一次、Lens 同意闸门、经 `MangaOcrJobRegistry.enqueue` 排队）。作品页「识别本章 / 识别全部已下载」改走它（行为不变）；漫画卡快捷格换成「识别文字（OCR）」（受漫画模块门控），有声书两格改为只在非漫画卡出现；漫画库多选底栏新增「识别文字」，选中合集时识别合集里的每一本。
 - **[x] ② 已加自动化测试** — `fushi/test/media/manga/manga_book_ocr_test.dart`（结果三态、本地卷目标、已识别不再排、卡菜单 / 多选接线源码守卫）。
 - **备注**：已识别过的卷 / 章不会被库页入口重跑（重识别仍走阅读器「重新识别本卷」/ 作品页「识别本章」）。在线作品的章级判据与作品页同源。
+- **后续（2026-11-17，漫画有声）**：本条「漫画阅读器不播有声书」的前提已失效——漫画阅读器现在能播漫画有声成品（`fushi/lib/src/media/manga/audio/`，设计见 `docs/specs/2026-11-17-manga-audio-mode-design.md` §3）。漫画卡的有声入口加回，但不是通用「导入有声书」（那条按 EPUB 正文匹配字幕，对漫画仍无意义，仍只按 `mediaItemSupportsAudiobook` 出现），而是「导入漫画有声」（选成品清单 `manifest.json` → 校验页数 / 音频 → 登记，受听书模块门控）。OCR 快捷格不变；源码守卫 `manga_book_ocr_test.dart` 同步改为同时钉住两格。

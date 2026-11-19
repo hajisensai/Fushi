@@ -21,6 +21,7 @@ import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/media/audiobook/tts/tts_local_log_dialog.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_ui_text.dart'
     show localInstallRemoveFailureText;
@@ -42,10 +43,8 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
-import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 打开本页。返回在本页新建的声音预设 id（没新建返回 null）。
 Future<String?> openGptSovitsLocalPage(
@@ -206,38 +205,11 @@ class _GptSovitsLocalPageState extends State<GptSovitsLocalPage> {
     }
   }
 
-  Future<void> _showLog() async {
-    final List<String> lines = _engine.server.logTail;
-    await showAppDialog<void>(
-      context: context,
-      builder: (BuildContext dialogContext) => FushiAlertDialog(
-        title: Text(t.audiobook_tts_local_log),
-        content: SizedBox(
-          width: 560,
-          height: 360,
-          child: SingleChildScrollView(
-            reverse: true,
-            child: SelectableText(
-              lines.isEmpty
-                  ? t.audiobook_tts_local_log_empty
-                  : lines.join('\n'),
-              style: Theme.of(
-                dialogContext,
-              ).textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
-            ),
-          ),
-        ),
-        actions: <Widget>[
-          FushiDialogAction(
-            label: t.dialog_ok,
-            kind: FushiDialogActionKind.primary,
-            autofocus: true,
-            onPressed: () => Navigator.of(dialogContext).pop(),
-          ),
-        ],
-      ),
-    );
-  }
+  Future<void> _showLog() => showTtsLocalLogDialog(
+    context,
+    title: t.audiobook_tts_local_log,
+    lines: _engine.server.logTail,
+  );
 
   /// 新建一份指向本机服务的 GPT-SoVITS 声音，返回给调用方去编辑（选参考音频）。
   Future<void> _createVoice() async {

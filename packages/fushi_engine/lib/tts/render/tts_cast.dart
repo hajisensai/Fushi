@@ -6,6 +6,8 @@
 ///   重新标注时保留，不被 LLM 覆盖）。
 /// - 没有归属的句子、归给「旁白」的句子、角色没配声音的句子，一律用任务的默认声音
 ///   （旁白声音）。
+/// - 每句的演出字段（类型 / 一拍 / 情绪 + 强度 / 种子，见 `cast_line_direction.dart`）
+///   与漫画演出稿同名同口径；句间停顿见 `tts_cast_timing.dart`。
 /// - 每本书一个 JSON 文件，原子写。
 library;
 
@@ -15,6 +17,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/tts/cast/cast_line_direction.dart';
 import 'package:fushi_engine/tts/cast/cast_line_kind.dart';
 import 'package:fushi_engine/tts/cast/cast_voice_assignment.dart';
 import 'package:fushi_engine/tts/cast/series_cast.dart';
@@ -38,7 +41,15 @@ class TtsCastLine {
   const TtsCastLine({
     required this.speaker,
     required this.source,
+    this.kind,
+    this.beatMs = 0,
     this.emotion,
+    this.intensity,
+    this.rateOffset,
+    this.pitchOffset,
+    this.volumeOffset,
+    this.seed,
+    this.tone,
     this.confidence,
     this.evidence,
     this.voice,
@@ -49,8 +60,26 @@ class TtsCastLine {
   final String speaker;
   final TtsCastSource source;
 
-  /// LLM 给的情绪 / 语气提示（目前只展示，合成不用）。
-  final String? emotion;
+  /// 类型（与漫画演出稿同一词表）；null = 没标，按说话人推断（见 [effectiveKind]）。
+  final CastLineKind? kind;
+
+  /// 句后额外停顿（毫秒），叠加在转场基础值之上（[CastLineLimits.maxBeatMs] 封顶）。
+  final int beatMs;
+
+  /// 情绪（封闭词表，只标注、不参与合成）+ 强度 0..100。
+  final CastEmotion? emotion;
+  final int? intensity;
+
+  /// 语速 / 音高 / 音量偏移（可选；引擎不支持的字段忽略）。
+  final double? rateOffset;
+  final double? pitchOffset;
+  final double? volumeOffset;
+
+  /// 种子；null = 用作品默认种子（[TtsCast.defaultSeed]）。单句重生成时写入。
+  final int? seed;
+
+  /// 旧版选角表里 LLM 给的自由文本语气提示（如「囁き」；新标注不再产出，只展示）。
+  final String? tone;
 
   /// LLM 自报的把握（0..1）；用户手改的行为 null（视为确定）。
   final double? confidence;
@@ -59,17 +88,77 @@ class TtsCastLine {
   /// 这一句单独指定的声音（「切配置重试」成功后写入，或用户手动指定）；null = 按角色。
   final String? voice;
 
-  /// 手动填写的要念的文字（替换计划里的念法）；null = 照原文。与漫画演出稿同名字段。
+  /// 手动填写的要念的文字（替换计划里的念法；小说的「文本修正」就是它）；null = 照
+  /// 原文。与漫画演出稿同名字段。
   final String? say;
 
-  TtsCastLine withOverrides({String? voice, String? say}) => TtsCastLine(
-    speaker: speaker,
-    source: source,
+  /// 实际类型：标了用标的；没标时旁白 = 叙述、其余 = 说出口。
+  CastLineKind get effectiveKind =>
+      kind ??
+      (speaker == kTtsNarrator ? CastLineKind.narration : CastLineKind.spoken);
+
+  /// 这句的演出字段（与漫画 `MangaScriptLine.direction` 同一个类型）。
+  CastLineDirection get direction => CastLineDirection(
+    beatMs: beatMs,
     emotion: emotion,
-    confidence: confidence,
-    evidence: evidence,
+    intensity: intensity,
+    rateOffset: rateOffset,
+    pitchOffset: pitchOffset,
+    volumeOffset: volumeOffset,
+    seed: seed,
+  );
+
+  /// 用户挂在这行上的补回设置（单句声音 / 念法 / 重生成写下的种子）：重新标注时要
+  /// 跟着这行留下来。
+  bool get hasUserOverrides => voice != null || say != null || seed != null;
+
+  TtsCastLine copyWith({
+    String? speaker,
+    TtsCastSource? source,
+    CastLineKind? kind,
+    int? beatMs,
+    int? seed,
+    String? voice,
+    String? say,
+    bool clearKind = false,
+    bool clearSeed = false,
+    bool clearVoice = false,
+    bool clearSay = false,
+    bool clearAiFields = false,
+  }) => TtsCastLine(
+    speaker: speaker ?? this.speaker,
+    source: source ?? this.source,
+    kind: clearKind ? null : kind ?? this.kind,
+    beatMs: beatMs ?? this.beatMs,
+    emotion: emotion,
+    intensity: intensity,
+    rateOffset: rateOffset,
+    pitchOffset: pitchOffset,
+    volumeOffset: volumeOffset,
+    seed: clearSeed ? null : seed ?? this.seed,
+    tone: tone,
+    confidence: clearAiFields ? null : confidence,
+    evidence: clearAiFields ? null : evidence,
+    voice: clearVoice ? null : voice ?? this.voice,
+    say: clearSay ? null : say ?? this.say,
+  );
+
+  /// 换上 [voice] / [say]（null 清掉），其余照旧。
+  TtsCastLine withOverrides({String? voice, String? say}) => copyWith(
     voice: voice,
     say: say,
+    clearVoice: voice == null,
+    clearSay: say == null,
+  );
+
+  /// 把 [kept] 上的用户补回设置（声音 / 念法 / 种子）挂到这行（新的 AI 标注）上。
+  TtsCastLine withUserOverridesFrom(TtsCastLine kept) => copyWith(
+    voice: kept.voice,
+    say: kept.say,
+    seed: kept.seed,
+    clearVoice: kept.voice == null,
+    clearSay: kept.say == null,
+    clearSeed: kept.seed == null,
   );
 
   /// 需要人看一眼：不明、把握低于 0.7、或无提示推断的台词。
@@ -83,27 +172,42 @@ class TtsCastLine {
   Map<String, Object?> toJson() => <String, Object?>{
     's': speaker,
     'src': source.name,
-    if (emotion != null) 'e': emotion,
+    if (kind != null) 'k': kind!.wire,
+    ...direction.toJson(),
+    if (tone != null) 'tone': tone,
     if (confidence != null) 'c': confidence,
     if (evidence != null) 'ev': evidence!.name,
     if (voice != null) 'voice': voice,
     if (say != null) 'say': say,
   };
 
+  /// 宽松解析（旧文件照读）：演出字段按 [CastLineDirection.fromJson] 夹到范围；
+  /// 不认识的类型当作没标。旧版 `e` 存的是自由文本语气提示——不在情绪词表里的
+  /// 原样转进 [tone]，不丢。
   static TtsCastLine? fromJson(Object? raw) {
     if (raw is! Map || raw['s'] is! String) return null;
-    final Object? c = raw['c'];
     TtsCastEvidence? evidence;
     for (final TtsCastEvidence e in TtsCastEvidence.values) {
       if (e.name == raw['ev']) evidence = e;
     }
+    final CastLineDirection d = CastLineDirection.fromJson(raw);
+    final Object? legacyTone = raw['e'];
+    final Object? tone = raw['tone'] ?? (d.emotion == null ? legacyTone : null);
     return TtsCastLine(
       speaker: raw['s'] as String,
       source: raw['src'] == TtsCastSource.user.name
           ? TtsCastSource.user
           : TtsCastSource.llm,
-      emotion: raw['e'] is String ? raw['e'] as String : null,
-      confidence: c is num ? c.toDouble().clamp(0.0, 1.0) : null,
+      kind: CastLineKind.parse(raw['k']),
+      beatMs: d.beatMs,
+      emotion: d.emotion,
+      intensity: d.intensity,
+      rateOffset: d.rateOffset,
+      pitchOffset: d.pitchOffset,
+      volumeOffset: d.volumeOffset,
+      seed: d.seed,
+      tone: tone is String && tone.trim().isNotEmpty ? tone : null,
+      confidence: castDoubleIn(raw['c'], 0, 1),
       evidence: evidence,
       voice: raw['voice'] is String ? raw['voice'] as String : null,
       say: raw['say'] is String && (raw['say'] as String).trim().isNotEmpty
@@ -165,10 +269,13 @@ class TtsCast {
     Map<String, TtsCastLine>? lines,
     Map<String, String>? voices,
     Map<String, TtsCastCharacter>? roster,
+    List<String>? retryVoices,
     this.annotatedSections = const <int>{},
+    this.defaultSeed = 0,
   }) : lines = lines ?? <String, TtsCastLine>{},
        voices = voices ?? <String, String>{},
-       roster = roster ?? <String, TtsCastCharacter>{};
+       roster = roster ?? <String, TtsCastCharacter>{},
+       retryVoices = retryVoices ?? <String>[];
 
   /// 行键（[ttsLineKey]）→ 角色。
   final Map<String, TtsCastLine> lines;
@@ -180,8 +287,15 @@ class TtsCast {
   /// 第二遍逐句归属只能从这里选（或 [kTtsUnknown]）。
   final Map<String, TtsCastCharacter> roster;
 
+  /// 本书自己的「切配置重试」候选声音（按顺序试，排在系列的候选前面）。书不属于
+  /// 任何系列时只有这一份。
+  final List<String> retryVoices;
+
   /// 已经跑过 LLM 标注的章（UI 显示进度、重新标注跳过已完成的章）。
   Set<int> annotatedSections;
+
+  /// 整部作品一个默认种子（设计 §6）；单句重生成写进该行的 [TtsCastLine.seed]。
+  int defaultSeed;
 
   /// 这本书所属系列的声音指派（[SeriesCastProfile.voices]，不随本文件落盘）：本书
   /// 没给角色配声音时回落到系列里记住的声音。
@@ -194,6 +308,7 @@ class TtsCast {
       for (final MapEntry<String, String> e in voices.entries)
         if (e.key != kTtsNarrator) e.key: e.value,
     },
+    retryVoices: retryVoices,
   );
 
   /// 某个角色用的声音：本书 → 系列；null = 任务默认声音。
@@ -216,6 +331,27 @@ class TtsCast {
   String? presetFor(int section, int matchStart) {
     final TtsCastLine? line = lines[ttsLineKey(section, matchStart)];
     return line?.voice ?? voiceOf(line?.speaker ?? kTtsNarrator);
+  }
+
+  /// 这一句实际用的种子：单句写下的 → 作品默认。
+  int seedFor(int section, int matchStart) =>
+      lines[ttsLineKey(section, matchStart)]?.seed ?? defaultSeed;
+
+  /// 这章的句间停顿按演出稿算（跑过选角标注；见 `tts_cast_timing.dart`）。没标过的章
+  /// 照旧只看段落 / 场景边界。
+  bool directsSection(int section) => annotatedSections.contains(section);
+
+  /// 单句重生成：给这一句写下新种子（null 清掉、回到作品默认）。没有标注行的句子按
+  /// 旁白建一行（来源仍是 AI，之后的标注照常给它定说话人，种子留着）。
+  void setLineSeed(int section, int matchStart, int? seed) {
+    final String key = ttsLineKey(section, matchStart);
+    final TtsCastLine base =
+        lines[key] ??
+        const TtsCastLine(speaker: kTtsNarrator, source: TtsCastSource.llm);
+    lines[key] = base.copyWith(
+      seed: seed?.clamp(0, CastLineLimits.maxSeed),
+      clearSeed: seed == null,
+    );
   }
 
   /// 这一句手动填写的念法；null = 照原文。
@@ -255,22 +391,21 @@ class TtsCast {
 
   /// 并入 LLM 的一章标注：用户手改过的行保留。
   void mergeLlm(int section, Map<String, TtsCastLine> annotated) {
-    // 单句声音 / 念法是用户的补回设置，挂在 AI 行上也要跨重新标注保留。
+    // 单句声音 / 念法 / 重生成写下的种子是用户的补回设置，挂在 AI 行上也要跨重新
+    // 标注保留。
     final Map<String, TtsCastLine> overrides = <String, TtsCastLine>{};
     lines.removeWhere((String key, TtsCastLine line) {
       if (!key.startsWith('$section:') || line.source != TtsCastSource.llm) {
         return false;
       }
-      if (line.voice != null || line.say != null) overrides[key] = line;
+      if (line.hasUserOverrides) overrides[key] = line;
       return true;
     });
     annotated.forEach((String key, TtsCastLine line) {
       final TtsCastLine? existing = lines[key];
       if (existing != null && existing.source == TtsCastSource.user) return;
       final TtsCastLine? kept = overrides.remove(key);
-      lines[key] = kept == null
-          ? line
-          : line.withOverrides(voice: kept.voice, say: kept.say);
+      lines[key] = kept == null ? line : line.withUserOverridesFrom(kept);
     });
     // 这次没标到的句子：覆盖照样留着（说话人回到它原来的值）。
     lines.addAll(overrides);
@@ -285,15 +420,21 @@ class TtsCast {
   int get reviewCount =>
       lines.values.where((TtsCastLine l) => l.needsReview).length;
 
-  /// 用户手动改一句的角色。
+  /// 用户手动改一句的角色。演出字段（一拍 / 情绪 / 种子）与补回设置留着；类型与
+  /// 新说话人对不上时（改成旁白、或从旁白改成角色）丢掉，按说话人重新推断。
   void setUserSpeaker(int section, int matchStart, String speaker) {
     final String key = ttsLineKey(section, matchStart);
-    final TtsCastLine? old = lines[key];
-    lines[key] = TtsCastLine(
+    final TtsCastLine old =
+        lines[key] ??
+        const TtsCastLine(speaker: kTtsNarrator, source: TtsCastSource.llm);
+    final bool narrator = speaker == kTtsNarrator;
+    final bool kindFits =
+        old.kind == null || (old.kind == CastLineKind.narration) == narrator;
+    lines[key] = old.copyWith(
       speaker: speaker,
       source: TtsCastSource.user,
-      voice: old?.voice,
-      say: old?.say,
+      clearKind: !kindFits,
+      clearAiFields: true,
     );
   }
 
@@ -301,17 +442,8 @@ class TtsCast {
   void renameSpeaker(String from, String to) {
     if (from == to) return;
     lines.updateAll(
-      (String _, TtsCastLine line) => line.speaker == from
-          ? TtsCastLine(
-              speaker: to,
-              source: line.source,
-              emotion: line.emotion,
-              confidence: line.confidence,
-              evidence: line.evidence,
-              voice: line.voice,
-              say: line.say,
-            )
-          : line,
+      (String _, TtsCastLine line) =>
+          line.speaker == from ? line.copyWith(speaker: to) : line,
     );
     final String? voice = voices.remove(from);
     if (voice != null) voices.putIfAbsent(to, () => voice);
@@ -341,6 +473,8 @@ class TtsCast {
       for (final TtsCastCharacter c in roster.values) c.toJson(),
     ],
     'annotated': annotatedSections.toList()..sort(),
+    if (retryVoices.isNotEmpty) 'retry': retryVoices,
+    if (defaultSeed != 0) 'seed': defaultSeed,
   };
 
   static TtsCast fromJson(Object? raw) {
@@ -349,7 +483,15 @@ class TtsCast {
     final Object? voices = raw['voices'];
     final Object? annotated = raw['annotated'];
     final Object? roster = raw['roster'];
+    final Object? retry = raw['retry'];
+    final Object? seed = raw['seed'];
     return TtsCast(
+      defaultSeed: seed is int ? seed.clamp(0, CastLineLimits.maxSeed) : 0,
+      retryVoices: <String>[
+        if (retry is List)
+          for (final Object? v in retry)
+            if (v is String && v.isNotEmpty) v,
+      ],
       roster: <String, TtsCastCharacter>{
         if (roster is List)
           for (final Object? r in roster)

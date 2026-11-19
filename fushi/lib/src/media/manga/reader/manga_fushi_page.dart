@@ -70,6 +70,8 @@ import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart'
 import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi_engine/media/manga/manga_pdf_text_layer.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart'
+    show MangaRenderManifest;
 import 'package:fushi/src/media/manga/pdf_text_layer_backfill.dart';
 import 'package:fushi/src/pdf/pdf_importer.dart';
 import 'package:fushi_engine/media/manga/panel_detection.dart';
@@ -82,6 +84,18 @@ import 'package:fushi/src/media/manga/reader/manga_reader_auto_ocr.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_stream_ocr.dart';
 import 'package:fushi/src/media/manga/reader/manga_read_aloud_bar.dart';
 import 'package:fushi/src/media/manga/reader/manga_read_aloud_controller.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_library.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_mining.dart';
+import 'package:fushi/src/utils/misc/tts_channel.dart';
+import 'package:fushi_engine/mining/immersion_mining_request.dart'
+    show immersionMiningAudioExtension;
+import 'package:fushi/src/media/manga/audio/manga_audio_playback_driver.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_session.dart';
+import 'package:fushi/src/media/audiobook/audiobook_controller.dart'
+    show readerVisibleForLifecycleState;
+import 'package:fushi/src/media/audiobook/audiobook_session.dart';
+import 'package:fushi/src/media/audiobook/audiobook_session_launcher.dart'
+    show AudiobookSessionStartRequest;
 import 'package:fushi/src/media/manga/reader/manga_page_sentences.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_voice_quick_switch.dart';
@@ -203,7 +217,6 @@ import 'package:fushi/src/ocr/system_ocr_setup_dialog.dart'
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
-import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi/src/webview/webview_menu_dismiss_bridge.dart';
 import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/manga/reader/manga_jump_point.dart';
@@ -312,6 +325,12 @@ enum MangaReaderInputAction {
   /// 当前页书签加 / 删（快捷键 [ShortcutAction.mangaToggleBookmark]，反馈
   /// FhspOXxPl_）。与书签面板「当前页」那一行同一执行体 `_toggleBookmarkHere`。
   toggleBookmark,
+
+  /// 朗读 / 漫画有声的播放暂停、上一句、下一句（快捷键
+  /// [ShortcutAction.mangaAudioPlayPause] 等，只开键盘通道）。
+  readAloudPlayPause,
+  readAloudPrevious,
+  readAloudNext,
 }
 
 /// 一次键盘平移移动的视口比例。按比例而非像素，1080p 与 4K 手感一致。
@@ -742,6 +761,16 @@ class MangaFushiPage extends BaseSourcePage {
     if (action == ShortcutAction.mangaToggleBookmark) {
       return MangaReaderInputAction.toggleBookmark;
     }
+    // 朗读 / 漫画有声的播放控制同理：不翻页、不动视野，任何模式下都执行。
+    final MangaReaderInputAction? readAloud = switch (action) {
+      ShortcutAction.mangaAudioPlayPause =>
+        MangaReaderInputAction.readAloudPlayPause,
+      ShortcutAction.mangaAudioPreviousLine =>
+        MangaReaderInputAction.readAloudPrevious,
+      ShortcutAction.mangaAudioNextLine => MangaReaderInputAction.readAloudNext,
+      _ => null,
+    };
+    if (readAloud != null) return readAloud;
     // 平移排在两道翻页门控**之前**：它动的是当前页的视野、不是 spread，所以
     // 「webtoon 让位原生滚动」与「弹窗可见让位」都不适用——webtoon 的上下平移本身
     // 就是滚文档，弹窗开着时也该能挪画面去看被挡住的部分。
@@ -860,6 +889,9 @@ class MangaFushiPage extends BaseSourcePage {
     ShortcutAction.mangaOpenStatistics,
     ShortcutAction.mangaToggleStudyClock,
     ShortcutAction.mangaToggleBookmark,
+    ShortcutAction.mangaAudioPlayPause,
+    ShortcutAction.mangaAudioPreviousLine,
+    ShortcutAction.mangaAudioNextLine,
   ];
 
   /// [commandKeyActions] 当前键盘绑定的桥 token（[InputBinding.bridgeToken]）。
@@ -1640,6 +1672,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// [mangaSentenceGroupNormalizedRect]）及其所在页。制卡裁切的预选 / 自动裁到分镜都
   /// 从它出发；页码与 [_miningPageIndex] 对不上时视为没有。
   ({int pageIndex, Rect rect})? _miningTextRect;
+
+  /// 最近一次 OCR 选区那句话的 OCR 块下标（同 [_miningTextRect] 的那次分组，见
+  /// [mangaSentenceGroupBlockIndices]）及其所在页。制卡取漫画有声成品的句子音频用
+  /// （[resolveMangaMiningAudioClip]）；页码与 [_miningPageIndex] 对不上时视为没有。
+  ({int pageIndex, List<int> blocks})? _miningSentenceBlocks;
   String? _miningChapterId;
   String? _miningPageImagePath;
   int _miningPageGeneration = 0;
@@ -2676,6 +2713,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // 首屏页成为当前单元：开书直接停在恢复位置时不会再有 _recordProgress，
     // 翻走时才入账（存档页不预置，续读也计一次）。
     _noteVisiblePages();
+    // 本卷的漫画有声正在后台播（退出阅读器继续听、再回来）：接回当宿主。
+    _readAloud.attachActiveAudio();
     // 换章 = 同一个 WebView 换正文。首次打开由 onWebViewCreated 装首窗；换章时
     // WebView 一直挂在树上、那条回调不会再来，必须在这里按新 payload 重装窗口
     // 文档——否则屏上留着旧章文档，只有页码 / OCR 层跟着变成新章（跨章后「只有
@@ -3150,6 +3189,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         ocr: recovery.payload.ocr ?? current.ocr,
       );
       setState(() => _payload = recoveredPayload);
+      // 补回的页改变了本卷 OCR：在播的成品对不上就停（不带错位下标高亮）。
+      _readAloud._recheckAudioAgainstOcr();
 
       final Set<int> visiblePages = <int>{
         for (final int spreadIndex in _loadedSpreads)
@@ -4313,6 +4354,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       unawaited(_toggleBookmarkHere(_bookmarkOnScreen()));
       return;
     }
+    if (action == MangaReaderInputAction.readAloudPlayPause ||
+        action == MangaReaderInputAction.readAloudPrevious ||
+        action == MangaReaderInputAction.readAloudNext) {
+      _readAloud.onShortcut(action);
+      return;
+    }
     final DateTime now = DateTime.now();
     if (_lastReaderInputAction == action &&
         _lastReaderInputSource != source &&
@@ -5350,6 +5397,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   Future<void> processMangaSelection(ReaderSelectionData data) async {
     if (!mounted) return;
     _miningTextRect = _sentenceRectOf(data);
+    _miningSentenceBlocks = _sentenceBlocksOf(data);
     final Size screen = MediaQuery.of(context).size;
     await dispatchMangaSelection(
       data,
@@ -5416,6 +5464,89 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       group,
     );
     return rect == null ? null : (pageIndex: pageIndex, rect: rect);
+  }
+
+  /// 选区那句话的 OCR 块下标（与 [_sentenceRectOf] 同一次分组）。旧 payload / 无 OCR /
+  /// 组号映射不到块时为 null。
+  ({int pageIndex, List<int> blocks})? _sentenceBlocksOf(
+    ReaderSelectionData data,
+  ) {
+    final int? pageIndex = data.mangaPageIndex;
+    final int? group = data.mangaSentenceGroup;
+    final MokuroPayload? payload = _payload;
+    if (pageIndex == null ||
+        group == null ||
+        payload == null ||
+        pageIndex < 0 ||
+        pageIndex >= payload.images.length) {
+      return null;
+    }
+    final List<int> blocks = mangaSentenceGroupBlockIndices(
+      payload.images[pageIndex],
+      group,
+    );
+    return blocks.isEmpty ? null : (pageIndex: pageIndex, blocks: blocks);
+  }
+
+  /// 制卡句子音频：本卷登记过漫画有声成品、清单仍对得上本卷当前 OCR、查词句子的块落
+  /// 在某一句里时，从那一句的音频裁出（[resolveMangaMiningAudioClip]），写进新临时目录。
+  /// 其余情况（含在线直读章、裁片失败）返回 null，卡片照常做、不带句子音频——句子音频
+  /// 不做 TTS 兜底（BUG-172）。参数都是调用方在第一个 await 前定格的快照。
+  Future<({String path, Directory dir})?> _mangaSentenceAudio({
+    required MokuroPayload? payload,
+    required int pageIndex,
+    required List<int> blocks,
+  }) async {
+    if (payload == null) return null;
+    Directory? dir;
+    try {
+      final MangaMiningAudioClip? clip = resolveMangaMiningAudioClip(
+        registration: await loadMangaAudio(appModel.database, widget.bookKey),
+        payload: payload,
+        pageIndex: pageIndex,
+        blocks: blocks,
+        headPadMs: appModel.miningAudioHeadPadMs,
+        tailPadMs: appModel.miningAudioTailPadMs,
+      );
+      if (clip == null || !await File(clip.inputPath).exists()) return null;
+      dir = await Directory.systemTemp.createTemp(
+        'fushi_manga_sentence_audio_',
+      );
+      final MiningMediaCompression compression = MiningMediaCompression.resolve(
+        imageTier: appModel.miningImageQuality,
+        audioTier: appModel.miningAudioQuality,
+      );
+      String? failure;
+      final String? path = await TtsChannel.instance.extractAudioSegment(
+        inputPath: clip.inputPath,
+        startMs: clip.range.startMs,
+        endMs: clip.range.endMs,
+        outputPath: p.join(
+          dir.path,
+          'sentence.${immersionMiningAudioExtension()}',
+        ),
+        audioChannels: compression.audioChannels,
+        audioBitrate: compression.audioBitrate,
+        onFailure: (String summary) => failure = summary,
+      );
+      if (path == null) {
+        ErrorLogService.instance.logDiagnostic(
+          'MangaFushiPage.miningSentenceAudio',
+          'sentence audio export failed: ${failure ?? 'unknown'}',
+        );
+        unawaited(_deleteTempDir(dir));
+        return null;
+      }
+      return (path: path, dir: dir);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'MangaFushiPage.miningSentenceAudio',
+        error,
+        stack,
+      );
+      if (dir != null) unawaited(_deleteTempDir(dir));
+      return null;
+    }
   }
 
   // ── 制卡（L7）────────────────────────────────────────────────────────
@@ -5565,8 +5696,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   /// 查词弹窗里点「+」制卡。句子 = 最近一次查词的框内句（气泡即句子）；卡图 =
   /// **本次 OCR 命中页的文件路径**（旧 payload 才回退当前 spread 首页），直接传路径
-  /// 经 [AnkiMiningContext.coverPath] 走 `{book-cover}`/`{card-image}` 通道。漫画无
-  /// 音轨，sasayaki 音频字段恒 null。
+  /// 经 [AnkiMiningContext.coverPath] 走 `{book-cover}`/`{card-image}` 通道。句子音频
+  /// 只在本卷有漫画有声成品且命中这句时给（[_mangaSentenceAudio]），否则为 null。
   @override
   Future<MinePopupResult> onMineFromPopup(Map<String, String> fields) async {
     // 本次请求的「高级制卡」覆盖项、制卡页与句子矩形都在第一个 await 之前同步读齐：
@@ -5580,6 +5711,14 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         miningText != null && miningText.pageIndex == miningPageIndex
         ? miningText.rect
         : null;
+    final ({int pageIndex, List<int> blocks})? miningBlocks =
+        _miningSentenceBlocks;
+    final List<int>? miningSentenceBlocks =
+        miningBlocks != null && miningBlocks.pageIndex == miningPageIndex
+        ? miningBlocks.blocks
+        : null;
+    // 在线直读章不取成品音频（与 OCR「未下载不识别」一致）。
+    final MokuroPayload? miningPayload = _streamingChapter ? null : _payload;
     final MangaCardImagePlan imagePlan = resolveMangaCardImagePlan(
       overrides: overrides,
       miningPageIndex: miningPageIndex,
@@ -5594,6 +5733,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       );
     }
     Directory? cropTempDir;
+    Directory? sentenceAudioTempDir;
     final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
     final SourceReviewSession? reviewSession = _sourceReviewSession;
     final String? bookUid = _bookUid;
@@ -5669,10 +5809,25 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         kind: TagHostKind.epub,
         entryKey: widget.bookKey,
       );
+      // 句子音频：漫画有声成品里命中这句的那一句（设计 §3）；「高级制卡」选了不要音频
+      // 就不取。
+      String? sentenceAudioPath;
+      if (miningPageIndex != null &&
+          miningSentenceBlocks != null &&
+          !(overrides?.omitAudio ?? false)) {
+        final ({String path, Directory dir})? audio = await _mangaSentenceAudio(
+          payload: miningPayload,
+          pageIndex: miningPageIndex,
+          blocks: miningSentenceBlocks,
+        );
+        sentenceAudioPath = audio?.path;
+        sentenceAudioTempDir = audio?.dir;
+      }
       final AnkiMiningContext miningContext = AnkiMiningContext(
         sentence: sentence,
         documentTitle: title,
         coverPath: coverPath,
+        sentenceAudioPath: sentenceAudioPath,
         sentenceOffset: sentenceOffset,
         sourceLink: sourceLink,
         source: AnkiMiningSource.manga,
@@ -5738,6 +5893,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       // 到这里就没人要了；与阅读器句子音频临时目录同一处理。
       final Directory? dir = cropTempDir;
       if (dir != null) unawaited(_deleteTempDir(dir));
+      final Directory? audioDir = sentenceAudioTempDir;
+      if (audioDir != null) unawaited(_deleteTempDir(audioDir));
     }
   }
 
@@ -7305,6 +7462,29 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                                 ),
                               ),
                             ),
+                      ),
+                    ),
+                  // 漫画有声（成品音频）播放条：同上，不受 chrome 显隐门控。
+                  if (_readAloud.audio
+                      case final MangaAudioPlaybackDriver audio)
+                    Positioned(
+                      left: kMangaChromeEdgeInset,
+                      right: kMangaChromeEdgeInset,
+                      bottom:
+                          MediaQuery.paddingOf(context).bottom +
+                          (_chromeVisible && _chromeActionsEnabled
+                              ? kMangaChromeBottomBarHeight
+                              : kMangaChromeBottomGap),
+                      child: MangaChromeReveal(
+                        fromTop: false,
+                        visible: true,
+                        child: Center(
+                          child: MangaAudioPlaybackBar(
+                            key: ValueKey<MangaAudioPlaybackDriver>(audio),
+                            driver: audio,
+                            onStop: _readAloud.stopAudio,
+                          ),
+                        ),
                       ),
                     ),
                   // 隐藏界面时角落常驻页码：全出血阅读下唯一的进度可见性。

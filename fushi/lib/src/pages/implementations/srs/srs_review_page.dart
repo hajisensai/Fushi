@@ -1581,6 +1581,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         fieldLabel: catalog.srsFieldDisplayName(field),
         fieldName: field.name,
         current: before,
+        promptStore: ref.read(appProvider).prefsRepo,
         run: (AiSrsFieldTask task, String instruction) async {
           final AiChatClient client = AiChatClient();
           try {

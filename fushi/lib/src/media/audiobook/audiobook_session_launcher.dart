@@ -1,11 +1,18 @@
+export 'package:fushi/src/media/audiobook/audiobook_session_start_request.dart';
+
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
+import 'package:fushi/src/media/audiobook/audiobook_session_start_request.dart';
 import 'package:fushi/src/media/audiobook/remote/audiobook_remote_playback.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_library.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_session.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart'
+    show kMangaAlignmentFormat;
 
 /// 从 bookKey 解析出启动 [AudiobookSession] 所需的全部材料（音频文件 / 初值 / persist
 /// 回调 / 书元数据），供 reader 页与书架长按入口共用，消除「解析音频文件 + 装 persist」
@@ -110,6 +117,23 @@ class AudiobookSessionLauncher {
     List<File> audioFiles,
     String bookKey,
   ) async {
+    // 漫画有声成品：播放列表要按清单时间表插入静音、进度口径要换算，与阅读器起播
+    // 同一条路径（manga_audio_session.dart）。清单读不出来就当没有可播放的有声书。
+    if (audiobook.alignmentFormat == kMangaAlignmentFormat) {
+      final MangaAudioRegistration? manga = await loadMangaAudio(_db, bookKey);
+      if (manga == null) return null;
+      final (String title, String? author, String? coverPath, BookFormat _) =
+          await _bookMeta(bookKey);
+      return resolveMangaAudioSessionRequest(
+        _db,
+        registration: manga,
+        title:
+            ReaderFushiSource.instance.overrideTitleForBookKey(bookKey) ??
+            title,
+        author: author,
+        coverPath: coverPath,
+      );
+    }
     final AudiobookRepository repo = AudiobookRepository(_db);
     final SessionPrefs prefs = await _readPrefs(repo, bookKey);
     final SessionPersistCallbacks persist = _persistFor(repo, bookKey);
@@ -336,31 +360,4 @@ class _SessionSource {
 
   /// 非空 = 音频在服务器上流式播放，[audioFiles] 是占位文件。
   final AudiobookRemotePlayback? remote;
-}
-
-class AudiobookSessionStartRequest {
-  const AudiobookSessionStartRequest({
-    required this.info,
-    required this.audioFiles,
-    required this.prefs,
-    required this.persist,
-    this.cues = const <AudioCue>[],
-    this.remote,
-  });
-
-  final SessionBookInfo info;
-  final List<File> audioFiles;
-  final SessionPrefs prefs;
-  final SessionPersistCallbacks persist;
-
-  /// 非空 = 远端（流式）书：[audioFiles] 是占位文件，播放与制卡取音频走它。起会话时
-  /// 原样传给 `AudiobookSession.start(remote:)`。
-  final AudiobookRemotePlayback? remote;
-
-  bool get isSrtBookSource => info.isSrtBookSource;
-
-  /// 全书对齐 cue（扁平，无章节上下文）。供后台听书 [AudiobookSession.start] 在无
-  /// reader 时灌进控制器，让 currentCue 在 load 后即可解析（悬浮窗有字）。reader 在场
-  /// 时 reader 仍会按章节重新 setChapterCues，覆盖此扁平列表，行为不变。
-  final List<AudioCue> cues;
 }

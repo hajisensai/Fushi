@@ -7,9 +7,10 @@ import 'package:fushi/src/media/manga/manga_overlay_html.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 
-/// 漫画朗读的高亮（Vfy9mU3-OV）：`__mangaSetSpeaking(page, group)` 只给正在读的
-/// 句子分组加 `manga-speaking`，后台 OCR 用 `__mangaReplaceOcr` 换掉文字层后高亮
-/// 仍在，group < 0 清除。
+/// 漫画朗读的高亮（Vfy9mU3-OV）：`__mangaSetSpeaking(page, blocks)` 只给正在读的
+/// 那几个块加 `manga-speaking`（现场朗读传句子分组里的块；成品音频传演出稿的块列表，
+/// 一句可以跨分组），后台 OCR 用 `__mangaReplaceOcr` 换掉文字层后高亮仍在，空列表
+/// 清除。
 ///
 /// 在**真 Chromium** 里加载 [mangaWindowDocument] 生成的整份文档跑生产脚本（与
 /// manga_zoom_scroll_chrome_js_test 同一套方式）；页 0 的文字层用
@@ -88,9 +89,18 @@ void main() {
       inlineSelectionJs: '',
     );
     final int group = mangaBlockSentenceGroups(page0)[1].group;
+    final List<int> groupBlocks = mangaSentenceGroupBlockIndices(page0, group);
+    // 跨分组的一句（成品音频的演出稿可以把不同分组的块归成一句）。
+    final int otherGroupBlock = List<int>.generate(
+      page0.blocks.length,
+      (int i) => i,
+    ).firstWhere((int i) => !groupBlocks.contains(i));
     final String setup =
         'window.__testBoxes=${jsonEncode(mangaOcrBoxesHtml(page0))};'
-        'window.__testGroup=$group;';
+        'window.__testGroup=$group;'
+        'window.__testBlocks=${jsonEncode(groupBlocks)};'
+        'window.__testCrossBlocks='
+        '${jsonEncode(<int>[groupBlocks.first, otherGroupBlock])};';
     const String bridge =
         '<script>window.flutter_inappwebview={callHandler:function(){'
         'return undefined;}};</script>';
@@ -100,7 +110,7 @@ void main() {
   }
 
   test(
-    '朗读高亮只挂在正在读的句子分组上，换文字层后仍在，-1 清除',
+    '朗读高亮只挂在正在读的块上（可跨分组），换文字层后仍在，空列表清除',
     () async {
       final String cases = File(
         'test/media/manga/manga_read_aloud_highlight_js_test.js',
@@ -136,7 +146,7 @@ void main() {
             jsonDecode(utf8.decode(base64Decode(payload!.group(1)!)))
                 as Map<String, dynamic>;
         expect(report['failures'], isEmpty, reason: '${report['failures']}');
-        expect(report['passed'] as int, 8);
+        expect(report['passed'] as int, 10);
       } finally {
         try {
           temp.deleteSync(recursive: true);
