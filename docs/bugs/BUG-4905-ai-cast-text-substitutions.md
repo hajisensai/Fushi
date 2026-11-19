@@ -1,4 +1,4 @@
-## BUG-4798 · 小说和漫画 AI 标注未应用系列用词替换表
+## BUG-4905 · 小说和漫画 AI 标注未应用系列用词替换表
 - **报告**：2026-11-17（用户：用词替换应覆盖 AI 输入，随后明确页图中的对应文字也要改）
 - **真实性**：✅ 真 bug（按用户本次明确的预期）：替换表原先仅供朗读/cue 输出使用；小说两遍提示词、漫画三遍提示词与页图上传路径没有消费系列替换表。
   - 根因：`fushi/lib/src/media/audiobook/tts/studio/tts_cast_annotator.dart:127` 的两遍请求只传原始 chunk；`packages/fushi_engine/lib/tts/manga_audio/manga_audio_annotate_runner.dart:244` 的角色提取、逐页与整场复核只传原始 OCR/台词；`fushi/lib/src/ai/ai_manga_audio_assistant.dart:156` 的页图准备只缩图/转码。
