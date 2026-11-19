@@ -654,32 +654,37 @@ class _MaterialNavCluster extends StatelessWidget {
             children: <Widget>[
               if (searchLeading && search != null) searchButton(search),
               if (searchLeading) const Spacer(),
-              _GlassTabCapsule(
-                width: minimized ? _kGlassNavBarMinimizedWidth : fullWidth,
-                minimized: minimized,
-                itemCount: capsuleIndices.length,
-                selectedPos: selectedPos,
-                // 原型样式时横拖归原型（模式条横拨 / 转盘旋钮），胶囊不再横拖滑 lens。
-                swipeSelect: !variant,
-                duration: duration,
-                curve: curve,
-                onSelectPos: (int pos) {
-                  final int i = capsuleIndices[pos];
-                  if (i != currentIndex) fushiSelectionHaptic(context);
-                  onTap(i);
-                },
-                children: <Widget>[
-                  layer(
-                    shown: !minimized,
-                    width: innerFull,
-                    child: minimized ? const SizedBox.shrink() : fullRow,
-                  ),
-                  layer(
-                    shown: minimized,
-                    width: innerMini,
-                    child: minimized ? miniCell : const SizedBox.shrink(),
-                  ),
-                ],
+              // 胶囊自成一个遍历组，与搜索圆钮按两者的布局盒排 Tab 序，不随
+              // 胶囊里相机模式条的滚动翻转（同 MD3 悬浮底栏，见
+              // [_MaterialFloatingBar]）。
+              FocusTraversalGroup(
+                child: _GlassTabCapsule(
+                  width: minimized ? _kGlassNavBarMinimizedWidth : fullWidth,
+                  minimized: minimized,
+                  itemCount: capsuleIndices.length,
+                  selectedPos: selectedPos,
+                  // 原型样式时横拖归原型（模式条横拨 / 转盘旋钮），胶囊不再横拖滑 lens。
+                  swipeSelect: !variant,
+                  duration: duration,
+                  curve: curve,
+                  onSelectPos: (int pos) {
+                    final int i = capsuleIndices[pos];
+                    if (i != currentIndex) fushiSelectionHaptic(context);
+                    onTap(i);
+                  },
+                  children: <Widget>[
+                    layer(
+                      shown: !minimized,
+                      width: innerFull,
+                      child: minimized ? const SizedBox.shrink() : fullRow,
+                    ),
+                    layer(
+                      shown: minimized,
+                      width: innerMini,
+                      child: minimized ? miniCell : const SizedBox.shrink(),
+                    ),
+                  ],
+                ),
               ),
               if (!searchLeading) const Spacer(),
               if (!searchLeading && search != null) searchButton(search),
@@ -1528,93 +1533,102 @@ class _MaterialFloatingBarState extends State<_MaterialFloatingBar>
           children: <Widget>[
             if (leading) ...fabSlot,
             Expanded(
-              child: LayoutBuilder(
-                builder: (BuildContext context, BoxConstraints box) {
-                  final double full = box.maxWidth;
-                  final double miniWidth = math.min(
-                    full,
-                    _miniWidth(context, miniLabelStyle),
-                  );
-                  return AnimatedBuilder(
-                    animation: _min.animation,
-                    builder: (BuildContext context, Widget? _) {
-                      final double target = _min.target;
-                      final double raw = _min.value;
-                      final double t = (raw - target).abs() < 0.001
-                          ? target
-                          : raw;
-                      final double shown = t.clamp(0.0, 1.0);
-                      final double width = (full + (miniWidth - full) * t)
-                          .clamp(miniWidth * 0.9, full);
-                      final bool minimized = widget.minimized;
-                      // 没有小胶囊可留（FAB 是当前项）：整条胶囊连同底色淡出让位。
-                      final bool vanish = widget.currentItem == null;
-                      return Align(
-                        alignment: anchor,
-                        heightFactor: 1,
-                        child: _NavCapsuleVanish(
-                          vanish: vanish,
-                          minimized: minimized,
-                          shown: shown,
-                          child: SizedBox(
-                            width: width,
-                            child: _FloatingNavSurface(
-                              color: capsuleColor,
-                              borderRadius: BorderRadius.circular(
-                                kAdaptiveNavBarContentHeight / 2,
-                              ),
-                              child: Stack(
-                                fit: StackFit.passthrough,
-                                children: <Widget>[
-                                  IgnorePointer(
-                                    ignoring: minimized,
-                                    child: ExcludeFocus(
-                                      excluding: minimized,
-                                      child: Opacity(
-                                        opacity: 1 - shown,
-                                        child: OverflowBox(
-                                          alignment: anchor,
-                                          minWidth: full,
-                                          maxWidth: full,
-                                          fit: OverflowBoxFit.deferToChild,
-                                          child: widget.capsule,
+              // 胶囊自成一个遍历组：底栏组里只剩「胶囊」与「FAB」两员，按两者
+              // 稳定的布局盒排序（胶囊在前，反转时 FAB 在前），与胶囊内容此刻
+              // 的几何无关。相机模式条放不下时溢出格摆在胶囊外、与 FAB 同列，
+              // 焦点停到哪格条带就滚到哪格；不隔开的话 FAB 与各格混在同一个
+              // 阅读顺序里按「此刻」的横坐标排，名次随条带滚动翻转，Tab 在
+              // 末几格与 FAB 之间打转、当前项之前的目的地永远到不了（Android
+              // appSmoke 窄屏实锤）。
+              child: FocusTraversalGroup(
+                child: LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints box) {
+                    final double full = box.maxWidth;
+                    final double miniWidth = math.min(
+                      full,
+                      _miniWidth(context, miniLabelStyle),
+                    );
+                    return AnimatedBuilder(
+                      animation: _min.animation,
+                      builder: (BuildContext context, Widget? _) {
+                        final double target = _min.target;
+                        final double raw = _min.value;
+                        final double t = (raw - target).abs() < 0.001
+                            ? target
+                            : raw;
+                        final double shown = t.clamp(0.0, 1.0);
+                        final double width = (full + (miniWidth - full) * t)
+                            .clamp(miniWidth * 0.9, full);
+                        final bool minimized = widget.minimized;
+                        // 没有小胶囊可留（FAB 是当前项）：整条胶囊连同底色淡出让位。
+                        final bool vanish = widget.currentItem == null;
+                        return Align(
+                          alignment: anchor,
+                          heightFactor: 1,
+                          child: _NavCapsuleVanish(
+                            vanish: vanish,
+                            minimized: minimized,
+                            shown: shown,
+                            child: SizedBox(
+                              width: width,
+                              child: _FloatingNavSurface(
+                                color: capsuleColor,
+                                borderRadius: BorderRadius.circular(
+                                  kAdaptiveNavBarContentHeight / 2,
+                                ),
+                                child: Stack(
+                                  fit: StackFit.passthrough,
+                                  children: <Widget>[
+                                    IgnorePointer(
+                                      ignoring: minimized,
+                                      child: ExcludeFocus(
+                                        excluding: minimized,
+                                        child: Opacity(
+                                          opacity: 1 - shown,
+                                          child: OverflowBox(
+                                            alignment: anchor,
+                                            minWidth: full,
+                                            maxWidth: full,
+                                            fit: OverflowBoxFit.deferToChild,
+                                            child: widget.capsule,
+                                          ),
                                         ),
                                       ),
                                     ),
-                                  ),
-                                  Positioned.fill(
-                                    child: IgnorePointer(
-                                      ignoring: !minimized,
-                                      child: ExcludeFocus(
-                                        excluding: !minimized,
-                                        child: Opacity(
-                                          opacity: shown,
-                                          child: Align(
-                                            alignment: anchor,
-                                            child: Padding(
-                                              padding: leading
-                                                  ? const EdgeInsetsDirectional.only(
-                                                      end: _kMiniInset,
-                                                    )
-                                                  : const EdgeInsetsDirectional.only(
-                                                      start: _kMiniInset,
-                                                    ),
-                                              child: mini,
+                                    Positioned.fill(
+                                      child: IgnorePointer(
+                                        ignoring: !minimized,
+                                        child: ExcludeFocus(
+                                          excluding: !minimized,
+                                          child: Opacity(
+                                            opacity: shown,
+                                            child: Align(
+                                              alignment: anchor,
+                                              child: Padding(
+                                                padding: leading
+                                                    ? const EdgeInsetsDirectional.only(
+                                                        end: _kMiniInset,
+                                                      )
+                                                    : const EdgeInsetsDirectional.only(
+                                                        start: _kMiniInset,
+                                                      ),
+                                                child: mini,
+                                              ),
                                             ),
                                           ),
                                         ),
                                       ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      );
-                    },
-                  );
-                },
+                        );
+                      },
+                    );
+                  },
+                ),
               ),
             ),
             if (!leading) ...fabSlot,
