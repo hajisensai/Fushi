@@ -1,12 +1,43 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-19T13:01:11Z",
+ "generatedAt": "2026-11-19T13:22:00Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "6dd38cb92db8a3daffbbfefe5fccfa77fdfe966a",
   "seq": 29190
  },
  "builds": [
+  {
+   "seq": 29190,
+   "version": "3.4.0",
+   "sha": "6dd38cb92db8a3daffbbfefe5fccfa77fdfe966a",
+   "unknown": false,
+   "publishedAt": "2026-11-19T13:21:47Z",
+   "testflight": false,
+   "baseSeq": 29116,
+   "prs": [
+    3681
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44526296839"
+    },
+    "macos": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44526296839"
+    },
+    "ios": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44526296839"
+    }
+   }
+  },
   {
    "seq": 29116,
    "version": "3.4.0",
@@ -79,7 +110,8 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44493954591"
     },
     "windows": {
      "state": "ok"
@@ -93,33 +125,7 @@
    }
   }
  ],
- "pending": {
-  "headSha": "6dd38cb92db8a3daffbbfefe5fccfa77fdfe966a",
-  "headSeq": 29190,
-  "prs": [
-   3681
-  ],
-  "direct": [],
-  "truncated": false,
-  "platforms": {
-   "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44526296892"
-   },
-   "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44526296839"
-   },
-   "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44526296839"
-   },
-   "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44526296839"
-   }
-  }
- },
+ "pending": null,
  "prs": {
   "3594": {
    "number": 3594,
