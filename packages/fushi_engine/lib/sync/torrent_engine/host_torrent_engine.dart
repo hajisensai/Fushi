@@ -101,7 +101,8 @@ class PeerTorrentLease {
   /// infohash（小写十六进制）。
   final String hash;
 
-  /// 加入它的已配对设备凭据指纹（诊断用；访问控制只看「是不是远程任务」）。
+  /// 加入它的已配对设备凭据指纹。访问控制的判据：远程只看得到、只能操作
+  /// owner 等于自己凭据指纹的租约（见 [PeerTorrentLeaseStore.ownedBy]）。
   final String owner;
   final int createdAt;
 }
@@ -163,11 +164,23 @@ class PeerTorrentLeaseStore {
     return _leases ??= loaded;
   }
 
-  /// 全部租约的 infohash。
+  /// 全部租约的 infohash（宿主的 resume 保留集合用，不分设备）。
   Future<Set<String>> hashes() async => (await _load()).keys.toSet();
 
+  /// [owner] 自己交来的租约的 infohash：远程列表的唯一来源。
+  Future<Set<String>> hashesOwnedBy(String owner) async => <String>{
+    for (final PeerTorrentLease l in (await _load()).values)
+      if (l.owner == owner) l.hash,
+  };
+
+  /// 是否有这条租约（不论属于哪台设备）。
   Future<bool> contains(String hash) async =>
       (await _load()).containsKey(hash.trim().toLowerCase());
+
+  /// 这条租约是否由 [owner] 交来：远程逐种子操作的访问判据。别的设备的租约和
+  /// host 自己的种子一样，对 [owner] 来说「不存在」。
+  Future<bool> ownedBy(String hash, String owner) async =>
+      (await _load())[hash.trim().toLowerCase()]?.owner == owner;
 
   Future<List<PeerTorrentLease>> all() async =>
       (await _load()).values.toList(growable: false);

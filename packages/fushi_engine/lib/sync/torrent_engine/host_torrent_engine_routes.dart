@@ -126,7 +126,9 @@ Future<shelf.Response> handleHostTorrentEngineRequest(
         return _json(<String, Object?>{'ok': ok});
       case 'torrents':
         if (seg.length == 1) {
-          if (method == 'GET') return await _list(engine, request);
+          if (method == 'GET') {
+            return await _list(engine, request, owner: owner);
+          }
           if (method == 'POST') {
             return await _add(engine, request, owner: owner);
           }
@@ -134,8 +136,9 @@ Future<shelf.Response> handleHostTorrentEngineRequest(
         }
         final String hash = seg[1].toLowerCase();
         if (!_hashPattern.hasMatch(hash)) return _bad('malformed torrent id');
-        // 租约是远程可见性的唯一判据：host 自己的种子对远程「不存在」。
-        if (!await (await _leasesOf(engine)).contains(hash)) {
+        // 租约归属是远程可见性的唯一判据：host 自己的种子、别的已配对设备交来
+        // 的种子，对这台设备都「不存在」（同样回 404，不泄露是否有人在下）。
+        if (!await (await _leasesOf(engine)).ownedBy(hash, owner)) {
           return shelf.Response.notFound('Unknown remote torrent');
         }
         return await _onTorrent(engine, request, method, hash, seg.sublist(2));
@@ -163,10 +166,13 @@ Future<shelf.Response> _withDetail(
 
 Future<shelf.Response> _list(
   HostTorrentEngine engine,
-  shelf.Request request,
-) async {
+  shelf.Request request, {
+  required String owner,
+}) async {
   final String? category = request.url.queryParameters['category'];
-  final Set<String> leased = await (await _leasesOf(engine)).hashes();
+  final Set<String> leased = await (await _leasesOf(
+    engine,
+  )).hashesOwnedBy(owner);
   final List<TorrentSnapshot>? all = await engine
       .withBackend<List<TorrentSnapshot>>(
         (TorrentBackend b) => b.listTorrents(
@@ -260,6 +266,10 @@ Future<shelf.Response> _add(
   }
 
   final PeerTorrentLeaseStore leases = await _leasesOf(engine);
+  // 别的设备已交来同一颗种子：和 host 自己的种子一样不让接管，回 ok:false。
+  if (await leases.contains(hash) && !await leases.ownedBy(hash, owner)) {
+    return _json(<String, Object?>{'ok': false, 'hash': hash});
+  }
   final bool alreadyLeased = await leases.contains(hash);
   // 先登记租约再加：加成功、登记还没落盘时 host 崩溃，种子会在下次剪枝时被删；
   // 反过来最多留一条指向不存在种子的租约（无害，删除时一并清）。

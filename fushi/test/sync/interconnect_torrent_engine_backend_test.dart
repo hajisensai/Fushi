@@ -29,6 +29,7 @@ import 'package:path/path.dart' as p;
 const String _hostId = 'vm-host-1';
 const String _sharedToken = 'shared-token';
 const String _peerToken = 'peer-token-of-pc';
+const String _otherPeerToken = 'peer-token-of-phone';
 const String _hashA = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const String _hostOwnHash = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
@@ -293,6 +294,7 @@ FushiSyncServer buildServer(HostTorrentEngine engine, String syncDir) =>
       ..hostId = _hostId
       ..pairedPeerCredentialsProvider = (() async => <String, String>{
         'pc-device': _peerToken,
+        'phone-device': _otherPeerToken,
       });
 
 void main() {
@@ -405,6 +407,39 @@ void main() {
       isFalse,
     );
     expect(await leases.contains(_hostOwnHash), isFalse);
+  });
+
+  test('租约按设备隔离：别的已配对设备看不到、改不了、删不掉、也接管不了', () async {
+    final RemoteFushiTorrentBackend pc = await client();
+    final String save = p.join(allowedRoot, 'pc');
+    expect(
+      await pc.addTorrent(magnet(_hashA), category: 'fushi', savePath: save),
+      isTrue,
+    );
+
+    final RemoteFushiTorrentBackend phone = await client(
+      token: _otherPeerToken,
+    );
+    expect(await phone.listTorrents(), isEmpty);
+    expect(await phone.listFiles(_hashA), isEmpty);
+    expect(await phone.pauseTorrent(_hashA), isFalse);
+    expect(
+      (await phone.moveStorage(_hashA, p.join(allowedRoot, 'x'))).ok,
+      isFalse,
+    );
+    expect(await phone.removeTorrent(_hashA, deleteFiles: true), isFalse);
+    // 同一颗种子再交一次：不接管，不改登记。
+    expect(await phone.addTorrent(magnet(_hashA), category: 'fushi'), isFalse);
+    expect(backend.torrents[_hashA]!.paused, isFalse);
+    expect(backend.torrents[_hashA]!.savePath, p.normalize(save));
+    expect(await leases.contains(_hashA), isTrue);
+
+    final RemoteFushiTorrentBackend pcAgain = await client();
+    expect(
+      (await pcAgain.listTorrents()).map((TorrentSnapshot s) => s.hash),
+      <String>[_hashA],
+    );
+    expect(await pcAgain.pauseTorrent(_hashA), isTrue);
   });
 
   test('保存目录越出白名单根 → 拒绝，引擎没被调用', () async {
