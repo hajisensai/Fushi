@@ -79,9 +79,20 @@ import 'package:test/test.dart';
 /// 却因此 import 了整个封面服务（它读 AppModel），把漫画下载 / 互联 / 同步编排等 20 个文件
 /// 拖进环。改为直接调引擎 writer（封面写盘守卫本就认它为收口）后最大环降到 630。
 ///
+/// 2026-11-19 合入漫画有声 / 小说 TTS 制作台（#3681，含 #3717）实测 651：漫画有声、TTS
+/// 制作台、声线包的服务层（演出稿 / 声线存储、渲染、匹配、标注任务等）直接 import
+/// AppModel，只为取数据库 / 数据目录 / 偏好 / 有声书会话。不调上限，改成窄依赖：
+/// 新增 `AudioProductionHost`（AppModel 实现、调用方注入），连同 develop 上本就因此在
+/// 环里的 `tts_studio_service` / `tts_render_runner` / `tts_cast_annotator` 一并改收它；
+/// 漫画有声书音源的书名改注入 `MangaBookTitleResolver`（不再 import `display_title`）；
+/// `AudiobookSessionStartRequest` 拆到叶子文件，断开 `manga_audio_session` ↔
+/// `audiobook_session_launcher` 互引；`real_path_directory_picker` 改收
+/// `ExternalStorageAccess`；`AiSavedPromptButton` 的存取由调用方注入、不再读
+/// `appProvider`。最大环降到 622（剩下进环的是本就读 AppModel 的制作台页面），上限随之下调。
+///
 /// 红了：新加的 import 把底层模块接到了 UI / AppModel 上。把用到的东西挪到
 /// 更底层的文件，或改用参数 / 回调注入，不要调大上限、不要把文件从目录里豁免。
-const int kMaxCycleFiles = 630;
+const int kMaxCycleFiles = 622;
 
 const String kAppModel = 'lib/src/models/app_model.dart';
 
