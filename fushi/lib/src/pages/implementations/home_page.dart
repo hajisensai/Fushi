@@ -39,6 +39,10 @@ import 'package:fushi/src/pages/implementations/download_backend_setup_dialog.da
 import 'package:fushi/src/pages/implementations/ai_settings_route.dart';
 import 'package:fushi/src/pages/implementations/managed_video_source_prompt.dart';
 import 'package:fushi/src/sync/background_tasks_indicator.dart';
+import 'package:fushi/src/sync/interconnect_download_background_tasks.dart';
+import 'package:fushi/src/sync/interconnect_download_manager.dart';
+import 'package:fushi/src/pages/implementations/interconnect_download_tasks_page.dart'
+    show openInterconnectDownloadTasksPage;
 import 'package:fushi/src/pages/implementations/home_background_tasks_scope.dart';
 import 'package:fushi/src/sync/desktop_foreground_guard.dart';
 import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
@@ -643,6 +647,7 @@ class _HomePageState extends BasePageState<HomePage>
         _videoSourceScrapeController;
     appModelNoUpdate.videoScrapeRuntime = _videoScrapeRuntime;
     syncBackgroundTasksListenable.addListener(_onSyncTasksChanged);
+    _interconnectDownloads.addListener(_onInterconnectDownloadsChanged);
 
     // 首页可能被「功能模块」关掉：默认落地改为第一个启用的 tab，不让
     // `_currentTab` 从第一帧起就指向一个隐藏 tab（同 [homeInitialTab] 的理由）。
@@ -1113,6 +1118,7 @@ class _HomePageState extends BasePageState<HomePage>
     _videoLibraryRefreshSignal.dispose();
     _videoPendingScrapeChangedSignal.dispose();
     syncBackgroundTasksListenable.removeListener(_onSyncTasksChanged);
+    _interconnectDownloads.removeListener(_onInterconnectDownloadsChanged);
     _scrapeTaskTick.dispose();
     for (final ScrollController controller in _tabScrollControllers.values) {
       controller.dispose();
@@ -3818,22 +3824,49 @@ class _HomePageState extends BasePageState<HomePage>
     setState(() => _syncTasksActive = next);
   }
 
+  /// app 级互联下载管理器（从已配对设备拉书 / 有声书 / 视频）：它的在跑任务也进
+  /// 「后台任务」入口，离开库页同样看得到下载走到哪一步。
+  late final InterconnectDownloadManager _interconnectDownloads = ref.read(
+    interconnectDownloadManagerProvider,
+  );
+
+  /// 互联下载在不在跑；与 [_syncTasksActive] 同理，外壳只在这一位翻转时重建
+  /// （下载进度一秒多次通知，进度本身由入口自己听）。
+  late bool _interconnectDownloadsActive = hasRunningInterconnectDownloads(
+    _interconnectDownloads,
+  );
+
+  void _onInterconnectDownloadsChanged() {
+    final bool next = hasRunningInterconnectDownloads(_interconnectDownloads);
+    if (!mounted || next == _interconnectDownloadsActive) return;
+    setState(() => _interconnectDownloadsActive = next);
+  }
+
   /// 「后台任务」入口与明细弹层听的全部数据源。
   late final Listenable _backgroundTasksListenable = Listenable.merge(
-    <Listenable>[syncBackgroundTasksListenable, _scrapeTaskTick],
+    <Listenable>[
+      syncBackgroundTasksListenable,
+      _scrapeTaskTick,
+      _interconnectDownloads,
+    ],
   );
 
   /// 有没有任何后台任务在跑（决定入口显隐）。
   bool get _hasBackgroundTasks =>
       _syncTasksActive ||
+      _interconnectDownloadsActive ||
       (_videoScrapeRuntime.currentController?.isBusy ?? false);
 
-  /// 此刻的后台任务：同步类（常规 / 复习）+ 视频源补刮。
+  /// 此刻的后台任务：同步类（常规 / 复习）+ 互联下载 + 视频源补刮。
   List<BackgroundTask> _backgroundTasks() {
     final VideoSourceScrapeTaskController? controller =
         _videoScrapeRuntime.currentController;
     return <BackgroundTask>[
       ...syncBackgroundTasks(),
+      ...interconnectDownloadBackgroundTasks(
+        _interconnectDownloads,
+        onOpen: () => unawaited(openInterconnectDownloadTasksPage(context)),
+      ),
       if (controller != null && controller.isBusy)
         _scrapeBackgroundTask(controller),
     ];
