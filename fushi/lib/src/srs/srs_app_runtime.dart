@@ -229,6 +229,9 @@ class SrsAppRuntime {
         srsDirectoryKeyOf(backend, SyncRepository(app.database)),
     localDirectories: _localDirectories,
     folderLocations: () async => app.srsFolderLocations,
+    // 移除了的文件夹位置（同步与历史页）：配置里去掉时同一个事务记下，这里逐个让内核忘掉、划掉。
+    pendingForgets: () => app.srsPendingLocationForgets,
+    onForgotten: app.markSrsLocationForgotten,
     profileLinker: _profileLinker,
     onDataChanged: _bumpPulledRevision,
     onNotice: _showSyncNotice,
@@ -464,6 +467,12 @@ class SrsAppRuntime {
       _onHostClientUpload,
     );
     interconnectWatch.start();
+    // 复习模块没起时移除的同步位置：运行时起来就让内核忘掉（之后每一轮开头也会补）。
+    unawaited(
+      sync.forgetPendingLocations().catchError((Object e, StackTrace stack) {
+        ErrorLogService.instance.log('SrsAppRuntime.forgetPending', e, stack);
+      }),
+    );
     // 旧版定时备份已由同步 v2 的时间线 / 归档 / 手动导出取代：本机旧备份文件（仍可经「导入」恢复）从升级后
     // 第一次看到起留 30 天再清（起算时刻持久化在目录里的标记文件，见 srs_legacy_backup_cleanup.dart）。
     unawaited(

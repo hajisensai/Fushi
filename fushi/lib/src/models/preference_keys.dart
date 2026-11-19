@@ -895,6 +895,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String（JSON 数组，SrsFolderLocation）：复习同步 v2 用户加的文件夹存储位置与用途（同步 / 媒体 / 归档）。
   // 设备本地（SyncRepository._deviceLocalFixedKeys）：路径只在这台设备上有意义。
   'srs_sync2_folder_locations',
+  // String（JSON 字符串数组，位置身份）：移除了、复习内核还没 `location_forget` 的同步位置，与上一项同一个事务写，
+  // 同步调度器起来后逐个忘掉、划掉。设备本地（SyncRepository._deviceLocalFixedKeys）。
+  'srs_sync2_forget_pending',
   // String（JSON：位置身份 → SrsLocationKey）：复习同步 v2 各存储位置的端到端加密密钥。凭据 + 设备本地
   // （同时登记在 kCredentialPreferenceKeys、PrefRedactionPolicy.sensitiveKeys 与 deviceLocalPrefKeys）。
   'srs_sync2_location_keys',

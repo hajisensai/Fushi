@@ -91,6 +91,7 @@ Future<void> _pump(
   required SrsDbStore store,
   required _Backend backend,
   required Widget home,
+  List<Override> overrides = const <Override>[],
 }) async {
   tester.view.physicalSize = const Size(1100, 1600);
   tester.view.devicePixelRatio = 1;
@@ -109,6 +110,7 @@ Future<void> _pump(
         ),
         srsReviewChromeFloatingProvider.overrideWithValue(false),
         srsRetainedCopyBackendProvider.overrideWithValue(backend),
+        ...overrides,
       ],
       child: TranslationProvider(
         child: MaterialApp(
@@ -280,6 +282,90 @@ void main() {
     expect(backend.deleted, <String>[_kDir]);
     expect(visible, isFalse, reason: '删完状态重读，行隐藏');
     expect(subtitle, isNull);
+    expect(tester.takeException(), isNull);
+    await _unmount(tester);
+  });
+
+  // 第五波复核遗留：牌组列表横幅最前的清除收尾提示。出错时显示原因；没出错时根本不挂（横幅是带间距的列表，零高度的
+  // 一项也占一条间距，把牌组树往下推——srs_pages_test 手机首页的最后一行就是这样被挤出屏幕的）。
+  testWidgets('牌组列表：清除收尾出错时横幅提示原因；没出错时不挂提示项', (WidgetTester tester) async {
+    final SrsDbStore store = await _storeWithDeck(tester);
+    SrsScrubState scrub = (due: true, error: 'database or disk is full');
+    await _pump(
+      tester,
+      store: store,
+      backend: _Backend(),
+      home: const SrsDeckListPage(),
+      overrides: <Override>[
+        srsScrubStateProvider.overrideWith((Ref ref) async => scrub),
+      ],
+    );
+    final Finder notice = find.text(
+      t.srs_scrub_error_notice(reason: 'database or disk is full'),
+    );
+    expect(notice, findsOneWidget);
+
+    scrub = (due: false, error: null);
+    ProviderScope.containerOf(
+      tester.element(find.byType(SrsDeckListPage)),
+    ).invalidate(srsScrubStateProvider);
+    await srsSettle(tester);
+    expect(notice, findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('srs-scrub-ok'), skipOffstage: false),
+      findsNothing,
+      reason: '没出错时不挂零高度的提示项',
+    );
+    expect(tester.takeException(), isNull);
+    await _unmount(tester);
+  });
+
+  // 第五波复核遗留：保留副本状态（后台 isolate 打开两个库文件）不跟复习库修订号重读；没人看就释放，下次进页面现读。
+  testWidgets('保留副本状态：修订号怎么跳都不重读；没人看时释放，再看时现读一次', (WidgetTester tester) async {
+    final SrsDbStore store = await _storeWithDeck(tester);
+    final _Backend backend = _Backend();
+    final ValueNotifier<bool> watching = ValueNotifier<bool>(true);
+    addTearDown(watching.dispose);
+    SrsRetainedCopyState? seen;
+    await _pump(
+      tester,
+      store: store,
+      backend: backend,
+      home: Scaffold(
+        body: ValueListenableBuilder<bool>(
+          valueListenable: watching,
+          builder: (BuildContext context, bool on, Widget? _) => on
+              ? Consumer(
+                  builder: (BuildContext context, WidgetRef ref, Widget? _) {
+                    seen = ref
+                        .watch(srsRetainedCopyProvider)
+                        .valueOrNull
+                        ?.state;
+                    return const SizedBox();
+                  },
+                )
+              : const SizedBox(),
+        ),
+      ),
+    );
+    expect(seen?.kind, SrsRetainedCopyKind.sealed);
+    expect(backend.states, 1);
+
+    final ProviderContainer container = ProviderScope.containerOf(
+      tester.element(find.byType(Scaffold)),
+    );
+    for (int i = 0; i < 3; i++) {
+      container.read(srsRevisionProvider.notifier).state++;
+      await srsSettle(tester);
+    }
+    expect(backend.states, 1, reason: '评分 / 编辑 / 同步拉入不改变保留副本');
+
+    watching.value = false;
+    await srsSettle(tester);
+    watching.value = true;
+    await srsSettle(tester);
+    expect(backend.states, 2, reason: '释放之后再看 = 现读');
+    expect(seen?.kind, SrsRetainedCopyKind.sealed);
     expect(tester.takeException(), isNull);
     await _unmount(tester);
   });

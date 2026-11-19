@@ -370,6 +370,10 @@ fn purge_deletes_only_the_confirmed_collection() {
     assert_eq!(v["tables"]["collections"], json!(1), "{v}");
     let e = try_as(h, P, "binding_get", json!({})).unwrap_err();
     assert!(e.contains("has no collection"), "{e}");
+    // 删掉之后数数 = 全 0（不报「没有集合」：删 profile 的核对与存量扫描都要对它数数）；从没绑定过的 R 同样。
+    let zero = json!({"notes": 0, "cards": 0, "reviews": 0, "rows": 0});
+    assert_eq!(g4(h, "profile_footprint", T1, json!({})), zero);
+    assert_eq!(as_profile(h, R, "profile_footprint", json!({})), zero);
     assert_eq!(
         g4(h, "profile_uids", T1, json!({}))["uids"],
         json!([Q]),

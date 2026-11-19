@@ -231,9 +231,12 @@ typedef SrsChannelRunner =
 
 /// 一轮同步报告里带回的错误（[SrsSyncReport.error]）：引擎没抛异常，但这个目录这轮没同步成。
 class SrsSyncReportError implements Exception {
-  const SrsSyncReportError(this.message);
+  const SrsSyncReportError(this.message, {this.locationDir});
 
   final String message;
+
+  /// 出错那一轮的集合目录名（[SrsSync2Report.locationDir]）：恢复提示要写出位置上的真实路径。
+  final String? locationDir;
 
   @override
   String toString() => message;
@@ -398,10 +401,14 @@ class SrsSyncScheduler {
     Future<bool> Function()? autoSyncEnabled,
     bool Function(String locationId)? locationDisabled,
     Future<bool?> Function(SyncAssetStore backend)? peerJoined,
+    Set<String> Function()? pendingForgets,
+    Future<void> Function(String locationId)? onForgotten,
     // 先加入是有时限的一次性关联：固定时长（与改成按进度判之前的旧库迁移拉取预算同值）。
     Duration joinBudget = const Duration(minutes: 2),
   }) : _profileLinker = profileLinker,
        _peerJoined = peerJoined,
+       _pendingForgets = pendingForgets,
+       _onForgotten = onForgotten,
        _joinBudget = joinBudget,
        _locationDisabled = locationDisabled,
        _autoSyncEnabled = autoSyncEnabled,
@@ -451,6 +458,12 @@ class SrsSyncScheduler {
 
   final Future<List<SrsLocalDirectory>> Function()? _localDirectories;
   final Future<List<SrsFolderLocation>> Function()? _folderLocations;
+
+  /// 移除了、内核还没忘掉的位置身份（偏好里的待忘清单，移除时与位置配置同一个事务写进去）；null = 没有这类位置。
+  final Set<String> Function()? _pendingForgets;
+
+  /// 内核已经忘掉这个位置：调用方把它从待忘清单里划掉。
+  final Future<void> Function(String locationId)? _onForgotten;
 
   /// 每个文件夹位置最近一次的错误（同步与历史页显示；成功一轮即清掉）。
   final Map<String, Object> folderErrors = <String, Object>{};
@@ -1044,6 +1057,7 @@ class SrsSyncScheduler {
         store.isWindingDown) {
       return SrsSync2Report()..error = kSrsSyncStoreUnavailable;
     }
+    await _forgetPendingIn(store);
     _step('directoryKey');
     final String? key = directoryKey ?? await _directoryKeyOf(backend);
     if (key == null) {
@@ -1612,7 +1626,9 @@ class SrsSyncScheduler {
       if (error != null) {
         notSynced++;
         if (error != kSrsSyncLocationDisabled) {
-          errors.add(SrsSyncReportError(error));
+          errors.add(
+            SrsSyncReportError(error, locationDir: report.locationDir),
+          );
         }
       } else if (report.peerNotJoined) {
         peersNotJoined++;
@@ -1633,25 +1649,45 @@ class SrsSyncScheduler {
     );
   }
 
-  /// 用户移除了同步位置 [locationId]（文件夹位置的「移除」；内核 `location_forget`，[srsSync4ForgetLocation]）：
-  /// 本机忘掉这个位置的同步状态、不再向它转发，位置上的文件与本机卡片不动；**忘掉之后**才调 [dropFromConfig] 把它从
-  /// 配置里去掉。两步一起排进 [_serially]：不与正在跑的一轮交错（那一轮可能正在往这个位置写 head），中间也插不进
-  /// 新的一轮（否则那一轮按还没去掉的配置又把状态行建回来）。卡片库没打开、或内核忘不掉，就抛给调用方（界面提示），
-  /// 配置不动——位置还在列表里，用户可以再移除一次；反过来先去掉配置再忘，失败时位置已经从界面上消失、内核状态却
-  /// 还在，用户再也没有入口清它，活跃窗口里还会继续为它保留转发原文（G8-7c 复核）。
-  Future<void> forgetLocation(
-    String locationId, {
-    required Future<void> Function() dropFromConfig,
-  }) => _serially(() async {
+  /// 让内核忘掉用户移除了的同步位置（文件夹位置的「移除」；内核 `location_forget`，[srsSync4ForgetLocation]）：本机
+  /// 忘掉它的同步状态、不再向它转发，位置上的文件与本机卡片不动。要忘的位置来自待忘清单（[_pendingForgets]）：
+  /// 移除时配置里去掉它、同一个事务里记进清单，所以移除本身不依赖运行时 / 卡片库在不在（复习模块没起时照样能移除，
+  /// 运行时起来后在这里补忘）；忘掉一个划掉一个（[_onForgotten]），没忘掉的留在清单里，下一次再来。
+  ///
+  /// 排进 [_serially]：不与正在跑的一轮交错（那一轮可能是按移除之前读到的配置在跑这个位置，会把状态行建回来——它
+  /// 跑完之后这里才忘）；之后的轮次读到的配置里已经没有它，不会再建。每一轮开头也补一遍（[_forgetPendingIn]）。
+  /// 卡片库没打开 = 这次什么都不做（留给下一次）；内核报错抛给调用方。
+  Future<void> forgetPendingLocations() => _serially(() async {
+    if (_pendingForgets?.call().isEmpty ?? true) return;
     final SrsDbStore? store = await _readStore();
-    if (store == null || store.isWindingDown) {
-      throw StateError(
-        'srs forgetLocation: card library unavailable, location kept',
-      );
-    }
-    await srsSync4ForgetLocation(store, locationId);
-    await dropFromConfig();
+    if (store == null || store.isWindingDown) return;
+    await _forgetPending(store);
   });
+
+  Future<void> _forgetPending(SrsDbStore store) async {
+    final Set<String> pending = _pendingForgets?.call() ?? const <String>{};
+    for (final String id in pending) {
+      await srsSync4ForgetLocation(store, id);
+      await _onForgotten?.call(id);
+    }
+  }
+
+  /// 一轮开头补忘待忘清单里的位置（已在 [_serially] 里）。忘不掉不挡这一轮：清单留着下一轮再来，同一个原因只记一次
+  /// 日志（持续性的故障每轮都是同一句）。
+  Future<void> _forgetPendingIn(SrsDbStore store) async {
+    if (_pendingForgets?.call().isEmpty ?? true) return;
+    try {
+      await _forgetPending(store);
+    } on Object catch (e, stack) {
+      if (_loggedSkipped.add('forget|$e')) {
+        ErrorLogService.instance.log(
+          'SrsSyncScheduler.forgetPendingLocations',
+          e,
+          stack,
+        );
+      }
+    }
+  }
 
   /// 跑用户加的文件夹存储位置（设计 §6.5：U 盘 / NAS / 被别的同步工具同步的目录）。文件夹此刻不在
   /// （U 盘没插）只记进 [folderErrors]，不算这轮「立即同步」失败——它是可选的冗余副本。
@@ -1688,6 +1724,7 @@ class SrsSyncScheduler {
     }
     final SrsDbStore? store = await _readStore();
     if (store == null || _halted) return const SrsSyncNowResult(ran: 0);
+    await _forgetPendingIn(store);
     final Directory? mediaRoot = await _readMediaRoot?.call();
     int ran = 0;
     bool changed = false;
@@ -1734,7 +1771,10 @@ class SrsSyncScheduler {
         // 口令类问题不进 folderErrors，由 [locationCrypto] 显示（需要口令 / 口令不对 / 加密设置不见了）。
         final String? error = outcome.locationError;
         if (error != null) {
-          folderErrors[l.id] = SrsSyncReportError(error);
+          folderErrors[l.id] = SrsSyncReportError(
+            error,
+            locationDir: folderOps?.locationDir,
+          );
           if (error == kSrsLocationProtocol1Root) {
             _noticeOnce(SrsSyncNotice.locationProtocol1);
           }
@@ -1773,7 +1813,9 @@ class SrsSyncScheduler {
         final String? error = report.error;
         if (error == kSrsSyncLocationDisabled) continue;
         if (error != null) {
-          errors.add(SrsSyncReportError(error));
+          errors.add(
+            SrsSyncReportError(error, locationDir: report.locationDir),
+          );
         } else {
           ran++;
           if (report.uploaded > 0) _onLocalDirectoryPublished?.call();

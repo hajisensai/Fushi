@@ -6,6 +6,7 @@ import 'package:fushi/src/srs/srs_sync_scheduler.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/toast_severity.dart';
+import 'package:path/path.dart' as p;
 
 /// 牌组列表「立即同步」的提示：配置了但这轮失败，不能说成「还没有配置同步服务」
 /// （iOS 互联客户端曾因此被误导去找已经配好的设置）。
@@ -54,6 +55,22 @@ void main() {
     expect(
       srsSyncErrorReason(const SrsSyncReportError(kSrsLocationProtocol1Root)),
       t.srs_sync_location_protocol1_root,
+    );
+  });
+
+  // 第五波复核遗留：「新根不见了」的恢复提示以前把集合目录写成 `<集合>`，用户找不到要删哪个文件。
+  test('新根不见了：恢复提示写出要删的围栏的真实路径（云盘相对路径 / 文件夹完整路径）', () {
+    const String dir = '0193a1b2-0000-7000-8000-0000000000aa';
+    final String cloud = srsSyncErrorReason(
+      const SrsSyncReportError(kSrsLocationNewRootMissing, locationDir: dir),
+    );
+    expect(cloud, contains('fushi-srs/$dir/v3/meta.json'));
+    expect(cloud, isNot(contains('<collection>')));
+    expect(cloud, isNot(contains('<集合>')));
+    final String usb = p.join('E:', 'srs');
+    expect(
+      srsNewRootMissingText(dir, folderPath: usb),
+      contains(p.join(usb, 'fushi-srs', dir, 'v3', 'meta.json')),
     );
   });
 

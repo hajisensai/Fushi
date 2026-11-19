@@ -32,10 +32,13 @@ import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/text/srs_text_import.dart';
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_store.dart'
+    show kSrsSync2Folder, kSrsSync2Namespace;
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart'
     show kSrsLocationNewRootMissing, kSrsLocationProtocol1Root;
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -652,10 +655,31 @@ String srsSyncErrorReason(Object error) => switch (error) {
     t.srs_sync_location_meta_unavailable,
   SrsSyncReportError(message: kSrsLocationProtocol1Root) =>
     t.srs_sync_location_protocol1_root,
-  SrsSyncReportError(message: kSrsLocationNewRootMissing) =>
-    t.srs_sync_location_new_root_missing,
+  SrsSyncReportError(
+    message: kSrsLocationNewRootMissing,
+    :final String? locationDir,
+  ) =>
+    srsNewRootMissingText(locationDir),
   _ => friendlySyncErrorDetail(error),
 };
+
+/// 「新根不见了」（[kSrsLocationNewRootMissing]）的恢复提示，写出这个位置上要删的那个围栏文件的真实路径：
+/// [folderPath] 给了（文件夹位置）= 磁盘上的完整路径；否则（云盘 / 互联）= 位置里的相对路径
+/// `fushi-srs/<集合目录名>/v3/meta.json`。[locationDir] 是出错那一轮的集合目录名（[SrsSyncReportError.locationDir]，
+/// 一轮一开头就从内核取到，这个错误总带着它）；万一没有，目录那一段写成 `…`，不编一个名字出来。
+String srsNewRootMissingText(String? locationDir, {String? folderPath}) {
+  final String dir = locationDir ?? '…';
+  final String path = folderPath == null
+      ? '$kSrsSync2Namespace/$dir/$kSrsSync2Folder/meta.json'
+      : p.join(
+          folderPath,
+          kSrsSync2Namespace,
+          dir,
+          kSrsSync2Folder,
+          'meta.json',
+        );
+  return t.srs_sync_location_new_root_missing(path: path);
+}
 
 /// 牌组列表 ⋯「立即同步」。
 ///

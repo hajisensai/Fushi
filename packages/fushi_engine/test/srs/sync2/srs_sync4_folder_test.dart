@@ -322,6 +322,18 @@ void main() {
     v4.deleteSync(recursive: true);
     final SrsFolderSyncReport r = await run(loc, a);
     expect(r.ops?.error, kSrsLocationNewRootMissing);
+    // 报告带着这一轮的集合目录名：界面据此写出要删的围栏的真实路径（第六波，以前写成 `<集合>`）。
+    expect(r.ops?.locationDir, dir);
+    expect(
+      p.join(
+        loc.path,
+        kSrsSync2Namespace,
+        r.ops!.locationDir!,
+        kSrsSync2Folder,
+        'meta.json',
+      ),
+      fence.path,
+    );
     expect(v4.existsSync(), isFalse, reason: '不重建新根');
     expect(fence.readAsBytesSync(), fenceBytes, reason: '围栏不动');
     // 用户按提示删掉围栏：按新集合重建。
