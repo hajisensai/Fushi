@@ -80,11 +80,14 @@ void main() {
     expect(panel.progress, greaterThan(0));
   });
 
-  testWidgets('手机窄窗：长页名先缩小到放得下，不省略成「Read…」', (WidgetTester tester) async {
+  /// 手机窄窗（380 宽）里挂一个带一颗动作的二级页头，返回页名的 RenderParagraph。
+  Future<RenderParagraph> pumpPhoneHeader(
+    WidgetTester tester,
+    String title,
+  ) async {
     tester.view.physicalSize = const Size(380, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    const String title = 'Reading';
     await tester.pumpWidget(
       MaterialApp(
         theme: ThemeData(useMaterial3: true),
@@ -102,13 +105,31 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    final RenderParagraph paragraph = tester.renderObject(find.text(title));
-    // 整个页名排得下（没被省略号截断）……
+    return tester.renderObject(find.text(title));
+  }
+
+  testWidgets('手机窄窗：长页名先缩小到放得下，不省略成「Read…」', (WidgetTester tester) async {
+    const String title = 'Reading';
+    final RenderParagraph paragraph = await pumpPhoneHeader(tester, title);
+    // 整个页名一行排得下（没被省略号截断）……
+    expect(paragraph.maxLines, 1);
     expect(paragraph.didExceedMaxLines, isFalse);
     // ……是靠缩小字号，不是画出页头：缩放后的页名在屏幕内、比满字号窄。
     final Rect rect = tester.getRect(find.text(title));
     expect(rect.right, lessThanOrEqualTo(380));
     expect(rect.width, lessThan(paragraph.size.width));
+  });
+
+  testWidgets('手机窄窗：缩到收起态字号仍放不下的页名折成两行，不省略', (WidgetTester tester) async {
+    const String title = 'Reading controls';
+    final RenderParagraph paragraph = await pumpPhoneHeader(tester, title);
+    final double fontSize = paragraph.text.style!.fontSize!;
+    // 两行、完整排下（词不拆开、没有省略号）。
+    expect(paragraph.maxLines, 2);
+    expect(paragraph.didExceedMaxLines, isFalse);
+    expect(paragraph.size.height, greaterThan(1.5 * fontSize * 0.98));
+    // 缩放后仍在屏幕内。
+    expect(tester.getRect(find.text(title)).right, lessThanOrEqualTo(380));
   });
 
   testWidgets('titleInBody：页名在主滚动越过 titleRevealOffset 后才淡入', (

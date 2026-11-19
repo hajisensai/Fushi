@@ -449,6 +449,94 @@ double fushiMastheadTextWidth(
   return width;
 }
 
+/// 页名在给定宽里的排法（[fushiMastheadTitleFit] 的结果）：[scale] 是相对
+/// 满字号的缩放，[lines] 是行数（1 或 2），[lineWidth] 是满字号坐标下的折行宽
+/// （单行时即自然宽）。
+@immutable
+class FushiMastheadTitleFit {
+  const FushiMastheadTitleFit({
+    required this.scale,
+    required this.lines,
+    required this.lineWidth,
+  });
+
+  final double scale;
+  final int lines;
+  final double lineWidth;
+}
+
+/// 页名 [text]（满字号 [style]）在 [maxWidth] 里的排法，依次取第一个放得下的：
+///
+/// 1. 满字号一行；
+/// 2. 一行，整体缩小到放得下（不小于 [singleLineMinScale]，即收起态字号）；
+/// 3. 两行、词不拆开，在 [twoLineMinScale]～[twoLineMaxScale] 间二分取最大缩放
+///    （「Reading controls」这类长页名与长译名）；
+/// 4. 都放不下：两行、[twoLineMinScale]，第二行末省略。
+FushiMastheadTitleFit fushiMastheadTitleFit({
+  required String text,
+  required TextStyle style,
+  required double maxWidth,
+  required double singleLineMinScale,
+  required double twoLineMinScale,
+  required double twoLineMaxScale,
+  required TextDirection direction,
+  required TextScaler textScaler,
+}) {
+  TextPainter layout(double wrapWidth, int maxLines) => TextPainter(
+    text: TextSpan(text: text, style: style),
+    textDirection: direction,
+    textScaler: textScaler,
+    maxLines: maxLines,
+    textWidthBasis: TextWidthBasis.longestLine,
+  )..layout(maxWidth: wrapWidth);
+
+  final TextPainter single = layout(double.infinity, 1);
+  final double natural = single.width + 1;
+  single.dispose();
+  if (!maxWidth.isFinite || natural <= maxWidth) {
+    return FushiMastheadTitleFit(scale: 1, lines: 1, lineWidth: natural);
+  }
+  final double singleScale = maxWidth / natural;
+  if (singleScale >= singleLineMinScale) {
+    return FushiMastheadTitleFit(
+      scale: singleScale,
+      lines: 1,
+      lineWidth: natural,
+    );
+  }
+  // 两行：按满字号排进 maxWidth / s 宽（等价于 s 倍字号排进 maxWidth）。
+  bool fits(double s) {
+    final double wrap = maxWidth / s;
+    final TextPainter painter = layout(wrap, 2);
+    final bool ok =
+        !painter.didExceedMaxLines && painter.minIntrinsicWidth <= wrap + 0.5;
+    painter.dispose();
+    return ok;
+  }
+
+  final double hiBound = math.max(twoLineMinScale, twoLineMaxScale);
+  double s = twoLineMinScale;
+  if (fits(hiBound)) {
+    s = hiBound;
+  } else if (fits(twoLineMinScale)) {
+    double lo = twoLineMinScale;
+    double hi = hiBound;
+    for (int k = 0; k < 10; k++) {
+      final double mid = (lo + hi) / 2;
+      if (fits(mid)) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+    }
+    s = lo;
+  }
+  final TextPainter wrapped = layout(maxWidth / s, 2);
+  final double lineWidth = math.min(maxWidth / s, wrapped.width + 1);
+  wrapped.dispose();
+  return FushiMastheadTitleFit(scale: s, lines: 2, lineWidth: lineWidth);
+}
+
 /// 一行文字的基线到行盒底边的距离（让两种字号的大字按基线对齐）。
 double fushiMastheadBaselineFromBottom(
   BuildContext context,
@@ -549,11 +637,15 @@ class FushiMastheadTitle extends StatelessWidget {
   const FushiMastheadTitle({
     required this.title,
     required this.compact,
+    this.maxLines = 1,
     super.key,
   });
 
   final String title;
   final bool compact;
+
+  /// 最多几行（二级页头放不下时折两行，见 [fushiMastheadTitleFit]）。
+  final int maxLines;
 
   @override
   Widget build(BuildContext context) {
@@ -576,8 +668,8 @@ class FushiMastheadTitle extends StatelessWidget {
         child: Text(
           title,
           key: ValueKey<String>('fushi-masthead-title-$title'),
-          maxLines: 1,
-          softWrap: false,
+          maxLines: maxLines,
+          softWrap: maxLines > 1,
           overflow: TextOverflow.ellipsis,
           style: fushiMastheadTitleStyle(context, compact: compact),
         ),

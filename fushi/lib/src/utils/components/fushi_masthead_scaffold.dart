@@ -41,9 +41,10 @@ import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
         FushiMastheadRole,
         FushiMastheadScope,
         FushiMastheadTitle,
+        FushiMastheadTitleFit,
         fushiMastheadCompact,
         fushiMastheadProgressOf,
-        fushiMastheadTextWidth,
+        fushiMastheadTitleFit,
         fushiMastheadTitleStyle,
         kFushiMastheadActionExtent,
         kFushiMastheadTrackedOffset;
@@ -152,25 +153,35 @@ class FushiMastheadHeader extends StatelessWidget {
         (titleStyle.height ?? 1);
     final Widget titleBox = LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        // 只占页名实际（缩放后）的宽：徽标紧跟在页名后面。放不下时先整体缩小
-        // 到放得下（最小到收起态字号），仍放不下才省略——手机上「阅读器」这类
-        // 长页名按 46 排只剩「Read…」（2026-11-19 用户）。
-        final double natural =
-            fushiMastheadTextWidth(context, title, titleStyle) + 1;
-        final double fitScale = math.min(
-          scale,
-          math.max(collapsed, constraints.maxWidth / natural),
+        // 只占页名实际（缩放后）的宽：徽标紧跟在页名后面。放不下时按
+        // [fushiMastheadTitleFit] 先缩小、再折两行，最后才省略——手机上
+        // 「Reading」按 46 排只剩「Read…」（2026-11-19 用户）。
+        final FushiMastheadTitleFit fit = fushiMastheadTitleFit(
+          text: title,
+          style: titleStyle,
+          maxWidth: constraints.maxWidth,
+          singleLineMinScale: collapsed,
+          twoLineMinScale: (compact ? 22 : 28) / fullSize,
+          twoLineMaxScale: (compact ? 34 : 56) / fullSize,
+          direction: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
         );
-        final double width = math.min(constraints.maxWidth, natural * fitScale);
+        // 静止态定下的字号与折行宽不随滚动变：收缩只在绘制层等比缩小，折好的
+        // 两行在滚动中不重排。
+        final double fitScale = math.min(scale, fit.scale);
+        final double width = math.min(
+          constraints.maxWidth,
+          fit.lineWidth * fitScale,
+        );
         return SizedBox(
           width: width,
-          height: lineHeight * fitScale,
+          height: lineHeight * fit.lines * fitScale,
           child: OverflowBox(
             alignment: AlignmentDirectional.bottomStart,
             minWidth: 0,
             maxWidth: width / fitScale,
             minHeight: 0,
-            maxHeight: lineHeight,
+            maxHeight: lineHeight * fit.lines,
             child: Transform.scale(
               scale: fitScale,
               alignment: AlignmentDirectional.bottomStart.resolve(
@@ -178,7 +189,11 @@ class FushiMastheadHeader extends StatelessWidget {
               ),
               child: Align(
                 alignment: AlignmentDirectional.bottomStart,
-                child: FushiMastheadTitle(title: title, compact: compact),
+                child: FushiMastheadTitle(
+                  title: title,
+                  compact: compact,
+                  maxLines: fit.lines,
+                ),
               ),
             ),
           ),
