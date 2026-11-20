@@ -221,7 +221,14 @@ mixin _FushiDbContentMisc
   /// 只要 title / uid / importedAt / format 等小列的调用方（书架映射、统计事实面、
   /// 导入重复检查、远端去重）走这里，不再把每本几十 KB 的 `chaptersJson` / `tocJson`
   /// 整库拉一遍再丢掉。
-  Future<List<EpubBookMeta>> getEpubBookMetas() async {
+  ///
+  /// [matchingBookKey]：只取与这本书「同名判定」相关的行——它自己、与它库内标题
+  /// 同名的书、以及标题等于 [orTitle] 的书。统计事实面按书读时靠这一小撮行判
+  /// 「标题在库里是否唯一」（legacy 无身份行按标题反查身份），结果与整库判定一致。
+  Future<List<EpubBookMeta>> getEpubBookMetas({
+    String? matchingBookKey,
+    String? orTitle,
+  }) async {
     final JoinedSelectStatement<HasResultSet, dynamic> query =
         selectOnly(epubBooks)
           ..addColumns(<Expression<Object>>[
@@ -235,6 +242,20 @@ mixin _FushiDbContentMisc
             epubBooks.completedAt,
           ])
           ..orderBy(<OrderingTerm>[OrderingTerm.desc(epubBooks.importedAt)]);
+    if (matchingBookKey != null) {
+      final Expression<bool> sameTitleAsBook = epubBooks.title.isInQuery(
+        selectOnly(epubBooks)
+          ..addColumns(<Expression<Object>>[epubBooks.title])
+          ..where(epubBooks.bookKey.equals(matchingBookKey)),
+      );
+      query.where(
+        orTitle == null || orTitle.isEmpty
+            ? epubBooks.bookKey.equals(matchingBookKey) | sameTitleAsBook
+            : epubBooks.bookKey.equals(matchingBookKey) |
+                  sameTitleAsBook |
+                  epubBooks.title.equals(orTitle),
+      );
+    }
     final List<TypedResult> rows = await query.get();
     return rows
         .map(

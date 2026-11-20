@@ -3779,10 +3779,16 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// 本书今日 / 累计：只经统一事实面 `loadStatFacts`（统计域 v92 读取纪律）。
   Future<ReaderBookStatTotals> _loadReaderBookStatTotals() async {
     // includeCounters：今天的查词 / 制卡数从 per-book 计数面切（`lookup_mining_counters`）。
+    // 只读本书（m5：全量读在大库上每开一次侧栏都要几百毫秒）。
     final StatFacts facts = await loadStatFacts(
       appModel.database,
       activityLimit: 0,
       includeCounters: true,
+      scope: StatFactsScope.media(
+        mediaKind: kActivityMediaBook,
+        mediaKey: widget.bookKey,
+        title: _book?.title,
+      ),
     );
     return summarizeReaderBookStats(
       facts.dailyBooks,
