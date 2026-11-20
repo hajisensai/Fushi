@@ -456,16 +456,28 @@ extension _ReaderWebView on _ReaderFushiPageState {
   }
 
   // TODO-1128: reverse the served on-disk XHTML path back to its spine index so
-  // the injection pipeline can look up absorbed single-image chapters. Linear
-  // scan over chapters (tens–hundreds), only on the cold cache-miss/prefetch
-  // path — never per frame. Returns -1 when the path is not a chapter document.
+  // the injection pipeline can look up absorbed single-image chapters. Returns
+  // -1 when the path is not a chapter document.
+  //
+  // 路线图 m1 / novel-17e：查表而不是逐章重算路径（每章两次 canonicalize）。表按书建一次，
+  // 章节列表换了（网文追加章节）或解包目录变了才重建，见 [ReaderChapterPathIndex]。
   int _chapterIndexForFilePath(String filePath) {
     final EpubBook? book = _book;
-    if (book == null) return -1;
-    for (int i = 0; i < book.chapters.length; i++) {
-      if (_chapterFilePath(i) == filePath) return i;
+    final String? dir = _extractDir;
+    if (book == null || dir == null) return -1;
+    final List<EpubChapter> chapters = book.chapters;
+    ReaderChapterPathIndex? index = _chapterPathIndex;
+    if (index == null ||
+        !index.describes(source: chapters, count: chapters.length, dir: dir)) {
+      index = ReaderChapterPathIndex.build(
+        source: chapters,
+        count: chapters.length,
+        dir: dir,
+        pathOf: _chapterFilePath,
+      );
+      _chapterPathIndex = index;
     }
-    return -1;
+    return index.indexOf(filePath);
   }
 
   // BUG-270: insert into the LRU, evicting the least-recently-used entry when

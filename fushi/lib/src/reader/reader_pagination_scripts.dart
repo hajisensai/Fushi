@@ -1541,6 +1541,49 @@ window.__fushiInstallShell = function(C) {
     this.nodeStartOffsets = offsets;
     if (this.paginationMetrics !== undefined) this.paginationMetrics = null;
   },
+  // BUG-2903：章内文本索引——按文档序列出有可匹配字符的文本节点、各自的章内起始字数与
+  // 章总字数。滚动中的进度回报每帧都要「视口边之前有多少字」（onReaderScroll →
+  // fushiProgressDetails），旧实现每次对整章做三遍 walk（总字数 / calculateProgress /
+  // getLastVisibleCharOffset），后两遍还逐节点 getClientRects——6000 个文本节点的长章
+  // 桌面 Chrome 实测一次 150–200ms，滚轮 rAF 缓动（BUG-2830）在其间整段冻住，体感是
+  // 「往下滚会卡在某处停一会」。索引只依赖 DOM 文本结构，不依赖几何，建一次即可；
+  // 正文 DOM 变化（有声书 span 包裹兜底、注音切换等）由 MutationObserver 记账，取用时
+  // 同步 takeRecords 判脏，不吃异步回调的时序。
+  //
+  // 两个 shell 共用（_sharedJs）：分页的「字符偏移 → 文本节点」（textNodeAtCharOffset：
+  // 恢复落页 / 每次进度采样的页上校验 charOffsetOnCurrentPage）、越界判据与扫描兜底此前
+  // 也各自从章首逐节点 walk——10 万字单章桌面 Chrome 实测章末一次 fushiProgressDetails
+  // 19ms、插图页（caret 落图走扫描兜底）56ms（路线图 m1 / gap-readerjs1-3）。
+  _textIndexCache: null,
+  _textIndexObserver: null,
+  _textIndex: function() {
+    var obs = this._textIndexObserver;
+    if (obs && obs.takeRecords().length > 0) this._textIndexCache = null;
+    var cache = this._textIndexCache;
+    if (cache && cache.body === document.body) return cache;
+    if (!obs) {
+      var self = this;
+      obs = new MutationObserver(function() { self._textIndexCache = null; });
+      this._textIndexObserver = obs;
+    }
+    obs.disconnect();
+    obs.observe(document.body, {childList: true, characterData: true, subtree: true});
+    var nodes = [];
+    var starts = [];
+    var total = 0;
+    var walker = this.createWalker();
+    var node;
+    while (node = walker.nextNode()) {
+      var len = this.countChars(node.textContent);
+      if (len <= 0) continue;
+      nodes.push(node);
+      starts.push(total);
+      total += len;
+    }
+    cache = {body: document.body, nodes: nodes, starts: starts, total: total};
+    this._textIndexCache = cache;
+    return cache;
+  },
   // BUG-492 (TODO-1053 Bug A) 越界判据（分页/连续共用，_sharedJs）：charOffset 是否落在
   // 本章可匹配字符总数之内。恢复端用它护住旧脏收藏——写入端曾把某句错记成相邻章
   // sectionIndex，恢复加载错章后 charOffset 可能超本章字符总数 → 定位静默失败停错位。
@@ -1548,31 +1591,27 @@ window.__fushiInstallShell = function(C) {
   // （countChars / createWalker，furigana 已 REJECT）。>=0 且在范围内返 true。
   charOffsetInRange: function(charOffset) {
     if (typeof charOffset !== 'number' || charOffset < 0) return false;
-    var walker = this.createWalker();
-    var runningOffset = 0;
-    var node;
-    while (node = walker.nextNode()) {
-      runningOffset += this.countChars(node.textContent);
-      if (runningOffset > charOffset) return true;
-    }
-    return false;
+    return charOffset < this._textIndex().total;
   },
   // 章内第 charOffset 个学习单位落在哪个文本节点：返 {node, remaining}（remaining = 该节点内
   // 目标单位之前的单位数），越界返 null。分页 scrollToCharOffset 与 charOffsetOnCurrentPage
   // 共用这一份走查（countChars / createWalker 口径，furigana 已 REJECT）——两处各写一份时
   // 只改一处就会让「落页」与「页上校验」对同一个偏移给出不同的字。
+  // 走章内文本索引二分：索引只收字数 > 0 的节点，与逐节点累加的「第一个 running + 字数 >
+  // charOffset 的节点」是同一个（零字节点永远不满足那个条件）。
   textNodeAtCharOffset: function(charOffset) {
-    var walker = this.createWalker();
-    var runningOffset = 0;
-    var node;
-    while (node = walker.nextNode()) {
-      var nodeChars = this.countChars(node.textContent);
-      if (runningOffset + nodeChars > charOffset) {
-        return { node: node, remaining: charOffset - runningOffset };
-      }
-      runningOffset += nodeChars;
+    if (typeof charOffset !== 'number' || charOffset < 0) return null;
+    var index = this._textIndex();
+    if (charOffset >= index.total) return null;
+    var starts = index.starts;
+    var lo = 0;
+    var hi = starts.length - 1;
+    while (lo < hi) {
+      var mid = (lo + hi + 1) >> 1;
+      if (starts[mid] <= charOffset) lo = mid;
+      else hi = mid - 1;
     }
-    return null;
+    return { node: index.nodes[lo], remaining: charOffset - starts[lo] };
   },
   // WebKit vertical text can give a collapsed caret range an all-zero rect,
   // even for an off-screen character. Measure that character instead; treating
@@ -1724,18 +1763,56 @@ window.__fushiInstallShell = function(C) {
   // 恒为 0 → 兜底把任何页都报成章首 0。重锚路径被 scrollToCharOffset 的 `<=0 → 保当前页`
   // 掩住看不出来；统计接入后（fushiProgressDetails 第三/四段）页首角落在插图 / 空行时
   // 整段 [0, 页尾) 被当成本页可见区间，翻走一次就把几千字前文计成已读。仅分页 shell 调用。
+  //
+  // 走章内文本索引二分（与连续 shell 的 _charsBeforeEdge 同构，只换成翻页轴）：multicol 里
+  // 文本节点按文档序沿翻页轴单调排开，二分出第一个不整段在首边之前的节点，再从它起逐个
+  // 累加跨边节点的局部计数，遇到整段在首边之后即止。每次只量 O(log n) 个节点的几何。
   firstVisibleCharOffsetByScanPaged: function() {
     var axis = this.pagedAxis();
     var firstEdge = this.pagedFirstEdge(axis);
-    var walker = this.createWalker();
-    var explored = 0;
-    var node;
-    while (node = walker.nextNode()) {
-      if (this.countChars(node.textContent) > 0) {
-        explored += this.countCharsBeforeViewportPaged(node, axis, firstEdge);
-      }
+    var index = this._textIndex();
+    var nodes = index.nodes;
+    var n = nodes.length;
+    if (n === 0) return 0;
+    var lo = 0;
+    var hi = n;
+    while (lo < hi) {
+      var mid = (lo + hi) >> 1;
+      var j = mid;
+      var side = null;
+      while (j < hi && (side = this._textNodeTurnSide(nodes[j], axis, firstEdge)) === null) j++;
+      if (side === null || side >= 0) hi = mid;
+      else lo = j + 1;
+    }
+    if (lo >= n) return index.total;
+    var explored = index.starts[lo];
+    for (var k = lo; k < n; k++) {
+      var kSide = this._textNodeTurnSide(nodes[k], axis, firstEdge);
+      if (kSide === null) continue;
+      if (kSide > 0) break;
+      explored += this.countCharsBeforeViewportPaged(nodes[k], axis, firstEdge);
     }
     return explored;
+  },
+  // 文本节点沿翻页轴相对首边的位置：-1 整段在首边之前 / 0 跨边 / 1 整段在首边之后 /
+  // null 无几何。判据与 countCharsBeforeViewportPaged 的两个早返回逐条同口径。
+  _textNodeTurnSide: function(node, axis, firstEdge) {
+    var range = document.createRange();
+    range.selectNodeContents(node);
+    var rects = range.getClientRects();
+    var minStart = Infinity;
+    var maxEnd = -Infinity;
+    for (var i = 0; i < rects.length; i++) {
+      var rect = rects[i];
+      if (rect.width <= 0 || rect.height <= 0) continue;
+      var span = this.turnSpan(axis, rect);
+      if (span.start < minStart) minStart = span.start;
+      if (span.end > maxEnd) maxEnd = span.end;
+    }
+    if (minStart === Infinity) return null;
+    if (maxEnd <= firstEdge) return -1;
+    if (minStart >= firstEdge) return 1;
+    return 0;
   },
   // 分页翻页轴上「当前页 content-box 起点」（body-relative）：横排 = padding-left、竖排 =
   // padding-top、竖排对开（xr，到 body 右缘的距离）= padding-right。前页的末列在它之前
@@ -4184,44 +4261,6 @@ $kSentenceAudioRubyGapJs
   // BUG-3518：WebKit 上有声书当前句是 Range（不包裹）；getRect 对 Range 同样成立。
   revealRange: function(range) {
     return this.scrollToTarget(range.cloneRange());
-  },
-  // BUG-2903：章内文本索引——按文档序列出有可匹配字符的文本节点、各自的章内起始字数与
-  // 章总字数。滚动中的进度回报每帧都要「视口边之前有多少字」（onReaderScroll →
-  // fushiProgressDetails），旧实现每次对整章做三遍 walk（总字数 / calculateProgress /
-  // getLastVisibleCharOffset），后两遍还逐节点 getClientRects——6000 个文本节点的长章
-  // 桌面 Chrome 实测一次 150–200ms，滚轮 rAF 缓动（BUG-2830）在其间整段冻住，体感是
-  // 「往下滚会卡在某处停一会」。索引只依赖 DOM 文本结构，不依赖几何，建一次即可；
-  // 正文 DOM 变化（有声书 span 包裹兜底、注音切换等）由 MutationObserver 记账，取用时
-  // 同步 takeRecords 判脏，不吃异步回调的时序。
-  _textIndexCache: null,
-  _textIndexObserver: null,
-  _textIndex: function() {
-    var obs = this._textIndexObserver;
-    if (obs && obs.takeRecords().length > 0) this._textIndexCache = null;
-    var cache = this._textIndexCache;
-    if (cache && cache.body === document.body) return cache;
-    if (!obs) {
-      var self = this;
-      obs = new MutationObserver(function() { self._textIndexCache = null; });
-      this._textIndexObserver = obs;
-    }
-    obs.disconnect();
-    obs.observe(document.body, {childList: true, characterData: true, subtree: true});
-    var nodes = [];
-    var starts = [];
-    var total = 0;
-    var walker = this.createWalker();
-    var node;
-    while (node = walker.nextNode()) {
-      var len = this.countChars(node.textContent);
-      if (len <= 0) continue;
-      nodes.push(node);
-      starts.push(total);
-      total += len;
-    }
-    cache = {body: document.body, nodes: nodes, starts: starts, total: total};
-    this._textIndexCache = cache;
-    return cache;
   },
   chapterCharTotal: function() {
     return this._textIndex().total;
