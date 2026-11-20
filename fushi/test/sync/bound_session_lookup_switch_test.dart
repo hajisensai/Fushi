@@ -12,7 +12,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
-/// BUG-4747：「用这台服务器查词典」（[FushiClientUrl.lookupEnabled]）只管从已配对 host
+/// BUG-4962：「用这台服务器查词典」（[FushiClientUrl.lookupEnabled]）只管从已配对 host
 /// 里挑词典来源。绑定会话（游戏串流 / 视频遥控）查的是那台 host 上正在播放的内容，
 /// 必须仍由它回答；此前开关关掉后这两条路径一次请求都不发，查词恒无结果。
 void main() {

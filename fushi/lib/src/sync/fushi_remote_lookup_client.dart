@@ -73,7 +73,7 @@ class FushiRemoteLookupClient {
 
   /// 绑定会话（游戏串流 / 视频遥控）的那台 host：被查的内容在它上面播放，查词必须由它
   /// 回答。这类客户端不做「词典来源」选择，所以 [FushiClientUrl.lookupEnabled] 与
-  /// [_skipDictionaryHost] 对它不适用（BUG-4747）。
+  /// [_skipDictionaryHost] 对它不适用（BUG-4962）。
   final FushiClientUrl? _onlyCandidate;
 
   /// RPC 往返预算：量的是「对端还活着吗」。
@@ -462,7 +462,7 @@ class FushiRemoteLookupClient {
   /// 自己的失败冷却）。每个候选的传输层结局由传输层经全局上报点记进可达性追踪。
   ///
   /// 两道筛都是「从已配对 host 里挑词典来源」的语义；绑定会话（[_onlyCandidate]）
-  /// 没有来源可挑，只筛它会让那台 host 关掉开关后串流 / 遥控查词一律无结果（BUG-4747）。
+  /// 没有来源可挑，只筛它会让那台 host 关掉开关后串流 / 遥控查词一律无结果（BUG-4962）。
   Future<InterconnectPostOutcome> _postLookup({
     required String path,
     required Map<String, dynamic> body,

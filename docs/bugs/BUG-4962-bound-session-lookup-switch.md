@@ -1,4 +1,4 @@
-## BUG-4747 · 关掉 host 的「用这台服务器查词典」后，游戏串流 / 视频遥控查词恒无结果
+## BUG-4962 · 关掉 host 的「用这台服务器查词典」后，游戏串流 / 视频遥控查词恒无结果
 - **报告**：2026-11-16（用户：核查服务器词典与游戏是否配合时发现）
 - **真实性**：✅ 真 bug（#3147 引入的回归）。`FushiRemoteLookupClient._postLookup`（`fushi/lib/src/sync/fushi_remote_lookup_client.dart` 的 `candidateFilter`）对所有词典端点都按 `FushiClientUrl.lookupEnabled` 与可达性跳过筛候选，包括绑定会话的客户端：游戏串流 `InterconnectGameStreamDictionaryLookup`（`fushi/lib/src/sync/game_stream_client.dart`，`onlyCandidate: peer`）与视频遥控 `video_remote_page.dart` 的 `_createLookup`。被筛空后传输层按「未配对 / 未启用」返回无结果，一次请求都不发，界面上点词无反应。这两道筛是「从已配对 host 里挑词典来源」的语义，绑定会话没有来源可挑，被查的内容就在那台 host 上播放，必须由它回答。复现：探针测试中开关开 = 1 次请求有结果，开关关 = 0 次请求无结果。
 - **[x] ① 已修复** — `_postLookup` 只在未绑定 host（`_onlyCandidate == null`）时套用 `lookupEnabled` 与可达性跳过筛选；普通查词的来源选择不变。
