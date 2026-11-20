@@ -1527,12 +1527,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       return;
     }
     switch (status) {
-      case WebMineAutoFinished(:final int ok, :final int failed):
-        FushiToast.show(
-          msg: auto
-              ? t.web_video_mine_auto_finished(ok: ok, failed: failed)
-              : t.web_video_mine_queue_finished(ok: ok, failed: failed),
-        );
+      case final WebMineAutoFinished finished:
+        FushiToast.show(msg: webMineFinishedText(finished, forToast: true));
       case WebMineAutoUnavailable():
         FushiToast.show(msg: t.web_video_mine_auto_unavailable);
       case WebMineAutoRunning() || null:
@@ -1554,15 +1550,10 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   }) {
     if (_closedAfterMining) return;
     _closedAfterMining = true;
-    if (status case WebMineAutoFinished(
-      :final int ok,
-      :final int failed,
-    ) when ok + failed > 0) {
-      FushiToast.show(
-        msg: auto
-            ? t.web_video_mine_auto_finished(ok: ok, failed: failed)
-            : t.web_video_mine_queue_finished(ok: ok, failed: failed),
-      );
+    // 出错中止即使一行没处理（准备步骤抛出）也要说：用户回来时总得知道这一轮没成。
+    if (status case final WebMineAutoFinished finished
+        when finished.ok + finished.failed > 0 || finished.errored) {
+      FushiToast.show(msg: webMineFinishedText(finished, forToast: true));
     }
     if (!mounted) return;
     // 关的是本页这条路由，不是导航栈顶：用户不在场时栈顶可能另有东西（maybePop 会弹错，
@@ -1921,9 +1912,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         // 交接，所以记在进程级的 [WebMineIdleGiveUps] 而不是本页。
         () async {
           if (!auto) return;
-          if (rowsEnd == null ||
-              rowsEnd == WebMineQueueRowsEnd.rowThrew ||
-              rowsEnd == WebMineQueueRowsEnd.surfaceLost) {
+          if (webMineRoundEndedOnError(rowsEnd)) {
             giveUps.giveUpBook(widget.bookUid);
           } else if (giveUps.unreachableVideos(widget.bookUid).isNotEmpty) {
             giveUps.settleAfterRound(
@@ -1941,6 +1930,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         failed: tally.failed,
         remaining: queued.length - tally.done,
         auto: auto,
+        errored: webMineRoundEndedOnError(rowsEnd),
       ),
     );
   }

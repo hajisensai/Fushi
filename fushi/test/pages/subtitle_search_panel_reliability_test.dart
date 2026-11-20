@@ -11,7 +11,9 @@ import 'package:fushi/src/pages/implementations/jimaku_subtitle_dialog.dart'
 import 'package:fushi/src/pages/implementations/subtitle_search_panel.dart';
 import 'package:fushi/src/pages/implementations/subtitle_workbench_page.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
-import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi_core/fushi_core.dart'
+    show FushiDatabase, MediaCollectionRow, VideoBookRow;
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi_engine/media/video/jimaku_client.dart'
@@ -549,8 +551,9 @@ void main() {
       /// 返回 open() 的 future——播放页拿到的就是它。
       Future<Future<List<String>?>> openWorkbench(
         WidgetTester tester,
-        _Download onDownload,
-      ) async {
+        _Download onDownload, {
+        SubtitleCollectionSpec? collection,
+      }) async {
         tester.view.physicalSize = const Size(1400, 1000);
         tester.view.devicePixelRatio = 1.0;
         addTearDown(tester.view.resetPhysicalSize);
@@ -578,6 +581,7 @@ void main() {
             initialQuery: 'Show',
             seriesKey: 'show',
           ),
+          collection: collection,
         );
         await tester.pumpAndSettle();
         await tester.tap(searchButton());
@@ -695,6 +699,92 @@ void main() {
           reason: '返回值已经交出去了，之后落盘的文件没有人登记',
         );
         expect(find.text('player-page'), findsOneWidget);
+      });
+
+      testWidgets('工作台：本集下载途中锁住作用域开关与重搜，下完解锁', (WidgetTester tester) async {
+        final SubtitleVersionGroup group = jaGroup(sources());
+        final Completer<VideoSubtitleDownload> late =
+            Completer<VideoSubtitleDownload>();
+        bool lateRequested = false;
+        // 合集作用域只是为了让开关出现；锁住时不会切过去，数据库不会被读。
+        final SubtitleCollectionSpec collection = SubtitleCollectionSpec(
+          collection: MediaCollectionRow(
+            origin: 'user',
+            organizeAliases: '',
+            id: 1,
+            name: 'Show',
+            collectionType: 'collection',
+            coverSource: null,
+            sortOrder: 0,
+            createdAt: 0,
+            orderUpdatedAt: 0,
+          ),
+          members: const <VideoBookRow>[],
+        );
+        await openWorkbench(tester, (VideoSubtitleCandidate c) {
+          if (c.episode != 3) {
+            return Future<VideoSubtitleDownload>.value(body(c));
+          }
+          lateRequested = true;
+          return late.future;
+        }, collection: collection);
+        final Finder toCollection = find.byKey(
+          const ValueKey<String>('subtitle-workbench-scope-collection'),
+        );
+        expect(tester.widget<FushiIconButton>(toCollection).enabled, isTrue);
+
+        await expandAndTick(tester, group, <VideoSubtitleCandidate>[
+          group.members.firstWhere(
+            (VideoSubtitleCandidate c) => c.episode == 1,
+          ),
+          group.members.firstWhere(
+            (VideoSubtitleCandidate c) => c.episode == 3,
+          ),
+        ]);
+        await tester.tap(
+          find.byKey(const ValueKey<String>('subtitle-batch-download')),
+        );
+        await driveIo(
+          tester,
+          () => lateRequested && saveDir.listSync().length == 1,
+        );
+        expect(lateRequested, isTrue);
+
+        // 修复前：开关可点，一切到「整个合集」本集面板就 dispose，第 3 集回来时按
+        // 「页面已关」静默不落盘，用户什么提示也看不到。
+        final FushiIconButton locked = tester.widget<FushiIconButton>(
+          toCollection,
+        );
+        expect(locked.enabled, isFalse);
+        expect(locked.tooltip, t.video_subtitle_scope_locked_downloading);
+        // 修复前：搜索钮可点、输入框回车照样重搜，清掉候选与勾选，批量的进度落在
+        // 看不见的行上。
+        expect(searchEnabled(tester), isFalse);
+        await tester.showKeyboard(fieldWithText('Show'));
+        await tester.testTextInput.receiveAction(TextInputAction.done);
+        await tester.pump();
+        expect(
+          find.byType(BatchActionBar),
+          findsOneWidget,
+          reason: '回车没有重搜：勾选（批量栏）还在',
+        );
+
+        // 第 3 集失败收尾（部分失败不关页）：开关与搜索恢复可用。
+        late.completeError(
+          const ExternalProviderFailure(
+            providerId: 'fake',
+            operation: 'download',
+            kind: ExternalProviderFailureKind.notFound,
+            message: 'gone',
+            statusCode: 404,
+          ),
+        );
+        await driveIo(
+          tester,
+          () => find.byKey(kSubtitleNoticeBannerKey).evaluate().isNotEmpty,
+        );
+        expect(tester.widget<FushiIconButton>(toCollection).enabled, isTrue);
+        expect(searchEnabled(tester), isTrue);
       });
 
       testWidgets('工作台：单条下载途中返回，迟到的那条不落盘，也不 pop 掉底下的播放页', (

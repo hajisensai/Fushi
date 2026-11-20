@@ -1322,7 +1322,7 @@ class VideoBookRepository {
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
     if (lease == null) {
-      return Future<void>.error(StateError('视频刮削资料正在清理'));
+      return Future<void>.error(VideoScrapeMaintenanceActiveError());
     }
     return VideoCoverMutationGate.runExclusive(
       () => _db.updateVideoBookCover(bookUid, coverPath),
@@ -1334,7 +1334,7 @@ class VideoBookRepository {
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
     if (lease == null) {
-      return Future<void>.error(StateError('视频刮削资料正在清理'));
+      return Future<void>.error(VideoScrapeMaintenanceActiveError());
     }
     return VideoCoverMutationGate.runExclusive(
       () => _db.clearVideoBookCover(bookUid),
@@ -1466,7 +1466,7 @@ class VideoBookRepository {
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
     if (lease == null) {
-      return Future<int>.error(StateError('视频刮削资料正在清理'));
+      return Future<int>.error(VideoScrapeMaintenanceActiveError());
     }
     return VideoCoverMutationGate.runExclusive(
       () => _deleteVideoBooksAndReclaimAssetsUnlocked(

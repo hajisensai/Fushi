@@ -1023,7 +1023,7 @@ mixin _LocalLibraryHostVideos
     _assertSafeVideoId(id);
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
-    if (lease == null) throw StateError('视频刮削资料正在清理');
+    if (lease == null) throw VideoScrapeMaintenanceActiveError();
     try {
       await _runExclusive(
         () => VideoCoverMutationGate.runExclusive(() async {

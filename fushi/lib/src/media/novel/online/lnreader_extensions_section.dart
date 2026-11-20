@@ -8,6 +8,7 @@ import 'package:fushi/src/media/manga/extension_store_list.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
+import 'package:fushi/src/media/novel/online/lnreader_state_error_notice.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -414,7 +415,12 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
             ),
           SliverToBoxAdapter(child: _loadingSlot(widget.manager.loading)),
           if (stores) _buildStores(),
-          if (catalog) ..._buildCatalog(),
+          // 状态没读出来：目录里每一行的「已装 / 可更新」都对着空占位算，装 / 卸
+          // 也必然被拒——整段换成错误态（同时显示仓库段时那里已经有一条）。
+          if (catalog && widget.manager.stateError != null && !stores)
+            _buildStateError()
+          else if (catalog && widget.manager.stateError == null)
+            ..._buildCatalog(),
         ],
       ),
     );
@@ -463,8 +469,15 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
     );
   }
 
+  /// `state.json` 没读出来时代替仓库 / 扩展列表的错误态（见 [LnReaderStateErrorNotice]）。
+  Widget _buildStateError() => SliverToBoxAdapter(
+    child: LnReaderStateErrorNotice(manager: widget.manager),
+  );
+
   Widget _buildStores() {
     final LnReaderManager manager = widget.manager;
+    // 没读出来时 stores 是空占位：画「还没有仓库」会引用户去重新添加，而添加必然被拒。
+    if (manager.stateError != null) return _buildStateError();
     if (manager.stores.isEmpty) {
       return SliverToBoxAdapter(
         child: FushiPlaceholderMessage(

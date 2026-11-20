@@ -569,4 +569,13 @@ void main() {
       expect(log, <String>['error', 'error', 'last']);
     });
   });
+
+  test('webMineRoundEndedOnError：准备步骤抛出 / 一行抛出 / 表面死亡算出错，跑完与让位不算', () {
+    // null = runWebMineQueueRows 没跑完（准备步骤抛出），计数是 0 / 0。
+    expect(webMineRoundEndedOnError(null), isTrue);
+    expect(webMineRoundEndedOnError(WebMineQueueRowsEnd.rowThrew), isTrue);
+    expect(webMineRoundEndedOnError(WebMineQueueRowsEnd.surfaceLost), isTrue);
+    expect(webMineRoundEndedOnError(WebMineQueueRowsEnd.drained), isFalse);
+    expect(webMineRoundEndedOnError(WebMineQueueRowsEnd.stopped), isFalse);
+  });
 }
