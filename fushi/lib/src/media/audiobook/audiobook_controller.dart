@@ -6,6 +6,7 @@ import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/media/audiobook/audiobook_jump_threshold.dart';
+import 'package:fushi/src/media/audiobook/linear_shuffle_order.dart';
 import 'package:fushi/src/media/audiobook/remote/audiobook_remote_playback.dart';
 import 'package:fushi/src/media/audiobook/text_leads_page_stop.dart';
 import 'package:fushi/src/media/range_playback.dart';
@@ -1288,7 +1289,7 @@ class AudiobookPlayerController extends ChangeNotifier {
         try {
           await _player
               .setAudioSource(
-                ConcatenatingAudioSource(children: audioSources),
+                concatenateAudiobookSources(audioSources),
                 preload: false,
               )
               .timeout(const Duration(seconds: 60));
@@ -1317,7 +1318,7 @@ class AudiobookPlayerController extends ChangeNotifier {
         try {
           await _player
               .setAudioSource(
-                ConcatenatingAudioSource(children: sources),
+                concatenateAudiobookSources(sources),
                 preload: false,
               )
               .timeout(const Duration(seconds: 60));
@@ -1890,7 +1891,7 @@ class AudiobookPlayerController extends ChangeNotifier {
       await _awaitPlatformForExplicitSeek<Duration?>(
         () => _player
             .setAudioSource(
-              ConcatenatingAudioSource(children: audioSources),
+              concatenateAudiobookSources(audioSources),
               initialIndex: fileIndex,
               initialPosition: Duration.zero,
               preload: false,
