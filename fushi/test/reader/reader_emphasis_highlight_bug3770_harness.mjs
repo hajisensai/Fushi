@@ -2,16 +2,16 @@
 // it covers. Runs the generated production reader CSS + engine shell + selection script in
 // real Chrome (default and custom cue text colour), screenshots the emphasis-mark strip before and after the cue highlight and
 // compares the mark ink. Only the Flutter bridge is replaced by a recorder.
-import fs from 'node:fs';
 import zlib from 'node:zlib';
 import { launchChromeDriver, resolveChrome } from '../../../tool/reader_pitch_headless/cdp_client.mjs';
+import { readPayload } from './reader_harness_support.js';
 
+const payload = readPayload();
 if (!resolveChrome()) {
   console.log('Chrome unavailable');
   process.exit(77);
 }
 // The only argument is the temp payload file the Dart test just wrote.
-const payload = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));  // NOSONAR: S8707 path comes from the Dart test harness
 
 // Show the screen holding the cue (VN renders it on the first highlight call), clear the
 // highlight and return the emphasis-mark strip: the band beside the emphasised text on the

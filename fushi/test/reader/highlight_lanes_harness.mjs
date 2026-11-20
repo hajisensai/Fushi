@@ -3,16 +3,16 @@
 // selection script (window.__fushiLanes) in real Chrome, plays a ruby-heavy cue, puts
 // a lookup (text + ruby class), a favourite and a search hit inside it, and checks the
 // painted lane layer geometry. Only the Flutter bridge is replaced by a recorder.
-import fs from 'node:fs';
 import zlib from 'node:zlib';
 import { launchChromeDriver, resolveChrome } from '../../../tool/reader_pitch_headless/cdp_client.mjs';
+import { readPayload } from './reader_harness_support.js';
 
+const payload = readPayload();
 if (!resolveChrome()) {
   console.log('Chrome unavailable');
   process.exit(77);
 }
 // The only argument is the temp payload file the Dart test just wrote.
-const payload = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));  // NOSONAR: S8707 path comes from the Dart test harness
 
 const CHECK = String.raw`(async () => {
   const errors = []; let checks = 0;

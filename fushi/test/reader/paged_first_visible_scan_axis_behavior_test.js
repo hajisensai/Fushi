@@ -35,19 +35,9 @@
 // (driven from paged_first_visible_scan_axis_behavior_test.dart inside `flutter test`).
 
 const assert = require('assert');
-const fs = require('fs');
+const { readPayload, shellObjectLiteral, compileScript } = require('./reader_harness_support.js');
 
-const data = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-
-function objectLiteral(source) {
-  const marker = 'window.fushiReader = {';
-  const start = source.indexOf(marker);
-  assert.ok(start >= 0, 'fushiReader object missing');
-  const brace = source.indexOf('{', start);
-  const end = source.indexOf('\n};', brace);
-  assert.ok(end >= 0, 'fushiReader object terminator missing');
-  return source.slice(brace, end + 2);
-}
+const data = readPayload();
 
 // ── fake DOM ──────────────────────────────────────────────────────────────
 // Page bands along the turn axis, body-relative. Current page = 1. Content box
@@ -110,11 +100,12 @@ function instantiate(vertical) {
     caretRangeFromPoint: () => null,
   };
   const Node = { TEXT_NODE: 3 };
-  new Function('window', data.studyUnits)(window);
+  compileScript(['window'], data.studyUnits, 'paged_first_visible_scan_axis_behavior_test-1.js')(window);
   const C = { perfTraceEnabled: false };
-  const factory = new Function(
-    'window', 'document', 'C', 'global', 'CSS', 'Highlight', 'getComputedStyle', 'Node',
-    'window.fushiReader = ' + objectLiteral(data.paged) + '; return window.fushiReader;'
+  const factory = compileScript(
+    ['window', 'document', 'C', 'global', 'CSS', 'Highlight', 'getComputedStyle', 'Node'],
+    'window.fushiReader = ' + shellObjectLiteral(data.paged) + '; return window.fushiReader;',
+    'paged_first_visible_scan_axis_behavior_test-2.js',
   );
   const reader = factory(window, document, C, {}, window.CSS, window.Highlight, getComputedStyle, Node);
 
@@ -267,7 +258,7 @@ const progressEnd = data.engine.indexOf('\n  };', progressStart);
 assert.ok(progressStart >= 0 && progressEnd > progressStart, 'production progress assembly missing');
 const progressSource = data.engine.slice(progressStart, progressEnd + 5);
 const progressWindow = {};
-new Function('window', progressSource)(progressWindow);
+compileScript(['window'], progressSource, 'paged_first_visible_scan_axis_behavior_test-3.js')(progressWindow);
 const progressReader = {
   calculateProgress: () => 0.9,
   paginationMetrics: { totalChars: 100 },

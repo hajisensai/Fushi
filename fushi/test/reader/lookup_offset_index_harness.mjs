@@ -5,15 +5,15 @@
 //   - getCaretRange 逐字兜底（行盒剪枝 caretScanCandidates） vs 不剪枝的全量扫描
 //   - fireTextSelected 的悬停回执 / 歌词 cue 上下文
 // 只替换了 Flutter 桥（callHandler 记录器）。
-import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { launchChromeDriver, resolveChrome } from '../../../tool/reader_pitch_headless/cdp_client.mjs';
+import { readPayload } from './reader_harness_support.js';
 
+const scripts = readPayload();
 if (!resolveChrome()) {
   console.log('Chrome unavailable');
   process.exit(77);
 }
-const scripts = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const driver = await launchChromeDriver();
 let count = 0;
 try {

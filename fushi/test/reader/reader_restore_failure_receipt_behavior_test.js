@@ -32,7 +32,7 @@
 //      and the same callback without a throw still sends only the success receipt.
 
 const assert = require('node:assert');
-const { readPayload, shellObjectLiteral, compileScript } = require('./paged_shell_behavior_support.js');
+const { readPayload, shellObjectLiteral, compileScript } = require('./reader_harness_support.js');
 
 const scripts = readPayload();
 const GENERATION = 7;
@@ -101,7 +101,11 @@ function handlerNames(env) {
 
 async function runChain(shellSource, env) {
   const chain = cut(shellSource, 'Promise.all(imagePromises).then(function() {', '\n  });', 'restore chain');
-  const run = compileScript(['window', 'C', 'imagePromises', 'console'], 'return ' + chain, 'restore-chain.js');
+  const run = compileScript(
+    ['window', 'C', 'imagePromises', 'console'],
+    'return ' + chain,
+    'restore-chain.js',
+  );
   try {
     await run(env.window, env.C, [], env.console);
   } catch (e) {
@@ -241,7 +245,11 @@ function bootCase(name, shellSource) {
   const reader = instantiate(shellSource, env);
   reader.initialize = () => { throw new Error('init boom'); };
   const boot = cut(shellSource, 'function _fushiBootInitialize() {', '\n}\n', 'boot wrapper');
-  compileScript(['window', 'console'], boot + '\n_fushiBootInitialize();', 'boot.js')(env.window, env.console);
+  compileScript(
+    ['window', 'console'],
+    boot + '\n_fushiBootInitialize();',
+    'boot.js',
+  )(env.window, env.console);
   assert.deepStrictEqual(handlerNames(env), ['onRestoreFailed'], name + ' D: boot failure must send a failure receipt');
   assert.strictEqual(env.calls[0][2], GENERATION, name + ' D: generation forwarded');
   assert.ok(env.errors.some((e) => e.includes('boot initialize failed')), name + ' D: boot failure still logged');
@@ -253,7 +261,11 @@ function vnCases(vnSource) {
     const reader = instantiate(vnSource, env);
     reader.initialize = () => { throw new Error('vn init boom'); };
     const boot = cut(vnSource, "if (document.readyState === 'complete') {", '\n}\n', 'VN boot block', true);
-    compileScript(['window', 'document', 'C', 'console'], boot, 'vn-boot.js')(env.window, env.document, env.C, env.console);
+    compileScript(
+      ['window', 'document', 'C', 'console'],
+      boot,
+      'vn-boot.js',
+    )(env.window, env.document, env.C, env.console);
     assert.deepStrictEqual(handlerNames(env), ['onRestoreFailed'], 'VN E: boot failure must send a failure receipt');
     assert.strictEqual(env.calls[0][2], GENERATION, 'VN E: generation forwarded');
   }
@@ -277,7 +289,11 @@ async function vnAsyncCase(vnSource) {
     throw new Error('vn async boom');
   };
   const boot = cut(vnSource, "if (document.readyState === 'complete') {", '\n}\n', 'VN boot block', true);
-  compileScript(['window', 'document', 'C', 'console'], boot, 'vn-boot.js')(env.window, env.document, env.C, env.console);
+  compileScript(
+    ['window', 'document', 'C', 'console'],
+    boot,
+    'vn-boot.js',
+  )(env.window, env.document, env.C, env.console);
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepStrictEqual(handlerNames(env), ['onRestoreFailed'], 'VN F: async rejection must send a failure receipt');
   assert.strictEqual(env.calls[0][1], 'vn async boom', 'VN F: reason forwarded');

@@ -1,14 +1,14 @@
 // Runs the production continuous-mode smooth wheel helper
 // (kContinuousWheelScrollJs) in real headless Chrome and drives it in the
 // same prepare -> try-scroll -> commit order the reader wheel listener uses.
-import fs from 'node:fs';
 import { launchChromeDriver, resolveChrome } from '../../../tool/reader_pitch_headless/cdp_client.mjs';
+import { readPayload } from './reader_harness_support.js';
 
+const helper = readPayload().helper;
 if (!resolveChrome()) {
   console.log('Chrome unavailable');
   process.exit(77);
 }
-const helper = JSON.parse(fs.readFileSync(process.argv[2], 'utf8')).helper;
 
 const PAGES = {
   horizontal: '<!doctype html><meta charset="utf-8"><style>html,body{margin:0}'

@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 
+import '../helpers/node_runtime.dart';
+
 /// TODO-553 / BUG-1115: touch gestures must distinguish page/scroll pans from
 /// word-lookup taps using the full movement path.
 ///
@@ -33,7 +35,7 @@ void main() {
   test(
     'reader touch handler distinguishes swipe, pan, and lookup tap via node',
     () async {
-      final String? nodeExe = _resolveNode();
+      final String? nodeExe = resolveNodeExecutable();
       if (nodeExe == null) {
         markTestSkipped(
           'node not found on PATH; skipping JS behavior execution',
@@ -50,19 +52,19 @@ void main() {
         reason: 'behavior harness ${jsTest.path} must exist',
       );
 
-      // 阈值从生产的单一真值取，作为 argv 交给 harness——harness 里**不再**有第二份
-      // 硬编码副本。以前它自带 44/22 且没有速度门，于是生产阈值一改，它既不会转红、
-      // 也不再验真正的判据（`velocity >= undefined` 恒 false）。
+      // 阈值从生产的单一真值取，经 stdin payload 交给 harness——harness 里**不再**有
+      // 第二份硬编码副本。以前它自带 44/22 且没有速度门，于是生产阈值一改，它既不会
+      // 转红、也不再验真正的判据（`velocity >= undefined` 恒 false）。
       final ({int dist, int fastDist, int fastVelocity}) thresholds =
           ReaderSettings.swipePageTurnDistThresholds(
             ReaderSettings.defaultSwipePageTurnSensitivity,
           );
-      final ProcessResult result = await Process.run(nodeExe, <String>[
-        jsTest.path,
-        '${thresholds.dist}',
-        '${thresholds.fastDist}',
-        '${thresholds.fastVelocity}',
-      ], workingDirectory: Directory.current.path);
+      final NodeHarnessResult result =
+          await runNodeHarness(nodeExe, jsTest.path, <String, int>{
+            'dist': thresholds.dist,
+            'fastDist': thresholds.fastDist,
+            'fastVelocity': thresholds.fastVelocity,
+          });
 
       expect(
         result.exitCode,
@@ -78,22 +80,4 @@ void main() {
       );
     },
   );
-}
-
-/// Resolve a usable `node` executable, returning null when none is on PATH.
-String? _resolveNode() {
-  final List<String> candidates = Platform.isWindows
-      ? <String>['node.exe', 'node']
-      : <String>['node'];
-  for (final String name in candidates) {
-    try {
-      final ProcessResult probe = Process.runSync(name, <String>['--version']);
-      if (probe.exitCode == 0) {
-        return name;
-      }
-    } on ProcessException {
-      // Not found; try next candidate.
-    }
-  }
-  return null;
 }
