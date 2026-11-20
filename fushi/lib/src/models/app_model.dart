@@ -608,6 +608,7 @@ import 'package:fushi/src/sync/extension_image_ocr_service.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/shortcut_preferences.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
+import 'package:fushi/src/platform/android/android_notification_channels.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/stats/reader_study_clock_start_mode.dart';
@@ -1804,6 +1805,7 @@ class AppModel
       _systemNotifier ??= LocalUpdateNotifier.isSupportedPlatform
       ? LocalUpdateNotifier(
           appName: 'Fushi',
+          androidChannelName: t.notification_channel_updates,
           groupTitle: t.updates_notification_header,
           onResponse: _onSystemNotificationResponse,
         )
@@ -5557,6 +5559,9 @@ class AppModel
       // 词形变化语法说明的译文表跟界面语言走（BUG-2038）。装的是一张内存查表，
       // 与词典引擎里那份英文 transforms JSON 无关，所以放在引擎初始化之后也没问题。
       unawaited(applyTransformDescriptionLocale(appLocale.toLanguageTag()));
+      // 系统通知设置里的渠道名跟界面语言（拍板台 left3621）：只有主引擎注册了这条
+      // 通道，手机端换语言会重启 app，所以每次主引擎初始化推一次整表就够。
+      unawaited(syncAndroidNotificationChannelNames());
       populateMediaTypes();
       populateMediaSources();
       populateDictionaryFormats();

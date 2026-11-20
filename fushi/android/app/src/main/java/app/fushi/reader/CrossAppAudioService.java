@@ -331,7 +331,8 @@ public class CrossAppAudioService extends Service {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
         NotificationChannel channel = new NotificationChannel(
                 NotificationIds.CHANNEL_CROSS_APP_AUDIO,
-                "App audio capture",
+                NotificationChannelNames.nameFor(
+                        this, NotificationIds.CHANNEL_CROSS_APP_AUDIO, "App audio capture"),
                 NotificationManager.IMPORTANCE_LOW);
         channel.setShowBadge(false);
         NotificationManager nm = getSystemService(NotificationManager.class);
