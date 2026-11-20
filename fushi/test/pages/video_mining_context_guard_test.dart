@@ -368,11 +368,22 @@ void main() {
       // 中止顺序：引擎在构造 AnkiMiningContext 之前就 return aborted（不建缺音频 context）；
       // shell 在读取 res.outcome!（落卡产物）之前据 res.aborted 中止。
       // BUG-1664：锚点随构造改为 `_withRootCause('required audio missing', …)`。
-      final int engineAbortIdx = engineCompact.indexOf(
+      // video-30：落卡拆到 `_commit`（文件里排在 `_mineNow` 前面，也有一句
+      // `AnkiMiningContext context = card.context!`），全文件 indexOf 会命中它而误红；
+      // 锚到抽取段 `_mineNow` 的方法体，比的才是「中止」与「构造 context」的先后。
+      final String mineNowCompact = compactCode(
+        methodBody(engine, 'Future<_PreparedCard> _mineNow('),
+      );
+      expect(
+        mineNowCompact,
+        isNotEmpty,
+        reason: '引擎必须有 _mineNow 方法；守卫锚点失效请同步更新本测试。',
+      );
+      final int engineAbortIdx = mineNowCompact.indexOf(
         compactCode("abortReason: _withRootCause('required audio missing'"),
       );
-      final int engineCtxIdx = engineCompact.indexOf(
-        compactCode('AnkiMiningContext context ='),
+      final int engineCtxIdx = mineNowCompact.indexOf(
+        compactCode('AnkiMiningContext context = AnkiMiningContext('),
       );
       expect(engineAbortIdx, greaterThanOrEqualTo(0));
       expect(
