@@ -21,7 +21,7 @@ import 'package:fushi/src/pages/implementations/games_library_page.dart'
 import 'package:fushi/src/pages/implementations/stat_shared.dart'
     show formatActivityRelativeTime;
 import 'package:fushi/src/utils/adaptive/shell_style.dart'
-    show ShellContentLayout, shellRedesignActive;
+    show ShellContentLayout;
 import 'package:fushi/src/utils/components/fushi_continue_blocks.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart';
@@ -35,8 +35,6 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiFloatingChromeVisiblePadding;
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
-import 'package:fushi/src/utils/components/fushi_page_title_metrics.dart';
-import 'package:fushi/src/utils/components/fushi_static_masthead.dart';
 import 'package:fushi/src/utils/components/galgame_poster_card.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
@@ -173,19 +171,6 @@ class GameStreamLibraryServices {
   }
 }
 
-/// 串流库页（[GameStreamLibraryPage]）是否画页头大字（[FushiStaticMasthead]）：
-/// 重设计外壳下的手机，且没挂 texthooker 页签（[hasNavigation]，非 Windows 桌面
-/// 才有）。首页外壳按同一判据决定要不要自己再画标题条
-/// （`homeShellBarTitleFor` 的 `gamesStreamMasthead`）。平板 / 桌面不在设计稿
-/// 11-20 #18 范围，照旧是普通页头。
-bool gameStreamLibraryDrawsMasthead(
-  BuildContext context, {
-  required bool hasNavigation,
-}) =>
-    !hasNavigation &&
-    shellRedesignActive(context) &&
-    FushiPageTitleMetrics.isCompact(context);
-
 /// Android 的「游戏」tab：串流接收端的远端游戏库（Moonlight 式应用网格）。
 ///
 /// 与 Windows 的本机 galgame 库（`HomeGamePage`）共用同一个模块开关与同一张
@@ -200,8 +185,9 @@ class GameStreamLibraryPage extends StatefulWidget {
 
   final GameStreamLibraryServices services;
 
-  /// Section tabs of the page that embeds this one (Windows games module).
-  /// Null where this page is the whole games module.
+  /// Header title slot from the library shell that embeds this page (zero-size
+  /// placeholder: the shell's floating toolbar draws tabs and actions). Null
+  /// only when mounted standalone, where the page draws its own header.
   final Widget? navigation;
 
   static const Key interconnectButtonKey = ValueKey<String>(
@@ -495,33 +481,9 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
       ),
     ];
     final Widget? navigation = widget.navigation;
-    // 手机上的纯串流库与其它模块页同一行页头大字（[FushiStaticMasthead]，规格
-    // `FushiPageTitleMetrics`，设计稿 11-20 #18）：外壳不再叠标题条，这里也就
-    // 不必给它让位；副标题（「在电脑上启动游戏…」）由空态 / 主机列表说明。
-    final bool masthead = gameStreamLibraryDrawsMasthead(
-      context,
-      hasNavigation: navigation != null,
-    );
-    if (masthead) {
-      return Scaffold(
-        body: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            FushiStaticMasthead(
-              key: const ValueKey<String>('game-stream-masthead'),
-              title: t.nav_game,
-              actions: actions,
-            ),
-            Expanded(child: _buildSwitchedBody(context, loading, motion)),
-          ],
-        ),
-      );
-    }
-    // 作为首页外壳的顶层 tab（非 Windows 的串流接收端）时，外壳把大标题胶囊
-    // 叠在内容上方、经 [FushiFloatingChromeInset] 下发让位高度；这里必须让开，
-    // 否则页头（外壳已画标题时只剩副标题一行）整段压在标题胶囊底下
-    // （2026-10-09 用户截图：「游戏」胶囊挡住「在电脑上启动游戏并串流到这里」）。
-    // 嵌在游戏模块分区里时外层已消费过 inset（这里读到 0），不会重复让位。
+    // 嵌在库页壳里（非 Windows 的 `GameStreamClientPage`、Windows 游戏模块的
+    // 串流分区）时，壳的浮动工具栏叠在内容上方、经 [FushiFloatingChromeInset]
+    // 下发让位高度：这里按工具区此刻的可见下沿让开，收起后不留空白。
     // 库页材质（2026-10-25 用户定版，与本机游戏库同一套）：游戏卡走透明卡盒（材质作用域在 [_buildBody] 的滚动视图上）。
     return Scaffold(
       body: FushiFloatingChromeVisiblePadding(

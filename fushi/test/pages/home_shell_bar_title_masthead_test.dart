@@ -74,44 +74,6 @@ void main() {
     }
   });
 
-  test('串流接收形态的游戏库是普通页头：外壳条照常画页名', () {
-    expect(
-      homeShellBarTitleFor(
-        HomeTab.games,
-        apple: true,
-        compact: true,
-        redesign: true,
-        gamesStreamClient: true,
-      ),
-      allOf(
-        isNotNull,
-        homeShellTitleFor(
-          HomeTab.games,
-          apple: true,
-          compact: true,
-          redesign: true,
-        ),
-      ),
-    );
-  });
-
-  test('手机上的纯串流游戏库自己画页头大字：外壳条不画（设计稿 11-20 #18）', () {
-    for (final bool apple in <bool>[false, true]) {
-      expect(
-        homeShellBarTitleFor(
-          HomeTab.games,
-          apple: apple,
-          compact: true,
-          redesign: true,
-          gamesStreamClient: true,
-          gamesStreamMasthead: true,
-        ),
-        isNull,
-        reason: 'apple=$apple',
-      );
-    }
-  });
-
   test('墨水屏（无页头大字）：Apple 外壳条照常画库页页名', () {
     for (final HomeTab tab in _mastheadTabs) {
       expect(

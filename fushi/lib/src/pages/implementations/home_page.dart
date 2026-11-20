@@ -1933,14 +1933,10 @@ class _HomePageState extends BasePageState<HomePage>
   /// 宽窗 M3E 下 [tab] 的页面名并进库页自己的浮动工具栏行（标题胶囊排在页签
   /// 胶囊左边，[FushiShellInlineTitle]），外壳不再在页签上面叠一整行标题
   /// （2026-10-10「库页顶部只留两行」）。只给确定挂着 [FushiFloatingChromeBar]
-  /// 的 tab：串流接收形态的游戏库是普通页头，仍由外壳画标题。窄窗本来就不显示
-  /// 这条标题（见 [_floatingTitleOverlay]），这里一律 false。
+  /// 的 tab（游戏两种形态都是：Windows 本机库与串流接收端的库页壳）。窄窗本来
+  /// 就不显示这条标题（见 [_floatingTitleOverlay]），这里一律 false。
   bool _shellTitleInline(HomeTab tab) {
     if (isGlassDesign(context) || !_tabHasFloatingChrome(tab)) return false;
-    if (tab == HomeTab.games &&
-        appModelNoUpdate.gamesModuleForm == GamesModuleForm.streamClient) {
-      return false;
-    }
     return !_shellWindowCompact();
   }
 
@@ -2042,12 +2038,6 @@ class _HomePageState extends BasePageState<HomePage>
         ) ==
         WindowSizeClass.compact,
     redesign: shellRedesignActive(context),
-    gamesStreamClient:
-        appModelNoUpdate.gamesModuleForm == GamesModuleForm.streamClient,
-    gamesStreamMasthead: gameStreamLibraryDrawsMasthead(
-      context,
-      hasNavigation: appModelNoUpdate.gamesOffersExternalTexthooker,
-    ),
   );
 
   /// 单个 [HomeTab] 的导航项（图标 + 标签）。底栏/侧栏/macOS 根侧栏共用同一顶层
@@ -4388,21 +4378,21 @@ class _HomePageState extends BasePageState<HomePage>
       ),
       HomeTab.dictionaries => HomeDictionaryPage(focusSignal: _dictFocusSignal),
       // 非 Windows 的 games 模块是串流接收端：远端主机游戏库 + 远程启动串流；
-      // Windows 仍是本机 galgame 库。形态判据只在 [GamesModuleForm.on]。
+      // Windows 仍是本机 galgame 库。形态判据只在 [GamesModuleForm.on]。两种
+      // 形态都是库页壳（浮动工具栏 / 页头大字），页面名由外壳下发、壳自己画。
       HomeTab.games =>
         appModelNoUpdate.gamesModuleForm == GamesModuleForm.streamClient
-            // 非 Windows 桌面另挂外部 texthooker 台词页（没有 hook，只看 WS 来的
-            // 台词）；手机端维持纯串流库。
-            ? (appModelNoUpdate.gamesOffersExternalTexthooker
-                  ? GameStreamClientPage(
-                      streamBuilder:
-                          (BuildContext context, Widget navigation) =>
-                              GameStreamLibraryPage(
-                                services: _gameStreamLibraryServices,
-                                navigation: navigation,
-                              ),
-                    )
-                  : GameStreamLibraryPage(services: _gameStreamLibraryServices))
+            // 非 Windows 桌面另挂外部 texthooker 台词视图（没有 hook，只看 WS 来的
+            // 台词）；手机 / 平板只有串流库。
+            ? GameStreamClientPage(
+                offersTexthooker:
+                    appModelNoUpdate.gamesOffersExternalTexthooker,
+                streamBuilder: (BuildContext context, Widget navigation) =>
+                    GameStreamLibraryPage(
+                      services: _gameStreamLibraryServices,
+                      navigation: navigation,
+                    ),
+              )
             : const HomeGamePage(),
       HomeTab.web => const WebHubPage(),
       HomeTab.srs => const SrsDeckListPage(),
@@ -4784,22 +4774,16 @@ String? homeShellTitleFor(
 /// 条再画一遍就是同一个页名两行——MD3 因库页标题本来就不按行摆（窄窗不叠、宽窗
 /// 并进工具栏行）没露出来，Apple 的外壳条恒在内容上方按行画，于是 Cupertino 下
 /// 「Video」小字 + 「Video」大字（反馈 4s8SaBMfyY）。页面名照常下发，只有外壳
-/// 条不画。串流接收形态的游戏库是普通页头（[gamesStreamClient]），仍由外壳画；
-/// 但手机上的纯串流库（[gamesStreamMasthead]：没挂 texthooker 页签）与其它模块
-/// 页一样自己画页头大字（设计稿 11-20 #18），外壳条同样不画。
+/// 条不画。
 @visibleForTesting
 String? homeShellBarTitleFor(
   HomeTab tab, {
   required bool apple,
   required bool compact,
   bool redesign = false,
-  bool gamesStreamClient = false,
-  bool gamesStreamMasthead = false,
 }) {
   final bool mastheadOwnsTitle =
-      redesign &&
-      _HomePageState._tabHasFloatingChrome(tab) &&
-      !(tab == HomeTab.games && gamesStreamClient && !gamesStreamMasthead);
+      redesign && _HomePageState._tabHasFloatingChrome(tab);
   if (mastheadOwnsTitle) return null;
   return homeShellTitleFor(
     tab,
