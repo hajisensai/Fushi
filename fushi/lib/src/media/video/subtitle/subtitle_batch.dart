@@ -67,6 +67,9 @@ enum SubtitleBatchStatus {
 
   /// 下载/落盘失败。
   failed,
+
+  /// 用户中途停止了批量，这一集还没开始就被跳过（没有下载、没有落盘）。
+  skipped,
 }
 
 /// [SubtitleBatchStatus.failed] 是在哪一步失败的。三步对用户是三件不同的事：没下下来
@@ -330,6 +333,11 @@ typedef SubtitleBatchItemCallback =
 /// [onItemDone] 抛错（调用方的持久化失败）同样只算**这一集**失败：状态改记
 /// [SubtitleBatchStatus.failed]、异常留在 [SubtitleBatchItem.error]，已落盘的
 /// [SubtitleBatchItem.subtitlePath] 保留，后面的集照常处理。
+///
+/// [isCancelled]：每集**开始前**问一次；返回 true 后不再开始新的一集，正在下载 /
+/// 对齐 / 落盘的那一集照常做完（不留半个字幕文件），其余集记
+/// [SubtitleBatchStatus.skipped] 并逐集回调 [onItemDone]（不回调 [onItemStart]）。
+/// 只有用户显式点「停止」才取消——关掉工作台不取消（BUG-4496）。
 Future<List<SubtitleBatchItem>> runSubtitleBatch({
   required VideoSubtitleRegistry registry,
   required List<VideoSubtitleCandidate> candidates,
@@ -343,6 +351,7 @@ Future<List<SubtitleBatchItem>> runSubtitleBatch({
   download,
   Map<String, SubtitleContentLanguage?> probedVersionLanguages =
       const <String, SubtitleContentLanguage?>{},
+  bool Function()? isCancelled,
 }) async {
   final List<SubtitleBatchItem> results = <SubtitleBatchItem>[];
   final Directory dir = Directory(saveDirectory);
@@ -414,6 +423,12 @@ Future<List<SubtitleBatchItem>> runSubtitleBatch({
       target: target,
       episode: episodes[i],
     );
+    if (isCancelled?.call() ?? false) {
+      item.status = SubtitleBatchStatus.skipped;
+      if (onItemDone != null) await onItemDone(item);
+      results.add(item);
+      continue;
+    }
     item.status = SubtitleBatchStatus.downloading;
     if (onItemStart != null) await onItemStart(item);
     SubtitleBatchFailureStage stage = SubtitleBatchFailureStage.download;
