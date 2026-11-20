@@ -230,9 +230,21 @@ void main() {
     // 必然已关。机器忙（CI 四路并发）时固定 200 ms 不够。只看指向真实文件的图：
     // 探测未决时的占位图（kPendingCoverImage）按设计永不完成，不能拿缓存总数判。
     final ImageCache cache = PaintingBinding.instance.imageCache;
-    Future<bool> fileImagePending() async {
+    // 艺术字（[FushiLogoTitle]）先经 ImageStream 量宽高比、量出来才建 [Image]：
+    // 这段读取期间树上没有 Image，只看 Image 会漏掉它的文件句柄。
+    Iterable<ImageProvider<Object>> providers() sync* {
       for (final Image image in tester.widgetList<Image>(find.byType(Image))) {
-        final ImageProvider<Object> provider = image.image;
+        yield image.image;
+      }
+      for (final FushiLogoTitle title in tester.widgetList<FushiLogoTitle>(
+        find.byType(FushiLogoTitle),
+      )) {
+        yield title.logo;
+      }
+    }
+
+    Future<bool> fileImagePending() async {
+      for (final ImageProvider<Object> provider in providers()) {
         final ImageProvider<Object> inner = provider is ResizeImage
             ? provider.imageProvider
             : provider;
