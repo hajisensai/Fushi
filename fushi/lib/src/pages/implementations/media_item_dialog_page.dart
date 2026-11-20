@@ -2055,7 +2055,8 @@ class _ContextSubmenuRowState extends State<_ContextSubmenuRow> {
 
   static const double _width = 232;
 
-  /// 子菜单与本行的水平间隙。
+  /// 子菜单与本行的水平间隙。这条缝算在子菜单的悬停区里（见 [build] 里包住子菜单
+  /// 的 [MouseRegion]），指针从行横移到子菜单全程至少落在其中一块上。
   static const double _gap = 4;
 
   /// 子菜单的内边距：首项与本行顶边对齐，所以整体上提这么多。
@@ -2088,7 +2089,8 @@ class _ContextSubmenuRowState extends State<_ContextSubmenuRow> {
   }
 
   void _syncHover() {
-    // 指针从行移到子菜单要穿过两者之间的缝：延一帧再判，免得一离开行就收起。
+    // 行与子菜单的悬停区首尾相接（缝隙归子菜单），但同一次指针移动里「离开行」
+    // 与「进入子菜单」是先后两个回调：等这一帧的指针事件都分发完再判。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (_hoverRow || _hoverMenu) {
@@ -2137,13 +2139,15 @@ class _ContextSubmenuRowState extends State<_ContextSubmenuRow> {
             showWhenUnlinked: false,
             targetAnchor: Alignment(flip ? -1 : 1, up ? 1 : -1),
             followerAnchor: corner,
-            offset: Offset(
-              flip ? -_gap : _gap,
-              up ? _verticalPadding : -_verticalPadding,
-            ),
+            offset: Offset(0, up ? _verticalPadding : -_verticalPadding),
             child: Align(
               alignment: corner,
+              // 子菜单离本行留 [_gap] 的缝，但这条缝必须仍是子菜单的悬停区：缝若落在
+              // 悬停区外，指针横移时只要有一次事件落进缝里，行与子菜单就都判为未悬停，
+              // 子菜单被收起、再也移不进去（反馈 iEhadpzweB）。所以缝做成子菜单
+              // [MouseRegion] 里朝向本行的透明内边距，而不是跟随偏移。
               child: MouseRegion(
+                hitTestBehavior: HitTestBehavior.opaque,
                 onEnter: (_) {
                   _hoverMenu = true;
                   _syncHover();
@@ -2171,9 +2175,15 @@ class _ContextSubmenuRowState extends State<_ContextSubmenuRow> {
                         },
                       ),
                     },
-                    child: FocusScope(
-                      node: _menuScope,
-                      child: _buildSubmenu(overlayContext),
+                    child: Padding(
+                      padding: EdgeInsets.only(
+                        left: flip ? 0 : _gap,
+                        right: flip ? _gap : 0,
+                      ),
+                      child: FocusScope(
+                        node: _menuScope,
+                        child: _buildSubmenu(overlayContext),
+                      ),
                     ),
                   ),
                 ),
