@@ -5186,6 +5186,17 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 判定，本机库断点、清单条目、互联 host 此刻的断点取较新（BUG-4304）。只读本机
       // 断点会让合集下一成员 / 播放列表下一集从本机旧断点起播，随后的实时上报（戳 =
       // now）把旧位置写回 host。
+      //
+      // 取流与开播位置互不依赖（取流请求不带起点，位置在 [_applyLoad] 才交给播放器），
+      // 两条一起发（路线图 #3722 m3 gap-remote-4）：串行时 host 离线要先等位置读超时
+      // （未选路 2 s 探测 / 已选路 15 s 请求上限）、再等取流同样一轮，实测 4.0 s / 17.0 s；
+      // 并行后是 2.0 s / 15.0 s。位置这条先失败（抛出）时取流的错误不能变成无人接的
+      // 异步错误，先挂一个空的错误监听；后面 `await urlsFuture` 照样把错误抛给下面的
+      // catch。本程被换集作废时不再等取流：换集路径已按 id 释放这次播放会话，晚到的
+      // 流票由来源收到即释放（BUG-4461）。
+      final Future<RemoteVideoStreamUrls> urlsFuture = client
+          .remoteVideoStreamUrls(info.id, episodeIndex: streamEpisodeIndex);
+      unawaited(urlsFuture.then<void>((_) {}, onError: (Object _) {}));
       final (String startUid, int startEp) = _remotePositionKeyForIndex(index);
       final int initialPositionMs =
           client is InterconnectSyncBackend &&
@@ -5207,10 +5218,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           : initialPositionMsOverride ??
                 await _resolveRemoteInitialPositionMs(info, index);
       if (seq != _episodeLoadSeq || !mounted) return;
-      final RemoteVideoStreamUrls urls = await client.remoteVideoStreamUrls(
-        info.id,
-        episodeIndex: streamEpisodeIndex,
-      );
+      final RemoteVideoStreamUrls urls = await urlsFuture;
       _remoteEmbeddedSubtitleTracks = urls.embeddedSubtitleTracks;
       // host 不支持按名下载时列表留空：列了也选不了。
       _remoteSidecarSubtitles = client is RemoteVideoSidecarSubtitleFetch
