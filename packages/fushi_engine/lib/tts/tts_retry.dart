@@ -29,10 +29,30 @@ class TtsRetryPolicy {
     this.baseDelay = const Duration(milliseconds: 600),
     this.maxDelay = const Duration(seconds: 8),
     this.maxRetryAfter = const Duration(seconds: 30),
+    this.rateLimited,
   });
 
   /// 不重试（只发一次）。
   static const TtsRetryPolicy none = TtsRetryPolicy(maxRetries: 0);
+
+  /// 整本书制作的「被限流时等待重试」：429 按服务端 `Retry-After` 等（最长 10 分钟），
+  /// 没给就指数退避到 1 分钟一次，最多 8 次；其余临时失败照默认策略。
+  static const TtsRetryPolicy patientRateLimit = TtsRetryPolicy(
+    rateLimited: TtsRetryPolicy(
+      maxRetries: 8,
+      baseDelay: Duration(seconds: 2),
+      maxDelay: Duration(minutes: 1),
+      maxRetryAfter: Duration(minutes: 10),
+    ),
+  );
+
+  /// 整本书制作的「被限流时暂停」：429 不重试，立刻上报（调用方停下整个任务）。
+  static const TtsRetryPolicy pauseOnRateLimit = TtsRetryPolicy(
+    rateLimited: TtsRetryPolicy.none,
+  );
+
+  /// [TtsFailureCode.rateLimited] 专用的子策略；null = 与其它临时失败同一套。
+  final TtsRetryPolicy? rateLimited;
 
   /// 第一次失败后最多再试几次。
   final int maxRetries;
@@ -49,6 +69,10 @@ class TtsRetryPolicy {
   /// 抖动取「基准的一半 .. 基准」之间均匀分布（equal jitter）：并发两路同时失败时
   /// 不会同一瞬间一起重打服务端，又保证至少等基准的一半。
   Duration? delayBefore(int retry, TtsFailure failure, Random random) {
+    final TtsRetryPolicy? sub = rateLimited;
+    if (sub != null && failure.code == TtsFailureCode.rateLimited) {
+      return sub.delayBefore(retry, failure, random);
+    }
     if (retry > maxRetries) return null;
     final Duration? retryAfter = failure.retryAfter;
     if (retryAfter != null) {
@@ -92,12 +116,13 @@ Future<T> ttsWithRetry<T>(
       final Duration? delay = policy.delayBefore(retry, failure, rng);
       if (delay == null) rethrow;
       onRetry?.call(retry, failure, delay);
-      await _cancellableDelay(delay, cancel);
+      await ttsCancellableDelay(delay, cancel);
     }
   }
 }
 
-Future<void> _cancellableDelay(Duration delay, TtsCancelToken cancel) {
+/// 等 [delay]；[cancel] 取消时立刻以 [TtsFailureCode.cancelled] 结束。
+Future<void> ttsCancellableDelay(Duration delay, TtsCancelToken cancel) {
   cancel.throwIfCancelled();
   if (delay <= Duration.zero) return Future<void>.value();
   final Completer<void> done = Completer<void>();

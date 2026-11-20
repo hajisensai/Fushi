@@ -178,6 +178,7 @@ class MangaReadAloudController extends ChangeNotifier {
     required MangaReadAloudHost host,
     required MangaReadAloudVoiceRig rig,
     required List<TtsPronunciationRule> pronunciation,
+    List<TtsPronunciationRule> preSynthesis = const <TtsPronunciationRule>[],
     required MangaReadAloudPlayToEnd playToEnd,
     required MangaReadAloudStopPlayback stopPlayback,
     required double Function() readSpeed,
@@ -186,6 +187,7 @@ class MangaReadAloudController extends ChangeNotifier {
        _follower = MangaSentenceFollower(host),
        _rig = rig,
        _pronunciation = pronunciation,
+       _preSynthesis = preSynthesis,
        _playToEnd = playToEnd,
        _stopPlayback = stopPlayback,
        _readSpeed = readSpeed,
@@ -195,6 +197,7 @@ class MangaReadAloudController extends ChangeNotifier {
   final MangaSentenceFollower _follower;
   MangaReadAloudVoiceRig _rig;
   final List<TtsPronunciationRule> _pronunciation;
+  final List<TtsPronunciationRule> _preSynthesis;
   final MangaReadAloudPlayToEnd _playToEnd;
   final MangaReadAloudStopPlayback _stopPlayback;
   final double Function() _readSpeed;
@@ -588,6 +591,7 @@ class MangaReadAloudController extends ChangeNotifier {
           pageIndex: page,
           rightToLeft: _host.rightToLeft,
           pronunciation: _pronunciation,
+          preSynthesis: _preSynthesis,
           maxInputLength: _rig.maxInputLength,
         );
         final List<int> chunkStart = <int>[];

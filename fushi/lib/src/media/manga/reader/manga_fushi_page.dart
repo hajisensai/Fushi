@@ -140,6 +140,7 @@ import 'package:fushi/src/media/manga/reader/manga_reader_study_stats.dart';
 import 'package:fushi/src/pages/implementations/statistics_center_page.dart';
 import 'package:fushi/src/reader/reader_statistics_sheet.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
+import 'package:fushi_engine/tts/tts_pronunciation.dart';
 import 'package:fushi/src/media/manga/reader/manga_volume_key_paging_controller.dart';
 import 'package:fushi/src/focus/page_focus_ownership.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart'

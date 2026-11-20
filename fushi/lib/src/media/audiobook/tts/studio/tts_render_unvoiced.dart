@@ -34,9 +34,13 @@ String ttsSentenceSpokenText(TtsCast cast, TtsPlanSentence sentence) =>
     cast.sayFor(sentence.section, sentence.matchStart) ?? sentence.spokenText;
 
 /// 一句合成失败能不能占位（而不是让任务失败）：引擎对这一句报的失败都算；取消不算
-/// （那是用户在停任务），其它异常（文件系统、程序错误）也不算。
+/// （那是用户在停任务）；限流不算（服务端对整个账号 / IP 限流，不是这一句的问题——
+/// 占位只会把后面一串句子都变成静音，应当按任务的「被限流时」等待或暂停）；其它
+/// 异常（文件系统、程序错误）也不算。
 bool ttsFailureIsPerLine(Object error) =>
-    error is TtsFailure && error.code != TtsFailureCode.cancelled;
+    error is TtsFailure &&
+    error.code != TtsFailureCode.cancelled &&
+    error.code != TtsFailureCode.rateLimited;
 
 /// 记进账本的失败码：引擎失败用 `TtsFailureCode.name`，声音解析失败用制作的错误码。
 String ttsUnvoicedCode(Object error) => switch (error) {
