@@ -4671,3 +4671,109 @@ WIP 原样编不过（schema 守卫表数没改）、三条停放测试装置有
   真错误不归类 + 422 不变）；变异实测：映射短路成 null，10 例变红、真错误 / 422 两例照绿；还原后绿。没拿 release 重跑 (a2) 这一格。
 - **升级说明（原第 2 条，不改行为）**：写进 R0 文档 §6「升级说明」第 1 条——**不可回退**：新版本只要打开过一次数据（哪怕复习库还没升级），
   主库就被升到新 schema，旧版本整个起不来；要回旧版本只能用升级前的整包备份或数据目录副本。发版说明应提示升级前先在旧版本做整包备份。
+
+## 49. 第六波合流（2026-11-20，分支 `pr/srs-gen4-w6-merge`，基于 `pr/srs-gen4-switch` `14799047ca`）
+
+本节是集成负责人的合流记录：把第六波各模块分支与 `develop` 按顺序 `git merge --no-ff` 合进来，每次合并后提交并推送 `pr/srs-gen4-w6-merge`。没开 PR，`pr/srs-gen4-switch` 和 `develop` 都没动。
+
+### 合并了什么（按顺序）
+
+| 序 | 来源 | 合并提交 | 交接节 |
+|---|---|---|---|
+| T1 | `origin/pr/srs-gen4-w6-import-reds` | `925e67caa4` | §44 |
+| T2 | `origin/pr/srs-gen4-w6-app-reds` | `bdca32138f` | §43 |
+| T3 | `origin/pr/srs-gen4-w6-identity-gate` | `1c946c3ebb` | §45 |
+| T4 | `origin/pr/srs-gen4-w6-relay-tail` | `49983d0375` | §46 |
+| T5 | `origin/pr/srs-gen4-w6-server-tail` | `a43b9ee52a` | §47 |
+| R0 | `origin/pr/srs-gen4-w6-r0-windows` | `a83465312b` | §48 |
+| — | `origin/develop` | `92e360200d` | — |
+
+合流后补的提交（每条都已推送）：
+
+- `b0f38d4224`：bug 撞号用 `dart run tool/bug.dart settle` 处理。gen4 的 `BUG-4843-srs-gen4-dangling-op-joins-into-other-collection` 改号为 **BUG-4907**，31 处引用随之改掉；develop 的 BUG-4843（glibc 基线）保持不动。
+- `ec5f6f9427`：Rust `SCHEMA` 定为 40027，`FROZEN` 追加 40027 的指纹；`gen4/cache.rs` 两处 `§43` 引用改指 `§44`（重编号后 import-reds 在 §44）。
+- `e1f9942045`：`fushi_fsrs/Cargo.toml` 的 rusqlite 开了 `backup` 特性，用 `dart run tool/native_licenses.dart` 重算许可汇编的输入指纹（`native_license_registry` 守卫原来是红的）。
+- `ab0be67f2b`：`fushi_cli` 补上 `srs retained` / `srs retained-delete` 两条命令。T2 新加的两条 ctl 路由（保留副本列表 / 删除）没有 CLI 入口，`ctl_cli_route_coverage_guard` 是红的。删除命令必须带 `--yes`，请求体带 `confirm: true`。新单测见 `packages/fushi_cli/test/commands/srs_commands_test.dart`；变异实测把路径改错后测试变红。
+- `e72d61f7f3`：import 大环上限 622 → 625。拆账写在守卫注释里：换代新加的 `srs_gen4_migration_controller` / `srs_retained_copy` / `srs_generation_view` / `srs_load_error` 本就读 `AppModel`，进环是因为它们本身就依赖 AppModel，不是哪个底层文件被拖进了环；`srs_gen4_rehearsal_section` 出环。
+- `96161a2ab4`：**真缺陷（gen4 既有）**。`srsProfileStores.hasReviewData` 遇到还没绑定新代集合的配置时，内核抛 `SrsProfileUnboundException`，结果互联「保存到」的候选列表整个落空（`host_remote_mining_targets_test` 9 条红，两台机器上都红）。修法：这种配置回 false，和备份导出跳过未绑定配置是同一条规则。
+- `5915b6849b`：`unified_collections_architecture_guard_test` 改认新形态。G11-4 之后 `merge()` 只跑主库事务，复习数据由调用方在提交后另走 `mergeSrsIntoLocal`；守卫还按旧形态找 `merge()` 内的 SRS 合并（gen4 既有红）。
+- `6063c21a5e`：`settings_flatten_anki_profile_test`「挖词目标 = Fushi 复习」用例改完映射后，显式让 `srsMiningChoicesProvider` 重算。G9-6 之后字段行读的是 provider 解析好、已归一成规范 ID 的落点；正式 app 里偏好变更经 `initialise` 接上的 `prefsRepo.addListener(notifyListeners)` 触发重算，测试的 `wire()` 不走 `initialise`，没接这条转发。调试实测：偏好已经是 `{fw: ''}`，provider 里仍是 `{fw: {expression}}`。gen4 既有红，属于测试装配问题，产品路径没坏。
+- `86e645bd13`：`ctl_anki_sync_and_lapis_cli_test` 两条内置 Anki 同步用例改在真实 zone 里建会话。gen4 的 `acac194cd5` 让 `AnkiSyncSession.close` 等串行队列尾 `_tail`。`_tail` 是构造时建的已完成 future，在 FakeAsync zone 里建的话，await 它的回调会排进 FakeAsync 的微任务队列，`tester.runAsync(session.close)` 期间没人去冲那个队列，close 永远不返回；Windows 上表现为 10 分钟超时，下一条用例跟着报 runAsync 重入红。插桩实测：停在 `await _tail` 之前、之后没打出来。产品侧 close 等队列是对的，所以只修测试。
+
+### 冲突怎么解的
+
+- **交接文档**：各节全部保留，重编号为 §43 app-reds（含续 / 续二）、§44 import-reds、§45 identity-gate、§46 relay-tail、§47 server-tail、§48 R0，本节 §49。文中和代码注释里的交叉引用都改到了新号（例如 `cache.rs` 改指 §44）。
+- **Rust schema**：develop 的 G8-3（`media_seen` 换成按 gens 集合存，主键 `(col, loc, device, gen)`）在 develop 上用的是 40020，和 gen4 的号段撞了；gen4 的 relay_park 用 40026，40025 没人用。最终表结构 = gen4 全部表 + develop 的 `media_seen` 新形态（`media.rs` / `media_tests.rs` 自动合入），`SCHEMA = 40027`，`FROZEN` 追加 `(40_027, "f55986e3a92176c9a730ad658c9700db7113f3b93167f90478a2232a906ce6be")`。追加前 frozen 守卫是红的，这就是变异证据。
+  - **与委托描述不符**：委托里假设有一条「升级阶梯」，但 gen4 store **没有**逐级升 schema 的路径，`check_kind` 遇到 schema 不等于当前 `SCHEMA` 的库一律拒绝。换代后的数据只来自迁移（旧格式 → gen4），不存在 40026 → 40027 的就地升级。这条线上从没发过 40020–40026 的库，所以不需要补阶梯；以后正式发布后再改表，就得先有阶梯。
+- **主库 schemaVersion**：develop 的 v159–v161 迁移步骤原样保留，gen4 的空迁移注释块顺延成 v162，`kFushiDbSchemaVersion = 162`。`fushi/test/database/*` 里所有 159/161 冲突都统一成 162；develop 的 migration_v159/v160/v161 测试，原来期望的最终版本 161 也改成 162。
+- **i18n**：走 `merge.fushi-i18n-json` 合并驱动，之后跑 `gen_i18n`，没手改 json。
+- **`srs_history_page.dart`**：`removeFolder` 函数体取 HEAD，失败文案用 relay-tail 的 `failure: (_) => t.srs_timeline_location_remove_failed`。
+- **`ctl_srs_routes.dart`**：保留 HEAD 的 `_requireSrsModule` / `requireSrsCtlLibraryDir`，再叠加 R0 的 try/catch → `srsCtlOpenBlockedFailure`（409 + 稳定码）。
+- **`srs_deck_list_page.dart`**：高度条件合并成 `joined.contains(index) || items[index] is SrsScrubErrorNotice ? 0 : ...`。
+- **develop 非 SRS 意图 + gen4 实现**：develop 的非 SRS 改动全部保留；没带回 protocol 3 代码。
+
+### 最终数字
+
+| 项 | 值 |
+|---|---|
+| Rust `SCHEMA` | 40027（FROZEN 已追加） |
+| `EXPORT4_VER` / `EXPORT4_VER_OLDEST` | 3（relay-tail 从 2 升上来）/ 1 |
+| `CACHE_RULES` | 3（T1） |
+| `ABI_VERSION` | 8（develop 是 7；gen4 各分支都没改导出符号，符号下限不变） |
+| `PLANNER_STATS` | 45 行 |
+| 主库 `kFushiDbSchemaVersion` | 162 |
+| import 大环上限 | 625 |
+
+### 验证
+
+- `native/fushi_fsrs`：`cargo fmt --check` 退出 0；`cargo test --profile quick --lib -j 4` 退出 0，1472 通过 / 0 失败 / 39 ignored（ignored 都是原有的，本轮没新增）。
+- `fushi/`：`dart tool/heavy.dart -- flutter analyze --no-pub` 在最终头上退出 0，No issues found（self-mac）。
+- engine `dart test test/srs`：退出 0，+977 ~25。`packages/fushi_server` `dart test`：退出 0，+731 ~13。`packages/fushi_cli` `srs_commands_test`：退出 0，11 条。
+- fushi 全量 dist（快照 `ec5f6f9427`，覆盖「合并后必跑」守卫）：退出 1，完成 51007 条，107 批里 12 批红。逐条分型：
+  - 合流造成、已修：`ctl_cli_route_coverage`、`native_license_registry`、`import_cycle`，修复提交见上。
+  - gen4 既有、已修：`unified_collections_architecture`、`host_remote_mining_targets`（产品缺陷）、`settings_flatten_anki_profile`、`ctl_anki_sync_and_lapis_cli`。
+  - 伪红：`global_shortcuts_portal_dbus_test`、`flatpak_launcher_x11_fallback_test` 是 `@TestOn('linux')`，在 mac / win 上零执行，报的是 "produced no events"。
+  - 只在 mac 上红、Windows 复跑绿（环境 / 偶发）：`bug_tool_number_pool_test`（dist mac 上 `git fetch origin` 失败）、`reader_remote_download_followups_test`、`tracking_plugins_section_test`、`music_lyrics_page_test`。
+- 修复后复跑：
+  - 上述 5 个守卫 / 套件本机 heavy 复跑：退出 0，+53。
+  - `settings_flatten_anki_profile_test`：退出 0，+10。
+  - `ctl_anki_sync_and_lapis_cli_test`：本机 Windows（`--here`）退出 0，+7；dist mac 退出 0，7 条。
+  - 修复前它们在本机都是红的（前者 line 592 找不到 "Not mapped"，后者 10 分钟超时），这就是变异对照。
+- 最终头（`86e645bd13`）复核：
+  - `flutter analyze --no-pub`：退出 0，No issues。
+  - dist 跑 `test/srs test/sync test/build test/tools` 加上述 3 个改过的套件：退出 1，完成 7391 条，36 批里 3 批红。
+  - 分型：wight-mac 第 6 批是 SSH 被远端断开（`Connection to … closed by remote host`），没有 done 事件，98 个套件没跑完，属于基础设施伪红；`bug_tool_number_pool_test` 同上，是 mac 环境问题；`srs_review_rated_feedback_test` 只在 wight-mac 上红一次（等评分提示超时）。
+  - 把这 90 个套件再交 dist 复跑（不含 bug_tool）：退出 1，完成 1256 条。其中 `srs_review_rated_feedback_test` 绿；`host_job_input_reuse_test`「响应体卡住的状态 GET 有上界」只在 self-mac 上红、wight-mac 复跑绿，是计时类偶发；`flatpak_launcher_x11_fallback_test` 是 `@TestOn('linux')` 零执行伪红。复跑里没有真红。
+
+### 仍红 / 没验
+
+- 没有已知的仍红项。
+- 只在 dist mac 上红的 4 个套件（见上）没在 mac 上逐个查根因，Windows 上是绿的。
+- PR CI 没看（本分支不开 PR）。Linux 只有 CI 能跑，本机没有 Linux 实跑。
+- **真机验证按用户指令取消，不做。**
+
+### 遗留登记（汇总各模块 not_done，归属照原模块）
+
+- **T2 app-reds（§43）**：Dart 只跑了改动的文件和 engine 的 `srs_remote_store_test`，没跑全量。本节的 dist 全量已经补上这一项。
+- **T3 identity-gate（§45）**：
+  - `_historyLinks`（同 profile 回导 / 旧卡接链补的 historyFrom 链接）在导入末尾经 writeEdits 单独写、不带笔记，被拒的新笔记理论上能走到这条路，但没构造出能触发的路径。没加未经测试的过滤，归本模块后续 / G9。
+  - 跨设备同 guid、不同笔记类型；PendingSelf 副本准备了两遍；THEIRS_SQL 看不到只有修改的实体。这三项照旧归 G9 / 设计。
+  - 声明式改法只保护如实声明了卡属于哪条笔记的调用方（.apkg 导入）；不带笔记的卡片修改仍按「哪里都没有的 ID 照常写」。
+- **T4 relay-tail（§46）**：
+  - `srs_import_entry` 和 `srs_anki_migration_page:343` 里，`store == null`、`media == null`、`task == null`、牌组不存在这几处有意保留 `t.srs_action_failed`。
+  - `srsFushiSrsImportFailureText` 判断「另一个复习库」仍然靠 FormatException 文本里的 'another profile'，没改成类型化异常。
+  - `srs_history_page` 没有 widget 测试覆盖 `_run` 的 failure。
+  - `store/gen4/export.rs` 的双指针没有单独的规模测试。
+  - 更早的遗留照旧：requeue 接回循环的真实 SrsDbStore 测试、服务端显示 relayBlocked、claim 登记。40025 指纹重算一项已由本节的 40027 取代，40025 从没启用。
+  - `packages/fushi_engine` 的 `srs_fushisrs.dart:395` 有一条 `only_throw_errors` info，原有的。
+- **T5 server-tail（§47）**：
+  - app 侧 `SrsRemoteProfile.displayName`（取 `names.first`）跟着列举顺序走，只影响关联候选的显示名，没改。
+  - Linux / macOS 实跑要看 CI。
+  - `fushi/test/sync/interconnect_srs_two_way_sync_test.dart` 在 T5 分支上没跑；本节 dist 的 `test/sync` 已覆盖。
+- **R0 Windows（§48）**：
+  - `itest_focus_navigation_prerequisite_guard_test` 扫不到手写的 `sendKeyEvent(LogicalKeyboardKey.tab)`；`video_bar_overflow_shortcuts_itest.dart` 疑似同病，交焦点 / itest 守卫 owner。
+  - (a2) 这一格的 409 只有单测证据，没拿 release 重跑，release 迁移页也没有像素证据。
+  - 进度页像素仍以 r0-a-zone4 为准；迁移页要在帧回调里重试一次才会出来（itest 的 zone 错位）。
+- **本节新增**：
+  - 测试装配 `wire()` 没接偏好 → AppModel 的通知转发，凡读 provider 解析过的偏好的页面，测试里都要手动让 provider 重算。没把转发加进 `wireLocalAudioForTesting`，因为影响面太大（所有用它的测试都会多出通知），以后可单独评估。
+  - 在 FakeAsync zone 里建 `AnkiSyncSession`、再在 runAsync 里 close 的测试都有同样的挂起风险。已扫过 `fushi/test`：另一处 `anki/anki_sync_client_section_test.dart` 在 `setUp`（真实 zone）里建会话，不受影响，dist 上是绿的。
