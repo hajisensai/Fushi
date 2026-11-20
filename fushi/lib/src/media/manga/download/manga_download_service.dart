@@ -1115,14 +1115,20 @@ class MangaDownloadService {
     }
 
     final int concurrency = pageConcurrency < 1 ? 1 : pageConcurrency;
+    bool completed = false;
     try {
       await Future.wait<void>(<Future<void>>[
         for (int i = 0; i < concurrency; i++) worker(),
       ]);
+      completed = true;
     } finally {
       active.abort = null;
       // 暂停 / 取消 / 失败停下时，节流攒着的最后进度也要落库（暂停行显示真实页数）。
-      await progress.flush();
+      await _flushStoppedProgress(
+        progress,
+        job.jobId,
+        stoppingWithError: !completed || token.isTripped || firstError != null,
+      );
     }
     _throwIfCancelled(token);
     if (firstError != null) {
@@ -1232,6 +1238,7 @@ class MangaDownloadService {
       jobId: job.jobId,
       now: () => _now,
     );
+    bool completed = false;
     try {
       await for (final MokuroMoeVolumeDownloadEvent event in downloader.run(
         db: _database,
@@ -1257,6 +1264,7 @@ class MangaDownloadService {
             }
         }
       }
+      completed = true;
     } on MokuroMoeDownloadCancelled {
       _throwIfCancelled(token);
       // 下载器自己中止但服务没要求（不该发生）：按取消收尾。
@@ -1264,7 +1272,15 @@ class MangaDownloadService {
     } finally {
       active.abort = null;
       _setTransfer(job.jobId, null);
-      await progress.flush();
+      await _flushStoppedProgress(
+        progress,
+        job.jobId,
+        stoppingWithError:
+            !completed ||
+            token.isTripped ||
+            last == null ||
+            last.stage != MokuroMoeDownloadStage.done,
+      );
     }
     _throwIfCancelled(token);
     if (last == null || last.stage != MokuroMoeDownloadStage.done) {
@@ -1464,6 +1480,26 @@ class MangaDownloadService {
     } on Object catch (error, stack) {
       ErrorLogService.instance.log(
         'MangaDownloadService.deleteChapter ${job.jobId}',
+        error,
+        stack,
+      );
+    }
+  }
+
+  /// 任务停下时把节流攒着的最后进度落库。[stoppingWithError] 为真表示任务正因
+  /// 取消 / 暂停 / 停止 / 失败停下：这时写库失败只记日志，不能顶掉那个异常——否则
+  /// 任务的停下原因（暂停还是失败、失败原因）会被判错。正常跑完时照常抛。
+  static Future<void> _flushStoppedProgress(
+    _ProgressWriter progress,
+    String jobId, {
+    required bool stoppingWithError,
+  }) async {
+    try {
+      await progress.flush();
+    } on Object catch (error, stack) {
+      if (!stoppingWithError) rethrow;
+      ErrorLogService.instance.log(
+        'MangaDownloadService.flushProgress $jobId',
         error,
         stack,
       );

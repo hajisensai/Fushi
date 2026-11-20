@@ -186,6 +186,32 @@ class _CountingDb extends FushiDatabase {
   }
 }
 
+/// 进度写库在 [failOn] 页数上抛错的库（停下时补写进度失败不能顶掉停下原因）。
+class _FailingProgressDb extends FushiDatabase {
+  _FailingProgressDb({required this.failOn})
+    : super.forTesting(NativeDatabase.memory());
+
+  final int failOn;
+  final List<int> progressWrites = <int>[];
+
+  @override
+  Future<int> updateMangaDownloadJobProgress(
+    String jobId, {
+    required int pagesDone,
+    required int pagesTotal,
+    required int updatedAt,
+  }) {
+    progressWrites.add(pagesDone);
+    if (pagesDone == failOn) throw StateError('progress write failed');
+    return super.updateMangaDownloadJobProgress(
+      jobId,
+      pagesDone: pagesDone,
+      pagesTotal: pagesTotal,
+      updatedAt: updatedAt,
+    );
+  }
+}
+
 const List<OnlineMangaChapter> _chapters = <OnlineMangaChapter>[
   OnlineMangaChapter(
     key: '/chapter/2',
@@ -345,6 +371,53 @@ void main() {
     await downloads.whenIdle;
     // 没有节流时是 [0, 1, 2, 3]：每页一次写库 = 一次 watchJobs 信号。
     expect(counting.progressWrites, <int>[0, 3]);
+    downloads.dispose();
+  });
+
+  test('暂停时补写节流进度失败：只记日志，任务仍判暂停而不是失败', () async {
+    final _FailingProgressDb failing = _FailingProgressDb(failOn: 1);
+    addTearDown(failing.close);
+    final OnlineMangaLibraryService failingLibrary = OnlineMangaLibraryService(
+      database: failing,
+      rootDirectory: Directory(p.join(root.path, 'legacy-failing')),
+      adapter: adapter,
+    );
+    await failingLibrary.add(_entry());
+    // 第 0 页取完（进度 1 落在节流窗口里只记内存），第 1 页卡住。
+    final Completer<void> stuck = Completer<void>();
+    adapter.gateFor = (int index) => index == 1 ? stuck : null;
+    final DateTime frozen = DateTime(2026, 11, 20);
+    final MangaDownloadService downloads = MangaDownloadService(
+      database: failing,
+      serviceFor: (OnlineMangaRuntimeKind runtime) => failingLibrary,
+      pageConcurrency: 1,
+      clock: () => frozen,
+      wait: (Duration duration) async {},
+    );
+    final MangaDownloadJobRow job = await downloads.enqueueChapter(
+      entry: _entry(),
+      chapter: _chapters.last,
+      autoOcr: false,
+    );
+    await downloads.start();
+    while ((adapter.fetchCounts[1] ?? 0) == 0) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+
+    await downloads.pause(job.jobId).timeout(const Duration(seconds: 5));
+    await downloads.whenIdle.timeout(const Duration(seconds: 5));
+
+    expect(failing.progressWrites, <int>[0, 1], reason: '停下时确实补写了进度 1');
+    final MangaDownloadJobRow paused = (await failing.findMangaDownloadJob(
+      kind: MangaDownloadJobKind.chapter,
+      bookKey: bookKey,
+      chapterKey: '/chapter/1',
+    ))!;
+    expect(paused.status, MangaDownloadJobStatus.paused);
+    // 修复前：写库异常顶掉 _Paused，走失败分支记一次失败尝试与 lastError。
+    expect(paused.lastError, isNull);
+    expect(paused.attemptCount, 0);
+    stuck.complete();
     downloads.dispose();
   });
 
@@ -952,8 +1025,8 @@ void main() {
     });
   });
 
-  // BUG-4906（manga-12）：暂停 / 取消传不到在途请求与退避；失败不分型一律退避。
-  group('中止立即生效与失败分型（BUG-4906）', () {
+  // BUG-4914（manga-12）：暂停 / 取消传不到在途请求与退避；失败不分型一律退避。
+  group('中止立即生效与失败分型（BUG-4914）', () {
     const Duration guard = Duration(seconds: 5);
 
     Future<void> untilAllPagesInFlight() async {

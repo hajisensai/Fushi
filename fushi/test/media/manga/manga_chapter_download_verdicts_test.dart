@@ -188,6 +188,58 @@ void main() {
     expect(second, isNot(contains('c2')));
   });
 
+  test('判据中途抛错：没判完的章下一轮必重判，不因任务行没再变而挂着旧结论', () async {
+    String? throwFor;
+    final List<String> seen = <String>[];
+    final MangaChapterDownloadVerdicts flaky = MangaChapterDownloadVerdicts(
+      check: (String bookDir, String key) async {
+        seen.add(key);
+        if (key == throwFor) throw StateError('stat failed');
+        return onDisk.contains(key);
+      },
+    );
+    const List<String> keys = <String>['c1', 'c2', 'c3'];
+    Map<String, MangaDownloadJobRow> jobsWith(String status) =>
+        <String, MangaDownloadJobRow>{
+          for (final String key in <String>['c1', 'c3'])
+            key: _job(key, status: status),
+        };
+
+    expect(
+      await flaky.resolve(
+        bookDir: '/b',
+        chapterKeys: keys,
+        jobs: jobsWith(MangaDownloadJobStatus.running),
+      ),
+      <String>{'c2'},
+    );
+
+    // c1 / c3 下完了；判 c1 时读盘抛错，c3 这一轮没轮到。
+    onDisk.addAll(<String>['c1', 'c3']);
+    seen.clear();
+    throwFor = 'c1';
+    await expectLater(
+      flaky.resolve(
+        bookDir: '/b',
+        chapterKeys: keys,
+        jobs: jobsWith(MangaDownloadJobStatus.done),
+      ),
+      throwsA(isA<StateError>()),
+    );
+    expect(seen, <String>['c1']);
+
+    // 下一轮任务行与上一轮相同（纯进度信号）：c1 / c3 也必须重判。
+    seen.clear();
+    throwFor = null;
+    final Set<String> next = await flaky.resolve(
+      bookDir: '/b',
+      chapterKeys: keys,
+      jobs: jobsWith(MangaDownloadJobStatus.done),
+    );
+    expect(seen, <String>['c1', 'c3']);
+    expect(next, <String>{'c1', 'c2', 'c3'});
+  });
+
   group('CoalescedRefresh', () {
     test('在跑时再请求只补一轮；等待方都等到最后一轮', () async {
       int runs = 0;
@@ -218,6 +270,25 @@ void main() {
       expect(runs, 3);
       gates[2].complete();
       await d;
+    });
+
+    test('一轮抛错时期间来的请求照样补跑，等待方收到那个错误', () async {
+      int runs = 0;
+      final Completer<void> gate = Completer<void>();
+      final CoalescedRefresh refresh = CoalescedRefresh(() async {
+        runs++;
+        if (runs == 1) {
+          await gate.future;
+          throw StateError('boom');
+        }
+      });
+      final Future<void> a = refresh.request();
+      final Future<void> b = refresh.request();
+      gate.complete();
+      await expectLater(a, throwsA(isA<StateError>()));
+      await expectLater(b, throwsA(isA<StateError>()));
+      expect(runs, 2, reason: '第一轮期间来的请求不能随它的错误一起丢掉');
+      expect(refresh.isRunning, isFalse);
     });
 
     test('一轮抛错：等待方收到错误，之后还能再跑', () async {

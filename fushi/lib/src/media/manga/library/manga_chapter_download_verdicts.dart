@@ -60,7 +60,8 @@ class MangaChapterDownloadVerdicts {
   /// 按当前章表与任务行算出已下载的章 key 集合；只对需要的章调判据。
   ///
   /// 作废标记在判据开跑**之前**取走：判的过程中再来的作废记到下一轮，不会被本轮
-  /// 吞掉（调用方的串行刷新会再跑一轮）。
+  /// 吞掉（调用方的串行刷新会再跑一轮）。某章判据抛错时，它和后面没判的章都放回
+  /// 作废集，下一轮必重判，异常照常抛给调用方。
   Future<Set<String>> resolve({
     required String bookDir,
     required List<String> chapterKeys,
@@ -93,8 +94,15 @@ class MangaChapterDownloadVerdicts {
     _verdicts.removeWhere((String key, bool _) => !listed.contains(key));
     _jobMarks.removeWhere((String key, String _) => !listed.contains(key));
     _bookDir = bookDir;
-    for (final String key in toCheck) {
-      _verdicts[key] = await _check(bookDir, key);
+    for (int i = 0; i < toCheck.length; i++) {
+      try {
+        _verdicts[toCheck[i]] = await _check(bookDir, toCheck[i]);
+      } on Object {
+        // 任务行标记已经记成新值，没判完的章要是不放回作废集，之后的纯进度信号
+        // 不会再触发重判，它们会一直挂着旧结论。
+        _stale.addAll(toCheck.skip(i));
+        rethrow;
+      }
     }
     return <String>{
       for (final MapEntry<String, bool> e in _verdicts.entries)
@@ -131,14 +139,27 @@ class CoalescedRefresh {
     return run;
   }
 
+  /// 某一轮抛错不中断循环：那一轮期间来的请求仍要补跑（否则它们拿到的是一轮
+  /// 早于自己的结果，请求本身被丢掉）。所有轮跑完后，等待方收到第一个错误。
   Future<void> _loop() async {
+    Object? firstError;
+    StackTrace? firstStack;
     try {
       do {
         _again = false;
-        await _body();
+        try {
+          await _body();
+        } on Object catch (error, stack) {
+          if (firstError == null) {
+            firstError = error;
+            firstStack = stack;
+          }
+        }
       } while (_again);
     } finally {
       _running = null;
     }
+    final Object? error = firstError;
+    if (error != null) Error.throwWithStackTrace(error, firstStack!);
   }
 }
