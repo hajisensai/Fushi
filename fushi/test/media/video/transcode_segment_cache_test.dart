@@ -219,4 +219,112 @@ void main() {
       expect(cache.bytes, 0);
     });
   });
+
+  // 拍板 design-nmv-transcode-prefetch：host 预取只拿空闲名额。
+  group('tryLeaseIdleTranscodeSlot', () {
+    test('给前台留够名额：最多拿到 kMax - 预留 个，之后返回 null', () {
+      final List<TranscodeSlotLease> leases = <TranscodeSlotLease>[];
+      for (
+        int i = 0;
+        i < kMaxConcurrentTranscodes - kTranscodeSlotsReservedForForeground;
+        i++
+      ) {
+        leases.add(tryLeaseIdleTranscodeSlot()!);
+      }
+      expect(tryLeaseIdleTranscodeSlot(), isNull);
+      expect(
+        liveTranscodeCount,
+        kMaxConcurrentTranscodes - kTranscodeSlotsReservedForForeground,
+      );
+      for (final TranscodeSlotLease l in leases) {
+        l.release();
+        l.release(); // 幂等
+      }
+      expect(liveTranscodeCount, 0);
+    });
+
+    test('有前台在排队时不给，交还的名额直接交棒给排队者', () async {
+      final Completer<void> gate = Completer<void>();
+      final List<Future<void>> fg = <Future<void>>[
+        for (int i = 0; i < kMaxConcurrentTranscodes; i++)
+          runGuardedTranscodeForTesting(() => gate.future),
+      ];
+      bool queuedRan = false;
+      final Future<void> queued = runGuardedTranscodeForTesting(() async {
+        queuedRan = true;
+      });
+      await Future<void>.delayed(Duration.zero);
+      expect(queuedRan, isFalse);
+      expect(tryLeaseIdleTranscodeSlot(), isNull, reason: '有人排队就不预取');
+      gate.complete();
+      await Future.wait(fg);
+      await queued;
+      expect(queuedRan, isTrue);
+      expect(liveTranscodeCount, 0);
+    });
+
+    test('带着租到的名额转段：不排队，结束（含失败）即交还', () async {
+      setTranscodeSegmentRunnerForTesting((List<String> args) async {
+        throw TranscodeFailure(1, 'boom');
+      });
+      addTearDown(() => setTranscodeSegmentRunnerForTesting(null));
+      final TranscodeSlotLease slot = tryLeaseIdleTranscodeSlot()!;
+      expect(liveTranscodeCount, 1);
+      await expectLater(
+        transcodeSegment(
+          inputPath: '/v.mkv',
+          profile: const VideoTranscodeProfile(
+            maxWidth: 640,
+            maxBitrate: 1000000,
+          ),
+          index: 0,
+          durationMs: 12000,
+          slot: slot,
+        ),
+        throwsA(isA<TranscodeFailure>()),
+      );
+      expect(slot.released, isTrue);
+      expect(liveTranscodeCount, 0);
+    });
+  });
+
+  group('TranscodeSegmentCache 预取辅助', () {
+    test('contains 认完成段与在途段；abandonInflight 后同键另起、旧结果不入缓存', () async {
+      final TranscodeSegmentCache cache = TranscodeSegmentCache();
+      final Completer<Uint8List> first = Completer<Uint8List>();
+      final Future<Uint8List> a = cache.obtain(
+        stream: 't',
+        index: 1,
+        input: '/v',
+        compute: () => first.future,
+      );
+      expect(cache.contains(stream: 't', index: 1, input: '/v'), isTrue);
+      expect(cache.contains(stream: 't', index: 2, input: '/v'), isFalse);
+      cache.abandonInflight(stream: 't', index: 1, input: '/v');
+      expect(cache.contains(stream: 't', index: 1, input: '/v'), isFalse);
+      int computed = 0;
+      final Uint8List b = await cache.obtain(
+        stream: 't',
+        index: 1,
+        input: '/v',
+        compute: () async {
+          computed++;
+          return _bytes(4, 1);
+        },
+      );
+      expect(computed, 1, reason: '不合流到被放弃的那次');
+      first.complete(_bytes(8, 2));
+      expect(await a, _bytes(8, 2));
+      expect(cache.bytes, 4, reason: '被放弃那次的结果不入缓存');
+      expect(
+        await cache.obtain(
+          stream: 't',
+          index: 1,
+          input: '/v',
+          compute: () async => _bytes(99),
+        ),
+        b,
+      );
+    });
+  });
 }
