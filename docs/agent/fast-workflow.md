@@ -200,7 +200,7 @@ Get-CimInstance Win32_Process |
 | `test/tools/tests_for_changes_guard_test.dart` | `test/` 全树 + 全仓路径索引 | 「按触发条件加跑」的推导规则本身：索引规模 + 逐树下界 + 声明 glob 有效 |
 | `test/torrent/download_http_client_proxy_test.dart` | `lib` + 4 个 `packages/*/lib` | 下载链路的 HttpClient 必须走统一代理装配 |
 | `test/utils/net/network_image_proxy_guard_test.dart` | `lib` 全树 | 远端图片必须走 `AppHttpImage`/`AppCachedHttpImage`，裸 provider 会绕过全应用代理装配（自带 `expectScanScale` 哨兵） |
-| `test/build/ui_idle_wait_guard_test.dart` | `lib` + `../packages/*/lib`（循环动画那条只扫 `lib`） | 禁调 `SchedulerBinding.scheduleTask`（零延迟空转饿死 Windows 输入，等空闲用 `waitForUiIdle`）；每个 `.repeat(` 循环动画必须表态：常驻装饰走 ambient ticker，其余写明跟着什么停（BUG-4387 / BUG-4893，两处 `expectScanScale`） |
+| `test/build/ui_idle_wait_guard_test.dart` | `lib` + `../packages/*/lib`（循环动画那条只扫 `lib`） | 禁调裸 `WidgetsFlutterBinding.ensureInitialized()`（所有入口用带 `FramePacedTaskScheduler` 的 binding，裸 binding 碰上常驻动画零延迟空转饿死 Windows 输入）；每个 `.repeat(` 循环动画必须表态：常驻装饰走 ambient ticker，其余写明跟着什么停（BUG-4387 / BUG-4725 / BUG-4893，两处 `expectScanScale`） |
 
 一条命令跑完，**当前基线 362 tests**（2026-09-03 反向枚举复核后实测，51 条 ~62 秒；上一基线 256 / 37 条）——比争论「这条该不该跑」便宜得多，所以**不要挑，整批跑**：
 

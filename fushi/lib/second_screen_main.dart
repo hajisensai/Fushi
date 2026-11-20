@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/diagnostics/fushi_binding.dart'
+    show FushiSecondaryWidgetsFlutterBinding;
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show dictionaryPopupWebViewUsesHybridComposition;
 import 'package:fushi/src/second_screen/panel/companion_panel_app.dart';
@@ -18,7 +20,7 @@ import 'package:fushi/src/utils/misc/channel_constants.dart';
 void secondScreenMain() {
   runZonedGuarded<Future<void>>(
     () async {
-      WidgetsFlutterBinding.ensureInitialized();
+      FushiSecondaryWidgetsFlutterBinding.ensureInitialized();
       // Same as popupMain: the dictionary WebView uses texture-layer hybrid
       // composition, which keeps the raster thread separate.
       dictionaryPopupWebViewUsesHybridComposition = false;

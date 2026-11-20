@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/diagnostics/fushi_binding.dart'
+    show FushiSecondaryWidgetsFlutterBinding;
 import 'package:fushi/src/utils/adaptive/legacy_design_compat.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -33,7 +35,7 @@ import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart';
 void popupMain() {
   runZonedGuarded<Future<void>>(
     () async {
-      WidgetsFlutterBinding.ensureInitialized();
+      FushiSecondaryWidgetsFlutterBinding.ensureInitialized();
       // BUG-2790：本引擎缓存复用、关窗只 detach，查词 WebView 必须走 TLHC，见
       // [dictionaryPopupWebViewUsesHybridComposition]。
       dictionaryPopupWebViewUsesHybridComposition = false;

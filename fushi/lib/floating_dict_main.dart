@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/diagnostics/fushi_binding.dart'
+    show FushiSecondaryWidgetsFlutterBinding;
 import 'package:fushi/src/utils/adaptive/legacy_design_compat.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -22,7 +24,7 @@ const _overlayChannel = MethodChannel('app.fushi.reader/floating_overlay');
 void floatingDictMain() {
   runZonedGuarded<Future<void>>(
     () async {
-      WidgetsFlutterBinding.ensureInitialized();
+      FushiSecondaryWidgetsFlutterBinding.ensureInitialized();
 
       final platformServices = PlatformServices.forCurrentPlatform();
       final container = ProviderContainer(
