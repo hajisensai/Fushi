@@ -216,7 +216,7 @@ void main() {
       expect(urls.single, endsWith('ok.png'));
     });
 
-    test('跳过群晖 @eaDir、__MACOSX 与 ._ AppleDouble（BUG-4907）', () {
+    test('跳过群晖 @eaDir、__MACOSX 与 ._ AppleDouble（BUG-4916）', () {
       // 放在 NAS 上 / 从 macOS 压缩包解出来的页图目录：缩略图与资源叉都是 .jpg，
       // 递归枚举不过滤就当成真页插进卷里（页数翻倍、空白页、OCR 白跑）。
       final Directory root = Directory.systemTemp.createTempSync(

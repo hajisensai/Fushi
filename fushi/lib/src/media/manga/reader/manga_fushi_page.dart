@@ -2969,7 +2969,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                 '\u001f${pages[index].sourceUrl ?? ''}',
         ],
         // 取页引用可能随运行时重启整份作废（桌面 sidecar 装 / 更新 / 卸扩展即重启，
-        // BUG-4908）：经页表持有者取，失效时它重解析换新引用；身份串上面已定，不变。
+        // BUG-4917）：经页表持有者取，失效时它重解析换新引用；身份串上面已定，不变。
         fetchPage: pageRefs.fetch,
         cancelPages: cancellable == null
             ? null
@@ -8884,9 +8884,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       ),
       onWebViewCreated: (InAppWebViewController controller) {
         _controller = controller;
+        notifyPopupBodyWebViewChanged();
         // 新建的 WebView 里还没有任何文档。
         _loadedDocument.invalidate();
-        notifyPopupBodyWebViewChanged();
         // ERRATA H2/C1：唯一的 onTextSelected 注册点。
         _registerSelectionHandlers(controller);
         // 空白 tap 本身是 no-op；但指针已让原生 WebView 夺走 OS 焦点，焦点回收

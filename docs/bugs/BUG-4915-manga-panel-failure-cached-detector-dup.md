@@ -1,4 +1,4 @@
-## BUG-4906 · 漫画分镜检测：暂时性失败被两层缓存、检测器并发创建泄漏 ONNX session
+## BUG-4915 · 漫画分镜检测：暂时性失败被两层缓存、检测器并发创建泄漏 ONNX session
 - **报告**：2026-11-20（路线图 #3722 gap-mangamisc-7，组 c38 复核）
 - **真实性**：✅ 真 bug，两处根因（行号为 develop `7745effa2e`）：
   1. 失败结果被两层缓存：`packages/fushi_engine/lib/media/manga/panel_detection.dart:432` 把 prepare / 推理途中

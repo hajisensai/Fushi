@@ -105,7 +105,7 @@ MihonCloudflareChallengeException? mihonCloudflareChallenge(Object? error) {
   return null;
 }
 
-/// 页引用已随运行时进程失效（桌面 sidecar 重启，BUG-4908）。
+/// 页引用已随运行时进程失效（桌面 sidecar 重启，BUG-4917）。
 ///
 /// 不是「这一页取失败」：同一章重新 [OnlineMangaRuntimeAdapter.resolveChapterPages]
 /// 换一份引用就能取。只由 [OnlineMangaRuntimeAdapter.fetchChapterPage] 抛，
@@ -120,7 +120,7 @@ class OnlineMangaPageRefExpired implements Exception {
   String toString() => 'OnlineMangaPageRefExpired: $message';
 }
 
-/// 一章的页表，运行时重启后就地换新引用（BUG-4908）。
+/// 一章的页表，运行时重启后就地换新引用（BUG-4917）。
 ///
 /// 在线直读会话（`OnlineMangaReaderSession`）按页序取页，页数与每页的身份串
 /// （面板 / OCR 缓存键）在开会话时就定了；这里只持有可以换的那部分——取页引用。

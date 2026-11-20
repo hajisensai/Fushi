@@ -10,7 +10,7 @@ import 'package:fushi/src/media/manga/library/online_manga_library_service.dart'
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-/// BUG-4908 的互联 host 一侧：host 缓存最近几章的页表给对端逐页取图。桌面 sidecar
+/// BUG-4917 的互联 host 一侧：host 缓存最近几章的页表给对端逐页取图。桌面 sidecar
 /// 一重启（装 / 更新 / 卸扩展），缓存里的取页引用整份作废；以前缓存原样留着，对端
 /// 读这几章剩下的页一律失败，直到页表被 LRU 挤掉。
 void main() {

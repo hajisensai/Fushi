@@ -1,4 +1,4 @@
-## BUG-4907 · 本地页图卷枚举把群晖 @eaDir 缩略图、__MACOSX 与 ._ 资源叉当成漫画页
+## BUG-4916 · 本地页图卷枚举把群晖 @eaDir 缩略图、__MACOSX 与 ._ 资源叉当成漫画页
 - **报告**：2026-11-20（路线图 #3722 第 3 节 c08 漫画侧遗留，并入组 c38）
 - **真实性**：✅ 真 bug。`packages/fushi_engine/lib/ocr/manga_ocr_folder_job.dart:207` 的 `enumerateMangaPages`
   递归下钻 6 层、只按扩展名收文件：群晖 `@eaDir/<页名>/SYNOPHOTO_THUMB_*.jpg`（每页一组缩略图）、macOS 解包留下的
