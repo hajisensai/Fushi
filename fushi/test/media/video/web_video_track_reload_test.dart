@@ -67,7 +67,7 @@ void main() {
     );
   });
 
-  test('两处宿主的「轨到了」都带上更新的 key，重选里按判据决定灌不灌', () {
+  test('两处宿主的「轨到了」都带上更新的 key，重选经共享选轨按判据决定灌不灌', () {
     for (final (String path, String onTrack, String reselect)
         in <(String, String, String)>[
           (
@@ -88,10 +88,19 @@ void main() {
         reason: path,
       );
       final String body = compactCode(methodBody(src, reselect));
-      final int gate = body.indexOf('if(!reload)return;');
-      expect(body, contains('webVideoTrackUpdateNeedsReload('), reason: path);
+      final int gate = body.indexOf('if(!r.reload)return;');
+      expect(body, contains('.reselect(updatedKey:updatedKey,'), reason: path);
       expect(gate, greaterThanOrEqualTo(0), reason: path);
       expect(body.indexOf('.setCues('), greaterThan(gate), reason: path);
     }
+    final String sel = compactCode(
+      methodBody(
+        File(
+          'lib/src/media/video/web_video_track_selection.dart',
+        ).readAsStringSync(),
+        'WebVideoTrackReselect reselect(',
+      ),
+    );
+    expect(sel, contains('webVideoTrackUpdateNeedsReload('));
   });
 }

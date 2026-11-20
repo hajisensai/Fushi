@@ -206,7 +206,7 @@ void main() {
       );
       final String created = body(
         page,
-        'onWebViewCreated: (InAppWebViewController controller) {',
+        'void _onSurfaceCreated(InAppWebViewController _) {',
         'unawaited(_applyShaderTier());',
       );
       expect(created, contains('if (_isMiningHost && !_windowed'));

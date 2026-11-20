@@ -19,11 +19,11 @@ extension _VideoRemoteControl on _VideoFushiPageState {
 
   /// 遥控会话身份：作品 / 集 / 视频路径 / 制卡来源任一变了就是新会话。网页档的视频
   /// 路径恒空、站内换片不一定换书（站点入口还没落书时 bookUid 不动），身份另加站点
-  /// 视频 key（[_webVideoKey]）。
+  /// 视频 key（[_webTrackSel.videoKey]）。
   String _videoRemoteIdentity(VideoPlayerController controller) =>
       '$_activeBookUid|$_currentEpisode|$_currentVideoPath|'
       '${controller.miningSource}|'
-      '${controller.isWebBackend ? _webVideoKey : ''}';
+      '${controller.isWebBackend ? _webTrackSel.videoKey : ''}';
 
   /// 本地 / 远端 / 网页档三种片源共用这一个绑定：按片源分流的只有字幕轨、在线字幕下载
   /// 与制卡（网页档没有本地媒体，字幕按「站点视频 → 轨」管，见 [_VideoWebSource]），其余
@@ -43,7 +43,7 @@ extension _VideoRemoteControl on _VideoFushiPageState {
         'speed': controller.speed,
         'controlRevision': controller.remoteControlRevision,
         'primaryTrack': web
-            ? _webActiveTrackKey
+            ? _webTrackSel.activeKey
             : controller.activeSubtitleTrackId,
         'secondaryTrack': controller.secondaryCues.isNotEmpty
             ? 'secondary'
@@ -349,7 +349,7 @@ extension _VideoRemoteControl on _VideoFushiPageState {
             kind: track.siteTrackId.isEmpty && !track.isLive
                 ? 'external'
                 : 'embedded',
-            selected: track.key == _webActiveTrackKey,
+            selected: track.key == _webTrackSel.activeKey,
             selectable: true,
           ),
         for (final WebVideoSiteTrack track in _unloadedWebSiteTracks())
@@ -387,7 +387,7 @@ extension _VideoRemoteControl on _VideoFushiPageState {
     throw const VideoRemoteException(404, 'subtitle_track_missing');
   }
 
-  /// 网页档的在线字幕：落盘后解析成 cue，作为当前站点视频的一条轨登记进 [_webTracks]
+  /// 网页档的在线字幕：落盘后解析成 cue，作为当前站点视频的一条轨登记进 [_webTrackSel.tracks]
   /// 并选中。网页档的字幕都按「站点视频 → 轨」管（[_reselectWebTrack] 每次轨集变化按轨
   /// 重灌 controller），直接 setCues 会被下一次站点轨回报覆盖；登记成轨后设置面板网页档
   /// 轨列表同样列出它、可切回。
@@ -436,7 +436,7 @@ extension _VideoRemoteControl on _VideoFushiPageState {
         ? state.href
         : row.videoPath;
     final String bookUid = _activeBookUid;
-    final String videoKey = _webVideoKey;
+    final String videoKey = _webTrackSel.videoKey;
     Future<void> enqueue() async {
       await _webMineQueue.enqueue(
         bookUid: bookUid,
