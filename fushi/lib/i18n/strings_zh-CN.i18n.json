@@ -1928,6 +1928,7 @@
   "book_scrape_hint": "书名 / 作者",
   "book_scrape_isbn_required": "openBD 只能按 ISBN 查询，请输入 10 位或 13 位 ISBN。",
   "book_scrape_mangabaka_attribution": "数据来自 MangaBaka（CC BY-NC-SA 4.0）",
+  "book_scrape_nsfw_hidden": "已隐藏 ${count} 条 NSFW 结果，把这本书标为 NSFW 后显示。",
   "book_scrape_rakuten_access_key": "访问密钥（accessKey）",
   "book_scrape_rakuten_application_id": "应用 ID（applicationId）",
   "book_scrape_rakuten_settings_hint": "在楽天ウェブサービス注册应用后获得这两项。只保存在本设备，不进备份和同步。",
