@@ -553,6 +553,7 @@ Future<String> runMangaOcrFolderJob({
       engine: 'local_onnx',
       engineSignature: engineSignature,
       schemaVersion: 1,
+      completedAt: DateTime.now().toUtc(),
     ),
   );
   final File output = File(p.join(outDir.path, kMangaOcrOutputFileName));

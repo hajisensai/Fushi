@@ -284,6 +284,7 @@ class SystemOcrMangaService implements SystemOcrMangaRunner {
         engine: 'system_ocr',
         engineSignature: systemOcrEngineSignature(language),
         schemaVersion: 1,
+        completedAt: DateTime.now().toUtc(),
       ),
     );
     final String output = p.join(

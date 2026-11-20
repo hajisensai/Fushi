@@ -280,6 +280,7 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
         engine: 'google_lens',
         engineSignature: googleLensEngineSignature(language),
         schemaVersion: 1,
+        completedAt: DateTime.now().toUtc(),
       ),
     );
     await outputDirectory.create(recursive: true);

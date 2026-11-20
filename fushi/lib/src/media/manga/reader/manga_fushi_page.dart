@@ -2731,7 +2731,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // but every atomic page cache is already safe to use. Restore those pages
     // after the first paint so opening a large book stays fast and both local
     // ONNX and Lens results remain queryable across reader restarts.
-    unawaited(_recoverIncrementalOcrCache(row.extractDir, payload));
+    unawaited(
+      _recoverIncrementalOcrCache(
+        row.extractDir,
+        p.join(row.extractDir, row.epubPath),
+        payload,
+      ),
+    );
     _reattachRunningOcrJob(row.extractDir);
     unawaited(_maybeStartVolumeOcr());
   }
@@ -3161,6 +3167,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   Future<void> _recoverIncrementalOcrCache(
     String managedDirectory,
+    String mangaJsonPath,
     MokuroPayload loadedPayload,
   ) async {
     try {
@@ -3173,6 +3180,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       final MangaOcrCacheRecovery recovery = await recoverCachedMangaOcr(
         managedDirectory: managedDirectory,
         basePayload: loadedPayload,
+        mangaJsonPath: mangaJsonPath,
         localEngineSignature: localCachePath == null
             ? null
             : p.basename(localCachePath),
