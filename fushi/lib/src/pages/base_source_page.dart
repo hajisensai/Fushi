@@ -152,12 +152,31 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
 
   /// BUG-4475：标题行（含沉浸页的隐形拖动条）叠在 Navigator 之上，弹窗的
   /// dismiss barrier 在那一条里命中不到。标题行上的单击按「点在弹窗外」走
-  /// barrier 同一钩子；只有当前路由上、弹窗可见的页面响应（被盖住的页面不动）。
+  /// barrier 同一钩子；只有当前路由上的页面响应（被盖住的页面不动）。
+  ///
+  /// BUG-4967：弹窗不在时，这一击是「点在页面最顶上那条空白」——页面画到窗口
+  /// 顶边、标题行透明叠在上面（阅读器的纸色一直铺到顶），用户看到的就是一条
+  /// 空白，却被拖动区整条吃掉、页面什么也收不到。交给 [onCaptionBlankTap]。
   void _onCaptionTap(Offset globalPosition) {
-    if (!mounted || !isDictionaryShown) return;
-    if (!(ModalRoute.of(context)?.isCurrent ?? true)) return;
-    onDismissBarrierTap(globalPosition);
+    if (!mounted) return;
+    switch (resolveCaptionTapAction(
+      routeIsCurrent: ModalRoute.of(context)?.isCurrent ?? true,
+      dictionaryShown: isDictionaryShown,
+    )) {
+      case CaptionTapAction.ignore:
+        return;
+      case CaptionTapAction.dismissPopup:
+        onDismissBarrierTap(globalPosition);
+      case CaptionTapAction.blankTap:
+        onCaptionBlankTap(globalPosition);
+    }
   }
+
+  /// 弹窗不在时标题行拖动区上的单击（BUG-4967）。默认不响应；页面画到窗口顶边、
+  /// 「点空白」有语义的（阅读器：唤出 / 收起控制栏）覆写它，按点在自己空白处
+  /// 处理。拖动整窗与双击最大化仍归窗口，不会走到这里。
+  @protected
+  void onCaptionBlankTap(Offset globalPosition) {}
 
   /// BUG-092: seed a single persistent, hidden popup slot on open so its
   /// [DictionaryPopupWebView] cold-loads popup.html + JS + CSS ONCE while the
@@ -2158,4 +2177,27 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     if (index < 0) return null;
     return stack[index];
   }
+}
+
+/// 标题行拖动区上一次单击的归宿（BUG-4475 / BUG-4967）。
+enum CaptionTapAction {
+  /// 本页不是当前路由（被别的路由 / 侧板盖住）：不动。
+  ignore,
+
+  /// 查词弹窗可见：按「点在弹窗外」走 dismiss barrier 同一钩子。
+  dismissPopup,
+
+  /// 没有弹窗：按「点在页面顶部空白」交给页面。
+  blankTap,
+}
+
+/// 标题行单击的分派判据（纯函数，单测直接钉它）。
+CaptionTapAction resolveCaptionTapAction({
+  required bool routeIsCurrent,
+  required bool dictionaryShown,
+}) {
+  if (!routeIsCurrent) return CaptionTapAction.ignore;
+  return dictionaryShown
+      ? CaptionTapAction.dismissPopup
+      : CaptionTapAction.blankTap;
 }

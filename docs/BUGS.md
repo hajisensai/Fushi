@@ -228,6 +228,10 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4966](bugs/BUG-4966-audiobook-first-seek-dropped-before-play.md) | 🚧 | 🚧 | 有声书刚打开时拖进度条拖不动，要先播一下才能拖 |
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4967](bugs/BUG-4967-caption-strip-blank-tap-chrome.md) | ✅ | ✅ | Windows 阅读器顶部标题行空白处单击不唤出/收起悬浮控制栏 |
 | [BUG-4958](bugs/BUG-4958-aggregate-sync-ui-isolate-anr.md) | ✅ | ✅ | 互联/云聚合同步在 UI isolate 上同步跑整份快照折叠与指纹，慢设备 ANR |
 | [BUG-4957](bugs/BUG-4957-audiobook-concat-shuffle-order-quadratic.md) | ✅ | ✅ | TTS 朗读 / 多文件有声书建 ConcatenatingAudioSource 时 just_audio 默认 ShuffleOrder 逐个随机 List.insert，O(n²) 占满主线程到 ANR |
 | [BUG-4956](bugs/BUG-4956-ios-popup-entries-fetch-status-zero-oom.md) | ✅ | ✅ | iOS 阅读器查词时 Out of Memory 闪退（词条拦截投递在 iOS 上恒失败 + 历史整表重写） |
