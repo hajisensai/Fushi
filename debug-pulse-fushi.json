@@ -1,12 +1,45 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-20T12:29:42Z",
+ "generatedAt": "2026-11-20T13:49:54Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "777dd301399ddac5a03ea2637f74bbca27b3e5cc",
-  "seq": 29216
+  "sha": "76811fc25da95f3be200a8769d48aafa00522396",
+  "seq": 29224
  },
  "builds": [
+  {
+   "seq": 29213,
+   "version": "3.4.0",
+   "sha": "4d0daa3f864dfe2f88639d0c5c7bf2570f0bec81",
+   "unknown": false,
+   "publishedAt": "2026-11-20T13:49:42Z",
+   "testflight": false,
+   "baseSeq": 29190,
+   "prs": [
+    3802,
+    3770,
+    3759
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44734680517"
+    },
+    "macos": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44734680517"
+    },
+    "ios": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44734680517"
+    }
+   }
+  },
   {
    "seq": 29190,
    "version": "3.4.0",
@@ -80,7 +113,8 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44503481993"
     },
     "windows": {
      "state": "ok"
@@ -95,32 +129,31 @@
   }
  ],
  "pending": {
-  "headSha": "777dd301399ddac5a03ea2637f74bbca27b3e5cc",
-  "headSeq": 29216,
+  "headSha": "76811fc25da95f3be200a8769d48aafa00522396",
+  "headSeq": 29224,
   "prs": [
-   3823,
-   3802,
-   3770,
-   3759
+   3841,
+   3822,
+   3823
   ],
   "direct": [],
   "truncated": false,
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44734688147"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44745158819"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44734688013"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44745158665"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44734688013"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44745158665"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44734688013"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44745158665"
    }
   }
  },
@@ -197,6 +230,15 @@
    "deletions": 208,
    "labels": []
   },
+  "3822": {
+   "number": 3822,
+   "title": "省额度：集成分支不追 develop；本机并行工作区取 BUG 号不再相撞",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T13:30:42Z",
+   "additions": 162,
+   "deletions": 15,
+   "labels": []
+  },
   "3823": {
    "number": 3823,
    "title": "tool(dist_test): 支持 Linux worker（PVE VM103 加入负载均衡）",
@@ -204,6 +246,15 @@
    "mergedAt": "2026-11-20T12:18:28Z",
    "additions": 84,
    "deletions": 6,
+   "labels": []
+  },
+  "3841": {
+   "number": 3841,
+   "title": "fix(dist_test): 本机作为同级 worker 参与外包测试；snapshot push 卡死 120 秒即剔除",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T13:32:10Z",
+   "additions": 676,
+   "deletions": 55,
    "labels": []
   }
  }
