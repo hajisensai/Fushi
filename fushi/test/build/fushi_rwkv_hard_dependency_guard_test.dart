@@ -274,7 +274,9 @@ void main() {
           } else {
             expect(
               body.contains('FUSHI_RWKV_LIB') ||
-                  body.contains('native/fushi_rwkv/build_'),
+                  body.contains('native/fushi_rwkv/build_') ||
+                  // Linux 服务端包：编译命令在 build_linux_bundle.sh 里。
+                  body.contains('build_linux_bundle.sh rust fushi_rwkv'),
               isTrue,
               reason:
                   '$id 编了 fushi_compute（FUSHI_COMPUTE_LIB），却没编 fushi_rwkv：'
