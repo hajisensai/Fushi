@@ -27,6 +27,8 @@ import 'package:fushi/src/pages/implementations/srs/srs_deck_settings_page.dart'
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_layout_sheet.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_ui.dart'
+    show SrsAdaptiveSections;
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
 import 'package:fushi/src/shortcuts/input_binding.dart'
@@ -2491,6 +2493,30 @@ void main() {
       final Finder replay = find.byKey(
         const ValueKey<String>('srs-settings-replay-question-audio'),
         skipOffstage: false,
+      );
+      // 左栏是懒构建的 ListView：音频分组在首屏缓存区以外时还没构建，先把它滚出来
+      // （分段行在窄栏里换到标题下方后，前面的分组变高）。
+      await tester.scrollUntilVisible(
+        autoplay,
+        120,
+        scrollable: find
+            .descendant(
+              of: find.byKey(SrsAdaptiveSections.primaryPaneKey),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      // 左栏是懒构建的 ListView：音频分组在缓存区以外时还没构建，先把它滚出来
+      // （分段行在窄栏里换到标题下方后，前面的分组变高）。
+      await tester.scrollUntilVisible(
+        autoplay,
+        120,
+        scrollable: find
+            .descendant(
+              of: find.byKey(SrsAdaptiveSections.primaryPaneKey),
+              matching: find.byType(Scrollable),
+            )
+            .first,
       );
       expect(autoplay, findsOneWidget);
       expect(replay, findsOneWidget);

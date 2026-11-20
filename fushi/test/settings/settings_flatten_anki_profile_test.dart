@@ -600,8 +600,9 @@ void main() {
     final Finder strip = find.byKey(
       const ValueKey<String>('card-target-switch'),
     );
-    SrsMiningTarget selected(WidgetTester tester) =>
-        tester.widget<FushiSegmentedStrip<SrsMiningTarget>>(strip).selected;
+    SrsMiningTarget selected(WidgetTester tester) => tester
+        .widget<AdaptiveSettingsSegmentedRow<SrsMiningTarget>>(strip)
+        .selected;
     Finder segment(String label) =>
         find.descendant(of: strip, matching: find.text(label));
 
