@@ -283,18 +283,34 @@ class TmdbVideoMetadataProvider
     );
     if (collectionId == null) return;
     try {
-      final Map<String, Object?>? collection = await _getObjectOrNull(
-        '/collection/$collectionId',
-        operation: 'TMDB collection',
-        cacheKey: 'tmdb:collection:$collectionId:$language',
+      final List<Map<String, Object?>>? parts = await fetchCollectionParts(
+        collectionId,
       );
-      if (collection == null) return;
-      payload[kTmdbCollectionPartsPayloadKey] = tmdbCollectionPartsFromResponse(
-        collection,
-      );
+      if (parts == null) return;
+      payload[kTmdbCollectionPartsPayloadKey] = parts;
     } on Exception {
       return;
     }
+  }
+
+  /// TMDB 合集 [collectionId] 的精简成员表（与刮削时挂进详情载荷
+  /// [kTmdbCollectionPartsPayloadKey] 的同一份形状、同一缓存键、同一 [language]）。
+  /// 合集不存在（404）→ null；未配置凭据或其余失败照常抛出。
+  ///
+  /// 刮削详情时由 [_attachCollectionParts] 调用；存量补齐（旧快照只有
+  /// `belongs_to_collection.id`、缺成员表）由 `refreshMissingTmdbCollectionParts`
+  /// 按合集去重后调用。
+  Future<List<Map<String, Object?>>?> fetchCollectionParts(
+    int collectionId,
+  ) async {
+    _requireAvailable();
+    final Map<String, Object?>? collection = await _getObjectOrNull(
+      '/collection/$collectionId',
+      operation: 'TMDB collection',
+      cacheKey: 'tmdb:collection:$collectionId:$language',
+    );
+    if (collection == null) return null;
+    return tmdbCollectionPartsFromResponse(collection);
   }
 
   @override

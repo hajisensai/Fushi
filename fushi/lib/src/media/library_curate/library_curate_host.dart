@@ -15,10 +15,13 @@ import 'package:fushi_engine/ai/ai_media_identity_assistant.dart';
 import 'package:fushi_engine/ai/ai_video_identity_assistant.dart';
 import 'package:fushi_engine/media/library_curate/library_curator.dart';
 import 'package:fushi_engine/media/video/metadata/video_collection_relation_sync.dart'
-    show backfillScrapedCollectionRelations, productionAniDbXmlDirectory;
+    show productionAniDbXmlDirectory;
+import 'package:fushi_engine/media/video/metadata/video_series_relation_refresh.dart';
 
 import 'package:fushi/src/ai/agent/ai_agent_toolbox.dart';
 import 'package:fushi/src/media/library_curate/library_curate_auto.dart';
+import 'package:fushi/src/media/video/acquisition/app_video_acquisition_assembly.dart'
+    show videoDiscoveryScrapeConfig;
 import 'package:fushi/src/models/module_registry.dart' show isAiModuleEnabled;
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/ops/app_op_context.dart';
@@ -39,6 +42,7 @@ LibraryCurator buildAppLibraryCurator({
   required PreferencesRepository prefs,
   required OpInvoker invoker,
   required bool Function() aiModuleEnabled,
+  required String Function() uiLocaleTag,
 }) {
   final PreferencesAiVideoIdentityAdvisor advisor =
       PreferencesAiVideoIdentityAdvisor(prefs);
@@ -55,10 +59,13 @@ LibraryCurator buildAppLibraryCurator({
     ai: () => libraryCurateAiOf(prefs, aiModuleEnabled: aiModuleEnabled()),
     videoDecider: () => advisor.capabilityKey == null ? null : advisor.decide,
     mediaDecider: () => mediaAdvisor.isAssigned ? mediaAdvisor.decide : null,
-    seriesRelationBackfill: () => backfillScrapedCollectionRelations(
+    // 先按合集去重联网补齐旧 TMDB 电影快照缺的合集成员表（已补过的 0 请求），
+    // 再跑不联网的存量补填；每趟库管家都把缺的系列关系补上。
+    seriesRelationBackfill: () async => (await refreshVideoSeriesRelations(
       db,
+      config: videoDiscoveryScrapeConfig(prefs, uiLocaleTag: uiLocaleTag()),
       aniDbXmlDirectory: productionAniDbXmlDirectory,
-    ),
+    )).backfill,
   );
 }
 
@@ -75,6 +82,7 @@ LibraryCurator libraryCuratorFor(OpContext context) {
     prefs: context.appModel.prefsRepo,
     invoker: buildAppInProcessOpInvoker(context),
     aiModuleEnabled: () => isAiModuleEnabled(context.appModel.moduleVisibility),
+    uiLocaleTag: () => context.appModel.appLocale.toLanguageTag(),
   );
 }
 

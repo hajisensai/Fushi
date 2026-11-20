@@ -147,4 +147,42 @@ void main() {
     await provider.fetchWork(tv);
     expect(requests.where((Uri u) => u.path.contains('/collection/')), isEmpty);
   });
+
+  test(
+    'fetchCollectionParts：同语言请求 /collection/{id} 返回精简成员；404 → null；失败抛出',
+    () async {
+      final List<Uri> requests = <Uri>[];
+      final TmdbVideoMetadataProvider provider = TmdbVideoMetadataProvider(
+        apiKey: 'KEY',
+        language: 'ja-JP',
+        client: MockClient((http.Request request) async {
+          requests.add(request.url);
+          if (request.url.path.endsWith('/collection/5')) {
+            return _json(<String, Object?>{
+              'id': 5,
+              'parts': <Object?>[
+                <String, Object?>{
+                  'id': 11,
+                  'title': 'Part 1',
+                  'release_date': '2001-01-01',
+                },
+              ],
+            });
+          }
+          if (request.url.path.endsWith('/collection/6')) {
+            return http.Response('{}', 404);
+          }
+          return _json(<Object?>[]);
+        }),
+      );
+      addTearDown(provider.close);
+      final List<Map<String, Object?>>? parts = await provider
+          .fetchCollectionParts(5);
+      expect(parts, hasLength(1));
+      expect(parts!.single['id'], 11);
+      expect(requests.single.queryParameters['language'], 'ja-JP');
+      expect(await provider.fetchCollectionParts(6), isNull);
+      await expectLater(provider.fetchCollectionParts(7), throwsException);
+    },
+  );
 }

@@ -8,6 +8,8 @@ import 'package:fushi_engine/media/video/metadata/video_collection_relation_sync
 import 'package:fushi_engine/media/video/metadata/video_metadata_database_store.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_related_works.dart';
+import 'package:fushi_engine/media/video/metadata/video_series_relation_refresh.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/common.dart' show CommonDatabase;
@@ -839,6 +841,158 @@ void main() {
       expect((await db.getVideoBookRelations('m12')).map(rowText), <String>[
         'tmdb:11:prequel:null',
       ]);
+    });
+
+    // ── 批量补齐：旧快照只有 belongs_to_collection.id、缺成员表 ──────────────
+
+    Future<int> tmdbMovie(int tmdbId, Object? collection) async {
+      await movieVideo('m$tmdbId');
+      final int w = await work(
+        null,
+        'tmdb',
+        '$tmdbId',
+        mediaType: 'movie',
+        bookUid: 'm$tmdbId',
+      );
+      await db.replaceVideoMetadataRawSnapshots(
+        'work:$w:tmdb',
+        <VideoMetadataRawSnapshotsCompanion>[
+          VideoMetadataRawSnapshotsCompanion.insert(
+            identityKey: 'work:$w:tmdb',
+            snapshotKind: 'details',
+            rawJson: jsonEncode(<String, Object?>{
+              'id': tmdbId,
+              'title': 'Movie $tmdbId',
+              'overview': 'keep me',
+              'belongs_to_collection': collection,
+            }),
+            fetchedAt: 7,
+          ),
+        ],
+      );
+      return w;
+    }
+
+    Future<Map<String, Object?>> detailsOf(int workId) async {
+      final VideoMetadataRawSnapshotRow row =
+          (await db.getVideoMetadataRawSnapshots('work:$workId:tmdb')).single;
+      expect(row.fetchedAt, 7, reason: '只改成员表，不动快照的 fetched_at');
+      return (jsonDecode(row.rawJson) as Map).cast<String, Object?>();
+    }
+
+    const List<Map<String, Object?>> parts5 = <Map<String, Object?>>[
+      <String, Object?>{'id': 11, 'title': 'P1', 'release_date': '2001-01-01'},
+      <String, Object?>{'id': 12, 'title': 'P2', 'release_date': '2003-01-01'},
+    ];
+
+    test('批量补齐：同合集两部旧快照只请求一次，成员表写回两份快照，补填后各有前传 / 续作；再跑 0 请求', () async {
+      final int w11 = await tmdbMovie(11, <String, Object?>{'id': 5});
+      final int w12 = await tmdbMovie(12, <String, Object?>{'id': 5});
+      final List<int> calls = <int>[];
+      Future<List<Map<String, Object?>>?> fetch(int id) async {
+        calls.add(id);
+        return parts5;
+      }
+
+      final VideoSeriesRelationRefreshResult r =
+          await refreshVideoSeriesRelations(
+            db,
+            config: const VideoSourceScrapeGlobalConfig(),
+            aniDbXmlDirectory: () async => null,
+            fetchTmdbParts: fetch,
+          );
+      expect(calls, <int>[5]);
+      expect(r.tmdb, (missing: 2, refreshed: 2, requests: 1, failed: 0));
+      for (final int w in <int>[w11, w12]) {
+        final Map<String, Object?> d = await detailsOf(w);
+        expect(d[kTmdbCollectionPartsPayloadKey], parts5);
+        expect(d['overview'], 'keep me');
+        expect(d['title'], 'Movie ${w == w11 ? 11 : 12}');
+      }
+      expect((await db.getVideoBookRelations('m11')).map(rowText), <String>[
+        'tmdb:12:sequel:m12',
+      ]);
+      expect((await db.getVideoBookRelations('m12')).map(rowText), <String>[
+        'tmdb:11:prequel:m11',
+      ]);
+      expect(r.backfill.worksWithRelations, 2);
+
+      final VideoSeriesRelationRefreshResult again =
+          await refreshVideoSeriesRelations(
+            db,
+            config: const VideoSourceScrapeGlobalConfig(),
+            aniDbXmlDirectory: () async => null,
+            fetchTmdbParts: fetch,
+          );
+      expect(calls, <int>[5], reason: '已有成员表的快照不再请求');
+      expect(again.tmdb, (missing: 0, refreshed: 0, requests: 0, failed: 0));
+      expect((await db.getVideoBookRelations('m11')).map(rowText), <String>[
+        'tmdb:12:sequel:m12',
+      ]);
+    });
+
+    test('批量补齐：合集请求抛异常 → 计入 failed、快照不动、不抛', () async {
+      final int w11 = await tmdbMovie(11, <String, Object?>{'id': 5});
+      final int w12 = await tmdbMovie(12, <String, Object?>{'id': 5});
+      int calls = 0;
+      final TmdbCollectionPartsRefreshResult r =
+          await refreshMissingTmdbCollectionParts(
+            db,
+            fetchParts: (int id) async {
+              calls++;
+              throw const HttpException('boom');
+            },
+          );
+      expect(calls, 1);
+      expect(r, (missing: 2, refreshed: 0, requests: 1, failed: 2));
+      for (final int w in <int>[w11, w12]) {
+        expect(
+          (await detailsOf(w)).containsKey(kTmdbCollectionPartsPayloadKey),
+          isFalse,
+        );
+      }
+      expect(await db.getVideoBookRelations('m11'), isEmpty);
+    });
+
+    test('批量补齐：belongs_to_collection 为 null 的电影和剧集都不请求；没配 TMDB 不联网', () async {
+      await tmdbMovie(13, null);
+      final int show = await db.createMediaCollection(
+        'Show',
+        collectionType: 'playlist',
+      );
+      final int tv = await work(show, 'tmdb', '77');
+      await db.replaceVideoMetadataRawSnapshots(
+        'work:$tv:tmdb',
+        <VideoMetadataRawSnapshotsCompanion>[
+          VideoMetadataRawSnapshotsCompanion.insert(
+            identityKey: 'work:$tv:tmdb',
+            snapshotKind: 'details',
+            rawJson: jsonEncode(<String, Object?>{'id': 77, 'name': 'Show'}),
+            fetchedAt: 1,
+          ),
+        ],
+      );
+      int calls = 0;
+      final VideoSeriesRelationRefreshResult r =
+          await refreshVideoSeriesRelations(
+            db,
+            config: const VideoSourceScrapeGlobalConfig(),
+            aniDbXmlDirectory: () async => null,
+            fetchTmdbParts: (int id) async {
+              calls++;
+              return parts5;
+            },
+          );
+      expect(calls, 0);
+      expect(r.tmdb, (missing: 0, refreshed: 0, requests: 0, failed: 0));
+
+      final VideoSeriesRelationRefreshResult noKey =
+          await refreshVideoSeriesRelations(
+            db,
+            config: const VideoSourceScrapeGlobalConfig(),
+            aniDbXmlDirectory: () async => null,
+          );
+      expect(noKey.tmdb, isNull);
     });
   });
 }

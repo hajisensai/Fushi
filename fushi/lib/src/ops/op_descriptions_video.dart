@@ -227,6 +227,21 @@ List<OpDescription> _describeScrapeOps(
     availability: video,
   ),
   OpDescription(
+    id: 'video.relation.refresh',
+    method: 'POST',
+    pattern: '$_video/relations/refresh',
+    summary:
+        'Fill in missing series relations (prequel / sequel) for already '
+        'scraped works. Only touches series relations, never other work '
+        'metadata; the only network use is one TMDB collection request per '
+        'collection whose scraped movie snapshots lack the member list (none '
+        'once filled). Returns counts: tmdb {missing, refreshed, requests, '
+        'failed} (absent without a TMDB key), works, worksWithRelations, rows, '
+        'bound.',
+    risk: OpRisk.irreversible,
+    availability: video,
+  ),
+  OpDescription(
     id: 'video.scrape.confirmation',
     method: 'GET',
     pattern: '$_video/scrape/confirmation',

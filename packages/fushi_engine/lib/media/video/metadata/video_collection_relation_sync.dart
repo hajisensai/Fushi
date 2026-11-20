@@ -6,7 +6,11 @@
 ///   用本次响应里本来就有的关系；TMDB 电影的合集成员是刮削时随详情多打的一次
 ///   `/collection/{id}`，见 `TmdbVideoMetadataProvider.fetchWork`）；
 /// - 存量补填 [backfillScrapedCollectionRelations]（AniDB 读已落盘的
-///   `AnimeDoc_{aid}.xml`，其余读 details 快照），挂在库管家 ⑤ 作品层之前，不联网。
+///   `AnimeDoc_{aid}.xml`，其余读 details 快照），不联网。
+///
+/// 旧快照缺 TMDB 合集成员表时由 [refreshMissingTmdbCollectionParts] 按合集去重
+/// 联网补上（只写快照里那一个键），批量入口见 `video_series_relation_refresh.dart`
+/// 的 `refreshVideoSeriesRelations`（库管家 ⑤ 作品层 / 控制通道共用）。
 ///
 /// 起点与已绑定目标都可以是合集或单视频（v162：挂在单个视频上的作品，散装电影），
 /// 见 [VideoRelationOwner]。
@@ -15,8 +19,10 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:drift/drift.dart' show QueryRow, Value, Variable;
+import 'package:drift/drift.dart'
+    show QueryRow, Table, TableInfo, Value, Variable;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/media/video/metadata/video_related_works.dart';
 import 'package:path/path.dart' as p;
@@ -339,6 +345,123 @@ Future<CollectionRelationBackfillResult> backfillScrapedCollectionRelations(
     worksWithRelations: worksWithRelations,
     rows: rows,
     bound: bound,
+  );
+}
+
+/// 为 TMDB 合集 [collectionId] 取精简成员表（`TmdbVideoMetadataProvider.fetchCollectionParts`
+/// 的形状）。合集不存在 → null；失败抛出。
+typedef TmdbCollectionPartsFetcher =
+    Future<List<Map<String, Object?>>?> Function(int collectionId);
+
+/// [refreshMissingTmdbCollectionParts] 的结果：
+/// - [missing]：缺成员表的 TMDB 电影 details 快照数；
+/// - [refreshed]：写回成员表的快照数；
+/// - [requests]：实际发出的合集请求数（每个合集至多一次）；
+/// - [failed]：合集请求失败、快照没动的电影数。
+typedef TmdbCollectionPartsRefreshResult = ({
+  int missing,
+  int refreshed,
+  int requests,
+  int failed,
+});
+
+/// 存量补齐：旧版刮的 TMDB 电影 details 快照里只有 `belongs_to_collection.id`、
+/// 没有合集成员表（[kTmdbCollectionPartsPayloadKey]），不联网的
+/// [backfillScrapedCollectionRelations] 因此补不出前传 / 续作。这里按合集 id 去重，
+/// 每个合集只请求一次 [fetchParts]，把成员表写回各自的快照（只改这一个键，作品其它
+/// 资料、快照的 `fetched_at` 都不动）。
+///
+/// 只挑主身份是 `tmdb`、挂在合集或单视频上的作品；已经有成员表（键是 List）的快照
+/// 不再请求，所以第二趟是 0 请求。合集 404（null）写回空成员表，同样不再重复请求。
+/// 某个合集请求抛 [Exception] → 记日志、该合集下的电影计入 `failed`、快照不动，
+/// 本函数不抛。
+Future<TmdbCollectionPartsRefreshResult> refreshMissingTmdbCollectionParts(
+  FushiDatabase db, {
+  required TmdbCollectionPartsFetcher fetchParts,
+}) async {
+  final List<QueryRow> rows = await db
+      .customSelect(
+        'SELECT DISTINCT s.identity_key AS ikey, s.raw_json AS raw '
+        'FROM video_metadata_works w '
+        'JOIN video_metadata_provider_identities i '
+        'ON i.work_id = w.id AND i.is_primary = 1 '
+        'JOIN video_metadata_raw_snapshots s '
+        "ON s.identity_key = i.identity_key AND s.snapshot_kind = 'details' "
+        "WHERE i.provider = 'tmdb' "
+        'AND (w.collection_id IS NOT NULL OR w.book_uid IS NOT NULL) '
+        'ORDER BY s.identity_key',
+      )
+      .get();
+  final Map<int, List<({String identityKey, Map<String, Object?> payload})>>
+  byCollection =
+      <int, List<({String identityKey, Map<String, Object?> payload})>>{};
+  int missing = 0;
+  for (final QueryRow row in rows) {
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(row.read<String>('raw'));
+    } on FormatException {
+      continue;
+    }
+    if (decoded is! Map) continue;
+    final Map<String, Object?> payload = decoded.map(
+      (Object? k, Object? v) => MapEntry<String, Object?>('$k', v),
+    );
+    if (payload[kTmdbCollectionPartsPayloadKey] is List) continue;
+    final Object? collection = payload['belongs_to_collection'];
+    if (collection is! Map) continue;
+    final Object? rawId = collection['id'];
+    final int? collectionId = switch (rawId) {
+      final int id => id,
+      final num id => id.toInt(),
+      final String id => int.tryParse(id.trim()),
+      _ => null,
+    };
+    if (collectionId == null) continue;
+    missing++;
+    (byCollection[collectionId] ??=
+            <({String identityKey, Map<String, Object?> payload})>[])
+        .add((identityKey: row.read<String>('ikey'), payload: payload));
+  }
+
+  int refreshed = 0;
+  int requests = 0;
+  int failed = 0;
+  for (final MapEntry<
+        int,
+        List<({String identityKey, Map<String, Object?> payload})>
+      >
+      e
+      in byCollection.entries) {
+    final List<Map<String, Object?>>? parts;
+    requests++;
+    try {
+      parts = await fetchParts(e.key);
+    } on Exception catch (error, stack) {
+      engineLog.log('videoRelations.tmdbCollection.${e.key}', error, stack);
+      failed += e.value.length;
+      continue;
+    }
+    for (final s in e.value) {
+      s.payload[kTmdbCollectionPartsPayloadKey] =
+          parts ?? const <Map<String, Object?>>[];
+      await db.customUpdate(
+        'UPDATE video_metadata_raw_snapshots SET raw_json = ? '
+        "WHERE identity_key = ? AND snapshot_kind = 'details'",
+        variables: <Variable<Object>>[
+          Variable<String>(jsonEncode(s.payload)),
+          Variable<String>(s.identityKey),
+        ],
+        updates: <TableInfo<Table, Object?>>{db.videoMetadataRawSnapshots},
+      );
+      refreshed++;
+    }
+  }
+  return (
+    missing: missing,
+    refreshed: refreshed,
+    requests: requests,
+    failed: failed,
   );
 }
 

@@ -43,6 +43,12 @@ const List<CtlCommandGroup> videoCommandGroups = <CtlCommandGroup>[
         render: _renderCancel,
       ),
       CtlCommandSpec(
+        name: 'relations',
+        summary: '补齐已刮作品的系列关系（前传 / 续作；只为缺合集成员表的 TMDB 电影按合集各请求一次，不改作品资料）',
+        build: _buildRelations,
+        render: _renderRelations,
+      ),
+      CtlCommandSpec(
         name: 'confirm',
         summary: '查看 / 回答刮削待确认（<序号> 选候选，--provider/--id 手动指定，--skip 跳过）',
         usage: '[<候选序号>]',
@@ -319,6 +325,30 @@ CtlRequestSpec _buildCancel(CtlCommandContext context) =>
     const CtlRequestSpec.post('/api/admin/video/scrape/cancel');
 
 String _renderCancel(Object? data) => '已请求取消当前刮削批次';
+
+// ── relations ────────────────────────────────────────────────────────────
+
+CtlRequestSpec _buildRelations(CtlCommandContext context) =>
+    const CtlRequestSpec.post('/api/admin/video/relations/refresh');
+
+String _renderRelations(Object? data) {
+  if (data is! Map) return '$data';
+  final List<String> lines = <String>[];
+  final Object? tmdb = data['tmdb'];
+  if (tmdb is Map) {
+    lines.add(
+      'TMDB 合集成员：缺 ${tmdb['missing']} 部，补上 ${tmdb['refreshed']} 部，'
+      '请求 ${tmdb['requests']} 次，失败 ${tmdb['failed']} 部',
+    );
+  } else {
+    lines.add('TMDB 合集成员：未配置 TMDB，未联网');
+  }
+  lines.add(
+    '系列关系：作品 ${data['works']} 部，有关系 ${data['worksWithRelations']} 部，'
+    '写入 ${data['rows']} 行，新绑定 ${data['bound']} 行',
+  );
+  return lines.join('\n');
+}
 
 // ── confirm ──────────────────────────────────────────────────────────────
 
