@@ -1012,11 +1012,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 没有在线视频播放器可探；判定、队列落卡、弹窗与引擎暂存契约都在专项测试里。
   'cardCreation/Online video mining':
       'test/media/video/mpv_cache_snapshot_test.dart + test/mining/video_mine_queue_test.dart + test/mining/immersion_mining_cached_snapshot_test.dart',
-  // 挖词目标（Anki / Fushi 复习，制卡页「卡片去向」的分段行）：写 prefsRepo；
+  // 「保存到」（挖词目标，Anki / Fushi 复习，制卡页「卡片去向」的分段行）：写 prefsRepo；
   // 复习模块关着时切到 Fushi 复习先弹确认框（harness 取消它，按没有变化判）。生效点是 ankiRepositoryProvider 最外层的 SrsMiningAnkiRepository
   // ——制卡时卡片落进复习库还是 Anki。harness 里没有复习库可探；三种目标的落卡、
   // 判重、合并规则与「模块关着时链上没有这一层」由专项测试咬死。
-  'cardCreation/Mining target': 'test/srs/srs_mining_test.dart',
+  'cardCreation/Save to': 'test/srs/srs_mining_test.dart',
   'cardCreation/Audio padding before sentence':
       'test/settings/mining_audio_padding_guard_test.dart',
   'cardCreation/Audio padding after sentence':
@@ -2572,7 +2572,7 @@ Future<ItemVerdict> _verifyFocusedNode({
       );
     }
   }
-  // 有的选项切过去要先确认（制卡页「挖词目标」切到 Fushi 复习而复习模块关着时，
+  // 有的选项切过去要先确认（制卡页「保存到」切到 Fushi 复习而复习模块关着时，
   // 弹「开启 Fushi 复习」确认框）。驱动后等收尾动画走完（下拉 / 菜单的退场），
   // 还多出来的路由就是驱动弹出的模态框：取消它（设置不变，按没有变化判），
   // 否则它挡住后面所有行，整轮焦点都卡在框里。

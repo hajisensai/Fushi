@@ -2083,6 +2083,7 @@
   "card_source_review_video_title": "Kaartfragment bekijken · Kijkvoortgang blijft behouden",
   "card_source_review_video_watching": "Normaal kijken · Kijkvoortgang wordt opgeslagen",
   "card_target_anki_hint": "AnkiDroid, AnkiConnect or AnkiWeb",
+  "card_target_destination_title": "Opslaan in",
   "card_target_srs_enable": "Turn on Fushi review",
   "card_target_srs_enable_confirm": "This turns on the Review module and sends cards you mine to Fushi review. You can switch back to Anki at any time.",
   "card_target_srs_hint": "Built-in spaced repetition, no Anki needed",

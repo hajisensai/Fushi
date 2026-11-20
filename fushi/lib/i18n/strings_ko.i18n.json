@@ -2083,6 +2083,7 @@
   "card_source_review_video_title": "카드 클립 검토 중 · 시청 진행 상황은 유지됩니다",
   "card_source_review_video_watching": "일반 시청 중 · 시청 진행 상황이 저장되고 있습니다",
   "card_target_anki_hint": "AnkiDroid, AnkiConnect or AnkiWeb",
+  "card_target_destination_title": "저장 위치",
   "card_target_srs_enable": "Turn on Fushi review",
   "card_target_srs_enable_confirm": "This turns on the Review module and sends cards you mine to Fushi review. You can switch back to Anki at any time.",
   "card_target_srs_hint": "Built-in spaced repetition, no Anki needed",

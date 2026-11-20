@@ -343,7 +343,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   }) {
     return AdaptiveSettingsSegmentedRow<SrsMiningTarget>(
       key: const ValueKey<String>('card-target-switch'),
-      title: t.srs_mining_target_title,
+      title: t.card_target_destination_title,
       subtitle: toReview ? t.card_target_srs_hint : t.card_target_anki_hint,
       segments: <ButtonSegment<SrsMiningTarget>>[
         ButtonSegment<SrsMiningTarget>(
