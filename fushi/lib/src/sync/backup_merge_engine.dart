@@ -49,9 +49,9 @@ import 'package:fushi_srs/fushi_srs.dart' show SrsCore;
 ///   id / same scrape identity / same exe path, see [_buildGameIdMap]); every
 ///   game-keyed child row (sources, sessions, study segments, activity rows,
 ///   tags) is remapped through that one map.
-/// - favorite SENTENCES (a `favorite_sentences` preference JSON blob, NOT a
-///   table) -> content dedupe-UNION, delegated to [AggregateMergeService] (the
-///   ATTACH SQL cannot merge a JSON blob, so this used to be dropped entirely).
+/// - favorite SENTENCES (the `favorite_sentences` table since v165; a
+///   preference JSON blob before) -> content dedupe-UNION, delegated to
+///   [AggregateMergeService] (identity is the content key, not the local id).
 /// - tags / profiles -> UNION by name with cross-DB id REMAPPING for every child
 ///   row referencing the autoincrement id.
 ///
