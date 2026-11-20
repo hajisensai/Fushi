@@ -11253,6 +11253,7 @@
   "storage_entry_external_audio_hint": "音声は元のファイルを参照するため、アプリの容量を使いません",
   "storage_entry_interconnect_legacy_clean_action": "Clean up now",
   "storage_entry_interconnect_legacy_confirm_body": "These are copies of book folders that older client versions wrote to this device over Interconnect. This device never reads them. Deleting them does not affect any book or reading progress on any device.",
+  "storage_entry_interconnect_legacy_host_running": "Interconnect service is running. Stop it to clean up.",
   "storage_entry_interconnect_legacy_label": "Legacy leftovers ($n folders)",
   "storage_entry_interconnect_legacy_partial": "$n folder(s) could not be removed; they will be retried on the next start",
   "storage_entry_interconnect_other_label": "Other Interconnect sync data",

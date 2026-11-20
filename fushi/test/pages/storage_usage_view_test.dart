@@ -92,8 +92,13 @@ void main() {
     Future<List<StorageVideoRef>> Function()? videos,
     Future<String?> Function(String bookUid)? deleteVideo,
     Future<List<String>> Function(String syncDataDir)? pruneInterconnect,
+    ValueNotifier<bool>? hostRunning,
   }) {
     return StorageUsageView(
+      interconnectHostStatus: hostRunning,
+      isInterconnectHostRunning: hostRunning == null
+          ? null
+          : () => hostRunning.value,
       pruneInterconnectFileBox:
           pruneInterconnect ?? (String _) async => const <String>[],
       service: service,
@@ -999,6 +1004,77 @@ void main() {
     await tester.pumpAndSettle();
     expect(pruneCalls, 0);
     expect(clean, findsOneWidget);
+  });
+
+  testWidgets('BUG-4906：互联 host 运行中「立即清理」禁用并写明原因，host 停下后按钮随之可用', (
+    WidgetTester tester,
+  ) async {
+    Directory(
+      p.join(support.path, kInterconnectSyncDataSupportChild),
+    ).createSync(recursive: true);
+    // 代替 FushiSyncServerController：同为 Listenable，起停时 notify。
+    final ValueNotifier<bool> running = ValueNotifier<bool>(true);
+    addTearDown(running.dispose);
+    int pruneCalls = 0;
+
+    await tester.pumpWidget(
+      wrap(
+        view(
+          service: service(
+            measureSyncData: (String _) async =>
+                const InterconnectSyncDataUsage(
+                  sharedBytes: 0,
+                  srsBytes: 0,
+                  deadFileBoxBytes: 4096,
+                  deadFileBoxFolders: 1,
+                  otherBytes: 0,
+                ),
+          ),
+          pruneInterconnect: (String _) async {
+            pruneCalls++;
+            return const <String>[];
+          },
+          hostRunning: running,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(_rowText(t.storage_category_database));
+    await tester.pumpAndSettle();
+    await tester.tap(_rowText(t.storage_category_database));
+    await tester.pumpAndSettle();
+
+    final Finder clean = find.widgetWithText(
+      FushiTextButton,
+      t.storage_entry_interconnect_legacy_clean_action,
+    );
+    final Finder reason = find.textContaining(
+      t.storage_entry_interconnect_legacy_host_running,
+    );
+    expect(clean, findsOneWidget);
+    expect(tester.widget<FushiTextButton>(clean).onPressed, isNull);
+    expect(reason, findsOneWidget);
+    await tester.ensureVisible(clean);
+    await tester.pumpAndSettle();
+    await tester.tap(clean, warnIfMissed: false);
+    await tester.pumpAndSettle();
+    expect(
+      find.text(t.storage_entry_interconnect_legacy_confirm_body),
+      findsNothing,
+    );
+    expect(pruneCalls, 0);
+
+    // host 停下：同一行就地重建，按钮可用、原因消失。
+    running.value = false;
+    await tester.pumpAndSettle();
+    expect(tester.widget<FushiTextButton>(clean).onPressed, isNotNull);
+    expect(reason, findsNothing);
+
+    // 又起来了：再次禁用。
+    running.value = true;
+    await tester.pumpAndSettle();
+    expect(tester.widget<FushiTextButton>(clean).onPressed, isNull);
+    expect(reason, findsOneWidget);
   });
 }
 

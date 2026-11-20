@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:fushi_audio/fushi_audio.dart' show SrtBookRepository;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:flutter/foundation.dart' show Listenable;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
@@ -44,10 +45,16 @@ class StorageUsageActions {
     this.anime4kBytesProvider = anime4kInstalledBytes,
     this.anime4kDelete = deleteAnime4kShaderFiles,
     this.pruneInterconnectFileBox = pruneDeadInterconnectFileBox,
+    this.interconnectHostStatus,
+    this.isInterconnectHostRunning,
   });
 
   /// 真实接线（原 `settings_schema_storage.dart` 里的闭包）。
   factory StorageUsageActions.of(SettingsContext c) => StorageUsageActions(
+    // 「旧版残留」清理只在互联 host 停着时可用：状态直接读 host 控制器（它就是
+    // ChangeNotifier，起停都 notify），不另存一份。
+    interconnectHostStatus: c.appModel.syncServerController,
+    isInterconnectHostRunning: () => c.appModel.syncServerController.isRunning,
     booksProvider: () => loadStorageBookRefs(c.appModel.database),
     dictionaryNamesProvider: () async => <String>[
       for (final Dictionary d in c.appModel.dictionaries) d.name,
@@ -156,6 +163,14 @@ class StorageUsageActions {
   /// 与扫描侧同源，单个目录删不掉只记日志、不抛，返回删掉的目录名。
   final Future<List<String>> Function(String syncDataDir)
   pruneInterconnectFileBox;
+
+  /// 互联 host 起停时通知（真实现就是 `FushiSyncServerController`）。null = 不监听。
+  final Listenable? interconnectHostStatus;
+
+  /// 互联 host 此刻是否在运行（真实现读 `FushiSyncServerController.isRunning`）。
+  /// 运行中不清理「旧版残留」：在跑的旧版本客户端可能正往这些书文件夹里写（用户
+  /// 2026-11-21 拍板）。null = 视为没在运行。
+  final bool Function()? isInterconnectHostRunning;
 }
 
 /// 派生 / 缓存类明细（封面缩略图、浏览器数据、OCR 模型、着色器、临时文件、
@@ -264,6 +279,13 @@ Future<StorageEntryDeleteOutcome> deleteStorageEntry(
         changed: failure == null,
       );
     case StorageEntryKind.interconnectLegacyFileBox:
+      // 存储页按钮在 host 运行时已禁用；控制通道 `rm` 也走这里，同一道闸。
+      if (actions.isInterconnectHostRunning?.call() ?? false) {
+        return StorageEntryDeleteOutcome(
+          failure: t.storage_entry_interconnect_legacy_host_running,
+          changed: false,
+        );
+      }
       final List<String> removed = await actions.pruneInterconnectFileBox(
         entry.paths.single,
       );
