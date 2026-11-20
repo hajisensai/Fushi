@@ -309,7 +309,10 @@ class ScanMangaArchiveItem {
 /// 一卷失败不中断其余卷（与视频分支 BUG-2570 同语义），由
 /// [SourceLibraryScanner.scan] 汇总成一条能照着查的 lastScanError。
 class _MangaVolumeTally {
-  _MangaVolumeTally({this.checkpoint});
+  _MangaVolumeTally({this.checkpoint, this.onAttempt});
+
+  /// 每卷开始前调一次（来源页导入进度，拍板台 design-nmv-scan-progress）。
+  final void Function(String path)? onAttempt;
 
   /// 每卷结束后调一次：把这一卷改动的来源索引落盘
   /// （[_MangaSourceIdentity.checkpoint]）。
@@ -326,6 +329,7 @@ class _MangaVolumeTally {
   /// 跳过；[DuplicateImportCancelledException] 同样是正常跳过；其它异常记为该卷
   /// 失败。
   Future<void> attempt(String path, Future<bool> Function() body) async {
+    onAttempt?.call(path);
     try {
       if (await body()) imported++;
     } on DuplicateImportCancelledException catch (e) {
@@ -1396,19 +1400,24 @@ class SourceLibraryScanner {
     void Function(String dirPath, FileSystemException error)?
     onUnreadableDirectory,
   }) async {
+    // 列目录进度报给来源占用表，来源页行内显示（拍板台 design-nmv-scan-progress）。
+    void onDirectoryListed(String dirPath, int filesSoFar) =>
+        sourceScanActivity.reportListing(source.id, dirPath, filesSoFar);
     if (source.transport == 'local') {
       return LocalSourceFileSystem(
         onUnreadableDirectory: onUnreadableDirectory,
+        onDirectoryListed: onDirectoryListed,
       );
     }
     final SourceLibrarySecret secret = await SourceLibraryCredentialStore(
       _db,
     ).readSecret(source.id);
-    return buildNetworkFileSystem(
+    return buildSourceFileSystem(
       transport: source.transport,
       config: decodeSourceConfig(source.configJson),
       password: secret.password,
       privateKey: secret.privateKey,
+      onDirectoryListed: onDirectoryListed,
     );
   }
 
@@ -1806,6 +1815,17 @@ class SourceLibraryScanner {
           item.discRootPath,
         for (final ScanDvdDiscItem item in plan.dvdDiscs) item.discRootPath,
       ];
+      // 导入阶段的进度总数 = 下面逐条走一遍的条目（书 / 视频 / 清单 / 漫画三类）；
+      // 蓝光 / DVD 光盘整批交给光盘导入器，数量少，不计。
+      sourceScanActivity.beginImport(
+        source.id,
+        plan.books.length +
+            plan.videos.length +
+            plan.playlists.length +
+            plan.mangas.length +
+            plan.mangaArchives.length +
+            plan.mangaFolders.length,
+      );
 
       switch (kind) {
         case SourceLibraryKind.book:
@@ -2088,6 +2108,7 @@ class SourceLibraryScanner {
     // R5 候选：导入（或重复跳过）后仍没配上音频的非 PDF 书 → 它在库里的 bookKey。
     final Map<String, String> r5BookKeys = <String, String>{};
     for (final ScanBookItem item in plan.books) {
+      sourceScanActivity.reportImportItem(source.id, item.bookPath);
       // 一本书的失败只作废这本书（与视频 BUG-2570、漫画逐卷记账同语义）。此前循环
       // 只接重复信号，任何别的异常（坏 EPUB、下载中断）直接跳出：后面的书全不导，
       // 远端来源的临时目录也不删。
@@ -2402,6 +2423,8 @@ class SourceLibraryScanner {
     // 合订本回收对索引的改动不经逐卷落盘）。
     final _MangaVolumeTally tally = _MangaVolumeTally(
       checkpoint: identity.checkpoint,
+      onAttempt: (String path) =>
+          sourceScanActivity.reportImportItem(source.id, path),
     );
     try {
       if (fs.isLocal) {
@@ -3028,6 +3051,7 @@ class SourceLibraryScanner {
       final List<String> failedPaths = <String>[];
       Object? firstError;
       for (final ScanVideoItem item in plan.videos) {
+        sourceScanActivity.reportImportItem(sourceId, item.videoPath);
         final String normalizedPath = normalizeVideoPath(item.videoPath);
         // BUG-2979：同名旧行的文件已经不在原处，**而且有正证据**说明这就是搬走的那个
         // 文件（[videoRowMoveEvidence]）。光凭「旧文件没了」不算：app 内扫描不回收
@@ -3278,6 +3302,7 @@ class SourceLibraryScanner {
     try {
       int count = 0;
       for (final ScanPlaylistItem item in plan.playlists) {
+        sourceScanActivity.reportImportItem(sourceId, item.playlistPath);
         // 合集名走解码 basename：网络清单的 href 是百分号编码的。
         final String collectionName = p.basenameWithoutExtension(
           sourceEntryBasename(item.playlistPath),

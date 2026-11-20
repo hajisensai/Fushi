@@ -278,11 +278,47 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     );
     _observedActiveScans = sourceScanActivity.activeSourceIds;
     sourceScanActivity.addListener(_onSourceScanActivityChanged);
+    sourceScanActivity.progressListenable.addListener(
+      _onSourceScanProgressChanged,
+    );
     _load();
   }
 
   /// 上一次看到的 [sourceScanActivity] 快照，用来找出「刚扫完」的来源。
   Set<int> _observedActiveScans = const <int>{};
+
+  /// 扫描进度（已找到几个文件 / 导入到第几条）变了：重画行内进度。占用表那边已
+  /// 节流，这里直接重建。
+  void _onSourceScanProgressChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// [row] 在扫时（本页发起或别处发起）的行内进度文案；没在扫返回 null。
+  /// 扫描器还没报进度（解析连接、激活书签）或是不报进度的音乐 / 游戏来源时显示
+  /// 「正在扫描…」（拍板台 design-nmv-scan-progress）。
+  String? _scanProgressText(SourceLibraryRow row) {
+    if (!_scanning.contains(row.id) && !sourceScanActivity.isScanning(row.id)) {
+      return null;
+    }
+    final SourceScanProgress? progress = sourceScanActivity.progressOf(row.id);
+    if (progress == null) return t.media_source_scan_progress_started;
+    final String head = switch (progress.phase) {
+      SourceScanPhase.listing => t.media_source_scan_progress_listing(
+        count: progress.filesFound,
+      ),
+      SourceScanPhase.importing => t.media_source_scan_progress_importing(
+        current: progress.processed,
+        total: progress.total,
+      ),
+    };
+    final String? path = progress.currentPath;
+    final String name = path == null ? '' : scanProgressPathLabel(path);
+    return name.isEmpty ? head : '$head  ·  $name';
+  }
+
+  /// [row] 在扫时行底进度条的完成比例；列目录阶段与没在扫时为 null（不定 / 不画）。
+  double? _scanProgressValue(SourceLibraryRow row) =>
+      sourceScanActivity.progressOf(row.id)?.fraction;
 
   /// 别处（首页的自动扫描）扫本页来源时：行级 loading 跟着亮，扫完重读该行与累计数。
   void _onSourceScanActivityChanged() {
@@ -322,6 +358,9 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   @override
   void dispose() {
     sourceScanActivity.removeListener(_onSourceScanActivityChanged);
+    sourceScanActivity.progressListenable.removeListener(
+      _onSourceScanProgressChanged,
+    );
     widget.scrapeTaskController?.removeListener(_onScrapeTaskChanged);
     if (widget.mediaKind == 'video') {
       videoScrapeCleanupRevision.removeListener(_onVideoScrapeCleanupChanged);
@@ -572,7 +611,8 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   /// 同一批字段、同一组动作。
   ImportSourceBlockData _blockDataFor(SourceLibraryRow row) {
     final bool isVideo = widget.mediaKind == 'video';
-    final bool scanning = _scanning.contains(row.id);
+    final bool scanning =
+        _scanning.contains(row.id) || sourceScanActivity.isScanning(row.id);
     final bool scraping = _isScrapingSource(row.id);
     final bool exporting = _exportingDiagnostics.contains(row.id);
     final bool busy = scanning || scraping || exporting || isBusy;
@@ -597,6 +637,8 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
       progressText = title == null || title.isEmpty
           ? progress
           : '$progress  ·  $title';
+    } else {
+      progressText = _scanProgressText(row);
     }
     final VideoSourceScrapeRunRow? latest = isVideo
         ? _latestScrapeRuns[row.id]
@@ -616,7 +658,8 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
           : t.media_source_auto_added_from(source: owner),
       scanError: row.lastScanError != null,
       working: scanning || scraping || exporting,
-      scrapeProgressText: progressText,
+      progressValue: scraping || exporting ? null : _scanProgressValue(row),
+      progressText: progressText,
       scrapeSummaryText: latest == null
           ? null
           : t.video_source_scrape_last_summary(
@@ -949,7 +992,11 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
                       top: tokens.spacing.gap,
                       end: tokens.spacing.gap,
                     ),
-                    child: const FushiLinearProgressIndicator(),
+                    child: FushiLinearProgressIndicator(
+                      value: scraping || exporting
+                          ? null
+                          : _scanProgressValue(row),
+                    ),
                   )
                 : const SizedBox(width: double.infinity),
           ),
@@ -1084,6 +1131,15 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
       final String? title = active.currentWorkTitle;
       return Text(
         title == null || title.isEmpty ? progress : '$progress  ·  $title',
+        style: subStyle,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      );
+    }
+    if (_scanProgressText(row) case final String scanProgress) {
+      return Text(
+        scanProgress,
+        key: ValueKey<String>('media_source_scan_progress_${row.id}'),
         style: subStyle,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
