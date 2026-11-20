@@ -347,6 +347,78 @@ fn import_drafts_reports_foreign_at_the_callers_input_index() {
     ffsrs_store_close(h);
 }
 
+/// 卡片修改 [key] = [v]，带 / 不带它的笔记（输入项的 `note`）。
+fn card_edit(profile: &str, card: &str, note: Option<&str>, key: &str, v: Value) -> Value {
+    json!({"e": {"t": "edit", "x": {"id": "ignored", "p": profile, "k": "card", "e": card, "f": key, "w": "dart", "s": 1, "ctx": {"vv": {}}, "v": v, "hlc": "0:0:dart", "ts": "anchored"}}, "note": note})
+}
+
+/// 带笔记的卡片修改跟着笔记过闸（第六波 BUG-4843 复核）：同批身份记录被拒的那条笔记（同 guid、B 已有、A 落到另一个
+/// 笔记类型），它的卡片修改——卡 ID 由 A 的副本类型派生、哪里都没有——一并不写，回包 `foreign` 报它们的下标。合法场景
+/// 照常：笔记是同批要建的、是本集合已有的、哪里都没有的，或修改不带笔记（「哪里都没有的 ID 照常写」不变）。`apply` 同一个闸。
+#[test]
+fn card_edits_carrying_a_rejected_note_are_not_written() {
+    let dir = tempdir::new("g9-owner-card-note");
+    let h = open(&dir.0, 0).unwrap();
+    ready(h, B);
+    ready(h, A);
+    let shared = derived("shared-guid");
+    run(
+        h,
+        B,
+        "apply",
+        json!({}),
+        &[note_with(B, &shared, "shared-guid")],
+    );
+    let own = derived("a-own");
+    let v = run(h, A, "apply", json!({}), &[note_with(A, &own, "a-own")]);
+    assert_eq!(v["foreign"], json!([]), "{v}");
+
+    let mut other_type = note_with(A, &shared, "shared-guid");
+    other_type["e"]["x"]["d"]["noteTypeId"] =
+        json!(rules::note_type(rules::CANONICAL, 424_242).text());
+    let dup_card = card(&shared, "dup-tmpl");
+    let fresh = derived("a-fresh");
+    let before = ops_of(&dir.0, A);
+    let v = run(
+        h,
+        A,
+        "import_drafts",
+        json!({}),
+        &[
+            other_type,
+            card_edit(A, &dup_card, Some(&shared), "newPos", json!(7)),
+            card_edit(A, &dup_card, Some(&shared), "suspended", json!(true)),
+            // 合法：同批要建的笔记的卡。
+            note_with(A, &fresh, "a-fresh"),
+            card_edit(A, &card(&fresh, "t"), Some(&fresh), "newPos", json!(8)),
+            // 合法：本集合已有的笔记的卡；哪里都没有的笔记的卡；不带笔记的、哪里都没有的卡。
+            card_edit(A, &card(&own, "t"), Some(&own), "newPos", json!(9)),
+            card_edit(A, &card(N3, "t"), Some(N3), "newPos", json!(10)),
+            card_edit(A, &card(N4, "t"), None, "newPos", json!(11)),
+        ],
+    );
+    assert_eq!(v["foreign"], json!([0, 1, 2]), "{v}");
+    assert_eq!(
+        ops_of(&dir.0, A) - before,
+        5,
+        "被拒笔记与它的两条卡片修改一条不写，合法的五条照写"
+    );
+    // `apply` 同一个闸：单发一条带被拒笔记的卡片修改，不写；同一张卡不带笔记照旧写（只加严、不改不带笔记的口径）。
+    let v = run(
+        h,
+        A,
+        "apply",
+        json!({}),
+        &[
+            card_edit(A, &dup_card, Some(&shared), "newPos", json!(12)),
+            card_edit(A, &dup_card, None, "newPos", json!(13)),
+        ],
+    );
+    assert_eq!(v["landed"], json!([false, true]), "{v}");
+    assert_eq!(v["foreign"], json!([0]), "{v}");
+    ffsrs_store_close(h);
+}
+
 /// [THEIRS_SQL] / [OURS_SQL] 都走索引（前者靠 SCHEMA 40023 的 `ent_id` / `alias_canon_any` / `cards_id`）。
 /// `OTHERS_SQL` 不在这里：`collections` 一个 profile 一行，整表就几行。
 #[test]

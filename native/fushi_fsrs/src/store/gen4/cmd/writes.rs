@@ -745,6 +745,9 @@ impl Origin<'_> {
 struct Item {
     body: Body,
     chg: bool,
+    /// 卡片修改带的笔记（输入的 `note`，调用方声明「这张卡是这条笔记的」）：这条修改再跟着笔记过实体归属闸
+    /// （`writes_owner.rs` 文件头「判据」），笔记被拒时它一并不写。只读卡片修改的；日志的笔记在 [Body::Log] 里。
+    card_note: Option<Key>,
 }
 
 /// 协议 3 的修改记录草稿（Dart `_applyInput` 为一条草稿发的那一项，意图命令拼输入用）。
@@ -795,6 +798,10 @@ fn parse_item(it: &Value) -> Result<Item, String> {
         b => b,
     };
     let chg = it["chg"] == Value::Bool(true);
+    let card_note = match &body {
+        Body::Edit(e) if e.kind == EntKind::Card => it["note"].as_str().map(Key::of),
+        _ => None,
+    };
     if chg {
         if !matches!(body, Body::Edit(_)) {
             return Err("apply: chg on an item that is not an edit".into());
@@ -803,7 +810,11 @@ fn parse_item(it: &Value) -> Result<Item, String> {
             return Err("apply: chg cannot be combined with init / stamped".into());
         }
     }
-    Ok(Item { body, chg })
+    Ok(Item {
+        body,
+        chg,
+        card_note,
+    })
 }
 
 /// `apply` 的本体（协议 3 `apply_local_on` 的新代版），在 [s] 里做；意图命令拼好输入也走这里。回包
@@ -831,7 +842,12 @@ pub(super) fn apply_in(
         }
         // 归一提前做：`chg` 与标签的判定按规范的 (种类, 实体, 键) 比。
         let body = s.canon_body(item.body)?;
-        parsed.push(Item { body, ..item });
+        let card_note = item.card_note.as_ref().map(|n| s.canon(n)).transpose()?;
+        parsed.push(Item {
+            body,
+            card_note,
+            ..item
+        });
     }
     let keep = drop_noops(s, &parsed)?;
     // 实体归属闸（`writes_owner.rs`）：身份记录先各自过闸（牌组按同批的名字 / 父牌组自证）；过了闸的、这一批要建的实体
@@ -861,7 +877,13 @@ pub(super) fn apply_in(
         }
         let theirs = match &item.body {
             Body::Entity { .. } => entity_foreign[at],
-            b => s.foreign_body(b, &born)?,
+            b => {
+                s.foreign_body(b, &born)?
+                    || match &item.card_note {
+                        Some(n) => s.foreign(EntKind::Note, &n.text(), &born)?,
+                        None => false,
+                    }
+            }
         };
         if theirs {
             foreign.push(opts.origin.of(at).unwrap_or(at));
