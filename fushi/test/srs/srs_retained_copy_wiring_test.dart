@@ -502,14 +502,13 @@ void main() {
     container.invalidate(srsRetainedCopyProvider);
     await srsSettle(tester);
     expect(backend.states, 2, reason: '重读开始，卡在状态命令里');
+    // 读还没完就被 invalidate，紧接着放行：那次构建在下一次重建之前读完（已经废弃）。
     container.invalidate(srsRetainedCopyProvider);
-    await srsSettle(tester);
-    expect(backend.states, 3, reason: '读的过程中又被 invalidate：重新读');
     backend.gate = null;
     gate.complete();
     await srsSettle(tester);
+    expect(backend.states, 3, reason: '废弃之后重新读一次');
     expect(seen?.firstSyncAtMs, isNull);
-    expect(backend.states, 3);
 
     backend.firstSyncAtMs = 1767225600000;
     srsSyncRoundsSucceeded.value++;
