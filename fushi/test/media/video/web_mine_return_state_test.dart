@@ -266,8 +266,8 @@ void main() {
       expect(clear, lessThan(fin.indexOf('_beginRestore(_replayOrigin)')));
       final String recover = body(
         page,
-        'Future<void> _recoverFromProcessGone()',
-        'void _seedWarmPopup()',
+        'Future<void> _onSurfaceGone()',
+        'void _onSurfaceCreated(',
       );
       expect(
         recover,
