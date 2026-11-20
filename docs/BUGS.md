@@ -66,6 +66,10 @@
 | [BUG-4908](bugs/BUG-4908-subtitle-pipeline-register-glossary-race.md) | ✅ | ✅ | 字幕生成：一集登记抛错连带后面各集不登记；S0 期间保存的专名表被管线盖掉 |
 | [BUG-4907](bugs/BUG-4907-subtitle-estimate-reprobes-duration.md) | ✅ | ✅ | 字幕费用预估每次刷新都对没识别过的集串行重跑 ffprobe |
 | [BUG-4906](bugs/BUG-4906-jimaku-same-key-rebuilds-pipeline.md) | ✅ | ✅ | 字幕面板每次搜索都按未变的 Jimaku key 重建下载管线运行时 |
+| [BUG-4909](bugs/BUG-4909-resume-decode-refresh-seeks-stale-position.md) | ✅ | ✅ | 回前台重建解码链用可能陈旧的缓存位置原地 seek，后台期间 Dart 侧停摆时会把播放头往回拉 |
+| [BUG-4908](bugs/BUG-4908-audio-track-restore-gives-up-after-4s.md) | ✅ | ✅ | 续播恢复音轨用 200 ms × 20 次轮询，音轨超过 4 秒才出现时静默放弃，用户选过的音轨丢失 |
+| [BUG-4907](bugs/BUG-4907-graphic-track-reselect-kills-inflight-extract.md) | ✅ | ✅ | 图形字幕整轨抽取跑到一半时重新选同一条图形轨，会把 ffmpeg 杀掉从头再抽 |
+| [BUG-4906](bugs/BUG-4906-video-params-sub-stale-after-handle-release.md) | ✅ | ✅ | 放掉视频句柄（数据根迁移 / 删视频 / 文件名整理）后，新 Player 的画面参数事件收不到，HDR 输出与杜比视界提示只剩开片快照补判 |
 | [BUG-4905](bugs/BUG-4905-ai-cast-text-substitutions.md) | ✅ | ✅ | 小说和漫画 AI 标注未应用系列用词替换表 |
 | [BUG-4904](bugs/BUG-4904-book-series-key-store-annotation.md) | ✅ | ✅ | 书店写法「卷号<系列名> (文库名)」的分卷导入后不归合集 |
 | [BUG-4903](bugs/BUG-4903-home-desktop-continue-cut-edge-title-concat.md) | ✅ | ✅ | 首页（桌面）「继续」右侧卡被窗口切掉一半、标题拼接成「Re：ゼロ…1<Re：…」 |
