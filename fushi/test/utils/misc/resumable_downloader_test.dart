@@ -378,18 +378,14 @@ void main() {
     test('a request that fails after the timeout does not surface', () async {
       final Completer<ResumableDownloadResponse> pending =
           Completer<ResumableDownloadResponse>();
-      final List<Object> uncaught = <Object>[];
-      await runZonedGuarded(() async {
-        final Future<ResumableDownloadResponse> waiting =
-            awaitResumableResponse(
-              pending.future,
-              const Duration(milliseconds: 20),
-            );
-        await expectLater(waiting, throwsA(isA<TimeoutException>()));
-        pending.completeError(const SocketException('reset'));
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-      }, (Object error, StackTrace _) => uncaught.add(error));
-      expect(uncaught, isEmpty);
+      // 没人接的失败会作为未捕获异步错误让这条用例红（测试框架兜底）。
+      final Future<ResumableDownloadResponse> waiting = awaitResumableResponse(
+        pending.future,
+        const Duration(milliseconds: 20),
+      );
+      await expectLater(waiting, throwsA(isA<TimeoutException>()));
+      pending.completeError(const SocketException('reset'));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
     });
 
     test('a response within the timeout is handed over untouched', () async {
@@ -406,7 +402,8 @@ void main() {
       );
       expect(response.statusCode, 200);
       expect(body.hasListener, isFalse);
-      await body.close();
+      // 没有订阅者的 close() 永远等不到 done，不 await。
+      unawaited(body.close());
     });
 
     test('SegmentedDownloader goes through the same first-byte wait', () {

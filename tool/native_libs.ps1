@@ -67,8 +67,7 @@ function Get-NativeHostLayout {
 
 # native/<crate> 的源码内容键：HEAD 的 git 树哈希；有 external_sources.txt 时把列出的
 # crate 外源码在 HEAD 的 blob 一起并成一个 git blob 对象 id（与 tool/native_source_key.sh
-# 逐字节同一算法：`printf '%s
-' "tree <树>" "<路径> <blob>"... | git hash-object --stdin`）。
+# 逐字节同一算法：「tree <树>」与每个「<路径> <blob>」各占一行，整段交给 `git hash-object --stdin`）。
 # 该目录或列出的外部源码有未提交改动（含未跟踪文件，不含 target/ prebuilt/ 这些 ignored）时
 # 返回 $null —— 产物对应的源码说不清，不写戳记、不复用。
 function Get-NativeSourceTree {
