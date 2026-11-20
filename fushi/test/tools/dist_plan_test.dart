@@ -557,6 +557,7 @@ void main() {
         '--target-platform=android-arm64,android-x64',
       ]);
       expect(apk.runsOn(DistPlatform.macos), isTrue);
+      expect(apk.runsOn(DistPlatform.linux), isTrue);
       final DistBuild? win = distBuildOf(<String>[
         'flutter',
         'build',
@@ -565,6 +566,7 @@ void main() {
       expect(win!.request, <String>['flutter', 'windows']);
       expect(win.runsOn(DistPlatform.windows), isTrue);
       expect(win.runsOn(DistPlatform.macos), isFalse);
+      expect(win.runsOn(DistPlatform.linux), isFalse);
       expect(
         distBuildOf(<String>[
           'flutter',

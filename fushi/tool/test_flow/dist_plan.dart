@@ -6,9 +6,12 @@ library;
 
 import 'dart:convert';
 
-/// Host platforms a worker can be. Linux-gated suites are not pinned (no
-/// Linux worker exists; they self-skip on the others and CI covers them).
-enum DistPlatform { windows, macos }
+/// Host platforms a worker can be. The scan pins suites to Windows / macOS
+/// only: Linux-gated suites stay unpinned (they self-skip elsewhere and CI,
+/// which runs on Linux, covers them), so a config without a Linux worker
+/// never strands a unit. A Linux worker takes the unpinned suites, analyze
+/// and Android compile checks.
+enum DistPlatform { windows, macos, linux }
 
 /// Tags whose suites need a worker that declared the matching capability
 /// (see fushi/dart_test.yaml: they need real local fixtures or tools).
