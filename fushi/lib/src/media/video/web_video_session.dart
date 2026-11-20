@@ -169,7 +169,8 @@ Future<WebViewEnvironment> webVideoWindowedEnvironment() async {
 /// 窗口宿主档环境的浏览器进程没了（WebView2 ProcessFailed，fork 转成 onRenderProcessGone）：
 /// 丢掉缓存，下次 [webVideoWindowedEnvironment] 在同一目录 / 同一参数上重建。同目录同参数的新
 /// 环境在旧浏览器进程还活着时会直接接到它上面（WebView2 的环境共享规则），所以只是渲染进程死了
-/// 也照样可用。返回被换下的旧环境（调用方负责释放）。
+/// 也照样可用。返回被换下的旧环境：播放器页**不**释放它（进程级缓存，别的页面可能还拿着同一个
+/// 对象，见 [WebVideoSession.recoverFromProcessGone]）。
 Future<WebViewEnvironment>? discardWebVideoWindowedEnvironment() =>
     MangaWebViewEnvironment.discardWindowedHosting();
 
@@ -499,25 +500,21 @@ class WebVideoSession {
   /// 窗口宿主档环境（浏览器进程没了旧环境就是废的；只是渲染进程没了新环境会接回同一个浏览器
   /// 进程），并记下重建后要回到的地址。登录态在共享罐里，不用抄。失败抛出由 death guard 记录——重建
   /// 照样进行，最坏是新 WebView 在旧环境里建不出来，与修复前一样停在死页面。
+  ///
+  /// 旧环境**不释放**：窗口宿主档环境是进程级缓存（[MangaWebViewEnvironment.obtainWindowedHosting]），
+  /// 别的原生播放器页、窗口档的网页播放器页（`WebVideoFushiPage._recoverFromProcessGone` 同一
+  /// 判断）拿的是同一个对象；只是渲染进程死了时浏览器进程还活着，这边释放会把别人正用着的环境
+  /// 拆掉。代理变更重建共享环境时由 `MangaWebViewEnvironment._create` 统一释放。
   Future<void> recoverFromProcessGone() async {
     if (_disposed) return;
     final String current = mainFrameUrl.value;
     if (current.isNotEmpty) _surfaceUrl = current;
     _web = null;
     _viewId = null;
-    final Future<WebViewEnvironment>? old =
-        discardWebVideoWindowedEnvironment();
+    discardWebVideoWindowedEnvironment()?.ignore();
     final WebViewEnvironment env = await webVideoWindowedEnvironment();
     if (_disposed) return;
     _environment = env;
-    if (old != null) {
-      try {
-        final WebViewEnvironment stale = await old;
-        if (!identical(stale, env)) await stale.dispose();
-      } catch (e) {
-        ErrorLogService.instance.log('web_video', 'stale env dispose: $e');
-      }
-    }
   }
 
   /// 建 WebView 之前的异步准备：注入脚本、窗口宿主档环境（与 app 内浏览器共享 cookie 罐，

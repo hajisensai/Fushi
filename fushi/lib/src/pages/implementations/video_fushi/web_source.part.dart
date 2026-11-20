@@ -1667,6 +1667,9 @@ extension _VideoWebSource on _VideoFushiPageState {
     ImmersionMinePayload payload,
     Future<void> Function() enqueue,
   ) async {
+    // 统计用发起时冻结的库与归属：直裁要等流解析 + 裁剪，落卡时可能已经换集 / 离页。
+    final FushiDatabase mineDb = appModel.database;
+    final ({String bookKey, String title}) statIdentity = _studyStatsIdentity;
     final RemoteMineResult? res = await mineWebVideoCueDirectOrQueue(
       mineDirect: () =>
           appModel.createRemoteMiningService().mineImmersion(payload),
@@ -1680,6 +1683,9 @@ extension _VideoWebSource on _VideoFushiPageState {
     if (res.result == 'duplicate') {
       _showMineOsd(t.card_duplicate, MineToastStatus.duplicate);
     } else {
+      // 新制成功计入视频统计：与本页其它制卡（[_recordVideoMineStat]）、内置网页播放器页
+      // 的直裁、队列重放落卡同一笔账——改走直裁不该让 YouTube 的卡不再计数。
+      unawaited(_recordVideoMineStat(mineDb, statIdentity));
       _showMineOsd(
         t.card_exported(deck: res.deckName ?? ''),
         MineToastStatus.added,
