@@ -8,6 +8,7 @@ import 'package:fushi/src/media/video/video_asbplayer_config.dart';
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_horizontal_seek_gesture.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
+import 'package:fushi/src/media/video/video_playlist_order.dart';
 import 'package:fushi/src/media/video/video_lua_script_manager.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart';
 import 'package:fushi/src/media/video/video_clip_export_preferences.dart';
@@ -97,6 +98,37 @@ SettingsDestination buildVideoDestination() {
               await settingsContext.appModel.setVideoAutoPlayNext(value);
             },
             defaultValue: true,
+          ),
+          // 连播顺序（拍板台 QHbRRctQdW）：自动连播时下一集按合集顺序还是随机挑
+          // （一轮内不重复、播完一轮再开一轮）。与「自动连播」「单文件循环」合起来就是
+          // 音乐播放器的顺序 / 随机 / 单曲循环。纯 pref，播放页快捷面板也能切（不加控制栏
+          // 常驻按钮）；手动上 / 下一集仍按合集顺序。
+          SettingsSegmentedItem<VideoPlaylistOrder>(
+            id: 'video.playback.playlist_order',
+            title: t.video_setting_playlist_order,
+            subtitle: t.video_setting_playlist_order_hint,
+            icon: FushiIcons.shuffle,
+            video: VideoPlacement(group: VideoGroup.playback, order: 98),
+            options: <SettingsSegmentOption<VideoPlaylistOrder>>[
+              SettingsSegmentOption<VideoPlaylistOrder>(
+                value: VideoPlaylistOrder.sequential,
+                label: t.video_playlist_order_sequential,
+              ),
+              SettingsSegmentOption<VideoPlaylistOrder>(
+                value: VideoPlaylistOrder.shuffle,
+                label: t.video_playlist_order_shuffle,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoPlaylistOrder,
+            onChanged:
+                (
+                  SettingsContext settingsContext,
+                  VideoPlaylistOrder order,
+                ) async {
+                  await settingsContext.appModel.setVideoPlaylistOrder(order);
+                },
+            defaultValue: VideoPlaylistOrder.fallback,
           ),
           // 作品图谱 L2：音乐库里的 OP / ED 经声纹识别出每集起止后自动跳过。纯 pref，
           // 播放页面板不单列（与原盘会话三项同理：它们决定的是进入 OP 时怎么办）。

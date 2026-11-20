@@ -124,6 +124,7 @@ import 'package:fushi/src/media/sources/reader_pdf_source.dart';
 import 'package:fushi/src/media/types/dictionary_media_type.dart';
 import 'package:fushi/src/media/types/reader_media_type.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
+import 'package:fushi/src/media/video/video_playlist_order.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart'
     show VideoHdrOutputMode;
 import 'package:fushi/src/media/video/video_screenshot_destination.dart';
@@ -7026,6 +7027,12 @@ class AppModel
 
   Future<void> setVideoAutoPlayNext(bool value) =>
       prefsRepo.setVideoAutoPlayNext(value);
+
+  /// 合集自动连播的选集顺序（拍板台 QHbRRctQdW，落 Drift preferences，默认顺序）。
+  VideoPlaylistOrder get videoPlaylistOrder => prefsRepo.videoPlaylistOrder;
+
+  Future<void> setVideoPlaylistOrder(VideoPlaylistOrder order) =>
+      prefsRepo.setVideoPlaylistOrder(order);
 
   /// 原盘会话三项（落 Drift preferences，默认都开）：桌面自动全屏 / 启动动画 /
   /// 详情页主按钮默认进菜单。

@@ -119,6 +119,7 @@ import 'package:fushi/src/media/video/video_remote_control_layout.dart';
 import 'package:fushi/src/stats/reader_study_clock_start_mode.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
+import 'package:fushi/src/media/video/video_playlist_order.dart';
 import 'package:fushi/src/media/video/video_lua_capability.dart';
 import 'package:fushi/src/media/video/video_clip_export_preferences.dart';
 import 'package:fushi/src/media/video/video_screenshot_destination.dart';
@@ -2401,6 +2402,21 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setVideoAutoPlayNext(bool value) async {
     await setPref('video_auto_play_next', value);
+    notifyListeners();
+  }
+
+  /// 合集自动连播的选集顺序（拍板台 QHbRRctQdW）：顺序 / 随机。旧库没有该 key
+  /// 时按顺序（历史行为），不需要迁移。
+  VideoPlaylistOrder get videoPlaylistOrder => VideoPlaylistOrder.fromStorage(
+    getPref(
+          'video_playlist_order',
+          defaultValue: VideoPlaylistOrder.fallback.storageValue,
+        )
+        as String,
+  );
+
+  Future<void> setVideoPlaylistOrder(VideoPlaylistOrder order) async {
+    await setPref('video_playlist_order', order.storageValue);
     notifyListeners();
   }
 
