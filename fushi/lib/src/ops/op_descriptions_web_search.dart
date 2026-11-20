@@ -17,12 +17,21 @@ import 'package:fushi/src/ops/op_describe_kit.dart';
 /// 配没配、用户关没关。
 List<OpDescription> describeWebSearchOps(OpDescribeKit kit) {
   PreferencesRepository prefs() => kit.context.appModel.prefsRepo;
-  OpAvailability availability() => agentWebSearchAvailability(
-    prefs().aiWebSearchConfig,
-    prefs().aiAgentWebSearchConsent,
+  return describeWebSearchOpsFor(
+    availability: () => agentWebSearchAvailability(
+      prefs().aiWebSearchConfig,
+      prefs().aiAgentWebSearchConsent,
+    ),
+    granted: () =>
+        agentWebSearchConsentGranted(prefs().aiAgentWebSearchConsent),
   );
-  bool granted() =>
-      agentWebSearchConsentGranted(prefs().aiAgentWebSearchConsent);
+}
+
+/// 可注入判据的描述（测试不经 AppModel）。
+List<OpDescription> describeWebSearchOpsFor({
+  required OpAvailability Function() availability,
+  required bool Function() granted,
+}) {
   const OpParam consent = OpParam.userGate(
     'confirm',
     description:
