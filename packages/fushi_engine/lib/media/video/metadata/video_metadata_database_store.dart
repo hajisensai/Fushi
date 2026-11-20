@@ -3,7 +3,7 @@ library;
 
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
-import 'package:drift/drift.dart' show Value;
+import 'package:drift/drift.dart' show BooleanExpressionOperators, Value;
 import 'package:fushi_engine/media/video/metadata/mal_video_metadata_provider.dart'
     show hasIncompleteMalCredits;
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
