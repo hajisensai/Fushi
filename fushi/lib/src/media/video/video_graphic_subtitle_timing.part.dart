@@ -57,19 +57,98 @@ final class GraphicSubtitleTimingStream extends GraphicSubtitleTimingInput {
 typedef GraphicSubtitleHostTrackFiles = ({File payload, File? header});
 
 /// 取回 host 已抽好的整轨（互联：host 有原文件）。拿不到（老 host 无端点 / host 抽取
-/// 失败 / 断网）返回 null。文件归控制器处置：解析完即删除。
+/// 失败 / 断网）返回 null。每调用一次真下一次；文件归 [GraphicSubtitleTimingHostTrack]
+/// 处置（最后一个持有者放下时删除）。
 typedef GraphicSubtitleHostTrackDownload =
     Future<GraphicSubtitleHostTrackFiles?> Function();
 
 /// 远端 host 已在本机抽好的整轨：client 只下几百 KB，不为字幕读整片。
+///
+/// 同一条轨的几个使用方——控制器的逐句时间表 / 模糊遮蔽层（选轨期间一直持有）、整轨
+/// OCR（转文字）——经 [retain] / [release] 共用**一次**下载：原先各调一次 [download]，
+/// 同一份整轨从 host 下两遍。持有者只读下载件、不改不删；最后一个持有者放下时删除。
 final class GraphicSubtitleTimingHostTrack extends GraphicSubtitleTimingInput {
-  const GraphicSubtitleTimingHostTrack({
+  GraphicSubtitleTimingHostTrack({
     required this.download,
     required super.streamIndex,
     required super.codec,
   });
 
+  /// 原始下载。使用方一律走 [retain] / [release]，不直调（直调绕过共用与清理）。
   final GraphicSubtitleHostTrackDownload download;
+
+  /// 当前这一次下载（持有者共用）；下载失败 / 全部放下后清空，下一位持有者重新下。
+  Future<GraphicSubtitleHostTrackFiles?>? _files;
+
+  /// [_files] 已下完的结果（放下时据此同步删除）。
+  GraphicSubtitleHostTrackFiles? _resolved;
+
+  int _holds = 0;
+
+  /// 当前持有者个数（测试用）。
+  @visibleForTesting
+  int get debugHolds => _holds;
+
+  /// 持有一份整轨：首个持有者触发下载，之后的持有者拿同一份文件。下载失败（null）
+  /// 不留缓存，下一位持有者重新下。每次 [retain] 必须配一次 [release]。
+  Future<GraphicSubtitleHostTrackFiles?> retain() {
+    _holds++;
+    return _files ??= _startDownload();
+  }
+
+  Future<GraphicSubtitleHostTrackFiles?> _startDownload() {
+    late final Future<GraphicSubtitleHostTrackFiles?> started;
+    void forget() {
+      if (identical(_files, started)) _files = null;
+    }
+
+    started = download().then(
+      (GraphicSubtitleHostTrackFiles? files) {
+        if (files == null) {
+          forget();
+        } else if (identical(_files, started)) {
+          _resolved = files;
+        } else {
+          // 下载途中所有持有者都已放下：没人要了，下完即删。
+          _deleteHostTrackFiles(files);
+        }
+        return files;
+      },
+      onError: (Object error) {
+        debugPrint('[GraphicSubtitleTimingHostTrack] download: $error');
+        forget();
+        return null;
+      },
+    );
+    return started;
+  }
+
+  /// 放下一份持有；最后一个持有者放下时删除下载件（还在下载就下完再删）。
+  void release() {
+    if (_holds == 0) return;
+    if (--_holds > 0) return;
+    final GraphicSubtitleHostTrackFiles? resolved = _resolved;
+    _files = null;
+    _resolved = null;
+    if (resolved != null) _deleteHostTrackFiles(resolved);
+  }
+}
+
+/// 删 host 整轨下载件：载荷、下载的轨头、以及解码时放到约定位置的轨头副本。
+void _deleteHostTrackFiles(GraphicSubtitleHostTrackFiles files) {
+  final String payloadPath = files.payload.path;
+  for (final String path in <String>{
+    payloadPath,
+    bitmapSubtitleTrackHeaderPath(payloadPath),
+    if (files.header != null) files.header!.path,
+  }) {
+    try {
+      final File f = File(path);
+      if (f.existsSync()) f.deleteSync();
+    } on FileSystemException {
+      // 临时文件留给系统清理。
+    }
+  }
 }
 
 /// host 回传的整轨 → 位图时间表的接口形状（测试替换用）。
@@ -79,9 +158,10 @@ typedef GraphicSubtitleTrackFileRegionLoad =
       required Size fallbackCanvas,
     });
 
-/// 生产实现：host 回传的整轨 → 位图时间表。轨头放到载荷旁的约定位置
+/// 生产实现：host 回传的整轨 → 位图时间表。轨头复制到载荷旁的约定位置
 /// （[bitmapSubtitleTrackHeaderPath]）后与本地抽轨产物同一条解码路径
 /// （[readGraphicSubtitleTrackInBackground]，后台 isolate，PGS / VobSub / DVB 通吃）。
+/// 下载件与整轨 OCR 共用（[GraphicSubtitleTimingHostTrack.retain]），只复制不挪动。
 /// 认不出 / 解不出返回 null。
 Future<GraphicSubtitleRegionTrack?> loadGraphicSubtitleRegionsFromTrackFile(
   GraphicSubtitleHostTrackFiles files, {
@@ -89,8 +169,11 @@ Future<GraphicSubtitleRegionTrack?> loadGraphicSubtitleRegionsFromTrackFile(
 }) async {
   final File? header = files.header;
   final String headerPath = bitmapSubtitleTrackHeaderPath(files.payload.path);
-  if (header != null && header.path != headerPath && header.existsSync()) {
-    header.renameSync(headerPath);
+  if (header != null &&
+      header.path != headerPath &&
+      header.existsSync() &&
+      !File(headerPath).existsSync()) {
+    header.copySync(headerPath);
   }
   final List<BitmapSubtitleCue> cues =
       await readGraphicSubtitleTrackInBackground(
@@ -105,8 +188,9 @@ Future<GraphicSubtitleRegionTrack?> loadGraphicSubtitleRegionsFromTrackFile(
 /// 供 [readGraphicSubtitleTrackInBackground] 解码——整轨 OCR 与逐句时间表同一个取数口径：
 /// - [GraphicSubtitleTimingStream]：ffmpeg 读本地文件 / 网络流（带播放会话请求头）抽轨，
 ///   边抽边写（[onProgress] / [cancel] 照常生效）；
-/// - [GraphicSubtitleTimingHostTrack]：下载 host 抽好的整轨（互联：client 绝不整片读流），
-///   下完一次性落位。下载本身不可中途撤销，[cancel] 在落位前生效。
+/// - [GraphicSubtitleTimingHostTrack]：持有 host 抽好的整轨（互联：client 绝不整片读流；
+///   控制器选轨时已下好就直接用，不再下第二份），复制落位。下载本身不可中途撤销，
+///   [cancel] 在落位前生效。
 ///
 /// 成功返回 true；失败 / 取消返回 false（失败摘要交 [onFailure]，取消不报）。
 Future<bool> materializeGraphicSubtitleTrack({
@@ -130,17 +214,13 @@ Future<bool> materializeGraphicSubtitleTrack({
     case GraphicSubtitleTimingHostTrack():
       bool cancelled = false;
       unawaited(cancel?.then((_) => cancelled = true));
-      final GraphicSubtitleHostTrackFiles? files = await input.download();
-      if (files == null) {
-        if (!cancelled) onFailure?.call('host track download failed');
-        return false;
-      }
-      final File? downloadedHeader = files.header;
-      final List<File> downloaded = <File>[
-        files.payload,
-        if (downloadedHeader != null) downloadedHeader,
-      ];
+      final GraphicSubtitleHostTrackFiles? files = await input.retain();
       try {
+        if (files == null) {
+          if (!cancelled) onFailure?.call('host track download failed');
+          return false;
+        }
+        final File? downloadedHeader = files.header;
         if (cancelled || !files.payload.existsSync()) return false;
         final File out = File(outputPath);
         out.parent.createSync(recursive: true);
@@ -154,13 +234,7 @@ Future<bool> materializeGraphicSubtitleTrack({
         onFailure?.call('host track: ${e.message}');
         return false;
       } finally {
-        for (final File f in downloaded) {
-          try {
-            if (f.existsSync()) f.deleteSync();
-          } on FileSystemException {
-            // 临时文件留给系统清理。
-          }
-        }
+        input.release();
       }
   }
 }
@@ -209,7 +283,7 @@ extension VideoGraphicSubtitleTimingController on VideoPlayerController {
     _graphicLiveProvisionalCue = null;
     _graphicTimingGeneration++;
     _graphicLiveGeneration++;
-    _graphicTimingInputOverride = null;
+    _setGraphicTimingInputOverride(null);
     _graphicRegionTrack.value = null;
     _cancelGraphicTimingFetch();
   }
@@ -339,6 +413,16 @@ extension VideoGraphicSubtitleTimingController on VideoPlayerController {
     return true;
   }
 
+  /// 换本次选轨显式给的取数输入：host 整轨选轨期间由控制器持有一份（逐句时间表 /
+  /// 遮蔽层解析完、整轨 OCR 稍后再要都用这一次下载），被换掉 / 清空 / 销毁时放下。
+  void _setGraphicTimingInputOverride(GraphicSubtitleTimingInput? input) {
+    final GraphicSubtitleTimingInput? previous = _graphicTimingInputOverride;
+    if (identical(previous, input)) return;
+    if (input is GraphicSubtitleTimingHostTrack) unawaited(input.retain());
+    _graphicTimingInputOverride = input;
+    if (previous is GraphicSubtitleTimingHostTrack) previous.release();
+  }
+
   /// 本次选轨的整轨时间表取数输入：调用方显式给的（互联 host 整轨）优先，否则按当前
   /// 播放源推导（[graphicSubtitleTimingInputForSource]）。
   GraphicSubtitleTimingInput? _graphicTimingInputFor({
@@ -417,28 +501,17 @@ extension VideoGraphicSubtitleTimingController on VideoPlayerController {
           cancel: cancel,
         );
       case GraphicSubtitleTimingHostTrack():
-        final GraphicSubtitleHostTrackFiles? files = await input.download();
-        if (files == null) return null;
+        // 选轨期间控制器本身就持有这条轨（[_setGraphicTimingInputOverride]），整轨 OCR
+        // 再要时直接用同一份下载件；这里只为解析这一段再持有一次。
+        final GraphicSubtitleHostTrackFiles? files = await input.retain();
         try {
-          if (stale()) return null;
+          if (files == null || stale()) return null;
           return await graphicSubtitleTrackFileRegionLoad(
             files,
             fallbackCanvas: fallbackCanvas,
           );
         } finally {
-          final String payloadPath = files.payload.path;
-          for (final String path in <String>[
-            payloadPath,
-            bitmapSubtitleTrackHeaderPath(payloadPath),
-            if (files.header != null) files.header!.path,
-          ]) {
-            try {
-              final File f = File(path);
-              if (f.existsSync()) f.deleteSync();
-            } on FileSystemException {
-              // 临时文件留给系统清理。
-            }
-          }
+          input.release();
         }
     }
   }
@@ -523,7 +596,7 @@ extension VideoGraphicSubtitleTimingController on VideoPlayerController {
   void debugLoadGraphicSubtitleTimingsWithInputForTesting(
     GraphicSubtitleTimingInput input,
   ) {
-    _graphicTimingInputOverride = input;
+    _setGraphicTimingInputOverride(input);
     _loadGraphicSubtitleTimings(
       streamIndex: input.streamIndex,
       codec: input.codec,

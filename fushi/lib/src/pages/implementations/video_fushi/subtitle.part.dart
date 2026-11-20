@@ -2860,7 +2860,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
   }
 
   /// 远端图形轨的整轨取数输入：互联 host 回传它抽好的整轨（client **不读**整片流，
-  /// [buildRemoteGraphicSubtitleTimingInput]）；媒体服务器 / URL 流按当前流地址 + 播放
+  /// [buildRemoteGraphicSubtitleTimingInput]；这条轨正当图形轨显示时用控制器手里那份，
+  /// 与逐句时间表 / 遮蔽层共用一次下载）；媒体服务器 / URL 流按当前流地址 + 播放
   /// 会话请求头抽（与控制器的逐句时间表同一口径）。轨不在 libmpv 正 demux 的原始容器里
   /// （[_remoteGraphicTrackSelectable]）/ 编码解不了 / 推导不出返回 null。
   GraphicSubtitleTimingInput? _remoteGraphicTrackOcrInput(
@@ -2875,6 +2876,12 @@ extension _VideoSubtitle on _VideoFushiPageState {
     if (client != null &&
         info != null &&
         client is RemoteVideoGraphicSubtitleTrackFetch) {
+      final GraphicSubtitleTimingInput? active = controller
+          .graphicSubtitleTimingInputForTrack(
+            streamIndex: ordinal,
+            codec: track.codec,
+          );
+      if (active is GraphicSubtitleTimingHostTrack) return active;
       final (String _, int episode) = _remotePositionKeyForIndex(
         _currentEpisode,
       );

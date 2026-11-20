@@ -2066,7 +2066,7 @@ class VideoPlayerController extends ChangeNotifier
             _graphicExtractedTimingCues.isNotEmpty)) {
       return true;
     }
-    _graphicTimingInputOverride = timingInput;
+    _setGraphicTimingInputOverride(timingInput);
     _loadGraphicSubtitleTimings(
       streamIndex: streamIndex,
       codec: _graphicSubtitleCodec,
@@ -7137,6 +7137,8 @@ class VideoPlayerController extends ChangeNotifier
     _graphicLiveObservedPlayer = null;
     _graphicLiveGeneration++;
     _cancelGraphicTimingFetch();
+    // 放下选轨期间持有的 host 整轨（删下载件）。
+    _setGraphicTimingInputOverride(null);
     _cancelEmbeddedTextExtract();
     unawaited(_discTrackSub?.cancel());
     unawaited(_discTracksSub?.cancel());
@@ -7266,6 +7268,8 @@ class VideoPlayerController extends ChangeNotifier
     _graphicLiveObservedPlayer = null;
     _graphicLiveGeneration++;
     _cancelGraphicTimingFetch();
+    // 放下选轨期间持有的 host 整轨（删下载件）。
+    _setGraphicTimingInputOverride(null);
     _cancelEmbeddedTextExtract();
     unawaited(_discTrackSub?.cancel());
     unawaited(_discTracksSub?.cancel());
