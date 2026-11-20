@@ -678,6 +678,7 @@
   "anki_error_first_field_empty": "所選筆記類型的第一個字段為空，Anki 不接受這樣的卡片。請在「Anki 設定」裡給它映射一個字段。",
   "anki_error_http": "無法匯出到 Anki：連接 AnkiConnect 時發生 HTTP 錯誤。",
   "anki_error_overwrite_fields_empty": "The fields chosen for overwriting are all empty for this card, so nothing was changed. Adjust Fields to overwrite if needed.",
+  "anki_error_overwrite_no_fields_selected": "No fields are checked in Fields to overwrite, so nothing was changed. Check at least one field first.",
   "anki_error_paired_device_mine_failed": "The card reached the Fushi Interconnect server, but Anki on that device could not create it: $reason",
   "anki_error_paired_device_mining_unavailable": "The Fushi Interconnect server is reachable but did not accept the card (it answered 404 / 405). Fushi cannot tell why from here: it may have nowhere to save cards right now, or its Fushi version may not accept cards from this device. The card was not sent.",
   "anki_error_paired_device_unreachable": "無法製卡：目前連不上 Fushi 互聯服務端。請確認服務端上的 Fushi 正在執行；如要在本機製卡，請在 Anki 設定中關閉「製卡到 Fushi 互聯服務端」。",

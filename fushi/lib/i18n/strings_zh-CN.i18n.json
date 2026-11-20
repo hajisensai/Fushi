@@ -678,6 +678,7 @@
   "anki_error_first_field_empty": "所选笔记类型的第一个字段为空，Anki 不接受这样的卡片。请在 Anki 设置里给它映射一个字段。",
   "anki_error_http": "无法导出到 Anki：连接 AnkiConnect 时发生 HTTP 错误。",
   "anki_error_overwrite_fields_empty": "要覆写的字段这次都是空的，卡片没有改动。如有需要请调整「覆写哪些字段」。",
+  "anki_error_overwrite_no_fields_selected": "「覆写哪些字段」一个都没勾，卡片没有改动。请先至少勾选一个字段。",
   "anki_error_paired_device_mine_failed": "卡片已发到 Fushi 互联服务端，但那台设备上的 Anki 制卡失败：$reason",
   "anki_error_paired_device_mining_unavailable": "Fushi 互联服务端连上了，但它没有接收这张卡（回了 404 / 405）。这边分不清具体原因：可能那台设备现在没有能存卡的地方，也可能它的 Fushi 版本不收这台设备的卡。这张卡没有送出。",
   "anki_error_paired_device_unreachable": "无法制卡：当前连不上 Fushi 互联服务端。请确认服务端上的 Fushi 正在运行；如果要在本机制卡，请关闭「制卡到 Fushi 互联服务端」。",

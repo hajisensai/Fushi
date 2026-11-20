@@ -657,6 +657,9 @@ String? localizeAnkiMineError(String? code) {
       return t.anki_error_all_fields_empty;
     case AnkiErrorCode.overwriteFieldsEmpty:
       return t.anki_error_overwrite_fields_empty;
+    // 拍板 lt2wobUYfE：查词弹窗直接点 ✓ 覆写时，「覆写哪些字段」一个都没勾。
+    case AnkiErrorCode.overwriteNoFieldsSelected:
+      return t.anki_error_overwrite_no_fields_selected;
     case AnkiErrorCode.syncClientSignedOut:
       return t.anki_error_sync_signed_out;
     case AnkiErrorCode.syncClientUnavailable:

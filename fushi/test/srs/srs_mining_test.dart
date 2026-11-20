@@ -753,6 +753,26 @@ void main() {
       expect(after.field(fid('Sentence')), before.field(fid('Sentence')));
     });
 
+    test('覆写：「覆写哪些字段」一个都没勾（拍板 lt2wobUYfE）→ 拒绝，笔记不动', () async {
+      final int handle = await mine('雪', 'ゆき');
+      final SrsNoteView before = await noteOf('雪', 'ゆき');
+      final String typeName = (await repo.overwriteNoteTypeName(handle))!;
+      inner.settings = inner.settings.withOverwriteFields(
+        typeName,
+        const <String>[],
+      );
+      final MineOutcome out = await repo.updateMinedNote(
+        noteId: handle,
+        rawPayloadJson: _payload('雪', 'ゆき'),
+        context: const AnkiMiningContext(sentence: '雪が積もる。'),
+      );
+      expect(out.result, MineResult.error);
+      expect(out.errorCode, AnkiErrorCode.overwriteNoFieldsSelected);
+      final SrsNoteView after = (await store.note(before.id))!;
+      expect(after.field(fid('Sentence')), before.field(fid('Sentence')));
+      expect(inner.ankiCalls, 0);
+    });
+
     test('覆写：原笔记已删 → 明确失败', () async {
       final int handle = await mine('雪', 'ゆき');
       await store.deleteNote((await noteOf('雪', 'ゆき')).id);

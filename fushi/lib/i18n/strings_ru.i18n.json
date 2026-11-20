@@ -678,6 +678,7 @@
   "anki_error_first_field_empty": "Первое поле выбранного типа заметки пусто, а такую заметку Anki не принимает. Сопоставьте ему поле в Настройках Anki.",
   "anki_error_http": "Не удалось экспортировать в Anki: при обращении к AnkiConnect произошла ошибка HTTP.",
   "anki_error_overwrite_fields_empty": "The fields chosen for overwriting are all empty for this card, so nothing was changed. Adjust Fields to overwrite if needed.",
+  "anki_error_overwrite_no_fields_selected": "No fields are checked in Fields to overwrite, so nothing was changed. Check at least one field first.",
   "anki_error_paired_device_mine_failed": "The card reached the Fushi Interconnect server, but Anki on that device could not create it: $reason",
   "anki_error_paired_device_mining_unavailable": "The Fushi Interconnect server is reachable but did not accept the card (it answered 404 / 405). Fushi cannot tell why from here: it may have nowhere to save cards right now, or its Fushi version may not accept cards from this device. The card was not sent.",
   "anki_error_paired_device_unreachable": "Не удалось создать карточку: ни одно сопряжённое устройство недоступно. Убедитесь, что на сопряжённом устройстве запущено Fushi, или отключите «Добывать на сопряжённое устройство» в разделе «Настройки Anki», чтобы создавать карточки локально.",
