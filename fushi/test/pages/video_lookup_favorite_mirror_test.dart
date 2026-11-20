@@ -137,6 +137,95 @@ void main() {
     });
   });
 
+  group('镜像判据与库内匹配同一组键（#3722 c51 遗留）', () {
+    FavoriteSentence legacy({int? sectionIndex}) => FavoriteSentence(
+      text: '旧句 ',
+      bookTitle: 'T',
+      createdAt: DateTime(2026, 11, 20),
+      bookKey: _bookUid,
+      sectionIndex: sectionIndex,
+      source: kFavoriteSentenceSourceVideo,
+    );
+
+    Set<String> mirrorOf(FavoriteSentence f, {required bool playlist}) =>
+        <String>{
+          videoFavoriteCacheKey(
+            text: f.text.trim(),
+            startMs: f.normCharOffset,
+            episodeIndex: f.sectionIndex,
+            isPlaylist: playlist,
+          ),
+        };
+
+    test('旧 text-only 条目带了集下标：镜像认它，库内匹配也认它', () {
+      for (final bool playlist in <bool>[false, true]) {
+        final FavoriteSentence f = legacy(sectionIndex: 3);
+        for (final int? start in <int?>[null, 500]) {
+          final bool inMirror = videoSentenceFavoritedInMirror(
+            mirrorOf(f, playlist: playlist),
+            sentence: '旧句',
+            cueStartMs: start,
+            episodeIndex: 3,
+            isPlaylist: playlist,
+          );
+          final bool matched = videoFavoriteMatchesSentence(
+            f,
+            sentence: '旧句',
+            cueStartMs: start,
+            episodeIndex: 3,
+            isPlaylist: playlist,
+          );
+          expect(inMirror, isTrue, reason: 'playlist=$playlist start=$start');
+          expect(
+            matched,
+            inMirror,
+            reason: '星标亮着就必须删得到（playlist=$playlist start=$start）',
+          );
+        }
+      }
+    });
+
+    test('cue 键条目：同一时间点同一集才算，与镜像一致', () {
+      final FavoriteSentence f = FavoriteSentence(
+        text: '一句',
+        bookTitle: 'T',
+        createdAt: DateTime(2026, 11, 20),
+        bookKey: _bookUid,
+        sectionIndex: 2,
+        normCharOffset: 1000,
+        source: kFavoriteSentenceSourceVideo,
+      );
+      for (final (int? start, int ep, bool expected) in <(int?, int, bool)>[
+        (1000, 2, true),
+        (1000, 3, false),
+        (2000, 2, false),
+        (null, 2, false),
+      ]) {
+        expect(
+          videoFavoriteMatchesSentence(
+            f,
+            sentence: '一句',
+            cueStartMs: start,
+            episodeIndex: ep,
+            isPlaylist: true,
+          ),
+          expected,
+          reason: 'start=$start ep=$ep',
+        );
+        expect(
+          videoSentenceFavoritedInMirror(
+            mirrorOf(f, playlist: true),
+            sentence: '一句',
+            cueStartMs: start,
+            episodeIndex: ep,
+            isPlaylist: true,
+          ),
+          expected,
+        );
+      }
+    });
+  });
+
   group('页面星标读镜像', () {
     final TestWidgetsFlutterBinding binding =
         TestWidgetsFlutterBinding.ensureInitialized();
@@ -283,8 +372,7 @@ void main() {
 
     testWidgets('镜像落后于页外收藏：点空心星标不写重复条目', (WidgetTester tester) async {
       final VideoFushiTestHooks hooks = await openPage(tester);
-      await tester.runAsync(hooks.debugRefreshFavoritedCueCache);
-      // 镜像填完之后才由页外（收藏夹页 / 同步合并）收藏了这句，本页镜像没重填。
+      // 镜像还没填（也就还没订阅变更）时页外（收藏夹页 / 同步合并）先收藏了这句。
       await seedFavorite(tester, '外部収蔵', 15000);
       final AudioCue cue = _cue('外部収蔵', 15000);
       hooks.debugSetLookupSentence('外部収蔵', cue);
@@ -300,6 +388,72 @@ void main() {
         all,
         hasLength(1),
         reason: 'repo.add 只按 id 去重，按镜像空心星标直接 add 会写出第二条',
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+
+    /// 让变更流事件与随后的镜像重填（真实异步 DB 读）跑完。
+    Future<void> letMirrorCatchUp(WidgetTester tester) async {
+      for (int round = 0; round < 10; round++) {
+        await tester.runAsync(() async {
+          await Future<void>.delayed(const Duration(milliseconds: 30));
+        });
+        await tester.pump();
+      }
+    }
+
+    testWidgets('页外收藏 / 取消收藏：镜像自动跟上（收藏库变更流）', (WidgetTester tester) async {
+      final VideoFushiTestHooks hooks = await openPage(tester);
+      await tester.runAsync(hooks.debugRefreshFavoritedCueCache);
+      final AudioCue cue = _cue('外から', 21000);
+      hooks.debugSetLookupSentence('外から', cue);
+      expect(hooks.debugCurrentSentenceFavorited, isFalse);
+
+      await seedFavorite(tester, '外から', 21000);
+      await letMirrorCatchUp(tester);
+      expect(
+        hooks.debugCurrentSentenceFavorited,
+        isTrue,
+        reason: '收藏夹页 / 同步合并改了收藏，播放页镜像要跟着重填',
+      );
+      expect(hooks.debugIsCueFavorited(cue), isTrue);
+
+      await tester.runAsync(() async {
+        final FavoriteSentenceRepository repo = FavoriteSentenceRepository(db);
+        for (final FavoriteSentence f in await repo.getAll()) {
+          await repo.removeById(f.id);
+        }
+      });
+      await letMirrorCatchUp(tester);
+      expect(hooks.debugCurrentSentenceFavorited, isFalse);
+      expect(hooks.debugIsCueFavorited(cue), isFalse);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+
+    testWidgets('旧 text-only 条目带集下标：星标亮着，取消收藏删得到', (WidgetTester tester) async {
+      await tester.runAsync(
+        () => FavoriteSentenceRepository(db).add(
+          FavoriteSentence(
+            text: '昔の収蔵',
+            bookTitle: 'T',
+            createdAt: DateTime(2026, 11, 20),
+            bookKey: _bookUid,
+            sectionIndex: 0,
+            source: kFavoriteSentenceSourceVideo,
+          ),
+        ),
+      );
+      final VideoFushiTestHooks hooks = await openPage(tester);
+      await tester.runAsync(hooks.debugRefreshFavoritedCueCache);
+      hooks.debugSetLookupSentence('昔の収蔵', _cue('昔の収蔵', 3000));
+      expect(hooks.debugCurrentSentenceFavorited, isTrue);
+
+      await tester.runAsync(hooks.debugToggleLookupSentenceFavorite);
+      expect(hooks.debugCurrentSentenceFavorited, isFalse);
+      expect(
+        await tester.runAsync(() => FavoriteSentenceRepository(db).getAll()),
+        isEmpty,
+        reason: '库内匹配曾要求 sectionIndex 为空，这条删不到、星标下次又亮',
       );
       await tester.pumpWidget(const SizedBox.shrink());
     });

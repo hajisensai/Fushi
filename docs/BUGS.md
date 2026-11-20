@@ -33,40 +33,30 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4235 条。点号进各自文件。
+> 共 4253 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4907](bugs/BUG-4907-resumable-first-byte-timeout-orphan-connection.md) | ✅ | ✅ | 断点续传下载首字节超时后底层请求不中止，晚到的响应留下孤儿连接 |
-| [BUG-4906](bugs/BUG-4906-native-prebuilt-stamp-external-sources.md) | ✅ | ✅ | fushi_music 预编译库戳记不含 #[path] 编入的 crate 外源码，legacy_text.rs 改了不重编 |
-> 共 4242 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4914](bugs/BUG-4914-video-favorite-legacy-unfavorite-miss.md) | ✅ | ✅ | 视频旧 text-only 收藏带集下标时星标亮着却取消不掉 |
+| [BUG-4913](bugs/BUG-4913-video-favorite-mirror-stale-external.md) | ✅ | ✅ | 视频播放页收藏星标在页外改收藏后不刷新 |
 | [BUG-4912](bugs/BUG-4912-video-lookup-favorite-two-copies.md) | ✅ | ✅ | 视频查词浮层收藏星标每查一词全量读库解析，与字幕条星标各存一份 |
 | [BUG-4911](bugs/BUG-4911-video-initial-fullscreen-frame-cap.md) | ✅ | ✅ | 换集保持全屏逐帧重试 30 帧，controls 首建晚于 30 帧就丢全屏 |
-| [BUG-4910](bugs/BUG-4910-video-speed-series-memory.md) | ✅ | ✅ | 倍速记忆本地每集一份、远端原地换集沿用，同一系列两边不一致 |
-| [BUG-4909](bugs/BUG-4909-jellyfin-review-transcode-not-released.md) | ✅ | ✅ | 卡片片段回看下 Jellyfin/Emby 转码会话不释放 |
-| [BUG-4908](bugs/BUG-4908-stream-book-client-never-closed.md) | ✅ | ✅ | 流媒体书客户端与来源直链解析器从不关闭（SFTP 每开一次留一条 SSH 连接） |
-| [BUG-4907](bugs/BUG-4907-video-auto-align-writes-after-episode-switch.md) | ✅ | ✅ | 字幕自动对轴的结果可能写到换集后的视频上 |
-| [BUG-4907](bugs/BUG-4907-remote-episode-switch-stale-failure.md) | ✅ | ✅ | 远端换集：作废那一程的失败仍把页面置成失败态 |
-| [BUG-4906](bugs/BUG-4906-video-init-unexpected-error-spins-forever.md) | ✅ | ✅ | 视频页打开时未预期异常不进失败态，永久转圈 |
-| [BUG-4906](bugs/BUG-4906-graphic-sub-ocr-one-cue-fails-whole-track.md) | ✅ | ✅ | 图形字幕整轨转文字一条 cue 出错整个任务作废 |
-> 共 4239 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
 | [BUG-4911](bugs/BUG-4911-mpv-property-batch-rejections-silent.md) | ✅ | ✅ | mpv 属性批量下发有五份同形实现，mpv 拒绝写入不留任何痕迹 |
+| [BUG-4910](bugs/BUG-4910-video-speed-series-memory.md) | ✅ | ✅ | 倍速记忆本地每集一份、远端原地换集沿用，同一系列两边不一致 |
 | [BUG-4910](bugs/BUG-4910-video-mining-screenshot-holds-player-lock.md) | ✅ | ✅ | 制卡截帧整段占着 Player 串行锁，「制卡后立刻续播」要等 JPEG 编码跑完 |
 | [BUG-4909](bugs/BUG-4909-resume-decode-refresh-seeks-stale-position.md) | ✅ | ✅ | 回前台重建解码链用可能陈旧的缓存位置原地 seek，后台期间 Dart 侧停摆时会把播放头往回拉 |
+| [BUG-4909](bugs/BUG-4909-jellyfin-review-transcode-not-released.md) | ✅ | ✅ | 卡片片段回看下 Jellyfin/Emby 转码会话不释放 |
+| [BUG-4908](bugs/BUG-4908-stream-book-client-never-closed.md) | ✅ | ✅ | 流媒体书客户端与来源直链解析器从不关闭（SFTP 每开一次留一条 SSH 连接） |
 | [BUG-4908](bugs/BUG-4908-audio-track-restore-gives-up-after-4s.md) | ✅ | ✅ | 续播恢复音轨用 200 ms × 20 次轮询，音轨超过 4 秒才出现时静默放弃，用户选过的音轨丢失 |
+| [BUG-4907](bugs/BUG-4907-video-auto-align-writes-after-episode-switch.md) | ✅ | ✅ | 字幕自动对轴的结果可能写到换集后的视频上 |
+| [BUG-4907](bugs/BUG-4907-resumable-first-byte-timeout-orphan-connection.md) | ✅ | ✅ | 断点续传下载首字节超时后底层请求不中止，晚到的响应留下孤儿连接 |
+| [BUG-4907](bugs/BUG-4907-remote-episode-switch-stale-failure.md) | ✅ | ✅ | 远端换集：作废那一程的失败仍把页面置成失败态 |
 | [BUG-4907](bugs/BUG-4907-graphic-track-reselect-kills-inflight-extract.md) | ✅ | ✅ | 图形字幕整轨抽取跑到一半时重新选同一条图形轨，会把 ffmpeg 杀掉从头再抽 |
-| [BUG-4906](bugs/BUG-4906-video-params-sub-stale-after-handle-release.md) | ✅ | ✅ | 放掉视频句柄（数据根迁移 / 删视频 / 文件名整理）后，新 Player 的画面参数事件收不到，HDR 输出与杜比视界提示只剩开片快照补判 |
-> 共 4234 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
 | [BUG-4906](bugs/BUG-4906-webvideo-builtin-process-gone.md) | ✅ | ✅ | 内置网页播放器渲染进程死亡后回到起始页且重放循环不知情 |
+| [BUG-4906](bugs/BUG-4906-video-params-sub-stale-after-handle-release.md) | ✅ | ✅ | 放掉视频句柄（数据根迁移 / 删视频 / 文件名整理）后，新 Player 的画面参数事件收不到，HDR 输出与杜比视界提示只剩开片快照补判 |
+| [BUG-4906](bugs/BUG-4906-video-init-unexpected-error-spins-forever.md) | ✅ | ✅ | 视频页打开时未预期异常不进失败态，永久转圈 |
+| [BUG-4906](bugs/BUG-4906-native-prebuilt-stamp-external-sources.md) | ✅ | ✅ | fushi_music 预编译库戳记不含 #[path] 编入的 crate 外源码，legacy_text.rs 改了不重编 |
+| [BUG-4906](bugs/BUG-4906-graphic-sub-ocr-one-cue-fails-whole-track.md) | ✅ | ✅ | 图形字幕整轨转文字一条 cue 出错整个任务作废 |
 | [BUG-4905](bugs/BUG-4905-ai-cast-text-substitutions.md) | ✅ | ✅ | 小说和漫画 AI 标注未应用系列用词替换表 |
 | [BUG-4904](bugs/BUG-4904-book-series-key-store-annotation.md) | ✅ | ✅ | 书店写法「卷号<系列名> (文库名)」的分卷导入后不归合集 |
 | [BUG-4903](bugs/BUG-4903-home-desktop-continue-cut-edge-title-concat.md) | ✅ | ✅ | 首页（桌面）「继续」右侧卡被窗口切掉一半、标题拼接成「Re：ゼロ…1<Re：…」 |
