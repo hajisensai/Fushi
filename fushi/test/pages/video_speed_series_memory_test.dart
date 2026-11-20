@@ -1,4 +1,4 @@
-// BUG-4910 / video-s2-2：倍速记忆本地每集一份（`video_speed_<bookUid>`），远端原地
+// BUG-5030 / video-s2-2：倍速记忆本地每集一份（`video_speed_<bookUid>`），远端原地
 // 换集沿用当前倍速——同一个系列两边行为不一致。统一合集 Phase 3 之后每集是独立
 // VideoBooks 行，本地合集换集读的是下一集自己的键（多半回到 1.0）。
 //

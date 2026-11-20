@@ -1722,7 +1722,12 @@ fn fit_jpeg(data: &[u8], dst_w: u32, dst_h: u32, quality: u8) -> Result<Vec<u8>,
 }
 
 /// 漫画页图「画质缩放」：解码（转正）→ 可分离重采样（[resample::Filter]：0 面积平均 / 1 Lanczos3 /
-/// 2 Catmull-Rom，`flags` 位 0 = 在线性光里算，即 Gamma 校正缩放）→ JPEG（4:4:4，灰度源编单通道）。
+/// 2 Catmull-Rom，`flags` 位 0 = 文字感知的 Gamma 校正）→ JPEG（4:4:4，灰度源编单通道）。
+///
+/// 文字感知的 Gamma 校正（[FIT_HQ_TEXT_AWARE_GAMMA]）：`text_boxes` 里的 OCR 框（归一化
+/// `[x0, y0, x1, y1]` × `text_box_count`）内在 sRGB 编码值上重采样（细笔画不变淡），框外在线性光
+/// 里（网点明度准），羽化遮罩混合；没有框时整页 sRGB——实测整页线性光让文字框笔画对比度掉
+/// 10%～20%（`docs/specs/2026-11-20-manga-upscale-design.md` §2.1 / §3.1）。
 ///
 /// 与 [ffc_image_fit_jpeg] 的区别：核按缩放比放宽（网点不出摩尔纹）、可在线性光里平均（网点不发闷），
 /// 并且**允许放大**（低清源显示得比原图大时，用比 WebView 双线性更锐的核预放大），放大倍数限
@@ -1740,6 +1745,8 @@ pub unsafe extern "C" fn ffc_image_fit_jpeg_hq(
     quality: u32,
     filter: u32,
     flags: u32,
+    text_boxes: *const f32,
+    text_box_count: usize,
     out_ptr: *mut *mut u8,
     out_len: *mut usize,
 ) -> i32 {
@@ -1747,6 +1754,20 @@ pub unsafe extern "C" fn ffc_image_fit_jpeg_hq(
         if data.is_null() || out_ptr.is_null() || out_len.is_null() {
             return status::NULL_ARGUMENT;
         }
+        if text_box_count > 0 && text_boxes.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        if text_box_count > FIT_HQ_MAX_TEXT_BOXES {
+            return status::INVALID_ARGUMENT;
+        }
+        let boxes: Vec<[f32; 4]> = if text_box_count == 0 {
+            Vec::new()
+        } else {
+            std::slice::from_raw_parts(text_boxes, text_box_count * 4)
+                .chunks_exact(4)
+                .map(|b| [b[0], b[1], b[2], b[3]])
+                .collect()
+        };
         let Some(filter) = resample::Filter::from_code(filter) else {
             return status::INVALID_ARGUMENT;
         };
@@ -1755,19 +1776,16 @@ pub unsafe extern "C" fn ffc_image_fit_jpeg_hq(
             || dst_h == 0
             || dst_w > u16::MAX as u32
             || dst_h > u16::MAX as u32
-            || flags & !FIT_HQ_LINEAR_LIGHT != 0
+            || flags & !FIT_HQ_TEXT_AWARE_GAMMA != 0
         {
             return status::INVALID_ARGUMENT;
         }
-        let linear = flags & FIT_HQ_LINEAR_LIGHT != 0;
-        match fit_jpeg_hq(
-            slice(data, len),
-            dst_w,
-            dst_h,
-            quality as u8,
-            filter,
-            linear,
-        ) {
+        let boxes: &[[f32; 4]] = if flags & FIT_HQ_TEXT_AWARE_GAMMA != 0 {
+            &boxes
+        } else {
+            &[]
+        };
+        match fit_jpeg_hq(slice(data, len), dst_w, dst_h, quality as u8, filter, boxes) {
             Ok(jpeg) => {
                 crate::hand_over_bytes(jpeg, out_ptr, out_len);
                 status::OK
@@ -1777,8 +1795,10 @@ pub unsafe extern "C" fn ffc_image_fit_jpeg_hq(
     })
 }
 
-/// [ffc_image_fit_jpeg_hq] 的 `flags` 位：在线性光里重采样。
-pub const FIT_HQ_LINEAR_LIGHT: u32 = 1;
+/// [ffc_image_fit_jpeg_hq] 的 `flags` 位：文字感知的 Gamma 校正（OCR 框外线性光、框内 sRGB）。
+pub const FIT_HQ_TEXT_AWARE_GAMMA: u32 = 1;
+/// [ffc_image_fit_jpeg_hq] 一次最多接受的文字框数（一页 OCR 行框通常几十到两三百）。
+pub const FIT_HQ_MAX_TEXT_BOXES: usize = 4096;
 /// [ffc_image_fit_jpeg_hq] 每边最多放大的倍数。
 pub const FIT_HQ_MAX_UPSCALE: u32 = 4;
 /// [ffc_image_fit_jpeg_hq] 输出像素上限（约 8K×6K）。
@@ -1791,7 +1811,7 @@ fn fit_jpeg_hq(
     dst_h: u32,
     quality: u8,
     filter: resample::Filter,
-    linear: bool,
+    text_boxes: &[[f32; 4]],
 ) -> Result<Vec<u8>, i32> {
     if dst_w as u64 * dst_h as u64 > FIT_HQ_MAX_PIXELS {
         return Err(status::INVALID_ARGUMENT);
@@ -1803,7 +1823,7 @@ fn fit_jpeg_hq(
         return Err(status::INVALID_ARGUMENT);
     }
     let ch = channels as usize;
-    let resized = resample::resample(
+    let resized = resample::resample_text_aware(
         &pixels,
         width as usize,
         height as usize,
@@ -1811,7 +1831,7 @@ fn fit_jpeg_hq(
         dst_w as usize,
         dst_h as usize,
         filter,
-        linear,
+        text_boxes,
     );
     drop(pixels);
     encode_fit_jpeg(&resized, dst_w, dst_h, ch, quality, icc.as_deref())
@@ -2641,8 +2661,16 @@ mod tests {
                 .unwrap()
         };
         assert_eq!(icc_of(&src).as_deref(), Some(&profile[..]));
-        let hq_down = fit_jpeg_hq(&src, 100, 150, 90, resample::Filter::Box, false).unwrap();
-        let hq_up = fit_jpeg_hq(&src, 400, 600, 90, resample::Filter::CatmullRom, true).unwrap();
+        let hq_down = fit_jpeg_hq(&src, 100, 150, 90, resample::Filter::Box, &[]).unwrap();
+        let hq_up = fit_jpeg_hq(
+            &src,
+            400,
+            600,
+            90,
+            resample::Filter::CatmullRom,
+            &[[0.1, 0.1, 0.4, 0.4]],
+        )
+        .unwrap();
         let standard = fit_jpeg(&src, 100, 150, 90).unwrap();
         for out in [hq_down, hq_up, standard] {
             assert_eq!(icc_of(&out).as_deref(), Some(&profile[..]));
@@ -2652,7 +2680,7 @@ mod tests {
         jpeg_encoder::Encoder::new(&mut plain, 95)
             .encode(&pixels, 200, 300, jpeg_encoder::ColorType::Luma)
             .unwrap();
-        let out = fit_jpeg_hq(&plain, 100, 150, 90, resample::Filter::Box, false).unwrap();
+        let out = fit_jpeg_hq(&plain, 100, 150, 90, resample::Filter::Box, &[]).unwrap();
         assert_eq!(icc_of(&out), None);
     }
 
@@ -2681,7 +2709,7 @@ mod tests {
         enc.encode(&cmyk, 200, 300, jpeg_encoder::ColorType::Cmyk)
             .unwrap();
         assert_eq!(icc_of(&src).as_deref(), Some(&cmyk_profile[..]));
-        let hq = fit_jpeg_hq(&src, 100, 150, 90, resample::Filter::Box, false).unwrap();
+        let hq = fit_jpeg_hq(&src, 100, 150, 90, resample::Filter::Box, &[]).unwrap();
         let standard = fit_jpeg(&src, 100, 150, 90).unwrap();
         for out in [hq, standard] {
             assert_eq!(icc_of(&out), None);
@@ -2694,7 +2722,7 @@ mod tests {
         enc.add_icc_profile(&rgb_profile).unwrap();
         enc.encode(&gray, 200, 300, jpeg_encoder::ColorType::Luma)
             .unwrap();
-        let out = fit_jpeg_hq(&src, 100, 150, 90, resample::Filter::Box, false).unwrap();
+        let out = fit_jpeg_hq(&src, 100, 150, 90, resample::Filter::Box, &[]).unwrap();
         assert_eq!(icc_of(&out), None);
         // RGB 源 + RGB 配置文件照常贴。
         let rgb: Vec<u8> = (0..200u32 * 300 * 3).map(|i| (i * 7 % 256) as u8).collect();
@@ -2716,13 +2744,14 @@ mod tests {
             image::DynamicImage::ImageLuma8(src),
             image::ImageFormat::Png,
         );
-        for (w, h, filter, linear) in [
-            (150, 200, resample::Filter::Box, false),
-            (150, 200, resample::Filter::Box, true),
-            (600, 800, resample::Filter::CatmullRom, false),
-            (450, 600, resample::Filter::Lanczos3, true),
+        let text: &[[f32; 4]] = &[[0.1, 0.1, 0.4, 0.5]];
+        for (w, h, filter, boxes) in [
+            (150, 200, resample::Filter::Box, &[][..]),
+            (150, 200, resample::Filter::Box, text),
+            (600, 800, resample::Filter::CatmullRom, &[][..]),
+            (450, 600, resample::Filter::Lanczos3, text),
         ] {
-            let jpeg = fit_jpeg_hq(&png, w, h, 92, filter, linear).unwrap();
+            let jpeg = fit_jpeg_hq(&png, w, h, 92, filter, boxes).unwrap();
             let out = image::load_from_memory_with_format(&jpeg, image::ImageFormat::Jpeg).unwrap();
             assert_eq!((out.width(), out.height()), (w, h));
             assert_eq!(out.color(), image::ColorType::L8);
@@ -2735,9 +2764,9 @@ mod tests {
             image::DynamicImage::ImageLuma8(image::GrayImage::new(40, 30)),
             image::ImageFormat::Png,
         );
-        assert!(fit_jpeg_hq(&png, 160, 120, 90, resample::Filter::CatmullRom, false).is_ok());
+        assert!(fit_jpeg_hq(&png, 160, 120, 90, resample::Filter::CatmullRom, &[]).is_ok());
         assert_eq!(
-            fit_jpeg_hq(&png, 161, 120, 90, resample::Filter::CatmullRom, false),
+            fit_jpeg_hq(&png, 161, 120, 90, resample::Filter::CatmullRom, &[]),
             Err(status::INVALID_ARGUMENT)
         );
         let rgba = encode(
@@ -2745,11 +2774,11 @@ mod tests {
             image::ImageFormat::Png,
         );
         assert_eq!(
-            fit_jpeg_hq(&rgba, 20, 20, 90, resample::Filter::Box, false),
+            fit_jpeg_hq(&rgba, 20, 20, 90, resample::Filter::Box, &[]),
             Err(status::BAD_INPUT)
         );
         assert_eq!(
-            fit_jpeg_hq(b"not an image", 20, 20, 90, resample::Filter::Box, false),
+            fit_jpeg_hq(b"not an image", 20, 20, 90, resample::Filter::Box, &[]),
             Err(status::BAD_INPUT)
         );
     }
@@ -2762,6 +2791,7 @@ mod tests {
         );
         let mut out_ptr: *mut u8 = std::ptr::null_mut();
         let mut out_len: usize = 0;
+        let boxes: [f32; 8] = [0.1, 0.1, 0.5, 0.5, 0.6, 0.2, 0.9, 0.8];
         let call = |filter: u32, flags: u32, out_ptr: &mut *mut u8, out_len: &mut usize| unsafe {
             ffc_image_fit_jpeg_hq(
                 png.as_ptr(),
@@ -2771,6 +2801,8 @@ mod tests {
                 90,
                 filter,
                 flags,
+                boxes.as_ptr(),
+                2,
                 out_ptr,
                 out_len,
             )
@@ -2784,11 +2816,44 @@ mod tests {
             status::INVALID_ARGUMENT
         );
         assert_eq!(
-            call(0, FIT_HQ_LINEAR_LIGHT, &mut out_ptr, &mut out_len),
+            call(0, FIT_HQ_TEXT_AWARE_GAMMA, &mut out_ptr, &mut out_len),
             status::OK
         );
         assert!(out_len > 0);
         crate::ffc_free_bytes(out_ptr, out_len);
+        // 有框数却给空指针 / 框数超上限
+        let null_boxes = unsafe {
+            ffc_image_fit_jpeg_hq(
+                png.as_ptr(),
+                png.len(),
+                20,
+                15,
+                90,
+                0,
+                FIT_HQ_TEXT_AWARE_GAMMA,
+                std::ptr::null(),
+                1,
+                &mut out_ptr,
+                &mut out_len,
+            )
+        };
+        assert_eq!(null_boxes, status::NULL_ARGUMENT);
+        let too_many = unsafe {
+            ffc_image_fit_jpeg_hq(
+                png.as_ptr(),
+                png.len(),
+                20,
+                15,
+                90,
+                0,
+                FIT_HQ_TEXT_AWARE_GAMMA,
+                boxes.as_ptr(),
+                FIT_HQ_MAX_TEXT_BOXES + 1,
+                &mut out_ptr,
+                &mut out_len,
+            )
+        };
+        assert_eq!(too_many, status::INVALID_ARGUMENT);
     }
 
     #[test]

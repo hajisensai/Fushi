@@ -64,6 +64,7 @@ import 'package:fushi/src/sync/sync_progress.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_resource_locks.dart';
 import 'package:fushi/src/sync/sync_state_apply_lock.dart';
+import 'package:fushi_engine/sync/sync_reserved_namespaces.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi_engine/sync/online_novel_book.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
@@ -189,22 +190,16 @@ const String kSyncVideosManifestName = 'videos.json';
 /// True for reserved folder names that are NOT books and must be filtered from
 /// any listing of book folders (compare dialog, remote-book import).
 ///
+/// 保留命名空间的判据只在引擎的 [isReservedSyncNamespaceName] 写一次（互联 host 的文件箱
+/// 清理用同一个）；此前这里逐个列名，漏了 `__settings__` 与 `fushi-srs`，云盘上这两个
+/// 共享目录被当成只剩元数据的远端书列进对比弹窗、可被「删远端」整个删掉（BUG-5007）。
+///
 /// An empty / whitespace-only name is also reserved: it is never a real book
 /// folder (a book's folder name is a non-empty sanitized title), and treating it
 /// as one would import the sync root itself or an orphan collapsed onto the root
 /// (BUG-619, TODO-1329).
 bool isReservedSyncFolderName(String name) =>
-    name.trim().isEmpty ||
-    name == kSyncDictionaryNamespace ||
-    name == kSyncLocalAudioNamespace ||
-    name == kSyncAggregateNamespace ||
-    name == kSyncCollectionsNamespace ||
-    name == kSyncVideosNamespace ||
-    name == kSyncTombstonesNamespace ||
-    name == kSyncFontsNamespace ||
-    // 待发制卡跨设备中转（见 PendingMineRelay）：不是书；当成书列出来，用户在对比
-    // 弹窗里一「删远端书」就连认领带待落的卡一起删了。
-    name == PendingMineRelay.namespace;
+    name.trim().isEmpty || isReservedSyncNamespaceName(name);
 
 /// 云墓碑消费每轮至多 GET 多少条**未被合并清单覆盖**的逐条标记（SDbJAx1Db6）。
 ///

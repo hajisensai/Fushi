@@ -130,7 +130,7 @@ class MangaReaderPreferences {
     this.readerHideThreshold = 13,
     this.einkMode = false,
     this.enhancedScaling = true,
-    this.gammaCorrectScaling = false,
+    this.gammaCorrectScaling = true,
     this.lookupOnHover = false,
     this.showOcrBoxes = false,
     this.invertColors = false,
@@ -216,8 +216,9 @@ class MangaReaderPreferences {
   /// 低清源预放大，不交 WebView 双线性 / mipmap（见 `manga_page_fit.dart`）。
   final bool enhancedScaling;
 
-  /// 画质缩放的 Gamma 校正（默认关，只在 [enhancedScaling] 开着时起作用）：在线性光里
-  /// 平均，网点明度更准，但细笔画缩小后变淡（实测见 `manga_page_fit.dart`）。
+  /// 画质缩放的文字感知 Gamma 校正（默认开，只在 [enhancedScaling] 开着时起作用）：OCR 文字框
+  /// 之外在线性光里平均（网点明度更准），框内仍在 sRGB 里平均（细笔画不变淡）；没有 OCR 数据的
+  /// 页整页 sRGB（实测见 `manga_page_fit.dart`）。
   final bool gammaCorrectScaling;
   final bool lookupOnHover;
   final bool showOcrBoxes;
@@ -398,7 +399,7 @@ class MangaReaderPreferences {
       readerHideThreshold: number('readerHideThreshold', 13, 0, 100),
       einkMode: flag('einkMode', false),
       enhancedScaling: flag('enhancedScaling', true),
-      gammaCorrectScaling: flag('gammaCorrectScaling', false),
+      gammaCorrectScaling: flag('gammaCorrectScaling', true),
       lookupOnHover: flag('lookupOnHover', false),
       showOcrBoxes: flag('showOcrBoxes', false),
       invertColors: flag('invertColors', false),

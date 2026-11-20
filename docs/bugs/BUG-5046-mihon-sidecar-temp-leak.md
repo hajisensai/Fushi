@@ -1,0 +1,13 @@
+## BUG-5046 · 桌面 Mihon sidecar 的临时文件永不回收：每次桥调用一个 NanoHTTPD 请求体文件，强杀后扩展 jar 目录残留
+- **报告**：2026-11-20（#3722 测量组 m2 量 manga-28 时发现）
+- **真实性**：✅ 真 bug。本机 `%TEMP%` 里有 504 个 `NanoHTTPD-*`（共 40 MB，2026-10-13 起累积，内容是 `{"data":"UEsDB…`，即桥调用请求体里的 APK base64）和 13 个 `mextensionserver*` 目录（10 MB）。根因：
+  - `fushi/lib/src/media/manga/mihon/desktop_mihon_runtime.dart` `_start()` 起 JVM 时没给 `-Djava.io.tmpdir`，JVM 用系统临时目录，宿主不管它的生命周期；
+  - 随包 NanoHTTPD 2.3.1 的 `HTTPSession.parseBody` 把超过 1 KB 的请求体写进 `DefaultTempFileManager` 的临时文件再 mmap，Windows 上映射没释放时 `DefaultTempFile.delete` 失败（日志 `could not delete temporary file`），每次桥调用留一个（`third_party/m_extension_server/overlay/server/src/main/kotlin/mextensionserver/controller/DalvikHandler.kt` 的 `session.parseBody(body)`，`/inspect`、`/source-image` 同）；
+  - 扩展 jar 解在 `MExtensionServerLoader` 的 `Files.createTempDirectory("mextensionserver")`，靠 JVM shutdown hook 删，Windows Job Object 结束进程时 hook 不跑。
+  - 复现：同版本 NanoHTTPD + Jackson 的探针服务端，用真实扩展 APK（60 KB）连发请求，2000 次请求 1942 次删除失败。
+- **[x] ① 已修复** — 新增 `fushi/lib/src/media/manga/mihon/mihon_sidecar_temp_dir.dart`：每个 JVM 一个 `<数据目录>/sidecar-tmp/jvm-*` 独占目录，作为 `-Djava.io.tmpdir` 传给 JVM，进程退出就删；旁边的 `.lock` 由宿主独占锁住，宿主被强杀后锁随进程释放，下一次起 JVM 时清扫能锁上的旧目录和没有锁文件的孤儿目录。探针复测：100 次请求，JVM 活着时 per-JVM 目录里 99～100 个文件、`%TEMP%` 新增 0 个，JVM 退出后 `sidecar-tmp` 下剩 0 项（3 次）。
+- **[x] ② 已加自动化测试** — `fushi/test/media/manga/mihon_sidecar_temp_dir_test.dart`（释放删干净、旧目录 / 孤儿目录被清扫、本进程活着的目录不扫、Windows 上别的进程锁着的目录不扫、源码守卫钉住 runtime 传 `java.io.tmpdir` 并在进程退出时释放）。
+- **备注**：
+  - 没修到的部分：同一个 JVM 活着期间每次桥调用仍多一个请求体文件（探针：100 次调用 99～100 个），要到 JVM 退出才删。根治要改 sidecar 不经 `parseBody` 落盘（或给 NanoHTTPD 换不 mmap 的临时文件管理器），属于 vendored 服务端改动、要重编三端 sidecar，与 manga-28 / manga-18b 同批，已交所有者拍板。
+  - 已有用户机器上历史残留在系统临时目录的 `NanoHTTPD-*` / `mextensionserver*` 不在宿主目录里，这次不清（不是本程序独占的路径，按名字前缀删系统临时目录有误删别的程序文件的风险）。
+  - 没在真 app + 随包 sidecar 上复测（本机没有构建好的 `mihon_bridge`），`desktop_mihon_runtime_integration_test.dart` 的真 sidecar 用例本机被 skip。

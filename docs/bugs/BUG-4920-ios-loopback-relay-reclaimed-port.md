@@ -1,0 +1,8 @@
+## BUG-4920 · iOS 本地中继监听 socket 被回收后仍被复用，媒体服务器视频打不开
+- **报告**：2026-11-20（应用内反馈 TUA4_h7d6a，iPad iOS 27.2，3.3.0-debug.28434：看完本地片再开 Jellyfin 片永远加载不出来，杀掉 app 重开才恢复）
+- **真实性**：✅ 真 bug。上传日志 11-18 那次（反馈分诊说「没有 playerError」是只看了日志尾部 200 行）同一进程里 21:20:05 / 21:21:16 两次 `tcp: Connection to tcp://127.0.0.1:49744 failed: Connection refused` 紧跟 `Failed to open http://192.168.0.18:8096/Videos/.../stream`，最后 45 秒 `mediaNeverOpened`；11-07～11-09 多次同形（49914 / 53209 / 54186 / 49460）。mpv 的全部网络请求经应用内网络中继（`http-proxy`），端口被拒 = 中继监听 socket 已死，而**同一端口反复出现** = 缓存里的死中继一直被复用。
+  - 根因 `fushi/lib/src/utils/net/app_native_proxy.dart:186`（修复前）：`_liveProxy` 只凭 `proxy.isRunning` 判活复用缓存中继；`isRunning`（同文件 :294）只是 `!_closed`，而 `_closed` 只在 `HttpServer` 监听流 `onDone` / `onError` 时置位。iOS 挂起 app 后回收监听 socket 时 Dart 侧收不到这两个事件，`isRunning` 永远为 true，之后每次 `ensureAppNativeProxyEndpoint()` 都把死端口交给 mpv，只有进程重启清掉缓存才恢复。BUG-2381 已把这个场景写进注释，但判据仍是自报状态，没真正验活。`YoutubeRangeRelay.instance()` 与 `CloudVideoStreamRelay.instance()` 抄的同一判据，同样缺陷。
+  - 「先看本地片」只是触发时序：本地片播放期间 / 之后 app 被挂起过（锁屏、切后台），中继端口被回收；本地文件不经中继所以不暴露，换到媒体服务器流才撞上。
+- **[x] ① 已修复** — 新增 `fushi/lib/src/utils/net/loopback_relay_slot.dart`：`LoopbackRelaySlot` 交出缓存中继前**真连一次 loopback 端口**探活（`loopbackListenerAccepts`），不 accept 就关掉旧对象、另起新中继；新 Future 在 await 前写回槽，并发调用排同一条链，只起一个；起中继失败的 Future 不缓存（保留 BUG-2381 语义）。`AppNativeProxy`（共享 / challenge 两个槽）、`YoutubeRangeRelay`、`CloudVideoStreamRelay` 三处单例统一改用它。提交见 PR。
+- **[x] ② 已加自动化测试** — `fushi/test/utils/net/loopback_relay_slot_test.dart`：探测区分活 / 关端口；自报 running 但端口不 accept 的中继被关闭并换新；并发只起一个、失败不缓存；`ensureAppNativeProxyEndpoint` 与 YouTube / 云盘中继单例在端口失活后换新端口。
+- **备注**：iOS 真机复测原始路径（本地片 → 挂起 → Jellyfin 片）未做；Dart 测试无法真正复现「系统回收监听 socket 但不发事件」，用替换探测函数模拟该状态，探测函数本身对真端口单独验证。

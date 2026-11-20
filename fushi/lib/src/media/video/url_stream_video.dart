@@ -586,7 +586,7 @@ class UrlStreamVideoClient
   }) async {}
 
   /// 释放底层 http client 与来源直链解析器（AList 登录态 / SFTP 的 SSH 连接）。播放页
-  /// 退出收尾用完后经 `RemoteClientTeardown` 调（BUG-4908）。
+  /// 退出收尾用完后经 `RemoteClientTeardown` 调（BUG-5012）。
   @override
   void close() {
     _httpClient.close();

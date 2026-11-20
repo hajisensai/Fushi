@@ -340,7 +340,7 @@ void main() {
     });
 
     test('内容就绪兜底超时经 _failNavigation（同一份收尾）', () {
-      // BUG-4906：兜底超时与 JS 失败回执共用 _abortStalledRestore，由它调 _failNavigation。
+      // BUG-4975：兜底超时与 JS 失败回执共用 _abortStalledRestore，由它调 _failNavigation。
       final String body = methodBody(
         corpus,
         'void _startContentReadyTimeout()',

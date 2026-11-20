@@ -141,7 +141,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 20));
   }
 
-  // BUG-4906：此前 `_init` 把未预期异常 rethrow 进无人 await 的 future——页面不进
+  // BUG-4982：此前 `_init` 把未预期异常 rethrow 进无人 await 的 future——页面不进
   // 失败态、没有原因也没有重试入口，永久停在加载态（测试框架里表现为未处理异常）。
   testWidgets('init 的未预期异常进入失败态并给出重试入口', (WidgetTester tester) async {
     await tester.pumpWidget(
@@ -165,7 +165,7 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  // BUG-4907：远端换集时作废的那一程（用户在它取流途中又换了集）晚到的失败，
+  // BUG-4999：远端换集时作废的那一程（用户在它取流途中又换了集）晚到的失败，
   // 此前照样把页面置成失败态，盖住正在载入的新一集。
   testWidgets('作废的远端换集失败不置失败态，最新一程失败仍报', (WidgetTester tester) async {
     const RemoteVideoInfo first = RemoteVideoInfo(id: 'ep-a', title: 'A');

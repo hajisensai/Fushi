@@ -73,7 +73,7 @@ void main() {
     timeout: const Timeout(Duration(seconds: 90)),
   );
 
-  // BUG-4907：归类对象是脱离文档的源树，判据不能读 computed style（挂着与摘下结果不同）。
+  // BUG-5003：归类对象是脱离文档的源树，判据不能读 computed style（挂着与摘下结果不同）。
   test(
     'VN standalone image classification does not depend on whether the '
     'source tree is attached',

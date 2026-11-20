@@ -59,7 +59,7 @@ class ReaderVisualNovelScripts {
 
   /// 恢复锚三选一的运行时分派（旧实现在 Dart 侧三元式挑一条语句）。
   ///
-  /// BUG-4906 续：VN 的恢复入口是 async 函数（先等 readyPromise 再切屏），渲染时抛的
+  /// BUG-4975 续：VN 的恢复入口是 async 函数（先等 readyPromise 再切屏），渲染时抛的
   /// 异常只让它返回的 promise 变成 rejected；boot 的 try/catch 只接得住同步异常。
   /// 这里给那个 promise 接上 catch：记 console.error（不再是无人处理的 rejection），
   /// 再走 notifyRestoreFailed。注意生产时序：`initialize()` 的 readyPromise 成功分支
@@ -297,7 +297,7 @@ $imageRevealSemantics
   }
 
   // 只看节点自身携带的信号（文字上下文、真实 / 声明尺寸、block-img 类），不读样式。
-  // BUG-4907：VN 归类的对象是 detachChapterSource 搬出来、不挂在文档上的源树，Blink /
+  // BUG-5003：VN 归类的对象是 detachChapterSource 搬出来、不挂在文档上的源树，Blink /
   // WebKit 对它 getComputedStyle 一律给空值，旧的「computed display 是块级」一条在生产里
   // 恒不生效；同一节点挂上文档时却会被书本样式或阅读器的 `p > img:only-child
   // { display:block }` 翻成独立插图。归类不能随挂载状态变。

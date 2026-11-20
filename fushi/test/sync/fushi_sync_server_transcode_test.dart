@@ -434,7 +434,7 @@ void main() {
       expect(liveTranscodeCount, 0, reason: '排空后计数回零，名额不泄漏');
     });
 
-    // BUG-4906 / video-34：修前每次请求都起一个 ffmpeg，往回拖 / 重连 / 并发
+    // BUG-4972 / video-34：修前每次请求都起一个 ffmpeg，往回拖 / 重连 / 并发
     // 重复请求同一段都要整段重转。
     test('同一段再请求从缓存取，不再起 ffmpeg；别的段照常转', () async {
       await startServer();
@@ -593,7 +593,7 @@ void main() {
       expect(liveTranscodeCount, 0);
     });
 
-    test('释放流票后，该流缓存的转码段一并清掉（BUG-4906）', () async {
+    test('释放流票后，该流缓存的转码段一并清掉（BUG-4972）', () async {
       await startServer();
       final Map<String, dynamic> json = await getJson(
         '/api/library/videos/v1/streamurl?maxWidth=854&maxBitrate=800000',

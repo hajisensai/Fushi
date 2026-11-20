@@ -152,13 +152,18 @@ List<MusicPlayItem> musicServerPlayItems(
 /// [titleInBody]：正文顶部已有同名大标题（[MusicDetailHero]），页头大字不再重复，
 /// 滚过色块后才以收缩字号淡入。墨水屏形态不受影响。
 ///
+/// [body] 是构建器：它拿到的 `context` 在页头脚手架之下，页头经 `MediaQuery`
+/// 注入的顶部让位只在那里读得到。正文留白一律用这个 `context` 量
+/// （[musicBrowsePagePadding]）；拿脚手架之上的 context 量会少掉页头高度，
+/// 正文顶端被页头盖住（BUG-4919）。
+///
 /// [mastheadBottom]：页头大字形态下页名下一行（[FushiMastheadScaffold.bottom]，
 /// 页签放这里即画成库页二级页签同款连体按钮组）；墨水屏形态不画，调用方自己
 /// 在正文里摆原来的控件。
 Widget musicBrowseScaffold(
   BuildContext context, {
   required String title,
-  required Widget body,
+  required WidgetBuilder body,
   List<FushiToolbarItem> actions = const <FushiToolbarItem>[],
   bool titleInBody = false,
   Widget? mastheadBottom,
@@ -179,7 +184,7 @@ Widget musicBrowseScaffold(
               onLongPress: item.onLongPress,
             ),
         ],
-        body: body,
+        body: Builder(builder: body),
       ),
     );
   }
@@ -214,7 +219,7 @@ Widget musicBrowseScaffold(
                 ],
               ),
             ),
-      body: body,
+      body: Builder(builder: body),
     ),
   );
 }
@@ -557,14 +562,12 @@ class _MusicServerBrowsePageState extends ConsumerState<MusicServerBrowsePage> {
         title: widget.browser.displayName,
         actions: actions,
         mastheadBottom: sectionTabs,
-        body: Builder(
-          builder: (BuildContext context) => Padding(
-            padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top),
-            child: MediaQuery.removePadding(
-              context: context,
-              removeTop: true,
-              child: animated,
-            ),
+        body: (BuildContext context) => Padding(
+          padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top),
+          child: MediaQuery.removePadding(
+            context: context,
+            removeTop: true,
+            child: animated,
           ),
         ),
       );
@@ -573,33 +576,31 @@ class _MusicServerBrowsePageState extends ConsumerState<MusicServerBrowsePage> {
       context,
       title: widget.browser.displayName,
       actions: actions,
-      body: Builder(
-        builder: (BuildContext context) => Padding(
-          padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top),
-          child: MediaQuery.removePadding(
-            context: context,
-            removeTop: true,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: tokens.spacing.page,
-                    vertical: tokens.spacing.gap,
-                  ),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: HorizontalDragScrollable(
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: segmented,
-                      ),
+      body: (BuildContext context) => Padding(
+        padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top),
+        child: MediaQuery.removePadding(
+          context: context,
+          removeTop: true,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: tokens.spacing.page,
+                  vertical: tokens.spacing.gap,
+                ),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: HorizontalDragScrollable(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: segmented,
                     ),
                   ),
                 ),
-                Expanded(child: animated),
-              ],
-            ),
+              ),
+              Expanded(child: animated),
+            ],
           ),
         ),
       ),
@@ -953,7 +954,7 @@ class _MusicServerArtistPageState extends State<MusicServerArtistPage> {
             if (musicViewStyleSwitchable(context))
               musicViewStyleToggle(MusicViewKind.albums, style),
           ],
-          body: FutureBuilder<List<MusicServerAlbum>>(
+          body: (BuildContext context) => FutureBuilder<List<MusicServerAlbum>>(
             future: _albums,
             builder:
                 (
@@ -1046,7 +1047,7 @@ class _MusicServerAlbumPageState extends ConsumerState<MusicServerAlbumPage> {
         if (musicTrackRowSurfaceActive(context))
           musicViewStyleToggle(MusicViewKind.tracks, style),
       ],
-      body: FutureBuilder<List<MusicServerTrack>>(
+      body: (BuildContext context) => FutureBuilder<List<MusicServerTrack>>(
         future: _tracks,
         builder:
             (BuildContext context, AsyncSnapshot<List<MusicServerTrack>> snap) {
@@ -1155,8 +1156,7 @@ class _MusicServerAlbumPageState extends ConsumerState<MusicServerAlbumPage> {
                 context,
                 tokens.spacing.gap,
               );
-              if (style == MusicViewStyle.blocks &&
-                  musicTrackRowSurfaceActive(context)) {
+              if (musicCoverBlocksActive(context, style)) {
                 return MusicStyledCollection(
                   style: style,
                   itemCount: tracks.length,
@@ -1233,140 +1233,138 @@ class _MusicServerSearchPageState extends ConsumerState<MusicServerSearchPage> {
     return musicBrowseScaffold(
       context,
       title: t.music_server_search,
-      body: Builder(
-        builder: (BuildContext context) => ListView(
-          padding: musicBrowsePagePadding(context),
-          children: <Widget>[
-            FushiSearchField(
-              controller: _controller,
-              focusNode: _focus,
-              autofocus: true,
-              hintText: t.music_server_search_hint,
-              onChanged: (_) {},
-              onSubmitted: _submit,
-            ),
-            SizedBox(height: tokens.spacing.gap),
-            if (_result != null)
-              FutureBuilder<MusicServerSearchResult>(
-                future: _result,
-                builder:
-                    (
-                      BuildContext context,
-                      AsyncSnapshot<MusicServerSearchResult> snap,
-                    ) {
-                      if (snap.hasError) {
-                        return musicBrowseErrorView(
-                          context,
-                          snap.error!,
-                          () => _submit(_controller.text),
-                        );
-                      }
-                      final MusicServerSearchResult? r = snap.data;
-                      if (r == null) return const FushiLoadingView();
-                      if (r.isEmpty) {
-                        return FushiPlaceholderMessage(
-                          icon: FushiIcons.searchOff,
-                          message: t.music_server_search_empty,
-                        );
-                      }
-                      return FushiEntranceScope(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          spacing: tokens.spacing.gap,
-                          children: <Widget>[
-                            if (r.albums.isNotEmpty) ...<Widget>[
-                              FushiSectionTitle(t.music_section_albums),
-                              SizedBox(
-                                height: 220,
-                                // 桌面端默认 dragDevices 不含鼠标：专辑横排要鼠标也拖得动。
-                                child: HorizontalDragScrollable(
-                                  child: ListView.separated(
-                                    scrollDirection: Axis.horizontal,
-                                    itemCount: r.albums.length,
-                                    separatorBuilder: (_, _) =>
-                                        SizedBox(width: tokens.spacing.gap),
-                                    itemBuilder: fushiStaggeredItemBuilder(
-                                      (BuildContext context, int i) => SizedBox(
-                                        width: 160,
-                                        child: MusicServerAlbumCard(
-                                          browser: widget.browser,
-                                          album: r.albums[i],
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                            if (r.playlists.isNotEmpty) ...<Widget>[
-                              FushiSectionTitle(t.music_section_playlists),
-                              SizedBox(
-                                height: 220,
-                                child: HorizontalDragScrollable(
-                                  child: ListView.separated(
-                                    scrollDirection: Axis.horizontal,
-                                    itemCount: r.playlists.length,
-                                    separatorBuilder: (_, _) =>
-                                        SizedBox(width: tokens.spacing.gap),
-                                    itemBuilder: fushiStaggeredItemBuilder(
-                                      (BuildContext context, int i) => SizedBox(
-                                        width: 160,
-                                        child: MusicServerPlaylistCard(
-                                          browser: widget.browser,
-                                          playlist: r.playlists[i],
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                            if (_stations
-                                case final Future<List<AppleMusicStation>>
-                                    stations)
-                              AppleMusicStationsFutureRow(
-                                catalog:
-                                    widget.browser as AppleMusicCatalogClient,
-                                stations: stations,
-                              ),
-                            if (r.tracks.isNotEmpty) ...<Widget>[
-                              FushiSectionTitle(t.music_section_songs),
-                              for (int i = 0; i < r.tracks.length; i++)
-                                MusicServerTrackTile(
-                                  browser: widget.browser,
-                                  tracks: r.tracks,
-                                  index: i,
-                                  showAlbum: true,
-                                  onPlay: (int i) => unawaited(
-                                    ref
-                                        .read(appProvider)
-                                        .musicSession
-                                        .engine
-                                        .playQueue(
-                                          musicServerPlayItems(
-                                            ref,
-                                            widget.browser,
-                                            r.tracks,
-                                          ),
-                                          startIndex: i,
-                                        ),
-                                  ),
-                                ),
-                            ],
-                            if (r.artists.isNotEmpty) ...<Widget>[
-                              FushiSectionTitle(t.music_section_artists),
-                              _ArtistColumn(
-                                browser: widget.browser,
-                                artists: r.artists,
-                              ),
-                            ],
-                          ],
-                        ),
+      body: (BuildContext context) => ListView(
+        padding: musicBrowsePagePadding(context),
+        children: <Widget>[
+          FushiSearchField(
+            controller: _controller,
+            focusNode: _focus,
+            autofocus: true,
+            hintText: t.music_server_search_hint,
+            onChanged: (_) {},
+            onSubmitted: _submit,
+          ),
+          SizedBox(height: tokens.spacing.gap),
+          if (_result != null)
+            FutureBuilder<MusicServerSearchResult>(
+              future: _result,
+              builder:
+                  (
+                    BuildContext context,
+                    AsyncSnapshot<MusicServerSearchResult> snap,
+                  ) {
+                    if (snap.hasError) {
+                      return musicBrowseErrorView(
+                        context,
+                        snap.error!,
+                        () => _submit(_controller.text),
                       );
-                    },
-              ),
-          ],
-        ),
+                    }
+                    final MusicServerSearchResult? r = snap.data;
+                    if (r == null) return const FushiLoadingView();
+                    if (r.isEmpty) {
+                      return FushiPlaceholderMessage(
+                        icon: FushiIcons.searchOff,
+                        message: t.music_server_search_empty,
+                      );
+                    }
+                    return FushiEntranceScope(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        spacing: tokens.spacing.gap,
+                        children: <Widget>[
+                          if (r.albums.isNotEmpty) ...<Widget>[
+                            FushiSectionTitle(t.music_section_albums),
+                            SizedBox(
+                              height: 220,
+                              // 桌面端默认 dragDevices 不含鼠标：专辑横排要鼠标也拖得动。
+                              child: HorizontalDragScrollable(
+                                child: ListView.separated(
+                                  scrollDirection: Axis.horizontal,
+                                  itemCount: r.albums.length,
+                                  separatorBuilder: (_, _) =>
+                                      SizedBox(width: tokens.spacing.gap),
+                                  itemBuilder: fushiStaggeredItemBuilder(
+                                    (BuildContext context, int i) => SizedBox(
+                                      width: 160,
+                                      child: MusicServerAlbumCard(
+                                        browser: widget.browser,
+                                        album: r.albums[i],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                          if (r.playlists.isNotEmpty) ...<Widget>[
+                            FushiSectionTitle(t.music_section_playlists),
+                            SizedBox(
+                              height: 220,
+                              child: HorizontalDragScrollable(
+                                child: ListView.separated(
+                                  scrollDirection: Axis.horizontal,
+                                  itemCount: r.playlists.length,
+                                  separatorBuilder: (_, _) =>
+                                      SizedBox(width: tokens.spacing.gap),
+                                  itemBuilder: fushiStaggeredItemBuilder(
+                                    (BuildContext context, int i) => SizedBox(
+                                      width: 160,
+                                      child: MusicServerPlaylistCard(
+                                        browser: widget.browser,
+                                        playlist: r.playlists[i],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                          if (_stations
+                              case final Future<List<AppleMusicStation>>
+                                  stations)
+                            AppleMusicStationsFutureRow(
+                              catalog:
+                                  widget.browser as AppleMusicCatalogClient,
+                              stations: stations,
+                            ),
+                          if (r.tracks.isNotEmpty) ...<Widget>[
+                            FushiSectionTitle(t.music_section_songs),
+                            for (int i = 0; i < r.tracks.length; i++)
+                              MusicServerTrackTile(
+                                browser: widget.browser,
+                                tracks: r.tracks,
+                                index: i,
+                                showAlbum: true,
+                                onPlay: (int i) => unawaited(
+                                  ref
+                                      .read(appProvider)
+                                      .musicSession
+                                      .engine
+                                      .playQueue(
+                                        musicServerPlayItems(
+                                          ref,
+                                          widget.browser,
+                                          r.tracks,
+                                        ),
+                                        startIndex: i,
+                                      ),
+                                ),
+                              ),
+                          ],
+                          if (r.artists.isNotEmpty) ...<Widget>[
+                            FushiSectionTitle(t.music_section_artists),
+                            _ArtistColumn(
+                              browser: widget.browser,
+                              artists: r.artists,
+                            ),
+                          ],
+                        ],
+                      ),
+                    );
+                  },
+            ),
+        ],
       ),
     );
   }
@@ -2129,11 +2127,13 @@ class _MusicServerPlaylistPageState
         tracks.isNotEmpty &&
         _editing == null &&
         musicTrackRowSurfaceActive(context);
-    final Widget body;
+    // 正文是构建器：留白（[musicBrowsePagePadding]）要用脚手架之下的 context 量。
+    final WidgetBuilder body;
     if (error != null && tracks == null) {
-      body = musicBrowseErrorView(context, error, () => unawaited(_reload()));
+      body = (BuildContext context) =>
+          musicBrowseErrorView(context, error, () => unawaited(_reload()));
     } else if (tracks == null) {
-      body = const FushiLoadingView();
+      body = (_) => const FushiLoadingView();
     } else {
       final bool reorderable =
           _editable &&
@@ -2273,8 +2273,8 @@ class _MusicServerPlaylistPageState
       final double heroGap = musicDetailHeroGap(context, tokens.spacing.gap);
       // 重设计外壳、不可编辑的歌单：曲目排成多列封面色块，按行惰性构建。可编辑
       // 的（[MusicPlaylistTrackColumn]，要拖动排序）仍是单列曲目行。
-      final bool blocks = switchable && layout == MusicViewStyle.blocks;
-      body = blocks
+      final bool blocks = switchable && musicCoverBlocksActive(context, layout);
+      body = (BuildContext context) => blocks
           ? FushiEntranceScope(
               child: CustomScrollView(
                 slivers: <Widget>[
