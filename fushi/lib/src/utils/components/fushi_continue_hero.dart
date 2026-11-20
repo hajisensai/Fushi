@@ -366,6 +366,7 @@ class FushiContinueEntry {
     this.semanticLabel,
     this.blockArt,
     this.blockCover,
+    this.blockDisc,
     this.byline,
     this.blockEyebrow,
     this.mark,
@@ -378,6 +379,10 @@ class FushiContinueEntry {
   /// 封面色块里用的封面：裸图，不带框 / 材质（色块自己画卡面，[cover] 若自带
   /// 卡盒框会叠两层）；null = [cover]。
   final Widget? blockCover;
+
+  /// 封面色块里的唱片盘面图（音乐专辑真实的盘面扫描图，[FushiCoverBlock.disc]）：
+  /// 给了就是「封面 + 唱片」摆法；没有盘面图就别给（不造假唱片）。
+  final Widget? blockDisc;
 
   /// 封面色块标题下的署名行（作者 / 「已看 N 集」）；null = [metaLines] 连起来。
   final String? byline;

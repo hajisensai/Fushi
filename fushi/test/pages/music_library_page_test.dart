@@ -31,6 +31,8 @@ import 'package:fushi/src/utils/components/fushi_search.dart'
 import 'package:fushi/src/pages/implementations/music/music_cover.dart'
     show MusicCover;
 
+import 'package:fushi/src/utils/components/fushi_fit_title.dart'
+    show FushiFitTitlePainter;
 import '../helpers/test_platform_services.dart';
 
 MusicTracksCompanion _track(
@@ -124,6 +126,16 @@ MusicPluginManager _noPlugins() => MusicPluginManager(
   log: (_, _, _) {},
 );
 
+/// 专辑块的标题：窄块是 [Text]；宽块走 W 原型的专辑海报版式，标题是装盒大字
+/// （[FushiFitTitlePainter] 画的，不是 [Text]）。
+Finder _albumTitle(String title) => find.byWidgetPredicate(
+  (Widget w) =>
+      (w is Text && w.data == title) ||
+      (w is CustomPaint &&
+          w.painter is FushiFitTitlePainter &&
+          (w.painter! as FushiFitTitlePainter).text == title),
+);
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -146,7 +158,7 @@ void main() {
     )) {
       expect(find.text(musicLibrarySectionLabel(s)), findsWidgets);
     }
-    expect(find.text('Night Album'), findsOneWidget);
+    expect(_albumTitle('Night Album'), findsOneWidget);
     expect(find.textContaining('FLAC 24/96'), findsOneWidget);
 
     await tester.tap(find.text(t.music_section_songs));
@@ -315,7 +327,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(field, findsNothing);
       expect(open, findsOneWidget);
-      expect(find.text('Night Album'), findsOneWidget);
+      expect(_albumTitle('Night Album'), findsOneWidget);
       expect(find.byType(FushiSearchBar), findsNothing);
 
       await tester.pumpWidget(const SizedBox.shrink());
@@ -617,7 +629,7 @@ void main() {
     expect(snap.searchable, isFalse);
     expect(snap.sorts, isEmpty);
 
-    Focus.of(tester.element(find.text('Night Album'))).requestFocus();
+    Focus.of(tester.element(_albumTitle('Night Album'))).requestFocus();
     await tester.pump();
     snap = CompanionLibraryMainSnapshot.fromJson(
       companionContexts.currentSnapshot!,

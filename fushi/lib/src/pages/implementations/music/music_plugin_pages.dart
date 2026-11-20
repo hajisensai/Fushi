@@ -21,6 +21,8 @@ import 'package:intl/intl.dart' show Intl, NumberFormat;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/components/fushi_continue_card_row.dart';
+import 'package:fushi/src/media/music/music_disc_art.dart'
+    show MusicDiscArtIndex;
 import 'package:fushi/src/media/music/music_history.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
@@ -1295,6 +1297,8 @@ Widget _musicRecommendCoverBlock({
   required String? cover,
   required VoidCallback onTap,
   FushiCoverBlockAction? action,
+  String? discArtPath,
+  bool albumPoster = false,
 }) => FushiHoverLift(
   scale: kMusicHoverLiftScale,
   builder: (BuildContext context, bool _) => shelfCoverCard(
@@ -1312,6 +1316,9 @@ Widget _musicRecommendCoverBlock({
       tintImage: musicCoverImageProvider(cover, size: 128),
       // 主按钮外观只在拼贴首块画，且只是视觉（点卡就是这个动作）。
       action: size == FushiCoverBlockSize.hero ? action : null,
+      // 本地专辑有盘面扫描图才画唱片（W 原型），没有就不画。
+      disc: discArtPath == null ? null : musicDiscArtImage(discArtPath),
+      albumPoster: albumPoster,
     ),
   ),
 );
@@ -2918,6 +2925,9 @@ typedef _RecentEntry = ({
   String? cover,
   VoidCallback onTap,
   bool play,
+
+  /// 本地专辑的盘面扫描图（[MusicDiscArtIndex.albums]）；其余为 null。
+  String? discArt,
 });
 
 class _RecentPlaysState extends ConsumerState<_RecentPlays> {
@@ -3027,7 +3037,7 @@ class _RecentPlaysState extends ConsumerState<_RecentPlays> {
   }
 
   /// 最近播放的格子：来源（专辑 / 歌单）在前，不够再补最近播放的单曲，最多 [_max]。
-  List<_RecentEntry> _entries(_Recent r) {
+  List<_RecentEntry> _entries(_Recent r, Map<String, String> discArt) {
     final List<_RecentEntry> out = <_RecentEntry>[
       for (final MusicRecentPlaySource src in r.sources)
         (
@@ -3039,6 +3049,9 @@ class _RecentPlaysState extends ConsumerState<_RecentPlays> {
           cover: src.source.cover,
           onTap: () => unawaited(_openSource(src.source)),
           play: false,
+          discArt: src.source.kind == MusicPlaySourceKind.album
+              ? discArt[src.source.id]
+              : null,
         ),
     ];
     for (int i = 0; i < r.tracks.length && out.length < _max; i++) {
@@ -3055,6 +3068,7 @@ class _RecentPlaysState extends ConsumerState<_RecentPlays> {
         cover: tr.item.coverPath,
         onTap: () => _playTrack(r.tracks, i),
         play: true,
+        discArt: null,
       ));
     }
     return out;
@@ -3096,6 +3110,8 @@ class _RecentPlaysState extends ConsumerState<_RecentPlays> {
           icon: e.play ? FushiIcons.play : FushiIcons.playlist,
           label: e.play ? t.music_play_all : t.music_plugin_hero_open,
         ),
+        discArtPath: e.discArt,
+        albumPoster: true,
       );
 
   /// 色块版式：推荐页按库页布局排一行（拼贴 = 最近一条是加大块、旁边叠半高卡），
@@ -3136,57 +3152,65 @@ class _RecentPlaysState extends ConsumerState<_RecentPlays> {
   }
 
   @override
-  Widget build(BuildContext context) => FutureBuilder<_Recent>(
-    future: _data,
-    builder: (BuildContext context, AsyncSnapshot<_Recent> snap) {
-      if (snap.hasData) _shown = snap.data;
-      final _Recent? r = snap.data ?? _shown;
-      if (r == null || (r.sources.isEmpty && r.tracks.isEmpty)) {
-        return widget.sliver
-            ? const SliverToBoxAdapter(child: SizedBox.shrink())
-            : const SizedBox.shrink();
-      }
-      final List<_RecentEntry> entries = _entries(r);
-      if (widget.sliver) return _buildSliver(context, entries);
-      final List<Widget> tiles = <Widget>[
-        for (final _RecentEntry e in entries)
-          _QuickTile(
-            key: e.key,
-            title: e.title,
-            subtitle: e.subtitle,
-            cover: e.cover,
-            tinted: true,
-            onTap: e.onTap,
-            playOnTap: e.play,
-          ),
-      ];
-      final double gap = FushiDesignTokens.of(context).spacing.gap;
-      return LayoutBuilder(
-        builder: (BuildContext context, BoxConstraints c) {
-          final int cols = _quickTileColumns(c.maxWidth);
-          final double w = (c.maxWidth - gap * (cols - 1)) / cols;
-          // 推荐页只露一行（窄屏就是一首），其余进「查看全部」。
-          final int shown = widget.full ? tiles.length : cols;
-          final Widget grid = Wrap(
-            spacing: gap,
-            runSpacing: gap,
-            children: <Widget>[
-              for (final Widget tile in tiles.take(shown))
-                SizedBox(width: w, child: tile),
-            ],
-          );
-          if (widget.full) return grid;
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              _header(context, more: tiles.length > shown),
-              grid,
-            ],
+  Widget build(BuildContext context) =>
+      ValueListenableBuilder<Map<String, String>>(
+        valueListenable: MusicDiscArtIndex.instance.albums,
+        builder: (BuildContext context, Map<String, String> discArt, _) =>
+            _build(context, discArt),
+      );
+
+  Widget _build(BuildContext context, Map<String, String> discArt) =>
+      FutureBuilder<_Recent>(
+        future: _data,
+        builder: (BuildContext context, AsyncSnapshot<_Recent> snap) {
+          if (snap.hasData) _shown = snap.data;
+          final _Recent? r = snap.data ?? _shown;
+          if (r == null || (r.sources.isEmpty && r.tracks.isEmpty)) {
+            return widget.sliver
+                ? const SliverToBoxAdapter(child: SizedBox.shrink())
+                : const SizedBox.shrink();
+          }
+          final List<_RecentEntry> entries = _entries(r, discArt);
+          if (widget.sliver) return _buildSliver(context, entries);
+          final List<Widget> tiles = <Widget>[
+            for (final _RecentEntry e in entries)
+              _QuickTile(
+                key: e.key,
+                title: e.title,
+                subtitle: e.subtitle,
+                cover: e.cover,
+                tinted: true,
+                onTap: e.onTap,
+                playOnTap: e.play,
+              ),
+          ];
+          final double gap = FushiDesignTokens.of(context).spacing.gap;
+          return LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints c) {
+              final int cols = _quickTileColumns(c.maxWidth);
+              final double w = (c.maxWidth - gap * (cols - 1)) / cols;
+              // 推荐页只露一行（窄屏就是一首），其余进「查看全部」。
+              final int shown = widget.full ? tiles.length : cols;
+              final Widget grid = Wrap(
+                spacing: gap,
+                runSpacing: gap,
+                children: <Widget>[
+                  for (final Widget tile in tiles.take(shown))
+                    SizedBox(width: w, child: tile),
+                ],
+              );
+              if (widget.full) return grid;
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  _header(context, more: tiles.length > shown),
+                  grid,
+                ],
+              );
+            },
           );
         },
       );
-    },
-  );
 }
 
 /// 「最近播放」二级页：全部来源与单曲。

@@ -206,10 +206,14 @@ class MusicCollectionBlock extends StatelessWidget {
     this.onTap,
     this.onLongPress,
     this.onSecondaryTap,
+    this.albumPoster = false,
   });
 
   final String title;
   final FushiCoverBlockSize size;
+
+  /// 专辑块：宽块走 W 原型的专辑海报版式（[FushiCoverBlock.albumPoster]）。
+  final bool albumPoster;
   final String? subtitle;
   final String? coverPath;
 
@@ -251,6 +255,7 @@ class MusicCollectionBlock extends StatelessWidget {
           chip: _nonEmpty(chip),
           leadingIcon: leadingIcon,
           trailing: trailing,
+          albumPoster: albumPoster && !circular,
           // 没有封面来源：不放音符 / 人像占位，交给色块画按标题生成的封面
           // （与块底同一色相，设计稿 M2）。
           covers: !musicHasCoverSource(coverPath, embeddedFromPath)
