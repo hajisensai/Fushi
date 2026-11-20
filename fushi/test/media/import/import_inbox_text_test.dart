@@ -79,7 +79,7 @@ void main() {
           importInboxEmptyText(folder: 'Manga', family: IosDeviceFamily.ipad),
         ]) {
           expect(s, contains('iPad'), reason: '${locale.languageTag}: $s');
-          expect(s, isNot(contains('iPhone')), reason: '${locale.languageTag}');
+          expect(s, isNot(contains('iPhone')), reason: locale.languageTag);
         }
       }
     });
