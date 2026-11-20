@@ -842,7 +842,7 @@ void main() {
 
       final Future<String?> inFlight = manager.uploadPage(
         job,
-        name: 'ch2/p002.jpg',
+        name: 'p002.jpg',
         bytes: List<int>.filled(1 << 20, 7),
       );
       await manager.cancelAndCleanup(job);
