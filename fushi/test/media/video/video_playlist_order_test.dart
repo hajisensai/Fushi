@@ -1,6 +1,6 @@
 import 'dart:math';
 
-import 'package:drift/drift.dart' hide isNull;
+import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_playlist_order.dart';
