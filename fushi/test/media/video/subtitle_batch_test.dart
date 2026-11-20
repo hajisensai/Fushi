@@ -605,6 +605,52 @@ void main() {
     expect(many.first.message, 'jimaku subtitles carry no episode numbers');
   });
 
+  test('中途停止：手上那一集做完落盘，其余集记 skipped、不下载，并逐集回调 onItemDone', () async {
+    final _FakeProvider provider = _FakeProvider();
+    bool stop = false;
+    final List<SubtitleBatchItem> started = <SubtitleBatchItem>[];
+    final List<SubtitleBatchStatus> finished = <SubtitleBatchStatus>[];
+    final List<SubtitleBatchItem> results = await runSubtitleBatch(
+      registry: VideoSubtitleRegistry(<VideoSubtitleProvider>[provider]),
+      candidates: <VideoSubtitleCandidate>[
+        _Cand('Show - 01.ja.srt', episode: 1),
+        _Cand('Show - 02.ja.srt', episode: 2),
+        _Cand('Show - 03.ja.srt', episode: 3),
+      ],
+      targets: <SubtitleBatchTarget>[
+        _target(0, 'Show - 01'),
+        _target(1, 'Show - 02'),
+        _target(2, 'Show - 03'),
+      ],
+      saveDirectory: tmp.path,
+      isCancelled: () => stop,
+      // 第 1 集开始下载时用户点了「停止」。
+      onItemStart: (SubtitleBatchItem item) async {
+        started.add(item);
+        stop = true;
+      },
+      onItemDone: (SubtitleBatchItem item) async => finished.add(item.status),
+    );
+    expect(started, hasLength(1), reason: '停止后不再开始新的一集');
+    expect(
+      results.map((SubtitleBatchItem i) => i.status),
+      <SubtitleBatchStatus>[
+        SubtitleBatchStatus.done,
+        SubtitleBatchStatus.skipped,
+        SubtitleBatchStatus.skipped,
+      ],
+    );
+    expect(File(results[0].subtitlePath!).existsSync(), isTrue);
+    expect(results[1].subtitlePath, isNull);
+    expect(provider.downloaded, <String>['Show - 01.ja.srt']);
+    expect(finished, <SubtitleBatchStatus>[
+      SubtitleBatchStatus.done,
+      SubtitleBatchStatus.skipped,
+      SubtitleBatchStatus.skipped,
+    ]);
+    expect(tmp.listSync().whereType<File>(), hasLength(1));
+  });
+
   test('单集下载失败记 failed，不中断后面的集', () async {
     final _FakeProvider provider = _FakeProvider(
       failNames: <String>{'Show - 01.ja.srt'},

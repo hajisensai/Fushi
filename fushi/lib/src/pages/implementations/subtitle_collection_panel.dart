@@ -362,6 +362,10 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
   bool _resolving = false;
   bool _searching = false;
   bool _running = false;
+
+  /// 用户点了「停止」：批量不再开始下一集，正在跑的那一集做完落盘。只有这个按钮
+  /// 能停批量——面板 / 工作台关掉不取消（BUG-4496）。
+  bool _stopRequested = false;
   List<AniListMedia> _seriesMatches = const <AniListMedia>[];
   int? _selectedSeriesId;
   bool _seriesLookupFailed = false;
@@ -1057,6 +1061,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     if (candidates.isEmpty) return;
     setState(() {
       _running = true;
+      _stopRequested = false;
       _notice = null;
       _statusByUid.clear();
     });
@@ -1071,6 +1076,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
         subtitleAligner: widget.subtitleAligner,
         download: _download,
         probedVersionLanguages: _probedLanguages,
+        isCancelled: () => _stopRequested,
         onItemStart: (SubtitleBatchItem item) async {
           if (!mounted) return;
           setState(() => _statusByUid[item.target.bookUid] = item);
@@ -1099,9 +1105,23 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     final int done = _statusByUid.values
         .where((SubtitleBatchItem i) => i.status == SubtitleBatchStatus.done)
         .length;
-    _setNotice(
-      t.video_jimaku_batch_done(done: done, total: widget.members.length),
+    final bool stopped = results.any(
+      (SubtitleBatchItem i) => i.status == SubtitleBatchStatus.skipped,
     );
+    _setNotice(
+      stopped
+          ? t.video_subtitle_batch_stopped(
+              done: done,
+              total: widget.members.length,
+            )
+          : t.video_jimaku_batch_done(done: done, total: widget.members.length),
+    );
+  }
+
+  /// 「停止」：只置标记，[runSubtitleBatch] 在下一集开始前看到就把剩下的记成跳过。
+  void _requestStop() {
+    if (!_running || _stopRequested) return;
+    setState(() => _stopRequested = true);
   }
 
   /// 单集持久化：本地视频写 DB（subtitleSource 列 + 解析的 cue），远端/流媒体写 prefs。
@@ -1158,6 +1178,8 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
           );
         case SubtitleBatchStatus.pending:
           return const FushiIcon(FushiIcons.schedule, size: 18);
+        case SubtitleBatchStatus.skipped:
+          return const FushiIcon(FushiIcons.skipNext, size: 18);
       }
     }
     if (_searching) {
@@ -1236,6 +1258,8 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
         case SubtitleBatchStatus.downloading:
         case SubtitleBatchStatus.pending:
           return Text(t.video_jimaku_source_loading);
+        case SubtitleBatchStatus.skipped:
+          return Text(t.video_subtitle_batch_skipped);
       }
     }
     if (_searching) return Text(t.video_jimaku_source_loading);
@@ -1704,18 +1728,35 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
                 onPressed: _running ? null : widget.onCancel,
                 child: Text(t.dialog_close),
               ),
-            FushiFilledButton.icon(
-              key: const ValueKey<String>('subtitle-collection-download-all'),
-              onPressed: canDownload ? _downloadAll : null,
-              icon: _running
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: FushiCircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const FushiIcon(FushiIcons.download),
-              label: Text(t.video_jimaku_batch_download),
-            ),
+            // 跑起来后主按钮换成「停止（当前集/总数）」；点了之后在等手上那一集
+            // 收尾，显示「正在停止…」并禁用。
+            if (_running)
+              FushiFilledButton.icon(
+                key: const ValueKey<String>('subtitle-collection-stop'),
+                onPressed: _stopRequested ? null : _requestStop,
+                icon: _stopRequested
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: FushiCircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const FushiIcon(FushiIcons.stop),
+                label: Text(
+                  _stopRequested
+                      ? t.video_subtitle_batch_stopping
+                      : t.video_subtitle_batch_stop(
+                          current: _statusByUid.length,
+                          total: widget.members.length,
+                        ),
+                ),
+              )
+            else
+              FushiFilledButton.icon(
+                key: const ValueKey<String>('subtitle-collection-download-all'),
+                onPressed: canDownload ? _downloadAll : null,
+                icon: const FushiIcon(FushiIcons.download),
+                label: Text(t.video_jimaku_batch_download),
+              ),
           ],
         ),
       ],
