@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-19T15:01:15Z",
+ "generatedAt": "2026-11-20T12:26:31Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "6dd38cb92db8a3daffbbfefe5fccfa77fdfe966a",
-  "seq": 29190
+  "sha": "777dd301399ddac5a03ea2637f74bbca27b3e5cc",
+  "seq": 29216
  },
  "builds": [
   {
@@ -94,7 +94,36 @@
    }
   }
  ],
- "pending": null,
+ "pending": {
+  "headSha": "777dd301399ddac5a03ea2637f74bbca27b3e5cc",
+  "headSeq": 29216,
+  "prs": [
+   3823,
+   3802,
+   3770,
+   3759
+  ],
+  "direct": [],
+  "truncated": false,
+  "platforms": {
+   "android": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44734688147"
+   },
+   "windows": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44734688013"
+   },
+   "macos": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44734688013"
+   },
+   "ios": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44734688013"
+   }
+  }
+ },
  "prs": {
   "3594": {
    "number": 3594,
@@ -139,6 +168,42 @@
    "mergedAt": "2026-11-19T10:12:27Z",
    "additions": 3133,
    "deletions": 33,
+   "labels": []
+  },
+  "3759": {
+   "number": 3759,
+   "title": "docs(agent): 子代理等待切片、CI 交给合并任务，减少缓存失效与唤醒",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T05:24:35Z",
+   "additions": 283,
+   "deletions": 11,
+   "labels": []
+  },
+  "3770": {
+   "number": 3770,
+   "title": "docs(agent): 修等待切片军规病句，写明 subagent_wait_slice 需 --install",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T05:27:18Z",
+   "additions": 2,
+   "deletions": 2,
+   "labels": []
+  },
+  "3802": {
+   "number": 3802,
+   "title": "tool(heavy): 起不来的命令排队前就拒；gradle wrapper 入库，原生库检查不再拦 JVM 单测",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T12:18:24Z",
+   "additions": 3999,
+   "deletions": 208,
+   "labels": []
+  },
+  "3823": {
+   "number": 3823,
+   "title": "tool(dist_test): 支持 Linux worker（PVE VM103 加入负载均衡）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T12:18:28Z",
+   "additions": 84,
+   "deletions": 6,
    "labels": []
   }
  }
