@@ -111,14 +111,18 @@ void main() {
         'function createPitchSection(pitches, reading)',
       );
       expect(section, greaterThanOrEqualTo(0));
+      // BUG-4917：合并前先把 H/L 模式串换算成数字位（[LHHHH] 才能与 [0] 合并），
+      // 合并吃的仍是全部词典的分组，只是多了这一步纯变换。
       final int call = js.indexOf(
-        'mergeIdenticalPitchGroups(pitches)',
+        'mergeIdenticalPitchGroups(normalizePitchPatterns(pitches, reading))',
         section,
       );
       expect(
         call,
         greaterThan(section),
-        reason: 'createPitchSection must call the merge on the raw pitches',
+        reason:
+            'createPitchSection must call the merge on every dictionary '
+            'pitches (pattern-normalized, BUG-4917)',
       );
       final int dedup = js.indexOf(
         'if (window.deduplicatePitchAccents)',
