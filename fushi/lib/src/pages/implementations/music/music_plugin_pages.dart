@@ -2133,7 +2133,7 @@ class _MusicPluginLibrarySectionState
                   kind: MusicViewKind.playlists,
                   fallback: MusicViewStyle.list,
                   builder: (BuildContext context, MusicViewStyle style) =>
-                      style == MusicViewStyle.blocks
+                      musicCoverBlocksActive(context, style)
                       ? FushiCoverBlocks(
                           layout: shellContentLayoutOf(context),
                           staggerEntrance: false,

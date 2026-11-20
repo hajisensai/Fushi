@@ -290,7 +290,7 @@ class _ShelfRow extends StatelessWidget {
 }
 
 /// 艺人页的一段专辑 / 歌单 / 相似艺人，按「色块 / 列表」样式排：
-/// - 色块：库页布局是封面网格时是原有的横排卡（[card]，null = 也排色块），色块
+/// - 色块：库页布局是封面网格时是原有的横排卡（[card]，null = 排单列行），色块
 ///   布局（拼贴 / 规整）下是封面色块（[block]，盒子版，一次建完）；
 /// - 列表：单列行（[row]）。
 /// 没有条目不占位。
@@ -317,7 +317,7 @@ Widget _styledSection(
     mainAxisSize: MainAxisSize.min,
     children: <Widget>[
       FushiSectionTitle(title),
-      if (style == MusicViewStyle.blocks)
+      if (musicCoverBlocksActive(context, style))
         FushiCoverBlocks(
           layout: shellContentLayoutOf(context),
           staggerEntrance: false,
@@ -923,8 +923,7 @@ class AppleMusicTrackListPage extends StatelessWidget {
         if (musicTrackRowSurfaceActive(context))
           musicViewStyleToggle(MusicViewKind.tracks, style),
       ],
-      body:
-          style == MusicViewStyle.blocks && musicTrackRowSurfaceActive(context)
+      body: musicCoverBlocksActive(context, style)
           ? MusicStyledCollection(
               style: style,
               itemCount: tracks.length,
@@ -1037,7 +1036,7 @@ class _AppleMusicLibrarySongsViewState
       MusicViewKind.tracks,
       MusicViewStyle.list,
     );
-    if (style == MusicViewStyle.blocks) {
+    if (musicCoverBlocksActive(context, style)) {
       return NotificationListener<ScrollNotification>(
         onNotification: (ScrollNotification n) {
           if (n.metrics.extentAfter < 600) unawaited(_loadMore());
