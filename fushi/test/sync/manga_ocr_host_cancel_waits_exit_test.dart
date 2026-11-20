@@ -328,6 +328,51 @@ void main() {
       await newManager.cancelAndCleanup(b);
     });
 
+    // 链要能传递：第二个管理器的任务还在排队（没起执行体，它自己的在停集合是空的）
+    // 就又关又开，第三个管理器仍要等第一个管理器那只还没停下的执行体。
+    test('连着关开两次：第三个管理器仍等第一个管理器的执行体停下', () async {
+      final _LingeringOcrService service = _LingeringOcrService();
+      final Directory jobRoot = Directory(p.join(tmpRoot.path, 'jobs'));
+      final MangaOcrHostJobManager first = MangaOcrHostJobManager(
+        service: service,
+        jobRoot: jobRoot,
+      );
+      await startedJob(first, '卷一');
+      await _waitFor(() => service.startedDirs.length == 1);
+      await first.disposeAll().timeout(const Duration(seconds: 5));
+
+      final MangaOcrHostJobManager second = MangaOcrHostJobManager(
+        service: service,
+        jobRoot: jobRoot,
+        runAfter: first.whenExecutorsStopped,
+      );
+      final MangaOcrHostJob b = await startedJob(second, '卷二');
+      await _settle();
+      expect(service.startedDirs, hasLength(1));
+      await second.disposeAll().timeout(const Duration(seconds: 5));
+      expect(b.state, MangaOcrHostJobState.cancelled);
+
+      final MangaOcrHostJobManager third = MangaOcrHostJobManager(
+        service: service,
+        jobRoot: jobRoot,
+        runAfter: second.whenExecutorsStopped,
+      );
+      final MangaOcrHostJob c = await startedJob(third, '卷三');
+      await _settle();
+      expect(
+        service.startedDirs,
+        hasLength(1),
+        reason: '第一个管理器的执行体还没停：第三个管理器的任务不能起跑',
+      );
+
+      service.exits.first.complete();
+      await _waitFor(() => service.startedDirs.length == 2);
+      expect(service.startedDirs.last, c.dir.path, reason: '排队被取消的卷二不起跑');
+
+      service.exits.last.complete();
+      await third.cancelAndCleanup(c);
+    });
+
     // app 每次开互联新建一个管理器：关了立刻再开时，旧管理器上途中的
     // cancelAndCleanup 回来不能删到新管理器的同卷任务头上。
     test('途中的 cancelAndCleanup 跨停机重开：不删新管理器同卷任务刚传的页图', () async {

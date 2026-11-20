@@ -123,6 +123,11 @@ class MangaOcrHostJobManager {
   /// 旧管理器取消掉的执行体可能还没停（整卷 isolate 还占着整套模型）；把它设成旧
   /// 管理器的 [whenExecutorsStopped]，新管理器的第一个任务就排在旧执行体停下之后，
   /// 不会两套模型同时在内存。缺省 = 立即可跑。它出错同样放行（只是个次序信号）。
+  ///
+  /// 它同时并进本管理器的 [whenExecutorsStopped]，所以这条链可以传递：连着开关
+  /// 互联好几次、中间的管理器任务还在排队没起执行体时，再下一个管理器照样等到
+  /// 最早那个还没停下的执行体。原生推理卡死时整条链都不完成，新任务一直排队——
+  /// 宁可排队也不让第二套模型进内存（已知局限，见 BUG-4800）。
   MangaOcrHostJobManager({
     required MangaOcrService service,
     required Directory jobRoot,
@@ -136,9 +141,14 @@ class MangaOcrHostJobManager {
        _jobRoot = jobRoot,
        _now = now ?? DateTime.now,
        _jobTtl = jobTtl,
-       _queueTail = runAfter == null
+       _predecessorStopped = runAfter == null
            ? Future<void>.value()
-           : runAfter.catchError((Object _) {});
+           : runAfter.catchError((Object _) {}) {
+    _queueTail = _predecessorStopped;
+  }
+
+  /// 构造参数 `runAfter`（出错已吞成完成）：上一个管理器的执行体全部停下。
+  final Future<void> _predecessorStopped;
 
   /// host 自己当前选择的模型（client 不点名时用它）。
   final MangaOcrService _service;
@@ -154,7 +164,7 @@ class MangaOcrHostJobManager {
   /// 串行执行队列尾（对照 FushiSyncServer._davWriteChain 的链式 future 模式）：
   /// 新 start 挂到链尾，前一整卷跑完才轮到下一卷——OCR 是重活，绝不并行两卷。
   /// 起点见构造参数 `runAfter`。
-  Future<void> _queueTail;
+  late Future<void> _queueTail;
 
   /// host 重启遗留的孤儿目录只清一次（首个 API 触达时惰性执行）。
   bool _orphanSweepDone = false;
@@ -246,8 +256,11 @@ class MangaOcrHostJobManager {
   /// [disposeAll] 取消掉的执行体全部真正停下（各自的收尾也做完）时完成；没有
   /// 在停的立即完成。要动任务根目录（删除 / 搬走）的调用方先等它——执行体停下
   /// 之前还会往自己的卷目录里写逐页缓存。原生推理卡住时它不完成。
+  ///
+  /// 也包含上一个管理器的执行体（构造参数 `runAfter`）：本管理器的任务若还在排队
+  /// 等它，本管理器自己的 [_stopping] 是空的，只看自己会把还没停下的更早执行体漏掉。
   Future<void> get whenExecutorsStopped =>
-      Future.wait<void>(_stopping.toList(growable: false));
+      Future.wait<void>(<Future<void>>[_predecessorStopped, ..._stopping]);
 
   void _trackStopping(Future<void> stopped) {
     _stopping.add(stopped);
