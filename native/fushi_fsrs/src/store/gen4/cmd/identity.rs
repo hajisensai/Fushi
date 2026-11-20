@@ -247,8 +247,14 @@ fn ensure_self(
 }
 
 /// 换绑丢掉的空集合里本机声明过的盐（[AdoptOutcome::Bound] 的 `carry`）：本机身份在新集合里建好之后，新集合还不算数的
-/// 那几个由本机另写一条 `Salts`（同 [ensure_self] 写初始盐的口径）。
-fn carry_salts(t: &Truth<'_>, col: i64, carry: &BTreeSet<String>, now: i64) -> Result<(), String> {
+/// 那几个由本机另写一条 `Salts`（同 [ensure_self] 写初始盐的口径）。旧整包备份读入（`cmd/backup.rs` `land`）在 `bound`
+/// 之后也经这里声明备份 profile 的盐：那份输入自身不带 `Salts` 操作（位置 / `.fushisrs` 第 2 版的盐随对方的操作到）。
+pub(super) fn declare_salts(
+    t: &Truth<'_>,
+    col: i64,
+    carry: &BTreeSet<String>,
+    now: i64,
+) -> Result<(), String> {
     let have = binding_of(t, col)?.salts;
     let missing: BTreeSet<String> = carry.difference(&have).cloned().collect();
     if missing.is_empty() {
@@ -409,7 +415,7 @@ pub fn collection_adopt_with(
         let out = adopt_foreign(t, profile, &foreign, confirmed, now)?;
         if let AdoptOutcome::Bound { col, carry, .. } = &out {
             ensure_self(t, *col, profile, now, pending)?;
-            carry_salts(t, *col, carry, now)?;
+            declare_salts(t, *col, carry, now)?;
         }
         Ok((outcome_json(&out), out.binding_changed().cloned()))
     })
