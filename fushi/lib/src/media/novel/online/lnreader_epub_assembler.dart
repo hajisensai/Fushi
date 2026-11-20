@@ -10,6 +10,10 @@ typedef LnReaderEpubImage = ({
   String mediaType,
 });
 
+/// 解压树里的目录三件套：`OEBPS/content.opf`、`OEBPS/toc.ncx`、`OEBPS/nav.xhtml`
+/// 的全文。
+typedef LnReaderPackageDocuments = ({String opf, String ncx, String nav});
+
 /// 一章：标题 + 规整好的 XHTML 片段（`<body>` 内部）+ 它引用的图片。
 typedef LnReaderEpubChapter = ({
   String title,
@@ -62,9 +66,7 @@ class LnReaderEpubAssembler {
     for (int i = 0; i < chapters.length; i++) {
       final LnReaderEpubChapter chapter = chapters[i];
       final int n = i + 1;
-      final String chapterTitle = chapter.title.trim().isEmpty
-          ? '$n'
-          : chapter.title.trim();
+      final String chapterTitle = _chapterTitle(n, chapter.title);
       zip.addDeflated(
         'OEBPS/chapter-$n.xhtml',
         utf8.encode(
@@ -75,20 +77,10 @@ class LnReaderEpubAssembler {
           ),
         ),
       );
-      manifest.write(
-        '    <item id="chapter-$n" href="chapter-$n.xhtml"'
-        ' media-type="application/xhtml+xml"/>\n',
-      );
-      spine.write('    <itemref idref="chapter-$n"/>\n');
-      navItems.write(
-        '      <li><a href="chapter-$n.xhtml">${esc(chapterTitle)}</a></li>\n',
-      );
-      ncxPoints.write(
-        '    <navPoint id="nav-$n" playOrder="$n">\n'
-        '      <navLabel><text>${esc(chapterTitle)}</text></navLabel>\n'
-        '      <content src="chapter-$n.xhtml"/>\n'
-        '    </navPoint>\n',
-      );
+      manifest.write(_manifestItem(n));
+      spine.write(_spineItem(n));
+      navItems.write(_navItem(n, chapterTitle));
+      ncxPoints.write(_ncxPoint(n, chapterTitle));
       for (final LnReaderEpubImage image in chapter.images) {
         if (!imageNames.add(image.fileName)) continue;
         // 图片本就是压缩格式，再 deflate 只费 CPU。
@@ -131,14 +123,14 @@ class LnReaderEpubAssembler {
         '  </metadata>\n'
         '  <manifest>\n'
         '$manifest'
-        '    <item id="nav" href="nav.xhtml"'
+        '$_navManifestItem'
         ' media-type="application/xhtml+xml" properties="nav"/>\n'
         '    <item id="ncx" href="toc.ncx"'
         ' media-type="application/x-dtbncx+xml"/>\n'
         '  </manifest>\n'
         '  <spine toc="ncx">\n'
         '$spine'
-        '  </spine>\n'
+        '$_spineEnd'
         '</package>\n',
       ),
     );
@@ -154,7 +146,7 @@ class LnReaderEpubAssembler {
         '  <docTitle><text>${esc(title)}</text></docTitle>\n'
         '  <navMap>\n'
         '$ncxPoints'
-        '  </navMap>\n'
+        '$_navMapEnd'
         '</ncx>\n',
       ),
     );
@@ -170,13 +162,99 @@ class LnReaderEpubAssembler {
         '  <nav epub:type="toc" id="toc">\n'
         '    <ol>\n'
         '$navItems'
-        '    </ol>\n'
+        '$_navListEnd'
         '  </nav>\n'
         '</body>\n'
         '</html>\n',
       ),
     );
     return zip.build();
+  }
+
+  // 目录三件套里与章节有关的行。[build] 与就地补丁（[retitleChapter] /
+  // [appendChapter]）共用同一份模板，补丁才能按行定位、不会与装配格式漂移。
+  static String _chapterTitle(int n, String title) =>
+      title.trim().isEmpty ? '$n' : title.trim();
+  static String _manifestItem(int n) =>
+      '    <item id="chapter-$n" href="chapter-$n.xhtml"'
+      ' media-type="application/xhtml+xml"/>\n';
+  static String _spineItem(int n) => '    <itemref idref="chapter-$n"/>\n';
+  static String _navItem(int n, String title) =>
+      '      <li><a href="chapter-$n.xhtml">${EpubBuilder.escXml(title)}'
+      '</a></li>\n';
+  static String _ncxLabel(int n, String title) =>
+      '    <navPoint id="nav-$n" playOrder="$n">\n'
+      '      <navLabel><text>${EpubBuilder.escXml(title)}</text></navLabel>\n';
+  static String _ncxPoint(int n, String title) =>
+      '${_ncxLabel(n, title)}'
+      '      <content src="chapter-$n.xhtml"/>\n'
+      '    </navPoint>\n';
+  static const String _navManifestItem = '    <item id="nav" href="nav.xhtml"';
+  static const String _spineEnd = '  </spine>\n';
+  static const String _navMapEnd = '  </navMap>\n';
+  static const String _navListEnd = '    </ol>\n';
+
+  /// 本装配器产出、已解压的书：把第 [number] 章（1 基）在目录（nav + NCX）里的
+  /// 标题换成 [title]。网页小说书末尾的「下一章」占位取回正文后用它把占位标题
+  /// 换成章名（与整本重建时写进目录的一致）。目录里没有这一章（不是本装配器的
+  /// 格式）抛 [FormatException]。
+  static LnReaderPackageDocuments retitleChapter(
+    LnReaderPackageDocuments docs, {
+    required int number,
+    required String title,
+  }) {
+    final String chapterTitle = _chapterTitle(number, title);
+    final RegExp navLine = RegExp(
+      '      <li><a href="chapter-$number\\.xhtml">[^<]*</a></li>\n',
+    );
+    final RegExp ncxLabel = RegExp(
+      '    <navPoint id="nav-$number" playOrder="$number">\n'
+      '      <navLabel><text>[^<]*</text></navLabel>\n',
+    );
+    if (!navLine.hasMatch(docs.nav) || !ncxLabel.hasMatch(docs.ncx)) {
+      throw FormatException('chapter $number is not in the table of contents');
+    }
+    return (
+      opf: docs.opf,
+      nav: docs.nav.replaceFirstMapped(
+        navLine,
+        (_) => _navItem(number, chapterTitle),
+      ),
+      ncx: docs.ncx.replaceFirstMapped(
+        ncxLabel,
+        (_) => _ncxLabel(number, chapterTitle),
+      ),
+    );
+  }
+
+  /// 本装配器产出、已解压的书：在 manifest / spine / nav / NCX 末尾追加第
+  /// [number] 章（1 基，文件 `chapter-<number>.xhtml`），目录标题 [title]。
+  /// spine 里已有这一章时原样返回（补丁可重放：上一次写到一半被杀，重取时
+  /// 再走一遍）。找不到插入点（不是本装配器的格式）抛 [FormatException]。
+  static LnReaderPackageDocuments appendChapter(
+    LnReaderPackageDocuments docs, {
+    required int number,
+    required String title,
+  }) {
+    if (docs.opf.contains(_spineItem(number))) return docs;
+    final String chapterTitle = _chapterTitle(number, title);
+    String insertBefore(String text, String anchor, String line) {
+      final int at = text.lastIndexOf(anchor);
+      if (at < 0) {
+        throw FormatException('no "${anchor.trim()}" to append chapter to');
+      }
+      return text.replaceRange(at, at, line);
+    }
+
+    return (
+      opf: insertBefore(
+        insertBefore(docs.opf, _spineEnd, _spineItem(number)),
+        _navManifestItem,
+        _manifestItem(number),
+      ),
+      ncx: insertBefore(docs.ncx, _navMapEnd, _ncxPoint(number, chapterTitle)),
+      nav: insertBefore(docs.nav, _navListEnd, _navItem(number, chapterTitle)),
+    );
   }
 
   /// 单章 XHTML。插件正文自带标题（Syosetu 给 `<h1>`、Kakuyomu 给 `<h2>`）时

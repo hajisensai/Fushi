@@ -3445,6 +3445,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
           row: bookRow,
           extractDir: extractDir,
           database: db,
+          pendingText: t.novel_web_chapter_pending,
+          nextChapterTitle: t.novel_web_chapter_next,
         );
     // v82：子表（阅读位置/揭图）键 = 书稳定 uid，一次解析存字段。空 uid（不应
     // 出现，v81 回填兜底）视同缺失——相关写入跳过，不拿 bookKey 兜底。
@@ -3771,6 +3773,69 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     // [_recomputeCharCountsInBackground] 一并补上。
     if (_charCountsAreCurrentCaliber) book.setChapterCharCountHints(counts);
     _readLedger.reset();
+  }
+
+  /// novel-d6：网页小说书取回末尾一章后，解压树的 spine 末尾续挂了新的「下一章」
+  /// 占位（[OnlineNovelChapterLoaded.grownSpineCharacters] = 新的全书字数）。
+  /// 重解析解压树，把多出的尾部章节并进已打开的书（[EpubBook.adoptTrailingChapters]），
+  /// 字数表接上新章，spread 表 / 目录缓存跟着重建，已装文档的无缝阅读序补上新章
+  /// ——读完这一章就能接着翻到下一章，不用重开书。
+  ///
+  /// 新章只追加在末尾：已有章的章号、章首累计字数与账本里的全书绝对偏移都不变，
+  /// 所以不 `_readLedger.reset()`（对比 [_switchOnlineChapterCharCounts]）。
+  /// 重解析的结果与 [grownCounts] / 已打开的书对不上（期间解压树被整本重建过）时
+  /// 不在不一致的状态上续拼，记日志、交给下次开书（开书补占位照旧兜底）。
+  Future<void> _adoptGrownOnlineSpine(
+    EpubBook book,
+    List<int> grownCounts,
+  ) async {
+    final String? extractDir = _extractDir;
+    if (extractDir == null) return;
+    try {
+      final EpubBook reparsed = await compute(parseBookOnly, extractDir);
+      if (!mounted || !identical(_book, book)) return;
+      final int before = book.chapters.length;
+      if (reparsed.chapters.length != grownCounts.length ||
+          _chapterCharCounts.length != before ||
+          !book.adoptTrailingChapters(reparsed)) {
+        throw StateError(
+          'grown spine does not extend the open book: open=$before '
+          'counts=${_chapterCharCounts.length} '
+          'reparsed=${reparsed.chapters.length} grown=${grownCounts.length}',
+        );
+      }
+      final List<int> counts = List<int>.unmodifiable(<int>[
+        ..._chapterCharCounts,
+        ...grownCounts.sublist(before),
+      ]);
+      _applyCharCounts(counts);
+      if (_charCountsAreCurrentCaliber) {
+        book.setChapterCharCountHints(counts);
+      } else {
+        // 整本按新口径重算还在途：那一次按旧章数算，落定时因长度不符被丢弃，
+        // 按新章数重起一次。
+        _recomputeCharCountsInBackground();
+      }
+      _rebuildSpreadMap();
+      _rebuild(() => _ttuTocCache = null);
+      _computeTocAnchorOffsetsInBackground();
+      final InAppWebViewController? controller = _controller;
+      if (controller == null) return;
+      final List<ReaderSeamlessChapterEntry> appended =
+          readerSeamlessChapterOrder(
+                chapterCount: book.chapters.length,
+                urlOf: _chapterUrl,
+                isAbsorbed: _spreadMap?.isAbsorbedImageChapter,
+              )
+              .where((ReaderSeamlessChapterEntry e) => e.index >= before)
+              .toList(growable: false);
+      if (appended.isEmpty) return;
+      await controller.evaluateJavascript(
+        source: readerSeamlessExtendOrderInvocation(appended),
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderFushi.grownOnlineSpine', e, stack);
+    }
   }
 
   /// TODO-131: DB 计数缺失（旧书 / chaptersJson 无 characters 字段）时，把整本
