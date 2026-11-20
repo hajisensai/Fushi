@@ -1485,7 +1485,11 @@ window.__fushiInstallShell = function(C) {
     this.scrollToProgressPaged(rctx, p);
     return true;
   },
+  // gap-readerjs1-2：本文档是否已经给 Dart 发过恢复回执（成功或失败）。初次恢复链
+  // 只该有一个结局；notifyRestoreFailed 据此不在成功回执之后再补一条失败回执。
+  _restoreReceiptSent: false,
   notifyRestoreComplete: function() {
+    this._restoreReceiptSent = true;
     this.perfMark('restoreDone');
     if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
       window.flutter_inappwebview.callHandler(
@@ -1496,6 +1500,23 @@ window.__fushiInstallShell = function(C) {
     }
     if (typeof this.warmPaginationMetrics === 'function') {
       this.warmPaginationMetrics();
+    }
+  },
+  // gap-readerjs1-2：初始化 / 初次恢复链同步抛出时的失败出口。原先异常只让
+  // `Promise.all(imagePromises).then(...)` 变成无人处理的 rejected promise，
+  // onRestoreComplete 永远不来，Dart 只能干等 8 秒内容就绪兜底。现在发一条带代际的
+  // onRestoreFailed，Dart 立刻走与兜底同一条收尾（_failNavigation）。已发过回执的
+  // 文档不再补发：失败只代表「还没落地的那次初次恢复」。
+  notifyRestoreFailed: function(error) {
+    try { if (window.console && console.error) console.error('[FushiReader] initial restore failed', error); } catch (_ignored) {}
+    if (this._restoreReceiptSent === true) return;
+    this._restoreReceiptSent = true;
+    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+      window.flutter_inappwebview.callHandler(
+        'onRestoreFailed',
+        String(error && error.message ? error.message : error),
+        C.navigationGeneration
+      );
     }
   },
   createWalker: function(rootNode) {
@@ -2473,10 +2494,26 @@ window.__fushiInstallShell = function(C) {
     }''';
 
   /// 有声书 cue 下发：旧实现「有 cue 才注入这一行」，现在「有 cue 才调用」。
+  ///
+  /// gap-readerjs1-2：cue 应用是恢复链上的附属步骤，它抛异常不该连带吞掉位置恢复
+  /// （原先一抛，后面的恢复与 onRestoreComplete 都不执行）。单独隔离、在控制台上报
+  /// 真实错误后照常往下恢复；cue 高亮缺失只影响跟读，正文与位置照常可用。
   static const String _sharedSentenceAudioInitJs = '''
     if (C.sentenceAudioCues !== null && C.sentenceAudioCues !== undefined) {
-      window.fushiReader.applySentenceAudioCues(C.sentenceAudioCues);
+      try {
+        window.fushiReader.applySentenceAudioCues(C.sentenceAudioCues);
+      } catch (cueError) {
+        try { if (window.console && console.error) console.error('[FushiReader] applySentenceAudioCues failed', cueError); } catch (_ignored) {}
+      }
     }''';
+
+  /// gap-readerjs1-2：初次恢复链（`Promise.all(imagePromises).then(...)`）的失败出口。
+  /// 链里任何一步同步抛出（建偏移表 / 恢复函数）都改发失败回执，不再留一条无人处理的
+  /// rejected promise 让 Dart 干等兜底。
+  static const String _sharedInitialRestoreCatchJs = '''
+  }).catch(function(restoreError) {
+    window.fushiReader.notifyRestoreFailed(restoreError);
+  });''';
 
   /// 三种 shell 共用的视口 meta 重写（BUG-1688 第二处：VN shell 原先没跑这段）。
   ///
@@ -2690,6 +2727,9 @@ function _fushiBootInitialize() {
     window.fushiReader.initialize();
   } catch (e) {
     try { if (window.console && console.error) console.error('[FushiReader] boot initialize failed', e); } catch (_ignored) {}
+    // gap-readerjs1-2：initialize 同步抛出时初次恢复链根本没挂上，onRestoreComplete
+    // 永远不来。发失败回执让 Dart 立刻收尾，而不是等 8 秒兜底。
+    try { window.fushiReader.notifyRestoreFailed(e); } catch (_ignored) {}
   }
 }
 window.addEventListener('load', function() {
@@ -3900,7 +3940,7 @@ $initImages
     }
     $sentenceAudioInit
     $initialRestoreScript
-  });
+$_sharedInitialRestoreCatchJs
 };
 window.fushiReader.updatePageSize = function(cssWidth, cssHeight) {
   // TODO-734：newViewportHeight = 纯 V（Math.round(cssHeight)），newHeight = V + O。
@@ -4771,7 +4811,7 @@ $initImages
     }
     $sentenceAudioInit
     $initialRestoreScript
-  });
+$_sharedInitialRestoreCatchJs
 };
 window.fushiReader.updatePageSize = function(cssWidth, cssHeight) {
   var newHeight = Math.round(cssHeight);
