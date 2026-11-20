@@ -235,6 +235,21 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '自动检测认不出的站点，可以粘贴它的解析规则（JSON）；需要登录的站再填 Cookie。':
       "For a site that automatic detection can't recognize, paste its parser "
       'rule (JSON); add a cookie for sites that need a login.',
+  '怎么写解析规则': 'How to write a parser rule',
+  '解析规则用 CSS 选择器告诉服务端站点搜索页上的结果在哪："search" 填搜索页地址里域名之后的部分，搜索词换成 {query}；"rows" 选中包住整条结果的元素（通常是表格行 tr）；"fields" 里写这一行内部的选择器，"title" 必填，"magnet" / "torrent" / "infoHash" 至少一个，末尾加 @href 表示取属性而不是文字。':
+      'A parser rule uses CSS selectors to tell the server where the results are on the '
+      'site\'s search page: "search" is the part of the search page address after the '
+      'domain, with your search word replaced by {query}; "rows" selects the element that '
+      'wraps one whole result (usually a table row, tr); "fields" holds selectors inside '
+      'that row: "title" is required, plus at least one of "magnet" / "torrent" / '
+      '"infoHash". Add @href to read an attribute instead of the text.',
+  '下载链接只在详情页时，让 "details" 指向详情页链接，再在 "detail" 段里写 "magnet" 或 "torrent"。不是 UTF-8 的站把 "encoding" 设为 windows-1251 或 latin1。规则里不含登录信息，需要登录的站另填 Cookie。用不到的部分直接删掉。':
+      'If the download link is only on each result\'s own page, point "details" at that '
+      'page\'s link and put "magnet" or "torrent" in the "detail" section. Sites that '
+      'aren\'t UTF-8 can set "encoding" to windows-1251 or latin1. The rule never holds '
+      'your login; add a cookie separately for sites that need signing in. Delete any '
+      'part you don\'t need.',
+  '填入模板': 'Use template',
   '解析规则（JSON；清空 = 改回自动检测）':
       'Parser rule (JSON; clear it to go back to automatic detection)',
   '新 Cookie（留空不改）': 'New cookie (leave empty to keep the current one)',
