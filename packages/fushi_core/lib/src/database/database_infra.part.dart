@@ -325,4 +325,29 @@ mixin _FushiDbInfra on _$FushiDatabase {
       }
     }
   }
+
+  /// 统计按 Profile 分区的两条读路径索引（video-36i）：统计页按
+  /// `(profile_id, date_key)` 取区间。v105 步给升级库建了它们，但 fresh 库的
+  /// onCreate 从来没建——v105 之后新装的库一直缺这两条。
+  ///
+  /// 不进 [_ensureIndexes]：那个清单会被 v105 之前的迁移步调用，彼时
+  /// `profile_id` 列还不存在、CREATE INDEX 当场失败。这里按列存在性守卫，onCreate
+  /// 与 onUpgrade 末尾各调一次：后者让「v105 后新装、缺索引」的存量库在下一次
+  /// 升 schema 时自动补齐（全幂等，已有索引时是 no-op）。
+  Future<void> _ensureStatIndexes() async {
+    if (await _tableExists('study_segments') &&
+        await _columnExists('study_segments', 'profile_id')) {
+      await customStatement(
+        'CREATE INDEX IF NOT EXISTS idx_study_segments_profile_date '
+        'ON study_segments (profile_id, date_key)',
+      );
+    }
+    if (await _tableExists('galgame_sessions') &&
+        await _columnExists('galgame_sessions', 'profile_id')) {
+      await customStatement(
+        'CREATE INDEX IF NOT EXISTS idx_galgame_sessions_profile_date '
+        'ON galgame_sessions (profile_id, date_key)',
+      );
+    }
+  }
 }

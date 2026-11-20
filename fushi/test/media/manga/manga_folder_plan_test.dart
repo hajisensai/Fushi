@@ -529,6 +529,63 @@ void main() {
     });
   });
 
+  // #3722 m2 gap-scanner-5：候选目录与 `.mokuro` / 页图目录 / 单文件卷的祖先后代
+  // 判据改成按祖先链查表。前两例钉住与 `p.Context.equals` / `isWithin` 同一口径
+  // （Windows 不分大小写），第三例钉住规模：旧实现是 候选数 ×（页图目录数 + 卷数）
+  // 次路径比较，3000 卷的真实目录树在 UI isolate 上同步卡约 3 秒。
+  group('planMangaFolders 祖先判据查表', () {
+    test('Windows 路径大小写不同的单文件卷照样认领同目录散图', () {
+      final MangaFolderPlan plan = planMangaFolders(
+        rootPath: r'C:\Lib',
+        context: p.windows,
+        filePaths: <String>[
+          r'C:\Lib\Series\cover.jpg',
+          r'c:\lib\SERIES\Vol 1.CBZ',
+          r'C:\Lib\Loose\001.jpg',
+        ],
+      );
+      expect(plan.carrierPaths, <String>[r'c:\lib\SERIES\Vol 1.CBZ']);
+      expect(plan.imageFolders, <String>[r'C:\Lib\Loose']);
+    });
+
+    test('Windows 路径大小写不同的 .mokuro 祖先 / 后代目录都让位', () {
+      final MangaFolderPlan plan = planMangaFolders(
+        rootPath: r'C:\Lib',
+        context: p.windows,
+        filePaths: <String>[
+          // mokuro 在候选之内（候选 = A）。
+          r'c:\LIB\a\inner\a.mokuro',
+          r'C:\Lib\A\001.jpg',
+          // 候选在 mokuro 目录之内：根级 mokuro 不在场，用卷目录本身。
+          r'C:\Lib\B\b.mokuro',
+          r'c:\lib\b\002.jpg',
+          r'C:\Lib\C\003.jpg',
+        ],
+      );
+      expect(plan.imageFolders, <String>[r'C:\Lib\C']);
+    });
+
+    test('3000 个页图卷 + 3000 个单文件卷的归组是线性的', () {
+      final String root = p.join('library');
+      final List<String> files = <String>[
+        for (int i = 0; i < 3000; i++) ...<String>[
+          p.join(root, 'Folder Series $i', '001.jpg'),
+          p.join(root, 'Archive Series $i', 'Archive Series $i Vol 1.cbz'),
+        ],
+      ];
+      final Stopwatch sw = Stopwatch()..start();
+      final MangaFolderPlan plan = planMangaFolders(
+        rootPath: root,
+        filePaths: files,
+      );
+      sw.stop();
+      expect(plan.imageFolders, hasLength(3000));
+      expect(plan.carrierPaths, hasLength(3000));
+      // 修前本机约 7 秒（平方级），修后几十毫秒；上限留出慢 CI 的余量。
+      expect(sw.elapsed, lessThan(const Duration(seconds: 2)));
+    });
+  });
+
   group('planMangaFoldersInDirectory (dart:io)', () {
     late Directory tmp;
 

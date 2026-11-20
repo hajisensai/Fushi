@@ -33,10 +33,40 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4233 条。点号进各自文件。
+> 共 4244 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4914](bugs/BUG-4914-mihon-sidecar-temp-leak.md) | ✅ | ✅ | 桌面 Mihon sidecar 的临时文件永不回收：每次桥调用一个 NanoHTTPD 请求体文件，强杀后扩展 jar 目录残留 |
+| [BUG-4913](bugs/BUG-4913-manga-series-refresh-lost-update.md) | ✅ | ✅ | 漫画作品页后台刷新覆盖刚开的订阅；下载状态旧读盖新读 |
+| [BUG-4910](bugs/BUG-4910-kavita-batch-progress-timestamps.md) | ✅ | ✅ | Kavita 对账 / 批量标已读后「继续阅读」落到已读过的旧章；对账逐章整份解码基线偏好 |
+| [BUG-4909](bugs/BUG-4909-manga-descriptor-snapshot-rollback.md) | ✅ | ✅ | 在线漫画描述符各写方拿快照整份写回、互相回滚；按下标选章开错章 |
+| [BUG-4908](bugs/BUG-4908-manga-online-chapter-sidecar-restart.md) | ✅ | ✅ | 桌面 sidecar 重启后正在读的在线漫画章剩下的页全部失败 |
+| [BUG-4908](bugs/BUG-4908-book-sync-tombstone-failure-silent.md) | ✅ | ✅ | 同步删除书时墓碑写入失败被吞且无日志 |
+| [BUG-4907](bugs/BUG-4907-manga-page-enum-nas-junk.md) | ✅ | ✅ | 本地页图卷枚举把群晖 @eaDir 缩略图、__MACOSX 与 ._ 资源叉当成漫画页 |
+| [BUG-4907](bugs/BUG-4907-book-batch-delete-vacuum-per-book.md) | ✅ | ✅ | 批量删书每本都跑一次整库 VACUUM + wal_checkpoint |
+| [BUG-4906](bugs/BUG-4906-shelf-delete-cover-resurrects.md) | ✅ | ✅ | 书架删书不清自定义封面，同名书重新导入后旧封面复活 |
+| [BUG-4906](bugs/BUG-4906-manga-panel-failure-cached-detector-dup.md) | ✅ | ✅ | 漫画分镜检测：暂时性失败被两层缓存、检测器并发创建泄漏 ONNX session |
+| [BUG-4906](bugs/BUG-4906-manga-download-pause-cancel-not-immediate.md) | ✅ | ✅ | 漫画下载的暂停 / 取消传不到在途请求，失败不分型一律退避 |
+> 共 4243 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4912](bugs/BUG-4912-media-server-download-no-resume.md) | ✅ | ✅ | Jellyfin / Emby / Plex 整片下载不能续传、无空闲超时，暂停或断网后从 0 重下 |
+| [BUG-4911](bugs/BUG-4911-remote-default-subtitle-no-read-timeout.md) | ✅ | ✅ | 远端起播默认字幕下载没有读超时，字幕站不回数据时页面永远停在「正在下载字幕」 |
+| [BUG-4910](bugs/BUG-4910-anime-download-concurrent-subtitle-lost.md) | ✅ | ✅ | 下载中心两集并发时先下完那集的默认字幕静默丢失（在线源 client 只有一个当前流槽位） |
+| [BUG-4909](bugs/BUG-4909-jellyfin-review-transcode-not-released.md) | ✅ | ✅ | 卡片片段回看下 Jellyfin/Emby 转码会话不释放 |
+| [BUG-4908](bugs/BUG-4908-stream-book-client-never-closed.md) | ✅ | ✅ | 流媒体书客户端与来源直链解析器从不关闭（SFTP 每开一次留一条 SSH 连接） |
+| [BUG-4907](bugs/BUG-4907-video-import-subtitle-parse-blocks-ui.md) | ✅ | ✅ | 视频导入 / 来源扫描 / 互联收字幕在 UI isolate 上同步解析整份字幕，特效重的 ASS 冻住 UI 上百毫秒 |
+| [BUG-4907](bugs/BUG-4907-remote-episode-switch-stale-failure.md) | ✅ | ✅ | 远端换集：作废那一程的失败仍把页面置成失败态 |
+| [BUG-4906](bugs/BUG-4906-video-metadata-image-uncapped-decode.md) | ✅ | ✅ | 视频作品详情页与库页远程回落的刮削图（TMDB 原图）整帧解码，几张就压满 ImageCache |
+| [BUG-4906](bugs/BUG-4906-video-init-unexpected-error-spins-forever.md) | ✅ | ✅ | 视频页打开时未预期异常不进失败态，永久转圈 |
+> 共 4235 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4907](bugs/BUG-4907-plex-identity-probe-sends-token.md) | ✅ | ✅ | Plex 连接探测在核对服务器身份之前就把 X-Plex-Token 发给被探测地址 |
+| [BUG-4906](bugs/BUG-4906-plex-auto-route.md) | ✅ | ✅ | Plex 换网络后起播一直走登录时那条不通的连接，不会自动换线路 |
 | [BUG-4905](bugs/BUG-4905-ai-cast-text-substitutions.md) | ✅ | ✅ | 小说和漫画 AI 标注未应用系列用词替换表 |
 | [BUG-4904](bugs/BUG-4904-book-series-key-store-annotation.md) | ✅ | ✅ | 书店写法「卷号<系列名> (文库名)」的分卷导入后不归合集 |
 | [BUG-4903](bugs/BUG-4903-home-desktop-continue-cut-edge-title-concat.md) | ✅ | ✅ | 首页（桌面）「继续」右侧卡被窗口切掉一半、标题拼接成「Re：ゼロ…1<Re：…」 |

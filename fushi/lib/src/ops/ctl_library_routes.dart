@@ -461,6 +461,7 @@ class _LibraryCtlHandlers {
     final DeleteBookResult result = await ReaderFushiSource.instance.deleteBook(
       db: _db,
       bookKey: key.id,
+      appModel: _app,
       scope: decision.scope,
       deleteLocalFiles: decision.deleteLocalFiles,
       deleteStatistics: decision.deleteStatistics,
@@ -499,6 +500,7 @@ class _LibraryCtlHandlers {
           .deleteBook(
             db: _db,
             bookKey: book.bookKey,
+            appModel: _app,
             scope: decision.scope,
             deleteLocalFiles: decision.deleteLocalFiles,
             deleteStatistics: decision.deleteStatistics,

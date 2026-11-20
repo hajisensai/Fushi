@@ -368,7 +368,7 @@ void main() {
     final OnlineMangaLibraryEntry selected = await service.selectChapter(
       bookKey: row.bookKey,
       entry: parsed,
-      chapterIndex: 0,
+      chapterKey: parsed.chapters[0].key,
     );
     expect(selected.currentChapter?.name, 'Chapter 2');
 
@@ -393,7 +393,7 @@ void main() {
     final OnlineMangaLibraryEntry selected = await service.selectChapter(
       bookKey: row.bookKey,
       entry: parsed,
-      chapterIndex: 1,
+      chapterKey: parsed.chapters[1].key,
     );
 
     // 源更新：最前面插了一话新的，于是原来那话的下标从 1 变成 2。

@@ -89,6 +89,118 @@ class OnlineMangaUnavailable implements Exception {
   String toString() => 'OnlineMangaUnavailable($reason): $message';
 }
 
+/// 从阶段 / 运行时异常的 cause 链里找出结构化的 Cloudflare 挑战（没有返回
+/// null）。挑战的文案是 `CLOUDFLARE_CHALLENGE_REQUIRED`，按文案匹配不到，只能按
+/// 类型认。
+MihonCloudflareChallengeException? mihonCloudflareChallenge(Object? error) {
+  final Set<Object> visited = <Object>{};
+  while (error != null && visited.add(error)) {
+    if (error is MihonCloudflareChallengeException) return error;
+    error = switch (error) {
+      OnlineMangaUnavailable(:final cause) => cause,
+      MihonRuntimeException(:final cause) => cause,
+      _ => null,
+    };
+  }
+  return null;
+}
+
+/// 页引用已随运行时进程失效（桌面 sidecar 重启，BUG-4908）。
+///
+/// 不是「这一页取失败」：同一章重新 [OnlineMangaRuntimeAdapter.resolveChapterPages]
+/// 换一份引用就能取。只由 [OnlineMangaRuntimeAdapter.fetchChapterPage] 抛，
+/// [OnlineMangaChapterPageRefs] 接住它重解析页表。
+class OnlineMangaPageRefExpired implements Exception {
+  const OnlineMangaPageRefExpired(this.message, {this.cause});
+
+  final String message;
+  final Object? cause;
+
+  @override
+  String toString() => 'OnlineMangaPageRefExpired: $message';
+}
+
+/// 一章的页表，运行时重启后就地换新引用（BUG-4908）。
+///
+/// 在线直读会话（`OnlineMangaReaderSession`）按页序取页，页数与每页的身份串
+/// （面板 / OCR 缓存键）在开会话时就定了；这里只持有可以换的那部分——取页引用。
+/// 取页撞上 [OnlineMangaPageRefExpired] 时重解析一次页表：页数一致就整份换新、
+/// 用新引用再取这一页；页数变了说明源端章节已不是开会话时那一份，按失败处理
+/// （[OnlineMangaUnavailable]，之后的取页都直接报这个错，不再反复重解析）。
+/// 并发撞上失效的取页共用同一次重解析。
+class OnlineMangaChapterPageRefs {
+  OnlineMangaChapterPageRefs({
+    required this.adapter,
+    required this.entry,
+    required this.chapter,
+    required List<OnlineMangaPageRef> pages,
+  }) : _pages = List<OnlineMangaPageRef>.unmodifiable(pages);
+
+  final OnlineMangaRuntimeAdapter adapter;
+  final OnlineMangaLibraryEntry entry;
+  final OnlineMangaChapter chapter;
+
+  List<OnlineMangaPageRef> _pages;
+  Future<List<OnlineMangaPageRef>>? _reresolving;
+  OnlineMangaUnavailable? _mismatch;
+
+  /// 页数（开会话时定，之后不变）。
+  int get length => _pages.length;
+
+  /// 重解析后发现源端页数已变：这份页表再也取不到页，持有者（缓存页表的互联
+  /// host）要丢掉它，下次按新页数重开。
+  bool get pageCountChanged => _mismatch != null;
+
+  /// 当前有效的第 [index] 页引用（取消在飞请求要对得上当前引用）。
+  OnlineMangaPageRef operator [](int index) => _pages[index];
+
+  /// 取第 [index] 页字节；引用随运行时失效时重解析页表后再取一次。
+  Future<Uint8List> fetch(int index) async {
+    final List<OnlineMangaPageRef> used = _pages;
+    try {
+      return await adapter.fetchChapterPage(used[index]);
+    } on OnlineMangaPageRefExpired {
+      final List<OnlineMangaPageRef> fresh = await _refreshAfterExpiry(used);
+      return adapter.fetchChapterPage(fresh[index]);
+    }
+  }
+
+  Future<List<OnlineMangaPageRef>> _refreshAfterExpiry(
+    List<OnlineMangaPageRef> expired,
+  ) {
+    final OnlineMangaUnavailable? mismatch = _mismatch;
+    if (mismatch != null) {
+      return Future<List<OnlineMangaPageRef>>.error(mismatch);
+    }
+    // 别的取页已经换过新表：直接用新表，不再解析一次。
+    if (!identical(expired, _pages)) {
+      return Future<List<OnlineMangaPageRef>>.value(_pages);
+    }
+    return _reresolving ??= _reresolve().whenComplete(() {
+      _reresolving = null;
+    });
+  }
+
+  Future<List<OnlineMangaPageRef>> _reresolve() async {
+    final List<OnlineMangaPageRef> fresh = await adapter.resolveChapterPages(
+      entry: entry,
+      chapter: chapter,
+    );
+    if (fresh.length != _pages.length) {
+      final OnlineMangaUnavailable mismatch = OnlineMangaUnavailable(
+        OnlineMangaUnavailableReason.runtimeFailure,
+        'The chapter now has ${fresh.length} pages instead of '
+        '${_pages.length} after the runtime restarted',
+        stage: 'pages',
+      );
+      _mismatch = mismatch;
+      throw mismatch;
+    }
+    _pages = List<OnlineMangaPageRef>.unmodifiable(fresh);
+    return _pages;
+  }
+}
+
 /// 一次刷新拉回来的作品 + 章节。
 class OnlineMangaRefreshResult {
   const OnlineMangaRefreshResult({
@@ -248,6 +360,9 @@ abstract interface class OnlineMangaRuntimeAdapter {
   });
 
   /// 取一页字节。只接受本运行时自己在 [resolveChapterPages] 里造的引用。
+  ///
+  /// 引用随运行时进程失效（桌面 sidecar 重启）时抛 [OnlineMangaPageRefExpired]：
+  /// 长期持有页表的调用方经 [OnlineMangaChapterPageRefs] 取页，由它重解析换新引用。
   Future<Uint8List> fetchChapterPage(OnlineMangaPageRef page);
 
   /// 取封面字节（入库时落盘一份，之后书架离线可见）。
@@ -712,21 +827,26 @@ class MihonLibraryAdapter
       throw ArgumentError.value(page, 'page', 'not a Mihon page reference');
     }
     final MihonRuntime runtime = manager.runtime;
-    if (runtime is CancellableMihonRuntime) {
-      return (runtime as CancellableMihonRuntime).fetchImageRequest(
+    try {
+      if (runtime is CancellableMihonRuntime) {
+        return await (runtime as CancellableMihonRuntime).fetchImageRequest(
+          page.context.extension,
+          page.context.source,
+          page.page,
+          requestId: _pageRequestId(page),
+          preferences: page.context.preferences,
+        );
+      }
+      return await runtime.fetchImage(
         page.context.extension,
         page.context.source,
         page.page,
-        requestId: _pageRequestId(page),
         preferences: page.context.preferences,
       );
+    } on MihonRuntimeException catch (error) {
+      if (error.code != kMihonStalePageReferenceCode) rethrow;
+      throw OnlineMangaPageRefExpired(error.message, cause: error);
     }
-    return runtime.fetchImage(
-      page.context.extension,
-      page.context.source,
-      page.page,
-      preferences: page.context.preferences,
-    );
   }
 
   @override
