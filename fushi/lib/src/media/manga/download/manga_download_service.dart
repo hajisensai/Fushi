@@ -53,6 +53,8 @@ import 'package:fushi/src/media/manga/download/online_manga_download_gate.dart';
 import 'package:fushi/src/media/manga/manga_json_writeback.dart';
 import 'package:fushi/src/media/manga/mihon/manga_page_files.dart';
 import 'package:fushi/src/media/manga/mihon/manga_page_provider.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_models.dart'
+    show MihonCloudflareChallengeException;
 import 'package:fushi/src/media/manga/online/mokuro_moe_volume_downloader.dart';
 import 'package:fushi/src/platform/mobile/android_download_keep_alive.dart';
 import 'package:fushi/src/platform/mobile/download_keep_alive_hub.dart';
@@ -367,6 +369,14 @@ class _PageFile {
   final File file;
 }
 
+/// 一条因 Cloudflare 挑战失败的任务留下的解题材料：挑战本身（URL / User-Agent）
+/// 与解它的运行时。只在内存：重启后挑战多半已过期，行上照旧只有「重试」，重试
+/// 再撞上挑战时会重新留一份。
+typedef MangaDownloadCloudflareChallenge = ({
+  Object runtime,
+  MihonCloudflareChallengeException challenge,
+});
+
 class MangaDownloadService {
   MangaDownloadService({
     required FushiDatabase database,
@@ -425,6 +435,14 @@ class MangaDownloadService {
   /// `_active` 赋值之间隔着一个 await）。worker 挂上时据此立即按暂停收尾。
   final Set<String> _pauseRequested = <String>{};
   Completer<void>? _idle;
+
+  /// 因 Cloudflare 挑战落 `failed` 的任务 → 解题材料（键 = jobId）。任务重新
+  /// 开跑 / 重试 / 删除时清掉；读的时候还要求行确实是 `failed`。
+  final Map<String, MangaDownloadCloudflareChallenge> _cloudflare =
+      <String, MangaDownloadCloudflareChallenge>{};
+
+  /// 正在解的挑战（键 = 挑战 host）：同站的验证单飞，按钮据此显示忙碌。
+  final Map<String, Future<bool>> _verifying = <String, Future<bool>>{};
 
   /// 当前任务的瞬态字节进度（只有 mokuro CBZ 下载阶段非空）；键 = jobId。
   ({String jobId, MangaDownloadByteProgress progress})? _transfer;
@@ -516,6 +534,102 @@ class MangaDownloadService {
       },
     );
     return merged.stream;
+  }
+
+  /// [job] 若因 Cloudflare 挑战失败且运行时能解，给出解题材料（= 下载中心这一
+  /// 行给不给「验证」，判据同作品页的验证按钮 [canSolveMihonCloudflare]）。
+  MangaDownloadCloudflareChallenge? cloudflareChallengeOf(
+    MangaDownloadJobRow job,
+  ) {
+    if (job.status != MangaDownloadJobStatus.failed) return null;
+    return _cloudflare[job.jobId];
+  }
+
+  /// [job] 的挑战是否正在验证（同站任一行在验证都算）。
+  bool isVerifyingCloudflare(MangaDownloadJobRow job) {
+    final MangaDownloadCloudflareChallenge? record = _cloudflare[job.jobId];
+    return record != null && _verifying.containsKey(record.challenge.url.host);
+  }
+
+  /// 弹验证页解 [jobId] 这一行的挑战；通过后重试这一行，以及**同站**（挑战
+  /// host 相同、同一个运行时）其它因 Cloudflare 失败的行——`cf_clearance` 按站
+  /// 生效，一次验证对它们同样有效。
+  ///
+  /// 返回 true = 验证通过并已重新排队；false = 这一行没有可解的挑战，或用户关掉
+  /// 了验证页。验证本身的失败照抛给按钮展示。同站并发的验证共享同一次。
+  Future<bool> verifyCloudflare(String jobId) {
+    final MangaDownloadCloudflareChallenge? record = _cloudflare[jobId];
+    if (record == null) return Future<bool>.value(false);
+    final String host = record.challenge.url.host;
+    final Future<bool>? pending = _verifying[host];
+    if (pending != null) return pending;
+    // 先建 future → 再写 map → 最后挂清理（同 Mihon 解题 resolver 的单飞顺序）。
+    final Future<bool> solving = _solveCloudflareAndRetry(record);
+    _verifying[host] = solving;
+    _notifyTransientChange();
+    return solving.whenComplete(() {
+      _verifying.remove(host);
+      _notifyTransientChange();
+    });
+  }
+
+  Future<bool> _solveCloudflareAndRetry(
+    MangaDownloadCloudflareChallenge record,
+  ) async {
+    final bool solved = await solveMihonCloudflare(
+      runtime: record.runtime,
+      error: record.challenge,
+    );
+    if (!solved) return false;
+    final String host = record.challenge.url.host;
+    final List<String> sameSite = <String>[
+      for (final MapEntry<String, MangaDownloadCloudflareChallenge> entry
+          in _cloudflare.entries)
+        if (entry.value.challenge.url.host == host &&
+            identical(entry.value.runtime, record.runtime))
+          entry.key,
+    ];
+    for (final String jobId in sameSite) {
+      await retry(jobId);
+    }
+    return true;
+  }
+
+  /// 任务表之外的瞬态状态（验证中）变了：并进 [watchJobs] 让下载中心重绘。
+  void _notifyTransientChange() {
+    if (!_transferChanges.isClosed) _transferChanges.add(null);
+  }
+
+  /// 任务因 [error] 落 `failed` 前调用：是 Cloudflare 挑战、且适配器给得出能解
+  /// 它的运行时，就留下解题材料。
+  void _rememberCloudflare(MangaDownloadJobRow job, Object error) {
+    final MihonCloudflareChallengeException? challenge =
+        mihonCloudflareChallenge(error);
+    if (challenge == null) return;
+    final OnlineMangaRuntimeKind? kind = OnlineMangaRuntimeKind.fromWire(
+      job.runtime,
+    );
+    if (kind == null) return;
+    final Object? runtime;
+    try {
+      runtime = switch (_serviceFor(kind).adapter) {
+        OnlineMangaChallengeSolver(:final Object challengeRuntime) =>
+          challengeRuntime,
+        _ => null,
+      };
+    } on Object catch (resolveError, stack) {
+      ErrorLogService.instance.log(
+        'MangaDownloadService.cloudflareRuntime ${job.jobId}',
+        resolveError,
+        stack,
+      );
+      return;
+    }
+    if (runtime == null ||
+        !canSolveMihonCloudflare(runtime: runtime, error: challenge)) {
+      return;
+    }
+    _cloudflare[job.jobId] = (runtime: runtime, challenge: challenge);
   }
 
   Future<List<MangaDownloadJobRow>> listJobs({
@@ -791,6 +905,7 @@ class MangaDownloadService {
         row.status != MangaDownloadJobStatus.cancelled) {
       return;
     }
+    _cloudflare.remove(jobId);
     await _database.updateMangaDownloadJobStatus(
       jobId,
       status: MangaDownloadJobStatus.queued,
@@ -810,6 +925,7 @@ class MangaDownloadService {
       active.abort?.call();
       await active.done.future;
     }
+    _cloudflare.remove(jobId);
     await _database.deleteMangaDownloadJob(jobId);
   }
 
@@ -824,6 +940,7 @@ class MangaDownloadService {
           },
         );
     for (final MangaDownloadJobRow row in rows) {
+      _cloudflare.remove(row.jobId);
       await _database.deleteMangaDownloadJob(row.jobId);
     }
   }
@@ -913,6 +1030,8 @@ class MangaDownloadService {
   Future<void> _run(MangaDownloadJobRow job, _ActiveJob active) async {
     final _CancelToken token = active.token;
     int attempt = job.attemptCount;
+    // 重新开跑（重试 / 重新入队）：上一次留下的挑战作废，再撞上会重新留。
+    _cloudflare.remove(job.jobId);
     while (true) {
       try {
         _throwIfCancelled(token);
@@ -949,6 +1068,8 @@ class MangaDownloadService {
         if (attempt >= kMangaDownloadMaxAttempts ||
             _disposed ||
             isPermanentMangaDownloadFailure(error)) {
+          // 先留解题材料再落库：落库触发下载中心重取，那时「验证」就该在。
+          _rememberCloudflare(job, error);
           await _database.updateMangaDownloadJobStatus(
             job.jobId,
             status: MangaDownloadJobStatus.failed,
