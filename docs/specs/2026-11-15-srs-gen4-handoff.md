@@ -3982,3 +3982,66 @@ exit 1；成功 949、失败 9、错误 6、跳过 21，实际执行 964。上�
   分支（暂缓时提前发布 `mergingInto`）、`deferredProfileMerge()` 与 `onAdopted` 文档里讲暂缓的几句；`srs_profile_link.dart` 删了
   `SrsDeferredProfileMerge`、`SrsProfileAdoptDeferred` 两个类型与 linker 接口 / 实现的 `deferredMerge` 方法。任务书一边把这两个
   文件划给同步 / 身份模块，一边要求删 `SrsDeferredProfileMerge` 整条链，而整条链就在这两个文件里，只能这样做。
+
+## 第六波 转发 / 重切件收尾（2026-11-20，分支 `pr/srs-gen4-w6-relay-tail`，基于 `pr/srs-gen4-switch` `0bf8472f40`）
+
+§39「复核修复后仍未做」四条与一批之内重收的 minor 在本节收掉，外加自动安全审查的一条 MEDIUM（导入流的转发材料没验签）。
+上一位实现者做到一半被额度中断（`16d18a423e` / `410a508500` / `d8bf35b803` 与代存的 WIP `dd9aeb8bc7`），本节由续做者补完，
+WIP 原样编不过（schema 守卫表数没改）、三条停放测试装置有误，已改对，不按「已完成」看待。
+
+### 取舍（所有者授权自行定）
+
+- **PurgePending / UntrustedUploader 的出路选「读者事件驱动重试 + 同步页说明」**，不选「重切者另出一份不依赖该 Purge 的件」：
+  后者要么把被清除的原文再交出去（违背 §26 C3「清除后原文不经本机离开」），要么让读者收一份它核不了 Purge 的件
+  （等于放弃 `purge_vouches`），两条都不可取。读者侧（`cmd/sync_park.rs`，SCHEMA **40026** 加 `relay_park`）记下这一件在
+  这个位置上**等哪条 Purge**（`wait` / `wait_seq` > 0）或**等哪台设备的信任变化**（`wait_seq` = 0 + 停放时的信任状态）；
+  `plan` 只对被转发来的 head 查停放，等的事没发生就不拉，发生了（Purge 落库或进了等待缓冲 / 信任状态变了）才放行再拉——
+  不是定时退避。拒绝之后再拉一次得到同样的延后，按「已拒绝」重新停放，之后不再拉。作者日志末尾到了停放件末尾、作者 head
+  不再列这一件、`location_forget` 时清掉。同步页（`status` 设备行 `relayBlocked: [{location, author, reason, pieces}]`，
+  `reason` = `purge` / `pending` / `rejected`）挂在**等的那台设备**一行上，那台设备本机还没有日志也补一行；app 设备行按原因
+  各说一行（`srs_device_relay_blocked_purge` / `_trust` / `_rejected`：让它同步一次 / 确认它 / 等作者自己同步），点行照旧去
+  冲突中心确认 / 拒绝。
+- **一批之内的重收在批被截断时**：交完的部分里还在等同一批里 Purge 的重切件不再直接报延后，回包 `requeue`（相对这一片的
+  下标）交回 Dart，`SrsDbStore.sync2IngestBatch` 接在剩下的段后面下一片再交（先前那次延后不计，`Receiver::uncount_deferred`）；
+  整片交完还交回、或下标越界按契约坏了报错。Dart 收段现在带 `location`（与 `plan` 同值）——不带内核不停放，照旧每轮再拉。
+- **`.fushisrs` 带转发材料选「导出流升版」**（`EXPORT4_VER` = 3，第 1、2 版照读），不选「下一轮同步自愈」：被清除的原文本机
+  已经没有，同步拿不回剔除记录，自愈不成立。
+- **导入流里的转发材料先验签再落库**（安全审查 MEDIUM）：`import.rs` 把一条原生日志链尾之后的材料攒齐，整条日志读完再交
+  `land_relay`——作者签名版本拿本机 `peers` 里这位作者的公钥（导入撞上另一把公钥时整笔已拒）、本机日志（此时已灌完）与
+  剔除记录拼出全部项（`Truth::author_items`，与 `recut_from_log` 同一套），**作者签名验得过才记**，记时照旧只换成空洞更多的
+  那份——没验过的一律不碰本机已有的行；剔除记录要被某个验过的版本担保（拼项时用到了它，即信封 / 载荷哈希 / 清除目标正是
+  作者签过的那条）才记，本机已有的那一格**不动**（`put_stub_if_absent`，拼项时本机那条优先）。没记的计入
+  `ImportedOps::relay_skipped`，回包 `imported.relaySkipped`（另带 `relayVersions` / `relayStubs`），不报错。段头作者不是所在
+  日志作者的由流语法整笔拒（读写两侧 `Grammar`，原有）。剔除记录点名的 Purge 本机不核：重切出去之后读者照样按
+  `purge_vouches` 核。文件里新设备的公钥仍是首见即记（与导入的操作本身同一信任口径：`.fushisrs` 的操作不带作者签名）。
+- **回收判据**（`cmd/sync_relay.rs` 文件头「重切材料的回收」）：作者区间还需要材料 ⇔ 本机没记它的 head / 最新 head 列着这个
+  区间 / 转发缓存里还有这个区间的件；剔除记录只留落在还需要的版本区间里、且不在作者签的空洞里的。记下更新的 head 与
+  `prune` 删缓存件时回收，只按这位作者的主键前缀 / 区间删。
+- **单条改动超过 16 MiB**：本机写入与 `.fushisrs` 导入报 `op too large: change <id> is N bytes (x MiB), over the 16 MiB limit …`
+  （`gen4/op.rs` `payload_within_cap`），整笔回滚；导入页按 `kSrsOpTooLarge` 给专门提示（`srs_timeline_import_op_too_large`）。
+
+### 测试
+
+- `cmd/sync_park_tests.rs` 4 条：待确认重切者 → 停放、之后不拉、同步页 `pending`；拒绝 → 再拉一次、按 `rejected` 停放；
+  确认 → 拉、收下、同步页不再提。等 Purge → 不拉，b 的段出现后 Purge 进等待缓冲 → 下一轮拉、全部收下。没有日志的等待设备
+  照样有一行。截断批交回 `requeue`、照 Dart 接回后全部收下、不报错。
+- `import_tests.rs` `forged_relay_material_is_verified_before_it_lands`：已有有效行时导入签名乱填且空洞更多的版本 → 不换、计
+  跳过；换了 Purge 的剔除记录 → 本机那条不动；空库导入载荷哈希被改的剔除记录 / 签名被改 / 不带作者公钥 → 都不记、重切不出来；
+  真实流照记。`relay_material_survives_export_and_import_so_a_restored_library_can_still_recut` 未改断言照绿。
+- 回收：`sync_relay_tests::reclaim` 两条（判据 + 规模）。导出 / 超限：`import_tests` 的超限一条、`sync_tests`
+  `a_write_over_the_payload_cap_is_refused_readably_and_nothing_lands`、Dart `srs_fushisrs_errors_test.dart`。
+  segBytes：`outbox_clamps_the_segment_target_to_the_cap`（测试钩子 `SEG_CAP_FOR_TEST` 把上限调到 300 字节）。
+- Dart：`srs_device_identity_test.dart` 新一条（`relayBlocked` 解析、按原因合计、认不出的项跳过、设备行文案）；
+  `srs_sync4_round_test.dart` 断言收段带的位置与 `plan` 同值；`srs_sync2_ingest_batching_test.dart` 新一条（交回按下标取、坏
+  下标报错）。
+- 变异实测见 PR 描述（脚本逐个改、跑、还原，工作区干净）。
+
+### 没做 / 已知限制
+
+- 重切者「另出一份不依赖该 Purge 的件」不做（理由见上）。Purge 作者被读者永久拒绝时，只经这位重切者供数据的位置对该读者
+  一直不完整，直到作者自己同步到那个位置——同步页如实说明，不丢数据。
+- `requeue` 的 Dart 接回循环只单测了取下标的 helper；整条循环由内核测试里照 Dart 写的 `ingest_like_dart`（`sync_relay_tests.rs`）
+  与 `a_truncated_batch_hands_the_waiting_recut_back_instead_of_dropping_it` 覆盖，没有起真实 `SrsDbStore` 造一批截断的重切件。
+- 服务端管理页 / ctl 的设备列表没显示 `relayBlocked`（只接了 app 同步页）。
+- `guards_tests.rs` `FROZEN` 追加了 40026 的指纹；40025 分给同批别的 PR，合流时按实际形状重算（两个号的表合起来才是终态）。
+- 真机复测没做（纯内核 + 同步页文案，按规则记一句）。
