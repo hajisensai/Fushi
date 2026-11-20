@@ -129,6 +129,8 @@ void main() {
       await tester.pumpWidget(
         TranslationProvider(
           child: MaterialApp(
+            // 每次换一棵新树：上一轮没关掉的对话框路由不留下来。
+            key: ValueKey<TtsTextRuleKind>(kind),
             home: Builder(
               builder: (BuildContext context) => Scaffold(
                 body: TextButton(

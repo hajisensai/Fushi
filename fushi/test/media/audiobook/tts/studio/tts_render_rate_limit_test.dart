@@ -13,6 +13,7 @@ import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_rate_limit_panel.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:material_ui/material_ui.dart';
 
 /// 11-20 反馈 #9：限流面板的参数确实进了合成任务（并发 / 每句间隔 / 被限流时），
@@ -243,8 +244,12 @@ void main() {
     await tester.tap(find.text('4'));
     await tester.pumpAndSettle();
     expect(concurrency, 4);
-    await tester.tap(find.text(t.audiobook_studio_rate_limit_pause));
-    await tester.pumpAndSettle();
+    // 长文案在窄行里会被设计系统换成菜单行，这里直接走行的回调。
+    tester
+        .widget<AdaptiveSettingsSegmentedRow<TtsRateLimitAction>>(
+          find.byKey(const ValueKey<String>('tts-studio-rate-limit-action')),
+        )
+        .onChanged(TtsRateLimitAction.pause);
     expect(action, TtsRateLimitAction.pause);
     await tester.tap(find.text(t.audiobook_studio_rate_limit_use_local));
     await tester.tap(find.text(t.audiobook_studio_rate_limit_selected_only));
