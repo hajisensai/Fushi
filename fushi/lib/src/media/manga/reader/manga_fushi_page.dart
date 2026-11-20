@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui show Image;
 
 import 'package:drift/drift.dart' show Value;
@@ -3411,7 +3412,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// [key] 是页在本页面内的稳定身份（LRU 键），[loadSource] 只在未命中时读原图。
   /// [quality] 是页图 URL 上的画质档（`fq=`），决定读头分流与转码的判据并分开缓存。
   /// [pageIndex] 已知时，这一页在转码队列出队那一刻若在屏上（当前跨页），就插到
-  /// 预热邻页之前（manga-6）。
+  /// 预热邻页之前（manga-6）；它也给文字感知 Gamma 校正取本页 OCR 文字框（取当下的
+  /// [_payload]，后台 OCR 补框后页面 JS 会换 `tb=` 重取）。页号不明时按无框处理（整页 sRGB）。
   Future<Uint8List?> _fitPageBytes(
     String key,
     int? fitWidth,
@@ -3420,12 +3422,22 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     int? pageIndex,
   }) async {
     if (fitWidth == null) return null;
+    final List<MokuroImage>? images = _payload?.images;
+    final Float32List? textBoxes =
+        quality == MangaFitQuality.enhancedTextGamma &&
+            images != null &&
+            pageIndex != null &&
+            pageIndex >= 0 &&
+            pageIndex < images.length
+        ? mangaTextBoxesOf(images[pageIndex])
+        : null;
     try {
       return await _pageFitter.fit(
         key,
         fitWidth,
         loadSource,
         quality: quality,
+        textBoxes: textBoxes,
         urgent: pageIndex == null ? null : () => _pageOnScreen(pageIndex),
       );
     } on Object catch (error, stackTrace) {
@@ -5326,10 +5338,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   Future<void> _replacePageOcrOverlay(int pageIndex, MokuroImage page) async {
     final String boxes = mangaOcrBoxesHtml(page);
+    final String textBoxSig = mangaTextBoxSignature(mangaTextBoxesOf(page));
     await _controller?.evaluateJavascript(
       source:
           'window.__mangaReplaceOcr && '
-          'window.__mangaReplaceOcr($pageIndex, ${jsonEncode(boxes)});',
+          'window.__mangaReplaceOcr($pageIndex, ${jsonEncode(boxes)}, '
+          '${jsonEncode(textBoxSig)});',
     );
   }
 

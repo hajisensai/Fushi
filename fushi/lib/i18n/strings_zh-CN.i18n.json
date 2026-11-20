@@ -6013,7 +6013,7 @@
   "manga_reader_filters": "自定义滤镜",
   "manga_reader_flash_on_page_change": "翻页闪屏",
   "manga_reader_fullscreen": "全屏",
-  "manga_reader_gamma_correct_scaling": "Gamma 校正缩放（网点明度更准，细笔画会变淡）",
+  "manga_reader_gamma_correct_scaling": "Gamma 校正网点（有 OCR 的页文字保持锐利）",
   "manga_reader_general": "常规",
   "manga_reader_global": "使用全局默认",
   "manga_reader_grayscale": "灰度",

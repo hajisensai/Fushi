@@ -6013,7 +6013,7 @@
   "manga_reader_filters": "مرشح مخصص",
   "manga_reader_flash_on_page_change": "وميض عند تغيير الصفحة",
   "manga_reader_fullscreen": "ملء الشاشة",
-  "manga_reader_gamma_correct_scaling": "Gamma-correct scaling (accurate screentone, fainter thin strokes)",
+  "manga_reader_gamma_correct_scaling": "Gamma-correct screentone (text stays crisp on OCR'd pages)",
   "manga_reader_general": "عام",
   "manga_reader_global": "استخدام الافتراضي العام",
   "manga_reader_grayscale": "تدرج الرمادي",

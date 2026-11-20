@@ -6013,7 +6013,7 @@
   "manga_reader_filters": "ฟิลเตอร์กำหนดเอง",
   "manga_reader_flash_on_page_change": "กะพริบเมื่อเปลี่ยนหน้า",
   "manga_reader_fullscreen": "เต็มหน้าจอ",
-  "manga_reader_gamma_correct_scaling": "Gamma-correct scaling (accurate screentone, fainter thin strokes)",
+  "manga_reader_gamma_correct_scaling": "Gamma-correct screentone (text stays crisp on OCR'd pages)",
   "manga_reader_general": "ทั่วไป",
   "manga_reader_global": "ใช้ค่าเริ่มต้นส่วนกลาง",
   "manga_reader_grayscale": "ขาวดำ",

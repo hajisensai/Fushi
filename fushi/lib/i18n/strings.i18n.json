@@ -6013,7 +6013,7 @@
   "manga_reader_filters": "Custom filter",
   "manga_reader_flash_on_page_change": "Flash on page change",
   "manga_reader_fullscreen": "Full screen",
-  "manga_reader_gamma_correct_scaling": "Gamma-correct scaling (accurate screentone, fainter thin strokes)",
+  "manga_reader_gamma_correct_scaling": "Gamma-correct screentone (text stays crisp on OCR'd pages)",
   "manga_reader_general": "General",
   "manga_reader_global": "Use global default",
   "manga_reader_grayscale": "Grayscale",

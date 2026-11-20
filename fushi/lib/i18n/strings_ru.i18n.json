@@ -6013,7 +6013,7 @@
   "manga_reader_filters": "Пользовательский фильтр",
   "manga_reader_flash_on_page_change": "Вспышка при смене страницы",
   "manga_reader_fullscreen": "Полный экран",
-  "manga_reader_gamma_correct_scaling": "Gamma-correct scaling (accurate screentone, fainter thin strokes)",
+  "manga_reader_gamma_correct_scaling": "Gamma-correct screentone (text stays crisp on OCR'd pages)",
   "manga_reader_general": "Общие",
   "manga_reader_global": "Использовать общие настройки по умолчанию",
   "manga_reader_grayscale": "Оттенки серого",
