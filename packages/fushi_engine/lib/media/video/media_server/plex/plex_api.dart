@@ -88,6 +88,28 @@ class PlexApiException implements Exception {
   String toString() => 'PlexApiException($statusCode, $path)';
 }
 
+/// 请求没到达服务器（连不上 / 连接中途断开：`http.ClientException`，含底层
+/// `SocketException`）。与 [PlexApiException]（服务器答了非 2xx）分开，调用方据此
+/// 判断「换一条连接也许能通」（`PlexServerConfig.rerouteAfterFailure`）。
+/// [toString] 与之前抛的 `Exception(message)` 逐字相同（播放页错误文案不变）。
+class PlexTransportException implements Exception {
+  const PlexTransportException(this.message);
+
+  /// 已脱敏的底层错误描述。
+  final String message;
+
+  @override
+  String toString() => 'Exception: $message';
+}
+
+/// [error] 是不是「这条连接不通」类失败：[PlexTransportException]、请求超时
+/// （[PlexApi.kRequestTimeout] 的 [TimeoutException]）或裸 [SocketException]。
+/// 服务器答了话（[PlexApiException]、解析失败、条目不存在）都不算。
+bool isPlexTransportFailure(Object error) =>
+    error is PlexTransportException ||
+    error is TimeoutException ||
+    error is SocketException;
+
 /// 一个媒体库（`/library/sections` 的 `Directory`）。
 class PlexSection {
   const PlexSection({
@@ -396,7 +418,7 @@ class PlexApi {
       return res;
     } on http.ClientException catch (e) {
       // 凭据脱敏在异常构造侧（见 credential_redaction.dart 文件头）。
-      throw Exception(redactCredentialsInText(e.toString()));
+      throw PlexTransportException(redactCredentialsInText(e.toString()));
     }
   }
 
@@ -601,7 +623,7 @@ class PlexApi {
       }
       return res.bodyBytes;
     } on http.ClientException catch (e) {
-      throw Exception(redactCredentialsInText(e.toString()));
+      throw PlexTransportException(redactCredentialsInText(e.toString()));
     }
   }
 
@@ -654,7 +676,7 @@ class PlexApi {
         }
       }
     } on http.ClientException catch (e) {
-      throw Exception(redactCredentialsInText(e.toString()));
+      throw PlexTransportException(redactCredentialsInText(e.toString()));
     }
   }
 

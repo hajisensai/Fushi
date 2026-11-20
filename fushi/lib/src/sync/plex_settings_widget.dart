@@ -146,6 +146,40 @@ Future<bool> probePlexConnection(
   }
 }
 
+/// 媒体服务器请求在当前线路上失败之后自动换线路（gap-remote-7）：[config] 是
+/// Plex 且 [error] 是传输失败时，在它已存的连接里探测（核对 machineIdentifier），
+/// 找到另一条可达线路就写回配置、失效这台的远端清单缓存槽（槽里的封面 / 流 URL
+/// 烤着旧线路的 host，与手动「切换线路」同口径），返回新配置供调用方重建客户端；
+/// 其余情况返回 null、不写任何东西。
+///
+/// 只换 `activeServerUrl`，不存账号 token、不改连接清单。Jellyfin 家族的多线路
+/// 不在这里自动切换（那边的备用线路是用户手填的，是否自动切换另行决定）。
+Future<MediaServerConfig?> rerouteMediaServerAfterFailure(
+  MediaServerConfig config,
+  Object error, {
+  required SyncRepository repo,
+  required RemoteLibraryCache cache,
+  Duration probeTimeout = const Duration(seconds: 5),
+  http.Client Function()? httpClientFactory,
+}) async {
+  if (config is! PlexServerConfig) return null;
+  final PlexServerConfig? rerouted = await config.rerouteAfterFailure(
+    error,
+    probe: (String uri) => probePlexConnection(
+      uri,
+      config.token,
+      config.machineIdentifier,
+      PlexClientInfo(clientIdentifier: config.clientIdentifier),
+      timeout: probeTimeout,
+      httpClientFactory: httpClientFactory,
+    ),
+  );
+  if (rerouted == null) return null;
+  await repo.upsertMediaServer(rerouted);
+  cache.invalidateSource(rerouted.sourceId);
+  return rerouted;
+}
+
 /// plex.tv 账号授权拿到账号 token 之后：列出账号下的服务器，各台按连接优先级探测
 /// 排名最靠前的可达地址，把可达的存成媒体服务器（设置页 PIN 登录与控制通道共用
 /// 这一处落库）。返回存下的配置；一台都不可达返回空表。
