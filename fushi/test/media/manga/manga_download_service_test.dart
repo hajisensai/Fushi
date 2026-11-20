@@ -1112,6 +1112,9 @@ void main() {
     final MangaDownloadJobRow failed = await jobOf('/chapter/1');
     expect(failed.status, MangaDownloadJobStatus.failed);
     expect(failed.lastError, contains('PAGE_TOO_LARGE'));
+    // 确定性失败：同一页再取还是超限，不该退避重试（每次都白下 100 MiB 以上）。
+    expect(failed.attemptCount, 1);
+    expect(adapter.fetchCounts[1], 1);
     final Directory images = Directory(
       p.join(mangaChapterDirectory(bookDir, '/chapter/1').path, 'images'),
     );

@@ -208,12 +208,17 @@ class MangaDownloadPreconditionFailed implements Exception {
 }
 
 /// 这次失败是不是「再试也一样」：前置条件不满足、源要用户亲自过 Cloudflare 验证
-/// （按类型认，见 [mihonCloudflareChallenge]）、源已停用 / 本平台没有该运行时。
+/// （按类型认，见 [mihonCloudflareChallenge]）、源已停用 / 本平台没有该运行时、
+/// 页超过单页上限（`PAGE_TOO_LARGE`：同一页再取还是那么大，每次重试都要白下
+/// 100 MiB 以上；空页 `PAGE_EMPTY` 可能是站点一时抽风，不算）。
 /// 是的话任务直接 `failed`，不再按 [kMangaDownloadRetryBackoff] 白等——一串要验证
 /// 或已下架的章节以前每章都要空等 2s + 8s 才失败。其余（网络、站点抽风、运行时
 /// 的一般失败）分不出是不是瞬时的，照旧退避重试。
 bool isPermanentMangaDownloadFailure(Object error) {
   if (error is MangaDownloadPreconditionFailed) return true;
+  if (error is MangaPageBytesRejected && error.code == kMangaPageTooLargeCode) {
+    return true;
+  }
   if (mihonCloudflareChallenge(error) != null) return true;
   if (error is OnlineMangaUnavailable &&
       error.reason != OnlineMangaUnavailableReason.runtimeFailure) {
