@@ -1527,9 +1527,6 @@ JSON.stringify((function(){
     );
   }
 
-  /// BUG-802：读取当前拖选文本，穿透词条卡的同源 iframe（见 [_selectedTextAcrossFramesJs]）。
-  /// 替代桌面上未实现、且天然只读顶层文档的 `_controller.getSelectedText()`——右键
-  /// 「复制/搜索」都靠它拿选区。空选区（或 controller 未就绪）返回空串，调用方据此早退。
   /// BUG-4911：弹窗正文（含同源词条 iframe）此刻是否持有**非空原生选区**。
   ///
   /// 本体横滑关闭检测器（`_BodySwipeDismissDetector`）是不进手势竞技场的 raw
@@ -1540,6 +1537,9 @@ JSON.stringify((function(){
   Future<bool> hasNativeSelection() async =>
       (await _selectedTextAcrossFrames()).isNotEmpty;
 
+  /// BUG-802：读取当前拖选文本，穿透词条卡的同源 iframe（见 [_selectedTextAcrossFramesJs]）。
+  /// 替代桌面上未实现、且天然只读顶层文档的 `_controller.getSelectedText()`——右键
+  /// 「复制/搜索」都靠它拿选区。空选区（或 controller 未就绪）返回空串，调用方据此早退。
   Future<String> _selectedTextAcrossFrames() async {
     final Object? raw = await _controller?.evaluateJavascript(
       source: _selectedTextAcrossFramesJs,
