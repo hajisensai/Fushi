@@ -34,6 +34,7 @@
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
 > 共 4238 条。点号进各自文件。
+> 共 4048 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -328,6 +329,7 @@
 | [BUG-4660](bugs/BUG-4660-manga-zip64-data-descriptor-size.md) | ✅ | ✅ | ZIP64 数据描述符被按 4 字节读，条目大小读成 0，导入报损坏 |
 | [BUG-4659](bugs/BUG-4659-manga-zip-2gib-cap.md) | ✅ | ✅ | 解出超过 2 GiB 的 .zip 漫画一律报 too large 无法导入 |
 | [BUG-4658](bugs/BUG-4658-manga-zip-non-utf8-names.md) | ✅ | ✅ | 非 UTF-8 文件名（Shift_JIS）的 .zip 漫画打不开，导入框报不支持的格式 |
+| [BUG-4659](bugs/BUG-4659-flatpak-baseapp-state-dir-cross-fs.md) | ✅ | ✅ | CI flatpak-baseapp 未命中缓存时 flatpak-builder 报 state dir 与 target dir 不在同一文件系统 |
 | [BUG-4657](bugs/BUG-4657-apkg-deleted-card-revlog-dropped.md) | ✅ | ✅ | apkg 导入丢掉 Anki 端已删卡的复习记录（统计 / 日历少算） |
 | [BUG-4656](bugs/BUG-4656-ios-unsigned-ipa-unstripped.md) | ✅ | ✅ | 未签名 IPA 的 Mach-O 没 strip 本地符号 |
 | [BUG-4655](bugs/BUG-4655-ios-dart-split-debug-info.md) | ✅ | ✅ | iOS 出包没拆 Dart 调试信息 |
