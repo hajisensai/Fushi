@@ -8992,11 +8992,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
               kMangaZoomMaxPercent,
             );
             if (_zoomPercent == normalized) return;
-            if (mounted) {
-              setState(() => _zoomPercent = normalized);
-            } else {
-              _zoomPercent = normalized;
-            }
+            // 捏合 / Ctrl+滚轮每一步都回报一次：倍率只是下次重建窗口文档的初值和
+            // 右键菜单（打开时现读）的文案，release 下没有任何 build 消费者，直接
+            // 赋值即可，不为每一步重建整个阅读页。只有 debug 命中胶囊显示倍率。
+            _zoomPercent = normalized;
+            if (kDebugMode && mounted) setState(() {});
           },
         );
         // 页内指针 / 滚轮输入（捏合缩放、拖动平移、双击缩放…，JS 侧已节流）：只喂
