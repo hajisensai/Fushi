@@ -125,8 +125,8 @@ List<OnboardingTutorialItem> srsOnboardingTutorialItems() =>
     <OnboardingTutorialItem>[
       OnboardingTutorialItem(
         icon: FushiIcons.statistics,
-        title: t.onboarding_srs_fsrs_title,
-        description: t.onboarding_srs_fsrs_desc,
+        title: t.onboarding_srs_rwkv_title,
+        description: t.onboarding_srs_rwkv_desc,
       ),
       OnboardingTutorialItem(
         icon: FushiIcons.collection,
@@ -1193,7 +1193,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
           title: t.onboarding_anki_fsrs_title,
           hint: t.onboarding_anki_fsrs_body,
         ),
-        // 开了 Fushi 内置复习的用户：内置复习已经默认 FSRS-7，这段 Anki 教程只在
+        // 开了 Fushi 内置复习的用户：内置复习已经默认 RWKV，这段 Anki 教程只在
         // 还要用 Anki 复习时才需要（教程本身保留，不移出本步）。
         if (appModelNoUpdate.moduleVisibility.isEnabled(
           ModuleId.srs,
