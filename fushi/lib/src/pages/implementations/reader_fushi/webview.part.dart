@@ -234,8 +234,6 @@ extension _ReaderWebView on _ReaderFushiPageState {
       return _notFound('resource not found: $epubPath (resolved: $filePath)');
     }
 
-    Uint8List data = await file.readAsBytes();
-
     // BUG-1203：「这是不是一个该走 HTML 处理链的内容文档」以 **EPUB 自己声明的
     // media-type** 为准，扩展名表只在声明缺失/畸形时兜底。EPUB 不规定内容文档的
     // 文件扩展名，只规定 media-type，所以任何扩展名白名单都必然漏（BUG-1199 补了
@@ -266,6 +264,31 @@ extension _ReaderWebView on _ReaderFushiPageState {
     // `sanitizeXhtml` 是为 HTML5 解析语义写的补偿，切走后不再防护那两类故障。
     String mime = isHtmlDocument ? 'text/html' : extMime;
 
+    // novel-17d：缓存命中不读盘。分类只看路径与 manifest，不需要字节，所以先查
+    // 两份按路径键控的缓存（章节 HTML LRU、样式表净化缓存），命中直接下发；原先先
+    // `readAsBytes` 再查缓存，翻回已读章 / 预取命中时整章字节白读一遍。缓存检查放在
+    // [_ensureOnlineChapter] 与 404 判定之后：在线书取回正文时那一章的条目已被丢弃，
+    // 不会把占位页的缓存当正文发出去。字体分支没有缓存，照常读字节。
+    final bool servesStyledHtml = isHtmlDocument && _settings != null;
+    final Uint8List? cachedBytes = servesStyledHtml
+        ? _cachedChapterHtml(filePath)
+        : (mime == 'text/css' ? _sanitizedCssCache[filePath] : null);
+    if (cachedBytes != null) {
+      return _ReaderResourceResponse(
+        contentType: mime,
+        contentEncoding: _contentEncodingForMime(mime),
+        statusCode: 200,
+        reasonPhrase: 'OK',
+        headers: const <String, String>{
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'no-cache',
+        },
+        data: cachedBytes,
+      );
+    }
+
+    Uint8List data = await file.readAsBytes();
+
     // 书自带的字体同样可能错设「x = 0 是竖排基线」（见 clearVerticalBaselineFlag）。
     if (_isFontMime(mime) || _isFontMime(declaredMime)) {
       final VerticalBaselineFontResult fixed =
@@ -284,20 +307,19 @@ extension _ReaderWebView on _ReaderFushiPageState {
           !_sanitizedCssCache.containsKey(filePath)) {
         _sanitizedCssCache.remove(_sanitizedCssCache.keys.first);
       }
-      data = _sanitizedCssCache.putIfAbsent(filePath, () {
-        // HBK-AUDIT-118: tolerate non-UTF-8 CSS bytes instead of throwing
-        // (decode + rewrite + encode run natively in one FFI call).
-        return ReaderResourceSanitizer.sanitizeCssBytes(data);
-      });
+      // HBK-AUDIT-118: tolerate non-UTF-8 CSS bytes instead of throwing
+      // (decode + rewrite + encode run natively in one FFI call).
+      data = ReaderResourceSanitizer.sanitizeCssBytes(data);
+      _sanitizedCssCache[filePath] = data;
     }
 
-    if (isHtmlDocument && _settings != null) {
+    if (servesStyledHtml) {
       // BUG-270 (TODO-296 B): repeat chapter visits (forward/back paging,
-      // prefetched chapters) reuse the sanitized + style-injected bytes from
-      // the LRU cache instead of re-reading/decoding/sanitizing/injecting. The
+      // prefetched chapters) are served from the LRU cache above, before the
+      // disk read. Here is the cold miss: sanitize + inject once and cache. The
       // cache is dropped on every style change (_invalidateStyleCache), so a
       // cached entry always carries the current styleTag.
-      data = _chapterHtmlBytes(filePath, data);
+      data = _buildAndCacheChapterHtml(filePath, data);
     }
 
     // TODO-1074 (root cause B): images are immutable on disk and carry no live
@@ -402,17 +424,21 @@ extension _ReaderWebView on _ReaderFushiPageState {
     );
   }
 
-  // BUG-270 (TODO-296 B): return the sanitized + style-injected chapter bytes
-  // for [filePath], serving from the LRU cache on a hit and building+caching on
-  // a miss. [rawData] is the already-read on-disk bytes from _interceptRequest
-  // (avoids a second disk read on the cold path). On an LRU hit the entry is
-  // moved to most-recently-used.
-  Uint8List _chapterHtmlBytes(String filePath, Uint8List rawData) {
+  // BUG-270 (TODO-296 B): the LRU hit path for the sanitized + style-injected
+  // chapter bytes of [filePath]. Looked up *before* any disk read (novel-17d);
+  // a hit is moved to most-recently-used.
+  Uint8List? _cachedChapterHtml(String filePath) {
     final Uint8List? cached = _sanitizedHtmlCache.remove(filePath);
     if (cached != null) {
       _sanitizedHtmlCache[filePath] = cached; // bump to MRU
-      return cached;
     }
+    return cached;
+  }
+
+  // BUG-270: the cold-miss path — [rawData] is the on-disk bytes the resource
+  // branch read after [_cachedChapterHtml] missed; sanitize + inject once and
+  // cache the result.
+  Uint8List _buildAndCacheChapterHtml(String filePath, Uint8List rawData) {
     final Uint8List built = _buildSanitizedChapterHtmlBytes(
       rawData,
       chapterIndex: _chapterIndexForFilePath(filePath),

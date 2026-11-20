@@ -16,7 +16,7 @@ void main() {
     late String src;
 
     setUpAll(() {
-      // TODO-589 batch8: _interceptRequest / _chapterHtmlBytes /
+      // TODO-589 batch8: _interceptRequest / _cachedChapterHtml /
       // _putChapterHtml / _buildSanitizedChapterHtmlBytes /
       // _prefetchAdjacentChapter / _onChapterLoadComplete 已搬到
       // reader_fushi/webview.part.dart，故改读「主壳 + 全部 part」合并语料。
@@ -50,11 +50,41 @@ void main() {
         'Future<_ReaderResourceResponse> _readerResourcePayload(',
       );
       expect(
-        containsCodeLine(payloadBody, '_chapterHtmlBytes(filePath, data)'),
+        containsCodeLine(
+          payloadBody,
+          '_buildAndCacheChapterHtml(filePath, data)',
+        ),
         isTrue,
         reason:
-            'HTML 分支必须走 _chapterHtmlBytes（命中缓存/失效重建），'
+            'HTML 冷路径必须走 _buildAndCacheChapterHtml（构建后入缓存），'
             '不能在资源分支里内联 sanitize+inject',
+      );
+
+      // novel-17d：缓存命中不读盘。两份按路径键控的缓存（章节 HTML LRU、样式表净化
+      // 缓存）必须在 `readAsBytes` **之前**查；旧实现先整章读盘再查缓存，命中时字节白读。
+      final int htmlLookup = payloadBody.indexOf(
+        '_cachedChapterHtml(filePath)',
+      );
+      final int cssLookup = payloadBody.indexOf('_sanitizedCssCache[filePath]');
+      final int read = payloadBody.indexOf('await file.readAsBytes()');
+      expect(htmlLookup, greaterThanOrEqualTo(0), reason: 'HTML 缓存查找缺失');
+      expect(cssLookup, greaterThanOrEqualTo(0), reason: 'CSS 缓存查找缺失');
+      expect(read, greaterThanOrEqualTo(0), reason: '冷路径读盘缺失');
+      expect(
+        htmlLookup < read && cssLookup < read,
+        isTrue,
+        reason: '缓存检查必须在读盘之前（novel-17d：先查后读）',
+      );
+      // 缓存检查必须在在线章取正文与 404 判定之后：在线书取回正文时丢弃该章条目，
+      // 先查缓存会把占位页的旧条目发出去。
+      final int ensureOnline = payloadBody.indexOf('_ensureOnlineChapter(');
+      final int notFound = payloadBody.indexOf("_notFound('resource not found");
+      expect(ensureOnline, greaterThanOrEqualTo(0));
+      expect(notFound, greaterThanOrEqualTo(0));
+      expect(
+        ensureOnline < htmlLookup && notFound < htmlLookup,
+        isTrue,
+        reason: '缓存检查放在 _ensureOnlineChapter 与 404 判定之后',
       );
 
       final String interceptBody = methodBody(
@@ -70,8 +100,8 @@ void main() {
       );
     });
 
-    test('_chapterHtmlBytes 命中即把条目顶到 MRU', () {
-      final String body = methodBody(src, 'Uint8List _chapterHtmlBytes(');
+    test('_cachedChapterHtml 命中即把条目顶到 MRU', () {
+      final String body = methodBody(src, 'Uint8List? _cachedChapterHtml(');
       expect(
         containsCodeLine(body, '_sanitizedHtmlCache.remove(filePath)'),
         isTrue,
@@ -171,7 +201,7 @@ void main() {
     });
   });
 
-  // ── LRU 算法行为测试（与 _putChapterHtml/_chapterHtmlBytes 等价的纯实现） ──
+  // ── LRU 算法行为测试（与 _putChapterHtml/_cachedChapterHtml 等价的纯实现） ──
   group('LRU eviction/hit semantics (mirror of impl)', () {
     const int limit = 3;
     late LinkedHashMap<String, Uint8List> cache;
