@@ -189,7 +189,9 @@ List<OpDescription> describeMediaLinksOps(OpDescribeKit kit) {
           'verdicts are linked directly (confirmed_by=ai, undoable); the rest '
           'are stored as suggestions. Queries MAL / Wikidata; when an LLM is '
           'assigned to "media links" the candidates are also sent to that LLM '
-          'for a verdict. Slow.',
+          'for a verdict, and same-kind items with overlapping titles (two '
+          'video collections / movies, two games) that no metadata source '
+          'relates are sent too, to find sequels and side stories. Slow.',
       risk: OpRisk.write,
       params: const <OpParam>[_endpointParam],
       undo: opCustomUndo(

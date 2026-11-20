@@ -2476,6 +2476,8 @@ List<String> mergeSkippedDeviceLocalTableNames() =>
       'music_disc_sources',
       // v131：OP / ED 声纹比对缓存——本机文件的实测结果，必须本机重算。
       'video_theme_song_spans',
+      // v163：作品图谱 AI 裁决缓存——本机配的模型给的结论，设备本地。
+      'media_link_ai_verdicts',
       // v135：游戏 VNDB 配音表缓存——本机取得的缓存，按需重取。
       'game_voice_casts',
       // v133：音乐刮削三表（键含本机路径派生的 track_uid），设备本地。

@@ -34,6 +34,7 @@ import 'sqlite_busy_timeout.dart';
 import 'sync_tombstone_kind.dart';
 import 'tables.dart';
 import 'tag_host_kind.dart';
+import 'media_link_ai_verdict_tables.dart';
 import 'people_tables.dart';
 import 'theme_song_span_tables.dart';
 
@@ -55,6 +56,7 @@ part 'database_music.part.dart';
 part 'database_music_identity.part.dart';
 part 'database_music_scrape.part.dart';
 part 'database_theme_song_spans.part.dart';
+part 'database_media_link_ai_verdicts.part.dart';
 part 'database_people.part.dart';
 part 'database_ai_agent.part.dart';
 
@@ -953,6 +955,7 @@ void _requireOneVideoMetadataOwner({
     MusicPlayEvents,
     MusicResumePoints,
     VideoThemeSongSpans,
+    MediaLinkAiVerdicts,
     MusicScrapeMeta,
     MusicMetadataRawSnapshots,
     MusicLockedFields,
@@ -982,6 +985,7 @@ class FushiDatabase extends _$FushiDatabase
         _FushiDbMusicIdentity,
         _FushiDbMusicScrape,
         _FushiDbThemeSongSpans,
+        _FushiDbMediaLinkAiVerdicts,
         _FushiDbPeople,
         _FushiDbAiAgent,
         _FushiDbItemScrape {
@@ -3253,6 +3257,14 @@ class FushiDatabase extends _$FushiDatabase
               await customStatement('PRAGMA foreign_keys = ON');
             }
           }
+        }
+      }
+      if (from < 163) {
+        // v163：media_link_ai_verdicts——作品图谱 AI 裁决的本机缓存（一对端点 + AI
+        // 当时看到的内容的摘要 → 结论），同样的问题不再问第二遍。设备本地、纯缓存、
+        // 无外键（见 media_link_ai_verdict_tables.dart）。纯建表；幂等守卫同 v131。
+        if (!await _tableExists('media_link_ai_verdicts')) {
+          await m.createTable(mediaLinkAiVerdicts);
         }
       }
       // 阶梯之后（列已齐）补统计分区索引：v105 后新装的库 onCreate 曾漏建
