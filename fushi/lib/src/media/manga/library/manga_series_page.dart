@@ -22,6 +22,7 @@ import 'package:fushi/src/media/manga/download/manga_download_service.dart';
 import 'package:fushi/src/media/manga/download/online_manga_download_gate.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_studio_page.dart';
 import 'package:fushi/src/media/manga/library/manga_book_ocr.dart';
+import 'package:fushi/src/media/manga/library/manga_chapter_download_verdicts.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_list.dart';
 import 'package:fushi/src/media/manga/library/manga_series_download_banner.dart';
 import 'package:fushi/src/media/downloads/manga_download_tasks_section.dart'
@@ -88,6 +89,7 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:path/path.dart' as p;
+import 'package:path/path.dart' show PathMap;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:fushi/src/media/links/media_link_entries.dart'
     show MediaLinkEntry;
@@ -253,11 +255,24 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   );
 
   /// 下载状态位（设计稿 2026-09-12 §5）：任务行 + 磁盘判据，两份合成章节行上
-  /// 的一个状态。任务表一变就整体重算。
+  /// 的一个状态。任务表一变就重算；磁盘判据按章缓存，只重判任务行状态变了的章
+  /// （[MangaChapterDownloadVerdicts]，manga-4），刷新串行合并（[_downloadRefresh]）。
   Map<String, MangaDownloadJobRow> _jobs =
       const <String, MangaDownloadJobRow>{};
   Set<String> _downloaded = const <String>{};
   StreamSubscription<void>? _jobsWatch;
+  final MangaChapterDownloadVerdicts _downloadVerdicts =
+      MangaChapterDownloadVerdicts();
+  late final CoalescedRefresh _downloadRefresh = CoalescedRefresh(
+    _refreshDownloadStateOnce,
+  );
+
+  /// 任务目录 → 章 key 的索引（gap-mangamisc-4）：OCR 横幅 / 章节行每次 build 都要
+  /// 把排队的任务目录对回章，逐章算 sha256 + 路径比较是「排队数 × 章数」。书目录或
+  /// 章表变了才重建；[PathMap] 保留 `p.equals` 的比较语义。
+  PathMap<String>? _chapterKeysByDirectory;
+  String? _chapterKeysIndexBookDir;
+  List<OnlineMangaChapter>? _chapterKeysIndexChapters;
 
   /// OCR 进度（BUG-2481）：注册表的「任务集合变了」信号 + 当前任务的事件流。
   /// 页面只观察，不拥有任务（所有权在注册表，BUG-2449）。
@@ -428,15 +443,18 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     final String? bookDir = _bookDir;
     final OnlineMangaLibraryEntry? entry = _entry;
     if (bookDir == null || entry == null) return null;
-    for (final OnlineMangaChapter chapter in entry.chapters) {
-      if (p.equals(
-        mangaChapterDirectory(bookDir, chapter.key).path,
-        directory,
-      )) {
-        return chapter.key;
-      }
+    PathMap<String>? index = _chapterKeysByDirectory;
+    if (index == null ||
+        _chapterKeysIndexBookDir != bookDir ||
+        !identical(_chapterKeysIndexChapters, entry.chapters)) {
+      index = _chapterKeysByDirectory = mangaChapterKeysByDirectory(
+        bookDir,
+        entry.chapters.map((OnlineMangaChapter chapter) => chapter.key),
+      );
+      _chapterKeysIndexBookDir = bookDir;
+      _chapterKeysIndexChapters = entry.chapters;
     }
-    return null;
+    return index[directory];
   }
 
   Set<String> get _ocrQueuedChapterKeys => <String>{
@@ -522,7 +540,20 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
 
   /// 重算下载状态位并（首次）订阅任务表。只对在库条目有意义：未入库的作品既没有
   /// 任务也没有章目录。
-  Future<void> _refreshDownloadState() async {
+  ///
+  /// 串行合并（[CoalescedRefresh]）：任务表的每个信号、用户动作都会请求，在跑的
+  /// 那一轮结束后最多再补一轮。[invalidate] 的章 / [full] 全量下一轮必重判磁盘。
+  Future<void> _refreshDownloadState({
+    Iterable<String> invalidate = const <String>[],
+    bool full = false,
+  }) {
+    _downloadVerdicts.invalidate(invalidate);
+    if (full) _downloadVerdicts.invalidateAll();
+    return _downloadRefresh.request();
+  }
+
+  Future<void> _refreshDownloadStateOnce() async {
+    if (!mounted) return;
     final EpubBookRow? row = _row;
     final OnlineMangaLibraryEntry? entry = _entry;
     final AppModel? appModel = _appModelOrNull;
@@ -542,9 +573,12 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       row.bookKey,
     );
     final String bookDir = await _resolveBookDir(row.bookKey);
-    final Set<String> downloaded = await downloadedChapterKeys(
-      bookDir,
-      entry.chapters.map((OnlineMangaChapter chapter) => chapter.key),
+    final Set<String> downloaded = await _downloadVerdicts.resolve(
+      bookDir: bookDir,
+      chapterKeys: <String>[
+        for (final OnlineMangaChapter chapter in entry.chapters) chapter.key,
+      ],
+      jobs: jobs,
     );
     if (!mounted) return;
     final bool downloadedChanged = !setEquals(downloaded, _downloaded);
@@ -747,7 +781,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         );
       }
     }
-    await _refreshDownloadState();
+    await _refreshDownloadState(invalidate: <String>[chapter.key]);
   }
 
   /// 「下载全部」：未下载且没有排队 / 执行中任务的章按章序（旧 → 新）入队。
@@ -1477,6 +1511,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         _states = const <String, MangaChapterStateRow>{};
         _downloaded = const <String>{};
         _jobs = const <String, MangaDownloadJobRow>{};
+        _downloadVerdicts.clear();
         // 丢掉三样只属于「在库」的状态：当前章、订阅、自动下载。
         _entry = entry.copyWith(
           clearCurrentChapter: true,
@@ -1662,7 +1697,9 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       _states = states;
       _localPosition = position;
     });
-    unawaited(_refreshDownloadState());
+    // 读的过程里章目录可能被别处动过（阅读器预下载走任务表，但互联 / 外部删除
+    // 不一定）：回来时做一次全量复核。
+    unawaited(_refreshDownloadState(full: true));
   }
 
   PrefKavitaMangaSyncStampStore _kavitaStamps() =>

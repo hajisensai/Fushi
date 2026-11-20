@@ -163,6 +163,29 @@ class _FakeOcrService implements MangaOcrService {
   }) => const Stream<MangaOcrVolumeEvent>.empty();
 }
 
+/// 记下每次进度写库的库（manga-4 节流断言用）。
+class _CountingDb extends FushiDatabase {
+  _CountingDb() : super.forTesting(NativeDatabase.memory());
+
+  final List<int> progressWrites = <int>[];
+
+  @override
+  Future<int> updateMangaDownloadJobProgress(
+    String jobId, {
+    required int pagesDone,
+    required int pagesTotal,
+    required int updatedAt,
+  }) {
+    progressWrites.add(pagesDone);
+    return super.updateMangaDownloadJobProgress(
+      jobId,
+      pagesDone: pagesDone,
+      pagesTotal: pagesTotal,
+      updatedAt: updatedAt,
+    );
+  }
+}
+
 const List<OnlineMangaChapter> _chapters = <OnlineMangaChapter>[
   OnlineMangaChapter(
     key: '/chapter/2',
@@ -292,6 +315,64 @@ void main() {
     expect(payload.images[2].size.height, 152);
     expect(await isChapterDownloaded(bookDir, '/chapter/1'), isTrue);
     expect(waits, isEmpty);
+    downloads.dispose();
+  });
+
+  test('进度写库节流（manga-4）：间隔内只落首个值与页齐那一刻', () async {
+    final _CountingDb counting = _CountingDb();
+    addTearDown(counting.close);
+    final OnlineMangaLibraryService countingLibrary = OnlineMangaLibraryService(
+      database: counting,
+      rootDirectory: Directory(p.join(root.path, 'legacy-counting')),
+      adapter: adapter,
+    );
+    await countingLibrary.add(_entry());
+    // 时钟不走：三页都落在同一个节流窗口里。
+    final DateTime frozen = DateTime(2026, 11, 20);
+    final MangaDownloadService downloads = MangaDownloadService(
+      database: counting,
+      serviceFor: (OnlineMangaRuntimeKind runtime) => countingLibrary,
+      pageConcurrency: 1,
+      clock: () => frozen,
+      wait: (Duration duration) async {},
+    );
+    await downloads.enqueueChapter(
+      entry: _entry(),
+      chapter: _chapters.last,
+      autoOcr: false,
+    );
+    await downloads.start();
+    await downloads.whenIdle;
+    // 没有节流时是 [0, 1, 2, 3]：每页一次写库 = 一次 watchJobs 信号。
+    expect(counting.progressWrites, <int>[0, 3]);
+    downloads.dispose();
+  });
+
+  test('进度写库节流：时钟走过间隔就照常落中间值', () async {
+    final _CountingDb counting = _CountingDb();
+    addTearDown(counting.close);
+    final OnlineMangaLibraryService countingLibrary = OnlineMangaLibraryService(
+      database: counting,
+      rootDirectory: Directory(p.join(root.path, 'legacy-counting')),
+      adapter: adapter,
+    );
+    await countingLibrary.add(_entry());
+    DateTime now = DateTime(2026, 11, 20);
+    final MangaDownloadService downloads = MangaDownloadService(
+      database: counting,
+      serviceFor: (OnlineMangaRuntimeKind runtime) => countingLibrary,
+      pageConcurrency: 1,
+      clock: () => now = now.add(kMangaDownloadProgressWriteInterval),
+      wait: (Duration duration) async {},
+    );
+    await downloads.enqueueChapter(
+      entry: _entry(),
+      chapter: _chapters.last,
+      autoOcr: false,
+    );
+    await downloads.start();
+    await downloads.whenIdle;
+    expect(counting.progressWrites, <int>[0, 1, 2, 3]);
     downloads.dispose();
   });
 
