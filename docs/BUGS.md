@@ -7,8 +7,8 @@
 > 这样并发 agent 各写各的文件，永不在同一处产生 git 冲突；撞号也只是两个不同文件名，
 > 改个名即可，不再有冲突标记手术。
 >
-> 新建一条：`dart run tool/bug.dart new <slug> [标题...]`（取「本地 + origin/develop」已占最大号 + 1、生成骨架、重建索引；
-> 不 fetch、不遍历其它分支）。并发分支撞号不用提前防：把 develop 合进来 / rebase 之后跑
+> 新建一条：`dart run tool/bug.dart new <slug> [标题...]`（取「本地 + origin/develop + 本机已预留」最大号 + 1、生成骨架、重建索引；
+> 不 fetch、不遍历其它分支；本机并行工作区共用 `.git/` 里的预留计数，取到的号互不相同）。与别的机器撞号不用提前防、不用汇报：把 develop 合进来 / rebase 之后跑
 > `dart run tool/bug.dart settle`，每组同号文件里**最早进入 develop 首父链**的那份保留原号，develop 上没有的
 > 那一份改到下一个空号并重建索引；develop 收到 push 时 CI（`bug-number-settle.yml`）在最新的 develop 尖端上
 > 跑同一判据并提交（推送被拒就整轮重算），被取消 / 乱序的 run 留下的撞号由下一次一并收口。
