@@ -97,10 +97,10 @@ asr.AsrIsolateBackend fushiAsrBackend() => asr.AsrIsolateBackend(
 
 /// 把 `fushi_asr_core` 的三个装配点接到本仓的实现上。
 ///
-/// 在 `main()` 里、`runApp` 之前调用一次。**不要**放进 `AppModel.initialise()`：
-/// 弹窗词典与悬浮词典是另外两个 Flutter entry point，走的是
-/// `initialiseForDictionaryPopup()`，不经 `initialise()`；装配放在 main 里，
-/// 哪个入口都不会漏。
+/// 经 `installEntryPointHostBindings()` 在每个 Dart entry point 的 `runApp` 之前
+/// 调用。**不要**放进 `AppModel.initialise()`：弹窗词典等 entry point 走的是
+/// `initialiseForDictionaryPopup()`，不经 `initialise()`；副 engine 也不跑
+/// `main()`，所以各入口自己调（BUG-4940）。
 ///
 /// 注意这三个装配点都是**根 isolate 的全局变量**，`Isolate.spawn` 出去的后台
 /// 转录 isolate 一个都带不过去（Dart 全局按 isolate 隔离）。后台那边的装配走

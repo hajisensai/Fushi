@@ -374,8 +374,8 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
             ),
           FushiSwitch.adaptive(
             value: source.enabled,
-            onChanged: (bool enabled) => setState(() {
-              _sources[index] = source.copyWith(enabled: enabled);
+            onChanged: (bool enabled) => _updateRow(source, (int at) {
+              _sources[at] = source.copyWith(enabled: enabled);
             }),
           ),
           // Gamepad/keyboard reorder equivalent for the drag handle
@@ -386,9 +386,9 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
             tooltip: t.move_up,
             enabled: index > 0,
             padding: EdgeInsets.all(tokens.spacing.gap / 2),
-            onTap: () => setState(() {
-              final AudioSourceConfig item = _sources.removeAt(index);
-              _sources.insert(index - 1, item);
+            onTap: () => _updateRow(source, (int at) {
+              if (at == 0) return;
+              _sources.insert(at - 1, _sources.removeAt(at));
             }),
           ),
           FushiIconButton(
@@ -397,9 +397,9 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
             tooltip: t.move_down,
             enabled: index < _sources.length - 1,
             padding: EdgeInsets.all(tokens.spacing.gap / 2),
-            onTap: () => setState(() {
-              final AudioSourceConfig item = _sources.removeAt(index);
-              _sources.insert(index + 1, item);
+            onTap: () => _updateRow(source, (int at) {
+              if (at >= _sources.length - 1) return;
+              _sources.insert(at + 1, _sources.removeAt(at));
             }),
           ),
           FushiIconButton(
@@ -408,8 +408,8 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
             tooltip: t.dialog_delete,
             enabled: !isFushiRemote,
             padding: EdgeInsets.all(tokens.spacing.gap / 2),
-            onTap: () => setState(() {
-              _sources.removeAt(index);
+            onTap: () => _updateRow(source, (int at) {
+              _sources.removeAt(at);
               // 删掉的正是在编辑的那行 → 编辑态当场失效（否则提交时 indexOf 找不到
               // 它，或在存在等值重复行时改到别人头上）。
               if (isEditingThis) _cancelEdit();
@@ -483,6 +483,22 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
   }
 
   // ── actions ──────────────────────────────────────────────────────────────
+
+  /// 行内按钮（开关 / ↑ / ↓ / 删除）的唯一改表入口：按**行实例身份**现场定位，
+  /// 不用构建时捕获的下标（BUG-4947）。
+  ///
+  /// 按钮闭包在构建时生成，而两次点击之间不一定隔着一次重建：慢帧设备（电子墨水屏、
+  /// 主线程忙）上 180ms 内连点删除，第二次点击仍落在上一帧的旧行上，旧闭包里的
+  /// `index` 已指向别的行（误删 / 误移别人）或越界（`RangeError`）。每次改动都会让
+  /// 该行换成新实例（`copyWith`）或移出列表，所以用 `identical` 查到的位置就是这一行
+  /// 此刻的真实位置；查不到说明点的是已不存在的旧行，这次点击没有可作用的对象。
+  void _updateRow(AudioSourceConfig row, void Function(int at) change) {
+    final int at = _sources.indexWhere(
+      (AudioSourceConfig s) => identical(s, row),
+    );
+    if (at < 0) return;
+    setState(() => change(at));
+  }
 
   /// 把某个远端行的 URL 载入下方输入框，进入编辑态（光标置末尾，便于改个别字符）。
   void _beginEditRemoteUrl(AudioSourceConfig source) {

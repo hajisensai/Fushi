@@ -2835,7 +2835,6 @@ extension _ReaderChrome on _ReaderFushiPageState {
     String? initialSettingsTab,
   }) {
     final List<TtuTocEntry> toc = _buildTtuToc();
-    final String? extractDir = _extractDir;
     // 快照一次：[AppModel.moduleVisibility] 每读一次都重新合成一个 Set，下面三个
     // 有声书回调都要问它。
     final bool listeningEnabled = _moduleVisibility.isEnabled(
@@ -2845,12 +2844,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       controller: _audiobookController,
       toc: toc,
       nsfw: MediaNsfwTarget.book(widget.bookKey),
-      coverPath: extractDir == null
-          ? null
-          : ReaderFushiSource.resolveCoverFilePath(
-              extractDir: extractDir,
-              coverPath: _book?.coverHref,
-            ),
+      coverPath: _bookCoverFilePath,
       readerProgress: (_readingChapter, _book!.chapters.length),
       readerCharOffset: _readingTocCharOffset,
       onJumpSection: (int index, String? fragment) async {
@@ -2873,7 +2867,6 @@ extension _ReaderChrome on _ReaderFushiPageState {
       onExitReader: () {
         unawaited(_exitReaderBook());
       },
-      webViewController: _controller!,
       appModel: appModel,
       ref: ref,
       isFushiReader: true,
@@ -3580,12 +3573,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
             key: const ValueKey<String>('fushi_play_bar'),
             controller: ctrl,
             showPlayButton: true,
-            coverPath: _extractDir == null
-                ? null
-                : ReaderFushiSource.resolveCoverFilePath(
-                    extractDir: _extractDir!,
-                    coverPath: _book?.coverHref,
-                  ),
+            coverPath: _bookCoverFilePath,
             chapterLabel: _lyricsMode ? null : _currentChapterLabel(),
             skipActionSeconds: ReaderFushiSource.instance.skipActionSeconds,
             invertSkip: ReaderFushiSource.instance.invertAudiobookSkipDirection,

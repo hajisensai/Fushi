@@ -243,6 +243,8 @@ public class CrossAppAudioService extends Service {
             }
         }, "fushi-cross-app-audio");
         captureThread.start();
+        // 截屏识字借用这份授权取帧，不再另申请（另申请会让系统停掉它，BUG-4922）。
+        ProjectionShare.MEDIA.publish(current);
         CrossAppAudioProvider.setCapturingMarker(this, true);
         notifyState(true, null);
         return true;
@@ -293,7 +295,11 @@ public class CrossAppAudioService extends Service {
         if (rec != null) rec.release();
         MediaProjection p = projection;
         projection = null;
-        if (p != null) p.stop();
+        if (p != null) {
+            // 先撤下共享（放掉截屏识字借用的虚拟屏），再停投屏。
+            ProjectionShare.MEDIA.withdraw(p);
+            p.stop();
+        }
         CrossAppAudioRing r = ring;
         ring = null;
         if (r != null) r.clear();

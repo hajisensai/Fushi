@@ -15,7 +15,7 @@ void closeOwnedRemoteVideoClient(RemoteVideoClient client) {
   }
 }
 
-/// 播放页自建远端客户端的「收尾后关闭」（BUG-4908）。
+/// 播放页自建远端客户端的「收尾后关闭」（BUG-5012）。
 ///
 /// 流媒体书（粘贴 URL / 来源库网络视频 / 媒体服务器入库条目）的客户端由播放页现建，
 /// 持有 http 连接、来源直链解析器（AList 登录态、SFTP 的 SSH 连接）。此前页面从不关它们：

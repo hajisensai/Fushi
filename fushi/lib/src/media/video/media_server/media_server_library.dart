@@ -173,16 +173,19 @@ class MediaServerVideoLibrary {
   /// 加入媒体库：电影一行；剧把**全部季**的集逐页取回各落一行，归进剧名合集。
   /// 已在库的集跳过（再点一次只补新集，不动已看 / 已下载的行）。返回新加的条数。
   /// 之后服务器上新出的集由后台库更新探针补（`video_library_update_probe.dart`）。
+  /// 用户亲手点的：用户删过的剧名合集就此重建（BUG-5014）。
   Future<int> addToLibrary(
     MediaServerBrowser browser,
     MediaServerItem work,
-  ) async => (await addMissing(browser, work)).length;
+  ) async => (await addMissing(browser, work, userIntent: true)).length;
 
-  /// [addToLibrary] 的本体：返回这次新加的条目（探针据此投递新集提醒）。
+  /// [addToLibrary] 的本体：返回这次新加的条目（探针据此投递新集提醒）。探针是
+  /// 被动刷新，[userIntent] 保持 false——用户删掉的合集不被它复活。
   Future<List<RemoteVideoInfo>> addMissing(
     MediaServerBrowser browser,
-    MediaServerItem work,
-  ) async {
+    MediaServerItem work, {
+    bool userIntent = false,
+  }) async {
     final List<MediaServerItem> leaves = await _playableLeavesOf(browser, work);
     final RemoteCollectionAdoptionService adoption =
         RemoteCollectionAdoptionService(database);
@@ -212,7 +215,7 @@ class MediaServerVideoLibrary {
         addedInfos.add(info);
       }
       // 已在库的集也重新收养一次：合集被用户删掉后重新加入能回到合集里。
-      await adoption.adoptVideo(info);
+      await adoption.adoptVideo(info, userIntent: userIntent);
     }
     if (added.isNotEmpty) {
       await repository.recordVideoImportActivity(

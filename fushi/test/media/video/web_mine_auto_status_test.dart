@@ -3,7 +3,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/web_mine_auto_status.dart';
 import 'package:material_ui/material_ui.dart';
 
-/// 网页视频制卡队列一轮结束的提示（BUG-4911）：出错中止不能说成「已制卡 0，失败 0」
+/// 网页视频制卡队列一轮结束的提示（BUG-5039）：出错中止不能说成「已制卡 0，失败 0」
 /// 或「你回来了，已暂停」。
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));

@@ -12,12 +12,16 @@ class RemoteCollectionAdoptionService {
 
   final FushiDatabase database;
 
-  Future<void> adoptVideo(RemoteVideoInfo video) => adoptMembership(
-    membership: video.collection,
-    mediaType: MediaKind.video,
-    remoteEntryKey: video.id,
-    localEntryKey: video.id,
-  );
+  /// [userIntent]：用户亲手加入 / 下载这部作品时传 true，撤销此前对该合集的
+  /// 删除（见 [FushiDatabase.adoptRemoteCollectionMember]）；被动刷新保持 false。
+  Future<void> adoptVideo(RemoteVideoInfo video, {bool userIntent = false}) =>
+      adoptMembership(
+        membership: video.collection,
+        mediaType: MediaKind.video,
+        remoteEntryKey: video.id,
+        localEntryKey: video.id,
+        userIntent: userIntent,
+      );
 
   /// 目录刷新：整份远端清单一次收养。身份索引只装载一次（全表读
   /// `epub_books` + alias），不按本数重复物化——dashboard 启动路径也走这里。
@@ -100,6 +104,7 @@ class RemoteCollectionAdoptionService {
     required MediaKind mediaType,
     required String remoteEntryKey,
     String? localEntryKey,
+    bool userIntent = false,
   }) async {
     if (membership == null) return;
     await database.adoptRemoteCollectionMember(
@@ -109,6 +114,7 @@ class RemoteCollectionAdoptionService {
       remoteEntryKey: remoteEntryKey,
       sortIndex: membership.sortIndex,
       localEntryKey: localEntryKey,
+      userIntent: userIntent,
     );
   }
 }

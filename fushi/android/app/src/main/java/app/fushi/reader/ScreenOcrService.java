@@ -138,6 +138,8 @@ public class ScreenOcrService extends Service {
 
     /** 常驻会话通知上的「停止」。 */
     static final String ACTION_STOP_SESSION = "app.fushi.reader.SCREEN_OCR_STOP_SESSION";
+    /** 借用 App 外内录手里的投屏授权截一帧（BUG-4922，见 {@link ProjectionShare}）。 */
+    static final String ACTION_CAPTURE_SHARED = "app.fushi.reader.SCREEN_OCR_CAPTURE_SHARED";
 
     // 查词窗（:popup 进程）→ 本服务的会话回报，经 setPackage 定向、接收端不导出。
     static final String ACTION_LOOKUP_SHOWN = "app.fushi.reader.SCREEN_OCR_LOOKUP_SHOWN";
@@ -171,6 +173,12 @@ public class ScreenOcrService extends Service {
     private Handler captureHandler;
 
     private MediaProjection projection;
+    /**
+     * 本次的 projection 是借来的（{@link ProjectionShare#MEDIA}，持有方是 App 外内录）：
+     * 收尾时只摘 surface、注销回调，不停投屏、不放虚拟屏（虚拟屏归共享方持有）。
+     */
+    private boolean projectionShared = false;
+    @Nullable private MediaProjection.Callback projectionCallback;
     private VirtualDisplay virtualDisplay;
     private ImageReader imageReader;
     /** 最近一帧（只在 captureThread 上读写）。 */
@@ -269,6 +277,13 @@ public class ScreenOcrService extends Service {
             stopSessionNow();
             return START_NOT_STICKY;
         }
+        if (projection != null && intent != null
+                && ACTION_CAPTURE_SHARED.equals(intent.getAction())) {
+            // 借用请求持有流程锁（launch 只在没有流程时发），本实例却还占着另一份授权（系统
+            // 停掉它的 onStop 回调还没到）：这次作罢，把锁和悬浮球还回去。
+            ScreenCaptureRequestActivity.onFlowFinished();
+            return START_NOT_STICKY;
+        }
         if (projection != null || intent == null) {
             // 已有一次截屏在进行（流程锁本应挡住），或系统重投空 intent：不接新活。
             if (projection == null && selectionView == null) finishFlow();
@@ -279,6 +294,23 @@ public class ScreenOcrService extends Service {
         String lang = intent.getStringExtra(EXTRA_LANGUAGE);
         if (lang != null && !lang.isEmpty()) language = lang;
         labels = ScreenCaptureRequestActivity.fromBundle(intent.getBundleExtra(EXTRA_LABELS));
+
+        if (ACTION_CAPTURE_SHARED.equals(intent.getAction())) {
+            // 借内录的授权：不申请新的（新的会让系统停掉内录那份），也不进前台——投屏
+            // 能力由持有方（内录的 mediaProjection 前台服务）担着。
+            MediaProjection shared = ProjectionShare.MEDIA.current();
+            if (shared == null) {
+                // 发起之后、服务起来之前内录停了。
+                toast(label(LABEL_FAILED, "Screen capture failed"));
+                finishFlow();
+                return START_NOT_STICKY;
+            }
+            projection = shared;
+            projectionShared = true;
+            keepSession = false;
+            startCapture();
+            return START_NOT_STICKY;
+        }
 
         // Android 14+：必须先以 mediaProjection 类型进入前台，再 getMediaProjection。
         try {
@@ -369,7 +401,7 @@ public class ScreenOcrService extends Service {
 
         // Android 14+ 规定 createVirtualDisplay 之前必须先注册回调。
         final MediaProjection current = projection;
-        current.registerCallback(new MediaProjection.Callback() {
+        projectionCallback = new MediaProjection.Callback() {
             @Override
             public void onStop() {
                 // 用户从系统面板停止共享 / 系统收回授权 / 锁屏：截到一半就当失败收尾；
@@ -383,16 +415,36 @@ public class ScreenOcrService extends Service {
                     mainHandler.post(() -> onProjectionStopped(current, inCapture));
                 });
             }
-        }, captureHandler);
+        };
+        current.registerCallback(projectionCallback, captureHandler);
 
         imageReader = newImageReader();
 
         try {
-            virtualDisplay = projection.createVirtualDisplay(
-                    "fushi-screen-ocr",
-                    screenWidth, screenHeight, screenDensityDpi,
-                    DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                    imageReader.getSurface(), null, captureHandler);
+            if (projectionShared) {
+                // 共享授权上的虚拟屏只建一次（Android 14 起同一 projection 不能建第二块），
+                // 之后每次借用都把它改到当前尺寸、挂上这次的 surface。
+                final boolean[] created = {false};
+                final ImageReader reader = imageReader;
+                virtualDisplay = ProjectionShare.MEDIA.displayFor(current, () -> {
+                    created[0] = true;
+                    return current.createVirtualDisplay(
+                            "fushi-screen-ocr",
+                            screenWidth, screenHeight, screenDensityDpi,
+                            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                            reader.getSurface(), null, null);
+                });
+                if (!created[0]) {
+                    virtualDisplay.resize(screenWidth, screenHeight, screenDensityDpi);
+                    virtualDisplay.setSurface(reader.getSurface());
+                }
+            } else {
+                virtualDisplay = projection.createVirtualDisplay(
+                        "fushi-screen-ocr",
+                        screenWidth, screenHeight, screenDensityDpi,
+                        DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                        imageReader.getSurface(), null, captureHandler);
+            }
         } catch (RuntimeException e) {
             Log.w(TAG, "createVirtualDisplay failed", e);
             toast(label(LABEL_FAILED, "Screen capture failed"));
@@ -437,6 +489,32 @@ public class ScreenOcrService extends Service {
     }
 
     // ── 保持截屏会话 ──────────────────────────────────────────────────────────
+
+    /** App 外内录开着、有可以借用的投屏授权（BUG-4922）。主线程。 */
+    static boolean hasSharedProjection() {
+        return ProjectionShare.MEDIA.current() != null;
+    }
+
+    /**
+     * 借内录的投屏授权截一帧：起本服务（普通 startService，不弹确认框、不起 Activity）。
+     * 起不来返回 false，调用方走「每次申请」。主线程。
+     */
+    static boolean captureWithSharedProjection(@NonNull Context context,
+            @Nullable String language, @Nullable Map<String, String> labels) {
+        if (!hasSharedProjection()) return false;
+        Intent intent = new Intent(context, ScreenOcrService.class)
+                .setAction(ACTION_CAPTURE_SHARED)
+                .putExtra(EXTRA_LANGUAGE, language == null ? "" : language)
+                .putExtra(EXTRA_LABELS, ScreenCaptureRequestActivity.toBundle(labels));
+        try {
+            context.startService(intent);
+        } catch (RuntimeException e) {
+            // 后台启动服务受限（IllegalStateException）等：走确认框。
+            Log.w(TAG, "ScreenOcrService could not be started for the shared projection", e);
+            return false;
+        }
+        return true;
+    }
 
     /** 有保持着、此刻空闲（没有流程在跑）的截屏会话。主线程。 */
     static boolean hasKeptSession() {
@@ -582,6 +660,21 @@ public class ScreenOcrService extends Service {
     /** 主线程：停掉投屏相关的一切，并退出前台（之后只剩选取层，不再持有录屏能力）。 */
     private void releaseCapture() {
         if (keptInstance == this) keptInstance = null;
+        if (projectionShared) {
+            // 借来的授权：虚拟屏还归共享方——仍在登记里就只摘掉本次的 surface（不再合成），
+            // 已被撤下（内录停了）时它已被放掉，不再碰；注销回调，不停投屏。
+            if (virtualDisplay != null && projection != null
+                    && ProjectionShare.MEDIA.holds(projection, virtualDisplay)) {
+                virtualDisplay.setSurface(null);
+            }
+            virtualDisplay = null;
+            if (projection != null && projectionCallback != null) {
+                projection.unregisterCallback(projectionCallback);
+            }
+            projection = null;
+        }
+        projectionShared = false;
+        projectionCallback = null;
         if (virtualDisplay != null) {
             virtualDisplay.release();
             virtualDisplay = null;

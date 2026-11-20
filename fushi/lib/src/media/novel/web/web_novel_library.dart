@@ -548,7 +548,7 @@ class WebNovelChapterLoader extends SerialOnlineNovelChapterLoader {
     // 「这一章已取过」以快照为准，不以文件为准：取章是先写正文文件、后写书行
     // （快照），两步之间失败 / 被杀时，末尾「下一章」的文件已是正文而快照里还没有
     // 这一章。只看文件就会永远短路——快照停在旧章数、`tailNext` 永远指着这一章，
-    // 开书补占位也因 spine 比快照多一项而不补，这本书再也追不了更（BUG-4906）。
+    // 开书补占位也因 spine 比快照多一项而不补，这本书再也追不了更（BUG-4970）。
     // 这种不一致按占位处理：重新取页并章，把快照补齐。
     final bool snapshotBehindFile =
         index == snapshot.chapters.length && snapshot.tailNext != null;
@@ -683,7 +683,7 @@ class WebNovelChapterLoader extends SerialOnlineNovelChapterLoader {
 
   /// 落盘顺序：新占位章文件 → nav → NCX → OPF。spine 以 OPF 为准，它最后写：
   /// 中途被杀只会留下一个没进 spine 的占位文件或多出一项的目录，书照样能开；
-  /// 下次取这一章时（快照还没写上，BUG-4906 的那条路）补丁会重放，追加可重放。
+  /// 下次取这一章时（快照还没写上，BUG-4970 的那条路）补丁会重放，追加可重放。
   Future<void> _writePackage(_PackagePatch package, String languageTag) async {
     final int? placeholder = package.placeholderNumber;
     if (placeholder != null) {

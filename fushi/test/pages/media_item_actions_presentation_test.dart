@@ -447,6 +447,88 @@ void main() {
       );
     });
 
+    // 反馈 iEhadpzweB：鼠标从「设置」行（#4b 起收进「更多」行）往右划向子菜单，
+    // 子菜单就收起、永远点不到。行与子菜单之间有一条缝，指针停在缝里时两边都不算
+    // 悬停。这里用真实鼠标悬停打开子菜单，把指针停在缝正中多等几帧，子菜单必须
+    // 还在，再移进去点中一项。
+    Future<void> expectSubmenuSurvivesGap(
+      WidgetTester tester, {
+      required Offset anchor,
+      required bool towardRight,
+    }) async {
+      await open(tester, screen: const Size(1280, 800), anchor: anchor);
+      final Finder moreRow = find.text(t.item_menu_more);
+      final Rect rowText = tester.getRect(moreRow);
+      final Rect row = tester.getRect(
+        find.ancestor(of: moreRow, matching: find.byType(InkWell)).first,
+      );
+      final TestGesture mouse = await tester.createGesture(
+        kind: ui.PointerDeviceKind.mouse,
+      );
+      addTearDown(mouse.removePointer);
+      await mouse.addPointer(location: rowText.center);
+      await tester.pumpAndSettle();
+      expect(find.text('Edit CSS'), findsOneWidget);
+
+      // 子菜单的可见面板（固定宽 248 的那层）。
+      final Rect panel = tester.getRect(
+        find
+            .ancestor(
+              of: find.text('Content language'),
+              matching: find.byWidgetPredicate(
+                (Widget w) => w is SizedBox && w.width == 248,
+              ),
+            )
+            .first,
+      );
+      expect(
+        towardRight ? panel.left > row.right : panel.right < row.left,
+        isTrue,
+        reason: 'submenu $panel must sit beside row $row with a gap',
+      );
+      // 缝正中：行的外缘与子菜单面板外缘之间。
+      final double gapX = towardRight
+          ? (row.right + panel.left) / 2
+          : (panel.right + row.left) / 2;
+      await mouse.moveTo(Offset(gapX, row.center.dy));
+      for (int i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Edit CSS'),
+        findsOneWidget,
+        reason: 'pointer resting in the gap must not dismiss the submenu',
+      );
+
+      await mouse.moveTo(tester.getCenter(find.text('Edit CSS')));
+      await tester.pumpAndSettle();
+      expect(find.text('Edit CSS'), findsOneWidget);
+      await tester.tap(find.text('Edit CSS'));
+      await tester.pumpAndSettle();
+      expect(fired, <String>['Edit CSS']);
+      expect(tester.takeException(), isNull);
+    }
+
+    testWidgets('hovering across the gap into the 更多 submenu keeps it open', (
+      WidgetTester tester,
+    ) async {
+      await expectSubmenuSurvivesGap(
+        tester,
+        anchor: const Offset(300, 200),
+        towardRight: true,
+      );
+    });
+
+    testWidgets('flipped left, hovering across the gap into the 更多 '
+        'submenu keeps it open', (WidgetTester tester) async {
+      await expectSubmenuSurvivesGap(
+        tester,
+        anchor: const Offset(1270, 40),
+        towardRight: false,
+      );
+    });
+
     testWidgets('the entrance grows out of the pointer corner, not the screen '
         'corner', (WidgetTester tester) async {
       fired = <String>[];

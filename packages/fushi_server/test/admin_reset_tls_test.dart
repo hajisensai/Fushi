@@ -1,4 +1,4 @@
-/// BUG-4906：`fushi_server admin reset-tls` 是旧部署换掉 Chrome 拒收证书的唯一入口
+/// BUG-4985：`fushi_server admin reset-tls` 是旧部署换掉 Chrome 拒收证书的唯一入口
 /// （`loadOrCreate` 对已落盘的证书不自动重签）。用固定向量里的旧版证书当磁盘现状，
 /// 跑真实 CLI，断言证书被换成新格式、指纹变了。
 library;

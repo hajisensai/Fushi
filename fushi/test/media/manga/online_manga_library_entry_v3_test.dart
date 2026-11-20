@@ -246,7 +246,7 @@ void main() {
       expect(afterSelect.currentChapterIndex, 0);
     });
 
-    // BUG-4909（gap-mangamisc-1）：写方各拿各的快照整份写回会互相回滚。
+    // BUG-5024（gap-mangamisc-1）：写方各拿各的快照整份写回会互相回滚。
     test('拿着进页时快照的刷新晚落库：不回滚期间点的订阅', () async {
       final EpubBookRow row = await service.add(entryFor(chapters: chapters));
       // 进页时读到的描述符（未订阅）；刷新在飞的这几秒里用户点了订阅。

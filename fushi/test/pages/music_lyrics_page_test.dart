@@ -27,6 +27,8 @@ import 'package:fushi/src/media/range_playback.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
+    show MinePopupResult;
 import 'package:fushi/src/pages/implementations/music/music_lyrics_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_queue_panel.dart';
 import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dart';
@@ -131,6 +133,20 @@ class _RecordingAnki extends FakeAnkiRepository {
   }) async {
     mined.add(context);
     return const MineOutcome.success(noteId: 77);
+  }
+
+  /// 覆写（点 ✓ 选「覆盖这张」）收到的 (noteId, 上下文)。
+  final List<({int noteId, AnkiMiningContext context})> updated =
+      <({int noteId, AnkiMiningContext context})>[];
+
+  @override
+  Future<MineOutcome> updateMinedNote({
+    required int noteId,
+    required String rawPayloadJson,
+    required AnkiMiningContext context,
+  }) async {
+    updated.add((noteId: noteId, context: context));
+    return MineOutcome.success(noteId: noteId);
   }
 }
 
@@ -633,6 +649,38 @@ void main() {
     expect(mined.single.durationMs, 4000);
     expect(mined.single.sentence, '沈むように');
     expect(mined.single.noteId, 77);
+
+    // BUG-4933：点 ✓ 选「覆盖这张」真的按 id 覆写那张卡（此前落到基类空实现，静默
+    // 不写），上下文与新制同一口径（句子 / 句子音频 / 出处）；覆写不新建卡、不进制卡历史。
+    final Object? overwrite = await tester.runAsync<Object?>(
+      () =>
+          (state as dynamic).onUpdateFromPopup(41, <String, String>{
+                'expression': '沈む',
+                'reading': 'しずむ',
+                'glossary': 'sink',
+              })
+              as Future<Object?>,
+    );
+    final MinePopupResult overwriteResult = overwrite! as MinePopupResult;
+    expect(overwriteResult.ankiConnect, isTrue);
+    expect(overwriteResult.noteId, 41);
+    expect(anki.mined, hasLength(1), reason: '覆写不走 mineEntry 新建卡');
+    final ({int noteId, AnkiMiningContext context}) update =
+        anki.updated.single;
+    expect(update.noteId, 41);
+    expect(update.context.sentence, '沈むように');
+    expect(update.context.sentenceAudioPath, isNotNull);
+    expect(
+      update.context.sourceLink?.toUri().toString(),
+      contains('kind=music'),
+    );
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+    final List<MinedSentenceRow> afterOverwrite =
+        await tester.runAsync(() => db.select(db.minedSentences).get())
+            as List<MinedSentenceRow>;
+    expect(afterOverwrite, hasLength(1), reason: '覆写不计入制卡历史');
 
     await tester.pumpWidget(const SizedBox.shrink());
   });

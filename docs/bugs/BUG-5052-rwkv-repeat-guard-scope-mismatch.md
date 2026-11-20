@@ -1,0 +1,6 @@
+## BUG-5052 · rwkv-repeat-guard-scope-mismatch
+- **报告**：2026-11-20（用户：应用内反馈 ys9tMVHj3S，iOS 3.3.0-debug.28434）「复习完所有单词后仍存在两个未复习单词，尝试复习时显示已复习完，退出后未复习单词仍存在」
+- **真实性**：✅ 真 bug（RWKV 牌组路径；用户的牌组是否 RWKV 无法从反馈确认，见备注）。根因 `native/fushi_fsrs/src/store/study.rs:893-909`（修复前）：RWKV-Instant 的同日间隔守卫（`instant_eligible` 的 `spaced`）数「上次作答之后别的卡的作答」时只数**这次排队请求的子树**（`scope`）里的作答。牌组列表（`deckSummaries`，不带 `deck`）的 scope 是全部牌组，别的牌组的作答也算进去 → 今天答过的低 R 卡判合格、列表 / 首页显示到期；点进牌组（`studyState`，带 `deck`）scope 只剩子树 → 同一张卡判暂缓，`next` 为 null，复习页显示「已复习完」，退回列表数字还在，直到当天结束。同一个牌组的到期数随请求范围变，计数与出卡口径不一致。
+- **[x] ① 已修复** — 间隔守卫改按牌组树分组：数与这张卡共用一套设置（同一个参数归属牌组，`DeckTree::params_owner_id`，与「每天最少」配额同一分组、与 Dart `SrsRwkvQueueSettings.repeatMinReviews` 文档「这组牌组里别的卡」一致）的牌组里的作答，不看请求范围；`instant_eligible` 去掉 `scope` 参数。
+- **[x] ② 已加自动化测试** — `native/fushi_fsrs/src/store/study.rs` `rwkv_repeat_guard_counts_the_settings_group_not_the_request_scope`：另一组设置的牌组里的作答不算间隔（列表与复习页都为 0）、同组兄弟牌组里的作答算（列表与复习页都出这张）；每步与 L2 SQL 基准对拍。修复前该测试在「列表到期数」处失败（列表 1、复习页 0）。
+- **备注**：反馈日志里没有复习相关异常，截图只能看到首页「2 待复习」而 EggRolls 树为 0，无法确认那 2 张所在牌组按 RWKV 排程；FSRS 路径的计数（会话 `tallies`）与出卡（`first_due` / `path_has_room`）同源，未找到不一致。另一处同类口径差未在本条改：「每天最少复习数」的配额扣减用的是请求里带来的合格卡（牌组列表带全部牌组的候选、复习页只带子树的），会让复习页比列表**多**补出卡（不会出现列表有数、复习页一张不出），需要单独评估。

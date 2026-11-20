@@ -2,9 +2,13 @@
 /// 一次性接线。
 ///
 /// 引擎包不依赖 Flutter，它需要的日志、数据根、ffmpeg 平台后端、图片缓存失效、
-/// 调试打印全靠宿主在进程入口装配。与 `installAsrHostBindings()` 同一范式、同一
-/// 调用位置（`main()`，不放 `AppModel.initialise()`：弹窗词典与悬浮词典两个入口
-/// 绕开 initialise）。`flutter_test_config.dart` 也调它，保证测试里的引擎代码拿到
+/// 调试打印全靠宿主在进程入口装配。与 `installAsrHostBindings()` 同一范式，两者经
+/// [installEntryPointHostBindings] 一起装，**每个** Dart entry point（`main`、
+/// `popupMain`、`secondScreenMain`、`floatingDictMain`）在 `runApp` 前各调一次——
+/// Dart 全局按 isolate 隔离，副 FlutterEngine（Android `:popup` / `:second_screen`
+/// 进程）不跑 `main()`，只装在 `main()` 里那些入口就全是未装配的默认值（BUG-4940：
+/// `:popup` 的 `enginePaths` 未装，在线 TTS 兜底取缓存目录即抛，app 外查词永远
+/// 没有兜底发音）。`flutter_test_config.dart` 也调它，保证测试里的引擎代码拿到
 /// 与从前逐字节一致的行为（`AppPaths` 路径、`ErrorLogService` 记录）。
 ///
 /// 幂等：重复调用只是重复赋同一批值。
@@ -15,6 +19,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/painting.dart';
 import 'package:flutter/services.dart' show RootIsolateToken;
+import 'package:fushi/src/asr_host/asr_host.dart' show installAsrHostBindings;
 import 'package:fushi/src/media/audiobook/audiobook_storage_platform.dart';
 import 'package:fushi/src/media/audiobook/platform_charset_detector.dart';
 import 'package:fushi/src/utils/cover_image.dart';
@@ -99,6 +104,15 @@ Future<void> _releaseImageCacheBeforeDelete(File file) async {
 FfmpegBackend _platformFfmpegBackend() {
   if (Platform.isAndroid || Platform.isIOS) return const KitFfmpegBackend();
   return const CliFfmpegBackend();
+}
+
+/// 进程 / engine 入口的宿主装配：引擎包（[installEngineHostBindings]）+ ASR 包
+/// （[installAsrHostBindings]）。每个 `@pragma('vm:entry-point')` 入口在
+/// `WidgetsFlutterBinding.ensureInitialized()` 之后、`runApp` 之前调用，由
+/// `test/build/entry_point_host_bindings_guard_test.dart` 钉住（BUG-4940）。
+void installEntryPointHostBindings() {
+  installEngineHostBindings();
+  installAsrHostBindings();
 }
 
 void installEngineHostBindings() {

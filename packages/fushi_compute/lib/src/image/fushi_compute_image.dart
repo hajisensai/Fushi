@@ -192,6 +192,8 @@ typedef _FitJpegHqC =
       Uint32,
       Uint32,
       Uint32,
+      Pointer<Float>,
+      Size,
       Pointer<Pointer<Uint8>>,
       Pointer<Size>,
     );
@@ -203,6 +205,8 @@ typedef _FitJpegHqDart =
       int,
       int,
       int,
+      int,
+      Pointer<Float>,
       int,
       Pointer<Pointer<Uint8>>,
       Pointer<Size>,
@@ -911,25 +915,43 @@ class FushiComputeImage {
     }
   }
 
-  /// 画质缩放成 JPEG：解码（转正）→ [filter] 可分离重采样（核按缩放比放宽，网点不出摩尔纹；
-  /// [linearLight] 为真时在线性光里平均，即 Gamma 校正缩放）→ JPEG（[quality] 1..100，4:4:4；
-  /// 灰度源编单通道）。**可以放大**（每边至多 4 倍、输出至多 4800 万像素）。解不开、带 alpha、
-  /// 或尺寸越界返回 null——调用方原样交出源字节。
+  /// 画质缩放成 JPEG：解码（转正）→ [filter] 可分离重采样（核按缩放比放宽，网点不出摩尔纹）→
+  /// JPEG（[quality] 1..100，4:4:4；灰度源编单通道）。**可以放大**（每边至多 4 倍、输出至多
+  /// 4800 万像素）。解不开、带 alpha、或尺寸越界返回 null——调用方原样交出源字节。
+  ///
+  /// [textAwareGammaBoxes] 非 null 时做文字感知的 Gamma 校正：每 4 个数是一个归一化文字框
+  /// `[x0, y0, x1, y1]`（0..1，相对整页），框内在 sRGB 编码值上重采样（细笔画不变淡），框外在线性光
+  /// 里（网点明度准），羽化混合；空列表等同 sRGB（没有文字框就不做线性光）。长度须是 4 的倍数，
+  /// 至多 [kFitHqMaxTextBoxes] 个框。
   Uint8List? fitJpegHq(
     Uint8List bytes, {
     required int width,
     required int height,
     required int quality,
     FfcResampleFilter filter = FfcResampleFilter.lanczos3,
-    bool linearLight = true,
+    Float32List? textAwareGammaBoxes,
   }) {
     if (quality < 1 || quality > 100) {
       throw ArgumentError.value(quality, 'quality', 'must be 1..100');
+    }
+    final Float32List? boxes = textAwareGammaBoxes;
+    if (boxes != null &&
+        (boxes.length % 4 != 0 || boxes.length ~/ 4 > kFitHqMaxTextBoxes)) {
+      throw ArgumentError.value(
+        boxes.length,
+        'textAwareGammaBoxes',
+        'must hold 4 floats per box, at most $kFitHqMaxTextBoxes boxes',
+      );
     }
     if (width <= 0 || height <= 0) return null;
     final Pointer<Uint8> src = _copyIn(bytes);
     final Pointer<Pointer<Uint8>> outPtr = malloc<Pointer<Uint8>>();
     final Pointer<Size> outLen = malloc<Size>();
+    final int boxFloats = boxes?.length ?? 0;
+    final Pointer<Float> boxPtr = boxFloats == 0
+        ? nullptr
+        : malloc<Float>(boxFloats);
+    if (boxFloats > 0) boxPtr.asTypedListOutOfLine(boxFloats).setAll(0, boxes!);
     try {
       final int status = _fitJpegHq(
         src,
@@ -938,7 +960,9 @@ class FushiComputeImage {
         height,
         quality,
         filter.code,
-        linearLight ? 1 : 0,
+        boxes == null ? 0 : _kFitHqTextAwareGamma,
+        boxPtr,
+        boxFloats ~/ 4,
         outPtr,
         outLen,
       );
@@ -948,6 +972,7 @@ class FushiComputeImage {
       _check('ffc_image_fit_jpeg_hq', status);
       return _takeBytes(outPtr, outLen);
     } finally {
+      if (boxPtr != nullptr) malloc.free(boxPtr);
       malloc.free(outPtr);
       malloc.free(outLen);
     }
@@ -1233,6 +1258,12 @@ class FushiComputeImage {
     }
   }
 }
+
+/// [FushiComputeImage.fitJpegHq] 一次最多接受的文字框数（原生 `FIT_HQ_MAX_TEXT_BOXES`）。
+const int kFitHqMaxTextBoxes = 4096;
+
+/// 原生 `FIT_HQ_TEXT_AWARE_GAMMA` 标志位。
+const int _kFitHqTextAwareGamma = 1;
 
 /// [FushiComputeImage.fitJpegHq] 的重采样核（与原生 `ffc_image_fit_jpeg_hq` 的 `filter` 码一一对应）。
 enum FfcResampleFilter {

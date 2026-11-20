@@ -1,0 +1,6 @@
+## BUG-4988 · fushi_music 预编译库戳记不含 #[path] 编入的 crate 外源码，legacy_text.rs 改了不重编
+- **报告**：2026-11-20（来源：路线图 #3722 c18 遗留，PR #3716 正文「未处理」一节）
+- **真实性**：✅ 真 bug（构建工具链）。`native/fushi_music/src/lib.rs:30` 用 `#[path = "../../fushi_compute/src/legacy_text.rs"]` 把 crate 外源码编进库，而预编译库的键只取 `native/<crate>` 的树哈希：`tool/native_libs.ps1` 的 `Get-NativeSourceTree`（`git rev-parse HEAD:native/$Crate`，未提交改动检查也只看这个目录）、`fushi/tool/dist_test/worker_prepare.sh` 的 `native_key`、`worker_build.sh` 的 Android 键。改 `legacy_text.rs` 后 fushi_music 的键不变，本机 / 兄弟 worktree / dist worker 上的旧库被当成当前源码的产物复用，测试跑旧判据。CI 出包是全新编译，不受影响；但 `native-music-gate.yml` 的 `paths` 也只有 `native/fushi_music/**`，同一改动不触发 fushi_music 的 Rust 门。
+- **[x] ① 已修复** — 新增 `native/<crate>/external_sources.txt`（crate 外源码清单，fushi_music 列 `legacy_text.rs`）；键 = 树哈希与清单内各文件 HEAD blob 合成的 git 对象 id：`tool/native_source_key.sh`（worker 两处调用）与 `native_libs.ps1` 同一算法（ps1 手算 git blob SHA-1，实测两边对 fushi_music 都得 `0ae9b2633a`，无清单的 crate 仍等于树哈希），ps1 的未提交改动检查也带上清单里的文件；`native-music-gate.yml` 的 `paths` 加 `legacy_text.rs`。
+- **[x] ② 已加自动化测试** — `fushi/test/build/native_external_sources_stamp_guard_test.dart`：扫所有 crate 的 `#[path]`，指向 crate 外的必须列进清单；三个算键脚本都读清单、worker 不再直接取 `rev-parse HEAD:native/<crate>`；音乐 Rust 门覆盖清单文件。
+- **备注**：已经编好、键按旧算法写的本机产物，fushi_music 的戳记会对不上，下一次 `native_libs.ps1` / worker prepare 重编一次（一次性）。
