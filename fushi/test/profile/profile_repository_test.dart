@@ -5,7 +5,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/preference_keys.dart'
-    show kSrsLapisMigrationReminderPrefKey;
+    show
+        kMiningTtsFallbackVoicePref,
+        kMiningTtsFallbackVoiceProfilePrefKeyPrefix,
+        kSrsLapisMigrationReminderPrefKey;
+import 'package:fushi/src/profile/profile_keys.dart';
+import 'package:fushi/src/sync/pref_redaction_policy.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -1034,5 +1039,122 @@ void main() {
         );
       },
     );
+  });
+
+  // 拍板台 olNAZUnEy6（方案 A）：TTS 兜底声音按配置记、只留在本机。
+  group('TTS 兜底声音按配置记、只留在本机', () {
+    Future<String> parkedKey(FushiDatabase db, int profileId) async =>
+        '$kMiningTtsFallbackVoiceProfilePrefKeyPrefix'
+        '${await db.profileUidOf(profileId)}';
+
+    /// 与 ProfileViewModel._switchLocked 同一顺序：快照旧配置 → 记激活 id → 应用新配置。
+    Future<void> switchTo(ProfileRepository repo, int from, int to) async {
+      await repo.snapshotCurrentSettings(from);
+      await repo.setActiveProfileId(to);
+      await repo.applyProfile(to);
+    }
+
+    test('切配置时声音跟着换，切回来换回原来的', () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+      final ja = await repo.createProfile('日语');
+      final en = await repo.createProfile('英语');
+      await repo.setActiveProfileId(ja);
+      await db.setPref(kMiningTtsFallbackVoicePref, 'preset:sovits-ja');
+
+      // 英语配置从没停放过：沿用切换前的选择（现有全局值 = 初始值）。
+      await switchTo(repo, ja, en);
+      expect(await db.getPref(kMiningTtsFallbackVoicePref), 'preset:sovits-ja');
+
+      await db.setPref(kMiningTtsFallbackVoicePref, 'preset:edge-en');
+      await switchTo(repo, en, ja);
+      expect(await db.getPref(kMiningTtsFallbackVoicePref), 'preset:sovits-ja');
+
+      await switchTo(repo, ja, en);
+      expect(await db.getPref(kMiningTtsFallbackVoicePref), 'preset:edge-en');
+    });
+
+    test('没选过的配置切回来仍是没选过（查词不兜底），不继承别的配置的声音', () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+      final a = await repo.createProfile('A');
+      final b = await repo.createProfile('B');
+      await repo.setActiveProfileId(a);
+
+      await switchTo(repo, a, b);
+      await db.setPref(kMiningTtsFallbackVoicePref, 'system');
+      await switchTo(repo, b, a);
+
+      expect(await db.getPref(kMiningTtsFallbackVoicePref), isNull);
+      expect(await db.getPref(await parkedKey(db, a)), '');
+      expect(await db.getPref(await parkedKey(db, b)), 'system');
+    });
+
+    test('停放键与 live 键都不进配置快照，归为设备本地', () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+      final a = await repo.createProfile('A');
+      await db.setPref(kMiningTtsFallbackVoicePref, 'preset:x');
+      await repo.snapshotCurrentSettings(a);
+
+      final String parked = await parkedKey(db, a);
+      expect(await db.getPref(parked), 'preset:x');
+      final Set<String> keys = await _prefKeys(db, a);
+      expect(keys, isNot(contains(kMiningTtsFallbackVoicePref)));
+      expect(keys, isNot(contains(parked)));
+      expect(ProfileKeys.isExcludedPref(parked), isTrue);
+      expect(PrefRedactionPolicy.isDeviceLocalOrCredential(parked), isTrue);
+    });
+
+    test('非激活配置的只读视图取它自己停放的声音', () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+      final a = await repo.createProfile('A');
+      final b = await repo.createProfile('B');
+      final c = await repo.createProfile('C');
+      await repo.setActiveProfileId(a);
+      await db.setPref(kMiningTtsFallbackVoicePref, 'preset:a');
+      await switchTo(repo, a, b);
+      await db.setPref(kMiningTtsFallbackVoicePref, 'preset:b');
+      await switchTo(repo, b, a);
+
+      final viewB = (await repo.loadSettingsView(b))!;
+      expect(viewB.prefsMap[kMiningTtsFallbackVoicePref], 'preset:b');
+      // C 从没停放过：与切过去的效果一致，沿用 live 值。
+      final viewC = (await repo.loadSettingsView(c))!;
+      expect(viewC.prefsMap[kMiningTtsFallbackVoicePref], 'preset:a');
+    });
+
+    test('没选过的非激活配置，视图里也没有兜底声音', () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+      final a = await repo.createProfile('A');
+      final b = await repo.createProfile('B');
+      await repo.setActiveProfileId(a);
+      await switchTo(repo, a, b);
+      await db.setPref(kMiningTtsFallbackVoicePref, 'preset:b');
+
+      final viewA = (await repo.loadSettingsView(a))!;
+      expect(viewA.prefsMap.containsKey(kMiningTtsFallbackVoicePref), isFalse);
+    });
+
+    test('复制配置带上声音，删除配置清掉它的停放键', () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+      final src = await repo.createProfile('Src');
+      final keep = await repo.createProfile('Keep');
+      await repo.setActiveProfileId(src);
+      await db.setPref(kMiningTtsFallbackVoicePref, 'preset:src');
+      await repo.snapshotCurrentSettings(src);
+
+      final dst = await repo.copyProfile(src, 'Dst');
+      final String dstKey = await parkedKey(db, dst);
+      expect(await db.getPref(dstKey), 'preset:src');
+
+      await repo.setActiveProfileId(keep);
+      await repo.deleteProfile(dst);
+      expect(await db.getPref(dstKey), isNull);
+      expect(await db.getPref(await parkedKey(db, src)), 'preset:src');
+    });
   });
 }

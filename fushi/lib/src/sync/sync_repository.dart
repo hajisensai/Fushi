@@ -2294,6 +2294,8 @@ class SyncRepository {
     'tts_voice_presets',
     'tts_active_preset_id',
     // 制卡单词音频的 TTS 兜底声音：可能是上面清单里某份预设的 id，一起留在本机。
+    // 各配置自己那份按 uid 停放（`mining_tts_fallback_voice::<uid>`，
+    // PrefRedactionPolicy.deviceLocalKeyPrefixes），同样不离开本机。
     'mining_tts_fallback_voice',
     // galgame 台词浮窗 TTS 设置：里面的声音也是上面清单里的预设 id。
     'gal_line_tts_settings',

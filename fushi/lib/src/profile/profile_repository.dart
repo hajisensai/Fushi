@@ -9,7 +9,10 @@ import 'package:fushi_engine/profile/profile_document.dart';
 import 'package:fushi_engine/media/media_pref_keys.dart'
     show dbSourcePrefKey, kReaderSourcePersistedKey;
 import 'package:fushi/src/models/preference_keys.dart'
-    show kProfileFallbackIdPrefKey;
+    show
+        kMiningTtsFallbackVoicePref,
+        kMiningTtsFallbackVoiceProfilePrefKeyPrefix,
+        kProfileFallbackIdPrefKey;
 import 'package:fushi/src/models/dictionary_repository.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/profile/language_binding.dart';
@@ -101,7 +104,13 @@ class ProfileRepository {
     if (count <= 1) return;
 
     final activeId = await getActiveProfileId();
+    final String? deletedUid = await _profileUidOrNull(id);
     await _db.deleteProfile(id);
+    if (deletedUid != null) {
+      for (final String prefix in perProfileDeviceLocalPrefs.values) {
+        await _db.deletePref('$prefix$deletedUid');
+      }
+    }
 
     if (activeId == id) {
       final remaining = await _db.getAllProfiles();
@@ -118,6 +127,8 @@ class ProfileRepository {
     // _load assigns a real id, so state.activeProfileId is still -1).
     // Snapshotting it would write orphan profile_settings rows / trip the FK.
     if (profileId <= 0) return;
+
+    await _parkPerProfileDeviceLocalPrefs(profileId);
 
     final entries = <ProfileSettingsCompanion>[];
 
@@ -282,6 +293,7 @@ class ProfileRepository {
           hidden: columns.hidden,
         );
       }
+      await _restorePerProfileDeviceLocalPrefs(profileId);
       for (final entry in prefMap.entries) {
         // [FushiDatabase.setPref] auto-bumps the persisted prefs-version
         // (TODO-855) for every non-version key written here, so the common
@@ -332,7 +344,69 @@ class ProfileRepository {
         )
         .toList();
     await _db.replaceProfileSettings(newId, copies);
+    // 设备本地的按配置键不在快照里，单独跟着复制：副本一开始与源配置用同一个声音。
+    final String? sourceUid = await _profileUidOrNull(sourceId);
+    if (sourceUid != null) {
+      final String newUid = await _db.profileUidOf(newId);
+      for (final String prefix in perProfileDeviceLocalPrefs.values) {
+        final String? parked = await _db.getPref('$prefix$sourceUid');
+        if (parked != null) await _db.setPref('$prefix$newUid', parked);
+      }
+    }
     return newId;
+  }
+
+  /// 按配置记、但只留在本机的偏好（拍板台 olNAZUnEy6，方案 A）：live 键 → 停放键前缀（后缀 = profile uid）。
+  ///
+  /// live 键本身是设备本地的（[ProfileKeys.isExcludedPref]），不进快照、切配置时也不被剪掉；全部读取方只读
+  /// live 键，代表**当前激活配置**的选择。各配置自己的值停放在「前缀 + uid」下：
+  /// * 切走（[snapshotCurrentSettings]）时把 live 值停放到这份配置名下（没写过 = 空串，「没选过」）；
+  /// * 切入（[applyProfile]）时把停放值换回 live 键；没停放过的配置（升级前建的 / 新建的）不动 live 值，
+  ///   即沿用切换前的选择——现有全局值就是每个配置的初始值，不需要一次性迁移；
+  /// * 非激活配置的只读视图（[loadSettingsView]：浏览器扩展 / 互联选了别的配置）取停放值。
+  ///
+  /// 兜底声音的值多半指向本机朗读声音预设（`tts_voice_presets` 设备本地），带到别的设备只会指向不存在的
+  /// 预设，所以不走快照 / 导出 / 同步，只在本机按配置记。
+  static const Map<String, String> perProfileDeviceLocalPrefs =
+      <String, String>{
+        kMiningTtsFallbackVoicePref:
+            kMiningTtsFallbackVoiceProfilePrefKeyPrefix,
+      };
+
+  /// 配置的 uid；配置行已不存在时 null。
+  Future<String?> _profileUidOrNull(int profileId) async {
+    if (profileId <= 0) return null;
+    if (await _db.getProfileById(profileId) == null) return null;
+    return _db.profileUidOf(profileId);
+  }
+
+  /// 把 [perProfileDeviceLocalPrefs] 的 live 值停放到 [profileId] 名下（live 没有 = 空串）。
+  Future<void> _parkPerProfileDeviceLocalPrefs(int profileId) async {
+    final String? uid = await _profileUidOrNull(profileId);
+    if (uid == null) return;
+    for (final MapEntry<String, String> e
+        in perProfileDeviceLocalPrefs.entries) {
+      final String live = await _db.getPref(e.key) ?? '';
+      final String parkedKey = '${e.value}$uid';
+      if (await _db.getPref(parkedKey) == live) continue;
+      await _db.setPref(parkedKey, live);
+    }
+  }
+
+  /// 把 [profileId] 名下停放的值换回 live 键：空串 = 那份配置没选过，删掉 live 键；没停放过 = 不动。
+  Future<void> _restorePerProfileDeviceLocalPrefs(int profileId) async {
+    final String? uid = await _profileUidOrNull(profileId);
+    if (uid == null) return;
+    for (final MapEntry<String, String> e
+        in perProfileDeviceLocalPrefs.entries) {
+      final String? parked = await _db.getPref('${e.value}$uid');
+      if (parked == null) continue;
+      if (parked.isEmpty) {
+        await _db.deletePref(e.key);
+      } else {
+        await _db.setPref(e.key, parked);
+      }
+    }
   }
 
   /// 全部媒体类型绑定的**裸串视图**（key = [ProfileMediaKind.dbValue]；DB 列
@@ -780,6 +854,19 @@ class ProfileRepository {
         if (settingsViewReadsLivePref(e.key)) e.key: e.value,
       ...snapshot.prefMap,
     };
+    // 按配置记的设备本地键：视图要的是这份配置自己的值（停放值），不是激活配置的 live 值；
+    // 没停放过的配置切过去会沿用 live 值（[applyProfile]），视图同口径保留 live。
+    final String uid = await _db.profileUidOf(profile.id);
+    for (final MapEntry<String, String> e
+        in perProfileDeviceLocalPrefs.entries) {
+      final String? parked = prefs['${e.value}$uid'];
+      if (parked == null) continue;
+      if (parked.isEmpty) {
+        prefs.remove(e.key);
+      } else {
+        prefs[e.key] = parked;
+      }
+    }
 
     final List<DictionaryMetaRow> liveRows = await _db
         .getAllDictionaryMetadata();
