@@ -65,7 +65,16 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     // 副行（「🎧 有声书 · 46%」，对齐状态同 EPUB 卡），纯字幕书写「字幕书」。
     // TODO-935 ①A：引用导入后原音频断链 → 副行改错误态「音频文件丢失」。
     // 反馈 IHgBrvHizT：用户对这组路径点过「不再提示」就退回正常副行。
-    final bool audioMissing = _srtMissingAudio.showsWarning(book);
+    // gap-novelmisc-2：断链结论随书单异步算好按 uid 缓存，build 里不同步探盘。
+    final bool audioMissing = _srtMissingAudio.showsWarning(
+      book,
+      hasMissing:
+          ref
+              .watch(srtBookMissingAudioUidsProvider)
+              .valueOrNull
+              ?.contains(book.uid) ??
+          false,
+    );
     // TODO-1094：书架 SRT 卡书名必须与长按对话框同源——两者都基于同一
     // [_srtBookMediaItem]，再经 [MediaSource.getDisplayTitleFromMediaItem] 应用
     // 编辑弹窗写入的 override_title 偏好。以前直接读 DB 原始列 book.title，忽略

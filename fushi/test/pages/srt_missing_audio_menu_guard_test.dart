@@ -23,7 +23,9 @@ void main() {
       'Widget _buildSrtCard(',
       '  _ShelfMetaSpec _srtBookMeta(',
     );
-    expect(card, contains('_srtMissingAudio.showsWarning(book)'));
+    expect(card, contains('_srtMissingAudio.showsWarning('));
+    // gap-novelmisc-2：卡片 build 只读异步缓存的断链结论，不现场同步探盘。
+    expect(card, contains('srtBookMissingAudioUidsProvider'));
   });
 
   test('shelf card menu carries the missing-audio actions, ungated', () {

@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/src/media/audiobook/srt_book_missing_audio.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/mining/after_mining_popup_action.dart';
 import 'package:fushi/src/media/sources/book_cover_file_resolver.dart';
@@ -112,6 +113,15 @@ final srtBooksProvider = FutureProvider<List<SrtBook>>((ref) {
   ref.watch(_srtBookUidsProvider);
   final db = ref.watch(appProvider).database;
   return SrtBookRepository(db).listAll();
+});
+
+/// 书架字幕书卡「音频文件丢失」的断链 uid 集合：随 [srtBooksProvider] 每出一份
+/// 新列表异步探一次，卡片 build 只查集合，不再逐卡同步探盘（gap-novelmisc-2）。
+final srtBookMissingAudioUidsProvider = FutureProvider<Set<String>>((
+  ref,
+) async {
+  final List<SrtBook> books = await ref.watch(srtBooksProvider.future);
+  return SrtBookMissingAudio.probeMissingUids(books);
 });
 
 /// 每本书的「最后阅读时间」（`reader_positions.updatedAt` 毫秒，key=书稳定身份：
