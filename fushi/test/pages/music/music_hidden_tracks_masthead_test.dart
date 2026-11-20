@@ -9,9 +9,12 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
+import 'package:flutter/services.dart' show EventChannel;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/music/apple_music/apple_music_native_bridge.dart'
+    show kAppleMusicNativeEventChannel;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart'
@@ -44,6 +47,25 @@ Future<void> _settle(WidgetTester tester) async {
 }
 
 void main() {
+  // 宿主是 macOS 14+ 时 Apple Music 走原生桥，flutter test 里没有插件：给事件通道一个
+  // 不发事件的桩（同 music_sources_pages_test）。
+  setUp(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockStreamHandler(
+          const EventChannel(kAppleMusicNativeEventChannel),
+          MockStreamHandler.inline(
+            onListen: (Object? _, MockStreamHandlerEventSink __) {},
+          ),
+        );
+  });
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockStreamHandler(
+          const EventChannel(kAppleMusicNativeEventChannel),
+          null,
+        );
+  });
+
   testWidgets('已移除的曲目：提示与第一行曲目都排在页头下沿之下', (WidgetTester tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(900, 1200);

@@ -445,8 +445,8 @@ class _MusicTrackDetailPageState extends ConsumerState<MusicTrackDetailPage> {
     ];
     final double heroGap = musicDetailHeroGap(context, tokens.spacing.gap);
     return FushiEntranceScope(
-      // Builder：顶部让位读脚手架给正文的 MediaQuery（含页头高度）；[_body] 的
-      // context 是脚手架外层的。
+      // 顶部让位读脚手架给正文的 MediaQuery（含页头高度）：[_body] 由
+      // musicBrowseScaffold 的正文构建器调用，context 已在脚手架之下。
       child: Builder(
         builder: (BuildContext context) => ListView.separated(
           padding: withBottomSafeInset(
