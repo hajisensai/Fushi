@@ -4033,5 +4033,20 @@ exit 1；成功 949、失败 9、错误 6、跳过 21，实际执行 964。上�
 ### 没做 / 交给别人
 
 - 没在真机 / 双设备上验回导与备份还原；证据是上面的 Rust / Dart 用例。
-- Dart 用例经 `heavy.dart` 外包到 dist 机器跑，原生库是 worker 那边的，不是本 worktree 编出的；本分支 Dart
-  侧改动不依赖内核这次的改动（只升了 `CACHE_RULES`，新建库不受影响）。
+- `CACHE_RULES` 2 → 3 本身没有能变红的用例：`a_cache_built_under_older_rules_is_rebuilt_once_on_open` 按 `CACHE_RULES - 1`
+  取「上一版口径」，常量回退到 2 时它照样绿；它钉的是「旧口径的库开库重建一次」，不是「这次必须升」。
+
+### 验证（2026-11-20，头 `2bce09da6f` 续做核验，本 worktree 编出的原生库）
+
+- `native/fushi_fsrs`：`cargo fmt --check` 退出 0；`cargo test --profile quick --lib -j 4` 退出 0，1440 passed / 0 failed / 39 ignored
+  （ignored 为存量，本分支没加）。
+- Dart（`--here` 强制本机，用本 worktree `setup_worktree.ps1` 编出的 `fushi_fsrs.dll`）：
+  - `packages/fushi_engine`：`dart test` `srs_apkg_stream_roundtrip_test` / `srs_backup_merge_test` / `srs_db_store_test` 退出 0，30 条全过（5 + 9 + 16）。
+  - `fushi/`：`flutter test` `backup_srs_gen4_guard_test` / `backup_import_overlay_test` / `backup_import_streaming_guard_test` /
+    `backup_srs_category_test` / `srs_sync_v1_removed_guard_test` / `source_guard_adoption_test` 退出 0，45 条全过。
+  - 改动的 11 个 Dart 文件 `dart format --set-exit-if-changed` 0 改动；`flutter analyze --no-pub`（经 heavy 外包）No issues，退出 0。
+- 变异实测（改完跑、还原后 `git status` 干净）：
+  - `cmd/writes.rs` 回包派生上界传 `i64::MAX`：新用例 `…_is_not_derived_in_the_log_hlcs_reply` 红，原用例绿。
+  - `_remapExtLog` 不打 `srsForeignLogKey`：往返用例红（期望 `(480, 480)`，实际 `(0, 480)`）。
+  - `backup.part.dart` 成功分支改成 `t.backup_import_success_srs_declined(count: 0)`（没有纯成功文案）：overlay 2 条、streaming 1 条红。
+  - `backup_srs_gen4_guard_test` 的 `codeLines` 退回 `trimLeft().startsWith('//')`：`source_guard_adoption_test` 红。
