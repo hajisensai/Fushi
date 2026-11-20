@@ -54,9 +54,14 @@ class _Backend implements SrsRetainedCopyBackend {
   /// 内核记下的新代第一次同步成功时刻；null = 还没同步成功过（[_sealed] 的形状）。
   int? firstSyncAtMs;
 
+  /// 给了 = 状态命令卡在这里，直到测试放行（模拟后台 isolate 读的过程）。
+  Completer<void>? gate;
+
   @override
   Future<SrsRetainedCopyState> state(String dir, {required int nowMs}) async {
     states++;
+    final Completer<void>? waitFor = gate;
+    if (waitFor != null) await waitFor.future;
     final String? why = refuseState;
     if (why != null) throw SrsCoreException(-1, why);
     if (deleted.isNotEmpty) {
@@ -462,6 +467,60 @@ void main() {
     srsSyncRoundsSucceeded.value++;
     await srsSettle(tester);
     expect(backend.states, 2, reason: '记下首次同步之后再成功不重读');
+    expect(tester.takeException(), isNull);
+    await _unmount(tester);
+  });
+
+  // 第六波第二轮复核：读状态的过程中 provider 被 invalidate（换库、删除的调用方），以前读完才挂的同步监听摘不掉
+  // （这次构建已经废弃，onDispose 抛），之后每一轮成功的同步都让它重读一次。
+  testWidgets('保留副本状态：读的过程中被 invalidate 不留下同步监听；记下首次同步之后再成功不重读', (
+    WidgetTester tester,
+  ) async {
+    final SrsDbStore store = await _storeWithDeck(tester);
+    final _Backend backend = _Backend();
+    SrsRetainedCopyState? seen;
+    await _pump(
+      tester,
+      store: store,
+      backend: backend,
+      home: Scaffold(
+        body: Consumer(
+          builder: (BuildContext context, WidgetRef ref, Widget? _) {
+            seen = ref.watch(srsRetainedCopyProvider).valueOrNull?.state;
+            return const SizedBox();
+          },
+        ),
+      ),
+    );
+    expect(backend.states, 1);
+    final ProviderContainer container = ProviderScope.containerOf(
+      tester.element(find.byType(Scaffold)),
+    );
+
+    final Completer<void> gate = Completer<void>();
+    backend.gate = gate;
+    container.invalidate(srsRetainedCopyProvider);
+    await srsSettle(tester);
+    expect(backend.states, 2, reason: '重读开始，卡在状态命令里');
+    container.invalidate(srsRetainedCopyProvider);
+    await srsSettle(tester);
+    expect(backend.states, 3, reason: '读的过程中又被 invalidate：重新读');
+    backend.gate = null;
+    gate.complete();
+    await srsSettle(tester);
+    expect(seen?.firstSyncAtMs, isNull);
+    expect(backend.states, 3);
+
+    backend.firstSyncAtMs = 1767225600000;
+    srsSyncRoundsSucceeded.value++;
+    await srsSettle(tester);
+    expect(backend.states, 4, reason: '第一次同步成功之后只重读一次');
+    expect(seen?.firstSyncAtMs, 1767225600000);
+    for (int i = 0; i < 3; i++) {
+      srsSyncRoundsSucceeded.value++;
+      await srsSettle(tester);
+    }
+    expect(backend.states, 4, reason: '废弃的那次构建不能留下监听');
     expect(tester.takeException(), isNull);
     await _unmount(tester);
   });

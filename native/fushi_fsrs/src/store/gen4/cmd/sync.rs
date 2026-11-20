@@ -1649,6 +1649,12 @@ pub fn location_forget(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, St
 /// 它在这个位置上的状态。只忘发命令的 profile 的集合，别的 profile 以前同步过这个位置的状态行与为它留着的转发原文就
 /// 再也没人清（第六波复核）。所以不按发命令的 profile 取集合：发命令的 profile 没有集合（删掉了 / 新代里从没打开过）
 /// 也照常忘别的集合，不报 `has no collection`。
+///
+/// 不按 profile 收窄不算越权（第六波第二轮复核核过）：能发这条命令的只有本机同步调度器的待忘清单，而能把位置从
+/// 设备配置里移除的那个 profile 本来就让每个 profile 都不再同步它；远程复习的白名单（engine `kSrsRemoteKernelOps`）
+/// 不含它（`srs_remote_store_test.dart` 白名单用例守着），ctl / 服务端没有入口；忘的只是同步状态与多余的转发原文，
+/// 卡片与复习记录一条不动。**前提是位置身份是设备级配置**：以后云盘通道 / 互联也接移除时，若它们的配置按 profile
+/// 分开，这里要改回按 profile 取集合。
 pub fn location_forget_everywhere(t: &Truth<'_>, req: &Value) -> Result<Value, String> {
     let cols: Vec<i64> = {
         let mut stmt = t

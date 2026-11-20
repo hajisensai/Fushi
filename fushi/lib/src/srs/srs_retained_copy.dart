@@ -55,14 +55,28 @@ typedef SrsRetainedCopyInfo = ({String dir, SrsRetainedCopyState state});
 /// - 复习库换了（迁移完成、换 profile、到期自动删都发生在开库时）：watch [srsStoreProvider]；
 /// - 删除：删的调用方 invalidate；
 /// - 第一次同步成功（到期时刻从「迁移 + 30 天」改成「首次同步 + 14 天」）：副本在、还没记下首次同步时听
-///   [srsSyncRoundsSucceeded]，下一轮成功的同步之后重读一次（设置页开着时日期跟着变）；记下了就不再听。没人看时
+///   [srsSyncRoundsSucceeded]（只按这一次读到的状态决定），下一轮成功的同步之后重读一次（设置页开着时日期跟着变）；记下了之后再成功也不重读。没人看时
 ///   自动释放，下次进设置页现读。
 /// 读的过程中 [Ref.keepAlive] 撑住：删牌组那条路是 `read(.future)`，没有监听者也要等它读完。
+///
+/// 监听在 provider 体的**同步开头**挂上、同一处登记 `onDispose` 摘掉，两者成对、都在第一个 `await` 之前：读的过程中
+/// 被 invalidate（换库、删除的调用方）时这一次构建的 dispose 照样把它摘掉。读完才决定要不要重读（`awaitingFirstSync`），
+/// 不在读完之后再挂——那时这次构建可能已经被废弃，`onDispose` 会抛、监听就永远摘不掉，之后每一轮成功的同步都让元素
+/// 重读一次（第六波第二轮复核）。
 final AutoDisposeFutureProvider<SrsRetainedCopyInfo?> srsRetainedCopyProvider =
     FutureProvider.autoDispose<SrsRetainedCopyInfo?>((
       AutoDisposeFutureProviderRef<SrsRetainedCopyInfo?> ref,
     ) async {
       final KeepAliveLink loading = ref.keepAlive();
+      bool awaitingFirstSync = false;
+      void onRoundSucceeded() {
+        if (awaitingFirstSync) ref.invalidateSelf();
+      }
+
+      srsSyncRoundsSucceeded.addListener(onRoundSucceeded);
+      ref.onDispose(
+        () => srsSyncRoundsSucceeded.removeListener(onRoundSucceeded),
+      );
       try {
         final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
         if (store == null) return null;
@@ -74,11 +88,7 @@ final AutoDisposeFutureProvider<SrsRetainedCopyInfo?> srsRetainedCopyProvider =
               .state(dir, nowMs: DateTime.now().millisecondsSinceEpoch);
           // 副本在、新代还没同步成功过：到期时刻会在第一次同步成功时从「迁移 + 30 天」改成「首次同步 + 14 天」。
           // 开着设置页时等下一轮成功的同步重读一次（重读之后记下了首次同步就不再听）。
-          if (state.present && state.firstSyncAtMs == null) {
-            void reread() => ref.invalidateSelf();
-            srsSyncRoundsSucceeded.addListener(reread);
-            ref.onDispose(() => srsSyncRoundsSucceeded.removeListener(reread));
-          }
+          awaitingFirstSync = state.present && state.firstSyncAtMs == null;
           return (dir: dir, state: state);
         } on SrsCoreException catch (e, stack) {
           ErrorLogService.instance.log('srs.retained_copy.state', e, stack);
