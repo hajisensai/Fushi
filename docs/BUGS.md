@@ -311,6 +311,7 @@
 | [BUG-4928](bugs/BUG-4928-srs-deck-context-menu-at-row-end.md) | ✅ | ✅ | 复习牌组列表右键菜单弹在行的右端，不在鼠标处 |
 | [BUG-4931](bugs/BUG-4931-oled-reader-bg-not-black.md) | ✅ | ✅ | OLED 纯黑深色下阅读器底色不是黑色 |
 | [BUG-4932](bugs/BUG-4932-apple-widget-dark-background-grey.md) | ✅ | ✅ | iOS 主屏小组件深色模式底色比系统原生小组件灰亮 |
+| [BUG-4938](bugs/BUG-4938-reader-top-bar-leading-squeezes-title.md) | ✅ | ✅ | 小说阅读器顶部悬浮栏书名胶囊被左上角前置圆钮挤没 |
 | [BUG-4905](bugs/BUG-4905-ai-cast-text-substitutions.md) | ✅ | ✅ | 小说和漫画 AI 标注未应用系列用词替换表 |
 | [BUG-4904](bugs/BUG-4904-book-series-key-store-annotation.md) | ✅ | ✅ | 书店写法「卷号<系列名> (文库名)」的分卷导入后不归合集 |
 | [BUG-4903](bugs/BUG-4903-home-desktop-continue-cut-edge-title-concat.md) | ✅ | ✅ | 首页（桌面）「继续」右侧卡被窗口切掉一半、标题拼接成「Re：ゼロ…1<Re：…」 |
