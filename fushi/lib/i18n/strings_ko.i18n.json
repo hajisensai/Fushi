@@ -4725,6 +4725,7 @@
   "import_extract": "파일 추출 중...",
   "import_failed": "사전 가져오기에 실패했습니다.",
   "import_folder_copy_failed": "폴더를 앱으로 복사할 수 없었습니다: $error",
+  "import_format_detecting": "Detecting format…",
   "import_format_group_audio": "Audio",
   "import_format_group_books": "Books",
   "import_format_group_droppable": "Can be dragged into the window",

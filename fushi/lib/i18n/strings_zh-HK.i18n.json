@@ -4725,6 +4725,7 @@
   "import_extract": "正在解壓檔案…",
   "import_failed": "辭典匯入失敗。",
   "import_folder_copy_failed": "無法把資料夾複製進應用：$error",
+  "import_format_detecting": "Detecting format…",
   "import_format_group_audio": "Audio",
   "import_format_group_books": "Books",
   "import_format_group_droppable": "Can be dragged into the window",

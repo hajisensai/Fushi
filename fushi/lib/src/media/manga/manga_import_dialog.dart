@@ -106,6 +106,13 @@ class _MangaImportDialogState extends State<MangaImportDialog>
 
   bool _pickerActive = false;
 
+  /// 正在后台定性的候选路径的显示名；null = 没有在定性的。
+  ///
+  /// 定性（`.epub` / `.zip` 要真开包）跑在后台 isolate，大 EPUB 要一两秒：这期间
+  /// 选择块显示这个文件名 + 小转圈「正在识别格式…」、导入按钮置灰，用户知道已经
+  /// 收到、不会以为没选上而反复点。只由当前一代收下（[_adoptGeneration]）清掉。
+  String? _probingName;
+
   /// 当前选中的目录若是 iOS 整卷拷进来的暂存副本（BUG-2786），在这里记着，关框时删。
   ///
   /// 为什么不在每次导入结束就删：导入失败时对话框不关、路径还在，用户会原样重试——
@@ -147,7 +154,8 @@ class _MangaImportDialogState extends State<MangaImportDialog>
     if (initial != null) {
       // 预填路径来自已判定为漫画的上游（拖放决策层 / 书籍框转交），这里仍重跑一次
       // 分类以拿到细分载体；万一上游给了非漫画路径，宁可留空也不静默导错东西
-      // （所以不弹「不支持的格式」）。
+      // （所以不弹「不支持的格式」）。首帧就显示「正在识别格式…」（见 [_classify]）。
+      _probingName = p.basename(initial);
       unawaited(_adoptPath(initial, reportRejection: false));
     }
   }
@@ -159,8 +167,21 @@ class _MangaImportDialogState extends State<MangaImportDialog>
     super.dispose();
   }
 
-  Future<ImportCarrier> _classify(String path) =>
-      _carrierResolver.resolveAsync(path);
+  /// 第 [generation] 次收下里定性 [path]，定性期间选择块显示「正在识别格式…」。
+  ///
+  /// 结果回来时若这一代已作废（[_isStaleAdoption]），加载态归取代它的那一代管，
+  /// 这里不动；否则清掉加载态（与调用方随后的 setState 落在同一帧）。
+  Future<ImportCarrier> _classify(String path, int generation) async {
+    final String name = p.basename(path);
+    // initState 里收下预填路径时首帧还没出、不能 setState：那里已先把加载态赋好，
+    // 这里同名就不再 setState。
+    if (_probingName != name) setState(() => _probingName = name);
+    final ImportCarrier carrier = await _carrierResolver.resolveAsync(path);
+    if (mounted && generation == _adoptGeneration) {
+      setState(() => _probingName = null);
+    }
+    return carrier;
+  }
 
   /// 每次开始收下一个路径 / 一批路径时加一。定性是异步的：用户在上一次定性还没
   /// 回来时又选了别的（或拖进一批），晚到的旧结果不得覆盖新选择。
@@ -190,6 +211,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
   /// 进入逐卷批量模式（不含 setState，调用方决定是否包一层）。
   void _setBatch(List<String> paths) {
     _adoptGeneration++;
+    _probingName = null;
     _batchPaths = List<String>.unmodifiable(paths);
     _path = null;
     _carrier = null;
@@ -243,7 +265,11 @@ class _MangaImportDialogState extends State<MangaImportDialog>
               label: t.dialog_cancel,
               onPressed: importing ? null : () => Navigator.pop(context),
             ),
-            buildImportAction(context, onImport: _doImport),
+            buildImportAction(
+              context,
+              onImport: _doImport,
+              enabled: _probingName == null,
+            ),
           ],
         ),
       ),
@@ -296,14 +322,20 @@ class _MangaImportDialogState extends State<MangaImportDialog>
       context,
       ImportTone.violet,
     );
+    final String? probing = _probingName;
     final String? name = _pathName;
     return ImportPickBlock(
       tone: ImportTone.violet,
-      title: name ?? t.manga_import_pick_file,
-      subtitle: name == null ? null : t.manga_import_pick_file,
+      title: probing ?? name ?? t.manga_import_pick_file,
+      subtitle: probing != null
+          ? t.import_format_detecting
+          : name == null
+          ? null
+          : t.manga_import_pick_file,
       icon: FushiIcons.books,
       dropHint: t.book_import_drop_hint,
-      selected: name != null,
+      selected: probing == null && name != null,
+      busy: probing != null,
       enabled: !importing,
       onTap: _pickFile,
       onClear: () {
@@ -446,6 +478,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
   void _clearSelection() {
     _adoptGeneration++;
     setState(() {
+      _probingName = null;
       _batchPaths = const <String>[];
       _path = null;
       _pathName = null;
@@ -464,7 +497,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
     bool reportRejection = true,
   }) async {
     final int generation = ++_adoptGeneration;
-    final ImportCarrier carrier = await _classify(candidate);
+    final ImportCarrier carrier = await _classify(candidate, generation);
     if (_isStaleAdoption(generation)) return false;
     if (!carrier.isMangaCapable) {
       if (!reportRejection) return false;
@@ -509,7 +542,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
     // 单个：取第一个能定性成漫画的路径。
     final int generation = ++_adoptGeneration;
     for (final String path in paths) {
-      final bool manga = (await _classify(path)).isMangaCapable;
+      final bool manga = (await _classify(path, generation)).isMangaCapable;
       if (_isStaleAdoption(generation)) return;
       if (manga) {
         // 同一路径的判定已在记忆里，这里不再开包。

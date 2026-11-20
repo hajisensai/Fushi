@@ -4725,6 +4725,7 @@
   "import_extract": "Mengekstrak file...",
   "import_failed": "Impor kamus gagal.",
   "import_folder_copy_failed": "Tidak dapat menyalin folder ke aplikasi: $error",
+  "import_format_detecting": "Detecting format…",
   "import_format_group_audio": "Audio",
   "import_format_group_books": "Books",
   "import_format_group_droppable": "Can be dragged into the window",

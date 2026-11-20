@@ -4725,6 +4725,7 @@
   "import_extract": "Bestanden uitpakken...",
   "import_failed": "Importeren van woordenboek mislukt.",
   "import_folder_copy_failed": "Kon de map niet naar de app kopiëren: $error",
+  "import_format_detecting": "Detecting format…",
   "import_format_group_audio": "Audio",
   "import_format_group_books": "Books",
   "import_format_group_droppable": "Can be dragged into the window",

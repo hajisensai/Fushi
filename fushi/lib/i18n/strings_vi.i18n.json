@@ -4725,6 +4725,7 @@
   "import_extract": "Đang giải nén tệp…",
   "import_failed": "Nhập từ điển thất bại.",
   "import_folder_copy_failed": "Không thể sao chép thư mục vào ứng dụng: $error",
+  "import_format_detecting": "Detecting format…",
   "import_format_group_audio": "Audio",
   "import_format_group_books": "Books",
   "import_format_group_droppable": "Can be dragged into the window",
