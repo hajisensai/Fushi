@@ -6208,6 +6208,18 @@ $liveConfigJs
     _selectTextAt(local.dx, local.dy);
   }
 
+  /// BUG-4967（拍板台 jWXKgQxjR2）：窗口最顶上那条 32px 是透明的自绘标题行，
+  /// 阅读器的纸色一直铺到顶边，看上去就是正文上方的空白；但它是整窗拖动区，
+  /// 鼠标单击被它整条吃掉，正文 WebView 收不到——悬浮控制栏点那里既唤不出也
+  /// 收不起。标题行单击（弹窗不在时）按「点正文空白」处理，与 `onTapEmpty`
+  /// 同一入口；参数为空 ⇒ 不参与点击翻页区域模板（这一条不在正文视口里）。
+  /// 歌词覆盖层在场时它自带全套手势，不经这里。
+  @override
+  void onCaptionBlankTap(Offset globalPosition) {
+    if (!_hasEverLoaded || _lyricsOverlayShown) return;
+    _handleReaderBlankTap(const <dynamic>[], sizeIndex: 2);
+  }
+
   // ── Reader chrome helpers kept in the shell ─────────────────────────
   // `_colorToCssRgba` / `_toDouble` stay here because their other call sites
   // live in the still-in-shell WebView region; the rest of the reader chrome

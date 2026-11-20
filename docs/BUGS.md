@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4373 条。点号进各自文件。
+> 共 4374 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4967](bugs/BUG-4967-caption-strip-blank-tap-chrome.md) | ✅ | ✅ | Windows 阅读器顶部标题行空白处单击不唤出/收起悬浮控制栏 |
 | [BUG-4958](bugs/BUG-4958-aggregate-sync-ui-isolate-anr.md) | ✅ | ✅ | 互联/云聚合同步在 UI isolate 上同步跑整份快照折叠与指纹，慢设备 ANR |
 | [BUG-4957](bugs/BUG-4957-audiobook-concat-shuffle-order-quadratic.md) | ✅ | ✅ | TTS 朗读 / 多文件有声书建 ConcatenatingAudioSource 时 just_audio 默认 ShuffleOrder 逐个随机 List.insert，O(n²) 占满主线程到 ANR |
 | [BUG-4956](bugs/BUG-4956-ios-popup-entries-fetch-status-zero-oom.md) | ✅ | ✅ | iOS 阅读器查词时 Out of Memory 闪退（词条拦截投递在 iOS 上恒失败 + 历史整表重写） |
@@ -146,13 +147,13 @@
 | [BUG-4907](bugs/BUG-4907-remote-episode-switch-stale-failure.md) | ✅ | ✅ | 远端换集：作废那一程的失败仍把页面置成失败态 |
 | [BUG-4907](bugs/BUG-4907-plex-identity-probe-sends-token.md) | ✅ | ✅ | Plex 连接探测在核对服务器身份之前就把 X-Plex-Token 发给被探测地址 |
 | [BUG-4907](bugs/BUG-4907-pdf-import-dir-reuse-and-rollback.md) | ✅ | ✅ | PDF 导入书目录存在即复用、失败无条件删除 |
-| [BUG-4907](bugs/BUG-4907-online-novel-atomic-write-cleanup-masks-error.md) | ✅ | ✅ | 在线书原子写失败后清理临时文件出错会顶掉原始异常 |
-| [BUG-4907](bugs/BUG-4907-manga-audio-no-pause-on-lookup.md) | ✅ | ✅ | 漫画阅读器查词时朗读 / 漫画有声不自动暂停 |
 | [BUG-4907](bugs/BUG-4907-book-batch-delete-vacuum-per-book.md) | ✅ | ✅ | 批量删书每本都跑一次整库 VACUUM + wal_checkpoint |
+| [BUG-4907](bugs/BUG-4907-manga-audio-no-pause-on-lookup.md) | ✅ | ✅ | 漫画阅读器查词时朗读 / 漫画有声不自动暂停 |
+| [BUG-4907](bugs/BUG-4907-graphic-track-reselect-kills-inflight-extract.md) | ✅ | ✅ | 图形字幕整轨抽取跑到一半时重新选同一条图形轨，会把 ffmpeg 杀掉从头再抽 |
 | [BUG-4907](bugs/BUG-4907-games-home-empty-card-stretched.md) | ✅ | ✅ | 游戏首页空库引导卡被拉满整个高度，窄卡居中两侧大片空白 |
 | [BUG-4907](bugs/BUG-4907-cloud-reserved-namespace-listed-as-book.md) | ✅ | ✅ | 云盘对比弹窗把 `__settings__` / `fushi-srs` 列成远端书、可被「删远端」整个删掉 |
-| [BUG-4907](bugs/BUG-4907-graphic-track-reselect-kills-inflight-extract.md) | ✅ | ✅ | 图形字幕整轨抽取跑到一半时重新选同一条图形轨，会把 ffmpeg 杀掉从头再抽 |
-| [BUG-4906](bugs/BUG-4906-interconnect-host-dead-file-box.md) | ✅ | ✅ | 互联 host 同步根堆积已无人读取的客户端文件箱书文件夹 |
+| [BUG-4907](bugs/BUG-4907-online-novel-atomic-write-cleanup-masks-error.md) | ✅ | ✅ | 在线书原子写失败后清理临时文件出错会顶掉原始异常 |
+| [BUG-4906](bugs/BUG-4906-interconnect-transcode-retranscodes-segments.md) | ✅ | ✅ | 互联实时转码同一段每次请求都重新起 ffmpeg |
 | [BUG-4906](bugs/BUG-4906-webvideo-builtin-process-gone.md) | ✅ | ✅ | 内置网页播放器渲染进程死亡后回到起始页且重放循环不知情 |
 | [BUG-4906](bugs/BUG-4906-web-novel-tail-chapter-snapshot-desync.md) | ✅ | ✅ | web-novel-tail-chapter-snapshot-desync |
 | [BUG-4906](bugs/BUG-4906-video-params-sub-stale-after-handle-release.md) | ✅ | ✅ | 放掉视频句柄（数据根迁移 / 删视频 / 文件名整理）后，新 Player 的画面参数事件收不到，HDR 输出与杜比视界提示只剩开片快照补判 |
@@ -169,7 +170,7 @@
 | [BUG-4906](bugs/BUG-4906-manga-audio-page-turn-pulled-back.md) | ✅ | ✅ | 漫画有声播放中翻页 / 滚动，画面先被拉回前一页再翻回来 |
 | [BUG-4906](bugs/BUG-4906-lnreader-state-read-error-reported-as-plugin-missing.md) | ✅ | ✅ | 在线小说取章时 LNReader 状态读盘失败被误报成「插件没装」 |
 | [BUG-4906](bugs/BUG-4906-jimaku-same-key-rebuilds-pipeline.md) | ✅ | ✅ | 字幕面板每次搜索都按未变的 Jimaku key 重建下载管线运行时 |
-| [BUG-4906](bugs/BUG-4906-interconnect-transcode-retranscodes-segments.md) | ✅ | ✅ | 互联实时转码同一段每次请求都重新起 ffmpeg |
+| [BUG-4906](bugs/BUG-4906-interconnect-host-dead-file-box.md) | ✅ | ✅ | 互联 host 同步根堆积已无人读取的客户端文件箱书文件夹 |
 | [BUG-4906](bugs/BUG-4906-interconnect-book-download-progress-lost.md) | ✅ | ✅ | 从对端下书：EPUB 落地后进度看不到、卡片换位，后台任务里也看不到 |
 | [BUG-4906](bugs/BUG-4906-graphic-sub-ocr-one-cue-fails-whole-track.md) | ✅ | ✅ | 图形字幕整轨转文字一条 cue 出错整个任务作废 |
 | [BUG-4906](bugs/BUG-4906-games-stream-wide-floating-title-capsule.md) | ✅ | ✅ | 非 Windows 游戏页（串流接收端）宽屏仍是悬浮标题胶囊，与其它模块的页头大字顶栏不一致 |
