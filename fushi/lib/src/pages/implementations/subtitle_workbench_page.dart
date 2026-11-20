@@ -135,12 +135,16 @@ class SubtitleCollectionSpec {
   const SubtitleCollectionSpec({
     required this.collection,
     required this.members,
+    this.initialSeason,
   });
 
   final MediaCollectionRow collection;
 
   /// 合集里**有序**的视频成员。
   final List<VideoBookRow> members;
+
+  /// 多季合集打开时优先选中的季号；null = 第一季。
+  final int? initialSeason;
 
   /// 语言记忆键（合集名小写 trim，与批量对话框约定一致）。
   String get seriesKey => collection.name.trim().toLowerCase();
@@ -354,6 +358,7 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
       onRemoteSubtitlePersist: host.persistRemoteSubtitle,
       onSubtitlePersisted: widget.onCollectionSubtitlePersisted,
       subtitleAligner: host.subtitleAligner,
+      initialSeason: spec.initialSeason,
     );
   }
 
