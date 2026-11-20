@@ -617,7 +617,7 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
         if (musicTrackRowSurfaceActive(context))
           musicViewStyleToggle(MusicViewKind.tracks, style),
       ],
-      body: _withSelection(
+      body: (BuildContext context) => _withSelection(
         albumMap,
         FushiEntranceScope(
           // Builder：顶部让位读的是脚手架给正文的 MediaQuery（页头高度在里面），

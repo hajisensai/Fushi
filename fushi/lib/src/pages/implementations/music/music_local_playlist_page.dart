@@ -283,7 +283,7 @@ class _MusicLocalPlaylistPageState
         if (musicViewStyleSwitchable(context))
           musicViewStyleToggle(MusicViewKind.tracks, style),
       ],
-      body: FutureBuilder<_PlaylistData>(
+      body: (BuildContext context) => FutureBuilder<_PlaylistData>(
         future: _data,
         builder: (BuildContext context, AsyncSnapshot<_PlaylistData> snap) {
           final _PlaylistData? d = snap.data ?? _shown;

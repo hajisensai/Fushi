@@ -573,7 +573,7 @@ class _MusicPluginCollectionPageState
       actions: <FushiToolbarItem>[
         if (switchable) musicViewStyleToggle(MusicViewKind.tracks, layout),
       ],
-      body: FutureBuilder<_Collection>(
+      body: (BuildContext context) => FutureBuilder<_Collection>(
         future: _data,
         builder: (BuildContext context, AsyncSnapshot<_Collection> snap) {
           if (snap.hasError) {
@@ -1364,7 +1364,7 @@ class _MusicPluginArtistPageState extends ConsumerState<MusicPluginArtistPage> {
         if (view != null)
           musicViewStyleToggle(view.$1, _tabStyle(context, shownTab)),
       ],
-      body: FutureBuilder<_ArtistData>(
+      body: (BuildContext context) => FutureBuilder<_ArtistData>(
         future: _data,
         builder: (BuildContext context, AsyncSnapshot<_ArtistData> snap) {
           if (snap.hasError) {

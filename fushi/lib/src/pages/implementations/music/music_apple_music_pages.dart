@@ -819,7 +819,7 @@ class _AppleMusicGenrePageState extends State<AppleMusicGenrePage> {
   Widget build(BuildContext context) => musicBrowseScaffold(
     context,
     title: widget.genre.name,
-    body: FutureBuilder<AppleMusicCharts>(
+    body: (BuildContext context) => FutureBuilder<AppleMusicCharts>(
       future: _charts,
       builder: (BuildContext context, AsyncSnapshot<AppleMusicCharts> snap) {
         if (snap.hasError) {
@@ -922,7 +922,7 @@ class AppleMusicTrackListPage extends StatelessWidget {
         if (musicTrackRowSurfaceActive(context))
           musicViewStyleToggle(MusicViewKind.tracks, style),
       ],
-      body:
+      body: (BuildContext context) =>
           style == MusicViewStyle.blocks && musicTrackRowSurfaceActive(context)
           ? MusicStyledCollection(
               style: style,
@@ -1368,7 +1368,7 @@ class _AppleMusicArtistPageState extends State<AppleMusicArtistPage> {
         if (musicViewStyleSwitchable(context))
           musicViewStyleToggle(MusicViewKind.albums, albumStyle),
       ],
-      body: FushiEntranceScope(
+      body: (BuildContext context) => FushiEntranceScope(
         child: ListView.builder(
           padding: musicBrowsePagePadding(context),
           itemCount: sections.length,

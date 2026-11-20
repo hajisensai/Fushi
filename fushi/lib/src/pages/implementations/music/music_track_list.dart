@@ -1302,7 +1302,7 @@ class MusicTrackListPage extends StatelessWidget {
         if (musicViewStyleSwitchable(context))
           musicViewStyleToggle(MusicViewKind.tracks, style),
       ],
-      body: MusicTrackList(
+      body: (BuildContext context) => MusicTrackList(
         tracks: tracks,
         albums: albums,
         context: MusicQueueContext.mixed,
