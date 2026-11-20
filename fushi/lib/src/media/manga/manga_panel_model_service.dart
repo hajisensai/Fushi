@@ -80,7 +80,85 @@ const Duration kMangaPanelModelStallTimeout = Duration(seconds: 30);
 ///
 /// 连接卡住（[stallTimeout] 内一个字节都没来）以 [TimeoutException] 结束并断开
 /// 连接，不让设置页永远停在「下载中」。任何失败都删掉 `.part`。
+///
+/// **进程内同时只有一次下载**：设置页、阅读页的高级制卡、制卡对话框三个入口都调
+/// 这里，写的是同一个 `<模型>.part`。下载进行中再调用不另起一次，而是接到正在跑的
+/// 那一次上（先补一条当前进度，之后同步收进度、完成与失败）。旧实现各起各的：
+/// 两路往同一个暂存文件交错写，一路失败时把另一路正在写的 `.part` 删掉，校验必挂。
+/// 全部订阅者都取消时才中止下载（只有一个入口时与旧语义相同）。
+/// [clientFactory] / [stallTimeout] 只对发起那一次生效。
 Stream<int> downloadMangaPanelModel({
+  HttpClient Function()? clientFactory,
+  Duration stallTimeout = kMangaPanelModelStallTimeout,
+}) {
+  final _PanelModelDownload download = _panelModelDownload ??=
+      _PanelModelDownload(
+        _downloadMangaPanelModelOnce(
+          clientFactory: clientFactory,
+          stallTimeout: stallTimeout,
+        ),
+      );
+  return download.subscribe();
+}
+
+_PanelModelDownload? _panelModelDownload;
+
+/// 正在进行的那一次下载与它的订阅者。下载结束（成功或失败）时先摘掉
+/// [_panelModelDownload] 再通知订阅者：之后的调用会重新发起，不会接到已结束的这一次。
+class _PanelModelDownload {
+  _PanelModelDownload(Stream<int> source) {
+    _source = source.listen(
+      (int received) {
+        _received = received;
+        for (final StreamController<int> sub in _subscribers.toList()) {
+          sub.add(received);
+        }
+      },
+      onError: (Object error, StackTrace stack) {
+        _detach();
+        for (final StreamController<int> sub in _subscribers.toList()) {
+          sub.addError(error, stack);
+        }
+      },
+      onDone: () {
+        _detach();
+        for (final StreamController<int> sub in _subscribers.toList()) {
+          unawaited(sub.close());
+        }
+        _subscribers.clear();
+      },
+      cancelOnError: false,
+    );
+  }
+
+  late final StreamSubscription<int> _source;
+  final List<StreamController<int>> _subscribers = <StreamController<int>>[];
+  int? _received;
+
+  void _detach() {
+    if (identical(_panelModelDownload, this)) _panelModelDownload = null;
+  }
+
+  Stream<int> subscribe() {
+    late final StreamController<int> sub;
+    sub = StreamController<int>(
+      onCancel: () async {
+        _subscribers.remove(sub);
+        if (_subscribers.isEmpty && identical(_panelModelDownload, this)) {
+          // 最后一个订阅者走了：中止下载（下载体的 finally 删 `.part`、关连接）。
+          _detach();
+          await _source.cancel();
+        }
+      },
+    );
+    final int? received = _received;
+    if (received != null) sub.add(received);
+    _subscribers.add(sub);
+    return sub.stream;
+  }
+}
+
+Stream<int> _downloadMangaPanelModelOnce({
   HttpClient Function()? clientFactory,
   Duration stallTimeout = kMangaPanelModelStallTimeout,
 }) async* {

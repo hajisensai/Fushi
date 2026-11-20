@@ -81,6 +81,50 @@ void main() {
       expect((await mangaPanelModelFile()).existsSync(), isFalse);
     }, timeout: const Timeout(Duration(seconds: 30)));
 
+    // 路线图 #3722 c12 遗留：设置页、高级制卡、制卡对话框三个入口共用一个 `.part`，
+    // 旧实现每调一次各起一次下载，往同一个暂存文件交错写。
+    test('a second caller joins the running download instead of starting '
+        'another', () async {
+      int requests = 0;
+      server.listen((HttpRequest request) async {
+        requests++;
+        request.response
+          ..statusCode = HttpStatus.ok
+          ..bufferOutput = false
+          ..add(List<int>.filled(4096, 7));
+        await request.response.flush();
+        held.add(request.response);
+      });
+      final List<int> firstProgress = <int>[];
+      final Completer<void> firstChunk = Completer<void>();
+      Object? firstError;
+      final Future<void> first =
+          downloadMangaPanelModel(
+                clientFactory: () => _LoopbackClient(server.port),
+                stallTimeout: const Duration(milliseconds: 500),
+              )
+              .forEach((int received) {
+                firstProgress.add(received);
+                if (!firstChunk.isCompleted) firstChunk.complete();
+              })
+              .catchError((Object e) => firstError = e);
+      await firstChunk.future;
+
+      final List<int> secondProgress = <int>[];
+      Object? secondError;
+      await downloadMangaPanelModel(
+        clientFactory: () => _LoopbackClient(server.port),
+      ).forEach(secondProgress.add).catchError((Object e) => secondError = e);
+      await first;
+
+      expect(requests, 1, reason: 'only one GET for both callers');
+      expect(secondProgress, isNotEmpty, reason: 'joins with current progress');
+      expect(secondProgress.first, firstProgress.last);
+      expect(firstError, isA<TimeoutException>());
+      expect(secondError, isA<TimeoutException>());
+      expect((await partFile()).existsSync(), isFalse);
+    }, timeout: const Timeout(Duration(seconds: 30)));
+
     test('a body that fails validation leaves no .part', () async {
       server.listen((HttpRequest request) async {
         request.response
