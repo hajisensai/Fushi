@@ -210,8 +210,16 @@ void main() {
       final String js = compactCode(
         maskComments(methodBody(page, 'Future<Object?> _js(')),
       );
-      expect(js, contains('_surfaceGone.future'));
-      expect(js, contains('Future.any<Object?>('));
+      // 每次调用一个局部 Completer 登记进 _inflightJs、结束即移出；不在长寿 future 上挂监听
+      // （表面不死时那些监听只增不减）。
+      expect(js, contains('_inflightJs.add(call);'));
+      expect(js, contains('_inflightJs.remove(call);'));
+      expect(js, isNot(contains('Future.any')));
+      final String recover = compactCode(
+        maskComments(methodBody(page, 'Future<void> _recoverFromProcessGone(')),
+      );
+      expect(recover, contains('_inflightJs.clear();'));
+      expect(recover, contains('call.complete(null);'));
     });
   });
 }

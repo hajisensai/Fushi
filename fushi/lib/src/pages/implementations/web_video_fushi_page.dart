@@ -384,9 +384,11 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         ErrorLogService.instance.log('web_video', '$surface: $message'),
   );
 
-  /// 当前表面死亡时完成：死进程上的 `evaluateJavascript` 可能永不返回，[_js] 拿它竞速，
-  /// 在途调用随表面一起作废，不把重放循环挂死。每死一次换一个新的。
-  Completer<void> _surfaceGone = Completer<void>();
+  /// 在途的 [_js] 调用，每次调用一个、结束即移出。死进程上的 `evaluateJavascript` 可能永不
+  /// 返回：表面死亡时 [_recoverFromProcessGone] 把这里还在飞的全部以 null 结束，在途调用随
+  /// 表面一起作废，不把重放循环挂死。不在一个长寿 future 上为每次调用挂监听——表面不死时
+  /// 那些监听连同调用结果会一直被引用，长时间看片只增不减。
+  final Set<Completer<Object?>> _inflightJs = <Completer<Object?>>{};
 
   /// 重建出来的 WebView 打开的地址：首建是书的起始页；进程死后是死前所在的页面（站内换过
   /// 集也不被甩回第一集）。
@@ -908,9 +910,11 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   /// 最后换环境：Dart 侧分不出死的是渲染进程还是浏览器进程，一律丢掉缓存的环境重建（只是渲染
   /// 进程死了新环境会接回同一个浏览器进程）。环境建不出来抛出由 death guard 记录，重建照样进行。
   Future<void> _recoverFromProcessGone() async {
-    final Completer<void> gone = _surfaceGone;
-    _surfaceGone = Completer<void>();
-    gone.complete();
+    final List<Completer<Object?>> inflight = _inflightJs.toList();
+    _inflightJs.clear();
+    for (final Completer<Object?> call in inflight) {
+      if (!call.isCompleted) call.complete(null);
+    }
     final WebVideoPlaybackState? last = _state;
     final String href = last != null && last.href.isNotEmpty
         ? last.href
@@ -1089,22 +1093,32 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   Future<Object?> _js(String expression) async {
     final InAppWebViewController? web = _web;
     if (web == null) return null;
-    final Future<Object?> gone = _surfaceGone.future.then((_) => null);
-    try {
-      return await Future.any<Object?>(<Future<Object?>>[
-        web.evaluateJavascript(
+    final Completer<Object?> call = Completer<Object?>();
+    _inflightJs.add(call);
+    web
+        .evaluateJavascript(
           source:
               '(function(){try{return window.__fushiWebVideo&&'
               '($expression);}catch(e){return String(e);}})()',
-        ),
-        gone,
-      ]);
+        )
+        .then(
+          (Object? value) {
+            if (!call.isCompleted) call.complete(value);
+          },
+          onError: (Object e, StackTrace st) {
+            if (!call.isCompleted) call.completeError(e, st);
+          },
+        );
+    try {
+      return await call.future;
     } catch (e) {
       ErrorLogService.instance.log(
         'web_video',
         'evaluateJavascript failed: $e',
       );
       return null;
+    } finally {
+      _inflightJs.remove(call);
     }
   }
 
