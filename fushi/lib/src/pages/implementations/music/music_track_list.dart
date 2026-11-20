@@ -1086,9 +1086,9 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
               durationText: musicTrackTimeLabel(track.durationMs, resume),
               playing: playing,
               onTap: tap,
-              onLongPress: _selecting
-                  ? tap
-                  : () => openMusicTrackDetail(c, track.trackUid),
+              // 多选态长按 = 勾选；平时长按弹菜单（详情 / 多选 / 从歌单移除…都在里面）。
+              onLongPress: _selecting ? tap : null,
+              menu: menu,
             ),
           ),
         );
@@ -1132,6 +1132,7 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
                     ? () => _tapRow(i, available ? play : () {})
                     : null,
                 onLongPress: _selecting ? tap : null,
+                menu: menu,
               ),
             ),
           ),
