@@ -167,6 +167,44 @@ void main() {
     });
   });
 
+  // 刮削图落成 sidecar（`fanart.<ext>` / `logo.<ext>`），重刮换身份是同路径覆盖写，
+  // 写后经 evictLocalCoverCache 驱逐（BUG-2737）。修前详情页用裸 FileImage，驱逐
+  // 能清到；改成背景 1280 / logo 640 的宽度键后，驱逐必须把这些宽度也清掉，否则
+  // 详情页重刮后仍画旧图。
+  testWidgets('same-path overwrite evicts the 1280 / 640 detail-page decodes', (
+    WidgetTester tester,
+  ) async {
+    await tester.runAsync(() async {
+      final Directory dir = await Directory.systemTemp.createTemp(
+        'meta-evict-',
+      );
+      addTearDown(() => dir.delete(recursive: true));
+      final File backdrop = await _writePng(dir, 1600, 900);
+      final File logo = await _writePng(dir, 800, 300);
+      final List<VideoMetadataImageRow> rows = <VideoMetadataImageRow>[
+        _row(kind: 'backdrop', localPath: backdrop.path),
+        _row(kind: 'logo', localPath: logo.path, position: 1),
+      ];
+      final ImageCache cache = PaintingBinding.instance.imageCache;
+      for (final (String kind, File file) in <(String, File)>[
+        ('backdrop', backdrop),
+        ('logo', logo),
+      ]) {
+        final ImageProvider image = videoMetadataRowImage(
+          rows,
+          kind,
+          localExists: (String _) => true,
+        )!;
+        await _decodedWidth(image);
+        final Object key = await image.obtainKey(ImageConfiguration.empty);
+        expect(cache.containsKey(key), isTrue, reason: kind);
+
+        await evictLocalCoverCache(file.path);
+        expect(cache.containsKey(key), isFalse, reason: kind);
+      }
+    });
+  });
+
   test('missing local file falls back to a capped remote image', () {
     final ImageProvider? image = videoMetadataRowImage(
       <VideoMetadataImageRow>[
