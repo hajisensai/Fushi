@@ -31,6 +31,7 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
         FushiFloatingChromeInset,
         FushiHeightReporter,
         FushiShellInlineTitle,
+        fushiMastheadOuterGap,
         kFushiFloatingChromeGap;
 import 'package:fushi/src/utils/components/nav_rail_brand_button.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
@@ -1821,6 +1822,14 @@ class _HomePageState extends BasePageState<HomePage>
   /// 这个值就翻一次，所有访问过的隐藏保活页里读它的浮动工具区、滚动视图、网格
   /// 都跟着在切 tab 的那一帧重建 + 重排。
   double _shellTitleInsetFor(HomeTab tab) {
+    // 首页（重设计外壳的页头大字）在手机上与库页同一条大字行：外壳同样留
+    // [fushiMastheadOuterGap]，页名基线、主按钮与书架对齐（设计稿 11-20 #18）。
+    // 平板 / 桌面不在本次范围，仍为 0。
+    if (tab == HomeTab.home &&
+        shellRedesignActive(context) &&
+        _shellWindowCompact()) {
+      return fushiMastheadOuterGap(context);
+    }
     if (!_shellTitleOverlaid(tab)) return 0;
     return _shellWindowCompact() || _shellTitleInline(tab)
         ? kFushiFloatingChromeGap
@@ -2029,6 +2038,10 @@ class _HomePageState extends BasePageState<HomePage>
     redesign: shellRedesignActive(context),
     gamesStreamClient:
         appModelNoUpdate.gamesModuleForm == GamesModuleForm.streamClient,
+    gamesStreamMasthead: gameStreamLibraryDrawsMasthead(
+      context,
+      hasNavigation: appModelNoUpdate.gamesOffersExternalTexthooker,
+    ),
   );
 
   /// 单个 [HomeTab] 的导航项（图标 + 标签）。底栏/侧栏/macOS 根侧栏共用同一顶层
@@ -4738,7 +4751,9 @@ String? homeShellTitleFor(
 /// 条再画一遍就是同一个页名两行——MD3 因库页标题本来就不按行摆（窄窗不叠、宽窗
 /// 并进工具栏行）没露出来，Apple 的外壳条恒在内容上方按行画，于是 Cupertino 下
 /// 「Video」小字 + 「Video」大字（反馈 4s8SaBMfyY）。页面名照常下发，只有外壳
-/// 条不画。串流接收形态的游戏库是普通页头（[gamesStreamClient]），仍由外壳画。
+/// 条不画。串流接收形态的游戏库是普通页头（[gamesStreamClient]），仍由外壳画；
+/// 但手机上的纯串流库（[gamesStreamMasthead]：没挂 texthooker 页签）与其它模块
+/// 页一样自己画页头大字（设计稿 11-20 #18），外壳条同样不画。
 @visibleForTesting
 String? homeShellBarTitleFor(
   HomeTab tab, {
@@ -4746,11 +4761,12 @@ String? homeShellBarTitleFor(
   required bool compact,
   bool redesign = false,
   bool gamesStreamClient = false,
+  bool gamesStreamMasthead = false,
 }) {
   final bool mastheadOwnsTitle =
       redesign &&
       _HomePageState._tabHasFloatingChrome(tab) &&
-      !(tab == HomeTab.games && gamesStreamClient);
+      !(tab == HomeTab.games && gamesStreamClient && !gamesStreamMasthead);
   if (mastheadOwnsTitle) return null;
   return homeShellTitleFor(
     tab,

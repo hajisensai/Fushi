@@ -21,7 +21,7 @@ import 'package:fushi/src/pages/implementations/games_library_page.dart'
 import 'package:fushi/src/pages/implementations/stat_shared.dart'
     show formatActivityRelativeTime;
 import 'package:fushi/src/utils/adaptive/shell_style.dart'
-    show ShellContentLayout;
+    show ShellContentLayout, shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_continue_blocks.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart';
@@ -35,6 +35,8 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiFloatingChromeVisiblePadding;
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_page_title_metrics.dart';
+import 'package:fushi/src/utils/components/fushi_static_masthead.dart';
 import 'package:fushi/src/utils/components/galgame_poster_card.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
@@ -170,6 +172,19 @@ class GameStreamLibraryServices {
     );
   }
 }
+
+/// 串流库页（[GameStreamLibraryPage]）是否画页头大字（[FushiStaticMasthead]）：
+/// 重设计外壳下的手机，且没挂 texthooker 页签（[hasNavigation]，非 Windows 桌面
+/// 才有）。首页外壳按同一判据决定要不要自己再画标题条
+/// （`homeShellBarTitleFor` 的 `gamesStreamMasthead`）。平板 / 桌面不在设计稿
+/// 11-20 #18 范围，照旧是普通页头。
+bool gameStreamLibraryDrawsMasthead(
+  BuildContext context, {
+  required bool hasNavigation,
+}) =>
+    !hasNavigation &&
+    shellRedesignActive(context) &&
+    FushiPageTitleMetrics.isCompact(context);
 
 /// Android 的「游戏」tab：串流接收端的远端游戏库（Moonlight 式应用网格）。
 ///
@@ -480,6 +495,28 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
       ),
     ];
     final Widget? navigation = widget.navigation;
+    // 手机上的纯串流库与其它模块页同一行页头大字（[FushiStaticMasthead]，规格
+    // `FushiPageTitleMetrics`，设计稿 11-20 #18）：外壳不再叠标题条，这里也就
+    // 不必给它让位；副标题（「在电脑上启动游戏…」）由空态 / 主机列表说明。
+    final bool masthead = gameStreamLibraryDrawsMasthead(
+      context,
+      hasNavigation: navigation != null,
+    );
+    if (masthead) {
+      return Scaffold(
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            FushiStaticMasthead(
+              key: const ValueKey<String>('game-stream-masthead'),
+              title: t.nav_game,
+              actions: actions,
+            ),
+            Expanded(child: _buildSwitchedBody(context, loading, motion)),
+          ],
+        ),
+      );
+    }
     // 作为首页外壳的顶层 tab（非 Windows 的串流接收端）时，外壳把大标题胶囊
     // 叠在内容上方、经 [FushiFloatingChromeInset] 下发让位高度；这里必须让开，
     // 否则页头（外壳已画标题时只剩副标题一行）整段压在标题胶囊底下
@@ -499,26 +536,32 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
               )
             else
               FushiPageHeader.customTitle(title: navigation, actions: actions),
-            Expanded(
-              // 骨架 → 内容交叉淡入（effects 弹簧，不过冲；减弱动态效果下瞬切）。
-              child: AnimatedSwitcher(
-                duration: motion.effectsDefault.duration,
-                switchInCurve: motion.effectsDefault.curve,
-                switchOutCurve: motion.effectsDefault.curve,
-                child: loading
-                    ? KeyedSubtree(
-                        key: const ValueKey<String>('game-stream-skeleton'),
-                        child: _buildLoadingSkeleton(context),
-                      )
-                    : KeyedSubtree(
-                        key: const ValueKey<String>('game-stream-body'),
-                        child: _buildBody(context),
-                      ),
-              ),
-            ),
+            Expanded(child: _buildSwitchedBody(context, loading, motion)),
           ],
         ),
       ),
+    );
+  }
+
+  /// 骨架 → 内容交叉淡入（effects 弹簧，不过冲；减弱动态效果下瞬切）。
+  Widget _buildSwitchedBody(
+    BuildContext context,
+    bool loading,
+    FushiMotionScheme motion,
+  ) {
+    return AnimatedSwitcher(
+      duration: motion.effectsDefault.duration,
+      switchInCurve: motion.effectsDefault.curve,
+      switchOutCurve: motion.effectsDefault.curve,
+      child: loading
+          ? KeyedSubtree(
+              key: const ValueKey<String>('game-stream-skeleton'),
+              child: _buildLoadingSkeleton(context),
+            )
+          : KeyedSubtree(
+              key: const ValueKey<String>('game-stream-body'),
+              child: _buildBody(context),
+            ),
     );
   }
 

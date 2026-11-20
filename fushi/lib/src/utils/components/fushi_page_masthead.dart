@@ -5,16 +5,16 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart';
-import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
     show FushiHeaderCrampScope;
+import 'package:fushi/src/utils/components/fushi_page_title_metrics.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart'
     show FushiAppleColors, appleColorsOf;
 import 'package:fushi/src/utils/components/library_section_tab.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart'
-    show HorizontalDragScrollable, WindowSizeClass, windowSizeClassReal;
+    show HorizontalDragScrollable;
 import 'package:fushi/src/utils/system_transparency.dart'
     show SystemTransparency;
 import 'package:fushi/src/utils/components/fushi_typography.dart';
@@ -141,11 +141,7 @@ class FushiMastheadSwitchHeadline extends InheritedWidget {
 
 /// 手机 / 窄窗（与外壳底栏同一判据：真实窗口宽落在 compact 档）。
 bool fushiMastheadCompact(BuildContext context) =>
-    windowSizeClassReal(
-      MediaQuery.sizeOf(context).width,
-      FushiAppUiScale.of(context),
-    ) ==
-    WindowSizeClass.compact;
+    FushiPageTitleMetrics.isCompact(context);
 
 /// 页头大字随滚动收缩：内容滚动偏移 0 → 本值映射到收缩进度 0 → 1（设计稿
 /// `.cap-B`：桌面 130、手机 90）。
@@ -175,17 +171,17 @@ double fushiMastheadProgressOf({
 
 double _lerp(double a, double b, double t) => a + (b - a) * t;
 
-/// 页名字号：宽窗 84 → 36，窄窗 46 → 28（设计稿 `.cap-B h2`）。
+/// 页名字号（[FushiPageTitleMetrics.titleFontAt]）。
 double _titleFontAt({required bool compact, required double p}) =>
-    compact ? _lerp(46, 28, p) : _lerp(84, 36, p);
+    FushiPageTitleMetrics.forCompact(compact).titleFontAt(p);
 
-/// 一级切换字号：宽窗 30 → 18，窄窗 19 → 15。
+/// 一级切换字号（[FushiPageTitleMetrics.switchFontAt]）。
 double _switchFontAt({required bool compact, required double p}) =>
-    compact ? _lerp(19, 15, p) : _lerp(30, 18, p);
+    FushiPageTitleMetrics.forCompact(compact).switchFontAt(p);
 
-/// 徽标边长：宽窗 44 → 28，窄窗固定 22。
+/// 徽标边长（[FushiPageTitleMetrics.badgeExtentAt]）。
 double fushiMastheadBadgeExtent({required bool compact, double p = 0}) =>
-    compact ? 22 : _lerp(44, 28, p);
+    FushiPageTitleMetrics.forCompact(compact).badgeExtentAt(p);
 
 /// 页头大字顶栏的几何（全部是设计稿 `.cap-B` 的原值，p = 收缩进度）。
 ///
@@ -195,9 +191,9 @@ double fushiMastheadBadgeExtent({required bool compact, double p = 0}) =>
 /// 不会自激）；收缩只在绘制层：各段按 [frameAt] 平移 / 缩放，页头底板按
 /// [visibleHeightAt] 收短。
 ///
-/// [pinnedCollapsed]：钉在收起态（首页手机，与库页顶栏折叠后同一字号）——进度
-/// 恒为 1（[progressFor]），版面高度也取收起态（[layoutHeight] = p = 1 的可见
-/// 高度），正文让位同步收短，不空一截。
+/// 所有模块页（含首页手机）都从展开态起收，没有「钉在收起态」的特例：切 tab
+/// 时页名字号、主按钮、基线一致（设计稿 11-20 #18，规格见
+/// [FushiPageTitleMetrics]）。
 @immutable
 class FushiMastheadGeometry {
   const FushiMastheadGeometry({
@@ -212,18 +208,10 @@ class FushiMastheadGeometry {
     required this.actions,
     required this.primary,
     required this.secondary,
-    this.pinnedCollapsed = false,
   });
 
   final bool compact;
   final double width;
-
-  /// 钉在收起态：进度恒为 1、版面高度取收起态（见类注释）。
-  final bool pinnedCollapsed;
-
-  /// 按滚动算出的进度 [scrollProgress] 换成本页头生效的进度（钉住时恒为 1）。
-  double progressFor(double scrollProgress) =>
-      pinnedCollapsed ? 1 : scrollProgress;
 
   /// 各段在 p = 0 时的版面尺寸（没有的段为 [Size.zero]）。
   final Size leading;
@@ -245,17 +233,31 @@ class FushiMastheadGeometry {
   double titleScaleAt(double p) =>
       _titleFontAt(compact: compact, p: p) /
       _titleFontAt(compact: compact, p: 0);
-  double switchScaleAt(double p) =>
-      _switchFontAt(compact: compact, p: p) /
-      _switchFontAt(compact: compact, p: 0);
+
+  /// 窄窗下没有页名时，一级切换就是这一行的主标题（标题形态的「书架 / 在线」
+  /// 或返回键页的单独页名，都是页名字号）：随滚动与页名同比例收缩。
+  bool get _switchIsTitle => compact && title.height <= 0;
+
+  double switchScaleAt(double p) => _switchIsTitle
+      ? titleScaleAt(p)
+      : _switchFontAt(compact: compact, p: p) /
+            _switchFontAt(compact: compact, p: 0);
   double badgeScaleAt(double p) =>
       fushiMastheadBadgeExtent(compact: compact, p: p) /
       fushiMastheadBadgeExtent(compact: compact);
 
   /// 主按钮缩放：收起态页名缩到 28 时主按钮（头像 / 导入）跟着从 48 缩到 40，
   /// 免得一颗大圆压过页名（2026-11-16 用户：顶栏比例不协调）。
-  double primaryScaleAt(double p) =>
-      primary.height <= 0 ? 1 : _lerp(1, 40 / primary.height, p).clamp(0, 1);
+  double primaryScaleAt(double p) => primary.height <= 0
+      ? 1
+      : _lerp(
+          1,
+          FushiPageTitleMetrics.collapsedPrimaryExtent / primary.height,
+          p,
+        ).clamp(0, 1);
+
+  FushiPageTitleMetrics get _metrics =>
+      FushiPageTitleMetrics.forCompact(compact);
 
   /// 第一行里动作组 / 主按钮占的高度（主按钮按 [primaryScaleAt] 缩放后）。
   double actionRowExtentAt(double p) =>
@@ -273,17 +275,18 @@ class FushiMastheadGeometry {
   }
 
   /// 面板上内边距：桌面 26 → 10；手机的状态栏由外壳让开，只留 8。
-  double topPadAt(double p) => compact ? 8 : _lerp(26, 10, p);
+  double topPadAt(double p) => _metrics.topPadAt(p);
 
   /// 徽标 / 一级切换（无页名时）/ 动作组与主按钮的下边距。
-  double badgeLiftAt(double p) => compact ? 6 : _lerp(12, 3, p);
-  double switchLiftAt(double p) => compact ? 6 : _lerp(11, 3, p);
-  double actionLiftAt(double p) => compact ? 2 : _lerp(8, 2, p);
+  double badgeLiftAt(double p) => _metrics.badgeLiftAt(p);
+  double switchLiftAt(double p) => _metrics.switchLiftAt(p);
+  double actionLiftAt(double p) => _metrics.actionLiftAt(p);
 
-  /// 一级切换的底边离第一行底边的距离：有页名时按字面基线对齐页名，否则按
-  /// 设计稿下边距。
+  /// 一级切换的底边离第一行底边的距离：有页名、或窄窗下它顶替页名当主标题
+  /// 时，字面基线落在页名基线上（各模块页同一条线，11-20 #18）；宽窗无页名时
+  /// 按设计稿下边距。
   double switchBottomLiftAt(double p) {
-    if (title.height <= 0) return switchLiftAt(p);
+    if (title.height <= 0 && !_switchIsTitle) return switchLiftAt(p);
     return math.max(
       0.0,
       titleBaseline * titleScaleAt(p) - switchBaseline * switchScaleAt(p),
@@ -291,13 +294,13 @@ class FushiMastheadGeometry {
   }
 
   /// 页名与徽标、徽标（或页名）与一级切换、动作组与主按钮之间的间距。
-  double get titleBadgeGap => compact ? 8 : 12;
-  double get toSwitchGap => compact ? 8 : 20;
-  double get actionsPrimaryGap => compact ? 8 : 12;
+  double get titleBadgeGap => _metrics.titleBadgeGap;
+  double get toSwitchGap => _metrics.toSwitchGap;
+  double get actionsPrimaryGap => _metrics.actionsPrimaryGap;
   static const double leadingGap = 8;
 
   double firstRowHeightAt(double p) {
-    double h = 0;
+    double h = _metrics.minFirstRowExtentAt(p);
     if (leading.height > 0) h = math.max(h, leading.height + actionLiftAt(p));
     if (title.height > 0) {
       h = math.max(h, title.height * titleScaleAt(p) + titleLiftAt(p));
@@ -337,8 +340,8 @@ class FushiMastheadGeometry {
       (hasSecondary ? rowGapAt(p) + secondary.height : 0) +
       bottomPad;
 
-  /// 版面高度：恒为展开态；钉在收起态时恒为收起态。
-  double get layoutHeight => visibleHeightAt(pinnedCollapsed ? 1 : 0);
+  /// 版面高度：恒为展开态。
+  double get layoutHeight => visibleHeightAt(0);
 
   /// 进度 [p] 下页头比展开态少画的那段高度。
   double collapseAt(double p) =>
@@ -348,7 +351,6 @@ class FushiMastheadGeometry {
   bool operator ==(Object other) =>
       other is FushiMastheadGeometry &&
       other.compact == compact &&
-      other.pinnedCollapsed == pinnedCollapsed &&
       other.width == width &&
       other.leading == leading &&
       other.title == title &&
@@ -363,7 +365,6 @@ class FushiMastheadGeometry {
   @override
   int get hashCode => Object.hash(
     compact,
-    pinnedCollapsed,
     width,
     leading,
     title,
@@ -395,23 +396,18 @@ TextStyle fushiMastheadTitleStyle(
   BuildContext context, {
   required bool compact,
 }) {
-  final ThemeData theme = Theme.of(context);
-  final double size = _titleFontAt(compact: compact, p: 0);
-  return (theme.textTheme.displayLarge ?? const TextStyle()).copyWith(
-    fontSize: size,
-    fontWeight: FontWeight.w900,
-    letterSpacing: -0.045 * size,
-    height: 0.98,
-    leadingDistribution: TextLeadingDistribution.even,
+  return FushiPageTitleMetrics.forCompact(compact).titleStyle(
+    Theme.of(context).textTheme.displayLarge ?? const TextStyle(),
     color: fushiMastheadPaletteOf(context).ink,
   );
 }
 
-/// 一级切换顶替页名当标题时（[FushiMastheadSwitchHeadline]）选中项 / 未选项的
-/// 字号：选中项放大到接近窄窗页名，未选项收小——大小差本身就说明「现在在哪」
+/// 一级切换顶替页名当标题时（[FushiMastheadSwitchHeadline]）未选项的字号：
+/// 选中项直接用页名字阶（[fushiMastheadTitleStyle]，与其它模块页的页名一模一样，
+/// 主标题不缩，11-20 #18），未选项收小变淡——大小差本身就说明「现在在哪」
 /// （2026-11-12 用户）。
-const double kFushiMastheadHeadlineSelectedFont = 38;
-const double kFushiMastheadHeadlineIdleFont = 22;
+const double kFushiMastheadHeadlineIdleFont =
+    FushiPageTitleMetrics.headlineIdleFontSize;
 
 /// 一级切换大字：宽窗 30 / 窄窗 19，字重 900、字距 -0.03em（各项同字重，切换
 /// 时宽度不跳）。[fontSize] 覆盖字号（标题形态的选中项 / 未选项）。
@@ -420,15 +416,10 @@ TextStyle fushiMastheadSwitchStyle(
   required bool compact,
   double? fontSize,
 }) {
-  final ThemeData theme = Theme.of(context);
-  final double size = fontSize ?? _switchFontAt(compact: compact, p: 0);
-  return (theme.textTheme.headlineMedium ?? const TextStyle()).copyWith(
-    fontSize: size,
-    fontWeight: FontWeight.w900,
-    letterSpacing: -0.03 * size,
-    height: 1,
-    leadingDistribution: TextLeadingDistribution.even,
+  return FushiPageTitleMetrics.forCompact(compact).switchStyle(
+    Theme.of(context).textTheme.headlineMedium ?? const TextStyle(),
     color: fushiMastheadPaletteOf(context).ink,
+    fontSize: fontSize,
   );
 }
 
@@ -477,8 +468,8 @@ TextStyle fushiMastheadSegmentLabelStyle(BuildContext context) =>
     );
 
 /// 动作组每颗按钮的最小宽 / 高（命中区 48）与相邻间隙。
-const double kFushiMastheadActionExtent = 48;
-const double kFushiMastheadActionGap = 3;
+const double kFushiMastheadActionExtent = FushiPageTitleMetrics.actionExtent;
+const double kFushiMastheadActionGap = FushiPageTitleMetrics.actionGap;
 
 /// 页头大字顶栏右侧的动作组：按钮平铺、不垫胶囊底（用户 2026-11-12「去掉
 /// 胶囊」），悬停 / 按压 / 焦点反馈由按钮本体自己画。这里只给每颗 48 的最小
@@ -491,21 +482,26 @@ class FushiMastheadActionGroup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        for (int i = 0; i < items.length; i++) ...<Widget>[
-          if (i > 0) const SizedBox(width: kFushiMastheadActionGap),
-          ConstrainedBox(
-            constraints: const BoxConstraints(
-              minWidth: kFushiMastheadActionExtent,
-              minHeight: kFushiMastheadActionExtent,
-              maxHeight: kFushiMastheadActionExtent,
+    // 图标字号走共用规格（[FushiPageTitleMetrics.actionIconSize]）：各模块页
+    // 的动作图标同一大小、同一条中线。
+    return IconTheme.merge(
+      data: const IconThemeData(size: FushiPageTitleMetrics.actionIconSize),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          for (int i = 0; i < items.length; i++) ...<Widget>[
+            if (i > 0) const SizedBox(width: kFushiMastheadActionGap),
+            ConstrainedBox(
+              constraints: const BoxConstraints(
+                minWidth: kFushiMastheadActionExtent,
+                minHeight: kFushiMastheadActionExtent,
+                maxHeight: kFushiMastheadActionExtent,
+              ),
+              child: Center(widthFactor: 1, child: items[i]),
             ),
-            child: Center(widthFactor: 1, child: items[i]),
-          ),
+          ],
         ],
-      ],
+      ),
     );
   }
 }
@@ -614,11 +610,7 @@ class FushiMastheadSwitch<T extends Object> extends StatelessWidget {
     final TextStyle style = fushiMastheadSwitchStyle(context, compact: compact);
     // 标题形态：选中项大、未选项小，按字面基线对齐；其余形态各项同字号。
     final TextStyle selectedStyle = headline
-        ? fushiMastheadSwitchStyle(
-            context,
-            compact: false,
-            fontSize: kFushiMastheadHeadlineSelectedFont,
-          )
+        ? fushiMastheadTitleStyle(context, compact: true)
         : style;
     final TextStyle idleStyle = headline
         ? fushiMastheadSwitchStyle(
@@ -1000,7 +992,7 @@ class _FushiMastheadPrimaryButtonState
   @override
   Widget build(BuildContext context) {
     final FushiMotionScheme motion = context.fushiMotion;
-    final double extent = fushiMastheadCompact(context) ? 48 : 56;
+    final double extent = FushiPageTitleMetrics.of(context).primaryExtent;
     final double target = _hovered || widget.selected ? 28 : 20;
     final FushiMastheadPalette palette = fushiMastheadPaletteOf(context);
     return MouseRegion(

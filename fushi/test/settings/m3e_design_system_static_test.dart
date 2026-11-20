@@ -1328,10 +1328,12 @@ class AnotherPopupPart {
           kSharedComponentImplementation,
       'lib/src/pages/implementations/home_collage_widgets.dart':
           kSharedComponentImplementation,
-      'lib/src/utils/components/fushi_floating_chrome.dart':
-          kSharedComponentImplementation,
       'lib/src/utils/components/fushi_page_masthead.dart':
           kSharedComponentImplementation,
+      'lib/src/utils/components/fushi_page_title_metrics.dart':
+          'Module-page masthead title spec (11-20 #18): the single source the '
+          'shared masthead components read their title / switch sizes from; '
+          'pages never set a title font size themselves.',
       'lib/src/utils/components/fushi_poster_block.dart':
           kSharedComponentImplementation,
       // 2) 页面 / 功能模块里逐条审过的内容类例外（封面美术、预览、播放器浮层、
@@ -1750,10 +1752,10 @@ class AnotherPopupPart {
       'lib/src/media/import/import_source_blocks.dart': <String>{
         'BorderRadius.circular(',
       },
-      'lib/src/utils/components/fushi_floating_chrome.dart': <String>{
+      'lib/src/utils/components/fushi_page_masthead.dart': <String>{
         'fontSize:',
       },
-      'lib/src/utils/components/fushi_page_masthead.dart': <String>{
+      'lib/src/utils/components/fushi_page_title_metrics.dart': <String>{
         'fontSize:',
       },
       'lib/src/utils/components/fushi_poster_block.dart': <String>{'fontSize:'},

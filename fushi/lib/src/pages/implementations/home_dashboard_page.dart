@@ -119,7 +119,6 @@ import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
         FushiMastheadPalette,
         FushiMastheadPrimaryButton,
         FushiMastheadRole,
-        fushiMastheadCompact,
         fushiMastheadRoleOf;
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
     show fushiNotificationFromVisibleSubtree;
@@ -2269,10 +2268,10 @@ class _HomeDashboardPageState
             FushiFloatingChromeScope(
               controller: _mastheadChrome,
               child: FushiFloatingChromeOverlay(
+                // 页名与其它模块页同一规格（`FushiPageTitleMetrics`，设计稿
+                // 11-20 #18：以书架为准）：从展开态大字起、随滚动收，不再钉在
+                // 收起态——切 tab 时字号 / 主按钮 / 基线不跳。
                 masthead: true,
-                // 首页手机：页名钉在收起态（与库页顶栏折叠后同一字号），不再
-                // 先画一行 46 号大字再随滚动收；桌面保持大标题。
-                mastheadPinnedCollapsed: fushiMastheadCompact(context),
                 chrome: _buildMastheadBar(appModel),
                 child: NotificationListener<ScrollMetricsNotification>(
                   onNotification: _toolbarScroll.handleMetrics,
