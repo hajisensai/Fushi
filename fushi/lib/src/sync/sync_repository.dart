@@ -4,7 +4,12 @@ import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:fushi/src/models/library_grid_columns.dart'
     show kLibraryGridColumnsPrefKey;
 import 'package:fushi/src/models/preference_keys.dart'
-    show kAnkiSettingsPrefKey, kWorkProfileSessionPrefKey;
+    show
+        kAnkiSettingsPrefKey,
+        kWhatsNewCardDismissedVersionPrefKey,
+        kWhatsNewSeenSeqPrefKey,
+        kWhatsNewSeenVersionPrefKey,
+        kWorkProfileSessionPrefKey;
 import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart'
     show kPageBackdropDeviceLocalPrefKeys;
 import 'package:fushi/src/utils/adaptive/shell_style.dart'
@@ -2043,6 +2048,10 @@ class SyncRepository {
     kStatLegacyProfileIdPrefKey,
     // 主进程此刻打开的作品会话（值是本库自增配置 id，只给本机弹窗进程镜像用）。
     kWorkProfileSessionPrefKey,
+    // 「本版新内容」看到哪个版本：描述这台设备装过的包，跟去别的设备会误判。
+    kWhatsNewSeenVersionPrefKey,
+    kWhatsNewSeenSeqPrefKey,
+    kWhatsNewCardDismissedVersionPrefKey,
     // 库页「每行数量」：合适的列数取决于这台设备的屏幕（BUG-4219）。
     kLibraryGridColumnsPrefKey,
     // 库页布局出厂判定（G1：新安装 = 拼贴 / 升级上来 = 封面网格 + 待弹选择框）：

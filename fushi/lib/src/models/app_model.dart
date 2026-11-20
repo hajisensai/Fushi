@@ -25,6 +25,9 @@ import 'package:fushi/src/utils/adaptive/shell_style.dart';
 import 'package:fushi/src/updates/host_self_update_service.dart';
 import 'package:fushi/src/updates/local_update_notifier.dart';
 import 'package:fushi/src/updates/update_check_scheduler.dart';
+import 'package:fushi/src/updates/whats_new.dart';
+import 'package:fushi/src/utils/misc/build_version.dart'
+    show resolveCurrentAppVersion;
 import 'package:fushi/src/updates/app_update_check.dart';
 import 'package:fushi/src/updates/usage_heartbeat.dart';
 import 'package:fushi_engine/media/metadata/books/rakuten_books.dart'
@@ -5196,6 +5199,17 @@ class AppModel
       StartupTimeline.mark('init-enter');
       _packageInfo = await PackageInfo.fromPlatform();
       _mediaTrackingAppVersion = _packageInfo.version;
+      final String runningVersion = resolveCurrentAppVersion(
+        _packageInfo.version,
+      );
+      _whatsNew = WhatsNewController(
+        prefs: () => prefsRepo,
+        runningVersion: runningVersion,
+        runningSeq: currentReleaseSequence(
+          version: runningVersion,
+          buildNumber: _packageInfo.buildNumber,
+        ),
+      );
       // 媒体服务器认证头的客户端身份（产品名 / 本机设备名 / 应用版本，
       // AL8qJr6yr-）：之后所有 Jellyfin / Emby 请求都按它报。
       mediaServerClientIdentity = await resolveMediaServerClientIdentity(
@@ -14612,6 +14626,12 @@ class AppModel
       prefsRepo.setUpdateBetaChannel(value);
 
   bool get updateDebugChannel => prefsRepo.updateDebugChannel;
+
+  /// 「本版新内容」（首页卡片 / 顶栏入口 / 新内容页）的状态。要知道本机跑的版本
+  /// 才能判，所以在主进程 [initialise] 读完 [packageInfo] 后才建；之前（以及没走
+  /// 初始化的测试夹具）是 null——不知道版本就不提示。
+  WhatsNewController? get whatsNew => _whatsNew;
+  WhatsNewController? _whatsNew;
   Future<void> setUpdateDebugChannel(bool value) =>
       prefsRepo.setUpdateDebugChannel(value);
 

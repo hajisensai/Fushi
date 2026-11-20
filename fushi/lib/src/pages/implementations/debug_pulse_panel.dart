@@ -341,7 +341,7 @@ class _PendingCard extends StatelessWidget {
             _PlatformStates(changes: pending, mine: platform),
           ],
           SizedBox(height: tokens.spacing.gap),
-          _ChangeList(report: report, changes: pending),
+          DebugPulseChangeList(report: report, changes: pending),
         ],
       ),
     );
@@ -481,7 +481,7 @@ class _BuildCard extends StatelessWidget {
                             t.updates_pulse_unknown_contents,
                             style: context.fushiType.bodySmall,
                           )
-                        : _ChangeList(report: report, changes: item),
+                        : DebugPulseChangeList(report: report, changes: item),
                   )
                 : const SizedBox(width: double.infinity),
           ),
@@ -494,8 +494,12 @@ class _BuildCard extends StatelessWidget {
 // ─────────────────────────────────────────────────────────── shared pieces
 
 /// 一组改动：PR 按类别分组（新功能 → 修复 → 优化 → 其他），末尾直推提交数。
-class _ChangeList extends StatelessWidget {
-  const _ChangeList({required this.report, required this.changes});
+class DebugPulseChangeList extends StatelessWidget {
+  const DebugPulseChangeList({
+    super.key,
+    required this.report,
+    required this.changes,
+  });
 
   final DebugPulseReport report;
   final DebugPulseChangeSet changes;
@@ -521,7 +525,7 @@ class _ChangeList extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(top: 4, bottom: 4),
               child: Text(
-                '${_kindLabel(kind)} · ${prs.length}',
+                '${debugPulseKindLabel(kind)} · ${prs.length}',
                 style: context.fushiType.labelMediumEmphasized.copyWith(
                   color: scheme.onSurfaceVariant,
                 ),
@@ -572,13 +576,8 @@ class _PrRow extends StatelessWidget {
       child: Row(
         children: <Widget>[
           FushiTag(
-            text: _kindLabel(pr.kind),
-            tone: switch (pr.kind) {
-              DebugPulsePrKind.feature => FushiTagTone.success,
-              DebugPulsePrKind.fix => FushiTagTone.warning,
-              DebugPulsePrKind.perf => FushiTagTone.accent,
-              DebugPulsePrKind.other => FushiTagTone.neutral,
-            },
+            text: debugPulseKindLabel(pr.kind),
+            tone: debugPulseKindTone(pr.kind),
           ),
           const SizedBox(width: 6),
           if (scope != null) ...<Widget>[
@@ -717,7 +716,8 @@ String _platformLabel(DebugPulsePlatform p) => switch (p) {
   DebugPulsePlatform.ios => 'iOS',
 };
 
-String _kindLabel(DebugPulsePrKind kind) => switch (kind) {
+/// PR 类别的显示名（流水线面板与「本版新内容」页共用）。
+String debugPulseKindLabel(DebugPulsePrKind kind) => switch (kind) {
   DebugPulsePrKind.feature => t.updates_pulse_kind_feature,
   DebugPulsePrKind.fix => t.updates_pulse_kind_fix,
   DebugPulsePrKind.perf => t.updates_pulse_kind_perf,
@@ -736,3 +736,11 @@ String _relative(DateTime at) {
     ActivityRelativeUnit.daysAgo => t.activity_days_ago(n: rel.value),
   };
 }
+
+/// PR 类别标签的色调（流水线面板与「本版新内容」页共用）。
+FushiTagTone debugPulseKindTone(DebugPulsePrKind kind) => switch (kind) {
+  DebugPulsePrKind.feature => FushiTagTone.success,
+  DebugPulsePrKind.fix => FushiTagTone.warning,
+  DebugPulsePrKind.perf => FushiTagTone.accent,
+  DebugPulsePrKind.other => FushiTagTone.neutral,
+};

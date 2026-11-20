@@ -85,6 +85,9 @@ import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/pages/implementations/updates_center_open.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/pages/implementations/updates_dashboard_banner.dart';
+import 'package:fushi/src/pages/implementations/whats_new_home_card.dart';
+import 'package:fushi/src/pages/implementations/whats_new_page.dart';
+import 'package:fushi/src/updates/whats_new.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart'
     show openLocalVideoBook;
 import 'package:fushi/src/pages/implementations/collections_page.dart';
@@ -1027,6 +1030,8 @@ class _HomeDashboardPageState
     _serverContinue = ServerContinueFeed.of(
       ref.read(appProvider).database,
     ).current;
+    // 「本版新内容」：没有基线（新装 / 降级）先定基线，升级上来的才出卡片。
+    unawaited(ref.read(appProvider).whatsNew?.ensureBaseline());
     unawaited(_loadDashboardData());
     // Kavita 绑定书：服务器端改了进度（网页端翻页 / 标已读未读）时静默对账，
     // 采用后写本地阅读位置，表级信号会带动本页重载。进入 / 切回首页 / 回前台触发。
@@ -1962,6 +1967,11 @@ class _HomeDashboardPageState
             children: <Widget>[
               // v101 更新提醒：有未读时才占位（横幅自己在 total==0 时收成
               // SizedBox.shrink），没有更新的日子首页不多一块空卡。
+              if (appModel.whatsNew case final WhatsNewController whatsNew)
+                WhatsNewHomeCard(
+                  controller: whatsNew,
+                  onOpen: () => unawaited(_openWhatsNew(whatsNew, appModel)),
+                ),
               UpdatesDashboardBanner(service: appModel.updateFeedService),
               // 已迁移只读态（Fushi 迁移 P1-4，仅老包生效）：首屏常驻引导。
               if (appModel.isMigrationReadonly) ...<Widget>[
@@ -2232,6 +2242,11 @@ class _HomeDashboardPageState
             sliver: SliverList.list(
               children: <Widget>[
                 // 与原版式同一组横幅（各自在没有内容时收成零高）。
+                if (appModel.whatsNew case final WhatsNewController whatsNew)
+                  WhatsNewHomeCard(
+                    controller: whatsNew,
+                    onOpen: () => unawaited(_openWhatsNew(whatsNew, appModel)),
+                  ),
                 UpdatesDashboardBanner(service: appModel.updateFeedService),
                 if (appModel.isMigrationReadonly) ...<Widget>[
                   _MigrationReadonlyBanner(appModel: appModel),
@@ -2314,7 +2329,10 @@ class _HomeDashboardPageState
       title: _editingWidgets ? t.home_widget_edit : t.nav_home,
       actionsSlot: _mastheadActions,
       child: ListenableBuilder(
-        listenable: Listenable.merge(<Listenable?>[updateCount]),
+        listenable: Listenable.merge(<Listenable?>[
+          updateCount,
+          appModel.whatsNew,
+        ]),
         builder: (BuildContext context, Widget? _) {
           final List<FushiToolbarItem> items = _toolbarItems(
             appModel,
@@ -2508,7 +2526,11 @@ class _HomeDashboardPageState
     final AppModel appModel = ref.read(appProvider);
     final HomeUpdateCount? updateCount = _updateCount;
     return ListenableBuilder(
-      listenable: Listenable.merge(<Listenable?>[_toolbarScroll, updateCount]),
+      listenable: Listenable.merge(<Listenable?>[
+        _toolbarScroll,
+        updateCount,
+        appModel.whatsNew,
+      ]),
       builder: (BuildContext context, Widget? _) {
         final int unseen = updateCount?.value ?? 0;
         final int feedbackUnseen = watchFeedbackUnseen(ref);
@@ -2540,6 +2562,15 @@ class _HomeDashboardPageState
           ),
         ]
       : <FushiToolbarItem>[
+          // 「本版新内容」卡片被关掉、还没打开看过时留的入口；看过即消失。
+          if (appModel.whatsNew case final WhatsNewController whatsNew
+              when whatsNew.status.stage == WhatsNewStage.entry)
+            FushiToolbarItem(
+              key: const ValueKey<String>('home-toolbar-whats-new'),
+              icon: FushiIcons.celebration,
+              label: t.whats_new_title,
+              onPressed: () => unawaited(_openWhatsNew(whatsNew, appModel)),
+            ),
           // 有未读时换成「响铃」字形并把未读数写进 tooltip / 语义标签（共享
           // 工具栏按钮没有角标槽；逐域未读明细仍在下方更新横幅里）。
           FushiToolbarItem(
@@ -2617,6 +2648,29 @@ class _HomeDashboardPageState
   }
 
   /// 工具栏「更新中心」：打开后回来刷新角标（看过的条目不再算未读）。
+  /// 打开「本版新内容」页；打开即算看过（卡片与顶栏入口一起消失）。
+  Future<void> _openWhatsNew(
+    WhatsNewController whatsNew,
+    AppModel appModel,
+  ) async {
+    final WhatsNewStatus status = whatsNew.status;
+    if (!status.pending) return;
+    await whatsNew.markSeen();
+    if (!mounted) return;
+    await Navigator.of(context).push<void>(
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => WhatsNewPage(
+          fromVersion: status.fromVersion,
+          fromSeq: status.fromSeq,
+          toVersion: status.toVersion,
+          toSeq: status.toSeq,
+          customProxy: appModel.updateCustomProxy,
+        ),
+      ),
+    );
+  }
+
   Future<void> _openUpdates(AppModel appModel) async {
     await openUpdatesCenter(context, appModel.updateFeedService);
     await _updateCount?.reload();
