@@ -5066,10 +5066,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     return parts.join(' · ');
   }
 
-  /// 手动标记已看 / 未看（本地行 + 媒体服务器条目）。落地见 [setVideosWatched]
-  /// （本地入库的媒体服务器条目同时回写服务器）；之后刷新本页（本地行走表级流，
-  /// 这里再显式 [_refresh] 一次）。服务器上有东西被改过就作废当前来源的清单缓存
-  /// 并强制重拉，让卡片 / 系列进度读到新的「已播放」。
   /// 合集成员里能「加入收听」的本机视频，按合集集序。
   List<VideoBookRow> _listenableMembers(
     List<String> memberUidOrder,
@@ -5123,6 +5119,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     await _listenToVideos(books);
   }
 
+  /// 手动标记已看 / 未看（本地行 + 媒体服务器条目）。落地见 [setVideosWatched]
+  /// （本地入库的媒体服务器条目同时回写服务器）；之后刷新本页（本地行走表级流，
+  /// 这里再显式 [_refresh] 一次）。服务器上有东西被改过就作废当前来源的清单缓存
+  /// 并强制重拉，让卡片 / 系列进度读到新的「已播放」。
   Future<void> _markWatched({
     required bool watched,
     List<String> localUids = const <String>[],
