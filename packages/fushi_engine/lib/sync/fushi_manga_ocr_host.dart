@@ -7,6 +7,10 @@
 /// 端点（全部走 FushiSyncServer 的既有 Basic 鉴权，无一豁免）：
 /// - `POST   /api/ocr/job`                       → `{jobId, pagesExpected}` 创建任务
 ///   （body 可带 `model` 点名 capabilities `mangaOcr.models` 里的某个模型）
+/// - `POST   /api/ocr/job/<id>/manifest`         → 内容去重（可选，capabilities
+///   `mangaOcr.contentDedup` 为真才发）：body `{pages:[{name, sha256?}]}` 按页序列出
+///   整卷，host 回 `{known:[name…]}` = 按「引擎签名 + 页图 SHA-256」已有识别结果、
+///   不必上传的页（[MangaOcrContentCache]）。发了清单的任务，结果按清单页序组装。
 /// - `PUT    /api/ocr/job/<id>/page/<i>?name=..[&mtime=<epoch ms>]` → 逐页上传
 ///   （body=图片字节；`mtime` 可选 = 源文件修改时间，host 落盘后把页图的修改时间
 ///   设成它，逐页断点缓存按「页名 + 大小 + 修改时间」校验，同卷重传才对得上）
@@ -30,14 +34,17 @@ import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 
+import 'package:fushi_compute/fushi_compute.dart' show ffcSha256File;
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart'
-    show kMangaOcrOutDirName;
+    show kMangaOcrOutDirName, kMangaOcrOutputFileName;
+import 'package:fushi_engine/ocr/manga_ocr_selected_service.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
+import 'package:fushi_engine/sync/manga_ocr_content_cache.dart';
 import 'package:fushi_engine/sync/remote_lookup_routes.dart'
     show readBoundedBodyString;
 import 'package:fushi_engine/utils/misc/atomic_text_file.dart'
-    show readAtomicallyWrittenTextFile;
+    show readAtomicallyWrittenTextFile, writeTextFileAtomically;
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:fushi_engine/utils/net/bounded_read.dart';
 import 'package:fushi_core/fushi_core.dart' show fnv1a64Hex;
@@ -104,12 +111,45 @@ class MangaOcrHostJob {
   /// 取消方必须补 complete，否则队列被永久卡死（后续 start 全部饿死）。
   Completer<void>? runCompleted;
 
+  /// 识别跑完后的收尾（写内容缓存、按清单组装结果）；在途时流的 onDone 不能把
+  /// 任务判成「没出结果就结束」。
+  Future<void>? publishing;
+
+  /// 整卷任务用的引擎签名（内容缓存的分区）；服务报不出签名时为 null，本任务不做
+  /// 内容去重、也不写内容缓存。
+  String? engineSignature;
+
+  /// 对端发来的清单（按页序的页名）；null = 老客户端没发，结果就是识别产物本身。
+  List<String>? manifest;
+
+  /// 清单里内容缓存命中、不必上传的页（页名 → 缓存结果）。建清单时就读进内存，
+  /// 跑完前缓存被淘汰也不缺页。
+  Map<String, MangaOcrContentCacheEntry> knownPages =
+      <String, MangaOcrContentCacheEntry>{};
+
+  /// 本任务实际上传过的页名（与清单同一套规范化写法）。
+  final Set<String> uploadedNames = <String>{};
+
+  /// 上传页的内容哈希（页名 → SHA-256），识别完按它写内容缓存。
+  final Map<String, String> pageHashes = <String, String>{};
+
+  /// 清单里命中缓存、又没有上传的页数：进度里算作已完成。
+  int get pagesSkipped => manifest == null
+      ? 0
+      : manifest!
+            .where(
+              (String name) =>
+                  knownPages.containsKey(name) && !uploadedNames.contains(name),
+            )
+            .length;
+
   Map<String, Object?> toStatusJson() => <String, Object?>{
     'jobId': id,
     'state': state.name,
     'pagesUploaded': pagesUploaded,
     'pagesDone': pagesDone,
     'pagesTotal': pagesTotal > 0 ? pagesTotal : (pagesExpected ?? 0),
+    if (manifest != null) 'pagesSkipped': pagesSkipped,
     if (model != null) 'model': model,
     if (error != null) 'error': error,
   };
@@ -136,9 +176,16 @@ class MangaOcrHostJobManager {
     DateTime Function()? now,
     Duration jobTtl = const Duration(hours: 1),
     Future<void>? runAfter,
+    Future<String> Function(String path)? contentHasher,
+    int contentCacheMaxEntries = 20000,
   }) : _service = service,
        _modelServices = modelServices,
        _jobRoot = jobRoot,
+       _contentHasher = contentHasher ?? ffcSha256File,
+       _contentCache = MangaOcrContentCache(
+         root: Directory(p.join(jobRoot.path, kMangaOcrContentCacheDirName)),
+         maxEntries: contentCacheMaxEntries,
+       ),
        _now = now ?? DateTime.now,
        _jobTtl = jobTtl,
        _predecessorStopped = runAfter == null
@@ -158,6 +205,12 @@ class MangaOcrHostJobManager {
   final Directory _jobRoot;
   final DateTime Function() _now;
   final Duration _jobTtl;
+
+  /// 上传页的内容哈希（缺省 = 原生流式 SHA-256，测试注入）。
+  final Future<String> Function(String path) _contentHasher;
+
+  /// 按「引擎签名 + 页图内容」的识别结果缓存（任务根下，不随卷目录清理）。
+  final MangaOcrContentCache _contentCache;
 
   final Map<String, MangaOcrHostJob> _jobs = <String, MangaOcrHostJob>{};
 
@@ -199,6 +252,9 @@ class MangaOcrHostJobManager {
       'supported': supported,
       'modelsReady': modelsReady,
       if (models.isNotEmpty) 'models': models,
+      // 对端据此先发内容清单、跳过 host 已识别过的页图。只在 host 的服务报得出
+      // 引擎签名时开：签名是内容缓存的分区，报不出就没法保证结果出自同一套模型。
+      if (_signsResults(_service)) 'contentDedup': true,
     };
   }
 
@@ -208,6 +264,28 @@ class MangaOcrHostJobManager {
   MangaOcrService _serviceFor(MangaOcrHostJob job) {
     final String? model = job.model;
     return model == null ? _service : (_modelServices[model] ?? _service);
+  }
+
+  /// [service] 报得出整卷引擎签名（可做内容去重）。
+  static bool _signsResults(MangaOcrService service) =>
+      service is MangaOcrEngineSignatureSource ||
+      service is SelectedMangaOcrService;
+
+  /// [job] 此刻的引擎签名；报不出 / 解析失败 / 不能当目录名时为 null。
+  Future<String?> _resolveSignature(MangaOcrHostJob job) async {
+    final MangaOcrService service = _serviceFor(job);
+    if (!_signsResults(service)) return null;
+    try {
+      final String? signature = await resolveMangaOcrEngineSignature(service);
+      if (signature == null ||
+          !MangaOcrContentCache.usableSignature(signature)) {
+        return null;
+      }
+      return signature;
+    } on Object catch (error, stack) {
+      engineLog.log('MangaOcrHostJobManager.resolveSignature', error, stack);
+      return null;
+    }
   }
 
   /// 测试钩子：当前驻留任务数（验证 TTL prune 行为）。
@@ -377,6 +455,19 @@ class MangaOcrHostJobManager {
         // 见方法注释：这页保持落盘时间（不续传），不算上传失败。
       }
     }
+    // 内容哈希只为识别完写内容缓存：服务报不出签名就用不上，不算。算失败只是这一页
+    // 不进内容缓存，上传照常成功。
+    String? sha256;
+    if (_signsResults(_serviceFor(job))) {
+      try {
+        final String digest = (await _contentHasher(
+          staging.path,
+        )).toLowerCase();
+        if (isMangaOcrContentSha256(digest)) sha256 = digest;
+      } on Object catch (error, stack) {
+        engineLog.log('MangaOcrHostJobManager.uploadPage hash', error, stack);
+      }
+    }
     if (!_acceptsUpload(job)) {
       _deleteQuietly(staging);
       return 'bad_state';
@@ -388,10 +479,82 @@ class MangaOcrHostJobManager {
       _deleteQuietly(staging);
       rethrow;
     }
+    final String pageName = segments.join('/');
+    job.uploadedNames.add(pageName);
+    if (sha256 != null) {
+      job.pageHashes[pageName] = sha256;
+    } else {
+      job.pageHashes.remove(pageName);
+    }
     job.pagesUploaded += 1;
     job.state = MangaOcrHostJobState.uploading;
     job.touchedAt = _now();
     return null;
+  }
+
+  /// 收对端的内容清单：[entries] 按页序，每项 `{name, sha256?}`。返回 `(拒绝码, 命中
+  /// 的页名)`：拒绝码非 null 时调用方转 400 / 409。
+  ///
+  /// 只在还没有任何上传时收（清单决定哪些页不传，传了一半再改清单说不清）；同一任务
+  /// 重发清单（应答丢了的重试）整份替换。命中的页按「本任务的引擎签名 + 页图内容」
+  /// 从 [MangaOcrContentCache] 读出、留在任务里，结果按清单页序组装。服务报不出签名
+  /// 时照收清单（结果照样按清单页序组装），只是一页也不命中。
+  Future<(String?, List<String>)> acceptManifest(
+    MangaOcrHostJob job,
+    List<Object?> entries,
+  ) async {
+    if (!_acceptsUpload(job) || job.pagesUploaded > 0) {
+      return ('bad_state', const <String>[]);
+    }
+    if (entries.isEmpty || entries.length > kMangaOcrManifestMaxPages) {
+      return ('bad_manifest', const <String>[]);
+    }
+    final List<String> names = <String>[];
+    final Map<String, String> hashes = <String, String>{};
+    for (final Object? entry in entries) {
+      if (entry is! Map) return ('bad_manifest', const <String>[]);
+      final Object? rawName = entry['name'];
+      final List<String>? segments = rawName is String
+          ? _sanitizePageName(rawName)
+          : null;
+      if (segments == null) return ('bad_name', const <String>[]);
+      final String name = segments.join('/');
+      if (hashes.containsKey(name) || names.contains(name)) {
+        return ('bad_manifest', const <String>[]);
+      }
+      names.add(name);
+      final Object? rawSha = entry['sha256'];
+      if (rawSha is String && isMangaOcrContentSha256(rawSha.toLowerCase())) {
+        hashes[name] = rawSha.toLowerCase();
+      }
+    }
+    final String? signature = await _resolveSignature(job);
+    final Map<String, MangaOcrContentCacheEntry> known =
+        <String, MangaOcrContentCacheEntry>{};
+    if (signature != null) {
+      for (final MapEntry<String, String> hash in hashes.entries) {
+        final MangaOcrContentCacheEntry? hit = await _contentCache.read(
+          signature,
+          hash.value,
+        );
+        if (hit != null) known[hash.key] = hit;
+      }
+    }
+    // 读缓存那段 await 期间任务可能被取消 / 已开始收上传。
+    if (!_acceptsUpload(job) || job.pagesUploaded > 0) {
+      return ('bad_state', const <String>[]);
+    }
+    job.manifest = names;
+    job.knownPages = known;
+    job.engineSignature = signature;
+    job.touchedAt = _now();
+    return (
+      null,
+      <String>[
+        for (final String name in names)
+          if (known.containsKey(name)) name,
+      ],
+    );
   }
 
   /// [job] 此刻还收逐页上传：未终态、没在跑、仍是表里那一个（没被取消出表或停机清表）。
@@ -412,7 +575,19 @@ class MangaOcrHostJobManager {
   Future<(int, String)?> start(MangaOcrHostJob job) async {
     if (job.state == MangaOcrHostJobState.running) return null; // 幂等。
     if (job.state.isTerminal) return (409, 'bad_state');
-    if (job.pagesUploaded <= 0) return (400, 'no_pages');
+    final List<String>? manifest = job.manifest;
+    if (manifest == null) {
+      if (job.pagesUploaded <= 0) return (400, 'no_pages');
+    } else {
+      // 发了清单：每一页要么命中内容缓存，要么已经传上来。
+      for (final String name in manifest) {
+        if (!job.uploadedNames.contains(name) &&
+            !job.knownPages.containsKey(name)) {
+          return (400, 'missing_pages');
+        }
+      }
+      if (job.uploadedNames.isEmpty) return _publishFromCache(job);
+    }
     final MangaOcrService service = _serviceFor(job);
     if (!service.isSupportedPlatform) return (503, 'not_supported');
     final MangaOcrModelStatus status;
@@ -429,10 +604,134 @@ class MangaOcrHostJobManager {
       return (409, 'bad_state');
     }
     if (job.state == MangaOcrHostJobState.running) return null;
+    // 老客户端没发清单：签名在这里取，识别完照样给上传的页写内容缓存。
+    if (job.manifest == null && job.engineSignature == null) {
+      job.engineSignature = await _resolveSignature(job);
+      if (job.state.isTerminal || !identical(_jobs[job.id], job)) {
+        return (409, 'bad_state');
+      }
+      if (job.state == MangaOcrHostJobState.running) return null;
+    }
     job.state = MangaOcrHostJobState.running;
     job.touchedAt = _now();
     _queueTail = _queueTail.then((_) => _runJob(job));
     return null;
+  }
+
+  /// 清单里每一页都命中内容缓存：不跑识别，直接按清单页序组装结果。
+  Future<(int, String)?> _publishFromCache(MangaOcrHostJob job) async {
+    job.state = MangaOcrHostJobState.running;
+    job.touchedAt = _now();
+    final File output = File(
+      p.join(job.dir.path, kMangaOcrOutDirName, kMangaOcrOutputFileName),
+    );
+    try {
+      await output.parent.create(recursive: true);
+      await writeTextFileAtomically(
+        output,
+        jsonEncode(_composeResult(job, const <String, dynamic>{})),
+      );
+    } on Object catch (error) {
+      if (job.state == MangaOcrHostJobState.running) {
+        job.state = MangaOcrHostJobState.error;
+        job.error = '$error';
+      }
+      return null;
+    }
+    // 写盘期间被取消：保持取消态。
+    if (job.state != MangaOcrHostJobState.running) return null;
+    final int total = job.manifest!.length;
+    job.resultPath = output.path;
+    job.pagesDone = total;
+    job.pagesTotal = total;
+    job.state = MangaOcrHostJobState.done;
+    job.touchedAt = _now();
+    return null;
+  }
+
+  /// 识别跑完的收尾：给上传的页写内容缓存；发了清单的任务再把命中缓存的页并进去、
+  /// 按清单页序重写产物。返回最终 manga.json 路径。
+  Future<String> _publishResult(
+    MangaOcrHostJob job,
+    String producedPath,
+  ) async {
+    final File produced = File(producedPath);
+    final Object? decoded = jsonDecode(
+      await readAtomicallyWrittenTextFile(produced),
+    );
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('manga.json is not an object');
+    }
+    final Object? rawOcr = decoded['ocr'];
+    final Map<String, Object?>? ocr = rawOcr is Map<String, dynamic>
+        ? Map<String, Object?>.of(rawOcr)
+        : null;
+    final Object? producedSignature = ocr?['engine_signature'];
+    // 产物自报的签名优先（它就是实际跑的那套模型）；产物不带时用起跑前取的签名。
+    final String? signature =
+        producedSignature is String &&
+            MangaOcrContentCache.usableSignature(producedSignature)
+        ? producedSignature
+        : job.engineSignature;
+    final Object? rawPages = decoded['pages'];
+    final List<Object?> pages = rawPages is List ? rawPages : const <Object?>[];
+    final Map<String, dynamic> fresh = <String, dynamic>{};
+    for (final Object? page in pages) {
+      if (page is! Map<String, dynamic>) continue;
+      final Object? url = page['url'];
+      if (url is! String) continue;
+      fresh[url] = page;
+      final String? sha256 = job.pageHashes[url];
+      if (signature != null && sha256 != null) {
+        try {
+          await _contentCache.write(signature, sha256, page, ocr: ocr);
+        } on Object catch (error, stack) {
+          // 内容缓存只是下次省上传，写不进去不影响本次结果。
+          engineLog.log('MangaOcrHostJobManager.cacheWrite', error, stack);
+        }
+      }
+    }
+    unawaited(_contentCache.prune());
+    if (job.manifest == null) return producedPath;
+    // 命中的页出自起跑前的签名：模型 / 识别选项在这之间变了，两套结果不能混进一卷。
+    if (job.knownPages.isNotEmpty &&
+        producedSignature is String &&
+        producedSignature != job.engineSignature) {
+      throw StateError('engine_changed');
+    }
+    final Map<String, Object?> composed = _composeResult(job, fresh);
+    await writeTextFileAtomically(
+      produced,
+      jsonEncode(<String, Object?>{...decoded, ...composed}),
+    );
+    return producedPath;
+  }
+
+  /// 按清单页序组装结果页：本任务上传过的页用识别产物（[fresh]，页名 → 页），其余
+  /// 用命中的缓存页。缺页抛 [StateError]（[start] 已校验过，不该发生）。
+  Map<String, Object?> _composeResult(
+    MangaOcrHostJob job,
+    Map<String, dynamic> fresh,
+  ) {
+    Map<String, Object?>? ocr;
+    final List<Map<String, Object?>> pages = <Map<String, Object?>>[];
+    for (final String name in job.manifest!) {
+      // 只有本任务上传过的页才取识别产物：卷目录 `vol_<slug>` 会留着同卷上一个
+      // 已完结任务的页图，同名旧页图也会被识别进产物，但它不是清单里那份内容。
+      if (job.uploadedNames.contains(name)) {
+        final Object? page = fresh[name];
+        if (page is! Map<String, dynamic>) {
+          throw StateError('missing page $name');
+        }
+        pages.add(page);
+        continue;
+      }
+      final MangaOcrContentCacheEntry? hit = job.knownPages[name];
+      if (hit == null) throw StateError('missing page $name');
+      ocr ??= hit.ocr;
+      pages.add(<String, Object?>{'url': name, ...hit.page});
+    }
+    return <String, Object?>{if (ocr != null) 'ocr': ocr, 'pages': pages};
   }
 
   Future<void> _runJob(MangaOcrHostJob job) async {
@@ -449,14 +748,39 @@ class MangaOcrHostJobManager {
         .listen(
           (MangaOcrVolumeEvent event) {
             job.touchedAt = _now();
+            // 命中内容缓存、没上传的页不在识别范围里，进度里算作已完成。
+            final int skipped = job.pagesSkipped;
             if (event.finished) {
-              job.resultPath = event.mangaJsonPath;
-              job.pagesDone = event.pagesTotal;
-              job.pagesTotal = event.pagesTotal;
-              job.state = MangaOcrHostJobState.done;
+              // 发了清单的任务按清单计页：卷目录里同卷旧任务留下的页图也会被
+              // 识别，但不属于本卷结果。
+              final int total =
+                  job.manifest?.length ?? event.pagesTotal + skipped;
+              job.pagesDone = total;
+              job.pagesTotal = total;
+              final String? produced = event.mangaJsonPath;
+              if (produced == null) {
+                job.state = MangaOcrHostJobState.error;
+                job.error = 'OCR finished without manga.json';
+                return;
+              }
+              job.publishing = () async {
+                try {
+                  final String path = await _publishResult(job, produced);
+                  if (job.state != MangaOcrHostJobState.running) return;
+                  job.resultPath = path;
+                  job.state = MangaOcrHostJobState.done;
+                } on Object catch (error) {
+                  if (job.state == MangaOcrHostJobState.running) {
+                    job.state = MangaOcrHostJobState.error;
+                    job.error = '$error';
+                  }
+                } finally {
+                  job.touchedAt = _now();
+                }
+              }();
             } else {
-              job.pagesDone = event.pagesDone;
-              job.pagesTotal = event.pagesTotal;
+              job.pagesDone = event.pagesDone + skipped;
+              job.pagesTotal = event.pagesTotal + skipped;
             }
           },
           onError: (Object e) {
@@ -468,6 +792,12 @@ class MangaOcrHostJobManager {
             finish();
           },
           onDone: () {
+            // 收尾在途：等它写完结果再放行串行队列。
+            final Future<void>? publishing = job.publishing;
+            if (publishing != null) {
+              unawaited(publishing.whenComplete(finish));
+              return;
+            }
             // 流收尾但没发 finished（服务侧静默取消等罕见路径）：不留永久 running。
             if (job.state == MangaOcrHostJobState.running) {
               job.state = MangaOcrHostJobState.error;
@@ -480,6 +810,7 @@ class MangaOcrHostJobManager {
     await completed.future;
     job.subscription = null;
     job.runCompleted = null;
+    job.publishing = null;
   }
 
   /// 取消/清理：订阅取消（[MangaOcrService.ocrFolder] 契约 = 页边界中止）、删除
@@ -579,6 +910,8 @@ class MangaOcrHostJobManager {
         followLinks: false,
       )) {
         if (entity is! Directory) continue;
+        // 内容缓存不是卷目录，自己按条目淘汰（[MangaOcrContentCache.prune]）。
+        if (p.basename(entity.path) == kMangaOcrContentCacheDirName) continue;
         if (live.contains(p.canonicalize(entity.path))) continue;
         final DateTime mtime = entity.statSync().modified;
         if (mtime.isBefore(cutoff)) {
@@ -643,6 +976,12 @@ const int kMangaOcrJobBodyMaxBytes = 64 * 1024;
 
 /// `PUT /api/ocr/job/<id>/page/<index>` 单页图片的上限（扫描页通常几 MB）。
 const int kMangaOcrPageBodyMaxBytes = 64 * 1024 * 1024;
+
+/// `POST /api/ocr/job/<id>/manifest` 的请求体上限（每页一个页名 + 一个哈希）。
+const int kMangaOcrManifestBodyMaxBytes = 4 * 1024 * 1024;
+
+/// 一份清单最多列的页数。
+const int kMangaOcrManifestMaxPages = 10000;
 
 /// 逐页上传的可选 query：源文件修改时间（Unix 毫秒）。
 const String kMangaOcrSourceModifiedQuery = 'mtime';
@@ -733,6 +1072,34 @@ Future<shelf.Response> handleMangaOcrRequest(
       return _ocrError(refusal.$1, refusal.$2);
     }
     return _ocrJson(job.toStatusJson());
+  }
+
+  // POST /api/ocr/job/<id>/manifest
+  if (parts.length == 2 && parts[1] == 'manifest') {
+    if (method != 'POST') return shelf.Response(405);
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(
+        await readBoundedBodyString(
+          request,
+          maxBytes: kMangaOcrManifestBodyMaxBytes,
+        ),
+      );
+    } on BodyTooLargeException {
+      rethrow;
+    } on FormatException {
+      return _ocrError(400, 'bad_manifest');
+    }
+    final Object? pages = decoded is Map ? decoded['pages'] : null;
+    if (pages is! List) return _ocrError(400, 'bad_manifest');
+    final (String? refusal, List<String> known) = await manager.acceptManifest(
+      job,
+      pages,
+    );
+    if (refusal != null) {
+      return _ocrError(refusal == 'bad_state' ? 409 : 400, refusal);
+    }
+    return _ocrJson(<String, Object?>{'known': known});
   }
 
   // GET /api/ocr/job/<id>/result

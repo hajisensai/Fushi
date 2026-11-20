@@ -100,6 +100,18 @@ abstract interface class MangaOcrFocusableService {
   });
 }
 
+/// 能报出「整卷任务此刻会用的引擎签名」的服务（本地 ONNX）。
+///
+/// 签名是逐页缓存子目录名、也写进产物 manga.json 的 `ocr.engine_signature`，按已
+/// 安装模型与识别选项解析（BUG-1173）。互联 host 用它给按页图内容键控的结果缓存
+/// 分区（`MangaOcrContentCache`）：签名不同的结果绝不互相顶替。报不出签名的服务
+/// （远端 / 外部 CLI / 测试替身）不实现本接口，host 对它们不做内容去重。
+abstract interface class MangaOcrEngineSignatureSource {
+  /// 与 [MangaOcrService.ocrFolder] 此刻起跑时用的签名同源；模型没装齐时也照常
+  /// 返回（按当前清单算），能不能跑由 `modelStatus` 判。
+  Future<String> resolveEngineSignature();
+}
+
 /// 可选的页级能力（阅读器「边看边 OCR」）：只填逐页原子缓存，绝不把半卷结果
 /// 发布成 manga.json。
 ///

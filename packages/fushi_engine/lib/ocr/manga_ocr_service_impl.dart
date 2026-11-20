@@ -1441,7 +1441,11 @@ class _IsolateVolumeJob implements MangaOcrVolumeJob {
 
 /// [MangaOcrService] 真实实现。
 class MangaOcrServiceImpl
-    implements MangaOcrService, MangaOcrFocusableService, MangaOcrPageService {
+    implements
+        MangaOcrService,
+        MangaOcrFocusableService,
+        MangaOcrPageService,
+        MangaOcrEngineSignatureSource {
   MangaOcrServiceImpl({
     Future<Directory> Function()? modelsDirProvider,
     MangaOcrModelDownloader? downloader,
@@ -1788,6 +1792,10 @@ class MangaOcrServiceImpl
         kMangaOcrPagesCacheDirName,
         signature,
       );
+
+  @override
+  Future<String> resolveEngineSignature() =>
+      _pageEngineSignature(ignoreFurigana: _ignoreFurigana());
 
   @override
   Future<String> resolvePageCacheDirPath({
