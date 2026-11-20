@@ -154,6 +154,20 @@ class WebMineQueueStore {
     );
   }
 
+  /// 这一行这次**确定没送到**（后端不可达，见 `isUndeliveredMineFailure`）：仍是待办，
+  /// 只把原因记下来给列表显示。下一次写入（含离开播放页时的自动写入）照常再试——
+  /// 它不是失败，重发也不会造出重复卡。
+  Future<void> markUndelivered(int id, String error) {
+    return (db.update(
+      db.webMineQueue,
+    )..where(($WebMineQueueTable t) => t.id.equals(id))).write(
+      WebMineQueueCompanion(
+        status: const Value<String>(WebMineQueueStatus.pending),
+        error: Value<String?>(error),
+      ),
+    );
+  }
+
   /// 失败行重新排队（用户点「重试失败项」）。
   Future<int> requeueFailed(String bookUid) {
     return (db.update(db.webMineQueue)..where(

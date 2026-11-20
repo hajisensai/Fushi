@@ -98,6 +98,15 @@ class KavitaProgressSync {
   /// 用户已裁决（或已拉取并确认）：此后推送不再做「服务器更新」检查。
   void markServerVerified() => _serverVerified = true;
 
+  /// 迟到的拉取对账完成（开章时按离线放行、随后探针带回了服务器进度）：此后按已
+  /// 确认的服务器状态推送。[lastPushedPage] 非空 = 两侧此刻一致的页（翻回这一页
+  /// 不重复上报）；[syncedAt] 是这次对账的本地时刻。
+  void acceptServerState({int? lastPushedPage, required int syncedAt}) {
+    _serverVerified = true;
+    _lastSyncAt = syncedAt;
+    if (lastPushedPage != null) _lastPushedPage = lastPushedPage;
+  }
+
   /// 翻页上报（防抖）。
   void reportPage(int page, {String? bookScrollId}) {
     if (_disposed) return;

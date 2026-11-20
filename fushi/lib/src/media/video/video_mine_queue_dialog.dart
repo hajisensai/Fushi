@@ -45,20 +45,24 @@ Future<VideoMineCommitSummary?> showVideoMineQueueDialog({
 
 /// 一批写入结束后的汇总提示：张数，加上写入的卡带回的提示（如「保存到」被主机退回默认，
 /// BUG-4287）——批量写入没有逐张的结果提示，汇总这一条不带它，用户就永远不知道落点变了。
+/// 有没送到的（后端不可达，留作待办、下次自动再试）另起一行说清楚，不混进「失败」。
 String videoMineCommitMessage(VideoMineCommitSummary summary) => <String>[
   t.video_mine_queue_committed(ok: summary.succeeded, failed: summary.failed),
+  if (summary.undelivered > 0)
+    t.video_mine_queue_committed_undelivered(count: summary.undelivered),
   ?summary.notice,
 ].join('\n');
 
-/// 汇总提示的级别：有失败或带回提示都是 warning（关掉「制卡成功提示」也照样要让用户看到）。
+/// 汇总提示的级别：有失败、没送到或带回提示都是 warning（关掉「制卡成功提示」也照样
+/// 要让用户看到）。
 ToastSeverity videoMineCommitSeverity(VideoMineCommitSummary summary) =>
-    summary.failed == 0 && summary.notice == null
+    summary.failed == 0 && summary.undelivered == 0 && summary.notice == null
     ? ToastSeverity.success
     : ToastSeverity.warning;
 
 /// 离开播放页之后，在后台把 [bookUid] 的待制卡写进 Anki：先等 [inFlight]（还在准备
-/// 媒体的暂存任务）收尾，再 [VideoMineQueue.commitAll]。只写待写入的行，不重排之前
-/// 写入失败的——那是待制卡列表里「全部写入」的事。
+/// 媒体的暂存任务）收尾，再 [VideoMineQueue.commitAll]。只写待写入的行（含上次因后端
+/// 不可达没送到的），不重排之前写入失败的——那是待制卡列表里「全部写入」的事。
 ///
 /// 结果用全局 toast 报：此时播放页和它左上角的 OSD 都已不在。视频页自己「提示只走
 /// OSD、不用 toast」（BUG-931）约束的是页面在场的时候——toast 会被视频画面挡住；退出
@@ -112,7 +116,7 @@ Future<VideoMineCommitSummary?> commitPendingVideoMines({
     repo: repo,
     retryFailed: false,
   );
-  return summary.succeeded + summary.failed == 0 ? null : summary;
+  return summary.attempted == 0 ? null : summary;
 }
 
 /// 导出 widget 便于测试直接构造。
@@ -186,7 +190,7 @@ class _VideoMineQueueDialogState extends State<VideoMineQueueDialog> {
       _progress = null;
       _notice = summary.notice ?? _notice;
     });
-    if (summary.failed == 0) {
+    if (summary.failed == 0 && summary.undelivered == 0) {
       Navigator.of(context).pop(summary);
       return;
     }
@@ -241,6 +245,8 @@ class _VideoMineQueueDialogState extends State<VideoMineQueueDialog> {
                           final String word = fields['expression'] ?? '';
                           final bool failed =
                               row.status == WebMineQueueStatus.failed;
+                          // 待办却带着原因 = 上次后端不可达没送到，下次自动再试。
+                          final String? undelivered = failed ? null : row.error;
                           return FushiListItem(
                             key: ValueKey<String>('video-mine-queue-${row.id}'),
                             density: FushiListDensity.compact,
@@ -254,10 +260,18 @@ class _VideoMineQueueDialogState extends State<VideoMineQueueDialog> {
                                   ? t.video_mine_queue_failed(
                                       reason: row.error ?? '',
                                     )
+                                  : undelivered != null
+                                  ? t.video_mine_queue_undelivered(
+                                      reason: undelivered,
+                                    )
                                   : row.sentence,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
-                              style: failed ? TextStyle(color: cs.error) : null,
+                              style: failed
+                                  ? TextStyle(color: cs.error)
+                                  : undelivered != null
+                                  ? TextStyle(color: cs.tertiary)
+                                  : null,
                             ),
                             trailing: FushiIconButtonControl(
                               tooltip: t.video_mine_queue_remove,
