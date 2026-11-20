@@ -8,6 +8,7 @@ import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.da
 /// 「视频刮削资料正在清理」从写死的中文 `StateError` 改成类型化错误 + 本地化文案
 /// （gap-scanner-11 遗留）。
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
 
   test('类型化错误出本地化文案，不露 `Bad state:` 与写死的中文', () {
