@@ -60,6 +60,16 @@ final class SrtBookRelocateRecordsConflict extends SrtBookRelocateResult {
   final int audiobookCount;
 }
 
+/// 独立字幕书（没有配对的有声书行）这次选的文件数与原登记不等，且调用方没有声明
+/// 「数量变化是有意的」（`allowCountChange`），一行未写。独立字幕书的字幕时间轴按
+/// 文件依次接排：合并 / 拆分后总时长不变才对得上，所以不拒绝，而是交给用户确认后
+/// 带 `allowCountChange: true` 重来。[expected] 是原登记文件数。
+final class SrtBookRelocateCountChanged extends SrtBookRelocateResult {
+  const SrtBookRelocateCountChanged({required this.expected});
+
+  final int expected;
+}
+
 /// uid 不存在。
 final class SrtBookRelocateNotFound extends SrtBookRelocateResult {
   const SrtBookRelocateNotFound();
@@ -555,11 +565,14 @@ class SrtBookRepository {
   /// （[SrtBookRelocateCountMismatch]，一行不写；两行原登记数互相就不等时是
   /// [SrtBookRelocateRecordsConflict]）：cue 的文件下标与断点的
   /// 毫秒数都按原来那几个文件排，数量变了就不是「同一批文件挪了位置」。独立字幕书
-  /// 没有第二份登记，保持原来「选几个写几个」的行为。
+  /// 没有第二份登记，数量变化可能是用户有意合并 / 拆分：数量不等且没带
+  /// [allowCountChange] 时返回 [SrtBookRelocateCountChanged] 让 UI 先确认，确认后带
+  /// `allowCountChange: true` 再写（选几个写几个）。原来一个都没登记的不问。
   Future<SrtBookRelocateResult> relocateAudioPaths(
     String uid,
-    List<String> newPaths,
-  ) async {
+    List<String> newPaths, {
+    bool allowCountChange = false,
+  }) async {
     return _db.transaction(() async {
       final SrtBookRow? row = await _db.getSrtBookByUid(uid);
       if (row == null) return const SrtBookRelocateNotFound();
@@ -592,6 +605,10 @@ class SrtBookRepository {
         if (registered.isNotEmpty && registered.length != newPaths.length) {
           return SrtBookRelocateCountMismatch(expected: registered.length);
         }
+      } else if (!allowCountChange &&
+          srtOld.isNotEmpty &&
+          srtOld.length != newPaths.length) {
+        return SrtBookRelocateCountChanged(expected: srtOld.length);
       }
       final String json = jsonEncode(newPaths);
       await _db.patchSrtBook(

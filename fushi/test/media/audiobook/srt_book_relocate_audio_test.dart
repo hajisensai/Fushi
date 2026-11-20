@@ -239,4 +239,74 @@ void main() {
     final Audiobook? ab = await abRepo.findByBookKey(dirtyKey);
     expect(ab!.audioPaths, <String>[stale.path]);
   });
+
+  group('独立字幕书（无配对有声书行）', () {
+    const String standaloneUid = 'srtbook_standalone';
+
+    Future<List<String>> seedStandalone() async {
+      final Directory dir = Directory(p.join(docsDir.path, 'standalone'))
+        ..createSync(recursive: true);
+      final List<String> paths = <String>[
+        p.join(dir.path, '01.mp3'),
+        p.join(dir.path, '02.mp3'),
+      ];
+      final File srt = File(p.join(dir.path, 'b.srt'))..writeAsStringSync('');
+      await SrtBookRepository(db).save(
+        SrtBook()
+          ..uid = standaloneUid
+          ..title = 'Standalone'
+          ..srtPath = srt.path
+          ..audioPaths = paths
+          ..importedAt = 1
+          ..bookKey = '',
+      );
+      return paths;
+    }
+
+    test('文件数变了：先回 CountChanged 带原登记数，一字不改', () async {
+      final List<String> before = await seedStandalone();
+      final List<String> merged = <String>[p.join(docsDir.path, 'all.mp3')];
+
+      final SrtBookRelocateResult result = await SrtBookRepository(
+        db,
+      ).relocateAudioPaths(standaloneUid, merged);
+      expect(
+        result,
+        isA<SrtBookRelocateCountChanged>().having(
+          (SrtBookRelocateCountChanged r) => r.expected,
+          'expected',
+          2,
+        ),
+      );
+      final SrtBook? srt = await SrtBookRepository(db).findByUid(standaloneUid);
+      expect(srt!.audioPaths, before);
+    });
+
+    test('确认后带 allowCountChange：选几个写几个', () async {
+      await seedStandalone();
+      final List<String> merged = <String>[p.join(docsDir.path, 'all.mp3')];
+
+      final SrtBookRelocateResult result = await SrtBookRepository(
+        db,
+      ).relocateAudioPaths(standaloneUid, merged, allowCountChange: true);
+      expect(result, isA<SrtBookRelocated>());
+      final SrtBook? srt = await SrtBookRepository(db).findByUid(standaloneUid);
+      expect(srt!.audioPaths, merged);
+    });
+
+    test('文件数相同：直接改写，不问', () async {
+      await seedStandalone();
+      final List<String> moved = <String>[
+        p.join(docsDir.path, 'm1.mp3'),
+        p.join(docsDir.path, 'm2.mp3'),
+      ];
+
+      final SrtBookRelocateResult result = await SrtBookRepository(
+        db,
+      ).relocateAudioPaths(standaloneUid, moved);
+      expect(result, isA<SrtBookRelocated>());
+      final SrtBook? srt = await SrtBookRepository(db).findByUid(standaloneUid);
+      expect(srt!.audioPaths, moved);
+    });
+  });
 }

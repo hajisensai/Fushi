@@ -404,9 +404,10 @@ class UrlStreamVideoClient
   /// 外挂字幕下载（[getRemoteVideoSubtitle]）的总预算，测试可调短。
   final Duration subtitleFetchTimeout;
 
-  /// 本次起播的 YouTube 画质档（gap-remote-10，内存版）：起播解析那次 getManifest
-  /// 顺手算出的各档（[YoutubeResolvedSource.variants]），或画质菜单第一次现取的结果。
-  /// 跟着本客户端走（换集 / 重开就是新客户端），不落盘——googlevideo 直链有时效。
+  /// 本次起播的 YouTube 画质档（gap-remote-10）：起播解析那次 getManifest 顺手算出的
+  /// 各档（[YoutubeResolvedSource.variants]）、持久缓存命中时和播放流一起存下的那份
+  /// （`YoutubeStreamCacheEntry.variants`，过期时间按全部直链里最早的 expire 算），或
+  /// 画质菜单第一次现取的结果。跟着本客户端走（换集 / 重开就是新客户端）。
   YoutubeVariantSet? _youtubeVariants;
 
   /// [_youtubeVariants] 是按哪个画质目标算的（「自动」档下标随它变）。

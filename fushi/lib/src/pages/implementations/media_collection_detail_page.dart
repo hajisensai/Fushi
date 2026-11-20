@@ -1535,6 +1535,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       service: appRemoteVideoSubtitleService(appModel),
       target: RemoteVideoSubtitleTarget.season(
         title: _canonicalWork?.title ?? _name,
+        originalLanguage: _canonicalWork?.originalLanguage,
         members: <RemoteVideoSubtitleSeasonMember>[
           for (final RemoteVideoInfo m in _remoteMembers)
             RemoteVideoSubtitleSeasonMember(

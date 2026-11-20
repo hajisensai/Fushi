@@ -1963,6 +1963,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       (_) => _syncVolumeOcrJob(),
     );
     _pageNotifier.addListener(_onReaderPageChanged);
+    _panelNavigationPrefs = appModelNoUpdate.prefsRepo
+      ..addListener(_onPanelNavigationPrefChanged);
+    _panelNavigationWasOn = appModelNoUpdate.mangaPanelNavigation;
     _attachControllerLookup();
     _volumeKeyPagingController = MangaVolumeKeyPagingController(
       onPrevious: () => _executeReaderInputAction(
@@ -2090,6 +2093,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _pageCurlDrag = null;
     _pageCurl?.dispose();
     _pageCurl = null;
+    _panelNavigationPrefs?.removeListener(_onPanelNavigationPrefChanged);
+    _panelNavigationPrefs = null;
     _panelGeneration++;
     _panelPrewarmer.dispose();
     _panelCursor.reset();
@@ -3872,6 +3877,19 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// [_detectPanels] 进 `_panelResults`，换章 / 换模式推进 `_panelGeneration` 后
   /// 迟到的结果自动作废。同时只有一个预热在飞，见 [MangaPanelPrewarmer]。
   void _prewarmPanels() => _panelPrewarmer.request();
+
+  /// 分镜导航开关的偏好订阅（开关可在阅读中从设置里打开）。
+  PreferencesRepository? _panelNavigationPrefs;
+  bool _panelNavigationWasOn = false;
+
+  /// 分镜导航从关到开：当场预热当前跨页，不等下一次翻页再懒检测。值没变的偏好
+  /// 通知（别的键）不动；关掉时不用清，[_panelPrewarmTarget] 自己会拒绝。
+  void _onPanelNavigationPrefChanged() {
+    final bool on = appModelNoUpdate.mangaPanelNavigation;
+    final bool turnedOn = on && !_panelNavigationWasOn;
+    _panelNavigationWasOn = on;
+    if (turnedOn && mounted) _prewarmPanels();
+  }
 
   /// 预热目标：当前代际下的当前跨页；开关关着 / 条漫 / 页面已卸载时不预热。
   ({int generation, int spread})? _panelPrewarmTarget() {
@@ -6101,6 +6119,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     await _loadInitialWindow();
     // 布局变化会换掉当前 spread 背后的页（ERRATA C2）。
     _updateCurrentPageImagePath();
+    // 换了模式就换了跨页配对：新代际下的当前跨页当场预热（条漫由门控拒绝）。
+    _prewarmPanels();
     FushiToast.show(
       msg: next == MangaReadingMode.webtoon
           ? t.manga_reading_mode_webtoon
@@ -6825,6 +6845,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // 上面每个 await 期间页面都可能已被关掉（顶栏方向按钮是 unawaited 调进来的）。
     if (!mounted) return;
     if (modeChanged) {
+      // 跨页配对变了：分镜光标指着旧跨页的条目，与 [_toggleReadingMode] 同样作废。
+      _resetPanelNavigation();
       _pageNotifier.value = _currentPage;
       _noteVisiblePages();
       await _loadInitialWindow();
@@ -6836,6 +6858,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       await _loadInitialWindow();
       if (!mounted) return;
     }
+    // 模式 / 方向 / 跨页偏移改了都可能换掉当前跨页：当场预热（已检测过的页走缓存，
+    // 门控拒绝条漫与关着的分镜导航），不等下一次翻页再懒检测。
+    _prewarmPanels();
     // 不 await：触发方式切回「进入即识别」时可能要弹 Google Lens 告知框，那不该挂
     // 在设置面板的保存链上（保存期间面板锁输入）。
     unawaited(_maybeStartVolumeOcr());

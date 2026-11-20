@@ -24,7 +24,9 @@ import 'package:fushi/src/settings/settings_cli_tasks.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/sync/jellyfin_settings_widget.dart'
-    show findMediaServerById;
+    show findMediaServerById, probeJellyfinRoute;
+import 'package:fushi/src/sync/jellyfin_video_client.dart'
+    show JellyfinServerConfig;
 import 'package:fushi/src/sync/plex_video_client.dart';
 import 'package:fushi/src/sync/remote_library_cache.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -147,8 +149,9 @@ Future<bool> probePlexConnection(
 /// 烤着旧线路的 host，与手动「切换线路」同口径），返回新配置供调用方重建客户端；
 /// 其余情况返回 null、不写任何东西。
 ///
-/// 只换 `activeServerUrl`，不存账号 token、不改连接清单。Jellyfin 家族的多线路
-/// 不在这里自动切换（那边的备用线路是用户手填的，是否自动切换另行决定）。
+/// 只换 `activeServerUrl`，不存账号 token、不改连接清单。Jellyfin 家族同理：在用户
+/// 手填的线路（登录地址 + 备用线路）里探（带现有令牌读一次媒体库，同时核对是同一台、
+/// 令牌仍有效），见 [JellyfinServerConfig.rerouteAfterFailure]。
 Future<MediaServerConfig?> rerouteMediaServerAfterFailure(
   MediaServerConfig config,
   Object error, {
@@ -157,6 +160,21 @@ Future<MediaServerConfig?> rerouteMediaServerAfterFailure(
   Duration probeTimeout = const Duration(seconds: 5),
   http.Client Function()? httpClientFactory,
 }) async {
+  if (config is JellyfinServerConfig) {
+    final JellyfinServerConfig? rerouted = await config.rerouteAfterFailure(
+      error,
+      probe: (String url) => probeJellyfinRoute(
+        config,
+        url,
+        timeout: probeTimeout,
+        httpClientFactory: httpClientFactory,
+      ),
+    );
+    if (rerouted == null) return null;
+    await repo.upsertMediaServer(rerouted);
+    cache.invalidateSource(rerouted.sourceId);
+    return rerouted;
+  }
   if (config is! PlexServerConfig) return null;
   final PlexServerConfig? rerouted = await config.rerouteAfterFailure(
     error,

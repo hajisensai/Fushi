@@ -317,10 +317,22 @@ Future<void> _deleteDirectoryQuietly(Directory directory, String tag) async {
   }
 }
 
-/// 同时在抽媒体的制卡任务上限（video-30）。抽取是 ffmpeg 重活（最高档 GIF / AVIF 单项
-/// 数秒），远端流还可能断流卡到超时：只放一个，一张卡断流就挡住后面所有卡；不设限，
-/// 连点十张就是十路 ffmpeg 与前台播放抢 CPU。两路让「一张卡住、下一张照常抽」成立。
-const int _kMaxConcurrentExtractions = 2;
+/// 同时在抽媒体的制卡任务上限（video-30），按设备现算。抽取是 ffmpeg 重活（最高档
+/// GIF / AVIF 单项数秒），远端流还可能断流卡到超时：只放一个，一张卡断流就挡住后面
+/// 所有卡；不设限，连点十张就是十路 ffmpeg 与前台播放抢 CPU。
+///
+/// - 低内存模式：1（每路 ffmpeg 都要解码帧缓冲，用户明说了内存紧）；
+/// - 移动端：8 核及以上 2 路，其余 1 路（前台还在解码播放，小核机两路 ffmpeg 会掉帧）；
+/// - 桌面：12 核及以上 3 路，其余 2 路（两路让「一张卡住、下一张照常抽」成立）。
+int resolveImmersionExtractionConcurrency({
+  required bool isMobile,
+  required bool lowMemoryMode,
+  required int processors,
+}) {
+  if (lowMemoryMode) return 1;
+  if (isMobile) return processors >= 8 ? 2 : 1;
+  return processors >= 12 ? 3 : 2;
+}
 
 /// 一张抽好媒体、等着按入队顺序落卡的卡（[ImmersionMiningEngine._mineNow] 的产物）。
 ///
@@ -473,10 +485,22 @@ class ImmersionMiningEngine {
   /// 已入队任务。
   static final SerialJobQueue _sharedMiningQueue = SerialJobQueue();
 
-  /// 抽取阶段的并发闸，见 [_sharedMiningQueue] 与 [_kMaxConcurrentExtractions]。
-  static final BoundedJobLimiter _extractionSlots = BoundedJobLimiter(
-    _kMaxConcurrentExtractions,
+  /// 抽取阶段的并发闸，见 [_sharedMiningQueue] 与
+  /// [resolveImmersionExtractionConcurrency]。上限每次排名额时现算，低内存开关
+  /// 即时生效。
+  static final BoundedJobLimiter _extractionSlots = BoundedJobLimiter.dynamic(
+    () => resolveImmersionExtractionConcurrency(
+      isMobile: Platform.isAndroid || Platform.isIOS,
+      lowMemoryMode: lowMemoryModeReader(),
+      processors: Platform.numberOfProcessors,
+    ),
   );
+
+  /// 低内存模式的现读入口（[resolveImmersionExtractionConcurrency]）。引擎不持有
+  /// AppModel，由 AppModel 初始化时接上；没接（单测 / 初始化前）按关着算。
+  static bool Function() lowMemoryModeReader = _lowMemoryModeOff;
+
+  static bool _lowMemoryModeOff() => false;
 
   /// 默认物化器：包一层 [materializeRemoteAudioViaRangeDownload]（补齐其额外可选参数）。
   static Future<String?> _defaultAudioMaterializer({

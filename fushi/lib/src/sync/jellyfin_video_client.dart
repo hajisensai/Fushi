@@ -27,6 +27,7 @@
 //   「较新时间戳者胜」合并，语义是 last-write-wins；[putRemoteVideoPosition]
 //   的 updatedAtMs 只在本端语境有意义，不上传。
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -143,6 +144,39 @@ class JellyfinServerConfig implements MediaServerConfig {
   @override
   JellyfinServerConfig withActiveRoute(String url) =>
       copyWithRoutes(activeServerUrl: url);
+
+  /// 当前线路不通时在用户手填的线路里自动换一条（gap-remote-7 的 Jellyfin 家族版）。
+  ///
+  /// 只有 [isJellyfinTransportFailure]（请求没到达服务器）才试——服务器答了话说明
+  /// 线路是通的，换线路无济于事。其余各条线路（登录地址在首位，按 [routeUrls] 顺序）
+  /// 同时用 [probe] 探，取顺序最靠前的可达那条。线路都是用户自己加进这台服务器的、
+  /// 加的时候已用现有令牌验过是同一台（`addJellyfinRoute`），所以 [probe] 可以带令牌
+  /// 读一次媒体库来同时确认「通」和「还是这台、令牌还有效」。
+  ///
+  /// 返回切到新线路的配置（只改 [activeServerUrl]）；不是传输失败、只有一条线路、
+  /// 全部不通时返回 null。写回与缓存失效由调用方做（`rerouteMediaServerAfterFailure`）。
+  Future<JellyfinServerConfig?> rerouteAfterFailure(
+    Object error, {
+    required Future<bool> Function(String url) probe,
+  }) async {
+    if (!isJellyfinTransportFailure(error)) return null;
+    final String current = effectiveServerUrl;
+    final List<String> candidates = <String>[
+      for (final String url in routeUrls)
+        if (url != current) url,
+    ];
+    if (candidates.isEmpty) return null;
+    final List<bool> reachable = await Future.wait(<Future<bool>>[
+      for (final String url in candidates)
+        Future<bool>.sync(
+          () => probe(url),
+        ).then((bool ok) => ok, onError: (Object _) => false),
+    ]);
+    for (int i = 0; i < candidates.length; i++) {
+      if (reachable[i]) return withActiveRoute(candidates[i]);
+    }
+    return null;
+  }
 
   @override
   MediaServerBrowser buildBrowser({http.Client? httpClient}) =>
@@ -757,6 +791,26 @@ class JellyfinPlaybackSession {
   bool get isTranscoding => playMethod == 'Transcode';
 }
 
+/// 请求没到达服务器（DNS / 连接被拒 / 断开，`http.ClientException`）：与服务器答了
+/// 话的 [JellyfinApiException] 分开，供「换一条线路也许能通」判断
+/// （[isJellyfinTransportFailure]）。文本已脱敏；[toString] 保持旧的
+/// `Exception: …` 形态，错误提示 / 日志不变。
+class JellyfinTransportException implements Exception {
+  const JellyfinTransportException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'Exception: $message';
+}
+
+/// [error] 是不是「这条线路不通」类失败：[JellyfinTransportException]、请求超时、
+/// 裸 socket 错误。服务器回了非 2xx（[JellyfinApiException]）说明线路是通的。
+bool isJellyfinTransportFailure(Object error) =>
+    error is JellyfinTransportException ||
+    error is TimeoutException ||
+    error is SocketException;
+
 /// Jellyfin HTTP 异常：状态码 + 端点，供 UI 按连接失败呈现。
 class JellyfinApiException implements Exception {
   const JellyfinApiException(
@@ -1009,7 +1063,7 @@ class JellyfinApi {
             .get(Uri.parse('$base/System/Ping'), headers: _headers)
             .timeout(kRequestTimeout);
       } on http.ClientException catch (e) {
-        throw Exception(redactCredentialsInText(e.toString()));
+        throw JellyfinTransportException(redactCredentialsInText(e.toString()));
       }
       final String body = utf8
           .decode(res.bodyBytes, allowMalformed: true)
@@ -1148,7 +1202,7 @@ class JellyfinApi {
         return null;
       }
     } on http.ClientException catch (e) {
-      throw Exception(redactCredentialsInText(e.toString()));
+      throw JellyfinTransportException(redactCredentialsInText(e.toString()));
     }
   }
 
@@ -1174,7 +1228,7 @@ class JellyfinApi {
       // 凭据脱敏必须在异常构造侧（见 credential_redaction.dart 文件头）：
       // ClientException.toString() 把带 api_key 的整条 URL 塞进文本，而
       // ErrorLogService 存的就是 error.toString()，无脱敏落盘并可一键上传。
-      throw Exception(redactCredentialsInText(e.toString()));
+      throw JellyfinTransportException(redactCredentialsInText(e.toString()));
     }
   }
 
@@ -2107,7 +2161,7 @@ class JellyfinApi {
       // [url] 自带 api_key（见 imageUrl / streamUrl / subtitleUrl）——网络层失败
       // 时 ClientException.toString() 会把整条带令牌的 URL 泄进错误文本，而那条
       // 文本会无脱敏落进 ErrorLogService 并可一键上传。
-      throw Exception(redactCredentialsInText(e.toString()));
+      throw JellyfinTransportException(redactCredentialsInText(e.toString()));
     }
   }
 
@@ -2169,7 +2223,7 @@ class JellyfinApi {
       }
     } on http.ClientException catch (e) {
       // 同 fetchBytes：[url] 带 api_key，异常文本必须在构造侧脱敏。
-      throw Exception(redactCredentialsInText(e.toString()));
+      throw JellyfinTransportException(redactCredentialsInText(e.toString()));
     }
   }
 
