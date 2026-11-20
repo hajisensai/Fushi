@@ -3,6 +3,7 @@
 // 宿主无 libmpv：用假 [PlatformPlayer] 撑起真 [Player]，钉住控制器侧契约——
 //  - 句柄释放（数据根迁移 / 删视频 / 文件名整理）后新 Player 的 `video-params` 仍能收到；
 //  - 重新选同一条图形轨不撤销在途的整轨抽取；
+//  - 续播恢复音轨等到目标轨出现为止，换片 / 卸载 / 用户自己选轨即放弃；
 import 'dart:async';
 import 'dart:ui' show Rect, Size;
 
@@ -40,6 +41,11 @@ class _FakeMpv extends PlatformPlayer {
   Future<void> setSubtitleTrack(SubtitleTrack track) async {
     selectedSubtitleIds.add(track.id);
     state = state.copyWith(track: state.track.copyWith(subtitle: track));
+  }
+
+  @override
+  Future<void> setAudioTrack(AudioTrack track) async {
+    state = state.copyWith(track: state.track.copyWith(audio: track));
   }
 
   void setTracks(Tracks tracks) {
@@ -94,6 +100,14 @@ const Tracks _pgsTracks = Tracks(
     SubtitleTrack('no', null, null),
     SubtitleTrack('1', 'jpn', 'jpn', codec: 'hdmv_pgs_subtitle'),
     SubtitleTrack('2', 'eng', 'eng', codec: 'hdmv_pgs_subtitle'),
+  ],
+);
+
+Tracks _audioTracks(List<String> ids) => Tracks(
+  audio: <AudioTrack>[
+    const AudioTrack('auto', null, null),
+    const AudioTrack('no', null, null),
+    for (final String id in ids) AudioTrack(id, null, 'jpn'),
   ],
 );
 
@@ -190,6 +204,64 @@ void main() {
       await pumpEventQueue();
       expect(loader.cancels, hasLength(1));
       expect(c.graphicSubtitleTimingCues.single.startMs, 3000);
+    });
+  });
+
+  group('续播恢复音轨的等待（video-12）', () {
+    late _FakeMpv mpv;
+    late Player player;
+    late VideoPlayerController c;
+
+    setUp(() {
+      mpv = _FakeMpv();
+      player = Player(platformPlayer: mpv);
+      c = VideoPlayerController()..debugAttachPlayerForTesting(player);
+      addTearDown(c.dispose);
+    });
+
+    test('目标轨晚到（多次轨列表变化之后才出现）也能等到', () async {
+      AudioTrack? got;
+      bool done = false;
+      unawaited(
+        c.waitForAudioTrack('3').then((AudioTrack? t) {
+          got = t;
+          done = true;
+        }),
+      );
+      for (int i = 0; i < 30; i++) {
+        mpv.setTracks(_audioTracks(<String>['1', if (i.isOdd) '2']));
+        await pumpEventQueue();
+      }
+      expect(done, isFalse, reason: '目标轨没出现前一直等，不按次数 / 时长放弃');
+      mpv.setTracks(_audioTracks(<String>['1', '2', '3']));
+      await pumpEventQueue();
+      expect(done, isTrue);
+      expect(got?.id, '3');
+    });
+
+    test('已在列表里：立即返回', () async {
+      mpv.setTracks(_audioTracks(<String>['1']));
+      expect((await c.waitForAudioTrack('1'))?.id, '1');
+    });
+
+    test('换片（load 令牌变了）：放弃，不把上一集的偏好套到新片上', () async {
+      final Future<AudioTrack?> waiting = c.waitForAudioTrack('2');
+      c.debugAttachPlayerForTesting(player); // 换集复用同一 Player。
+      mpv.setTracks(_audioTracks(<String>['1', '2']));
+      expect(await waiting, isNull);
+    });
+
+    test('等待期间用户自己选了轨：放弃，不覆盖用户的选择', () async {
+      final Future<AudioTrack?> waiting = c.waitForAudioTrack('2');
+      await c.selectAudioTrack(const AudioTrack('1', null, 'eng'));
+      mpv.setTracks(_audioTracks(<String>['1', '2']));
+      expect(await waiting, isNull);
+    });
+
+    test('Player 销毁（退出 / 放句柄）：放弃', () async {
+      final Future<AudioTrack?> waiting = c.waitForAudioTrack('2');
+      await player.dispose();
+      expect(await waiting, isNull);
     });
   });
 }

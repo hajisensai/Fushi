@@ -2565,6 +2565,55 @@ class VideoPlayerController extends ChangeNotifier
   List<AudioTrack> get audioTracks =>
       _player?.state.tracks.audio ?? const <AudioTrack>[];
 
+  /// 等当前这次 [load] 的音轨列表里出现 id 为 [trackId] 的轨并返回它（续播恢复音轨用）。
+  ///
+  /// libmpv `open` 之后音轨列表才逐步填充，时机随片源 / 读盘速度不定（大 REMUX、慢盘
+  /// 可能要好几秒）。这里事件驱动：订阅 `player.stream.tracks`，每次醒来复读
+  /// `state.tracks.audio`，不设固定超时。返回 null 的终止条件：
+  /// - 换片（[load] 令牌变了）或 Player 被换掉；
+  /// - Player 销毁（[dispose] / [_releaseMediaHandles]，流随之结束）；
+  /// - 等待期间有显式选轨（[selectAudioTrack]，用户已经自己选了，不能再被恢复覆盖）。
+  /// 未 [load] 时立即返回 null。
+  Future<AudioTrack?> waitForAudioTrack(String trackId) async {
+    final Player? player = _player;
+    if (player == null) return null;
+    final int loadToken = _loadToken;
+    final int selectionSeq = _audioSelectionSeq;
+    AudioTrack? findTrack() {
+      for (final AudioTrack track in player.state.tracks.audio) {
+        if (track.id == trackId) return track;
+      }
+      return null;
+    }
+
+    final AudioTrack? ready = findTrack();
+    if (ready != null) return ready;
+    final Completer<AudioTrack?> done = Completer<AudioTrack?>();
+    void check() {
+      if (done.isCompleted) return;
+      if (!_isCurrentLoad(player, loadToken) ||
+          _audioSelectionSeq != selectionSeq) {
+        done.complete(null);
+        return;
+      }
+      final AudioTrack? track = findTrack();
+      if (track != null) done.complete(track);
+    }
+
+    final StreamSubscription<Tracks> sub = player.stream.tracks.listen(
+      (Tracks _) => check(),
+      onDone: () {
+        if (!done.isCompleted) done.complete(null);
+      },
+    );
+    check(); // 复读闭合 check-then-subscribe 竞态（同 [_waitForTrackCount]）。
+    try {
+      return await done.future;
+    } finally {
+      await sub.cancel();
+    }
+  }
+
   /// 切换音轨。未 [load] 时 no-op 安全。
   Future<void> selectAudioTrack(AudioTrack track) async {
     claimDiscTrackOwnership();
