@@ -1,4 +1,4 @@
-// BUG-4907：VN 独立插图归类不随源树是否挂在文档上变化。
+// BUG-5003：VN 独立插图归类不随源树是否挂在文档上变化。
 // 由 vn_refit_late_image_test.dart 执行，payload（生产 VN shell / 选区脚本 / 学习单位 / 生产 VN CSS）
 // 经 stdin 送入。
 //

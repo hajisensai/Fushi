@@ -35,7 +35,9 @@ class SourceDataHandler {
                 method = "preferencesManga",
                 preferences = preferences,
             )
-            MExtensionServerLoader.invokeWithExtension(request.data) { loaded ->
+            // Wipes preferences and cookies every lane reads: wait out any
+            // in-flight playback call instead of pulling state from under it.
+            MExtensionServerLoader.invokeExclusively(request.data) { loaded ->
                 val source = MihonInvoker.selectSource(loaded.sources, data)
                 val sourceId: Long =
                     when (source) {

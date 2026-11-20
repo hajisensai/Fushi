@@ -8,7 +8,7 @@ import 'package:fushi_engine/utils/net/deadline_get.dart';
 import 'package:http/http.dart' as http;
 import 'package:test/test.dart';
 
-/// BUG-4911：远端起播的默认字幕下载挡在开流之前，没有读超时时字幕站「接了连接却
+/// BUG-5037：远端起播的默认字幕下载挡在开流之前，没有读超时时字幕站「接了连接却
 /// 不回数据」会让页面永远停在「正在下载字幕」。这里用真实的本机 HTTP 服务端模拟
 /// 两种卡法：连响应头都不回、回了响应头和半截正文后不再送数据。
 void main() {

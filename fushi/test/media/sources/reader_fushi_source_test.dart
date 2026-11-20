@@ -25,7 +25,7 @@ import 'package:fushi_engine/sync/ttu_filename.dart';
 
 import '../../helpers/test_platform_services.dart';
 
-/// deleteBook 必须带 AppModel（清 override 封面要它的 thumbnails 目录，BUG-4906）。
+/// deleteBook 必须带 AppModel（清 override 封面要它的 thumbnails 目录，BUG-4979）。
 class _DeleteTestAppModel extends AppModel {
   _DeleteTestAppModel() : super(testPlatformServices());
   final Directory _thumbs = Directory.systemTemp.createTempSync(

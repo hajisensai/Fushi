@@ -130,6 +130,7 @@ class InterconnectDownloadTask {
     int? receivedBytes,
     int? totalBytes,
     bool clearBytes = false,
+    bool clearTotalBytes = false,
     String? error,
     bool clearError = false,
     InterconnectDownloadStage? stage,
@@ -143,7 +144,9 @@ class InterconnectDownloadTask {
       kind: kind,
       origin: origin,
       receivedBytes: clearBytes ? null : (receivedBytes ?? this.receivedBytes),
-      totalBytes: clearBytes ? null : (totalBytes ?? this.totalBytes),
+      totalBytes: clearBytes || clearTotalBytes
+          ? null
+          : (totalBytes ?? this.totalBytes),
       startedAt: startedAt,
       error: clearError ? null : (error ?? this.error),
       destPath: destPath,
@@ -1051,10 +1054,15 @@ class InterconnectDownloadManager extends ChangeNotifier {
     final InterconnectDownloadTask? task = _tasks[id];
     if (task == null || !task.isRunning) return;
     final int? knownTotal = total != null && total > 0 ? total : null;
+    // 每次字节回报都是传输原语当下的完整快照（e_LVlqyUd-）：总量未知就是未知，
+    // 不沿用之前的总量——传输原语中途换了口径（番剧直链拿到播放列表后改走分片、
+    // 画面下完转下外挂音轨）时，旧总量配新已收只会拼出一个停住或超百的错误比例。
+    // 总量未知时比例交给 onProgress。
     _tasks[id] = task.copyWith(
       receivedBytes: received,
       totalBytes: knownTotal,
-      progress: _fraction(received, knownTotal ?? task.totalBytes),
+      clearTotalBytes: knownTotal == null,
+      progress: _fraction(received, knownTotal),
     );
     _notifyProgress(id);
   }

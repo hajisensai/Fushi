@@ -1,0 +1,10 @@
+## BUG-4976 · card-color-scope-children-global-accent
+- **报告**：2026-11-20（用户：截图 31～35，Windows 深色）首页「复习」蓝灰卡里「开始复习」是粉紫胶囊；书架 › 导入页深蓝「Fushi 互联」卡里开关是全局紫；导入引导棕卡点「支持 34 种格式」弹出灰色对话框 / 灰胶囊；复习页绿色「连续天数」卡里热力图是紫格；绿色「导入文件夹」卡弹出的二选一对话框是灰底 + 绿 / 深蓝两张选项卡 + 全局蓝「取消」。用户规则：自定义颜色组件的子组件（含从它弹出的对话框 / 菜单 / 底部弹层）都统一用这个组件的配色。
+- **真实性**：✅ 真 bug，五处同一根因：带色卡片只给自己画底色，没给子树下发局部配色，子组件和弹层一律读全局主题。
+  - `fushi/lib/src/utils/components/fushi_poster_block.dart:132`（海报色块只包了 `DefaultTextStyle` + `IconTheme`，子树 `Theme` 仍是全局）→ 首页复习卡 `home_srs_panel.dart` 的 `FushiFilledButton.tonal` 取全局 secondaryContainer；复习页连续天数卡的 `SrsCalendarHeatmap` 经 `srs_stat_charts.dart:118` 按全局 `scheme.primary` 的色相出格子色。
+  - `fushi/lib/src/media/import/import_source_blocks.dart:246`（导入页色块壳 `_BlockShell` 同样只画底色）→ `:596` 的 `adaptiveSwitch` 取全局 primary / Apple accent。
+  - `fushi/lib/src/media/import/import_collage_blocks.dart:122`（格式气泡用引导块里的 context 弹框，但引导块没有局部主题可捕获）→ `:178` 胶囊取全局 `surfaceContainerHighest`。
+  - `fushi/lib/src/pages/implementations/media_sources_view.dart:1264`：「导入文件夹」块的点按转到页面 State、用页面 context 弹框，就算块有局部主题也捕获不到；对话框里选项块按 `import_surface_spec.dart:80` 各自钉色（绿 / 深蓝两个色相）。
+- **[x] ① 已修复** — 公共层一次修：新增 `FushiBlockColorScope`（`fushi/lib/src/utils/components/fushi_block_color_scope.dart`）按块的 `FushiCoverBlockColors` 派生整套局部主题包住子树（MD3：强调色族 / 表面色阶换块色后经 `rethemeFushiWithScheme` 重走主题工厂；Apple：换 `FushiAppleColors`），中性块不包；`FushiPosterBlock`、导入页 `_BlockShell` / 引导块 / 方式块 / 选择块都套上。弹层继承：`fushi_popup_origin.dart` 的来源机制——context 在块里时由 `InheritedTheme.capture` 带进路由（`showAppDialog` 的 Cupertino 路径、`adaptiveModalSheet` 的 Cupertino / Apple 桌面 sheet 路径原本不捕获，已补）；经页面 State 转弹时 `FushiCard` 的点按在带来源的 Zone 里跑，两个弹层入口读到后套上同一份配色。块配色作用域里 `importToneColors` 收成块的色相、按 `importToneDepth` 取两档深浅（`FushiCoverBlockColors.fromHue(depth:)`），`importToneThemeOrNull` 让位给来源配色。
+- **[x] ② 已加自动化测试** — `fushi/test/utils/components/fushi_block_color_scope_test.dart`：MD3 / Apple × 深 / 浅，断言色块子树的 primary / secondary / tertiary / 开关组件主题 / Apple accent = 块配色，块里按钮弹出的对话框、块里卡片经页面 context 转弹的对话框都承接块配色，二选一选项块同色相两档；块外保持全局主题；中性块不包。
+- **备注**：PR `pr/card-color-scope`。

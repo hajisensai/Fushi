@@ -3217,7 +3217,7 @@ profile uid 不变」断言，不分 `bound` / `joined`。
   提示」「B 目录的 meta.json 一时读不出：这一轮不算补齐，下一轮发布补上提示」「提示一直写不成：每轮发布都重试，同一个失败只记
   一次日志」。变异实测（各自单独改、跑完 `git restore`，工作区干净）：观察里不含在场目录 → 第一条红（`Actual: <false>`）；不确定也
   记缓存 → 第二、三条红；每次失败都记日志 → 第三条红。
-- **BUG-4626 新代并入场景已正式登记为 BUG-4907**（`docs/bugs/BUG-4907-srs-gen4-dangling-op-joins-into-other-collection.md`）：根因
+- **BUG-4626 新代并入场景已正式登记为 BUG-5005**（`docs/bugs/BUG-5005-srs-gen4-dangling-op-joins-into-other-collection.md`）：根因
   `file:line`（`gen4/cmd/writes.rs:31` / `:886` 写入口不设闸，`gen4/identity.rs:430` / `:572` 并入无条件并集）、两种修法与复现用例
   全文都在 bug 文件里，交 G9 身份 / 设计；本分支仍不改内核。
 
@@ -3328,7 +3328,7 @@ v4 整个删掉 → 新根不见了、不重建，删围栏后重建、媒体根
   已发布 / 本机日志里有 `Join`」这几条廉价条件（`DISPOSABLE_SQL`）。只有内置种子与盐 = 空，D27 方向上换绑（`bound`）、不写 `Join`。
   测试：内核 `cmd/profile_data_tests.rs` `a_profile_with_only_builtin_seeds_binds_without_a_join`；Dart 真内核端到端
   `srs_profile_link_sync_test`「全新设备（开库已写内置种子、从没同步过）关联已有集合：bound，两边日志里都没有 Join」。
-- **② BUG-4907 写入口实体归属闸（`e7ad8988eb`）**：选「写入口设闸」而不是「并入时丢悬空操作」。新文件
+- **② BUG-5005 写入口实体归属闸（`e7ad8988eb`）**：选「写入口设闸」而不是「并入时丢悬空操作」。新文件
   `gen4/cmd/writes_owner.rs`，唯一判据 `Session::foreign`：一条本机操作指向的实体在库里别的集合有（`ent_ix.id` /
   `alias_ix.canon` / `cards.id`）、本集合一点痕迹都没有（身份、别名类、卡片行、修改 / 日志 / 标签索引行、同一批要建的实体；
   先不收尾查，没查到再收尾查一遍）时不写：`apply_in` 那一项 `landed: false` 并把下标放进回包 `foreign`，`purge` 跳过并回
@@ -4226,7 +4226,7 @@ schema、`ABI_VERSION`、i18n key 都不变；Rust 只改注释。
   - `backup.part.dart` 成功分支改成 `t.backup_import_success_srs_declined(count: 0)`（没有纯成功文案）：overlay 2 条、streaming 1 条红。
   - `backup_srs_gen4_guard_test` 的 `codeLines` 退回 `trimLeft().startsWith('//')`：`source_guard_adoption_test` 红。
 
-## 45. 第六波 身份归属闸收口（BUG-4907 残余，2026-11-18，分支 `pr/srs-gen4-w6-identity-gate`，基于 `pr/srs-gen4-switch` `0bf8472f40`）
+## 45. 第六波 身份归属闸收口（BUG-5005 残余，2026-11-18，分支 `pr/srs-gen4-w6-identity-gate`，基于 `pr/srs-gen4-switch` `0bf8472f40`）
 
 收 §37「第五波 G9 身份收尾」第二轮复核留下的两处残余。SCHEMA 不变（40024，没加表 / 索引，分到的 40025 没用）。
 
@@ -4321,7 +4321,7 @@ ID 不加盐以后实体是**内容寻址**的：两个集合拿同一份身份�
   打开「合并笔记模板」）。
 
 复核（minor）：同 guid + 同笔记类型、只改 `createdAt` 的记录能过闸，并入时可能顶掉 B 的 `createdAt`——接受，只影响 B 这条笔记的
-新卡次序，已写进 BUG-4907 文件。复核（nit）：`PendingSelf` 两遍副本维持上面「没做」的判断。
+新卡次序，已写进 BUG-5005 文件。复核（nit）：`PendingSelf` 两遍副本维持上面「没做」的判断。
 
 测试：内核 `import_drafts_reports_foreign_at_the_callers_input_index`；engine `srs_apkg_import_test.dart`「同库另一份 profile 已有
 同 guid、另一个笔记类型的笔记」（不合并：`otherProfileNoteType` 一条、`notesAdded` / `cardsAdded` 为 0、`reviewLogsImported` 比只有
@@ -4369,7 +4369,7 @@ apkg 用例红（3 ≠ 2）。
 
 测试：内核 `card_edits_carrying_a_rejected_note_are_not_written`（`import_drafts`：被拒笔记 + 它的两条卡片修改进 `foreign` 不写，
 同批要建的笔记 / 本集合已有的笔记 / 哪里都没有的笔记的卡、不带笔记的哪里都没有的卡照写，A 的操作恰好多 5 条；`apply`：带被拒笔记
-的不写、同一张卡不带笔记照写）。engine `srs_apkg_import_test.dart` 组「被拒的笔记整份不计、卡片修改不落（BUG-4907 第二轮复核）」
+的不写、同一张卡不带笔记照写）。engine `srs_apkg_import_test.dart` 组「被拒的笔记整份不计、卡片修改不落（BUG-5005 第二轮复核）」
 三条：每条先断言 P2 的报告与「包里没有 g4」的单 profile 对照**整份 `toJson`（除冲突列表）逐项相同**、冲突只多 g4 的
 `otherProfileNoteType`，再断言带 g4 的对照里 g4 确实贡献了——① fushi-ext 场景：恢复 / 校验 / 包外 revlog / 日志 / 锚点各 1；
 ② 未来 revlog：`futureCards` 含 41；③ 新卡 + 暂停：g4 副本类型的卡上有 `newPos` 77 与 `suspended`，P2 同号的卡一条修改都没有。
@@ -4588,7 +4588,7 @@ WIP 原样编不过（schema 守卫表数没改）、三条停放测试装置有
 规划 §6 R0 的 Windows 部分，证据与逐格结论全在 [2026-11-15-srs-gen4-r0-windows.md](2026-11-15-srs-gen4-r0-windows.md)。
 被测：v3.3.0、v3.0.1 官方安装包解出的 `fushi.exe`（sha256 与 `versions.json` 钉死的一致）+ 本分支 release 构建；全部隔离数据根，没碰本机用户库。
 第一轮只加实测工具与测试、没改产品代码；之后改了产品代码：复核轮 `native/fushi_fsrs/src/store/gen4/cmd/backup.rs` / `identity.rs`
-（BUG-4906），第二轮复核 `fushi/lib/src/ops/ctl_srs_routes.dart`（控制通道代际状态回 409 + 机读码），见下两节。第一轮加的工具与测试：
+（BUG-4989），第二轮复核 `fushi/lib/src/ops/ctl_srs_routes.dart`（控制通道代际状态回 409 + 机读码），见下两节。第一轮加的工具与测试：
 
 - `tool/srs_old_binary/r0_win.py`（新）：跨进程保留数据根、按步骤表调控制通道，记前后 `app-support/` 顶层文件 sha256、抹掉 D3 例外字节后的
   sha256、主库 schema、两代 SRS 库的 `srs_meta` 与行数。`r0_compare.py`（新）：迁移前后逐卡比对，经 `alias_ix` 换算规范 ID。
@@ -4606,7 +4606,7 @@ WIP 原样编不过（schema 守卫表数没改）、三条停放测试装置有
 
 **交给别的模块的缺陷 / 待拍板（第一轮时本模块没改；1、3 后来在复核轮 / 第二轮复核修了，2 定为升级说明，见下）：**
 
-1. **旧备份覆盖恢复后卡片与日志脱钩（✘ → 复核轮已修，BUG-4906，见下「复核轮」）**：v3.3.0 整包备份在新版本上「覆盖」恢复，`srs4.db` 有 6 卡 / 12 条
+1. **旧备份覆盖恢复后卡片与日志脱钩（✘ → 复核轮已修，BUG-4989，见下「复核轮」）**：v3.3.0 整包备份在新版本上「覆盖」恢复，`srs4.db` 有 6 卡 / 12 条
    `log_ix`，但卡片是用不带盐的模板 ID 重新派生的（与迁移路径得到的规范 ID 也不同），对不上日志和 `alias_ix`；6 张全 `hidden=1`、`queue new`、
    `reps 0`；`salt_ix` 只有本机 uid，没有备份里的 uid；恢复后主库 profile uid 是本机的、`collections` 行 dir 是备份的。界面上卡片总数 0。
    指向 `dispatch.rs` `legacy_backup_import` → `cmd/backup.rs` `land` → `identity.rs` `collection_adopt_with` / `adopt_foreign` 的 Bound 分支只写本机
@@ -4628,7 +4628,7 @@ WIP 原样编不过（schema 守卫表数没改）、三条停放测试装置有
 
 按复核意见改了五处，细节与证据在 R0 文档 §4.1 / §4.6 / §5：
 
-- **BUG-4906 已按根因修**（复核 major 2）：旧整包备份认领结论为 `bound`（本机 profile 打开过、空集合换绑 / 没绑过）时，`cmd/backup.rs` `land`
+- **BUG-4989 已按根因修**（复核 major 2）：旧整包备份认领结论为 `bound`（本机 profile 打开过、空集合换绑 / 没绑过）时，`cmd/backup.rs` `land`
   由本机写一条 `Salts` 声明备份 profile 的盐（协议 3 备份里没有 `Salts` 操作，`Bound` 本身只带本机盐）。`cmd/identity.rs` 的 `carry_salts`
   改名 `declare_salts` 供两处共用。没有改 `collection_adopt_with` 的 `Bound` 分支一律写调用方给的盐：那样位置认领 / `.fushisrs` 第 2 版也多写
   一条本机 `Salts`，打破 4 条既有测试（含两台设备 `canonical_ids` 不收敛）。新测试 `backup_tests.rs`
@@ -4690,7 +4690,7 @@ WIP 原样编不过（schema 守卫表数没改）、三条停放测试装置有
 
 合流后补的提交（每条都已推送）：
 
-- `b0f38d4224`：bug 撞号用 `dart run tool/bug.dart settle` 处理。gen4 的 `BUG-4843-srs-gen4-dangling-op-joins-into-other-collection` 改号为 **BUG-4907**，31 处引用随之改掉；develop 的 BUG-4843（glibc 基线）保持不动。
+- `b0f38d4224`：bug 撞号用 `dart run tool/bug.dart settle` 处理。gen4 的 `BUG-4843-srs-gen4-dangling-op-joins-into-other-collection` 改号为 **BUG-5005**，31 处引用随之改掉；develop 的 BUG-4843（glibc 基线）保持不动。
 - `ec5f6f9427`：Rust `SCHEMA` 定为 40027，`FROZEN` 追加 40027 的指纹；`gen4/cache.rs` 两处 `§43` 引用改指 `§44`（重编号后 import-reds 在 §44）。
 - `e1f9942045`：`fushi_fsrs/Cargo.toml` 的 rusqlite 开了 `backup` 特性，用 `dart run tool/native_licenses.dart` 重算许可汇编的输入指纹（`native_license_registry` 守卫原来是红的）。
 - `ab0be67f2b`：`fushi_cli` 补上 `srs retained` / `srs retained-delete` 两条命令。T2 新加的两条 ctl 路由（保留副本列表 / 删除）没有 CLI 入口，`ctl_cli_route_coverage_guard` 是红的。删除命令必须带 `--yes`，请求体带 `confirm: true`。新单测见 `packages/fushi_cli/test/commands/srs_commands_test.dart`；变异实测把路径改错后测试变红。

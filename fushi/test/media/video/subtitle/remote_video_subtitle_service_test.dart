@@ -905,7 +905,7 @@ void main() {
     });
   });
 
-  group('BUG-4909 产物临时目录', () {
+  group('BUG-5018 产物临时目录', () {
     List<FileSystemEntity> workLeft() {
       final Directory work = Directory(p.join(tmp.path, 'work'));
       return work.existsSync() ? work.listSync() : const <FileSystemEntity>[];

@@ -82,7 +82,7 @@ void main() {
         'https://$mid.relay',
       ],
     });
-    // 每台核对自己的 machineIdentifier（探测拿不到 token，见 BUG-4907）。
+    // 每台核对自己的 machineIdentifier（探测拿不到 token，见 BUG-4997）。
     expect(probed.every(((String, String) p) => p.$1.contains(p.$2)), isTrue);
 
     // 不在家：局域网地址都不通；B 的公网先回，A 的 relay 先回。

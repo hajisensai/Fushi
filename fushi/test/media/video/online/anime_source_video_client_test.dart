@@ -644,7 +644,7 @@ void main() {
       expect(await c.defaultSubtitleFileName(second), 'episode_2.日本語.vtt');
     });
 
-    test('字幕站接了连接却不回数据：默认字幕下载到点抛 TimeoutException（BUG-4911）', () async {
+    test('字幕站接了连接却不回数据：默认字幕下载到点抛 TimeoutException（BUG-5037）', () async {
       final HttpServer server = await HttpServer.bind(
         InternetAddress.loopbackIPv4,
         0,

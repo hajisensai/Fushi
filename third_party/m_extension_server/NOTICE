@@ -15,7 +15,9 @@ Significant Fushi modifications:
 - catalogue identity preservation for legacy detail parsers;
 - INVOKEINTERFACE correction in the bytecode rewriter;
 - Java 8 class file version for converted extension classes;
-- per-data-root storage directory and host preference snapshot rule.
+- per-data-root storage directory and host preference snapshot rule;
+- per-lane (catalogue / playback) call serialization of cached extension
+  instances.
 
 Corresponding Source for shipped binaries is upstream_src/ plus
 server-build.gradle.patch plus overlay/, all in this directory. The build

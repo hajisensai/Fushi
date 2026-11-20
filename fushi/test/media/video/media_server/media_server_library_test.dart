@@ -432,7 +432,7 @@ void main() {
     );
   });
 
-  test('BUG-4906：起播详情在当前线路失败、换线路回调给出新配置时，按新配置重建 '
+  test('BUG-4980：起播详情在当前线路失败、换线路回调给出新配置时，按新配置重建 '
       '客户端并在新线路上取详情，起播用新客户端', () async {
     await library.addToLibrary(browser, series);
     final VideoBookRow row = (await repository.getByBookUid('e2'))!;
@@ -467,7 +467,7 @@ void main() {
     expect(launch.info.title, 'Ep 2 (fresh)');
   });
 
-  test('BUG-4906：换线路回调返回 null 时客户端照旧、只取一次详情', () async {
+  test('BUG-4980：换线路回调返回 null 时客户端照旧、只取一次详情', () async {
     await library.addToLibrary(browser, series);
     final VideoBookRow row = (await repository.getByBookUid('e2'))!;
     final launch = await buildMediaServerLaunch(

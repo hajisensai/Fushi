@@ -185,15 +185,18 @@ class AnimeSourceLibrary {
   }
 
   /// 加入媒体库：每集一行在线行，归进作品合集。已在库的集跳过（刷新后只补新集，
-  /// 不动已看 / 已下载的行）。返回新加的集数。
+  /// 不动已看 / 已下载的行）。返回新加的集数。用户亲手点的：用户删过的作品合集
+  /// 就此重建（BUG-5014）。
   Future<int> addToLibrary(AnimeSourceVideoClient client) async =>
-      (await addMissing(client)).length;
+      (await addMissing(client, userIntent: true)).length;
 
   /// [addToLibrary] 的本体：返回这次新加的集（后台库更新探针据此投递新集提醒，
-  /// 见 `video_library_update_probe.dart`）。
+  /// 见 `video_library_update_probe.dart`）。探针是被动刷新，[userIntent] 保持
+  /// false——用户删掉的合集不被它复活。
   Future<List<RemoteVideoInfo>> addMissing(
-    AnimeSourceVideoClient client,
-  ) async {
+    AnimeSourceVideoClient client, {
+    bool userIntent = false,
+  }) async {
     final RemoteCollectionAdoptionService adoption =
         RemoteCollectionAdoptionService(database);
     final List<RemoteVideoInfo> infos = client.remoteVideos;
@@ -222,7 +225,7 @@ class AnimeSourceLibrary {
         addedInfos.add(info);
       }
       // 已在库的集也重新收养一次：合集被用户删掉后重新加入能回到合集里。
-      await adoption.adoptVideo(info);
+      await adoption.adoptVideo(info, userIntent: userIntent);
     }
     if (added.isNotEmpty) {
       await repository.recordVideoImportActivity(
@@ -250,6 +253,7 @@ class AnimeSourceLibrary {
 
   /// 下载完成：把 [file] 登记成本地视频行（同 bookUid 覆盖在线行），归进作品合集，
   /// 补封面与默认字幕，并把在线播放留下的断点接过来（见 [onlinePositionReader]）。
+  /// 下载是用户亲手发起的：用户删过的作品合集就此重建（BUG-5014）。
   Future<void> registerDownloaded(
     AnimeSourceVideoClient client,
     RemoteVideoInfo info,
@@ -296,7 +300,9 @@ class AnimeSourceLibrary {
         ),
       ),
     );
-    await RemoteCollectionAdoptionService(database).adoptVideo(info);
+    await RemoteCollectionAdoptionService(
+      database,
+    ).adoptVideo(info, userIntent: true);
     if (existing?.coverPath == null) {
       await _applyCovers(client, <String>[info.id]);
     }

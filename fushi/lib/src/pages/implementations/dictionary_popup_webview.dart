@@ -125,7 +125,9 @@ bool dictionaryPopupWebViewUsesHybridComposition = true;
 ///   - Windows：fork 的 `WebResourceRequested` 以 `CONTEXT_ALL` 注册，`fetch` 同样
 ///     进拦截器，响应头照灌；
 ///   - iOS / macOS：文档本身由 `fushi-popup://` 供，词条 URL 同 scheme 同 host，同源
-///     请求不需要 CORS（`CustomSchemeResponse` 也带不了头）；
+///     请求不需要 CORS（`CustomSchemeResponse` 也带不了头）。响应是非 HTTP 的
+///     `URLResponse`，`fetch` 看到的 status 恒为 0——页面侧按正文判成败
+///     （[buildPopupFetchedEntriesJs]，BUG-4956）；
 ///   - Linux（WPE）：两者都不具备，继续字面量投递。
 /// 运行时若某个 WebView 取回失败（`popupEntriesFetchFailed`），该 WebView 退回字面量
 /// 并记错误日志，见 [DictionaryPopupWebViewState]。
@@ -1428,6 +1430,10 @@ JSON.stringify((function(){
   // 桌面 in-app 弹窗与 Windows 全局查词覆盖窗共用）。touch + pointer/mouse 两套识别，
   // 解决桌面 WebView2 不触发 touch 导致下滑关闭失效。
   static const String _topPullReleaseJs = kPopupTopPullReleaseJs;
+
+  // BUG-4925：选区变成新的非空选区时上报，宿主冒泡 [PopupSelectionChangedNotification]
+  // 让正文横滑检测器作废这一划（拖选区柄不再被当成滑动关闭）。
+  static const String _selectionChangeReportJs = kPopupSelectionChangeReportJs;
 
   // TODO-1152：内容渲染完成后逼一帧合成的「表面重绘 nudge」JS。put_Bounds 增大后
   // WebView2 已按新视口重排/重栅格，但内容随即 idle、compositor 不再产帧，宿主 WGC
@@ -3157,6 +3163,23 @@ JSON.stringify((function(){
         );
 
         controller.addJavaScriptHandler(
+          handlerName: 'popupSelectionChanged',
+          callback: (_) {
+            return _guardJsBridge<Object?>(
+              'DictPopupWebview.popupSelectionChanged',
+              null,
+              ErrorLogService.instance,
+              () {
+                if (mounted) {
+                  const PopupSelectionChangedNotification().dispatch(context);
+                }
+                return null;
+              },
+            );
+          },
+        );
+
+        controller.addJavaScriptHandler(
           handlerName: 'topPullReleased',
           callback: (_) {
             return _guardJsBridge<Object?>(
@@ -4028,6 +4051,7 @@ JSON.stringify((function(){
         // has already defined window.fushiSelection by load-stop). It stays
         // dormant until the reader hands it the cursor on lookup.
         controller.evaluateJavascript(source: _topPullReleaseJs);
+        controller.evaluateJavascript(source: _selectionChangeReportJs);
         // TODO-1353: 装一次 Ctrl+滚轮缩放监听（幂等 guard；warm 热槽也只装一次）。
         controller.evaluateJavascript(source: _zoomWheelJs);
         controller.evaluateJavascript(

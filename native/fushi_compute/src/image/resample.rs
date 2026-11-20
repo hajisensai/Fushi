@@ -203,6 +203,109 @@ pub(crate) fn resample(
     dst
 }
 
+/// 文字保护遮罩（`dw × dh`，0..1）：`boxes` 是归一化矩形 `[x0, y0, x1, y1]`（0..1，相对整页），
+/// 每个框在目标分辨率上外扩 [MASK_GROW] 像素后置 1，再做 sigma = [MASK_SIGMA] 的可分离高斯羽化。
+/// 退化框（x1 <= x0 等）、非有限值忽略。
+pub(crate) fn text_mask(boxes: &[[f32; 4]], dw: usize, dh: usize) -> Vec<f32> {
+    let mut mask = vec![0f32; dw * dh];
+    for b in boxes {
+        if !b.iter().all(|v| v.is_finite()) || b[2] <= b[0] || b[3] <= b[1] {
+            continue;
+        }
+        let x0 = ((b[0] * dw as f32).floor() - MASK_GROW).clamp(0.0, dw as f32) as usize;
+        let y0 = ((b[1] * dh as f32).floor() - MASK_GROW).clamp(0.0, dh as f32) as usize;
+        let x1 = ((b[2] * dw as f32).ceil() + MASK_GROW).clamp(0.0, dw as f32) as usize;
+        let y1 = ((b[3] * dh as f32).ceil() + MASK_GROW).clamp(0.0, dh as f32) as usize;
+        if x1 <= x0 {
+            continue;
+        }
+        for y in y0..y1 {
+            mask[y * dw + x0..y * dw + x1].fill(1.0);
+        }
+    }
+    gaussian_blur(&mut mask, dw, dh, MASK_SIGMA);
+    mask
+}
+
+/// 文字框外扩（目标像素）。
+pub(crate) const MASK_GROW: f32 = 2.0;
+/// 羽化高斯 sigma（目标像素）。
+pub(crate) const MASK_SIGMA: f32 = 1.5;
+
+/// 原地可分离高斯模糊（边缘夹取）。
+pub(crate) fn gaussian_blur(buf: &mut [f32], w: usize, h: usize, sigma: f32) {
+    if w == 0 || h == 0 || sigma <= 0.0 {
+        return;
+    }
+    let r = (sigma * 3.0).ceil() as isize;
+    let k: Vec<f32> = (-r..=r)
+        .map(|i| (-((i * i) as f32) / (2.0 * sigma * sigma)).exp())
+        .collect();
+    let sum: f32 = k.iter().sum();
+    let k: Vec<f32> = k.iter().map(|v| v / sum).collect();
+    let mut tmp = vec![0f32; w * h];
+    for y in 0..h {
+        let row = &buf[y * w..(y + 1) * w];
+        for x in 0..w {
+            let mut acc = 0.0;
+            for (j, kv) in k.iter().enumerate() {
+                let xx = (x as isize + j as isize - r).clamp(0, w as isize - 1) as usize;
+                acc += row[xx] * kv;
+            }
+            tmp[y * w + x] = acc;
+        }
+    }
+    for y in 0..h {
+        for x in 0..w {
+            let mut acc = 0.0;
+            for (j, kv) in k.iter().enumerate() {
+                let yy = (y as isize + j as isize - r).clamp(0, h as isize - 1) as usize;
+                acc += tmp[yy * w + x] * kv;
+            }
+            buf[y * w + x] = acc;
+        }
+    }
+}
+
+/// 按遮罩逐像素混合：`mask = 1` 取 `inside`，`0` 取 `outside`。`ch` 通道交错。
+pub(crate) fn blend(inside: &[u8], outside: &[u8], mask: &[f32], ch: usize) -> Vec<u8> {
+    debug_assert_eq!(inside.len(), outside.len());
+    debug_assert_eq!(inside.len(), mask.len() * ch);
+    inside
+        .iter()
+        .zip(outside)
+        .enumerate()
+        .map(|(i, (&a, &b))| {
+            let m = mask[i / ch];
+            (a as f32 * m + b as f32 * (1.0 - m))
+                .round()
+                .clamp(0.0, 255.0) as u8
+        })
+        .collect()
+}
+
+/// 文字感知的 Gamma 校正缩放：文字框内在 sRGB 编码值上重采样（细笔画不变淡），框外在线性光里
+/// （网点明度准），羽化遮罩混合。`boxes` 为空时等同 sRGB 重采样（没有 OCR 数据就不做线性光）。
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn resample_text_aware(
+    src: &[u8],
+    w: usize,
+    h: usize,
+    ch: usize,
+    dw: usize,
+    dh: usize,
+    filter: Filter,
+    boxes: &[[f32; 4]],
+) -> Vec<u8> {
+    let srgb = resample(src, w, h, ch, dw, dh, filter, false);
+    if boxes.is_empty() {
+        return srgb;
+    }
+    let linear = resample(src, w, h, ch, dw, dh, filter, true);
+    let mask = text_mask(boxes, dw, dh);
+    blend(&srgb, &linear, &mask, ch)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -284,5 +387,63 @@ mod tests {
         }
         let out = resample(&src, 10, 10, 3, 4, 4, Filter::Lanczos3, true);
         assert!(out.chunks(3).all(|p| p == [255, 0, 40]));
+    }
+
+    #[test]
+    fn text_mask_is_one_inside_feathered_at_edges_and_zero_far_away() {
+        let m = text_mask(&[[0.25, 0.25, 0.5, 0.5]], 100, 100);
+        assert!(m[37 * 100 + 37] > 0.99, "centre {}", m[37 * 100 + 37]);
+        assert!(m[90 * 100 + 90] < 1e-6);
+        // 框外扩 2 px 的边上：羽化（0..1 之间），不是硬边
+        let edge = m[37 * 100 + 52];
+        assert!(edge > 0.05 && edge < 0.95, "edge {edge}");
+        // 退化框 / NaN 忽略
+        let none = text_mask(&[[0.5, 0.5, 0.4, 0.6], [f32::NAN, 0.0, 1.0, 1.0]], 20, 20);
+        assert!(none.iter().all(|v| *v == 0.0));
+    }
+
+    #[test]
+    fn text_aware_keeps_strokes_srgb_inside_boxes_and_tone_linear_outside() {
+        // 左半：1 px 黑竖线间隔 3 px 白（细笔画）；右半：黑白棋盘（网点）。
+        let (w, h) = (200usize, 100usize);
+        let mut src = vec![255u8; w * h];
+        for y in 0..h {
+            for x in 0..w {
+                let black = if x < 100 {
+                    x % 4 == 0
+                } else {
+                    (x + y) % 2 == 0
+                };
+                if black {
+                    src[y * w + x] = 0;
+                }
+            }
+        }
+        let (dw, dh) = (100usize, 50usize);
+        let boxes = [[0.0f32, 0.0, 0.45, 1.0]];
+        let out = resample_text_aware(&src, w, h, 1, dw, dh, Filter::Box, &boxes);
+        let srgb = resample(&src, w, h, 1, dw, dh, Filter::Box, false);
+        let lin = resample(&src, w, h, 1, dw, dh, Filter::Box, true);
+        let mean = |img: &[u8], x0: usize, x1: usize| -> f32 {
+            let (mut s, mut n) = (0.0f32, 0.0f32);
+            for y in 10..40 {
+                for x in x0..x1 {
+                    s += img[y * dw + x] as f32;
+                    n += 1.0;
+                }
+            }
+            s / n
+        };
+        // 文字区与 sRGB 一致（笔画不被线性光提亮）
+        assert!((mean(&out, 5, 35) - mean(&srgb, 5, 35)).abs() < 0.5);
+        assert!(mean(&lin, 5, 35) > mean(&srgb, 5, 35) + 20.0);
+        // 网点区与线性光一致（明度约 188 而不是 128）
+        assert!((mean(&out, 60, 95) - mean(&lin, 60, 95)).abs() < 0.5);
+        assert!(mean(&out, 60, 95) > 170.0);
+        // 没有框：完全等于 sRGB
+        assert_eq!(
+            resample_text_aware(&src, w, h, 1, dw, dh, Filter::Box, &[]),
+            srgb
+        );
     }
 }

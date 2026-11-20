@@ -1,0 +1,6 @@
+## BUG-4927 · manga-windows-scrollbars
+- **报告**：2026-11-21（用户：应用内反馈 TO--uST-OO「Windows 漫画阅读器全屏后出现上下左右滚动条」）
+- **真实性**：✅ 真 bug。漫画阅读器文档（`fushi/lib/src/media/manga/manga_overlay_html.dart` `mangaWindowDocument`，原 `html,body{...height:100%;...}` 一行）只靠宿主 `InAppWebViewSettings(verticalScrollBarEnabled:false, horizontalScrollBarEnabled:false)`（`fushi/lib/src/media/manga/reader/manga_fushi_page.dart:8822`）关滚动条，而这两个开关只在 Android 生效；Windows WebView2 显示占位的经典滚动条（约 17px）。布局全用 100vw/100vh：webtoon 内容一长出现竖条，`#manga-root{width:100vw}` 就比可见宽度多出条宽 → 横向溢出出横条 → 100vh 又溢出；spread 放大时 `#manga-canvas` 的 `scale` 也把文档撑出可滚溢出。文档本身从未声明视口滚动条与原生滚动轴的所有权。
+- **[x] ① 已修复** — 文档自管：所有模式 `html{scrollbar-width:none}` + `::-webkit-scrollbar{display:none;width:0;height:0}`（隐藏且不占位）；按位置所有权限定原生滚动轴——spread 两轴都由 JS（PAN_X/PAN_Y、translateX）拥有 → `html{overflow:hidden}`；webtoon / 纵向分页纵向归 `window.scrollY`（滚轮走原生竖滚）、横向归 PAN_X → 只 `overflow-x:hidden`。溢出只写在 `html`（视口传播），不写 `body`，否则 body 自成滚动容器、`window.scrollY` 失效。
+- **[x] ② 已加自动化测试** — `fushi/test/media/manga/manga_overlay_html_test.dart` 组「BUG-4927 文档自管视口滚动条」：全模式隐藏滚动条、`html,body` 规则不含 overflow、spread `overflow:hidden`、连续模式只关横向。
+- **备注**：WebView2 实际渲染未在真机复测（本环境无法驱动 Windows 漫画阅读器全屏）；测试钉的是文档 CSS 契约。

@@ -17,7 +17,7 @@ const double _kRailStageRadius = 44;
 const double _kRailStageCornerExtent =
     _kRailStageRadius * kShellSmoothRadiusScale;
 
-/// 镂空脊侧栏列表视口离侧栏底边的距离（BUG-4906）：视口底 + bleed + 内凹圆角
+/// 镂空脊侧栏列表视口离侧栏底边的距离（BUG-4971）：视口底 + bleed + 内凹圆角
 /// 必须停在舞台左下大圆角之上，当前项被挤到最底部时缺口才能和舞台直边连成
 /// 一体（旧值 12：缺口的内凹圆角伸进舞台圆角，被舞台补角的侧栏色盖出缺口）。
 const double _kRailNotchBottomInset =

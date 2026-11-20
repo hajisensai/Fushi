@@ -344,7 +344,7 @@ class _ReaderStatisticsSheetState extends State<ReaderStatisticsSheet> {
       setState(() => _lastSnapshot = snap);
     });
     // 读失败（库被关 / 查询异常）不能成为无人接的异步错误：记进错误日志，今日 /
-    // 累计停在空态，侧栏其余实时读数照常（BUG-4915）。
+    // 累计停在空态，侧栏其余实时读数照常（BUG-5051）。
     unawaited(
       widget.loadBookTotals().then(
         (ReaderBookStatTotals totals) {

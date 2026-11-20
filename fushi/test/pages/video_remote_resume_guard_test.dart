@@ -128,7 +128,7 @@ void main() {
       () {
         final String initRemote = region(
           'Future<void> _initRemote() async {',
-          // 终点钉代码（倍速写入 key getter）而不是它上面的注释：BUG-4910 把注释改成
+          // 终点钉代码（倍速写入 key getter）而不是它上面的注释：BUG-5030 把注释改成
           // 「写入 key」后，钉注释的锚点就失配了。
           'String get _speedPrefKey',
         );
@@ -205,7 +205,7 @@ void main() {
       );
       expect(
         _flat(region2).contains(
-          // BUG-4908：远端写入经 _remoteTeardown 登记（客户端等它用完再关）。
+          // BUG-5012：远端写入经 _remoteTeardown 登记（客户端等它用完再关）。
           _flat(
             '_isRemote ? (String uid, int posMs) => '
             '_remoteTeardown.track(() => _persistRemotePosition(uid, posMs)) '

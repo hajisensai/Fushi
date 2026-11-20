@@ -1,4 +1,4 @@
-// BUG-4906 / video-34：互联实时转码分段的小 LRU（[TranscodeSegmentCache]）。
+// BUG-4972 / video-34：互联实时转码分段的小 LRU（[TranscodeSegmentCache]）。
 //
 // 修前 host 对同一条流同一段的每次请求都起一个新 ffmpeg（4K HEVC 源一段实测
 // 1.4～3.3 s 墙钟、占满多核）。这里钉住缓存本身的契约：命中不再计算、同键并发

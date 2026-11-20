@@ -16,7 +16,7 @@ class _HistoryGate {
   }
 }
 
-// The gate is inside replaceAllDictionaryHistory's real SQLite transaction,
+// The gate is inside syncDictionaryHistory's real SQLite transaction,
 // at its DELETE. Clear therefore retains Drift's actual connection ordering;
 // no repository method or pre-transaction scheduling is replaced.
 class _HistorySqlBoundary extends QueryInterceptor {
