@@ -951,7 +951,7 @@ class FushiComputeImage {
     final Pointer<Float> boxPtr = boxFloats == 0
         ? nullptr
         : malloc<Float>(boxFloats);
-    if (boxFloats > 0) boxPtr.asTypedList(boxFloats).setAll(0, boxes!);
+    if (boxFloats > 0) boxPtr.asTypedListOutOfLine(boxFloats).setAll(0, boxes!);
     try {
       final int status = _fitJpegHq(
         src,
