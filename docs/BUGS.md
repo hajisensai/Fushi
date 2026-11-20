@@ -41,6 +41,11 @@
 | [BUG-4907](bugs/BUG-4907-manga-page-enum-nas-junk.md) | ✅ | ✅ | 本地页图卷枚举把群晖 @eaDir 缩略图、__MACOSX 与 ._ 资源叉当成漫画页 |
 | [BUG-4906](bugs/BUG-4906-manga-panel-failure-cached-detector-dup.md) | ✅ | ✅ | 漫画分镜检测：暂时性失败被两层缓存、检测器并发创建泄漏 ONNX session |
 | [BUG-4906](bugs/BUG-4906-manga-download-pause-cancel-not-immediate.md) | ✅ | ✅ | 漫画下载的暂停 / 取消传不到在途请求，失败不分型一律退避 |
+> 共 4234 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4913](bugs/BUG-4913-manga-series-refresh-lost-update.md) | ✅ | ✅ | 漫画作品页后台刷新覆盖刚开的订阅；下载状态旧读盖新读 |
 | [BUG-4905](bugs/BUG-4905-ai-cast-text-substitutions.md) | ✅ | ✅ | 小说和漫画 AI 标注未应用系列用词替换表 |
 | [BUG-4904](bugs/BUG-4904-book-series-key-store-annotation.md) | ✅ | ✅ | 书店写法「卷号<系列名> (文库名)」的分卷导入后不归合集 |
 | [BUG-4903](bugs/BUG-4903-home-desktop-continue-cut-edge-title-concat.md) | ✅ | ✅ | 首页（桌面）「继续」右侧卡被窗口切掉一半、标题拼接成「Re：ゼロ…1<Re：…」 |
