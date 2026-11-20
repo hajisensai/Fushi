@@ -132,12 +132,19 @@ public class ScreenOcrService extends Service {
     static final String LABEL_SESSION_NOTIFICATION = "ocr_session_notification";
     static final String LABEL_SESSION_HINT = "ocr_session_hint";
     static final String LABEL_SESSION_STOP = "ocr_session_stop";
+    /** 识别中通知上的「取消」（BUG-4790）。 */
+    static final String LABEL_CANCEL = "ocr_cancel";
     /** Dart `ScreenOcrEngine` 的名字（截屏识字引擎，决定 4BBSaB12zj）。 */
     static final String ENGINE_SYSTEM_OCR = "systemOcr";
     static final String ENGINE_LOCAL_MODEL = "localModel";
 
     /** 常驻会话通知上的「停止」。 */
     static final String ACTION_STOP_SESSION = "app.fushi.reader.SCREEN_OCR_STOP_SESSION";
+    /** 识别中通知上的「取消」（BUG-4790），带 {@link #EXTRA_FLOW}。 */
+    static final String ACTION_CANCEL_RECOGNITION =
+            "app.fushi.reader.SCREEN_OCR_CANCEL_RECOGNITION";
+    /** 取消针对的流程编号（{@link ScreenOcrRecognitionGate}）。 */
+    static final String EXTRA_FLOW = "screenOcrFlow";
     /** 借用 App 外内录手里的投屏授权截一帧（BUG-4922，见 {@link ProjectionShare}）。 */
     static final String ACTION_CAPTURE_SHARED = "app.fushi.reader.SCREEN_OCR_CAPTURE_SHARED";
 
@@ -199,6 +206,8 @@ public class ScreenOcrService extends Service {
     private Bitmap frozenFrame;
     private boolean receiverRegistered = false;
     private boolean finished = false;
+    /** 流程编号与识别中阶段：识别中可取消、过期回调丢弃（BUG-4790）。 */
+    private final ScreenOcrRecognitionGate recognition = new ScreenOcrRecognitionGate();
     /** 隐藏选取层时盯住的查词窗令牌；它所在进程一死就收尾（否则选取层永远藏着、悬浮球回不来）。 */
     @Nullable private IBinder lookupToken;
     @Nullable private IBinder.DeathRecipient lookupDeath;
@@ -277,6 +286,10 @@ public class ScreenOcrService extends Service {
             stopSessionNow();
             return START_NOT_STICKY;
         }
+        if (intent != null && ACTION_CANCEL_RECOGNITION.equals(intent.getAction())) {
+            cancelRecognition(intent.getLongExtra(EXTRA_FLOW, 0));
+            return START_NOT_STICKY;
+        }
         if (projection != null && intent != null
                 && ACTION_CAPTURE_SHARED.equals(intent.getAction())) {
             // 借用请求持有流程锁（launch 只在没有流程时发），本实例却还占着另一份授权（系统
@@ -291,6 +304,7 @@ public class ScreenOcrService extends Service {
         }
         // 新的一次流程（服务可能是上一次停掉会话后还没销毁就被重新拉起的那个实例）。
         finished = false;
+        recognition.begin();
         String lang = intent.getStringExtra(EXTRA_LANGUAGE);
         if (lang != null && !lang.isEmpty()) language = lang;
         labels = ScreenCaptureRequestActivity.fromBundle(intent.getBundleExtra(EXTRA_LABELS));
@@ -365,6 +379,8 @@ public class ScreenOcrService extends Service {
         }
         unwatchLookupToken();
         releaseCapture();
+        // 被系统停掉时识别中的取消通知（已不是前台通知）不会随服务消失。
+        cancelScreenOcrNotification();
         removeSelectionView();
         releaseFrame();
         cardWriter.shutdown();
@@ -574,6 +590,7 @@ public class ScreenOcrService extends Service {
                 closeLatestImage();
             });
             finished = false;
+            recognition.begin();
             // surface 一挂回去，系统就重新合成这块虚拟屏、出新帧；悬浮球随后藏起的那次
             // 合成也会再出一帧，「画面静止」判据取的是它之后的最后一帧。
             virtualDisplay.setSurface(imageReader.getSurface());
@@ -719,29 +736,34 @@ public class ScreenOcrService extends Service {
      * OCR 模型配置。
      */
     private void recognize(@NonNull Bitmap bitmap) {
+        final long flow = recognition.current();
+        recognition.onRecognitionStarted(flow);
+        // BUG-4790：识别期间（本机模型首次加载 / Lens 联网可能要一两分钟）选取层还没
+        // 画出来、悬浮球藏着，通知是唯一的出口：挂上带「取消」的「正在识别」。
+        notifyForeground(buildRecognizingNotification(flow));
         boolean asked = FloatingBallChannel.queryScreenOcrEngine(new MethodChannel.Result() {
             @Override
             public void success(@Nullable Object reply) {
-                onEngineReply(bitmap, reply);
+                onEngineReply(bitmap, reply, flow);
             }
 
             @Override
             public void error(@NonNull String code, @Nullable String message,
                     @Nullable Object details) {
                 Log.w(TAG, "screenOcrEngine failed: " + code + " " + message);
-                onEngineReply(bitmap, null);
+                onEngineReply(bitmap, null, flow);
             }
 
             @Override
             public void notImplemented() {
-                onEngineReply(bitmap, null);
+                onEngineReply(bitmap, null, flow);
             }
         });
-        if (!asked) recognizeWithMlKit(bitmap);
+        if (!asked) recognizeWithMlKit(bitmap, flow);
     }
 
-    private void onEngineReply(@NonNull Bitmap bitmap, @Nullable Object reply) {
-        if (finished) {
+    private void onEngineReply(@NonNull Bitmap bitmap, @Nullable Object reply, long flow) {
+        if (stale(flow)) {
             bitmap.recycle();
             return;
         }
@@ -758,19 +780,19 @@ public class ScreenOcrService extends Service {
         }
         Object engine = map == null ? null : map.get("engine");
         if (!(engine instanceof String) || ENGINE_SYSTEM_OCR.equals(engine)) {
-            recognizeWithMlKit(bitmap);
+            recognizeWithMlKit(bitmap, flow);
             return;
         }
-        recognizeInDart(bitmap, (String) engine, false);
+        recognizeInDart(bitmap, (String) engine, false, flow);
     }
 
     /** 设备自带 OCR（ML Kit）就地识别。 */
-    private void recognizeWithMlKit(@NonNull Bitmap bitmap) {
+    private void recognizeWithMlKit(@NonNull Bitmap bitmap, long flow) {
         SystemOcrChannel.recognizerFor(language)
                 .process(InputImage.fromBitmap(bitmap, 0))
-                .addOnSuccessListener(text -> showRecognized(bitmap, toLines(text)))
+                .addOnSuccessListener(text -> showRecognized(bitmap, toLines(text), flow))
                 .addOnFailureListener(error -> {
-                    if (finished) {
+                    if (stale(flow)) {
                         bitmap.recycle();
                         return;
                     }
@@ -781,7 +803,7 @@ public class ScreenOcrService extends Service {
                     Log.w(TAG, "text recognition failed", error);
                     if (unavailable) {
                         // BUG-4508：ML Kit 动态模块加载失败时退到本机模型再试。
-                        recognizeInDart(bitmap, ENGINE_LOCAL_MODEL, true);
+                        recognizeInDart(bitmap, ENGINE_LOCAL_MODEL, true, flow);
                         return;
                     }
                     bitmap.recycle();
@@ -796,16 +818,16 @@ public class ScreenOcrService extends Service {
      * {@link #reportMlKitUnavailable}；非重试时 Dart 不在则退回 ML Kit。
      */
     private void recognizeInDart(@NonNull Bitmap bitmap, @NonNull String engine,
-            boolean fallback) {
+            boolean fallback, long flow) {
         try {
             frameEncoder.execute(() -> {
                 byte[] png = encodePng(bitmap);
-                mainHandler.post(() -> sendFrameToDart(bitmap, png, engine, fallback));
+                mainHandler.post(() -> sendFrameToDart(bitmap, png, engine, fallback, flow));
             });
         } catch (RejectedExecutionException e) {
             Log.w(TAG, "frame encoder is shut down", e);
             bitmap.recycle();
-            if (!finished) finishFlow();
+            if (!stale(flow)) finishFlow();
         }
     }
 
@@ -822,59 +844,65 @@ public class ScreenOcrService extends Service {
     }
 
     private void sendFrameToDart(@NonNull Bitmap bitmap, @Nullable byte[] png,
-            @NonNull String engine, boolean fallback) {
-        if (finished) {
+            @NonNull String engine, boolean fallback, long flow) {
+        if (stale(flow)) {
             bitmap.recycle();
             return;
         }
         if (png == null) {
-            onDartUnreachable(bitmap, fallback);
+            onDartUnreachable(bitmap, fallback, flow);
             return;
         }
         boolean sent = FloatingBallChannel.recognizeScreenOcrFrame(png, engine, fallback,
-                new MethodChannel.Result() {
+                flow, new MethodChannel.Result() {
                     @Override
                     public void success(@Nullable Object reply) {
-                        onDartRecognized(bitmap, reply, fallback);
+                        onDartRecognized(bitmap, reply, fallback, flow);
                     }
 
                     @Override
                     public void error(@NonNull String code, @Nullable String message,
                             @Nullable Object details) {
                         Log.w(TAG, "recognizeScreenOcrFrame failed: " + code + " " + message);
-                        onDartUnreachable(bitmap, fallback);
+                        onDartUnreachable(bitmap, fallback, flow);
                     }
 
                     @Override
                     public void notImplemented() {
-                        onDartUnreachable(bitmap, fallback);
+                        onDartUnreachable(bitmap, fallback, flow);
                     }
                 });
-        if (!sent) onDartUnreachable(bitmap, fallback);
+        if (!sent) onDartUnreachable(bitmap, fallback, flow);
     }
 
     /** Dart 不在 / 没回话：首选引擎时退回 ML Kit；ML Kit 失败后的重试则按模型不可用收尾。 */
-    private void onDartUnreachable(@NonNull Bitmap bitmap, boolean fallback) {
-        if (finished) {
+    private void onDartUnreachable(@NonNull Bitmap bitmap, boolean fallback, long flow) {
+        if (stale(flow)) {
             bitmap.recycle();
             return;
         }
         if (fallback) {
             reportMlKitUnavailable(bitmap);
         } else {
-            recognizeWithMlKit(bitmap);
+            recognizeWithMlKit(bitmap, flow);
         }
     }
 
     private void onDartRecognized(@NonNull Bitmap bitmap, @Nullable Object reply,
-            boolean fallback) {
-        if (finished) {
+            boolean fallback, long flow) {
+        if (stale(flow)) {
             bitmap.recycle();
             return;
         }
         Map<?, ?> map = reply instanceof Map ? (Map<?, ?>) reply : null;
         if (map == null) {
-            onDartUnreachable(bitmap, fallback);
+            onDartUnreachable(bitmap, fallback, flow);
+            return;
+        }
+        if (Boolean.TRUE.equals(map.get("cancelled"))) {
+            // Dart 侧这次识别已被取消（BUG-4790）：用户自己取消的，不提示，静默收尾。
+            bitmap.recycle();
+            finishFlow();
             return;
         }
         if (Boolean.TRUE.equals(map.get("unavailable"))) {
@@ -888,14 +916,15 @@ public class ScreenOcrService extends Service {
             finishFlow();
             return;
         }
-        showRecognized(bitmap, ScreenOcrLayout.linesFromWire(map.get("lines")));
+        showRecognized(bitmap, ScreenOcrLayout.linesFromWire(map.get("lines")), flow);
     }
 
     /** 识别出的行 → 选取层；一行都没有就提示并收尾。 */
     private void showRecognized(@NonNull Bitmap bitmap,
-            @NonNull List<ScreenOcrLayout.Line> lines) {
-        // 识别期间流程已被收尾（系统重投空 intent 等）：不能再挂一个没人管的选取层。
-        if (finished) {
+            @NonNull List<ScreenOcrLayout.Line> lines, long flow) {
+        // 识别期间流程已被收尾（系统重投空 intent / 用户在通知上取消等）、或已换成下一次
+        // 流程：不能再挂一个没人管的选取层。
+        if (stale(flow)) {
             bitmap.recycle();
             return;
         }
@@ -905,10 +934,50 @@ public class ScreenOcrService extends Service {
             finishFlow();
             return;
         }
+        // 识别完了：撤掉通知上的取消（选取层有自己的关闭方式）。
+        endRecognition();
         // 框是在这一帧上识别出来的：选取层就画这一帧，框与画面恒对齐。
         frozenFrame = bitmap;
         writeCardFrame(bitmap);
         showSelection(lines);
+    }
+
+    /** 异步回调带回来的流程编号已过期（流程已收尾 / 被取消，或已换成下一次流程）。 */
+    private boolean stale(long flow) {
+        return finished || !recognition.isCurrent(flow);
+    }
+
+    /**
+     * 识别中通知上点了「取消」（BUG-4790）。当前流程正在识别：先让 Dart 放弃这次识别
+     * （Lens 断开请求；本机模型的结果到了也丢掉），再照常收尾——解流程锁、放回悬浮球、
+     * 撤通知。还没停下来的识别晚到的结果带着旧编号，落不进下一次流程。
+     */
+    private void cancelRecognition(long flow) {
+        if (!finished && recognition.takeCancel(flow)) {
+            FloatingBallChannel.cancelScreenOcrRecognition(flow);
+            finishFlow();
+            return;
+        }
+        // 过期的取消（选取层已画出 / 流程早已结束）。服务是被这次点击冷启动的、或已收尾
+        // 只是被这次点击重新 start 起来的：没有活要干就停掉，不留一个空跑的服务。
+        if (recognition.current() == 0 || (finished && keptInstance != this)) stopSelf();
+    }
+
+    /** 识别结束（选取层画出来了）：撤掉识别中的取消通知，保持会话时换回会话通知。 */
+    private void endRecognition() {
+        if (!recognition.isRecognizing()) return;
+        recognition.onRecognitionEnded();
+        if (keepSession && projection != null && virtualDisplay != null) {
+            notifyForeground(buildSessionNotification());
+        } else {
+            cancelScreenOcrNotification();
+        }
+    }
+
+    /** 撤掉本服务的通知（不是前台通知时用；前台通知随 stopForeground / stopSelf 撤）。 */
+    private void cancelScreenOcrNotification() {
+        NotificationManager nm = getSystemService(NotificationManager.class);
+        if (nm != null) nm.cancel(NotificationIds.SCREEN_OCR);
     }
 
     /** ML Kit 模型不可用、本机模型也用不了：提示并拉起系统 OCR 模型配置（BUG-2906）。 */
@@ -1158,6 +1227,7 @@ public class ScreenOcrService extends Service {
     /** 任何出口都走这里：拆选取层、解流程锁、放回悬浮球、停服务。主线程。 */
     private void finishFlow() {
         session.reset();
+        recognition.onRecognitionEnded();
         unwatchLookupToken();
         removeSelectionView();
         releaseFrame();
@@ -1171,6 +1241,8 @@ public class ScreenOcrService extends Service {
             notifyForeground(buildSessionNotification());
             return;
         }
+        // 识别中挂的取消通知不是前台通知，stopSelf 不会替它撤。
+        cancelScreenOcrNotification();
         stopSelf();
     }
 
@@ -1389,6 +1461,32 @@ public class ScreenOcrService extends Service {
                 .setSmallIcon(R.drawable.ic_stat_fushi)
                 .setOngoing(true)
                 .addAction(stopAction)
+                .build();
+    }
+
+    /**
+     * 识别中（BUG-4790）：同样是「正在识别」，多一个「取消」。取消带着本次流程编号，
+     * 点到上一次流程残留的通知不会取消掉此刻的这一次。
+     */
+    private Notification buildRecognizingNotification(long flow) {
+        Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                ? new Notification.Builder(this, NotificationIds.CHANNEL_SCREEN_OCR)
+                : new Notification.Builder(this);
+        Intent cancel = new Intent(this, ScreenOcrService.class)
+                .setAction(ACTION_CANCEL_RECOGNITION)
+                .putExtra(EXTRA_FLOW, flow);
+        PendingIntent cancelIntent = PendingIntent.getService(this, 1, cancel,
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        Notification.Action cancelAction = new Notification.Action.Builder(
+                Icon.createWithResource(this, R.drawable.ic_stat_fushi),
+                label(LABEL_CANCEL, "Cancel"),
+                cancelIntent).build();
+        return builder
+                .setContentTitle(label(LABEL_NOTIFICATION, "Reading text on screen…"))
+                .setSmallIcon(R.drawable.ic_stat_fushi)
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
+                .addAction(cancelAction)
                 .build();
     }
 

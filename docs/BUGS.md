@@ -266,7 +266,7 @@
 | [BUG-4793](bugs/BUG-4793-server-admin-update-config-mutates-before-save.md) | ✅ | ✅ | 服务端 AdminContext.updateConfig 写盘前就换了内存配置：config.yaml 写失败时内存与文件分家，BUG-4763 的档位回滚也因此不触发 |
 | [BUG-4792](bugs/BUG-4792-cross-app-audio-consent-destroy-busy.md) | ✅ | ✅ | 跨应用语音授权页被系统以非 finishing 方式销毁后，start 永远挂着，之后每次开启都回 busy |
 | [BUG-4791](bugs/BUG-4791-cross-app-audio-provider-rpc-main-thread.md) | ✅ | ✅ | 应用外查词取跨应用语音快照时，跨进程 RPC 与约 2.9MB 写盘压在查词窗平台主线程上 |
-| [BUG-4790](bugs/BUG-4790-screen-ocr-dart-recognition-no-cancel.md) | 🚧 | 🚧 | Android 截屏识字交给 Dart 识别期间没有取消出口，识别慢时悬浮球一直藏着 |
+| [BUG-4790](bugs/BUG-4790-screen-ocr-dart-recognition-no-cancel.md) | ✅ | ✅ | Android 截屏识字交给 Dart 识别期间没有取消出口，识别慢时悬浮球一直藏着 |
 | [BUG-4789](bugs/BUG-4789-screen-ocr-engine-destroyed-orphan-dart-reply.md) | ✅ | ✅ | 截屏识字等 Dart 回话时主引擎被销毁，挂起的回话永远不来，流程锁不解、悬浮球一直藏着 |
 | [BUG-4788](bugs/BUG-4788-screen-ocr-lens-consent-desktop-wording-on-android.md) | ✅ | ✅ | Android 截屏识字的 Google Lens 同意框照搬桌面文案，手机上写着「整块显示器」 |
 | [BUG-4787](bugs/BUG-4787-screen-ocr-card-frame-deleted-before-mining.md) | ✅ | ✅ | 截屏识字：查词窗打开后又截了一次屏，Android 定格帧文件被清掉，这张卡静默不带图 |
