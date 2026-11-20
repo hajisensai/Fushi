@@ -390,7 +390,7 @@ void main() {
     expect(nav, isNot(contains('>$nextTitle<')));
   });
 
-  test('BUG-4906：末尾「下一章」正文已写盘、书行（快照）没写上就中断：'
+  test('BUG-4970：末尾「下一章」正文已写盘、书行（快照）没写上就中断：'
       '下次请求按快照判未取、重新取页把快照补齐，之后开书照常补新占位', () async {
     final WebNovelLibrary lib = library();
     final String bookKey = await readPage(

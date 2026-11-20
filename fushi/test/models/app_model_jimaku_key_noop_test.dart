@@ -9,7 +9,7 @@ import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 
 import '../helpers/test_platform_services.dart';
 
-/// BUG-4906：字幕搜索 / 合集面板的「初始 key」不随保存刷新，改过一次 key 之后
+/// BUG-4973：字幕搜索 / 合集面板的「初始 key」不随保存刷新，改过一次 key 之后
 /// 每次搜索都会按**同一个值**调 [AppModel.setJimakuApiKey]。值没变时不得作废
 /// 查字幕 registry（作废 = 下次搜索现建 http client、重读 AJATT 目录）、不得重建
 /// 下载管线运行时。

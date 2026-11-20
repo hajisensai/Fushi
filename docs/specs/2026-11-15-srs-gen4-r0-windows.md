@@ -53,7 +53,7 @@
 | (c) | 迁移途中硬结束 | ✔ 提交前硬结束：旧库字节不变、v3.3.0 照常可用（SRS 层），新版本重开后重新迁移、逐卡一致 | `r0-c-kill2`、`20261120-144625-r0-c1-v330-killed`、`r0-c-resume` |
 | (c0) | 新版本打开过的根，旧版本再开 | 旧版本整个 app 起不来（主库 schema 159 > 146 / 118），SRS 文件不动 | `20261120-124632-r0-c0-old-after-new-open`、b2 |
 | (d) | 文件夹位置三态 | ✔ 只有旧 → 新加入；✔ 两代都有 → 旧版本不动目标；✔ 只有新 → 旧版本不动目标；— 旧版本的提示文字没看到像素 | `D:/fushi-r0/M/d/*.json` |
-| (e) | 备份四个方向 | ✔ 新备份 → v3.3.0 / v3.0.1 拒绝；✔ 旧备份 → 新（合并）按设计要用户确认；✘→✔ 旧备份 → 新（覆盖）卡片 ID 与日志脱钩，复核轮按根因修了（BUG-4906），修后 release 重跑 6/6 卡、12/12 条日志逐条一致；— `.fushisrs` 四向没有自动化入口 | `D:/fushi-r0/M/e1-*.json`、`e2.json`、`e1r-fix-compare.json` |
+| (e) | 备份四个方向 | ✔ 新备份 → v3.3.0 / v3.0.1 拒绝；✔ 旧备份 → 新（合并）按设计要用户确认；✘→✔ 旧备份 → 新（覆盖）卡片 ID 与日志脱钩，复核轮按根因修了（BUG-4989），修后 release 重跑 6/6 卡、12/12 条日志逐条一致；— `.fushisrs` 四向没有自动化入口 | `D:/fushi-r0/M/e1-*.json`、`e2.json`、`e1r-fix-compare.json` |
 
 ### 4.1 (a) 旧版本数据 → 新版本迁移
 
@@ -193,7 +193,7 @@
   12 条 `missing_in`。根因指向旧备份导入（`dispatch.rs` `legacy_backup_import` → `cmd/backup.rs` `land` → `identity.rs`
   `collection_adopt_with` / `adopt_foreign` 的 Bound 分支只写本机 carry 盐，备份的盐（`legacy::salts`）没进 `salt_ix`），带盐的内置 ID 没能换算到规范 ID。
   属 G11-4 / G9（导入 / 身份），第一轮没改。
-  **复核轮已按根因修（BUG-4906，`docs/bugs/BUG-4906-srs-gen4-legacy-backup-replace-drops-backup-salts.md`）**：根因确认在认领结论
+  **复核轮已按根因修（BUG-4989，`docs/bugs/BUG-4989-srs-gen4-legacy-backup-replace-drops-backup-salts.md`）**：根因确认在认领结论
   `bound`（本机 profile 已打开过、空集合、目录名大于备份 uid → `rebind_empty` 换绑）之后只写本机盐；`Bound` 的设计是对方的盐随对方的操作到，
   而协议 3 备份里没有任何 `Salts` 操作。修法：`cmd/backup.rs` `land` 在 `bound` 时由本机声明备份 profile 的盐（`legacy::salts`，已过身份确认），
   再落 `import_backup`。没有改成「`Bound` 一律写调用方给的盐」——那样位置认领 / `.fushisrs` 第 2 版也多写一条本机 `Salts`，实测打破 4 条既有测试

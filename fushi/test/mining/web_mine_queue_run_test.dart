@@ -327,7 +327,7 @@ void main() {
     });
   });
 
-  group('runWebMineQueueRows：重放表面进程死亡（BUG-4906）', () {
+  group('runWebMineQueueRows：重放表面进程死亡（BUG-4983）', () {
     test('重放途中渲染进程死了：在途这一行不标失败、留在待办，其余行不碰，结束本轮', () async {
       final _FakePage page = _FakePage(current: 'A')..surfaceDiesDuringRow = 2;
       final WebMineQueueRowsEnd end = await page.run(<WebMineQueueRow>[

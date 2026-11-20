@@ -6,6 +6,8 @@ import 'package:fushi_core/fushi_core.dart'
     show databaseSnapshotMainFileName, fnv1a32Hex, isDeletableDatabaseSnapshot;
 import 'package:fushi_engine/media/collections/shelf_sort.dart'
     show naturalCompare;
+import 'package:fushi_engine/sync/interconnect_file_box_prune.dart'
+    show InterconnectSyncDataUsage, measureInterconnectSyncData;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/storage/app_paths.dart';
@@ -143,6 +145,11 @@ enum StorageEntryKind {
   /// 临时目录内的本地备份归档聚合项；删除仍走通用文件删除原语。
   backupArchives,
 
+  /// 互联 host 同步数据里的「旧版残留」聚合项（BUG-4991；`paths` = 单个
+  /// `<sync-data>` 目录；删除走 fushi_engine `pruneDeadInterconnectFileBox`，识别口径
+  /// 与扫描侧 `measureInterconnectSyncData` 同源）。
+  interconnectLegacyFileBox,
+
   /// 类目根下的磁盘子项，只读展示（删它就是裸 `Directory.delete`，绕过墓碑/引用护栏）。
   readOnly,
 
@@ -201,6 +208,7 @@ class StorageEntryUsage {
     required this.kind,
     this.externalPaths = const <String>[],
     this.group,
+    this.itemCount = 0,
   });
 
   /// 域内主键（EPUB 书 = bookKey，纯字幕书 = `SrtBooks.uid`，词典 = 词典名，
@@ -228,6 +236,11 @@ class StorageEntryUsage {
   /// 明细分组名（目前只有视频：所属作品 / 合集名）。同组条目在
   /// [StorageCategoryUsage.entries] 里连续排列，UI 在组首插组头；null = 不分组。
   final String? group;
+
+  /// 聚合条目内含的对象个数，UI 拿它翻译标题（目前只有
+  /// [StorageEntryKind.interconnectLegacyFileBox]：旧版残留的书文件夹个数）；
+  /// 其余条目恒 0。
+  final int itemCount;
 }
 
 /// 视频条目的扫描输入（由 UI 层从 `video_books` + 合集成员表取出后传入）。
@@ -615,6 +628,12 @@ String _subtitleOutputLabel(final FileSystemEntity output) {
   return files.isEmpty ? name : files.first;
 }
 
+/// `<support>/sync-data`：互联 host 的 WebDAV 根（`FushiSyncServer.syncDataDir` =
+/// `p.join(<数据根>, 'sync-data')`，数据根即 `AppModel.databaseDirectory` = support 根）。
+/// 在「数据库与内部数据」里不整块显示，按用途拆开（见
+/// `StorageUsageService._interconnectEntries`）。
+const String kInterconnectSyncDataSupportChild = 'sync-data';
+
 /// `<support>/ocr_models`（[StorageCategoryId.ocrModels] 的根；
 /// 各本机模型落在它下面的兄弟目录，见 `MangaOcrLocalModel.modelsDirectory`）。
 const String kOcrModelsSupportChild = 'ocr_models';
@@ -717,7 +736,11 @@ class StorageUsageService {
     Future<bool> Function()? documentsRootIsFushiOwned,
     Future<List<Directory>> Function()? sharedDocumentsRoots,
     StorageIsolateRunner? isolateRunner,
-  }) : _documentsRoot = documentsRoot ?? AppPaths.documentsRootDirectory,
+    Future<InterconnectSyncDataUsage> Function(String syncDataDir)?
+    measureInterconnectSyncDataUsage,
+  }) : _measureSyncData =
+           measureInterconnectSyncDataUsage ?? _measureSyncDataInIsolate,
+       _documentsRoot = documentsRoot ?? AppPaths.documentsRootDirectory,
        _supportRoot = supportRoot ?? AppPaths.supportRootDirectory,
        _cacheRoots = cacheRoots ?? _defaultCacheRoots,
        _documentsRootIsFushiOwned =
@@ -746,6 +769,17 @@ class StorageUsageService {
       : const <Directory>[];
 
   final StorageIsolateRunner _run;
+
+  /// 互联同步数据按用途归类（默认在后台 isolate 跑 fushi_engine
+  /// [measureInterconnectSyncData]）。只在 `<support>/sync-data` 存在时调用。
+  /// 它是 async IO，不走 [_run]（[StorageIsolateRunner] 只收同步计算）；widget 测试
+  /// 的 FakeAsync 区里真 isolate / 异步 IO 都不完成，测试经构造参数注假实现。
+  final Future<InterconnectSyncDataUsage> Function(String syncDataDir)
+  _measureSyncData;
+
+  static Future<InterconnectSyncDataUsage> _measureSyncDataInIsolate(
+    final String syncDataDir,
+  ) => Isolate.run(() => measureInterconnectSyncData(syncDataDir));
 
   /// 多路径求和（isolate 隔离）。
   Future<int> sizeOfPaths(final List<String> paths) =>
@@ -1035,6 +1069,61 @@ class StorageUsageService {
   /// 快照聚合条目的域内主键（UI 用它做忙碌态/去重）。
   static const String kDatabaseSnapshotsEntryId = 'database-snapshots';
 
+  /// 互联同步数据拆出的各条目主键（BUG-4991）。UI 按 id 翻译标题。
+  static const String kInterconnectSharedEntryId = 'interconnect-shared';
+  static const String kInterconnectSrsEntryId = 'interconnect-srs';
+  static const String kInterconnectLegacyEntryId = 'interconnect-legacy';
+  static const String kInterconnectOtherEntryId = 'interconnect-other';
+
+  /// `<support>/sync-data` 按用途拆成的明细（BUG-4991）：
+  /// - 互联客户端共享数据、复习同步：只读，只要目录在就显示（0 也是信息）；
+  /// - 旧版残留：可清理（[StorageEntryKind.interconnectLegacyFileBox]），为 0 不出现；
+  /// - 其余认不出的东西：只读，为 0 不出现。
+  ///
+  /// 四条之和 = `<sync-data>` 整树，类目总量不因拆分少算。
+  static List<StorageEntryUsage> _interconnectEntries(
+    final Directory support,
+    final String syncDataDir,
+    final InterconnectSyncDataUsage usage,
+  ) {
+    final String base =
+        '${p.basename(support.path)}/$kInterconnectSyncDataSupportChild';
+    return <StorageEntryUsage>[
+      StorageEntryUsage(
+        id: kInterconnectSharedEntryId,
+        // label 是路径形状的身份串兜底，显示名由 UI 翻译（`storageEntryTitle`）。
+        label: '$base (shared)',
+        bytes: usage.sharedBytes,
+        paths: <String>[syncDataDir],
+        kind: StorageEntryKind.readOnly,
+      ),
+      StorageEntryUsage(
+        id: kInterconnectSrsEntryId,
+        label: '$base (srs)',
+        bytes: usage.srsBytes,
+        paths: <String>[syncDataDir],
+        kind: StorageEntryKind.readOnly,
+      ),
+      if (usage.deadFileBoxBytes > 0 || usage.deadFileBoxFolders > 0)
+        StorageEntryUsage(
+          id: kInterconnectLegacyEntryId,
+          label: '$base (legacy)',
+          bytes: usage.deadFileBoxBytes,
+          paths: <String>[syncDataDir],
+          kind: StorageEntryKind.interconnectLegacyFileBox,
+          itemCount: usage.deadFileBoxFolders,
+        ),
+      if (usage.otherBytes > 0)
+        StorageEntryUsage(
+          id: kInterconnectOtherEntryId,
+          label: '$base (other)',
+          bytes: usage.otherBytes,
+          paths: <String>[syncDataDir],
+          kind: StorageEntryKind.readOnly,
+        ),
+    ];
+  }
+
   Future<StorageCategoryUsage> _scanDatabase(
     final Directory support,
     final Directory docs,
@@ -1066,6 +1155,20 @@ class StorageUsageService {
     final List<String> snapshotPaths = <String>[
       for (final Map<String, Object> e in snapshots) e['path'] as String,
     ];
+    final String syncDataDir = p.join(
+      support.path,
+      kInterconnectSyncDataSupportChild,
+    );
+    final bool hasSyncData = supportChildNames.contains(
+      kInterconnectSyncDataSupportChild,
+    );
+    final List<StorageEntryUsage> syncDataEntries = hasSyncData
+        ? _interconnectEntries(
+            support,
+            syncDataDir,
+            await _measureSyncData(syncDataDir),
+          )
+        : const <StorageEntryUsage>[];
     final StorageCategoryUsage localState =
         await _scanGeneric(StorageCategoryId.database, <String>[
           for (final String child
@@ -1081,9 +1184,12 @@ class StorageUsageService {
               p.join(support.path, kOcrModelsSupportChild),
               // 字幕生成任务单列一类（[StorageCategoryId.subtitleJobs]）。
               p.join(support.path, kAsrJobsSupportChild),
+              // 互联同步数据按用途拆成下面几条，不再整块一行。
+              syncDataDir,
               ...snapshotPaths,
             },
           ),
+          ...syncDataEntries,
           if (snapshots.isNotEmpty)
             StorageEntryUsage(
               id: kDatabaseSnapshotsEntryId,

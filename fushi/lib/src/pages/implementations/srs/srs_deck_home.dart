@@ -2031,6 +2031,10 @@ List<PopupMenuEntry<_DeckAction>> _deckMenuItems({
       ];
 
 /// 在 [anchorContext] 的位置弹出牌组菜单，选中后交给 [onAction]。
+///
+/// 右键经 [contextMenuInvoker] 同步派发到这里时，菜单贴着按下点弹出（M3 / 桌面右键
+/// 菜单的约定，反馈 Ne6WHI9TYE）；长按 / 菜单键 / 「选项」按钮没有按下坐标，贴在
+/// [anchorContext] 的右端。
 Future<void> _showDeckMenu(
   BuildContext anchorContext, {
   required SrsDeckSummary deck,
@@ -2039,8 +2043,9 @@ Future<void> _showDeckMenu(
   required bool canMoveDown,
   required void Function(SrsDeckSummary deck, _DeckAction action) onAction,
   bool remote = false,
-  Offset? at,
 }) async {
+  // 必须在第一个 await 之前读：只在右键回调同步执行期间非空。
+  final Offset? pointer = activeContextMenuAnchor;
   final RenderBox? box = anchorContext.findRenderObject() as RenderBox?;
   final RenderBox? overlay =
       Navigator.of(anchorContext).overlay?.context.findRenderObject()
@@ -2048,13 +2053,13 @@ Future<void> _showDeckMenu(
   if (box == null || overlay == null || !box.hasSize) return;
   final Rect rowRect =
       box.localToGlobal(Offset.zero, ancestor: overlay) & box.size;
-  final Offset anchor = at ?? rowRect.centerRight;
+  // 全局 UI 缩放下 Overlay 与屏幕坐标不同尺度：按下点经 globalToLocal 换算（BUG-781）。
+  final Rect anchorRect = pointer != null
+      ? overlay.globalToLocal(pointer) & Size.zero
+      : Rect.fromLTWH(rowRect.right, rowRect.top, 0, rowRect.height);
   final _DeckAction? picked = await showFushiMenu<_DeckAction>(
     context: anchorContext,
-    position: RelativeRect.fromRect(
-      Rect.fromLTWH(anchor.dx, rowRect.top, 0, rowRect.height),
-      Offset.zero & overlay.size,
-    ),
+    position: RelativeRect.fromRect(anchorRect, Offset.zero & overlay.size),
     semanticLabel: t.srs_deck_menu,
     items: _deckMenuItems(
       isDefault: isDefault,

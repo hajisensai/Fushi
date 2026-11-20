@@ -27,7 +27,7 @@ import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 ///
 /// [db]：生产判据（[looksLikeImageArchiveInBackground]）把 `.epub` 探测的解压落点
 /// 建在书库根下的 `.tmp-*`、用完即删，否决理由回主 isolate 记诊断日志（与漫画导入框
-/// 同一入口，BUG-4909）；不给才退回系统临时目录。
+/// 同一入口，BUG-5022）；不给才退回系统临时目录。
 Future<Map<String, bool>> probeDroppedImageArchives(
   List<String> paths, {
   Future<bool> Function(String path)? probe,

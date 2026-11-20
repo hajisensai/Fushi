@@ -1043,8 +1043,8 @@ void main() {
     });
   });
 
-  // BUG-4914（manga-12）：暂停 / 取消传不到在途请求与退避；失败不分型一律退避。
-  group('中止立即生效与失败分型（BUG-4914）', () {
+  // BUG-5047（manga-12）：暂停 / 取消传不到在途请求与退避；失败不分型一律退避。
+  group('中止立即生效与失败分型（BUG-5047）', () {
     const Duration guard = Duration(seconds: 5);
 
     Future<void> untilAllPagesInFlight() async {

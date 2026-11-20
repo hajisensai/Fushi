@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:isolate';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_engine/sync/aggregate_merge_service.dart';
@@ -53,6 +54,39 @@ Future<bool> readWebHistorySyncEnabled(FushiDatabase db) =>
 /// sync behaviourally by favorite_sentence_merge_import_test.dart.
 const String _favoriteSentencesPrefKey = 'favorite_sentences';
 
+/// 把一段**纯计算**挪出调用方 isolate 执行（默认 [Isolate.run]）。
+///
+/// 快照折叠 / 写回增量 / 指纹 / 上行编码都是对**整份**统计 + 收藏数据的 O(N log N)
+/// 纯计算（逐条 jsonEncode、排序、逐码元哈希）。在 app 里调用方是 UI isolate
+/// （Android 上与平台线程合并），数据一大、CPU 一慢（墨水屏）就一次跑几秒，直接
+/// 判 ANR（反馈 c2voByEqPq：符号化后主线程栈全在 [AggregateSyncService.
+/// unorderedSnapshotFingerprint] / `_stableHash` / `_JsonStringifier`）。
+/// 传入的 computation 只引用可跨 isolate 发送的纯数据（快照与原始 JSON），绝不
+/// 捕获持有数据库连接的服务实例。
+typedef AggregatePureRunner = Future<R> Function<R>(R Function() computation);
+
+Future<R> _runInBackgroundIsolate<R>(R Function() computation) =>
+    Isolate.run<R>(computation, debugName: 'aggregate-sync-fold');
+
+/// 一轮聚合同步「折叠」步骤的纯计算结果（在 [AggregatePureRunner] 里算好再交回）。
+class AggregateFoldPlan {
+  const AggregateFoldPlan({
+    required this.merged,
+    required this.applyNeeded,
+    this.peerFingerprint,
+  });
+
+  /// 本地快照与全部对端快照折叠后的结果。
+  final AggregateSnapshot merged;
+
+  /// [merged] 相对本地快照是否有写回增量（[AggregateSyncService.localDelta] 非 null）。
+  final bool applyNeeded;
+
+  /// 互联通道：host 快照（按共享许可裁剪后）的 [AggregateSyncService.
+  /// unorderedSnapshotFingerprint]，供 PUT 跳过判据用；云通道为 null。
+  final String? peerFingerprint;
+}
+
 /// Drives the `aggregate` sync dimension over any cloud [SyncAssetStore]
 /// (Google Drive / OneDrive / Dropbox / WebDAV / FTP / SFTP), the TODO-1056
 /// phase-B channel. Statistics and favorites are collection / monotonic
@@ -82,9 +116,14 @@ class AggregateSyncService {
     this.scope = SyncChannelScope.unscoped,
     this.localApplyLock,
     this.peerSnapshotCache,
-  });
+    AggregatePureRunner? pureRunner,
+  }) : _runPure = pureRunner ?? _runInBackgroundIsolate;
 
   final FushiDatabase _db;
+
+  /// 折叠 / 增量 / 指纹 / 上行编码这些整份快照纯计算的执行器（见
+  /// [AggregatePureRunner]）。默认后台 isolate；测试可注入计数包装。
+  final AggregatePureRunner _runPure;
 
   /// 对端快照的本地副本（见 [AggregatePeerSnapshotCache]）。null = 每轮都下载全部
   /// 对端快照（测试 / 无头服务端，那里没有出站云同步）。
@@ -129,16 +168,14 @@ class AggregateSyncService {
     bool shareWebHistory = false,
   }) async {
     if (!shareStats && !shareWebHistory) return false;
-    AggregateSnapshot scoped(AggregateSnapshot s) => s.select(
-      stats: shareStats,
-      favorites: shareStats,
-      webHistory: shareWebHistory,
-    );
 
     // 1) Materialise local state.
-    final AggregateSnapshot localSnapshot = scoped(
-      await materializeLocalSnapshot(),
-    );
+    final AggregateSnapshot localSnapshot = (await materializeLocalSnapshot())
+        .select(
+          stats: shareStats,
+          favorites: shareStats,
+          webHistory: shareWebHistory,
+        );
 
     // 2) Ensure the reserved namespace, list peer snapshots.
     final String ns = await store.ensureNamespace(kSyncAggregateNamespace);
@@ -152,7 +189,6 @@ class AggregateSyncService {
     // 3) Fold every OTHER device's snapshot into the local one. Own asset is
     //    skipped (it is a stale echo of our own state; re-folding it is a no-op
     //    anyway, but skipping saves a download).
-    AggregateSnapshot merged = localSnapshot;
     final List<AssetEntry> peerEntries = <AssetEntry>[
       for (final AssetEntry entry in children)
         if (!entry.isFolder &&
@@ -161,27 +197,34 @@ class AggregateSyncService {
             entry.name != ownLegacyAssetName)
           entry,
     ];
+    final List<Object?> peerJsons = <Object?>[];
     for (final AssetEntry entry in peerEntries) {
-      Object? peerJson;
       try {
-        peerJson = await _readPeerSnapshot(store, entry);
+        peerJsons.add(await _readPeerSnapshot(store, entry));
       } catch (_) {
         // A single unreadable peer snapshot must not abort the sweep; skip it.
         continue;
       }
-      final AggregateSnapshot peer = scoped(
-        AggregateSnapshot.fromJson(peerJson),
-      );
-      merged = mergeSnapshots(merged, peer);
     }
     await peerSnapshotCache?.retainOnly(scope.id, <String>{
       for (final AssetEntry e in peerEntries) e.name,
     });
+    // 折叠 + 写回增量判定是整份快照的纯计算，放后台跑（见 [AggregatePureRunner]）。
+    final AggregateFoldPlan plan = await _planFoldOff(
+      _runPure,
+      local: localSnapshot,
+      peerJsons: peerJsons,
+      stats: shareStats,
+      favorites: shareStats,
+      webHistory: shareWebHistory,
+      fingerprintPeer: false,
+    );
+    final AggregateSnapshot merged = plan.merged;
 
     // 4) Apply the merged result back locally (MAX / union writes; idempotent).
     //    合并结果与本地内容相等（[localDelta] 为 null）时整步跳过：mergeSnapshots
     //    每次都返回新对象，旧的 `identical` 判据恒真，稳态每轮都要整库重写。
-    if (localDelta(merged, localSnapshot) != null) {
+    if (plan.applyNeeded) {
       await _applyMergedLocally(merged);
     }
 
@@ -202,8 +245,10 @@ class AggregateSyncService {
     // 判据同时要求**远端确实还存在**本端那份资产（`children` 里已经列到了，免费）：
     // 只信本地记录的话，远端那份被删掉后本端会永远拒绝重传，peers 再也拿不到本端
     // 的数据。
-    final Map<String, dynamic> payload = outgoing.toJson();
-    final String hash = _stableHash(jsonEncode(payload));
+    final ({Map<String, Object?> payload, String hash}) encoded =
+        await _encodeOutgoingOff(_runPure, outgoing);
+    final Map<String, Object?> payload = encoded.payload;
+    final String hash = encoded.hash;
     final bool ownAssetPresent = children.any(
       (AssetEntry e) => !e.isFolder && e.name == ownAssetName,
     );
@@ -321,17 +366,22 @@ class AggregateSyncService {
 
     // 3) Fold the host snapshot into the local one through the same pure merge
     //    the cloud channel uses (single source of truth; commutative/idempotent).
-    final AggregateSnapshot remote = AggregateSnapshot.fromJson(remoteJson)
-        .select(
-          stats: shareStats,
-          favorites: shareFavorites,
-          webHistory: shareWebHistory,
-        );
-    final AggregateSnapshot merged = mergeSnapshots(localSnapshot, remote);
+    //    折叠、写回增量判定、host 快照指纹都是整份快照的纯计算：放后台跑，UI
+    //    isolate 只等结果（c2voByEqPq：这几步在慢设备上同步跑满 5 秒 = ANR）。
+    final AggregateFoldPlan plan = await _planFoldOff(
+      _runPure,
+      local: localSnapshot,
+      peerJsons: <Object?>[remoteJson],
+      stats: shareStats,
+      favorites: shareFavorites,
+      webHistory: shareWebHistory,
+      fingerprintPeer: true,
+    );
+    final AggregateSnapshot merged = plan.merged;
 
     // 4) Apply the merged result back locally (MAX / union writes; idempotent).
     //    与云通道同一判据：内容相等就不进锁、不重读本地、不写库。
-    if (localDelta(merged, localSnapshot) != null) {
+    if (plan.applyNeeded) {
       await _applyMergedLocally(merged);
     }
 
@@ -344,13 +394,103 @@ class AggregateSyncService {
     // host 刚给的就是这份内容时 PUT 只是让 host 把同一批数据再折一遍（并集 / MAX，
     // 无变化）。比较不计列表顺序：两端数据库查出来的行序天然不同，而折叠结果与
     // 顺序无关（收藏句合并后按时间重排，其余都是按键并集）。
-    final Map<String, Object?> outgoingJson = outgoing.toJson();
-    if (unorderedSnapshotFingerprint(outgoingJson) ==
-        unorderedSnapshotFingerprint(remote.toJson())) {
-      return;
-    }
+    final Map<String, Object?>? outgoingJson = await _outgoingIfChangedOff(
+      _runPure,
+      outgoing,
+      plan.peerFingerprint!,
+    );
+    if (outgoingJson == null) return;
     await pushMerged(outgoingJson);
   }
+
+  /// 折叠步骤的纯计算：把 [peerJsons] 逐份解码、按共享许可裁剪、依次折进 [local]，
+  /// 并判定合并结果相对 [local] 有没有写回增量。[fingerprintPeer] 为 true 时（互联
+  /// 通道，恰一份 host 快照）顺带算出 host 快照的 [unorderedSnapshotFingerprint]。
+  ///
+  /// 只读入参、不碰数据库，可以（也应当）在后台 isolate 里跑。
+  @visibleForTesting
+  static AggregateFoldPlan planFold({
+    required AggregateSnapshot local,
+    required List<Object?> peerJsons,
+    required bool stats,
+    required bool favorites,
+    required bool webHistory,
+    bool fingerprintPeer = false,
+  }) {
+    assert(!fingerprintPeer || peerJsons.length == 1);
+    AggregateSnapshot merged = local;
+    String? peerFingerprint;
+    for (final Object? json in peerJsons) {
+      final AggregateSnapshot peer = AggregateSnapshot.fromJson(
+        json,
+      ).select(stats: stats, favorites: favorites, webHistory: webHistory);
+      if (fingerprintPeer) {
+        peerFingerprint = unorderedSnapshotFingerprint(peer.toJson());
+      }
+      merged = mergeSnapshots(merged, peer);
+    }
+    return AggregateFoldPlan(
+      merged: merged,
+      applyNeeded: localDelta(merged, local) != null,
+      peerFingerprint: peerFingerprint,
+    );
+  }
+
+  /// 云通道上行的纯计算：快照编码 + 内容哈希（「没变就不重传」的判据）。
+  @visibleForTesting
+  static ({Map<String, Object?> payload, String hash}) encodeOutgoing(
+    AggregateSnapshot outgoing,
+  ) {
+    final Map<String, Object?> payload = outgoing.toJson();
+    return (payload: payload, hash: _stableHash(jsonEncode(payload)));
+  }
+
+  /// 互联通道上行的纯计算：[outgoing] 与 host 刚给的内容（指纹 [peerFingerprint]，
+  /// 不计列表顺序）相同就返回 null（不 PUT），否则返回要 PUT 的 JSON。
+  @visibleForTesting
+  static Map<String, Object?>? liveOutgoingIfChanged(
+    AggregateSnapshot outgoing,
+    String peerFingerprint,
+  ) {
+    final Map<String, Object?> json = outgoing.toJson();
+    return unorderedSnapshotFingerprint(json) == peerFingerprint ? null : json;
+  }
+
+  // 下面三个包装刻意写成 static：闭包只捕获参数里的纯数据。写在实例方法里的闭包
+  // 与同一作用域的其它闭包共用上下文，可能把持有数据库连接的 `this` / 传输层对象
+  // 一起带进 isolate 消息（发不过去，或白白深拷贝）。
+  static Future<AggregateFoldPlan> _planFoldOff(
+    AggregatePureRunner run, {
+    required AggregateSnapshot local,
+    required List<Object?> peerJsons,
+    required bool stats,
+    required bool favorites,
+    required bool webHistory,
+    required bool fingerprintPeer,
+  }) => run<AggregateFoldPlan>(
+    () => planFold(
+      local: local,
+      peerJsons: peerJsons,
+      stats: stats,
+      favorites: favorites,
+      webHistory: webHistory,
+      fingerprintPeer: fingerprintPeer,
+    ),
+  );
+
+  static Future<({Map<String, Object?> payload, String hash})>
+  _encodeOutgoingOff(AggregatePureRunner run, AggregateSnapshot outgoing) =>
+      run<({Map<String, Object?> payload, String hash})>(
+        () => encodeOutgoing(outgoing),
+      );
+
+  static Future<Map<String, Object?>?> _outgoingIfChangedOff(
+    AggregatePureRunner run,
+    AggregateSnapshot outgoing,
+    String peerFingerprint,
+  ) => run<Map<String, Object?>?>(
+    () => liveOutgoingIfChanged(outgoing, peerFingerprint),
+  );
 
   /// 与列表顺序无关的快照内容指纹：顶层每个列表的元素各自编码后排序再拼接。
   /// 两份快照指纹相同 ⇔ 每个家族的记录集合（含重复次数）逐条相同。

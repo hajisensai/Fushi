@@ -1,4 +1,4 @@
-// BUG-4907：Plex 连接探测（登录挑线路、请求失败后自动换线路）核对
+// BUG-4997：Plex 连接探测（登录挑线路、请求失败后自动换线路）核对
 // machineIdentifier 之前就把 X-Plex-Token 发给了被探测地址。修复后 `/identity`
 // 不带凭据，核对通过、被选为当前线路的地址才会收到带 token 的请求。
 // 假 PMS 走 MockClient：按 origin 决定「连不上 / 答成哪台服务器」，并记下每个

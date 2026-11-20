@@ -255,6 +255,58 @@ void main() {
     );
   });
 
+  testWidgets('BUG-4921：续播行写服务器给的真实集号，不拿列表下标冒充；缺号不写集号', (
+    WidgetTester tester,
+  ) async {
+    useTallView(tester);
+    MediaServerItem episode(String id, int? number, {bool played = false}) =>
+        MediaServerItem(
+          id: id,
+          name: 'Episode $id',
+          type: MediaServerItemType.episode,
+          seriesId: 's1',
+          seriesName: 'Series s1',
+          seasonId: 'sea1',
+          seasonNumber: 1,
+          episodeNumber: number,
+          played: played,
+        );
+    browser.seasons['s1'] = <MediaServerItem>[seasonOne];
+    // 服务器上这一季只有第 151、152 集（前面的没入库）；151 看完 → 续播 152。
+    browser.episodes['s1|sea1'] = <MediaServerItem>[
+      episode('e151', 151, played: true),
+      episode('e152', 152),
+    ];
+    await tester.pumpWidget(harness(series));
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining(t.collection_continue_progress(n: 152)),
+      findsWidgets,
+    );
+    expect(
+      find.textContaining(t.collection_continue_progress(n: 2)),
+      findsNothing,
+      reason: '列表下标 +1 = 2 不是集号',
+    );
+
+    // 续播那集服务器没给集号 → 只写集名，不编一个集号。
+    browser.episodes['s1|sea1'] = <MediaServerItem>[
+      episode('e151', 151, played: true),
+      episode('nonum', null),
+    ];
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(harness(series));
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining('${t.video_continue_watching}  ·  Episode nonum'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining(t.collection_continue_progress(n: 2)),
+      findsNothing,
+    );
+  });
+
   testWidgets('电影详情：简介 + 播放，播放直接出请求且不带同伴', (WidgetTester tester) async {
     useTallView(tester);
     const MediaServerItem movie = MediaServerItem(

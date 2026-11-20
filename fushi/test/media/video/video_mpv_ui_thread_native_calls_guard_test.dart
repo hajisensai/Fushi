@@ -175,6 +175,49 @@ void main() {
     );
   });
 
+  // BUG-4941：mpv_terminate_destroy 要等 mpv 内核线程退出（client.c 里
+  // mp_dispatch_lock 的 cond_wait + mp_thread_join），内核卡在打不开的流上时会一直
+  // 挡住调用线程。Android 上 UI isolate 与平台主线程合并，dispose 5 秒后在 UI
+  // isolate 里同步调它，反馈 wcOJwX-sHh 的两次 ANR 主线程栈就停在这里
+  // （pthread_join / pthread_cond_wait，同一个 Dart 调用点）。只许在辅助 isolate
+  // 的顶层函数里调，且 dispose 要经 compute 把它送过去。
+  test('media_kit patch destroys the mpv handle off the UI thread', () {
+    final String source = maskComments(
+      File(
+        '../ci/patches/hosted/media_kit-1.2.6/lib/src/player/native/player/real.dart',
+      ).readAsStringSync(),
+    );
+    final int helper = source.indexOf('void _terminateDestroy(');
+    expect(
+      helper,
+      isNonNegative,
+      reason: '补丁里找不到辅助 isolate 的 _terminateDestroy',
+    );
+    final int helperEnd = source.indexOf('\n}\n', helper);
+    const String call = 'mpv.mpv_terminate_destroy(';
+    int at = source.indexOf(call);
+    expect(at, isNonNegative, reason: '补丁里找不到 $call');
+    while (at >= 0) {
+      expect(
+        at > helper && at < helperEnd,
+        isTrue,
+        reason: '$call 会阻塞到 mpv 内核线程退出，只能经 compute 在辅助 isolate 里调',
+      );
+      at = source.indexOf(call, at + 1);
+    }
+
+    final int d = source.indexOf('Future<void> dispose(');
+    expect(d, isNonNegative);
+    final String dispose = source.substring(d, source.indexOf('\n  }\n', d));
+    expect(dispose, contains('compute('));
+    expect(dispose, contains('_terminateDestroy,'));
+    // 销毁仍须排在辅助 isolate 上的钩子放行 / 截帧之后。
+    expect(
+      dispose.indexOf('_offThreadNativeCalls'),
+      lessThan(dispose.indexOf('_terminateDestroy,')),
+    );
+  });
+
   // 暂停 OCR 截帧不得占 Player 串行锁：持锁期间 play() / pause() 全排队，开着暂停识别
   // 时按继续播放要等截帧完才响应。截帧也不得编 PNG（#3828 测量：1080p 纯 Dart 编码约
   // 0.9 s，编码 + 解码占整条识别链约 95%）：原始像素直接交 OCR 引擎。不持锁
@@ -223,7 +266,7 @@ void main() {
     expect(screenshot, contains('_offThreadNativeCalls.remove('));
   });
 
-  // BUG-4910：持锁的截帧（制卡）只许锁住取原始帧，JPEG / PNG 编码在锁外跑，否则
+  // BUG-5027：持锁的截帧（制卡）只许锁住取原始帧，JPEG / PNG 编码在锁外跑，否则
   // 「制卡后立刻续播」的 play() 要等几百毫秒的纯 Dart 编码。行为测试在
   // `test/third_party/media_kit_screenshot_lock_test.dart`（要真 libmpv，CI 跳过），
   // 这里钉住结构，CI 上也有人看着。

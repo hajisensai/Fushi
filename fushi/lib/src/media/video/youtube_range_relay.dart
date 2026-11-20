@@ -5,6 +5,7 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/net/loopback_relay_slot.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 
 /// 本地有界分块中继：把 googlevideo 「只接受有界 `Range`」的直链翻成普通可 seek 的
@@ -41,7 +42,7 @@ import 'package:fushi_engine/utils/net/app_http.dart';
 /// 中继只在交给播放器 / ffmpeg 的边上套（[UrlStreamVideoClient.remoteVideoStreamUrls]、
 /// 画质切换、批量制卡）；[YoutubeStreamCache] 与 liveness 探测继续持有原始 URL——本地
 /// 端口随进程变，登记表也只活在进程内。
-class YoutubeRangeRelay {
+class YoutubeRangeRelay implements LoopbackRelay {
   YoutubeRangeRelay._(this._server);
 
   /// 每次对上游的有界分块大小。googlevideo 对单个区间还有**上限**：真机探针同一 URL
@@ -50,24 +51,15 @@ class YoutubeRangeRelay {
   /// keep-alive 复用，开销可忽略。
   static const int chunkBytes = 2 * 1024 * 1024;
 
-  static Future<YoutubeRangeRelay>? _shared;
+  static final LoopbackRelaySlot<YoutubeRangeRelay> _shared =
+      LoopbackRelaySlot<YoutubeRangeRelay>(
+        start: start,
+        log: (String message) => debugPrint('[youtube-relay] $message'),
+      );
 
   /// 进程内单例。监听 socket 死了（移动端挂起后被系统回收）就另起一个：与
-  /// `AppNativeProxy` 的 `_liveProxy` 同一口径，绝不把失败的 Future 缓存成终身答案。
-  static Future<YoutubeRangeRelay> instance() async {
-    final Future<YoutubeRangeRelay>? cached = _shared;
-    if (cached != null) {
-      try {
-        final YoutubeRangeRelay relay = await cached;
-        if (relay.isRunning) return relay;
-      } on Object catch (error) {
-        debugPrint('[youtube-relay] restarting after $error');
-      }
-    }
-    final Future<YoutubeRangeRelay> started = start();
-    _shared = started;
-    return started;
-  }
+  /// `AppNativeProxy` 同用 [LoopbackRelaySlot]，交出前真连探活，失败的 Future 不缓存。
+  static Future<YoutubeRangeRelay> instance() => _shared.acquire();
 
   /// 起一个绑定 loopback 随机端口的中继（测试直接调；生产走 [instance]）。
   static Future<YoutubeRangeRelay> start() async {
@@ -103,8 +95,10 @@ class YoutubeRangeRelay {
   final HttpClient _upstream = createAppHttpClient()..autoUncompress = false;
   bool _closed = false;
 
+  @override
   bool get isRunning => !_closed;
 
+  @override
   int get port => _server.port;
 
   /// 登记一条上游流，返回交给播放内核的本地地址。同一 URL 重复登记复用同一 token。
@@ -166,6 +160,7 @@ class YoutubeRangeRelay {
     path: '/yt/$token',
   );
 
+  @override
   Future<void> close() async {
     _closed = true;
     _upstream.close(force: true);

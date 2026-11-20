@@ -554,7 +554,7 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     final MihonProxyPolicyServer proxyPolicy =
         await MihonProxyPolicyServer.start(token);
     _proxyPolicy = proxyPolicy;
-    // JVM 的临时目录归宿主管、随这个进程退出删掉（BUG-4914）：NanoHTTPD 每个请求体
+    // JVM 的临时目录归宿主管、随这个进程退出删掉（BUG-5046）：NanoHTTPD 每个请求体
     // 一个删不掉的临时文件、强杀后残留的扩展 jar，以前都落在系统临时目录里永不回收。
     final MihonSidecarTempDir tempDir = await MihonSidecarTempDir.create(
       dataDirectory,

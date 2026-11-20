@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:test/test.dart';
 import 'package:path/path.dart' as p;
 
-/// 守卫（BUG-4906）：预编译原生库的戳记 / 缓存键必须覆盖 crate 经 `#[path = ...]`
+/// 守卫（BUG-4988）：预编译原生库的戳记 / 缓存键必须覆盖 crate 经 `#[path = ...]`
 /// 编进来的 crate 外源码。
 ///
 /// 洞的形状：`tool/native_libs.ps1` 与 dist worker 的键只哈希 `native/<crate>` 目录，
