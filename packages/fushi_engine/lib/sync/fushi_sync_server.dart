@@ -667,6 +667,15 @@ class FushiSyncServer {
   /// （释放流票 / TTL / 上限淘汰 / 吊销）时连同它的段一起清掉。
   final TranscodeSegmentCache _transcodeSegments = TranscodeSegmentCache();
 
+  /// 在途的 host 预取（转码 HLS 的「下一段」），按签发它的流 token 分组；预取结束
+  /// （成功 / 失败 / 取消）即移出。seek 走远时作废没人等的旧预取，释放流票时连同
+  /// 已被前台请求合流的一起取消。
+  final Map<String, List<_TranscodePrefetch>> _transcodePrefetches =
+      <String, List<_TranscodePrefetch>>{};
+
+  /// 在途预取的完成信号（测试等它们收尾用）。
+  final Set<Future<void>> _transcodePrefetchRuns = <Future<void>>{};
+
   /// 源文件平均码率（bps）的探测缓存，键 = 路径 + 大小 + 修改时间（文件被替换即
   /// 失效）。`/streamurl` 下发给 client 的「自动」档判据用，ffprobe 每个文件只跑一次。
   final Map<String, int?> _sourceBitrateCache = <String, int?>{};
@@ -1190,6 +1199,9 @@ class FushiSyncServer {
     await _blurayClipRelays.closeAll();
     _discShares.clear();
     _exportCache.dispose();
+    for (final String stream in _transcodePrefetches.keys.toList()) {
+      _cancelTranscodePrefetches(stream, (_TranscodePrefetch _) => true);
+    }
     _transcodeSegments.clear();
     // 漫画 P3：host 停机时中止在跑的 OCR 任务（页边界停，断点缓存保留）。
     await _mangaOcrJobs?.disposeAll();
@@ -1752,6 +1764,18 @@ class FushiSyncServer {
   /// video-34 测试钩子：当前缓存的转码分段数（验证 token 作废时段随之清掉）。
   @visibleForTesting
   int get cachedTranscodeSegmentCount => _transcodeSegments.length;
+
+  /// 测试钩子：当前在途的 host 预取数。
+  @visibleForTesting
+  int get pendingTranscodePrefetchCount => _transcodePrefetches.values.fold(
+    0,
+    (int sum, List<_TranscodePrefetch> l) => sum + l.length,
+  );
+
+  /// 测试钩子：等此刻在途的 host 预取全部收尾（成功 / 失败 / 取消都算）。
+  @visibleForTesting
+  Future<void> transcodePrefetchesSettled() =>
+      Future.wait<void>(_transcodePrefetchRuns.toList());
 
   /// BUG-908(a) 测试钩子：当前驻留的音频 token 数（验证 cap 逐出行为）。
   @visibleForTesting
