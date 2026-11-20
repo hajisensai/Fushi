@@ -53,6 +53,7 @@ import 'package:fushi/src/media/music/lyrics/lyrics_candidate_scoring.dart'
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_sources.dart'
     show pickCdgCompanion;
+import 'package:fushi/src/media/music/music_clip_gain.dart';
 import 'package:fushi/src/media/music/music_clip_source.dart';
 import 'package:fushi/src/media/music/music_mining_origin.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
@@ -252,6 +253,7 @@ typedef MusicLyricsClipExtractor =
       required String outputPath,
       required int audioChannels,
       required String audioBitrate,
+      required double gainDb,
       required void Function(String summary) onFailure,
     });
 
@@ -263,6 +265,7 @@ Future<String?> _ffmpegClip({
   required String outputPath,
   required int audioChannels,
   required String audioBitrate,
+  required double gainDb,
   required void Function(String summary) onFailure,
 }) => TtsChannel.instance.extractAudioSegment(
   inputPath: inputPath,
@@ -273,6 +276,7 @@ Future<String?> _ffmpegClip({
   audioBitrate: audioBitrate,
   onFailure: onFailure,
   httpHeaders: httpHeaders,
+  gainDb: gainDb,
 );
 
 @visibleForTesting
@@ -282,6 +286,12 @@ MusicLyricsClipExtractor musicLyricsClipExtractor = _ffmpegClip;
 /// widget 测试注入替身。
 @visibleForTesting
 MusicPluginStreamResolver? musicLyricsClipPluginResolver;
+
+/// 制卡片段缺增益数据时的响度测量（缺省 [measureMusicClipLoudness] 跑 FFmpeg
+/// `ebur128`）；widget 测试注入替身。
+@visibleForTesting
+MusicClipLoudnessMeasurer musicLyricsClipLoudnessMeasurer =
+    measureMusicClipLoudness;
 
 /// 制卡截音频前远端流的物化（null = [materializeMusicClipSource] 的缺省 range 分片下载）；
 /// widget 测试注入替身。
@@ -992,6 +1002,16 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
             message: reason,
           );
         }
+        // 按播放时听到的响度截（issue #3405）：与播放同一份 ReplayGain，缺数据时测这一段。
+        final double gainDb = await resolveMusicClipGainDb(
+          item: item,
+          settings: appModel.musicPlayerEngine.currentSettings,
+          inputPath: cutSource.inputPath,
+          httpHeaders: cutSource.httpHeaders,
+          startMs: clip.startMs,
+          endMs: clip.endMs,
+          measurer: musicLyricsClipLoudnessMeasurer,
+        );
         String? failure;
         audioPath = await musicLyricsClipExtractor(
           inputPath: cutSource.inputPath,
@@ -1004,6 +1024,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           ),
           audioChannels: compression.audioChannels,
           audioBitrate: compression.audioBitrate,
+          gainDb: gainDb,
           onFailure: (String summary) => failure ??= summary,
         );
         if (audioPath == null) {

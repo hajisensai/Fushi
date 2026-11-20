@@ -241,6 +241,55 @@ void main() {
   });
 
   // TTS 倍速（查词 / 制卡 TTS 兜底）：合成出的整段短音频变速不变调。
+  // issue #3405：歌曲制卡按播放响度截，片段整体增益走 `-af volume=…dB`。
+  group('buildFfmpegVolumeFilter / gainDb', () {
+    test('增益写成两位小数的 dB；null / 非有限 / ≈0 不加滤镜', () {
+      expect(buildFfmpegVolumeFilter(-7.5), 'volume=-7.50dB');
+      expect(buildFfmpegVolumeFilter(3.456), 'volume=3.46dB');
+      expect(buildFfmpegVolumeFilter(null), isNull);
+      expect(buildFfmpegVolumeFilter(0), isNull);
+      expect(buildFfmpegVolumeFilter(0.001), isNull);
+      expect(buildFfmpegVolumeFilter(double.nan), isNull);
+      expect(buildFfmpegVolumeFilter(double.negativeInfinity), isNull);
+    });
+
+    test('滤镜链：中置声道 → 变速 → 增益', () {
+      expect(
+        buildFfmpegSentenceAudioFilter(
+          tempo: 1.5,
+          frontCenterOnly: true,
+          gainDb: -6,
+        ),
+        'pan=mono|c0=FC,atempo=1.500,volume=-6.00dB',
+      );
+      expect(buildFfmpegSentenceAudioFilter(gainDb: -6), 'volume=-6.00dB');
+    });
+
+    test('clip 参数在编码器前带 -af volume；gainDb null / 0 与不传逐字节相同', () {
+      List<String> clip({double? gainDb}) => buildFfmpegClipArgs(
+        inputPath: '/a/song.flac',
+        startMs: 3500,
+        endMs: 8500,
+        outputPath: '/a/out.aac',
+        gainDb: gainDb,
+      );
+      final List<String> args = clip(gainDb: -9.25);
+      final int af = args.indexOf('-af');
+      expect(af, greaterThan(args.indexOf('-i')));
+      expect(args[af + 1], 'volume=-9.25dB');
+      expect(af, lessThan(args.indexOf('-c:a')));
+      final List<String> base = buildFfmpegClipArgs(
+        inputPath: '/a/song.flac',
+        startMs: 3500,
+        endMs: 8500,
+        outputPath: '/a/out.aac',
+      );
+      expect(clip(), base);
+      expect(clip(gainDb: 0), base);
+      expect(base, isNot(contains('-af')));
+    });
+  });
+
   group('buildFfmpegRetempoArgs', () {
     test('1.0 → null（调用方保留原文件，不跑 ffmpeg）', () {
       expect(

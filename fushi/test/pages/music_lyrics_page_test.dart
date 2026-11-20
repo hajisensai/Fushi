@@ -17,6 +17,8 @@ import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_lyrics_view.dart';
 import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_live.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
+import 'package:fushi/src/media/music/music_clip_gain.dart';
+import 'package:fushi/src/media/music/music_loudness_scanner.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_session.dart';
@@ -310,6 +312,14 @@ void main() {
   }
 
   setUp(() async {
+    // 用例不起真 FFmpeg 测响度：缺省测不出（片段 0 dB），要测的用例自己换替身。
+    musicLyricsClipLoudnessMeasurer =
+        ({
+          required String inputPath,
+          required Map<String, String> httpHeaders,
+          required int startMs,
+          required int endMs,
+        }) async => null;
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     dir = Directory.systemTemp.createTempSync('fushi_lyrics_page_');
     File(
@@ -354,6 +364,7 @@ void main() {
   tearDown(() async {
     musicSubtitleAsrSupported = asrGate;
     musicLyricsClipExtractor = ffmpegClip;
+    musicLyricsClipLoudnessMeasurer = measureMusicClipLoudness;
     await db.close();
     dir.deleteSync(recursive: true);
   });
@@ -564,8 +575,24 @@ void main() {
   });
 
   testWidgets('长按查词：查行内起点文本、按设置暂停；制卡带音乐出处与行时间窗', (WidgetTester tester) async {
-    final List<({String input, int startMs, int endMs})> clips =
+    final List<({String input, int startMs, int endMs, double gainDb})> clips =
+        <({String input, int startMs, int endMs, double gainDb})>[];
+    // 曲目没有 ReplayGain 数据（ReplayGain 默认开）：测这一段的响度，按播放响度截（#3405）。
+    final List<({String input, int startMs, int endMs})> measured =
         <({String input, int startMs, int endMs})>[];
+    musicLyricsClipLoudnessMeasurer =
+        ({
+          required String inputPath,
+          required Map<String, String> httpHeaders,
+          required int startMs,
+          required int endMs,
+        }) async {
+          measured.add((input: inputPath, startMs: startMs, endMs: endMs));
+          return const MusicLoudnessMeasurement(
+            integratedLufs: -9,
+            truePeakDbtp: -0.5,
+          );
+        };
     musicLyricsClipExtractor =
         ({
           required String inputPath,
@@ -575,9 +602,15 @@ void main() {
           required String outputPath,
           required int audioChannels,
           required String audioBitrate,
+          required double gainDb,
           required void Function(String summary) onFailure,
         }) async {
-          clips.add((input: inputPath, startMs: startMs, endMs: endMs));
+          clips.add((
+            input: inputPath,
+            startMs: startMs,
+            endMs: endMs,
+            gainDb: gainDb,
+          ));
           expect(httpHeaders, isEmpty, reason: '本机文件不带请求头');
           File(outputPath).writeAsBytesSync(<int>[1, 2, 3]);
           return outputPath;
@@ -614,6 +647,16 @@ void main() {
     expect(clips.single.input, item().path, reason: '本机文件原样交给 ffmpeg');
     expect(clips.single.startMs, 3500, reason: '行 [4 s, 8 s) 前后各扩 0.5 s');
     expect(clips.single.endMs, 8500);
+    expect(measured.single, (
+      input: item().path,
+      startMs: 3500,
+      endMs: 8500,
+    ), reason: '测的是要写进卡的同一段');
+    expect(
+      clips.single.gainDb,
+      closeTo(-9, 1e-9),
+      reason: '-9 LUFS 归一到 -18 LUFS：片段压 9 dB',
+    );
     final AnkiMiningContext ctx = anki.mined.single;
     expect(ctx.sentence, '沈むように');
     expect(ctx.sentenceAudioPath, isNotNull);
@@ -654,6 +697,7 @@ void main() {
           required String outputPath,
           required int audioChannels,
           required String audioBitrate,
+          required double gainDb,
           required void Function(String summary) onFailure,
         }) async {
           clips.add((startMs: startMs, endMs: endMs));
