@@ -1429,6 +1429,10 @@ JSON.stringify((function(){
   // 解决桌面 WebView2 不触发 touch 导致下滑关闭失效。
   static const String _topPullReleaseJs = kPopupTopPullReleaseJs;
 
+  // BUG-4925：选区变成新的非空选区时上报，宿主冒泡 [PopupSelectionChangedNotification]
+  // 让正文横滑检测器作废这一划（拖选区柄不再被当成滑动关闭）。
+  static const String _selectionChangeReportJs = kPopupSelectionChangeReportJs;
+
   // TODO-1152：内容渲染完成后逼一帧合成的「表面重绘 nudge」JS。put_Bounds 增大后
   // WebView2 已按新视口重排/重栅格，但内容随即 idle、compositor 不再产帧，宿主 WGC
   // 帧池（尺寸已随 setSurfaceSize 重建为全高）采不到新暴露下半区 → 下半屏黑。改 opacity
@@ -3157,6 +3161,23 @@ JSON.stringify((function(){
         );
 
         controller.addJavaScriptHandler(
+          handlerName: 'popupSelectionChanged',
+          callback: (_) {
+            return _guardJsBridge<Object?>(
+              'DictPopupWebview.popupSelectionChanged',
+              null,
+              ErrorLogService.instance,
+              () {
+                if (mounted) {
+                  const PopupSelectionChangedNotification().dispatch(context);
+                }
+                return null;
+              },
+            );
+          },
+        );
+
+        controller.addJavaScriptHandler(
           handlerName: 'topPullReleased',
           callback: (_) {
             return _guardJsBridge<Object?>(
@@ -4028,6 +4049,7 @@ JSON.stringify((function(){
         // has already defined window.fushiSelection by load-stop). It stays
         // dormant until the reader hands it the cursor on lookup.
         controller.evaluateJavascript(source: _topPullReleaseJs);
+        controller.evaluateJavascript(source: _selectionChangeReportJs);
         // TODO-1353: 装一次 Ctrl+滚轮缩放监听（幂等 guard；warm 热槽也只装一次）。
         controller.evaluateJavascript(source: _zoomWheelJs);
         controller.evaluateJavascript(
