@@ -13789,6 +13789,7 @@
   "web_video_mine_auto_unavailable": "Couldn't record card audio silently (needs Windows 11; see the error log), so auto card creation was skipped until restart",
   "web_video_mine_background": "Making the card in the background (cut straight from the YouTube stream)",
   "web_video_mine_queue_empty": "Очередь карточек пуста",
+  "web_video_mine_queue_errored": "Card creation stopped on an error (see the error log): $ok done, $failed failed",
   "web_video_mine_queue_finished": "Карточек создано: $ok, ошибок: $failed",
   "web_video_mine_queue_run": "Создать карточки из очереди",
   "web_video_mine_queue_running": "Создание карточек $done/$total…",

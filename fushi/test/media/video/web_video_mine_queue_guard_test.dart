@@ -72,6 +72,12 @@ void main() {
       final int finish = run.lastIndexOf('_finishMining(');
       expect(finish, greaterThan(round));
       expect(run.substring(finish), contains('WebMineAutoFinished('));
+      // BUG-4911：出错中止（准备步骤抛出 / 一行抛出 / 表面死亡）要带进结果，否则提示
+      // 仍是「已制卡 0，失败 0」。
+      expect(
+        compactCode(run.substring(finish)),
+        contains('errored:webMineRoundEndedOnError(rowsEnd),'),
+      );
       // 「无条件」= 这次调用是方法体顶层的语句，没有被 if (...) { } 之类的块包住
       // （包进一个只在正常跑完时才进的分支，BUG-4829 就原样回来了）。
       final String finishLine = run.substring(
@@ -183,9 +189,7 @@ void main() {
       expect(code, contains('flushBeforeRebuild:_recoverFromProcessGone,'));
       expect(code, contains('WebUri(_surfaceUrl??row.videoPath)'));
       final String recover = compactCode(
-        maskComments(
-          methodBody(page, 'Future<void> _recoverFromProcessGone('),
-        ),
+        maskComments(methodBody(page, 'Future<void> _recoverFromProcessGone(')),
       );
       for (final String stale in <String>[
         '_web=null;',

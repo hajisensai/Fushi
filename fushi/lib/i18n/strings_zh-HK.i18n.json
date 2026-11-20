@@ -13789,6 +13789,7 @@
   "web_video_mine_auto_unavailable": "Couldn't record card audio silently (needs Windows 11; see the error log), so auto card creation was skipped until restart",
   "web_video_mine_background": "正在背景製卡（直接從 YouTube 影片串流擷取）",
   "web_video_mine_queue_empty": "佇列中沒有卡片",
+  "web_video_mine_queue_errored": "Card creation stopped on an error (see the error log): $ok done, $failed failed",
   "web_video_mine_queue_finished": "製卡完成：成功 $ok，失敗 $failed",
   "web_video_mine_queue_run": "製作佇列中的卡片",
   "web_video_mine_queue_running": "製卡中 $done/$total…",

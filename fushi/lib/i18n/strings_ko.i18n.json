@@ -13789,6 +13789,7 @@
   "web_video_mine_auto_unavailable": "Couldn't record card audio silently (needs Windows 11; see the error log), so auto card creation was skipped until restart",
   "web_video_mine_background": "Making the card in the background (cut straight from the YouTube stream)",
   "web_video_mine_queue_empty": "대기 중인 카드가 없습니다",
+  "web_video_mine_queue_errored": "Card creation stopped on an error (see the error log): $ok done, $failed failed",
   "web_video_mine_queue_finished": "카드 만들기 완료: 성공 $ok, 실패 $failed",
   "web_video_mine_queue_run": "대기 중인 카드 만들기",
   "web_video_mine_queue_running": "카드 만드는 중 $done/$total…",

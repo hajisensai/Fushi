@@ -13789,6 +13789,7 @@
   "web_video_mine_auto_unavailable": "无法静音录制卡片音频（需要 Windows 11，详见错误日志），本次运行不再空闲自动制卡",
   "web_video_mine_background": "正在后台制卡（直接从 YouTube 视频流截取）",
   "web_video_mine_queue_empty": "制卡队列为空",
+  "web_video_mine_queue_errored": "制卡出错中止（详见错误日志）：成功 $ok，失败 $failed",
   "web_video_mine_queue_finished": "制卡完成：成功 $ok，失败 $failed",
   "web_video_mine_queue_run": "制作队列中的卡片",
   "web_video_mine_queue_running": "制卡中 $done/$total…",

@@ -63,6 +63,14 @@ enum WebMineQueueRowsEnd {
   surfaceLost,
 }
 
+/// 一轮是不是**出错中止**的：[end] 为 null（准备步骤或编排本身抛出，[runWebMineQueueRows]
+/// 根本没跑完）、某一行抛出、或重放表面死了。这三种都不是「跑完了」也不是「让位」：
+/// 计数只反映出错前处理掉的行（准备步骤抛出时就是 0 / 0），剩下的行原样留在待办。
+bool webMineRoundEndedOnError(WebMineQueueRowsEnd? end) =>
+    end == null ||
+    end == WebMineQueueRowsEnd.rowThrew ||
+    end == WebMineQueueRowsEnd.surfaceLost;
+
 /// 逐行跑 [rows]（应已 [groupWebMineRowsByVideo]），结果记进 [tally]，返回停下的原因。
 ///
 /// 每一行的结局只有三种：
