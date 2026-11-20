@@ -2348,9 +2348,10 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  /// 视频字幕列表是否列出**特效字幕**（歌词特效 / 屏幕字，拍板台 H7r4mf_z2n），默认
-  /// false（拍板选项 B 原文「默认隐藏特效事件」）。与 [VideoSubtitleJumpPanel] 的
-  /// 「显示特效字幕」切换钮一一对应，跨开关 / 跨重启记住；只影响列表，不影响播放画面上的字幕。
+  /// 视频字幕列表里**特效字幕**（歌词特效 / 屏幕字，拍板台 H7r4mf_z2n）是否按字幕自带
+  /// 样式着色（left3545：显示样式，不筛选——两态列出的行相同），默认 false。与
+  /// [VideoSubtitleJumpPanel] 的「显示特效字幕」切换钮一一对应，跨开关 / 跨重启记住；
+  /// 只影响列表，不影响播放画面上的字幕。键名沿用（存量偏好键冻结）。
   bool get videoSubtitleListShowEffects =>
       getPref('video_subtitle_list_show_effects', defaultValue: false) as bool;
 
