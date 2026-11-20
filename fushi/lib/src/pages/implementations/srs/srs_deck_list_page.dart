@@ -1004,10 +1004,12 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
       stats: ref.watch(srsHomeStatsProvider).valueOrNull,
       deleting: deleter.deleting,
       banners: <Widget>[
-        // 彻底清除的字节层收尾出错（内核 `scrub_state`）：清除的原文还在磁盘上。只在出错时挂：列表项之间有间距，
-        // 没出错时挂一个零高度的项也会多出一条空白，把牌组树往下推。
-        if (ref.watch(srsScrubErrorProvider) != null)
-          const SrsScrubErrorNotice(),
+        // 彻底清除的字节层收尾出错（内核 `scrub_state`）：清除的原文还在磁盘上。下方间距由提示自己带（列表在它
+        // 后面不插间距，见 [_DeckList] 的 separatorBuilder）：没出错时零高度、不占一条空白，出现 / 消失连同间距
+        // 一起展开 / 收起。
+        SrsScrubErrorNotice(
+          gapBelow: FushiDesignTokens.of(context).spacing.gap * 1.5,
+        ),
         ..._srsDeckBanners(
           context,
           data: list,
@@ -1350,8 +1352,11 @@ class _DeckListState extends State<_DeckList> {
             itemCount: items.length,
             // 牌组行是一组分段卡（行间 2px，由 FushiGroupedListItem 自己画），其余块之间才留
             // 卡片间距。
+            // 自己带下方间距的横幅（[SrsScrubErrorNotice]：没出错时零高度，间距随它一起收起）后面也不插。
             separatorBuilder: (BuildContext context, int index) => SizedBox(
-              height: index >= firstDeckItem && index < lastDeckItem - 1
+              height:
+                  (index >= firstDeckItem && index < lastDeckItem - 1) ||
+                      items[index] is SrsScrubErrorNotice
                   ? 0
                   : tokens.spacing.gap * 1.5,
             ),

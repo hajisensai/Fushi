@@ -414,6 +414,9 @@ Future<void> srsSync4Relay({
 /// 标记 / `last_ok`、各设备的 head 记录、转发记账、旧根核对——并且不再向它转发（为它留着的原文按剩下的位置重判）。
 /// 位置上的文件、本机的卡片与复习记录一个不动；已传水位与媒体代号留着（同一个位置加回来时 head 代号接着往上）。
 /// 没记过这个位置也照常返回。G10 的 host 目录 / 通道位置的移除同样调这一个。回包 `{forgotten, relayDropped}`。
+///
+/// 位置配置是设备级的（所有 profile 共用），所以内核在库文件里**每一个**集合里各忘一次，不只 [host] 的 profile 的
+/// （[host] 的 profile 没有集合也照常忘别的集合）。
 Future<Map<String, Object?>> srsSync4ForgetLocation(
   SrsSync2Host host,
   String locationId,

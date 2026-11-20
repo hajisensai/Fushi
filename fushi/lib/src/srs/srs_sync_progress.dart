@@ -53,3 +53,8 @@ enum SrsSyncStage {
 /// 当前在跑的那一轮复习同步；没在跑为 null。
 final ValueNotifier<SrsSyncProgress?> srsSyncProgress =
     ValueNotifier<SrsSyncProgress?>(null);
+
+/// 成功跑完的复习同步轮数（任何位置的一轮没报错跑完 +1；[SrsSyncScheduler] 记）。只给少数「等第一次同步成功」的
+/// 消费方当事件用（保留副本的到期日期：第一次同步成功之后改按它再留 14 天，见 `srs_retained_copy.dart`），
+/// 不是统计值。
+final ValueNotifier<int> srsSyncRoundsSucceeded = ValueNotifier<int>(0);

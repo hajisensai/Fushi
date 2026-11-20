@@ -974,6 +974,7 @@ class SrsSyncScheduler {
         // 不计：见上。
       } else if (error == null) {
         stats.consecutiveFailures = 0;
+        srsSyncRoundsSucceeded.value++;
       } else {
         _noteRoundFailure(stats, describe, 'report error: $error');
       }
@@ -1652,7 +1653,8 @@ class SrsSyncScheduler {
   /// 让内核忘掉用户移除了的同步位置（文件夹位置的「移除」；内核 `location_forget`，[srsSync4ForgetLocation]）：本机
   /// 忘掉它的同步状态、不再向它转发，位置上的文件与本机卡片不动。要忘的位置来自待忘清单（[_pendingForgets]）：
   /// 移除时配置里去掉它、同一个事务里记进清单，所以移除本身不依赖运行时 / 卡片库在不在（复习模块没起时照样能移除，
-  /// 运行时起来后在这里补忘）；忘掉一个划掉一个（[_onForgotten]），没忘掉的留在清单里，下一次再来。
+  /// 运行时起来后在这里补忘）；忘掉一个划掉一个（[_onForgotten]），没忘掉的留在清单里，下一次再来。清单是设备级的，
+  /// 内核也在库文件里每一个 profile 的集合里各忘一次（不只当前打开的这个），所以忘一次就能划掉。
   ///
   /// 排进 [_serially]：不与正在跑的一轮交错（那一轮可能是按移除之前读到的配置在跑这个位置，会把状态行建回来——它
   /// 跑完之后这里才忘）；之后的轮次读到的配置里已经没有它，不会再建。每一轮开头也补一遍（[_forgetPendingIn]）。

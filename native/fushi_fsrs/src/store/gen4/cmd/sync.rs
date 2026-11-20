@@ -1643,6 +1643,36 @@ pub fn location_forget(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, St
     Ok(json!({"forgotten": forgotten, "relayDropped": dropped}))
 }
 
+/// `location_forget` 的分发入口：在这个文件的**每一个**集合里各忘一次 [location_forget]，回包两项各自相加。
+///
+/// 同步位置的配置是设备级的（文件夹位置、通道都存在设备本地偏好里，所有 profile 共用），每个 profile 的集合各自记着
+/// 它在这个位置上的状态。只忘发命令的 profile 的集合，别的 profile 以前同步过这个位置的状态行与为它留着的转发原文就
+/// 再也没人清（第六波复核）。所以不按发命令的 profile 取集合：发命令的 profile 没有集合（删掉了 / 新代里从没打开过）
+/// 也照常忘别的集合，不报 `has no collection`。
+///
+/// 不按 profile 收窄不算越权（第六波第二轮复核核过）：能发这条命令的只有本机同步调度器的待忘清单，而能把位置从
+/// 设备配置里移除的那个 profile 本来就让每个 profile 都不再同步它；远程复习的白名单（engine `kSrsRemoteKernelOps`）
+/// 不含它（`srs_remote_store_test.dart` 白名单用例守着），ctl / 服务端没有入口；忘的只是同步状态与多余的转发原文，
+/// 卡片与复习记录一条不动。**前提是位置身份是设备级配置**：以后云盘通道 / 互联也接移除时，若它们的配置按 profile
+/// 分开，这里要改回按 profile 取集合。
+pub fn location_forget_everywhere(t: &Truth<'_>, req: &Value) -> Result<Value, String> {
+    let cols: Vec<i64> = {
+        let mut stmt = t
+            .conn()
+            .prepare_cached(crate::store::gen4::dispatch::COLLECTIONS_SQL)
+            .map_err(sql)?;
+        let rows = stmt.query_map([], |r| r.get(0)).map_err(sql)?;
+        rows.collect::<rusqlite::Result<_>>().map_err(sql)?
+    };
+    let (mut forgotten, mut dropped) = (0u64, 0u64);
+    for col in cols {
+        let v = location_forget(t, col, req)?;
+        forgotten += v["forgotten"].as_u64().unwrap_or(0);
+        dropped += v["relayDropped"].as_u64().unwrap_or(0);
+    }
+    Ok(json!({"forgotten": forgotten, "relayDropped": dropped}))
+}
+
 // ---------------------------------------------------------------------- 设备：停用、换身份
 
 /// `retire {profile, device, retire, now}`：停用 / 取消停用一台别的设备（协议 3 `devices.rs` `retire` 同语义）：停用后

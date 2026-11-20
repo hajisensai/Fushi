@@ -1354,6 +1354,9 @@ void main() {
         'rotate',
         'retire',
         'apply',
+        // 移除位置在库文件里每一个集合上都忘（位置配置是设备级的，不按发命令的 profile 收窄）：只能由本机调度器的
+        // 待忘清单发，远程客户端不能借它清掉主机上别的 profile 的同步状态。
+        'location_forget',
         'seal_file',
         'open_file',
         'sync2Command',

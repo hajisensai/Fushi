@@ -4071,6 +4071,83 @@ schema 不变（40024，没有加表 / 索引）；`ABI_VERSION` 不变（只改
   没改（归同步 owner）。
 - 真机验证按用户 07-29 指令不做。
 
+### 续（2026-11-20，第六波复核后的跟进，同分支）
+
+schema 不变（40024）；`ABI_VERSION` 不变（`location_forget` 的请求 / 回包形状不变，只是作用范围从发命令的 profile 的集合扩到
+库文件里的全部集合）。
+
+- **待忘清单与内核按 profile 忘对不上（复核 minor）**：清单和位置配置一样是设备级的，但内核 `location_forget` 只在发命令的
+  profile 的集合里忘，忘一次就划掉，别的 profile 以前同步过这个位置的状态行（加密记忆 / loc 标记 / head 记录）与为它保留的
+  转发原文再也没人清。**修法改内核契约，不在 Dart 里按 (位置, profile) 记账**：`dispatch.rs` 的 `location_forget` 改调
+  `cmd/sync.rs` `location_forget_everywhere`，对 `collections` 里每个集合各跑一次 `location_forget`、回包两项相加；发命令的
+  profile 没有集合（删掉了 / 新代里从没打开过）也照常忘别的集合，不再报 `has no collection`（以前这种情形清单会一直卡着）。
+  理由：位置是设备级配置，所有 profile 都不会再往那里同步；按 profile 记账要在移除时枚举 profile、删 profile 时修清单，还
+  漏掉孤儿集合。Dart 侧清单格式不变，只改了 `PreferencesRepository.srsForgetPendingKey`、调度器 `forgetPendingLocations`、
+  engine `srsSync4ForgetLocation` 的注释。Rust 测试 `profile_data_tests.rs`
+  `forgetting_a_location_forgets_it_in_every_collection`（Q、R 两个集合都记着 `folder:usb`，从没绑定的 S 发命令 =
+  忘掉 2 行、别的位置不动、再忘回 0）。
+- **牌组列表清除提示的出现 / 消失动画（复核 nit）**：横幅改回常挂，`SrsScrubErrorNotice` 新增 `gapBelow`：提示自己带下方
+  间距、`_DeckList` 的 `separatorBuilder` 在它后面不插间距，所以没出错时零高度且不占空白（① 的根因仍然消除），出错时
+  `FushiAnimatedSize` + `AnimatedSwitcher` 连同间距一起展开 / 收起。同步与历史页不带间距，用默认 0。wiring 测试改为：出错时
+  提示下方有间距且下一项紧贴其下；没出错时提示零高度、下一项（按 `FushiStaggeredEntrance.index` 找）顶边 = 提示顶边。
+- **保留副本到期日期在首次同步成功后不刷新（复核 nit）**：新增全局 `srsSyncRoundsSucceeded`（`srs_sync_progress.dart`，与
+  `srsSyncProgress` 同一种全局可听值），调度器 `_trackRound` 记成功的一轮时 +1。`srsRetainedCopyProvider` 只在「副本在、
+  `firstSyncAtMs` 为 null」时听它，下一轮成功后 `invalidateSelf` 重读一次；记下首次同步之后不再听。测试：wiring「还没记下
+  首次同步时，下一轮成功的同步之后重读一次；记下之后不再重读」，调度器文件夹用例断言成功一轮计数 +1。
+- **文件夹位置的恢复提示文案（复核 nit）**：新增 `srs_sync_folder_new_root_missing`（`i18n_sync --add`，「请删掉文件 $path」，
+  并提到别的同步工具还没同步完的情形），`srsNewRootMissingText` 给了 `folderPath` 用它；云盘 / 互联仍用
+  `srs_sync_location_new_root_missing`（相对路径，「这个位置上的 $path」）。toast 测试两种文案各按全文断言。
+
+验证：`cargo fmt --check` 0；`cargo test --profile quick --lib -j 4` 1440 passed / 0 failed / 39 ignored；engine
+`srs_sync4_folder_test` 7 条全绿；Dart（dist）`srs_retained_copy_wiring` / `srs_sync_scheduler` / `srs_sync_now_toast` /
+`srs_pages` / `srs_history_page` / `srs_retained_copy` 一批 163 条，除 wiring 牌组列表新用例的测试写法外全绿（先是按固定 key 找「下一项」
+找错了项，改按列表项序号；再是零高度项被 sliver 算作不可见，改 `skipOffstage: false`），修后 wiring 6 条全绿；`flutter analyze --no-pub` 无问题。
+
+变异（Dart 一次全加、一批跑，还原后工作区干净）：去掉 separator 对提示的跳过 → wiring 牌组列表用例与 `srs_pages_test` MD3
+首页用例红；保留副本 provider 不听成功计数 → wiring 首次同步用例红；调度器不加计数 → 调度器文件夹用例红（`Expected: <1>`）；
+文件夹文案改回通用 key → toast 用例红。Rust：分发改回只忘发命令的 profile → 新用例红（S 没有集合报错）；同时把测试改成由 Q
+发 → `forgotten` 1 ≠ 2 红。
+
+没做 / 归属（更新上面那条）：
+
+- 云盘通道 / 互联的「删除」：查过，没有一个显式的「移除通道位置」入口——通道位置身份由后端账户 / 地址现算
+  （`srs_directory_key.dart`），退出登录或改地址后身份就算不出来了，要忘只能在同步设置各后端（7 种）改配置 / 退出前先取
+  身份记进待忘清单；而且退出登录不等于不再用这个目录（重新登录同一账户还是同一个位置，忘掉会让下一轮当新位置重新起步）。
+  这是同步设置模块的产品取舍，本分支不改，归同步 owner；现状是这些位置的状态行与转发原文一直留着（不丢卡片与复习记录）。
+- 真机验证按用户 07-29 指令不做。
+
+### 续二（2026-11-20，第六波第二轮复核后的跟进，同分支）
+
+schema、`ABI_VERSION`、i18n key 都不变；Rust 只改注释。
+
+- **保留副本状态读的过程中被 invalidate 会泄漏同步监听（复核 minor，已实测）**：上一轮在 `await backend.state(...)` 之后
+  才 `addListener` + `ref.onDispose`；读的过程中 provider 被 invalidate（换库、删除的调用方）时那次构建已经 dispose，
+  `onDispose` 抛 `StateError`，监听永远摘不掉，之后每一轮成功的同步都让元素重读一次。**修法：把注册与释放挪到 provider
+  体的同步开头、在第一个 `await` 之前成对登记**，读完只设一个本次构建私有的 `awaitingFirstSync` 标志，监听里按它决定
+  要不要 `invalidateSelf`。这样不管在哪一刻被废弃，这次构建的 dispose 都会摘掉自己的监听；代价是副本不在 / 已记下首次
+  同步时也挂着一个空转的监听（只比较一个布尔），换来生命周期不依赖 `await` 时序。没有把计数改成 provider 再 `ref.listen`：
+  它由调度器在 Riverpod 之外写（`_trackRound`），桥接只是多一层，且在 `await` 之后 `ref.listen` 同样有废弃问题，根因
+  在注册时机。测试：wiring「读的过程中被 invalidate 不留下同步监听」（假执行端的状态命令卡在 `Completer` 上，读到一半
+  invalidate、紧接着放行，再首次同步 + 连续 3 轮成功 = 只重读一次）。
+- **`location_forget` 对全部集合生效后 dispatch 不再校验发命令的 profile（复核 nit）**：核过，没有越权面，不收紧。
+  能发这条命令的只有本机调度器的待忘清单（`srs_sync_scheduler.dart` `_forgetPending`）；engine 里所有 `sync2Command`
+  调用方的 `op` 都是写死的；远程复习唯一的透传口 `srsRemoteKernelCommand` 只认 `kSrsRemoteKernelOps`（不含它），ctl /
+  `fushi_server` 没有入口。位置配置本来就是设备级的：能移除位置的那个 profile 本来就让所有 profile 都不再同步它，忘别的
+  集合里的同步状态没有给它更多权力；忘掉的也只是同步状态与多余的转发原文，卡片与复习记录不动。补了守卫：
+  `srs_remote_store_test.dart` 白名单用例的禁止清单加上 `location_forget`（远程直调 404、经浏览入口夹带 400）；
+  `cmd/sync.rs` `location_forget_everywhere` 注释写明这条结论与前提（位置身份是设备级配置；以后云盘通道 / 互联接移除时
+  若配置按 profile 分开，要改回按 profile 取集合）。
+- **文件夹位置恢复提示里多余的「at this location」**：上一轮（`30812455b3`）已经给文件夹位置单独用
+  `srs_sync_folder_new_root_missing`（「delete the file $path」，17 份 json 里都没有 at this location），这一轮核对后不再改；
+  云盘 / 互联的 `srs_sync_location_new_root_missing` 写的是位置里的相对路径，「at this location」在那里是必要的，保留。
+
+验证：`cargo fmt --check` 0；`cargo test --profile quick --lib -j 4` 0，1440 passed / 0 failed / 39 ignored；engine
+`dart test test/srs/srs_remote_store_test.dart` 0，32 条全过；Dart（dist）`srs_retained_copy_wiring` + `srs_retained_copy`
+0，12 条全过；`flutter analyze --no-pub` 0，No issues found。
+
+变异（还原后工作区干净）：provider 换回上一轮的写法（读完才挂监听）→ 新用例红（`Expected: <4>  Actual: <7>`）；
+`kSrsRemoteKernelOps` 加上 `location_forget` → 白名单用例红（`Expected: not contains 'location_forget'`）。
+
 ## 44. 第六波 导入红测试收尾（2026-11-18，分支 `pr/srs-gen4-w6-import-reds`，基于 `pr/srs-gen4-switch` `0bf8472f40`）
 
 导入 / 备份侧剩下的红测试逐条定因，外加第五波 S3 复核的 nit。不升 SCHEMA（仍 40024），不加表 / 索引；存量持久化名不动。

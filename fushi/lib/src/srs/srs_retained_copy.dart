@@ -22,6 +22,9 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_sync_progress.dart'
+    show srsSyncRoundsSucceeded;
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -51,14 +54,29 @@ typedef SrsRetainedCopyInfo = ({String dir, SrsRetainedCopyState state});
 /// isolate 打开两个库文件，而结果几乎从不变）。会改变它的只有：
 /// - 复习库换了（迁移完成、换 profile、到期自动删都发生在开库时）：watch [srsStoreProvider]；
 /// - 删除：删的调用方 invalidate；
-/// - 第一次同步成功（到期时刻从「迁移 + 30 天」改成「首次同步 + 14 天」）：只影响设置行的日期，自动释放（没人看
-///   就丢掉），下次进设置页现读。
+/// - 第一次同步成功（到期时刻从「迁移 + 30 天」改成「首次同步 + 14 天」）：副本在、还没记下首次同步时听
+///   [srsSyncRoundsSucceeded]（只按这一次读到的状态决定），下一轮成功的同步之后重读一次（设置页开着时日期跟着变）；记下了之后再成功也不重读。没人看时
+///   自动释放，下次进设置页现读。
 /// 读的过程中 [Ref.keepAlive] 撑住：删牌组那条路是 `read(.future)`，没有监听者也要等它读完。
+///
+/// 监听在 provider 体的**同步开头**挂上、同一处登记 `onDispose` 摘掉，两者成对、都在第一个 `await` 之前：读的过程中
+/// 被 invalidate（换库、删除的调用方）时这一次构建的 dispose 照样把它摘掉。读完才决定要不要重读（`awaitingFirstSync`），
+/// 不在读完之后再挂——那时这次构建可能已经被废弃，`onDispose` 会抛、监听就永远摘不掉，之后每一轮成功的同步都让元素
+/// 重读一次（第六波第二轮复核）。
 final AutoDisposeFutureProvider<SrsRetainedCopyInfo?> srsRetainedCopyProvider =
     FutureProvider.autoDispose<SrsRetainedCopyInfo?>((
       AutoDisposeFutureProviderRef<SrsRetainedCopyInfo?> ref,
     ) async {
       final KeepAliveLink loading = ref.keepAlive();
+      bool awaitingFirstSync = false;
+      void onRoundSucceeded() {
+        if (awaitingFirstSync) ref.invalidateSelf();
+      }
+
+      srsSyncRoundsSucceeded.addListener(onRoundSucceeded);
+      ref.onDispose(
+        () => srsSyncRoundsSucceeded.removeListener(onRoundSucceeded),
+      );
       try {
         final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
         if (store == null) return null;
@@ -68,6 +86,9 @@ final AutoDisposeFutureProvider<SrsRetainedCopyInfo?> srsRetainedCopyProvider =
           final SrsRetainedCopyState state = await ref
               .read(srsRetainedCopyBackendProvider)
               .state(dir, nowMs: DateTime.now().millisecondsSinceEpoch);
+          // 副本在、新代还没同步成功过：到期时刻会在第一次同步成功时从「迁移 + 30 天」改成「首次同步 + 14 天」。
+          // 开着设置页时等下一轮成功的同步重读一次（重读之后记下了首次同步就不再听）。
+          awaitingFirstSync = state.present && state.firstSyncAtMs == null;
           return (dir: dir, state: state);
         } on SrsCoreException catch (e, stack) {
           ErrorLogService.instance.log('srs.retained_copy.state', e, stack);
@@ -175,29 +196,45 @@ final FutureProvider<SrsScrubState?> srsScrubStateProvider =
       return store.scrubState();
     });
 
-/// 收尾出错的原因（[srsScrubStateProvider] 的 `error`）；没出错 / 还没读到 = null。放进带间距的列表（牌组列表
-/// 横幅是 `ListView.separated`）的调用方按它决定挂不挂 [SrsScrubErrorNotice]：零高度的一项照样占一条间距，会把下面
-/// 的内容整体往下推一截。
+/// 收尾出错的原因（[srsScrubStateProvider] 的 `error`）；没出错 / 还没读到 = null。
 final Provider<String?> srsScrubErrorProvider = Provider<String?>(
   (Ref ref) => ref.watch(srsScrubStateProvider).valueOrNull?.error,
 );
 
-/// 收尾出错时的提示：「清除的内容在磁盘上还没抹干净：<原因>」。没出错时零高度。出现 / 消失淡入淡出。
+/// 收尾出错时的提示：「清除的内容在磁盘上还没抹干净：<原因>」。没出错时零高度。出现 / 消失时高度与淡入淡出一起做。
+///
+/// [gapBelow]：放进带间距的列表（牌组列表横幅是 `ListView.separated`）时由提示**自己**带下方间距、列表在它后面不再
+/// 插间距——零高度的一项照样占一条间距，会把下面的内容整体往下推一截（第六波 ①）；间距放进提示里，就随提示一起
+/// 展开 / 收起。不带间距的列表（同步与历史页）用默认 0。
 class SrsScrubErrorNotice extends ConsumerWidget {
-  const SrsScrubErrorNotice({super.key});
+  const SrsScrubErrorNotice({super.key, this.gapBelow = 0});
+
+  final double gapBelow;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final String? error = ref.watch(srsScrubErrorProvider);
-    return AnimatedSwitcher(
-      duration: fushiMotionDuration(context, FushiMotion.short),
-      child: error == null
-          ? const SizedBox.shrink(key: ValueKey<String>('srs-scrub-ok'))
-          : FushiInlineNotice(
-              key: const ValueKey<String>('srs-scrub-error'),
-              severity: FushiNoticeSeverity.warning,
-              message: t.srs_scrub_error_notice(reason: error),
-            ),
+    final Duration duration = fushiMotionDuration(context, FushiMotion.short);
+    return FushiAnimatedSize(
+      duration: duration,
+      curve: FushiMotion.standard,
+      alignment: Alignment.topCenter,
+      child: AnimatedSwitcher(
+        duration: duration,
+        child: error == null
+            ? const SizedBox(
+                key: ValueKey<String>('srs-scrub-ok'),
+                width: double.infinity,
+              )
+            : Padding(
+                key: const ValueKey<String>('srs-scrub-error'),
+                padding: EdgeInsets.only(bottom: gapBelow),
+                child: FushiInlineNotice(
+                  severity: FushiNoticeSeverity.warning,
+                  message: t.srs_scrub_error_notice(reason: error),
+                ),
+              ),
+      ),
     );
   }
 }

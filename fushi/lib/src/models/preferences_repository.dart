@@ -4300,7 +4300,8 @@ class PreferencesRepository extends ChangeNotifier
   /// 移除文件夹位置时与 [srsFolderLocationsKey] 在**同一个事务**里写（[removeSrsFolderLocation]）：配置里去掉、
   /// 同时记下「内核要忘掉它」；同步调度器起来后（以及每一轮开头）逐个 `location_forget`，忘掉一个划掉一个
   /// （[markSrsLocationForgotten]）。复习模块没起（没有运行时）、卡片库没打开、内核一时忘不掉都不挡移除，
-  /// 也不会让内核里留下没人能清的状态。
+  /// 也不会让内核里留下没人能清的状态：这份清单和位置配置一样是设备级的（所有 profile 共用），内核的
+  /// `location_forget` 也在库文件里**每一个** profile 的集合里各忘一次，所以随便哪个 profile 忘掉一次就可以划掉。
   static const String srsForgetPendingKey = 'srs_sync2_forget_pending';
 
   Set<String> get srsPendingLocationForgets {

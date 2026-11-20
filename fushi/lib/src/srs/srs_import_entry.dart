@@ -664,21 +664,25 @@ String srsSyncErrorReason(Object error) => switch (error) {
 };
 
 /// 「新根不见了」（[kSrsLocationNewRootMissing]）的恢复提示，写出这个位置上要删的那个围栏文件的真实路径：
-/// [folderPath] 给了（文件夹位置）= 磁盘上的完整路径；否则（云盘 / 互联）= 位置里的相对路径
-/// `fushi-srs/<集合目录名>/v3/meta.json`。[locationDir] 是出错那一轮的集合目录名（[SrsSyncReportError.locationDir]，
+/// [folderPath] 给了（文件夹位置）= 磁盘上的完整路径，用文件夹位置自己的文案（路径已经是绝对的，不再说「这个位置
+/// 上的」）；否则（云盘 / 互联）= 位置里的相对路径 `fushi-srs/<集合目录名>/v3/meta.json`。[locationDir] 是出错那一轮的集合目录名（[SrsSyncReportError.locationDir]，
 /// 一轮一开头就从内核取到，这个错误总带着它）；万一没有，目录那一段写成 `…`，不编一个名字出来。
 String srsNewRootMissingText(String? locationDir, {String? folderPath}) {
   final String dir = locationDir ?? '…';
-  final String path = folderPath == null
-      ? '$kSrsSync2Namespace/$dir/$kSrsSync2Folder/meta.json'
-      : p.join(
-          folderPath,
-          kSrsSync2Namespace,
-          dir,
-          kSrsSync2Folder,
-          'meta.json',
-        );
-  return t.srs_sync_location_new_root_missing(path: path);
+  if (folderPath == null) {
+    return t.srs_sync_location_new_root_missing(
+      path: '$kSrsSync2Namespace/$dir/$kSrsSync2Folder/meta.json',
+    );
+  }
+  return t.srs_sync_folder_new_root_missing(
+    path: p.join(
+      folderPath,
+      kSrsSync2Namespace,
+      dir,
+      kSrsSync2Folder,
+      'meta.json',
+    ),
+  );
 }
 
 /// 牌组列表 ⋯「立即同步」。
