@@ -13234,6 +13234,7 @@
   "video_subtitle_ai_remote_episode_host_outdated": "host 上的 Fushi 版本太旧，不能为 host 播放列表第 2 集起生成字幕，请先更新 host。",
   "video_subtitle_ai_remote_host": "在 ${host} 上运行",
   "video_subtitle_ai_remote_host_error": "host 报错：${reason}",
+  "video_subtitle_ai_remote_language_host_outdated": "host 上的 Fushi 版本只能生成日语字幕，请先更新 host 再生成其他语言。",
   "video_subtitle_ai_remote_probing": "正在连接 host…",
   "video_subtitle_ai_remote_proofread_hint": "使用 host 上为「字幕校对」指派的 AI 提供商",
   "video_subtitle_ai_remote_result_missing": "电脑端任务结束了，但没有返回字幕",
