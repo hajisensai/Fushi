@@ -200,6 +200,7 @@ class PlexVideoClient
         RemoteVideoPlaybackSession,
         RemoteVideoCollectionIsWork,
         RemoteVideoTrackingEpisodeFetch,
+        RemoteVideoClientConnections,
         MediaServerBrowser {
   PlexVideoClient({
     required this.api,
@@ -1022,5 +1023,6 @@ class PlexVideoClient
     }
   }
 
+  @override
   void close() => api.close();
 }

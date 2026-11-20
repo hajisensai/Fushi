@@ -63,19 +63,22 @@ export 'package:fushi/src/media/video/video_lua_capability.dart';
 const String kLuaScriptExtension = '.lua';
 
 /// Lua 脚本存放目录：`<documents>/mpv_scripts`（不存在则创建）。
+///
+/// 每次开播都走这里（[listLuaScriptPaths]），一律异步 IO，不在 UI isolate 上同步
+/// 碰盘（video-20：网络盘 / 慢盘上同步 stat + 列目录会卡住开播那一帧）。
 Future<Directory> mpvLuaScriptDirectory() async {
   final Directory dir = await AppPaths.mpvLuaScriptsDirectory();
-  if (!dir.existsSync()) dir.createSync(recursive: true);
+  if (!await dir.exists()) await dir.create(recursive: true);
   return dir;
 }
 
-/// 列出 [dir] 里的 Lua 脚本**绝对路径**（仅顶层、按路径排序）。纯函数（只读目录），
+/// 列出 [dir] 里的 Lua 脚本**绝对路径**（仅顶层、按路径排序）。只读目录（异步），
 /// 便于用临时目录单测。不递归——子目录留给用户放脚本自己的资源/模块，避免把
 /// `xxx/modules/*.lua` 这类依赖文件当独立脚本重复装载。
-List<String> listLuaScriptFilesIn(Directory dir) {
-  if (!dir.existsSync()) return const <String>[];
+Future<List<String>> listLuaScriptFilesIn(Directory dir) async {
+  if (!await dir.exists()) return const <String>[];
   final List<String> out = <String>[];
-  for (final FileSystemEntity e in dir.listSync(followLinks: false)) {
+  await for (final FileSystemEntity e in dir.list(followLinks: false)) {
     if (e is! File) continue;
     if (p.extension(e.path).toLowerCase() == kLuaScriptExtension) {
       out.add(e.path);
