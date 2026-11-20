@@ -79,9 +79,12 @@
 | [BUG-4907](bugs/BUG-4907-graphic-track-reselect-kills-inflight-extract.md) | ✅ | ✅ | 图形字幕整轨抽取跑到一半时重新选同一条图形轨，会把 ffmpeg 杀掉从头再抽 |
 | [BUG-4906](bugs/BUG-4906-video-params-sub-stale-after-handle-release.md) | ✅ | ✅ | 放掉视频句柄（数据根迁移 / 删视频 / 文件名整理）后，新 Player 的画面参数事件收不到，HDR 输出与杜比视界提示只剩开片快照补判 |
 > 共 4234 条。点号进各自文件。
+> 共 4236 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4908](bugs/BUG-4908-paged-progress-landing-first-after-metrics-invalidation.md) | 🚧 | 🚧 | 竖排分页 progress 0.9 落点在度量缓存作废后第一次与之后几次不一致 |
+| [BUG-4907](bugs/BUG-4907-vn-standalone-image-computed-display.md) | ✅ | ✅ | VN 独立插图归类读脱离文档的 computed display，该分支恒不生效且随挂载状态翻转 |
 | [BUG-4906](bugs/BUG-4906-reader-init-restore-no-failure-exit.md) | ✅ | ✅ | 阅读器引擎初始化或初次恢复链抛异常时不回执，只能等8秒兜底 |
 > 共 4234 条。点号进各自文件。
 

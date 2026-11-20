@@ -1,12 +1,11 @@
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 import 'package:fushi/src/reader/reader_visual_novel_scripts.dart';
 
 import '../helpers/source_guard.dart';
 import '../pages/reader_fushi_page_source_corpus.dart';
+
+import '../helpers/node_runtime.dart';
 
 /// gap-readerjs1-2：阅读器引擎初始化 / 初次恢复链没有失败出口。
 ///
@@ -22,23 +21,22 @@ void main() {
   test(
     'init / initial-restore failures send a failure receipt (Node)',
     () async {
-      final String? nodeExe = _resolveNode();
+      final String? nodeExe = resolveNodeExecutable();
       if (nodeExe == null) {
         markTestSkipped(
           'node not found on PATH; skipping JS behavior execution',
         );
         return;
       }
-      final ({int exitCode, String stdout, String stderr}) result =
-          await _runNodeHarness(
-            nodeExe,
-            'test/reader/reader_restore_failure_receipt_behavior_test.js',
-            <String, String>{
-              'paged': ReaderPaginationScripts.paginatedShellSource(),
-              'continuous': ReaderPaginationScripts.continuousShellSource(),
-              'vn': ReaderVisualNovelScripts.vnShellScript(),
-            },
-          );
+      final NodeHarnessResult result = await runNodeHarness(
+        nodeExe,
+        'test/reader/reader_restore_failure_receipt_behavior_test.js',
+        <String, String>{
+          'paged': ReaderPaginationScripts.paginatedShellSource(),
+          'continuous': ReaderPaginationScripts.continuousShellSource(),
+          'vn': ReaderVisualNovelScripts.vnShellScript(),
+        },
+      );
       expect(
         result.exitCode,
         0,
@@ -76,43 +74,4 @@ void main() {
       expect(containsCodeLine(timeout, '_abortStalledRestore();'), isTrue);
     });
   });
-}
-
-/// Runs the Node harness with [payload] piped as JSON on stdin (no file path
-/// crosses the process boundary) and returns its exit code, stdout and stderr.
-Future<({int exitCode, String stdout, String stderr})> _runNodeHarness(
-  String nodeExe,
-  String harness,
-  Map<String, String> payload,
-) async {
-  final Process process = await Process.start(nodeExe, <String>[
-    harness,
-  ], workingDirectory: Directory.current.path);
-  final Future<String> stdout = process.stdout.transform(utf8.decoder).join();
-  final Future<String> stderr = process.stderr.transform(utf8.decoder).join();
-  process.stdin.add(utf8.encode(jsonEncode(payload)));
-  await process.stdin.close();
-  return (
-    exitCode: await process.exitCode,
-    stdout: await stdout,
-    stderr: await stderr,
-  );
-}
-
-/// Resolve a usable `node` executable, returning null when none is on PATH.
-String? _resolveNode() {
-  final List<String> candidates = Platform.isWindows
-      ? <String>['node.exe', 'node']
-      : <String>['node'];
-  for (final String name in candidates) {
-    try {
-      final ProcessResult probe = Process.runSync(name, <String>['--version']);
-      if (probe.exitCode == 0) {
-        return name;
-      }
-    } on ProcessException {
-      // Not found; try next candidate.
-    }
-  }
-  return null;
 }

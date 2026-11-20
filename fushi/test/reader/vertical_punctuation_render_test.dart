@@ -11,6 +11,8 @@ import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/reader/reader_vertical_punctuation_font.dart';
 import 'package:fushi_core/fushi_core.dart';
 
+import '../helpers/node_runtime.dart';
+
 /// BUG-3606：真 Chrome 跑生产阅读器 CSS，正文字体是一款没有 `vert` 的字体
 /// （`fixtures/no_vert_cjk.woff2`）。竖排三种布局下正文的「必须画成标点子集的竖排字形
 /// （与只用缺 vert 字体画出的横排「不同）；横排必须原样（不注入子集）。WebKit 一侧要在
@@ -71,7 +73,7 @@ html::before { display: none !important; }
   test(
     'vertical body text uses the vertical form of 「 even with a no-vert font',
     () async {
-      final String? nodeExe = _resolveNode();
+      final String? nodeExe = resolveNodeExecutable();
       if (nodeExe == null) {
         markTestSkipped('node not found on PATH; skipping JS execution');
         return;
@@ -92,55 +94,22 @@ html::before { display: none !important; }
           ),
         },
       ];
-      final Directory temp = Directory.systemTemp.createTempSync(
-        'vertical-punct-',
+      final Map<String, Object> payload = <String, Object>{'pages': pages};
+      final NodeHarnessResult run = await runNodeHarness(
+        nodeExe,
+        'test/reader/vertical_punctuation_render_harness.mjs',
+        payload,
+        timeout: const Duration(seconds: 100),
       );
-      try {
-        final File payload = File('${temp.path}/pages.json')
-          ..writeAsStringSync(jsonEncode(<String, Object>{'pages': pages}));
-        final Process process = await Process.start(nodeExe, <String>[
-          'test/reader/vertical_punctuation_render_harness.mjs',
-          payload.path,
-        ]);
-        final Future<String> stdout = process.stdout
-            .transform(utf8.decoder)
-            .join();
-        final Future<String> stderr = process.stderr
-            .transform(utf8.decoder)
-            .join();
-        final int exitCode = await process.exitCode.timeout(
-          const Duration(seconds: 100),
-          onTimeout: () {
-            process.kill(ProcessSignal.sigkill);
-            return -1;
-          },
-        );
-        final String out = await stdout;
-        if (exitCode == 77) {
-          markTestSkipped('Chrome unavailable: $out');
-          return;
-        }
-        expect(exitCode, 0, reason: '$out\n${await stderr}');
-        expect(out, contains('PASS 4 punctuation pages'));
-      } finally {
-        temp.deleteSync(recursive: true);
+      final int exitCode = run.exitCode;
+      final String out = run.stdout;
+      if (exitCode == 77) {
+        markTestSkipped('Chrome unavailable: $out');
+        return;
       }
+      expect(exitCode, 0, reason: '$out\n${run.stderr}');
+      expect(out, contains('PASS 4 punctuation pages'));
     },
     timeout: const Timeout(Duration(seconds: 150)),
   );
-}
-
-String? _resolveNode() {
-  final List<String> candidates = Platform.isWindows
-      ? <String>['node.exe', 'node']
-      : <String>['node'];
-  for (final String name in candidates) {
-    try {
-      final ProcessResult probe = Process.runSync(name, <String>['--version']);
-      if (probe.exitCode == 0) return name;
-    } on ProcessException {
-      // Try the next executable name.
-    }
-  }
-  return null;
 }

@@ -11,14 +11,14 @@
 // the previous page's last line; aligning that caret dropped every reopen one
 // page back (BUG-3431 paged side). The spread additionally checks its axis and
 // a backward walk that retraces the forward pages.
-import fs from 'node:fs';
 import { launchChromeDriver, resolveChrome } from '../../../tool/reader_pitch_headless/cdp_client.mjs';
+import { readPayload } from './reader_harness_support.js';
 
+const payload = readPayload();
 if (!resolveChrome()) {
   console.log('Chrome unavailable');
   process.exit(77);
 }
-const payload = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 
 const PT = 24, PB = 32, PL = 20, PR = 28;
 // The body fills the real viewport, as in production (the reader WebView is the

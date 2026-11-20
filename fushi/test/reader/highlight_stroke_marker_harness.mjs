@@ -4,15 +4,15 @@
 // / VN) + the selection script (window.__fushiLanes) in real Chrome, and checks the SVG strokes
 // the lane layer paints instead of 1em lanes for each of the four highlight kinds. Only the
 // Flutter bridge is replaced by a recorder.
-import fs from 'node:fs';
 import { launchChromeDriver, resolveChrome } from '../../../tool/reader_pitch_headless/cdp_client.mjs';
+import { readPayload } from './reader_harness_support.js';
 
+const payload = readPayload();
 if (!resolveChrome()) {
   console.log('Chrome unavailable');
   process.exit(77);
 }
 // The only argument is the temp payload file the Dart test just wrote.
-const payload = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));  // NOSONAR: S8707 path comes from the Dart test harness
 
 const CHECK = String.raw`(async () => {
   const errors = []; let checks = 0;
