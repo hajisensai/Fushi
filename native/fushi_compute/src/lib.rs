@@ -25,6 +25,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 pub mod crypto;
 pub mod dart;
+pub mod document_charset;
 pub mod font;
 pub mod galcal;
 pub mod hash;

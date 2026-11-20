@@ -11,14 +11,14 @@ import 'package:fushi_audio/fushi_audio.dart';
 ///
 /// 插件只有 android / ios 实现（`flutter.plugin.platforms` 仅这两项），所以
 /// [installPlatformCharsetDetector] 只在这两端装配；桌面三端不装，非 Unicode
-/// 字节直接交给 Rust 计算内核的本地多字节编码识别（`decodeLegacyText`：
-/// Shift_JIS / CP932、GBK、EUC-JP、Big5，五端同一份），仍判不出才降级到宽松 UTF-8。
+/// 字节直接交给 Rust 计算内核的旧编码识别（`decodeLegacyText`：中日编码、韩文
+/// EUC-KR、Windows-125x 等，五端同一份），仍判不出才降级到宽松 UTF-8。
 ///
 /// 平台接口未被任何实现覆盖（测试替身，[UnimplementedError]）或原生侧识别失败
 /// （[PlatformException]）时返回 null，`decodeTextBytes` 接着走同一条 Rust 路径。
 ///
-/// 移动端保留插件并让它先判：它覆盖的编码更多（韩文 EUC-KR、Windows-125x 等），
-/// 而这些编码的字节按 GBK / Big5 读往往零错误，交给 Rust 那一级会被解成汉字乱码。
+/// 移动端保留插件并让它先判（沿用既有行为）；它判不出时 Rust 那一级照样能认韩文
+/// EUC-KR、Windows-125x 等编码，不会再被解成汉字乱码。
 Future<String?> pluginCharsetDecode(Uint8List bytes) async {
   try {
     final DecodingResult result = await CharsetDetector.autoDecode(bytes);

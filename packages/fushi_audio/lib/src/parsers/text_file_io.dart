@@ -207,8 +207,9 @@ String? decodeUnicodeText(Uint8List bytes) {
   }
 }
 
-/// 平台字符集检测的解码函数签名：把 [bytes] 识别成传统多字节编码
-/// （Shift-JIS / CP932 / GBK / Big5 / EUC-JP …）并解成字符串；识别不了返回 null。
+/// 平台字符集检测的解码函数签名：把 [bytes] 识别成传统编码
+/// （Shift-JIS / CP932 / GBK / Big5 / EUC-JP / EUC-KR / Windows-125x …）并解成字符串；
+/// 识别不了返回 null。
 typedef PlatformCharsetDecoder = Future<String?> Function(Uint8List bytes);
 
 /// 平台字符集检测装配点（与 `fushiDebugPrint` 同范式）。
@@ -218,9 +219,8 @@ typedef PlatformCharsetDecoder = Future<String?> Function(Uint8List bytes);
 /// Flutter app 启动时调 `installPlatformCharsetDetector()` 写入这里。
 ///
 /// 插件只有 android / ios 实现（1.0.2 的 `flutter.plugin.platforms` 仅这两项），
-/// 覆盖面比 [decodeLegacyText] 宽（韩文 EUC-KR、Windows-125x 等），所以移动端
-/// 让它先判；桌面三端、无头服务端、纯 Dart 测试都不装配——这些环境直接落到
-/// [decodeLegacyText]。
+/// 移动端让它先判；桌面三端、无头服务端、纯 Dart 测试都不装配——这些环境直接落到
+/// [decodeLegacyText]（覆盖面相当：中日编码、韩文 EUC-KR、Windows-125x 等单字节编码）。
 PlatformCharsetDecoder? platformCharsetDecoder;
 
 /// 调用已装配的平台字符集检测解码 [bytes]；未装配或本平台不可用时返回 null。
@@ -234,7 +234,7 @@ Future<String?> tryPlatformCharsetDecode(Uint8List bytes) async {
 
 /// [decodeLegacyText] 在调用方 isolate 里同步解码的输入上限（字节）。
 ///
-/// 原生解码四个候选编码各解一遍并逐字符计分，实测（Windows x64 release）约
+/// 原生解码四个候选编码各解一遍并逐字符计分（chardetng 另过一遍），实测（Windows x64 release）约
 /// 55～95 ms / MB：8 KB ≈ 0.5～0.6 ms，16 KB 的 Shift_JIS 已到 1.3 ms。超过这个
 /// 上限的输入（绝大多数字幕文件）放后台 isolate，不占 UI isolate。
 const int kLegacyDecodeInlineMaxBytes = 8 * 1024;
@@ -242,18 +242,17 @@ const int kLegacyDecodeInlineMaxBytes = 8 * 1024;
 String? _decodeLegacyTextSync(Uint8List bytes) =>
     LegacyTextDecoder.decodeDocument(bytes)?.text;
 
-/// 把 [bytes] 当成一整份本地多字节编码（Shift_JIS / CP932、GBK、EUC-JP、Big5）
-/// 的文本判编码并解码；判不出返回 null。
+/// 把 [bytes] 当成一整份非 Unicode 旧编码（Shift_JIS / CP932、GBK、EUC-JP、Big5、
+/// 韩文 EUC-KR / CP949、Windows-1251 / 1252 / 1256 / 874 等单字节编码）的文本判编码并
+/// 解码；判不出返回 null。
 ///
-/// 实现在 Rust 计算内核（`native/fushi_compute/src/legacy_text.rs` 的
-/// `decode_document`，与曲库 ID3 乱码修复、漫画 zip 条目名同一套判据），五端与
-/// 无头服务端同一份。原生库是硬依赖：缺库时抛 `FushiComputeUnavailableError`，
-/// 不静默降级。
+/// 实现在 Rust 计算内核（`native/fushi_compute/src/document_charset.rs`：chardetng 认
+/// EUC-KR 与单字节编码，中日编码交给 `legacy_text.rs`，与曲库 ID3 乱码修复、漫画 zip
+/// 条目名同一套判据），五端与无头服务端同一份。原生库是硬依赖：缺库时抛
+/// `FushiComputeUnavailableError`，不静默降级。
 ///
-/// 判不出（返回 null）的情形：全 ASCII；基本是 UTF-8、只坏了少数几处；像单字节
-/// 西文编码（Windows-1252 / 1256 等）的文本——这些字节按 Shift_JIS / GBK 读常常
-/// 零错误，靠「解出的字是否成串」区分；没有候选编码能在容错口径内解开。开头的
-/// UTF-8 BOM 不算正文。
+/// 判不出（返回 null）的情形：全 ASCII；基本是 UTF-8、只坏了少数几处；证据太少
+/// （不到 8 个高位字节）或没有编码能在容错口径内解开。开头的 UTF-8 BOM 不算正文。
 Future<String?> decodeLegacyText(Uint8List bytes) {
   if (bytes.length <= kLegacyDecodeInlineMaxBytes) {
     return Future<String?>.value(_decodeLegacyTextSync(bytes));
@@ -268,7 +267,8 @@ Future<String?> decodeLegacyText(Uint8List bytes) {
 ///    （含无 BOM）/ UTF-32 LE·BE。BOM 在此处**统一剥除**。
 /// 2. [tryPlatformCharsetDecode]——只在装了平台插件且它认得出时生效（移动端）。
 /// 3. [decodeLegacyText]——Rust 计算内核识别 Shift_JIS / CP932 / GBK / EUC-JP /
-///    Big5。桌面三端与无头服务端的非 Unicode 文本靠这一级（BUG-4798）。
+///    Big5 / EUC-KR 与单字节编码。桌面三端与无头服务端的非 Unicode 文本靠这一级
+///    （BUG-4798）。
 /// 4. `utf8.decode(allowMalformed: true)`——最后兜底。宁可坏字节变 U+FFFD，
 ///    也不能让整个字幕/弹幕/播放列表加载失败（BUG-1490）。
 Future<String> decodeTextBytes(Uint8List bytes) async {

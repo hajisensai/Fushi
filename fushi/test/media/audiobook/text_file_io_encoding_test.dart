@@ -332,7 +332,7 @@ void main() {
       expect(cues[0].text, 'おはよう、今日はいい天気ですね。');
     });
 
-    test('Windows-1252 的英文字幕不被解成汉字，正文语言仍判英文', () async {
+    test('Windows-1252 的英文字幕按 Windows-1252 解回原文，正文语言仍判英文', () async {
       // 弯撇号 `’`（0x92）与后一个字母恰好是 Shift_JIS / GBK 的一个合法双字节字；
       // 末尾一条 `“Wait…”`（0x85 0x94 相邻）让「像 Latin-1」的短标签判据整份判否。
       // 解成汉字的话 BUG-3069 的字幕语言守卫会把这份英文字幕当成中文。
@@ -365,10 +365,8 @@ void main() {
       ]);
 
       final String text = await decodeTextBytes(bytes);
-      expect(
-        text,
-        contains('I don\u{FFFD}t know what you\u{FFFD}re talking about.'),
-      );
+      // 从前判不出、降级成宽松 UTF-8，弯撇号处处是 U+FFFD。
+      expect(text, doc.toString());
       expect(
         detectSubtitleContentLanguage(text),
         SubtitleContentLanguage.english,
