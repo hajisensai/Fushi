@@ -183,9 +183,7 @@ void main() {
       expect(code, contains('flushBeforeRebuild:_recoverFromProcessGone,'));
       expect(code, contains('WebUri(_surfaceUrl??row.videoPath)'));
       final String recover = compactCode(
-        maskComments(
-          methodBody(page, 'Future<void> _recoverFromProcessGone('),
-        ),
+        maskComments(methodBody(page, 'Future<void> _recoverFromProcessGone(')),
       );
       for (final String stale in <String>[
         '_web=null;',
