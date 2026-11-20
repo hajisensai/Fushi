@@ -215,8 +215,78 @@ void main() {
         dir.deleteSync(recursive: true);
       }
     });
+
+    test('dragging the window edge re-requests only the final tier', () async {
+      // manga-22：resize 一秒几十次，每次都直接换 `fit=` 档的话，已加载的页每跨过
+      // 一个 128 px 档就排一次整张转码；resize 路径只排版，换图走 200 ms 合并。
+      final String document = doc(fit: true);
+      final int from = document.indexOf('  var FIT_IMAGES = ');
+      final int to = document.indexOf('  function _recenterPan(){');
+      expect(from, greaterThan(0));
+      expect(to, greaterThan(from));
+      final String section = document.substring(from, to);
+      final String script = _resizeHarness.replaceFirst(
+        '/*SECTION*/',
+        section,
+      );
+      final Directory dir = Directory.systemTemp.createTempSync('manga-fit-');
+      try {
+        final File file = File('${dir.path}/verify.js')
+          ..writeAsStringSync(script);
+        final ProcessResult result = await Process.run('node', <String>[
+          file.path,
+        ], runInShell: Platform.isWindows);
+        expect(
+          result.exitCode,
+          0,
+          reason: '${result.stdout}\n${result.stderr}',
+        );
+      } finally {
+        dir.deleteSync(recursive: true);
+      }
+    });
   });
 }
+
+const String _resizeHarness = r'''
+const assert=require('node:assert/strict');
+var ZOOM=1, CURRENT=0, IS_WEBTOON=false, IS_VERTICAL_PAGED=false;
+var ROTATE_WIDE=false, SPREAD_GUTTER=false;
+const listeners={};
+const window={innerWidth:800,innerHeight:1200,devicePixelRatio:2,
+  addEventListener(type,fn){ (listeners[type]=listeners[type]||[]).push(fn); }};
+const timers=[];
+function setTimeout(fn){ timers.push(fn); return timers.length; }
+function clearTimeout(id){ if (id) timers[id-1]=null; }
+function flushTimers(){ timers.splice(0).forEach(function(fn){ if (fn) fn(); }); }
+function getComputedStyle(){ return {marginBottom:'0px'}; }
+function _applyWidePolicy(){}
+function _bridge(){ return null; }
+const img={a:{'data-src':'https://manga.local/img/p0.jpg?s=ab&v=1'},sets:0,
+  complete:false,naturalWidth:0,
+  getAttribute(k){ return k in this.a ? this.a[k] : null; },
+  setAttribute(k,v){ this.a[k]=String(v); this.sets++; }};
+const source={style:{}};
+const page={dataset:{pw:'3840',ph:'5400',spreadPages:'1'},style:{},
+  previousElementSibling:null,
+  getAttribute(k){ return k==='data-spread' ? '0' : null; },
+  querySelector(sel){ return sel==='img' ? img : source; },
+  getBoundingClientRect(){ return {top:0,bottom:10}; }};
+const document={body:{style:{}},documentElement:{style:{}},
+  querySelectorAll(){ return [page]; }, querySelector(){ return page; }};
+/*SECTION*/
+assert.equal(img.sets,1,'开卷首排版立即取图，不等合并');
+const opened=img.a.src;
+for (let w=800; w<=1400; w+=40) {
+  window.innerWidth=w;
+  listeners.resize.forEach(function(fn){ fn(); });
+}
+assert.equal(img.sets,1,'拖动过程中不换档取图');
+flushTimers();
+assert.equal(img.sets,2,'停手后只按最终尺寸取一次');
+assert.notEqual(img.a.src,opened);
+assert.match(img.a.src,/&fit=\d+$/);
+''';
 
 const String _harness = r'''
 const assert=require('node:assert/strict');
