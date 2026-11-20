@@ -583,12 +583,22 @@ class VideoBookRepository {
   /// 视频库书架展示用列表：在 [listAll] 基础上自愈被数据根迁移遗弃的封面绝对路径
   /// （[_repairMovedCoverPaths]）。**只给展示层用**——删除 GC（[collectReferencedAssetPaths]）
   /// 与去重（[findByVideoPath]）走纯 [listAll]，不引入 path_provider 依赖与写副作用。
-  Future<List<VideoBookRow>> listForShelf() {
+  Future<List<VideoBookRow>> listForShelf() =>
+      _listForShelfFrom(_db.allVideoBooks);
+
+  /// [listForShelf] 的按 uid 版本（同样自愈封面路径），只取这几行：库页刮削增量
+  /// 刷新只换标题 / 封面变了的书架行，不为几行重列整库。不存在的 uid 不在结果里。
+  Future<List<VideoBookRow>> listForShelfByUids(Iterable<String> bookUids) =>
+      _listForShelfFrom(() => _db.getVideoBooksByBookUids(bookUids));
+
+  Future<List<VideoBookRow>> _listForShelfFrom(
+    Future<List<VideoBookRow>> Function() read,
+  ) {
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
     // maintenance 活跃时仍允许纯读展示，但绝不在它结束后拿旧快照做路径自愈写回。
-    if (lease == null) return _db.allVideoBooks();
-    return _listForShelfUnlocked().whenComplete(lease.release);
+    if (lease == null) return read();
+    return _listForShelfUnlocked(read).whenComplete(lease.release);
   }
 
   /// 书架展示的**读**路径不持 [VideoCoverMutationGate]。
@@ -598,8 +608,10 @@ class VideoBookRepository {
   /// future 一旦被丢弃（页面销毁、widget 树拆除、测试 zone 结束），队列尾就永远
   /// 不完成，此后全进程的封面写入**全部死锁**。真正需要串行的只有下面
   /// [_repairMovedCoverPaths] 里那次极少发生的指针回写，锁就只加在那里。
-  Future<List<VideoBookRow>> _listForShelfUnlocked() async {
-    final List<VideoBookRow> rows = await _db.allVideoBooks();
+  Future<List<VideoBookRow>> _listForShelfUnlocked(
+    Future<List<VideoBookRow>> Function() read,
+  ) async {
+    final List<VideoBookRow> rows = await read();
     return _repairMovedCoverPaths(rows);
   }
 

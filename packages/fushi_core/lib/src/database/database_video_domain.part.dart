@@ -402,10 +402,13 @@ mixin _FushiDbVideoDomain
 
   /// 全表附加图组（库页/首页批量预取，替代逐归属查询的 N+1；调用方按
   /// collectionId / bookUid 内存分组）。
+  /// 排序与 [compareMediaImagesForDisplay] 同一口径（id 兜底，同位次也有确定顺序，
+  /// 库页增量重读才能与整表重读逐项一致）。
   Future<List<MediaImageRow>> getAllMediaImages() =>
       (select(mediaImages)..orderBy([
             ($MediaImagesTable t) => OrderingTerm(expression: t.kind),
             ($MediaImagesTable t) => OrderingTerm(expression: t.position),
+            ($MediaImagesTable t) => OrderingTerm(expression: t.id),
           ]))
           .get();
 
@@ -743,6 +746,7 @@ mixin _FushiDbVideoDomain
             ]))
           .get();
 
+  /// 排序与 [compareVideoMetadataEpisodesForDisplay] 同一口径（id 兜底）。
   Future<List<VideoMetadataEpisodeRow>> getAllVideoMetadataEpisodes() =>
       (select(videoMetadataEpisodes)
             ..orderBy(<OrderingTerm Function($VideoMetadataEpisodesTable)>[
@@ -750,6 +754,7 @@ mixin _FushiDbVideoDomain
                   OrderingTerm(expression: t.seasonId),
               ($VideoMetadataEpisodesTable t) =>
                   OrderingTerm(expression: t.episodeNumber),
+              ($VideoMetadataEpisodesTable t) => OrderingTerm(expression: t.id),
             ]))
           .get();
 

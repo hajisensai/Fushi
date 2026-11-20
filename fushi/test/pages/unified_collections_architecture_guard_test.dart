@@ -180,8 +180,13 @@ void main() {
       isTrue,
       reason: '首页行卡统一 2:3 竖封面，卡宽走 videoHomePosterCardWidth',
     );
+    // 刮削展示映射收在 [VideoLibraryScrapeMaps]（整表与增量刷新共用）。
     expect(
-      homeSrc.contains('getAllCollectionScrapeMeta'),
+      homeSrc.contains('VideoLibraryScrapeMaps.load(') &&
+          homeSrc.contains('_collectionScrapeMetaById') &&
+          File(
+            'lib/src/media/video/video_library_scrape_maps.dart',
+          ).readAsStringSync().contains('getAllCollectionScrapeMeta'),
       isTrue,
       reason: '视频首页必须消费合集刮削资料（作品名 / 年份筛选）',
     );
