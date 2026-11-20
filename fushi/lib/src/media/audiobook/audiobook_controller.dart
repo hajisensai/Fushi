@@ -2426,8 +2426,9 @@ class AudiobookPlayerController extends ChangeNotifier {
       positionMs: effectiveMs,
     );
     // 显示句（悬浮字幕等）与 reader 高亮分开记：gap 里高亮 hold 上一句，显示句
-    // 已经是下一句（novel-15）。命中句区间时显示句就是当前句，随下面的
-    // notifyListeners 一起被显示面读到，不另发信号。
+    // 已经是下一句（novel-15）。命中句区间时显示句就是当前句：当前句换了就随下面
+    // 的 notifyListeners 一起被显示面读到；当前句没变（从 gap 落回 hold 的那一句）
+    // 则只发显示面信号。
     final AudioCue? display = idx >= 0
         ? fileCues[idx]
         : _displayCueFor(cues: fileCues, effectiveMs: effectiveMs);
@@ -2459,6 +2460,11 @@ class AudiobookPlayerController extends ChangeNotifier {
       }
       if (forceNotify) {
         notifyListeners();
+      } else if (displayChanged) {
+        // 正文 hold 的那一句没变，但显示句变了：gap 里显示句已提前切到下一句，
+        // 随后回退 / 单句循环落回这一句（novel-15）。不 notify 正文监听者，只告诉
+        // 显示面，否则悬浮字幕停在下一句、耳朵里放的却是这一句。
+        _displayCueSignal.fire();
       }
       return;
     }

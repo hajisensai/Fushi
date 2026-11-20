@@ -194,5 +194,31 @@ void main() {
       controller.debugUpdateCueForPosition(4500); // 下一个 gap → s2
       expect(displaySignals, 2);
     });
+
+    test('gap 里显示句已切到下一句，回退进 hold 的那一句也要发信号', () {
+      final controller = AudiobookPlayerController();
+      addTearDown(controller.dispose);
+      controller.setChapterCues(cues);
+      int displaySignals = 0;
+      int readerNotifies = 0;
+      controller.displayCueChanged.addListener(() => displaySignals++);
+      controller.addListener(() => readerNotifies++);
+
+      controller.debugUpdateCueForPosition(1500); // s0 句内
+      controller.debugUpdateCueForPosition(2500); // gap → 显示句 s1
+      expect(displaySignals, 1);
+      final int notifiesBeforeRewind = readerNotifies;
+
+      // 回退几秒 / 单句循环跳回句首：落回正文仍 hold 着的 s0。currentCue 没变，
+      // 控制器不 notify；显示句却从 s1 回到 s0，显示面必须收到信号，否则悬浮
+      // 字幕停在 s1、而耳朵里在放 s0。
+      controller.debugUpdateCueForPosition(1200);
+      expect(controller.currentCue?.text, 's0');
+      expect(readerNotifies, notifiesBeforeRewind, reason: '正文高亮没变，不 notify');
+      expect(displaySignals, 2, reason: '显示句 s1 → s0 没有任何信号');
+
+      controller.debugUpdateCueForPosition(1800); // 仍在 s0：显示句没变
+      expect(displaySignals, 2);
+    });
   });
 }
