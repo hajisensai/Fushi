@@ -90,8 +90,6 @@ import 'package:fushi/src/media/video/video_resource_check.dart'
     show isLocalVideoResourceMissing;
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/sync/video_remote_host.dart';
-import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
-    show youtubeVideoIdOrNull;
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart'
     show RemoteMineResult;
 import 'package:fushi_engine/sync/immersion_mine_payload.dart';
@@ -239,7 +237,8 @@ class WebVideoFushiPage extends ConsumerStatefulWidget {
 
   /// 制卡队列真机钩子：把当前 cue（无则位置附近最近一条）按弹窗制卡同一路径入队，
   /// 回队列行 id；`debugRunMineQueue` 跑完整个队列（重放录音/截帧 → 引擎）后返回
-  /// 一次重放抓到的媒体大小与 warning（引擎落卡结果看队列行 status/error）。
+  /// 一次重放抓到的媒体大小与 warning（引擎落卡结果：成功的行直接出表、warning 记诊断日志，
+  /// 失败的行留在队列里看 status/error，见 [WebMineQueueStore.markDone]）。
   @visibleForTesting
   static Future<int?> Function(Map<String, String> fields)?
   debugEnqueueCurrentCue;
@@ -372,12 +371,28 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     canOwn: (FocusReclaimCause _) => mounted && !_popup.hasVisiblePopup,
   );
 
+  /// WebView 渲染 / 浏览器进程死亡的处置（BUG-4906）：先 [_recoverFromProcessGone] 作废死表面的
+  /// 一切引用、换环境、记下要回到哪里，再按预算重建。[WebViewDeathGuard.deathCount] 同时是表面的
+  /// 「代」：重放循环据此判断录到的东西是不是同一个表面上的。
   late final WebViewDeathGuard _deathGuard = WebViewDeathGuard(
     surface: 'web_video',
+    flushBeforeRebuild: _recoverFromProcessGone,
     afterRebuild: () {
       if (mounted) setState(() {});
     },
+    reporter: (String surface, String message) =>
+        ErrorLogService.instance.log('web_video', '$surface: $message'),
   );
+
+  /// 在途的 [_js] 调用，每次调用一个、结束即移出。死进程上的 `evaluateJavascript` 可能永不
+  /// 返回：表面死亡时 [_recoverFromProcessGone] 把这里还在飞的全部以 null 结束，在途调用随
+  /// 表面一起作废，不把重放循环挂死。不在一个长寿 future 上为每次调用挂监听——表面不死时
+  /// 那些监听连同调用结果会一直被引用，长时间看片只增不减。
+  final Set<Completer<Object?>> _inflightJs = <Completer<Object?>>{};
+
+  /// 重建出来的 WebView 打开的地址：首建是书的起始页；进程死后是死前所在的页面（站内换过
+  /// 集也不被甩回第一集）。
+  String? _surfaceUrl;
 
   InAppWebViewController? _web;
 
@@ -884,6 +899,54 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     WidgetsBinding.instance.addPostFrameCallback((_) => _seedWarmPopup());
   }
 
+  /// WebView 进程死后、表面重建前（[WebViewDeathGuard] 的 flushBeforeRebuild，BUG-4906）。
+  ///
+  /// 宿主 State 不随表面重建，死表面留下的东西都得在这里作废，否则新 WebView 起来之前它们
+  /// 一直被当成活的：控制器（死进程上的调用会抛或永久挂起）、最后一拍播放态（重放循环拿它
+  /// 判「播到了没有」）、超分确认、绑在死前浏览器进程上的静音预起。然后记下死前所在的页面与
+  /// 播放位置，重建后回到那里（不是书的起始页）；正在重放时不恢复——本轮会因表面换代结束，
+  /// 收尾时按开跑前的状态恢复（[_beginRestore]）。
+  ///
+  /// 最后换环境：Dart 侧分不出死的是渲染进程还是浏览器进程，一律丢掉缓存的环境重建（只是渲染
+  /// 进程死了新环境会接回同一个浏览器进程）。环境建不出来抛出由 death guard 记录，重建照样进行。
+  Future<void> _recoverFromProcessGone() async {
+    final List<Completer<Object?>> inflight = _inflightJs.toList();
+    _inflightJs.clear();
+    for (final Completer<Object?> call in inflight) {
+      if (!call.isCompleted) call.complete(null);
+    }
+    final WebVideoPlaybackState? last = _state;
+    final String href = last != null && last.href.isNotEmpty
+        ? last.href
+        : (_webViewUrl ?? '');
+    if (href.isNotEmpty) _surfaceUrl = href;
+    _web = null;
+    _viewId = null;
+    _shaderActive = false;
+    _state = null;
+    _dropSeekTarget();
+    final ({LoopbackGalAudioSource source, PcmFormat format})? pre =
+        _preStartedAudio;
+    _preStartedAudio = null;
+    _preStartFuture = null;
+    if (pre != null) unawaited(pre.source.stop());
+    if (last != null &&
+        !_mineRunning &&
+        !_isMiningHost &&
+        _pendingRestore == null) {
+      _beginRestore(WebMineReturnState.of(last));
+    }
+    if (!mounted) return;
+    if (_windowed) {
+      // 旧环境不释放：窗口宿主档环境与原生播放器页的播放器层共用一份缓存，别人可能还拿着。
+      discardWebVideoWindowedEnvironment()?.ignore();
+      _env = await WebVideoFushiPage.windowedEnvironment();
+    } else {
+      discardWebVideoCapturableEnvironment();
+      _env = await WebVideoFushiPage.capturableEnvironment();
+    }
+  }
+
   void _seedWarmPopup() {
     if (!mounted) return;
     _popup.lowMemory = _appModel.lowMemoryMode;
@@ -916,11 +979,13 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     );
     if (track == null) return;
     _tracks[track.key] = track;
-    _reselectTrack();
+    _reselectTrack(updatedKey: track.key);
   }
 
   /// 轨集 / 当前视频变化后重选当前轨并灌进 controller（同轨更新也要灌：live 轨边看边长）。
-  void _reselectTrack() {
+  /// [updatedKey] = 本次只是这条轨到了 / 长了：选轨没变且它不是当前轨时只记进轨集、不重灌
+  /// （[webVideoTrackUpdateNeedsReload]）。
+  void _reselectTrack({String? updatedKey}) {
     final String? next = _subtitlesOff
         ? null
         : chooseWebVideoTrackKey(
@@ -931,7 +996,15 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
             pinned: _pinnedTrackKey,
           );
     final bool changed = next != _activeTrackKey;
+    final bool reload =
+        updatedKey == null ||
+        webVideoTrackUpdateNeedsReload(
+          updatedKey: updatedKey,
+          previousActiveKey: _activeTrackKey,
+          nextActiveKey: next,
+        );
     _activeTrackKey = next;
+    if (!reload) return;
     final WebVideoTrack? track = next == null ? null : _tracks[next];
     _controller.setCues(track?.cues ?? const <AudioCue>[]);
     final int? pos = _state?.positionMs;
@@ -1020,18 +1093,32 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   Future<Object?> _js(String expression) async {
     final InAppWebViewController? web = _web;
     if (web == null) return null;
+    final Completer<Object?> call = Completer<Object?>();
+    _inflightJs.add(call);
+    web
+        .evaluateJavascript(
+          source:
+              '(function(){try{return window.__fushiWebVideo&&'
+              '($expression);}catch(e){return String(e);}})()',
+        )
+        .then(
+          (Object? value) {
+            if (!call.isCompleted) call.complete(value);
+          },
+          onError: (Object e, StackTrace st) {
+            if (!call.isCompleted) call.completeError(e, st);
+          },
+        );
     try {
-      return await web.evaluateJavascript(
-        source:
-            '(function(){try{return window.__fushiWebVideo&&'
-            '($expression);}catch(e){return String(e);}})()',
-      );
+      return await call.future;
     } catch (e) {
       ErrorLogService.instance.log(
         'web_video',
         'evaluateJavascript failed: $e',
       );
       return null;
+    } finally {
+      _inflightJs.remove(call);
     }
   }
 
@@ -1220,36 +1307,127 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   /// 媒体源），录不了句子音频/截不了帧。之后在本页（可捕获的 1080p 内置档）按队列逐句重放
   /// 录音 + 截帧再落卡。行里冻结点击那一刻的 Anki 字段（词典释义等）与 cue 时间窗。
   /// 无锚点 cue（还没查过词 / 无字幕轨）时退回 mixin 的纯字段制卡，行为与改动前一致。
+  ///
+  /// YouTube 例外（gap-webvideo-4）：与原生播放器页网页档、手机遥控同一条分流
+  /// （[mineWebVideoCueDirectOrQueue]），按视频 id + 字幕时间窗从真实视频流后台直裁，裁不出来
+  /// 才退回队列。
   @override
   Future<MinePopupResult> onMineEntry(Map<String, String> fields) async {
     final AudioCue? cue = _lastLookupCue ?? _controller.currentCue;
     final VideoBookRow? row = _row;
     if (cue == null || row == null) return super.onMineEntry(fields);
-    await _enqueueMine(fields, cue, row);
+    if (await _mineLocalCue(fields, cue, row)) {
+      FushiToast.show(msg: t.web_video_mine_background);
+      return const MinePopupResult.queued();
+    }
     FushiToast.show(msg: t.web_video_mine_queued(count: _minePending));
     // 卡还没真落地：不把弹窗按钮画成 ✓（弹窗侧「未知结局不重画」契约，TODO-448）。
     return const MinePopupResult();
   }
 
-  Future<void> _enqueueMine(
+  /// 本页一句制卡（弹窗 / 顶层查词窗口）的分流：YouTube 在后台直裁（返回 true，结局由 toast
+  /// 报），其它站点入队（返回 false 时已入队）。
+  Future<bool> _mineLocalCue(
     Map<String, String> fields,
     AudioCue cue,
     VideoBookRow row,
   ) async {
-    final String fieldSentence = (fields['sentence'] ?? '').trim();
-    await _mineQueue.enqueue(
-      bookUid: widget.bookUid,
-      videoKey: _videoKey,
-      href: _state?.href.isNotEmpty == true ? _state!.href : row.videoPath,
-      cueStartMs: cue.startMs,
-      cueEndMs: cue.endMs,
-      sentence: fieldSentence.isEmpty
-          ? simultaneousCueText(_controller.cueStreamOwning(cue), cue)
-          : fieldSentence,
-      cueSentence: cue.text,
-      fields: fields,
+    final ({String href, String sentence, Future<void> Function() enqueue})
+    frozen = _freezeMineEnqueue(fields, cue, row);
+    final String? youtubeId = webVideoDirectMineVideoId(frozen.href);
+    if (youtubeId == null) {
+      await frozen.enqueue();
+      return false;
+    }
+    unawaited(
+      _mineYoutubeCueInBackground(
+        ImmersionMinePayload(
+          fields: fields,
+          sentence: frozen.sentence,
+          cueSentence: cue.text,
+          documentTitle: _barTitle(row),
+          youtubeVideoId: youtubeId,
+          clipStartMs: cue.startMs,
+          clipEndMs: cue.endMs,
+        ),
+        frozen.enqueue,
+      ),
     );
-    await _refreshMinePending();
+    return true;
+  }
+
+  /// 入队一句要的东西在点下这一刻冻结（字段、时间窗、所在视频与地址）：YouTube 直裁失败
+  /// 退回入队时已过了几秒，用户可能换了集。返回的 `enqueue` 真正写库，可以晚些调。
+  ({String href, String sentence, Future<void> Function() enqueue})
+  _freezeMineEnqueue(
+    Map<String, String> fields,
+    AudioCue cue,
+    VideoBookRow row,
+  ) {
+    final String fieldSentence = (fields['sentence'] ?? '').trim();
+    final String videoKey = _videoKey;
+    final String href = _state?.href.isNotEmpty == true
+        ? _state!.href
+        : row.videoPath;
+    final String sentence = fieldSentence.isEmpty
+        ? simultaneousCueText(_controller.cueStreamOwning(cue), cue)
+        : fieldSentence;
+    Future<void> enqueue() async {
+      await _mineQueue.enqueue(
+        bookUid: widget.bookUid,
+        videoKey: videoKey,
+        href: href,
+        cueStartMs: cue.startMs,
+        cueEndMs: cue.endMs,
+        sentence: sentence,
+        cueSentence: cue.text,
+        fields: fields,
+      );
+      await _refreshMinePending();
+    }
+
+    return (href: href, sentence: sentence, enqueue: enqueue);
+  }
+
+  /// YouTube 后台直裁的结局只剩 toast 能告诉用户（弹窗早已收下）；拿不到媒体退回队列，与取
+  /// 媒体无关的失败（Anki 未配置 / 落卡失败等）当场报失败。
+  Future<void> _mineYoutubeCueInBackground(
+    ImmersionMinePayload payload,
+    Future<void> Function() enqueue,
+  ) async {
+    final RemoteMineResult? res;
+    try {
+      res = await mineWebVideoCueDirectOrQueue(
+        mineDirect: () =>
+            _appModel.createRemoteMiningService().mineImmersion(payload),
+        enqueue: enqueue,
+        onFallback: (String reason) => ErrorLogService.instance.log(
+          'web_video.mine',
+          'YouTube direct mine failed, queued for replay: $reason',
+        ),
+      );
+    } catch (e, st) {
+      // 连退回入队都失败（库写不进去）。
+      ErrorLogService.instance.log('web_video.mine', e, st);
+      if (mounted) FushiToast.show(msg: t.card_export_failed);
+      return;
+    }
+    if (!mounted) return;
+    if (res == null) {
+      FushiToast.show(msg: t.web_video_mine_queued(count: _minePending));
+    } else if (res.result == 'duplicate') {
+      FushiToast.show(msg: t.card_duplicate);
+    } else if (res.result == 'success') {
+      FushiToast.show(msg: t.card_exported(deck: res.deckName ?? ''));
+      // 与队列落卡同一笔统计（[_mineQueuedRow]）：改走直裁不该让 YouTube 的卡不再计数。
+      unawaited(recordMined());
+    } else {
+      FushiToast.show(
+        msg: t.card_export_failed_detail(
+          reason: res.message ?? res.detail ?? res.result,
+        ),
+      );
+    }
   }
 
   Future<void> _refreshMinePending() async {
@@ -1475,8 +1653,11 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       userDataFolder: WebVideoFushiPage.capturableUserDataFolder(),
       silent: true,
     );
+    final int surfaceGen = _deathGuard.deathCount;
     final PcmFormat? format = await silent.start();
-    if (!mounted) {
+    // 起的途中表面死了：这份采集绑的是死前的浏览器进程，[_recoverFromProcessGone] 已作废本次
+    // 预起，新 WebView 建好时会重起一份。
+    if (!mounted || surfaceGen != _deathGuard.deathCount) {
       await silent.stop();
       return;
     }
@@ -1546,7 +1727,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     await web.loadUrl(urlRequest: URLRequest(url: WebUri(row.href)));
     final DateTime until = DateTime.now().add(const Duration(seconds: 30));
     while (DateTime.now().isBefore(until)) {
-      if (!mounted || _mineStopRequested) {
+      // 表面在等的途中死了（[_web] 被作废或已换成重建出来的那个）：死页面等不到画面，不是
+      // 这个视频到不了（BUG-4906）。
+      if (!mounted || _mineStopRequested || !identical(web, _web)) {
         return WebMineNavigateOutcome.interrupted;
       }
       if (_videoKey == row.videoKey && (_state?.hasVideo ?? false)) {
@@ -1608,6 +1791,10 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       ErrorLogService.instance.log('web_video.mineQueue', error, stack);
     }
 
+    // 表面的代（BUG-4906）：本轮只认开跑时这一个 WebView。死了（重建出来的是另一个页面）或
+    // 已报废（重建预算用尽、[_web] 一直是 null），在途那一行留待办、本轮结束。
+    final int surfaceGen = _deathGuard.deathCount;
+    bool surfaceLost() => _web == null || _deathGuard.deathCount != surfaceGen;
     _replayOrigin = widget.mineReturnState ?? _currentReturnState();
     _pendingRestore = null;
     // 采集起好之后的每一步都在 [runWebMineQueueRound] 里：哪一步抛出，后面的还原步骤
@@ -1673,6 +1860,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
               cueStartMs: row.cueStartMs,
               cueEndMs: row.cueEndMs,
             );
+            // 录的途中表面死了：抓到的是死页面（停住的画面、空音频）或重建后别处的东西，
+            // 不能落成卡。抛出 → 这一行留待办（[runWebMineQueueRows] 的 surfaceLost）。
+            if (surfaceLost()) throw StateError('web_video_surface_lost');
             _debugCaptures?.add(cap);
             final String? error = await _mineQueuedRow(
               row,
@@ -1686,6 +1876,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
           markFailed: (WebMineQueueRow row, String error) =>
               _mineQueue.markFailed(row.id, error),
           onError: onMineError,
+          surfaceLost: surfaceLost,
           onUnreachable: (String videoKey) =>
               giveUps.giveUpVideo(widget.bookUid, videoKey),
           onProgress: () {
@@ -1724,12 +1915,15 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
           }
           unawaited(_refreshMinePending());
         },
-        // 自动跑：出了错（准备步骤抛出 / 某一行抛出），或剩下的待办全在到不了的视频上——
-        // 这本书本次空闲不再开跑。用户还没回来，空闲调度几秒后就会原样再撞一次；窗口宿主档
-        // 每撞一次还是一趟整页交接，所以记在进程级的 [WebMineIdleGiveUps] 而不是本页。
+        // 自动跑：出了错（准备步骤抛出 / 某一行抛出 / 重放表面进程死亡），或剩下的待办全在
+        // 到不了的视频上——这本书本次空闲不再开跑。用户还没回来，空闲调度几秒后就会原样再撞
+        // 一次（进程死亡多半是内存压力，立刻再跑只会再死）；窗口宿主档每撞一次还是一趟整页
+        // 交接，所以记在进程级的 [WebMineIdleGiveUps] 而不是本页。
         () async {
           if (!auto) return;
-          if (rowsEnd == null || rowsEnd == WebMineQueueRowsEnd.rowThrew) {
+          if (rowsEnd == null ||
+              rowsEnd == WebMineQueueRowsEnd.rowThrew ||
+              rowsEnd == WebMineQueueRowsEnd.surfaceLost) {
             giveUps.giveUpBook(widget.bookUid);
           } else if (giveUps.unreachableVideos(widget.bookUid).isNotEmpty) {
             giveUps.settleAfterRound(
@@ -1788,7 +1982,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
           providedAudioName:
               'web_video_audio.${immersionMiningAudioExtension()}',
           // 录不到音（无 loopback / 站点静音）也出截图卡：用户排队等的是这张卡，
-          // 缺音频记进行 warning 而不是整行报废。
+          // 缺音频只记一条诊断日志（行落卡后直接出表，见 [WebMineQueueStore.markDone]），
+          // 不整行报废。
           requireAudio: false,
           stillFormat: _appModel.videoMiningStillFormat,
         ),
@@ -2117,11 +2312,13 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       if (updateNoteId == null && r.accepted) _afterGlobalLookupMineAccepted();
       return r.toJson();
     }
-    await _enqueueMine(fields, cue, row);
+    final bool direct = await _mineLocalCue(fields, cue, row);
     if (updateNoteId == null) _afterGlobalLookupMineAccepted();
     return <String, Object?>{
       'ankiConnect': false,
-      'message': t.web_video_mine_queued(count: _minePending),
+      'message': direct
+          ? t.web_video_mine_background
+          : t.web_video_mine_queued(count: _minePending),
     };
   }
 
@@ -2781,9 +2978,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     );
   }
 
-  /// 遥控制卡：与本页制卡同两条路。YouTube 按视频 id + 时间窗（与手机试听同一个窗）从真实
-  /// 视频流裁音频与画面、当场出卡；其它站点冻结字段与字幕时间窗进本页制卡队列，之后在可
-  /// 捕获档逐句重放落卡（手机收到「已收下」）。
+  /// 遥控制卡：与本页制卡同一条分流（[mineWebVideoCueDirectOrQueue]）。YouTube 按视频 id +
+  /// 时间窗（与手机试听同一个窗）从真实视频流裁音频与画面、当场出卡，裁不出来退回队列；其它
+  /// 站点冻结字段与字幕时间窗进本页制卡队列，之后在可捕获档逐句重放落卡（手机收到「已收下」）。
   Future<Map<String, Object?>> _mineRemoteCue(
     VideoRemoteCue cue,
     Map<String, dynamic> request,
@@ -2798,46 +2995,59 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     final String href = _state?.href.isNotEmpty == true
         ? _state!.href
         : row.videoPath;
-    final String? youtubeId = youtubeVideoIdOrNull(href);
+    final String videoKey = _videoKey;
+    Future<void> enqueue() async {
+      await _mineQueue.enqueue(
+        bookUid: widget.bookUid,
+        videoKey: videoKey,
+        href: href,
+        cueStartMs: selection.startMs,
+        cueEndMs: selection.endMs,
+        sentence: sentence,
+        cueSentence: selection.cueSentence,
+        fields: parsed.fields,
+      );
+      await _refreshMinePending();
+      if (mounted) {
+        FushiToast.show(msg: t.web_video_mine_queued(count: _minePending));
+      }
+    }
+
+    final String? youtubeId = webVideoDirectMineVideoId(href);
     if (youtubeId != null) {
       final ({int clipStartMs, int clipEndMs}) window = _remoteMiningWindow(
         cue,
         selection.startMs,
         selection.endMs,
       );
-      final RemoteMineResult res = await _appModel
-          .createRemoteMiningService()
-          .mineImmersion(
-            ImmersionMinePayload(
-              fields: parsed.fields,
-              sentence: sentence,
-              cueSentence: selection.cueSentence,
-              documentTitle: _barTitle(row),
-              youtubeVideoId: youtubeId,
-              clipStartMs: window.clipStartMs,
-              clipEndMs: window.clipEndMs,
-            ),
-          );
-      return <String, Object?>{
-        'success': res.result == 'success',
-        if (res.result == 'duplicate') 'duplicate': true,
-        if (res.result != 'success' && res.result != 'duplicate')
-          'error': 'mining_failed',
-      };
-    }
-    await _mineQueue.enqueue(
-      bookUid: widget.bookUid,
-      videoKey: _videoKey,
-      href: href,
-      cueStartMs: selection.startMs,
-      cueEndMs: selection.endMs,
-      sentence: sentence,
-      cueSentence: selection.cueSentence,
-      fields: parsed.fields,
-    );
-    await _refreshMinePending();
-    if (mounted) {
-      FushiToast.show(msg: t.web_video_mine_queued(count: _minePending));
+      final RemoteMineResult? res = await mineWebVideoCueDirectOrQueue(
+        mineDirect: () => _appModel.createRemoteMiningService().mineImmersion(
+          ImmersionMinePayload(
+            fields: parsed.fields,
+            sentence: sentence,
+            cueSentence: selection.cueSentence,
+            documentTitle: _barTitle(row),
+            youtubeVideoId: youtubeId,
+            clipStartMs: window.clipStartMs,
+            clipEndMs: window.clipEndMs,
+          ),
+        ),
+        enqueue: enqueue,
+        onFallback: (String reason) => ErrorLogService.instance.log(
+          'web_video.mine',
+          'remote YouTube direct mine failed, queued for replay: $reason',
+        ),
+      );
+      if (res != null) {
+        return <String, Object?>{
+          'success': res.result == 'success',
+          if (res.result == 'duplicate') 'duplicate': true,
+          if (res.result != 'success' && res.result != 'duplicate')
+            'error': 'mining_failed',
+        };
+      }
+    } else {
+      await enqueue();
     }
     return <String, Object?>{
       ...const MinePopupResult.queued().toJson(),
@@ -3547,7 +3757,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   ) {
     return InAppWebView(
       webViewEnvironment: _env,
-      initialUrlRequest: URLRequest(url: WebUri(row.videoPath)),
+      initialUrlRequest: URLRequest(url: WebUri(_surfaceUrl ?? row.videoPath)),
       initialUserScripts: scripts,
       initialSettings: InAppWebViewSettings(
         // Windows 生效（fork put_UserAgent）。软件 DRM 档必须去掉 Edg/ 标记，否则

@@ -14963,6 +14963,7 @@ RemoteMineResult remoteMineError(
   Object? error,
   StackTrace? stackTrace,
   RemoteMineErrorKind errorKind = RemoteMineErrorKind.transient,
+  bool mediaUnavailable = false,
 }) {
   ErrorLogService.instance.log(source, error ?? detail ?? reason, stackTrace);
   return RemoteMineResult(
@@ -14970,6 +14971,7 @@ RemoteMineResult remoteMineError(
     message: reason,
     detail: detail,
     errorKind: errorKind,
+    mediaUnavailable: mediaUnavailable,
   );
 }
 
@@ -15363,6 +15365,7 @@ class _AppModelRemoteLookupService
           error: e,
           stackTrace: st,
           errorKind: youtubeMineResolveErrorKind(e),
+          mediaUnavailable: true,
         );
       }
       final ImmersionMiningResult ytRes = await ImmersionMiningEngine().mine(
@@ -15408,6 +15411,7 @@ class _AppModelRemoteLookupService
           'Anki.mineImmersion.youtube',
           youtubeMineAbortMessage(ytRes.abortReason),
           detail: ytRes.abortReason,
+          mediaUnavailable: true,
         );
       }
       return remoteMineResultFromOutcome(ytRes.outcome! as MineOutcome);
@@ -15491,6 +15495,7 @@ class _AppModelRemoteLookupService
           detail: 'resolve failed: $e',
           error: e,
           stackTrace: st,
+          mediaUnavailable: true,
         );
       }
       final ImmersionMiningResult biRes = await ImmersionMiningEngine().mine(
@@ -15543,6 +15548,7 @@ class _AppModelRemoteLookupService
           'Anki.mineImmersion.bilibili',
           'bilibili 制卡失败：${biRes.abortReason ?? '媒体抽取失败'}',
           detail: biRes.abortReason,
+          mediaUnavailable: true,
         );
       }
       return remoteMineResultFromOutcome(biRes.outcome! as MineOutcome);
