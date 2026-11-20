@@ -116,14 +116,16 @@ void main() {
   });
 
   // 2026-10-19 (owner's call): free slots are not enough, the holders'
-  // ceilings plus the next one's must fit half the RAM (64 GB -> 32 GB).
+  // ceilings plus the next one's must fit the budget (32 GB in this test;
+  // the default has been 5/8 of the RAM since 2026-11-20).
   test(
     'a free slot waits while the ceilings would overbook the budget',
     () async {
+      // The budget is pinned: the default follows the host's RAM.
       final HeavyLease t1 = await take(4, kind: HeavyKind.test);
       final HeavyLease t2 = await take(4, kind: HeavyKind.test);
       await expectLater(
-        take(4, kind: HeavyKind.test),
+        take(4, kind: HeavyKind.test, budgetMb: 32768),
         throwsA(
           isA<HeavyLeaseTimeout>().having(
             (HeavyLeaseTimeout e) => e.message,
@@ -137,7 +139,11 @@ void main() {
       );
       // An analyze still fits next to the two test runs, booked at its
       // measured footprint (8 GB) rather than its 16 GB ceiling.
-      final HeavyLease a = await take(4, kind: HeavyKind.analyze);
+      final HeavyLease a = await take(
+        4,
+        kind: HeavyKind.analyze,
+        budgetMb: 32768,
+      );
       expect(
         readHeavyHolders(
           Directory('${tmp.path}/state'),
@@ -189,7 +195,7 @@ void main() {
           5,
         ]);
         await expectLater(
-          take(2, kind: HeavyKind.test),
+          take(2, kind: HeavyKind.test, budgetMb: 32768),
           throwsA(
             isA<HeavyLeaseTimeout>().having(
               (HeavyLeaseTimeout e) => e.message,
@@ -202,7 +208,11 @@ void main() {
           ),
         );
         // An analyze fits next to it, in a light slot.
-        final HeavyLease a = await take(2, kind: HeavyKind.analyze);
+        final HeavyLease a = await take(
+          2,
+          kind: HeavyKind.analyze,
+          budgetMb: 32768,
+        );
         expect(a.slot, kLightSlotBase);
         a.release();
       } finally {

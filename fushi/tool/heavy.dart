@@ -13,7 +13,7 @@
 //        dart run tool/heavy.dart -- .\gradlew.bat :app:assembleRelease
 //
 // It queues first come, first served for a free slot whose run's memory
-// ceiling fits the budget next to the holders' (half the RAM; it never "runs
+// ceiling fits the budget next to the holders' (5/8 of the RAM; it never "runs
 // anyway", never reads the live free memory, and unless --wait-max-min=N is
 // given it never gives up waiting; a run goes ahead of earlier ones only
 // while those do not fit the budget and the head's booking stays free, and
