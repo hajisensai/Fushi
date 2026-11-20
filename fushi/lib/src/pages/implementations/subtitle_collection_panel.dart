@@ -1220,10 +1220,19 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
                   ),
           );
         case SubtitleBatchStatus.failed:
-          // 与本集面板同一套文案（BUG-1844）：key 被拒 / 连不上 / HTTP 状态码。
-          return Text(
-            describeSubtitleFailure(t.video_jimaku_download_failed, item.error),
-          );
+          return Text(switch (item.failureStage) {
+            // 下下来了：说成「下载失败」用户会去换来源，而问题在本地。
+            SubtitleBatchFailureStage.write =>
+              t.video_subtitle_batch_save_failed,
+            SubtitleBatchFailureStage.persist =>
+              t.video_subtitle_batch_persist_failed,
+            // 与本集面板同一套文案（BUG-1844）：key 被拒 / 连不上 / HTTP 状态码。
+            SubtitleBatchFailureStage.download || null =>
+              describeSubtitleFailure(
+                t.video_jimaku_download_failed,
+                item.error,
+              ),
+          });
         case SubtitleBatchStatus.downloading:
         case SubtitleBatchStatus.pending:
           return Text(t.video_jimaku_source_loading);
