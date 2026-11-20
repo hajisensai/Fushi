@@ -4000,7 +4000,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
 
   /// 「删除合集」时连同成员本体一起删：按 (mediaType, entryKey) 分派到删书/删视频。
   /// 复用批量删除同一分派纪律（[_batchDeleteConfirm]）——epub 直接删；srt 先 findByUid
-  /// 拿 bookKey 删本体再删 srt 行；video 逐个删并末尾一次 compact。删书本身各自 VACUUM。
+  /// 拿 bookKey 删本体再删 srt 行；video 逐个删并末尾一次 compact。删书同样逐本不回收、
+  /// 末尾（finally）回收一次。
   /// [deleteLocalFiles] / [deleteStatistics] 与视频侧共用同一回调形状。书架合集不提供
   /// 「同时删除本地文件」（书的原件删除自有纪律，走 [ReaderFushiSource.deleteBook]），
   /// 故 [deleteLocalFiles] 恒 false；[deleteStatistics] 来自「同时删除统计数据」勾选，
@@ -4012,6 +4013,32 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     bool deleteStatistics,
   ) async {
     bool anyVideo = false;
+    bool anyBook = false;
+    try {
+      await _deleteCollectionMembersMediaLoop(
+        members,
+        deleteStatistics,
+        onBookDeleted: () => anyBook = true,
+        onVideoDeleted: () => anyVideo = true,
+      );
+    } finally {
+      if (anyBook) {
+        await ReaderFushiSource.compactAfterBookDeleteBestEffort(
+          appModel.database,
+        );
+      }
+      if (anyVideo) {
+        await _videoRepo.compactAfterVideoDeleteBestEffort();
+      }
+    }
+  }
+
+  Future<void> _deleteCollectionMembersMediaLoop(
+    List<MediaCollectionItemRow> members,
+    bool deleteStatistics, {
+    required void Function() onBookDeleted,
+    required void Function() onVideoDeleted,
+  }) async {
     for (final MediaCollectionItemRow m in members) {
       switch (MediaKind.tryParse(m.mediaType)) {
         case MediaKind.epub:
@@ -4021,23 +4048,29 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           final String epubBookKey =
               await appModel.database.resolveEpubBookKeyByUid(m.entryKey) ??
               m.entryKey;
-          await ReaderFushiSource.instance.deleteBook(
-            db: appModel.database,
-            bookKey: epubBookKey,
-            appModel: appModel,
-            deleteStatistics: deleteStatistics,
-          );
+          final DeleteBookResult result = await ReaderFushiSource.instance
+              .deleteBook(
+                db: appModel.database,
+                bookKey: epubBookKey,
+                appModel: appModel,
+                deleteStatistics: deleteStatistics,
+                compactDatabase: false,
+              );
+          if (result.deleted) onBookDeleted();
         case MediaKind.srt:
           final SrtBookRepository repo = SrtBookRepository(appModel.database);
           final SrtBook? book = await repo.findByUid(m.entryKey);
           if (book != null) {
             if (book.bookKey.isNotEmpty) {
-              await ReaderFushiSource.instance.deleteBook(
-                db: appModel.database,
-                bookKey: book.bookKey,
-                appModel: appModel,
-                deleteStatistics: deleteStatistics,
-              );
+              final DeleteBookResult result = await ReaderFushiSource.instance
+                  .deleteBook(
+                    db: appModel.database,
+                    bookKey: book.bookKey,
+                    appModel: appModel,
+                    deleteStatistics: deleteStatistics,
+                    compactDatabase: false,
+                  );
+              if (result.deleted) onBookDeleted();
             }
             // 纯字幕书（bookKey 空）刻意不删统计：它的 legacy 统计与墓碑只能按
             // title 定位，会连坐同名 EPUB 的统计（与书架单删 / 批删同一边界）。
@@ -4049,7 +4082,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             m.entryKey,
             compactDatabase: false,
           );
-          anyVideo = true;
+          onVideoDeleted();
         case MediaKind.game:
           // 游戏成员**刻意跳过**：game 维度只支持解散合集不删本体——游戏本体是
           // 用户安装目录（exe 及其资源），绝不能从合集删除路径连带删除；从库移除
@@ -4060,9 +4093,6 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           // 未知种类（对端未来新增 / '' 哨兵）：本页不认识 → 跳过，不误删。
           break;
       }
-    }
-    if (anyVideo) {
-      await _videoRepo.compactAfterVideoDeleteBestEffort();
     }
   }
 

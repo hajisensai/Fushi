@@ -1516,6 +1516,8 @@ class AppModel
     List<DeletionPropagationCandidate> confirmed,
   ) async {
     bool deletedVideoBook = false;
+    // 书逐本不回收数据库空间，整批结束后回收一次（与视频同一纪律）。
+    bool deletedBook = false;
     for (final DeletionPropagationCandidate c in confirmed) {
       try {
         // 命名统一 Phase 3.4：墓碑 mediaType 经 [SyncTombstoneKind.tryParse]
@@ -1523,12 +1525,15 @@ class AppModel
         // 分支，跳过但留痕（语义与旧 default 一致）。
         switch (SyncTombstoneKind.tryParse(c.mediaType)) {
           case SyncTombstoneKind.book:
-            await ReaderFushiSource.instance.deleteBook(
-              db: database,
-              bookKey: c.itemKey,
-              appModel: this,
-              scope: DeleteScope.keepLocalOnly,
-            );
+            final DeleteBookResult result = await ReaderFushiSource.instance
+                .deleteBook(
+                  db: database,
+                  bookKey: c.itemKey,
+                  appModel: this,
+                  scope: DeleteScope.keepLocalOnly,
+                  compactDatabase: false,
+                );
+            deletedBook = deletedBook || result.deleted;
           case SyncTombstoneKind.video:
             final bool deleted = await VideoBookRepository(database)
                 .deleteVideoBookAndReclaimAssets(
@@ -1590,6 +1595,9 @@ class AppModel
       } catch (e) {
         debugPrint('[sync] apply deletion ${c.mediaType}/${c.itemKey}: $e');
       }
+    }
+    if (deletedBook) {
+      await ReaderFushiSource.compactAfterBookDeleteBestEffort(database);
     }
     if (deletedVideoBook) {
       await VideoBookRepository(database).compactAfterVideoDeleteBestEffort();

@@ -1066,45 +1066,59 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       }
       await appModel.audiobookSession.stopIfPlayingAny(sessionKeys);
     }
-    for (final key in toDelete) {
-      if (key.startsWith('srt_')) {
-        final String uid = key.substring(4);
-        final SrtBookRepository repo = SrtBookRepository(appModel.database);
-        final SrtBook? book = await repo.findByUid(uid);
-        if (book != null) {
-          // BUG-3101：配对了 EPUB 的字幕书由 deleteBook 整本删（srt 行随事务级联
-          // 删除），纯字幕书走 repo（scope 落地为 srtbook 墓碑）——只走一条路径，
-          // 计数按这条路径的真实结果（以前 deleteBook 后再按 uid 删一次，回报 0 行，
-          // 「已删除 N 本」少算）。纯字幕书刻意不删统计：它的统计只能按 title 定位，
-          // 会连坐同名 EPUB（见 [_selectionHasStatisticsTarget]）。
-          final DeleteBookResult removed = await ReaderFushiSource.instance
-              .deleteSrtShelfBook(
-                db: appModel.database,
-                book: book,
-                scope: scope,
-                deleteLocalFiles: deleteLocalFiles,
-                deleteStatistics: deleteStatistics,
-              );
-          localFiles = localFiles.merge(removed.localFiles);
-          if (removed.deleted) deleted++;
+    // 每本都不单独回收数据库空间（compactDatabase:false），整批结束后在 finally 里
+    // 回收一次：以前每删一本都跑一次整库 VACUUM + wal_checkpoint，批删 N 本串行 N 次。
+    try {
+      for (final key in toDelete) {
+        if (key.startsWith('srt_')) {
+          final String uid = key.substring(4);
+          final SrtBookRepository repo = SrtBookRepository(appModel.database);
+          final SrtBook? book = await repo.findByUid(uid);
+          if (book != null) {
+            // BUG-3101：配对了 EPUB 的字幕书由 deleteBook 整本删（srt 行随事务级联
+            // 删除），纯字幕书走 repo（scope 落地为 srtbook 墓碑）——只走一条路径，
+            // 计数按这条路径的真实结果（以前 deleteBook 后再按 uid 删一次，回报 0 行，
+            // 「已删除 N 本」少算）。纯字幕书刻意不删统计：它的统计只能按 title 定位，
+            // 会连坐同名 EPUB（见 [_selectionHasStatisticsTarget]）。
+            final DeleteBookResult removed = await ReaderFushiSource.instance
+                .deleteSrtShelfBook(
+                  db: appModel.database,
+                  book: book,
+                  appModel: appModel,
+                  scope: scope,
+                  deleteLocalFiles: deleteLocalFiles,
+                  deleteStatistics: deleteStatistics,
+                  compactDatabase: false,
+                );
+            localFiles = localFiles.merge(removed.localFiles);
+            if (removed.deleted) deleted++;
+          }
+        } else {
+          final String? bookKey = _parseBookKey(key);
+          if (bookKey != null) {
+            final DeleteBookResult result = await ReaderFushiSource.instance
+                .deleteBook(
+                  db: appModel.database,
+                  bookKey: bookKey,
+                  appModel: appModel,
+                  scope: scope,
+                  deleteLocalFiles: deleteLocalFiles,
+                  deleteStatistics: deleteStatistics,
+                  keepDownloadedFiles: decision.keepDownloadedFiles,
+                  compactDatabase: false,
+                );
+            localFiles = localFiles.merge(result.localFiles);
+            if (result.deleted) deleted++;
+          }
         }
-      } else {
-        final String? bookKey = _parseBookKey(key);
-        if (bookKey != null) {
-          final DeleteBookResult result = await ReaderFushiSource.instance
-              .deleteBook(
-                db: appModel.database,
-                bookKey: bookKey,
-                scope: scope,
-                deleteLocalFiles: deleteLocalFiles,
-                deleteStatistics: deleteStatistics,
-                keepDownloadedFiles: decision.keepDownloadedFiles,
-              );
-          localFiles = localFiles.merge(result.localFiles);
-          if (result.deleted) deleted++;
-        }
+        progress.value++;
       }
-      progress.value++;
+    } finally {
+      if (deleted > 0) {
+        await ReaderFushiSource.compactAfterBookDeleteBestEffort(
+          appModel.database,
+        );
+      }
     }
     if (!mounted) return;
     _refreshSrtBooks();
@@ -1554,6 +1568,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         .deleteSrtShelfBook(
           db: appModel.database,
           book: book,
+          appModel: appModel,
           scope: scope,
           deleteLocalFiles: decision.deleteLocalFiles,
           deleteStatistics: decision.deleteStatistics,
@@ -1662,6 +1677,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     final DeleteBookResult result = await ReaderFushiSource.instance.deleteBook(
       db: appModel.database,
       bookKey: bookKey,
+      appModel: appModel,
       scope: decision.scope,
       deleteLocalFiles: decision.deleteLocalFiles,
       deleteStatistics: decision.deleteStatistics,
