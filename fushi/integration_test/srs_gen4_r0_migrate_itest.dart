@@ -236,13 +236,37 @@ void main() {
           'focus=${FocusManager.instance.primaryFocus}',
         );
       }
-      if (!reached) {
-        _log('[r0] start button not focusable; giving up before Enter');
+      final Finder button = find.descendant(
+        of: start,
+        matching: find.byWidgetPredicate((Widget w) => w is ButtonStyleButton),
+      );
+      final ButtonStyleButton? b = button.evaluate().isEmpty
+          ? null
+          : tester.widget<ButtonStyleButton>(button.first);
+      final List<String> owners = <String>[];
+      FocusManager.instance.primaryFocus?.context?.visitAncestorElements((
+        Element e,
+      ) {
+        owners.add(e.widget.runtimeType.toString());
+        return owners.length < 12;
+      });
+      _log(
+        '[r0] diag: button=${b?.runtimeType} enabled=${b?.enabled} '
+        'canStart=${controller.canStart} dbOpen=${appModel.isDatabaseOpen} '
+        'focusOwners=${owners.join(' < ')}',
+      );
+      clock = Stopwatch()..start();
+      if (reached) {
+        _log('[r0] start button focused; pressing Enter');
+        _log('[r0] enter sent=${await key(LogicalKeyboardKey.enter)}');
+      } else if (b != null && b.enabled) {
+        // 焦点进不去（见上面 diag）：按钮本身可用，改调它的 onPressed（与 Enter 激活同一个回调，不是坐标点击），结论里注明。
+        _log('[r0] FOCUS FALLBACK: invoking the enabled button onPressed');
+        b.onPressed!();
+      } else {
+        _log('[r0] start button disabled; giving up');
         return;
       }
-      _log('[r0] start button focused; pressing Enter');
-      clock = Stopwatch()..start();
-      _log('[r0] enter sent=${await key(LogicalKeyboardKey.enter)}');
     } else if (_fallbackStart) {
       // 迁移页没出来（上面记了原因）：按钮背后就是 controller.start，直接调它把迁移本身测完，结论里注明。
       _log(
