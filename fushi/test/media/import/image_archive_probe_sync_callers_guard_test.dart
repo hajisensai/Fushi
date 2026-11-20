@@ -13,13 +13,12 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
-/// 去掉 `//` 注释后的代码行（文档注释里提到旧调用不算）。
-Iterable<String> _codeLines(File f) sync* {
-  for (final String line in f.readAsLinesSync()) {
-    final int comment = line.indexOf('//');
-    yield comment < 0 ? line : line.substring(0, comment);
-  }
-}
+import '../../helpers/source_guard.dart';
+
+/// 掩掉注释后的代码行（文档注释 / 块注释里提到旧调用不算）。[maskComments] 等长
+/// 替换、换行位置不变，行号与原文一致。
+Iterable<String> _codeLines(File f) =>
+    maskComments(f.readAsStringSync()).split('\n');
 
 void main() {
   test('同步开包判据只在后台探测入口里被调用', () {
