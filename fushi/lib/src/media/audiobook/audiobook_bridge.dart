@@ -704,20 +704,19 @@ void 0;
   ) async {
     if (query.isEmpty) return const <BookSearchResult>[];
 
-    // 每章搜索文本只算一次（后台 isolate、原生扫描），之后的查询直接复用。章节
-    // 正文可能被换掉（在线小说占位页 → 正文，`discardCachedHtml`），所以缓存按
-    // 每章 html 字符串的对象同一性校验，变了就整本重算。
-    final List<String> htmls = <String>[
-      for (final EpubChapter c in book.chapters) c.html,
-    ];
-    final _SearchTextCache? cached = _searchTextCache[book];
-    final List<String> texts;
-    if (cached != null && cached.matches(htmls)) {
-      texts = cached.texts;
-    } else {
-      texts = await compute(_buildSearchTexts, htmls);
-      _searchTextCache[book] = _SearchTextCache(htmls, texts);
+    // 每章搜索文本只算一次（后台 isolate、原生扫描），之后的查询直接复用。
+    // UI isolate 不碰章节正文：lazy 章节只把文件路径交给 isolate 自己读盘（以前
+    // 这里逐章读 `c.html`，首搜在 UI isolate 上同步读整本，读进来的正文随后一直
+    // 驻留在各章的缓存里）。章节正文可能被换掉（在线小说占位页 → 正文，
+    // `discardCachedHtml`），缓存按每章的显式内容版本号判新旧，只重算变了的章。
+    final _SearchTextCache cache = _searchTextCache[book] ??=
+        _SearchTextCache();
+    final List<_SearchTextJob> jobs = cache.staleJobs(book.chapters);
+    if (jobs.isNotEmpty) {
+      final List<String> built = await compute(_buildSearchTexts, jobs);
+      cache.store(book.chapters, jobs, built);
     }
+    final List<String> texts = cache.texts;
     return compute(
       _searchIsolate,
       _SearchParams(chapterTexts: texts, query: query),
@@ -792,18 +791,49 @@ void 0;
 
 // ── 搜索 isolate ─────────────────────────────────────────────────────────────
 
+/// 一章搜索文本的来源：lazy 章节给盘上路径（isolate 自己读），eager 章节给
+/// 已在内存里的正文。
+typedef _SearchTextJob = ({int index, String? filePath, String? html});
+
+/// [AudiobookBridge.searchBook] 的按书缓存：每章的搜索文本及其对应的
+/// [EpubChapter.contentVersion] / [EpubChapter.filePath]。不持有章节正文。
 class _SearchTextCache {
-  _SearchTextCache(this.htmls, this.texts);
+  List<String> texts = const <String>[];
+  List<int> _versions = const <int>[];
+  List<String?> _paths = const <String?>[];
 
-  final List<String> htmls;
-  final List<String> texts;
+  /// 缺失或版本 / 路径对不上的章。章数变了整本重算。
+  List<_SearchTextJob> staleJobs(List<EpubChapter> chapters) {
+    final bool sameShape = texts.length == chapters.length;
+    return <_SearchTextJob>[
+      for (int i = 0; i < chapters.length; i++)
+        if (!sameShape ||
+            _versions[i] != chapters[i].contentVersion ||
+            _paths[i] != chapters[i].filePath)
+          (
+            index: i,
+            filePath: chapters[i].filePath,
+            // eager 章节没有盘上文件，正文本来就在内存里。
+            html: chapters[i].filePath == null ? chapters[i].html : null,
+          ),
+    ];
+  }
 
-  bool matches(List<String> current) {
-    if (current.length != htmls.length) return false;
-    for (int i = 0; i < current.length; i++) {
-      if (!identical(current[i], htmls[i])) return false;
+  void store(
+    List<EpubChapter> chapters,
+    List<_SearchTextJob> jobs,
+    List<String> built,
+  ) {
+    final bool sameShape = texts.length == chapters.length;
+    final List<String> nextTexts = sameShape
+        ? List<String>.of(texts)
+        : List<String>.filled(chapters.length, '');
+    for (int j = 0; j < jobs.length; j++) {
+      nextTexts[jobs[j].index] = built[j];
     }
-    return true;
+    texts = nextTexts;
+    _versions = <int>[for (final EpubChapter c in chapters) c.contentVersion];
+    _paths = <String?>[for (final EpubChapter c in chapters) c.filePath];
   }
 }
 
@@ -813,22 +843,24 @@ class _SearchParams {
   final String query;
 }
 
-/// 后台 isolate：每章的搜索坐标系文本（[EpubBook.chapterSearchText]）。
-List<String> _buildSearchTexts(List<String> chapterHtmls) {
+/// 后台 isolate：每章的搜索坐标系文本（[EpubBook.chapterSearchText]）。lazy 章节
+/// 在这里按路径读盘（[EpubChapter.readHtmlFile]，与 UI isolate 的 `html` 同一套
+/// 解码），读完即弃，不回传正文。
+List<String> _buildSearchTexts(List<_SearchTextJob> jobs) {
   final EpubBook book = EpubBook(
     title: '',
     chapters: <EpubChapter>[
-      for (int i = 0; i < chapterHtmls.length; i++)
+      for (final _SearchTextJob job in jobs)
         EpubChapter(
-          id: '$i',
-          href: '$i',
+          id: '${job.index}',
+          href: '${job.index}',
           mediaType: 'application/xhtml+xml',
-          html: chapterHtmls[i],
+          html: job.html ?? EpubChapter.readHtmlFile(job.filePath!),
         ),
     ],
   );
   return <String>[
-    for (int i = 0; i < chapterHtmls.length; i++) book.chapterSearchText(i),
+    for (int i = 0; i < jobs.length; i++) book.chapterSearchText(i),
   ];
 }
 
