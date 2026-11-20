@@ -323,7 +323,8 @@ SettingsSliderItem _ttsFallbackSpeedItem() => SettingsSliderItem(
 );
 
 /// 「制卡发音兜底」的声音选择（单词音频；句子音频不做 TTS 兜底，BUG-172）。
-/// 偏好设备本地（可能指向本机声音预设），见 [kMiningTtsFallbackVoicePref]。
+/// 偏好设备本地（可能指向本机声音预设），按配置记、切配置自动换（只在本机），见
+/// [kMiningTtsFallbackVoicePref] 与 `ProfileRepository.perProfileDeviceLocalPrefs`。
 SettingsActionItem _miningTtsFallbackVoiceItem() => SettingsActionItem(
   id: 'models.tts_fallback_voice',
   title: t.models_tts_fallback_voice,

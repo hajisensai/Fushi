@@ -57,6 +57,20 @@ const String kSectionTabOrderPrefKeyPrefix = 'section_tab_order::';
 /// 不随备份导出、恢复时保留本机值，也不经设置同步离开本机。
 const String kSrsDayRolloverPendingPrefKeyPrefix = 'srs_day_rollover_pending::';
 
+/// String：制卡单词音频 / 查词的 TTS 兜底声音（`MiningTtsFallbackVoice.wire`）。live 值是**当前激活配置**
+/// 的选择，全部读取方（查词 ♪ / 自动发音、制卡、设置页、CLI）只读它。值可能指向本机的声音预设
+/// （`tts_voice_presets` 是设备本地清单），所以与 `tts_active_preset_id` 同族：设备本地，不进
+/// Profile 快照 / 备份 / 同步；各配置自己那份停放在 [kMiningTtsFallbackVoiceProfilePrefKeyPrefix]。
+const String kMiningTtsFallbackVoicePref = 'mining_tts_fallback_voice';
+
+/// 各配置停放的 TTS 兜底声音（拍板台 olNAZUnEy6，方案 A「按配置记，只记在本机」）：后缀 = profile uid，
+/// 值 = 切走那一刻 [kMiningTtsFallbackVoicePref] 的原始编码值，空串 = 那份配置没选过（查词不兜底）。
+/// 切走时由 `ProfileRepository.snapshotCurrentSettings` 写下，切入时由 `applyProfile` 换回 live 键；
+/// 没停放过的配置（升级前建的）切入时沿用当时的 live 值——即「现有全局值复制给每个配置当初始值」。
+/// 设备本地（`PrefRedactionPolicy.deviceLocalKeyPrefixes`）：不进 Profile 快照 / 分享 / 备份 / 设置同步。
+const String kMiningTtsFallbackVoiceProfilePrefKeyPrefix =
+    'mining_tts_fallback_voice::';
+
 /// 本机最后写下 / 采纳的复习翻日时刻修改记录 ID（String）：后缀 = profile uid。同步拉入后生效记录还是它就不改本机
 /// 统计日界（`AppModel.adoptSyncedDayRollover`）。设备本地，同上。
 const String kSrsDayRolloverSeenPrefKeyPrefix = 'srs_day_rollover_seen::';
@@ -1288,6 +1302,7 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
   kLibraryManualOrderPrefKeyPrefix,
   kSrsDayRolloverPendingPrefKeyPrefix,
   kSrsDayRolloverSeenPrefKeyPrefix,
+  kMiningTtsFallbackVoiceProfilePrefKeyPrefix,
   kMusicScanParserRevisionPrefKeyPrefix,
   'src:',
   // string：`sync_remote_account__<通道槽位>`——云后端最近一次取到的账号（规整后的
