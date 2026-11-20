@@ -490,7 +490,9 @@ class GraphicSubtitleTrackExtractionHub {
     required int streamIndex,
     required String? codec,
   }) async {
-    GraphicSubtitleTrackExtractOutcome outcome;
+    // 走到 finally 时仍是初值 = 意外异常中途抛出（不会被返回，只给登记表收尾判断用）。
+    GraphicSubtitleTrackExtractOutcome outcome =
+        const GraphicSubtitleTrackExtractOutcome(ok: false);
     try {
       await Directory(job.workPath).create(recursive: true);
       final _ExitRecordingBackend backend = _ExitRecordingBackend.wrap(
@@ -524,10 +526,22 @@ class GraphicSubtitleTrackExtractionHub {
         ok: false,
         failure: 'work dir: ${error.message}',
       );
+    } on ProcessException catch (error) {
+      // ffmpeg 起不来（捆绑件损坏 / 不在 PATH）：`Process.start` 的异常向上传播
+      // （[runFfmpegProcess] 契约），这里落成失败结局交给每份租约，与非零退出同一条路。
+      outcome = GraphicSubtitleTrackExtractOutcome(
+        ok: false,
+        failure: describeFfmpegProcessException(error),
+      );
+    } finally {
+      // 其它意外异常照样经 [outcome] 抛给持有者；登记表无论如何都要收尾，否则这份坏掉
+      // 的抽取会一直留在表里，后来者全加入它。
+      job.done = true;
+      // 失败的不留给后来者加入：下一位重新抽。
+      if (!outcome.ok && identical(_jobs[job.key], job)) {
+        _jobs.remove(job.key);
+      }
     }
-    job.done = true;
-    // 失败的不留给后来者加入：下一位重新抽。
-    if (!outcome.ok && identical(_jobs[job.key], job)) _jobs.remove(job.key);
     return outcome;
   }
 
@@ -537,7 +551,12 @@ class GraphicSubtitleTrackExtractionHub {
     // 正在被杀 / 正在删载荷的。
     if (identical(_jobs[job.key], job)) _jobs.remove(job.key);
     if (!job.done && !job.abort.isCompleted) job.abort.complete();
-    await job.outcome;
+    // 只等抽轨进程退出再删载荷；结局（含意外异常）已经经 [GraphicSubtitleTrackLease.outcome]
+    // 交给每份租约的持有者，交回不再重抛（整轨转文字在 finally 里交回，重抛会跳过收尾）。
+    await job.outcome.then<void>(
+      (GraphicSubtitleTrackExtractOutcome _) {},
+      onError: (Object _) {},
+    );
     try {
       await Directory(job.workPath).delete(recursive: true);
     } on FileSystemException {

@@ -890,6 +890,26 @@ void main() {
         await first.release();
         await second.release();
       });
+
+      test('ffmpeg 起不来（ProcessException）：落成失败结局，交回不抛，下一位重新抽', () async {
+        backend.launchError = const ProcessException('ffmpeg', <String>[
+          '-i',
+        ], 'not found');
+        final GraphicSubtitleTrackLease first = ocrLease();
+        final GraphicSubtitleTrackExtractOutcome failed = await first.outcome;
+        expect(failed.ok, isFalse);
+        expect(failed.exitCode, isNull);
+        expect(failed.failure, contains('ffmpeg launch failed'));
+        expect(hub.debugActiveExtractions, 0, reason: '坏掉的抽取不留在表里');
+        // 整轨转文字在 finally 里交回：这里抛出会跳过页面收尾（运行标志复位）。
+        await first.release();
+
+        final GraphicSubtitleTrackLease second = ocrLease();
+        await until(() => backend.started == 1);
+        backend.finish(0, 0);
+        expect((await second.outcome).ok, isTrue);
+        await second.release();
+      });
     });
   });
 }
@@ -903,6 +923,9 @@ class _ScriptedBackend implements FfmpegBackend, FfmpegWatchedRunner {
 
   /// 非零退出 / 被强杀时的 ffmpeg 日志。
   String failureOutput = 'Invalid data found when processing input';
+
+  /// 非 null = 下一次观察式运行像 `Process.start` 起不来那样直接抛它（用一次即清）。
+  ProcessException? launchError;
   final List<Completer<int?>> _runs = <Completer<int?>>[];
   int killed = 0;
 
@@ -915,6 +938,11 @@ class _ScriptedBackend implements FfmpegBackend, FfmpegWatchedRunner {
     List<String> args,
     FfmpegWatch watch,
   ) async {
+    final ProcessException? launch = launchError;
+    if (launch != null) {
+      launchError = null;
+      throw launch;
+    }
     final Completer<int?> exit = Completer<int?>();
     _runs.add(exit);
     unawaited(
