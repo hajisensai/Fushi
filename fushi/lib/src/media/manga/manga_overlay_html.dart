@@ -1006,6 +1006,22 @@ String mangaWindowDocument(
       'html,body{margin:0;padding:0;background:$backgroundCss;height:100%;'
       'touch-action:none;'
       '-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}'
+      // BUG-4927：文档级原生滚动条归文档自己管，不靠宿主 WebView 设置。
+      // InAppWebViewSettings 的 vertical/horizontalScrollBarEnabled 只在 Android
+      // 生效，Windows WebView2 用占位的经典滚动条（约 17px）：布局全是 100vw/100vh，
+      // 一条竖条出现就让 100vw 比可见宽度多出条宽 → 横向溢出 → 横条又让 100vh
+      // 溢出，四边滚动条互相撑出来（webtoon 内容一长就触发；spread 放大时
+      // #manga-canvas 的 scale 也会把文档撑出可滚溢出）。
+      // - 所有模式隐藏视口滚动条且不占位（scrollbar-width / ::-webkit-scrollbar）。
+      // - 溢出只写在 html（视口传播）上；写到 body 会让 body 自成滚动容器，
+      //   webtoon 的 window.scrollY 就失效了。
+      // - spread：两轴位置都由 JS 的 PAN_X/PAN_Y 与 translateX 拥有，文档本身
+      //   不得滚动 → overflow:hidden。
+      // - webtoon：纵向归 window.scrollY（滚轮走原生竖滚），横向归 PAN_X →
+      //   只关横向 overflow-x:hidden。
+      'html{scrollbar-width:none;'
+      '${isWebtoon ? 'overflow-x:hidden;' : 'overflow:hidden;'}}'
+      '::-webkit-scrollbar{display:none;width:0;height:0;}'
       '$rootSizing'
       // BUG-1759：#manga-canvas / #manga-root **不得**在样式表里常驻
       // will-change:transform——Chromium 会把带该提示的层的栅格化尺度钉成只升不降，

@@ -305,6 +305,7 @@
 | [BUG-4918](bugs/BUG-4918-srs-conflicts-stale-held-keep.md) | ✅ | ✅ | 冲突页处理失败后列表不重读、处理中按钮仍可点：扣住的删除反复报 no such conflict |
 | [BUG-4919](bugs/BUG-4919-music-hidden-tracks-under-masthead.md) | ✅ | ✅ | 已移除的曲目等音乐二级页正文顶端被页头盖住 |
 | [BUG-4923](bugs/BUG-4923-floating-ball-lens-consent-no-navigator.md) | ✅ | ✅ | 悬浮球截屏识字的 Google Lens 同意框弹不出来（context 之上没有 Navigator） |
+| [BUG-4927](bugs/BUG-4927-manga-windows-scrollbars.md) | ✅ | ✅ | manga-windows-scrollbars |
 | [BUG-4905](bugs/BUG-4905-ai-cast-text-substitutions.md) | ✅ | ✅ | 小说和漫画 AI 标注未应用系列用词替换表 |
 | [BUG-4904](bugs/BUG-4904-book-series-key-store-annotation.md) | ✅ | ✅ | 书店写法「卷号<系列名> (文库名)」的分卷导入后不归合集 |
 | [BUG-4903](bugs/BUG-4903-home-desktop-continue-cut-edge-title-concat.md) | ✅ | ✅ | 首页（桌面）「继续」右侧卡被窗口切掉一半、标题拼接成「Re：ゼロ…1<Re：…」 |
