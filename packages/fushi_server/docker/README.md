@@ -86,7 +86,13 @@ is turned off inside the container; update the image instead.
 | **Release bundle** | `docker compose -f docker-compose.bundle.yml up -d --build` | Packaging a published [fushi-server release](https://github.com/hajisensai/fushi-server/releases) in about a minute. Only as new as the latest release. `FUSHI_SERVER_TAG` pins one; a `fushi_server-*-linux-x64.tar.gz` in `dist/` is used instead of downloading. |
 | **Prebuilt** | `FUSHI_IMAGE=ghcr.io/hajisensai/fushi-server:latest` in `.env`, then `docker compose up -d` (no `--build`) | Once the maintainer publishes images (`.github/workflows/server-docker-publish.yml`). Not available yet. |
 
-Both builds give the same container: same settings, volumes and ports.
+Both builds give the same container: same settings, volumes and ports. The
+source build runs `packages/fushi_server/tool/build_linux_bundle.sh`, the same
+script the Linux release bundle is built with.
+
+Images are **linux/amd64 only**: the release bundles and the native libraries
+(libtorrent, the Rust cores, fushidicts, onnxruntime) are built for x64 only,
+so there is no arm64 image (Raspberry Pi, ARM NAS) yet.
 
 ## Settings that matter later
 

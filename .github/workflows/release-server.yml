@@ -183,17 +183,14 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ninja-build cmake pkg-config
-      - name: Pub get (workspace)
-        working-directory: fushi
-        run: flutter pub get
+      # 构建命令与 bundle 布局只在 packages/fushi_server/tool/build_linux_bundle.sh 写一次
+      # （Docker 的 Dockerfile.source 用同一份 `all`）；这里每个子命令一步，缓存与日志按件分。
       # 与 build-multiplatform.yml 各 job 同一步：fushi_asr_onnx_ffi 钉 archive ^4 而本仓钉
       # ^3.6.1，ci/patches/ 里那一行 readBytes→content 补丁不打，dart build cli 直接
-      # 编译失败（首跑 run 34798601057 实测，两个平台同一原因）。
-      - name: Apply pub cache patches
+      # 编译失败（首跑 run 34798601057 实测，两个平台同一原因）。prepare 两件都做。
+      - name: Pub get (workspace) + pub cache patches
         shell: bash
-        run: |
-          chmod +x ci/apply-patches.sh
-          bash ci/apply-patches.sh
+        run: bash packages/fushi_server/tool/build_linux_bundle.sh prepare
       - name: Resolve vcpkg cache identity
         id: vcpkg_cache_id
         shell: bash
@@ -225,11 +222,7 @@ jobs:
         shell: bash
         env:
           VCPKG_DOWNLOADS: ${{ runner.temp }}/vcpkg-downloads
-        run: |
-          set -euo pipefail
-          chmod +x native/fushi_torrent/build_linux_so.sh
-          bash native/fushi_torrent/build_linux_so.sh "$VCPKG_INSTALLATION_ROOT"
-          bash .github/scripts/verify_torrent_abi.sh native/fushi_torrent/prebuilt/linux-x64/libfushi_torrent_ffi.so nm
+        run: bash packages/fushi_server/tool/build_linux_bundle.sh torrent "$VCPKG_INSTALLATION_ROOT"
       # 互联 P2P 隧道（iroh）.so：服务端按 bin/../lib/libfushi_p2p.so 定位。只依赖
       # glibc（Rust 静态链其余一切），在本 job 的 ubuntu-22.04 上编即继承同一条 glibc 下限。
       # 失败口径同 torrent bridge：构建失败即 job 失败，不发缺库的服务端包。
@@ -244,10 +237,7 @@ jobs:
           key: fushi-p2p-linux-x64-ubuntu22
       - name: Build fushi_p2p (Linux x64)
         shell: bash
-        run: |
-          set -euo pipefail
-          bash native/fushi_p2p/build_linux_so.sh
-          bash native/fushi_p2p/verify_abi.sh native/fushi_p2p/prebuilt/linux-x64/libfushi_p2p.so nm
+        run: bash packages/fushi_server/tool/build_linux_bundle.sh rust fushi_p2p
       # SRS 排程内核（fsrs-rs）.so：服务端按 bin/../lib/libfushi_fsrs.so 定位。同 fushi_p2p：
       # 只依赖 glibc，构建失败即 job 失败。
       - name: Cache Rust build (fushi_fsrs)
@@ -257,10 +247,7 @@ jobs:
           key: fushi-fsrs-linux-x64-ubuntu22
       - name: Build fushi_fsrs (Linux x64)
         shell: bash
-        run: |
-          set -euo pipefail
-          bash native/fushi_fsrs/build_linux_so.sh
-          bash native/fushi_fsrs/verify_abi.sh native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so nm
+        run: bash packages/fushi_server/tool/build_linux_bundle.sh rust fushi_fsrs
       # 计算内核（哈希 / 图像 / 文本）.so：**硬依赖**，服务端按 bin/../lib/libfushi_compute.so
       # 定位。同 fushi_fsrs：只依赖 glibc，构建失败即 job 失败。
       - name: Cache Rust build (fushi_compute)
@@ -270,10 +257,7 @@ jobs:
           key: fushi-compute-linux-x64-ubuntu22
       - name: Build fushi_compute (Linux x64)
         shell: bash
-        run: |
-          set -euo pipefail
-          bash native/fushi_compute/build_linux_so.sh
-          bash native/fushi_compute/verify_abi.sh native/fushi_compute/prebuilt/linux-x64/libfushi_compute.so nm
+        run: bash packages/fushi_server/tool/build_linux_bundle.sh rust fushi_compute
       # RWKV-Instant 排程推理 .so：**硬依赖**，服务端按 bin/../lib/libfushi_rwkv.so 定位（经
       # fushi_srs → fushi_engine）。同 fushi_compute：只依赖 glibc，构建失败即 job 失败。
       - name: Cache Rust build (fushi_rwkv)
@@ -283,24 +267,12 @@ jobs:
           key: fushi-rwkv-linux-x64-ubuntu22
       - name: Build fushi_rwkv (Linux x64)
         shell: bash
-        run: |
-          set -euo pipefail
-          bash native/fushi_rwkv/build_linux_so.sh
-          bash native/fushi_rwkv/verify_abi.sh native/fushi_rwkv/prebuilt/linux-x64/libfushi_rwkv.so nm
+        run: bash packages/fushi_server/tool/build_linux_bundle.sh rust fushi_rwkv
+      # dart build cli + 上面几件 .so 进 bundle/lib + onnxruntime（microsoft/onnxruntime 的
+      # GitHub release 自 2026-11-17 起 404，脚本改走 NuGet、钉 sha256）。
       - name: Build fushi_server bundle
         shell: bash
-        run: |
-          set -euo pipefail
-          dart build cli --target packages/fushi_server/bin/fushi_server.dart --output build/fushi_server_linux
-          mkdir -p build/fushi_server_linux/bundle/lib
-          cp native/fushi_torrent/prebuilt/linux-x64/libfushi_torrent_ffi.so build/fushi_server_linux/bundle/lib/
-          cp native/fushi_p2p/prebuilt/linux-x64/libfushi_p2p.so build/fushi_server_linux/bundle/lib/
-          cp native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so build/fushi_server_linux/bundle/lib/
-          cp native/fushi_compute/prebuilt/linux-x64/libfushi_compute.so build/fushi_server_linux/bundle/lib/
-          cp native/fushi_rwkv/prebuilt/linux-x64/libfushi_rwkv.so build/fushi_server_linux/bundle/lib/
-          # microsoft/onnxruntime 的 GitHub release 自 2026-11-17 起 404，改走 NuGet（钉 sha256）。
-          python3 .github/scripts/fetch_onnxruntime_nuget.py "$ORT_VERSION" linux-x64 build/fushi_server_linux/bundle/lib
-          ls -la build/fushi_server_linux/bundle/bin build/fushi_server_linux/bundle/lib
+        run: bash packages/fushi_server/tool/build_linux_bundle.sh cli
       # 词典引擎 libfushidicts_ffi.so：服务端查词按 bin/../lib/ 定位、变形表按
       # bin/../share/fushi/transforms 定位。fushidicts 要 C++23（std::ranges::to 等），
       # 下限 GCC 14；ubuntu-22.04 系统源只到 gcc-12，所以从 ubuntu-toolchain-r/test PPA
@@ -320,29 +292,7 @@ jobs:
         env:
           CC: gcc-14
           CXX: g++-14
-        run: |
-          set -euo pipefail
-          bash native/fushidicts/build_linux_so.sh
-          lib=build/fushi_server_linux/bundle/lib/libfushidicts_ffi.so
-          mkdir -p "$(dirname "$lib")"
-          cp native/fushidicts/prebuilt/linux-x64/libfushidicts_ffi.so "$lib"
-          DICTS_LIB="$lib" python3 - <<'PY'
-          import ctypes
-          import os
-          lib = ctypes.CDLL(os.environ["DICTS_LIB"])
-          lib.fushidicts_create.restype = ctypes.c_void_p
-          lib.fushidicts_destroy.argtypes = [ctypes.c_void_p]
-          handle = lib.fushidicts_create()
-          if not handle:
-              raise SystemExit("fushidicts_create returned null")
-          lib.fushidicts_destroy(handle)
-          print("fushidicts .so smoke ok")
-          PY
-          share=build/fushi_server_linux/bundle/share/fushi
-          mkdir -p "$share"
-          rm -rf "$share/transforms"
-          cp -a fushi/assets/transforms "$share/transforms"
-          test -f "$share/transforms/manifest.json"
+        run: bash packages/fushi_server/tool/build_linux_bundle.sh fushidicts
       # fushi-anki-sync（native/fushi_anki_sync，链 Anki 官方 rslib 的 AGPL helper）放
       # bundle/bin/，与 fushi_server 可执行文件同级。build.sh 生成 AGPL 源码说明
       # fushi-anki-sync.SOURCE.txt（commit 取 fushi checkout 的 HEAD——这里 GITHUB_SHA
@@ -351,9 +301,10 @@ jobs:
         uses: ./.github/actions/setup-fushi-anki-sync
       - name: Build and bundle fushi-anki-sync
         shell: bash
-        run: |
-          set -euo pipefail
-          bash native/fushi_anki_sync/build.sh --install-dir build/fushi_server_linux/bundle/bin
+        run: bash packages/fushi_server/tool/build_linux_bundle.sh anki-sync
+      - name: Verify bundle contents
+        shell: bash
+        run: bash packages/fushi_server/tool/build_linux_bundle.sh verify
       # README 声明的 glibc 基线（BUG-4843）：bundle 里每个 ELF（含 fushi-anki-sync、
       # onnxruntime、sqlite3 native asset）的最大 GLIBC_ 符号版本都不得超过它，超了不发版。
       - name: Verify glibc baseline of bundled ELFs

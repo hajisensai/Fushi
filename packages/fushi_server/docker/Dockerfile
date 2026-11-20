@@ -7,9 +7,11 @@
 #   cp fushi_server-*-linux-x64.tar.gz dist/ && docker build -t fushi-server .   # local/CI tarball
 #
 # For unreleased code use Dockerfile.source (see README "Docker").
-# Keep the runtime stage in sync with Dockerfile.source.
+# The runtime stage (from `FROM debian:trixie-slim AS runtime` on) must stay
+# identical in both Dockerfiles apart from the COPY source paths;
+# server-docker.yml diffs them. The bundle stage is named `bundle` in both.
 
-FROM debian:trixie-slim AS fetch
+FROM debian:trixie-slim AS bundle
 ARG FUSHI_SERVER_REPO=hajisensai/fushi-server
 ARG FUSHI_SERVER_TAG=
 RUN apt-get update \
@@ -54,7 +56,7 @@ FROM debian:trixie-slim AS runtime
 RUN apt-get update \
     && apt-get install -y --no-install-recommends 7zip ca-certificates curl ffmpeg tzdata \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=fetch /opt/fushi_server /opt/fushi_server
+COPY --from=bundle /opt/fushi_server /opt/fushi_server
 # Fail the build, not the first start, if the bundle needs a newer glibc.
 COPY --chmod=755 check_bundle_libs.sh /usr/local/bin/fushi-check-bundle-libs
 RUN fushi-check-bundle-libs /opt/fushi_server

@@ -312,9 +312,10 @@ void main() {
         'bash native/fushi_rwkv/verify_abi.sh fushi/build/ios/iphoneos/Runner.app/Runner nm',
         'bash native/fushi_rwkv/verify_abi.sh "\$runner" nm',
       ],
+      // Linux 服务端包的构建命令只在 build_linux_bundle.sh 写一次（release-server.yml
+      // 与 Docker 共用）：workflow 调它编 fushi_rwkv，脚本把 .so 放进 bundle。
       'release-server.yml': <String>[
-        'native/fushi_rwkv/build_linux_so.sh',
-        'cp native/fushi_rwkv/prebuilt/linux-x64/libfushi_rwkv.so build/fushi_server_linux/bundle/lib/',
+        'packages/fushi_server/tool/build_linux_bundle.sh rust fushi_rwkv',
         'native/fushi_rwkv/build_windows_dll.ps1',
         'Copy-Item native/fushi_rwkv/prebuilt/windows-x64/fushi_rwkv.dll \$lib -Force',
       ],
@@ -327,6 +328,25 @@ void main() {
         }
       });
     }
+
+    test('build_linux_bundle.sh 编 fushi_rwkv 并放进 bundle/lib', () {
+      final String text = read(
+        '../packages/fushi_server/tool/build_linux_bundle.sh',
+      );
+      expect(
+        text,
+        contains('RUST_CRATES=(fushi_p2p fushi_fsrs fushi_compute fushi_rwkv)'),
+      );
+      expect(text, contains('bash "native/\$crate/build_linux_so.sh"'));
+      expect(
+        text,
+        contains(
+          'cp native/fushi_rwkv/prebuilt/linux-x64/libfushi_rwkv.so '
+          '"\$BUNDLE/lib/"',
+        ),
+      );
+      expect(text, contains('lib/libfushi_rwkv.so'), reason: 'verify 清单');
+    });
   });
 }
 

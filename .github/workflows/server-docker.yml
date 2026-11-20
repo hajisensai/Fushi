@@ -32,6 +32,21 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
+      # Dockerfile.source (an hour or more cold) is not built here, so its runtime
+      # stage is held to the one this job does build.
+      - name: Runtime stages of both Dockerfiles match
+        working-directory: packages/fushi_server/docker
+        run: |
+          set -euo pipefail
+          runtime() {
+            sed -n '/^FROM debian:trixie-slim AS runtime$/,$p' "$1" \
+              | sed 's#packages/fushi_server/docker/##g'
+          }
+          [ -n "$(runtime Dockerfile)" ] || { echo "::error::Dockerfile has no runtime stage"; exit 1; }
+          if ! diff -u <(runtime Dockerfile) <(runtime Dockerfile.source); then
+            echo "::error::runtime stages of Dockerfile and Dockerfile.source differ"
+            exit 1
+          fi
       - name: Build image
         working-directory: packages/fushi_server/docker
         run: docker build -t fushi-server:ci .

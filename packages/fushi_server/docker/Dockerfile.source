@@ -12,9 +12,13 @@
 #   - build_source_image.sh passes --build-context toolchain=docker-image://...;
 #   - the manual publish workflow (server-docker-publish.yml) does the same.
 #
-# Keep the runtime stage in sync with Dockerfile.
+# The runtime stage (from `FROM debian:trixie-slim AS runtime` on) must stay
+# identical in both Dockerfiles apart from the COPY source paths;
+# server-docker.yml diffs them. The bundle stage is named `bundle` in both.
 
-FROM toolchain AS build
+FROM toolchain AS bundle
+# Same build commands and bundle layout as the release (release-server.yml):
+# both run packages/fushi_server/tool/build_linux_bundle.sh.
 # The context has no .git: fushi-anki-sync records this commit in its AGPL
 # SOURCE.txt. Published images pass the exact commit; local builds may leave it.
 ARG FUSHI_SOURCE_COMMIT=unknown
@@ -33,7 +37,9 @@ RUN --mount=type=cache,id=fushi-server-pub,target=/root/.pub-cache \
     --mount=type=cache,id=fushi-server-t-rwkv,target=/src/native/fushi_rwkv/target \
     --mount=type=cache,id=fushi-server-t-anki,target=/src/native/fushi_anki_sync/target \
     --mount=type=cache,id=fushi-server-anki-src,target=/src/native/fushi_anki_sync/.anki-src \
-    bash packages/fushi_server/docker/build_server_bundle.sh /opt/fushi_server
+    bash packages/fushi_server/tool/build_linux_bundle.sh all "$VCPKG_ROOT" \
+    && cp -a build/fushi_server_linux/bundle /opt/fushi_server \
+    && cp packages/fushi_server/README.md /opt/fushi_server/README.md
 
 FROM debian:trixie-slim AS runtime
 # ffmpeg/ffprobe: video, audiobook cue split, subtitles. 7zip: archive import.
@@ -41,7 +47,7 @@ FROM debian:trixie-slim AS runtime
 RUN apt-get update \
     && apt-get install -y --no-install-recommends 7zip ca-certificates curl ffmpeg tzdata \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=build /opt/fushi_server /opt/fushi_server
+COPY --from=bundle /opt/fushi_server /opt/fushi_server
 # Fail the build, not the first start, if the bundle needs a newer glibc.
 COPY --chmod=755 packages/fushi_server/docker/check_bundle_libs.sh /usr/local/bin/fushi-check-bundle-libs
 RUN fushi-check-bundle-libs /opt/fushi_server

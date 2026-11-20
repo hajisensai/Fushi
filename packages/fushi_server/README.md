@@ -144,6 +144,8 @@ docker compose logs fushi-server # 首次启动打印 admin_token；配对时 PI
   （`scale: 0`，从不运行）构建 `tool/linux/Dockerfile` 工具链镜像，作为命名上下文给构建阶段；构建上下文是
   仓库根，`Dockerfile.source.dockerignore` 挡掉构建产物与缓存。不用 Compose 时：
   `bash packages/fushi_server/docker/build_source_image.sh`（只送 `git ls-files` 列出的源码）。
+  构建阶段跑的是 `tool/build_linux_bundle.sh all`，与 `release-server.yml` 出 Linux 发布包同一份
+  脚本，所以源码镜像与发布包的命令、布局一致，改构建只改这一处。
   `docker-compose.bundle.yml` 改用 `Dockerfile` 打包已发布的 release（约 1 分钟，但只与最新 release 一样新）：
   默认取 `FUSHI_SERVER_REPO` 最新一个带 linux-x64 包的 release，`FUSHI_SERVER_TAG` 钉版本，核对 GitHub
   给的 SHA-256；`docker/dist/` 里放 `fushi_server-*-linux-x64.tar.gz` 则用本地包（`build-multiplatform.yml`
@@ -151,7 +153,10 @@ docker compose logs fushi-server # 首次启动打印 admin_token；配对时 PI
 - **预构建镜像**：`server-docker-publish.yml` 只能手动触发：打包一个 fushi-server release（默认）或源码，
   冒烟后**勾选 push 才**推到 `ghcr.io/<owner>/fushi-server`；在 hajisensai 以外的仓库推送必须显式填
   `registry_owner`。发布后在 `.env` 设 `FUSHI_IMAGE=ghcr.io/hajisensai/fushi-server:latest`，
-  `docker compose up -d`（不加 `--build`）。
+  `docker compose up -d`（不加 `--build`）。发布节奏：每次 fushi-server 发版后手动跑一次
+  （release 模式、留空 `release_tag` 即取最新带 linux-x64 包的版本，勾 `latest`）。
+- **架构**：只有 linux/amd64。发布包和全部原生库（libtorrent、Rust 内核、fushidicts、onnxruntime）
+  目前只出 x64，arm64（树莓派、部分 ARM NAS）暂不提供。
 - **语言**：`.env` 的 `FUSHI_LANGUAGE`（`en` / `zh`）只在首次启动时写进配置（`init --language`；打包的
   release 早于语言设置时忽略）。之后以 WebUI「设置」为准：入口脚本与容器里的 `fushi_server` 包装都不把
   这个变量交给服务端进程；临时用另一种语言跑一条命令用 `FUSHI_CLI_LANGUAGE`。
