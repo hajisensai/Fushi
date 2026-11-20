@@ -1318,37 +1318,15 @@ class _DeckListState extends State<_DeckList> {
     // items 里第 k 项与第 k+1 项连成一体（中间不留卡片间距）的 k。
     final Set<int> joined = <int>{};
     if (bands) {
-      // 列表是先序：一个组 = 一个（相对）顶层牌组 + 紧跟其后的子孙。
-      int i = 0;
-      while (i < decks.length) {
-        final SrsDeckSummary head = decks[i];
-        final FushiCoverBlockColors colors = _srsDeckBandColors(
+      items.addAll(
+        _srsDeckBandGroups(
           context,
-          head.deck.id,
-        );
-        final List<Widget> rows = <Widget>[
-          rowAt(i, index: 0, band: _DeckBand(colors: colors, inner: false)),
-        ];
-        int j = i + 1;
-        while (j < decks.length && decks[j].depth - baseDepth > 0) {
-          rows.add(
-            rowAt(
-              j,
-              index: j - i,
-              band: _DeckBand(colors: colors, inner: true),
-            ),
-          );
-          j++;
-        }
-        items.add(
-          _DeckBandGroup(
-            key: ValueKey<String>('srs-band-${head.deck.id}'),
-            colors: colors,
-            children: rows,
-          ),
-        );
-        i = j;
-      }
+          decks: decks,
+          baseDepth: baseDepth,
+          keyPrefix: 'srs-band-',
+          rowAt: rowAt,
+        ),
+      );
     } else {
       int shown = 0;
       for (int i = 0; i < decks.length; i++) {
@@ -1407,8 +1385,8 @@ class _DeckListState extends State<_DeckList> {
 /// 名字下一条进度条（今天的完成度）；行尾三个计数 + tonal 播放按钮（直接复习）。
 ///
 /// 两种外壳：[band] 非 null = 拼贴版式，行是牌组色块里的透明内层行（粗圆角进度条、语义色
-/// 计数 chip、圆形 tonal 播放钮，见 srs_deck_tree_band.dart）；null = 分段卡行（墨水屏、
-/// 已配对设备分区）。
+/// 计数 chip、圆形 tonal 播放钮，见 srs_deck_tree_band.dart）；null = 分段卡行（墨水屏）。
+/// 本机牌组树与「已配对设备」分区用的都是这一个行组件、同一套外壳判据。
 ///
 /// 点行交给 [onOpen]（宽屏选中、手机进详情页）；右键 / 菜单键 / 窄屏长按弹出牌组菜单。
 class _DeckRow extends StatelessWidget {

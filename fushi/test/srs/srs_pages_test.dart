@@ -1878,7 +1878,8 @@ void main() {
         findsNothing,
       );
 
-      // 色块配色与首页拼贴的牌组海报同一套（色相键 srs-deck:<id>）。
+      // 色块配色与首页拼贴的牌组海报同一套（色相键 srs-deck:<牌组全名>：已配对设备上的同名
+      // 牌组与本机同色，设计稿 11-20 #17）。
       Color bandColor(String id) =>
           (tester
                       .widget<DecoratedBox>(
@@ -1897,7 +1898,7 @@ void main() {
         bandColor(parent),
         fushiPosterColors(
           context,
-          fushiPosterHue('srs-deck:$parent'),
+          fushiPosterHue('srs-deck:Parent'),
         ).container,
       );
 

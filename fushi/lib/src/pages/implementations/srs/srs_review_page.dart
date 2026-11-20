@@ -52,7 +52,8 @@ import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/anki/card_source_origin.dart'
     show cardSourceKindIcon, cardSourceLinkOfFields;
-import 'package:fushi/src/anki/card_source_router.dart' show openCardSource;
+import 'package:fushi/src/anki/card_source_router.dart'
+    show cardSourceOpenerProvider;
 import 'package:fushi/src/focus/page_focus_ownership.dart';
 import 'package:fushi/src/second_screen/companion/companion_page_link.dart';
 import 'package:fushi/src/second_screen/companion/companion_protocol.dart';
@@ -1936,7 +1937,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     _lookup.closeAll();
     srsRunLogged(
       'SrsReview.openSource',
-      () => openCardSource(ref: ref, link: link),
+      () => ref.read(cardSourceOpenerProvider)(ref: ref, link: link),
     );
   }
 

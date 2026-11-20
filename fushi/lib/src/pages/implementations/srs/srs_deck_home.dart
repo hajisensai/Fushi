@@ -116,6 +116,21 @@ Widget _srsTopStackLayout(Widget? current, List<Widget> previous) => Stack(
   children: <Widget>[...previous, ?current],
 );
 
+/// 外壳叠在正文右下的悬浮按钮（「后台任务」FAB，同步 / 刷新已配对设备时出现）要让出的高度：
+/// 按钮边长 + 离底边距。
+final double _kSrsHomeFabClearance =
+    fushiFabMetrics(FushiFabSize.regular).extent +
+    kFushiFloatingToolbarEdgeMargin;
+
+/// 复习首页各版式列表的底部内边距：分区间距 + 底部浮动工具栏 / 手势区（外壳 `extendBody`
+/// 把悬浮底栏的高度并进 MediaQuery 底部 padding，[bottomSafeInsetOf]）+ 悬浮按钮
+/// （[_kSrsHomeFabClearance]）。末尾的「已配对设备」行、说明文字与统计卡都能滚到底栏和
+/// 按钮之上（设计稿 11-20 #17）。
+double srsHomeListBottomPadding(BuildContext context) =>
+    FushiDesignTokens.of(context).spacing.section +
+    bottomSafeInsetOf(context) +
+    _kSrsHomeFabClearance;
+
 /// 复习首页：根层（今日计划 + 牌组树 + 热力图 / 预测），宽屏右栏是选中牌组详情；手机上 [focus]
 /// 非 null 时是该牌组的详情页。
 class _SrsHomeView extends StatelessWidget {
@@ -335,9 +350,11 @@ class _SrsHomeView extends StatelessWidget {
               ),
           ],
           footer: _pairedSection(),
-          padding: withBottomSafeInset(
-            context,
-            EdgeInsets.fromLTRB(side, top, side, tokens.spacing.section),
+          padding: EdgeInsets.fromLTRB(
+            side,
+            top,
+            side,
+            srsHomeListBottomPadding(context),
           ),
           onOpen: (SrsDeckSummary d) => onSelect(d.deck.id),
         );
@@ -371,14 +388,11 @@ class _SrsHomeView extends StatelessWidget {
             0,
             (constraints.maxWidth - content) / 2 - tokens.spacing.gap / 2,
           );
-          final EdgeInsets columnPadding = withBottomSafeInset(
-            context,
-            EdgeInsets.fromLTRB(
-              tokens.spacing.gap / 2,
-              top,
-              tokens.spacing.gap / 2,
-              tokens.spacing.section,
-            ),
+          final EdgeInsets columnPadding = EdgeInsets.fromLTRB(
+            tokens.spacing.gap / 2,
+            top,
+            tokens.spacing.gap / 2,
+            srsHomeListBottomPadding(context),
           );
           final bool three = content >= _kSrsHomeThreeColumnMin;
           final List<Widget> statCards = <Widget>[
@@ -459,14 +473,11 @@ class _SrsHomeView extends StatelessWidget {
       );
     }
 
-    final EdgeInsets padding = withBottomSafeInset(
-      context,
-      EdgeInsets.fromLTRB(
-        tokens.spacing.page,
-        top,
-        tokens.spacing.page,
-        tokens.spacing.section,
-      ),
+    final EdgeInsets padding = EdgeInsets.fromLTRB(
+      tokens.spacing.page,
+      top,
+      tokens.spacing.page,
+      srsHomeListBottomPadding(context),
     );
     final SrsDeckSummary? focused = focus;
     final Widget body;
@@ -1390,11 +1401,8 @@ class _SrsDeckPoster extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 色相键与今日计划块（按牌组 id）错开：只有一个牌组时两块并排也不同色。
-    final FushiCoverBlockColors colors = fushiPosterColors(
-      context,
-      fushiPosterHue('srs-deck:${deck.deck.id}'),
-    );
+    // 与牌组树里这个牌组的色块同色（[_srsDeckBandColors]，按牌组全名取色相）。
+    final FushiCoverBlockColors colors = _srsDeckBandColors(context, deck);
     final TextStyle base =
         Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
     final TextStyle caption = FushiPosterText.caption

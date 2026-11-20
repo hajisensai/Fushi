@@ -19,6 +19,10 @@ import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_list_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_ui.dart'
+    show SrsCountTriple;
+import 'package:fushi/src/utils/components/fushi_poster_block.dart'
+    show fushiPosterColors, fushiPosterHue;
 import 'package:fushi/src/pages/implementations/srs/srs_edit_history_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_remote_review_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
@@ -954,6 +958,115 @@ void main() {
         () => host.store.history(first),
       ))!;
       expect(afterStale.lastEffective?.rating, 4, reason: '这次评分没记');
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    // 设计稿 11-20 #17：远程卡组行就是本机卡组行（同一个 _DeckRow、同一套色块外壳），只是数据源换成
+    // 主机快照；色块按牌组名取色（与本机同名牌组同色）；列表底部让出底部工具栏与悬浮按钮。
+    testWidgets('「已配对设备」的牌组行与本机同一套色块行：计数装在药丸里、同名同色，列表底部让出工具栏和悬浮按钮', (
+      WidgetTester tester,
+    ) async {
+      final _Host host = (await tester.runAsync(
+        () => _openHost(<String>['犬', '猫']),
+      ))!;
+      addTearDown(() => tester.runAsync(host.db.close));
+      final String parentId = (await tester.runAsync(
+        () => host.store.createDeck('Parent'),
+      ))!;
+      final (FushiDatabase localDb, SrsDbStore local) = (await tester.runAsync(
+        () => openSrsTestStore(deviceId: 'local'),
+      ))!;
+      addTearDown(() => tester.runAsync(localDb.close));
+      final Directory dir = Directory.systemTemp.createTempSync('srs_rd_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final AppModel app = SrsTestAppModel();
+      // 外壳 extendBody：悬浮底栏的高度经 MediaQuery 底部 padding 传给正文。
+      const double toolbar = 96;
+      tester.view.padding = const FakeViewPadding(bottom: toolbar);
+      addTearDown(tester.view.resetPadding);
+      await _pumpHome(
+        tester,
+        app: app,
+        local: local,
+        overrides: <Override>[
+          srsRemoteHostConnectorProvider.overrideWithValue(
+            _FakeConnector(app, host, dir),
+          ),
+        ],
+      );
+      await settle(tester);
+
+      final Finder list = find.ancestor(
+        of: find.byKey(const ValueKey<String>('srs-home-paired')),
+        matching: find.byType(ListView),
+      );
+      final double bottom =
+          (tester.widget<ListView>(list.first).padding! as EdgeInsets).bottom;
+      expect(
+        bottom,
+        greaterThanOrEqualTo(toolbar + 56),
+        reason: '底部 padding = 分区间距 + 底部工具栏 + 悬浮按钮',
+      );
+      expect(
+        bottom,
+        srsHomeListBottomPadding(
+          tester.element(find.byKey(const ValueKey<String>('srs-home-paired'))),
+        ),
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs-paired-header-host-1')),
+      );
+      await settle(tester);
+      final Finder row = find.byKey(
+        ValueKey<String>('srs-paired-deck-host-1-$parentId'),
+      );
+      expect(row, findsOneWidget);
+      // 行组件就是本机牌组树用的那一个，且走色块外壳（不是分段卡）。
+      final Finder deckRow = find.descendant(
+        of: row,
+        matching: find.byWidgetPredicate(
+          (Widget w) => w.runtimeType.toString() == '_DeckRow',
+        ),
+      );
+      expect(deckRow, findsOneWidget);
+      expect(
+        find.descendant(of: row, matching: find.byType(SrsDeckCountChips)),
+        findsOneWidget,
+        reason: '三个计数装在药丸 chip 里',
+      );
+      expect(
+        find.descendant(of: row, matching: find.byType(SrsCountTriple)),
+        findsNothing,
+        reason: '不再是分段卡行的裸数字',
+      );
+      // 色块按牌组名取色：与本机同名牌组的色块 / 海报同一个色相键。
+      final Finder band = find.byKey(
+        ValueKey<String>('srs-paired-band-host-1-$parentId'),
+      );
+      expect(band, findsOneWidget);
+      final Color fill =
+          (tester
+                      .widget<DecoratedBox>(
+                        find
+                            .descendant(
+                              of: band,
+                              matching: find.byType(DecoratedBox),
+                            )
+                            .first,
+                      )
+                      .decoration
+                  as ShapeDecoration)
+              .color!;
+      expect(
+        fill,
+        fushiPosterColors(
+          tester.element(band),
+          fushiPosterHue('srs-deck:Parent'),
+        ).container,
+      );
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(seconds: 1));
