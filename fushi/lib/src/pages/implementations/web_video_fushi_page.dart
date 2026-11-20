@@ -1389,7 +1389,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     return (href: href, sentence: sentence, enqueue: enqueue);
   }
 
-  /// YouTube 后台直裁的结局只剩 toast 能告诉用户（弹窗早已收下）；裁不出来退回队列。
+  /// YouTube 后台直裁的结局只剩 toast 能告诉用户（弹窗早已收下）；拿不到媒体退回队列，与取
+  /// 媒体无关的失败（Anki 未配置 / 落卡失败等）当场报失败。
   Future<void> _mineYoutubeCueInBackground(
     ImmersionMinePayload payload,
     Future<void> Function() enqueue,
@@ -1416,10 +1417,16 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       FushiToast.show(msg: t.web_video_mine_queued(count: _minePending));
     } else if (res.result == 'duplicate') {
       FushiToast.show(msg: t.card_duplicate);
-    } else {
+    } else if (res.result == 'success') {
       FushiToast.show(msg: t.card_exported(deck: res.deckName ?? ''));
       // 与队列落卡同一笔统计（[_mineQueuedRow]）：改走直裁不该让 YouTube 的卡不再计数。
       unawaited(recordMined());
+    } else {
+      FushiToast.show(
+        msg: t.card_export_failed_detail(
+          reason: res.message ?? res.detail ?? res.result,
+        ),
+      );
     }
   }
 
@@ -3035,6 +3042,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         return <String, Object?>{
           'success': res.result == 'success',
           if (res.result == 'duplicate') 'duplicate': true,
+          if (res.result != 'success' && res.result != 'duplicate')
+            'error': 'mining_failed',
         };
       }
     } else {

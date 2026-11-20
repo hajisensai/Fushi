@@ -1659,9 +1659,9 @@ extension _VideoWebSource on _VideoFushiPageState {
     return const MinePopupResult.queued();
   }
 
-  /// YouTube 后台制卡的结局只剩 OSD 能告诉用户（弹窗早已画了「已加入」）。直裁裁不出来退回
-  /// 制卡队列（[enqueue] 自己报「已入队」）；连入队也失败才抛出，由 [_trackBackgroundMine]
-  /// 报错并记日志。
+  /// YouTube 后台制卡的结局只剩 OSD 能告诉用户（弹窗早已画了「已加入」）。直裁拿不到媒体退回
+  /// 制卡队列（[enqueue] 自己报「已入队」）；与取媒体无关的失败（Anki 未配置 / 落卡失败等）
+  /// 或连入队也失败则抛出，由 [_trackBackgroundMine] 报错并记日志。
   Future<void> _mineWebYoutubeCue(
     ImmersionMinePayload payload,
     Future<void> Function() enqueue,
@@ -1676,13 +1676,16 @@ extension _VideoWebSource on _VideoFushiPageState {
       ),
     );
     if (res == null) return;
-    if (res.result == 'duplicate') {
-      _showMineOsd(t.card_duplicate, MineToastStatus.duplicate);
-    } else {
-      _showMineOsd(
-        t.card_exported(deck: res.deckName ?? ''),
-        MineToastStatus.added,
-      );
+    switch (res.result) {
+      case 'success':
+        _showMineOsd(
+          t.card_exported(deck: res.deckName ?? ''),
+          MineToastStatus.added,
+        );
+      case 'duplicate':
+        _showMineOsd(t.card_duplicate, MineToastStatus.duplicate);
+      default:
+        throw StateError(res.message ?? res.detail ?? res.result);
     }
   }
 

@@ -492,6 +492,8 @@ extension _VideoRemoteControl on _VideoFushiPageState {
         return <String, Object?>{
           'success': res.result == 'success',
           if (res.result == 'duplicate') 'duplicate': true,
+          if (res.result != 'success' && res.result != 'duplicate')
+            'error': 'mining_failed',
         };
       }
     } else {

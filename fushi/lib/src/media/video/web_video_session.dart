@@ -109,10 +109,14 @@ String? webVideoDirectMineVideoId(String href) => youtubeVideoIdOrNull(href);
 /// 直裁一句，裁不出来就退回制卡队列。内置网页播放器页（本页制卡 / 顶层查词窗口制卡 / 手机遥控
 /// 制卡）与原生播放器页网页档的制卡共用，分流规则只在这里写一次。
 ///
-/// `success` / `duplicate` 原样返回（重复卡不入队：重放出来还是同一张重复卡）。其余结局（流解析
-/// 失败、缺音频中止、引擎报错）或 [mineDirect] 抛出都算「这条路裁不出来」：原因交给
-/// [onFallback]，调 [enqueue] 入队后返回 null——重放录的是播放出来的画面与声音，不依赖流解析。
-/// [enqueue] 抛出照常向外抛（入队也失败了，调用方要报错）。
+/// 只有「这条路拿不到媒体」才退回队列：结局标了 [RemoteMineResult.mediaUnavailable]（流解析
+/// 失败、裁剪缺音频中止）或 [mineDirect] 抛出——重放录的是播放出来的画面与声音，不依赖流解析。
+/// 原因交给 [onFallback]，调 [enqueue] 入队后返回 null。[enqueue] 抛出照常向外抛（入队也失败
+/// 了，调用方要报错）。
+///
+/// 其余结局原样返回，由调用方当场报：`success` / `duplicate`（重复卡不入队：重放出来还是同一张
+/// 重复卡），以及与取媒体无关的失败——`notConfigured`、落卡阶段的 Anki 错误、无效时间窗。这些
+/// 排进队列重放也会在同一处再失败，还要先白跑一整趟重放，用户当下却只看到「已加入制卡队列」。
 Future<RemoteMineResult?> mineWebVideoCueDirectOrQueue({
   required Future<RemoteMineResult> Function() mineDirect,
   required Future<void> Function() enqueue,
@@ -121,7 +125,7 @@ Future<RemoteMineResult?> mineWebVideoCueDirectOrQueue({
   String reason;
   try {
     final RemoteMineResult res = await mineDirect();
-    if (res.result == 'success' || res.result == 'duplicate') return res;
+    if (!res.mediaUnavailable) return res;
     reason = res.message ?? res.detail ?? res.result;
   } catch (e) {
     reason = '$e';
