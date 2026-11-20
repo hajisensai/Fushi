@@ -11,6 +11,7 @@ import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/ops/ctl_video_support.dart'
     show CtlVideoWorkId, ctlVideoConfirmationId;
 import 'package:fushi/src/ops/op_describe_kit.dart';
+import 'package:fushi/src/ops/op_descriptions_video_organize.dart';
 import 'package:fushi/src/ops/op_task_status.dart';
 import 'package:fushi/src/ops/op_descriptions_library.dart'
     show OpUndoScope, opScopedSnapshotUndo, opUndoDisplay;
@@ -43,6 +44,7 @@ List<OpDescription> describeVideoOps(OpDescribeKit kit) {
       ]);
   return <OpDescription>[
     ..._describeScrapeOps(kit, video),
+    ...describeVideoOrganizeOps(kit, video),
     ..._describeDiscoveryOps(kit, discovery, downloads),
     ..._describePlayerOps(kit, video),
     ..._describeSubtitleOps(kit, video),
