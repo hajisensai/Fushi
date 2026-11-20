@@ -1456,6 +1456,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
           .deleteBook(
             db: appModel.database,
             bookKey: row.bookKey,
+            appModel: appModel,
             scope: decision.scope,
             deleteStatistics: decision.deleteStatistics,
             keepDownloadedFiles: decision.keepDownloadedFiles,
