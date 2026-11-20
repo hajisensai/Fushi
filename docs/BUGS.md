@@ -157,6 +157,11 @@
 | [BUG-4908](bugs/BUG-4908-manga-epub-import-no-actual-byte-cap.md) | ✅ | ✅ | 纯图 EPUB 漫画导入不按实际解出字节封顶、探测白解整本 |
 | [BUG-4907](bugs/BUG-4907-pdf-import-dir-reuse-and-rollback.md) | ✅ | ✅ | PDF 导入书目录存在即复用、失败无条件删除 |
 | [BUG-4906](bugs/BUG-4906-manga-import-skip-duplicate-after-extract.md) | ✅ | ✅ | 漫画批量导入跳过重复卷前先整包解压、逐页读完 |
+> 共 4234 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4906](bugs/BUG-4906-server-tls-cert-chrome-invalid.md) | ✅ | ✅ | 服务端 WebUI 在 Chrome 报 ERR_CERT_INVALID 无法进入（自签证书签名算法带 NULL 参数、IP 写成 dNSName） |
 | [BUG-4905](bugs/BUG-4905-ai-cast-text-substitutions.md) | ✅ | ✅ | 小说和漫画 AI 标注未应用系列用词替换表 |
 | [BUG-4904](bugs/BUG-4904-book-series-key-store-annotation.md) | ✅ | ✅ | 书店写法「卷号<系列名> (文库名)」的分卷导入后不归合集 |
 | [BUG-4903](bugs/BUG-4903-home-desktop-continue-cut-edge-title-concat.md) | ✅ | ✅ | 首页（桌面）「继续」右侧卡被窗口切掉一半、标题拼接成「Re：ゼロ…1<Re：…」 |

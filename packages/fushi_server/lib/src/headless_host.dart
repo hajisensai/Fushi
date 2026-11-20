@@ -277,6 +277,11 @@ class HeadlessHost {
 
   String? get hostFingerprint => _hostFingerprint;
 
+  /// 已落盘的证书是 BUG-4906 之前的旧格式（Chrome 拒收，WebUI 打不开）；
+  /// `fushi_server admin reset-tls` 重签。
+  bool get tlsCertificateChromeRejected => _tlsCertificateChromeRejected;
+  bool _tlsCertificateChromeRejected = false;
+
   /// 互联端口用的 TLS 上下文；admin 端口复用同一份自签证书。
   SecurityContext? get securityContext => _securityContext;
   bool get isRunning => _server != null;
@@ -354,6 +359,10 @@ class HeadlessHost {
         ..useCertificateChainBytes(utf8.encode(tlsIdentity.certificatePem))
         ..usePrivateKeyBytes(utf8.encode(tlsIdentity.privateKeyPem));
       _hostFingerprint = tlsIdentity.fingerprintSha256;
+      _tlsCertificateChromeRejected =
+          FushiTlsIdentityStore.isChromeRejectedLegacyCertificate(
+            tlsIdentity.certificatePem,
+          );
     }
     _securityContext = securityContext;
 
