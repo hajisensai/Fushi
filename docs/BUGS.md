@@ -373,8 +373,8 @@
 | [BUG-4773](bugs/BUG-4773-srs-limit-unit-legacy-count-stale-after-log-sync.md) | ✅ | ✅ | 存量单位提醒计数按内容指纹缓存，只同步进来旧复习日志时不刷新 |
 | [BUG-4772](bugs/BUG-4772-licenses-7zip-not-in-native-registry.md) | ✅ | ✅ | 随包的 7-Zip（7z.exe / 7z.dll，含 unRAR 派生代码）没进应用内原生许可清单 |
 | [BUG-4771](bugs/BUG-4771-shell-thumbs-host-job-window.md) | ✅ | ✅ | 缩略图宿主进程先启动后入内存 job、入 job 失败照跑，并发宿主无总内存上限 |
-| [BUG-4770](bugs/BUG-4770-music-album-track-row-no-touch-menu.md) | 🚧 | 🚧 | 专辑页本地曲目行在触屏上打不开曲目菜单（加入队列 / 加入歌单 / 从音乐库移除只有右键入口） |
-| [BUG-4769](bugs/BUG-4769-music-track-blocks-no-touch-menu.md) | 🚧 | 🚧 | 色块样式曲目格在触屏上打不开曲目菜单（多选 / 从歌单移除 / 加入队列等只有右键入口） |
+| [BUG-4770](bugs/BUG-4770-music-album-track-row-no-touch-menu.md) | ✅ | ✅ | 专辑页本地曲目行在触屏上打不开曲目菜单（加入队列 / 加入歌单 / 从音乐库移除只有右键入口） |
+| [BUG-4769](bugs/BUG-4769-music-track-blocks-no-touch-menu.md) | ✅ | ✅ | 色块样式曲目格在触屏上打不开曲目菜单（多选 / 从歌单移除 / 加入队列等只有右键入口） |
 | [BUG-4768](bugs/BUG-4768-music-local-track-row-no-touch-menu.md) | ✅ | ✅ | 触屏上本地曲目行打不开菜单：歌曲 / 艺人 / 歌单页进不了多选、点不到「从这个歌单移除」 |
 | [BUG-4767](bugs/BUG-4767-music-stage-lyrics-blur-pref-stale.md) | ✅ | ✅ | MV / 卡拉 OK 舞台页歌词用 ref.read 读「模糊非当前行」，页面开着时改了偏好不刷新 |
 | [BUG-4766](bugs/BUG-4766-frame-cover-preview-concurrent-ffmpeg.md) | ✅ | ✅ | 挑帧封面弹窗连点微调会并发起多个 ffmpeg 抽帧 |

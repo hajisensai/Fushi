@@ -1482,6 +1482,7 @@ class MusicServerTrackTile extends StatelessWidget {
             durationText: formatMusicDuration(track.durationMs),
             playing: playing,
             onTap: () => onPlay(index),
+            menu: menu,
           ),
         ),
       );

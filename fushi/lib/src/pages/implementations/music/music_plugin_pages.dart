@@ -273,7 +273,7 @@ class _TrackRow extends StatelessWidget {
     return _withPlaying(row);
   }
 
-  /// 歌单详情网格里的一格（[block]）：封面色块，点块从这首起播，右键是行菜单。
+  /// 歌单详情网格里的一格（[block]）：封面色块，点块从这首起播，右键 / 长按是行菜单。
   Widget _buildBlock(
     BuildContext context,
     String subtitle,
@@ -288,6 +288,7 @@ class _TrackRow extends StatelessWidget {
       durationText: formatMusicDuration(track.durationMs),
       playing: playing,
       onTap: track.playable ? onTap : null,
+      menu: menu,
     ),
   );
 
