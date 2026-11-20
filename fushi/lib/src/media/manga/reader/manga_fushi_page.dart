@@ -2699,6 +2699,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _loadFailed = false;
     });
     _resetPanelNavigation();
+    _prewarmPanels();
     _pageNotifier.value = _currentPage;
     // A chapter switch can land on the same page index (no notifier event).
     _syncCompanionClaim();
@@ -3831,6 +3832,28 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     return true;
   }
 
+  /// 落到一个跨页就在后台把它的分镜检测好（manga-21）：此前检测懒到按下翻页键
+  /// 才做，第一次按键要等「建检测器 + 读页 + 预处理 + 推理」整条链。只在分镜导航
+  /// 开着、且不是条漫时做（与 [_tryPanelTurn] 同一判据）；结果照常经
+  /// [_detectPanels] 进 `_panelResults`，换章 / 换模式推进 `_panelGeneration` 后
+  /// 迟到的结果自动作废。
+  void _prewarmPanels() {
+    if (!appModel.mangaPanelNavigation || _mode.isWebtoon) return;
+    unawaited(
+      _panelEntriesForSpread(_currentSpread).catchError((
+        Object error,
+        StackTrace stack,
+      ) {
+        ErrorLogService.instance.log(
+          'MangaFushiPage.prewarmPanels',
+          error,
+          stack,
+        );
+        return const <MangaPanelEntry>[];
+      }),
+    );
+  }
+
   void _resetPanelNavigation() {
     _panelGeneration++;
     _panelCursor.reset();
@@ -3939,6 +3962,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     await _replaceSpreadOcr(target);
     _updateCurrentPageImagePath();
     _recordProgress();
+    _prewarmPanels();
   }
 
   /// 墨水屏「每 N 页全刷」的计数入口（`EinkFullRefreshController.notePageTurn`）。
@@ -6413,6 +6437,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
     _updateCurrentPageImagePath();
     _recordProgress();
+    _prewarmPanels();
   }
 
   /// 阅读器里的章节选择器。
