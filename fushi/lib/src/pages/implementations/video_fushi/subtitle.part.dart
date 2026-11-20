@@ -2993,6 +2993,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
     );
     Directory? work;
     Future<bool>? extraction;
+    // 网络 / 本地流抽轨走共享表：模糊遮蔽 / 制卡时间表正在抽同一条轨时直接加入，
+    // 不再让 ffmpeg 把整个视频读第二遍。
+    GraphicSubtitleTrackLease? lease;
+    void Function()? stopProgress;
     Timer? livePublishTimer;
     bool livePublished = false;
     bool succeeded = false;
@@ -3021,26 +3025,51 @@ extension _VideoSubtitle on _VideoFushiPageState {
           aiLabel: engine.aiProvider,
         ),
       );
-      work = await Directory.systemTemp.createTemp('fushi_graphic_sub_track_');
       // 载荷格式随编码（PGS 段流 / VobSub、DVB 单轨 TS + 轨头），读取一律按轨头解码。
-      final String payloadPath = p.join(work.path, 'track.bin');
+      final String payloadPath;
       // 边抽边识别（边看边 OCR）：抽轨进程写载荷的同时反复读出已落盘的 cue，
       // 播放头附近的先识别，识别一条就补进可点字幕；不必等整个文件读完。
       bool extractDone = false;
-      extraction = materializeGraphicSubtitleTrack(
-        input: input,
-        outputPath: payloadPath,
-        cancel: cancel.future,
-        onProgress: (Duration processed) => _updateGraphicSubtitleOcrJob(
-          (GraphicSubtitleOcrJobState job) =>
-              job.copyWith(processed: processed),
-        ),
-        onFailure: (String summary) => ErrorLogService.instance.log(
-          'video.graphicSubtitleOcr.extract',
-          summary,
-          StackTrace.current,
-        ),
-      ).whenComplete(() => extractDone = true);
+      void reportProgress(Duration processed) => _updateGraphicSubtitleOcrJob(
+        (GraphicSubtitleOcrJobState job) => job.copyWith(processed: processed),
+      );
+      void reportFailure(String summary) => ErrorLogService.instance.log(
+        'video.graphicSubtitleOcr.extract',
+        summary,
+        StackTrace.current,
+      );
+      if (input case GraphicSubtitleTimingStream(input: final source)) {
+        final GraphicSubtitleTrackLease shared = lease =
+            GraphicSubtitleTrackExtractionHub.shared.acquire(
+              input: source,
+              streamIndex: input.streamIndex,
+              codec: input.codec,
+            );
+        payloadPath = shared.payloadPath;
+        stopProgress = shared.listenProgress(reportProgress);
+        // 取消只结束这边的等待；租约在 finally 里交回，别的使用方还在用时抽轨照跑。
+        extraction = Future.any(<Future<bool>>[
+          shared.outcome.then((GraphicSubtitleTrackExtractOutcome outcome) {
+            if (outcome.failure case final String summary) {
+              reportFailure(summary);
+            }
+            return outcome.ok;
+          }),
+          cancel.future.then((_) => false),
+        ]).whenComplete(() => extractDone = true);
+      } else {
+        final Directory dir = work = await Directory.systemTemp.createTemp(
+          'fushi_graphic_sub_track_',
+        );
+        payloadPath = p.join(dir.path, 'track.bin');
+        extraction = materializeGraphicSubtitleTrack(
+          input: input,
+          outputPath: payloadPath,
+          cancel: cancel.future,
+          onProgress: reportProgress,
+          onFailure: reportFailure,
+        ).whenComplete(() => extractDone = true);
+      }
       final Future<bool> extractionResult = extraction;
       List<GraphicSubtitleTextCue> pending = const <GraphicSubtitleTextCue>[];
       // 单条识别失败只跳过那一条（整轨不作废），收尾时告诉用户跳过了几条。
@@ -3204,6 +3233,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
         await restoreGraphic();
       }
       try {
+        stopProgress?.call();
+        await lease?.release();
         await work?.delete(recursive: true);
       } on FileSystemException {
         // 临时目录，删不掉留给系统清理。
