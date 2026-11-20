@@ -1,0 +1,61 @@
+name: fushi_server Docker image
+
+# Builds the fushi_server Docker image (packages/fushi_server/docker/Dockerfile,
+# from the newest published Linux release bundle) and smoke-tests it
+# (smoke_test.sh: first-start init as a non-root user, health check, WebUI /
+# admin API). Build only, never pushes to a registry. Dockerfile.source (an hour
+# or more cold) is built by the manual server-docker-publish.yml instead.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: ['main', 'develop']
+    paths:
+      - 'packages/fushi_server/docker/**'
+      - '.github/workflows/server-docker.yml'
+  push:
+    branches: ['develop']
+    paths:
+      - 'packages/fushi_server/docker/**'
+      - '.github/workflows/server-docker.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: server-docker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      # Dockerfile.source (an hour or more cold) is not built here, so its runtime
+      # stage is held to the one this job does build.
+      - name: Runtime stages of both Dockerfiles match
+        working-directory: packages/fushi_server/docker
+        run: |
+          set -euo pipefail
+          runtime() {
+            sed -n '/^FROM debian:trixie-slim AS runtime$/,$p' "$1" \
+              | sed 's#packages/fushi_server/docker/##g'
+          }
+          [ -n "$(runtime Dockerfile)" ] || { echo "::error::Dockerfile has no runtime stage"; exit 1; }
+          if ! diff -u <(runtime Dockerfile) <(runtime Dockerfile.source); then
+            echo "::error::runtime stages of Dockerfile and Dockerfile.source differ"
+            exit 1
+          fi
+      - name: Build image
+        working-directory: packages/fushi_server/docker
+        run: docker build -t fushi-server:ci .
+      - name: Compose files parse
+        working-directory: packages/fushi_server/docker
+        run: |
+          docker compose -f docker-compose.yml config --quiet
+          docker compose -f docker-compose.bundle.yml config --quiet
+      # The newest release bundle may predate the language setting, so no
+      # --language here; the source image is checked with it before publishing.
+      - name: Smoke test
+        run: bash packages/fushi_server/docker/smoke_test.sh fushi-server:ci

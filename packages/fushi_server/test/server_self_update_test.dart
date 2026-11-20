@@ -434,6 +434,21 @@ void main() {
       expect(await recoverServerSelfUpdate(), ServerUpdateRecovery.proceed);
     });
 
+    test('容器镜像里即使留着换包日志也不收尾：程序文件归镜像管，不动、不重启', () async {
+      writeNewBundle();
+      await swapKilledAfter(1);
+      final String exe = p.join(root.path, 'bin', 'fushi_server');
+      expect(
+        await recoverServerSelfUpdate(
+          installRoot: root,
+          runningExecutable: exe,
+          containerImage: true,
+        ),
+        ServerUpdateRecovery.proceed,
+      );
+      expect(_read(exe), 'new exe', reason: '容器里不还原文件');
+    });
+
     test('上次没删掉的陈旧 *.fushi-old 换前先删：还原不会放回更早的版本', () async {
       writeNewBundle();
       _write(p.join(root.path, 'lib', 'a.so.fushi-old'), 'ancient a');
@@ -741,6 +756,44 @@ void main() {
       expect(dev.platformSupported, isFalse);
       expect(s.supported, isFalse);
       expect(s.currentVersion, 'dev');
+    });
+
+    test('container image: release bundle with remote_update on is still '
+        'unsupported and never queries GitHub', () async {
+      final ServerSelfUpdater boxed = ServerSelfUpdater(
+        installRoot: root,
+        current: _beta,
+        assetSuffix: _suffix,
+        platform: 'linux',
+        isAllowed: () async => true,
+        onInstalled: () => fail('container must not install'),
+        containerImage: true,
+        fetchReleases: (Uri _) => fail('container must not hit GitHub'),
+      );
+      final HostUpdateStatus s = await boxed.status(refresh: true);
+      expect(boxed.platformSupported, isFalse);
+      expect(s.supported, isFalse);
+      expect(s.remoteUpdateAllowed, isTrue);
+      expect(s.canTrigger, isFalse);
+    });
+  });
+
+  group('serverRunsInContainerImage', () {
+    test('reads FUSHI_CONTAINER', () {
+      bool run(Map<String, String> env) =>
+          serverRunsInContainerImage(environment: env);
+      expect(run(const <String, String>{}), isFalse);
+      expect(run(const <String, String>{kServerContainerEnv: ''}), isFalse);
+      expect(run(const <String, String>{kServerContainerEnv: '0'}), isFalse);
+      expect(
+        run(const <String, String>{kServerContainerEnv: 'False'}),
+        isFalse,
+      );
+      expect(run(const <String, String>{kServerContainerEnv: '1'}), isTrue);
+      expect(
+        run(const <String, String>{kServerContainerEnv: 'docker'}),
+        isTrue,
+      );
     });
   });
 
