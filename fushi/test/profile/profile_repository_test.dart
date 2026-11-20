@@ -1138,6 +1138,29 @@ void main() {
       expect(viewA.prefsMap.containsKey(kMiningTtsFallbackVoicePref), isFalse);
     });
 
+    test('覆盖导入激活配置后 applyProfile 不把声音换回切走时的旧值', () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+      final a = await repo.createProfile('A');
+      final b = await repo.createProfile('B');
+      await repo.setActiveProfileId(a);
+      await db.setPref(kMiningTtsFallbackVoicePref, 'preset:old');
+      await switchTo(repo, a, b);
+      await switchTo(repo, b, a);
+      // 回到 A 后改了声音，还没再切走过：A 的停放值仍是旧的。
+      await db.setPref(kMiningTtsFallbackVoicePref, 'preset:new');
+
+      final String json = await repo.exportProfileToJson(b);
+      await repo.importProfileFromJson(
+        json,
+        mode: ProfileImportMode.overwrite,
+        targetProfileId: a,
+      );
+      await repo.applyProfile(a);
+
+      expect(await db.getPref(kMiningTtsFallbackVoicePref), 'preset:new');
+    });
+
     test('复制配置带上声音，删除配置清掉它的停放键', () async {
       final db = await _openDb();
       final repo = _repo(db);

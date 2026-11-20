@@ -742,6 +742,11 @@ class ProfileRepository {
             'overwrite target $targetProfileId not found',
           );
         }
+        // 覆盖激活配置后调用方会 [applyProfile]，它会把停放值换回 live 键；导入文件不带
+        // 设备本地键，所以先把激活配置当前的 live 选择停放下来，免得换回切走那一刻的旧值。
+        if (targetProfileId == await getActiveProfileId()) {
+          await _parkPerProfileDeviceLocalPrefs(targetProfileId);
+        }
         await _db.replaceProfileSettings(
           targetProfileId,
           profileSettingCompanions(export.settings, targetProfileId),
