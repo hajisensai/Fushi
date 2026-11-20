@@ -138,8 +138,10 @@ void main() {
       );
       expect(
         b,
-        contains('resolvedStartMs = resolveEpisodeStart('),
-        reason: 'load 必须先按 start intent 和 duration 决定真实起播点',
+        contains('resolvedStartMs = resolveVideoStart('),
+        reason:
+            'load 必须先按 start intent、续播开关和 duration 决定真实起播点'
+            '（resolveVideoStart = 续播门 + resolveEpisodeStart）',
       );
       expect(
         b,
