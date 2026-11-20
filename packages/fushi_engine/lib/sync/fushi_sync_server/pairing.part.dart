@@ -635,6 +635,9 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         'dictionaries': lib,
         'books': lib,
         'audio': lib,
+        // 本地音频清单带内容身份 contentId、单项端点认 contentId（拍板 pr3481）。
+        // 老 host 无此字段 → client 退回按显示名匹配并在报告里提示升级对端。
+        kLiveLibraryLocalAudioContentIdCapability: lib,
         'videos': lib,
         // 互联漫画源（按页在线阅读，`/api/library/manga/**`）。老 host 无此字段 →
         // client 的漫画「来源」页把这一行标成「对端版本过低」，而不是让用户点进去

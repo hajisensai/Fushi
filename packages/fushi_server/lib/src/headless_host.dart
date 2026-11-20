@@ -355,6 +355,14 @@ class HeadlessHost {
   Future<void> start() async {
     if (_server != null) return;
     await paths.ensureLayout();
+    // 本地音频库补内容身份 + 收掉内容相同的重复登记（拍板 pr3481）。要在开始
+    // 接推送之前跑完：它读改写同一个登记偏好，与并发的导入交错会丢条目。只有
+    // 升级后第一次启动要扫库，身份写回登记后再启动就是纯读偏好。
+    try {
+      await localAudio.normalizeContentIdentities();
+    } catch (e, stack) {
+      engineLog.log('HeadlessHost.localAudioIdentity', e, stack);
+    }
     // 远程更新的启动收尾（还原中断的换包、删旧文件）不在这里：它必须先于开库，
     // 在 withServerRuntime 里做（server_update_recovery.dart）。
 
