@@ -9561,6 +9561,7 @@
   "srs_import_merge_notetypes": "Merge note types",
   "srs_import_merge_notetypes_help": "When a note type in the package has different fields or card templates than the same note type here, merge them into one: fields and templates added in the package are added here, and nothing here is removed. When off, the package's version is imported as a separate note type, and notes that already exist under the note type here are not updated.",
   "srs_import_needs_kernel": "This package uses Anki's newer format, which needs the scheduling engine. The engine isn't available on this device.",
+  "srs_import_op_too_large": "One item in this file is over 16 MB (usually a field with an embedded image or file), so the import stopped there. What was imported before it is kept; shrink or remove that item and import the same file again to add the rest.",
   "srs_import_options_help": "About these options",
   "srs_import_options_title": "Import options",
   "srs_import_pick_title": "Import Anki package",

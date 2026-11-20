@@ -162,7 +162,7 @@ class _SrsNoteTypeEditorPageState extends ConsumerState<SrsNoteTypeEditorPage> {
       } catch (e, stack) {
         ErrorLogService.instance.log(where, e, stack);
         FushiToast.show(
-          msg: t.srs_action_failed,
+          msg: srsActionFailedText(e),
           severity: ToastSeverity.error,
         );
       }

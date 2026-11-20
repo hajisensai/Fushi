@@ -9561,6 +9561,7 @@
   "srs_import_merge_notetypes": "合并笔记模板",
   "srs_import_merge_notetypes_help": "包里的笔记模板与本机同一个模板的字段或卡片模板不一致时，合并成一个：包里新增的字段和模板加到本机，本机已有的不会删除。关闭时把包里的版本另存为一个新模板，本机这个模板下已有的笔记不会被更新。",
   "srs_import_needs_kernel": "这个包是 Anki 新格式，需要排程内核；本设备上排程内核不可用。",
+  "srs_import_op_too_large": "这个文件里有一条超过 16 MB 的内容（通常是字段里内嵌了图片或文件），导入在这里停下了。此前已导入的部分会保留；把那条内容缩小或删掉后重新导入同一个文件，会补上剩下的部分。",
   "srs_import_options_help": "选项说明",
   "srs_import_options_title": "导入选项",
   "srs_import_pick_title": "导入 Anki 包",

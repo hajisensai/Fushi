@@ -4021,11 +4021,26 @@ WIP 原样编不过（schema 守卫表数没改）、三条停放测试装置有
   不出来、这位作者被整台跳过；本机清除时写下的剔除记录删了生不回来）。记下更新的 head 与 `prune` 删缓存件时回收，只按这位
   作者的主键前缀 / 区间删。代价：版本到了之后作者空洞里的剔除记录要等下一次回收（下一份 head / `prune`）才删。
 - **单条改动超过 16 MiB**：本机写入与 `.fushisrs` 导入报 `op too large: change <id> is N bytes (x MiB), over the 16 MiB limit …`
-  （`gen4/op.rs` `payload_within_cap`），整笔回滚；导入页按 `kSrsOpTooLarge` 给专门提示（`srs_timeline_import_op_too_large`）。
-  app 本机写入（加 / 改笔记、牌组设置、笔记类型 / 模板、复习、改笔记类型等）原先一律 toast「操作没有成功，请重试」，现在
-  走 `fushi/lib/src/srs/srs_action_error_text.dart` `srsActionFailedText(e)`：错误文本含 `kSrsOpTooLarge` 给
-  `srs_write_op_too_large`（太大、什么都没存、改用媒体附件），其余照旧。按文本认是因为错误可能裹在后台 isolate 转交的
-  `StateError` 里。只换了 `catch (e, stack)` 里单行的那 23 处；`srs_history_page` 的 `failure:` 固定文案与多行写法的几处没动。
+  （`gen4/op.rs` `payload_within_cap`），整笔回滚。**第三轮改成按类型认**：FFI 边界 `SrsCoreException.of`
+  （`packages/fushi_srs/lib/src/store/srs_core.dart`）按内核那句的标记（`SrsOpTooLargeException.marker` = op.rs
+  `ERR_OP_TOO_LARGE` + `": "`，`srs_core_test` 核对两边一致）把它类型化成 `SrsOpTooLargeException`，与 Unwired / ReadOnly
+  等同一套机制；它是纯数据对象，经后台 isolate 原样转交（`srs_core_workers.dart` 的 `StateError(e.toString())` 兜底只给发不过去
+  的对象用，碰不到它）。界面一律按类型选文案，不再匹配英文（删了 `kSrsOpTooLarge`），错误 → i18n 的表集中在
+  `fushi/lib/src/srs/srs_action_error_text.dart`：
+  - `srsActionFailedText(e)`：本机写入 → `srs_write_op_too_large`（太大、什么都没存、改用媒体附件），其余「操作没有成功」。
+    原 23 处之外补上 `srs_history_page` 设备改名 / 停用 / 恢复 3 处、`srs_note_type_editor_page` 的 `_run`、导入报告
+    「继续用 FSRS」（`srsKeepImportedDecksOnFsrsFromReport` 以前写库失败没接、异常直接冒出按钮回调）。
+  - `srsImportFailureMessage(e)`（从 `srs_import_entry.dart` 挪来）：.apkg / .colpkg / 文本导入、Anki 一键迁移落库那一批
+    超限 → 新 key `srs_import_op_too_large`（导入停在那里、此前已落库的批保留、改小后重导会补齐；每批只含完整笔记、导入
+    幂等），不再显示内核英文原话；`srs_anki_migration_page` 的失败对话框原先自己抄了一份判断，改成调它。
+  - `srsFushiSrsImportFailureText(e)`：时间线页 `.fushisrs` 导入。`srsFushiSrsKernelError` 遇到 `SrsOpTooLargeException`
+    原样交回，不再换成按英文开头认的 `FormatException`。
+  - 顺带修掉的真 bug：`srs_history_page` 的 `_run(…, failure: failure)` 在调用时就拿走了字符串初值，导入里 `catch` 再改
+    `failure` 不生效——另一个复习库 / 坏文件 / 一条太大一直只显示笼统的「导入失败」。`_run` 的 `failure` 改成
+    `String Function(Object error)`，拿到错误对象再选文案。
+  - 没换、有意不换的：`srs_import_entry` / `srs_anki_migration_page:343` 里 `store == null` / `media == null` /
+    `task == null` / 牌组不存在那几处 `t.srs_action_failed`——那里没有写库、也没有错误对象（库 / 媒体库打开失败已在
+    `readSrsStore` / provider 里记日志），超限不可能出现在这些分支。
 
 ### 测试
 
@@ -4039,6 +4054,13 @@ WIP 原样编不过（schema 守卫表数没改）、三条停放测试装置有
   规模）。导出 / 超限：`import_tests` 的超限一条、`sync_tests`
   `a_write_over_the_payload_cap_is_refused_readably_and_nothing_lands`、Dart `srs_fushisrs_errors_test.dart`。
   segBytes：`outbox_clamps_the_segment_target_to_the_cap`（测试钩子 `SEG_CAP_FOR_TEST` 把上限调到 300 字节）。
+- 第三轮：超限类型化——`srs_core_test` `an op over the payload cap is typed on every write path`（与 op.rs 常量 / 报错格式
+  对照）；`packages/fushi_engine/test/srs/srs_op_too_large_e2e_test.dart` 起真实 `SrsDbStore`（语句走后台 isolate）：加笔记
+  超限抛 `SrsOpTooLargeException`、笔记数仍 0、之后照常能写，.apkg 里一条超限抛的也是它（不是 `SrsImportException.corrupt`）、
+  这一批没落库；`fushi/test/srs/srs_action_error_text_test.dart` 三张表逐类核对。剔除记录核对规模：`gen4/export.rs`
+  `relay_stubs_over_many_voids_check_in_linear_time`（三十万段空洞各带一条剔除记录，读写合计约 1.6 s；把双指针换回逐条扫
+  空洞实测 28.7 s、超 15 s 时限红）。`put_stub_if_absent` 的 `INSERT OR IGNORE` 改 `OR REPLACE` 实测
+  `put_stub_if_absent_never_replaces_a_stored_stub` 红。
 - Dart：`srs_device_identity_test.dart` 新一条（`relayBlocked` 解析、按原因合计、认不出的项跳过、设备行文案）；
   `srs_sync4_round_test.dart` 断言收段带的位置与 `plan` 同值；`srs_sync2_ingest_batching_test.dart` 新一条（交回按下标取、坏
   下标报错）。

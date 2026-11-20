@@ -1764,6 +1764,59 @@ mod tests {
         assert_eq!(read_all(&write_all(&v).unwrap()).unwrap().1, v);
     }
 
+    /// 规模：三十万段空洞、每段上一条剔除记录（不可信流能声明的最坏形状之一）。剔除记录对空洞的核对是升序双指针，
+    /// 读写两侧合起来与条数成线性；逐条扫全部空洞（O(剔除记录×空洞)，这里约 9×10^10 次比较）会远超时限。
+    #[test]
+    fn relay_stubs_over_many_voids_check_in_linear_time() {
+        const N: u64 = 300_000;
+        let dev = id(NAT);
+        let mut base = op_of(dev, 1, &Body4::Edit(native_edit()));
+        base.hlc = Hlc {
+            wall: base.hlc.wall,
+            logical: 0,
+            device: dev,
+        };
+        // seq 2k+1 是一条操作，2k+2 是一段 1 条的空洞，末尾停在空洞上。
+        let mut items = Vec::with_capacity(4 * N as usize + 3);
+        items.push(ExportItem::NativeLog {
+            device: dev,
+            public: Some([0x9a; 32]),
+            count: 2 * N,
+        });
+        let mut tail = CHAIN_ZERO;
+        for k in 0..N {
+            let mut op = base.clone();
+            op.id.seq = 2 * k + 1;
+            items.push(ExportItem::NativeOp(op));
+            let mut after = [0u8; 32];
+            after[..8].copy_from_slice(&k.to_le_bytes());
+            items.push(ExportItem::NativeVoid {
+                n: 1,
+                chain_after: after,
+                marks: Vec::new(),
+            });
+            tail = after;
+        }
+        items.push(ExportItem::NativeTail(tail));
+        items.push(ExportItem::NativeRelay {
+            versions: 0,
+            stubs: N,
+        });
+        let stub = relay_stub(2);
+        for k in 0..N {
+            let mut s = stub.clone();
+            s.op.id.seq = 2 * k + 2;
+            items.push(ExportItem::Stub(s));
+        }
+        let started = std::time::Instant::now();
+        let bytes = write_all(&items).unwrap();
+        let (_, got) = read_all(&bytes).unwrap();
+        let took = started.elapsed();
+        eprintln!("relay {N} stubs over {N} voids: write + read {took:?}");
+        assert_eq!(got.len(), items.len());
+        assert!(took.as_secs() < 15, "{took:?}");
+    }
+
     /// 读写两侧同一套语义规则：写者拒的，手拼成字节读者也拒。
     #[test]
     fn grammar_rules_hold_on_both_sides() {

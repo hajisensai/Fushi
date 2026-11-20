@@ -309,6 +309,42 @@ void main() {
       expect((r as SrsCoreRemovedException).op, 'channel_settle');
     });
 
+    test('an op over the payload cap is typed on every write path', () {
+      // 标记与内核同源：op.rs 的常量与报错格式（`{ERR_OP_TOO_LARGE}: change …`）。
+      final String op = File(
+        '../../native/fushi_fsrs/src/gen4/op.rs',
+      ).readAsStringSync();
+      expect(
+        op,
+        contains(
+          'pub const ERR_OP_TOO_LARGE: &str = "'
+          '${SrsOpTooLargeException.marker.replaceFirst(': ', '')}";',
+        ),
+      );
+      expect(op, contains('"{ERR_OP_TOO_LARGE}: change '));
+      const String cap =
+          'op too large: change 0a:2 is 16777217 bytes (16.0 MiB), over the '
+          '16 MiB limit for a single change (usually a field holding an '
+          'embedded image or file; store it as a media file instead)';
+      for (final String m in <String>[
+        'gen4 store: $cap; nothing was saved',
+        'gen4 import: $cap; nothing was imported',
+      ]) {
+        final SrsCoreException e = SrsCoreException.of(-1, m);
+        expect(e, isA<SrsOpTooLargeException>(), reason: m);
+        expect(e.message, m);
+      }
+      // 只提到这几个词、不是内核那句报错的不算。
+      expect(
+        SrsCoreException.of(-1, 'gen4 store: no note n1').runtimeType,
+        SrsCoreException,
+      );
+      expect(
+        SrsCoreException.of(-1, 'note "op too large" missing').runtimeType,
+        SrsCoreException,
+      );
+    });
+
     test('a removed sync2 command reaches Dart typed', () {
       final SrsCore core = SrsCore.open(dir.path);
       addTearDown(core.close);

@@ -108,8 +108,9 @@ pub const SALTS_MAX: usize = 1 << 16;
 pub const MAX_OP_PAYLOAD: usize = 16 * 1024 * 1024;
 
 /// 一条操作的载荷超过 [MAX_OP_PAYLOAD] 时给用户看的报错的开头（[payload_within_cap]）。本机写入（`Truth::append_native`）
-/// 与 `.fushisrs` 导入（`export.rs` 的语法核对）报这一句，Dart 按它认出「一条改动太大」（`srs_fushisrs.dart`
-/// `kSrsOpTooLarge`，导入页给专门的提示）；改它要同步改 Dart。
+/// 与 `.fushisrs` 导入（`export.rs` 的语法核对）报这一句，Dart 在 FFI 边界按它把错误类型化成 `SrsOpTooLargeException`
+/// （`packages/fushi_srs/lib/src/store/srs_core.dart` 的 `marker`，界面按类型给专门的本地化提示）；改它要同步改 Dart
+/// （`srs_core_test.dart` 核对两边一致）。
 pub const ERR_OP_TOO_LARGE: &str = "op too large";
 
 /// 载荷不超过 [MAX_OP_PAYLOAD]；超了给一句看得懂的报错（多大、上限多少、通常是什么造成的），以 [ERR_OP_TOO_LARGE]

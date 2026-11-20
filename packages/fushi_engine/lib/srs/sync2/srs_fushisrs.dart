@@ -42,6 +42,7 @@ import 'package:archive/archive_io.dart' hide ZLibDecoder;
 import 'package:crypto/crypto.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_media_sync.dart';
+import 'package:fushi_srs/fushi_srs.dart' show SrsOpTooLargeException;
 import 'package:path/path.dart' as p;
 
 const String kSrsFushiSrsExtension = 'fushisrs';
@@ -395,20 +396,15 @@ Future<Map<String, Object?>> _kernelImport(
   }
 }
 
-/// 内核报「一条改动太大」的开头（内核 `gen4/op.rs` `ERR_OP_TOO_LARGE`：一条操作的载荷超过 16 MiB，通常是字段里内嵌了
-/// 图片 / 文件）。导入页按它给专门的提示，而不是「不是 Fushi 导出文件」。
-const String kSrsOpTooLarge = 'op too large';
-
-/// 内核导入（第 2 版流）拒收的错误 [e] 换成界面认得的 [FormatException]：另一个集合 → `another profile`；一条改动超过
-/// 载荷上限 → 消息以 [kSrsOpTooLarge] 开头（带内核原话：多大、上限多少）；别的坏流 → `corrupt .fushisrs`。认不出的
-/// 原样交回（调用方 rethrow）。
+/// 内核导入（第 2 版流）拒收的错误 [e] 换成界面认得的 [FormatException]：另一个集合 → `another profile`；别的坏流 →
+/// `corrupt .fushisrs`。一条改动超过载荷上限的已在 FFI 边界类型化成 [SrsOpTooLargeException]（文件没坏，是那一条太大），
+/// 与认不出的一样原样交回（调用方 rethrow），导入页按类型给专门的提示。
 Object srsFushiSrsKernelError(Object e) {
+  if (e is SrsOpTooLargeException) return e;
   final String m = e.toString();
   if (m.contains('belongs to another collection')) {
     return const FormatException('this .fushisrs belongs to another profile');
   }
-  final int tooLarge = m.indexOf(kSrsOpTooLarge);
-  if (tooLarge >= 0) return FormatException(m.substring(tooLarge));
   if (m.contains('gen4 import:')) {
     return FormatException('corrupt .fushisrs: $m');
   }

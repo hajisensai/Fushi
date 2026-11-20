@@ -356,15 +356,6 @@ Future<SrsImportReport> runSrsTextImportFile({
   );
 }
 
-/// 导入失败原因 → 给人看的一句话。
-String srsImportFailureMessage(Object failure) =>
-    failure is SrsImportException &&
-        failure.code == SrsImportException.needsKernel
-    ? t.srs_import_needs_kernel
-    : t.srs_import_failed(
-        error: failure is SrsImportException ? failure.message : '$failure',
-      );
-
 /// 用户不要 RWKV：把导入时由 FSRS 预设改用 RWKV 的牌组（[SrsImportReport.fsrsDecks]）切回各自
 /// 原来的 FSRS 算法，返回切了几个。导入时参数已经按原算法存下，切回即用。
 ///
@@ -443,7 +434,15 @@ Future<void> srsKeepImportedDecksOnFsrsFromReport(
     FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
     return;
   }
-  final int n = await srsKeepImportedDecksOnFsrs(store, report.fsrsDecks);
+  final int n;
+  try {
+    n = await srsKeepImportedDecksOnFsrs(store, report.fsrsDecks);
+  } catch (e, stack) {
+    // 切算法是写复习库：失败照写入失败提示（以前没接，异常直接冒出报告对话框的按钮回调）。
+    ErrorLogService.instance.log('srsKeepImportedDecksOnFsrs', e, stack);
+    FushiToast.show(msg: srsActionFailedText(e), severity: ToastSeverity.error);
+    return;
+  }
   bumpSrsRevision(ref);
   FushiToast.show(msg: t.srs_import_kept_fsrs(n: n));
 }

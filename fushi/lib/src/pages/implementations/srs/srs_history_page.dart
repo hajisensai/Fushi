@@ -30,6 +30,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_conflicts_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_sync_devices_section.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_sync_settings.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
+import 'package:fushi/src/srs/srs_action_error_text.dart';
 import 'package:fushi/src/srs/srs_navigation.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/srs/srs_app_runtime.dart';
@@ -284,11 +285,12 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
     unawaited(_reload());
   }
 
-  /// 跑一个会改动复习库的操作：期间禁用按钮，失败统一提示。
+  /// 跑一个会改动复习库的操作：期间禁用按钮，失败统一提示。[failure] 拿到抛出的错误对象再给提示（按错误类型选文案，
+  /// 如一条改动超过 16 MiB → [srsActionFailedText]）；不在调用时就定死一句话。
   Future<void> _run(
     String where,
     Future<void> Function() body, {
-    required String failure,
+    required String Function(Object error) failure,
   }) async {
     if (_busy) return;
     setState(() => _busy = true);
@@ -296,7 +298,7 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
       await body();
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsHistoryPage.$where', e, stack);
-      FushiToast.show(msg: failure, severity: ToastSeverity.error);
+      FushiToast.show(msg: failure(e), severity: ToastSeverity.error);
     } finally {
       if (mounted) setState(() => _busy = false);
       await _reload();
@@ -379,7 +381,7 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
         msg: t.srs_timeline_restore_done(time: time),
         severity: ToastSeverity.success,
       );
-    }, failure: t.srs_timeline_restore_failed);
+    }, failure: (_) => t.srs_timeline_restore_failed);
   }
 
   Future<void> _addCheckpoint() => _run('checkpoint', () async {
@@ -391,7 +393,7 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
       msg: t.srs_timeline_checkpoint_done,
       severity: ToastSeverity.success,
     );
-  }, failure: t.srs_timeline_checkpoint_failed);
+  }, failure: (_) => t.srs_timeline_checkpoint_failed);
 
   // ---------------------------------------------------------------- 存储位置
 
@@ -483,7 +485,7 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
           path: path,
         ),
       ]);
-    }, failure: t.srs_timeline_location_unavailable);
+    }, failure: (_) => t.srs_timeline_location_unavailable);
   }
 
   Future<void> _editFolder(SrsFolderLocation l) async {
@@ -499,7 +501,7 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
             in ref.read(appProvider).srsFolderLocations)
           x.id == l.id ? edited : x,
       ]);
-    }, failure: t.srs_timeline_location_unavailable);
+    }, failure: (_) => t.srs_timeline_location_unavailable);
   }
 
   Future<void> _removeFolder(SrsFolderLocation l) async {
@@ -527,7 +529,7 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
         throw StateError('removeFolder: srs runtime unavailable');
       }
       await sync.forgetLocation(l.locationId, dropFromConfig: drop);
-    }, failure: t.srs_timeline_location_remove_failed);
+    }, failure: (_) => t.srs_timeline_location_remove_failed);
   }
 
   /// 位置的加密状态（最近一轮同步看到的；还没同步过的位置按本机记的密钥推断）。
@@ -574,7 +576,7 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
           msg: t.srs_timeline_location_encrypt_done,
           severity: ToastSeverity.success,
         );
-      }, failure: t.srs_timeline_location_encrypt_failed);
+      }, failure: (_) => t.srs_timeline_location_encrypt_failed);
       return;
     }
     if (s?.error == kSrsSync2BadKdf) {
@@ -609,7 +611,7 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
               : t.srs_timeline_location_unlocked,
           severity: err == null ? ToastSeverity.success : ToastSeverity.error,
         );
-      }, failure: t.srs_timeline_location_encrypt_failed);
+      }, failure: (_) => t.srs_timeline_location_encrypt_failed);
       return;
     }
     if ((s?.encrypted ?? false) || k != null) {
@@ -633,7 +635,7 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
         msg: t.srs_timeline_location_encrypt_done,
         severity: ToastSeverity.success,
       );
-    }, failure: t.srs_timeline_location_encrypt_failed);
+    }, failure: (_) => t.srs_timeline_location_encrypt_failed);
   }
 
   String _purposesLabel(SrsFolderLocation l) {
@@ -832,7 +834,7 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
     await FushiShare.shareFiles(<XFile>[
       XFile(out.path, mimeType: 'application/zip'),
     ], subject: name);
-  }, failure: t.srs_timeline_export_failed);
+  }, failure: (_) => t.srs_timeline_export_failed);
 
   Future<void> _import() async {
     final String? path = await pickSystemFilePath(
@@ -849,51 +851,41 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
       icon: FushiIcons.importFile,
     );
     if (!ok || !mounted) return;
-    String failure = t.srs_timeline_import_failed;
     await _run('import', () async {
       final SrsDbStore? store = await readSrsStore(ref);
       if (store == null) return;
-      final SrsFushiSrsImport r;
-      try {
-        r = await srsImportFushiSrs(
-          store,
-          File(path),
-          mediaRoot: await _mediaRoot(store),
-          // 文件来自另一个复习库，或同一个库的文件带来新的旧 profile 标识 / 设备：确认之前不合并（内核什么都没写）。
-          confirmForeign: (SrsFushiSrsForeign f) async =>
-              mounted &&
-              await showFushiConfirmDialog(
-                context: context,
-                title: t.srs_timeline_import,
-                message: switch (f.reason) {
-                  SrsFushiSrsConfirmReason.join =>
-                    t.srs_timeline_import_foreign_confirm,
-                  SrsFushiSrsConfirmReason.identity =>
-                    t.srs_timeline_import_identity_confirm(
-                      salts: f.newSalts.length,
-                      devices: f.newPeers.length,
-                    ),
-                },
-                confirmLabel: t.srs_timeline_import,
-                cancelLabel: t.cancel,
-                icon: FushiIcons.importFile,
-              ),
-        );
-      } on FormatException catch (e) {
-        failure = e.message.contains('another profile')
-            ? t.srs_timeline_import_other_profile
-            : e.message.startsWith(kSrsOpTooLarge)
-            ? t.srs_timeline_import_op_too_large
-            : t.srs_timeline_import_invalid;
-        rethrow;
-      }
+      final SrsFushiSrsImport r = await srsImportFushiSrs(
+        store,
+        File(path),
+        mediaRoot: await _mediaRoot(store),
+        // 文件来自另一个复习库，或同一个库的文件带来新的旧 profile 标识 / 设备：确认之前不合并（内核什么都没写）。
+        confirmForeign: (SrsFushiSrsForeign f) async =>
+            mounted &&
+            await showFushiConfirmDialog(
+              context: context,
+              title: t.srs_timeline_import,
+              message: switch (f.reason) {
+                SrsFushiSrsConfirmReason.join =>
+                  t.srs_timeline_import_foreign_confirm,
+                SrsFushiSrsConfirmReason.identity =>
+                  t.srs_timeline_import_identity_confirm(
+                    salts: f.newSalts.length,
+                    devices: f.newPeers.length,
+                  ),
+              },
+              confirmLabel: t.srs_timeline_import,
+              cancelLabel: t.cancel,
+              icon: FushiIcons.importFile,
+            ),
+      );
       if (r.declined) return;
       if (mounted) bumpSrsRevision(ref);
       FushiToast.show(
         msg: t.srs_timeline_import_done(n: r.applied),
         severity: ToastSeverity.success,
       );
-    }, failure: failure);
+      // 失败文案按抛出的错误对象选（另一个复习库 / 坏文件 / 一条超过 16 MiB / 其他）。
+    }, failure: srsFushiSrsImportFailureText);
   }
 
   // ---------------------------------------------------------------- 顶栏
@@ -1101,7 +1093,7 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
       await store.sync2DeviceInfo(nick: nick);
       // 名字随 head 发布：跑一轮让别的设备尽快看到。
       unawaited(ref.read(srsAppRuntimeProvider)?.sync.syncNow());
-    }, failure: t.srs_action_failed);
+    }, failure: srsActionFailedText);
   }
 
   /// 「这台设备不用了」：确认框说明后果（卡住的修改立即应用、它没同步出来的不会出现、不删数据、可恢复）。
@@ -1124,7 +1116,7 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
         msg: t.srs_device_retired_toast(device: name),
         severity: ToastSeverity.success,
       );
-    }, failure: t.srs_action_failed);
+    }, failure: srsActionFailedText);
   }
 
   Future<void> _unretire(SrsDeviceView d) async {
@@ -1137,7 +1129,7 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
         msg: t.srs_device_unretired_toast(device: name),
         severity: ToastSeverity.success,
       );
-    }, failure: t.srs_action_failed);
+    }, failure: srsActionFailedText);
   }
 
   Widget _buildBody(BuildContext context) {
