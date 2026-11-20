@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:ui' show Size;
+import 'dart:ui' show Rect, Size;
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
@@ -26,6 +26,7 @@ import 'package:fushi/src/media/video/video_hdr_output.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 import 'package:fushi/src/media/video/video_playable_end.dart';
 import 'package:fushi/src/media/video/mpv_cache_snapshot.dart';
+import 'package:fushi/src/media/video/raw_video_frame.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show CachedMediaSnapshot;
 import 'package:fushi_engine/media/video/bitmap_subtitle/bitmap_subtitle_track.dart'
@@ -1810,6 +1811,27 @@ class VideoPlayerController extends ChangeNotifier
       synchronized: false,
     );
     return bytes as Uint8List?;
+  }
+
+  /// 截取当前解码帧在整帧比例矩形 [fraction] 内的一块 RGBA 像素（只有视频，不合成
+  /// 字幕；不做 PNG / JPEG 编码），给持续抽帧的智能遮布用。裁剪在截帧 isolate 上就地
+  /// 做完，只有这一小块传回来。非 libmpv 后端 / 未 [load] / 截帧失败 / 裁剪为空返回
+  /// null。
+  ///
+  /// 与 [captureFrameWithSubtitles] 一样不占 Player 的串行锁（BUG-3645），截帧在辅助
+  /// isolate 上跑，句柄销毁前会等它。
+  Future<RawVideoFrameCrop?> captureRawFrameCrop(Rect fraction) async {
+    final Player? player = _player;
+    if (player == null || !hasNativePlayer) return null;
+    final dynamic native = player.platform;
+    if (native == null) return null;
+    final Object? bytes = await native.screenshot(
+      format: kRawVideoFrameFormat,
+      includeLibassSubtitles: false,
+      synchronized: false,
+      fushiRawTransform: rawVideoFrameCropTransform(fraction),
+    );
+    return parseRawVideoFrameCrop(bytes as Uint8List?);
   }
 
   /// 把播放器轴 `[startMs, endMs]` 这段**已缓冲**的远端流原样落成本地文件

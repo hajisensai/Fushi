@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ui' show Rect;
 
+import 'package:fushi/src/media/video/raw_video_frame.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
@@ -97,6 +99,82 @@ void main() {
         'pause',
         'screenshot',
       ], reason: '排在截帧后面的 pause() 只该等取帧，不该等 JPEG 编码');
+    },
+    skip: skip,
+    timeout: const Timeout(Duration(seconds: 60)),
+  );
+
+  // `image/x-fushi-bgra`（智能遮布）落在 BUG-4910 拆开后的取帧 isolate 上：变换对
+  // mpv node 的视图就地裁剪，产出原样返回（不是整帧、不是 JPEG），持锁 / 不持锁两条
+  // 路径都一样；缺变换是参数错误。
+  test(
+    'image/x-fushi-bgra returns the transform output from the capture isolate',
+    () async {
+      final Directory temp = await Directory.systemTemp.createTemp(
+        'screenshot-bgra-',
+      );
+      addTearDown(() => temp.delete(recursive: true));
+      final String fixture = p.join(temp.path, 'v.mkv');
+      final ProcessResult made = await Process.run(ffmpeg!, <String>[
+        '-hide_banner',
+        '-loglevel',
+        'error',
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc2=size=640x360:rate=24:duration=2',
+        '-c:v',
+        'libx264',
+        '-preset',
+        'ultrafast',
+        fixture,
+      ]);
+      expect(made.exitCode, 0, reason: '${made.stderr}');
+
+      final Player player = Player();
+      addTearDown(player.dispose);
+      final dynamic native = player.platform;
+      await native.setProperty('vo', 'null');
+      await native.setProperty('ao', 'null');
+      await player.open(Media(fixture), play: false);
+      await native.setProperty('vid', '1');
+
+      final DateTime deadline = DateTime.now().add(const Duration(seconds: 10));
+      while (await player.screenshot(format: null) == null) {
+        if (DateTime.now().isAfter(deadline)) fail('no decoded frame');
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+
+      expect(
+        () => native.screenshot(format: kRawVideoFrameFormat),
+        throwsArgumentError,
+        reason: 'x-fushi-bgra 必须带 fushiRawTransform',
+      );
+
+      for (final bool synchronized in <bool>[true, false]) {
+        final Object? bytes = await native.screenshot(
+          format: kRawVideoFrameFormat,
+          synchronized: synchronized,
+          fushiRawTransform: rawVideoFrameCropTransform(
+            const Rect.fromLTRB(0.25, 0.5, 0.75, 1),
+          ),
+        );
+        final RawVideoFrameCrop? crop = parseRawVideoFrameCrop(
+          bytes as Uint8List?,
+        );
+        expect(crop, isNotNull, reason: 'synchronized=$synchronized');
+        expect(crop!.frameWidth, 640);
+        expect(crop.frameHeight, 360);
+        expect(crop.left, 160);
+        expect(crop.top, 180);
+        expect(crop.width, 320);
+        expect(crop.height, 180);
+        expect(
+          bytes!.length,
+          kRawVideoFrameCropHeaderBytes + 320 * 180 * 4,
+          reason: '只传回裁剪，不是整帧',
+        );
+      }
     },
     skip: skip,
     timeout: const Timeout(Duration(seconds: 60)),
