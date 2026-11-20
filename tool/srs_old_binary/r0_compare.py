@@ -5,6 +5,9 @@
 卡片集合、每张卡的队列 / 到期日（due_day、due_at）/ 间隔 / reps / lapses / stability / difficulty / 最后复习时间，
 以及每张卡的复习日志条数。新代库的 ID 列可能是 16 字节 BLOB，统一转成 UUID 文本再对。
 
+新代把内置笔记类型派生出来的 ID（带 profile 盐的旧 ID）规范化成不带盐的 ID，旧 ID → 新 ID 记在 `alias_ix`；
+比对前把旧库的卡片 / 笔记 / 牌组 ID 和新库日志里的卡片 ID 都经 `alias_ix` 换成规范 ID（`aliased` 记换了几个）。
+
   python -I tool/srs_old_binary/r0_compare.py --old <旧 app-support> --new <新 app-support> [--json out.json]
 退出码：0 = 全部一致；1 = 有差异；2 = 读不了。
 """
@@ -78,13 +81,42 @@ def new_facts(support: Path) -> dict[str, Any]:
                     logs[_id(cid)] = logs.get(_id(cid), 0) + n
             meta = dict(con.execute("SELECT key, value FROM srs_meta WHERE key IN ('schema')")) \
                 if "srs_meta" in tables else {}
+            aliases: dict[Any, Any] = {}
+            if "alias_ix" in tables:
+                for aid, canon in con.execute("SELECT id, canon FROM alias_ix"):
+                    aliases[_id(aid)] = _id(canon)
             return {"cards": cards, "logs": logs, "log_total": sum(logs.values()), "meta": meta,
-                    "tables": sorted(tables)}
+                    "tables": sorted(tables), "aliases": aliases}
         finally:
             con.close()
 
 
+def canonicalize(old: dict[str, Any], new: dict[str, Any]) -> int:
+    """把旧库的卡片 / 笔记 / 牌组 ID 与新库日志的卡片 ID 经新库 `alias_ix` 换成规范 ID（原地改），返回换了几个。"""
+    aliases: dict[Any, Any] = new.get("aliases", {})
+    hits = 0
+
+    def canon(v: Any) -> Any:
+        nonlocal hits
+        if v in aliases:
+            hits += 1
+            return aliases[v]
+        return v
+
+    cards: dict[Any, Any] = {}
+    for cid, row in old["cards"].items():
+        row = dict(row)
+        row["note_id"] = canon(row["note_id"])
+        row["deck_id"] = canon(row["deck_id"])
+        cards[canon(cid)] = row
+    old["cards"] = cards
+    old["logs"] = {canon(k): v for k, v in old["logs"].items()}
+    new["logs"] = {canon(k): v for k, v in new["logs"].items()}
+    return hits
+
+
 def compare(old: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
+    aliased = canonicalize(old, new)
     diffs: list[dict[str, Any]] = []
     for cid in sorted(set(old["cards"]) | set(new["cards"]), key=str):
         o, n = old["cards"].get(cid), new["cards"].get(cid)
@@ -98,7 +130,8 @@ def compare(old: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
             diffs.append({"card": cid, "col": "log_count", "old": old["logs"].get(cid, 0),
                           "new": new["logs"].get(cid, 0)})
     return {"old_cards": len(old["cards"]), "new_cards": len(new["cards"]), "old_logs": old["log_total"],
-            "new_logs": new["log_total"], "old_meta": old["meta"], "new_meta": new["meta"], "diffs": diffs}
+            "new_logs": new["log_total"], "old_meta": old["meta"], "new_meta": new["meta"], "aliased": aliased,
+            "diffs": diffs}
 
 
 def main(argv: Optional[list[str]] = None) -> int:
@@ -124,7 +157,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     if a.json:
         Path(a.json).write_text(text, encoding="utf-8")
     print(json.dumps({k: out[k] for k in ("old_cards", "new_cards", "old_logs", "new_logs", "old_meta",
-                                          "new_meta", "diffs")}, ensure_ascii=False, default=str))
+                                          "new_meta", "aliased", "diffs")}, ensure_ascii=False, default=str))
     return 0 if not out["diffs"] else 1
 
 

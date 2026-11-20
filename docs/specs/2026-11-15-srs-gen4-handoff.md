@@ -3982,3 +3982,43 @@ exit 1；成功 949、失败 9、错误 6、跳过 21，实际执行 964。上�
   分支（暂缓时提前发布 `mergingInto`）、`deferredProfileMerge()` 与 `onAdopted` 文档里讲暂缓的几句；`srs_profile_link.dart` 删了
   `SrsDeferredProfileMerge`、`SrsProfileAdoptDeferred` 两个类型与 linker 接口 / 实现的 `deferredMerge` 方法。任务书一边把这两个
   文件划给同步 / 身份模块，一边要求删 `SrsDeferredProfileMerge` 整条链，而整条链就在这两个文件里，只能这样做。
+
+## 第六波 R0 Windows 实测（2026-11-20，分支 `pr/srs-gen4-w6-r0-windows`，基于 `pr/srs-gen4-switch` `0bf8472f40`）
+
+规划 §6 R0 的 Windows 部分，证据与逐格结论全在 [2026-11-15-srs-gen4-r0-windows.md](2026-11-15-srs-gen4-r0-windows.md)。
+被测：v3.3.0、v3.0.1 官方安装包解出的 `fushi.exe`（sha256 与 `versions.json` 钉死的一致）+ 本分支 release 构建；全部隔离数据根，没碰本机用户库。
+本模块没改产品代码，只加实测工具与测试：
+
+- `tool/srs_old_binary/r0_win.py`（新）：跨进程保留数据根、按步骤表调控制通道，记前后 `app-support/` 顶层文件 sha256、抹掉 D3 例外字节后的
+  sha256、主库 schema、两代 SRS 库的 `srs_meta` 与行数。`r0_compare.py`（新）：迁移前后逐卡比对，经 `alias_ix` 换算规范 ID。
+- `srs_old_binary.py run --exe`：新版本对旧输入跑同一套动作。
+- `fushi/integration_test/srs_gen4_r0_migrate_itest.dart`（新，手动跑）：旧数据根经界面迁移，可选途中硬结束；`captureFlutterFrame` 加
+  `settle:false`（屏上有转圈时 `pumpAndSettle` 永远等不到静止，整条测试挂住）。
+- `fushi/test/srs/srs_deck_list_not_migrated_test.dart`（新）：库报要迁移时牌组列表必须以 `SrsStoreNotMigrated` 落定（复习页据此换迁移页），4 例。
+
+结论摘要：
+- (a) ✔ v3.3.0 的 6 卡 / 12 条日志迁移后逐卡一致（队列、到期、间隔、reps、lapses、S/D、最后复习、牌组、笔记、日志条数）。
+- (b) ✔ 迁移后 v3.3.0 对 SRS 显式拒绝（控制通道 422）、`srs4.db` 字节不变、`srs.db` 只差 D3 例外字节；v3.0.1 整个 app 拒绝启动、SRS 文件字节不变。
+- (c) ✔ 提交前硬结束：`srs.db` 字节不变，v3.3.0 照常读出 6 卡（SRS 层），新版本重开后重新迁移、逐卡一致；提交后、封存前被杀那条没实测。
+- (d) ✔ 同步位置三态：旧位置被新版本接管（写 v4 + v3 围栏），旧版本对两代 / 只有新的位置都不写目标。
+- (e) ✔ 新备份给旧版本恢复被拒；旧备份给新版本合并要用户确认（按设计）；✘ 旧备份「覆盖」恢复见下。
+
+**交给别的模块的缺陷 / 待拍板（本模块没改）：**
+
+1. **旧备份覆盖恢复后卡片与日志脱钩（✘，归 G11-4 / G9 导入与身份）**：v3.3.0 整包备份在新版本上「覆盖」恢复，`srs4.db` 有 6 卡 / 12 条
+   `log_ix`，但卡片是用不带盐的模板 ID 重新派生的（与迁移路径得到的规范 ID 也不同），对不上日志和 `alias_ix`；6 张全 `hidden=1`、`queue new`、
+   `reps 0`；`salt_ix` 只有本机 uid，没有备份里的 uid；恢复后主库 profile uid 是本机的、`collections` 行 dir 是备份的。界面上卡片总数 0。
+   指向 `dispatch.rs` `legacy_backup_import` → `cmd/backup.rs` `land` → `identity.rs` `collection_adopt_with` / `adopt_foreign` 的 Bound 分支只写本机
+   carry 盐、备份的盐（`legacy::salts`）没进 `salt_ix`。复现数据：`D:/fushi-r0/A/old-backup.zip`（本机，不入库），复现步骤：
+   `srs_old_binary.py run --exe <新 release> --action restore-backup --target D:/fushi-r0/A/old-backup.zip`（替换模式），再
+   `r0_compare.py --old <旧根>/app-support --new <恢复后>/app-support`。
+2. **新版本只要打开过旧数据根（哪怕没迁移 SRS），旧版本就整个起不来**：主库 schema 146 → 159 不可降级（既有行为，非 gen4 引入），所以规划 (c)
+   「提交前旧版本仍可用」只在 SRS 层成立。是否要在升级说明里讲清，待拍板。
+3. **控制通道对未迁移库回 500**（`SrsStoreNotMigrated` 当内部错误），不是可机读的「先迁移」4xx；ctl / AI 调用方得认错误文本。建议归控制通道 owner
+   映射成 409 / 422 + 机读码。
+4. **itest 下迁移页不出来**：Windows 离屏 runner 的 debug itest 里，未迁移库让复习页一直转圈（provider 状态已是错误、`.future` 不完成、错误日志有
+   UncaughtZone），判为 itest 的 zone 混用问题；release 包同样数据根错误日志里没有 UncaughtZone，provider 链单测无误。但 release 的迁移页像素
+   没看到——要在可见窗口 / 真机上补看一眼。本次迁移改走按钮背后的 `SrsGen4MigrationController.start()`。
+
+缺口：Android / macOS / iOS 真机、Linux 服务端、fushi_server beta 全没做；`.fushisrs` 四向没有自动化入口；所有「旧版本给用户的提示文字」
+只有控制通道证据、没有真像素。

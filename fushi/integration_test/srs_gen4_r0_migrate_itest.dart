@@ -7,9 +7,15 @@
 //   .\tool\run_windows_itest.ps1 integration_test/srs_gen4_r0_migrate_itest.dart `
 //     -DartDefine @('FUSHI_R0_SEED=D:/fushi-r0/A/old-root/app-support')
 //   # 途中硬结束：再加 'FUSHI_R0_KILL_AFTER_MS=40'（按下开始后多少毫秒）或 'FUSHI_R0_KILL_AT=translate'（轮询到该步）
+//   # 迁移页没出来时改走 controller.start（按钮背后的同一个入口，结论里注明）：再加 'FUSHI_R0_FALLBACK_START=true'
+//
+// 已知：在本 itest 的 binding 下，未迁移的库让复习页一直转圈（srsStorageProvider / srsStoreProvider 已是 AsyncError，
+// 它们的 `.future` 却不完成，错误日志里有 UncaughtZone 的 SrsStoreNotMigrated——疑似错误跨不过 zone 边界）；同一份
+// 数据根用 release 包打开时错误日志里没有 UncaughtZone。见 docs/specs/2026-11-15-srs-gen4-r0-windows.md §4 (a)。
 //
 // 种子目录：旧版本数据根的 app-support/（fushi.db、srs.db 连 -wal / -shm、srs_media/ 等），原样拷进隔离根，
 // 不改种子。
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -19,6 +25,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_generation_view.dart';
 import 'package:fushi/src/srs/srs_gen4_migration_controller.dart';
+import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/startup/test_environment.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:integration_test/integration_test.dart';
@@ -33,6 +40,7 @@ import 'test_helpers.dart';
 
 const String _seed = String.fromEnvironment('FUSHI_R0_SEED');
 const String _killAt = String.fromEnvironment('FUSHI_R0_KILL_AT');
+const bool _fallbackStart = bool.fromEnvironment('FUSHI_R0_FALLBACK_START');
 const int _killAfterMs = int.fromEnvironment(
   'FUSHI_R0_KILL_AFTER_MS',
   defaultValue: -1,
@@ -95,27 +103,84 @@ void main() {
     // 复习页先转圈开库、开库报「要迁移」后才换成迁移页；本机负载高时 debug 构建要几十秒。每 15 秒记一次屏上文字。
     final Stopwatch wait = Stopwatch()..start();
     while (start.evaluate().isEmpty &&
-        wait.elapsed < const Duration(minutes: 3)) {
+        wait.elapsed < const Duration(seconds: 90)) {
       await tester.pump(const Duration(milliseconds: 250));
       if (wait.elapsedMilliseconds % 15000 < 260) {
         _log('[r0] waiting ${wait.elapsed.inSeconds}s: ${_visibleText()}');
+        final ProviderContainer c = ProviderScope.containerOf(
+          appModel.navigatorKey.currentContext!,
+        );
+        _log(
+          '[r0]   storage=${c.read(srsStorageProvider)} '
+          'store=${c.read(srsStoreProvider)} '
+          'decks=${c.read(srsDeckListProvider)}',
+        );
       }
+    }
+    bool viaButton = start.evaluate().isNotEmpty;
+    if (!viaButton) {
+      // R0 实测：开库已报「要迁移」（srsStorageProvider / srsStoreProvider 都是 AsyncError）而牌组列表一直
+      // AsyncLoading、复习页一直转圈。记下各 provider 的状态与 `.future` 是否完成，作废列表再等一轮。
+      final ProviderContainer c = ProviderScope.containerOf(
+        appModel.navigatorKey.currentContext!,
+      );
+      Future<String> settle(Future<Object?> f) => f
+          .then<String>((Object? v) => 'value $v')
+          .catchError((Object e) => 'error ${e.runtimeType}')
+          .timeout(const Duration(seconds: 5), onTimeout: () => 'timeout');
+      final AsyncValue<Object?> store = c.read(srsStoreProvider);
+      _log(
+        '[r0] store isLoading=${store.isLoading} isRefreshing=${store.isRefreshing} '
+        'revision=${c.read(srsRevisionProvider)}',
+      );
+      _log(
+        '[r0] storage.future: ${await settle(c.read(srsStorageProvider.future))}',
+      );
+      _log(
+        '[r0] store.future: ${await settle(c.read(srsStoreProvider.future))}',
+      );
+      _log(
+        '[r0] decks.future: ${await settle(c.read(srsDeckListProvider.future))}',
+      );
+      c.invalidate(srsDeckListProvider);
+      for (int i = 0; i < 120 && start.evaluate().isEmpty; i++) {
+        await tester.pump(const Duration(milliseconds: 250));
+      }
+      viaButton = start.evaluate().isNotEmpty;
+      _log(
+        '[r0] after invalidate(decks): found=$viaButton '
+        'decks=${c.read(srsDeckListProvider)}',
+      );
     }
     _log('[r0] prompt text: ${_visibleText()}');
     await captureFlutterFrame(tester, 'r0-01-prompt', settle: false);
-    expect(start, findsOneWidget, reason: '旧库应当让复习页给出迁移提示');
-
     final ProviderContainer container = ProviderScope.containerOf(
       appModel.navigatorKey.currentContext!,
     );
     final SrsGen4MigrationController controller = container.read(
       srsGen4MigrationProvider,
     );
-    final FocusDriver driver = FocusDriver(tester);
-    expect(await driver.focusWidget(start), isTrue, reason: '「开始升级」应能用 Tab 走到');
-    _log('[r0] start button focused; pressing Enter');
-    final Stopwatch clock = Stopwatch()..start();
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    final Stopwatch clock;
+    if (viaButton) {
+      final FocusDriver driver = FocusDriver(tester);
+      expect(
+        await driver.focusWidget(start),
+        isTrue,
+        reason: '「开始升级」应能用 Tab 走到',
+      );
+      _log('[r0] start button focused; pressing Enter');
+      clock = Stopwatch()..start();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    } else if (_fallbackStart) {
+      // 迁移页没出来（上面记了原因）：按钮背后就是 controller.start，直接调它把迁移本身测完，结论里注明。
+      _log(
+        '[r0] FALLBACK: start button never appeared; calling controller.start()',
+      );
+      clock = Stopwatch()..start();
+      unawaited(controller.start());
+    } else {
+      fail('旧库应当让复习页给出迁移提示（FUSHI_R0_FALLBACK_START=true 可改走 controller.start）');
+    }
 
     bool shotProgress = false;
     String lastStep = '';
