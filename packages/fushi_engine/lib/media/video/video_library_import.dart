@@ -7,6 +7,7 @@ import 'dart:isolate';
 import 'package:fushi_audio/fushi_audio_core.dart';
 import 'package:fushi_engine/media/video/external_video.dart'
     show decodedSourceBasename;
+import 'package:fushi_engine/media/video/subtitle/plain_subtitle_overlap.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 
 /// 为 m3u8 播放列表生成跨设备稳定 bookUid：`video/playlist/<sanitize(文件名)>`。
@@ -106,8 +107,13 @@ List<AudioCue> _parseSubtitleCuesSync(
   String bookUid,
 ) {
   final List<AudioCue> cues = switch (format) {
-    'srt' => SrtParser.parseString(content: content, bookKey: bookUid),
-    'vtt' => VttParser.parseString(content: content, bookKey: bookUid),
+    // 纯文本字幕的部分重叠收口，与播放器走的 parseSubtitleContent 同一语义。
+    'srt' => clampPlainTextCueOverlaps(
+      SrtParser.parseString(content: content, bookKey: bookUid),
+    ),
+    'vtt' => clampPlainTextCueOverlaps(
+      VttParser.parseString(content: content, bookKey: bookUid),
+    ),
     _ => AssParser.parseString(content: content, bookKey: bookUid),
   };
   cues.sort((AudioCue a, AudioCue b) => a.startMs.compareTo(b.startMs));
