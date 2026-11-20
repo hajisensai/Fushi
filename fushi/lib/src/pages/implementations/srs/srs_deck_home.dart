@@ -401,13 +401,10 @@ class _SrsHomeView extends StatelessWidget {
                 key: const ValueKey<String>('srs-home-heatmap'),
                 stats: s,
               ),
-              _SrsForecastCard(
-                key: const ValueKey<String>('srs-home-forecast'),
-                stats: s,
-              ),
+              ..._srsHomeDueCards(s),
             ],
           ];
-          // 两栏时热力图（宽）跟在树下面，未来 7 天（窄）跟在详情下面，两栏高度大致平衡；
+          // 两栏时热力图（宽）跟在树下面，未来 7 天 / RWKV 此刻（窄）跟在详情下面，两栏高度大致平衡；
           // 三栏时两张统计卡自成一栏。
           Widget sideColumn(List<Widget> children) => SingleChildScrollView(
             // 侧栏各自滚动；不接主滚动控制器（主滚动归左栏的树）。
@@ -462,7 +459,7 @@ class _SrsHomeView extends StatelessWidget {
                   flex: three ? 8 : 9,
                   child: sideColumn(<Widget>[
                     detail,
-                    if (!three && statCards.length > 1) statCards.last,
+                    if (!three) ...statCards.skip(1),
                   ]),
                 ),
                 if (three) Expanded(flex: 7, child: sideColumn(statCards)),
@@ -1201,7 +1198,10 @@ class _SrsDeckDetail extends StatelessWidget {
     final SrsHomeDeckDetail? d = detail;
     final int? day = today;
     final bool work = _srsDeckHasWork(deck);
+    // 纯 RWKV 的牌组没有到期日预测（恒为空），不画那张图，改画「RWKV 此刻」。
+    final bool showForecast = d == null || d.showsForecast;
     final List<int>? forecast = d?.forecast;
+    final SrsRwkvNow? rwkvNow = d?.rwkvNow;
 
     final Widget head = Row(
       spacing: tokens.spacing.gap * 1.5,
@@ -1353,13 +1353,23 @@ class _SrsDeckDetail extends StatelessWidget {
             children: <Widget>[
               head,
               SizedBox(height: tokens.spacing.gap / 2),
-              Text(t.srs_home_forecast_title, style: small),
-              chart,
-              if (forecast != null && forecast.length > 1)
-                Text(
-                  t.srs_home_forecast_tomorrow(n: forecast[1]),
-                  style: small,
+              if (showForecast) ...<Widget>[
+                Text(t.srs_home_forecast_title, style: small),
+                chart,
+                if (forecast != null && forecast.length > 1)
+                  Text(
+                    t.srs_home_forecast_tomorrow(n: forecast[1]),
+                    style: small,
+                  ),
+              ],
+              if (rwkvNow != null) ...<Widget>[
+                Text(t.srs_stats_rwkv_now_title, style: small),
+                _SrsRwkvNowView(
+                  key: const ValueKey<String>('srs-home-detail-rwkv'),
+                  now: rwkvNow,
+                  target: d?.desiredRetention,
                 ),
+              ],
               SizedBox(height: tokens.spacing.gap / 2),
               actions,
             ],
@@ -1417,6 +1427,9 @@ class _SrsDeckPoster extends StatelessWidget {
     final List<int>? days = d?.forecast;
     final double? retention = d?.retention;
     final double? target = d?.desiredRetention;
+    // 纯 RWKV 的牌组没有到期日预测（恒为空），不画那排柱，改画「RWKV 此刻」。
+    final bool showForecast = d == null || d.showsForecast;
+    final SrsRwkvNow? rwkvNow = d?.rwkvNow;
 
     final Widget head = Row(
       spacing: 14,
@@ -1642,7 +1655,22 @@ class _SrsDeckPoster extends StatelessWidget {
             key: const ValueKey<String>('srs-home-detail-retention'),
             child: retentionPart,
           ),
-          forecastPart,
+          if (showForecast) forecastPart,
+          if (rwkvNow != null)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              spacing: 6,
+              children: <Widget>[
+                Text(t.srs_stats_rwkv_now_title, style: caption),
+                _SrsRwkvNowView(
+                  key: const ValueKey<String>('srs-home-detail-rwkv'),
+                  now: rwkvNow,
+                  target: target,
+                  poster: colors,
+                ),
+              ],
+            ),
           actions,
         ],
       ),
@@ -1888,10 +1916,7 @@ class _SrsHomeStatsPair extends StatelessWidget {
           key: const ValueKey<String>('srs-home-heatmap'),
           stats: stats,
         ),
-        _SrsForecastCard(
-          key: const ValueKey<String>('srs-home-forecast'),
-          stats: stats,
-        ),
+        ..._srsHomeDueCards(stats),
       ],
     );
   }
