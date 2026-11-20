@@ -13,8 +13,6 @@ import 'package:fushi_engine/tts/tts_pronunciation.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/settings/glass_settings_renderer.dart'
-    show GlassSettingsRenderer;
 import 'package:fushi/src/settings/settings_kit_core.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -273,7 +271,7 @@ class _TtsTextRulesPageState extends State<TtsTextRulesPage> {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double inset = isGlassDesign(context)
-        ? GlassSettingsRenderer.detailHorizontalInset(context)
+        ? settingsGlassDetailHorizontalInset(context)
         : tokens.spacing.page;
     final int extra = _rules.isEmpty ? 2 : 1;
     return SettingsKitScaffold(

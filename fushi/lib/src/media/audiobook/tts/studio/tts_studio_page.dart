@@ -26,6 +26,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
+import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/media/audiobook/tts/cast/cast_substitutions_page.dart';
 import 'package:fushi/src/media/audiobook/tts/cast/series_cast_resolver.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/audiobook_m4b_export_flow.dart';
@@ -1676,10 +1677,11 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
     final BuildContext? target = _chaptersHeaderKey.currentContext;
     if (target == null) return;
     unawaited(
-      Scrollable.ensureVisible(
+      FushiFocusScroll.ensureVisible(
         target,
         duration: fushiMotionDuration(context, FushiMotion.medium),
         curve: FushiMotion.enter,
+        alignment: 0,
       ),
     );
   }
