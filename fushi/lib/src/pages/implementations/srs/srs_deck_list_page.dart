@@ -887,36 +887,33 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
       context,
     ).backButtonTooltip;
     final SrsDeckSummary? go = nested ? null : list?.firstRootWithWork;
-    return Padding(
-      padding: EdgeInsets.only(top: FushiDesignTokens.of(context).spacing.gap),
-      child: FushiStaticMasthead(
-        key: const ValueKey<String>('srs_home_masthead'),
-        title: title,
-        leading: nested
-            ? FushiIconButton(
-                key: const ValueKey<String>('srs_home_back'),
-                icon: FushiIcons.back,
-                tooltip: backLabel,
-                onTap: onBack,
-              )
-            : canPop && navigator != null
-            ? FushiIconButton(
-                icon: FushiIcons.back,
-                tooltip: backLabel,
-                onTap: () => unawaited(navigator.maybePop()),
-              )
-            : null,
-        actions: _buildAppleActions(conflicts),
-        trailing: go == null
-            ? null
-            : FushiMastheadCtaButton(
-                buttonKey: const ValueKey<String>('srs-masthead-start'),
-                icon: FushiIcons.play,
-                label: t.srs_home_start,
-                onPressed: () =>
-                    srsRunLogged('SrsDeckList.review', () => _openReview(go)),
-              ),
-      ),
+    return FushiStaticMasthead(
+      key: const ValueKey<String>('srs_home_masthead'),
+      title: title,
+      leading: nested
+          ? FushiIconButton(
+              key: const ValueKey<String>('srs_home_back'),
+              icon: FushiIcons.back,
+              tooltip: backLabel,
+              onTap: onBack,
+            )
+          : canPop && navigator != null
+          ? FushiIconButton(
+              icon: FushiIcons.back,
+              tooltip: backLabel,
+              onTap: () => unawaited(navigator.maybePop()),
+            )
+          : null,
+      actions: _buildAppleActions(conflicts),
+      trailing: go == null
+          ? null
+          : FushiMastheadCtaButton(
+              buttonKey: const ValueKey<String>('srs-masthead-start'),
+              icon: FushiIcons.play,
+              label: t.srs_home_start,
+              onPressed: () =>
+                  srsRunLogged('SrsDeckList.review', () => _openReview(go)),
+            ),
     );
   }
 

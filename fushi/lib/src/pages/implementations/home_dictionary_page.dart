@@ -1009,34 +1009,31 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   /// 词典管理是弹层），主按钮位也不另造（稿里的「OCR 查词」本页没有）。独立
   /// 路由的返回键作前导。
   Widget _buildMasthead() {
-    return Padding(
-      padding: EdgeInsets.only(top: FushiDesignTokens.of(context).spacing.gap),
-      child: FushiStaticMasthead(
-        key: const ValueKey<String>('home-dictionary-masthead'),
-        title: t.nav_lookup,
-        leading: widget.showBackButton
-            ? FushiIconButton(
-                key: const ValueKey<String>('home-dictionary-route-back'),
-                tooltip: t.back,
-                icon: FushiIcons.back,
-                onTap: () => Navigator.of(context).maybePop(),
-              )
-            : null,
-        actions: <Widget>[
-          if (isGlassDesign(context))
-            FushiIconButton(
-              key: const ValueKey<String>('home-dictionary-manage'),
-              tooltip: t.dictionaries,
-              icon: CupertinoIcons.book,
-              onTap: appModel.showDictionaryMenu,
-            ),
+    return FushiStaticMasthead(
+      key: const ValueKey<String>('home-dictionary-masthead'),
+      title: t.nav_lookup,
+      leading: widget.showBackButton
+          ? FushiIconButton(
+              key: const ValueKey<String>('home-dictionary-route-back'),
+              tooltip: t.back,
+              icon: FushiIcons.back,
+              onTap: () => Navigator.of(context).maybePop(),
+            )
+          : null,
+      actions: <Widget>[
+        if (isGlassDesign(context))
           FushiIconButton(
-            tooltip: t.clear_dictionary_title,
-            icon: FushiIcons.deleteSweep,
-            onTap: _showDeleteDictionaryHistoryPrompt,
+            key: const ValueKey<String>('home-dictionary-manage'),
+            tooltip: t.dictionaries,
+            icon: CupertinoIcons.book,
+            onTap: appModel.showDictionaryMenu,
           ),
-        ],
-      ),
+        FushiIconButton(
+          tooltip: t.clear_dictionary_title,
+          icon: FushiIcons.deleteSweep,
+          onTap: _showDeleteDictionaryHistoryPrompt,
+        ),
+      ],
     );
   }
 

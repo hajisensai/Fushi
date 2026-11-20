@@ -47,6 +47,9 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
         kFushiTopFadeExtent,
         kFushiTopScrimOverlayOpacity;
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
+import 'package:fushi/src/utils/components/fushi_page_title_metrics.dart';
+import 'package:fushi/src/utils/components/fushi_static_masthead.dart'
+    show FushiStaticMasthead;
 import 'package:fushi/src/utils/adaptive/shell_style.dart'
     show shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_masthead_scaffold.dart'
@@ -5296,6 +5299,12 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
     Widget buildHeader(bool? titleRevealed) => FushiScrollAwayChrome(
       controller: _chrome,
       enabled: floatingChrome,
+      // 页头大字不是胶囊行：手机上不整行缩，模块页大标题才与库页同一尺寸
+      // （设计稿 11-20 #18，规格 [FushiPageTitleMetrics]）。平板 / 桌面这次不在
+      // 范围内（用户 11-20：只核对、不改），仍按原样缩。
+      capsuleScale:
+          !(widget.header is FushiStaticMasthead &&
+              FushiPageTitleMetrics.isCompact(context)),
       child: widget.header != null
           ? Semantics(
               label: widget.title,
