@@ -328,6 +328,7 @@
 | [BUG-4946](bugs/BUG-4946-miui-onekeyclean-exit-misreport.md) | ✅ | ✅ | 小米 MIUI / HyperOS 一键清理（OneKeyClean）被误报为闪退 |
 | [BUG-4949](bugs/BUG-4949-srs-conflicts-page-quadratic-group-count.md) | ✅ | ✅ | iOS 同步冲突页扣住的删除上万条时 build 占住主线程数秒，被看门狗 0x8BADF00D 杀掉 |
 | [BUG-4945](bugs/BUG-4945-reader-panel-null-controller-after-renderer-death.md) | ✅ | ✅ | reader-panel-null-controller-after-renderer-death |
+| [BUG-4948](bugs/BUG-4948-srs-conflicts-label-n-plus-one.md) | ✅ | ✅ | 冲突中心逐条读实体名，大冲突量的库上整页重读 63 秒、内存翻倍，停在冲突页时意外退出 |
 | [BUG-4905](bugs/BUG-4905-ai-cast-text-substitutions.md) | ✅ | ✅ | 小说和漫画 AI 标注未应用系列用词替换表 |
 | [BUG-4904](bugs/BUG-4904-book-series-key-store-annotation.md) | ✅ | ✅ | 书店写法「卷号<系列名> (文库名)」的分卷导入后不归合集 |
 | [BUG-4903](bugs/BUG-4903-home-desktop-continue-cut-edge-title-concat.md) | ✅ | ✅ | 首页（桌面）「继续」右侧卡被窗口切掉一半、标题拼接成「Re：ゼロ…1<Re：…」 |

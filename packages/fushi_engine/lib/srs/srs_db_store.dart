@@ -5737,6 +5737,57 @@ class SrsDbStore implements SrsSync2Host {
   Future<List<SrsNoteCacheRow>> notesPendingDecision() =>
       noteRows(const <String, Object?>{'pending': true});
 
+  /// 一批卡 / 笔记的人读名：笔记缓存的 `sort_field`（第一个字段去标签、去首尾空白，与浏览页的排序字段同口径；
+  /// 卡片按所属笔记）。固定至多两条批量读（卡 → 笔记 ID、笔记 → 排序字段），不随条数增长。
+  ///
+  /// 冲突中心以前逐条 `cardDetail` / `note`（每条三次读 + 一次字段寄存器物化）：6950 条冲突的库上一次整页
+  /// 重读要 2 万次读、63 s，常驻内存翻倍到 3.3 GB（BUG-4948）。
+  ///
+  /// 没有缓存行、或排序字段为空的 ID 不在结果里（调用方自己兜底，例如显示 ID）。
+  Future<({Map<String, String> cards, Map<String, String> notes})>
+  sortLabelsOf({
+    Iterable<String> cardIds = const <String>[],
+    Iterable<String> noteIds = const <String>[],
+  }) async {
+    final Map<String, String> noteOfCard = <String, String>{};
+    final List<String> cards = cardIds.toSet().toList();
+    if (cards.isNotEmpty) {
+      final SrsColumns c = await cardColumnsWhere(
+        const <String>['id', 'note_id'],
+        <String, Object?>{'ids': cards},
+      );
+      final SrsStringColumn id = c.strings('id');
+      final SrsStringColumn note = c.strings('note_id');
+      for (int i = 0; i < c.rows; i++) {
+        noteOfCard[id[i]] = note[i];
+      }
+    }
+    final Set<String> wanted = <String>{...noteIds, ...noteOfCard.values};
+    final Map<String, String> sortOf = <String, String>{};
+    if (wanted.isNotEmpty) {
+      final SrsColumns n = await noteColumns(
+        const <String>['id', 'sort_field'],
+        <String, Object?>{'ids': wanted.toList()},
+      );
+      final SrsStringColumn id = n.strings('id');
+      final SrsStringColumn sort = n.strings('sort_field');
+      for (int i = 0; i < n.rows; i++) {
+        final String text = sort[i].trim();
+        if (text.isNotEmpty) sortOf[id[i]] = text;
+      }
+    }
+    return (
+      cards: <String, String>{
+        for (final MapEntry<String, String> e in noteOfCard.entries)
+          if (sortOf[e.value] case final String text) e.key: text,
+      },
+      notes: <String, String>{
+        for (final String id in noteIds)
+          if (sortOf[id] case final String text) id: text,
+      },
+    );
+  }
+
   /// 标志类 / 设置类的同步冲突（被覆盖的候选），不含机器产出（第六轮审查第 10 条）与界面状态（折叠）。
   ///
   /// 被支配的记录落库时就删了，所以一个字段键上还留着 ≥ 2 条记录的才可能有冲突：先在库里
