@@ -44,10 +44,14 @@ internal enum class InvocationLane {
  * Many Mihon sources keep pagination cursors and other mutable state on the
  * source object. Reusing an instance is therefore part of the source contract,
  * not just a loading optimization.
+ *
+ * Fushi: the lookup input [K] is generic. Upstream keyed by the raw APK bytes
+ * every call carried; the sidecar now receives only the APK's SHA-256 and
+ * [load] fetches the bytes from [ExtensionApkStore] on a miss.
  */
-internal class ExtensionInstanceCache<T>(
-    private val keyOf: (ByteArray) -> String,
-    private val load: (ByteArray) -> T,
+internal class ExtensionInstanceCache<K, T>(
+    private val keyOf: (K) -> String,
+    private val load: (K) -> T,
     private val dispose: (T) -> Unit,
 ) : AutoCloseable {
     private class Entry<T>(
@@ -64,7 +68,7 @@ internal class ExtensionInstanceCache<T>(
     private val entries = mutableMapOf<String, Entry<T>>()
 
     fun <R> use(
-        data: ByteArray,
+        data: K,
         lane: InvocationLane = InvocationLane.CATALOGUE,
         block: (T) -> R,
     ): R =
@@ -83,7 +87,7 @@ internal class ExtensionInstanceCache<T>(
      * a source's preferences and cookies).
      */
     fun <R> useExclusively(
-        data: ByteArray,
+        data: K,
         block: (T) -> R,
     ): R =
         lifecycleLock.readLock().withLock {
@@ -93,7 +97,7 @@ internal class ExtensionInstanceCache<T>(
             }
         }
 
-    private fun entryFor(data: ByteArray): Entry<T> {
+    private fun entryFor(data: K): Entry<T> {
         val key = keyOf(data)
         return synchronized(cacheLock) {
             entries.getOrPut(key) {
