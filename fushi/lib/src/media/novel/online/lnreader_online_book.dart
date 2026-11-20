@@ -18,9 +18,11 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/novel/online/lnreader_book_download.dart';
 import 'package:fushi/src/media/novel/online/lnreader_epub_assembler.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
+import 'package:fushi/src/media/novel/online/lnreader_missing_images.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
 import 'package:fushi/src/media/novel/online/novel_online_sources_gate.dart';
 import 'package:fushi/src/media/novel/online/online_novel_chapter_loader.dart';
+import 'package:fushi/src/media/novel/online/online_novel_missing_images.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 在线小说书的重启安全描述符，存在 `EpubBooks.sourceMetadata`。
@@ -525,7 +527,11 @@ LnReaderOnlineChapterLoader? lnReaderOnlineChapterLoaderFor({
 /// 同一章并发请求只取一次；不同章串行取（骨架见
 /// [SerialOnlineNovelChapterLoader]）。这一章有了正文就顺手预取下一章，顺序阅读
 /// 翻到下一章时不用等网络。
-class LnReaderOnlineChapterLoader extends SerialOnlineNovelChapterLoader {
+///
+/// 插图单张没取到时章节文件里留占位（`lnreader_missing_images.dart`），阅读器经
+/// [OnlineNovelMissingImagesRetrier] 查缺图、补取。
+class LnReaderOnlineChapterLoader extends SerialOnlineNovelChapterLoader
+    implements OnlineNovelMissingImagesRetrier {
   LnReaderOnlineChapterLoader({
     required this.manager,
     required this.database,
@@ -604,14 +610,7 @@ class LnReaderOnlineChapterLoader extends SerialOnlineNovelChapterLoader {
     )) {
       return null;
     }
-    // ensureReady 而不是 initialise：state.json 读不出来时 initialise 不抛、已装
-    // 列表是空占位，下面就会误报「插件没装」，把读盘错误藏起来。
-    await manager.ensureReady();
-    LnReaderInstalledPlugin? plugin;
-    for (final LnReaderInstalledPlugin candidate in manager.installed) {
-      if (candidate.id == descriptor.pluginId) plugin = candidate;
-    }
-    if (plugin == null) throw LnReaderOnlinePluginMissing(descriptor.pluginId);
+    final LnReaderInstalledPlugin plugin = await _installedPlugin();
     final LnReaderPluginInfo info = await manager.load(plugin);
     final LnReaderChapter chapter = descriptor.chapters[index];
     final HttpClient client = download.openClient();
@@ -623,6 +622,7 @@ class LnReaderOnlineChapterLoader extends SerialOnlineNovelChapterLoader {
         info: info,
         chapter: chapter,
         imagePrefix: lnReaderOnlineImagePrefix(chapter.path),
+        markMissingImages: true,
       );
     } finally {
       client.close(force: true);
@@ -657,6 +657,145 @@ class LnReaderOnlineChapterLoader extends SerialOnlineNovelChapterLoader {
     );
     _unacknowledged[index] = result;
     return result;
+  }
+
+  /// 描述符里的插件（已装列表里找）；没装抛 [LnReaderOnlinePluginMissing]。
+  Future<LnReaderInstalledPlugin> _installedPlugin() async {
+    // ensureReady 而不是 initialise：state.json 读不出来时 initialise 不抛、已装
+    // 列表是空占位，下面就会误报「插件没装」，把读盘错误藏起来。
+    await manager.ensureReady();
+    for (final LnReaderInstalledPlugin candidate in manager.installed) {
+      if (candidate.id == descriptor.pluginId) return candidate;
+    }
+    throw LnReaderOnlinePluginMissing(descriptor.pluginId);
+  }
+
+  /// 补取串行：同一章的两轮（自动 + 手动）不并发读改写同一个章节文件。
+  Future<void> _retryChain = Future<void>.value();
+
+  @override
+  Future<OnlineNovelMissingImages> missingImages(int index) async {
+    final List<LnReaderMissingImage> missing = await _readMissing(index);
+    return OnlineNovelMissingImages(
+      index: index,
+      count: missing.length,
+      autoRetryAvailable: missing.any(
+        (LnReaderMissingImage image) => image.autoRetryAvailable,
+      ),
+    );
+  }
+
+  /// 第 [index] 章文件里的缺图占位；文件不在 / 不是本书正文 / 还是占位页为空。
+  Future<List<LnReaderMissingImage>> _readMissing(int index) async {
+    if (index < 0 || index >= descriptor.chapters.length) {
+      return const <LnReaderMissingImage>[];
+    }
+    final File file = lnReaderOnlineChapterFile(extractDir, index);
+    if (!file.existsSync()) return const <LnReaderMissingImage>[];
+    final String xhtml = await file.readAsString();
+    if (xhtml.contains(kLnReaderPendingChapterAttribute)) {
+      return const <LnReaderMissingImage>[];
+    }
+    return parseLnReaderMissingImages(xhtml);
+  }
+
+  @override
+  Future<OnlineNovelMissingImagesRetry> retryMissingImages(
+    int index, {
+    required bool automatic,
+  }) {
+    final Future<OnlineNovelMissingImagesRetry> run = _retryChain.then(
+      (_) => _retryMissingImages(index, automatic: automatic),
+    );
+    _retryChain = run.then<void>((_) {}, onError: (Object _) {});
+    return run;
+  }
+
+  Future<OnlineNovelMissingImagesRetry> _retryMissingImages(
+    int index, {
+    required bool automatic,
+  }) async {
+    final List<LnReaderMissingImage> missing = await _readMissing(index);
+    final List<LnReaderMissingImage> targets = <LnReaderMissingImage>[
+      for (final LnReaderMissingImage image in missing)
+        if (!automatic || image.autoRetryAvailable) image,
+    ];
+    if (targets.isEmpty) {
+      return OnlineNovelMissingImagesRetry(
+        index: index,
+        recovered: 0,
+        remaining: missing.length,
+      );
+    }
+    final LnReaderInstalledPlugin plugin = await _installedPlugin();
+    final LnReaderPluginInfo info = await manager.load(plugin);
+    final LnReaderChapter chapter = descriptor.chapters[index];
+    // Referer 与第一次下载同一个：章节页地址（防盗链按引用页判）。
+    final String referer = await manager.runtime.resolveUrl(
+      plugin.id,
+      chapter.path,
+      isNovel: false,
+    );
+    final List<LnReaderEpubImage> recovered = <LnReaderEpubImage>[];
+    final Set<String> failed = <String>{};
+    String? firstFailure;
+    final HttpClient client = download.openClient();
+    try {
+      for (final LnReaderMissingImage image in targets) {
+        final LnReaderEpubImage? fetched = await download.fetchChapterImage(
+          client: client,
+          info: info,
+          referer: referer,
+          url: image.url,
+          fileName: image.fileName,
+          onFailure: (String reason) => firstFailure ??= reason,
+        );
+        if (fetched == null) {
+          failed.add(image.fileName);
+        } else {
+          recovered.add(fetched);
+        }
+      }
+    } finally {
+      client.close(force: true);
+    }
+    // 取图要等网络，期间作品页可能已按新章节列表就地重建了解压树（连载更新）：
+    // 第 index 章已不是这一章就放弃这次结果（同 [loadChapter]）。
+    final File file = lnReaderOnlineChapterFile(extractDir, index);
+    if (!await _isStillChapter(index) || !file.existsSync()) {
+      return OnlineNovelMissingImagesRetry(
+        index: index,
+        recovered: 0,
+        remaining: missing.length,
+      );
+    }
+    for (final LnReaderEpubImage image in recovered) {
+      await writeAtomically(
+        File(p.join(extractDir, 'OEBPS', image.fileName)),
+        image.bytes,
+      );
+    }
+    // 重读再改：按文件名认占位，期间文件若被改过，对不上的占位自然跳过。
+    final String updated = applyLnReaderMissingImageRetry(
+      await file.readAsString(),
+      recovered: <String>{
+        for (final LnReaderEpubImage image in recovered) image.fileName,
+      },
+      failed: failed,
+    );
+    await writeAtomically(file, utf8.encode(updated));
+    if (failed.isNotEmpty) {
+      ErrorLogService.instance.log(
+        'LnReaderOnlineChapterLoader.retryMissingImages',
+        '${plugin.id} ${chapter.path}: still missing ${failed.length} of '
+            '${targets.length} images (first: $firstFailure)',
+      );
+    }
+    return OnlineNovelMissingImagesRetry(
+      index: index,
+      recovered: recovered.length,
+      remaining: parseLnReaderMissingImages(updated).length,
+    );
   }
 
   /// 书行里的当前描述符第 [index] 章还是不是本加载器开书时认的那一章。

@@ -102,6 +102,7 @@ extension _ReaderSeamlessChapters on _ReaderFushiPageState {
     _preciseLocateQueue.clear();
     _pageTurnQueue.clear();
     _currentChapter = to;
+    _onlineMissingImages?.show(to);
     _initialProgress = 0.0;
     _initialCharOffset = -1;
     _initialCharOffsetEnd = -1;

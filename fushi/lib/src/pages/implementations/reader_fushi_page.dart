@@ -45,6 +45,8 @@ import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/media_source.dart';
 import 'package:fushi/src/media/novel/online/lnreader_online_book.dart';
 import 'package:fushi/src/media/novel/online/online_novel_chapter_loader.dart';
+import 'package:fushi/src/media/novel/online/online_novel_missing_images.dart';
+import 'package:fushi/src/media/novel/online/online_novel_missing_images_notice.dart';
 import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/src/media/novel/web/web_novel_library.dart';
 import 'package:fushi/src/pages/base_source_page.dart';
@@ -2052,6 +2054,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// null。开书定位时按书行描述符建一次，拦截层读章节文件前经它把占位页换成正文。
   OnlineNovelChapterLoader? _onlineChapterLoader;
 
+  /// 在线书的缺图提示与补取（加载器能补取缺图时才有，见
+  /// [OnlineNovelMissingImagesRetrier]）。与 [_onlineChapterLoader] 同生共死。
+  OnlineNovelMissingImagesController? _onlineMissingImages;
+
   /// [_chapterCharCounts] 整表已是当前口径（[kChapterCharCountCaliber]）、并已
   /// 注入 [EpubBook.setChapterCharCountHints]。在线书取章后换单章字数时据此决定
   /// 要不要重注入提示（提示只接受当前口径）。
@@ -3500,6 +3506,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     final String extractDir = located.extractDir;
     _extractDir = extractDir;
     _onlineChapterLoader?.dispose();
+    _onlineMissingImages?.dispose();
+    _onlineMissingImages = null;
     _charCountsAreCurrentCaliber = false;
     _onlineCharCountAdoption.clear();
     _onlineChapterLoader =
@@ -3516,6 +3524,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
           pendingText: t.novel_web_chapter_pending,
           nextChapterTitle: t.novel_web_chapter_next,
         );
+    if (_onlineChapterLoader
+        case final OnlineNovelMissingImagesRetrier retrier) {
+      _onlineMissingImages = _createOnlineMissingImagesController(retrier);
+    }
     // v82：子表（阅读位置/揭图）键 = 书稳定 uid，一次解析存字段。空 uid（不应
     // 出现，v81 回填兜底）视同缺失——相关写入跳过，不拿 bookKey 兜底。
     // 正文语言：本书手动指定/导入回填的 dc:language > 全局默认内容语言。
@@ -4144,6 +4156,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   void dispose() {
     // 关书：排队中还没开始的取章 / 后台预取不再发起（在取的那一章照常写盘）。
     _onlineChapterLoader?.dispose();
+    _onlineMissingImages?.dispose();
     _bodyMenuDismiss.detach();
     _lyricsMenuDismiss.detach();
     // 反馈 kEFPY4cuKZ：离开这本书 = 撤掉它的作品级配置覆盖层（全局配置从未改动）。
@@ -4946,6 +4959,23 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                             'bottom_chrome',
                             _buildBottomChrome(),
                           ),
+                          // 在线书缺图提示（悬浮胶囊，不占正文位置）。
+                          if (_onlineMissingImages
+                              case final OnlineNovelMissingImagesController
+                                  missingImages)
+                            _coveredByLyricsOverlay(
+                              'online_missing_images',
+                              Positioned(
+                                top: _readerTopOffset + 8,
+                                left: 12,
+                                right: 12,
+                                child: Center(
+                                  child: OnlineNovelMissingImagesNoticeBar(
+                                    controller: missingImages,
+                                  ),
+                                ),
+                              ),
+                            ),
                           // BUG-2230 同口径（网页流媒体页 / 漫画页早已如此）：**出口不是
                           // 内容的一部分，不随内容存亡**。本页的返回箭头挂在顶栏上，而
                           // 顶栏的可见条件含 `_hasEverLoaded`——它只在 WebView 首屏渲染
