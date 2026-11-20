@@ -5699,7 +5699,18 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 经 [AnkiMiningContext.coverPath] 走 `{book-cover}`/`{card-image}` 通道。句子音频
   /// 只在本卷有漫画有声成品且命中这句时给（[_mangaSentenceAudio]），否则为 null。
   @override
-  Future<MinePopupResult> onMineFromPopup(Map<String, String> fields) async {
+  Future<MinePopupResult> onMineFromPopup(Map<String, String> fields) =>
+      _mineFromPopup(fields);
+
+  /// 新制与覆写（[overwriteNoteId] 非空，点 ✓ 选「覆盖这张」）共用这一条：句子、卡图
+  /// （裁切 / 打码 / NSFW 模糊）、句子音频、出处链接都按同一份口径算，只有最后一步
+  /// 分到 `mineEntry` / `updateMinedNote`。BUG-4933：此前覆写落到基类的空实现，点了
+  /// 「覆盖」什么也不写、也不报错。覆写不计入制卡统计 / 历史，也不给「撤销」（撤销 =
+  /// 删卡，会把被覆写的旧卡一并删掉）。
+  Future<MinePopupResult> _mineFromPopup(
+    Map<String, String> fields, {
+    int? overwriteNoteId,
+  }) async {
     // 本次请求的「高级制卡」覆盖项、制卡页与句子矩形都在第一个 await 之前同步读齐：
     // 制卡排队期间用户可能已经点了别的字，页面状态会被新选区改写。
     final MiningRequestOverrides? overrides = MiningRequestOverrides.readFrom(
@@ -5847,13 +5858,19 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                 context: miningContext,
               ),
             )
+          : overwriteNoteId != null
+          ? await repo.updateMinedNote(
+              noteId: overwriteNoteId,
+              rawPayloadJson: rawPayloadJson,
+              context: miningContext,
+            )
           : await repo.mineEntry(
               rawPayloadJson: rawPayloadJson,
               context: miningContext,
             );
       final described = describeMineOutcome(
         outcome,
-        overwrite: reviewSession != null,
+        overwrite: reviewSession != null || overwriteNoteId != null,
       );
       if (described.record && reviewSession == null) {
         unawaited(_recordMinedCount());
@@ -5875,7 +5892,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           msg: described.message,
           status: described.status,
           // 反馈 JNyykxvuY9：成功提示带「撤销」，几秒内点一下删掉刚加的卡。
-          action: reviewSession != null
+          action: reviewSession != null || overwriteNoteId != null
               ? null
               : minedCardUndoToastAction(repo, outcome),
         );
@@ -5959,7 +5976,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     Map<String, String> fields,
   ) async {
     if (_sourceReviewSession != null) return onMineFromPopup(fields);
-    return super.onUpdateFromPopup(noteId, fields);
+    return _mineFromPopup(fields, overwriteNoteId: noteId);
   }
 
   // ── 阅读模式覆盖 ─────────────────────────────────────────────────────
