@@ -5,7 +5,6 @@
 // - 设置 › 存储「删除旧版本保留副本」行：有副本时出现、副标题报大小与到期，没有时隐藏；点它 = 确认后删、状态重读。
 // 执行端是假的，不碰保留副本的原生命令（由 Rust retained_tests.rs 覆盖）；牌组库是真的临时库。
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:flutter/gestures.dart' show kSecondaryButton;
@@ -26,6 +25,7 @@ import 'package:fushi/src/srs/srs_storage_host.dart';
 import 'package:fushi/src/srs/srs_sync_progress.dart'
     show srsSyncRoundsSucceeded;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -322,14 +322,38 @@ void main() {
       t.srs_scrub_error_notice(reason: 'database or disk is full'),
     );
     expect(notice, findsOneWidget);
-    final Finder slot = find.byType(SrsScrubErrorNotice);
-    // 横幅下面紧跟的那一项（今日计划 / 宽屏的统计带 / 「牌组」小标题，取最上面的）的顶边。
-    double nextTop() =>
-        <String>['srs-home-today', 'srs-home-band', 'srs-home-decks-header']
-            .map((String k) => find.byKey(ValueKey<String>(k)))
-            .where((Finder f) => f.evaluate().isNotEmpty)
-            .map((Finder f) => tester.getTopLeft(f).dy)
-            .reduce(math.min);
+    // 零高度时 sliver 把它算作不可见，查找要带 skipOffstage: false。
+    final Finder slot = find.byType(SrsScrubErrorNotice, skipOffstage: false);
+    // 列表里紧跟在提示后面的那一项（列表项都包在 FushiStaggeredEntrance 里，按序号找下一个）的顶边。
+    double nextTop() {
+      final FushiStaggeredEntrance own = tester.widget<FushiStaggeredEntrance>(
+        find
+            .ancestor(
+              of: slot,
+              matching: find.byType(
+                FushiStaggeredEntrance,
+                skipOffstage: false,
+              ),
+            )
+            .first,
+      );
+      final Finder next = find
+          .descendant(
+            of: find
+                .ancestor(
+                  of: slot,
+                  matching: find.byType(ListView, skipOffstage: false),
+                )
+                .first,
+            matching: find.byWidgetPredicate(
+              (Widget w) =>
+                  w is FushiStaggeredEntrance && w.index == own.index + 1,
+            ),
+          )
+          .first;
+      return tester.getTopLeft(next).dy;
+    }
+
     final double gap =
         tester.getBottomLeft(slot).dy - tester.getBottomLeft(notice).dy;
     expect(gap, greaterThan(0), reason: '出错时间距由提示自己带');
