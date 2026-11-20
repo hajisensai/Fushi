@@ -305,6 +305,55 @@ void main() {
     expect(job.pagesTotal, 2);
   });
 
+  test('a stale page image left in the shared volume directory by a finished '
+      'job never replaces the cached page', () async {
+    final _SigningService service = _SigningService();
+    final MangaOcrHostJobManager manager = buildManager(service);
+    // 同卷上一个任务跑完，`vol_<slug>` 里留着旧的 p1.jpg（内容 [1]）。
+    await runLegacy(manager, 'A', <String, List<int>>{
+      'p1.jpg': <int>[1],
+    });
+    // 另一卷让内容 [9] 进内容缓存。
+    await runLegacy(manager, 'Other', <String, List<int>>{
+      'q.jpg': <int>[9],
+    });
+
+    // 同卷重跑：p1.jpg 现在是内容 [9]（命中），p2.jpg 是新页。
+    final MangaOcrHostJob job = manager.createJob(volumeTitle: 'A');
+    final (String? refusal, List<String> known) = await manager.acceptManifest(
+      job,
+      <Object?>[
+        <String, Object?>{
+          'name': 'p1.jpg',
+          'sha256': _sha256Bytes(<int>[9]),
+        },
+        <String, Object?>{
+          'name': 'p2.jpg',
+          'sha256': _sha256Bytes(<int>[3]),
+        },
+      ],
+    );
+    expect(refusal, isNull);
+    expect(known, <String>['p1.jpg']);
+    expect(
+      await manager.uploadPage(job, name: 'p2.jpg', bytes: <int>[3]),
+      isNull,
+    );
+    expect(await manager.start(job), isNull);
+    await _waitTerminal(job);
+    expect(job.state, MangaOcrHostJobState.done, reason: '${job.error}');
+    expect(
+      service.ocrInputs.last,
+      contains('p1.jpg'),
+      reason: 'precondition: the stale page is recognised with the volume',
+    );
+    final Map<String, dynamic> manga = await _result(manager, job);
+    expect(_urls(manga), <String>['p1.jpg', 'p2.jpg']);
+    expect(_texts(manga), <String>['9', '3']);
+    expect(job.pagesDone, 2);
+    expect(job.pagesTotal, 2);
+  });
+
   test('start refuses a manifest page that is neither cached nor uploaded; '
       'manifest is only accepted before uploads', () async {
     final _SigningService service = _SigningService();

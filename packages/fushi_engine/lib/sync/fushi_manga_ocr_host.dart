@@ -707,8 +707,8 @@ class MangaOcrHostJobManager {
     return producedPath;
   }
 
-  /// 按清单页序组装结果页：识别产物里有的用产物（[fresh]，页名 → 页），否则用命中
-  /// 的缓存页。缺页抛 [StateError]（[start] 已校验过，不该发生）。
+  /// 按清单页序组装结果页：本任务上传过的页用识别产物（[fresh]，页名 → 页），其余
+  /// 用命中的缓存页。缺页抛 [StateError]（[start] 已校验过，不该发生）。
   Map<String, Object?> _composeResult(
     MangaOcrHostJob job,
     Map<String, dynamic> fresh,
@@ -716,8 +716,13 @@ class MangaOcrHostJobManager {
     Map<String, Object?>? ocr;
     final List<Map<String, Object?>> pages = <Map<String, Object?>>[];
     for (final String name in job.manifest!) {
-      final Object? page = fresh[name];
-      if (page is Map<String, dynamic>) {
+      // 只有本任务上传过的页才取识别产物：卷目录 `vol_<slug>` 会留着同卷上一个
+      // 已完结任务的页图，同名旧页图也会被识别进产物，但它不是清单里那份内容。
+      if (job.uploadedNames.contains(name)) {
+        final Object? page = fresh[name];
+        if (page is! Map<String, dynamic>) {
+          throw StateError('missing page $name');
+        }
         pages.add(page);
         continue;
       }
@@ -746,8 +751,12 @@ class MangaOcrHostJobManager {
             // 命中内容缓存、没上传的页不在识别范围里，进度里算作已完成。
             final int skipped = job.pagesSkipped;
             if (event.finished) {
-              job.pagesDone = event.pagesTotal + skipped;
-              job.pagesTotal = event.pagesTotal + skipped;
+              // 发了清单的任务按清单计页：卷目录里同卷旧任务留下的页图也会被
+              // 识别，但不属于本卷结果。
+              final int total =
+                  job.manifest?.length ?? event.pagesTotal + skipped;
+              job.pagesDone = total;
+              job.pagesTotal = total;
               final String? produced = event.mangaJsonPath;
               if (produced == null) {
                 job.state = MangaOcrHostJobState.error;
