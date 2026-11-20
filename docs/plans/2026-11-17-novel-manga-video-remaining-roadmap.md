@@ -488,7 +488,7 @@
 | c10 | manga-25 四个探测调用方只有源码守卫、没有行为测试；真实延迟没量 | 入口都要 `BuildContext` + `AppModel` 才能驱动 | 真机验证时量 |
 | c08（漫画侧） | 本地页图卷的 `enumerateMangaPages`（`EN/ocr/manga_ocr_folder_job.dart`）不过滤 `._` / `@eaDir` | 文件归 c10 | c10 合入后单开或并 c38 |
 | c08（漫画侧） | 漫画首扫的索引每卷新导入仍整份重写一次（随卷数平方增长） | 根治要改成逐条存储，没做也没实测 | 并 c27 |
-| c11 | manga-8 的原方向（内容哈希 / host 跳过上传 / 缓存按内容键） | 要动协议并使现有缓存失效 | 待拍板，暂不做 |
+| c11 | manga-8 的原方向（内容哈希 / host 跳过上传 / 缓存按内容键） | 拍板「做」（design-nmv-manga-ocr-content-hash）。可选清单端点 + capabilities `contentDedup`，内容缓存放任务根 `_content_cache/<引擎签名>/`，卷目录逐页缓存不动、不失效 | 已做 |
 | c11 | manifest 端点的重复解析；章 `manga.json` 路径仍用私有 helper；`uploadPage` 在任务被取消后仍把状态写回 uploading | 计划外文件 / 文件被别的 claim 占着 / 既有窗口 | 新开小组 |
 | c12 | 服务器恢复后、开章前没有任何其它 Kavita 请求成功时，那一次开章仍按离线放行 | 审查给了两种做法，取了第一种 | 所有者过目（第 5 节） |
 | c12 | `KavitaMangaSyncSession.close()` 的 flush 吞错没加日志；`kavita_epub_sync.dart` 是否有同样的「每次等满」没看；分镜模型下载三个入口共用一个 `.part` | 不在文件清单 | 新开小组 |
