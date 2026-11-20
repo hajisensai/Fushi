@@ -503,8 +503,8 @@ fn count(s: &mut Session<'_, '_>, notes: bool, sub: &str) -> Result<i64, String>
         .map_err(sql)
 }
 
-/// 「父::子」全名（还原点的名字；协议 3 `deck_delete::full_name`）。
-fn full_name(tree: &crate::store::sync2::config::DeckTree, id: &str) -> String {
+/// 「父::子」全名（还原点的名字；协议 3 `deck_delete::full_name`；实体归属闸按它重算牌组 ID，`writes_owner.rs`）。
+pub(super) fn full_name(tree: &crate::store::sync2::config::DeckTree, id: &str) -> String {
     let mut parts: Vec<&str> = Vec::new();
     let mut cur = Some(id);
     let mut guard = 0;

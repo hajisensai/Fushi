@@ -35,7 +35,8 @@
 //! - **实体归属闸**（BUG-4843，`writes_owner.rs`）：ID 不再加盐，同库别的集合的实体 ID 在这里虽然读不到，写下去却会成为
 //!   悬空操作、等本集合之后并进那个集合时对它生效。调用方给实体 ID 的写命令（`apply_in` / `purge` / `sched`）在写之前
 //!   问 [Session::foreign]：别的集合有、本集合一点痕迹都没有的实体不写（身份记录与 profile 设置实体的判法见
-//!   `writes_owner.rs` 文件头）；`apply` 一族回包的 `foreign` 交回这些项的下标。
+//!   `writes_owner.rs` 文件头）；`apply` 一族回包的 `foreign` 交回这些项的调用方输入下标（`import_drafts` 按筛掉初值
+//!   之前的原输入计，同 `edits` 第 7 列）。
 //! - **回包**：命令自己的键之外，[write] 统一补上 `changed`（`[种类, 规范实体 ID]`，碰过的实体）、`purged`（彻底清除的
 //!   实体）、`replayed`（写了日志的卡）、`edits`（`[种类, 实体, 字段键, 设备, 序号, 值]`，撤销据它判断之后有没有
 //!   被别人动过，与协议 3 同形）、`nextSeq`（本机身份日志的下一个 seq）与 `settled`（这条命令里派生层收尾的计数，
@@ -96,6 +97,7 @@ use crate::sync2::vv::OpId;
 
 #[path = "writes_owner.rs"]
 mod owner;
+use owner::Batch;
 pub(super) use owner::Born;
 
 /// 一个实体的修改行（寄存器内核的落库行 JSON + server_time），`registers` 的输入。
@@ -743,6 +745,9 @@ impl Origin<'_> {
 struct Item {
     body: Body,
     chg: bool,
+    /// 卡片修改带的笔记（输入的 `note`，调用方声明「这张卡是这条笔记的」）：这条修改再跟着笔记过实体归属闸
+    /// （`writes_owner.rs` 文件头「判据」），笔记被拒时它一并不写。只读卡片修改的；日志的笔记在 [Body::Log] 里。
+    card_note: Option<Key>,
 }
 
 /// 协议 3 的修改记录草稿（Dart `_applyInput` 为一条草稿发的那一项，意图命令拼输入用）。
@@ -793,6 +798,10 @@ fn parse_item(it: &Value) -> Result<Item, String> {
         b => b,
     };
     let chg = it["chg"] == Value::Bool(true);
+    let card_note = match &body {
+        Body::Edit(e) if e.kind == EntKind::Card => it["note"].as_str().map(Key::of),
+        _ => None,
+    };
     if chg {
         if !matches!(body, Body::Edit(_)) {
             return Err("apply: chg on an item that is not an edit".into());
@@ -801,12 +810,18 @@ fn parse_item(it: &Value) -> Result<Item, String> {
             return Err("apply: chg cannot be combined with init / stamped".into());
         }
     }
-    Ok(Item { body, chg })
+    Ok(Item {
+        body,
+        chg,
+        card_note,
+    })
 }
 
 /// `apply` 的本体（协议 3 `apply_local_on` 的新代版），在 [s] 里做；意图命令拼好输入也走这里。回包
 /// `{"landed": [每项落没落], "foreign": [下标]}`，`landed` 与 [items] 等长：`chg` 筛掉的、标签写入展开为空的、指向别的
-/// 集合的实体的（实体归属闸，`writes_owner.rs`；下标是 [items] 里的位置，进 `foreign`）是 false。
+/// 集合的实体的（实体归属闸，`writes_owner.rs`）是 false，它们的**调用方输入下标**进 `foreign`（与 `edits` 第 7 列同一
+/// 口径，[Origin]：`import_drafts` 按筛掉初值之前的原输入计——导入路径按它认出被拒的笔记、记进导入报告，BUG-4843；意图
+/// 命令自己拼的项没有输入下标，按 [items] 里的位置计）。
 ///
 /// - `chg`（store/sync2/changing.rs 的判据，[registers::write_is_noop]）：值没变的修改不写；同一批里同一个
 ///   (种类, 实体, 字段键) 按顺序判，后一项比前一项写下的值。
@@ -827,18 +842,25 @@ pub(super) fn apply_in(
         }
         // 归一提前做：`chg` 与标签的判定按规范的 (种类, 实体, 键) 比。
         let body = s.canon_body(item.body)?;
-        parsed.push(Item { body, ..item });
+        let card_note = item.card_note.as_ref().map(|n| s.canon(n)).transpose()?;
+        parsed.push(Item {
+            body,
+            card_note,
+            ..item
+        });
     }
     let keep = drop_noops(s, &parsed)?;
-    // 实体归属闸（`writes_owner.rs`）：身份记录先各自过闸；过了闸的、这一批要建的实体算本集合的（同批先后到）。
+    // 实体归属闸（`writes_owner.rs`）：身份记录先各自过闸（牌组按同批的名字 / 父牌组自证）；过了闸的、这一批要建的实体
+    // 算本集合的（同批先后到）。
     let mut entity_foreign = vec![false; parsed.len()];
     let mut born = Born::new();
+    let batch = Batch::of(parsed.iter().map(|i| &i.body));
     for (at, item) in parsed.iter().enumerate() {
         if !keep[at] {
             continue;
         }
-        if let Body::Entity { id, .. } = &item.body {
-            if s.foreign_body(&item.body, &Born::new())? {
+        if let Body::Entity { kind, id, data } = &item.body {
+            if s.foreign_record(*kind, &id.text(), data, &batch)? {
                 entity_foreign[at] = true;
             } else {
                 born.insert(id.text());
@@ -855,10 +877,16 @@ pub(super) fn apply_in(
         }
         let theirs = match &item.body {
             Body::Entity { .. } => entity_foreign[at],
-            b => s.foreign_body(b, &born)?,
+            b => {
+                s.foreign_body(b, &born)?
+                    || match &item.card_note {
+                        Some(n) => s.foreign(EntKind::Note, &n.text(), &born)?,
+                        None => false,
+                    }
+            }
         };
         if theirs {
-            foreign.push(at);
+            foreign.push(opts.origin.of(at).unwrap_or(at));
             continue;
         }
         s.at = opts.origin.of(at);

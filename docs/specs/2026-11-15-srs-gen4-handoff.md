@@ -4225,3 +4225,167 @@ schema、`ABI_VERSION`、i18n key 都不变；Rust 只改注释。
   - `_remapExtLog` 不打 `srsForeignLogKey`：往返用例红（期望 `(480, 480)`，实际 `(0, 480)`）。
   - `backup.part.dart` 成功分支改成 `t.backup_import_success_srs_declined(count: 0)`（没有纯成功文案）：overlay 2 条、streaming 1 条红。
   - `backup_srs_gen4_guard_test` 的 `codeLines` 退回 `trimLeft().startsWith('//')`：`source_guard_adoption_test` 红。
+
+## 45. 第六波 身份归属闸收口（BUG-4843 残余，2026-11-18，分支 `pr/srs-gen4-w6-identity-gate`，基于 `pr/srs-gen4-switch` `0bf8472f40`）
+
+收 §37「第五波 G9 身份收尾」第二轮复核留下的两处残余。SCHEMA 不变（40024，没加表 / 索引，分到的 40025 没用）。
+
+### 更正 §37
+
+§37「复核后补修」里两句与实测不符（按规矩不改别人的节，在这里更正）：
+
+- 「牌组 / 笔记类型的身份记录不判（对它们的修改仍判）」——不对：它们不判却进 `Born`，同批对 B 的牌组 / 笔记类型的修改借它
+  过闸（第二轮复核探针：A 的日志 1→5、回包里两条 `renamed by A`）；只有修改单独发时才判。
+- 「伪造一条 guid 与 B 一致、只换笔记类型的身份记录在写入口分不出来」——分得出来：B 的定义就在同一个库里。
+
+### 判据（`gen4/cmd/writes_owner.rs` 文件头「身份记录：内容寻址的归属」，`Session::foreign_record`）
+
+ID 不加盐以后实体是**内容寻址**的：两个集合拿同一份身份内容建出来的就是同一个实体，并入后合成一份。修改 / 标签 / 日志的闸都看
+「本集合有没有痕迹」，痕迹的源头是身份记录，所以归属判据定在身份记录上。库里有别的集合、别的集合里有 X 的痕迹时，本集合为 X
+写身份记录要同时满足：
+
+1. **自证**（`Session::derived`）：ID 能由这条记录按规范规则重算出来——笔记 `note/<guid>`；笔记类型 `notetype/<ankiNum>`；牌组
+   `deck/<全名>`，全名取同批的 `name`（带 `parent` 时再取父牌组在本集合牌组树里或同批里的全名，「只按叶子名」也认），或第 n 个
+   备选 `deck_alternate(全名, n)`，备选只在前一个已被本集合占着时才轮得到（同 Dart `SrsDbStore.deckIdForNew`）；`builtin` 只认
+   规范的内置默认牌组常量；卡片没有合法的身份记录来源，永远自证不了。牌组的名字从同批修改里收（`Batch`，`apply_in` 建）。
+2. **结构一致**（`Session::conflicts`、`identity_key`）：与库里每个有 X 定义的集合的定义（`Index::new(t, 那个集合).definition`，
+   各按自己的别名表归一，类上同一个挑选规则）比结构——笔记 guid + 笔记类型，笔记类型 Anki 编号 + 种类（缺省 `standard`，同
+   `registers.rs`）；牌组的结构就是 ID。`createdAt` 不算（同一份内容的合法导入在存量里算法不同）。别的集合把 X 当成另一种实体
+   也算冲突。
+3. 例外：与本集合此刻的定义逐字相同的重发照写（不带新内容；存量冲突里重发自己那份不被拒）。
+
+不满足的不写、不进 `Born`，同批借它作保的修改一并不写（回包 `foreign`）。字段 / 模板是笔记类型上的 `fieldDef/` / `tmplDef/`
+修改，跟着笔记类型的归属走；profile 设置实体仍按 §37 的 `PROFILE_SQL`。
+
+为什么在并集收敛语义下成立：判据只决定本机写不写，写下的操作照常传播、并集，派生只由操作集合决定（同 §37）。剩下按定义不算
+「别人的」那一种：A 拿出的身份内容与 B 的**完全一致**——与「A 独立导入了同一份内容」逐字节相同，内容寻址下就是同一个实体，A
+之后的修改并入后作用到合成的那一份，是设计里的并集语义。
+
+### 取舍
+
+- **没选**「首个身份记录的作者集合定归属、随操作落库，并入时作者 ≠ 归属的修改不生效」（任务书给的例子）：合法的「两个集合各自
+  导入同一份内容」里后建的一方并入后对自己那份写的修改与复习全部失效（丢复习记录，违背所有者底线）；放宽成「内容一致的身份
+  记录的作者」又回到内容判据、只是挪到并入时做；作者集合要进操作格式，`derive.rs` 冻结判定、重建恒等、摘要对拍、协议 3 投影
+  对拍都要重做；它同样分不出内容完全一致的那种。
+- 库里另一个集合已有同 guid、不同笔记类型的笔记时，本集合导入这条笔记不写（`foreign`；Dart 侧不读 `foreign`，导入继续，
+  这一条不落）。同 Anki「同 guid 异笔记类型」跳过；不拒的话两个集合日后并入，B 的笔记可能被换笔记类型（字段全空）。
+- 只有「X 在别的集合里有痕迹」才多做这些查询（每条身份记录：本集合定义 1 次 + 每个别的集合定义 1 次，牌组另读一次牌组树）；
+  单集合库、别的集合没有的 ID 与以前一样一条查询放行。
+
+### 测试与验证
+
+- 内核新文件 `gen4/cmd/writes_owner_merge_tests.rs`（挂在 `writes_owner_tests.rs` 下）：每种实体一条「A 写 B 的 ID → A 的集合导出、
+  在另一个库里确认并入 B（`joined`）→ B 的 `entity_views`（定义、活着的修改、标签、日志、缓存行）与并入前逐字相同」——笔记、卡、
+  牌组、笔记类型、字段、模板；合法场景：同一份内容两个集合各建（含内置实体、`createdAt` 不同）并入合成一份且两边的写都在、牌组
+  备选、子牌组按父牌组全名、迁移库双盐别名类（`tests_class.rs` 场景）、经 `.fushisrs` 带进来的存量同号实体重发自己的定义。
+- engine `srs_profile_ownership_merge_test.dart` 补残余二（真实 guid 只换笔记类型 + 同批改字段）与残余一（牌组身份记录 + 同批
+  改名），并入后断言 B 的牌组名。
+- 变异实测（内核，各自单独改、跑 `owner::`、还原）10 项全红：牌组 / 笔记类型不判（6 条红）、不比别的集合的定义（4）、去掉重发
+  例外（1）、备选不往后试（1）、不按父牌组全名（1）、笔记类型自证恒真（1）、内置牌组恒自证（1）、笔记自证恒真（1）、卡片自证
+  恒真（1）、笔记自证恒假（3，合法场景红）。Dart 层：前两项合起来（旧行为）重编 `id_audit` + `raw_sql` 库（测试宿主优先加载
+  的那份）跑 `srs_profile_ownership_merge_test.dart`：exit 1，「A 的日志里不能有指向 B 的实体的操作」Expected 4 / Actual 8；
+  换回本分支编出的库 exit 0。
+- `cargo fmt --check` 0；`cargo test --profile quick --lib -j 4` 0，1450 passed / 0 failed / 39 ignored（基线 39，未新增）。
+- 续做复核（2026-11-20，上一位实现者额度中断后接手，头 `43125faa5e`）：上面两项变异在本机重跑（牌组 / 笔记类型不判 → 6 条红，
+  不比别的集合的定义 → 4 条红，各 exit 101，还原后工作区干净）；engine `srs_profile_ownership_merge_test.dart` +
+  `srs_profile_ownership_test.dart` 用本 worktree 编出的库 exit 0，79 条全过。
+
+### 没做
+
+- `PendingSelf` 未绑定时预检与确认各生成一份、副本备两遍（§37「没做」）：没顺手修。根治要把预先生成的本机身份（含签名钥匙
+  种子）跨请求落库（`srs_meta`），预检就得写库（现在预检在回滚掉的保存点里跑、不留任何东西），还要在所有绑定路径（`identity`、
+  `collection_adopt`、`.fushisrs` 导入、关联已有集合）上消费 / 清掉它，否则留下一份没人用的钥匙种子——这是身份生命周期的改动，
+  不是顺手的事。代价只在「覆盖还原进空库」这一条路径上多备一次副本，结果正确。归 G9 身份 / 备份模块。
+- 别的集合只有修改、没有身份记录 / 别名 / 卡片行的实体（例如别的集合没配缓存时的卡）`THEIRS_SQL` 看不到（§37 原样）；按
+  现有调用方（Dart 开库即配缓存）不会出现，未处理。
+
+### 复核跟改（2026-11-20，同分支第二轮）
+
+复核（major）指出「取舍」节第二条「Dart 侧不读 `foreign`，导入继续，这一条不落」是**静默丢导入**：同一个包 / 同一份 CSV 被同库
+两份 profile 导入、两边落到不同笔记类型（`.apkg` 不合并笔记模板时 `_mapNoteType` 改挂到 `_duplicateAnkiNum` 副本类型；文本导入
+的 guid 列来自文件、笔记类型由用户选）时，后导入一方的这些笔记被闸拒掉，导入报告却照记「已添加」。写入口分不清它与伪造的
+残余二（内容相同），所以闸不动，改成让拒绝**对用户可见、且不留副作用**：
+
+- 内核 `writes.rs` `apply_in`：回包 `foreign` 改报调用方输入下标（`Origin`，同 `edits` 第 7 列）。以前报筛掉初值项之后的位置，
+  `import_drafts` 筛掉过初值项时对不上草稿——Dart 要按它认笔记，这是前提。
+- Dart `SrsDbStore.importDrafts` 返回 `SrsImportDraftsResult`（`existed` + `foreignNotes`，`_foreignNoteRecords` 从回包 `foreign`
+  取笔记身份记录草稿的 ID，下标越界抛 `StateError`）；`.apkg` `_flush` 与文本导入 `flush` 落库后才计数：被拒的记
+  `conflictNotes`（新原因代码 `SrsImportIssueReason.otherProfileNoteType`，冻结；报告文案 `srs_import_report_conflicts_other_profile`，
+  `i18n_sync --add`，16 种语言先落英文），不加 `notesAdded` / `cardsAdded`，`.apkg` 为它记进报告的复习数 / 重置为新卡数退回
+  （`_PendingNewNote`）。
+- `.apkg` 落库时按新笔记的卡给日志带上笔记（`importDrafts(logNotes:)`）。新笔记的卡还没有缓存行，以前日志只带卡、目标是「哪里
+  都没有的卡」照常写——笔记被拒时它的复习悬空落进本集合，进统计与日历（有效复习投影对没有缓存行的卡也投影）。带上笔记后
+  跟着笔记一并被拒。合法新笔记的日志多带一个本来就对的笔记 ID，内核行为不变。
+- 选「报冲突」不选「改走新 guid」：`.apkg` 改 guid 后同一个包再导入时认不出这条（`_existingNotes` 按 guid 派生的 ID 查），每导入
+  一次多一份；报冲突是确定性的，与本机的「同 guid 异笔记类型」（`noteTypeChanged`）同一种处理，文案给出解法（用同一个笔记类型 /
+  打开「合并笔记模板」）。
+
+复核（minor）：同 guid + 同笔记类型、只改 `createdAt` 的记录能过闸，并入时可能顶掉 B 的 `createdAt`——接受，只影响 B 这条笔记的
+新卡次序，已写进 BUG-4843 文件。复核（nit）：`PendingSelf` 两遍副本维持上面「没做」的判断。
+
+测试：内核 `import_drafts_reports_foreign_at_the_callers_input_index`；engine `srs_apkg_import_test.dart`「同库另一份 profile 已有
+同 guid、另一个笔记类型的笔记」（不合并：`otherProfileNoteType` 一条、`notesAdded` / `cardsAdded` 为 0、`reviewLogsImported` 比只有
+一份 profile 的对照少 1（同次导入里别的笔记的复习照常计数）、P2
+没有这条笔记也没有它的复习、P1 不变；合并笔记模板再导入：照常加上、复习落下），原「合并笔记模板」用例的包构造提成顶层
+`withExtraFieldApkg`、`openTestStore` 加可选 `storage`（同库多份 profile）；`srs_text_import_test.dart`「GUID 列的 guid 在同库另一份
+profile 里是另一个笔记类型的笔记」（同批别的行照常、同一个笔记类型照常导入）。
+
+验证（2026-11-20）：`cargo fmt --check` 0；`cargo test --profile quick --lib -j 4` 0，1451 passed / 0 failed / 39 ignored（基线 39）；
+engine `srs_apkg_import_test.dart` + `srs_text_import_test.dart` + `srs_profile_ownership_merge_test.dart` +
+`srs_import_drafts_initial_test.dart`（`heavy.dart --here`，本 worktree 编出的库）exit 0，74 passed / 1 skipped（既有）。变异实测各自
+单独改、跑完还原、工作区干净：内核 `foreign` 按筛掉后的位置报 → 新内核用例红（`[0]` ≠ `[1]`）；Dart 不取 `foreignNotes` → apkg 与
+文本两条新用例红（冲突列表为空、`notesAdded` 2 ≠ 1）；`.apkg` 不给日志带笔记 → apkg 用例红（P2 查到那条复习）；不退回复习数 →
+apkg 用例红（3 ≠ 2）。
+
+没做（本轮新增）：
+
+- ~~被拒笔记的**卡片级**修改仍落成悬空修改~~：第三轮已修，见下一节。
+- 同 guid 异笔记类型**分在两台设备**各自导入时闸看不到对方，日后并入仍按「规范 JSON 最小者胜」二选一笔记类型：ID 只由 guid
+  派生的固有代价（设计 2026-11-11 §2），并入只在用户确认时发生。归设计 / G9。
+
+### 复核跟改（2026-11-20，同分支第三轮）
+
+第二轮复核（`verify2` 通过，余 1 minor + 1 nit）与上一节「没做」里的卡片级悬空修改，提交 `f3d5e2cfc7`（内核）、`b31ce6a359`（Dart）：
+
+- minor：`.apkg` 被拒笔记只退回了复习数 / 重置为新卡数，`fushiLogsRestored`、`revlogsVerifiedByExt`、`revlogsAlreadyPresent`、
+  `revlogsNotInExt`、`anchorsWritten`、`futureCards` 仍按已导入计。根因是按卡的计数直接写报告、被拒后逐个减回。改成一条笔记的卡片
+  计数记在 `_CardTally`（`srs_apkg_import.dart`；`_importNote` 的卡片循环与 `_importCardSchedule` 只记这里，不碰报告）：已有笔记
+  当场 `addTo` 报告，新笔记随 `_PendingNewNote` 等落库回包，落了才并进，被拒的整份不计——同一个「被拒」判断推出全部计数，
+  `_PendingNewNote.logs` / `resetToNew` 删掉。来源包里卡已删除的 revlog（BUG-4657）不属任何笔记，仍直接记报告。副作用：新笔记的
+  卡片计数（含 `futureCards` 的顺序）在落库那一批才进报告，总数不变。
+- nit：BUG 文件与上一节写的「`reviewLogsImported` 为 0」与测试不符，按测试改成「比只有一份 profile 的对照少 1」。
+- 卡片级悬空修改（上一节「没做」第一条）：在本模块的闸内闭合。内核 `writes.rs` `apply_in`：**卡片修改带笔记**（输入项的 `note`，
+  同日志带笔记；`Item.card_note`，按本集合别名表归一）时，除了卡自己过闸，它的笔记也问 `Session::foreign`——同批身份记录被拒的
+  笔记没进 `Born`、别的集合有、本集合没有，于是它的卡片修改一并不写、下标进 `foreign`。只加严：不带笔记、或笔记是本集合的 /
+  同批要建的 / 哪里都没有的，结果同以前（「哪里都没有的 ID 照常写」不变）。Dart `_applyInput` 给卡片修改（`SrsEditDraft` 与
+  `SrsReadyDraft(SrsEditEvent)`）按 `cardNotes`（原 `logNotes` 改名：日志与卡片修改共用这张「卡 → 笔记」表）带上笔记；
+  `.apkg` 新笔记的卡全在表里。取舍写在 `writes_owner.rs` 文件头「卡片修改带笔记」：
+  - 没选「内核按被拒笔记 × 模板推出卡 ID 一并拒」：填空题卡序号来自字段 `{{cN}}`、上不封顶（别名层靠字段史补上限外的序号），
+    副本类型的模板常在同一批才建，内核要在写入口重做一遍 Dart 出卡规则才推得全，推不全的照样漏成悬空修改；调用方本来就是按
+    笔记 × 模板派生出这些卡 ID 的，声明给内核即可精确闭合，且复用日志早已有的 `note` 输入位，线上形状不变。
+  - 也没选「导入前问内核会不会被拒」的跨集合只读命令：多一次往返、多一条命令，且查询与落库不在同一个事务里，中间可能变。
+  - 声明是调用方给的：不带笔记的卡片修改仍按卡自己的判据（与日志不带笔记时一样），所以这条只保护如实声明的调用方（`.apkg`
+    导入）。闸挡的本来就是「拿错 ID」而不是恶意调用方，后者不带笔记得到的只是今天的口径。
+
+测试：内核 `card_edits_carrying_a_rejected_note_are_not_written`（`import_drafts`：被拒笔记 + 它的两条卡片修改进 `foreign` 不写，
+同批要建的笔记 / 本集合已有的笔记 / 哪里都没有的笔记的卡、不带笔记的哪里都没有的卡照写，A 的操作恰好多 5 条；`apply`：带被拒笔记
+的不写、同一张卡不带笔记照写）。engine `srs_apkg_import_test.dart` 组「被拒的笔记整份不计、卡片修改不落（BUG-4843 第二轮复核）」
+三条：每条先断言 P2 的报告与「包里没有 g4」的单 profile 对照**整份 `toJson`（除冲突列表）逐项相同**、冲突只多 g4 的
+`otherProfileNoteType`，再断言带 g4 的对照里 g4 确实贡献了——① fushi-ext 场景：恢复 / 校验 / 包外 revlog / 日志 / 锚点各 1；
+② 未来 revlog：`futureCards` 含 41；③ 新卡 + 暂停：g4 副本类型的卡上有 `newPos` 77 与 `suspended`，P2 同号的卡一条修改都没有。
+
+验证（2026-11-20，本 worktree，HEAD `b31ce6a359` + 本节文档）：`native/fushi_fsrs` `cargo fmt --check` exit 0；`cargo test --profile
+quick --lib -j 4` exit 0，1452 passed / 0 failed / 39 ignored（基线 39）；`fushi/` 下 `dart tool/heavy.dart -- flutter analyze --no-pub`
+exit 0（No issues found，dist self-mac）；engine 三个改动文件 `dart analyze` No issues；`dart tool/heavy.dart --here -- flutter test`
+`srs_apkg_import_test.dart` + `srs_text_import_test.dart` + `srs_profile_ownership_merge_test.dart` + `srs_profile_ownership_test.dart` +
+`srs_import_drafts_initial_test.dart`（本 worktree `setup_worktree.ps1` 编出的 `fushi_fsrs`）exit 0，155 passed / 1 skipped（既有）。
+变异实测各自单独改、跑完 `git checkout` 还原、工作区干净：被拒笔记的 tally 照样并进 → ① ② 红（`reviewLogsImported` 3 ≠ 2、
+`futureCards` 多 41）；复现第一轮「只退回日志数与重置数」→ ① ② 红（`anchorsWritten` 2 ≠ 1、`futureCards` 多 41）；`_applyInput`
+卡片修改不带笔记 → ③ 红（P2 卡上有 `newPos` / `suspended`）；内核不看 `card_note` → 内核用例红（`foreign` `[0]` ≠ `[0, 1, 2]`）。
+
+仍没做：
+
+- 同 profile 回导 / 旧卡接链补的 `historyFrom` 链接（`_historyLinks`）在导入末尾经 `writeEdits` 单独写、不带笔记。新笔记要走到这条
+  路须 fushi-ext 同 profile 且前身卡在本集合、或撞上认不出笔记的旧卡，被拒笔记几乎走不到；没构造出能触发的路径，不为它加未测的
+  过滤。要做时给 `writeEdits` 也接 `cardNotes`，或在 `_flush` 收被拒笔记的卡 ID 后滤掉。归本模块后续 / G9。
+- 上一节其余「没做」（跨设备同 guid 异类型、`PendingSelf` 两遍副本、THEIRS_SQL 看不到只有修改的实体）不变。PR CI 未等。

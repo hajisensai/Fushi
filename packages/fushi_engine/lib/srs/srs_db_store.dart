@@ -285,6 +285,21 @@ Map<String, Object?> srsCacheConfigFor(String profileUid) => <String, Object?>{
   },
 };
 
+/// [SrsDbStore.importDrafts] 的结果。
+final class SrsImportDraftsResult {
+  const SrsImportDraftsResult(this.existed, this.foreignNotes);
+
+  /// 这批身份记录里**落库前就已存在**的实体 ID（内核回包 `existed`）。
+  final Set<String> existed;
+
+  /// 身份记录被实体归属闸拒掉的笔记 ID（内核回包 `foreign` 指向的笔记身份记录草稿，
+  /// native/fushi_fsrs/src/store/gen4/cmd/writes_owner.rs）：同一个库里别的集合（另一份 profile）已有这个 ID、身份
+  /// 结构不同——同一个 guid 落到了另一个笔记类型（`.apkg` 不合并笔记模板时的副本、文本导入用户选的类型）。这条笔记
+  /// 连同同批写给它的字段 / 牌组 / 标签一条都没落，导入路径要记冲突、不算新增（BUG-4843 复核：以前不读，报告照记
+  /// 「已添加」，卡片实际不存在）。
+  final Set<String> foreignNotes;
+}
+
 /// 本机事件的草稿（[SrsDbStore.importDrafts]）：修改记录只记「给哪个实体的哪个字段键写什么值」，
 /// 写入者序号与 HLC 等到落库的同一个独占区里才分配；其余事件（身份记录、来源给定 HLC 的日志）
 /// 已定稿，原样带上。
@@ -1366,7 +1381,8 @@ class SrsDbStore implements SrsSync2Host {
   /// [existed]：给了就按导入的一批草稿落（内核 `import_drafts`，见 [importDrafts]）——「初值」草稿里键已有记录的不落，
   /// 这批身份记录里落库前就已存在的实体 ID 加进这个集合。
   ///
-  /// [logNotes]：日志卡片 → 笔记（调用方已知时给，省一次读卡片行）；[study]：落库、刷新缓存后在同一次命令里排队
+  /// [cardNotes]：卡片 → 笔记（调用方已知时给）：日志按它带上笔记（省一次读卡片行），卡片修改也带上（跟着笔记过实体归属闸，
+  /// 见 [importDrafts]）；[study]：落库、刷新缓存后在同一次命令里排队
   /// （store/study.rs），结果交给 [onStudy]。
   ///
   /// [onEntities]：这批身份记录落下的规范实体 ID，按草稿下标（[srsEntityWritesByInput]，内核回包 `entityWrites`）。
@@ -1376,7 +1392,8 @@ class SrsDbStore implements SrsSync2Host {
     bool receive = false,
     bool stamps = false,
     Set<String>? existed,
-    Map<String, String> logNotes = const <String, String>{},
+    Set<String>? foreignNotes,
+    Map<String, String> cardNotes = const <String, String>{},
     Map<String, Object?>? study,
     void Function(Map<String, Object?> study)? onStudy,
     void Function(List<String?> entities)? onEntities,
@@ -1418,7 +1435,7 @@ class SrsDbStore implements SrsSync2Host {
       receive: receive,
       initials: existed != null,
       source: source,
-      logNotes: logNotes,
+      cardNotes: cardNotes,
     );
     late _Applied applied;
     await _commandOrReload(() async {
@@ -1455,10 +1472,38 @@ class SrsDbStore implements SrsSync2Host {
     if (onEntities != null && !identical(applied, _Applied.stale)) {
       onEntities(srsEntityWritesByInput(drafts.length, applied.reply));
     }
+    if (foreignNotes != null && !identical(applied, _Applied.stale)) {
+      foreignNotes.addAll(_foreignNoteRecords(drafts, applied.reply));
+    }
     if (!stamps || identical(applied, _Applied.stale)) {
       return const <SrsFieldEdit>[];
     }
     return _writtenEdits(drafts, applied.reply);
+  }
+
+  /// 回包 `foreign`（实体归属闸拒掉的项的输入下标，= 草稿下标：[_applyInput] 一条草稿一项）里的笔记身份记录草稿的
+  /// 笔记 ID（[SrsImportDraftsResult.foreignNotes]）。下标越界是内核与 Dart 对不上。
+  static Set<String> _foreignNoteRecords(
+    List<SrsEventDraft> drafts,
+    Map<String, Object?> reply,
+  ) {
+    final Set<String> out = <String>{};
+    for (final Object? at
+        in (reply['foreign'] as List<Object?>?) ?? const <Object?>[]) {
+      final int i = at! as int;
+      if (i < 0 || i >= drafts.length) {
+        throw StateError(
+          'srs: the `apply` reply has foreign index $i outside the '
+          '${drafts.length} drafts (the native core and Dart do not match)',
+        );
+      }
+      if (drafts[i] case SrsReadyDraft(
+        event: SrsEntityEvent(:final SrsEntityRecord record),
+      ) when record.kind == SrsEntityKind.note) {
+        out.add(record.id);
+      }
+    }
+    return out;
   }
 
   /// 一批草稿里修改记录草稿落库后的修改记录（按草稿顺序；内核没写出操作的草稿——值没变、标签列表与现值相同——不在
@@ -1513,12 +1558,12 @@ class SrsDbStore implements SrsSync2Host {
     required bool receive,
     bool initials = false,
     required SrsTimeSource source,
-    Map<String, String> logNotes = const <String, String>{},
+    Map<String, String> cardNotes = const <String, String>{},
   }) async {
     final Map<String, String> noteOf = await _logNotesOf(<SrsEvent>[
       for (final SrsEventDraft d in drafts)
         if (d case SrsReadyDraft(:final SrsEvent event)) event,
-    ], logNotes);
+    ], cardNotes);
     final List<Map<String, Object?>> input = <Map<String, Object?>>[];
     for (final SrsEventDraft d in drafts) {
       switch (d) {
@@ -1526,7 +1571,13 @@ class SrsDbStore implements SrsSync2Host {
           final SrsEvent stored = await _compactEvent(event);
           input.add(<String, Object?>{
             'e': stored.toJson(),
-            'note': stored is SrsLogEvent ? noteOf[stored.log.cardId] : null,
+            'note': switch (stored) {
+              SrsLogEvent(:final SrsReviewLog log) => noteOf[log.cardId],
+              SrsEditEvent(:final SrsFieldEdit edit)
+                  when edit.entityKind == SrsEntityKind.card =>
+                cardNotes[edit.entityId],
+              _ => null,
+            },
             if (receive) 'clk': 'r',
           });
         case SrsEditDraft():
@@ -1546,7 +1597,7 @@ class SrsDbStore implements SrsSync2Host {
                 if (d.machine) 'm': true,
               },
             },
-            'note': null,
+            'note': d.kind == SrsEntityKind.card ? cardNotes[d.entityId] : null,
             'clk': 't',
             if (initials && d.initial) 'init': true,
             if (d.ifChanged) 'chg': true,
@@ -2466,13 +2517,30 @@ class SrsDbStore implements SrsSync2Host {
   /// （[SrsEditDraft.initial]）里键已有修改记录的不落，由内核在落库的同一笔里判。
   ///
   /// 返回这批身份记录里**落库前就已存在**的实体 ID（导入据此按实际新建数计数：攒批时以为是新
-  /// 笔记、落库时已被同步 / 别处建好的，不算「新增」）。
-  Future<Set<String>> importDrafts(List<SrsEventDraft> drafts) async {
-    if (drafts.isEmpty) return const <String>{};
+  /// 笔记、落库时已被同步 / 别处建好的，不算「新增」），与被实体归属闸拒掉的笔记
+  /// （[SrsImportDraftsResult.foreignNotes]：没落，导入记冲突）。
+  ///
+  /// [cardNotes]：卡 → 笔记（这批里新建的笔记的卡还没有卡片缓存行，查不到笔记）。带上笔记的日志与卡片修改跟着笔记过
+  /// 实体归属闸：笔记被拒时它的日志、它的卡片修改（新卡位置、牌组、暂停）一并不落，不留下指向不存在的卡、却照样进统计
+  /// 的悬空复习，也不留下没有缓存行的悬空卡片修改（BUG-4843 复核；内核 `writes_owner.rs` 文件头「卡片修改带笔记」）。
+  Future<SrsImportDraftsResult> importDrafts(
+    List<SrsEventDraft> drafts, {
+    Map<String, String> cardNotes = const <String, String>{},
+  }) async {
+    if (drafts.isEmpty) {
+      return const SrsImportDraftsResult(<String>{}, <String>{});
+    }
     return runExclusive(() async {
       final Set<String> existed = <String>{};
-      await _emit(drafts, receive: true, existed: existed);
-      return existed;
+      final Set<String> foreign = <String>{};
+      await _emit(
+        drafts,
+        receive: true,
+        existed: existed,
+        foreignNotes: foreign,
+        cardNotes: cardNotes,
+      );
+      return SrsImportDraftsResult(existed, foreign);
     });
   }
 
