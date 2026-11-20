@@ -75,12 +75,34 @@ void main() {
   });
 
   test('显式关闭字幕仍然短路整条兜底（TODO-818 不倒退）', () {
+    // video-20 把原来独立的 `if (subtitleExplicitlyOff) {` 短路分支拆进了各入口的判据
+    // （DB cue 改惰性读），不变式改为逐个入口都带关闭前置：外挂档重解析、DB 读、
+    // 内嵌轨重解析、兜底链。「关闭时不读 DB」另有行为测试 video_open_lazy_cues_test。
     expect(
-      containsCodeLine(body, 'if (subtitleExplicitlyOff) {'),
+      containsCodeLine(
+        body,
+        'final String? rehydratePath = subtitleExplicitlyOff',
+      ),
       isTrue,
-      reason: '用户显式关过字幕就不该被任何一层兜底重新打开',
+      reason: '显式关闭时不重解析外挂档（rehydratePath 恒 null）',
     );
-    // 兜底判据自身也带 !subtitleExplicitlyOff，双保险。
+    expect(
+      containsCodeLine(
+        body,
+        'if (!subtitleExplicitlyOff && rehydratePath == null) {',
+      ),
+      isTrue,
+      reason: '显式关闭时不读 DB 缓存 cue',
+    );
+    final RegExp embeddedGate = RegExp(
+      r'final bool rehydrateEmbedded =\s*!subtitleExplicitlyOff &&',
+    );
+    expect(
+      embeddedGate.hasMatch(maskComments(body)),
+      isTrue,
+      reason: '显式关闭时不重解析内嵌轨',
+    );
+    // 兜底链入口：用户显式关过字幕就不该被任何一层兜底重新打开。
     expect(
       // 已确定渲染图形轨（graphicStreamIndex != null）时不再试，BUG-3103。
       containsCodeLine(

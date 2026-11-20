@@ -355,11 +355,18 @@ void main() {
     };
     try {
       await tester.tap(find.text(t.remote_video_stream_play));
+      // 开播链在 controller.load 前用真实异步 dart:io 扫着色器 / Lua 脚本目录
+      // （video-20）。真实 IO 只在 runAsync 里推进，await 的续体绑在测试的
+      // fake-async zone、只在 pump 时跑——两者交替把这条链排空（同
+      // video_quick_settings_sheet_test 的 _settleShaderListLoad）。
       for (
         int i = 0;
-        i < 40 && !logs.any((String l) => l.contains('[video-load]'));
+        i < 100 && !logs.any((String l) => l.contains('[video-load]'));
         i++
       ) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)),
+        );
         await tester.pump(const Duration(milliseconds: 50));
       }
     } finally {
