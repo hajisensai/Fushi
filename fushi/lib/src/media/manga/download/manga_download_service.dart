@@ -40,7 +40,7 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:drift/drift.dart' show Value;
-import 'package:flutter/foundation.dart' show ValueNotifier;
+import 'package:flutter/foundation.dart' show ValueNotifier, visibleForTesting;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/manga/library/manga_chapter_storage.dart';
@@ -256,8 +256,30 @@ class _CancelToken {
     _trip();
   }
 
+  /// 置位时要同步回调的监听（[MangaDownloadService._untilTripped] 用）。
+  ///
+  /// 不能直接在 [tripped] 上挂 `then`：Future 的监听摘不掉，令牌活满整个任务，
+  /// 每页挂一个就把每页的结果（页字节）一直攥到任务结束——一章几百页的高清图
+  /// 全留在内存里。这里的监听在等的那一步结束时就摘掉。
+  final Set<void Function()> _listeners = <void Function()>{};
+
+  /// 挂一个置位监听，返回摘除函数（已置位时不会再回调，调用方自己查 [isTripped]）。
+  void Function() onTrip(void Function() listener) {
+    _listeners.add(listener);
+    return () => _listeners.remove(listener);
+  }
+
+  /// 当前挂着的置位监听数（测试核「等完即摘」用）。
+  int get listenerCount => _listeners.length;
+
   void _trip() {
-    if (!_tripped.isCompleted) _tripped.complete();
+    if (_tripped.isCompleted) return;
+    _tripped.complete();
+    final List<void Function()> listeners = _listeners.toList(growable: false);
+    _listeners.clear();
+    for (final void Function() listener in listeners) {
+      listener();
+    }
   }
 }
 
@@ -331,6 +353,11 @@ class MangaDownloadService {
   bool _draining = false;
   bool _wakeRequested = false;
   _ActiveJob? _active;
+
+  /// 当前任务令牌上挂着的置位监听数（没有在跑的任务时为 0）。测试用：在飞的
+  /// 等待之外不该有残留监听（manga-12 复审：残留监听会攥住每页字节）。
+  @visibleForTesting
+  int get debugActiveTripListenerCount => _active?.token.listenerCount ?? 0;
 
   /// 已要求暂停、但 worker 刚领走还没挂上 [_active] 的任务（领取的 DB 提交与
   /// `_active` 赋值之间隔着一个 await）。worker 挂上时据此立即按暂停收尾。
@@ -1408,19 +1435,20 @@ class MangaDownloadService {
       }
     }
 
+    // 监听在 [work] 结束时摘掉（见 [_CancelToken._listeners]：不摘的话每页字节
+    // 都被令牌攥到任务结束）。
+    final void Function() unsubscribe = token.onTrip(interrupt);
     work.then<void>(
       (T value) {
+        unsubscribe();
         if (!result.isCompleted) result.complete(value);
       },
       onError: (Object error, StackTrace stack) {
+        unsubscribe();
         if (!result.isCompleted) result.completeError(error, stack);
       },
     );
-    if (token.isTripped) {
-      interrupt();
-    } else {
-      unawaited(token.tripped.then<void>((_) => interrupt()));
-    }
+    if (token.isTripped) interrupt();
     return result.future;
   }
 }

@@ -41,6 +41,9 @@ class _FakeAdapter implements OnlineMangaRuntimeAdapter {
   /// 非空时取页先卡在这里（取消用）。
   Completer<void>? gate;
 
+  /// 非空且对某页返回非 null 时，该页取页卡在它上面（只卡单页用）。
+  Completer<void>? Function(int index)? gateFor;
+
   /// 非空时取页（过了 [gate] 之后）抛它造出的错误（失败分型用）。
   Exception Function(int index)? pageError;
 
@@ -77,6 +80,8 @@ class _FakeAdapter implements OnlineMangaRuntimeAdapter {
     fetchCounts[page.index] = (fetchCounts[page.index] ?? 0) + 1;
     final Completer<void>? pending = gate;
     if (pending != null) await pending.future;
+    final Completer<void>? pageGate = gateFor?.call(page.index);
+    if (pageGate != null) await pageGate.future;
     final Exception Function(int index)? error = pageError;
     if (error != null) throw error(page.index);
     final int left = failuresLeft[page.index] ?? 0;
@@ -1070,6 +1075,28 @@ void main() {
   });
 
   // manga-27：直读与下载共用一段「字节 → 暂存 → 改名」，单页上限同一口径。
+  test('已取完的页不在中止令牌上留监听（否则每页字节被攥到任务结束）', () async {
+    final Completer<void> lastPage = Completer<void>();
+    adapter.gateFor = (int index) =>
+        index == _FakeAdapter.pageCount - 1 ? lastPage : null;
+    final MangaDownloadService downloads = build(pageConcurrency: 1);
+    await downloads.enqueueChapter(
+      entry: _entry(),
+      chapter: _chapters.last,
+      autoOcr: false,
+    );
+    await downloads.start();
+    while ((adapter.fetchCounts[_FakeAdapter.pageCount - 1] ?? 0) == 0) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    // 前两页与页表都已取完，只剩最后一页在飞：令牌上只该挂它这一个监听。
+    expect(downloads.debugActiveTripListenerCount, 1);
+    lastPage.complete();
+    await downloads.whenIdle;
+    expect((await jobOf('/chapter/1')).status, MangaDownloadJobStatus.done);
+    downloads.dispose();
+  });
+
   test('下载侧也拒超过单页上限的页（与在线直读同一口径），不落盘', () async {
     adapter.pageBytes = (int index) =>
         index == 1 ? Uint8List(kMangaPageMaximumBytes + 1) : null;
