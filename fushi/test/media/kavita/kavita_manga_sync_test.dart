@@ -76,6 +76,9 @@ class _Server {
   int progressStatus;
   int progressCalls = 0;
   int chapterInfoCalls = 0;
+
+  /// 写请求（推进度 / 标已读）的 HTTP 状态（非 200 = 服务器在、但拒绝）。
+  int writeStatus = 200;
   final List<http.Request> writes = <http.Request>[];
 
   /// 同一台服务器始终是同一个协议层实例（生产里由 `KavitaApiRegistry` 保证）。
@@ -121,6 +124,7 @@ class _Server {
           200,
         );
       }
+      if (writeStatus != 200) return http.Response('', writeStatus);
       writes.add(r);
       return http.Response('', 200);
     }),
@@ -557,6 +561,39 @@ void main() {
         .diagnosticEntries
         .where((ErrorLogEntry e) => e.source == 'KavitaMangaSync.pull')
         .toList();
+
+    // 推送失败原来在 KavitaProgressSync 里被整个吞掉，关章 close() 也不记：离线 /
+    // 服务器报错时进度没推出去却无迹可查（路线图 #3722 c12 遗留）。
+    test('a failed push leaves one diagnostic and marks the server', () async {
+      final _Server server = _Server();
+      final KavitaMangaSyncSession? session = await attach(server);
+      server.offline = true;
+      session!.onPageSaved(_chapterKey, 3);
+      await session.close();
+      expect(server.pushedPages, isEmpty);
+      expect(
+        ErrorLogService.instance.diagnosticEntries
+            .where((ErrorLogEntry e) => e.source == 'KavitaMangaSync.push')
+            .length,
+        1,
+      );
+      expect(unreachable(server), isTrue);
+    });
+
+    test('a push the server rejects is logged as an error', () async {
+      final _Server server = _Server();
+      final KavitaMangaSyncSession? session = await attach(server);
+      server.writeStatus = 500;
+      session!.onPageSaved(_chapterKey, 3);
+      await session.close();
+      expect(
+        ErrorLogService.instance.entries
+            .where((ErrorLogEntry e) => e.source == 'KavitaMangaSync.push')
+            .length,
+        1,
+      );
+      expect(unreachable(server), isFalse);
+    });
 
     test('second open does not wait for the pull again', () async {
       final Completer<void> hang = Completer<void>();

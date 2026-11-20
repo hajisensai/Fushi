@@ -175,9 +175,14 @@
 | [BUG-4906](bugs/BUG-4906-lnreader-state-read-error-reported-as-plugin-missing.md) | ✅ | ✅ | 在线小说取章时 LNReader 状态读盘失败被误报成「插件没装」 |
 > 共 4235 条。点号进各自文件。
 > 共 4237 条。点号进各自文件。
+> 共 4241 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4916](bugs/BUG-4916-mihon-page-request-id-collision.md) | ✅ | ✅ | Mihon 取图请求号拿 identityHashCode 拼，两个活页引用撞号时互相顶掉 / 取消错页 |
+| [BUG-4915](bugs/BUG-4915-interconnect-ocr-upload-after-cancel.md) | ✅ | ✅ | 互联 host 代跑 OCR：写盘途中任务被取消，晚到的页图仍落进卷目录、状态写回 uploading |
+| [BUG-4914](bugs/BUG-4914-manga-folder-plan-nas-junk-volume.md) | ✅ | ✅ | 漫画卷归组的 dart:io 入口把群晖 @eaDir 缩略图目录归成一卷（服务端库扫描 / 导入命令） |
+| [BUG-4913](bugs/BUG-4913-manga-series-refresh-lost-update.md) | ✅ | ✅ | 漫画作品页后台刷新覆盖刚开的订阅；下载状态旧读盖新读 |
 | [BUG-4908](bugs/BUG-4908-manga-online-chapter-sidecar-restart.md) | ✅ | ✅ | 桌面 sidecar 重启后正在读的在线漫画章剩下的页全部失败 |
 | [BUG-4907](bugs/BUG-4907-manga-page-enum-nas-junk.md) | ✅ | ✅ | 本地页图卷枚举把群晖 @eaDir 缩略图、__MACOSX 与 ._ 资源叉当成漫画页 |
 | [BUG-4906](bugs/BUG-4906-manga-panel-failure-cached-detector-dup.md) | ✅ | ✅ | 漫画分镜检测：暂时性失败被两层缓存、检测器并发创建泄漏 ONNX session |

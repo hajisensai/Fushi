@@ -66,14 +66,28 @@ class _FakeAdapter implements OnlineMangaRuntimeAdapter {
   ) async =>
       OnlineMangaRefreshResult(series: entry.series, chapters: entry.chapters);
 
+  /// 页表被解析了几次。
+  int resolveCount = 0;
+
+  /// 运行时「进程代」：页引用记下解析时的代（借 `bookKey` 存），代变了（模拟桌面
+  /// sidecar 重启）旧引用取页就抛 [OnlineMangaPageRefExpired]。
+  int generation = 0;
+
   @override
   Future<List<OnlineMangaPageRef>> resolveChapterPages({
     required OnlineMangaLibraryEntry entry,
     required OnlineMangaChapter chapter,
-  }) async => <OnlineMangaPageRef>[
-    for (int i = 0; i < pageCount; i++)
-      InterconnectMangaPageRef(index: i, bookKey: 'fake', remoteIndex: i),
-  ];
+  }) async {
+    resolveCount += 1;
+    return <OnlineMangaPageRef>[
+      for (int i = 0; i < pageCount; i++)
+        InterconnectMangaPageRef(
+          index: i,
+          bookKey: 'fake-gen$generation',
+          remoteIndex: i,
+        ),
+    ];
+  }
 
   @override
   Future<Uint8List> fetchChapterPage(OnlineMangaPageRef page) async {
@@ -82,6 +96,10 @@ class _FakeAdapter implements OnlineMangaRuntimeAdapter {
     if (pending != null) await pending.future;
     final Completer<void>? pageGate = gateFor?.call(page.index);
     if (pageGate != null) await pageGate.future;
+    if (page is InterconnectMangaPageRef &&
+        page.bookKey != 'fake-gen$generation') {
+      throw OnlineMangaPageRefExpired('stale page ${page.index}');
+    }
     final Exception Function(int index)? error = pageError;
     if (error != null) throw error(page.index);
     final int left = failuresLeft[page.index] ?? 0;
@@ -1251,6 +1269,33 @@ void main() {
     downloads.dispose();
   });
 
+  // 路线图 #3722 c43 遗留：整章下载途中 sidecar 重启，旧页表全部失效。原来按一般
+  // 失败退避（白等 2 秒）后整章重来；现在经 OnlineMangaChapterPageRefs 就地换新引用。
+  test('运行时重启让页引用失效：就地重解析页表接着取，不退避重来', () async {
+    final Completer<void> restart = Completer<void>();
+    adapter.gateFor = (int index) => index == 0 ? null : restart;
+    final MangaDownloadService downloads = build(pageConcurrency: 1);
+    await downloads.enqueueChapter(
+      entry: _entry(),
+      chapter: _chapters.last,
+      autoOcr: false,
+    );
+    await downloads.start();
+    while ((adapter.fetchCounts[1] ?? 0) == 0) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    adapter.generation = 1;
+    restart.complete();
+    await downloads.whenIdle;
+
+    final MangaDownloadJobRow job = await jobOf('/chapter/1');
+    expect(job.status, MangaDownloadJobStatus.done);
+    expect(job.attemptCount, 0, reason: '没有记任何一次失败');
+    expect(waits, isEmpty, reason: '没有退避');
+    expect(adapter.resolveCount, 2, reason: '页表只多解析一次');
+    downloads.dispose();
+  });
+
   test('下载侧也拒超过单页上限的页（与在线直读同一口径），不落盘', () async {
     adapter.pageBytes = (int index) =>
         index == 1 ? Uint8List(kMangaPageMaximumBytes + 1) : null;
@@ -1266,6 +1311,9 @@ void main() {
     final MangaDownloadJobRow failed = await jobOf('/chapter/1');
     expect(failed.status, MangaDownloadJobStatus.failed);
     expect(failed.lastError, contains('PAGE_TOO_LARGE'));
+    // 确定性失败：同一页再取还是超限，不该退避重试（每次都白下 100 MiB 以上）。
+    expect(failed.attemptCount, 1);
+    expect(adapter.fetchCounts[1], 1);
     final Directory images = Directory(
       p.join(mangaChapterDirectory(bookDir, '/chapter/1').path, 'images'),
     );

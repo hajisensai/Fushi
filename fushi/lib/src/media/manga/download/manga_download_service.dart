@@ -218,12 +218,17 @@ class MangaDownloadPreconditionFailed implements Exception {
 }
 
 /// 这次失败是不是「再试也一样」：前置条件不满足、源要用户亲自过 Cloudflare 验证
-/// （按类型认，见 [mihonCloudflareChallenge]）、源已停用 / 本平台没有该运行时。
+/// （按类型认，见 [mihonCloudflareChallenge]）、源已停用 / 本平台没有该运行时、
+/// 页超过单页上限（`PAGE_TOO_LARGE`：同一页再取还是那么大，每次重试都要白下
+/// 100 MiB 以上；空页 `PAGE_EMPTY` 可能是站点一时抽风，不算）。
 /// 是的话任务直接 `failed`，不再按 [kMangaDownloadRetryBackoff] 白等——一串要验证
 /// 或已下架的章节以前每章都要空等 2s + 8s 才失败。其余（网络、站点抽风、运行时
 /// 的一般失败）分不出是不是瞬时的，照旧退避重试。
 bool isPermanentMangaDownloadFailure(Object error) {
   if (error is MangaDownloadPreconditionFailed) return true;
+  if (error is MangaPageBytesRejected && error.code == kMangaPageTooLargeCode) {
+    return true;
+  }
   if (mihonCloudflareChallenge(error) != null) return true;
   if (error is OnlineMangaUnavailable &&
       error.reason != OnlineMangaUnavailableReason.runtimeFailure) {
@@ -1031,11 +1036,19 @@ class MangaDownloadService {
     }
     _throwIfCancelled(token);
     final OnlineMangaRuntimeAdapter adapter = service.adapter;
-    final List<OnlineMangaPageRef> pages = await _untilTripped(
-      adapter.resolveChapterPages(entry: entry, chapter: chapter),
-      token,
+    // 页引用会随运行时进程失效（桌面 sidecar 整章下载途中重启，BUG-4908）：经
+    // [OnlineMangaChapterPageRefs] 取页，撞上失效就重解析一次页表换新引用接着取，
+    // 而不是整章按一般失败退避、重试时从头再解析。
+    final OnlineMangaChapterPageRefs pages = OnlineMangaChapterPageRefs(
+      adapter: adapter,
+      entry: entry,
+      chapter: chapter,
+      pages: await _untilTripped(
+        adapter.resolveChapterPages(entry: entry, chapter: chapter),
+        token,
+      ),
     );
-    if (pages.isEmpty) {
+    if (pages.length == 0) {
       throw StateError('The chapter has no pages');
     }
     _throwIfCancelled(token);
@@ -1064,17 +1077,18 @@ class MangaDownloadService {
     ];
     Object? firstError;
     StackTrace? firstStack;
-    // 在飞的取页：暂停 / 取消时经 [OnlineMangaPageCancellable] 交给运行时取消，
-    // 释放运行时侧的取图通道（Android 取图线程池有限，见 MihonChannelHandler）。
-    final Set<OnlineMangaPageRef> inFlight = <OnlineMangaPageRef>{};
+    // 在飞的取页（页序）：暂停 / 取消时经 [OnlineMangaPageCancellable] 交给运行时
+    // 取消，释放运行时侧的取图通道（Android 取图线程池有限，见 MihonChannelHandler）。
+    // 记页序而不是引用：重解析后在飞的是新引用，取消时按页序取当前引用。
+    final Set<int> inFlight = <int>{};
     if (adapter is OnlineMangaPageCancellable) {
       final OnlineMangaPageCancellable cancellable =
           adapter as OnlineMangaPageCancellable;
       active.abort = () {
         if (inFlight.isEmpty) return;
-        final List<OnlineMangaPageRef> requests = inFlight.toList(
-          growable: false,
-        );
+        final List<OnlineMangaPageRef> requests = <OnlineMangaPageRef>[
+          for (final int index in inFlight) pages[index],
+        ];
         unawaited(
           cancellable.cancelChapterPages(requests).catchError((
             Object error,
@@ -1093,15 +1107,9 @@ class MangaDownloadService {
       while (pending.isNotEmpty && firstError == null) {
         if (token.isTripped) return;
         final int index = pending.removeAt(0);
-        inFlight.add(pages[index]);
+        inFlight.add(index);
         try {
-          files[index] = await _fetchPage(
-            adapter,
-            pages[index],
-            images,
-            index,
-            token,
-          );
+          files[index] = await _fetchPage(pages, images, index, token);
           done += 1;
           await progress.report(done: done, total: pages.length);
           _reportKeepAlive(job, done: done, total: pages.length);
@@ -1109,7 +1117,7 @@ class MangaDownloadService {
           firstError ??= error;
           firstStack ??= stack;
         } finally {
-          inFlight.remove(pages[index]);
+          inFlight.remove(index);
         }
       }
     }
@@ -1154,7 +1162,8 @@ class MangaDownloadService {
     _throwIfCancelled(token);
     MokuroPayload payload = MokuroPayload(images: payloadImages);
     final List<String> sourceUrls = <String>[
-      for (final OnlineMangaPageRef page in pages) page.sourceUrl ?? '',
+      for (int index = 0; index < pages.length; index++)
+        pages[index].sourceUrl ?? '',
     ];
     final MangaDownloadSidecarFetcher? sidecarFetcher =
         _sidecarFetcher ??
@@ -1399,16 +1408,12 @@ class MangaDownloadService {
   /// 取一页落盘。取字节与 [token] 赛跑：暂停 / 取消后不再等在飞的请求，它晚到的
   /// 字节直接丢掉、**不写盘**——已落地的页照旧留给续跑，没落地的那页恢复后重取。
   Future<_PageFile> _fetchPage(
-    OnlineMangaRuntimeAdapter adapter,
-    OnlineMangaPageRef page,
+    OnlineMangaChapterPageRefs pages,
     Directory images,
     int index,
     _CancelToken token,
   ) async {
-    final Uint8List bytes = await _untilTripped(
-      adapter.fetchChapterPage(page),
-      token,
-    );
+    final Uint8List bytes = await _untilTripped(pages.fetch(index), token);
     // 空页 / 超单页上限与在线直读同一口径（manga_page_files.dart）。
     checkMangaPageBytes(bytes);
     // 落盘名不变：`page-NNNNNN` + 嗅探扩展名，嗅不出来按 `.jpg`（AVIF 有自己的

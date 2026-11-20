@@ -66,7 +66,11 @@ import 'package:fushi_engine/sync/online_novel_book.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart' show sanitizeTtuFilename;
 import 'package:fushi_engine/sync/online_manga_host_reader.dart';
 import 'package:fushi_engine/sync/manga_sync_package.dart'
-    show hasExportableMangaContent, kMangaPackageMarker, repackageMangaBook;
+    show
+        hasExportableMangaContent,
+        kMangaPackageMarker,
+        readExportableMangaPayload,
+        repackageMangaBook;
 import 'package:fushi_engine/sync/pdf_sync_package.dart'
     show hasExportablePdfContent, isPdfFile, pdfBookFilePath;
 import 'package:fushi_engine/stats/stat_facts.dart';
@@ -103,6 +107,7 @@ import 'package:fushi_engine/media/manga/manga_chapter_storage.dart'
         mangaChapterDigest,
         mangaChapterDirectoryByDigest,
         mangaChapterImagesDirectory,
+        mangaChapterJsonFile,
         readDownloadedChapterPayload;
 import 'package:fushi_engine/media/manga/manga_storage.dart' show MangaStorage;
 import 'package:fushi_engine/media/manga/mokuro_payload.dart'

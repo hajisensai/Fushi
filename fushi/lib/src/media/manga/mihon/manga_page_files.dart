@@ -41,8 +41,14 @@ String mangaPageFileName(
     '${mangaPageFileStem(index)}'
     '${kMangaPageExtensionByContentType[mangaImageContentType(bytes)] ?? unknownExtension}';
 
-/// 页字节不可用：空页（`PAGE_EMPTY`）或超过 [kMangaPageMaximumBytes]
-/// （`PAGE_TOO_LARGE`）。
+/// [MangaPageBytesRejected] 的错误码：空页。
+const String kMangaPageEmptyCode = 'PAGE_EMPTY';
+
+/// [MangaPageBytesRejected] 的错误码：超过 [kMangaPageMaximumBytes]。
+const String kMangaPageTooLargeCode = 'PAGE_TOO_LARGE';
+
+/// 页字节不可用：空页（[kMangaPageEmptyCode]）或超过 [kMangaPageMaximumBytes]
+/// （[kMangaPageTooLargeCode]）。
 class MangaPageBytesRejected extends MihonRuntimeException {
   const MangaPageBytesRejected(super.code, super.message);
 }
@@ -51,13 +57,13 @@ class MangaPageBytesRejected extends MihonRuntimeException {
 void checkMangaPageBytes(Uint8List bytes) {
   if (bytes.isEmpty) {
     throw const MangaPageBytesRejected(
-      'PAGE_EMPTY',
+      kMangaPageEmptyCode,
       'The online manga page is empty',
     );
   }
   if (bytes.length > kMangaPageMaximumBytes) {
     throw const MangaPageBytesRejected(
-      'PAGE_TOO_LARGE',
+      kMangaPageTooLargeCode,
       'The online manga page is too large',
     );
   }

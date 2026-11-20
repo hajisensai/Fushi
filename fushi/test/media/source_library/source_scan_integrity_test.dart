@@ -463,6 +463,8 @@ void main() {
       expect(junk('#recycle/old.cbz'), isTrue);
       expect(junk('.Trash-1000/files/a.epub'), isTrue);
       expect(junk('.Trashes/501/a.mkv'), isTrue);
+      // 与引擎卷归组 / 页图枚举共用一份判据后，macOS 压缩包残渣目录也算。
+      expect(junk('Manga/__MACOSX/Vol1/001.jpg'), isTrue);
 
       expect(junk('Show/01.mkv'), isFalse);
       expect(junk('.hidden/01.mkv'), isFalse, reason: '隐藏目录里放媒体是合法用法');

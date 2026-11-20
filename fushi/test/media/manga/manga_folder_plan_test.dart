@@ -620,6 +620,23 @@ void main() {
       expect(plan.mokuroPaths, <String>[p.join(mk, 'vol-3.mokuro')]);
     });
 
+    test('跳过 @eaDir / __MACOSX / 回收站目录与 ._ 资源叉（与 BUG-4907 同根因）', () {
+      // NAS 上的漫画库：群晖给每页建 `@eaDir/<页名>/SYNOPHOTO_THUMB_*.jpg`，
+      // macOS 往 SMB 盘写 `._001.jpg`。纯函数只看扩展名，不在枚举时丢掉的话
+      // `@eaDir` 自成一卷、只有资源叉的根被当成「根本身有页图」。
+      final String vol1 = p.join(tmp.path, 'vol-1');
+      writeFile(p.join(vol1, '001.jpg'));
+      writeFile(p.join(vol1, '@eaDir', '001.jpg', 'SYNOPHOTO_THUMB_M.jpg'));
+      writeFile(p.join(tmp.path, '@eaDir', 'vol-1', 'SYNOPHOTO_THUMB_S.jpg'));
+      writeFile(p.join(tmp.path, '__MACOSX', 'vol-1', '._001.jpg'));
+      writeFile(p.join(tmp.path, r'#recycle', 'old', '001.jpg'));
+      writeFile(p.join(tmp.path, '._cover.jpg'));
+
+      final MangaFolderPlan plan = planMangaFoldersInDirectory(tmp);
+
+      expect(plan.imageFolders, <String>[vol1]);
+    });
+
     test('不存在的根目录 → 空归组而非异常', () {
       final Directory missing = Directory(p.join(tmp.path, 'missing'));
       expect(planMangaFoldersInDirectory(missing).isEmpty, isTrue);
