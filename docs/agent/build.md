@@ -583,6 +583,11 @@ Linux 静态 torrent bridge。规则：
 - 守卫 `fushi/test/build/native_store_names_single_source_guard_test.dart` 钉死以上几条（含
   「PR 门 restore 的每个件都有同 runner、同 CC/CXX 的 develop 生产方」）。
 
+## 第三方 action 钉 SHA（2026-11-21，拍板 ci-pin-actions）
+
+- `.github/` 下所有外部 `uses:` 一律写成 `owner/repo@<40 位 commit SHA> # <版本>`（`gh api repos/<owner>/<repo>/commits/<tag> --jq .sha` 取 SHA，注释写该提交对应的完整版本 tag）；tag / 分支可被上游强推改写，只有 SHA 不可变。本仓组合 action（`./.github/actions/*`）与 `docker://` 不在此列。守卫 `fushi/test/build/workflow_action_sha_pin_guard_test.dart`。
+- 升级交给 `.github/dependabot.yml`（github-actions，覆盖 workflows 与组合 action，每周一合成一个 PR 提到 `develop`），SHA 与版本注释一起改。`dtolnay/rust-toolchain` 钉 master 的 SHA（注释 `# master`，工具链版本由 `toolchain:` 输入决定）并在 Dependabot 里 ignore，需要时手动换 master 最新 SHA。
+
 ## PR 主门分层：快门每推必跑，全量按需 / 合并后跑（2026-11-18）
 
 **起因（实测）**：近 3 天 `main.yml`（Build Android APK）占全仓 runner 分钟的 59%，把并发槽顶满——Linux job 排队 p75 29 分钟、p90 56 分钟；一次 PR 运行真正干活约 50 分钟，墙钟中位数 102 分钟、p90 199 分钟，被后一次 push 取消而白烧 2394 分钟。近 7 天各会话为等 CI 纯空等约 27 小时（平均每次 67 分钟）。而 PR 上这份全量，`develop` 每次 push 的 `release.yml` 本来就再跑一遍。

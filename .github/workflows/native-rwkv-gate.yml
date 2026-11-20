@@ -70,19 +70,19 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       # 工具链钉法与 native-fsrs-gate.yml 一致（Rust 1.95.0）。
       - name: Set up Rust (fushi_rwkv)
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: '1.95.0'
       - name: Cache Rust build (fushi_rwkv)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_rwkv -> target
           key: fushi-rwkv-tests-${{ matrix.name }}
       - name: Cache RWKV weights
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: native/fushi_rwkv/model
           key: fushi-rwkv-model-${{ env.RWKV_MODEL_SHA256 }}-${{ env.RWKV_SMALL_INT8_SHA256 }}-${{ env.RWKV_SMALL_VECTORS_SHA256 }}-${{ env.RWKV_TINY_INT8_SHA256 }}-${{ env.RWKV_TINY_VECTORS_SHA256 }}
@@ -102,20 +102,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       # 工具链钉法与 native-compute-gate.yml 一致（Rust 1.95.0、cargo-ndk 4.1.2）。
       - name: Set up Rust (fushi_rwkv, Android + iOS targets)
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: '1.95.0'
           targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,aarch64-apple-ios
       - name: Cache Rust build (fushi_rwkv Android)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_rwkv -> target
           key: fushi-rwkv-android
       - name: Install cargo-ndk
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f # v2.90.6
         with:
           tool: cargo-ndk@4.1.2
       - name: Build fushi_rwkv Android .so (arm64-v8a, armeabi-v7a, x86_64)
