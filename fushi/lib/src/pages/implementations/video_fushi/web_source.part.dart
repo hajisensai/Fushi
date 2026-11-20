@@ -245,6 +245,7 @@ extension _VideoWebSource on _VideoFushiPageState {
       _pendingController = null;
       _title = row.title;
       _failed = false;
+      _failureHealsOnOpen = false;
       _failReason = null;
       _failTorrentVideo = null;
       _currentVideoPath = null;

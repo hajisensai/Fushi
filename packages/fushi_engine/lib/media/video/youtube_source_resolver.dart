@@ -136,10 +136,16 @@ class YoutubeResolvedSource {
     required this.title,
     required this.httpHeaders,
     required this.cues,
+    this.variants,
   });
 
   final String streamUrl;
   final String? audioStreamUrl;
+
+  /// 画质菜单的各档（gap-remote-10）：起播那次 getManifest 顺手从同一份 manifest
+  /// 算出，挂到本次起播的客户端上，点开画质菜单不再重取一遍 manifest。null = 来源
+  /// 没给（测试假件 / 旧调用方），画质菜单照旧懒解析。
+  final YoutubeVariantSet? variants;
 
   /// TODO-1000（BUG-528）：**制卡 GIF/帧专用**的低分辨率视频流 URL（muxed 360p 或最低
   /// 码率 video-only）。播放用的 [streamUrl] 可达 4K，让 ffmpeg 从它按时间戳裁 GIF 会
@@ -1154,6 +1160,12 @@ Future<YoutubeResolvedSource> _resolveYoutubeSourceInner(
   final String? miningVideoUrl = _pickMiningVideoUrl(manifest);
   // muxed 挖矿流自带音轨 → 制卡音频从它抽（audio-only DASH 流 ffmpeg seek 会超时）。
   final bool miningVideoHasAudio = manifest.muxed.isNotEmpty;
+  // 画质菜单的各档与起播用的是同一份 manifest：顺手算出挂到结果上（纯内存，不联网），
+  // 点开画质菜单时不必再 getManifest 一遍（gap-remote-10）。
+  final YoutubeVariantSet variants = youtubeVariantSetFromManifest(
+    manifest,
+    playbackTargetHeight,
+  );
   final String bookKey = 'yt:${videoId.value}';
   // 制卡路径 withCaptions=false → 跳过字幕解析（省 ~19s，避免超时）；播放器路径仍取字幕
   // （A3：人工>ASR·精确语言选轨，[_resolveBestCaptionCues]）。
@@ -1169,6 +1181,7 @@ Future<YoutubeResolvedSource> _resolveYoutubeSourceInner(
     title: title,
     httpHeaders: youtubeStreamReplayHeaders(),
     cues: cues,
+    variants: variants,
   );
 }
 
@@ -1379,6 +1392,15 @@ Future<YoutubeVariantSet> _resolveYoutubeVideoVariantsInner(
     videoId,
     ytClients,
   );
+  return youtubeVariantSetFromManifest(manifest, playbackTargetHeight);
+}
+
+/// 纯函数：从一份 manifest 算画质菜单的各档（[resolveYoutubeVideoVariants] 与起播
+/// [resolveYoutubeSource] 共用，后者把结果挂在 [YoutubeResolvedSource.variants] 上）。
+YoutubeVariantSet youtubeVariantSetFromManifest(
+  yt.StreamManifest manifest,
+  int? playbackTargetHeight,
+) {
   // 无分离流（仅 muxed ≤360p）：无多档可选，返回空集（播放页回退无 YouTube 画质菜单）。
   if (manifest.videoOnly.isEmpty || manifest.audioOnly.isEmpty) {
     return const YoutubeVariantSet(
