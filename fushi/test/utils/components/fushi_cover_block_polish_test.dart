@@ -338,7 +338,7 @@ void main() {
 
           final Rect cover = tester.getRect(find.byKey(coverKey));
           final Rect discRest = tester.getRect(find.byKey(discKey));
-          // 唱片在封面右侧（后方）。
+          // 唱片在封面右侧。
           expect(discRest.center.dx, greaterThan(cover.center.dx));
           await hover(tester);
           final Rect discHover = tester.getRect(find.byKey(discKey));
@@ -348,7 +348,9 @@ void main() {
       );
     }
 
-    testWidgets('唱片画在封面后面', (WidgetTester tester) async {
+    testWidgets('唱片压在封面之上（W 原型「扇形」：唱片 z 2、封面 z 1）', (
+      WidgetTester tester,
+    ) async {
       await pumpBlock(
         tester,
         const FushiCoverBlock(
@@ -367,7 +369,7 @@ void main() {
       }
 
       tester.element(find.byKey(blockKey)).visitChildren(visit);
-      expect(order.map((Element e) => e.widget.key), <Key>[discKey, coverKey]);
+      expect(order.map((Element e) => e.widget.key), <Key>[coverKey, discKey]);
     });
   });
 

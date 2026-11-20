@@ -394,7 +394,7 @@ class FushiCoverBlock extends StatefulWidget {
 
   /// 唱片盘面图（专辑目录里真实的盘面扫描图；W 原型 `.dc`）。给了就换成「封面 +
   /// 唱片」摆法：宽块（宽 ≥ 1.2 × 高）封面在左、唱片在右；竖块封面在左上、唱片
-  /// 叠在右后。静止姿态封面 −14°、唱片 +16°；悬停时唱片弹簧转出到 +110°、封面
+  /// 叠在右侧之上（W 原型「扇形」：唱片压在封面上）。静止姿态封面 −14°、唱片 +16°；悬停时唱片弹簧转出到 +110°、封面
   /// 再斜 3°。文字区换成装满下方盒子的强调色标题大字（[FushiFitTitle]，读屏读
   /// 一遍），右下角是 [chip]（如「CD」）；副行 / 进度 / logo 等不画（放进详情页）。
   /// 只画圆形裁切，不做假唱片——没有盘面图就别传。null = 原摆法。
@@ -789,7 +789,7 @@ class _FushiCoverBlockState extends State<FushiCoverBlock>
     ];
   }
 
-  /// 唱片摆法（W 原型 CD 色块）：唱片（在后）→ 封面 → 标题大字 → 右下 chip。
+  /// 唱片摆法（W 原型 CD 色块）：封面 → 唱片（压在封面上）→ 标题大字 → 右下 chip。
   List<Widget> _buildDiscBlock(
     FushiCoverBlockColors colors,
     Size size,
@@ -803,13 +803,15 @@ class _FushiCoverBlockState extends State<FushiCoverBlock>
         ? FushiGeneratedCover(title: widget.title)
         : widget.covers.first;
     final String? chip = widget.chip;
+    // W 原型「扇形」预设没有 `behind`：`innerPose` 给封面 z 1、唱片 z 2，唱片压在
+    // 封面之上（用户 11-20 指定按 w_proto 做）。
     return <Widget>[
-      _posed(geo.disc, _DiscFace(child: widget.disc!)),
       _posed(
         geo.cover,
         _CoverCard(radius: 14, overlay: widget.coverOverlay, child: cover),
         animation: _coverPose,
       ),
+      _posed(geo.disc, _DiscFace(child: widget.disc!)),
       Positioned.fromRect(
         rect: geo.title,
         child: KeyedSubtree(
@@ -1535,10 +1537,10 @@ const double kFushiCoverBlockDiscRowMaxHeight = 150;
 /// 唱片摆法的几何（W 原型 CD 色块，「扇形」角度预设）。封面 / 唱片的边长 S；
 /// 位移按 S 的倍数（原型以盘径为单位）：
 /// - 封面：静止 `x .04S, y .02S, r −14°`，悬停再斜 3°（−17°）；
-/// - 唱片：静止 `x −.14S, y .02S, r +16°`（在封面后、半藏），悬停转出到
+/// - 唱片：静止 `x −.14S, y .02S, r +16°`（压在封面右缘上），悬停转出到
 ///   `x .02S, y −.04S, r +110°`。
 /// 宽块（宽 ≥ 1.2 × 高，原型 2 列）封面在左、唱片在右，标题大字装在两者下方；
-/// 竖块（原型 1 列）封面在左上、唱片叠在右后，标题在下。
+/// 竖块（原型 1 列）封面在左上、唱片叠在它右侧之上，标题在下。
 @immutable
 class _DiscGeometry {
   const _DiscGeometry({
@@ -1595,7 +1597,7 @@ class _DiscGeometry {
 
   /// 矮块（拼贴首块旁的半高卡，高 125）：原型的「标题在封面下方」在这个高度里
   /// 只剩不到 10 px 的标题盒，大字画不出来。改成横排：封面占满高度立在起始侧、
-  /// 唱片同尺寸叠在它后面偏右（同一套扇形角度与悬停转出），标题大字铺在唱片
+  /// 唱片同尺寸压在它右半边上（同一套扇形角度与悬停转出），标题大字铺在唱片
   /// 之后（上限 0.3 × 高，同原型无盘双格卡），右下角 chip。原型没有这一档，
   /// 是按原型双格卡的比例外推的。
   factory _DiscGeometry._row(double w, double h) {
