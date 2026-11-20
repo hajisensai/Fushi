@@ -31,13 +31,18 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 /// 位置、查词、制卡、统计、同步全部复用普通书的链路，与在线漫画「点章节即入库」
 /// 同一个形态。
 ///
-/// 描述符只含插件 id、作品路径与章节路径 / 标题（**不含** cookie / 请求头）。
+/// 描述符只含插件 id、作品路径、章节路径 / 标题，以及作品页头部要画的简介 /
+/// 作者 / 状态 / 类型标签（**不含** cookie / 请求头）。头部字段让已上架作品的
+/// 作品页在源站详情回来之前就画出完整头部，详情回来时章节列表不再整体下移
+/// （拍板台 design-nmv-novel-header-shift 选 a）。它们是可选键：这几个键出现
+/// 之前建的书没有它们，下一次取到源站详情时补上（[LnReaderOnlineLibrary.refreshDetails]）。
 @immutable
 class LnReaderOnlineBookDescriptor {
   const LnReaderOnlineBookDescriptor({
     required this.pluginId,
     required this.novelPath,
     required this.chapters,
+    this.details = LnReaderNovelDetails.empty,
   });
 
   static const String marker = kLnReaderOnlineBookMarker;
@@ -48,6 +53,9 @@ class LnReaderOnlineBookDescriptor {
 
   /// 章节按 spine 顺序：第 i 项就是 `OEBPS/chapter-(i+1).xhtml`。
   final List<LnReaderChapter> chapters;
+
+  /// 上次从源站取到的作品头部信息。
+  final LnReaderNovelDetails details;
 
   bool isNovel(String otherPluginId, String otherNovelPath) =>
       pluginId == otherPluginId && novelPath == otherNovelPath;
@@ -61,7 +69,17 @@ class LnReaderOnlineBookDescriptor {
       for (final LnReaderChapter chapter in chapters)
         <String, String>{'path': chapter.path, 'name': chapter.name},
     ],
+    ...details.toJson(),
   });
+
+  /// 换掉头部信息，章节列表（= 解压树的 spine）原样保留。
+  LnReaderOnlineBookDescriptor withDetails(LnReaderNovelDetails next) =>
+      LnReaderOnlineBookDescriptor(
+        pluginId: pluginId,
+        novelPath: novelPath,
+        chapters: chapters,
+        details: next,
+      );
 
   /// 不是在线小说描述符（普通书 / 在线漫画 / 损坏）一律 null——描述符坏了只该
   /// 让这本书退化成普通书，不该让阅读器或书架炸。
@@ -88,11 +106,68 @@ class LnReaderOnlineBookDescriptor {
                 path: (raw['path'] ?? '').toString(),
               ),
         ],
+        details: LnReaderNovelDetails.fromJson(decoded),
       );
     } on FormatException {
       return null;
     }
   }
+}
+
+/// 作品页头部的源站信息（简介 / 作者 / 状态 / 类型标签），原样存插件给的值
+/// （简介可能是 HTML 片段，显示时再 `stripLnReaderHtml`）。
+@immutable
+class LnReaderNovelDetails {
+  const LnReaderNovelDetails({
+    this.summary,
+    this.author,
+    this.status,
+    this.genres,
+  });
+
+  factory LnReaderNovelDetails.of(LnReaderNovel novel) => LnReaderNovelDetails(
+    summary: novel.summary,
+    author: novel.author,
+    status: novel.status,
+    genres: novel.genres,
+  );
+
+  factory LnReaderNovelDetails.fromJson(Map<String, Object?> json) =>
+      LnReaderNovelDetails(
+        summary: _optionalText(json['summary']),
+        author: _optionalText(json['author']),
+        status: _optionalText(json['status']),
+        genres: _optionalText(json['genres']),
+      );
+
+  static const LnReaderNovelDetails empty = LnReaderNovelDetails();
+
+  final String? summary;
+  final String? author;
+  final String? status;
+  final String? genres;
+
+  /// 只写有值的键：没取到的字段不占描述符。
+  Map<String, String> toJson() => <String, String>{
+    if (summary != null) 'summary': summary!,
+    if (author != null) 'author': author!,
+    if (status != null) 'status': status!,
+    if (genres != null) 'genres': genres!,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is LnReaderNovelDetails &&
+      other.summary == summary &&
+      other.author == author &&
+      other.status == status &&
+      other.genres == genres;
+
+  @override
+  int get hashCode => Object.hash(summary, author, status, genres);
+
+  static String? _optionalText(Object? value) =>
+      value is String && value.isNotEmpty ? value : null;
 }
 
 /// 占位章正文上的标记属性：解压树里的章节文件带它 = 还没取过正文。
@@ -242,12 +317,38 @@ class LnReaderOnlineLibrary {
             pluginId: plugin.id,
             novelPath: novel.path,
             chapters: novel.chapters,
+            details: LnReaderNovelDetails.of(novel),
           ).encode(),
         ),
       ),
     );
     return bookKey;
   }
+
+  /// 把源站刚给的作品头部信息写进这部作品在线书的描述符（不在书架 / 信息
+  /// 没变就什么都不写）。章节列表不跟着换：它必须与解压树的 spine 一致，只有
+  /// [ensureBook] 重建占位树时才能改。
+  ///
+  /// 读改写放在同一个事务里，与 [_syncChapters] 末尾的整份描述符写入不会互相
+  /// 盖掉：先写的一方的章节列表总会被后一方读到。
+  Future<void> refreshDetails(String pluginId, LnReaderNovel novel) =>
+      database.transaction(() async {
+        final EpubBookRow? row = await findBook(pluginId, novel.path);
+        final LnReaderOnlineBookDescriptor? descriptor =
+            LnReaderOnlineBookDescriptor.tryParse(row?.sourceMetadata);
+        if (row == null || descriptor == null) return;
+        final LnReaderNovelDetails details = LnReaderNovelDetails.of(novel);
+        if (descriptor.details == details) return;
+        await (database.update(
+          database.epubBooks,
+        )..where((EpubBooks t) => t.bookKey.equals(row.bookKey))).write(
+          EpubBooksCompanion(
+            sourceMetadata: Value<String?>(
+              descriptor.withDetails(details).encode(),
+            ),
+          ),
+        );
+      });
 
   Future<void> _syncChapters(
     EpubBookRow row,
@@ -262,6 +363,7 @@ class LnReaderOnlineLibrary {
       descriptor.chapters.map((LnReaderChapter c) => c.path).toList(),
       novel.chapters.map((LnReaderChapter c) => c.path).toList(),
     )) {
+      await refreshDetails(plugin.id, novel);
       return;
     }
     final String extractDir = row.extractDir;
@@ -300,6 +402,7 @@ class LnReaderOnlineLibrary {
           pluginId: plugin.id,
           novelPath: novel.path,
           chapters: novel.chapters,
+          details: LnReaderNovelDetails.of(novel),
         ).encode(),
         chapterCount: rebuilt.chapterCount,
         chaptersJson: rebuilt.chaptersJson,

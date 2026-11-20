@@ -145,6 +145,41 @@ void main() {
         isNull,
       );
     });
+
+    test('头部信息（简介 / 作者 / 状态 / 类型）编码往返；旧描述符没有这几个键照样认', () {
+      const LnReaderNovelDetails details = LnReaderNovelDetails(
+        summary: '<p>あらすじ</p>',
+        author: '作者',
+        status: 'Ongoing',
+        genres: 'ファンタジー,恋愛',
+      );
+      final LnReaderOnlineBookDescriptor parsed =
+          LnReaderOnlineBookDescriptor.tryParse(
+            const LnReaderOnlineBookDescriptor(
+              pluginId: 'p',
+              novelPath: '/n',
+              chapters: chapters,
+              details: details,
+            ).encode(),
+          )!;
+      expect(parsed.details, details);
+      expect(parsed.chapters.length, 3);
+
+      // 头部字段出现之前建的书：描述符只有章节，照样是在线书，头部信息为空。
+      final LnReaderOnlineBookDescriptor legacy =
+          LnReaderOnlineBookDescriptor.tryParse(
+            '{"type":"${LnReaderOnlineBookDescriptor.marker}","version":1,'
+            '"pluginId":"p","novelPath":"/n",'
+            '"chapters":[{"path":"/1","name":"一"}]}',
+          )!;
+      expect(legacy.chapters.single.path, '/1');
+      expect(legacy.details, LnReaderNovelDetails.empty);
+      // 没取到的字段不写键。
+      expect(
+        jsonDecode(legacy.encode()) as Map<String, Object?>,
+        isNot(contains('summary')),
+      );
+    });
   });
 
   group('LnReaderOnlineLibrary / LnReaderOnlineChapterLoader', () {
@@ -347,6 +382,71 @@ void main() {
       );
       expect(imports, 1);
       expect(rebuilds, 0);
+    });
+
+    test('建书时头部信息写进描述符；之后源站详情变了，章节不变也补写、章节列表不动', () async {
+      const LnReaderNovel detailed = LnReaderNovel(
+        name: 'テスト小説',
+        path: '/novel',
+        chapters: chapters,
+        totalPages: 1,
+        summary: '<p>あらすじ</p>',
+        author: '作者',
+        status: 'Ongoing',
+        genres: 'ファンタジー',
+      );
+      final String key = await library().ensureBook(
+        plugin: plugin,
+        novel: detailed,
+        pendingText: 'PENDING',
+      );
+      Future<LnReaderOnlineBookDescriptor> read() async =>
+          LnReaderOnlineBookDescriptor.tryParse(
+            (await db.getEpubBook(key))!.sourceMetadata,
+          )!;
+      expect((await read()).details, LnReaderNovelDetails.of(detailed));
+
+      // 源站完结了、改了简介：作品页拿到新详情后补写，不重建占位树。
+      const LnReaderNovel finished = LnReaderNovel(
+        name: 'テスト小説',
+        path: '/novel',
+        chapters: <LnReaderChapter>[LnReaderChapter(name: '零', path: '/0')],
+        totalPages: 1,
+        summary: '完結',
+        author: '作者',
+        status: 'Completed',
+      );
+      await library().refreshDetails(plugin.id, finished);
+      final LnReaderOnlineBookDescriptor refreshed = await read();
+      expect(refreshed.details, LnReaderNovelDetails.of(finished));
+      expect(refreshed.chapters.map((LnReaderChapter c) => c.path), <String>[
+        '/1',
+        '/2',
+        '/3',
+      ], reason: '章节列表 = 解压树的 spine，只有重建占位树时才能换。');
+      expect(rebuilds, 0);
+
+      // 章节没变的 ensureBook（旧目录阶段点「继续阅读」）也顺手补写头部信息。
+      await library().ensureBook(
+        plugin: plugin,
+        novel: detailed,
+        pendingText: 'PENDING',
+      );
+      expect((await read()).details, LnReaderNovelDetails.of(detailed));
+      expect(rebuilds, 0);
+
+      // 不在书架的作品：什么都不写。
+      await library().refreshDetails(
+        plugin.id,
+        const LnReaderNovel(
+          name: 'other',
+          path: '/other',
+          chapters: chapters,
+          totalPages: 1,
+          author: 'x',
+        ),
+      );
+      expect(await library().findBook(plugin.id, '/other'), isNull);
     });
 
     test('在线书的书行才建加载器；普通书连 LNReader 管理器都不碰', () async {
