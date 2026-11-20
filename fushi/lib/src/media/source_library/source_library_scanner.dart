@@ -33,6 +33,7 @@
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
@@ -53,6 +54,7 @@ import 'package:fushi_engine/media/torrent/download_save_root.dart'
     show isSourceIncomingPath;
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
+import 'package:fushi_engine/epub/epub_parser.dart' show EpubParser;
 import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart';
 import 'package:fushi_engine/media/audiobook/book_audiobook_pairing.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart'
@@ -1017,6 +1019,161 @@ class _BookImportTally {
   }
 }
 
+/// 书籍来源一次扫描的「已入库的书」判据：来源扫描索引（引擎 [BookSourceIndex]，与漫画
+/// / 游戏来源同一个偏好键族 `media_source_scan_index_<sourceId>`，不升 schema）+ 标题
+/// 预判。目的是重扫时**已入库的书不再整本下载 / 解压 / 解析 / 计数**，再因同名被丢弃。
+///
+/// - 索引命中：`源相对路径 → 书 uid`，且那本书仍在库、仍归本来源、当时记下的内容指纹
+///   （本地「字节数 + 修改时刻」/ 远端列目录给的 ETag 或大小 + 时间）与现在一致——
+///   什么都不读，直接给出 bookKey（供补挂有声书与 R5 配对）。指纹拿不到（传输不给
+///   元数据）一律不算命中，宁可多读一次，不凭空跳过一个可能已被换掉的文件。
+/// - 标题预判：本地 EPUB 只读 OPF 的 `dc:title`（[EpubParser.readTitleSync]，不解压
+///   正文），没有标题时回退文件名——与导入器「无 dc:title 回退文件名」同一口径；PDF
+///   的标题本来就是文件名。预判的标题撞上库里的书 = 导入器用 [DuplicatePolicy.skip]
+///   也会判重复，结论相同，只是省掉整本解析。远端 EPUB 不下载拿不到标题，照旧下载。
+///
+/// 索引只在整轮收尾时存一次：丢了能找回来（下一轮标题预判 / 导入器判重复时按
+/// [record] 的同一判据重新认领），不必逐本落盘。
+class _BookSourceIdentity {
+  _BookSourceIdentity._({
+    required this.db,
+    required this.sourceId,
+    required this.rootPath,
+    required this.isLocal,
+    required this.index,
+    required Map<String, BookSourceRow> rowByUid,
+    required Map<String, BookSourceRow> rowByTitleKey,
+    required Map<String, SourceFileEntry> entryByPath,
+  }) : _rowByUid = rowByUid,
+       _rowByTitleKey = rowByTitleKey,
+       _entryByPath = entryByPath;
+
+  static Future<_BookSourceIdentity> load({
+    required FushiDatabase db,
+    required SourceLibraryRow source,
+    required bool isLocal,
+    required List<SourceFileEntry> entries,
+  }) async {
+    final BookSourceIndex index = await BookSourceIndex.load(db, source.id);
+    final List<BookSourceRow> rows = await loadBookSourceRows(db);
+    index.retainUids(<String>{
+      for (final BookSourceRow row in rows)
+        if (row.uid.isNotEmpty) row.uid,
+    });
+    return _BookSourceIdentity._(
+      db: db,
+      sourceId: source.id,
+      rootPath: source.rootPath,
+      isLocal: isLocal,
+      index: index,
+      rowByUid: <String, BookSourceRow>{
+        for (final BookSourceRow row in rows)
+          if (row.uid.isNotEmpty) row.uid: row,
+      },
+      rowByTitleKey: <String, BookSourceRow>{
+        for (final BookSourceRow row in rows)
+          sanitizeTtuFilename(row.title): row,
+      },
+      entryByPath: <String, SourceFileEntry>{
+        for (final SourceFileEntry entry in entries)
+          if (!entry.isDirectory) entry.path: entry,
+      },
+    );
+  }
+
+  final FushiDatabase db;
+  final int sourceId;
+  final String rootPath;
+  final bool isLocal;
+  final BookSourceIndex index;
+  final Map<String, BookSourceRow> _rowByUid;
+
+  /// `sanitizeTtuFilename(书名)` → 书行：与导入器判重复（[resolveDuplicateTitle]
+  /// 比的是全部书名的净化键）同一个键。本轮新导入的书由 [record] 补进来，同一批里
+  /// 第二本同名书因此同样被预判为重复。
+  final Map<String, BookSourceRow> _rowByTitleKey;
+  final Map<String, SourceFileEntry> _entryByPath;
+
+  String relOf(String path) => isLocal
+      ? bookSourceRelPath(rootPath, path)
+      : p.url.relative(p.url.normalize(path), from: p.url.normalize(rootPath));
+
+  String? fingerprintOf(String path) => isLocal
+      ? localSourceContentFingerprint(path)
+      : _entryByPath[path]?.contentFingerprint;
+
+  /// 书 [path] 是不是本来源早先导入、且之后没被换过的那本：是就返回它的 bookKey。
+  String? knownBookKey(String path) {
+    final String rel = relOf(path);
+    final String? uid = index.uidOf(rel);
+    if (uid == null) return null;
+    final BookSourceRow? row = _rowByUid[uid];
+    if (row == null || row.sourceId != sourceId) return null;
+    final String? fingerprint = fingerprintOf(path);
+    if (fingerprint == null || index.signatureOf(rel) != fingerprint) {
+      return null;
+    }
+    return row.bookKey;
+  }
+
+  /// 不导入就能知道的书名（null = 要整本拿到手才知道，即远端 EPUB）。
+  static Future<String?> predictTitle(ScanBookItem item, bool isLocal) async {
+    // 与导入调用同口径（[SourceLibraryScanner._importBooks] 传给导入器的就是
+    // `p.basename(item.bookPath)`）。
+    final String fallback = p.basenameWithoutExtension(item.bookPath);
+    if (item.isPdf) return fallback;
+    if (!isLocal) return null;
+    final String path = item.bookPath;
+    final String? title = await Isolate.run(
+      () => EpubParser.readTitleSync(path),
+    );
+    return title ?? fallback;
+  }
+
+  /// 标题 [title] 已被库里的书占着时返回那一行（导入器会按重复跳过）。
+  BookSourceRow? rowForTitle(String title) =>
+      _rowByTitleKey[sanitizeTtuFilename(title)];
+
+  /// 书 [path] 对应库里的书行 [row]（刚导入的，或判重复撞上的）：只有那一行就是
+  /// 本来源这个文件导进来的（`sourceId` 是本来源、PDF / EPUB 格式一致；EPUB 还要源
+  /// 文件名一致——PDF 行的 `epubPath` 恒为书目录里的 `document.pdf`，书名就是文件名，
+  /// 书名对上即文件名对上）才记进索引并记下内容指纹；别的来源 / 手动导入的同名书不
+  /// 认领——它不进索引，下一轮仍按标题预判跳过。
+  void record(String path, ScanBookItem item, BookSourceRow row) {
+    _rowByTitleKey[sanitizeTtuFilename(row.title)] = row;
+    if (row.uid.isNotEmpty) _rowByUid[row.uid] = row;
+    final String fileName = p.basename(path);
+    final String format = item.isPdf
+        ? BookFormat.pdf.dbValue
+        : BookFormat.epub.dbValue;
+    if (row.uid.isEmpty ||
+        row.sourceId != sourceId ||
+        row.format != format ||
+        (!item.isPdf && row.epubPath != fileName)) {
+      return;
+    }
+    final String rel = relOf(path);
+    index.put(rel, row.uid);
+    final String? fingerprint = fingerprintOf(path);
+    if (fingerprint != null) index.putSignature(rel, fingerprint);
+  }
+
+  /// 书行 [bookKey] 的瘦投影（刚导入 / 判重复后补进内存表用）。
+  Future<BookSourceRow?> rowOf(String bookKey) async {
+    final EpubBookRow? row = await db.getEpubBook(bookKey);
+    if (row == null) return null;
+    return BookSourceRow(
+      bookKey: row.bookKey,
+      uid: row.uid,
+      title: row.title,
+      format: row.format,
+      epubPath: row.epubPath,
+      extractDir: row.extractDir,
+      sourceId: row.sourceId,
+    );
+  }
+}
+
 class _BookAudiobookPlan {
   const _BookAudiobookPlan({
     required this.books,
@@ -1562,6 +1719,7 @@ class SourceLibraryScanner {
             plan,
             source,
             files,
+            entries: entries,
             subtitlePaths: <String>[
               for (final SourceFileEntry e in entries)
                 if (!e.isDirectory &&
@@ -1794,15 +1952,42 @@ class SourceLibraryScanner {
   /// (not counted, not an error). The within-isolate parse + DB read picks up
   /// books inserted earlier in the same scan, so a same-batch duplicate is also
   /// skipped.
+  ///
+  /// 已入库的书在开包之前就认出来（[_BookSourceIdentity]：来源扫描索引 + 标题预判），
+  /// 不再为了「因重名丢弃」整本下载 / 解压 / 解析 / 计数；认出来的书照样给出 bookKey，
+  /// 补挂有声书与 R5 配对不受影响。
   Future<_BookImportTally> _importBooks(
     ScanPlan plan,
     SourceLibraryRow source,
     SourceFileSystem fs, {
+    required List<SourceFileEntry> entries,
     required List<String> subtitlePaths,
   }) async {
     final _BookImportTally tally = _BookImportTally(
       ambiguous: plan.ambiguousAudiobookBookPaths,
     );
+    final _BookSourceIdentity identity = await _BookSourceIdentity.load(
+      db: _db,
+      source: source,
+      isLocal: fs.isLocal,
+      entries: entries,
+    );
+    try {
+      await _importBookItems(plan, source, fs, identity, tally, subtitlePaths);
+    } finally {
+      await identity.index.save(_db);
+    }
+    return tally;
+  }
+
+  Future<void> _importBookItems(
+    ScanPlan plan,
+    SourceLibraryRow source,
+    SourceFileSystem fs,
+    _BookSourceIdentity identity,
+    _BookImportTally tally,
+    List<String> subtitlePaths,
+  ) async {
     final bool hasBookmark =
         sourceBookmarkFromConfig(source.configJson) != null;
     final Set<String> ambiguous = plan.ambiguousAudiobookBookPaths.toSet();
@@ -1813,58 +1998,26 @@ class SourceLibraryScanner {
       // 只接重复信号，任何别的异常（坏 EPUB、下载中断）直接跳出：后面的书全不导，
       // 远端来源的临时目录也不删。
       try {
-        String? bookKey;
-        // 网络来源：先把远端书文件下载到临时盘（导入器只吃本地路径）；本地原样。
-        // 每本书各用一个临时目录、导完即删——整轮共用一个的话，整库的书要在临时盘上
-        // 留到扫描结束。
-        Directory? bookTmp;
-        try {
-          String localBook = item.bookPath;
-          if (!fs.isLocal) {
-            bookTmp = createSourceScanTempDir('m1c_scan_books_');
-            localBook = await fs.copyToLocal(item.bookPath, bookTmp.path);
-          }
-          // DuplicatePolicy.skip() reuses the sanitizeTtuFilename identity key so
-          // a re-scan / same-batch duplicate throws
-          // DuplicateImportCancelledException (caught below) instead of a silent
-          // "X (2)" (BUG-443). The returned bookKey is the audiobook anchor when a
-          // sidecar audio attaches.
-          //
-          // PDF 分流到 [PdfImporter]：同一套 bookKey 身份、同一条 skip 语义、同一张
-          // `EpubBooks` 表，差别只在产物（拷 document.pdf + 栅格化首页当封面）。标题
-          // 取文件名去扩展名——PDF 元数据里的标题不可靠，与单本导入对话框同口径。
-          bookKey = item.isPdf
-              ? await PdfImporter.importFromPath(
-                  db: _db,
-                  filePath: localBook,
-                  fileName: p.basename(item.bookPath),
-                  title: p.basenameWithoutExtension(item.bookPath),
-                  sourceId: source.id,
-                  policy: const DuplicatePolicy.skip(),
-                )
-              : await EpubImporter.importFromPath(
-                  db: _db,
-                  filePath: localBook,
-                  fileName: p.basename(item.bookPath),
-                  sourceId: source.id,
-                  policy: const DuplicatePolicy.skip(),
-                );
-          tally.imported++;
-        } on DuplicateImportCancelledException catch (e) {
-          // TODO-1284：书已导入过。纯重扫时静默跳过是对的（对齐 _importVideos），但若
-          // 首次导入后才把字幕+音频放到书旁边（书当初是按纯 EPUB 导入的），重扫必须
-          // 把它补挂成有声书——否则新增的 .srt/.mp3 被静默忽略。[_attachAudiobook]
-          // 只在该书尚未挂任何有声书时才动手，保证重复重扫幂等、不重跑 matcher、不
-          // 覆盖用户手动重匹配。
-          final String existingKey = sanitizeTtuFilename(e.title);
-          if (await _db.getEpubBook(existingKey) != null) bookKey = existingKey;
-          debugPrint(
-            'SourceLibraryScanner skip duplicate book '
-            '${e.title} (${item.bookPath})',
+        String? bookKey = identity.knownBookKey(item.bookPath);
+        if (bookKey == null) {
+          final String? title = await _BookSourceIdentity.predictTitle(
+            item,
+            fs.isLocal,
           );
-        } finally {
-          _deleteScanTempDir(bookTmp);
+          final BookSourceRow? taken = title == null
+              ? null
+              : identity.rowForTitle(title);
+          if (taken != null) {
+            // 导入器用 DuplicatePolicy.skip() 也会判它重复：结论一样，不开包。
+            identity.record(item.bookPath, item, taken);
+            bookKey = taken.bookKey;
+            debugPrint(
+              'SourceLibraryScanner skip duplicate book '
+              '${taken.title} (${item.bookPath})',
+            );
+          }
         }
+        bookKey ??= await _importOneBook(item, source, fs, identity, tally);
         if (bookKey == null) continue;
         if (item.audioPaths.isEmpty) {
           if (!item.isPdf && !ambiguous.contains(item.bookPath)) {
@@ -1923,7 +2076,76 @@ class SourceLibraryScanner {
         }
       }
     }
-    return tally;
+  }
+
+  /// 导入一本书（还没认出是已入库的书时才走到这里）；返回它在库里的 bookKey，判重复
+  /// 但撞上的行已不在时返回 null。
+  Future<String?> _importOneBook(
+    ScanBookItem item,
+    SourceLibraryRow source,
+    SourceFileSystem fs,
+    _BookSourceIdentity identity,
+    _BookImportTally tally,
+  ) async {
+    String? bookKey;
+    // 网络来源：先把远端书文件下载到临时盘（导入器只吃本地路径）；本地原样。
+    // 每本书各用一个临时目录、导完即删——整轮共用一个的话，整库的书要在临时盘上
+    // 留到扫描结束。
+    Directory? bookTmp;
+    try {
+      String localBook = item.bookPath;
+      if (!fs.isLocal) {
+        bookTmp = createSourceScanTempDir('m1c_scan_books_');
+        localBook = await fs.copyToLocal(item.bookPath, bookTmp.path);
+      }
+      // DuplicatePolicy.skip() reuses the sanitizeTtuFilename identity key so
+      // a re-scan / same-batch duplicate throws
+      // DuplicateImportCancelledException (caught below) instead of a silent
+      // "X (2)" (BUG-443). The returned bookKey is the audiobook anchor when a
+      // sidecar audio attaches.
+      //
+      // PDF 分流到 [PdfImporter]：同一套 bookKey 身份、同一条 skip 语义、同一张
+      // `EpubBooks` 表，差别只在产物（拷 document.pdf + 栅格化首页当封面）。标题
+      // 取文件名去扩展名——PDF 元数据里的标题不可靠，与单本导入对话框同口径。
+      bookKey = item.isPdf
+          ? await PdfImporter.importFromPath(
+              db: _db,
+              filePath: localBook,
+              fileName: p.basename(item.bookPath),
+              title: p.basenameWithoutExtension(item.bookPath),
+              sourceId: source.id,
+              policy: const DuplicatePolicy.skip(),
+            )
+          : await EpubImporter.importFromPath(
+              db: _db,
+              filePath: localBook,
+              fileName: p.basename(item.bookPath),
+              sourceId: source.id,
+              policy: const DuplicatePolicy.skip(),
+            );
+      tally.imported++;
+      final BookSourceRow? row = await identity.rowOf(bookKey);
+      if (row != null) identity.record(item.bookPath, item, row);
+    } on DuplicateImportCancelledException catch (e) {
+      // TODO-1284：书已导入过。纯重扫时静默跳过是对的（对齐 _importVideos），但若
+      // 首次导入后才把字幕+音频放到书旁边（书当初是按纯 EPUB 导入的），重扫必须
+      // 把它补挂成有声书——否则新增的 .srt/.mp3 被静默忽略。[_attachAudiobook]
+      // 只在该书尚未挂任何有声书时才动手，保证重复重扫幂等、不重跑 matcher、不
+      // 覆盖用户手动重匹配。
+      final String existingKey = sanitizeTtuFilename(e.title);
+      final BookSourceRow? existing = await identity.rowOf(existingKey);
+      if (existing != null) {
+        bookKey = existingKey;
+        identity.record(item.bookPath, item, existing);
+      }
+      debugPrint(
+        'SourceLibraryScanner skip duplicate book '
+        '${e.title} (${item.bookPath})',
+      );
+    } finally {
+      _deleteScanTempDir(bookTmp);
+    }
+    return bookKey;
   }
 
   /// 一本书失败之后：来源本身还连得上吗？本地来源恒为 true；远端重新列一次来源根

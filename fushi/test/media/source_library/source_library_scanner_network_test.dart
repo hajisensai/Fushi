@@ -387,6 +387,55 @@ void main() {
       expect(after.mediaCount, 1);
       expect(after.lastScanError, isNull);
     });
+
+    // novel-6：网络来源重扫时每本已入库的书此前都先整本下载、再解析，最后因重名丢弃。
+    // 来源扫描索引记下了「源相对路径 → 书」与列目录给的 ETag：ETag 不变就零下载，
+    // 变了（远端文件被换过）照常下载重判。
+    testWidgets('novel-6 远端书：ETag 不变的重扫零下载，ETag 变了才重新下载', (
+      WidgetTester tester,
+    ) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final String localEpub = p.join(tmp.path, 'novel.epub');
+      _writeEpub(localEpub, 'IndexedRemoteNovel');
+      final _FakeVirtualNetworkFs fs = _FakeVirtualNetworkFs(
+        <String, String>{'/remote/books/novel.epub': localEpub},
+        etags: <String, String>{'/remote/books/novel.epub': '"v1"'},
+      );
+      final int sid = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'Remote Books',
+          mediaKind: 'book',
+          rootPath: '/remote/books',
+          transport: const Value('sftp'),
+          createdAt: 1000,
+        ),
+      );
+      final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
+      Future<void> scan() => tester.runAsync(() async {
+        await SourceLibraryScanner(
+          db,
+          transcribeAudiobook: null,
+        ).scan(source, fs: fs);
+      });
+
+      await scan();
+      expect(fs.copyToLocalCalls, 1);
+      expect(await db.getAllEpubBooks(), hasLength(1));
+
+      await scan();
+      expect(fs.copyToLocalCalls, 1, reason: 'ETag 没变：已入库的书不再下载');
+      expect(await db.getAllEpubBooks(), hasLength(1));
+      expect((await db.getMediaSourceById(sid))!.lastScanError, isNull);
+
+      fs.etags['/remote/books/novel.epub'] = '"v2"';
+      await scan();
+      expect(fs.copyToLocalCalls, 2, reason: 'ETag 变了 = 远端文件被换过，必须重判');
+      expect(await db.getAllEpubBooks(), hasLength(1), reason: '内容同名仍按重复跳过');
+
+      await scan();
+      expect(fs.copyToLocalCalls, 2, reason: '重判后记下新 ETag，再扫又是零下载');
+    });
   });
 
   group(
