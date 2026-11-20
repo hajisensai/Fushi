@@ -15,6 +15,10 @@ void main() {
   final Uint8List payload = Uint8List.fromList(
     List<int>.generate(256 * 1024, (int i) => (i * 31 + 7) & 0xff),
   );
+  // 服务器上的文件被替换后的新内容（与 [payload] 逐字节不同，拼片会被看出来）。
+  final Uint8List payloadV2 = Uint8List.fromList(
+    List<int>.generate(256 * 1024, (int i) => (i * 17 + 3) & 0xff),
+  );
   const int half = 96 * 1024;
 
   late HttpServer server;
@@ -27,6 +31,10 @@ void main() {
   // 首个（不带 Range 的）请求只送 [half] 字节就挂住。
   bool stallFirstFullResponse = false;
   int statusOverride = 0;
+  // 当前服务端给出的字节（换文件时切成 [payloadV2]）。
+  Uint8List served = payload;
+  // 无视 If-Range、有 Range 就回 206 的服务器 / 兼容层。
+  bool ignoreIfRange = false;
 
   setUp(() async {
     requests.clear();
@@ -34,6 +42,8 @@ void main() {
     honourRange = true;
     stallFirstFullResponse = false;
     statusOverride = 0;
+    served = payload;
+    ignoreIfRange = false;
     temp = await Directory.systemTemp.createTemp('fushi-ms-resume-');
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     server.listen((HttpRequest request) async {
@@ -57,27 +67,28 @@ void main() {
       final RegExpMatch? m = range == null
           ? null
           : RegExp(r'^bytes=(\d+)-$').firstMatch(range);
-      final bool rangeValid = ifRange == null || ifRange == etag;
+      final bool rangeValid =
+          ignoreIfRange || ifRange == null || ifRange == etag;
       if (m != null && honourRange && rangeValid) {
         final int start = int.parse(m.group(1)!);
         response.statusCode = HttpStatus.partialContent;
         response.headers.set(
           HttpHeaders.contentRangeHeader,
-          'bytes $start-${payload.length - 1}/${payload.length}',
+          'bytes $start-${served.length - 1}/${served.length}',
         );
-        response.contentLength = payload.length - start;
-        response.add(payload.sublist(start));
+        response.contentLength = served.length - start;
+        response.add(served.sublist(start));
         await response.close();
         return;
       }
-      response.contentLength = payload.length;
+      response.contentLength = served.length;
       if (stallFirstFullResponse) {
         stallFirstFullResponse = false;
-        response.add(payload.sublist(0, half));
+        response.add(served.sublist(0, half));
         await response.flush();
         return; // 挂住：不再送数据也不关。
       }
-      response.add(payload);
+      response.add(served);
       await response.close();
     });
   });
@@ -95,53 +106,48 @@ void main() {
     return api;
   }
 
-  String jellyfinUrl() => '${base()}/Videos/abc/stream?static=true&api_key=$token';
+  String jellyfinUrl() =>
+      '${base()}/Videos/abc/stream?static=true&api_key=$token';
 
-  test(
-    '空闲超时后留 .part，下一次带 Range + If-Range 从断点接着拉，拼出完整文件',
-    () async {
-      stallFirstFullResponse = true;
-      final File dest = File('${temp.path}/movie.mkv');
-      final File part = File('${dest.path}.part');
-      final File sidecar = File(
-        '${dest.path}$kMediaServerResumeSidecarSuffix',
-      );
-      await expectLater(
-        jellyfin().downloadResumable(
-          jellyfinUrl(),
-          dest,
-          resumeKey: 'jellyfin:abc:src1',
-          stallTimeout: const Duration(milliseconds: 300),
-        ),
-        throwsA(isA<TimeoutException>()),
-      );
-      expect(dest.existsSync(), isFalse);
-      expect(part.lengthSync(), half);
-      // 侧车只记条目键与验证器，不落 URL / 令牌。
-      final String side = sidecar.readAsStringSync();
-      expect(side, contains('jellyfin:abc:src1'));
-      expect(side, contains('v1'));
-      expect(side, isNot(contains(token)));
-      expect(side, isNot(contains('127.0.0.1')));
-
-      final List<int> bytes = <int>[];
-      await jellyfin().downloadResumable(
+  test('空闲超时后留 .part，下一次带 Range + If-Range 从断点接着拉，拼出完整文件', () async {
+    stallFirstFullResponse = true;
+    final File dest = File('${temp.path}/movie.mkv');
+    final File part = File('${dest.path}.part');
+    final File sidecar = File('${dest.path}$kMediaServerResumeSidecarSuffix');
+    await expectLater(
+      jellyfin().downloadResumable(
         jellyfinUrl(),
         dest,
         resumeKey: 'jellyfin:abc:src1',
-        onBytes: (int received, int? total) => bytes.add(received),
-      );
-      expect(requests.last['range'], 'bytes=$half-');
-      expect(requests.last['ifRange'], '"v1"');
-      expect(dest.readAsBytesSync(), payload);
-      expect(part.existsSync(), isFalse);
-      expect(sidecar.existsSync(), isFalse);
-      // 进度含续传前已有的字节（下载中心按它显示）。
-      expect(bytes.first, half);
-      expect(bytes.last, payload.length);
-    },
-    timeout: const Timeout(Duration(seconds: 30)),
-  );
+        stallTimeout: const Duration(milliseconds: 300),
+      ),
+      throwsA(isA<TimeoutException>()),
+    );
+    expect(dest.existsSync(), isFalse);
+    expect(part.lengthSync(), half);
+    // 侧车只记条目键与验证器，不落 URL / 令牌。
+    final String side = sidecar.readAsStringSync();
+    expect(side, contains('jellyfin:abc:src1'));
+    expect(side, contains('v1'));
+    expect(side, isNot(contains(token)));
+    expect(side, isNot(contains('127.0.0.1')));
+
+    final List<int> bytes = <int>[];
+    await jellyfin().downloadResumable(
+      jellyfinUrl(),
+      dest,
+      resumeKey: 'jellyfin:abc:src1',
+      onBytes: (int received, int? total) => bytes.add(received),
+    );
+    expect(requests.last['range'], 'bytes=$half-');
+    expect(requests.last['ifRange'], '"v1"');
+    expect(dest.readAsBytesSync(), payload);
+    expect(part.existsSync(), isFalse);
+    expect(sidecar.existsSync(), isFalse);
+    // 进度含续传前已有的字节（下载中心按它显示）。
+    expect(bytes.first, half);
+    expect(bytes.last, payload.length);
+  }, timeout: const Timeout(Duration(seconds: 30)));
 
   test('暂停（cancelSignal）抛 RemoteDownloadCancelled 且保留 .part 供继续', () async {
     stallFirstFullResponse = true;
@@ -204,12 +210,44 @@ void main() {
       throwsA(isA<TimeoutException>()),
     );
     etag = '"v2"';
+    served = payloadV2;
     await jellyfin().downloadResumable(
       jellyfinUrl(),
       dest,
       resumeKey: 'jellyfin:abc:src1',
     );
-    expect(dest.readAsBytesSync(), payload);
+    expect(requests.last['ifRange'], '"v1"');
+    expect(dest.readAsBytesSync(), payloadV2);
+  }, timeout: const Timeout(Duration(seconds: 30)));
+
+  test('服务器无视 If-Range、文件换了仍回 206：验证器对不上就作废这条响应，不带 Range 重开', () async {
+    stallFirstFullResponse = true;
+    final File dest = File('${temp.path}/ignores-if-range.mkv');
+    await expectLater(
+      jellyfin().downloadResumable(
+        jellyfinUrl(),
+        dest,
+        resumeKey: 'jellyfin:abc:src1',
+        stallTimeout: const Duration(milliseconds: 300),
+      ),
+      throwsA(isA<TimeoutException>()),
+    );
+    etag = '"v2"';
+    served = payloadV2;
+    ignoreIfRange = true;
+    final int before = requests.length;
+    await jellyfin().downloadResumable(
+      jellyfinUrl(),
+      dest,
+      resumeKey: 'jellyfin:abc:src1',
+    );
+    // 第一条带 Range 的 206 被作废，紧接着不带 Range 重拉整份。
+    expect(
+      requests.sublist(before).map((Map<String, String?> r) => r['range']),
+      <String?>['bytes=$half-', null],
+    );
+    expect(dest.readAsBytesSync(), payloadV2);
+    expect(File('${dest.path}.part').existsSync(), isFalse);
   }, timeout: const Timeout(Duration(seconds: 30)));
 
   test('断点键不同（别的条目 / 别的版本留下的 .part）：不续传，从 0 下', () async {
@@ -272,9 +310,7 @@ void main() {
       throwsA(isA<TimeoutException>()),
     );
     expect(
-      File(
-        '${dest.path}$kMediaServerResumeSidecarSuffix',
-      ).readAsStringSync(),
+      File('${dest.path}$kMediaServerResumeSidecarSuffix').readAsStringSync(),
       isNot(contains(token)),
     );
     await api.downloadResumable(
