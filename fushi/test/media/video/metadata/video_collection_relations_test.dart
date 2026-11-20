@@ -706,6 +706,30 @@ void main() {
       expect((await db.getCollectionRelations(a)).map(rowText), <String>[
         'anidb:300:side_story:m300',
       ]);
+
+      // 电影后来并进一个合集、由合集级作品接管：成员自己那部作品连同它刮来的
+      // 关系一起作废。
+      final int box = await db.createMediaCollection(
+        'Box',
+        collectionType: 'playlist',
+      );
+      await db.addToCollection(box, MediaKind.video, 'm300');
+      await store.apply(
+        VideoSourceScrapeWork(
+          source: null,
+          collection: (await db.getMediaCollectionById(box))!,
+          title: 'Box',
+          members: <VideoBookRow>[(await db.getVideoBookByBookUid('m300'))!],
+        ),
+        VideoMetadataWork(
+          provider: VideoMetadataProviderKind.anidb,
+          kind: VideoMetadataMediaKind.tv,
+          title: 'Box',
+          ids: <VideoMetadataId>[VideoMetadataId(type: 'anidb', value: '999')],
+          rawPayload: const <String, Object?>{'aid': 999},
+        ),
+      );
+      expect(await db.getVideoBookRelations('m300'), isEmpty);
     });
 
     test('TMDB：电影合集成员落成前传 / 续作，tmdb 关系只绑电影作品（剧集 id 另一命名空间）', () async {

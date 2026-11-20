@@ -631,10 +631,18 @@ class VideoMetadataDatabaseStore {
   /// 删掉合集自己拥有的作品行（成员按 AniDB 作品拆成各自的电影作品后，合集级
   /// 的那一行是残留——否则合集详情页会继续展示旧身份）。与
   /// [_removeBookOwnedWorksForCollection] 对称；季 / 集 / 身份 / 图随 FK 级联。
+  /// 那部作品刮来的系列关系（合集起点、非 `local` 的行）一并删掉——它们描述的是
+  /// 已经不存在的身份；按季拆分建的 `local` 行是用户结构，不动。
   Future<void> removeCollectionOwnedWork(int collectionId) async {
     await (database.delete(
       database.videoMetadataWorks,
     )..where((table) => table.collectionId.equals(collectionId))).go();
+    await (database.delete(database.collectionRelations)..where(
+          (table) =>
+              table.collectionId.equals(collectionId) &
+              table.source.equals('local').not(),
+        ))
+        .go();
   }
 
   Future<void> _removeBookOwnedWorksForCollection(int collectionId) async {
@@ -646,6 +654,10 @@ class VideoMetadataDatabaseStore {
     if (memberBookUids.isEmpty) return;
     await (database.delete(
       database.videoMetadataWorks,
+    )..where((table) => table.bookUid.isIn(memberBookUids))).go();
+    // 成员自己那部作品（散装电影）刮来的系列关系随作品一起作废（v162 单视频起点）。
+    await (database.delete(
+      database.collectionRelations,
     )..where((table) => table.bookUid.isIn(memberBookUids))).go();
   }
 
