@@ -49,6 +49,8 @@ import 'package:fushi_engine/media/manga/manga_importer.dart'
     show kMangaImageExtensions;
 import 'package:fushi_engine/media/manga/mokuro_legacy_html.dart'
     show legacyMokuroHtmlPathsIn;
+import 'package:fushi_engine/media/system_junk_entries.dart'
+    show isAppleDoubleFileName, isSystemJunkDirectoryName;
 import 'package:path/path.dart' as p;
 
 /// `.mokuro` 卷 manifest 的扩展名（含点、小写）。
@@ -374,6 +376,12 @@ Map<String, MangaSeriesVolume>? _seriesVolumes(
 
 /// `dart:io` 便捷入口：递归枚举 [root] 下的文件（不跟符号链接；无权限/瞬时 IO
 /// 的子目录整个跳过，不让整次归组失败）后交给 [planMangaFolders]。
+///
+/// 系统 / 垃圾条目（`@eaDir`、`__MACOSX`、回收站目录，`._` 资源叉文件，判据见
+/// `system_junk_entries.dart`）在枚举时就丢掉：纯函数 [planMangaFolders] 只看扩展名，
+/// 不丢的话群晖每页一份的 `@eaDir/<页名>/SYNOPHOTO_THUMB_*.jpg` 会让 `@eaDir` 自成
+/// 一卷，只有 `._001.jpg` 的根会被当成「根本身有页图」。app 源库扫描在列目录时已按
+/// 同一判据过滤（`excludeSourceJunkEntries`）。
 MangaFolderPlan planMangaFoldersInDirectory(Directory root) {
   final List<String> files = <String>[];
   void walk(Directory dir) {
@@ -384,10 +392,11 @@ MangaFolderPlan planMangaFoldersInDirectory(Directory root) {
       return;
     }
     for (final FileSystemEntity entity in entries) {
+      final String name = p.basename(entity.path);
       if (entity is File) {
-        files.add(entity.path);
+        if (!isAppleDoubleFileName(name)) files.add(entity.path);
       } else if (entity is Directory) {
-        walk(entity);
+        if (!isSystemJunkDirectoryName(name)) walk(entity);
       }
     }
   }

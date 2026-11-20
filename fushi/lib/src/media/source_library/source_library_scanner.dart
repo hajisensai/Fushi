@@ -105,6 +105,7 @@ import 'package:fushi/src/pdf/pdf_importer.dart';
 import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
 import 'package:fushi_engine/media/source_library/book_library_prune.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/system_junk_entries.dart';
 import 'package:fushi_engine/media/video/external_video.dart'
     show normalizeVideoPath, sourceEntryBasename;
 import 'package:fushi_engine/sync/ttu_filename.dart';
@@ -711,30 +712,15 @@ List<SourceFileEntry> excludeSourceIncomingEntries(
       .toList(growable: false);
 }
 
-/// 目录名（小写比较）整棵不扫：回收站、系统卷信息、NAS / macOS 的索引与缩略图目录。
-/// 里面的文件要么是别的东西的残骸（回收站里的 `$Rxxxx.mkv`），要么根本不是媒体。
-const Set<String> kSourceScanJunkDirectoryNames = <String>{
-  r'$recycle.bin',
-  'recycler',
-  'system volume information',
-  '@eadir',
-  '#recycle',
-  '@recycle',
-  '@recently-snapshot',
-  '.trash',
-  '.trashes',
-  '.spotlight-v100',
-  '.fseventsd',
-  '.temporaryitems',
-  '.documentrevisions-v100',
-  'lost+found',
-};
-
 /// [path]（[scanRoot] 之下的条目或目录）是不是系统 / 垃圾条目：
 ///
-/// - 任一层目录名在 [kSourceScanJunkDirectoryNames] 里，或是 Linux 的 `.Trash-<uid>`；
-/// - 文件名以 `._` 开头——macOS 往 exFAT / SMB / WebDAV 盘上写的 AppleDouble 资源叉，
-///   与正片同名同扩展名（`._01.mkv`），只看扩展名会被当成视频 / 页图入库。
+/// - 任一层目录名是系统 / 垃圾目录（[isSystemJunkDirectoryName]：回收站、`@eaDir`、
+///   `__MACOSX`、Linux 的 `.Trash-<uid>` …）；
+/// - 文件名以 `._` 开头（[isAppleDoubleFileName]）——macOS 往 exFAT / SMB / WebDAV 盘上
+///   写的 AppleDouble 资源叉，与正片同名同扩展名（`._01.mkv`），只看扩展名会被当成
+///   视频 / 页图入库。
+///
+/// 判据与引擎的卷归组 / 页图枚举共用 `system_junk_entries.dart` 一份。
 ///
 /// 只看 [scanRoot] **之下**的路径段：用户把回收站本身加成来源是他自己的选择。不一刀切
 /// 丢所有 `.` 开头的名字（`.hidden/` 里放媒体是合法用法）。
@@ -755,13 +741,9 @@ bool isSourceScanJunkPath(
   if (segments.isEmpty) return false;
   final int dirCount = isDirectory ? segments.length : segments.length - 1;
   for (int i = 0; i < dirCount; i++) {
-    final String name = segments[i].toLowerCase();
-    if (kSourceScanJunkDirectoryNames.contains(name) ||
-        name.startsWith('.trash-')) {
-      return true;
-    }
+    if (isSystemJunkDirectoryName(segments[i])) return true;
   }
-  return !isDirectory && segments.last.startsWith('._');
+  return !isDirectory && isAppleDoubleFileName(segments.last);
 }
 
 /// 丢掉列目录结果里的系统 / 垃圾条目（[isSourceScanJunkPath]）。本地与网络来源一起过：
