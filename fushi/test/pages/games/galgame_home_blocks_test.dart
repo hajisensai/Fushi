@@ -120,6 +120,7 @@ void main() {
     final List<GalgameItemAction> expected = <GalgameItemAction>[
       GalgameItemAction.detail,
       GalgameItemAction.status,
+      GalgameItemAction.cleared,
       GalgameItemAction.stats,
       GalgameItemAction.rename,
       GalgameItemAction.cover,
@@ -129,6 +130,7 @@ void main() {
       GalgameItemAction.tags,
       GalgameItemAction.privacy,
       GalgameItemAction.language,
+      if (Platform.isWindows) GalgameItemAction.hookWorkbench,
       if (Platform.isWindows) GalgameItemAction.upscaling,
       if (Platform.isWindows) GalgameItemAction.japaneseLocale,
       if (currentRevealHost() != null) GalgameItemAction.fileLocation,

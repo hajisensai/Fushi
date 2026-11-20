@@ -2369,8 +2369,15 @@ class AnotherPopupPart {
     expect(frame, contains('kSettingsSegmentInnerRadius'));
     expect(frame, contains('apple ? 0 : kSettingsSegmentGap'));
     expect(frame, contains('FushiFilledButton.tonalIcon('));
-    // E：设置组收进子菜单。
-    expect(frame, contains('_ContextSubmenuRow('));
+    // E（2026-11-20 #4b 统一骨架）：右键菜单与手机底部面板共用 _ItemMenuPanel，
+    // 低频项收进「更多 ›」二级菜单（_ItemSubmenuRow），右键里浮出、面板里下钻。
+    expect(frame, contains('_ItemMenuPanel('));
+    final String menu = File(
+      'lib/src/pages/implementations/media_item_context_menu.part.dart',
+    ).readAsStringSync();
+    expect(menu, contains('class _ItemSubmenuRow'));
+    expect(menu, contains('FushiStaggeredEntrance('));
+    expect(menu, contains('FushiPressScale('));
     // 动效：错峰进场 + 按压缩放。
     expect(frame, contains('FushiEntranceScope('));
     expect(frame, contains('FushiStaggeredEntrance('));

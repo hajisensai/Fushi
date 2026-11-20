@@ -165,7 +165,7 @@ void main() {
       );
     });
 
-    test('长按面板含五项管理动作且不含播放动作', () {
+    test('长按面板含五项管理动作，主按钮是「继续播放」', () {
       final String menuBody = _videoMenuBody(src);
 
       expect(menuBody.contains('_editTags(book)'), isTrue);
@@ -173,11 +173,10 @@ void main() {
       expect(menuBody.contains('_pickCover(book)'), isTrue);
       expect(menuBody.contains('_pickSubtitle(book)'), isTrue);
       expect(menuBody.contains('_confirmDelete(book)'), isTrue);
-      expect(
-        menuBody.contains('_open(book)'),
-        isFalse,
-        reason: '播放仍由卡片点击负责，长按面板不放播放按钮',
-      );
+      // 2026-11-20 #4b（用户拍板设计稿 #i4b）：四种媒体的菜单统一骨架，主操作行
+      // 是大号「继续」——视频卡是「继续播放」，与点卡同一入口 [_open]。
+      expect(menuBody.contains('_open(book)'), isTrue);
+      expect(menuBody.contains('t.item_menu_continue_watching'), isTrue);
       expect(menuBody.contains('dialog_read'), isFalse);
     });
 

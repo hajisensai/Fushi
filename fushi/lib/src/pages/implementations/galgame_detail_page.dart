@@ -92,6 +92,10 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 /// [GalgameRepository]：条目本身读缓存，会话流水与每日聚合按需查 DB。
 /// 启动按钮不自带启动逻辑——[onLaunch] 由库页传入，复用那边带再入守卫的
 /// `_launchGame`，避免两处各写一套 helper 确认 / 注入流程。
+/// 详情页「编辑」tab 的下标（文本处理 / 制卡覆盖都在这里；菜单的「文本 Hook 与
+/// 制卡」工作台入口直达它）。
+const int kGalgameDetailEditTab = 2;
+
 class GalgameDetailPage extends ConsumerStatefulWidget {
   const GalgameDetailPage({
     required this.gameId,

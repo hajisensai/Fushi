@@ -30,8 +30,15 @@ import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart'
         DialogActionGroup,
         DialogDangerAction,
         DialogQuickAction,
+        DialogWorkbenchAction,
+        ItemMenuSlot,
         MediaItemDialogFrame,
+        mediaPrivacyToggleAction,
         showMediaItemActions;
+import 'package:fushi/src/pages/implementations/galgame_detail_page.dart'
+    show GalgameDetailPage, kGalgameDetailEditTab;
+import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart'
+    show DialogListAction;
 import 'package:fushi/src/pages/implementations/media_item_stats_dialog.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart'
     show allTagsProvider, filteredGameIdsProvider, gameTagMapProvider;
@@ -67,6 +74,7 @@ Future<void> showGalgameItemMenu({
   required WidgetRef ref,
   required GalgameEntry game,
   required VoidCallback onDetail,
+  VoidCallback? onLaunch,
 }) => showGalgameItemActionsMenu(
   context: context,
   actions: GalgameItemActions(
@@ -74,6 +82,7 @@ Future<void> showGalgameItemMenu({
     ref: ref,
     game: game,
     onDetail: onDetail,
+    onLaunch: onLaunch,
   ),
 );
 
@@ -86,6 +95,7 @@ Future<void> showGalgameItemActionsMenu({
 }) async {
   final GalgameEntry game = actions.game;
   final List<GalgameItemMenuItem> items = galgameItemMenuItems(game);
+  final VoidCallback? launch = actions.onLaunch;
   await showMediaItemActions<void>(
     context: context,
     builder: (BuildContext dialogContext) => MediaItemDialogFrame(
@@ -94,14 +104,54 @@ Future<void> showGalgameItemActionsMenu({
       coverMaterial: ShelfCoverMaterial.gameCase,
       nsfw: MediaNsfwTarget.game(game.id, adult: game.isNsfw),
       title: game.displayName,
-      showLaunchAction: false,
+      progressLabel: game.playStatus == GalgamePlayStatus.unset
+          ? null
+          : galgamePlayStatusLabel(game.playStatus),
+      // 主按钮「启动游戏」（#4b）：与点卡同一入口；调用方没给启动回调时不画。
+      showLaunchAction: launch != null,
+      launchLabel: t.game_launch,
+      onLaunch: launch == null
+          ? null
+          : () {
+              Navigator.pop(dialogContext);
+              launch();
+            },
       quickActions: <DialogQuickAction>[
         for (final GalgameItemMenuItem item in items)
-          if (!item.danger)
+          // 私密是开关行、工作台是整行入口，二者在下面的 listActions 里。
+          if (!item.danger &&
+              item.action != GalgameItemAction.privacy &&
+              item.action != GalgameItemAction.hookWorkbench)
             DialogQuickAction(
               label: item.label,
               icon: item.icon,
               group: item.group,
+              slot: item.slot,
+              selected: item.selected,
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                actions.dispatch(item.action);
+              },
+            ),
+      ],
+      listActions: <DialogListAction>[
+        // 私密：开关行就地拨动（与书 / 视频 / 合集同一份定义）。
+        if (items.any(
+          (GalgameItemMenuItem i) => i.action == GalgameItemAction.privacy,
+        ))
+          mediaPrivacyToggleAction(
+            actions.context,
+            db: actions._appModel.database,
+            kind: TagHostKind.game,
+            entryKey: game.id,
+            title: game.displayName,
+          ),
+        for (final GalgameItemMenuItem item in items)
+          if (item.action == GalgameItemAction.hookWorkbench)
+            DialogWorkbenchAction(
+              label: item.label,
+              icon: item.icon,
+              subtitle: t.item_menu_game_workbench_hint,
               onPressed: () {
                 Navigator.pop(dialogContext);
                 actions.dispatch(item.action);
@@ -128,6 +178,9 @@ Future<void> showGalgameItemActionsMenu({
 enum GalgameItemAction {
   detail,
   status,
+
+  /// 标记通关 / 取消（游玩状态「玩过」的一键开关，#4b 主操作行）。
+  cleared,
   stats,
   rename,
   cover,
@@ -137,6 +190,10 @@ enum GalgameItemAction {
   tags,
   privacy,
   language,
+
+  /// 「文本 Hook 与制卡」工作台入口（Windows）：进详情页的编辑 tab（文本处理 /
+  /// 制卡覆盖都在那里）。
+  hookWorkbench,
   upscaling,
   japaneseLocale,
   fileLocation,
@@ -152,6 +209,8 @@ class GalgameItemMenuItem {
     required this.icon,
     required this.group,
     this.danger = false,
+    this.slot,
+    this.selected = false,
   });
 
   final GalgameItemAction action;
@@ -159,6 +218,12 @@ class GalgameItemMenuItem {
   final IconData icon;
   final DialogActionGroup group;
   final bool danger;
+
+  /// 右键菜单里的落点（见 [ItemMenuSlot]）；null = 按 [group] 推断。
+  final ItemMenuSlot? slot;
+
+  /// 开关类动作当前开着（已通关）。
+  final bool selected;
 }
 
 /// 菜单项清单（单一真相源；见 [showGalgameItemMenu] 的次序说明）。
@@ -170,12 +235,22 @@ List<GalgameItemMenuItem> galgameItemMenuItems(
     label: t.game_view_detail,
     group: DialogActionGroup.content,
     icon: FushiIcons.info,
+    slot: ItemMenuSlot.primary,
   ),
   GalgameItemMenuItem(
     action: GalgameItemAction.status,
     label: t.game_play_status,
     group: DialogActionGroup.progress,
     icon: FushiIcons.flag,
+    slot: ItemMenuSlot.primary,
+  ),
+  GalgameItemMenuItem(
+    action: GalgameItemAction.cleared,
+    label: t.item_menu_game_cleared,
+    group: DialogActionGroup.progress,
+    icon: FushiIcons.check,
+    slot: ItemMenuSlot.primary,
+    selected: game.playStatus == GalgamePlayStatus.played,
   ),
   GalgameItemMenuItem(
     action: GalgameItemAction.stats,
@@ -187,24 +262,28 @@ List<GalgameItemMenuItem> galgameItemMenuItems(
     action: GalgameItemAction.rename,
     label: t.game_rename,
     group: DialogActionGroup.organize,
+    slot: ItemMenuSlot.edit,
     icon: FushiIcons.rename,
   ),
   GalgameItemMenuItem(
     action: GalgameItemAction.cover,
     label: t.game_set_cover,
     group: DialogActionGroup.organize,
+    slot: ItemMenuSlot.edit,
     icon: FushiIcons.image,
   ),
   GalgameItemMenuItem(
     action: GalgameItemAction.autoCover,
     label: t.game_auto_cover,
     group: DialogActionGroup.organize,
+    slot: ItemMenuSlot.edit,
     icon: FushiIcons.imageSearch,
   ),
   GalgameItemMenuItem(
     action: GalgameItemAction.scrape,
     label: t.game_scrape,
     group: DialogActionGroup.organize,
+    slot: ItemMenuSlot.edit,
     icon: FushiIcons.cloudDownload,
   ),
   GalgameItemMenuItem(
@@ -231,6 +310,15 @@ List<GalgameItemMenuItem> galgameItemMenuItems(
     group: DialogActionGroup.settings,
     icon: FushiIcons.language,
   ),
+  // 工作台入口：galgame Hook 只做 Windows。
+  if (Platform.isWindows)
+    GalgameItemMenuItem(
+      action: GalgameItemAction.hookWorkbench,
+      label: t.item_menu_game_workbench,
+      group: DialogActionGroup.content,
+      icon: Icons.phishing_outlined,
+      slot: ItemMenuSlot.workbench,
+    ),
   // 超分 / 转区：每游戏一档，Windows-only（galgame Hook、Magpie、Locale
   // Emulator 都只做 Windows），档位写在菜单项上。
   if (Platform.isWindows)
@@ -258,6 +346,7 @@ List<GalgameItemMenuItem> galgameItemMenuItems(
       label: t.media_file_location_open,
       group: DialogActionGroup.organize,
       icon: FushiIcons.folderOpen,
+      slot: ItemMenuSlot.more,
     ),
   GalgameItemMenuItem(
     action: GalgameItemAction.remove,
@@ -306,12 +395,20 @@ class GalgameItemActions {
     required this.game,
     required this.onDetail,
     this.onChanged,
+    this.onLaunch,
+    this.onOpenWorkbench,
   });
 
   final BuildContext context;
   final WidgetRef ref;
   final GalgameEntry game;
   final VoidCallback onDetail;
+
+  /// 启动这个游戏（与点卡同一入口）；null = 菜单不画「启动游戏」主按钮。
+  final VoidCallback? onLaunch;
+
+  /// 打开「文本 Hook 与制卡」工作台（详情页编辑 tab）；null = 直接推详情页。
+  final VoidCallback? onOpenWorkbench;
 
   /// 每个动作（「详情」除外）执行完、[context] 仍挂载时调一次。仓储写操作自己会
   /// 通知监听者；不在仓储里的派生状态（游戏库的合集映射）由调用方在这里重取。
@@ -335,6 +432,28 @@ class GalgameItemActions {
         return;
       case GalgameItemAction.status:
         await _promptPlayStatus();
+      case GalgameItemAction.cleared:
+        await _repo.setPlayStatus(
+          game.id,
+          game.playStatus == GalgamePlayStatus.played
+              ? GalgamePlayStatus.unset
+              : GalgamePlayStatus.played,
+        );
+      case GalgameItemAction.hookWorkbench:
+        final VoidCallback? open = onOpenWorkbench;
+        if (open != null) {
+          open();
+        } else {
+          await Navigator.of(context).push(
+            adaptivePageRoute<void>(
+              context: context,
+              builder: (BuildContext ctx) => GalgameDetailPage(
+                gameId: game.id,
+                initialTab: kGalgameDetailEditTab,
+              ),
+            ),
+          );
+        }
       case GalgameItemAction.stats:
         await showMediaItemStatsDialog(
           context,

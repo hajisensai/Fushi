@@ -119,7 +119,9 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
     Widget interactiveCard = ContextMenuTrigger(
       // 桌面端鼠标右键打开与长按相同的书籍上下文菜单（PC 用户惯例），多选态压制不变。
       // 哪个鼠标键唤出由绑定表决定（默认右键），不再硬绑次按钮。
-      onInvoke: contextMenuInvoker(_selectionMode ? null : onLongPress),
+      onInvoke: contextMenuInvoker(
+        _selectionMode ? _showBatchMenu : onLongPress,
+      ),
       child: Padding(
         key: cardKey,
         padding: EdgeInsets.all(

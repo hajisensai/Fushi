@@ -104,50 +104,40 @@ void main() {
     expect(await pendingMangaOcrTargets(row), isEmpty);
   });
 
-  test('卡菜单与多选底栏接到同一条 OCR 路径，漫画卡的有声入口是导入漫画有声成品（源码守卫）', () {
+  test('漫画卡菜单的有声流程收进有声漫画工作台，工作台与多选底栏接到同一条 OCR 路径（源码守卫）', () {
     final String shelf = File(
       'lib/src/pages/implementations/reader_fushi_history_page.dart',
     ).readAsStringSync();
     final String books = File(
       'lib/src/pages/implementations/reader_history/books.part.dart',
     ).readAsStringSync();
+    final String workbench = File(
+      'lib/src/media/manga/audio/manga_audio_workbench_page.dart',
+    ).readAsStringSync();
+    // 2026-11-20 #4：菜单顶部 5 个无文字图标里的 OCR / 演出稿 / 导入成品 / 生成
+    // 4 个是同一条有声流程，收成一个「有声漫画工作台」入口。
     expect(
-      shelf.contains(
-        'if (isManga && modules.isEnabled(ModuleId.manga))\n'
-        '        DialogQuickAction(\n'
-        '          label: t.manga_library_ocr_action,',
-      ),
+      RegExp(
+        r'if \(isManga && modules\.isEnabled\(ModuleId\.manga\)\)\s*'
+        r'DialogWorkbenchAction\(\s*label: t\.manga_audio_workbench_title,',
+      ).hasMatch(shelf),
       isTrue,
-      reason: '漫画卡快捷格必须是 OCR',
+      reason: '漫画卡要有有声漫画工作台入口',
     );
     expect(
       RegExp(
         r'if \(canAttachAudiobook\)\s*'
-        r'DialogQuickAction\(\s*label: t\.audiobook_import,',
+        r'DialogListAction\(\s*label: t\.audiobook_import,',
       ).hasMatch(shelf),
       isTrue,
       reason:
           '通用「导入有声书」（按 EPUB 正文匹配字幕）只按共享判据 '
           'mediaItemSupportsAudiobook 出现（漫画卡不出现）',
     );
-    // 2026-11-17 漫画有声：漫画阅读器能播成品音频后，漫画卡的有声入口加回，
-    // 走漫画有声成品清单导入（受听书模块门控），不是通用导入有声书。
-    expect(
-      RegExp(
-        r'if \(isManga && modules\.isEnabled\(ModuleId\.listening\)\)\s*'
-        r'DialogQuickAction\(\s*label: t\.manga_audio_import,',
-      ).hasMatch(shelf),
-      isTrue,
-      reason: '漫画卡要有导入漫画有声的入口',
-    );
-    expect(
-      books.contains("ValueKey<String>('reader_shelf_batch_ocr')"),
-      isTrue,
-    );
-    expect(
-      'enqueuePendingMangaOcrForBooks('.allMatches(books).length,
-      greaterThanOrEqualTo(2),
-      reason: '卡菜单与多选底栏共用同一个入口函数',
-    );
+    // 工作台里 OCR 与多选底栏同一入口函数，导入漫画有声成品也在工作台里。
+    expect(workbench.contains('enqueuePendingMangaOcrForBooks('), isTrue);
+    expect(workbench.contains('pickAndImportMangaAudio('), isTrue);
+    expect(books.contains("key: 'reader_shelf_batch_ocr'"), isTrue);
+    expect(books.contains('enqueuePendingMangaOcrForBooks('), isTrue);
   });
 }
