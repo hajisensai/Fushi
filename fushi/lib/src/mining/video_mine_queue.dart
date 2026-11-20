@@ -36,7 +36,8 @@ class VideoMineQueue {
 
   /// 把引擎备好的一张卡暂存起来（`ImmersionMiningRequest.stageNote` 里调用）。
   ///
-  /// **必须在返回前拷走** [context] 里的媒体：引擎的临时文件名是固定的，下一张卡会覆盖。
+  /// **必须在返回前拷走** [context] 里的媒体：引擎把每张卡的媒体抽在它私有的临时目录里，
+  /// 本方法一返回那个目录就整个删掉（video-30）。
   /// 返回新行 id。
   Future<int> stage({
     required String bookUid,
