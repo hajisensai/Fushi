@@ -967,7 +967,11 @@ $kSentenceAudioRubyGapJs
     var rect = target.getClientRects()[0];
     return rect || target.getBoundingClientRect();
   },
+  // gap-readerjs1-2：与分页 / 连续 shell 同一份契约——每个文档的初次恢复只有一个结局，
+  // 已发过回执就不再补发失败回执。
+  _restoreReceiptSent: false,
   notifyRestoreComplete: function() {
+    this._restoreReceiptSent = true;
     // Fushi adaptation: hoshi a posts to a native @JavascriptInterface
     // (FushiReaderRestore). Fushi is InAppWebView, so forward to the same
     // 'onRestoreComplete' handler the paginated/continuous shells use.
@@ -975,6 +979,20 @@ $kSentenceAudioRubyGapJs
       window.flutter_inappwebview.callHandler(
         'onRestoreComplete',
         null,
+        C.navigationGeneration
+      );
+    }
+  },
+  // gap-readerjs1-2：boot 里 initialize / 初次恢复同步抛出时的失败出口（与分页 /
+  // 连续 shell 的 notifyRestoreFailed 同一协议），Dart 收到后立刻走导航中止收尾，
+  // 不再等 8 秒内容就绪兜底。
+  notifyRestoreFailed: function(error) {
+    if (this._restoreReceiptSent === true) return;
+    this._restoreReceiptSent = true;
+    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+      window.flutter_inappwebview.callHandler(
+        'onRestoreFailed',
+        String(error && error.message ? error.message : error),
         C.navigationGeneration
       );
     }
@@ -4014,6 +4032,7 @@ window.addEventListener('load', function() {
     $initialRestoreScript
   } catch (e) {
     try { if (window.console && console.error) console.error('[FushiVN] boot restore failed', e); } catch (_ignored) {}
+    try { window.fushiReader.notifyRestoreFailed(e); } catch (_ignored) {}
   }
 });
 if (document.readyState === 'complete') {
@@ -4022,6 +4041,7 @@ if (document.readyState === 'complete') {
     $initialRestoreScript
   } catch (e) {
     try { if (window.console && console.error) console.error('[FushiVN] boot restore failed', e); } catch (_ignored) {}
+    try { window.fushiReader.notifyRestoreFailed(e); } catch (_ignored) {}
   }
 }
 };
