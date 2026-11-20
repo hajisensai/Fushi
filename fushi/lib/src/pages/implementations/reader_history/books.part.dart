@@ -38,6 +38,35 @@ bool isEpubBackedAudiobookSrt(SrtBook book) {
   return hasAudioPaths || hasAudioRoot;
 }
 
+/// 书架批删 / 批量解散的逐项执行（gap-novelmisc-7 批删兜底）。
+///
+/// 每一项单独兜住：某一本删的时候抛了（库被占用、磁盘尾活失败……）记进
+/// [logSource] 的错误日志、计入 `failed`，**接着删下一本**。以前异常直接冲出循环：
+/// 后面的书一本都没删，书架 provider 不刷新、多选态不退出、没有任何提示，异常还
+/// 成了一条未处理的异步错误。[deleteOne] 返回这一项是否真的删掉了（`done` 计数，
+/// 与 BUG-439 的诚实计数同口径）；[onItemDone] 每处理完一项（成败都算）调一次，
+/// 驱动进度弹窗。
+Future<({int done, int failed})> runShelfBatchDeleteItems<K>(
+  Iterable<K> keys,
+  Future<bool> Function(K key) deleteOne, {
+  required void Function() onItemDone,
+  required String logSource,
+}) async {
+  int done = 0;
+  int failed = 0;
+  for (final K key in keys) {
+    try {
+      if (await deleteOne(key)) done++;
+    } catch (e, stack) {
+      failed++;
+      ErrorLogService.instance.log(logSource, e, stack);
+    } finally {
+      onItemDone();
+    }
+  }
+  return (done: done, failed: failed);
+}
+
 /// books domain methods extracted via part-of (TODO-587); shared private scope.
 extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
   // v79：srtBookTagMapProvider 键换 uid（String）。泛型 map 索引不受编译器
@@ -65,7 +94,16 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     // 副行（「🎧 有声书 · 46%」，对齐状态同 EPUB 卡），纯字幕书写「字幕书」。
     // TODO-935 ①A：引用导入后原音频断链 → 副行改错误态「音频文件丢失」。
     // 反馈 IHgBrvHizT：用户对这组路径点过「不再提示」就退回正常副行。
-    final bool audioMissing = _srtMissingAudio.showsWarning(book);
+    // gap-novelmisc-2：断链结论随书单异步算好按 uid 缓存，build 里不同步探盘。
+    final bool audioMissing = _srtMissingAudio.showsWarning(
+      book,
+      hasMissing:
+          ref
+              .watch(srtBookMissingAudioUidsProvider)
+              .valueOrNull
+              ?.contains(book.uid) ??
+          false,
+    );
     // TODO-1094：书架 SRT 卡书名必须与长按对话框同源——两者都基于同一
     // [_srtBookMediaItem]，再经 [MediaSource.getDisplayTitleFromMediaItem] 应用
     // 编辑弹窗写入的 override_title 偏好。以前直接读 DB 原始列 book.title，忽略
@@ -650,13 +688,45 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     }
   }
 
-  /// 重新定位断链音频：让用户重选文件 → 重写 [SrtBook.audioPaths] → 落库。
+  /// 重新定位断链音频：让用户重选文件 → 经 [SrtBookRepository.relocateAudioPaths]
+  /// 落库（EPUB 有声书配对行连同 `audiobooks` 行同一事务改写，进度不动）。
   /// 复用与导入一致的「引用原路径」语义（重选的桌面真实路径直接存）。
   Future<void> _relocateSrtBookAudio(SrtBook book) async {
     final List<String> picked = await _pickSrtAudioFiles();
     if (picked.isEmpty || !mounted) return;
+    final SrtBookRelocateResult result = await SrtBookRepository(
+      appModel.database,
+    ).relocateAudioPaths(book.uid, picked);
+    if (!mounted) return;
+    switch (result) {
+      case SrtBookRelocated():
+        break;
+      case SrtBookRelocateCountMismatch(:final int expected):
+        FushiToast.show(
+          msg: t.audiobook_relocate_count_mismatch(
+            expected: expected,
+            picked: picked.length,
+          ),
+          severity: ToastSeverity.error,
+        );
+        return;
+      case SrtBookRelocateRecordsConflict(
+        :final int srtBookCount,
+        :final int audiobookCount,
+      ):
+        FushiToast.show(
+          msg: t.audiobook_relocate_records_conflict(
+            srtBookCount: srtBookCount,
+            audiobookCount: audiobookCount,
+          ),
+          severity: ToastSeverity.error,
+        );
+        return;
+      case SrtBookRelocateNotFound():
+        return;
+    }
     book.audioPaths = picked;
-    await SrtBookRepository(appModel.database).save(book);
+    book.audioRoot = null;
     if (mounted) {
       _refreshSrtBooks();
       _rebuild(() {});
@@ -1035,17 +1105,18 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     // 先解散选中合集（只删合集容器 + 成员引用行，绝不删媒体本体）。
     // 用确认框弹出前定死的那份目标，不重新读选中集。
     final Set<int> toDissolve = targetCollectionIds;
-    int dissolved = 0;
-    for (final int id in toDissolve) {
-      final int removed = await deleteMediaCollectionWithAssets(
-        appModel.database,
-        id,
-      );
-      if (removed > 0) dissolved++;
-      progress.value++;
-    }
+    final ({int done, int failed}) dissolveOutcome =
+        await runShelfBatchDeleteItems<int>(
+          toDissolve,
+          (int id) async =>
+              await deleteMediaCollectionWithAssets(appModel.database, id) > 0,
+          onItemDone: () => progress.value++,
+          logSource: 'ReaderHistory.batchDissolveCollection',
+        );
+    final int dissolved = dissolveOutcome.done;
 
     int deleted = 0;
+    int failed = dissolveOutcome.failed;
     LocalFileDeleteReport localFiles = const LocalFileDeleteReport();
     // 目标集在确认框弹出前就定死（[targetKeys]），不重新读 `_selectedKeys`。
     final Set<String> toDelete = targetKeys;
@@ -1066,50 +1137,63 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     // 每本都不单独回收数据库空间（compactDatabase:false），整批结束后在 finally 里
     // 回收一次：以前每删一本都跑一次整库 VACUUM + wal_checkpoint，批删 N 本串行 N 次。
     try {
-      for (final key in toDelete) {
-        if (key.startsWith('srt_')) {
-          final String uid = key.substring(4);
-          final SrtBookRepository repo = SrtBookRepository(appModel.database);
-          final SrtBook? book = await repo.findByUid(uid);
-          if (book != null) {
-            // BUG-3101：配对了 EPUB 的字幕书由 deleteBook 整本删（srt 行随事务级联
-            // 删除），纯字幕书走 repo（scope 落地为 srtbook 墓碑）——只走一条路径，
-            // 计数按这条路径的真实结果（以前 deleteBook 后再按 uid 删一次，回报 0 行，
-            // 「已删除 N 本」少算）。纯字幕书刻意不删统计：它的统计只能按 title 定位，
-            // 会连坐同名 EPUB（见 [_selectionHasStatisticsTarget]）。
-            final DeleteBookResult removed = await ReaderFushiSource.instance
-                .deleteSrtShelfBook(
-                  db: appModel.database,
-                  book: book,
-                  appModel: appModel,
-                  scope: scope,
-                  deleteLocalFiles: deleteLocalFiles,
-                  deleteStatistics: deleteStatistics,
-                  compactDatabase: false,
+      final ({int done, int failed}) outcome =
+          await runShelfBatchDeleteItems<String>(
+            toDelete,
+            (String key) async {
+              if (key.startsWith('srt_')) {
+                final String uid = key.substring(4);
+                final SrtBookRepository repo = SrtBookRepository(
+                  appModel.database,
                 );
-            localFiles = localFiles.merge(removed.localFiles);
-            if (removed.deleted) deleted++;
-          }
-        } else {
-          final String? bookKey = _parseBookKey(key);
-          if (bookKey != null) {
-            final DeleteBookResult result = await ReaderFushiSource.instance
-                .deleteBook(
-                  db: appModel.database,
-                  bookKey: bookKey,
-                  appModel: appModel,
-                  scope: scope,
-                  deleteLocalFiles: deleteLocalFiles,
-                  deleteStatistics: deleteStatistics,
-                  keepDownloadedFiles: decision.keepDownloadedFiles,
-                  compactDatabase: false,
-                );
-            localFiles = localFiles.merge(result.localFiles);
-            if (result.deleted) deleted++;
-          }
-        }
-        progress.value++;
-      }
+                final SrtBook? book = await repo.findByUid(uid);
+                if (book != null) {
+                  // BUG-3101：配对了 EPUB 的字幕书由 deleteBook 整本删（srt 行随事务级联
+                  // 删除），纯字幕书走 repo（scope 落地为 srtbook 墓碑）——只走一条路径，
+                  // 计数按这条路径的真实结果（以前 deleteBook 后再按 uid 删一次，回报 0 行，
+                  // 「已删除 N 本」少算）。纯字幕书刻意不删统计：它的统计只能按 title 定位，
+                  // 会连坐同名 EPUB（见 [_selectionHasStatisticsTarget]）。
+                  final DeleteBookResult removed = await ReaderFushiSource
+                      .instance
+                      .deleteSrtShelfBook(
+                        db: appModel.database,
+                        book: book,
+                        appModel: appModel,
+                        scope: scope,
+                        deleteLocalFiles: deleteLocalFiles,
+                        deleteStatistics: deleteStatistics,
+                        compactDatabase: false,
+                      );
+                  localFiles = localFiles.merge(removed.localFiles);
+                  return removed.deleted;
+                }
+                return false;
+              } else {
+                final String? bookKey = _parseBookKey(key);
+                if (bookKey != null) {
+                  final DeleteBookResult result = await ReaderFushiSource
+                      .instance
+                      .deleteBook(
+                        db: appModel.database,
+                        bookKey: bookKey,
+                        appModel: appModel,
+                        scope: scope,
+                        deleteLocalFiles: deleteLocalFiles,
+                        deleteStatistics: deleteStatistics,
+                        keepDownloadedFiles: decision.keepDownloadedFiles,
+                        compactDatabase: false,
+                      );
+                  localFiles = localFiles.merge(result.localFiles);
+                  return result.deleted;
+                }
+                return false;
+              }
+            },
+            onItemDone: () => progress.value++,
+            logSource: 'ReaderHistory.batchDelete',
+          );
+      deleted = outcome.done;
+      failed += outcome.failed;
     } finally {
       if (deleted > 0) {
         await ReaderFushiSource.compactAfterBookDeleteBestEffort(
@@ -1137,7 +1221,8 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         : t.batch_dissolve_success(m: dissolved);
     FushiToast.show(
       msg: successMsg,
-      severity: deleted > 0 || dissolved > 0
+      // 有条目失败（已记错误日志）时计数照实说、提示降为警告。
+      severity: failed == 0 && (deleted > 0 || dissolved > 0)
           ? ToastSeverity.success
           : ToastSeverity.warning,
     );

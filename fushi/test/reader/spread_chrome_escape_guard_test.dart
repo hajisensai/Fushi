@@ -219,9 +219,10 @@ void main() {
       // 本标记的写点；要守的是「从双页切歌词，歌词就绪不被 spread 守卫挡死」——
       // 歌词文档必须装进歌词自己的 WebView，就绪走自己的 finalize，绝不经
       // _onChapterLoadComplete 的 spread 守卫。
+      // _loadLyricsPage 是错误收口包装，装载逻辑在 _loadLyricsPageUnguarded。
       final String lyricsBody = methodBody(
         source,
-        'Future<void> _loadLyricsPage()',
+        'Future<void> _loadLyricsPageUnguarded()',
       );
       expect(
         lyricsBody,
