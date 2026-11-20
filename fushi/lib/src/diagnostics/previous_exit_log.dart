@@ -100,11 +100,12 @@ enum PreviousExitKind {
   /// 被厂商系统按应用结束：ColorOS / OxygenOS / realme UI 的 `o-stop`（Android 记成
   /// `OTHER` +「`stop <包名> due to o-stop(<码>)`」，OPlus 框架主动停应用——划掉最近任务、
   /// 一键清理、后台 / 耗电管理），MIUI / HyperOS 的 `SwipeUpClean`（`OTHER` +
-  /// 「`SwipeUpClean`」，在最近任务里上划清掉应用），MIUI / HyperOS 熄屏耗电检查（`OTHER` +
+  /// 「`SwipeUpClean`」，在最近任务里上划清掉应用；「`OneKeyClean`」，一键清理 / 全部清除），
+  /// MIUI / HyperOS 熄屏耗电检查（`OTHER` +
   /// 「`ScreenOffCPUCheckKill over … used … (…%) threshold …`」）。平台给了明确原因，不是
   /// 闪退；真崩溃 / ANR 系统另记 `CRASH*` / `ANR`。否则用户每在最近任务里划掉一次（死时界面
   /// 还在最上层、importance=100，或在跑前台服务、importance=125），下次启动都弹「意外退出」
-  /// （反馈 HqhXJvwgq3 / lN8b_hBgKD）。耗电检查杀进程说明熄屏时真的在吃 CPU，那条记录按
+  /// （反馈 HqhXJvwgq3 / lN8b_hBgKD / PojVLNyNtZ）。耗电检查杀进程说明熄屏时真的在吃 CPU，那条记录按
   /// [androidExitSevere] 落进用户可见的错误日志，不因为不弹闪退报告就藏起来（反馈
   /// Z9FwhY9377）。
   vendorStopped,
@@ -298,7 +299,17 @@ const int kSessionMemorySampleCount = 6;
 /// 内存采样间隔。
 const Duration kMemorySampleInterval = Duration(seconds: 30);
 
-/// 会话标记文件：每次状态变化**同步**整份覆写（几十字节），进程下一刻被杀也已落盘。
+/// 会话标记文件：每次状态变化**同步**整份覆写（几十字节），写进内核页缓存后进程下一刻被杀
+/// 也不丢。
+///
+/// 诊断标记（会话标记、活动 / 查词 / 导入 / 启动步进面包屑、致命错误同步追加）的落盘语义
+/// （BUG-4943，反馈 OU6bZvpCd0）：**同步 `write` 进内核页缓存，不 fsync**。这些标记要防的是「进程下一刻没了」——Dart 接不到的原生崩溃、SIGKILL、系统回收、
+/// 看门狗强杀。进程死不丢页缓存：`write(2)` 返回后数据归内核，进程怎么死都会照常回写。
+/// fsync 只多防「整机掉电 / 内核崩溃」，而那种情况下「上次怎么没的」本来就判不准。
+/// 代价却落在主线程上：Flutter 3.29 起 Android 的 UI isolate 跑在平台主线程，低端机
+/// IO 拥塞时一次 fsync 能卡几秒，每 30 秒的内存采样、每次生命周期 / 内存压力都同步
+/// fsync 会话标记，被系统判 ANR（主线程 state=D 停在 `libc fsync`）。所以这些标记一律
+/// 只同步写、不带 `flush: true`；守卫见 `test/diagnostics/diagnostic_marker_no_fsync_guard_test.dart`。
 class SessionMarker {
   SessionMarker(this.file, {required this.pid, required this.version});
 
@@ -440,7 +451,7 @@ class SessionMarker {
           'launchDetail': _launchDetail,
           if (_memorySamples.isNotEmpty) 'memorySamples': _memorySamples,
         }),
-        flush: true,
+        // 不 fsync（BUG-4943）：进程死不丢页缓存，见 [SessionMarker] 文档。
       );
     } on FileSystemException catch (e) {
       debugPrint('[PreviousExitLog] session marker write failed: $e');
@@ -458,10 +469,18 @@ class SessionMarker {
 ///
 /// [androidUiVisibleAtDeath]：同一进程死前界面可不可见的原生证据
 /// （[androidSessionUiVisibleAtDeath]），按 [androidDiedInForeground] 的次序压过标记推断。
+///
+/// [currentVersion]：本次进程的版本（与标记里的 [PreviousSession.version] 同一来源）。
+/// 两边都已知且不同 = 上次进程之后装了新版本：iOS（TestFlight / App Store）与 macOS
+/// 装新版时由系统结束旧进程，平台不留原因（没有 Android `PACKAGE_UPDATED` 那样的记录），
+/// 标记只会停在 resumed，按「停在前台时没了」会每次更新都误报一次闪退（反馈
+/// QL5TsHwY78）。这时归 [PreviousExitKind.appUpdated]；真有崩溃证据（MetricKit、`.ips`、
+/// Android `CRASH*`）时 [classifyPreviousExit] 按优先级照常压过它。
 ExitReportEntry? describeUncleanPreviousSession(
   PreviousSession? previous, {
   int? androidImportanceAtDeath,
   bool? androidUiVisibleAtDeath,
+  String? currentVersion,
 }) {
   if (previous == null || previous.clean) return null;
   final bool diedInForeground = androidDiedInForeground(
@@ -528,6 +547,25 @@ ExitReportEntry? describeUncleanPreviousSession(
       atMs: previous.lifecycleAt,
     );
   }
+  final String? previousVersion = knownSessionVersion(previous.version);
+  final String? runningVersion = knownSessionVersion(currentVersion);
+  if (previousVersion != null &&
+      runningVersion != null &&
+      previousVersion != runningVersion) {
+    b.write(
+      '（本次已是 $runningVersion：上次进程之后装了新版本，'
+      '多半是安装更新时被系统结束，按更新处理）',
+    );
+    return ExitReportEntry(
+      kPreviousExitUncleanSource,
+      b.toString(),
+      severe: false,
+      kind: PreviousExitKind.appUpdated,
+      foreground: diedInForeground,
+      duringStartup: !previous.initialised,
+      atMs: previous.lifecycleAt,
+    );
+  }
   b.write(
     diedInForeground
         ? '（停在前台时没了，疑似闪退）'
@@ -546,6 +584,15 @@ ExitReportEntry? describeUncleanPreviousSession(
     duringStartup: !previous.initialised,
     atMs: previous.lifecycleAt,
   );
+}
+
+/// 版本拿不到（没注入 `FUSHI_BUILD_VERSION`）时会话标记里记的占位值。
+const String kUnknownSessionVersion = 'unknown';
+
+/// 会话标记里的版本能不能参与比较：空串 / [kUnknownSessionVersion] 是「不知道」，返回 null。
+String? knownSessionVersion(String? version) {
+  final String? v = version?.trim();
+  return v == null || v.isEmpty || v == kUnknownSessionVersion ? null : v;
 }
 
 /// 日志 source：上次退出链超出预算、被退出看门狗结束（有意退出，只作诊断）。
@@ -620,6 +667,12 @@ final RegExp _oplusAppStop = RegExp(
 /// `#hw7f_pogDW` 也是它）。整串锚定，子原因前缀可有可无。
 final RegExp _miuiSwipeUpClean = RegExp(r'^(?:\[[A-Z0-9_ ]+\] )?SwipeUpClean$');
 
+/// MIUI / HyperOS 一键清理（最近任务里的「全部清除」、安全中心加速）结束应用时写下的
+/// `ApplicationExitInfo` 描述：原因码 `REASON_OTHER`，描述是 `OneKeyClean`（反馈
+/// PojVLNyNtZ，Xiaomi 22041219G，SDK 34；死时在跑前台服务，importance=125）。整串锚定，
+/// 子原因前缀可有可无。
+final RegExp _miuiOneKeyClean = RegExp(r'^(?:\[[A-Z0-9_ ]+\] )?OneKeyClean$');
+
 /// MIUI / HyperOS 熄屏 CPU 检查杀进程时写下的 `ApplicationExitInfo` 描述：原因码
 /// `REASON_OTHER`，描述形如 `ScreenOffCPUCheckKill over +25m0s475ms used +45m1s910ms
 /// (180.07031%) threshold 6.0`（熄屏窗口里进程 CPU 占比超过阈值，反馈 Z9FwhY9377）。
@@ -633,6 +686,7 @@ final RegExp _miuiScreenOffCpuKill = RegExp(
 final List<RegExp> _vendorStopDescriptions = <RegExp>[
   _oplusAppStop,
   _miuiSwipeUpClean,
+  _miuiOneKeyClean,
   _miuiScreenOffCpuKill,
 ];
 
@@ -657,7 +711,7 @@ bool androidExitSevere(String reason, {String? description}) =>
 /// 「scheduleCrash for '…' failed」——系统结束了够不着的进程，应用里没崩）返回 null，
 /// 交给会话标记。`OTHER` 只在
 /// [description] 是 AOSP 自己写的 appop 变更杀进程描述时才算权限变更、是 OPlus 的
-/// `o-stop` 停应用描述、MIUI / HyperOS 的 `SwipeUpClean` / 熄屏耗电检查描述时算厂商停止
+/// `o-stop` 停应用描述、MIUI / HyperOS 的 `SwipeUpClean` / `OneKeyClean` / 熄屏耗电检查描述时算厂商停止
 /// （[PreviousExitKind.vendorStopped]，见 [_vendorStopDescriptions]），其它照旧 null。
 PreviousExitKind? androidExitKind(String reason, {String? description}) =>
     switch (reason) {
@@ -1569,10 +1623,8 @@ abstract final class ActivityBreadcrumb {
     final File? f = _file(activity);
     if (f == null) return;
     try {
-      f.writeAsStringSync(
-        '[${DateTime.now().toIso8601String()}] $detail',
-        flush: true,
-      );
+      // 不 fsync（BUG-4943）：进程死不丢页缓存，见 [SessionMarker] 文档。
+      f.writeAsStringSync('[${DateTime.now().toIso8601String()}] $detail');
     } on FileSystemException catch (e) {
       debugPrint('[ActivityBreadcrumb] mark $activity failed: $e');
     }
@@ -1943,14 +1995,14 @@ abstract final class PreviousExitLog {
           ? await collector(appDir)
           : await collect(
               appDir: appDir,
-              version: fushiRunningCodeVersion ?? 'unknown',
+              version: fushiRunningCodeVersion ?? kUnknownSessionVersion,
             );
       final String? previousVersion = _previous?.version;
       _verdict = classifyPreviousExit(
         entries,
         version: previousVersion != null && previousVersion.isNotEmpty
             ? previousVersion
-            : fushiRunningCodeVersion ?? 'unknown',
+            : fushiRunningCodeVersion ?? kUnknownSessionVersion,
         nowMs: DateTime.now().millisecondsSinceEpoch,
       );
       for (final ExitReportEntry e in entries) {
@@ -2044,6 +2096,7 @@ abstract final class PreviousExitLog {
 
     final ExitReportEntry? unclean = describeUncleanPreviousSession(
       previous,
+      currentVersion: version,
       androidImportanceAtDeath: previous == null || androidPayload == null
           ? null
           : androidImportanceAtDeath(

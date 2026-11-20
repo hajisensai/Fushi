@@ -570,6 +570,79 @@ void main() {
     expect(saved, isEmpty);
   });
 
+  // BUG-4947：两次点击之间没有重建（慢帧设备 180ms 内连点）时，第二次点击落在上一帧
+  // 的旧行上。行内按钮必须按行身份现场定位，不能拿构建时捕获的下标去 removeAt。
+  group('row buttons tapped twice before a rebuild (BUG-4947)', () {
+    final AudioSourceConfig a = AudioSourceConfig.remoteAudio(
+      url: 'https://a.example.com/{term}',
+    );
+    final AudioSourceConfig b = AudioSourceConfig.remoteAudio(
+      url: 'https://b.example.com/{term}',
+    );
+
+    Future<List<AudioSourceConfig>?> run(
+      WidgetTester tester,
+      List<AudioSourceConfig> sources,
+      Finder button,
+    ) async {
+      List<AudioSourceConfig>? saved;
+      await openDialog(
+        tester,
+        AudioSourcesDialog(
+          sources: sources,
+          onSave: (List<AudioSourceConfig> v) => saved = v,
+        ),
+      );
+      // 两次 tap 之间不 pump：第二次命中的仍是第一次点击前构建的那个按钮。
+      await tester.tap(button);
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(t.dialog_close));
+      await tester.pumpAndSettle();
+      return saved;
+    }
+
+    testWidgets('double delete on the only row does not throw RangeError', (
+      WidgetTester tester,
+    ) async {
+      final List<AudioSourceConfig>? saved = await run(
+        tester,
+        <AudioSourceConfig>[a],
+        find.byIcon(FushiIcons.delete),
+      );
+      expect(tester.takeException(), isNull);
+      expect(saved, isEmpty);
+    });
+
+    testWidgets('double delete on the first row does not delete the next row', (
+      WidgetTester tester,
+    ) async {
+      final List<AudioSourceConfig>? saved = await run(
+        tester,
+        <AudioSourceConfig>[a, b],
+        find.byIcon(FushiIcons.delete).first,
+      );
+      expect(tester.takeException(), isNull);
+      expect(saved?.map((AudioSourceConfig s) => s.url), <String?>[b.url]);
+    });
+
+    testWidgets('double move-down moves the tapped row, never another row', (
+      WidgetTester tester,
+    ) async {
+      final List<AudioSourceConfig>? saved = await run(
+        tester,
+        <AudioSourceConfig>[a, b],
+        find.byIcon(FushiIcons.expandMore).first,
+      );
+      expect(tester.takeException(), isNull);
+      // 第一次把 a 移到末尾；第二次点的仍是 a，它已在末尾，不再动，更不能把 b 换回来。
+      expect(saved?.map((AudioSourceConfig s) => s.url), <String?>[
+        b.url,
+        a.url,
+      ]);
+    });
+  });
+
   // fushiRemote 无 URL 可改、本地库路径由文件选择器决定 → 都不给 ✎（只有自定义远端行有）。
   testWidgets('only remoteAudio rows expose the edit button', (
     WidgetTester tester,

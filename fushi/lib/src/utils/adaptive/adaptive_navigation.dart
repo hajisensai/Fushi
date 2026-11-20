@@ -274,7 +274,7 @@ const SpringDescription _kNavExpressiveSpatial = kNavExpressiveSpatial;
 /// 行 56、药丸 56×32，全圆角）。
 const double _kMaterialRailRowHeight = 56;
 
-/// 矮窗口紧凑档（BUG-4906）：展开 rail 的行高（仍 ≥48dp 命中区）。
+/// 矮窗口紧凑档（BUG-4971）：展开 rail 的行高（仍 ≥48dp 命中区）。
 const double _kMaterialRailRowDenseHeight = 48;
 
 /// MD3 展开 rail 一行的高度：[dense] = 矮窗口紧凑档。
@@ -1312,7 +1312,7 @@ class _MaterialNavCluster extends StatelessWidget {
                             const SizedBox(
                               height: _kRailNotchFillet + _kRailNotchBleed,
                             ),
-                          // 矮窗口下所有 tile 的总高可能超过可用高度（BUG-4906）：先
+                          // 矮窗口下所有 tile 的总高可能超过可用高度（BUG-4971）：先
                           // 换紧凑行距（收起 60→52、展开 56→48，命中区仍 ≥48dp），
                           // 还放不下就在视口里滚动，不裁条目、不 RenderFlex 溢出。
                           Expanded(
@@ -2031,7 +2031,7 @@ class _SlidingIndicatorScopeState extends State<_SlidingIndicatorScope>
     super.initState();
     _progress.animation.addStatusListener(_onStatus);
     _progress.animation.addListener(_onProgress);
-    // 挂载时的当前项也要在可视区里（BUG-4906：矮窗口冷启动 / 侧栏重建时停在
+    // 挂载时的当前项也要在可视区里（BUG-4971：矮窗口冷启动 / 侧栏重建时停在
     // 「设置」这类末尾项，旧实现只在选中变化时滚入，缺口与指示器都在视口外）。
     _revealSelected();
   }
@@ -3417,7 +3417,7 @@ class _NavFocusCell extends StatefulWidget {
   /// 在整排里的序号（速览卡据此判断内容上下交换的方向）。
   final int order;
 
-  /// MD3 侧栏矮窗口紧凑档（BUG-4906）：收起格去掉上下留白、展开行高 48。
+  /// MD3 侧栏矮窗口紧凑档（BUG-4971）：收起格去掉上下留白、展开行高 48。
   final bool railDense;
 
   final FushiFocusId id;

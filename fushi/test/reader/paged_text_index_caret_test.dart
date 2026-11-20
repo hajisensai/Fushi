@@ -15,10 +15,10 @@ import 'package:fushi_core/fushi_core.dart';
 
 /// 路线图 m1 实测（桌面 headless Chrome，10 万字单章）：
 ///
-/// - BUG-4910 / gap-readerjs1-3：分页章末一次 `fushiProgressDetails` 19ms、插图页（页首 caret 落图走
+/// - BUG-5028 / gap-readerjs1-3：分页章末一次 `fushiProgressDetails` 19ms、插图页（页首 caret 落图走
 ///   扫描兜底）56ms——「字符偏移 → 文本节点」、越界判据、扫描兜底都从章首逐节点 walk。
 ///   修复后共用连续 shell 的章内文本索引（BUG-2903）+ 二分。
-/// - BUG-4909 / gap-readerjs2-2：光标换行移动每按一次键对整章逐字 getClientRects（113892 次、约
+/// - BUG-5021 / gap-readerjs2-2：光标换行移动每按一次键对整章逐字 getClientRects（113892 次、约
 ///   620ms）。修复后先按文本节点行盒判是否与视口相交，不相交的整节点跳过（同章降到
 ///   约 13ms）。
 ///

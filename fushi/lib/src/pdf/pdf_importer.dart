@@ -86,7 +86,7 @@ class PdfImporter {
 
   /// [importFromPath] 的落盘落库段（PDF 已打开过、页数与封面字节已在手）。
   ///
-  /// 与 EPUB / 漫画导入同一套书目录归属（BUG-4907，沿用 BUG-4840 的做法）：
+  /// 与 EPUB / 漫画导入同一套书目录归属（BUG-5000，沿用 BUG-4840 的做法）：
   /// `document.pdf` 与封面先备进书库根下本次独占的 `.tmp-*`，再经
   /// [EpubImporter.placeUnderResolvedTitle] 在落位锁内「重取快照 → 挪进
   /// `<bookKey>/` → 插行」。此前是 [EpubStorage.bookDirectory]（存在即复用）直接往

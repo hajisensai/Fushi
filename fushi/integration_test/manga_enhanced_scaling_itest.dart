@@ -2,6 +2,7 @@
 /// 真实低清卷（带 OCR）开书，量当前页的页图 URL / 实际像素宽，抓 WebView 真像素，再在
 /// 一个 OCR 块的首字上模拟点击，命中的必须是那个字（换了缩放后的图，OCR 仍在原图坐标系）。
 /// 放大到 250% 后再抓一张、再点一次（画质档预放大低清源的路径）。
+/// 画质档默认带文字感知 Gamma 校正（OCR 框外线性光、框内 sRGB），URL 带 `fq=g&tb=<框签名>`。
 ///
 /// 需要本机私有素材（版权页图不入库）：
 ///
@@ -255,7 +256,11 @@ void main() {
         expect(loaded(rest), isTrue);
         final String src = rest['src']! as String;
         expect(src, contains('fit='));
-        expect(src.contains('fq=1'), _enhanced);
+        // 画质缩放默认带文字感知 Gamma 校正（fq=g）：URL 上挂本页 OCR 文字框签名，框数 > 0。
+        expect(src.contains('fq=g'), _enhanced);
+        if (_enhanced) {
+          expect(src, matches(RegExp(r'[?&]tb=[1-9][0-9]*-[0-9a-f]+')));
+        }
         await shoot('rest');
         expect(await tapProbe(), firstLine.characters.first);
 

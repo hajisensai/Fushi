@@ -2216,7 +2216,7 @@ class GalgameHomeSkeleton extends StatelessWidget {
   }
 }
 
-/// 游戏首页空库态（BUG-4907）：与书架 / 视频库同一个共享空态
+/// 游戏首页空库态（BUG-4992）：与书架 / 视频库同一个共享空态
 /// [FushiPlaceholderMessage]（MD3 饱和色块图标弹入 / Apple
 /// ContentUnavailableView 式无底居中），在剩余空间里上下左右居中，不再是一张
 /// 被拉满整列高度的窄卡。文案 =「还没有游戏」+ 拖放 .exe 提示；主按钮「导入

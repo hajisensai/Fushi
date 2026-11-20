@@ -68,10 +68,14 @@ class CloudflareChallengeActivity : Activity() {
         }
         super.onCreate(state)
         receiver = intent.getParcelableExtra("receiver")
+        // The coordinator unparcels this Bundle in the main process with no app classloader:
+        // an anonymous subclass name there is a BadParcelableException on its main thread
+        // (BUG-4952), so only the framework ResultReceiver type may cross.
+        val control = object : ResultReceiver(main) {
+            override fun onReceiveResult(code: Int, data: Bundle?) { complete(false) }
+        }
         receiver?.send(RESULT_FIRST_USER, Bundle().apply {
-            putParcelable("control", object : ResultReceiver(main) {
-                override fun onReceiveResult(code: Int, data: Bundle?) { complete(false) }
-            })
+            putParcelable("control", control.forIpc())
         })
         if (Build.VERSION.SDK_INT < 28 || !WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) {
             complete(false, code = "CHALLENGE_PROXY_UNSUPPORTED")

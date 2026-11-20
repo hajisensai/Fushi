@@ -120,7 +120,7 @@ void main() {
     ]);
   });
 
-  // BUG-4909：回看中 Stopped 不发，但 Jellyfin / Emby 转码会话要靠客户端显式停——
+  // BUG-5020：回看中 Stopped 不发，但 Jellyfin / Emby 转码会话要靠客户端显式停——
   // 闸门回看分支改为「只摘会话、停转码」，不改任何进度。
   test('回看中停止：能摘会话的来源只摘会话、停转码，不上报停止', () async {
     final _DetachingClient client = _DetachingClient();

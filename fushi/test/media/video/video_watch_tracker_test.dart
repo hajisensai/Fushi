@@ -524,7 +524,7 @@ void main() {
       },
     );
 
-    // BUG-4908：离开时的完成判定要经远端客户端取追番身份；播放页按 close() 的 future
+    // BUG-5012：离开时的完成判定要经远端客户端取追番身份；播放页按 close() 的 future
     // 等它用完才关自建的客户端。close() 早于回调结束就完成，客户端会在请求途中被关。
     test('close() 等离开时的完成回调跑完才完成', () async {
       final Completer<void> trackingLookup = Completer<void>();

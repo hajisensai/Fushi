@@ -3930,7 +3930,7 @@ class JellyfinVideoClient
     }
   }
 
-  /// 卡片片段回看结束（BUG-4909）：与 [stopRemoteVideoPlayback] 同样按先进先出摘下
+  /// 卡片片段回看结束（BUG-5020）：与 [stopRemoteVideoPlayback] 同样按先进先出摘下
   /// 最早那条会话、停它的转码，但**不**发 Stopped——回看不得判已看、写断点。
   @override
   Future<void> detachRemoteVideoPlayback(String id) =>

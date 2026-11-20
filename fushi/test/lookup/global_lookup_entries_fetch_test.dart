@@ -11,7 +11,9 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 void main() {
   group('GlobalLookupEntriesStore', () {
     test('同一个结果对象的令牌稳定，不同结果不同', () {
-      final GlobalLookupEntriesStore store = GlobalLookupEntriesStore();
+      final GlobalLookupEntriesStore store = GlobalLookupEntriesStore(
+        fetchSupported: true,
+      );
       final DictionarySearchResult a = DictionarySearchResult(searchTerm: 'a');
       final DictionarySearchResult b = DictionarySearchResult(searchTerm: 'b');
       expect(store.tokenFor(a), store.tokenFor(a));
@@ -19,7 +21,9 @@ void main() {
     });
 
     test('只有达到阈值的结果才登记取回，字节按地址原样取回', () {
-      final GlobalLookupEntriesStore store = GlobalLookupEntriesStore();
+      final GlobalLookupEntriesStore store = GlobalLookupEntriesStore(
+        fetchSupported: true,
+      );
       expect(store.register(1, '[]'), isNull, reason: '小结果仍走字面量');
 
       final String big = jsonEncode(<String>['x' * kPopupEntriesFetchMinChars]);
@@ -34,7 +38,9 @@ void main() {
     });
 
     test('只保留仍在栈里的帧的字节', () {
-      final GlobalLookupEntriesStore store = GlobalLookupEntriesStore();
+      final GlobalLookupEntriesStore store = GlobalLookupEntriesStore(
+        fetchSupported: true,
+      );
       final String big = 'y' * kPopupEntriesFetchMinChars;
       final String url1 = store.register(1, big)!;
       final String url2 = store.register(2, big)!;
@@ -44,17 +50,21 @@ void main() {
     });
 
     test('取回失败过之后一律走字面量', () {
-      final GlobalLookupEntriesStore store = GlobalLookupEntriesStore()
-        ..fetchUnavailable = true;
+      final GlobalLookupEntriesStore store = GlobalLookupEntriesStore(
+        fetchSupported: true,
+      )..fetchUnavailable = true;
       expect(store.register(3, 'z' * kPopupEntriesFetchMinChars), isNull);
     });
 
     // PR #2763 审查：桌面窗与游戏卡片是两个 WebView2 宿主，共用一份 store 时桌面的
     // retain 会删掉游戏卡片还没取走的字节，对面 404 又把回退置成全进程永久生效。
     test('每个宿主一份：一方 retain / 回退不影响另一方，地址互不相认', () {
-      final GlobalLookupEntriesStore desktop = GlobalLookupEntriesStore();
+      final GlobalLookupEntriesStore desktop = GlobalLookupEntriesStore(
+        fetchSupported: true,
+      );
       final GlobalLookupEntriesStore card = GlobalLookupEntriesStore(
         hostKey: 'gal:1234',
+        fetchSupported: true,
       );
       final String big = 'w' * kPopupEntriesFetchMinChars;
       final String cardUrl = card.register(5, big)!;
@@ -66,6 +76,28 @@ void main() {
       desktop.fetchUnavailable = true;
       expect(desktop.register(7, big), isNull);
       expect(card.register(8, big), isNotNull, reason: '回退只作用于取回失败的宿主');
+    });
+    // BUG-4939（反馈 JjwV57oM44）：取回地址是 https，只有 Windows WebView2 的
+    // WebResourceRequested 接得住；macOS WKWebView / Linux WebKitGTK 宿主请求落到真
+    // 网络，挂着的取回让卡片停在上一次的词条上。这些宿主一律字面量。
+    test('宿主接不住取回地址时大结果也走字面量', () {
+      final GlobalLookupEntriesStore store = GlobalLookupEntriesStore(
+        fetchSupported: false,
+      );
+      expect(store.register(9, 'q' * (kPopupEntriesFetchMinChars * 4)), isNull);
+      expect(store.bytesFor(store.urlFor(9)), isNull);
+    });
+
+    test('默认判据：只有 Windows 宿主走取回', () {
+      expect(
+        GlobalLookupEntriesStore.globalLookupEntriesFetchSupported,
+        Platform.isWindows,
+      );
+      expect(
+        GlobalLookupEntriesStore().fetchSupported,
+        Platform.isWindows,
+        reason: '控制器按宿主建 store 时不传参数，走的就是这个默认值',
+      );
     });
   });
 
@@ -91,6 +123,22 @@ void main() {
       );
       expect(native, contains('!is_image && !is_dictmedia && !is_entries'));
       expect(native, contains('Access-Control-Allow-Origin: *'));
+    });
+
+    // BUG-4939：判据 [GlobalLookupEntriesStore.globalLookupEntriesFetchSupported]
+    // 只放行 Windows，依据是另外两个原生宿主根本不拦这个地址。哪天给它们接上拦截，
+    // 这条会红——同时把判据放开，别让两边说法不一。
+    test('macOS / Linux 宿主不拦截取回地址（判据只放行 Windows 的依据）', () {
+      final String mac = File(
+        'macos/Runner/GlobalLookupOverlay.swift',
+      ).readAsStringSync();
+      final String linux = File(
+        'linux/lookup_card/card_overlay.cc',
+      ).readAsStringSync();
+      for (final String src in <String>[mac, linux]) {
+        expect(src, isNot(contains('popup-entries')));
+        expect(src, isNot(contains('fushi.local')));
+      }
     });
 
     test('媒体解析先查词条取回，渲染后只留在栈帧的字节', () {

@@ -103,7 +103,7 @@ native_key() {
   if [ "$1" = fushi_fsrs ]; then features=raw_sql; fi
   # The crate's tree hash, folded with the sources it pulls in from outside
   # native/<crate> (external_sources.txt): fushi_music compiles
-  # native/fushi_compute/src/legacy_text.rs in (BUG-4906).
+  # native/fushi_compute/src/legacy_text.rs in (BUG-4988).
   key=$(bash tool/native_source_key.sh "$1")
   if [ -n "$features" ]; then key="$key+$features"; fi
 }

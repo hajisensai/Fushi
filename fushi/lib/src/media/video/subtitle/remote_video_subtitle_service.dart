@@ -624,7 +624,7 @@ class RemoteVideoSubtitleService {
           ),
         );
         // 这一集的产物临时目录不论成功、失败、取消还是取回时抛错都要删，且删完才收尾
-        // 任务（BUG-4909）：字幕已复制进 `video_subtitles/`，留着只会在系统临时目录里
+        // 任务（BUG-5018）：字幕已复制进 `video_subtitles/`，留着只会在系统临时目录里
         // 越积越多。
         final _RemoteEpisodeOutcome outcome;
         try {

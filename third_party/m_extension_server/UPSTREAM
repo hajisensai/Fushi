@@ -334,6 +334,27 @@ overlay/ (full-file replacements):
                                                 cache
   .../impl/HostPreferenceSnapshot.kt            new: host preference snapshot
                                                 rule (see below)
+  .../impl/ExtensionInstanceCache.kt            calls to one cached extension
+  .../impl/MExtensionServerLoader.kt            instance are serialized per
+  (+ test/.../ExtensionInstanceCacheTest.kt)    InvocationLane instead of under
+                                                one per-instance lock:
+                                                CATALOGUE (browse / search /
+                                                details / episodes / filters /
+                                                preferences / covers) and
+                                                PLAYBACK (getVideoList /
+                                                getPageList). A minutes-long
+                                                stream resolution had queued
+                                                every search on the same
+                                                extension behind it until the
+                                                host's BRIDGE_TIMEOUT (BUG-5026).
+                                                SourceDataHandler clears state
+                                                through invokeExclusively, which
+                                                waits out both lanes. The
+                                                Android host has no per-source
+                                                lock at all (shared 2-thread
+                                                pool), so overlapping lanes is
+                                                behaviour extensions already
+                                                see there.
   .../AppModule.kt                              ProtoBuf registered in the
                                                 Injekt container next to Json
   .../network/interceptor/CloudflareInterceptor.kt

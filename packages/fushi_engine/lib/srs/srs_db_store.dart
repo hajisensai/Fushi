@@ -295,7 +295,7 @@ final class SrsImportDraftsResult {
   /// 身份记录被实体归属闸拒掉的笔记 ID（内核回包 `foreign` 指向的笔记身份记录草稿，
   /// native/fushi_fsrs/src/store/gen4/cmd/writes_owner.rs）：同一个库里别的集合（另一份 profile）已有这个 ID、身份
   /// 结构不同——同一个 guid 落到了另一个笔记类型（`.apkg` 不合并笔记模板时的副本、文本导入用户选的类型）。这条笔记
-  /// 连同同批写给它的字段 / 牌组 / 标签一条都没落，导入路径要记冲突、不算新增（BUG-4907 复核：以前不读，报告照记
+  /// 连同同批写给它的字段 / 牌组 / 标签一条都没落，导入路径要记冲突、不算新增（BUG-5005 复核：以前不读，报告照记
   /// 「已添加」，卡片实际不存在）。
   final Set<String> foreignNotes;
 }
@@ -2551,7 +2551,7 @@ class SrsDbStore implements SrsSync2Host {
   ///
   /// [cardNotes]：卡 → 笔记（这批里新建的笔记的卡还没有卡片缓存行，查不到笔记）。带上笔记的日志与卡片修改跟着笔记过
   /// 实体归属闸：笔记被拒时它的日志、它的卡片修改（新卡位置、牌组、暂停）一并不落，不留下指向不存在的卡、却照样进统计
-  /// 的悬空复习，也不留下没有缓存行的悬空卡片修改（BUG-4907 复核；内核 `writes_owner.rs` 文件头「卡片修改带笔记」）。
+  /// 的悬空复习，也不留下没有缓存行的悬空卡片修改（BUG-5005 复核；内核 `writes_owner.rs` 文件头「卡片修改带笔记」）。
   Future<SrsImportDraftsResult> importDrafts(
     List<SrsEventDraft> drafts, {
     Map<String, String> cardNotes = const <String, String>{},
@@ -5736,6 +5736,57 @@ class SrsDbStore implements SrsSync2Host {
   /// 有待裁决（内容类冲突 / 删除与并发修改）的笔记。
   Future<List<SrsNoteCacheRow>> notesPendingDecision() =>
       noteRows(const <String, Object?>{'pending': true});
+
+  /// 一批卡 / 笔记的人读名：笔记缓存的 `sort_field`（第一个字段去标签、去首尾空白，与浏览页的排序字段同口径；
+  /// 卡片按所属笔记）。固定至多两条批量读（卡 → 笔记 ID、笔记 → 排序字段），不随条数增长。
+  ///
+  /// 冲突中心以前逐条 `cardDetail` / `note`（每条三次读 + 一次字段寄存器物化）：6950 条冲突的库上一次整页
+  /// 重读要 2 万次读、63 s，常驻内存翻倍到 3.3 GB（BUG-4948）。
+  ///
+  /// 没有缓存行、或排序字段为空的 ID 不在结果里（调用方自己兜底，例如显示 ID）。
+  Future<({Map<String, String> cards, Map<String, String> notes})>
+  sortLabelsOf({
+    Iterable<String> cardIds = const <String>[],
+    Iterable<String> noteIds = const <String>[],
+  }) async {
+    final Map<String, String> noteOfCard = <String, String>{};
+    final List<String> cards = cardIds.toSet().toList();
+    if (cards.isNotEmpty) {
+      final SrsColumns c = await cardColumnsWhere(
+        const <String>['id', 'note_id'],
+        <String, Object?>{'ids': cards},
+      );
+      final SrsStringColumn id = c.strings('id');
+      final SrsStringColumn note = c.strings('note_id');
+      for (int i = 0; i < c.rows; i++) {
+        noteOfCard[id[i]] = note[i];
+      }
+    }
+    final Set<String> wanted = <String>{...noteIds, ...noteOfCard.values};
+    final Map<String, String> sortOf = <String, String>{};
+    if (wanted.isNotEmpty) {
+      final SrsColumns n = await noteColumns(
+        const <String>['id', 'sort_field'],
+        <String, Object?>{'ids': wanted.toList()},
+      );
+      final SrsStringColumn id = n.strings('id');
+      final SrsStringColumn sort = n.strings('sort_field');
+      for (int i = 0; i < n.rows; i++) {
+        final String text = sort[i].trim();
+        if (text.isNotEmpty) sortOf[id[i]] = text;
+      }
+    }
+    return (
+      cards: <String, String>{
+        for (final MapEntry<String, String> e in noteOfCard.entries)
+          if (sortOf[e.value] case final String text) e.key: text,
+      },
+      notes: <String, String>{
+        for (final String id in noteIds)
+          if (sortOf[id] case final String text) id: text,
+      },
+    );
+  }
 
   /// 标志类 / 设置类的同步冲突（被覆盖的候选），不含机器产出（第六轮审查第 10 条）与界面状态（折叠）。
   ///

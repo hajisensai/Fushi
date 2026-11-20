@@ -137,6 +137,34 @@ function blobToBase64(blob) {
   });
 }
 
+// 反馈 8KlXeA-A0f：页面层查词弹窗的单词发音在这里播。content script 在页面里 new Audio
+// 会吃页面 CSP 的 media-src（X 拦掉 127.0.0.1 的音频端点）；offscreen 是扩展源文档，只受
+// 扩展自己的 CSP（extension_pages 不限 media-src）。新一段先掐掉上一段（interrupt 语义与
+// popup.js playWordAudio 一致）；play() 真的开始才回 ok，失败回原因供调用方回落。
+let wordAudio = null;
+
+async function playWordAudio(url, volume) {
+  if (wordAudio) {
+    try { wordAudio.pause(); } catch (_) {}
+    wordAudio = null;
+  }
+  if (typeof url !== 'string' || !/^(https?:|data:audio\/)/i.test(url)) {
+    return { ok: false, error: 'BadUrl' };
+  }
+  const audio = new Audio(url);
+  if (typeof volume === 'number' && isFinite(volume)) {
+    audio.volume = Math.max(0, Math.min(1, volume));
+  }
+  wordAudio = audio;
+  try {
+    await audio.play();
+    return { ok: true };
+  } catch (e) {
+    if (wordAudio === audio) wordAudio = null;
+    return { ok: false, error: (e && (e.name || e.message)) || 'UnknownError' };
+  }
+}
+
 chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
   if (!msg || msg.target !== 'offscreen') return false;
   (async () => {
@@ -146,6 +174,7 @@ chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
       else if (msg.type === 'beginClip') sendResponse(beginClip());
       else if (msg.type === 'endClip') sendResponse(await endClip());
       else if (msg.type === 'isRecording') sendResponse({ ok: true, recording: !!(stream && stream.active) });
+      else if (msg.type === 'playWordAudio') sendResponse(await playWordAudio(msg.url, msg.volume));
       else sendResponse({ ok: false, error: 'unknown' });
     } catch (e) { sendResponse({ ok: false, error: String(e) }); }
   })();

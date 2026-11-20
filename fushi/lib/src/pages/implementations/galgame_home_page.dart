@@ -873,7 +873,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
     );
   }
 
-  /// 空库态（拼贴版与经典版同一份，BUG-4907）：居中的共享空态 + 导入 / 去发现。
+  /// 空库态（拼贴版与经典版同一份，BUG-4992）：居中的共享空态 + 导入 / 去发现。
   /// 「去发现」只跟 externalDiscovery 门控。
   Widget _buildEmptyState(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
