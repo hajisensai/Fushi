@@ -3035,4 +3035,133 @@ mod tests {
             });
         }
     }
+
+    /// [super::CACHE_RULES] 与派生排序键的实际口径对表（交接 §43「第六波 导入红测试收尾」）。每一行是一条派生输入、
+    /// 当前口径下的输出、以及让这一行输出成为现在这样的那一版修订号（文档注释里的修订表）。
+    ///
+    /// 钉两件事：
+    /// - 派生口径改了（任一行输出变了）就红——改的人要在这里改期望、把那一行的修订号记成新的一版，并升 `CACHE_RULES`；
+    /// - 表里最新一版必须等于 `CACHE_RULES`：常量退回去（比如退回 2，`op_wall` 上界还在）就红。
+    ///   `a_cache_built_under_older_rules_is_rebuilt_once_on_open` 只钉「旧口径的库开库重建一次」，钉不住这一条。
+    #[test]
+    fn cache_rules_matches_the_pinned_derivation_table() {
+        use crate::anki_import_rules::derived_log_hlc;
+
+        const FOREIGN: &str = r#"{"foreignLog":true}"#;
+        // (说明, origin, kind, anki_id, at, extra, op_wall, 期望, 修订号)
+        type Row = (
+            &'static str,
+            &'static str,
+            &'static str,
+            Option<i64>,
+            i64,
+            &'static str,
+            i64,
+            Option<&'static str>,
+            i64,
+        );
+        let table: [Row; 8] = [
+            (
+                "原生日志：用操作 HLC",
+                "dev-a",
+                "review",
+                None,
+                1_000,
+                "{}",
+                2_000,
+                None,
+                0,
+            ),
+            (
+                "Anki revlog：(ankiId, 0, anki)，不看操作时刻",
+                "anki",
+                "review",
+                Some(1_699_999_999_000),
+                1_699_999_999_000,
+                "{}",
+                1,
+                Some("1699999999000:0:anki"),
+                1,
+            ),
+            (
+                "Anki 导入锚点：(at, 1, anki)",
+                "anki",
+                "importAnchor",
+                None,
+                1_700_000_000_000,
+                "{}",
+                1,
+                Some("1700000000000:1:anki"),
+                1,
+            ),
+            (
+                "外来日志早于操作：(at, 0, fushi)",
+                "dev-b",
+                "review",
+                None,
+                1_000,
+                FOREIGN,
+                2_000,
+                Some("1000:0:fushi"),
+                2,
+            ),
+            (
+                "外来日志与操作同一毫秒：仍派生",
+                "dev-b",
+                "review",
+                None,
+                2_000,
+                FOREIGN,
+                2_000,
+                Some("2000:0:fushi"),
+                2,
+            ),
+            (
+                "外来标记不是 true：用操作 HLC",
+                "dev-b",
+                "review",
+                None,
+                1_000,
+                r#"{"foreignLog":"true"}"#,
+                2_000,
+                None,
+                2,
+            ),
+            (
+                "外来日志晚于操作（伪造的未来时刻）：不派生",
+                "dev-b",
+                "review",
+                None,
+                3_000,
+                FOREIGN,
+                2_000,
+                None,
+                3,
+            ),
+            (
+                "外来日志远在未来：不派生",
+                "dev-b",
+                "review",
+                None,
+                i64::MAX,
+                FOREIGN,
+                2_000,
+                None,
+                3,
+            ),
+        ];
+        for (what, origin, kind, anki_id, at, extra, op_wall, want, _) in table {
+            assert_eq!(
+                derived_log_hlc(origin, kind, anki_id, at, extra, op_wall).as_deref(),
+                want,
+                "{what}：派生口径变了，改期望、记新修订号并升 CACHE_RULES"
+            );
+        }
+        let latest = table.iter().map(|r| r.8).max().unwrap();
+        assert_eq!(
+            super::CACHE_RULES,
+            latest,
+            "CACHE_RULES 与派生口径对表的最新修订号不一致"
+        );
+    }
 }
