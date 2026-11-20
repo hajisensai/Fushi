@@ -13,6 +13,7 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
@@ -128,6 +129,8 @@ void main() {
       );
       final dynamic reader = await _waitForReader(tester);
 
+      Future<Uint8List?> capture() async =>
+          await reader.debugCaptureWebView() as Uint8List?;
       Future<Map<String, Object?>> js(String body) async =>
           _json(await reader.debugEvaluateJavascript('JSON.stringify($body)'));
       Future<void> mouse(String type, double x, double y) async {
@@ -173,8 +176,9 @@ void main() {
       debugPrint('[bubble-zoom] early=$early opened=$opened');
       expect(early['open'], isFalse, reason: '停留不足 350ms 不应弹');
       expect(opened['open'], isTrue, reason: '停留 350ms 后应弹出放大层');
-      final ObserveShot hoverShot = await captureReaderWebView(
+      final ObserveShot hoverShot = await captureWebViewWith(
         '01-bubble-zoom-hover',
+        capture,
       );
       expect(hoverShot.saved, isTrue);
 
@@ -198,7 +202,7 @@ void main() {
       expect((afterTap['hit']! as Map)['text'], '猫');
       await tester.pump(const Duration(seconds: 1));
       expect(
-        (await captureReaderWebView('02-bubble-zoom-lookup-page')).saved,
+        (await captureWebViewWith('02-bubble-zoom-lookup-page', capture)).saved,
         isTrue,
       );
       expect(
@@ -226,7 +230,10 @@ void main() {
       expect(afterEsc['open'], isFalse, reason: 'Esc 应收起放大层');
       expect(reader.isDictionaryShown as bool, isFalse);
       expect(readerStillUp, isTrue, reason: 'Esc 先收放大层，不退出阅读器');
-      expect((await captureReaderWebView('03-bubble-zoom-esc')).saved, isTrue);
+      expect(
+        (await captureWebViewWith('03-bubble-zoom-esc', capture)).saved,
+        isTrue,
+      );
     } finally {
       await appModel.setMangaSpreadPreference(spreadBefore);
       if (bookDir.existsSync()) bookDir.deleteSync(recursive: true);
