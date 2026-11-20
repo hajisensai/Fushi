@@ -136,6 +136,7 @@ void main() {
       GalgameItemAction.stats,
       GalgameItemAction.rename,
       GalgameItemAction.cover,
+      GalgameItemAction.onlineCover,
       GalgameItemAction.autoCover,
       GalgameItemAction.scrape,
       GalgameItemAction.collect,

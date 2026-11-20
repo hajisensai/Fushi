@@ -395,6 +395,21 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         slot: ItemMenuSlot.edit,
         onPressed: () => _renameBook(dialogContext, item),
       ),
+      // 拍板 left3612（「设置封面也能用刮削封面」各媒体都要）：有声书 / 字幕书卡与
+      // EPUB 卡对称直挂「在线刮削封面」。此前只能进详情页或「编辑信息」的封面字段
+      // 才找得到；流程与 EPUB 卡同一个 [_scrapeBookItem]（详情页「刮削」也走它），
+      // 封面落 override 层、条目资料落 `(srt, uid)`。刮削要打第三方 API，属「在线
+      // 服务」模块。
+      if (modules.isEnabled(ModuleId.services))
+        DialogListAction(
+          label: t.book_scrape_cover,
+          icon: Icons.image_search_outlined,
+          slot: ItemMenuSlot.edit,
+          onPressed: () async {
+            Navigator.pop(dialogContext);
+            await _scrapeBookItem(item);
+          },
+        ),
       // 元数据详情页（与视频卡「详情」同一套海报面板外观）：封面 / 刮削资料 /
       // 进度 / 开始阅读 / 刮削。
       DialogListAction(
