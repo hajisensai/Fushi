@@ -4505,7 +4505,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final File subDest = File(p.join(dir.path, '$safeUid.$ext'));
     await client.getRemoteVideoSubtitle(video.id, subDest);
     final String content = await readTextWithEncoding(subDest);
-    final List<AudioCue> cues = parseSubtitleCues(
+    final List<AudioCue> cues = await parseSubtitleCues(
       content: content,
       format: ext,
       bookUid: bookUid,

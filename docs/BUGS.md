@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4234 条。点号进各自文件。
+> 共 4235 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4907](bugs/BUG-4907-video-import-subtitle-parse-blocks-ui.md) | ✅ | ✅ | 视频导入 / 来源扫描 / 互联收字幕在 UI isolate 上同步解析整份字幕，特效重的 ASS 冻住 UI 上百毫秒 |
 | [BUG-4906](bugs/BUG-4906-video-metadata-image-uncapped-decode.md) | ✅ | ✅ | 视频作品详情页与库页远程回落的刮削图（TMDB 原图）整帧解码，几张就压满 ImageCache |
 | [BUG-4905](bugs/BUG-4905-ai-cast-text-substitutions.md) | ✅ | ✅ | 小说和漫画 AI 标注未应用系列用词替换表 |
 | [BUG-4904](bugs/BUG-4904-book-series-key-store-annotation.md) | ✅ | ✅ | 书店写法「卷号<系列名> (文库名)」的分卷导入后不归合集 |
