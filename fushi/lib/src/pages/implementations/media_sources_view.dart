@@ -36,6 +36,7 @@ import 'package:fushi/src/media/alist/alist_api_client.dart';
 import 'package:fushi/src/media/audio_cd/audio_cd_import.dart';
 import 'package:fushi/src/media/source_library/add_local_folder_source.dart';
 import 'package:fushi/src/media/import/import_inbox.dart';
+import 'package:fushi/src/media/import/import_inbox_text.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/media/source_library/game_source_scanner.dart'
     show countGamesOfSource;
@@ -1577,7 +1578,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   }
 
   void _showInboxEmpty(String folder) => FushiToast.show(
-    msg: t.media_import_inbox_empty(folder: folder),
+    msg: importInboxEmptyText(folder: folder),
     severity: ToastSeverity.info,
   );
 
