@@ -15,7 +15,7 @@
     `runWebMineQueueRows`（`fushi/lib/src/mining/web_mine_queue_run.dart:105`）把这一行标
     `navigate_timeout`、把视频记成「到不了」；正在录的那一句拿着死页面的停帧 / 空音频照样落成卡，
     后面的行接着在重建回起始页的页面上录。
-- **[x] ① 已修复** — 页面接 `flushBeforeRebuild: _recoverFromProcessGone`：作废死表面的控制器 / 播放态 /
+- **[x] ① 已修复**（`07058fed69`）— 页面接 `flushBeforeRebuild: _recoverFromProcessGone`：作废死表面的控制器 / 播放态 /
   超分确认 / 静音预起，记下死前页面（重建打开 `_surfaceUrl`），非重放时按死前快照 `_beginRestore`
   恢复集 / 轨 / 位置；`_surfaceGone` 让在途 `_js` 随表面作废；可捕获档补
   `discardWebVideoCapturableEnvironment()` 环境重建入口（旧单例不释放，见注释）。重放循环：
