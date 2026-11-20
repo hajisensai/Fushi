@@ -67,11 +67,26 @@
     - Dart `SrsDbStore.importDrafts` 返回 `SrsImportDraftsResult`（`existed` + `foreignNotes`：回包 `foreign` 指向的笔记身份记录
       草稿的笔记 ID）；两个导入路径落库后才计数，被拒的记 `conflictNotes`（新原因 `otherProfileNoteType`，导入报告文案
       `srs_import_report_conflicts_other_profile`：另一份配置已有同一批笔记、属于另一个笔记类型，用同一个笔记类型 / 打开「合并笔记
-      模板」再导入），不加 `notesAdded` / `cardsAdded`，为它记进报告的复习数 / 重置为新卡数退回；
-    - `.apkg` 导入落库时按新笔记的卡带上日志的笔记（`importDrafts(logNotes:)`）：新笔记的卡还没有缓存行，以前日志只带卡、目标
-      是「哪里都没有的卡」，笔记被拒时它的复习照样悬空落进本集合、进统计与日历；带上笔记后跟着笔记一并不落。
-    - 没改：被拒笔记的卡片级修改（旗标、新卡位置等，目标是副本类型派生的卡 ID，哪里都没有）仍按「哪里都没有的 ID 照常写」落成
-      悬空修改——没有卡片缓存行，不进任何视图、统计与排期，并入后也对不上任何卡（副本类型的模板 ID 与别的集合的不同）。
+      模板」再导入），不加 `notesAdded` / `cardsAdded`；它的卡片计数整份不进报告（第二轮复核起按 `_CardTally` 落了才并进，见下）；
+    - `.apkg` 导入落库时按新笔记的卡带上日志的笔记（`importDrafts(cardNotes:)`，第一轮叫 `logNotes`）：新笔记的卡还没有缓存行，
+      以前日志只带卡、目标是「哪里都没有的卡」，笔记被拒时它的复习照样悬空落进本集合、进统计与日历；带上笔记后跟着笔记一并不落。
+  - **第六波第二轮复核跟改**（2026-11-20，同分支）：
+    - 报告计数：第一轮只退回了复习数 / 重置为新卡数，`fushiLogsRestored`、`revlogsVerifiedByExt`、`revlogsAlreadyPresent`、
+      `revlogsNotInExt`、`anchorsWritten`、`futureCards` 仍按已导入计。根因是按卡的计数直接记进报告、被拒后逐个减回。改成一条
+      笔记的卡片计数记在 `_CardTally`（`srs_apkg_import.dart`，`_importNote` 的卡片循环与 `_importCardSchedule` 只记这里）：已有
+      笔记当场并进报告，新笔记随 `_PendingNewNote` 等落库回包，落了才并进、被拒的整份不计——从同一个「被拒」判断推出，不再
+      逐个计数器打补丁。来源包里卡已删除的 revlog（BUG-4657）不属任何笔记，仍直接记报告。
+    - 卡片级修改：第一轮没改的「被拒笔记的卡片修改（新卡位置、牌组、暂停，目标是副本类型派生的卡 ID，哪里都没有）按『哪里都
+      没有的 ID 照常写』落成悬空修改」修掉。内核 `writes.rs` `apply_in`：**卡片修改带笔记**（输入项的 `note`，同日志带笔记）时，
+      除了卡自己过闸，它的笔记也过闸——笔记是别人的（同批身份记录被拒的那条笔记没进 `Born`，别的集合有、本集合没有）就一并不写，
+      下标进回包 `foreign`；只加严，不带笔记、笔记是本集合的 / 同批要建的 / 哪里都没有的，结果同以前。Dart `_applyInput` 给卡片
+      修改按 `cardNotes` 带上笔记，`.apkg` 新笔记的卡全在里面。
+    - 没选「内核按被拒笔记 × 模板推出卡 ID 一并拒」：填空题的卡序号来自笔记字段（`{{cN}}`，上不封顶，别名层要靠字段史补上限外
+      的序号），副本类型的模板又常在同一批才建，内核要在写入口重做一遍 Dart 出卡规则才推得全，推不全的照样漏；调用方本来就是按
+      笔记 × 模板派生出这些卡 ID 的，声明给内核即可精确闭合（取舍写在 `writes_owner.rs` 文件头「卡片修改带笔记」）。
+    - 仍没覆盖：同 profile 回导 / 旧卡接链补的 `historyFrom` 链接（`_historyLinks`）在导入末尾经 `writeEdits` 单独写、不带笔记。
+      新笔记要走到这条路须 fushi-ext 同 profile 且前身卡在本集合、或撞上认不出笔记的旧卡，被拒笔记几乎走不到；没构造出能触发的
+      路径，不为它加未测的过滤，记在交接第六波节。
     - 这层保护只在两个集合同处一个库时有：分在两台设备各自导入时都能写进去，日后并入仍按「规范 JSON 最小者胜」二选一笔记类型
       （同 guid 异笔记类型是 ID 只由 guid 派生的固有代价，设计 2026-11-11 §2）。两份 profile 只在用户确认并入时才合到一起，
       这一条记在交接第六波节「没做」。
@@ -99,9 +114,16 @@
     全名、笔记类型 / 笔记 / 卡片自证恒真、内置牌组恒自证、笔记自证恒假）各自单独改都有用例转红，还原后工作区干净。
   - 第六波复核跟改补测：内核 `import_drafts_reports_foreign_at_the_callers_input_index`（初值项筛掉后被拒项按原输入下标报；变异
     「按筛掉后的位置报」→ `left: [0]` / `right: [1]` 转红）；engine `srs_apkg_import_test.dart`「同库另一份 profile 已有同 guid、
-    另一个笔记类型的笔记」（不合并导入：记 `otherProfileNoteType`、`notesAdded` / `cardsAdded` / `reviewLogsImported` 为 0、P2 没有
+    另一个笔记类型的笔记」（不合并导入：记 `otherProfileNoteType`、`notesAdded` / `cardsAdded` 为 0、`reviewLogsImported` 比只有一份
+    profile 的对照少 1——同次导入里别的笔记的复习照常计数、P2 没有
     这条笔记也没有它的复习；合法场景：合并笔记模板再导入照常加上、复习落下）与 `srs_text_import_test.dart`「GUID 列的 guid 在同库
     另一份 profile 里是另一个笔记类型的笔记」（记冲突、同批别的行照常；同一个笔记类型照常导入）。
+  - 第六波第二轮复核跟改补测：内核 `card_edits_carrying_a_rejected_note_are_not_written`（`import_drafts` 里被拒笔记的两条卡片修改
+    进 `foreign`、不写；同批要建的笔记 / 本集合已有的笔记 / 哪里都没有的笔记的卡、不带笔记的哪里都没有的卡照写；`apply` 同一个闸，
+    同一张卡不带笔记照写）；engine `srs_apkg_import_test.dart` 组「被拒的笔记整份不计、卡片修改不落」三条——每条先断言 P2 的报告
+    与「包里没有 g4」的单 profile 对照**整份 `toJson` 逐项相同**（只多 g4 一条冲突），再按场景断言对照里 g4 确实贡献了：fushi-ext
+    恢复 / 校验 / 包外 revlog / 日志 / 锚点各 1；未来卡记进 `futureCards`；新卡位置与暂停写在 g4 的卡上（P2 同样那几张卡一条修改都
+    没有）。
 - **备注**：
   - 同库两集合互不并入时没有后果（A 的悬空操作只在 A 的集合里，B 看不到）；只有 A 的集合之后并进 B（本机或别的设备确认并入、
     `.fushisrs` 导入）才生效。
