@@ -1394,5 +1394,62 @@ void main() {
         }
       },
     );
+
+    test('a late reply to an earlier tag under the right key is skipped, not '
+        'mistaken for a key mismatch (pr3541)', () async {
+      final AnidbUdpCipher session = AnidbUdpCipher.derive('udp-key', _salt);
+      // The previous FILE timed out twice; AniDB answers it only now, sealed
+      // with the same session key, right before the current reply.
+      final List<int> stale = session.encrypt('t1 320 NO SUCH FILE');
+      // Precondition: ciphertext is not UTF-8, so a plaintext re-read of it
+      // would come back empty-handed (the old misclassification path).
+      expect(() => utf8.decode(stale), throwsFormatException);
+      final RawDatagramSocket server = await RawDatagramSocket.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      final _FixtureSender sender = _FixtureSender(server);
+      final StreamSubscription<RawSocketEvent> subscription = server.listen((
+        event,
+      ) {
+        if (sender.onEvent(event)) return;
+        if (event != RawSocketEvent.read) return;
+        while (true) {
+          final Datagram? datagram = server.receive();
+          if (datagram == null) break;
+          final String packet = session.decrypt(datagram.data)!;
+          final String tag = RegExp(r'&tag=(\w+)$').firstMatch(packet)![1]!;
+          sender.send(stale, datagram.address, datagram.port);
+          sender.send(
+            session.encrypt('$tag 220 FILE\n$_file'),
+            datagram.address,
+            datagram.port,
+          );
+        }
+      });
+      final AnidbUdpTransport transport = AnidbDatagramTransport.forSocket(
+        await RawDatagramSocket.bind(InternetAddress.loopbackIPv4, 0),
+        InternetAddress.loopbackIPv4,
+        server.port,
+      )..cipher = session;
+      try {
+        for (final String tag in <String>['t2', 't3']) {
+          expect(
+            await transport.exchange(
+              'FILE size=123&ed2k=$_hash&s=Ab12&tag=$tag',
+              tag,
+              const Duration(seconds: 5),
+            ),
+            '$tag 220 FILE\n$_file',
+            reason: 'the transport stays usable after skipping the stale reply',
+          );
+        }
+        await sender.flushed;
+      } finally {
+        await transport.close();
+        server.close();
+        await subscription.cancel();
+      }
+    });
   });
 }
