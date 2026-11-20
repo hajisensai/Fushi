@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-20T13:49:54Z",
+ "generatedAt": "2026-11-20T13:52:54Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "76811fc25da95f3be200a8769d48aafa00522396",
@@ -12,8 +12,8 @@
    "version": "3.4.0",
    "sha": "4d0daa3f864dfe2f88639d0c5c7bf2570f0bec81",
    "unknown": false,
-   "publishedAt": "2026-11-20T13:49:42Z",
-   "testflight": false,
+   "publishedAt": "2026-11-20T13:52:40Z",
+   "testflight": true,
    "baseSeq": 29190,
    "prs": [
     3802,
@@ -27,16 +27,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44734680517"
+     "state": "ok"
     },
     "macos": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44734680517"
+     "state": "ok"
     },
     "ios": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44734680517"
+     "state": "ok"
     }
    }
   },
@@ -85,36 +82,6 @@
    "platforms": {
     "android": {
      "state": "ok"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 29104,
-   "version": "3.4.0",
-   "sha": "37ba84838174da18e53f6f3d172748bf25501ff7",
-   "unknown": false,
-   "publishedAt": "2026-11-19T11:16:31Z",
-   "testflight": true,
-   "baseSeq": 29093,
-   "prs": [
-    3742,
-    3741
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44503481993"
     },
     "windows": {
      "state": "ok"
@@ -183,24 +150,6 @@
    "mergedAt": "2026-11-19T10:55:19Z",
    "additions": 89,
    "deletions": 0,
-   "labels": []
-  },
-  "3741": {
-   "number": 3741,
-   "title": "fix(ci): onnxruntime 改从 NuGet 取（GitHub release 404）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-19T09:10:18Z",
-   "additions": 226,
-   "deletions": 83,
-   "labels": []
-  },
-  "3742": {
-   "number": 3742,
-   "title": "feat(torrent-engine): 下载后端可选「互联设备」，BT 借已配对设备（fushi_server 或 app）的引擎跑",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-19T10:12:27Z",
-   "additions": 3133,
-   "deletions": 33,
    "labels": []
   },
   "3759": {
