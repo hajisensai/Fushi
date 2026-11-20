@@ -7527,7 +7527,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     }
     _popup.clear();
     _volumeDisplay.dispose();
-    _watchTracker?.dispose();
+    // 离开那一刻的完成判定会经远端客户端取追番身份（媒体服务器入库条目，
+    // [_remoteTrackingCompletion]）：登记进 [_remoteTeardown]，本页自建的客户端等它用完
+    // 再关（BUG-4908）。
+    final VideoWatchTracker? watchTracker = _watchTracker;
+    if (watchTracker != null)
+      unawaited(_remoteTeardown.track(watchTracker.close));
     _watchTracker = null;
     GlobalLookupController.instance.removeHiddenListener(_studyClockGate.sync);
     _studyClockGate.dispose();
