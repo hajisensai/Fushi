@@ -128,8 +128,8 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
     if (nextHighlight != _subtitleLookupHighlight) {
       _rebuild(() => _subtitleLookupHighlight = nextHighlight);
     }
-    // 刷新查词浮层顶部收藏星标：判定当前字幕句是否已收藏（异步，不阻塞弹窗）。
-    unawaited(_refreshVideoSentenceFavorite());
+    // 刷新查词浮层顶部收藏星标：读收藏镜像同步判定（video-25）。
+    _refreshVideoSentenceFavorite();
   }
 
   /// 查词暂停（浮层与副屏查词页同一入口）：仅当视频正在播放才暂停并标记，浮层全关 /
@@ -165,26 +165,27 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
     if (resume) unawaited(_controller?.resumePlayback());
   }
 
-  /// 当前查词字幕句的收藏键：视频句子把 cue.startMs 兼容写入
-  /// [FavoriteSentence.normCharOffset]，用 `bookUid + startMs` 指回时间轴；没有 cue 的
-  /// 旧条目继续以 `text + bookUid` 兼容匹配。
-  Future<void> _refreshVideoSentenceFavorite() async {
-    final String sentence = _lastLookupSentence;
-    final AudioCue? cue = _lastLookupCue;
-    if (sentence.isEmpty) {
-      if (mounted && _currentVideoSentenceIsFavorited) {
-        _rebuild(() => _currentVideoSentenceIsFavorited = false);
-      }
-      return;
-    }
-    final bool favorited = (await _matchingVideoFavorites(
-      sentence,
-      cue,
-    )).isNotEmpty;
+  /// 当前查词字幕句是否已收藏：读收藏镜像 [_favoritedVideoSentences]（video-25）。
+  ///
+  /// 视频句子把 cue.startMs 兼容写入 [FavoriteSentence.normCharOffset]，用
+  /// `bookUid + startMs` 指回时间轴；没有 cue 的旧条目继续以 `text + bookUid` 兼容匹配。
+  /// 原先每查一个词都 `getAll()` 读出并解析全部收藏句（代价随收藏总量增长），且浮层
+  /// 星标读库、字幕条星标读镜像，两份状态。现在同一份镜像；镜像填完由
+  /// [_refreshFavoritedCueCache] 补刷当前句。
+  void _refreshVideoSentenceFavorite() {
+    final bool favorited = _isLookupSentenceFavorited();
     if (mounted && favorited != _currentVideoSentenceIsFavorited) {
       _rebuild(() => _currentVideoSentenceIsFavorited = favorited);
     }
   }
+
+  bool _isLookupSentenceFavorited() => videoSentenceFavoritedInMirror(
+    _favoritedVideoSentences,
+    sentence: _lastLookupSentence,
+    cueStartMs: _lastLookupCue?.startMs,
+    episodeIndex: _favoriteSectionIndex,
+    isPlaylist: _favoriteIsPlaylist,
+  );
 
   /// 收藏/取消收藏当前查词所在的字幕句（视频端，TODO-047 ④）。来源标
   /// [kFavoriteSentenceSourceVideo]、记 [dateKey]=今日键，使其计入视频统计的「收藏语句」
@@ -207,20 +208,21 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
       )) {
         await repo.removeById(fav.id);
       }
+      _favoriteMirrorRevision++;
       if (mounted) {
         _rebuild(() {
           _currentVideoSentenceIsFavorited = false;
           if (cue != null) {
             _favoritedVideoSentences.remove(
               _videoFavoriteCacheKey(
-                sentence,
+                sentence.trim(),
                 cue.startMs,
                 _favoriteSectionIndex,
               ),
             );
           }
           _favoritedVideoSentences.remove(
-            _videoFavoriteCacheKey(sentence, null, null),
+            _videoFavoriteCacheKey(sentence.trim(), null, null),
           );
         });
       }
@@ -257,11 +259,18 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
         reading: headword?.reading,
       ),
     );
+    _favoriteMirrorRevision++;
     if (mounted) {
       _rebuild(() {
         _currentVideoSentenceIsFavorited = true;
+        // 镜像键一律用 trim 过的文本（与 [_refreshFavoritedCueCache] / [_isCueFavorited]
+        // 同口径），否则带首尾空白的查词句收藏后，字幕条星标要等下一次全量重填才亮。
         _favoritedVideoSentences.add(
-          _videoFavoriteCacheKey(sentence, cue?.startMs, _favoriteSectionIndex),
+          _videoFavoriteCacheKey(
+            sentence.trim(),
+            cue?.startMs,
+            _favoriteSectionIndex,
+          ),
         );
       });
     }
@@ -399,15 +408,13 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
   }
 
   /// 字幕跳转列表面板某句是否已收藏（同步，读缓存 [_favoritedVideoSentences]）。
-  bool _isCueFavorited(AudioCue cue) {
-    final String text = cue.text.trim();
-    return _favoritedVideoSentences.contains(
-          _videoFavoriteCacheKey(text, cue.startMs, _favoriteSectionIndex),
-        ) ||
-        _favoritedVideoSentences.contains(
-          _videoFavoriteCacheKey(text, null, null),
-        );
-  }
+  bool _isCueFavorited(AudioCue cue) => videoSentenceFavoritedInMirror(
+    _favoritedVideoSentences,
+    sentence: cue.text,
+    cueStartMs: cue.startMs,
+    episodeIndex: _favoriteSectionIndex,
+    isPlaylist: _favoriteIsPlaylist,
+  );
 
   /// 从字幕跳转列表面板行内 toggle 某句收藏（TODO-152 子A）。与查词浮层收藏走同一
   /// [FavoriteSentenceRepository]，视频句键优先用 `bookUid + cue.startMs`，并兼容旧
@@ -442,6 +449,7 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
         ),
       );
     }
+    _favoriteMirrorRevision++;
     if (!mounted) return;
     _rebuild(() {
       if (wasFavorited) {
@@ -474,18 +482,24 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
 
   /// 拉本视频已收藏句填充 [_favoritedVideoSentences]（打开字幕跳转列表前调一次）。
   /// 只取本 bookKey + video 来源那批，按 `text` 建集供同步查询。
+  ///
+  /// 填完补刷查词浮层星标（video-25：浮层星标也读这份镜像，查词可能早于首次填充）。
+  /// 读库期间本页又增删过收藏（[_favoriteMirrorRevision] 变了）时，这份快照可能早于
+  /// 那次写，丢掉重读——否则刚收藏的句子会被旧快照盖掉。
   Future<void> _refreshFavoritedCueCache() async {
     final String bookUid = _activeBookUid;
     final int generation = _episodeLoadSeq;
     final FavoriteSentenceRepository repo = FavoriteSentenceRepository(
       appModel.database,
     );
+    final int revision = _favoriteMirrorRevision;
     final List<FavoriteSentence> all = await repo.getAll();
     if (!mounted ||
         generation != _episodeLoadSeq ||
         bookUid != _activeBookUid) {
       return;
     }
+    if (revision != _favoriteMirrorRevision) return _refreshFavoritedCueCache();
     _rebuild(() {
       _favoritedVideoSentences
         ..clear()
@@ -504,6 +518,7 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
                 ),
               ),
         );
+      _currentVideoSentenceIsFavorited = _isLookupSentenceFavorited();
     });
   }
 

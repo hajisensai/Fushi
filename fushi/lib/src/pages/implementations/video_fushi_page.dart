@@ -791,6 +791,42 @@ String videoFavoriteCacheKey({
       : 'cue|${normalizedEpisodeIndex ?? 'single'}|$startMs|$text';
 }
 
+/// 一句字幕在收藏镜像（[videoFavoriteCacheKey] 键集）里是否已收藏（video-25）。
+///
+/// 查词浮层星标与字幕条 / 跳转列表星标都读它：同一份镜像、同一个判据，两处不会各说
+/// 各话。[sentence] 先 trim（镜像键也是 trim 过的文本）。有 cue 时按
+/// `startMs (+集下标)` 键查，再兼容没有 startMs 的旧 text-only 条目；没有 cue 的查词句
+/// 只认旧 text-only 条目——与取消收藏时 DB 匹配（`_matchingVideoFavorites`）同口径。
+bool videoSentenceFavoritedInMirror(
+  Set<String> mirror, {
+  required String sentence,
+  required int? cueStartMs,
+  required int? episodeIndex,
+  required bool isPlaylist,
+}) {
+  final String text = sentence.trim();
+  if (text.isEmpty) return false;
+  if (cueStartMs != null &&
+      mirror.contains(
+        videoFavoriteCacheKey(
+          text: text,
+          startMs: cueStartMs,
+          episodeIndex: episodeIndex,
+          isPlaylist: isPlaylist,
+        ),
+      )) {
+    return true;
+  }
+  return mirror.contains(
+    videoFavoriteCacheKey(
+      text: text,
+      startMs: null,
+      episodeIndex: null,
+      isPlaylist: isPlaylist,
+    ),
+  );
+}
+
 /// TODO-897 / BUG-805：缺失资源对话框的用户选择。「重新导入」现为真动作
 /// （单视频重链选文件 / 播放列表打开导入对话框），不再有独立「重新选择文件」项。
 enum _MissingResourceChoice { reimport, delete, cancel }
@@ -1310,6 +1346,21 @@ abstract class VideoFushiTestHooks {
 
   /// 页面当前的字幕外观快照。
   VideoSubtitleStyle get debugSubtitleStyle;
+
+  /// 走与打开视频同一条路径从库里重填收藏镜像（video-25）。
+  Future<void> debugRefreshFavoritedCueCache();
+
+  /// 模拟一次查词落到 [sentence]（[cue] 可空）后刷新浮层收藏星标（与 [_lookupAt] 同一调用）。
+  void debugSetLookupSentence(String sentence, AudioCue? cue);
+
+  /// 查词浮层顶部收藏星标当前是否实心。
+  bool get debugCurrentSentenceFavorited;
+
+  /// 字幕条 / 跳转列表星标对 [cue] 的判定。
+  bool debugIsCueFavorited(AudioCue cue);
+
+  /// 走浮层星标同一条路径收藏 / 取消收藏当前查词句。
+  Future<void> debugToggleLookupSentenceFavorite();
   Future<void> debugSelectSubtitleOff();
 
   /// 当前播放位置（毫秒）；未就绪为 null。
@@ -2017,6 +2068,26 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   @override
   VideoSubtitleStyle get debugSubtitleStyle => _subtitleStyle;
+
+  @override
+  Future<void> debugRefreshFavoritedCueCache() => _refreshFavoritedCueCache();
+
+  @override
+  void debugSetLookupSentence(String sentence, AudioCue? cue) {
+    _lastLookupSentence = sentence;
+    _lastLookupCue = cue;
+    _refreshVideoSentenceFavorite();
+  }
+
+  @override
+  bool get debugCurrentSentenceFavorited => _currentVideoSentenceIsFavorited;
+
+  @override
+  bool debugIsCueFavorited(AudioCue cue) => _isCueFavorited(cue);
+
+  @override
+  Future<void> debugToggleLookupSentenceFavorite() =>
+      _toggleFavoriteSentenceForVideo();
 
   @override
   void debugOpenSubtitleSettings() =>
@@ -3411,8 +3482,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }
 
   /// 当前查词所在字幕句是否已被收藏（驱动查词浮层顶部收藏星标的实心/空心）。每次
-  /// [_lookupAt] 成功后据 [_lastLookupSentence] 异步刷新。视频句子收藏走与书内同一
-  /// [FavoriteSentenceRepository]（preferences JSON），来源标 [kFavoriteSentenceSourceVideo]。
+  /// [_lookupAt] 成功后据 [_lastLookupSentence] 从镜像 [_favoritedVideoSentences] 同步
+  /// 算出（video-25：不再每查一个词就把全部收藏句 JSON 读出解析），镜像重填后补刷。
+  /// 视频句子收藏走与书内同一 [FavoriteSentenceRepository]（preferences JSON），来源标
+  /// [kFavoriteSentenceSourceVideo]。
   bool _currentVideoSentenceIsFavorited = false;
 
   /// 本视频已收藏句锚点的缓存集合（驱动字幕跳转列表行内收藏星标的实心/空心，TODO-152
@@ -3421,6 +3494,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 行内收藏 toggle 后增量更新。新条目按 `bookUid + cue.startMs` 匹配；旧条目没有
   /// startMs 时保留 text-only 兼容键。
   final Set<String> _favoritedVideoSentences = <String>{};
+
+  /// 本页对收藏的增删次数（video-25）：镜像全量重填（[_refreshFavoritedCueCache]）读库
+  /// 期间若本页又增删过，读到的那份快照可能早于这次写，填完要重读一次。
+  int _favoriteMirrorRevision = 0;
   VideoRemotePlaybackBinding? _videoRemoteBinding;
   final VideoRemoteCueCache _videoRemoteCueCache = VideoRemoteCueCache();
 
