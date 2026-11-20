@@ -29,8 +29,10 @@ import 'test_flow/suite_timings.dart';
 ///                                                # tests of dist_itests.json
 ///   dart tool/dist_test.dart --analyze [paths]   # flutter analyze on another
 ///                                                # machine
-///   dart tool/dist_test.dart --offload [paths]   # other machines first; this
-///                                                # one only for the leftovers
+///   dart tool/dist_test.dart --offload [paths]   # the other machines, and
+///                                                # this one as their peer
+///                                                # while a heavy slot here
+///                                                # is free (--no-local: not)
 ///   dart tool/dist_test.dart --package=packages/fushi_engine [paths]
 ///                                                # a workspace package's tests
 ///                                                # (pure Dart ones: dart test)
@@ -214,9 +216,9 @@ Future<void> _main(_Options options) async {
         if (options.workers!.contains(c.name)) c,
     ];
   }
-  // Off this machine: the other machines are the workers; this one only
-  // picks up test suites they could not run (never analyze or a build:
-  // heavy.dart then runs it here itself).
+  // Off this machine: the other machines are the workers, and for tests this
+  // one joins them as a peer ([fallback] below; never for analyze or a
+  // build: heavy.dart then runs it here itself).
   final DistJob? job = options.analyze
       ? const DistJob.analyze()
       : (options.build == null ? null : DistJob.build(options.build!));
@@ -227,8 +229,12 @@ Future<void> _main(_Options options) async {
           (options.build?.runsOn(c.platform) ?? true))
         ...createDistWorkers(c, repoRoot: repoRoot),
   ];
+  // This machine's worker in an offloaded test run: driven alongside the
+  // others from the start (it queues for a heavy slot here like any heavy
+  // run, and leaves that queue once the others did it all or none of them
+  // is left to share with), then once more for whatever is still left.
   final List<DistWorker> fallback = <DistWorker>[
-    if (options.offload && job == null)
+    if (options.offload && job == null && !options.noLocal)
       for (final DistWorkerConfig c in configs)
         if (c.kind == DistWorkerKind.local)
           ...createDistWorkers(c, repoRoot: repoRoot),
@@ -413,9 +419,11 @@ Future<void> _main(_Options options) async {
     busyRetries: options.busyRetries,
     concurrency: options.concurrency,
   );
+  scheduler.localIsPeer = true;
   await Future.wait(<Future<void>>[
-    for (final DistWorker w in workers) scheduler.drive(w),
+    for (final DistWorker w in everyWorker) scheduler.drive(w),
   ]);
+  scheduler.localIsPeer = false;
   if (options.offload && scheduler.results.isEmpty) {
     // Nothing ran anywhere else (unreachable, busy, paused): the caller runs
     // the whole command here, in its own form.
@@ -425,13 +433,19 @@ Future<void> _main(_Options options) async {
     stdout.writeln('DIST OFFLOAD: no other machine took any suite');
     exit(_tally.declineCode);
   }
-  if (queue.remaining.isNotEmpty && fallback.isNotEmpty) {
+  // Left only when this machine had no slot while the others still worked
+  // (or none of them could run these suites): now it queues here for them.
+  final List<DistWorker> idleHere = <DistWorker>[
+    for (final DistWorker w in fallback)
+      if (!scheduler.isUsable(w)) w,
+  ];
+  if (queue.remaining.isNotEmpty && idleHere.isNotEmpty) {
     stdout.writeln(
       '${queue.remaining.length} suite(s) left that no other machine ran: '
       'running them here',
     );
     await Future.wait(<Future<void>>[
-      for (final DistWorker w in fallback) scheduler.drive(w),
+      for (final DistWorker w in idleHere) scheduler.drive(w),
     ]);
   }
   // Every red suite once more on another machine, for the report only.
@@ -563,6 +577,38 @@ class _Scheduler {
   /// queue ran dry (for [rerunFailures]).
   final List<DistWorker> _usable = <DistWorker>[];
 
+  /// [worker] prepared and was never dropped ([_usable]).
+  bool isUsable(DistWorker worker) => _usable.contains(worker);
+
+  /// Workers whose prepare is under way.
+  final Set<DistWorker> _preparing = <DistWorker>{};
+
+  /// Set by main() while this machine's worker is driven alongside the
+  /// others: it then shares their queue, and while it still waits for a
+  /// heavy slot here it is only wanted as long as another machine is
+  /// preparing or working too. With all of them gone (busy, unreachable,
+  /// failed) it leaves the heavy queue, so that heavy.dart -- which queues
+  /// here and keeps asking the other machines meanwhile -- takes over.
+  bool localIsPeer = false;
+
+  static bool _isLocal(DistWorker w) => w.config.kind == DistWorkerKind.local;
+
+  /// Another machine's worker is preparing or working.
+  bool get _othersAtIt =>
+      _preparing.any((DistWorker w) => !_isLocal(w)) ||
+      _live.any((DistWorker w) => !_isLocal(w));
+
+  /// [worker], not yet prepared, is still worth waiting for: something it
+  /// may run is left (or a batch in flight could requeue some), and for
+  /// this machine's peer worker another machine is still at it.
+  bool _wantedWhilePreparing(DistWorker worker) => distWantedWhilePreparing(
+    claimLost: _tally.lost,
+    batchesInFlight: _inFlight > 0,
+    workLeftForIt: queue.remaining.any(worker.eligible),
+    localPeer: localIsPeer && _isLocal(worker),
+    othersAtIt: _othersAtIt,
+  );
+
   /// The units of every batch that ran to the end, by batch id.
   final Map<int, List<DistUnit>> _unitsByBatch = <int, List<DistUnit>>{};
 
@@ -586,18 +632,40 @@ class _Scheduler {
   );
 
   Future<void> drive(DistWorker worker) async {
+    _preparing.add(worker);
+    // Appended: this machine's worker may be driven twice in a run (main()).
     final IOSink prepLog = File(
       '${out.path}/prepare.${worker.name}.log',
-    ).openWrite();
+    ).openWrite(mode: FileMode.append);
     final Stopwatch prep = Stopwatch()..start();
     try {
       stdout.writeln('[${worker.name}] preparing');
-      if (!await _prepareAskingAgain(worker, prepLog)) {
+      final bool ready;
+      try {
+        ready = await _prepareAskingAgain(worker, prepLog);
+        // Live before it stops counting as preparing: a peer waiting for a
+        // slot here must never see this machine as neither.
+        if (ready) _live.add(worker);
+      } finally {
+        _preparing.remove(worker);
+        _notify();
+      }
+      if (!ready) {
         // The others ran everything this worker could have (a slow first
-        // prepare must not hold up a run that is otherwise done).
+        // prepare must not hold up a run that is otherwise done) -- or, for
+        // this machine's peer still waiting for a slot, no other machine is
+        // left to share with ([localIsPeer]).
+        final bool alone =
+            localIsPeer &&
+            _isLocal(worker) &&
+            !_othersAtIt &&
+            queue.remaining.any(worker.eligible);
         stdout.writeln(
-          '[${worker.name}] not needed: nothing left for it after '
-          '${prep.elapsed.inSeconds}s of preparing',
+          alone
+              ? '[${worker.name}] leaves the heavy queue here after '
+                    '${prep.elapsed.inSeconds}s: no other machine is at it'
+              : '[${worker.name}] not needed: nothing left for it after '
+                    '${prep.elapsed.inSeconds}s of preparing',
         );
         await worker.abandon();
         await prepLog.close();
@@ -608,6 +676,7 @@ class _Scheduler {
       stdout.writeln('[${worker.name}] ready after ${prep.elapsed.inSeconds}s');
       _breakerLearns(worker);
     } on Object catch (e) {
+      _live.remove(worker);
       // No connection is "for now" like busy: nothing of the run got there.
       if (e is! DistWorkerBusy && e is! DistWorkerUnreachable) {
         _tally.failed(worker);
@@ -623,7 +692,6 @@ class _Scheduler {
       return;
     }
     await prepLog.close();
-    _live.add(worker);
     final DistSpeed speed = _speeds[worker]!;
 
     int infraStreak = 0;
@@ -804,9 +872,7 @@ class _Scheduler {
           return _prepareWhileNeeded(worker, log);
         },
         retries: busyRetries,
-        stillWanted: () =>
-            !_tally.lost &&
-            (_inFlight > 0 || queue.remaining.any(worker.eligible)),
+        stillWanted: () => _wantedWhilePreparing(worker),
         // Each answer, not only the last of them: "in use" is the machine
         // answering, short of disk is known at the first one.
         answered: (DistWorkerBusy e) => _breakerLearns(worker, e),
@@ -871,10 +937,7 @@ class _Scheduler {
       while (true) {
         if (error != null) Error.throwWithStackTrace(error!, trace!);
         if (done) return true;
-        if (_tally.lost ||
-            (_inFlight == 0 && !queue.remaining.any(worker.eligible))) {
-          return false;
-        }
+        if (!_wantedWhilePreparing(worker)) return false;
         await _changed.future;
       }
     } finally {
@@ -1253,6 +1316,7 @@ class _Options {
     required this.itest,
     required this.analyze,
     required this.offload,
+    required this.noLocal,
     required this.busyRetries,
     required this.offloadClaim,
     required this.package,
@@ -1289,10 +1353,16 @@ class _Options {
   /// machine that takes it, instead of tests.
   final bool analyze;
 
-  /// tool/heavy.dart handing work off this machine: other machines first,
-  /// this one only for what they leave; [kDistOffloadDeclined] when no other
-  /// machine took anything.
+  /// tool/heavy.dart handing work off this machine: the other machines, and
+  /// this one as their peer while it gets a heavy slot here
+  /// ([_Scheduler.localIsPeer]); [kDistOffloadDeclined] / busy when nothing
+  /// ran anywhere.
   final bool offload;
+
+  /// [kDistNoLocalFlag]: no local worker at all. heavy.dart passes it to the
+  /// attempts it makes while the run already queues here: its own queue is
+  /// this machine's bid, a local worker would only queue a second time.
+  final bool noLocal;
 
   /// How often in a row a busy worker is asked again before it is dropped.
   final int busyRetries;
@@ -1327,6 +1397,7 @@ class _Options {
     bool itest = false;
     bool analyze = false;
     bool offload = false;
+    bool noLocal = false;
     int busyRetries = _Scheduler.kBusyRetries;
     String? offloadClaim;
     String package = kDistAppPackage;
@@ -1360,6 +1431,8 @@ class _Options {
         analyze = true;
       } else if (arg == '--offload') {
         offload = true;
+      } else if (arg == kDistNoLocalFlag) {
+        noLocal = true;
       } else if (arg.startsWith('--busy-retries=')) {
         busyRetries =
             int.tryParse(arg.substring('--busy-retries='.length)) ??
@@ -1405,6 +1478,7 @@ class _Options {
       itest: itest,
       analyze: analyze,
       offload: offload,
+      noLocal: noLocal,
       busyRetries: busyRetries,
       offloadClaim: offloadClaim,
       package: package,
