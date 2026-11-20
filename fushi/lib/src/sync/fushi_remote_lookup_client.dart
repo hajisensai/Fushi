@@ -150,8 +150,9 @@ class FushiRemoteLookupClient {
   ///
   /// [dictionaryConfigFor]：按候选（即按 host）给出本端生效配置对这台 host 的词典选择
   /// （`DictionaryRepository.filtersForHost`）。返回非 null 才发 `dictionaries` 字段，
-  /// host 把它当这次请求的唯一真相；null / 不传时请求体与旧版逐字相同。只发给开着
-  /// [FushiClientUrl.lookupEnabled] 的地址。
+  /// host 把它当这次请求的唯一真相；null / 不传时请求体与旧版逐字相同。普通查词只发给
+  /// 开着 [FushiClientUrl.lookupEnabled] 的地址；绑定会话（游戏串流 / 视频遥控）发给
+  /// 那台 host，词典选择同样按本端设置（拍板台 pr3602）。
   Future<DictionarySearchResult?> searchDictionary({
     required String term,
     required bool wildcards,

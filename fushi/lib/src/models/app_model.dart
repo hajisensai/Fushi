@@ -11042,6 +11042,22 @@ class AppModel
     _remoteDictionaryCatalog = null;
   }
 
+  /// 本端生效配置对 [candidate] 这台 host 的词典选择，随远端查词请求的 `dictionaries`
+  /// 字段发出；host 只按它排除与排序，不需要知道配置是什么。[profileView] 非 null 时用
+  /// 作品 / 扩展所选的配置视图，否则用激活配置。null = 没有可说的（请求体与旧版相同）。
+  ///
+  /// 普通远端查词、游戏串流与视频遥控查词共用这一份：用户在词典管理里对这台 host 做的
+  /// 隐藏与排序在三条路径上一致生效（拍板台 pr3602：尊重接收端的选择）。
+  RemoteLookupDictionaryConfig? remoteLookupDictionaryConfigFor(
+    FushiClientUrl candidate, {
+    ProfileSettingsView? profileView,
+  }) {
+    final String hostId = remoteDictionaryHostIdOf(candidate);
+    return profileView != null
+        ? profileView.filtersForHost(hostId)
+        : dictRepo.filtersForHost(hostId);
+  }
+
   Future<DictionarySearchResult?> _searchRemoteDictionary({
     required String searchTerm,
     required bool searchWithWildcards,
@@ -11078,12 +11094,11 @@ class AppModel
             rubySpans: rubySpans,
             // 本端生效配置（作品 / 扩展所选配置视图，否则激活配置）对每台 host 的词典
             // 选择：host 只按它排除与排序，不需要知道配置是什么。
-            dictionaryConfigFor: (FushiClientUrl candidate) {
-              final String hostId = remoteDictionaryHostIdOf(candidate);
-              return profileView != null
-                  ? profileView.filtersForHost(hostId)
-                  : dictRepo.filtersForHost(hostId);
-            },
+            dictionaryConfigFor: (FushiClientUrl candidate) =>
+                remoteLookupDictionaryConfigFor(
+                  candidate,
+                  profileView: profileView,
+                ),
           );
       // 每台 host 的可达 / 不可达已由传输层经全局上报点逐候选记进 [_remoteDictionaryReachability]。
       return result;
