@@ -99,12 +99,13 @@ bool _rowIsStyled(WidgetTester tester, String text) {
           w.text.toPlainText(includeSemanticsLabels: false) == text,
     ),
   );
-  bool styled = false;
-  rich.text.visitChildren((InlineSpan span) {
-    if (span.style?.color == _opRed) styled = true;
-    return !styled;
-  });
-  return styled;
+  // 不用 visitChildren：它跳过没有 text 的容器 span，而样式正挂在容器上。
+  bool walk(InlineSpan span) {
+    if (span.style?.color == _opRed) return true;
+    return span is TextSpan && (span.children?.any(walk) ?? false);
+  }
+
+  return walk(rich.text);
 }
 
 void _expectAllRowsListed() {
