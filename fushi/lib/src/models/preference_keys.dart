@@ -1204,12 +1204,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'web_browser_youtube_subtitles',
   // bool（默认 true）：网页漫画章末二维码广告页剔除（判定在 native/fushi_web_core 的 comic_ad）。
   'web_comic_ad_filter',
-  // bool（默认 false）：Android 桌面小组件默认隐藏书名 / 视频标题 / 释义 / Profile 名。
-  // 描述这台设备的桌面，设备本地（deviceLocalPrefKeys + ProfileKeys 排除）。
   // String / int / String：见 [kWhatsNewSeenVersionPrefKey]。设备本地。
   'whats_new_card_dismissed_version',
   'whats_new_seen_seq',
   'whats_new_seen_version',
+  // bool（默认 false）：Android 桌面小组件默认隐藏书名 / 视频标题 / 释义 / Profile 名。
+  // 描述这台设备的桌面，设备本地（deviceLocalPrefKeys + ProfileKeys 排除）。
   'widget_privacy_hide_definitions',
   'widget_privacy_hide_profile',
   'widget_privacy_hide_titles',

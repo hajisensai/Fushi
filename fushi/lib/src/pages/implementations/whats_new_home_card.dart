@@ -9,6 +9,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/updates/whats_new.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
     show isEinkTheme, isGlassDesign;
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -39,9 +40,9 @@ class WhatsNewHomeCard extends StatelessWidget {
         final bool visible = status.stage == WhatsNewStage.card;
         // 出现 / 收起走尺寸 + 淡入淡出（减弱动态效果下零时长）；下间距挂在有内容
         // 的那一支上，没有新内容时首页顶部不留空。
-        return AnimatedSize(
+        return FushiAnimatedSize(
           duration: fushiMotionDuration(context, FushiMotion.medium),
-          curve: Curves.easeOutCubic,
+          curve: FushiMotion.standard,
           alignment: Alignment.topCenter,
           child: AnimatedSwitcher(
             duration: fushiMotionDuration(context, FushiMotion.short),
