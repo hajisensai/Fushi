@@ -1,0 +1,13 @@
+## BUG-4942 · 内置浏览器查词点「高级制卡」后视频自动续播、字段预填缺例句
+- **报告**：2026-11-17（应用内反馈 4YiquMnaSc，Windows 3.3.0-debug.28629；附录屏）
+- **真实性**：✅ 真 bug（录屏：app 内浏览器 YouTube 页查词 → 点「高级制卡」，对话框开着时字幕一句句往下走 = 视频在播）。
+  - 链路：app 内浏览器的扩展宿主把查词交给 `SrsCardLookupHost`（`web_browser_extension_host_feature.dart` `_presentLookup`），关栈回调 `onClosed` → 页内 `lookupClosed` → content.js 续播。
+  - 根因 `fushi/lib/src/pages/implementations/srs/srs_card_lookup.dart:440`（修前 `didChangeDependencies`）：本页不再是栈顶就一律关整栈。「高级制卡」对话框（`showAdvancedMiningDialog` → `showAppDialog`，根导航器上的路由）正是压在浏览器页之上的路由，于是一点「高级制卡」整栈被关 → `onClosed` → 扩展续播视频；对话框确认时要回点的那层弹窗也已关掉。查词会话自己的对话框都经 `runWithLookupPopupHidden`（弹窗停靠、不关栈），宿主没区分这两种「被盖住」。
+  - 附带：`advancedMiningOpenerFor` 没给本宿主的语境，「卡片字段」预填的 Sentence 兜底取宿主级 `favoriteLookupContext`（本宿主为 null）→ 预填里没有例句，而真正落卡时 `onMineEntry` 又用 `_sentence` 补上——预填与落卡不一致。
+- **[x] ① 已修复** — `didChangeDependencies` 在 `lookupPopupHiddenByDialog`（查词会话自己的对话框）期间不关栈，post-frame 回调里再判一次；其它路由盖住本页照旧关栈。宿主覆写 `advancedMiningOpenerFor`，把查词所在那句（`srsLookupMiningContext(_sentence)`）按表面传给预填，不改宿主级 `favoriteLookupContext`（收藏行为不变）。
+- **[x] ② 已加自动化测试** — `fushi/test/srs/srs_card_lookup_test.dart`「查词会话自己的对话框（BUG-4942）」组：经 `runWithLookupPopupHidden` 弹对话框 → 栈不关、`onClosed` 不回调、关窗后弹窗仍在（撤掉修复后此条红）；别的路由盖住本页仍关栈；语境纯函数。
+- **备注**：
+  - 反馈里「卡上没有字幕句和视频片段」：app 内浏览器宿主模式（2026-10-28 `6b39656910` 起）查词交给 app 弹窗，制卡走 `DictionaryPageMixin.onMineEntry` 纯字段 + 例句兜底，**从来没接**扩展 `bridge-shim.js` `mineEntry` 那条带时间窗 / 画面 / YouTube 裁流的路（宿主的消息路由 `web_browser_extension_messages.dart` 也没有 `mine`），所以浏览器里制的卡没有片段。这是宿主模式缺的整条能力（要给扩展来源的查词接沉浸制卡：`fushiMineContext` 时间窗 + `webBrowserRemoteMinePayload` + `mineImmersion`，含高级制卡覆盖项），本条未做，另立。
+  - 「用 Fushi 播放」（原生页网页档 `video_fushi/web_source.part.dart`）：YouTube 点「+」已后台直裁（`_onWebMineEntry`）；高级制卡对话框在网页档按设计不给句子 / 音频 / 图片分区（`video_fushi_page.dart` `buildAdvancedMiningSections` 的 `_webMode` 分支）。录屏里原生页对话框期间视频未播放（关对话框后弹窗仍在、字幕未前进）。内置档页 YouTube 排队重放由 open PR #3784 改直裁。
+  - 「视频增强少了几个功能」：网页档设置面板按设计去掉着色器 / mpv / 弹幕分组（`videoWebBackendSettingsGroups`），站点画面不经 libmpv；缺具体项，需问用户。
+  - 未在真实 Windows app 内浏览器复测（子代理环境无真机会话），按集成测试纪律待补。
