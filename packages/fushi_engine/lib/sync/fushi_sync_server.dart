@@ -80,6 +80,7 @@ import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_service.dart';
 import 'package:fushi_engine/sync/remote_lookup_routes.dart';
 import 'package:fushi_engine/sync/remote_mining_target.dart';
+import 'package:fushi_engine/srs/srs_remote_generation.dart';
 import 'package:fushi_engine/srs/srs_remote_store.dart';
 import 'package:fushi_engine/srs/srs_remote_store_routes.dart';
 import 'package:fushi_engine/sync/srs_change_feed.dart';
@@ -824,7 +825,8 @@ class FushiSyncServer {
       InterconnectPluginRelayTickets();
 
   /// 远程复习库（docs/specs/2026-11-01-srs-remote-review-design.md）：每个请求现取，复习模块关着时回 null →
-  /// `/api/srs/remote/*` 404、`/api/capabilities` 不声明 [kSrsRemoteStoreCapability]。
+  /// 端点 503 `unavailable`（V2）/ 404（V1）、`/api/capabilities` 不声明 [kSrsRemoteStoreCapabilityV2] /
+  /// [kSrsRemoteStoreCapability]。开着时两个都声明：V2 是真端点，V1 只是拒绝桩（D31，srs_remote_generation.dart）。
   SrsRemoteStoreService? Function()? srsRemoteStoreProvider;
 
   /// 「互联主机」AI 提供商的主机侧（反馈 M8KvhMTHVS，`ai/ai_relay.dart`）：已配对设备把
@@ -1343,9 +1345,22 @@ class FushiSyncServer {
       return jsonResponse(<String, dynamic>{'joined': joined()});
     }
     // 远程复习库：已配对设备不下载卡组，直接在本机的复习库上复习。鉴权走上方 middleware。
-    if (reqPath.startsWith(kSrsRemoteStorePathPrefix)) {
+    if (isSrsRemoteStorePath(reqPath)) {
       final SrsRemoteStoreService? review = srsRemoteStoreProvider?.call();
-      if (review == null) return shelf.Response.notFound('SRS review off');
+      if (review == null) {
+        // V2 端点回机读码：新客户端据「404 而没有机读码」判断对端是不认 V2 的旧主机，复习关着不能混进去。
+        return reqPath.startsWith(kSrsRemoteStoreV2PathPrefix)
+            ? shelf.Response(
+                503,
+                body: jsonEncode(<String, dynamic>{
+                  'error': SrsRemoteStoreError.unavailable,
+                }),
+                headers: const <String, String>{
+                  'Content-Type': 'application/json',
+                },
+              )
+            : shelf.Response.notFound('SRS review off');
+      }
       return handleSrsRemoteStoreRequest(review, request, method, reqPath);
     }
     if (reqPath.startsWith(kAiRelayPathPrefix)) {
@@ -1380,7 +1395,10 @@ class FushiSyncServer {
       if (_leaderboardLinkAvailable) {
         capabilities[kInterconnectLeaderboardLinkCapability] = true;
       }
-      if (srsRemoteStore) capabilities[kSrsRemoteStoreCapability] = true;
+      if (srsRemoteStore) {
+        capabilities[kSrsRemoteStoreCapabilityV2] = true;
+        capabilities[kSrsRemoteStoreCapability] = true;
+      }
       if (screenOcr) capabilities[kScreenOcrCapability] = true;
       if (aiRelay) capabilities[kAiRelayCapability] = true;
       return jsonResponse(capabilities);

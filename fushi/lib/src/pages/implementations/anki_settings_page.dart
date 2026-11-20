@@ -632,9 +632,12 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     // 内置类型（Lapis、Fushi 卡片）恒用各自的默认映射，不给逐字段改。
     final bool builtinMapping =
         noteType == null || srsBuiltinNoteTypeSpec(noteType.builtinKey) != null;
+    // 按换成规范 ID 的落点查（G9-6，解析落点时已归一）：偏好里可能还是成员 ID 键（作品级覆盖层、开库归一之前），
+    // 拿规范的 type.id 去查原样的偏好会显示按字段名猜的映射。
     final Map<String, String>? stored = builtinMapping
         ? null
-        : appModel.srsMiningDestination.fieldMappingsByType[noteType.id];
+        : (resolved.destination ?? appModel.srsMiningDestination)
+              .fieldMappingsByType[noteType.id];
     final Map<String, String> mappings = builtinMapping
         ? const <String, String>{}
         : srsEffectiveFieldMappings(noteType, stored);

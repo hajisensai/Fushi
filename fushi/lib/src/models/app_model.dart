@@ -1749,17 +1749,15 @@ class AppModel
     }
   }
 
-  /// 备份导出要读的本机 SRS 存储：复习模块开着时照常打开；模块关着时只在 srs.db 已经存在
-  /// （以前用过复习、数据还在）时打开——数据在就得能随备份走，没用过复习的设备不凭空建库。
-  /// 返回 null = 本机没有 srs.db（SRS 若还在主库老表里，由主库副本按老形态带走）。
+  /// 备份导出要读的本机 SRS 存储：复习模块开着时照常打开；模块关着时只在本机有复习库文件（新代 `srs4.db`
+  /// 或协议 3 的 `srs.db`，[SrsStorageHost.hasStoredLibrary]）时打开——数据在就得能随备份走，没用过复习的设备
+  /// 不凭空建库。返回 null = 本机没有复习库（SRS 若还在主库老表里，由主库副本按老形态带走）。
   Future<SrsStorage?> srsStorageForBackup() async {
     final SrsStorageHost? host = _srsStorageHost;
     if (host == null) return null;
-    if (!moduleVisibility.isEnabled(ModuleId.srs) &&
-        !File(host.path).existsSync()) {
-      return null;
-    }
-    return host.acquire();
+    return host.acquireIfStored(
+      moduleEnabled: moduleVisibility.isEnabled(ModuleId.srs),
+    );
   }
 
   /// Test seam：注入一份 SRS 存储持有者（不经初始化路径）。
@@ -12634,6 +12632,17 @@ class AppModel
       _prefsRepo?.srsFolderLocations ?? const <SrsFolderLocation>[];
   Future<void> setSrsFolderLocations(List<SrsFolderLocation> value) =>
       prefsRepo.setSrsFolderLocations(value);
+
+  /// 移除文件夹位置 [id]：配置里去掉、同一个事务里记进「内核待忘」清单（透传 prefsRepo，见
+  /// [PreferencesRepository.removeSrsFolderLocation]）。
+  Future<void> removeSrsFolderLocation(String id) =>
+      prefsRepo.removeSrsFolderLocation(id);
+
+  /// 移除了、复习内核还没忘掉的位置身份（同步调度器逐个 `location_forget`）。
+  Set<String> get srsPendingLocationForgets =>
+      _prefsRepo?.srsPendingLocationForgets ?? const <String>{};
+  Future<void> markSrsLocationForgotten(String locationId) =>
+      prefsRepo.markSrsLocationForgotten(locationId);
 
   /// 复习同步 v2 里这台设备关掉的通道位置（设备本地；透传 prefsRepo）。
   Set<String> get srsDisabledLocations =>

@@ -50,7 +50,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 163);
+    expect(migrated.schemaVersion, 164);
     final Map<String, String> originByName = <String, String>{
       for (final MediaCollectionRow r
           in await migrated.getAllMediaCollections())

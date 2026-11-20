@@ -64,6 +64,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_import_tasks_bar.dart';
 import 'package:fushi/src/srs/srs_home_stats.dart';
 import 'package:fushi/src/utils/components/section_visibility.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_retained_copy.dart';
 import 'package:fushi/src/srs/srs_remote_store_client.dart'
     show
         SrsRemoteBadResponse,
@@ -381,6 +382,20 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
   Future<void> _delete(SrsDeckSummary deck) async {
     final SrsDbStore? before = await readSrsStore(ref);
     if (before == null || !mounted) return;
+    // 迁移后的旧版本保留副本（D32）：彻底清除管不到它，里面仍有升级前的原文——选项说明与随后的选择写明，并给立即删除。
+    // 状态在后台读（provider 不抛：读不了按没有处理）。容器先取出来，删完重读它时本页可能已经卸载。
+    final ProviderContainer container = ProviderScope.containerOf(
+      context,
+      listen: false,
+    );
+    final SrsRetainedCopyBackend retainedBackend = ref.read(
+      srsRetainedCopyBackendProvider,
+    );
+    final SrsRetainedCopyInfo? retainedInfo = await ref.read(
+      srsRetainedCopyProvider.future,
+    );
+    if (!mounted) return;
+    final SrsRetainedCopyState? retained = retainedInfo?.state;
     final _DeckDeleteMode? mode = await showFushiChoiceDialog<_DeckDeleteMode>(
       context: context,
       title: t.srs_deck_delete,
@@ -403,12 +418,16 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
         FushiChoiceOption<_DeckDeleteMode>(
           value: _DeckDeleteMode.purge,
           label: t.srs_deck_delete_purge,
-          subtitle: t.srs_deck_delete_purge_hint,
+          subtitle: srsPurgeOptionHint(retained),
           icon: FushiIcons.delete,
         ),
       ],
     );
     if (mode == null || !mounted) return;
+    final SrsPurgeRetainedChoice? retainedChoice = mode == _DeckDeleteMode.purge
+        ? await askSrsPurgeRetainedCopy(context, retained)
+        : SrsPurgeRetainedChoice.keep;
+    if (retainedChoice == null || !mounted) return;
     // 控制器先取出来：删除途中本页可能被销毁（复习 tab 不常驻），之后不能再碰 ref。
     final SrsDeckDeleteController deleter = ref.read(
       srsDeckDeleteControllerProvider,
@@ -428,6 +447,13 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
       purgeNow: purge,
       mediaRoot: mediaRoot,
     );
+    if (await settleSrsPurgeRetainedCopy(
+      retainedChoice,
+      retainedBackend,
+      retainedInfo?.dir,
+    )) {
+      container.invalidate(srsRetainedCopyProvider);
+    }
   }
 
   /// 收起 / 展开子牌组：写进牌组本身（Anki deck collapsed），随同步到其它设备。
@@ -986,38 +1012,50 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
       selectedId: _selectedId ?? _focusId,
       stats: ref.watch(srsHomeStatsProvider).valueOrNull,
       deleting: deleter.deleting,
-      banners: _srsDeckBanners(
-        context,
-        data: list,
-        showImportTasks: ref.read(srsImportControllerProvider).tasks.isNotEmpty,
-        lapisPending: ref.watch(srsLegacyLapisPendingProvider).valueOrNull ?? 0,
-        joinProvisional:
-            ref.watch(srsCollectionBindingProvider).valueOrNull?.state ==
-            SrsCollectionBindingState.provisional,
-        onMigrateLapis: () => srsRunLogged(
-          'SrsDeckList.lapisMigration',
-          () => openSrsLegacyLapisMigrationPage(context),
+      banners: <Widget>[
+        // 彻底清除的字节层收尾出错（内核 `scrub_state`）：清除的原文还在磁盘上。下方间距由提示自己带（列表在它
+        // 后面不插间距，见 [_DeckList] 的 separatorBuilder）：没出错时零高度、不占一条空白，出现 / 消失连同间距
+        // 一起展开 / 收起。
+        SrsScrubErrorNotice(
+          gapBelow: FushiDesignTokens.of(context).spacing.gap * 1.5,
         ),
-        onDismissLapisReminder: () => srsRunLogged(
-          'SrsDeckList.lapisReminderDismiss',
-          () => dismissSrsLapisMigrationReminder(ref),
+        ..._srsDeckBanners(
+          context,
+          data: list,
+          showImportTasks: ref
+              .read(srsImportControllerProvider)
+              .tasks
+              .isNotEmpty,
+          lapisPending:
+              ref.watch(srsLegacyLapisPendingProvider).valueOrNull ?? 0,
+          joinProvisional:
+              ref.watch(srsCollectionBindingProvider).valueOrNull?.state ==
+              SrsCollectionBindingState.provisional,
+          onMigrateLapis: () => srsRunLogged(
+            'SrsDeckList.lapisMigration',
+            () => openSrsLegacyLapisMigrationPage(context),
+          ),
+          onDismissLapisReminder: () => srsRunLogged(
+            'SrsDeckList.lapisReminderDismiss',
+            () => dismissSrsLapisMigrationReminder(ref),
+          ),
+          onStarterPacks: () => srsRunLogged(
+            'SrsDeckList.starterPacks',
+            () => openSrsStarterPacks(context, ref),
+          ),
+          onAddFirst: () => srsRunLogged('SrsDeckList.addFirst', _addNote),
+          legacyLimitUnitDecks:
+              ref.watch(srsLimitUnitLegacyCountProvider).valueOrNull ?? 0,
+          onKeepLegacyLimitCards: () => srsRunLogged(
+            'SrsDeckList.limitUnitKeepCards',
+            () => _settleLegacyLimitUnit(list.store, SrsLimitUnit.cards),
+          ),
+          onAcceptLimitAnswers: () => srsRunLogged(
+            'SrsDeckList.limitUnitAcceptAnswers',
+            () => _settleLegacyLimitUnit(list.store, SrsLimitUnit.reviews),
+          ),
         ),
-        onStarterPacks: () => srsRunLogged(
-          'SrsDeckList.starterPacks',
-          () => openSrsStarterPacks(context, ref),
-        ),
-        onAddFirst: () => srsRunLogged('SrsDeckList.addFirst', _addNote),
-        legacyLimitUnitDecks:
-            ref.watch(srsLimitUnitLegacyCountProvider).valueOrNull ?? 0,
-        onKeepLegacyLimitCards: () => srsRunLogged(
-          'SrsDeckList.limitUnitKeepCards',
-          () => _settleLegacyLimitUnit(list.store, SrsLimitUnit.cards),
-        ),
-        onAcceptLimitAnswers: () => srsRunLogged(
-          'SrsDeckList.limitUnitAcceptAnswers',
-          () => _settleLegacyLimitUnit(list.store, SrsLimitUnit.reviews),
-        ),
-      ),
+      ],
       onFocus: _setFocus,
       onSelect: _select,
       onReview: (SrsDeckSummary d) =>
@@ -1344,8 +1382,10 @@ class _DeckListState extends State<_DeckList> {
             padding: padding,
             itemCount: items.length,
             // 同一组里的行不留缝；牌组色块之间是拼贴块间距，其余块之间留卡片间距。
+            // 自己带下方间距的横幅（[SrsScrubErrorNotice]：没出错时零高度，间距随它一起收起）后面也不插。
             separatorBuilder: (BuildContext context, int index) => SizedBox(
-              height: joined.contains(index)
+              height:
+                  joined.contains(index) || items[index] is SrsScrubErrorNotice
                   ? 0
                   : index >= firstDeckItem && index < lastDeckItem - 1
                   ? kFushiCoverBlockSpacing

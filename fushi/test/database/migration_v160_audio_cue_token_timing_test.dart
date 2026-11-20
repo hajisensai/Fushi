@@ -51,13 +51,13 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 163);
+    expect(migrated.schemaVersion, 164);
     final List<AudioCueRow> rows = await migrated.getCuesForBook('book');
     expect(rows.single.tokenTimingJson, isNull);
     await migrated.close();
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
-    expect(probe.select('PRAGMA user_version').first.values.first, 163);
+    expect(probe.select('PRAGMA user_version').first.values.first, 164);
     probe.execute(
       'UPDATE audio_cues SET token_timing_json = \'{"t":["a"],"o":[5]}\'',
     );

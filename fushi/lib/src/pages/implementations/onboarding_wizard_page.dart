@@ -82,6 +82,8 @@ import 'package:fushi_anki/fushi_anki.dart'
 import 'package:fushi_audio/fushi_audio.dart'
     show AudiobookRepository, SrtBookRepository;
 import 'package:fushi_dictionary/fushi_dictionary.dart' show Dictionary;
+import 'package:fushi_engine/srs/srs_canonical_ids.dart'
+    show srsCanonicalIdIn, srsCanonicalIdMap, srsStoreCanonicalIds;
 import 'package:fushi_engine/srs/srs_db_store.dart' show SrsDbStore;
 import 'package:url_launcher/url_launcher.dart';
 
@@ -673,8 +675,12 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     try {
       final SrsDbStore? store = await ref.read(srsStoreProvider.future);
       if (store == null) return;
-      if (appModelNoUpdate.srsMiningDestination.noteTypeId ==
-          store.lapisNoteTypeId) {
+      // 偏好里可能还是成员 ID（开库归一在后台跑），按规范 ID 比（G9-6）。
+      final String stored = appModelNoUpdate.srsMiningDestination.noteTypeId;
+      final Map<String, String> canonical = await srsCanonicalIdMap(<String>[
+        stored,
+      ], srsStoreCanonicalIds(store));
+      if (srsCanonicalIdIn(canonical, stored) == store.lapisNoteTypeId) {
         await appModelNoUpdate.setSrsMiningNoteTypeId('');
       }
     } catch (e, stack) {

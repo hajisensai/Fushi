@@ -12,9 +12,12 @@
 use rusqlite::Connection;
 use serde_json::{Value, json};
 
-use super::tests::{N1, N2, N3, N4, Norm, Pair, T0, card, decode, library, library_pair, note};
+use super::tests::{
+    ANKI_AT, N1, N2, N3, N4, Norm, Pair, T0, card, decode, library, library_pair, note,
+};
 use super::writes::{self, Session, write};
 use super::{writes_intent, writes_local, writes_restore};
+use crate::gen4_ids::rules::{self, CANONICAL};
 use crate::store::gen4::derive::Ref;
 use crate::store::gen4::derive::tests::{assert_rebuild_is_identity, dump};
 use crate::store::gen4::truth::{TRUST_PENDING, Truth};
@@ -128,7 +131,7 @@ impl<'d> W<'d> {
             .into_iter()
             .collect();
         let mut files = Vec::new();
-        crate::store::ffi::sync2_dispatch(&self.p.d.core, &req, &mut blobs, &mut files)
+        crate::store::legacy3::sync2_dispatch(&self.p.d.core, &req, &mut blobs, &mut files)
     }
 
     fn req(now: i64, extra: Value) -> Value {
@@ -355,6 +358,69 @@ fn import_drafts_matches_protocol_3() {
     )
     .unwrap_err();
     assert!(e.contains("chg"), "{e}");
+}
+
+/// C8：`.apkg` 导入按 Dart 的顺序发草稿（笔记身份 → 字段 → 标签 → 卡片修改）。`apply_in` 在身份记录与标签项处收尾，
+/// 于是一条笔记的卡片修改总与下一条笔记的身份记录落进同一次收尾、而不与它自己的笔记同批。别名表不能因此每条笔记
+/// 整表重算一次（那是 O(库大小)，整次导入 O(n²)）：建笔记类型那一批之后，每批整表重算 0 次，与库里已有多少笔记无关。
+#[test]
+fn importing_in_the_dart_order_never_recomputes_the_whole_alias_table() {
+    let lib = library();
+    let w = W::new(&lib);
+    let anki_nt: i64 = 1_700_000_000_777;
+    let nt = rules::note_type(CANONICAL, anki_nt);
+    let fld = rules::field(&nt, 0);
+    let tpl = rules::template(&nt, 0);
+    let first = vec![
+        json!({"e": {"t": "entity", "x": {"id": nt.text(), "p": P, "k": "notetype",
+            "d": {"createdAt": 1, "ankiNum": anki_nt, "ntKind": "standard"}}}, "note": null}),
+        draft(
+            "notetype",
+            &nt.text(),
+            &format!("fieldDef/{}", fld.text()),
+            json!({"name": "Front", "ord": 0, "ankiNum": 0}),
+        ),
+        draft(
+            "notetype",
+            &nt.text(),
+            &format!("tmplDef/{}", tpl.text()),
+            json!({"name": "Card 1", "ord": 0, "ankiNum": 0, "front": "{{Front}}"}),
+        ),
+    ];
+    writes::import_drafts(&w.t(), w.p.col, &W::req(T1, json!({})), &first).unwrap();
+    let mut n: i64 = 0;
+    for batch in 0..4 {
+        let mut items = Vec::new();
+        for _ in 0..15 {
+            n += 1;
+            let guid = format!("c8-{n}");
+            let x = rules::note(CANONICAL, &guid);
+            let xc = rules::card(&x, &tpl, 0).text();
+            let x = x.text();
+            items.push(
+                json!({"e": {"t": "entity", "x": {"id": x, "p": P, "k": "note",
+                "d": {"createdAt": n, "guid": guid, "noteTypeId": nt.text()}}}, "note": null}),
+            );
+            items.push(draft(
+                "note",
+                &x,
+                &format!("f/{}", fld.text()),
+                json!(format!("語{n}")),
+            ));
+            items.push(draft("note", &x, "tags", json!(["c8"])));
+            items.push(draft("card", &xc, "deck", json!(LANG)));
+            items.push(draft("card", &xc, "suspended", json!(true)));
+        }
+        let v =
+            writes::import_drafts(&w.t(), w.p.col, &W::req(T1 + batch, json!({})), &items).unwrap();
+        assert_eq!(
+            v["settled"]["aliasRebuilds"],
+            json!(0),
+            "batch {batch}: {}",
+            v["settled"]
+        );
+    }
+    assert_rebuild_is_identity(&w.t(), w.p.col);
 }
 
 /// `purge` 与 `checkpoint`：状态相同；清除的实体进 `purged`。
@@ -1472,4 +1538,459 @@ fn a_failing_restore_writes_nothing() {
     let e = writes_restore::restore(&w.t(), w.p.col, &W::req(T1, json!({}))).unwrap_err();
     assert!(e.contains("missing at"), "{e}");
     assert_eq!(fingerprint(&w), before);
+}
+
+// ---------------------------------------------------------------------- Anki 来源日志的 HLC（K3，交接 §26 C4）
+
+/// Dart 导入器写的一条 Anki 来源日志（`srs_apkg_import.dart` `_revlogLog` / 锚点）：`hlc` 是 Dart
+/// `srsImportedRevlogHlc` / `srsImportAnchorHlc` 给的。协议 3 收下它当 `legacy_hlc`；新代丢掉、在日志投影里按
+/// `crate::anki_import_rules` 再派生（`cmd/writes.rs` 文件头「只写协议 4 原生能收的形」）。
+fn anki_item(
+    id: &str,
+    card: &str,
+    note: &str,
+    kind: &str,
+    at: i64,
+    rating: Option<i64>,
+    ivl: i64,
+) -> Value {
+    let anchor = kind == "importAnchor";
+    let mut x = json!({
+        "id": id, "p": P, "card": card, "kind": kind,
+        "hlc": format!("{at}:{}:anki", i64::from(anchor)),
+        "at": at, "ts": "wall", "origin": "anki", "rtype": if anchor { "manual" } else { "review" },
+        "utcOff": 0, "rollover": 4,
+        "res": {"queue": "review", "ivl": ivl, "step": 0, "reps": 1, "lapses": 0, "scheduler": "fushi", "dueDay": ivl},
+    });
+    if !anchor {
+        x["ankiId"] = json!(at);
+        x["alg"] = json!("anki");
+        x["dur"] = json!(5000);
+    }
+    if let Some(r) = rating {
+        x["rating"] = json!(r);
+    }
+    json!({"e": {"t": "log", "x": x}, "note": note})
+}
+
+impl W<'_> {
+    /// 发生在 [at] 的统计行条数：(协议 3, 新代)。
+    fn stat_rows_at(&self, at: i64) -> (i64, i64) {
+        let w = self.p.d.core.writer().unwrap();
+        let old = super::tests::on_p3(&w, &self.p.cfg, |c| {
+            c.query_row(
+                "SELECT COUNT(*) FROM srs_stat_reviews WHERE occurred_at = ?1",
+                [at],
+                |r| r.get(0),
+            )
+            .unwrap()
+        });
+        let new = self
+            .p
+            .g4
+            .query_row(
+                "SELECT COUNT(*) FROM stats WHERE col = ?1 AND at = ?2",
+                [self.p.col, at],
+                |r| r.get(0),
+            )
+            .unwrap();
+        (old, new)
+    }
+
+    /// 新代 `read logs` 里 [card] 的日志：(规范日志 ID, `hlc`)。
+    fn log_hlcs(&self, card: &str) -> Vec<(String, String)> {
+        let (_, f) = self.p.g4(json!({"q": "logs", "cards": [card]}));
+        let (_, rows) = decode(&f[0].1);
+        rows.iter()
+            .map(|r| {
+                let v: Value = serde_json::from_str(&r[2]).unwrap();
+                (r[0].clone(), v["hlc"].as_str().unwrap().to_owned())
+            })
+            .collect()
+    }
+
+    /// 新代卡片行里最后一条有效日志是 [log]（规范 ID）的卡有几张。
+    fn cards_last_at(&self, log: &str) -> i64 {
+        self.p
+            .g4
+            .query_row(
+                "SELECT COUNT(*) FROM cards WHERE col = ?1 AND last_log_id = ?2",
+                rusqlite::params![self.p.col, Ref::of(&Key::of(&self.p.canon(log)))],
+                |r| r.get(0),
+            )
+            .unwrap()
+    }
+}
+
+/// 同一条 Anki revlog 落在血统里前身、后继两张卡上（Lapis 换成 Fushi 卡片后重导；Dart 按新卡重算日志 ID，内容相同）：
+/// 统计只算一次，卡片状态、日志与协议 3 相同。改前新代按操作 HLC 排、两份副本 HLC 不同不成组：统计 2 行、后继卡的代表
+/// 日志变成新导入的那份（C4）。
+#[test]
+fn an_anki_revlog_on_two_cards_of_a_lineage_counts_once() {
+    let lib = library();
+    let w = W::new(&lib);
+    let (c31, c32) = (card(N3, "t1"), card(N3, "t2"));
+    let link = vec![draft(
+        "card",
+        &c32,
+        &format!("historyFrom/{c31}"),
+        json!(true),
+    )];
+    w.p3("apply", T1, json!({}), Some(&link));
+    writes::apply(&w.t(), w.p.col, &W::req(T1, json!({})), &link).unwrap();
+    // `library` 已经把 a1（ANKI_AT）导入到 c31 上；同一条 revlog 再导入到后继卡 c32。
+    assert_eq!(w.stat_rows_at(ANKI_AT), (1, 1));
+    let items = vec![anki_item("a1copy", &c32, N3, "review", ANKI_AT, Some(3), 3)];
+    w.p3("import_drafts", T1 + 1, json!({}), Some(&items));
+    writes::import_drafts(&w.t(), w.p.col, &W::req(T1 + 1, json!({})), &items).unwrap();
+    assert_eq!(w.stat_rows_at(ANKI_AT), (1, 1));
+    let anki = format!("{ANKI_AT}:0:anki");
+    let hlcs = w.log_hlcs(&c32);
+    assert!(
+        !hlcs.is_empty() && hlcs.iter().all(|(_, h)| *h == anki),
+        "{hlcs:?}"
+    );
+    w.same_state(&[N1, N2, N3, N4], &all_cards(), false);
+}
+
+/// 比本机原生复习（r3，T0 + DAY + 52）更早、评分不同的 Anki 复习导入之后不改卡片当前排程：它排在原生复习之前，最后一条
+/// 有效日志仍是 r3（与协议 3 相同）。改前新代按导入时刻排，它成了最后一条，把 ivl 拉回 9（C4 的静默排程错误）。
+#[test]
+fn an_anki_review_older_than_a_native_one_does_not_reschedule_the_card() {
+    let lib = library();
+    let w = W::new(&lib);
+    let c21 = card(N2, "t1");
+    assert_eq!(w.cards_last_at("r3"), 1);
+    let items = vec![anki_item("a2", &c21, N2, "review", T0 + DAY, Some(1), 9)];
+    w.p3("import_drafts", T1, json!({}), Some(&items));
+    writes::import_drafts(&w.t(), w.p.col, &W::req(T1, json!({})), &items).unwrap();
+    assert_eq!(w.cards_last_at("r3"), 1);
+    assert_eq!(w.cards_last_at("a2"), 0);
+    w.same_state(&[N1, N2, N3, N4], &all_cards(), false);
+}
+
+/// 导入锚点与同一毫秒的 revlog 一起写（输入里锚点在前）：锚点的 HLC 是 `(T, 1, "anki")`、排在 revlog `(T, 0, "anki")`
+/// 之后，成为最后一条有效日志（与协议 3 相同）；`apply` 回包的 `logHlcs` 与 `read logs` 的 `hlc` 逐字相同。
+#[test]
+fn an_import_anchor_sorts_after_the_revlog_of_the_same_millisecond() {
+    let lib = library();
+    let w = W::new(&lib);
+    let c22 = card(N2, "t2");
+    let at = T0 + 2 * DAY;
+    let items = vec![
+        anki_item("x-anchor", &c22, N2, "importAnchor", at, None, 7),
+        anki_item("x-rev", &c22, N2, "review", at, Some(3), 3),
+    ];
+    w.p3("apply", T1, json!({}), Some(&items));
+    let gv = writes::apply(
+        &w.t(),
+        w.p.col,
+        &W::req(T1, json!({"logHlcs": true})),
+        &items,
+    )
+    .unwrap();
+    let replied: Vec<(String, String)> = gv["logHlcs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| {
+            (
+                l[1].as_str().unwrap().to_owned(),
+                l[2].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        replied,
+        vec![
+            (w.p.canon("x-anchor"), format!("{at}:1:anki")),
+            (w.p.canon("x-rev"), format!("{at}:0:anki")),
+        ]
+    );
+    let mut read = w.log_hlcs(&c22);
+    read.sort();
+    let mut want = replied.clone();
+    want.sort();
+    assert_eq!(read, want);
+    assert_eq!(w.cards_last_at("x-anchor"), 1);
+    w.same_state(&[N1, N2, N3, N4], &all_cards(), false);
+}
+
+// ---------------------------------------------------------------------- 外来原生日志的排序键（第五波，规划 §6）
+
+/// Dart 回导 Fushi 导出包时恢复的一条外来原生日志（`srs_apkg_import.dart` `_remapExtLog`）：`origin` = fushi，`hlc`
+/// 是作者设备的 HLC（新代丢掉），带标记 `foreignLog: true`（`crate::anki_import_rules::FOREIGN_LOG_KEY`）。
+fn foreign_item(id: &str, card: &str, note: &str, at: i64, rating: i64, ivl: i64) -> Value {
+    json!({"e": {"t": "log", "x": {
+        "id": id, "p": P, "card": card, "kind": "review", "rating": rating,
+        "hlc": format!("{at}:3:author-device"), "at": at, "ts": "wall", "origin": "fushi",
+        "rtype": "review", "dur": 4000, "alg": "fsrs6", "utcOff": 0, "rollover": 4, "foreignLog": true,
+        "res": {"queue": "review", "ivl": ivl, "step": 0, "reps": 2, "lapses": 0, "scheduler": "fushi", "dueDay": ivl},
+    }}, "note": note})
+}
+
+/// 回导的外来原生日志比本机原生复习（r3，T0 + DAY + 52）更早：它按来源数据（发生时刻）排在 r3 之前，最后一条有效日志
+/// 仍是 r3（与协议 3 按作者 HLC 排的结果相同），排序键是 `{at}:0:fushi`、与 `logHlcs` 回包逐字相同。改前新代丢了作者
+/// HLC、按导入时刻（操作 HLC）排，它成了最后一条，把 ivl 改成 9（交接 §28「没做」第 3 条）。
+#[test]
+fn a_foreign_native_review_older_than_a_local_one_does_not_reschedule_the_card() {
+    let lib = library();
+    let w = W::new(&lib);
+    let c21 = card(N2, "t1");
+    assert_eq!(w.cards_last_at("r3"), 1);
+    let at = T0 + DAY;
+    let items = vec![foreign_item("f1", &c21, N2, at, 1, 9)];
+    w.p3("import_drafts", T1, json!({}), Some(&items));
+    writes::import_drafts(&w.t(), w.p.col, &W::req(T1, json!({})), &items).unwrap();
+    assert_eq!(w.cards_last_at("r3"), 1);
+    assert_eq!(w.cards_last_at("f1"), 0);
+    let f1 = w.p.canon("f1");
+    let derived = format!("{at}:0:fushi");
+    assert!(
+        w.log_hlcs(&c21)
+            .iter()
+            .any(|(id, h)| *id == f1 && *h == derived),
+        "{:?}",
+        w.log_hlcs(&c21)
+    );
+    w.same_state(&[N1, N2, N3, N4], &all_cards(), false);
+    // `apply` 回包的 `logHlcs` 与 `read logs` 同口径。
+    let gv = writes::apply(
+        &w.t(),
+        w.p.col,
+        &W::req(T1 + 1, json!({"logHlcs": true})),
+        &[foreign_item("f2", &c21, N2, at + 1, 1, 9)],
+    )
+    .unwrap();
+    assert_eq!(
+        gv["logHlcs"],
+        json!([[0, w.p.canon("f2"), format!("{}:0:fushi", at + 1)]])
+    );
+    assert_eq!(w.cards_last_at("r3"), 1);
+}
+
+/// 同一份导出包回导两次（第二次的导入时刻不同）：卡片行、日志投影逐行不变。这条是防回归用例、不是「修前红」的：同 ID
+/// 日志类的代表取操作号最小的那份（`cache.rs` `log_class_rep`），第二次导入的副本本来就当不了代表，去掉派生它照样绿
+/// （第五波复核变异实测）。它钉住的是「重复导入不换代表、不重排」这条现状。
+#[test]
+fn importing_the_same_foreign_logs_twice_changes_nothing() {
+    let lib = library();
+    let w = W::new(&lib);
+    let c21 = card(N2, "t1");
+    // 一条比 r3 早、一条比 r3 晚：晚的那条是最后一条有效日志。
+    let items = vec![
+        foreign_item("f1", &c21, N2, T0 + DAY, 1, 9),
+        foreign_item("f3", &c21, N2, T0 + 2 * DAY, 3, 11),
+    ];
+    writes::import_drafts(&w.t(), w.p.col, &W::req(T1, json!({})), &items).unwrap();
+    assert_eq!(w.cards_last_at("f3"), 1);
+    let cards = |w: &W<'_>| -> Vec<String> {
+        let mut stmt = w
+            .p
+            .g4
+            .prepare(
+                "SELECT hex(id), hex(last_log_id), due_day, scheduled_days, reps, queue FROM cards \
+                     WHERE col = ?1 ORDER BY id",
+            )
+            .unwrap();
+        stmt.query_map([w.p.col], |r| {
+            Ok(format!(
+                "{:?} {:?} {:?} {:?} {:?} {:?}",
+                r.get::<_, Option<String>>(0)?,
+                r.get::<_, Option<String>>(1)?,
+                r.get::<_, Option<i64>>(2)?,
+                r.get::<_, Option<i64>>(3)?,
+                r.get::<_, Option<i64>>(4)?,
+                r.get::<_, Option<String>>(5)?,
+            ))
+        })
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap()
+    };
+    let (rows, logs) = (cards(&w), w.log_hlcs(&c21));
+    writes::import_drafts(&w.t(), w.p.col, &W::req(T1 + DAY, json!({})), &items).unwrap();
+    assert_eq!(cards(&w), rows);
+    assert_eq!(w.log_hlcs(&c21), logs);
+    assert_eq!(w.cards_last_at("f3"), 1);
+}
+
+/// 发生时刻在未来的外来日志（`at` 晚于载着它的导入操作；导入文件不可信，伪造的 fushi-ext 能写任意 `at`）不派生排序键、
+/// 回落到导入操作的 HLC：此后本机的原生复习仍排在它之后、决定排程。改前它派生成 `{at}:0:fushi`，本机此后一切复习都排在
+/// 它前面，排程钉死在它的结果上（第五波复核）。
+#[test]
+fn a_foreign_log_from_the_future_does_not_pin_the_schedule() {
+    let lib = library();
+    let w = W::new(&lib);
+    let c21 = card(N2, "t1");
+    let future = T1 + 1000 * DAY;
+    let gv = writes::import_drafts(
+        &w.t(),
+        w.p.col,
+        &W::req(T1, json!({"logHlcs": true})),
+        &[foreign_item("f9", &c21, N2, future, 1, 9)],
+    )
+    .unwrap();
+    let derived = format!("{future}:0:fushi");
+    assert!(
+        w.log_hlcs(&c21).iter().all(|(_, h)| *h != derived),
+        "{:?}",
+        w.log_hlcs(&c21)
+    );
+    // `import_drafts` 不报 `logHlcs`（只有 `apply` 报）：回包这条路径的上界由下面
+    // `a_foreign_log_from_the_future_is_not_derived_in_the_log_hlcs_reply` 钉。
+    assert!(gv.get("logHlcs").is_none(), "{gv}");
+    let mut native = foreign_item("n9", &c21, N2, T1 + DAY, 3, 11);
+    native["e"]["x"]
+        .as_object_mut()
+        .unwrap()
+        .remove("foreignLog");
+    writes::apply(&w.t(), w.p.col, &W::req(T1 + DAY, json!({})), &[native]).unwrap();
+    assert_eq!(w.cards_last_at("n9"), 1);
+    assert_eq!(w.cards_last_at("f9"), 0);
+}
+
+/// `apply` 回包 `logHlcs` 这条路径（`cmd/writes.rs` 写下后读操作 HLC 再派生）同样守上界：发生时刻在未来的外来日志回的是
+/// 载着它的操作 HLC、不是 `{at}:0:fushi`，并与随后 `read logs` 的 `hlc` 逐字相同（第六波；第五波复核只经 `import_drafts`
+/// 测了投影，那条入口不报 `logHlcs`，回包的上界没有用例钉住）。
+#[test]
+fn a_foreign_log_from_the_future_is_not_derived_in_the_log_hlcs_reply() {
+    let lib = library();
+    let w = W::new(&lib);
+    let c21 = card(N2, "t1");
+    let future = T1 + 1000 * DAY;
+    let gv = writes::apply(
+        &w.t(),
+        w.p.col,
+        &W::req(T1, json!({"logHlcs": true})),
+        &[foreign_item("f9", &c21, N2, future, 1, 9)],
+    )
+    .unwrap();
+    let f9 = w.p.canon("f9");
+    let replied = gv["logHlcs"].as_array().unwrap();
+    assert_eq!(replied.len(), 1, "{gv}");
+    assert_eq!(replied[0][1], json!(f9));
+    let hlc = replied[0][2].as_str().unwrap().to_owned();
+    assert_ne!(hlc, format!("{future}:0:fushi"));
+    // 回落到操作 HLC：物理时刻不晚于这批写入的时刻（远早于伪造的发生时刻）。
+    let wall: i64 = hlc.split(':').next().unwrap().parse().unwrap();
+    assert!(wall < future, "{hlc}");
+    let read: Vec<String> = w
+        .log_hlcs(&c21)
+        .into_iter()
+        .filter(|(id, _)| *id == f9)
+        .map(|(_, h)| h)
+        .collect();
+    assert_eq!(read, vec![hlc]);
+}
+
+// ---------------------------------------------------------------------- 写回包带修改行（K3，交接 §26 T1 (c)）
+
+/// `editRows: true`：`edits` 里有输入下标的项、`tagWrites` 每项都带上收尾之后的修改行，与随后 `read edits` 的
+/// `j` / `st` 逐字相同；同批后面的写入盖掉的那项行是 null、并明确标「被盖掉」（第五波），其余项标 false。不带这个键的
+/// 回包形状不变。
+#[test]
+fn edit_rows_in_the_reply_are_what_read_edits_gives() {
+    let lib = library();
+    let w = W::new(&lib);
+    let items = vec![
+        draft("note", N1, "f/fa", json!("鯨")),
+        draft("note", N1, "tags", json!(["z", "a"])),
+        draft("note", N3, "f/fb", json!("dog C")),
+        draft("note", N1, "f/fb", json!("whale 1")),
+        draft("note", N1, "f/fb", json!("whale 2")),
+    ];
+    let gv = writes::apply(
+        &w.t(),
+        w.p.col,
+        &W::req(T1, json!({"editRows": true})),
+        &items,
+    )
+    .unwrap();
+    let (_, f) =
+        w.p.g4(json!({"q": "edits", "kind": "note", "ids": [N1, N3]}));
+    let (_, read) = decode(&f[0].1);
+    let read_j = |j: &str| read.iter().find(|r| r[1] == j).cloned();
+    let edits = gv["edits"].as_array().unwrap();
+    assert_eq!(edits.len(), 4, "{gv}");
+    let mut live = 0;
+    for e in edits {
+        assert_eq!(e.as_array().unwrap().len(), 10, "{e}");
+        if e[6] == json!(3) {
+            // 被同批第 5 项盖掉：不是活着的行，明确标出来。
+            assert_eq!(
+                (&e[7], &e[8], &e[9]),
+                (&Value::Null, &Value::Null, &json!(true)),
+                "{e}"
+            );
+            continue;
+        }
+        assert_eq!(e[9], json!(false), "{e}");
+        let j = e[7].as_str().unwrap();
+        let row = read_j(j).unwrap_or_else(|| panic!("{j} not in read edits {read:?}"));
+        let v: Value = serde_json::from_str(j).unwrap();
+        assert_eq!((&v["w"], &v["s"]), (&e[3], &e[4]), "{e}");
+        assert_eq!(
+            row[2],
+            e[8].as_i64().map_or("∅".to_owned(), |s| s.to_string())
+        );
+        live += 1;
+    }
+    assert_eq!(live, 3);
+    let tags = gv["tagWrites"].as_array().unwrap();
+    assert_eq!(tags.len(), 1, "{gv}");
+    let j = tags[0][4].as_str().unwrap();
+    assert_eq!(tags[0][5], json!(false), "{gv}");
+    assert!(read_j(j).is_some(), "{j} not in read edits {read:?}");
+    assert_eq!(
+        serde_json::from_str::<Value>(j).unwrap()["f"],
+        json!("tags")
+    );
+    // 不要修改行：形状照旧。
+    let gv = writes::apply(
+        &w.t(),
+        w.p.col,
+        &W::req(T1 + 1, json!({})),
+        &[draft("note", N1, "f/fa", json!("鯱"))],
+    )
+    .unwrap();
+    assert_eq!(gv["edits"][0].as_array().unwrap().len(), 7, "{gv}");
+}
+
+/// 同一批里同一条笔记整列表写两次标签：前一项明确标「被盖掉」、不给行（合成的 `tags` 行是后一次的结果），后一项带行；
+/// 字段写两次同理。改前前一项的标签行是后一次的结果、字段行是 null 却不说明为什么（Dart `_writtenEdits` 抛错）。
+#[test]
+fn a_later_write_in_the_same_batch_marks_the_earlier_one_superseded() {
+    let lib = library();
+    let w = W::new(&lib);
+    let items = vec![
+        draft("note", N1, "tags", json!(["x"])),
+        draft("note", N1, "f/fa", json!("一")),
+        draft("note", N1, "tags", json!(["y", "x"])),
+        draft("note", N1, "f/fa", json!("二")),
+    ];
+    let gv = writes::apply(
+        &w.t(),
+        w.p.col,
+        &W::req(T1, json!({"editRows": true})),
+        &items,
+    )
+    .unwrap();
+    let tags = gv["tagWrites"].as_array().unwrap();
+    assert_eq!(tags.len(), 2, "{gv}");
+    assert_eq!(
+        (&tags[0][0], &tags[0][4], &tags[0][5]),
+        (&json!(0), &Value::Null, &json!(true))
+    );
+    assert_eq!((&tags[1][0], &tags[1][5]), (&json!(2), &json!(false)));
+    let last: Value = serde_json::from_str(tags[1][4].as_str().unwrap()).unwrap();
+    assert_eq!(last["f"], json!("tags"));
+    let edits = gv["edits"].as_array().unwrap();
+    let by_input = |i: i64| edits.iter().find(|e| e[6] == json!(i)).unwrap();
+    assert_eq!(
+        (&by_input(1)[7], &by_input(1)[9]),
+        (&Value::Null, &json!(true))
+    );
+    assert!(by_input(3)[7].is_string(), "{gv}");
+    assert_eq!(by_input(3)[9], json!(false));
 }

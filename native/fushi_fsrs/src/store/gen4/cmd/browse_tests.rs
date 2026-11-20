@@ -24,7 +24,7 @@ use super::tests::{N1, N2, N3, Pair, T0, card, library, note, on_p3};
 use super::tests_class::{ANKI_NT, DECK, Twin, base_ops, land, set, twin, u};
 use crate::gen4::op::tests::id;
 use crate::gen4_ids::rules::{self, CANONICAL};
-use crate::store::browse::{P3, Sessions};
+use crate::store::browse::{P3, Sessions, Source};
 use crate::store::gen4::derive::Index;
 use crate::store::gen4::derive::tests::{native, op, with};
 use crate::store::gen4::truth::Truth;
@@ -588,6 +588,51 @@ fn keyed_tables_resolve_member_keys_to_the_canonical_key() {
     });
 }
 
+/// 浏览的修改行（[Source::edits]，`edited:` 与按修改时间排都读它）含笔记的合成 `tags` 行：只加一个标签（OR-Set 操作，
+/// 不进寄存器）也把笔记的最后改动时刻推到那条标签操作；只要字段键时不带它；`tags` 不当字段原文（C7）。
+#[test]
+fn browse_edits_count_the_last_tag_op_as_a_modification() {
+    with(|t, col| {
+        let w = land(t, col);
+        let note = w.c_note.text();
+        let field = format!("f/{}", w.c_field.text());
+        let modified = |keys: &[String]| -> (Vec<(String, String)>, Option<i64>) {
+            let src = G4::new(t, col);
+            let mut out = None;
+            src.edits(Some(std::slice::from_ref(&note)), keys, &mut |id, rows| {
+                assert_eq!(id, note);
+                out = Some(crate::registers::note_browse_values(rows)?);
+                Ok(())
+            })
+            .unwrap();
+            out.expect("the note has edits")
+        };
+        let (values, before) = modified(&[]);
+        let before = before.expect("field edits");
+        assert!(before < 900, "{before}");
+        write(
+            t,
+            col,
+            0xd7,
+            1,
+            900,
+            &[crate::gen4::op::Body4::TagAdd {
+                note: u(w.note[1]),
+                tag: "zz".into(),
+            }],
+        );
+        let (after_values, after) = modified(&[]);
+        assert_eq!(after, Some(900));
+        assert_eq!(after_values, values, "tags is not a field value");
+        assert!(after_values.iter().all(|(k, _)| k != "tags"));
+        // 只要字段键：没有 `tags` 行，最后改动时刻还是字段的。
+        assert_eq!(modified(std::slice::from_ref(&field)).1, Some(before));
+        // 键里点名了 `tags`：带它（只要字段键时省掉的那一行，点名时不能省）。
+        assert_eq!(modified(&[field.clone(), "tags".to_owned()]).1, Some(900));
+        assert_eq!(modified(&["tags".to_owned()]).1, Some(900));
+    });
+}
+
 // ---------------------------------------------------------------------- 失效
 
 /// 一批原生写入（一个事务、逐条维护后收尾）。
@@ -928,11 +973,11 @@ fn a_read_inside_a_rolled_back_write_does_not_stick() {
 /// 一条实际执行过的语句：SQL 原文、绑定参数展开后的 SQL、这一次执行的虚拟机步数与全表扫描步数
 /// （`sqlite3_stmt_status` 的 `VM_STEP` / `FULLSCAN_STEP`，在语句开始与结束之间的差）。
 #[derive(Debug, Clone)]
-struct Ran {
-    sql: String,
+pub(super) struct Ran {
+    pub(super) sql: String,
     expanded: String,
-    steps: i64,
-    fullscan: i64,
+    pub(super) steps: i64,
+    pub(super) fullscan: i64,
 }
 
 thread_local! {
@@ -942,8 +987,8 @@ thread_local! {
 }
 
 /// [f] 里连接上实际执行的每条语句（`SQLITE_TRACE_STMT` / `SQLITE_TRACE_PROFILE`）——测的是代码真正 prepare 的
-/// SQL，不是测试里抄的一份。
-fn profile(t: &Truth<'_>, f: impl FnOnce()) -> Vec<Ran> {
+/// SQL，不是测试里抄的一份。`dispatch_tests.rs` 也用（按卡认集合的语句数）。
+pub(super) fn profile(t: &Truth<'_>, f: impl FnOnce()) -> Vec<Ran> {
     use rusqlite::StatementStatus::{FullscanStep, VmStep};
     use rusqlite::trace::{TraceEvent, TraceEventCodes};
     fn on(e: TraceEvent<'_>) {

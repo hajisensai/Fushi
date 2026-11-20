@@ -29,8 +29,8 @@ part of 'srs_deck_list_page.dart';
 /// 不必点「立即同步」。没进分区的主机（新配对 / 上次没应答）不受它限制，每次进页面都探。
 const Duration kSrsPairedProbeTtl = Duration(minutes: 15);
 
-/// 首页缓存落盘格式的版本（[kSrsHomePairedCachePrefKey]）；对不上的整份不读。
-const int _kPairedCacheVersion = 1;
+/// 首页缓存落盘格式的版本（[kSrsHomePairedCachePrefKey]）；对不上的整份不读。2 = 远程复习 V2：牌组树按视图存（G10-2）。
+const int _kPairedCacheVersion = 2;
 
 /// 进行中的加载被代际判定作废（[_PairedHost.epoch] 变了）。
 class _SrsPairedLoadStale implements Exception {

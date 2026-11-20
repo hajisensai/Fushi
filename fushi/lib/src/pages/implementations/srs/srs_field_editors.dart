@@ -52,6 +52,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/srs/srs_action_error_text.dart';
 
 /// 一个字段的当前值。编辑器改值走 [edit]；页面整体换值（重读笔记、连续添加后清空、
 /// 冲突裁决）走 [reset]，编辑器据 [generation] 重建内部状态。
@@ -413,7 +414,10 @@ class _SrsFieldEditorState extends ConsumerState<SrsFieldEditor> {
       _model.edit(apply(_model.value, name));
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsFieldEditor.$what', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -432,7 +436,10 @@ class _SrsFieldEditorState extends ConsumerState<SrsFieldEditor> {
       await ref.read(srsSoundPlayerProvider)(file.path);
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsFieldEditor.play', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
     }
   }
 

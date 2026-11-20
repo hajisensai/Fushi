@@ -329,7 +329,9 @@ main{grid-column:1;padding:4px 16px 48px}
 <div class="card"><h2 class="kit-title-medium">Fushi 复习</h2>
 <p class="kit-supporting">本机替已配对设备保管 Fushi 复习的收藏：手机可以远程复习、制卡落到这里，Yomitan 可经下面的 AnkiConnect 往这里加卡。勾选要提供的配置文件（每门语言一份）；不勾选任何一份 = 关闭。同步位置开了端到端加密的配置文件暂不支持。</p>
 <div class="kv-grid" id="srs-status"></div>
-<div id="srs-profiles"></div>
+<div id="srs-migration"></div>
+<div id="srs-retained"></div>
+<div id="srs-profiles" style="margin-top:12px"></div>
 </div>
 <h3 class="kit-section-title">待确认的设备</h3>
 <div class="card">
@@ -956,9 +958,44 @@ $('#btn-anki-run').onclick = guard(async()=>{ await post('anki/run'); toast(T('�
 $('#btn-anki-retry').onclick = guard(async()=>{ const r = await post('anki/retry'); toast(T('已重试 {0} 张', r.retried)); loadAnki(); });
 
 // ── 复习 ──
-const SRS_STATE = {opening:T('打开中'), ready:T('可用'), encrypted:T('同步位置已加密（暂不支持）'), needs_upgrade:T('数据来自更新版本的 Fushi，请升级服务端'), failed:T('出错')};
+const SRS_STATE = {opening:T('打开中'), ready:T('可用'), encrypted:T('同步位置已加密（暂不支持）'), needs_upgrade:T('数据来自更新版本的 Fushi，请升级服务端'), failed:T('出错'), upgrading:T('复习库升级中'), upgrade_blocked:T('复习库升级没完成，需在服务端处理（ctl srs migration）')};
 // 各份配置文件的 RWKV 准备状态（ServerSrsProfile.toJson 的 rwkv / rwkvError）：idle = 库里没有 RWKV 牌组 / 还没开始，不显示。
 const SRS_RWKV = {downloading:T('RWKV 下载权重中'), preparing:T('RWKV 准备中'), ready:T('RWKV 就绪'), failed:T('RWKV 出错')};
+// 复习库换代（协议 3 srs.db → 新代，server_srs.dart ServerSrsGeneration）：ready 不显示；其余显示状态、进度、处置说明。
+// 失败类状态不自动重跑，「开始升级」由管理员表态后才发（server.srs.migration.start）；提交点之前可叫停。
+const SRS_GEN_STATE = {migrating:T('升级中'), migrating_elsewhere:T('另一个进程在升级'), needs_migration:T('需要升级'), migration_failed:T('升级失败'), sealed_old_only:T('只剩封存的旧库'), legacy_beside_new:T('新库旁边还有没升级的旧库'), blocked:T('升级受阻'), no_space:T('磁盘空间不够'), error:T('出错')};
+const SRS_GEN_IDLE = ['ready','migrating','migrating_elsewhere'];
+function renderSrsMigration(g){
+  const box = $('#srs-migration');
+  if (!g || g.state==='ready') { box.innerHTML=''; return; }
+  const progress = g.step ? ` · ${g.step}${g.total ? ' '+g.done+'/'+g.total : ''}` : '';
+  const kv = [[T('复习库换代'), (SRS_GEN_STATE[g.state]||g.state) + progress + (g.cancelRequested ? T(' · 已请求叫停') : '')]];
+  if (g.code) kv.push([T('原因'), g.code + (g.reason ? T('：') + g.reason : '')]);
+  if (g.reportPath) kv.push([T('报告'), g.reportPath]);
+  const start = !SRS_GEN_IDLE.includes(g.state) ? `<button class="primary-button" id="btn-srs-mig-start">${esc(T('开始升级'))}</button>` : '';
+  const cancel = g.cancellable ? `<button class="outlined-button danger-button" id="btn-srs-mig-cancel">${esc(T('叫停升级'))}</button>` : '';
+  box.innerHTML = `<div class="kv-grid" style="margin-top:12px">${kvHtml(kv)}</div><p class="kit-supporting" data-srs-advice>${esc(g.advice||'')}</p>${start||cancel ? `<div class="action-row">${start}${cancel}</div>` : ''}`;
+  const s = $('#btn-srs-mig-start');
+  if (s) s.onclick = guard(async()=>{ if(!await ask(T('开始升级复习库？升级期间远程复习与制卡暂停；旧的 srs.db 会封存保留，不删除任何文件。'))) return; await post('srs/migration/start'); toast(T('已开始升级')); loadSrs(); });
+  const c = $('#btn-srs-mig-cancel');
+  if (c) c.onclick = guard(async()=>{ if(!await ask(T('叫停复习库升级？提交步骤之前叫停会回到升级前的样子；刚好进入提交步骤时以最终结论为准。'), true)) return; await post('srs/migration/cancel'); toast(T('已请求叫停')); loadSrs(); });
+}
+// 旧版本保留副本（D32，engine srs_ctl_routes.dart 的 retained 路由）：迁移时封存在原位的协议 3 srs.db。只在还是封存的
+// 副本时显示；删除不可撤销（之后不能退回旧版本，清除过的原文随之消失），一定先确认、带 confirm: true 才发。
+function renderSrsRetained(r){
+  const box = $('#srs-retained');
+  if (!r || r.copy !== 'sealed') { box.innerHTML=''; return; }
+  const due = r.dueAtMs ? T('{0} 到期后自动删除', fmtTime(r.dueAtMs)) : T('删除前一直保留（不会自动到期）');
+  const kv = [[T('旧版本保留副本'), fmtBytes(r.bytes) + ' · ' + due]];
+  if (r.error) kv.push([T('自动删除没做成'), r.error]);
+  box.innerHTML = `<div class="kv-grid" style="margin-top:12px">${kvHtml(kv)}</div><div class="action-row"><button class="outlined-button danger-button" id="btn-srs-retained-delete">${esc(T('删除保留副本'))}</button></div>`;
+  $('#btn-srs-retained-delete').onclick = guard(async()=>{
+    if (!await ask(T('立即删除旧版本保留副本？不可撤销：删除后不能再退回旧版本，彻底清除过的内容在旧库里的原文也随之消失。删除前会先核对新库完好，核对不过不删。'), true)) return;
+    const res = await post('srs/retained/delete', {confirm: true});
+    toast(res.deleted ? T('已删除保留副本，释放 {0}', fmtBytes(res.freedBytes)) : T('没有可删除的保留副本'));
+    loadSrs();
+  });
+}
 let srsFormKey = null;
 // 待确认 / 已拒绝的设备（服务端开库后第一次同步过来的；删除与彻底清除在本机扣着，engine srs_devices.dart）。
 function renderSrsDevices(devs){
@@ -980,7 +1017,7 @@ function renderSrsDevices(devs){
   }));
 }
 async function loadSrs(){
-  const [st, found, devs] = await Promise.all([api('srs'), api('srs/profiles'), api('srs/devices').catch(()=>({profiles:[]}))]);
+  const [st, found, devs, retained] = await Promise.all([api('srs'), api('srs/profiles'), api('srs/devices').catch(()=>({profiles:[]})), api('srs/retained').catch(()=>null)]);
   const ac = st.ankiConnect || {};
   const kv = [
     [T('状态'), st.enabled ? T('已开启') : T('未开启（没有勾选配置文件）')],
@@ -988,7 +1025,9 @@ async function loadSrs(){
     ['AnkiConnect', ac.listening ? T('监听 {0}:{1}', ac.bind, ac.listeningPort) : (ac.enabled ? T('未监听') + (ac.lastError ? T('：') + ac.lastError : '') : T('关闭'))],
   ];
   $('#srs-status').innerHTML = kvHtml(kv);
+  renderSrsMigration(st.generation);
   renderSrsDevices(devs);
+  renderSrsRetained(retained);
   const served = {}; (st.profiles||[]).forEach(p=>served[p.uid]=p);
   const list = found.profiles || [];
   const key = JSON.stringify([list.map(p=>[p.uid,p.name,p.served,p.missing]), st.config, ac.enabled, ac.bind, ac.port, ac.apiKeySet, ac.profileKeysSet]);
@@ -1007,6 +1046,15 @@ async function loadSrs(){
       <td class="small" data-label="${esc(H.state)}" data-srs-status="${esc(p.uid)}">${esc(statusOf(p.uid))}</td>
       <td>${p.served?`<button class="text-button" data-srs-sync="${esc(p.uid)}">${esc(T('同步'))}</button>`:''}</td></tr>`).join('')}</table>`
     : empty(T('同步目录里还没有任何配置文件：先让一台设备经互联同步一次复习数据。'), 'srs');
+  // 管理员给提供中的配置文件起名（srs.profile_names）：本机发布到同步位置的说明文件、远程复习的选择列表都用它；空 = 用设备报的名字。
+  const named = list.filter(p=>p.served);
+  if (named.length) {
+    $('#srs-profiles').insertAdjacentHTML('beforeend', `<div class="form-grid" style="margin-top:12px">${named.map(p=>`<label class="field is-wide">${esc(T('{0} 的名字（空 = 用设备报的名字）', p.uid))}<input data-srs-name="${esc(p.uid)}" maxlength="100" autocomplete="off" placeholder="${esc(p.name && p.name!==p.uid ? p.name : '')}" value="${esc((cfg.profileNames||{})[p.uid]||'')}"></label>`).join('')}</div><div class="action-row"><button class="text-button" id="btn-srs-names">${esc(T('保存名字'))}</button></div>`);
+    $('#btn-srs-names').onclick = guard(async()=>{
+      const profileNames = {}; document.querySelectorAll('[data-srs-name]').forEach(el=>{ if(el.value.trim()) profileNames[el.dataset.srsName]=el.value.trim(); });
+      await put('srs', {profileNames}); toast(T('已保存')); srsFormKey=null; loadSrs();
+    });
+  }
   document.querySelectorAll('[data-srs-serve]').forEach(el=>el.onchange = guard(async()=>{
     await put('srs', el.checked ? {addProfiles:[el.dataset.srsServe]} : {removeProfiles:[el.dataset.srsServe]});
     toast(el.checked ? T('已开始提供') : T('已停止提供')); srsFormKey=null; loadSrs();

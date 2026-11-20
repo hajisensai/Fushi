@@ -75,7 +75,7 @@ fn bench_real_folder() {
             req["profile"] = json!(profile);
             req["caches"] = json!({"defaultDeck": deck});
             let (mut blobs, mut files) = (blobs, Vec::new());
-            crate::store::ffi::sync2_dispatch(&core, &req, &mut blobs, &mut files).unwrap()
+            crate::store::legacy3::sync2_dispatch(&core, &req, &mut blobs, &mut files).unwrap()
         };
         if let Ok(n) = std::env::var("SRS_BENCH_WAL_AUTOCKPT") {
             core.writer()
@@ -166,7 +166,7 @@ fn bench_real_folder() {
         let req =
             json!({"op": "rebuild_caches", "profile": profile, "caches": {"defaultDeck": deck}});
         let (mut b, mut f) = (Vec::new(), Vec::new());
-        crate::store::ffi::sync2_dispatch(&core, &req, &mut b, &mut f).unwrap();
+        crate::store::legacy3::sync2_dispatch(&core, &req, &mut b, &mut f).unwrap();
         println!(
             "BENCH oneshot total {}ms = ingest {ingest} + rebuild_caches {}",
             ms(t0),

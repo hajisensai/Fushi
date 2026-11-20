@@ -10,7 +10,7 @@
     "native/fushi_corpus/Cargo.lock": "4695a11421e561835f0a2dd874cef58caff88b3ddee493b8a7287c8836c309cf",
     "native/fushi_corpus/Cargo.toml": "1c892a3a2775a105af6922d82ae6528ce2974fa4dd36b493753daa2dae690cb7",
     "native/fushi_fsrs/Cargo.lock": "a41cf85bae681992d6378ef97de8684a8ed029a29a1a5aa1f397b9b7a8720dab",
-    "native/fushi_fsrs/Cargo.toml": "81dadd591833704cd4c789c88182028484b3747cce1a092e8dce41adc32d10e8",
+    "native/fushi_fsrs/Cargo.toml": "e8cf7f9283a58009aa06bc22bc6530c1a33654c5785a30df360a4a5eaa66d5a7",
     "native/fushi_ios_umbrella/Cargo.lock": "4bd7fd2c72cacdf24992b310184ea5aee7436e23941d75d1819f660b84785abd",
     "native/fushi_ios_umbrella/Cargo.toml": "4ed339300c28218efbd798edb160922a79d1b77b2069937ae85c9a4455e1e9c7",
     "native/fushi_music/Cargo.lock": "75a053345ab749fb1ffbeb67d1f8abf6440ff6e8df22401fa455c3d259314679",

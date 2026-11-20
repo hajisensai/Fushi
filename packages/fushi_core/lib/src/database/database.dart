@@ -2569,8 +2569,8 @@ class FushiDatabase extends _$FushiDatabase
           await _ensureProfileUidIndex();
         }
         // srs_* 表从 2026-10-23 起归 Rust 独占的 srs.db（docs/specs/2026-10-23-srs-rust-store.md），
-        // 不再在 Drift 里声明；老库仍按当年的形状建出来，由 SrsDbStore 打开前的一次性搬迁
-        // （fushi_engine srs_legacy_store_migration.dart）搬走后删除。
+        // 不再在 Drift 里声明；老库仍按当年的形状建出来（旧版本的一次性搬迁搬走后删除；新代不搬，
+        // 主库里还有这些表时 SrsStorage.open 明确拒绝，见 fushi_engine srs_storage.dart）。
         await _createLegacySrsTables(kLegacySrsV117Tables);
         await _ensureSrsIndexes();
       }
@@ -3267,6 +3267,11 @@ class FushiDatabase extends _$FushiDatabase
           await m.createTable(mediaLinkAiVerdicts);
         }
       }
+      // v164：表结构不变（空迁移；W3 合流时由 v156 顺延到 v159，第六波合流再顺延到 develop 的
+      // v159–v161 之后，整批合入时再顺延到 v162 collection_relations / v163 media_link_ai_verdicts 之后）。
+      // 复习换代第二段（协议 4，G11-4 / D33）把整包备份的复习部分换成按集合导出的
+      // 操作流、服务端备份换成新代复习库：主库 schema 升一档是旧版本拒收新备份的唯一闸门（旧版本见到更新的主库，
+      // 在动任何文件之前拒绝整份备份），本身不改任何表。
       // 阶梯之后（列已齐）补统计分区索引：v105 后新装的库 onCreate 曾漏建
       // （video-36i），每次升 schema 都幂等补一次。
       await _ensureStatIndexes();
