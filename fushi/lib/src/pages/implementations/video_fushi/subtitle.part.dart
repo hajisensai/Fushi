@@ -3043,6 +3043,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
       ).whenComplete(() => extractDone = true);
       final Future<bool> extractionResult = extraction;
       List<GraphicSubtitleTextCue> pending = const <GraphicSubtitleTextCue>[];
+      // 单条识别失败只跳过那一条（整轨不作废），收尾时告诉用户跳过了几条。
+      int failedCues = 0;
       DateTime? lastPublishAt;
       Future<void> publishLive() async {
         livePublishTimer?.cancel();
@@ -3110,6 +3112,14 @@ extension _VideoSubtitle on _VideoFushiPageState {
             onRefineError: (Object error, StackTrace stack) => ErrorLogService
                 .instance
                 .log('video.graphicSubtitleOcr.refine', error, stack),
+            onCueError: (Object error, StackTrace stack) {
+              failedCues++;
+              ErrorLogService.instance.log(
+                'video.graphicSubtitleOcr.cue',
+                error,
+                stack,
+              );
+            },
           );
       livePublishTimer?.cancel();
       livePublishTimer = null;
@@ -3152,12 +3162,18 @@ extension _VideoSubtitle on _VideoFushiPageState {
       if (!userKeepsSource()) {
         // 用户中途换了别的字幕：产物只进轨道列表，不抢当前选择。
         _registerImportedSubtitleSource(target);
-        return;
+      } else {
+        await applyResult(target);
+        if (!isCurrent()) return;
+        if (controller.cues.isNotEmpty && _currentSubtitleSource == target) {
+          await _setDelayMs(0);
+        }
       }
-      await applyResult(target);
-      if (!isCurrent()) return;
-      if (controller.cues.isNotEmpty && _currentSubtitleSource == target) {
-        await _setDelayMs(0);
+      if (failedCues > 0) {
+        _showOsd(
+          t.video_subtitle_graphic_ocr_cues_skipped(count: failedCues),
+          severity: ToastSeverity.warning,
+        );
       }
     } on GraphicSubtitleOcrUnavailable catch (error) {
       if (isCurrent()) _reportGraphicSubtitleOcrUnavailable(error.reason);
@@ -5891,6 +5907,15 @@ extension _VideoSubtitle on _VideoFushiPageState {
     // 超界的 cue 在 [buildCueActivityEnvelope] 内按 length 自然 clamp/跳过（不进活动序列）。
     final int probeLimitMs = _subtitleAlignProbeLimitMs;
     final int effectiveDurationMs = math.min(rawDurationMs, probeLimitMs);
+    // 抽音频要几十秒：期间原地换集（远端 / 在线合集复用同一个 controller）或换了字幕源，
+    // 算出的平移量就不属于现在的视频，丢弃而不是写进新一集的调轴。
+    final int loadSeq = _episodeLoadSeq;
+    final int cueEpoch = controller.cueSourceEpoch;
+    bool isCurrent() =>
+        mounted &&
+        identical(_controller, controller) &&
+        _episodeLoadSeq == loadSeq &&
+        controller.cueSourceEpoch == cueEpoch;
 
     _showOsd(
       t.video_subtitle_auto_align_running,
@@ -5898,36 +5923,30 @@ extension _VideoSubtitle on _VideoFushiPageState {
       severity: ToastSeverity.info,
     );
 
-    final _SubtitleTimingAudio? audio = await _resolveSubtitleAlignAudio();
-    if (!mounted) return null;
-    final List<double> rawRms = audio == null
-        ? const <double>[]
-        : await extractAudioEnergyEnvelope(
-            videoPath: audio.path,
-            windowMs: kSubtitleAutoAlignBinMs,
-            audioStreamIndex: audio.audioStreamIndex,
-            audioStreamCount: audio.audioStreamCount,
-            limitMs: probeLimitMs,
-          );
-    if (!mounted) return null;
-
-    final List<double> audioActivity = normalizeAudioEnergyEnvelope(rawRms);
-    final List<double> cueActivity = buildCueActivityEnvelope(
-      cues,
-      effectiveDurationMs,
-      binMs: kSubtitleAutoAlignBinMs,
+    final SubtitleAutoAlignResult? result = await runSubtitleAutoAlign(
+      cues: cues,
+      durationMs: effectiveDurationMs,
+      isCurrent: isCurrent,
+      loadAudioEnergy: () async {
+        final _SubtitleTimingAudio? audio = await _resolveSubtitleAlignAudio();
+        if (audio == null || !isCurrent()) return const <double>[];
+        return extractAudioEnergyEnvelope(
+          videoPath: audio.path,
+          windowMs: kSubtitleAutoAlignBinMs,
+          audioStreamIndex: audio.audioStreamIndex,
+          audioStreamCount: audio.audioStreamCount,
+          limitMs: probeLimitMs,
+        );
+      },
     );
-    final SubtitleAutoAlignResult result = bestOffsetMsByCrossCorrelation(
-      audioActivity,
-      cueActivity,
-      binMs: kSubtitleAutoAlignBinMs,
-    );
+    // await 返回到这里之间也可能换集：写延迟前再核一次身份。
+    if (result == null || !isCurrent()) return null;
 
     switch (result.status) {
       case SubtitleAutoAlignStatus.aligned:
         // 走现有写穿路径：controller 即时重算 cue + 落盘 delayMs + 角标 OSD。
         await _setDelayMs(result.offsetMs);
-        if (!mounted) return null;
+        if (!isCurrent()) return null;
         _showOsd(
           t.video_subtitle_auto_align_done(ms: result.offsetMs),
           icon: Icons.auto_fix_high,
