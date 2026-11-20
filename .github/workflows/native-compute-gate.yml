@@ -10,6 +10,11 @@
 #          cargo-ndk 三个 ABI + ELF 架构 + ffc_* 符号核对。
 #   lib.rs 与各域模块自己的单元测试
 #       -> 本 workflow 的 rust-tests job（ubuntu 上 `cargo test --release`）。
+#   字幕解析（src/parse/subtitle/）在 arm64 上的逐位一致性
+#       -> 本 workflow 的 subtitle-parity-arm64 job（macOS arm64 上跑 packages/fushi_audio 的
+#          subtitle_native_parity_test.dart）。摘要分 CPU 架构冻结（语料里的 NaN 位模式随硬件），
+#          而 PR 上跑 packages 测试的只有 x64（main.yml 的 Linux、build-multiplatform 的
+#          Windows / Linux），arm64 那张表此前只能手动验（拍板台 left3646）。
 #
 # ── 它**不**负责什么 ──────────────────────────────────────────────────────────────
 #   * 不重复跑上面四端；不碰发布路径（全程只读，不上传产物、不建 tag）。
@@ -26,6 +31,11 @@ on:
       - 'native/fushi_compute/**'
       # verify_abi.sh 的期望符号集取自这里的 lookup 名：绑定新增符号也要重新核对 .so。
       - 'packages/fushi_compute/**'
+      # subtitle-parity-arm64 的输入：Dart 侧字幕解析入口（委托 Rust）与逐位一致性测试 / 语料。
+      - 'packages/fushi_audio/lib/src/parsers/**'
+      - 'packages/fushi_audio/test/parsers/subtitle_native_parity_test.dart'
+      - 'packages/fushi_audio/test/parsers/subtitle_parity_corpus.dart'
+      - '.github/actions/setup-fushi-compute/**'
       - '.github/workflows/native-compute-gate.yml'
 
 permissions:
@@ -99,3 +109,35 @@ jobs:
         run: |
           set -euo pipefail
           cargo test --release --locked
+
+  # arm64 字幕解析逐位一致性（拍板台 left3646 第 2 条）。subtitle_native_parity_test.dart 的冻结摘要
+  # 按 Abi.current() 分 x64 / arm64 两张表；macos-latest 是 Apple Silicon，与 arm64 表求得时的平台
+  # 一致（iOS / Android arm64 同一套 aarch64 NaN 语义）。只跑这一个文件，不重复 x64 端已覆盖的包测试。
+  # 原生库是硬依赖：setup-fushi-compute 编 aarch64 dylib 并导出 FUSHI_COMPUTE_LIB，找不到库时
+  # 测试直接失败（不 skip）；执行数哨兵防「零个测试跑过」也判绿。
+  subtitle-parity-arm64:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: '3.47.6'
+          cache: true
+      - name: Build fushi_compute (macOS arm64 dylib)
+        uses: ./.github/actions/setup-fushi-compute
+      - name: Subtitle native parity (arm64 digests)
+        shell: bash
+        working-directory: packages/fushi_audio
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64 || { echo "::error::expected an arm64 runner, got $(uname -m)"; exit 1; }
+          test -f "$FUSHI_COMPUTE_LIB" || { echo "::error::FUSHI_COMPUTE_LIB not built: $FUSHI_COMPUTE_LIB"; exit 1; }
+          dart pub get --enforce-lockfile
+          log="$RUNNER_TEMP/subtitle_parity_arm64.log"
+          dart test test/parsers/subtitle_native_parity_test.dart --reporter expanded 2>&1 | tee "$log"
+          passed="$(grep -Eo '\+[0-9]+' "$log" | tail -n 1 | tr -d '+')"
+          if [ -z "$passed" ] || [ "$passed" -lt 6 ]; then
+            echo "::error::subtitle parity ran ${passed:-0} tests on arm64; expected at least 6"
+            exit 1
+          fi

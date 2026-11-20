@@ -486,9 +486,21 @@ final VideoSubtitleRowExtentCache videoSubtitleRowExtentCache =
 /// 40 与改版前 compact IconButton 的占位一致。玻璃设计系统不读这几项尺寸。
 const ButtonStyle _kHeaderIconButtonStyle = ButtonStyle(
   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-  minimumSize: WidgetStatePropertyAll<Size>(Size.square(40)),
-  maximumSize: WidgetStatePropertyAll<Size>(Size.square(40)),
+  minimumSize: WidgetStatePropertyAll<Size>(
+    Size.square(_kHeaderIconButtonMaxExtent),
+  ),
+  maximumSize: WidgetStatePropertyAll<Size>(
+    Size.square(_kHeaderIconButtonMaxExtent),
+  ),
 );
+
+/// 带 [_kHeaderIconButtonStyle] 的头部图标钮的宽度上界：MD3 下 maximumSize 钉死 40；
+/// 玻璃设计系统不读 style，compact 密度下边长 28 / 36，也不超过 40。经典版式筛选行按它给
+/// 固定宽的开关 / 导出钮预留宽度（拍板台 left3646）。
+const double _kHeaderIconButtonMaxExtent = 40;
+
+/// 经典版式筛选行：筛选区与右侧「显示特效字幕」开关之间的缝。
+const double _kClassicFilterRowGap = 4;
 
 /// 命中字幕列表某行某字符：整条 [cue] + grapheme 下标 + 该字符的全局屏幕矩形 +
 /// 浮层锚点矩形。比 [SubtitleListCharHit] 多带所属 [cue]，供查词浮层 dismiss barrier
@@ -1948,6 +1960,9 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
 
   Widget _buildHeader(ColorScheme cs, List<AudioCue> cues) {
     final double iconSize = widget.fontSize + 4;
+    final bool showExport =
+        _filter == VideoSubtitleListFilter.favorites &&
+        widget.onExportFavorites != null;
     return Padding(
       padding: const EdgeInsets.only(left: 16, right: 4, top: 4, bottom: 6),
       child: Column(
@@ -2060,96 +2075,114 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
               ),
             ],
           ),
-          // 筛选区与收藏计数都是松弛 Flexible（flex 1）：Row 先排固定宽的特效开关与导出钮，
-          // 剩余宽度两者各分一半为上限、各取 min(自身宽度, 一半)——非收藏档没有计数，筛选区
-          // 独占剩余宽度；收藏档里筛选区宽于一半时会被截到一半、可横向拖动（计数用不满的那
-          // 部分不回补），计数超出一半时省略号截断。开关与导出钮始终完整可见，整行不右溢。
-          Row(
-            children: <Widget>[
-              Flexible(
-                child: HorizontalDragScrollable(
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        FushiSegmentedButton<VideoSubtitleListFilter>(
-                          showSelectedIcon: false,
-                          segments: VideoSubtitleListFilter.values
-                              .map(
-                                (VideoSubtitleListFilter filter) =>
-                                    ButtonSegment<VideoSubtitleListFilter>(
-                                      value: filter,
-                                      label: Text(_filterLabel(filter)),
-                                    ),
-                              )
-                              .toList(growable: false),
-                          selected: <VideoSubtitleListFilter>{_filter},
-                          onSelectionChanged: _setFilter,
-                          style: SegmentedButton.styleFrom(
-                            visualDensity: VisualDensity.compact,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            padding: const EdgeInsets.symmetric(horizontal: 10),
-                            textStyle: TextStyle(fontSize: widget.fontSize - 1),
-                          ),
-                        ),
-                      ],
+          // 拍板台 left3646（选 A：筛选区优先、计数让位）：筛选区先按自身宽度排，上限是整行
+          // 减去缝与固定宽的特效开关 / 导出钮（按 [_kHeaderIconButtonMaxExtent] 上界预留，
+          // 两钮始终完整可见）；收藏计数只拿剩下的，放不下时省略号截断。旧写法让筛选区与计数
+          // 同为 Flexible（flex 1），各以剩余宽度的一半为上限、计数用不满的那半也不回补，
+          // 宽面板里筛选区照样只露半截、要横拖。真窄到连筛选区都放不下时它仍可横向拖动，整行不右溢。
+          LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints box) => Row(
+              children: <Widget>[
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: math.max(
+                      0,
+                      box.maxWidth -
+                          _kClassicFilterRowGap -
+                          _kHeaderIconButtonMaxExtent -
+                          (showExport ? _kHeaderIconButtonMaxExtent : 0),
                     ),
                   ),
-                ),
-              ),
-              // H7r4mf_z2n：「显示特效字幕」开关。不放进上面可横向拖动的筛选区：收藏档右侧
-              // 多出导出钮与计数后可滚区被压窄，开关会被裁到视口外（窄面板要横向拖才看得到）。
-              // 放在可滚区外与导出 / 计数同排，任何面板宽度下都直接可见。
-              const SizedBox(width: 4),
-              FushiIconButtonControl(
-                key: const ValueKey<String>('video-subtitle-list-show-effects'),
-                tooltip: t.video_subtitle_list_show_effects,
-                icon: FushiIcon(FushiIcons.animation, size: iconSize),
-                color: _showEffects ? cs.primary : cs.onSurfaceVariant,
-                // 开 / 关不只靠颜色：选中态同时进 Semantics（toggled）。
-                isSelected: _showEffects,
-                onPressed: _toggleShowEffects,
-                visualDensity: VisualDensity.compact,
-                style: _kHeaderIconButtonStyle,
-              ),
-              // BUG-1907：导出收藏语句。只在收藏档出现——它导的就是这一档的内容，
-              // 放在计数旁边语义自洽；也避免把第一行挤爆（面板最窄 240px）。
-              if (_filter == VideoSubtitleListFilter.favorites &&
-                  widget.onExportFavorites != null)
-                FushiIconButtonControl(
-                  tooltip: t.video_subtitle_list_export_favorites,
-                  // 全平台统一 Material 分享图标（ios_share 是 iOS 专属视觉，巡检 PR-3；
-                  // 收藏夹页的导出按钮同此约定）。
-                  icon: FushiIcon(FushiIcons.share, size: iconSize),
-                  color: cs.onSurfaceVariant,
-                  visualDensity: VisualDensity.compact,
-                  onPressed: _favoriteCueCount(cues) == 0
-                      ? null
-                      : () => widget.onExportFavorites!(
-                          _favoriteCuesForExport(widget.controller.cues),
-                        ),
-                ),
-              // TODO-631：收藏档收藏数。删了独立「本集收藏」面板后，其顶部「收藏 N」计数
-              // 并入字幕列表收藏档——只在 favorites 档显示，让用户切到收藏档时一眼看到本
-              // 视频已收藏多少句（与列表条目数一致，复用同一 isCueFavorited 谓词）。
-              if (_filter == VideoSubtitleListFilter.favorites)
-                Flexible(
-                  child: Padding(
-                    padding: const EdgeInsets.only(left: 8, right: 4),
-                    child: Text(
-                      t.video_favorite_count(count: _favoriteCueCount(cues)),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: cs.primary,
-                        fontSize: widget.fontSize - 1,
-                        fontWeight: FontWeight.w600,
+                  child: HorizontalDragScrollable(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          FushiSegmentedButton<VideoSubtitleListFilter>(
+                            showSelectedIcon: false,
+                            segments: VideoSubtitleListFilter.values
+                                .map(
+                                  (VideoSubtitleListFilter filter) =>
+                                      ButtonSegment<VideoSubtitleListFilter>(
+                                        value: filter,
+                                        label: Text(_filterLabel(filter)),
+                                      ),
+                                )
+                                .toList(growable: false),
+                            selected: <VideoSubtitleListFilter>{_filter},
+                            onSelectionChanged: _setFilter,
+                            style: SegmentedButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                              ),
+                              textStyle: TextStyle(
+                                fontSize: widget.fontSize - 1,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
                 ),
-            ],
+                // H7r4mf_z2n：「显示特效字幕」开关。不放进上面可横向拖动的筛选区：收藏档右侧
+                // 多出导出钮与计数后可滚区被压窄，开关会被裁到视口外（窄面板要横向拖才看得到）。
+                // 放在可滚区外与导出 / 计数同排，任何面板宽度下都直接可见。
+                const SizedBox(width: _kClassicFilterRowGap),
+                FushiIconButtonControl(
+                  key: const ValueKey<String>(
+                    'video-subtitle-list-show-effects',
+                  ),
+                  tooltip: t.video_subtitle_list_show_effects,
+                  icon: FushiIcon(FushiIcons.animation, size: iconSize),
+                  color: _showEffects ? cs.primary : cs.onSurfaceVariant,
+                  // 开 / 关不只靠颜色：选中态同时进 Semantics（toggled）。
+                  isSelected: _showEffects,
+                  onPressed: _toggleShowEffects,
+                  visualDensity: VisualDensity.compact,
+                  style: _kHeaderIconButtonStyle,
+                ),
+                // BUG-1907：导出收藏语句。只在收藏档出现——它导的就是这一档的内容，
+                // 放在计数旁边语义自洽；也避免把第一行挤爆（面板最窄 240px）。
+                if (showExport)
+                  FushiIconButtonControl(
+                    tooltip: t.video_subtitle_list_export_favorites,
+                    // 全平台统一 Material 分享图标（ios_share 是 iOS 专属视觉，巡检 PR-3；
+                    // 收藏夹页的导出按钮同此约定）。
+                    icon: FushiIcon(FushiIcons.share, size: iconSize),
+                    color: cs.onSurfaceVariant,
+                    visualDensity: VisualDensity.compact,
+                    style: _kHeaderIconButtonStyle,
+                    onPressed: _favoriteCueCount(cues) == 0
+                        ? null
+                        : () => widget.onExportFavorites!(
+                            _favoriteCuesForExport(widget.controller.cues),
+                          ),
+                  ),
+                // TODO-631：收藏档收藏数。删了独立「本集收藏」面板后，其顶部「收藏 N」计数
+                // 并入字幕列表收藏档——只在 favorites 档显示，让用户切到收藏档时一眼看到本
+                // 视频已收藏多少句（与列表条目数一致，复用同一 isCueFavorited 谓词）。
+                if (_filter == VideoSubtitleListFilter.favorites)
+                  Flexible(
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 8, right: 4),
+                      child: Text(
+                        t.video_favorite_count(count: _favoriteCueCount(cues)),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: cs.primary,
+                          fontSize: widget.fontSize - 1,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
           // BUG-1907：搜索输入框。收起时完全不占高度——面板最窄 240px，常驻一行
           // 输入框会实打实吃掉列表可视区。
