@@ -12,6 +12,7 @@ import 'package:fushi/src/media/manga/library/online_manga_library_service.dart'
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/manga_ocr_job_stream.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart';
@@ -38,6 +39,9 @@ class _FakeAdapter implements OnlineMangaRuntimeAdapter {
 
   /// 非空时取页先卡在这里（取消用）。
   Completer<void>? gate;
+
+  /// 非空时取页（过了 [gate] 之后）抛它造出的错误（失败分型用）。
+  Exception Function(int index)? pageError;
 
   static Uint8List pngOf(int index) => Uint8List.fromList(
     img.encodePng(img.Image(width: 100 + index, height: 150 + index)),
@@ -72,6 +76,8 @@ class _FakeAdapter implements OnlineMangaRuntimeAdapter {
     fetchCounts[page.index] = (fetchCounts[page.index] ?? 0) + 1;
     final Completer<void>? pending = gate;
     if (pending != null) await pending.future;
+    final Exception Function(int index)? error = pageError;
+    if (error != null) throw error(page.index);
     final int left = failuresLeft[page.index] ?? 0;
     if (left > 0) {
       failuresLeft[page.index] = left - 1;
@@ -85,6 +91,17 @@ class _FakeAdapter implements OnlineMangaRuntimeAdapter {
     OnlineMangaLibraryEntry entry,
     String url,
   ) async => <int>[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+}
+
+/// 能取消在飞取页的假运行时（[OnlineMangaPageCancellable]），记下被取消的页序。
+class _CancellableAdapter extends _FakeAdapter
+    implements OnlineMangaPageCancellable {
+  final List<int> cancelled = <int>[];
+
+  @override
+  Future<void> cancelChapterPages(Iterable<OnlineMangaPageRef> pages) async {
+    cancelled.addAll(pages.map((OnlineMangaPageRef page) => page.index));
+  }
 }
 
 /// 记录 update / stop 顺序的假保活（BUG-2714）。
@@ -165,7 +182,7 @@ OnlineMangaLibraryEntry _entry() => const OnlineMangaLibraryEntry(
 void main() {
   late Directory root;
   late FushiDatabase db;
-  late _FakeAdapter adapter;
+  late _CancellableAdapter adapter;
   late OnlineMangaLibraryService library;
   late List<Duration> waits;
   late String bookKey;
@@ -175,22 +192,25 @@ void main() {
     MangaDownloadOcrHook? onChapterDownloaded,
     DownloadKeepAlive? keepAlive,
     int pageConcurrency = 4,
+    Future<void> Function(Duration duration)? wait,
   }) => MangaDownloadService(
     database: db,
     serviceFor: (OnlineMangaRuntimeKind runtime) => library,
     onChapterDownloaded: onChapterDownloaded,
     keepAlive: keepAlive,
     pageConcurrency: pageConcurrency,
-    wait: (Duration duration) async {
-      waits.add(duration);
-    },
+    wait:
+        wait ??
+        (Duration duration) async {
+          waits.add(duration);
+        },
   );
 
   setUp(() async {
     root = await Directory.systemTemp.createTemp('fushi-manga-download-');
     EpubStorage.debugBaseDirectoryOverride = root.path;
     db = FushiDatabase.forTesting(NativeDatabase.memory());
-    adapter = _FakeAdapter();
+    adapter = _CancellableAdapter();
     library = OnlineMangaLibraryService(
       database: db,
       rootDirectory: Directory(p.join(root.path, 'legacy')),
@@ -837,6 +857,209 @@ void main() {
       expect((await jobOf('/chapter/1')).status, MangaDownloadJobStatus.paused);
       expect(adapter.fetchCounts, isEmpty);
       second.dispose();
+    });
+  });
+
+  // BUG-4906（manga-12）：暂停 / 取消传不到在途请求与退避；失败不分型一律退避。
+  group('中止立即生效与失败分型（BUG-4906）', () {
+    const Duration guard = Duration(seconds: 5);
+
+    Future<void> untilAllPagesInFlight() async {
+      while ((adapter.fetchCounts[_FakeAdapter.pageCount - 1] ?? 0) == 0) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+    }
+
+    List<String> landedPages() {
+      final Directory images = Directory(
+        p.join(mangaChapterDirectory(bookDir, '/chapter/1').path, 'images'),
+      );
+      if (!images.existsSync()) return const <String>[];
+      return images
+          .listSync()
+          .whereType<File>()
+          .map((File file) => p.basename(file.path))
+          .toList();
+    }
+
+    test('取页卡住时暂停立即返回：在飞请求交给运行时取消，晚到的字节不落盘；恢复后补齐', () async {
+      adapter.gate = Completer<void>();
+      final MangaDownloadService downloads = build();
+      final MangaDownloadJobRow job = await downloads.enqueueChapter(
+        entry: _entry(),
+        chapter: _chapters.last,
+        autoOcr: false,
+      );
+      await downloads.start();
+      await untilAllPagesInFlight();
+
+      // 修复前：pause 要等在飞的取页自己完成（运行时侧最长 2 分钟），这里永远等不到。
+      await downloads.pause(job.jobId).timeout(guard);
+      await downloads.whenIdle.timeout(guard);
+
+      final MangaDownloadJobRow paused = await jobOf('/chapter/1');
+      expect(paused.status, MangaDownloadJobStatus.paused);
+      expect(paused.pagesDone, 0);
+      expect(adapter.cancelled.toSet(), <int>{0, 1, 2});
+
+      // 被放弃的请求晚到：字节不能再写进章目录（暂停的半成品只认已落地的页）。
+      adapter.gate!.complete();
+      adapter.gate = null;
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(landedPages(), isEmpty);
+
+      await downloads.resume(job.jobId);
+      await downloads.whenIdle.timeout(guard);
+      expect((await jobOf('/chapter/1')).status, MangaDownloadJobStatus.done);
+      expect(await isChapterDownloaded(bookDir, '/chapter/1'), isTrue);
+      downloads.dispose();
+    });
+
+    test('取页卡住时取消立即收尾：cancelled、半成品删掉、在飞请求被取消', () async {
+      adapter.gate = Completer<void>();
+      final MangaDownloadService downloads = build();
+      final MangaDownloadJobRow job = await downloads.enqueueChapter(
+        entry: _entry(),
+        chapter: _chapters.last,
+        autoOcr: false,
+      );
+      await downloads.start();
+      await untilAllPagesInFlight();
+
+      await downloads.cancel(job.jobId);
+      await downloads.whenIdle.timeout(guard);
+
+      expect(
+        (await jobOf('/chapter/1')).status,
+        MangaDownloadJobStatus.cancelled,
+      );
+      expect(adapter.cancelled.toSet(), <int>{0, 1, 2});
+      final Directory chapterDir = mangaChapterDirectory(bookDir, '/chapter/1');
+      expect(chapterDir.existsSync(), isFalse);
+
+      adapter.gate!.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(chapterDir.existsSync(), isFalse, reason: '晚到的字节不能把目录建回来');
+      downloads.dispose();
+    });
+
+    test('退避等待中暂停立即生效（退避注入口仍收到退避表）', () async {
+      adapter.failuresLeft[0] = 99;
+      final List<Duration> recorded = <Duration>[];
+      final MangaDownloadService downloads = build(
+        // 永不结束的退避：修复前暂停要等它走完。
+        wait: (Duration duration) {
+          recorded.add(duration);
+          return Completer<void>().future;
+        },
+      );
+      final MangaDownloadJobRow job = await downloads.enqueueChapter(
+        entry: _entry(),
+        chapter: _chapters.last,
+        autoOcr: false,
+      );
+      await downloads.start();
+      while (recorded.isEmpty) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+
+      await downloads.pause(job.jobId).timeout(guard);
+      await downloads.whenIdle.timeout(guard);
+
+      final MangaDownloadJobRow paused = await jobOf('/chapter/1');
+      expect(paused.status, MangaDownloadJobStatus.paused);
+      expect(paused.attemptCount, 1);
+      expect(recorded, <Duration>[kMangaDownloadRetryBackoff[0]]);
+      downloads.dispose();
+    });
+
+    for (final ({String name, Exception Function(int) error}) failure
+        in <({String name, Exception Function(int) error})>[
+          (
+            name: '要过 Cloudflare 验证（挑战包在运行时失败的 cause 里，按类型认）',
+            error: (int index) => OnlineMangaUnavailable(
+              OnlineMangaUnavailableReason.runtimeFailure,
+              'Mihon fetchImage failed',
+              cause: MihonCloudflareChallengeException(
+                Uri.parse('https://source.example/'),
+              ),
+              stage: 'pages',
+            ),
+          ),
+          (
+            name: '源已停用',
+            error: (int index) => const OnlineMangaUnavailable(
+              OnlineMangaUnavailableReason.sourceDisabled,
+              'The source is disabled',
+            ),
+          ),
+        ]) {
+      test('${failure.name} → 不退避，直接 failed', () async {
+        adapter.pageError = failure.error;
+        final MangaDownloadService downloads = build(pageConcurrency: 1);
+        await downloads.enqueueChapter(
+          entry: _entry(),
+          chapter: _chapters.last,
+          autoOcr: false,
+        );
+        await downloads.start();
+        await downloads.whenIdle;
+
+        final MangaDownloadJobRow failed = await jobOf('/chapter/1');
+        expect(failed.status, MangaDownloadJobStatus.failed);
+        expect(failed.attemptCount, 1);
+        expect(waits, isEmpty, reason: '再试也一样的失败不该白等退避');
+        expect(adapter.fetchCounts, <int, int>{0: 1});
+        downloads.dispose();
+      });
+    }
+
+    test('章已从源的章节表里下架（前置条件）→ 不退避，直接 failed', () async {
+      const OnlineMangaChapter gone = OnlineMangaChapter(
+        key: '/chapter/gone',
+        name: 'Gone',
+        number: 9,
+        raw: <String, Object?>{'url': '/chapter/gone'},
+      );
+      final MangaDownloadService downloads = build();
+      await downloads.enqueueChapter(
+        entry: _entry(),
+        chapter: gone,
+        autoOcr: false,
+      );
+      await downloads.start();
+      await downloads.whenIdle;
+
+      final MangaDownloadJobRow failed = await jobOf('/chapter/gone');
+      expect(failed.status, MangaDownloadJobStatus.failed);
+      expect(failed.attemptCount, 1);
+      expect(failed.lastError, contains('no longer listed'));
+      expect(waits, isEmpty);
+      downloads.dispose();
+    });
+
+    test('一般的运行时失败（分不出是否瞬时）仍照退避表重试', () async {
+      adapter.pageError = (int index) => const OnlineMangaUnavailable(
+        OnlineMangaUnavailableReason.runtimeFailure,
+        'SocketException: Connection reset',
+      );
+      final MangaDownloadService downloads = build(pageConcurrency: 1);
+      await downloads.enqueueChapter(
+        entry: _entry(),
+        chapter: _chapters.last,
+        autoOcr: false,
+      );
+      await downloads.start();
+      await downloads.whenIdle;
+
+      final MangaDownloadJobRow failed = await jobOf('/chapter/1');
+      expect(failed.status, MangaDownloadJobStatus.failed);
+      expect(failed.attemptCount, kMangaDownloadMaxAttempts);
+      expect(waits, <Duration>[
+        kMangaDownloadRetryBackoff[0],
+        kMangaDownloadRetryBackoff[1],
+      ]);
+      downloads.dispose();
     });
   });
 }

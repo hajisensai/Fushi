@@ -4,8 +4,11 @@
 /// 单 worker 串行取 `manga_download_jobs`
 /// 里最早的 `queued` 任务，任务内 4 并发取页落到章目录，全部齐后写章 `manga.json`
 /// → `done`。失败按 2s / 8s / 20s 退避重试三次，再失败留 `failed` + `last_error`；
+/// 「再试也一样」的失败（前置条件不满足、要过 Cloudflare 验证、源已停用，见
+/// [isPermanentMangaDownloadFailure]）不退避，直接 `failed`。
 /// 取消真中止并删半成品目录；暂停（`paused`）同样中止，但半成品原样留着，恢复后
-/// 按磁盘现状续跑，暂停态跨进程重启保持。进程重启后 `running` 行复位为 `queued`
+/// 按磁盘现状续跑，暂停态跨进程重启保持。暂停 / 取消立即生效：在飞的请求与退避
+/// 都与中止信号赛跑，不等它们自己走完（manga-12）。进程重启后 `running` 行复位为 `queued`
 /// 续跑，已落地的页按磁盘现状跳过。
 ///
 /// 完成钩子 [onChapterDownloaded]：`auto_ocr` 为真时由装配方（AppModel）解析引擎
@@ -185,13 +188,69 @@ String mangaDownloadJobId({
   return sha256.convert(utf8.encode(identity)).toString().substring(0, 32);
 }
 
+/// 前置条件不满足：书已出库、条目没有在线描述、章已从源的章节表里下架、运行时
+/// 未知等。这类失败**重试也不会变**，不走退避，直接落 `failed`（manga-12）。
+class MangaDownloadPreconditionFailed implements Exception {
+  const MangaDownloadPreconditionFailed(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+/// 这次失败是不是「再试也一样」：前置条件不满足、源要用户亲自过 Cloudflare 验证
+/// （按类型认，见 [mihonCloudflareChallenge]）、源已停用 / 本平台没有该运行时。
+/// 是的话任务直接 `failed`，不再按 [kMangaDownloadRetryBackoff] 白等——一串要验证
+/// 或已下架的章节以前每章都要空等 2s + 8s 才失败。其余（网络、站点抽风、运行时
+/// 的一般失败）分不出是不是瞬时的，照旧退避重试。
+bool isPermanentMangaDownloadFailure(Object error) {
+  if (error is MangaDownloadPreconditionFailed) return true;
+  if (mihonCloudflareChallenge(error) != null) return true;
+  if (error is OnlineMangaUnavailable &&
+      error.reason != OnlineMangaUnavailableReason.runtimeFailure) {
+    return true;
+  }
+  return false;
+}
+
 /// 中止信号。用户取消（[cancelled]）、用户暂停（[paused]）与服务停止（[stopped]）
 /// 三者必须分开：取消把行改成 `cancelled` 并删半成品；暂停把行改成 `paused`、半成品
 /// 留着续跑；停止只是进程要退出，行保持 `running` 留给下次启动续跑。
+///
+/// 除了三个标志，还带一个**可等待的**完成信号 [tripped]（manga-12）：在途的页表
+/// 解析、取页、sidecar 与退避等待都和它赛跑，暂停 / 取消立即生效，而不是等在飞的
+/// 请求（运行时侧最长 2 分钟）或退避（最长 20 秒）自己走完。
 class _CancelToken {
   bool cancelled = false;
   bool paused = false;
   bool stopped = false;
+
+  final Completer<void> _tripped = Completer<void>();
+
+  /// 任一中止标志被置位时完成（只完成一次）。
+  Future<void> get tripped => _tripped.future;
+
+  bool get isTripped => cancelled || paused || stopped;
+
+  void cancel() {
+    cancelled = true;
+    _trip();
+  }
+
+  void pause() {
+    paused = true;
+    _trip();
+  }
+
+  void stop() {
+    stopped = true;
+    _trip();
+  }
+
+  void _trip() {
+    if (!_tripped.isCompleted) _tripped.complete();
+  }
 }
 
 class _ActiveJob {
@@ -202,8 +261,10 @@ class _ActiveJob {
   final _CancelToken token = _CancelToken();
   final Completer<void> done = Completer<void>();
 
-  /// 中止当前执行体的钩子（mokuro 卷任务挂 downloader.cancel；章节任务按页
-  /// 检查 token，不需要）。取消 / 停止时与 token 一起触发。
+  /// 释放执行体占着的外部资源的钩子：mokuro 卷任务挂 downloader.cancel；章节
+  /// 任务挂「把在飞的取页交给运行时取消」（[OnlineMangaPageCancellable]，Android
+  /// 取图线程有限，暂停 / 取消后旧请求不该继续占着）。取消 / 暂停 / 停止时在 token
+  /// 置位之后同步调用。
   void Function()? abort;
 }
 
@@ -331,7 +392,7 @@ class MangaDownloadService {
     _disposed = true;
     final _ActiveJob? active = _active;
     if (active != null) {
-      active.token.stopped = true;
+      active.token.stop();
       active.abort?.call();
     }
     _stopKeepAlive();
@@ -535,7 +596,7 @@ class MangaDownloadService {
     if (row == null) return;
     final _ActiveJob? active = _active;
     if (active != null && active.jobId == jobId) {
-      active.token.cancelled = true;
+      active.token.cancel();
       active.abort?.call();
       return;
     }
@@ -579,7 +640,7 @@ class MangaDownloadService {
       if (!matches(row)) continue;
       final _ActiveJob? active = _active;
       if (active != null && active.jobId == row.jobId) {
-        active.token.paused = true;
+        active.token.pause();
         active.abort?.call();
         stopping.add(active.done.future);
       } else if (_started) {
@@ -648,7 +709,7 @@ class MangaDownloadService {
   Future<void> remove(String jobId) async {
     final _ActiveJob? active = _active;
     if (active != null && active.jobId == jobId) {
-      active.token.cancelled = true;
+      active.token.cancel();
       active.abort?.call();
       await active.done.future;
     }
@@ -691,7 +752,7 @@ class MangaDownloadService {
         if (next == null) break;
         final _ActiveJob active = _ActiveJob(next);
         _active = active;
-        if (_pauseRequested.remove(next.jobId)) active.token.paused = true;
+        if (_pauseRequested.remove(next.jobId)) active.token.pause();
         _reportKeepAlive(next);
         try {
           await _run(next, active);
@@ -762,7 +823,7 @@ class MangaDownloadService {
           case MangaDownloadJobKind.mokuroVolume:
             await _downloadMokuroVolume(job, active);
           default:
-            await _download(job, token);
+            await _download(job, active);
         }
         return;
       } on _Stopped {
@@ -788,7 +849,9 @@ class MangaDownloadService {
           stack,
         );
         attempt += 1;
-        if (attempt >= kMangaDownloadMaxAttempts || _disposed) {
+        if (attempt >= kMangaDownloadMaxAttempts ||
+            _disposed ||
+            isPermanentMangaDownloadFailure(error)) {
           await _database.updateMangaDownloadJobStatus(
             job.jobId,
             status: MangaDownloadJobStatus.failed,
@@ -805,12 +868,17 @@ class MangaDownloadService {
           lastError: '$error',
           attemptCount: attempt,
         );
-        await _wait(
-          kMangaDownloadRetryBackoff[(attempt - 1).clamp(
-            0,
-            kMangaDownloadRetryBackoff.length - 1,
-          )],
-        );
+        // 退避可被暂停 / 取消 / 停止打断：与 token 的完成信号赛跑（[_wait] 注入口
+        // 保留，测试照旧记录退避表）。
+        await Future.any<void>(<Future<void>>[
+          _wait(
+            kMangaDownloadRetryBackoff[(attempt - 1).clamp(
+              0,
+              kMangaDownloadRetryBackoff.length - 1,
+            )],
+          ),
+          token.tripped,
+        ]);
         if (token.stopped) return;
         if (token.paused && !token.cancelled) {
           await _markPaused(job);
@@ -829,27 +897,36 @@ class MangaDownloadService {
     }
   }
 
-  Future<void> _download(MangaDownloadJobRow job, _CancelToken token) async {
+  Future<void> _download(MangaDownloadJobRow job, _ActiveJob active) async {
+    final _CancelToken token = active.token;
     final OnlineMangaRuntimeKind? runtime = OnlineMangaRuntimeKind.fromWire(
       job.runtime,
     );
     if (runtime == null) {
-      throw StateError('Unknown manga runtime: ${job.runtime}');
+      throw MangaDownloadPreconditionFailed(
+        'Unknown manga runtime: ${job.runtime}',
+      );
     }
     final OnlineMangaLibraryService service = _serviceFor(runtime);
     EpubBookRow? row = await _database.getEpubBook(job.bookKey);
     if (row == null) {
-      throw StateError('The manga is no longer in the library: ${job.bookKey}');
+      throw MangaDownloadPreconditionFailed(
+        'The manga is no longer in the library: ${job.bookKey}',
+      );
     }
     final OnlineMangaLibraryEntry? entry = OnlineMangaLibraryEntry.tryParse(
       row.sourceMetadata,
     );
     if (entry == null) {
-      throw StateError('The library row has no online descriptor');
+      throw const MangaDownloadPreconditionFailed(
+        'The library row has no online descriptor',
+      );
     }
     final int chapterIndex = entry.indexOfChapterKey(job.chapterKey);
     if (chapterIndex < 0) {
-      throw StateError('The chapter is no longer listed: ${job.chapterKey}');
+      throw MangaDownloadPreconditionFailed(
+        'The chapter is no longer listed: ${job.chapterKey}',
+      );
     }
     final OnlineMangaChapter chapter = entry.chapters[chapterIndex];
     row = await service.ensureBookDirectory(row);
@@ -861,8 +938,11 @@ class MangaDownloadService {
       return;
     }
     _throwIfCancelled(token);
-    final List<OnlineMangaPageRef> pages = await service.adapter
-        .resolveChapterPages(entry: entry, chapter: chapter);
+    final OnlineMangaRuntimeAdapter adapter = service.adapter;
+    final List<OnlineMangaPageRef> pages = await _untilTripped(
+      adapter.resolveChapterPages(entry: entry, chapter: chapter),
+      token,
+    );
     if (pages.isEmpty) {
       throw StateError('The chapter has no pages');
     }
@@ -892,16 +972,43 @@ class MangaDownloadService {
     ];
     Object? firstError;
     StackTrace? firstStack;
+    // 在飞的取页：暂停 / 取消时经 [OnlineMangaPageCancellable] 交给运行时取消，
+    // 释放运行时侧的取图通道（Android 取图线程池有限，见 MihonChannelHandler）。
+    final Set<OnlineMangaPageRef> inFlight = <OnlineMangaPageRef>{};
+    if (adapter is OnlineMangaPageCancellable) {
+      final OnlineMangaPageCancellable cancellable =
+          adapter as OnlineMangaPageCancellable;
+      active.abort = () {
+        if (inFlight.isEmpty) return;
+        final List<OnlineMangaPageRef> requests = inFlight.toList(
+          growable: false,
+        );
+        unawaited(
+          cancellable.cancelChapterPages(requests).catchError((
+            Object error,
+            StackTrace stack,
+          ) {
+            ErrorLogService.instance.log(
+              'MangaDownloadService.cancelPages ${job.jobId}',
+              error,
+              stack,
+            );
+          }),
+        );
+      };
+    }
     Future<void> worker() async {
       while (pending.isNotEmpty && firstError == null) {
-        if (token.cancelled || token.paused || token.stopped) return;
+        if (token.isTripped) return;
         final int index = pending.removeAt(0);
+        inFlight.add(pages[index]);
         try {
           files[index] = await _fetchPage(
-            service.adapter,
+            adapter,
             pages[index],
             images,
             index,
+            token,
           );
           done += 1;
           await _database.updateMangaDownloadJobProgress(
@@ -914,14 +1021,20 @@ class MangaDownloadService {
         } on Object catch (error, stack) {
           firstError ??= error;
           firstStack ??= stack;
+        } finally {
+          inFlight.remove(pages[index]);
         }
       }
     }
 
     final int concurrency = pageConcurrency < 1 ? 1 : pageConcurrency;
-    await Future.wait<void>(<Future<void>>[
-      for (int i = 0; i < concurrency; i++) worker(),
-    ]);
+    try {
+      await Future.wait<void>(<Future<void>>[
+        for (int i = 0; i < concurrency; i++) worker(),
+      ]);
+    } finally {
+      active.abort = null;
+    }
     _throwIfCancelled(token);
     if (firstError != null) {
       Error.throwWithStackTrace(firstError!, firstStack!);
@@ -950,14 +1063,19 @@ class MangaDownloadService {
     ];
     final MangaDownloadSidecarFetcher? sidecarFetcher =
         _sidecarFetcher ??
-        (service.adapter is MangaOcrSidecarProvider
+        (adapter is MangaOcrSidecarProvider
             ? (OnlineMangaLibraryEntry e, OnlineMangaChapter c) =>
-                  (service.adapter as MangaOcrSidecarProvider)
-                      .fetchChapterOcrSidecar(entry: e, chapter: c)
+                  (adapter as MangaOcrSidecarProvider).fetchChapterOcrSidecar(
+                    entry: e,
+                    chapter: c,
+                  )
             : null);
     if (sidecarFetcher != null) {
       try {
-        final String? sidecar = await sidecarFetcher(entry, chapter);
+        final String? sidecar = await _untilTripped(
+          sidecarFetcher(entry, chapter),
+          token,
+        );
         if (sidecar != null && looksLikeMokuroSidecar(sidecar)) {
           final MokuroSidecarMergeResult merged = mergeMokuroSidecar(
             downloaded: payload,
@@ -966,6 +1084,8 @@ class MangaDownloadService {
           );
           if (merged.accepted) payload = merged.payload;
         }
+      } on _Interrupted {
+        rethrow;
       } on Object catch (error, stack) {
         // sidecar 是增强能力，网络或格式问题不得让图片下载失败。
         ErrorLogService.instance.log(
@@ -997,11 +1117,15 @@ class MangaDownloadService {
   ) async {
     final MokuroMoeVolumeDownloaderFactory? factory = _mokuroDownloader;
     if (factory == null) {
-      throw StateError('No mokuro.moe downloader is wired into this service');
+      throw const MangaDownloadPreconditionFailed(
+        'No mokuro.moe downloader is wired into this service',
+      );
     }
     final String? seriesName = mokuroMoeSeriesNameOf(job.bookKey);
     if (seriesName == null) {
-      throw StateError('Not a mokuro.moe task: ${job.bookKey}');
+      throw MangaDownloadPreconditionFailed(
+        'Not a mokuro.moe task: ${job.bookKey}',
+      );
     }
     final _CancelToken token = active.token;
     _throwIfCancelled(token);
@@ -1166,13 +1290,19 @@ class MangaDownloadService {
     }
   }
 
+  /// 取一页落盘。取字节与 [token] 赛跑：暂停 / 取消后不再等在飞的请求，它晚到的
+  /// 字节直接丢掉、**不写盘**——已落地的页照旧留给续跑，没落地的那页恢复后重取。
   Future<_PageFile> _fetchPage(
     OnlineMangaRuntimeAdapter adapter,
     OnlineMangaPageRef page,
     Directory images,
     int index,
+    _CancelToken token,
   ) async {
-    final Uint8List bytes = await adapter.fetchChapterPage(page);
+    final Uint8List bytes = await _untilTripped(
+      adapter.fetchChapterPage(page),
+      token,
+    );
     if (bytes.isEmpty) {
       throw StateError('Empty page image at index $index');
     }
@@ -1270,16 +1400,50 @@ class MangaDownloadService {
     if (token.cancelled) throw const _Cancelled();
     if (token.paused) throw const _Paused();
   }
+
+  /// 等 [work]，但 [token] 一置位就按 [_throwIfCancelled] 的优先级抛中止异常，
+  /// 不再等 [work]。[work] 晚到的结果 / 错误被吞掉（调用方已经不要它了）。
+  static Future<T> _untilTripped<T>(Future<T> work, _CancelToken token) {
+    final Completer<T> result = Completer<T>();
+    void interrupt() {
+      if (result.isCompleted) return;
+      try {
+        _throwIfCancelled(token);
+      } on _Interrupted catch (error, stack) {
+        result.completeError(error, stack);
+      }
+    }
+
+    work.then<void>(
+      (T value) {
+        if (!result.isCompleted) result.complete(value);
+      },
+      onError: (Object error, StackTrace stack) {
+        if (!result.isCompleted) result.completeError(error, stack);
+      },
+    );
+    if (token.isTripped) {
+      interrupt();
+    } else {
+      unawaited(token.tripped.then<void>((_) => interrupt()));
+    }
+    return result.future;
+  }
 }
 
-class _Cancelled implements Exception {
+/// 执行体被暂停 / 取消 / 停止打断（不是失败，不进重试与错误日志）。
+sealed class _Interrupted implements Exception {
+  const _Interrupted();
+}
+
+class _Cancelled extends _Interrupted {
   const _Cancelled();
 }
 
-class _Paused implements Exception {
+class _Paused extends _Interrupted {
   const _Paused();
 }
 
-class _Stopped implements Exception {
+class _Stopped extends _Interrupted {
   const _Stopped();
 }
