@@ -1138,8 +1138,9 @@ jobs:
         name: android-dart-symbols-${{ steps.channel.outputs.release_sequence }}
         path: fushi/build/android-dart-symbols/
         if-no-files-found: warn
-        # 正式 / 测试版与 iOS dSYM 同为 90 天；debug 通道每次 push 都出一份（arm64 约 140 MB），留 14 天。
-        retention-days: ${{ (steps.channel.outputs.channel == 'formal' || steps.channel.outputs.channel == 'beta') && 90 || 14 }}
+        # debug 通道每次 push 都出一份（arm64 约 140 MB），留 14 天；其余（formal / beta，以及手动发
+        # GitHub Release 的 channel=github-release——正式版的一等路径）与 iOS dSYM 同为 90 天。
+        retention-days: ${{ steps.channel.outputs.channel == 'debug' && 14 || 90 }}
 
     - name: Collect Android post-build diagnostics
       if: ${{ always() && (steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true') }}

@@ -138,8 +138,9 @@ void main() {
       expect(
         s,
         contains(
-          "retention-days: \${{ (steps.channel.outputs.channel == 'formal' || "
-          "steps.channel.outputs.channel == 'beta') && 90 || 14 }}",
+          // 只有 debug 通道短留；手动发 GitHub Release（channel=github-release）是正式版
+          // 一等路径，不能落进 14 天。
+          "retention-days: \${{ steps.channel.outputs.channel == 'debug' && 14 || 90 }}",
         ),
       );
       expect(
