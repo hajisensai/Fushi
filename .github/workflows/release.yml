@@ -1033,6 +1033,8 @@ jobs:
           --build-name "${{ steps.channel.outputs.build_version_name }}" \
           --build-number "${{ steps.channel.outputs.android_build_number }}" \
           --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
+        # BUG-4955：AGP strip 前的 libapp.so（带 .symtab / DWARF）存下来，ANR 栈的裸 pc 才对得上源码。
+        bash tool/android_dart_symbols.sh stash android-arm64
 
     - name: Prepare release-signed debug-channel APK asset
       if: steps.channel.outputs.build_debug_channel_apk == 'true'
@@ -1104,6 +1106,8 @@ jobs:
             --build-name "${{ steps.channel.outputs.build_version_name }}" \
             --build-number "${{ steps.channel.outputs.android_build_number }}" \
             --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
+          # BUG-4955：换 target-platform 重编会清掉上一个 ABI 的 flutter 中间产物，逐次收。
+          bash tool/android_dart_symbols.sh stash "$platform"
           echo "::endgroup::"
         done
         missing=0
@@ -1114,6 +1118,28 @@ jobs:
           fi
         done
         exit "$missing"
+
+    # BUG-4955：Android 的 Dart 符号。ANR / tombstone 栈里 libapp.so 只有 `base.apk (offset …) (???)`
+    # 的裸 pc（反馈 ICF67eBY57），没有 AGP strip 前的那份 ELF 就还原不了。不用 --split-debug-info：
+    # 它连带 DWARF 栈，会让 app 内诊断的 Dart 栈与调用点归因退化。核对 build-id 与包里一致；
+    # 只是诊断件，不挡发版（continue-on-error），也不进 Release 资产。
+    - name: Verify Android Dart symbols match APKs
+      if: ${{ steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      continue-on-error: true
+      working-directory: fushi
+      shell: bash
+      run: bash tool/android_dart_symbols.sh verify
+
+    - name: Upload Android Dart symbols
+      if: ${{ steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      continue-on-error: true
+      uses: actions/upload-artifact@v7
+      with:
+        name: android-dart-symbols-${{ steps.channel.outputs.release_sequence }}
+        path: fushi/build/android-dart-symbols/
+        if-no-files-found: warn
+        # 正式 / 测试版与 iOS dSYM 同为 90 天；debug 通道每次 push 都出一份（arm64 约 140 MB），留 14 天。
+        retention-days: ${{ (steps.channel.outputs.channel == 'formal' || steps.channel.outputs.channel == 'beta') && 90 || 14 }}
 
     - name: Collect Android post-build diagnostics
       if: ${{ always() && (steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true') }}
