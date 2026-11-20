@@ -958,7 +958,13 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // JSON：本机一键部署的官方 Irodori-TTS-Server（IrodoriLocalEngine）：专属目录 / 端口 /
   // 下载源 / 后端 / 模型 / 是否 app 所装。只对这台电脑成立，设备本地。
   'tts_irodori_local',
-  // JSON：TTS 发音词典（写法 → 读法，TtsPronunciationStore），只改合成文本。
+  // JSON：TTS 识别后替换（TtsTextRulesStore / TtsTextRuleKind.postRecognition）：
+  // 制作有声书语音识别校对时把识别结果改回原文写法再比对。
+  'tts_post_recognition_rules',
+  // JSON：TTS 合成前替换（TtsTextRulesStore / TtsTextRuleKind.preSynthesis）：发音
+  // 词典之后再改写合成文本。
+  'tts_pre_synthesis_rules',
+  // JSON：TTS 发音词典（写法 → 读法，TtsTextRulesStore），只改合成文本。
   'tts_pronunciation_rules',
   // double：TTS 朗读倍速（播放器本地倍速，服务端恒 1.0）。
   'tts_read_aloud_speed',

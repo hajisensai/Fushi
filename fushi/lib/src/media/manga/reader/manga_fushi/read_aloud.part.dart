@@ -495,7 +495,8 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
         c = MangaReadAloudController(
           host: this,
           rig: rig,
-          pronunciation: _tts.pronunciation.load(),
+          pronunciation: _tts.textRules.load(TtsTextRuleKind.pronunciation),
+          preSynthesis: _tts.textRules.load(TtsTextRuleKind.preSynthesis),
           playToEnd: (String path, double speed) =>
               DesktopAudioPlayback.playFileToEnd(path, speed: speed),
           stopPlayback: DesktopAudioPlayback.stop,
