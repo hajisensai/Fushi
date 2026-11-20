@@ -5687,6 +5687,11 @@ class AppModel
       // 旧版按「无画面视频」收进视频库的纯音频搬到音乐库（反馈 QAondMh4M5）。按数据
       // 幂等：没有这类行就什么都不做；搬不动的行原样留在视频库，下次启动再试。
       unawaited(_migrateAudioOnlyVideosToMusic());
+      // 上个进程被杀 / 崩溃留在书库根的导入残留（`.tmp-*` 暂存、`.bak-*` 让位旧树、
+      // 拷到一半的半成品）：开库后清一次，不等下一次导入才清（BUG-4841，#3722 c07
+      // 遗留）。Android 就地重建拷贝回退期间被杀时，这一步把 bak 还原成完整的书。
+      // 每进程只跑一次、失败只记日志；导入入口等的是同一个 Future。
+      unawaited(EpubImporter.ensureImportResidueSwept(_database));
       // 启动关键路径上的查询都发完了：这时才读查词历史整表（见
       // DictionaryRepository.loadFromDb 的 deferHistory）。
       dictRepo.startDeferredHistoryLoad();
