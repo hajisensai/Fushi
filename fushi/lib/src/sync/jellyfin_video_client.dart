@@ -2418,6 +2418,7 @@ class JellyfinVideoClient
         RemoteCoverFetcher,
         RemoteVideoDetailFetch,
         RemoteVideoPlaybackStop,
+        RemoteVideoPlaybackDetach,
         RemoteVideoPlaybackSession,
         RemoteVideoPlayedMark,
         RemoteVideoQualityLimit,
@@ -2427,7 +2428,8 @@ class JellyfinVideoClient
         MediaServerLibraryItems,
         MediaServerItemVersions,
         RemoteVideoTitleIdentityFetch,
-        RemoteVideoTrackingEpisodeFetch {
+        RemoteVideoTrackingEpisodeFetch,
+        RemoteVideoClientConnections {
   JellyfinVideoClient({
     required this.api,
     required this.userId,
@@ -3874,11 +3876,7 @@ class JellyfinVideoClient
   /// 否则它跑到服务器自己的超时为止、与下一次起播抢 CPU。
   @override
   Future<void> stopRemoteVideoPlayback(String id, int positionMs) async {
-    final List<JellyfinPlaybackSession>? list = _sessions[id];
-    final JellyfinPlaybackSession? session = list == null || list.isEmpty
-        ? null
-        : list.removeAt(0);
-    if (list != null && list.isEmpty) _sessions.remove(id);
+    final JellyfinPlaybackSession? session = _takeOldestSession(id);
     try {
       await api.reportStopped(
         itemId: id,
@@ -3886,11 +3884,32 @@ class JellyfinVideoClient
         session: session,
       );
     } finally {
-      if (session != null && session.isTranscoding) {
-        await api.stopActiveEncodings(session.playSessionId);
-      }
+      await _stopTranscoding(session);
     }
   }
 
+  /// 卡片片段回看结束（BUG-4909）：与 [stopRemoteVideoPlayback] 同样按先进先出摘下
+  /// 最早那条会话、停它的转码，但**不**发 Stopped——回看不得判已看、写断点。
+  @override
+  Future<void> detachRemoteVideoPlayback(String id) =>
+      _stopTranscoding(_takeOldestSession(id));
+
+  /// 同一条目「退出→立刻重开」时旧页的收尾晚到：按先进先出取最早那条，不拿新会话。
+  JellyfinPlaybackSession? _takeOldestSession(String id) {
+    final List<JellyfinPlaybackSession>? list = _sessions[id];
+    final JellyfinPlaybackSession? session = list == null || list.isEmpty
+        ? null
+        : list.removeAt(0);
+    if (list != null && list.isEmpty) _sessions.remove(id);
+    return session;
+  }
+
+  Future<void> _stopTranscoding(JellyfinPlaybackSession? session) async {
+    if (session != null && session.isTranscoding) {
+      await api.stopActiveEncodings(session.playSessionId);
+    }
+  }
+
+  @override
   void close() => api.close();
 }
