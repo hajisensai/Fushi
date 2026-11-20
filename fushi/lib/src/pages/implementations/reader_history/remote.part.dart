@@ -1292,26 +1292,13 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     // 有声书播放断点 → prefs（与 resume/播放写键空间同源，见 sync sweep）。
     // `remoteAudiobookPosition` 仅互联后端具备（live API），故此段按类型门控。
     if (book.hasAudiobook && client is InterconnectSyncBackend) {
-      try {
-        final ({int positionMs, int updatedAtMs}) pos = await client
-            .remoteAudiobookPosition(book.downloadId);
-        if (pos.updatedAtMs > 0) {
-          await appModel.database.setPrefTyped<int>(
-            audiobookPositionPrefKey(localBookKey),
-            pos.positionMs,
-          );
-          await appModel.database.setPrefTyped<int>(
-            audiobookPositionAtPrefKey(localBookKey),
-            pos.updatedAtMs,
-          );
-        }
-      } catch (e, stack) {
-        ErrorLogService.instance.log(
-          'ReaderFushiHistoryPage.downloadRemoteAudiobookPosition',
-          e,
-          stack,
-        );
-      }
+      await backfillRemoteAudiobookPosition(
+        client: client,
+        database: appModel.database,
+        remoteKey: book.downloadId,
+        localKey: localBookKey,
+        logSource: 'ReaderFushiHistoryPage.downloadRemoteAudiobookPosition',
+      );
     }
   }
 
@@ -1476,26 +1463,13 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     }
     // 与整书下载同样把 host 端听书断点拉回来（best-effort，独立吞错）。
     if (client is InterconnectSyncBackend) {
-      try {
-        final ({int positionMs, int updatedAtMs}) pos = await client
-            .remoteAudiobookPosition(book.downloadId);
-        if (pos.updatedAtMs > 0) {
-          await appModel.database.setPrefTyped<int>(
-            audiobookPositionPrefKey(localBookKey),
-            pos.positionMs,
-          );
-          await appModel.database.setPrefTyped<int>(
-            audiobookPositionAtPrefKey(localBookKey),
-            pos.updatedAtMs,
-          );
-        }
-      } catch (e, stack) {
-        ErrorLogService.instance.log(
-          'ReaderFushiHistoryPage.downloadRemoteAudiobookPosition',
-          e,
-          stack,
-        );
-      }
+      await backfillRemoteAudiobookPosition(
+        client: client,
+        database: appModel.database,
+        remoteKey: book.downloadId,
+        localKey: localBookKey,
+        logSource: 'ReaderFushiHistoryPage.downloadRemoteAudiobookPosition',
+      );
     }
     if (!mounted) return;
     ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
@@ -1986,26 +1960,13 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     // [_downloadRemoteBookProgress] 有声书段对称——此前纯 SRT 下载完从 0 开始，
     // 且 sweep 交集键 bug 让它之后也永远同步不上）。standalone 的 identity=uid
     // 恰为本地 `audiobook_pos_<uid>` 进度键，写穿即正确命名空间。best-effort。
-    try {
-      final ({int positionMs, int updatedAtMs}) pos = await client
-          .remoteAudiobookPosition(book.identity);
-      if (pos.updatedAtMs > 0) {
-        await appModel.database.setPrefTyped<int>(
-          audiobookPositionPrefKey(book.identity),
-          pos.positionMs,
-        );
-        await appModel.database.setPrefTyped<int>(
-          audiobookPositionAtPrefKey(book.identity),
-          pos.updatedAtMs,
-        );
-      }
-    } catch (e, stack) {
-      ErrorLogService.instance.log(
-        'ReaderFushiHistoryPage.downloadRemoteSrtAudiobookPosition',
-        e,
-        stack,
-      );
-    }
+    await backfillRemoteAudiobookPosition(
+      client: client,
+      database: appModel.database,
+      remoteKey: book.identity,
+      localKey: book.identity,
+      logSource: 'ReaderFushiHistoryPage.downloadRemoteSrtAudiobookPosition',
+    );
     if (!mounted) return;
     _refreshSrtBooks(); // 失效本地 SRT provider + 重拉远端（按 uid dedup 隐藏占位）
     ScaffoldMessenger.of(
@@ -2368,4 +2329,34 @@ class _RemoteAudiobookException implements Exception {
 
   @override
   String toString() => '_RemoteAudiobookException: $cause';
+}
+
+/// 互联下载编排里「把 host 端听书断点拉回本机」的唯一实现（gap-novelmisc-6：整书下载、
+/// 补拉有声书、纯 SRT 有声书下载三处原先各抄一份）。
+///
+/// 用 host 端真实 key [remoteKey] 拉，写本机键空间 [localKey]（`audiobook_pos_*` 与
+/// 时间戳两键，与 resume / 播放 / sync sweep 同源）。host 没有记录（updatedAtMs == 0）
+/// 不写；拉取或落库出错记进 [logSource] 后吞掉——best-effort，绝不阻断主下载。
+Future<void> backfillRemoteAudiobookPosition({
+  required InterconnectSyncBackend client,
+  required FushiDatabase database,
+  required String remoteKey,
+  required String localKey,
+  required String logSource,
+}) async {
+  try {
+    final ({int positionMs, int updatedAtMs}) pos = await client
+        .remoteAudiobookPosition(remoteKey);
+    if (pos.updatedAtMs <= 0) return;
+    await database.setPrefTyped<int>(
+      audiobookPositionPrefKey(localKey),
+      pos.positionMs,
+    );
+    await database.setPrefTyped<int>(
+      audiobookPositionAtPrefKey(localKey),
+      pos.updatedAtMs,
+    );
+  } catch (e, stack) {
+    ErrorLogService.instance.log(logSource, e, stack);
+  }
 }
