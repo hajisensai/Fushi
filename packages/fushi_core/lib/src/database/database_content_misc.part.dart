@@ -242,6 +242,85 @@ mixin _FushiDbContentMisc
         .toList(growable: false);
   }
 
+  /// 书架投影（[EpubBookShelfRow]，与 [getAllEpubBooks] 同序：importedAt 降序）。
+  /// [bookKey] 非空时只取那一本（单本重建 MediaItem 与整架同一条派生，不分叉）。
+  ///
+  /// 每章字数在 SQLite 侧用 `json_each` 抽成逗号串，整段 `chapters_json` /
+  /// `toc_json` 不出库。`chapters_json` 不是合法 JSON 数组时（空串、损坏）
+  /// `CASE` 短路，不让一本坏行把整个书架查询炸掉；数组元素不是对象、或
+  /// `characters` 缺失 / 不是数字时该章记 0。`group_concat(... ORDER BY key)`
+  /// 钉死数组顺序（聚合顺序不能依赖扫描顺序）。
+  Future<List<EpubBookShelfRow>> getEpubBookShelfRows({String? bookKey}) async {
+    final List<QueryRow> rows = await customSelect(
+      'SELECT book_key, uid, title, author, cover_path, extract_dir, '
+      'chapter_count, format, source_metadata, '
+      // 嵌套 CASE 而不是 AND：SQLite 只保证 CASE 分支惰性求值，AND 两侧
+      // 都可能被求值，而 json_type 碰到非法 JSON 会直接抛错。
+      'CASE WHEN json_valid(chapters_json) THEN '
+      "CASE WHEN json_type(chapters_json) = 'array' THEN ("
+      'SELECT group_concat('
+      "CASE WHEN c.type = 'object' THEN "
+      "CASE WHEN json_type(c.value, '\$.characters') IN ('integer', 'real') "
+      "THEN CAST(json_extract(c.value, '\$.characters') AS INTEGER) "
+      "ELSE 0 END ELSE 0 END, ',' ORDER BY c.key) "
+      'FROM json_each(epub_books.chapters_json) AS c'
+      ') END END AS section_chars '
+      'FROM epub_books '
+      '${bookKey == null ? '' : 'WHERE book_key = ? '}'
+      'ORDER BY imported_at DESC',
+      variables: <Variable<Object>>[
+        if (bookKey != null) Variable<String>(bookKey),
+      ],
+      readsFrom: <ResultSetImplementation<dynamic, dynamic>>{epubBooks},
+    ).get();
+    return rows
+        .map((QueryRow row) {
+          final String? chars = row.read<String?>('section_chars');
+          return EpubBookShelfRow(
+            bookKey: row.read<String>('book_key'),
+            uid: row.read<String>('uid'),
+            title: row.read<String>('title'),
+            author: row.read<String?>('author'),
+            coverPath: row.read<String?>('cover_path'),
+            extractDir: row.read<String>('extract_dir'),
+            chapterCount: row.read<int>('chapter_count'),
+            format: row.read<String>('format'),
+            sourceMetadata: row.read<String?>('source_metadata'),
+            sectionChars: chars == null || chars.isEmpty
+                ? const <int>[]
+                : chars.split(',').map(int.parse).toList(growable: false),
+          );
+        })
+        .toList(growable: false);
+  }
+
+  /// 分卷归组投影（[EpubBookSeriesFacts]，与 [getAllEpubBooks] 同序）：归组只要
+  /// 身份 / 书名 / 格式 / `sourceMetadata`，不把章节与目录 JSON 整表拉出来。
+  Future<List<EpubBookSeriesFacts>> getEpubBookSeriesFacts() async {
+    final JoinedSelectStatement<HasResultSet, dynamic> query =
+        selectOnly(epubBooks)
+          ..addColumns(<Expression<Object>>[
+            epubBooks.bookKey,
+            epubBooks.uid,
+            epubBooks.title,
+            epubBooks.format,
+            epubBooks.sourceMetadata,
+          ])
+          ..orderBy(<OrderingTerm>[OrderingTerm.desc(epubBooks.importedAt)]);
+    final List<TypedResult> rows = await query.get();
+    return rows
+        .map(
+          (TypedResult row) => EpubBookSeriesFacts(
+            bookKey: row.read(epubBooks.bookKey)!,
+            uid: row.read(epubBooks.uid)!,
+            title: row.read(epubBooks.title)!,
+            format: row.read(epubBooks.format)!,
+            sourceMetadata: row.read(epubBooks.sourceMetadata),
+          ),
+        )
+        .toList(growable: false);
+  }
+
   /// 监听 EPUB 书 bookKey 集合，供书架在任意导入路径落库后自动刷新（同
   /// [watchVideoBookUids]，BUG-793）。消费方按集合 `.distinct` 去重，改作者/封面等
   /// 纯列更新（集合不变）不触发重算。
