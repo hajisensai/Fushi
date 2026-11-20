@@ -148,6 +148,8 @@
   "opt_subtitleAutoScroll_desc": "Mantém a linha atual visível durante a reprodução.",
   "opt_subtitleReplaceNative_title": "Substituir legendas do site",
   "opt_subtitleReplaceNative_desc": "Mostra frases inteiras da faixa completa — ideal para legendas automáticas do YouTube.",
+  "opt_subtitleMergeAsrSentences_title": "Juntar legendas automáticas em frases",
+  "opt_subtitleMergeAsrSentences_desc": "Junta os fragmentos das legendas automáticas do YouTube em frases completas com base na pontuação e nas pausas. Sem pontuação, os cortes podem sair imprecisos.",
   "opt_subtitleOverlayAllTracks_title": "Desenhar todas as faixas com o Fushi",
   "opt_subtitleOverlayAllTracks_desc": "As faixas do site também ganham desfoque anti-spoiler e consulta ao passar o mouse.",
   "opt_subtitleOverlayBlur_title": "Desfoque anti-spoiler",

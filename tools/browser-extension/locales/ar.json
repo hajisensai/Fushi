@@ -148,6 +148,8 @@
   "opt_subtitleAutoScroll_desc": "يُبقي السطر الحالي ظاهرًا أثناء التشغيل.",
   "opt_subtitleReplaceNative_title": "استبدال ترجمة الموقع",
   "opt_subtitleReplaceNative_desc": "يعرض جملًا كاملة من المسار الكامل — مثالي لترجمة YouTube التلقائية.",
+  "opt_subtitleMergeAsrSentences_title": "دمج الترجمة التلقائية في جمل",
+  "opt_subtitleMergeAsrSentences_desc": "يدمج أجزاء ترجمة YouTube التلقائية في جمل كاملة اعتمادًا على علامات الترقيم والتوقفات. قد يكون التقسيم غير دقيق إذا خلت الترجمة من علامات الترقيم.",
   "opt_subtitleOverlayAllTracks_title": "رسم كل المسارات بـ Fushi",
   "opt_subtitleOverlayAllTracks_desc": "تحصل مسارات الموقع أيضًا على تمويه الحرق والبحث بالتمرير.",
   "opt_subtitleOverlayBlur_title": "تمويه الحرق",

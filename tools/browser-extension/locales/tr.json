@@ -148,6 +148,8 @@
   "opt_subtitleAutoScroll_desc": "Oynatırken geçerli satırı görünür tutar.",
   "opt_subtitleReplaceNative_title": "Site altyazılarını değiştir",
   "opt_subtitleReplaceNative_desc": "Tam parçadan bütün cümleler gösterir — YouTube otomatik altyazıları için ideal.",
+  "opt_subtitleMergeAsrSentences_title": "Otomatik altyazıları cümlelere birleştir",
+  "opt_subtitleMergeAsrSentences_desc": "YouTube otomatik altyazı parçalarını noktalama ve duraklamalara göre tam cümlelere birleştirir. Noktalama yoksa cümle sınırları kayabilir.",
   "opt_subtitleOverlayAllTracks_title": "Tüm parçaları Fushi ile çiz",
   "opt_subtitleOverlayAllTracks_desc": "Site parçaları da spoiler bulanıklığı ve üzerine gelince arama alır.",
   "opt_subtitleOverlayBlur_title": "Spoiler bulanıklığı",

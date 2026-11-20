@@ -6,7 +6,8 @@
 //
 // 三条不变式：
 //  · **不新增任何状态**。每一项都写既有的 chrome.storage.local 键（subtitleOverlayEnabled /
-//    subtitleReplaceNative / subtitleOverlayAllTracks / subtitleOverlayBackground / subtitleStyle）
+//    subtitleReplaceNative / subtitleMergeAsrSentences / subtitleOverlayAllTracks / subtitleOverlayBackground /
+//    subtitleStyle）
 //    或调既有执行端（content.js 的 fushiToggleSubtitleHiding、subtitle-panel.js 的
 //    fushiSubtitleShortcut）。options 页、工具栏弹窗、本菜单三处看到的永远是同一个值，
 //    因为三处都只经 storage.onChanged 回读。覆盖层总开关的写法与工具栏弹窗逐字同构
@@ -90,6 +91,11 @@
     var items = [];
     items.push({ id: 'overlay', kind: 'switch', on: overlayOn, label: tr('ap_hp_overlay_toggle_label'), icon: 'subtitles' });
     items.push({ id: 'replaceNative', kind: 'switch', on: !!s.replaceNative, disabled: !overlayOn, label: tr('opt_subtitleReplaceNative_title'), icon: 'closed_caption' });
+    // 自动字幕分句整合只对 YouTube 自动字幕有意义（别的站没有 ASR 滚动行），只在 YouTube 出现；
+    // 它改的是轨本身（侧边栏 / 查词 / 制卡也用），不随覆盖层置灰。
+    if (s.asrMergeAvailable) {
+      items.push({ id: 'mergeAsr', kind: 'switch', on: !!s.mergeAsr, label: tr('opt_subtitleMergeAsrSentences_title'), icon: 'text_fields' });
+    }
     items.push({ id: 'allTracks', kind: 'switch', on: !!s.allTracks, disabled: !overlayOn, label: tr('opt_subtitleOverlayAllTracks_title'), icon: 'layers' });
     items.push({ id: 'background', kind: 'switch', on: s.background !== false, disabled: !overlayOn, label: tr('opt_subtitleOverlayBackground_title'), icon: 'format_color_fill' });
     items.push({ id: 'hidden', kind: 'switch', on: !!s.hidden, label: tr('opt_subtitleHidden_title'), icon: 'visibility_off' });
@@ -296,6 +302,7 @@
     prefs: {
       subtitleOverlayEnabled: true,
       subtitleReplaceNative: false,
+      subtitleMergeAsrSentences: false,
       subtitleOverlayAllTracks: false,
       subtitleOverlayBackground: true,
       subtitleHidden: false,
@@ -750,6 +757,8 @@
     var items = menuModel(Object.assign({
       overlayOn: overlayEffective(),
       replaceNative: !!st.prefs.subtitleReplaceNative,
+      asrMergeAvailable: site === 'youtube',
+      mergeAsr: !!st.prefs.subtitleMergeAsrSentences,
       allTracks: !!st.prefs.subtitleOverlayAllTracks,
       background: st.prefs.subtitleOverlayBackground !== false,
       hidden: !!st.prefs.subtitleHidden,
@@ -1226,6 +1235,7 @@
       return;
     }
     if (id === 'replaceNative') return writePrefs({ subtitleReplaceNative: !st.prefs.subtitleReplaceNative });
+    if (id === 'mergeAsr') return writePrefs({ subtitleMergeAsrSentences: !st.prefs.subtitleMergeAsrSentences });
     if (id === 'allTracks') return writePrefs({ subtitleOverlayAllTracks: !st.prefs.subtitleOverlayAllTracks });
     if (id === 'background') return writePrefs({ subtitleOverlayBackground: st.prefs.subtitleOverlayBackground === false });
     if (id === 'study') return writePrefs({ studyTrackVideo: st.prefs.studyTrackVideo === false });
@@ -1322,7 +1332,8 @@
   // ────────────────────────────── 装载与同步 ──────────────────────────────
 
   var PREF_KEYS = [
-    SETTING_KEY, PANEL_GATE_KEY, 'subtitleOverlayEnabled', 'subtitleReplaceNative', 'subtitleOverlayAllTracks',
+    SETTING_KEY, PANEL_GATE_KEY, 'subtitleOverlayEnabled', 'subtitleReplaceNative', 'subtitleMergeAsrSentences',
+    'subtitleOverlayAllTracks',
     'subtitleOverlayBackground', 'subtitleHidden', 'subtitleStyle', 'studyTrackVideo',
     // 字幕遮布的值归 subtitle-mask.js；这里订阅它只为菜单开着时重绘开关态。
     'subtitleMask',
@@ -1334,6 +1345,7 @@
     st.gate = s[PANEL_GATE_KEY] === true;
     st.prefs.subtitleOverlayEnabled = readBool(s, 'subtitleOverlayEnabled', true);
     st.prefs.subtitleReplaceNative = readBool(s, 'subtitleReplaceNative', false);
+    st.prefs.subtitleMergeAsrSentences = readBool(s, 'subtitleMergeAsrSentences', false);
     st.prefs.subtitleOverlayAllTracks = readBool(s, 'subtitleOverlayAllTracks', false);
     st.prefs.subtitleOverlayBackground = readBool(s, 'subtitleOverlayBackground', true);
     st.prefs.subtitleHidden = readBool(s, 'subtitleHidden', false);
@@ -1376,6 +1388,7 @@
     s[PANEL_GATE_KEY] = st.gate;
     s.subtitleOverlayEnabled = st.prefs.subtitleOverlayEnabled;
     s.subtitleReplaceNative = st.prefs.subtitleReplaceNative;
+    s.subtitleMergeAsrSentences = st.prefs.subtitleMergeAsrSentences;
     s.subtitleOverlayAllTracks = st.prefs.subtitleOverlayAllTracks;
     s.subtitleOverlayBackground = st.prefs.subtitleOverlayBackground;
     s.subtitleHidden = st.prefs.subtitleHidden;

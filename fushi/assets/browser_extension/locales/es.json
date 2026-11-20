@@ -148,6 +148,8 @@
   "opt_subtitleAutoScroll_desc": "Mantiene visible la línea actual durante la reproducción.",
   "opt_subtitleReplaceNative_title": "Reemplazar subtítulos del sitio",
   "opt_subtitleReplaceNative_desc": "Muestra frases completas de la pista entera: ideal para subtítulos automáticos de YouTube.",
+  "opt_subtitleMergeAsrSentences_title": "Unir subtítulos automáticos en frases",
+  "opt_subtitleMergeAsrSentences_desc": "Une los fragmentos de los subtítulos automáticos de YouTube en frases completas según la puntuación y las pausas. Sin puntuación, los cortes pueden no ser exactos.",
   "opt_subtitleOverlayAllTracks_title": "Dibujar todas las pistas con Fushi",
   "opt_subtitleOverlayAllTracks_desc": "Las pistas del sitio también tienen desenfoque antispoiler y búsqueda al pasar el ratón.",
   "opt_subtitleOverlayBlur_title": "Desenfoque antispoiler",

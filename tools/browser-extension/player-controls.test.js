@@ -913,3 +913,14 @@ test('menuModel：全屏项随 fullscreenActive 切换文案与图标', () => {
   assert.strictEqual(on.icon, 'fullscreen_exit');
   assert.notStrictEqual(on.label, FUSHI_T('pc_fullscreen_enter'));
 });
+
+test('menuModel：「自动字幕分句整合」只在 YouTube 出现，不随覆盖层置灰（97pds8EODm）', () => {
+  const ids = (s) => PC.menuModel(s).map((i) => i.id);
+  assert.ok(!ids({ overlayOn: true }).includes('mergeAsr'), '非 YouTube 没有 ASR 滚动行，不出现');
+  const yt = PC.menuModel({ overlayOn: false, asrMergeAvailable: true, mergeAsr: true });
+  const byId = Object.fromEntries(yt.map((i) => [i.id, i]));
+  assert.strictEqual(byId.mergeAsr.kind, 'switch');
+  assert.strictEqual(byId.mergeAsr.on, true);
+  assert.ok(!byId.mergeAsr.disabled, '改的是轨本身（侧边栏 / 查词 / 制卡也用），覆盖层关了照样有意义');
+  assert.strictEqual(yt.map((i) => i.id).indexOf('mergeAsr'), yt.map((i) => i.id).indexOf('replaceNative') + 1);
+});

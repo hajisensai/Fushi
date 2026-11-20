@@ -148,6 +148,8 @@
   "opt_subtitleAutoScroll_desc": "Держит текущую строку в поле зрения при воспроизведении.",
   "opt_subtitleReplaceNative_title": "Заменять субтитры сайта",
   "opt_subtitleReplaceNative_desc": "Показывает целые предложения из полной дорожки — идеально для автосубтитров YouTube.",
+  "opt_subtitleMergeAsrSentences_title": "Объединять автосубтитры в предложения",
+  "opt_subtitleMergeAsrSentences_desc": "Склеивает фрагменты автоматических субтитров YouTube в целые предложения по знакам препинания и паузам. Без знаков препинания границы могут быть неточными.",
   "opt_subtitleOverlayAllTracks_title": "Рисовать все дорожки через Fushi",
   "opt_subtitleOverlayAllTracks_desc": "Дорожки сайта тоже получают размытие спойлеров и поиск при наведении.",
   "opt_subtitleOverlayBlur_title": "Размытие от спойлеров",
