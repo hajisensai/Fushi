@@ -987,6 +987,38 @@ class ReaderFushiSource extends ReaderMediaSource {
     String? coverPath,
   }) => resolveBookCoverFilePath(extractDir: extractDir, coverPath: coverPath);
 
+  /// BUG-5043：手上只有书行（bookKey + 自带封面）的上屏面要显示的封面文件，与书架卡
+  /// （[getDisplayThumbnailFromMediaItem]）同一优先级——用户 override 封面 > 刮削
+  /// 卷封面（[scrapedThumbnailFile]）> 书自带封面（[resolveCoverFilePath]）。都没有
+  /// 返回 null。作品页等处只读 `row.coverPath` 会让刮削 / 用户改过的封面在书架上
+  /// 显示、点进去却还是原封面。override 与刮削层都只按 `hoshi://book/<bookKey>`
+  /// 身份存（与 format 无关），所以三种书都可由本源解析。
+  File? displayCoverFileForBook({
+    required AppModel appModel,
+    required String bookKey,
+    required String extractDir,
+    String? coverPath,
+  }) {
+    if (bookKey.isNotEmpty) {
+      final MediaItem item = overrideTitleMediaItemForBookKey(bookKey);
+      final File? override = resolveOverrideThumbnailFile(
+        appModel: appModel,
+        item: item,
+      );
+      if (override != null) return override;
+      final File? scraped = scrapedThumbnailFile(
+        appModel: appModel,
+        item: item,
+      );
+      if (scraped != null) return scraped;
+    }
+    final String? own = resolveCoverFilePath(
+      extractDir: extractDir,
+      coverPath: coverPath,
+    );
+    return own == null ? null : File(own);
+  }
+
   /// 删一本书（EPUB / PDF / 漫画 / 字幕书）攒下的统计：「同时删除统计数据」勾选的
   /// 落地，书架单删 / 批删 / 合集连删 / 漫画作品页移出书架共用。
   ///
@@ -1233,7 +1265,7 @@ class ReaderFushiSource extends ReaderMediaSource {
       // runs for them. Clear the override title preference AND the override
       // thumbnail file here, so renamed/recovered books do not leave orphaned
       // override rows/files behind (a same-title reimport reuses the bookKey).
-      // BUG-4906：独立于上面的磁盘尾活——解压目录被占用（Windows errno 32，见
+      // BUG-4979：独立于上面的磁盘尾活——解压目录被占用（Windows errno 32，见
       // TODO-1359）等失败不能连带跳过这一步，否则同名重导照样带出旧封面。
       await _clearBookOverridesLogged(
         appModel: appModel,
@@ -1267,7 +1299,7 @@ class ReaderFushiSource extends ReaderMediaSource {
   }
 
   /// 清掉这本书的 override 书名偏好与 override 封面文件（封面文件名只由 bookKey
-  /// 派生，同名重导拿到同一个 bookKey，不清旧封面就「复活」，BUG-4906）。失败只记
+  /// 派生，同名重导拿到同一个 bookKey，不清旧封面就「复活」，BUG-4979）。失败只记
   /// 日志：DB 行是唯一真相源，删书结果不因这一步翻转。
   Future<void> _clearBookOverridesLogged({
     required AppModel appModel,
@@ -1297,7 +1329,7 @@ class ReaderFushiSource extends ReaderMediaSource {
   ///
   /// host 删书不经 [deleteBook]：行、墓碑、解压目录由 host 服务自己处理，但有声书 /
   /// 配对字幕书的持久目录和 override 书名 / 封面只有 app 知道放在哪。以前这个钩子在
-  /// app 里没接（#3722 c37 审查遗留，与 BUG-4906 同一根因）：对端删掉的书在 host 上
+  /// app 里没接（#3722 c37 审查遗留，与 BUG-4979 同一根因）：对端删掉的书在 host 上
   /// 留着几百 MB 的有声书副本，同名重导还带出旧封面。
   ///
   /// host 服务在删行**成功之后**才调（与 [deleteBook] 同序：DB 行是唯一真相源，删行

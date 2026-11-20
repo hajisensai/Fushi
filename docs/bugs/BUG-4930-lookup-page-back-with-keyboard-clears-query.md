@@ -1,0 +1,6 @@
+## BUG-4930 · 查词页：键盘弹着时点导航栏「收起键盘」把输入和结果清空
+- **报告**：2026-11-21（应用内反馈 r3wf1i68Qn，Android 15 / SDK 35，三星 SM-C5560 + Gboard，3.3.0：输完词、结果已出来、没按搜索，点右下角收起键盘 ﹀，结果页消失回到输入页、输入被清空。同条反馈的问题①「底栏呼不出」反馈人确认装 debug 版后已解决，不在本条范围）。
+- **真实性**：✅ 真 bug。`fushi/lib/src/pages/implementations/home_dictionary_page.dart:795` 的 `PopScope` 在有查询时 `canPop: false`，`onPopInvokedWithResult`（`:796-802`）无条件 `_clearSearch()`，不区分软键盘是否弹着。Android 上 `android:enableOnBackInvokedCallback="true"`（`fushi/android/app/src/main/AndroidManifest.xml:53`）：用户敲下第一个字后 `canPop` 才翻成 false，Flutter 此时才向系统登记 `OnBackInvokedCallback`——晚于键盘弹起时 IME 登记的回调，同优先级后登记者先收，于是导航栏的收键盘 ﹀（即键盘弹着时的返回）被分发给本页，落进清空分支。BUG-3833 加了「收起键盘」按钮，但没处理键盘弹着时的系统返回。
+- **[x] ① 已修复** — `onPopInvokedWithResult` 在软键盘弹着（`_softKeyboardVisible`，`didChangeMetrics` 读 `View.viewInsets` 维护）且搜索框持焦时，只 `_hideSoftKeyboard()`（`TextInput.hide`、不交焦点，同 BUG-2686 / BUG-3833）并返回，查询与结果保留；键盘收下后再按返回恢复原有的清空 / 关浮层语义。判据放在关浮层分支之前：键盘弹着时返回先收键盘是 Android 惯例。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/home_dictionary_lookup_page_toggles_test.dart`「键盘弹着时系统返回只收键盘，查询与结果保留」：Android 平台、查出结果、搜索框持焦、`viewInsets` 底部 600 时 `handlePopRoute`，断言发了 `TextInput.hide`、输入框文字与结果仍在、焦点留框；键盘收下后再返回则清空。变异验证：去掉修复判据该例变红。
+- **备注**：未真机复测（需 Android 15 + Gboard 实机确认导航栏 ﹀ 不再清空）。

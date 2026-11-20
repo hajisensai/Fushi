@@ -754,6 +754,26 @@ void main() {
       expect(find.text(t.srs_deck_rename), findsOneWidget, reason: '右键行出牌组菜单');
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await _settle(tester);
+      // 反馈 Ne6WHI9TYE：右键菜单要在指针处弹出，不是行的右端。
+      final Offset click = tester.getCenter(find.text('Vocabulary'));
+      await tester.tapAt(click, buttons: kSecondaryButton);
+      await _settle(tester);
+      // 第一项（自定义学习）贴着按下点；不拿「重命名」，它排在第四项。
+      final Offset menuItem = tester.getTopLeft(
+        find.text(t.srs_custom_study_title),
+      );
+      expect(
+        (menuItem.dx - click.dx).abs(),
+        lessThan(80),
+        reason: '菜单左缘贴着右键按下点（$click），实际菜单项在 $menuItem',
+      );
+      expect(
+        (menuItem.dy - click.dy).abs(),
+        lessThan(80),
+        reason: '菜单顶边贴着右键按下点（$click），实际菜单项在 $menuItem',
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await _settle(tester);
       await _unmount(tester);
     });
 

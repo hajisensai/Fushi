@@ -685,8 +685,7 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
       );
     }
     final Widget? header = shrinkWrap ? null : widget.header;
-    if (widget.style == MusicViewStyle.blocks &&
-        musicTrackRowSurfaceActive(buildContext)) {
+    if (musicCoverBlocksActive(buildContext, widget.style)) {
       return _withSelection(
         MusicStyledCollection(
           style: MusicViewStyle.blocks,
@@ -1302,7 +1301,7 @@ class MusicTrackListPage extends StatelessWidget {
         if (musicViewStyleSwitchable(context))
           musicViewStyleToggle(MusicViewKind.tracks, style),
       ],
-      body: MusicTrackList(
+      body: (BuildContext context) => MusicTrackList(
         tracks: tracks,
         albums: albums,
         context: MusicQueueContext.mixed,

@@ -378,7 +378,11 @@ void main() {
     expect(rowOf('gammaCorrectScaling').onChanged, isNotNull);
     await tester.tap(find.text(titleOf('gammaCorrectScaling')));
     await tester.pumpAndSettle();
-    expect(saved['gammaCorrectScaling'], true);
+    // 拨一下就是把默认值取反（文字感知 Gamma 校正默认开）。
+    expect(
+      saved['gammaCorrectScaling'],
+      !const MangaReaderPreferences().gammaCorrectScaling,
+    );
   });
 
   testWidgets('list leaves room for the floating scope bar', (

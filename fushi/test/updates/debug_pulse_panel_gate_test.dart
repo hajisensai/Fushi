@@ -1,4 +1,4 @@
-// BUG-4906：调试版流水线面板要对「本机跑的就是调试包」的人可见，不只看通道设置。
+// BUG-4987：调试版流水线面板要对「本机跑的就是调试包」的人可见，不只看通道设置。
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';

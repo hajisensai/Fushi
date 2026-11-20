@@ -57,6 +57,8 @@ import 'package:fushi/src/pages/implementations/stat_charts.dart'
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
 import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart'
+    show activeContextMenuAnchor;
 import 'package:fushi/src/srs/srs_app_runtime.dart';
 import 'package:fushi/src/srs/srs_import_entry.dart';
 import 'package:fushi/src/srs/srs_import_task.dart';
@@ -1780,17 +1782,15 @@ class _DeckRow extends StatelessWidget {
   }
 
   /// 长按 / 右键 / 菜单键在行的位置弹出牌组菜单。
-  Future<void> _showMenuFor(BuildContext rowContext, {Offset? at}) =>
-      _showDeckMenu(
-        rowContext,
-        deck: deck,
-        isDefault: isDefault,
-        canMoveUp: canMoveUp,
-        canMoveDown: canMoveDown,
-        remote: remote,
-        onAction: onAction,
-        at: at,
-      );
+  Future<void> _showMenuFor(BuildContext rowContext) => _showDeckMenu(
+    rowContext,
+    deck: deck,
+    isDefault: isDefault,
+    canMoveUp: canMoveUp,
+    canMoveDown: canMoveDown,
+    remote: remote,
+    onAction: onAction,
+  );
 
   Widget _buildRow(BuildContext context, {required bool compact}) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);

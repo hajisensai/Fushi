@@ -55,8 +55,11 @@ public final class ProcessExitChannel {
     private static final String KEY_TRIMS = "trim_events";
     private static final int MAX_TRIMS = 8;
     private static final int MAX_REASONS = 5;
-    /** 读 ANR 文本 trace 的字节上限（只要开头的 "main" 线程段）。 */
-    private static final int TRACE_READ_BYTES = 64 * 1024;
+    /**
+     * 读 ANR 文本 trace 的字节上限：除主线程外还要找 Flutter 引擎线程段（raster / ui），
+     * 一百多条线程的转储常过百 KB，引擎线程排在后面，只读开头会读不到。
+     */
+    private static final int TRACE_READ_BYTES = 1024 * 1024;
     /**
      * 读 tombstone proto 的字节上限：线程表在 proto 中段、顺序与崩溃线程无关，一百多条线程
      * （各带寄存器与栈内存片段）的 tombstone 常有几百 KB，只读开头会读不到崩溃线程。
@@ -318,7 +321,7 @@ public final class ProcessExitChannel {
     }
 
     /**
-     * ANR trace 是文本：从 "main" 线程段开始取一截。native crash 的 tombstone 在 API 31+ 是
+     * ANR trace 是文本：取主线程段 + Flutter 引擎线程段（{@link AnrTraceSummary}）。native crash 的 tombstone 在 API 31+ 是
      * protobuf：按 tombstone.proto 解出信号 / abort message / 崩溃线程完整栈（{@link
      * TombstoneSummary}）。解不开（读到的不是 proto，或被截断）时如实标明，再退回抽可打印串，
      * 好歹留下 abort message 与 .so 名。
@@ -343,11 +346,8 @@ public final class ProcessExitChannel {
                             + " bytes):\n" + printableRuns(bytes, 6, TRACE_SUMMARY_CHARS);
                 }
             }
-            final String s = new String(bytes, StandardCharsets.UTF_8);
-            final int main = s.indexOf("\"main\"");
-            final String from = main >= 0 ? s.substring(main) : s;
-            return from.length() > TRACE_SUMMARY_CHARS
-                    ? from.substring(0, TRACE_SUMMARY_CHARS) : from;
+            return AnrTraceSummary.summarize(
+                    new String(bytes, StandardCharsets.UTF_8), TRACE_SUMMARY_CHARS);
         } catch (IOException | RuntimeException e) {
             return "trace unavailable: " + e;
         }

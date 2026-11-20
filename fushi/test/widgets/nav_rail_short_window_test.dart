@@ -4,7 +4,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart';
 import 'package:material_ui/material_ui.dart';
 
-/// BUG-4906：窗口矮时（用户截图约 830×717）镂空脊侧栏排不开。
+/// BUG-4971：窗口矮时（用户截图约 830×717）镂空脊侧栏排不开。
 ///
 /// - 所有目的地都要可达（排不下就紧凑间距 + 滚动，不裁条目），没有 overflow；
 /// - 当前项的缺口在任何位置（含被挤到最底部）都完整：上下沿包住指示器槽并各

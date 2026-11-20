@@ -40,6 +40,10 @@ VideoLocalExtraMatch? classifyLocalVideoExtra(String path) {
       'ncop nced' => VideoMetadataExtraKind.clip,
       '迷你动画' || '迷你動畫' => VideoMetadataExtraKind.short,
       '特典' || '特典映像' || '映像特典' => VideoMetadataExtraKind.extra,
+      // 发布组 BDRip 的特典目录（DBD-Raws / VCB-Studio 等的 `SP` / `SPs`），与下载
+      // 整理器的特典目录词表同口径。不认的话目录里 `[Grp][Title][SP][01]` 会被
+      // 当成独立剧集进刮削计划，按解析出的标题「SP」误绑到无关剧（BUG-5035）。
+      'sp' || 'sps' => VideoMetadataExtraKind.extra,
       _ => kind,
     };
     if (kind != null) break;

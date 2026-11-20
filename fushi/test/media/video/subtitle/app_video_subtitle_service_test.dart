@@ -1084,7 +1084,7 @@ void main() {
   });
 
   group('费用预估', () {
-    test('BUG-4907：重估不重复探测时长；探测失败的下次重探', () async {
+    test('BUG-4993：重估不重复探测时长；探测失败的下次重探', () async {
       settings.provider = testProvider();
       final String ep1 = video('ep01.mkv');
       final String ep2 = video('ep02.mkv');
@@ -1155,7 +1155,7 @@ void main() {
     });
   });
 
-  group('BUG-4908 生成管线的失败隔离', () {
+  group('BUG-5008 生成管线的失败隔离', () {
     test('一集登记抛错不连带后面的集；任务仍按第一处错误判失败', () async {
       final String ep1 = video('ep01.mkv');
       final String ep2 = video('ep02.mkv');

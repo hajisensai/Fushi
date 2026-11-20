@@ -373,7 +373,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     canOwn: (FocusReclaimCause _) => mounted && !_popup.hasVisiblePopup,
   );
 
-  /// WebView 渲染 / 浏览器进程死亡的处置（BUG-4906）：先 [_recoverFromProcessGone] 作废死表面的
+  /// WebView 渲染 / 浏览器进程死亡的处置（BUG-4983）：先 [_recoverFromProcessGone] 作废死表面的
   /// 一切引用、换环境、记下要回到哪里，再按预算重建。[WebViewDeathGuard.deathCount] 同时是表面的
   /// 「代」：重放循环据此判断录到的东西是不是同一个表面上的。
   late final WebViewDeathGuard _deathGuard = WebViewDeathGuard(
@@ -901,7 +901,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     WidgetsBinding.instance.addPostFrameCallback((_) => _seedWarmPopup());
   }
 
-  /// WebView 进程死后、表面重建前（[WebViewDeathGuard] 的 flushBeforeRebuild，BUG-4906）。
+  /// WebView 进程死后、表面重建前（[WebViewDeathGuard] 的 flushBeforeRebuild，BUG-4983）。
   ///
   /// 宿主 State 不随表面重建，死表面留下的东西都得在这里作废，否则新 WebView 起来之前它们
   /// 一直被当成活的：控制器（死进程上的调用会抛或永久挂起）、最后一拍播放态（重放循环拿它
@@ -1721,7 +1721,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     final DateTime until = DateTime.now().add(const Duration(seconds: 30));
     while (DateTime.now().isBefore(until)) {
       // 表面在等的途中死了（[_web] 被作废或已换成重建出来的那个）：死页面等不到画面，不是
-      // 这个视频到不了（BUG-4906）。
+      // 这个视频到不了（BUG-4983）。
       if (!mounted || _mineStopRequested || !identical(web, _web)) {
         return WebMineNavigateOutcome.interrupted;
       }
@@ -1784,7 +1784,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       ErrorLogService.instance.log('web_video.mineQueue', error, stack);
     }
 
-    // 表面的代（BUG-4906）：本轮只认开跑时这一个 WebView。死了（重建出来的是另一个页面）或
+    // 表面的代（BUG-4983）：本轮只认开跑时这一个 WebView。死了（重建出来的是另一个页面）或
     // 已报废（重建预算用尽、[_web] 一直是 null），在途那一行留待办、本轮结束。
     final int surfaceGen = _deathGuard.deathCount;
     bool surfaceLost() => _web == null || _deathGuard.deathCount != surfaceGen;

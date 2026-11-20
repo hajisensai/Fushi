@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/discovery/discovery_labels.dart'
+    show formatDiscoveryBytes;
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart'
     show remoteVideoDownloadFileName;
@@ -291,6 +293,48 @@ void main() {
   });
 
   group('下载中心条目', () {
+    test('e_LVlqyUd-: 传输原语中途换口径（总量变未知）时不沿用旧总量，状态不停在 100%', () async {
+      final InterconnectDownloadManager manager = InterconnectDownloadManager();
+      addTearDown(manager.dispose);
+      final File file = dest('switch.mp4');
+      final Completer<void> release = Completer<void>();
+      final Completer<void> switched = Completer<void>();
+      final Future<void> running = manager
+          .startVideoDownload(
+            id: 'v1',
+            title: 'Title v1',
+            dest: file,
+            run:
+                (
+                  File target, {
+                  void Function(double progress)? onProgress,
+                  void Function(int received, int? total)? onBytes,
+                  Future<void>? cancelSignal,
+                }) async {
+                  // 直链尝试：拿到 231 KB 的播放列表文本，报满。
+                  onBytes?.call(231 * 1024, 231 * 1024);
+                  // 改走分片：总量未知，只报已写分片字节与分片比例。
+                  onBytes?.call(5000, null);
+                  onProgress?.call(0.25);
+                  switched.complete();
+                  await release.future;
+                  await target.writeAsBytes(<int>[1]);
+                },
+          )
+          .then((_) {}, onError: (Object _) {});
+      await switched.future;
+      final InterconnectDownloadTask task = manager.taskFor('v1')!;
+      expect(task.receivedBytes, 5000);
+      expect(task.totalBytes, isNull);
+      expect(task.progress, closeTo(0.25, 1e-9));
+      expect(
+        interconnectDownloadStatusLabel(task),
+        '${t.download_task_status_downloading} · ${formatDiscoveryBytes(5000)}',
+      );
+      release.complete();
+      await running;
+    });
+
     test('下载中给「已收 / 总 (百分比)」，暂停给继续与删除，完成只给移出', () async {
       final InterconnectDownloadManager manager = InterconnectDownloadManager();
       addTearDown(manager.dispose);

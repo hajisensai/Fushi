@@ -631,7 +631,7 @@ class AppVideoSubtitleService {
   final AppVideoSubtitleDurationProbe _probeDurationMs;
 
   /// 费用预估用的时长缓存（按媒体路径；存进行中的探测，并发刷新共用一次）。面板每次
-  /// 切开关 / 换语言都会重估，没识别过的集原先每次都串行跑一遍 ffprobe（BUG-4907）。
+  /// 切开关 / 换语言都会重估，没识别过的集原先每次都串行跑一遍 ffprobe（BUG-4993）。
   /// 探测失败（null / 非正）不缓存，下次重探。
   final Map<String, Future<int?>> _estimateDurations = <String, Future<int?>>{};
   final AppVideoSubtitleAudioTrackProbe _probeAudioTracks;
@@ -1080,7 +1080,7 @@ class AppVideoSubtitleService {
   /// 正在跑、而且还会写 [work] 的 [language] 专名表的任务（开了校对、S0 还没完成）；
   /// 没有为 null。
   ///
-  /// BUG-4908：S0 在开跑时读进旧表、生成完整表写回。这期间用户在编辑页保存 / 重新
+  /// BUG-5008：S0 在开跑时读进旧表、生成完整表写回。这期间用户在编辑页保存 / 重新
   /// 生成的表会被 S0 的写回整个盖掉（新条目与 `userEdited` 标记都丢）。S0 完成之后
   /// 管线只用内存里的表，不再写，编辑照常。
   AppVideoSubtitleJob? glossaryWriterFor(
@@ -1587,7 +1587,7 @@ class AppVideoSubtitleService {
         keepRecordedAudio: job.consistencyOnly,
       );
       job.result = result;
-      // 登记逐集独立（BUG-4908）：一集写库抛错不能让后面已经导出的集都不登记。
+      // 登记逐集独立（BUG-5008）：一集写库抛错不能让后面已经导出的集都不登记。
       // 全部登记完再按第一处错误把任务判失败（原因照旧给人看、进错误日志）。
       Object? registerError;
       for (final VideoSubtitleEpisodeResult r in result.episodes) {

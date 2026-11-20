@@ -28,7 +28,7 @@ bool _manualCheckInFlight = false;
 /// UpdateChecker 既有对话框 → 应用内下载安装。
 ///
 /// [channel] 为 null 时按 [appUpdateChannelOf]（设置 / 安装绑定）检查；调用方自己
-/// 代表某条时间线时显式传入（BUG-4906：调试版流水线面板的「更新」按钮恒按 debug
+/// 代表某条时间线时显式传入（BUG-4987：调试版流水线面板的「更新」按钮恒按 debug
 /// 时间线查——通道设成 stable 却跑调试包的 TestFlight / 调试 APK 用户，面板说「有新
 /// 调试版」，按钮就不能拿 stable manifest 去比、回一句「已是最新」）。
 Future<void> checkAppUpdateNow(
