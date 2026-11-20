@@ -1907,7 +1907,20 @@ String _mangaGestureJs({
     _pageAnim = null;
     if (a) a.finish();
   }
-  // 登记一段时长 ms 的动画；到点或被 finish 时恰好执行一次 done。
+  // 「翻页落定」：没有在播的翻页动画、strip 已停在 CURRENT 上。_onPageSettled(fn)
+  // 此刻已落定就立即执行，否则挂到当前动画收尾（到点 / 被 finish 打断都算）之后。
+  // 关闭动画 / 墨水屏 / 长距离跳页走瞬时落位，没有 _pageAnim，同一条路径立即生效。
+  var _pageSettleWaiters = [];
+  function _onPageSettled(fn){
+    if (_pageAnim) _pageSettleWaiters.push(fn); else fn();
+  }
+  function _flushPageSettled(){
+    if (_pageAnim) return;
+    var waiters = _pageSettleWaiters;
+    _pageSettleWaiters = [];
+    for (var i = 0; i < waiters.length; i++) waiters[i]();
+  }
+  // 登记一段时长 ms 的动画；到点或被 finish 时恰好执行一次 done，随后通知落定。
   function _runPageAnim(ms, done){
     var a = {timer: null, finish: null};
     var ran = false;
@@ -1917,6 +1930,7 @@ String _mangaGestureJs({
       if (a.timer) { clearTimeout(a.timer); a.timer = null; }
       if (_pageAnim === a) _pageAnim = null;
       done();
+      _flushPageSettled();
     };
     a.finish = run;
     a.timer = setTimeout(run, ms + 34);
@@ -2087,10 +2101,15 @@ String _mangaGestureJs({
     out.sort(function(a, c){ return a[0] - c[0]; });
     return out;
   };
+  // 翻页：先落位（瞬时或起动画），再通知气泡模块——它在「翻页落定」时再量新跨页
+  // （_onPageSettled），所以必须排在本次动画登记之后，不能被上一段动画的收尾提前触发。
   window.__mangaApplyTranslate = function(target){
+    _applyTranslate(target);
+    if (typeof _bzAfterTranslate === 'function') _bzAfterTranslate();
+  };
+  function _applyTranslate(target){
     TURN_SERIAL++;
     if (typeof _bzViewportChanged === 'function') _bzViewportChanged();
-    if (typeof _bzAfterTranslate === 'function') _bzAfterTranslate();
     // 翻到含失败页的跨页 = 读者要看它：重取一次。
     _retryFailedPagesWhere(function(page){
       return Number(page.getAttribute('data-spread')) === target;
@@ -2143,7 +2162,7 @@ String _mangaGestureJs({
           Math.max(1, window.innerWidth || 1))));
     }
     _slideTurn(target, slideMs);
-  };
+  }
   // 运行中换翻页动画设置（设置面板 / 系统「减弱动态效果」切换）。
   function _rootTransitionDecl(){
     if (PAGE_ANIM === 'slide') {

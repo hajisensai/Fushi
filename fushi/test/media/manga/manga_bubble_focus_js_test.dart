@@ -208,6 +208,12 @@ void main() {
         '  window.__mangaBubbleZoomClose',
       );
       final String focus = section(doc, '  // ── 逐格读（聚焦模式）──', '})();');
+      // 真实的翻页动画登记 / 「翻页落定」信号（_runPageAnim / _onPageSettled）。
+      final String settle = section(
+        doc,
+        '  // 当前在播的翻页动画',
+        '  function _slideTurn(',
+      );
       final bool webtoon = mode != MangaReadingMode.spread;
       return '''
 const assert=require('node:assert/strict');
@@ -261,7 +267,7 @@ function _applyCanvas(){ if (typeof _bzViewportChanged==='function') _bzViewport
 function _zoomAnchorScrollTo(y){ window.scrollY=y; }
 function _animateZoomTo(z,x,y,after){ zoomTargets.push(z); ZOOM=z; if(after) after(); }
 function _recenterPan(){ PAN_X=0; PAN_Y=0; }
-function _animMs(){ return 0; }
+$settle
 $tap
 $zoom
 $focus
@@ -365,8 +371,7 @@ assert.equal(fcPendingEdge,'first');
 assert.ok(calls.indexOf('onMangaTurn:next')>=0);
 assert.ok(focusCalls().indexOf('onMangaBubbleFocus:turn:2:3:first')>=0);
 SEQ=[{key:'1:2',l:200,t:100,r:300,b:200},{key:'1:4',l:50,t:100,r:150,b:200}];
-_bzAfterTranslate();
-advance(200);
+_bzAfterTranslate(); // 无翻页动画：落定即刻，同步聚焦
 assert.equal(fcOn,true);
 assert.equal(fcKey,'1:2');
 assert.equal(fcPendingEdge,null);
@@ -376,8 +381,46 @@ assert.equal(fcPendingEdge,'last');
 assert.ok(calls.indexOf('onMangaTurn:prev')>=0);
 SEQ=[A,B,C];
 _bzAfterTranslate();
-advance(200);
 assert.equal(fcKey,'0:5');
+'''),
+      );
+    });
+
+    test('跨页落点由「翻页落定」驱动：动画中途不量，动画到点 / 被打断才聚焦', () async {
+      await runJs(
+        harness('''
+var NEXT=[{key:'1:2',l:200,t:100,r:300,b:200},{key:'1:4',l:50,t:100,r:150,b:200}];
+// ① 动画正常走完：动画中途（量到的是半路位置）不聚焦，到点才聚焦。
+_fcEnter(C);
+_fcStep(1);
+_runPageAnim(300,function(){ SEQ=NEXT; });   // 翻页动画登记（收尾时 strip 落到新跨页）
+_bzAfterTranslate();
+advance(150);
+assert.equal(fcKey,'0:5');
+assert.equal(fcPendingEdge,'first');
+advance(400);
+assert.equal(fcKey,'1:2');
+assert.equal(fcPendingEdge,null);
+// ② 动画被打断（连按 / 新拖动走 _finishPageAnim 直接落到终点）：同一信号立即聚焦，
+//    不等原定时长。
+SEQ=[A,B,C];
+_fcEnter(C);
+_fcStep(1);
+_runPageAnim(10000,function(){ SEQ=NEXT; });
+_bzAfterTranslate();
+advance(500);
+assert.equal(fcKey,'0:5');
+_finishPageAnim();
+assert.equal(fcKey,'1:2');
+// ③ 等待中途用户自己退出了逐格读：落定时不再拉回来。
+SEQ=[A,B,C];
+_fcEnter(C);
+_fcStep(1);
+_runPageAnim(300,function(){ SEQ=NEXT; });
+_bzAfterTranslate();
+_fcExit(true);
+advance(400);
+assert.equal(fcOn,false);
 '''),
       );
     });

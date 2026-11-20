@@ -216,9 +216,11 @@ String mangaBubbleFocusJs({
     if (!fcPendingEdge) { _fcExit(true); return; }
     var edge = fcPendingEdge;
     if (fcDim) { fcDim.remove(); fcDim = null; }
-    // 量新跨页的气泡要等翻页过渡（#manga-root 的 transform，时长 = _animMs）走完：
-    // 过渡中量到的是半路位置。无动画时 _animMs 为 0。
-    setTimeout(function(){ if (fcOn) _fcFocusEdge(edge); }, _animMs() + 60);
+    // 翻页过渡（#manga-root 的 transform）中量到的是半路位置：等翻页落定
+    // （动画收尾或被打断都算；无动画时立即）再量新跨页、聚焦首 / 末气泡。
+    _onPageSettled(function(){
+      if (fcOn && fcPendingEdge === edge) _fcFocusEdge(edge);
+    });
   }
   function _fcRelease(p, x, y){
     var dx = x - p.x, dy = y - p.y, el = Math.max(1, Date.now() - p.t);
@@ -449,7 +451,7 @@ String mangaBubbleFocusJs({
   function _bzAfterTranslate(){
     _fcAfterTranslate();
     tsKey = null;
-    _tsScheduleRefresh(_animMs() + 30);
+    if (TS_ON) _onPageSettled(_tsBuild);
   }
 ''';
 }
