@@ -99,6 +99,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/web_browser/tab_view/web_browser_tab_view_logic_test.dart（forceDark 进 WebView 设置）',
   'webBrowser/Open desktop sites by default':
       'test/pages/fushi_web_browser_shell_test.dart（新标签页默认桌面版）',
+  'webBrowser/Fushi handles video full screen':
+      'test/web_browser/web_browser_fullscreen_test.dart（页内全屏脚本：接管 → 伪全屏；'
+      '不接管 → 不改全屏 API）+ test/pages/web_browser_settings_page_test.dart（偏好写穿）',
   'webBrowser/Restore tabs from last time':
       'test/web_browser/web_browser_tabs_controller_test.dart（关闭会话持久化时不读不写）+ '
       'test/pages/fushi_web_browser_shell_test.dart（恢复上次的标签页）',
