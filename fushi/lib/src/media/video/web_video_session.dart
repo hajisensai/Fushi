@@ -30,6 +30,10 @@ import 'package:fushi/src/media/video/underlay_composition.dart'
 import 'package:fushi/src/media/video/web_video_shaders.dart';
 import 'package:fushi/src/media/video/web_video_subtitle_media.dart'
     show webVideoCookieHeader;
+import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
+    show youtubeVideoIdOrNull;
+import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart'
+    show RemoteMineResult;
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
@@ -83,6 +87,62 @@ Future<WebViewEnvironment> webVideoCapturableEnvironment() {
     ),
   );
 }
+
+/// 可捕获档的环境重建入口：内置网页播放器页的 WebView 进程死了（WebView2 ProcessFailed，fork
+/// 转成 onRenderProcessGone；Dart 侧分不出死的是渲染进程还是整个浏览器进程）就丢掉缓存的单例，
+/// 下次 [webVideoCapturableEnvironment] 在同一目录 / 同一参数上重建。浏览器进程没了旧环境就是
+/// 废的，新 WebView 建在它上面只会再死一次；只是渲染进程没了时，同目录同参数的新环境会直接
+/// 接回还活着的浏览器进程（WebView2 的环境共享规则），照样可用。
+///
+/// 旧环境**不释放**：它是进程级单例，登录回抄（[syncWebVideoLoginToBrowser]）或另一页可能还
+/// 拿着同一个引用；浏览器进程还活着时释放会把别人用着的环境拆掉。独立 cookie 罐在磁盘上，
+/// 浏览器进程重启不丢登录态，重建后不用再抄。
+void discardWebVideoCapturableEnvironment() {
+  _capturableEnv = null;
+}
+
+/// 网页视频一句制卡走哪条路（唯一判据，gap-webvideo-4）：YouTube 能按视频 id + 字幕时间窗从真实
+/// 视频流直接裁音频与画面（与浏览器扩展、手机遥控同一条 `FushiRemoteMiningService.mineImmersion`
+/// 的 YouTube 分支），返回视频 id；其它站点返回 null，只能进制卡队列等可捕获档逐句重放。
+String? webVideoDirectMineVideoId(String href) => youtubeVideoIdOrNull(href);
+
+/// 直裁一句，裁不出来就退回制卡队列。内置网页播放器页（本页制卡 / 顶层查词窗口制卡 / 手机遥控
+/// 制卡）与原生播放器页网页档的制卡共用，分流规则只在这里写一次。
+///
+/// `success` / `duplicate` 原样返回（重复卡不入队：重放出来还是同一张重复卡）。其余结局（流解析
+/// 失败、缺音频中止、引擎报错）或 [mineDirect] 抛出都算「这条路裁不出来」：原因交给
+/// [onFallback]，调 [enqueue] 入队后返回 null——重放录的是播放出来的画面与声音，不依赖流解析。
+/// [enqueue] 抛出照常向外抛（入队也失败了，调用方要报错）。
+Future<RemoteMineResult?> mineWebVideoCueDirectOrQueue({
+  required Future<RemoteMineResult> Function() mineDirect,
+  required Future<void> Function() enqueue,
+  void Function(String reason)? onFallback,
+}) async {
+  String reason;
+  try {
+    final RemoteMineResult res = await mineDirect();
+    if (res.result == 'success' || res.result == 'duplicate') return res;
+    reason = res.message ?? res.detail ?? res.result;
+  } catch (e) {
+    reason = '$e';
+  }
+  onFallback?.call(reason);
+  await enqueue();
+  return null;
+}
+
+/// 站点投来一条轨（[updatedKey]）之后，要不要把当前轨整份重灌进字幕 controller（内置网页播放器
+/// 页与原生播放器页的网页档共用这条判据）。
+///
+/// live 轨边看边长，每采到一句 bridge 就把整条轨同 key 重投一次；当前显示的若是另一条整轨
+/// （整轨优先于 live 轨），那些重投只该进轨集，不该把当前那条几百上千句的整轨重灌一遍（每次
+/// `setCues` 都重建索引并通知字幕列表等监听者）。只有两种情况要灌：选轨结果变了，或更新的
+/// 正是当前轨。
+bool webVideoTrackUpdateNeedsReload({
+  required String updatedKey,
+  required String? previousActiveKey,
+  required String? nextActiveKey,
+}) => nextActiveKey != previousActiveKey || updatedKey == nextActiveKey;
 
 /// 窗口宿主档（4K）环境：**不带** `--disable-direct-composition`（硬件 PlayReady 的受保护输出
 /// 要走 DComp overlay），带 fork 的窗口宿主哨兵。与 app 内浏览器**同一 user data folder、同一
