@@ -2213,4 +2213,122 @@ void main() {
     expect(log, contains('onTrimMemory: UI_HIDDEN'));
     await ErrorLogService.instance.flush();
   });
+
+  // 拍板台 left3525：活动面包屑（ASR 转录、复习同步）只说明「死的时候在做什么」，严重级
+  // 跟同一次启动的会话判定走。修前一律 severe：后台转录时被系统回收也记一条严重错误。
+  group('活动面包屑的严重级跟上次会话的前后台判定走', () {
+    const String detail =
+        'model=kotoba-v2 variant=fp16 profile=mixedAudio need=2100MB '
+        'headroom=900MB rss=1500MB';
+
+    void writeMarker(String lifecycle, {bool clean = false}) {
+      File('${tmp.path}/session_marker.json').writeAsStringSync(
+        jsonEncode(<String, Object?>{
+          'pid': 4242,
+          'startedAt': 1000,
+          'version': 'v',
+          'lifecycle': lifecycle,
+          'lifecycleAt': 4000,
+          'clean': clean,
+          'initialised': true,
+        }),
+      );
+    }
+
+    void writeBreadcrumb() => File(
+      '${tmp.path}/activity_asr_transcribe.breadcrumb',
+    ).writeAsStringSync('[2026-11-17T07:00:00.000] $detail');
+
+    Future<ExitReportEntry> crumbEntry({
+      bool isAndroid = false,
+      MethodChannel? androidChannel,
+    }) async {
+      final List<ExitReportEntry> entries = await PreviousExitLog.collect(
+        appDir: tmp,
+        version: 'v',
+        isAndroid: isAndroid,
+        isWindows: false,
+        isMacOS: false,
+        isIOS: false,
+        androidChannel: androidChannel,
+        nowMs: 9000,
+      );
+      expect(
+        File('${tmp.path}/activity_asr_transcribe.breadcrumb').existsSync(),
+        isFalse,
+      );
+      return entries.singleWhere(
+        (ExitReportEntry e) => e.source == kActivityCrashRecoveredSource,
+      );
+    }
+
+    test('停在后台时没了（系统回收）：只作诊断，内容照留', () async {
+      writeMarker('paused');
+      writeBreadcrumb();
+      final ExitReportEntry e = await crumbEntry();
+      expect(e.severe, isFalse);
+      expect(e.foreground, isFalse);
+      expect(e.kind, isNull);
+      expect(e.text, contains('asr_transcribe'));
+      expect(e.text, contains('need=2100MB'));
+      expect(e.text, contains('headroom=900MB'));
+      expect(e.text, contains('backgroundReclaim'));
+    });
+
+    test('停在前台时没了：仍按严重记', () async {
+      writeMarker('resumed');
+      writeBreadcrumb();
+      final ExitReportEntry e = await crumbEntry();
+      expect(e.severe, isTrue);
+      expect(e.foreground, isTrue);
+      expect(e.text, contains('need=2100MB'));
+    });
+
+    test('上次会话标了 clean：只作诊断', () async {
+      writeMarker('resumed', clean: true);
+      writeBreadcrumb();
+      final ExitReportEntry e = await crumbEntry();
+      expect(e.severe, isFalse);
+    });
+
+    test('没有上次会话标记：前后台未知，按严重记', () async {
+      writeBreadcrumb();
+      final ExitReportEntry e = await crumbEntry();
+      expect(e.severe, isTrue);
+    });
+
+    test('Android 同一 pid 死时 importance=400 压过标记的前台推断：只作诊断', () async {
+      const MethodChannel channel = MethodChannel('test/process_exit_crumb');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            channel,
+            (MethodCall call) async => <String, Object?>{
+              'sdk': 34,
+              'reasons': <Object?>[
+                <String, Object?>{
+                  'reason': 'OTHER',
+                  'status': 0,
+                  'importance': 400,
+                  'pid': 4242,
+                  'timestamp': 5000,
+                  'description': '[UNKNOWN] unspecified',
+                  'processName': 'app.fushi.reader',
+                },
+              ],
+            },
+          );
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null),
+      );
+      writeMarker('inactive');
+      writeBreadcrumb();
+      final ExitReportEntry e = await crumbEntry(
+        isAndroid: true,
+        androidChannel: channel,
+      );
+      expect(e.severe, isFalse);
+      expect(e.foreground, isFalse);
+    });
+  });
 }

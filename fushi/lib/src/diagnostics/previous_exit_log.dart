@@ -1641,9 +1641,19 @@ abstract final class ActivityBreadcrumb {
   }
 }
 
-/// 读出并删除 [dir] 里上次进程留下的活动面包屑。
-List<ExitReportEntry> collectActivityBreadcrumbs(Directory dir) {
-  final List<ExitReportEntry> out = <ExitReportEntry>[];
+/// 上次进程留下的一个活动面包屑：活动名 + 文件内容（[ActivityBreadcrumb.mark] 写的那行）。
+@immutable
+class ActivityBreadcrumbRecord {
+  const ActivityBreadcrumbRecord(this.activity, this.detail);
+
+  final String activity;
+  final String detail;
+}
+
+/// 读出并删除 [dir] 里上次进程留下的活动面包屑。只读文件、不下结论：严重级要等上次
+/// 会话的前后台判定出来后由 [describeActivityBreadcrumb] 定。
+List<ActivityBreadcrumbRecord> takeActivityBreadcrumbs(Directory dir) {
+  final List<ActivityBreadcrumbRecord> out = <ActivityBreadcrumbRecord>[];
   if (!dir.existsSync()) return out;
   for (final FileSystemEntity e in dir.listSync(followLinks: false)) {
     if (e is! File) continue;
@@ -1653,23 +1663,69 @@ List<ExitReportEntry> collectActivityBreadcrumbs(Directory dir) {
     try {
       final String detail = e.readAsStringSync().trim();
       e.deleteSync();
-      out.add(
-        ExitReportEntry(
-          kActivityCrashRecoveredSource,
-          _cap(
-            redactExitReportPaths(
-              '上次进程在「$activity」进行中没了（原生崩溃 / 被系统杀 / 强杀）：$detail',
-            ),
-          ),
-          severe: true,
-        ),
-      );
+      out.add(ActivityBreadcrumbRecord(activity, detail));
     } on FileSystemException catch (err) {
       debugPrint('[ActivityBreadcrumb] recover $activity failed: $err');
     }
   }
   return out;
 }
+
+/// 把面包屑折成日志条目，严重级与上次会话的判定统一（拍板台 left3525）：面包屑只说明
+/// 「死的时候在做什么」，不说明怎么死的，所以不自带严重级，跟同一次启动的会话判定走——
+/// - 有会话判定（[unclean]，[describeUncleanPreviousSession] 的结果，已服从 Android
+///   死时重要性 / 界面可见性）：它算严重（停在前台时没了）才严重；后台被系统回收、退出
+///   途中没了、停在闪退提示上被关掉都只作诊断，内容（模型 / need / headroom 等）照样进日志。
+/// - 上次会话标了 clean（[previous] 非 null 且 clean）：活动没收尾但退出链走完了，只作诊断。
+/// - 没有上次会话标记（[previous] 为 null）：前后台不知道，按严重记（与
+///   [ExitReportEntry.foreground] 的缺省一致，宁可多记一次）。
+/// 面包屑条目不带 [ExitReportEntry.kind]，不参与 [classifyPreviousExit] 选种类。
+ExitReportEntry describeActivityBreadcrumb(
+  ActivityBreadcrumbRecord record, {
+  required PreviousSession? previous,
+  required ExitReportEntry? unclean,
+}) {
+  final bool severe;
+  final bool foreground;
+  final String judgement;
+  if (unclean != null) {
+    severe = unclean.severe;
+    foreground = unclean.foreground;
+    judgement = severe
+        ? '（会话判定：停在前台时没了，疑似原生崩溃 / 被杀）'
+        : '（会话判定：${unclean.kind?.name ?? 'unknown'}，'
+              '${foreground ? '' : '停在后台、'}不按崩溃记，只作诊断）';
+  } else if (previous != null) {
+    severe = false;
+    foreground = previous.diedInForeground;
+    judgement = '（上次会话已标正常退出：活动没收尾就走完了退出链，只作诊断）';
+  } else {
+    severe = true;
+    foreground = true;
+    judgement = '（没有上次会话标记，前后台未知：原生崩溃 / 被系统杀 / 强杀）';
+  }
+  return ExitReportEntry(
+    kActivityCrashRecoveredSource,
+    _cap(
+      redactExitReportPaths(
+        '上次进程在「${record.activity}」进行中没了$judgement：${record.detail}',
+      ),
+    ),
+    severe: severe,
+    foreground: foreground,
+  );
+}
+
+/// 读出、删除并折成日志条目（[takeActivityBreadcrumbs] + [describeActivityBreadcrumb]）。
+/// 不传会话判定时按「没有上次会话标记」处理。
+List<ExitReportEntry> collectActivityBreadcrumbs(
+  Directory dir, {
+  PreviousSession? previous,
+  ExitReportEntry? unclean,
+}) => <ExitReportEntry>[
+  for (final ActivityBreadcrumbRecord r in takeActivityBreadcrumbs(dir))
+    describeActivityBreadcrumb(r, previous: previous, unclean: unclean),
+];
 
 // ───────────────────────── 判定 ─────────────────────────
 
@@ -2054,8 +2110,11 @@ abstract final class PreviousExitLog {
     final int now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
     final List<ExitReportEntry> out = <ExitReportEntry>[];
 
-    // 启动早期（复习同步等长活动开跑之前）收走上次进程留下的活动面包屑。
-    out.addAll(collectActivityBreadcrumbs(appDir));
+    // 启动早期（复习同步等长活动开跑之前）收走上次进程留下的活动面包屑；严重级等下面
+    // 会话判定出来后统一定（[describeActivityBreadcrumb]）。
+    final List<ActivityBreadcrumbRecord> breadcrumbs = takeActivityBreadcrumbs(
+      appDir,
+    );
 
     final SessionMarker marker = SessionMarker(
       File('${appDir.path}${Platform.pathSeparator}session_marker.json'),
@@ -2112,6 +2171,11 @@ abstract final class PreviousExitLog {
               startedAtMs: previous.startedAt,
             ),
     );
+    for (final ActivityBreadcrumbRecord r in breadcrumbs) {
+      out.add(
+        describeActivityBreadcrumb(r, previous: previous, unclean: unclean),
+      );
+    }
     if (unclean != null) out.add(unclean);
     final ExitReportEntry? forced = describeForcedPreviousExit(previous);
     if (forced != null) out.add(forced);
