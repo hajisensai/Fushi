@@ -73,6 +73,17 @@ void main() {
     ),
     timeout: const Timeout(Duration(seconds: 90)),
   );
+
+  // BUG-4907：归类对象是脱离文档的源树，判据不能读 computed style（挂着与摘下结果不同）。
+  test(
+    'VN standalone image classification does not depend on whether the '
+    'source tree is attached',
+    () => runHarness(
+      'test/reader/vn_standalone_image_classification_harness.mjs',
+      'PASS VN standalone image classification',
+    ),
+    timeout: const Timeout(Duration(seconds: 90)),
+  );
 }
 
 /// Runs a Node harness with [payload] piped as JSON on stdin (no file path

@@ -270,27 +270,6 @@ $imageRevealSemantics
     return candidate || node;
   }
 
-  function computedDisplay(node) {
-    if (!global.getComputedStyle) return '';
-    try {
-      return String(global.getComputedStyle(node).display || '').toLowerCase();
-    } catch (_error) {
-      return '';
-    }
-  }
-
-  function isBlockDisplay(display) {
-    return [
-      'block',
-      'flex',
-      'grid',
-      'list-item',
-      'table',
-      'table-caption',
-      'flow-root'
-    ].indexOf(display) >= 0;
-  }
-
   function declaredImageDimension(node, name) {
     var value = node && node.getAttribute ? node.getAttribute(name) : null;
     // 只认纯数字（像素）写法；`width="100%"` 这类相对值说明不了图有多大。
@@ -312,13 +291,17 @@ $imageRevealSemantics
     return hasClass(node, 'gaiji') || hasClass(node, 'gaiji-line');
   }
 
+  // 只看节点自身携带的信号（文字上下文、真实 / 声明尺寸、block-img 类），不读样式。
+  // BUG-4907：VN 归类的对象是 detachChapterSource 搬出来、不挂在文档上的源树，Blink /
+  // WebKit 对它 getComputedStyle 一律给空值，旧的「computed display 是块级」一条在生产里
+  // 恒不生效；同一节点挂上文档时却会被书本样式或阅读器的 `p > img:only-child
+  // { display:block }` 翻成独立插图。归类不能随挂载状态变。
   function isStandaloneImageNode(node, contextRoot) {
     if (isInlineGlyphImage(node)) return false;
     var textContext = mediaTextContextRoot(node, contextRoot);
     if (!hasMeaningfulText(textContext)) return true;
     if (isLargeImage(node)) return true;
-    if (hasClass(node, 'block-img')) return true;
-    return isBlockDisplay(computedDisplay(node));
+    return hasClass(node, 'block-img');
   }
 
   function isStandaloneMediaNode(node, contextRoot) {
