@@ -5,6 +5,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart' show DatabaseSnapshotDeletionResult;
+import 'package:fushi_engine/sync/interconnect_file_box_prune.dart'
+    show pruneDeadInterconnectFileBox;
 import 'package:material_color_utilities/material_color_utilities.dart'
     show Hct;
 
@@ -59,6 +61,7 @@ class StorageUsageView extends ConsumerStatefulWidget {
     this.deleteVideo,
     this.anime4kBytesProvider = anime4kInstalledBytes,
     this.anime4kDelete = deleteAnime4kShaderFiles,
+    this.pruneInterconnectFileBox = pruneDeadInterconnectFileBox,
     super.key,
   });
 
@@ -83,10 +86,16 @@ class StorageUsageView extends ConsumerStatefulWidget {
          deleteVideo: actions.deleteVideo,
          anime4kBytesProvider: actions.anime4kBytesProvider,
          anime4kDelete: actions.anime4kDelete,
+         pruneInterconnectFileBox: actions.pruneInterconnectFileBox,
          key: key,
        );
 
   final StorageUsageService service;
+
+  /// 清理互联同步数据里的「旧版残留」（见
+  /// [StorageUsageActions.pruneInterconnectFileBox]；参数是 `<sync-data>` 目录）。
+  final Future<List<String>> Function(String syncDataDir)
+  pruneInterconnectFileBox;
 
   /// 书籍清单取数（真实现读 `epub_books` 表）。
   final Future<List<StorageBookRef>> Function() booksProvider;
@@ -257,13 +266,17 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
 
   // ── 删除动作 ────────────────────────────────────────────────────────
 
-  Future<bool> _confirmDelete(String name, String body) async {
+  Future<bool> _confirmDelete(
+    String name,
+    String body, {
+    String? confirmLabel,
+  }) async {
     final bool ok = await showFushiConfirmDialog(
       context: context,
       title: t.storage_entry_delete_confirm_title(name: name),
       message: body,
       icon: FushiIcons.delete,
-      confirmLabel: t.dialog_delete,
+      confirmLabel: confirmLabel ?? t.dialog_delete,
       destructive: true,
     );
     return ok && mounted;
@@ -285,9 +298,19 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
       StorageEntryKind.backupArchives =>
         t.storage_entry_delete_backups_confirm_body,
       StorageEntryKind.derivedFile => t.storage_entry_delete_files_confirm_body,
+      StorageEntryKind.interconnectLegacyFileBox =>
+        t.storage_entry_interconnect_legacy_confirm_body,
       StorageEntryKind.readOnly => throw StateError('read-only entry'),
     };
-    if (!await _confirmDelete(_entryTitle(entry), body)) return;
+    if (!await _confirmDelete(
+      _entryTitle(entry),
+      body,
+      confirmLabel: entry.kind == StorageEntryKind.interconnectLegacyFileBox
+          ? t.storage_entry_interconnect_legacy_clean_action
+          : null,
+    )) {
+      return;
+    }
     setState(() => _busyEntryId = entry.id);
     String? failure;
     // 磁盘是否真的变了。快照删除是逐文件容错的：**部分**成功也必须重扫，否则
@@ -330,6 +353,7 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
     deleteVideo: widget.deleteVideo,
     anime4kBytesProvider: widget.anime4kBytesProvider,
     anime4kDelete: widget.anime4kDelete,
+    pruneInterconnectFileBox: widget.pruneInterconnectFileBox,
   );
 
   // ── 一键清除全部缓存（反馈 jg3XoDVISk）─────────────────────────────────
@@ -890,6 +914,16 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
                     width: 16,
                     height: 16,
                     child: FushiCircularProgressIndicator(strokeWidth: 2),
+                  )
+                : entry.kind == StorageEntryKind.interconnectLegacyFileBox
+                // 「旧版残留」是一次性整批清理，不是删某个对象：给明确的文字
+                // 动作（MD3 / Apple 由 FushiTextButton 分派，自带按压反馈）。
+                ? FushiTextButton(
+                    destructive: true,
+                    onPressed: _deleteBusy ? null : () => _deleteEntry(entry),
+                    child: Text(
+                      t.storage_entry_interconnect_legacy_clean_action,
+                    ),
                   )
                 : FushiIconButtonControl(
                     tooltip: t.dialog_delete,

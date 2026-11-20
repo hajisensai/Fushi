@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart'
     show DatabaseSnapshotDeletionResult, deleteDatabaseSnapshotFiles;
+import 'package:fushi_engine/sync/interconnect_file_box_prune.dart'
+    show InterconnectSyncDataUsage;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/pages/implementations/storage_usage_view.dart';
@@ -12,6 +14,8 @@ import 'package:fushi/src/settings/storage_usage_actions.dart';
 import 'package:fushi/src/storage/storage_usage_service.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
+    show FushiTextButton;
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
     show FushiAlertDialog;
@@ -51,12 +55,19 @@ void main() {
   /// 回复永远送不进 FakeAsync 区（扫描卡住 → pumpAndSettle 超时，只在 macOS 宿主上
   /// 红）；`documentsRootIsFushiOwned` 的默认实现读宿主真实的 SharedPreferences。
   /// 临时 docs 根本就归测试所有，按「专属根」统计。
-  StorageUsageService service() => StorageUsageService(
+  ///
+  /// 互联同步数据的归类默认走真 isolate + 异步 IO（FakeAsync 里不完成），用例按需注
+  /// [measureSyncData]。
+  StorageUsageService service({
+    Future<InterconnectSyncDataUsage> Function(String syncDataDir)?
+    measureSyncData,
+  }) => StorageUsageService(
     documentsRoot: () async => docs,
     supportRoot: () async => support,
     cacheRoots: () async => <Directory>[cache],
     documentsRootIsFushiOwned: () async => true,
     isolateRunner: <R>(R Function() computation) async => computation(),
+    measureInterconnectSyncDataUsage: measureSyncData,
   );
 
   Widget wrap(Widget child) {
@@ -80,8 +91,11 @@ void main() {
     Future<List<String>> Function()? anime4kDelete,
     Future<List<StorageVideoRef>> Function()? videos,
     Future<String?> Function(String bookUid)? deleteVideo,
+    Future<List<String>> Function(String syncDataDir)? pruneInterconnect,
   }) {
     return StorageUsageView(
+      pruneInterconnectFileBox:
+          pruneInterconnect ?? (String _) async => const <String>[],
       service: service,
       booksProvider: books ?? () async => const <StorageBookRef>[],
       dictionaryNamesProvider: () async => const <String>[],
@@ -826,6 +840,165 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('custom_fonts/mine.ttf'), findsOneWidget);
     expect(find.byIcon(FushiIcons.delete), findsNothing);
+  });
+
+  testWidgets('BUG-4906：互联 sync-data 拆成三块，只有旧版残留带「立即清理」，确认后调清理原语并重扫', (
+    WidgetTester tester,
+  ) async {
+    writeFile(p.join(support.path, 'fushi.db'), 1000);
+    final String syncData = p.join(
+      support.path,
+      kInterconnectSyncDataSupportChild,
+    );
+    Directory(syncData).createSync(recursive: true);
+    bool pruned = false;
+    final List<String> measuredDirs = <String>[];
+    final List<String> prunedDirs = <String>[];
+
+    await tester.pumpWidget(
+      wrap(
+        view(
+          service: service(
+            measureSyncData: (String dir) async {
+              measuredDirs.add(dir);
+              return InterconnectSyncDataUsage(
+                sharedBytes: 3 * 1024,
+                srsBytes: 2 * 1024,
+                deadFileBoxBytes: pruned ? 0 : 7 * 1024,
+                deadFileBoxFolders: pruned ? 0 : 2,
+                otherBytes: 0,
+              );
+            },
+          ),
+          pruneInterconnect: (String dir) async {
+            prunedDirs.add(dir);
+            pruned = true;
+            return const <String>['BookA', 'BookB'];
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(_rowText(t.storage_category_database));
+    await tester.pumpAndSettle();
+    await tester.tap(_rowText(t.storage_category_database));
+    await tester.pumpAndSettle();
+
+    final String legacyTitle = t.storage_entry_interconnect_legacy_label(n: 2);
+    expect(
+      find.text(t.storage_entry_interconnect_shared_label),
+      findsOneWidget,
+    );
+    expect(find.text(t.storage_entry_interconnect_srs_label), findsOneWidget);
+    expect(find.text(legacyTitle), findsOneWidget);
+    // 不再整块一行。
+    expect(find.text('support/sync-data'), findsNothing);
+    expect(measuredDirs, <String>[syncData]);
+    // 整个类目里只有旧版残留一个清理入口，其余（共享 / 复习同步 / 活库）只读。
+    final Finder clean = find.widgetWithText(
+      FushiTextButton,
+      t.storage_entry_interconnect_legacy_clean_action,
+    );
+    expect(clean, findsOneWidget);
+    expect(find.byTooltip(t.dialog_delete), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey<String>(
+            'storage_entry:${StorageUsageService.kInterconnectLegacyEntryId}',
+          ),
+        ),
+        matching: clean,
+      ),
+      findsOneWidget,
+    );
+
+    await tester.ensureVisible(clean);
+    await tester.pumpAndSettle();
+    await tester.tap(clean);
+    await tester.pumpAndSettle();
+    expect(
+      find.text(t.storage_entry_delete_confirm_title(name: legacyTitle)),
+      findsOneWidget,
+    );
+    expect(
+      find.text(t.storage_entry_interconnect_legacy_confirm_body),
+      findsOneWidget,
+    );
+    // 未确认前不调清理原语。
+    expect(prunedDirs, isEmpty);
+    await tester.tap(
+      find.widgetWithText(
+        FilledButton,
+        t.storage_entry_interconnect_legacy_clean_action,
+      ),
+    );
+    for (int i = 0; i < 20; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+      if (prunedDirs.isNotEmpty && measuredDirs.length > 1) break;
+    }
+    await tester.pumpAndSettle();
+
+    expect(prunedDirs, <String>[syncData]);
+    // 清理后重扫：旧版残留消失，按钮随之消失，另两块仍在。
+    expect(measuredDirs.length, greaterThan(1));
+    expect(find.text(legacyTitle), findsNothing);
+    expect(clean, findsNothing);
+    expect(
+      find.text(t.storage_entry_interconnect_shared_label),
+      findsOneWidget,
+    );
+    expect(find.text(t.storage_entry_interconnect_srs_label), findsOneWidget);
+  });
+
+  testWidgets('BUG-4906：取消确认框不调清理原语', (WidgetTester tester) async {
+    Directory(
+      p.join(support.path, kInterconnectSyncDataSupportChild),
+    ).createSync(recursive: true);
+    int pruneCalls = 0;
+
+    await tester.pumpWidget(
+      wrap(
+        view(
+          service: service(
+            measureSyncData: (String _) async =>
+                const InterconnectSyncDataUsage(
+                  sharedBytes: 0,
+                  srsBytes: 0,
+                  deadFileBoxBytes: 4096,
+                  deadFileBoxFolders: 1,
+                  otherBytes: 0,
+                ),
+          ),
+          pruneInterconnect: (String _) async {
+            pruneCalls++;
+            return const <String>[];
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(_rowText(t.storage_category_database));
+    await tester.pumpAndSettle();
+    await tester.tap(_rowText(t.storage_category_database));
+    await tester.pumpAndSettle();
+
+    final Finder clean = find.widgetWithText(
+      FushiTextButton,
+      t.storage_entry_interconnect_legacy_clean_action,
+    );
+    await tester.ensureVisible(clean);
+    await tester.pumpAndSettle();
+    await tester.tap(clean);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.dialog_cancel));
+    await tester.pumpAndSettle();
+    expect(pruneCalls, 0);
+    expect(clean, findsOneWidget);
   });
 }
 

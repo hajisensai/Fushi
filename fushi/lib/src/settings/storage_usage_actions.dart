@@ -13,6 +13,8 @@ import 'package:fushi_engine/media/video/video_book_repository.dart'
     show VideoBookRepository;
 import 'package:fushi_engine/sync/deletion_propagation.dart'
     show DeleteDecision, DeleteScope;
+import 'package:fushi_engine/sync/interconnect_file_box_prune.dart'
+    show pruneDeadInterconnectFileBox;
 import 'package:fushi/src/media/video/video_shader_downloader.dart'
     show anime4kInstalledBytes, deleteAnime4kShaderFiles;
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart'
@@ -41,6 +43,7 @@ class StorageUsageActions {
     this.deleteVideo,
     this.anime4kBytesProvider = anime4kInstalledBytes,
     this.anime4kDelete = deleteAnime4kShaderFiles,
+    this.pruneInterconnectFileBox = pruneDeadInterconnectFileBox,
   });
 
   /// 真实接线（原 `settings_schema_storage.dart` 里的闭包）。
@@ -146,6 +149,13 @@ class StorageUsageActions {
 
   final Future<int> Function() anime4kBytesProvider;
   final Future<List<String>> Function() anime4kDelete;
+
+  /// 清掉互联 host 同步数据里的「旧版残留」书文件夹（BUG-4906；参数是
+  /// `<sync-data>` 目录，即 [StorageEntryKind.interconnectLegacyFileBox] 明细的
+  /// `paths.single`）。真实现 fushi_engine `pruneDeadInterconnectFileBox`：识别口径
+  /// 与扫描侧同源，单个目录删不掉只记日志、不抛，返回删掉的目录名。
+  final Future<List<String>> Function(String syncDataDir)
+  pruneInterconnectFileBox;
 }
 
 /// 派生 / 缓存类明细（封面缩略图、浏览器数据、OCR 模型、着色器、临时文件、
@@ -252,6 +262,19 @@ Future<StorageEntryDeleteOutcome> deleteStorageEntry(
       return StorageEntryDeleteOutcome(
         failure: failure,
         changed: failure == null,
+      );
+    case StorageEntryKind.interconnectLegacyFileBox:
+      final List<String> removed = await actions.pruneInterconnectFileBox(
+        entry.paths.single,
+      );
+      // 原语自身吞错（被占用的目录只记日志）：删掉的少于扫描时数到的 = 部分失败，
+      // 如实告诉用户；host 下次启动还会再收一遍。
+      final int left = entry.itemCount - removed.length;
+      return StorageEntryDeleteOutcome(
+        failure: left > 0
+            ? t.storage_entry_interconnect_legacy_partial(n: left)
+            : null,
+        changed: removed.isNotEmpty,
       );
     case StorageEntryKind.readOnly:
       throw StateError('read-only entry');
@@ -429,14 +452,25 @@ String storageCategoryTitle(StorageCategoryId id) => switch (id) {
   StorageCategoryId.other => t.storage_category_other,
 };
 
-/// 条目显示名：快照 / 备份聚合条目按文件数翻译，其余用服务层给的 label。
+/// 条目显示名：快照 / 备份聚合条目按文件数翻译，互联同步数据拆出的各条按
+/// 用途翻译（BUG-4906），其余用服务层给的 label。
 String storageEntryTitle(StorageEntryUsage entry) => switch (entry.kind) {
   StorageEntryKind.databaseSnapshots =>
     t.storage_entry_database_snapshots_label(n: entry.paths.length),
   StorageEntryKind.backupArchives => t.storage_entry_backups_label(
     n: entry.paths.length,
   ),
-  _ => entry.label,
+  StorageEntryKind.interconnectLegacyFileBox =>
+    t.storage_entry_interconnect_legacy_label(n: entry.itemCount),
+  _ => switch (entry.id) {
+    StorageUsageService.kInterconnectSharedEntryId =>
+      t.storage_entry_interconnect_shared_label,
+    StorageUsageService.kInterconnectSrsEntryId =>
+      t.storage_entry_interconnect_srs_label,
+    StorageUsageService.kInterconnectOtherEntryId =>
+      t.storage_entry_interconnect_other_label,
+    _ => entry.label,
+  },
 };
 
 /// 「一键清除全部缓存」覆盖的类目（反馈 jg3XoDVISk）。
