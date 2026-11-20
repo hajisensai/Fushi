@@ -25,7 +25,6 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/media/audio_cd/audio_cd_import.dart';
 import 'package:fushi/src/media/collections/collection_owned_subscriptions.dart';
-import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi/src/pages/base_module_tab_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart' show HomeTab;
@@ -247,6 +246,7 @@ import 'package:fushi/src/media/video/metadata/video_source_scrape_run_detail_di
         showVideoMetadataCandidateSearchDialog,
         showVideoSourceScrapeManualBindingDialog;
 import 'package:fushi/src/media/video/metadata/video_tmdb_ordering_dialog.dart';
+import 'package:fushi/src/media/video/metadata/video_metadata_image_provider.dart';
 
 part 'home_video/companion.part.dart';
 
@@ -1838,7 +1838,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     )) {
       final ImageProvider? local = _localFileCover(row.localPath);
       if (local != null) return local;
-      if (row.remoteUrl.isNotEmpty) return AppCachedHttpImage(row.remoteUrl);
+      // 远程回落与本地分支同一解码上限（#3722 video-18：刮削剧照是原图）。
+      if (row.remoteUrl.isNotEmpty) return metadataRemoteImage(row.remoteUrl);
     }
     return null;
   }
@@ -1860,9 +1861,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         if (row.kind != kind) continue;
         final ImageProvider? local = _localFileCover(row.localPath);
         if (local != null) return local;
-        if (row.remoteUrl.isNotEmpty) {
-          return AppCachedHttpImage(row.remoteUrl);
-        }
+        // 远程回落与本地分支（[_localFileCover] = 720 宽）同一解码上限（#3722
+        // video-18）：刮削图默认是 TMDB 原图，裸解码几张就压满 ImageCache。
+        if (row.remoteUrl.isNotEmpty) return metadataRemoteImage(row.remoteUrl);
       }
     }
     return null;
@@ -4504,7 +4505,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final File subDest = File(p.join(dir.path, '$safeUid.$ext'));
     await client.getRemoteVideoSubtitle(video.id, subDest);
     final String content = await readTextWithEncoding(subDest);
-    final List<AudioCue> cues = parseSubtitleCues(
+    final List<AudioCue> cues = await parseSubtitleCues(
       content: content,
       format: ext,
       bookUid: bookUid,
@@ -12363,11 +12364,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       for (final String kind in kinds) {
         for (final VideoMetadataImageRow row in ordered) {
           if (row.kind != kind || row.remoteUrl.isEmpty) continue;
-          return ResizeImage.resizeIfNeeded(
-            decodeWidth,
-            null,
-            AppCachedHttpImage(row.remoteUrl),
-          );
+          return metadataRemoteImage(row.remoteUrl, width: decodeWidth);
         }
       }
       return null;
@@ -12379,14 +12376,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
             MediaImageKind.backdrop,
           ]),
         ) ??
-        workImage(const <String>['backdrop'], decodeWidth: 1280);
+        workImage(const <String>[
+          'backdrop',
+        ], decodeWidth: kMetadataBackdropDecodePixelWidth);
     final ImageProvider? logo =
         settled(
           _mediaImageProvider(images, const <MediaImageKind>[
             MediaImageKind.logo,
           ]),
         ) ??
-        workImage(const <String>['logo'], decodeWidth: 640);
+        workImage(const <String>[
+          'logo',
+        ], decodeWidth: kMetadataLogoDecodePixelWidth);
     final ImageProvider? poster =
         (cid == null
             ? null
