@@ -14,6 +14,7 @@ import 'package:fushi_engine/tts/providers/irodori_server_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/openai_compatible_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/irodori_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/translate_tts_providers.dart';
+import 'package:fushi_engine/tts/providers/unsloth_studio_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/voicepeak_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/voicevox_tts_provider.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
@@ -37,6 +38,8 @@ String ttsProviderLabel(String providerId) => switch (providerId) {
   IrodoriTtsDescriptor.providerId => t.audiobook_tts_provider_irodori,
   IrodoriServerTtsDescriptor.providerId =>
     t.audiobook_tts_provider_irodori_server,
+  UnslothStudioTtsDescriptor.providerId =>
+    t.audiobook_tts_provider_unsloth_studio,
   OpenAiCompatibleTtsDescriptor.providerId =>
     t.audiobook_tts_provider_openai_compatible,
   CustomHttpTtsDescriptor.providerId => t.audiobook_tts_provider_custom_http,
@@ -78,6 +81,8 @@ String? ttsProviderHint(String providerId) => switch (providerId) {
   AivisSpeechTtsDescriptor.providerId ||
   SharevoxTtsDescriptor.providerId => t.audiobook_tts_provider_voicevox_hint,
   VoicepeakTtsDescriptor.providerId => t.audiobook_tts_provider_voicepeak_hint,
+  UnslothStudioTtsDescriptor.providerId =>
+    t.audiobook_tts_provider_unsloth_studio_hint,
   OpenAiCompatibleTtsDescriptor.providerId =>
     t.audiobook_tts_provider_openai_compatible_hint,
   CustomHttpTtsDescriptor.providerId =>
@@ -126,6 +131,7 @@ String ttsParamLabel(String key) => switch (key) {
   CustomHttpTtsDescriptor.bodyKey => t.audiobook_tts_param_body_template,
   CustomHttpTtsDescriptor.headersKey => t.audiobook_tts_param_headers,
   CustomHttpTtsDescriptor.langKey => t.audiobook_tts_param_lang,
+  UnslothStudioTtsDescriptor.languageKey => t.audiobook_tts_param_language,
   CustomHttpTtsDescriptor.responseKey => t.audiobook_tts_param_response_format,
   CustomHttpTtsDescriptor.responsePathKey =>
     t.audiobook_tts_param_response_path,
@@ -145,12 +151,27 @@ String ttsChoiceLabel(String providerId, String key, String value) => switch ((
       CustomHttpTtsResponse.jsonUrl => t.audiobook_tts_response_json_url,
     },
   (CustomHttpTtsDescriptor.providerId, _) => value,
+  (UnslothStudioTtsDescriptor.providerId, _) => _unslothLanguageLabel(value),
   _ => ttsLanguageLabel(value),
 };
 
-/// 非必填的声音类参数「不选」时显示什么（系统语音：默认引擎 / 按文字语言自动挑）。
+/// Unsloth Studio 的文本语言（CosyVoice 只读整句，没有 GPT-SoVITS「夹杂英文」那层
+/// 区分，用不带括注的语言名）。
+String _unslothLanguageLabel(String code) => switch (code) {
+  UnslothStudioTtsDescriptor.autoLanguage => t.audiobook_tts_lang_auto,
+  'zh' => t.audiobook_tts_lang_plain_zh,
+  'ja' => t.audiobook_tts_lang_plain_ja,
+  'en' => t.audiobook_tts_lang_en,
+  'es' => t.audiobook_tts_lang_es,
+  _ => code,
+};
+
+/// 非必填的声音类参数「不选」时显示什么（系统语音：默认引擎 / 按文字语言自动挑；
+/// Unsloth Studio 的模型：用 Studio 当前载入的那个）。
 String ttsParamEmptyLabel(String key) => switch (key) {
   SystemTtsDescriptor.engineKey => t.audiobook_tts_param_engine_default,
+  UnslothStudioTtsDescriptor.modelKey =>
+    t.audiobook_tts_param_unsloth_model_loaded,
   _ => t.audiobook_tts_param_voice_auto,
 };
 
@@ -185,6 +206,8 @@ String? ttsParamHint(String providerId, String key) => switch ((
     OpenAiCompatibleTtsDescriptor.modelKey,
   ) =>
     t.audiobook_tts_param_model_hint,
+  (UnslothStudioTtsDescriptor.providerId, final String key) =>
+    _unslothParamHint(key),
   (IrodoriTtsDescriptor.providerId, IrodoriTtsDescriptor.endpointKey) =>
     t.audiobook_tts_param_irodori_endpoint_hint,
   (
@@ -229,6 +252,19 @@ String? ttsParamHint(String providerId, String key) => switch ((
     t.audiobook_tts_param_voicepeak_pitch_hint,
   (CustomHttpTtsDescriptor.providerId, final String key) =>
     _customHttpParamHint(key),
+  _ => null,
+};
+
+/// Unsloth Studio 各参数的说明。
+String? _unslothParamHint(String key) => switch (key) {
+  UnslothStudioTtsDescriptor.apiKeyKey =>
+    t.audiobook_tts_param_unsloth_api_key_hint,
+  UnslothStudioTtsDescriptor.modelKey =>
+    t.audiobook_tts_param_unsloth_model_hint,
+  UnslothStudioTtsDescriptor.voiceKey =>
+    t.audiobook_tts_param_unsloth_voice_hint,
+  UnslothStudioTtsDescriptor.languageKey =>
+    t.audiobook_tts_param_unsloth_language_hint,
   _ => null,
 };
 
@@ -309,6 +345,14 @@ String? ttsPresetLanguage(TtsVoicePreset preset) {
     return ttsLanguageCodeToTag(
       preset.param(GptSovitsTtsDescriptor.textLangKey, fallback: 'ja'),
     );
+  }
+  // Unsloth Studio：固定了文本语言就按它试听；自动时推不出（声音 id 是不透明串）。
+  if (preset.providerId == UnslothStudioTtsDescriptor.providerId) {
+    final String lang = preset.param(
+      UnslothStudioTtsDescriptor.languageKey,
+      fallback: UnslothStudioTtsDescriptor.autoLanguage,
+    );
+    return lang == UnslothStudioTtsDescriptor.autoLanguage ? null : lang;
   }
   final String voice = preset.params['voice'] ?? '';
   return _kVoiceLocalePrefix.firstMatch(voice)?.group(1);

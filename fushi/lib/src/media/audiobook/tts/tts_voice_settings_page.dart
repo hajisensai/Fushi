@@ -938,6 +938,7 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
     final String? picked = await showFushiChoiceDialog<String>(
       context: context,
       title: ttsParamLabel(spec.key),
+      message: ttsParamHint(_preset.providerId, spec.key),
       selected: current,
       options: <FushiChoiceOption<String>>[
         // 非必填的声音类参数（系统语音的引擎 / 声音）可以不选：空 = 引擎默认行为。
@@ -1065,6 +1066,7 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
     final String? picked = await showFushiChoiceDialog<String>(
       context: context,
       title: ttsParamLabel(spec.key),
+      message: ttsParamHint(_preset.providerId, spec.key),
       selected: current,
       options: <FushiChoiceOption<String>>[
         for (final String c in spec.choices)
@@ -1463,6 +1465,10 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
           key: ValueKey<String>('tts-voice-param-${spec.key}'),
           child: AdaptiveSettingsRow(
             title: label,
+            // 选择类参数没有输入框可挂说明：说明放副标题（声音类的副标题是当前值，
+            // 说明在选择对话框里）。
+            subtitle: ttsParamHint(_preset.providerId, spec.key),
+            subtitleMaxLines: 3,
             onTap: () => unawaited(_pickChoice(spec)),
             trailing: Text(
               ttsChoiceLabel(
