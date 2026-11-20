@@ -245,6 +245,24 @@ void main() {
         };
       }
 
+      test('e_LVlqyUd-: 音轨阶段继续报累计字节（画面 + 音轨），不停在画面的 100%', () async {
+        serve('/v.m4s', List<int>.filled(4000, 1));
+        serve('/a.m4a', List<int>.filled(3000, 2));
+        final File dest = File(p.join(tmp.path, 'out', 'ep.mkv'));
+        final List<(int, int?)> reports = <(int, int?)>[];
+        await downloader(
+          _FakeFfmpeg.succeeding(<int>[7, 7, 7]),
+        ).downloadWithExternalAudio(
+          url: server.url('/v.m4s'),
+          audioUrls: <String>[server.url('/a.m4a')],
+          headers: const <String, String>{},
+          dest: dest,
+          onBytes: (int received, int? total) => reports.add((received, total)),
+        );
+        expect(reports, contains((4000, 4000)));
+        expect(reports.last, (7000, null));
+      });
+
       test('两路都下完后 ffmpeg -c copy 合成，画面自带音轨在前、外挂音轨随后', () async {
         serve('/v.m4s', List<int>.filled(4000, 1));
         serve('/a.m4a', List<int>.filled(3000, 2));
@@ -680,7 +698,8 @@ void main() {
         server.requests.every((_Req r) => r.referer == 'https://site.example/'),
         isTrue,
       );
-      expect(progress, <double>[0.5, 1.0]);
+      // 起跑先报一次本轮的起点（e_LVlqyUd-：盖掉直链尝试留下的 100%）。
+      expect(progress, <double>[0.0, 0.5, 1.0]);
       // TS → mp4：-c copy + ADTS 转换；只映射音视频（TS 里的 ID3 / SCTE-35 数据流
       // mp4 装不下，-map 0 会让整次转封装失败）。
       final List<String> args = ffmpeg.calls.single;
@@ -742,6 +761,50 @@ void main() {
       );
     });
 
+    test('e_LVlqyUd-: a sniffed playlist switches the byte report to the '
+        'segment stream instead of freezing at the playlist size', () async {
+      final Uint8List expected = installHls(mediaPath: '/hls/stream');
+      // 现场：hoster 给播放列表带了 Content-Length，直链尝试据此报出「已收 / 总」。
+      server.routes['/hls/stream'] = _bytes(
+        Uint8List.fromList(utf8.encode(mediaText)),
+      );
+      final File dest = File(p.join(tmp.path, 'ep1.mp4'));
+      final List<(int, int?)> reports = <(int, int?)>[];
+      final InterconnectDownloadManager manager = InterconnectDownloadManager();
+      addTearDown(manager.dispose);
+      await manager.startVideoDownload(
+        id: 'ep1',
+        title: 'Episode 1',
+        dest: dest,
+        run:
+            (
+              File target, {
+              void Function(double progress)? onProgress,
+              void Function(int received, int? total)? onBytes,
+              Future<void>? cancelSignal,
+            }) => downloader(_FakeFfmpeg.failing()).download(
+              url: server.url('/hls/stream'),
+              headers: const <String, String>{},
+              dest: target,
+              onProgress: onProgress,
+              onBytes: (int received, int? total) {
+                reports.add((received, total));
+                onBytes?.call(received, total);
+              },
+              cancelSignal: cancelSignal,
+            ),
+      );
+      expect(await dest.readAsBytes(), expected);
+      // 直链尝试先报了播放列表文本的「已收 / 总」……
+      expect(reports.first.$2, mediaText.length);
+      // ……改走分片后按已写分片字节报，总量未知。
+      expect(reports.last, (expected.length, null));
+      final InterconnectDownloadTask task = manager.taskFor('ep1')!;
+      expect(task.status, InterconnectDownloadStatus.completed);
+      expect(task.receivedBytes, expected.length);
+      expect(task.totalBytes, isNull);
+    });
+
     test(
       'resumes from .hls.progress: only the missing segment is fetched',
       () async {
@@ -772,7 +835,8 @@ void main() {
           '/hls/media.m3u8',
           '/hls/seg2.png',
         ]);
-        expect(progress, <double>[1.0]);
+        // 起跑报续传起点（已有 1/2 片），再报补完。
+        expect(progress, <double>[0.5, 1.0]);
       },
     );
 
@@ -1249,7 +1313,8 @@ void main() {
       expect(await dest.readAsBytes(), <int>[
         for (final Uint8List part in parts) ...part,
       ]);
-      expect(progress, <double>[for (int i = 1; i <= count; i++) i / count]);
+      // 起跑先报一次本轮起点 0（e_LVlqyUd-），再按落盘顺序逐片报。
+      expect(progress, <double>[for (int i = 0; i <= count; i++) i / count]);
     });
 
     test('HTTP errors on a segment surface as failures, not cancels', () async {

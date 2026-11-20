@@ -33,6 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
+> 共 4234 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4906](bugs/BUG-4906-anime-download-stale-bytes.md) | ✅ | ✅ | 番剧下载状态卡在「231 KB / 231 KB (100%)」 |
 > 共 4238 条。点号进各自文件。
 > 共 4048 条。点号进各自文件。
 
