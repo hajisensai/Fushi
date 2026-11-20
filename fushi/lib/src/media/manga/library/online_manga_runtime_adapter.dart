@@ -165,8 +165,9 @@ class OnlineMangaChapterPageRefs {
     List<OnlineMangaPageRef> expired,
   ) {
     final OnlineMangaUnavailable? mismatch = _mismatch;
-    if (mismatch != null)
+    if (mismatch != null) {
       return Future<List<OnlineMangaPageRef>>.error(mismatch);
+    }
     // 别的取页已经换过新表：直接用新表，不再解析一次。
     if (!identical(expired, _pages)) {
       return Future<List<OnlineMangaPageRef>>.value(_pages);
