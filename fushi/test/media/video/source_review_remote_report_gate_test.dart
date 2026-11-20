@@ -35,6 +35,27 @@ class _RecordingClient
       throw UnsupportedError('unexpected ${invocation.memberName}');
 }
 
+/// 有停止上报、也能「只摘会话、停转码」的来源（Jellyfin / Emby）。
+class _DetachingClient
+    implements
+        RemoteVideoClient,
+        RemoteVideoPlaybackStop,
+        RemoteVideoPlaybackDetach {
+  final List<String> calls = <String>[];
+
+  @override
+  Future<void> stopRemoteVideoPlayback(String id, int positionMs) async =>
+      calls.add('stop $id $positionMs');
+
+  @override
+  Future<void> detachRemoteVideoPlayback(String id) async =>
+      calls.add('detach $id');
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('unexpected ${invocation.memberName}');
+}
+
 /// 只有断点上报、没有会话协议的来源（互联 host / 云盘）。
 class _PositionOnlyClient implements RemoteVideoClient {
   final List<String> calls = <String>[];
@@ -97,6 +118,26 @@ void main() {
       'paused ep5 63000 false',
       'stop ep5 64000',
     ]);
+  });
+
+  // BUG-4909：回看中 Stopped 不发，但 Jellyfin / Emby 转码会话要靠客户端显式停——
+  // 闸门回看分支改为「只摘会话、停转码」，不改任何进度。
+  test('回看中停止：能摘会话的来源只摘会话、停转码，不上报停止', () async {
+    final _DetachingClient client = _DetachingClient();
+    final SourceReviewRemoteReportGate gate = SourceReviewRemoteReportGate(
+      isReview: () => true,
+    );
+    expect(await gate.stop(client, 'ep5', 64000), isFalse);
+    expect(client.calls, <String>['detach ep5']);
+  });
+
+  test('非回看停止：照常上报停止，不另外摘会话', () async {
+    final _DetachingClient client = _DetachingClient();
+    final SourceReviewRemoteReportGate gate = SourceReviewRemoteReportGate(
+      isReview: () => false,
+    );
+    expect(await gate.stop(client, 'ep5', 64000), isTrue);
+    expect(client.calls, <String>['stop ep5 64000']);
   });
 
   test('非回看时负位置钳到 0', () async {

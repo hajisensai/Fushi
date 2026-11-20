@@ -2993,6 +2993,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
     );
     Directory? work;
     Future<bool>? extraction;
+    // 网络 / 本地流抽轨走共享表：模糊遮蔽 / 制卡时间表正在抽同一条轨时直接加入，
+    // 不再让 ffmpeg 把整个视频读第二遍。
+    GraphicSubtitleTrackLease? lease;
+    void Function()? stopProgress;
     Timer? livePublishTimer;
     bool livePublished = false;
     bool succeeded = false;
@@ -3021,28 +3025,55 @@ extension _VideoSubtitle on _VideoFushiPageState {
           aiLabel: engine.aiProvider,
         ),
       );
-      work = await Directory.systemTemp.createTemp('fushi_graphic_sub_track_');
       // 载荷格式随编码（PGS 段流 / VobSub、DVB 单轨 TS + 轨头），读取一律按轨头解码。
-      final String payloadPath = p.join(work.path, 'track.bin');
+      final String payloadPath;
       // 边抽边识别（边看边 OCR）：抽轨进程写载荷的同时反复读出已落盘的 cue，
       // 播放头附近的先识别，识别一条就补进可点字幕；不必等整个文件读完。
       bool extractDone = false;
-      extraction = materializeGraphicSubtitleTrack(
-        input: input,
-        outputPath: payloadPath,
-        cancel: cancel.future,
-        onProgress: (Duration processed) => _updateGraphicSubtitleOcrJob(
-          (GraphicSubtitleOcrJobState job) =>
-              job.copyWith(processed: processed),
-        ),
-        onFailure: (String summary) => ErrorLogService.instance.log(
-          'video.graphicSubtitleOcr.extract',
-          summary,
-          StackTrace.current,
-        ),
-      ).whenComplete(() => extractDone = true);
+      void reportProgress(Duration processed) => _updateGraphicSubtitleOcrJob(
+        (GraphicSubtitleOcrJobState job) => job.copyWith(processed: processed),
+      );
+      void reportFailure(String summary) => ErrorLogService.instance.log(
+        'video.graphicSubtitleOcr.extract',
+        summary,
+        StackTrace.current,
+      );
+      if (input case GraphicSubtitleTimingStream(input: final source)) {
+        final GraphicSubtitleTrackLease shared = lease =
+            GraphicSubtitleTrackExtractionHub.shared.acquire(
+              input: source,
+              streamIndex: input.streamIndex,
+              codec: input.codec,
+            );
+        payloadPath = shared.payloadPath;
+        stopProgress = shared.listenProgress(reportProgress);
+        // 取消只结束这边的等待；租约在 finally 里交回，别的使用方还在用时抽轨照跑。
+        extraction = Future.any(<Future<bool>>[
+          shared.outcome.then((GraphicSubtitleTrackExtractOutcome outcome) {
+            if (outcome.failure case final String summary) {
+              reportFailure(summary);
+            }
+            return outcome.ok;
+          }),
+          cancel.future.then((_) => false),
+        ]).whenComplete(() => extractDone = true);
+      } else {
+        final Directory dir = work = await Directory.systemTemp.createTemp(
+          'fushi_graphic_sub_track_',
+        );
+        payloadPath = p.join(dir.path, 'track.bin');
+        extraction = materializeGraphicSubtitleTrack(
+          input: input,
+          outputPath: payloadPath,
+          cancel: cancel.future,
+          onProgress: reportProgress,
+          onFailure: reportFailure,
+        ).whenComplete(() => extractDone = true);
+      }
       final Future<bool> extractionResult = extraction;
       List<GraphicSubtitleTextCue> pending = const <GraphicSubtitleTextCue>[];
+      // 单条识别失败只跳过那一条（整轨不作废），收尾时告诉用户跳过了几条。
+      int failedCues = 0;
       DateTime? lastPublishAt;
       Future<void> publishLive() async {
         livePublishTimer?.cancel();
@@ -3110,6 +3141,14 @@ extension _VideoSubtitle on _VideoFushiPageState {
             onRefineError: (Object error, StackTrace stack) => ErrorLogService
                 .instance
                 .log('video.graphicSubtitleOcr.refine', error, stack),
+            onCueError: (Object error, StackTrace stack) {
+              failedCues++;
+              ErrorLogService.instance.log(
+                'video.graphicSubtitleOcr.cue',
+                error,
+                stack,
+              );
+            },
           );
       livePublishTimer?.cancel();
       livePublishTimer = null;
@@ -3152,12 +3191,18 @@ extension _VideoSubtitle on _VideoFushiPageState {
       if (!userKeepsSource()) {
         // 用户中途换了别的字幕：产物只进轨道列表，不抢当前选择。
         _registerImportedSubtitleSource(target);
-        return;
+      } else {
+        await applyResult(target);
+        if (!isCurrent()) return;
+        if (controller.cues.isNotEmpty && _currentSubtitleSource == target) {
+          await _setDelayMs(0);
+        }
       }
-      await applyResult(target);
-      if (!isCurrent()) return;
-      if (controller.cues.isNotEmpty && _currentSubtitleSource == target) {
-        await _setDelayMs(0);
+      if (failedCues > 0) {
+        _showOsd(
+          t.video_subtitle_graphic_ocr_cues_skipped(count: failedCues),
+          severity: ToastSeverity.warning,
+        );
       }
     } on GraphicSubtitleOcrUnavailable catch (error) {
       if (isCurrent()) _reportGraphicSubtitleOcrUnavailable(error.reason);
@@ -3188,6 +3233,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
         await restoreGraphic();
       }
       try {
+        stopProgress?.call();
+        await lease?.release();
         await work?.delete(recursive: true);
       } on FileSystemException {
         // 临时目录，删不掉留给系统清理。
@@ -4948,15 +4995,38 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// 有效调轴从 0 起算：系列级 / 本集持久化的调轴是给没对齐的字幕调的，对齐后的
   /// 时间轴已经贴着视频，再叠上去只会推歪。换回别的档时恢复原调轴。持久化值本身
   /// 不动——系列级调轴对同系列其它没对齐的集仍然有效。
-  Future<void> _refreshPrimarySubtitleAlignment(String? source) async {
+  Future<void> _refreshPrimarySubtitleAlignment(String? source) =>
+      _applyPrimarySubtitleAlignment(
+        _startPrimarySubtitleAlignmentCheck(source),
+      );
+
+  /// 起一次「是不是对齐产物」检查：代次此刻前进（之后起跑的检查会作废它），结果
+  /// future 可以先和别的 IO 并行，稍后交给 [_applyPrimarySubtitleAlignment]。本次载入
+  /// 已读过同一份字幕时直接用 [_loadAlignmentHint]，不重读。
+  _SubtitleAlignmentCheck _startPrimarySubtitleAlignmentCheck(String? source) {
     final int generation = ++_subtitleAlignmentCheckGeneration;
-    final bool aligned =
+    final bool candidate =
         !_isRemote &&
         source != null &&
         !SubtitleSource.isOff(source) &&
-        !SubtitleSource.isEmbeddedPersisted(source) &&
-        await isSubtitleAlignmentProduct(source);
-    if (!mounted || generation != _subtitleAlignmentCheckGeneration) return;
+        !SubtitleSource.isEmbeddedPersisted(source);
+    final ({String path, Future<bool> aligned})? hint = _loadAlignmentHint;
+    final Future<bool> aligned = !candidate
+        ? Future<bool>.value(false)
+        : hint != null && hint.path == source
+        ? hint.aligned
+        : isSubtitleAlignmentProduct(source);
+    return (generation: generation, aligned: aligned);
+  }
+
+  /// 按 [check] 的结果改调轴；期间又起了新检查（换源 / 换集）就丢掉这次结果。
+  Future<void> _applyPrimarySubtitleAlignment(
+    _SubtitleAlignmentCheck check,
+  ) async {
+    final bool aligned = await check.aligned;
+    if (!mounted || check.generation != _subtitleAlignmentCheckGeneration) {
+      return;
+    }
     if (aligned == _primarySubtitleAligned) return;
     _primarySubtitleAligned = aligned;
     if (aligned) {
@@ -5891,6 +5961,15 @@ extension _VideoSubtitle on _VideoFushiPageState {
     // 超界的 cue 在 [buildCueActivityEnvelope] 内按 length 自然 clamp/跳过（不进活动序列）。
     final int probeLimitMs = _subtitleAlignProbeLimitMs;
     final int effectiveDurationMs = math.min(rawDurationMs, probeLimitMs);
+    // 抽音频要几十秒：期间原地换集（远端 / 在线合集复用同一个 controller）或换了字幕源，
+    // 算出的平移量就不属于现在的视频，丢弃而不是写进新一集的调轴。
+    final int loadSeq = _episodeLoadSeq;
+    final int cueEpoch = controller.cueSourceEpoch;
+    bool isCurrent() =>
+        mounted &&
+        identical(_controller, controller) &&
+        _episodeLoadSeq == loadSeq &&
+        controller.cueSourceEpoch == cueEpoch;
 
     _showOsd(
       t.video_subtitle_auto_align_running,
@@ -5898,36 +5977,30 @@ extension _VideoSubtitle on _VideoFushiPageState {
       severity: ToastSeverity.info,
     );
 
-    final _SubtitleTimingAudio? audio = await _resolveSubtitleAlignAudio();
-    if (!mounted) return null;
-    final List<double> rawRms = audio == null
-        ? const <double>[]
-        : await extractAudioEnergyEnvelope(
-            videoPath: audio.path,
-            windowMs: kSubtitleAutoAlignBinMs,
-            audioStreamIndex: audio.audioStreamIndex,
-            audioStreamCount: audio.audioStreamCount,
-            limitMs: probeLimitMs,
-          );
-    if (!mounted) return null;
-
-    final List<double> audioActivity = normalizeAudioEnergyEnvelope(rawRms);
-    final List<double> cueActivity = buildCueActivityEnvelope(
-      cues,
-      effectiveDurationMs,
-      binMs: kSubtitleAutoAlignBinMs,
+    final SubtitleAutoAlignResult? result = await runSubtitleAutoAlign(
+      cues: cues,
+      durationMs: effectiveDurationMs,
+      isCurrent: isCurrent,
+      loadAudioEnergy: () async {
+        final _SubtitleTimingAudio? audio = await _resolveSubtitleAlignAudio();
+        if (audio == null || !isCurrent()) return const <double>[];
+        return extractAudioEnergyEnvelope(
+          videoPath: audio.path,
+          windowMs: kSubtitleAutoAlignBinMs,
+          audioStreamIndex: audio.audioStreamIndex,
+          audioStreamCount: audio.audioStreamCount,
+          limitMs: probeLimitMs,
+        );
+      },
     );
-    final SubtitleAutoAlignResult result = bestOffsetMsByCrossCorrelation(
-      audioActivity,
-      cueActivity,
-      binMs: kSubtitleAutoAlignBinMs,
-    );
+    // await 返回到这里之间也可能换集：写延迟前再核一次身份。
+    if (result == null || !isCurrent()) return null;
 
     switch (result.status) {
       case SubtitleAutoAlignStatus.aligned:
         // 走现有写穿路径：controller 即时重算 cue + 落盘 delayMs + 角标 OSD。
         await _setDelayMs(result.offsetMs);
-        if (!mounted) return null;
+        if (!isCurrent()) return null;
         _showOsd(
           t.video_subtitle_auto_align_done(ms: result.offsetMs),
           icon: Icons.auto_fix_high,

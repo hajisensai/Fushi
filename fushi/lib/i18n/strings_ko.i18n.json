@@ -13368,6 +13368,7 @@
   "video_subtitle_glossary_user_edited": "Edited by you; kept when regenerating",
   "video_subtitle_graphic_hint": "그래픽 자막 · 화면에 표시 · 일시정지 후 단어 찾기(OCR)",
   "video_subtitle_graphic_learning_hint": "이미지 자막은 일시정지 시 OCR로 인식되며, 글자를 탭하면 단어를 찾을 수 있습니다. 아래 \"텍스트 자막으로 변환\"을 사용하면 재생 중에도 단어를 찾을 수 있습니다.",
+  "video_subtitle_graphic_ocr_cues_skipped": "Text subtitles saved; skipped $count lines that could not be recognized",
   "video_subtitle_graphic_ocr_empty": "이 자막 트랙에서 인식된 텍스트가 없습니다",
   "video_subtitle_graphic_ocr_enable_action": "Turn on",
   "video_subtitle_graphic_ocr_enable_hint": "Image subtitles need OCR for tap-to-look-up",
