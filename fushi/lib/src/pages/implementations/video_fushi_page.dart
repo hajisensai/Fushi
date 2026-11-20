@@ -455,6 +455,7 @@ import 'package:fushi_asr_subtitles/asr_subtitles.dart'
 import 'package:fushi_engine/media/video/video_duration_probe.dart'
     show probeVideoDurationMs;
 import 'package:fushi/src/media/video/video_volume_overlays.dart';
+import 'package:fushi/src/media/video/video_speed_pref.dart';
 import 'package:fushi/src/media/video/video_volume_pref.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/diagnostics/video_frame_timing_probe.dart';
@@ -1276,6 +1277,9 @@ abstract class VideoFushiTestHooks {
   bool get debugLoadFailed;
   String? get debugLoadFailureReason;
 
+  /// 页面当前的播放倍速（开片时按持久化键读出的值）。
+  double get debugPlaybackSpeed;
+
   /// 走与剧集面板 / 上下集同一条远端换集路径（[_loadRemoteEpisode]）载入第 [index] 集。
   Future<void> debugLoadRemoteEpisode(int index);
   bool get debugVideoFocusAttached;
@@ -1949,6 +1953,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   bool get debugVideoSurfaceHoldsFocus => _videoFocusNode.hasPrimaryFocus;
   @override
   bool get debugLoadFailed => _failed;
+
+  @override
+  double get debugPlaybackSpeed => _playbackSpeed;
   @override
   // Reuse the localized UI reason, never expose the raw caught exception/path.
   String? get debugLoadFailureReason => _failed ? _failReason : null;
@@ -5506,8 +5513,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     await _applyYoutubeCaptionTrack(controller, best, loadSeq: seq);
   }
 
-  /// per-book 播放倍速偏好 key（速度记忆，跨重启保留）。
-  String get _speedPrefKey => 'video_speed_$_activeBookUid';
+  /// 播放倍速偏好的写入 key（速度记忆，跨重启保留）：作为播放列表合集某一集打开时
+  /// 写**系列级**键、全系列共享，单视频写本条目键（[videoSpeedWriteKey]，video-s2-2）。
+  String get _speedPrefKey => videoSpeedWriteKey(
+    bookUid: _activeBookUid,
+    collectionId: widget.playlistCollectionId,
+  );
 
   /// 播放音量偏好的写入 key（音量记忆）：作为播放列表合集某一集打开时写**系列级**
   /// 键、全系列共享，单视频写本条目键（[videoVolumeWriteKey]，cehHSgF04K）。
@@ -5516,12 +5527,20 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     collectionId: widget.playlistCollectionId,
   );
 
-  /// 读 per-book 持久化倍速（无则 1.0）。
+  /// 读持久化倍速（无则 1.0）：系列键优先、回退本条目键（[videoSpeedReadKeys]）。
   double _readPersistedSpeed() {
-    final double v =
-        (appModel.prefsRepo.getPref(_speedPrefKey, defaultValue: 1.0) as num)
-            .toDouble();
-    return v.clamp(0.25, 4.0);
+    Object? raw;
+    for (final String key in videoSpeedReadKeys(
+      bookUid: _activeBookUid,
+      collectionId: widget.playlistCollectionId,
+    )) {
+      raw = appModel.prefsRepo.getPref(key);
+      if (raw != null) break;
+    }
+    final double v = raw is num
+        ? raw.toDouble()
+        : double.tryParse(raw?.toString() ?? '') ?? 1.0;
+    return v.clamp(0.25, 4.0).toDouble();
   }
 
   /// 读持久化音量（无则 100）：系列键优先、回退本条目键（[videoVolumeReadKeys]）。

@@ -33,19 +33,16 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4237 条。点号进各自文件。
+> 共 4240 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4910](bugs/BUG-4910-video-speed-series-memory.md) | ✅ | ✅ | 倍速记忆本地每集一份、远端原地换集沿用，同一系列两边不一致 |
 | [BUG-4909](bugs/BUG-4909-jellyfin-review-transcode-not-released.md) | ✅ | ✅ | 卡片片段回看下 Jellyfin/Emby 转码会话不释放 |
 | [BUG-4908](bugs/BUG-4908-stream-book-client-never-closed.md) | ✅ | ✅ | 流媒体书客户端与来源直链解析器从不关闭（SFTP 每开一次留一条 SSH 连接） |
+| [BUG-4907](bugs/BUG-4907-video-auto-align-writes-after-episode-switch.md) | ✅ | ✅ | 字幕自动对轴的结果可能写到换集后的视频上 |
 | [BUG-4907](bugs/BUG-4907-remote-episode-switch-stale-failure.md) | ✅ | ✅ | 远端换集：作废那一程的失败仍把页面置成失败态 |
 | [BUG-4906](bugs/BUG-4906-video-init-unexpected-error-spins-forever.md) | ✅ | ✅ | 视频页打开时未预期异常不进失败态，永久转圈 |
-> 共 4235 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4907](bugs/BUG-4907-video-auto-align-writes-after-episode-switch.md) | ✅ | ✅ | 字幕自动对轴的结果可能写到换集后的视频上 |
 | [BUG-4906](bugs/BUG-4906-graphic-sub-ocr-one-cue-fails-whole-track.md) | ✅ | ✅ | 图形字幕整轨转文字一条 cue 出错整个任务作废 |
 | [BUG-4905](bugs/BUG-4905-ai-cast-text-substitutions.md) | ✅ | ✅ | 小说和漫画 AI 标注未应用系列用词替换表 |
 | [BUG-4904](bugs/BUG-4904-book-series-key-store-annotation.md) | ✅ | ✅ | 书店写法「卷号<系列名> (文库名)」的分卷导入后不归合集 |
