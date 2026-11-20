@@ -591,6 +591,10 @@ part 'video_fushi/companion.part.dart';
 part 'video_fushi/controller_lookup.part.dart';
 part 'video_fushi/study_stats.part.dart';
 
+/// 一次「当前主字幕是不是对齐产物」检查：起跑时的代次 + 结果（见
+/// `_startPrimarySubtitleAlignmentCheck`）。
+typedef _SubtitleAlignmentCheck = ({int generation, Future<bool> aligned});
+
 /// 视频页：media_kit 播放器 + 可点击字幕 overlay（点词查词 + 制卡）。
 ///
 /// 装配：[VideoPlayerController.load] 打开视频 + cue 同步 → [Stack] 叠
@@ -3678,6 +3682,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 「是不是对齐产物」异步检查的代次：只认最后一次，旧的回来直接丢。
   int _subtitleAlignmentCheckGeneration = 0;
 
+  /// 本次载入读字幕解析 cue 时顺手算好的「是不是对齐产物」（video-20）：载入链上的
+  /// 对齐检查遇到同一路径就直接用它，不再把刚读过的字幕整份重读一遍算哈希。只在
+  /// 一次载入内有效——[_applyLoad] 收尾时清掉，之后的检查（对齐写盘、换源）照常读盘。
+  ({String path, Future<bool> aligned})? _loadAlignmentHint;
+
   /// 副字幕独立调轴（毫秒，TODO-2837 主副字幕分开调轴）：null = 未单独设置 =
   /// 跟随 [_delayMs]（v86 前「主副共用一个 offset」行为）；非 null = 副轨独立偏移
   /// （主副字幕轴不同源时各调各的）。两层持久化镜像 [_delayMs]（per-book
@@ -5938,10 +5947,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // iOS：下面先要读同目录字幕 / 封面等原文件，访问窗口得在第一次读盘前就位
     // （BUG-3697；控制器 load 里还有一道，覆盖不经这里的打开路径）。
     await SourceFolderAccess.instance.ensureForPath(row.videoPath);
+    _loadAlignmentHint = null;
     final bool subtitleExplicitlyOff = SubtitleSource.isOff(row.subtitleSource);
     final ({String videoPath, String? subtitleSource}) paths =
         await _relocateSingleMediaPaths(row);
-    List<AudioCue> cues = await widget.repo.loadCues(_activeBookUid);
+    // video-20：DB 缓存 cue（整表读）改惰性——字幕显式关闭时读了就丢、外挂档重解析
+    // 成功时被覆盖，只在真要用它（回退 / 内嵌轨判定 / 兜底链入口）时才读。
+    List<AudioCue> cues = const <AudioCue>[];
     String? externalSub = paths.subtitleSource;
     int? graphicStreamIndex;
 
@@ -5968,6 +5980,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // [_restorePersistedSubtitle]（与播放列表换集同一重解析路径）重解析已抽取的缓存档案，
     // 恢复 cueStyle。缓存命中不触发 ffmpeg 重抽取；图形轨（无文本 cue → cues 为空）不进本
     // 分支，仍由下方 `cues.isEmpty` 分支经 libmpv 画面渲染恢复（不倒退 BUG-122）。
+    if (!subtitleExplicitlyOff && rehydratePath == null) {
+      cues = await widget.repo.loadCues(_activeBookUid);
+    }
     final bool rehydrateEmbedded =
         !subtitleExplicitlyOff &&
         rehydratePath == null &&
@@ -5975,19 +5990,19 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         SubtitleSource.isEmbeddedPersisted(externalSub);
 
     // TODO-818：用户显式关闭字幕。哨幕短路两个自动重选向量（sidecar 探测 + 内嵌轨
-    // 抽取），externalSub 保持哨兵原样传给 _applyLoad，恢复后仍是关闭态。
-    if (subtitleExplicitlyOff) {
-      cues = const <AudioCue>[];
-    } else if (rehydratePath != null) {
+    // 抽取），externalSub 保持哨兵原样传给 _applyLoad，恢复后仍是关闭态；cues 保持
+    // 空（关闭时 rehydratePath 恒 null、rehydrateEmbedded 恒 false，也不读 DB 缓存）。
+    if (rehydratePath != null) {
       // 外挂文本字幕：重解析磁盘档案作为真相源，恢复 cue 级 / 行内样式 markup（TODO-1246）。
       final List<AudioCue> reparsed = await _loadExternalSubtitleCues(
         rehydratePath,
         _activeBookUid,
+        primeAlignment: true,
       );
-      if (reparsed.isNotEmpty) {
-        cues = reparsed;
-      }
-      // reparsed 为空（档案被删/损坏）：保留上面的 DB 缓存 cues，仅缺样式不缺内容。
+      cues = reparsed.isNotEmpty
+          ? reparsed
+          : await widget.repo.loadCues(_activeBookUid);
+      // reparsed 为空（档案被删/损坏）：回退 DB 缓存 cues，仅缺样式不缺内容。
       // **但缓存本身可能就是空的**——合集里的每一集只落字幕源指针、不落 cue
       // （见 _selectSubtitleSource 的 `_episodes.isEmpty` 分支），所以这条支路解析
       // 失败时 cues 恒为空。下面那组兜底因此**不能**继续挂在同一条 else-if 链上，
@@ -6286,7 +6301,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     try {
       final SubtitleFormat? format = subtitleFormatForPath(sidecarPath);
       if (format == null) return null;
-      final String text = await readTextWithEncoding(File(sidecarPath));
+      final String text = await _readSubtitleTextForLoad(sidecarPath);
       final List<AudioCue> cues = await parseSubtitleContentAsync(
         format,
         content: text,
@@ -6323,14 +6338,20 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     return (path: path, cues: cues);
   }
 
+  ///
+  /// [primeAlignment]：本次载入链上的读（[_loadSingle]），顺手把对齐判定留给
+  /// [_loadAlignmentHint]。
   Future<List<AudioCue>> _loadExternalSubtitleCues(
     String path,
-    String bookUid,
-  ) async {
+    String bookUid, {
+    bool primeAlignment = false,
+  }) async {
     try {
       final SubtitleFormat? format = subtitleFormatForPath(path);
       if (format == null) return const <AudioCue>[];
-      final String text = await readTextWithEncoding(File(path));
+      final String text = primeAlignment
+          ? await _readSubtitleTextForLoad(path)
+          : await readTextWithEncoding(File(path));
       return await parseSubtitleContentAsync(
         format,
         content: text,
@@ -6340,6 +6361,17 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       debugPrint('[VideoFushiPage] external subtitle parse failed: $e');
       return const <AudioCue>[];
     }
+  }
+
+  /// 载入链上读一份字幕文本：只读一次盘，同一份字节一边解码、一边（并行）判
+  /// 「是不是对齐产物」，结果留给本次载入的对齐检查（[_loadAlignmentHint]）。
+  Future<String> _readSubtitleTextForLoad(String path) async {
+    final Uint8List bytes = await File(path).readAsBytes();
+    _loadAlignmentHint = (
+      path: path,
+      aligned: isSubtitleAlignmentProductBytes(bytes),
+    );
+    return decodeTextBytes(bytes);
   }
 
   /// 共享 load 装配：复用或新建 controller，载入视频 + cue，挂位置持久化回调。
@@ -6461,6 +6493,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       controller.dispose();
     }
 
+    // 「当前主字幕是不是对齐产物」的检查先起跑，与下面的着色器 / 脚本目录 IO 和
+    // controller.load 并行，load 之后再按结果调轴（video-20：原先在 load 之后串行读）。
+    final _SubtitleAlignmentCheck alignmentCheck =
+        _startPrimarySubtitleAlignmentCheck(
+          externalSubtitlePath ?? _currentSubtitleSource,
+        );
     final VideoMpvConfig mpvConfig = VideoMpvConfig.decode(
       appModel.videoMpvConfig,
     );
@@ -6572,9 +6610,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       unawaited(_detectHlsVariantsForLoad(mediaUri));
     }
     // 当前主字幕是对齐产物时调轴归零（换集 / 首开都按本次实际选中的档算）。
-    await _refreshPrimarySubtitleAlignment(
-      externalSubtitlePath ?? _currentSubtitleSource,
-    );
+    await _applyPrimarySubtitleAlignment(alignmentCheck);
     // 应用持久化的音画延迟（换集复用同一值；load 不重置 delay）。
     controller.setDelayMs(_delayMs);
     // TODO-2837：副字幕独立调轴同步应用（null = 跟随主字幕，controller 侧回退）。
@@ -6651,6 +6687,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // （externalSubtitlePath==null）时当前选中由 _currentSubtitleSource 保留（菜单
       // 切换时再写）。
       _currentSubtitleSource = externalSubtitlePath ?? _currentSubtitleSource;
+      // 载入链上的对齐检查都已起跑：交还给读盘口径，之后的检查（对齐写盘、换源）
+      // 不再沿用本次载入读到的字节。
+      _loadAlignmentHint = null;
       // TODO-1276/1297：首开时页级加载态保持到「首帧解码出画且缓冲结束」
       // （[isReadyForFirstPaint]）再让位给 media_kit——快路径（本地文件 load 返回时
       // 常已出画且不缓冲）此处即 true、立即挂载 [Video]；慢路径（仍在缓冲 / 首帧未就绪）

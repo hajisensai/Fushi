@@ -4995,15 +4995,38 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// 有效调轴从 0 起算：系列级 / 本集持久化的调轴是给没对齐的字幕调的，对齐后的
   /// 时间轴已经贴着视频，再叠上去只会推歪。换回别的档时恢复原调轴。持久化值本身
   /// 不动——系列级调轴对同系列其它没对齐的集仍然有效。
-  Future<void> _refreshPrimarySubtitleAlignment(String? source) async {
+  Future<void> _refreshPrimarySubtitleAlignment(String? source) =>
+      _applyPrimarySubtitleAlignment(
+        _startPrimarySubtitleAlignmentCheck(source),
+      );
+
+  /// 起一次「是不是对齐产物」检查：代次此刻前进（之后起跑的检查会作废它），结果
+  /// future 可以先和别的 IO 并行，稍后交给 [_applyPrimarySubtitleAlignment]。本次载入
+  /// 已读过同一份字幕时直接用 [_loadAlignmentHint]，不重读。
+  _SubtitleAlignmentCheck _startPrimarySubtitleAlignmentCheck(String? source) {
     final int generation = ++_subtitleAlignmentCheckGeneration;
-    final bool aligned =
+    final bool candidate =
         !_isRemote &&
         source != null &&
         !SubtitleSource.isOff(source) &&
-        !SubtitleSource.isEmbeddedPersisted(source) &&
-        await isSubtitleAlignmentProduct(source);
-    if (!mounted || generation != _subtitleAlignmentCheckGeneration) return;
+        !SubtitleSource.isEmbeddedPersisted(source);
+    final ({String path, Future<bool> aligned})? hint = _loadAlignmentHint;
+    final Future<bool> aligned = !candidate
+        ? Future<bool>.value(false)
+        : hint != null && hint.path == source
+        ? hint.aligned
+        : isSubtitleAlignmentProduct(source);
+    return (generation: generation, aligned: aligned);
+  }
+
+  /// 按 [check] 的结果改调轴；期间又起了新检查（换源 / 换集）就丢掉这次结果。
+  Future<void> _applyPrimarySubtitleAlignment(
+    _SubtitleAlignmentCheck check,
+  ) async {
+    final bool aligned = await check.aligned;
+    if (!mounted || check.generation != _subtitleAlignmentCheckGeneration) {
+      return;
+    }
     if (aligned == _primarySubtitleAligned) return;
     _primarySubtitleAligned = aligned;
     if (aligned) {
