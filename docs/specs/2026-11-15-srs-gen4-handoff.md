@@ -4070,3 +4070,81 @@ schema 不变（40024，没有加表 / 索引）；`ABI_VERSION` 不变（只改
 - 待忘清单只接了文件夹位置的「移除」（本页唯一的移除入口）；云盘通道 / 互联在各自设置页删除时内核位置状态怎么收，本分支没查、
   没改（归同步 owner）。
 - 真机验证按用户 07-29 指令不做。
+
+## 44. 第六波 导入红测试收尾（2026-11-18，分支 `pr/srs-gen4-w6-import-reds`，基于 `pr/srs-gen4-switch` `0bf8472f40`）
+
+导入 / 备份侧剩下的红测试逐条定因，外加第五波 S3 复核的 nit。不升 SCHEMA（仍 40024），不加表 / 索引；存量持久化名不动。
+
+### ① `.apkg` 往返用例多出 `"foreignLog":true`：测试过期
+
+- **定因**：`srs_apkg_stream_roundtrip_test.dart`「导出到文件 → 按文件导入另一份库」逐字段比 A（导出方）与 B（导入方）的日志，
+  B 的每条日志多了出处标记 `foreignLog: true`（§38 ①，Dart `_remapExtLog` 打、内核 `derived_log_hlc` 读）。标记是**导入方
+  这份库**的事实（「这条复习在这里是外来的」，只决定这份库里的派生排序键），导出方自己的原生日志本来就没有；它和已经排除的
+  `hlc` 同类，都是落库方本机的东西。不是回归：卡片行（队列、到期、间隔、reps、最后一条日志）两边逐列相同。
+- **定案**：比较面去掉标记（`_comparableLog`，按 JSON 解析后去掉顶层 `hlc` 与 `srsForeignLogKey`，不再用正则删 `hlc`），
+  标记**另行断言**：A 的日志 0 条带标记、B 的日志条数等于 A 且每条都带。生产代码不动。
+- **变异**：生产侧 `_remapExtLog` 不打标记 → 新断言红（见验证）；比较面不去标记 → 即原来的红。
+
+### ② 备份导入源码守卫 3 条：测试过期
+
+- **定因**：`backup_import_overlay_test.dart` 2 条、`backup_import_streaming_guard_test.dart` 1 条逐字锚
+  `completeBackupImport(t.backup_import_success)`。G11-4（§25）起合并导入里有没并入的复习数据时完成提示换成
+  `t.backup_import_success_srs_declined(...)`（三元二选一，`backup_srs_gen4_guard_test.dart` 钉着），成功出口还在，只是字面变了。
+- **定案**：成功出口改按正则 `completeBackupImport\(\s*[^;]*\bt\.backup_import_success\b[^;]*\);` 匹配——实参里必须有**纯**
+  成功文案（词边界让带后缀的那条不算数）；其余判据（失败走 `failBackupImport`、成功后 1 秒自动重启、失败不自动重启）不变。
+
+### ③ `SrsBackupManifest` 撞「旧 SRS 同步 / 旧定时备份已删」守卫：改名
+
+- **定因**：`srs_sync_v1_removed_guard_test.dart` 禁的是旧备份库（`srs_backup_store`）的符号，G11-4 的备份 v2 清单类恰好
+  也叫 `SrsBackupManifest`。守卫按名字认不出新旧，收窄守卫等于给旧实现复活留口子。
+- **定案**：新类改名 `SrsBackupBundleManifest`（所在文件 `srs_backup_bundle.dart`，与 `kSrsBackupManifestEntry` 等常量同族）；
+  只是 Dart 类型名，不是持久化名（清单条目名 `srs/manifest.json`、键、版本号都不动）。守卫原样不改。
+
+### ④ `backup_srs_gen4_guard_test.dart` 手写注释剥离：改用共享掩码
+
+- `codeLines` 原来丢掉 `trimLeft().startsWith('//')` 的整行（`source_guard_adoption_test` 禁用形态）：块注释、行尾注释放行。
+  改为 `maskComments`（`test/helpers/source_guard.dart`），掩完只剩空白的行不要、行号仍是原文行号；`mergeCalls` 的配平
+  扫描与 `contains('…srsResults =\n')` 判据照旧成立。
+
+### ⑤ 第五波 S3 复核 nit
+
+- **回包 `logHlcs` 的时刻上界没有用例**：`a_foreign_log_from_the_future_does_not_pin_the_schedule` 走的是 `import_drafts`，它
+  不报 `logHlcs`（只有 `apply` 报），里面 `if let Some(replied)` 那段从来没执行过。新用例
+  `a_foreign_log_from_the_future_is_not_derived_in_the_log_hlcs_reply`（`writes_tests.rs`）走 `apply` + `logHlcs: true`：回包
+  不是 `{at}:0:fushi`、物理时刻早于伪造的发生时刻、与随后 `read logs` 的 `hlc` 逐字相同。原用例那段空分支换成「`import_drafts`
+  不报 `logHlcs`」的断言。变异：`cmd/writes.rs` 回包派生的上界传 `i64::MAX` → 新用例红、原用例仍绿（坐实原来没钉住）。
+- **`CACHE_RULES` 2 → 3**：第五波复核给派生加 `op_wall` 上界改了推导口径，但 `0442ce60ac`（`CACHE_RULES` = 2、还没上界）已经推到
+  `pr/srs-gen4-w5-import-write` 上过，按 2 物化过的开发库里带未来时刻的外来日志排在派生位置上。按 `cache.rs` 自己的规则（缓存行
+  变了就 +1）升到 3，开库时整层重建一次，不改真相、不丢卡。`a_cache_built_under_older_rules_is_rebuilt_once_on_open` 的旧值
+  列表加上「上一版口径」（`CACHE_RULES - 1`）。
+- **「这次必须升」的用例**（复核 minor，续做补上）：重建用例按 `CACHE_RULES - 1` 取上一版，常量退回 2 照样绿。新加
+  `cache_rules_matches_the_pinned_derivation_table`（`cache.rs` 测试模块）：派生排序键 `derived_log_hlc` 的 8 行输入 / 期望 /
+  「让这一行成为现在这样的修订号」对表（原生 0、Anki 1、外来早于或同毫秒 2、外来晚于操作 3），要求表里最新修订号等于
+  `CACHE_RULES`。以后改派生口径而不升、或把常量退回去，都会红；改口径的人要改期望、记新修订号并升常量。变异：常量退回 2 →
+  红（left 2 / right 3）；`derived_log_hlc` 去掉 `at <= op_wall` → 红（「伪造的未来时刻」那行得到 `3000:0:fushi`）。
+
+### 没做 / 交给别人
+
+- 没在真机 / 双设备上验回导与备份还原；证据是上面的 Rust / Dart 用例。
+- 对表只覆盖 `derived_log_hlc` 这一处派生；`log_body` 里别的缓存列口径（若以后改）不在表里，靠改的人按 `CACHE_RULES` 的规则自觉升。
+- 集成分支后来合入的 T2（#3736）没合进本分支（不 rebase / 不合并），冲突留给合流处理。2026-11-20 对集成分支头 `14799047ca` 做
+  `git merge-tree`：只有本交接文档文末追加节冲突（两边各追加一节，两节都保留即可），代码文件无冲突。
+- 复核 nit「成功出口正则不看分支可达性」（`false ? t.backup_import_success : …` 能骗绿）未加严：查找范围与基线相同，没有变宽。
+
+### 验证（2026-11-20，头 `2bce09da6f` 续做核验，本 worktree 编出的原生库）
+
+- 续做（`b414ebdbea` 对表用例）：`cargo fmt --check` 退出 0；`cargo test --profile quick --lib -j 4` 退出 0，1441 passed /
+  0 failed / 39 ignored（比上次多的 1 条就是对表用例）。只动 Rust 测试与本文档，Dart 侧未重跑。
+
+- `native/fushi_fsrs`：`cargo fmt --check` 退出 0；`cargo test --profile quick --lib -j 4` 退出 0，1440 passed / 0 failed / 39 ignored
+  （ignored 为存量，本分支没加）。
+- Dart（`--here` 强制本机，用本 worktree `setup_worktree.ps1` 编出的 `fushi_fsrs.dll`）：
+  - `packages/fushi_engine`：`dart test` `srs_apkg_stream_roundtrip_test` / `srs_backup_merge_test` / `srs_db_store_test` 退出 0，30 条全过（5 + 9 + 16）。
+  - `fushi/`：`flutter test` `backup_srs_gen4_guard_test` / `backup_import_overlay_test` / `backup_import_streaming_guard_test` /
+    `backup_srs_category_test` / `srs_sync_v1_removed_guard_test` / `source_guard_adoption_test` 退出 0，45 条全过。
+  - 改动的 11 个 Dart 文件 `dart format --set-exit-if-changed` 0 改动；`flutter analyze --no-pub`（经 heavy 外包）No issues，退出 0。
+- 变异实测（改完跑、还原后 `git status` 干净）：
+  - `cmd/writes.rs` 回包派生上界传 `i64::MAX`：新用例 `…_is_not_derived_in_the_log_hlcs_reply` 红，原用例绿。
+  - `_remapExtLog` 不打 `srsForeignLogKey`：往返用例红（期望 `(480, 480)`，实际 `(0, 480)`）。
+  - `backup.part.dart` 成功分支改成 `t.backup_import_success_srs_declined(count: 0)`（没有纯成功文案）：overlay 2 条、streaming 1 条红。
+  - `backup_srs_gen4_guard_test` 的 `codeLines` 退回 `trimLeft().startsWith('//')`：`source_guard_adoption_test` 红。

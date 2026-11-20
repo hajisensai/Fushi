@@ -56,6 +56,30 @@ Future<(SrsDbStore, SrsReadCounter)> _emptyStore(String deviceId) async {
   return (store, counter);
 }
 
+/// [dumpSrsState] 的一行日志（`卡|日志 JSON`）去掉落库方本机的东西之后的比较形：
+/// - `hlc`：各自库的内核在落库时按本机时钟打（新代不沿用包里 / 来源的 HLC）；
+/// - [srsForeignLogKey]：导入方给从 fushi-ext 恢复的日志打的出处标记（`srs_apkg_import.dart` `_remapExtLog`，交接
+///   §38）。它说的是「这条复习在**这份库**里是外来的」、只决定这份库里的派生排序键，导出方自己的原生日志没有它。复习
+///   本身（卡、评分、时刻、结果……）照样逐字段比；标记有没有打上由用例另行断言（[_foreignMarks]）。
+String _comparableLog(String line) {
+  final int bar = line.indexOf('|');
+  final Map<String, Object?> j =
+      (jsonDecode(line.substring(bar + 1)) as Map<String, Object?>)
+        ..remove('hlc')
+        ..remove(srsForeignLogKey);
+  return '${line.substring(0, bar)}|${jsonEncode(j)}';
+}
+
+/// [s] 的全部日志里带出处标记（`srsForeignLogKey: true`）的条数与总条数。
+Future<(int, int)> _foreignMarks(SrsDbStore s) async {
+  final List<String> logs = (await dumpSrsState(s))['logs']!;
+  final int marked = logs.where((String l) {
+    final Object? j = jsonDecode(l.substring(l.indexOf('|') + 1));
+    return j is Map<String, Object?> && j[srsForeignLogKey] == true;
+  }).length;
+  return (marked, logs.length);
+}
+
 /// 一份库里与写入者 / 本机无关的物化内容：笔记（字段、标签、首选牌组、出处、删除态）、
 /// 卡片缓存行、全部日志、牌组全名与设置。
 Future<Map<String, Object?>> _materialized(SrsDbStore s) async {
@@ -116,11 +140,9 @@ Future<Map<String, Object?>> _materialized(SrsDbStore s) async {
           c.lastLogId,
         ].toString(),
     ],
-    // 日志的 HLC 由各自库的内核在落库时按本机时钟打（新代不沿用包里 / 来源的 HLC），是本机的东西，不比。
-    'logs': <String>[
-      for (final String l in dump['logs']!)
-        l.replaceAll(RegExp(r'"hlc":"[^"]*",'), ''),
-    ],
+    // 日志里落库方本机的东西（HLC、外来出处标记）不比，见 [_comparableLog]。
+    'logs': <String>[for (final String l in dump['logs']!) _comparableLog(l)]
+      ..sort(),
     'decks': <String>[
       for (final SrsDeckView d in tree.decks)
         <Object?>[
@@ -215,6 +237,12 @@ void main() {
     for (final String k in ma.keys) {
       expect(mb[k], ma[k], reason: k);
     }
+    // 出处标记：导出方自己的日志一条都没有；导入方从 fushi-ext 恢复的每一条都有（排序键按发生时刻派生，不按导入时刻）。
+    final (int markedA, int totalA) = await _foreignMarks(a);
+    final (int markedB, int totalB) = await _foreignMarks(b);
+    expect(totalA, greaterThan(0));
+    expect(markedA, 0);
+    expect((markedB, totalB), (totalA, totalA));
   });
 
   test('exportAnkiPackage（字节）与写文件的包内容相同', () async {

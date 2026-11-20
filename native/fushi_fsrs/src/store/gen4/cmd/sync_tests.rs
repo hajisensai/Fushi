@@ -663,7 +663,9 @@ fn a_cache_built_under_older_rules_is_rebuilt_once_on_open() {
             })
             .map_err(|e| e.to_string())
     };
-    for stale in [None, Some("0")] {
+    // 没有这一项、最早的 0、上一版口径（每次 +1 时那批已打开过的库记的就是它）都要重建。
+    let previous = (CACHE_RULES - 1).to_string();
+    for stale in [None, Some("0"), Some(previous.as_str())] {
         let before = a.direct(|t, col| {
             assert_eq!(t.derive_cfg(col, RULES_KEY)?, Some(CACHE_RULES.to_string()));
             let n = count(t, col)?;

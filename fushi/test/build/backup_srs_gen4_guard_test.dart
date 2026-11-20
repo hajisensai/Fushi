@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// G11-4 守卫：整包备份 / 还原 / 服务端备份的复习部分只走新代（协议 4）内核。
 ///
 /// - 不打开 `SrsStorage`（它会在旁边留着协议 3 `srs.db` 时报 `LegacyNotMigrated`，备份路径不该替用户触发迁移判断之外的开库）：
@@ -21,14 +23,15 @@ void main() {
     '../packages/fushi_engine/lib/srs/srs_backup_merge.dart',
   ];
 
-  /// 去掉整行 `//` 注释（文档注释里会解释为什么不这么做）。
+  /// [path] 的代码行（1 起的行号, 行）：注释经共享词法掩码（`maskComments`，行注释、行尾注释、块注释一起）换成等长空白，
+  /// 掩完只剩空白的行不要；字符串字面量原样保留。
   List<(int, String)> codeLines(String path) {
     final File f = File(path);
     expect(f.existsSync(), isTrue, reason: 'missing ${f.absolute.path}');
-    final List<String> lines = f.readAsLinesSync();
+    final List<String> lines = maskComments(f.readAsStringSync()).split('\n');
     return <(int, String)>[
       for (int i = 0; i < lines.length; i++)
-        if (!lines[i].trimLeft().startsWith('//')) (i + 1, lines[i]),
+        if (lines[i].trim().isNotEmpty) (i + 1, lines[i].trimRight()),
     ];
   }
 

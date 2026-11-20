@@ -319,7 +319,7 @@ void main() {
       expect(manifest.containsKey('magic'), isFalse);
       expect(manifest['v'], 2);
       expect(manifest['gen'], 4);
-      final SrsBackupManifest parsed = SrsBackupManifest.parse(
+      final SrsBackupBundleManifest parsed = SrsBackupBundleManifest.parse(
         archive.findFile(kSrsBackupManifestEntry)!.content as List<int>,
       );
       expect(parsed.units, hasLength(1));
@@ -827,7 +827,7 @@ Future<String> _protocol3LibraryFrom(
   final Archive archive = ZipDecoder().decodeBytes(
     File(e.zip).readAsBytesSync(),
   );
-  final SrsBackupManifest m = SrsBackupManifest.parse(
+  final SrsBackupBundleManifest m = SrsBackupBundleManifest.parse(
     archive.findFile(kSrsBackupManifestEntry)!.content as List<int>,
   );
   final String stream = p.join(work.path, '0.bin');

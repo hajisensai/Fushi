@@ -1371,7 +1371,7 @@ class BackupService {
       if (srs != null) {
         final Directory srsDir = Directory(p.join(tmpDir.path, 'srs'));
         await srsDir.create();
-        final SrsBackupManifest? manifest = await srsExportBackupStreams(
+        final SrsBackupBundleManifest? manifest = await srsExportBackupStreams(
           core: srs.core,
           profiles: await _srsBackupProfiles(),
           outDir: srsDir.path,

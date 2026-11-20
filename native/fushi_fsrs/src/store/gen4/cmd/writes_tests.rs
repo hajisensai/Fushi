@@ -1837,12 +1837,9 @@ fn a_foreign_log_from_the_future_does_not_pin_the_schedule() {
         "{:?}",
         w.log_hlcs(&c21)
     );
-    if let Some(replied) = gv.get("logHlcs").and_then(Value::as_array) {
-        assert!(
-            replied.iter().all(|l| l[2] != json!(derived)),
-            "{replied:?}"
-        );
-    }
+    // `import_drafts` 不报 `logHlcs`（只有 `apply` 报）：回包这条路径的上界由下面
+    // `a_foreign_log_from_the_future_is_not_derived_in_the_log_hlcs_reply` 钉。
+    assert!(gv.get("logHlcs").is_none(), "{gv}");
     let mut native = foreign_item("n9", &c21, N2, T1 + DAY, 3, 11);
     native["e"]["x"]
         .as_object_mut()
@@ -1851,6 +1848,40 @@ fn a_foreign_log_from_the_future_does_not_pin_the_schedule() {
     writes::apply(&w.t(), w.p.col, &W::req(T1 + DAY, json!({})), &[native]).unwrap();
     assert_eq!(w.cards_last_at("n9"), 1);
     assert_eq!(w.cards_last_at("f9"), 0);
+}
+
+/// `apply` 回包 `logHlcs` 这条路径（`cmd/writes.rs` 写下后读操作 HLC 再派生）同样守上界：发生时刻在未来的外来日志回的是
+/// 载着它的操作 HLC、不是 `{at}:0:fushi`，并与随后 `read logs` 的 `hlc` 逐字相同（第六波；第五波复核只经 `import_drafts`
+/// 测了投影，那条入口不报 `logHlcs`，回包的上界没有用例钉住）。
+#[test]
+fn a_foreign_log_from_the_future_is_not_derived_in_the_log_hlcs_reply() {
+    let lib = library();
+    let w = W::new(&lib);
+    let c21 = card(N2, "t1");
+    let future = T1 + 1000 * DAY;
+    let gv = writes::apply(
+        &w.t(),
+        w.p.col,
+        &W::req(T1, json!({"logHlcs": true})),
+        &[foreign_item("f9", &c21, N2, future, 1, 9)],
+    )
+    .unwrap();
+    let f9 = w.p.canon("f9");
+    let replied = gv["logHlcs"].as_array().unwrap();
+    assert_eq!(replied.len(), 1, "{gv}");
+    assert_eq!(replied[0][1], json!(f9));
+    let hlc = replied[0][2].as_str().unwrap().to_owned();
+    assert_ne!(hlc, format!("{future}:0:fushi"));
+    // 回落到操作 HLC：物理时刻不晚于这批写入的时刻（远早于伪造的发生时刻）。
+    let wall: i64 = hlc.split(':').next().unwrap().parse().unwrap();
+    assert!(wall < future, "{hlc}");
+    let read: Vec<String> = w
+        .log_hlcs(&c21)
+        .into_iter()
+        .filter(|(id, _)| *id == f9)
+        .map(|(_, h)| h)
+        .collect();
+    assert_eq!(read, vec![hlc]);
 }
 
 // ---------------------------------------------------------------------- 写回包带修改行（K3，交接 §26 T1 (c)）

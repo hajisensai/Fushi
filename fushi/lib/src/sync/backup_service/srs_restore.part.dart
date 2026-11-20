@@ -96,12 +96,12 @@ Future<_SrsRestoreUnits?> _prepareSrsRestoreUnits({
   }
   final ArchiveFile? manifestFile = archive.findFile(kSrsBackupManifestEntry);
   final ArchiveFile? p3File = archive.findFile(_srsDbName);
-  SrsBackupManifest? manifest;
+  SrsBackupBundleManifest? manifest;
   if (manifestFile != null) {
     if (manifestFile.size > kSrsBackupManifestMaxBytes) {
       throw const FormatException('srs backup manifest too large');
     }
-    manifest = SrsBackupManifest.parse(manifestFile.content as List<int>);
+    manifest = SrsBackupBundleManifest.parse(manifestFile.content as List<int>);
     for (final SrsBackupUnit u in manifest.units) {
       if (archive.findFile(srsBackupStreamEntry(u.n)) == null) {
         throw FormatException(
