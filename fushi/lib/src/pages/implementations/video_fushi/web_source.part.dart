@@ -1762,6 +1762,14 @@ extension _VideoWebSource on _VideoFushiPageState {
     }
     final int? seek = plan.seekMs;
     if (seek != null && controller != null) unawaited(controller.seekMs(seek));
+    switch (plan.setPlaying) {
+      case true:
+        if (controller != null) unawaited(controller.play());
+      case false:
+        if (controller != null) unawaited(controller.pause());
+      case null:
+        break;
+    }
   }
 
   /// 空闲判定：用户在播放器档里暂停了、队列非空、整机 2 分钟没输入 → 交接到内置档。

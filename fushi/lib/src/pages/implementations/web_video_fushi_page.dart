@@ -594,6 +594,12 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   /// 待恢复的播放状态：画面就绪后由 [_applyPendingRestore] 逐拍对齐（站点轨清单可能晚到）。
   WebMineRestoreTracker? _pendingRestore;
 
+  /// 重放途中表面死了、重建出来的新页面还没轮到收尾恢复（[_applyPendingRestore] 在
+  /// [_mineRunning] 期间不动）：这段时间站点自动播放一律就地暂停。新页面不在死前那份静音采集
+  /// 的进程树里，本轮收尾又会还原会话音量——不停下就是用户不在场时外放。收尾（cleanup）清掉，
+  /// 交给按开跑前状态的恢复接手。
+  bool _holdRebuiltSurfacePaused = false;
+
   /// 真机钩子收集：非 null 时每句重放抓到的媒体都记一份（只在 debugRunMineQueue 内）。
   List<WebMineReplayCapture>? _debugCaptures;
 
@@ -938,6 +944,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         _pendingRestore == null) {
       _beginRestore(WebMineReturnState.of(last));
     }
+    if (_mineRunning) _holdRebuiltSurfacePaused = true;
     if (!mounted) return;
     if (_windowed) {
       // 旧环境不释放：窗口宿主档环境与原生播放器页的播放器层共用一份缓存，别人可能还拿着。
@@ -1069,6 +1076,10 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
           WebVideoFushiPage.capturableUserDataFolder(),
         ),
       );
+    }
+    if (_holdRebuiltSurfacePaused && state.isPlaying) {
+      // 机器的收尾动作，不是有人动过播放：不走计数的 [_pause]（与试听到点暂停同）。
+      unawaited(_js('window.__fushiWebVideo.pause()'));
     }
     _applyPendingRestore(state);
     _maybeAutoRunMineQueue();
@@ -1528,6 +1539,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       if (mounted && status != null) setState(() => _autoStatus = status);
       return;
     }
+    // 空闲自动制卡时用户不在场：换回原档后的整页重载会让站点自动播放，一律停在暂停。
+    final WebMineReturnState? origin = _replayOrigin ?? widget.mineReturnState;
     switch (status) {
       case final WebMineAutoFinished finished:
         FushiToast.show(msg: webMineFinishedText(finished, forToast: true));
@@ -1537,10 +1550,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         break;
     }
     unawaited(
-      _reopen(
-        hosting: back,
-        mineReturnState: widget.mineReturnState ?? _replayOrigin,
-      ),
+      _reopen(hosting: back, mineReturnState: auto ? origin?.paused() : origin),
     );
   }
 
@@ -1637,6 +1647,15 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     if (audio != null) unawaited(_selectSiteAudioTrack(audio));
     final int? seek = plan.seekMs;
     if (seek != null) unawaited(_seekMs(seek));
+    // 恢复是机器动作，不走计数的 [_play] / [_pause]。
+    switch (plan.setPlaying) {
+      case true:
+        unawaited(_js('window.__fushiWebVideo.play()'));
+      case false:
+        unawaited(_js('window.__fushiWebVideo.pause()'));
+      case null:
+        break;
+    }
   }
 
   /// 制卡交接页：WebView 控制器一建好（浏览器进程已在、站点还没播起来）就开静音采集，
@@ -1788,8 +1807,12 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     // 已报废（重建预算用尽、[_web] 一直是 null），在途那一行留待办、本轮结束。
     final int surfaceGen = _deathGuard.deathCount;
     bool surfaceLost() => _web == null || _deathGuard.deathCount != surfaceGen;
-    _replayOrigin = widget.mineReturnState ?? _currentReturnState();
+    final WebMineReturnState? origin =
+        widget.mineReturnState ?? _currentReturnState();
+    // 空闲自动制卡：用户不在场，收尾恢复一律停在暂停（表面重建 / 整页重载后站点会自动播放）。
+    _replayOrigin = auto ? origin?.paused() : origin;
     _pendingRestore = null;
+    _holdRebuiltSurfacePaused = false;
     // 采集起好之后的每一步都在 [runWebMineQueueRound] 里：哪一步抛出，后面的还原步骤
     // （停采集 = 还原会话音量、复位运行态）与整轮收尾 [_finishMining] 都照常执行（BUG-4829）。
     await runWebMineQueueRound(
@@ -1886,9 +1909,10 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         );
       },
       cleanup: <Future<void> Function()>[
-        // 一句播到一半抛出时站点可能还在播：先停下，否则下一步还原会话音量后会外放。
+        // 一句播到一半抛出、或表面死后重建出的新页面在自动播放：先停下，否则下一步还原会话
+        // 音量后会外放。
         () async {
-          if (sawError) await _pause();
+          if (sawError || surfaceLost()) await _pause();
         },
         // 先停采集（native 随即把压低的会话音量还原），再还原站点外观与播放状态。
         loopback.stop,
@@ -1901,6 +1925,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
             _mineAuto = false;
             _mineProgress = null;
           });
+          _holdRebuiltSurfacePaused = false;
           // 原页：集 / 字幕轨 / 音轨 / 位置原样还回去；交接页把它带回原档（[_finishMining]）。
           if (widget.returnHostingAfterMining == null &&
               !widget.closeAfterMining) {
