@@ -240,25 +240,34 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
     final ({String expression, String reading})? headword = leadingHeadwordOf(
       _popup.entries.isEmpty ? null : _popup.entries.first.result,
     );
-    await repo.add(
-      FavoriteSentence(
-        // 视频标题尚未加载（_title==null）时回退到 bookUid，保证 bookTitle 永远非空
-        // ——收藏夹页 / 统计页都按 bookTitle 展示来源行，空标题会显示成空白条目。
-        text: sentence,
-        bookTitle: _title ?? _activeBookUid,
-        createdAt: DateTime.now(),
-        bookKey: _activeBookUid,
-        sectionIndex: _favoriteSectionIndex,
-        normCharOffset: cue?.startMs,
-        normCharLength: cue == null
-            ? null
-            : (cue.endMs - cue.startMs).clamp(0, 1 << 31).toInt(),
-        source: kFavoriteSentenceSourceVideo,
-        dateKey: statTodayKey(),
-        expression: headword?.expression,
-        reading: headword?.reading,
-      ),
-    );
+    // 星标读的是页内镜像（video-25），页外来源（收藏夹页、同步合并）收藏过这句时镜像可能
+    // 还没重填、星标是空心。收藏前按库内同口径匹配确认一次，已在库里就不再写第二条
+    // （repo.add 只按 id 去重，不拦内容重复）。
+    final bool alreadyInDb = (await _matchingVideoFavorites(
+      sentence,
+      cue,
+    )).isNotEmpty;
+    if (!alreadyInDb) {
+      await repo.add(
+        FavoriteSentence(
+          // 视频标题尚未加载（_title==null）时回退到 bookUid，保证 bookTitle 永远非空
+          // ——收藏夹页 / 统计页都按 bookTitle 展示来源行，空标题会显示成空白条目。
+          text: sentence,
+          bookTitle: _title ?? _activeBookUid,
+          createdAt: DateTime.now(),
+          bookKey: _activeBookUid,
+          sectionIndex: _favoriteSectionIndex,
+          normCharOffset: cue?.startMs,
+          normCharLength: cue == null
+              ? null
+              : (cue.endMs - cue.startMs).clamp(0, 1 << 31).toInt(),
+          source: kFavoriteSentenceSourceVideo,
+          dateKey: statTodayKey(),
+          expression: headword?.expression,
+          reading: headword?.reading,
+        ),
+      );
+    }
     _favoriteMirrorRevision++;
     if (mounted) {
       _rebuild(() {
@@ -434,7 +443,8 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
       )) {
         await repo.removeById(fav.id);
       }
-    } else {
+    } else if ((await _matchingVideoFavorites(sentence, cue)).isEmpty) {
+      // 镜像可能落后于页外来源（收藏夹页、同步合并）：库里已有就不写第二条。
       await repo.add(
         FavoriteSentence(
           text: sentence,

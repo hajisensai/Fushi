@@ -280,5 +280,28 @@ void main() {
       );
       await tester.pumpWidget(const SizedBox.shrink());
     });
+
+    testWidgets('镜像落后于页外收藏：点空心星标不写重复条目', (WidgetTester tester) async {
+      final VideoFushiTestHooks hooks = await openPage(tester);
+      await tester.runAsync(hooks.debugRefreshFavoritedCueCache);
+      // 镜像填完之后才由页外（收藏夹页 / 同步合并）收藏了这句，本页镜像没重填。
+      await seedFavorite(tester, '外部収蔵', 15000);
+      final AudioCue cue = _cue('外部収蔵', 15000);
+      hooks.debugSetLookupSentence('外部収蔵', cue);
+      expect(hooks.debugCurrentSentenceFavorited, isFalse);
+
+      await tester.runAsync(hooks.debugToggleLookupSentenceFavorite);
+      expect(hooks.debugCurrentSentenceFavorited, isTrue);
+      expect(hooks.debugIsCueFavorited(cue), isTrue);
+      final List<FavoriteSentence>? all = await tester.runAsync(
+        () => FavoriteSentenceRepository(db).getAll(),
+      );
+      expect(
+        all,
+        hasLength(1),
+        reason: 'repo.add 只按 id 去重，按镜像空心星标直接 add 会写出第二条',
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
   });
 }
