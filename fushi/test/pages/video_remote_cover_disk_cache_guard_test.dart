@@ -18,6 +18,8 @@ void main() {
     'lib/src/pages/implementations/home_video_page.dart',
     'lib/src/pages/implementations/video_work_detail_page.dart',
     'lib/src/pages/implementations/media_collection_detail_page.dart',
+    // 刮削图远程回落的共用 provider（#3722 video-18）：库页与作品详情页经它取图。
+    'lib/src/media/video/metadata/video_metadata_image_provider.dart',
   ];
 
   // `CachedNetworkImage(` 里也含有 `NetworkImage(` 子串，所以裸 NetworkImage 的
@@ -50,9 +52,14 @@ void main() {
 
   test('被守卫的页面确实还在渲染带磁盘缓存的远端封面', () {
     for (final String path in paths) {
+      // 直接写 `AppCachedHttpImage(`，或经共用的 `metadataRemoteImage(`（它本身在
+      // 清单里，内部就是 AppCachedHttpImage + 解码上限）。
       expect(
         File(path).readAsStringSync(),
-        contains('AppCachedHttpImage('),
+        anyOf(
+          contains('AppCachedHttpImage('),
+          contains('metadataRemoteImage('),
+        ),
         reason:
             '$path 不再出现磁盘缓存封面用法：'
             '要么封面被删（请同步收缩本守卫清单），要么被换成了别的远端图片写法',
