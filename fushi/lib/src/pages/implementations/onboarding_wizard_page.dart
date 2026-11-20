@@ -11,7 +11,6 @@ import 'package:fushi/src/pages/implementations/dictionary_dialog_page.dart';
 import 'package:fushi/src/pages/implementations/home_dictionary_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/pages/implementations/shortcut_settings_page.dart';
-import 'package:fushi/src/pages/implementations/srs/srs_deck_list_page.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/anki/anki_config_controls.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
@@ -266,7 +265,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   String? _packPickError;
 
   // 扩展安装引导要「浏览器」模块在本平台存在（[ModuleId.availableOn]）且本平台能装
-  // 扩展（[browserExtensionSupportedOn]）——模块 2026-10-19 起五端都有，扩展仍只在桌面。
+  // 扩展（[browserExtensionSupportedOn]）——模块 2026-10-19 起五端都有，扩展安装引导仍只在桌面。
   bool get _browserExtensionAvailable =>
       _moduleAvailable(ModuleId.web) &&
       browserExtensionSupportedOn(isDesktop: DesktopLookupService.isDesktop);
@@ -1545,16 +1544,9 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
           icon: FushiIcons.repeat,
           title: t.onboarding_srs_title,
           body: t.onboarding_srs_body,
+          // 不放「打开牌组」：默认牌组已备好、制的卡直接进复习，这一步只做说明；
+          // 中途跳去牌组列表只会把用户带离引导（所有者 11-20 反馈）。
           items: srsOnboardingTutorialItems(),
-          actions: <OnboardingAction>[
-            OnboardingAction(
-              icon: FushiIcons.add,
-              label: t.onboarding_srs_action,
-              description: t.onboarding_srs_action_desc,
-              necessity: OnboardingActionNecessity.recommended,
-              onPressed: () => _pushPage((_) => const SrsDeckListPage()),
-            ),
-          ],
         );
       case OnboardingStepId.finish:
         return _buildFinishStep();

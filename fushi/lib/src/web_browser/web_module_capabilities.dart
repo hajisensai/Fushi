@@ -2,7 +2,10 @@
 ///
 /// 模块本身五端都有，但里面的几块能力各有各的平台判据：视频站点只在 Windows
 /// （[webVideoSitesAvailable]），网页漫画 / 小说导入是在线源能力、iOS 上整体缺席
-/// （[StoreRestrictedCapability]），浏览器扩展只在桌面（[browserExtensionSupportedOn]）。
+/// （[StoreRestrictedCapability]），扩展安装引导只在桌面（[browserExtensionSupportedOn]）。
+/// 扩展本身在任何支持扩展的浏览器里都能用（含安卓上支持扩展的 Chromium 系浏览器，
+/// 见 tools/browser-extension 的 touch-lookup.js / mobile-drawer.js），所以文案只说
+/// 「支持扩展的浏览器」，不写平台。
 /// 说明文案若写死成一份，就会在 iOS 上宣传受限能力、在 Android / macOS / Linux 上
 /// 宣传不存在的视频站点。判据各自只写一处，这里只做组合。
 library;
@@ -47,7 +50,7 @@ class WebModuleCapabilities {
 String webModuleOnboardingHint(WebModuleCapabilities c) {
   if (!c.webReaders) return t.onboarding_feature_web_basic_hint;
   if (c.videoSites && c.browserExtension) return t.onboarding_feature_web_hint;
-  if (c.browserExtension) return t.onboarding_feature_web_reader_desktop_hint;
+  if (c.browserExtension) return t.onboarding_feature_web_reader_extension_hint;
   return t.onboarding_feature_web_reader_hint;
 }
 
