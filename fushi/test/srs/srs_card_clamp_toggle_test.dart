@@ -99,7 +99,7 @@ void main() {
   );
 
   test('模板样式：纯文字整行，没有填充底色、没有胶囊外形、命中区 ≥48px', () {
-    final String css = kFushiCardStylingCss;
+    const String css = kFushiCardStylingCss;
     final String rule = _block(css, '.fc-clamp-toggle');
     expect(rule, contains('background: transparent;'));
     expect(rule, isNot(contains('999px')), reason: '不再是胶囊');
