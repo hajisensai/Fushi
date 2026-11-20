@@ -243,7 +243,17 @@
   // 独立网页（fushi_server 的 WebUI 等，经 sync-mirrors.mjs 生成的 web_kit.g.dart 内嵌本文件）：
   // 页面在加载本脚本前给 <html> 写 data-fushi-theme-host="page"。这类页面同扩展页面一样把主题
   // 写到自己的根上，偏好存 localStorage（同步读，首帧前就套上，无闪烁）而不是 chrome.storage。
+  // 这个 DOM 属性任何网页都写得出来，而 content script 与宿主页共享 DOM / localStorage：
+  // 扩展上下文（有 chrome.runtime.id）里一律不认，否则宿主页能让 content script 改读页面可控的
+  // localStorage、把主题写到宿主页根上（装了扩展再开 fushi_server WebUI 时还会两份各套一遍）。
+  function inExtensionContext() {
+    try {
+      return typeof chrome !== 'undefined' && !!chrome && !!chrome.runtime && !!chrome.runtime.id;
+    } catch (_) { return false; }
+  }
+
   function isStandalonePage() {
+    if (inExtensionContext()) return false;
     try {
       var root = document && document.documentElement;
       return !!root && root.getAttribute('data-fushi-theme-host') === 'page';
