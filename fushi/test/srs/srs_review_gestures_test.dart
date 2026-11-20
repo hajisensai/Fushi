@@ -1,4 +1,4 @@
-// 复习页卡面手势的纯判定：默认映射（= 加手势系统之前的行为）、两面可绑动作、「只留重来 /
+// 复习页卡面手势的纯判定：默认映射（2026-11-20 起默认开启）、两面可绑动作、「只留重来 /
 // 良好」屏蔽、识别器开关、持久化格式（容错 / 向前兼容）、点按分区与滑动判定、页内载荷换算。
 import 'dart:convert';
 
@@ -10,28 +10,82 @@ void main() {
   const SrsReviewSide back = SrsReviewSide.back;
 
   group('默认映射', () {
-    test('两面单击（任一分区）= 切换顶栏，其余一概不绑', () {
+    test('默认开启：问题面点左右 / 左右滑显示答案，答案面左滑良好、右滑重来，下滑撤销，点中间切换顶栏', () {
       final SrsReviewGestureMap m = SrsReviewGestureMap.defaults;
-      for (final SrsReviewSide side in SrsReviewSide.values) {
-        for (final SrsReviewGesture g in SrsReviewGesture.values) {
-          expect(
-            m.resolve(side, g, hideHardEasy: false),
-            g.isTap
-                ? SrsReviewGestureAction.toggleToolbar
-                : SrsReviewGestureAction.none,
-            reason: '$side $g',
-          );
-        }
+      const Map<SrsReviewGesture, SrsReviewGestureAction> expectFront =
+          <SrsReviewGesture, SrsReviewGestureAction>{
+            SrsReviewGesture.tapLeft: SrsReviewGestureAction.showAnswer,
+            SrsReviewGesture.tapCenter: SrsReviewGestureAction.toggleToolbar,
+            SrsReviewGesture.tapRight: SrsReviewGestureAction.showAnswer,
+            SrsReviewGesture.doubleTap: SrsReviewGestureAction.none,
+            SrsReviewGesture.longPress: SrsReviewGestureAction.none,
+            SrsReviewGesture.swipeLeft: SrsReviewGestureAction.showAnswer,
+            SrsReviewGesture.swipeRight: SrsReviewGestureAction.showAnswer,
+            SrsReviewGesture.swipeUp: SrsReviewGestureAction.none,
+            SrsReviewGesture.swipeDown: SrsReviewGestureAction.undo,
+          };
+      const Map<SrsReviewGesture, SrsReviewGestureAction> expectBack =
+          <SrsReviewGesture, SrsReviewGestureAction>{
+            SrsReviewGesture.tapLeft: SrsReviewGestureAction.toggleToolbar,
+            SrsReviewGesture.tapCenter: SrsReviewGestureAction.toggleToolbar,
+            SrsReviewGesture.tapRight: SrsReviewGestureAction.toggleToolbar,
+            SrsReviewGesture.doubleTap: SrsReviewGestureAction.none,
+            SrsReviewGesture.longPress: SrsReviewGestureAction.none,
+            SrsReviewGesture.swipeLeft: SrsReviewGestureAction.rateGood,
+            SrsReviewGesture.swipeRight: SrsReviewGestureAction.rateAgain,
+            SrsReviewGesture.swipeUp: SrsReviewGestureAction.none,
+            SrsReviewGesture.swipeDown: SrsReviewGestureAction.undo,
+          };
+      for (final SrsReviewGesture g in SrsReviewGesture.values) {
+        expect(
+          m.resolve(front, g, hideHardEasy: false),
+          expectFront[g],
+          reason: 'front $g',
+        );
+        expect(
+          m.resolve(back, g, hideHardEasy: false),
+          expectBack[g],
+          reason: 'back $g',
+        );
       }
       expect(m.isDefault, isTrue);
     });
 
-    test('默认不开双击 / 长按 / 滑动识别器：单击不被推迟、拖动与长按不被接管', () {
+    test('两面「点中间」都切换顶栏：触屏唤出悬浮顶栏的入口不丢', () {
+      for (final SrsReviewSide side in SrsReviewSide.values) {
+        expect(
+          SrsReviewGestureMap.defaults.resolve(
+            side,
+            SrsReviewGesture.tapCenter,
+            hideHardEasy: false,
+          ),
+          SrsReviewGestureAction.toggleToolbar,
+        );
+      }
+    });
+
+    test('默认开滑动识别器，不开双击 / 长按：单击不被推迟、长按选词不被抢', () {
       for (final SrsReviewSide side in SrsReviewSide.values) {
         expect(
           SrsReviewGestureMap.defaults.arming(side, hideHardEasy: false),
-          SrsCardGestureArming.none,
+          const SrsCardGestureArming(
+            swipeHorizontal: true,
+            swipeVertical: true,
+          ),
         );
+      }
+    });
+
+    test('默认不绑困难 / 简单：「只留重来 / 良好」开不开，默认手势都一样生效', () {
+      final SrsReviewGestureMap m = SrsReviewGestureMap.defaults;
+      for (final SrsReviewSide side in SrsReviewSide.values) {
+        for (final SrsReviewGesture g in SrsReviewGesture.values) {
+          expect(
+            m.resolve(side, g, hideHardEasy: true),
+            m.resolve(side, g, hideHardEasy: false),
+            reason: '$side $g',
+          );
+        }
       }
     });
 
@@ -106,7 +160,7 @@ void main() {
         SrsReviewGestureAction.rateGood,
       );
       expect(
-        m.resolve(front, SrsReviewGesture.tapLeft, hideHardEasy: false),
+        m.resolve(front, SrsReviewGesture.tapCenter, hideHardEasy: false),
         SrsReviewGestureAction.toggleToolbar,
       );
       expect(m.isDefault, isFalse);
@@ -164,7 +218,11 @@ void main() {
         m.arming(back, hideHardEasy: false),
         const SrsCardGestureArming(swipeHorizontal: true, swipeVertical: true),
       );
-      expect(m.arming(front, hideHardEasy: false), SrsCardGestureArming.none);
+      expect(
+        m.arming(front, hideHardEasy: false),
+        const SrsCardGestureArming(swipeHorizontal: true, swipeVertical: true),
+        reason: '问题面默认的滑动（显示答案）不受评分开关影响',
+      );
     });
   });
 
@@ -207,11 +265,11 @@ void main() {
       );
       expect(
         m.actionFor(front, SrsReviewGesture.tapLeft),
-        SrsReviewGestureAction.toggleToolbar,
+        SrsReviewGestureMap.defaultActionFor(front, SrsReviewGesture.tapLeft),
       );
       expect(
         m.actionFor(front, SrsReviewGesture.tapRight),
-        SrsReviewGestureAction.toggleToolbar,
+        SrsReviewGestureMap.defaultActionFor(front, SrsReviewGesture.tapRight),
         reason: '问题面不许评分',
       );
       expect(
@@ -223,7 +281,10 @@ void main() {
         SrsReviewGestureAction.none,
       );
       for (final SrsReviewGesture g in SrsReviewGesture.values) {
-        expect(m.actionFor(back, g), SrsReviewGestureMap.defaultActionFor(g));
+        expect(
+          m.actionFor(back, g),
+          SrsReviewGestureMap.defaultActionFor(back, g),
+        );
       }
     });
 
