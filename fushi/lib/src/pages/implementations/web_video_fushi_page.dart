@@ -90,8 +90,6 @@ import 'package:fushi/src/media/video/video_resource_check.dart'
     show isLocalVideoResourceMissing;
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/sync/video_remote_host.dart';
-import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
-    show youtubeVideoIdOrNull;
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart'
     show RemoteMineResult;
 import 'package:fushi_engine/sync/immersion_mine_payload.dart';
@@ -239,7 +237,8 @@ class WebVideoFushiPage extends ConsumerStatefulWidget {
 
   /// 制卡队列真机钩子：把当前 cue（无则位置附近最近一条）按弹窗制卡同一路径入队，
   /// 回队列行 id；`debugRunMineQueue` 跑完整个队列（重放录音/截帧 → 引擎）后返回
-  /// 一次重放抓到的媒体大小与 warning（引擎落卡结果看队列行 status/error）。
+  /// 一次重放抓到的媒体大小与 warning（引擎落卡结果：成功的行直接出表、warning 记诊断日志，
+  /// 失败的行留在队列里看 status/error，见 [WebMineQueueStore.markDone]）。
   @visibleForTesting
   static Future<int?> Function(Map<String, String> fields)?
   debugEnqueueCurrentCue;
@@ -976,11 +975,13 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     );
     if (track == null) return;
     _tracks[track.key] = track;
-    _reselectTrack();
+    _reselectTrack(updatedKey: track.key);
   }
 
   /// 轨集 / 当前视频变化后重选当前轨并灌进 controller（同轨更新也要灌：live 轨边看边长）。
-  void _reselectTrack() {
+  /// [updatedKey] = 本次只是这条轨到了 / 长了：选轨没变且它不是当前轨时只记进轨集、不重灌
+  /// （[webVideoTrackUpdateNeedsReload]）。
+  void _reselectTrack({String? updatedKey}) {
     final String? next = _subtitlesOff
         ? null
         : chooseWebVideoTrackKey(
@@ -991,7 +992,15 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
             pinned: _pinnedTrackKey,
           );
     final bool changed = next != _activeTrackKey;
+    final bool reload =
+        updatedKey == null ||
+        webVideoTrackUpdateNeedsReload(
+          updatedKey: updatedKey,
+          previousActiveKey: _activeTrackKey,
+          nextActiveKey: next,
+        );
     _activeTrackKey = next;
+    if (!reload) return;
     final WebVideoTrack? track = next == null ? null : _tracks[next];
     _controller.setCues(track?.cues ?? const <AudioCue>[]);
     final int? pos = _state?.positionMs;
@@ -1284,36 +1293,120 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   /// 媒体源），录不了句子音频/截不了帧。之后在本页（可捕获的 1080p 内置档）按队列逐句重放
   /// 录音 + 截帧再落卡。行里冻结点击那一刻的 Anki 字段（词典释义等）与 cue 时间窗。
   /// 无锚点 cue（还没查过词 / 无字幕轨）时退回 mixin 的纯字段制卡，行为与改动前一致。
+  ///
+  /// YouTube 例外（gap-webvideo-4）：与原生播放器页网页档、手机遥控同一条分流
+  /// （[mineWebVideoCueDirectOrQueue]），按视频 id + 字幕时间窗从真实视频流后台直裁，裁不出来
+  /// 才退回队列。
   @override
   Future<MinePopupResult> onMineEntry(Map<String, String> fields) async {
     final AudioCue? cue = _lastLookupCue ?? _controller.currentCue;
     final VideoBookRow? row = _row;
     if (cue == null || row == null) return super.onMineEntry(fields);
-    await _enqueueMine(fields, cue, row);
+    if (await _mineLocalCue(fields, cue, row)) {
+      FushiToast.show(msg: t.web_video_mine_background);
+      return const MinePopupResult.queued();
+    }
     FushiToast.show(msg: t.web_video_mine_queued(count: _minePending));
     // 卡还没真落地：不把弹窗按钮画成 ✓（弹窗侧「未知结局不重画」契约，TODO-448）。
     return const MinePopupResult();
   }
 
-  Future<void> _enqueueMine(
+  /// 本页一句制卡（弹窗 / 顶层查词窗口）的分流：YouTube 在后台直裁（返回 true，结局由 toast
+  /// 报），其它站点入队（返回 false 时已入队）。
+  Future<bool> _mineLocalCue(
     Map<String, String> fields,
     AudioCue cue,
     VideoBookRow row,
   ) async {
-    final String fieldSentence = (fields['sentence'] ?? '').trim();
-    await _mineQueue.enqueue(
-      bookUid: widget.bookUid,
-      videoKey: _videoKey,
-      href: _state?.href.isNotEmpty == true ? _state!.href : row.videoPath,
-      cueStartMs: cue.startMs,
-      cueEndMs: cue.endMs,
-      sentence: fieldSentence.isEmpty
-          ? simultaneousCueText(_controller.cueStreamOwning(cue), cue)
-          : fieldSentence,
-      cueSentence: cue.text,
-      fields: fields,
+    final ({String href, String sentence, Future<void> Function() enqueue})
+    frozen = _freezeMineEnqueue(fields, cue, row);
+    final String? youtubeId = webVideoDirectMineVideoId(frozen.href);
+    if (youtubeId == null) {
+      await frozen.enqueue();
+      return false;
+    }
+    unawaited(
+      _mineYoutubeCueInBackground(
+        ImmersionMinePayload(
+          fields: fields,
+          sentence: frozen.sentence,
+          cueSentence: cue.text,
+          documentTitle: _barTitle(row),
+          youtubeVideoId: youtubeId,
+          clipStartMs: cue.startMs,
+          clipEndMs: cue.endMs,
+        ),
+        frozen.enqueue,
+      ),
     );
-    await _refreshMinePending();
+    return true;
+  }
+
+  /// 入队一句要的东西在点下这一刻冻结（字段、时间窗、所在视频与地址）：YouTube 直裁失败
+  /// 退回入队时已过了几秒，用户可能换了集。返回的 `enqueue` 真正写库，可以晚些调。
+  ({String href, String sentence, Future<void> Function() enqueue})
+  _freezeMineEnqueue(
+    Map<String, String> fields,
+    AudioCue cue,
+    VideoBookRow row,
+  ) {
+    final String fieldSentence = (fields['sentence'] ?? '').trim();
+    final String videoKey = _videoKey;
+    final String href = _state?.href.isNotEmpty == true
+        ? _state!.href
+        : row.videoPath;
+    final String sentence = fieldSentence.isEmpty
+        ? simultaneousCueText(_controller.cueStreamOwning(cue), cue)
+        : fieldSentence;
+    Future<void> enqueue() async {
+      await _mineQueue.enqueue(
+        bookUid: widget.bookUid,
+        videoKey: videoKey,
+        href: href,
+        cueStartMs: cue.startMs,
+        cueEndMs: cue.endMs,
+        sentence: sentence,
+        cueSentence: cue.text,
+        fields: fields,
+      );
+      await _refreshMinePending();
+    }
+
+    return (href: href, sentence: sentence, enqueue: enqueue);
+  }
+
+  /// YouTube 后台直裁的结局只剩 toast 能告诉用户（弹窗早已收下）；裁不出来退回队列。
+  Future<void> _mineYoutubeCueInBackground(
+    ImmersionMinePayload payload,
+    Future<void> Function() enqueue,
+  ) async {
+    final RemoteMineResult? res;
+    try {
+      res = await mineWebVideoCueDirectOrQueue(
+        mineDirect: () =>
+            _appModel.createRemoteMiningService().mineImmersion(payload),
+        enqueue: enqueue,
+        onFallback: (String reason) => ErrorLogService.instance.log(
+          'web_video.mine',
+          'YouTube direct mine failed, queued for replay: $reason',
+        ),
+      );
+    } catch (e, st) {
+      // 连退回入队都失败（库写不进去）。
+      ErrorLogService.instance.log('web_video.mine', e, st);
+      if (mounted) FushiToast.show(msg: t.card_export_failed);
+      return;
+    }
+    if (!mounted) return;
+    if (res == null) {
+      FushiToast.show(msg: t.web_video_mine_queued(count: _minePending));
+    } else if (res.result == 'duplicate') {
+      FushiToast.show(msg: t.card_duplicate);
+    } else {
+      FushiToast.show(msg: t.card_exported(deck: res.deckName ?? ''));
+      // 与队列落卡同一笔统计（[_mineQueuedRow]）：改走直裁不该让 YouTube 的卡不再计数。
+      unawaited(recordMined());
+    }
   }
 
   Future<void> _refreshMinePending() async {
@@ -1868,7 +1961,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
           providedAudioName:
               'web_video_audio.${immersionMiningAudioExtension()}',
           // 录不到音（无 loopback / 站点静音）也出截图卡：用户排队等的是这张卡，
-          // 缺音频记进行 warning 而不是整行报废。
+          // 缺音频只记一条诊断日志（行落卡后直接出表，见 [WebMineQueueStore.markDone]），
+          // 不整行报废。
           requireAudio: false,
           stillFormat: _appModel.videoMiningStillFormat,
         ),
@@ -2197,11 +2291,13 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       if (updateNoteId == null && r.accepted) _afterGlobalLookupMineAccepted();
       return r.toJson();
     }
-    await _enqueueMine(fields, cue, row);
+    final bool direct = await _mineLocalCue(fields, cue, row);
     if (updateNoteId == null) _afterGlobalLookupMineAccepted();
     return <String, Object?>{
       'ankiConnect': false,
-      'message': t.web_video_mine_queued(count: _minePending),
+      'message': direct
+          ? t.web_video_mine_background
+          : t.web_video_mine_queued(count: _minePending),
     };
   }
 
@@ -2861,9 +2957,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     );
   }
 
-  /// 遥控制卡：与本页制卡同两条路。YouTube 按视频 id + 时间窗（与手机试听同一个窗）从真实
-  /// 视频流裁音频与画面、当场出卡；其它站点冻结字段与字幕时间窗进本页制卡队列，之后在可
-  /// 捕获档逐句重放落卡（手机收到「已收下」）。
+  /// 遥控制卡：与本页制卡同一条分流（[mineWebVideoCueDirectOrQueue]）。YouTube 按视频 id +
+  /// 时间窗（与手机试听同一个窗）从真实视频流裁音频与画面、当场出卡，裁不出来退回队列；其它
+  /// 站点冻结字段与字幕时间窗进本页制卡队列，之后在可捕获档逐句重放落卡（手机收到「已收下」）。
   Future<Map<String, Object?>> _mineRemoteCue(
     VideoRemoteCue cue,
     Map<String, dynamic> request,
@@ -2878,46 +2974,57 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     final String href = _state?.href.isNotEmpty == true
         ? _state!.href
         : row.videoPath;
-    final String? youtubeId = youtubeVideoIdOrNull(href);
+    final String videoKey = _videoKey;
+    Future<void> enqueue() async {
+      await _mineQueue.enqueue(
+        bookUid: widget.bookUid,
+        videoKey: videoKey,
+        href: href,
+        cueStartMs: selection.startMs,
+        cueEndMs: selection.endMs,
+        sentence: sentence,
+        cueSentence: selection.cueSentence,
+        fields: parsed.fields,
+      );
+      await _refreshMinePending();
+      if (mounted) {
+        FushiToast.show(msg: t.web_video_mine_queued(count: _minePending));
+      }
+    }
+
+    final String? youtubeId = webVideoDirectMineVideoId(href);
     if (youtubeId != null) {
       final ({int clipStartMs, int clipEndMs}) window = _remoteMiningWindow(
         cue,
         selection.startMs,
         selection.endMs,
       );
-      final RemoteMineResult res = await _appModel
-          .createRemoteMiningService()
-          .mineImmersion(
-            ImmersionMinePayload(
-              fields: parsed.fields,
-              sentence: sentence,
-              cueSentence: selection.cueSentence,
-              documentTitle: _barTitle(row),
-              youtubeVideoId: youtubeId,
-              clipStartMs: window.clipStartMs,
-              clipEndMs: window.clipEndMs,
-            ),
-          );
-      return <String, Object?>{
-        'success': res.result == 'success',
-        if (res.result == 'duplicate') 'duplicate': true,
-        if (res.result != 'success' && res.result != 'duplicate')
-          'error': 'mining_failed',
-      };
-    }
-    await _mineQueue.enqueue(
-      bookUid: widget.bookUid,
-      videoKey: _videoKey,
-      href: href,
-      cueStartMs: selection.startMs,
-      cueEndMs: selection.endMs,
-      sentence: sentence,
-      cueSentence: selection.cueSentence,
-      fields: parsed.fields,
-    );
-    await _refreshMinePending();
-    if (mounted) {
-      FushiToast.show(msg: t.web_video_mine_queued(count: _minePending));
+      final RemoteMineResult? res = await mineWebVideoCueDirectOrQueue(
+        mineDirect: () => _appModel.createRemoteMiningService().mineImmersion(
+          ImmersionMinePayload(
+            fields: parsed.fields,
+            sentence: sentence,
+            cueSentence: selection.cueSentence,
+            documentTitle: _barTitle(row),
+            youtubeVideoId: youtubeId,
+            clipStartMs: window.clipStartMs,
+            clipEndMs: window.clipEndMs,
+          ),
+        ),
+        enqueue: enqueue,
+        onFallback: (String reason) => ErrorLogService.instance.log(
+          'web_video.mine',
+          'remote YouTube direct mine failed, queued for replay: $reason',
+        ),
+      );
+      if (res != null) {
+        return <String, Object?>{
+          'success': res.result == 'success',
+          if (res.result == 'duplicate') 'duplicate': true,
+        };
+      }
+    } else {
+      await enqueue();
     }
     return <String, Object?>{
       ...const MinePopupResult.queued().toJson(),
