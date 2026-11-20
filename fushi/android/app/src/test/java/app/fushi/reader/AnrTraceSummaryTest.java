@@ -95,6 +95,51 @@ public class AnrTraceSummaryTest {
         assertTrue(out, out.contains("(no Flutter engine thread in trace)"));
     }
 
+    /**
+     * 真实长度的帧：主线程打满帧数上限、{@code 1.ui}（线程创建早、tid 小）排在 {@code 1.raster} 前面
+     * 也打满上限。总预算 3400 字装不下全部时，被等的 raster 线程顶部几帧必须留下，不能被主线程尾部和
+     * ui 线程挤掉。
+     */
+    @Test
+    public void rasterTopFramesSurviveWhenBudgetIsTight() {
+        StringBuilder b = new StringBuilder();
+        b.append("\"main\" prio=5 tid=1 Native\n");
+        b.append("  | group=\"main\" sCount=1 ucsCount=0 flags=1 obj=0x72008ef8 self=0xb40000739355a7b0\n");
+        for (int i = 0; i < 16; i++) {
+            b.append("  native: #").append(i).append(" pc 000c8fc8  /apex/com.android.runtime/lib64/bionic/"
+                    + "libc.so (pthread_cond_wait+72) (BuildId: e2d9c5ba32145bb6e11e59494ee68593)\n");
+        }
+        for (int i = 0; i < 40; i++) {
+            b.append("  at android.view.SurfaceView.onWindowVisibilityChanged(SurfaceView.java:").append(i)
+                    .append(")\n");
+        }
+        b.append('\n');
+        b.append("\"1.ui\" prio=5 (not attached)\n");
+        for (int i = 0; i < 20; i++) {
+            b.append("  native: #").append(i).append(" pc 00011111  ").append(APK)
+                    .append(" (offset 8468000) (flutter::MessageLoopAndroid::Run()+40)\n");
+        }
+        b.append('\n');
+        b.append("\"1.raster\" prio=5 (not attached)\n");
+        b.append("  native: #00 pc 0005823c  /apex/com.android.runtime/lib64/bionic/libc.so (syscall+28)\n");
+        b.append("  native: #01 pc 00012345  /vendor/lib64/egl/libGLES_mali.so (eglDestroySurface+40)\n");
+        for (int i = 2; i < 20; i++) {
+            b.append("  native: #").append(i).append(" pc 00022222  ").append(APK)
+                    .append(" (offset 8468000) (impeller::SurfaceGLES::~SurfaceGLES()+12)\n");
+        }
+        b.append('\n');
+
+        String out = AnrTraceSummary.summarize(b.toString(), 3400);
+
+        assertTrue(out.length() <= 3400);
+        assertTrue(out, out.startsWith("\"main\" prio=5 tid=1 Native\n"));
+        assertTrue(out, out.contains("\"1.raster\" prio=5 (not attached)"));
+        assertTrue(out, out.contains("libGLES_mali.so (eglDestroySurface+40)"));
+        assertTrue(out, out.contains("\"1.ui\""));
+        // raster 是被等的线程，排在 ui 前面。
+        assertTrue(out, out.indexOf("\"1.raster\"") < out.indexOf("\"1.ui\""));
+    }
+
     @Test
     public void unrecognisedTraceFallsBackToHead() {
         assertEquals("abcde", AnrTraceSummary.summarize("abcdefgh", 5));

@@ -17,6 +17,10 @@ import java.util.regex.Pattern;
  * <p>现在：主线程段 + 全部 Flutter 引擎线程段（{@code N.raster} / {@code N.ui} / {@code N.io}，
  * 多引擎时有多组），去掉 {@code | group=...} 之类的状态行、BuildId 与安装路径噪音，每段限帧数。
  *
+ * <p>总预算按段分配、只在行边界截断：有引擎线程时主线程段最多占一半，余下由引擎线程段按
+ * raster → ui → io 的顺序均分（前一段没用完的额度顺延给后面）。不这样分的话，真实长度的帧
+ * 下主线程 24 帧 + 排在前面（tid 小）的 {@code 1.ui} 就能吃满 3400 字，被等的 raster 线程一帧不剩。
+ *
  * <p>纯 JVM 代码（不碰 android.*），单测直接喂文本。
  */
 final class AnrTraceSummary {
@@ -26,6 +30,8 @@ final class AnrTraceSummary {
     static final int MAX_ENGINE_FRAMES = 14;
 
     private static final Pattern ENGINE_THREAD = Pattern.compile("^\\d+\\.(raster|ui|io)$");
+    /** 截断标记 {@code "  ... (+N frames)\n"} 预留的字数。 */
+    private static final int MARKER_RESERVE = 24;
     private static final Pattern BUILD_ID = Pattern.compile(" \\(BuildId: [0-9a-fA-F]+\\)");
     private static final Pattern APK_PATH = Pattern.compile("/data/app/\\S*/([^/\\s]+\\.apk)");
 
@@ -85,33 +91,73 @@ final class AnrTraceSummary {
         if (main == null && engine.isEmpty()) {
             return trace.length() > maxChars ? trace.substring(0, maxChars) : trace;
         }
+        // 被等的多半是 raster，其次 ui；同类按原顺序（多引擎时 1.* 在 2.* 前）。
+        engine.sort((a, b) -> Integer.compare(enginePriority(a.name), enginePriority(b.name)));
+
         final StringBuilder out = new StringBuilder();
-        if (main != null) appendBlock(out, main, MAX_MAIN_FRAMES);
-        for (ThreadBlock b : engine) {
-            if (out.length() > 0) out.append('\n');
-            appendBlock(out, b, MAX_ENGINE_FRAMES);
+        if (main != null) {
+            appendBlock(out, main, MAX_MAIN_FRAMES, engine.isEmpty() ? maxChars : maxChars / 2);
+        }
+        int omitted = 0;
+        for (int i = 0; i < engine.size(); i++) {
+            final int share = (maxChars - out.length()) / (engine.size() - i);
+            final int limit = out.length() + share;
+            final int before = out.length();
+            if (before > 0) out.append('\n');
+            if (!appendBlock(out, engine.get(i), MAX_ENGINE_FRAMES, limit)) {
+                out.setLength(before);
+                omitted++;
+            }
+        }
+        if (omitted > 0) {
+            appendIfFits(out, "\n(+" + omitted + " engine threads omitted)\n", maxChars);
         }
         if (main != null && engine.isEmpty()) {
-            out.append("\n(no Flutter engine thread in trace)\n");
+            appendIfFits(out, "\n(no Flutter engine thread in trace)\n", maxChars);
         }
         return out.length() > maxChars ? out.substring(0, maxChars) : out.toString();
     }
 
-    private static void appendBlock(StringBuilder out, ThreadBlock b, int maxFrames) {
-        out.append(b.lines.get(0)).append('\n');
+    private static int enginePriority(String name) {
+        if (name.endsWith(".raster")) return 0;
+        if (name.endsWith(".ui")) return 1;
+        return 2;
+    }
+
+    private static void appendIfFits(StringBuilder out, String s, int maxChars) {
+        if (out.length() + s.length() <= maxChars) out.append(s);
+    }
+
+    /**
+     * 把一段线程追加到 {@code out}，整行截断，不让 {@code out} 超过 {@code limit}（截断标记也算在内）。
+     * 连首行都放不下时什么也不加，返回 false。
+     */
+    private static boolean appendBlock(StringBuilder out, ThreadBlock b, int maxFrames, int limit) {
+        final String head = b.lines.get(0) + '\n';
+        if (out.length() + head.length() > limit) return false;
+        out.append(head);
         int kept = 0;
         int dropped = 0;
+        boolean full = false;
         for (int i = 1; i < b.lines.size(); i++) {
             final String line = b.lines.get(i);
             if (line.trim().startsWith("|")) continue;
-            if (kept >= maxFrames) {
-                dropped++;
-                continue;
+            if (!full && kept < maxFrames) {
+                final String c = compact(line);
+                if (out.length() + c.length() + 1 + MARKER_RESERVE <= limit) {
+                    out.append(c).append('\n');
+                    kept++;
+                    continue;
+                }
+                full = true;
             }
-            out.append(compact(line)).append('\n');
-            kept++;
+            dropped++;
         }
-        if (dropped > 0) out.append("  ... (+").append(dropped).append(" frames)\n");
+        if (dropped > 0) {
+            final String marker = "  ... (+" + dropped + " frames)\n";
+            if (out.length() + marker.length() <= limit) out.append(marker);
+        }
+        return true;
     }
 
     /** 去掉 BuildId 与安装路径里的随机目录名，只留 apk / so 文件名。 */
