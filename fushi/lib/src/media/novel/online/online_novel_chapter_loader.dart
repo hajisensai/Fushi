@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 
@@ -175,7 +176,17 @@ abstract class SerialOnlineNovelChapterLoader
       await temp.writeAsBytes(bytes, flush: true);
       await temp.rename(target.path);
     } on Object {
-      if (await temp.exists()) await temp.delete();
+      // 清理临时文件本身失败（被占用 / 只读）不能顶掉写入 / 改名的原始异常：
+      // 调用方要报、要据以判断的是后者。残留的 `.part` 只在日志里留痕。
+      try {
+        if (await temp.exists()) await temp.delete();
+      } on FileSystemException catch (cleanupError, cleanupStack) {
+        engineLog.log(
+          'SerialOnlineNovelChapterLoader.writeAtomically.cleanup',
+          cleanupError,
+          cleanupStack,
+        );
+      }
       rethrow;
     }
   }
