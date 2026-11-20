@@ -2195,6 +2195,8 @@ class SyncRepository {
     'ai_web_search',
     // 「抓搜索结果网页交给 AI」的同意：同意的是这台设备上配的那个后端，跟着它设备本地。
     'ai_web_search_page_fetch',
+    // 「AI 助手自主联网搜索」的首次确认：同理跟着这台设备配的后端设备本地。
+    'ai_agent_web_search',
     // 「允许已配对设备远程使用 AI 助手」：授权的是这台机器的 AI 指派与操作目录，
     // 只对点它的那台设备成立；漂过去会让另一台设备静默对配对设备开放。
     'ai_agent_for_peers',

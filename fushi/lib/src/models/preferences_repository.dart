@@ -35,6 +35,9 @@ import 'package:fushi_engine/ai/web_knowledge.dart'
         parseWebKnowledgeEnabledIds;
 import 'package:fushi/src/models/preference_keys.dart'
     show
+        kAiAgentWebSearchAllow,
+        kAiAgentWebSearchOff,
+        kAiAgentWebSearchPref,
         kAiWebSearchPageFetchAllow,
         kAiWebSearchPageFetchDeny,
         kAiWebSearchPageFetchPref,
@@ -3576,6 +3579,24 @@ class PreferencesRepository extends ChangeNotifier
       kAiWebSearchPageFetchPref,
       allowed ? kAiWebSearchPageFetchAllow : kAiWebSearchPageFetchDeny,
     );
+    notifyListeners();
+  }
+
+  /// 「AI 助手自主联网搜索」的首次确认状态：`''` 还没同意 / [kAiAgentWebSearchAllow] /
+  /// [kAiAgentWebSearchOff]（见 [kAiAgentWebSearchPref]）。
+  String get aiAgentWebSearchConsent =>
+      getPref(kAiAgentWebSearchPref, defaultValue: '') as String;
+
+  /// 用户在助手的确认卡上点了同意（由 `web.search` / `web.read` 路由经表态参数写）。
+  Future<void> grantAiAgentWebSearch() async {
+    await setPref(kAiAgentWebSearchPref, kAiAgentWebSearchAllow);
+    notifyListeners();
+  }
+
+  /// 设置页开关：关 = [kAiAgentWebSearchOff]（两条操作不可用）；开 = 回到 `''`
+  /// （还没同意，助手下次用时重新确认），不直接写成已同意。
+  Future<void> setAiAgentWebSearchEnabled(bool enabled) async {
+    await setPref(kAiAgentWebSearchPref, enabled ? '' : kAiAgentWebSearchOff);
     notifyListeners();
   }
 

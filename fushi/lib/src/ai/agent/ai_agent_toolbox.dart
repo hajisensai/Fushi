@@ -30,6 +30,16 @@ const List<String> kAiAgentResidentOps = <String>[
   'downloads.job.list',
 ];
 
+/// 某条操作此刻可用时才写进 system prompt 的一句话（[AiAgentToolbox.promptNote]）。
+/// 常驻内容每轮都付费：只放「不说模型就想不到要用」的，且只在可用时出现（没配
+/// 搜索后端 / 在设置里关了联网搜索的用户一个字也不多付）。
+const Map<String, String> kAiAgentOpPromptNotes = <String, String>{
+  'web.search':
+      'Web search is available: when the local library and metadata sources '
+      "can't answer (e.g. to check facts about a work), use web__search, then "
+      'web__read with a result id.',
+};
+
 /// 长任务结束的回调（会话 id、操作 id、任务 id、最终状态）。
 typedef AiAgentTaskFinished =
     void Function(
@@ -86,7 +96,8 @@ Object? redactAiAgentResult(Object? data) {
 ///   直接注入（spec §4.1）。
 /// - 每次写操作都记进本机 `ai_agent_actions`（不同步、不备份），撤销按记录里的
 ///   撤销载荷调 [OpUndo.revert]——过了会话、重启 app 也能撤。
-class AiAgentToolbox implements AgentToolbox, AgentSkillProvider {
+class AiAgentToolbox
+    implements AgentToolbox, AgentSkillProvider, AgentPromptNoteProvider {
   AiAgentToolbox({
     required this.invoker,
     required this.database,
@@ -94,6 +105,7 @@ class AiAgentToolbox implements AgentToolbox, AgentSkillProvider {
     this.resident = kAiAgentResidentOps,
     this.taskPollInterval = const Duration(seconds: 3),
     this.maxTaskWatch = const Duration(hours: 6),
+    this.promptNotes = kAiAgentOpPromptNotes,
     List<AiAgentAppSkill>? skills,
   }) : _clock = clock ?? DateTime.now,
        _skills = skills ?? buildAiAgentSkills();
@@ -124,7 +136,19 @@ class AiAgentToolbox implements AgentToolbox, AgentSkillProvider {
   final List<String> resident;
   final DateTime Function() _clock;
 
+  /// 操作 id → 可用时追加进 system prompt 的一句话（见 [kAiAgentOpPromptNotes]）。
+  final Map<String, String> promptNotes;
+
   OpCatalog get catalog => invoker.catalog;
+
+  @override
+  String? promptNote() {
+    final List<String> notes = <String>[
+      for (final MapEntry<String, String> e in promptNotes.entries)
+        if (_available(e.key) != null) e.value,
+    ];
+    return notes.isEmpty ? null : notes.join('\n');
+  }
 
   @override
   List<AgentToolSpec> residentTools() => <AgentToolSpec>[
@@ -173,14 +197,19 @@ class AiAgentToolbox implements AgentToolbox, AgentSkillProvider {
     final AgentToolResult? unavailable = unavailableResultOf(op);
     if (unavailable != null) return unavailable;
     final FushiOpSpec spec = op.spec;
-    if (spec.needsConfirmation && !invocation.confirmed) {
+    // 首次确认过的操作（[FushiOp.consentGranted]）不再逐次确认：用户那次点的同意
+    // 已由路由记进本机偏好，这里照「已表态」注入表态参数。
+    final bool needsConfirmation =
+        spec.needsConfirmation && !op.consentAlreadyGranted;
+    if (needsConfirmation && !invocation.confirmed) {
       // agent loop 保证不会走到这里；万一走到，绝不替用户表态。
       return const AgentToolResult.error('confirmation_required');
     }
     final Set<String> gates = <String>{
-      // 可逆操作：撤销就是兜底，直接注入；强制确认 / 不可逆：只在用户点了同意后注入。
+      // 可逆操作：撤销就是兜底，直接注入；强制确认 / 不可逆：只在用户点了同意
+      // （或之前已给过长期同意）后注入。
       if (spec.risk != OpRisk.read &&
-          (invocation.confirmed || !spec.needsConfirmation))
+          (invocation.confirmed || !needsConfirmation))
         for (final OpParam p in spec.gateParams) p.name,
     };
     final OpInvocation result;
@@ -352,6 +381,7 @@ AgentToolSpec agentToolSpecOf(FushiOp op) {
     confirm: spec.confirm,
     undoable: spec.undoable,
     longRunning: spec.longRunning,
+    preapproved: spec.needsConfirmation && op.consentAlreadyGranted,
   );
 }
 
