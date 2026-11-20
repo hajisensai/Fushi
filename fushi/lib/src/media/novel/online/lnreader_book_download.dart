@@ -9,6 +9,7 @@ import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 
 import 'package:fushi/src/media/novel/online/lnreader_epub_assembler.dart';
 import 'package:fushi/src/media/novel/online/lnreader_fetch_bridge.dart';
+import 'package:fushi/src/media/novel/online/lnreader_line_breaks.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
 import 'package:fushi/src/media/novel/online/lnreader_missing_images.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
@@ -211,7 +212,11 @@ class LnReaderBookDownload {
       imagePrefix: imagePrefix,
     );
     final List<LnReaderEpubImage> images = <LnReaderEpubImage>[];
-    String body = xhtml.xhtml;
+    // 源级开关「合并段内换行」（拍板台 zCkIxtnwcV）：在宿主清洗之后、落盘之前
+    // 接回句中折行；插件（上游 LNReader 仓库）不改。
+    String body = plugin.mergeLineBreaks
+        ? mergeLnReaderSoftLineBreaks(xhtml.xhtml)
+        : xhtml.xhtml;
     int dropped = 0;
     String? firstFailure;
     for (final ({String url, String fileName}) image in xhtml.images) {
