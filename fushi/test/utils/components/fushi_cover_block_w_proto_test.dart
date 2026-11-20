@@ -57,7 +57,11 @@ void main() {
   );
 
   /// 标题大字画在自己的盒子里：排出来的外框不越出 CustomPaint，且盒子在色块内。
-  void expectTitleInside(WidgetTester tester, String title) {
+  void expectTitleInside(
+    WidgetTester tester,
+    String title, {
+    double minFont = 20,
+  }) {
     final Finder paint = fitPaint(title);
     expect(paint, findsOneWidget, reason: '大字没画出来');
     final CustomPaint w = tester.widget<CustomPaint>(paint);
@@ -76,7 +80,7 @@ void main() {
     // 不是退回到最小字号的一行小字：W 原型的大字至少是正文的两倍。
     final double fontSize =
         (w.painter! as FushiFitTitlePainter).style.fontSize!;
-    expect(fontSize, greaterThan(20), reason: '字号 $fontSize');
+    expect(fontSize, greaterThan(minFont), reason: '字号 $fontSize');
   }
 
   const String title = 'K-ON!! ORIGINAL SOUND TRACK Vol.1';
@@ -183,7 +187,8 @@ void main() {
         const Size(330, 204),
       );
       expect(tester.takeException(), isNull);
-      expectTitleInside(tester, title);
+      // 窄盒里「ORIGINAL」要整词一行，测试字体（Ahem 每字等宽 = 字号）下只剩小字号。
+      expectTitleInside(tester, title, minFont: 10);
     });
 
     testWidgets('窄块（单格）仍是原摆法，不走海报版式', (WidgetTester tester) async {
@@ -203,44 +208,77 @@ void main() {
     });
   });
 
-  test('W 原型 fit()：wrapAnywhere 只看盒高，顶上留 0.1em', () {
+  group('fit()：拉丁单词不拆开、中日文照常逐字换行', () {
     const TextStyle style = TextStyle(fontWeight: FontWeight.w900, height: .92);
-    const Size box = Size(183, 223);
-    final double? anywhere = fushiFitTitleFontSize(
-      text: title,
-      style: style,
-      box: box,
-      minSize: 10,
-      maxSize: 84,
-      direction: TextDirection.ltr,
-      wrapAnywhere: true,
-    );
-    final double? keepWords = fushiFitTitleFontSize(
-      text: title,
-      style: style,
-      box: box,
-      minSize: 10,
-      maxSize: 84,
-      direction: TextDirection.ltr,
-    );
-    expect(anywhere, isNotNull);
-    expect(keepWords, isNotNull);
-    expect(anywhere!, greaterThanOrEqualTo(keepWords!));
-    final TextPainter p = TextPainter(
+
+    TextPainter layout(String text, double size, double width) => TextPainter(
       text: TextSpan(
-        text: title,
-        style: style.copyWith(
-          fontSize: anywhere,
-          letterSpacing: -0.04 * anywhere,
-        ),
+        text: text,
+        style: style.copyWith(fontSize: size, letterSpacing: -0.04 * size),
       ),
       textDirection: TextDirection.ltr,
-    )..layout(maxWidth: box.width);
-    expect(
-      p.height + anywhere * kFushiFitTitleTopPad,
-      lessThanOrEqualTo(box.height),
-    );
-    p.dispose();
+    )..layout(maxWidth: width);
+
+    test('「SUPERSTAR - EP」：最长的词整个放进一行，顶上留 0.1em', () {
+      // 用户截图里的海报大字盒（420×204 块：封面右侧约 175 宽）。
+      const Size box = Size(175, 136);
+      const String text = 'SUPERSTAR - EP';
+      final double size = fushiFitTitleFontSize(
+        text: text,
+        style: style,
+        box: box,
+        minSize: 10,
+        maxSize: 61,
+        direction: TextDirection.ltr,
+      )!;
+      final TextPainter p = layout(text, size, box.width);
+      expect(p.minIntrinsicWidth, lessThanOrEqualTo(box.width + 0.5));
+      // 首行恰好以整个「SUPERSTAR」结束，不在词中间断开。
+      final TextRange firstLine = p.getLineBoundary(
+        const TextPosition(offset: 0),
+      );
+      expect(
+        text.substring(firstLine.start, firstLine.end).trim(),
+        startsWith('SUPERSTAR'),
+      );
+      expect(
+        p.height + size * kFushiFitTitleTopPad,
+        lessThanOrEqualTo(box.height),
+      );
+      p.dispose();
+    });
+
+    test('中日文没有词边界，照常逐字换行（不被压成一行小字）', () {
+      const Size box = Size(175, 136);
+      const String text = '十一月的萧邦';
+      final double size = fushiFitTitleFontSize(
+        text: text,
+        style: style,
+        box: box,
+        minSize: 10,
+        maxSize: 61,
+        direction: TextDirection.ltr,
+      )!;
+      // 一行排下 6 个字最多 175 / 6 ≈ 29；逐字换行能拿到更大的字号。
+      expect(size, greaterThan(box.width / text.length + 5));
+    });
+
+    test('单词在最小字号（10 px）下仍放不进盒宽时才词内换行，照样完整显示', () {
+      const Size box = Size(60, 200);
+      const String text = 'Supercalifragilisticexpialidocious';
+      final double? size = fushiFitTitleFontSize(
+        text: text,
+        style: style,
+        box: box,
+        minSize: 10,
+        maxSize: 60,
+        direction: TextDirection.ltr,
+      );
+      expect(size, isNotNull);
+      final TextPainter p = layout(text, size!, box.width);
+      expect(p.height, lessThanOrEqualTo(box.height));
+      p.dispose();
+    });
   });
 
   group('调用点', () {

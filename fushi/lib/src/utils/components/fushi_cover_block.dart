@@ -824,7 +824,6 @@ class _FushiCoverBlockState extends State<FushiCoverBlock>
             shift: _watermark,
             direction: direction,
             semantic: true,
-            wrapAnywhere: true,
           ),
         ),
       ),
@@ -886,7 +885,6 @@ class _FushiCoverBlockState extends State<FushiCoverBlock>
           shift: _watermark,
           direction: direction,
           semantic: true,
-          wrapAnywhere: true,
         ),
       ),
       Positioned.fromRect(

@@ -58,11 +58,12 @@ TextPainter _layoutFitTitle(
 /// 高度判据与原型一致地计入 `span` 的 `padding-top: .1em`（排完的总高 +
 /// 0.1 × 字号 ≤ 盒高），字形顶上留出那一点气口。
 ///
-/// [wrapAnywhere] 为 false（水印）时先按「词不拆开」求（最长的不可断片段——
-/// 拉丁词——整个放得进盒宽，[TextPainter.minIntrinsicWidth]）：否则二分会为了
-/// 字号把短标题逐字母拆成一列碎片；只有最小字号下词都放不进盒宽时才允许词内
-/// 换行。为 true（W 原型 `.big`：唱片色块 / 专辑海报的标题大字）时照原型的
-/// `overflow-wrap: anywhere` 只看盒高，词可以在任意处折行。
+/// 拉丁单词不拆开：字号上限还要满足「最长的不可断片段（拉丁词）整个放进一行」
+/// （[TextPainter.minIntrinsicWidth] ≤ 盒宽），否则二分会为了字号把
+/// 「SUPERSTAR」排成「SUPERS / TAR」。中日文每个字都是断行点，照常逐字换行。
+/// 只有 [minSize]（唱片 / 海报大字 10 px，水印 max(22, 0.12 × 块高)）下单词
+/// 仍放不进盒宽时，才退回词内换行（原型的 `overflow-wrap: anywhere`），照样完整
+/// 显示。水印与唱片 / 海报大字共用这一套判据。
 double? fushiFitTitleFontSize({
   required String text,
   required TextStyle style,
@@ -70,7 +71,6 @@ double? fushiFitTitleFontSize({
   required double minSize,
   required double maxSize,
   required TextDirection direction,
-  bool wrapAnywhere = false,
 }) {
   if (text.trim().isEmpty || box.width <= 0 || box.height <= 0) return null;
   if (maxSize < minSize) return null;
@@ -83,7 +83,8 @@ double? fushiFitTitleFontSize({
     );
     final bool ok =
         painter.height + size * kFushiFitTitleTopPad <= box.height &&
-        (!keepWords || painter.minIntrinsicWidth <= box.width + 0.5) &&
+        // 不留容差：画的时候按盒宽排版，宽出一丝也会把词从中间断开。
+        (!keepWords || painter.minIntrinsicWidth <= box.width) &&
         painter.computeLineMetrics().every(
           (LineMetrics line) => line.width <= box.width + 0.5,
         );
@@ -91,8 +92,8 @@ double? fushiFitTitleFontSize({
     return ok;
   }
 
-  bool keepWords = !wrapAnywhere;
-  if (!fits(minSize, keepWords: keepWords)) {
+  bool keepWords = true;
+  if (!fits(minSize, keepWords: true)) {
     if (!fits(minSize, keepWords: false)) return null;
     keepWords = false;
   }
@@ -192,7 +193,6 @@ class FushiFitTitle extends StatelessWidget {
     this.shift,
     this.direction,
     this.semantic = false,
-    this.wrapAnywhere = false,
     super.key,
   });
 
@@ -212,10 +212,6 @@ class FushiFitTitle extends StatelessWidget {
 
   /// true = 这就是标题（读屏读一遍）；false = 装饰水印（不进语义）。
   final bool semantic;
-
-  /// 词可在任意处折行（W 原型 `.big` 的 `overflow-wrap: anywhere`），见
-  /// [fushiFitTitleFontSize]。
-  final bool wrapAnywhere;
 
   @override
   Widget build(BuildContext context) {
@@ -237,7 +233,6 @@ class FushiFitTitle extends StatelessWidget {
           minSize: minSize,
           maxSize: maxSize,
           direction: dir,
-          wrapAnywhere: wrapAnywhere,
         );
         if (size == null) {
           return semantic
