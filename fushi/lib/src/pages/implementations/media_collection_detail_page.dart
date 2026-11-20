@@ -136,6 +136,7 @@ import 'package:fushi/src/pages/implementations/ai_settings_route.dart'
 import 'package:fushi/src/media/video/subtitle/remote_video_subtitle_service.dart'
     show
         RemoteVideoSubtitleEpisode,
+        RemoteVideoSubtitleSeasonMember,
         RemoteVideoSubtitleTarget,
         appRemoteVideoSubtitleService;
 import 'package:fushi/src/media/video/subtitle/remote_video_subtitle_sheet.dart'
@@ -1527,22 +1528,21 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   }
 
   Future<void> _generateRemoteSeasonJaSubtitles(AppModel appModel) async {
-    bool hasJapanese(RemoteVideoInfo m) =>
-        m.subtitleFileName?.toLowerCase().endsWith('.ja.srt') ?? false;
+    // 「已有字幕跳过」按面板里选的语言算（[RemoteVideoSubtitleTarget.forLanguage]）。
     await showRemoteVideoSubtitleSheet(
       context: context,
       service: appRemoteVideoSubtitleService(appModel),
-      target: RemoteVideoSubtitleTarget(
+      target: RemoteVideoSubtitleTarget.season(
         title: _canonicalWork?.title ?? _name,
-        wholeSeason: true,
-        episodes: <RemoteVideoSubtitleEpisode>[
+        members: <RemoteVideoSubtitleSeasonMember>[
           for (final RemoteVideoInfo m in _remoteMembers)
-            if (!hasJapanese(m))
-              RemoteVideoSubtitleEpisode(videoId: m.id, title: m.title),
-        ],
-        skippedExisting: <String>[
-          for (final RemoteVideoInfo m in _remoteMembers)
-            if (hasJapanese(m)) m.title,
+            RemoteVideoSubtitleSeasonMember(
+              episode: RemoteVideoSubtitleEpisode(
+                videoId: m.id,
+                title: m.title,
+              ),
+              subtitleFileName: m.subtitleFileName,
+            ),
         ],
       ),
       prefs: PrefsRepoVideoSubtitleGeneratePrefs(appModel.prefsRepo),
