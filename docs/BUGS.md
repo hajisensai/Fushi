@@ -326,6 +326,7 @@
 | [BUG-4947](bugs/BUG-4947-audio-source-row-stale-index-removeat.md) | ✅ | ✅ | 音频源对话框连点删除崩溃（RangeError @ List.removeAt） |
 | [BUG-4937](bugs/BUG-4937-music-grid-layout-still-blocks.md) | ✅ | ✅ | music-grid-layout-still-blocks |
 | [BUG-4946](bugs/BUG-4946-miui-onekeyclean-exit-misreport.md) | ✅ | ✅ | 小米 MIUI / HyperOS 一键清理（OneKeyClean）被误报为闪退 |
+| [BUG-4949](bugs/BUG-4949-srs-conflicts-page-quadratic-group-count.md) | ✅ | ✅ | iOS 同步冲突页扣住的删除上万条时 build 占住主线程数秒，被看门狗 0x8BADF00D 杀掉 |
 | [BUG-4905](bugs/BUG-4905-ai-cast-text-substitutions.md) | ✅ | ✅ | 小说和漫画 AI 标注未应用系列用词替换表 |
 | [BUG-4904](bugs/BUG-4904-book-series-key-store-annotation.md) | ✅ | ✅ | 书店写法「卷号<系列名> (文库名)」的分卷导入后不归合集 |
 | [BUG-4903](bugs/BUG-4903-home-desktop-continue-cut-edge-title-concat.md) | ✅ | ✅ | 首页（桌面）「继续」右侧卡被窗口切掉一半、标题拼接成「Re：ゼロ…1<Re：…」 |
