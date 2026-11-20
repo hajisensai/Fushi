@@ -12,6 +12,8 @@ import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_remote_title.dart';
 import 'package:fushi_engine/media/video/live_transcode.dart';
+import 'package:fushi_engine/media/video/video_fingerprint_store.dart';
+import 'package:fushi_engine/media/video/video_fingerprint_warmer.dart';
 import 'package:fushi_engine/media/video/video_source_fingerprint.dart';
 import 'package:fushi_engine/sync/ai_relay_routes.dart';
 import 'package:fushi_engine/sync/bluray_clip_relay_pool.dart';
@@ -546,9 +548,15 @@ class FushiSyncServer {
     FushiRemoteGameStreamService? gameStreamService,
     VideoRemoteService? videoRemoteService,
     @visibleForTesting BlurayClipRelayPool? blurayClipRelays,
+    @visibleForTesting
+    Duration videoFingerprintWarmDelay = const Duration(minutes: 1),
   }) : assert(listenScope == null || !allowLan, 'listenScope 与 allowLan 只给一个'),
        syncDataDir = p.join(syncDataDir, 'sync-data'),
        _blurayClipRelays = blurayClipRelays ?? BlurayClipRelayPool(),
+       _videoFingerprintWarmDelay = videoFingerprintWarmDelay,
+       _videoFingerprintStore = VideoFingerprintStore(
+         File(p.join(syncDataDir, 'video_fingerprints.json')),
+       ),
        _requestedPort = port,
        _token = token,
        _listenScope =
@@ -644,6 +652,17 @@ class FushiSyncServer {
   /// 偏好读侧（互联 host 的实时转码开关）。null = 调用方没接线（老调用方、单测），
   /// 按默认值走，行为与从前一致。
   final PrefStore? _prefs;
+
+  /// 视频指纹落盘缓存（拍板台 left3657）。放在 sync-data（WebDAV 根）的**上一级**，
+  /// 不经 WebDAV 暴露给对端；起服务时挂到 [VideoSourceFingerprint.instance]。
+  final VideoFingerprintStore _videoFingerprintStore;
+
+  /// 起服务后多久开始后台预热视频指纹（避开启动高峰）。
+  final Duration _videoFingerprintWarmDelay;
+  Timer? _videoFingerprintWarmStart;
+
+  /// 后台低优先级预热视频指纹；host 不提供媒体库时为 null。
+  VideoFingerprintWarmer? _videoFingerprintWarmer;
   final DateTime Function() _now;
 
   /// 单词音频 token（TTL 5 分钟 + BUG-908(a) 上限 128）与查词/制卡端点的 handler
@@ -1025,6 +1044,7 @@ class FushiSyncServer {
     final shelf.Handler handler = _buildHandler();
     try {
       _server = await _bindListener(handler);
+      _startVideoFingerprintWarmup();
     } on SocketException catch (e) {
       if (isAddressInUseError(e)) {
         throw SyncServerPortInUseException(_requestedPort);
@@ -1208,6 +1228,7 @@ class FushiSyncServer {
     await _screenOcr?.dispose();
     await _hostJobs?.disposeAll();
     await _assistant?.dispose();
+    _stopVideoFingerprintWarmup();
   }
 
   /// gzip 压缩 JSON/XML 文本响应（`Accept-Encoding: gzip` 内容协商）。

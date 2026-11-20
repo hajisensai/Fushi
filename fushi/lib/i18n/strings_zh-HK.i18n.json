@@ -2114,6 +2114,7 @@
   "card_source_review_draft_saved": "修改已保留為本地草稿，請恢復草稿後重新核對並手動提交。",
   "card_source_review_failed": "修改尚未儲存，原卡可能已被修改或裝置不可達。",
   "card_source_review_fingerprint_mismatch": "當前檔案與卡片來源不一致，請使用對應的原檔案。",
+  "card_source_review_host_unreadable": "互聯主機上有這條影片，但讀不到它的檔案（可能已被移走或刪除）。",
   "card_source_review_invalid": "來源連結無效或版本暫不支持。",
   "card_source_review_local_required": "請先下載影片，再進行不影響伺服器進度的回看。",
   "card_source_review_media_missing": "此裝置沒有對應來源，請先匯入或下載作品。",

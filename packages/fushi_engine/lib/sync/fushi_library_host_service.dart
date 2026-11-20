@@ -89,6 +89,15 @@ const String kVideoFingerprintReasonNotFound = 'not_found';
 /// [kVideoFingerprintUnavailableStatus] 的 reason：文件读不了 / 算的期间被改写。
 const String kVideoFingerprintReasonUnreadable = 'unreadable';
 
+/// `/fingerprint` 的「不等」查询参数（拍板台 left3657）：带 `wait=0` 时 host 不当场
+/// 整文件哈希——已算过（内存 / 落盘缓存，含后台预热的）回 200 + 指纹；还没算过回
+/// [kVideoFingerprintPendingStatus] 并在后台开算。卡片回跳用它，不让用户干等几十秒。
+/// 老 host 不认这个参数，照旧当场算完再答（与改动前一致）。
+const String kVideoFingerprintWaitQueryParam = 'wait';
+
+/// `/fingerprint?wait=0` 时「还没算好、已在后台开算」的状态码（拍板台 left3657）。
+const int kVideoFingerprintPendingStatus = 202;
+
 // ── 改名前的旧 header 名（Hibiki → Fushi，2026-10）─────────────────────────────
 //
 // 互联两端可能跑不同版本：改名前的 client / host 只认 `X-Hibiki-*`。旧名照样**发**
