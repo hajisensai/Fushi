@@ -288,7 +288,10 @@ void main() {
     final File manga = File(p.join(root.path, 'pages.epub'))
       ..writeAsBytesSync(_realEpubBytes('TODO 2189 manga', pureImage: true));
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    // 书籍框的开包定性走后台 isolate，`.epub` 探测解进书库根的 `.tmp-*`。
+    EpubStorage.debugBaseDirectoryOverride = root.path;
     addTearDown(() async {
+      EpubStorage.debugBaseDirectoryOverride = null;
       await db.close();
       if (root.existsSync()) root.deleteSync(recursive: true);
     });
@@ -322,7 +325,12 @@ void main() {
     );
     await tester.pump();
     await tester.tap(find.text(t.dialog_import));
-    await tester.pumpAndSettle();
+    // 定性在真后台 isolate 里跑：给真时间，而不是只推假时钟。
+    await _pumpUntil(
+      tester,
+      condition: () async =>
+          find.text(t.manga_import_detected_title).evaluate().isNotEmpty,
+    );
 
     expect(
       find.text(t.manga_import_detected_title),
@@ -373,6 +381,11 @@ void main() {
         Future<void>.sync(
           () => dropTarget.onDrop(<String>[manga.path], Offset.zero),
         ),
+      );
+      await _pumpUntil(
+        tester,
+        condition: () async =>
+            find.text(t.manga_import_detected_title).evaluate().isNotEmpty,
       );
       await tester.pumpAndSettle();
       expect(find.text(t.manga_import_detected_title), findsOneWidget);

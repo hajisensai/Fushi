@@ -709,7 +709,7 @@ class _BookImportDialogState extends State<BookImportDialog>
   /// 不让「猜个初值」这种锦上添花的事挡住转录入口。
   Future<AsrLanguage?> _asrLanguageHintFromPendingBook() async {
     final String? path = _epubPath;
-    if (path == null || _classifyCarrier(path) != ImportCarrier.epub) {
+    if (path == null || await _classifyCarrier(path) != ImportCarrier.epub) {
       return null;
     }
     try {
@@ -734,7 +734,7 @@ class _BookImportDialogState extends State<BookImportDialog>
   /// 来源（epub）：用户手打过的标题不动；读取期间重选了别的文件也不回写。读取在
   /// 后台 isolate；包坏了照旧保留文件名并记日志，真正的失败交给导入那一步报。
   Future<void> _fillTitleFromEpubMetadata(String path) async {
-    if (_classifyCarrier(path) != ImportCarrier.epub) return;
+    if (await _classifyCarrier(path) != ImportCarrier.epub) return;
     final String? title;
     try {
       title = await readEpubTitleInBackground(path);
@@ -1391,7 +1391,7 @@ class _BookImportDialogState extends State<BookImportDialog>
     // PDF + 字幕 + 音频：PDF 走自己的导入器（落库 format='pdf'），对齐时引擎按
     // format 取 PDF 文本层逐页全文（`loadBookTextSections`），PDF 阅读器播放 + 高亮。
     // 以前这里只认 EPUB / 文本，PDF 被塞进 EpubImporter 当 zip 解包直接失败。
-    final bool isPdf = _classifyCarrier(_epubPath!) == ImportCarrier.pdf;
+    final bool isPdf = await _classifyCarrier(_epubPath!) == ImportCarrier.pdf;
     if (isPdf) {
       reportProgress(0.2, t.import_step_importing_book);
       bookKey = await PdfImporter.importFromPath(
