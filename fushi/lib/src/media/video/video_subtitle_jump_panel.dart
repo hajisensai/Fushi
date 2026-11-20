@@ -1020,12 +1020,20 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   /// 记下：布局 / 滚动帧只读数组。
   ///
   /// 生命期 = 一次构建：两个列表构建点（经典 / M3E）进来先 [_resetRowExtentMemo]，
-  /// 收藏切换、当前句加粗、字号 / 字体 / 宽度档位这些会改行高的输入都经 setState
-  /// 重建，自然换一份新备忘；同一次构建里行高与已构建的行严格一致。行宽在不重建
-  /// 的情况下也可能变（父级只改约束），所以宽度变了也整份作废。
+  /// 字号 / 字体 / 宽度档位这些会改行高的输入都经 setState 重建，自然换一份新备忘；
+  /// 同一次构建里行高与已构建的行严格一致。不重建也可能变的输入另作备忘键：行宽
+  /// （父级只改约束）、当前句（加粗改断行，决定 [_isRowBold]）——任一变了整份作废，
+  /// 不依赖「换句一定 setState」这条隐式契约。
+  ///
+  /// 收藏态（M3E 收藏行多一颗星）是唯一靠重建作废的行高输入：[isCueFavorited] 是
+  /// 谓词、没有版本号可做键，逐行调它正是本备忘要省掉的开销。契约：收藏变化必须
+  /// 让面板重建（页面层 toggle 收藏后 setState，面板的 `isCueFavorited` 参数随之
+  /// 重新下发）；以后若改成不重建面板的 Listenable 驱动，必须同时在那条通知里调
+  /// [_resetRowExtentMemo]。
   List<double?> _rowExtentMemo = const <double?>[];
   List<int>? _rowExtentMemoIndexes;
   double? _rowExtentMemoWidth;
+  int? _rowExtentMemoCurrentCue;
 
   void _resetRowExtentMemo() {
     _rowExtentMemoIndexes = null;
@@ -1039,11 +1047,14 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     int visibleIndex,
     double rowWidth,
   ) {
+    final int currentCue = widget.controller.currentCueIndex;
     if (!identical(visibleIndexes, _rowExtentMemoIndexes) ||
         rowWidth != _rowExtentMemoWidth ||
+        currentCue != _rowExtentMemoCurrentCue ||
         _rowExtentMemo.length != visibleIndexes.length) {
       _rowExtentMemoIndexes = visibleIndexes;
       _rowExtentMemoWidth = rowWidth;
+      _rowExtentMemoCurrentCue = currentCue;
       _rowExtentMemo = List<double?>.filled(visibleIndexes.length, null);
     }
     final double? memo = _rowExtentMemo[visibleIndex];
