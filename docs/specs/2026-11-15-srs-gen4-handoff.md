@@ -4005,7 +4005,7 @@ exit 1；成功 949、失败 9、错误 6、跳过 21，实际执行 964。上�
 
 **交给别的模块的缺陷 / 待拍板（本模块没改）：**
 
-1. **旧备份覆盖恢复后卡片与日志脱钩（✘，归 G11-4 / G9 导入与身份）**：v3.3.0 整包备份在新版本上「覆盖」恢复，`srs4.db` 有 6 卡 / 12 条
+1. **旧备份覆盖恢复后卡片与日志脱钩（✘ → 复核轮已修，BUG-4906，见下「复核轮」）**：v3.3.0 整包备份在新版本上「覆盖」恢复，`srs4.db` 有 6 卡 / 12 条
    `log_ix`，但卡片是用不带盐的模板 ID 重新派生的（与迁移路径得到的规范 ID 也不同），对不上日志和 `alias_ix`；6 张全 `hidden=1`、`queue new`、
    `reps 0`；`salt_ix` 只有本机 uid，没有备份里的 uid；恢复后主库 profile uid 是本机的、`collections` 行 dir 是备份的。界面上卡片总数 0。
    指向 `dispatch.rs` `legacy_backup_import` → `cmd/backup.rs` `land` → `identity.rs` `collection_adopt_with` / `adopt_foreign` 的 Bound 分支只写本机
@@ -4017,8 +4017,28 @@ exit 1；成功 949、失败 9、错误 6、跳过 21，实际执行 964。上�
 3. **控制通道对未迁移库回 500**（`SrsStoreNotMigrated` 当内部错误），不是可机读的「先迁移」4xx；ctl / AI 调用方得认错误文本。建议归控制通道 owner
    映射成 409 / 422 + 机读码。
 4. **itest 下迁移页不出来**：Windows 离屏 runner 的 debug itest 里，未迁移库让复习页一直转圈（provider 状态已是错误、`.future` 不完成、错误日志有
-   UncaughtZone），判为 itest 的 zone 混用问题；release 包同样数据根错误日志里没有 UncaughtZone，provider 链单测无误。但 release 的迁移页像素
+   UncaughtZone），第一轮判为 itest 的 zone 混用问题（当时未证实，复核轮用判别实验证实，见下）；release 包同样数据根错误日志里没有 UncaughtZone，provider 链单测只说明单 zone 下能落定。但 release 的迁移页像素
    没看到——要在可见窗口 / 真机上补看一眼。本次迁移改走按钮背后的 `SrsGen4MigrationController.start()`。
 
 缺口：Android / macOS / iOS 真机、Linux 服务端、fushi_server beta 全没做；`.fushisrs` 四向没有自动化入口；所有「旧版本给用户的提示文字」
 只有控制通道证据、没有真像素。
+
+### 第六波 R0 复核轮（2026-11-20，同分支续提交）
+
+按复核意见改了五处，细节与证据在 R0 文档 §4.1 / §4.6 / §5：
+
+- **BUG-4906 已按根因修**（复核 major 2）：旧整包备份认领结论为 `bound`（本机 profile 打开过、空集合换绑 / 没绑过）时，`cmd/backup.rs` `land`
+  由本机写一条 `Salts` 声明备份 profile 的盐（协议 3 备份里没有 `Salts` 操作，`Bound` 本身只带本机盐）。`cmd/identity.rs` 的 `carry_salts`
+  改名 `declare_salts` 供两处共用。没有改 `collection_adopt_with` 的 `Bound` 分支一律写调用方给的盐：那样位置认领 / `.fushisrs` 第 2 版也多写
+  一条本机 `Salts`，打破 4 条既有测试（含两台设备 `canonical_ids` 不收敛）。新测试 `backup_tests.rs`
+  `a_protocol_3_backup_replacing_a_fresh_profile_keeps_its_salts_and_cards`，变异实测红 / 还原绿；修后 release（同一 `fushi.exe` + 新
+  `fushi_fsrs.dll`）重跑 e1-replace：6/6 卡、12/12 条日志逐条一致。这条原归 G11-4 / G9，**不再是 gen4 合并的阻断项**。
+- **迁移页转圈的原因已证实**（复核 major 1）：在帧回调里走「重试」同一条作废后迁移页随即出现，证实是 itest 的错误 zone 错位（启动时在
+  `runZonedGuarded` 里建的失败 future 跨不到 itest 的帧 zone）。迁移页 / 进度页 / 迁移后复习页有 debug 真像素（`r0-a-zone4`）。
+  **仍没做到**：release 的迁移页像素（离屏 PrintWindow 全黑，UI Automation 也读不到语义树）；「开始升级」用 Tab 和焦点请求都走不到——
+  焦点被首页外壳里一个无标签 `Focus`（祖先 `HomeSyncExitScope`）占着，按钮本身 `enabled=true`、`canStart=true`。itest 改调按钮 `onPressed`。
+  这是 `HomePage.debugSelectTab` 换页后焦点不进内容的 itest 现象，还是桌面键盘用户也走不到，**没查清**，交焦点所有权 / G10 迁移界面 owner。
+- `r0_compare.py`（复核 minor 1）：换算前记 `old_cards_raw`，两张旧卡换到同一规范 ID 报 `collision`；按卡逐条比 `(日志 ID, 时间, 评分, 用时)`
+  （新库取 `stats`）；新增 `r0_compare_test.py` 4 例。
+- `controller.outcome` 提交后为 null（复核 minor 2）：按契约就是这样（`outcome` 只放提交以外的结论），不是缺陷。
+- 单测 `srs_deck_list_not_migrated_test.dart` 的措辞（复核 nit）：R0 文档改成「单 zone 下 provider 链落定」，不再拿它当「环境问题」的依据。

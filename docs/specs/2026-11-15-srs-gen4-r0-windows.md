@@ -47,13 +47,13 @@
 
 | 格 | 内容 | 结论 | 证据 |
 |---|---|---|---|
-| (a) | v3.3.0 建库 / 制卡 / 复习 → 新版本迁移 | ✔ 数据：6 卡 / 12 日志逐卡一致；— 提示页：itest 里迁移页没出来（见 (a) 说明），改走 `controller.start()` | `r0-a-migrate3`、`D:/fushi-r0/M/a3-compare.json` |
+| (a) | v3.3.0 建库 / 制卡 / 复习 → 新版本迁移 | ✔ 数据：6 卡 / 12 日志逐卡逐条一致；✔ 迁移页 / 进度页 / 迁移后复习页 debug 真像素（复核轮 `r0-a-zone4`）；转圈的原因证实是 itest 的错误 zone 错位；— release 迁移页像素仍没有；— 「开始升级」没能用 Tab 走到（焦点被首页级节点占着），改调按钮的 `onPressed` | `r0-a-migrate3`、`r0-a-zone4`、`D:/fushi-r0/M/a3-compare-v2.json` |
 | (a2) | 新 release 只打开旧根、不迁移 | ✔ SRS 不动；✘?（规划外）主库被升到 159，见 (c0) | `20261120-124602-r0-a2-new-first-open` |
 | (b) | 迁移后旧版本再打开 | ✔ 显式拒绝、不写（SRS 层字节比对，只有 D3 例外字节） | `20261120-142928-r0-b1-v330-swap`、`20261120-143005-r0-b2-v301-full` |
 | (c) | 迁移途中硬结束 | ✔ 提交前硬结束：旧库字节不变、v3.3.0 照常可用（SRS 层），新版本重开后重新迁移、逐卡一致 | `r0-c-kill2`、`20261120-144625-r0-c1-v330-killed`、`r0-c-resume` |
 | (c0) | 新版本打开过的根，旧版本再开 | 旧版本整个 app 起不来（主库 schema 159 > 146 / 118），SRS 文件不动 | `20261120-124632-r0-c0-old-after-new-open`、b2 |
 | (d) | 文件夹位置三态 | ✔ 只有旧 → 新加入；✔ 两代都有 → 旧版本不动目标；✔ 只有新 → 旧版本不动目标；— 旧版本的提示文字没看到像素 | `D:/fushi-r0/M/d/*.json` |
-| (e) | 备份四个方向 | ✔ 新备份 → v3.3.0 / v3.0.1 拒绝；✔ 旧备份 → 新（合并）按设计要用户确认；✘ 旧备份 → 新（覆盖）卡片 ID 与日志脱钩；— `.fushisrs` 四向没有自动化入口 | `D:/fushi-r0/M/e1-*.json`、`e2.json` |
+| (e) | 备份四个方向 | ✔ 新备份 → v3.3.0 / v3.0.1 拒绝；✔ 旧备份 → 新（合并）按设计要用户确认；✘→✔ 旧备份 → 新（覆盖）卡片 ID 与日志脱钩，复核轮按根因修了（BUG-4906），修后 release 重跑 6/6 卡、12/12 条日志逐条一致；— `.fushisrs` 四向没有自动化入口 | `D:/fushi-r0/M/e1-*.json`、`e2.json`、`e1r-fix-compare.json` |
 
 ### 4.1 (a) 旧版本数据 → 新版本迁移
 
@@ -66,8 +66,31 @@
   error zone 边界」：itest 的测试 zone 与 app 的 `runZonedGuarded` zone 混用。佐证：同一类数据根（`M/a`、`M/v`）用 **release 包**
   打开并导航到复习页 45 s，错误日志里 0 条 UncaughtZone。provider 链本身单测无误：新增
   `fushi/test/srs/srs_deck_list_not_migrated_test.dart`（4 例：先读库 / 修订号跳的组合），库报要迁移时牌组列表 10 s 内以
-  `SrsStoreNotMigrated` 落定（exit 0，+4）。**结论：判为 itest 环境问题、不是产品缺陷，但 release 的迁移页像素没看到**
-  （离屏 release 窗口 PrintWindow 全黑；`--onscreen` 抓屏抓到的是桌面别的窗口，已删）。真机 / 可见窗口复核留缺口。
+  `SrsStoreNotMigrated` 落定（exit 0，+4）——它只说明**单 zone 下** provider 链能落定，复现不了 itest 里的转圈，不能当「判为环境问题」
+  的依据。第一轮的结论「判为 itest 环境问题」当时**未证实**（复核意见），复核轮补了判别实验（下一条）。
+- **复核轮判别（`r0-a-zone2` / `r0-a-zone3` / `r0-a-zone4`，同一份种子，debug itest，各 exit 0、实际执行 1 条用例）**：假设是存储 / store
+  两层由 app 启动时在 `main.dart` 的 `runZonedGuarded`（错误 zone A，常驻装配 `srsAppRuntimeProvider` 的 `readStore`）里先建，缓存的
+  `.future` 落在 A；itest 的 binding 在测试文件 `main` 里初始化，帧回调（复习页 / 牌组列表 build）跑在另一个错误 zone，Dart 的错误不跨错误
+  zone 投递，帧 zone 里 await 那个已失败的 future 永远等不到、错误按 A 的未捕获错误记日志（`UncaughtZone`）。实验：90 s 转圈、三个 `.future`
+  5 s 都超时之后，**在帧回调里**走复习页错误态「重试」同一条作废（`retrySrsStoreOpen` 的口径：只作废失败的存储 / store 两层），重建出的
+  future 落在帧 zone。结果三轮都一样：作废后迁移页随即出现（`after frame-zone retry: found=true`，牌组列表从 `AsyncLoading` 变成
+  `AsyncError(SrsStoreNotMigrated)`），屏上文字「复习库升级 | 这个版本用新的格式保存复习数据。升级会把现有的卡片和复习记录转换过去；
+  旧库会原样封存保留，不会删除任何东西。 | 开始升级」。同一份数据、同一个 provider，只换了 future 建在哪个 zone，转圈就消失——**假设成立**。
+  正式版 binding 在 zone A 里初始化，帧回调也在 A，不存在这个错位；但这是由机制推出的，**release 上的迁移页像素 / 界面状态仍没直接看到**
+  （见下「release 取证」）。
+- 真像素（`fushi/.codex-test/windows-itest/r0-a-zone4/screenshots/`）：`r0-01-prompt.png` 迁移页（进场动画中，按钮与图标已出现）、
+  `r0-02-progress.png` 进度页（「复习库升级 / 正在升级，期间可以继续使用其他功能。/ 1/10 检查剩余空间 / 最后一步之前都可以取消，取消后一切
+  保持原样。/ 取消」）、`r0-03-after.png` 迁移后复习页（6 张待复习、保持率 83%、近 30 天 12 次复习）。迁移 `@62ms running → @275ms parity
+  → @398ms committed`，`status after: state=ready`；`error_log` 里 6 条 `UncaughtZone SrsStoreNotMigrated` 都是作废之前的 zone A 打开。
+- **焦点驱动没走到「开始升级」**（`r0-a-zone2` / `zone3`）：Tab 发了 60 次（每次 `sendKeyEvent` 都送达），焦点始终停在同一个无标签
+  `Focus` 上；`FocusDriver.requestFocusInside(按钮)` 也拿不到焦点。诊断（`zone4`）：按钮 `FilledButton enabled=true`、`canStart=true`、
+  主库开着；占着焦点的节点在首页外壳里（祖先 `_ActionsScope < Actions < PopScope < ValueListenableBuilder<bool> < HomeSyncExitScope <
+  BackdropGroup …`）。`zone4` 因此改调这个可用按钮的 `onPressed`（与 Enter 激活同一个回调，不是坐标点击）。这是 itest 经
+  `HomePage.debugSelectTab` 换页后焦点不进页面内容、还是桌面键盘用户也走不到这个按钮，**没查清**；属焦点所有权（`docs/agent/focus-ownership.md`）
+  / G10 迁移界面，见交接文档本节复核轮。另：第一轮 `r0-a-zone` 在 `FocusDriver.focusWidget` 后一言不发挂了 18 分钟（被我按 PID 结束），
+  推测是遍历耗尽后 `expect` 失败、live binding 收尾挂住；后几轮改成每步记日志、按键带 10 s 超时、不让 `expect` 在这里失败。
+- **release 取证**：复核轮试过用 UI Automation 读离屏 release 窗口的无障碍树（`20261120-153615-r0-ui2-release-prompt-view`），
+  Flutter 视图只回窗口外壳 1–2 个节点、没有语义子树，取不到界面状态，工具没有入库。release 的迁移页仍只有控制通道证据（500 / 422），留缺口。
 - 迁移改走按钮背后的同一个入口 `SrsGen4MigrationController.start()`（`FUSHI_R0_FALLBACK_START=true`），探针：
   `@47ms running → @258ms precondition → @366ms committed`，`status after: state=ready`。迁移后复习页（真像素
   `r0-a-migrate3/screenshots/r0-03-after.png`）：今日 6 张待复习、Default 牌组 6 张 · 已掌握 2、保持率 83%、近 30 天 12 次复习。
@@ -75,6 +98,15 @@
   exit 0：`old_cards 6 = new_cards 6`、`old_logs 12 = new_logs 12`、`diffs []`；比的列是 queue / due_day / due_at /
   scheduled_days / reps / lapses / stability / difficulty / last_reviewed_at / deck_id / suspended / note_id 与每卡日志条数。
   新代把带 profile 盐的内置派生 ID 规范化（`alias_ix` 15 行，卡片 6 条 how=2、其余 how=1），比对前经 `alias_ix` 换算（`aliased 30`）。
+  **复核轮重比**（`r0_compare.py` 补了两处：换算前记旧卡行数 `old_cards_raw`、两张旧卡换到同一规范 ID 报 `collision` 不再被
+  dict 覆盖吞掉；每张卡逐条比日志 `(日志 ID, 时间, 评分, 用时)`，新库取派生的 `stats` 表——`log_ix` 不带评分。单测
+  `tool/srs_old_binary/r0_compare_test.py` 4 例，`python -I` 跑 `Ran 4 tests … OK`；拿上一版比对器跑同一份单测 1 失败 2 错误）：
+  同一份 `M/a3` 重比 exit 0：`old_cards_raw 6 = old_cards 6 = new_cards 6`、12/12 条日志逐条 ID / 时间 / 评分 / 用时一致、
+  `diffs []`（`D:/fushi-r0/M/a3-compare-v2.json`，`aliased 36`：比上次多的 6 次是旧库逐条日志按卡分组时的卡片 ID 换算）。
+- 迁移提交后 `controller.outcome` 为 null（探针 `finished … phase=committed outcome=null`）**不是缺陷**：
+  `SrsGen4MigrationController.outcome` 的契约就是「提交以外的结论」（`fushi/lib/src/srs/srs_gen4_migration_controller.dart`
+  `outcome` 的文档：没开始 / 放弃 / 取消 / 空间不够），`start()` 在 `committed` 分支只调 `onCommitted()`（重开存储）、置
+  `phase=committed`，复习页随即换回正常内容，迁移页（`srs_generation_view.dart` 读 `outcome` 只为显示失败原因）不再显示。
   迁移报告 `srs4-migration-report.json`：`profileVerdict pass`，日志新旧 12/12、带日志卡 6/6，`knownDifferences.total 0`。
 - 迁移后 `srs.db` 封存：`srs_meta.schema 39999`、`sealed_into srs4.db`、`sealed_from 26`；`srs4.db` schema 40024。
 
@@ -137,12 +169,25 @@
   行 dir 是 `01a1ec82`。app 里卡片总数 0、保持率却算出 6 次复习。`r0_compare.py --old A/old-root-pristine/app-support --new M/e/replace-root/app-support`
   12 条 `missing_in`。根因指向旧备份导入（`dispatch.rs` `legacy_backup_import` → `cmd/backup.rs` `land` → `identity.rs`
   `collection_adopt_with` / `adopt_foreign` 的 Bound 分支只写本机 carry 盐，备份的盐（`legacy::salts`）没进 `salt_ix`），带盐的内置 ID 没能换算到规范 ID。
-  属 G11-4 / G9（导入 / 身份），本模块不改，见交接文档本节与 not_done。
+  属 G11-4 / G9（导入 / 身份），第一轮没改。
+  **复核轮已按根因修（BUG-4906，`docs/bugs/BUG-4906-srs-gen4-legacy-backup-replace-drops-backup-salts.md`）**：根因确认在认领结论
+  `bound`（本机 profile 已打开过、空集合、目录名大于备份 uid → `rebind_empty` 换绑）之后只写本机盐；`Bound` 的设计是对方的盐随对方的操作到，
+  而协议 3 备份里没有任何 `Salts` 操作。修法：`cmd/backup.rs` `land` 在 `bound` 时由本机声明备份 profile 的盐（`legacy::salts`，已过身份确认），
+  再落 `import_backup`。没有改成「`Bound` 一律写调用方给的盐」——那样位置认领 / `.fushisrs` 第 2 版也多写一条本机 `Salts`，实测打破 4 条既有测试
+  （含 `sync_relay_tests::devices_converge_after_a_join` 两台设备 `canonical_ids` 不一致）。测试 `backup_tests.rs`
+  `a_protocol_3_backup_replacing_a_fresh_profile_keeps_its_salts_and_cards`（变异实测：去掉修复变红，只去掉盐断言时卡片 / 日志行比对同样红）。
+  **修后 release 实测**：上面同一个 release 的 `fushi.exe`（sha256 不变）换上本分支 release 编的 `fushi_fsrs.dll`（`a3134284…11df`，原 `48e23535…0c07`）
+  放在 `D:/fushi-r0/new-fix/Release/`，`srs_old_binary.py run --action restore-backup --restore-mode replace`（`20261120-164345-restore-backup`，
+  accepted）→ 重开（`20261120-164425-r0-e1r-fix-reopen`）：`srs/decks` 200 Default review 6 / total 6，`srs/notes?mode=cards` 6 张、卡片 ID
+  与迁移路径相同（如 `b2a1861d…`），`stats` young 4 / mature 2；`r0_compare.py` exit 0：`old_cards_raw 6 = new_cards 6`、12/12 条日志逐条
+  ID / 时间 / 评分 / 用时一致、`diffs []`（`D:/fushi-r0/M/e1r-fix-compare.json`）。
 - `.fushisrs` 四向：新旧两边都没有控制通道入口（只有界面里的导出 / 导入文件对话框），离屏驱动不了系统文件对话框。—
 
 ## 5. 缺口
 
 - Android / macOS / iOS 真机、Linux 服务端、fushi_server beta 全没做。
-- 迁移提示页、旧版本拒绝提示、同步位置提示都没有 release 真像素（离屏 PrintWindow 全黑）；迁移后的复习页有 debug itest 真像素。
+- 迁移提示页、旧版本拒绝提示、同步位置提示都没有 release 真像素（离屏 PrintWindow 全黑，UI Automation 也读不到语义树）；迁移页 / 进度页 /
+  迁移后复习页有 debug itest 真像素（`r0-a-zone4`）。
+- 「开始升级」没能用 Tab / 焦点请求走到，itest 改调按钮 `onPressed`；是不是桌面键盘可达性缺陷没查清（§4.1）。
 - `.fushisrs` 四向、旧备份「合并」的界面确认路径没驱动。
 - (d2) 没跑 v3.0.1。

@@ -22,4 +22,5 @@
   `a_protocol_3_backup_replacing_a_fresh_profile_keeps_its_salts_and_cards`：协议 3 备份（profile P）确认读进已打开过的全新 profile Q →
   `bound`，`collection_info` 的盐含 P 与 Q，`cards` / `notes` / `log_ix` 派生行与直接迁移同一份库逐行相同。变异实测：去掉修复
   （注释 `declare_salts` 那一行）这条红（`backup_tests` 13 过 1 败），只去掉盐断言时卡片 / 日志行比对同样红；还原后工作区干净。
-- **备注**：R0 实测里的复现数据 `D:/fushi-r0/A/old-backup.zip`（本机，不入库）；修复后没有在 release 二进制上重跑 e1-replace（见 R0 文档 §4.6）。
+- **备注**：R0 实测里的复现数据 `D:/fushi-r0/A/old-backup.zip`（本机，不入库）。修后在 release 上重跑了 e1-replace（同一个 `fushi.exe` 换上
+  修复后的 `fushi_fsrs.dll`）：6/6 卡、12/12 条日志逐条一致、卡片 ID 与迁移路径相同（R0 文档 §4.6）。
