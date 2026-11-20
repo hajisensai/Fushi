@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/reader/reader_sentence_audio_ownership_script.dart';
+import 'package:fushi/src/reader/reader_sentence_audio_relocation_script.dart';
 import 'package:fushi/src/reader/reader_study_unit_script.dart';
 
 import '../helpers/node_runtime.dart';
@@ -26,7 +27,8 @@ void main() {
       'selection': ReaderSelectionScripts.source(),
       // 与生产 engineShell 同序：study units 之后注入句子音频标点归属
       // 模块（collectSentenceAudioCueRanges 依赖它）。
-      'units': '$kStudyUnitJs\n$kSentenceAudioOwnershipJs',
+      'units':
+          '$kStudyUnitJs\n$kSentenceAudioOwnershipJs\n$kSentenceAudioRelocationJs',
     };
     final NodeHarnessResult result = await runNodeHarness(
       nodeExe,

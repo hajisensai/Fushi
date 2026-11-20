@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/reader/reader_sentence_audio_ownership_script.dart';
+import 'package:fushi/src/reader/reader_sentence_audio_relocation_script.dart';
 import 'package:fushi/src/reader/reader_study_unit_script.dart';
 
 import '../helpers/node_runtime.dart';
@@ -27,7 +28,8 @@ void main() {
           ReaderPaginationScripts.continuousShellSource(),
         ],
         'selection': ReaderSelectionScripts.source(),
-        'units': '$kStudyUnitJs\n$kSentenceAudioOwnershipJs',
+        'units':
+            '$kStudyUnitJs\n$kSentenceAudioOwnershipJs\n$kSentenceAudioRelocationJs',
       };
       // 内层进程超时（75s）小于外层测试超时（90s），挂住时报出进程输出而不是被外层硬杀。
       final NodeHarnessResult run = await runNodeHarness(

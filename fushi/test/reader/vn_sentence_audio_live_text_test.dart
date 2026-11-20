@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_content_styles.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/reader/reader_sentence_audio_ownership_script.dart';
+import 'package:fushi/src/reader/reader_sentence_audio_relocation_script.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/reader/reader_study_unit_script.dart';
 import 'package:fushi/src/reader/reader_visual_novel_scripts.dart';
@@ -43,7 +44,8 @@ void main() {
       final Map<String, String> payload = <String, String>{
         'shell': ReaderVisualNovelScripts.vnShellScript(),
         'selection': ReaderSelectionScripts.source(),
-        'units': '$kStudyUnitJs\n$kSentenceAudioOwnershipJs',
+        'units':
+            '$kStudyUnitJs\n$kSentenceAudioOwnershipJs\n$kSentenceAudioRelocationJs',
         'css': css,
       };
       final NodeHarnessResult result = await runNodeHarness(
