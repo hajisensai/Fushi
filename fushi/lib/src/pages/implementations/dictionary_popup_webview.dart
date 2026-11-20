@@ -1530,6 +1530,16 @@ JSON.stringify((function(){
   /// BUG-802：读取当前拖选文本，穿透词条卡的同源 iframe（见 [_selectedTextAcrossFramesJs]）。
   /// 替代桌面上未实现、且天然只读顶层文档的 `_controller.getSelectedText()`——右键
   /// 「复制/搜索」都靠它拿选区。空选区（或 controller 未就绪）返回空串，调用方据此早退。
+  /// BUG-4911：弹窗正文（含同源词条 iframe）此刻是否持有**非空原生选区**。
+  ///
+  /// 本体横滑关闭检测器（`_BodySwipeDismissDetector`）是不进手势竞技场的 raw
+  /// [Listener]，WebView 在竞技场里赢下长按 / 拖动并不能把触摸挡在它外面——触屏上
+  /// 长按选字后横拖扩选、或拖选区把手，轨迹都是「明确横向」，抬手就被判成滑关。
+  /// 检测器在判定滑关前问这里：有选区 = 这次拖动在操作原生选区，不关窗。
+  /// 与右键「复制 / 搜索」读的是同一份跨 frame 选区（[_selectedTextAcrossFrames]）。
+  Future<bool> hasNativeSelection() async =>
+      (await _selectedTextAcrossFrames()).isNotEmpty;
+
   Future<String> _selectedTextAcrossFrames() async {
     final Object? raw = await _controller?.evaluateJavascript(
       source: _selectedTextAcrossFramesJs,
@@ -2875,6 +2885,9 @@ JSON.stringify((function(){
       // 扩展），detector 只在非 WebView 区（顶栏 / 外框留白）收到横拖关窗——TODO-880
       // 的「顶栏/留白横拖关」保留，仅正文区让位给框选。边界由「谁渲染谁吃手势」自然
       // 划定，无坐标特判。
+      // BUG-4911：上面「detector 只在非 WebView 区收到横拖」在 BUG-1242 把 detector 改成
+      // 不进竞技场的 raw Listener 后不再成立——触屏拖选照样到得了 detector。现在由
+      // detector 判滑关前问 [DictionaryPopupWebViewState.hasNativeSelection] 让位选区。
       gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
         Factory<LongPressGestureRecognizer>(
           () => LongPressGestureRecognizer(

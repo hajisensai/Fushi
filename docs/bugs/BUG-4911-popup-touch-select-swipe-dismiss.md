@@ -1,0 +1,6 @@
+## BUG-4911 · 触屏在查词弹窗正文里拖选文字时弹窗被本体横滑关掉
+- **报告**：2026-11-20（用户：应用内反馈 DrV7fPpWD2，iPad13,16 / iOS 27.0.1 / 3.3.0-debug.28434，漫画阅读器里「想选中弹窗里的一段释义做卡片，弹窗每次都消失」）
+- **真实性**：✅ 真 bug（沿代码路径定位，未在 iOS 真机 / 模拟器复现）。根因 `fushi/lib/src/pages/implementations/dictionary_popup_layer.dart:2429`（`_BodySwipeDismissDetectorState._onPointerUp`）：本体横滑关闭检测器自 BUG-1242 起是**不进手势竞技场的 raw `Listener`**，包住整张弹窗 surface（含正文 WebView）。TODO-896 给弹窗 WebView 声明 LongPress / 横拖 / 竖拖识别器（`dictionary_popup_webview.dart` 的 `gestureRecognizers`），前提是「WebView 赢下竞技场 → 正文框选到不了检测器」，但 Listener 不参与竞技场，这个前提已不成立。触屏上长按选字后横拖扩选、或拖选区把手，轨迹都是明确横向，抬手时位移过阈（默认灵敏度约 94px）就 `onDismiss`。检测器是五个表面共用的，漫画阅读器只是用户当时所在的表面；桌面鼠标拖选不受影响（检测器只认触摸类指针）。
+- **[x] ① 已修复** — 检测器判滑关前问选区探针 `touchOnNativeSelection`（`dictionary_popup_layer.dart:1639` `_touchOnNativeSelection`，`:1765` 接线）：起手点落在本层 WebView 矩形内、且 WebView 持有非空原生选区（新 `DictionaryPopupWebViewState.hasNativeSelection`，`dictionary_popup_webview.dart:1540`，复用右键复制 / 搜索读跨同源 iframe 选区的同一段 JS）→ 这次拖动在操作选区，不关窗。没有 WebView / 起手点在顶栏或留白上同步判定，滑关行为不变；问询失败记日志并按旧语义关窗；真值回来时层已卸载则不关。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/dictionary_popup_body_swipe_native_selection_test.dart`（经 `debugPopupBodySwipeDismissDetector` 注入假探针：同步 / 异步有选区不关、无选区照关、无探针当帧关、未过阈不问探针、卸载后不关；源码守卫锁层上的接线）。
+- **备注**：iOS 真机肉眼复测未做（本机 Windows，无 iOS 设备 / 模拟器）。已知取舍：弹窗里已有选区时，起手在正文上的横滑不再关窗（选区在操作中），顶栏 / 留白 / 点 × / 点弹窗外照常关。
