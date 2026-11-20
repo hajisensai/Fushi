@@ -2867,7 +2867,6 @@ extension _ReaderChrome on _ReaderFushiPageState {
       onExitReader: () {
         unawaited(_exitReaderBook());
       },
-      webViewController: _controller!,
       appModel: appModel,
       ref: ref,
       isFushiReader: true,
