@@ -116,7 +116,8 @@ void main() {
     );
   });
 
-  test('设置面板去掉着色器 / mpv / 弹幕分组，其余保持原顺序', () {
+  // 拍板 kp-No6loQi：「画质增强」页签留着（面板画成说明态），整页消失会被当成功能没了。
+  test('设置面板去掉 mpv / 弹幕分组、保留画质增强，其余保持原顺序', () {
     expect(
       videoWebBackendSettingsGroups(<VideoGroup>[
         VideoGroup.playback,
@@ -125,7 +126,11 @@ void main() {
         VideoGroup.danmaku,
         VideoGroup.controls,
       ]),
-      <VideoGroup>[VideoGroup.playback, VideoGroup.controls],
+      <VideoGroup>[
+        VideoGroup.playback,
+        VideoGroup.shaders,
+        VideoGroup.controls,
+      ],
     );
     expect(
       videoWebBackendSettingsGroups(<VideoGroup>[VideoGroup.subtitle]),
