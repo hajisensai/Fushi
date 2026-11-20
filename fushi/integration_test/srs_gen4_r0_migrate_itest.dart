@@ -19,7 +19,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/scheduler.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -78,25 +77,6 @@ String _visibleText() {
     if (s != null && s.trim().isNotEmpty) out.add(s.trim());
   }
   return out.join(' | ');
-}
-
-/// 键盘焦点落在 [target] 上或它的子树里（同 FocusDriver 的判据：scope 与 skipTraversal 的整页键事件 sink 不算）。
-bool _focusInside(Finder target) {
-  final FocusNode? f = FocusManager.instance.primaryFocus;
-  if (f == null || f is FocusScopeNode || f.skipTraversal) return false;
-  final BuildContext? ctx = f.context;
-  final List<Element> els = target.evaluate().toList();
-  if (ctx == null || els.isEmpty) return false;
-  if (ctx == els.first) return true;
-  bool inside = false;
-  ctx.visitAncestorElements((Element el) {
-    if (el == els.first) {
-      inside = true;
-      return false;
-    }
-    return true;
-  });
-  return inside;
 }
 
 void main() {
@@ -196,53 +176,14 @@ void main() {
     );
     final Stopwatch clock;
     if (viaButton) {
-      // 进场动画走完再遍历（有界 pump，屏上可能有不停的动画）。
-      for (int i = 0; i < 8; i++) {
-        await tester.pump(const Duration(milliseconds: 250));
-      }
-
-      // 焦点驱动（Tab 遍历 + Enter，同 FocusDriver，不用坐标）。每一步都记日志、按键带超时：上一轮在这一步停了 18 分钟没有任何输出，要知道停在哪。
-      Future<bool> key(LogicalKeyboardKey k) => tester
-          .sendKeyEvent(k)
-          .then((_) => true)
-          .timeout(const Duration(seconds: 10), onTimeout: () => false);
-      bool reached = _focusInside(start);
-      for (int i = 0; i < 12 && !reached; i++) {
-        final bool sent = await key(LogicalKeyboardKey.tab);
-        for (int j = 0; j < 2; j++) {
-          await tester.pump(const Duration(milliseconds: 60));
-        }
-        reached = _focusInside(start);
-        _log(
-          '[r0] tab #$i sent=$sent focus=${FocusManager.instance.primaryFocus} '
-          'onStart=$reached',
-        );
-        if (!sent) break;
-      }
-      if (!reached) {
-        // 复核轮实测（r0-a-zone2）：Tab 60 次焦点一直停在同一个无标签 Focus 上，遍历不动。这里不让 expect 失败
-        // （live binding 下失败后的收尾会挂住整条用例），记下来，改用 FocusDriver 的焦点兜底：把焦点交给按钮自己
-        // 的 Focus 节点（纯焦点操作，不是坐标点击），再按 Enter。遍历不到按钮的原因见 R0 文档 §4.1。
-        _log(
-          '[r0] TAB TRAVERSAL NEVER REACHED START; requesting its focus node',
-        );
-        reached = await FocusDriver(tester).requestFocusInside(start);
-        for (int j = 0; j < 4; j++) {
-          await tester.pump(const Duration(milliseconds: 60));
-        }
-        reached = reached && _focusInside(start);
-        _log(
-          '[r0] requestFocusInside -> onStart=$reached '
-          'focus=${FocusManager.instance.primaryFocus}',
-        );
-      }
-      final Finder button = find.descendant(
-        of: start,
-        matching: find.byWidgetPredicate((Widget w) => w is ButtonStyleButton),
-      );
-      final ButtonStyleButton? b = button.evaluate().isEmpty
-          ? null
-          : tester.widget<ButtonStyleButton>(button.first);
+      // 焦点驱动（Tab 遍历 + Enter，FocusDriver，不用坐标、不直接调回调）。
+      // 前置：打开「键盘/手柄焦点导航」开关。默认关着时全局把裸 Tab 中和成 DoNothingIntent（用户裁定 TODO-112），
+      // 隔离根的偏好恒为默认，Tab 一步都走不动——复核轮「Tab 60 次焦点停在首页外壳的无标签 Focus（HomePage 的
+      // 整页 sink `_keyboardFocusNode`）上」就是本 itest 漏了这一步（BUG-1106 同根因），不是迁移页的缺陷。
+      // 产品侧的可达性由 test/srs/srs_generation_view_keyboard_test.dart 钉住（MD3 / Apple）。
+      await enableFocusNavigation(tester);
+      final FocusDriver driver = FocusDriver(tester);
+      final bool reached = await driver.focusWidget(start, maxSteps: 60);
       final List<String> owners = <String>[];
       FocusManager.instance.primaryFocus?.context?.visitAncestorElements((
         Element e,
@@ -251,22 +192,14 @@ void main() {
         return owners.length < 12;
       });
       _log(
-        '[r0] diag: button=${b?.runtimeType} enabled=${b?.enabled} '
-        'canStart=${controller.canStart} dbOpen=${appModel.isDatabaseOpen} '
-        'focusOwners=${owners.join(' < ')}',
+        '[r0] focus traversal -> onStart=$reached '
+        'focus=${FocusManager.instance.primaryFocus} '
+        'canStart=${controller.canStart} focusOwners=${owners.join(' < ')}',
       );
+      expect(reached, isTrue, reason: 'Tab 应能把焦点走到「开始升级」');
       clock = Stopwatch()..start();
-      if (reached) {
-        _log('[r0] start button focused; pressing Enter');
-        _log('[r0] enter sent=${await key(LogicalKeyboardKey.enter)}');
-      } else if (b != null && b.enabled) {
-        // 焦点进不去（见上面 diag）：按钮本身可用，改调它的 onPressed（与 Enter 激活同一个回调，不是坐标点击），结论里注明。
-        _log('[r0] FOCUS FALLBACK: invoking the enabled button onPressed');
-        b.onPressed!();
-      } else {
-        _log('[r0] start button disabled; giving up');
-        return;
-      }
+      _log('[r0] start button focused; pressing Enter');
+      await driver.activate();
     } else if (_fallbackStart) {
       // 迁移页没出来（上面记了原因）：按钮背后就是 controller.start，直接调它把迁移本身测完，结论里注明。
       _log(
