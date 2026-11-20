@@ -206,10 +206,18 @@ class MusicCollectionBlock extends StatelessWidget {
     this.onTap,
     this.onLongPress,
     this.onSecondaryTap,
+    this.albumPoster = false,
+    this.disc,
   });
 
   final String title;
   final FushiCoverBlockSize size;
+
+  /// 专辑块：宽块走 W 原型的专辑海报版式（[FushiCoverBlock.albumPoster]）。
+  final bool albumPoster;
+
+  /// 专辑真实的盘面扫描图（[FushiCoverBlock.disc]）；没有盘面图就别给。
+  final Widget? disc;
   final String? subtitle;
   final String? coverPath;
 
@@ -251,6 +259,8 @@ class MusicCollectionBlock extends StatelessWidget {
           chip: _nonEmpty(chip),
           leadingIcon: leadingIcon,
           trailing: trailing,
+          albumPoster: albumPoster && !circular,
+          disc: circular ? null : disc,
           // 没有封面来源：不放音符 / 人像占位，交给色块画按标题生成的封面
           // （与块底同一色相，设计稿 M2）。
           covers: !musicHasCoverSource(coverPath, embeddedFromPath)
@@ -376,14 +386,9 @@ class MusicStyledCollection extends StatelessWidget {
     this.shrinkWrap = false,
     this.controller,
     this.scrollKey,
-    this.uniformAfterHero = true,
   });
 
   final MusicViewStyle style;
-
-  /// 拼贴下只有首块加大、其余等尺寸（设计稿 M2：音乐的拼贴不出洞），见
-  /// [SliverFushiCoverBlocks.uniformAfterHero]。
-  final bool uniformAfterHero;
   final int itemCount;
   final IndexedWidgetBuilder rowBuilder;
   final FushiCoverBlockItemBuilder blockBuilder;
@@ -432,9 +437,9 @@ class MusicStyledCollection extends StatelessWidget {
           ? grid
           : ShelfCoverMaterialScope(material: material, child: grid);
     }
+    // 音乐的色块一律等尺寸（不起拼贴加大首块，用户 11-20 拍板）：每块都是 W 原型
+    // 的双格比例——有盘面图画唱片，没有走无盘专辑海报版式。
     return SliverFushiCoverBlocks(
-      layout: shellContentLayoutOf(context),
-      uniformAfterHero: uniformAfterHero,
       itemCount: itemCount,
       itemBuilder: blockBuilder,
     );

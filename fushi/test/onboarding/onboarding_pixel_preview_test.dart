@@ -17,9 +17,12 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/onboarding/onboarding_steps.dart';
+import 'package:fushi/src/pages/implementations/browser_extension_page.dart';
 import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart';
+import 'package:fushi/src/settings/shell_style_preview.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
@@ -28,6 +31,7 @@ import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/shortcuts/visual/keyboard_layout_view.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -195,15 +199,6 @@ void _srsOnboardingScenes(Directory out) {
         title: t.onboarding_srs_title,
         body: t.onboarding_srs_body,
         items: srsOnboardingTutorialItems(),
-        actions: <OnboardingAction>[
-          OnboardingAction(
-            icon: FushiIcons.add,
-            label: t.onboarding_srs_action,
-            description: t.onboarding_srs_action_desc,
-            necessity: OnboardingActionNecessity.recommended,
-            onPressed: () {},
-          ),
-        ],
       ),
     ),
     'fushi_3_finish': () => _wizardFrame(
@@ -244,6 +239,99 @@ void _srsOnboardingScenes(Directory out) {
       ]),
     ),
   };
+  // 安卓的浏览器扩展：新手引导那一步 + 安装引导（Vivaldi 流程），手机尺寸 MD3。
+  const Size phone = Size(412, 915);
+  testWidgets('android_ext onboarding step', (WidgetTester tester) async {
+    LocaleSettings.setLocale(AppLocale.zhCn);
+    try {
+      await _capture(
+        tester,
+        File('${out.path}/android_ext_onboarding_md3_$_suffix.png'),
+        size: phone,
+        child: _wizardFrame(
+          current: 5,
+          step: OnboardingStepView(
+            icon: FushiIcons.browserExtension,
+            title: t.onboarding_step_extension_title,
+            body: t.onboarding_step_extension_body,
+            actions: <OnboardingAction>[
+              OnboardingAction(
+                icon: FushiIcons.openInNew,
+                label: t.onboarding_step_extension_action,
+                description: t.onboarding_step_extension_action_desc,
+                necessity: OnboardingActionNecessity.recommended,
+                onPressed: () {},
+              ),
+            ],
+          ),
+        ),
+      );
+    } finally {
+      LocaleSettings.setLocale(AppLocale.en);
+    }
+  });
+  testWidgets('android_ext install guide', (WidgetTester tester) async {
+    LocaleSettings.setLocale(AppLocale.zhCn);
+    try {
+      await _capture(
+        tester,
+        File('${out.path}/android_ext_guide_md3_$_suffix.png'),
+        size: phone,
+        child: Builder(
+          builder: (BuildContext context) => ColoredBox(
+            color: Theme.of(context).colorScheme.surface,
+            child: _stepList(<Widget>[
+              buildBrowserExtensionInstallStepsForTest(
+                path:
+                    '/storage/emulated/0/Download/Fushi/fushi-browser-extension',
+                serverEnabled: true,
+                hasToken: true,
+                flow: BrowserExtensionInstallFlow.android,
+              ),
+            ]),
+          ),
+        ),
+      );
+    } finally {
+      LocaleSettings.setLocale(AppLocale.en);
+    }
+  });
+
+  // 欢迎页的「库页布局」两张选择卡（11-20 反馈：拼贴缩略图改用真实色块缩小）。
+  for (final bool apple in <bool>[false, true]) {
+    final String name = 'library_layout_${apple ? 'apple' : 'md3'}';
+    testWidgets('onboarding $name', (WidgetTester tester) async {
+      LocaleSettings.setLocale(AppLocale.zhCn);
+      try {
+        await _capture(
+          tester,
+          File('${out.path}/${name}_$_suffix.png'),
+          size: const Size(720, 260),
+          apple: apple,
+          child: Builder(
+            builder: (BuildContext context) => ColoredBox(
+              color: Theme.of(context).colorScheme.surface,
+              child: _stepList(<Widget>[
+                OnboardingSectionLabel(
+                  title: t.onboarding_library_layout_title,
+                  hint: t.onboarding_library_layout_hint,
+                ),
+                const SizedBox(height: 12),
+                ShellLayoutChoiceCards(
+                  selected: ShellContentLayout.collage,
+                  arrangement: ShellBlockArrangement.aligned,
+                  onSelected: (_) {},
+                ),
+              ]),
+            ),
+          ),
+        );
+      } finally {
+        LocaleSettings.setLocale(AppLocale.en);
+      }
+    });
+  }
+
   for (final bool apple in <bool>[false, true]) {
     for (final (String width, Size size) in sizes) {
       for (final MapEntry<String, Widget Function()> scene in scenes.entries) {

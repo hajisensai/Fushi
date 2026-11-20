@@ -1,6 +1,6 @@
 // 长读（全量同步冲突）进行中，短读（一张卡 / 一条笔记）的完成延迟，在真实库上量（手动跑；默认跳过）。
 //
-// FUSHI_SRS_REAL_DB=<srs.db 副本路径> dart test test/srs/srs_concurrent_reads_bench_test.dart
+// FUSHI_SRS_REAL_DB=<新代库目录或协议 3 的 srs.db；在副本上跑> dart test test/srs/srs_concurrent_reads_bench_test.dart
 //
 // 必须用副本：打开 store 可能做升级写入。
 import 'dart:async';
@@ -21,7 +21,7 @@ void main() {
   test(
     '长读进行中的短读延迟',
     () async {
-      final TestSrs srs = await openTestSrsAt(path!);
+      final TestSrs srs = await openRealDataTestSrs(path!);
       final String uid =
           (await srs.core
                   .customSelect(

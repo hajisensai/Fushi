@@ -95,10 +95,16 @@ String srsFushiCardFieldId(String profileUid, String fieldKey) =>
 SrsBuiltinNoteType srsBuiltinNoteType(
   String profileUid,
   SrsBuiltinNoteTypeSpec spec,
+) => srsBuiltinNoteTypeIn(srsBuiltinNoteTypeId(profileUid, spec.key), spec);
+
+/// 笔记类型 ID 已知（[nt]：本机向内核要的，或远程复习主机信封 `ids` 里给的规范 ID）时的内置定义：字段 / 模板 ID 全由
+/// [nt] 派生，不碰 profile uid。
+SrsBuiltinNoteType srsBuiltinNoteTypeIn(
+  String nt,
+  SrsBuiltinNoteTypeSpec spec,
 ) {
   final String key = spec.key;
   final AnkiNoteTypeTemplate tpl = spec.template;
-  final String nt = srsBuiltinNoteTypeId(profileUid, key);
   final Map<String, String> nameToId = <String, String>{
     for (final String f in tpl.fields) f: _builtinFieldIdIn(nt, key, f),
   };

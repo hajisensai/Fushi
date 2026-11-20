@@ -30,19 +30,9 @@
 // (driven from reader_follow_reveal_late_image_anchor_behavior_test.dart inside `flutter test`).
 
 const assert = require('assert');
-const fs = require('fs');
+const { readPayload, shellObjectLiteral, compileScript } = require('./reader_harness_support.js');
 
-const data = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-
-function objectLiteral(source) {
-  const marker = 'window.fushiReader = {';
-  const start = source.indexOf(marker);
-  assert.ok(start >= 0, 'fushiReader object missing');
-  const brace = source.indexOf('{', start);
-  const end = source.indexOf('\n};', brace);
-  assert.ok(end >= 0, 'fushiReader object terminator missing');
-  return source.slice(brace, end + 2);
-}
+const data = readPayload();
 
 const PAGE = 1000;
 const VIEWPORT_H = 800;
@@ -99,12 +89,16 @@ function instantiate(shellSource, { continuous }) {
   };
   const Node = { TEXT_NODE: 3 };
   const requestAnimationFrame = (fn) => fn();
-  new Function('window', data.studyUnits)(window);
+  compileScript(
+    ['window'],
+    data.studyUnits,
+    'reader_follow_reveal_late_image_anchor_behavior_test-1.js',
+  )(window);
   const C = { perfTraceEnabled: false };
-  const factory = new Function(
-    'window', 'document', 'C', 'global', 'CSS', 'Highlight', 'getComputedStyle', 'Node',
-    'requestAnimationFrame',
-    'window.fushiReader = ' + objectLiteral(shellSource) + '; return window.fushiReader;'
+  const factory = compileScript(
+    ['window', 'document', 'C', 'global', 'CSS', 'Highlight', 'getComputedStyle', 'Node', 'requestAnimationFrame'],
+    'window.fushiReader = ' + shellObjectLiteral(shellSource) + '; return window.fushiReader;',
+    'reader_follow_reveal_late_image_anchor_behavior_test-2.js',
   );
   const reader = factory(window, document, C, {}, window.CSS, window.Highlight,
     getComputedStyle, Node, requestAnimationFrame);

@@ -352,7 +352,7 @@ void main() {
           pickedPath: picked.path,
           coversDirectory: covers,
         ),
-        throwsStateError,
+        throwsA(isA<VideoScrapeMaintenanceActiveError>()),
       );
 
       expect((await row()).coverPath, isNull);

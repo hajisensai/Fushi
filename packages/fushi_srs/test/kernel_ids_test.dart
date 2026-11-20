@@ -1,6 +1,7 @@
 // SrsKernelIds：根上的 ID 与同步目录名经 FFI 向内核要（native/fushi_fsrs/src/gen4_ids/derive.rs）。
 // 根上的规则与 golden_ids.json 的逐值比对在 packages/fushi_engine/test/srs/srs_gen4_canonical_ids_golden_test.dart；
-// 这里钉住 FFI 入口本身：G7 之前答带盐值、批量与逐个同值、改造前 Dart 公式的等价值、落单代理项的处理。
+// 这里钉住 FFI 入口本身：根上的 ID 答规范值（不带盐、与 profile 无关，G9-7）、批量与逐个同值、改造前 Dart 公式的
+// 等价值、落单代理项的处理。
 @TestOn('vm')
 library;
 
@@ -12,23 +13,33 @@ const String _uid = '019a5e4c-0000-7000-8000-00000000abcd';
 void main() {
   final SrsKernelIds ids = SrsKernelIds(_uid);
 
-  test('G7 之前答存量规则：盐 = profile uid，目录名 = uid', () {
-    expect(ids.note('g1'), uuidV5(srsNamespace, '$_uid/note/g1'));
-    expect(ids.noteType(42), uuidV5(srsNamespace, '$_uid/notetype/42'));
+  test('根上的 ID 答规范规则（不带盐、与 profile 无关），目录名 = uid', () {
+    expect(ids.note('g1'), uuidV5(srsNamespace, 'note/g1'));
+    expect(ids.noteType(42), uuidV5(srsNamespace, 'notetype/42'));
     expect(
       ids.builtinNoteType('lapis'),
       uuidV5(
         srsNamespace,
-        '$_uid/notetype/${SrsIds.builtinNoteTypeAnkiNum('lapis')}',
+        'notetype/${SrsIds.builtinNoteTypeAnkiNum('lapis')}',
       ),
     );
-    expect(ids.deck(' A :: B '), uuidV5(srsNamespace, '$_uid/deck/A::B'));
+    expect(ids.deck(' A :: B '), uuidV5(srsNamespace, 'deck/A::B'));
     expect(
       ids.deckAlternate('A::B', 3),
-      uuidV5(srsNamespace, '$_uid/deck-alt/3/A::B'),
+      uuidV5(srsNamespace, 'deck-alt/3/A::B'),
     );
-    expect(ids.defaultDeck, uuidV5(srsNamespace, '$_uid/builtin-deck/default'));
+    expect(ids.defaultDeck, uuidV5(srsNamespace, 'builtin-deck/default'));
+    expect(
+      ids.defaultDeck,
+      isNot(uuidV5(srsNamespace, '$_uid/builtin-deck/default')),
+    );
     expect(ids.locationDir, _uid);
+    final SrsKernelIds other = SrsKernelIds(
+      '019a5e4c-0000-7000-8000-00000000ef01',
+    );
+    expect(other.note('g1'), ids.note('g1'));
+    expect(other.defaultDeck, ids.defaultDeck);
+    expect(other.builtinNoteType('lapis'), ids.builtinNoteType('lapis'));
   });
 
   test('批量与逐个同值', () {
@@ -121,7 +132,7 @@ void main() {
   test('落单的代理项按 U+FFFD 算（与改造前对 utf8.encode 的结果哈希相同）', () {
     const String lone = 'a\uD800b';
     expect(ids.note(lone), ids.note('a�b'));
-    expect(ids.note(lone), uuidV5(srsNamespace, '$_uid/note/a�b'));
+    expect(ids.note(lone), uuidV5(srsNamespace, 'note/a�b'));
   });
 
   test('嵌套 List 里的名字含落单代理项：不抛错，按 U+FFFD 算（G5B-2）', () {
@@ -167,9 +178,10 @@ void main() {
       ]),
       throwsA(anything),
     );
+    // 只有目录名要 profile。
     expect(
       () => SrsKernelIds.askFor(null, <List<Object?>>[
-        <Object?>['note', 'g'],
+        <Object?>['location_dir'],
       ]),
       throwsA(anything),
     );

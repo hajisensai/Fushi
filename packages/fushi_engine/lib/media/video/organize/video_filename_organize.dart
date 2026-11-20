@@ -108,6 +108,44 @@ String? canonicalVideoFileStem(VideoFilenameIdentity identity) {
   return '$root - S$season$range';
 }
 
+/// 调用方点名的落点（AI 助手 / CLI 的「把这个文件搬到这里、改成这个名」）：不按
+/// 刮削身份算规范名，目录与文件名由调用方给。用于刮削身份本身就是错的场合——
+/// 电影被当成某部剧的 `Season 00/S00E01`，按身份整理只会把错名再写一遍。
+///
+/// 两项至少给一项。目录只能落在条目所属的来源库根之内（相对段，不含 `..`）。
+class VideoFilenameCustomTarget {
+  const VideoFilenameCustomTarget({this.directorySegments, this.stem});
+
+  /// 相对来源库根的目录段；空表 = 库根本身；null = 目录不动。
+  final List<String>? directorySegments;
+
+  /// 新文件名主干（不含扩展名，扩展名保留原样）；null = 文件名不动。
+  final String? stem;
+}
+
+/// 纯函数：[target] 不合法的原因；合法返回 null。
+///
+/// 每一段（目录段与文件名主干）必须已经是安全文件名：非空、不是 `.` / `..`、不含
+/// 路径分隔符与各平台非法字符（判据 = [fullwidthSafeFileName] 不改它）。不替调用方
+/// 悄悄换字符——落到磁盘上的名字必须就是它看到的那个。
+String? invalidVideoCustomTargetReason(VideoFilenameCustomTarget target) {
+  final List<String>? segments = target.directorySegments;
+  final String? stem = target.stem;
+  if (segments == null && stem == null) {
+    return 'neither a directory nor a file name was given';
+  }
+  for (final String segment in <String>[...?segments, ?stem]) {
+    if (segment.isEmpty || segment == '.' || segment == '..') {
+      return 'empty or relative path segment: "$segment"';
+    }
+    if (segment != segment.trim() ||
+        fullwidthSafeFileName(segment) != segment) {
+      return 'not a safe file name: "$segment"';
+    }
+  }
+  return null;
+}
+
 /// 刮削写出的元数据 sidecar 后缀（`video_sidecar_target_resolver.dart` 的命名：
 /// `<stem>.nfo`、分集缩略图 `<stem>.jpg`、共享目录电影图 `<stem>-poster.jpg` 等）。
 final RegExp _metadataSidecarSuffix = RegExp(

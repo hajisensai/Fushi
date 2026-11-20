@@ -19,6 +19,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/srs/srs_action_error_text.dart';
 
 /// 对 [noteIds]（必须是同一个源笔记类型）走一遍「更改笔记类型」：
 /// 选目标类型 → 字段映射 → 卡片模板映射 → 确认 → 写入（经事件存储，可同步、可按冲突规则合并）。
@@ -181,7 +182,7 @@ Future<bool> showSrsMigrateToFushiCardFlow(
     return true;
   } catch (e, stack) {
     ErrorLogService.instance.log('showSrsMigrateToFushiCard.apply', e, stack);
-    FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+    FushiToast.show(msg: srsActionFailedText(e), severity: ToastSeverity.error);
     return false;
   }
 }

@@ -116,14 +116,16 @@ void main() {
   });
 
   // 2026-10-19 (owner's call): free slots are not enough, the holders'
-  // ceilings plus the next one's must fit half the RAM (64 GB -> 32 GB).
+  // ceilings plus the next one's must fit the budget (32 GB in this test;
+  // the default has been 5/8 of the RAM since 2026-11-20).
   test(
     'a free slot waits while the ceilings would overbook the budget',
     () async {
+      // The budget is pinned: the default follows the host's RAM.
       final HeavyLease t1 = await take(4, kind: HeavyKind.test);
       final HeavyLease t2 = await take(4, kind: HeavyKind.test);
       await expectLater(
-        take(4, kind: HeavyKind.test),
+        take(4, kind: HeavyKind.test, budgetMb: 32768),
         throwsA(
           isA<HeavyLeaseTimeout>().having(
             (HeavyLeaseTimeout e) => e.message,
@@ -137,7 +139,11 @@ void main() {
       );
       // An analyze still fits next to the two test runs, booked at its
       // measured footprint (8 GB) rather than its 16 GB ceiling.
-      final HeavyLease a = await take(4, kind: HeavyKind.analyze);
+      final HeavyLease a = await take(
+        4,
+        kind: HeavyKind.analyze,
+        budgetMb: 32768,
+      );
       expect(
         readHeavyHolders(
           Directory('${tmp.path}/state'),
@@ -189,7 +195,7 @@ void main() {
           5,
         ]);
         await expectLater(
-          take(2, kind: HeavyKind.test),
+          take(2, kind: HeavyKind.test, budgetMb: 32768),
           throwsA(
             isA<HeavyLeaseTimeout>().having(
               (HeavyLeaseTimeout e) => e.message,
@@ -202,7 +208,11 @@ void main() {
           ),
         );
         // An analyze fits next to it, in a light slot.
-        final HeavyLease a = await take(2, kind: HeavyKind.analyze);
+        final HeavyLease a = await take(
+          2,
+          kind: HeavyKind.analyze,
+          budgetMb: 32768,
+        );
         expect(a.slot, kLightSlotBase);
         a.release();
       } finally {
@@ -269,6 +279,133 @@ void main() {
     expect(b.slot, 0);
     expect(readHeavyQueue(Directory('${tmp.path}/state')), isEmpty);
     b.release();
+  });
+
+  // 2026-11-20: a stopped tool call left heavy.dart queued with nobody
+  // waiting; once admitted its command died in the dead console
+  // (0xC0000142) and the next orphan took the slot (heavy_lease.dart
+  // HeavyCallerWatch).
+  group('the caller is gone', () {
+    Future<HeavyLease> queue({
+      required bool Function() callerGone,
+      String? worktree,
+    }) => acquireHeavyLease(
+      need: HeavyNeed(
+        kind: HeavyKind.test,
+        capMb: 2048,
+        worktreeExclusive: worktree != null,
+      ),
+      label: 'orphan',
+      worktreeRoot: worktree,
+      environment: env(1),
+      readMemory: () => roomy,
+      poll: const Duration(milliseconds: 50),
+      log: (_) {},
+      callerGone: callerGone,
+    );
+
+    test('a queued run leaves the queue and takes no slot', () async {
+      final Directory state = Directory('${tmp.path}/state');
+      final HeavyLease busy = await take(1);
+      bool gone = false;
+      final Future<HeavyLease> orphan = queue(callerGone: () => gone);
+      final Future<void> leaves = expectLater(
+        orphan,
+        throwsA(isA<HeavyLeaseCallerGone>()),
+      );
+      final Stopwatch sw = Stopwatch()..start();
+      while (readHeavyQueue(state).isEmpty) {
+        if (sw.elapsed > const Duration(seconds: 20)) fail('never queued');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      gone = true;
+      await leaves;
+      expect(readHeavyQueue(state), isEmpty);
+      expect(
+        Directory('${state.path}/queue').listSync(),
+        isEmpty,
+        reason: 'ticket left behind',
+      );
+      // The slot it waited for goes to the next one, not to it.
+      busy.release();
+      final HeavyLease next = await take(1);
+      expect(next.slot, 0);
+    });
+
+    test('one waiting for its worktree lets the worktree go', () async {
+      final String wt = '${tmp.path}/wt';
+      bool gone = false;
+      final HeavyLease holder = await queue(
+        callerGone: () => false,
+        worktree: wt,
+      );
+      final Future<void> leaves = expectLater(
+        queue(callerGone: () => gone, worktree: wt),
+        throwsA(isA<HeavyLeaseCallerGone>()),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      gone = true;
+      await leaves;
+      holder.release();
+      // Neither left the worktree lock held.
+      final HeavyLease again = await queue(
+        callerGone: () => false,
+        worktree: wt,
+      );
+      again.release();
+    });
+
+    test('through a watch: only a run started with a console, and only '
+        'after two readings of none in a row', () async {
+      List<int> reads = <int>[0, 0, 0];
+      int next() => reads.removeAt(0);
+
+      final HeavyCallerWatch detached = HeavyCallerWatch(next);
+      expect(detached.watching, isFalse);
+      expect(detached.gone(), isFalse);
+      expect(detached.gone(), isFalse);
+      expect(reads, hasLength(2), reason: 'not read again once unwatched');
+
+      reads = <int>[5, 0, 5, 0, 0];
+      final HeavyCallerWatch w = HeavyCallerWatch(next);
+      expect(w.watching, isTrue);
+      expect(w.gone(), isFalse);
+      expect(w.suspect, isTrue);
+      expect(w.gone(), isFalse, reason: 'one odd reading cancels nothing');
+      expect(w.suspect, isFalse);
+      expect(w.gone(), isFalse);
+      expect(w.gone(), isTrue);
+      expect(w.gone(), isTrue, reason: 'gone stays gone without reading');
+      expect(reads, isEmpty);
+
+      reads = <int>[5, 0, 0];
+      final HeavyCallerWatch s = HeavyCallerWatch(next);
+      expect(await s.settle(gap: Duration.zero), isTrue);
+      reads = <int>[5, 0, 3];
+      final HeavyCallerWatch back = HeavyCallerWatch(next);
+      expect(await back.settle(gap: Duration.zero), isFalse);
+      reads = <int>[5, 4];
+      expect(await HeavyCallerWatch(next).settle(), isFalse);
+      expect(reads, isEmpty);
+
+      // The watch is what acquireHeavyLease is given.
+      final HeavyLease busy = await take(1);
+      reads = <int>[5, 2, 0, 0];
+      final HeavyCallerWatch q = HeavyCallerWatch(next);
+      await expectLater(
+        queue(callerGone: q.gone),
+        throwsA(isA<HeavyLeaseCallerGone>()),
+      );
+      busy.release();
+    });
+
+    test('this process is watched by its own console on Windows only', () {
+      final HeavyCallerWatch own = HeavyCallerWatch.forThisProcess();
+      if (!Platform.isWindows) expect(own.watching, isFalse);
+      // A console that is there is not gone, whatever the test runner has.
+      expect(own.gone(), isFalse);
+      expect(own.gone(), isFalse);
+    });
   });
 
   test('a dead waiter\'s ticket is swept, not waited on', () async {

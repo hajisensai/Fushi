@@ -25,12 +25,23 @@ bool get _live => Platform.environment['FUSHI_YT_LIVE_ITEST'] == '1';
 /// 只捕获制卡 context 的假 Anki repo（不连真 Anki——验的是「从直播流抽出的媒体」）。
 class _CaptureRepo implements BaseAnkiRepository {
   AnkiMiningContext? captured;
+
+  /// 落卡那一刻封面 / 句子音频的字节数。引擎落卡后就删掉本张卡的私有临时目录
+  /// （video-30），事后按路径量会扑空。
+  int? coverLengthAtImport;
+  int? audioLengthAtImport;
+
+  static int? _lengthOf(String? path) =>
+      path != null && File(path).existsSync() ? File(path).lengthSync() : null;
+
   @override
   Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
   }) async {
     captured = context;
+    coverLengthAtImport = _lengthOf(context.coverPath);
+    audioLengthAtImport = _lengthOf(context.sentenceAudioPath);
     return const MineOutcome.success(noteId: 1);
   }
 
@@ -92,9 +103,9 @@ void main() {
       final AnkiMiningContext ctx = repo.captured!;
       expect(ctx.coverPath, isNotNull);
       expect(ctx.coverPath, endsWith('.gif'), reason: '封面应是 cue GIF（非降级静帧）');
-      expect(File(ctx.coverPath!).lengthSync(), greaterThan(1000));
+      expect(repo.coverLengthAtImport, greaterThan(1000));
       expect(ctx.sentenceAudioPath, isNotNull);
-      expect(File(ctx.sentenceAudioPath!).lengthSync(), greaterThan(1000));
+      expect(repo.audioLengthAtImport, greaterThan(1000));
       expect(ctx.sentence, isNotEmpty);
       expect(ctx.source, AnkiMiningSource.video);
     },

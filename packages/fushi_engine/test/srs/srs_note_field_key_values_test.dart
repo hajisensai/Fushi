@@ -36,7 +36,7 @@ void main() {
       }
     });
     final SrsReadCounter counter = SrsReadCounter();
-    final TestSrs srs = await openTestSrsAt('${tmp.path}/srs.db');
+    final TestSrs srs = openTestSrsIn(tmp.path);
     final SrsDbStore store = await SrsDbStore.open(
       core: srs.core,
       profileUid: kProfile,

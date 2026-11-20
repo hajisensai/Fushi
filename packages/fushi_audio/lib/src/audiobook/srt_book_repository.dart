@@ -30,6 +30,41 @@ class SrtBookDeleteResult {
   final LocalFileDeleteReport localFiles;
 }
 
+/// [SrtBookRepository.relocateAudioPaths] 的结果。
+sealed class SrtBookRelocateResult {
+  const SrtBookRelocateResult();
+}
+
+/// 已改写（配对的 `audiobooks` 行一并改写）。
+final class SrtBookRelocated extends SrtBookRelocateResult {
+  const SrtBookRelocated();
+}
+
+/// 新文件数与原登记不等（或一个都没选），一行未写。[expected] 是拒绝所依据的
+/// 原登记文件数——提示文案只用它，不在 UI 侧另取某一行的数。
+final class SrtBookRelocateCountMismatch extends SrtBookRelocateResult {
+  const SrtBookRelocateCountMismatch({required this.expected});
+
+  final int expected;
+}
+
+/// 配对的两行原登记文件数本身就不一致（脏数据）：选多少个都满足不了「两行都相等」，
+/// 一行未写。提示用户重新导入，而不是报一个永远选不对的数。
+final class SrtBookRelocateRecordsConflict extends SrtBookRelocateResult {
+  const SrtBookRelocateRecordsConflict({
+    required this.srtBookCount,
+    required this.audiobookCount,
+  });
+
+  final int srtBookCount;
+  final int audiobookCount;
+}
+
+/// uid 不存在。
+final class SrtBookRelocateNotFound extends SrtBookRelocateResult {
+  const SrtBookRelocateNotFound();
+}
+
 class SrtBookRepository {
   const SrtBookRepository(this._db);
 
@@ -500,6 +535,94 @@ class SrtBookRepository {
       const SrtBooksCompanion(audioPathsJson: Value<String?>(null)),
     );
     return affected > 0;
+  }
+
+  /// 书架「重新定位文件」的唯一写入口：把一条字幕书登记的音频文件**原样换到新位置**
+  /// （同一批文件被用户挪走 / 换了盘符），不是换音频。
+  ///
+  /// 与 [replaceAudio] 的区别：重新定位不复制、不动播放进度（文件还是那几个，进度
+  /// 指向的仍是同一段声音），所以不能套 [replaceAudio]——它会按「音频变了」判进度
+  /// 去留，并把引用路径复制进持久目录。
+  ///
+  /// EPUB 有声书的配对行（`bookKey` 非空）的同一批路径还登记在 `audiobooks` 行上，
+  /// 会话启动器（`AudiobookSessionLauncher._pickSource`）优先读那一行：只改 srt 行时，
+  /// 旧路径全断 → 退到 srt 行按 uid 身份起播，cue / 进度都挂在 bookKey 上，于是字幕
+  /// 不跟、进度归零；部分还在 → 按那一行的残缺列表起播，文件缺项、cue 错位。所以两行
+  /// 在**同一个事务**里一起改。只改带对齐字幕的 `audiobooks` 行：没有对齐的是旧版
+  /// 书架 audioOnly 误落的脏行（见 [_healDirtyAudiobookRow]），不该被救活。
+  ///
+  /// 配对行要求新文件数与两行原登记的文件数都相等，否则拒绝
+  /// （[SrtBookRelocateCountMismatch]，一行不写；两行原登记数互相就不等时是
+  /// [SrtBookRelocateRecordsConflict]）：cue 的文件下标与断点的
+  /// 毫秒数都按原来那几个文件排，数量变了就不是「同一批文件挪了位置」。独立字幕书
+  /// 没有第二份登记，保持原来「选几个写几个」的行为。
+  Future<SrtBookRelocateResult> relocateAudioPaths(
+    String uid,
+    List<String> newPaths,
+  ) async {
+    return _db.transaction(() async {
+      final SrtBookRow? row = await _db.getSrtBookByUid(uid);
+      if (row == null) return const SrtBookRelocateNotFound();
+      final List<String> srtOld = _decodePaths(row.audioPathsJson);
+      if (newPaths.isEmpty) {
+        return SrtBookRelocateCountMismatch(expected: srtOld.length);
+      }
+      AudiobookRow? abRow;
+      if (row.bookKey.isNotEmpty) {
+        final AudiobookRow? candidate = await _db.getAudiobookByBookKey(
+          row.bookKey,
+        );
+        if (candidate != null &&
+            (candidate.alignmentPath.isNotEmpty ||
+                candidate.alignmentFormat.isNotEmpty)) {
+          abRow = candidate;
+        }
+        final List<String> abOld = abRow == null
+            ? const <String>[]
+            : _decodePaths(abRow.audioPathsJson);
+        if (srtOld.isNotEmpty &&
+            abOld.isNotEmpty &&
+            srtOld.length != abOld.length) {
+          return SrtBookRelocateRecordsConflict(
+            srtBookCount: srtOld.length,
+            audiobookCount: abOld.length,
+          );
+        }
+        final List<String> registered = abOld.isNotEmpty ? abOld : srtOld;
+        if (registered.isNotEmpty && registered.length != newPaths.length) {
+          return SrtBookRelocateCountMismatch(expected: registered.length);
+        }
+      }
+      final String json = jsonEncode(newPaths);
+      await _db.patchSrtBook(
+        uid,
+        SrtBooksCompanion(
+          audioPathsJson: Value(json),
+          audioRoot: const Value<String?>(null),
+        ),
+      );
+      if (abRow != null) {
+        await _db.patchAudiobook(
+          abRow.bookKey,
+          AudiobooksCompanion(
+            audioPathsJson: Value(json),
+            audioRoot: const Value<String?>(null),
+          ),
+        );
+      }
+      return const SrtBookRelocated();
+    });
+  }
+
+  static List<String> _decodePaths(String? json) {
+    if (json == null || json.isEmpty) return const <String>[];
+    try {
+      final dynamic decoded = jsonDecode(json);
+      if (decoded is! List) return const <String>[];
+      return decoded.whereType<String>().toList();
+    } on FormatException {
+      return const <String>[];
+    }
   }
 
   /// Deletes the SRT book + its on-disk persist dir. [SrtBookDeleteResult

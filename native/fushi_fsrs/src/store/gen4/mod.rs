@@ -1,5 +1,5 @@
-//! 协议 4 的存储侧（设计 §2、§6.1）。还没有任何命令接到这里：现有的 `srs.db` 与协议 3 的内核照旧，这里是另一个文件、
-//! 另一套表。
+//! 协议 4 的存储侧（设计 §2、§6.1）。C ABI 的库句柄与 `ffsrs_store_sync2` 的命令已经接到这里（S1：[kernel] /
+//! [dispatch]）；协议 3 的 `srs.db` 内核代码原地留着给协议 3 的测试与对拍装置，由 G7-6 删。
 //!
 //! - [legacy]：旧代读入器。把协议 3 的 srs.db 里的操作日志读出来、验链、逐条转译。只读。
 //! - [legacy_export]：冻结的协议 3 导出流（`.fushisrs` 第 1 版，魔数 `FSRS2EXP`）读入器。只读。
@@ -26,7 +26,10 @@
 //! - [fork]：本机身份分叉的检测（换身份本身是 `truth` 的 `rotate_identity`，本机身份表 `self_` 的读写也在那里）。
 //! - [compact]：本机原生段的小段合并（分层合并的计划与重新切段、签名；不改表）。
 //! - `compare`：协议 3 的投影与新代派生层逐类对拍（干跑与测试装置共用）。
-//! - [cmd]：读命令的新代实现（`read` / `read_lib` 的各个查询、`entity_views`、修改历史）。还没接分发器。
+//! - [cmd]：读写命令的新代实现（`read` / `read_lib` 的各个查询、`entity_views`、修改历史、写命令）。
+//! - [kernel]：命令层的库句柄（C ABI 句柄表里放的就是它）：连接、常驻会话、写入代数；迁移的全局命令（S1）。
+//! - [dispatch]：新代分发器——`ffsrs_store_sync2` 的每条命令接到 [cmd]，未接线 / 已删的给明确的错误（S1）。
+//! - [local]：新代库里的本机状态行（修订号、纪元、校时状态；`srs_meta` 键，S1）。
 //! - [carry]：迁移时带过去的本机状态（公钥与名字、暂扣、检查点、本机媒体、`media_at`、加密位置记忆、绑定状态、切点），
 //!   预演与迁移共用。
 //! - [migrate]：迁移编排（设计 §6.1、规划 §1.4 第 1–11 步，G7-2）：取锁 → 前提 → 临时文件里走 [dryrun] 的同一套阶段 →
@@ -42,16 +45,24 @@ pub mod compact;
 pub(crate) mod compare;
 pub mod derive;
 pub mod digest;
+pub mod discard;
+pub mod dispatch;
 pub mod dryrun;
 pub mod export;
 pub mod files;
 pub mod fork;
+#[cfg(test)]
+mod guards_tests;
+#[cfg(any(test, feature = "id_audit"))]
+pub(crate) mod id_audit;
 pub mod identity;
 pub mod import;
 pub mod ingest;
 pub mod inherit;
+pub mod kernel;
 pub mod legacy;
 pub mod legacy_export;
+pub mod local;
 pub mod media;
 pub mod migrate;
 pub mod native;
@@ -59,8 +70,12 @@ pub mod oldroot;
 pub(crate) mod pack;
 #[cfg(test)]
 pub(crate) mod parity;
+pub(crate) mod prepare;
 pub mod receive;
+pub mod refresh;
+pub mod retained;
 pub mod schema;
+pub(crate) mod scrub;
 pub mod sync_state;
 pub mod truth;
 pub mod weigh;

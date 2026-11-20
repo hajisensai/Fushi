@@ -93,6 +93,24 @@ abstract final class VideoCoverMutationGate {
   static void debugResetForTesting() {
     _busy = false;
     _waiters.clear();
+    _debugHolderEntry = null;
+  }
+
+  /// 当前持锁者进门时的调用栈。只在 debug（assert 开启）下采集，release 恒为 null，
+  /// 不给生产路径加 `StackTrace.current` 的开销。
+  static StackTrace? _debugHolderEntry;
+
+  /// 锁空闲且无人排队。**仅供测试**：widget 测试据此判断封面写入链已排干。
+  @visibleForTesting
+  static bool get debugIsIdle => !_busy && _waiters.isEmpty;
+
+  /// 锁的当前状态（持锁与否、排队数、持锁者进门调用栈），供测试超时时说清「卡在谁手里」。
+  /// **仅供测试**。
+  @visibleForTesting
+  static String debugDescribeState() {
+    final StackTrace? holder = _debugHolderEntry;
+    return 'busy=$_busy waiters=${_waiters.length} holder='
+        '${holder == null ? (_busy ? '(移交中或非 debug 构建)' : '(无)') : '\n$holder'}';
   }
 
   static Future<T> runExclusive<T>(Future<T> Function() action) async {
@@ -101,6 +119,11 @@ abstract final class VideoCoverMutationGate {
         inheritedContext.owner.active) {
       return inheritedContext.runChild(action);
     }
+    StackTrace? debugEntry;
+    assert(() {
+      debugEntry = StackTrace.current;
+      return true;
+    }());
     // 判 + 占必须在第一次 await 之前同步完成，否则两个同步进入者会同时看到空闲。
     if (_busy) {
       final Completer<void> waiter = Completer<void>();
@@ -109,6 +132,7 @@ abstract final class VideoCoverMutationGate {
     } else {
       _busy = true;
     }
+    _debugHolderEntry = debugEntry;
     final _VideoCoverMutationOwner owner = _VideoCoverMutationOwner();
     final _VideoCoverMutationContext root = _VideoCoverMutationContext(owner);
     try {
@@ -120,6 +144,7 @@ abstract final class VideoCoverMutationGate {
       // Timer/unawaited descendant 会继承 Zone；outer 完成后先让 owner 失效，随后这些
       // 后代再进 gate 必须排队，不能借旧 Zone 永久绕过新的持锁者。
       owner.active = false;
+      _debugHolderEntry = null;
       if (_waiters.isNotEmpty) {
         _waiters.removeFirst().complete();
       } else {

@@ -80,6 +80,7 @@ import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_service.dart';
 import 'package:fushi_engine/sync/remote_lookup_routes.dart';
 import 'package:fushi_engine/sync/remote_mining_target.dart';
+import 'package:fushi_engine/srs/srs_remote_generation.dart';
 import 'package:fushi_engine/srs/srs_remote_store.dart';
 import 'package:fushi_engine/srs/srs_remote_store_routes.dart';
 import 'package:fushi_engine/sync/srs_change_feed.dart';
@@ -662,6 +663,10 @@ class FushiSyncServer {
   final Map<String, _VideoStreamToken> _videoStreamTokens =
       <String, _VideoStreamToken>{};
 
+  /// 转码 HLS 分段的小 LRU（video-34），键含签发分段的流 token + 段号；token 作废
+  /// （释放流票 / TTL / 上限淘汰 / 吊销）时连同它的段一起清掉。
+  final TranscodeSegmentCache _transcodeSegments = TranscodeSegmentCache();
+
   /// 源文件平均码率（bps）的探测缓存，键 = 路径 + 大小 + 修改时间（文件被替换即
   /// 失效）。`/streamurl` 下发给 client 的「自动」档判据用，ffprobe 每个文件只跑一次。
   final Map<String, int?> _sourceBitrateCache = <String, int?>{};
@@ -820,7 +825,8 @@ class FushiSyncServer {
       InterconnectPluginRelayTickets();
 
   /// 远程复习库（docs/specs/2026-11-01-srs-remote-review-design.md）：每个请求现取，复习模块关着时回 null →
-  /// `/api/srs/remote/*` 404、`/api/capabilities` 不声明 [kSrsRemoteStoreCapability]。
+  /// 端点 503 `unavailable`（V2）/ 404（V1）、`/api/capabilities` 不声明 [kSrsRemoteStoreCapabilityV2] /
+  /// [kSrsRemoteStoreCapability]。开着时两个都声明：V2 是真端点，V1 只是拒绝桩（D31，srs_remote_generation.dart）。
   SrsRemoteStoreService? Function()? srsRemoteStoreProvider;
 
   /// 「互联主机」AI 提供商的主机侧（反馈 M8KvhMTHVS，`ai/ai_relay.dart`）：已配对设备把
@@ -1184,6 +1190,7 @@ class FushiSyncServer {
     await _blurayClipRelays.closeAll();
     _discShares.clear();
     _exportCache.dispose();
+    _transcodeSegments.clear();
     // 漫画 P3：host 停机时中止在跑的 OCR 任务（页边界停，断点缓存保留）。
     await _mangaOcrJobs?.disposeAll();
     await _screenOcr?.dispose();
@@ -1338,9 +1345,22 @@ class FushiSyncServer {
       return jsonResponse(<String, dynamic>{'joined': joined()});
     }
     // 远程复习库：已配对设备不下载卡组，直接在本机的复习库上复习。鉴权走上方 middleware。
-    if (reqPath.startsWith(kSrsRemoteStorePathPrefix)) {
+    if (isSrsRemoteStorePath(reqPath)) {
       final SrsRemoteStoreService? review = srsRemoteStoreProvider?.call();
-      if (review == null) return shelf.Response.notFound('SRS review off');
+      if (review == null) {
+        // V2 端点回机读码：新客户端据「404 而没有机读码」判断对端是不认 V2 的旧主机，复习关着不能混进去。
+        return reqPath.startsWith(kSrsRemoteStoreV2PathPrefix)
+            ? shelf.Response(
+                503,
+                body: jsonEncode(<String, dynamic>{
+                  'error': SrsRemoteStoreError.unavailable,
+                }),
+                headers: const <String, String>{
+                  'Content-Type': 'application/json',
+                },
+              )
+            : shelf.Response.notFound('SRS review off');
+      }
       return handleSrsRemoteStoreRequest(review, request, method, reqPath);
     }
     if (reqPath.startsWith(kAiRelayPathPrefix)) {
@@ -1375,7 +1395,10 @@ class FushiSyncServer {
       if (_leaderboardLinkAvailable) {
         capabilities[kInterconnectLeaderboardLinkCapability] = true;
       }
-      if (srsRemoteStore) capabilities[kSrsRemoteStoreCapability] = true;
+      if (srsRemoteStore) {
+        capabilities[kSrsRemoteStoreCapabilityV2] = true;
+        capabilities[kSrsRemoteStoreCapability] = true;
+      }
       if (screenOcr) capabilities[kScreenOcrCapability] = true;
       if (aiRelay) capabilities[kAiRelayCapability] = true;
       return jsonResponse(capabilities);
@@ -1725,6 +1748,10 @@ class FushiSyncServer {
   /// BUG-1568 测试钩子：当前驻留的视频流 token 数（验证签发侧 cap 逐出行为）。
   @visibleForTesting
   int get videoStreamTokenCount => _videoStreamTokens.length;
+
+  /// video-34 测试钩子：当前缓存的转码分段数（验证 token 作废时段随之清掉）。
+  @visibleForTesting
+  int get cachedTranscodeSegmentCount => _transcodeSegments.length;
 
   /// BUG-908(a) 测试钩子：当前驻留的音频 token 数（验证 cap 逐出行为）。
   @visibleForTesting

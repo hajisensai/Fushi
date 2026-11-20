@@ -131,21 +131,22 @@ void main() {
         tester.getTopLeft(brightnessRow).dy,
         greaterThan(tester.getTopLeft(find.text(t.reader_theme)).dy),
       );
-      // 272 宽抽屉里三段图标条放不进行宽 55%，按设计系统的唯一判据
-      // （settingsChoiceUsesSegments）退回「点整行弹菜单」形态：整行仍须完整落在
-      // 抽屉内（左侧保留 48px 点外关闭区），三个选项都能从菜单里选到。
-      final Finder menuRow = find.descendant(
+      // 272 宽抽屉里三段图标条放不进行宽 55%，按分段行的唯一判据
+      // （settingsSegmentedPlacement）换到标题下方并撑满整行：整条须完整落在
+      // 抽屉内（左侧保留 48px 点外关闭区），三个选项都能直接点到。
+      final Finder strip = find.descendant(
         of: brightnessRow,
-        matching: find.byType(SettingsChoiceMenuRow),
+        matching: find.byWidgetPredicate((Widget w) => w is SegmentedButton),
       );
       // 2026-10 M3E 主题预设卡（FushiThemePresetCard）比旧色块高得多，720 高的
       // 视窗里「明暗」行被推到首屏以下——像用户一样先滚到它。
-      await tester.ensureVisible(menuRow);
+      await tester.ensureVisible(strip);
       await tester.pumpAndSettle();
-      expect(menuRow.hitTestable(), findsOneWidget);
-      expect(tester.getRect(menuRow).left, greaterThanOrEqualTo(48));
-      expect(tester.getRect(menuRow).right, lessThanOrEqualTo(320));
+      expect(strip.hitTestable(), findsOneWidget);
+      expect(tester.getRect(strip).left, greaterThanOrEqualTo(48));
+      expect(tester.getRect(strip).right, lessThanOrEqualTo(320));
 
+      const List<String> order = <String>['light', 'system', 'dark'];
       for (final (String, String) choice in <(String, String)>[
         ('dark', t.dark_mode_dark),
         ('light', t.dark_mode_light),
@@ -154,12 +155,15 @@ void main() {
         final int liveBefore = liveChanges;
         final int styleBefore = styleChanges;
         final int themeBefore = themeChanges;
-        await tester.tap(menuRow);
-        await tester.pumpAndSettle();
-        final Finder item = find.text(choice.$2).last;
-        expect(tester.getRect(item).left, greaterThanOrEqualTo(0));
-        expect(tester.getRect(item).right, lessThanOrEqualTo(320));
-        await tester.tap(item);
+        // 三段等宽（轨道内边距 4）：点选中项所在那一段的中心。
+        final Rect track = tester.getRect(strip).deflate(4);
+        final double cell = track.width / order.length;
+        await tester.tapAt(
+          Offset(
+            track.left + cell * (order.indexOf(choice.$1) + 0.5),
+            track.center.dy,
+          ),
+        );
         await tester.pumpAndSettle();
 
         expect(model.themeNotifier.brightnessMode, choice.$1);

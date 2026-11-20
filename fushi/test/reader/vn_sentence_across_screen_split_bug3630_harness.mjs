@@ -7,15 +7,15 @@
 // Runs the complete generated VN factory plus the real selection script in
 // Chrome (the same setup as vn_lookup_audio_coordinates_harness.mjs); only the
 // Flutter bridge is replaced with a recorder.
-import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { launchChromeDriver, resolveChrome } from '../../../tool/reader_pitch_headless/cdp_client.mjs';
+import { readPayload } from './reader_harness_support.js';
 
+const scripts = readPayload();
 if (!resolveChrome()) {
   console.log('Chrome unavailable');
   process.exit(77);
 }
-const scripts = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 
 // Screen capacity of the deterministic ruler below, in code points of visible
 // text (ruby annotations excluded). With 17 the dialogue splits as

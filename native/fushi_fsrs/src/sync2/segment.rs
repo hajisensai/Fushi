@@ -50,6 +50,7 @@ pub const CONTENT_FLOOR: u32 = 3;
 /// 时间，段越少首次提交 / 新设备追赶越快；增量同步每轮只有几条操作，本来就只出一个小段，由小段合并（§7.1）收拢。
 pub const SEGMENT_TARGET_BYTES: u64 = 4 * 1024 * 1024;
 /// 每段条数上限：只是解码内存的保险（真实复习压缩后每条几十字节，4 MB 约十万条）。
+#[cfg(test)]
 pub const SEGMENT_MAX_OPS: u64 = 250_000;
 /// 每段**解压后**的体积上限（按载荷 + 每条固定开销估计）。只按压缩后体积切时，重复度高的正文（例句、模板
 /// 化字段）压缩比能到上百倍，一个 4 MB 的段解开就是几百 MB，读端解一段要同时拿着明文与解出来的操作。
@@ -59,15 +60,19 @@ pub const SEGMENT_MAX_RAW_BYTES: u64 = 16 * 1024 * 1024;
 /// -1 17.8 MB、-3 17.5 MB（0.15 s）、-9 17.2 MB（0.7 s）、-19 14.5 MB（60 s）。-3 之后每多一档只省 1%、耗时翻倍，
 /// 手机上首次提交几十万条要按秒计，取 3。不用字典：首次提交 / 合并后的段是几 MB 的大帧，字典只对几百字节的小帧有用，
 /// 而小段的绝对体积本来就小；字典一旦用上就成了格式的一部分，永远要随包带着训练那天的那一份。
+#[cfg(test)]
 pub const SEGMENT_ZSTD_LEVEL: i32 = 3;
 
 /// 压一个段体（[SEGMENT_ZSTD_LEVEL]）。只在分配失败这类不可能的情形出错。
+#[cfg(test)]
 fn compress_body(raw: &[u8]) -> Result<Vec<u8>, String> {
     zstd::bulk::compress(raw, SEGMENT_ZSTD_LEVEL).map_err(|e| format!("segment compress: {e}"))
 }
 
 /// 估算压缩体积的小块：块内一起压、块间各自压，求和是整段一起压的上界（块越大越准，也越费内存）。
+#[cfg(test)]
 const CHUNK_OPS: usize = 4096;
+#[cfg(test)]
 const CHUNK_RAW: usize = 256 * 1024;
 
 pub type Chain = [u8; 32];
@@ -125,6 +130,7 @@ pub struct SegmentHeader {
 }
 
 impl SegmentHeader {
+    #[cfg(test)]
     fn write(&self, w: &mut Writer) {
         w.raw(MAGIC);
         w.u8(VERSION);
@@ -200,6 +206,7 @@ pub struct Segment {
     pub ops: Vec<Op>,
 }
 
+#[cfg(test)]
 fn write_body(ops: &[Op]) -> Vec<u8> {
     let mut w = Writer::with_capacity(ops.len() * 48);
     w.uv(ops.len() as u64);
@@ -352,6 +359,7 @@ impl Iterator for OpStream<'_> {
 }
 
 /// 打包一段（[ops] 必须是同一设备的连续 seq，[prev_chain] 是 first − 1 处的链值）。
+#[cfg(test)]
 pub fn pack(
     collection: Id,
     ops: &[Op],
@@ -472,6 +480,7 @@ pub fn relay_unwrap(
 
 /// 一个收到的段（原段或转发件）里转发要用的部分：`(原段完整字节, 原段体是密文时的明文压缩体)`。[key] = 它所在
 /// 位置的密钥。调用方先验过签名与链。
+#[cfg(test)]
 pub fn relay_parts(
     bytes: &[u8],
     key: Option<&CollectionKey>,
@@ -496,6 +505,7 @@ pub fn relay_parts(
 }
 
 /// 打包一个转发件（[orig] = 原段完整字节，[plain] = 原段体是密文时的明文压缩体；[key] = 目标位置的密钥）。
+#[cfg(test)]
 pub fn relay_pack(
     orig: &[u8],
     plain: Option<&[u8]>,
@@ -680,6 +690,7 @@ pub fn open(
 }
 
 /// 一组操作打成段体后压缩出来的字节数（不含段头、签名、加密开销，那些是每段几十字节的常数）。
+#[cfg(test)]
 pub fn compressed_len(ops: &[Op]) -> u64 {
     let raw = write_body(ops);
     // 压不了（分配失败）就按原长算：只会切得更碎，不会超限。
@@ -692,6 +703,7 @@ pub fn compressed_len(ops: &[Op]) -> u64 {
 /// 切点只落在小块边界上；体积估计是各小块单独压缩之和（上界），所以真实段不超过 [SEGMENT_TARGET_BYTES]，
 /// 解压后也不超过 [SEGMENT_MAX_RAW_BYTES]（单条操作本身更大时一条一段）。
 #[derive(Default)]
+#[cfg(test)]
 pub struct Splitter {
     chunk: Vec<Op>,
     chunk_raw: usize,
@@ -700,11 +712,14 @@ pub struct Splitter {
     out: Vec<(u64, u64, u64)>,
 }
 
+#[cfg(test)]
 impl Splitter {
+    #[cfg(test)]
     pub fn new() -> Splitter {
         Splitter::default()
     }
 
+    #[cfg(test)]
     pub fn push(&mut self, op: Op) {
         let raw = op.payload.len() + 24;
         if !self.chunk.is_empty()
@@ -716,6 +731,7 @@ impl Splitter {
         self.chunk.push(op);
     }
 
+    #[cfg(test)]
     fn flush_chunk(&mut self) {
         let (Some(head), Some(tail)) = (self.chunk.first(), self.chunk.last()) else {
             return;
@@ -745,6 +761,7 @@ impl Splitter {
 
     /// `(first, last, 体积)`：解压后已过上限一半的段按「满段」（[SEGMENT_TARGET_BYTES] 的一半）记。分层合并
     /// （store/sync2/transport.rs）只看这个数，否则这种压缩后很小的段会每轮被挑出来重切、又切回原样。
+    #[cfg(test)]
     fn sized((a, b, s, w): (u64, u64, u64, u64)) -> (u64, u64, u64) {
         if w >= SEGMENT_MAX_RAW_BYTES / 2 {
             (a, b, s.max(SEGMENT_TARGET_BYTES / 2))
@@ -753,6 +770,7 @@ impl Splitter {
         }
     }
 
+    #[cfg(test)]
     pub fn finish(mut self) -> Vec<(u64, u64, u64)> {
         self.flush_chunk();
         if let Some(done) = self.cur.take() {
@@ -763,6 +781,7 @@ impl Splitter {
 }
 
 /// 一次性切一组操作（[Splitter] 的便捷形）。
+#[cfg(test)]
 pub fn split_ranges(ops: &[Op]) -> Vec<(u64, u64, u64)> {
     let mut s = Splitter::new();
     for op in ops {
@@ -829,6 +848,7 @@ impl Head {
     }
 
     /// head 引用的段文件名。
+    #[cfg(test)]
     pub fn segment_files(&self) -> Vec<String> {
         self.segments
             .iter()
@@ -875,6 +895,7 @@ impl Head {
 
     /// 内容签名：除代号与时刻外的全部字段（发布了什么、ack 到哪、摘要、名字）。两个 head 的内容签名相同 =
     /// 对别的设备而言没有任何新信息，不必再发一次（见 `sync2_head` 的「没变就不写」）。
+    #[cfg(test)]
     pub fn content_sig(&self) -> String {
         let mut v = self.unsigned_json();
         if let Some(ext) = &self.ext {

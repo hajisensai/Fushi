@@ -24,14 +24,24 @@
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
 
-use super::{Touched, load_op, sql};
+#[cfg(test)]
+use super::Touched;
+#[cfg(test)]
+use super::load_op;
+use super::sql;
 use crate::sync2::id::Id;
-use crate::sync2::op::{Body, EditBody, EntKind, Op};
+#[cfg(test)]
+#[cfg(test)]
+use crate::sync2::op::Body;
+use crate::sync2::op::{EditBody, EntKind, Op};
+#[cfg(test)]
 use crate::sync2::vv::{OpId, Vv};
 
 /// `sync2_trust.state`：待本机确认。
+#[cfg(test)]
 pub(crate) const PENDING: i64 = 1;
 /// `sync2_trust.state`：本机拒绝了。
+#[cfg(test)]
 pub(crate) const REJECTED: i64 = 2;
 
 /// `sync2_trust_held.what`。
@@ -41,6 +51,7 @@ const WHAT_PURGE: &str = "purge";
 /// 本机的这个 profile 里还没有用户自己的东西：没有复习日志、没有修改记录，身份记录全是内置的（默认牌组、内置笔记
 /// 类型——Dart 开库就写，`SrsDbStore.ensureBuiltins`，所以不能要求操作日志为空）。新装的设备第一次同步时就是这样：
 /// 库里没有可丢的东西，这时认识的设备不扣。
+#[cfg(test)]
 pub(crate) fn library_fresh(c: &Connection, profile: &str) -> Result<bool, String> {
     c.prepare_cached(
         "SELECT NOT EXISTS (SELECT 1 FROM srs_review_logs WHERE profile_uid = srs_id(?1))            AND NOT EXISTS (SELECT 1 FROM srs_field_edits WHERE profile_uid = srs_id(?1))            AND NOT EXISTS (SELECT 1 FROM srs_entities WHERE profile_uid = srs_id(?1)                              AND json_extract(payload_json, '$.builtin') IS NULL)",
@@ -67,6 +78,7 @@ pub(crate) fn state(c: &Connection, profile: &str, device: &Id) -> Result<Option
 /// 先把通道做完再判。[c] 在调用方的事务里，这里只能在那笔事务里一次做完：`sync2_plan_at` 进事务之前已按片做过
 /// （[sees_new_device]），正常走不到，这是兜底。做完的片落进投影的变化交给 [settled]（同
 /// [super::channel::settle]：调用方攒着、随下一条命令的回包带回 Dart）。
+#[cfg(test)]
 pub(crate) fn note_new_device(
     c: &Connection,
     profile: &str,
@@ -89,6 +101,7 @@ pub(crate) fn note_new_device(
 
 /// [heads] 里有没有本机还不认识的设备（`plan` 会为它调 [note_new_device] 的那种；只多不少：别的集合的、要更新
 /// 版本才读得了的 head 也算）。`sync2_plan_at` 据此在进写事务之前先把没做完的收段通道按片做完。
+#[cfg(test)]
 pub(crate) fn sees_new_device(
     c: &Connection,
     profile: &str,
@@ -169,6 +182,7 @@ pub(crate) fn hold_purge(
 }
 
 /// 信任 [device]：信任记录删掉，扣着的删除 / 清除按 seq 交给生产投影。返回放行的条数。
+#[cfg(test)]
 pub(crate) fn release(
     c: &Connection,
     profile: &str,
@@ -215,6 +229,7 @@ pub(crate) fn release(
 }
 
 /// 拒绝 [device]（只对还没信任的设备：可信设备的删除早已投影，拒绝改变不了它们，停用见 devices.rs）。
+#[cfg(test)]
 pub(crate) fn reject(c: &Connection, profile: &str, device: &Id) -> Result<(), String> {
     let n = c
         .execute(
@@ -231,6 +246,7 @@ pub(crate) fn reject(c: &Connection, profile: &str, device: &Id) -> Result<(), S
 /// 摘要串里版本向量的部分（digest.rs `VV_PREFIX` + 版本向量哈希）；本机扣着不可信设备的操作时再接上扣住集合的
 /// 指纹。别的设备（含老版本）只在这部分逐字相同时才比根：信任了它的设备与扣着它的本机不比（两边投影本来就该
 /// 不同），扣着同一批的设备照样互相比较。放行之后指纹消失，回到与别的设备逐位可比。
+#[cfg(test)]
 pub(crate) fn digest_vv_tag(c: &Connection, profile: &str, vv: &Vv) -> Result<String, String> {
     let base = format!("{}{}", super::digest::VV_PREFIX, vv.hash_hex());
     let held: Vec<(Vec<u8>, i64)> = c
@@ -254,6 +270,7 @@ pub(crate) fn digest_vv_tag(c: &Connection, profile: &str, vv: &Vv) -> Result<St
 }
 
 /// 设备状态补充（devices.rs `status_extras`）：设备 ID 文本 → (`pending` / `rejected`, 首次出现, 扣着的删除数, 扣着的清除数)。
+#[cfg(test)]
 pub(crate) fn untrusted(
     c: &Connection,
     profile: &str,
@@ -300,6 +317,7 @@ impl crate::store::SrsCore {
     /// 信任 / 拒绝一台还没确认的设备（冲突中心「待确认的设备」）。信任：扣着的删除 / 清除按生产投影放行，返回与
     /// [crate::store::SrsCore::sync2_append] 同形的投影变化（`marks` / `replayed` / `changed` / `purged`）外加 `released`；
     /// 已经可信的设备再信任一次什么也不做。拒绝：只对待确认 / 已拒绝的设备，扣着的继续扣着。
+    #[cfg(test)]
     pub fn sync2_trust(
         &self,
         profile: &str,
@@ -314,7 +332,8 @@ impl crate::store::SrsCore {
 }
 
 /// [crate::store::SrsCore::sync2_trust] 的本体：在调用方持着的写连接、开好的 SAVEPOINT 里做（不自己取锁）。本机写命令
-/// 分发（store/ffi.rs `local_write_body`）把它与缓存刷新、本机状态行放进同一个 SAVEPOINT。
+/// 分发（store/legacy3 `local_write_body`）把它与缓存刷新、本机状态行放进同一个 SAVEPOINT。
+#[cfg(test)]
 pub(crate) fn trust_on(
     c: &Connection,
     profile: &str,

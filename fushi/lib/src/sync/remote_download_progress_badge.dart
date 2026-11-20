@@ -21,10 +21,14 @@ class RemoteDownloadProgressBadge extends StatelessWidget {
     required this.tooltip,
     this.receivedBytes,
     this.totalBytes,
+    this.caption,
     super.key,
   });
 
   final double? progress;
+
+  /// 环下说明（多阶段任务的阶段名），见 [FushiDownloadCoverOverlay.caption]。
+  final String? caption;
 
   /// 读屏标签（「下载中」）；值读百分比 / 已下载字节。
   final String tooltip;
@@ -39,6 +43,7 @@ class RemoteDownloadProgressBadge extends StatelessWidget {
       receivedBytes: receivedBytes,
       totalBytes: totalBytes,
       semanticsLabel: tooltip,
+      caption: caption,
     );
   }
 }

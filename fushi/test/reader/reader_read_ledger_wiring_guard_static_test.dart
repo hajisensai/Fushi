@@ -340,11 +340,14 @@ void main() {
     });
 
     test('内容就绪兜底超时经 _failNavigation（同一份收尾）', () {
+      // BUG-4906：兜底超时与 JS 失败回执共用 _abortStalledRestore，由它调 _failNavigation。
       final String body = methodBody(
         corpus,
         'void _startContentReadyTimeout()',
       );
-      expect(containsCodeLine(body, '_failNavigation();'), isTrue);
+      expect(containsCodeLine(body, '_abortStalledRestore();'), isTrue);
+      final String abort = methodBody(corpus, 'void _abortStalledRestore()');
+      expect(containsCodeLine(abort, '_failNavigation();'), isTrue);
     });
 
     test('全语料只有 _failNavigation 调 discard', () {

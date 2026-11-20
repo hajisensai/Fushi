@@ -417,8 +417,8 @@ extension _VideoRemoteControl on _VideoFushiPageState {
     };
   }
 
-  /// 网页档的遥控制卡：与本页网页档制卡（[_onWebMineEntry]）同两条路——YouTube 按视频
-  /// id + 字幕时间窗从真实视频流裁音频与画面、当场出卡；其它站点没有可截的本地媒体，
+  /// 网页档的遥控制卡：与本页网页档制卡（[_onWebMineEntry]）同一条分流——YouTube 按视频
+  /// id + 字幕时间窗从真实视频流裁音频与画面、当场出卡，裁不出来退回队列；其它站点没有可截的本地媒体，
   /// 冻结字段与时间窗进网页制卡队列，之后切到可捕获档逐句重放落卡（手机收到「已收下」）。
   Future<Map<String, Object?>> _mineRemoteWebCue(
     VideoRemoteCue cue,
@@ -435,7 +435,29 @@ extension _VideoRemoteControl on _VideoFushiPageState {
     final String href = state != null && state.href.isNotEmpty
         ? state.href
         : row.videoPath;
-    final String? youtubeId = youtubeVideoIdOrNull(href);
+    final String bookUid = _activeBookUid;
+    final String videoKey = _webVideoKey;
+    Future<void> enqueue() async {
+      await _webMineQueue.enqueue(
+        bookUid: bookUid,
+        videoKey: videoKey,
+        href: href,
+        cueStartMs: selection.startMs,
+        cueEndMs: selection.endMs,
+        sentence: sentence,
+        cueSentence: selection.cueSentence,
+        fields: parsed.fields,
+      );
+      await _refreshStagedMineCount();
+      if (mounted) {
+        _showOsd(
+          t.web_video_mine_queued(count: _stagedMineCount.value),
+          icon: FushiIcons.checklist,
+        );
+      }
+    }
+
+    final String? youtubeId = webVideoDirectMineVideoId(href);
     if (youtubeId != null) {
       // 与手机试听同一个窗（含首尾留白与调轴，BUG-3350）：服务端 YouTube 裁剪不再加留白。
       final VideoPlayerController? controller = _controller;
@@ -447,42 +469,35 @@ extension _VideoRemoteControl on _VideoFushiPageState {
             selection.startMs,
             selection.endMs,
           );
-      final RemoteMineResult res = await appModel
-          .createRemoteMiningService()
-          .mineImmersion(
-            ImmersionMinePayload(
-              fields: parsed.fields,
-              sentence: sentence,
-              cueSentence: selection.cueSentence,
-              documentTitle: row.title,
-              youtubeVideoId: youtubeId,
-              clipStartMs: window.clipStartMs,
-              clipEndMs: window.clipEndMs,
-            ),
-          );
-      return <String, Object?>{
-        'success': res.result == 'success',
-        if (res.result == 'duplicate') 'duplicate': true,
-        if (res.result != 'success' && res.result != 'duplicate')
-          'error': 'mining_failed',
-      };
-    }
-    await _webMineQueue.enqueue(
-      bookUid: _activeBookUid,
-      videoKey: _webVideoKey,
-      href: href,
-      cueStartMs: selection.startMs,
-      cueEndMs: selection.endMs,
-      sentence: sentence,
-      cueSentence: selection.cueSentence,
-      fields: parsed.fields,
-    );
-    await _refreshStagedMineCount();
-    if (mounted) {
-      _showOsd(
-        t.web_video_mine_queued(count: _stagedMineCount.value),
-        icon: FushiIcons.checklist,
+      // 裁不出来退回队列（[mineWebVideoCueDirectOrQueue]，与本页制卡同一条分流）。
+      final RemoteMineResult? res = await mineWebVideoCueDirectOrQueue(
+        mineDirect: () => appModel.createRemoteMiningService().mineImmersion(
+          ImmersionMinePayload(
+            fields: parsed.fields,
+            sentence: sentence,
+            cueSentence: selection.cueSentence,
+            documentTitle: row.title,
+            youtubeVideoId: youtubeId,
+            clipStartMs: window.clipStartMs,
+            clipEndMs: window.clipEndMs,
+          ),
+        ),
+        enqueue: enqueue,
+        onFallback: (String reason) => ErrorLogService.instance.log(
+          'VideoFushi.web',
+          'remote YouTube direct mine failed, queued for replay: $reason',
+        ),
       );
+      if (res != null) {
+        return <String, Object?>{
+          'success': res.result == 'success',
+          if (res.result == 'duplicate') 'duplicate': true,
+          if (res.result != 'success' && res.result != 'duplicate')
+            'error': 'mining_failed',
+        };
+      }
+    } else {
+      await enqueue();
     }
     return <String, Object?>{
       ...const MinePopupResult.queued().toJson(),
@@ -678,7 +693,7 @@ extension _VideoRemoteControl on _VideoFushiPageState {
       return;
     }
     _ownsHandedOverNativeFullscreen = false;
-    _didInitialFullscreen = true;
+    _initialFullscreen.settle();
     unawaited(navigator.push<void>(route));
     if (oldFullscreenRoute != null && oldFullscreenRoute.isActive) {
       rootNavigator.removeRoute<void>(oldFullscreenRoute);

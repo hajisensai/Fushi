@@ -235,4 +235,54 @@ void main() {
       <String>['chapter-1.xhtml'],
     );
   });
+  // c40 顺带：写入 / 改名失败后清理临时文件，清理本身也失败（文件被占用 / 只读）
+  // 时，以前抛出的是清理的异常，把真正的失败原因顶掉了。
+  test('原子写：改名失败、清理临时文件也失败时，抛出的仍是改名的原始异常', () async {
+    final _GatedLoader loader = _GatedLoader(root.path);
+    final File target = File(chapterFile(0));
+    const FileSystemException renameError = FileSystemException('rename boom');
+    final List<String> constructed = <String>[];
+    await IOOverrides.runZoned(
+      () async {
+        await expectLater(
+          loader.write(target, <int>[1, 2, 3]),
+          throwsA(same(renameError)),
+        );
+      },
+      createFile: (String path) {
+        constructed.add(path);
+        return _UndeletableTemp(path, renameError);
+      },
+    );
+    expect(constructed.single, endsWith('.part'));
+  });
+}
+
+/// 临时文件替身：写入成功、改名抛 [renameError]、存在、删除抛另一个异常。
+class _UndeletableTemp implements File {
+  _UndeletableTemp(this.path, this.renameError);
+
+  @override
+  final String path;
+  final FileSystemException renameError;
+
+  @override
+  Future<File> writeAsBytes(
+    List<int> bytes, {
+    FileMode mode = FileMode.write,
+    bool flush = false,
+  }) async => this;
+
+  @override
+  Future<File> rename(String newPath) async => throw renameError;
+
+  @override
+  Future<bool> exists() async => true;
+
+  @override
+  Future<FileSystemEntity> delete({bool recursive = false}) async =>
+      throw const FileSystemException('delete boom');
+
+  @override
+  Object? noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

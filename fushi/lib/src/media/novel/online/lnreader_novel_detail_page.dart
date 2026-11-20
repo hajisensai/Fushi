@@ -368,6 +368,7 @@ class _LnReaderNovelDetailPageState
           .deleteBook(
             db: appModel.database,
             bookKey: book.bookKey,
+            appModel: appModel,
             scope: decision.scope,
           );
       if (!mounted) return;

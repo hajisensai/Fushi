@@ -17,6 +17,7 @@
 /// 拆分只删行、不改字、不动时间轴：日语正文与顺序一个字都不动。
 library;
 
+import 'package:fushi_engine/media/video/subtitle/srt_writer.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_content_language.dart';
 
 /// 拆分的输入 / 输出单元：一条带时间的字幕文本。[text] 里的换行（`\n`，或 ASS 未展开
@@ -198,23 +199,10 @@ _LineKind _nearestTextKind(List<_LineKind> kinds, int i) {
 
 /// 把 cue 写成 SRT（UTF-8 文本，`\n` 换行，编号从 1 起）。负时间按 0 写。
 String subtitleTextCuesToSrt(List<SubtitleTextCue> cues) {
-  final StringBuffer out = StringBuffer();
-  for (int i = 0; i < cues.length; i++) {
-    final SubtitleTextCue cue = cues[i];
-    out
-      ..write('${i + 1}\n')
-      ..write('${_srtTime(cue.startMs)} --> ${_srtTime(cue.endMs)}\n')
-      ..write('${cue.text}\n\n');
-  }
-  return out.toString();
-}
-
-String _srtTime(int ms) {
-  final int v = ms < 0 ? 0 : ms;
-  final int h = v ~/ 3600000;
-  final int m = (v ~/ 60000) % 60;
-  final int s = (v ~/ 1000) % 60;
-  final int milli = v % 1000;
-  String two(int n) => n.toString().padLeft(2, '0');
-  return '${two(h)}:${two(m)}:${two(s)},${milli.toString().padLeft(3, '0')}';
+  return writeSrtBlocks(
+    cues.map(
+      (SubtitleTextCue cue) =>
+          (startMs: cue.startMs, endMs: cue.endMs, text: cue.text),
+    ),
+  );
 }

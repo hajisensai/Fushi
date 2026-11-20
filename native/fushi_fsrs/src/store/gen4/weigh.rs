@@ -341,7 +341,7 @@ impl<'t, 'c> Index<'t, 'c> {
         out: &mut Settled,
     ) -> Result<(), String> {
         let mut ents = std::mem::take(&mut self.touched);
-        self.dirt.entities.extend(ents.iter().cloned());
+        self.dirt.touched(&ents);
         // 别名表变了的行（`alias.rs` 记的 `alias_moves`：变了规范 ID 的 ID 与它前后的规范 ID）：类的成员变了，
         // 类里的删除要按新的类重看——别名迟到（先扣住、后来才并类）时逐条维护才与重建相同。变动的 ID 多于
         // [MOVES_IN_PLACE]（盐集合变了这类情形，成千上万个带盐 ID 一起换规范 ID）时与重建一样把有删除的实体全看一遍，

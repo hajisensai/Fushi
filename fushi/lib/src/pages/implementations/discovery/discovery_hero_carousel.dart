@@ -29,6 +29,8 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
 import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi/src/utils/components/fushi_carousel.dart';
+import 'package:fushi/src/utils/components/fushi_cover_block.dart'
+    show FushiShadowBleedViewport, kFushiCoverBlockRegularBleed;
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiTopFadeScrim;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -307,33 +309,46 @@ class _DiscoveryHeroCarouselState extends State<DiscoveryHeroCarousel> {
         final double height = DiscoveryHeroBanner.heightFor(
           constraints.maxWidth,
         );
-        final Widget pages = HorizontalDragScrollable(
-          child: PageView.builder(
-            key: const ValueKey<String>('discovery-hero-pages'),
-            controller: _controller,
-            itemCount: widget.itemCount,
-            physics: _multiPage
-                ? const PageScrollPhysics()
-                : const NeverScrollableScrollPhysics(),
-            onPageChanged: _onPageChanged,
-            itemBuilder: (BuildContext context, int index) => KeyedSubtree(
-              key: _pageKey(index),
-              child: Listener(
-                onPointerSignal: _onPointerSignal,
-                // M3E carousel：项按离当前页的距离收缩 / 压暗，背景图视差
-                // （首块背景剧照的 FushiParallax 读这份偏移）。
-                child: AnimatedBuilder(
-                  animation: _controller,
-                  child: widget.itemBuilder(context, index),
-                  builder: (BuildContext context, Widget? child) =>
-                      FushiCarouselItemOffset(
-                        offset: _offsetOf(index),
-                        child: FushiCarouselItemTransform(child: child!),
+        // 视口给首块投影留余量（设计稿 11-20 #14）：PageView 的视口按自身矩形硬裁，
+        // 首块下边距为 0、两侧只有页边距，投影（模糊 26、下移 10）会被切成一圈
+        // 直角框。视口向四周外扩 [kFushiCoverBlockRegularBleed]、每页再内缩同样的量，
+        // 首块位置不变、投影整段画得出来。
+        final Widget pages = FushiShadowBleedViewport(
+          bleed: kFushiCoverBlockRegularBleed,
+          builder: (BuildContext context, EdgeInsets bleed) =>
+              HorizontalDragScrollable(
+                child: PageView.builder(
+                  key: const ValueKey<String>('discovery-hero-pages'),
+                  controller: _controller,
+                  itemCount: widget.itemCount,
+                  physics: _multiPage
+                      ? const PageScrollPhysics()
+                      : const NeverScrollableScrollPhysics(),
+                  onPageChanged: _onPageChanged,
+                  itemBuilder: (BuildContext context, int index) => Padding(
+                    padding: bleed,
+                    child: KeyedSubtree(
+                      key: _pageKey(index),
+                      child: Listener(
+                        onPointerSignal: _onPointerSignal,
+                        // M3E carousel：项按离当前页的距离收缩 / 压暗，背景图视差
+                        // （首块背景剧照的 FushiParallax 读这份偏移）。
+                        child: AnimatedBuilder(
+                          animation: _controller,
+                          child: widget.itemBuilder(context, index),
+                          builder: (BuildContext context, Widget? child) =>
+                              FushiCarouselItemOffset(
+                                offset: _offsetOf(index),
+                                child: FushiCarouselItemTransform(
+                                  child: child!,
+                                ),
+                              ),
+                        ),
                       ),
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ),
         );
         return Actions(
           actions: <Type, Action<Intent>>{

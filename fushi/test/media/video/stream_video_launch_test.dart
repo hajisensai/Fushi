@@ -288,5 +288,53 @@ void main() {
       // 无 expire 不缓存 → 两次都重解析。
       expect(resolveCalls, 2);
     });
+
+    test('起播解析出的画质档挂在客户端上，点开画质菜单直接用（gap-remote-10）', () async {
+      const YoutubeVariantSet variants = YoutubeVariantSet(
+        variants: <YoutubeVideoVariant>[
+          YoutubeVideoVariant(
+            height: 1080,
+            label: '1080p',
+            videoUrl: 'https://g/v1080',
+            codec: 'avc1',
+          ),
+          YoutubeVideoVariant(
+            height: 720,
+            label: '720p',
+            videoUrl: 'https://g/v720',
+            codec: 'avc1',
+          ),
+        ],
+        audioStreamUrl: 'https://g/a',
+        defaultIndex: 0,
+      );
+      final YoutubeResolvedSource base = fakeResolved('v');
+      final launch = await buildStreamVideoLaunch(
+        ytRow(),
+        streamCache: YoutubeStreamCache(
+          file: File('${tmp.path}/c.json'),
+          now: () => now,
+        ),
+        youtubeTargetHeight: 1080,
+        youtubeResolver: (String url) async => YoutubeResolvedSource(
+          streamUrl: base.streamUrl,
+          audioStreamUrl: base.audioStreamUrl,
+          miningVideoUrl: base.miningVideoUrl,
+          miningVideoHasAudio: base.miningVideoHasAudio,
+          title: base.title,
+          httpHeaders: base.httpHeaders,
+          cues: base.cues,
+          variants: variants,
+        ),
+        livenessCheck: (String u, Map<String, String> h) async => true,
+        now: () => now,
+      );
+      addTearDown(launch.client.close);
+      // 同一个画质目标：拿到的就是起播那份（没有再走联网的 getManifest）。
+      expect(
+        await launch.client.youtubeQualityVariants(playbackTargetHeight: 1080),
+        same(variants),
+      );
+    });
   });
 }

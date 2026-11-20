@@ -329,6 +329,9 @@ buildStreamVideoLaunch(
     String? miningVideoUrl;
     bool miningVideoHasAudio;
     Map<String, String> httpHeaders;
+    // 画质菜单各档：只有本次真的解析了 manifest 才有（持久缓存命中时没有 manifest，
+    // 画质菜单照旧懒解析）。
+    YoutubeVariantSet? variants;
 
     YoutubeStreamCacheEntry? hit;
     if (videoId != null) {
@@ -359,6 +362,7 @@ buildStreamVideoLaunch(
       // TODO-1301（BUG-600）：透传 muxed 挖矿流是否自带音轨（播放页据此选制卡音频源）。
       miningVideoHasAudio = resolved.miningVideoHasAudio;
       httpHeaders = resolved.httpHeaders;
+      variants = resolved.variants;
       if (videoId != null) {
         final int? expiresAtMs = computeStreamCacheExpiryMs(<String?>[
           resolved.streamUrl,
@@ -391,6 +395,8 @@ buildStreamVideoLaunch(
       // 字幕后置：起播不带 cue，watch URL 供播放页 load 后异步解析字幕灌 1302 字幕轨。
       youtubeCaptionsUrl: url,
       httpHeaderFields: httpHeaders,
+      youtubeVariants: variants,
+      youtubeVariantsTargetHeight: youtubeTargetHeight,
     );
   } else {
     final String? subtitleUrl = spec.subtitleUrl;
@@ -448,6 +454,8 @@ buildOnlineVideoExtraLaunch({
       miningVideoHasAudio: resolved.miningVideoHasAudio,
       youtubeCaptionsUrl: url,
       httpHeaderFields: resolved.httpHeaders,
+      youtubeVariants: resolved.variants,
+      youtubeVariantsTargetHeight: youtubeTargetHeight,
     );
   } else {
     client = UrlStreamVideoClient(streamUrl: url, miningVideoHasAudio: true);

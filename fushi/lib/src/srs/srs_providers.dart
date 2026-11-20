@@ -43,6 +43,7 @@ import 'package:fushi/src/models/preference_keys.dart'
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_device_view.dart';
+import 'package:fushi/src/srs/srs_persisted_ids.dart';
 import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_profile_stores.dart';
@@ -301,6 +302,7 @@ srsStoreProvider = FutureProvider<SrsDbStore?>((Ref ref) async {
   ).getOrCreateDeviceId();
   final Directory support = await ref.watch(srsSupportRootProvider)();
   int rolloverHour() => app.statDayResetHour;
+  bool reused = false;
   final SrsDbStore store = await stores.activate(
     profileUid,
     // 同一个配置再激活（与 uid 无关的依赖重建）：同一条连接、同一台设备就沿用这份副本，换上新参数。
@@ -310,6 +312,7 @@ srsStoreProvider = FutureProvider<SrsDbStore?>((Ref ref) async {
         return false;
       }
       current.rebind(engine: engine, fallbackRolloverHour: rolloverHour);
+      reused = true;
       return true;
     },
     () => SrsDbStore.open(
@@ -317,9 +320,6 @@ srsStoreProvider = FutureProvider<SrsDbStore?>((Ref ref) async {
       profileUid: profileUid,
       deviceId: deviceId,
       engine: engine,
-      // 旧库迁移推迟到首次同步确认之后、第一轮上传之前，先从同步位置收一轮再迁移（BUG-4011，
-      // SrsSyncScheduler.ensureMigrated）。确认弹框没回答前不迁移也不拉。
-      deferMigration: true,
       // 复习的「今天」与统计页共用日界（stats_day_reset_hour）；profile 设置里
       // 有同步来的翻日时刻时以它为准（见 SrsDbStore.dayContext）。
       fallbackRolloverHour: rolloverHour,
@@ -327,12 +327,30 @@ srsStoreProvider = FutureProvider<SrsDbStore?>((Ref ref) async {
       styles: SrsStyleStore(SrsStyleStore.directoryFor(support, profileUid)),
     ),
   );
-  // 存量去重在后台分批跑，不挡打开；store 换掉（切 profile / 关模块）或副本开始作废时停下，下次从断点续。
+  // 后台维护在 store 换掉（切 profile / 关模块）或副本开始作废时停下，下次从断点续。（协议 3 的存量样式去重
+  // `compactStoredStyles` 改的是协议 3 的存储表示，新代没有，已删。）
+  // 辅助进程（查词弹窗）重新激活同一份副本时重取身份：绑定变化只随引起它的命令回到主进程，这里看不到回包
+  // （交接说明「G9-4」「G7-5b」）。打开时 [SrsDbStore.open] 已经取过。
+  if (reused && storage.core.mode == SrsOpenMode.secondary) {
+    await store.refreshIdentity();
+  }
+  // 绑定变了 = 库换了（设计 §5.1）：整份重建依赖这份库的东西（RWKV 服务随 [srsRwkvServiceProvider] 关旧挂新，
+  // 列表 / 统计重读）。副本对象沿用（同一条连接、同一个 profile），它自己的缓存在 [SrsDbStore.onBindingChanged] 里已作废。
+  final StreamSubscription<void> bindingChanges = store.bindingChanges.listen(
+    (_) => ref.invalidateSelf(),
+  );
+  ref.onDispose(bindingChanges.cancel);
   bool disposed = false;
   ref.onDispose(() => disposed = true);
   bool shouldStop() => disposed || store.isWindingDown;
-  srsRunLogged('srsCompactStoredStyles', () async {
-    await store.compactStoredStyles(shouldStop: shouldStop);
+  // 偏好里存的牌组 / 笔记类型 / 字段映射 ID 与内置实体 ID 换成规范 ID（G9-6，srs_persisted_ids.dart）：补盐 / 并入后
+  // 旧盐算出的成员 ID 在牌组树里查不到。归一不到的原样保留。
+  srsRunLogged('srsNormalizeStoreIds', () async {
+    await srsNormalizeStoreIds(
+      store: store,
+      prefs: app.prefsRepo,
+      shouldStop: shouldStop,
+    );
   });
   // 媒体保留期回收：只被「删除已满 90 天」的笔记引用的本机媒体（srs_purge.dart）。历史本身永久保留。
   srsRunLogged('srsPurgeExpiredTombstones', () async {
@@ -402,6 +420,12 @@ final FutureProvider<SrsRwkvService?> srsRwkvServiceProvider =
         if (identical(store.rwkv, service)) store.rwkv = null;
         unawaited(service.close());
       });
+      // 换库（绑定变了）时按 [srsAttachRwkv] 的契约关旧服务、挂新服务：旧服务的内存态（已回放到的指纹、落库键）
+      // 属于换之前的库，不跨库沿用（交接说明 §8.6「进程内换库时 RWKV 内存态」）。迁移之后的重开换的是整个
+      // store，本 provider 随 [srsStoreProvider] 重建，同一条路径。
+      final StreamSubscription<void> bindingChanges = store.bindingChanges
+          .listen((_) => ref.invalidateSelf());
+      ref.onDispose(bindingChanges.cancel);
       await srsRwkvStartIfUsed(
         store,
         service,
@@ -818,9 +842,11 @@ Future<int> _srsMemoByContent(
 
 String _srsContentFingerprint(SrsDbStore store) => store.contentFingerprint;
 
-/// 内容指纹 + RWKV 整表重查键：内容指纹不随复习日志变（本机评分不让角标重扫），但别的设备的复习日志并进来
-/// （同步合并、导入）也不推进它（store/refresh.rs `Counters::content`）。RWKV 键恰好在每次合并别的设备的事件时
-/// 推进、本机评分时不动，拼上它后「只并进来旧复习日志」也会让按日志算的计数重算。
+/// 内容指纹 + RWKV 整表重查键。内容指纹不随本机复习日志变（本机评分不让角标重扫）。协议 3 里别的设备的复习日志
+/// 并进来（同步合并、导入）也不推进它，当时靠拼上 RWKV 键（每次合并别的设备的事件都推进）让「只并进来旧复习日志」
+/// 也重算。新代（协议 4）里收段 / 导入只要落了东西就把刷新键整份作废（内核 `gen4/cmd/sync.rs` `Tally::all()`，
+/// `gen4/refresh.rs` 文件头「谁推进」），内容指纹本身就会推进，RWKV 这一半是冗余的保险，不再是唯一信号
+/// （`srs_limit_unit_legacy_count_test` 断言了这条前提）。
 String _srsContentAndMergeFingerprint(SrsDbStore store) =>
     '${store.contentFingerprint}|${store.rwkvScoresKey}';
 
@@ -851,7 +877,8 @@ final FutureProvider<int> srsLegacyLapisPendingProvider = FutureProvider<int>((
 
 /// 每日上限单位改缺省之前就在用、还没写过单位的牌组数（[SrsDbStore.limitUnitLegacyDecks]，牌组页的一次性提醒）。
 /// 复用上次结果（[_srsMemoByContent]）：它只取决于牌组设置与改缺省之前的复习，本机评分只落今天的日志，不会变；
-/// 改缺省之前的复习只可能随别的设备的事件并进来，所以键是内容指纹 + 合并（[_srsContentAndMergeFingerprint]）。
+/// 改缺省之前的复习只可能随别的设备的事件并进来，所以键要随合并推进（[_srsContentAndMergeFingerprint]；新代里内容指纹
+/// 本身就随收段推进）。
 final FutureProvider<int> srsLimitUnitLegacyCountProvider = FutureProvider<int>(
   (Ref ref) async {
     ref.watch(srsRevisionProvider);

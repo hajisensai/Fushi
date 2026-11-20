@@ -438,6 +438,12 @@ class MangaReaderSettingsSheet extends StatefulWidget {
 /// [splitMangaGlobalPatch] 分流过去，而不是写进漫画偏好里一个没人读的字段。
 const Set<String> _kWorkOnlyKeys = <String>{'fullscreen'};
 
+/// 子开关 → 它依赖的主开关：主开关关着时子开关不起作用（如 Gamma 校正只在画质缩放
+/// 开着时参与转码，见 `MangaFitQuality.fromPreferences`），行置灰不可操作。
+const Map<String, String> _kRequiresToggle = <String, String>{
+  'gammaCorrectScaling': 'enhancedScaling',
+};
+
 /// 全局作用域补丁按落点拆开：`keepScreenOn` 落到阅读器全局「保持屏幕常亮」
 /// （漫画没有本书覆盖时开书 / 重应用都只读它），其余键合进漫画全局偏好。
 ///
@@ -771,9 +777,17 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
         icon: icon,
         showIcon: icon != null,
         value: _value(d.key) == true,
-        onChanged: _editable(d.key) ? (bool v) => _set(d.key, v) : null,
+        onChanged: _editable(d.key) && _prerequisiteOn(d.key)
+            ? (bool v) => _set(d.key, v)
+            : null,
       ),
     );
+  }
+
+  /// [key] 依赖的主开关（[_kRequiresToggle]）当前是开着的；没有依赖为 true。
+  bool _prerequisiteOn(String key) {
+    final String? parent = _kRequiresToggle[key];
+    return parent == null || _value(parent) == true;
   }
 
   Widget _integer(MangaReaderPreferenceDescriptor d) {

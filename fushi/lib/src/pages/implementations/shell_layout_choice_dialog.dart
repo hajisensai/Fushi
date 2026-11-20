@@ -36,7 +36,7 @@ Future<void> maybeShowShellLayoutChoice({
   )) {
     return;
   }
-  final List<ImageProvider<Object>> covers = shellPreviewCoversNow(
+  final List<ShellPreviewCover> covers = shellPreviewCoversNow(
     context,
     appModel,
   );
@@ -61,7 +61,7 @@ class ShellLayoutChoiceDialog extends StatefulWidget {
     required this.arrangement,
     required this.onConfirm,
     required this.onLater,
-    this.covers = const <ImageProvider<Object>>[],
+    this.covers = const <ShellPreviewCover>[],
     this.initial = ShellContentLayout.collage,
     super.key,
   });
@@ -70,7 +70,7 @@ class ShellLayoutChoiceDialog extends StatefulWidget {
   final ShellBlockArrangement arrangement;
 
   /// 书库前几张封面（[shellPreviewCoversNow]）；空 = 画主题色块。
-  final List<ImageProvider<Object>> covers;
+  final List<ShellPreviewCover> covers;
 
   /// 打开时高亮的布局。
   final ShellContentLayout initial;

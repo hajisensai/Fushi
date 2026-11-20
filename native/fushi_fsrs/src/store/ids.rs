@@ -210,6 +210,12 @@ pub(crate) mod audit {
     /// 直接参数、[TEXT_ID_FNS] 的参数（任意深度）不算。
     fn quoted_uuid(sql: &str) -> bool {
         let has_wrap = sql.to_ascii_lowercase().contains("srs_id(");
+        quoted_uuid_with(sql, !has_wrap, is_id_column)
+    }
+
+    /// [quoted_uuid] 的判定本体：[any_bare] = 任何没套 `srs_id(` 的 UUID 字面量都算；否则只算拿去和 [is_id] 认的列
+    /// 比较的那些。新代的审计（`store/gen4/id_audit.rs`）用它，列表与规则换成新代的。
+    pub(crate) fn quoted_uuid_with(sql: &str, any_bare: bool, is_id: fn(&str) -> bool) -> bool {
         let b = sql.as_bytes();
         // 每一层开着的括号：是不是 [TEXT_ID_FNS] 的调用。
         let mut calls: Vec<bool> = Vec::new();
@@ -239,7 +245,7 @@ pub(crate) mod audit {
                         let wrapped = tail.len() >= 7
                             && tail[tail.len() - 7..].eq_ignore_ascii_case(b"srs_id(");
                         let bare = !wrapped && !calls.iter().any(|&c| c);
-                        if bare && (!has_wrap || compared_column(head).is_some_and(is_id_column)) {
+                        if bare && (any_bare || compared_column(head).is_some_and(is_id)) {
                             return true;
                         }
                     }
@@ -260,7 +266,7 @@ pub(crate) mod audit {
         false
     }
 
-    fn allowed(sql: &str) -> bool {
+    pub(crate) fn allowed(sql: &str) -> bool {
         sql.contains("json_extract") || sql.contains("srs_meta") || sql.contains("-- ids:text")
     }
 
@@ -328,6 +334,8 @@ pub(crate) mod audit {
         Err(format!("id audit: {}", hits.join("\n---\n")))
     }
 
+    /// 只给协议 3 读连接池的开连接函数用（`store/mod.rs` `open_pool_reader`），那个池换代后只在测试构建里编（G7-6）。
+    #[cfg(test)]
     pub(crate) fn installed(mut conn: rusqlite::Connection) -> rusqlite::Connection {
         install(&mut conn);
         conn
