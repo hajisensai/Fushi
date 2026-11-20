@@ -4,7 +4,6 @@ import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
@@ -112,7 +111,6 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
     required this.onJumpSection,
     required this.onExitReader,
     this.readerCharOffset,
-    required this.webViewController,
     required this.appModel,
     required this.ref,
     this.pageProgress,
@@ -195,7 +193,6 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
   /// 同一 spine 章下的多个目录项只有它能区分，为 null 时就是跳到章首。
   final Future<void> Function(int sectionIndex, String? fragment) onJumpSection;
   final VoidCallback onExitReader;
-  final InAppWebViewController webViewController;
   final AppModel appModel;
 
   /// Riverpod ref from the reader page, forwarded to the schema-projected
@@ -576,13 +573,6 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
   }
 
   Future<void> _updateSetting(String key, Object value) async {
-    if (!widget.isFushiReader) {
-      await AudiobookBridge.setReaderSetting(
-        widget.webViewController,
-        key: key,
-        value: value,
-      );
-    }
     final ReaderFushiSource src = ReaderFushiSource.instance;
     switch (key) {
       case 'fontSize':

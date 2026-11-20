@@ -1798,7 +1798,7 @@ class VideoPlayerController extends ChangeNotifier
       );
     }
     // 不占 Player 的串行锁（BUG-3645）：持锁期间 play() / pause() 都得排队。补丁里
-    // 持锁截帧本来也只锁取原始帧、编码在锁外（BUG-4910），这里连取帧也不排队，暂停
+    // 持锁截帧本来也只锁取原始帧、编码在锁外（BUG-5027），这里连取帧也不排队，暂停
     // OCR 开着时按继续播放不等它。
     // 公开的 Player.screenshot 不透传 synchronized，只能直接调 NativePlayer。截帧在
     // 辅助 isolate 上跑，句柄销毁前会等它（media_kit 补丁登记进
@@ -2027,7 +2027,7 @@ class VideoPlayerController extends ChangeNotifier
     if (streamIndex < 0 || streamIndex >= real.length) return false;
     // 重新选**同一条**图形轨（同一次 load、同一个原盘标题、同一份取数来源）：逐句
     // 时间表与在途的整轨抽取都还属于它，不作废——否则没开模糊档时控制器是抽取的唯一
-    // 等待者，撤销会把 ffmpeg 杀掉从头再抽（BUG-4907）。原生下发照常重做（幂等）。
+    // 等待者，撤销会把 ffmpeg 杀掉从头再抽（BUG-4994）。原生下发照常重做（幂等）。
     final bool reselectingActiveTrack =
         _graphicSubtitleActive &&
         _graphicSubtitleStreamIndex == streamIndex &&

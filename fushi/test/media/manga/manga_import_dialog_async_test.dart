@@ -1,4 +1,4 @@
-/// 路线图 #3722 c39（BUG-4909，manga-3）：漫画导入的 `.epub` 定性不再在 UI isolate
+/// 路线图 #3722 c39（BUG-5022，manga-3）：漫画导入的 `.epub` 定性不再在 UI isolate
 /// 上同步开包。
 ///
 /// - 导入框单选 / 预填：定性走 [ImportCarrierResolver.resolveAsync]，开包判据跑在

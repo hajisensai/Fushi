@@ -130,7 +130,7 @@ void main() {
         Uri.parse('https://manga.local/img/a.jpg?fit=640$q'),
       );
       expect(of('&fq=1'), MangaFitQuality.enhanced);
-      expect(of('&fq=g'), MangaFitQuality.enhancedLinear);
+      expect(of('&fq=g'), MangaFitQuality.enhancedTextGamma);
       expect(of(''), MangaFitQuality.standard);
       expect(of('&fq=zzz'), MangaFitQuality.standard);
       expect(
@@ -138,6 +138,57 @@ void main() {
         MangaFitQuality.standard,
         reason: 'Gamma 校正只是画质缩放的子开关',
       );
+    });
+  });
+
+  group('文字感知 Gamma 校正的文字框', () {
+    MokuroBlock block(double l, double t, double r, double b) => MokuroBlock(
+      rectangle: MokuroRect.fromLTRB(l, t, r, b),
+      isVertical: true,
+      fontSize: 20,
+      zIndex: 0,
+      lines: const <String>['あ'],
+    );
+
+    test('block boxes are normalised to the page, degenerate ones dropped', () {
+      final Float32List boxes = mangaTextBoxesOf(
+        MokuroImage(
+          url: 'p.jpg',
+          size: const MokuroSize(1000, 2000),
+          blocks: <MokuroBlock>[
+            block(100, 200, 300, 600),
+            block(50, 50, 50, 80), // 零宽
+            block(900, 1900, 1200, 2400), // 越界夹回
+          ],
+        ),
+      );
+      const List<double> want = <double>[0.1, 0.1, 0.3, 0.3, 0.9, 0.95, 1, 1];
+      expect(boxes.length, want.length);
+      for (int i = 0; i < want.length; i++) {
+        expect(boxes[i], closeTo(want[i], 1e-6), reason: 'index $i');
+      }
+      expect(
+        mangaTextBoxesOf(
+          const MokuroImage(
+            url: 'p.jpg',
+            size: MokuroSize.zero,
+            blocks: <MokuroBlock>[],
+          ),
+        ),
+        isEmpty,
+      );
+    });
+
+    test('signature changes when OCR adds or moves a box', () {
+      final Float32List a = Float32List.fromList(<double>[0.1, 0.1, 0.3, 0.3]);
+      final Float32List b = Float32List.fromList(<double>[0.1, 0.1, 0.3, 0.31]);
+      expect(mangaTextBoxSignature(Float32List(0)), '0');
+      expect(mangaTextBoxSignature(a), startsWith('1-'));
+      expect(
+        mangaTextBoxSignature(a),
+        mangaTextBoxSignature(Float32List.fromList(a)),
+      );
+      expect(mangaTextBoxSignature(a), isNot(mangaTextBoxSignature(b)));
     });
   });
 
@@ -164,7 +215,7 @@ void main() {
       ));
       // 低清源显示得更大：标准档从不放大，画质档预放大。
       expect(of(600, 900, 1200, MangaFitQuality.standard), isNull);
-      expect(of(600, 900, 1200, MangaFitQuality.enhancedLinear), (
+      expect(of(600, 900, 1200, MangaFitQuality.enhancedTextGamma), (
         width: 1200,
         height: 1800,
       ));
@@ -186,6 +237,7 @@ void main() {
               Uint8List bytes,
               int width, {
               required MangaFitQuality quality,
+              Float32List? textBoxes,
             }) async {
               modes.add(quality);
               return Uint8List(quality == MangaFitQuality.enhanced ? 7 : 5);
@@ -217,6 +269,57 @@ void main() {
       ]);
     });
 
+    test('text gamma: boxes reach the transcoder and key the cache', () async {
+      final List<String> seen = <String>[];
+      final MangaPageFitter fitter = MangaPageFitter(
+        transcoder:
+            (
+              Uint8List bytes,
+              int width, {
+              required MangaFitQuality quality,
+              Float32List? textBoxes,
+            }) async {
+              seen.add('${quality.name}:${textBoxes?.length}');
+              return Uint8List(3);
+            },
+      );
+      Future<Uint8List> load() async => Uint8List(4);
+      final Float32List one = Float32List.fromList(<double>[0, 0, 0.5, 0.5]);
+      await fitter.fit(
+        'p',
+        640,
+        load,
+        quality: MangaFitQuality.enhancedTextGamma,
+      );
+      await fitter.fit(
+        'p',
+        640,
+        load,
+        quality: MangaFitQuality.enhancedTextGamma,
+        textBoxes: one,
+      );
+      await fitter.fit(
+        'p',
+        640,
+        load,
+        quality: MangaFitQuality.enhancedTextGamma,
+        textBoxes: Float32List.fromList(one),
+      );
+      // 非 Gamma 档不看框，也不把框传下去。
+      await fitter.fit(
+        'p',
+        640,
+        load,
+        quality: MangaFitQuality.enhanced,
+        textBoxes: one,
+      );
+      expect(seen, <String>[
+        'enhancedTextGamma:0',
+        'enhancedTextGamma:4',
+        'enhanced:null',
+      ]);
+    });
+
     test('one transcode at a time; same page and width deduped', () async {
       int running = 0;
       int maxRunning = 0;
@@ -228,6 +331,7 @@ void main() {
               Uint8List bytes,
               int width, {
               required MangaFitQuality quality,
+              Float32List? textBoxes,
             }) async {
               transcodes++;
               running++;
@@ -281,6 +385,7 @@ void main() {
                 Uint8List bytes,
                 int width, {
                 required MangaFitQuality quality,
+                Float32List? textBoxes,
               }) async {
                 transcodes++;
                 return width == 1 ? null : Uint8List(100);
@@ -318,6 +423,7 @@ void main() {
               Uint8List bytes,
               int width, {
               required MangaFitQuality quality,
+              Float32List? textBoxes,
             }) async {
               calls++;
               if (calls == 1) throw StateError('native failure');
@@ -348,6 +454,7 @@ void main() {
                 Uint8List bytes,
                 int width, {
                 required MangaFitQuality quality,
+                Float32List? textBoxes,
               }) async {
                 transcoded.add(bytes.first);
                 final Completer<void> gate = Completer<void>();
@@ -402,6 +509,7 @@ void main() {
               Uint8List bytes,
               int width, {
               required MangaFitQuality quality,
+              Float32List? textBoxes,
             }) async {
               transcoded.add(quality);
               return Uint8List(9);
@@ -451,6 +559,7 @@ void main() {
                 Uint8List bytes,
                 int width, {
                 required MangaFitQuality quality,
+                Float32List? textBoxes,
               }) async {
                 order.add(String.fromCharCode(bytes.first));
                 final Completer<void> gate = Completer<void>();
@@ -510,6 +619,7 @@ void main() {
               Uint8List bytes,
               int width, {
               required MangaFitQuality quality,
+              Float32List? textBoxes,
             }) async {
               transcodes++;
               final Completer<void> gate = Completer<void>();
@@ -607,6 +717,24 @@ void main() {
       );
       expect(doc(fit: true), contains("var FIT_HQ = '';"));
     });
+
+    test(
+      'text gamma: page carries its box signature, URL carries tb=',
+      () async {
+        final String document = doc(fit: true, enhanced: true, gamma: true);
+        expect(document, contains('data-tb="0"'));
+        expect(document, contains('var FIT_TEXT_GAMMA = true;'));
+        expect(
+          doc(fit: true, enhanced: true),
+          contains('var FIT_TEXT_GAMMA = false;'),
+        );
+        expect(
+          doc(fit: false, enhanced: true, gamma: true).contains('data-tb='),
+          isFalse,
+        );
+        await runHarness(document, _textGammaHarness);
+      },
+    );
 
     test('_refitPage asks for layout width x dpr x zoom tier', () async {
       final String document = doc(fit: true);
@@ -761,4 +889,21 @@ const document={querySelectorAll(){ return [page]; }};
 _refitPage(page);
 // 3840 × 0.2 × 2.625 = 2016，恰是 32 的整数倍（标准档会取到 2048）。
 assert.equal(img.a.src, 'https://manga.local/img/p0.jpg?v=1&fit=2016&fq=1');
+''';
+
+const String _textGammaHarness = r'''
+const assert=require('node:assert/strict');
+var ZOOM=1, CURRENT=0, IS_WEBTOON=false;
+const window={innerWidth:800,innerHeight:1200,devicePixelRatio:2.625};
+const img={a:{'data-src':'https://manga.local/img/p0.jpg?v=1'}, getAttribute(k){ return k in this.a ? this.a[k] : null; }, setAttribute(k,v){ this.a[k]=String(v); }};
+const attrs={'data-spread':'0','data-tb':'0'};
+const page={dataset:{pw:'3840'}, __fitScale:0.2, getAttribute(k){ return k in attrs ? attrs[k] : null; }, setAttribute(k,v){ attrs[k]=String(v); }, querySelector(){ return img; }, getBoundingClientRect(){ return {top:0,bottom:10}; }};
+const document={querySelectorAll(){ return [page]; }};
+/*SECTION*/
+_refitPage(page);
+assert.equal(img.a.src, 'https://manga.local/img/p0.jpg?v=1&fit=2016&fq=g&tb=0');
+// 后台 OCR 补上文字框：签名变了，页图按新框重取。
+page.setAttribute('data-tb','3-abc');
+_refitPage(page);
+assert.equal(img.a.src, 'https://manga.local/img/p0.jpg?v=1&fit=2016&fq=g&tb=3-abc');
 ''';

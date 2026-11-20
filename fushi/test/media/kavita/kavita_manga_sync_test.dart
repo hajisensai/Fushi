@@ -949,7 +949,7 @@ void main() {
     });
   });
 
-  // BUG-4910（gap-mangamisc-2 / -3）：批量写进度逐章各取时间戳，「继续阅读」落到
+  // BUG-5032（gap-mangamisc-2 / -3）：批量写进度逐章各取时间戳，「继续阅读」落到
   // 最后写的最旧那章；对账逐章整份解码基线偏好。
   group('batch writes share one timestamp', () {
     // 章表新 → 旧：下标 0 是最新一话（与源一致）。

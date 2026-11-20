@@ -72,7 +72,7 @@ void main() {
       final int finish = run.lastIndexOf('_finishMining(');
       expect(finish, greaterThan(round));
       expect(run.substring(finish), contains('WebMineAutoFinished('));
-      // BUG-4911：出错中止（准备步骤抛出 / 一行抛出 / 表面死亡）要带进结果，否则提示
+      // BUG-5039：出错中止（准备步骤抛出 / 一行抛出 / 表面死亡）要带进结果，否则提示
       // 仍是「已制卡 0，失败 0」。
       expect(
         compactCode(run.substring(finish)),
@@ -183,7 +183,7 @@ void main() {
 
   // 行为规则（表面换代后在途行留待办、不标 navigate_timeout）在
   // test/mining/web_mine_queue_run_test.dart；这里钉页面把表面的代接进了那套规则。
-  group('BUG-4906：内置档页 WebView 进程死亡后恢复，重放循环知情', () {
+  group('BUG-4983：内置档页 WebView 进程死亡后恢复，重放循环知情', () {
     test('死亡守卫先跑恢复钩子；重建回到死前的页面而不是起始页', () {
       final String code = compactCode(maskComments(page));
       expect(code, contains('flushBeforeRebuild:_recoverFromProcessGone,'));

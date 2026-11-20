@@ -73,8 +73,20 @@ function run(opts) {
   const measured = [];
   const styles = new Map();
   for (const r of rubies) {
-    styles.set(r.ruby, { fontSize: opts.fs + 'px', writingMode: opts.wm, fontStyle: 'normal', fontWeight: '400', fontFamily: 'X' });
-    styles.set(r.rt, { fontSize: opts.rfs + 'px', writingMode: opts.wm, fontStyle: 'normal', fontWeight: '400', fontFamily: 'X' });
+    // HXZ2hLIoCi: computed `ruby-position` of the ruby and `margin-block-end` of the
+    // rt (px). Left unset by the older cases, which then carry no rect positions either.
+    styles.set(r.ruby, {
+      fontSize: opts.fs + 'px', writingMode: opts.wm, fontStyle: 'normal', fontWeight: '400', fontFamily: 'X',
+      getPropertyValue: (k) => (k === 'ruby-position' ? opts.rubyPosition || '' : ''),
+    });
+    styles.set(r.rt, {
+      fontSize: opts.rfs + 'px', writingMode: opts.wm, fontStyle: 'normal', fontWeight: '400', fontFamily: 'X',
+      getPropertyValue: (k) => {
+        if (k !== 'margin-block-end') return '';
+        const v = typeof opts.marginEnd === 'function' ? opts.marginEnd() : opts.marginEnd;
+        return v === undefined ? '' : v + 'px';
+      },
+    });
   }
   const root = {
     style: { setProperty: (k, v) => { props[k] = v; } },
@@ -331,5 +343,51 @@ run({
     assert.strictEqual(ctl.snapReads(), 1, 'the marker reading is cached while pending');
   },
 });
+
+// BUG-4936 (feedback HXZ2hLIoCi): iOS 18.2 (WebKit 18) pushed every annotation into its base. The
+// model above assumes WebKit 26+, where the BUG-2472 `margin-block-start: -2em` only
+// cancels the annotation's in-flow height. WebKit 18 also applies it to the
+// annotation's position: the rt lands 2em (22px at rfs 11) inside the base. Rects
+// below are Playwright WebKit 18.2 / 27.2 on the reporter's own chapter (22px, Apple
+// ruby rule, rt 11px), measured with the CSS default pull 0.1 (margin-block-end
+// -0.2em = -2.2px). The script must measure where the annotation really sits and
+// subtract the engine's extra shift; on WebKit 26+ the extra shift is 0.
+const vrect = (left, width) => ({ left, right: left + width, top: 502.3, bottom: 524.3, width, height: 22 });
+const hrect = (top, height) => ({ left: 138, right: 160, top, bottom: top + height, width: 22, height });
+// WebKit 18.2, vertical: rt [362.9, +12] sits on top of base [363, +25] (gap -25.1).
+assert.strictEqual(run({
+  wm: 'vertical-rl', fs: 22, rfs: 11, canvas: hira, marginEnd: -2.2,
+  rubies: [{ rtRects: [vrect(362.9, 12)], baseRects: [vrect(363, 25)] }],
+}), '-1.818', 'WebKit 18: (1.5 + 0.5) / 11 minus the 2em the engine adds');
+// WebKit 27.2, vertical: annotation right where margin-block-end puts it (gap -2.2).
+assert.strictEqual(run({
+  wm: 'vertical-rl', fs: 22, rfs: 11, canvas: hira, marginEnd: -2.2,
+  rubies: [{ rtRects: [vrect(385.2, 15)], baseRects: [vrect(362.4, 25)] }],
+}), '0.318', 'WebKit 26+: no extra shift, same value as the pure font-metrics model');
+// Re-measuring with the written value applied must give the same value (no drift):
+// WebKit 18 with pull -1.818 → margin-block-end = +18.898px, rt back 3.102px into base.
+assert.strictEqual(run({
+  wm: 'vertical-rl', fs: 22, rfs: 11, canvas: hira, marginEnd: 18.898,
+  rubies: [{ rtRects: [vrect(381, 12)], baseRects: [vrect(359.102, 25)] }],
+}), '-1.818', 'WebKit 18 re-measure is stable');
+// Horizontal on WebKit 18: rt bottom 65.2 inside base [41, +25] (gap -24.2).
+const h18 = Number(run({
+  wm: 'horizontal-tb', fs: 22, rfs: 11, canvas: hira, marginEnd: -2.2,
+  rubies: [{ rtRects: [hrect(53.2, 12)], baseRects: [hrect(41, 25)] }],
+}));
+const h27 = Number(run({
+  wm: 'horizontal-tb', fs: 22, rfs: 11, canvas: hira, marginEnd: -2.2,
+  rubies: [{ rtRects: [hrect(41 - 15 + 2.2, 15)], baseRects: [hrect(41, 25)] }],
+}));
+assert.ok(Math.abs(h18 - (Number(run({
+  wm: 'horizontal-tb', fs: 22, rfs: 11, canvas: hira,
+  rubies: [{ rtRects: [hrect(53.2, 12)], baseRects: [hrect(41, 25)] }],
+})) - 2)) < 1e-9, 'WebKit 18 horizontal: 2em taken back ' + h18);
+assert.ok(h27 > 0 && h27 < 0.5, 'WebKit 26+ horizontal keeps the model value ' + h27);
+// An annotation placed under the base is outside the model: no correction.
+assert.strictEqual(run({
+  wm: 'vertical-rl', fs: 22, rfs: 11, canvas: hira, marginEnd: -2.2, rubyPosition: 'under',
+  rubies: [{ rtRects: [vrect(362.9, 12)], baseRects: [vrect(363, 25)] }],
+}), '0.182', 'ruby-position under → model value only');
 
 console.log('all assertions passed');

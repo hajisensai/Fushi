@@ -1,4 +1,4 @@
-// BUG-4907 + 拍板台 design-nmv-fyi-tail ①：VN 独立插图归类不随源树是否挂在文档上变化，且
+// BUG-5003 + 拍板台 design-nmv-fyi-tail ①：VN 独立插图归类不随源树是否挂在文档上变化，且
 // 书本 CSS 排成块级的小图算独立插图、阅读器自己的 `p > img:only-child` 规则不算。
 // 由 vn_refit_late_image_test.dart 执行，payload（生产 VN shell / 选区脚本 / 学习单位 / 生产 VN CSS）
 // 经 stdin 送入。

@@ -123,7 +123,7 @@ void main() {
     });
 
     test('content-ready 兜底超时经 _failNavigation 收口', () {
-      // BUG-4906：兜底超时与 JS 失败回执共用 _abortStalledRestore 收尾，
+      // BUG-4975：兜底超时与 JS 失败回执共用 _abortStalledRestore 收尾，
       // 收口点仍是 _failNavigation，这里沿调用链两段各钉一次。
       final String body = methodBody(
         navigation,

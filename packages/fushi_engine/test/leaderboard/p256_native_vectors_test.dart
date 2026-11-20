@@ -217,7 +217,7 @@ void main() {
     test(
       'legacy certificates (NULL sig params) are recognised for reissue',
       () {
-        // BUG-4906：旧版落盘证书不自动重签，serve 启动据此提示 `admin reset-tls`。
+        // BUG-4985：旧版落盘证书不自动重签，serve 启动据此提示 `admin reset-tls`。
         expect(
           FushiTlsIdentityStore.isChromeRejectedLegacyCertificate(
             t['certificate_pem_example']! as String,

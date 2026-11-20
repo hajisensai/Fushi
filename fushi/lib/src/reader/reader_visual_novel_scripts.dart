@@ -59,7 +59,7 @@ class ReaderVisualNovelScripts {
 
   /// 恢复锚三选一的运行时分派（旧实现在 Dart 侧三元式挑一条语句）。
   ///
-  /// BUG-4906 续：VN 的恢复入口是 async 函数（先等 readyPromise 再切屏），渲染时抛的
+  /// BUG-4975 续：VN 的恢复入口是 async 函数（先等 readyPromise 再切屏），渲染时抛的
   /// 异常只让它返回的 promise 变成 rejected；boot 的 try/catch 只接得住同步异常。
   /// 这里给那个 promise 接上 catch：记 console.error（不再是无人处理的 rejection），
   /// 再走 notifyRestoreFailed。注意生产时序：`initialize()` 的 readyPromise 成功分支
@@ -314,7 +314,7 @@ $imageRevealSemantics
 
   // 拍板台 design-nmv-fyi-tail ①：书本 CSS 把文字中间的小图排成 `display:block`（行内
   // style 或书本样式表），VN 就把它当独立插图、单独一屏。只能在 detachChapterSource 之前
-  // 量：源树一摘下文档，Blink / WebKit 对它 getComputedStyle 一律给空值（BUG-4907）。量的
+  // 量：源树一摘下文档，Blink / WebKit 对它 getComputedStyle 一律给空值（BUG-5003）。量的
   // 结果写成节点属性，随节点搬进源树、随 cloneNode 带进屏，之后的归类（切屏、内容流、
   // 迟到图片复核）只读属性、不读样式，挂着与摘下归类一致。
   function markBookBlockImages(doc) {
@@ -344,7 +344,7 @@ $imageRevealSemantics
   }
 
   // 只看节点自身携带的信号（文字上下文、真实 / 声明尺寸、block-img 类、挂载时记下的书本
-  // 块级标记），不读样式。BUG-4907：VN 归类的对象是 detachChapterSource 搬出来、不挂在
+  // 块级标记），不读样式。BUG-5003：VN 归类的对象是 detachChapterSource 搬出来、不挂在
   // 文档上的源树，对它 getComputedStyle 恒为空；归类不能随挂载状态变。
   function isStandaloneImageNode(node, contextRoot) {
     if (isInlineGlyphImage(node)) return false;

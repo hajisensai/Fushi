@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui show Image;
 
 import 'package:drift/drift.dart' show Value;
@@ -3411,7 +3412,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// [key] 是页在本页面内的稳定身份（LRU 键），[loadSource] 只在未命中时读原图。
   /// [quality] 是页图 URL 上的画质档（`fq=`），决定读头分流与转码的判据并分开缓存。
   /// [pageIndex] 已知时，这一页在转码队列出队那一刻若在屏上（当前跨页），就插到
-  /// 预热邻页之前（manga-6）。
+  /// 预热邻页之前（manga-6）；它也给文字感知 Gamma 校正取本页 OCR 文字框（取当下的
+  /// [_payload]，后台 OCR 补框后页面 JS 会换 `tb=` 重取）。页号不明时按无框处理（整页 sRGB）。
   Future<Uint8List?> _fitPageBytes(
     String key,
     int? fitWidth,
@@ -3420,12 +3422,22 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     int? pageIndex,
   }) async {
     if (fitWidth == null) return null;
+    final List<MokuroImage>? images = _payload?.images;
+    final Float32List? textBoxes =
+        quality == MangaFitQuality.enhancedTextGamma &&
+            images != null &&
+            pageIndex != null &&
+            pageIndex >= 0 &&
+            pageIndex < images.length
+        ? mangaTextBoxesOf(images[pageIndex])
+        : null;
     try {
       return await _pageFitter.fit(
         key,
         fitWidth,
         loadSource,
         quality: quality,
+        textBoxes: textBoxes,
         urgent: pageIndex == null ? null : () => _pageOnScreen(pageIndex),
       );
     } on Object catch (error, stackTrace) {
@@ -5326,10 +5338,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   Future<void> _replacePageOcrOverlay(int pageIndex, MokuroImage page) async {
     final String boxes = mangaOcrBoxesHtml(page);
+    final String textBoxSig = mangaTextBoxSignature(mangaTextBoxesOf(page));
     await _controller?.evaluateJavascript(
       source:
           'window.__mangaReplaceOcr && '
-          'window.__mangaReplaceOcr($pageIndex, ${jsonEncode(boxes)});',
+          'window.__mangaReplaceOcr($pageIndex, ${jsonEncode(boxes)}, '
+          '${jsonEncode(textBoxSig)});',
     );
   }
 
@@ -5460,7 +5474,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (!mounted) return;
     _miningTextRect = _sentenceRectOf(data);
     _miningSentenceBlocks = _sentenceBlocksOf(data);
-    // 查后从句首重播要知道查的是哪句（弹窗或副屏随后打开时认领，BUG-4909）。
+    // 查后从句首重播要知道查的是哪句（弹窗或副屏随后打开时认领，BUG-5024）。
     _readAloud.noteLookupSentence(_miningSentenceBlocks);
     final Size screen = MediaQuery.of(context).size;
     await dispatchMangaSelection(
@@ -5763,7 +5777,18 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 经 [AnkiMiningContext.coverPath] 走 `{book-cover}`/`{card-image}` 通道。句子音频
   /// 只在本卷有漫画有声成品且命中这句时给（[_mangaSentenceAudio]），否则为 null。
   @override
-  Future<MinePopupResult> onMineFromPopup(Map<String, String> fields) async {
+  Future<MinePopupResult> onMineFromPopup(Map<String, String> fields) =>
+      _mineFromPopup(fields);
+
+  /// 新制与覆写（[overwriteNoteId] 非空，点 ✓ 选「覆盖这张」）共用这一条：句子、卡图
+  /// （裁切 / 打码 / NSFW 模糊）、句子音频、出处链接都按同一份口径算，只有最后一步
+  /// 分到 `mineEntry` / `updateMinedNote`。BUG-4933：此前覆写落到基类的空实现，点了
+  /// 「覆盖」什么也不写、也不报错。覆写不计入制卡统计 / 历史，也不给「撤销」（撤销 =
+  /// 删卡，会把被覆写的旧卡一并删掉）。
+  Future<MinePopupResult> _mineFromPopup(
+    Map<String, String> fields, {
+    int? overwriteNoteId,
+  }) async {
     // 本次请求的「高级制卡」覆盖项、制卡页与句子矩形都在第一个 await 之前同步读齐：
     // 制卡排队期间用户可能已经点了别的字，页面状态会被新选区改写。
     final MiningRequestOverrides? overrides = MiningRequestOverrides.readFrom(
@@ -5911,13 +5936,19 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                 context: miningContext,
               ),
             )
+          : overwriteNoteId != null
+          ? await repo.updateMinedNote(
+              noteId: overwriteNoteId,
+              rawPayloadJson: rawPayloadJson,
+              context: miningContext,
+            )
           : await repo.mineEntry(
               rawPayloadJson: rawPayloadJson,
               context: miningContext,
             );
       final described = describeMineOutcome(
         outcome,
-        overwrite: reviewSession != null,
+        overwrite: reviewSession != null || overwriteNoteId != null,
       );
       if (described.record && reviewSession == null) {
         unawaited(_recordMinedCount());
@@ -5939,7 +5970,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           msg: described.message,
           status: described.status,
           // 反馈 JNyykxvuY9：成功提示带「撤销」，几秒内点一下删掉刚加的卡。
-          action: reviewSession != null
+          action: reviewSession != null || overwriteNoteId != null
               ? null
               : minedCardUndoToastAction(repo, outcome),
         );
@@ -6023,7 +6054,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     Map<String, String> fields,
   ) async {
     if (_sourceReviewSession != null) return onMineFromPopup(fields);
-    return super.onUpdateFromPopup(noteId, fields);
+    return _mineFromPopup(fields, overwriteNoteId: noteId);
   }
 
   // ── 阅读模式覆盖 ─────────────────────────────────────────────────────

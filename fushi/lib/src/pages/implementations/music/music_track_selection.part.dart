@@ -387,7 +387,7 @@ class MusicHiddenTracksPage extends ConsumerWidget {
                 ),
               ),
           ],
-          body: rows == null
+          body: (BuildContext context) => rows == null
               ? const Center(child: FushiCircularProgressIndicator())
               : _body(context, db, rows),
         );

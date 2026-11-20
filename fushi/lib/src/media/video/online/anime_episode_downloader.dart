@@ -610,6 +610,7 @@ class AnimeEpisodeDownloader {
             headers,
             dest,
             onProgress: onProgress,
+            onBytes: onBytes,
             isCancelled: () => cancelled,
             cancelSignal: cancelSignal,
           ),
@@ -637,6 +638,7 @@ class AnimeEpisodeDownloader {
               headers,
               dest,
               onProgress: onProgress,
+              onBytes: onBytes,
               isCancelled: () => cancelled,
               cancelSignal: cancelSignal,
             ),
@@ -711,6 +713,9 @@ class AnimeEpisodeDownloader {
       cancelSignal: cancelSignal,
     );
     final bool? videoHasAudio = await _probeHasAudioStream(video);
+    // 音轨阶段的字节口径（e_LVlqyUd-）：已就绪分量的字节 + 当前音轨已收，总量未知
+    // （音轨大小事先不知道）。不报的话状态会一直停在画面分量的「已收 / 总 (100%)」。
+    int readyBytes = await video.length();
     final List<File> ready = <File>[];
     Object? firstError;
     StackTrace? firstStack;
@@ -724,9 +729,13 @@ class AnimeEpisodeDownloader {
           onProgress: onProgress == null
               ? null
               : (double value) => onProgress(base + value * audioShare),
+          onBytes: onBytes == null
+              ? null
+              : (int received, int? _) => onBytes(readyBytes + received, null),
           cancelSignal: cancelSignal,
         );
         ready.add(audios[i]);
+        readyBytes += await audios[i].length();
       } on RemoteDownloadCancelled {
         rethrow;
       } on Object catch (error, stack) {
@@ -799,6 +808,8 @@ class AnimeEpisodeDownloader {
           cancelSignal,
         );
         if (now != null && stored.matches(now)) {
+          final int length = await component.length();
+          onBytes?.call(length, length);
           onProgress?.call(1.0);
           return;
         }
@@ -1183,6 +1194,7 @@ class AnimeEpisodeDownloader {
     required bool Function() isCancelled,
     Future<void>? cancelSignal,
     void Function(double progress)? onProgress,
+    void Function(int received, int? total)? onBytes,
   }) async {
     // 自适应在途窗（拍板台 design-nmv-fyi-tail ⑥）：平时 [kAnimeHlsSegmentsInFlight] 片
     // 同时在途；任何请求被限流（429 / 503）就降到 1 片，照 `Retry-After`（没给就指数
@@ -1302,6 +1314,11 @@ class AnimeEpisodeDownloader {
     try {
       if (done > 0) await sink.truncate(written);
       await sink.setPosition(written);
+      // 起跑先报一次本轮的口径（e_LVlqyUd-）：分片流的总字节事先不知道，报
+      // `(已写, null)` 让调用方丢掉之前那趟直链尝试（下回来的是播放列表文本）留下的
+      // 「已收 / 总」——否则状态一直停在播放列表的「231 KB / 231 KB (100%)」。
+      onBytes?.call(written, null);
+      onProgress?.call(done / segments.length);
       Uri? writtenInit = done > 0 ? segments[done - 1].initSection : null;
       topUp();
       for (int index = done; index < segments.length; index++) {
@@ -1337,6 +1354,7 @@ class AnimeEpisodeDownloader {
           ).encode(),
           flush: true,
         );
+        onBytes?.call(written, null);
         onProgress?.call((index + 1) / segments.length);
       }
     } finally {

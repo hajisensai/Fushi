@@ -21,7 +21,7 @@
 //   E. the VN shell follows the same receipt contract (boot failure -> failure
 //      receipt, success first -> no failure receipt).
 //
-// BUG-4906 follow-up (asynchronous throws): every restore entry is an async
+// BUG-4975 follow-up (asynchronous throws): every restore entry is an async
 // function and hands its settle + receipt to a deferred callback, so a throw
 // after the first `await` or inside that callback never reached the chain's
 // catch and Dart again waited for the 8 s fallback:

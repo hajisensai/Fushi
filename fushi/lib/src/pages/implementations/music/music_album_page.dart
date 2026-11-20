@@ -617,7 +617,7 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
         if (musicTrackRowSurfaceActive(context))
           musicViewStyleToggle(MusicViewKind.tracks, style),
       ],
-      body: _withSelection(
+      body: (BuildContext context) => _withSelection(
         albumMap,
         FushiEntranceScope(
           // Builder：顶部让位读的是脚手架给正文的 MediaQuery（页头高度在里面），
@@ -788,8 +788,7 @@ class _AlbumDiscListState extends ConsumerState<_AlbumDiscList> {
           : Text(tracks[i].artistCredit!),
       resumes[i],
     );
-    if (widget.style == MusicViewStyle.blocks &&
-        musicTrackRowSurfaceActive(context)) {
+    if (musicCoverBlocksActive(context, widget.style)) {
       // 一碟十几首、排在外层列表里：盒子版色块（一次建完），与库页同一套几何。
       // 外层列表已整块错峰进场，格子不再各自进场。
       return FushiCoverBlocks(
