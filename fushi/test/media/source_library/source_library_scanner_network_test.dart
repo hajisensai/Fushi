@@ -138,6 +138,9 @@ class _FakeVirtualNetworkFs implements SourceFileSystem {
 
   int copyToLocalCalls = 0;
 
+  /// 每次列目录的 `目录 + (递归 ? ' [r]' : '')`，按调用顺序。
+  final List<String> listings = <String>[];
+
   @override
   bool get isLocal => false;
 
@@ -154,6 +157,7 @@ class _FakeVirtualNetworkFs implements SourceFileSystem {
     String dirPath, {
     bool recursive = false,
   }) async {
+    listings.add(recursive ? '$dirPath [r]' : dirPath);
     final String prefix = dirPath.endsWith('/') ? dirPath : '$dirPath/';
     final List<SourceFileEntry> out = <SourceFileEntry>[];
     for (final String vpath in files.keys) {
@@ -741,6 +745,9 @@ void main() {
         2,
         reason: 'both pages are mirrored before import',
       );
+      // gap-scanner-8：页图查找表取自扫描开始时已递归列出的整份清单，不再为这一卷
+      // 把父目录整棵重新列一遍。
+      expect(fs.listings, <String>['/remote/manga [r]']);
 
       SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
       expect(after.mediaCount, 1);
@@ -761,6 +768,56 @@ void main() {
       );
       after = (await db.getMediaSourceById(sid))!;
       expect(after.lastScanError, isNull);
+    });
+
+    testWidgets('gap-scanner-8 来源没开递归：清单里没有卷内页图，现场列卷的父目录', (
+      WidgetTester tester,
+    ) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final String page = p.join(tmp.path, 'p001.jpg');
+      File(page).writeAsBytesSync(<int>[1, 2, 3]);
+      final String mokuroLocal = p.join(tmp.path, 'Flat.mokuro');
+      File(mokuroLocal).writeAsStringSync(
+        jsonEncode(<String, Object?>{
+          'version': '0.2.0',
+          'title': 'FlatManga',
+          'pages': <Object?>[
+            <String, Object?>{
+              'img_width': 800,
+              'img_height': 1200,
+              'img_path': 'Flat/p001.jpg',
+              'blocks': <Object?>[],
+            },
+          ],
+        }),
+      );
+      final _FakeVirtualNetworkFs fs = _FakeVirtualNetworkFs(<String, String>{
+        '/remote/flat/Flat.mokuro': mokuroLocal,
+        '/remote/flat/Flat/p001.jpg': page,
+      });
+      final int sid = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'Flat Manga',
+          mediaKind: 'manga',
+          rootPath: '/remote/flat',
+          transport: const Value('sftp'),
+          recursive: const Value(false),
+          createdAt: 1000,
+        ),
+      );
+      final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
+      await tester.runAsync(() async {
+        await SourceLibraryScanner(
+          db,
+          transcribeAudiobook: null,
+        ).scan(source, fs: fs);
+      });
+      final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
+      expect(after.lastScanError, isNull, reason: '实际值=${after.lastScanError}');
+      expect(await db.getAllEpubBooks(), hasLength(1));
+      expect(fs.copyToLocalCalls, 1);
+      expect(fs.listings, <String>['/remote/flat', '/remote/flat [r]']);
     });
 
     testWidgets('远端判过「不是漫画」的 .zip：ETag 不变就不再下载，ETag 变了才重新下载重判', (
@@ -1070,6 +1127,8 @@ void main() {
           3,
           reason: '只下三张页图：OCR 产物目录、非图片文件、._ 资源叉与 @eaDir 缩略图不下载',
         );
+        // gap-scanner-8：两卷都从整份清单按前缀取页图，不再逐卷重列卷目录。
+        expect(fs.listings, <String>['/remote/manga [r]']);
         // 子目录布局原样保留（与本地散图卷同构）：Vol1 两页都在。
         final Map<String, Object?> manifest =
             jsonDecode(

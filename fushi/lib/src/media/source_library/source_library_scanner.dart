@@ -370,7 +370,9 @@ class _MangaSourceIdentity {
     required this.isLocal,
     required this.index,
     required Map<String, SourceFileEntry> entryByPath,
-  }) : _entryByPath = entryByPath;
+    required List<SourceFileEntry>? scanFiles,
+  }) : _entryByPath = entryByPath,
+       _scanFiles = scanFiles;
 
   /// 读索引、丢掉指向已不在库的书的条目，并按本轮计划算出在场的源。
   static Future<_MangaSourceIdentity> load({
@@ -395,6 +397,16 @@ class _MangaSourceIdentity {
         for (final SourceFileEntry entry in entries)
           if (!entry.isDirectory) entry.path: entry,
       },
+      // 递归列出的整份清单才覆盖每卷的页图；只列一层时卷内文件不在手上。
+      scanFiles: source.recursive
+          ? (<SourceFileEntry>[
+              for (final SourceFileEntry entry in entries)
+                if (!entry.isDirectory) entry,
+            ]..sort(
+              (SourceFileEntry a, SourceFileEntry b) =>
+                  a.path.compareTo(b.path),
+            ))
+          : null,
     );
     identity.present.addAll(<String>[
       for (final ScanMangaItem item in plan.mangas)
@@ -415,6 +427,40 @@ class _MangaSourceIdentity {
   final bool isLocal;
   final BookSourceIndex index;
   final Map<String, SourceFileEntry> _entryByPath;
+
+  /// 扫描开始时递归列出的整份文件清单，按路径排序（gap-scanner-8）；只列了一层时
+  /// 为 null。
+  final List<SourceFileEntry>? _scanFiles;
+
+  /// 远端目录 [dir] 下（递归）的全部文件：路径以 `dir/` 开头的条目。
+  ///
+  /// 整份清单扫描开始时已经递归列过一遍，这里按前缀在排好序的清单上二分取一段，
+  /// 不再为每一卷把父目录整棵重新列一遍（每卷一次远端递归 PROPFIND / SFTP 遍历）。
+  /// 清单不完整（来源没开递归）时才现场列 [dir]。
+  Future<List<SourceFileEntry>> filesUnder(
+    SourceFileSystem fs,
+    String dir,
+  ) async {
+    final List<SourceFileEntry>? files = _scanFiles;
+    if (files == null) return fs.listFiles(dir, recursive: true);
+    final String prefix = dir.endsWith('/') ? dir : '$dir/';
+    int lo = 0;
+    int hi = files.length;
+    while (lo < hi) {
+      final int mid = (lo + hi) >> 1;
+      if (files[mid].path.compareTo(prefix) < 0) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    final List<SourceFileEntry> out = <SourceFileEntry>[];
+    for (int i = lo; i < files.length; i++) {
+      if (!files[i].path.startsWith(prefix)) break;
+      out.add(files[i]);
+    }
+    return out;
+  }
 
   /// 本轮计划里的全部卷（索引键形态）。
   final Set<String> present = <String>{};
@@ -2571,9 +2617,9 @@ class SourceLibraryScanner {
 
     // 远端相对路径（解码、正斜杠）→ 远端全路径查找表，作用域 = `.mokuro` 父目录。
     final String parentDir = _remoteParentDir(item.mokuroPath);
-    final List<SourceFileEntry> remoteFiles = await fs.listFiles(
+    final List<SourceFileEntry> remoteFiles = await id.filesUnder(
+      fs,
       parentDir,
-      recursive: true,
     );
     final String prefix = parentDir.endsWith('/') ? parentDir : '$parentDir/';
     final Map<String, String> remoteByRel = <String, String>{};
@@ -2692,11 +2738,13 @@ class SourceLibraryScanner {
         ..createSync();
       await _mirrorRemoteMangaPages(
         fs,
+        id,
         '$prefix$volumeName',
         Directory(p.join(root.path, volumeName)),
       );
       await _mirrorRemoteMangaPages(
         fs,
+        id,
         '$prefix$kMokuroLegacyOcrDirName/$volumeName',
         Directory(p.join(root.path, kMokuroLegacyOcrDirName, volumeName)),
         extensions: const <String>{'.json'},
@@ -2781,7 +2829,7 @@ class SourceLibraryScanner {
     try {
       final Directory volumeDir = Directory(p.join(tmp.path, 'volume'))
         ..createSync();
-      await _mirrorRemoteMangaPages(fs, item.folderPath, volumeDir);
+      await _mirrorRemoteMangaPages(fs, id, item.folderPath, volumeDir);
       // 页序 / 宽高 / 缺页判据全部交给本地导入器对镜像目录再枚举一次
       // （enumerateMangaPages），与本地散图卷同一口径，不另写一套。
       final String bookKey = await MangaImporter.importFromImageFolder(
@@ -2812,15 +2860,13 @@ class SourceLibraryScanner {
   /// [extensions] 缺省是页图；mokuro 旧版产物的逐页 OCR 目录传 `{'.json'}`。
   static Future<void> _mirrorRemoteMangaPages(
     SourceFileSystem fs,
+    _MangaSourceIdentity id,
     String remoteDir,
     Directory destRoot, {
     Set<String> extensions = kMangaImageExtensions,
   }) async {
     final String prefix = remoteDir.endsWith('/') ? remoteDir : '$remoteDir/';
-    for (final SourceFileEntry e in await fs.listFiles(
-      remoteDir,
-      recursive: true,
-    )) {
+    for (final SourceFileEntry e in await id.filesUnder(fs, remoteDir)) {
       if (e.isDirectory || !e.path.startsWith(prefix)) continue;
       if (!extensions.contains(p.extension(e.name).toLowerCase())) {
         continue;
