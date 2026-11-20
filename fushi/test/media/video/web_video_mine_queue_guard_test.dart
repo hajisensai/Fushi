@@ -22,13 +22,27 @@ void main() {
   });
 
   group('BUG-4818：窗口宿主档会话不把可捕获档的旧 cookie 抄回共享罐', () {
-    test('WebVideoSession 整个类里没有回抄 / 复制 cookie 的调用', () {
+    test('WebVideoSession 不回抄；唯一的复制是可捕获档开页时从共享罐抄进本环境', () {
       final String code = maskComments(session);
       final int start = code.indexOf('class WebVideoSession {');
       expect(start, greaterThanOrEqualTo(0));
       final String body = code.substring(start);
       expect(body, isNot(contains('syncWebVideoLoginToBrowser(')));
-      expect(body, isNot(contains('copyWebVideoLoginCookies(')));
+      // gap-webvideo-11：内置档页改用本会话后，BUG-3801 的「开页从共享罐抄登录态」挪进了
+      // prepare，方向是共享罐 → 可捕获档（to: env），只在可捕获档发起；窗口宿主档就住在
+      // 共享罐里，从不复制。
+      final Iterable<RegExpMatch> copies = RegExp(
+        r'copyWebVideoLoginCookies\(',
+      ).allMatches(body);
+      expect(copies, hasLength(1));
+      final String prepare = compactCode(
+        methodBody(body, 'Future<void> prepare('),
+      );
+      expect(prepare, contains('if(hosting==WebVideoHosting.builtin){'));
+      expect(
+        prepare.indexOf('copyWebVideoLoginCookies(uri:site,to:env)'),
+        greaterThan(prepare.indexOf('if(hosting==WebVideoHosting.builtin){')),
+      );
     });
 
     test('内置档页的回抄只在非窗口档时发起', () {
@@ -122,7 +136,8 @@ void main() {
         compactCode(nav),
         contains(
           compactCode(
-            'if (!mounted || _mineStopRequested || !identical(web, _web)) {'
+            'if (!mounted || _mineStopRequested ||'
+            ' session.surfaceGeneration != surfaceGen) {'
             ' return WebMineNavigateOutcome.interrupted; }',
           ),
         ),
@@ -184,20 +199,42 @@ void main() {
   // 行为规则（表面换代后在途行留待办、不标 navigate_timeout）在
   // test/mining/web_mine_queue_run_test.dart；这里钉页面把表面的代接进了那套规则。
   group('BUG-4983：内置档页 WebView 进程死亡后恢复，重放循环知情', () {
+    // gap-webvideo-11：内置档页的 WebView 由共享会话建（WebVideoSurface），死亡守卫的恢复
+    // 钩子是会话的 recoverFromProcessGone，页面自己的那一半经 onProcessGone 接进去。
     test('死亡守卫先跑恢复钩子；重建回到死前的页面而不是起始页', () {
-      final String code = compactCode(maskComments(page));
-      expect(code, contains('flushBeforeRebuild:_recoverFromProcessGone,'));
-      expect(code, contains('WebUri(_surfaceUrl??row.videoPath)'));
+      final String sessionCode = compactCode(maskComments(session));
+      expect(
+        sessionCode,
+        contains('flushBeforeRebuild:widget.session.recoverFromProcessGone,'),
+      );
+      expect(sessionCode, contains('WebUri(session.surfaceUrl)'));
       final String recover = compactCode(
-        maskComments(methodBody(page, 'Future<void> _recoverFromProcessGone(')),
+        maskComments(
+          methodBody(session, 'Future<void> recoverFromProcessGone('),
+        ),
       );
       for (final String stale in <String>[
+        '_surfaceGeneration+=1;',
+        '_abandonInflight();',
+        '_surfaceUrl=current;',
         '_web=null;',
-        '_state=null;',
-        '_preStartFuture=null;',
+        'awaitonProcessGone?.call();',
         'discardWebVideoCapturableEnvironment();',
       ]) {
         expect(recover, contains(stale), reason: stale);
+      }
+      final String code = compactCode(maskComments(page));
+      expect(code, contains('WebVideoSurface(session:session)'));
+      expect(code, contains('onProcessGone:_onSurfaceGone,'));
+      final String gone = compactCode(
+        maskComments(methodBody(page, 'Future<void> _onSurfaceGone(')),
+      );
+      for (final String stale in <String>[
+        '_state=null;',
+        '_preStartFuture=null;',
+        '_shaderActive=false;',
+      ]) {
+        expect(gone, contains(stale), reason: stale);
       }
     });
 
@@ -213,19 +250,24 @@ void main() {
     });
 
     test('页面调用随死表面作废，不挂在死进程上', () {
+      // 页面命令唯一出口委托给会话（两个宿主页同一个包装）。
+      expect(
+        compactCode(maskComments(methodBody(page, 'Future<Object?> _js('))),
+        contains('_session?.evaluate(expression)'),
+      );
       final String js = compactCode(
-        maskComments(methodBody(page, 'Future<Object?> _js(')),
+        maskComments(methodBody(session, 'Future<Object?> evaluate(')),
       );
-      // 每次调用一个局部 Completer 登记进 _inflightJs、结束即移出；不在长寿 future 上挂监听
+      // 每次调用一个局部 Completer 登记进 _inflight、结束即移出；不在长寿 future 上挂监听
       // （表面不死时那些监听只增不减）。
-      expect(js, contains('_inflightJs.add(call);'));
-      expect(js, contains('_inflightJs.remove(call);'));
+      expect(js, contains('_inflight.add(call);'));
+      expect(js, contains('_inflight.remove(call);'));
       expect(js, isNot(contains('Future.any')));
-      final String recover = compactCode(
-        maskComments(methodBody(page, 'Future<void> _recoverFromProcessGone(')),
+      final String abandon = compactCode(
+        maskComments(methodBody(session, 'void _abandonInflight(')),
       );
-      expect(recover, contains('_inflightJs.clear();'));
-      expect(recover, contains('call.complete(null);'));
+      expect(abandon, contains('_inflight.clear();'));
+      expect(abandon, contains('call.complete(null);'));
     });
   });
 }

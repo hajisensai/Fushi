@@ -252,7 +252,6 @@ import 'package:fushi/src/media/video/web_video_bridge.dart'
         WebVideoSeekDone,
         WebVideoSiteTrack,
         WebVideoTrack,
-        chooseWebVideoTrackKey,
         kWebVideoLiveTrackLang,
         pickWebVideoSiteTrackForLanguage,
         shouldOpenInWebVideoPlayer;
@@ -273,6 +272,7 @@ import 'package:fushi/src/media/video/web_video_hosting.dart'
         webVideoHostingFromPref;
 import 'package:fushi/src/media/video/netflix_metadata.dart';
 import 'package:fushi/src/media/video/web_video_platform_player.dart';
+import 'package:fushi/src/media/video/web_video_track_selection.dart';
 import 'package:fushi/src/media/video/web_video_session.dart';
 import 'package:fushi/src/media/video/web_video_subtitle_media.dart'
     show
@@ -2664,33 +2664,23 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   String? _webEpisodeMetaDoneUrl;
   bool _webEpisodeMetaBusy = false;
 
-  /// 站点当前视频身份（glue 的 `videoKey`；SPA 换集即变）与它名下的字幕轨。
-  String _webVideoKey = '';
-  final Map<String, WebVideoTrack> _webTracks = <String, WebVideoTrack>{};
+  /// 站点当前视频身份、它名下的字幕轨与当前选择（与内置网页播放器同一份
+  /// [WebVideoTrackSelection]）。
+  final WebVideoTrackSelection _webTrackSel = WebVideoTrackSelection();
 
   /// 这一集生成的字幕（完整管线产物，登记在这一集的书 `subtitleSource` 上，重进时读回）：
-  /// 作为一条可选轨并进 [_webTracks]（key 见 [webVideoGeneratedTrackKey]），站点换了视频
+  /// 作为一条可选轨并进 [_webTrackSel.tracks]（key 见 [webVideoGeneratedTrackKey]），站点换了视频
   /// key 而仍是这一集时按新 key 重挂。
   ({String bookUid, String path, List<AudioCue> cues})? _webGeneratedSubtitle;
 
   /// 已读过生成字幕登记的那一集的书：每集只读一次（换集后重读）。
   String? _webGeneratedCheckedBookUid;
 
-  /// 当前显示的轨（[chooseWebVideoTrackKey] 的结果，每次轨集变化重算）。
-  String? _webActiveTrackKey;
-
-  /// 显式选定的轨：用户在面板点选的，或显式请求（用户点选 / 每集按语言偏好替用户开）后采到的
-  /// 那条。只有它钉住选择；自动结果不回写成「选择」，后到的整轨才能取代先到的 live 轨。
-  String? _webPinnedTrackKey;
-
-  /// 用户在字幕面板选了「关闭」：不再自动挑轨。
-  bool _webSubtitlesOff = false;
-
   /// 站点播放器自己的字幕轨清单（Netflix）与它当前开着的轨；用户 / 默认选轨请求的那条在采到
-  /// 整轨前记在 [_webPendingTrackKey]（`videoKey|lang`），采到即选中；每集只替用户自动开一次。
+  /// 整轨前记在 [WebVideoTrackSelection.pendingKey]（`videoKey|lang`），采到即选中；每集只替用户
+  /// 自动开一次。
   List<WebVideoSiteTrack> _webSiteTracks = const <WebVideoSiteTrack>[];
   String _webSiteTrackCurrent = '';
-  String? _webPendingTrackKey;
   String? _webSiteTrackAutoVideoKey;
 
   /// 待采整轨的确定失败判据（P2-1）：请求那一刻 live 轨已有的 cue 数。站点已切到所请求的轨、
