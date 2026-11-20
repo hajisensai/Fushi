@@ -203,7 +203,12 @@ void main() {
       );
       expect(
         _flat(region2).contains(
-          _flat('_isRemote ? _persistRemotePosition : _persistPosition'),
+          // BUG-4908：远端写入经 _remoteTeardown 登记（客户端等它用完再关）。
+          _flat(
+            '_isRemote ? (String uid, int posMs) => '
+            '_remoteTeardown.track(() => _persistRemotePosition(uid, posMs)) '
+            ': _persistPosition',
+          ),
         ),
         isTrue,
         reason: 'remote save must go through _persistRemotePosition',
