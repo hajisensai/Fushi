@@ -9455,6 +9455,8 @@
   "shortcut_gamepad_brand_xbox": "Xbox",
   "shortcut_gamepad_pick_list": "Pilih dari daftar",
   "shortcut_gamepad_unavailable_hint": "Komponen GameInput tidak terdeteksi — dukungan gamepad tidak tersedia. Instal Windows Gaming Services untuk mengaktifkan dukungan kontroler.",
+  "shortcut_global_external_enabled": "Enable app-outside shortcuts",
+  "shortcut_global_external_enabled_hint": "System-wide hotkeys, mouse side buttons and gamepad triggers that work while another app is in front. Turn off to leave no system hooks; bindings below are kept.",
   "shortcut_keyboard": "Papan ketik",
   "shortcut_lookup_page_escape_minimize": "Tombol kembali di halaman pencarian meminimalkan jendela",
   "shortcut_lookup_page_escape_minimize_hint": "Setelah hotkey bawa ke depan, tekan tombol kembali (Esc secara default) di halaman pencarian untuk menyingkirkan jendela dan kembali ke yang sedang Anda lakukan. Kueri dan hasil dipertahankan.",

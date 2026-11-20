@@ -9455,6 +9455,8 @@
   "shortcut_gamepad_brand_xbox": "Xbox",
   "shortcut_gamepad_pick_list": "從列表選擇",
   "shortcut_gamepad_unavailable_hint": "未檢測到 GameInput 組件，手柄功能不可用。可安裝 Windows「遊戲服務(Gaming Services)」以啟用手柄支持。",
+  "shortcut_global_external_enabled": "Enable app-outside shortcuts",
+  "shortcut_global_external_enabled_hint": "System-wide hotkeys, mouse side buttons and gamepad triggers that work while another app is in front. Turn off to leave no system hooks; bindings below are kept.",
   "shortcut_keyboard": "鍵盤",
   "shortcut_lookup_page_escape_minimize": "查詞頁按返回鍵最小化窗口",
   "shortcut_lookup_page_escape_minimize_hint": "置頂快捷鍵喚出查詞頁後，在查詞頁按返回鍵（預設 Esc）把窗口收回去，直接回到之前的程式；查詢和結果原樣保留。",

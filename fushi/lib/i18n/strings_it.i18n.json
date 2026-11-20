@@ -9455,6 +9455,8 @@
   "shortcut_gamepad_brand_xbox": "Xbox",
   "shortcut_gamepad_pick_list": "Scegli dalla lista",
   "shortcut_gamepad_unavailable_hint": "Componente GameInput non rilevato — supporto gamepad non disponibile. Installa Windows Gaming Services per abilitare il supporto controller.",
+  "shortcut_global_external_enabled": "Enable app-outside shortcuts",
+  "shortcut_global_external_enabled_hint": "System-wide hotkeys, mouse side buttons and gamepad triggers that work while another app is in front. Turn off to leave no system hooks; bindings below are kept.",
   "shortcut_keyboard": "Tastiera",
   "shortcut_lookup_page_escape_minimize": "Il tasto indietro nella pagina di ricerca riduce a icona la finestra",
   "shortcut_lookup_page_escape_minimize_hint": "Dopo la scorciatoia per portare in primo piano, premi il tasto indietro (Esc per impostazione predefinita) nella pagina di ricerca per allontanare la finestra e tornare a ciò che stavi facendo. La query e i risultati vengono mantenuti.",

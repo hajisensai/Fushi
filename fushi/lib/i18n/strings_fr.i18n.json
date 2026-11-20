@@ -9455,6 +9455,8 @@
   "shortcut_gamepad_brand_xbox": "Xbox",
   "shortcut_gamepad_pick_list": "Choisir dans la liste",
   "shortcut_gamepad_unavailable_hint": "Composant GameInput non détecté — le support manette est indisponible. Installez les Services de jeu Windows pour activer le support des manettes.",
+  "shortcut_global_external_enabled": "Enable app-outside shortcuts",
+  "shortcut_global_external_enabled_hint": "System-wide hotkeys, mouse side buttons and gamepad triggers that work while another app is in front. Turn off to leave no system hooks; bindings below are kept.",
   "shortcut_keyboard": "Clavier",
   "shortcut_lookup_page_escape_minimize": "La touche Retour sur la page de recherche réduit la fenêtre",
   "shortcut_lookup_page_escape_minimize_hint": "Après le raccourci de mise au premier plan, appuyez sur la touche Retour (Échap par défaut) sur la page de recherche pour renvoyer la fenêtre en arrière-plan et reprendre ce que vous faisiez. La requête et les résultats sont conservés.",

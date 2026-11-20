@@ -9455,6 +9455,8 @@
   "shortcut_gamepad_brand_xbox": "Xbox",
   "shortcut_gamepad_pick_list": "Elegir de la lista",
   "shortcut_gamepad_unavailable_hint": "Componente GameInput no detectado — el soporte de gamepad no está disponible. Instale los Windows Gaming Services para habilitar soporte de controles.",
+  "shortcut_global_external_enabled": "Enable app-outside shortcuts",
+  "shortcut_global_external_enabled_hint": "System-wide hotkeys, mouse side buttons and gamepad triggers that work while another app is in front. Turn off to leave no system hooks; bindings below are kept.",
   "shortcut_keyboard": "Teclado",
   "shortcut_lookup_page_escape_minimize": "La tecla de retroceso en la página de consulta minimiza la ventana",
   "shortcut_lookup_page_escape_minimize_hint": "Tras el atajo de traer al frente, pulsa la tecla de retroceso (Esc por defecto) en la página de consulta para enviar la ventana al fondo y volver a lo que estabas haciendo. La consulta y los resultados se conservan.",

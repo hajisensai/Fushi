@@ -9455,6 +9455,8 @@
   "shortcut_gamepad_brand_xbox": "Xbox",
   "shortcut_gamepad_pick_list": "Choose from list",
   "shortcut_gamepad_unavailable_hint": "GameInput component not detected — gamepad support is unavailable. Install the Windows Gaming Services to enable controller support.",
+  "shortcut_global_external_enabled": "Enable app-outside shortcuts",
+  "shortcut_global_external_enabled_hint": "System-wide hotkeys, mouse side buttons and gamepad triggers that work while another app is in front. Turn off to leave no system hooks; bindings below are kept.",
   "shortcut_keyboard": "Keyboard",
   "shortcut_lookup_page_escape_minimize": "Back key on the lookup page minimizes the window",
   "shortcut_lookup_page_escape_minimize_hint": "After the bring-to-front hotkey, press the back key (Esc by default) on the lookup page to send the window away and return to what you were doing. The query and results are kept.",

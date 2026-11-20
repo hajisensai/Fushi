@@ -9455,6 +9455,8 @@
   "shortcut_gamepad_brand_xbox": "Xbox",
   "shortcut_gamepad_pick_list": "Listeden seç",
   "shortcut_gamepad_unavailable_hint": "GameInput bileşeni algılanmadı — oyun kolu desteği kullanılamıyor. Kumanda desteğini etkinleştirmek için Windows Oyun Hizmetleri'ni yükleyin.",
+  "shortcut_global_external_enabled": "Enable app-outside shortcuts",
+  "shortcut_global_external_enabled_hint": "System-wide hotkeys, mouse side buttons and gamepad triggers that work while another app is in front. Turn off to leave no system hooks; bindings below are kept.",
   "shortcut_keyboard": "Klavye",
   "shortcut_lookup_page_escape_minimize": "Arama sayfasında geri tuşu pencereyi simge durumuna küçültür",
   "shortcut_lookup_page_escape_minimize_hint": "Öne getirme kısayolundan sonra, pencereyi uzaklaştırıp yaptığınız işe dönmek için arama sayfasında geri tuşuna (varsayılan Esc) basın. Sorgu ve sonuçlar korunur.",
