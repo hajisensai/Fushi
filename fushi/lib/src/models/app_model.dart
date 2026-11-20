@@ -137,6 +137,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/section_tab_order.dart'
     show
@@ -4128,26 +4129,48 @@ class AppModel
     }
   }
 
-  /// 本进程是否已经跑过一轮 [_upgradeDictionaryFormats]。
+  /// 本进程是否已经跑过启动期那一轮 [_upgradeDictionaryFormats]。
   bool _dictFormatUpgradeStarted = false;
 
-  /// 启动期（首帧之后）的词典维护：先把存量词典原地升级到新磁盘格式，再补写
-  /// redirect 标记。串行：两者都逐本整本读词典，并发只会互相抢 IO；升级在前，补写
+  /// 正在跑的那一轮（启动期或词典页按钮发起的）；同一时刻只跑一轮。
+  Future<void>? _dictFormatUpgradeRunning;
+
+  /// 还停在旧格式、可以升级的词典本数（词典页据此显示升级入口；0 = 不显示）。
+  final ValueNotifier<int> dictFormatUpgradePending = ValueNotifier<int>(0);
+
+  /// 启动期（首帧之后）的词典维护：先检查存量词典的磁盘格式（有待升级的问用户），再
+  /// 补写 redirect 标记。串行：两者都逐本读词典，并发只会互相抢 IO；升级在前，补写
   /// 标记时读到的就是升级后的记录文件。只挂在主进程 init 路径上（查词弹窗进程不跑）。
   Future<void> _runDictionaryStartupMaintenance() async {
     await WidgetsBinding.instance.endOfFrame;
-    await _upgradeDictionaryFormats();
+    if (!_dictFormatUpgradeStarted) {
+      _dictFormatUpgradeStarted = true;
+      await _upgradeDictionaryFormats(fromUser: false);
+    }
     await _migrateDictionaryRedirectFlags();
   }
 
-  /// 存量词典原地升级到当前磁盘格式（[FushiDicts.upgradeDictionaryFormats]），编排见
-  /// [DictionaryFormatUpgradeCoordinator]：先不占词典写锁逐本静默检查（常态启动到此
-  /// 为止，不挡下载 / 自动更新）；确有词典要升级才占写锁、亮状态行做完剩下的，升级过
-  /// 就异步重载引擎让新格式生效、重载后静默补跑一遍清旧文件。失败 / 不适用只记日志
-  /// （词典仍按旧格式可用），下次启动再试。本进程只跑一次。
-  Future<void> _upgradeDictionaryFormats() async {
-    if (_dictFormatUpgradeStarted) return;
-    _dictFormatUpgradeStarted = true;
+  /// 词典页「升级」按钮：用户点按钮本身就是同意，不再弹确认框。
+  Future<void> upgradeDictionaryFormatsNow() =>
+      _upgradeDictionaryFormats(fromUser: true);
+
+  /// 存量词典升级到当前磁盘格式，编排见 [DictionaryFormatUpgradeCoordinator]：先不占
+  /// 词典写锁静默检查（常态启动到此为止，不挡下载 / 自动更新，旧式词典一个字节都不
+  /// 写）；有待升级的先征得用户同意（拍板台 pr3554）——启动期弹一次确认框（点过「以后
+  /// 再说」就不再弹，只在词典页留入口），词典页按钮直接算同意；同意了才占写锁、亮状态
+  /// 行升级，升级过就异步重载引擎让新格式生效、重载后静默补跑一遍清旧文件。失败 /
+  /// 不适用只记日志（词典仍按旧格式可用）。
+  Future<void> _upgradeDictionaryFormats({required bool fromUser}) {
+    final Future<void>? running = _dictFormatUpgradeRunning;
+    if (running != null) return running;
+    final Future<void> run = _runDictionaryFormatUpgrade(
+      fromUser: fromUser,
+    ).whenComplete(() => _dictFormatUpgradeRunning = null);
+    _dictFormatUpgradeRunning = run;
+    return run;
+  }
+
+  Future<void> _runDictionaryFormatUpgrade({required bool fromUser}) async {
     try {
       final DictionaryFormatUpgradeRun result =
           await DictionaryFormatUpgradeCoordinator(
@@ -4156,7 +4179,9 @@ class AppModel
               for (final Dictionary d in dictRepo.dictionaries)
                 path.join(dictionaryResourceDirectory.path, d.name),
             ],
+            tidy: FushiDicts.tidyDictionaryFormats,
             upgrade: FushiDicts.upgradeDictionaryFormats,
+            confirm: fromUser ? (_) async => true : _confirmDictFormatUpgrade,
             reload: _rebuildDictPathsCacheAsync,
             settleOldEngine: FushiDicts.whenBackgroundBorrowsSettled,
             message: (int done, int total) =>
@@ -4164,11 +4189,17 @@ class AppModel
             log: (String tag, Object info) =>
                 ErrorLogService.instance.log(tag, info),
           ).run();
-      final FushiDictUpgradeReport? first = result.first;
-      if (first != null && first.anyUpgraded) {
+      final FushiDictUpgradeReport? cleanup = result.cleanup;
+      final FushiDictUpgradeReport? upgraded = result.upgrade;
+      dictFormatUpgradePending.value = cleanup != null
+          ? cleanup.pending.length
+          : upgraded != null
+          ? upgraded.failed.length
+          : result.pending.length;
+      if (upgraded != null && upgraded.anyUpgraded) {
         debugPrint(
           '[Fushi] dictionary format upgraded: '
-          '${first.upgraded.map(path.basename).join(', ')}',
+          '${upgraded.upgraded.map(path.basename).join(', ')}',
         );
       }
     } catch (e, stack) {
@@ -4178,6 +4209,25 @@ class AppModel
         stack,
       );
     }
+  }
+
+  /// 启动期的升级确认框。点过「以后再说」的不再弹（词典页的入口照常在）；没有可用的
+  /// 界面上下文时不升级（下次启动再问）。
+  Future<bool> _confirmDictFormatUpgrade(int pendingCount) async {
+    if (prefsRepo.dictFormatUpgradePromptDismissed) return false;
+    final BuildContext? context = navigatorKey.currentContext;
+    if (context == null || !context.mounted) return false;
+    final bool accepted = await showFushiConfirmDialog(
+      context: context,
+      icon: Icons.upgrade_rounded,
+      title: t.dict_upgrade_format_prompt_title,
+      message: t.dict_upgrade_format_prompt_body(count: pendingCount),
+      confirmLabel: t.dict_upgrade_format_prompt_confirm,
+      cancelLabel: t.dict_upgrade_format_prompt_later,
+      barrierDismissible: false,
+    );
+    if (!accepted) await prefsRepo.setDictFormatUpgradePromptDismissed();
+    return accepted;
   }
 
   /// 给存量释义词典补写 `redirect_glossary.flag`（[FushiDicts.ensureRedirectFlags]）。

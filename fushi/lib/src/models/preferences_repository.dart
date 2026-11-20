@@ -3055,6 +3055,16 @@ class PreferencesRepository extends ChangeNotifier
     await setPref('p2p_download_notice_dismissed', true);
   }
 
+  /// 启动期「词典格式可以升级」提示是否点过「以后再说」（默认 false = 有待升级的
+  /// 词典就在启动时问一次；点过之后只在词典页留升级入口，拍板台 pr3554）。
+  bool get dictFormatUpgradePromptDismissed =>
+      getPref('dict_format_upgrade_prompt_dismissed', defaultValue: false)
+          as bool;
+
+  Future<void> setDictFormatUpgradePromptDismissed() async {
+    await setPref('dict_format_upgrade_prompt_dismissed', true);
+  }
+
   /// 从第三方游戏资源站下载前的风险说明是否已勾「不再提示」（默认 false）。
   bool get gameResourceNoticeDismissed =>
       getPref('game_resource_notice_dismissed', defaultValue: false) as bool;

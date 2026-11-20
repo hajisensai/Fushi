@@ -8,6 +8,7 @@
 #include <cstring>
 #include <filesystem>
 #include <functional>
+#include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -20,6 +21,7 @@
 #include "hash/key_index.hpp"
 #include "json/meta_record.hpp"
 #include "memory/memory.hpp"
+#include "util/dict_marker.hpp"
 #include "util/fs_utf8.hpp"
 
 namespace fushidicts {
@@ -35,18 +37,6 @@ constexpr std::chrono::minutes kStaleTmpAge{10};
 // 的旧文件也删得掉（memory::remove_file 在 Windows 上走 POSIX 语义），映射着它的引擎照常读。
 void remove_if_possible(const std::string& path) {
   (void)memory::remove_file(path);
-}
-
-// 导入完成的标记（query.cpp dict_format_version 同一组名字）的路径；没有 = 不是完整
-// 导入的词典目录。
-std::optional<std::string> marker_path(const std::string& dir) {
-  for (const char* name : {"/.fushidicts_2", "/.fushidicts_1", "/.hoshidicts_1"}) {
-    std::error_code ec;
-    if (std::filesystem::is_regular_file(fushi::fs_path(dir + name), ec)) {
-      return dir + name;
-    }
-  }
-  return std::nullopt;
 }
 
 // [final_path] 的临时文件名：同目录、唯一（时间戳 + 线程）。升级本身由目录锁串行化，
@@ -90,6 +80,35 @@ std::optional<key_index::blobs_file> current_key_index(const std::string& dir) {
 bool exists(const std::string& path) {
   std::error_code ec;
   return std::filesystem::exists(fushi::fs_path(path), ec);
+}
+
+// 索引已是 key.index 时把完成标记换成 .fushidicts_3（util/dict_marker.hpp）：旧引擎只认
+// 旧式标记，留着旧标记它就会去开已经删掉的 hash.table、静默查不到词；换掉之后它整目录
+// 不加载（拍板台 pr3554：降级要重导）。次序：新标记写完落盘 → 目录项落盘 → 删旧标记，
+// 任何时刻目录里至少有一个标记。记录布局版本沿用旧标记（v1 存量升级后仍是 v1 记录）。
+// 没能落盘就不删旧标记，留给下一次调用。
+void finish_key_index_marker(const std::string& dir) {
+  if (!dict_marker::has_legacy_marker(dir)) {
+    return;  // 常态：早就换好了，不碰磁盘。
+  }
+  const std::string v3 = dict_marker::marker_file(dir, dict_marker::kKeyIndexMarker);
+  int record_version = dict_marker::is_file(v3) ? dict_marker::key_index_marker_record_version(v3) : 0;
+  if (record_version == 0) {
+    record_version = dict_marker::legacy_record_version(dir);
+  }
+  if (!dict_marker::write_key_index_marker(dir, record_version) || !memory::sync_directory(dir)) {
+    return;
+  }
+  dict_marker::remove_legacy_markers(dir);
+}
+
+// 旧式词典换成 key.index 装得下吗：key.index 的记录偏移是 32 位，偏移都落在 blobs.bin
+// 里，所以 blobs.bin 不超过 4 GiB 就装得下（导入端退回旧式索引的正是超过的那些）。只看
+// 文件大小，不读索引——只检查（convert = false）时用，要便宜。
+bool legacy_fits_key_index(const std::string& dir) {
+  std::error_code ec;
+  const uintmax_t size = std::filesystem::file_size(fushi::fs_path(hash::dict_file(dir, hash::kBlobsFile)), ec);
+  return !ec && size <= std::numeric_limits<uint32_t>::max();
 }
 
 // 提交之后（或发现已是最新时）清掉不再需要的文件。
@@ -275,8 +294,8 @@ UpgradeResult commit_key_index(const std::string& dir, const std::vector<key_ind
 
 }  // namespace
 
-UpgradeResult upgrade_dictionary(const std::string& dir, bool allow_meta_rewrite) {
-  const std::optional<std::string> marker = marker_path(dir);
+UpgradeResult upgrade_dictionary(const std::string& dir, bool allow_meta_rewrite, bool convert) {
+  const std::optional<std::string> marker = dict_marker::find(dir);
   if (!marker) {
     return UpgradeResult::Failed;
   }
@@ -289,8 +308,13 @@ UpgradeResult upgrade_dictionary(const std::string& dir, bool allow_meta_rewrite
     return UpgradeResult::Failed;
   }
   if (const std::optional<key_index::blobs_file> kind = current_key_index(dir)) {
+    finish_key_index_marker(dir);
     remove_superseded(dir, *kind);
     return UpgradeResult::UpToDate;
+  }
+  if (!convert) {
+    // 只检查：旧式索引要整本改写，由宿主征得用户同意后再调 convert = true。
+    return legacy_fits_key_index(dir) ? UpgradeResult::Pending : UpgradeResult::NotApplicable;
   }
 
   UpgradeResult result = UpgradeResult::Failed;
@@ -374,6 +398,7 @@ UpgradeResult upgrade_dictionary(const std::string& dir, bool allow_meta_rewrite
 
   if (result == UpgradeResult::Upgraded) {
     if (const std::optional<key_index::blobs_file> kind = current_key_index(dir)) {
+      finish_key_index_marker(dir);
       remove_superseded(dir, *kind);
     }
   }
