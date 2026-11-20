@@ -3,6 +3,8 @@ import 'package:fushi/src/utils/components/fushi_continue_blocks.dart';
 import 'package:fushi/src/utils/components/fushi_continue_card_row.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
+    show showFushiConfirmDialog;
 import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart';
 import 'package:fushi/src/utils/components/fushi_series_cover_block.dart';
 import 'package:fushi/src/utils/components/fushi_continue_hero.dart';

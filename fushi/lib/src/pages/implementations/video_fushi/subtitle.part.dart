@@ -3590,6 +3590,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       final RemoteVideoSubtitleTarget remoteTarget = _remoteDiscSubtitleTarget(
         discTitle,
         audioTrack: controller.currentAudioStreamIndex,
+        audioLanguages: _audioTrackLanguagesOf(controller),
       );
       return (BuildContext context) => RemoteVideoSubtitleSheet(
         embedded: true,
@@ -3611,6 +3612,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
         videoId,
         episode,
         audioTrack: controller.currentAudioStreamIndex,
+        audioLanguages: _audioTrackLanguagesOf(controller),
       );
       final RemoteVideoSubtitleService remoteService =
           appRemoteVideoSubtitleService(appModel);
@@ -4009,6 +4011,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
         videoId,
         episode,
         audioTrack: controller.currentAudioStreamIndex,
+        audioLanguages: _audioTrackLanguagesOf(controller),
       ),
       prefs: PrefsRepoVideoSubtitleGeneratePrefs(appModel.prefsRepo),
       onJobStarted: (RemoteVideoSubtitleJob job) => unawaited(
@@ -4017,6 +4020,17 @@ extension _VideoSubtitle on _VideoFushiPageState {
       onTranscribeInApp: onTranscribeInApp,
     );
   }
+
+  /// 播放器当前片源真实音轨（去掉 libmpv 的 auto/no 伪轨）的语言标签，远端面板猜
+  /// 识别语言用（[RemoteVideoSubtitleTarget.languageGuess]）。没标签的轨不列。
+  List<String> _audioTrackLanguagesOf(VideoPlayerController controller) =>
+      <String>[
+        for (final AudioTrack track in controller.audioTracks)
+          if (track.id != 'auto' &&
+              track.id != 'no' &&
+              (track.language ?? '').trim().isNotEmpty)
+            track.language!.trim(),
+      ];
 
   /// host 管线的单集目标：host 上的 ([videoId], 集下标 [episode])。播放列表的集名取剧集
   /// 面板那一集的名字（与选集列表同口径），单视频 / 合集成员取视频标题。[audioTrack] 是
@@ -4027,6 +4041,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     String videoId,
     int episode, {
     int? audioTrack,
+    List<String> audioLanguages = const <String>[],
   }) {
     final _PlaylistEpisodeRef? ref =
         !_isRemoteCollection && _isPlaylist && episode < _episodes.length
@@ -4039,6 +4054,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
         videoId;
     return RemoteVideoSubtitleTarget(
       title: title,
+      audioLanguages: audioLanguages,
       episodes: <RemoteVideoSubtitleEpisode>[
         RemoteVideoSubtitleEpisode(
           videoId: videoId,
@@ -4063,6 +4079,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       target: _remoteDiscSubtitleTarget(
         title,
         audioTrack: controller.currentAudioStreamIndex,
+        audioLanguages: _audioTrackLanguagesOf(controller),
       ),
       prefs: PrefsRepoVideoSubtitleGeneratePrefs(appModel.prefsRepo),
       onJobStarted: (RemoteVideoSubtitleJob job) => unawaited(
@@ -4077,12 +4094,14 @@ extension _VideoSubtitle on _VideoFushiPageState {
   RemoteVideoSubtitleTarget _remoteDiscSubtitleTarget(
     RemoteDiscHostTitle title, {
     int? audioTrack,
+    List<String> audioLanguages = const <String>[],
   }) {
     final String disc = widget.remoteDisc?.title ?? _title ?? '';
     final String name = p.basenameWithoutExtension(title.memberPath);
     final String label = disc.isEmpty ? name : '$disc · $name';
     return RemoteVideoSubtitleTarget(
       title: label,
+      audioLanguages: audioLanguages,
       episodes: <RemoteVideoSubtitleEpisode>[
         RemoteVideoSubtitleEpisode(
           videoId: title.videoId,

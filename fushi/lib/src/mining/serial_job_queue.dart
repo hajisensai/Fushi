@@ -85,10 +85,24 @@ class SerialJobQueue {
 /// 只管并发数，不管完成顺序——需要按入队顺序收尾的场景在外面再套一条
 /// [SerialJobQueue]（见 `ImmersionMiningEngine`：抽取走本闸、落卡走串行队列）。
 class BoundedJobLimiter {
-  BoundedJobLimiter(this.maxConcurrent)
-    : assert(maxConcurrent > 0, 'maxConcurrent must be positive');
+  /// 固定上限。
+  BoundedJobLimiter(int maxConcurrent)
+    : assert(maxConcurrent > 0, 'maxConcurrent must be positive'),
+      _limit = (() => maxConcurrent);
 
-  final int maxConcurrent;
+  /// 上限每次排名额时现读（[limit]，结果 < 1 按 1 算）：设备 / 设置在运行期变了
+  /// （低内存模式开关），下一次排名额就按新值。上限调小时已在跑的任务不打断，
+  /// 只是归还名额时不再转交，直到在跑数降到新上限以下；调大时归还名额顺带放行
+  /// 多出来的排队任务。
+  BoundedJobLimiter.dynamic(int Function() limit) : _limit = limit;
+
+  final int Function() _limit;
+
+  /// 此刻的并发上限（≥ 1）。
+  int get maxConcurrent {
+    final int value = _limit();
+    return value < 1 ? 1 : value;
+  }
 
   int _running = 0;
   final Queue<Completer<void>> _waiters = Queue<Completer<void>>();
@@ -101,12 +115,12 @@ class BoundedJobLimiter {
 
   /// 拿到名额后执行 [job]，返回它的结果（异常原样抛出）。名额在 [job] 结束时一定归还。
   Future<T> run<T>(Future<T> Function() job) async {
-    if (_running < maxConcurrent) {
+    if (_waiters.isEmpty && _running < maxConcurrent) {
       _running++;
     } else {
       final Completer<void> slot = Completer<void>();
       _waiters.add(slot);
-      // 名额由 [_release] 原样转交，计数不变。
+      // 名额由 [_release] 计好数后转交。
       await slot.future;
     }
     try {
@@ -117,10 +131,11 @@ class BoundedJobLimiter {
   }
 
   void _release() {
-    if (_waiters.isNotEmpty) {
+    _running--;
+    final int limit = maxConcurrent;
+    while (_waiters.isNotEmpty && _running < limit) {
+      _running++;
       _waiters.removeFirst().complete();
-    } else {
-      _running--;
     }
   }
 }

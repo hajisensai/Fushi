@@ -63,7 +63,14 @@ void main() {
         reason: '晚到的旧文档失败回执不能中止当前导航',
       );
       expect(containsCodeLine(accept, '_clearContentReadyTimeout();'), isTrue);
-      expect(containsCodeLine(accept, '_abortStalledRestore();'), isTrue);
+      // 明确的失败回执不说「加载超时」：用专门的「恢复失败」文案。
+      expect(
+        containsCodeLine(
+          accept,
+          '_abortStalledRestore(message: t.reader_content_restore_failed);',
+        ),
+        isTrue,
+      );
     });
 
     test('failure receipt and 8 s fallback share one abort path', () {
@@ -71,7 +78,21 @@ void main() {
       expect(containsCodeLine(abort, '_failNavigation();'), isTrue);
       expect(containsCodeLine(abort, '_readerContentReady = true;'), isTrue);
       final String timeout = methodBody(src, 'void _startContentReadyTimeout(');
-      expect(containsCodeLine(timeout, '_abortStalledRestore();'), isTrue);
+      expect(
+        containsCodeLine(
+          timeout,
+          '_abortStalledRestore(message: t.reader_content_timeout);',
+        ),
+        isTrue,
+      );
+      expect(
+        containsCodeLine(
+          abort,
+          'FushiToast.show(msg: message, severity: ToastSeverity.warning);',
+        ),
+        isTrue,
+        reason: '提示文案由调用方按来由给，收尾本身不写死哪一句',
+      );
     });
   });
 }

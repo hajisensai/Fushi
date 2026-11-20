@@ -694,13 +694,39 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
   Future<void> _relocateSrtBookAudio(SrtBook book) async {
     final List<String> picked = await _pickSrtAudioFiles();
     if (picked.isEmpty || !mounted) return;
-    final SrtBookRelocateResult result = await SrtBookRepository(
-      appModel.database,
-    ).relocateAudioPaths(book.uid, picked);
+    final SrtBookRepository repository = SrtBookRepository(appModel.database);
+    SrtBookRelocateResult result = await repository.relocateAudioPaths(
+      book.uid,
+      picked,
+    );
     if (!mounted) return;
+    // 独立字幕书换了文件数：可能是有意合并 / 拆分，问一句再写（字幕按文件依次接排，
+    // 总时长不变才对得上）。
+    if (result case SrtBookRelocateCountChanged(:final int expected)) {
+      final bool confirmed = await showFushiConfirmDialog(
+        context: context,
+        title: t.audiobook_relocate_count_changed_title,
+        message: t.audiobook_relocate_count_changed_message(
+          expected: expected,
+          picked: picked.length,
+        ),
+        confirmLabel: t.audiobook_relocate,
+        icon: Icons.audio_file_outlined,
+      );
+      if (!confirmed || !mounted) return;
+      result = await repository.relocateAudioPaths(
+        book.uid,
+        picked,
+        allowCountChange: true,
+      );
+      if (!mounted) return;
+    }
     switch (result) {
       case SrtBookRelocated():
         break;
+      case SrtBookRelocateCountChanged():
+        // 已带 allowCountChange 重来，不会再回这个结果。
+        return;
       case SrtBookRelocateCountMismatch(:final int expected):
         FushiToast.show(
           msg: t.audiobook_relocate_count_mismatch(

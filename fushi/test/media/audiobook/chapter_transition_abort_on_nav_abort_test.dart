@@ -136,7 +136,7 @@ void main() {
       );
       final String abort = methodBody(
         navigation,
-        'void _abortStalledRestore() {',
+        'void _abortStalledRestore({required String message}) {',
       );
       expect(
         containsIdentifierCall(abort, '_failNavigation'),

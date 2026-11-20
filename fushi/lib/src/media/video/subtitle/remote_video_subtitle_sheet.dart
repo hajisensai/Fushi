@@ -149,8 +149,14 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
   RemoteVideoSubtitleJob? _job;
   String? _startError;
 
-  /// 要生成的语言。接回已有任务时取它的语言，否则日语（老 host 只认日语）。
+  /// 要生成的语言。接回已有任务时取它的语言；否则按目标手里的证据猜
+  /// （[RemoteVideoSubtitleTarget.languageGuess]，与本机面板同一套排序），host 探测回来
+  /// 不认猜到的语言、用户又没动过时退回日语（[_probe]）。
   VideoSubtitleLanguage _language = VideoSubtitleLanguage.japanese;
+  bool _languageTouched = false;
+
+  /// 语言初值从哪一档来（提示「为什么选了它」）；用户自己选过 / 接回已有任务后为 null。
+  VideoSubtitleLanguageSource? _languageSource;
 
   /// 按当前语言的目标：整季的「已有字幕跳过」随语言重算。
   RemoteVideoSubtitleTarget get _target => widget.target.forLanguage(_language);
@@ -163,8 +169,13 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
     );
     if (latest != null) {
       _language = latest.options.language;
+      _languageTouched = true;
       _attach(latest);
       _saveBeside = true;
+    } else {
+      final VideoSubtitleLanguageGuess guess = widget.target.languageGuess;
+      _language = guess.language;
+      _languageSource = guess.source;
     }
     unawaited(_probe());
   }
@@ -193,6 +204,8 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
     if (_running || language == _language) return;
     setState(() {
       _language = language;
+      _languageTouched = true;
+      _languageSource = null;
       _startError = null;
       _attach(widget.service.latestJobFor(widget.target, language: language));
     });
@@ -223,8 +236,25 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
     setState(() {
       _host = host;
       _probing = false;
+      // 猜到的语言 host 跑不了（老 host 只认日语）：用户没动过就退回日语，不把一条
+      // 「host 太旧」的拦截挂在用户根本没选过的语言上。接回的任务语言不动（如实拦）。
+      if (host != null &&
+          !_languageTouched &&
+          !hostAcceptsVideoSubtitleLanguage(host, _language)) {
+        _language = VideoSubtitleLanguage.japanese;
+        _languageSource = null;
+      }
     });
   }
+
+  String? _languageSourceHint() => switch (_languageSource) {
+    null || VideoSubtitleLanguageSource.contentLanguage => null,
+    VideoSubtitleLanguageSource.audioTrack => t.video_subtitle_ai_language_hint,
+    VideoSubtitleLanguageSource.metadata =>
+      t.video_subtitle_ai_language_from_metadata,
+    VideoSubtitleLanguageSource.fallback =>
+      t.video_subtitle_ai_language_from_default,
+  };
 
   bool get _hostSupportsKind => _host?.supports(kVideoSubtitleJobKind) ?? false;
 
@@ -635,24 +665,44 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
     );
   }
 
-  Widget _languageControl() => KeyedSubtree(
-    key: const ValueKey<String>('remote-subtitle-language'),
-    child: adaptiveSegmentedButton<VideoSubtitleLanguage>(
-      context: context,
-      segments: <ButtonSegment<VideoSubtitleLanguage>>[
-        for (final VideoSubtitleLanguage l in _hostLanguages)
-          ButtonSegment<VideoSubtitleLanguage>(
-            value: l,
-            label: Text(
-              videoSubtitleLanguageLabel(l),
-              key: ValueKey<String>('remote-subtitle-language-${l.tag}'),
+  Widget _languageControl() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: <Widget>[
+      KeyedSubtree(
+        key: const ValueKey<String>('remote-subtitle-language'),
+        child: adaptiveSegmentedButton<VideoSubtitleLanguage>(
+          context: context,
+          segments: <ButtonSegment<VideoSubtitleLanguage>>[
+            for (final VideoSubtitleLanguage l in _hostLanguages)
+              ButtonSegment<VideoSubtitleLanguage>(
+                value: l,
+                label: Text(
+                  videoSubtitleLanguageLabel(l),
+                  key: ValueKey<String>('remote-subtitle-language-${l.tag}'),
+                ),
+              ),
+          ],
+          selected: <VideoSubtitleLanguage>{_language},
+          onSelectionChanged: (Set<VideoSubtitleLanguage> s) =>
+              _setLanguage(s.first),
+        ),
+      ),
+      FushiAnimatedSize(
+        duration: context.fushiMotion.spatialDefault.duration,
+        curve: context.fushiMotion.spatialDefault.curve,
+        alignment: Alignment.topCenter,
+        child: switch (_languageSourceHint()) {
+          null => const SizedBox(width: double.infinity),
+          final String hint => Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: _hint(
+              hint,
+              key: const ValueKey<String>('remote-subtitle-language-source'),
             ),
           ),
-      ],
-      selected: <VideoSubtitleLanguage>{_language},
-      onSelectionChanged: (Set<VideoSubtitleLanguage> s) =>
-          _setLanguage(s.first),
-    ),
+        },
+      ),
+    ],
   );
 
   Widget _saveControl() {

@@ -44,15 +44,16 @@ extension _ReaderNavigation on _ReaderFushiPageState {
         debugPrint(
           '[ReaderFushi] content ready timeout — forcing overlay removal',
         );
-        _abortStalledRestore();
+        _abortStalledRestore(message: t.reader_content_timeout);
       },
     );
   }
 
   /// 内容就绪等不来时的统一收尾：8 秒兜底超时（[_startContentReadyTimeout]）与 JS
   /// 失败回执（[_acceptRestoreFailed]，gap-readerjs1-2）共用。摘遮罩、解开导航态、
-  /// 放行积压翻页、补 chrome insets、落焦、起阅读计时，并提示用户。
-  void _abortStalledRestore() {
+  /// 放行积压翻页、补 chrome insets、落焦、起阅读计时，并按来由提示用户（[message]：
+  /// 超时说「加载超时」，JS 明确回报失败说「恢复失败」——两种原因不混用一句文案）。
+  void _abortStalledRestore({required String message}) {
     _rebuild(() {
       _readerContentReady = true;
       _hasEverLoaded = true;
@@ -75,10 +76,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     // 里建/启，而这条路径正是「JS 迟迟不回 onRestoreComplete」——遮罩已摘、书能
     // 读，却一秒都不记时长（字数照常累计 ⇒ 速度又爆表）。
     _ensureStudyClock();
-    FushiToast.show(
-      msg: t.reader_content_timeout,
-      severity: ToastSeverity.warning,
-    );
+    FushiToast.show(msg: message, severity: ToastSeverity.warning);
   }
 
   /// BUG-438 / TODO-889：内容真正就绪（或不再需要兜底）时清掉超时 timer + 绝对 deadline，
@@ -133,7 +131,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     debugPrint('[ReaderFushi] onRestoreFailed: $reason');
     _clearContentReadyTimeout();
     if (_readerContentReady) return;
-    _abortStalledRestore();
+    _abortStalledRestore(message: t.reader_content_restore_failed);
   }
 
   void _onRestoreComplete() {

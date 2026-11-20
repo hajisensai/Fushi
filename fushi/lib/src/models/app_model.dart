@@ -5382,6 +5382,8 @@ class AppModel
       // 系统语音兜底（「朗读声音」里的系统语音预设拿不到 AppModel）按已装词典
       // 的词头语言定语言：现读，词典增删即时生效（BUG-3669）。
       systemTtsDictionaryLanguages = () => installedDictionarySourceLanguages;
+      // 制卡抽取并发按低内存模式现算（引擎不持有 AppModel）。
+      ImmersionMiningEngine.lowMemoryModeReader = () => prefsRepo.lowMemoryMode;
       mediaHistoryRepo = MediaHistoryRepository(_database);
 
       StartupTimeline.mark('platform-services');
@@ -6035,6 +6037,8 @@ class AppModel
       // 系统语音兜底（「朗读声音」里的系统语音预设拿不到 AppModel）按已装词典
       // 的词头语言定语言：现读，词典增删即时生效（BUG-3669）。
       systemTtsDictionaryLanguages = () => installedDictionarySourceLanguages;
+      // 制卡抽取并发按低内存模式现算（引擎不持有 AppModel）。
+      ImmersionMiningEngine.lowMemoryModeReader = () => prefsRepo.lowMemoryMode;
       await dictRepo.loadFromDb();
       // 同主进程：全局「远程查词」并入每台 host 的开关（幂等，主进程先跑过就是
       // no-op）。更新后第一次查词可能先拉起弹窗进程，不能只靠主进程迁移。

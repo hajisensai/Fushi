@@ -138,6 +138,32 @@ void main() {
       );
       expect(callerBody, contains('_prewarmPanels();'), reason: caller);
     }
+    // 换阅读模式 / 设置重应用（方向、跨页偏移、模式）/ 打开分镜导航开关时当场预热，
+    // 不等下一次翻页再懒检测。
+    for (final String caller in <String>[
+      'Future<void> _toggleReadingMode() async {',
+      'Future<void> _reapplyReaderPreferences() async {',
+      'void _onPanelNavigationPrefChanged() {',
+    ]) {
+      final int at = source.indexOf(caller);
+      expect(at, isNonNegative, reason: caller);
+      final String callerBody = source.substring(
+        at,
+        source.indexOf('\n  }\n', at),
+      );
+      expect(callerBody, contains('_prewarmPanels()'), reason: caller);
+    }
+    expect(
+      flat,
+      contains('..addListener(_onPanelNavigationPrefChanged);'),
+      reason: '分镜导航开关从关到开要能被阅读页听到',
+    );
+    expect(
+      flat,
+      contains(
+        '_panelNavigationPrefs?.removeListener(_onPanelNavigationPrefChanged);',
+      ),
+    );
   });
 
   test('页面销毁时释放 detector 的 ONNX session', () {

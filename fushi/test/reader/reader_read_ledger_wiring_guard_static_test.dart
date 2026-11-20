@@ -345,8 +345,14 @@ void main() {
         corpus,
         'void _startContentReadyTimeout()',
       );
-      expect(containsCodeLine(body, '_abortStalledRestore();'), isTrue);
-      final String abort = methodBody(corpus, 'void _abortStalledRestore()');
+      expect(
+        containsCodeLine(
+          body,
+          '_abortStalledRestore(message: t.reader_content_timeout);',
+        ),
+        isTrue,
+      );
+      final String abort = methodBody(corpus, 'void _abortStalledRestore(');
       expect(containsCodeLine(abort, '_failNavigation();'), isTrue);
     });
 

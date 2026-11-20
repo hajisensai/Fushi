@@ -329,8 +329,8 @@ buildStreamVideoLaunch(
     String? miningVideoUrl;
     bool miningVideoHasAudio;
     Map<String, String> httpHeaders;
-    // 画质菜单各档：只有本次真的解析了 manifest 才有（持久缓存命中时没有 manifest，
-    // 画质菜单照旧懒解析）。
+    // 画质菜单各档：本次解析了 manifest 时从同一份算出；持久缓存命中时取缓存里和
+    // 播放流一起存下的那份（旧缓存没有时画质菜单照旧现取）。
     YoutubeVariantSet? variants;
 
     YoutubeStreamCacheEntry? hit;
@@ -354,6 +354,7 @@ buildStreamVideoLaunch(
       miningVideoUrl = hit.miningVideoUrl;
       miningVideoHasAudio = hit.miningVideoHasAudio;
       httpHeaders = hit.httpHeaders;
+      variants = hit.variants;
     } else {
       final YoutubeResolvedSource resolved = await resolve(url);
       streamUrl = resolved.streamUrl;
@@ -364,10 +365,17 @@ buildStreamVideoLaunch(
       httpHeaders = resolved.httpHeaders;
       variants = resolved.variants;
       if (videoId != null) {
+        final YoutubeVariantSet? resolvedVariants = resolved.variants;
+        // 档位直链一并算进过期时间：缓存命中时它们要和播放流一样可用。
         final int? expiresAtMs = computeStreamCacheExpiryMs(<String?>[
           resolved.streamUrl,
           resolved.audioStreamUrl,
           resolved.miningVideoUrl,
+          if (resolvedVariants != null) ...<String?>[
+            resolvedVariants.audioStreamUrl,
+            for (final YoutubeVideoVariant v in resolvedVariants.variants)
+              v.videoUrl,
+          ],
         ], clock());
         // 可判定有效期才缓存；无 expire / 快过期 → 不缓存（下次仍重解析，不劣于旧）。
         if (expiresAtMs != null) {
@@ -381,6 +389,7 @@ buildStreamVideoLaunch(
               httpHeaders: resolved.httpHeaders,
               expiresAtMs: expiresAtMs,
               targetHeight: youtubeTargetHeight,
+              variants: resolvedVariants,
             ),
           );
         }

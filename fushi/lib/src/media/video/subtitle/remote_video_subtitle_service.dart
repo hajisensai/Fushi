@@ -58,6 +58,8 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_h
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart'
     show VideoSubtitleStage;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
+import 'package:fushi_engine/media/video/video_duration_probe.dart'
+    show AudioTrackFacts;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/i18n/strings.g.dart' show t;
@@ -189,6 +191,8 @@ class RemoteVideoSubtitleTarget {
     required this.episodes,
     this.wholeSeason = false,
     this.skippedExisting = const <String>[],
+    this.audioLanguages = const <String>[],
+    this.originalLanguage,
   }) : _seasonMembers = null,
        language = VideoSubtitleLanguage.japanese;
 
@@ -198,6 +202,8 @@ class RemoteVideoSubtitleTarget {
     required this.title,
     required List<RemoteVideoSubtitleSeasonMember> members,
     this.language = VideoSubtitleLanguage.japanese,
+    this.audioLanguages = const <String>[],
+    this.originalLanguage,
   }) : wholeSeason = true,
        _seasonMembers = members,
        episodes = <RemoteVideoSubtitleEpisode>[
@@ -223,8 +229,28 @@ class RemoteVideoSubtitleTarget {
       title: title,
       members: members,
       language: next,
+      audioLanguages: audioLanguages,
+      originalLanguage: originalLanguage,
     );
   }
+
+  /// 播放器当前这份片源的音轨语言标签（发起端是播放页时才有；远端直传播放的就是 host
+  /// 上那份文件，标签与 host ffprobe 读到的同源）。面板猜语言初值用。
+  final List<String> audioLanguages;
+
+  /// 刮削的作品原语言（合集页 / 播放页认得出作品时才有）。面板猜语言初值用。
+  final String? originalLanguage;
+
+  /// 面板语言初值与来由：与本机面板同一套证据排序（[resolveVideoSubtitleLanguage]：
+  /// 音轨标签 → 作品原语言 → 日语）。远端没有逐集的内容语言可读（host 不在 wire 上报），
+  /// 也不在本机 ffprobe host 的文件，所以只用发起端已经握在手里的证据。
+  VideoSubtitleLanguageGuess get languageGuess => resolveVideoSubtitleLanguage(
+    audioTracks: <AudioTrackFacts>[
+      for (int i = 0; i < audioLanguages.length; i++)
+        AudioTrackFacts(index: i, language: audioLanguages[i]),
+    ],
+    originalLanguage: originalLanguage,
+  );
 
   final String title;
   final List<RemoteVideoSubtitleEpisode> episodes;
