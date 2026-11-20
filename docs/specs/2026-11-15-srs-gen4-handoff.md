@@ -4013,3 +4013,25 @@ exit 1；成功 949、失败 9、错误 6、跳过 21，实际执行 964。上�
 - `fushi/test/srs/srs_generation_old_server_e2e_test.dart` 经 heavy 外包到 dist 机（self-mac）跑，用的是那台机器的原生库，不是本
   worktree 编的 Windows dll。
 - 服务端 FSRS 优化器（§4.6）、端到端加密位置仍不支持，见 server-parity-gaps，不属本块。
+
+### 第六波 服务端收尾：复核修复（2026-11-20，同分支续做）
+
+- **新客户端往旧服务端制卡（复核 major）**：「旧服务端」实际是换代分支的基线 develop `6dd38cb92d`（协议 3）——v3.3.0 的服务端
+  还没有复习库（`server_srs.dart` 是之后加的），测试注释原先写 v3.3.0 是错的，已改。按基线源码：围栏让那份 profile 进
+  needsUpgrade，`ServerSrsProfile.store` 只在 ready 时非空，复习落点没了；没带 Anki helper 时 `miningAvailable` 为假，
+  `/api/mine/forward` 读请求体之前回 404 `Mining off`。新客户端原先把这个 404 当「主机可能收到了卡但没确认」
+  （`InterconnectPostTransport` 把任何响应都算 `mayHaveDelivered` → `RemoteMineOutcomeUnknown` → `connectionUnknown`），
+  用户看到的原因是错的、卡也进不了待发队列。根因修在传输层：404 / 405（没有这个端点 / 没接线，对端什么都没做）不再算
+  可能已送达；制卡客户端据此抛 `RemoteMineRefused`，仓库映射成新错误码 `AnkiErrorCode.pairedDeviceMiningUnavailable`
+  （文案 `anki_error_paired_device_mining_unavailable`：连上了、主机现在不收卡、可能要升级、卡没送出），并算「确定没送到」
+  （`isUndeliveredMineFailure`），开着「连不上时暂存」时进待发队列。端到端：`srs_generation_old_server_e2e_test.dart` 两条都补了
+  经生产链路（`FushiRemoteMiningClient` → `RemoteMiningAnkiRepository` → `PendingMiningAnkiRepository`）往旧主机真 HTTP 制卡。
+  带 Anki helper 的旧服务端照旧把卡落进它自己的 Anki（解析器从复习退到 Anki），与库代无关，没测。
+- **名字不先取自己上次发布的（复核 minor）**：测试里改成服务端先建身份（新代设备 ID 是 UUIDv7，先建的先列出），并断言
+  前提「服务端自己那份先被列出」；变异「去掉 `e.key != own`」→ 红（`Expected: 'Japanese'`）。
+- **设备报的名字过滤（复核 nit）**：抽出 `serverSrsProfileNameOk`（≤100 字、无控制字符），admin 写入与 `_resolveName` 同一口径，
+  设备报的不合格名字跳过；变异「去掉过滤」→ 红（`Actual: 'J\x07P'`）。
+- **每轮全量扫同步根（复核 minor）**：`srsListRemoteProfiles` 加 `onlyDirs`，`_publishInfo` 只读自己绑定的目录。
+- **换绑后旧目录残留 `profile.json`（复核 minor，推测）**：核实服务端运行期不换绑——它不发 `collection_adopt` /
+  `collection_join` / `collection_salts_add`，也没有 `.fushisrs` / SRS 备份导入；绑定只在第一次 `identity` 建（目录 = uid）。没有
+  需要清的旧目录，没加代码；server-parity-gaps 里写明「以后给服务端加换绑路径时要一并带上清理」。
