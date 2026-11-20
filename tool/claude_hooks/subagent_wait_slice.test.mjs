@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
-import { SUBAGENT_FOREGROUND_TIMEOUT_MS, slicedToolInput } from './subagent_wait_slice.mjs';
+import { SUBAGENT_FOREGROUND_TIMEOUT_MS, install, slicedToolInput } from './subagent_wait_slice.mjs';
 
 const sub = (toolInput, toolName = 'Bash') => ({
   agent_id: 'a1',
@@ -65,6 +67,49 @@ test('the hook answers updatedInput JSON on stdin input, nothing otherwise', () 
     const quiet = run(stdin);
     assert.equal(quiet.status, 0);
     assert.equal(quiet.stdout, '');
+  }
+});
+
+test('--install copies the hook, registers it once and keeps the old settings', () => {
+  const home = mkdtempSync(path.join(os.tmpdir(), 'wait-slice-'));
+  try {
+    const claudeDir = path.join(home, '.claude');
+    mkdirSync(claudeDir);
+    const settingsPath = path.join(claudeDir, 'settings.json');
+    const before = '﻿{"env":{"A":"中文"},"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[]}]}}';
+    writeFileSync(settingsPath, before);
+
+    install(home);
+    const target = path.join(claudeDir, 'hooks', 'subagent_wait_slice.mjs');
+    assert.ok(existsSync(target));
+    assert.equal(readFileSync(`${settingsPath}.bak-subagent-wait-slice`, 'utf8'), before);
+    const settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
+    assert.equal(settings.env.A, '中文');
+    assert.equal(settings.hooks.PreToolUse.length, 2);
+    const entry = settings.hooks.PreToolUse[1];
+    assert.equal(entry.matcher, 'Bash|PowerShell');
+    assert.equal(entry.hooks[0].command, `node "${target.replace(/\\/g, '/')}"`);
+
+    // The installed copy answers like the original, and a second run adds nothing.
+    const out = spawnSync(process.execPath, [target], {
+      input: JSON.stringify(sub({ command: 'x', timeout: 600000 })),
+      encoding: 'utf8',
+    });
+    assert.equal(JSON.parse(out.stdout).hookSpecificOutput.updatedInput.timeout, SUBAGENT_FOREGROUND_TIMEOUT_MS);
+    assert.ok(install(home).includes('already registered in settings.json'));
+    assert.equal(JSON.parse(readFileSync(settingsPath, 'utf8')).hooks.PreToolUse.length, 2);
+
+    // No settings file yet: one is created.
+    const fresh = mkdtempSync(path.join(os.tmpdir(), 'wait-slice-'));
+    try {
+      install(fresh);
+      const created = JSON.parse(readFileSync(path.join(fresh, '.claude', 'settings.json'), 'utf8'));
+      assert.equal(created.hooks.PreToolUse.length, 1);
+    } finally {
+      rmSync(fresh, { recursive: true, force: true });
+    }
+  } finally {
+    rmSync(home, { recursive: true, force: true });
   }
 });
 
