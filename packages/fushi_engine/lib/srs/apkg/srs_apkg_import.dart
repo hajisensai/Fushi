@@ -1779,26 +1779,44 @@ class _Importer {
     );
   }
 
-  /// 本批里当作新笔记攒下的（noteId, 卡数）：落库后按实际是否新建计入报告（BUG-3553）。
-  final List<(String, int)> _pendingNewNotes = <(String, int)>[];
+  /// 本批里当作新笔记攒下的：落库后按实际是否新建计入报告（BUG-3553），被实体归属闸拒掉的记冲突（BUG-4843）。
+  final List<_PendingNewNote> _pendingNewNotes = <_PendingNewNote>[];
 
   Future<void> _flush({bool force = false}) async {
     if (_pending.isEmpty || (!force && _pending.length < _batchEvents)) return;
     final List<SrsEventDraft> batch = List<SrsEventDraft>.of(_pending);
-    final List<(String, int)> newNotes = List<(String, int)>.of(
+    final List<_PendingNewNote> newNotes = List<_PendingNewNote>.of(
       _pendingNewNotes,
     );
     _pending.clear();
     _pendingNewNotes.clear();
-    final Set<String> existed = await store.importDrafts(batch);
-    for (final (String noteId, int cards) in newNotes) {
-      if (existed.contains(noteId)) {
+    final SrsImportDraftsResult landed = await store.importDrafts(
+      batch,
+      logNotes: <String, String>{
+        for (final _PendingNewNote p in newNotes)
+          for (final String card in p.cardIds) card: p.noteId,
+      },
+    );
+    for (final _PendingNewNote p in newNotes) {
+      if (landed.foreignNotes.contains(p.noteId)) {
+        // 同库另一份 profile 已有同 guid、另一个笔记类型的笔记（本包不合并笔记模板时落到了副本类型上）：内核的
+        // 实体归属闸没让这条笔记落，它的日志也没落。记冲突，不算新增（BUG-4843 复核：以前照记「已添加」）。
+        report.conflictNotes.add(
+          SrsImportNoteIssue(
+            guid: p.guid,
+            noteType: p.noteType,
+            reason: SrsImportIssueReason.otherProfileNoteType,
+          ),
+        );
+        report.reviewLogsImported -= p.logs;
+        report.cardsResetToNew -= p.resetToNew;
+      } else if (landed.existed.contains(p.noteId)) {
         // 攒批期间同一条笔记已被同步 / 别处建好：初值里键已有记录的没落（见
         // SrsEditDraft.initial），不算新增。
         report.notesSkipped++;
       } else {
         report.notesAdded++;
-        report.cardsAdded += cards;
+        report.cardsAdded += p.cards;
       }
     }
   }
@@ -1874,6 +1892,7 @@ class _Importer {
     final bool retype = noteDeleted && existing.noteTypeId != nt.id;
     final List<(_SrcCard, String)> cardIds = _cardIdsOf(nt, noteId, cards);
     bool update = false;
+    _PendingNewNote? pendingNew;
     if (isNew) {
       // 新笔记的事件攒进本批，与它的卡片标志、日志同一个事务落库（以前每条笔记各自
       // 落两三次库、各刷新一遍缓存，见 BUG-3549）。
@@ -1889,7 +1908,14 @@ class _Importer {
           createdAt: _extNoteCreatedAt[guid] ?? n['id'] as int,
         ),
       );
-      _pendingNewNotes.add((noteId, cards.length));
+      pendingNew = _PendingNewNote(
+        noteId,
+        guid,
+        nt.name,
+        cards.length,
+        <String>[for (final (_SrcCard _, String id) in cardIds) id],
+      );
+      _pendingNewNotes.add(pendingNew);
     } else if (existing.noteTypeId != nt.id && !retype) {
       report.conflictNotes.add(
         SrsImportNoteIssue(
@@ -1961,6 +1987,8 @@ class _Importer {
       report.notesSkipped++;
     }
 
+    final int logsBefore = report.reviewLogsImported;
+    final int resetBefore = report.cardsResetToNew;
     for (final (_SrcCard c, String cardId) in cardIds) {
       await _importCardFlags(
         cardId,
@@ -1984,6 +2012,9 @@ class _Importer {
         report.cardsResetToNew++;
       }
     }
+    pendingNew
+      ?..logs = report.reviewLogsImported - logsBefore
+      ..resetToNew = report.cardsResetToNew - resetBefore;
   }
 
   /// 来源卡在本机的卡 ID（模板按 ord 对应；填空题共用一个模板、按填空序号区分）。
@@ -2421,4 +2452,28 @@ class _Importer {
       return null;
     }
   }
+}
+
+/// 本批里当作新笔记攒下的一条（[_Importer._flush] 落库后按回包计入报告）。[logs] / [resetToNew]：为它的卡记进
+/// 报告的日志数 / 「重置为新卡」数——这条笔记被实体归属闸拒掉时从报告里退回（它的日志同样没落）。
+final class _PendingNewNote {
+  _PendingNewNote(
+    this.noteId,
+    this.guid,
+    this.noteType,
+    this.cards,
+    this.cardIds,
+  );
+
+  final String noteId;
+  final String guid;
+
+  /// 来源笔记类型名（冲突报告用）。
+  final String noteType;
+  final int cards;
+
+  /// 它的卡在本机的 ID：落库时日志按它带上笔记（[SrsDbStore.importDrafts] 的 `logNotes`），笔记被拒时日志一并不落。
+  final List<String> cardIds;
+  int logs = 0;
+  int resetToNew = 0;
 }

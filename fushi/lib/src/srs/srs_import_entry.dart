@@ -162,6 +162,8 @@ List<String> srsImportReportLines(SrsImportReport r) => <String>[
         t.srs_import_report_conflicts_type_changed(n: e.value, name: e.key.$2),
       SrsImportIssueReason.noteTypeKindMismatch =>
         t.srs_import_report_conflicts_kind_mismatch(n: e.value, name: e.key.$2),
+      SrsImportIssueReason.otherProfileNoteType =>
+        t.srs_import_report_conflicts_other_profile(n: e.value, name: e.key.$2),
       _ => t.srs_import_report_conflicts_missing_type(n: e.value),
     },
   if (r.removedInSource.isNotEmpty)
