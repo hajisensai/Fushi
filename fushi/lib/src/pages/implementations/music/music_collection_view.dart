@@ -69,6 +69,20 @@ MusicViewStyle musicViewStyleOf(
     ? MusicViewStyleStore.instance.effective(kind, fallback)
     : fallback;
 
+/// [style] 在本页是否真排成封面色块（`FushiCoverBlocks` / `SliverFushiCoverBlocks`
+/// 那套大字色块）：色块样式、重设计外壳生效、且库页布局不是封面网格。
+///
+/// 封面网格（[ShellContentLayout.grid]，设置里的「封面网格（原来的）」；墨水屏恒为
+/// 它）保留原有画法，色块排布本身也不接这一档（`fushi_cover_block_layout.dart`
+/// 文件头：「[ShellContentLayout.grid] 不走这里——调用点保留原封面网格」）：有原有
+/// 封面网格卡的视图（专辑、来源歌单）排网格卡（[MusicStyledCollection.gridCardBuilder]
+/// 等），没有的（曲目、艺人、本地歌单——改版前都是单列行）排单列行。所有「色块还是
+/// 行」的分流都经这一处，不在各页各写一遍判据。
+bool musicCoverBlocksActive(BuildContext context, MusicViewStyle style) =>
+    style == MusicViewStyle.blocks &&
+    musicViewStyleSwitchable(context) &&
+    shellContentLayoutOf(context) != ShellContentLayout.grid;
+
 /// 读 [kind] 当前的样式并跟着切换重建。[fallback] 是调用页的原有画法：用户没选过
 /// 时用它；墨水屏恒用它。
 class MusicViewStyleBuilder extends StatelessWidget {
@@ -364,8 +378,9 @@ typedef MusicGridDelegateBuilder =
 ///
 /// - [MusicViewStyle.list]：单列行（[rowBuilder]），惰性、错峰进场；
 /// - [MusicViewStyle.blocks]：库页布局是封面网格（[ShellContentLayout.grid]，含
-///   墨水屏）且调用页有原有封面网格卡（[gridCardBuilder] + [gridDelegate]）时排原有
-///   网格卡；否则排封面色块（[SliverFushiCoverBlocks]，拼贴 / 规整按库页布局）。
+///   墨水屏）时保留原有画法——调用页有原有封面网格卡（[gridCardBuilder] +
+///   [gridDelegate]）排网格卡，没有就排单列行（[rowBuilder]）；其余布局排封面色块
+///   （[SliverFushiCoverBlocks]，判据见 [musicCoverBlocksActive]）。
 ///
 /// [header] 排在条目前、随列表一起滚（详情页的头部色块），与条目隔 [headerGap]；
 /// [footer] 排在最后（分页加载的转圈）。[shrinkWrap] 时不自己滚（嵌在外层滚动里）。
@@ -393,7 +408,7 @@ class MusicStyledCollection extends StatelessWidget {
   final IndexedWidgetBuilder rowBuilder;
   final FushiCoverBlockItemBuilder blockBuilder;
 
-  /// 封面网格布局下的原有网格卡；null = 网格布局下也排色块。
+  /// 封面网格布局下的原有网格卡；null = 网格布局下排单列行（[rowBuilder]）。
   final IndexedWidgetBuilder? gridCardBuilder;
   final MusicGridDelegateBuilder? gridDelegate;
 
@@ -416,7 +431,7 @@ class MusicStyledCollection extends StatelessWidget {
       shellContentLayoutOf(context) == ShellContentLayout.grid;
 
   Widget _body(BuildContext context, double viewportWidth) {
-    if (style == MusicViewStyle.list) {
+    if (!_useGridCards(context) && !musicCoverBlocksActive(context, style)) {
       return SliverList(
         delegate: SliverChildBuilderDelegate(
           fushiStaggeredItemBuilder(rowBuilder),

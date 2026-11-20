@@ -274,7 +274,7 @@ class _MusicLocalPlaylistPageState
   /// 排序：要排序切回列表；「从这个歌单移除」照旧在右键 / 「⋯」菜单里）。
   Widget _buildPage(BuildContext context, MusicViewStyle style) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final bool blocks = style == MusicViewStyle.blocks;
+    final bool blocks = musicCoverBlocksActive(context, style);
     return musicBrowseScaffold(
       context,
       title: _shown?.playlist?.name ?? widget.playlist.name,

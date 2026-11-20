@@ -619,7 +619,7 @@ class _MusicPluginCollectionPageState
             tokens.spacing.gap,
           );
           // 重设计外壳、色块样式：曲目排成多列封面色块，按行惰性构建。
-          if (switchable && layout == MusicViewStyle.blocks) {
+          if (musicCoverBlocksActive(context, layout)) {
             return FushiEntranceScope(
               child: CustomScrollView(
                 slivers: <Widget>[
@@ -1154,7 +1154,7 @@ class _MusicPluginArtistPageState extends ConsumerState<MusicPluginArtistPage> {
     double width,
   ) {
     final MusicViewStyle style = _tabStyle(context, tab);
-    final bool blocks = style == MusicViewStyle.blocks;
+    final bool blocks = musicCoverBlocksActive(context, style);
     switch (tab) {
       case _ArtistTab.popular when blocks:
         return <Widget>[
