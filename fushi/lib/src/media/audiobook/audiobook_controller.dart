@@ -3071,22 +3071,51 @@ class AudiobookPlayerController extends ChangeNotifier {
     );
   }
 
+  /// 文件 [audioFileIndex] 那一段里「此刻在播」的那条的全表下标：起点不晚于
+  /// [positionMs] 的最后一条——命中句区间时就是那一句，落在句间静音里是刚播完的那句
+  /// （与 [_updateCurrentCue] 的「gap 保持上一句」、歌词层 [_allBookIndexAt] 同一口径）。
+  /// 该文件里还没有任何一句开始（早于首句 / 该文件没有 cue）为 -1。
+  static int _startedCueIndexInFile({
+    required List<AudioCue> cues,
+    required int audioFileIndex,
+    required int positionMs,
+  }) {
+    final ({int start, int end}) span = _fileCueSpan(cues, audioFileIndex);
+    // 在该文件那一段里二分找第一条 startMs > positionMs；上一条即为在播句。
+    int lo = span.start;
+    int hi = span.end;
+    while (lo < hi) {
+      final int mid = (lo + hi) >>> 1;
+      if (cues[mid].startMs <= positionMs) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    return lo > span.start ? lo - 1 : -1;
+  }
+
   /// 没有当前 cue 时，「播放器停在文件 [audioFileIndex] 的 [positionMs]」对应的全表
-  /// 下标：只在该文件那一段里按位置找（[JsonAlignmentParser.findCueIndex]），命中
-  /// 返回那一条；没命中（gap / 早于该文件首句 / 该文件没有 cue）返回该文件那一段的
-  /// 起点（夹到表内）。单文件书里那一段就是整表，与原先「回到首句」一致。
+  /// 下标：该文件里已开始的最后一句（[_startedCueIndexInFile]，句间静音里是刚播完的
+  /// 那句）；该文件里还没有句子开始时返回该文件那一段的起点（夹到表内）。
+  ///
+  /// 反馈 Y7g59hUCPn：旧实现只认句区间命中（[JsonAlignmentParser.findCueIndex]），
+  /// 落在句间静音就退到「该文件首句」。开书还没播放时当前句从未被 tick 填过
+  /// （[_updateCurrentCue] 在 gap 里只保持、不新定位），恢复点又常落在句间——单文件
+  /// m4b 的「该文件首句」就是全书第一句，按「重播本句」被拽回书首。
   static int _cueIndexAtFilePosition({
     required List<AudioCue> cues,
     required int audioFileIndex,
     required int positionMs,
   }) {
     if (cues.isEmpty) return -1;
-    final ({int start, int end}) span = _fileCueSpan(cues, audioFileIndex);
-    final int local = JsonAlignmentParser.findCueIndex(
-      cues: cues.sublist(span.start, span.end),
+    final int started = _startedCueIndexInFile(
+      cues: cues,
+      audioFileIndex: audioFileIndex,
       positionMs: positionMs,
     );
-    if (local >= 0) return span.start + local;
+    if (started >= 0) return started;
+    final ({int start, int end}) span = _fileCueSpan(cues, audioFileIndex);
     return span.start < cues.length ? span.start : cues.length - 1;
   }
 
@@ -3099,16 +3128,21 @@ class AudiobookPlayerController extends ChangeNotifier {
     if (cues.isEmpty) return null;
     final int idx = currentCueIndex;
     if (idx < 0 || idx >= cues.length) {
-      final ({int start, int end}) span = _fileCueSpan(cues, audioFileIndex);
-      final int local = JsonAlignmentParser.findCueIndex(
-        cues: cues.sublist(span.start, span.end),
+      // 没有当前 cue：按位置取当前文件里已开始的最后一句（句间静音里是刚播完的
+      // 那句），下一句是它的后一条——反馈 Y7g59hUCPn：旧实现在 gap 里退到当前
+      // 文件首句，单文件书开书未播放时按「下一句」被拽回全书第一句。
+      final int started = _startedCueIndexInFile(
+        cues: cues,
+        audioFileIndex: audioFileIndex,
         positionMs: positionMs,
       );
-      // 没定位到 cue：跳到当前文件的首句（单文件书 = 全章首句）；当前文件之后
-      // 已没有 cue 时是章边界。
-      if (local < 0) return span.start < cues.length ? span.start : null;
-      final int at = span.start + local;
-      return at + 1 >= cues.length ? null : at + 1;
+      if (started < 0) {
+        // 当前文件里还没有句子开始：下一句就是该文件首句；该文件之后已没有 cue
+        // 时是章边界。
+        final ({int start, int end}) span = _fileCueSpan(cues, audioFileIndex);
+        return span.start < cues.length ? span.start : null;
+      }
+      return started + 1 >= cues.length ? null : started + 1;
     }
     if (idx + 1 >= cues.length) return null;
     return idx + 1;
