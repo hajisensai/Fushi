@@ -6,7 +6,7 @@
 // 同形循环：下载任务导入后认行归来源、删下载计划时清掉已入库行。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 String _read(String relative) {
   final List<String> candidates = <String>[relative, '../$relative'];

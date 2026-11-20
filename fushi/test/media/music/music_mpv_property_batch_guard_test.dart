@@ -4,7 +4,7 @@
 // （属性名拼错 / 值非法）无声无息，写入抛出时还会把整次打开打断。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   for (final String path in <String>[

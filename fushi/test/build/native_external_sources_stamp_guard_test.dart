@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:path/path.dart' as p;
 
 /// 守卫（BUG-4906）：预编译原生库的戳记 / 缓存键必须覆盖 crate 经 `#[path = ...]`
