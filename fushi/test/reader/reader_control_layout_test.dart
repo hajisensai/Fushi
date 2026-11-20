@@ -214,10 +214,15 @@ void main() {
         '"topLeft":["back"],"topCenter":["title"],'
         '"topRight":["jumpHistory","settings"]}}',
       );
-      expect(moved.itemsIn(ReaderControlSlot.topRight), <ReaderControlItem>[
-        ReaderControlItem.jumpHistory,
-        ReaderControlItem.settings,
-      ]);
+      // JSON 里缺席的其它按钮按出厂表回填（导航 / 有声书接在后面），
+      // 用户放的两颗在前、顺序不变。
+      expect(
+        moved.itemsIn(ReaderControlSlot.topRight).take(2),
+        <ReaderControlItem>[
+          ReaderControlItem.jumpHistory,
+          ReaderControlItem.settings,
+        ],
+      );
       expect(ReaderControlLayout.decode(moved.encode()), moved);
       // 移出（removed）后不再回填。
       final ReaderControlLayout removed = ReaderControlLayout.decode(
