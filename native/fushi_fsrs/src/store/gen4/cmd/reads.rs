@@ -226,7 +226,11 @@ pub fn run(t: &Truth<'_>, col: i64, req: &Value, files: &mut Files) -> Result<Va
             "edits" => single(files, r.edits(req)?),
             "successors" => single(files, r.successors()?),
             "conflict_edits" => single(files, r.conflict_edits(req)?),
-            "style_candidates" => single(files, r.style_candidates(req)?),
+            "style_candidates" => {
+                let (table, end) = r.style_candidates(req)?;
+                files.push((TABLE.to_owned(), table));
+                json!({"end": end})
+            }
             "source_note_candidates" => single(files, r.source_note_candidates(req)?),
             "lapis_backfill" => single(files, r.lapis_backfill(req)?),
             "logs" => single(files, r.logs(req)?),
@@ -699,12 +703,17 @@ impl<'t, 'c> Reads<'t, 'c> {
 
     /// `style_candidates {after, limit}`：笔记字段（`f/` 键）活着的写入里值带内联 `<style>` 块的，按操作主键游标取下一批
     /// （`rid` = 操作主键, `id` = 修改记录 ID, `json` = 这条写入的原值修改行）。存量样式去重的取数步。
-    fn style_candidates(&mut self, req: &Value) -> Result<Vec<u8>, String> {
+    ///
+    /// 另回扫描上界 `end`（集合里最大的修改操作主键，不小于 `after`），口径同协议 3 `store/reads.rs`：命中不满
+    /// `limit` 条时 `(after, end]` 已整段看完，调用方把游标推到 `end`，空扫描不再每次开库重来。
+    fn style_candidates(&mut self, req: &Value) -> Result<(Vec<u8>, i64), String> {
         let (after, limit) = (need_int(req, "after")?, need_int(req, "limit")?);
         let limit = usize::try_from(limit.max(0)).unwrap_or(usize::MAX);
+        let keys = self.edit_keys_after(after)?;
+        let end = keys.iter().copied().max().unwrap_or(after).max(after);
         let mut out = Table::new(&[("rid", KIND_I64), ("id", KIND_STR), ("json", KIND_STR)]);
         let mut n = 0usize;
-        for k in self.edit_keys_after(after)? {
+        for k in keys {
             if n >= limit {
                 break;
             }
@@ -740,7 +749,7 @@ impl<'t, 'c> Reads<'t, 'c> {
             ])?;
             n += 1;
         }
-        Ok(out.encode())
+        Ok((out.encode(), end))
     }
 
     /// 集合里主键大于 [after] 的修改操作的主键，升序（逐台设备按主键段取）。

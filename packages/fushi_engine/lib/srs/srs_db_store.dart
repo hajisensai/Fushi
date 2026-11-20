@@ -1338,6 +1338,7 @@ class SrsDbStore implements SrsSync2Host {
     final SrsStyleStore? st = styles;
     if (st == null) return 0;
     int rewritten = 0;
+    bool scanned = false;
     while (shouldStop?.call() != true) {
       // 每批一个独占区：样式去重（会写样式文件）在 Dart 算，落库一半交内核（`edits_rewrite_repr`，
       // native/fushi_fsrs/src/store/repr_rewrite.rs）——改写表示、刷新这些笔记的缓存行、推进游标并写本机状态行在一个
@@ -1345,11 +1346,19 @@ class SrsDbStore implements SrsSync2Host {
       final int done = await runExclusive(() async {
         int n = -1;
         await _commandOrReload(() async {
-          final SrsColumns rows = await _readTable(
+          final SrsReadResult read = await _read(
             'style_candidates',
             <String, Object?>{'after': _styleCursor, 'limit': batchSize},
           );
-          if (rows.rows == 0) return;
+          final SrsColumns rows = read.table;
+          // 内核回这次扫描的上界 `end`：命中不满一批说明 (游标, end] 已整段看完，游标推到 end 并落盘。
+          // 以前只拿最后一条命中当游标，最后一批之后的空扫描推不动它，每次开库都从同一个旧游标把其后的
+          // 整张修改记录表重扫一遍（大库 20 秒，BUG-4916）。
+          final int end = (read.json['end'] as int?) ?? _styleCursor;
+          final int cursor = rows.rows >= batchSize
+              ? rows.ints('rid')[rows.rows - 1]
+              : max(end, _styleCursor);
+          if (rows.rows == 0 && cursor == _styleCursor) return;
           final SrsIntColumn rid = rows.ints('rid');
           final SrsStringColumn json = rows.strings('json');
           final List<List<Object>> rewrites = <List<Object>>[];
@@ -1365,7 +1374,7 @@ class SrsDbStore implements SrsSync2Host {
               rewrites.add(<Object>[rid[i], c.canonical()]);
             }
           }
-          final int cursor = rid[rows.rows - 1];
+          scanned = rows.rows < batchSize;
           _absorbLocalWrite(
             await _sync2(<String, Object?>{
               'op': 'edits_rewrite_repr',
@@ -1382,6 +1391,8 @@ class SrsDbStore implements SrsSync2Host {
       });
       if (done < 0) break;
       rewritten += done;
+      // 命中不满一批：游标已推到扫描上界，这一轮看完了，不再空扫一遍。
+      if (scanned) break;
       // 让出事件循环：迁移在后台跑，不长时间占住数据库连接。
       await Future<void>.delayed(Duration.zero);
     }

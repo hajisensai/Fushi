@@ -379,6 +379,60 @@ void main() {
     await db.close();
   });
 
+  // BUG-4916（反馈 _tdycqnr6s）：最后一批命中之后还有一大段不带样式的修改记录时，游标要推过这段尾巴、落进本机状态。以前游标只停在
+  // 最后一条命中上，每次开库都从那里把其后整张修改记录表（逐行解 json 再 instr）重扫一遍，大库开复习卡 20 秒。
+  test('存量迁移扫完后游标推到扫描上界：重启不再重扫命中之后的尾巴', () async {
+    final SrsStorage db = await memDb();
+    final SrsDbStore legacy = await open(db, 'dev');
+    for (int i = 0; i < 2; i++) {
+      await addNote(legacy, '語$i', dicts);
+    }
+    // 尾巴：不带样式的笔记，rowid 都在命中之后。
+    for (int i = 0; i < 6; i++) {
+      await legacy.createNote(
+        noteTypeId: legacy.fushiCardNoteTypeId,
+        fieldsById: <String, String>{fid('Expression'): '尾$i'},
+      );
+    }
+    Future<int> maxRowid() async =>
+        (await db.core
+                .customSelect('SELECT MAX(rowid) AS n FROM srs_field_edits')
+                .getSingle())
+            .read<int>('n');
+    Future<int> lastStyleRowid() async =>
+        (await db.core
+                .customSelect(
+                  "SELECT MAX(rowid) AS n FROM srs_field_edits WHERE instr(json, '<style>') > 0",
+                )
+                .getSingle())
+            .read<int>('n');
+    Future<int?> storedCursor() async {
+      final String json =
+          (await db.core
+                  .customSelect('SELECT json FROM srs_local_state')
+                  .getSingle())
+              .read<String>('json');
+      return (jsonDecode(json) as Map<String, Object?>)['styleCursor'] as int?;
+    }
+
+    final int lastHit = await lastStyleRowid();
+    final int tail = await maxRowid();
+    expect(tail, greaterThan(lastHit), reason: '场景要有命中之后的尾巴');
+
+    final SrsDbStore s = await open(db, 'dev', styleDir: 'media');
+    expect(await s.compactStoredStyles(batchSize: 4), 4);
+    expect(await rawStyleRows(db), 0);
+    expect(await storedCursor(), tail, reason: '整段看完：游标落在扫描上界，不停在最后一条命中上');
+
+    // 重启再跑：从上界接着扫，什么都不改；游标不动。
+    final SrsDbStore resumed = await open(db, 'dev', styleDir: 'media');
+    srsDebugReadCommands = 0;
+    expect(await resumed.compactStoredStyles(batchSize: 4), 0);
+    expect(srsDebugReadCommands, 1, reason: '一次读就确认没有新行');
+    expect(await storedCursor(), tail);
+    await db.close();
+  });
+
   test('AnkiConnect：加卡 / 改卡落库去重，notesInfo 原样读回；同内容改卡不产生记录', () async {
     final AcHarness h = await AcHarness.create(
       styles: SrsStyleStore(Directory(p.join(tmp.path, 'ac'))),

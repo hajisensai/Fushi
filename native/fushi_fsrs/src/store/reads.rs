@@ -175,7 +175,11 @@ pub(crate) fn run(
         "edits" => single(files, edits(c, profile, req)?),
         "successors" => single(files, successors(c, profile)?),
         "conflict_edits" => single(files, conflict_edits(c, profile, req)?),
-        "style_candidates" => single(files, style_candidates(c, profile, req)?),
+        "style_candidates" => {
+            let (table, end) = style_candidates(c, profile, req)?;
+            files.push((TABLE.to_owned(), table));
+            json!({"end": end})
+        }
         "source_note_candidates" => single(files, source_note_candidates(c, profile, req)?),
         "lapis_backfill" => single(files, lapis_backfill(c, profile, req)?),
         "logs" => single(files, logs(c, profile, req)?),
@@ -410,22 +414,32 @@ fn conflict_edits(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>,
 
 /// `style_candidates {after, limit}`：笔记字段（`f/` 键）的修改记录里原文带内联 `<style>` 块的，按 rowid 游标取下
 /// 一批（`rid`, `id`, `json`）。存量样式去重的取数步（Dart `compactStoredStyles`）。
-fn style_candidates(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>, String> {
+///
+/// 回包 `{end}`：这次扫描的上界（开扫时表里最大的 rowid，不小于 `after`）。命中不满 `limit` 条时 `(after, end]`
+/// 已经整段看完，调用方把游标推到 `end`；只认最后一条命中当游标的话，最后一批之后的空扫描永远推不动游标，每次
+/// 开库都从同一个旧游标把其后整张表（逐行解 `json` 生成列再 `instr`）重扫一遍——1.2 GB 的库上 20 秒（BUG-4916，反馈
+/// _tdycqnr6s）。上界先取、再作为条件绑进查询，两条语句之间新落的行留给下一次。
+fn style_candidates(c: &Connection, profile: &str, req: &Value) -> Result<(Vec<u8>, i64), String> {
+    let after_v = need_int(req, "after")?;
+    let max_rid: i64 = c
+        .prepare_cached("SELECT coalesce(max(rowid), 0) FROM srs_field_edits")
+        .map_err(sql)?
+        .query_row([], |r| r.get(0))
+        .map_err(sql)?;
+    let end_v = max_rid.max(after_v);
     let mut q = Sel::of(profile);
-    let (after, limit) = (
-        q.int(need_int(req, "after")?),
-        q.int(need_int(req, "limit")?),
-    );
+    let (after, limit, end) = (q.int(after_v), q.int(need_int(req, "limit")?), q.int(end_v));
     q.push(&format!(
         "SELECT rowid, id, json FROM srs_field_edits \
-         WHERE profile_uid = srs_id(?1) AND entity_kind = 'note' AND rowid > {after} \
+         WHERE profile_uid = srs_id(?1) AND entity_kind = 'note' AND rowid > {after} AND rowid <= {end} \
          AND field_key LIKE 'f/%' AND instr(json, '<style>') > 0 \
          ORDER BY rowid LIMIT {limit}"
     ));
-    q.table(
+    let table = q.table(
         c,
         &[("rid", KIND_I64), ("id", KIND_STR), ("json", KIND_STR)],
-    )
+    )?;
+    Ok((table, end_v))
 }
 
 /// `source_note_candidates {needle}`：字段（`f/` 键）的修改记录原文里出现 `needle` 的笔记 ID（去重；只是候选，

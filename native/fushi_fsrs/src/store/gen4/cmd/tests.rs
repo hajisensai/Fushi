@@ -483,13 +483,15 @@ fn edits_conflicts_and_field_scans_match_protocol_3() {
         json!({"q": "lapis_backfill", "pairs": [["f/fa", "f/fb"]], "notes": [N1, N4]}),
         &[("t", &[Id])],
     );
-    // 样式块：游标只当游标用（新代是操作主键），比 (修改记录 ID, 行)。
-    let rows = p.same(
-        json!({"q": "style_candidates", "after": 0, "limit": 100}),
-        &[("t", &[Skip, Id, Edit])],
-    );
+    // 样式块：游标只当游标用（新代是操作主键），比 (修改记录 ID, 行)；回包的扫描上界 `end` 两边口径不同（rowid / 操作主键），
+    // 不比值、只比语义（[style_scan_end_lets_the_cursor_pass_an_empty_tail]）。
+    let req = json!({"q": "style_candidates", "after": 0, "limit": 100});
+    let (_, pf) = p.p3(req.clone());
+    let (_, gf) = p.g4(req.clone());
+    let rows = p.rows(&pf, "t", &[Skip, Id, Edit]);
+    assert_eq!(rows, p.rows(&gf, "t", &[Skip, Id, Edit]), "{req}");
     assert_eq!(rows.len(), 1);
-    let rid: i64 = rows[0][0].parse().unwrap();
+    let rid: i64 = decode(&gf[0].1).1[0][0].parse().unwrap();
     let (_, f) = p.g4(json!({"q": "style_candidates", "after": rid, "limit": 100}));
     assert!(
         decode(&f[0].1).1.is_empty(),
@@ -497,6 +499,48 @@ fn edits_conflicts_and_field_scans_match_protocol_3() {
     );
     let (_, f) = p.g4(json!({"q": "style_candidates", "after": 0, "limit": 0}));
     assert!(decode(&f[0].1).1.is_empty(), "limit 0 gives nothing");
+}
+
+/// BUG-4916（反馈 _tdycqnr6s）：存量样式去重最后一批之后的空扫描要能把游标推过已看完的尾巴。以前只回命中、调用方拿最后一条
+/// 命中当游标，命中之后的整段没有命中时游标永远停在那条命中上，每次开库都从那里把其后整张修改记录表重扫一遍。
+/// 两代读都回扫描上界 `end`：命中不满一批时 `(after, end]` 已看完，从 `end` 再扫是空的、上界不再前进；`end` 不小于
+/// 最后一条命中，也不小于请求的 `after`。
+#[test]
+fn style_scan_end_lets_the_cursor_pass_an_empty_tail() {
+    let lib = library();
+    let p = Pair::new(&lib);
+    let req = json!({"q": "style_candidates", "after": 0, "limit": 100});
+    for (side, (v, f)) in [("p3", p.p3(req.clone())), ("g4", p.g4(req.clone()))] {
+        let hits = decode(&f[0].1).1;
+        assert_eq!(hits.len(), 1, "{side}");
+        let rid: i64 = hits[0][0].parse().unwrap();
+        let end = v["end"]
+            .as_i64()
+            .unwrap_or_else(|| panic!("{side}: no end in {v}"));
+        assert!(
+            end > rid,
+            "{side}: the scan covers edits after the last hit ({end} vs {rid})"
+        );
+        let again = json!({"q": "style_candidates", "after": end, "limit": 100});
+        let (v2, f2) = if side == "p3" {
+            p.p3(again)
+        } else {
+            p.g4(again)
+        };
+        assert!(decode(&f2[0].1).1.is_empty(), "{side}: nothing past end");
+        assert_eq!(
+            v2["end"].as_i64(),
+            Some(end),
+            "{side}: an empty tail does not move end"
+        );
+        let past = json!({"q": "style_candidates", "after": end + 1000, "limit": 100});
+        let (v3, _) = if side == "p3" { p.p3(past) } else { p.g4(past) };
+        assert_eq!(
+            v3["end"].as_i64(),
+            Some(end + 1000),
+            "{side}: end never goes behind after"
+        );
+    }
 }
 
 #[test]
