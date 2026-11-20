@@ -207,18 +207,17 @@ void main() {
     expect(ab!.audioPaths, abBefore);
   });
 
-  test('没有对齐字幕的 audiobooks 脏行不被救活', () async {
-    const String dirtyKey = 'dirty';
-    final Directory dir = Directory(p.join(docsDir.path, 'dirty'))
-      ..createSync(recursive: true);
-    final File stale = File(p.join(dir.path, 'stale.mp3'))
-      ..writeAsStringSync('S');
+  /// 旧版书架 audioOnly 导入误落的脏行：`audiobooks` 行没有对齐字幕、音频
+  /// 在 [audioPath]（还存在，所以启动器会优先拿它起播），配对 srt 行登记的音频已断。
+  Future<void> seedDirtyRow(String dirtyKey, String audioPath) async {
     final AudiobookRepository abRepo = AudiobookRepository(db);
     await abRepo.ensureAudiobook(dirtyKey);
     await abRepo.replaceAudio(
       bookKey: dirtyKey,
-      audioPaths: <String>[stale.path],
+      audioPaths: <String>[audioPath],
     );
+    final Directory dir = Directory(p.join(docsDir.path, 'dirty_srt'))
+      ..createSync(recursive: true);
     final File srt = File(p.join(dir.path, 'b.srt'))..writeAsStringSync('');
     await SrtBookRepository(db).save(
       SrtBook()
@@ -229,14 +228,90 @@ void main() {
         ..importedAt = 1
         ..bookKey = dirtyKey,
     );
-    final File fresh = File(p.join(dir.path, 'fresh.mp3'))
+  }
+
+  test('没有对齐字幕的 audiobooks 脏行：重新定位后被删，启动器读到新文件', () async {
+    const String dirtyKey = 'dirty';
+    final Directory dirtyPersist = await AudiobookStorage.ensurePersistDir(
+      dirtyKey,
+    );
+    final File stale = File(p.join(dirtyPersist.path, 'stale.mp3'))
+      ..writeAsStringSync('S');
+    await seedDirtyRow(dirtyKey, stale.path);
+    final Directory freshDir = Directory(p.join(docsDir.path, 'fresh'))
+      ..createSync(recursive: true);
+    final File fresh = File(p.join(freshDir.path, 'fresh.mp3'))
       ..writeAsStringSync('F');
 
     final SrtBookRelocateResult result = await SrtBookRepository(
       db,
     ).relocateAudioPaths('srtbook_epub_$dirtyKey', <String>[fresh.path]);
     expect(result, isA<SrtBookRelocated>());
-    final Audiobook? ab = await abRepo.findByBookKey(dirtyKey);
+    expect(
+      await AudiobookRepository(db).findByBookKey(dirtyKey),
+      isNull,
+      reason: '脏行不救活也不删时，启动器永远优先读它，重新定位不生效',
+    );
+    expect(dirtyPersist.existsSync(), isFalse, reason: '脏行的持久目录随行删除');
+
+    final AudiobookSessionStartRequest? request =
+        await AudiobookSessionLauncher(db).resolve(dirtyKey);
+    expect(request, isNotNull);
+    expect(request!.isSrtBookSource, isTrue);
+    expect(request.audioFiles.map((File f) => f.path).toList(), <String>[
+      fresh.path,
+    ]);
+  });
+
+  test('新选的文件就在脏行持久目录里：删行但保留目录，不删刚选的文件', () async {
+    const String dirtyKey = 'dirty-inside';
+    final Directory dirtyPersist = await AudiobookStorage.ensurePersistDir(
+      dirtyKey,
+    );
+    final File stale = File(p.join(dirtyPersist.path, 'stale.mp3'))
+      ..writeAsStringSync('S');
+    await seedDirtyRow(dirtyKey, stale.path);
+    // 用户重新定位时选中的正是脏行目录里的文件。
+    final File picked = File(p.join(dirtyPersist.path, 'chapter.mp3'))
+      ..writeAsStringSync('P');
+
+    final SrtBookRelocateResult result = await SrtBookRepository(
+      db,
+    ).relocateAudioPaths('srtbook_epub_$dirtyKey', <String>[picked.path]);
+    expect(result, isA<SrtBookRelocated>());
+    expect(await AudiobookRepository(db).findByBookKey(dirtyKey), isNull);
+    expect(picked.existsSync(), isTrue, reason: '整目录删除会删掉用户刚选的文件');
+
+    final AudiobookSessionStartRequest? request =
+        await AudiobookSessionLauncher(db).resolve(dirtyKey);
+    expect(request, isNotNull);
+    expect(request!.isSrtBookSource, isTrue);
+    expect(request.audioFiles.map((File f) => f.path).toList(), <String>[
+      picked.path,
+    ]);
+  });
+
+  test('重新定位被拒绝时脏行与目录都不动', () async {
+    const String dirtyKey = 'dirty-rejected';
+    final Directory dirtyPersist = await AudiobookStorage.ensurePersistDir(
+      dirtyKey,
+    );
+    final File stale = File(p.join(dirtyPersist.path, 'stale.mp3'))
+      ..writeAsStringSync('S');
+    await seedDirtyRow(dirtyKey, stale.path);
+    final Directory freshDir = Directory(p.join(docsDir.path, 'fresh2'))
+      ..createSync(recursive: true);
+    final List<String> picked = <String>[
+      for (final String n in <String>['a.mp3', 'b.mp3'])
+        (File(p.join(freshDir.path, n))..writeAsStringSync(n)).path,
+    ];
+
+    final SrtBookRelocateResult result = await SrtBookRepository(
+      db,
+    ).relocateAudioPaths('srtbook_epub_$dirtyKey', picked);
+    expect(result, isA<SrtBookRelocateCountMismatch>());
+    final Audiobook? ab = await AudiobookRepository(db).findByBookKey(dirtyKey);
     expect(ab!.audioPaths, <String>[stale.path]);
+    expect(stale.existsSync(), isTrue);
   });
 }

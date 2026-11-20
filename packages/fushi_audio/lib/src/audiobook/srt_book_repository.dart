@@ -338,7 +338,7 @@ class SrtBookRepository {
     // SrtBooks 重新定位的正确音频被无视（「重新导入后音频不对」根因）。
     // 写入非空音频后删除这条脏行，让 resolve 落到 SrtBook 正确音频。排在换音频的
     // 事务之外：它要删脏行的持久目录，磁盘操作回滚不了。
-    await _healDirtyAudiobookRow(book);
+    await _healDirtyAudiobookRow(bookKey: book.bookKey, keptAudio: persisted);
 
     return persisted;
   }
@@ -403,10 +403,12 @@ class SrtBookRepository {
   /// TODO-1032 PR2：删除「旧版书架 audioOnly 导入误落的 Audiobook 脏行」，使读取端
   /// resolve 落到本次写入的 SrtBook 正确音频。
   ///
+  /// 两个写入口都在写库提交后调：[replaceAudio]（换音频）与 [relocateAudioPaths]
+  /// （书架「重新定位文件」）。[keptAudio] 是字幕书此刻登记的音频。
+  ///
   /// 严守的隔离判据（绝不误删真 EPUB 有声书）：
-  /// 1. 仅当本次 [book] 真带音频（[SrtBook.audioPaths] 非空）才触发——否则会删出
-  ///    「两边都没音频」。
-  /// 2. 仅对 **EPUB 配对 SRT 书**愈合：[SrtBook.bookKey] 非空（standalone 字幕书
+  /// 1. 仅当字幕书真带音频（[keptAudio] 非空）才触发——否则会删出「两边都没音频」。
+  /// 2. 仅对 **EPUB 配对 SRT 书**愈合：[bookKey] 非空（standalone 字幕书
   ///    bookKey 为空，从不落 Audiobook 行，天然豁免）。
   /// 3. **核心**：只删 **没有对齐字幕** 的 Audiobook 行（`alignmentPath` 空 **且**
   ///    `alignmentFormat` 空）。Audiobooks.alignmentPath / alignmentFormat 都是
@@ -425,10 +427,15 @@ class SrtBookRepository {
   /// SrtBook cue。进度隔离：SrtBook 进度 pref key 为 `audiobook_pos_<uid>`，脏行
   /// 进度为 `audiobook_pos_<bookKey>`，`deleteAudiobook` 只删表行+cue+persistDir，
   /// 不删 pref，且 key 本就不同——删脏行不连带丢 SrtBook 进度。
-  Future<void> _healDirtyAudiobookRow(SrtBook book) async {
-    final List<String>? audioPaths = book.audioPaths;
-    if (audioPaths == null || audioPaths.isEmpty) return; // guard 1
-    final String bookKey = book.bookKey;
+  ///
+  /// 目录隔离：脏行的持久目录（按 bookKey 派生）平时随行一起删；但 [keptAudio] 里
+  /// 只要有一个文件落在那个目录里（重新定位 / 引用导入时用户选的正是脏行目录里的
+  /// 文件），整目录删除就会删掉字幕书刚登记的音频——这时只删行和脏 cue，目录留着。
+  Future<void> _healDirtyAudiobookRow({
+    required String bookKey,
+    required List<String> keptAudio,
+  }) async {
+    if (keptAudio.isEmpty) return; // guard 1
     if (bookKey.isEmpty) return; // guard 2: standalone 字幕书无脏行
 
     final AudiobookRow? abRow = await _db.getAudiobookByBookKey(bookKey);
@@ -439,7 +446,14 @@ class SrtBookRepository {
         abRow.alignmentPath.isNotEmpty || abRow.alignmentFormat.isNotEmpty;
     if (hasAlignment) return;
 
-    // 确证为 audioOnly 脏行：删行（连带 bookKey 命名空间下的脏 cue + persistDir）。
+    // 确证为 audioOnly 脏行：删行（连带 bookKey 命名空间下的脏 cue）。
+    for (final String path in keptAudio) {
+      if (await AudiobookStorage.persistDirContains(bookKey, path)) {
+        // 字幕书登记的文件就在脏行目录里：只删行与脏 cue，目录不动。
+        await _db.deleteAudiobookByBookKey(bookKey);
+        return;
+      }
+    }
     await AudiobookRepository(_db).deleteAudiobook(bookKey);
   }
 
@@ -549,7 +563,8 @@ class SrtBookRepository {
   /// 旧路径全断 → 退到 srt 行按 uid 身份起播，cue / 进度都挂在 bookKey 上，于是字幕
   /// 不跟、进度归零；部分还在 → 按那一行的残缺列表起播，文件缺项、cue 错位。所以两行
   /// 在**同一个事务**里一起改。只改带对齐字幕的 `audiobooks` 行：没有对齐的是旧版
-  /// 书架 audioOnly 误落的脏行（见 [_healDirtyAudiobookRow]），不该被救活。
+  /// 书架 audioOnly 误落的脏行，不该被救活——它还会挡住启动器读 srt 行，所以事务
+  /// 提交后经 [_healDirtyAudiobookRow] 删掉（新文件在脏行目录里时保留目录）。
   ///
   /// 配对行要求新文件数与两行原登记的文件数都相等，否则拒绝
   /// （[SrtBookRelocateCountMismatch]，一行不写；两行原登记数互相就不等时是
@@ -560,9 +575,11 @@ class SrtBookRepository {
     String uid,
     List<String> newPaths,
   ) async {
-    return _db.transaction(() async {
+    String bookKey = '';
+    final SrtBookRelocateResult result = await _db.transaction(() async {
       final SrtBookRow? row = await _db.getSrtBookByUid(uid);
       if (row == null) return const SrtBookRelocateNotFound();
+      bookKey = row.bookKey;
       final List<String> srtOld = _decodePaths(row.audioPathsJson);
       if (newPaths.isEmpty) {
         return SrtBookRelocateCountMismatch(expected: srtOld.length);
@@ -612,6 +629,11 @@ class SrtBookRepository {
       }
       return const SrtBookRelocated();
     });
+    // 排在事务之外：要删脏行的持久目录，磁盘操作回滚不了（与 [replaceAudio] 同理）。
+    if (result is SrtBookRelocated) {
+      await _healDirtyAudiobookRow(bookKey: bookKey, keptAudio: newPaths);
+    }
+    return result;
   }
 
   static List<String> _decodePaths(String? json) {

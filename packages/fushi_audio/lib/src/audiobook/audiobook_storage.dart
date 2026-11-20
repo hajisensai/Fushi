@@ -688,6 +688,22 @@ abstract final class AudiobookStorage {
     }
   }
 
+  /// [path] 是否落在 [bookUid] 的持久目录里：现行哈希目录或旧版 `hashCode` 目录，
+  /// 与 [deletePersistDir] 删的是同两处。整目录删除前用它排除「还有登记指着里面的
+  /// 文件」，否则会连用户刚选的音频一起删掉。
+  static Future<bool> persistDirContains(String bookUid, String path) async {
+    final Directory docs = await _documentsRoot();
+    for (final String name in <String>[
+      _stableHash(bookUid),
+      bookUid.hashCode.toRadixString(16),
+    ]) {
+      if (_isInside(Directory(p.join(docs.path, 'audiobooks', name)), path)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   static Future<void> deletePersistDir(String bookUid) async {
     final Directory docs = await _documentsRoot();
     final String hash = _stableHash(bookUid);
