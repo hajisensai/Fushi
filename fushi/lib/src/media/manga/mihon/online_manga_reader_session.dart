@@ -8,6 +8,7 @@ import 'package:crypto/crypto.dart';
 import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/media/manga/mihon/manga_page_files.dart';
 import 'package:fushi/src/media/manga/mihon/manga_page_provider.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 
@@ -33,9 +34,6 @@ const int kOnlineMangaPrefetchAhead = 4;
 
 /// 每次取页时顺带往回预取几页（回翻一页不白屏即可）。
 const int kOnlineMangaPrefetchBehind = 1;
-
-/// 单页字节上限，与旧在线会话 / 下载服务的 100 MiB 口径一致。
-const int kOnlineMangaMaximumPageBytes = 100 * 1024 * 1024;
 
 /// 取第 [index] 页（0-based）的原始字节。Mihon 必须经扩展自己的客户端，所以这里
 /// 只接一个闭包，由调用方绑到 `OnlineMangaRuntimeAdapter.fetchChapterPage`。
@@ -320,28 +318,15 @@ class OnlineMangaReaderSession implements MangaReaderSession {
       _throwIfClosed();
       final Uint8List bytes = await _fetchPage(index);
       _throwIfClosed();
-      if (bytes.isEmpty) {
-        throw const MihonRuntimeException(
-          'PAGE_EMPTY',
-          'The online manga page is empty',
-        );
-      }
-      if (bytes.length > kOnlineMangaMaximumPageBytes) {
-        throw const MihonRuntimeException(
-          'PAGE_TOO_LARGE',
-          'The online manga page is too large',
-        );
-      }
-      final File target = File(
-        p.join(directory.path, onlineMangaStreamPageFileName(index, bytes)),
+      checkMangaPageBytes(bytes);
+      final File target = await writeMangaPageFile(
+        File(
+          p.join(directory.path, onlineMangaStreamPageFileName(index, bytes)),
+        ),
+        bytes,
+        // 写暂存期间会话关了：不落盘（目录马上被删）。
+        beforeCommit: _throwIfClosed,
       );
-      final File staged = File('${target.path}.part');
-      await staged.writeAsBytes(bytes, flush: true);
-      if (_closed) {
-        await _deleteQuietly(staged);
-        _throwIfClosed();
-      }
-      await staged.rename(target.path);
       _cached[index] = target;
       return target;
     } finally {
@@ -413,18 +398,8 @@ class OnlineMangaReaderSession implements MangaReaderSession {
 
 /// 直读缓存里第 [index] 页的文件名：与下载服务同一个 `page-NNNNNN` 词干，扩展名按
 /// 字节嗅探（嗅不出来用 `.img`，阅读器不靠扩展名判类型）。
-String onlineMangaStreamPageFileName(int index, Uint8List bytes) {
-  final String stem = 'page-${(index + 1).toString().padLeft(6, '0')}';
-  final String extension = switch (mangaImageContentType(bytes)) {
-    'image/png' => '.png',
-    'image/jpeg' => '.jpg',
-    'image/gif' => '.gif',
-    'image/webp' => '.webp',
-    'image/avif' => '.avif',
-    _ => '.img',
-  };
-  return '$stem$extension';
-}
+String onlineMangaStreamPageFileName(int index, Uint8List bytes) =>
+    mangaPageFileName(index, bytes, unknownExtension: '.img');
 
 /// 带插队的计数信号量：前台请求排在预取前面，已排队的预取被前台要到时可提升。
 class _PagePermitPool {

@@ -12,6 +12,7 @@ import 'package:fushi/src/media/manga/library/online_manga_library_service.dart'
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/manga_ocr_job_stream.dart';
+import 'package:fushi/src/media/manga/mihon/manga_page_files.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
@@ -83,8 +84,13 @@ class _FakeAdapter implements OnlineMangaRuntimeAdapter {
       failuresLeft[page.index] = left - 1;
       throw StateError('boom page ${page.index}');
     }
+    final Uint8List? override = pageBytes?.call(page.index);
+    if (override != null) return override;
     return pngOf(page.index);
   }
+
+  /// 非空且对某页返回非 null 时，用它替换该页的字节（上限 / 空页用）。
+  Uint8List? Function(int index)? pageBytes;
 
   @override
   Future<List<int>> fetchCover(
@@ -1061,5 +1067,36 @@ void main() {
       ]);
       downloads.dispose();
     });
+  });
+
+  // manga-27：直读与下载共用一段「字节 → 暂存 → 改名」，单页上限同一口径。
+  test('下载侧也拒超过单页上限的页（与在线直读同一口径），不落盘', () async {
+    adapter.pageBytes = (int index) =>
+        index == 1 ? Uint8List(kMangaPageMaximumBytes + 1) : null;
+    final MangaDownloadService downloads = build(pageConcurrency: 1);
+    await downloads.enqueueChapter(
+      entry: _entry(),
+      chapter: _chapters.last,
+      autoOcr: false,
+    );
+    await downloads.start();
+    await downloads.whenIdle;
+
+    final MangaDownloadJobRow failed = await jobOf('/chapter/1');
+    expect(failed.status, MangaDownloadJobStatus.failed);
+    expect(failed.lastError, contains('PAGE_TOO_LARGE'));
+    final Directory images = Directory(
+      p.join(mangaChapterDirectory(bookDir, '/chapter/1').path, 'images'),
+    );
+    final List<String> names = images
+        .listSync()
+        .map((FileSystemEntity entity) => p.basename(entity.path))
+        .toList();
+    expect(
+      names.where((String name) => name.startsWith('page-000002')),
+      isEmpty,
+      reason: '超限的页不能落盘（暂存也不能留）',
+    );
+    downloads.dispose();
   });
 }

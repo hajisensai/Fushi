@@ -51,6 +51,7 @@ import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart'
 import 'package:fushi/src/media/manga/download/manga_download_sidecar.dart';
 import 'package:fushi/src/media/manga/download/online_manga_download_gate.dart';
 import 'package:fushi/src/media/manga/manga_json_writeback.dart';
+import 'package:fushi/src/media/manga/mihon/manga_page_files.dart';
 import 'package:fushi/src/media/manga/mihon/manga_page_provider.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_volume_downloader.dart';
 import 'package:fushi/src/platform/mobile/android_download_keep_alive.dart';
@@ -958,7 +959,7 @@ class MangaDownloadService {
     await images.create(recursive: true);
     final List<_PageFile?> files = List<_PageFile?>.filled(pages.length, null);
     int done = 0;
-    // 续跑：磁盘上已完整落地的页直接认（`.tmp` 不算）。
+    // 续跑：磁盘上已完整落地的页直接认（暂存文件不算）。
     for (int index = 0; index < pages.length; index++) {
       final _PageFile? existing = await _existingPageFile(images, index);
       if (existing != null) {
@@ -1310,34 +1311,37 @@ class MangaDownloadService {
       adapter.fetchChapterPage(page),
       token,
     );
-    if (bytes.isEmpty) {
-      throw StateError('Empty page image at index $index');
-    }
-    final String name = '${_pageStem(index)}${_extensionFor(bytes)}';
-    final File target = File(p.join(images.path, name));
-    // 先写 .tmp 再 rename：半截文件被续跑当成有效页就是一页永久坏图。
-    final File staged = File('${target.path}.tmp');
-    await staged.writeAsBytes(bytes, flush: true);
-    await staged.rename(target.path);
+    // 空页 / 超单页上限与在线直读同一口径（manga_page_files.dart）。
+    checkMangaPageBytes(bytes);
+    // 落盘名不变：`page-NNNNNN` + 嗅探扩展名，嗅不出来按 `.jpg`（AVIF 有自己的
+    // 扩展名，WebView / 导入白名单按扩展名认格式）。先写暂存再改名：半截文件被
+    // 续跑当成有效页就是一页永久坏图。
+    final String name = mangaPageFileName(
+      index,
+      bytes,
+      unknownExtension: _kUnknownPageExtension,
+    );
+    final File target = await writeMangaPageFile(
+      File(p.join(images.path, name)),
+      bytes,
+    );
     return _PageFile(
       relativeUrl: '${MangaStorage.kImagesDirName}/$name',
       file: target,
     );
   }
 
-  static String _pageStem(int index) =>
-      'page-${(index + 1).toString().padLeft(6, '0')}';
+  /// 下载侧嗅不出格式时的扩展名（直读缓存用 `.img`，那边不进章目录）。
+  static const String _kUnknownPageExtension = '.jpg';
 
-  /// 续跑时找磁盘上已落地的第 [index] 页（任意扩展名，`.tmp` 除外，空文件不算）。
+  /// 续跑时找磁盘上已落地的第 [index] 页（扩展名表里任一个，暂存文件不算，空文件
+  /// 不算）。
   Future<_PageFile?> _existingPageFile(Directory images, int index) async {
-    final String stem = _pageStem(index);
-    for (final String ext in const <String>[
-      '.jpg',
-      '.png',
-      '.webp',
-      '.gif',
-      '.avif',
-    ]) {
+    final String stem = mangaPageFileStem(index);
+    for (final String ext in <String>{
+      ...kMangaPageExtensionByContentType.values,
+      _kUnknownPageExtension,
+    }) {
       final File file = File(p.join(images.path, '$stem$ext'));
       if (await file.exists() && await file.length() > 0) {
         return _PageFile(
@@ -1349,26 +1353,9 @@ class MangaDownloadService {
     return null;
   }
 
-  static String _extensionFor(Uint8List bytes) {
-    switch (mangaImageContentType(bytes)) {
-      case 'image/png':
-        return '.png';
-      case 'image/webp':
-        return '.webp';
-      case 'image/gif':
-        return '.gif';
-      case 'image/avif':
-        // 以前落进 default 存成 `.jpg`：WebView 按扩展名给 image/jpeg、导入白名单也照旧，
-        // 但内容其实是 AVIF，换扩展名就能对上真实格式。
-        return '.avif';
-      default:
-        return '.jpg';
-    }
-  }
-
   /// 用户取消后丢掉这条任务的半成品（issue #2720）。
   ///
-  /// - 章节任务：删未完成章的目录（页图 / `.tmp`）；章已完整落地（manga.json
+  /// - 章节任务：删未完成章的目录（页图 / 暂存文件）；章已完整落地（manga.json
   ///   在、判据 [isChapterDownloaded] 为真）就是用户的内容，**不删**——取消一条
   ///   排队中的重下任务不能把已下好的章顺手抹掉。
   /// - mokuro 卷：删下载器 staging（`.part` / 未导入的 `.cbz`）；已导入的卷在库
