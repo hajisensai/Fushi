@@ -33,10 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4234 条。点号进各自文件。
+> 共 4236 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4908](bugs/BUG-4908-srs-v30-writer-dirs-never-dropped.md) | ✅ | ✅ | v3.0.x 复习同步写入者目录迁移完也永远留在位置上 |
+| [BUG-4907](bugs/BUG-4907-cloud-reserved-namespace-listed-as-book.md) | ✅ | ✅ | 云盘对比弹窗把 `__settings__` / `fushi-srs` 列成远端书、可被「删远端」整个删掉 |
 | [BUG-4906](bugs/BUG-4906-interconnect-host-dead-file-box.md) | ✅ | ✅ | 互联 host 同步根堆积已无人读取的客户端文件箱书文件夹 |
 | [BUG-4905](bugs/BUG-4905-ai-cast-text-substitutions.md) | ✅ | ✅ | 小说和漫画 AI 标注未应用系列用词替换表 |
 | [BUG-4904](bugs/BUG-4904-book-series-key-store-annotation.md) | ✅ | ✅ | 书店写法「卷号<系列名> (文库名)」的分卷导入后不归合集 |

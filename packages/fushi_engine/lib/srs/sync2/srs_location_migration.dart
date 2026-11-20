@@ -123,8 +123,9 @@ class SrsLocationPrepared {
   bool mediaLeftover = false;
 }
 
-/// 协议 1 之前的旧同步引擎的写入者目录（`fushi-srs/<uid>/<写入者>/`，只有云盘 / 互联通道上有）：迁移只读它们的
-/// `media/`，逐个文件搬、逐个文件删（目录本身与别的内容不动）。
+/// 协议 1 之前的旧同步引擎（v3.0.x）的写入者目录（`fushi-srs/<uid>/<写入者>/`，只有云盘 / 互联通道上有）：迁移读它们的
+/// `media/`，逐个文件搬、逐个文件删；全部搬完、旧根确认处理到头之后整目录删（[deleteWriter]，所有者 2026-11-21 拍板
+/// 放弃 v3.0.x 客户端，BUG-4908）。
 abstract interface class SrsV1Writers {
   /// 全部写入者目录名。
   Future<List<String>> writers();
@@ -138,6 +139,10 @@ abstract interface class SrsV1Writers {
 
   /// 删掉 [writer] 的 `media/<name>`（不在视为成功）。
   Future<void> deleteMedia(String writer, String name);
+
+  /// 整个删掉写入者目录 [writer]（`batch-*` / `snapshot-*` / `cursor` / `probe` / `profile.json` 一并；不在视为成功）。
+  /// 只由 [srsMigrateV1Media] 在「旧根已处理到头、写入者媒体全空」时调。
+  Future<void> deleteWriter(String writer);
 }
 
 /// [SyncAssetStore] 上的写入者目录。
@@ -215,6 +220,16 @@ class SrsAssetV1Writers implements SrsV1Writers {
     await _ensureListed(writer);
     final String? id = _media[writer]?[name];
     if (id != null) await store.deleteAsset(id);
+  }
+
+  @override
+  Future<void> deleteWriter(String writer) async {
+    if (!_writerIds.containsKey(writer)) await writers();
+    final String? id = _writerIds[writer];
+    if (id == null) return;
+    await store.deleteAsset(id, isFolder: true);
+    _writerIds.remove(writer);
+    _media.remove(writer);
   }
 }
 
@@ -775,6 +790,9 @@ class SrsV1MediaReport {
 
   /// 删旧文件时逐个出的错（读 / 删失败）：这些文件留在旧根下一次再删；调用方必须记日志。
   final List<(Object, StackTrace)> cleanupErrors = <(Object, StackTrace)>[];
+
+  /// 这一次整目录删掉的 v3.0.x 写入者目录（BUG-4908）。
+  final List<String> droppedWriters = <String>[];
 }
 
 /// 搬旧根的媒体残留（见库注释第二段）。新根在用、旧根上立着围栏时才做事，否则什么都不碰（交回空结论）。
@@ -1032,6 +1050,9 @@ class _MediaMigration {
     final String listing = _fingerprint(files, writerMedia);
     if (await _markerOf(v1) == listing) {
       // 上次完整处理之后旧根没变（归档位置 / 留下的不认识的文件）：不下载、不封、不重写。
+      if (ws != null && writerMedia.isEmpty && !archive) {
+        await _dropWriters(ws);
+      }
       _finish(markDone: true);
       return;
     }
@@ -1126,6 +1147,25 @@ class _MediaMigration {
     } else if (settled) {
       // 只剩这台设备这个进程里做不了的（解不开 / 不是合法媒体名 / 内容对不上）：不再每轮重下一遍，下个进程再看。
       memo?.markMediaDone(host.profileUid, locationId);
+    }
+  }
+
+  /// 删掉 v3.0.x 旧事件同步留下的全部写入者目录（BUG-4908）。调用方已确认四件事：旧根 `v2/meta.json` 是围栏、新根
+  /// `v3/meta.json` 在用（[srsMigrateV1Media] 开头）、旧根的完成标记指纹等于当前清单（含写入者媒体）、每个写入者的
+  /// `media/` 都已为空——写入者目录里剩下的 `batch-*` / `snapshot-*` 现版本谁都不读（旧事件同步已删），`profile.json`
+  /// 只在还没迁移的位置上被 `srsListRemoteProfiles` 读（迁移过的位置由每台现版本设备每轮发布的
+  /// `v3/devices/<设备>/profile.json` 代替）。归档位置只复制不删，不走这里。删失败（网络 / 占用）只记进
+  /// [SrsV1MediaReport.cleanupErrors]，下一个进程再试。
+  Future<void> _dropWriters(SrsV1Writers ws) async {
+    for (final String w in await ws.writers()) {
+      if (_halt()) return;
+      _step('drop-writer $w');
+      try {
+        await ws.deleteWriter(w);
+        out.droppedWriters.add(w);
+      } on Object catch (e, stack) {
+        out.cleanupErrors.add((e, stack));
+      }
     }
   }
 

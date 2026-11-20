@@ -1879,6 +1879,12 @@ class _MemWriters implements SrsV1Writers {
     if (failDelete) throw const FileSystemException('rate limited');
     files[writer]?.remove(name);
   }
+
+  @override
+  Future<void> deleteWriter(String writer) async {
+    if (failDelete) throw const FileSystemException('rate limited');
+    files.remove(writer);
+  }
 }
 
 /// 名字是 [broken] 的资产下载时抛（限流 / 断网），文件本身还在。
