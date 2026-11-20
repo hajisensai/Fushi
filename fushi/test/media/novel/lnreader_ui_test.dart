@@ -184,7 +184,10 @@ void main() {
     await tester.pump();
   }
 
-  testWidgets('state.json 读不出来：已装源 / 仓库 / 扩展三处都说「读取失败」而不是空态，重试能恢复', (
+  Finder stateFailed() =>
+      find.byKey(const ValueKey<String>('lnreader-state-load-failed'));
+
+  testWidgets('state.json 读不出来：已装源段说「读取失败」而不是「还没有小说源」，重试能恢复', (
     WidgetTester tester,
   ) async {
     final (LnReaderManager broken, File blocker) = (await tester.runAsync(
@@ -199,38 +202,41 @@ void main() {
         manager: broken,
         onOpenSource: (LnReaderInstalledPlugin _) {},
       ),
+    ]);
+    // initState 里的 initialise 再失败一次、落定后骨架让位。
+    await pumpUntil(tester, () => stateFailed().evaluate().isNotEmpty);
+    // 修复前：这里画「还没有小说源」，引用户去重新安装，而安装必然被拒。
+    expect(find.text(t.novel_online_sources_empty), findsNothing);
+    expect(find.text(t.novel_sources_state_load_failed), findsOneWidget);
+
+    // 盘恢复后点「重试」：重读成功，错误态让位给真实（这里是全新）状态。
+    await tester.runAsync(blocker.delete);
+    await tester.tap(find.text(t.retry));
+    await pumpUntil(tester, () => broken.stateError == null);
+    await tester.pump();
+    expect(stateFailed(), findsNothing);
+    expect(find.text(t.novel_online_sources_empty), findsOneWidget);
+  });
+
+  testWidgets('state.json 读不出来：仓库段说「读取失败」而不是「还没有仓库」，同屏的扩展目录不重复', (
+    WidgetTester tester,
+  ) async {
+    final (LnReaderManager broken, File _) = (await tester.runAsync(
+      unreadableManager,
+    ))!;
+    addTearDown(broken.dispose);
+    await tester.runAsync(broken.initialise);
+    await pumpSlivers(tester, <Widget>[
       LnReaderExtensionsSection(
         manager: broken,
         showStores: true,
         showCatalog: true,
       ),
     ]);
-    // 两个段的 initState 各自 initialise 一次（都失败），落定后再看。
-    await pumpUntil(
-      tester,
-      () => find
-          .byKey(const ValueKey<String>('lnreader-state-load-failed'))
-          .evaluate()
-          .isNotEmpty,
-    );
-    // 修复前：已装源段画「还没有小说源」、仓库段画「还没有仓库」+ 添加入口。
-    expect(find.text(t.novel_online_sources_empty), findsNothing);
+    await pumpUntil(tester, () => stateFailed().evaluate().isNotEmpty);
+    // 修复前：画「还没有仓库」+ 添加入口，添加必然被 ensureReady 拒绝。
     expect(find.text(t.novel_store_empty), findsNothing);
-    expect(
-      find.byKey(const ValueKey<String>('lnreader-state-load-failed')),
-      findsNWidgets(2),
-      reason: '已装源段一条、仓库段一条；同屏的扩展目录不再重复第三条。',
-    );
-    expect(find.text(t.novel_sources_state_load_failed), findsNWidgets(2));
-
-    // 盘恢复后点「重试」：重读成功，错误态让位给真实（这里是全新）状态。
-    await tester.runAsync(blocker.delete);
-    await tester.tap(find.text(t.retry).first);
-    await pumpUntil(tester, () => broken.stateError == null);
-    await tester.pump();
-    expect(find.text(t.novel_sources_state_load_failed), findsNothing);
-    expect(find.text(t.novel_online_sources_empty), findsOneWidget);
-    expect(find.text(t.novel_store_empty), findsOneWidget);
+    expect(stateFailed(), findsOneWidget);
   });
 
   testWidgets('state.json 读不出来：只显示扩展目录时也给错误态', (WidgetTester tester) async {
@@ -246,13 +252,7 @@ void main() {
         showCatalog: true,
       ),
     ]);
-    await pumpUntil(
-      tester,
-      () => find
-          .byKey(const ValueKey<String>('lnreader-state-load-failed'))
-          .evaluate()
-          .isNotEmpty,
-    );
+    await pumpUntil(tester, () => stateFailed().evaluate().isNotEmpty);
     expect(find.text(t.novel_sources_state_load_failed), findsOneWidget);
   });
 
