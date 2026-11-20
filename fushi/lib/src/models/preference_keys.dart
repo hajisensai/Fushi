@@ -29,6 +29,15 @@ const String kProfileFallbackIdPrefKey = 'profile_fallback_id';
 /// 合并导入；主进程启动时清空（会话只活在主进程内存里）。
 const String kWorkProfileSessionPrefKey = 'work_profile_session';
 
+/// 「本版新内容」（首页卡片 / 新内容页）：本机最近一次「看过」的 app 版本串与它的
+/// release sequence（String / int，空串 / 0 = 还没定基线），以及首页卡片被关掉时的
+/// 版本串（String）。描述的是**这台设备装过哪个包**：设备本地，不进 Profile 快照 /
+/// 备份 / 设置同步——跟到另一台设备上就会把那边的「新内容」误判成看过 / 没看过。
+const String kWhatsNewSeenVersionPrefKey = 'whats_new_seen_version';
+const String kWhatsNewSeenSeqPrefKey = 'whats_new_seen_seq';
+const String kWhatsNewCardDismissedVersionPrefKey =
+    'whats_new_card_dismissed_version';
+
 /// Anki 制卡设置（整份 `AnkiSettings` JSON，String）。原先存在 SharedPreferences
 /// `fushi_anki_settings`，迁进 Drift 是为了让 `:popup` 进程 / 悬浮词典与主 app
 /// 读到同一份（见 `anki_settings_drift_store.dart`）。含 AnkiConnect apiKey 明文 →
@@ -1217,6 +1226,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'web_browser_youtube_subtitles',
   // bool（默认 true）：网页漫画章末二维码广告页剔除（判定在 native/fushi_web_core 的 comic_ad）。
   'web_comic_ad_filter',
+  // String / int / String：见 [kWhatsNewSeenVersionPrefKey]。设备本地。
+  'whats_new_card_dismissed_version',
+  'whats_new_seen_seq',
+  'whats_new_seen_version',
   // bool（默认 false）：Android 桌面小组件默认隐藏书名 / 视频标题 / 释义 / Profile 名。
   // 描述这台设备的桌面，设备本地（deviceLocalPrefKeys + ProfileKeys 排除）。
   'widget_privacy_hide_definitions',

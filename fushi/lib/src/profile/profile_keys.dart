@@ -26,6 +26,9 @@ import 'package:fushi/src/models/preference_keys.dart'
         kLibraryManualOrderPrefKeyPrefix,
         kSectionTabOrderPrefKeyPrefix,
         kSrsLapisMigrationReminderPrefKey,
+        kWhatsNewCardDismissedVersionPrefKey,
+        kWhatsNewSeenSeqPrefKey,
+        kWhatsNewSeenVersionPrefKey,
         kWorkProfileSessionPrefKey;
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/sync/pref_redaction_policy.dart';
@@ -92,6 +95,10 @@ class ProfileKeys {
     'onboarding_completed',
     'onboarding_finished',
     'onboarding_home_card_dismissed',
+    // 「本版新内容」看到哪个版本：描述本机装过的包，与新手引导标志同族。
+    kWhatsNewSeenVersionPrefKey,
+    kWhatsNewSeenSeqPrefKey,
+    kWhatsNewCardDismissedVersionPrefKey,
     // 「下载 → 浏览」一次性搬迁提示的已处理标记：同族。进快照的话，切到一个
     // 标记落地前建的老 Profile 会把它删掉，关着浏览的用户又被提示一遍。
     'browse_moved_notice_handled',

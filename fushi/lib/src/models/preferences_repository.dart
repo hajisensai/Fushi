@@ -41,7 +41,10 @@ import 'package:fushi/src/models/preference_keys.dart'
         kAiWebSearchPageFetchAllow,
         kAiWebSearchPageFetchDeny,
         kAiWebSearchPageFetchPref,
-        kLibraryManualOrderPrefKeyPrefix;
+        kLibraryManualOrderPrefKeyPrefix,
+        kWhatsNewCardDismissedVersionPrefKey,
+        kWhatsNewSeenSeqPrefKey,
+        kWhatsNewSeenVersionPrefKey;
 import 'package:fushi/src/models/library_grid_columns.dart';
 import 'package:fushi/src/stats/study_goal_period.dart' show StudyGoalPeriod;
 import 'package:fushi/src/utils/misc/platform_utils.dart' show WindowSizeClass;
@@ -6585,6 +6588,29 @@ class PreferencesRepository extends ChangeNotifier
     await setPref('update_debug_channel', value);
     notifyListeners();
   }
+
+  /// 「本版新内容」基线：本机最近一次看过的版本串（空串 = 还没定基线）。
+  String get whatsNewSeenVersion =>
+      getPref(kWhatsNewSeenVersionPrefKey, defaultValue: '') as String;
+
+  /// 与 [whatsNewSeenVersion] 配对的 release sequence（0 = 未知）。
+  int get whatsNewSeenSeq =>
+      getPref(kWhatsNewSeenSeqPrefKey, defaultValue: 0) as int;
+
+  Future<void> setWhatsNewSeen({
+    required String version,
+    required int seq,
+  }) async {
+    await setPref(kWhatsNewSeenVersionPrefKey, version);
+    await setPref(kWhatsNewSeenSeqPrefKey, seq);
+  }
+
+  /// 首页「本版新内容」卡片在哪个版本上被关掉（空串 = 没关过）。
+  String get whatsNewCardDismissedVersion =>
+      getPref(kWhatsNewCardDismissedVersionPrefKey, defaultValue: '') as String;
+
+  Future<void> setWhatsNewCardDismissedVersion(String version) =>
+      setPref(kWhatsNewCardDismissedVersionPrefKey, version);
 
   /// 用户手填的「自定义更新代理」（`host:port`，空串=未设）。fake-ip/TUN 模式下系统
   /// 代理只写注册表、Dart HttpClient 读不到时的兜底入口（TODO-871/862）：非空时检查/下载
