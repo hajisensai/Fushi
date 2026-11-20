@@ -1911,7 +1911,9 @@ Duration subtitleExtractTimeoutForBytes(int sizeBytes) {
 /// 与主页把字幕拖到视频卡（`attachSubtitleToVideoBook`）共用同一份失败分类，
 /// 不各自 `readAsString` + 解析（那样失败原因会退化成空列表或未捕获异常，BUG-1504）。
 ///
-/// [contentReader] 仅供测试注入（默认 [readTextWithEncoding]）。
+/// [contentReader] 默认 [readTextWithEncoding]；播放页载入链注入自己的读法，同一份
+/// 字节顺手判对齐产物（只读一次盘）。须与 [readTextWithEncoding] 同样任何字节都能解出
+/// 字符串。
 Future<SubtitleCueLoadResult> loadExternalSubtitleCueResult(
   String path,
   String bookUid, {

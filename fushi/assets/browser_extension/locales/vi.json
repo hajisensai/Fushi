@@ -487,6 +487,8 @@
   "pc_offset_title": "Lệch thời gian",
   "pc_style_title": "Kiểu phụ đề",
   "pc_mask_edit": "Chỉnh tấm che phụ đề",
+  "pc_fullscreen_enter": "Toàn màn hình",
+  "pc_fullscreen_exit": "Thoát toàn màn hình",
   "mask_edit_hint": "Kéo để di chuyển, kéo cạnh hoặc góc để đổi kích thước",
   "mask_edit_reset": "Đặt lại",
   "mask_edit_done": "Xong",

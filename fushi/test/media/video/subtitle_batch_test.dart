@@ -633,6 +633,25 @@ void main() {
       ),
     );
     expect(results[1].error, isNull);
+    expect(results[0].failureStage, SubtitleBatchFailureStage.download);
+    expect(results[1].failureStage, isNull);
+  });
+
+  test('下载到了但写不进本地：failed 记在「写盘」这一步，行文案不说成「下载失败」', () async {
+    // 保存目录的位置上是个文件：createSync / 写盘必抛。
+    final File blocker = File('${tmp.path}/not_a_dir');
+    await blocker.writeAsString('x');
+    final List<SubtitleBatchItem> results = await runSubtitleBatch(
+      registry: VideoSubtitleRegistry(<VideoSubtitleProvider>[_FakeProvider()]),
+      candidates: <VideoSubtitleCandidate>[
+        _Cand('Show - 01.ja.srt', episode: 1),
+      ],
+      targets: <SubtitleBatchTarget>[_target(0, 'Show - 01')],
+      saveDirectory: blocker.path,
+    );
+    expect(results.single.status, SubtitleBatchStatus.failed);
+    expect(results.single.failureStage, SubtitleBatchFailureStage.write);
+    expect(results.single.error, isA<FileSystemException>());
   });
 
   test('onItemDone 抛错（调用方持久化失败）只算这一集失败：保留已落盘路径，后面的集照常处理', () async {
@@ -663,6 +682,9 @@ void main() {
       ],
     );
     expect(results[1].error, isStateError);
+    // 已经落盘：失败在「设为这一集的字幕」这一步，行上不能再说「下载失败」。
+    expect(results[1].failureStage, SubtitleBatchFailureStage.persist);
+    expect(results[0].failureStage, isNull);
     expect(
       File(results[1].subtitlePath!).existsSync(),
       isTrue,

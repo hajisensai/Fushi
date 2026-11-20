@@ -2,14 +2,14 @@
 // Chrome and checks the chapter text index that backs per-frame progress
 // reports: same numbers as the old whole-chapter walk, O(log n) geometry per
 // report, and synchronous invalidation when the chapter DOM changes.
-import fs from 'node:fs';
 import { launchChromeDriver, resolveChrome } from '../../../tool/reader_pitch_headless/cdp_client.mjs';
+import { readPayload } from './reader_harness_support.js';
 
+const engine = readPayload().engine;
 if (!resolveChrome()) {
   console.log('Chrome unavailable');
   process.exit(77);
 }
-const engine = JSON.parse(fs.readFileSync(process.argv[2], 'utf8')).engine;
 
 const W = 1000;
 const H = 800;

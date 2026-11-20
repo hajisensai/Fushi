@@ -156,8 +156,9 @@ extension _VideoQuality on _VideoFushiPageState {
     return _isYoutubeStream ? t.video_quality_auto : null;
   }
 
-  /// 打开画质侧栏（右键菜单 / 设置面板共用入口）。YouTube 流首次点开即**懒解析**各档
-  /// （一次 getManifest；侧栏解析中显 spinner），避免每次开视频都预解析多档拖慢起播。
+  /// 打开画质侧栏（右键菜单 / 设置面板共用入口）。YouTube 流的各档优先用起播时同一份
+  /// manifest 算好的（挂在客户端上）；没有才首次点开时**懒解析**（一次 getManifest；
+  /// 侧栏解析中显 spinner），不为画质菜单额外预解析拖慢起播。
   void _showQualityMenu({VideoControlSlot? sourceSlot}) {
     if (_isYoutubeStream &&
         !_youtubeVariantsResolved &&
@@ -175,14 +176,17 @@ extension _VideoQuality on _VideoFushiPageState {
   /// bump [_episodeLoadSeq]。故 await 后除 `mounted` 外**必须重校验 seq**——否则 A 集迟到
   /// 的解析结果会覆盖 B 集状态，B 的画质菜单显 A 的档、切档播 A 的流（换集状态泄漏）。
   Future<void> _ensureYoutubeVariantsLoaded() async {
-    final String? watch = _currentYoutubeWatchUrl;
-    if (watch == null) return;
+    final RemoteVideoClient? client = _effectiveRemoteClient;
+    if (client is! UrlStreamVideoClient || _currentYoutubeWatchUrl == null) {
+      return;
+    }
     if (_youtubeVariantsResolved || _youtubeVariantsLoading) return;
     final int seq = _episodeLoadSeq;
     _rebuild(() => _youtubeVariantsLoading = true);
     try {
-      final YoutubeVariantSet set = await resolveYoutubeVideoVariants(
-        watch,
+      // 起播那次 getManifest 已算好的各档挂在客户端上：直接用，不再重取 manifest
+      // （gap-remote-10）；没有（持久缓存命中起播的）才现取一次。
+      final YoutubeVariantSet set = await client.youtubeQualityVariants(
         playbackTargetHeight: appModel.youtubeQualityTargetHeightOrNull,
       );
       // 换集：丢弃迟到结果（新集已复位状态、bump seq），绝不覆盖新集画质态。

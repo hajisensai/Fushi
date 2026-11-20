@@ -122,9 +122,16 @@ class ServerAnkiConnect {
     }
     final ({String uid, String? key})? route = _route(_keyOf(raw));
     if (route == null) {
+      // 复习库在升级到新代 / 升级受阻：说清楚是哪一种（同为 503，不是 500）。
       return shelf.Response(
         503,
-        body: 'Fushi review is not available on this server',
+        body: switch (_srs.upgradeRefusal) {
+          ServerSrsUpgradeRefusal.upgrading =>
+            'Fushi review on this server is being upgraded; try again when it finishes',
+          ServerSrsUpgradeRefusal.blocked =>
+            'Fushi review on this server needs its library upgrade finished by the server owner',
+          null => 'Fushi review is not available on this server',
+        },
       );
     }
     final SrsAnkiConnectEndpoint endpoint = _endpointFor(route.uid);

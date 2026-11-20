@@ -110,6 +110,19 @@ const List<CtlCommandGroup> srsCommandGroups = <CtlCommandGroup>[
         build: _buildFindReplace,
         render: _renderNoteBatch,
       ),
+      CtlCommandSpec(
+        name: 'retained',
+        summary: '旧版本保留副本（升级时封存的旧库）：大小、到期时间、自动删除的错误',
+        build: _buildRetained,
+        render: _renderRetained,
+      ),
+      CtlCommandSpec(
+        name: 'retained-delete',
+        summary: '立即删除旧版本保留副本（不可撤销：之后不能退回旧版本；先核对新库，核对不过不删；需 --yes）',
+        configure: _configureYes,
+        build: _buildRetainedDelete,
+        render: _renderRetainedDelete,
+      ),
     ],
   ),
 ];
@@ -292,6 +305,47 @@ String _renderStats(Object? data) {
         ' · 期望保留率 ${_pct(data['desiredRetention'])}',
     '连续学习：${streak['current']} 天（最长 ${streak['longest']} 天）',
   ].join('\n');
+}
+
+// ── retained（旧版本保留副本，D32） ──────────────────────────────────
+
+CtlRequestSpec _buildRetained(CtlCommandContext c) =>
+    const CtlRequestSpec.get('$_root/retained');
+
+String _renderRetained(Object? data) {
+  if (data is! Map) return renderCtlJson(data);
+  final Object? copy = data['copy'];
+  if (copy != 'sealed') {
+    return copy == 'tombstone' ? '保留副本已删除（原位是墓碑）' : '没有旧版本保留副本';
+  }
+  final Object? due = data['dueAtMs'];
+  final Object? error = data['error'];
+  return <String>[
+    '旧版本保留副本：${data['bytes']} 字节',
+    due is int
+        ? '到期：${DateTime.fromMillisecondsSinceEpoch(due).toLocal()}（到期后下次开库时自动删除）'
+        : '不会自动到期（删除前一直保留）',
+    if (error is String && error.isNotEmpty) '自动删除没做成：$error',
+  ].join('\n');
+}
+
+CtlRequestSpec _buildRetainedDelete(CtlCommandContext c) {
+  if (!c.flag('yes')) {
+    throw const CtlUsageError('删除旧版本保留副本不可撤销（之后不能再退回旧版本），确认请加 --yes');
+  }
+  return const CtlRequestSpec.post(
+    '$_root/retained/delete',
+    body: <String, Object?>{'confirm': true},
+  );
+}
+
+String _renderRetainedDelete(Object? data) {
+  if (data is! Map) return renderCtlJson(data);
+  if (data['deleted'] == true) {
+    return '已删除保留副本，释放 ${data['freedBytes']} 字节';
+  }
+  final Object? reason = data['reason'];
+  return reason is String && reason.isNotEmpty ? '没有删除：$reason' : '没有可删除的保留副本';
 }
 
 // ── conflicts ────────────────────────────────────────────────────────

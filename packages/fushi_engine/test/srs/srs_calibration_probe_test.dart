@@ -19,7 +19,9 @@ void main() {
   test(
     'calibration probe on a real srs.db copy',
     () async {
-      final SrsStorage storage = await SrsStorage.open(path: dbPath!);
+      final SrsStorage storage = await SrsStorage.open(
+        directory: File(dbPath!).parent.path,
+      );
       final FfiFsrsEngine engine = FfiFsrsEngine.tryCreate()!;
       final SrsDbStore store = await SrsDbStore.open(
         core: storage.core,

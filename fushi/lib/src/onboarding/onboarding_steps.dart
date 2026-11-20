@@ -311,7 +311,7 @@ enum OnboardingStepId {
   backup,
   interconnect,
 
-  /// 浏览器扩展安装引导（仅桌面）。
+  /// 浏览器扩展安装引导（桌面与安卓，见 browserExtensionInstallFlowOn）。
   browserExtension,
 
   /// 自定义字体配置（仅 [OnboardingFeature.fonts] 被勾选时）。
@@ -337,7 +337,7 @@ enum OnboardingStepId {
 /// 恒以 [OnboardingStepId.welcome]、[OnboardingStepId.features] 开头，
 /// [OnboardingStepId.finish] 固定收尾；中间配置步骤按固定顺序（资源准备 → 复习方式 / Anki →
 /// 备份 → 互联 → 扩展 → 字体）出现：能力步骤（含字体）只保留被勾选的，
-/// 浏览器扩展安装引导步骤 = [browserExtensionAvailable]（桌面平台）**且**扩展
+/// 浏览器扩展安装引导步骤 = [browserExtensionAvailable]（桌面与安卓）**且**扩展
 /// 模块被勾选。模块勾选自身不产生步骤。
 ///
 /// **模块是本模块名下配置步骤的总闸**（用户拍板的「关一个模块 = 关掉它的全部

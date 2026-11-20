@@ -321,7 +321,7 @@ void main() {
         clearCoverCollection,
         <CollectionRelationsCompanion>[
           CollectionRelationsCompanion.insert(
-            collectionId: clearCoverCollection,
+            collectionId: Value<int?>(clearCoverCollection),
             relationType: 'sequel',
             targetCollectionId: Value<int?>(keepCoverCollection),
             source: 'anidb',
@@ -329,7 +329,7 @@ void main() {
             title: 'Manual cover series',
           ),
           CollectionRelationsCompanion.insert(
-            collectionId: clearCoverCollection,
+            collectionId: Value<int?>(clearCoverCollection),
             relationType: 'sequel',
             targetCollectionId: Value<int?>(keepCoverCollection),
             source: 'local',

@@ -4,16 +4,16 @@
 // production reader CSS (einkMode) + engine shell + selection script in real Chrome, plays the
 // cue, then scans the band just outside each cue line on its block-end side (left of a vertical
 // column, below a horizontal line) pixel by pixel along the line.
-import fs from 'node:fs';
 import zlib from 'node:zlib';
 import { launchChromeDriver, resolveChrome } from '../../../tool/reader_pitch_headless/cdp_client.mjs';
+import { readPayload } from './reader_harness_support.js';
 
+const payload = readPayload();
 if (!resolveChrome()) {
   console.log('Chrome unavailable');
   process.exit(77);
 }
 // The only argument is the temp payload file the Dart test just wrote.
-const payload = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));  // NOSONAR: S8707 path comes from the Dart test harness
 
 // Play the cue and return one band per visual line of cue text, plus what the engine paints.
 const PLAY = String.raw`(async () => {

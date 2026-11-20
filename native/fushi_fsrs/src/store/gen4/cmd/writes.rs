@@ -20,20 +20,51 @@
 //!   `native_allowed` 两道关）。所以：
 //!   - 输入项的 `stamped`（带来源身份的外来修改 / 日志，协议 3 并入旧 profile 用）一律拒：换代后外来数据经并入
 //!     （G9 `collection_join` / `adopt_foreign`）进来，不在本机日志里冒充；
-//!   - 日志事件里的 `hlc` 丢掉（协议 3 存成 `legacy_hlc`）：新代日志的排序键是 (发生时刻, 操作号)（`cache.rs`
-//!     `card_logs`），HLC 就是操作自己的；
+//!   - 日志事件里的 `hlc` 丢掉（协议 3 存成 `legacy_hlc`）：原生日志的排序键（卡片历史规则 `crate::history` 按 HLC
+//!     排、按 HLC 认同一事件的副本）是操作自己的 HLC；**Anki 来源的日志例外**：它的 HLC 由来源数据派生（铁律 C，
+//!     `crate::anki_import_rules` [derived_log_hlc]，与 Dart 导入器写的 `srsImportedRevlogHlc` / `srsImportAnchorHlc`
+//!     逐字相同），在日志投影（`cache.rs` `log_body`）与回包 `logHlcs` 里派生，不落进操作——输入里带的 `hlc` 照样丢；
+//!     **回导的外来原生日志**（Dart `_remapExtLog` 打上 `foreignLog: true` 的）同理按发生时刻派生 `{at}:0:fushi`（第五波，
+//!     规划 §6）：作者 HLC 不进操作，排序键也不随导入时刻 / 导入设备变；
 //!   - 旧版时钟（`legacyDevice` / `recvNow` / `tickNow` / 输入项的 `clk`）不再存在（设计 §2.4 删旧写入者状态），这些
 //!     键收到也不看；要旧版时钟戳的 `stamps: true` 明确拒绝；
 //!   - 不认识的事件（协议 3 存成 `LegacyUnknown`）明确拒绝：那是协议 1 的残留，新写入不生成。
 //! - **按规范 ID 写**（D5，规划 §1.5）：输入里的 ID（实体、修改键与值里嵌的 ID、日志的卡 / 笔记 / `revokes`、标签的
 //!   笔记）先按这个集合的别名表归一（`alias.rs` [Index::canonical]，命令开始时已收好的那张表），再写。不做「映射到已
 //!   有别名成员」的过渡层。
-//! - **没有跨 profile 的归属判定**：协议 3 的 `ownership.rs` 防的是「同一个 srs.db 里别的 profile 的实体」（带盐 ID
-//!   撞号）；新代一个集合一个 `col`，所有主键带 `col`，别的集合的实体在这里根本不可见。回包的 `foreign` 恒为空数组。
+//! - **实体归属闸**（BUG-4907，`writes_owner.rs`）：ID 不再加盐，同库别的集合的实体 ID 在这里虽然读不到，写下去却会成为
+//!   悬空操作、等本集合之后并进那个集合时对它生效。调用方给实体 ID 的写命令（`apply_in` / `purge` / `sched`）在写之前
+//!   问 [Session::foreign]：别的集合有、本集合一点痕迹都没有的实体不写（身份记录与 profile 设置实体的判法见
+//!   `writes_owner.rs` 文件头）；`apply` 一族回包的 `foreign` 交回这些项的调用方输入下标（`import_drafts` 按筛掉初值
+//!   之前的原输入计，同 `edits` 第 7 列）。
 //! - **回包**：命令自己的键之外，[write] 统一补上 `changed`（`[种类, 规范实体 ID]`，碰过的实体）、`purged`（彻底清除的
 //!   实体）、`replayed`（写了日志的卡）、`edits`（`[种类, 实体, 字段键, 设备, 序号, 值]`，撤销据它判断之后有没有
 //!   被别人动过，与协议 3 同形）、`nextSeq`（本机身份日志的下一个 seq）与 `settled`（这条命令里派生层收尾的计数，
 //!   缓存层重算了多少笔记 / 卡 / 统计行）。协议 3 的 `marks` / `diagnostics` 是投影表的落库细节，新代没有。
+//!   S1c 起（交接说明「S1c 刷新计数与写回包」节）：
+//!   - `edits` 每项第 7 列是**输入下标**：这条修改来自调用方输入的第几项（`apply` / `change` 的输入原样计，
+//!     `import_drafts` 按筛掉初值之前的原输入计；意图命令自己拼的项、命令直接落的修改是 null）。值没变被丢掉的项不占位，
+//!     所以 Dart 按下标认领，不再按 (种类, 实体, 字段键) 猜、不再逐条点查归一（实体与键已是规范形）。
+//!   - `tagWrites`：整列表 `tags` 项展开成的标签操作每项报一条 `[输入下标, 规范笔记 ID, 设备, 最后一条操作的 seq]`
+//!     （协议 3 的 `stamps` 给这一项的也是展开出的最后一条操作的身份）。不进 `edits`：它们不是修改记录，撤销记录器按
+//!     差量撤标签（Dart `noteTags`）。
+//!   - `logHlcs`（只在 `apply` 的请求带 `logHlcs: true` 时）：每条写下的日志 `[输入下标, 规范日志 ID, HLC]`，HLC 与
+//!     `read` 的 `logs` 行里的 `hlc` 同形（原生日志是操作的 HLC，Anki 来源的是派生 HLC，见上「只写协议 4 原生能收的
+//!     形」）。导入成批的日志不要它（回包会随日志数线性涨）。
+//!   - 修改行（只在 `apply` / `import_drafts` / `change` 的请求带 `editRows: true` 时）：`edits` 里有输入下标的每项后面
+//!     补三列 `[…, 行 JSON, 服务器时刻, 被盖掉]`，`tagWrites` 每项后面补两列 `[…, 行 JSON, 被盖掉]`——行是收尾之后这条
+//!     修改 / 这条笔记合成的 `tags` 行在 `read` 的 `edits` 里的 `j` / `st`（同一个函数 [super::edit_rows] 出的，逐字
+//!     相同）。**被盖掉**（第五波，交接 §38「第五波 导入与写接口」）是 bool：这一项被同批后面的写入盖掉了——同一 (种类,
+//!     实体, 字段键) 后面还有一条修改（标签是同一条笔记后面还有一次整列表写入）、或这个实体在这批里被彻底清除；这时行
+//!     与服务器时刻是 null（标签项不给后面那次的合成行）。行是 null 却没标被盖掉 = 内核与调用方对不上（调用方报错）。
+//!     调用方（Dart `_emit(stamps: true)` 的 `_writtenEdits`）直接用它拼落库后的修改记录、跳过被盖掉的项（同一个键
+//!     只交回最后一条），不在命令之后再发一条 `read edits` 回读（T1 `srs_write_preread_cost`）。
+//!   - `entityWrites`（G9-7）：每条落下的身份记录 `[输入下标, 种类, 规范实体 ID]`（输入下标规则同 `edits`）。调用方
+//!     按请求 ID 建实体（Dart `createDeck` / `createNote` / 内置实体），返回给上层的是这里的规范 ID，不拿请求 ID 当
+//!     结果：请求 ID 是别名类的成员时（迁移来的库里持久化的旧 ID、带盐的旧算法），两者不同。
+//!   - `stamps: true` 仍然拒绝（要的是旧版时钟的戳）；替代形状就是上面几项。
+//!   - 回包里还有一项 `refreshTally`（`refresh.rs` [TALLY_KEY]）：这条命令落下的变化类别，分发器提交之后取走、推进进程内
+//!     刷新计数，**不交给 Dart**。
 //!
 //! # 读现值
 //!
@@ -49,9 +80,11 @@ use serde_json::{Map, Value, json};
 use super::super::cache::CFG_KEY;
 use super::super::derive::{Index, Ref, Settled};
 use super::super::native::Native;
+use super::super::refresh::{TALLY_KEY, Tally};
 use super::super::schema::sql;
 use super::super::truth::Truth;
 use super::{profile_of, ref_of, with_profile};
+use crate::anki_import_rules::{anki_source_hlc, derived_log_hlc};
 use crate::gen4::translate::native_body4;
 use crate::registers::{self, StoredEdit};
 use crate::store::caches::NoteInfo;
@@ -61,6 +94,11 @@ use crate::sync2::id::{Id, Key};
 use crate::sync2::op::{Body, EditBody, EntKind, Intent, LogBody};
 use crate::sync2::replay::SNAPSHOT_KEY;
 use crate::sync2::vv::OpId;
+
+#[path = "writes_owner.rs"]
+mod owner;
+use owner::Batch;
+pub(super) use owner::Born;
 
 /// 一个实体的修改行（寄存器内核的落库行 JSON + server_time），`registers` 的输入。
 pub(super) type Lines = Vec<(String, Option<i64>)>;
@@ -87,6 +125,21 @@ pub struct Session<'t, 'c> {
     replayed: BTreeSet<String>,
     settled: Settled,
     written: u64,
+    /// 正在落的操作来自调用方输入的第几项（[apply_in] 设、落完清；意图命令自己拼的项、命令直接落的操作是 None）：进
+    /// 回包 `edits` 每项的第 7 列与 `tagWrites` / `logHlcs` 的第 1 列（文件头「回包」）。
+    at: Option<usize>,
+    /// 刷新计数要的变化类别（`refresh.rs` [Tally]）：每条操作按种类记，[Session::finish] 写进回包，分发器提交之后取走。
+    tally: Tally,
+    /// 整列表标签项展开成的标签操作，每项一条 `[输入下标, 规范笔记 ID, 设备, 最后一条操作的 seq]`。
+    tag_writes: Vec<Value>,
+    /// 请求带 `logHlcs: true` 时（[apply]）：写下的每条日志 `[输入下标, 规范日志 ID, HLC]`。None = 不报。
+    log_hlcs: Option<Vec<Value>>,
+    /// 落下的身份记录，每条 `[输入下标, 种类, 规范实体 ID]`（文件头「回包」`entityWrites`）。
+    entity_writes: Vec<Value>,
+    /// 请求带 `editRows: true`：收尾时给 `edits` / `tagWrites` 补上落库修改行（文件头「回包」，[Session::attach_rows]）。
+    edit_rows: bool,
+    /// 库里有没有别的集合（实体归属闸 [Session::foreign] 用；None = 还没问过）。
+    others: Option<bool>,
 }
 
 /// 一条写命令（见文件头「一条命令一个事务」）：[f] 在 [Session] 里做命令本体，返回命令自己的回包（JSON 对象）；
@@ -128,7 +181,19 @@ impl<'t, 'c> Session<'t, 'c> {
             replayed: BTreeSet::new(),
             settled: Settled::default(),
             written: 0,
+            at: None,
+            tally: Tally::default(),
+            tag_writes: Vec::new(),
+            log_hlcs: None,
+            entity_writes: Vec::new(),
+            edit_rows: false,
+            others: None,
         })
+    }
+
+    /// 请求带 `editRows: true` 就在回包里补上落库修改行（文件头「回包」）。
+    pub(super) fn want_edit_rows(&mut self, req: &Value) {
+        self.edit_rows = req.get("editRows") == Some(&Value::Bool(true));
     }
 
     /// 本机身份（作者）的设备 ID。
@@ -158,11 +223,17 @@ impl<'t, 'c> Session<'t, 'c> {
         absorb(&mut self.settled, &st);
         self.dirty = false;
         self.tree = None;
+        // 整层重建：按刷新键记的缓存全部作废。
+        self.tally.invalidate();
         Ok(st)
     }
 
     /// 本机改了某台设备的信任状态：告诉派生层，收尾时重判扣住的删除与清除（`weigh.rs` [Index::trust_changed]）。
     pub(super) fn trust_changed(&mut self) {
+        // 可见性变了（协议 3 按回包 `changed` 记进内容计数）：不是牌组 / 配置事件，RWKV 分数表不整表重查。
+        self.tally.landed = true;
+        self.tally.content = true;
+        self.tally.stats = true;
         self.ix.trust_changed();
         self.dirty = true;
         self.tree = None;
@@ -178,6 +249,8 @@ impl<'t, 'c> Session<'t, 'c> {
         match &body {
             Body::Entity { kind, id, .. } => {
                 self.changed.insert(note(*kind, id));
+                self.entity_writes
+                    .push(json!([self.at, kind.wire(), id.text()]));
             }
             Body::Edit(e) => {
                 self.changed.insert(note(e.kind, &e.entity));
@@ -199,8 +272,21 @@ impl<'t, 'c> Session<'t, 'c> {
         if !matches!(body, Body::Log(_)) {
             self.tree = None;
         }
+        self.tally.op(&body);
         let edit = match &body {
             Body::Edit(e) => Some((e.kind, e.entity.text(), e.key.clone(), e.value.clone())),
+            _ => None,
+        };
+        // 派生排序键要用到写下后那条操作的 HLC（外来日志的上界，[derived_log_hlc]），先留下派生要的字段。
+        let log = match &body {
+            Body::Log(l) if self.log_hlcs.is_some() => Some((
+                l.id.text(),
+                l.origin.clone(),
+                l.kind.clone(),
+                l.anki_id,
+                l.at,
+                l.extra.clone(),
+            )),
             _ => None,
         };
         let b4 = native_body4(body)?;
@@ -215,7 +301,31 @@ impl<'t, 'c> Session<'t, 'c> {
                 id.device.text(),
                 id.seq,
                 serde_json::from_str::<Value>(&value).unwrap_or(Value::Null),
+                self.at,
             ]));
+        }
+        if let Some((log_id, origin, kind, anki_id, at, extra)) = log {
+            // 与 `read` 的 `logs` 行里的 `hlc` 同口径（`cache.rs` `log_body` / `log_at`）：Anki 来源与回导的外来原生日志是由
+            // 来源数据派生的 HLC，其余原生日志是它那条操作的 HLC（文件头「只写协议 4 原生能收的形」）。操作刚写下、按主键点读；
+            // Anki 来源的派生不看操作，省掉这次读。
+            let text = match anki_source_hlc(&origin, &kind, anki_id, at) {
+                Some(text) => text,
+                None => {
+                    let hlc = self
+                        .t
+                        .entry(self.col, &id)?
+                        .and_then(|e| e.op().map(|o| o.hlc))
+                        .ok_or_else(|| {
+                            format!("gen4 write: log {log_id} is not readable after append")
+                        })?;
+                    derived_log_hlc(&origin, &kind, anki_id, at, &extra, hlc.wall).unwrap_or_else(
+                        || format!("{}:{}:{}", hlc.wall, hlc.logical, id.device.text()),
+                    )
+                }
+            };
+            if let Some(out) = self.log_hlcs.as_mut() {
+                out.push(json!([self.at, log_id, text]));
+            }
         }
         Ok(id)
     }
@@ -225,6 +335,16 @@ impl<'t, 'c> Session<'t, 'c> {
         let st = self.native.finish(&mut self.ix)?;
         absorb(&mut self.settled, &st);
         self.dirty = false;
+        // 派生层判成「已清除」的操作在真相层落成空洞（设计 §3.2；`weigh.rs` [Index::execute_purges]）：本机的 `purge`、
+        // 改信任放开了扣住的清除都在这里执行，同一个事务。发件按日志里的空洞条数重切、重传（`cmd/sync.rs` 已传水位）。
+        if self.ix.execute_purges()? > 0 {
+            self.tally.landed = true;
+            self.tally.content = true;
+            self.tally.stats = true;
+        }
+        if self.edit_rows {
+            self.attach_rows()?;
+        }
         let next = self.t.last_of(self.col, &self.native.device())? + 1;
         if !v.is_object() {
             *v = json!({});
@@ -240,6 +360,18 @@ impl<'t, 'c> Session<'t, 'c> {
             "edits".into(),
             Value::Array(std::mem::take(&mut self.edits)),
         );
+        m.insert(
+            "tagWrites".into(),
+            Value::Array(std::mem::take(&mut self.tag_writes)),
+        );
+        m.insert(
+            "entityWrites".into(),
+            Value::Array(std::mem::take(&mut self.entity_writes)),
+        );
+        if let Some(logs) = self.log_hlcs.take() {
+            m.insert("logHlcs".into(), Value::Array(logs));
+        }
+        m.insert(TALLY_KEY.into(), self.tally.json());
         m.insert("nextSeq".into(), json!(next));
         m.insert(
             "settled".into(),
@@ -247,8 +379,94 @@ impl<'t, 'c> Session<'t, 'c> {
                 "cacheNotes": self.settled.cache_notes,
                 "cacheCards": self.settled.cache_cards,
                 "cacheStats": self.settled.cache_stats,
+                // 这条命令里别名表整表重算的次数（诊断；`alias.rs`「重算与增量」，C8）。
+                "aliasRebuilds": self.settled.aliases_rebuilt,
             }),
         );
+        Ok(())
+    }
+
+    /// 给回包 `edits` 里有输入下标的每项补上 `[行 JSON, 服务器时刻]`、`tagWrites` 每项补上 `[行 JSON]`（文件头「回包」
+    /// 修改行）。在收尾之后调：行与之后一条 `read edits` 读到的逐字相同（同一个 [super::edit_rows]，按类判定活着的行）。
+    /// 每个碰过的实体只读一次。
+    fn attach_rows(&mut self) -> Result<(), String> {
+        let mut want: BTreeSet<(String, String)> = BTreeSet::new();
+        for e in &self.edits {
+            if e[6].is_null() {
+                continue;
+            }
+            if let (Some(k), Some(id)) = (e[0].as_str(), e[1].as_str()) {
+                want.insert((k.to_owned(), id.to_owned()));
+            }
+        }
+        for tw in &self.tag_writes {
+            if let Some(id) = tw[1].as_str() {
+                want.insert((EntKind::Note.wire().to_owned(), id.to_owned()));
+            }
+        }
+        let mut rows: HashMap<(String, String), Vec<(String, String, Option<i64>)>> =
+            HashMap::with_capacity(want.len());
+        for (k, id) in want {
+            let kind = EntKind::parse(&k)
+                .ok_or_else(|| format!("gen4 write: unknown entity kind {k} in edits"))?;
+            let r = super::edit_rows(self.t, &mut self.ix, kind, &ref_of(&id), &self.profile)?;
+            rows.insert((k, id), r);
+        }
+        let row_of = |k: &str, id: &str, pick: &dyn Fn(&str, &Value) -> bool| -> Value {
+            rows.get(&(k.to_owned(), id.to_owned()))
+                .and_then(|r| {
+                    r.iter().find(|(f, j, _)| {
+                        serde_json::from_str::<Value>(j).is_ok_and(|v| pick(f, &v))
+                    })
+                })
+                .map_or(json!([null, null]), |(_, j, st)| json!([j, st]))
+        };
+        // 被同批后面的写入盖掉（文件头「回包」修改行）：同一 (种类, 实体, 字段键) 后面还有一条修改、或这个实体在这批里被
+        // 彻底清除。按位置判，不按「行找不到」猜——找不到又不是被盖掉的，照样给 null、不标，调用方当契约不符报错。
+        let purged = &self.purged;
+        let edit_key = |e: &Value| -> (String, String, String) {
+            (
+                e[0].as_str().unwrap_or("").to_owned(),
+                e[1].as_str().unwrap_or("").to_owned(),
+                e[2].as_str().unwrap_or("").to_owned(),
+            )
+        };
+        let keys: Vec<(String, String, String)> = self.edits.iter().map(edit_key).collect();
+        for (i, e) in self.edits.iter_mut().enumerate() {
+            if e[6].is_null() {
+                continue;
+            }
+            let (k, id, _) = &keys[i];
+            let (device, seq) = (e[3].clone(), e[4].clone());
+            let found = row_of(k, id, &|_, v| v["w"] == device && v["s"] == seq);
+            let superseded = found[0].is_null()
+                && (keys[i + 1..].contains(&keys[i]) || purged.contains(&(k.clone(), id.clone())));
+            if let (Some(arr), Value::Array(pair)) = (e.as_array_mut(), found) {
+                arr.extend(pair);
+                arr.push(Value::Bool(superseded));
+            }
+        }
+        let notes: Vec<String> = self
+            .tag_writes
+            .iter()
+            .map(|tw| tw[1].as_str().unwrap_or("").to_owned())
+            .collect();
+        let note_kind = EntKind::Note.wire().to_owned();
+        for (i, tw) in self.tag_writes.iter_mut().enumerate() {
+            let id = &notes[i];
+            // 同一条笔记后面还有一次整列表标签写入：合成的 `tags` 行是后面那次的结果，不是这一项写下的。
+            let superseded =
+                notes[i + 1..].contains(id) || purged.contains(&(note_kind.clone(), id.clone()));
+            let row = if superseded {
+                Value::Null
+            } else {
+                row_of(&note_kind, id, &|f, _| f == "tags")[0].clone()
+            };
+            if let Some(arr) = tw.as_array_mut() {
+                arr.push(row);
+                arr.push(Value::Bool(superseded));
+            }
+        }
         Ok(())
     }
 
@@ -466,6 +684,7 @@ fn absorb(total: &mut Settled, s: &Settled) {
     total.scanned += s.scanned;
     total.aliases += s.aliases;
     total.aliases_proven += s.aliases_proven;
+    total.aliases_rebuilt += s.aliases_rebuilt;
     total.digests += s.digests;
     total.cache_notes += s.cache_notes;
     total.cache_cards += s.cache_cards;
@@ -491,17 +710,44 @@ pub(super) fn fail_after(req: &Value, stage: &str) -> Result<(), String> {
 
 /// [apply_in] 的选项。
 #[derive(Clone, Copy, Debug, Default)]
-pub(super) struct ApplyOpts {
+pub(super) struct ApplyOpts<'a> {
     /// 收不收 `chg` 项（`import_drafts` 不收）。
     pub(super) chg: bool,
     /// `chg` 筛掉的项不进 `landed`（协议 3 `change_on` 先就地筛掉输入项再走 `apply`，`landed` 只对留下的项）。
     pub(super) compact: bool,
+    /// 输入项与调用方输入的对应（回包里的输入下标，[Session::at]）。
+    pub(super) origin: Origin<'a>,
+}
+
+/// [apply_in] 的输入项是调用方的哪几项。
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) enum Origin<'a> {
+    /// 就是调用方的输入（`apply`、`change`）：第 i 项 = 输入第 i 项。
+    #[default]
+    Caller,
+    /// 调用方输入筛掉一些之后留下的（`import_drafts` 的初值筛选）：第 i 项 = 输入第 `kept[i]` 项。
+    Kept(&'a [usize]),
+    /// 命令自己拼的（意图命令）：没有输入下标。
+    Synthesized,
+}
+
+impl Origin<'_> {
+    fn of(self, at: usize) -> Option<usize> {
+        match self {
+            Origin::Caller => Some(at),
+            Origin::Kept(kept) => kept.get(at).copied(),
+            Origin::Synthesized => None,
+        }
+    }
 }
 
 /// 一项输入解析出的操作体，与它带的标记。
 struct Item {
     body: Body,
     chg: bool,
+    /// 卡片修改带的笔记（输入的 `note`，调用方声明「这张卡是这条笔记的」）：这条修改再跟着笔记过实体归属闸
+    /// （`writes_owner.rs` 文件头「判据」），笔记被拒时它一并不写。只读卡片修改的；日志的笔记在 [Body::Log] 里。
+    card_note: Option<Key>,
 }
 
 /// 协议 3 的修改记录草稿（Dart `_applyInput` 为一条草稿发的那一项，意图命令拼输入用）。
@@ -552,6 +798,10 @@ fn parse_item(it: &Value) -> Result<Item, String> {
         b => b,
     };
     let chg = it["chg"] == Value::Bool(true);
+    let card_note = match &body {
+        Body::Edit(e) if e.kind == EntKind::Card => it["note"].as_str().map(Key::of),
+        _ => None,
+    };
     if chg {
         if !matches!(body, Body::Edit(_)) {
             return Err("apply: chg on an item that is not an edit".into());
@@ -560,11 +810,18 @@ fn parse_item(it: &Value) -> Result<Item, String> {
             return Err("apply: chg cannot be combined with init / stamped".into());
         }
     }
-    Ok(Item { body, chg })
+    Ok(Item {
+        body,
+        chg,
+        card_note,
+    })
 }
 
 /// `apply` 的本体（协议 3 `apply_local_on` 的新代版），在 [s] 里做；意图命令拼好输入也走这里。回包
-/// `{"landed": [每项落没落], "foreign": []}`，`landed` 与 [items] 等长：`chg` 筛掉的、标签写入展开为空的是 false。
+/// `{"landed": [每项落没落], "foreign": [下标]}`，`landed` 与 [items] 等长：`chg` 筛掉的、标签写入展开为空的、指向别的
+/// 集合的实体的（实体归属闸，`writes_owner.rs`）是 false，它们的**调用方输入下标**进 `foreign`（与 `edits` 第 7 列同一
+/// 口径，[Origin]：`import_drafts` 按筛掉初值之前的原输入计——导入路径按它认出被拒的笔记、记进导入报告，BUG-4907；意图
+/// 命令自己拼的项没有输入下标，按 [items] 里的位置计）。
 ///
 /// - `chg`（store/sync2/changing.rs 的判据，[registers::write_is_noop]）：值没变的修改不写；同一批里同一个
 ///   (种类, 实体, 字段键) 按顺序判，后一项比前一项写下的值。
@@ -575,7 +832,7 @@ pub(super) fn apply_in(
     s: &mut Session<'_, '_>,
     now: i64,
     items: &[Value],
-    opts: ApplyOpts,
+    opts: ApplyOpts<'_>,
 ) -> Result<Value, String> {
     let mut parsed = Vec::with_capacity(items.len());
     for it in items {
@@ -585,9 +842,32 @@ pub(super) fn apply_in(
         }
         // 归一提前做：`chg` 与标签的判定按规范的 (种类, 实体, 键) 比。
         let body = s.canon_body(item.body)?;
-        parsed.push(Item { body, ..item });
+        let card_note = item.card_note.as_ref().map(|n| s.canon(n)).transpose()?;
+        parsed.push(Item {
+            body,
+            card_note,
+            ..item
+        });
     }
     let keep = drop_noops(s, &parsed)?;
+    // 实体归属闸（`writes_owner.rs`）：身份记录先各自过闸（牌组按同批的名字 / 父牌组自证）；过了闸的、这一批要建的实体
+    // 算本集合的（同批先后到）。
+    let mut entity_foreign = vec![false; parsed.len()];
+    let mut born = Born::new();
+    let batch = Batch::of(parsed.iter().map(|i| &i.body));
+    for (at, item) in parsed.iter().enumerate() {
+        if !keep[at] {
+            continue;
+        }
+        if let Body::Entity { kind, id, data } = &item.body {
+            if s.foreign_record(*kind, &id.text(), data, &batch)? {
+                entity_foreign[at] = true;
+            } else {
+                born.insert(id.text());
+            }
+        }
+    }
+    let mut foreign: Vec<usize> = Vec::new();
     // 标签：这一批要碰的笔记此刻的标签（批内写过的按批内的算，见 [expand_tags]）。
     let mut tags_now: HashMap<String, Vec<String>> = HashMap::new();
     let mut landed = vec![false; parsed.len()];
@@ -595,6 +875,21 @@ pub(super) fn apply_in(
         if !keep[at] {
             continue;
         }
+        let theirs = match &item.body {
+            Body::Entity { .. } => entity_foreign[at],
+            b => {
+                s.foreign_body(b, &born)?
+                    || match &item.card_note {
+                        Some(n) => s.foreign(EntKind::Note, &n.text(), &born)?,
+                        None => false,
+                    }
+            }
+        };
+        if theirs {
+            foreign.push(opts.origin.of(at).unwrap_or(at));
+            continue;
+        }
+        s.at = opts.origin.of(at);
         // 已有的实体再发一遍身份记录：照样追加（同协议 3），但不算「落了」——协议 3 的 `landed` 是「投影里有东西
         // 变了」，身份记录只在实体第一次出现时投影（`Marks::entity`）。批内前面刚建的同一个实体也算已有。
         if let Body::Entity { id, .. } = &item.body {
@@ -603,6 +898,11 @@ pub(super) fn apply_in(
             landed[at] = !existed;
             continue;
         }
+        // 整列表标签：展开成的标签操作在回包 `tagWrites` 里报一项（最后一条操作的 dot），不进 `edits`（不是修改记录）。
+        let tags_of = match &item.body {
+            Body::Edit(e) if e.kind == EntKind::Note && e.key == "tags" => Some(e.entity.text()),
+            _ => None,
+        };
         let bodies = match item.body {
             Body::Edit(e) if e.kind == EntKind::Note && e.key == "tags" => {
                 expand_tags(s, &mut tags_now, e)?
@@ -613,11 +913,17 @@ pub(super) fn apply_in(
             }
             b => vec![b],
         };
+        let mut last = None;
         for b in bodies {
-            s.land(b, now)?;
+            last = Some(s.land(b, now)?);
             landed[at] = true;
         }
+        if let (Some(note), Some(id)) = (tags_of, last) {
+            s.tag_writes
+                .push(json!([s.at, note, id.device.text(), id.seq]));
+        }
     }
+    s.at = None;
     if opts.compact {
         let landed: Vec<bool> = landed
             .into_iter()
@@ -625,9 +931,9 @@ pub(super) fn apply_in(
             .filter(|(_, k)| **k)
             .map(|(l, _)| l)
             .collect();
-        return Ok(json!({"landed": landed, "foreign": []}));
+        return Ok(json!({"landed": landed, "foreign": foreign}));
     }
-    Ok(json!({"landed": landed, "foreign": []}))
+    Ok(json!({"landed": landed, "foreign": foreign}))
 }
 
 /// `chg` 筛选（见 [apply_in]）：每项留不留。
@@ -781,6 +1087,10 @@ pub fn apply(t: &Truth<'_>, col: i64, req: &Value, items: &[Value]) -> Result<Va
         if !expect_last_holds(s, req)? {
             return Ok(json!({"stale": true}));
         }
+        if req.get("logHlcs") == Some(&Value::Bool(true)) {
+            s.log_hlcs = Some(Vec::new());
+        }
+        s.want_edit_rows(req);
         apply_in(
             s,
             now,
@@ -788,6 +1098,7 @@ pub fn apply(t: &Truth<'_>, col: i64, req: &Value, items: &[Value]) -> Result<Va
             ApplyOpts {
                 chg: true,
                 compact: false,
+                origin: Origin::Caller,
             },
         )
     })
@@ -808,6 +1119,7 @@ pub fn import_drafts(
 ) -> Result<Value, String> {
     let now = now_of(req)?;
     write(t, col, |s| {
+        s.want_edit_rows(req);
         let mut existed: BTreeSet<String> = BTreeSet::new();
         for it in items {
             if it["e"]["t"].as_str() != Some("entity") {
@@ -842,7 +1154,8 @@ pub fn import_drafts(
             }
         }
         let mut kept: Vec<Value> = Vec::with_capacity(items.len());
-        for it in items {
+        let mut kept_at: Vec<usize> = Vec::with_capacity(items.len());
+        for (at, it) in items.iter().enumerate() {
             if is_init(it) {
                 let x = &it["e"]["x"];
                 if let (Some(k), Some(e), Some(f)) =
@@ -856,6 +1169,7 @@ pub fn import_drafts(
                 }
             }
             kept.push(it.clone());
+            kept_at.push(at);
         }
         let mut v = apply_in(
             s,
@@ -864,6 +1178,7 @@ pub fn import_drafts(
             ApplyOpts {
                 chg: false,
                 compact: false,
+                origin: Origin::Kept(&kept_at),
             },
         )?;
         v["existed"] = json!(existed);
@@ -872,7 +1187,8 @@ pub fn import_drafts(
 }
 
 /// `purge`（彻底清除一批同类实体，协议 3 `local_write_body` 的 `purge` 分支）：每个实体「删除 + 清除」两条操作，按
-/// 输入顺序，一笔落下。[req]：`{"now", "kind", "entities": [...]}`（非空）。不存在 / 已清除过的照常追加（清除幂等）。
+/// 输入顺序，一笔落下。[req]：`{"now", "kind", "entities": [...]}`（非空）。不存在 / 已清除过的照常追加（清除幂等）；
+/// 别的集合的实体（实体归属闸，`writes_owner.rs`）不写，回包 `foreign` 交回它们在 `entities` 里的下标。
 pub fn purge(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String> {
     let now = now_of(req)?;
     let kind = req["kind"].as_str().ok_or("purge: missing kind")?;
@@ -881,16 +1197,35 @@ pub fn purge(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String> {
         .and_then(Value::as_array)
         .filter(|e| !e.is_empty())
         .ok_or("purge: missing entities")?;
-    let mut bodies = Vec::with_capacity(entities.len() * 2);
+    let mut bodies = Vec::with_capacity(entities.len());
     for e in entities {
         let e = e.as_str().ok_or("purge: entity is not a string")?;
-        bodies.extend(crate::store::sync2::purge_bodies(kind, e, now)?);
+        bodies.push(crate::store::sync2::purge_bodies(kind, e, now)?);
     }
     write(t, col, |s| {
-        for b in bodies {
-            s.land(b, now)?;
+        let mut foreign: Vec<usize> = Vec::new();
+        for (at, pair) in bodies.into_iter().enumerate() {
+            // 归属按归一后的实体判（清除操作体里那一条，删除与清除指向同一个实体）。
+            let canon: Vec<Body> = pair
+                .into_iter()
+                .map(|b| s.canon_body(b))
+                .collect::<Result<_, _>>()?;
+            let mut theirs = false;
+            for b in &canon {
+                if s.foreign_body(b, &Born::new())? {
+                    theirs = true;
+                    break;
+                }
+            }
+            if theirs {
+                foreign.push(at);
+                continue;
+            }
+            for b in canon {
+                s.land(b, now)?;
+            }
         }
-        Ok(json!({}))
+        Ok(json!({"foreign": foreign}))
     })
 }
 

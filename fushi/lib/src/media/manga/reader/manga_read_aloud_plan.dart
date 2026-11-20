@@ -52,6 +52,7 @@ List<MangaReadAloudUtterance> planMangaPageReadAloud(
   required int pageIndex,
   required bool rightToLeft,
   required List<TtsPronunciationRule> pronunciation,
+  List<TtsPronunciationRule> preSynthesis = const <TtsPronunciationRule>[],
   required int maxInputLength,
 }) {
   final List<MangaPageSentence> sentences = mangaPageSentencesInReadingOrder(
@@ -67,7 +68,11 @@ List<MangaReadAloudUtterance> planMangaPageReadAloud(
     final String text = sentence.sentence.trim();
     if (!_speakable.hasMatch(text)) continue;
     final List<String> chunks = splitTtsTextForInputLimit(
-      applyTtsPronunciation(text, pronunciation),
+      applyTtsSpokenRules(
+        text,
+        pronunciation: pronunciation,
+        preSynthesis: preSynthesis,
+      ),
       maxLength: maxInputLength,
     );
     if (chunks.isEmpty) continue;

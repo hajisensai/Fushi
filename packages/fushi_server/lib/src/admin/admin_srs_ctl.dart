@@ -17,7 +17,8 @@
 /// 服务端一个进程持有多份 profile 的库：每个端点都认 `profile`（query 或 body，profile uid）。没给时只有
 /// 一份可用就是它，几份都可用回 409 `profile_required`——与设备信任端点「没点名」的口径一致，不猜默认那份
 /// （这些端点有写操作，写错库比多打一个参数贵）。没提供的 uid → 404 `profile_not_served`，那份还没就绪 /
-/// 加密 / 出错 → 409 `profile_unavailable`，复习库整个没起 → 409 `srs_unavailable`。按 id 点名的实体
+/// 加密 / 出错 → 409 `profile_unavailable`，复习库整个没起 → 409 `srs_unavailable`，复习库在升级到新代 → 503
+/// `srs_upgrading`、升级没完成要管理员处理 → 503 `srs_upgrade_blocked`（`ctl srs migration`）。按 id 点名的实体
 /// 只认点名的那份：别的 profile 的 id 与不存在的 id 同一个回答（读 / 合并 404，批量改笔记记进 `missing`、
 /// 不写）——由复习库自己按 profile 核对（BUG-4626 / BUG-4480）。
 ///
@@ -47,22 +48,31 @@ SrsCtlHost serverSrsCtlHost(ServerSrs? Function() srs) => SrsCtlHost(
     } else {
       final List<ServerSrsProfile> ready = s.readyProfiles;
       if (ready.length > 1) throw _refused(409, 'profile_required');
-      if (ready.isEmpty) throw _refused(409, 'profile_unavailable');
+      if (ready.isEmpty) throw _unavailable(s);
       prof = ready.single;
     }
     final SrsDbStore? store = prof.store;
-    if (store == null) throw _refused(409, 'profile_unavailable');
+    if (store == null) throw _unavailable(s);
     return SrsCtlTarget(store, profile: prof.uid);
   },
   changed: (SrsCtlTarget target) {
     final String? uid = target.profile;
     if (uid != null) srs()?.notifyWrite(uid);
   },
+  // 旧版本保留副本（D32）：服务端的复习库目录 = 数据目录的 support（`srs4.db` / 封存的 `srs.db` 所在）。
+  libraryDir: () => srs()?.support.path,
 );
 
 /// 取不到库的拒绝：短码既是 `reason` 也是消息（与 admin_srs.dart 的错误体同形）。
 CtlFailure _refused(int status, String reason) =>
     CtlFailure(status, reason, reason);
+
+/// 那份 profile 不可用：复习库在升级 / 升级受阻时回类型化的 503（`srs_upgrading` / `srs_upgrade_blocked`，
+/// [ServerSrsUpgradeRefusal]），其余照旧 409 `profile_unavailable`。
+CtlFailure _unavailable(ServerSrs srs) => switch (srs.upgradeRefusal) {
+  final ServerSrsUpgradeRefusal r => _refused(r.status, r.reason),
+  null => _refused(409, 'profile_unavailable'),
+};
 
 /// `/api/admin/srs/*` 里复习库内容那一组端点：把请求拼成 [CtlCall] 交给 engine 路由。
 class AdminSrsCtl {
@@ -127,9 +137,15 @@ buildServerSrsCtlOps(ServerSrs? Function() srs) {
     descriptions: srsCtlOpDescriptions(
       host,
       idPrefix: 'server.',
-      availability: () => (srs()?.readyProfiles.isNotEmpty ?? false)
-          ? const OpAvailability.available()
-          : const OpAvailability.unavailable('srs_unavailable'),
+      availability: () {
+        final ServerSrs? s = srs();
+        if (s?.readyProfiles.isNotEmpty ?? false) {
+          return const OpAvailability.available();
+        }
+        return OpAvailability.unavailable(
+          s?.upgradeRefusal?.reason ?? 'srs_unavailable',
+        );
+      },
       scopeParams: const <OpParam>[_profileParam],
     ),
   );

@@ -1315,12 +1315,32 @@ pub(crate) struct UndoTarget<'v> {
     pub value: &'v Value,
 }
 
-/// 撤销校验（store/sync2/undo_check.rs）：某字段键自 [ours] 那次写入以来有没有被别人动过，只看库里的修改记录。
+/// 撤销校验里「这个键唯一没被支配的那条」（[undo_verdict] 交给调用方的「见没见过」判据）：dot 与它落库的上下文。
+pub(crate) struct UndoLive<'e> {
+    pub writer: &'e str,
+    pub seq: i64,
+    #[cfg(test)]
+    ctx: &'e Ctx,
+}
+
+impl UndoLive<'_> {
+    /// 这条记录落库的因果上下文含不含 dot `(w, q)`。只有上下文是写入者维护的完整 DVV 时（协议 3 的修改记录）它才
+    /// 回答「见没见过」；新代原生写入的投影行只记了别的要输出的行（`store/gen4/derive.rs` `edit_lines_as`），不能拿来问。
+    #[cfg(test)]
+    pub(crate) fn ctx_contains(&self, w: &str, q: i64) -> bool {
+        self.ctx.contains(w, q)
+    }
+}
+
+/// 撤销校验（store/sync2/undo_check.rs、store/gen4/cmd/center.rs）：某字段键自 [ours] 那次写入以来有没有被别人动过。
 ///
 /// 可以撤 ⇔ 这个键只剩一条没被支配的记录（没有并发候选），且它
 /// - 就是 [ours]；或
-/// - 因果上见过 [ours]（ctx 含它的 dot），且值与 [ours] 相同——之后的改动又全部改回了 [ours] 写下的值
-///   （典型：先撤了更晚的那一步，撤销写下的记录把值还原成 [ours] 的值），现值仍是这次操作的结果。
+/// - 值与 [ours] 相同，且因果上见过 [ours]（[sees]）——之后的改动又全部改回了 [ours] 写下的值（典型：先撤了更晚的
+///   那一步，撤销写下的记录把值还原成 [ours] 的值），现值仍是这次操作的结果。
+///
+/// 「见没见过」是因果事实，由调用方按它的真相层回答（[sees]，值相同才问）：协议 3 的修改记录上下文是完整 DVV，按行
+/// 上下文判（[UndoLive::ctx_contains]）；新代按操作的依赖与旧闭包判（`Index::write_sees`）。
 ///
 /// [ours] 为 None（这一版之前记下的撤销载荷没有 dot）时只能按值：唯一的记录值与 [after] 相同。
 /// 返回 (能不能撤, 现值)。
@@ -1329,6 +1349,7 @@ pub(crate) fn undo_verdict(
     key: &str,
     ours: Option<&UndoTarget<'_>>,
     after: Option<&Value>,
+    sees: &mut dyn FnMut(&UndoLive<'_>, &UndoTarget<'_>) -> Result<bool, String>,
 ) -> Result<(bool, Value), String> {
     let parsed = parse_stored(edits)?;
     let ent = Entity::build(&parsed);
@@ -1341,7 +1362,16 @@ pub(crate) fn undo_verdict(
     let ok = match ours {
         Some(o) => {
             (x.writer == o.writer && x.seq == o.seq)
-                || (x.ctx.contains(o.writer, o.seq) && same_value(&x.value, o.value))
+                || (same_value(&x.value, o.value)
+                    && sees(
+                        &UndoLive {
+                            writer: &x.writer,
+                            seq: x.seq,
+                            #[cfg(test)]
+                            ctx: &x.ctx,
+                        },
+                        o,
+                    )?)
         }
         None => after.is_some_and(|a| same_value(&x.value, a)),
     };

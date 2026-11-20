@@ -4,28 +4,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 
 void main() {
-  group('parseChapterList (TODO-424)', () {
-    test('parses count + per-index title/time into升序 VideoChapter list', () {
-      // 模拟 mkv 5 章 Chapter 01..05，time 为秒（浮点字符串）。
-      const Map<int, String> titles = <int, String>{
-        0: 'Chapter 01',
-        1: 'Chapter 02',
-        2: 'Chapter 03',
-        3: 'Chapter 04',
-        4: 'Chapter 05',
-      };
-      const Map<int, String> times = <int, String>{
-        0: '0.000',
-        1: '300.500',
-        2: '600',
-        3: '900.250',
-        4: '1200.0',
-      };
-      final List<VideoChapter> chapters = parseChapterList(
-        count: '5',
-        titleAt: (int i) => titles[i]!,
-        timeAt: (int i) => times[i]!,
-      );
+  group('parseChapterListJson (TODO-424 / c32 video-36a)', () {
+    test('整份 JSON → 升序 VideoChapter 列表（秒 → 毫秒）', () {
+      // libmpv 把 node 数组序列化成的形状（mkv 5 章）。
+      const String raw =
+          '[{"title":"Chapter 01","time":0.000000},'
+          '{"title":"Chapter 02","time":300.500000},'
+          '{"title":"Chapter 03","time":600},'
+          '{"title":"Chapter 04","time":900.25},'
+          '{"title":"Chapter 05","time":1200.0}]';
+      final List<VideoChapter> chapters = parseChapterListJson(raw);
       expect(chapters.length, 5);
       expect(
         chapters[0],
@@ -36,31 +24,27 @@ void main() {
       expect(chapters[2].start, const Duration(seconds: 600));
       expect(chapters[3].start, const Duration(milliseconds: 900250));
       expect(chapters[4].start, const Duration(seconds: 1200));
+      expect(chapters[4].index, 4);
     });
 
-    test('empty / zero / non-numeric count => empty list (无章节)', () {
-      String t(int i) => '';
-      String s(int i) => '0';
-      expect(parseChapterList(count: '', titleAt: t, timeAt: s), isEmpty);
-      expect(parseChapterList(count: '0', titleAt: t, timeAt: s), isEmpty);
-      expect(parseChapterList(count: 'NaN', titleAt: t, timeAt: s), isEmpty);
-      expect(parseChapterList(count: '-3', titleAt: t, timeAt: s), isEmpty);
+    test('读不到 / 不是 JSON 数组 / 空数组 => 空列表（无章节）', () {
+      expect(parseChapterListJson(''), isEmpty);
+      expect(parseChapterListJson('   '), isEmpty);
+      expect(parseChapterListJson('[]'), isEmpty);
+      expect(parseChapterListJson('{"title":"x"}'), isEmpty);
+      expect(parseChapterListJson('not json'), isEmpty);
     });
 
-    test(
-      'blank title kept as empty string; negative/invalid time clamps to 0',
-      () {
-        final List<VideoChapter> chapters = parseChapterList(
-          count: '2',
-          titleAt: (int i) => i == 0 ? '' : 'Named',
-          timeAt: (int i) => i == 0 ? '-5' : 'oops',
-        );
-        expect(chapters[0].title, '');
-        expect(chapters[0].start, Duration.zero); // -5s clamp 到 0
-        expect(chapters[1].title, 'Named');
-        expect(chapters[1].start, Duration.zero); // 非法 time => 0
-      },
-    );
+    test('缺 title 记空串；负值 / 缺失 / 非数字 time clamp 到 0', () {
+      final List<VideoChapter> chapters = parseChapterListJson(
+        '[{"time":-5},{"title":"Named"},{"title":"S","time":"12"}]',
+      );
+      expect(chapters[0].title, '');
+      expect(chapters[0].start, Duration.zero);
+      expect(chapters[1].title, 'Named');
+      expect(chapters[1].start, Duration.zero);
+      expect(chapters[2].start, Duration.zero);
+    });
   });
 
   group('adjacentChapterIndex (TODO-424)', () {

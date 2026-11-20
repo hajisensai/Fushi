@@ -139,43 +139,41 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  group('phone: bottom sheet with icon grid (B)', () {
-    testWidgets('quick actions are hero tiles, the rest a 4-column grid', (
+  // 2026-11-20 #4b：手机长按与右键菜单同一份数据、同一套分段（底部面板），
+  // 二级菜单在面板内下钻。
+  group('phone: bottom sheet is the unified item menu', () {
+    testWidgets('organize rows on top, low-frequency items behind 更多', (
       WidgetTester tester,
     ) async {
       await open(tester, screen: const Size(390, 844));
 
       expect(find.byType(BottomSheet), findsOneWidget);
       expect(find.byType(Dialog), findsNothing);
-      // 前四个宫格同一行、等距排开。
-      final List<double> ys = <String>[
+      for (final String label in <String>[
         'Rename',
         'Add to collection',
         'Tags',
-        'Mark as finished',
-      ].map((String l) => tester.getTopLeft(find.text(l)).dy).toList();
-      expect(ys.toSet().length, 1, reason: '前 4 个动作同一行');
-      expect(
-        tester.getTopLeft(find.text('Reset progress')).dy,
-        greaterThan(ys.first),
-        reason: '第 5 个换到下一行',
-      );
-      // 主动作大色块在宫格之上。
-      expect(tester.getTopLeft(find.text('Quick 0')).dy, lessThan(ys.first));
-      // 设置组也在宫格里（抽屉不收子菜单）。
+      ]) {
+        expect(find.text(label), findsOneWidget);
+      }
+      // 内容 / 进度 / 设置组收进「更多」。
+      expect(find.text('Edit CSS'), findsNothing);
+      expect(find.text('Quick 0'), findsNothing);
+      await tester.tap(find.text(t.item_menu_more));
+      await tester.pumpAndSettle();
       expect(find.text('Edit CSS'), findsOneWidget);
-      expect(find.widgetWithText(OutlinedButton, 'Delete'), findsOneWidget);
+      expect(find.text('Quick 0'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('tapping a tile fires its action', (WidgetTester tester) async {
+    testWidgets('tapping a row fires its action', (WidgetTester tester) async {
       await open(tester, screen: const Size(390, 844));
       await tester.tap(find.text('Tags'));
       await tester.pumpAndSettle();
       expect(fired, <String>['Tags']);
     });
 
-    testWidgets('a tile is reachable by keyboard and activates with Enter', (
+    testWidgets('a row is reachable by keyboard and activates with Enter', (
       WidgetTester tester,
     ) async {
       await open(tester, screen: const Size(390, 844));
@@ -187,12 +185,12 @@ void main() {
       expect(fired, <String>['Rename']);
     });
 
-    testWidgets('more than three quick actions join the grid', (
+    testWidgets('extra quick actions are reachable behind 更多', (
       WidgetTester tester,
     ) async {
       await open(tester, screen: const Size(390, 844), quickCount: 5);
-      // 不再有大色块：Quick 0 与普通动作同为宫格格子，排在最前（content 组
-      // 在 organize 之后，所以按组排序后跟在整理组后面）。
+      await tester.tap(find.text(t.item_menu_more));
+      await tester.pumpAndSettle();
       expect(find.text('Quick 4'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
@@ -302,7 +300,7 @@ void main() {
   });
 
   group('desktop right-click: context menu (E)', () {
-    testWidgets('opens at the pointer with settings tucked in a submenu', (
+    testWidgets('opens at the pointer with low-frequency items tucked in 更多', (
       WidgetTester tester,
     ) async {
       await open(
@@ -318,12 +316,10 @@ void main() {
       expect(titleTopLeft.dx, lessThan(380));
       expect(titleTopLeft.dy, greaterThan(200));
       expect(titleTopLeft.dy, lessThan(260));
-      // 快捷动作只剩图标（文字进 tooltip）。
+      // 未指定落点的快捷动作与设置组都收进「更多」（#4b）。
       expect(find.text('Quick 0'), findsNothing);
-      expect(find.byTooltip('Quick 0'), findsOneWidget);
-      // 设置组默认收起。
       expect(find.text('Edit CSS'), findsNothing);
-      await tester.tap(find.text(t.item_actions_group_settings));
+      await tester.tap(find.text(t.item_menu_more));
       await tester.pumpAndSettle();
       expect(find.text('Edit CSS'), findsOneWidget);
       // 子菜单在主菜单右侧。
@@ -407,11 +403,11 @@ void main() {
     }) async {
       await open(tester, screen: screen, anchor: anchor);
       final Rect panel = menuPanel(tester);
-      await tester.tap(find.text(t.item_actions_group_settings));
+      await tester.tap(find.text(t.item_menu_more));
       await tester.pumpAndSettle();
-      final Rect first = tester.getRect(find.text('Content language'));
+      final Rect first = tester.getRect(find.text('Quick 0'));
       final Rect last = tester.getRect(find.text('Edit CSS'));
-      final Rect row = tester.getRect(find.text(t.item_actions_group_settings));
+      final Rect row = tester.getRect(find.text(t.item_menu_more));
       for (final Rect r in <Rect>[first, last]) {
         expect(r.left, greaterThanOrEqualTo(0));
         expect(r.right, lessThanOrEqualTo(screen.width));
@@ -421,7 +417,7 @@ void main() {
       // 翻到主菜单左侧、紧贴主菜单，而不是飞到别处。
       expect(last.right, lessThanOrEqualTo(panel.left));
       expect(last.right, greaterThan(panel.left - 80));
-      // 与「设置」行同一高度带。
+      // 与「更多」行同一高度带。
       expect(
         first.top <= row.bottom && last.bottom >= row.top,
         isTrue,
@@ -433,7 +429,7 @@ void main() {
       expect(tester.takeException(), isNull);
     }
 
-    testWidgets('near the right edge the settings submenu flips left and '
+    testWidgets('near the right edge the 更多 submenu flips left and '
         'stays on screen', (WidgetTester tester) async {
       await expectSubmenuOnScreen(
         tester,
@@ -442,7 +438,7 @@ void main() {
       );
     });
 
-    testWidgets('near the bottom-right corner the settings submenu grows '
+    testWidgets('near the bottom-right corner the 更多 submenu grows '
         'upward and stays on screen', (WidgetTester tester) async {
       await expectSubmenuOnScreen(
         tester,

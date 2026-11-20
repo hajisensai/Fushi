@@ -577,4 +577,49 @@ void main() {
       findsOneWidget,
     );
   });
+
+  group('生成语言', () {
+    testWidgets('老 host（没列 languages）：不显示语言选择，提交不带 language', (
+      WidgetTester tester,
+    ) async {
+      final _Host host = _Host(const <String>['video_subtitle']);
+      await pump(tester, service(host));
+      expect(
+        find.byKey(const ValueKey<String>('remote-subtitle-language')),
+        findsNothing,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('remote-subtitle-start')),
+      );
+      await tester.pumpAndSettle();
+      expect(host.runs.single.containsKey('language'), isFalse);
+    });
+
+    testWidgets('新 host：显示语言选择，选普通话后提交带 language=zh', (
+      WidgetTester tester,
+    ) async {
+      final _Host host = _Host(
+        const <String>['video_subtitle'],
+        capability: const <String, Object?>{
+          'video_subtitle': <String, Object?>{
+            'languages': <String>['ja', 'zh'],
+          },
+        },
+      );
+      await pump(tester, service(host));
+      expect(
+        find.byKey(const ValueKey<String>('remote-subtitle-language')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('remote-subtitle-language-zh')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('remote-subtitle-start')),
+      );
+      await tester.pumpAndSettle();
+      expect(host.runs.single['language'], 'zh');
+    });
+  });
 }

@@ -70,6 +70,58 @@ const BoxConstraints _kMd3DialogConstraints = BoxConstraints(
   maxWidth: 560,
 );
 
+/// 对话框里滚动条离面板右缘的内缩（逻辑像素）。
+const double kFushiDialogScrollbarCrossInset = 8;
+
+/// MD3 对话框的默认圆角（M3 规范 extra-large = 28）。
+const double _kMd3DialogCornerRadius = 28;
+
+/// 对话框面板内的滚动条内缩：右缘让出 [kFushiDialogScrollbarCrossInset]，首尾各让出
+/// 面板圆角半径，拇指与轨道不再贴着、压过圆角（11-20 反馈 #7：声音选择弹窗的滚动条
+/// 贴在圆角外缘一直画到底边）。只改子树的 `ScrollbarThemeData` 两个边距，外观其余
+/// 照旧走全局主题；面板内所有自动包上的 / 显式的 [FushiScrollbar] 一并受益。
+class FushiDialogScrollbarInset extends StatelessWidget {
+  const FushiDialogScrollbarInset({
+    super.key,
+    required this.cornerRadius,
+    required this.child,
+  });
+
+  /// 面板圆角半径；≤ 0（全屏）时不内缩首尾。
+  final double cornerRadius;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final ScrollbarThemeData base = ScrollbarTheme.of(context);
+    return ScrollbarTheme(
+      data: base.copyWith(
+        crossAxisMargin: kFushiDialogScrollbarCrossInset,
+        mainAxisMargin: math.max(0, cornerRadius),
+      ),
+      child: child,
+    );
+  }
+}
+
+/// MD3 对话框面板的圆角半径：调用方 shape > 主题 shape > 规范 28。只认圆角矩形族
+/// （其它形状取规范值）。
+double _md3DialogCornerRadius(BuildContext context, ShapeBorder? shape) {
+  final ShapeBorder? effective = shape ?? DialogTheme.of(context).shape;
+  final BorderRadiusGeometry? radius = switch (effective) {
+    RoundedRectangleBorder(:final BorderRadiusGeometry borderRadius) =>
+      borderRadius,
+    RoundedSuperellipseBorder(:final BorderRadiusGeometry borderRadius) =>
+      borderRadius,
+    ContinuousRectangleBorder(:final BorderRadiusGeometry borderRadius) =>
+      borderRadius,
+    _ => null,
+  };
+  if (radius == null) return _kMd3DialogCornerRadius;
+  final BorderRadius resolved = radius.resolve(Directionality.maybeOf(context));
+  return math.max(resolved.topRight.x, resolved.bottomRight.x);
+}
+
 /// 与 Material [Dialog] 相同的默认外边距。
 const EdgeInsets _kDialogInsetPadding = EdgeInsets.symmetric(
   horizontal: 40,
@@ -287,6 +339,10 @@ class FushiAppleDialogPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final Widget child = FushiDialogScrollbarInset(
+      cornerRadius: radius,
+      child: this.child,
+    );
     final bool dark =
         Theme.of(context).colorScheme.brightness == Brightness.dark;
     final Color? explicitTint = tint != null && tint!.a > 0 ? tint : null;
@@ -661,69 +717,75 @@ class FushiAlertDialog extends StatelessWidget {
     if (!isGlassDesign(context) &&
         _adaptive &&
         useCupertinoAdaptiveControls(context)) {
-      return AlertDialog.adaptive(
-        icon: _md3HeroIcon(),
-        iconPadding: iconPadding,
-        iconColor: iconColor,
-        title: title,
-        titlePadding: titlePadding,
-        titleTextStyle: titleTextStyle,
-        content: _scrollableContent(),
-        contentPadding: contentPadding,
-        contentTextStyle: contentTextStyle,
-        actions: actions,
-        actionsPadding: actionsPadding,
-        actionsAlignment: actionsAlignment,
-        actionsOverflowAlignment: actionsOverflowAlignment,
-        actionsOverflowDirection: actionsOverflowDirection,
-        actionsOverflowButtonSpacing: actionsOverflowButtonSpacing,
-        buttonPadding: buttonPadding,
-        backgroundColor: backgroundColor,
-        elevation: elevation,
-        shadowColor: shadowColor,
-        surfaceTintColor: surfaceTintColor,
-        semanticLabel: semanticLabel,
-        insetPadding: _resolveDialogInset(context, insetPadding),
-        clipBehavior: clipBehavior,
-        shape: shape,
-        alignment: alignment,
-        constraints: _resolveMd3DialogConstraints(context, constraints),
-        scrollable: scrollable ?? false,
-        scrollController: scrollController,
-        actionScrollController: actionScrollController,
-        insetAnimationDuration: insetAnimationDuration,
-        insetAnimationCurve: insetAnimationCurve,
+      return FushiDialogScrollbarInset(
+        cornerRadius: _md3DialogCornerRadius(context, shape),
+        child: AlertDialog.adaptive(
+          icon: _md3HeroIcon(),
+          iconPadding: iconPadding,
+          iconColor: iconColor,
+          title: title,
+          titlePadding: titlePadding,
+          titleTextStyle: titleTextStyle,
+          content: _scrollableContent(),
+          contentPadding: contentPadding,
+          contentTextStyle: contentTextStyle,
+          actions: actions,
+          actionsPadding: actionsPadding,
+          actionsAlignment: actionsAlignment,
+          actionsOverflowAlignment: actionsOverflowAlignment,
+          actionsOverflowDirection: actionsOverflowDirection,
+          actionsOverflowButtonSpacing: actionsOverflowButtonSpacing,
+          buttonPadding: buttonPadding,
+          backgroundColor: backgroundColor,
+          elevation: elevation,
+          shadowColor: shadowColor,
+          surfaceTintColor: surfaceTintColor,
+          semanticLabel: semanticLabel,
+          insetPadding: _resolveDialogInset(context, insetPadding),
+          clipBehavior: clipBehavior,
+          shape: shape,
+          alignment: alignment,
+          constraints: _resolveMd3DialogConstraints(context, constraints),
+          scrollable: scrollable ?? false,
+          scrollController: scrollController,
+          actionScrollController: actionScrollController,
+          insetAnimationDuration: insetAnimationDuration,
+          insetAnimationCurve: insetAnimationCurve,
+        ),
       );
     }
     if (!isGlassDesign(context)) {
-      return AlertDialog(
-        icon: _md3HeroIcon(),
-        iconPadding: iconPadding,
-        iconColor: iconColor,
-        title: title,
-        titlePadding: titlePadding,
-        titleTextStyle: titleTextStyle,
-        content: _scrollableContent(),
-        contentPadding: contentPadding,
-        contentTextStyle: contentTextStyle,
-        actions: actions,
-        actionsPadding: actionsPadding,
-        actionsAlignment: actionsAlignment,
-        actionsOverflowAlignment: actionsOverflowAlignment,
-        actionsOverflowDirection: actionsOverflowDirection,
-        actionsOverflowButtonSpacing: actionsOverflowButtonSpacing,
-        buttonPadding: buttonPadding,
-        backgroundColor: backgroundColor,
-        elevation: elevation,
-        shadowColor: shadowColor,
-        surfaceTintColor: surfaceTintColor,
-        semanticLabel: semanticLabel,
-        insetPadding: _resolveDialogInset(context, insetPadding),
-        clipBehavior: clipBehavior,
-        shape: shape,
-        alignment: alignment,
-        constraints: _resolveMd3DialogConstraints(context, constraints),
-        scrollable: scrollable ?? false,
+      return FushiDialogScrollbarInset(
+        cornerRadius: _md3DialogCornerRadius(context, shape),
+        child: AlertDialog(
+          icon: _md3HeroIcon(),
+          iconPadding: iconPadding,
+          iconColor: iconColor,
+          title: title,
+          titlePadding: titlePadding,
+          titleTextStyle: titleTextStyle,
+          content: _scrollableContent(),
+          contentPadding: contentPadding,
+          contentTextStyle: contentTextStyle,
+          actions: actions,
+          actionsPadding: actionsPadding,
+          actionsAlignment: actionsAlignment,
+          actionsOverflowAlignment: actionsOverflowAlignment,
+          actionsOverflowDirection: actionsOverflowDirection,
+          actionsOverflowButtonSpacing: actionsOverflowButtonSpacing,
+          buttonPadding: buttonPadding,
+          backgroundColor: backgroundColor,
+          elevation: elevation,
+          shadowColor: shadowColor,
+          surfaceTintColor: surfaceTintColor,
+          semanticLabel: semanticLabel,
+          insetPadding: _resolveDialogInset(context, insetPadding),
+          clipBehavior: clipBehavior,
+          shape: shape,
+          alignment: alignment,
+          constraints: _resolveMd3DialogConstraints(context, constraints),
+          scrollable: scrollable ?? false,
+        ),
       );
     }
     return _buildGlass(context);
@@ -1035,23 +1097,26 @@ class FushiSimpleDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!isGlassDesign(context)) {
-      return SimpleDialog(
-        title: title,
-        titlePadding: titlePadding,
-        titleTextStyle: titleTextStyle,
-        contentPadding: contentPadding,
-        contentTextStyle: contentTextStyle,
-        backgroundColor: backgroundColor,
-        elevation: elevation,
-        shadowColor: shadowColor,
-        surfaceTintColor: surfaceTintColor,
-        semanticLabel: semanticLabel,
-        insetPadding: _resolveDialogInset(context, insetPadding),
-        clipBehavior: clipBehavior,
-        shape: shape,
-        alignment: alignment,
-        constraints: _resolveMd3DialogConstraints(context, constraints),
-        children: children,
+      return FushiDialogScrollbarInset(
+        cornerRadius: _md3DialogCornerRadius(context, shape),
+        child: SimpleDialog(
+          title: title,
+          titlePadding: titlePadding,
+          titleTextStyle: titleTextStyle,
+          contentPadding: contentPadding,
+          contentTextStyle: contentTextStyle,
+          backgroundColor: backgroundColor,
+          elevation: elevation,
+          shadowColor: shadowColor,
+          surfaceTintColor: surfaceTintColor,
+          semanticLabel: semanticLabel,
+          insetPadding: _resolveDialogInset(context, insetPadding),
+          clipBehavior: clipBehavior,
+          shape: shape,
+          alignment: alignment,
+          constraints: _resolveMd3DialogConstraints(context, constraints),
+          children: children,
+        ),
       );
     }
     // macOS 26 sheet 形态的选择列表：标题靠左，下面是菜单式选项行。默认
@@ -1245,20 +1310,23 @@ class FushiDialog extends StatelessWidget {
           child: child,
         );
       }
-      return Dialog(
-        backgroundColor: backgroundColor,
-        elevation: elevation,
-        shadowColor: shadowColor,
-        surfaceTintColor: surfaceTintColor,
-        insetAnimationDuration: insetAnimationDuration,
-        insetAnimationCurve: insetAnimationCurve,
-        insetPadding: _resolveDialogInset(context, insetPadding),
-        clipBehavior: clipBehavior,
-        shape: shape,
-        alignment: alignment,
-        semanticsRole: semanticsRole,
-        constraints: constraints,
-        child: child,
+      return FushiDialogScrollbarInset(
+        cornerRadius: _md3DialogCornerRadius(context, shape),
+        child: Dialog(
+          backgroundColor: backgroundColor,
+          elevation: elevation,
+          shadowColor: shadowColor,
+          surfaceTintColor: surfaceTintColor,
+          insetAnimationDuration: insetAnimationDuration,
+          insetAnimationCurve: insetAnimationCurve,
+          insetPadding: _resolveDialogInset(context, insetPadding),
+          clipBehavior: clipBehavior,
+          shape: shape,
+          alignment: alignment,
+          semanticsRole: semanticsRole,
+          constraints: constraints,
+          child: child,
+        ),
       );
     }
     return _FushiGlassDialogShell(

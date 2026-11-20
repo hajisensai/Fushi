@@ -25,6 +25,8 @@ on:
     branches: ['main', 'develop']
     paths:
       - 'native/fushi_music/**'
+      # #[path] 编进 fushi_music 的 crate 外源码（native/fushi_music/external_sources.txt）。
+      - 'native/fushi_compute/src/legacy_text.rs'
       - '.github/workflows/native-music-gate.yml'
 
 permissions:

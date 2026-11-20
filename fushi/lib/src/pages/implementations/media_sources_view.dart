@@ -71,6 +71,7 @@ import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart';
 import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -1798,6 +1799,10 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     final Future<void> Function(SourceLibraryRow, SourceScanSummary)?
     onVideoScanCompleted = widget.onVideoScanCompleted;
     SourceScanSummary? summary;
+    // 视频刮削资料正在清理：扫描没开始。两条路——带刮削 controller 时由它的互斥门抛
+    // 类型化错误，不带时扫描器回 [SourceScanSummary.blocked]——都要告诉用户，
+    // 否则点了「重新扫描」什么也不发生。
+    bool blockedByScrapeCleanup = false;
     setState(() => _scanning.add(row.id));
     try {
       // 扫描器自己登记进全局扫描占用表（[sourceScanActivity]，每来源锁）：首页的自动
@@ -1811,6 +1816,8 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
       summary = controller == null
           ? await scan()
           : await controller.runSourceScan(row.id, scan);
+    } on VideoScrapeMaintenanceActiveError {
+      blockedByScrapeCleanup = true;
     } finally {
       try {
         final SourceLibraryRow? updated = await _db.getMediaSourceById(row.id);
@@ -1836,6 +1843,12 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
           await _refreshCount(row.id);
           final SourceScanSummary? done = summary;
           if (done != null && done.succeeded) _showBookAudiobookSummary(done);
+          if (blockedByScrapeCleanup || done?.blocked != null) {
+            FushiToast.show(
+              msg: t.media_source_scan_blocked_scrape_cleanup,
+              severity: ToastSeverity.warning,
+            );
+          }
         }
       } finally {
         onLibraryChanged?.call();

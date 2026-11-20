@@ -60,7 +60,7 @@ void main() {
       database: () => db,
       prefs: () => prefs,
       aiModuleEnabled: () => true,
-      linkDeps: (_) => (
+      linkDeps: (_, _) => (
         deps: LibraryCurateLinkDeps(
           fetchMalSourceMaterial: (String id) async => const <Never>[],
           lookupWikidataAnime: (Iterable<String> ids) async =>

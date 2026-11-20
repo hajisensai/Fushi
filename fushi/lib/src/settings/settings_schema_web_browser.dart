@@ -151,6 +151,34 @@ SettingsSection buildWebBrowserSection() {
         },
       ),
       SettingsSwitchItem(
+        id: 'system.web_browser_fullscreen_takeover',
+        title: t.web_browser_settings_fullscreen_takeover,
+        subtitle: t.web_browser_settings_fullscreen_takeover_hint,
+        icon: FushiIcons.fullscreen,
+        defaultValue: kWebBrowserFullscreenTakeoverDefault,
+        value: (SettingsContext c) =>
+            webBrowserFullscreenTakeover(c.appModel.prefsRepo),
+        onChanged: (SettingsContext c, bool value) async {
+          await setWebBrowserFullscreenTakeover(c.appModel.prefsRepo, value);
+          c.refresh();
+        },
+      ),
+      SettingsSwitchItem(
+        id: 'system.web_browser_fullscreen_auto_rotate',
+        title: t.web_browser_settings_fullscreen_auto_rotate,
+        subtitle: t.web_browser_settings_fullscreen_auto_rotate_hint,
+        icon: FushiIcons.phone,
+        // 只有手机能转屏。
+        visible: (_) => isMobilePlatform,
+        defaultValue: kWebBrowserFullscreenAutoRotateDefault,
+        value: (SettingsContext c) =>
+            webBrowserFullscreenAutoRotate(c.appModel.prefsRepo),
+        onChanged: (SettingsContext c, bool value) async {
+          await setWebBrowserFullscreenAutoRotate(c.appModel.prefsRepo, value);
+          c.refresh();
+        },
+      ),
+      SettingsSwitchItem(
         id: 'system.web_browser_restore_tabs',
         title: t.web_browser_settings_restore_tabs,
         subtitle: t.web_browser_settings_restore_tabs_hint,

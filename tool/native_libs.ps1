@@ -8,7 +8,7 @@
     powershell -ExecutionPolicy Bypass -File tool/native_libs.ps1
 
   每个 crate 按顺序：
-    1) 本地 prebuilt/<平台>/ 旁的戳记（<产物>.source：native/<crate> 的 git 树哈希 + 产物大小 + mtime）
+    1) 本地 prebuilt/<平台>/ 旁的戳记（<产物>.source：native/<crate> 的源码内容键 + 产物大小 + mtime）
        与 HEAD 一致 → 跳过；
     2) 兄弟 worktree（含主 checkout）里有戳记一致的产物 → 拷过来（秒级，免 cargo）；
     3) 否则跑 native/<crate>/build_* 编译，编完写戳记（此时才需要 cargo）。
@@ -20,8 +20,10 @@
   各的戳记，复用规则相同。
 
   新增一个 app / 测试硬依赖的 crate：往 $NativeTestCrates 加一行；它必须自带
-  build_{windows_dll.ps1,linux_so.sh,macos_dylib.sh}、产物落 prebuilt/<平台>/，且不依赖
-  native/<crate> 目录以外的源码（戳记只哈希这个目录）。
+  build_{windows_dll.ps1,linux_so.sh,macos_dylib.sh}、产物落 prebuilt/<平台>/。戳记哈希
+  native/<crate> 目录；经 `#[path = ...]` 编入的目录外源码必须列进
+  native/<crate>/external_sources.txt（一行一个，相对仓库根），它们的 blob 并进戳记
+  （与 tool/native_source_key.sh 同一算法；守卫 native_external_sources_stamp_guard_test）。
 
   -Android：改为备 Android 出包硬依赖的 .so（fushi_compute / fushi_rwkv / fushi_music / fushi_corpus，
   `fushi/android/app/build.gradle` 的 checkFushi*Native 查的那四个），落在
@@ -86,8 +88,11 @@ function Get-NativeHostLayout {
     return @{ Dir = 'linux-x64'; Prefix = 'lib'; Ext = '.so'; Script = 'build_linux_so.sh' }
 }
 
-# native/<crate> 在 HEAD 的 git 树哈希；该目录有未提交改动（含未跟踪文件，不含 target/ prebuilt/
-# 这些 ignored）时返回 $null —— 产物对应的源码说不清，不写戳记、不复用。
+# native/<crate> 的源码内容键：HEAD 的 git 树哈希；有 external_sources.txt 时把列出的
+# crate 外源码在 HEAD 的 blob 一起并成一个 git blob 对象 id（与 tool/native_source_key.sh
+# 逐字节同一算法：「tree <树>」与每个「<路径> <blob>」各占一行，整段交给 `git hash-object --stdin`）。
+# 该目录或列出的外部源码有未提交改动（含未跟踪文件，不含 target/ prebuilt/ 这些 ignored）时
+# 返回 $null —— 产物对应的源码说不清，不写戳记、不复用。
 function Get-NativeSourceTree {
     [OutputType([string])]
     param([string]$RepoRoot, [string]$Crate)
@@ -95,11 +100,40 @@ function Get-NativeSourceTree {
     # PS 5.1 + ErrorActionPreference=Stop 下原生命令写 stderr 会变成终止性错误，
     # 拿不到树哈希只意味着「不复用、照常编」，所以整段兜住。
     try {
-        $dirty = (& git -C $RepoRoot status --porcelain --untracked-files=all -- "native/$Crate" | Out-String).Trim()
+        $extra = @()
+        $listPath = Join-Path $RepoRoot "native/$Crate/external_sources.txt"
+        if (Test-Path -LiteralPath $listPath) {
+            # 读工作区这份（UTF-8，注释是中文）而不是 `git show` 的输出：PS 5.1 按控制台代码页
+            # 解原生命令输出，中文注释会把换行一起吃掉。下面的 status 检查覆盖 native/$Crate，
+            # 这份文件有未提交改动时整段返回 $null，所以它与 HEAD 一致。
+            $extra = @([IO.File]::ReadAllLines($listPath, [Text.Encoding]::UTF8) |
+                ForEach-Object { $_.Trim() } |
+                Where-Object { $_ -and -not $_.StartsWith('#') })
+        }
+        $dirty = (& git -C $RepoRoot status --porcelain --untracked-files=all -- "native/$Crate" @extra | Out-String).Trim()
         if ($dirty) { return $null }
         $tree = (& git -C $RepoRoot rev-parse "HEAD:native/$Crate" | Out-String).Trim()
         if ($LASTEXITCODE -ne 0 -or -not $tree) { return $null }
-        return $tree
+        if ($extra.Count -eq 0) { return $tree }
+        $lines = @("tree $tree")
+        foreach ($src in $extra) {
+            $blob = (& git -C $RepoRoot rev-parse "HEAD:$src" | Out-String).Trim()
+            if ($LASTEXITCODE -ne 0 -or -not $blob) { return $null }
+            $lines += "$src $blob"
+        }
+        # git blob 对象 id = SHA-1("blob <长度>\0" + 内容)，即 `git hash-object --stdin`。
+        $body = [Text.Encoding]::UTF8.GetBytes(($lines -join "`n") + "`n")
+        $header = [Text.Encoding]::ASCII.GetBytes("blob $($body.Length)")
+        $bytes = New-Object byte[] ($header.Length + 1 + $body.Length)
+        [Array]::Copy($header, 0, $bytes, 0, $header.Length)
+        [Array]::Copy($body, 0, $bytes, $header.Length + 1, $body.Length)
+        $sha1 = [Security.Cryptography.SHA1]::Create()
+        try {
+            return (($sha1.ComputeHash($bytes) | ForEach-Object { $_.ToString('x2') }) -join '')
+        }
+        finally {
+            $sha1.Dispose()
+        }
     }
     catch {
         return $null

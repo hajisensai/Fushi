@@ -347,7 +347,7 @@ class MediaServerVideoLibrary {
   }) async {
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
-    if (lease == null) throw StateError('视频刮削资料正在清理');
+    if (lease == null) throw VideoScrapeMaintenanceActiveError();
     try {
       return await VideoCoverMutationGate.runExclusive(() async {
         if (bytes != null) {
@@ -409,6 +409,12 @@ class MediaServerLaunchUnavailable implements Exception {
 /// 的快照照常起播。这一次的结果由客户端留给随后的取流 / 取字幕
 /// （`LaunchItemDetailMemo`）：成功则同一份详情不再重取，失败则取流立刻抛同一个
 /// 错——这里不判失败，也就不用分辨「连不上」和「条目不可播」。
+///
+/// 换线路（gap-remote-7）：详情请求失败时交给 [rerouteAfterFailure]（配置 + 错误）。
+/// 它判出「当前线路不通、另一条已存线路可达」并已写回时返回新配置，这里按新配置
+/// **重建**客户端并在新线路上取这一次详情，起播用的客户端也是新的这个（流地址带
+/// 新线路的 host）；返回 null（不是传输失败 / 没有别的可达线路 / 该类型不自动切）
+/// 时一切照旧。缺省不换线路。
 /// [playlistCollectionId] 为空时只有这一条。
 Future<
   ({
@@ -424,6 +430,8 @@ buildMediaServerLaunch({
   required VideoBookRepository repository,
   required Future<List<MediaServerConfig>> Function() loadConfigs,
   int? playlistCollectionId,
+  Future<MediaServerConfig?> Function(MediaServerConfig config, Object error)?
+  rerouteAfterFailure,
 }) async {
   final MediaServerBookSpec? spec = MediaServerBookSpec.tryParse(
     row.streamSpecJson,
@@ -478,21 +486,41 @@ buildMediaServerLaunch({
       ..clear()
       ..add(spec.info);
   }
-  final MediaServerBrowser browser = config.buildBrowser();
+  MediaServerBrowser browser = config.buildBrowser();
   int startIndex = members.indexWhere(
     (RemoteVideoInfo m) => m.id == spec.itemId,
   );
   if (startIndex < 0) startIndex = 0;
-  try {
-    final MediaServerItem detail = await browser.itemDetail(
+  Future<void> fetchLaunchDetail(MediaServerBrowser from) async {
+    final MediaServerItem detail = await from.itemDetail(
       spec.itemId,
       forLaunch: true,
     );
     if (detail.isPlayable) {
-      members[startIndex] = browser.toRemoteVideoInfo(detail);
+      members[startIndex] = from.toRemoteVideoInfo(detail);
     }
+  }
+
+  try {
+    await fetchLaunchDetail(browser);
   } on Object catch (error) {
     debugPrint('[media-server-library] detail ${spec.itemId} failed: $error');
+    final MediaServerConfig? rerouted = await rerouteAfterFailure?.call(
+      config,
+      error,
+    );
+    if (rerouted != null) {
+      debugPrint('[media-server-library] ${config.sourceId} switched route');
+      browser = rerouted.buildBrowser();
+      try {
+        await fetchLaunchDetail(browser);
+      } on Object catch (retryError) {
+        debugPrint(
+          '[media-server-library] detail ${spec.itemId} failed on the new '
+          'route: $retryError',
+        );
+      }
+    }
   }
   return (
     client: browser.playbackClient,

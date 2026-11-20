@@ -61,6 +61,7 @@ import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/srs/srs_action_error_text.dart';
 
 /// 检查器的页签。
 enum SrsBrowseInspectorTab { preview, edit, history }
@@ -647,7 +648,10 @@ class _EditTabState extends State<_EditTab> {
       if (mounted) setState(() => _justSaved = true);
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsBrowse.inlineEdit', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
     }
   }
 
@@ -663,7 +667,10 @@ class _EditTabState extends State<_EditTab> {
       ErrorLogService.instance.log('SrsBrowse.inlineTags', e, stack);
       // 没写进去：仍算未保存，下次失焦 / 回车再写。
       if (_sameTags(_savedTags, after)) _savedTags = before;
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
     }
   }
 

@@ -44,6 +44,32 @@ void main() {
     expect(body, isNot(contains('setMangaZoomPercent')));
   });
 
+  test('漫画页的缩放回调在 release 下不重建整个阅读页（manga-14）', () {
+    // 捏合 / Ctrl+滚轮每一步都会回报一次倍率；会话倍率在 release 下没有 build
+    // 消费者（右键菜单打开时现读、窗口文档重建时才取），每步 setState 只是白白
+    // 重建整页。唯一的 build 消费者是 debug 命中胶囊，所以 setState 只能挂在
+    // kDebugMode 后面。
+    final String page = File(
+      'lib/src/media/manga/reader/manga_fushi_page.dart',
+    ).readAsStringSync();
+    final int handler = page.indexOf("handlerName: 'onMangaZoomChanged'");
+    expect(handler, greaterThan(0));
+    final int next = page.indexOf('addJavaScriptHandler(', handler);
+    final String body = page.substring(handler, next);
+    final Iterable<RegExpMatch> rebuilds = RegExp(
+      r'setState\(',
+    ).allMatches(body);
+    for (final RegExpMatch rebuild in rebuilds) {
+      final int lineStart = body.lastIndexOf('\n', rebuild.start) + 1;
+      expect(
+        body.substring(lineStart, rebuild.start),
+        contains('kDebugMode'),
+        reason: '缩放回调里的 setState 必须只在 debug 下发生',
+      );
+    }
+    expect(body, isNot(contains('setState(() => _zoomPercent')));
+  });
+
   test('改无关阅读设置不把会话缩放跳回默认值', () {
     final String page = File(
       'lib/src/media/manga/reader/manga_fushi_page.dart',

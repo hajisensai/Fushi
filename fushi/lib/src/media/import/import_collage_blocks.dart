@@ -15,6 +15,7 @@ import 'package:fushi/src/media/import/import_surface_spec.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/fushi_block_color_scope.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_fit_text.dart';
@@ -257,110 +258,113 @@ class ImportGuideBlock extends StatelessWidget {
         : (spec.guideDescriptionWithoutDrop ?? spec.guideDescription);
     final bool showFormats =
         spec.formatGroups.isNotEmpty || spec.pickOnlyFormatGroups.isNotEmpty;
-    return FushiHoverLift(
-      forceLifted: lifted,
-      builder: (BuildContext context, bool hovering) {
-        final double glyphSize = compact ? 46 : 60;
-        final Widget glyph = ImportGlyph(
-          icon: spec.guideIcon,
-          colors: colors,
-          seed: 'import-guide-${spec.id}',
-          size: glyphSize,
-          turns: (hovering || dragging) && motion ? 14 / 360 : 0,
-        );
-        final Widget text = Semantics(
-          container: true,
-          header: true,
-          label: '$title. $description',
-          child: ExcludeSemantics(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text(
-                  title,
-                  style:
-                      (compact
-                              ? context.fushiType.titleMedium
-                              : context.fushiType.titleLarge)
-                          .copyWith(
-                            height: 1.2,
-                            fontWeight: FontWeight.w800,
-                            color: colors.onContainer,
-                          ),
-                ),
-                const SizedBox(height: 6),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 420),
-                  child: Text(
-                    description,
-                    style: context.fushiType.bodySmall.copyWith(
-                      height: 1.5,
-                      color: colors.onContainer,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-        final Widget formats = showFormats
-            ? ImportFormatChip(spec: spec, colors: colors)
-            : const SizedBox.shrink();
-        final Widget content = banner
-            ? Row(
-                children: <Widget>[
-                  glyph,
-                  const SizedBox(width: 18),
-                  Expanded(child: text),
-                  const SizedBox(width: 12),
-                  formats,
-                ],
-              )
-            : Column(
+    return FushiBlockColorScope(
+      colors: colors,
+      child: FushiHoverLift(
+        forceLifted: lifted,
+        builder: (BuildContext context, bool hovering) {
+          final double glyphSize = compact ? 46 : 60;
+          final Widget glyph = ImportGlyph(
+            icon: spec.guideIcon,
+            colors: colors,
+            seed: 'import-guide-${spec.id}',
+            size: glyphSize,
+            turns: (hovering || dragging) && motion ? 14 / 360 : 0,
+          );
+          final Widget text = Semantics(
+            container: true,
+            header: true,
+            label: '$title. $description',
+            child: ExcludeSemantics(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
-                  glyph,
-                  const SizedBox(height: 10),
-                  text,
-                  if (showFormats) ...<Widget>[
-                    const SizedBox(height: 12),
+                  Text(
+                    title,
+                    style:
+                        (compact
+                                ? context.fushiType.titleMedium
+                                : context.fushiType.titleLarge)
+                            .copyWith(
+                              height: 1.2,
+                              fontWeight: FontWeight.w800,
+                              color: colors.onContainer,
+                            ),
+                  ),
+                  const SizedBox(height: 6),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 420),
+                    child: Text(
+                      description,
+                      style: context.fushiType.bodySmall.copyWith(
+                        height: 1.5,
+                        color: colors.onContainer,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+          final Widget formats = showFormats
+              ? ImportFormatChip(spec: spec, colors: colors)
+              : const SizedBox.shrink();
+          final Widget content = banner
+              ? Row(
+                  children: <Widget>[
+                    glyph,
+                    const SizedBox(width: 18),
+                    Expanded(child: text),
+                    const SizedBox(width: 12),
                     formats,
                   ],
-                ],
-              );
-        final Duration fade = fushiMotionDuration(context, FushiMotion.short);
-        return AnimatedContainer(
-          duration: fade,
-          curve: FushiMotion.standard,
-          constraints: BoxConstraints(minHeight: minHeight),
-          decoration: ShapeDecoration(
-            color: colors.container,
-            shape: fushiCoverBlockShape(context, FushiCoverBlockSize.regular),
-            shadows: lifted
-                ? fushiCoverBlockShadows(FushiCoverBlockSize.regular)
-                : const <BoxShadow>[],
-          ),
-          child: CustomPaint(
-            foregroundPainter: dropEnabled
-                ? ImportDashedBorderPainter(
-                    color: dragging
-                        ? colors.onContainer
-                        : colors.onContainer.withValues(alpha: 0.3),
-                    radius: radius,
-                    dashed: !dragging && !eink,
-                    strokeWidth: dragging ? 3 : 2,
-                    inset: dragging ? 4 : 8,
-                  )
-                : null,
-            child: Padding(
-              padding: EdgeInsets.all(compact ? 18 : 22),
-              child: content,
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    glyph,
+                    const SizedBox(height: 10),
+                    text,
+                    if (showFormats) ...<Widget>[
+                      const SizedBox(height: 12),
+                      formats,
+                    ],
+                  ],
+                );
+          final Duration fade = fushiMotionDuration(context, FushiMotion.short);
+          return AnimatedContainer(
+            duration: fade,
+            curve: FushiMotion.standard,
+            constraints: BoxConstraints(minHeight: minHeight),
+            decoration: ShapeDecoration(
+              color: colors.container,
+              shape: fushiCoverBlockShape(context, FushiCoverBlockSize.regular),
+              shadows: lifted
+                  ? fushiCoverBlockShadows(FushiCoverBlockSize.regular)
+                  : const <BoxShadow>[],
             ),
-          ),
-        );
-      },
+            child: CustomPaint(
+              foregroundPainter: dropEnabled
+                  ? ImportDashedBorderPainter(
+                      color: dragging
+                          ? colors.onContainer
+                          : colors.onContainer.withValues(alpha: 0.3),
+                      radius: radius,
+                      dashed: !dragging && !eink,
+                      strokeWidth: dragging ? 3 : 2,
+                      inset: dragging ? 4 : 8,
+                    )
+                  : null,
+              child: Padding(
+                padding: EdgeInsets.all(compact ? 18 : 22),
+                child: content,
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 }
@@ -414,166 +418,177 @@ class ImportMethodBlock extends StatelessWidget {
         ? t.import_in_progress
         : method.description;
     final String? destination = method.destination?.label;
-    return FushiHoverLift(
-      enabled: interactive,
-      builder: (BuildContext context, bool hovering) {
-        final Widget glyph = ImportGlyph(
-          icon: method.icon,
-          colors: colors,
-          seed: 'import-method-${method.id}',
-          size: wide || !showDetails ? 38 : 46,
-          turns: hovering && motion ? -10 / 360 : 0,
-          spinning: busy,
-        );
-        final Widget name = FushiFitText(
-          text: method.label,
-          minSize: showDetails ? 13 : 12,
-          maxSize: showDetails ? 17 : 15,
-          style: TextStyle(
-            height: 1.2,
-            fontWeight: FontWeight.w800,
-            color: colors.onContainer,
-          ),
-        );
-        final TextStyle detailStyle = context.fushiType.bodySmall.copyWith(
-          height: 1.45,
-          fontWeight: FontWeight.w600,
-          color: colors.onContainer,
-        );
-        final List<Widget> details = <Widget>[
-          if ((showDetails || busy) && description != null) ...<Widget>[
-            const SizedBox(height: 6),
-            Text(description, style: detailStyle),
-          ],
-          if (showDetails && !busy && method.note != null) ...<Widget>[
-            const SizedBox(height: 4),
-            Text(
-              method.note!,
-              style: detailStyle.copyWith(fontWeight: FontWeight.w500),
+    return FushiBlockColorScope(
+      colors: colors,
+      child: FushiHoverLift(
+        enabled: interactive,
+        builder: (BuildContext context, bool hovering) {
+          final Widget glyph = ImportGlyph(
+            icon: method.icon,
+            colors: colors,
+            seed: 'import-method-${method.id}',
+            size: wide || !showDetails ? 38 : 46,
+            turns: hovering && motion ? -10 / 360 : 0,
+            spinning: busy,
+          );
+          final Widget name = FushiFitText(
+            text: method.label,
+            minSize: showDetails ? 13 : 12,
+            maxSize: showDetails ? 17 : 15,
+            style: TextStyle(
+              height: 1.2,
+              fontWeight: FontWeight.w800,
+              color: colors.onContainer,
             ),
-          ],
-        ];
-        final Widget arrow = AnimatedSlide(
-          duration: fushiMotionDuration(context, FushiMotion.medium),
-          curve: FushiMotion.release,
-          offset: Offset(hovering && motion ? 4 / _goSize : 0, 0),
-          child: SizedBox.square(
-            dimension: _goSize,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: colors.onContainer.withValues(alpha: 0.16),
+          );
+          final TextStyle detailStyle = context.fushiType.bodySmall.copyWith(
+            height: 1.45,
+            fontWeight: FontWeight.w600,
+            color: colors.onContainer,
+          );
+          final List<Widget> details = <Widget>[
+            if ((showDetails || busy) && description != null) ...<Widget>[
+              const SizedBox(height: 6),
+              Text(description, style: detailStyle),
+            ],
+            if (showDetails && !busy && method.note != null) ...<Widget>[
+              const SizedBox(height: 4),
+              Text(
+                method.note!,
+                style: detailStyle.copyWith(fontWeight: FontWeight.w500),
               ),
-              child: Center(
-                child: FushiIcon(
-                  FushiIcons.forward,
-                  size: 18,
-                  color: colors.onContainer,
+            ],
+          ];
+          final Widget arrow = AnimatedSlide(
+            duration: fushiMotionDuration(context, FushiMotion.medium),
+            curve: FushiMotion.release,
+            offset: Offset(hovering && motion ? 4 / _goSize : 0, 0),
+            child: SizedBox.square(
+              dimension: _goSize,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: colors.onContainer.withValues(alpha: 0.16),
+                ),
+                child: Center(
+                  child: FushiIcon(
+                    FushiIcons.forward,
+                    size: 18,
+                    color: colors.onContainer,
+                  ),
                 ),
               ),
             ),
-          ),
-        );
-        final Widget go = ExcludeSemantics(
-          child: Row(
-            children: <Widget>[
-              if (showDetails && destination != null)
-                Expanded(
-                  child: Text(
-                    destination,
-                    style: context.fushiType.labelMedium.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: colors.onContainer,
-                    ),
-                  ),
-                )
-              else
-                const Spacer(),
-              arrow,
-            ],
-          ),
-        );
-        final Widget body = wide
-            ? Row(
-                children: <Widget>[
-                  glyph,
-                  const SizedBox(width: 14),
+          );
+          final Widget go = ExcludeSemantics(
+            child: Row(
+              children: <Widget>[
+                if (showDetails && destination != null)
                   Expanded(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[name, ...details],
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  if (showDetails && destination != null) ...<Widget>[
-                    ExcludeSemantics(
-                      child: Text(
-                        destination,
-                        style: context.fushiType.labelMedium.copyWith(
-                          fontWeight: FontWeight.w700,
-                          color: colors.onContainer,
-                        ),
+                    child: Text(
+                      destination,
+                      style: context.fushiType.labelMedium.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: colors.onContainer,
                       ),
                     ),
-                    const SizedBox(width: 8),
-                  ],
-                  ExcludeSemantics(child: arrow),
-                ],
-              )
-            // 去向行贴底：非定位的内容列预留去向行高度，去向行定位在块底——
-            // 块按 [minHeight] 撑开时它在底部，内容长了块随之增高（不出溢出）。
-            : Stack(
-                children: <Widget>[
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: _goSize + 10),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        glyph,
-                        const SizedBox(height: 10),
-                        name,
-                        ...details,
-                      ],
+                  )
+                else
+                  const Spacer(),
+                arrow,
+              ],
+            ),
+          );
+          final Widget body = wide
+              ? Row(
+                  children: <Widget>[
+                    glyph,
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[name, ...details],
+                      ),
                     ),
-                  ),
-                  PositionedDirectional(start: 0, end: 0, bottom: 0, child: go),
-                ],
-              );
-        return AnimatedOpacity(
-          opacity: dimmed ? 0.45 : 1,
-          duration: fushiMotionDuration(context, FushiMotion.short),
-          curve: FushiMotion.standard,
-          child: Semantics(
-            enabled: interactive,
-            label: <String>[
-              method.label,
-              if (description != null) description,
-              if (showDetails && !busy && method.note != null) method.note!,
-            ].join('. '),
-            excludeSemantics: true,
-            button: true,
-            onTap: interactive ? onTap : null,
-            child: FushiCard(
-              key: ValueKey<String>('import-method-${method.id}'),
-              focusId: FushiFocusId('import-method-${method.id}'),
+                    const SizedBox(width: 12),
+                    if (showDetails && destination != null) ...<Widget>[
+                      ExcludeSemantics(
+                        child: Text(
+                          destination,
+                          style: context.fushiType.labelMedium.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: colors.onContainer,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    ExcludeSemantics(child: arrow),
+                  ],
+                )
+              // 去向行贴底：非定位的内容列预留去向行高度，去向行定位在块底——
+              // 块按 [minHeight] 撑开时它在底部，内容长了块随之增高（不出溢出）。
+              : Stack(
+                  children: <Widget>[
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: _goSize + 10),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          glyph,
+                          const SizedBox(height: 10),
+                          name,
+                          ...details,
+                        ],
+                      ),
+                    ),
+                    PositionedDirectional(
+                      start: 0,
+                      end: 0,
+                      bottom: 0,
+                      child: go,
+                    ),
+                  ],
+                );
+          return AnimatedOpacity(
+            opacity: dimmed ? 0.45 : 1,
+            duration: fushiMotionDuration(context, FushiMotion.short),
+            curve: FushiMotion.standard,
+            child: Semantics(
+              enabled: interactive,
+              label: <String>[
+                method.label,
+                if (description != null) description,
+                if (showDetails && !busy && method.note != null) method.note!,
+              ].join('. '),
+              excludeSemantics: true,
+              button: true,
               onTap: interactive ? onTap : null,
-              color: colors.container,
-              shape: fushiCoverBlockShape(context, FushiCoverBlockSize.regular),
-              borderRadius: BorderRadius.circular(radius),
-              padding: EdgeInsets.zero,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: wide ? 96 : minHeight),
-                child: Padding(
-                  padding: EdgeInsets.all(showDetails ? 16 : 12),
-                  child: body,
+              child: FushiCard(
+                key: ValueKey<String>('import-method-${method.id}'),
+                focusId: FushiFocusId('import-method-${method.id}'),
+                onTap: interactive ? onTap : null,
+                color: colors.container,
+                shape: fushiCoverBlockShape(
+                  context,
+                  FushiCoverBlockSize.regular,
+                ),
+                borderRadius: BorderRadius.circular(radius),
+                padding: EdgeInsets.zero,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: wide ? 96 : minHeight),
+                  child: Padding(
+                    padding: EdgeInsets.all(showDetails ? 16 : 12),
+                    child: body,
+                  ),
                 ),
               ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }

@@ -12,12 +12,13 @@ use serde_json::{Value, json};
 use super::preview::{NOTE_SQL, preview};
 use super::tests::{N1, N2, N3, N4, Pair, T0, card, library, on_p3};
 use super::training::{
-    COUNT_SINCE_SQL, COUNT_SQL, MEMBER_SQL, SCAN_SQL, TAIL_SQL, calibration_items, history_states,
+    COUNT_SINCE_SQL, COUNT_SQL, SCAN_SQL, TAIL_SQL, calibration_items, history_states,
     optimizer_items, rwkv_cards, rwkv_log_tail, rwkv_replay, stat_projection,
 };
 use crate::gen4::op::tests::id;
 use crate::gen4::op::{Body4, Log4};
 use crate::projection::{Alg, Day};
+use crate::store::gen4::cache::LOG_REP_SQL;
 use crate::store::gen4::derive::{Ref, SEQ_BASE, SEQ_INSERT_SQL};
 use crate::store::gen4::truth::Truth;
 use crate::store::projections::{self, RwkvRange};
@@ -433,12 +434,12 @@ fn fingerprint_tail_and_scan_statements_use_the_arrival_order() {
         "{NOTE_SQL}: {steps:?}"
     );
     // 判别名类代表的点查（每行尾巴每个成员一次）：走 `log_id (col, id, k)`，不按 `log_ix` 主键 (col=?) 扫整个集合。
-    let steps = plan(MEMBER_SQL);
+    let steps = plan(LOG_REP_SQL);
     assert!(
         steps
             .iter()
             .any(|s| s.contains("log_ix USING") && s.contains("INDEX log_id (col=? AND id=?)")),
-        "{MEMBER_SQL}: {steps:?}"
+        "{LOG_REP_SQL}: {steps:?}"
     );
     // 每条日志进索引时取落库序：`log_seq` 主键上的 MAX（不扫、不建临时表）。
     let steps = plan(SEQ_INSERT_SQL);

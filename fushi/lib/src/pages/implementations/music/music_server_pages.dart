@@ -788,6 +788,9 @@ class MusicServerAlbumBlockCard extends StatelessWidget {
       trailing: musicServerPreviewOnly(browser)
           ? const MusicPreviewBadge()
           : null,
+      // 服务器（含 Apple Music）专辑只有封面图、没有盘面图来源：不画唱片，宽块
+      // 走 W 原型的无盘专辑海报版式。
+      albumPoster: true,
       onTap: () => _openServerAlbum(context, browser, album),
     ),
   );

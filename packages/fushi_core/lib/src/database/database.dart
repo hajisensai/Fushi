@@ -34,6 +34,7 @@ import 'sqlite_busy_timeout.dart';
 import 'sync_tombstone_kind.dart';
 import 'tables.dart';
 import 'tag_host_kind.dart';
+import 'media_link_ai_verdict_tables.dart';
 import 'people_tables.dart';
 import 'theme_song_span_tables.dart';
 
@@ -55,6 +56,7 @@ part 'database_music.part.dart';
 part 'database_music_identity.part.dart';
 part 'database_music_scrape.part.dart';
 part 'database_theme_song_spans.part.dart';
+part 'database_media_link_ai_verdicts.part.dart';
 part 'database_people.part.dart';
 part 'database_ai_agent.part.dart';
 
@@ -953,6 +955,7 @@ void _requireOneVideoMetadataOwner({
     MusicPlayEvents,
     MusicResumePoints,
     VideoThemeSongSpans,
+    MediaLinkAiVerdicts,
     MusicScrapeMeta,
     MusicMetadataRawSnapshots,
     MusicLockedFields,
@@ -982,6 +985,7 @@ class FushiDatabase extends _$FushiDatabase
         _FushiDbMusicIdentity,
         _FushiDbMusicScrape,
         _FushiDbThemeSongSpans,
+        _FushiDbMediaLinkAiVerdicts,
         _FushiDbPeople,
         _FushiDbAiAgent,
         _FushiDbItemScrape {
@@ -2565,8 +2569,8 @@ class FushiDatabase extends _$FushiDatabase
           await _ensureProfileUidIndex();
         }
         // srs_* 表从 2026-10-23 起归 Rust 独占的 srs.db（docs/specs/2026-10-23-srs-rust-store.md），
-        // 不再在 Drift 里声明；老库仍按当年的形状建出来，由 SrsDbStore 打开前的一次性搬迁
-        // （fushi_engine srs_legacy_store_migration.dart）搬走后删除。
+        // 不再在 Drift 里声明；老库仍按当年的形状建出来（旧版本的一次性搬迁搬走后删除；新代不搬，
+        // 主库里还有这些表时 SrsStorage.open 明确拒绝，见 fushi_engine srs_storage.dart）。
         await _createLegacySrsTables(kLegacySrsV117Tables);
         await _ensureSrsIndexes();
       }
@@ -3223,6 +3227,54 @@ class FushiDatabase extends _$FushiDatabase
           await m.createTable(itemImages);
         }
       }
+      if (from < 162) {
+        // v162：collection_relations 的起点与已绑定目标可以是单视频（挂在单个视频
+        // 上的作品，散装电影）——加 book_uid（起点，FK video_books cascade）与
+        // target_book_uid（已绑定目标，FK video_books setNull），collection_id 放宽
+        // 为可空，CHECK 起点二选一 / 目标至多一个，唯一键补 (book_uid, source,
+        // subject_id)。NOT NULL 与内联约束 SQLite 不能单独改，走 alterTable 按当前
+        // Dart 定义重建 + 按列名拷贝（v113 先例）：存量行（起点全是合集）的 `id`
+        // 与各列原值保留，新两列 NULL，原有外键语义（删合集 cascade、目标合集被删
+        // setNull）不变。没有表引用 collection_relations，FK OFF/ON 夹住只是沿用
+        // 重建惯例。幂等守卫：只在还缺 book_uid 时重建，mid-ladder 由 v66
+        // createTable 按当前定义建出的表已是新 shape 直接短路。
+        if (await _tableExists('collection_relations') &&
+            !await _columnExists('collection_relations', 'book_uid')) {
+          final bool foreignKeysWereOn = await _foreignKeysEnabled();
+          await customStatement('PRAGMA foreign_keys = OFF');
+          try {
+            await m.alterTable(
+              TableMigration(
+                collectionRelations,
+                newColumns: [
+                  collectionRelations.bookUid,
+                  collectionRelations.targetBookUid,
+                ],
+              ),
+            );
+          } finally {
+            if (foreignKeysWereOn) {
+              await customStatement('PRAGMA foreign_keys = ON');
+            }
+          }
+        }
+      }
+      if (from < 163) {
+        // v163：media_link_ai_verdicts——作品图谱 AI 裁决的本机缓存（一对端点 + AI
+        // 当时看到的内容的摘要 → 结论），同样的问题不再问第二遍。设备本地、纯缓存、
+        // 无外键（见 media_link_ai_verdict_tables.dart）。纯建表；幂等守卫同 v131。
+        if (!await _tableExists('media_link_ai_verdicts')) {
+          await m.createTable(mediaLinkAiVerdicts);
+        }
+      }
+      // v164：表结构不变（空迁移；W3 合流时由 v156 顺延到 v159，第六波合流再顺延到 develop 的
+      // v159–v161 之后，整批合入时再顺延到 v162 collection_relations / v163 media_link_ai_verdicts 之后）。
+      // 复习换代第二段（协议 4，G11-4 / D33）把整包备份的复习部分换成按集合导出的
+      // 操作流、服务端备份换成新代复习库：主库 schema 升一档是旧版本拒收新备份的唯一闸门（旧版本见到更新的主库，
+      // 在动任何文件之前拒绝整份备份），本身不改任何表。
+      // 阶梯之后（列已齐）补统计分区索引：v105 后新装的库 onCreate 曾漏建
+      // （video-36i），每次升 schema 都幂等补一次。
+      await _ensureStatIndexes();
     },
     onCreate: (m) async {
       await m.createAll();
@@ -3245,6 +3297,7 @@ class FushiDatabase extends _$FushiDatabase
       await _ensureAiAgentIndexes();
       await _ensureAiAgentSessionProfileIndex();
       await _ensureAiAgentSessionOriginIndex();
+      await _ensureStatIndexes();
     },
     beforeOpen: (details) async {
       // Second, belt-and-suspenders downgrade guard. drift calls beforeOpen
