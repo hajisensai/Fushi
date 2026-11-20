@@ -109,13 +109,15 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
     recorded for undo (admin only, use `--dry-run` first).
   - Profiles whose sync location is end-to-end encrypted are not served in v1. Serving them
     would need the passphrase on the server.
-  - The server does not publish a profile info file (`profile.json`) for the collections it
-    serves. The app writes it per device under `v4/devices/<device>/` (`srsPublishProfileInfo`,
-    called from `SrsProfileLinker.publish`); the server's `srsRunLocationRound` call passes no
-    `publishDeviceInfo`. A gen4 collection that only the server ever wrote to therefore shows no
-    name or note count in other devices' link lists. Fixing it needs a name source on the server
-    (it only mirrors names reported by devices today) and the note count from the kernel
-    (`userNoteCount`). Recorded by the SRS gen4 wave 5 identity tail (handoff, "第五波 G9 身份收尾").
+  - Profile info file (`profile.json`): after each successful round the server publishes its own
+    file under `v4/devices/<its gen4 device>/` (`ServerSrsProfile._publishInfo`, same writer as the
+    app's `SrsProfileLinker.publish`), and hands its device name (`device_name` in the yaml) to the
+    kernel as the model through `publishDeviceInfo`. The note count comes from the kernel
+    (`userNoteCount`). The name is, in order: the admin's name for that profile (yaml
+    `srs.profile_names`, `PUT /api/admin/srs {profileNames}`, WebUI Review page, `ctl srs config`),
+    else the first name another device reports in that directory, else the name the server itself
+    published last (so the name survives after the naming device leaves). The server does not
+    publish `mergingInto` (it never merges profiles) and does not write join hints.
   - AnkiConnect `getProfiles` reports one profile per key.
   - Device trust (srs.db v29, BUG-4306, `native/fushi_fsrs/src/store/sync2/trust.rs`) is
     confirmed on the server itself: a device that first syncs after the server's copy of a
@@ -136,6 +138,12 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
   - The FSRS optimizer is not run on the server yet (spec §4.6). `SrsOptimizationScheduler`
     already lives in the engine; the server's collections pick up parameters optimized on
     other devices through the normal sync.
+  - Old-version retained copy (D32): the WebUI Review page shows it while the sealed copy is there
+    (size, due date or "kept until deleted", the auto-delete error) with a "Delete retained copy"
+    button behind a danger confirmation; `fushi_server ctl srs retained [status]` /
+    `ctl srs retained delete --yes`. Both use the engine routes `GET /api/admin/srs/retained` and
+    `POST …/retained/delete {confirm: true}` (`server.srs.retained.*` in the op catalog). There is no
+    op for naming a profile (`profileNames` is admin config only).
   - The server op catalog (`admin_ops.dart`) describes `server.srs.status`, `.profiles`,
     `.devices` (read only), `.sync` (irreversible, user confirms), `.mining-target.set`, `.mining-deck.set`,
     `.rollover-hour.set` and `.rwkv-model.set` (undoable). Left out on purpose: the AnkiConnect settings (keys are
