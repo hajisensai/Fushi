@@ -2977,28 +2977,22 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         ),
         child: FushiPressScale(
           enabled: enabled,
-          // 快捷键提示与评分按钮同一写法（空格 / Enter / 手柄 A 都翻面，见 _onKey）。
-          child: FushiTooltip(
-            message: _withKeyHint(
-              t.srs_review_show_answer,
-              ShortcutAction.srsReviewPrimary,
-            ),
-            child: SizedBox(
-              width: double.infinity,
-              child: FushiFilledButton.icon(
-                key: const ValueKey<String>('srs-show-answer'),
-                onPressed: enabled ? _showAnswer : null,
-                size: FushiButtonSize.m,
-                style: apple
-                    ? const ButtonStyle(
-                        minimumSize: WidgetStatePropertyAll<Size>(
-                          Size(_kBarButtonHeightApple, _kBarButtonHeightApple),
-                        ),
-                      )
-                    : null,
-                icon: const FushiIcon(FushiIcons.visibility),
-                label: Text(t.srs_review_show_answer),
-              ),
+          // 按钮自带文字，悬停不再弹重复的文字 + 快捷键提示（用户 11-20）。
+          child: SizedBox(
+            width: double.infinity,
+            child: FushiFilledButton.icon(
+              key: const ValueKey<String>('srs-show-answer'),
+              onPressed: enabled ? _showAnswer : null,
+              size: FushiButtonSize.m,
+              style: apple
+                  ? const ButtonStyle(
+                      minimumSize: WidgetStatePropertyAll<Size>(
+                        Size(_kBarButtonHeightApple, _kBarButtonHeightApple),
+                      ),
+                    )
+                  : null,
+              icon: const FushiIcon(FushiIcons.visibility),
+              label: Text(t.srs_review_show_answer),
             ),
           ),
         ),
@@ -3200,12 +3194,6 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         tone: tone,
         interval: showIntervals ? _ratingInterval(rating) : '',
         label: label,
-        tooltip: _withKeyHint(label, switch (rating) {
-          1 => ShortcutAction.srsReviewAgain,
-          2 => ShortcutAction.srsReviewHard,
-          3 => ShortcutAction.srsReviewGood,
-          _ => ShortcutAction.srsReviewEasy,
-        }),
         onPressed: _busy ? null : () => _rate(rating),
       ),
     );
@@ -3235,14 +3223,12 @@ class SrsRatingButton extends StatelessWidget {
     required this.tone,
     required this.interval,
     required this.label,
-    required this.tooltip,
     required this.onPressed,
   });
 
   final SrsRatingTone tone;
   final String interval;
   final String label;
-  final String tooltip;
   final VoidCallback? onPressed;
 
   @override
@@ -3283,7 +3269,7 @@ class SrsRatingButton extends StatelessWidget {
     final Widget button = apple
         ? FushiPlainButton(
             onPressed: onPressed,
-            semanticLabel: tooltip,
+            semanticLabel: label,
             borderRadius: BorderRadius.circular(
               _SrsReviewPageState._kBarButtonHeightApple / 2,
             ),
@@ -3324,10 +3310,8 @@ class SrsRatingButton extends StatelessWidget {
             ),
             child: content(enabled ? c.foreground : disabledForeground),
           );
-    return FushiPressScale(
-      enabled: onPressed != null,
-      child: FushiTooltip(message: tooltip, child: button),
-    );
+    // 按钮自带评价词，悬停不再弹重复的文字 + 快捷键提示（用户 11-20）。
+    return FushiPressScale(enabled: onPressed != null, child: button);
   }
 }
 

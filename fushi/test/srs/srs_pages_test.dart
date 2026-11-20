@@ -42,6 +42,8 @@ import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiTooltip;
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -1325,6 +1327,14 @@ void main() {
         findsOneWidget,
       );
       expect(find.textContaining('食べる'), findsWidgets);
+      // 按钮自带文字：悬停不弹重复的「文字 + 快捷键」提示（用户 11-20）。
+      expect(
+        find.ancestor(
+          of: find.byKey(const ValueKey<String>('srs-show-answer')),
+          matching: find.byType(FushiTooltip),
+        ),
+        findsNothing,
+      );
 
       await tester.tap(find.byKey(const ValueKey<String>('srs-show-answer')));
       await _settle(tester);
@@ -1334,6 +1344,13 @@ void main() {
       );
       for (int r = 1; r <= 4; r++) {
         expect(find.byKey(ValueKey<String>('srs-rate-$r')), findsOneWidget);
+        expect(
+          find.descendant(
+            of: find.byKey(ValueKey<String>('srs-rate-$r')),
+            matching: find.byType(FushiTooltip),
+          ),
+          findsNothing,
+        );
       }
       // 「简单」直接毕业到复习队列：至少有一个按天计的间隔预览（带 fuzz，不钉具体值）。
       expect(
@@ -1896,10 +1913,7 @@ void main() {
       final BuildContext context = tester.element(band(parent));
       expect(
         bandColor(parent),
-        fushiPosterColors(
-          context,
-          fushiPosterHue('srs-deck:Parent'),
-        ).container,
+        fushiPosterColors(context, fushiPosterHue('srs-deck:Parent')).container,
       );
 
       // 计数是带语义色的 chip（每行一组）。
