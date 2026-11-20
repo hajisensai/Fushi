@@ -42,6 +42,7 @@ part 'database.g.dart';
 part 'database_infra.part.dart';
 part 'database_prefs_media.part.dart';
 part 'database_video_domain.part.dart';
+part 'database_video_scrape_journal.part.dart';
 part 'database_library.part.dart';
 part 'database_statistics.part.dart';
 part 'database_content_misc.part.dart';
@@ -977,6 +978,7 @@ class FushiDatabase extends _$FushiDatabase
         _FushiDbContentMisc,
         _FushiDbStatistics,
         _FushiDbVideoDomain,
+        _FushiDbVideoScrapeJournal,
         _FushiDbUpdateFeed,
         _FushiDbMangaDownload,
         _FushiDbWebBrowser,

@@ -68,6 +68,7 @@ import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi/src/media/torrent/anime_download_subscription.dart'
     show AnimeDownloadSubscription, AnimeDownloadSubscriptionStore;
 import 'package:fushi/src/media/video/video_home_layout.dart';
+import 'package:fushi/src/media/video/video_library_scrape_maps.dart';
 import 'package:fushi/src/media/video/video_duration_pref.dart';
 import 'package:fushi/src/media/video/video_online_services_banner.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
@@ -766,26 +767,35 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   Map<String, DateTime> _watchAtByUid = const <String, DateTime>{};
   Map<String, DateTime> _legacyWatchAtByTitle = const <String, DateTime>{};
 
-  /// TODO-2486：条目刮削年份（uid → 年份；无资料不入映射 = 「未知」桶）与合集
-  /// 刮削资料（hero 轮播的 backdrop / 简介 / airDate），与 [_loadLibraryMaps]
-  /// 同批预取（批量 DAO，无 N+1）。
-  Map<String, int> _airYearByUid = const <String, int>{};
+  /// TODO-2486：刮削展示映射（条目年份、合集资料、作品 / 图片、分集剧照、特典、
+  /// 媒体图组），与 [_loadLibraryMaps] 同批预取（批量 DAO，无 N+1）；刮削写入之后
+  /// 只按 [_scrapeCursor] 以来的增量替换变了的键（[_patchScrapePresentation]）。
+  VideoLibraryScrapeMaps _scrapeMaps = VideoLibraryScrapeMaps.empty;
 
-  Map<int, CollectionScrapeMetaRow> _collectionScrapeMetaById =
-      const <int, CollectionScrapeMetaRow>{};
-  Map<int, VideoMetadataWorkRow> _metadataWorkByCollection =
-      const <int, VideoMetadataWorkRow>{};
-  Map<String, VideoMetadataWorkRow> _metadataWorkByBook =
-      const <String, VideoMetadataWorkRow>{};
-  Map<int, List<VideoMetadataImageRow>> _metadataImagesByWork =
-      const <int, List<VideoMetadataImageRow>>{};
+  /// [_scrapeMaps]（以及书架行的标题 / 封面）已与刮削展示日志对齐到的游标：
+  /// 此游标之前的全部刮削写入都已反映在页面状态里。null = 还没有整表轮次落地。
+  ///
+  /// 只进不退：整表轮次落地前先按日志补齐到不低于它（[_catchUpScrapeMaps]），
+  /// 增量只在不低于它时落地——页面不会被更旧的快照倒回去。
+  VideoScrapeJournalCursor? _scrapeCursor;
+
+  Map<String, int> get _airYearByUid => _scrapeMaps.airYearByUid;
+  Map<int, CollectionScrapeMetaRow> get _collectionScrapeMetaById =>
+      _scrapeMaps.collectionScrapeMetaById;
+  Map<int, VideoMetadataWorkRow> get _metadataWorkByCollection =>
+      _scrapeMaps.metadataWorkByCollection;
+  Map<String, VideoMetadataWorkRow> get _metadataWorkByBook =>
+      _scrapeMaps.metadataWorkByBook;
+  Map<int, List<VideoMetadataImageRow>> get _metadataImagesByWork =>
+      _scrapeMaps.metadataImagesByWork;
 
   /// 每个本地视频文件绑定的分集与各集刮削图（`episodeId` 归属），只收至少一集
   /// 带图的文件；主卡按续播点挑集（[_episodeStillProvider]）。
-  Map<String, List<VideoFileEpisodeStills>> _fileEpisodesByBook =
-      const <String, List<VideoFileEpisodeStills>>{};
-  Map<String, int> _runtimeMinutesByBookUid = const <String, int>{};
-  Set<String> _localExtraBookUids = const <String>{};
+  Map<String, List<VideoFileEpisodeStills>> get _fileEpisodesByBook =>
+      _scrapeMaps.fileEpisodesByBook;
+  Map<String, int> get _runtimeMinutesByBookUid =>
+      _scrapeMaps.runtimeMinutesByBookUid;
+  Set<String> get _localExtraBookUids => _scrapeMaps.localExtraBookUids;
 
   /// 「已更新未看」行：订阅（新 Drift 订阅 + 旧 AniList JSON 订阅）解析到的
   /// 合集 id（[subscribedVideoCollectionIds]），与 [_loadLibraryMaps] 同批预取。
@@ -808,11 +818,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   int _libraryMapsAppliedSequence = 0;
 
   /// v68 附加图组（media_images）按归属分桶：合集（hero 背景/logo、续播行横卡）
-  /// 与散装视频（续播行横卡）。与 [_loadLibraryMaps] 同批预取（一次全表查询）。
-  Map<int, List<MediaImageRow>> _mediaImagesByCollection =
-      const <int, List<MediaImageRow>>{};
-  Map<String, List<MediaImageRow>> _mediaImagesByBookUid =
-      const <String, List<MediaImageRow>>{};
+  /// 与散装视频（续播行横卡）。属于 [_scrapeMaps]。
+  Map<int, List<MediaImageRow>> get _mediaImagesByCollection =>
+      _scrapeMaps.mediaImagesByCollection;
+  Map<String, List<MediaImageRow>> get _mediaImagesByBookUid =>
+      _scrapeMaps.mediaImagesByBookUid;
 
   /// TODO-2486：年份 / 看完状态下拉筛选（本地即筛，刻意不持久化——与搜索词同
   /// 一决定：下次进库还挂着上次的筛选只会让人以为库空了）。
@@ -1001,6 +1011,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       _remoteFuture = _loadRemoteVideos();
     });
     _reloadStaleWatchProgress();
+    _reloadStaleScrapePresentation();
     unawaited(_refreshVideoRemoteTargets());
     // 切回视频页**不再**重跑在线补刮 / 待确认清单（2026-10 切 tab 卡顿）：那一轮
     // 是「每个来源全库重列 + 逐文件 parseVideoFilename + 逐作品查规范身份」，全压在
@@ -1025,6 +1036,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   @override
   void onShownToUserAgain() {
     _reloadStaleWatchProgress();
+    _reloadStaleScrapePresentation();
   }
 
   /// BUG-3610：观看进度变了。前台 → 防抖后走播放返回同一条窄刷新（书架列表 +
@@ -1278,7 +1290,48 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
 
   bool _scrapeBatchWasBusy = false;
 
+  /// 本页不在眼前（上面压着播放页 / 详情页，或停在别的 tab）时到达的刮削展示
+  /// 变化：只记一笔，露出来再补（拍板 design-nmv-video16-scrape-refresh ①）。
+  /// 播放期间刮削批次照跑，库页每 2 s 一轮的重算用户一帧都看不到，却占着 UI
+  /// isolate，盖在上面的播放页会掉帧（与 BUG-4895 同理）。
+  _ScrapePresentationStale _scrapePresentationStale =
+      _ScrapePresentationStale.none;
+
+  /// 增量刷新单飞：在途时再来的请求合并成在途结束后再跑一轮。
+  bool _scrapePatchInFlight = false;
+  bool _scrapePatchQueued = false;
+
+  /// 增量涉及的键多于此数时直接整表重读（全量清理一次碰到全库，逐键分块重读
+  /// 反而比十几张全表查询更慢）。
+  static const int _scrapePatchMaxKeys = 500;
+
+  void _markScrapePresentationStale(_ScrapePresentationStale stale) {
+    if (stale.index > _scrapePresentationStale.index) {
+      _scrapePresentationStale = stale;
+    }
+  }
+
+  /// 露出来时补做被推迟的刮削展示刷新（没有推迟的就什么都不做）。
+  void _reloadStaleScrapePresentation() {
+    if (!mounted || !isShownToUser) return;
+    final _ScrapePresentationStale stale = _scrapePresentationStale;
+    _scrapePresentationStale = _ScrapePresentationStale.none;
+    switch (stale) {
+      case _ScrapePresentationStale.none:
+        return;
+      case _ScrapePresentationStale.changed:
+        _reloadAfterScrapePresentationChanged();
+      case _ScrapePresentationStale.batchFinished:
+        _refreshAfterScrapeBatch();
+    }
+  }
+
   void _onScrapePresentationChanged(void _) {
+    if (!isShownToUser) {
+      _scrapePresentationReloadDebounce?.cancel();
+      _markScrapePresentationStale(_ScrapePresentationStale.changed);
+      return;
+    }
     if (widget.scrapeTaskController?.isBusy == true) {
       if (_scrapePresentationReloadDebounce?.isActive == true) return;
       _scrapePresentationReloadDebounce = Timer(
@@ -1296,13 +1349,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
 
   void _reloadAfterScrapePresentationChanged() {
     if (!mounted) return;
-    if (widget.scrapeTaskController?.isBusy == true) {
-      // 批次中只刷列表与映射：封面回填与待确认清单（每次都要全来源重新规划 +
-      // 逐作品查身份）留给批次结束那一次。
-      _refresh(backfillCovers: false);
+    if (!isShownToUser) {
+      _markScrapePresentationStale(_ScrapePresentationStale.changed);
       return;
     }
-    _refresh();
+    // 只重读变了的作品（[_patchScrapePresentation]），不再整表重读重算。
+    unawaited(_patchScrapePresentation());
+    // 批次中封面回填与待确认清单（每次都要全来源重新规划 + 逐作品查身份）留给
+    // 批次结束那一次。
+    if (widget.scrapeTaskController?.isBusy == true) return;
+    _maybeBackfillCovers();
     // 刚确认完一个作品的身份，提醒条上的数字要跟着掉下去。只读重算：这里的
     // 触发源就是刮削写入（含补刮批次自己的），不能再发起补刮（BUG-3072）。
     unawaited(_refreshPendingScrapeCount());
@@ -1317,7 +1373,157 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     if (busy) return;
     _scrapePresentationReloadDebounce?.cancel();
     _scrapePresentationReloadDebounce = null;
-    _reloadAfterScrapePresentationChanged();
+    if (!mounted) return;
+    if (!isShownToUser) {
+      _markScrapePresentationStale(_ScrapePresentationStale.batchFinished);
+      return;
+    }
+    _refreshAfterScrapeBatch();
+  }
+
+  /// 批次结束的兜底：整表重读一次（作废式）+ 封面回填 + 待确认数。批次中的增量
+  /// 已经让页面跟上了，这一轮兜的是节流窗口尾巴与封面回填。
+  void _refreshAfterScrapeBatch() {
+    _refresh();
+    unawaited(_refreshPendingScrapeCount());
+  }
+
+  /// 刮削写入后的增量刷新：按 [_scrapeCursor] 以来的日志只重读变了的作品 / 视频 /
+  /// 合集，替换 [_scrapeMaps] 里这些键，书架行只换标题 / 封面变了的那几行。
+  ///
+  /// 不作废在途的整表轮次（那会丢掉它们带的合集 / 来源等其余映射），但清理不变式
+  /// 照旧成立：整表轮次落地前先按日志补齐（[_catchUpScrapeMaps]），清理之前发起、
+  /// 清理之后才落地的旧轮带不回已清掉的资料。
+  Future<void> _patchScrapePresentation() async {
+    if (_scrapePatchInFlight) {
+      _scrapePatchQueued = true;
+      return;
+    }
+    final VideoScrapeJournalCursor? since = _scrapeCursor;
+    if (since == null) {
+      // 首轮整表还没落地：它落地前自己会按日志补齐。首轮失败（游标一直没有）时
+      // 退回整表重读。
+      if (_libraryMapsReady) _refresh(backfillCovers: false);
+      return;
+    }
+    _scrapePatchInFlight = true;
+    try {
+      await _patchScrapePresentationFrom(since);
+    } finally {
+      _scrapePatchInFlight = false;
+      if (_scrapePatchQueued && mounted) {
+        _scrapePatchQueued = false;
+        unawaited(_patchScrapePresentation());
+      }
+    }
+  }
+
+  Future<void> _patchScrapePresentationFrom(
+    VideoScrapeJournalCursor since,
+  ) async {
+    final int requestGeneration = _libraryMapsRequestGeneration;
+    final AppModel appModel = ref.read(appProvider);
+    final FushiDatabase db = appModel.database;
+    final VideoScrapePresentationDelta? delta = await db
+        .readVideoScrapePresentationDelta(since);
+    if (!mounted) return;
+    if (delta == null || delta.keyCount > _scrapePatchMaxKeys) {
+      // 日志重装过 / 被裁掉（增量不完整），或增量比整表还大：整表重读。
+      _refresh(backfillCovers: false);
+      return;
+    }
+    if (delta.isEmpty) {
+      // 只有与库页无关的写入（如刮削进度表）：不重读、不重建。
+      if (_scrapeCursor == since) _scrapeCursor = delta.cursor;
+      return;
+    }
+    final Future<List<VideoBookRow>>? shelfBase = _future;
+    final Future<List<VideoBookRow>> shelfRowsF = delta.shelfBookUids.isEmpty
+        ? Future<List<VideoBookRow>>.value(const <VideoBookRow>[])
+        : widget.repo.listForShelfByUids(delta.shelfBookUids);
+    final Future<VideoScrapePresentationRows> rowsF = db
+        .getVideoScrapePresentationRows(delta);
+    final Future<Set<int>?> subscribedF =
+        delta.identitiesChanged || delta.workIds.isNotEmpty
+        ? _loadSubscribedCollectionIds(
+            db,
+            appModel,
+            _collectionsById.values.toList(growable: false),
+          )
+        : Future<Set<int>?>.value();
+    await Future.wait<Object?>(<Future<Object?>>[
+      shelfRowsF,
+      rowsF,
+      subscribedF,
+    ]);
+    final List<VideoBookRow> shelfRows = await shelfRowsF;
+    final VideoScrapePresentationRows rows = await rowsF;
+    final Set<int>? subscribed = await subscribedF;
+    if (!mounted || requestGeneration != _libraryMapsRequestGeneration) return;
+    final VideoScrapeJournalCursor? current = _scrapeCursor;
+    // 期间已有更新的整表轮次 / 增量落地（游标越过这批增量）：本批全是旧数据。
+    if (current == null ||
+        current.epoch != delta.cursor.epoch ||
+        current.seq > delta.cursor.seq) {
+      return;
+    }
+    if (delta.shelfBookUids.isNotEmpty) {
+      // 刮削可能刚把封面文件写到原先探过不存在的路径上。
+      _coverExists.revalidateMissing();
+    }
+    setState(() {
+      _scrapeMaps = _scrapeMaps.patched(delta, rows);
+      _scrapeCursor = delta.cursor;
+      if (subscribed != null) _subscribedCollectionIds = subscribed;
+      // 期间换过书架列表（更新的整表重读已在途）就不再叠：它读得比这批更晚。
+      if (delta.shelfBookUids.isNotEmpty &&
+          shelfBase != null &&
+          identical(_future, shelfBase)) {
+        _future = shelfBase.then(
+          (List<VideoBookRow> base) =>
+              mergeVideoShelfRows(base, shelfRows, delta.shelfBookUids),
+        );
+      }
+    });
+  }
+
+  /// 整表轮次落地前按刮削展示日志补齐：[cursor] 之后的写入由增量重读覆盖到
+  /// [maps] 上，直到不低于页面当前游标。返回补齐后的映射与游标。
+  ///
+  /// 这是「清理写入后旧轮不得落地」在非作废式轮次上的保证：清理之前发起的轮次
+  /// 读到的旧资料，在落地前就被清理碰到的键的当前状态覆盖掉。
+  Future<(VideoLibraryScrapeMaps, VideoScrapeJournalCursor)> _catchUpScrapeMaps(
+    FushiDatabase db,
+    VideoLibraryScrapeMaps maps,
+    VideoScrapeJournalCursor cursor,
+  ) async {
+    VideoLibraryScrapeMaps out = maps;
+    VideoScrapeJournalCursor at = cursor;
+    while (true) {
+      final VideoScrapePresentationDelta? delta = await db
+          .readVideoScrapePresentationDelta(at);
+      if (delta == null) {
+        // 日志在这一轮途中重装 / 裁掉：增量已不完整，按整表结果重新起算。
+        // 整表本身是在重装之后才落地的最新快照（重装只发生在连接重开时，那时
+        // 页面会被整体重建），从新日志的当前尾部起算即可。
+        at = await db.videoScrapePresentationJournalCursor();
+        break;
+      }
+      if (!delta.isEmpty) {
+        out = out.patched(
+          delta,
+          await db.getVideoScrapePresentationRows(delta),
+        );
+      }
+      at = delta.cursor;
+      final VideoScrapeJournalCursor? current = _scrapeCursor;
+      if (current == null ||
+          current.epoch != at.epoch ||
+          current.seq <= at.seq) {
+        break;
+      }
+    }
+    return (out, at);
   }
 
   /// 卡片 / 合集长按菜单里给不给「选择」：首页分区（横滚行、Hero）没有可勾选的
@@ -1446,13 +1652,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 它照常落地，紧跟的新一轮按发起序号覆盖它（序号只进不退，见
   /// [_libraryMapsAppliedSequence]）。
   ///
-  /// 刮削表变更**不走这里**：批次中的 2 s 节流刷新、非批次刷新与批次结束的补刷
-  /// 都是作废式（批次里可能夹着清理写入，刻意保守；代价是一轮映射慢于 2 s 时批次
-  /// 期间映射不更新，等批次结束的补刷，见 BUG-3235 残留）。
+  /// 刮削表变更**不走这里**，也不整表重读：按刮削展示日志只重读变了的作品
+  /// （[_patchScrapePresentation]，拍板 design-nmv-video16-scrape-refresh）。只有
+  /// 批次结束的补刷是作废式整表轮次。
   ///
-  /// 清理不变式不受影响：清理之后的刷新走作废式 [_loadLibraryMaps]（刮削表变更
-  /// 的刷新、页面自己的清理动作都是），一旦请求，清理前
-  /// 发起的所有轮次——包括这里沿用旧代次的——都因代次不符被拒。
+  /// 清理不变式不受影响：页面自己的清理动作之后走作废式 [_loadLibraryMaps]，一旦
+  /// 请求，清理前发起的所有轮次——包括这里沿用旧代次的——都因代次不符被拒；别处
+  /// 发起的清理由日志记下碰到的键，任何整表轮次落地前都先按日志补齐
+  /// （[_catchUpScrapeMaps]），清理前发起的旧轮带不回已清掉的资料。
   Future<void> _loadLibraryMapsKeepingInFlight() =>
       _runLibraryMapsRound(_libraryMapsRequestGeneration);
 
@@ -1543,6 +1750,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final Map<String, int> manualRanks = decodeShelfManualOrder(
       appModel.prefsRepo.libraryManualOrder(_manualOrderLibrary),
     );
+    // 刮削展示日志游标先于全表查询取：下面读到的快照至少包含它之前的全部刮削
+    // 写入，之后的由落地前的补齐覆盖（[_catchUpScrapeMaps]）。
+    final VideoScrapeJournalCursor scrapeCursor = await db
+        .videoScrapePresentationJournalCursor();
     // 十三个全表查询互不依赖：一次全部发出去，让 Drift 的后台执行器流水线化，
     // 而不是每个都等上一个的往返回来再发下一个（合集行要等最后一个落地才能画）。
     // 先 Future.wait 挂上监听，某个查询失败时其余错误不会成为无人接的未处理异常。
@@ -1559,21 +1770,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         .getAllVideoWatchStatistics();
     final Future<Map<String, int>> segmentEndAtByUidF = db
         .getLatestStudyEndAtByMedia(kActivityMediaVideo);
-    final Future<List<VideoScrapeMetaRow>> scrapeRowsF = db
-        .getAllVideoScrapeMeta();
-    final Future<List<CollectionScrapeMetaRow>> collectionScrapeMetaF = db
-        .getAllCollectionScrapeMeta();
-    final Future<List<VideoMetadataWorkRow>> metadataWorksF = db
-        .getAllVideoMetadataWorks();
-    final Future<List<VideoMetadataImageRow>> metadataImagesF = db
-        .getAllVideoMetadataImages();
-    final Future<List<VideoMetadataEpisodeRow>> metadataEpisodesF = db
-        .getAllVideoMetadataEpisodes();
-    final Future<List<VideoMetadataSeasonRow>> metadataSeasonsF = db
-        .getAllVideoMetadataSeasons();
-    final Future<List<VideoMetadataExtraRow>> metadataExtrasF = db
-        .getAllVideoMetadataExtras();
-    final Future<List<MediaImageRow>> mediaImagesF = db.getAllMediaImages();
+    // 刮削展示映射（八张表）：同批发出，聚合与增量共用 [VideoLibraryScrapeMaps]。
+    final Future<VideoLibraryScrapeMaps> scrapeMapsF =
+        VideoLibraryScrapeMaps.load(db);
     await Future.wait<Object?>(<Future<Object?>>[
       collectionsF,
       folderBooksF,
@@ -1582,14 +1781,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       collectionItemsF,
       watchRowsF,
       segmentEndAtByUidF,
-      scrapeRowsF,
-      collectionScrapeMetaF,
-      metadataWorksF,
-      metadataImagesF,
-      metadataEpisodesF,
-      metadataSeasonsF,
-      metadataExtrasF,
-      mediaImagesF,
+      scrapeMapsF,
     ]);
     final List<MediaCollectionRow> collections = await collectionsF;
     final List<MediaSourceRow> videoSources = await folderSourcesF;
@@ -1622,94 +1814,20 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     );
     final Map<String, DateTime> watchByUid = recency.byUid;
     final Map<String, DateTime> legacyByTitle = recency.legacyByTitle;
-    // TODO-2486：刮削资料批量预取——条目 airDate 派生年份（年份筛选）、合集资料。
-    // 批量 DAO 全表一次拉，替代逐本/逐合集查询的 N+1。
-    final List<VideoScrapeMetaRow> scrapeRows = await scrapeRowsF;
-    final Map<String, int> airYearByUid = <String, int>{
-      for (final VideoScrapeMetaRow r in scrapeRows)
-        if (videoAirYear(r.airDate) case final int year) r.bookUid: year,
-    };
-    final Map<int, CollectionScrapeMetaRow> collectionMetaById =
-        <int, CollectionScrapeMetaRow>{
-          for (final CollectionScrapeMetaRow r in await collectionScrapeMetaF)
-            r.collectionId: r,
-        };
-    final List<VideoMetadataWorkRow> metadataWorks = await metadataWorksF;
-    final Map<int, VideoMetadataWorkRow> metadataWorkByCollection =
-        <int, VideoMetadataWorkRow>{
-          for (final VideoMetadataWorkRow work in metadataWorks)
-            if (work.collectionId != null) work.collectionId!: work,
-        };
-    final Map<String, VideoMetadataWorkRow> metadataWorkByBook =
-        <String, VideoMetadataWorkRow>{
-          for (final VideoMetadataWorkRow work in metadataWorks)
-            if (work.bookUid != null) work.bookUid!: work,
-        };
-    final Map<int, List<VideoMetadataImageRow>> metadataImagesByWork =
-        <int, List<VideoMetadataImageRow>>{};
-    final Map<int, List<VideoMetadataImageRow>> metadataImagesByEpisode =
-        <int, List<VideoMetadataImageRow>>{};
-    for (final VideoMetadataImageRow image in await metadataImagesF) {
-      if (image.workId case final int workId) {
-        (metadataImagesByWork[workId] ??= <VideoMetadataImageRow>[]).add(image);
-      }
-      if (image.episodeId case final int episodeId) {
-        (metadataImagesByEpisode[episodeId] ??= <VideoMetadataImageRow>[]).add(
-          image,
-        );
-      }
-    }
-    final Map<int, int> seasonNumberById = <int, int>{
-      for (final VideoMetadataSeasonRow season in await metadataSeasonsF)
-        season.id: season.seasonNumber,
-    };
-    // 每个文件绑定的全部分集（含没有剧照的——一文件多集时按片长定位续播点要完整
-    // 的集序），主卡渲染时按续播点挑那一集的剧照（[resumedFileEpisodeStills]）。
-    final Map<String, List<VideoFileEpisodeStills>> fileEpisodesByBook =
-        <String, List<VideoFileEpisodeStills>>{};
-    // 一文件多集（v110）时同一文件有多条分集行：时长按集累加。
-    final Map<String, int> runtimeMinutesByBookUid = <String, int>{};
-    for (final VideoMetadataEpisodeRow episode in await metadataEpisodesF) {
-      if (episode.bookUid case final String uid) {
-        (fileEpisodesByBook[uid] ??= <VideoFileEpisodeStills>[]).add(
-          VideoFileEpisodeStills(
-            episodeId: episode.id,
-            seasonNumber: seasonNumberById[episode.seasonId],
-            episodeNumber: episode.episodeNumber,
-            runtimeMinutes: episode.runtimeMinutes,
-            stills:
-                metadataImagesByEpisode[episode.id] ??
-                const <VideoMetadataImageRow>[],
-          ),
-        );
-        if (episode.runtimeMinutes case final int minutes) {
-          runtimeMinutesByBookUid[uid] =
-              (runtimeMinutesByBookUid[uid] ?? 0) + minutes;
-        }
-      }
-    }
-    final Set<String> localExtraBookUids = <String>{
-      for (final VideoMetadataExtraRow extra in await metadataExtrasF)
-        if (extra.bookUid != null) extra.bookUid!,
-    };
     final Set<int> subscribedCollectionIds = await _loadSubscribedCollectionIds(
       db,
       appModel,
       collections,
     );
-    // v68 附加图组：一次全表查询按归属分桶（hero 背景/logo、续播行横卡）。
-    final Map<int, List<MediaImageRow>> imagesByCollection =
-        <int, List<MediaImageRow>>{};
-    final Map<String, List<MediaImageRow>> imagesByBookUid =
-        <String, List<MediaImageRow>>{};
-    for (final MediaImageRow row in await mediaImagesF) {
-      final int? cid = row.collectionId;
-      if (cid != null) {
-        (imagesByCollection[cid] ??= <MediaImageRow>[]).add(row);
-      } else if (row.bookUid case final String uid) {
-        (imagesByBookUid[uid] ??= <MediaImageRow>[]).add(row);
-      }
-    }
+    // 落地前按日志补齐刮削展示映射（见 [_catchUpScrapeMaps]）。
+    final (
+      VideoLibraryScrapeMaps scrapeMaps,
+      VideoScrapeJournalCursor caughtUpCursor,
+    ) = await _catchUpScrapeMaps(
+      db,
+      await scrapeMapsF,
+      scrapeCursor,
+    );
     if (!mounted || requestGeneration != _libraryMapsRequestGeneration) return;
     // 同一代次内只进不退：发起更早的一轮晚于更新的一轮落地时丢弃。
     if (requestSequence < _libraryMapsAppliedSequence) return;
@@ -1728,23 +1846,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       _libraryMapsReady = true;
       _watchAtByUid = watchByUid;
       _legacyWatchAtByTitle = legacyByTitle;
-      _airYearByUid = airYearByUid;
-      _collectionScrapeMetaById = collectionMetaById;
-      _metadataWorkByCollection = metadataWorkByCollection;
-      _metadataWorkByBook = metadataWorkByBook;
-      _metadataImagesByWork = metadataImagesByWork;
-      _fileEpisodesByBook = <String, List<VideoFileEpisodeStills>>{
-        for (final MapEntry<String, List<VideoFileEpisodeStills>> e
-            in fileEpisodesByBook.entries)
-          // 没有任何一集带图的文件不进表：主卡直接走作品图链。
-          if (e.value.any((VideoFileEpisodeStills ep) => ep.stills.isNotEmpty))
-            e.key: e.value,
-      };
-      _runtimeMinutesByBookUid = runtimeMinutesByBookUid;
-      _localExtraBookUids = localExtraBookUids;
+      _scrapeMaps = scrapeMaps;
+      _scrapeCursor = caughtUpCursor;
       _subscribedCollectionIds = subscribedCollectionIds;
-      _mediaImagesByCollection = imagesByCollection;
-      _mediaImagesByBookUid = imagesByBookUid;
     });
   }
 
@@ -12870,4 +12974,17 @@ class _RemoteVideoDownloadPlan {
     receivedBytes: receivedBytes,
     totalBytes: totalBytes ?? video.sizeBytes,
   );
+}
+
+/// 库页不在眼前期间被推迟的刮削展示刷新（[_HomeVideoPageState._scrapePresentationStale]）。
+/// 按「要补的量」排序：露出来时取最大的那一档补一次。
+enum _ScrapePresentationStale {
+  /// 没有推迟的。
+  none,
+
+  /// 刮削展示表有写入：露出来补一次增量。
+  changed,
+
+  /// 期间有批次结束：露出来补批次结束的整表兜底刷新。
+  batchFinished,
 }
