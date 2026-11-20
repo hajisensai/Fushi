@@ -1143,6 +1143,14 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
     ];
   }
 
+  /// 已选样本文件合计超过每天的样本文件上传额度（[FeedbackLimits.fileBytesPerDay]）。
+  bool get _filesOverDailyQuota =>
+      _files.fold<int>(
+        0,
+        (int sum, ({File file, int bytes}) f) => sum + f.bytes,
+      ) >
+      FeedbackLimits.fileBytesPerDay;
+
   /// 样本文件区：说明 + 已选文件（文件名 · 大小 · ×）+ 「添加文件」（名额满了不显示）。
   /// 正文发出之后（上传附件时）锁住。
   List<Widget> _filesSection(FushiDesignTokens tokens) => <Widget>[
@@ -1155,6 +1163,18 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
       key: const ValueKey<String>('feedback-files-hint'),
       style: tokens.type.metadata,
     ),
+    // 合计超过每 IP 每天的样本文件额度（服务端 fileBytesPerIpDay）：提交前就提醒，传不下的会
+    // 留在本机待重试，不是提交后才发现「附件没传上去」。
+    if (_filesOverDailyQuota) ...<Widget>[
+      SizedBox(height: tokens.spacing.gap),
+      FushiInlineNotice(
+        key: const ValueKey<String>('feedback-files-over-quota'),
+        severity: FushiNoticeSeverity.warning,
+        message: t.feedback_compose_files_over_quota(
+          max: FushiByteFormat.bytes(FeedbackLimits.fileBytesPerDay),
+        ),
+      ),
+    ],
     SizedBox(height: tokens.spacing.gap),
     for (final ({File file, int bytes}) f in _files) ...<Widget>[
       FushiCard(
