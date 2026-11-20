@@ -11,7 +11,6 @@ import 'package:fushi_engine/ai/ai_video_identity_assistant.dart';
 import 'package:fushi_engine/ai/web_knowledge.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
     show VideoMetadataMediaKind;
-import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:test/test.dart';
