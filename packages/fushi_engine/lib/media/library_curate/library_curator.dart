@@ -32,6 +32,8 @@ import 'package:fushi_engine/media/links/work_graph.dart';
 import 'package:fushi_engine/media/links/work_graph_loader.dart';
 import 'package:fushi_engine/media/metadata/dlsite/dlsite_client.dart'
     show DlsiteWorkId;
+import 'package:fushi_engine/media/video/metadata/video_collection_relation_sync.dart'
+    show CollectionRelationBackfillResult;
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
 
@@ -224,6 +226,7 @@ class LibraryCurator {
     this.mediaDecider,
     this.limits = const LibraryCurateLimits(),
     this.onWorksChanged,
+    this.seriesRelationBackfill,
     DateTime Function()? clock,
   }) : _clock = clock ?? DateTime.now;
 
@@ -245,6 +248,12 @@ class LibraryCurator {
   /// 作品层重算后通知宿主（宿主的作品图缓存本就随表变更失效，这里只是让界面立即
   /// 刷新；可空）。
   final void Function()? onWorksChanged;
+
+  /// ⑤ 作品层重算之前的系列关系存量补填（不联网：AniDB 读已落盘 XML、其余读
+  /// details 快照，见 `backfillScrapedCollectionRelations`）。null = 不补。幂等，
+  /// 每趟都跑：新落盘的 XML / 新入库的目标作品在下一趟补上、升级绑定。
+  final Future<CollectionRelationBackfillResult> Function()?
+  seriesRelationBackfill;
   final DateTime Function() _clock;
 
   LibraryCurateRun? _current;
@@ -1360,8 +1369,26 @@ class LibraryCurator {
   // ── ⑤ 作品层 ─────────────────────────────────────────────────────────
 
   Future<LibraryCurateStageResult> _works(_RunContext ctx) async {
+    final Future<CollectionRelationBackfillResult> Function()? backfill =
+        seriesRelationBackfill;
+    int relationRows = 0;
+    if (backfill != null) {
+      try {
+        final CollectionRelationBackfillResult r = await backfill();
+        relationRows = r.rows + r.bound;
+        engineLog.logDiagnostic(
+          'libraryCurate.works',
+          'series relations backfill: works=${r.works} '
+              'withRelations=${r.worksWithRelations} rows=${r.rows} '
+              'bound=${r.bound}',
+        );
+      } on Object catch (error, stack) {
+        // 补填失败不拖垮作品层重算（关系网只是少画几条系列边）。
+        engineLog.log('libraryCurate.works.relations', error, stack);
+      }
+    }
     final WorkGraph graph = await loadWorkGraph(db);
-    if (ctx.run.changes > 0) onWorksChanged?.call();
+    if (ctx.run.changes > 0 || relationRows > 0) onWorksChanged?.call();
     return LibraryCurateStageResult(
       stage: LibraryCurateStage.works,
       status: LibraryCurateStageStatus.done,

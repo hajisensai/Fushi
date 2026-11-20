@@ -8,6 +8,8 @@ import 'package:fushi_engine/media/video/metadata/mal_video_metadata_provider.da
     show hasIncompleteMalCredits;
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_collection_relation_sync.dart';
+import 'package:fushi_engine/media/video/metadata/video_related_works.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi_engine/media/video/scraper/title_normalizer.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
@@ -280,6 +282,31 @@ class VideoMetadataDatabaseStore {
         now: now,
       );
       await _replaceRawSnapshot(workId, metadata, now);
+      if (localWork.collection case final MediaCollectionRow collection) {
+        // 系列关系（续作 / 前传 / 外传…）：只用本次响应里本来就有的关系，不联网
+        // 补抓；载荷没带关系信息（AniDB 只有目录、TMDB）时不动已有行。
+        final List<VideoRelatedWork>? related = relatedWorksFromRawPayload(
+          metadata.provider.name,
+          metadata.rawPayload,
+        );
+        if (related != null) {
+          await syncScrapedCollectionRelations(
+            database,
+            collectionId: collection.id,
+            source: metadata.provider.name,
+            related: related,
+          );
+        }
+        // 别的合集里指向本作品外部 id 的纯刮削行升级成已绑定。
+        await bindCollectionRelationsToWork(
+          database,
+          collectionId: collection.id,
+          identities: <(String, String)>[
+            for (final VideoMetadataId id in _uniqueIds(metadata.ids))
+              (id.type.trim().toLowerCase(), id.value),
+          ],
+        );
+      }
       // 锁住的整组词（genres / studios）保留旧集合；其余种类照常整体替换。
       final Map<String, List<String>> lockedTerms =
           isLocked(VideoMetadataLockableField.genres) ||

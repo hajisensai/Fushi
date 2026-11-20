@@ -193,6 +193,56 @@ mixin _FushiDbVideoDomain
     return <int>[for (final CollectionScrapeMetaRow r in rows) r.collectionId];
   }
 
+  /// 整体替换某合集**来自 [source] 这一个源**的相关作品边（作品资料写库时按主源
+  /// 的完整关系列表替换）。只动该源的行：`local`（按季拆分建的前后作）与别的源
+  /// 留下的行不受影响；该源本轮已不存在的关系随之删除，重刮不重复、不残留。
+  Future<void> replaceSourceCollectionRelations(
+    int collectionId,
+    String source,
+    List<CollectionRelationsCompanion> relations,
+  ) => transaction(() async {
+    await (delete(collectionRelations)..where(
+          ($CollectionRelationsTable t) =>
+              t.collectionId.equals(collectionId) & t.source.equals(source),
+        ))
+        .go();
+    for (final CollectionRelationsCompanion c in relations) {
+      await into(collectionRelations).insertOnConflictUpdate(c);
+    }
+  });
+
+  /// 升级绑定（批量）：把指向 `(source, subjectId)`、尚未绑定的纯刮削边绑定到本地
+  /// 合集 [targetCollectionId]（目标作品入库 / 刮削完成时调）。起点就是目标合集
+  /// 自己的边不绑（自环）。返回绑定的行数。
+  Future<int> bindCollectionRelationsBySubject(
+    String source,
+    String subjectId,
+    int targetCollectionId,
+  ) =>
+      (update(collectionRelations)..where(
+            ($CollectionRelationsTable t) =>
+                t.source.equals(source) &
+                t.subjectId.equals(subjectId) &
+                t.targetCollectionId.isNull() &
+                t.collectionId.equals(targetCollectionId).not(),
+          ))
+          .write(
+            CollectionRelationsCompanion(
+              targetCollectionId: Value<int?>(targetCollectionId),
+            ),
+          );
+
+  /// 全部相关作品边（作品图快照整表一次读，按 collectionId → sortIndex → id）。
+  Future<List<CollectionRelationRow>> getAllCollectionRelations() =>
+      (select(collectionRelations)..orderBy([
+            ($CollectionRelationsTable t) =>
+                OrderingTerm(expression: t.collectionId),
+            ($CollectionRelationsTable t) =>
+                OrderingTerm(expression: t.sortIndex),
+            ($CollectionRelationsTable t) => OrderingTerm(expression: t.id),
+          ]))
+          .get();
+
   // ── media_images（媒体附加图组，schema v68 / Jellyfin 图组对齐）──────
 
   /// 整体替换某合集**刮削所属**的附加图组（重刮即替换；空列表 = 清空）。

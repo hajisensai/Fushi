@@ -14,6 +14,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_media_identity_assistant.dart';
 import 'package:fushi_engine/ai/ai_video_identity_assistant.dart';
 import 'package:fushi_engine/media/library_curate/library_curator.dart';
+import 'package:fushi_engine/media/video/metadata/video_collection_relation_sync.dart'
+    show backfillScrapedCollectionRelations, productionAniDbXmlDirectory;
 
 import 'package:fushi/src/ai/agent/ai_agent_toolbox.dart';
 import 'package:fushi/src/media/library_curate/library_curate_auto.dart';
@@ -53,6 +55,10 @@ LibraryCurator buildAppLibraryCurator({
     ai: () => libraryCurateAiOf(prefs, aiModuleEnabled: aiModuleEnabled()),
     videoDecider: () => advisor.capabilityKey == null ? null : advisor.decide,
     mediaDecider: () => mediaAdvisor.isAssigned ? mediaAdvisor.decide : null,
+    seriesRelationBackfill: () => backfillScrapedCollectionRelations(
+      db,
+      aniDbXmlDirectory: productionAniDbXmlDirectory,
+    ),
   );
 }
 
