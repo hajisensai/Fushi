@@ -441,7 +441,11 @@ Future<int> Function()? mediaLinkInferCallback({
         lookupWikidataAnime: WikidataAnimeBridge.shared.anidbIdsForVndb,
         judge: provider == null
             ? null
-            : AiMediaLinkJudge(client: aiClient!, provider: provider),
+            : AiMediaLinkJudge(
+                client: aiClient!,
+                provider: provider,
+                cache: MediaLinkVerdictCache(appModel.database),
+              ),
       );
     } on WikidataBridgeException {
       FushiToast.show(

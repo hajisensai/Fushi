@@ -16,11 +16,15 @@
 /// - 不再发规则的英文证据句（它只是把两边标题又抄一遍），改发规则名与猜测关系；
 /// - 回复用短键，不相关的不写理由；
 /// - 回复被截断时逐条抢救已写完的结论，不整批作废重问；
-/// - 后面的批次失败时保留前面已拿到的结论（[AiMediaLinkJudge.partialFailure]）。
+/// - 后面的批次失败时保留前面已拿到的结论（[AiMediaLinkJudge.partialFailure]）；
+/// - 问过的一对记进本机缓存（[MediaLinkVerdictCache]，`media_link_ai_verdicts`）：
+///   AI 看到的内容、模型、提示词版本都没变就直接用上次的结论，不再发请求。
 library;
 
 import 'dart:convert';
 
+import 'package:crypto/crypto.dart' show sha1;
+import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi_engine/ai/ai_chat_client.dart';
@@ -38,6 +42,13 @@ const int kAiMediaLinkMaxTitlesPerItem = 4;
 
 /// 单个标题最多发几个字符（超长的文件名式标题截断）。
 const int kAiMediaLinkMaxTitleChars = 80;
+
+/// 提示词 / 回复格式的版本：改了系统提示词或发给 AI 的条目形状就加一，旧缓存的摘要
+/// 自然对不上、全部重问。
+const int kAiMediaLinkPromptVersion = 2;
+
+/// 缓存的结论保留多久：过期后重新问一次（模型在进步，条目也可能早就删了）。
+const Duration kAiMediaLinkVerdictCacheTtl = Duration(days: 180);
 
 /// 解析「作品图谱裁决」当前可用的提供商；null = 未指派 / 已删 / 没配全（跳过 AI，
 /// 只剩确定性推断）。
@@ -258,16 +269,152 @@ List<MediaLinkVerdict?> parseAiMediaLinkVerdicts(String reply, int count) {
 /// 一批 [count] 条候选的输出上限：每条结论约 60 token（含一句理由），留一倍余量。
 int aiMediaLinkMaxTokens(int count) => 256 + 110 * count;
 
+/// 一条候选在缓存里的位置：无序的一对端点（[aFirst] = 候选的 from 就是字典序较小的
+/// 一端）+ AI 输入的摘要。
+typedef _CacheSlot = ({
+  MediaLinkEndpoint a,
+  MediaLinkEndpoint b,
+  bool aFirst,
+  String fingerprint,
+});
+
+String _endpointSortKey(MediaLinkEndpoint e) =>
+    '${e.kind.dbValue}\u0000${e.key}';
+
+/// 作品图谱 AI 裁决的本机缓存（`media_link_ai_verdicts`，设备本地、纯缓存）。
+class MediaLinkVerdictCache {
+  MediaLinkVerdictCache(this.db, {int Function()? now})
+    : _now = now ?? (() => DateTime.now().millisecondsSinceEpoch);
+
+  final FushiDatabase db;
+  final int Function() _now;
+
+  int get _notBefore => _now() - kAiMediaLinkVerdictCacheTtl.inMilliseconds;
+
+  _CacheSlot _slot(MediaLinkCandidate c, String model) {
+    final bool aFirst =
+        _endpointSortKey(
+          c.from.endpoint,
+        ).compareTo(_endpointSortKey(c.to.endpoint)) <=
+        0;
+    final MediaLinkSubject a = aFirst ? c.from : c.to;
+    final MediaLinkSubject b = aFirst ? c.to : c.from;
+    return (
+      a: a.endpoint,
+      b: b.endpoint,
+      aFirst: aFirst,
+      fingerprint: sha1
+          .convert(
+            utf8.encode(
+              jsonEncode(<Object?>[
+                kAiMediaLinkPromptVersion,
+                model,
+                _item(a),
+                _item(b),
+              ]),
+            ),
+          )
+          .toString(),
+    );
+  }
+
+  /// [candidates] 各自缓存的结论（同序同长）；没缓存 / 已过期 / AI 输入变了为 null。
+  Future<List<MediaLinkVerdict?>> lookup(
+    List<MediaLinkCandidate> candidates,
+    String model,
+  ) async {
+    final Map<String, MediaLinkAiVerdictRow> rows =
+        <String, MediaLinkAiVerdictRow>{
+          for (final MediaLinkAiVerdictRow r
+              in await db.mediaLinkAiVerdictsSince(_notBefore))
+            '${r.aKind}\u0000${r.aKey}\u0001${r.bKind}\u0000${r.bKey}': r,
+        };
+    return <MediaLinkVerdict?>[
+      for (final MediaLinkCandidate c in candidates) _read(c, model, rows),
+    ];
+  }
+
+  MediaLinkVerdict? _read(
+    MediaLinkCandidate c,
+    String model,
+    Map<String, MediaLinkAiVerdictRow> rows,
+  ) {
+    final _CacheSlot slot = _slot(c, model);
+    final MediaLinkAiVerdictRow? row =
+        rows['${_endpointSortKey(slot.a)}\u0001${_endpointSortKey(slot.b)}'];
+    if (row == null || row.fingerprint != slot.fingerprint) return null;
+    final MediaLinkRelation? relation = row.relation == null
+        ? null
+        : MediaLinkRelation.tryParse(row.relation!);
+    if (row.related && relation == null) return null;
+    final bool? aIsOriginal = row.aIsOriginal;
+    return MediaLinkVerdict(
+      related: row.related,
+      relation: relation ?? MediaLinkRelation.sameWork,
+      fromIsOriginal: aIsOriginal == null ? null : aIsOriginal == slot.aFirst,
+      confidence: row.confidence,
+      reason: row.reason.isEmpty ? 'AI verdict' : row.reason,
+    );
+  }
+
+  /// 记下 [candidates] 各自刚拿到的结论（[verdicts] 同序；null = 没判出来，不记），
+  /// 顺带清掉过期行。
+  Future<void> store(
+    List<MediaLinkCandidate> candidates,
+    List<MediaLinkVerdict?> verdicts,
+    String model,
+  ) async {
+    final int at = _now();
+    final List<MediaLinkAiVerdictsCompanion> rows =
+        <MediaLinkAiVerdictsCompanion>[];
+    for (int i = 0; i < candidates.length; i++) {
+      final MediaLinkVerdict? v = verdicts[i];
+      if (v == null) continue;
+      final _CacheSlot slot = _slot(candidates[i], model);
+      final bool? fromIsOriginal = v.fromIsOriginal;
+      rows.add(
+        MediaLinkAiVerdictsCompanion.insert(
+          aKind: slot.a.kind.dbValue,
+          aKey: slot.a.key,
+          bKind: slot.b.kind.dbValue,
+          bKey: slot.b.key,
+          fingerprint: slot.fingerprint,
+          related: v.related,
+          relation: Value<String?>(v.related ? v.relation.dbValue : null),
+          aIsOriginal: Value<bool?>(
+            !v.related || fromIsOriginal == null
+                ? null
+                : fromIsOriginal == slot.aFirst,
+          ),
+          confidence: v.confidence,
+          reason: Value<String>(v.related ? v.reason : ''),
+          judgedAt: at,
+        ),
+      );
+    }
+    if (rows.isEmpty) return;
+    await db.upsertMediaLinkAiVerdicts(rows);
+    await db.pruneMediaLinkAiVerdicts(_notBefore);
+  }
+}
+
 /// [MediaLinkJudge] 的 AI 实现：按 [kAiMediaLinkMaxCandidatesPerRequest] 分批请求。
+/// 给了 [cache] 时先查缓存，只把没问过（或 AI 输入变了）的候选发出去，拿到结论即记。
 ///
 /// 第一批就失败 = 提供商不可用，照常抛 [AiChatFailure]（调用方退回只跑确定性规则）；
 /// 后面的批次失败时不再继续请求，已拿到的结论照常返回、没问到的为 null（等同
 /// 「没经 AI」），失败记在 [partialFailure]——已付费的结论不作废。
 class AiMediaLinkJudge implements MediaLinkJudge {
-  AiMediaLinkJudge({required this.client, required this.provider});
+  AiMediaLinkJudge({required this.client, required this.provider, this.cache});
 
   final AiChatClient client;
   final AiProviderConfig provider;
+
+  /// null = 不用缓存（每条候选都问）。
+  final MediaLinkVerdictCache? cache;
+
+  /// 累计从缓存直接取到结论的候选数。
+  int cacheHits = 0;
 
   /// 累计发出的请求数（含失败的那次）。
   int requestCount = 0;
@@ -280,22 +427,26 @@ class AiMediaLinkJudge implements MediaLinkJudge {
     List<MediaLinkCandidate> candidates,
   ) async {
     partialFailure = null;
-    final List<MediaLinkVerdict?> out = List<MediaLinkVerdict?>.filled(
-      candidates.length,
-      null,
-    );
+    final List<MediaLinkVerdict?> out =
+        await cache?.lookup(candidates, provider.model) ??
+        List<MediaLinkVerdict?>.filled(candidates.length, null);
+    final List<int> ask = <int>[
+      for (int i = 0; i < out.length; i++)
+        if (out[i] == null) i,
+    ];
+    cacheHits += out.length - ask.length;
     for (
       int start = 0;
-      start < candidates.length;
+      start < ask.length;
       start += kAiMediaLinkMaxCandidatesPerRequest
     ) {
-      final List<MediaLinkCandidate> batch = candidates.sublist(
+      final List<int> indexes = ask.sublist(
         start,
-        (start + kAiMediaLinkMaxCandidatesPerRequest).clamp(
-          0,
-          candidates.length,
-        ),
+        (start + kAiMediaLinkMaxCandidatesPerRequest).clamp(0, ask.length),
       );
+      final List<MediaLinkCandidate> batch = <MediaLinkCandidate>[
+        for (final int i in indexes) candidates[i],
+      ];
       final String reply;
       requestCount++;
       try {
@@ -312,7 +463,15 @@ class AiMediaLinkJudge implements MediaLinkJudge {
         partialFailure = e;
         break;
       }
-      out.setAll(start, parseAiMediaLinkVerdicts(reply, batch.length));
+      final List<MediaLinkVerdict?> got = parseAiMediaLinkVerdicts(
+        reply,
+        batch.length,
+      );
+      for (int k = 0; k < indexes.length; k++) {
+        out[indexes[k]] = got[k];
+      }
+      // 每批拿到就记：后面的批次失败也不丢。
+      await cache?.store(batch, got, provider.model);
     }
     return out;
   }

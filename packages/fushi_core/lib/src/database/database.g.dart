@@ -77282,6 +77282,689 @@ class VideoThemeSongSpansCompanion
   }
 }
 
+class $MediaLinkAiVerdictsTable extends MediaLinkAiVerdicts
+    with TableInfo<$MediaLinkAiVerdictsTable, MediaLinkAiVerdictRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MediaLinkAiVerdictsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _aKindMeta = const VerificationMeta('aKind');
+  @override
+  late final GeneratedColumn<String> aKind = GeneratedColumn<String>(
+    'a_kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _aKeyMeta = const VerificationMeta('aKey');
+  @override
+  late final GeneratedColumn<String> aKey = GeneratedColumn<String>(
+    'a_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _bKindMeta = const VerificationMeta('bKind');
+  @override
+  late final GeneratedColumn<String> bKind = GeneratedColumn<String>(
+    'b_kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _bKeyMeta = const VerificationMeta('bKey');
+  @override
+  late final GeneratedColumn<String> bKey = GeneratedColumn<String>(
+    'b_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _fingerprintMeta = const VerificationMeta(
+    'fingerprint',
+  );
+  @override
+  late final GeneratedColumn<String> fingerprint = GeneratedColumn<String>(
+    'fingerprint',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _relatedMeta = const VerificationMeta(
+    'related',
+  );
+  @override
+  late final GeneratedColumn<bool> related = GeneratedColumn<bool>(
+    'related',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("related" IN (0, 1))',
+    ),
+  );
+  static const VerificationMeta _relationMeta = const VerificationMeta(
+    'relation',
+  );
+  @override
+  late final GeneratedColumn<String> relation = GeneratedColumn<String>(
+    'relation',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _aIsOriginalMeta = const VerificationMeta(
+    'aIsOriginal',
+  );
+  @override
+  late final GeneratedColumn<bool> aIsOriginal = GeneratedColumn<bool>(
+    'a_is_original',
+    aliasedName,
+    true,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("a_is_original" IN (0, 1))',
+    ),
+  );
+  static const VerificationMeta _confidenceMeta = const VerificationMeta(
+    'confidence',
+  );
+  @override
+  late final GeneratedColumn<double> confidence = GeneratedColumn<double>(
+    'confidence',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _reasonMeta = const VerificationMeta('reason');
+  @override
+  late final GeneratedColumn<String> reason = GeneratedColumn<String>(
+    'reason',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _judgedAtMeta = const VerificationMeta(
+    'judgedAt',
+  );
+  @override
+  late final GeneratedColumn<int> judgedAt = GeneratedColumn<int>(
+    'judged_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    aKind,
+    aKey,
+    bKind,
+    bKey,
+    fingerprint,
+    related,
+    relation,
+    aIsOriginal,
+    confidence,
+    reason,
+    judgedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'media_link_ai_verdicts';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MediaLinkAiVerdictRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('a_kind')) {
+      context.handle(
+        _aKindMeta,
+        aKind.isAcceptableOrUnknown(data['a_kind']!, _aKindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_aKindMeta);
+    }
+    if (data.containsKey('a_key')) {
+      context.handle(
+        _aKeyMeta,
+        aKey.isAcceptableOrUnknown(data['a_key']!, _aKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_aKeyMeta);
+    }
+    if (data.containsKey('b_kind')) {
+      context.handle(
+        _bKindMeta,
+        bKind.isAcceptableOrUnknown(data['b_kind']!, _bKindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_bKindMeta);
+    }
+    if (data.containsKey('b_key')) {
+      context.handle(
+        _bKeyMeta,
+        bKey.isAcceptableOrUnknown(data['b_key']!, _bKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_bKeyMeta);
+    }
+    if (data.containsKey('fingerprint')) {
+      context.handle(
+        _fingerprintMeta,
+        fingerprint.isAcceptableOrUnknown(
+          data['fingerprint']!,
+          _fingerprintMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_fingerprintMeta);
+    }
+    if (data.containsKey('related')) {
+      context.handle(
+        _relatedMeta,
+        related.isAcceptableOrUnknown(data['related']!, _relatedMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_relatedMeta);
+    }
+    if (data.containsKey('relation')) {
+      context.handle(
+        _relationMeta,
+        relation.isAcceptableOrUnknown(data['relation']!, _relationMeta),
+      );
+    }
+    if (data.containsKey('a_is_original')) {
+      context.handle(
+        _aIsOriginalMeta,
+        aIsOriginal.isAcceptableOrUnknown(
+          data['a_is_original']!,
+          _aIsOriginalMeta,
+        ),
+      );
+    }
+    if (data.containsKey('confidence')) {
+      context.handle(
+        _confidenceMeta,
+        confidence.isAcceptableOrUnknown(data['confidence']!, _confidenceMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_confidenceMeta);
+    }
+    if (data.containsKey('reason')) {
+      context.handle(
+        _reasonMeta,
+        reason.isAcceptableOrUnknown(data['reason']!, _reasonMeta),
+      );
+    }
+    if (data.containsKey('judged_at')) {
+      context.handle(
+        _judgedAtMeta,
+        judgedAt.isAcceptableOrUnknown(data['judged_at']!, _judgedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_judgedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {aKind, aKey, bKind, bKey};
+  @override
+  MediaLinkAiVerdictRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MediaLinkAiVerdictRow(
+      aKind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}a_kind'],
+      )!,
+      aKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}a_key'],
+      )!,
+      bKind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}b_kind'],
+      )!,
+      bKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}b_key'],
+      )!,
+      fingerprint: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}fingerprint'],
+      )!,
+      related: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}related'],
+      )!,
+      relation: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}relation'],
+      ),
+      aIsOriginal: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}a_is_original'],
+      ),
+      confidence: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}confidence'],
+      )!,
+      reason: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}reason'],
+      )!,
+      judgedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}judged_at'],
+      )!,
+    );
+  }
+
+  @override
+  $MediaLinkAiVerdictsTable createAlias(String alias) {
+    return $MediaLinkAiVerdictsTable(attachedDatabase, alias);
+  }
+}
+
+class MediaLinkAiVerdictRow extends DataClass
+    implements Insertable<MediaLinkAiVerdictRow> {
+  final String aKind;
+  final String aKey;
+  final String bKind;
+  final String bKey;
+
+  /// AI 输入 + 提示词版本 + 模型名的摘要（十六进制）。
+  final String fingerprint;
+
+  /// AI 是否判两端相关。
+  final bool related;
+
+  /// 相关时的关系（`MediaLinkRelation.dbValue`）；不相关为 NULL。
+  final String? relation;
+
+  /// 有方向的关系里 a 一端是否是原作 / 前作 / 本篇；NULL = AI 说不清或无方向。
+  final bool? aIsOriginal;
+  final double confidence;
+
+  /// AI 给的一句理由（不相关时为空串）。
+  final String reason;
+
+  /// 裁决时刻（毫秒）：过期判据。
+  final int judgedAt;
+  const MediaLinkAiVerdictRow({
+    required this.aKind,
+    required this.aKey,
+    required this.bKind,
+    required this.bKey,
+    required this.fingerprint,
+    required this.related,
+    this.relation,
+    this.aIsOriginal,
+    required this.confidence,
+    required this.reason,
+    required this.judgedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['a_kind'] = Variable<String>(aKind);
+    map['a_key'] = Variable<String>(aKey);
+    map['b_kind'] = Variable<String>(bKind);
+    map['b_key'] = Variable<String>(bKey);
+    map['fingerprint'] = Variable<String>(fingerprint);
+    map['related'] = Variable<bool>(related);
+    if (!nullToAbsent || relation != null) {
+      map['relation'] = Variable<String>(relation);
+    }
+    if (!nullToAbsent || aIsOriginal != null) {
+      map['a_is_original'] = Variable<bool>(aIsOriginal);
+    }
+    map['confidence'] = Variable<double>(confidence);
+    map['reason'] = Variable<String>(reason);
+    map['judged_at'] = Variable<int>(judgedAt);
+    return map;
+  }
+
+  MediaLinkAiVerdictsCompanion toCompanion(bool nullToAbsent) {
+    return MediaLinkAiVerdictsCompanion(
+      aKind: Value(aKind),
+      aKey: Value(aKey),
+      bKind: Value(bKind),
+      bKey: Value(bKey),
+      fingerprint: Value(fingerprint),
+      related: Value(related),
+      relation: relation == null && nullToAbsent
+          ? const Value.absent()
+          : Value(relation),
+      aIsOriginal: aIsOriginal == null && nullToAbsent
+          ? const Value.absent()
+          : Value(aIsOriginal),
+      confidence: Value(confidence),
+      reason: Value(reason),
+      judgedAt: Value(judgedAt),
+    );
+  }
+
+  factory MediaLinkAiVerdictRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MediaLinkAiVerdictRow(
+      aKind: serializer.fromJson<String>(json['aKind']),
+      aKey: serializer.fromJson<String>(json['aKey']),
+      bKind: serializer.fromJson<String>(json['bKind']),
+      bKey: serializer.fromJson<String>(json['bKey']),
+      fingerprint: serializer.fromJson<String>(json['fingerprint']),
+      related: serializer.fromJson<bool>(json['related']),
+      relation: serializer.fromJson<String?>(json['relation']),
+      aIsOriginal: serializer.fromJson<bool?>(json['aIsOriginal']),
+      confidence: serializer.fromJson<double>(json['confidence']),
+      reason: serializer.fromJson<String>(json['reason']),
+      judgedAt: serializer.fromJson<int>(json['judgedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'aKind': serializer.toJson<String>(aKind),
+      'aKey': serializer.toJson<String>(aKey),
+      'bKind': serializer.toJson<String>(bKind),
+      'bKey': serializer.toJson<String>(bKey),
+      'fingerprint': serializer.toJson<String>(fingerprint),
+      'related': serializer.toJson<bool>(related),
+      'relation': serializer.toJson<String?>(relation),
+      'aIsOriginal': serializer.toJson<bool?>(aIsOriginal),
+      'confidence': serializer.toJson<double>(confidence),
+      'reason': serializer.toJson<String>(reason),
+      'judgedAt': serializer.toJson<int>(judgedAt),
+    };
+  }
+
+  MediaLinkAiVerdictRow copyWith({
+    String? aKind,
+    String? aKey,
+    String? bKind,
+    String? bKey,
+    String? fingerprint,
+    bool? related,
+    Value<String?> relation = const Value.absent(),
+    Value<bool?> aIsOriginal = const Value.absent(),
+    double? confidence,
+    String? reason,
+    int? judgedAt,
+  }) => MediaLinkAiVerdictRow(
+    aKind: aKind ?? this.aKind,
+    aKey: aKey ?? this.aKey,
+    bKind: bKind ?? this.bKind,
+    bKey: bKey ?? this.bKey,
+    fingerprint: fingerprint ?? this.fingerprint,
+    related: related ?? this.related,
+    relation: relation.present ? relation.value : this.relation,
+    aIsOriginal: aIsOriginal.present ? aIsOriginal.value : this.aIsOriginal,
+    confidence: confidence ?? this.confidence,
+    reason: reason ?? this.reason,
+    judgedAt: judgedAt ?? this.judgedAt,
+  );
+  MediaLinkAiVerdictRow copyWithCompanion(MediaLinkAiVerdictsCompanion data) {
+    return MediaLinkAiVerdictRow(
+      aKind: data.aKind.present ? data.aKind.value : this.aKind,
+      aKey: data.aKey.present ? data.aKey.value : this.aKey,
+      bKind: data.bKind.present ? data.bKind.value : this.bKind,
+      bKey: data.bKey.present ? data.bKey.value : this.bKey,
+      fingerprint: data.fingerprint.present
+          ? data.fingerprint.value
+          : this.fingerprint,
+      related: data.related.present ? data.related.value : this.related,
+      relation: data.relation.present ? data.relation.value : this.relation,
+      aIsOriginal: data.aIsOriginal.present
+          ? data.aIsOriginal.value
+          : this.aIsOriginal,
+      confidence: data.confidence.present
+          ? data.confidence.value
+          : this.confidence,
+      reason: data.reason.present ? data.reason.value : this.reason,
+      judgedAt: data.judgedAt.present ? data.judgedAt.value : this.judgedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaLinkAiVerdictRow(')
+          ..write('aKind: $aKind, ')
+          ..write('aKey: $aKey, ')
+          ..write('bKind: $bKind, ')
+          ..write('bKey: $bKey, ')
+          ..write('fingerprint: $fingerprint, ')
+          ..write('related: $related, ')
+          ..write('relation: $relation, ')
+          ..write('aIsOriginal: $aIsOriginal, ')
+          ..write('confidence: $confidence, ')
+          ..write('reason: $reason, ')
+          ..write('judgedAt: $judgedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    aKind,
+    aKey,
+    bKind,
+    bKey,
+    fingerprint,
+    related,
+    relation,
+    aIsOriginal,
+    confidence,
+    reason,
+    judgedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MediaLinkAiVerdictRow &&
+          other.aKind == this.aKind &&
+          other.aKey == this.aKey &&
+          other.bKind == this.bKind &&
+          other.bKey == this.bKey &&
+          other.fingerprint == this.fingerprint &&
+          other.related == this.related &&
+          other.relation == this.relation &&
+          other.aIsOriginal == this.aIsOriginal &&
+          other.confidence == this.confidence &&
+          other.reason == this.reason &&
+          other.judgedAt == this.judgedAt);
+}
+
+class MediaLinkAiVerdictsCompanion
+    extends UpdateCompanion<MediaLinkAiVerdictRow> {
+  final Value<String> aKind;
+  final Value<String> aKey;
+  final Value<String> bKind;
+  final Value<String> bKey;
+  final Value<String> fingerprint;
+  final Value<bool> related;
+  final Value<String?> relation;
+  final Value<bool?> aIsOriginal;
+  final Value<double> confidence;
+  final Value<String> reason;
+  final Value<int> judgedAt;
+  final Value<int> rowid;
+  const MediaLinkAiVerdictsCompanion({
+    this.aKind = const Value.absent(),
+    this.aKey = const Value.absent(),
+    this.bKind = const Value.absent(),
+    this.bKey = const Value.absent(),
+    this.fingerprint = const Value.absent(),
+    this.related = const Value.absent(),
+    this.relation = const Value.absent(),
+    this.aIsOriginal = const Value.absent(),
+    this.confidence = const Value.absent(),
+    this.reason = const Value.absent(),
+    this.judgedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MediaLinkAiVerdictsCompanion.insert({
+    required String aKind,
+    required String aKey,
+    required String bKind,
+    required String bKey,
+    required String fingerprint,
+    required bool related,
+    this.relation = const Value.absent(),
+    this.aIsOriginal = const Value.absent(),
+    required double confidence,
+    this.reason = const Value.absent(),
+    required int judgedAt,
+    this.rowid = const Value.absent(),
+  }) : aKind = Value(aKind),
+       aKey = Value(aKey),
+       bKind = Value(bKind),
+       bKey = Value(bKey),
+       fingerprint = Value(fingerprint),
+       related = Value(related),
+       confidence = Value(confidence),
+       judgedAt = Value(judgedAt);
+  static Insertable<MediaLinkAiVerdictRow> custom({
+    Expression<String>? aKind,
+    Expression<String>? aKey,
+    Expression<String>? bKind,
+    Expression<String>? bKey,
+    Expression<String>? fingerprint,
+    Expression<bool>? related,
+    Expression<String>? relation,
+    Expression<bool>? aIsOriginal,
+    Expression<double>? confidence,
+    Expression<String>? reason,
+    Expression<int>? judgedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (aKind != null) 'a_kind': aKind,
+      if (aKey != null) 'a_key': aKey,
+      if (bKind != null) 'b_kind': bKind,
+      if (bKey != null) 'b_key': bKey,
+      if (fingerprint != null) 'fingerprint': fingerprint,
+      if (related != null) 'related': related,
+      if (relation != null) 'relation': relation,
+      if (aIsOriginal != null) 'a_is_original': aIsOriginal,
+      if (confidence != null) 'confidence': confidence,
+      if (reason != null) 'reason': reason,
+      if (judgedAt != null) 'judged_at': judgedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MediaLinkAiVerdictsCompanion copyWith({
+    Value<String>? aKind,
+    Value<String>? aKey,
+    Value<String>? bKind,
+    Value<String>? bKey,
+    Value<String>? fingerprint,
+    Value<bool>? related,
+    Value<String?>? relation,
+    Value<bool?>? aIsOriginal,
+    Value<double>? confidence,
+    Value<String>? reason,
+    Value<int>? judgedAt,
+    Value<int>? rowid,
+  }) {
+    return MediaLinkAiVerdictsCompanion(
+      aKind: aKind ?? this.aKind,
+      aKey: aKey ?? this.aKey,
+      bKind: bKind ?? this.bKind,
+      bKey: bKey ?? this.bKey,
+      fingerprint: fingerprint ?? this.fingerprint,
+      related: related ?? this.related,
+      relation: relation ?? this.relation,
+      aIsOriginal: aIsOriginal ?? this.aIsOriginal,
+      confidence: confidence ?? this.confidence,
+      reason: reason ?? this.reason,
+      judgedAt: judgedAt ?? this.judgedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (aKind.present) {
+      map['a_kind'] = Variable<String>(aKind.value);
+    }
+    if (aKey.present) {
+      map['a_key'] = Variable<String>(aKey.value);
+    }
+    if (bKind.present) {
+      map['b_kind'] = Variable<String>(bKind.value);
+    }
+    if (bKey.present) {
+      map['b_key'] = Variable<String>(bKey.value);
+    }
+    if (fingerprint.present) {
+      map['fingerprint'] = Variable<String>(fingerprint.value);
+    }
+    if (related.present) {
+      map['related'] = Variable<bool>(related.value);
+    }
+    if (relation.present) {
+      map['relation'] = Variable<String>(relation.value);
+    }
+    if (aIsOriginal.present) {
+      map['a_is_original'] = Variable<bool>(aIsOriginal.value);
+    }
+    if (confidence.present) {
+      map['confidence'] = Variable<double>(confidence.value);
+    }
+    if (reason.present) {
+      map['reason'] = Variable<String>(reason.value);
+    }
+    if (judgedAt.present) {
+      map['judged_at'] = Variable<int>(judgedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaLinkAiVerdictsCompanion(')
+          ..write('aKind: $aKind, ')
+          ..write('aKey: $aKey, ')
+          ..write('bKind: $bKind, ')
+          ..write('bKey: $bKey, ')
+          ..write('fingerprint: $fingerprint, ')
+          ..write('related: $related, ')
+          ..write('relation: $relation, ')
+          ..write('aIsOriginal: $aIsOriginal, ')
+          ..write('confidence: $confidence, ')
+          ..write('reason: $reason, ')
+          ..write('judgedAt: $judgedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $MusicScrapeMetaTable extends MusicScrapeMeta
     with TableInfo<$MusicScrapeMetaTable, MusicScrapeMetaRow> {
   @override
@@ -83453,6 +84136,8 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
       $MusicResumePointsTable(this);
   late final $VideoThemeSongSpansTable videoThemeSongSpans =
       $VideoThemeSongSpansTable(this);
+  late final $MediaLinkAiVerdictsTable mediaLinkAiVerdicts =
+      $MediaLinkAiVerdictsTable(this);
   late final $MusicScrapeMetaTable musicScrapeMeta = $MusicScrapeMetaTable(
     this,
   );
@@ -83600,6 +84285,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     musicPlayEvents,
     musicResumePoints,
     videoThemeSongSpans,
+    mediaLinkAiVerdicts,
     musicScrapeMeta,
     musicMetadataRawSnapshots,
     musicLockedFields,
@@ -135632,6 +136318,342 @@ typedef $$VideoThemeSongSpansTableProcessedTableManager =
       VideoThemeSongSpanRow,
       PrefetchHooks Function()
     >;
+typedef $$MediaLinkAiVerdictsTableCreateCompanionBuilder =
+    MediaLinkAiVerdictsCompanion Function({
+      required String aKind,
+      required String aKey,
+      required String bKind,
+      required String bKey,
+      required String fingerprint,
+      required bool related,
+      Value<String?> relation,
+      Value<bool?> aIsOriginal,
+      required double confidence,
+      Value<String> reason,
+      required int judgedAt,
+      Value<int> rowid,
+    });
+typedef $$MediaLinkAiVerdictsTableUpdateCompanionBuilder =
+    MediaLinkAiVerdictsCompanion Function({
+      Value<String> aKind,
+      Value<String> aKey,
+      Value<String> bKind,
+      Value<String> bKey,
+      Value<String> fingerprint,
+      Value<bool> related,
+      Value<String?> relation,
+      Value<bool?> aIsOriginal,
+      Value<double> confidence,
+      Value<String> reason,
+      Value<int> judgedAt,
+      Value<int> rowid,
+    });
+
+class $$MediaLinkAiVerdictsTableFilterComposer
+    extends Composer<_$FushiDatabase, $MediaLinkAiVerdictsTable> {
+  $$MediaLinkAiVerdictsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get aKind => $composableBuilder(
+    column: $table.aKind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get aKey => $composableBuilder(
+    column: $table.aKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get bKind => $composableBuilder(
+    column: $table.bKind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get bKey => $composableBuilder(
+    column: $table.bKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get fingerprint => $composableBuilder(
+    column: $table.fingerprint,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get related => $composableBuilder(
+    column: $table.related,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get relation => $composableBuilder(
+    column: $table.relation,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get aIsOriginal => $composableBuilder(
+    column: $table.aIsOriginal,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get confidence => $composableBuilder(
+    column: $table.confidence,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get reason => $composableBuilder(
+    column: $table.reason,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get judgedAt => $composableBuilder(
+    column: $table.judgedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$MediaLinkAiVerdictsTableOrderingComposer
+    extends Composer<_$FushiDatabase, $MediaLinkAiVerdictsTable> {
+  $$MediaLinkAiVerdictsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get aKind => $composableBuilder(
+    column: $table.aKind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get aKey => $composableBuilder(
+    column: $table.aKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get bKind => $composableBuilder(
+    column: $table.bKind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get bKey => $composableBuilder(
+    column: $table.bKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get fingerprint => $composableBuilder(
+    column: $table.fingerprint,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get related => $composableBuilder(
+    column: $table.related,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get relation => $composableBuilder(
+    column: $table.relation,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get aIsOriginal => $composableBuilder(
+    column: $table.aIsOriginal,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get confidence => $composableBuilder(
+    column: $table.confidence,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get reason => $composableBuilder(
+    column: $table.reason,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get judgedAt => $composableBuilder(
+    column: $table.judgedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$MediaLinkAiVerdictsTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $MediaLinkAiVerdictsTable> {
+  $$MediaLinkAiVerdictsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get aKind =>
+      $composableBuilder(column: $table.aKind, builder: (column) => column);
+
+  GeneratedColumn<String> get aKey =>
+      $composableBuilder(column: $table.aKey, builder: (column) => column);
+
+  GeneratedColumn<String> get bKind =>
+      $composableBuilder(column: $table.bKind, builder: (column) => column);
+
+  GeneratedColumn<String> get bKey =>
+      $composableBuilder(column: $table.bKey, builder: (column) => column);
+
+  GeneratedColumn<String> get fingerprint => $composableBuilder(
+    column: $table.fingerprint,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get related =>
+      $composableBuilder(column: $table.related, builder: (column) => column);
+
+  GeneratedColumn<String> get relation =>
+      $composableBuilder(column: $table.relation, builder: (column) => column);
+
+  GeneratedColumn<bool> get aIsOriginal => $composableBuilder(
+    column: $table.aIsOriginal,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<double> get confidence => $composableBuilder(
+    column: $table.confidence,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get reason =>
+      $composableBuilder(column: $table.reason, builder: (column) => column);
+
+  GeneratedColumn<int> get judgedAt =>
+      $composableBuilder(column: $table.judgedAt, builder: (column) => column);
+}
+
+class $$MediaLinkAiVerdictsTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $MediaLinkAiVerdictsTable,
+          MediaLinkAiVerdictRow,
+          $$MediaLinkAiVerdictsTableFilterComposer,
+          $$MediaLinkAiVerdictsTableOrderingComposer,
+          $$MediaLinkAiVerdictsTableAnnotationComposer,
+          $$MediaLinkAiVerdictsTableCreateCompanionBuilder,
+          $$MediaLinkAiVerdictsTableUpdateCompanionBuilder,
+          (
+            MediaLinkAiVerdictRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $MediaLinkAiVerdictsTable,
+              MediaLinkAiVerdictRow
+            >,
+          ),
+          MediaLinkAiVerdictRow,
+          PrefetchHooks Function()
+        > {
+  $$MediaLinkAiVerdictsTableTableManager(
+    _$FushiDatabase db,
+    $MediaLinkAiVerdictsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MediaLinkAiVerdictsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MediaLinkAiVerdictsTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$MediaLinkAiVerdictsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> aKind = const Value.absent(),
+                Value<String> aKey = const Value.absent(),
+                Value<String> bKind = const Value.absent(),
+                Value<String> bKey = const Value.absent(),
+                Value<String> fingerprint = const Value.absent(),
+                Value<bool> related = const Value.absent(),
+                Value<String?> relation = const Value.absent(),
+                Value<bool?> aIsOriginal = const Value.absent(),
+                Value<double> confidence = const Value.absent(),
+                Value<String> reason = const Value.absent(),
+                Value<int> judgedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MediaLinkAiVerdictsCompanion(
+                aKind: aKind,
+                aKey: aKey,
+                bKind: bKind,
+                bKey: bKey,
+                fingerprint: fingerprint,
+                related: related,
+                relation: relation,
+                aIsOriginal: aIsOriginal,
+                confidence: confidence,
+                reason: reason,
+                judgedAt: judgedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String aKind,
+                required String aKey,
+                required String bKind,
+                required String bKey,
+                required String fingerprint,
+                required bool related,
+                Value<String?> relation = const Value.absent(),
+                Value<bool?> aIsOriginal = const Value.absent(),
+                required double confidence,
+                Value<String> reason = const Value.absent(),
+                required int judgedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => MediaLinkAiVerdictsCompanion.insert(
+                aKind: aKind,
+                aKey: aKey,
+                bKind: bKind,
+                bKey: bKey,
+                fingerprint: fingerprint,
+                related: related,
+                relation: relation,
+                aIsOriginal: aIsOriginal,
+                confidence: confidence,
+                reason: reason,
+                judgedAt: judgedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$MediaLinkAiVerdictsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $MediaLinkAiVerdictsTable,
+      MediaLinkAiVerdictRow,
+      $$MediaLinkAiVerdictsTableFilterComposer,
+      $$MediaLinkAiVerdictsTableOrderingComposer,
+      $$MediaLinkAiVerdictsTableAnnotationComposer,
+      $$MediaLinkAiVerdictsTableCreateCompanionBuilder,
+      $$MediaLinkAiVerdictsTableUpdateCompanionBuilder,
+      (
+        MediaLinkAiVerdictRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $MediaLinkAiVerdictsTable,
+          MediaLinkAiVerdictRow
+        >,
+      ),
+      MediaLinkAiVerdictRow,
+      PrefetchHooks Function()
+    >;
 typedef $$MusicScrapeMetaTableCreateCompanionBuilder =
     MusicScrapeMetaCompanion Function({
       required String trackUid,
@@ -138840,6 +139862,8 @@ class $FushiDatabaseManager {
       $$MusicResumePointsTableTableManager(_db, _db.musicResumePoints);
   $$VideoThemeSongSpansTableTableManager get videoThemeSongSpans =>
       $$VideoThemeSongSpansTableTableManager(_db, _db.videoThemeSongSpans);
+  $$MediaLinkAiVerdictsTableTableManager get mediaLinkAiVerdicts =>
+      $$MediaLinkAiVerdictsTableTableManager(_db, _db.mediaLinkAiVerdicts);
   $$MusicScrapeMetaTableTableManager get musicScrapeMeta =>
       $$MusicScrapeMetaTableTableManager(_db, _db.musicScrapeMeta);
   $$MusicMetadataRawSnapshotsTableTableManager get musicMetadataRawSnapshots =>

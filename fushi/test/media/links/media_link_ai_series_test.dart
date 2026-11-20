@@ -448,6 +448,135 @@ void main() {
     });
   });
 
+  group('裁决缓存', () {
+    MediaLinkCandidate pair(
+      String title, {
+      bool swapped = false,
+      String videoTitle = 'CLANNAD',
+    }) {
+      final MediaLinkSubject game = subject(MediaLinkKind.game, 'g', <String>[
+        title,
+      ]);
+      final MediaLinkSubject video = subject(
+        MediaLinkKind.videoCollection,
+        '1',
+        <String>[videoTitle],
+      );
+      return MediaLinkCandidate(
+        from: swapped ? video : game,
+        to: swapped ? game : video,
+        relation: MediaLinkRelation.sameWork,
+        source: kMediaLinkTitleMatchSource,
+        confidence: 0.35,
+        reason: 'r',
+      );
+    }
+
+    test('问过的一对不再发请求；两端反着摆方向照样对；AI 输入 / 模型变了重问；过期重问', () async {
+      final FushiDatabase db = memDb();
+      int calls = 0;
+      final AiChatClient client = AiChatClient(
+        client: MockClient((http.Request request) async {
+          calls++;
+          return chat(
+            jsonEncode(<String, Object?>{
+              'v': <Object?>[
+                <String, Object?>{
+                  'i': 0,
+                  'r': 'adaptation',
+                  'o': 'a',
+                  'c': 0.8,
+                  'why': 'game first',
+                },
+              ],
+            }),
+          );
+        }),
+      );
+      addTearDown(client.close);
+      int now = 1000;
+      AiMediaLinkJudge judge({String model = 'm'}) => AiMediaLinkJudge(
+        client: client,
+        provider: AiProviderConfig(
+          id: 'p',
+          presetId: kAiCustomPresetId,
+          name: 'p',
+          baseUrl: Uri.parse('https://example.com/v1'),
+          apiKey: 'k',
+          model: model,
+        ),
+        cache: MediaLinkVerdictCache(db, now: () => now),
+      );
+
+      final AiMediaLinkJudge first = judge();
+      final MediaLinkVerdict asked = (await first.judge(<MediaLinkCandidate>[
+        pair('Clannad'),
+      ])).single!;
+      expect(asked.fromIsOriginal, isTrue, reason: 'a = 游戏是原作');
+      expect(calls, 1);
+
+      final AiMediaLinkJudge second = judge();
+      final MediaLinkVerdict cached = (await second.judge(<MediaLinkCandidate>[
+        pair('Clannad', swapped: true),
+      ])).single!;
+      expect(calls, 1, reason: '同一对、AI 输入没变：不发请求');
+      expect(second.requestCount, 0);
+      expect(second.cacheHits, 1);
+      expect(cached.relation, MediaLinkRelation.adaptation);
+      expect(cached.confidence, 0.8);
+      expect(cached.reason, 'game first');
+      expect(cached.fromIsOriginal, isFalse, reason: '这次 from 是动画，原作仍是游戏');
+
+      await judge().judge(<MediaLinkCandidate>[
+        pair('Clannad', videoTitle: 'CLANNAD After Story'),
+      ]);
+      expect(calls, 2, reason: '标题变了 = AI 输入变了');
+      await judge(model: 'other').judge(<MediaLinkCandidate>[
+        pair('Clannad', videoTitle: 'CLANNAD After Story'),
+      ]);
+      expect(calls, 3, reason: '换了模型');
+      expect(
+        await db.mediaLinkAiVerdictsSince(0),
+        hasLength(1),
+        reason: '同一对只留最新一条',
+      );
+
+      now += kAiMediaLinkVerdictCacheTtl.inMilliseconds + 1;
+      await judge(model: 'other').judge(<MediaLinkCandidate>[
+        pair('Clannad', videoTitle: 'CLANNAD After Story'),
+      ]);
+      expect(calls, 4, reason: '过期重问');
+    });
+
+    test('不相关的结论也记：第二轮推断零请求、仍然不写', () async {
+      final FushiDatabase db = memDb();
+      int calls = 0;
+      final AiChatClient client = AiChatClient(
+        client: MockClient((http.Request request) async {
+          calls++;
+          return chat('{"v":[{"i":0,"r":"none","c":0.9}]}');
+        }),
+      );
+      addTearDown(client.close);
+      for (int round = 0; round < 2; round++) {
+        final MediaLinkInferenceOutcome out = await applyMediaLinkCandidates(
+          db: db,
+          candidates: <MediaLinkCandidate>[pair('Clannad')],
+          trigger: MediaLinkInferenceTrigger.manual,
+          judge: AiMediaLinkJudge(
+            client: client,
+            provider: provider(),
+            cache: MediaLinkVerdictCache(db),
+          ),
+        );
+        expect(out.written, 0);
+        expect(out.discarded, 1);
+      }
+      expect(calls, 1);
+      expect(await db.allMediaLinks(), isEmpty);
+    });
+  });
+
   test('库管家一批端点：候选合并、同一对只问一次、整批一次裁决', () async {
     final FushiDatabase db = memDb();
     final List<int> collections = <int>[

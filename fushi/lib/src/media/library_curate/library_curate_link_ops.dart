@@ -261,9 +261,10 @@ Future<LibraryCurateLinkResult> runLibraryCurateMusicInference({
 }
 
 /// 生产依赖：MAL（Jikan）+ Wikidata 桥 + 「作品关联」指派的 AI（[provider] 为 null
-/// 不发 AI 请求）。用完调返回的 `close`。
+/// 不发 AI 请求）；AI 结论记进 [db] 的本机裁决缓存。用完调返回的 `close`。
 ({LibraryCurateLinkDeps deps, void Function() close}) libraryCurateLinkDeps(
   AiProviderConfig? provider,
+  FushiDatabase db,
 ) {
   final MalVideoMetadataProvider mal = MalVideoMetadataProvider(
     client: createAppHttpIoClient(),
@@ -275,7 +276,11 @@ Future<LibraryCurateLinkResult> runLibraryCurateMusicInference({
       lookupWikidataAnime: WikidataAnimeBridge.shared.anidbIdsForVndb,
       judge: provider == null
           ? null
-          : AiMediaLinkJudge(client: client!, provider: provider),
+          : AiMediaLinkJudge(
+              client: client!,
+              provider: provider,
+              cache: MediaLinkVerdictCache(db),
+            ),
     ),
     close: () {
       mal.close();

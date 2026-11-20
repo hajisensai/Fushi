@@ -178,6 +178,49 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
     PathRebaseKind.notAPath,
     '作品图谱连接来源（manual / mal / ai …），不是来源路径。',
   ),
+  // v163 作品图谱 AI 裁决缓存（设备本地、纯缓存）：没有任何路径列。
+  PathRebaseColumn(
+    'MediaLinkAiVerdicts',
+    'aKind',
+    PathRebaseKind.notAPath,
+    '端点种类枚举值，不是路径。',
+  ),
+  PathRebaseColumn(
+    'MediaLinkAiVerdicts',
+    'aKey',
+    PathRebaseKind.notAPath,
+    '端点键（书键 / uid / 合集键），与 MediaLinks 的端点键同语义，不是路径。',
+  ),
+  PathRebaseColumn(
+    'MediaLinkAiVerdicts',
+    'bKind',
+    PathRebaseKind.notAPath,
+    '端点种类枚举值，不是路径。',
+  ),
+  PathRebaseColumn(
+    'MediaLinkAiVerdicts',
+    'bKey',
+    PathRebaseKind.notAPath,
+    '端点键（书键 / uid / 合集键），与 MediaLinks 的端点键同语义，不是路径。',
+  ),
+  PathRebaseColumn(
+    'MediaLinkAiVerdicts',
+    'fingerprint',
+    PathRebaseKind.notAPath,
+    'AI 输入摘要（十六进制），不是路径。',
+  ),
+  PathRebaseColumn(
+    'MediaLinkAiVerdicts',
+    'relation',
+    PathRebaseKind.notAPath,
+    '关系枚举值，不是路径。',
+  ),
+  PathRebaseColumn(
+    'MediaLinkAiVerdicts',
+    'reason',
+    PathRebaseKind.notAPath,
+    'AI 给的一句理由文本，不是路径。',
+  ),
   PathRebaseColumn(
     'MediaOpenHistory',
     'mediaSource',
