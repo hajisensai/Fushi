@@ -4100,8 +4100,8 @@ schema 不变（40024）；`ABI_VERSION` 不变（`location_forget` 的请求 / 
 
 验证：`cargo fmt --check` 0；`cargo test --profile quick --lib -j 4` 1440 passed / 0 failed / 39 ignored；engine
 `srs_sync4_folder_test` 7 条全绿；Dart（dist）`srs_retained_copy_wiring` / `srs_sync_scheduler` / `srs_sync_now_toast` /
-`srs_pages` / `srs_history_page` / `srs_retained_copy` 一批 163 条，除 wiring 新用例的查找写法（零高度项被 sliver 算作不可见，
-改 `skipOffstage: false`）外全绿，修后 wiring 6 条全绿；`flutter analyze --no-pub` 无问题。
+`srs_pages` / `srs_history_page` / `srs_retained_copy` 一批 163 条，除 wiring 牌组列表新用例的测试写法外全绿（先是按固定 key 找「下一项」
+找错了项，改按列表项序号；再是零高度项被 sliver 算作不可见，改 `skipOffstage: false`），修后 wiring 6 条全绿；`flutter analyze --no-pub` 无问题。
 
 变异（Dart 一次全加、一批跑，还原后工作区干净）：去掉 separator 对提示的跳过 → wiring 牌组列表用例与 `srs_pages_test` MD3
 首页用例红；保留副本 provider 不听成功计数 → wiring 首次同步用例红；调度器不加计数 → 调度器文件夹用例红（`Expected: <1>`）；
