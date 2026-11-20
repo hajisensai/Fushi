@@ -663,13 +663,19 @@ void main() {
       expect(await File('${dest.path}.hls.part').exists(), isFalse);
       expect(await File('${dest.path}.hls.progress').exists(), isFalse);
       expect(await File('${dest.path}.remux.mp4').exists(), isFalse);
-      expect(server.requests.map((_Req r) => r.path), <String>[
-        '/hls/master.m3u8',
-        '/hls/media.m3u8',
-        '/hls/seg1.ts',
-        '/hls/key.bin',
-        '/hls/seg2.png',
-      ]);
+      final List<String> paths = <String>[
+        for (final _Req r in server.requests) r.path,
+      ];
+      expect(paths.take(2), <String>['/hls/master.m3u8', '/hls/media.m3u8']);
+      // 分片同时在途（video-33），到达服务器的先后不定；钥匙只取一次。
+      expect(
+        paths.skip(2),
+        unorderedEquals(<String>[
+          '/hls/seg1.ts',
+          '/hls/key.bin',
+          '/hls/seg2.png',
+        ]),
+      );
       expect(
         server.requests.every((_Req r) => r.referer == 'https://site.example/'),
         isTrue,
@@ -783,26 +789,26 @@ void main() {
     test('cancel mid-way throws RemoteDownloadCancelled and keeps the '
         'resume record', () async {
       installHls();
-      final Completer<void> seg2Arrived = Completer<void>();
       final Completer<void> release = Completer<void>();
       addTearDown(() {
         if (!release.isCompleted) release.complete();
       });
       server.routes['/hls/seg2.png'] = (HttpRequest request) async {
-        seg2Arrived.complete();
         await release.future;
         await request.response.close();
       };
       final File dest = File(p.join(tmp.path, 'ep1.mp4'));
       final Completer<void> cancel = Completer<void>();
+      // 第一片写完（断点已落）、第二片还挂着时取消。
       final Future<void> run = downloader(_FakeFfmpeg.failing()).download(
         url: server.url('/hls/master.m3u8'),
         headers: const <String, String>{},
         dest: dest,
+        onProgress: (double progress) {
+          if (progress >= 0.5 && !cancel.isCompleted) cancel.complete();
+        },
         cancelSignal: cancel.future,
       );
-      await seg2Arrived.future;
-      cancel.complete();
       await expectLater(run, throwsA(isA<RemoteDownloadCancelled>()));
       expect(await dest.exists(), isFalse);
       final HlsDownloadProgress record = HlsDownloadProgress.tryParse(
@@ -816,14 +822,12 @@ void main() {
 
     /// 下到第二片时暂停：留下「第一片已写完」的 part 与断点记录。
     Future<File> cancelAtSecondSegment() async {
-      final Completer<void> seg2Arrived = Completer<void>();
       final Completer<void> release = Completer<void>();
       addTearDown(() {
         if (!release.isCompleted) release.complete();
       });
       final _Handler seg2 = server.routes['/hls/seg2.png']!;
       server.routes['/hls/seg2.png'] = (HttpRequest request) async {
-        seg2Arrived.complete();
         await release.future;
         await request.response.close();
       };
@@ -833,10 +837,11 @@ void main() {
         url: server.url('/hls/master.m3u8'),
         headers: const <String, String>{},
         dest: dest,
+        onProgress: (double progress) {
+          if (progress >= 0.5 && !cancel.isCompleted) cancel.complete();
+        },
         cancelSignal: cancel.future,
       );
-      await seg2Arrived.future;
-      cancel.complete();
       await expectLater(run, throwsA(isA<RemoteDownloadCancelled>()));
       server.routes['/hls/seg2.png'] = seg2;
       server.requests.clear();
@@ -884,12 +889,17 @@ void main() {
       );
       // 从 0 下：旧流的第一片一个字节都不留。
       expect(await dest.readAsBytes(), <int>[...other1, ...other2]);
-      expect(server.requests.map((_Req r) => r.path), <String>[
+      final List<String> paths = <String>[
+        for (final _Req r in server.requests) r.path,
+      ];
+      expect(paths.take(2), <String>[
         '/hls/master.m3u8',
         '/hls/alt/media.m3u8',
-        '/hls/alt/a.ts',
-        '/hls/alt/b.ts',
       ]);
+      expect(
+        paths.skip(2),
+        unorderedEquals(<String>['/hls/alt/a.ts', '/hls/alt/b.ts']),
+      );
       expect(await File('${dest.path}.hls.progress').exists(), isFalse);
     });
 
@@ -1170,6 +1180,67 @@ void main() {
       for (final File f in leftovers) {
         expect(await f.exists(), isFalse, reason: f.path);
       }
+    });
+
+    test('video-33: segments are fetched kAnimeHlsSegmentsInFlight at a time '
+        'and still written in playlist order', () async {
+      const int count = 6;
+      final List<Uint8List> parts = <Uint8List>[
+        for (int i = 0; i < count; i++) _tsPackets(2 + i, seed: 3 + 2 * i),
+      ];
+      server.routes['/hls/media.m3u8'] = _text(
+        '#EXTM3U\n#EXT-X-TARGETDURATION:4\n'
+        '${<String>[for (int i = 0; i < count; i++) '#EXTINF:4,\ns$i.ts\n'].join()}'
+        '#EXT-X-ENDLIST\n',
+      );
+      int inFlight = 0;
+      int peak = 0;
+      int servedOthers = 0;
+      final Completer<void> windowFull = Completer<void>();
+      final Completer<void> othersServed = Completer<void>();
+      for (int i = 0; i < count; i++) {
+        server.routes['/hls/s$i.ts'] = (HttpRequest request) async {
+          inFlight++;
+          if (inFlight > peak) peak = inFlight;
+          if (inFlight >= kAnimeHlsSegmentsInFlight &&
+              !windowFull.isCompleted) {
+            windowFull.complete();
+          }
+          // 串行实现下窗口永远凑不满：等满上限后照常回，测试靠 peak 判红。
+          await windowFull.future.timeout(
+            const Duration(seconds: 2),
+            onTimeout: () {},
+          );
+          // 队头那片最后才回：后面的片先到也不能先写盘。
+          if (i == 0) {
+            await othersServed.future.timeout(
+              const Duration(seconds: 2),
+              onTimeout: () {},
+            );
+          }
+          inFlight--;
+          request.response.add(parts[i]);
+          await request.response.close();
+          if (i != 0 &&
+              ++servedOthers >= kAnimeHlsSegmentsInFlight - 1 &&
+              !othersServed.isCompleted) {
+            othersServed.complete();
+          }
+        };
+      }
+      final File dest = File(p.join(tmp.path, 'ep1.mp4'));
+      final List<double> progress = <double>[];
+      await downloader(_FakeFfmpeg.failing()).download(
+        url: server.url('/hls/media.m3u8'),
+        headers: const <String, String>{},
+        dest: dest,
+        onProgress: progress.add,
+      );
+      expect(peak, kAnimeHlsSegmentsInFlight);
+      expect(await dest.readAsBytes(), <int>[
+        for (final Uint8List part in parts) ...part,
+      ]);
+      expect(progress, <double>[for (int i = 1; i <= count; i++) i / count]);
     });
 
     test('HTTP errors on a segment surface as failures, not cancels', () async {
