@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:drift/drift.dart' show BooleanExpressionOperators, OrderingTerm;
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dart'
     show isUndeliveredMineFailure;
@@ -94,18 +93,11 @@ class VideoMineQueue {
   Future<int> openCount(String bookUid) => _store.openCount(bookUid);
 
   /// 写入失败的暂存卡（Anki 没开 / 重复 等），供列表展示与重试。
-  Future<List<WebMineQueueRow>> failed(String bookUid) async {
-    return (db.select(db.webMineQueue)
-          ..where(
-            ($WebMineQueueTable t) =>
-                t.bookUid.equals(bookUid) &
-                t.status.equals(WebMineQueueStatus.failed),
-          )
-          ..orderBy(<OrderingTerm Function($WebMineQueueTable)>[
-            ($WebMineQueueTable t) => OrderingTerm.asc(t.id),
-          ]))
-        .get();
-  }
+  Future<List<WebMineQueueRow>> failed(String bookUid) =>
+      _store.failed(bookUid);
+
+  /// 单行重试：失败行排回待写入（列表里那一行的「重试」）。见 [WebMineQueueStore.requeueRow]。
+  Future<bool> retry(int id) => _store.requeueRow(id);
 
   /// 删掉一张暂存卡（行 + 媒体）。
   Future<void> discard(int id) async {
@@ -265,7 +257,7 @@ class VideoMineQueue {
     if (outcome.result != MineResult.success &&
         outcome.result != MineResult.queued) {
       final String reason = outcome.result == MineResult.duplicate
-          ? 'duplicate'
+          ? WebMineQueueStore.duplicateError
           : (outcome.errorDetail ?? outcome.result.name);
       if (isUndeliveredMineFailure(outcome)) {
         await _store.markUndelivered(row.id, reason);

@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/mining/video_mine_queue.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_anki/fushi_anki.dart' show BaseAnkiRepository;
 import 'package:fushi/src/mining/web_mine_queue_store.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -52,6 +53,14 @@ String videoMineCommitMessage(VideoMineCommitSummary summary) => <String>[
     t.video_mine_queue_committed_undelivered(count: summary.undelivered),
   ?summary.notice,
 ].join('\n');
+
+/// 失败行副标题里的原因：已知的固定标记（重复卡、视频到不了）换成本地化说明，其余原样
+/// （引擎 / Anki 带回的原因本身就是给人看的）。本地「待制卡」与网页视频「制卡队列」共用。
+String mineQueueFailureText(String? error) => switch (error) {
+  WebMineQueueStore.duplicateError => t.video_mine_queue_reason_duplicate,
+  'navigate_timeout' => t.web_video_mine_queue_reason_unreachable,
+  _ => error ?? '',
+};
 
 /// 汇总提示的级别：有失败、没送到或带回提示都是 warning（关掉「制卡成功提示」也照样
 /// 要让用户看到）。
@@ -177,6 +186,12 @@ class _VideoMineQueueDialogState extends State<VideoMineQueueDialog> {
     await _reload();
   }
 
+  Future<void> _retry(WebMineQueueRow row) async {
+    await widget.queue.retry(row.id);
+    widget.onChanged?.call();
+    await _reload();
+  }
+
   Future<void> _commitAll() async {
     setState(() => _progress = (done: 0, total: _rows.length));
     final VideoMineCommitSummary summary = await widget.commit((
@@ -258,7 +273,7 @@ class _VideoMineQueueDialogState extends State<VideoMineQueueDialog> {
                             subtitle: Text(
                               failed
                                   ? t.video_mine_queue_failed(
-                                      reason: row.error ?? '',
+                                      reason: mineQueueFailureText(row.error),
                                     )
                                   : undelivered != null
                                   ? t.video_mine_queue_undelivered(
@@ -273,10 +288,23 @@ class _VideoMineQueueDialogState extends State<VideoMineQueueDialog> {
                                   ? TextStyle(color: cs.tertiary)
                                   : null,
                             ),
-                            trailing: FushiIconButtonControl(
-                              tooltip: t.video_mine_queue_remove,
-                              icon: const FushiIcon(Icons.delete_outline),
-                              onPressed: busy ? null : () => _remove(row),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: <Widget>[
+                                // 单行重试：重复卡也能点（用户多半已在 Anki 删了那张）；
+                                // 「全部写入」的批量重排会跳过重复卡。
+                                if (failed)
+                                  FushiIconButtonControl(
+                                    tooltip: t.video_mine_queue_retry,
+                                    icon: const FushiIcon(FushiIcons.refresh),
+                                    onPressed: busy ? null : () => _retry(row),
+                                  ),
+                                FushiIconButtonControl(
+                                  tooltip: t.video_mine_queue_remove,
+                                  icon: const FushiIcon(Icons.delete_outline),
+                                  onPressed: busy ? null : () => _remove(row),
+                                ),
+                              ],
                             ),
                           );
                         },
@@ -291,7 +319,15 @@ class _VideoMineQueueDialogState extends State<VideoMineQueueDialog> {
           child: Text(t.dialog_close),
         ),
         FushiFilledButton(
-          onPressed: busy || _rows.isEmpty ? null : _commitAll,
+          // 只剩重复卡时「全部写入」无事可做（批量重排跳过重复卡），按钮灰掉。
+          onPressed:
+              busy ||
+                  !_rows.any(
+                    (WebMineQueueRow r) =>
+                        r.error != WebMineQueueStore.duplicateError,
+                  )
+              ? null
+              : _commitAll,
           child: Text(t.video_mine_queue_commit_all),
         ),
       ],

@@ -259,4 +259,38 @@ void main() {
     // 两边共用的按书待办不受这条过滤影响：暂存队列照样读得到自己的行。
     expect(await store.pending('remote/emby/1'), hasLength(2));
   });
+  test('requeueFailed 跳过重复卡；requeueRow 单行排回（含重复卡），非失败行不动', () async {
+    final int dup = await enqueue('book-a', 1000);
+    final int bad = await enqueue('book-a', 2000);
+    final int other = await enqueue('book-b', 3000);
+    final int fresh = await enqueue('book-a', 4000);
+    await store.markFailed(dup, WebMineQueueStore.duplicateError);
+    await store.markFailed(bad, 'navigate_timeout');
+    await store.markFailed(other, 'navigate_timeout');
+
+    expect(
+      (await store.failed('book-a')).map((WebMineQueueRow r) => r.id),
+      <int>[dup, bad],
+    );
+    expect(await store.requeueFailed('book-a'), 1);
+    expect(
+      (await store.pending('book-a')).map((WebMineQueueRow r) => r.id),
+      <int>[bad, fresh],
+    );
+    final WebMineQueueRow requeued = (await store.pending('book-a')).first;
+    expect(requeued.error, isNull);
+    // 重复卡留在失败里；别的书的失败行不受影响。
+    expect(
+      (await store.failed('book-a')).single.error,
+      WebMineQueueStore.duplicateError,
+    );
+    expect((await store.failed('book-b')).single.id, other);
+
+    expect(await store.requeueRow(dup), isTrue);
+    expect(await store.requeueRow(dup), isFalse);
+    expect(await store.requeueRow(fresh), isFalse);
+    expect(await store.failed('book-a'), isEmpty);
+    expect(await store.pendingCount('book-a'), 3);
+    expect(await store.openCount('book-a'), 3);
+  });
 }
