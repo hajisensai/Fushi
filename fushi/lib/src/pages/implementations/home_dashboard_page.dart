@@ -2448,9 +2448,13 @@ class _HomeDashboardPageState
     if (entry.remote != null || entry.server != null) return null;
     if (entry.video case final VideoBookRow video) {
       final int? cid = entry.collectionId;
-      return cid != null ? 'video|c$cid' : 'video|b${video.bookUid}';
+      return MediaKind.video.compositeKey(
+        cid != null ? 'c$cid' : 'b${video.bookUid}',
+      );
     }
-    if (entry.game case final GalgameEntry game) return 'game|${game.id}';
+    if (entry.game case final GalgameEntry game) {
+      return MediaKind.game.compositeKey(game.id);
+    }
     final MediaItem? book = entry.book;
     final MediaKind? kind = entry.kind;
     if (book == null || kind == null) return null;
@@ -2460,7 +2464,7 @@ class _HomeDashboardPageState
     final String? uid = bookKey == null ? null : _epubUidByBookKey[bookKey];
     if (uid == null) return null;
     final int? cid = entry.seriesCount > 0 ? entry.collectionId : null;
-    return '${kind.dbValue}|$uid${cid == null ? '' : '|c$cid'}';
+    return kind.compositeKey('$uid${cid == null ? '' : '|c$cid'}');
   }
 
   /// 条目的系列元数据（没有 / 还没取到为 null）。没取过或取的是旧一轮时在后台
@@ -2485,6 +2489,10 @@ class _HomeDashboardPageState
     FushiSeriesMeta? meta;
     try {
       meta = await _querySeriesMeta(entry);
+    } catch (e, stack) {
+      // 失败也记进本轮缓存（meta 为 null），同一轮快照不再重查；下一轮快照
+      // （_seriesMetaGeneration 自增）按正常机制重取。
+      ErrorLogService.instance.log('HomeDashboardPage.seriesMeta', e, stack);
     } finally {
       _seriesMetaLoading.remove(key);
     }
