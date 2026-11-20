@@ -135,6 +135,7 @@ import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/media/range_playback.dart';
 import 'package:fushi/src/media/audiobook/reader_quick_settings_sheet.dart';
+import 'package:fushi/src/media/sources/book_cover_file_resolver.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi_engine/media/kavita/kavita_models.dart'
     show KavitaProgress;
@@ -2048,6 +2049,31 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   ReaderSettings? _settings;
   String? _extractDir;
 
+  /// 配对 `srt_books.cover_path`（BUG-4913）：字幕 + 音频导入的书（乐曲 / 独立字幕书）
+  /// 封面只在这一列，正文 EPUB 没有 cover-image。开书后台读一次，经
+  /// [_bookCoverFilePath] 与 EPUB 封面按书架同序合成。
+  String? _pairedSrtCoverPath;
+
+  /// 阅读器里这本书的封面文件：制卡、迷你播放条、歌词页、快捷设置、TTS 通知与伴屏
+  /// 共用，与书架字幕书 / 有声书卡同序（[resolveReaderBookCoverFilePath]）。
+  String? get _bookCoverFilePath => resolveReaderBookCoverFilePath(
+    pairedSrtCoverPath: _pairedSrtCoverPath,
+    extractDir: _extractDir,
+    coverHref: _book?.coverHref,
+  );
+
+  /// 读配对 SrtBook 的封面列；书没配字幕书行时保持 null。
+  Future<void> _loadPairedSrtCover(FushiDatabase db) async {
+    try {
+      final SrtBookRow? row = await db.getSrtBookByBookKey(widget.bookKey);
+      final String? cover = row?.coverPath;
+      if (!mounted || cover == _pairedSrtCoverPath) return;
+      setState(() => _pairedSrtCoverPath = cover);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderFushi.loadPairedSrtCover', e, stack);
+    }
+  }
+
   /// 在线小说书（LNReader 在线阅读）/ 网页小说书（追更）的按需取章；普通书为
   /// null。开书定位时按书行描述符建一次，拦截层读章节文件前经它把占位页换成正文。
   OnlineNovelChapterLoader? _onlineChapterLoader;
@@ -3574,6 +3600,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _settings?.enterBookLayout(this, _book!.originalLayout);
     // 同合集卷上下文与首屏无关，后台装载；失败只记日志（卷切换入口不出现）。
     unawaited(_loadVolumeContext(db));
+    // 配对字幕书的封面（乐曲 / 独立字幕书的唯一封面来源）同样与首屏无关。
+    unawaited(_loadPairedSrtCover(db));
 
     // Source links must resolve exactly. Ordinary stale bookmarks may fall
     // back to a saved position, which would show unrelated text for this card.
