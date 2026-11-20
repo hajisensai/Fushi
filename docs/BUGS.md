@@ -33,7 +33,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4237 条。点号进各自文件。
+> 共 4238 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -62,6 +62,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4906](bugs/BUG-4906-interconnect-transcode-retranscodes-segments.md) | ✅ | ✅ | 互联实时转码同一段每次请求都重新起 ffmpeg |
+| [BUG-4910](bugs/BUG-4910-mining-queue-remote-stall-blocks-all.md) | ✅ | ✅ | 沉浸制卡全进程一条串行队列，一张远端断流的卡挡住后面所有卡 |
 | [BUG-4909](bugs/BUG-4909-remote-subtitle-temp-dir-leak.md) | ✅ | ✅ | 远端字幕生成失败 / 取消时不清产物临时目录 |
 | [BUG-4908](bugs/BUG-4908-subtitle-pipeline-register-glossary-race.md) | ✅ | ✅ | 字幕生成：一集登记抛错连带后面各集不登记；S0 期间保存的专名表被管线盖掉 |
 | [BUG-4907](bugs/BUG-4907-subtitle-estimate-reprobes-duration.md) | ✅ | ✅ | 字幕费用预估每次刷新都对没识别过的集串行重跑 ffprobe |

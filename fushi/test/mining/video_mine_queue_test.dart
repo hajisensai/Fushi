@@ -87,7 +87,8 @@ void main() {
     if (tmp.existsSync()) await tmp.delete(recursive: true);
   });
 
-  /// 模拟引擎的固定临时文件名：暂存必须拷走，下一张会覆盖它们。
+  /// 模拟引擎的临时媒体：暂存必须拷走——引擎在暂存返回后就删掉本张卡的私有目录；这里
+  /// 让下一张写同名文件覆盖它，效果一样。
   Future<int> stageOne(String word, {String book = 'remote/emby/1'}) async {
     final File cover = File('${tmp.path}/immersion_clip.avif')
       ..writeAsStringSync('cover-$word');
