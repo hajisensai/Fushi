@@ -51,6 +51,7 @@ void main() {
         freshInstall: read<bool>('first_time_setup', true),
         layoutChosen: false,
         layoutActive: true,
+        layoutChoiceOffered: false,
       ),
       LibraryLayoutDefaultNoticeDecision.none,
     );

@@ -7,6 +7,11 @@
 /// 「只对升级上来、没选过布局的用户」靠**首次启动新版时就落标记**实现：全新安装、
 /// 显式选过布局（含已删的 `blocks`）、墨水屏（库页布局恒为封面网格、设置项隐藏）
 /// 在第一次判定时直接记成已处理；之后才落到默认值的人不会再被提示。
+///
+/// 与「选一种库页布局」选择框（`shell_layout_choice_dialog.dart`，G1）同管一件事：
+/// 本安装一旦被判成升级用户（出厂值封面网格，选择框待弹或已处理），这条提示就
+/// 由选择框代劳、只落标记。否则在选择框里点「稍后再说」（不写布局）后，首页会紧接着
+/// 再弹这条，而两者对「哪个是新默认」的说法相反。
 library;
 
 import 'package:material_ui/material_ui.dart';
@@ -34,15 +39,18 @@ enum LibraryLayoutDefaultNoticeDecision {
 
 /// 纯判定（测试钉住）：[handled] 是已处理标记，[freshInstall] 是本次启动是否
 /// 全新安装，[layoutChosen] 是当前 Profile 是否显式选过库页布局，
-/// [layoutActive] 是库页布局此刻是否生效（墨水屏恒为封面网格、设置项隐藏）。
+/// [layoutActive] 是库页布局此刻是否生效（墨水屏恒为封面网格、设置项隐藏），
+/// [layoutChoiceOffered] 是本安装是否归「选一种库页布局」选择框管（出厂判定为
+/// 升级用户，见 `ShellLayoutInstallDefault`）。
 LibraryLayoutDefaultNoticeDecision decideLibraryLayoutDefaultNotice({
   required bool handled,
   required bool freshInstall,
   required bool layoutChosen,
   required bool layoutActive,
+  required bool layoutChoiceOffered,
 }) {
   if (handled) return LibraryLayoutDefaultNoticeDecision.none;
-  if (freshInstall || layoutChosen || !layoutActive) {
+  if (freshInstall || layoutChosen || layoutChoiceOffered || !layoutActive) {
     return LibraryLayoutDefaultNoticeDecision.markHandled;
   }
   return LibraryLayoutDefaultNoticeDecision.show;
@@ -61,6 +69,9 @@ Future<void> maybeShowLibraryLayoutDefaultNotice({
         freshInstall: freshInstall,
         layoutChosen: appModel.shellContentLayoutChosen,
         layoutActive: shellRedesignActive(context),
+        layoutChoiceOffered:
+            appModel.themeNotifier.shellLayoutInstallDefault !=
+            ShellLayoutInstallDefault.fresh,
       );
   if (decision == LibraryLayoutDefaultNoticeDecision.none) return;
   await appModel.setLibraryLayoutDefaultNoticeHandled();

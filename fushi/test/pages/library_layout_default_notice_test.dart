@@ -21,11 +21,13 @@ void main() {
       bool freshInstall = false,
       bool layoutChosen = false,
       bool layoutActive = true,
+      bool layoutChoiceOffered = false,
     }) => decideLibraryLayoutDefaultNotice(
       handled: handled,
       freshInstall: freshInstall,
       layoutChosen: layoutChosen,
       layoutActive: layoutActive,
+      layoutChoiceOffered: layoutChoiceOffered,
     );
 
     test('升级上来、没选过布局（此前看到的是拼贴）：弹一次', () {
@@ -46,6 +48,15 @@ void main() {
     test('显式选过布局：默认值改动对他无影响，只落标记', () {
       expect(
         decide(layoutChosen: true),
+        LibraryLayoutDefaultNoticeDecision.markHandled,
+      );
+    });
+
+    test('归「选一种库页布局」选择框管的升级用户：只落标记，不在「稍后再说」后再弹一遍', () {
+      // 选择框里点「稍后再说」不写布局（layoutChosen 仍为 false），此前这条提示
+      // 紧接着又弹，且与选择框对「新默认」的说法相反。
+      expect(
+        decide(layoutChoiceOffered: true),
         LibraryLayoutDefaultNoticeDecision.markHandled,
       );
     });
