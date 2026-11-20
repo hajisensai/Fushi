@@ -974,6 +974,16 @@ class AnotherPopupPart {
           'text + timestamp rows as video-subsystem content; row/timestamp '
           'font size scales with appUiScale, not ordinary page chrome '
           '(same content rationale as the allowlisted subtitle overlay).',
+      'lib/src/media/video/video_portrait_layout.dart':
+          'Portrait study layout (decision P9AS-fvjJh): fontSize: is the '
+          'current subtitle cue itself, passed in from the user subtitle '
+          'font size scaled with appUiScale -- the same reviewed content '
+          'exception as video_subtitle_jump_panel / subtitle_transcript_text.',
+      'lib/src/pages/implementations/video_fushi/portrait.part.dart':
+          'Portrait study layout wiring (decision P9AS-fvjJh): the only '
+          'fontSize: values are the current cue and episode rows scaled with '
+          '_videoUiScale, handed to the allowlisted video content panels -- '
+          'same content rationale as the sibling episode.part.dart.',
       'lib/src/media/video/video_chapter_panel.dart':
           'Chapter list panel (TODO-424) renders chapter index + title + start '
           'timestamp rows as video-subsystem content; row font size scales '
@@ -1793,6 +1803,10 @@ class AnotherPopupPart {
         'fontSize:',
         'SwitchListTile(',
         'CheckboxListTile(',
+      },
+      'lib/src/media/video/video_portrait_layout.dart': <String>{'fontSize:'},
+      'lib/src/pages/implementations/video_fushi/portrait.part.dart': <String>{
+        'fontSize:',
       },
       'lib/src/pages/shared/library_section_tabs.dart': <String>{'fontSize:'},
       'lib/src/utils/misc/fushi_toast.dart': <String>{'fontSize:'},

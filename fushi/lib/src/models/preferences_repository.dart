@@ -41,6 +41,7 @@ import 'package:fushi/src/models/preference_keys.dart'
         kAiWebSearchPageFetchDeny,
         kAiWebSearchPageFetchPref,
         kLibraryManualOrderPrefKeyPrefix,
+        kVideoOrientationPrefKeyPrefix,
         kWhatsNewCardDismissedVersionPrefKey,
         kWhatsNewSeenSeqPrefKey,
         kWhatsNewSeenVersionPrefKey;
@@ -3166,6 +3167,42 @@ class PreferencesRepository extends ChangeNotifier
     await setPref('video_lock_window_aspect_ratio', value);
     notifyListeners();
   }
+
+  /// 手机 / 平板进入视频时的方向（拍板台 P9AS-fvjJh）：`VideoEntryOrientation`
+  /// 的落库值，默认 `landscape`（老用户习惯不变）。
+  String get videoEntryOrientation =>
+      getPref('video_entry_orientation', defaultValue: 'landscape') as String;
+
+  Future<void> setVideoEntryOrientation(String value) async {
+    await setPref('video_entry_orientation', value);
+    notifyListeners();
+  }
+
+  /// 手机竖屏看横版视频时用「视频在上、当前句 + 字幕列表在下」的学习版式（默认开）。
+  bool get videoPortraitSubtitleList =>
+      getPref('video_portrait_subtitle_list', defaultValue: true) as bool;
+
+  Future<void> setVideoPortraitSubtitleList(bool value) async {
+    await setPref('video_portrait_subtitle_list', value);
+    notifyListeners();
+  }
+
+  /// 记住每部作品上次手动转到的方向（默认关）。
+  bool get videoRememberOrientation =>
+      getPref('video_remember_orientation', defaultValue: false) as bool;
+
+  Future<void> setVideoRememberOrientation(bool value) async {
+    await setPref('video_remember_orientation', value);
+    notifyListeners();
+  }
+
+  /// 某部作品记住的方向（`landscape` / `portrait`）；没记过返回空串。
+  String videoOrientationForWork(String bookUid) =>
+      getPref('$kVideoOrientationPrefKeyPrefix$bookUid', defaultValue: '')
+          as String;
+
+  Future<void> setVideoOrientationForWork(String bookUid, String value) =>
+      setPref('$kVideoOrientationPrefKeyPrefix$bookUid', value);
 
   /// YouTube 显式画质目标高度（如 720/1080/2160）；0 = 自动（默认策略：编码优先、
   /// ≤1080p，见 pickPlaybackVideoStream）。消费方把 0 换算成 null 传解析器。

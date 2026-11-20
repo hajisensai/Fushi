@@ -14,6 +14,8 @@ import 'package:fushi/src/media/video/video_hdr_output.dart';
 import 'package:fushi/src/media/video/video_clip_export_preferences.dart';
 import 'package:fushi/src/media/video/video_screenshot_destination.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
+import 'package:fushi/src/media/video/video_orientation_policy.dart'
+    show VideoEntryOrientation;
 import 'package:fushi/src/media/video/video_resume.dart';
 import 'package:fushi/src/media/video/video_settings_actions.dart';
 import 'package:fushi/src/media/video/video_settings_cli.dart';
@@ -1642,6 +1644,68 @@ SettingsDestination buildVideoPictureDestination() {
                 settingsContext.appModel.videoLockWindowAspectRatio,
             onChanged: (SettingsContext settingsContext, bool value) async {
               await setVideoLockWindowAspectRatioDual(settingsContext, value);
+            },
+            defaultValue: false,
+          ),
+          // 拍板台 P9AS-fvjJh：竖屏播放三项，仅手机 / 平板（桌面窗口不走设备方向）。
+          // 进入方向只在下次打开视频时生效；播放中转屏用控件栏的转屏按钮。
+          SettingsSegmentedItem<String>(
+            id: 'video.playback.entry_orientation',
+            title: t.video_setting_entry_orientation,
+            subtitle: t.video_setting_entry_orientation_hint,
+            icon: Icons.screen_rotation_outlined,
+            visible: (_) => isMobilePlatform,
+            video: VideoPlacement(group: VideoGroup.playback, order: 41),
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: VideoEntryOrientation.landscape.storageValue,
+                label: t.video_setting_entry_orientation_landscape,
+              ),
+              SettingsSegmentOption<String>(
+                value: VideoEntryOrientation.videoAspect.storageValue,
+                label: t.video_setting_entry_orientation_video,
+              ),
+              SettingsSegmentOption<String>(
+                value: VideoEntryOrientation.sensor.storageValue,
+                label: t.video_setting_entry_orientation_sensor,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                VideoEntryOrientation.fromStorage(
+                  settingsContext.appModel.videoEntryOrientation,
+                ).storageValue,
+            onChanged: (SettingsContext settingsContext, String value) async {
+              await settingsContext.appModel.setVideoEntryOrientation(value);
+            },
+            defaultValue: VideoEntryOrientation.landscape.storageValue,
+          ),
+          SettingsSwitchItem(
+            id: 'video.playback.portrait_subtitle_list',
+            title: t.video_setting_portrait_subtitle_list,
+            subtitle: t.video_setting_portrait_subtitle_list_hint,
+            icon: Icons.splitscreen_outlined,
+            visible: (_) => isMobilePlatform,
+            video: VideoPlacement(group: VideoGroup.playback, order: 42),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoPortraitSubtitleList,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setVideoPortraitSubtitleList(
+                value,
+              );
+            },
+            defaultValue: true,
+          ),
+          SettingsSwitchItem(
+            id: 'video.playback.remember_orientation',
+            title: t.video_setting_remember_orientation,
+            subtitle: t.video_setting_remember_orientation_hint,
+            icon: Icons.bookmark_outline,
+            visible: (_) => isMobilePlatform,
+            video: VideoPlacement(group: VideoGroup.playback, order: 43),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoRememberOrientation,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setVideoRememberOrientation(value);
             },
             defaultValue: false,
           ),
