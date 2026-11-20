@@ -150,6 +150,31 @@ void main() {
     expect(raw.playResY, 1024);
   });
 
+  test('QRC 注音轨对不上：整首不挂 ruby，rubyDropped 过 FFI 并经 Dart 线格式往返', () {
+    const String body =
+        '[1000,1000]夜(1000,300)に(1300,200)駆(1500,200)け(1700,300)';
+    final LyricTimeline t = FushiLyrics.parse(
+      utf8.encode('[kana:1よる]\n$body'),
+      hint: 'qrc',
+      durationMs: 30000,
+    );
+    expect(t.rubyDropped, isTrue);
+    expect(<String?>[
+      for (final LyricLine l in t.lines)
+        for (final LyricSyllable s in l.syllables) s.ruby,
+    ], everyElement(isNull));
+    final LyricTimeline again = decodeLyricTimeline(encodeLyricTimeline(t));
+    expect(again.rubyDropped, isTrue);
+    expect(again, t);
+    expect(again.copyWith(isUserEdited: true).rubyDropped, isTrue);
+    final LyricTimeline matched = FushiLyrics.parse(
+      utf8.encode('[kana:1よる1か]\n$body'),
+      hint: 'qrc',
+      durationMs: 30000,
+    );
+    expect(matched.rubyDropped, isFalse);
+  });
+
   test('线格式版本不符 / 截断抛 FormatException', () {
     final Uint8List ok = encodeLyricTimeline(
       const LyricTimeline(format: 'lrc', lines: <LyricLine>[]),
