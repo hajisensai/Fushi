@@ -1,6 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/models/app_font_loader.dart';
 import 'package:fushi/src/reader/reader_settings.dart' show ReaderCustomFontCss;
+import 'package:fushi/src/utils/components/fushi_material_components.dart'
+    show FushiSelectableChip;
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// 字体行右侧的对照样字：一个拉丁字母对 + 日文最能看出字形差异的几个字
@@ -16,6 +18,52 @@ const String kJaFontSampleSentence = '吾輩は猫である。名前はまだ無
 /// 简繁分开：繁体字体（如教育部楷书）没有简体字形，简体样张里的「黄」「张」会
 /// 回退到别的字体，反之亦然——只给一种中文样张就看不出字体本来的样子。
 enum FontSampleScript { japanese, simplifiedChinese, traditionalChinese, latin }
+
+/// 样张工具栏只分「日文 / 中文 / 西文」三档；简繁是中文档下的二级选择，由样张里
+/// 的 [FontChineseVariantChips] 切换。
+extension FontSampleScriptGroup on FontSampleScript {
+  bool get isChinese =>
+      this == FontSampleScript.simplifiedChinese ||
+      this == FontSampleScript.traditionalChinese;
+}
+
+/// 中文样张里的简繁小切换：两枚小 chip，标签固定用中文书写（「简体」「繁體」各用
+/// 本字体写自己），不随界面语言翻译——这是给看中文的人分辨字形用的。
+///
+/// [script] 不是中文时不渲染（返回空盒）。
+class FontChineseVariantChips extends StatelessWidget {
+  const FontChineseVariantChips({
+    required this.script,
+    required this.onChanged,
+    super.key,
+  });
+
+  final FontSampleScript script;
+  final ValueChanged<FontSampleScript> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!script.isChinese) return const SizedBox.shrink();
+    return Wrap(
+      spacing: 6,
+      children: <Widget>[
+        for (final (FontSampleScript value, String label)
+            in const <(FontSampleScript, String)>[
+              (FontSampleScript.simplifiedChinese, '简体'),
+              (FontSampleScript.traditionalChinese, '繁體'),
+            ])
+          FushiSelectableChip(
+            key: ValueKey<String>('font-chinese-variant-${value.name}'),
+            label: label,
+            selected: script == value,
+            onSelected: (_) {
+              if (script != value) onChanged(value);
+            },
+          ),
+      ],
+    );
+  }
+}
 
 /// 该文种的内容语言标签，喂给 `contentFontFamilies` 决定缺字回退到哪套系统字体。
 String fontSampleLanguageTag(FontSampleScript script) => switch (script) {

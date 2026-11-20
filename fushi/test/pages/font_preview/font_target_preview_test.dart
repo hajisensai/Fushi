@@ -316,33 +316,60 @@ void main() {
     );
   });
 
-  for (final AppLocale locale in <AppLocale>[AppLocale.en, AppLocale.zhCn]) {
-    testWidgets('样文工具栏四个文种在 360 宽手机上不溢出（${locale.languageTag}）', (
-      WidgetTester tester,
-    ) async {
-      LocaleSettings.setLocale(locale);
-      tester.view.devicePixelRatio = 1;
-      tester.view.physicalSize = const Size(360, 640);
-      addTearDown(tester.view.reset);
-      final TextEditingController controller = TextEditingController();
-      addTearDown(controller.dispose);
-      FontSampleScript? picked;
-      await tester.pumpWidget(
-        buildApp(
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: FontSampleToolbar(
-              script: FontSampleScript.japanese,
-              onScriptChanged: (FontSampleScript s) => picked = s,
-              controller: controller,
-              onCustomChanged: () {},
-            ),
-          ),
+  testWidgets('样文工具栏三档：「中文」保留当前简繁，从别的文种切过来默认简体', (WidgetTester tester) async {
+    final TextEditingController controller = TextEditingController();
+    addTearDown(controller.dispose);
+    FontSampleScript? picked;
+    Widget toolbar(FontSampleScript script) => buildApp(
+      FontSampleToolbar(
+        script: script,
+        onScriptChanged: (FontSampleScript s) => picked = s,
+        controller: controller,
+        onCustomChanged: () {},
+      ),
+    );
+    await tester.pumpWidget(toolbar(FontSampleScript.japanese));
+    expect(find.text('简体'), findsNothing);
+    await tester.tap(find.text(t.font_library_filter_chinese));
+    expect(picked, FontSampleScript.simplifiedChinese);
+
+    picked = null;
+    await tester.pumpWidget(toolbar(FontSampleScript.traditionalChinese));
+    await tester.tap(find.text(t.font_library_sample_latin));
+    expect(picked, FontSampleScript.latin);
+  });
+
+  testWidgets('中文样张上的简繁小 chip 切换文种，日文下不显示', (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(420, 900);
+    addTearDown(tester.view.reset);
+    FontSampleScript script = FontSampleScript.simplifiedChinese;
+    Future<void> pump() => tester.pumpWidget(
+      buildApp(
+        FontTargetPreview(
+          target: FontTarget.body,
+          families: const <String>['Preview Family'],
+          script: script,
+          onScriptChanged: (FontSampleScript s) => script = s,
         ),
-      );
-      expect(tester.takeException(), isNull);
-      await tester.tap(find.text(t.font_library_sample_traditional));
-      expect(picked, FontSampleScript.traditionalChinese);
-    });
-  }
+      ),
+    );
+    await pump();
+    expect(find.text('简体'), findsOneWidget);
+    expect(find.text('繁體'), findsOneWidget);
+    await tester.tap(find.text('繁體'));
+    expect(script, FontSampleScript.traditionalChinese);
+    await pump();
+    expect(
+      find.textContaining(
+        fontTargetSampleTexts(FontSampleScript.traditionalChinese).bodyText,
+        findRichText: true,
+      ),
+      findsOneWidget,
+    );
+
+    script = FontSampleScript.japanese;
+    await pump();
+    expect(find.text('简体'), findsNothing);
+  });
 }

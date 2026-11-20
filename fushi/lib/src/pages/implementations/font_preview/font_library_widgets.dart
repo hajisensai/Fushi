@@ -694,6 +694,10 @@ class FontSampleToolbar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    // 「中文」一档代表当前的简 / 繁之一；简繁由样张里的小 chip 切换。
+    final FontSampleScript chinese = script.isChinese
+        ? script
+        : FontSampleScript.simplifiedChinese;
     final Widget segments = FushiSegmentedButton<FontSampleScript>(
       key: const ValueKey<String>('font-sample-script'),
       showSelectedIcon: false,
@@ -703,12 +707,8 @@ class FontSampleToolbar extends StatelessWidget {
           label: Text(t.font_library_filter_japanese),
         ),
         ButtonSegment<FontSampleScript>(
-          value: FontSampleScript.simplifiedChinese,
-          label: Text(t.font_library_sample_simplified),
-        ),
-        ButtonSegment<FontSampleScript>(
-          value: FontSampleScript.traditionalChinese,
-          label: Text(t.font_library_sample_traditional),
+          value: chinese,
+          label: Text(t.font_library_filter_chinese),
         ),
         ButtonSegment<FontSampleScript>(
           value: FontSampleScript.latin,
@@ -762,6 +762,7 @@ class FontLibraryDetailPanel extends StatefulWidget {
     required this.customSample,
     required this.onToggleTarget,
     required this.onDelete,
+    this.onScriptChanged,
     this.onMoveUp,
     this.onMoveDown,
     this.chainPosition,
@@ -773,6 +774,9 @@ class FontLibraryDetailPanel extends StatefulWidget {
   final FontLibraryEntryView entry;
   final FontSampleScript script;
   final String customSample;
+
+  /// 样张里的简繁小 chip 切换文种；null = 不显示切换。
+  final ValueChanged<FontSampleScript>? onScriptChanged;
   final ValueChanged<FontTarget> onToggleTarget;
   final VoidCallback onDelete;
 
@@ -907,6 +911,11 @@ class _FontLibraryDetailPanelState extends State<FontLibraryDetailPanel> {
                   }
                 },
               ),
+              if (widget.onScriptChanged != null && custom.isEmpty)
+                FontChineseVariantChips(
+                  script: widget.script,
+                  onChanged: widget.onScriptChanged!,
+                ),
             ],
           ),
           const SizedBox(height: 8),
