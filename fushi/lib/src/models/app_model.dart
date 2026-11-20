@@ -13178,7 +13178,7 @@ class AppModel
 
   /// 把当前 server 真值写进本机已解压的浏览器扩展副本（没装过不落盘）。
   Future<void> syncBrowserExtensionServerConfig() async {
-    if (!DesktopLookupService.isDesktop) return;
+    if (!browserExtensionInstallAvailableOn(defaultTargetPlatform)) return;
     if (!moduleVisibility.isEnabled(ModuleId.web)) return;
     await rewriteBrowserExtensionServerConfig(
       BrowserExtensionServerConfig(
@@ -14172,9 +14172,9 @@ class AppModel
 
   /// BUG-726：把已解压的浏览器扩展副本刷新到当前 app 内置版本（详见
   /// [refreshBundledBrowserExtensionIfStale]），并缓存内置指纹供查词响应下发。
-  /// 仅桌面（扩展解压引导仅桌面有意义）；移动端 no-op。
+  /// 只在有扩展安装引导的平台跑（[browserExtensionInstallAvailableOn]）；iOS no-op。
   Future<void> refreshBrowserExtensionCopy() async {
-    if (!DesktopLookupService.isDesktop) return;
+    if (!browserExtensionInstallAvailableOn(defaultTargetPlatform)) return;
     _browserExtensionBuild = await bundledBrowserExtensionFingerprint();
     await refreshBundledBrowserExtensionIfStale(
       serverConfig: BrowserExtensionServerConfig(
