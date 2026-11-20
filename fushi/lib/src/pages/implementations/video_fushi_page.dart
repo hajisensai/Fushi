@@ -1280,6 +1280,9 @@ abstract class VideoFushiTestHooks {
   /// 页面当前的播放倍速（开片时按持久化键读出的值）。
   double get debugPlaybackSpeed;
 
+  /// 走与倍速菜单 / 快捷键同一条 [_setSpeed] 路径改倍速，并立即落盘（不等防抖）。
+  Future<void> debugSetPlaybackSpeed(double speed);
+
   /// 走与剧集面板 / 上下集同一条远端换集路径（[_loadRemoteEpisode]）载入第 [index] 集。
   Future<void> debugLoadRemoteEpisode(int index);
   bool get debugVideoFocusAttached;
@@ -1956,6 +1959,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   @override
   double get debugPlaybackSpeed => _playbackSpeed;
+
+  @override
+  Future<void> debugSetPlaybackSpeed(double speed) async {
+    await _setSpeed(speed);
+    await _flushPersistedVideoSpeed();
+  }
+
   @override
   // Reuse the localized UI reason, never expose the raw caught exception/path.
   String? get debugLoadFailureReason => _failed ? _failReason : null;

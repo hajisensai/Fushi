@@ -160,6 +160,7 @@ void main() {
       WidgetTester tester, {
       required String bookUid,
       int? collectionId,
+      double? setTo,
     }) async {
       await tester.pumpWidget(
         wrap(
@@ -180,9 +181,35 @@ void main() {
       }
       expect(hooks.debugLoadFailed, isTrue, reason: '载入应已越过读偏好阶段');
       final double speed = hooks.debugPlaybackSpeed;
+      if (setTo != null) {
+        await tester.runAsync(() => hooks.debugSetPlaybackSpeed(setTo));
+      }
       await tester.pumpWidget(const SizedBox.shrink());
       return speed;
     }
+
+    testWidgets('合集里一集改倍速写系列键，换到另一集沿用', (WidgetTester tester) async {
+      final int id = await seedSeries(tester);
+      await openSpeed(tester, bookUid: 'ep1', collectionId: id, setTo: 1.75);
+      expect(prefs.getPref(videoSeriesSpeedPrefKey(id)), 1.75);
+      expect(
+        prefs.getPref(videoSpeedPrefKey('ep1')),
+        isNull,
+        reason: '合集里改倍速只写系列键，不再写本集键',
+      );
+      // 上一页的 ProviderScope 卸载时连带 dispose 了 appModel（及其 prefs）：从同一个
+      // DB 重新载入偏好、换一只新的 appModel 再开另一集——系列键得真落了盘。
+      await tester.runAsync(() async {
+        prefs = PreferencesRepository(db);
+        await prefs.loadFromDb();
+      });
+      appModel = _TestAppModel(platformServices, db)
+        ..wireLocalAudioForTesting(
+          prefsRepo: prefs,
+          databaseDirectory: storeDir,
+        );
+      expect(await openSpeed(tester, bookUid: 'ep2', collectionId: id), 1.75);
+    });
 
     testWidgets('合集里的一集读系列倍速（本集没存过也跟随系列）', (WidgetTester tester) async {
       final int id = await seedSeries(tester);
