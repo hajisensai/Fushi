@@ -46,6 +46,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/srs/srs_navigation.dart';
+import 'package:fushi/src/srs/srs_action_error_text.dart';
 
 enum _ItemAction { rename, moveUp, moveDown, delete }
 
@@ -463,7 +464,10 @@ class _SrsNoteTypeEditorPageState extends ConsumerState<SrsNoteTypeEditorPage> {
       if (mounted) await _openTemplate(_type ?? type, id);
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsNoteTypeEditor.addTemplate', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
     }
   }
 

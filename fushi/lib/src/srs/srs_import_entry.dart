@@ -61,6 +61,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/srs/srs_action_error_text.dart';
 
 // ---------------------------------------------------------------- 导入（逻辑）
 
@@ -605,7 +606,7 @@ Future<void> openSrsMinedHistoryImport(
     );
   } catch (e, stack) {
     ErrorLogService.instance.log('openSrsMinedHistoryImport', e, stack);
-    FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+    FushiToast.show(msg: srsActionFailedText(e), severity: ToastSeverity.error);
   }
 }
 
@@ -693,7 +694,7 @@ Future<void> openSrsSyncNow(
     FushiToast.show(msg: toast.msg, severity: toast.severity);
   } catch (e, stack) {
     ErrorLogService.instance.log('openSrsSyncNow', e, stack);
-    FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+    FushiToast.show(msg: srsActionFailedText(e), severity: ToastSeverity.error);
   } finally {
     _srsSyncNowInFlight = false;
   }

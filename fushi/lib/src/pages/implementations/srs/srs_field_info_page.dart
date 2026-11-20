@@ -60,6 +60,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/srs/srs_action_error_text.dart';
 
 /// 高亮框（预览里框出本字段的内容）。只用内联样式：卡片 CSS 不认识它。
 String srsFieldHighlightHtml(String value) =>
@@ -214,7 +215,10 @@ class _SrsFieldInfoPageState extends ConsumerState<SrsFieldInfoPage> {
       );
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsFieldInfo.save', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
     } finally {
       if (mounted) setState(() => _saving = false);
     }

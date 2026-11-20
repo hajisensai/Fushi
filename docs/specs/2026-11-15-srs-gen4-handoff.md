@@ -4015,10 +4015,17 @@ WIP 原样编不过（schema 守卫表数没改）、三条停放测试装置有
   日志作者的由流语法整笔拒（读写两侧 `Grammar`，原有）。剔除记录点名的 Purge 本机不核：重切出去之后读者照样按
   `purge_vouches` 核。文件里新设备的公钥仍是首见即记（与导入的操作本身同一信任口径：`.fushisrs` 的操作不带作者签名）。
 - **回收判据**（`cmd/sync_relay.rs` 文件头「重切材料的回收」）：作者区间还需要材料 ⇔ 本机没记它的 head / 最新 head 列着这个
-  区间 / 转发缓存里还有这个区间的件；剔除记录只留落在还需要的版本区间里、且不在作者签的空洞里的。记下更新的 head 与
-  `prune` 删缓存件时回收，只按这位作者的主键前缀 / 区间删。
+  区间 / 转发缓存里还有这个区间的件；剔除记录跟着**还需要的区间**走：seq 落在某个还需要的区间里就留，只有那个区间本机存着
+  作者签名版本、而这个 seq 在它作者签的空洞里时才不算；还需要、本机还没收到版本的区间整段留（复核 major：作者合并后
+  `note_head` 早于收段，原先按「本机已存的版本」算会把 [1,4] 版本连同落在里面的剔除记录一起删，[1,8] 的版本晚到时重切
+  不出来、这位作者被整台跳过；本机清除时写下的剔除记录删了生不回来）。记下更新的 head 与 `prune` 删缓存件时回收，只按这位
+  作者的主键前缀 / 区间删。代价：版本到了之后作者空洞里的剔除记录要等下一次回收（下一份 head / `prune`）才删。
 - **单条改动超过 16 MiB**：本机写入与 `.fushisrs` 导入报 `op too large: change <id> is N bytes (x MiB), over the 16 MiB limit …`
   （`gen4/op.rs` `payload_within_cap`），整笔回滚；导入页按 `kSrsOpTooLarge` 给专门提示（`srs_timeline_import_op_too_large`）。
+  app 本机写入（加 / 改笔记、牌组设置、笔记类型 / 模板、复习、改笔记类型等）原先一律 toast「操作没有成功，请重试」，现在
+  走 `fushi/lib/src/srs/srs_action_error_text.dart` `srsActionFailedText(e)`：错误文本含 `kSrsOpTooLarge` 给
+  `srs_write_op_too_large`（太大、什么都没存、改用媒体附件），其余照旧。按文本认是因为错误可能裹在后台 isolate 转交的
+  `StateError` 里。只换了 `catch (e, stack)` 里单行的那 23 处；`srs_history_page` 的 `failure:` 固定文案与多行写法的几处没动。
 
 ### 测试
 
@@ -4028,7 +4035,8 @@ WIP 原样编不过（schema 守卫表数没改）、三条停放测试装置有
 - `import_tests.rs` `forged_relay_material_is_verified_before_it_lands`：已有有效行时导入签名乱填且空洞更多的版本 → 不换、计
   跳过；换了 Purge 的剔除记录 → 本机那条不动；空库导入载荷哈希被改的剔除记录 / 签名被改 / 不带作者公钥 → 都不记、重切不出来；
   真实流照记。`relay_material_survives_export_and_import_so_a_restored_library_can_still_recut` 未改断言照绿。
-- 回收：`sync_relay_tests::reclaim` 两条（判据 + 规模）。导出 / 超限：`import_tests` 的超限一条、`sync_tests`
+- 回收：`sync_relay_tests::reclaim` 四条（判据、合并后版本晚到仍能从日志重切的端到端、`put_stub_if_absent` 不换已有、
+  规模）。导出 / 超限：`import_tests` 的超限一条、`sync_tests`
   `a_write_over_the_payload_cap_is_refused_readably_and_nothing_lands`、Dart `srs_fushisrs_errors_test.dart`。
   segBytes：`outbox_clamps_the_segment_target_to_the_cap`（测试钩子 `SEG_CAP_FOR_TEST` 把上限调到 300 字节）。
 - Dart：`srs_device_identity_test.dart` 新一条（`relayBlocked` 解析、按原因合计、认不出的项跳过、设备行文案）；
@@ -4045,3 +4053,5 @@ WIP 原样编不过（schema 守卫表数没改）、三条停放测试装置有
 - 服务端管理页 / ctl 的设备列表没显示 `relayBlocked`（只接了 app 同步页）。
 - `guards_tests.rs` `FROZEN` 追加了 40026 的指纹；40025 分给同批别的 PR，合流时按实际形状重算（两个号的表合起来才是终态）。
 - 真机复测没做（纯内核 + 同步页文案，按规则记一句）。
+- 复核 nit「同一位置同一作者既有自写旧 head 又有转发 head 时 tidy 可能删停放行」没改：复核者与续做者都没构造出触发路径
+  （`relay_outbox` 的 `present_at` / `have` 挡住了作者已有自写 head 的位置），不为构造不出的情形改 `plan`。

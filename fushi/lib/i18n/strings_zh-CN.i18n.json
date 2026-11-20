@@ -10499,6 +10499,7 @@
   "srs_word_audio_backfill_scanning": "正在查找缺单词音频的卡片…",
   "srs_word_audio_backfill_summary": "补了 ${filled} 张 / 跳过 ${skipped} 张 / 失败 ${failed} 张",
   "srs_word_audio_backfill_title": "补全单词音频",
+  "srs_write_op_too_large": "这次改动超过 16 MB（通常是字段里直接粘贴了图片或文件），无法保存，什么都没有存。大文件请改用媒体附件添加。",
   "srt_audio_unresolved": "未找到音频文件 — 请重新附加",
   "srt_book_attach_epub": "添加书籍文件",
   "srt_book_attach_epub_remove_old_hint": "已用书籍正文生成新的有声书，原来的字幕书可以删除",

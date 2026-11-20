@@ -10499,6 +10499,7 @@
   "srs_word_audio_backfill_scanning": "Finding cards without word audio…",
   "srs_word_audio_backfill_summary": "Filled ${filled} · skipped ${skipped} · failed ${failed}",
   "srs_word_audio_backfill_title": "Fill missing word audio",
+  "srs_write_op_too_large": "This change is larger than 16 MB (usually an image or file pasted straight into a field), so it can't be saved. Nothing was saved. Add large files as media attachments instead.",
   "srt_audio_unresolved": "Audiobestand niet gevonden — koppel opnieuw",
   "srt_book_attach_epub": "Add book file",
   "srt_book_attach_epub_remove_old_hint": "A new audiobook with the book text was created. You can delete the old subtitle-only book.",
