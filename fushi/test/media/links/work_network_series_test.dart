@@ -10,6 +10,7 @@ import 'package:fushi_engine/media/links/work_graph.dart';
 /// 目标展开整条系列、前传 / 续作去重、上限折叠、手动续作 / 外传连接，且系列边
 /// 不并作品。
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(() => LocaleSettings.setLocale(AppLocale.zhCn));
 
   MediaLinkEndpoint vc(int id) =>
@@ -154,11 +155,11 @@ void main() {
       layout.lanes.map((WorkNetworkLane l) => l.kind.runtimeType),
       contains(WorkNetworkSeriesLane),
     );
-    expect(
-      layout.nodeOrder.last,
-      kWorkNetworkSeriesMoreId,
-      reason: '折叠节点在系列栏最后',
-    );
+    final List<String> seriesOrder = <String>[
+      for (final String id in layout.nodeOrder)
+        if (nodes[id]!.role == WorkNetworkRole.series) id,
+    ];
+    expect(seriesOrder.last, kWorkNetworkSeriesMoreId, reason: '折叠节点在系列栏最后');
   });
 
   test('合集不在作品图里、只有刮削相关作品时也出网（不是空态）', () {
