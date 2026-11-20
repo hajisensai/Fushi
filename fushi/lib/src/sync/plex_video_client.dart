@@ -183,9 +183,11 @@ class PlexServerConfig implements MediaServerConfig {
   /// 只有 [isPlexTransportFailure]（请求没到达服务器）才探测——服务器答了话
   /// （非 2xx、条目不存在）说明这条连接是通的，换线路无济于事。各条连接按登录时
   /// 排好的优先级（局域网 → 公网 → relay）同时探测，取排名最靠前的可达那条
-  /// （[firstReachablePlexConnection]）。[probe] 必须核对 `/identity` 的
-  /// machineIdentifier 是 [machineIdentifier]（`probePlexConnection`）：别的服务器
-  /// 占了旧局域网地址时不能把这台的 token 发过去。
+  /// （[firstReachablePlexConnection]）。[probe] 必须**不带凭据**核对 `/identity`
+  /// 的 machineIdentifier 是 [machineIdentifier]（`probePlexConnection` →
+  /// `verifyPlexServerIdentity`，签名里就没有 token）：探测本身不向任何候选地址
+  /// 发 token；别的服务器占了旧局域网地址时核对不通过、不会被选成当前线路，之后
+  /// 带 token 的请求也就不会发过去。
   ///
   /// 返回切到新线路后的配置（只改 [activeServerUrl]，不存任何新凭据）；不是传输
   /// 失败、全部不通、或最靠前的可达线路就是当前这条时返回 null（调用方原样

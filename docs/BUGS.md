@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4234 条。点号进各自文件。
+> 共 4235 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4907](bugs/BUG-4907-plex-identity-probe-sends-token.md) | ✅ | ✅ | Plex 连接探测在核对服务器身份之前就把 X-Plex-Token 发给被探测地址 |
 | [BUG-4906](bugs/BUG-4906-plex-auto-route.md) | ✅ | ✅ | Plex 换网络后起播一直走登录时那条不通的连接，不会自动换线路 |
 | [BUG-4905](bugs/BUG-4905-ai-cast-text-substitutions.md) | ✅ | ✅ | 小说和漫画 AI 标注未应用系列用词替换表 |
 | [BUG-4904](bugs/BUG-4904-book-series-key-store-annotation.md) | ✅ | ✅ | 书店写法「卷号<系列名> (文库名)」的分卷导入后不归合集 |
