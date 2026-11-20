@@ -113,6 +113,38 @@ void main() {
     expect(snapshot.matches(state.build), isFalse, reason: '底色编进文档');
   });
 
+  test('画质缩放 / Gamma 校正编进文档（FIT_STEP / FIT_HQ），切换后判为需重载', () {
+    // #3843 × manga-13：页图 URL 上的 `fq=` 与取整档距是生成文档时写进 JS 常量的，
+    // 改这两个开关不重载文档的话，屏上页图仍按旧画质档请求，开关形同虚设。
+    final MangaReaderPreferences base = state.preferences;
+    expect(base.enhancedScaling, isTrue, reason: '前提：画质缩放默认开');
+    expect(state.build(_nav()), contains("var FIT_HQ = '&fq=1';"));
+
+    state.preferences = base.copyWithJson(<String, Object?>{
+      'enhancedScaling': false,
+    });
+    expect(snapshot.matches(state.build), isFalse);
+    expect(state.build(_nav()), contains("var FIT_HQ = '';"));
+    expect(state.build(_nav()), contains('var FIT_STEP = 128;'));
+
+    state.preferences = base.copyWithJson(<String, Object?>{
+      'gammaCorrectScaling': true,
+    });
+    expect(snapshot.matches(state.build), isFalse);
+    expect(state.build(_nav()), contains("var FIT_HQ = '&fq=g';"));
+
+    // 画质缩放关着时 Gamma 校正不起作用：文档逐字不变，不白重载。
+    final MangaWindowNavigation loaded = _nav();
+    state.preferences = base.copyWithJson(<String, Object?>{
+      'enhancedScaling': false,
+    });
+    snapshot.record(state.build(loaded), loaded);
+    state.preferences = state.preferences.copyWithJson(<String, Object?>{
+      'gammaCorrectScaling': true,
+    });
+    expect(snapshot.matches(state.build), isTrue);
+  });
+
   test('装载后文档内翻页 / 滚动 / 捏合不影响判定', () {
     // 页面里这几项在 JS 推进后同步回 Dart，现建文档会带上新值。
     final MangaWindowNavigation moved = _nav(

@@ -3344,6 +3344,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           fitWidth,
           loadSource,
           pageIndex: pageIndex,
+          quality: mangaFitQualityOf(url),
         );
         return WebResourceResponse(
           contentType: fitted != null
@@ -3391,6 +3392,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       mangaFitWidthOf(url),
       () => File(filePath).readAsBytes(),
       pageIndex: pageIndex,
+      quality: mangaFitQualityOf(url),
     );
     return WebResourceResponse(
       contentType: fitted != null ? 'image/jpeg' : _mangaMimeForPath(filePath),
@@ -3407,12 +3409,14 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 页图在 [fitWidth] 档的降采样 JPEG（BUG-4704）；URL 没要、不值得缩、或转码
   /// 失败都返回 null，由调用方交出原图——降采样只是省内存，任何失败都不能让页白掉。
   /// [key] 是页在本页面内的稳定身份（LRU 键），[loadSource] 只在未命中时读原图。
+  /// [quality] 是页图 URL 上的画质档（`fq=`），决定读头分流与转码的判据并分开缓存。
   /// [pageIndex] 已知时，这一页在转码队列出队那一刻若在屏上（当前跨页），就插到
   /// 预热邻页之前（manga-6）。
   Future<Uint8List?> _fitPageBytes(
     String key,
     int? fitWidth,
     Future<Uint8List> Function() loadSource, {
+    required MangaFitQuality quality,
     int? pageIndex,
   }) async {
     if (fitWidth == null) return null;
@@ -3421,6 +3425,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         key,
         fitWidth,
         loadSource,
+        quality: quality,
         urgent: pageIndex == null ? null : () => _pageOnScreen(pageIndex),
       );
     } on Object catch (error, stackTrace) {

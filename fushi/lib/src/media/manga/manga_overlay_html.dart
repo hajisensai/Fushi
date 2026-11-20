@@ -8,7 +8,11 @@ import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_text_join.dart';
 import 'package:fushi/src/media/manga/reader/manga_page_fit.dart'
-    show kMangaFitQueryParam;
+    show
+        MangaFitQuality,
+        kMangaEnhancedFitStep,
+        kMangaFitEnhancedQueryParam,
+        kMangaFitQueryParam;
 import 'package:fushi/src/ocr/ocr_text_regions.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 
@@ -1255,7 +1259,10 @@ String _mangaGestureJs({
   // 缩放档只给屏上那一页（跨页模式的当前跨页 / 条漫里与视口相交的页），1 / 2 / 4 / 8：
   // 放大看细节时换更高的档，清晰度不降；屏外的页恒取 1 档，预热的邻页不跟着放大。
   var FIT_IMAGES = $fitImagesToDisplay;
-  var FIT_STEP = 128;
+  // 画质缩放：取整档收细，并在 URL 上带画质档（`fq=1` / `fq=g`）——响应由 URL 完全决定，切开关后
+  // WebView 的 max-age 缓存不会把另一种缩放的图端回来。
+  var FIT_STEP = ${preferences.enhancedScaling ? kMangaEnhancedFitStep : 128};
+  var FIT_HQ = '${_fitQualityQuery(preferences)}';
   function _zoomTier(){
     if (!(ZOOM > 1.01)) return 1;
     return Math.min(8, Math.pow(2, Math.ceil(Math.log(ZOOM) / Math.LN2 - 1e-6)));
@@ -1283,7 +1290,7 @@ String _mangaGestureJs({
     if (!base) return;
     var width = _fitWidthFor(page);
     var next = width > 0
-        ? base + (base.indexOf('?') < 0 ? '?' : '&') + '$kMangaFitQueryParam=' + width
+        ? base + (base.indexOf('?') < 0 ? '?' : '&') + '$kMangaFitQueryParam=' + width + FIT_HQ
         : base;
     if (img.getAttribute('src') !== next) img.setAttribute('src', next);
   }
@@ -3592,4 +3599,13 @@ String _escapeHtml(String input) {
 
 String _escapeAttr(String input) {
   return _escapeHtml(input).replaceAll('"', '&quot;');
+}
+
+/// 页图 URL 上的画质档后缀（`&fq=…`；标准档为空串）。
+String _fitQualityQuery(MangaReaderPreferences preferences) {
+  final String? value = MangaFitQuality.fromPreferences(
+    enhanced: preferences.enhancedScaling,
+    gammaCorrect: preferences.gammaCorrectScaling,
+  ).urlValue;
+  return value == null ? '' : '&$kMangaFitEnhancedQueryParam=$value';
 }
