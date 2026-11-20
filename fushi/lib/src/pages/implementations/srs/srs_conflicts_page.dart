@@ -23,6 +23,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_value_diff.dart';
+import 'package:fushi/src/srs/srs_conflict_groups.dart';
 import 'package:fushi/src/srs/srs_device_view.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart'
@@ -102,20 +103,6 @@ enum _BulkAction {
       this == _BulkAction.heldDelete || this == _BulkAction.duplicatesMerge;
 }
 
-/// 每个「同类」组（[_Conflict.group] / 扣住删除的 `held/<kind>`）有几条：一趟数完。
-///
-/// 页面每条卡片都要显示所在组的条数。早先在 build 里对每条卡片各扫一遍整张列表（O(N²)），
-/// 扣住的删除上万条时一次 build 就把 Dart 线程（iOS 上即主线程）占住好几秒，系统要求退出时
-/// 5 秒内没响应、被看门狗以 0x8BADF00D 杀掉（BUG-4949，反馈 3sGnx0FYRr）。组条数是加载结果的
-/// 派生状态，加载时数一次，build 只查表。
-Map<String, int> srsCountByGroup(Iterable<String> groups) {
-  final Map<String, int> counts = <String, int>{};
-  for (final String group in groups) {
-    counts[group] = (counts[group] ?? 0) + 1;
-  }
-  return counts;
-}
-
 /// 冲突页的一条（标志 / 设置类）。
 class _Conflict {
   const _Conflict({
@@ -167,11 +154,11 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
   /// 本机还没信任的设备（待确认在前，再是已拒绝的）：它们的删除与彻底清除在本机扣着（内核 trust.rs）。
   List<SrsDeviceView> _untrusted = const <SrsDeviceView>[];
 
-  /// 每组的条数（[srsCountByGroup]，随 [_load] 一起换）。
-  Map<String, int> _sameCounts = const <String, int>{};
-
   /// 勾了「同类都按这个选」的组（[_Conflict.group] / 扣住删除的 `held/<kind>`）。
   final Set<String> _applySame = <String>{};
+
+  /// 每组的条数（键同 [_applySame]），随数据载入一趟算好，build 只查表（BUG-4950）。
+  Map<String, int> _sameCounts = const <String, int>{};
 
   @override
   void initState() {
@@ -281,10 +268,10 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
         .duplicateNoteGroups();
     final SrsDeviceDirectory devices = await srsLoadDeviceDirectory(store);
     final List<SrsDeviceView> untrusted = srsUntrustedDevices(devices.all);
-    final Map<String, int> sameCounts = srsCountByGroup(<String>[
-      for (final _Conflict c in conflicts) c.group,
-      for (final _HeldDelete h in held) _heldGroup(h),
-    ]);
+    final Map<String, int> sameCounts = <String, int>{
+      ...srsSameGroupCounts(held, _heldGroup),
+      ...srsSameGroupCounts(conflicts, (_Conflict c) => c.group),
+    };
     if (!mounted || gen != _loadGen) return;
     setState(() {
       _devices = devices;
@@ -309,7 +296,8 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
 
   static String _heldGroup(_HeldDelete c) => 'held/${c.kind}';
 
-  /// build 里每条卡片都调：只查加载时数好的表，不扫列表（BUG-4949）。
+  /// build 里每张卡片都调：只查 [_sameCounts]，不得在这里扫列表（BUG-4949 / BUG-4950：
+  /// 逐卡全表扫是 O(n²)，几千条扣住的删除让一次重建在主线程上跑几秒，iOS 退出时被看门狗杀）。
   int _sameCount(String group) => _sameCounts[group] ?? 0;
 
   void _toggleSame(String group, bool on) =>
