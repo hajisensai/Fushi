@@ -4035,3 +4035,23 @@ exit 1；成功 949、失败 9、错误 6、跳过 21，实际执行 964。上�
 - **换绑后旧目录残留 `profile.json`（复核 minor，推测）**：核实服务端运行期不换绑——它不发 `collection_adopt` /
   `collection_join` / `collection_salts_add`，也没有 `.fushisrs` / SRS 备份导入；绑定只在第一次 `identity` 建（目录 = uid）。没有
   需要清的旧目录，没加代码；server-parity-gaps 里写明「以后给服务端加换绑路径时要一并带上清理」。
+
+### 第六波 服务端收尾：第三轮（2026-11-20，同分支续做）
+
+- **取名规则依赖目录列举顺序（第二轮复核 major）**：不只是测试的问题——`_resolveName` 原先「按 `nameOf` 的顺序取第一个别的
+  设备报的名字」，`nameOf` 的顺序就是 `LocalDirectoryAssetStore.listChildren`（`listSync`，不排序）的顺序，Linux ext4 / macOS
+  APFS 上是哈希序：两台设备报了不同名字时，同一份数据在不同机器上取出的名字不同，测试的「服务端那份先列出」前提也随之一半
+  概率不成立。改成确定规则 `serverSrsPickReportedName`（`server_srs.dart`）：跳过服务端自己那份与不合格的外来名字，取说明文件
+  修改时刻最新的（设备改了名，它的说明文件就最新），一样新 / 没有时刻时取写入者名按码点最小的。`SrsRemoteProfile` 加
+  `nameAtOf`（写入者 → 它说明文件的修改时刻）供挑选用。本地目录后端 `LocalDirectoryAssetStore.findAsset` 原先不带修改时刻（`listChildren` 带），说明文件的时刻在本地目录上永远是 null（`updatedAt` 也一样），一并补上。测试：单测把每组输入按正反两种列举顺序各跑一遍、断言结果相同；
+  装配测试去掉了列举顺序前提，改为断言 `nameAtOf` 覆盖每个报了名字的写入者。取舍：时刻来自同步后端（本地目录是 mtime），
+  被同步工具改写 mtime 时退化为「按写入者名」，仍确定。app 侧 `SrsRemoteProfile.displayName`（`names.first`）同样跟列举顺序走，
+  只影响关联候选的显示名，不归本模块，没改。
+- **拒收文案说得过于确定（minor）**：客户端只看得到 404 / 405，分不清「主机上没有能写的落点（没配 Anki、复习库没提供 / 要
+  升级）」与「主机版本没有这个端点」，所以文案改成说原话加几种可能：「连上了，但它没有接收这张卡（回了 404 / 405），这边分不清
+  具体原因……这张卡没有送出」（`anki_error_paired_device_mining_unavailable` 用 `i18n_sync --set` 改 17 份，代码常量同步）。
+  测试钉住英文 / 中文 / 常量三份都含「404 / 405」、不含「没配 Anki / 复习库不可用」的断言。没有按响应体 `Mining off` 细分：
+  那是自由文本、多候选时也只剩一个状态码，拿它当协议不可靠。
+- **测试源码里的 BEL（nit）**：改成 `'J\u0007P'`。
+- **每轮全量扫描 / 外来名字限制（第一轮 verify 的 minor / nit）**：第二轮已修（`onlyDirs` 只读自己绑定的目录；
+  `serverSrsProfileNameOk` 过滤设备报的名字），本轮核过仍成立，名字挑选同样先过这道过滤。

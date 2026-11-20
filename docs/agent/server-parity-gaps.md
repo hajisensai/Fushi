@@ -115,7 +115,10 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
     kernel as the model through `publishDeviceInfo`. The note count comes from the kernel
     (`userNoteCount`). The name is, in order: the admin's name for that profile (yaml
     `srs.profile_names`, `PUT /api/admin/srs {profileNames}`, WebUI Review page, `ctl srs config`),
-    else the first name another device reports in that directory, else the name the server itself
+    else a name another device reports in that directory (if several devices report different
+    names: the one whose info file is newest, ties broken by the smallest writer id —
+    `serverSrsPickReportedName`; never the directory listing order, which is hash order on
+    Linux / macOS), else the name the server itself
     published last (so the name survives after the naming device leaves). Names reported by other
     devices come from the sync location (untrusted) and go through the same check as admin names
     (`serverSrsProfileNameOk`: at most 100 characters, no control characters); a name that fails it
@@ -160,8 +163,9 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
     the server's new library, and no local card is lost. Mining from a new client to an old server
     is covered for the server without an Anki helper (its only landing, the review profile, is in
     "needs upgrade", so the old server answers `/api/mine/forward` with 404 `Mining off`): the client
-    reports "reachable but not accepting cards (it may need a Fushi update)"
-    (`AnkiErrorCode.pairedDeviceMiningUnavailable`) and, with "queue undelivered cards" on, the card
+    reports "reachable but did not accept the card (it answered 404 / 405)" and says it cannot tell
+    why — the client only sees the status, which a host with no writable landing and a host without
+    the endpoint both return (`AnkiErrorCode.pairedDeviceMiningUnavailable`) and, with "queue undelivered cards" on, the card
     goes to the pending queue. An old server that has the Anki helper still lands such cards in its
     own Anki (its target resolver falls back from review to Anki); that path does not depend on the
     library generation and is not tested here. "Old server" means the protocol-3 baseline (develop
