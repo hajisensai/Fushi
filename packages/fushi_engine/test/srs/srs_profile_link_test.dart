@@ -6,6 +6,7 @@ import 'package:fushi_engine/srs/srs_profile_link.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart' show kSrs4Root;
 import 'package:fushi_engine/sync/local_directory_asset_store.dart';
+import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:test/test.dart';
 
 const String kMine = '01928c3e-0000-7000-8000-00000000000b';
@@ -510,6 +511,81 @@ void main() {
       expect(p.writers.length, 2);
     });
 
+    // 复核 major：同一台设备升级前把说明文件写在旧根 `v3/devices/`，升级后写 `v4/devices/`，旧那份没人删。两份都用同一个
+    // 写入者名，以前后读的覆盖先读的，采信哪份跟着目录列举顺序走（Linux ext4 上是哈希序）。现在当前发布位置 `v4/` 优先，
+    // 与两份的修改时刻谁新无关；名字集合（displayName 取第一个）也按时刻 + 写入者名排。两种列举顺序各跑一遍。
+    test('同一设备 v3 旧说明文件 + v4 新说明文件：两种列举顺序都只采信 v4 那份', () async {
+      final String ns = await store.ensureNamespace(kSrsSync2Namespace);
+      final String profile = await store.ensureFolder(ns, kOther);
+      final String v3devices = await store.ensureFolder(
+        await store.ensureFolder(profile, kSrsSync2Folder),
+        'devices',
+      );
+      final String oldDir = await store.ensureFolder(v3devices, 'devA');
+      final File f = File('${root.path}/info.json')
+        ..writeAsStringSync(
+          '{"v":1,"name":"OldName","hasNotes":true,"mergingInto":"$kMine"}',
+        );
+      await store.putAsset(oldDir, kSrsProfileInfoName, f);
+      f.deleteSync();
+      await srsPublishProfileInfo(
+        store,
+        profileUid: kOther,
+        writerId: 'devA',
+        name: 'NewName',
+        hasNotes: true,
+      );
+      await srsPublishProfileInfo(
+        store,
+        profileUid: kOther,
+        writerId: 'devB',
+        name: 'B',
+        hasNotes: true,
+      );
+      final File oldInfo = File('$oldDir/$kSrsProfileInfoName');
+      final File newInfo = File(
+        '${root.path}/$kSrsSync2Namespace/$kOther/$kSrs4Root/devices/devA/'
+        '$kSrsProfileInfoName',
+      );
+      final File bInfo = File(
+        '${root.path}/$kSrsSync2Namespace/$kOther/$kSrs4Root/devices/devB/'
+        '$kSrsProfileInfoName',
+      );
+      final DateTime t = DateTime(2026, 11, 1);
+      newInfo.setLastModifiedSync(t);
+      bInfo.setLastModifiedSync(t.subtract(const Duration(hours: 1)));
+      // 旧文件比新文件旧（真实场景）与比新文件新（钉住「位置优先于时刻」）各一遍。
+      for (final Duration oldShift in <Duration>[
+        const Duration(days: -1),
+        const Duration(days: 1),
+      ]) {
+        oldInfo.setLastModifiedSync(t.add(oldShift));
+        for (final bool reversed in <bool>[false, true]) {
+          final SrsRemoteProfile r = (await srsListRemoteProfiles(
+            _OrderedDirectoryStore(root, reversed: reversed),
+          )).single;
+          final String why = 'reversed=$reversed oldShift=$oldShift';
+          expect(r.nameOf, <String, String>{
+            srsV2WriterName('devA'): 'NewName',
+            srsV2WriterName('devB'): 'B',
+          }, reason: why);
+          expect(
+            r.nameAtOf[srsV2WriterName('devA')],
+            newInfo.statSync().modified.millisecondsSinceEpoch,
+            reason: why,
+          );
+          expect(r.names.toList(), <String>['NewName', 'B'], reason: why);
+          expect(r.displayName, 'NewName', reason: why);
+          // 旧那份的并入标记同样不采信（v4 那份没有并入标记）。
+          expect(r.mergingInto, isEmpty, reason: why);
+          expect(r.writers.toSet(), <String>{
+            srsV2WriterName('devA'),
+            srsV2WriterName('devB'),
+          }, reason: why);
+        }
+      }
+    });
+
     test('新代集合根 v4/ 不是写入者目录（G8-7 起云端会有 fushi-srs/<dir>/v4/）', () async {
       await srsPublishProfileInfo(
         store,
@@ -735,4 +811,18 @@ void main() {
       expect((await srsListRemoteProfiles(store)).single.writers, isEmpty);
     });
   });
+}
+
+/// 把 [listChildren] 按名字正序或逆序返回的本地目录后端：模拟不同机器上的目录列举顺序（`listSync` 不排序）。
+class _OrderedDirectoryStore extends LocalDirectoryAssetStore {
+  _OrderedDirectoryStore(super.root, {required this.reversed});
+
+  final bool reversed;
+
+  @override
+  Future<List<AssetEntry>> listChildren(String namespaceId) async {
+    final List<AssetEntry> out = await super.listChildren(namespaceId)
+      ..sort((AssetEntry a, AssetEntry b) => a.name.compareTo(b.name));
+    return reversed ? out.reversed.toList() : out;
+  }
 }

@@ -139,7 +139,7 @@ class SrsRemoteProfile {
     this.joinHints = const <SrsJoinHint>[],
   });
 
-  /// 显示名：说明文件里报的第一个名字，没有时用 uid。
+  /// 显示名：[names] 的第一个（最近改动过的说明文件报的名字），没有时用 uid。
   String get displayName => names.isEmpty ? uid : names.first;
 
   /// 位置目录名（`fushi-srs/<它>/`）。协议 3 时代它就是 profile uid（字段名沿用）；新代里是集合的目录名（内核
@@ -159,16 +159,19 @@ class SrsRemoteProfile {
   /// 各写入者说明文件里最新的修改时刻（毫秒；后端不给或没有说明文件时为 null）。让用户分辨候选用。
   final int? updatedAt;
 
-  /// 各写入者 [kSrsProfileInfoName] 里报的 profile 名（旧版本不写说明文件时为空）。
+  /// 各写入者 [kSrsProfileInfoName] 里报的 profile 名（[nameOf] 的值去重；旧版本不写说明文件时为空）。按说明文件的修改
+  /// 时刻新的在前、同刻按写入者名（UTF-16 码元序）排，不跟后端的目录列举顺序走。
   final Set<String> names;
 
-  /// 写入者 → 它说明文件里报的 profile 名（只收非空的）。[names] 是它们的并集；要区分「别的设备报的」与「本机自己
+  /// 写入者 → 它说明文件里报的 profile 名（只收非空的）。同一写入者在几个位置各有一份说明文件时（旧根 `v3/devices/`
+  /// 留着升级前的那份）只采信当前发布位置那份（`v4/` 优先，见 [srsListRemoteProfiles]）。[names] 是它们的并集；要区分「别的设备报的」与「本机自己
   /// 上次发布的」时用这个（无头服务端发布自己的说明文件时，名字取别的设备报的、没有才沿用自己上次发布的，
   /// 否则设备改名后服务端会一直把自己那份旧名字当来源）。
   final Map<String, String> nameOf;
 
-  /// 写入者 → 报 [nameOf] 那份说明文件的修改时刻（毫秒；后端不给时没有这一项）。[nameOf] 的键顺序跟着后端的列举顺序
-  /// 走（本地目录在 Linux / macOS 上是哈希序），要在几个写入者报的名字里挑一个时按这个时刻 + 写入者名排，不按顺序。
+  /// 写入者 → 报 [nameOf] 那份说明文件的修改时刻（毫秒；后端不给时没有这一项）。说明文件在笔记数、设备名、改名等
+  /// 任一项变了时都会重写，所以这是「这台设备最近一次改动说明文件」的时刻，不是改名时刻。[nameOf] 的键顺序跟着后端的
+  /// 列举顺序走（本地目录在 Linux / macOS 上是哈希序），要在几个写入者报的名字里挑一个时按这个时刻 + 写入者名排，不按顺序。
   final Map<String, int> nameAtOf;
 
   /// 有没有写入者报告过「有用户笔记」；没有任何说明文件时为 null（未知）。
@@ -363,9 +366,11 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
     final AssetEntry p = folders[i];
     if (onlyDirs != null && !onlyDirs.contains(p.name)) continue;
     final List<String> writers = <String>[];
-    final Set<String> names = <String>{};
     final Map<String, String> nameOf = <String, String>{};
     final Map<String, int> nameAtOf = <String, int>{};
+    // 写入者 → 当前采信的那份说明文件的（来源优先级, 修改时刻）。同一写入者可能有好几份（协议 3 时代写在旧根
+    // `v3/devices/`，现在写 `v4/devices/`，旧那份没人删）：采信哪份按优先级 + 时刻定，不按目录列举顺序。
+    final Map<String, (int, int?)> chosenOf = <String, (int, int?)>{};
     bool? hasNotes;
     int? updatedAt;
     final List<String> devices = <String>[];
@@ -375,8 +380,10 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
     String? v3Collection;
     final List<SrsJoinHint> hints = <SrsJoinHint>[];
 
-    /// 读写入者 [writer] 在 [folder] 里的说明文件；有（读得出）返回 true。
-    Future<bool> readInfo(String writer, String folder) async {
+    /// 读写入者 [writer] 在 [folder] 里的说明文件；有（读得出）返回 true。[rank] 是这份文件所在位置的优先级
+    /// （[_kSrsInfoRankV4] 等，当前发布位置最高）：同一写入者的名字与 `mergingInto` 只采信优先级最高的那份，同级取修改
+    /// 时刻新的（没有时刻的排最后）；别的项（有无笔记、笔记数、设备名、最新时刻）各份都算。
+    Future<bool> readInfo(String writer, String folder, int rank) async {
       final (Map<String, Object?>?, int?) read = await _readInfo(
         store,
         folder,
@@ -386,14 +393,30 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
       if (info == null) return false;
       final int? at = read.$2;
       if (at != null && (updatedAt == null || at > updatedAt!)) updatedAt = at;
-      final Object? name = info['name'];
-      if (name is String && name.isNotEmpty) {
-        names.add(name);
-        nameOf[writer] = name;
-        if (at != null) {
-          nameAtOf[writer] = at;
+      final (int, int?)? prev = chosenOf[writer];
+      final bool chosen =
+          prev == null ||
+          rank > prev.$1 ||
+          (rank == prev.$1 && (at ?? -1) > (prev.$2 ?? -1));
+      if (chosen) {
+        chosenOf[writer] = (rank, at);
+        final Object? name = info['name'];
+        if (name is String && name.isNotEmpty) {
+          nameOf[writer] = name;
+          if (at != null) {
+            nameAtOf[writer] = at;
+          } else {
+            nameAtOf.remove(writer);
+          }
         } else {
+          nameOf.remove(writer);
           nameAtOf.remove(writer);
+        }
+        final Object? into = info['mergingInto'];
+        if (into is String && into.isNotEmpty && into != p.name) {
+          mergingInto[writer] = into;
+        } else {
+          mergingInto.remove(writer);
         }
       }
       final Object? notes = info['hasNotes'];
@@ -405,10 +428,6 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
       final Object? count = info['notes'];
       if (count is int && (noteCount == null || count > noteCount!)) {
         noteCount = count;
-      }
-      final Object? into = info['mergingInto'];
-      if (into is String && into.isNotEmpty && into != p.name) {
-        mergingInto[writer] = into;
       }
       return true;
     }
@@ -429,7 +448,8 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
           for (final AssetEntry dev in await store.listChildren(d.id)) {
             if (!dev.isFolder) continue;
             final String name = srsV2WriterName(dev.name);
-            if (await readInfo(name, dev.id) && !writers.contains(name)) {
+            if (await readInfo(name, dev.id, _kSrsInfoRankV4) &&
+                !writers.contains(name)) {
               writers.add(name);
             }
           }
@@ -449,14 +469,28 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
             if (!dev.isFolder || dev.name == tombstone) continue;
             final String name = srsV2WriterName(dev.name);
             if (!writers.contains(name)) writers.add(name);
-            await readInfo(name, dev.id);
+            await readInfo(
+              name,
+              dev.id,
+              w.name == kSrsSync2Folder ? _kSrsInfoRankV3 : _kSrsInfoRankV2,
+            );
           }
         }
         continue;
       }
       writers.add(w.name);
-      await readInfo(w.name, w.id);
+      await readInfo(w.name, w.id, _kSrsInfoRankLegacy);
     }
+    // 名字集合按「说明文件新的在前、同刻按写入者名（UTF-16 码元序）」排（[SrsRemoteProfile.displayName] 取第一个），
+    // 不跟目录列举顺序走。
+    final List<String> byRecency = nameOf.keys.toList()
+      ..sort((String a, String b) {
+        final int c = (nameAtOf[b] ?? -1).compareTo(nameAtOf[a] ?? -1);
+        return c != 0 ? c : a.compareTo(b);
+      });
+    final Set<String> names = <String>{
+      for (final String w in byRecency) nameOf[w]!,
+    };
     out.add(
       SrsRemoteProfile(
         uid: p.name,
@@ -476,6 +510,13 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
   }
   return out;
 }
+
+/// 同一写入者的几份说明文件采信哪份（[srsListRemoteProfiles]）：新代根 `v4/devices/`（当前发布位置）> 旧根
+/// `v3/devices/`（协议 2/3）> `v2/devices/`（协议 1）> 旧格式写入者目录。旧位置的文件升级后没人删，名字可能是改名前的。
+const int _kSrsInfoRankV4 = 3;
+const int _kSrsInfoRankV3 = 2;
+const int _kSrsInfoRankV2 = 1;
+const int _kSrsInfoRankLegacy = 0;
 
 /// 集合根 [rootFolder]（`v4/` 或旧根 `v3/`）的 `meta.json` 里的集合标识；没有 / 读不出 / 不是字符串为 null。
 Future<String?> _readCollection(
