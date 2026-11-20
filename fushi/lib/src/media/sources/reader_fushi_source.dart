@@ -1221,12 +1221,26 @@ class ReaderFushiSource extends ReaderMediaSource {
             );
           }
         }
+      } catch (e, stack) {
+        ErrorLogService.instance.log(
+          'ReaderFushiSource.deleteBook.cleanup',
+          e,
+          stack,
+        );
+        debugPrint(
+          '[ReaderFushiSource] deleteBook post-DB cleanup failed '
+          '(DB rows already removed; on-disk copy may leak): $e',
+        );
+      }
 
-        // HBK-AUDIT-040: these books are created with canDelete:false, so the
-        // generic AppModel.deleteMediaItem cleanup (clearOverrideValues) never
-        // runs for them. Clear the override title preference AND the override
-        // thumbnail file here, so renamed/recovered books do not leave orphaned
-        // override rows/files behind (a same-title reimport reuses the bookKey).
+      // HBK-AUDIT-040: these books are created with canDelete:false, so the
+      // generic AppModel.deleteMediaItem cleanup (clearOverrideValues) never
+      // runs for them. Clear the override title preference AND the override
+      // thumbnail file here, so renamed/recovered books do not leave orphaned
+      // override rows/files behind (a same-title reimport reuses the bookKey).
+      // BUG-4906：独立于上面的磁盘尾活——解压目录被占用（Windows errno 32，见
+      // TODO-1359）等失败不能连带跳过这一步，否则同名重导照样带出旧封面。
+      try {
         final MediaItem item = MediaItem(
           mediaIdentifier: mediaIdentifierFor(bookKey),
           title: '',
@@ -1240,13 +1254,9 @@ class ReaderFushiSource extends ReaderMediaSource {
         await clearOverrideValues(appModel: appModel, item: item);
       } catch (e, stack) {
         ErrorLogService.instance.log(
-          'ReaderFushiSource.deleteBook.cleanup',
+          'ReaderFushiSource.deleteBook.overrides',
           e,
           stack,
-        );
-        debugPrint(
-          '[ReaderFushiSource] deleteBook post-DB cleanup failed '
-          '(DB rows already removed; on-disk copy may leak): $e',
         );
       }
 

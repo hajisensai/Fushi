@@ -19,7 +19,8 @@ import 'package:fushi/src/media/media_source.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
-import 'package:fushi_audio/fushi_audio.dart' show SrtBook, SrtBookRepository;
+import 'package:fushi_audio/fushi_audio.dart'
+    show AudiobookStorage, SrtBook, SrtBookRepository;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart' show DeleteScope;
 
@@ -152,6 +153,35 @@ void main() {
       // 同名重导 = 同一个 bookKey。
       await db.insertEpubBook(bookRow('Kokoro'));
       expect(resolvedCover('Kokoro'), isNull);
+    });
+
+    test('前面的磁盘尾活抛错（目录被占用等）也照样清封面', () async {
+      await db.insertEpubBook(bookRow('Locked'));
+      final File cover = writeOverrideCover('Locked');
+      // 让第一步磁盘尾活（有声书持久目录）确定性抛错，模拟 Windows 上解压目录 /
+      // 持久目录被占用（errno 32）。
+      final Future<Directory> Function()? savedResolver =
+          AudiobookStorage.documentsRootResolver;
+      AudiobookStorage.documentsRootResolver = () async =>
+          throw const FileSystemException('injected: dir in use');
+      addTearDown(() => AudiobookStorage.documentsRootResolver = savedResolver);
+      await ErrorLogService.instance.clear();
+
+      final DeleteBookResult r = await ReaderFushiSource.instance.deleteBook(
+        db: db,
+        bookKey: 'Locked',
+        appModel: app,
+      );
+
+      expect(r.deleted, isTrue, reason: '尾活失败不翻转删除结果');
+      expect(
+        ErrorLogService.instance.entries.map((ErrorLogEntry e) => e.source),
+        contains('ReaderFushiSource.deleteBook.cleanup'),
+        reason: '注入的尾活失败确实发生了',
+      );
+      expect(cover.existsSync(), isFalse, reason: '封面清理不能被前面的失败连带跳过');
+      await db.insertEpubBook(bookRow('Locked'));
+      expect(resolvedCover('Locked'), isNull);
     });
 
     test('配对 EPUB 的字幕书卡删除（deleteSrtShelfBook）同样清封面', () async {
