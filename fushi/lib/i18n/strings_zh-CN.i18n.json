@@ -7221,6 +7221,7 @@
   "music_lyrics_providers_move_up": "上移",
   "music_lyrics_providers_title": "歌词来源",
   "music_lyrics_reset_source": "恢复自动来源",
+  "music_lyrics_ruby_dropped_notice": "这首歌的注音和歌词对不上，已隐藏",
   "music_lyrics_script_han": "汉字",
   "music_lyrics_script_hangul": "韩文",
   "music_lyrics_script_kana": "日文",

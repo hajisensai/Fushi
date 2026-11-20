@@ -2441,6 +2441,29 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       ),
     );
     // 字幕组特效 ASS：结构化会丢特效，提示去卡拉 OK 字幕页原样渲染（§6.3）。
+    // 来源自带的注音轨对不上：整首不挂（宁缺不错位），但说一句，免得用户以为这首歌本来就
+    // 没注音（拍板台 left3645 方案 B）。
+    final List<Widget> notices = <Widget>[
+      if (_prefersOriginal)
+        FushiInlineNotice(
+          key: const ValueKey<String>('music_lyrics_karaoke_notice'),
+          message: t.music_karaoke_effects_hint,
+          icon: FushiIcons.mic,
+          actions: <Widget>[
+            FushiTextButton(
+              key: const ValueKey<String>('music_lyrics_karaoke_notice_open'),
+              onPressed: () => unawaited(_openKaraoke()),
+              child: Text(t.music_karaoke_open),
+            ),
+          ],
+        ),
+      if (r.timeline.rubyDropped)
+        FushiInlineNotice(
+          key: const ValueKey<String>('music_lyrics_ruby_dropped_notice'),
+          message: t.music_lyrics_ruby_dropped_notice,
+          icon: FushiIcons.info,
+        ),
+    ];
     return Column(
       children: <Widget>[
         if (_searchingOnline)
@@ -2450,25 +2473,17 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
         FushiAnimatedSize(
           duration: fushiMotionDuration(context, FushiMotion.short),
           curve: context.fushiMotion.spatialDefault.curve,
-          child: _prefersOriginal
-              ? Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                  child: FushiInlineNotice(
-                    key: const ValueKey<String>('music_lyrics_karaoke_notice'),
-                    message: t.music_karaoke_effects_hint,
-                    icon: FushiIcons.mic,
-                    actions: <Widget>[
-                      FushiTextButton(
-                        key: const ValueKey<String>(
-                          'music_lyrics_karaoke_notice_open',
-                        ),
-                        onPressed: () => unawaited(_openKaraoke()),
-                        child: Text(t.music_karaoke_open),
+          child: notices.isEmpty
+              ? const SizedBox(width: double.infinity)
+              : Column(
+                  children: <Widget>[
+                    for (final Widget notice in notices)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                        child: notice,
                       ),
-                    ],
-                  ),
-                )
-              : const SizedBox(width: double.infinity),
+                  ],
+                ),
         ),
         Expanded(child: view),
       ],
