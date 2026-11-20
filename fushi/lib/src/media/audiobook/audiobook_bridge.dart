@@ -711,10 +711,13 @@ void 0;
     // `discardCachedHtml`），缓存按每章的显式内容版本号判新旧，只重算变了的章。
     final _SearchTextCache cache = _searchTextCache[book] ??=
         _SearchTextCache();
+    final int chapterCount = book.chapters.length;
     final List<_SearchTextJob> jobs = cache.staleJobs(book.chapters);
     if (jobs.isNotEmpty) {
       final List<String> built = await compute(_buildSearchTexts, jobs);
-      cache.store(book.chapters, jobs, built);
+      // 按发任务时的版本快照入账：isolate 读盘期间章节被换掉
+      // （discardCachedHtml）的，记的仍是旧版本号，下次搜索照样重算。
+      cache.store(chapterCount, jobs, built);
     }
     final List<String> texts = cache.texts;
     return compute(
@@ -792,8 +795,13 @@ void 0;
 // ── 搜索 isolate ─────────────────────────────────────────────────────────────
 
 /// 一章搜索文本的来源：lazy 章节给盘上路径（isolate 自己读），eager 章节给
-/// 已在内存里的正文。
-typedef _SearchTextJob = ({int index, String? filePath, String? html});
+/// 已在内存里的正文。[version] / [filePath] 是发任务那一刻的快照，结果按它入账。
+typedef _SearchTextJob = ({
+  int index,
+  int version,
+  String? filePath,
+  String? html,
+});
 
 /// [AudiobookBridge.searchBook] 的按书缓存：每章的搜索文本及其对应的
 /// [EpubChapter.contentVersion] / [EpubChapter.filePath]。不持有章节正文。
@@ -812,6 +820,7 @@ class _SearchTextCache {
             _paths[i] != chapters[i].filePath)
           (
             index: i,
+            version: chapters[i].contentVersion,
             filePath: chapters[i].filePath,
             // eager 章节没有盘上文件，正文本来就在内存里。
             html: chapters[i].filePath == null ? chapters[i].html : null,
@@ -819,21 +828,29 @@ class _SearchTextCache {
     ];
   }
 
-  void store(
-    List<EpubChapter> chapters,
-    List<_SearchTextJob> jobs,
-    List<String> built,
-  ) {
-    final bool sameShape = texts.length == chapters.length;
+  /// 把 [jobs] 的结果 [built] 记进 [chapterCount] 章的缓存。版本号 / 路径记
+  /// 任务里的快照而不是入账时章节的当前值：任务在 isolate 里跑的时候章节可能
+  /// 已被换掉，那样记当前值就会把旧正文算出的文本当成新版本永久缓存住。
+  void store(int chapterCount, List<_SearchTextJob> jobs, List<String> built) {
+    final bool sameShape = texts.length == chapterCount;
     final List<String> nextTexts = sameShape
         ? List<String>.of(texts)
-        : List<String>.filled(chapters.length, '');
+        : List<String>.filled(chapterCount, '');
+    final List<int> nextVersions = sameShape
+        ? List<int>.of(_versions)
+        : List<int>.filled(chapterCount, -1);
+    final List<String?> nextPaths = sameShape
+        ? List<String?>.of(_paths)
+        : List<String?>.filled(chapterCount, null);
     for (int j = 0; j < jobs.length; j++) {
-      nextTexts[jobs[j].index] = built[j];
+      final _SearchTextJob job = jobs[j];
+      nextTexts[job.index] = built[j];
+      nextVersions[job.index] = job.version;
+      nextPaths[job.index] = job.filePath;
     }
     texts = nextTexts;
-    _versions = <int>[for (final EpubChapter c in chapters) c.contentVersion];
-    _paths = <String?>[for (final EpubChapter c in chapters) c.filePath];
+    _versions = nextVersions;
+    _paths = nextPaths;
   }
 }
 

@@ -92,6 +92,31 @@ void main() {
     );
   });
 
+  test('isolate 算文本期间章节被换掉：缓存记发任务时的版本，下次照样重算', () async {
+    // searchBook 同步跑到 compute 前就定下了要算的章和它们的版本（v0）；
+    // 之后章节被换掉（v1），isolate 算出的仍是 v0 的文本。若入账时记的是章节
+    // 当前版本 v1，下一次搜索就把旧文本当新版本用。
+    final Future<List<BookSearchResult>> first = AudiobookBridge.searchBook(
+      book,
+      '猫',
+    );
+    book.chapters[0].discardCachedHtml();
+    expect((await first).map((BookSearchResult r) => r.sectionIndex), <int>[
+      0,
+      2,
+    ]);
+
+    // v1 对应的正文（在线书加载器写盘与 discardCachedHtml 之间的先后不保证）。
+    file(0).writeAsStringSync(_chapter('もう犬しかいない。'));
+    expect(
+      (await AudiobookBridge.searchBook(
+        book,
+        '猫',
+      )).map((BookSearchResult r) => r.sectionIndex),
+      <int>[2],
+    );
+  });
+
   test('eager 章节（没有盘上文件）照常可搜', () async {
     final EpubBook eager = EpubBook(
       title: 't',
