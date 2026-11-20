@@ -156,10 +156,45 @@ def screenshot(top: int, out: Path, screen: bool = False) -> dict[str, Any]:
 
 
 def file_hashes(d: Path) -> dict[str, str]:
+    """数据根 `app-support/` 顶层每个文件（复习库、主库 `fushi.db`、偏好……）的 sha256。"""
     if not d.is_dir():
         return {}
     return {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
-            for p in sorted(d.iterdir()) if p.is_file() and p.name.startswith("srs")}
+            for p in sorted(d.iterdir()) if p.is_file()}
+
+
+def main_schema(db: Path) -> Optional[int]:
+    """主库 `fushi.db` 的 `PRAGMA user_version`（拷进临时目录只读打开）。旧版本遇到更大的号在初始化时整体拒绝。"""
+    if not db.is_file():
+        return None
+    import shutil
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        for suf in ("", "-wal", "-shm"):
+            src = Path(str(db) + suf)
+            if src.is_file():
+                shutil.copy2(src, Path(td) / (db.name + suf))
+        con = sqlite3.connect(f"file:{Path(td) / db.name}?mode=ro", uri=True)
+        try:
+            return int(con.execute("PRAGMA user_version").fetchone()[0])
+        finally:
+            con.close()
+
+
+def masked_hashes(d: Path) -> dict[str, str]:
+    """`srs*` 文件抹掉 SQLite 文件头 24–27（改动计数）与 92–95（version-valid-for）后的 sha256：规划 D3 批准的已知例外
+    （已发布版本拒绝更新的库时只改这两处）。两边这个值相同 = 除这两处外逐字节相同。"""
+    if not d.is_dir():
+        return {}
+    out: dict[str, str] = {}
+    for p in sorted(d.iterdir()):
+        if p.is_file() and p.name.startswith("srs"):
+            b = bytearray(p.read_bytes())
+            if len(b) >= 100 and b[:16] == b"SQLite format 3\x00":
+                b[24:28] = b"\x00" * 4
+                b[92:96] = b"\x00" * 4
+            out[p.name] = hashlib.sha256(bytes(b)).hexdigest()
+    return out
 
 
 def db_facts(db: Path) -> dict[str, Any]:
@@ -263,7 +298,7 @@ def main() -> int:
             f.write(line + "\n")
 
     ev("begin", version=v["id"], exe=str(h.app_exe(v)), root=str(root),
-       before_hashes=file_hashes(support), srs_db=db_facts(support / "srs.db"),
+       before_hashes=file_hashes(support), before_masked=masked_hashes(support), main_schema=main_schema(support / "fushi.db"), srs_db=db_facts(support / "srs.db"),
        srs4_db=db_facts(support / "srs4.db"))
     app = R0App(v, run_dir, root, a.onscreen)
     if a.set_pref:
@@ -280,7 +315,7 @@ def main() -> int:
     except Exception as e:  # noqa: BLE001 —— 起不来本身就是证据
         ev("start-failed", error=str(e))
         app.quit(timeout=30)
-        ev("end", after_hashes=file_hashes(support))
+        ev("end", after_hashes=file_hashes(support), after_masked=masked_hashes(support))
         return 2
     assert app.proc is not None
     steps = json.loads(Path(a.steps).read_text(encoding="utf-8"))
@@ -350,7 +385,7 @@ def main() -> int:
             break
     if not killed:
         ev("quit", **app.quit())
-    ev("end", after_hashes=file_hashes(support), srs_db=db_facts(support / "srs.db"),
+    ev("end", after_hashes=file_hashes(support), after_masked=masked_hashes(support), main_schema=main_schema(support / "fushi.db"), srs_db=db_facts(support / "srs.db"),
        srs4_db=db_facts(support / "srs4.db"), run_dir=str(run_dir))
     return 0
 
