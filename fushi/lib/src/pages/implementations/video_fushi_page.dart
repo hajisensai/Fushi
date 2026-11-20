@@ -239,6 +239,7 @@ import 'package:fushi/src/second_screen/input/controller_lookup_target.dart';
 import 'package:fushi/src/media/video/video_remote_binding_support.dart';
 import 'package:fushi/src/media/video/video_ocr_cli_consent.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
+import 'package:fushi/src/media/video/video_initial_fullscreen_gate.dart';
 import 'package:fushi/src/media/video/video_control_bar.dart';
 import 'package:fushi/src/media/video/video_top_bar_slots.dart';
 import 'package:fushi_engine/media/collections/collection_season_groups.dart';
@@ -794,6 +795,42 @@ String videoFavoriteCacheKey({
       : 'cue|${normalizedEpisodeIndex ?? 'single'}|$startMs|$text';
 }
 
+/// 一句字幕在收藏镜像（[videoFavoriteCacheKey] 键集）里是否已收藏（video-25）。
+///
+/// 查词浮层星标与字幕条 / 跳转列表星标都读它：同一份镜像、同一个判据，两处不会各说
+/// 各话。[sentence] 先 trim（镜像键也是 trim 过的文本）。有 cue 时按
+/// `startMs (+集下标)` 键查，再兼容没有 startMs 的旧 text-only 条目；没有 cue 的查词句
+/// 只认旧 text-only 条目——与取消收藏时 DB 匹配（`_matchingVideoFavorites`）同口径。
+bool videoSentenceFavoritedInMirror(
+  Set<String> mirror, {
+  required String sentence,
+  required int? cueStartMs,
+  required int? episodeIndex,
+  required bool isPlaylist,
+}) {
+  final String text = sentence.trim();
+  if (text.isEmpty) return false;
+  if (cueStartMs != null &&
+      mirror.contains(
+        videoFavoriteCacheKey(
+          text: text,
+          startMs: cueStartMs,
+          episodeIndex: episodeIndex,
+          isPlaylist: isPlaylist,
+        ),
+      )) {
+    return true;
+  }
+  return mirror.contains(
+    videoFavoriteCacheKey(
+      text: text,
+      startMs: null,
+      episodeIndex: null,
+      isPlaylist: isPlaylist,
+    ),
+  );
+}
+
 /// TODO-897 / BUG-805：缺失资源对话框的用户选择。「重新导入」现为真动作
 /// （单视频重链选文件 / 播放列表打开导入对话框），不再有独立「重新选择文件」项。
 enum _MissingResourceChoice { reimport, delete, cancel }
@@ -1307,6 +1344,27 @@ abstract class VideoFushiTestHooks {
   String? get debugResolvedDiscSubtitleTrackId;
   String? get debugResolvedDiscAudioTrackId;
   void debugOpenSubtitleSettings();
+
+  /// 播放页交给设置面板的能力槽（与面板拿到的是同一份构造），测试经它走真实回调。
+  VideoQuickSettingsHost debugQuickSettingsHost();
+
+  /// 页面当前的字幕外观快照。
+  VideoSubtitleStyle get debugSubtitleStyle;
+
+  /// 走与打开视频同一条路径从库里重填收藏镜像（video-25）。
+  Future<void> debugRefreshFavoritedCueCache();
+
+  /// 模拟一次查词落到 [sentence]（[cue] 可空）后刷新浮层收藏星标（与 [_lookupAt] 同一调用）。
+  void debugSetLookupSentence(String sentence, AudioCue? cue);
+
+  /// 查词浮层顶部收藏星标当前是否实心。
+  bool get debugCurrentSentenceFavorited;
+
+  /// 字幕条 / 跳转列表星标对 [cue] 的判定。
+  bool debugIsCueFavorited(AudioCue cue);
+
+  /// 走浮层星标同一条路径收藏 / 取消收藏当前查词句。
+  Future<void> debugToggleLookupSentenceFavorite();
   Future<void> debugSelectSubtitleOff();
 
   /// 当前播放位置（毫秒）；未就绪为 null。
@@ -2008,6 +2066,33 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   @override
   String? get debugActiveAudioTrackId =>
       (_controller ?? _pendingController)?.activeAudioTrackId;
+  @override
+  VideoQuickSettingsHost debugQuickSettingsHost() =>
+      _buildVideoQuickSettingsHost();
+
+  @override
+  VideoSubtitleStyle get debugSubtitleStyle => _subtitleStyle;
+
+  @override
+  Future<void> debugRefreshFavoritedCueCache() => _refreshFavoritedCueCache();
+
+  @override
+  void debugSetLookupSentence(String sentence, AudioCue? cue) {
+    _lastLookupSentence = sentence;
+    _lastLookupCue = cue;
+    _refreshVideoSentenceFavorite();
+  }
+
+  @override
+  bool get debugCurrentSentenceFavorited => _currentVideoSentenceIsFavorited;
+
+  @override
+  bool debugIsCueFavorited(AudioCue cue) => _isCueFavorited(cue);
+
+  @override
+  Future<void> debugToggleLookupSentenceFavorite() =>
+      _toggleFavoriteSentenceForVideo();
+
   @override
   void debugOpenSubtitleSettings() =>
       _showPlayerSettings(initialCategory: 'subtitle');
@@ -2888,18 +2973,22 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 对话框/遮罩压住（`isCurrent`），避免切窗返回时抢走全屏内对话框的焦点。
   PageRoute<void>? _videoFullscreenRoute;
 
-  /// BUG-839：`initialFullscreen` 新页「首帧就绪后重进全屏」的一次性闸门 + 有界重试计数。
-  /// controls 首建帧（设 [_videoControlsContext]）可能晚于就绪帧，故就绪后逐帧重试到
-  /// context 可用再进全屏；失败/缺失态或超过上限则放弃，避免死循环（见
-  /// [_scheduleInitialFullscreenIfNeeded]）。
-  bool _didInitialFullscreen = false;
+  /// BUG-839：`initialFullscreen` 新页「首帧就绪后重进全屏」的一次性闸门。
+  /// controls 首建帧（设 [_videoControlsContext]）可能晚于就绪帧，所以就绪只是「开闸」，
+  /// 真正的尝试由 context 赋值点（[_captureVideoControlsContext]）与失败 / 缺失态渲染
+  /// 事件驱动，不再逐帧轮询（video-36e，见 [_scheduleInitialFullscreenIfNeeded]）。
+  late final VideoInitialFullscreenGate _initialFullscreen =
+      VideoInitialFullscreenGate(
+        schedulePostFrame: (void Function() callback) => WidgetsBinding.instance
+            .addPostFrameCallback((Duration _) => callback()),
+        attempt: _attemptInitialFullscreen,
+      );
 
   /// BUG-2043：本页是否持有从上一集页**接管**来的原生全屏（窗口已是原生全屏、栈上
   /// 尚无本页的全屏路由）。initState 经 [_claimHandedOverNativeFullscreen] 置真；就绪
   /// 后压上全屏路由（退出改由路由 pop 收口）、再换下一集（所有权继续传递）或
   /// [_releaseHandedOverNativeFullscreen] 亲自退出，三者都把它翻假。
   bool _ownsHandedOverNativeFullscreen = false;
-  int _initialFullscreenRetries = 0;
 
   /// 观看统计采集器（字幕字数 + 完成标记 + 喂空闲门；时长由它的墙钟时钟计）；首次
   /// load 建，dispose 释放。
@@ -3397,8 +3486,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }
 
   /// 当前查词所在字幕句是否已被收藏（驱动查词浮层顶部收藏星标的实心/空心）。每次
-  /// [_lookupAt] 成功后据 [_lastLookupSentence] 异步刷新。视频句子收藏走与书内同一
-  /// [FavoriteSentenceRepository]（preferences JSON），来源标 [kFavoriteSentenceSourceVideo]。
+  /// [_lookupAt] 成功后据 [_lastLookupSentence] 从镜像 [_favoritedVideoSentences] 同步
+  /// 算出（video-25：不再每查一个词就把全部收藏句 JSON 读出解析），镜像重填后补刷。
+  /// 视频句子收藏走与书内同一 [FavoriteSentenceRepository]（preferences JSON），来源标
+  /// [kFavoriteSentenceSourceVideo]。
   bool _currentVideoSentenceIsFavorited = false;
 
   /// 本视频已收藏句锚点的缓存集合（驱动字幕跳转列表行内收藏星标的实心/空心，TODO-152
@@ -3407,6 +3498,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 行内收藏 toggle 后增量更新。新条目按 `bookUid + cue.startMs` 匹配；旧条目没有
   /// startMs 时保留 text-only 兼容键。
   final Set<String> _favoritedVideoSentences = <String>{};
+
+  /// 本页对收藏的增删次数（video-25）：镜像全量重填（[_refreshFavoritedCueCache]）读库
+  /// 期间若本页又增删过，读到的那份快照可能早于这次写，填完要重读一次。
+  int _favoriteMirrorRevision = 0;
   VideoRemotePlaybackBinding? _videoRemoteBinding;
   final VideoRemoteCueCache _videoRemoteCueCache = VideoRemoteCueCache();
 
@@ -3745,7 +3840,19 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       ValueNotifier<({Offset position, double speed})?>(null);
 
   /// 当前字幕外观（全局偏好快照；设置面板改动后刷新）。
-  VideoSubtitleStyle _subtitleStyle = VideoSubtitleStyle.defaults;
+  ///
+  /// video-36f：做成 [ValueNotifier]，只有字幕 overlay 经 [ValueListenableBuilder] 订阅。
+  /// 设置面板的字幕样式滑条每个采样都走 [VideoQuickSettingsHost.onSubtitleStylePreview]，
+  /// 原先那里 `setState` 重建整个播放页（控制条、侧栏、浮层全部重算）；现在只重建字幕层。
+  /// 其余读点（剪辑导出、拖拽松手）都是事件时读值，不需要订阅。
+  final ValueNotifier<VideoSubtitleStyle> _subtitleStyleNotifier =
+      ValueNotifier<VideoSubtitleStyle>(VideoSubtitleStyle.defaults);
+  VideoSubtitleStyle get _subtitleStyle => _subtitleStyleNotifier.value;
+  set _subtitleStyle(VideoSubtitleStyle style) {
+    // 异步载入路径可能在页面释放后才写回样式：notifier 已 dispose，写了会断言。
+    if (!mounted) return;
+    _subtitleStyleNotifier.value = style;
+  }
 
   /// 「拖拽调整字幕位置」模式开关（TODO-2838）：设置面板入口进入、画面顶部横幅
   /// 「完成」退出。开启时字幕 overlay 让出查词指针面、改挂竖直拖拽（见
@@ -7701,6 +7808,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _minesInFlight.dispose();
     _stagedMineCount.dispose();
     _longPressSpeedBadge.dispose();
+    _subtitleStyleNotifier.dispose();
     _autoAdvanceCountdownTimer?.cancel();
     _autoAdvanceCountdownNotifier.dispose();
     _remoteSwitchPhase.dispose();
@@ -12324,9 +12432,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }
 
   Future<void> _persistSubtitleStyle(VideoSubtitleStyle style) async {
+    // 写 notifier 即刷新字幕 overlay（video-36f），不再整页 setState。
     _subtitleStyle = style;
     await appModel.setVideoSubtitleStyle(VideoSubtitleStyle.encode(style));
-    if (mounted) setState(() {});
   }
 
   /// 切换字幕模糊（'B' 热键 + 设置面板共用）。TODO-840 Part B：在「模糊」与「不遮蔽」
@@ -12831,8 +12939,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       onSetSubtitleObscureMode: _setSubtitleObscureMode,
       onSetSecondarySubtitleObscureMode: _setSecondarySubtitleObscureMode,
       onAsbConfigChanged: _setAsbConfig,
+      // video-36f：只改 notifier，字幕 overlay 自己订阅重建，不 setState 整页。
       onSubtitleStylePreview: (VideoSubtitleStyle s) {
-        if (mounted) setState(() => _subtitleStyle = s);
+        if (mounted) _subtitleStyle = s;
       },
       onSubtitleStyleCommit: _persistSubtitleStyle,
       // TODO-2838：进入「拖拽调整字幕位置」模式（关设置侧栏 + 开拖拽，见 layout.part）。
@@ -13115,6 +13224,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 它的失败提示只认最后一次 attach 的 context。横幅是唯一 attach 点时，继续观看
     // 那一帧起 context 就是已卸载的，提示会被静默吞掉——由页面自己接管。
     _sourceReviewSession?.attachContext(context);
+    // video-36e：失败 / 缺失态的 controls 永远不建，等着进全屏的闸门在这里收到放弃事件
+    // （帧后回调里退掉接管来的原生全屏）。
+    if (_failed || _missingResource) _initialFullscreen.notify();
     final Widget body = _failed
         ? _buildFailedBody(cs)
         // TODO-897：本地资源缺失态——必须在转圈判据之前短路（缺失时不调 load，

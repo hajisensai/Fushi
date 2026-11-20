@@ -252,7 +252,7 @@ extension _VideoEpisode on _VideoFushiPageState {
       // 原生全屏所有权随 initialFullscreen 交给新页：本页不再在 dispose 里释放它，
       // 挂着的一次性重进全屏回调也不得再压路由（本页马上被摘）。
       _ownsHandedOverNativeFullscreen = false;
-      _didInitialFullscreen = true;
+      _initialFullscreen.settle();
       unawaited(navigator.push<void>(nextRoute));
       if (oldFullscreenRoute != null && oldFullscreenRoute.isActive) {
         rootNavigator.removeRoute<void>(oldFullscreenRoute);
