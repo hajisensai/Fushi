@@ -25,7 +25,9 @@ namespace {
 // 无声的漏查，所以每次装载都验，不吻合就当没有这份缓存。也因为有它兜底，写文件时
 // 不做同步刷盘。
 constexpr uint64_t kMagic = 0x314C46494E554446ULL;  // "FDUNIFL1"（小端字节序）
-constexpr uint32_t kVersion = 1;
+// 2：块与块内位改由键的 tag（key_index::tag_of）决定（1 是完整 64 位哈希），旧文件
+// 的位对不上，必须被拒。
+constexpr uint32_t kVersion = 2;
 constexpr uint64_t kBlocksAlign = 4096;
 constexpr uint32_t kMaxDicts = 1U << 16;
 constexpr std::string_view kFilePrefix = "union-";
@@ -48,7 +50,7 @@ static_assert(sizeof(file_header) == 64);
 
 constexpr uint64_t kLayout =
     static_cast<uint64_t>(union_filter::kBitsPerPair) | (union_filter::kPairsPerBlock << 8) |
-    (static_cast<uint64_t>(union_filter::kBlockBytes) << 24);
+    (static_cast<uint64_t>(union_filter::kBlockBytes) << 24) | (static_cast<uint64_t>(key_index::kTagBits) << 40);
 
 // [header]（checksum 字段按 0 计）+ 身份列表 + 块区的校验和。
 uint64_t file_checksum(file_header header, std::span<const uint64_t> identities, const void* blocks,
@@ -73,15 +75,30 @@ std::vector<union_filter::source> unique_sources(std::span<const union_filter::s
   return out;
 }
 
-// hash.table 的键数上界：导入端按 capacity = max(n * 10 / 7, 16) 建表（hash.cpp
-// build_to_file），所以 n <= (capacity + 1) * 7 / 10。多估只是过滤器略大，少估才抬假阳性。
+// 键数（上界）：key.index 文件头里有确数；hash.table 按导入端的 capacity =
+// max(n * 10 / 7, 16)（hash.cpp build_to_file）反推，n <= (capacity + 1) * 7 / 10。
+// 多估只是过滤器略大，少估才抬假阳性。
 uint64_t estimated_pairs(std::span<const union_filter::source> sources) {
   uint64_t total = 0;
   for (const union_filter::source& s : sources) {
+    if (s.keys) {
+      total += s.keys->num_keys() + 1;
+      continue;
+    }
     const uint64_t capacity = slot_capacity(s.table, s.table_size);
     total += (capacity + 1) * 7 / 10 + 1;
   }
   return total;
+}
+
+// 一本词典索引里每个键的 tag：visit(tag) 返回 false = 提前停止。
+template <typename Visit>
+void for_each_tag(const union_filter::source& s, Visit&& visit) {
+  if (s.keys) {
+    s.keys->for_each_slot([&](uint32_t tag, key_index::location) -> bool { return visit(tag); });
+    return;
+  }
+  for_each_slot(s.table, s.table_size, [&](uint64_t h, uint64_t) -> bool { return visit(key_index::tag_of(h)); });
 }
 
 uint64_t blocks_for(uint64_t pairs) {
@@ -119,7 +136,7 @@ bool union_filter::fill(uint64_t* blocks, uint64_t num_blocks, std::span<const s
   bool cancelled = false;
   for (const source& s : sources) {
     const uint64_t identity = s.identity;
-    for_each_slot(s.table, s.table_size, [&](uint64_t h, uint64_t) -> bool {
+    for_each_tag(s, [&](uint32_t tag) -> bool {
       if (cancel && --until_check == 0) {
         until_check = kCancelCheckEvery;
         if (cancel->load(std::memory_order_relaxed)) {
@@ -127,8 +144,8 @@ bool union_filter::fill(uint64_t* blocks, uint64_t num_blocks, std::span<const s
           return false;
         }
       }
-      uint64_t* block = blocks + block_index(h, num_blocks) * kBlockWords;
-      uint64_t x = pair_bits(h, identity);
+      uint64_t* block = blocks + block_index(tag, num_blocks) * kBlockWords;
+      uint64_t x = pair_bits(tag, identity);
       for (unsigned i = 0; i < kBitsPerPair; i++) {
         const unsigned bit = static_cast<unsigned>(x & 511U);
         block[bit >> 6] |= uint64_t{1} << (bit & 63U);

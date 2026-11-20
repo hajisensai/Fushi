@@ -1535,6 +1535,8 @@ class AdminApi {
       'engine': ctx.config.torrentEngine,
       'library': ctx.config.torrentLibraryPath,
       'listen': ctx.config.torrentListen,
+      // 已配对设备借本机引擎下载时，除下载根外允许落盘的目录（保存即生效）。
+      'peerRoots': ctx.config.torrentPeerRoots,
       'embeddedLibraryFound': locateBundledLibrary(torrentLibraryName()),
     },
     // 远程可达三项：保存即生效，不在 restartRequiredKeys 里。
@@ -1677,6 +1679,9 @@ class AdminApi {
       torrentListen: (torrent?['listen'] ?? '').toString().isEmpty
           ? null
           : torrent!['listen'].toString(),
+      torrentPeerRoots: torrent?['peerRoots'] == null
+          ? null
+          : ServerConfig.parseTorrentPeerRoots(torrent!['peerRoots']),
       publicUrls: publicUrls,
       p2p: p2p,
       p2pRelays: p2pRelays,

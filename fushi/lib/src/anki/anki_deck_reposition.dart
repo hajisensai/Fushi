@@ -10,7 +10,8 @@ import 'package:fushi_core/fushi_core.dart' show katakanaToHiragana;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 /// 查引擎：一个表达式 → 引擎返回的全部词条（各自带全部已装载词典的词频）。
-/// 生产实现是 `FushiDicts.instance.query`；测试注入假表。
+/// 只读词条的 reading 与 frequencies，所以生产实现是只取词频的
+/// `FushiDicts.instance.queryFrequencies`（不解压释义）；测试注入假表。
 typedef AnkiFrequencyLookup = List<FushiTermResult> Function(String expression);
 
 /// 重排的词频取值选项。

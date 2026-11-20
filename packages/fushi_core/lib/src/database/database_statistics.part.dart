@@ -831,6 +831,8 @@ mixin _FushiDbStatistics
         await deleteTagAssignmentsForHost(TagHostKind.game, id);
         // v135 配音表缓存（设备本地、无外键）同事务清掉。
         await (delete(gameVoiceCasts)..where((t) => t.gameId.equals(id))).go();
+        // v155：单个游戏的刮削资料 / 横版背景图（逻辑外键）同事务清。
+        await _purgeItemScrapeRows(this, MediaKind.game, <String>[id]);
         return (delete(galgames)..where((t) => t.id.equals(id))).go();
       });
 

@@ -1042,7 +1042,9 @@ class _VideoSourceScrapeTaskPanelState
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    t.video_source_scrape_confirmation_hint,
+                    confirmation.strictMatches
+                        ? t.video_source_scrape_confirmation_hint
+                        : t.video_source_scrape_confirmation_review_hint,
                     style: type.bodySmall.copyWith(color: onCard),
                   ),
                 ],

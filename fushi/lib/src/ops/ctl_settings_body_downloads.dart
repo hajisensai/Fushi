@@ -45,6 +45,9 @@ bool _embedded(SettingsContext c) =>
 bool _qb(SettingsContext c) =>
     _backend(c) == QbConnectionConfig.backendQbittorrent;
 
+bool _fushiHost(SettingsContext c) =>
+    _backend(c) == QbConnectionConfig.backendFushiHost;
+
 bool _pageVisible(SettingsContext c) => isSettingsDestinationVisible(
   SettingsDestinationId.downloads,
   c.appModel.moduleVisibility,
@@ -86,20 +89,30 @@ CtlBodyPage _commonPage() => CtlBodyPage(
     SettingsSegmentedItem<String>(
       id: _id('backend'),
       title: t.download_settings,
-      visible: (SettingsContext c) => _app(c).supportsEmbeddedTorrent,
-      options: <SettingsSegmentOption<String>>[
-        SettingsSegmentOption<String>(
-          value: QbConnectionConfig.backendEmbedded,
-          label: t.video_setting_torrent_backend_embedded,
-        ),
-        SettingsSegmentOption<String>(
-          value: QbConnectionConfig.backendQbittorrent,
-          label: t.video_setting_torrent_backend_qb,
-        ),
+      options: _backendOptions(),
+      // 没有内置引擎的平台（iOS）只剩外接 qB 与互联设备。
+      optionsBuilder: (SettingsContext c) => <SettingsSegmentOption<String>>[
+        for (final SettingsSegmentOption<String> o in _backendOptions())
+          if (o.value != QbConnectionConfig.backendEmbedded ||
+              _app(c).supportsEmbeddedTorrent)
+            o,
       ],
       selected: _backend,
       onChanged: (SettingsContext c, String value) =>
           _commit(c, (QbConnectionConfig q) => q.copyWith(backend: value)),
+    ),
+    SettingsCustomItem(
+      id: _id('engine_host'),
+      builder: (SettingsContext _) => const SizedBox.shrink(),
+      searchTitle: t.video_setting_torrent_engine_host_title,
+      visible: _fushiHost,
+      cliValue: SettingsCliValue(
+        read: (SettingsContext c) => _cfg(c).remoteHostUrl,
+        write: _writeEngineHost,
+        help:
+            '借哪台已配对设备的 BT 引擎（下载后端 = fushi_host 时生效）；填已配对 host 的地址，'
+            '候选见 `config run downloads.cli.execution_host_candidates`',
+      ),
     ),
     SettingsCustomItem(
       id: _id('save_root'),
@@ -479,6 +492,49 @@ Future<void> _writeExecutionHost(SettingsContext c, String raw) async {
     );
   }
   await _app(c).prefsRepo.setDownloadExecutionHostUrl(host.url);
+}
+
+List<SettingsSegmentOption<String>> _backendOptions() =>
+    <SettingsSegmentOption<String>>[
+      SettingsSegmentOption<String>(
+        value: QbConnectionConfig.backendEmbedded,
+        label: t.video_setting_torrent_backend_embedded,
+      ),
+      SettingsSegmentOption<String>(
+        value: QbConnectionConfig.backendQbittorrent,
+        label: t.video_setting_torrent_backend_qb,
+      ),
+      SettingsSegmentOption<String>(
+        value: QbConnectionConfig.backendFushiHost,
+        label: t.video_setting_torrent_backend_fushi_host,
+      ),
+    ];
+
+/// 「下载后端 = 互联设备」借哪台 host 的引擎：只认已配对且启用的 host，存它的
+/// hostId（换地址不换身份）+ 代表地址。
+Future<void> _writeEngineHost(SettingsContext c, String raw) async {
+  final String value = raw.trim();
+  final List<FushiClientUrl> urls = await loadDownloadExecutionHostUrls(
+    _app(c),
+  );
+  final FushiClientUrl? host = value.isEmpty
+      ? null
+      : interconnectPeerRepresentativeOf(urls, value);
+  if (host == null) {
+    final List<String> known = <String>[
+      for (final FushiClientUrl h in interconnectPeerRepresentatives(urls))
+        h.url,
+    ];
+    throw ArgumentError(
+      '「$value」不是已配对且启用的 host'
+      '${known.isEmpty ? '（还没有配对任何 host）' : '；可选：${known.join('、')}'}',
+    );
+  }
+  await _commit(
+    c,
+    (QbConnectionConfig q) =>
+        q.copyWith(remoteHostId: host.hostId ?? '', remoteHostUrl: host.url),
+  );
 }
 
 Future<Object?> _executionHostCandidates(

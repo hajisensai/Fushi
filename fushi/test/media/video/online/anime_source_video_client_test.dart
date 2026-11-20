@@ -862,6 +862,74 @@ void main() {
     });
   });
 
+  group('字幕生成拉整集音频前现取地址（RemoteVideoSubtitleAudioRefresh）', () {
+    List<Object?> round(int sig) => <Object?>[
+      <Object?, Object?>{
+        'url': 'https://cdn.example/video-only.m4s?sig=$sig',
+        'quality': '1080p',
+        'headers': <Object?, Object?>{'Referer': 'https://site.example/$sig'},
+        'audioTracks': <Object?>[
+          <Object?, Object?>{
+            'url': 'https://cdn.example/ja.m4a?sig=$sig',
+            'lang': '日本語',
+          },
+          <Object?, Object?>{
+            'url': 'https://cdn.example/dub.m4a?sig=$sig',
+            'lang': 'English',
+          },
+        ],
+      },
+    ];
+
+    test('重新向扩展取流，挑同一位置的外挂音轨；不改播放用的当前流与请求头', () async {
+      runtime.videos = round(1);
+      final AnimeSourceVideoClient c = client();
+      final String id = c.remoteVideos.first.id;
+      await c.remoteVideoStreamUrls(id);
+      final int callsAfterPlay = runtime.videoListCalls;
+      expect(c, isA<RemoteVideoSubtitleAudioRefresh>());
+
+      runtime.videos = round(2);
+      final RemoteVideoSubtitleAudio dub = await c.freshSubtitleAudio(
+        id,
+        currentAudioUrl: 'https://cdn.example/dub.m4a?sig=1',
+      );
+      expect(runtime.videoListCalls, callsAfterPlay + 1, reason: '签名链接短 TTL');
+      expect(dub.url, 'https://cdn.example/dub.m4a?sig=2');
+      expect(dub.audioOnly, isTrue);
+      expect(dub.headers['Referer'], 'https://site.example/2');
+      // 播放会话不动：播放页下发给 libmpv 的头仍是起播那一轮的。
+      expect(c.httpHeaderFields['Referer'], 'https://site.example/1');
+      expect(c.streamVariantIndex, 0);
+    });
+
+    test('播放器放的是流自带音轨：读视频流本身（新地址）', () async {
+      runtime.videos = round(1);
+      final AnimeSourceVideoClient c = client();
+      final String id = c.remoteVideos.first.id;
+      await c.remoteVideoStreamUrls(id);
+      runtime.videos = round(3);
+      final RemoteVideoSubtitleAudio own = await c.freshSubtitleAudio(id);
+      expect(own.url, 'https://cdn.example/video-only.m4s?sig=3');
+      expect(own.audioOnly, isFalse);
+      expect(own.headers['Referer'], 'https://site.example/3');
+    });
+
+    test('认不出上一轮那条外挂音轨：取第一条外挂音轨（声音本来就从外挂音轨出）', () async {
+      runtime.videos = round(1);
+      final AnimeSourceVideoClient c = client();
+      final String id = c.remoteVideos.first.id;
+      await c.remoteVideoStreamUrls(id);
+      runtime.videos = round(4);
+      final RemoteVideoSubtitleAudio audio = await c.freshSubtitleAudio(
+        id,
+        currentAudioUrl: 'https://elsewhere.example/a.m4a',
+      );
+      expect(audio.url, 'https://cdn.example/ja.m4a?sig=4');
+      expect(audio.audioOnly, isTrue);
+    });
+  });
+
   test('episodeIds from library rows override the derived ids', () {
     final AnimeSourceVideoClient c = AnimeSourceVideoClient(
       manager: manager,

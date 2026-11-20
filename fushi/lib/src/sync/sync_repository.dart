@@ -7,6 +7,8 @@ import 'package:fushi/src/models/preference_keys.dart'
     show kAnkiSettingsPrefKey, kWorkProfileSessionPrefKey;
 import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart'
     show kPageBackdropDeviceLocalPrefKeys;
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show ShellLayoutInstallDefault;
 import 'package:fushi/src/web_browser/web_browser_prefs.dart';
 import 'package:fushi/src/models/preferences_repository.dart'
     show
@@ -2043,6 +2045,12 @@ class SyncRepository {
     kWorkProfileSessionPrefKey,
     // 库页「每行数量」：合适的列数取决于这台设备的屏幕（BUG-4219）。
     kLibraryGridColumnsPrefKey,
+    // 库页布局出厂判定（G1：新安装 = 拼贴 / 升级上来 = 封面网格 + 待弹选择框）：
+    // 本设备一次性的判定结论。不进 Profile 快照 / 备份 / 设置同步，导入时保留本机
+    // 值——随推荐包或老 Profile 换进来会把新用户重判成老用户（切网格并弹框）。
+    // 有意不放进 [installScopedPrefKeys]：那一类导入时会被清掉、下次启动重判，
+    // 而重判在已有书库的数据上必然得出「升级上来」。
+    ShellLayoutInstallDefault.prefKey,
     // 书架文件夹导入「缺字幕就转录」：几个小时的设备端推理，跑不跑得动是这台设备
     // 的事（手机上开着、恢复到没有 ASR 算力的机器上不该跟着开）。同组的总开关
     // `audiobook_auto_transcribe` 是同步的，这一个有意设成设备本地。
@@ -2224,6 +2232,9 @@ class SyncRepository {
     'library_organize_auto',
     'library_organize_auto_since',
     'library_organize_consented',
+    // AI 库管家：自动开关与本机运行记录 / 水位——同理只对这台设备成立。
+    'library_curate_auto',
+    'library_curate_state',
     'video_subtitle_segmenter',
     'video_subtitle_moss_backend',
     // 按系列记住的字幕文件夹（0PZAhFd1RO）：值是这台机器上的外部绝对路径，系列键里
@@ -2259,6 +2270,10 @@ class SyncRepository {
     'usage_stats_install_id',
     'usage_stats_install_pow',
     'usage_stats_last_ping_at',
+    // 服务端通知（updates/notice_feed.dart）：缓存的是发给这台设备这份构建的通知，
+    // 已弹过的记录也只对本机有意义。
+    'notices_cache',
+    'notices_seen',
     // 书架「仅从本机移除」的远端书：语义就是只对这台设备成立，随备份漂到另一台
     // 设备会让那边的同一份远端书也莫名消失。
     'hidden_remote_books',

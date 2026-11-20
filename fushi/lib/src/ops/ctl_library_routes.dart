@@ -20,6 +20,7 @@ import 'package:fushi/src/media/video/video_library_delete.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/ops/ctl_library_curate_routes.dart';
 import 'package:fushi/src/ops/ctl_library_organize_routes.dart';
 import 'package:fushi/src/pages/implementations/galgame_detail_page.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
@@ -29,6 +30,7 @@ import 'package:fushi/src/ops/ctl_audiobook_routes.dart';
 import 'package:fushi/src/ops/ctl_library_entries.dart';
 import 'package:fushi/src/ops/ctl_library_import.dart';
 import 'package:fushi/src/ops/ctl_library_manage_routes.dart';
+import 'package:fushi/src/ops/ctl_library_scrape_routes.dart';
 import 'package:fushi/src/ops/ctl_manga_ocr_routes.dart';
 import 'package:fushi/src/ops/ctl_reader_routes.dart';
 import 'package:fushi/src/ops/op_context.dart';
@@ -63,11 +65,15 @@ List<CtlRoute> buildLibraryCtlRoutes(OpContext context) {
     // 书架管理（合集 / 标签 / 书签 / 收藏句 / 改名 / 封面 / 读完 / 重置 / 来源增删改）、
     // 阅读会话遥控、有声书、漫画 OCR：各自一个文件，路径同在 library 前缀下。
     ...buildLibraryManageCtlRoutes(context),
+    // v161 条目刮削资料 / 横版背景（CLI `library scrape-meta`）。
+    ...buildLibraryScrapeCtlRoutes(context),
     ...buildReaderCtlRoutes(context),
     ...buildAudiobookCtlRoutes(context),
     ...buildMangaOcrCtlRoutes(context),
     // AI 整理库（CLI `library organize` / `organize-history` / `organize-undo`）。
     ...buildLibraryOrganizeCtlRoutes(context),
+    // AI 库管家（CLI `library curate` / `curate-*`，spec 2026-11-18）。
+    ...buildLibraryCurateCtlRoutes(context),
   ];
 }
 

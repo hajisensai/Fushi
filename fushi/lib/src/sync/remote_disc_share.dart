@@ -96,6 +96,15 @@ class RemoteDiscShareUnsupported implements Exception {
   String toString() => 'RemoteDiscShareUnsupported';
 }
 
+/// 对端不认按（盘, title）裁音频（老 host 的能力表里没有
+/// `liveLibrary.videoClipAudioDiscTitle`）：库里没有行的原盘 title 取不到音频。
+class RemoteDiscTitleAudioUnsupported implements Exception {
+  const RemoteDiscTitleAudioUnsupported();
+
+  @override
+  String toString() => 'RemoteDiscTitleAudioUnsupported';
+}
+
 /// 「能共享原盘」的远端视频源（互联 host）。按能力分级，同 `RemoteVideoClient`。
 abstract interface class RemoteDiscShareSource {
   /// host 是否声明 `liveLibrary.discShareV1`。探不到（网络）抛错。

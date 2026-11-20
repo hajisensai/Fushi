@@ -2091,6 +2091,23 @@ class BackupService {
         "OR (media_kind = 'game' AND entry_key NOT IN "
         '(SELECT id FROM galgames))',
       );
+      // v161 条目刮削资料 / 附加图：键与合集成员同一套（epub=uid / srt=uid /
+      // game=galgames.id），宿主不在本份导出里的行一并收敛。
+      for (final String table in const <String>[
+        'item_scrape_meta',
+        'item_images',
+      ]) {
+        await db.customStatement(
+          'DELETE FROM $table WHERE '
+          "(media_type = 'epub' AND entry_key NOT IN "
+          '(SELECT uid FROM epub_books)) '
+          "OR (media_type = 'srt' AND entry_key NOT IN "
+          '(SELECT uid FROM srt_books)) '
+          "OR (media_type = 'game' AND entry_key NOT IN "
+          '(SELECT id FROM galgames))',
+        );
+      }
+
       // v156 NSFW 标记：同一套宿主逻辑外键，同口径收敛。
       await db.customStatement(
         'DELETE FROM media_nsfw_flags WHERE '

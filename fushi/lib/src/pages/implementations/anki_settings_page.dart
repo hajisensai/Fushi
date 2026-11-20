@@ -1931,6 +1931,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
           // 「让 AI 帮忙」的提供商按功能指派解析；编辑器本身零 Riverpod 依赖，
           // 所以在这里读偏好再传进去。
           aiEnabled: isAiModuleEnabled(ref.read(appProvider).moduleVisibility),
+          savedPromptStoreOf: () => ref.read(appProvider).prefsRepo,
           resolveAiProvider: () {
             final PreferencesRepository prefs = ref.read(appProvider).prefsRepo;
             return prefs.aiFeatureAssignments.resolve(

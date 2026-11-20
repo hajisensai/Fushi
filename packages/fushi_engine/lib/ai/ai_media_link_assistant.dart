@@ -48,6 +48,13 @@ Judge each candidate on its own:
 - "confidence": a number from 0 to 1.
 - "reason": one short sentence the user will read.
 
+When side "a" is music (kind music_album or music_track) the question is
+different: is that music made for side "b" (its soundtrack, opening / ending /
+insert theme song, character song or drama CD)? Then "related" is true only if
+it is, "relation" is "soundtrack" for a score / OST album and "theme_song" for
+theme / insert / character songs, and "original" is "a". A compilation or a
+cover that merely contains the title is not related.
+
 Never invent identifiers and never add candidates. Reply with one JSON object
 only, no prose:
 {"verdicts":[{"index":0,"related":true,"relation":"adaptation","original":"a","confidence":0.8,"reason":"..."}]}
@@ -96,6 +103,8 @@ List<MediaLinkVerdict?> parseAiMediaLinkVerdicts(String reply, int count) {
     final MediaLinkRelation? relation = switch (node['relation']) {
       'adaptation' => MediaLinkRelation.adaptation,
       'same_work' => MediaLinkRelation.sameWork,
+      'theme_song' => MediaLinkRelation.themeSong,
+      'soundtrack' => MediaLinkRelation.soundtrack,
       _ => null,
     };
     if (related && relation == null) continue;

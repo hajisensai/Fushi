@@ -40,6 +40,7 @@ class FushiSectionTitle extends StatelessWidget {
     this.trailing,
     this.padding,
     this.level = FushiSectionTitleLevel.content,
+    this.shrinkTrailing = false,
   });
 
   /// 分组标题（[FushiSectionTitleLevel.group]）。
@@ -48,6 +49,7 @@ class FushiSectionTitle extends StatelessWidget {
     super.key,
     this.trailing,
     this.padding,
+    this.shrinkTrailing = false,
   }) : level = FushiSectionTitleLevel.group;
 
   final String text;
@@ -59,6 +61,11 @@ class FushiSectionTitle extends StatelessWidget {
   final EdgeInsetsGeometry? padding;
 
   final FushiSectionTitleLevel level;
+
+  /// [trailing] 是可截断的说明文字（计数 / 来源摘要，需自带单行省略）时置真：
+  /// 尾随最多占行宽三分之一、超出省略，不把标题行顶出右缘。默认假——按钮 /
+  /// 菜单等动作控件按固有宽度排，压缩会把它们自己挤溢出。
+  final bool shrinkTrailing;
 
   /// 当前设计系统下该层级的标题样式（供需要自绘标题的地方复用同一口径）。
   static TextStyle styleOf(BuildContext context, FushiSectionTitleLevel level) {
@@ -106,9 +113,9 @@ class FushiSectionTitle extends StatelessWidget {
             ? title
             : Row(
                 children: <Widget>[
-                  Expanded(child: title),
+                  Expanded(flex: shrinkTrailing ? 2 : 1, child: title),
                   const SizedBox(width: 8),
-                  trailing!,
+                  if (shrinkTrailing) Flexible(child: trailing!) else trailing!,
                 ],
               ),
       ),

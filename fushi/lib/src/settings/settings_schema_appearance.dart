@@ -28,6 +28,7 @@ import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_schema_page_backdrop.dart';
+import 'package:fushi/src/settings/shell_style_preview.dart';
 import 'package:fushi/src/settings/nav_module_order_list.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/utils/misc/app_icon_preferences.dart'
@@ -37,6 +38,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/content_language_picker.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 
 /// 「功能模块」开关行的 item id。
@@ -214,6 +216,185 @@ SettingsCustomItem _navModuleOrderItem() => SettingsCustomItem(
   ),
 );
 
+/// 外壳样式选择行的公共壳：左边标题 + 说明，右边一组紧凑选择块（迷你示意 + 短
+/// 标签）。声明选择块一行排开的固有宽度（[ShellChoiceTiles.widthFor]），行宽放不下
+/// 时设置行自己把选择块换到标题下方（块再按 Wrap 折行），窄屏不溢出。
+Widget _shellChoiceRow({
+  required String title,
+  required Widget tiles,
+  required int optionCount,
+  String? subtitle,
+}) => AdaptiveSettingsRow(
+  title: title,
+  subtitle: subtitle,
+  icon: FushiIcons.widgets,
+  trailing: tiles,
+  trailingWidth: ShellChoiceTiles.widthFor(optionCount),
+);
+
+/// 外壳样式枚举行的控制通道读写：取值 = 枚举名（与改成预览卡之前的分段行同一
+/// 写法），也认界面名称（大小写无关）。
+SettingsCliValue _shellEnumCli<T extends Enum>({
+  required List<T> values,
+  required T Function(SettingsContext context) read,
+  required String Function(T value) labelOf,
+  required Future<void> Function(SettingsContext context, T value) write,
+}) => SettingsCliValue(
+  read: (SettingsContext context) => read(context).name,
+  options: (SettingsContext context) => <String>[
+    for (final T value in values) value.name,
+  ],
+  write: (SettingsContext context, String raw) async {
+    final String needle = raw.trim().toLowerCase();
+    for (final T value in values) {
+      if (value.name.toLowerCase() == needle ||
+          labelOf(value).toLowerCase() == needle) {
+        await write(context, value);
+        return;
+      }
+    }
+    throw ArgumentError(
+      '取值必须是 ${values.map((T value) => value.name).join(' / ')}',
+    );
+  },
+);
+
+SettingsCustomItem _shellContentLayoutItem() => SettingsCustomItem(
+  id: 'appearance.shell_content_layout',
+  searchTitle: t.library_layout,
+  searchKeywords: (SettingsContext c) => <String>[
+    for (final ShellContentLayout layout in ShellContentLayout.values)
+      shellContentLayoutLabel(layout),
+  ],
+  icon: FushiIcons.widgets,
+  visible: (SettingsContext c) => !isEinkTheme(c.context),
+  // 「默认」= 本安装的出厂布局：新安装拼贴，升级上来的老用户封面网格（G1）。
+  reset: SettingsCustomReset(
+    isModified: (SettingsContext c) =>
+        c.appModel.shellContentLayout !=
+        c.appModel.themeNotifier.shellContentLayoutDefault,
+    reset: (SettingsContext c) => c.appModel
+        .setShellContentLayout(
+          c.appModel.themeNotifier.shellContentLayoutDefault,
+        )
+        .then((_) => c.refresh()),
+    currentLabel: (SettingsContext c) =>
+        shellContentLayoutLabel(c.appModel.shellContentLayout),
+    defaultLabel: (SettingsContext c) => shellContentLayoutLabel(
+      c.appModel.themeNotifier.shellContentLayoutDefault,
+    ),
+  ),
+  cliValue: _shellEnumCli<ShellContentLayout>(
+    values: ShellContentLayout.values,
+    read: (SettingsContext c) => c.appModel.shellContentLayout,
+    labelOf: shellContentLayoutLabel,
+    write: (SettingsContext c, ShellContentLayout value) =>
+        c.appModel.setShellContentLayout(value).then((_) => c.refresh()),
+  ),
+  builder: (SettingsContext settingsContext) {
+    final AppModel appModel = settingsContext.appModel;
+    return _shellChoiceRow(
+      title: t.library_layout,
+      optionCount: ShellContentLayout.values.length,
+      tiles: ShellLayoutChoiceTiles(
+        selected: appModel.shellContentLayout,
+        arrangement: appModel.shellBlockArrangement,
+        covers: shellPreviewCoversOf(settingsContext.ref, appModel),
+        onSelected: (ShellContentLayout value) => appModel
+            .setShellContentLayout(value)
+            .then((_) => settingsContext.refresh()),
+      ),
+    );
+  },
+);
+
+SettingsCustomItem _shellBlockArrangementItem() => SettingsCustomItem(
+  id: 'appearance.shell_block_arrangement',
+  searchTitle: t.library_arrangement,
+  searchKeywords: (SettingsContext c) => <String>[
+    for (final ShellBlockArrangement arrangement
+        in ShellBlockArrangement.values)
+      shellBlockArrangementLabel(arrangement),
+  ],
+  subtitle: t.library_arrangement_hint,
+  icon: FushiIcons.widgets,
+  // 摆放只属于拼贴：选封面网格时整行隐藏（不是置灰）。
+  visible: (SettingsContext c) =>
+      !isEinkTheme(c.context) &&
+      c.appModel.shellContentLayout == ShellContentLayout.collage,
+  reset: SettingsCustomReset(
+    isModified: (SettingsContext c) =>
+        c.appModel.shellBlockArrangement !=
+        ShellBlockArrangement.defaultFor(c.appModel.shellContentLayout),
+    // 恢复默认清掉偏好回到「没选过」（BUG-4703），不把此刻布局下的默认值钉死。
+    reset: (SettingsContext c) =>
+        c.appModel.resetShellBlockArrangement().then((_) => c.refresh()),
+    currentLabel: (SettingsContext c) =>
+        shellBlockArrangementLabel(c.appModel.shellBlockArrangement),
+    defaultLabel: (SettingsContext c) => shellBlockArrangementLabel(
+      ShellBlockArrangement.defaultFor(c.appModel.shellContentLayout),
+    ),
+  ),
+  cliValue: _shellEnumCli<ShellBlockArrangement>(
+    values: ShellBlockArrangement.values,
+    read: (SettingsContext c) => c.appModel.shellBlockArrangement,
+    labelOf: shellBlockArrangementLabel,
+    write: (SettingsContext c, ShellBlockArrangement value) =>
+        c.appModel.setShellBlockArrangement(value).then((_) => c.refresh()),
+  ),
+  builder: (SettingsContext settingsContext) => _shellChoiceRow(
+    title: t.library_arrangement,
+    subtitle: t.library_arrangement_hint,
+    optionCount: ShellBlockArrangement.values.length,
+    tiles: ShellArrangementChoiceTiles(
+      selected: settingsContext.appModel.shellBlockArrangement,
+      onSelected: (ShellBlockArrangement value) => settingsContext.appModel
+          .setShellBlockArrangement(value)
+          .then((_) => settingsContext.refresh()),
+    ),
+  ),
+);
+
+SettingsCustomItem _shellRailStyleItem() => SettingsCustomItem(
+  id: 'appearance.shell_rail_style',
+  searchTitle: t.home_nav_rail_style,
+  searchKeywords: (SettingsContext c) => <String>[
+    for (final ShellRailStyle style in ShellRailStyle.values)
+      shellRailStyleLabel(style),
+  ],
+  icon: FushiIcons.widgets,
+  visible: (SettingsContext c) =>
+      !isGlassDesign(c.context) && !isEinkTheme(c.context),
+  reset: SettingsCustomReset(
+    isModified: (SettingsContext c) =>
+        c.appModel.shellRailStyle != ShellRailStyle.defaultStyle,
+    reset: (SettingsContext c) => c.appModel
+        .setShellRailStyle(ShellRailStyle.defaultStyle)
+        .then((_) => c.refresh()),
+    currentLabel: (SettingsContext c) =>
+        shellRailStyleLabel(c.appModel.shellRailStyle),
+    defaultLabel: (SettingsContext c) =>
+        shellRailStyleLabel(ShellRailStyle.defaultStyle),
+  ),
+  cliValue: _shellEnumCli<ShellRailStyle>(
+    values: ShellRailStyle.values,
+    read: (SettingsContext c) => c.appModel.shellRailStyle,
+    labelOf: shellRailStyleLabel,
+    write: (SettingsContext c, ShellRailStyle value) =>
+        c.appModel.setShellRailStyle(value).then((_) => c.refresh()),
+  ),
+  builder: (SettingsContext settingsContext) => _shellChoiceRow(
+    title: t.home_nav_rail_style,
+    optionCount: ShellRailStyle.values.length,
+    tiles: ShellRailChoiceTiles(
+      selected: settingsContext.appModel.shellRailStyle,
+      onSelected: (ShellRailStyle value) => settingsContext.appModel
+          .setShellRailStyle(value)
+          .then((_) => settingsContext.refresh()),
+    ),
+  ),
+);
+
 SettingsDestination buildAppearanceDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.appearance,
@@ -371,98 +552,16 @@ SettingsDestination buildAppearanceDestination() {
                     settingsContext.appModel.setGlassMaterial(value),
             defaultValue: FushiGlassMaterial.frosted,
           ),
-          // 外壳重设计的四项：生效范围同 `shellRedesignActive`——非墨水屏一律生效
-          // （MD3 与 Apple 都是），墨水屏保持原外壳（库页恒为封面网格），所以四项在
-          // 墨水屏下都不显示。侧栏样式另外只管 MD3 侧栏：Apple 设计系统用系统
-          // 侧栏，不读它。色块摆放只对拼贴布局有意义，封面网格下置灰。
-          SettingsSegmentedItem<ShellRailStyle>(
-            id: 'appearance.shell_rail_style',
-            title: t.home_nav_rail_style,
-            icon: FushiIcons.widgets,
-            visible: (SettingsContext c) =>
-                !isGlassDesign(c.context) && !isEinkTheme(c.context),
-            options: <SettingsSegmentOption<ShellRailStyle>>[
-              SettingsSegmentOption<ShellRailStyle>(
-                value: ShellRailStyle.notch,
-                label: t.home_nav_rail_style_notch,
-              ),
-              SettingsSegmentOption<ShellRailStyle>(
-                value: ShellRailStyle.spine,
-                label: t.home_nav_rail_style_spine,
-              ),
-            ],
-            selected: (SettingsContext settingsContext) =>
-                settingsContext.appModel.shellRailStyle,
-            onChanged:
-                (SettingsContext settingsContext, ShellRailStyle value) =>
-                    settingsContext.appModel
-                        .setShellRailStyle(value)
-                        .then((_) => settingsContext.refresh()),
-            defaultValue: ShellRailStyle.defaultStyle,
-          ),
-          SettingsSegmentedItem<ShellContentLayout>(
-            id: 'appearance.shell_content_layout',
-            title: t.library_layout,
-            icon: FushiIcons.widgets,
-            visible: (SettingsContext c) => !isEinkTheme(c.context),
-            options: <SettingsSegmentOption<ShellContentLayout>>[
-              SettingsSegmentOption<ShellContentLayout>(
-                value: ShellContentLayout.collage,
-                label: t.library_layout_collage,
-              ),
-              SettingsSegmentOption<ShellContentLayout>(
-                value: ShellContentLayout.grid,
-                label: t.library_layout_grid,
-              ),
-            ],
-            selected: (SettingsContext settingsContext) =>
-                settingsContext.appModel.shellContentLayout,
-            onChanged:
-                (SettingsContext settingsContext, ShellContentLayout value) =>
-                    settingsContext.appModel
-                        .setShellContentLayout(value)
-                        .then((_) => settingsContext.refresh()),
-            defaultValue: ShellContentLayout.defaultLayout,
-          ),
-          SettingsSegmentedItem<ShellBlockArrangement>(
-            id: 'appearance.shell_block_arrangement',
-            title: t.library_arrangement,
-            subtitle: t.library_arrangement_hint,
-            icon: FushiIcons.widgets,
-            visible: (SettingsContext c) => !isEinkTheme(c.context),
-            enabled: (SettingsContext c) =>
-                c.appModel.shellContentLayout != ShellContentLayout.grid,
-            options: <SettingsSegmentOption<ShellBlockArrangement>>[
-              SettingsSegmentOption<ShellBlockArrangement>(
-                value: ShellBlockArrangement.aligned,
-                label: t.library_arrangement_aligned,
-              ),
-              SettingsSegmentOption<ShellBlockArrangement>(
-                value: ShellBlockArrangement.staggered,
-                label: t.library_arrangement_staggered,
-              ),
-              SettingsSegmentOption<ShellBlockArrangement>(
-                value: ShellBlockArrangement.scattered,
-                label: t.library_arrangement_scattered,
-              ),
-            ],
-            selected: (SettingsContext settingsContext) =>
-                settingsContext.appModel.shellBlockArrangement,
-            onChanged:
-                (
-                  SettingsContext settingsContext,
-                  ShellBlockArrangement value,
-                ) => settingsContext.appModel
-                    .setShellBlockArrangement(value)
-                    .then((_) => settingsContext.refresh()),
-            // 没选过时摆放跟着布局走（拼贴 = 散落、封面网格下的色块分区 = 规整），
-            // 「已改过」对照此刻布局下的真实默认；恢复默认清掉偏好回到跟着走
-            // （BUG-4703）。
-            defaultValueBuilder: (SettingsContext c) =>
-                ShellBlockArrangement.defaultFor(c.appModel.shellContentLayout),
-            resetToDefault: (SettingsContext c) =>
-                c.appModel.resetShellBlockArrangement(),
-          ),
+          // 外壳重设计的几项（设计稿 S1）：生效范围同 `shellRedesignActive`——非墨水屏
+          // 一律生效（MD3 与 Apple 都是），墨水屏保持原外壳（库页恒为封面网格），所以
+          // 都不显示。三项各是一行：左边标题，右边一组带迷你示意的紧凑选择块
+          // （shell_style_preview.dart 的 Shell*ChoiceTiles；升级弹窗与新手引导用同一套
+          // 示意的大卡）。不再单列整块「实时预览」：所有者反馈太占位置，每个选项的
+          // 迷你示意已看得出差别。色块摆放只属于拼贴，选封面网格时整行隐藏；侧栏样式
+          // 只管 MD3 侧栏（Apple 设计系统用系统侧栏，不读它）。
+          _shellContentLayoutItem(),
+          _shellBlockArrangementItem(),
+          _shellRailStyleItem(),
           SettingsSwitchItem(
             id: 'appearance.shell_smooth_corners',
             title: t.theme_smooth_corners,

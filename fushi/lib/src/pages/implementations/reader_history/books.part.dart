@@ -86,7 +86,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       // `srtBookId`（`_addSrtToCollection` 同源）——两者不可混用。
       dragMediaRef: MediaRef(kind: MediaKind.srt, entryKey: book.uid),
       dragLabel: displayTitle,
-      onTap: () => _openSrtBook(book),
+      onTap: () => _activateSrtCard(book),
       onLongPress: () => _companionPressed(
         FushiFocusId('${focusIdPrefix}reader-shelf-srt-${book.uid}'),
         () => _showSrtBookDialog(
@@ -102,7 +102,9 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         // BUG-990：两阶段下载末段卡已变 SRT 卡但有声书包仍在下 → 继续显示加载覆盖层。
         loadingOverlay: _audiobookDownloadingOverlay(book.bookKey),
         byline: srtItem.author,
-        continuesOnTap: true,
+        // 刮削过的点卡先进详情页（[_activateSrtCard]），首块不画「继续」按钮外观。
+        continuesOnTap: _itemScrapeKeyForSrt(book) == null,
+        series: _itemSeriesMetaFor(_itemScrapeKeyForSrt(book)),
       ),
     );
   }
@@ -260,6 +262,16 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       book.bookKey.isNotEmpty &&
       _epubProgressByBookKey.containsKey(book.bookKey);
 
+  /// 点 / Enter / 手柄 A 激活 SRT 卡：刮削过（[_itemScrapeKeyForSrt] 非 null）先进
+  /// 元数据详情页，没刮削的照旧直接开书（同 [_activateEpubCard]）。
+  Future<void> _activateSrtCard(SrtBook book) async {
+    if (_itemScrapeKeyForSrt(book) != null) {
+      await _pushSrtDetail(book);
+      return;
+    }
+    await _openSrtBook(book);
+  }
+
   Future<void> _openSrtBook(SrtBook book) async {
     if (book.bookKey.isEmpty) {
       FushiToast.show(msg: t.srt_epub_not_ready, severity: ToastSeverity.error);
@@ -343,6 +355,13 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         label: t.book_rename,
         icon: Icons.drive_file_rename_outline,
         onPressed: () => _renameBook(dialogContext, item),
+      ),
+      // 元数据详情页（与视频卡「详情」同一套海报面板外观）：封面 / 刮削资料 /
+      // 进度 / 开始阅读 / 刮削。
+      DialogListAction(
+        label: t.book_detail_open_action,
+        icon: FushiIcons.info,
+        onPressed: () => _openSrtDetail(dialogContext, book),
       ),
       // 合集详情页成员卡：补「移出合集」（网格右键 / 长按与键盘/手柄长按 A 都走这
       // 一个菜单，BUG-2969）。
@@ -1885,6 +1904,16 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     if (mounted) _rebuild(() {});
   }
 
+  Future<void> _openMangaAudioStudio(String bookKey) async {
+    Navigator.pop(context);
+    await openMangaAudioStudioPage(
+      context,
+      appModel: appModel,
+      bookKey: bookKey,
+    );
+    if (mounted) _rebuild(() {});
+  }
+
   /// 打开 [AudiobookImportDialog] 本体（调用方负责先收起自己的菜单）。
   /// 卡菜单入口与字幕书「重新导入」的分流入口共用，避免第二处手抄 extractDir 查询。
   Future<void> _openAudiobookImportForKey(String bookKey) async {
@@ -1907,268 +1936,22 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
 
   /// 文件拖入书架后的路由：分类 → 命中测试 → 决策 → 打开对应对话框/提示。
   /// [globalPosition] 为 [FushiFileDropTarget] 透出的 Flutter global/view 坐标，
-  /// 可直接与卡片登记表（同坐标系屏幕矩形）命中测试。
-  Future<void> _handleShelfDrop(
-    List<String> paths,
-    Offset globalPosition,
-  ) async {
-    final ModalRoute<dynamic>? route = ModalRoute.of(context);
-    if (route != null && !route.isCurrent) return;
-
-    // 图片型 .zip（一包页图的漫画）与 Yomitan 词典包同形，要真读包才分得出——与导入
-    // 对话框的分派同一判据，两条入口对「这算不算漫画」回答一致。但那次「真读包」是
-    // **同步解整个压缩包**，原来就长在下面 classifyDroppedFiles 的注入谓词里，也就
-    // 长在 desktop_drop 回调的同步栈上：拖个大包进来 UI 线程直接卡死。先离线程一次
-    // 性判完（[probeDroppedImageArchives]），再把结果当同步谓词喂回去，分类函数保持
-    // 纯函数不变。
-    //
-    // 漫画库（[_mangaOnly]）落点偏好漫画：`.epub` 也开包，图片型 EPUB 直接归漫画，
-    // 不再先进书籍导入框、再被告知「这看起来是漫画」；`.pdf` 直接归漫画。
-    final Map<String, bool> imageArchives = await probeDroppedImageArchives(
-      paths,
-      preferManga: _mangaOnly,
-    );
-    if (!mounted) return;
-
-    // 目录（漫画页图文件夹）没有扩展名，纯分类函数分不出来——把真实文件系统判据
-    // 注入进去（分类层本身仍不碰 IO）。
-    final DroppedFiles files = classifyDroppedFiles(
-      paths,
-      isDirectory: (String pth) => Directory(pth).existsSync(),
-      isImageArchive: (String pth) => imageArchives[pth] ?? false,
-      preferManga: _mangaOnly,
-    );
-    debugPrint(
-      '[fushi-drop] [reader-shelf] classified '
-      'books=${files.books.length} subtitles=${files.subtitles.length} '
-      'audios=${files.audios.length} videos=${files.videos.length} '
-      'mangas=${files.mangas.length} '
-      'unsupportedMangas=${files.unsupportedMangas.length} '
-      'dictionaries=${files.dictionaries.length} unknown=${files.unknown.length} '
-      'global=$globalPosition',
-    );
-    final String? hitBookKey = _cardDropRegistry.hitTest(globalPosition);
-    // 漫画库是同一个页面的 mangaOnly 壳，但落点语义不同（见 DropSurface.manga）。
-    final DropIntent intent = decideDropIntent(
-      surface: _mangaOnly ? DropSurface.manga : DropSurface.books,
-      files: files,
-      cardHit: hitBookKey != null,
-    );
-    // 跨模块落点一次快照。被关掉的模块不再打开它的导入对话框，而是给一条与
-    // [DropIntent.unsupportedSurface] 同形态的 SnackBar——拖放没有「不渲染入口」
-    // 这个选项（落点就是整块书架），所以必须给可见反馈，绝不静默吞掉。
-    final ModuleVisibility modules = _moduleVisibility;
-    void showModuleDisabled() {
-      // 闭包里重判一次 mounted：本函数在 await 之后才走到这里，闭包体外的流分析
-      // 结论传不进来（use_build_context_synchronously）。
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(FushiSnackBar(content: Text(t.module_disabled_hint)));
-    }
-
-    switch (intent) {
-      // 书架/漫画库不产出这个意图：目录在这两个表面仍是「一本漫画的页图文件夹」
-      // （importNewManga），把整个目录登记成扫描根是视频页的语义。列出来只为让
-      // `decideDropIntent` 以后给 books 也加上文件夹语义时，这里编译期就红。
-      case DropIntent.addFolderAsSource:
-        debugPrint(
-          '[fushi-drop] [reader-shelf] intent=addFolderAsSource '
-          '(not produced on this surface)',
-        );
-      case DropIntent.importNewBook:
-        // 一本书：同批的字幕 / 音频一起预填（有声书）。多本：逐本弹导入框，不再只导
-        // 第一本、其余静默丢掉；此时字幕 / 音频没法确定归哪一本，不预填。
-        if (files.books.length == 1) {
-          _openBookImportPrefilled(
-            epubPath: files.books.single,
-            subtitlePath: files.subtitles.isNotEmpty
-                ? files.subtitles.first
-                : null,
-            audioPaths: files.audios,
-          );
-        } else {
-          unawaited(_openBookImportsInSequence(files.books));
-        }
-      case DropIntent.importNewManga:
-        // 漫画（.mokuro / .cbz / 页图目录 / 图片型 zip）走漫画自己的导入对话框。
-        // 决策层本来就把漫画和书分成了两个 intent，此前两个 intent 却落到同一个
-        // 对话框；现在落点跟着 intent 走，载体身份不再在半路丢失。
-        if (!modules.isEnabled(ModuleId.manga)) {
-          showModuleDisabled();
-          return;
-        }
-        _openMangaImportPrefilled(mangaPaths: files.mangas);
-      case DropIntent.unsupportedMangaArchive:
-        debugPrint(
-          '[fushi-drop] [reader-shelf] intent=unsupportedMangaArchive',
-        );
-        ScaffoldMessenger.of(context).showSnackBar(
-          FushiSnackBar(content: Text(t.drag_drop_manga_archive_unsupported)),
-        );
-      case DropIntent.attachToBookCard:
-        // 往书卡上拖音频/字幕 = 给这本书挂有声书，属听书模块。
-        if (!modules.isEnabled(ModuleId.listening)) {
-          showModuleDisabled();
-          return;
-        }
-        _openAudiobookPrefilled(
-          bookKey: hitBookKey!,
-          audioPaths: files.audios,
-          alignmentPath: files.subtitles.isNotEmpty
-              ? files.subtitles.first
-              : null,
-        );
-      case DropIntent.needCardTarget:
-        debugPrint('[fushi-drop] [reader-shelf] intent=needCardTarget');
-        ScaffoldMessenger.of(context).showSnackBar(
-          FushiSnackBar(content: Text(t.drag_drop_need_card_target)),
-        );
-      case DropIntent.importNewVideo:
-        // 书架拖入视频 → 自动切到视频导入流程，带上文件（不再只提示让用户手动切，
-        // TODO-558）。视频卡与书卡同页渲染，无需跨 tab 通信。
-        if (!modules.isEnabled(ModuleId.video)) {
-          showModuleDisabled();
-          return;
-        }
-        _openVideoImportPrefilled(
-          videoPath: files.videos.first,
-          subtitlePath: files.subtitles.isNotEmpty
-              ? files.subtitles.first
-              : null,
-        );
-      case DropIntent.importNewPlaylist:
-        if (!modules.isEnabled(ModuleId.video)) {
-          showModuleDisabled();
-          return;
-        }
-        _openPlaylistImportPrefilled(playlistPath: files.playlists.first);
-      case DropIntent.importVideoUrl:
-        // 书架拖入网络流 URL → 自动切到视频导入（预填 URL 并入库），与拖视频文件的
-        // 自动切换一致（TODO-1306）。
-        if (!modules.isEnabled(ModuleId.video)) {
-          showModuleDisabled();
-          return;
-        }
-        _openStreamImportPrefilled(streamUrl: files.urls.first);
-      case DropIntent.importTorrent:
-        // 拖入 .torrent → 下载中心「添加任务」对话框预填种子；内容类型按落点预填
-        // （漫画库→漫画、书架→小说），用户可在框里改。下载中心是独立模块，关掉
-        // 时与其它模块一样给可见提示而不是静默。
-        if (!modules.isEnabled(ModuleId.browse)) {
-          showModuleDisabled();
-          return;
-        }
-        unawaited(
-          showManualDownloadTaskDialog(
-            context: context,
-            appModel: appModel,
-            torrentPaths: files.torrents,
-            initialDiscoveryKind: _mangaOnly
-                ? DiscoveryMediaKind.manga
-                : DiscoveryMediaKind.novel,
-          ),
-        );
-      case DropIntent.unsupportedSurface:
-        debugPrint('[fushi-drop] [reader-shelf] intent=unsupportedSurface');
-        ScaffoldMessenger.of(context).showSnackBar(
-          FushiSnackBar(content: Text(t.drag_drop_unsupported_on_books)),
-        );
-      case DropIntent.attachToVideoCard:
-      // 只由 video 表面产出（书架上的音频是有声书素材），列在此处仅为穷尽 switch。
-      case DropIntent.importAudioToMusic:
-      case DropIntent.ignore:
-        break;
-    }
-  }
-
-  /// 拖入书文件 → 打开 [BookImportDialog]，预填 EPUB（及可选字幕）路径。
-  /// 复用 [ReaderFushiSource.buildBookImportButton] 的 repo/打开/刷新范式。
-  ///
-  /// 返回对话框结果：true 已导入、false 这一本没导（同名取消 / 转交漫画未导）、
-  /// null 用户关掉了对话框（[_openBookImportsInSequence] 据此停止后续）。
-  Future<bool?> _openBookImportPrefilled({
-    required String epubPath,
-    required String? subtitlePath,
-    List<String> audioPaths = const <String>[],
-  }) async {
-    final bool? imported = await showAppDialog<bool>(
-      context: context,
-      builder: (_) => BookImportDialog(
-        prefs: appModel.prefsRepo,
-        repo: SrtBookRepository(appModel.database),
-        audiobookRepo: AudiobookRepository(appModel.database),
-        db: appModel.database,
-        initialEpubPath: epubPath,
-        initialSubtitlePath: subtitlePath,
-        initialAudioPaths: audioPaths.isEmpty ? null : audioPaths,
-      ),
-    );
-    if (imported == true && mounted) {
-      _refreshSrtBooks();
-      ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
-    }
-    return imported;
-  }
-
-  /// 多本书同时拖入：逐本打开 [BookImportDialog]（每本都要定标题 / 处理同名）。
-  ///
-  /// 只有用户**关掉对话框**（取消 / 返回键 / 点遮罩，结果 null）才停止后续：那是
-  /// 「剩下的都不要了」。同名询问里选「否」只是这一本不导（对话框回 false），继续下一本
-  /// ——否则一本重名就把后面所有书静默丢掉，正是这里要消灭的行为。
-  Future<void> _openBookImportsInSequence(List<String> bookPaths) async {
-    for (final String bookPath in bookPaths) {
-      if (!mounted) return;
-      final bool? imported = await _openBookImportPrefilled(
-        epubPath: bookPath,
-        subtitlePath: null,
+  /// 可直接与卡片登记表（同坐标系屏幕矩形）命中测试。分发本体在
+  /// [routeReaderShelfDrop]，与书 / 漫画「导入」视图的整页落点共用（IM2）。
+  Future<void> _handleShelfDrop(List<String> paths, Offset globalPosition) =>
+      routeReaderShelfDrop(
+        context: context,
+        appModel: appModel,
+        mangaOnly: _mangaOnly,
+        paths: paths,
+        globalPosition: globalPosition,
+        hitTestCard: _cardDropRegistry.hitTest,
+        onLibraryChanged: () {
+          _refreshSrtBooks();
+          ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
+        },
+        onAudiobookAttached: () => _rebuild(() {}),
       );
-      if (imported == null) return;
-    }
-  }
-
-  /// 拖入漫画 → 打开 [MangaImportDialog]，预填漫画路径（目录 / .cbz / .mokuro /
-  /// 图片型 zip / 漫画库里的图片型 epub 与 pdf）。多个路径时对话框进逐卷批量模式。
-  /// 刷新范式与 [_openBookImportPrefilled] 一致：漫画与书共用 `EpubBooks` 表和同一块
-  /// 书架，故失效的 provider 也相同。
-  Future<void> _openMangaImportPrefilled({
-    required List<String> mangaPaths,
-  }) async {
-    final bool? imported = await showAppDialog<bool>(
-      context: context,
-      builder: (_) =>
-          MangaImportDialog(db: appModel.database, initialPaths: mangaPaths),
-    );
-    if (imported == true && mounted) {
-      _refreshSrtBooks();
-      ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
-    }
-  }
-
-  /// 拖入字幕/音频到书卡 → 打开 [AudiobookImportDialog] 附加到该书，预填音频/对齐路径。
-  /// 复用 [_openAudiobookImport] 的 extractDir 取法与刷新范式（此处无外层对话框需 pop）。
-  Future<void> _openAudiobookPrefilled({
-    required String bookKey,
-    required List<String> audioPaths,
-    required String? alignmentPath,
-  }) async {
-    final EpubBookRow? row = await appModel.database.getEpubBook(bookKey);
-    if (!mounted) return;
-    await showAppDialog<bool>(
-      context: context,
-      builder: (_) => AudiobookImportDialog(
-        prefs: appModel.prefsRepo,
-        bookKey: bookKey,
-        repo: AudiobookRepository(appModel.database),
-        extractDir: row?.extractDir,
-        initialAudioPaths: audioPaths.isEmpty ? null : audioPaths,
-        initialAlignmentPath: alignmentPath,
-      ),
-    );
-    if (mounted) {
-      _rebuild(() {});
-    }
-  }
 
   /// 书的内容语言选择框。选择器 UI 与词典共用（[showContentLanguagePicker]），
   /// 这里只负责读当前值与写库。

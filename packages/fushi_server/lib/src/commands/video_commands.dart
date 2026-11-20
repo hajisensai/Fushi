@@ -49,6 +49,7 @@ import 'package:path/path.dart' as p;
 
 const String kAniDbUsernameEnv = 'FUSHI_ANIDB_USERNAME';
 const String kAniDbPasswordEnv = 'FUSHI_ANIDB_PASSWORD';
+const String kAniDbUdpApiKeyEnv = 'FUSHI_ANIDB_UDP_API_KEY';
 
 String get _usage => tr(
   '''
@@ -332,10 +333,12 @@ AnidbUdpConfig resolveAniDbUdpConfig(
   final AnidbUdpConfig fromPrefs = config.anidbUdpConfig;
   final String user = (env[kAniDbUsernameEnv] ?? '').trim();
   final String password = env[kAniDbPasswordEnv] ?? '';
-  if (user.isEmpty && password.isEmpty) return fromPrefs;
+  final String apiKey = env[kAniDbUdpApiKeyEnv] ?? '';
+  if (user.isEmpty && password.isEmpty && apiKey.isEmpty) return fromPrefs;
   return AnidbUdpConfig(
     username: user.isNotEmpty ? user : fromPrefs.username,
     password: password.isNotEmpty ? password : fromPrefs.password,
+    apiKey: apiKey.isNotEmpty ? apiKey : fromPrefs.apiKey,
     clientName: fromPrefs.clientName,
     clientVersion: fromPrefs.clientVersion,
   );
@@ -351,13 +354,14 @@ String? aniDbUnavailableReason(AnidbUdpConfig config) {
     if (!RegExp(r'^[a-zA-Z0-9_-]+$').hasMatch(config.username))
       tr('AniDB 用户名', 'an AniDB username'),
     if (config.password.isEmpty) tr('AniDB 密码', 'an AniDB password'),
+    if (config.apiKey.isEmpty) tr('AniDB UDP API Key', 'an AniDB UDP API key'),
   ];
   return tr(
     'AniDB 不可用：缺${missing.isEmpty ? '有效配置' : missing.join('、')}。'
-        '设环境变量 $kAniDbUsernameEnv / $kAniDbPasswordEnv，或从已配好的 Fushi 经互联同步；'
+        '设环境变量 $kAniDbUsernameEnv / $kAniDbPasswordEnv / $kAniDbUdpApiKeyEnv，或从已配好的 Fushi 经互联同步；'
         '只算哈希用 video hash',
     'AniDB is unavailable: missing ${missing.isEmpty ? 'a valid configuration' : missing.join(', ')}. '
-        'Set the environment variables $kAniDbUsernameEnv / $kAniDbPasswordEnv, or sync from an already configured Fushi via interconnect; '
+        'Set the environment variables $kAniDbUsernameEnv / $kAniDbPasswordEnv / $kAniDbUdpApiKeyEnv, or sync from an already configured Fushi via interconnect; '
         'use video hash to only compute the hash',
   );
 }

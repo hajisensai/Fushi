@@ -1,7 +1,8 @@
 // 排行榜页顶部的「总字数」卡：一个大数字 + 三句话（本周增量与占比、离下一个
 // 百万还差多少、够读完几卷某部热门作品），外加一条到下一个百万的进度条。
 // 数字来自服务端字数榜的「我」（总榜 = 总字数，周榜 = 本周，月榜 = 本月），不在本地另算；
-// 大数字可在 周 / 月 / 累计 之间切换，进度条与参照作品始终按累计总数算。
+// 大数字跟随页面的 周 / 月 / 累计 窗口（受控：由页面传入 [window]，与榜单同一组
+// 选择，卡片里不再另放一组），进度条与参照作品始终按累计总数算。
 // 参照作品每次打开页面轮换（随包 jiten 数据，不联网）。
 
 import 'dart:math' as math;
@@ -51,11 +52,13 @@ String leaderboardSummaryTitle(LeaderboardWindow window) => switch (window) {
 };
 
 /// 总字数卡。[total] / [week] / [month] 为 null = 还在加载；[error] 非 null 且 [total] 为 null =
-/// 加载失败（显示原因，不再停在加载条上）。
+/// 加载失败（显示原因，不再停在加载条上）。[window] = 大数字显示哪个窗口（页面的
+/// 窗口选择，与榜单联动）。
 class LeaderboardCharsSummaryCard extends StatefulWidget {
   const LeaderboardCharsSummaryCard({
     required this.total,
     required this.week,
+    required this.window,
     this.month,
     this.error,
     this.works = kLeaderboardReferenceWorks,
@@ -65,6 +68,9 @@ class LeaderboardCharsSummaryCard extends StatefulWidget {
 
   final int? total;
   final int? week;
+
+  /// 大数字显示哪个窗口（由页面的窗口选择驱动）。
+  final LeaderboardWindow window;
 
   /// 本月字数；null = 还没取到（切到「本月」时显示加载条）。
   final int? month;
@@ -84,9 +90,6 @@ class _LeaderboardCharsSummaryCardState
   /// 每次打开页面（State 新建）定一个随机种子：同一次打开里数字刷新也不换作品。
   late final int _seed = (widget.random ?? math.Random()).nextInt(1 << 31);
 
-  /// 大数字显示哪个窗口（默认累计）。
-  LeaderboardWindow _window = LeaderboardWindow.all;
-
   int? _valueOf(LeaderboardWindow w) => switch (w) {
     LeaderboardWindow.all => widget.total,
     LeaderboardWindow.week => widget.week,
@@ -98,13 +101,14 @@ class _LeaderboardCharsSummaryCardState
 
   @override
   Widget build(BuildContext context) {
+    final LeaderboardWindow window = widget.window;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ThemeData theme = Theme.of(context);
     final ColorScheme colors = theme.colorScheme;
     final int? total = widget.total;
     final int week = widget.week ?? 0;
     // 大数字：累计 = total；周 / 月 = 对应窗口的值（total 已知时才有占比）。
-    final int? shown = _valueOf(_window);
+    final int? shown = _valueOf(window);
     final Duration countUp = fushiMotionDuration(context, FushiMotion.long * 2);
 
     final List<Widget> lines = <Widget>[];
@@ -114,7 +118,7 @@ class _LeaderboardCharsSummaryCardState
       final double share = week <= 0 ? 0 : math.min(week / total, 1);
       final LeaderboardReferenceEquivalent? equivalent = _equivalent(total);
       lines.addAll(<Widget>[
-        if (_window != LeaderboardWindow.all && (shown ?? 0) > 0)
+        if (window != LeaderboardWindow.all && (shown ?? 0) > 0)
           Text(
             t.leaderboard_summary_window_share(
               pct: NumberFormat.decimalPercentPattern(
@@ -125,7 +129,7 @@ class _LeaderboardCharsSummaryCardState
             key: const ValueKey<String>('leaderboard-summary-share'),
             style: tokens.type.listTitle,
           )
-        else if (_window == LeaderboardWindow.all && week > 0)
+        else if (window == LeaderboardWindow.all && week > 0)
           Text(
             t.leaderboard_summary_week(
               n: leaderboardGroupedNumber(week),
@@ -171,16 +175,8 @@ class _LeaderboardCharsSummaryCardState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          LeaderboardChoiceRow<LeaderboardWindow>(
-            keyPrefix: 'leaderboard-summary-window',
-            values: LeaderboardWindow.values,
-            selected: _window,
-            labelOf: leaderboardWindowLabel,
-            onSelected: (LeaderboardWindow w) => setState(() => _window = w),
-          ),
-          SizedBox(height: tokens.spacing.gap),
           Text(
-            leaderboardSummaryTitle(_window),
+            leaderboardSummaryTitle(window),
             key: const ValueKey<String>('leaderboard-summary-title'),
             style: theme.textTheme.labelLarge?.copyWith(
               color: colors.onSurfaceVariant,
@@ -209,7 +205,7 @@ class _LeaderboardCharsSummaryCardState
               ),
             )
           else if (total <= 0 ||
-              (_window != LeaderboardWindow.all && shown <= 0))
+              (window != LeaderboardWindow.all && shown <= 0))
             Text(
               t.leaderboard_summary_empty,
               key: const ValueKey<String>('leaderboard-summary-empty'),

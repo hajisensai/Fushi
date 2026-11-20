@@ -54,7 +54,15 @@ void main() {
       '  Widget _buildSrtCover(',
     );
 
-    expect(srtCard, contains('onTap: () => _openSrtBook(book)'));
+    // #3515 起点卡先经 _activateSrtCard：刮削过的进元数据详情页，没刮削的仍
+    // 直接落到 _openSrtBook（走 AppModel.openMedia）。
+    expect(srtCard, contains('onTap: () => _activateSrtCard(book)'));
+    final String activate = _sectionSource(
+      source,
+      'Future<void> _activateSrtCard(SrtBook book) async {',
+      'Future<void> _openSrtBook(SrtBook book) async {',
+    );
+    expect(activate, contains('await _openSrtBook(book);'));
   });
 }
 

@@ -1,7 +1,11 @@
 import 'dart:async';
 
+import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
+import 'package:flutter/foundation.dart'
+    show SynchronousFuture, ValueListenable;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi_engine/media/external_provider.dart';
@@ -17,6 +21,8 @@ import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart'
+    show FushiRefreshIndicator;
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/fushi_section_title.dart';
@@ -28,6 +34,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show
+        FushiFloatingChromeInset,
         FushiFloatingChromeInsetSpacer,
         FushiFloatingChromeInsetPadding,
         FushiFloatingChromeOverlay,
@@ -144,19 +151,6 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
       const <discovery.VideoDiscoveryItem>[];
   List<ExternalProviderFailure> _failures = const <ExternalProviderFailure>[];
 
-  /// Hero 简介与详情页同一份数据：列表条目的简介是来源原文（动画卡片来自
-  /// AniList / MAL，恒英文），详情经 [VideoDiscoveryActions.loadDetails] 按资料
-  /// 语言合并（含 TMDB 交叉引用）。Hero 是发现页唯一显示简介的地方，所以对
-  /// Hero 轮播的当前页与下一页预取详情、用详情的简介；详情回来前不显示简介，
-  /// 免得先闪一段英文再换成中文。
-  ///
-  /// 作品 key → 详情简介（值为 null = 详情取回了但没有简介 / 取失败，退回列表
-  /// 条目自带的简介）。
-  final Map<String, String?> _heroOverviews = <String, String?>{};
-
-  /// 详情在途的作品 key。
-  final Set<String> _heroOverviewsPending = <String>{};
-
   VideoDiscoveryController get _controller =>
       widget.controller ?? const EmptyVideoDiscoveryController();
 
@@ -191,41 +185,19 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
-    _listenDetailsUpdates();
     unawaited(_reload());
   }
 
   @override
   void didUpdateWidget(covariant VideoDiscoveryPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!identical(
-      oldWidget.actions.detailsUpdates,
-      widget.actions.detailsUpdates,
-    )) {
-      _listenDetailsUpdates();
-    }
     if (!identical(oldWidget.controller, widget.controller)) {
       unawaited(_reload());
     }
   }
 
-  StreamSubscription<void>? _detailsUpdates;
-
-  /// 详情数据源变好（交叉索引后台就绪）时，Hero 原地重取一次：保留当前简介，
-  /// 新数据到了再替换，不闪空。
-  void _listenDetailsUpdates() {
-    unawaited(_detailsUpdates?.cancel());
-    _detailsUpdates = widget.actions.detailsUpdates?.listen((_) {
-      if (!mounted || _popular.isEmpty || _hasActiveSearchOrFilter) return;
-      for (final discovery.VideoDiscoveryItem item in _heroItems) {
-        unawaited(_hydrateHero(item, refresh: true));
-      }
-    });
-  }
-
   @override
   void dispose() {
-    unawaited(_detailsUpdates?.cancel());
     _debounce.dispose();
     _scrollController
       ..removeListener(_onScroll)
@@ -283,10 +255,6 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
       _seasonalAnime = const <discovery.VideoDiscoveryItem>[];
       _failures = const <ExternalProviderFailure>[];
       _hasMore = false;
-      // 换控制器（资料语言 / key 变了）或换筛选都重取：详情按资料语言合并，
-      // 留着上一轮的简介就是旧语言。重复取同一条由传输层缓存兜住。
-      _heroOverviews.clear();
-      _heroOverviewsPending.clear();
     });
 
     if (_hasActiveSearchOrFilter) {
@@ -351,64 +319,36 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
       _totalFailure = merged.isTotalFailure;
       _loading = false;
     });
-    _hydrateHeroAround(0);
+  }
+
+  /// 发现条目的标题 logo（键 = canonicalIdentityKey）。列表接口不带 logo，按需经
+  /// 详情端口（provider 自带缓存）各取一次，首块与媒体块共用；同一条只发起一次。
+  final Map<String, Future<ImageProvider?>> _logoFutures =
+      <String, Future<ImageProvider?>>{};
+
+  /// [item] 的标题 logo：已带完整图组的直接给；否则懒取详情。取不到（无 logo /
+  /// 离线 / 限流）为 null，块回落标题文字——logo 只是增强，详情页打开时会走自己
+  /// 的加载与报错。
+  Future<ImageProvider?> _logoFor(discovery.VideoDiscoveryItem item) {
+    final String? known = item.logoUrl;
+    if (known != null) {
+      return SynchronousFuture<ImageProvider?>(_networkImage(known));
+    }
+    final VideoDiscoveryDetailLoader? loader = widget.actions.loadDetails;
+    if (loader == null) return SynchronousFuture<ImageProvider?>(null);
+    return _logoFutures.putIfAbsent(
+      item.reference.canonicalIdentityKey,
+      () => loader(item).then(
+        (VideoDiscoveryDetailData data) => _networkImage(data.item.logoUrl),
+        onError: (Object _) => null,
+      ),
+    );
   }
 
   /// Hero 轮播的条目：热门前 [_kHeroCount] 条（搜索 / 筛选态没有 Hero）。
   List<discovery.VideoDiscoveryItem> get _heroItems => _hasActiveSearchOrFilter
       ? const <discovery.VideoDiscoveryItem>[]
       : _popular.take(_kHeroCount).toList(growable: false);
-
-  /// 轮播停在 [page]：预取这一页与下一页的详情简介（下一页提前取，切过去时
-  /// 简介已经到位，不闪空）。
-  void _hydrateHeroAround(int page) {
-    final List<discovery.VideoDiscoveryItem> items = _heroItems;
-    if (items.isEmpty) return;
-    unawaited(_hydrateHero(items[page % items.length]));
-    if (items.length > 1) {
-      unawaited(_hydrateHero(items[(page + 1) % items.length]));
-    }
-  }
-
-  /// [refresh]：数据源变好后的重取——当前简介留着，新的到了再换。
-  Future<void> _hydrateHero(
-    discovery.VideoDiscoveryItem item, {
-    bool refresh = false,
-  }) async {
-    final VideoDiscoveryDetailLoader? loader = widget.actions.loadDetails;
-    final String key = item.reference.canonicalIdentityKey;
-    if (loader == null) return;
-    if (_heroOverviewsPending.contains(key)) return;
-    if (refresh != _heroOverviews.containsKey(key)) return;
-    final int generation = _generation;
-    if (refresh) {
-      _heroOverviewsPending.add(key);
-    } else {
-      setState(() => _heroOverviewsPending.add(key));
-    }
-    String? overview;
-    bool failed = false;
-    try {
-      overview = (await loader(item)).item.overview;
-    } on Object {
-      // 详情取不到：退回列表条目自带的简介（重取失败则保留当前的）。
-      failed = true;
-    }
-    if (!mounted || generation != _generation) return;
-    setState(() {
-      _heroOverviewsPending.remove(key);
-      if (!(failed && refresh)) _heroOverviews[key] = overview;
-    });
-  }
-
-  String? _heroSummary(discovery.VideoDiscoveryItem item) {
-    if (widget.actions.loadDetails == null) return item.overview;
-    final String key = item.reference.canonicalIdentityKey;
-    // 还没取回（在途或尚未轮到）：先不显示，免得先闪英文原文。
-    if (!_heroOverviews.containsKey(key)) return null;
-    final String? detailed = _heroOverviews[key]?.trim();
-    return detailed == null || detailed.isEmpty ? item.overview : detailed;
-  }
 
   Future<void> _loadMore() async {
     if (_loading || _loadingMore || !_hasMore || _totalFailure) return;
@@ -525,7 +465,15 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
               _buildControls(),
             ],
           ),
-          child: floating ? body : DiscoveryScrollTopFade(child: body),
+          // 下拉刷新（设计稿 DI15：刷新进「⋯」，同时支持下拉）。指示器从浮动
+          // 工具区下沿冒出，不压在搜索行上。
+          child: Builder(
+            builder: (BuildContext context) => FushiRefreshIndicator(
+              edgeOffset: FushiFloatingChromeInset.of(context),
+              onRefresh: _reload,
+              child: floating ? body : DiscoveryScrollTopFade(child: body),
+            ),
+          ),
         ),
       ),
     );
@@ -536,30 +484,81 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
   /// 放送」小模块（[AiringTodayShelf]），三种宽度、embedded 与否都在同一处。
   bool get _headerVisible => !widget.embedded && !isCupertinoPlatform(context);
 
+  /// 页头动作（设计稿 DI15 / DI10）：平铺「AI 下载」（宽窗带字）/ 订阅 / 下载
+  /// 中心（**有后台任务时才出现**）/ ⋯（刷新）。搜索是内容第一行的输入框，不占
+  /// 顶栏。宿主没给任务信号（[VideoDiscoveryActions.downloadTasksActive] 为
+  /// null）时下载中心照旧常驻——判断不了就不藏入口。
   Widget _buildHeader() {
+    final ValueListenable<bool>? tasks = widget.actions.downloadTasksActive;
+    if (tasks == null) return _buildHeaderWith(downloadsActive: true);
+    return ValueListenableBuilder<bool>(
+      valueListenable: tasks,
+      builder: (BuildContext context, bool active, Widget? _) =>
+          _buildHeaderWith(downloadsActive: active),
+    );
+  }
+
+  Widget _buildHeaderWith({required bool downloadsActive}) {
+    final ValueChanged<String?>? onAiAcquire = widget.actions.onAiAcquire;
+    final VoidCallback? onOpenDownloads = widget.actions.onOpenDownloads;
+    final VoidCallback? onOpenSubscriptions =
+        widget.actions.onOpenSubscriptions;
     final List<Widget> actions = <Widget>[
-      if (widget.actions.onOpenDownloads != null)
+      if (onAiAcquire != null)
         FushiIconButton(
-          key: const ValueKey<String>('video-discovery-open-downloads'),
-          icon: Icons.download_outlined,
-          tooltip: t.download_tasks_tab,
-          label: t.download_tasks_tab,
-          onTap: widget.actions.onOpenDownloads!,
+          key: const ValueKey<String>('video-discovery-ai-acquire'),
+          icon: FushiIcons.ai,
+          tooltip: t.ai_video_acquire_entry,
+          label: t.ai_feature_acquire,
+          overflowPriority: 2,
+          onTap: () => onAiAcquire(_searchController.text),
         ),
-      if (widget.actions.onOpenSubscriptions != null)
+      if (onOpenSubscriptions != null)
         FushiIconButton(
           key: const ValueKey<String>('video-discovery-open-subscriptions'),
           icon: Icons.subscriptions_outlined,
           tooltip: t.download_subscriptions_tab,
           label: t.download_subscriptions_tab,
-          onTap: widget.actions.onOpenSubscriptions!,
+          overflowPriority: 1,
+          onTap: onOpenSubscriptions,
         ),
+      if (onOpenDownloads != null && downloadsActive)
+        FushiIconButton(
+          key: const ValueKey<String>('video-discovery-open-downloads'),
+          icon: Icons.download_outlined,
+          tooltip: t.download_tasks_tab,
+          label: t.download_tasks_tab,
+          // 只在有任务时出现：亮一枚小圆点说明「正在下」。
+          badge: widget.actions.downloadTasksActive != null,
+          onTap: onOpenDownloads,
+        ),
+      _buildMoreMenu(),
     ];
     return FushiPageHeader.customTitle(
       title: widget.navigation,
       actions: actions,
     );
   }
+
+  /// 页头末尾的「⋯」：刷新（设计稿 DI15「刷新进 ⋯」）。
+  Widget _buildMoreMenu() => FushiOverflowMenu<VoidCallback>(
+    key: const ValueKey<String>('video-discovery-more'),
+    tooltip: t.common_more_actions,
+    onSelected: (VoidCallback action) => action(),
+    items: <PopupMenuEntry<VoidCallback>>[
+      PopupMenuItem<VoidCallback>(
+        key: const ValueKey<String>('video-discovery-refresh'),
+        value: () => unawaited(_reload()),
+        child: Row(
+          children: <Widget>[
+            const FushiIcon(FushiIcons.refresh, size: 20),
+            const SizedBox(width: 12),
+            Expanded(child: Text(t.refresh)),
+          ],
+        ),
+      ),
+    ],
+  );
 
   Widget _buildControls() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -597,11 +596,13 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
                 onSubmitted: _submitSearch,
                 onClear: _clearSearch,
               );
-              // 「AI 下视频」入口跟搜索框同一行：embedded 于下载页时页头不渲染，
-              // 搜索行是三种宽度下唯一都可见的位置。null = 宿主没接线（平台合规
-              // 不可用），整颗按钮不渲染；AI 未指派由宿主在点击时引导去配置。
-              final ValueChanged<String?>? onAiAcquire =
-                  widget.actions.onAiAcquire;
+              // 「AI 下视频」入口：有页头时在页头平铺（设计稿 DI15）；没有页头
+              // （embedded 于下载页 / Apple 外观）时退回搜索框同一行——那里是
+              // 唯一都可见的位置。null = 宿主没接线（平台合规不可用），整颗按钮
+              // 不渲染；AI 未指派由宿主在点击时引导去配置。
+              final ValueChanged<String?>? onAiAcquire = _headerVisible
+                  ? null
+                  : widget.actions.onAiAcquire;
               final Widget? aiEntry = onAiAcquire == null
                   ? null
                   : FushiIconButtonControl.filledTonal(
@@ -637,6 +638,9 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
             },
           ),
           SizedBox(height: tokens.spacing.gap),
+          // 分类 chip 与「年份 / 地区 / 类型 / 排序」同一行（设计稿「视频发现」）：
+          // chip 靠起始侧、放不下时横滑，筛选下拉靠尾侧；窄屏下拉合成一颗
+          // 「筛选」钮打开筛选面板，排序留在行尾。
           Row(
             children: <Widget>[
               Expanded(
@@ -669,24 +673,6 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
                               discovery.VideoDiscoveryCategory.values.last)
                             SizedBox(width: tokens.spacing.gap),
                         ],
-                        if (!compact) ...<Widget>[
-                          Padding(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: tokens.spacing.card,
-                            ),
-                            child: const SizedBox(
-                              height: 24,
-                              child: FushiVerticalDivider(width: 1),
-                            ),
-                          ),
-                          _buildYearField(),
-                          SizedBox(width: tokens.spacing.gap),
-                          _buildRegionMenu(),
-                          SizedBox(width: tokens.spacing.gap),
-                          _buildGenreMenu(),
-                          SizedBox(width: tokens.spacing.gap),
-                          _buildSortMenu(),
-                        ],
                       ],
                     ),
                   ),
@@ -696,6 +682,15 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
                 ..._compactEntries(tokens),
                 SizedBox(width: tokens.spacing.gap),
                 _buildSortMenu(compact: true),
+              ] else ...<Widget>[
+                SizedBox(width: tokens.spacing.card),
+                _buildYearField(),
+                SizedBox(width: tokens.spacing.gap),
+                _buildRegionMenu(),
+                SizedBox(width: tokens.spacing.gap),
+                _buildGenreMenu(),
+                SizedBox(width: tokens.spacing.gap),
+                _buildSortMenu(),
               ],
             ],
           ),
@@ -704,14 +699,16 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
     );
   }
 
-  /// 窄屏分类 chip 行行尾的入口：AI 下视频（宿主接线时）/ 高级筛选面板。宽屏下
-  /// AI 入口在搜索行、筛选控件直接铺在 chip 行里。
+  /// 窄屏分类 chip 行行尾的入口：AI 下视频（宿主接线且没有页头时；有页头时它在
+  /// 页头）/ 高级筛选面板。宽屏下筛选控件直接铺在 chip 行尾侧。
   List<Widget> _compactEntries(FushiDesignTokens tokens) {
     const BoxConstraints size = BoxConstraints(
       minWidth: kFushiSearchFieldHeight,
       minHeight: kFushiSearchFieldHeight,
     );
-    final ValueChanged<String?>? onAiAcquire = widget.actions.onAiAcquire;
+    final ValueChanged<String?>? onAiAcquire = _headerVisible
+        ? null
+        : widget.actions.onAiAcquire;
     final int activeFilters =
         (_year != 0 ? 1 : 0) +
         (_region.isNotEmpty ? 1 : 0) +
@@ -1028,8 +1025,6 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
                   DiscoveryShelf(
                     title: t.video_discovery_hot,
                     loading: true,
-                    shape: DiscoveryCoverShape.landscape,
-                    titleMaxLines: 1,
                     itemWidth: _shelfItemWidth(constraints.maxWidth),
                     itemCount: 0,
                     itemBuilder: (BuildContext context, int index) =>
@@ -1094,8 +1089,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
                   key: const ValueKey<String>('video-discovery-hero-carousel'),
                   itemCount: heroItems.length,
                   itemBuilder: (BuildContext context, int index) =>
-                      _buildHero(heroItems[index]),
-                  onPageChanged: _hydrateHeroAround,
+                      _buildHero(heroItems[index], rank: index + 1),
                 ),
                 ?airingToday,
                 if (popularRest.isNotEmpty)
@@ -1103,6 +1097,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
                     title: t.video_discovery_hot,
                     items: popularRest,
                     imageResolver: widget.imageResolver,
+                    logoFor: _logoFor,
                     onOpen: _openItem,
                   ),
               ],
@@ -1118,6 +1113,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
               title: t.video_discovery_seasonal_anime,
               items: _seasonalAnime,
               imageResolver: widget.imageResolver,
+              logoFor: _logoFor,
               onOpen: _openItem,
             ),
           ),
@@ -1163,8 +1159,8 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
                     index: index,
                     child: _DiscoveryMediaCard(
                       item: _works[index],
-                      landscape: false,
                       imageResolver: widget.imageResolver,
+                      logoFor: _logoFor,
                       onTap: () => _openItem(_works[index]),
                     ),
                   ),
@@ -1182,8 +1178,10 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
     );
   }
 
-  /// 首屏 Hero 轮播的一页：横版剧照优先、只有海报时模糊垫底 + 尾侧海报。
-  Widget _buildHero(discovery.VideoDiscoveryItem item) {
+  /// 首屏轮播的一页：拼贴首块（设计稿「视频发现」）。背景用横版剧照
+  /// （`backdropUrl`），没有就由首块把海报放大模糊；前景是斜放的海报。chip 是
+  /// 「热门 · 第 N」；元信息只放来源已给的年份 / 评分 / 题材。
+  Widget _buildHero(discovery.VideoDiscoveryItem item, {required int rank}) {
     final bool hasBackdrop = item.backdropUrl?.trim().isNotEmpty == true;
     final ImageProvider? backdrop = hasBackdrop
         ? widget.imageResolver?.call(item, true) ??
@@ -1192,23 +1190,55 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
     final ImageProvider? poster =
         widget.imageResolver?.call(item, false) ??
         _networkImage(item.posterUrl);
-    return DiscoveryHeroBanner(
+    final double? score = item.score;
+    final String? genre = item.genres
+        .map((String g) => g.trim())
+        .where((String g) => g.isNotEmpty)
+        .firstOrNull;
+    return FutureBuilder<ImageProvider?>(
       key: ValueKey<String>(
         'video-discovery-hero-${item.reference.canonicalIdentityKey}',
       ),
+      future: _logoFor(item),
+      builder: (BuildContext context, AsyncSnapshot<ImageProvider?> logo) =>
+          _buildHeroBanner(
+            item,
+            rank: rank,
+            backdrop: backdrop,
+            poster: poster,
+            score: score,
+            genre: genre,
+            logo: logo.data,
+          ),
+    );
+  }
+
+  Widget _buildHeroBanner(
+    discovery.VideoDiscoveryItem item, {
+    required int rank,
+    required ImageProvider? backdrop,
+    required ImageProvider? poster,
+    required double? score,
+    required String? genre,
+    required ImageProvider? logo,
+  }) {
+    return DiscoveryHeroBanner(
       eyebrow: t.video_discovery_hot,
+      rank: rank,
       title: item.reference.title,
-      subtitle: item.reference.originalTitle,
       metaParts: <String>[
         if (item.reference.year != null) '${item.reference.year}',
-        _videoDiscoveryCategoryLabel(item.reference.discoveryCategory),
-        if (item.score != null) '★ ${item.score!.toStringAsFixed(1)}',
+        if (score != null) '★ ${score.toStringAsFixed(1)}',
+        ?genre,
       ],
-      summary: _heroSummary(item),
       backdrop: backdrop,
+      logo: logo,
       poster: poster,
       actionLabel: t.video_hero_detail_view,
       actionKey: const ValueKey<String>('video-discovery-hero-open'),
+      focusId: FushiFocusId(
+        'video-discovery-hero-${item.reference.canonicalIdentityKey}',
+      ),
       onOpen: () => _openItem(item),
     );
   }
@@ -1283,8 +1313,10 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
   };
 }
 
-/// 横滑行卡宽：手机 240、平板 / 桌面 280（16:9 横卡）。
-double _shelfItemWidth(double width) => width < 600 ? 240 : 280;
+/// 横滑行媒体块宽：手机 128、平板 / 桌面 156（竖版海报块，与「今日放送」同档）。
+/// 横滑行块宽：与库页拼贴横滑条同一规则（桌面 300，窄窗约七成行宽）。
+double _shelfItemWidth(double width) =>
+    FushiCoverBlockStrip.rowTileWidth(width);
 
 String _videoDiscoveryCategoryLabel(
   discovery.VideoDiscoveryCategory category,
@@ -1299,7 +1331,7 @@ ImageProvider? _networkImage(String? url) {
   return value.isEmpty ? null : AppCachedHttpImage(value);
 }
 
-/// 视频发现的横滑行：共享 [DiscoveryShelf] 版式 + 本页的横向封面卡；行头
+/// 视频发现的横滑行：共享 [DiscoveryShelf] 版式 + 本页的海报媒体块；行头
 /// 「查看全部」推整组网格页。
 class _DiscoveryShelf extends StatelessWidget {
   const _DiscoveryShelf({
@@ -1307,6 +1339,7 @@ class _DiscoveryShelf extends StatelessWidget {
     required this.items,
     required this.onOpen,
     this.imageResolver,
+    this.logoFor,
     super.key,
   });
 
@@ -1314,6 +1347,7 @@ class _DiscoveryShelf extends StatelessWidget {
   final List<discovery.VideoDiscoveryItem> items;
   final ValueChanged<discovery.VideoDiscoveryItem> onOpen;
   final VideoDiscoveryImageResolver? imageResolver;
+  final _DiscoveryLogoLoader? logoFor;
 
   void _openAll(BuildContext context) {
     unawaited(
@@ -1324,8 +1358,8 @@ class _DiscoveryShelf extends StatelessWidget {
         material: ShelfCoverMaterial.glossyPoster,
         itemBuilder: (BuildContext context, int index) => _DiscoveryMediaCard(
           item: items[index],
-          landscape: false,
           imageResolver: imageResolver,
+          logoFor: logoFor,
           onTap: () => onOpen(items[index]),
         ),
       ),
@@ -1339,15 +1373,13 @@ class _DiscoveryShelf extends StatelessWidget {
         return DiscoveryShelf(
           title: title,
           storageKey: 'video-discovery-shelf-$title',
-          shape: DiscoveryCoverShape.landscape,
-          titleMaxLines: 1,
           itemWidth: _shelfItemWidth(constraints.maxWidth),
           trailing: DiscoveryViewAllButton(onPressed: () => _openAll(context)),
           itemCount: items.length,
           itemBuilder: (BuildContext context, int index) => _DiscoveryMediaCard(
             item: items[index],
-            landscape: true,
             imageResolver: imageResolver,
+            logoFor: logoFor,
             onTap: () => onOpen(items[index]),
           ),
         );
@@ -1356,42 +1388,63 @@ class _DiscoveryShelf extends StatelessWidget {
   }
 }
 
-/// 发现卡：共享 [DiscoveryCoverCard]（光面海报 + 下方标题 / 副行）。封面上不压
-/// 角标：评分带星进副行最前（「★ 8.4 · 2026 · 动画」）。
+/// 发现条目：共享等尺寸媒体块 [DiscoveryCoverCard]（海报 + 完整标题 + 副行）。
+/// 封面上不压角标：评分带星进副行最前（「★ 8.4 · 2026 · 动画」）；没有海报时
+/// 媒体块画按标题生成的封面。
 class _DiscoveryMediaCard extends StatelessWidget {
   const _DiscoveryMediaCard({
     required this.item,
-    required this.landscape,
     required this.onTap,
     this.imageResolver,
+    this.logoFor,
   });
 
   final discovery.VideoDiscoveryItem item;
-  final bool landscape;
   final VoidCallback onTap;
   final VideoDiscoveryImageResolver? imageResolver;
+
+  /// 标题 logo 的懒取端口（页面共用缓存）；null = 不取，只画标题文字。
+  final _DiscoveryLogoLoader? logoFor;
 
   @override
   Widget build(BuildContext context) {
     final String stableId = item.reference.canonicalIdentityKey;
-    final DiscoveryCoverShape shape = landscape
-        ? DiscoveryCoverShape.landscape
-        : DiscoveryCoverShape.portrait;
     final ImageProvider? image =
-        imageResolver?.call(item, landscape) ?? _defaultImage(item, landscape);
+        imageResolver?.call(item, false) ?? _defaultImage(item);
     final double? score = item.score;
+    final _DiscoveryLogoLoader? loader = logoFor;
+    if (loader == null) return _buildCard(stableId, image, score, null);
+    return FutureBuilder<ImageProvider?>(
+      future: loader(item),
+      builder: (BuildContext context, AsyncSnapshot<ImageProvider?> logo) =>
+          _buildCard(stableId, image, score, logo.data),
+    );
+  }
+
+  /// 与视频库系列块同一摆法：有横版剧照时剧照铺在尾侧、竖海报完整斜放在起始
+  /// 侧，标题位有 logo 用 logo（用户 2026-11-16「就该和视频媒体库的系列一样」）。
+  Widget _buildCard(
+    String stableId,
+    ImageProvider? image,
+    double? score,
+    ImageProvider? logo,
+  ) {
+    final String backdropUrl = item.backdropUrl?.trim() ?? '';
+    final ImageProvider? backdrop =
+        backdropUrl.isEmpty || backdropUrl == item.posterUrl?.trim()
+        ? null
+        : imageResolver?.call(item, true) ?? AppCachedHttpImage(backdropUrl);
     return DiscoveryCoverCard(
       key: ValueKey<String>('video-discovery-card-$stableId'),
+      backdrop: backdrop,
+      logo: logo,
       focusId: FushiFocusId('video-discovery-card-$stableId'),
       title: item.reference.title,
       subtitle: _metadata(score),
       leadingIcon: score == null ? null : Icons.star_rounded,
-      shape: shape,
-      titleMaxLines: landscape ? 1 : 2,
       onTap: onTap,
       cover: DiscoveryImageCover(
         image: image,
-        shape: shape,
         placeholderIcon: Icons.movie_outlined,
       ),
     );
@@ -1403,19 +1456,15 @@ class _DiscoveryMediaCard extends StatelessWidget {
     _videoDiscoveryCategoryLabel(item.reference.discoveryCategory),
   ].join(' · ');
 
-  ImageProvider? _defaultImage(
-    discovery.VideoDiscoveryItem item,
-    bool landscape,
-  ) {
-    final String value =
-        (landscape
-                ? item.backdropUrl ?? item.posterUrl
-                : item.posterUrl ?? item.backdropUrl)
-            ?.trim() ??
-        '';
+  ImageProvider? _defaultImage(discovery.VideoDiscoveryItem item) {
+    final String value = (item.posterUrl ?? item.backdropUrl)?.trim() ?? '';
     return value.isEmpty ? null : AppCachedHttpImage(value);
   }
 }
+
+/// 发现条目标题 logo 的懒取端口（页面状态持有缓存）。
+typedef _DiscoveryLogoLoader =
+    Future<ImageProvider?> Function(discovery.VideoDiscoveryItem item);
 
 class _FlattenedDiscoveryBatch {
   const _FlattenedDiscoveryBatch({required this.items, required this.hasMore});

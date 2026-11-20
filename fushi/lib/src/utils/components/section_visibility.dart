@@ -27,6 +27,11 @@ class SectionVisibility extends InheritedWidget {
           ?.visible ??
       true;
 
+  /// 同 [of]，但不建立依赖（依赖变化回调里核对「这次是不是可见性变了」用）。
+  static bool peek(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<SectionVisibility>()?.visible ??
+      true;
+
   @override
   bool updateShouldNotify(SectionVisibility oldWidget) =>
       visible != oldWidget.visible;

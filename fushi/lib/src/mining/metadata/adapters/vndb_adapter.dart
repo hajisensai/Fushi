@@ -195,7 +195,7 @@ GalgameMetadataDraft parseVndbVisualNovel(Map<Object?, Object?> vn) {
     nameCn: titles.chinese,
     aliases: aliases,
     allTitles: draftStringList(<Object?>[...titles.all, ...aliases]),
-    summary: draftString(vn['description']),
+    summary: vndbDescription(vn['description']),
     tags: parseVndbTags(vn['tags']),
     developer: _parseDevelopers(vn['developers']),
     releaseDate: draftDate(vn['released']),
@@ -230,7 +230,7 @@ List<SourceCandidate> parseVndbSearchResults(
         nameCn: titles.chinese,
         coverUrl: _parseImage(vn['image']),
         releaseDate: draftDate(vn['released']),
-        summary: summaryExcerpt(vn['description']),
+        summary: summaryExcerpt(vndbDescription(vn['description'])),
       ),
     );
     if (out.length >= limit) {

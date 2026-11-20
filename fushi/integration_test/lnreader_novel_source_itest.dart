@@ -19,7 +19,7 @@ import 'package:fushi/src/media/novel/online/lnreader_online_book.dart';
 import 'package:fushi/src/media/novel/online/lnreader_source_browse_page.dart';
 import 'package:fushi/src/media/novel/online/novel_online_sources_gate.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
-import 'package:fushi/src/pages/implementations/media_sources_page.dart';
+import 'package:fushi/src/pages/implementations/browse_online_sources_view.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
@@ -104,21 +104,28 @@ void main() {
     final AppModel appModel = await readyAppModel(tester);
     expect(isNovelOnlineSourcesAvailable, isTrue);
 
-    // ① 书导入页：本地段之外多出仓库 / 扩展 / 在线源三段（与视频同一条选择器）。
+    // ① 「浏览」里小说域的扩展目录（书导入页的在线段已统一搬进「浏览」）。
     await push(
       appModel,
-      const Scaffold(body: MediaSourcesPage(mediaKind: 'book')),
+      const Scaffold(
+        body: BrowseOnlineSourcesView(
+          domain: OnlineSourcesDomain.novel,
+          section: OnlineSourcesSection.extensions,
+        ),
+      ),
     );
     expect(
       await until(
         tester,
         () => find
-            .byKey(const ValueKey<String>('import_segment_extensions'))
+            .byKey(
+              const ValueKey<String>('book_lnreader_extensions_extensions'),
+            )
             .evaluate()
             .isNotEmpty,
       ),
       isTrue,
-      reason: '书导入页应出现「扩展」段',
+      reason: '「浏览」小说扩展目录应出现',
     );
     await captureFlutterFrame(tester, 'lnreader-01-book-import-segments');
     await popAll(tester, appModel);

@@ -6,8 +6,12 @@ import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/media/links/adaptation_progress_section.dart';
 import 'package:fushi/src/media/links/media_link_editor_dialog.dart';
 import 'package:fushi/src/media/links/media_link_entries.dart';
+import 'package:fushi/src/media/links/work_graph_store.dart';
+import 'package:fushi/src/media/links/work_plans.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
+import 'package:fushi/src/pages/implementations/work_network_page.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -19,6 +23,7 @@ import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
@@ -52,7 +57,14 @@ Future<void> showMediaLinksDialog({
         onInfer: onInfer,
         searchActionFor: searchActionFor,
         onOpen: (MediaLinkEntry e) {
-          Navigator.of(dialogContext).pop();
+          // 从关系网页里打开时弹窗已不在栈顶：只移除弹窗这一条路由，不误关关系网页。
+          final ModalRoute<Object?>? route = ModalRoute.of(dialogContext);
+          final NavigatorState navigator = Navigator.of(dialogContext);
+          if (route == null || route.isCurrent) {
+            navigator.pop();
+          } else if (route.isActive) {
+            navigator.removeRoute(route);
+          }
           onOpen(e);
         },
       ),
@@ -60,17 +72,22 @@ Future<void> showMediaLinksDialog({
   ),
 );
 
-/// 详情页「同一作品」横向区块（spec `docs/specs/2026-10-24-cross-media-links.md` §1）。
+/// 详情页「同一作品」区块（spec `docs/specs/2026-10-24-cross-media-links.md` §1，
+/// AI 库管家 spec `docs/specs/2026-11-18-ai-library-curator-design.md` §4.3）。
 ///
-/// - 头部：标题 +「关联作品」入口（手动连接对话框）+ 可选的「查找相关作品」（L1 推断，
-///   [onInfer] 为 null 时不显示）。
-/// - 「同一作品」横滚行：只显示**已确认**的连接（手动连接 / 用户确认过的推断）。卡片
-///   点了跳对应模块条目（[onOpen]）；本机不存在的端点是「未入库」灰卡，不可点。长按
-///   / 右键出菜单「移除关联」（写墓碑，推断不会再提议这一对）。
-/// - 「可能相关」行：未确认的推断建议，带来源与理由，「确认」/「不相关」两键。
+/// - 头部：标题 +「关系网」入口（作品成员 + 卫星 ≥ 2 个节点时）+「关联作品」入口
+///   （手动连接对话框）+ 可选的「查找相关作品」（L1 推断，[onInfer] 为 null 时不显示）。
+/// - 「同一作品」横滚行：列本条目所在的**整部作品**（作品图的连通分量，取自进程级
+///   [WorkGraphStore]），按媒体种类分组；同一系列合集的各卷折成一张合集卡；本条目
+///   自己与它所在的合集不重复列出；主题曲 / 原声 / 配音另起一组。卡片点了跳对应
+///   模块条目（[onOpen]）；本机不存在的端点是「未入库」灰卡。与本条目**直接**相连
+///   的卡长按 / 右键出菜单「移除关联」（写墓碑，推断不会再提议这一对）；AI 直接生效
+///   的连接在卡上标「AI」并带一键移除。
+/// - 「可能相关」行：本条目未确认的推断建议，带来源与理由，「确认」/「不相关」两键。
 ///
-/// 数据随 `media_links` 表变更自动重取（`tableUpdates` 手动订阅，而不是 drift
-/// `.watch()`：长驻页面订阅 watch 流在 dispose 时会留下 Timer，见 BUG-834 范式）。
+/// 直接连接随 `media_links` 表变更自动重取（`tableUpdates` 手动订阅，而不是 drift
+/// `.watch()`：长驻页面订阅 watch 流在 dispose 时会留下 Timer，见 BUG-834 范式）；
+/// 作品图由 [WorkGraphStore] 去抖重建后通知本区块。
 class MediaLinksSection extends StatefulWidget {
   const MediaLinksSection({
     required this.database,
@@ -111,51 +128,136 @@ ShelfCoverMaterial mediaLinkCoverMaterial(MediaLinkKind kind) => switch (kind) {
   MediaLinkKind.musicTrack => ShelfCoverMaterial.glossyAlbum,
 };
 
+/// 区块一次加载的结果。
+class _SectionData {
+  const _SectionData({
+    required this.views,
+    required this.plan,
+    required this.entries,
+  });
+
+  static const _SectionData empty = _SectionData(
+    views: <MediaLinkView>[],
+    plan: null,
+    entries: <String, MediaLinkEntry>{},
+  );
+
+  /// 本条目的全部直接连接（不含墓碑）。
+  final List<MediaLinkView> views;
+  final WorkSectionPlan? plan;
+
+  /// 卡片键（[WorkCardSpec.key]）→ 解析好的展示信息。
+  final Map<String, MediaLinkEntry> entries;
+}
+
+/// 横滚行里的一项：一张卡，带它所在分组（分组首卡上方画组名）。
+typedef _RowItem = ({WorkCardSpec card, String? groupLabel});
+
 class _MediaLinksSectionState extends State<MediaLinksSection> {
   static const double _cardWidth = 116;
   static const double _coverHeight = _cardWidth * 3 / 2;
   static const double _gap = 12;
+  static const double _groupGap = 28;
+  static const double _groupLabelHeight = 24;
   static const double _suggestionWidth = 300;
   static const double _suggestionHeight = 148;
 
   /// 持久化在 State 里（BUG-2010：build 里现取 = 每次重建都多查一次库）。
-  late Future<List<MediaLinkView>> _views;
+  late Future<_SectionData> _data;
   StreamSubscription<Set<TableUpdate>>? _tableSub;
+  late WorkGraphStore _store;
   bool _inferring = false;
 
   @override
   void initState() {
     super.initState();
-    _views = _load();
+    _store = WorkGraphStore.of(widget.database);
+    _store.addListener(_reload);
+    _data = _load();
+    _subscribe();
+  }
+
+  void _subscribe() {
     _tableSub = widget.database
         .tableUpdates(TableUpdateQuery.onTable(widget.database.mediaLinks))
-        .listen((_) {
-          if (!mounted) return;
-          // 块体写法：箭头体会把赋值结果（Future）当返回值交给 setState，触发
-          // 「setState() callback argument returned a Future」断言、整次重建作废。
-          setState(() {
-            _views = _load();
-          });
-        });
+        .listen((_) => _reload());
+  }
+
+  void _reload() {
+    if (!mounted) return;
+    // 块体写法：箭头体会把赋值结果（Future）当返回值交给 setState，触发
+    // 「setState() callback argument returned a Future」断言、整次重建作废。
+    setState(() {
+      _data = _load();
+    });
   }
 
   @override
   void didUpdateWidget(covariant MediaLinksSection oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.database != widget.database) {
+      _store.removeListener(_reload);
+      _store = WorkGraphStore.of(widget.database);
+      _store.addListener(_reload);
+      unawaited(_tableSub?.cancel());
+      _subscribe();
+    }
     if (oldWidget.self != widget.self ||
         oldWidget.database != widget.database) {
-      _views = _load();
+      _data = _load();
     }
   }
 
   @override
   void dispose() {
+    _store.removeListener(_reload);
     unawaited(_tableSub?.cancel());
     super.dispose();
   }
 
-  Future<List<MediaLinkView>> _load() =>
-      loadMediaLinkViews(widget.database, widget.self);
+  Future<_SectionData> _load() async {
+    final FushiDatabase db = widget.database;
+    final List<MediaLinkView> views = await loadMediaLinkViews(db, widget.self);
+    final WorkSectionPlan plan = planWorkSection(
+      snapshot: _store.value,
+      self: widget.self,
+      confirmed: <MediaLinkView>[
+        for (final MediaLinkView v in views)
+          if (v.state == MediaLinkState.confirmed) v,
+      ],
+    );
+    final Map<String, MediaLinkEntry> entries = <String, MediaLinkEntry>{};
+    for (final WorkCardSpec card in <WorkCardSpec>[
+      for (final ({WorkMediaGroup group, List<WorkCardSpec> cards}) g
+          in plan.groups)
+        ...g.cards,
+      ...plan.satellites,
+    ]) {
+      entries[card.key] = await _resolveCard(db, card);
+    }
+    return _SectionData(views: views, plan: plan, entries: entries);
+  }
+
+  /// 卡片展示信息：直接相连的端点复用已解析的对端；折叠合集取合集名。
+  Future<MediaLinkEntry> _resolveCard(
+    FushiDatabase db,
+    WorkCardSpec card,
+  ) async {
+    final WorkSeriesInfo? series = card.series;
+    if (series == null) {
+      for (final MediaLinkView v in card.direct) {
+        if (v.other.endpoint == card.target) return v.other;
+      }
+    }
+    final MediaLinkEntry entry = await resolveMediaLinkEntry(db, card.target);
+    if (series == null || series.name.isEmpty) return entry;
+    return MediaLinkEntry(
+      endpoint: entry.endpoint,
+      title: series.name,
+      inLibrary: entry.inLibrary,
+      coverPath: entry.coverPath,
+    );
+  }
 
   Future<void> _openEditor() async {
     await showMediaLinkEditorDialog(
@@ -182,7 +284,27 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
     }
   }
 
-  Future<void> _showCardMenu(MediaLinkView view, Offset globalPosition) async {
+  void _openNetwork(MediaLinkEndpoint endpoint) {
+    unawaited(
+      Navigator.of(context).push<void>(
+        adaptivePageRoute<void>(
+          context: context,
+          builder: (_) => WorkNetworkPage(
+            database: widget.database,
+            endpoint: endpoint,
+            onOpen: widget.onOpen,
+            onInfer: widget.onInfer,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showCardMenu(
+    List<MediaLinkView> direct,
+    Offset globalPosition,
+  ) async {
+    if (direct.isEmpty) return;
     final RenderObject? overlay = Overlay.of(
       context,
     ).context.findRenderObject();
@@ -209,7 +331,16 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
       ],
     );
     if (remove != true || !mounted) return;
-    await widget.database.removeMediaLink(view.id);
+    await rejectMediaLinks(widget.database, <MediaLinkId>[
+      for (final MediaLinkView v in direct) v.id,
+    ]);
+    FushiToast.show(msg: t.media_link_removed, severity: ToastSeverity.info);
+  }
+
+  Future<void> _removeAiLinks(List<MediaLinkView> ai) async {
+    await rejectMediaLinks(widget.database, <MediaLinkId>[
+      for (final MediaLinkView v in ai) v.id,
+    ]);
     FushiToast.show(msg: t.media_link_removed, severity: ToastSeverity.info);
   }
 
@@ -230,8 +361,67 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
     );
   }
 
-  Widget _buildCard(BuildContext context, MediaLinkView view) {
-    final MediaLinkEntry other = view.other;
+  /// 卡片副行的关系 / 身份：直接相连的取关系名（「原作」「改编作」「主题曲」…），
+  /// 折叠合集取卷数，作品原作标「原作」，其余取种类名。
+  String _cardRelationLabel(WorkCardSpec card) {
+    if (card.direct.isNotEmpty) return mediaLinkBadgeLabel(card.direct.first);
+    final WorkSeriesInfo? series = card.series;
+    if (series != null && series.endpoint == null) {
+      return t.media_link_series_volumes(count: series.volumeCount);
+    }
+    if (card.original) return t.media_link_role_original;
+    return mediaLinkKindLabel(card.target.kind);
+  }
+
+  /// AI 来源标识 + 一键移除（压在封面角上；只出现在 AI 直接生效的直接连接上）。
+  Widget _aiOverlay(BuildContext context, List<MediaLinkView> ai) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return Stack(
+      children: <Widget>[
+        Positioned(
+          left: 6,
+          top: 6,
+          child: FushiTooltip(
+            message: t.media_link_ai_linked,
+            child: Semantics(
+              label: t.media_link_ai_linked,
+              child: DecoratedBox(
+                key: const ValueKey<String>('media-link-ai-badge'),
+                decoration: BoxDecoration(
+                  color: scheme.tertiaryContainer,
+                  borderRadius: FushiBorderRadius.card,
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: FushiIcon(
+                    FushiIcons.ai,
+                    size: 16,
+                    color: scheme.onTertiaryContainer,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        Positioned(
+          right: 0,
+          top: 0,
+          child: FushiIconButtonControl.filledTonal(
+            key: const ValueKey<String>('media-link-ai-remove'),
+            tooltip: t.media_link_ai_remove,
+            icon: const FushiIcon(FushiIcons.linkOff, size: 18),
+            onPressed: () => unawaited(_removeAiLinks(ai)),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCard(
+    BuildContext context,
+    WorkCardSpec spec,
+    MediaLinkEntry other,
+  ) {
     final bool missing = !other.inLibrary;
     // 合集端点的键是本机 id，丢了就没有可搜的标题。
     final ValueChanged<String>? search =
@@ -243,6 +433,10 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
               ? t.media_link_not_in_library
               : t.media_link_search_missing)
         : null;
+    final List<MediaLinkView> ai = <MediaLinkView>[
+      for (final MediaLinkView v in spec.direct)
+        if (mediaLinkIsAiEffective(v.row)) v,
+    ];
     final Widget cover = ShelfCoverMaterialScope(
       material: mediaLinkCoverMaterial(other.endpoint.kind),
       child: ShelfCoverFrame(child: _cover(context, other, _cardWidth)),
@@ -250,9 +444,7 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
     // 封面即卡片（与库页同一套材质，按对端种类逐卡选）；关系 / 未入库不再压在
     // 封面上，进封面下的副行。
     final Widget card = SizedBox(
-      key: ValueKey<String>(
-        'media-link-card-${other.endpoint.kind.dbValue}-${other.endpoint.key}',
-      ),
+      key: ValueKey<String>('media-link-card-${spec.key}'),
       width: _cardWidth,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -278,33 +470,46 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
             opacity: missing ? 0.6 : 1,
             child: ShelfCardMeta(
               title: other.title,
-              subtitle: <String>[
-                mediaLinkBadgeLabel(view),
-                ?status,
-              ].join(' · '),
+              subtitle: <String>[_cardRelationLabel(spec), ?status].join(' · '),
             ),
           ),
         ],
       ),
     );
-    return FushiHoverLift(
+    final Widget interactive = FushiHoverLift(
       enabled: !missing || search != null,
       builder: (BuildContext context, bool _) => Semantics(
         button: !missing || search != null,
         label: other.title,
         // 右键菜单由绑定表决定唤出键（默认右键），右键被别的动作占用时自动让位。
         child: ContextMenuTrigger(
-          onInvoke: (Offset position) => _showCardMenu(view, position),
+          onInvoke: (Offset position) => _showCardMenu(spec.direct, position),
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: missing
                 ? (search == null ? null : () => search(other.title))
                 : () => widget.onOpen(other),
             onLongPressStart: (LongPressStartDetails d) =>
-                _showCardMenu(view, d.globalPosition),
+                _showCardMenu(spec.direct, d.globalPosition),
             child: card,
           ),
         ),
+      ),
+    );
+    if (ai.isEmpty) return interactive;
+    return SizedBox(
+      width: _cardWidth,
+      child: Stack(
+        children: <Widget>[
+          interactive,
+          Positioned(
+            left: 0,
+            top: 0,
+            width: _cardWidth,
+            height: _coverHeight,
+            child: _aiOverlay(context, ai),
+          ),
+        ],
       ),
     );
   }
@@ -372,16 +577,20 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
                           key: const ValueKey<String>(
                             'media-link-suggestion-reject',
                           ),
-                          onPressed: () =>
-                              widget.database.removeMediaLink(view.id),
+                          onPressed: () => rejectMediaLinks(
+                            widget.database,
+                            <MediaLinkId>[view.id],
+                          ),
                           child: Text(t.media_link_suggestion_reject),
                         ),
                         FushiTextButton(
                           key: const ValueKey<String>(
                             'media-link-suggestion-confirm',
                           ),
-                          onPressed: () =>
-                              widget.database.confirmMediaLink(view.id),
+                          onPressed: () => confirmMediaLinks(
+                            widget.database,
+                            <MediaLinkId>[view.id],
+                          ),
                           child: Text(t.media_link_suggestion_confirm),
                         ),
                       ],
@@ -397,10 +606,11 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
   }
 
   /// 横滚行：鼠标拖动横滚；裸滚轮刻意不横滚（嵌在详情页纵向滚动里，BUG-1536）。
-  Widget _row({
+  Widget _row<T>({
     required double height,
-    required List<MediaLinkView> items,
-    required Widget Function(BuildContext, MediaLinkView) builder,
+    required List<T> items,
+    required Widget Function(BuildContext, T) builder,
+    required double Function(int index) gapBefore,
     required Object replayKey,
   }) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -414,7 +624,8 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
             physics: desktopAwareScrollPhysics(),
             padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
             itemCount: items.length,
-            separatorBuilder: (_, __) => const SizedBox(width: _gap),
+            separatorBuilder: (_, int index) =>
+                SizedBox(width: gapBefore(index + 1)),
             itemBuilder: fushiStaggeredItemBuilder(
               (BuildContext context, int index) =>
                   builder(context, items[index]),
@@ -425,22 +636,75 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
     );
   }
 
+  /// 作品行的一项：分组首卡上方是组名，其余卡上方留同高空白（卡片顶端对齐）。
+  Widget _buildRowItem(
+    BuildContext context,
+    _RowItem item,
+    Map<String, MediaLinkEntry> entries,
+  ) {
+    final MediaLinkEntry? entry = entries[item.card.key];
+    final String? label = item.groupLabel;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        SizedBox(
+          width: _cardWidth,
+          height: _groupLabelHeight,
+          child: label == null
+              ? null
+              : Text(
+                  label,
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.visible,
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+        ),
+        if (entry != null)
+          _buildCard(context, item.card, entry)
+        else
+          const SizedBox(width: _cardWidth),
+      ],
+    );
+  }
+
+  List<_RowItem> _rowItems(WorkSectionPlan plan) => <_RowItem>[
+    for (final ({WorkMediaGroup group, List<WorkCardSpec> cards}) g
+        in plan.groups)
+      for (int i = 0; i < g.cards.length; i++)
+        (
+          card: g.cards[i],
+          groupLabel: i == 0 ? workMediaGroupLabel(g.group) : null,
+        ),
+    for (int i = 0; i < plan.satellites.length; i++)
+      (
+        card: plan.satellites[i],
+        groupLabel: i == 0 ? t.media_link_group_satellites : null,
+      ),
+  ];
+
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ThemeData theme = Theme.of(context);
-    return FutureBuilder<List<MediaLinkView>>(
-      future: _views,
-      builder: (BuildContext context, AsyncSnapshot<List<MediaLinkView>> snap) {
-        final List<MediaLinkView> views = snap.data ?? const <MediaLinkView>[];
+    return FutureBuilder<_SectionData>(
+      future: _data,
+      builder: (BuildContext context, AsyncSnapshot<_SectionData> snap) {
+        final _SectionData data = snap.data ?? _SectionData.empty;
         final List<MediaLinkView> confirmed = <MediaLinkView>[
-          for (final MediaLinkView v in views)
+          for (final MediaLinkView v in data.views)
             if (v.state == MediaLinkState.confirmed) v,
         ];
         final List<MediaLinkView> suggested = <MediaLinkView>[
-          for (final MediaLinkView v in views)
+          for (final MediaLinkView v in data.views)
             if (v.state == MediaLinkState.suggested) v,
         ];
+        final WorkSectionPlan? plan = data.plan;
+        final List<_RowItem> items = plan == null
+            ? const <_RowItem>[]
+            : _rowItems(plan);
         return Padding(
           key: const ValueKey<String>('media-links-section'),
           padding: EdgeInsets.only(top: tokens.spacing.section),
@@ -465,6 +729,13 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
                           ),
                         ),
                       ),
+                      if (plan != null && plan.networkNodeCount >= 2)
+                        FushiIconButtonControl(
+                          key: const ValueKey<String>('media-link-network'),
+                          tooltip: t.media_link_network_title,
+                          icon: const FushiIcon(FushiIcons.hub),
+                          onPressed: () => _openNetwork(plan.networkEndpoint),
+                        ),
                       if (widget.onInfer != null)
                         FushiTextButton(
                           key: const ValueKey<String>('media-link-infer'),
@@ -479,13 +750,21 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
                     ],
                   ),
                 ),
-                if (confirmed.isNotEmpty) ...<Widget>[
+                if (items.isNotEmpty) ...<Widget>[
                   SizedBox(height: tokens.spacing.rowVertical),
-                  _row(
-                    height: _coverHeight + ShelfCardMeta.heightFor(context),
-                    items: confirmed,
-                    builder: _buildCard,
-                    replayKey: confirmed.length,
+                  _row<_RowItem>(
+                    height:
+                        _groupLabelHeight +
+                        _coverHeight +
+                        ShelfCardMeta.heightFor(context),
+                    items: items,
+                    builder: (BuildContext context, _RowItem item) =>
+                        _buildRowItem(context, item, data.entries),
+                    gapBefore: (int index) =>
+                        index < items.length && items[index].groupLabel != null
+                        ? _groupGap
+                        : _gap,
+                    replayKey: items.length,
                   ),
                 ],
                 if (suggested.isNotEmpty) ...<Widget>[
@@ -501,10 +780,11 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
                       style: theme.textTheme.titleSmall,
                     ),
                   ),
-                  _row(
+                  _row<MediaLinkView>(
                     height: _suggestionHeight,
                     items: suggested,
                     builder: _buildSuggestion,
+                    gapBefore: (int _) => _gap,
                     replayKey: suggested.length,
                   ),
                 ],

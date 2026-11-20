@@ -104,7 +104,7 @@ void main() {
     expect(await pendingMangaOcrTargets(row), isEmpty);
   });
 
-  test('卡菜单与多选底栏接到同一条 OCR 路径，漫画卡不再出现有声书入口（源码守卫）', () {
+  test('卡菜单与多选底栏接到同一条 OCR 路径，漫画卡的有声入口是导入漫画有声成品（源码守卫）', () {
     final String shelf = File(
       'lib/src/pages/implementations/reader_fushi_history_page.dart',
     ).readAsStringSync();
@@ -127,8 +127,18 @@ void main() {
       ).hasMatch(shelf),
       isTrue,
       reason:
-          '漫画阅读器不播有声书，「导入有声书」只按共享判据 '
+          '通用「导入有声书」（按 EPUB 正文匹配字幕）只按共享判据 '
           'mediaItemSupportsAudiobook 出现（漫画卡不出现）',
+    );
+    // 2026-11-17 漫画有声：漫画阅读器能播成品音频后，漫画卡的有声入口加回，
+    // 走漫画有声成品清单导入（受听书模块门控），不是通用导入有声书。
+    expect(
+      RegExp(
+        r'if \(isManga && modules\.isEnabled\(ModuleId\.listening\)\)\s*'
+        r'DialogQuickAction\(\s*label: t\.manga_audio_import,',
+      ).hasMatch(shelf),
+      isTrue,
+      reason: '漫画卡要有导入漫画有声的入口',
     );
     expect(
       books.contains("ValueKey<String>('reader_shelf_batch_ocr')"),

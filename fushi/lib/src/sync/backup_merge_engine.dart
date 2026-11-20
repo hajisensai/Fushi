@@ -937,9 +937,14 @@ class BackupMergeEngine {
 
     // 成员：collection_id 经映射改写后 INSERT OR IGNORE（复合主键去重）。命中本地成员
     // 移出墓碑（同自然键 + 成员键）的成员跳过——防旧备份复活用户已移出的成员（任务7）。
+    final bool srcHasPinned = await _srcColumnExists(
+      'media_collection_items',
+      'pinned_by_user',
+    );
     final List<QueryRow> srcItems = await _db
         .customSelect(
-          'SELECT collection_id, media_type, entry_key, sort_index '
+          'SELECT collection_id, media_type, entry_key, sort_index'
+          '${srcHasPinned ? ', pinned_by_user' : ''} '
           'FROM $_srcAlias.media_collection_items',
         )
         .get();
@@ -975,15 +980,20 @@ class BackupMergeEngine {
       }
       // 落库键：epub 三级回落换到本库键域；同书的 uid 行与透传 bookKey 行换键后
       // 可能收敛为同一键——复合 PK 上的 INSERT OR IGNORE 顺带去重。
+      // v159 pinned_by_user 取或：备份里是 1 就升到 1，本机已是 1 的不降（旧备份
+      // 没有这一列按 0）。
       await _db.customStatement(
-        'INSERT OR IGNORE INTO media_collection_items '
-        '(collection_id, media_type, entry_key, sort_index) '
-        'VALUES (?, ?, ?, ?)',
+        'INSERT INTO media_collection_items '
+        '(collection_id, media_type, entry_key, sort_index, pinned_by_user) '
+        'VALUES (?, ?, ?, ?, ?) '
+        'ON CONFLICT (collection_id, media_type, entry_key) DO UPDATE SET '
+        'pinned_by_user = MAX(pinned_by_user, excluded.pinned_by_user)',
         <Object?>[
           tgt,
           mediaType,
           isEpub ? rekeyEpubEntryKey(entryKey) : entryKey,
           it.read<int>('sort_index'),
+          srcHasPinned && (it.read<int>('pinned_by_user') != 0) ? 1 : 0,
         ],
       );
     }
@@ -1781,6 +1791,12 @@ class BackupMergeEngine {
           null => null,
           _ => key,
         };
+    // v159：旧备份没有 confirmed_by——只认 is_user_confirmed，未确认的当「未知」
+    // 并入（不冲掉本机的 AI 生效，见 [FushiDatabase.mergeRemoteMediaLink]）。
+    final bool srcHasConfirmedBy = await _srcColumnExists(
+      'media_links',
+      'confirmed_by',
+    );
     final List<QueryRow> rows = await _db
         .customSelect('SELECT * FROM $_srcAlias.media_links')
         .get();
@@ -1819,13 +1835,20 @@ class BackupMergeEngine {
           source: r.read<String>('source'),
           confidence: r.readNullable<double>('confidence'),
           isUserConfirmed: r.read<int>('is_user_confirmed') != 0,
+          confirmedBy: srcHasConfirmedBy
+              ? r.readNullable<String>('confirmed_by')
+              : null,
           reason: r.readNullable<String>('reason'),
           createdAt: r.read<int>('created_at'),
           updatedAt: r.read<int>('updated_at'),
           deletedAt: r.readNullable<int>('deleted_at'),
         ),
+        confirmerKnown: srcHasConfirmedBy,
       );
     }
+    // 否决管一整对（不分关系与方向）：逐 id 合并完再按不变量收掉落在被否决一对上的
+    // AI 生效（[FushiDatabase.enforceMediaLinkVetoes]）。
+    await _db.enforceMediaLinkVetoes();
   }
 
   /// Profiles UNION by name (device keeps its own profile + id on a name clash),

@@ -153,8 +153,9 @@ void main() {
       // 正反锚原先挂在页头统计钮上，统计入口收敛到首页 dashboard 后那颗钮已撤——
       // 只删正锚会让反锚 `onPressed: _openStatistics` 变成对不存在符号的恒真断言，
       // 整条不变式零覆盖。锚点迁到仍在页头的收藏夹钮；收藏夹入口收敛到首页
-      // dashboard（2026-10-14）后再迁到「管理来源」钮。
-      expect(videoSrc.contains('onTap: _openManageSources'), isTrue);
+      // dashboard（2026-10-14）后再迁到「管理来源」钮；#3515 把独立使用时的「管理
+      // 来源」收进页头「⋯」（FushiHeaderMoreEntry.onSelected），锚点跟随。
+      expect(videoSrc.contains('onSelected: _openManageSources'), isTrue);
       expect(
         videoSrc.contains('onPressed: _openManageSources'),
         isFalse,

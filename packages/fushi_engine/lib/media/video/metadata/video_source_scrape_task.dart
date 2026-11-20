@@ -248,14 +248,24 @@ class VideoSourceScrapeConfirmation {
     required this.localWorkTitle,
     required List<VideoSourceScrapeConfirmationCandidate> candidates,
     this.aiSuggestion,
+    this.strictMatches = false,
+    this.workStableKey,
   }) : candidates = List<VideoSourceScrapeConfirmationCandidate>.unmodifiable(
          candidates,
        );
+
+  /// 候选都通过了严格匹配门、只是不止一条（见
+  /// `VideoMetadataResolution.strictMatches`）；false = 只是可能的候选。
+  final bool strictMatches;
 
   final int sourceId;
   final String sourceLabel;
   final String localWorkTitle;
   final List<VideoSourceScrapeConfirmationCandidate> candidates;
+
+  /// 待确认作品单元的键（`book:<uid>` / `collection:<id>`，与计划器 `stableKey`
+  /// 同一把）。回答前据此抓认领撤销快照；不经协调器构造的确认项可以没有。
+  final String? workStableKey;
 
   /// AI 的倾向（置信度没到自动采用门槛才会走到人工确认）；null = 没问 AI 或
   /// AI 没有倾向。只作提示，选哪条仍由用户决定。

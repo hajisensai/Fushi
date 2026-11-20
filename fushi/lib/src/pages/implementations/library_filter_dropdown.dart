@@ -33,9 +33,13 @@ class LibraryFilterDropdown<T extends Object> extends StatelessWidget {
     required this.allLabel,
     required this.onSelected,
     super.key,
+    this.itemKeyOf,
   });
 
   final T? value;
+
+  /// 菜单项的 key（测试 / 焦点驱动按它找项）；参数 null = 「全部」项。缺省不挂。
+  final Key? Function(T? value)? itemKeyOf;
 
   /// 「全部」之后的菜单项顺序。
   final List<T> options;
@@ -53,11 +57,13 @@ class LibraryFilterDropdown<T extends Object> extends StatelessWidget {
       onSelected: (_FilterChoice<T> choice) => onSelected(choice.value),
       itemBuilder: (BuildContext context) => <PopupMenuEntry<_FilterChoice<T>>>[
         PopupMenuItem<_FilterChoice<T>>(
+          key: itemKeyOf?.call(null),
           value: _FilterChoice<T>(null),
           child: Text(allLabel),
         ),
         for (final T option in options)
           PopupMenuItem<_FilterChoice<T>>(
+            key: itemKeyOf?.call(option),
             value: _FilterChoice<T>(option),
             child: Text(labelOf(option)),
           ),

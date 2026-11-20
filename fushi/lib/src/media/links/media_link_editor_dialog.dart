@@ -17,7 +17,8 @@ import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:material_ui/material_ui.dart';
 
-String _themeSongRoleLabel(ThemeSongRole r) => switch (r) {
+/// 主题曲角色（OP / ED / 插入曲 / 主题曲）的显示名；编辑对话框与关系网边标签共用。
+String mediaLinkThemeSongRoleLabel(ThemeSongRole r) => switch (r) {
   ThemeSongRole.op => t.music_theme_song_role_op,
   ThemeSongRole.ed => t.music_theme_song_role_ed,
   ThemeSongRole.insert => t.music_theme_song_role_insert,
@@ -222,7 +223,7 @@ class _MediaLinkEditorDialogState extends State<MediaLinkEditorDialog> {
                                 in kMediaLinkPickableThemeSongRoles)
                               ButtonSegment<ThemeSongRole>(
                                 value: r,
-                                label: Text(_themeSongRoleLabel(r)),
+                                label: Text(mediaLinkThemeSongRoleLabel(r)),
                               ),
                           ],
                           selected: <ThemeSongRole>{_themeSongRole},

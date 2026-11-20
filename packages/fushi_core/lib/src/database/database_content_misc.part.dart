@@ -1632,6 +1632,9 @@ mixin _FushiDbContentMisc
       // v77：标签映射是逻辑外键，随宿主显式清理（附属 SRT 行也一并清）。
       await deleteTagAssignmentsForHost(TagHostKind.srt, uid);
     }
+    // v155：单本刮削资料 / 附加图是逻辑外键，随宿主同事务清（附属 SRT 行一并清；
+    // 图片文件由删除路径之后的 ItemImageStore 回收扫）。
+    await _purgeItemScrapeRows(this, MediaKind.srt, srtUids);
     await (delete(srtBooks)..where((t) => t.bookKey.equals(bookKey))).go();
     await deleteTagAssignmentsForHost(TagHostKind.epub, bookKey);
     // Audiobook + its cues are keyed directly by bookKey now.
@@ -1645,6 +1648,7 @@ mixin _FushiDbContentMisc
       // v83 顺手修的历史缺口：epub 删除此前不清合集成员行 → 计数虚高、
       // 移空自删失效、孤儿被 sync 原样发布。与 video/game 删除路径对齐。
       await removeEntryFromAllCollections(MediaKind.epub, bookUid);
+      await _purgeItemScrapeRows(this, MediaKind.epub, <String>[bookUid]);
     }
     if (tombstone) {
       await into(bookTombstones).insertOnConflictUpdate(

@@ -1007,6 +1007,7 @@ class _HashService extends AnidbHashIdentityService {
          config: const AnidbUdpConfig(
            username: 'user',
            password: 'test',
+           apiKey: 'udp-key',
            clientName: 'testclient',
            clientVersion: 1,
          ),

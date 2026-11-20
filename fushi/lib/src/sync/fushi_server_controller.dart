@@ -13,6 +13,7 @@ import 'package:fushi/src/platform/desktop/desktop_device_info_service.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart';
 import 'package:fushi_engine/sync/fushi_screen_ocr_host.dart';
+import 'package:fushi_engine/sync/torrent_engine/host_torrent_engine.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -113,6 +114,7 @@ class FushiSyncServerController extends ChangeNotifier {
     Future<HostJobManager> Function()? hostJobsFactory,
     HostDownloadHost Function()? downloadsFactory,
     HostSubscriptionHost Function()? subscriptionsFactory,
+    HostTorrentEngine Function()? torrentEngineFactory,
     HostAssistantProvider Function()? assistantFactory,
     VideoSubtitleBackfillRunner? videoSubtitleBackfill,
     GraphicSubtitleTrackExporter? graphicSubtitleTrackExporter,
@@ -142,6 +144,7 @@ class FushiSyncServerController extends ChangeNotifier {
        _hostJobsFactory = hostJobsFactory,
        _downloadsFactory = downloadsFactory,
        _subscriptionsFactory = subscriptionsFactory,
+       _torrentEngineFactory = torrentEngineFactory,
        _assistantFactory = assistantFactory,
        _videoSubtitleBackfill = videoSubtitleBackfill,
        _graphicSubtitleTrackExporter =
@@ -190,6 +193,10 @@ class FushiSyncServerController extends ChangeNotifier {
   final Future<HostJobManager> Function()? _hostJobsFactory;
   final HostDownloadHost Function()? _downloadsFactory;
   final HostSubscriptionHost Function()? _subscriptionsFactory;
+
+  /// 把本机 BT 引擎借给已配对设备（`/api/torrent-engine`，对端「下载后端 =
+  /// 互联设备」）。
+  final HostTorrentEngine Function()? _torrentEngineFactory;
 
   /// AI 助手会话（`/api/assistant`：手机把一句话交给本机的 AI 去办）。
   final HostAssistantProvider Function()? _assistantFactory;
@@ -853,6 +860,7 @@ class FushiSyncServerController extends ChangeNotifier {
             hostJobs: hostJobs,
             downloads: _downloadsFactory?.call(),
             subscriptions: _subscriptionsFactory?.call(),
+            torrentEngine: _torrentEngineFactory?.call(),
             assistant: _assistantFactory?.call(),
             securityContext: securityContext,
             hostFingerprint: hostFingerprint,

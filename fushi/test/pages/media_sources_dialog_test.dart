@@ -16,6 +16,8 @@ import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/import/import_surface_spec.dart'
+    show importNetworkTransports;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
@@ -492,16 +494,27 @@ void main() {
         // 四选、视频去掉 FTP，见 _networkTransports），测试连接复用 sync 子系统的
         // WebDavSyncBackend（PROPFIND 探活），凭据仍走 saveSecret（上面的红线守卫
         // 覆盖），绝不作为列写进来源行。
+        // #3515（IM10）起 transport 集的真相源是 import_surface_spec 的
+        // [importNetworkTransports]（导入页网络共享块的说明也从它派生），来源页
+        // 只转发——这里钉转发 + 直接测真相源的取值。
         expect(
-          src.contains("const <String>['sftp', 'ftp', 'webdav', 'alist']"),
+          src.contains('importNetworkTransports(widget.mediaKind)'),
           isTrue,
-          reason: '书/漫画的网络来源 transport 集必须提供 SFTP/FTP/WebDAV/AList 四选',
+          reason: '来源页的 transport 集必须取自 importNetworkTransports',
         );
-        expect(
-          src.contains("const <String>['sftp', 'webdav', 'alist']"),
-          isTrue,
-          reason: '视频网络来源必须收窄到 SFTP/WebDAV/AList（FTP 读不了区间不可 seek）',
-        );
+        for (final String kind in <String>['book', 'manga']) {
+          expect(importNetworkTransports(kind), <String>[
+            'sftp',
+            'ftp',
+            'webdav',
+            'alist',
+          ], reason: '书/漫画的网络来源 transport 集必须提供 SFTP/FTP/WebDAV/AList 四选');
+        }
+        expect(importNetworkTransports('video'), <String>[
+          'sftp',
+          'webdav',
+          'alist',
+        ], reason: '视频网络来源必须收窄到 SFTP/WebDAV/AList（FTP 读不了区间不可 seek）');
         expect(
           src.contains('WebDavSyncBackend.instance.testConnection'),
           isTrue,

@@ -17,6 +17,7 @@ import 'package:fushi_core/fushi_core.dart' show MediaTrackingMappingRow;
 import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/home_widget_layout.dart';
@@ -26,7 +27,12 @@ import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart'
 import 'package:fushi/src/pages/implementations/activity_feed.dart'
     show formatActivityRelativeTime;
 import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
+import 'package:fushi/src/utils/components/fushi_cover_block.dart'
+    show FushiCoverBlockColors, FushiCoverBlockSize, fushiCoverBlockShape;
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_poster_block.dart';
+import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
+    show shelfCoverCard;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -43,6 +49,7 @@ class HomeTrackingSummary {
     required this.failed,
     required this.pending,
     required this.lastSyncAt,
+    this.linked = 0,
   });
 
   factory HomeTrackingSummary.of(MediaTrackingHomeSnapshot snapshot) {
@@ -51,9 +58,11 @@ class HomeTrackingSummary {
     int failed = 0;
     int pending = 0;
     int lastSyncAt = 0;
+    final Set<String> connectedIds = <String>{};
     for (final MediaTrackingProviderStatus site in snapshot.sites) {
       if (!site.enabled || !site.configured) continue;
       connected++;
+      connectedIds.add(site.providerId);
       if (site.unauthorized) signInNeeded++;
       failed += site.failures.length;
       pending += site.pending;
@@ -67,6 +76,10 @@ class HomeTrackingSummary {
       failed: failed,
       pending: pending,
       lastSyncAt: lastSyncAt,
+      linked: <String>{
+        for (final MediaTrackingMappingRow m in snapshot.mappings)
+          if (connectedIds.contains(m.provider)) '${m.mediaType}|${m.mediaKey}',
+      }.length,
     );
   }
 
@@ -96,6 +109,10 @@ class HomeTrackingSummary {
 
   /// Latest sync attempt on any connected site (epoch ms; 0 = never).
   final int lastSyncAt;
+
+  /// Local titles linked on at least one connected site (the "N synced" the
+  /// collage block shows when nothing needs the user).
+  final int linked;
 
   /// Something the user has to do: sign in again, link a title, or look at a
   /// send that keeps failing.
@@ -329,6 +346,273 @@ class HomeTrackingPanel extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// Hue of the collage Tracking block: red-ish while something needs the user,
+/// green-ish when everything is fine (design H6).
+double homeTrackingPosterHue(HomeTrackingSummary summary) =>
+    summary.needsAttention || summary.connected == 0 ? 350 : 140;
+
+/// The big figure of the collage block: the titles waiting to be linked while
+/// there are any, otherwise the linked titles.
+int homeTrackingPosterFigure(HomeTrackingSummary summary) =>
+    summary.unlinked > 0 ? summary.unlinked : summary.linked;
+
+/// The chips under the figure of the collage block: the problems other than
+/// "to link" (that one is the figure), or, when nothing needs the user, what
+/// is still queued and when the last sync ran.
+List<String> homeTrackingPosterChips(
+  HomeTrackingSummary summary,
+  DateTime now,
+) {
+  if (summary.connected == 0) return const <String>[];
+  if (summary.needsAttention) {
+    return <String>[
+      if (summary.signInNeeded > 0) t.home_tracking_panel_sign_in,
+      if (summary.failed > 0) t.home_tracking_panel_failed(n: summary.failed),
+    ];
+  }
+  return <String>[
+    if (summary.pending > 0) t.media_tracking_pending_count(n: summary.pending),
+    if (summary.lastSyncAt > 0)
+      formatActivityRelativeTime(summary.lastSyncAt, now),
+  ];
+}
+
+/// The home Tracking block in the collage layout (design H6): one whole block
+/// coloured by state. While titles wait to be linked the figure is that count
+/// (also the watermark), the other problems are chips, the covers of the
+/// waiting titles fan out on the end side and "Fix ›" sits bottom-end. When
+/// nothing needs the user it says how many titles are synced and when the
+/// last sync ran. Tapping anywhere opens the Tracking page (same as [onOpen]).
+class HomeTrackingPoster extends StatelessWidget {
+  const HomeTrackingPoster({
+    super.key,
+    required this.summary,
+    required this.covers,
+    required this.onOpen,
+    required this.height,
+  });
+
+  final HomeTrackingSummary summary;
+
+  /// Covers of the titles waiting to be linked (at most three are drawn).
+  final List<Widget> covers;
+  final VoidCallback onOpen;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final FushiCoverBlockColors colors = FushiCoverBlockColors.fromHue(
+      theme,
+      homeTrackingPosterHue(summary),
+    );
+    final TextStyle base = theme.textTheme.bodyMedium ?? const TextStyle();
+    final Color muted = colors.onContainer.withValues(alpha: 0.8);
+    final bool attention = summary.needsAttention;
+    final bool action = attention || summary.connected == 0;
+    final int figure = homeTrackingPosterFigure(summary);
+    final String counted = summary.unlinked > 0
+        ? t.home_tracking_panel_to_link(n: figure)
+        : t.home_tracking_panel_synced(n: figure);
+    // The counted phrase split around the figure, so the number is big and
+    // the words stay small on whichever side the language puts them
+    // ("12 to link", "已同步 12 项", "Карт: 12").
+    final int at = counted.indexOf('$figure');
+    final String before = at < 0 ? '' : counted.substring(0, at).trim();
+    final String after = at < 0
+        ? counted
+        : counted.substring(at + '$figure'.length).trim();
+    final DateTime now = DateTime.now();
+    final List<String> chips = homeTrackingPosterChips(summary, now);
+    final List<Widget> shown = covers.take(3).toList();
+    final String text = homeTrackingPanelText(summary, now);
+
+    final Widget figureText = summary.connected == 0
+        ? Text(
+            t.home_tracking_panel_not_connected,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: FushiPosterText.name.on(base).copyWith(color: colors.accent),
+          )
+        : Text.rich(
+            TextSpan(
+              children: <InlineSpan>[
+                if (before.isNotEmpty)
+                  TextSpan(
+                    text: '$before ',
+                    style: FushiPosterText.meta.on(base).copyWith(color: muted),
+                  ),
+                TextSpan(
+                  text: '$figure',
+                  style: FushiPosterText.headline
+                      .on(base)
+                      .copyWith(color: colors.accent),
+                ),
+                if (after.isNotEmpty)
+                  TextSpan(
+                    text: ' $after',
+                    style: FushiPosterText.meta.on(base).copyWith(color: muted),
+                  ),
+              ],
+            ),
+            key: const ValueKey<String>('home-tracking-panel-figure'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          );
+
+    final Widget info = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: <Widget>[
+        Row(
+          spacing: 6,
+          children: <Widget>[
+            FushiIcon(
+              attention ? FushiIcons.syncProblem : FushiIcons.sync,
+              size: 14,
+              color: muted,
+            ),
+            Flexible(
+              child: Text(
+                t.home_tracking_panel_title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: FushiPosterText.meta.on(base).copyWith(color: muted),
+              ),
+            ),
+          ],
+        ),
+        figureText,
+        if (chips.isNotEmpty)
+          SizedBox(
+            height: 26,
+            child: ClipRect(
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: <Widget>[
+                  for (final String chip in chips)
+                    FushiPosterChip(colors: colors, label: chip),
+                ],
+              ),
+            ),
+          )
+        else
+          const SizedBox.shrink(),
+      ],
+    );
+
+    final Widget end = Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: <Widget>[
+        if (shown.isNotEmpty)
+          _HomeTrackingCoverFan(covers: shown)
+        else
+          const SizedBox.shrink(),
+        if (action)
+          FushiPosterChip(
+            key: const ValueKey<String>('home-tracking-panel-action'),
+            colors: colors,
+            solid: true,
+            label:
+                '${summary.connected == 0 ? t.home_tracking_panel_connect : t.home_tracking_panel_resolve} ›',
+          )
+        else
+          const SizedBox.shrink(),
+      ],
+    );
+
+    final Widget poster = LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints box) => FushiPosterBlock(
+        // The figure doubles as the watermark, boxed into the end half.
+        watermark: summary.unlinked > 0 ? '$figure' : '',
+        watermarkEdge: FushiPosterWatermarkEdge.bottom,
+        watermarkStart: box.maxWidth.isFinite ? box.maxWidth * 0.5 : 0,
+        watermarkFontSize: 90,
+        colors: colors,
+        padding: const EdgeInsets.all(16),
+        child: SizedBox(
+          height: height - 32,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            spacing: 12,
+            children: <Widget>[
+              Expanded(child: info),
+              end,
+            ],
+          ),
+        ),
+      ),
+    );
+
+    return Semantics(
+      key: const ValueKey<String>('home-tracking-panel'),
+      container: true,
+      label: '${t.home_tracking_panel_title} · $text',
+      child: SizedBox(
+        height: height,
+        child: shelfCoverCard(
+          key: const ValueKey<String>('home-tracking-panel-open'),
+          shape: fushiCoverBlockShape(context, FushiCoverBlockSize.regular),
+          onTap: onOpen,
+          child: poster,
+        ),
+      ),
+    );
+  }
+}
+
+/// Up to three covers fanned out (the outer ones tilted), the collage "stack".
+class _HomeTrackingCoverFan extends StatelessWidget {
+  const _HomeTrackingCoverFan({required this.covers});
+
+  final List<Widget> covers;
+
+  static const double _width = 30;
+  static const double _height = 44;
+  static const double _overlap = 14;
+
+  /// Tilt of cover [i] of [n]: the outer two lean out, the middle stays up.
+  static double _angle(int i, int n) {
+    if (n == 1) return 0;
+    if (n == 2) return i == 0 ? -0.14 : 0.14;
+    return (i - 1) * 0.14;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final int n = covers.length;
+    return ExcludeSemantics(
+      child: SizedBox(
+        width: _width + (n - 1) * (_width - _overlap) + 8,
+        height: _height + 6,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: <Widget>[
+            for (int i = 0; i < n; i++)
+              PositionedDirectional(
+                start: 4 + i * (_width - _overlap),
+                top: 3,
+                child: Transform.rotate(
+                  angle: _angle(i, n),
+                  child: ClipRRect(
+                    borderRadius: FushiBorderRadius.chip,
+                    child: SizedBox(
+                      width: _width,
+                      height: _height,
+                      child: covers[i],
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }

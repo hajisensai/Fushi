@@ -7324,6 +7324,27 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// AI 库管家自动路径（spec docs/specs/2026-11-18-ai-library-curator-design.md §9，
+  /// 所有者 2026-11-18 拍板**默认开**）：入库 / 扫描后去抖跑一趟库管家（合集归属 →
+  /// 认身份 → 关系推断 → 作品层）。没给任何一步指派 AI 提供商时不发任何 AI 请求；
+  /// 开着时它取代旧的「导入后自动整理」（[libraryOrganizeAuto] 只在它关掉时生效，
+  /// 两套自动任务不会重复跑）。设备本地。
+  bool get libraryCurateAuto =>
+      getPref('library_curate_auto', defaultValue: true) as bool;
+
+  Future<void> setLibraryCurateAuto(bool value) async {
+    await setPref('library_curate_auto', value);
+    notifyListeners();
+  }
+
+  /// AI 库管家的本机状态（JSON：运行记录、增量水位、进度、抑制清单，见
+  /// `LibraryCurateState`）。设备本地，丢了只是下一趟当首趟全量跑。
+  String get libraryCurateState =>
+      getPref('library_curate_state', defaultValue: '') as String;
+
+  Future<void> setLibraryCurateState(String value) =>
+      setPref('library_curate_state', value);
+
   Future<void> setMangaOnlineCatalogEnabled(bool value) async {
     await setPref('manga_online_catalog_enabled', value);
     notifyListeners();

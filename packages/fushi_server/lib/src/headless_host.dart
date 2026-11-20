@@ -27,6 +27,8 @@ import 'package:fushi_engine/sync/interconnect_p2p.dart';
 import 'package:fushi_engine/srs/sync2/srs_host_directory.dart'
     show srsHostUploadedSegmentDevice;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/video_local_files.dart'
+    show videoBookDiscTitlePath, videoBookEpisodePath;
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show VideoSubtitleBackfillReport;
@@ -70,6 +72,7 @@ import 'package:fushi_server/src/dictionary_host.dart';
 import 'package:fushi_server/src/download_host.dart';
 import 'package:fushi_server/src/host_bindings.dart';
 import 'package:fushi_server/src/lan_advertiser.dart';
+import 'package:fushi_server/src/peer_torrent_engine.dart';
 import 'package:fushi_server/src/leaderboard_link_host.dart';
 import 'package:fushi_server/src/profile_hub.dart';
 import 'package:fushi_server/src/remote_mining_host.dart';
@@ -408,6 +411,7 @@ class HeadlessHost {
           pipelineJobsRoot: videoSubtitleJobsRootUnder(paths.support),
           database: () => db,
           resolveVideoPath: _resolveVideoPath,
+          resolveDiscTitlePath: _resolveDiscTitlePath,
           aiSettings: () => ServerAiSettings(() => config.ai),
           mossStatus: (MossBackendPreference backend) =>
               mossProvisionStatus(backend: backend),
@@ -438,6 +442,8 @@ class HeadlessHost {
       // 字幕语言现读配置（WebUI 改完经 applyConfig 进来，下一个任务的字幕阶段生效）。
       subtitleLanguage: () => config.subtitleLanguage,
       subtitleRegistryFactory: _subtitleRegistryFactory,
+      // 远程任务的落盘白名单现读配置：`ctl settings set` 改完下一条命令即生效。
+      peerTorrentRoots: () => config.torrentPeerRoots,
     );
     await downloads.start();
     _downloads = downloads;
@@ -524,6 +530,8 @@ class HeadlessHost {
             ),
             hostJobs: jobs,
             downloads: downloads,
+            // 把本机 BT 引擎借给已配对设备当下载后端（桌面端「下载后端 = 互联设备」）。
+            torrentEngine: ServerPeerTorrentEngine(downloads),
             subscriptions: downloads.subscriptions,
             securityContext: securityContext,
             hostFingerprint: _hostFingerprint,
@@ -979,13 +987,41 @@ class HeadlessHost {
         enabled: () => config.leaderboardLink,
       );
 
-  /// `asr` 任务的 `videoId` → host 库里的视频文件（分集 0）。
-  Future<String?> _resolveVideoPath(String videoId) async {
+  /// `asr` / `video_subtitle` 任务的 `videoId`（+ 播放列表集下标 [episodeIndex]）→
+  /// host 库里那一集的视频文件；按集取文件与播放端点同一判据（[videoBookEpisodePath]）。
+  Future<String?> _resolveVideoPath(
+    String videoId, {
+    int episodeIndex = 0,
+  }) async {
     final VideoBookRow? row = await VideoBookRepository(
       db,
     ).getByBookUid(videoId);
     if (row == null) return null;
-    return await hasLocalMediaFile(row.videoPath) ? row.videoPath : null;
+    final String? path = videoBookEpisodePath(
+      videoPath: row.videoPath,
+      playlistJson: row.playlistJson,
+      episodeIndex: episodeIndex,
+    );
+    if (path == null) return null;
+    return await hasLocalMediaFile(path) ? path : null;
+  }
+
+  /// host 库里那一行所在蓝光盘上的另一条 title（远端原盘会话里库中没有行的 title）；
+  /// 判据是 [videoBookDiscTitlePath]，与 app 当 host 同一份。
+  Future<String?> _resolveDiscTitlePath(
+    String videoId,
+    String discTitle,
+  ) async {
+    final VideoBookRow? row = await VideoBookRepository(
+      db,
+    ).getByBookUid(videoId);
+    if (row == null) return null;
+    final String? path = videoBookDiscTitlePath(
+      videoPath: row.videoPath,
+      discTitle: discTitle,
+    );
+    if (path == null) return null;
+    return await hasLocalMediaFile(path) ? path : null;
   }
 
   // ── 库服务 ────────────────────────────────────────────────────────────

@@ -8,7 +8,7 @@
 /// ```
 /// fushi_server ctl status
 /// fushi_server ctl logs
-/// fushi_server ctl pairing [ls] | pairing revoke <peerId> | pairing owner <peerId> on|off
+/// fushi_server ctl pairing [ls] | pairing link | pairing revoke <peerId> | pairing owner <peerId> on|off
 /// fushi_server ctl libraries [ls] | libraries add <path> [--kind video|book|manga|audiobook] [--id x]
 ///                                 | libraries rm <id> [--purge]
 /// fushi_server ctl scan [--prune | --no-prune]
@@ -220,6 +220,7 @@ fushi_server ctl <action> [args] --interconnect https://127.0.0.1:38765 --passwo
   status                                   运行状态
   logs [-f|--follow]                       最近日志（-f 持续跟随）
   pairing [ls] | revoke <peerId>           已配对设备 / 待确认 PIN
+  pairing link                             出一次性配对链接（对端 `fushi_cli peer pair <链接> --yes`）
   pairing owner <peerId> on|off            标记 / 取消「我的设备」（可跟随本机排行榜账户自动登录）
   libraries [ls] | add <path> [--kind video|book|manga|audiobook] [--id x] | rm <id> [--purge]
   scan [--prune|--no-prune]                触发一次库扫描（后台进行）
@@ -270,6 +271,7 @@ fushi_server ctl <action> [args] --interconnect https://127.0.0.1:38765 --passwo
   status                                   Run status
   logs [-f|--follow]                       Recent logs (-f keeps following)
   pairing [ls] | revoke <peerId>           Paired devices / pending PINs
+  pairing link                             Issue a one-time pairing link (peer: `fushi_cli peer pair <link> --yes`)
   pairing owner <peerId> on|off            Mark / unmark "my device" (may follow the local leaderboard account for auto sign-in)
   libraries [ls] | add <path> [--kind video|book|manga|audiobook] [--id x] | rm <id> [--purge]
   scan [--prune|--no-prune]                Trigger a library scan (runs in the background)
@@ -809,6 +811,12 @@ _CtlRequest? _parseAction(
             '$_api/pairing',
             render: _renderPairing,
           );
+        case 'link':
+          return const _CtlRequest(
+            'POST',
+            '$_api/pairing/link',
+            render: _renderPairLink,
+          );
         case 'revoke' when arg(0) != null:
           return _CtlRequest(
             'DELETE',
@@ -822,7 +830,8 @@ _CtlRequest? _parseAction(
           );
       }
       return usage(
-        'pairing [ls] | pairing revoke <peerId> | pairing owner <peerId> on|off',
+        'pairing [ls] | pairing link | pairing revoke <peerId> | '
+        'pairing owner <peerId> on|off',
       );
 
     case 'libraries':
@@ -1329,6 +1338,23 @@ void _renderLogs(Object? response, StringSink out) {
   if (lines is! List) return _renderGeneric(response, out);
   for (final Object? line in lines) {
     out.writeln('$line');
+  }
+}
+
+/// `pairing link`：一行链接 + 有效期，链接单独成行方便复制 / 管道。
+void _renderPairLink(Object? response, StringSink out) {
+  if (response is! Map || response['uri'] == null) {
+    return _renderGeneric(response, out);
+  }
+  out.writeln(response['uri']);
+  final Object? ttl = response['expiresInSeconds'];
+  if (ttl is num) {
+    out.writeln(
+      tr(
+        '（${ttl.toInt()} 秒内有效，只能用一次）',
+        '(valid for ${ttl.toInt()} s, single use)',
+      ),
+    );
   }
 }
 

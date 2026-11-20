@@ -20,6 +20,7 @@ import 'package:path/path.dart' as p;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_music/fushi_music.dart';
 
+import 'package:fushi/src/media/import/import_choice_dialog.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/music/disc/music_audio_cd.dart';
 import 'package:fushi/src/media/music/disc/music_disc_import.dart';
@@ -92,10 +93,33 @@ Future<int> pickAndAddMusicDiscs({
     dialogTitle: t.music_disc_add,
   );
   if (path == null || !context.mounted) return 0;
-  final MusicDiscImportService service = MusicDiscImportService(app.database);
   final List<String> discs = await probeMusicDiscRoot(path) != null
       ? <String>[path]
       : await findMusicDiscRootsInBackground(path);
+  return _registerMusicDiscs(app, discs);
+}
+
+/// 导入菜单「光盘 › 光盘镜像…」：选一个或多个 `.iso` 文件登记成光盘专辑（读不出的盘
+/// 报出具体原因）。返回登记了几张。
+Future<int> pickAndAddMusicDiscImages({
+  required BuildContext context,
+  required AppModel app,
+}) async {
+  final List<String> images = await pickRealFilePaths(
+    context: context,
+    appModel: app,
+    allowedExtensions: const <String>{'iso'},
+  );
+  if (images.isEmpty || !context.mounted) return 0;
+  return _registerMusicDiscs(app, <String>[
+    for (final String path in images)
+      if (isDiscImagePath(path)) path,
+  ]);
+}
+
+/// 逐张登记 [discs]，汇总成一条提示。返回登记了几张。
+Future<int> _registerMusicDiscs(AppModel app, List<String> discs) async {
+  final MusicDiscImportService service = MusicDiscImportService(app.database);
   int added = 0;
   String? firstError;
   for (final String disc in discs) {
@@ -347,15 +371,15 @@ Future<String?> readAudioCdIntoLibrary({
     }
     drive = drives.length == 1
         ? drives.single
-        : await showFushiChoiceDialog<String>(
+        // 读 CD 属于音乐导入流程：与其它导入对话框同一套选择行（导入对话框统一）。
+        : await showImportChoiceDialog<String>(
             context: context,
             title: t.music_cd_choose_drive,
-            icon: FushiIcons.audio,
-            options: <FushiChoiceOption<String>>[
+            options: <ImportChoiceOption<String>>[
               for (final String d in drives)
-                FushiChoiceOption<String>(
+                ImportChoiceOption<String>(
                   value: d,
-                  label: d,
+                  title: d,
                   icon: FushiIcons.audio,
                 ),
             ],
@@ -406,16 +430,15 @@ Future<String?> readAudioCdIntoLibrary({
   if (releases.length == 1) {
     release = releases.single;
   } else if (releases.length > 1) {
-    release = await showFushiChoiceDialog<MusicReleaseTracklist>(
+    release = await showImportChoiceDialog<MusicReleaseTracklist>(
       context: context,
       title: t.music_disc_lookup_pick,
-      icon: FushiIcons.music,
-      options: <FushiChoiceOption<MusicReleaseTracklist>>[
+      options: <ImportChoiceOption<MusicReleaseTracklist>>[
         for (final MusicReleaseTracklist r in releases)
-          FushiChoiceOption<MusicReleaseTracklist>(
+          ImportChoiceOption<MusicReleaseTracklist>(
             value: r,
-            label: r.title,
-            subtitle: <String>[
+            title: r.title,
+            hint: <String>[
               ?r.artistCredit,
               ?r.date,
               ?r.country,

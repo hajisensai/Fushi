@@ -1,0 +1,8 @@
+## BUG-4847 · 每次切到书架，书架与藏着的漫画书架各整页重建两次（切回对账无条件换远端 future）
+- **报告**：2026-11-16（用户：转来群反馈录屏「切 tab 变卡了」；修完 BUG-4851 / BUG-4896 后列出的剩余项「可见 tab 自己的重建：书架约 33 ms」，用户回「都做都做，能优化就优化」）
+- **真实性**：✅ 真 bug（Windows profile 构建实测，探针 `fushi/integration_test/home_tab_switch_perf_itest.dart`）。每次切到书 tab：首帧 build 33～38 ms，约 100 ms 后再来一帧 24～29 ms；timeline 里两帧都是 `FutureBuilder<_RemoteBookState?>` 往下整棵书架网格重建，而且各出现两份——可见的书架一份、藏着的漫画书架一份。
+  - 根因：`fushi/lib/src/pages/implementations/reader_fushi_history_page.dart:851-857`（修前行号）`_onShellTabActivated` 在书 tab 被激活时无条件调 `_refreshRemoteBooks()`（`reader_history/remote.part.dart:220`），后者 `setState` 换一个新的 `_remoteBooksFuture`。换 future = 整页当帧重建一次、future 完成（TTL 缓存命中，几十毫秒内）再重建一次，即使远端态一字未变。书架与漫画书架是同一个 State 类的两个实例、订阅同一个信号、判的都是 `== HomeTab.books`（`:853`）：切到书 tab 时藏着的漫画书架跟着重建，切到漫画 tab 时漫画书架反而从不对账。
+  - 同一处的第二个错：进度延后重算的可见性判据两个实例也都写死 `HomeTab.books`（`:873`），且欠账各记各的——停在漫画 tab 时到达的阅读位置写入只记欠账，要切到书 tab 才失效缓存。
+- **[x] ① 已修复** — 切回对账改成「先比再换」：`remote.part.dart` 新增 `_reconcileRemoteBooksOnActivation`，照常取一遍远端态（走共享 TTL 缓存），与正在显示的那份按内容签名比（`_remoteBookStateSignature`：失败标记、占位书、配对信息、有声书更新；签名按对象缓存在 `Expando` 里），一样就什么都不动，不一样才换 future。两个实例各看各的 tab（`_shelfTab`）。进度欠账改成两个实例共用一份（`_shelfProgressReloadOwedProvider`）：书架正被看着时当场重算；另一个书架正被看着时不记欠账；都不在前台才记一笔，谁先被切回来谁补。事件驱动的调用方（下载完成、隐藏清单变更、下拉刷新）仍走 `_refreshRemoteBooks` 无条件换。提交见 PR #3534。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/reader_remote_interconnect_test.dart` 五条（真书架页 + 真 drift 库 + 假远端客户端）：「切回书架 tab 远端态没变时不换 future」「远端态变了就换上（BUG-992 的对账照旧生效）」「漫画书架按漫画 tab 对账，切到书 tab 不动它」「停在漫画 tab 时到达的进度写入由漫画书架当场重算」「两个书架都不在前台时进度写入只记一笔，切回书架补一次」。
+- **备注**：修后实测（同一探针、同一数据根，不开剖析的回访轮）：只上这一条修复时书 tab 切入首帧 19.8 / 12.7 ms，不再有第二帧；叠上 BUG-4848 后 6.2 / 3.9 ms。BUG-1181 / BUG-1180 的「TTL 内切 tab 不重复联网」不受影响（取数仍走同一份共享缓存）。

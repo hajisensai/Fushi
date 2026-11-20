@@ -200,7 +200,7 @@ void main() {
       // 收敛前是四份复制品：合集 / 游戏 / 视频（裸 AlertDialog，还过早 dispose
       // 了 controller）/ Profile。再加书、扫描根、词典本会变成七份。
       //
-      // 下面这五条是**已收编**的。游戏 `_RenameGameDialog` 与 `ProfileNameDialog`
+      // 下面这五条是**已收编**的。游戏 `GalgameRenameDialog` 与 `ProfileNameDialog`
       // 还没收，所以不在清单里——测试名不写「四个域全收了」，免得读起来像已经
       // 收干净了（守卫清单说谎比没有守卫更坏）。
       for (final (String what, String path) in <(String, String)>[

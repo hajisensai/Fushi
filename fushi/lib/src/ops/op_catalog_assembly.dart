@@ -9,12 +9,15 @@ import 'package:fushi/src/ops/op_descriptions_url_import.dart';
 import 'package:fushi/src/ops/op_descriptions_disc.dart';
 import 'package:fushi/src/ops/op_descriptions_media_links.dart';
 import 'package:fushi/src/ops/op_descriptions_book_metadata.dart';
+import 'package:fushi/src/ops/op_descriptions_library_scrape.dart';
 import 'package:fushi/src/ops/op_descriptions_srs.dart';
+import 'package:fushi/src/ops/op_descriptions_tts.dart';
 import 'package:fushi/src/ops/op_descriptions_music.dart';
 import 'package:fushi/src/ops/op_descriptions_dictionary.dart';
 import 'package:fushi/src/ops/op_descriptions_downloads.dart';
 import 'package:fushi/src/ops/op_descriptions_games.dart';
 import 'package:fushi/src/ops/op_descriptions_library.dart';
+import 'package:fushi/src/ops/op_descriptions_library_curate.dart';
 import 'package:fushi/src/ops/op_descriptions_online.dart';
 import 'package:fushi/src/ops/op_descriptions_settings.dart';
 import 'package:fushi/src/ops/op_descriptions_settings_more.dart';
@@ -30,12 +33,15 @@ List<OpDescription> buildAppOpDescriptions(OpDescribeKit kit) =>
       ...describeDownloadOps(kit),
       ...describeVideoOps(kit),
       ...describeLibraryOps(kit),
+      ...describeLibraryCurateOps(kit),
       ...describeGameOps(kit),
       ...describeDictionaryOps(kit),
       ...describeDataOps(kit),
       ...describeMusicOps(kit),
       ...describeSrsOps(kit),
+      ...describeTtsOps(kit),
       ...describeBookMetadataOps(kit),
+      ...describeLibraryScrapeOps(kit),
       ...describeMediaLinksOps(kit),
       ...describeDiscOps(kit),
       ...describeUrlImportOps(kit),

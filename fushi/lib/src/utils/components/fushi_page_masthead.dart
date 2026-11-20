@@ -8,6 +8,7 @@ import 'package:fushi/src/utils/adaptive/shell_style.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
     show FushiHeaderCrampScope;
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart'
     show FushiAppleColors, appleColorsOf;
@@ -193,6 +194,10 @@ double fushiMastheadBadgeExtent({required bool compact, double p = 0}) =>
 /// 第二行是二级页签。**版面高度恒为 p = 0 的两行总高**（内容让位不随滚动变，
 /// 不会自激）；收缩只在绘制层：各段按 [frameAt] 平移 / 缩放，页头底板按
 /// [visibleHeightAt] 收短。
+///
+/// [pinnedCollapsed]：钉在收起态（首页手机，与库页顶栏折叠后同一字号）——进度
+/// 恒为 1（[progressFor]），版面高度也取收起态（[layoutHeight] = p = 1 的可见
+/// 高度），正文让位同步收短，不空一截。
 @immutable
 class FushiMastheadGeometry {
   const FushiMastheadGeometry({
@@ -207,10 +212,18 @@ class FushiMastheadGeometry {
     required this.actions,
     required this.primary,
     required this.secondary,
+    this.pinnedCollapsed = false,
   });
 
   final bool compact;
   final double width;
+
+  /// 钉在收起态：进度恒为 1、版面高度取收起态（见类注释）。
+  final bool pinnedCollapsed;
+
+  /// 按滚动算出的进度 [scrollProgress] 换成本页头生效的进度（钉住时恒为 1）。
+  double progressFor(double scrollProgress) =>
+      pinnedCollapsed ? 1 : scrollProgress;
 
   /// 各段在 p = 0 时的版面尺寸（没有的段为 [Size.zero]）。
   final Size leading;
@@ -239,6 +252,26 @@ class FushiMastheadGeometry {
       fushiMastheadBadgeExtent(compact: compact, p: p) /
       fushiMastheadBadgeExtent(compact: compact);
 
+  /// 主按钮缩放：收起态页名缩到 28 时主按钮（头像 / 导入）跟着从 48 缩到 40，
+  /// 免得一颗大圆压过页名（2026-11-16 用户：顶栏比例不协调）。
+  double primaryScaleAt(double p) =>
+      primary.height <= 0 ? 1 : _lerp(1, 40 / primary.height, p).clamp(0, 1);
+
+  /// 第一行里动作组 / 主按钮占的高度（主按钮按 [primaryScaleAt] 缩放后）。
+  double actionRowExtentAt(double p) =>
+      math.max(actions.height, primary.height * primaryScaleAt(p));
+
+  /// 页名的下边距：展开态贴底（大字压住整行）；收起态逐步抬到与动作组垂直
+  /// 居中，小字页名不再坠在一排图标的下沿。
+  double titleLiftAt(double p) {
+    if (title.height <= 0) return 0;
+    final double centered =
+        actionLiftAt(p) +
+        actionRowExtentAt(p) / 2 -
+        title.height * titleScaleAt(p) / 2;
+    return math.max(0.0, centered) * p;
+  }
+
   /// 面板上内边距：桌面 26 → 10；手机的状态栏由外壳让开，只留 8。
   double topPadAt(double p) => compact ? 8 : _lerp(26, 10, p);
 
@@ -266,7 +299,9 @@ class FushiMastheadGeometry {
   double firstRowHeightAt(double p) {
     double h = 0;
     if (leading.height > 0) h = math.max(h, leading.height + actionLiftAt(p));
-    if (title.height > 0) h = math.max(h, title.height * titleScaleAt(p));
+    if (title.height > 0) {
+      h = math.max(h, title.height * titleScaleAt(p) + titleLiftAt(p));
+    }
     if (badge.height > 0) {
       h = math.max(h, badge.height * badgeScaleAt(p) + badgeLiftAt(p));
     }
@@ -277,7 +312,9 @@ class FushiMastheadGeometry {
       );
     }
     if (actions.height > 0) h = math.max(h, actions.height + actionLiftAt(p));
-    if (primary.height > 0) h = math.max(h, primary.height + actionLiftAt(p));
+    if (primary.height > 0) {
+      h = math.max(h, primary.height * primaryScaleAt(p) + actionLiftAt(p));
+    }
     return h;
   }
 
@@ -285,9 +322,10 @@ class FushiMastheadGeometry {
   double rowGapAt(double p) =>
       math.max(0.0, _lerp(14, 8, p) - _kSegmentHitBand);
 
-  /// 面板下内边距：桌面 12、手机 8（二级页签的下命中带算在里面）。
+  /// 面板下内边距：桌面 12、手机 16（二级页签的下命中带算在里面）。手机原为 8，
+  /// 比页边距 / 卡片间距都小，首张卡贴着顶栏（2026-11-16 用户反馈）。
   double get bottomPad =>
-      (compact ? 8 : 12) - (hasSecondary ? _kSegmentHitBand : 0);
+      (compact ? 16 : 12) - (hasSecondary ? _kSegmentHitBand : 0);
 
   double secondaryTopAt(double p) =>
       topPadAt(p) + firstRowHeightAt(p) + rowGapAt(p);
@@ -299,8 +337,8 @@ class FushiMastheadGeometry {
       (hasSecondary ? rowGapAt(p) + secondary.height : 0) +
       bottomPad;
 
-  /// 版面高度（恒为展开态）。
-  double get layoutHeight => visibleHeightAt(0);
+  /// 版面高度：恒为展开态；钉在收起态时恒为收起态。
+  double get layoutHeight => visibleHeightAt(pinnedCollapsed ? 1 : 0);
 
   /// 进度 [p] 下页头比展开态少画的那段高度。
   double collapseAt(double p) =>
@@ -310,6 +348,7 @@ class FushiMastheadGeometry {
   bool operator ==(Object other) =>
       other is FushiMastheadGeometry &&
       other.compact == compact &&
+      other.pinnedCollapsed == pinnedCollapsed &&
       other.width == width &&
       other.leading == leading &&
       other.title == title &&
@@ -324,6 +363,7 @@ class FushiMastheadGeometry {
   @override
   int get hashCode => Object.hash(
     compact,
+    pinnedCollapsed,
     width,
     leading,
     title,
@@ -345,7 +385,6 @@ const double _kSegmentGap = 3;
 const double _kSegmentInnerRadius = 8;
 const double _kSegmentOuterRadius = 20;
 const double _kSegmentPadding = 16;
-const double _kSegmentPressedPadding = 22;
 
 /// 换页签 / 换页名时的入场位移（逻辑 px）：小幅位移 + 淡入，不做大幅滑动。
 const double _kMastheadEnterTravel = 28;
@@ -833,15 +872,11 @@ class _MastheadSegment extends StatefulWidget {
 
 class _MastheadSegmentState extends State<_MastheadSegment> {
   bool _hovered = false;
-  bool _pressed = false;
 
-  void _setPressed(bool value) {
-    if (_pressed == value) return;
-    setState(() => _pressed = value);
-  }
-
+  /// 首 / 中 / 尾按位置定圆角（外侧 20、内侧 8），选中与否不改外形——四项同形
+  /// 同高、只靠填充色 / 前景色区分选中（设计稿 V4）。
   BorderRadiusDirectional _radius() {
-    if (widget.selected || (widget.first && widget.last)) {
+    if (widget.first && widget.last) {
       return BorderRadiusDirectional.circular(_kSegmentOuterRadius);
     }
     const Radius inner = Radius.circular(_kSegmentInnerRadius);
@@ -867,9 +902,6 @@ class _MastheadSegmentState extends State<_MastheadSegment> {
     final TextStyle style = fushiMastheadSegmentLabelStyle(
       context,
     ).copyWith(color: ink);
-    final double padding = _pressed
-        ? _kSegmentPressedPadding
-        : _kSegmentPadding;
     // 一个按钮一个语义节点：名称、选中、点按都挂在这一层，子树（文字、手势）
     // 不再各出节点，不靠 MergeSemantics 合并。
     return Semantics(
@@ -887,43 +919,41 @@ class _MastheadSegmentState extends State<_MastheadSegment> {
         child: MouseRegion(
           cursor: SystemMouseCursors.click,
           onEnter: (_) => setState(() => _hovered = true),
-          onExit: (_) => setState(() {
-            _hovered = false;
-            _pressed = false;
-          }),
+          onExit: (_) => setState(() => _hovered = false),
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTapDown: (_) => _setPressed(true),
-            onTapUp: (_) => _setPressed(false),
-            onTapCancel: () => _setPressed(false),
             onTap: widget.onTap,
             // 视觉 40、命中 48：上下各补 [_kSegmentHitBand] 的透明命中带。
             child: SizedBox(
               height: _kSegmentHitHeight,
+              // 按压只做不占布局的缩放（[FushiPressScale]），不再加宽内边距——
+              // 四项的宽高在按压时也不变（设计稿 V4）。
               child: Center(
-                child: AnimatedContainer(
-                  duration: motion.effectsDefault.duration,
-                  curve: motion.effectsDefault.curve,
-                  height: _kSegmentHeight,
-                  decoration: ShapeDecoration(
-                    color: fill,
-                    shape: shellShape(context, _radius()),
-                  ),
-                  child: AnimatedPadding(
-                    duration: motion.spatialFast.duration,
-                    curve: motion.spatialFast.curve,
-                    padding: EdgeInsets.symmetric(horizontal: padding),
-                    child: Center(
-                      widthFactor: 1,
-                      child: AnimatedDefaultTextStyle(
-                        duration: motion.effectsDefault.duration,
-                        curve: motion.effectsDefault.curve,
-                        style: style,
-                        child: Text(
-                          widget.label,
-                          key: widget.labelKey,
-                          maxLines: 1,
-                          softWrap: false,
+                child: FushiPressScale(
+                  child: AnimatedContainer(
+                    duration: motion.effectsDefault.duration,
+                    curve: motion.effectsDefault.curve,
+                    height: _kSegmentHeight,
+                    decoration: ShapeDecoration(
+                      color: fill,
+                      shape: shellShape(context, _radius()),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: _kSegmentPadding,
+                      ),
+                      child: Center(
+                        widthFactor: 1,
+                        child: AnimatedDefaultTextStyle(
+                          duration: motion.effectsDefault.duration,
+                          curve: motion.effectsDefault.curve,
+                          style: style,
+                          child: Text(
+                            widget.label,
+                            key: widget.labelKey,
+                            maxLines: 1,
+                            softWrap: false,
+                          ),
                         ),
                       ),
                     ),
@@ -1062,6 +1092,7 @@ class FushiMastheadPanel extends StatelessWidget {
   const FushiMastheadPanel({
     required this.height,
     required this.progress,
+    this.backdropBlur = true,
     super.key,
   });
 
@@ -1071,9 +1102,23 @@ class FushiMastheadPanel extends StatelessWidget {
   /// 生效的收缩进度（已按动效开关取过档）。
   final double progress;
 
+  /// 是否自己开一层背景模糊。嵌套工具层（库页标签条等）传 false：页头与标签条
+  /// 是同一块吸顶面（设计稿 V3），两层各开一块 `ClipRect + BackdropFilter`，两块
+  /// 磨砂的模糊边界在接缝处叠出一条线，标签条那块像另一层底。嵌套层只画不透明
+  /// 的同色填充，接在根层模糊底板的下沿（接缝由调用方按物理像素对齐）。
+  final bool backdropBlur;
+
   @override
   Widget build(BuildContext context) {
     if (progress <= 0 || height <= 0) return const SizedBox.shrink();
+    if (!backdropBlur) {
+      return SizedBox(
+        height: height,
+        child: ColoredBox(
+          color: fushiMastheadPageColor(context).withValues(alpha: progress),
+        ),
+      );
+    }
     return ValueListenableBuilder<bool>(
       valueListenable: SystemTransparency.reduceTransparency,
       builder: (BuildContext context, bool reduce, Widget? _) {

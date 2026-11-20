@@ -416,6 +416,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'last_selected_deck',
   'last_selected_dictionary_format',
   'last_selected_model',
+  // bool（默认 true，所有者 2026-11-18 拍板）：AI 库管家自动路径（入库 / 扫描后去抖
+  // 跑一趟）。开着时取代 library_organize_auto。设备本地（按量计费只对这台设备成立）。
+  'library_curate_auto',
+  // String（JSON）：AI 库管家本机运行记录、增量水位、进度与抑制清单（设备本地）。
+  'library_curate_state',
   // String（JSON：`"<库>.<尺寸档>" → 列数`）：库页「每行数量」，缺省 = 自动
   // （library_grid_columns.dart，BUG-4219）。设备本地。
   'library_grid_columns',
@@ -687,6 +692,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'network_proxy_p2p_mode',
   'network_proxy_password',
   'network_proxy_username',
+  // 服务端通知（updates/notice_feed.dart），设备本地：上次成功响应里的通知（JSON 数组
+  // 字符串）、已弹过的对话框级通知 id（JSON 数组字符串）。
+  'notices_cache',
+  'notices_seen',
   'onboarding_completed',
   // bool：新手引导是否**走完**（点了最后一步的「开始使用」；跳过 / 返回不算）。
   // 缺省 true（老安装不受影响），全新安装首帧写 false。与 onboarding_completed
@@ -817,6 +826,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String：书架「阅读状态」筛选（ShelfReadStatus.name，'' = 全部）。
   'shelf_read_status_filter',
   'shelf_sort_mode',
+  // String：库页布局出厂判定（G1，设备本地——SyncRepository.deviceLocalPrefKeys；
+  // 值 collage / grid_choice_pending / grid，ThemeNotifier 载入偏好时判定一次），
+  // 见 ShellLayoutInstallDefault。
+  'shell_content_layout_install_default',
   'show_expression_tags',
   'show_floating_lyric',
   'show_media_notification',

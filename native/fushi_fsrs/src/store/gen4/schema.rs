@@ -26,7 +26,7 @@
 //!   同步运行时的本机状态（[SYNC]，G8-4，不迁移、从头对账）：`loc_heads`（各位置上各设备最新的 head）、`op_wait`（原生
 //!   操作的因果等待缓冲）、`relay_out`（本机转发到各位置的文件与两段式删除）、`oldroot_fp`（各位置旧根的清单指纹）；
 //!   读写 API 在 `sync_state.rs`，收段在 `receive.rs`。
-//!   媒体清单（G8-3，`media.rs`）另有两张不迁移的进度表：`media_seen`（各作者清单收到第几代）、`media_listed`（哪些媒体
+//!   媒体清单（G8-3，`media.rs`）另有两张不迁移的进度表：`media_seen`（各作者的清单收到了哪几代）、`media_listed`（哪些媒体
 //!   目录有人完整列举过）；`media_at` 多一列 `pend`（还没随本机清单发出）。
 //!
 //! 各列的取值见 `truth.rs`（落库规则）与 `pack.rs`（操作体的存储编码）。`writers.name` 存的是名字的紧凑字节形
@@ -70,9 +70,11 @@ use rusqlite::Connection;
 /// `relay_auth` / `relay_stubs`，[SYNC]，`sync_state.rs`；主键点查与主键前缀，没有显式索引，[PLANNER_STATS] 不变）；
 /// 第六波转发收尾起 `40026`（重切件的停放 `relay_park`，[SYNC]，`cmd/sync_park.rs`：读者记下一个位置上的重切件在等
 /// 哪条 Purge / 哪台设备的信任变化，只在那件事发生时再拉；主键点查与主键前缀，没有显式索引，[PLANNER_STATS] 不变；
-/// 40025 分给同批别的 PR）。
+/// 40025 分给同批别的 PR、最后没用）；第六波合流起 `40027`（`40026` 的形状再加 develop 上 G8-3 修复的 `media_seen`
+/// 按代号一行的集合、主键多一列 `gen`——那次修复在 develop 上单独用了 `40020`，与本线 40020 的预分配撞号，合流后
+/// 两边的表合起来才是终态，另起新号，不复用任何一边进过构建的号）。
 /// 整批推送前每个改表的 PR 各自用分到的号。
-pub const SCHEMA: i64 = 40_026;
+pub const SCHEMA: i64 = 40_027;
 
 /// 新代的号段从这里起：`schema` 小于它的都不是新代库（协议 3 的 1～29 与封存值 39999）。
 pub const GEN_FLOOR: i64 = 40_000;
@@ -208,7 +210,8 @@ CREATE TABLE IF NOT EXISTS op_forks (
 /// - `held` / `checkpoints` / `media_local`：列同 `sync2_held` / `sync2_checkpoints` / `sync2_media_local`。
 /// - `media_at`：`(位置, 内容哈希)` → 在 / 不在 / 可疑与 HLC 文本（D18）；`pend` = 这条还没出现在位置上的任何清单里、
 ///   要随本机下一份清单发出去（G8-3，`media.rs`）。`loc_key` = 协议 3 同口径的「位置/媒体目录#sha256」。
-/// - `media_seen`：每个位置上每个作者的清单已收到的最大代号（只收更大的；本机自己那行 = 已发出的最大代号）。
+/// - `media_seen`：每个位置上每个作者已收到的清单代号，一代一行（集合，不是水位：代号有空洞、列目录会滞后；本机自己
+///   的行 = 已发出的代号）。每轮裁到当轮列举里还在的代号（`media::pending_gens`）。
 /// - `media_listed`：哪些「位置/媒体目录」有人完整列举过（协议 3 的 SEEDED）；`pend` = 是本机列的、还没随清单发出。
 /// - `media_gen`：本机在每个位置上已预留的最大清单代号（只升不降，换根 / 对账也不清：一个代号只对应一个文件）。
 /// - `loc_state`：每个位置的加密记忆（`location_seal`）：`loc_ids` = 位置 ID 的 JSON，`sealed` 0/1，`kdf` = 派生参数 JSON，
@@ -277,7 +280,7 @@ CREATE TABLE IF NOT EXISTS media_seen (
   loc TEXT NOT NULL,
   device BLOB NOT NULL,
   gen INTEGER NOT NULL,
-  PRIMARY KEY (col, loc, device)
+  PRIMARY KEY (col, loc, device, gen)
 ) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS media_listed (
   col INTEGER NOT NULL,
@@ -1216,7 +1219,7 @@ mod tests {
                     "col INTEGER NN PK1",
                     "loc TEXT NN PK2",
                     "device BLOB NN PK3",
-                    "gen INTEGER NN",
+                    "gen INTEGER NN PK4",
                 ],
             ),
             (

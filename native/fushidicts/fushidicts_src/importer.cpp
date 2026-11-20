@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdlib>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -28,7 +29,10 @@
 #include <vector>
 
 #include "hash/bloom.hpp"
+#include "hash/dict_index.hpp"
 #include "hash/hash.hpp"
+#include "hash/key_index.hpp"
+#include "json/meta_record.hpp"
 #include "json/yomitan_parser.hpp"
 #include "mdx/mdx_reader.hpp"
 #include "memory/memory.hpp"
@@ -77,6 +81,16 @@ struct ProcessedFile {
 };
 
 void setup_stream_exceptions(std::ofstream& stream) { stream.exceptions(std::ios::failbit | std::ios::badbit); }
+
+// FUSHIDICTS_LEGACY_INDEX=1：按改动前的格式导入——旧式 hash.table + bloom.filter（每个
+// 键都写 offset 表）、meta 记录一律 type 1 原样 JSON。用途：测试里造「存量词典」（升级
+// 等价、旧式回退），以及覆盖「key.index 装不下（超 4 GiB）→ 旧式」那条回退路径的读侧。
+// 用环境变量而不是导入选项：与 FUSHIDICTS_BLOB_WINDOWED 同一种开关，不改导入 API / FFI，
+// 整套原生测试也能不改代码地对旧格式跑一遍。每次导入时读一次。
+bool legacy_index_forced() {
+  const char* v = std::getenv("FUSHIDICTS_LEGACY_INDEX");
+  return v != nullptr && std::string_view(v) == "1";
+}
 
 // Failure-path cleanup (BUG-2952). It runs *after* a failed import -- often a
 // failed import on a full disk -- so it must never throw: the throwing
@@ -414,7 +428,9 @@ ProcessedFile process_term_bank(const std::string& content, const ZSTD_CDict* cd
   return processed;
 }
 
-ProcessedFile process_meta_bank(const std::string& content) {
+// [preparse]：freq / pitch / ipa 在这里解析成 type 3 记录（json/meta_record.hpp），解析
+// 不了的照旧 type 1；为假时一律 type 1（旧式导入）。
+ProcessedFile process_meta_bank(const std::string& content, bool preparse) {
   ProcessedFile processed;
   if (content.empty()) {
     return processed;
@@ -440,13 +456,7 @@ ProcessedFile process_meta_bank(const std::string& content) {
     std::string_view mode = meta.mode;
     std::string_view data = meta.data.str;
 
-    write_val<uint8_t>(processed.data, 1);
-    write_val<uint16_t>(processed.data, static_cast<uint16_t>(expr.size()));
-    write_str(processed.data, expr);
-    write_val<uint8_t>(processed.data, static_cast<uint8_t>(mode.size()));
-    write_str(processed.data, mode);
-    write_val<uint32_t>(processed.data, static_cast<uint32_t>(data.size()));
-    write_str(processed.data, data);
+    meta_record::append(processed.data, expr, mode, data, preparse);
 
     processed.offsets.emplace_back(XXH3_64bits(expr.data(), expr.size()), offset);
     processed.count++;
@@ -864,7 +874,7 @@ void write_terms(std::ofstream& file, std::vector<std::pair<uint64_t, uint64_t>>
 
 void write_meta(std::ofstream& file, std::vector<std::pair<uint64_t, uint64_t>>& offsets, const Zip& zip,
                 const std::vector<int>& files, uint64_t& write_offset, ImportResult& result, bool low_ram,
-                const std::string& breadcrumb_dir) {
+                const std::string& breadcrumb_dir, bool preparse) {
   if (files.empty()) {
     return;
   }
@@ -901,7 +911,8 @@ void write_meta(std::ofstream& file, std::vector<std::pair<uint64_t, uint64_t>>&
                                   "yomitan: meta_bank #" + std::to_string(bank_seq++) + " / " +
                                       zip.entries[file_index].name);
     threads.push_back(
-        std::async(std::launch::async, [&zip, file_index]() { return process_meta_bank(zip.read(file_index)); }));
+        std::async(std::launch::async,
+                   [&zip, file_index, preparse]() { return process_meta_bank(zip.read(file_index), preparse); }));
 
     if (threads.size() == max_threads) {
       write_processed(threads.front().get());
@@ -915,28 +926,107 @@ void write_meta(std::ofstream& file, std::vector<std::pair<uint64_t, uint64_t>>&
   }
 }
 
-std::vector<char> build_offset_index(std::vector<std::pair<uint64_t, uint64_t>>& offsets, uint64_t& write_offset,
-                                     std::vector<std::pair<uint64_t, uint64_t>>& hash_entries) {
-  std::vector<char> offset_buf;
+// 键 → 记录的索引，写在记录之后。[entries] 按键哈希升序、一个键一项；[tables] 是要追加
+// 到记录文件末尾的 offset 表 [u32 count][u64 x count]（从 [base] 开始的偏移）。
+struct OffsetIndex {
+  std::vector<char> tables;
+  std::vector<hash::key_index::entry> entries;
+};
+
+// 只对应一条记录的键标 single、offset 直接是那条记录，不写 offset 表（key.index 用）；
+// 多条记录的键写 offset 表。旧式 hash.table 只认 offset 表，见 without_single。
+OffsetIndex build_offset_index(std::vector<std::pair<uint64_t, uint64_t>>& offsets, uint64_t base) {
+  OffsetIndex index;
   radix_sort(offsets);
   for (size_t i = 0; i < offsets.size();) {
     size_t j = i + 1;
     while (j < offsets.size() && offsets[j].first == offsets[i].first) {
       j++;
     }
-
-    hash_entries.emplace_back(offsets[i].first, write_offset);
-
-    auto count = static_cast<uint32_t>(j - i);
-    write_val<uint32_t>(offset_buf, count);
-    for (size_t k = i; k < j; ++k) {
-      write_val<uint64_t>(offset_buf, offsets[k].second);
+    if (j - i == 1) {
+      index.entries.push_back({.hash = offsets[i].first, .offset = offsets[i].second, .single = true});
+      i = j;
+      continue;
     }
-
-    write_offset += sizeof(uint32_t) + count * sizeof(uint64_t);
+    index.entries.push_back({.hash = offsets[i].first, .offset = base + index.tables.size(), .single = false});
+    auto count = static_cast<uint32_t>(j - i);
+    write_val<uint32_t>(index.tables, count);
+    for (size_t k = i; k < j; ++k) {
+      write_val<uint64_t>(index.tables, offsets[k].second);
+    }
     i = j;
   }
-  return offset_buf;
+  return index;
+}
+
+// 把 single 的键改回 offset 表（key.index 装不下、退回旧式时用）。结果与改动前的
+// build_offset_index（每个键都写 offset 表，按键哈希升序）逐字节相同。
+OffsetIndex without_single(const OffsetIndex& in, uint64_t base) {
+  OffsetIndex out;
+  out.entries.reserve(in.entries.size());
+  for (const hash::key_index::entry& e : in.entries) {
+    const uint64_t at = base + out.tables.size();
+    if (e.single) {
+      write_val<uint32_t>(out.tables, 1);
+      write_val<uint64_t>(out.tables, e.offset);
+    } else {
+      const size_t from = static_cast<size_t>(e.offset - base);
+      uint32_t count = 0;
+      std::memcpy(&count, in.tables.data() + from, sizeof(count));
+      const size_t len = sizeof(uint32_t) + static_cast<size_t>(count) * sizeof(uint64_t);
+      out.tables.insert(out.tables.end(), in.tables.begin() + static_cast<std::ptrdiff_t>(from),
+                        in.tables.begin() + static_cast<std::ptrdiff_t>(from + len));
+    }
+    out.entries.push_back({.hash = e.hash, .offset = at, .single = false});
+  }
+  return out;
+}
+
+// 词典目录里上一次导入留下的索引文件：key.index 比旧式文件优先，留着就会盖住这次写的
+// 旧式索引；blobs3.bin 属于上一次的 key.index。都先删掉。删不掉的 key.index（Windows 上
+// 别的引擎正映射着）是硬错误——这次导入的结果会被它盖住。
+void remove_previous_index(const std::string& path) {
+  for (const std::string_view name :
+       {hash::kKeyIndexFile, hash::kRewrittenBlobsFile, hash::kHashTableFile, hash::kBloomFilterFile}) {
+    std::error_code ec;
+    std::filesystem::remove(fushi::fs_path(hash::dict_file(path, name)), ec);
+  }
+  std::error_code ec;
+  if (std::filesystem::exists(fushi::fs_path(hash::dict_file(path, hash::kKeyIndexFile)), ec)) {
+    throw std::runtime_error("could not remove the previous key.index");
+  }
+}
+
+// 记录写完之后：建索引，并把 offset 表追加到 [blobs]（当前写到 [write_offset]）。
+// 优先写 key.index（单记录的键直指记录、不写它的 offset 表）；key.index 装不下这本
+// 词典（offset 超 32 位等）时退回旧式 hash.table + bloom.filter。[legacy] 直接走这条
+// 回退路径（不试 key.index），所以旧式导入同时覆盖了「超 4 GiB 回退」的写侧。
+void write_index(const std::string& path, std::ofstream& blobs, std::vector<std::pair<uint64_t, uint64_t>>& offsets,
+                 uint64_t write_offset, bool legacy) {
+  remove_previous_index(path);
+  OffsetIndex index = build_offset_index(offsets, write_offset);
+  std::vector<std::pair<uint64_t, uint64_t>>().swap(offsets);
+
+  if (!legacy && hash::key_index::build_to_file(index.entries, hash::key_index::blobs_file::original,
+                                                hash::dict_file(path, hash::kKeyIndexFile))) {
+    blobs.write(index.tables.data(), static_cast<std::streamsize>(index.tables.size()));
+    return;
+  }
+  index = without_single(index, write_offset);
+  std::vector<std::pair<uint64_t, uint64_t>> hash_entries;
+  hash_entries.reserve(index.entries.size());
+  for (const hash::key_index::entry& e : index.entries) {
+    hash_entries.emplace_back(e.hash, e.offset);
+  }
+  std::vector<hash::key_index::entry>().swap(index.entries);
+  auto hash_thread = std::async(std::launch::async, [&hash_entries, &path]() {
+    hash::linear table;
+    table.build_to_file(hash_entries, hash::dict_file(path, hash::kHashTableFile));
+    auto hashes = hash_entries | std::views::keys | std::ranges::to<std::vector>();
+    hash::bloom::build_to_file(hashes, hash::dict_file(path, hash::kBloomFilterFile));
+  });
+  blobs.write(index.tables.data(), static_cast<std::streamsize>(index.tables.size()));
+  hash_thread.get();
 }
 
 // Append one media record [u16 path_len][path][u32 blob_size][blob] to `media`,
@@ -2004,12 +2094,13 @@ ImportResult import_yomitan(Zip& zip, const std::string& output_dir, bool low_ra
       dict_file.write(zstd_dict.data(), static_cast<std::streamsize>(zstd_dict.size()));
     }
 
+    const bool legacy = legacy_index_forced();
     std::ofstream blobs(fushi::fs_path(path + "/blobs.bin"), std::ios::binary);
     setup_stream_exceptions(blobs);
     std::vector<std::pair<uint64_t, uint64_t>> offsets;
     uint64_t write_offset = 0;
     write_terms(blobs, offsets, zip, files.term_banks, write_offset, result, low_ram, breadcrumb_dir, cdict.get());
-    write_meta(blobs, offsets, zip, files.meta_banks, write_offset, result, low_ram, breadcrumb_dir);
+    write_meta(blobs, offsets, zip, files.meta_banks, write_offset, result, low_ram, breadcrumb_dir, !legacy);
     ankerl::unordered_dense::map<uint64_t, uint64_t> kanji_glossaries;
     write_kanji(blobs, offsets, zip, files.kanji_banks, write_offset, result, low_ram, kanji_glossaries, breadcrumb_dir);
     if (offsets.empty()) {
@@ -2019,19 +2110,7 @@ ImportResult import_yomitan(Zip& zip, const std::string& output_dir, bool low_ra
       throw std::runtime_error("empty dictionary");
     }
 
-    std::vector<std::pair<uint64_t, uint64_t>> hash_entries;
-    auto offset_buf = build_offset_index(offsets, write_offset, hash_entries);
-    std::vector<std::pair<uint64_t, uint64_t>>().swap(offsets);
-
-    auto hash_thread = std::async(std::launch::async, [&hash_entries, &path]() {
-      hash::linear table;
-      table.build_to_file(hash_entries, path + "/hash.table");
-      auto hashes = hash_entries | std::views::keys | std::ranges::to<std::vector>();
-      hash::bloom::build_to_file(hashes, path + "/bloom.filter");
-    });
-
-    blobs.write(offset_buf.data(), static_cast<std::streamsize>(offset_buf.size()));
-    hash_thread.get();
+    write_index(path, blobs, offsets, write_offset, legacy);
 
     result.media_count = media_thread.get();
 
@@ -2177,20 +2256,8 @@ void finish_simple_dict(SimpleDictSink& sink, SimpleDictRecords&& records_in, co
     throw std::runtime_error("empty dictionary");
   }
 
-  std::vector<std::pair<uint64_t, uint64_t>> hash_entries;
-  auto offset_buf = build_offset_index(records.offsets, write_offset, hash_entries);
-  std::vector<std::pair<uint64_t, uint64_t>>().swap(records.offsets);
-
   const std::string& path = sink.path;
-  auto hash_thread = std::async(std::launch::async, [&hash_entries, &path]() {
-    hash::linear table;
-    table.build_to_file(hash_entries, path + "/hash.table");
-    auto hashes = hash_entries | std::views::keys | std::ranges::to<std::vector>();
-    hash::bloom::build_to_file(hashes, path + "/bloom.filter");
-  });
-
-  sink.blobs.write(offset_buf.data(), static_cast<std::streamsize>(offset_buf.size()));
-  hash_thread.get();
+  write_index(path, sink.blobs, records.offsets, write_offset, legacy_index_forced());
 
   // Simple dicts store the wildcard "*" on every term (SimpleEntryAccumulator),
   // so rules are always present; writing the flag just spares the reader the

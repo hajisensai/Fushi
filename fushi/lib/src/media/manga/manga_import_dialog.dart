@@ -4,13 +4,18 @@ import 'dart:io';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/import/import_carrier.dart';
+import 'package:fushi/src/media/import/import_dialog_blocks.dart';
+import 'package:fushi/src/utils/components/fushi_cover_block.dart';
 import 'package:fushi/src/media/import/import_dialog_frame.dart';
+import 'package:fushi/src/media/import/import_surface_spec.dart';
 import 'package:fushi/src/media/import/import_flow_mixin.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/manga/import/manga_folder_batch.dart';
@@ -23,10 +28,9 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
-import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
-import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// 漫画导入对话框。
@@ -206,14 +210,19 @@ class _MangaImportDialogState extends State<MangaImportDialog>
         debugLabel: 'manga-import-dialog',
         onDrop: _handleDialogDrop,
         child: ImportDialogFrame(
-          leadingIcon: FushiIcons.books,
+          tone: ImportTone.violet,
           title: t.manga_import_action,
+          subtitle: t.manga_import_hint,
           body: _buildForm(),
-          actions: <Widget>[
-            FushiDialogAction(
-              label: t.manga_ocr_wizard_title,
+          // 「OCR 导入漫画」是另一条独立流程：按钮区左侧 tonal，与取消 / 导入分开。
+          secondaryActions: <Widget>[
+            FushiFilledButton.tonalIcon(
               onPressed: importing ? null : _openOcrWizard,
+              icon: const FushiIcon(FushiIcons.ocr),
+              label: Text(t.manga_ocr_wizard_title),
             ),
+          ],
+          actions: <Widget>[
             FushiDialogAction(
               label: t.dialog_cancel,
               onPressed: importing ? null : () => Navigator.pop(context),
@@ -227,59 +236,84 @@ class _MangaImportDialogState extends State<MangaImportDialog>
 
   Widget _buildForm() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        Text(t.manga_import_hint, style: tokens.type.metadata),
-        SizedBox(height: tokens.spacing.gap),
-        AdaptiveSettingsSection(children: <Widget>[_mangaRow()]),
-        SizedBox(height: tokens.spacing.rowVertical),
-        // 批量目录没有「一个标题」可填——每卷用自己的文件名。与其留一个填了也
-        // 不生效的输入框，不如换成说明这批要导几卷。
-        if (_batchPaths.isNotEmpty)
-          Text(
-            t.manga_import_selection_batch_hint(n: _batchPaths.length),
-            style: tokens.type.metadata,
-          )
-        else if (_carrier == ImportCarrier.mangaBatchFolder)
-          Text(
-            t.manga_import_batch_hint(n: _batchVolumeCount),
-            style: tokens.type.metadata,
-          )
-        else
-          FushiTextField(
-            controller: _titleCtrl,
-            labelText: t.srt_import_title_hint,
-            onChanged: (String _) => _titleFromUser = true,
-          ),
-        if (importing) ...buildProgressSection(context, tokens),
-      ],
+    return FushiEntranceScope(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          FushiStaggeredEntrance(index: 0, child: _mangaRow()),
+          SizedBox(height: tokens.spacing.card),
+          // 批量目录没有「一个标题」可填——每卷用自己的文件名。与其留一个填了也
+          // 不生效的输入框，不如换成说明这批要导几卷。
+          if (_batchPaths.isNotEmpty)
+            Text(
+              t.manga_import_selection_batch_hint(n: _batchPaths.length),
+              style: tokens.type.metadata,
+            )
+          else if (_carrier == ImportCarrier.mangaBatchFolder)
+            Text(
+              t.manga_import_batch_hint(n: _batchVolumeCount),
+              style: tokens.type.metadata,
+            )
+          else
+            FushiStaggeredEntrance(
+              index: 1,
+              child: FushiFormSection(
+                children: <Widget>[
+                  FushiTextField(
+                    controller: _titleCtrl,
+                    labelText: t.srt_import_title_hint,
+                    enabled: !importing,
+                    onChanged: (String _) => _titleFromUser = true,
+                  ),
+                ],
+              ),
+            ),
+          if (importing) ...buildProgressSection(context, tokens),
+        ],
+      ),
     );
   }
 
   Widget _mangaRow() {
-    return FushiFilePickerRow(
-      title: t.manga_import_pick_file,
-      subtitle: _pathName,
+    final FushiCoverBlockColors colors = ImportPickBlock.colorsOf(
+      context,
+      ImportTone.violet,
+    );
+    final String? name = _pathName;
+    return ImportPickBlock(
+      tone: ImportTone.violet,
+      title: name ?? t.manga_import_pick_file,
+      subtitle: name == null ? null : t.manga_import_pick_file,
       icon: FushiIcons.books,
+      dropHint: t.book_import_drop_hint,
+      selected: name != null,
+      enabled: !importing,
       onTap: _pickFile,
-      actions: <Widget>[
-        // 漫画载体可以是**文件**（.cbz/.zip/.mokuro）也可以是**目录**（一卷页图），
-        // 两种选择器在系统层是两个不同的对话框，故并列两个入口而非合成一个。
-        FushiIconButton(
-          icon: FushiIcons.folderOpen,
-          tooltip: t.manga_import_pick_folder,
-          isWideTapArea: true,
-          onTap: _pickFolder,
-        ),
-        FushiIconButton(
-          icon: FushiIcons.file,
-          tooltip: t.manga_import_pick_file,
-          isWideTapArea: true,
-          onTap: _pickFile,
-        ),
-      ],
+      onClear: () {
+        unawaited(_discardStaging());
+        _clearSelection();
+      },
+      // 漫画载体可以是**文件**（.cbz/.zip/.mokuro）也可以是**目录**（一卷页图），
+      // 两种选择器在系统层是两个不同的对话框，故并列两个带字入口而非合成一个
+      // （原先是两枚只靠 tooltip 区分的图标）。
+      below: ImportTileActions(
+        colors: colors,
+        actions: <ImportTileAction>[
+          ImportTileAction(
+            icon: FushiIcons.file,
+            label: t.manga_import_pick_file,
+            enabled: !importing,
+            onTap: _pickFile,
+          ),
+          ImportTileAction(
+            icon: FushiIcons.folderOpen,
+            label: t.manga_import_pick_folder,
+            enabled: !importing,
+            onTap: _pickFolder,
+          ),
+        ],
+      ),
     );
   }
 

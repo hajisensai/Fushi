@@ -10,8 +10,17 @@ import 'package:fushi_engine/sync/tag_sync.dart'
 /// 与标签清单同形的读-合并-写：client GET host 清单 → [applyMediaLinkManifest]
 /// 并入本机 → 本机清单未被 host 覆盖（[mediaLinkManifestCovers]）才 POST → host
 /// 用同一内核并入。合并是整行 LWW（`mediaLinkRemoteWins`：updatedAt 大者胜，相等
-/// 时墓碑 > 已确认 > 建议），与应用顺序无关、重放幂等，不需要基线。删除 / 否决是
-/// 墓碑行（`deletedAt`），随清单照常传播——对端否决过的建议不会在本机复活。
+/// 时墓碑 > 用户确认 > AI 生效 > 建议，再相等按内容指纹），与应用顺序无关、重放
+/// 幂等。删除 / 否决是墓碑行（`deletedAt`），随清单照常传播——对端否决过的建议不会
+/// 在本机复活。
+///
+/// **`confirmedBy`（v159，AI 库管家设计稿 §5.3）**：条目可选字段，`user` / `ai` /
+/// `none`（建议或墓碑）。`confirmed` 照旧写（= `confirmedBy == user`，给旧版对端读）。
+/// - 缺字段 = 旧版对端：`confirmed == true` 按 `user`；`confirmed == false` 是**未知**
+///   而不是「建议」——旧版不认识 AI 生效，会把它当建议原样回传，这种条目不得把本机
+///   的 AI 生效冲掉（`FushiDatabase.mergeRemoteMediaLink` 的 `confirmerKnown`）。
+/// - AI 生效不推进 `updatedAt`（停在它依据的状态上），所以一边否决、一边 AI 生效时，
+///   否决晚于 AI 那一端的基线就是否决胜；同一时刻用户确认压过 AI 生效。
 ///
 /// 端点跨端身份（与标签清单同一套换算）：
 /// - book / audiobook：wire bookKey（[CollectionBookIdentityIndex]）；本机没有这本书
@@ -121,15 +130,20 @@ class MediaLinkManifestEntry {
     required this.relation,
     required this.to,
     required this.source,
-    required this.isUserConfirmed,
     required this.createdAt,
     required this.updatedAt,
+    bool isUserConfirmed = false,
+    String? confirmedBy,
+    this.confirmerKnown = true,
     this.role,
     this.episodeRange,
     this.confidence,
     this.reason,
     this.deletedAt,
-  });
+  }) : confirmer = isUserConfirmed ? MediaLinkConfirmer.user : confirmedBy;
+
+  /// wire 上「建议 / 墓碑，没有生效方」的 `confirmedBy` 值（与「缺字段」区分开）。
+  static const String confirmedByNone = 'none';
 
   factory MediaLinkManifestEntry.fromJson(Object? json) {
     final Map<String, dynamic> map = requireManifestObject(json, 'media link');
@@ -145,6 +159,15 @@ class MediaLinkManifestEntry {
     final Object? source = map['source'];
     final Object? confidence = map['confidence'];
     final Object? deleted = map['deletedAt'];
+    final bool legacyConfirmed = map['confirmed'] == true;
+    final Object? rawBy = map['confirmedBy'];
+    // 未知值（对端未来新增）按缺字段处理：只认 confirmed。
+    final String? by =
+        rawBy == MediaLinkConfirmer.user ||
+            rawBy == MediaLinkConfirmer.ai ||
+            rawBy == confirmedByNone
+        ? rawBy as String
+        : null;
     return MediaLinkManifestEntry(
       from: MediaLinkWireEndpoint.fromJson(map['from']),
       relation: relation,
@@ -152,7 +175,9 @@ class MediaLinkManifestEntry {
       source: source is String && source.isNotEmpty
           ? source
           : MediaLinkSource.manual,
-      isUserConfirmed: map['confirmed'] == true,
+      isUserConfirmed: legacyConfirmed,
+      confirmedBy: by == confirmedByNone ? null : by,
+      confirmerKnown: by != null || legacyConfirmed,
       createdAt: created,
       updatedAt: updated,
       role: _optString(map['role']),
@@ -167,7 +192,13 @@ class MediaLinkManifestEntry {
   final String relation;
   final MediaLinkWireEndpoint to;
   final String source;
-  final bool isUserConfirmed;
+
+  /// 生效方（[MediaLinkConfirmer]）；null = 建议（或 [confirmerKnown] 为 false 时
+  /// 「旧版对端没说」）。
+  final String? confirmer;
+
+  /// 对端说没说 `confirmedBy`（见类注释）。
+  final bool confirmerKnown;
   final int createdAt;
   final int updatedAt;
   final String? role;
@@ -176,8 +207,22 @@ class MediaLinkManifestEntry {
   final String? reason;
   final int? deletedAt;
 
-  /// 与 `mediaLinkRemoteWins` 同口径的状态名次：墓碑 2 > 已确认 1 > 建议 0。
-  int get stateRank => deletedAt != null ? 2 : (isUserConfirmed ? 1 : 0);
+  bool get isUserConfirmed => confirmer == MediaLinkConfirmer.user;
+
+  /// 与 `mediaLinkRemoteWins` 同口径的版本（时钟 → 名次 → 内容指纹）。
+  MediaLinkVersion get version => (
+    updatedAt: updatedAt,
+    rank: mediaLinkStateRank(deleted: deletedAt != null, confirmer: confirmer),
+    content: mediaLinkContentKey(
+      source: source,
+      confidence: confidence,
+      reason: reason,
+      role: role,
+      episodeRange: episodeRange,
+      createdAt: createdAt,
+      deletedAt: deletedAt,
+    ),
+  );
 
   String get sortKey =>
       '${from.kind}\u0000${from.key}\u0000$relation\u0000'
@@ -189,6 +234,7 @@ class MediaLinkManifestEntry {
     'to': to.toJson(),
     'source': source,
     'confirmed': isUserConfirmed,
+    if (confirmerKnown) 'confirmedBy': confirmer ?? confirmedByNone,
     'createdAt': createdAt,
     'updatedAt': updatedAt,
     if (role != null) 'role': role,
@@ -317,7 +363,7 @@ Future<MediaLinkManifest> loadLocalMediaLinkManifest(FushiDatabase db) async {
         relation: r.relation,
         to: to,
         source: r.source,
-        isUserConfirmed: r.isUserConfirmed,
+        confirmedBy: mediaLinkConfirmerOf(r),
         createdAt: r.createdAt,
         updatedAt: r.updatedAt,
         role: r.role,
@@ -361,14 +407,20 @@ Future<int> applyMediaLinkManifest(
         source: e.source,
         confidence: e.confidence,
         isUserConfirmed: e.isUserConfirmed,
+        confirmedBy: e.confirmer,
         reason: e.reason,
         createdAt: e.createdAt,
         updatedAt: e.updatedAt,
         deletedAt: e.deletedAt,
       ),
+      confirmerKnown: e.confirmerKnown,
     );
     if (didChange) changed++;
   }
+  // 否决管一整对：对端带来的否决（或本机的 AI 生效遇上对端的否决）可能落在同一对
+  // 的另一种关系 / 方向上，逐 id 的 LWW 管不到——合并完按不变量把这一对上的 AI 生效
+  // 写成墓碑（FushiDatabase.enforceMediaLinkVetoes）。
+  changed += await db.enforceMediaLinkVetoes();
   return changed;
 }
 
@@ -389,11 +441,18 @@ bool mediaLinkManifestCovers(
     final bool undirected =
         MediaLinkRelation.tryParse(l.relation)?.directed == false;
     final bool covered = remote.links.any((MediaLinkManifestEntry r) {
-      if (r.relation != l.relation || r.updatedAt < l.updatedAt) return false;
-      // 同一时刻按 `mediaLinkRemoteWins` 的名次：远端名次低于本机时本机会赢，
-      // 远端还没有本机的知识。
-      if (r.updatedAt == l.updatedAt && r.stateRank < l.stateRank) {
-        return false;
+      if (r.relation != l.relation) return false;
+      // 按 `mediaLinkRemoteWins` 的全序：远端比本机旧时本机会赢，远端还没有本机的
+      // 知识。例外：远端是旧版（没说 confirmedBy）、同一时钟上的未删未确认行，而本机
+      // 是 AI 生效——旧版存不下 AI 生效，POST 过去也只会原样当建议，不算缺知识。
+      if (compareMediaLinkVersions(r.version, l.version) < 0) {
+        final bool legacyHoldsAi =
+            !r.confirmerKnown &&
+            r.updatedAt == l.updatedAt &&
+            r.deletedAt == null &&
+            l.deletedAt == null &&
+            l.confirmer == MediaLinkConfirmer.ai;
+        if (!legacyHoldsAi) return false;
       }
       if (endpointMatches(r.from, l.from) && endpointMatches(r.to, l.to)) {
         return true;

@@ -26,7 +26,15 @@ void main() {
     );
     expect(
       <String>[for (final CtlCommandSpec s in _group().commands) s.name],
-      <String>['search', 'get', 'apply'],
+      <String>[
+        'search',
+        'get',
+        'volumes',
+        'apply',
+        'art',
+        'art-clear',
+        'art-remove',
+      ],
     );
     for (final CtlCommandSpec s in _group().commands) {
       expect(s.render, isNotNull, reason: s.name);
@@ -51,10 +59,11 @@ void main() {
     );
   });
 
-  test('--source 认书目四源：anilist / openbd / ndl / rakuten', () {
+  test('--source 认 mangabaka 与书目四源：anilist / openbd / ndl / rakuten', () {
     expect(kBookScrapeSources, <String>[
       'bangumi',
       'dlsite',
+      'mangabaka',
       'anilist',
       'openbd',
       'ndl',
@@ -89,7 +98,7 @@ void main() {
     expect(apply.body, <String, Object?>{
       'id': '99026',
       'source': 'anilist',
-      'fields': <String>['cover'],
+      'fields': <String>['cover', 'details'],
     });
   });
 
@@ -101,7 +110,7 @@ void main() {
     expect(() => _build('get', <String>['bangumi']), _usageError());
   });
 
-  test('apply：默认只换封面；--title / --author 追加；--no-cover 要有别的字段', () {
+  test('apply：默认换封面 + 写条目资料；--title / --author 追加；都关掉要有别的字段', () {
     final CtlRequestSpec cover = _build('apply', <String>['book:猫/1', '11']);
     expect(cover.method, 'POST');
     expect(
@@ -110,7 +119,7 @@ void main() {
     );
     expect(cover.body, <String, Object?>{
       'id': '11',
-      'fields': <String>['cover'],
+      'fields': <String>['cover', 'details'],
     });
     final CtlRequestSpec all = _build('apply', <String>[
       'srt:u1',
@@ -120,6 +129,7 @@ void main() {
       '--title',
       '--author',
       '--no-cover',
+      '--no-details',
     ]);
     expect(all.body, <String, Object?>{
       'id': 'RJ01',
@@ -127,7 +137,12 @@ void main() {
       'fields': <String>['title', 'author'],
     });
     expect(
-      () => _build('apply', <String>['book:猫', '11', '--no-cover']),
+      () => _build('apply', <String>[
+        'book:猫',
+        '11',
+        '--no-cover',
+        '--no-details',
+      ]),
       _usageError(),
     );
     expect(() => _build('apply', <String>['video:v', '11']), _usageError());
@@ -160,5 +175,101 @@ void main() {
     });
     expect(applied, contains('已写回：封面'));
     expect(applied, contains('未写回：作者'));
+  });
+
+  test('mangabaka 是合法源', () {
+    expect(
+      _build('get', <String>['mangabaka', '8940']).path,
+      '/api/admin/book/scrape/mangabaka/8940',
+    );
+    expect(
+      _build('search', <String>['x', '--source', 'mangabaka']).query,
+      <String, String>{'query': 'x', 'source': 'mangabaka'},
+    );
+  });
+
+  test('art：合集 id 进路径；钉死参数三个一起给', () {
+    final CtlRequestSpec plain = _build('art', <String>['7']);
+    expect(plain.method, 'POST');
+    expect(plain.path, '/api/admin/book/collections/7/scrape-art');
+    expect(plain.body, <String, Object?>{});
+    final CtlRequestSpec dry = _build('art', <String>['7', '--dry-run']);
+    expect(dry.body, <String, Object?>{'dryRun': true});
+    final CtlRequestSpec pinned = _build('art', <String>[
+      '7',
+      '--series-key',
+      'k',
+      '--pin-source',
+      'MangaBaka',
+      '--series-id',
+      '8940',
+    ]);
+    expect(pinned.body, <String, Object?>{
+      'seriesKey': 'k',
+      'source': 'mangabaka',
+      'seriesId': '8940',
+    });
+    expect(() => _build('art', <String>['x']), _usageError());
+    expect(
+      () => _build('art', <String>['7', '--series-key', 'k']),
+      _usageError(),
+    );
+    expect(
+      () => _build('art', <String>[
+        '7',
+        '--series-key',
+        'k',
+        '--pin-source',
+        'dlsite',
+        '--series-id',
+        '1',
+      ]),
+      _usageError(),
+    );
+  });
+
+  test('art-clear / art-remove：DELETE；art-remove 只收 book: 键', () {
+    final CtlRequestSpec clear = _build('art-clear', <String>['7']);
+    expect(clear.method, 'DELETE');
+    expect(clear.path, '/api/admin/book/collections/7/scrape-art');
+    final CtlRequestSpec remove = _build('art-remove', <String>['book:abc']);
+    expect(remove.method, 'DELETE');
+    expect(remove.path, '/api/admin/book/items/book%3Aabc/scraped-art');
+    expect(() => _build('art-remove', <String>['srt:1']), _usageError());
+    final String rendered = _spec('art-remove').render!(<String, Object?>{
+      'removed': <Object?>['a', 'b'],
+    });
+    expect(rendered, contains('2'));
+  });
+
+  test('volumes / apply --volume：只对 mangabaka', () {
+    expect(
+      _build('volumes', <String>['8940']).path,
+      '/api/admin/book/scrape/mangabaka/8940/volumes',
+    );
+    final CtlRequestSpec apply = _build('apply', <String>[
+      'book:k',
+      '8940',
+      '--source',
+      'mangabaka',
+      '--volume',
+      '3',
+    ]);
+    expect(apply.body!['volume'], 3);
+    expect(
+      () => _build('apply', <String>['book:k', '1', '--volume', '3']),
+      _usageError(),
+    );
+    expect(
+      () => _build('apply', <String>[
+        'book:k',
+        '1',
+        '--source',
+        'mangabaka',
+        '--volume',
+        'x',
+      ]),
+      _usageError(),
+    );
   });
 }

@@ -39,6 +39,45 @@
 |---|:--:|:--:|---|
 | [BUG-4906](bugs/BUG-4906-srs-gen4-legacy-backup-replace-drops-backup-salts.md) | ✅ | ✅ | 旧整包备份覆盖恢复到已打开过的新 profile：备份的盐没进新集合，卡片与复习日志脱钩、界面 0 张 |
 | [BUG-4843](bugs/BUG-4843-srs-gen4-dangling-op-joins-into-other-collection.md) | ✅ | ✅ | 新代同库 A 拿 B 的实体 ID 写下的悬空操作，A 的集合并入 B 之后改到 B 的笔记 / 卡片（BUG-4626 新代并入场景） |
+> 共 4233 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4905](bugs/BUG-4905-ai-cast-text-substitutions.md) | ✅ | ✅ | 小说和漫画 AI 标注未应用系列用词替换表 |
+| [BUG-4904](bugs/BUG-4904-book-series-key-store-annotation.md) | ✅ | ✅ | 书店写法「卷号<系列名> (文库名)」的分卷导入后不归合集 |
+| [BUG-4903](bugs/BUG-4903-home-desktop-continue-cut-edge-title-concat.md) | ✅ | ✅ | 首页（桌面）「继续」右侧卡被窗口切掉一半、标题拼接成「Re：ゼロ…1<Re：…」 |
+| [BUG-4902](bugs/BUG-4902-home-phone-content-covered-by-navbar-sync-fab.md) | ✅ | ✅ | 首页（手机）复习卡被浮动导航栏压住、同步悬浮球盖住内容 |
+| [BUG-4901](bugs/BUG-4901-collage-default-scattered-uneven-gaps.md) | ✅ | ✅ | 拼贴库页色块间距忽大忽小（没选过摆放时默认「散落」） |
+| [BUG-4900](bugs/BUG-4900-collage-backdrop-cropped-hover-clipped.md) | ✅ | ✅ | 拼贴视频块背景剧照被两侧裁掉、悬停放大后右列块被内容区裁切 |
+| [BUG-4899](bugs/BUG-4899-video-tag-chip-drag-reorder-lost.md) | ✅ | ✅ | 视频库标签条拖动排序在桌面鼠标下失效 |
+| [BUG-4898](bugs/BUG-4898-book-title-hash-suffix.md) | ✅ | ✅ | 书架 / 漫画库卡片标题带文件名哈希后缀「[679fb7c9]」 |
+| [BUG-4897](bugs/BUG-4897-library-switch-masthead-stale-frame.md) | ✅ | ✅ | 库页从「在线」切回「书架」：首帧大号页头压在旧滚动位置的内容上，点下去约 0.5 秒才切 |
+| [BUG-4896](bugs/BUG-4896-games-tab-warm-popup-webview-recreated.md) | ✅ | ✅ | 切进 / 切出游戏 tab 每次销毁并冷建查词弹窗 WebView，卡 80～150 ms |
+| [BUG-4895](bugs/BUG-4895-video-stutter-covered-dashboard-reload.md) | ✅ | ✅ | 视频从首页打开后播放掉帧：被播放页盖住的首页仪表盘每秒整批重载一次 |
+| [BUG-4894](bugs/BUG-4894-anidb-all-bracket-fuzzy-candidates.md) | ✅ | ✅ | 全方括号文件名 `[K-ON!][04][BIG5]…` 待确认列表塞满只共享 `kon` 音节的无关作品 |
+| [BUG-4893](bugs/BUG-4893-mascot-glow-starves-windows-input.md) | ✅ | ✅ | 吉祥物光晕开着冷启动：启动期 idle 任务让调度器空转，Windows 鼠标键盘全失灵 |
+| [BUG-4892](bugs/BUG-4892-book-series-volume-not-last-ungrouped.md) | ✅ | ✅ | 卷号后面跟副标题、卷号前夹标签、『』特典册的分卷不归组，整套散在书架上 |
+| [BUG-4891](bugs/BUG-4891-manga-ctc-body-column-dropped-as-ruby.md) | ✅ | ✅ | 本机 Manga CTC 把正文短列当注音删掉、把疏排竖排读成横排（漫画 OCR 丢列与串列乱码） |
+| [BUG-4862](bugs/BUG-4862-cli-ignores-test-root-ctl-dir.md) | 🚧 | 🚧 | CLI 不认 FUSHI_TEST_ROOT，ctl 命令打到用户安装版 |
+| [BUG-4861](bugs/BUG-4861-home-recent-cell-shadow-clipped.md) | ✅ | ✅ | home-recent-cell-shadow-clipped |
+| [BUG-4860](bugs/BUG-4860-collage-remote-cover-shadow-mismatch.md) | ✅ | ✅ | collage-remote-cover-shadow-mismatch |
+| [BUG-4859](bugs/BUG-4859-book-manga-import-view-no-drop-target.md) | 🚧 | 🚧 | 书 / 漫画导入视图画拖放虚线与悬停态，祖先链却没有落点，拖进来什么都不发生（IM2） |
+| [BUG-4858](bugs/BUG-4858-import-network-subtitle-transports-mismatch.md) | ✅ | ✅ | 「添加来源 › 网络」副标题与本域真实可选传输不符（视频写只有 WebDAV，书/漫画/音乐漏 AList、音乐还写了 FTP，IM10） |
+| [BUG-4857](bugs/BUG-4857-video-import-view-no-drop-target.md) | ✅ | ✅ | 视频导入视图画拖放虚线与悬停态，祖先链却没有落点，拖进来什么都不发生（IM2） |
+| [BUG-4856](bugs/BUG-4856-srs-review-bottom-bar-backdrop-cut.md) | ✅ | ✅ | SRS 复习页底栏画不透明底板，页面背景（柔光等）在底部被截成白条 |
+| [BUG-4855](bugs/BUG-4855-shell-rail-preview-overflow.md) | ✅ | ✅ | 外观设置「侧栏样式」两张预览卡画出 OVERFLOWED 红黄条 |
+| [BUG-4854](bugs/BUG-4854-shell-grid-preview-blank.md) | ✅ | ✅ | 外观设置「封面网格」预览卡整块空白 |
+| [BUG-4853](bugs/BUG-4853-rail-collapse-surface-gap.md) | ✅ | ✅ | 侧栏收起过渡中色块与内容区之间露出一条竖带（镂空脊舞台圆角贴在竖带外） |
+| [BUG-4852](bugs/BUG-4852-video-danmaku-per-frame-repaint-blur.md) | ✅ | ✅ | 开弹幕后视频掉帧：弹幕无 key，队首出列让整屏弹幕文本重录、Impeller 模糊阴影全部重做 |
+| [BUG-4851](bugs/BUG-4851-home-tab-switch-hidden-pages-rebuild.md) | ✅ | ✅ | 切 tab 时所有访问过的隐藏保活页跟着重建重排（外壳顶部让位挂在共同祖先上） |
+| [BUG-4850](bugs/BUG-4850-fullscreen-settings-unmounts-home-body.md) | ✅ | ✅ | 没有自绘标题栏的平台进设置，正文连同全部保活 tab 被整棵卸载 |
+| [BUG-4849](bugs/BUG-4849-lookup-srs-tabs-remount-on-every-entry.md) | ✅ | ✅ | 查词 / 复习 tab 每次切入整页重挂（16～94 ms），查词页还要拆建一次预热的查词 WebView |
+| [BUG-4848](bugs/BUG-4848-hidden-keepalive-pages-rebuild-on-shared-state.md) | ✅ | ✅ | 回首页卡 100 ms：首页失效书列表 provider，藏着的书架与漫画书架各跟着整页重建四次 |
+| [BUG-4847](bugs/BUG-4847-shelf-activation-swaps-remote-future-double-rebuild.md) | ✅ | ✅ | 每次切到书架，书架与藏着的漫画书架各整页重建两次（切回对账无条件换远端 future） |
+| [BUG-4846](bugs/BUG-4846-lookup-module-gates-overlay.md) | ✅ | ✅ | 查词模块关闭时 galgame 查词不弹卡、应用外悬浮球缺截屏识字/应用外查词 |
+| [BUG-4845](bugs/BUG-4845-dictionary-inflection-cross-language.md) | ✅ | ✅ | 英语查词 My→M、Our→O、One→On 排在原词前面：变形规则不分语言 + 排序先比预处理步数 |
+| [BUG-4844](bugs/BUG-4844-book-cover-undo-backup-pruned-by-source-mtime.md) | ✅ | ✅ | book-cover-undo-backup-pruned-by-source-mtime |
+| [BUG-4843](bugs/BUG-4843-linux-server-glibc-baseline.md) | ✅ | ✅ | Linux 服务端 CI 包原生库要 GLIBC_2.43，超出 README 声明的 glibc ≥ 2.35 |
 | [BUG-4842](bugs/BUG-4842-series-wall-wheel-scroll-rebake.md) | ✅ | ✅ | 视频系列墙滚轮滚动卡顿：每档滚轮把整屏封面面重新离屏烘焙 |
 | [BUG-4841](bugs/BUG-4841-epub-import-parse-failure-leaves-staging-dir.md) | ✅ | ✅ | EPUB 导入解析失败时书库根下的 .tmp-* 解压目录永久残留，崩溃留下的 .tmp-* / .bak-* 也没人清 |
 | [BUG-4840](bugs/BUG-4840-manga-import-book-dir-not-owned.md) | ✅ | ✅ | 漫画导入直接往书目录里写、失败回滚无条件删目录：会删掉同名并发导入或孤儿书的目录；暂存在系统临时目录 |

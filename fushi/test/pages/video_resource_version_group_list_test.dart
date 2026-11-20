@@ -252,10 +252,14 @@ void main() {
     expect(submit.onPressed, isNotNull, reason: '点行选中后提交可用');
   });
 
-  testWidgets('「全部条目」开关切回平铺列表', (WidgetTester tester) async {
+  testWidgets('「版本卡 / 全部条目」分段切回平铺列表', (WidgetTester tester) async {
     await pumpSurface(tester);
     await tester.tap(
-      find.byKey(const ValueKey<String>('video-resource-flat-toggle')),
+      // 「版本卡 / 全部条目」分段：点「全部条目」那一段。
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('video-resource-flat-toggle')),
+        matching: find.text(t.resource_version_view_flat),
+      ),
     );
     await tester.pumpAndSettle();
     expect(

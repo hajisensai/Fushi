@@ -81,13 +81,17 @@ void main() {
     ),
   );
 
-  test('三条路由齐全', () {
+  test('路由齐全（元数据刮削 + 每卷封面 / 横幅）', () {
     expect(
       <String>[for (final CtlRoute r in routes) '${r.method} ${r.pattern}'],
       <String>[
         'GET /api/admin/book/scrape',
         'GET /api/admin/book/scrape/:source/:id',
+        'GET /api/admin/book/scrape/:source/:id/volumes',
         'POST /api/admin/book/items/:key/scrape',
+        'POST /api/admin/book/collections/:id/scrape-art',
+        'DELETE /api/admin/book/collections/:id/scrape-art',
+        'DELETE /api/admin/book/items/:key/scraped-art',
       ],
     );
   });
@@ -155,7 +159,7 @@ void main() {
     );
   });
 
-  test('apply：默认只换封面；--title 写显示名；结果带快照与封面备份', () async {
+  test('apply：默认换封面 + 写条目资料；--title 写显示名；结果带快照与封面备份', () async {
     await seedBook(db, '猫');
     final Map<String, Object?> cover =
         (await call(
@@ -165,8 +169,23 @@ void main() {
               body: <String, Object?>{'id': '11'},
             ))!
             as Map<String, Object?>;
-    expect(cover['applied'], <String>['cover']);
+    expect(cover['applied'], <String>['cover', 'details']);
     expect(((cover['after']! as Map<String, Object?>)['coverSha']), isNotNull);
+    // v155：默认连条目资料一起写（书架系列色块读它），键 = (epub, uid)。
+    final String uid = (await db.resolveEpubBookUid('猫'))!;
+    final ItemScrapeMetaRow meta = (await db.getItemScrapeMeta(
+      MediaKind.epub,
+      uid,
+    ))!;
+    expect(meta.source, 'bangumi');
+    expect(meta.subjectId, '11');
+    expect(meta.airDate, '2010-01-01');
+    expect(meta.detailUrl, 'https://bgm.tv/subject/11');
+    expect(
+      (cover['before']! as Map<String, Object?>)['state'],
+      containsPair('details', null),
+      reason: '撤销快照记下「执行前没有资料」',
+    );
     expect(ref.invalidations, greaterThan(0));
 
     final Map<String, Object?> both =
@@ -191,6 +210,27 @@ void main() {
       ),
       '四叶妹妹',
     );
+  });
+
+  test('apply onlyEmpty：已有 override 封面 / 显示名的字段不覆盖，全被滤掉 → 422', () async {
+    await seedBook(db, '鱼');
+    Future<Object?> apply(List<String> fields) => call(
+      'POST',
+      '$kBookMetadataCtlItems/:key/scrape',
+      params: <String, String>{'key': 'book:鱼'},
+      body: <String, Object?>{'id': '11', 'fields': fields, 'onlyEmpty': true},
+    );
+    // 起初都空：照写。
+    final Map<String, Object?> first =
+        (await apply(<String>['cover']))! as Map<String, Object?>;
+    expect(first['applied'], <String>['cover']);
+    // 已有 override 封面：封面被滤掉，只写显示名。
+    final Map<String, Object?> second =
+        (await apply(<String>['cover', 'title']))! as Map<String, Object?>;
+    expect(second['applied'], <String>['title']);
+    expect(second['requested'], <String>['title']);
+    // 两项都有值了：没东西写。
+    expect(() => apply(<String>['cover', 'title']), _ctlFailure(422));
   });
 
   test('apply：键不对 400、视频键 422、书不存在 404、候选不存在 404、没给 id 400', () async {

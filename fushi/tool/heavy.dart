@@ -4,6 +4,9 @@
 //                            [--cap-mb=N] [--here] [--check-only]
 //                            -- <command...>
 //   dart run tool/heavy.dart --status
+//   dart run tool/heavy.dart --stats[=days]    how long runs queued and ran
+//   dart run tool/heavy.dart --replay[=days]   the same runs queued again with
+//                                              fixed and with measured bookings
 //
 //   e.g. dart run tool/heavy.dart -- flutter test test/foo_test.dart --no-pub
 //        dart run tool/heavy.dart -- flutter analyze --no-pub
@@ -70,6 +73,7 @@ import 'test_flow/heavy_i18n.dart';
 import 'test_flow/heavy_lease.dart';
 import 'test_flow/heavy_offload.dart';
 import 'test_flow/heavy_offload_rival.dart';
+import 'test_flow/heavy_replay.dart';
 import 'test_flow/heavy_sdk_check.dart';
 import 'test_flow/heavy_test_closure.dart';
 
@@ -78,12 +82,16 @@ Future<void> main(List<String> args) async {
   if (args.isNotEmpty && args.first.startsWith('--stats')) {
     return _stats(_intArg(args, '--stats=') ?? 7);
   }
+  if (args.isNotEmpty && args.first.startsWith('--replay')) {
+    return _replay(_intArg(args, '--replay=') ?? 7);
+  }
   final int sep = args.indexOf('--');
   if (sep < 0 || sep == args.length - 1) {
     stderr.writeln(
       'usage: dart run tool/heavy.dart [options] -- <command...>\n'
       '       dart run tool/heavy.dart --status\n'
-      '       dart run tool/heavy.dart --stats[=days]',
+      '       dart run tool/heavy.dart --stats[=days]\n'
+      '       dart run tool/heavy.dart --replay[=days]',
     );
     exit(64);
   }
@@ -109,12 +117,33 @@ Future<void> main(List<String> args) async {
   // dartTestCommandFor). The other machines still get the command as typed.
   final List<String> command = testPlan?.local ?? asTyped;
   final int? capOverride = _intArg(own, '--cap-mb=');
+  // What the kind (a test: what it compiles, heavy_budget.dart testBookMb)
+  // books by itself, and what runs of that class peaked at on this machine
+  // when enough of them are on record (heavy_history.dart
+  // heavyMeasuredBookMb). An explicit --cap-mb books what it asks for.
+  final int staticMb = testPlan?.bookMb ?? classified.bookedMb;
+  final int? measuredMb = capOverride != null
+      ? null
+      : heavyMeasuredBookMb(
+          readHeavyHistory(
+            heavyStateDir(),
+            since: DateTime.now().subtract(kHeavyMeasuredWindow),
+          ),
+          kind: classified.kind.name,
+          staticMb: staticMb,
+          capMb: classified.capMb,
+          now: DateTime.now(),
+        );
+  if (measuredMb != null && measuredMb != staticMb) {
+    stderr.writeln(
+      'heavy: books $measuredMb MB instead of $staticMb MB: what runs of '
+      'this kind peaked at here (p95 + 10%, heavy.dart --stats)',
+    );
+  }
   final HeavyNeed need = HeavyNeed(
     kind: classified.kind,
     capMb: capOverride ?? classified.capMb,
-    // An explicit --cap-mb books what it asks for; a test books from what it
-    // compiles (heavy_budget.dart testBookMb).
-    bookMb: capOverride ?? testPlan?.bookMb ?? classified.bookMb,
+    bookMb: capOverride ?? measuredMb ?? testPlan?.bookMb ?? classified.bookMb,
     worktreeExclusive: classified.worktreeExclusive,
     light: classified.light,
   );
@@ -134,6 +163,12 @@ Future<void> main(List<String> args) async {
         ran: total.elapsed - queued,
         exitCode: code,
         bookMb: need.bookMb,
+        // The class the peak is a sample of; a --cap-mb run is of none.
+        staticMb:
+            capOverride == null &&
+                kHeavyMeasuredKinds.contains(classified.kind.name)
+            ? staticMb
+            : null,
         peakMb: peakMb,
       ),
     );
@@ -627,6 +662,62 @@ void _stats(int days) {
       days: days,
     ),
   );
+}
+
+/// `--replay[=days]`: the runs of the last [days] days queued again by the
+/// lease's own rules, once with the bookings fixed per kind and closure and
+/// once with the measured ones (test_flow/heavy_replay.dart says what a
+/// replay leaves out).
+void _replay(int days) {
+  final List<HeavyHistoryEntry> entries = readHeavyHistory(
+    heavyStateDir(),
+    since: DateTime.now().subtract(Duration(days: days)),
+  );
+  if (entries.isEmpty) {
+    stdout.writeln('heavy: no finished run recorded in the last $days day(s)');
+    return;
+  }
+  final MemorySnapshot? m = readMemorySnapshot();
+  final int slots = heavySlotCount(m);
+  final int? budget = heavyBudgetMb(m);
+  if (budget == null) {
+    stdout.writeln(
+      'heavy: no memory budget on this machine; nothing to replay',
+    );
+    return;
+  }
+  final List<int> measured = heavyReplayMeasuredBooks(entries);
+  final Map<HeavyHistoryEntry, int> measuredOf = <HeavyHistoryEntry, int>{
+    for (int i = 0; i < entries.length; i++) entries[i]: measured[i],
+  };
+  stdout
+    ..writeln(
+      'heavy: ${entries.length} run(s) of the last $days day(s) queued again: '
+      '$slots slots, $kLightSlotCount light, $budget MB budget; every run '
+      'takes as long as it did, holders without history are left out',
+    )
+    ..write(
+      renderHeavyReplay(entries, <String, HeavyReplay>{
+        'as recorded': <int, Duration>{
+          for (int i = 0; i < entries.length; i++)
+            if (entries[i].where == HeavyRanWhere.here ||
+                entries[i].queued > Duration.zero)
+              i: entries[i].queued,
+        },
+        'fixed bookings': replayHeavyHistory(
+          entries,
+          slots: slots,
+          budgetMb: budget,
+          bookOf: heavyReplayStaticBook,
+        ),
+        'measured bookings': replayHeavyHistory(
+          entries,
+          slots: slots,
+          budgetMb: budget,
+          bookOf: (HeavyHistoryEntry e) => measuredOf[e]!,
+        ),
+      }),
+    );
 }
 
 void _status() {

@@ -174,6 +174,68 @@ void main() {
     expect(await state(), MediaLinkState.confirmed);
   });
 
+  test('查找相关作品（AI 生效）→ 撤销：新建的写墓碑，把已有建议升成生效的退回建议', () async {
+    await suggest();
+    const MediaLinkEndpoint other = (
+      kind: MediaLinkKind.videoEpisode,
+      key: 'video/other',
+    );
+    final MediaLinkId freshId = mediaLinkIdFor(
+      MediaLinkRelation.sameWork,
+      book,
+      other,
+    );
+    mediaLinkInferOverride = (OpContext _, MediaLinkEndpoint self) => () async {
+      await db.applyAiMediaLink(
+        relation: MediaLinkRelation.adaptation,
+        from: book,
+        to: video,
+        source: MediaLinkSource.ai,
+        confidence: 0.95,
+      );
+      await db.applyAiMediaLink(
+        relation: MediaLinkRelation.sameWork,
+        from: book,
+        to: other,
+        source: MediaLinkSource.ai,
+        confidence: 0.95,
+      );
+      return 2;
+    };
+    final OpInvocation inferred = await run('links.infer', <String, Object?>{
+      'endpoint': 'book:原作',
+    });
+    expect(
+      (await db.mediaLinkById(linkId))!.confirmedBy,
+      MediaLinkConfirmer.ai,
+    );
+    expect(await undo(inferred), OpUndoStatus.done);
+
+    final MediaLinkRow back = (await db.mediaLinkById(linkId))!;
+    expect(
+      mediaLinkStateOf(back),
+      MediaLinkState.suggested,
+      reason: '升级的那条也在撤销范围里：退回原来的建议',
+    );
+    expect(back.source, 'mal');
+    final MediaLinkRow tomb = (await db.mediaLinkById(freshId))!;
+    expect(
+      mediaLinkStateOf(tomb),
+      MediaLinkState.removed,
+      reason: '凭空新建的写墓碑，不删行（已同步出去的副本拉不回来）',
+    );
+    expect(
+      await db.applyAiMediaLink(
+        relation: MediaLinkRelation.sameWork,
+        from: book,
+        to: other,
+        source: MediaLinkSource.ai,
+      ),
+      isNull,
+      reason: '撤销过的一对不再自动生效',
+    );
+  });
+
   // BUG-3854：AI 只能接受 / 否决 / 推断建议，用户点名「把 A 和 B 关联起来」时没有任何
   // 操作能做到（详情页「关联作品」对话框背后的手动连接从没进操作目录）。
   group('手动关联（links.candidates / links.add / links.remove）', () {

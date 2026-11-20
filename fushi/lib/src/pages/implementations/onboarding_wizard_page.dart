@@ -34,6 +34,10 @@ import 'package:fushi/src/settings/settings_actions.dart'
     show buildLanguageSelector, buildBrightnessSelector;
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
+import 'package:fushi/src/settings/shell_style_preview.dart'
+    show ShellLayoutChoiceCards, shellPreviewCoversOf;
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show ShellContentLayout, shellRedesignActive;
 import 'package:fushi/src/settings/settings_schema_card_creation.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/src/settings/settings_schema_lookup.dart'
@@ -1729,6 +1733,26 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
             ],
           ),
         ),
+        // 库页布局（G1）：新安装出厂是拼贴，这里默认高亮拼贴；点选立即写入（跳过
+        // 向导也不丢），之后可在 设置 › 外观 › 库页布局 改。墨水屏库页恒为封面
+        // 网格，不问。
+        if (shellRedesignActive(context)) ...<Widget>[
+          SizedBox(height: tokens.spacing.section),
+          OnboardingSectionLabel(
+            title: t.onboarding_library_layout_title,
+            hint: t.onboarding_library_layout_hint,
+          ),
+          SizedBox(height: tokens.spacing.gap),
+          ShellLayoutChoiceCards(
+            selected: appModel.shellContentLayout,
+            arrangement: appModel.shellBlockArrangement,
+            covers: shellPreviewCoversOf(ref, appModel),
+            onSelected: (ShellContentLayout layout) async {
+              await appModel.setShellContentLayout(layout);
+              if (mounted) setState(() {});
+            },
+          ),
+        ],
         // 语言之后再问用途：先让用户换成看得懂的界面语言。
         SizedBox(height: tokens.spacing.section),
         OnboardingSectionLabel(
