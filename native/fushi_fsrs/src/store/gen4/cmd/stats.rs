@@ -51,8 +51,9 @@ pub(crate) fn snapshot_of(t: &Truth<'_>, col: i64) -> Result<Snapshot, String> {
 }
 
 fn read_snapshot(t: &Truth<'_>, col: i64) -> Result<Snapshot, String> {
-    let profile = profile_of(t, col)?;
-    Snapshot::load_with(t.conn(), CARDS, REVIEWS, &col, &profile)
+    // 没绑定的集合照旧报错（读的是集合号，profile 本身原料里不留）。
+    profile_of(t, col)?;
+    Snapshot::load_with(t.conn(), CARDS, REVIEWS, &col)
 }
 
 /// `stats_report`：一个范围 + 一个牌组子集的全部聚合值（同协议 3）。

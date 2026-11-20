@@ -276,6 +276,18 @@ CardSourceVideoAction decideCardSourceVideoAction({
 
 /// Resolve a portable locator through the current library. URLs never supply
 /// paths, remote credentials, or arbitrary routes to the navigation layer.
+/// 「回到出处」的跳转动作签名（[openCardSource]）。
+typedef CardSourceOpener =
+    Future<void> Function({
+      required WidgetRef ref,
+      required CardSourceLink link,
+    });
+
+/// 复习页「回到出处」各入口（顶栏图标、媒体胶囊、例句卡 ↩、卡面来源链接）共用的跳转动作。
+/// 默认就是 [openCardSource]；做成 provider 是为了让 widget 测试能确认这些入口落到同一个动作上。
+final Provider<CardSourceOpener> cardSourceOpenerProvider =
+    Provider<CardSourceOpener>((Ref ref) => openCardSource);
+
 Future<void> openCardSource({
   required WidgetRef ref,
   required CardSourceLink link,

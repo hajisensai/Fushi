@@ -88,6 +88,8 @@ void main() {
   List<String> menuLabels() => <String>[
     t.game_view_detail,
     t.game_play_status,
+    // #4b 主操作行的「通关」一键开关（游玩状态「玩过」）。
+    t.item_menu_game_cleared,
     t.media_stats_action,
     t.game_rename,
     t.game_set_cover,
@@ -102,6 +104,8 @@ void main() {
     // 链。hook 文本没有任何语言声明可读，用户指定是它唯一的真值来源，所以与
     // 标签同属「每游戏配置」，紧随其后。
     t.book_language_action,
+    // #4b 工作台入口「文本 Hook 与制卡」：galgame Hook 只做 Windows。
+    if (Platform.isWindows) t.item_menu_game_workbench,
     if (Platform.isWindows) '${t.game_upscaling} · ${t.game_upscaling_off}',
     // BUG-1477：每游戏「日语区域（转区）」档，与超分同为「启动期配置」，
     // 故紧邻它排在删除之前。未设过的游戏显示默认档——BUG-2253 起默认档是

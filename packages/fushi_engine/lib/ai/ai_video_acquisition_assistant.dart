@@ -246,7 +246,7 @@ Rules:
 /// 用户提示：整份快照 JSON 序列化，模型不用猜字段含义。
 String buildVideoAcquisitionIntentUserPrompt(
   VideoAcquisitionIntentQuery query,
-) => const JsonEncoder.withIndent('  ').convert(query.toJson());
+) => jsonEncode(query.toJson());
 
 /// 解析模型回复成已校验的意图。
 ///
@@ -493,7 +493,7 @@ Rules:
 String buildAiVideoAliasUserPrompt(
   String query,
   List<WebKnowledgePage> pages,
-) => const JsonEncoder.withIndent('  ').convert(<String, Object?>{
+) => jsonEncode(<String, Object?>{
   'name': query,
   'reference': <Map<String, Object?>>[
     for (final WebKnowledgePage page in pages)

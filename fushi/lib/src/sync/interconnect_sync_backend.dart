@@ -616,6 +616,7 @@ class InterconnectSyncBackend extends SyncBackend
     if (signature != _configSignature) {
       _configSignature = signature;
       _sessionResolved = false;
+      _resolveFlight = null;
       // BUG-1180：身份变了 = 远端清单缓存里的东西属于**上一个**对端，必须作废。
       // 监听者同步收到通知，所以本次 restoreAuth 返回时缓存已经是空的，紧随其后的
       // 那次 read() 必然重新向新对端取数。
@@ -710,10 +711,34 @@ class InterconnectSyncBackend extends SyncBackend
     requestTimeout: requestTimeout,
   );
 
+  /// 在途的那一轮选路（[_ensureResolved] 单飞）。配置身份变了（[_loadConfig]）、
+  /// 登出、关闭一次性会话时丢掉它，之后的调用方按新配置另起一轮。
+  Future<void>? _resolveFlight;
+
+  /// 会话没选路时，并发调用方共享同一轮选路（单飞）。
+  ///
+  /// 起播并行取流与开播位置（路线图 #3722 m3 gap-remote-4）后，两条请求会同时撞上
+  /// 「还没选路」：各跑一轮 [_resolveSession] 不只是探测做两遍——两轮选中的候选
+  /// 若不同（组内排序随谁先答而变），后完成的那轮会 `_ops?.close()` 掉前一轮刚交给
+  /// 调用方的连接句柄，在途请求被拒连、`onConnectivityError` 再把会话置脏。
+  /// 一轮结束（成功或失败）就清掉，下一次调用按 [_sessionResolved] 重新判断。
+  Future<void> _ensureResolved() {
+    if (_sessionResolved) return Future<void>.value();
+    final Future<void>? inFlight = _resolveFlight;
+    if (inFlight != null) return inFlight;
+    late final Future<void> flight;
+    flight = _resolveSession().whenComplete(() {
+      if (identical(_resolveFlight, flight)) _resolveFlight = null;
+    });
+    _resolveFlight = flight;
+    return flight;
+  }
+
   /// Probes the candidate addresses (in order) and settles the session on the
   /// first reachable one. Switching addresses rebuilds [_ops] and clears the
-  /// folder cache, whose paths embed the previous base URL.
-  Future<void> _ensureResolved() async {
+  /// folder cache, whose paths embed the previous base URL. 只经 [_ensureResolved]
+  /// 调用（单飞）。
+  Future<void> _resolveSession() async {
     if (_sessionResolved) return;
     if (!_hasAnyCredential) {
       throw SyncAuthError(
@@ -820,6 +845,7 @@ class InterconnectSyncBackend extends SyncBackend
     _candidates = const <FushiClientUrl>[];
     _token = null;
     _sessionResolved = false;
+    _resolveFlight = null;
     _activeCandidate = null;
     // 登出后配置身份归零，下次 restoreAuth 必然重探测（BUG-1183）。
     _configSignature = null;
@@ -840,6 +866,7 @@ class InterconnectSyncBackend extends SyncBackend
       _ops?.close();
       _ops = null;
       _sessionResolved = false;
+      _resolveFlight = null;
       return false;
     }
     // BUG-1559：已经探明可达的会话不得被重建成「候选[0]」。
@@ -869,6 +896,7 @@ class InterconnectSyncBackend extends SyncBackend
     _ops?.close();
     _ops = null;
     _sessionResolved = false;
+    _resolveFlight = null;
     _activeCandidate = null;
   }
 

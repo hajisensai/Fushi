@@ -10,6 +10,8 @@
 // 第 3 步：`bulkWrites` 的深度、原值与 WAL 自动 checkpoint 阈值归内核（`bulk_cache`，store/mod.rs `bulk_begin` /
 // `bulk_end`）。改动前一次（空的）批量写入经执行器 3 条 PRAGMA（读原值、调高、恢复）+ 内核 3 条（`bulk_cache` 开 /
 // `wal_checkpoint` / `bulk_cache` 关），改动后 0 + 2（并回 WAL 在 `bulk_cache` 关里做）。
+import 'dart:io';
+
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -19,7 +21,6 @@ import 'package:test/test.dart';
 
 import 'apkg/apkg_test_support.dart' show FakeFsrsEngine;
 import 'support/srs_bulk_fixture.dart';
-import 'support/srs_raw_sql.dart';
 import 'package:fushi_engine/srs/srs_reads.dart';
 
 typedef _Cost = ({int statements, int core});
@@ -56,7 +57,6 @@ void main() {
     final List<String> notes = await s.noteIdsOfType(basic.id);
 
     final BulkFixture src = await BulkFixture.open(notes: 3, deviceId: 'src');
-    final List<SrsEvent> remote = await src.store.exportAll();
     final BulkFixture dst = await BulkFixture.open(notes: 0, deviceId: 'other');
 
     // 每种操作先预热一次（首次的懒加载不计），再量第二次。
@@ -75,13 +75,17 @@ void main() {
       'purge',
       () => s.sync2PurgeMany(SrsEntityKind.note, <String>[notes[purged++]]),
     );
-    final Uint8List exported = await s.sync2ExportOps();
-    await measure('import', () => s.sync2ImportOps(exported));
+    // 导出 / 导入按文件（内核直接读写，G11-3）。
+    final Directory tmp = Directory.systemTemp.createTempSync('srs_cost_');
+    final String exported = '${tmp.path}${Platform.pathSeparator}ops.bin';
+    await s.sync2ExportOps(exported);
+    await measure('import', () => s.sync2ImportOps(path: exported));
     await measure('sched', () => s.resetCard(cards.last));
     await measure('bulkWrites', () => s.bulkWrites(() async {}));
-    costs['applyRemote'] = await _cost(
+    // 对端数据：新代 `apply` 拒绝外来已盖戳的事件，经集合并入进来（`.fushisrs` 导入，内核 `import` + `collection_adopt`）。
+    costs['joinCollection'] = await _cost(
       dst.store,
-      () => dst.store.applyRemote(remote, serverTimeMs: 1),
+      () => joinCollectionFrom(dst.store, src.store),
     );
 
     for (final MapEntry<String, _Cost> e in costs.entries) {
@@ -91,7 +95,9 @@ void main() {
         'core=${e.value.core}',
       );
     }
-    // 改动前（见文件头）各多 BEGIN / COMMIT / 本机状态 upsert 3 条；applyRemote 剩下的 1 条是发命令前的 Drift 预读。
+    // 改动前（见文件头）各多 BEGIN / COMMIT / 本机状态 upsert 3 条。新代 `import` 之后重取一次身份（`identity`：包里
+    // 有本机身份的操作时内核先换身份，`SrsDbStore.sync2ImportOps`），所以内核命令 3 条。`joinCollection` 是整条
+    // `.fushisrs` 导入：预检 + 还原点 + `import` + `identity`（+ 落下之后的清除通知读）。
     // createNote 的那 1 条预读（这条笔记已有的修改记录）在第 14 步收掉：值没变的键由内核落库时筛
     // （srs_write_preread_cost_test.dart）。
     expect(costs, <String, _Cost>{
@@ -99,9 +105,9 @@ void main() {
       'answer': (statements: 0, core: 2),
       'checkpoint': (statements: 0, core: 1),
       'purge': (statements: 0, core: 1),
-      'import': (statements: 0, core: 2),
+      'import': (statements: 0, core: 3),
       'sched': (statements: 0, core: 1),
-      'applyRemote': (statements: 1, core: 1),
+      'joinCollection': (statements: 0, core: 5),
       'bulkWrites': (statements: 0, core: 2),
     });
   });
@@ -216,19 +222,8 @@ void main() {
       'rebuildCaches': await _cost(s, s.rebuildCaches),
       'open(current)': await openCost(),
     };
-    f.store.core.debugExecRaw(
-      r"UPDATE srs_local_state SET json = json_set(json, '$.cacheRev', 1)",
-    );
-    costs['open(cacheRev 1)'] = await openCost();
-    // 旧版本号的那次打开确实由内核补跑了升级、记下了当前版本号（同一条命令里，语句数不多一条）。
-    final int rev =
-        (await f.core
-                .customSelect(
-                  r"SELECT json_extract(json, '$.cacheRev') AS v FROM srs_local_state",
-                )
-                .getSingle())
-            .read<int>('v');
-    expect(rev, s.debugCacheRevision);
+    // 协议 3 这里还量「缓存修订号 1 的老库打开」（内核补跑升级）：新代没有本机状态行的 `cacheRev`（派生层是真相的
+    // 纯函数，协议 3 的旧库只经换代迁移整份重建），那一项删了。
     for (final MapEntry<String, _Cost> e in costs.entries) {
       // ignore: avoid_print
       print(
@@ -241,10 +236,11 @@ void main() {
     // `local_state_ensure`（srs_local_state_kernel_test.dart）。
     // G5：srs.db 的 Drift 执行器删了，「语句」改数内核读命令。开库剩下的读只有补内置实体前查哪几个已在（以前三个
     // 内置实体各一条 SELECT，现在一条 `entities {ids}`），所以 3 → 1。
+    // 新代：开库多一条 `collection_info`（盐集合不在 identity 回包里，绑定代号要带上它，SrsDbStore._sync2Open），
+    // 3 → 4（`identity` + `collection_info` + `cache_config_set` + 本机状态）。
     expect(costs, <String, _Cost>{
       'rebuildCaches': (statements: 0, core: 1),
-      'open(current)': (statements: 1, core: 3),
-      'open(cacheRev 1)': (statements: 1, core: 3),
+      'open(current)': (statements: 1, core: 4),
     });
   });
 

@@ -487,6 +487,8 @@
   "pc_offset_title": "Sfasamento tempi",
   "pc_style_title": "Stile sottotitoli",
   "pc_mask_edit": "Regola maschera sottotitoli",
+  "pc_fullscreen_enter": "Schermo intero",
+  "pc_fullscreen_exit": "Esci da schermo intero",
   "mask_edit_hint": "Trascina per spostare, trascina bordi o angoli per ridimensionare",
   "mask_edit_reset": "Reimposta",
   "mask_edit_done": "Fatto",

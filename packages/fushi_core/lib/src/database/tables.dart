@@ -1864,14 +1864,27 @@ class VideoScrapeMeta extends Table {
 // 与 [CollectionScrapeMeta] 同族：可重建的刮削缓存（删了重刮即回填），删除合集
 // FK cascade 连带清边；目标合集被删则 setNull 退回纯刮削态（刮削事实还在，只是
 // 本地绑定失效——这正是「目标两态」的语义，不需要墓碑）。
+//
+// v162：起点与已绑定目标都可以是**单视频**（挂在单个视频上的作品，散装电影）。
+// 起点合集 / 单视频二选一（CHECK，同 [MediaImages] 的单一归属），删视频 cascade
+// 清边；已绑定目标合集 / 单视频至多一个，目标视频被删 setNull 退回纯刮削态。
+// 存量行（起点都是合集）按列名原样拷贝，新两列为 NULL。
 @DataClassName('CollectionRelationRow')
 class CollectionRelations extends Table {
   IntColumn get id => integer().autoIncrement()();
 
-  /// 边的起点：本地合集。删合集 cascade 清边。
-  IntColumn get collectionId => integer().references(
+  /// 边的起点：本地合集（与 [bookUid] 二选一）。删合集 cascade 清边。
+  IntColumn get collectionId => integer().nullable().references(
     MediaCollections,
     #id,
+    onDelete: KeyAction.cascade,
+  )();
+
+  /// 边的起点：单视频（v162，与 [collectionId] 二选一；挂在单个视频上的作品，
+  /// 散装电影）。删视频 cascade 清边。
+  TextColumn get bookUid => text().nullable().references(
+    VideoBooks,
+    #bookUid,
     onDelete: KeyAction.cascade,
   )();
 
@@ -1891,6 +1904,14 @@ class CollectionRelations extends Table {
     onDelete: KeyAction.setNull,
   )();
 
+  /// 已绑定态（v162）：目标在本地库中是单视频（散装电影）时的 bookUid，与
+  /// [targetCollectionId] 至多一个非空。目标视频被删自动 setNull 退回纯刮削态。
+  TextColumn get targetBookUid => text().nullable().references(
+    VideoBooks,
+    #bookUid,
+    onDelete: KeyAction.setNull,
+  )();
+
   /// 目标条目来源（`ScrapeSource.name`：bangumi / tmdb）。
   TextColumn get source => text()();
 
@@ -1906,10 +1927,19 @@ class CollectionRelations extends Table {
   /// 目标封面本地路径（抓取层下载落地后回填）。
   TextColumn get coverPath => text().nullable()();
 
-  /// 同一合集下同一源内条目只此一边（重复刮削按此去重）。
+  /// 起点合集 / 单视频恰好一个；已绑定目标合集 / 单视频至多一个。
+  @override
+  List<String> get customConstraints => <String>[
+    'CHECK ((collection_id IS NULL) != (book_uid IS NULL))',
+    'CHECK (target_collection_id IS NULL OR target_book_uid IS NULL)',
+  ];
+
+  /// 同一起点下同一源内条目只此一边（重复刮削按此去重）。两条唯一键分别覆盖两种
+  /// 起点——SQLite 的 UNIQUE 对 NULL 不判等，各自只约束自己那种起点的行。
   @override
   List<Set<Column>> get uniqueKeys => [
     {collectionId, source, subjectId},
+    {bookUid, source, subjectId},
   ];
 }
 

@@ -239,10 +239,28 @@ class _PlatformViewLikeFaceState extends State<_PlatformViewLikeFace> {
   );
 }
 
+/// 本文件各用例只开自己要测的那几条绑定：底子是「三区单击都切换顶栏、其余不绑」，不随
+/// 默认映射（[SrsReviewGestureMap.defaults]）变化。
+SrsReviewGestureMap _tapsToggleToolbarOnly() {
+  SrsReviewGestureMap m = SrsReviewGestureMap.defaults;
+  for (final SrsReviewSide side in SrsReviewSide.values) {
+    for (final SrsReviewGesture g in SrsReviewGesture.values) {
+      m = m.withBinding(
+        side,
+        g,
+        g.isTap
+            ? SrsReviewGestureAction.toggleToolbar
+            : SrsReviewGestureAction.none,
+      );
+    }
+  }
+  return m;
+}
+
 SrsReviewGestureMap _map(
   List<(SrsReviewSide, SrsReviewGesture, SrsReviewGestureAction)> bindings,
 ) {
-  SrsReviewGestureMap m = SrsReviewGestureMap.defaults;
+  SrsReviewGestureMap m = _tapsToggleToolbarOnly();
   for (final (SrsReviewSide side, SrsReviewGesture g, SrsReviewGestureAction a)
       in bindings) {
     m = m.withBinding(side, g, a);

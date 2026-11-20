@@ -1,5 +1,4 @@
 import 'dart:async' show unawaited;
-import 'dart:math' as math;
 import 'package:collection/collection.dart' show mergeSort;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -1035,94 +1034,48 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
     final List<MediaDiscoverySource> sources = service.sourcesFor(_kind);
     final double gap = tokens.spacing.gap;
     final double page = tokens.spacing.page;
+    final VoidCallback? manage = widget.onManageSources;
+    // 设计稿 11-20 #13：引导降成一行横幅，来源块回到首行；网格末尾放一张与来源块
+    // 同尺寸的「添加来源」块（有去处时），不再让一张半空的引导卡占三块来源的面积。
+    final List<Widget> blocks = <Widget>[
+      for (final MediaDiscoverySource source in sources)
+        _buildSourceCard(context, source),
+      if (manage != null)
+        DiscoveryAddSourceBlock(
+          key: const ValueKey<String>('discovery_guide_manage'),
+          // 书 / 游戏的来源不是扩展（内置发现源 + 自配服务器，都在「设置 › 在线
+          // 服务」），副文案写「管理来源」；iOS 只有用户服务器（合规门）。
+          hint: StoreRestrictedCapability.externalDiscovery.isAvailable
+              ? t.manga_discovery_empty_action
+              : t.discovery_source_add_hint_server,
+          onTap: manage,
+        ),
+    ];
     return Padding(
       padding: EdgeInsets.fromLTRB(page, gap, page, tokens.spacing.section),
-      child: LayoutBuilder(
-        builder: (BuildContext context, BoxConstraints constraints) {
-          final double available = constraints.maxWidth;
-          const double minWidth = kDiscoverySourceBlockMinWidth;
-          const double blockHeight = kDiscoverySourceBlockHeight;
-          final List<Widget> blocks = <Widget>[
-            for (final MediaDiscoverySource source in sources)
-              _buildSourceCard(context, source),
-          ];
-          final bool collage =
-              blocks.isNotEmpty && available >= 3 * minWidth + 2 * gap;
-          if (!collage) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                FushiStaggeredEntrance(
-                  index: 0,
-                  child: _buildPickerBanner(context, sources, height: null),
-                ),
-                if (blocks.isNotEmpty) ...<Widget>[
-                  SizedBox(height: gap),
-                  DiscoverySourceBlockGrid(indexOffset: 1, children: blocks),
-                ],
-              ],
-            );
-          }
-          final double half = (available - gap) / 2;
-          final int rightColumns = DiscoverySourceBlockGrid.columnsFor(
-            half,
-            gap,
-            minWidth,
-          );
-          final int beside = math.min(blocks.length, rightColumns * 2);
-          final double guideHeight = blockHeight * 2 + gap;
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  SizedBox(
-                    width: half,
-                    height: guideHeight,
-                    child: FushiStaggeredEntrance(
-                      index: 0,
-                      child: _buildPickerBanner(
-                        context,
-                        sources,
-                        height: guideHeight,
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: gap),
-                  SizedBox(
-                    width: half,
-                    child: DiscoverySourceBlockGrid(
-                      indexOffset: 1,
-                      children: blocks.sublist(0, beside),
-                    ),
-                  ),
-                ],
-              ),
-              if (beside < blocks.length) ...<Widget>[
-                SizedBox(height: gap),
-                DiscoverySourceBlockGrid(
-                  indexOffset: 1 + beside,
-                  children: blocks.sublist(beside),
-                ),
-              ],
-            ],
-          );
-        },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          FushiStaggeredEntrance(
+            index: 0,
+            child: _buildPickerBanner(context, sources),
+          ),
+          if (blocks.isNotEmpty) ...<Widget>[
+            SizedBox(height: gap),
+            DiscoverySourceBlockGrid(indexOffset: 1, children: blocks),
+          ],
+        ],
       ),
     );
   }
 
-  /// 域引导块：MD3 secondaryContainer 色块 / Apple 实色分组卡，普通标题字号
-  /// （titleLarge，不用大字、不重复写域名，DI5）。文案 = 引导句 + 能力计数；
-  /// 有可浏览来源时给「浏览 <第一个可浏览源>」，一个来源都没有时写「还没有来源」
-  /// 并给去处（有外部发现源能力 =「管理来源」，iOS =「连接服务器」；判据只走合规
-  /// 边界）。[height] 非空时是拼贴里的定高块。
+  /// 域引导横幅（一行）：图标 + 引导句 + 能力计数；有可浏览来源时结尾给「浏览
+  /// <第一个可浏览源>」。一个来源都没有时写「还没有来源」（去处是网格里的「添加
+  /// 来源」块）。MD3 secondaryContainer 底 / Apple 实色分组卡。
   Widget _buildPickerBanner(
     BuildContext context,
-    List<MediaDiscoverySource> sources, {
-    required double? height,
-  }) {
+    List<MediaDiscoverySource> sources,
+  ) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ThemeData theme = Theme.of(context);
     final bool apple = isGlassDesign(context);
@@ -1143,89 +1096,73 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
         break;
       }
     }
-    final VoidCallback? manage = widget.onManageSources;
-    final Widget? action = firstBrowsable != null
-        ? FushiFilledButton.tonal(
-            key: const ValueKey<String>('discovery_guide_browse'),
-            onPressed: () => _selectSource(firstBrowsable!.id),
-            child: Text(
-              t.discovery_guide_browse_source(
-                source: firstBrowsable.displayName,
-              ),
-            ),
-          )
-        : sources.isEmpty && manage != null
-        ? FushiFilledButton(
-            key: const ValueKey<String>('discovery_guide_manage'),
-            onPressed: manage,
-            child: Text(
-              // 书 / 游戏的来源不是扩展（内置发现源 + 自配服务器，都在「设置 ›
-              // 在线服务」），所以这里写「管理来源」而不是「去装扩展」；iOS 只有
-              // 用户服务器（合规门），写「连接服务器」。
-              StoreRestrictedCapability.externalDiscovery.isAvailable
-                  ? t.manga_discovery_empty_action
-                  : t.discovery_guide_connect_server,
-            ),
-          )
-        : null;
-    final Widget content = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: height == null ? MainAxisSize.min : MainAxisSize.max,
-      children: <Widget>[
-        FushiNeutralIconBadge(
-          icon: _kind == DiscoveryMediaKind.game
-              ? FushiIcons.games
-              : FushiIcons.travelExplore,
-          size: 48,
-          iconSize: 26,
-        ),
-        if (height != null)
-          const Spacer()
-        else
-          SizedBox(height: tokens.spacing.card),
-        // 定高块（拼贴里与两行来源块等高）：标题 / 计数各自限行，长文案或大字号
-        // 下省略号收尾，不把按钮顶出块底。
-        Text(
-          sources.isEmpty
-              ? t.discovery_guide_no_sources
-              : t.discovery_source_pick_hint,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: theme.textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.w600,
-            letterSpacing: apple ? -0.3 : null,
-            color: foreground,
-          ),
-        ),
-        if (sources.isNotEmpty) ...<Widget>[
-          SizedBox(height: tokens.spacing.gap / 2),
-          Text(
-            t.discovery_guide_capability_counts(
-              browsable: browsable,
-              searchOnly: sources.length - browsable,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.bodyMedium?.copyWith(color: secondary),
-          ),
-        ],
-        if (action != null) ...<Widget>[
-          SizedBox(height: tokens.spacing.card),
-          action,
-        ],
-      ],
-    );
+    final MediaDiscoverySource? first = firstBrowsable;
     return FushiCard(
       key: const ValueKey<String>('discovery_pick_banner'),
       color: apple ? null : theme.colorScheme.secondaryContainer,
       borderRadius: discoveryHeroRadius(context),
-      padding: EdgeInsets.all(tokens.spacing.section),
-      child: height == null
-          ? content
-          : SizedBox(
-              height: height - tokens.spacing.section * 2,
-              child: content,
+      padding: EdgeInsetsDirectional.fromSTEB(
+        tokens.spacing.card,
+        tokens.spacing.gap,
+        tokens.spacing.gap,
+        tokens.spacing.gap,
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 40),
+        child: Row(
+          spacing: tokens.spacing.gap,
+          children: <Widget>[
+            FushiIcon(
+              _kind == DiscoveryMediaKind.game
+                  ? FushiIcons.games
+                  : FushiIcons.travelExplore,
+              size: 20,
+              color: foreground ?? theme.colorScheme.onSurfaceVariant,
             ),
+            Expanded(
+              child: Wrap(
+                spacing: tokens.spacing.gap,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: <Widget>[
+                  Text(
+                    sources.isEmpty
+                        ? t.discovery_guide_no_sources
+                        : t.discovery_source_pick_hint,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: foreground,
+                    ),
+                  ),
+                  if (sources.isNotEmpty)
+                    Text(
+                      t.discovery_guide_capability_counts(
+                        browsable: browsable,
+                        searchOnly: sources.length - browsable,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: secondary,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            if (first != null)
+              FushiTextButton(
+                key: const ValueKey<String>('discovery_guide_browse'),
+                onPressed: () => _selectSource(first.id),
+                child: Text(
+                  t.discovery_guide_browse_source(source: first.displayName),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 

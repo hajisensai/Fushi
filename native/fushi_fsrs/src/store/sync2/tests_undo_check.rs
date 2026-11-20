@@ -11,7 +11,7 @@ const CARD: &str = "0193a1b2-0000-7000-8000-00000000d0c1";
 fn dispatch(d: &Device, req: Value) -> Value {
     let mut blobs: Vec<Vec<u8>> = Vec::new();
     let mut files = Vec::new();
-    crate::store::ffi::sync2_dispatch(&d.core, &req, &mut blobs, &mut files).unwrap()
+    crate::store::legacy3::sync2_dispatch(&d.core, &req, &mut blobs, &mut files).unwrap()
 }
 
 /// 本机写一条卡片旗标，交回 `apply` 报告的那条修改的 dot `(设备, 序号)`。

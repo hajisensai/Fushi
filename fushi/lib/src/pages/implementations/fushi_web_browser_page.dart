@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' show FlutterView;
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -28,6 +30,7 @@ import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -77,6 +80,7 @@ import 'package:fushi/src/web_browser/tab_view/web_browser_tab_view.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tab.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tab_host.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tabs_controller.dart';
+import 'package:fushi/src/web_browser/web_browser_fullscreen.dart';
 import 'package:fushi/src/web_browser/web_browser_prefs.dart';
 import 'package:fushi/src/media/video/web_video_sites.dart'
     show webVideoSitesAvailable;
@@ -974,6 +978,16 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
   Uri? _bookmarkCheckedFor;
   bool _systemUiHidden = false;
 
+  /// 网页全屏期间设的方向集（null = 没动过，见 [_applyFullscreenDisplay]）。
+  List<DeviceOrientation>? _fullscreenOrientations;
+
+  /// 前台标签页处在「竖拿横视频」全屏分屏（[webBrowserFullscreenSplit]）。
+  bool _fullscreenSplit = false;
+
+  /// 本页所在的视图（[didChangeDependencies] 里取；转屏回调 [didChangeMetrics] 读它的
+  /// 尺寸，回调里不能再拿 context 查祖先）。
+  FlutterView? _view;
+
   AppModel get _appModel => ref.read(appProvider);
 
   @override
@@ -1045,6 +1059,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _view = View.maybeOf(context);
     final ModalRoute<Object?>? route = ModalRoute.of(context);
     _studyCoverWatch.attach(route);
     _playbackCoverWatch.attach(route);
@@ -1099,6 +1114,11 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     if (_systemUiHidden) {
       unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
     }
+    if (_fullscreenOrientations != null) {
+      unawaited(
+        SystemChrome.setPreferredOrientations(kWebBrowserIdleOrientations),
+      );
+    }
     _watched?.removeListener(_onActiveTabChanged);
     _tabs.removeListener(_onTabsChanged);
     _store.removeListener(_onStoreChanged);
@@ -1112,6 +1132,9 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     _addressFocus.dispose();
     super.dispose();
   }
+
+  @override
+  void didChangeMetrics() => _syncFullscreenSplit();
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -1133,7 +1156,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     _watched = active;
     active?.addListener(_onActiveTabChanged);
     _collapse = const WebBrowserCollapseState();
-    _applySystemUi(active?.fullscreen ?? false);
+    _applyFullscreenDisplay(active);
     _refreshBookmark();
   }
 
@@ -1145,7 +1168,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
   void _onActiveTabChanged() {
     final WebBrowserTab? tab = _watched;
     if (tab == null) return;
-    _applySystemUi(tab.fullscreen);
+    _applyFullscreenDisplay(tab);
     if (tab.url != _bookmarkCheckedFor) _refreshBookmark();
     _rebuild();
   }
@@ -1165,6 +1188,52 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
         if ((b != null) != _bookmarked) setState(() => _bookmarked = b != null);
       }, onError: (Object _) {}),
     );
+  }
+
+  /// 前台页的网页全屏态 → 系统栏、手机方向锁、分屏。方向只在手机上锁：横视频
+  /// 转横屏、竖视频转竖屏（[webBrowserFullscreenOrientations]）；退出全屏还原成
+  /// [kWebBrowserIdleOrientations]，从没锁过就不碰（别的页可能在管方向）。
+  void _applyFullscreenDisplay(WebBrowserTab? tab) {
+    final bool fullscreen = tab?.fullscreen ?? false;
+    _applySystemUi(fullscreen);
+    if (isMobilePlatform) {
+      final List<DeviceOrientation> next = webBrowserFullscreenOrientations(
+        fullscreen: fullscreen,
+        fit: tab?.fullscreenFit ?? WebBrowserFullscreenFit.unknown,
+        autoRotate: webBrowserFullscreenAutoRotate(_prefs),
+      );
+      final List<DeviceOrientation>? applied = _fullscreenOrientations;
+      if (fullscreen ? !listEquals(applied, next) : applied != null) {
+        _fullscreenOrientations = fullscreen ? next : null;
+        unawaited(SystemChrome.setPreferredOrientations(next));
+      }
+    }
+    _syncFullscreenSplit();
+  }
+
+  /// 分屏判据随前台页全屏态与视口方向变（转屏走 [didChangeMetrics]）；变了通知功能
+  /// 插件（字幕侧栏自动拉开 / 收回）并重排。
+  void _syncFullscreenSplit() {
+    if (!mounted) return;
+    final WebBrowserTab? tab = _tabs.activeTab;
+    final Size? size = _view?.physicalSize;
+    final bool split =
+        tab != null &&
+        size != null &&
+        webBrowserFullscreenSplit(
+          fullscreen: tab.fullscreen,
+          fit: tab.fullscreenFit,
+          width: size.width,
+          height: size.height,
+        );
+    if (split == _fullscreenSplit) return;
+    _fullscreenSplit = split;
+    if (tab != null) {
+      for (final WebBrowserFeature f in _features) {
+        f.onFullscreenSplitChanged(tab, split: split);
+      }
+    }
+    _rebuild();
   }
 
   void _applySystemUi(bool fullscreen) {
@@ -2413,7 +2482,9 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     Widget pages,
   ) {
     Widget? panel;
-    if (active != null && !active.fullscreen) {
+    // 全屏看视频时不出侧栏，「竖拿横视频」分屏除外（视频贴顶、下面给字幕列表）。
+    final bool split = _fullscreenSplit;
+    if (active != null && (!active.fullscreen || split)) {
       for (final WebBrowserFeature f in _features) {
         panel = f.sidePanel(context, active);
         if (panel != null) break;
@@ -2421,7 +2492,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     }
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints box) {
-        final bool wide = box.maxWidth >= 720;
+        final bool wide = !split && box.maxWidth >= 720;
         // 拖动中逐帧跟手，不走开合动画。
         final Duration d = _sidePanelWidthDrag != null
             ? Duration.zero
@@ -2435,8 +2506,21 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
                           : kWebBrowserSidePanelDefaultWidth))
                   .clamp(kWebBrowserSidePanelMinWidth, maxPanelWidth)
             : box.maxWidth;
-        final double panelHeight = wide ? box.maxHeight : box.maxHeight * 0.45;
+        // 分屏：上面留出视频（16:9 按宽铺满，避开刘海）的高度，其余全给侧栏，
+        // 网页被推挤而不是被盖住，伪全屏的视频随之缩进上半区。
+        final double splitTop = split ? MediaQuery.paddingOf(context).top : 0;
+        final double panelHeight = wide
+            ? box.maxHeight
+            : split
+            ? box.maxHeight -
+                  splitTop -
+                  webBrowserFullscreenSplitVideoHeight(
+                    width: box.maxWidth,
+                    height: box.maxHeight,
+                  )
+            : box.maxHeight * 0.45;
         final bool open = panel != null;
+        final bool push = split && open;
         return Stack(
           fit: StackFit.expand,
           children: <Widget>[
@@ -2445,6 +2529,8 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
               curve: FushiMotion.standard,
               padding: EdgeInsetsDirectional.only(
                 end: wide && open ? panelWidth : 0,
+                top: push ? splitTop : 0,
+                bottom: push ? panelHeight : 0,
               ),
               child: pages,
             ),

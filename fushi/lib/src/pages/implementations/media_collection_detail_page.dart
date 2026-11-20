@@ -99,6 +99,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart'
     show currentRevealHost, revealFirstOf;
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_error_text.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart';
@@ -136,12 +137,13 @@ import 'package:fushi/src/pages/implementations/ai_settings_route.dart'
 import 'package:fushi/src/media/video/subtitle/remote_video_subtitle_service.dart'
     show
         RemoteVideoSubtitleEpisode,
+        RemoteVideoSubtitleSeasonMember,
         RemoteVideoSubtitleTarget,
         appRemoteVideoSubtitleService;
 import 'package:fushi/src/media/video/subtitle/remote_video_subtitle_sheet.dart'
     show showRemoteVideoSubtitleSheet;
 import 'package:fushi/src/media/links/media_link_entries.dart'
-    show MediaLinkEntry;
+    show MediaLinkEntry, resolveMediaLinkEntry;
 import 'package:fushi/src/media/links/media_link_inference_host.dart'
     show mediaLinkInferCallback;
 import 'package:fushi/src/media/links/media_link_opener.dart'
@@ -1390,7 +1392,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       ErrorLogService.instance.log('collectionDetail.setCover', e, stack);
       if (!mounted) return;
       FushiToast.show(
-        msg: t.collection_cover_failed,
+        msg: videoScrapeMaintenanceText(e) ?? t.collection_cover_failed,
         severity: ToastSeverity.error,
       );
       return;
@@ -1533,22 +1535,21 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   }
 
   Future<void> _generateRemoteSeasonJaSubtitles(AppModel appModel) async {
-    bool hasJapanese(RemoteVideoInfo m) =>
-        m.subtitleFileName?.toLowerCase().endsWith('.ja.srt') ?? false;
+    // 「已有字幕跳过」按面板里选的语言算（[RemoteVideoSubtitleTarget.forLanguage]）。
     await showRemoteVideoSubtitleSheet(
       context: context,
       service: appRemoteVideoSubtitleService(appModel),
-      target: RemoteVideoSubtitleTarget(
+      target: RemoteVideoSubtitleTarget.season(
         title: _canonicalWork?.title ?? _name,
-        wholeSeason: true,
-        episodes: <RemoteVideoSubtitleEpisode>[
+        members: <RemoteVideoSubtitleSeasonMember>[
           for (final RemoteVideoInfo m in _remoteMembers)
-            if (!hasJapanese(m))
-              RemoteVideoSubtitleEpisode(videoId: m.id, title: m.title),
-        ],
-        skippedExisting: <String>[
-          for (final RemoteVideoInfo m in _remoteMembers)
-            if (hasJapanese(m)) m.title,
+            RemoteVideoSubtitleSeasonMember(
+              episode: RemoteVideoSubtitleEpisode(
+                videoId: m.id,
+                title: m.title,
+              ),
+              subtitleFileName: m.subtitleFileName,
+            ),
         ],
       ),
       prefs: PrefsRepoVideoSubtitleGeneratePrefs(appModel.prefsRepo),
@@ -3733,11 +3734,28 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     SliverToBoxAdapter(child: _buildExtrasSection(tokens)),
     // 相关作品横滚（TODO-2484）：无关系边整块不渲染（区块内部判空）。
     SliverToBoxAdapter(
-      child: CollectionRelationsSection(
-        database: widget.database,
-        collectionId: widget.collection.id,
-        onOpenCollection: (int id) => _openRelatedCollection(id),
-        onDownload: _downloadsAvailable ? _downloadRelation : null,
+      child: Consumer(
+        builder: (BuildContext context, WidgetRef ref, Widget? _) =>
+            CollectionRelationsSection(
+              database: widget.database,
+              collectionId: widget.collection.id,
+              onOpenCollection: (int id) => _openRelatedCollection(id),
+              onDownload: _downloadsAvailable ? _downloadRelation : null,
+              // v162：目标是本机散装电影（单视频作品）——与作品图谱打开单个视频
+              // 同一个出口。
+              onOpenVideo: (String bookUid) async {
+                final MediaLinkEntry entry = await resolveMediaLinkEntry(
+                  widget.database,
+                  (kind: MediaLinkKind.videoEpisode, key: bookUid),
+                );
+                if (!context.mounted) return;
+                await openMediaLinkEntry(
+                  context: context,
+                  ref: ref,
+                  entry: entry,
+                );
+              },
+            ),
       ),
     ),
     // 跨模块「同一作品」（作品图谱 media_links）：原作 / 改编 / 游戏…

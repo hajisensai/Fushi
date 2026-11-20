@@ -267,12 +267,21 @@ resolvePinnedSubtitleVersion(
   return null;
 }
 
-/// 批量下载能否开放：选中来源存在且确有可解析字幕、没在搜索/下载中。纯函数。
+/// 批量下载能否开放：选中来源存在且确有可下的字幕、没在搜索/下载中。纯函数。
+///
+/// 「可下的字幕」= 单集文件（[SubtitleCollectionSource.index]）**或**能解开的整季包
+/// （[SubtitleCollectionSource.unpackablePackFormat]）。整季包不进 index（它不是某一
+/// 集的文件），但批量会按集号从包里拆（`runSubtitleBatch`），成员行也据此预览「将从
+/// 整季包中拆出」；只看 index 的话只有整季包的来源按钮是灰的，与成员行自相矛盾。
 bool canRunSubtitleCollectionBatch({
   required SubtitleCollectionSource? selected,
   required bool searching,
   required bool running,
-}) => selected != null && !searching && !running && !selected.index.isEmpty;
+}) =>
+    selected != null &&
+    !searching &&
+    !running &&
+    (!selected.index.isEmpty || selected.unpackablePackFormat != null);
 
 class SubtitleCollectionPanel extends StatefulWidget {
   const SubtitleCollectionPanel({
@@ -1211,10 +1220,19 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
                   ),
           );
         case SubtitleBatchStatus.failed:
-          // 与本集面板同一套文案（BUG-1844）：key 被拒 / 连不上 / HTTP 状态码。
-          return Text(
-            describeSubtitleFailure(t.video_jimaku_download_failed, item.error),
-          );
+          return Text(switch (item.failureStage) {
+            // 下下来了：说成「下载失败」用户会去换来源，而问题在本地。
+            SubtitleBatchFailureStage.write =>
+              t.video_subtitle_batch_save_failed,
+            SubtitleBatchFailureStage.persist =>
+              t.video_subtitle_batch_persist_failed,
+            // 与本集面板同一套文案（BUG-1844）：key 被拒 / 连不上 / HTTP 状态码。
+            SubtitleBatchFailureStage.download ||
+            null => describeSubtitleFailure(
+              t.video_jimaku_download_failed,
+              item.error,
+            ),
+          });
         case SubtitleBatchStatus.downloading:
         case SubtitleBatchStatus.pending:
           return Text(t.video_jimaku_source_loading);

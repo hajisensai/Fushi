@@ -35,12 +35,25 @@ const int kActivityCoverDecodePixelWidth = 192;
 ///
 /// `.avif`（漫画页图当封面、AVIF 封面）Flutter 自带 codec 在多数平台解不开，交给
 /// [AvifFileImage] 走原生内核，同样按 [width] 只缩不放。
+///
+/// 用过的每个 [width] 都记进 [_resizedFileImageWidths]：解码宽度是 [ImageCache] 键的
+/// 一部分，[evictLocalCoverCache] 要按这张表把同一路径的每个宽度键都清掉。
 ImageProvider resizedFileImage(
   File file, {
   int width = kLocalCoverDecodePixelWidth,
-}) => isAvifPath(file.path)
-    ? AvifFileImage(file, maxWidth: width)
-    : ResizeImage(FileImage(file), width: width, allowUpscaling: false);
+}) {
+  _resizedFileImageWidths.add(width);
+  return isAvifPath(file.path)
+      ? AvifFileImage(file, maxWidth: width)
+      : ResizeImage(FileImage(file), width: width, allowUpscaling: false);
+}
+
+/// 本进程里 [resizedFileImage] 出现过的全部解码宽度（含默认 720）。
+///
+/// 同一路径按不同宽度取图（作品详情页背景 1280 / logo 640、库页 720、迷你条 144……）
+/// 在 [ImageCache] 里是不同的键；只驱逐默认宽度的话，同路径覆盖写（BUG-2737 重刮
+/// 换身份写 `fanart.<ext>`）后非默认宽度的页面仍画旧图。
+final Set<int> _resizedFileImageWidths = <int>{kLocalCoverDecodePixelWidth};
 
 /// 路径扩展名是不是 `.avif`（大小写不敏感）。导入 / 下载 / 直读缓存都按真实字节定
 /// 扩展名，所以扩展名就是格式。
@@ -145,7 +158,9 @@ Future<void> evictLocalCoverCache(String path) async {
   final File file = File(path);
   for (final ImageProvider provider in <ImageProvider>[
     FileImage(file),
-    resizedFileImage(file),
+    // 每个用过的解码宽度各是一个键（见 [_resizedFileImageWidths]），都要清。
+    for (final int width in _resizedFileImageWidths.toList())
+      resizedFileImage(file, width: width),
   ]) {
     // 先清 ImageCache 再推进代际号：反过来的话，两步之间 resolve 到的仍是旧
     // completer（旧字节），却记下了新代际号，旧图结果就能通过代际校验进缓存。

@@ -39,6 +39,11 @@ const String kBookSourceScanIndexPrefKeyPrefix = 'media_source_scan_index_';
 String bookSourceScanIndexPrefKey(int sourceId) =>
     '$kBookSourceScanIndexPrefKeyPrefix$sourceId';
 
+/// 来源 [sourceId] 的扫描索引**逐条日志**键前缀（见 [BookSourceIndex.journal]）。以
+/// `~` 收尾：`..._1~` 不会前缀匹配到来源 12 的 `..._12` / `..._12~`。
+String bookSourceScanJournalPrefKeyPrefix(int sourceId) =>
+    '${bookSourceScanIndexPrefKey(sourceId)}~';
+
 /// [entryPath] 相对库根 [rootPath] 的索引键：正斜杠分隔、已归一。库根本身（漫画根目录
 /// 直接放页图时整根是一卷）为 `.`。
 String bookSourceRelPath(String rootPath, String entryPath) => p
@@ -64,6 +69,12 @@ String bookSourceAbsPath(String rootPath, String rel) =>
 /// 文件的廉价签名（调用方定义，如有声书目录的音频清单 + 字幕「字节数 + 修改时刻」）。
 /// 重扫时签名没变就什么都不做，变了才去比库里的行、就地更新（有声书目录补章节 /
 /// 换字幕）。旧版索引没有这张表，读出来为空；只给有这种需求的来源用。
+///
+/// **两级落盘**：整份快照（[save]）在一个偏好键里；扫描途中逐条丢不起的改动走
+/// [journal]——每条源一行（`<快照键>~<相对路径>`），写一条是 O(1)。[load] 先读快照
+/// 再按日志覆盖，[save] 在同一个事务里写快照并清空日志。此前逐卷落盘就是整份重写，
+/// 首扫 N 卷要写 N 次逐渐变大的 JSON（实测 2000 卷 ≈ 111 MiB / 22 s，5000 卷 ≈
+/// 700 MiB / 75 s），随卷数平方增长。
 class BookSourceIndex {
   BookSourceIndex._(
     this.sourceId,
@@ -116,32 +127,87 @@ class BookSourceIndex {
         // 损坏的索引按空处理。
       }
     }
+    // 上次整份保存之后逐条记下的改动（扫描中途被杀时留下的）：比快照新，覆盖它。
+    final String journalPrefix = bookSourceScanJournalPrefKeyPrefix(sourceId);
+    final Map<String, String> journal = await db.getPrefsByPrefix(
+      journalPrefix,
+    );
+    for (final MapEntry<String, String> row in journal.entries) {
+      final String rel = row.key.substring(journalPrefix.length);
+      try {
+        final Object? decoded = jsonDecode(
+          PrefCodec.decode<String>(row.value, ''),
+        );
+        if (decoded is! Map<String, dynamic>) continue;
+        void apply(String field, Map<String, String> into) {
+          final Object? value = decoded[field];
+          if (value is String && value.isNotEmpty) into[rel] = value;
+        }
+
+        apply('u', entries);
+        apply('r', rejected);
+        apply('s', signatures);
+      } on FormatException {
+        // 损坏的日志行按没有处理（只会少认领 / 多判一次）。
+      }
+    }
     return BookSourceIndex._(sourceId, entries, rejected, signatures);
   }
 
-  /// 落库（认领与负向表都空时直接删键）。
-  Future<void> save(FushiDatabase db) async {
+  /// 整份落库（认领与负向表都空时直接删键），并清空逐条日志（同一个事务）。
+  Future<void> save(FushiDatabase db) => db.transaction(() async {
     final String key = bookSourceScanIndexPrefKey(sourceId);
     if (_uidByRel.isEmpty && _rejectedByRel.isEmpty) {
       await db.deletePref(key);
-      return;
+    } else {
+      await db.setPref(
+        key,
+        PrefCodec.encode(
+          jsonEncode(<String, Object?>{
+            'v': 1,
+            'entries': _uidByRel,
+            if (_rejectedByRel.isNotEmpty) 'rejected': _rejectedByRel,
+            if (_signatureByRel.isNotEmpty) 'signatures': _signatureByRel,
+          }),
+        ),
+      );
     }
+    await _clearJournal(db, sourceId);
+  });
+
+  /// 把 [rel] 当前的认领 / 负向结果 / 签名**逐条**落盘（一行，O(1)），不重写整份
+  /// 快照。给扫描途中「丢了就找不回来」的改动用（新导入的卷、「不是本类媒体」的
+  /// 结论）；整轮收尾仍 [save] 一次，把日志并进快照。
+  ///
+  /// 只记「有」不记「删」：[remove] / [retainUids] 这类收缩只在整份 [save] 里生效。
+  Future<void> journal(FushiDatabase db, String rel) async {
     await db.setPref(
-      key,
+      '${bookSourceScanJournalPrefKeyPrefix(sourceId)}$rel',
       PrefCodec.encode(
         jsonEncode(<String, Object?>{
-          'v': 1,
-          'entries': _uidByRel,
-          if (_rejectedByRel.isNotEmpty) 'rejected': _rejectedByRel,
-          if (_signatureByRel.isNotEmpty) 'signatures': _signatureByRel,
+          if (_uidByRel[rel] case final String uid) 'u': uid,
+          if (_rejectedByRel[rel] case final String fp) 'r': fp,
+          if (_signatureByRel[rel] case final String sig) 's': sig,
         }),
       ),
     );
   }
 
-  /// 删掉来源 [sourceId] 的索引（库根移除时用）。
+  static Future<void> _clearJournal(FushiDatabase db, int sourceId) async {
+    final Map<String, String> rows = await db.getPrefsByPrefix(
+      bookSourceScanJournalPrefKeyPrefix(sourceId),
+    );
+    for (final String key in rows.keys) {
+      await db.deletePref(key);
+    }
+  }
+
+  /// 删掉来源 [sourceId] 的索引与逐条日志（库根移除时用）。
   static Future<void> clear(FushiDatabase db, int sourceId) =>
-      db.deletePref(bookSourceScanIndexPrefKey(sourceId));
+      db.transaction(() async {
+        await db.deletePref(bookSourceScanIndexPrefKey(sourceId));
+        await _clearJournal(db, sourceId);
+      });
 
   Map<String, String> get entries =>
       Map<String, String>.unmodifiable(_uidByRel);

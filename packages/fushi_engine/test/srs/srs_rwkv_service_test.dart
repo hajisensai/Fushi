@@ -1129,10 +1129,16 @@ void main() {
       await service.start();
       await _settled(service);
       expect(backend.resets, 1);
-      // 删掉最早的一条评分日志（如恢复备份改写了历史），再答一题：新行数与行数差对不上。
+      // 删掉最早的一条评分日志（如恢复备份改写了历史），再答一题：新行数与行数差对不上。新代里 RWKV 的指纹、回放与
+      // 尾巴都沿派生层的日志索引 `log_ix` 与本机落库序 `log_seq`（内核 `cmd/training.rs`），没有「只删一条日志」的
+      // 公开命令（彻底清除连卡一起删，改的不只是日志），所以走测试专用原始通道，按派生层一条日志操作出索引时的写法
+      // （`derive.rs`：`log_ix` 与 `log_seq` 同删）删掉落库序最早的那条：效果与协议 3 删日志表最早一行相同。
       f.store.core.debugExecRaw(
-        'DELETE FROM srs_review_logs WHERE rowid = '
-        '(SELECT MIN(rowid) FROM srs_review_logs)',
+        'DELETE FROM log_ix WHERE k = '
+        '(SELECT k FROM log_seq WHERE n = (SELECT MIN(n) FROM log_seq))',
+      );
+      f.store.core.debugExecRaw(
+        'DELETE FROM log_seq WHERE n = (SELECT MIN(n) FROM log_seq)',
       );
       await f.store.reloadLocal();
       final List<SrsRwkvPhase> phases = <SrsRwkvPhase>[];

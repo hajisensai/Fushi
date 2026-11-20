@@ -25,6 +25,9 @@ import 'package:fushi/src/utils/adaptive/shell_style.dart';
 import 'package:fushi/src/updates/host_self_update_service.dart';
 import 'package:fushi/src/updates/local_update_notifier.dart';
 import 'package:fushi/src/updates/update_check_scheduler.dart';
+import 'package:fushi/src/updates/whats_new.dart';
+import 'package:fushi/src/utils/misc/build_version.dart'
+    show resolveCurrentAppVersion;
 import 'package:fushi/src/updates/app_update_check.dart';
 import 'package:fushi/src/updates/usage_heartbeat.dart';
 import 'package:fushi_engine/media/metadata/books/rakuten_books.dart'
@@ -1262,6 +1265,15 @@ class AppModel
     libraryServiceFactory: () => LocalLibraryHostService(
       db: database,
       dictionaryResourceRoot: dictionaryResourceDirectory,
+      // 对端删书时 host 上 DB 行以外的东西：有声书 / 配对字幕书持久目录、override
+      // 书名与封面（#3722 c37 审查遗留，同 BUG-4906）。
+      cleanupBookOnDisk: (EpubBookRow row, String? pairedSrtUid) =>
+          ReaderFushiSource.instance.cleanupBookFilesForHostDelete(
+            db: database,
+            appModel: this,
+            row: row,
+            pairedSrtUid: pairedSrtUid,
+          ),
       packages: SyncAssetPackageService(db: database),
       scrapeController: () async => videoScrapeControllerResolver?.call(),
       // 书架上的在线漫画没下载的章由本机运行时现取给对端（iPhone 没有在线源
@@ -1516,6 +1528,8 @@ class AppModel
     List<DeletionPropagationCandidate> confirmed,
   ) async {
     bool deletedVideoBook = false;
+    // 书逐本不回收数据库空间，整批结束后回收一次（与视频同一纪律）。
+    bool deletedBook = false;
     for (final DeletionPropagationCandidate c in confirmed) {
       try {
         // 命名统一 Phase 3.4：墓碑 mediaType 经 [SyncTombstoneKind.tryParse]
@@ -1523,12 +1537,15 @@ class AppModel
         // 分支，跳过但留痕（语义与旧 default 一致）。
         switch (SyncTombstoneKind.tryParse(c.mediaType)) {
           case SyncTombstoneKind.book:
-            await ReaderFushiSource.instance.deleteBook(
-              db: database,
-              bookKey: c.itemKey,
-              appModel: this,
-              scope: DeleteScope.keepLocalOnly,
-            );
+            final DeleteBookResult result = await ReaderFushiSource.instance
+                .deleteBook(
+                  db: database,
+                  bookKey: c.itemKey,
+                  appModel: this,
+                  scope: DeleteScope.keepLocalOnly,
+                  compactDatabase: false,
+                );
+            deletedBook = deletedBook || result.deleted;
           case SyncTombstoneKind.video:
             final bool deleted = await VideoBookRepository(database)
                 .deleteVideoBookAndReclaimAssets(
@@ -1590,6 +1607,9 @@ class AppModel
       } catch (e) {
         debugPrint('[sync] apply deletion ${c.mediaType}/${c.itemKey}: $e');
       }
+    }
+    if (deletedBook) {
+      await ReaderFushiSource.compactAfterBookDeleteBestEffort(database);
     }
     if (deletedVideoBook) {
       await VideoBookRepository(database).compactAfterVideoDeleteBestEffort();
@@ -1729,17 +1749,15 @@ class AppModel
     }
   }
 
-  /// 备份导出要读的本机 SRS 存储：复习模块开着时照常打开；模块关着时只在 srs.db 已经存在
-  /// （以前用过复习、数据还在）时打开——数据在就得能随备份走，没用过复习的设备不凭空建库。
-  /// 返回 null = 本机没有 srs.db（SRS 若还在主库老表里，由主库副本按老形态带走）。
+  /// 备份导出要读的本机 SRS 存储：复习模块开着时照常打开；模块关着时只在本机有复习库文件（新代 `srs4.db`
+  /// 或协议 3 的 `srs.db`，[SrsStorageHost.hasStoredLibrary]）时打开——数据在就得能随备份走，没用过复习的设备
+  /// 不凭空建库。返回 null = 本机没有复习库（SRS 若还在主库老表里，由主库副本按老形态带走）。
   Future<SrsStorage?> srsStorageForBackup() async {
     final SrsStorageHost? host = _srsStorageHost;
     if (host == null) return null;
-    if (!moduleVisibility.isEnabled(ModuleId.srs) &&
-        !File(host.path).existsSync()) {
-      return null;
-    }
-    return host.acquire();
+    return host.acquireIfStored(
+      moduleEnabled: moduleVisibility.isEnabled(ModuleId.srs),
+    );
   }
 
   /// Test seam：注入一份 SRS 存储持有者（不经初始化路径）。
@@ -5196,6 +5214,17 @@ class AppModel
       StartupTimeline.mark('init-enter');
       _packageInfo = await PackageInfo.fromPlatform();
       _mediaTrackingAppVersion = _packageInfo.version;
+      final String runningVersion = resolveCurrentAppVersion(
+        _packageInfo.version,
+      );
+      _whatsNew = WhatsNewController(
+        prefs: () => prefsRepo,
+        runningVersion: runningVersion,
+        runningSeq: currentReleaseSequence(
+          version: runningVersion,
+          buildNumber: _packageInfo.buildNumber,
+        ),
+      );
       // 媒体服务器认证头的客户端身份（产品名 / 本机设备名 / 应用版本，
       // AL8qJr6yr-）：之后所有 Jellyfin / Emby 请求都按它报。
       mediaServerClientIdentity = await resolveMediaServerClientIdentity(
@@ -5679,6 +5708,11 @@ class AppModel
       // 旧版按「无画面视频」收进视频库的纯音频搬到音乐库（反馈 QAondMh4M5）。按数据
       // 幂等：没有这类行就什么都不做；搬不动的行原样留在视频库，下次启动再试。
       unawaited(_migrateAudioOnlyVideosToMusic());
+      // 上个进程被杀 / 崩溃留在书库根的导入残留（`.tmp-*` 暂存、`.bak-*` 让位旧树、
+      // 拷到一半的半成品）：开库后清一次，不等下一次导入才清（BUG-4841，#3722 c07
+      // 遗留）。Android 就地重建拷贝回退期间被杀时，这一步把 bak 还原成完整的书。
+      // 每进程只跑一次、失败只记日志；导入入口等的是同一个 Future。
+      unawaited(EpubImporter.ensureImportResidueSwept(_database));
       // 启动关键路径上的查询都发完了：这时才读查词历史整表（见
       // DictionaryRepository.loadFromDb 的 deferHistory）。
       dictRepo.startDeferredHistoryLoad();
@@ -7225,7 +7259,11 @@ class AppModel
   /// Jimaku API key（自动获取日语字幕）。
   String get jimakuApiKey => prefsRepo.jimakuApiKey;
 
+  /// 值没变直接返回：字幕搜索 / 合集面板在「输入框与面板打开时的 key 不同」时每次
+  /// 搜索都会调到这里（面板的初始 key 不随保存刷新），按原值重建一遍下载管线运行时
+  /// 与查字幕 registry 纯属浪费（BUG-4906）。
   Future<void> setJimakuApiKey(String key) async {
+    if (key == prefsRepo.jimakuApiKey) return;
     await prefsRepo.setJimakuApiKey(key);
     await reloadVideoDownloadPipelineRuntime();
   }
@@ -12595,6 +12633,17 @@ class AppModel
   Future<void> setSrsFolderLocations(List<SrsFolderLocation> value) =>
       prefsRepo.setSrsFolderLocations(value);
 
+  /// 移除文件夹位置 [id]：配置里去掉、同一个事务里记进「内核待忘」清单（透传 prefsRepo，见
+  /// [PreferencesRepository.removeSrsFolderLocation]）。
+  Future<void> removeSrsFolderLocation(String id) =>
+      prefsRepo.removeSrsFolderLocation(id);
+
+  /// 移除了、复习内核还没忘掉的位置身份（同步调度器逐个 `location_forget`）。
+  Set<String> get srsPendingLocationForgets =>
+      _prefsRepo?.srsPendingLocationForgets ?? const <String>{};
+  Future<void> markSrsLocationForgotten(String locationId) =>
+      prefsRepo.markSrsLocationForgotten(locationId);
+
   /// 复习同步 v2 里这台设备关掉的通道位置（设备本地；透传 prefsRepo）。
   Set<String> get srsDisabledLocations =>
       _prefsRepo?.srsDisabledLocations ?? const <String>{};
@@ -13166,7 +13215,7 @@ class AppModel
 
   /// 把当前 server 真值写进本机已解压的浏览器扩展副本（没装过不落盘）。
   Future<void> syncBrowserExtensionServerConfig() async {
-    if (!DesktopLookupService.isDesktop) return;
+    if (!browserExtensionInstallAvailableOn(defaultTargetPlatform)) return;
     if (!moduleVisibility.isEnabled(ModuleId.web)) return;
     await rewriteBrowserExtensionServerConfig(
       BrowserExtensionServerConfig(
@@ -14160,9 +14209,9 @@ class AppModel
 
   /// BUG-726：把已解压的浏览器扩展副本刷新到当前 app 内置版本（详见
   /// [refreshBundledBrowserExtensionIfStale]），并缓存内置指纹供查词响应下发。
-  /// 仅桌面（扩展解压引导仅桌面有意义）；移动端 no-op。
+  /// 只在有扩展安装引导的平台跑（[browserExtensionInstallAvailableOn]）；iOS no-op。
   Future<void> refreshBrowserExtensionCopy() async {
-    if (!DesktopLookupService.isDesktop) return;
+    if (!browserExtensionInstallAvailableOn(defaultTargetPlatform)) return;
     _browserExtensionBuild = await bundledBrowserExtensionFingerprint();
     await refreshBundledBrowserExtensionIfStale(
       serverConfig: BrowserExtensionServerConfig(
@@ -14612,6 +14661,12 @@ class AppModel
       prefsRepo.setUpdateBetaChannel(value);
 
   bool get updateDebugChannel => prefsRepo.updateDebugChannel;
+
+  /// 「本版新内容」（首页卡片 / 顶栏入口 / 新内容页）的状态。要知道本机跑的版本
+  /// 才能判，所以在主进程 [initialise] 读完 [packageInfo] 后才建；之前（以及没走
+  /// 初始化的测试夹具）是 null——不知道版本就不提示。
+  WhatsNewController? get whatsNew => _whatsNew;
+  WhatsNewController? _whatsNew;
   Future<void> setUpdateDebugChannel(bool value) =>
       prefsRepo.setUpdateDebugChannel(value);
 
@@ -14951,6 +15006,7 @@ RemoteMineResult remoteMineError(
   Object? error,
   StackTrace? stackTrace,
   RemoteMineErrorKind errorKind = RemoteMineErrorKind.transient,
+  bool mediaUnavailable = false,
 }) {
   ErrorLogService.instance.log(source, error ?? detail ?? reason, stackTrace);
   return RemoteMineResult(
@@ -14958,6 +15014,7 @@ RemoteMineResult remoteMineError(
     message: reason,
     detail: detail,
     errorKind: errorKind,
+    mediaUnavailable: mediaUnavailable,
   );
 }
 
@@ -15351,6 +15408,7 @@ class _AppModelRemoteLookupService
           error: e,
           stackTrace: st,
           errorKind: youtubeMineResolveErrorKind(e),
+          mediaUnavailable: true,
         );
       }
       final ImmersionMiningResult ytRes = await ImmersionMiningEngine().mine(
@@ -15396,6 +15454,7 @@ class _AppModelRemoteLookupService
           'Anki.mineImmersion.youtube',
           youtubeMineAbortMessage(ytRes.abortReason),
           detail: ytRes.abortReason,
+          mediaUnavailable: true,
         );
       }
       return remoteMineResultFromOutcome(ytRes.outcome! as MineOutcome);
@@ -15479,6 +15538,7 @@ class _AppModelRemoteLookupService
           detail: 'resolve failed: $e',
           error: e,
           stackTrace: st,
+          mediaUnavailable: true,
         );
       }
       final ImmersionMiningResult biRes = await ImmersionMiningEngine().mine(
@@ -15531,6 +15591,7 @@ class _AppModelRemoteLookupService
           'Anki.mineImmersion.bilibili',
           'bilibili 制卡失败：${biRes.abortReason ?? '媒体抽取失败'}',
           detail: biRes.abortReason,
+          mediaUnavailable: true,
         );
       }
       return remoteMineResultFromOutcome(biRes.outcome! as MineOutcome);

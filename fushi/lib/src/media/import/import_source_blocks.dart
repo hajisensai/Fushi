@@ -22,6 +22,7 @@ import 'package:fushi/src/pages/implementations/discovery/discovery_source_block
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
+import 'package:fushi/src/utils/components/fushi_block_color_scope.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_fit_text.dart';
@@ -243,15 +244,19 @@ class _BlockShell extends StatelessWidget {
   static const EdgeInsetsGeometry padding = EdgeInsets.fromLTRB(16, 14, 12, 14);
 
   @override
-  Widget build(BuildContext context) => FushiHoverLift(
-    builder: (BuildContext context, bool _) => DecoratedBox(
-      decoration: ShapeDecoration(
-        color: colors.container,
-        shape: fushiCoverBlockShape(context, FushiCoverBlockSize.regular),
-      ),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(minHeight: minHeight),
-        child: Padding(padding: padding, child: child),
+  Widget build(BuildContext context) => FushiBlockColorScope(
+    // 块里的开关 / 按钮 / 弹层取块自己的配色（不退回全局 primary）。
+    colors: colors,
+    child: FushiHoverLift(
+      builder: (BuildContext context, bool _) => DecoratedBox(
+        decoration: ShapeDecoration(
+          color: colors.container,
+          shape: fushiCoverBlockShape(context, FushiCoverBlockSize.regular),
+        ),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: minHeight),
+          child: Padding(padding: padding, child: child),
+        ),
       ),
     ),
   );

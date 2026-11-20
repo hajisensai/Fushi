@@ -58,14 +58,28 @@ class ReaderVisualNovelScripts {
   static String vnShellScript() => _shell();
 
   /// 恢复锚三选一的运行时分派（旧实现在 Dart 侧三元式挑一条语句）。
+  ///
+  /// BUG-4906 续：VN 的恢复入口是 async 函数（先等 readyPromise 再切屏），渲染时抛的
+  /// 异常只让它返回的 promise 变成 rejected；boot 的 try/catch 只接得住同步异常。
+  /// 这里给那个 promise 接上 catch：记 console.error（不再是无人处理的 rejection），
+  /// 再走 notifyRestoreFailed。注意生产时序：`initialize()` 的 readyPromise 成功分支
+  /// （失败分支 fail-open 同样）先发了 onRestoreComplete，入口的 `await ensureReady()`
+  /// 之后才继续，所以入口在那之后抛出时回执早已发过，notifyRestoreFailed 按「一个文档
+  /// 一个结局」不补发——VN 这里从来没有「干等 8 秒兜底」，遮罩已按初始屏摘掉；
+  /// 这条 catch 的作用是不丢异常诊断，失败回执只在回执尚未发出时才生效。
   static const String _initialRestoreJs = '''
+    var initialRestore;
     if (C.initialFragment !== null && C.initialFragment !== undefined) {
-      window.fushiReader.jumpToFragment(C.initialFragment);
+      initialRestore = window.fushiReader.jumpToFragment(C.initialFragment);
     } else if (C.initialCharOffset >= 0) {
-      window.fushiReader.restoreToCharOffset(C.initialCharOffset);
+      initialRestore = window.fushiReader.restoreToCharOffset(C.initialCharOffset);
     } else {
-      window.fushiReader.restoreProgress(C.initialProgress);
-    }''';
+      initialRestore = window.fushiReader.restoreProgress(C.initialProgress);
+    }
+    Promise.resolve(initialRestore).catch(function(restoreError) {
+      try { if (window.console && console.error) console.error('[FushiVN] initial restore failed', restoreError); } catch (_ignored) {}
+      window.fushiReader.notifyRestoreFailed(restoreError);
+    });''';
 
   static String _shell() {
     const String initialRestoreScript = _initialRestoreJs;
@@ -261,27 +275,6 @@ $imageRevealSemantics
     return candidate || node;
   }
 
-  function computedDisplay(node) {
-    if (!global.getComputedStyle) return '';
-    try {
-      return String(global.getComputedStyle(node).display || '').toLowerCase();
-    } catch (_error) {
-      return '';
-    }
-  }
-
-  function isBlockDisplay(display) {
-    return [
-      'block',
-      'flex',
-      'grid',
-      'list-item',
-      'table',
-      'table-caption',
-      'flow-root'
-    ].indexOf(display) >= 0;
-  }
-
   function declaredImageDimension(node, name) {
     var value = node && node.getAttribute ? node.getAttribute(name) : null;
     // 只认纯数字（像素）写法；`width="100%"` 这类相对值说明不了图有多大。
@@ -303,13 +296,17 @@ $imageRevealSemantics
     return hasClass(node, 'gaiji') || hasClass(node, 'gaiji-line');
   }
 
+  // 只看节点自身携带的信号（文字上下文、真实 / 声明尺寸、block-img 类），不读样式。
+  // BUG-4907：VN 归类的对象是 detachChapterSource 搬出来、不挂在文档上的源树，Blink /
+  // WebKit 对它 getComputedStyle 一律给空值，旧的「computed display 是块级」一条在生产里
+  // 恒不生效；同一节点挂上文档时却会被书本样式或阅读器的 `p > img:only-child
+  // { display:block }` 翻成独立插图。归类不能随挂载状态变。
   function isStandaloneImageNode(node, contextRoot) {
     if (isInlineGlyphImage(node)) return false;
     var textContext = mediaTextContextRoot(node, contextRoot);
     if (!hasMeaningfulText(textContext)) return true;
     if (isLargeImage(node)) return true;
-    if (hasClass(node, 'block-img')) return true;
-    return isBlockDisplay(computedDisplay(node));
+    return hasClass(node, 'block-img');
   }
 
   function isStandaloneMediaNode(node, contextRoot) {
@@ -967,7 +964,11 @@ $kSentenceAudioRubyGapJs
     var rect = target.getClientRects()[0];
     return rect || target.getBoundingClientRect();
   },
+  // gap-readerjs1-2：与分页 / 连续 shell 同一份契约——每个文档的初次恢复只有一个结局，
+  // 已发过回执就不再补发失败回执。
+  _restoreReceiptSent: false,
   notifyRestoreComplete: function() {
+    this._restoreReceiptSent = true;
     // Fushi adaptation: hoshi a posts to a native @JavascriptInterface
     // (FushiReaderRestore). Fushi is InAppWebView, so forward to the same
     // 'onRestoreComplete' handler the paginated/continuous shells use.
@@ -975,6 +976,20 @@ $kSentenceAudioRubyGapJs
       window.flutter_inappwebview.callHandler(
         'onRestoreComplete',
         null,
+        C.navigationGeneration
+      );
+    }
+  },
+  // gap-readerjs1-2：boot 里 initialize / 初次恢复同步抛出时的失败出口（与分页 /
+  // 连续 shell 的 notifyRestoreFailed 同一协议），Dart 收到后立刻走导航中止收尾，
+  // 不再等 8 秒内容就绪兜底。
+  notifyRestoreFailed: function(error) {
+    if (this._restoreReceiptSent === true) return;
+    this._restoreReceiptSent = true;
+    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+      window.flutter_inappwebview.callHandler(
+        'onRestoreFailed',
+        String(error && error.message ? error.message : error),
         C.navigationGeneration
       );
     }
@@ -4014,6 +4029,7 @@ window.addEventListener('load', function() {
     $initialRestoreScript
   } catch (e) {
     try { if (window.console && console.error) console.error('[FushiVN] boot restore failed', e); } catch (_ignored) {}
+    try { window.fushiReader.notifyRestoreFailed(e); } catch (_ignored) {}
   }
 });
 if (document.readyState === 'complete') {
@@ -4022,6 +4038,7 @@ if (document.readyState === 'complete') {
     $initialRestoreScript
   } catch (e) {
     try { if (window.console && console.error) console.error('[FushiVN] boot restore failed', e); } catch (_ignored) {}
+    try { window.fushiReader.notifyRestoreFailed(e); } catch (_ignored) {}
   }
 }
 };

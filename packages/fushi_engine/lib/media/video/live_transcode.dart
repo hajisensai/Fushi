@@ -725,6 +725,133 @@ Future<Uint8List> _spawnResolvedSegment(
   return r.bytes;
 }
 
+/// 转码分段缓存的总字节上限。
+///
+/// 一段 = [kTranscodeSegmentSeconds] 秒内容：3 Mbps 档约 2.3 MB，8 Mbps 档约 6 MB，
+/// 64 MB 能装下最近十来段——够「往回拖一下」「同一段被重新请求」命中，又不至于让
+/// 无头 host（NAS / 小主机）为一条播放会话常驻几百 MB。
+const int kTranscodeSegmentCacheBytes = 64 * 1024 * 1024;
+
+/// 一段转码产物在缓存里的身份：签发它的流（host 侧是流 token，画质档与音轨都绑在
+/// token 上）、段号、以及本次反查到的输入路径（同一 token 下库里换了文件就不命中）。
+typedef _TranscodeSegmentKey = ({String stream, int index, String input});
+
+/// 转码分段的小 LRU（video-34）：同一条流同一段只转一次。
+///
+/// 背景：一段一个进程（见文件头）没有可泄漏的状态，但也意味着播放器往回拖、或因
+/// 重连 / seek 重新请求同一段时，host 要把这 6 秒再完整转一遍——转码是整条链路里
+/// 最贵的一步，4K HEVC 源的一段要占满多核好几秒。
+///
+/// 两层：
+/// - **完成的段**按最近使用排序，总字节超过 [maxBytes] 时从最久未用的一头淘汰；单段
+///   比 [maxBytes] 还大的不入缓存。
+/// - **在途的段**按同一个键合流：同一段的并发请求共用一次转码，不起第二个 ffmpeg。
+///   失败 / 被取消的结果原样传给每个等待者，**不入缓存**（下次请求重新转）。
+///
+/// 生命周期跟流走：调用方在流作废时（释放流票、TTL / 上限淘汰、吊销）调
+/// [evictStream]，该流的段立即出缓存；作废那一刻还在途的段转完后也不再入缓存。
+class TranscodeSegmentCache {
+  TranscodeSegmentCache({this.maxBytes = kTranscodeSegmentCacheBytes});
+
+  final int maxBytes;
+
+  /// 插入顺序即 LRU 顺序：命中时移到末尾，淘汰从头部开始。
+  final Map<_TranscodeSegmentKey, Uint8List> _done =
+      <_TranscodeSegmentKey, Uint8List>{};
+  final Map<_TranscodeSegmentKey, Future<Uint8List>> _inflight =
+      <_TranscodeSegmentKey, Future<Uint8List>>{};
+  int _bytes = 0;
+
+  /// 当前缓存的总字节数（只计完成的段）。
+  int get bytes => _bytes;
+
+  /// 当前缓存的完成段数。
+  int get length => _done.length;
+
+  /// 当前在途（正在转、可被合流）的段数。
+  int get inflightCount => _inflight.length;
+
+  /// 取 [stream] 的第 [index] 段：命中直接返回；同键在途就等那一次；否则跑
+  /// [compute]，成功后入缓存。
+  Future<Uint8List> obtain({
+    required String stream,
+    required int index,
+    required String input,
+    required Future<Uint8List> Function() compute,
+  }) {
+    final _TranscodeSegmentKey key = (
+      stream: stream,
+      index: index,
+      input: input,
+    );
+    final Uint8List? hit = _done.remove(key);
+    if (hit != null) {
+      _done[key] = hit;
+      return Future<Uint8List>.value(hit);
+    }
+    final Future<Uint8List>? pending = _inflight[key];
+    if (pending != null) return pending;
+    // 先登记再开跑：compute 同步抛出时也由下面的 catch 收进 Future，不会留下登记。
+    final Completer<Uint8List> result = Completer<Uint8List>();
+    final Future<Uint8List> self = result.future;
+    _inflight[key] = self;
+    unawaited(_computeInto(key, self, compute, result));
+    return self;
+  }
+
+  Future<void> _computeInto(
+    _TranscodeSegmentKey key,
+    Future<Uint8List> self,
+    Future<Uint8List> Function() compute,
+    Completer<Uint8List> result,
+  ) async {
+    try {
+      final Uint8List bytes = await compute();
+      // 在途期间流被作废（evictStream 摘掉了登记）就不入缓存。
+      if (identical(_inflight[key], self)) {
+        _inflight.remove(key);
+        _store(key, bytes);
+      }
+      result.complete(bytes);
+    } catch (e, st) {
+      if (identical(_inflight[key], self)) _inflight.remove(key);
+      result.completeError(e, st);
+    }
+  }
+
+  void _store(_TranscodeSegmentKey key, Uint8List bytes) {
+    if (bytes.length > maxBytes) return;
+    final Uint8List? old = _done.remove(key);
+    if (old != null) _bytes -= old.length;
+    _done[key] = bytes;
+    _bytes += bytes.length;
+    while (_bytes > maxBytes && _done.isNotEmpty) {
+      final _TranscodeSegmentKey oldest = _done.keys.first;
+      _bytes -= _done.remove(oldest)!.length;
+    }
+  }
+
+  /// 流 [stream] 作废：它的完成段立即出缓存，在途段转完后不入缓存（等待中的请求照常
+  /// 拿到那次转码的结果——是否还认这条流由调用方自己的存活判定决定）。
+  void evictStream(String stream) {
+    _done.removeWhere((_TranscodeSegmentKey k, Uint8List v) {
+      if (k.stream != stream) return false;
+      _bytes -= v.length;
+      return true;
+    });
+    _inflight.removeWhere(
+      (_TranscodeSegmentKey k, Future<Uint8List> _) => k.stream == stream,
+    );
+  }
+
+  /// 清空（host 停机）。
+  void clear() {
+    _done.clear();
+    _inflight.clear();
+    _bytes = 0;
+  }
+}
+
 /// 转码进程以非 0 退出。带上 ffmpeg 的 stderr，好让 host 日志里能看出是源文件的问题
 /// 还是 ffmpeg 自身的问题。
 class TranscodeFailure implements Exception {

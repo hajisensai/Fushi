@@ -7,19 +7,10 @@ import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
-/// Preserve structured challenges across the library's stage/error wrappers.
-MihonCloudflareChallengeException? mihonCloudflareChallenge(Object? error) {
-  final Set<Object> visited = <Object>{};
-  while (error != null && visited.add(error)) {
-    if (error is MihonCloudflareChallengeException) return error;
-    error = switch (error) {
-      OnlineMangaUnavailable(:final cause) => cause,
-      MihonRuntimeException(:final cause) => cause,
-      _ => null,
-    };
-  }
-  return null;
-}
+// 判型 helper 住在适配器契约文件里（下载服务的失败分型也要用，不该为此 import
+// 一个 widget 文件），这里转出口，既有调用方的 import 不变。
+export 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart'
+    show mihonCloudflareChallenge;
 
 /// A challenge is opened only by this explicit user action, never by a fetch.
 class MihonCloudflareAction extends StatefulWidget {

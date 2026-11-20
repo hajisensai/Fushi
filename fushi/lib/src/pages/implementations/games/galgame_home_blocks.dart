@@ -27,6 +27,7 @@ import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
@@ -2215,9 +2216,13 @@ class GalgameHomeSkeleton extends StatelessWidget {
   }
 }
 
-/// 空状态引导块（不用大字）：生成封面小方块 + 「还没有游戏」+ 拖放提示 +
-/// 「导入」/「去发现」。[onDiscover] 为 null（`externalDiscovery` 门控不可用）时
-/// 不画「去发现」。
+/// 游戏首页空库态（BUG-4907）：与书架 / 视频库同一个共享空态
+/// [FushiPlaceholderMessage]（MD3 饱和色块图标弹入 / Apple
+/// ContentUnavailableView 式无底居中），在剩余空间里上下左右居中，不再是一张
+/// 被拉满整列高度的窄卡。文案 =「还没有游戏」+ 拖放 .exe 提示；主按钮「导入
+/// 游戏」、次按钮「去发现」。整块经 [FushiStaggeredEntrance] 进场（调用方包
+/// [FushiEntranceScope]），两套设计系统同一条进场。[onDiscover] 为 null
+/// （`externalDiscovery` 门控不可用）时不画「去发现」。
 class GalgameHomeEmpty extends StatelessWidget {
   const GalgameHomeEmpty({
     required this.onImport,
@@ -2225,74 +2230,45 @@ class GalgameHomeEmpty extends StatelessWidget {
     super.key,
   });
 
+  /// 空态主按钮的 key（测试按它找「导入游戏」）。
+  static const Key importKey = ValueKey<String>('galgame-home-empty-import');
+
+  /// 空态次按钮的 key（测试按它找「去发现」）。
+  static const Key discoverKey = ValueKey<String>(
+    'galgame-home-empty-discover',
+  );
+
   final VoidCallback onImport;
   final VoidCallback? onDiscover;
 
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ({Color container, Color onContainer, Color muted}) c = _statColors(
-      context,
-    );
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 460),
-        child: FushiStaggeredEntrance(
-          index: 0,
-          child: _StatShell(
-            child: Padding(
-              padding: EdgeInsets.all(tokens.spacing.gap),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  SizedBox(
-                    width: 64,
-                    height: 64,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(14),
-                      child: FushiGeneratedCover(title: t.game_library),
-                    ),
-                  ),
-                  SizedBox(width: tokens.spacing.card),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(
-                          t.game_empty,
-                          style: context.fushiType.titleMediumEmphasized
-                              .copyWith(color: c.onContainer),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          t.game_import_drop_hint,
-                          style: _statSubStyle(context),
-                        ),
-                        SizedBox(height: tokens.spacing.card),
-                        Wrap(
-                          spacing: tokens.spacing.gap,
-                          runSpacing: tokens.spacing.gap,
-                          children: <Widget>[
-                            FushiFilledButton.icon(
-                              onPressed: onImport,
-                              icon: const FushiIcon(FushiIcons.libraryAdd),
-                              label: Text(t.library_view_import),
-                            ),
-                            if (onDiscover != null)
-                              FushiFilledButton.tonalIcon(
-                                onPressed: onDiscover,
-                                icon: const FushiIcon(FushiIcons.travelExplore),
-                                label: Text(t.game_home_go_discover),
-                              ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+    return FushiStaggeredEntrance(
+      index: 0,
+      child: FushiPlaceholderMessage(
+        icon: FushiIcons.games,
+        message: t.game_empty,
+        detail: t.game_import_drop_hint,
+        action: Wrap(
+          alignment: WrapAlignment.center,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: <Widget>[
+            FushiFilledButton.icon(
+              key: importKey,
+              onPressed: onImport,
+              icon: const FushiIcon(FushiIcons.libraryAdd),
+              label: Text(t.game_home_import_games),
             ),
-          ),
+            if (onDiscover != null)
+              FushiFilledButton.tonalIcon(
+                key: discoverKey,
+                onPressed: onDiscover,
+                icon: const FushiIcon(FushiIcons.travelExplore),
+                label: Text(t.game_home_go_discover),
+              ),
+          ],
         ),
       ),
     );

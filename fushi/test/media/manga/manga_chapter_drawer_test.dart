@@ -74,7 +74,7 @@ void main() {
       .state<ScrollableState>(
         find
             .descendant(
-              of: find.byType(SingleChildScrollView),
+              of: find.byType(CustomScrollView),
               matching: find.byType(Scrollable),
             )
             .first,
@@ -92,6 +92,29 @@ void main() {
     expect(drawerScroll(tester).pixels, greaterThan(0));
     expect(visible(tester, row(20)), isTrue, reason: '当前章必须在视口里');
     expect(visible(tester, row(200)), isFalse);
+  });
+
+  testWidgets('gap-mangamisc-5：章节行懒建，开抽屉不把上千话全部建出来', (
+    WidgetTester tester,
+  ) async {
+    await pumpDrawer(tester);
+    final int built = find
+        .byWidgetPredicate(
+          (Widget w) =>
+              w.key is ValueKey<String> &&
+              (w.key! as ValueKey<String>).value.startsWith(
+                'manga_chapter_/c/',
+              ),
+        )
+        .evaluate()
+        .length;
+    expect(
+      built,
+      lessThan(chapters.length ~/ 2),
+      reason: '只该建视口附近的行（共 ${chapters.length} 话，建了 $built 行）',
+    );
+    expect(row(200), findsNothing, reason: '表头（第 200 话）离当前章很远，不该被建出来');
+    expect(visible(tester, row(20)), isTrue);
   });
 
   testWidgets('排序初值来自偏好：旧→新时第 1 话在最前，仍定位到当前章', (WidgetTester tester) async {

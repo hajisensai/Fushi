@@ -14,6 +14,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
+import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_duplicate_notes.dart';
 import 'package:fushi_engine/srs/srs_note_batch_edit.dart';
@@ -145,22 +146,17 @@ void main() {
       readStore: () async => s,
       readMedia: (String name) async => null,
     );
-    final String card = (await s.cardsOfNotes(<String>[
-      notes[6],
-    ]))[notes[6]]!.first.id;
-    final String? base = (await s.cardRow(card))!.lastLogId;
-    late int status;
-    f.counter.reset();
-    costs['remoteAnswer'] = await _cost(s, () async {
+    Future<int> answer(String card, String? base, String request) async {
       final shelf.Response res = await handleSrsRemoteStoreRequest(
         service,
         shelf.Request(
           'POST',
-          Uri.parse('http://host/api/srs/remote/call'),
+          Uri.parse('http://host/api/srs/remote2/call'),
           body: jsonEncode(<String, Object?>{
+            'g': 4,
             'profile': kBulkUid,
             'op': 'answerAndStudy',
-            'request': 'wp10-cost',
+            'request': request,
             'args': <String, Object?>{
               'card': card,
               'rating': 3,
@@ -171,17 +167,38 @@ void main() {
           }),
         ),
         'POST',
-        '/api/srs/remote/call',
+        '/api/srs/remote2/call',
       );
-      status = res.statusCode;
+      return res.statusCode;
+    }
+
+    // 远程复习 V2（G10-2）每个回包的信封带牌组树标签（`tt`，srs_remote_store.dart `_treeWire`），按结构键缓存在服务
+    // 里，作答不让结构键变。冷、热两次分开钉（之前的期望是 V1 路由的，V2 那一轮这条用例还崩在 ID 口径上，没重量）：
+    // - 冷：服务的第一次调用，实测 4 条读（edits ×2、entities ×2）+ 3 条命令；
+    // - 热：同一服务第二次作答（另一张卡），实测 0 条读 + 2 条命令。
+    // 以后冷路径或热路径哪个变贵都会在这里红。
+    final Map<String, List<SrsCardCacheRow>> cardsOf = await s.cardsOfNotes(
+      <String>[notes[6], notes[7]],
+    );
+    final String coldCard = cardsOf[notes[7]]!.first.id;
+    final String? coldBase = (await s.cardRow(coldCard))!.lastLogId;
+    late int status;
+    f.counter.reset();
+    costs['remoteAnswerCold'] = await _cost(s, () async {
+      status = await answer(coldCard, coldBase, 'wp10-cost-cold');
     });
     expect(status, 200);
-    // 路由上剩下的 srs.db 往返都是内核读命令（计数器只数读命令；写在内核命令里），以前是 Drift 的 SELECT。
-    // 钉住读了哪几种：多出别的读（例如整表扫日志）就是路由变重了。
-    expect(f.counter.counts.keys.toSet(), <String>{
-      'edits',
-      'entities',
-    }, reason: f.counter.summary());
+    final String coldReads = f.counter.summary();
+    final Set<String> coldKinds = f.counter.counts.keys.toSet();
+    final String card = cardsOf[notes[6]]!.first.id;
+    final String? base = (await s.cardRow(card))!.lastLogId;
+    f.counter.reset();
+    costs['remoteAnswer'] = await _cost(s, () async {
+      status = await answer(card, base, 'wp10-cost');
+    });
+    expect(status, 200);
+    final String warmReads = f.counter.summary();
+    final Set<String> warmKinds = f.counter.counts.keys.toSet();
 
     for (final MapEntry<String, _Cost> e in costs.entries) {
       // ignore: avoid_print
@@ -190,14 +207,22 @@ void main() {
         'core=${e.value.core}',
       );
     }
+    // ignore: avoid_print
+    print('WRITE_COST reads cold: $coldReads | warm: $warmReads');
+    // 路由上剩下的 srs.db 往返都是内核读命令（计数器只数读命令；写在内核命令里），以前是 Drift 的 SELECT。
+    // 钉住读了哪几种：多出别的读（例如整表扫日志）就是路由变重了。
+    expect(coldKinds, <String>{'edits', 'entities'}, reason: coldReads);
+    expect(warmKinds, isEmpty, reason: warmReads);
     expect(costs, <String, _Cost>{
       'applyPlan': (statements: 0, core: 1),
       'revertPlan': (statements: 0, core: 1),
       'mergeNotes': (statements: 0, core: 1),
       'purgeNotesNow': (statements: 0, core: 3),
       'purgeExpired': (statements: 0, core: 2),
-      // 6 条都是 SELECT（上面钉了种类），不是这一步收掉的那条读卡缓存行；读站点改成命令归第 14 步。
-      'remoteAnswer': (statements: 6, core: 2),
+      // 冷的 4 条都是读命令（上面钉了种类），不是这一步收掉的那条读卡缓存行；读站点改成命令归第 14 步。原期望
+      // （6 条、2 条命令）量的是 V1 路由。
+      'remoteAnswerCold': (statements: 4, core: 3),
+      'remoteAnswer': (statements: 0, core: 2),
     });
   });
 }

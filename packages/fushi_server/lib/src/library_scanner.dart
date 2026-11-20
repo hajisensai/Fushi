@@ -746,7 +746,7 @@ class LibraryScanner {
           scan.index.uidOf(rel) == null) {
         final String? fingerprint = localSourceContentFingerprint(carrierPath);
         if (scan.index.isRejected(rel, fingerprint)) continue;
-        if (!await looksLikeImageArchiveInBackground(carrierPath)) {
+        if (!await looksLikeImageArchiveInBackground(carrierPath, db: db)) {
           scan.index.reject(rel, fingerprint);
           continue;
         }

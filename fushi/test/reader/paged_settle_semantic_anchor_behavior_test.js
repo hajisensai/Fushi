@@ -40,7 +40,7 @@
 const assert = require('node:assert');
 const {
   readPayload, shellObjectLiteral, compileScript, scrolledRect, scrolledRange,
-} = require('./paged_shell_behavior_support.js');
+} = require('./reader_harness_support.js');
 
 const data = readPayload();
 

@@ -72,6 +72,8 @@ String? _noticeOf(MineOutcome? outcome) {
 ///
 /// * `connectionRefused`：建连就没成（Anki 没开 / 地址不通）。
 /// * `pairedDeviceUnreachable`：互联远端制卡时一个已配对设备都连不上。
+/// * `pairedDeviceMiningUnavailable`：连上了主机、但它的制卡端点回 404 / 405（此刻不收卡，例如复习库要升级），
+///   请求没被执行。
 ///
 /// 刻意**不**包括：`connectionTimeout`（连上了、请求可能已发出）、
 /// `connectionUnknown`（含 AnkiConnect「提交结果未知」与远端兜底异常）——卡可能
@@ -79,7 +81,8 @@ String? _noticeOf(MineOutcome? outcome) {
 bool isUndeliveredMineFailure(MineOutcome outcome) =>
     outcome.result == MineResult.error &&
     (outcome.errorCode == AnkiErrorCode.connectionRefused ||
-        outcome.errorCode == AnkiErrorCode.pairedDeviceUnreachable);
+        outcome.errorCode == AnkiErrorCode.pairedDeviceUnreachable ||
+        outcome.errorCode == AnkiErrorCode.pairedDeviceMiningUnavailable);
 
 /// 待发制卡队列的仓库层接线：包在制卡链路最外层。
 ///

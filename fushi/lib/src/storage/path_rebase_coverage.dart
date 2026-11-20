@@ -704,6 +704,18 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
   // ── collection_relations（合集相关作品边表，schema v66 / TODO-2484）──
   PathRebaseColumn(
     'CollectionRelations',
+    'bookUid',
+    PathRebaseKind.notAPath,
+    'v162 单视频起点的 bookUid 外键，不是路径。',
+  ),
+  PathRebaseColumn(
+    'CollectionRelations',
+    'targetBookUid',
+    PathRebaseKind.notAPath,
+    'v162 已绑定单视频目标的 bookUid 外键，不是路径。',
+  ),
+  PathRebaseColumn(
+    'CollectionRelations',
     'source',
     PathRebaseKind.notAPath,
     'ScrapeSource 枚举名（当前 anidb/tmdb；亦可为历史来源名），不是路径。',

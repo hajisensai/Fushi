@@ -36,6 +36,8 @@ import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart'
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/sync/remote_lookup_routes.dart'
     show readBoundedBodyString;
+import 'package:fushi_engine/utils/misc/atomic_text_file.dart'
+    show readAtomicallyWrittenTextFile;
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:fushi_engine/utils/net/bounded_read.dart';
 import 'package:fushi_core/fushi_core.dart' show fnv1a64Hex;
@@ -117,6 +119,15 @@ class MangaOcrHostJob {
 /// [MangaOcrService] 构造注入（生产 = MangaOcrServiceImpl；测试 = fake），
 /// 对存储层/DB 零依赖，可独立单测。
 class MangaOcrHostJobManager {
+  /// [runAfter]：串行队列的起点。app 每次开互联新建一个管理器，关了立刻再开时
+  /// 旧管理器取消掉的执行体可能还没停（整卷 isolate 还占着整套模型）；把它设成旧
+  /// 管理器的 [whenExecutorsStopped]，新管理器的第一个任务就排在旧执行体停下之后，
+  /// 不会两套模型同时在内存。缺省 = 立即可跑。它出错同样放行（只是个次序信号）。
+  ///
+  /// 它同时并进本管理器的 [whenExecutorsStopped]，所以这条链可以传递：连着开关
+  /// 互联好几次、中间的管理器任务还在排队没起执行体时，再下一个管理器照样等到
+  /// 最早那个还没停下的执行体。原生推理卡死时整条链都不完成，新任务一直排队——
+  /// 宁可排队也不让第二套模型进内存（已知局限，见 BUG-4800）。
   MangaOcrHostJobManager({
     required MangaOcrService service,
     required Directory jobRoot,
@@ -124,11 +135,20 @@ class MangaOcrHostJobManager {
         const <String, MangaOcrService>{},
     DateTime Function()? now,
     Duration jobTtl = const Duration(hours: 1),
+    Future<void>? runAfter,
   }) : _service = service,
        _modelServices = modelServices,
        _jobRoot = jobRoot,
        _now = now ?? DateTime.now,
-       _jobTtl = jobTtl;
+       _jobTtl = jobTtl,
+       _predecessorStopped = runAfter == null
+           ? Future<void>.value()
+           : runAfter.catchError((Object _) {}) {
+    _queueTail = _predecessorStopped;
+  }
+
+  /// 构造参数 `runAfter`（出错已吞成完成）：上一个管理器的执行体全部停下。
+  final Future<void> _predecessorStopped;
 
   /// host 自己当前选择的模型（client 不点名时用它）。
   final MangaOcrService _service;
@@ -143,7 +163,8 @@ class MangaOcrHostJobManager {
 
   /// 串行执行队列尾（对照 FushiSyncServer._davWriteChain 的链式 future 模式）：
   /// 新 start 挂到链尾，前一整卷跑完才轮到下一卷——OCR 是重活，绝不并行两卷。
-  Future<void> _queueTail = Future<void>.value();
+  /// 起点见构造参数 `runAfter`。
+  late Future<void> _queueTail;
 
   /// host 重启遗留的孤儿目录只清一次（首个 API 触达时惰性执行）。
   bool _orphanSweepDone = false;
@@ -235,8 +256,11 @@ class MangaOcrHostJobManager {
   /// [disposeAll] 取消掉的执行体全部真正停下（各自的收尾也做完）时完成；没有
   /// 在停的立即完成。要动任务根目录（删除 / 搬走）的调用方先等它——执行体停下
   /// 之前还会往自己的卷目录里写逐页缓存。原生推理卡住时它不完成。
+  ///
+  /// 也包含上一个管理器的执行体（构造参数 `runAfter`）：本管理器的任务若还在排队
+  /// 等它，本管理器自己的 [_stopping] 是空的，只看自己会把还没停下的更早执行体漏掉。
   Future<void> get whenExecutorsStopped =>
-      Future.wait<void>(_stopping.toList(growable: false));
+      Future.wait<void>(<Future<void>>[_predecessorStopped, ..._stopping]);
 
   void _trackStopping(Future<void> stopped) {
     _stopping.add(stopped);
@@ -316,31 +340,72 @@ class MangaOcrHostJobManager {
   /// 设修改时间只为续传，页图本身已经写好：文件系统不收这个时间（FAT / exFAT 的
   /// 可表示范围比 NTFS / POSIX 窄）或页图在两步之间被取消删掉时，这一页只是不能
   /// 续传，上传照常算成功——不能让一个省重复识别的步骤把整卷代跑变成 500。
+  ///
+  /// 写盘先落本任务专属的暂存名（`<页名>.<jobId>.part`，扩展名不是页图，枚举不收），
+  /// 写完再**同步**复核任务仍收上传、改名到位并记账，复核与改名之间没有 await。
+  /// 写盘那段 await 期间任务可能已被取消（[cancelAndCleanup] 删光页图、出表）或停机
+  /// 清表：旧实现回来照样把页图留在卷目录、把状态写回 `uploading`——那张页图会被同卷
+  /// 下一个任务（落回同一个 `vol_<slug>`）当成自己的页一起识别。现在只删自己的
+  /// 暂存文件并回 `bad_state`，不碰别的任务可能已经写进同一目录的同名页。
   Future<String?> uploadPage(
     MangaOcrHostJob job, {
     required String name,
     required List<int> bytes,
     DateTime? sourceModified,
   }) async {
-    if (job.state.isTerminal || job.state == MangaOcrHostJobState.running) {
-      return 'bad_state';
-    }
+    if (!_acceptsUpload(job)) return 'bad_state';
     final List<String>? segments = _sanitizePageName(name);
     if (segments == null) return 'bad_name';
     final File dest = File(p.joinAll(<String>[job.dir.path, ...segments]));
-    dest.parent.createSync(recursive: true);
-    await dest.writeAsBytes(bytes, flush: true);
+    final File staging = File('${dest.path}.${job.id}.part');
+    try {
+      dest.parent.createSync(recursive: true);
+      await staging.writeAsBytes(bytes, flush: true);
+    } on FileSystemException {
+      // 取消清理在写盘途中删掉了子目录 / 暂存文件：任务已经不收这页。
+      if (!_acceptsUpload(job)) {
+        _deleteQuietly(staging);
+        return 'bad_state';
+      }
+      rethrow;
+    }
     if (sourceModified != null) {
       try {
-        await dest.setLastModified(sourceModified);
+        // 改名不动修改时间，在暂存文件上设即可。
+        await staging.setLastModified(sourceModified);
       } on FileSystemException {
         // 见方法注释：这页保持落盘时间（不续传），不算上传失败。
       }
+    }
+    if (!_acceptsUpload(job)) {
+      _deleteQuietly(staging);
+      return 'bad_state';
+    }
+    try {
+      staging.renameSync(dest.path);
+    } on FileSystemException {
+      if (!_acceptsUpload(job)) return 'bad_state';
+      _deleteQuietly(staging);
+      rethrow;
     }
     job.pagesUploaded += 1;
     job.state = MangaOcrHostJobState.uploading;
     job.touchedAt = _now();
     return null;
+  }
+
+  /// [job] 此刻还收逐页上传：未终态、没在跑、仍是表里那一个（没被取消出表或停机清表）。
+  bool _acceptsUpload(MangaOcrHostJob job) =>
+      !job.state.isTerminal &&
+      job.state != MangaOcrHostJobState.running &&
+      identical(_jobs[job.id], job);
+
+  static void _deleteQuietly(File file) {
+    try {
+      if (file.existsSync()) file.deleteSync();
+    } on FileSystemException {
+      // 尽力删：留下的暂存文件扩展名不是页图，不会被枚举，交给 TTL / 孤儿清扫。
+    }
   }
 
   /// 开始跑（串行队列）。返回 null = 已受理；非 null = `(statusCode, errorCode)`。
@@ -445,17 +510,24 @@ class MangaOcrHostJobManager {
     if (detached) return;
     _jobs.remove(job.id);
     if (_dirSharedWithOtherJob(job, liveOnly: true)) return;
+    final List<FileSystemEntity> entries;
     try {
-      if (job.dir.existsSync()) {
-        for (final FileSystemEntity entity in job.dir.listSync(
-          followLinks: false,
-        )) {
-          if (p.basename(entity.path) == kMangaOcrOutDirName) continue;
-          entity.deleteSync(recursive: true);
-        }
+      if (!job.dir.existsSync()) return;
+      entries = job.dir.listSync(followLinks: false);
+    } on FileSystemException {
+      return; // 清理失败不致命：TTL 孤儿清扫兜底。
+    }
+    // 逐个删、互不连坐：Windows 上某一项还被打开着（在飞的上传正往子目录里写）时
+    // 删它会抛错，旧实现整个循环跟着中止，排在它后面的页图全留在卷目录里，同卷
+    // 下一个任务落回这个目录就会把它们当成自己的页。删不掉的那一项交给 TTL 孤儿
+    // 清扫（在飞的上传回来发现任务已不收会删掉自己的暂存文件）。
+    for (final FileSystemEntity entity in entries) {
+      if (p.basename(entity.path) == kMangaOcrOutDirName) continue;
+      try {
+        entity.deleteSync(recursive: true);
+      } on FileSystemException {
+        // 见上。
       }
-    } catch (_) {
-      // 清理失败不致命：TTL 孤儿清扫兜底。
     }
   }
 
@@ -465,7 +537,9 @@ class MangaOcrHostJobManager {
     if (job.state != MangaOcrHostJobState.done || path == null) return null;
     final File file = File(path);
     if (!file.existsSync()) return null;
-    return file.readAsString();
+    // 产物由 writeTextFileAtomically 写：同卷新任务落回同一目录、正往这个文件上
+    // rename 时，Windows 上开着读会让那次替换以「拒绝访问」失败（BUG-4801）。
+    return readAtomicallyWrittenTextFile(file);
   }
 
   // ── TTL / 孤儿清理 ─────────────────────────────────────────────

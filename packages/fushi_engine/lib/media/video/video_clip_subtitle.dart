@@ -1,4 +1,5 @@
 import 'package:fushi_audio/fushi_audio_core.dart';
+import 'package:fushi_engine/media/video/subtitle/srt_writer.dart';
 import 'package:path/path.dart' as p;
 import 'package:meta/meta.dart';
 
@@ -41,19 +42,12 @@ String? buildClipSrtContent({
   );
   if (picked.isEmpty) return null;
 
-  final StringBuffer buffer = StringBuffer();
-  for (int i = 0; i < picked.length; i++) {
-    final ClipSubtitleCue cue = picked[i];
-    buffer
-      ..writeln(i + 1)
-      ..writeln(
-        '${formatSrtTimestamp(cue.startMs)} --> '
-        '${formatSrtTimestamp(cue.endMs)}',
-      )
-      ..writeln(cue.text)
-      ..writeln();
-  }
-  return buffer.toString();
+  return writeSrtBlocks(
+    picked.map(
+      (ClipSubtitleCue cue) =>
+          (startMs: cue.startMs, endMs: cue.endMs, text: cue.text),
+    ),
+  );
 }
 
 /// 片段区间内的一条字幕：时间轴**已平移到片段起点为 0**、已 clamp 到片段边界、
@@ -174,19 +168,6 @@ List<ClipSubtitleCue> orderClipCuesForBurn(List<ClipSubtitleCue> cues) {
     return byLayer != 0 ? byLayer : a.compareTo(b);
   });
   return List<ClipSubtitleCue>.unmodifiable(order.map((int i) => cues[i]));
-}
-
-/// SRT 时间戳：`HH:MM:SS,mmm`。负值 clamp 到 0（SRT 无负时间轴）。
-String formatSrtTimestamp(int ms) {
-  final int safe = ms < 0 ? 0 : ms;
-  final int totalSeconds = safe ~/ 1000;
-  final int hours = totalSeconds ~/ 3600;
-  final int minutes = (totalSeconds % 3600) ~/ 60;
-  final int seconds = totalSeconds % 60;
-  final int millis = safe % 1000;
-  String two(int v) => v.toString().padLeft(2, '0');
-  return '${two(hours)}:${two(minutes)}:${two(seconds)},'
-      '${millis.toString().padLeft(3, '0')}';
 }
 
 /// 清洗 cue 文本，使其能安全放进 SRT 块。

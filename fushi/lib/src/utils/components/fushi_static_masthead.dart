@@ -1,7 +1,10 @@
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
-    show FushiFloatingChromeBar, FushiFloatingChromeSoloTitle;
+    show
+        FushiFloatingChromeBar,
+        FushiFloatingChromeSoloTitle,
+        fushiMastheadOuterGap;
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
     show FushiShellHeaderActions;
 import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
@@ -80,16 +83,21 @@ class _FushiStaticMastheadState extends State<FushiStaticMasthead> {
       // 有返回键时大字行不画外壳页名，页名由一级切换位的单独页名补上。
       title: hasLeading ? null : widget.title,
       actionsSlot: _slot,
-      child: FushiMastheadScope(
-        role: FushiMastheadRole.primary,
-        child: FushiFloatingChromeBar(
-          tabs: hasLeading
-              ? FushiFloatingChromeSoloTitle(title: widget.title)
-              : const SizedBox.shrink(),
-          slot: _slot,
-          leading: widget.leading,
-          trailing: widget.trailing,
-          padding: widget.padding,
+      // 大字行上方的呼吸与库页同一值（[fushiMastheadOuterGap]）：调用点不再各自
+      // 垫 Padding，各模块页大字行落在同一条线上。
+      child: Padding(
+        padding: EdgeInsets.only(top: fushiMastheadOuterGap(context)),
+        child: FushiMastheadScope(
+          role: FushiMastheadRole.primary,
+          child: FushiFloatingChromeBar(
+            tabs: hasLeading
+                ? FushiFloatingChromeSoloTitle(title: widget.title)
+                : const SizedBox.shrink(),
+            slot: _slot,
+            leading: widget.leading,
+            trailing: widget.trailing,
+            padding: widget.padding,
+          ),
         ),
       ),
     );

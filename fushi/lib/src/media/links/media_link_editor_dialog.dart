@@ -61,8 +61,29 @@ class _MediaLinkEditorDialogState extends State<MediaLinkEditorDialog> {
   late MediaLinkKind _kind = _initialKind();
   MediaLinkRelation _relation = MediaLinkRelation.adaptation;
 
-  /// adaptation 方向：true = 本条是原作（本条 → 目标）。
+  /// 有方向关系（改编 / 续作 / 外传）的方向：true = 本条是落库 from 端（原作 /
+  /// 前作 / 本篇，本条 → 目标）。
   bool _selfIsOriginal = true;
+
+  /// 当前关系要不要问方向（主题曲的方向由「谁是音乐」定，不问）。
+  bool get _asksDirection =>
+      _relation.directed && _relation != MediaLinkRelation.themeSong;
+
+  /// 方向两段的文案（本条是 from 端 / 目标是 from 端）。
+  (String, String) get _directionLabels => switch (_relation) {
+    MediaLinkRelation.sequel => (
+      t.media_link_direction_this_prequel,
+      t.media_link_direction_target_prequel,
+    ),
+    MediaLinkRelation.sideStory => (
+      t.media_link_direction_this_main,
+      t.media_link_direction_target_main,
+    ),
+    _ => (
+      t.media_link_direction_this_original,
+      t.media_link_direction_target_original,
+    ),
+  };
 
   /// theme_song 的角色与适用集数（`media_links.role` / `episode_range`）。
   ThemeSongRole _themeSongRole = ThemeSongRole.op;
@@ -169,7 +190,7 @@ class _MediaLinkEditorDialogState extends State<MediaLinkEditorDialog> {
             FushiAnimatedSize(
               duration: fushiMotionDuration(context, FushiMotion.short),
               curve: FushiMotion.standard,
-              child: _relation == MediaLinkRelation.adaptation
+              child: _asksDirection
                   ? Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: <Widget>[
@@ -179,13 +200,11 @@ class _MediaLinkEditorDialogState extends State<MediaLinkEditorDialog> {
                           segments: <ButtonSegment<bool>>[
                             ButtonSegment<bool>(
                               value: true,
-                              label: Text(t.media_link_direction_this_original),
+                              label: Text(_directionLabels.$1),
                             ),
                             ButtonSegment<bool>(
                               value: false,
-                              label: Text(
-                                t.media_link_direction_target_original,
-                              ),
+                              label: Text(_directionLabels.$2),
                             ),
                           ],
                           selected: <bool>{_selfIsOriginal},

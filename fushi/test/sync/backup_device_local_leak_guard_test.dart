@@ -178,8 +178,14 @@ void main() {
       contains('clearLegacySrsDeviceLocalTables'),
       reason: '_stripCredentials 必须清空老形态主库里的 SRS 本机状态 / 缓存',
     );
-    // 新形态：srs.db 快照由 Rust 清空设备本地表。
-    expect(s, contains('snapshotInto(path, stripDeviceLocal: true)'));
+    // 新形态（G11-4）：复习部分是内核按集合导出的操作流（FSRS4EXP，只有真相层操作与设备公钥，不带待投递、签名私钥与
+    // 任何本机状态），不再写整库快照条目。
+    expect(s, contains('srsExportBackupStreams('));
+    expect(
+      s,
+      isNot(contains('snapshotInto(')),
+      reason: '整包备份不再带复习库整库快照（那会带上本机身份与私钥）',
+    );
 
     final String restore = File(
       'lib/src/sync/backup_service/restore.part.dart',

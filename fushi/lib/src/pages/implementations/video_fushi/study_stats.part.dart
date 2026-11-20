@@ -45,6 +45,11 @@ extension _VideoStudyStats on _VideoFushiPageState {
       appModel.database,
       activityLimit: 0,
       includeCounters: true,
+      scope: StatFactsScope.media(
+        mediaKind: kActivityMediaVideo,
+        mediaKey: key,
+        title: _title,
+      ),
     );
     return summarizeReaderBookStats(
       facts.dailyVideos,

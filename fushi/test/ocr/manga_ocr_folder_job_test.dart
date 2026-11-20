@@ -215,6 +215,37 @@ void main() {
       expect(urls, hasLength(1));
       expect(urls.single, endsWith('ok.png'));
     });
+
+    test('跳过群晖 @eaDir、__MACOSX 与 ._ AppleDouble（BUG-4916）', () {
+      // 放在 NAS 上 / 从 macOS 压缩包解出来的页图目录：缩略图与资源叉都是 .jpg，
+      // 递归枚举不过滤就当成真页插进卷里（页数翻倍、空白页、OCR 白跑）。
+      final Directory root = Directory.systemTemp.createTempSync(
+        'manga_enum_junk_',
+      );
+      addTearDown(() => root.deleteSync(recursive: true));
+      _writePng(p.join(root.path, '001.png'), 10, 10);
+      _writePng(p.join(root.path, 'ch2', '002.png'), 10, 10);
+      _writePng(
+        p.join(root.path, '@eaDir', '001.png', 'SYNOPHOTO_THUMB_M.png'),
+        10,
+        10,
+      );
+      _writePng(
+        p.join(root.path, 'ch2', '@EADIR', '002.png', 'SYNOPHOTO_THUMB_S.png'),
+        10,
+        10,
+      );
+      _writePng(p.join(root.path, '__MACOSX', 'ch2', '002.png'), 10, 10);
+      File(p.join(root.path, '._001.png')).writeAsBytesSync(<int>[0, 5, 22, 7]);
+      File(
+        p.join(root.path, 'ch2', '._002.png'),
+      ).writeAsBytesSync(<int>[0, 5, 22, 7]);
+
+      final List<String> urls = enumerateMangaPages(
+        root,
+      ).map((MangaOcrPageFile page) => page.relativeUrl).toList();
+      expect(urls, <String>['001.png', 'ch2/002.png']);
+    });
   });
 
   group('runMangaOcrFolderJob', () {

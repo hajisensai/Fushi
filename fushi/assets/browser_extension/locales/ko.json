@@ -487,6 +487,8 @@
   "pc_offset_title": "싱크 조절",
   "pc_style_title": "자막 스타일",
   "pc_mask_edit": "자막 가리개 조정",
+  "pc_fullscreen_enter": "전체 화면",
+  "pc_fullscreen_exit": "전체 화면 종료",
   "mask_edit_hint": "드래그해 이동, 가장자리나 모서리를 드래그해 크기 조절",
   "mask_edit_reset": "초기화",
   "mask_edit_done": "완료",

@@ -16,6 +16,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi_engine/media/image_kernels.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
+import 'package:fushi_engine/media/system_junk_entries.dart';
 import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
 import 'package:fushi_engine/utils/misc/atomic_text_file.dart';
@@ -196,7 +197,8 @@ bool _isDigit(int codeUnit) => codeUnit >= 0x30 && codeUnit <= 0x39;
 const int kMangaPageScanMaxDepth = 6;
 
 /// 枚举 [root] 下的页图：递归下钻到 [kMangaPageScanMaxDepth] 层，排除
-/// [kMangaOcrOutDirName] 产物目录，按相对路径自然序排序。
+/// [kMangaOcrOutDirName] 产物目录、系统 / 垃圾目录（`@eaDir`、`__MACOSX`、回收站…，
+/// [isSystemJunkDirectoryName]）与 `._` AppleDouble 文件，按相对路径自然序排序。
 ///
 /// 旧实现只认「顶层文件 + 一层子目录内的文件」。已入库漫画的书目录是
 /// `manga.json` + `images/<destRel>`，而 destRel **保留源子目录结构**：
@@ -211,6 +213,7 @@ List<MangaOcrPageFile> enumerateMangaPages(Directory root) {
     if (!kMangaOcrImageExtensions.contains(ext)) {
       return;
     }
+    if (isAppleDoubleFileName(p.basename(file.path))) return;
     final String relative = p.relative(file.path, from: root.path);
     pages.add(
       MangaOcrPageFile(file: file, relativeUrl: normalizeMangaUrl(relative)),
@@ -229,7 +232,8 @@ List<MangaOcrPageFile> enumerateMangaPages(Directory root) {
       if (entity is File) {
         addFile(entity);
       } else if (entity is Directory && depth < kMangaPageScanMaxDepth) {
-        if (p.basename(entity.path) == kMangaOcrOutDirName) {
+        final String name = p.basename(entity.path);
+        if (name == kMangaOcrOutDirName || isSystemJunkDirectoryName(name)) {
           continue;
         }
         walk(entity, depth + 1);
