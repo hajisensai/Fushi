@@ -218,10 +218,11 @@ void main() {
     await _pumpReview(tester, store: store);
 
     expect(_floatingBar, findsNothing);
-    // 卡面右下角、底栏上沿以上：正面内容居中，这里是空白。原生卡面铺到底栏背后，
-    // 卡面自己的右下角落在底栏那条里（归底栏，见下一条）。
+    // 卡面中间一栏的下方、底栏上沿以上：正面内容居中，这里是空白；默认映射里只有
+    // 「点中间」切换顶栏（问题面点左 / 右 = 显示答案）。原生卡面铺到底栏背后，卡面
+    // 自己的底边落在底栏那条里（归底栏，见下一条）。
     final Offset blank = Offset(
-      tester.getBottomRight(_surface).dx - 24,
+      tester.getCenter(_surface).dx,
       tester.getTopLeft(_bottomBar).dy - 24,
     );
     await tester.tapAt(blank);

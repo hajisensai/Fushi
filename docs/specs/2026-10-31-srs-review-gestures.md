@@ -7,7 +7,11 @@
 - 手势（`SrsReviewGesture`，wire 名即偏好 JSON 的键）：`tap_left` / `tap_center` / `tap_right`（单击**空白**，按卡面区域横向三等分）、`double_tap`、`long_press`、`swipe_left` / `swipe_right` / `swipe_up` / `swipe_down`。
 - 动作（`SrsReviewGestureAction`）：`none`、`show_answer`（只问题面）、`rate_again|hard|good|easy`（只答案面；「只留重来 / 良好」开着时困难 / 简单不生效，设置页注明）、`undo`、`replay_audio`、`toggle_toolbar`、`edit_note`、`bury`、`suspend`、`flag`。
 - 每个动作都调复习页现成实现（`_showAnswer` / `_rate` / `_undoLast` / `_replayAudio` / `_toggleChrome` / `_onCardAction`），与按钮、快捷键同一条路径；评分 / 撤销在忙碌时不响应（同按钮禁用）。
-- 问题面、答案面各一套映射。**默认 = 今天的行为**：三区单击都是切换顶栏，其余不绑。
+- 问题面、答案面各一套映射。**默认开启（2026-11-20 起）**：
+  - 问题面：点左 / 点右、向左 / 右 / 上滑 = 显示答案；点中间 = 切换顶栏；下滑 / 双击 / 长按不绑。
+  - 答案面：向左滑 = 重来、向右滑 = 良好、向上滑 = 简单、向下滑 = 困难；三区单击都是切换顶栏（点空白误触评分代价太大，不绑评分）；双击 / 长按不绑。
+  - 两面「点中间」恒为切换顶栏：触屏唤出悬浮顶栏的入口不能丢。双击不绑 = 单击不被推迟；长按不绑 = 不抢长按选词。
+  - 已改过映射的人不受影响（见下「存储」：两面都显式落盘）；之前从没改过（偏好为空串）的人拿到新默认。
 - 键盘 / 手柄不变；iOS 不受限。
 
 ## 存储
@@ -54,6 +58,7 @@
 ## 反馈与动效
 
 - 滑动途中：卡面按位移的 0.4 跟手（`SrsSwipeFollow`），中央显示松手会执行的动作（`SrsSwipeHintBadge`，评分用评分按钮同一套色调，两套设计系统各自配色）；只有朝着绑了动作的方向拖才有反馈；松手 / 作废弹回（`FushiMotion.release`）。墨水屏 / 系统「减弱动态效果」下卡面不移动、提示直接到位。
+- 设置页每面先一张手势示意图（`SrsReviewGestureDiagram`，`srs_review_gesture_diagram.dart`）：中间一张三等分的示意卡片标出三区单击的动作，四边是四向滑动，底下是双击 / 长按；每处一个手势图（`SrsGestureGlyph`：落点 + 轨迹 / 涟漪 / 按住弧），出现时演示两遍后停在终态（墨水屏 / 减弱动态效果下直接终态），标的是 `resolve` 后实际生效的动作（「只留重来 / 良好」屏蔽的显示为不生效），评分用评分按钮色调。
 - 设置页「复习选项 → 手势」（`SrsReviewGesturesPage`，MD3 / Apple 两套）：说明与两组错峰进场（`FushiEntranceScope` + `FushiStaggeredEntrance`），行按压缩放（`FushiPressScale`），选动作走整页选择（选项多于行内下拉上限），右上角重置回默认。
 
 ## 冲突规则小结
