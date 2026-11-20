@@ -23,6 +23,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_value_diff.dart';
+import 'package:fushi/src/srs/srs_conflict_groups.dart';
 import 'package:fushi/src/srs/srs_device_view.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart'
@@ -156,6 +157,9 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
   /// 勾了「同类都按这个选」的组（[_Conflict.group] / 扣住删除的 `held/<kind>`）。
   final Set<String> _applySame = <String>{};
 
+  /// 每组的条数（键同 [_applySame]），随数据载入一趟算好，build 只查表（BUG-4950）。
+  Map<String, int> _sameCounts = const <String, int>{};
+
   @override
   void initState() {
     super.initState();
@@ -288,6 +292,10 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
       _conflicts = conflicts;
       _pending = pending;
       _held = held;
+      _sameCounts = <String, int>{
+        ...srsSameGroupCounts(held, _heldGroup),
+        ...srsSameGroupCounts(conflicts, (_Conflict c) => c.group),
+      };
       _duplicates = duplicates;
       _loadError = null;
       _loading = false;
@@ -340,9 +348,9 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
 
   static String _heldGroup(_HeldDelete c) => 'held/${c.kind}';
 
-  int _sameCount(String group) => group.startsWith('held/')
-      ? _held.where((_HeldDelete h) => _heldGroup(h) == group).length
-      : _conflicts.where((_Conflict c) => c.group == group).length;
+  /// build 里每张卡片都调：只查 [_sameCounts]，不得在这里扫列表（BUG-4950：逐卡全表扫
+  /// 是 O(n²)，几千条扣住的删除让一次重建在主线程上跑几秒）。
+  int _sameCount(String group) => _sameCounts[group] ?? 0;
 
   void _toggleSame(String group, bool on) =>
       setState(() => on ? _applySame.add(group) : _applySame.remove(group));
