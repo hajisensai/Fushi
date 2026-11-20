@@ -2348,6 +2348,10 @@ class VideoPlayerController extends ChangeNotifier
   /// 后台自动加载据此判「期间用户是否自己换过字幕」（[_loadEmbeddedSubtitleIfNeeded]）。
   int _cueSourceEpoch = 0;
 
+  /// [_cueSourceEpoch] 的只读视图：页面上跨 await 的字幕操作（自动对轴）据此判
+  /// 「期间主字幕是否换过源」，换过就丢弃旧结果。
+  int get cueSourceEpoch => _cueSourceEpoch;
+
   /// 本地视频的内封文本轨要整轨抽取（慢盘上一分钟以上）时，先借播放器解码这条轨，
   /// 文本即时回流成可点 cue（与远端直出容器的 [selectEmbeddedTextTrackViaPlayer]
   /// 同一条回流：可查词、可制卡，字幕列表边播边累积），抽完再由

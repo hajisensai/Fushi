@@ -13389,6 +13389,7 @@
   "video_subtitle_glossary_user_edited": "Edited by you; kept when regenerating",
   "video_subtitle_graphic_hint": "Subtitle grafis · ditampilkan di video · jeda untuk cari kata (OCR)",
   "video_subtitle_graphic_learning_hint": "Subtitle gambar dikenali dengan OCR saat dijeda; ketuk kata untuk mencarinya. Gunakan \"Ubah ke subtitle teks\" di bawah untuk mencari kata saat diputar.",
+  "video_subtitle_graphic_ocr_cues_skipped": "Text subtitles saved; skipped $count lines that could not be recognized",
   "video_subtitle_graphic_ocr_empty": "Tidak ada teks yang dikenali di trek subtitle ini",
   "video_subtitle_graphic_ocr_enable_action": "Turn on",
   "video_subtitle_graphic_ocr_enable_hint": "Image subtitles need OCR for tap-to-look-up",

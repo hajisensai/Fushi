@@ -13389,6 +13389,7 @@
   "video_subtitle_glossary_user_edited": "Edited by you; kept when regenerating",
   "video_subtitle_graphic_hint": "Phụ đề đồ họa · hiển thị trên hình · tạm dừng để tra từ (OCR)",
   "video_subtitle_graphic_learning_hint": "Phụ đề dạng ảnh được nhận dạng bằng OCR khi tạm dừng; chạm vào một từ để tra. Dùng \"Chuyển thành phụ đề văn bản\" bên dưới để tra từ ngay khi đang phát.",
+  "video_subtitle_graphic_ocr_cues_skipped": "Text subtitles saved; skipped $count lines that could not be recognized",
   "video_subtitle_graphic_ocr_empty": "Không nhận dạng được văn bản trong rãnh phụ đề này",
   "video_subtitle_graphic_ocr_enable_action": "Turn on",
   "video_subtitle_graphic_ocr_enable_hint": "Image subtitles need OCR for tap-to-look-up",

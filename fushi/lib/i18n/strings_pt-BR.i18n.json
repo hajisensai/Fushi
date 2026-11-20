@@ -13389,6 +13389,7 @@
   "video_subtitle_glossary_user_edited": "Edited by you; kept when regenerating",
   "video_subtitle_graphic_hint": "Legenda gráfica · exibida no vídeo · consulta ao pausar (OCR)",
   "video_subtitle_graphic_learning_hint": "Legendas de imagem são reconhecidas por OCR ao pausar; toque em uma palavra para consultá-la. Use \"Converter em legendas de texto\" abaixo para consultar durante a reprodução.",
+  "video_subtitle_graphic_ocr_cues_skipped": "Text subtitles saved; skipped $count lines that could not be recognized",
   "video_subtitle_graphic_ocr_empty": "Nenhum texto reconhecido nesta faixa de legendas",
   "video_subtitle_graphic_ocr_enable_action": "Turn on",
   "video_subtitle_graphic_ocr_enable_hint": "Image subtitles need OCR for tap-to-look-up",

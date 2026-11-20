@@ -13389,6 +13389,7 @@
   "video_subtitle_glossary_user_edited": "Edited by you; kept when regenerating",
   "video_subtitle_graphic_hint": "Grafische ondertitel · op video getoond · opzoeken na pauze (OCR)",
   "video_subtitle_graphic_learning_hint": "Beeldondertitels worden bij pauze met OCR herkend; tik op een woord om het op te zoeken. Gebruik \"Omzetten naar tekstondertitels\" hieronder om tijdens het afspelen op te zoeken.",
+  "video_subtitle_graphic_ocr_cues_skipped": "Text subtitles saved; skipped $count lines that could not be recognized",
   "video_subtitle_graphic_ocr_empty": "Geen tekst herkend in dit ondertitelspoor",
   "video_subtitle_graphic_ocr_enable_action": "Turn on",
   "video_subtitle_graphic_ocr_enable_hint": "Image subtitles need OCR for tap-to-look-up",

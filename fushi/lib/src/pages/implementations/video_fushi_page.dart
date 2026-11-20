@@ -353,6 +353,11 @@ import 'package:fushi/src/media/video/video_immersive_mode.dart';
 import 'package:fushi/src/media/video/video_lua_script_manager.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
+import 'package:fushi/src/media/video/video_graphic_subtitle_regions.dart'
+    show
+        GraphicSubtitleTrackExtractionHub,
+        GraphicSubtitleTrackLease,
+        GraphicSubtitleTrackExtractOutcome;
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_screenshot_compose.dart';
 import 'package:fushi/src/media/video/video_screenshot_destination.dart';
