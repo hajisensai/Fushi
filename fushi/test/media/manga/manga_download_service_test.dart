@@ -1136,7 +1136,7 @@ void main() {
 
     final MangaDownloadJobRow job = await jobOf('/chapter/1');
     expect(job.status, MangaDownloadJobStatus.done);
-    expect(job.attemptCount, 1);
+    expect(job.attemptCount, 0, reason: '没有记任何一次失败');
     expect(waits, isEmpty, reason: '没有退避');
     expect(adapter.resolveCount, 2, reason: '页表只多解析一次');
     downloads.dispose();
