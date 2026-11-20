@@ -336,6 +336,7 @@
 | [BUG-4951](bugs/BUG-4951-mihon-async-interceptor-exception-crash.md) | ✅ | ✅ | 在线漫画取图失败后闪退：扩展拦截器抛非 IOException，OkHttp 异步线程重抛把进程带崩 |
 | [BUG-4952](bugs/BUG-4952-android-cf-verify-crash.md) | ✅ | ✅ | Android 点「网站验证」主进程立即闪退 |
 | [BUG-4955](bugs/BUG-4955-android-dart-symbols.md) | ✅ | ✅ | Android 发布不留 Dart 调试信息，ANR 栈的 libapp.so pc 对不上源码 |
+| [BUG-4958](bugs/BUG-4958-aggregate-sync-ui-isolate-anr.md) | ✅ | ✅ | 互联/云聚合同步在 UI isolate 上同步跑整份快照折叠与指纹，慢设备 ANR |
 | [BUG-4905](bugs/BUG-4905-ai-cast-text-substitutions.md) | ✅ | ✅ | 小说和漫画 AI 标注未应用系列用词替换表 |
 | [BUG-4904](bugs/BUG-4904-book-series-key-store-annotation.md) | ✅ | ✅ | 书店写法「卷号<系列名> (文库名)」的分卷导入后不归合集 |
 | [BUG-4903](bugs/BUG-4903-home-desktop-continue-cut-edge-title-concat.md) | ✅ | ✅ | 首页（桌面）「继续」右侧卡被窗口切掉一半、标题拼接成「Re：ゼロ…1<Re：…」 |
