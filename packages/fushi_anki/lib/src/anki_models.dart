@@ -75,7 +75,11 @@ AnkiOverwriteScope ankiOverwriteScopeFromName(String? name) {
 }
 
 /// 解析持久化的 [AnkiSettings.overwriteFieldsByNoteType]：缺键 / 形状不对一律视为空表
-/// （= 每种笔记类型都覆写全部字段，旧存档升级后行为不变）；空清单的条目丢弃。
+/// （= 每种笔记类型都覆写全部字段，旧存档升级后行为不变）。
+///
+/// 拍板 lt2wobUYfE：空清单**保留**——它表示「一个字段都不写」（用户在覆写弹窗里点
+/// 「全部字段」取消了全选），覆写会被拒绝而不是退回整卡替换。旧存档从来没存过空
+/// 清单（旧 [AnkiSettings.withOverwriteFields] 把空选择当删条目），不需要迁移。
 Map<String, List<String>> overwriteFieldsByNoteTypeFromJson(Object? raw) {
   if (raw is! Map) return const <String, List<String>>{};
   final Map<String, List<String>> out = <String, List<String>>{};
@@ -83,13 +87,24 @@ Map<String, List<String>> overwriteFieldsByNoteTypeFromJson(Object? raw) {
     final Object? key = e.key;
     final Object? value = e.value;
     if (key is! String || value is! List) continue;
-    final List<String> fields = <String>[
+    out[key] = <String>[
       for (final Object? f in value)
         if (f is String && f.isNotEmpty) f,
     ];
-    if (fields.isNotEmpty) out[key] = fields;
   }
   return out;
+}
+
+/// 拍板 lt2wobUYfE：用户在「覆写哪些字段」里一个都没勾（[onlyFields] 是
+/// [AnkiSettings.overwriteFieldsFor] 返回的空集）时拒绝覆写，错误码
+/// [AnkiErrorCode.overwriteNoFieldsSelected]。各后端在渲染前就调（查词弹窗直接点 ✓
+/// 覆写也走这里），不白渲染 / 白下载媒体。不拒绝时返回 null。
+MineOutcome? rejectNoOverwriteFieldsSelectedOutcome(Set<String>? onlyFields) {
+  if (onlyFields == null || onlyFields.isNotEmpty) return null;
+  return MineOutcome.failure(
+    'No fields are checked in "Fields to overwrite" — nothing was changed.',
+    errorCode: AnkiErrorCode.overwriteNoFieldsSelected,
+  );
 }
 
 /// 查重（以及据同一条件反查已存在卡）的**搜索范围**。
@@ -397,17 +412,19 @@ class AnkiSettings {
   /// 读写一律经 [overwriteFieldsFor] / [withOverwriteFields]，不直接拼这张表。
   final Map<String, List<String>> overwriteFieldsByNoteType;
 
-  /// [noteTypeName] 这种笔记类型覆写时要写的字段；`null` = 全部字段（旧行为）。
+  /// [noteTypeName] 这种笔记类型覆写时要写的字段；`null` = 全部字段（旧行为），
+  /// 空集 = 一个都不写（拍板 lt2wobUYfE：覆写被拒绝，见
+  /// [rejectNoOverwriteFieldsSelectedOutcome]）。
   Set<String>? overwriteFieldsFor(String? noteTypeName) {
     if (noteTypeName == null) return null;
     final List<String>? fields = overwriteFieldsByNoteType[noteTypeName];
-    if (fields == null || fields.isEmpty) return null;
+    if (fields == null) return null;
     return fields.toSet();
   }
 
-  /// 记住 [noteTypeName] 的覆写字段选择。[fields] 为 `null` 或空 = 恢复「全部字段」，
-  /// 直接删掉这个笔记类型的条目（空选择没有「什么都不写」的意义，覆写按钮本身就
-  /// 是「要写」）。
+  /// 记住 [noteTypeName] 的覆写字段选择。[fields] 为 `null` = 恢复「全部字段」，
+  /// 删掉这个笔记类型的条目；空 = 一个字段都不写（拍板 lt2wobUYfE：「全部字段」可以
+  /// 取消全选，空选择要持久化，覆写入口据此禁用 / 拒绝）。
   AnkiSettings withOverwriteFields(
     String noteTypeName,
     Iterable<String>? fields,
@@ -415,13 +432,10 @@ class AnkiSettings {
     final Map<String, List<String>> next = <String, List<String>>{
       ...overwriteFieldsByNoteType,
     };
-    final List<String> list = fields == null
-        ? const <String>[]
-        : fields.toSet().toList();
-    if (list.isEmpty) {
+    if (fields == null) {
       next.remove(noteTypeName);
     } else {
-      next[noteTypeName] = list;
+      next[noteTypeName] = fields.toSet().toList();
     }
     return copyWith(overwriteFieldsByNoteType: next);
   }
@@ -2031,6 +2045,12 @@ class AnkiErrorCode {
   /// 与具体词条有关（这次没有图 / 没有音频），**不是**字段映射配错，不进
   /// [isFieldMappingConfigError]。
   static const String overwriteFieldsEmpty = 'ANKI_OVERWRITE_FIELDS_EMPTY';
+
+  /// 拍板 lt2wobUYfE：「覆写哪些字段」一个都没勾（[AnkiSettings.overwriteFieldsFor]
+  /// 返回空集）——这是用户的选择，不是渲染结果为空，也不是字段映射配错，单列一码给
+  /// 「先勾至少一个字段」的文案；不进 [isFieldMappingConfigError]。
+  static const String overwriteNoFieldsSelected =
+      'ANKI_OVERWRITE_NO_FIELDS_SELECTED';
 
   /// BUG-2380：「创建并选用 Lapis」建完之后，Lapis 牌组 / 笔记类型仍然不在后端
   /// 回读的清单里 —— 也就是后端把创建**静默吞掉**了（AnkiDroid 的 `addNewDeck`

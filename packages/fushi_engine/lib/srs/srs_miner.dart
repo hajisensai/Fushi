@@ -754,6 +754,14 @@ class SrsMiner with AnkiNoteComposer {
         );
       }
       final (SrsNoteView note, SrsNoteTypeView type) = live;
+      final Set<String>? onlyFields = settings.overwriteFieldsFor(
+        _noteTypeNameOf(type),
+      );
+      // 拍板 lt2wobUYfE：一个字段都没勾就不渲染、不写，直接拒绝。
+      final MineOutcome? noneSelected = rejectNoOverwriteFieldsSelectedOutcome(
+        onlyFields,
+      );
+      if (noneSelected != null) return noneSelected;
       late final AnkiMiningPayload payload;
       final MineOutcome? invalid = _parse(
         rawPayloadJson,
@@ -767,9 +775,6 @@ class SrsMiner with AnkiNoteComposer {
         noteType: _isLapis(type) ? null : type,
         canonical: await _canonicalDestination(),
         keepEmpty: true,
-      );
-      final Set<String>? onlyFields = settings.overwriteFieldsFor(
-        _noteTypeNameOf(type),
       );
       final Map<String, String> fields = <String, String>{
         for (final SrsFieldDef f in type.fields)
