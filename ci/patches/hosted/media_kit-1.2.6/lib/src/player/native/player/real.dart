@@ -109,7 +109,15 @@ class NativePlayer extends PlatformPlayer {
         // Fushi patch (BUG-3507): hook continuations run on a helper isolate
         // ([_hookContinueOffThread]); never destroy the handle under one.
         await Future.wait(_offThreadNativeCalls.toList());
-        mpv.mpv_terminate_destroy(ctx);
+        // Fushi patch (BUG-4941): `mpv_terminate_destroy` waits for the core
+        // thread to stop (`mp_dispatch_lock` + `mp_thread_join` in
+        // `player/client.c`). A core stuck in a demuxer/stream open blocks the
+        // caller; on Android the UI isolate shares the platform main thread,
+        // so calling it here produced ANRs. Run it on a helper isolate.
+        await compute(
+          _terminateDestroy,
+          _TerminateDestroyData(ctx.address, NativeLibrary.path),
+        );
       });
     }
 
@@ -3235,6 +3243,23 @@ void _hookContinue(_HookContinueData data) {
   final mpv = generated.MPV(DynamicLibrary.open(data.lib));
   final ctx = Pointer<generated.mpv_handle>.fromAddress(data.ctx);
   mpv.mpv_hook_continue(ctx, data.id);
+}
+
+/// Fushi patch (BUG-4941): arguments of [_terminateDestroy].
+class _TerminateDestroyData {
+  final int ctx;
+  final String lib;
+
+  const _TerminateDestroyData(this.ctx, this.lib);
+}
+
+/// Destroys the handle on a helper isolate: `mpv_terminate_destroy` blocks
+/// until the mpv core thread has exited, which must never happen on the UI
+/// (on Android: platform main) thread.
+void _terminateDestroy(_TerminateDestroyData data) {
+  final mpv = generated.MPV(DynamicLibrary.open(data.lib));
+  final ctx = Pointer<generated.mpv_handle>.fromAddress(data.ctx);
+  mpv.mpv_terminate_destroy(ctx);
 }
 
 class _GetPlaylistData {
