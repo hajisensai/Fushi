@@ -7,6 +7,20 @@ part of 'database.dart';
 /// [title] 是删前的库内标题（墓碑与歧义复核的判据），[bookUid] 是稳定身份。
 typedef VideoStatisticsIdentity = ({String title, String bookUid});
 
+/// [_FushiDbContentMisc.syncDictionaryHistory] 的一条保留行：[resultJson] 为 null
+/// 表示正文不变、只改 [position]。
+typedef DictionaryHistoryRetainedRow = ({
+  int id,
+  int position,
+  String? resultJson,
+});
+
+/// [_FushiDbContentMisc.syncDictionaryHistory] 的结果。
+typedef DictionaryHistorySyncResult = ({
+  List<int> insertedIds,
+  List<int> missingIds,
+});
+
 mixin _FushiDbContentMisc
     on _$FushiDatabase, _FushiDbLibrary, _FushiDbTagsSync {
   // ── dictionary metadata ─────────────────────────────────────────
@@ -179,6 +193,44 @@ mixin _FushiDbContentMisc
         b.insert(dictionaryHistory, item);
       }
     });
+  });
+
+  /// 查词历史增量落库（BUG-4956）：一次事务里删掉不在 [retained] 里的行、改写保留行的
+  /// `position`（[DictionaryHistoryRetainedRow.resultJson] 非空时连同正文）、插入
+  /// [inserted]。单条 `resultJson` 是 0.26–1.5 MB，整表重写每次查词都要把十条全部
+  /// 重新编码、跨 isolate 拷贝、绑定一遍；增量写只碰新增 / 正文变了的那一条。
+  ///
+  /// 返回插入行的 id（与 [inserted] 同序）和库里已不存在的保留行 id（调用方的行身份
+  /// 过期了，例如表被别处整表替换：那几条要作为新行重写）。
+  Future<DictionaryHistorySyncResult> syncDictionaryHistory({
+    required List<DictionaryHistoryRetainedRow> retained,
+    required List<DictionaryHistoryCompanion> inserted,
+  }) => transaction(() async {
+    await (delete(dictionaryHistory)..where(
+          (t) => t.id.isNotIn(<int>[
+            for (final DictionaryHistoryRetainedRow r in retained) r.id,
+          ]),
+        ))
+        .go();
+    final List<int> missingIds = <int>[];
+    for (final DictionaryHistoryRetainedRow r in retained) {
+      final String? json = r.resultJson;
+      final int changed =
+          await (update(
+            dictionaryHistory,
+          )..where((t) => t.id.equals(r.id))).write(
+            DictionaryHistoryCompanion(
+              position: Value(r.position),
+              resultJson: json == null ? const Value.absent() : Value(json),
+            ),
+          );
+      if (changed == 0) missingIds.add(r.id);
+    }
+    final List<int> insertedIds = <int>[
+      for (final DictionaryHistoryCompanion item in inserted)
+        await into(dictionaryHistory).insert(item),
+    ];
+    return (insertedIds: insertedIds, missingIds: missingIds);
   });
 
   Future<int> clearDictionaryHistory() => delete(dictionaryHistory).go();
