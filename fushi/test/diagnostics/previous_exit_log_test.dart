@@ -926,6 +926,44 @@ void main() {
       }
     }
 
+    // 反馈 PojVLNyNtZ（Xiaomi 22041219G，SDK 34）：MIUI / HyperOS 一键清理以 OTHER +
+    //「OneKeyClean」结束进程；死时在跑前台服务（importance=125）。旧实现 OTHER 不认这段描述
+    // → null → 回落标记推断，报「停在前台时没了，疑似闪退」。
+    for (final String lifecycle in <String>['resumed', 'inactive', 'paused']) {
+      for (final String description in <String>[
+        'OneKeyClean',
+        '[UNKNOWN] OneKeyClean',
+      ]) {
+        test(
+          'OTHER +「$description」+ importance=125 + 标记停在 $lifecycle → 厂商停止，不弹闪退报告',
+          () async {
+            final PreviousExitVerdict? v = await verdictFor(
+              lifecycle: lifecycle,
+              reasons: <Map<String, Object?>>[
+                record(pid: 23415, importance: 125, description: description),
+              ],
+            );
+            expect(v, isNotNull);
+            expect(v!.kind, PreviousExitKind.vendorStopped);
+            expect(v.worthReporting, isFalse);
+            expect(v.summary, contains('OneKeyClean'));
+          },
+        );
+      }
+    }
+
+    test('OneKeyClean 不压过真崩溃：同一启动另有 CRASH 记录时照样上报', () async {
+      final PreviousExitVerdict? v = await verdictFor(
+        lifecycle: 'resumed',
+        reasons: <Map<String, Object?>>[
+          record(pid: 23415, importance: 125, description: 'OneKeyClean'),
+          record(pid: 18800, importance: 100, reason: 'CRASH', timestamp: 4500),
+        ],
+      );
+      expect(v!.kind, PreviousExitKind.crash);
+      expect(v.worthReporting, isTrue);
+    });
+
     test('SwipeUpClean 不压过真崩溃：同一启动另有 CRASH 记录时照样上报', () async {
       final PreviousExitVerdict? v = await verdictFor(
         lifecycle: 'resumed',
@@ -1144,6 +1182,34 @@ void main() {
       },
     );
 
+    test('androidExitKind：OTHER 只认锚定的 MIUI / HyperOS「OneKeyClean」形态', () {
+      expect(
+        androidExitKind('OTHER', description: 'OneKeyClean'),
+        PreviousExitKind.vendorStopped,
+      );
+      expect(
+        androidExitKind('OTHER', description: ' [UNKNOWN] OneKeyClean '),
+        PreviousExitKind.vendorStopped,
+      );
+      for (final String description in <String>[
+        'OneKeyCleanX',
+        'crash after OneKeyClean',
+        'onekeyclean',
+        '[unknown] OneKeyClean',
+      ]) {
+        expect(
+          androidExitKind('OTHER', description: description),
+          isNull,
+          reason: description,
+        );
+      }
+      expect(
+        androidExitKind('CRASH', description: 'OneKeyClean'),
+        PreviousExitKind.crash,
+      );
+      expect(androidExitKind('SIGNALED', description: 'OneKeyClean'), isNull);
+    });
+
     test('androidExitKind：OTHER 只认锚定的 MIUI / HyperOS「SwipeUpClean」形态', () {
       expect(
         androidExitKind('OTHER', description: 'SwipeUpClean'),
@@ -1159,7 +1225,7 @@ void main() {
         'crash after SwipeUpClean',
         'swipeupclean',
         '[unknown] SwipeUpClean',
-        'OneKeyClean',
+        'SwipeUpOneKeyClean',
       ]) {
         expect(
           androidExitKind('OTHER', description: description),
@@ -1207,7 +1273,7 @@ void main() {
         isNull,
       );
       expect(androidExitKind('OTHER'), isNull);
-      expect(androidExitKind('OTHER', description: 'OneKeyClean'), isNull);
+      expect(androidExitKind('OTHER', description: 'OneKey Clean'), isNull);
       // 前后缀不锚定的变体不认（避免厂商文本里夹着这段被误判）。
       expect(
         androidExitKind(
