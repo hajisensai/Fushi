@@ -288,7 +288,11 @@ class _BookImportDialogState extends State<BookImportDialog>
             // OCR 归 [MangaImportDialog]，在线目录归下载页。书籍框只做书。
             // 2026-10 体验优化：导入中取消键禁用（见 buildImportPopGuard）。
             buildCancelAction(context),
-            buildImportAction(context, onImport: _doImport),
+            buildImportAction(
+              context,
+              onImport: _doImport,
+              enabled: _classifyingCount == 0,
+            ),
           ],
         ),
       ),
@@ -311,7 +315,14 @@ class _BookImportDialogState extends State<BookImportDialog>
   /// 返回 `true`（调用方不收下这个路径）——过期的「这是漫画」不能再弹确认框，更不能
   /// 把旧路径转交漫画流程、关掉正在导入的书籍框。
   Future<bool> _handoffIfManga(String path, int generation) async {
-    final ImportCarrier carrier = await _classifyCarrier(path);
+    if (!mounted) return true;
+    setState(() => _classifyingCount++);
+    final ImportCarrier carrier;
+    try {
+      carrier = await _classifyCarrier(path);
+    } finally {
+      if (mounted) setState(() => _classifyingCount--);
+    }
     if (!mounted || _isStaleSelection(generation)) return true;
     if (!carrier.isManga) return false;
     final bool canImportAsBook = canImportMangaCarrierAsBook(path, carrier);
@@ -380,6 +391,12 @@ class _BookImportDialogState extends State<BookImportDialog>
   /// 别的、或对旧选择点了导入：回来的结果只在它仍是最新一次选择、且没在导入时才收下，
   /// 否则界面显示的与正在导入的不是同一本。
   int _selectionGeneration = 0;
+
+  /// 正在后台定性的载体数。定性要开包（大 EPUB 好几秒），期间 `importing` 还是
+  /// false：不拦的话导入键照样能点，`_doImport` 兜底闸门那次定性没回来前再点一次
+  /// 就会开出第二条 `_doImport`，两条一起进 [runImport]，同一本书并发导入两次。
+  /// 非零时导入键禁用、`_doImport` 直接返回——定性改成异步前它是同步的，没有这个窗口。
+  int _classifyingCount = 0;
 
   bool _isStaleSelection(int generation) =>
       !mounted || importing || generation != _selectionGeneration;
@@ -1162,6 +1179,9 @@ class _BookImportDialogState extends State<BookImportDialog>
   }
 
   Future<void> _doImport() async {
+    // 重入闸：按键已按 [_classifyingCount] / importing 禁用，这里再守一次（键盘默认
+    // 动作、递归重入都经此处）。
+    if (importing || _classifyingCount > 0) return;
     if (widget.requireBook && _epubPath == null) {
       await _pickEpub();
       if (!mounted || _epubPath == null) return;

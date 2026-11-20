@@ -481,4 +481,70 @@ void main() {
       expect(find.text(p.basename(newer.path)), findsOneWidget);
     },
   );
+
+  testWidgets(
+    'import pressed again while the carrier verdict is still out does not '
+    'start a second import',
+    (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1000, 1000);
+      addTearDown(tester.view.reset);
+      final Directory root = Directory.systemTemp.createTempSync(
+        'book_import_reentry_',
+      );
+      final File epub = File(p.join(root.path, 'slow.epub'))
+        ..writeAsBytesSync(_realEpubBytes('Slow verdict'));
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
+      EpubStorage.debugBaseDirectoryOverride = root.path;
+      addTearDown(() async {
+        EpubStorage.debugBaseDirectoryOverride = null;
+        await db.close();
+        if (root.existsSync()) root.deleteSync(recursive: true);
+      });
+
+      // 书架拖入（initialEpubPath）的定性在 _doImport 兜底闸门里现开包，迟迟不回。
+      final Completer<bool> verdict = Completer<bool>();
+      int probes = 0;
+      Future<bool> probe(String path) {
+        probes += 1;
+        return verdict.future;
+      }
+
+      await tester.pumpWidget(
+        _host(
+          BookImportDialog(
+            repo: SrtBookRepository(db),
+            audiobookRepo: AudiobookRepository(db),
+            db: db,
+            initialEpubPath: epub.path,
+            imageArchiveProbe: probe,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await tester.tap(find.text(t.dialog_import));
+      await tester.pump();
+      // 定性没回来、importing 还是 false：这一下不能再开出第二条 _doImport。
+      await tester.tap(find.text(t.dialog_import), warnIfMissed: false);
+      await tester.pump();
+
+      verdict.complete(false);
+      await _pumpUntil(
+        tester,
+        condition: () async => (await db.getAllEpubBooks()).isNotEmpty,
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(probes, 1);
+      expect(
+        await db.getAllEpubBooks(),
+        hasLength(1),
+        reason: '定性期间再点导入不能把同一本书并发导入两次',
+      );
+      expect(find.text(t.book_import_duplicate_cancelled), findsNothing);
+    },
+  );
 }
