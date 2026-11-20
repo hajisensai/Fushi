@@ -698,6 +698,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/media/video/video_subtitle_mask_test.dart（关闭不画 / 开启按内容区落位）',
   'video/Mask look':
       'test/media/video/video_subtitle_mask_test.dart（模糊 / 纯色两种外观各出各的层）',
+  // 遮布定位方式（手动 / 智能）：同样写 video_subtitle_mask JSON 偏好（mode 字段），
+  // 生效点是遮布层是否建采样器 + 识别器（要真播放器抽帧），harness 无适用探针。
+  'video/Positioning':
+      'test/media/video/smart_subtitle_mask_test.dart（偏好 mode 字段往返 / 旧偏好'
+      '缺省手动；遮布层只在开启 + 智能模式时建识别器，切回手动即拆）',
   'video/Mask strength':
       'test/media/video/video_subtitle_mask_test.dart（强度 → 纯色不透明度）',
   'video/Tap picture to show subtitles':

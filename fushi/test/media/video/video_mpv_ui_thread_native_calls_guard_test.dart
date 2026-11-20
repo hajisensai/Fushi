@@ -239,11 +239,11 @@ void main() {
     );
     expect(screenshot, contains('lock.synchronized(capture)'));
     final String capture = slice(
-      'Future<_RawScreenshot?> capture()',
+      'Future<_CapturedScreenshot?> capture()',
       '\n    }\n',
     );
     expect(capture, contains('compute(\n        _screenshotRaw,'));
-    final String raw = slice('_RawScreenshot? _screenshotRaw(', '\n}\n');
+    final String raw = slice('_CapturedScreenshot? _screenshotRaw(', '\n}\n');
     for (final String encode in <String>['encodeJpg(', 'encodePng(']) {
       expect(capture.contains(encode), isFalse, reason: '编码不许在锁内');
       expect(raw.contains(encode), isFalse, reason: '取帧 isolate 不许顺带编码');
@@ -251,5 +251,28 @@ void main() {
     final int locked = screenshot.indexOf('lock.synchronized(capture)');
     final int encode = screenshot.indexOf('compute(_encodeScreenshot');
     expect(encode, greaterThan(locked), reason: '编码排在锁释放之后');
+
+    // `image/x-fushi-bgra`（智能遮布）：变换在取帧 isolate 上对 mpv node 的 BGRA
+    // 视图执行，必须在 node 释放前跑；产出直接返回，不走整帧
+    // TransferableTypedData、也不进编码 isolate。
+    final int transform = raw.indexOf('rawTransform(w, h, stride, bytes)');
+    expect(transform, isNonNegative, reason: '变换要在取帧 isolate 里跑');
+    expect(
+      transform,
+      lessThan(raw.indexOf('mpv_free_node_contents(')),
+      reason: '视图属于 mpv node，变换必须在 node 释放前跑',
+    );
+    expect(
+      raw.indexOf('_TransformedScreenshot('),
+      lessThan(raw.indexOf('TransferableTypedData.fromList(')),
+      reason: '变换分支先于整帧拷贝分支，不另拷整帧',
+    );
+    final int transformed = screenshot.indexOf('_TransformedScreenshot(');
+    expect(transformed, isNonNegative, reason: '变换产出要直接返回');
+    expect(
+      transformed,
+      lessThan(encode),
+      reason: '变换产出在编码前返回，不进 _encodeScreenshot',
+    );
   });
 }

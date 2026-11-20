@@ -499,22 +499,44 @@ extension _VideoLayout on _VideoFushiPageState {
                         // 字幕之下——不糊按钮，Fushi 字幕仍压在遮布上可读可查词。
                         // IgnorePointer；关闭时零尺寸。
                         Positioned.fill(
-                          child:
-                              ValueListenableBuilder<VideoSubtitleMaskConfig>(
-                                valueListenable:
-                                    appModel.videoSubtitleMaskListenable,
-                                builder:
-                                    (
-                                      BuildContext context,
-                                      VideoSubtitleMaskConfig config,
-                                      Widget? _,
-                                    ) => VideoSubtitleMaskLayer(
-                                      controller: controller,
-                                      fit: videoFitModeToBoxFit(_videoFitMode),
-                                      config: config,
-                                      draftRect: _subtitleMaskDraft,
-                                    ),
-                              ),
+                          child: ValueListenableBuilder<VideoSubtitleMaskConfig>(
+                            valueListenable:
+                                appModel.videoSubtitleMaskListenable,
+                            builder:
+                                (
+                                  BuildContext context,
+                                  VideoSubtitleMaskConfig config,
+                                  Widget? _,
+                                ) => VideoSubtitleMaskLayer(
+                                  controller: controller,
+                                  fit: videoFitModeToBoxFit(_videoFitMode),
+                                  config: config,
+                                  draftRect: _subtitleMaskDraft,
+                                  createSmartDetector:
+                                      _createSmartSubtitleMaskDetector,
+                                  smartDetectorIdentity:
+                                      _smartSubtitleMaskDetectorIdentity,
+                                  onSmartUnavailable: () {
+                                    // 正在下载：下完身份一变就会重建，不必提示。
+                                    if (_mangaOcrModelDownloads.isActive(
+                                      _smartSubtitleMaskOcrModel,
+                                    )) {
+                                      return;
+                                    }
+                                    _showOsd(
+                                      t.video_subtitle_mask_smart_unavailable,
+                                      severity: ToastSeverity.warning,
+                                    );
+                                  },
+                                  onSmartError:
+                                      (Object error, StackTrace stack) =>
+                                          ErrorLogService.instance.log(
+                                            'VideoFushiPage.smartSubtitleMask',
+                                            error,
+                                            stack,
+                                          ),
+                                ),
+                          ),
                         ),
                         // Apple（iOS / macOS 26）：控制条背后的很淡的顶 / 底暗化 + 底栏液态
                         // 玻璃胶囊。必须排在 media_kit 控制条**之前**（画在按钮 / 进度条
@@ -1371,6 +1393,15 @@ extension _VideoLayout on _VideoFushiPageState {
 
   // ── 字幕遮布编辑 ─────────────────────────────────────────────────────────
 
+  /// 智能遮布的识别器：设置里选的本机 OCR 模型（离线、不上传），与截屏识字 / 硬字幕
+  /// OCR 同一个入口；遮布层随智能模式开关建 / 拆。
+  SmartSubtitleMaskDetector _createSmartSubtitleMaskDetector() =>
+      LocalOcrSmartSubtitleMaskDetector(
+        LocalScreenOcr(
+          createMangaOcrService(localModel: _smartSubtitleMaskOcrModel),
+        ),
+      );
+
   /// 进入「调整字幕遮布」模式（设置面板入口）：关设置侧栏（面板盖着画面没法拖），
   /// 打开编辑框。开关是关的也照样显示遮布，方便先摆好再开。
   void _enterSubtitleMaskEdit() {
@@ -1450,7 +1481,10 @@ extension _VideoLayout on _VideoFushiPageState {
                       const SizedBox(width: 8),
                       Flexible(
                         child: Text(
-                          t.video_subtitle_mask_edit_hint,
+                          appModel.videoSubtitleMask.mode ==
+                                  VideoSubtitleMaskMode.smart
+                              ? t.video_subtitle_mask_smart_edit_hint
+                              : t.video_subtitle_mask_edit_hint,
                           style: labelStyle,
                         ),
                       ),

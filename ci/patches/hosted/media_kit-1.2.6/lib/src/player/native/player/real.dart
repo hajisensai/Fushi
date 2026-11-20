@@ -1174,17 +1174,29 @@ class NativePlayer extends PlatformPlayer {
   Future<Uint8List?> screenshot(
       {String? format = 'image/jpeg',
       bool synchronized = true,
-      bool includeLibassSubtitles = false}) async {
+      bool includeLibassSubtitles = false,
+      // Fushi patch: required with `image/x-fushi-bgra`, see [_ScreenshotData].
+      Uint8List? Function(int width, int height, int stride, Uint8List bgra)?
+          fushiRawTransform}) async {
     if (![
       'image/jpeg',
       'image/png',
+      // Fushi patch: hand the raw BGRA pixels to [fushiRawTransform] on the
+      // capture isolate and return its bytes — callers that sample frames
+      // continuously (smart subtitle mask) cannot afford the pure-Dart
+      // PNG/JPEG encode, nor shipping whole frames between isolates when they
+      // only need a crop.
+      'image/x-fushi-bgra',
       null,
     ].contains(format)) {
       throw ArgumentError.value(
         format,
         'format',
-        'Supported values are: image/jpeg, image/png, null',
+        'Supported values are: image/jpeg, image/png, image/x-fushi-bgra, null',
       );
+    }
+    if (format == 'image/x-fushi-bgra' && fushiRawTransform == null) {
+      throw ArgumentError.notNull('fushiRawTransform');
     }
     // Fushi patch (#3722 video-4): only the raw capture (`screenshot-raw`, the
     // part that touches the handle and decides which frame is taken) runs under
@@ -1193,7 +1205,13 @@ class NativePlayer extends PlatformPlayer {
     // released: a `play()` queued right behind a screenshot (mining a card,
     // then resuming) waits for the capture only, not for the encode. The frame
     // is still the one current when the request reached the lock.
-    Future<_RawScreenshot?> capture() async {
+    //
+    // `image/x-fushi-bgra` is the exception: its transform reads a view of the
+    // mpv node, so it has to run inside the capture call, before the node is
+    // freed — and therefore inside the locked section when [synchronized] is
+    // true. It never touches the handle and only copies the part of the frame
+    // it needs (a small crop), so it adds little to the locked section.
+    Future<_CapturedScreenshot?> capture() async {
       if (disposed) {
         throw AssertionError('[Player] has been disposed');
       }
@@ -1211,6 +1229,7 @@ class NativePlayer extends PlatformPlayer {
           ctx.address,
           NativeLibrary.path,
           includeLibassSubtitles,
+          format == 'image/x-fushi-bgra' ? fushiRawTransform : null,
         ),
       );
       // Fushi patch: the capture runs on a helper isolate against the raw
@@ -1226,11 +1245,19 @@ class NativePlayer extends PlatformPlayer {
       }
     }
 
-    final raw =
+    final captured =
         synchronized ? await lock.synchronized(capture) : await capture();
-    if (raw == null) {
-      return null;
+    switch (captured) {
+      case null:
+        return null;
+      // Fushi patch (`image/x-fushi-bgra`): the transform already ran on the
+      // capture isolate; its bytes come back as the isolate's result as is.
+      case _TransformedScreenshot(:final bytes):
+        return bytes;
+      case _RawScreenshot():
+        break;
     }
+    final raw = captured;
     if (format == null) {
       return raw.bytes.materialize().asUint8List();
     }
@@ -3102,23 +3129,46 @@ class _ScreenshotData {
   final String lib;
   final bool includeLibassSubtitles;
 
+  /// Fushi patch (`image/x-fushi-bgra`): runs on the capture isolate inside
+  /// [_screenshotRaw] with the frame size, row stride and a view of mpv's BGRA
+  /// buffer. The view is only valid during the call (the node is freed right
+  /// after), so the transform must copy what it keeps. Its result replaces the
+  /// whole-frame copy and the encode. Sent to the capture isolate, so it must
+  /// only close over sendable values. `null` for every other format.
+  final Uint8List? Function(int width, int height, int stride, Uint8List bgra)?
+      rawTransform;
+
   const _ScreenshotData(
     this.ctx,
     this.lib,
     this.includeLibassSubtitles,
+    this.rawTransform,
   );
+}
+
+/// Fushi patch: what [_screenshotRaw] hands back to the calling isolate.
+sealed class _CapturedScreenshot {
+  const _CapturedScreenshot();
 }
 
 /// Fushi patch (#3722 video-4): a captured BGRA frame. [bytes] is created on
 /// the capture isolate, so handing it to the encode isolate and materializing
 /// it there copies nothing.
-class _RawScreenshot {
+final class _RawScreenshot extends _CapturedScreenshot {
   final int w;
   final int h;
   final int stride;
   final TransferableTypedData bytes;
 
   const _RawScreenshot(this.w, this.h, this.stride, this.bytes);
+}
+
+/// Fushi patch (`image/x-fushi-bgra`): the bytes [_ScreenshotData.rawTransform]
+/// returned on the capture isolate (`null` if it declined the frame).
+final class _TransformedScreenshot extends _CapturedScreenshot {
+  final Uint8List? bytes;
+
+  const _TransformedScreenshot(this.bytes);
 }
 
 class _ScreenshotEncodeData {
@@ -3129,8 +3179,10 @@ class _ScreenshotEncodeData {
 }
 
 /// Takes the current frame (`screenshot-raw`) and copies it out of the mpv
-/// node. Runs on a helper isolate (the command takes the mpv core lock).
-_RawScreenshot? _screenshotRaw(_ScreenshotData data) {
+/// node — or, with [_ScreenshotData.rawTransform], hands the node's buffer to
+/// the transform and returns its bytes. Runs on a helper isolate (the command
+/// takes the mpv core lock).
+_CapturedScreenshot? _screenshotRaw(_ScreenshotData data) {
   // ---------
   final mpv = generated.MPV(DynamicLibrary.open(data.lib));
   final ctx = Pointer<generated.mpv_handle>.fromAddress(data.ctx);
@@ -3159,7 +3211,11 @@ _RawScreenshot? _screenshotRaw(_ScreenshotData data) {
     result.cast(),
   );
 
-  _RawScreenshot? raw;
+  _CapturedScreenshot? raw;
+  // Fushi patch (`image/x-fushi-bgra`): a throwing transform is rethrown only
+  // after the node and the argument buffers are freed below.
+  Object? transformError;
+  StackTrace? transformStack;
 
   if (result.ref.format == generated.mpv_format.MPV_FORMAT_NODE_MAP) {
     int? w, h, stride;
@@ -3194,7 +3250,22 @@ _RawScreenshot? _screenshotRaw(_ScreenshotData data) {
       }
     }
 
-    if (w != null && h != null && stride != null && bytes != null) {
+    final rawTransform = data.rawTransform;
+    if (w != null &&
+        h != null &&
+        stride != null &&
+        bytes != null &&
+        rawTransform != null) {
+      // Fushi patch (`image/x-fushi-bgra`): must run here, before the node
+      // (which owns [bytes]) is freed below; the transform copies what it
+      // keeps, so the whole frame is never copied.
+      try {
+        raw = _TransformedScreenshot(rawTransform(w, h, stride, bytes));
+      } catch (error, stack) {
+        transformError = error;
+        transformStack = stack;
+      }
+    } else if (w != null && h != null && stride != null && bytes != null) {
       // The only copy: the node is freed below.
       raw = _RawScreenshot(
         w,
@@ -3211,6 +3282,9 @@ _RawScreenshot? _screenshotRaw(_ScreenshotData data) {
   calloc.free(arr);
   calloc.free(result.cast());
 
+  if (transformError != null) {
+    Error.throwWithStackTrace(transformError, transformStack!);
+  }
   return raw;
 }
 
