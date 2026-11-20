@@ -1796,8 +1796,9 @@ class VideoPlayerController extends ChangeNotifier
         includeLibassSubtitles: true,
       );
     }
-    // 不占 Player 的串行锁（BUG-3645）：截帧 + 纯 Dart 编 PNG 要几百毫秒，持锁期间
-    // play() / pause() 都得排队——暂停 OCR 开着时按继续播放要等截帧编完才响应。
+    // 不占 Player 的串行锁（BUG-3645）：持锁期间 play() / pause() 都得排队。补丁里
+    // 持锁截帧本来也只锁取原始帧、编码在锁外（BUG-4910），这里连取帧也不排队，暂停
+    // OCR 开着时按继续播放不等它。
     // 公开的 Player.screenshot 不透传 synchronized，只能直接调 NativePlayer。截帧在
     // 辅助 isolate 上跑，句柄销毁前会等它（media_kit 补丁登记进
     // `_offThreadNativeCalls`）。
@@ -5996,17 +5997,11 @@ class VideoPlayerController extends ChangeNotifier
     notifyListeners();
   }
 
-  /// 按 map **顺序**逐条下发 mpv 属性；单条失败跳过（与 [applyMpvConfigToPlayer] 同范式）。
+  /// 按 map **顺序**逐条下发 mpv 属性（[setMpvPropertiesInOrder]，被拒留痕后跳过）。
   Future<void> _setMpvProperties(Map<String, String> props) async {
-    final dynamic native = _player?.platform;
-    if (native == null) return;
-    for (final MapEntry<String, String> e in props.entries) {
-      try {
-        await native.setProperty(e.key, e.value);
-      } catch (_) {
-        // 非 libmpv / 属性不接受：跳过这条，继续下一条。
-      }
-    }
+    final Player? player = _player;
+    if (player == null) return;
+    await setMpvPropertiesInOrder(player, props);
   }
 
   /// 读一条 libmpv 字符串属性（[property]），best-effort：非 libmpv 后端（无

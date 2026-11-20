@@ -33,10 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4237 条。点号进各自文件。
+> 共 4239 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4911](bugs/BUG-4911-mpv-property-batch-rejections-silent.md) | ✅ | ✅ | mpv 属性批量下发有五份同形实现，mpv 拒绝写入不留任何痕迹 |
+| [BUG-4910](bugs/BUG-4910-video-mining-screenshot-holds-player-lock.md) | ✅ | ✅ | 制卡截帧整段占着 Player 串行锁，「制卡后立刻续播」要等 JPEG 编码跑完 |
 | [BUG-4909](bugs/BUG-4909-resume-decode-refresh-seeks-stale-position.md) | ✅ | ✅ | 回前台重建解码链用可能陈旧的缓存位置原地 seek，后台期间 Dart 侧停摆时会把播放头往回拉 |
 | [BUG-4908](bugs/BUG-4908-audio-track-restore-gives-up-after-4s.md) | ✅ | ✅ | 续播恢复音轨用 200 ms × 20 次轮询，音轨超过 4 秒才出现时静默放弃，用户选过的音轨丢失 |
 | [BUG-4907](bugs/BUG-4907-graphic-track-reselect-kills-inflight-extract.md) | ✅ | ✅ | 图形字幕整轨抽取跑到一半时重新选同一条图形轨，会把 ffmpeg 杀掉从头再抽 |

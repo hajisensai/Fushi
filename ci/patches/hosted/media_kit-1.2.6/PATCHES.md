@@ -158,3 +158,44 @@ Regression test: the `quiesce` mode of
 isolate killed without dispose after quiescing; exits `-1073740791` with
 `Callback invoked after it has been deleted` without the fix). Remove when
 upstream unregisters its callbacks before the engine can free them.
+
+## BUG-4910: a locked screenshot holds the player lock for the capture only
+
+`lib/src/player/native/player/real.dart` splits `NativePlayer.screenshot` in
+two. `_screenshotRaw` (helper isolate, registered in `_offThreadNativeCalls`
+like before) runs `screenshot-raw` and copies the BGRA frame into a
+`TransferableTypedData`; only this step runs under `lock` when
+`synchronized` is true. `_encodeScreenshot` (a second helper isolate) builds
+the JPEG / PNG after the lock is released; it never touches the handle, so
+`dispose` does not wait for it. `format: null` still returns the raw BGRA
+bytes.
+
+Upstream encodes inside the locked section, on the same isolate as the
+capture. The pure-Dart encode takes hundreds of ms for a 1080p frame, and
+every `play()` / `pause()` / `seek()` queued behind a screenshot waited for
+it: mining a card and resuming right away resumed only after the JPEG was
+done. The captured frame is unchanged (the capture still runs in lock order).
+
+Regression tests: `fushi/test/third_party/media_kit_screenshot_lock_test.dart`
+(real libmpv + ffmpeg: `FUSHI_TEST_LIBMPV`, `FUSHI_TEST_FFMPEG`; a `pause()`
+queued right after a JPEG screenshot completes first) and the structural
+guard in `fushi/test/media/video/video_mpv_ui_thread_native_calls_guard_test.dart`.
+Remove when upstream encodes outside its lock.
+
+## BUG-4911: property writes report libmpv's result
+
+`lib/src/player/native/player/real.dart` adds
+`NativePlayer.setPropertyWithResult(property, value)`: the body of the
+patched async `setProperty` (BUG-3507), returning the
+`MPV_EVENT_SET_PROPERTY_REPLY` error (or the immediate `mpv_set_property_async`
+error, or the synchronous `mpv_set_property_string` result when
+`configuration.async` is off). `setProperty` now delegates to it and still
+returns nothing. Upstream drops the code, so a rejected write (unknown name,
+bad value, not settable at runtime) left no trace; Fushi's single batch helper
+`setMpvPropertiesInOrder` (`fushi/lib/src/media/video/video_mpv_config.dart`)
+logs it. Returns `MPV_ERROR_UNINITIALIZED` when the player got disposed while
+waiting for initialization; a write still pending at `dispose` resolves to 0.
+
+Regression test: `fushi/test/media/video/video_mpv_property_batch_test.dart`
+(helper contract) and the guard above (`setProperty` delegates, the write
+stays async). Remove together with the BUG-3507 property patch.
