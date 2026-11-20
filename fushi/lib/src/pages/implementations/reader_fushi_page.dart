@@ -154,6 +154,7 @@ import 'package:fushi/src/reader/reader_session_remote.dart';
 import 'package:fushi/src/reader/reader_ruby_metrics_script.dart';
 import 'package:fushi/src/reader/reader_audio_position.dart';
 import 'package:fushi/src/reader/reader_audio_cue_offset_index.dart';
+import 'package:fushi/src/reader/reader_chapter_path_index.dart';
 import 'package:fushi/src/reader/reader_chapter_perf_trace.dart';
 import 'package:fushi/src/reader/reader_engine_config.dart';
 import 'package:fushi/src/reader/page_curl/page_curl.dart';
@@ -2395,6 +2396,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   static const int _kChapterHtmlCacheLimit = 6;
   final LinkedHashMap<String, Uint8List> _sanitizedHtmlCache =
       LinkedHashMap<String, Uint8List>();
+
+  /// 章节文档路径 → 章号反查表（novel-17e），由 `_chapterIndexForFilePath` 按需建、
+  /// 书的章节表或解包目录变了自动重建。
+  ReaderChapterPathIndex? _chapterPathIndex;
 
   /// TODO-perf（跨章·图片）预热配额（PR#469 审查）：`_prefetchAdjacentChapterImages`
   /// 把整解码后的位图塞进 WebView 图片缓存，整页插图书（1600×2400 PNG × N）在移动端
