@@ -87,6 +87,11 @@ const Duration kMangaPanelModelStallTimeout = Duration(seconds: 30);
 /// 两路往同一个暂存文件交错写，一路失败时把另一路正在写的 `.part` 删掉，校验必挂。
 /// 全部订阅者都取消时才中止下载（只有一个入口时与旧语义相同）。
 /// [clientFactory] / [stallTimeout] 只对发起那一次生效。
+///
+/// 取消不是立刻停：下载体只在产出下一块时才看得到取消，卡在等数据时要等到下一块
+/// 或 [stallTimeout] 才走到 finally 删 `.part`。所以新发起的那一次先等上一次的下载体
+/// 真正退出（[_panelModelStopped]）再碰 `.part`，否则「取消后马上再点下载」时旧那次
+/// 的清理会删掉新那次正在写的暂存文件。
 Stream<int> downloadMangaPanelModel({
   HttpClient Function()? clientFactory,
   Duration stallTimeout = kMangaPanelModelStallTimeout,
@@ -94,6 +99,7 @@ Stream<int> downloadMangaPanelModel({
   final _PanelModelDownload download = _panelModelDownload ??=
       _PanelModelDownload(
         _downloadMangaPanelModelOnce(
+          after: _panelModelStopped,
           clientFactory: clientFactory,
           stallTimeout: stallTimeout,
         ),
@@ -103,10 +109,15 @@ Stream<int> downloadMangaPanelModel({
 
 _PanelModelDownload? _panelModelDownload;
 
+/// 最近发起的那一次下载的下载体退出（含 finally 的 `.part` 清理）时完成；只当次序
+/// 信号，从不带错误。
+Future<void> _panelModelStopped = Future<void>.value();
+
 /// 正在进行的那一次下载与它的订阅者。下载结束（成功或失败）时先摘掉
 /// [_panelModelDownload] 再通知订阅者：之后的调用会重新发起，不会接到已结束的这一次。
 class _PanelModelDownload {
   _PanelModelDownload(Stream<int> source) {
+    _panelModelStopped = _stopped.future;
     _source = source.listen(
       (int received) {
         _received = received;
@@ -126,12 +137,19 @@ class _PanelModelDownload {
           unawaited(sub.close());
         }
         _subscribers.clear();
+        _markStopped();
       },
       cancelOnError: false,
     );
   }
 
   late final StreamSubscription<int> _source;
+  final Completer<void> _stopped = Completer<void>();
+
+  void _markStopped() {
+    if (!_stopped.isCompleted) _stopped.complete();
+  }
+
   final List<StreamController<int>> _subscribers = <StreamController<int>>[];
   int? _received;
 
@@ -147,7 +165,11 @@ class _PanelModelDownload {
         if (_subscribers.isEmpty && identical(_panelModelDownload, this)) {
           // 最后一个订阅者走了：中止下载（下载体的 finally 删 `.part`、关连接）。
           _detach();
-          await _source.cancel();
+          try {
+            await _source.cancel();
+          } finally {
+            _markStopped();
+          }
         }
       },
     );
@@ -159,9 +181,11 @@ class _PanelModelDownload {
 }
 
 Stream<int> _downloadMangaPanelModelOnce({
+  required Future<void> after,
   HttpClient Function()? clientFactory,
   Duration stallTimeout = kMangaPanelModelStallTimeout,
 }) async* {
+  await after;
   if (!kMangaPanelModelManifest.isVerified) {
     throw StateError('panel model manifest has no verified release digest');
   }
