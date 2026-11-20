@@ -415,9 +415,12 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
       final EpubBookRow? row = _findBookByTitleOrKey(rows, title);
       if (row == null) return; // 幂等：不存在则静默跳过
 
-      // 先让注入的磁盘清理回调运行（AudiobookStorage / SrtBook 等 DB 行外资源），
-      // 在 DB deleteEpubBook 事务之前拿到 row 数据（事务后 row 即消失）。
-      await _cleanupBookOnDisk?.call(row);
+      // 配对字幕书的 uid 住在即将被级联删掉的 srt_books 行上：删行前先取，DB 行外
+      // 的清理（[_cleanupBookOnDisk]）放到删行**成功之后**——先删有声书持久目录 /
+      // override 封面、再删行失败，书留着而它的有声书副本已经没了。
+      final String? pairedSrtUid = (await _db.getSrtBookByBookKey(
+        row.bookKey,
+      ))?.uid;
 
       // DB 事务：删除 EpubBooks 行及其所有关联行（readerPositions / bookmarks /
       // srtBooks / audioCues / audiobooks）。见 HBK-AUDIT-041。
@@ -426,6 +429,7 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
         row.bookKey,
         tombstone: true,
       );
+      if (deleted > 0) await _cleanupBookOnDisk?.call(row, pairedSrtUid);
       // BUG-2945：再记同步删除墓碑。上面的 tombstone 只防旧备份复活，其它设备
       // 拉 /api/tombstones 读的是 sync_deletion_tombstones——host 不写，「从所有
       // 设备删除」就只删掉了发起端与 host 两份。

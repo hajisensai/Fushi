@@ -149,8 +149,13 @@ void main() {
       refreshDictionaryCache: () async {},
       runExclusive: (Future<void> Function() body) => body(),
       // 与 AppModel 里的接线同一个调用。
-      cleanupBookOnDisk: (EpubBookRow row) => ReaderFushiSource.instance
-          .cleanupBookFilesForHostDelete(db: db, appModel: app, row: row),
+      cleanupBookOnDisk: (EpubBookRow row, String? pairedSrtUid) =>
+          ReaderFushiSource.instance.cleanupBookFilesForHostDelete(
+            db: db,
+            appModel: app,
+            row: row,
+            pairedSrtUid: pairedSrtUid,
+          ),
     );
 
     test('对端删书：有声书 / 配对字幕书持久目录与 override 封面都清掉，同名重导不复活', () async {
@@ -202,6 +207,60 @@ void main() {
         contains('ReaderFushiSource.hostDeleteBook.cleanup'),
       );
       expect(cover.existsSync(), isFalse);
+    });
+
+    test('删行失败：书还在，有声书 / 配对字幕书持久目录与封面一样都不能先没了', () async {
+      await db.insertEpubBook(bookRow('HostKept'));
+      await db.upsertSrtBook(
+        SrtBooksCompanion.insert(
+          uid: 'srt/kept',
+          title: 'HostKept',
+          srtPath: '/tmp/kept.srt',
+          importedAt: 0,
+          bookKey: const Value<String>('HostKept'),
+        ),
+      );
+      final Directory bookAudio = await AudiobookStorage.ensurePersistDir(
+        'HostKept',
+      );
+      File('${bookAudio.path}/a.mp3').writeAsBytesSync(<int>[1]);
+      final Directory srtAudio = await AudiobookStorage.ensurePersistDir(
+        'srt/kept',
+      );
+      File('${srtAudio.path}/b.mp3').writeAsBytesSync(<int>[2]);
+      final File cover = writeOverrideCover('HostKept');
+      // 删行在 DB 层失败（库忙 / 约束等）：用触发器注入。
+      await db.customStatement(
+        'CREATE TRIGGER inject_epub_delete_failure BEFORE DELETE ON epub_books '
+        "BEGIN SELECT RAISE(ABORT, 'injected delete failure'); END",
+      );
+
+      await expectLater(hostFor().deleteBook('HostKept'), throwsA(anything));
+
+      expect(await db.getEpubBook('HostKept'), isNotNull);
+      expect(bookAudio.existsSync(), isTrue, reason: '书还在，有声书副本不能先删');
+      expect(srtAudio.existsSync(), isTrue);
+      expect(cover.existsSync(), isTrue, reason: '书还在，override 封面不能先清');
+    });
+
+    test('对端删书后回收这本书不再被引用的条目附加图文件', () async {
+      final EnginePaths savedPaths = enginePaths;
+      enginePaths = FixedEnginePaths(
+        documents: root,
+        support: root,
+        temp: root,
+      );
+      addTearDown(() => enginePaths = savedPaths);
+      final Directory items = await VideoStorage.itemImagesDir();
+      items.createSync(recursive: true);
+      final File orphan = File('${items.path}/hosted_backdrop.jpg')
+        ..writeAsBytesSync(<int>[1]);
+      await db.insertEpubBook(bookRow('HostImages'));
+
+      await hostFor().deleteBook('HostImages');
+
+      expect(await db.getEpubBook('HostImages'), isNull);
+      expect(orphan.existsSync(), isFalse);
     });
 
     test('AppModel 的 host 服务接了这条清理', () {

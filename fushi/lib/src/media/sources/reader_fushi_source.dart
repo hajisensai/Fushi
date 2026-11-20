@@ -1305,20 +1305,23 @@ class ReaderFushiSource extends ReaderMediaSource {
   /// app 里没接（#3722 c37 审查遗留，与 BUG-4906 同一根因）：对端删掉的书在 host 上
   /// 留着几百 MB 的有声书副本，同名重导还带出旧封面。
   ///
-  /// 按 host 服务的契约在删行**之前**调用（配对字幕书的 uid 住在即将被级联删掉的
-  /// srt_books 行上）。与 [deleteBook] 的尾活同一纪律：磁盘目录被占用等失败只记日志，
-  /// 不挡删行；封面清理独立于前面的失败。
+  /// host 服务在删行**成功之后**才调（与 [deleteBook] 同序：DB 行是唯一真相源，删行
+  /// 失败时书还在，它的有声书副本与封面不能先没了）；配对字幕书的 uid 住在已被级联
+  /// 删掉的 srt_books 行上，由 host 服务删行前取好经 [pairedSrtUid] 传进来。与
+  /// [deleteBook] 的尾活同一纪律：磁盘目录被占用等失败只记日志；封面清理独立于前面
+  /// 的失败。行已删，这本书的条目附加图（横版背景 / logo）行也随事务删了，文件在
+  /// 这里按「不再被引用」回收（host 删书一次一本，与单删同样当场回收）。
   Future<void> cleanupBookFilesForHostDelete({
     required FushiDatabase db,
     required AppModel appModel,
     required EpubBookRow row,
+    required String? pairedSrtUid,
   }) async {
     try {
-      final SrtBook? srt = await SrtBookRepository(
-        db,
-      ).findByBookKey(row.bookKey);
       await AudiobookStorage.deletePersistDir(row.bookKey);
-      if (srt != null) await AudiobookStorage.deletePersistDir(srt.uid);
+      if (pairedSrtUid != null) {
+        await AudiobookStorage.deletePersistDir(pairedSrtUid);
+      }
     } catch (e, stack) {
       ErrorLogService.instance.log(
         'ReaderFushiSource.hostDeleteBook.cleanup',
@@ -1331,6 +1334,8 @@ class ReaderFushiSource extends ReaderMediaSource {
       bookKey: row.bookKey,
       logSource: 'ReaderFushiSource.hostDeleteBook.overrides',
     );
+    // 自己吞错记日志，不翻转删除结果。
+    await ItemScrapeStore(db).reclaimUnreferencedFiles();
   }
 
   /// 删书后的整批收尾：回收不再被引用的条目附加图文件，再回收数据库空间（整库

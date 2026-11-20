@@ -1264,11 +1264,12 @@ class AppModel
       dictionaryResourceRoot: dictionaryResourceDirectory,
       // 对端删书时 host 上 DB 行以外的东西：有声书 / 配对字幕书持久目录、override
       // 书名与封面（#3722 c37 审查遗留，同 BUG-4906）。
-      cleanupBookOnDisk: (EpubBookRow row) =>
+      cleanupBookOnDisk: (EpubBookRow row, String? pairedSrtUid) =>
           ReaderFushiSource.instance.cleanupBookFilesForHostDelete(
             db: database,
             appModel: this,
             row: row,
+            pairedSrtUid: pairedSrtUid,
           ),
       packages: SyncAssetPackageService(db: database),
       scrapeController: () async => videoScrapeControllerResolver?.call(),
