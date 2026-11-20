@@ -72,7 +72,7 @@ class ExtensionInstanceCacheTest {
 
     @Test
     fun `a long playback call does not block catalogue calls on the same instance`() {
-        // BUG-4909 / feedback igLsy_gcWz: a 5 min getVideoList held the only
+        // BUG-5026 / feedback igLsy_gcWz: a 5 min getVideoList held the only
         // per-instance lock, so searches on the same extension waited behind it
         // until the host gave up with BRIDGE_TIMEOUT.
         val playbackStarted = CountDownLatch(1)

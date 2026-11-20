@@ -806,7 +806,7 @@ void main() {
       );
     });
 
-    test('BUG-4906：互联 sync-data 拆成共享 / 复习同步 / 旧版残留 / 其他，总量不少算', () async {
+    test('BUG-4991：互联 sync-data 拆成共享 / 复习同步 / 旧版残留 / 其他，总量不少算', () async {
       final String syncData = p.join(
         support.path,
         kInterconnectSyncDataSupportChild,
@@ -884,7 +884,7 @@ void main() {
       expect(kDirectlyDeletableEntryKinds, isNot(contains(legacy.kind)));
     });
 
-    test('BUG-4906：无旧版残留 / 无其他时只出共享与复习同步两条（0 也显示）', () async {
+    test('BUG-4991：无旧版残留 / 无其他时只出共享与复习同步两条（0 也显示）', () async {
       final String syncData = p.join(
         support.path,
         kInterconnectSyncDataSupportChild,
@@ -907,7 +907,7 @@ void main() {
       expect(db.bytes, 0);
     });
 
-    test('BUG-4906：没有 sync-data 时不出任何互联条目', () async {
+    test('BUG-4991：没有 sync-data 时不出任何互联条目', () async {
       writeFile(p.join(support.path, 'fushi.db'), 10);
       final List<StorageCategoryUsage> all = await service()
           .scanCategories(

@@ -4,7 +4,7 @@ import 'package:fushi/src/settings/storage_usage_actions.dart';
 import 'package:fushi/src/storage/storage_usage_service.dart';
 import 'package:fushi_core/fushi_core.dart' show DatabaseSnapshotDeletionResult;
 
-// BUG-4906：「旧版残留」清理在互联 host 运行时被拒——存储页按钮禁用之外，控制通道 `rm`
+// BUG-4991：「旧版残留」清理在互联 host 运行时被拒——存储页按钮禁用之外，控制通道 `rm`
 // 走的 deleteStorageEntry 也是同一道闸。
 
 StorageUsageActions _actions({

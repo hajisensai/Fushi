@@ -173,7 +173,7 @@ class MediaServerVideoLibrary {
   /// 加入媒体库：电影一行；剧把**全部季**的集逐页取回各落一行，归进剧名合集。
   /// 已在库的集跳过（再点一次只补新集，不动已看 / 已下载的行）。返回新加的条数。
   /// 之后服务器上新出的集由后台库更新探针补（`video_library_update_probe.dart`）。
-  /// 用户亲手点的：用户删过的剧名合集就此重建（BUG-4908）。
+  /// 用户亲手点的：用户删过的剧名合集就此重建（BUG-5014）。
   Future<int> addToLibrary(
     MediaServerBrowser browser,
     MediaServerItem work,

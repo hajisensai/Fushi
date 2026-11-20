@@ -272,7 +272,7 @@ void main() {
     },
   );
 
-  // BUG-4908：用户显式加入 / 下载 = 撤销合集删除；成员级墓碑仍拦。
+  // BUG-5016：用户显式加入 / 下载 = 撤销合集删除；成员级墓碑仍拦。
   test('userIntent clears the collection deletion tombstone and recreates '
       'the collection', () async {
     await db.upsertCollectionMemberTombstone(

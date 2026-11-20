@@ -260,7 +260,7 @@ void main() {
     expect(screenshot, contains('_offThreadNativeCalls.remove('));
   });
 
-  // BUG-4910：持锁的截帧（制卡）只许锁住取原始帧，JPEG / PNG 编码在锁外跑，否则
+  // BUG-5027：持锁的截帧（制卡）只许锁住取原始帧，JPEG / PNG 编码在锁外跑，否则
   // 「制卡后立刻续播」的 play() 要等几百毫秒的纯 Dart 编码。行为测试在
   // `test/third_party/media_kit_screenshot_lock_test.dart`（要真 libmpv，CI 跳过），
   // 这里钉住结构，CI 上也有人看着。

@@ -1,4 +1,4 @@
-// BUG-4913：阅读器制卡 / 播放条的封面必须与书架字幕书卡同序——配对
+// BUG-5045：阅读器制卡 / 播放条的封面必须与书架字幕书卡同序——配对
 // srt_books.cover_path 优先，再退回正文 EPUB 封面。字幕 + 音频导入的乐曲正文 EPUB
 // 没有 cover-image，以前只看 EPUB，制出的卡 Lapis Picture 一律为空。
 import 'dart:io';

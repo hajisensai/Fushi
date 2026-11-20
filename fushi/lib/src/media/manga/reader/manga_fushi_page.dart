@@ -5474,7 +5474,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (!mounted) return;
     _miningTextRect = _sentenceRectOf(data);
     _miningSentenceBlocks = _sentenceBlocksOf(data);
-    // 查后从句首重播要知道查的是哪句（弹窗或副屏随后打开时认领，BUG-4909）。
+    // 查后从句首重播要知道查的是哪句（弹窗或副屏随后打开时认领，BUG-5024）。
     _readAloud.noteLookupSentence(_miningSentenceBlocks);
     final Size screen = MediaQuery.of(context).size;
     await dispatchMangaSelection(

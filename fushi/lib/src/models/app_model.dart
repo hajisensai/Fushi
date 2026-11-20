@@ -1266,7 +1266,7 @@ class AppModel
       db: database,
       dictionaryResourceRoot: dictionaryResourceDirectory,
       // 对端删书时 host 上 DB 行以外的东西：有声书 / 配对字幕书持久目录、override
-      // 书名与封面（#3722 c37 审查遗留，同 BUG-4906）。
+      // 书名与封面（#3722 c37 审查遗留，同 BUG-4973）。
       cleanupBookOnDisk: (EpubBookRow row, String? pairedSrtUid) =>
           ReaderFushiSource.instance.cleanupBookFilesForHostDelete(
             db: database,
@@ -7300,7 +7300,7 @@ class AppModel
 
   /// 值没变直接返回：字幕搜索 / 合集面板在「输入框与面板打开时的 key 不同」时每次
   /// 搜索都会调到这里（面板的初始 key 不随保存刷新），按原值重建一遍下载管线运行时
-  /// 与查字幕 registry 纯属浪费（BUG-4906）。
+  /// 与查字幕 registry 纯属浪费（BUG-4973）。
   Future<void> setJimakuApiKey(String key) async {
     if (key == prefsRepo.jimakuApiKey) return;
     await prefsRepo.setJimakuApiKey(key);

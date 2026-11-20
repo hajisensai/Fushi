@@ -120,7 +120,7 @@ String? resolveBookCoverFilePath({
   return null;
 }
 
-/// 阅读器里「这本书的封面文件」（BUG-4913）：制卡 `{book-cover}`、迷你播放条、
+/// 阅读器里「这本书的封面文件」（BUG-5045）：制卡 `{book-cover}`、迷你播放条、
 /// 歌词页、快捷设置、TTS 通知、伴屏共用这一处，与书架字幕书 / 有声书卡
 /// （`reader_history/books.part.dart` 的 `_buildSrtCover`）同序：
 ///

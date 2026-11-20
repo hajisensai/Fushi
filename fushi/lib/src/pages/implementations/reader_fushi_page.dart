@@ -2049,7 +2049,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   ReaderSettings? _settings;
   String? _extractDir;
 
-  /// 配对 `srt_books.cover_path`（BUG-4913）：字幕 + 音频导入的书（乐曲 / 独立字幕书）
+  /// 配对 `srt_books.cover_path`（BUG-5045）：字幕 + 音频导入的书（乐曲 / 独立字幕书）
   /// 封面只在这一列，正文 EPUB 没有 cover-image。开书后台读一次，经
   /// [_bookCoverFilePath] 与 EPUB 封面按书架同序合成。
   String? _pairedSrtCoverPath;

@@ -15,7 +15,7 @@ import 'package:fushi_engine/srs/sync2/srs_location_store.dart'
 import 'package:fushi_engine/sync/ttu_models.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-// BUG-4907：云盘同步根下的 `__settings__`（可移植设置）与 `fushi-srs`（复习同步）是所有设备
+// BUG-5007：云盘同步根下的 `__settings__`（可移植设置）与 `fushi-srs`（复习同步）是所有设备
 // 共用的命名空间，不是书。保留名判据漏了它们时，对比弹窗把它们列成「只剩元数据的远端书」，
 // 行菜单里的「删除」会把整个命名空间递归删掉。
 

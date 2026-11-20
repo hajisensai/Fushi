@@ -159,7 +159,7 @@ isolate killed without dispose after quiescing; exits `-1073740791` with
 `Callback invoked after it has been deleted` without the fix). Remove when
 upstream unregisters its callbacks before the engine can free them.
 
-## BUG-4910: a locked screenshot holds the player lock for the capture only
+## BUG-5027: a locked screenshot holds the player lock for the capture only
 
 `lib/src/player/native/player/real.dart` splits `NativePlayer.screenshot` in
 two. `_screenshotRaw` (helper isolate, registered in `_offThreadNativeCalls`

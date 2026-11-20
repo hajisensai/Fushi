@@ -295,7 +295,7 @@ final class SrsImportDraftsResult {
   /// 身份记录被实体归属闸拒掉的笔记 ID（内核回包 `foreign` 指向的笔记身份记录草稿，
   /// native/fushi_fsrs/src/store/gen4/cmd/writes_owner.rs）：同一个库里别的集合（另一份 profile）已有这个 ID、身份
   /// 结构不同——同一个 guid 落到了另一个笔记类型（`.apkg` 不合并笔记模板时的副本、文本导入用户选的类型）。这条笔记
-  /// 连同同批写给它的字段 / 牌组 / 标签一条都没落，导入路径要记冲突、不算新增（BUG-4907 复核：以前不读，报告照记
+  /// 连同同批写给它的字段 / 牌组 / 标签一条都没落，导入路径要记冲突、不算新增（BUG-5005 复核：以前不读，报告照记
   /// 「已添加」，卡片实际不存在）。
   final Set<String> foreignNotes;
 }
@@ -2551,7 +2551,7 @@ class SrsDbStore implements SrsSync2Host {
   ///
   /// [cardNotes]：卡 → 笔记（这批里新建的笔记的卡还没有卡片缓存行，查不到笔记）。带上笔记的日志与卡片修改跟着笔记过
   /// 实体归属闸：笔记被拒时它的日志、它的卡片修改（新卡位置、牌组、暂停）一并不落，不留下指向不存在的卡、却照样进统计
-  /// 的悬空复习，也不留下没有缓存行的悬空卡片修改（BUG-4907 复核；内核 `writes_owner.rs` 文件头「卡片修改带笔记」）。
+  /// 的悬空复习，也不留下没有缓存行的悬空卡片修改（BUG-5005 复核；内核 `writes_owner.rs` 文件头「卡片修改带笔记」）。
   Future<SrsImportDraftsResult> importDrafts(
     List<SrsEventDraft> drafts, {
     Map<String, String> cardNotes = const <String, String>{},

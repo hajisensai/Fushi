@@ -220,7 +220,7 @@ if [ "$need" = android ]; then
     esac
   done
   for crate in fushi_compute fushi_rwkv fushi_music fushi_corpus fushi_web_core; do
-    # Folds in external_sources.txt (BUG-4906), same key as worker_prepare.sh.
+    # Folds in external_sources.txt (BUG-4988), same key as worker_prepare.sh.
     key="$(bash tool/native_source_key.sh "$crate")$abis"
     stamp="$state/android-$crate.key"
     have=1

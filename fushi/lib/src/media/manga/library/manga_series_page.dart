@@ -2689,7 +2689,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     final EpubBookRow? row = _row;
     if (row == null) return null;
     final AppModel? appModel = _appModelOrNull;
-    // BUG-4912：与书架卡同一入口（用户 override > 刮削卷封面 > 书自带封面），
+    // BUG-5043：与书架卡同一入口（用户 override > 刮削卷封面 > 书自带封面），
     // 只读 row.coverPath 会让书架上刮削过的封面点进来又变回源原图。自带封面那一档
     // 仍是书架/制卡共用的 resolveCoverFilePath（TODO-1388 / BUG-703）；没有
     // AppModel（无 ProviderScope 的源浏览树）就只有这一档。

@@ -283,7 +283,7 @@ abstract interface class RemoteVideoPlaybackStop {
   Future<void> stopRemoteVideoPlayback(String id, int positionMs);
 }
 
-/// 「持有要释放的连接」的可选能力（BUG-4908）：http 客户端、来源直链解析器（AList
+/// 「持有要释放的连接」的可选能力（BUG-5012）：http 客户端、来源直链解析器（AList
 /// 登录态、SFTP 的 SSH 连接）。
 ///
 /// 播放页只关**自己现建**的客户端（流媒体书 / 媒体服务器入库条目），经
@@ -294,7 +294,7 @@ abstract interface class RemoteVideoClientConnections {
   void close();
 }
 
-/// 「只摘会话、停转码，不上报停止」的可选能力（BUG-4909）。
+/// 「只摘会话、停转码，不上报停止」的可选能力（BUG-5020）。
 ///
 /// 卡片片段回看（BUG-3490）不得改服务器进度，所以 [RemoteVideoPlaybackStop] 在回看中
 /// 一律不发；可 Jellyfin / Emby 的转码 ffmpeg 只在客户端显式停（`DELETE

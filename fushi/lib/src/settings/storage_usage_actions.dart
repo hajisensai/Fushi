@@ -157,7 +157,7 @@ class StorageUsageActions {
   final Future<int> Function() anime4kBytesProvider;
   final Future<List<String>> Function() anime4kDelete;
 
-  /// 清掉互联 host 同步数据里的「旧版残留」书文件夹（BUG-4906；参数是
+  /// 清掉互联 host 同步数据里的「旧版残留」书文件夹（BUG-4991；参数是
   /// `<sync-data>` 目录，即 [StorageEntryKind.interconnectLegacyFileBox] 明细的
   /// `paths.single`）。真实现 fushi_engine `pruneDeadInterconnectFileBox`：识别口径
   /// 与扫描侧同源，单个目录删不掉只记日志、不抛，返回删掉的目录名。
@@ -475,7 +475,7 @@ String storageCategoryTitle(StorageCategoryId id) => switch (id) {
 };
 
 /// 条目显示名：快照 / 备份聚合条目按文件数翻译，互联同步数据拆出的各条按
-/// 用途翻译（BUG-4906），其余用服务层给的 label。
+/// 用途翻译（BUG-4991），其余用服务层给的 label。
 String storageEntryTitle(StorageEntryUsage entry) => switch (entry.kind) {
   StorageEntryKind.databaseSnapshots =>
     t.storage_entry_database_snapshots_label(n: entry.paths.length),

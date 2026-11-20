@@ -6,7 +6,7 @@ import 'package:fushi/src/reader/reader_source_locator.dart';
 
 import '../helpers/source_guard.dart' as guard;
 
-/// BUG-4914：小说卡片「来源」回看时高亮整体往后偏（制卡词「真っ当な」，高亮落在
+/// BUG-5049：小说卡片「来源」回看时高亮整体往后偏（制卡词「真っ当な」，高亮落在
 /// 「理由」」上）。根因：制卡写 [CardSourceLink] 时 charOffset/charLength 取的是
 /// `_miningSpanRange()` 的**音频匹配坐标**（`sentenceMatchableOffset`，白名单 UTF-16
 /// 码元数），而回看把它当 `Bookmark.charAnchor`，按**学习单位坐标**

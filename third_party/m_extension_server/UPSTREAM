@@ -346,7 +346,7 @@ overlay/ (full-file replacements):
                                                 stream resolution had queued
                                                 every search on the same
                                                 extension behind it until the
-                                                host's BRIDGE_TIMEOUT (BUG-4909).
+                                                host's BRIDGE_TIMEOUT (BUG-5026).
                                                 SourceDataHandler clears state
                                                 through invokeExclusively, which
                                                 waits out both lanes. The

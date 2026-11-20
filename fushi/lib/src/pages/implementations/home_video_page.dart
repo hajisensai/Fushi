@@ -3792,7 +3792,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     // 本页 State —— 故切 tab / 退页 / 本页 dispose 时下载仍在管理器里推进到底，重进
     // 页面只 ref.watch 订阅渲染进度。manager 自身去重（同 id 在跑则忽略）。
     // #6 续传口径按分支写实：互联走 host live 下载引擎、Jellyfin / Emby / Plex 走
-    // 媒体服务器续传下载（都是 Range + `.part`，中断留 part 下次可续，BUG-4912）；云后端
+    // 媒体服务器续传下载（都是 Range + `.part`，中断留 part 下次可续，BUG-5042）；云后端
     // 分支（CloudRemoteVideoClient.getRemoteVideo）是整文件重下，失败清残片、无断点续传。
     final InterconnectDownloadManager manager = ref.read(
       interconnectDownloadManagerProvider,

@@ -192,7 +192,7 @@ const String kSyncVideosManifestName = 'videos.json';
 ///
 /// 保留命名空间的判据只在引擎的 [isReservedSyncNamespaceName] 写一次（互联 host 的文件箱
 /// 清理用同一个）；此前这里逐个列名，漏了 `__settings__` 与 `fushi-srs`，云盘上这两个
-/// 共享目录被当成只剩元数据的远端书列进对比弹窗、可被「删远端」整个删掉（BUG-4907）。
+/// 共享目录被当成只剩元数据的远端书列进对比弹窗、可被「删远端」整个删掉（BUG-5007）。
 ///
 /// An empty / whitespace-only name is also reserved: it is never a real book
 /// folder (a book's folder name is a non-empty sanitized title), and treating it

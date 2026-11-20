@@ -7,7 +7,7 @@ import 'package:fushi_engine/sync/sync_reserved_namespaces.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
-// BUG-4906：互联 host 同步根下旧版本客户端写下、host 从不读回的文件箱书文件夹，host 启动时
+// BUG-4991：互联 host 同步根下旧版本客户端写下、host 从不读回的文件箱书文件夹，host 启动时
 // 收走；保留命名空间（还有人读的共享数据）与认不出的东西一律不碰。
 
 Future<int> _put(

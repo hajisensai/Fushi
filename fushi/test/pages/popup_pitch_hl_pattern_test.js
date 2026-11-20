@@ -1,4 +1,4 @@
-// BUG-4917 behavior test（反馈 ax68AKUrex）：H/L 模式串音调不画高低线、与同型数字位分两行。
+// BUG-5054 behavior test（反馈 ax68AKUrex）：H/L 模式串音调不画高低线、与同型数字位分两行。
 //
 // 大辞泉+ / NHK-meta 的 pitch position 是 H/L 串（"LHHHH"）。原生层原样放进 popup JSON 的
 // `patterns`，popup.js 以前把它一律当纯文本 `[LHHHH]` 渲染，也不换算成下降位——于是

@@ -847,7 +847,7 @@ void main() {
     expect(find.byIcon(FushiIcons.delete), findsNothing);
   });
 
-  testWidgets('BUG-4906：互联 sync-data 拆成三块，只有旧版残留带「立即清理」，确认后调清理原语并重扫', (
+  testWidgets('BUG-4991：互联 sync-data 拆成三块，只有旧版残留带「立即清理」，确认后调清理原语并重扫', (
     WidgetTester tester,
   ) async {
     writeFile(p.join(support.path, 'fushi.db'), 1000);
@@ -960,7 +960,7 @@ void main() {
     expect(find.text(t.storage_entry_interconnect_srs_label), findsOneWidget);
   });
 
-  testWidgets('BUG-4906：取消确认框不调清理原语', (WidgetTester tester) async {
+  testWidgets('BUG-4991：取消确认框不调清理原语', (WidgetTester tester) async {
     Directory(
       p.join(support.path, kInterconnectSyncDataSupportChild),
     ).createSync(recursive: true);
@@ -1006,7 +1006,7 @@ void main() {
     expect(clean, findsOneWidget);
   });
 
-  testWidgets('BUG-4906：互联 host 运行中「立即清理」禁用并写明原因，host 停下后按钮随之可用', (
+  testWidgets('BUG-4991：互联 host 运行中「立即清理」禁用并写明原因，host 停下后按钮随之可用', (
     WidgetTester tester,
   ) async {
     Directory(

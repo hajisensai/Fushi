@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
-/// BUG-4917（反馈 ax68AKUrex）：H/L 模式串音调（大辞泉+ / NHK-meta 的 "LHHHH"）在弹窗里
+/// BUG-5054（反馈 ax68AKUrex）：H/L 模式串音调（大辞泉+ / NHK-meta 的 "LHHHH"）在弹窗里
 /// 只显示成文本、不画高低线，且没有换算成下降位，与同型数字位 [0] 分成两行；制卡字段
 /// 也写成 [LHHHH]。
 ///

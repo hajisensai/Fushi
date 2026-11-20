@@ -1,8 +1,0 @@
-## BUG-4910 · Kavita 对账 / 批量标已读后「继续阅读」落到已读过的旧章；对账逐章整份解码基线偏好
-- **报告**：2026-11-20（路线图 #3722 c50 · gap-mangamisc-2 + gap-mangamisc-3，审读发现）
-- **真实性**：✅ 真 bug。基准 `origin/develop` @ `7745effa2e`：
-  - `fushi/lib/src/media/kavita/kavita_manga_sync.dart:552`（`reconcileKavitaChapterStates`）与 `:605`（`alignKavitaMangaChapterMark`，作品页 `_markKavitaChapters` 对多选的每章循环调用）逐章 `saveMangaChapterState`；`packages/fushi_core/lib/src/database/database_content_misc.part.dart` 的 `saveMangaChapterState` 每次各取一次 `DateTime.now()` 写 `updatedAt`。章表按新 → 旧遍历，最后写的最旧那章 `updatedAt` 最大；`fushi/lib/src/media/manga/library/manga_resume_point.dart` 的 `continueMangaChapterIndex` 按 `updatedAt` 最大选章 → 「继续阅读」落到最旧的已读章（再前进一话）。
-  - gap-mangamisc-3：`kavita_manga_sync.dart:542` 对账每章调 `stamps?.stampOf`，`PrefKavitaMangaSyncStampStore.stampOf`（`:210`）每次整份 `jsonDecode` 基线偏好；批量标记逐章 `record` 每章一次读改写整份偏好。量（本机 Dart VM JIT，`jsonDecode` 同形状数据）：基线满额 2000 条（131 KB）时 500 章对账 326 ms、100 章 67 ms，单次解码 0.8 ms；200 条时 500 章 37 ms。对账在 UI isolate 上跑，移动端更慢。
-- **[x] ① 已修复** — `fushi_core` 加批量写口 `saveMangaChapterStates`（一个事务、同一个 `updatedAt`，不把 `updatedAt` 置 0——同步按它 LWW）；同一时间戳下 `continueMangaChapterIndex` 取章表最先出现（最新）那章。`reconcileKavitaChapterStates` 收集写入一次落库；新增 `alignKavitaMangaChapterMarks` 整批对齐（旧单章函数改为它的包装），作品页多选标记改调批量版。基线存取接口加 `stampsOfBook`（一次读出一本书的全部基线）与 `recordAll`（一次读改写），对账 / 批量标记各只解码、写回一次。
-- **[x] ② 已加自动化测试** — `fushi/test/media/kavita/kavita_manga_sync_test.dart` 组 `batch writes share one timestamp`：300 章对账后全部章同一 `updatedAt`、继续阅读落在最新读过章的下一话；Kavita 批量标已读同理且基线落末页；批量标未读同事务清已读；偏好基线存储对账只读一次、批量标记只写一次。改前前三条因逐章时间戳不同而红，最后一条因逐章解码 / 写回（读 300 次、写 50 次）而红。
-- **备注**：真机 Kavita 续读验证本轮不做（所有者定）。

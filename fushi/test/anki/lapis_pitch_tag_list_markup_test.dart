@@ -71,7 +71,7 @@ void main() {
 
     test('制卡侧复用展示侧的 pitch 归一化（BUG-2152 跨词典那一路）', () {
       final String body = functionBody('buildMinePayload');
-      // BUG-4917：合并前先把 H/L 模式串换算成数字位，与弹窗同一份归一化。
+      // BUG-5054：合并前先把 H/L 模式串换算成数字位，与弹窗同一份归一化。
       expect(
         body,
         contains('normalizePitchPatterns(pitches || [], reading)'),

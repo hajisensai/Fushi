@@ -1,6 +1,0 @@
-## BUG-4906 · 漫画批量导入跳过重复卷前先整包解压、逐页读完
-- **报告**：2026-11-20（路线图 #3722 c26 / manga-10，复核结论「部分成立」）
-- **真实性**：✅ 真问题（性能）：跳过策略（`DuplicatePolicy.skip`）的判重只在落位那一步（`packages/fushi_engine/lib/epub/epub_importer.dart:286` 的 `resolveDuplicateTitle`，经 `MangaImporter._copyAndInsert`），而在它之前压缩包已整包解压进暂存目录（基线 `packages/fushi_engine/lib/media/manga/manga_archive_importer.dart:516-604`）、页图文件夹已逐页整张读进内存探尺寸（基线 `manga_importer.dart:132` → `:166`）。重导一个已导过 49 / 50 卷的文件夹，49 个包白解。受影响入口：导入框批量 / 拖放（`manga_folder_batch.dart`）、操作目录导入、服务端 `import` 命令与库扫描首次撞名；app 来源库扫描已在导入前判重，不受影响。
-- **[x] ① 已修复** — `book_title_conflict.dart` 加 `throwIfSkippedDuplicate`（与 `resolveDuplicateTitle` 同一身份口径、同一异常与 title），`MangaImporter.precheckSkippedDuplicate` 只在跳过策略下读一次瘦投影书目；`importArchive` 在建暂存目录、开包之前预检（入库标题提前算成一个值，mokuro / 页图目录两条分支共用），`importFromImageFolder` 在逐页读尺寸之前预检。落位时的原判重保留；`ask` 策略「先做完再问」的次序不变（所有者定）。PDF 入口（`PdfImporter.importFromPath`）顺带在打开文档、栅格化封面之前预检。
-- **[x] ② 已增加自动化测试** — `fushi/test/media/manga/manga_import_fastpath_test.dart` 的 manga-10 组：同名第二份是 CRC 坏包 / 页图解不开的文件夹，跳过策略下必须以 `DuplicateImportCancelledException('vol 01')` 中止（没有预检时先解压 / 读页，报 CRC / Could not decode）；`ask` 策略对同名坏包仍先报 CRC、不调询问回调。`fushi/test/pdf/pdf_import_dir_ownership_test.dart` 覆盖 PDF 入口预检。
-- **备注**：真机「批量导入大半已导过的文件夹看耗时」未做（本轮不做设备验证）。

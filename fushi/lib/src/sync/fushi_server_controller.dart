@@ -931,7 +931,7 @@ class FushiSyncServerController extends ChangeNotifier {
         st,
       ),
     );
-    // BUG-4906：清掉同步根下已无人读取的客户端文件箱书文件夹（旧版本客户端写下的
+    // BUG-4991：清掉同步根下已无人读取的客户端文件箱书文件夹（旧版本客户端写下的
     // epub / 有声书 / 进度 JSON，host 从不读回）。绑端口前跑，不和 WebDAV 写竞争；
     // 自身吞错留痕，绝不挡启动。
     await pruneDeadInterconnectFileBox(server.syncDataDir);

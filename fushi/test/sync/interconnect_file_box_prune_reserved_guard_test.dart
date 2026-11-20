@@ -21,7 +21,7 @@ import 'package:fushi_engine/sync/deletion_propagation.dart'
 import 'package:fushi_engine/sync/sync_reserved_namespaces.dart';
 import 'package:path/path.dart' as p;
 
-// BUG-4906 / BUG-4907 守卫：互联 host 启动时收走已死的文件箱书文件夹，但同步根下的**保留命名空间**
+// BUG-4991 / BUG-5007 守卫：互联 host 启动时收走已死的文件箱书文件夹，但同步根下的**保留命名空间**
 // 是别的设备 / host 自己还在读的共享数据，一个都不能被当成书文件夹删掉。
 
 /// 源码里声明的全部同步命名空间名（`const String k…Namespace = '…'` 与
@@ -85,7 +85,7 @@ void main() {
     }
   });
 
-  test('客户端列书与 host 清理共用同一份保留判据（BUG-4907）', () {
+  test('客户端列书与 host 清理共用同一份保留判据（BUG-5007）', () {
     for (final String name in _declaredNamespaces()) {
       expect(isReservedSyncFolderName(name), isTrue, reason: name);
     }

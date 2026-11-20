@@ -176,7 +176,7 @@ void main() {
     expect(await playlistOrder(), ids);
   });
 
-  // BUG-4908：用户删掉作品合集后，被动刷新（探针 addMissing）不复活它；用户
+  // BUG-5016：用户删掉作品合集后，被动刷新（探针 addMissing）不复活它；用户
   // 再点「加入媒体库」或下载一集，合集重建、集重新归组。
   group('a deleted anime playlist', () {
     Future<void> deletePlaylist() async {

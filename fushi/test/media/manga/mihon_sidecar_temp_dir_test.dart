@@ -7,7 +7,7 @@ import 'package:test/test.dart';
 
 import '../../helpers/source_guard.dart';
 
-/// BUG-4914：桌面 Mihon sidecar 的 `java.io.tmpdir` 由宿主持有。修前 JVM 用系统临时
+/// BUG-5046：桌面 Mihon sidecar 的 `java.io.tmpdir` 由宿主持有。修前 JVM 用系统临时
 /// 目录：NanoHTTPD 每个请求体一个删不掉的 `NanoHTTPD-*` 文件、强杀后的
 /// `mextensionserver*` 扩展 jar 目录，都永不回收（本机实测 5 周 504 个 / 40 MB）。
 void main() {

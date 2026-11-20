@@ -2857,7 +2857,7 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
     // 把 spoke 都标成 /spəʊk/ 时，弹窗里合成一行、卡片上却是 [/spəʊk/][/spəʊk/]。
     // 同一份归一化喂给两边，两处显示就不会再分叉。（词典内部的重复由原生
     // enrich_pitch 去掉，那一层这里看不见。）
-    // BUG-4917：H/L 模式串先换算成数字位（与弹窗同一份归一化），字段写 [0] 而不是
+    // BUG-5054：H/L 模式串先换算成数字位（与弹窗同一份归一化），字段写 [0] 而不是
     // [LHHHH]，与数字位词典的同型条目也能合并。
     const patternNormalizedPitches = normalizePitchPatterns(pitches || [], reading);
     const normalizedPitches = mergeIdenticalPitchGroups(patternNormalizedPitches);
@@ -4351,7 +4351,7 @@ function createHarmonicFrequencyTag(frequencies) {
 
 // https://github.com/yomidevs/yomitan/blob/c24d4c9b39ceec1b5fd133df774c41972e9ebbdc/ext/js/language/ja/japanese.js#L350
 function isMoraPitchHigh(moraIndex, pitchAccentValue) {
-    // BUG-4917：Yomitan 的 pitch position 也可以是 H/L 模式串（大辞泉+ / NHK-meta 的
+    // BUG-5054：Yomitan 的 pitch position 也可以是 H/L 模式串（大辞泉+ / NHK-meta 的
     // "LHHLLL"）。与上游 japanese.js 同法：第 i 拍高低直接读第 i 个字符，越界即低。
     if (typeof pitchAccentValue === 'string') {
         return pitchAccentValue[moraIndex] === 'H';
@@ -4452,7 +4452,7 @@ function createTranscriptionsHtml(transcriptions) {
 // 时（app 默认）各存活组的位置互斥，payload 不可能全等，合并对位置组恒为 no-op，
 // 默认外观一字不变；去重关闭时才塌行。（两本纯 IPA 词典给出完全相同的
 // transcriptions 是唯一例外，那也本就该合。）
-// BUG-4917：H/L 模式串（"LHHHH"）是「逐拍高低」的写法，和数字下降位描述的是同一件事。
+// BUG-5054：H/L 模式串（"LHHHH"）是「逐拍高低」的写法，和数字下降位描述的是同一件事。
 // 这里把它换算回数字位：能唯一换算的串就是那个数字位，弹窗画高低线、制卡字段写 [0]，
 // 并且和数字位词典（アクセント辞典 的 [0]）走同一套合并 / 去重——此前 [LHHHH] 与
 // [0] 是同一个平板型却分成两行。
@@ -4578,7 +4578,7 @@ function createPitchGroup(pitchData, reading) {
         li.appendChild(document.createTextNode(` [${pitch}]`));
         list.appendChild(li);
     });
-    // 79c55c2 二期：pattern 式 accent（字符串位）。BUG-4917：长度对得上读音的 H/L 串
+    // 79c55c2 二期：pattern 式 accent（字符串位）。BUG-5054：长度对得上读音的 H/L 串
     // 按逐拍高低画高低线（能换算成数字位的已在 normalizePitchPatterns 里并走），
     // 其它字符串（"heiban" 这类名字、长度对不上的串）仍以文本渲染。
     (pitchData.patterns || []).forEach((pattern) => {
@@ -4662,7 +4662,7 @@ function createPitchSection(pitches, reading) {
     // `unique=[1]` 存活，5 个来源全留住。
     //
     // 关去重那一档逐字节不变：合并对它本来就是幂等的（原实现也是合并后渲染）。
-    // BUG-4917：先把 H/L 模式串换算成数字位，[LHHHH] 才会和 [0] 合并 / 去重。
+    // BUG-5054：先把 H/L 模式串换算成数字位，[LHHHH] 才会和 [0] 合并 / 去重。
     const merged = mergeIdenticalPitchGroups(normalizePitchPatterns(pitches, reading));
     const groups = [];
     if (window.deduplicatePitchAccents) {

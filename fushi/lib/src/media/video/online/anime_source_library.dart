@@ -186,7 +186,7 @@ class AnimeSourceLibrary {
 
   /// 加入媒体库：每集一行在线行，归进作品合集。已在库的集跳过（刷新后只补新集，
   /// 不动已看 / 已下载的行）。返回新加的集数。用户亲手点的：用户删过的作品合集
-  /// 就此重建（BUG-4908）。
+  /// 就此重建（BUG-5014）。
   Future<int> addToLibrary(AnimeSourceVideoClient client) async =>
       (await addMissing(client, userIntent: true)).length;
 
@@ -253,7 +253,7 @@ class AnimeSourceLibrary {
 
   /// 下载完成：把 [file] 登记成本地视频行（同 bookUid 覆盖在线行），归进作品合集，
   /// 补封面与默认字幕，并把在线播放留下的断点接过来（见 [onlinePositionReader]）。
-  /// 下载是用户亲手发起的：用户删过的作品合集就此重建（BUG-4908）。
+  /// 下载是用户亲手发起的：用户删过的作品合集就此重建（BUG-5014）。
   Future<void> registerDownloaded(
     AnimeSourceVideoClient client,
     RemoteVideoInfo info,

@@ -145,7 +145,7 @@ enum StorageEntryKind {
   /// 临时目录内的本地备份归档聚合项；删除仍走通用文件删除原语。
   backupArchives,
 
-  /// 互联 host 同步数据里的「旧版残留」聚合项（BUG-4906；`paths` = 单个
+  /// 互联 host 同步数据里的「旧版残留」聚合项（BUG-4991；`paths` = 单个
   /// `<sync-data>` 目录；删除走 fushi_engine `pruneDeadInterconnectFileBox`，识别口径
   /// 与扫描侧 `measureInterconnectSyncData` 同源）。
   interconnectLegacyFileBox,
@@ -1069,13 +1069,13 @@ class StorageUsageService {
   /// 快照聚合条目的域内主键（UI 用它做忙碌态/去重）。
   static const String kDatabaseSnapshotsEntryId = 'database-snapshots';
 
-  /// 互联同步数据拆出的各条目主键（BUG-4906）。UI 按 id 翻译标题。
+  /// 互联同步数据拆出的各条目主键（BUG-4991）。UI 按 id 翻译标题。
   static const String kInterconnectSharedEntryId = 'interconnect-shared';
   static const String kInterconnectSrsEntryId = 'interconnect-srs';
   static const String kInterconnectLegacyEntryId = 'interconnect-legacy';
   static const String kInterconnectOtherEntryId = 'interconnect-other';
 
-  /// `<support>/sync-data` 按用途拆成的明细（BUG-4906）：
+  /// `<support>/sync-data` 按用途拆成的明细（BUG-4991）：
   /// - 互联客户端共享数据、复习同步：只读，只要目录在就显示（0 也是信息）；
   /// - 旧版残留：可清理（[StorageEntryKind.interconnectLegacyFileBox]），为 0 不出现；
   /// - 其余认不出的东西：只读，为 0 不出现。

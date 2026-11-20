@@ -51,7 +51,7 @@ const List<String> _overlayOverridesUpstream = <String>[
   'server/src/main/kotlin/eu/kanade/tachiyomi/network/Requests.kt',
   'server/src/main/kotlin/eu/kanade/tachiyomi/network/interceptor/RateLimitInterceptor.kt',
   'server/src/main/kotlin/eu/kanade/tachiyomi/network/interceptor/SpecificHostRateLimitInterceptor.kt',
-  // BUG-4909：扩展实例按调用通道（目录 / 取流）分别串行，慢 getVideoList 不再
+  // BUG-5026：扩展实例按调用通道（目录 / 取流）分别串行，慢 getVideoList 不再
   // 把同扩展的搜索排在身后；上游改名会让三份一起打空。
   'server/src/main/kotlin/mextensionserver/impl/ExtensionInstanceCache.kt',
   'server/src/main/kotlin/mextensionserver/impl/MExtensionServerLoader.kt',

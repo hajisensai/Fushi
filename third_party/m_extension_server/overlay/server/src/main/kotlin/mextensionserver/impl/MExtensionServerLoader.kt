@@ -72,7 +72,7 @@ object MExtensionServerLoader {
 
     // Fushi: calls are serialized per [InvocationLane], not per instance, so a
     // minutes-long getVideoList no longer queues searches on the same
-    // extension behind it (BUG-4909).
+    // extension behind it (BUG-5026).
     internal fun <T> invokeWithExtension(
         base64Data: String,
         lane: InvocationLane = InvocationLane.CATALOGUE,

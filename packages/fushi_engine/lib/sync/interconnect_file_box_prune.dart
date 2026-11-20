@@ -7,7 +7,7 @@ import 'package:fushi_engine/sync/sync_reserved_namespaces.dart';
 import 'package:fushi_engine/sync/sync_root_folder.dart';
 import 'package:path/path.dart' as p;
 
-/// 清掉互联 host 上**已无人读取**的客户端「文件箱」书文件夹（BUG-4906）。
+/// 清掉互联 host 上**已无人读取**的客户端「文件箱」书文件夹（BUG-4991）。
 ///
 /// [syncDataDir] 是 host 的 WebDAV 根（`FushiSyncServer.syncDataDir`，即 `<数据根>/sync-data`），
 /// 清理范围只有其下 [kSyncRootFolderName] 的一级子目录。
@@ -73,7 +73,7 @@ Future<bool> _isDeadFileBoxFolder(Directory dir) async {
   return true;
 }
 
-/// 互联 host 同步数据（`<sync-data>`）按用途归类后的占用字节数（存储页用，BUG-4906）。
+/// 互联 host 同步数据（`<sync-data>`）按用途归类后的占用字节数（存储页用，BUG-4991）。
 ///
 /// 三类之和 + [otherBytes] = `<sync-data>` 整棵树的大小。
 class InterconnectSyncDataUsage {

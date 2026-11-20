@@ -161,10 +161,10 @@ void main() {
     expect(c.fileDurationsMs, isEmpty);
   });
 
-  // BUG-4907（反馈 sGoT-tNpkx）：cue 只估到末句结束，片尾静音 / 音乐不在 cue 里。
+  // BUG-5006（反馈 sGoT-tNpkx）：cue 只估到末句结束，片尾静音 / 音乐不在 cue 里。
   // 进度条用 [totalDuration]（末文件取真实时长），拖动走 [seekGlobalMs]；两者必须同一
   // 口径，否则拖到片尾会被夹回末句结束，显示「3:43 / -0:31」却怎么也拖不进去。
-  group('drag into the tail beyond the last cue (BUG-4907)', () {
+  group('drag into the tail beyond the last cue (BUG-5006)', () {
     test('splitGlobalMs extends only the last file by its real duration', () {
       const List<int> durations = <int>[10000, 8000];
       expect(AudiobookPlayerController.splitGlobalMs(70000, durations), (

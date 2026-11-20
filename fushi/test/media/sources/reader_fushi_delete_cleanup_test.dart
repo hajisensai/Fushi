@@ -1,9 +1,9 @@
 // 删书原语 `ReaderFushiSource.deleteBook` 的三处清理缺口（路线图 #3722 c37）：
-// - BUG-4906：appModel 可选、多数调用点不传 → override 封面文件不清，同名书重新导入
+// - BUG-4979：appModel 可选、多数调用点不传 → override 封面文件不清，同名书重新导入
 //   （bookKey = 净化后的书名，同名即同键）后旧封面复活。先在 develop 上复现过一次：
 //   不传 appModel 删书 → 同名重导 → resolveOverrideThumbnailFile 非空。
-// - BUG-4907：每删一本都跑一次整库 VACUUM + wal_checkpoint，批删 N 本串行 N 次。
-// - BUG-4908：「同步删除」的墓碑写入失败被 `catch (_)` 吞掉，无日志。
+// - BUG-4996：每删一本都跑一次整库 VACUUM + wal_checkpoint，批删 N 本串行 N 次。
+// - BUG-5011：「同步删除」的墓碑写入失败被 `catch (_)` 吞掉，无日志。
 // 真实内存 Drift 库 + 真实删书原语；VACUUM 计数与墓碑写失败都经 Drift 拦截器观测 /
 // 注入，不碰用户库。
 import 'dart:io';
@@ -277,7 +277,7 @@ void main() {
     });
   });
 
-  group('BUG-4906 删书清 override 封面，同名重导不复活', () {
+  group('BUG-4979 删书清 override 封面，同名重导不复活', () {
     test('书架删书后同名书重新导入，没有旧封面', () async {
       await db.insertEpubBook(bookRow('Kokoro'));
       final File cover = writeOverrideCover('Kokoro');
@@ -395,7 +395,7 @@ void main() {
     });
   });
 
-  group('BUG-4907 批删只回收一次数据库空间', () {
+  group('BUG-4996 批删只回收一次数据库空间', () {
     test('单删默认照旧 VACUUM 一次', () async {
       await db.insertEpubBook(bookRow('One'));
       await ReaderFushiSource.instance.deleteBook(
@@ -477,7 +477,7 @@ void main() {
     });
   });
 
-  group('BUG-4908 同步删除墓碑写入失败留痕', () {
+  group('BUG-5011 同步删除墓碑写入失败留痕', () {
     test('墓碑写失败：书照样删掉，ErrorLogService 有一条记录', () async {
       await ErrorLogService.instance.clear();
       await db.insertEpubBook(bookRow('Synced'));

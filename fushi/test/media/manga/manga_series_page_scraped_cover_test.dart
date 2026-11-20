@@ -24,7 +24,7 @@ import 'package:path/path.dart' as p;
 
 import '../../helpers/test_platform_services.dart';
 
-/// BUG-4912（应用内反馈 vJJGPZtC3p）：书架里刮削过封面的漫画，书架卡显示刮削出的
+/// BUG-5043（应用内反馈 vJJGPZtC3p）：书架里刮削过封面的漫画，书架卡显示刮削出的
 /// 卷封面，点进作品页却还是源原来的封面——作品页只读 `row.coverPath`，不查刮削层
 /// （[BookArtStore]）。作品页的封面 / hero 背景必须与书架卡同一优先级：
 /// 用户 override > 刮削卷封面 > 书自带封面。

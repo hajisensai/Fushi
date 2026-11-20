@@ -1327,7 +1327,7 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
   /// [userIntent]：用户**亲手**把这部作品加进库 / 下载它（作品页「加入媒体库」、
   /// 下载完成入库）时传 true——同事务先清该自然键的合集级删除墓碑，与
   /// [createMediaCollection]「重建 = 撤销删除」同一语义；否则删过一次合集后，
-  /// 用户再怎么显式加入，集都只会散落在库里、永不归组（BUG-4908）。成员级墓碑
+  /// 用户再怎么显式加入，集都只会散落在库里、永不归组（BUG-5016）。成员级墓碑
   /// （用户把某一集单独移出合集）仍照常拦，只有 [addToCollection] 逐键撤销。
   /// 同步 / 目录刷新 / 后台库更新探针等被动路径保持默认 false，墓碑让路。
   Future<int?> adoptRemoteCollectionMember({
