@@ -297,6 +297,7 @@
 | [BUG-4920](bugs/BUG-4920-ios-loopback-relay-reclaimed-port.md) | ✅ | ✅ | iOS 本地中继监听 socket 被回收后仍被复用，媒体服务器视频打不开 |
 | [BUG-4909](bugs/BUG-4909-desktop-anime-search-blocked-by-video-list.md) | ✅ | ✅ | 桌面端动画在线源面板被同扩展的慢取流卡住数分钟 |
 | [BUG-4917](bugs/BUG-4917-pitch-hl-pattern-not-drawn.md) | ✅ | ✅ | 音调词典 H/L 模式串只显示成文本、不画高低线，且与同型数字位分成两行 |
+| [BUG-4908](bugs/BUG-4908-deleted-remote-collection-not-recreated-on-explicit-add.md) | ✅ | ✅ | 删掉的在线源作品合集再显式加入或下载也永不重建 |
 | [BUG-4905](bugs/BUG-4905-ai-cast-text-substitutions.md) | ✅ | ✅ | 小说和漫画 AI 标注未应用系列用词替换表 |
 | [BUG-4904](bugs/BUG-4904-book-series-key-store-annotation.md) | ✅ | ✅ | 书店写法「卷号<系列名> (文库名)」的分卷导入后不归合集 |
 | [BUG-4903](bugs/BUG-4903-home-desktop-continue-cut-edge-title-concat.md) | ✅ | ✅ | 首页（桌面）「继续」右侧卡被窗口切掉一半、标题拼接成「Re：ゼロ…1<Re：…」 |
