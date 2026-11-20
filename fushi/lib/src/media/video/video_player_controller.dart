@@ -17,6 +17,7 @@ import 'package:fushi/src/media/video/bluray_aacs_module.dart';
 import 'package:fushi/src/media/video/bluray_java_runtime.dart';
 import 'package:fushi/src/media/video/disc/remote_disc_menu_source.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
+import 'package:fushi/src/media/video/video_resume.dart';
 import 'package:fushi/src/media/video/video_external_audio_tracks.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoExternalAudioTrack;
@@ -3444,6 +3445,9 @@ class VideoPlayerController extends ChangeNotifier
     required List<AudioCue> cues,
     int initialPositionMs = 0,
     required EpisodeStartIntent startIntent,
+    // 断点续播开关（偏好 `video_resume_mode`，video_resume.dart）：只拦按断点定起点的
+    // 意图，explicitCue 的明确起点不受影响。长视频档在 open 后按真实时长再判一次。
+    VideoResumeMode resumeMode = VideoResumeMode.all,
     double initialSpeed = 1.0,
     double initialVolume = 100.0,
     String? externalSubtitlePath,
@@ -3534,10 +3538,11 @@ class VideoPlayerController extends ChangeNotifier
     final int requestedStartMs = openBlurayMenu || initialPositionMs < 0
         ? 0
         : initialPositionMs;
-    final int preloadStartMs = resolveEpisodeStart(
-      startIntent,
-      requestedStartMs,
-      null,
+    final int preloadStartMs = resolveVideoStart(
+      intent: startIntent,
+      savedPositionMs: requestedStartMs,
+      durationMs: null,
+      mode: resumeMode,
     );
     _setPendingSeekLanding(preloadStartMs);
     _bookUid = openBlurayMenu ? null : bookUid;
@@ -4115,10 +4120,11 @@ class VideoPlayerController extends ChangeNotifier
     if (resolvedStartMs > 0) {
       await _waitUntilSeekable(player);
       if (!_isCurrentLoad(player, loadToken)) return; // 等待期间换片：放弃这次恢复
-      resolvedStartMs = resolveEpisodeStart(
-        startIntent,
-        requestedStartMs,
-        player.state.duration.inMilliseconds,
+      resolvedStartMs = resolveVideoStart(
+        intent: startIntent,
+        savedPositionMs: requestedStartMs,
+        durationMs: player.state.duration.inMilliseconds,
+        mode: resumeMode,
       );
     }
     // `start` 是全局选项，会影响该 Player 后续每一次 loadfile（换集 / 画质切档复用同一
