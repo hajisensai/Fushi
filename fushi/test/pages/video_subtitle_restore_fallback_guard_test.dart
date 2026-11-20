@@ -75,10 +75,54 @@ void main() {
   });
 
   test('显式关闭字幕仍然短路整条兜底（TODO-818 不倒退）', () {
+    // video-20 起 DB 缓存 cue 改惰性读取：不再有「if (subtitleExplicitlyOff) { cues = [] }」
+    // 这一支，改由每个可能产出 cue 的入口各自带关闭判据。逐个钉住这些入口。
     expect(
-      containsCodeLine(body, 'if (subtitleExplicitlyOff) {'),
+      containsCodeLine(
+        body,
+        'final String? rehydratePath = subtitleExplicitlyOff',
+      ),
       isTrue,
-      reason: '用户显式关过字幕就不该被任何一层兜底重新打开',
+      reason: '关闭时外挂档案重解析路径必须恒为 null',
+    );
+    expect(
+      containsCodeLine(
+        body,
+        'if (!subtitleExplicitlyOff && rehydratePath == null) {',
+      ),
+      isTrue,
+      reason: '关闭时不得读 DB 缓存 cue（读了就会把关掉的字幕重新显示出来）',
+    );
+    final List<String> lines = maskComments(body).split('\n');
+    final List<int> loadCuesLines = <int>[
+      for (int i = 0; i < lines.length; i++)
+        if (lines[i].contains('widget.repo.loadCues(')) i,
+    ];
+    expect(loadCuesLines, isNotEmpty, reason: 'DB cue 安全网必须还在');
+    for (final int at in loadCuesLines) {
+      String? gate;
+      for (int i = at; i >= 0; i--) {
+        if (lines[i].trimLeft().startsWith('if (')) {
+          gate = lines[i];
+          break;
+        }
+      }
+      expect(
+        gate != null &&
+            (gate.contains('!subtitleExplicitlyOff') ||
+                gate.contains('rehydratePath != null')),
+        isTrue,
+        reason:
+            '每处 loadCues 都必须落在「未显式关闭」的门内'
+            '（rehydratePath 非空蕴含未关闭）；第 ${at + 1} 行的门是：$gate',
+      );
+    }
+    expect(
+      RegExp(
+        r'final bool rehydrateEmbedded =\s*!subtitleExplicitlyOff &&',
+      ).hasMatch(maskComments(body)),
+      isTrue,
+      reason: '关闭时不得走内嵌轨重解析',
     );
     // 兜底判据自身也带 !subtitleExplicitlyOff，双保险。
     expect(
