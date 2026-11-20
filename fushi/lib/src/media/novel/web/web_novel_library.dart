@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
@@ -174,20 +175,20 @@ class WebNovelLibrary {
     required String nextChapterTitle,
     EpubBookRow? existing,
   }) async {
-    final _LoadedChapterLookup? loadedFrom = existing == null
-        ? null
-        : _loadedChapterLookup(existing);
-    final Uint8List bytes = _assemble(
-      snapshot: snapshot,
-      title: existing?.title ?? _bookTitle(snapshot),
-      nextChapterTitle: nextChapterTitle,
-      bodyFor: (int i) {
-        if (i == chapterIndex) {
-          return (body: content.xhtml, images: content.images);
-        }
-        return loadedFrom?.call(snapshot.chapters[i].url);
-      },
-      pendingText: pendingText,
+    final Uint8List bytes = await buildWebNovelEpubInBackground(
+      WebNovelEpubRequest(
+        snapshot: snapshot,
+        title: existing?.title ?? _bookTitle(snapshot),
+        nextChapterTitle: nextChapterTitle,
+        pendingText: pendingText,
+        previous: existing == null
+            ? null
+            : (
+                sourceMetadata: existing.sourceMetadata,
+                extractDir: existing.extractDir,
+              ),
+        fresh: (index: chapterIndex, content: content),
+      ),
     );
     if (existing == null) {
       final String bookKey = await _importEpub(
@@ -222,13 +223,17 @@ class WebNovelLibrary {
     );
     if (snapshot == null || snapshot.tailNext == null) return false;
     if (row.chapterCount > snapshot.chapters.length) return false;
-    final _LoadedChapterLookup loadedFrom = _loadedChapterLookup(row);
-    final Uint8List bytes = _assemble(
-      snapshot: snapshot,
-      title: row.title,
-      nextChapterTitle: nextChapterTitle,
-      bodyFor: (int i) => loadedFrom(snapshot.chapters[i].url),
-      pendingText: pendingText,
+    final Uint8List bytes = await buildWebNovelEpubInBackground(
+      WebNovelEpubRequest(
+        snapshot: snapshot,
+        title: row.title,
+        nextChapterTitle: nextChapterTitle,
+        pendingText: pendingText,
+        previous: (
+          sourceMetadata: row.sourceMetadata,
+          extractDir: row.extractDir,
+        ),
+      ),
     );
     await _rebuild(row, bytes, snapshot.raw);
     return true;
@@ -243,64 +248,6 @@ class WebNovelLibrary {
     if (first.isNotEmpty) return first;
     return Uri.tryParse(snapshot.chapters.firstOrNull?.url ?? '')?.host ??
         'Web novel';
-  }
-
-  /// 旧书 [row] 的「URL → 那一章已取过的正文」查找（按旧快照的章序找文件）。
-  ///
-  /// 旧快照只解析一次、建好 URL → 章序表再逐章查：重建要对新快照的每一章各查
-  /// 一次，逐章重新解析快照 + 线性找 URL 是章数的平方（gap-novelmisc-5）。同一
-  /// URL 在旧快照里重复时取第一次出现的章序（与原先 `indexWhere` 一致）。
-  _LoadedChapterLookup _loadedChapterLookup(EpubBookRow row) {
-    final WebNovelSnapshot? previous = WebNovelSnapshot.tryParse(
-      row.sourceMetadata,
-    );
-    if (previous == null) return (String url) => null;
-    final Map<String, int> indexByUrl = <String, int>{};
-    for (int i = 0; i < previous.chapters.length; i++) {
-      indexByUrl.putIfAbsent(previous.chapters[i].url, () => i);
-    }
-    return (String url) {
-      final int? index = indexByUrl[url];
-      return index == null
-          ? null
-          : readLnReaderLoadedChapter(row.extractDir, index);
-    };
-  }
-
-  Uint8List _assemble({
-    required WebNovelSnapshot snapshot,
-    required String title,
-    required String nextChapterTitle,
-    required ({String body, List<LnReaderEpubImage> images})? Function(int i)
-    bodyFor,
-    required String pendingText,
-  }) {
-    final List<LnReaderEpubChapter> chapters = <LnReaderEpubChapter>[];
-    for (int i = 0; i < snapshot.chapters.length; i++) {
-      final ({String body, List<LnReaderEpubImage> images})? loaded = bodyFor(
-        i,
-      );
-      chapters.add((
-        title: snapshot.chapters[i].title,
-        // 正文丢了（旧书解压树缺文件）的章留占位：阅读器读到时按它的 URL 现取。
-        xhtmlBody: loaded?.body ?? lnReaderPendingChapterBody(pendingText),
-        images: loaded?.images ?? const <LnReaderEpubImage>[],
-      ));
-    }
-    if (snapshot.tailNext != null) {
-      chapters.add((
-        title: nextChapterTitle,
-        xhtmlBody: lnReaderPendingChapterBody(pendingText),
-        images: const <LnReaderEpubImage>[],
-      ));
-    }
-    return LnReaderEpubAssembler.build(
-      title: title,
-      languageTag: snapshot.lang ?? '',
-      identifier: webNovelBookIdentifier(snapshot.workKey ?? title),
-      author: snapshot.author,
-      chapters: chapters,
-    );
   }
 
   Future<void> _rebuild(EpubBookRow row, Uint8List bytes, String raw) async {
@@ -329,6 +276,107 @@ class WebNovelLibrary {
       }
     }
   }
+}
+
+/// 一次「组装网页小说书 EPUB」要的全部输入（都是可跨 isolate 拷贝的纯数据）。
+@immutable
+class WebNovelEpubRequest {
+  const WebNovelEpubRequest({
+    required this.snapshot,
+    required this.title,
+    required this.nextChapterTitle,
+    required this.pendingText,
+    this.previous,
+    this.fresh,
+  });
+
+  /// spine 以它为准：第 i 项 = 快照第 i 章，有 `tailNext` 时末尾挂「下一章」占位。
+  final WebNovelSnapshot snapshot;
+  final String title;
+  final String nextChapterTitle;
+  final String pendingText;
+
+  /// 就地重建时的旧书：旧快照原文（`sourceMetadata`）与解压树。已取过的章按 URL
+  /// 从旧树里原样搬过来；没有（新建书）为 null。
+  final ({String? sourceMetadata, String extractDir})? previous;
+
+  /// 刚取回的那一章（第 `index` 章用它，不读旧树）。
+  final ({int index, WebNovelChapterContent content})? fresh;
+}
+
+/// 组装网页小说书的 EPUB 字节：逐章从旧解压树读已取过的正文（含图片）、打 ZIP。
+///
+/// 读盘 + 打包是同步的，章数 / 图片一多就是几百毫秒到几秒，只能在后台 isolate 里跑
+/// （[buildWebNovelEpubInBackground]）；公开给测试直接调。
+Uint8List buildWebNovelEpub(WebNovelEpubRequest request) {
+  final WebNovelSnapshot snapshot = request.snapshot;
+  final _LoadedChapterLookup? loadedFrom = request.previous == null
+      ? null
+      : _loadedChapterLookup(
+          request.previous!.sourceMetadata,
+          request.previous!.extractDir,
+        );
+  final ({int index, WebNovelChapterContent content})? fresh = request.fresh;
+  final List<LnReaderEpubChapter> chapters = <LnReaderEpubChapter>[];
+  for (int i = 0; i < snapshot.chapters.length; i++) {
+    final ({String body, List<LnReaderEpubImage> images})? loaded =
+        fresh != null && fresh.index == i
+        ? (body: fresh.content.xhtml, images: fresh.content.images)
+        : loadedFrom?.call(snapshot.chapters[i].url);
+    chapters.add((
+      title: snapshot.chapters[i].title,
+      // 正文丢了（旧书解压树缺文件）的章留占位：阅读器读到时按它的 URL 现取。
+      xhtmlBody:
+          loaded?.body ?? lnReaderPendingChapterBody(request.pendingText),
+      images: loaded?.images ?? const <LnReaderEpubImage>[],
+    ));
+  }
+  if (snapshot.tailNext != null) {
+    chapters.add((
+      title: request.nextChapterTitle,
+      xhtmlBody: lnReaderPendingChapterBody(request.pendingText),
+      images: const <LnReaderEpubImage>[],
+    ));
+  }
+  return LnReaderEpubAssembler.build(
+    title: request.title,
+    languageTag: snapshot.lang ?? '',
+    identifier: webNovelBookIdentifier(snapshot.workKey ?? request.title),
+    author: snapshot.author,
+    chapters: chapters,
+  );
+}
+
+/// [buildWebNovelEpub] 放进一次性后台 isolate（#3722 c40 遗留：以前网页小说书的
+/// 新建 / 就地重建在 UI isolate 上同步读旧解压树的每一章、再同步打 ZIP，长连载
+/// 追一章界面就停一下）。产物经 `Isolate.exit` 交回，不拷贝。
+Future<Uint8List> buildWebNovelEpubInBackground(WebNovelEpubRequest request) =>
+    Isolate.run<Uint8List>(
+      () => buildWebNovelEpub(request),
+      debugName: 'web-novel-epub',
+    );
+
+/// 旧书的「URL → 那一章已取过的正文」查找（按旧快照的章序找文件）。
+///
+/// 旧快照只解析一次、建好 URL → 章序表再逐章查：重建要对新快照的每一章各查
+/// 一次，逐章重新解析快照 + 线性找 URL 是章数的平方（gap-novelmisc-5）。同一
+/// URL 在旧快照里重复时取第一次出现的章序（与原先 `indexWhere` 一致）。
+_LoadedChapterLookup _loadedChapterLookup(
+  String? previousSourceMetadata,
+  String extractDir,
+) {
+  final WebNovelSnapshot? previous = WebNovelSnapshot.tryParse(
+    previousSourceMetadata,
+  );
+  if (previous == null) return (String url) => null;
+  final Map<String, int> indexByUrl = <String, int>{};
+  for (int i = 0; i < previous.chapters.length; i++) {
+    indexByUrl.putIfAbsent(previous.chapters[i].url, () => i);
+  }
+  return (String url) {
+    final int? index = indexByUrl[url];
+    return index == null ? null : readLnReaderLoadedChapter(extractDir, index);
+  };
 }
 
 /// 生产取图：带页面 Referer 与该站 cookie（与浏览器同一份），走全局代理；重定向
