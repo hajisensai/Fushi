@@ -289,6 +289,7 @@
 - manga-3：`.epub` 定性在 UI isolate 上同步整本解压，批量导入每本解两遍以上，选中一本几百 MB 的 EPUB 界面直接停住。位置 `MG/manga_import_dialog.dart`、`F/media/import/import_carrier.dart`。修法：批量路径 `.epub` 不预定性、交导入阶段判；单选定性改异步并过 memo 守卫。
 - 文件：`MG/manga_import_dialog.dart`、`F/media/import/import_carrier.dart`、`MG/import/manga_folder_batch.dart`、`EN/media/manga/manga_archive_importer.dart`。
 - 测试：守卫 + 批量单测。验证：桌面把 300 MB 以上的文字 EPUB 选进漫画导入框，界面不停住。
+- 顺带收 c26 遗留：`_looksLikeImageEpub` 定性探测仍把 container / OPF / spine 文档解进系统临时目录（c26 后页图已不落盘，只剩几 KB，finally 删除）；定性改异步时一并改成书库根下的 `.tmp-*`（要给探测接口带 db），见 BUG-4908 备注。
 
 #### c40 `pr/novel-heavy-work-off-ui`（M）
 - 依赖：c01 #3699、c04 #3698。闸：#3515。

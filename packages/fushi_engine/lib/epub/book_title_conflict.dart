@@ -103,6 +103,26 @@ Future<String> resolveDuplicateTitle({
   }
 }
 
+/// [DuplicatePolicy.skip] 的**预检**：拟用标题的身份 key 已在 [existingTitles] 里时
+/// 抛 [DuplicateImportCancelledException]（与 [resolveDuplicateTitle] 跳过时同一个
+/// 异常、同一个 title），其余情况（不撞名 / 策略不是跳过）什么都不做。
+///
+/// 给「定书名之前要先做重活」的导入入口用（manga-10：压缩包要整包解压、页图文件夹
+/// 要逐页读尺寸，判重却在这些之后）：跳过策略的结论只取决于标题与书库快照，能在
+/// 重活之前定下来。[resolveDuplicateTitle] 那次判重照旧保留——预检与落位之间书库
+/// 可能又变了。[DuplicatePolicy.ask] 不走预检：它的「先做完再问」次序是有意保留的。
+void throwIfSkippedDuplicate({
+  required List<String> existingTitles,
+  required String proposedTitle,
+  required DuplicatePolicy policy,
+}) {
+  if (policy is! SkipDuplicate) return;
+  final String key = sanitizeTtuFilename(proposedTitle);
+  if (existingTitles.any((String t) => sanitizeTtuFilename(t) == key)) {
+    throw DuplicateImportCancelledException(proposedTitle);
+  }
+}
+
 String _uniqueSuffixedTitle(String base, Set<String> existingKeys) {
   for (int i = 2; ; i++) {
     final String candidate = '$base ($i)';
