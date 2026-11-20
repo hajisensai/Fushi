@@ -11,6 +11,8 @@ import 'package:fushi/src/platform/mobile/download_keep_alive_hub.dart';
 import 'package:fushi/src/sync/interconnect_video_resume_store.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi/src/sync/sync_error_messages.dart';
+import 'package:fushi_engine/media/video/media_server/media_server_resumable_download.dart'
+    show kMediaServerResumeSidecarSuffix;
 
 /// 一个互联（Fushi 互联 / LAN 对端）下载任务的生命周期状态。
 ///
@@ -867,15 +869,21 @@ class InterconnectDownloadManager extends ChangeNotifier {
     if (leftovers != null) return leftovers();
     final String destPath = spec.dest.path;
     bool deleted = false;
-    // 互联下载自己的 ETag 侧车。
-    final File etag = File('$destPath.part.etag');
-    try {
-      if (await etag.exists()) {
-        await etag.delete();
-        deleted = true;
+    // 互联下载自己的 ETag 侧车、媒体服务器整片下载的断点侧车。
+    for (final File sidecar in <File>[
+      File('$destPath.part.etag'),
+      File('$destPath$kMediaServerResumeSidecarSuffix'),
+    ]) {
+      try {
+        if (await sidecar.exists()) {
+          await sidecar.delete();
+          deleted = true;
+        }
+      } catch (e) {
+        debugPrint(
+          '[interconnect-download] discard ${sidecar.path} failed: $e',
+        );
       }
-    } catch (e) {
-      debugPrint('[interconnect-download] discard ${etag.path} failed: $e');
     }
     // `.part` 及在线视频源（Aniyomi）集下载的全部半成品：直链验证器侧车、HLS
     // 分片流 + 断点记录、转封装中间件，以及 DASH 分离流的画面 / 外挂音轨分量（各带

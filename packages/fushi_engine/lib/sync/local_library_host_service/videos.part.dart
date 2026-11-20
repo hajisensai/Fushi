@@ -1422,7 +1422,7 @@ mixin _LocalLibraryHostVideos
         .toLowerCase();
     List<AudioCue> cues = const <AudioCue>[];
     try {
-      cues = parseSubtitleCues(
+      cues = await parseSubtitleCues(
         content: await readTextWithEncoding(File(preferred)),
         format: ext,
         bookUid: id,
