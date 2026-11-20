@@ -2709,7 +2709,7 @@ mod tests {
         enc.encode(&cmyk, 200, 300, jpeg_encoder::ColorType::Cmyk)
             .unwrap();
         assert_eq!(icc_of(&src).as_deref(), Some(&cmyk_profile[..]));
-        let hq = fit_jpeg_hq(&src, 100, 150, 90, resample::Filter::Box, false).unwrap();
+        let hq = fit_jpeg_hq(&src, 100, 150, 90, resample::Filter::Box, &[]).unwrap();
         let standard = fit_jpeg(&src, 100, 150, 90).unwrap();
         for out in [hq, standard] {
             assert_eq!(icc_of(&out), None);
@@ -2722,7 +2722,7 @@ mod tests {
         enc.add_icc_profile(&rgb_profile).unwrap();
         enc.encode(&gray, 200, 300, jpeg_encoder::ColorType::Luma)
             .unwrap();
-        let out = fit_jpeg_hq(&src, 100, 150, 90, resample::Filter::Box, false).unwrap();
+        let out = fit_jpeg_hq(&src, 100, 150, 90, resample::Filter::Box, &[]).unwrap();
         assert_eq!(icc_of(&out), None);
         // RGB 源 + RGB 配置文件照常贴。
         let rgb: Vec<u8> = (0..200u32 * 300 * 3).map(|i| (i * 7 % 256) as u8).collect();
