@@ -125,7 +125,7 @@ void main() {
   // 单测只证明时机门本身对；main.dart 不经它直接构造 HeadlessInAppWebView，首帧前预热
   // 的 ANR 照旧。守卫：main.dart 唯一的 HeadlessInAppWebView 构造落在
   // runWebViewPrewarmWhenIdle(...) 调用之内，且接的是首帧光栅化 + waitForUiIdle
-  // （不是会零延迟空转的 scheduleTask idle 任务，BUG-4893）。
+  // （等空闲的唯一入口，常驻装饰动画不算忙，BUG-4387 / BUG-4893）。
   group('main.dart 预热时机守卫', () {
     test('HeadlessInAppWebView 只在 runWebViewPrewarmWhenIdle 之内构造', () {
       final String code = maskComments(
@@ -149,7 +149,7 @@ void main() {
       expect(
         gateArgs,
         matches(RegExp(r'whenIdle:\s*waitForUiIdle\s*,')),
-        reason: '等空闲必须走 waitForUiIdle：按帧复查、不空转',
+        reason: '等空闲必须走 waitForUiIdle（ambient 策略 + 按帧调度）',
       );
       expect(gateArgs, isNot(contains('scheduleTask')));
     });
