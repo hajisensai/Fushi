@@ -97,17 +97,23 @@ void main() {
       MusicViewStyle style,
     ) async {
       late bool active;
+      // 每次换一棵新的 MaterialApp，并等主题动画走完再读（首帧读到的不一定是
+      // 目标布局）。
       await tester.pumpWidget(
-        _app(
-          layout,
-          Builder(
-            builder: (BuildContext context) {
-              active = musicCoverBlocksActive(context, style);
-              return const SizedBox.shrink();
-            },
+        KeyedSubtree(
+          key: UniqueKey(),
+          child: _app(
+            layout,
+            Builder(
+              builder: (BuildContext context) {
+                active = musicCoverBlocksActive(context, style);
+                return const SizedBox.shrink();
+              },
+            ),
           ),
         ),
       );
+      await tester.pumpAndSettle();
       return active;
     }
 
