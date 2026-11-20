@@ -389,7 +389,7 @@ List<GalgameItemMenuItem> galgameItemMenuItems(
       action: GalgameItemAction.hookWorkbench,
       label: t.item_menu_game_workbench,
       group: DialogActionGroup.content,
-      icon: Icons.phishing_outlined,
+      icon: FushiIcons.textFields,
       slot: ItemMenuSlot.workbench,
     ),
   // 超分 / 转区：每游戏一档，Windows-only（galgame Hook、Magpie、Locale
@@ -410,7 +410,7 @@ List<GalgameItemMenuItem> galgameItemMenuItems(
           '${t.game_japanese_locale} · '
           '${GalJapaneseLocaleModeDialog.modeLabel(galJapaneseLocaleModeFromKey(game.japaneseLocaleMode))}',
       group: DialogActionGroup.settings,
-      icon: Icons.translate_outlined,
+      icon: FushiIcons.language,
     ),
   // 桌面才有文件管理器契约（移动端 [currentRevealHost] 为 null）。
   if (currentRevealHost() != null)
