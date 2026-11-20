@@ -1,4 +1,4 @@
-// BUG-4843（BUG-4626 在新代的并入场景，交接 T1 节「待 G9-5 确认」）：同库两份 profile 时 A 拿 B 的实体 ID 下手。
+// BUG-4907（BUG-4626 在新代的并入场景，交接 T1 节「待 G9-5 确认」）：同库两份 profile 时 A 拿 B 的实体 ID 下手。
 // 设计稿 2026-11-11 §2 下 ID 不再按 uid 加盐、并入 = 操作并集：A 的集合之后并进 B 的集合（另一台设备上的 B 确认导入
 // A 的 `.fushisrs`，内核 `import` + `collection_adopt`）时，A 当初写下的指向 B 的实体的操作会对 B 的同名实体生效。
 // 内核在写入口设实体归属闸（`native/fushi_fsrs/src/store/gen4/cmd/writes_owner.rs`）：别的集合有、本集合没有痕迹的
@@ -86,7 +86,7 @@ void main() {
       SrsFieldKeys.dayRolloverHour,
       9,
     );
-    // 第六波（BUG-4843 残余二）：用 B 的**真实** guid（ID 能按规则重算出来）、只换笔记类型的身份记录，带同批改字段——与 B 的
+    // 第六波（BUG-4907 残余二）：用 B 的**真实** guid（ID 能按规则重算出来）、只换笔记类型的身份记录，带同批改字段——与 B 的
     // 定义结构冲突，不写。残余一：牌组身份记录 + 同批改名（名字重算不出这个 ID），以前牌组身份记录不判、替改名作保。
     await a.writeEdits(
       <SrsEditSpec>[

@@ -1,4 +1,4 @@
-//! 实体归属闸（`writes_owner.rs`，BUG-4843）：经 C ABI 在一个库里开两个 profile（两个集合）。并入场景的端到端在 Dart
+//! 实体归属闸（`writes_owner.rs`，BUG-4907）：经 C ABI 在一个库里开两个 profile（两个集合）。并入场景的端到端在 Dart
 //! `packages/fushi_engine/test/srs/srs_profile_ownership_merge_test.dart`。
 
 use std::path::Path;
@@ -304,7 +304,7 @@ fn a_single_collection_library_writes_dangling_ops_as_before() {
 }
 
 /// `import_drafts` 先筛掉「键上已有活着的修改」的初值项再过闸：被拒的项在回包 `foreign` 里按**筛掉之前**的调用方
-/// 输入下标报（Dart 导入路径按它认出被拒的笔记、记进导入报告，BUG-4843 复核：以前报的是筛掉之后的位置，对不上草稿）。
+/// 输入下标报（Dart 导入路径按它认出被拒的笔记、记进导入报告，BUG-4907 复核：以前报的是筛掉之后的位置，对不上草稿）。
 /// 被拒的这一条是合法导入撞上的：B 已有同一个 guid 的笔记（不同笔记类型），A 导入同一个 guid 却落到另一个笔记类型
 /// （`.apkg` 不合并笔记模板时的副本、文本导入用户选的类型）。
 #[test]
@@ -352,7 +352,7 @@ fn card_edit(profile: &str, card: &str, note: Option<&str>, key: &str, v: Value)
     json!({"e": {"t": "edit", "x": {"id": "ignored", "p": profile, "k": "card", "e": card, "f": key, "w": "dart", "s": 1, "ctx": {"vv": {}}, "v": v, "hlc": "0:0:dart", "ts": "anchored"}}, "note": note})
 }
 
-/// 带笔记的卡片修改跟着笔记过闸（第六波 BUG-4843 复核）：同批身份记录被拒的那条笔记（同 guid、B 已有、A 落到另一个
+/// 带笔记的卡片修改跟着笔记过闸（第六波 BUG-4907 复核）：同批身份记录被拒的那条笔记（同 guid、B 已有、A 落到另一个
 /// 笔记类型），它的卡片修改——卡 ID 由 A 的副本类型派生、哪里都没有——一并不写，回包 `foreign` 报它们的下标。合法场景
 /// 照常：笔记是同批要建的、是本集合已有的、哪里都没有的，或修改不带笔记（「哪里都没有的 ID 照常写」不变）。`apply` 同一个闸。
 #[test]

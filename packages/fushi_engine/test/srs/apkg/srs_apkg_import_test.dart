@@ -1515,7 +1515,7 @@ void main() {
     });
 
     test(
-      '同库另一份 profile 已有同 guid、另一个笔记类型的笔记：落到副本类型的那条记冲突，不算已添加，复习也不落（BUG-4843 复核）',
+      '同库另一份 profile 已有同 guid、另一个笔记类型的笔记：落到副本类型的那条记冲突，不算已添加，复习也不落（BUG-4907 复核）',
       () async {
         final int revId = t - 2 * 86400000;
         final int due = (t ~/ 1000 - crtSecs) ~/ 86400 + 1;
@@ -1612,7 +1612,7 @@ void main() {
       },
     );
 
-    group('被拒的笔记整份不计、卡片修改不落（BUG-4843 第二轮复核）', () {
+    group('被拒的笔记整份不计、卡片修改不落（BUG-4907 第二轮复核）', () {
       final String g4 = SrsKernelIds(kProfile).note('g4');
 
       /// 同上一条的场景（P1 先导入、P2 不合并笔记模板时 g4 落到副本类型被拒），[also] 给卡 41 造状态，[ext] 附 fushi-ext。

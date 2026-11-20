@@ -12,7 +12,7 @@
 //   笔记类型……）各跑一遍，之后 B 的整份真相与视图逐条不变；对调用方的结局与给「哪里都没有的 ID」时同一类；A 为 B 的
 //   ID **一条都不写**（只碰 B 的 ID 的入口：A 的日志长度不变；同时写自己实体的入口 [_writesOwnToo]：A 的真相里没有
 //   指向 B 的 ID 的操作）。没人的 ID 照旧落悬空记录，B 的实体 ID 在写入口就被实体归属闸拦下（内核
-//   `gen4/cmd/writes_owner.rs`，BUG-4843：A 的集合之后并进 B 时，悬空操作会对 B 的同名实体生效，所以不能写下）。
+//   `gen4/cmd/writes_owner.rs`，BUG-4907：A 的集合之后并进 B 时，悬空操作会对 B 的同名实体生效，所以不能写下）。
 //   并入之后 B 不被改的端到端在 `srs_profile_ownership_merge_test.dart`；
 // - 远程复习的主机路由（srs_remote_store_routes.dart）：点名 A、参数里给 B 的 ID，同样读不到、写不落；
 // - 正常路径：同样的入口对本 profile 自己的 ID 照常生效。
@@ -508,7 +508,7 @@ void main() {
           () => w.value(a, env.a, _Target.of(env.b)),
         );
         final int opsForeign = await env.ops(kA) - opsBefore;
-        // 实体归属闸（BUG-4843）：A 为 B 的 ID 一条都不写。只碰 B 的 ID 的入口按日志长度数（彻底清除之类不留在真相
+        // 实体归属闸（BUG-4907）：A 为 B 的 ID 一条都不写。只碰 B 的 ID 的入口按日志长度数（彻底清除之类不留在真相
         // 视图里的也数得到）；同时写 A 自己实体的入口按真相里指向 B 的 ID 的操作数。
         expect(
           await env.pointingAt(kA, env.b.ids) - pointingBefore,
@@ -565,7 +565,7 @@ void main() {
         1,
       );
       expect((await b.store.note(b.note))!.field(b.expression), '鳥');
-      // 一批里自己的照写；不存在的卡落悬空记录，别人的卡被实体归属闸拦下（BUG-4843），B 的卡不变。
+      // 一批里自己的照写；不存在的卡落悬空记录，别人的卡被实体归属闸拦下（BUG-4907），B 的卡不变。
       final List<SrsFieldEdit> out = await a.editFieldsBatch(<SrsFieldChange>[
         SrsFieldChange(SrsEntityKind.card, b.card, SrsFieldKeys.flag, 3),
         SrsFieldChange(SrsEntityKind.card, none.card, SrsFieldKeys.flag, 3),
@@ -853,7 +853,7 @@ void main() {
         },
         reason: '别人的 ID：$got；不存在的 ID：$absent',
       );
-      // 这里每个入口只碰 B 的 ID：A 一条都不写（实体归属闸，BUG-4843）；不存在的 ID 照旧落悬空记录。
+      // 这里每个入口只碰 B 的 ID：A 一条都不写（实体归属闸，BUG-4907）；不存在的 ID 照旧落悬空记录。
       expect(foreignOps, 0, reason: '$got / $absent');
       expect(absentOps, greaterThan(0), reason: '$absent');
       // 没有一条回 500（内部错误）：要么照「没有这个实体」正常返回，要么是与不存在同样的 4xx。

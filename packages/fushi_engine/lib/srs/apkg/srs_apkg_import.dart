@@ -1779,7 +1779,7 @@ class _Importer {
     );
   }
 
-  /// 本批里当作新笔记攒下的：落库后按实际是否新建计入报告（BUG-3553），被实体归属闸拒掉的记冲突（BUG-4843）。
+  /// 本批里当作新笔记攒下的：落库后按实际是否新建计入报告（BUG-3553），被实体归属闸拒掉的记冲突（BUG-4907）。
   final List<_PendingNewNote> _pendingNewNotes = <_PendingNewNote>[];
 
   Future<void> _flush({bool force = false}) async {
@@ -1800,7 +1800,7 @@ class _Importer {
     for (final _PendingNewNote p in newNotes) {
       if (landed.foreignNotes.contains(p.noteId)) {
         // 同库另一份 profile 已有同 guid、另一个笔记类型的笔记（本包不合并笔记模板时落到了副本类型上）：内核的
-        // 实体归属闸没让这条笔记落，它的日志、卡片修改也没落。记冲突，不算新增（BUG-4843 复核：以前照记「已添加」），
+        // 实体归属闸没让这条笔记落，它的日志、卡片修改也没落。记冲突，不算新增（BUG-4907 复核：以前照记「已添加」），
         // 它的卡片计数（[_CardTally]）整份不并进报告。
         report.conflictNotes.add(
           SrsImportNoteIssue(
@@ -2481,7 +2481,7 @@ final class _PendingNewNote {
 }
 
 /// 一条笔记的卡片对导入报告的计数（[_Importer._importNote] 的卡片循环、[_Importer._importCardSchedule] 记在这里，不直接
-/// 改报告）：已有笔记当场 [addTo] 报告；新笔记等落库回包，落了才并进，被实体归属闸拒掉的整份不计（BUG-4843 第二轮复核：
+/// 改报告）：已有笔记当场 [addTo] 报告；新笔记等落库回包，落了才并进，被实体归属闸拒掉的整份不计（BUG-4907 第二轮复核：
 /// 以前直接记进报告、被拒时只退回日志数与重置数，fushi-ext 恢复数 / 校验数、锚点、未来卡等仍按已导入计）。笔记的卡
 /// 计进报告的项都在这里，只此一处并进报告（来源包里卡已删除的 revlog 不属任何笔记，仍直接记报告）。
 final class _CardTally {

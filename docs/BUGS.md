@@ -33,16 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4200 条。点号进各自文件。
+> 共 4235 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4907](bugs/BUG-4907-srs-gen4-dangling-op-joins-into-other-collection.md) | ✅ | ✅ | 新代同库 A 拿 B 的实体 ID 写下的悬空操作，A 的集合并入 B 之后改到 B 的笔记 / 卡片（BUG-4626 新代并入场景） |
 | [BUG-4906](bugs/BUG-4906-srs-gen4-legacy-backup-replace-drops-backup-salts.md) | ✅ | ✅ | 旧整包备份覆盖恢复到已打开过的新 profile：备份的盐没进新集合，卡片与复习日志脱钩、界面 0 张 |
-| [BUG-4843](bugs/BUG-4843-srs-gen4-dangling-op-joins-into-other-collection.md) | ✅ | ✅ | 新代同库 A 拿 B 的实体 ID 写下的悬空操作，A 的集合并入 B 之后改到 B 的笔记 / 卡片（BUG-4626 新代并入场景） |
-> 共 4233 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
 | [BUG-4905](bugs/BUG-4905-ai-cast-text-substitutions.md) | ✅ | ✅ | 小说和漫画 AI 标注未应用系列用词替换表 |
 | [BUG-4904](bugs/BUG-4904-book-series-key-store-annotation.md) | ✅ | ✅ | 书店写法「卷号<系列名> (文库名)」的分卷导入后不归合集 |
 | [BUG-4903](bugs/BUG-4903-home-desktop-continue-cut-edge-title-concat.md) | ✅ | ✅ | 首页（桌面）「继续」右侧卡被窗口切掉一半、标题拼接成「Re：ゼロ…1<Re：…」 |
