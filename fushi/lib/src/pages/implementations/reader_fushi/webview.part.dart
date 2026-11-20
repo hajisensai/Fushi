@@ -2458,6 +2458,25 @@ updateLive: function(patch) {
           },
         );
 
+        // gap-readerjs1-2：引擎初始化 / 初次恢复链抛异常时的失败回执。
+        // args[0] = 错误描述；args[1] = 文档的 navigationGeneration（同上，缺失/失配丢弃）。
+        controller.addJavaScriptHandler(
+          handlerName: 'onRestoreFailed',
+          callback: (List<dynamic> args) {
+            final int? generation = readerReportedNavigationGeneration(args, 1);
+            if (generation == null) {
+              debugPrint(
+                '[ReaderFushi] onRestoreFailed missing/invalid generation',
+              );
+              return;
+            }
+            _acceptRestoreFailed(
+              reportedGeneration: generation,
+              reason: args.isEmpty ? '' : '${args.first}',
+            );
+          },
+        );
+
         // BUG-493 根因修复：JS 侧 `_reanchorPending` 清旗已单点化（_sharedJs 的
         // `_setReanchorPending`），true→false（重锚 settle）那一刻回调此处。settle 即补
         // 刷一次进度，事件驱动替代旧的 Dart 侧 120ms×8 轮询重试——commit 成功 / gate 不
