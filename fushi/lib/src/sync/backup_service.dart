@@ -563,6 +563,9 @@ const List<String> _deviceLocalTables = <String>[
   'video_theme_song_spans',
   // v163：作品图谱 AI 裁决缓存。纯缓存（AI 配置本身就是设备本地的），无外键。
   'media_link_ai_verdicts',
+  // v165：视频内容指纹（搬家识别）。纯缓存、可由本机文件重算；另一台设备同一个
+  // book_uid 可能是另一份片源，设备本地。无外键，删除 / 回灌顺序无约束。
+  'video_content_fingerprints',
   // v135：游戏 VNDB 配音表缓存。纯缓存、可由 VNDB 重新取得，设备本地。无外键。
   'game_voice_casts',
   // v133：音乐刮削三表。键是 track_uid（含本机路径）、内容可由重刮重建，与曲库目录
@@ -614,6 +617,7 @@ const List<String> _deviceLocalTablesParentFirst = <String>[
   'music_track_credits',
   'video_theme_song_spans',
   'media_link_ai_verdicts',
+  'video_content_fingerprints',
   'game_voice_casts',
   'music_scrape_meta',
   'music_metadata_raw_snapshots',

@@ -50,6 +50,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi_engine/media/video/video_member_file.dart';
+import 'package:fushi_engine/media/video/video_content_fingerprint.dart';
 import 'package:fushi_engine/media/torrent/download_save_root.dart'
     show isSourceIncomingPath;
 import 'package:fushi_engine/epub/book_title_conflict.dart';
@@ -3041,6 +3042,20 @@ class SourceLibraryScanner {
         normalizeVideoPath(r.videoPath): r,
     };
     List<MediaCollectionItemRow>? collectionItems;
+    // 内容指纹（v165，搬家识别）：本地传输才有。整表一次取齐；本轮算过的新路径指纹
+    // 记在 [contentByPath]，搬家判据与入库后记账共用一次计算。
+    final Map<String, VideoContentFingerprintRow> fingerprintByUid =
+        streamInPlace
+        ? <String, VideoContentFingerprintRow>{}
+        : await _db.allVideoContentFingerprints();
+    final Map<String, VideoContentFingerprint?> contentByPath =
+        <String, VideoContentFingerprint?>{};
+    Future<VideoContentFingerprint?> contentOf(String path) async =>
+        contentByPath.containsKey(path)
+        ? contentByPath[path]
+        : contentByPath[path] = await computeVideoContentFingerprint(path);
+    // 本轮扫到、库里已有的行：扫描结束后复查它们的指纹（原地换了文件就重算）。
+    final Set<String> seenUids = <String>{};
 
     // Temp dir only used by non-local transports (copyToLocal downloads here);
     // for local transport copyToLocal returns the original path unchanged.
@@ -3065,6 +3080,8 @@ class SourceLibraryScanner {
                 moved,
                 item.videoPath,
                 knownSizeOf: _knownVideoFileSize,
+                knownContent: fingerprintByUid[moved.bookUid],
+                contentOf: contentOf,
               );
         if (moved != null && evidence != VideoMoveEvidence.none) {
           final VideoBookRow? live = rowByPath[normalizedPath];
@@ -3081,6 +3098,11 @@ class SourceLibraryScanner {
                   : null,
             );
             await _videoRepo.assignSourceIfNull(moved.bookUid, sourceId);
+            // 指纹跟着行走：同一份内容，修改时刻按新位置刷新。
+            await _recordContentFingerprint(
+              moved.bookUid,
+              await contentOf(item.videoPath),
+            );
             existingPaths.add(normalizedPath);
             rowByPath[normalizedPath] = moved;
             continue;
@@ -3098,6 +3120,8 @@ class SourceLibraryScanner {
         }
         // Skip already-imported physical files (library or same-batch dup).
         if (!existingPaths.add(normalizedPath)) {
+          final VideoBookRow? already = rowByPath[normalizedPath];
+          if (already != null) seenUids.add(already.bookUid);
           continue;
         }
         // BUG-2570：一个文件的失败只作废这个文件。此前整个循环共用 [scan] 的总
@@ -3169,6 +3193,13 @@ class SourceLibraryScanner {
           if (cues.isNotEmpty) {
             await _videoRepo.saveCues(bookUid: bookUid, cues: cues);
           }
+          if (!streamInPlace) {
+            // 文件还在原处时就记下指纹：以后搬了家才认得出是同一个文件。
+            await _recordContentFingerprint(
+              bookUid,
+              await contentOf(item.videoPath),
+            );
+          }
           createdPaths.add(item.videoPath);
         } catch (e, stack) {
           failedPaths.add(item.videoPath);
@@ -3176,6 +3207,24 @@ class SourceLibraryScanner {
           debugPrint(
             'SourceLibraryScanner video import failed for '
             '${item.videoPath}: $e\n$stack',
+          );
+        }
+      }
+      if (!streamInPlace) {
+        // 补算：本轮扫到的已有行复查（原地换了文件就重算），库里其余还没有指纹的
+        // 本地行（升级前入库的、手动导入的）趁这次补上——指纹要在文件搬走之前算好。
+        // 只是增强证据，失败不影响本轮入库结果。
+        try {
+          await backfillVideoContentFingerprints(
+            _db,
+            rows: await _videoRepo.listAll(),
+            recheckUids: seenUids,
+            fingerprintOf: contentOf,
+          );
+        } catch (e, stack) {
+          debugPrint(
+            'SourceLibraryScanner video fingerprint backfill failed: '
+            '$e\n$stack',
           );
         }
       }
@@ -3191,6 +3240,15 @@ class SourceLibraryScanner {
         } catch (_) {}
       }
     }
+  }
+
+  /// 给 [bookUid] 记下内容指纹；[fingerprint] 为 null（读不了 / 算的期间在变）就不记。
+  Future<void> _recordContentFingerprint(
+    String bookUid,
+    VideoContentFingerprint? fingerprint,
+  ) async {
+    if (fingerprint == null) return;
+    await recordVideoContentFingerprint(_db, bookUid, fingerprint);
   }
 
   /// 规格缓存（`video_file_specs`，ffprobe 探过才有行）里记的 [filePath] 的字节数；
@@ -3554,6 +3612,10 @@ enum VideoMoveEvidence {
   /// 没有证据：不是搬家（或判不出来），新文件按新文件入库、旧行不动。
   none,
 
+  /// 旧行在文件还在原处时记过内容指纹（`video_content_fingerprints`），新文件算出来
+  /// 一模一样（字节数 + 指纹）。最强的证据，不看目录名。
+  sameContent,
+
   /// 新旧路径的目录尾段连着对得上，而且对上的名字里至少有一个不是通用目录名
   /// （[isGenericVideoDirectoryName]）：`剧/Season 03/x.mkv` 整棵挪了位置。只对上
   /// `Season 01` 这种名字不算——`剧A/Season 01/01.mkv` 与 `剧B/Season 01/01.mkv`
@@ -3627,6 +3689,11 @@ final RegExp _numberedVideoDirectoryName = RegExp(
 /// 前提全是**反证**：通用文件名（`01.mkv`、`NCOP.mkv`）加上「旧文件没了」在这个 app
 /// 里是常态——扫描有意不回收已删文件的行（BUG-4055）。所以还要一条正证据：
 ///
+/// - [knownContent] 有（旧行记过内容指纹）且 [contentOf] 算得出新文件的指纹 → 只看
+///   内容：相同 = [VideoMoveEvidence.sameContent]，不同 = 不是同一个文件（目录名
+///   怎么对得上都不算）。拍板台 design-nmv-video-move-fingerprint：目录名判据会漏判
+///   （目录改了名）也会误判（名单外的通用名连着两层撞上），内容指纹两头都堵住；
+/// - 没有指纹时退回下面两条（升级后还没补算到的行、新文件读不了）：
 /// - [knownSizeOf] 给得出旧路径的字节数（规格缓存里探过）→ 只看大小：相等 =
 ///   [VideoMoveEvidence.sameSize]，不等 = 不是同一个文件；
 /// - 给不出（没探过）→ 比目录尾段（[_matchedTrailingDirectories]）：连着对上至少两层
@@ -3641,6 +3708,9 @@ Future<VideoMoveEvidence> videoRowMoveEvidence(
   VideoBookRow row,
   String newPath, {
   required Future<int?> Function(String oldPath) knownSizeOf,
+  VideoContentFingerprintRow? knownContent,
+  Future<VideoContentFingerprint?> Function(String newPath) contentOf =
+      computeVideoContentFingerprint,
 }) async {
   final String oldPath = row.videoPath;
   if (row.playlistJson != null || row.streamSpecJson != null) {
@@ -3663,6 +3733,14 @@ Future<VideoMoveEvidence> videoRowMoveEvidence(
   // async：库根常在网络盘上（BUG-3756）。
   if (await videoMemberExists(oldPath)) return VideoMoveEvidence.none;
 
+  if (knownContent != null) {
+    final VideoContentFingerprint? now = await contentOf(newPath);
+    if (now != null) {
+      return now.sameContentAs(knownContent)
+          ? VideoMoveEvidence.sameContent
+          : VideoMoveEvidence.none;
+    }
+  }
   final int? oldSize = await knownSizeOf(oldPath);
   if (oldSize != null) {
     final int? newSize = await _fileSizeOrNull(newPath);

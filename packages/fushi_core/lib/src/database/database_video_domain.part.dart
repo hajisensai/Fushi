@@ -3655,6 +3655,10 @@ mixin _FushiDbVideoDomain
         await (delete(
           videoThemeSongSpans,
         )..where((t) => t.bookUid.isIn(chunk))).go();
+        // v165：内容指纹缓存（无外键，见 video_content_fingerprint_tables.dart）。
+        await (delete(
+          videoContentFingerprints,
+        )..where((t) => t.bookUid.isIn(chunk))).go();
       }
       final List<String> filePaths = <String>{
         for (final VideoBookRow row in rows) ...videoBookFilePaths(row),

@@ -930,6 +930,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     _loadLibraryMaps();
     // 统一合集：后台给缺封面的各集补抽封面（拆集/迁移拆出的非首集、每集独立视频应各有封面）。
     _maybeBackfillCovers();
+    // 搬家识别：后台给还没有内容指纹的本地视频补算（进程内一次，见仓库方法注释）。
+    unawaited(widget.repo.backfillContentFingerprintsOncePerProcess());
     // 条目自动刮削：进页面补刮还没有资料的本地视频（取代旧页头「批量匹配海报」按钮）。
     unawaited(_maybeAutoScrape());
     // 在线补刮 + 待确认提醒（BUG-2199/BUG-2201）。视频 tab 访问过才挂载
