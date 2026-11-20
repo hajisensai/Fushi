@@ -16,7 +16,7 @@ import 'package:fushi_srs/fushi_srs.dart'
         SrsStoreNotMigrated;
 
 SrsCtlDeps _deps(Object error) => SrsCtlDeps(
-  store: () async => throw error,
+  store: () => Future<SrsDbStore?>.error(error),
   moduleEnabled: () => true,
   changed: () {},
 );

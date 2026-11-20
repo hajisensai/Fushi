@@ -47,7 +47,7 @@
 
 | 格 | 内容 | 结论 | 证据 |
 |---|---|---|---|
-| (a) | v3.3.0 建库 / 制卡 / 复习 → 新版本迁移 | ✔ 数据：6 卡 / 12 日志逐卡逐条一致；✔ 迁移页 / 进度页 / 迁移后复习页 debug 真像素（复核轮 `r0-a-zone4`）；转圈的原因证实是 itest 的错误 zone 错位；— release 迁移页像素仍没有；— 「开始升级」没能用 Tab 走到（焦点被首页级节点占着），改调按钮的 `onPressed` | `r0-a-migrate3`、`r0-a-zone4`、`D:/fushi-r0/M/a3-compare-v2.json` |
+| (a) | v3.3.0 建库 / 制卡 / 复习 → 新版本迁移 | ✔ 数据：6 卡 / 12 日志逐卡逐条一致；✔ 迁移页 / 进度页 / 迁移后复习页 debug 真像素（复核轮 `r0-a-zone4`）；转圈的原因证实是 itest 的错误 zone 错位；— release 迁移页像素仍没有；✔ 第二轮复核：开了焦点导航后 Tab 走到「开始升级」、Enter 开始迁移（`r0-a-focus`；复核轮走不到是 itest 没开焦点导航开关） | `r0-a-migrate3`、`r0-a-zone4`、`r0-a-focus`、`D:/fushi-r0/M/a3-compare-v2.json` |
 | (a2) | 新 release 只打开旧根、不迁移 | ✔ SRS 不动；✘?（规划外）主库被升到 159，见 (c0) | `20261120-124602-r0-a2-new-first-open` |
 | (b) | 迁移后旧版本再打开 | ✔ 显式拒绝、不写（SRS 层字节比对，只有 D3 例外字节） | `20261120-142928-r0-b1-v330-swap`、`20261120-143005-r0-b2-v301-full` |
 | (c) | 迁移途中硬结束 | ✔ 提交前硬结束：旧库字节不变、v3.3.0 照常可用（SRS 层），新版本重开后重新迁移、逐卡一致 | `r0-c-kill2`、`20261120-144625-r0-c1-v330-killed`、`r0-c-resume` |
@@ -82,13 +82,32 @@
   `r0-02-progress.png` 进度页（「复习库升级 / 正在升级，期间可以继续使用其他功能。/ 1/10 检查剩余空间 / 最后一步之前都可以取消，取消后一切
   保持原样。/ 取消」）、`r0-03-after.png` 迁移后复习页（6 张待复习、保持率 83%、近 30 天 12 次复习）。迁移 `@62ms running → @275ms parity
   → @398ms committed`，`status after: state=ready`；`error_log` 里 6 条 `UncaughtZone SrsStoreNotMigrated` 都是作废之前的 zone A 打开。
-- **焦点驱动没走到「开始升级」**（`r0-a-zone2` / `zone3`）：Tab 发了 60 次（每次 `sendKeyEvent` 都送达），焦点始终停在同一个无标签
-  `Focus` 上；`FocusDriver.requestFocusInside(按钮)` 也拿不到焦点。诊断（`zone4`）：按钮 `FilledButton enabled=true`、`canStart=true`、
-  主库开着；占着焦点的节点在首页外壳里（祖先 `_ActionsScope < Actions < PopScope < ValueListenableBuilder<bool> < HomeSyncExitScope <
-  BackdropGroup …`）。`zone4` 因此改调这个可用按钮的 `onPressed`（与 Enter 激活同一个回调，不是坐标点击）。这是 itest 经
-  `HomePage.debugSelectTab` 换页后焦点不进页面内容、还是桌面键盘用户也走不到这个按钮，**没查清**；属焦点所有权（`docs/agent/focus-ownership.md`）
-  / G10 迁移界面，见交接文档本节复核轮。另：第一轮 `r0-a-zone` 在 `FocusDriver.focusWidget` 后一言不发挂了 18 分钟（被我按 PID 结束），
-  推测是遍历耗尽后 `expect` 失败、live binding 收尾挂住；后几轮改成每步记日志、按键带 10 s 超时、不让 `expect` 在这里失败。
+- **「开始升级」的键盘可达性（复核轮没走到，第二轮复核查清并重跑）**：
+  - 复核轮现象（`r0-a-zone2` / `zone3` / `zone4`）：Tab 发了 60 次（每次 `sendKeyEvent` 都送达），焦点始终停在同一个无标签 `Focus` 上
+    （祖先 `_ActionsScope < Actions < PopScope < ValueListenableBuilder<bool> < HomeSyncExitScope < BackdropGroup …`），按钮
+    `FilledButton enabled=true`、`canStart=true`、主库开着；`zone4` 改调按钮的 `onPressed`。当时文档写的「`FocusDriver.requestFocusInside(按钮)`
+    也拿不到焦点」**不能当可达性证据**：这个辅助函数只认显式传了 `focusNode` 的 `Focus`，Material 按钮的焦点节点是按钮内部自建的、`Focus`
+    widget 上没有，所以它在按钮子树里一个节点都找不到、退去请求祖先节点——拿不到焦点是辅助函数自己的限制造成的假象，与产品无关。
+  - 根因（第二轮复核，沿真实代码路径）：那个无标签 `Focus` 是 `HomePage` 的整页键事件 sink（`home_page.dart` 的 `_keyboardFocusNode`，
+    `autofocus: true` + `skipTraversal: true`）。焦点停在它上面不动，是因为**实验「键盘/手柄焦点导航」开关默认关着时**，
+    `global_navigation.dart` 的 `wrapWithGlobalNavigation` 把裸 Tab / Shift+Tab 中和成 `DoNothingIntent`（用户裁定 TODO-112：没开焦点导航时
+    按 Tab 不该有动作）。itest 每次跑在全新隔离根上、偏好恒为默认，而本 itest 自己手写 `sendKeyEvent(tab)`、没先调
+    `enableFocusNavigation(tester)`——与 BUG-1106 同根因；手写 Tab 也绕过了守卫 `itest_focus_navigation_prerequisite_guard_test.dart`
+    （它只扫 `FocusDriver` 的 `reachAll` / `focusUntil` / `focusWidget`）。**结论：itest 的问题，不是迁移页 / 桌面键盘用户的可达性缺陷。**
+    `HomePage.debugSelectTab` 换页与焦点进不进内容无关。
+  - 产品侧钉住：新增 `fushi/test/srs/srs_generation_view_keyboard_test.dart`（与 `main.dart` 同构：`wrapWithGlobalNavigation` 包
+    `FushiFocusRoot`，页面外套首页那样的 `autofocus` + `skipTraversal` 整页 sink），MD3 / Apple 各两例：开了焦点导航，Tab 从 sink 走到
+    「开始升级」、Enter 开始迁移（`runs` 1 次）；没开（默认），Tab 一步不动、焦点留在 sink。4/4 通过；变异实测见交接文档第二轮复核节。
+  - itest 改成真的焦点驱动：先 `enableFocusNavigation(tester)`，再 `FocusDriver.focusWidget(开始升级)` + `activate()`（Enter），删掉
+    `onPressed` 兜底与 `requestFocusInside` 兜底，走不到就 `expect` 失败（现在也在上面那条守卫的扫描范围里）。重跑 `r0-a-focus`
+    （同一份种子 `A/old-root-pristine/app-support`，`heavy.dart -- run_windows_itest.ps1 … -RunId r0-a-focus`）：runner exit 0、
+    `+1: All tests passed!`（实际执行 1 条用例）。探针：`focus traversal -> onStart=true … focusOwners=_ActionsScope < Actions <
+    _ParentInkResponseProvider < _InkResponseStateWidget < InkWell …`（焦点在按钮的 InkWell 上）→ `pressing Enter` →
+    `@382ms phase=committed` → `status after: state=ready`；迁移后屏上文字「6 张 · 新卡 0 · 已掌握 2 | 6 待复习 | 83% 保持率 | 近 30 天 12 次复习」。
+    真像素 `fushi/.codex-test/windows-itest/r0-a-focus/screenshots/r0-01-prompt.png`、`r0-03-after.png`；6 卡迁移约 0.4 s，Enter 之后那一帧
+    pump 里迁移已经做完，这一轮没抓到进度页（进度页像素见 `r0-a-zone4`）。迁移页仍需「帧回调里重试」才出来（上一条，itest 的 zone 错位）。
+  - 另：第一轮 `r0-a-zone` 在 `FocusDriver.focusWidget` 后一言不发挂了 18 分钟（被我按 PID 结束），当时同样没开焦点导航，遍历必然耗尽；
+    挂住推测是 `expect` 失败后 live binding 收尾卡住，没再复现（`r0-a-focus` 遍历成功，没走到失败分支）。
 - **release 取证**：复核轮试过用 UI Automation 读离屏 release 窗口的无障碍树（`20261120-153615-r0-ui2-release-prompt-view`），
   Flutter 视图只回窗口外壳 1–2 个节点、没有语义子树，取不到界面状态，工具没有入库。release 的迁移页仍只有控制通道证据（500 / 422），留缺口。
 - 迁移改走按钮背后的同一个入口 `SrsGen4MigrationController.start()`（`FUSHI_R0_FALLBACK_START=true`），探针：
@@ -113,12 +132,16 @@
 ### 4.2 (a2) / (c0) 新版本只打开旧根
 
 - (a2) 新 release 打开 v3.3.0 根（不迁移）：控制通道 `srs/decks|cards|stats` 都是 **500** `SrsStoreNotMigrated(needsMigration)`
-  （内部错误码，不是「先迁移」的 4xx；ctl 调用方得自己认文本），`retained` 给 `{"copy":"other"}`；`srs.db` 原样（sha 与抹 D3 后都不变），
+  （内部错误码，不是「先迁移」的 4xx；ctl 调用方得自己认文本。**第二轮复核已改**：app 的 `requireSrsCtlStore` 把打开时的代际 / 身份
+  状态映射成 **409 + 稳定错误码**——要升级 `srs_needs_migration`、上次升级失败 `srs_migration_failed`、别的进程在升级 `srs_upgrading`、
+  只剩封存旧库 `srs_sealed_old_only`、新库旁有没升级的旧库 `srs_legacy_unmigrated`、主库里还有协议 1 复习表 `srs_legacy_main_db`、
+  辅助进程里 profile 还没身份 `srs_profile_identity_pending`；真错误仍是 500 `internal`。单测 `fushi/test/ops/ctl_srs_open_blocked_test.dart`。
+  这条结论是单测上的，没有拿 release 重跑这一格），`retained` 给 `{"copy":"other"}`；`srs.db` 原样（sha 与抹 D3 后都不变），
   只多了空的 `srs.gen.lock`。**但主库 `fushi.db` 从 146 升到 159。**
 - (c0) 之后 v3.3.0 再开这个根：启动即拒绝 `FushiDatabaseDowngradeException: schema v159; this app only understands v146`，
   整个 app 起不来；SRS 文件不动。v3.0.1 同样（v118）。也就是说 **新版本只要打开过一次（哪怕没迁移 SRS），旧版本就不能再用这份数据根**，
   拦人的是主库 schema 门，不是 SRS 代际门。这与规划 (c)「迁移提交前旧版本仍可用」只在 SRS 层成立；主库层是既有行为（主库迁移本来就不可降级），
-  不属 gen4 范围，记在这里供拍板（是否需要在旧版本说明 / 升级提示里讲清）。
+  不属 gen4 范围。第二轮复核定为**不改行为、写成升级说明条目**（见 §6「升级说明」第 1 条：不可回退）。
 
 ### 4.3 (b) 迁移后旧版本再打开
 
@@ -188,6 +211,15 @@
 - Android / macOS / iOS 真机、Linux 服务端、fushi_server beta 全没做。
 - 迁移提示页、旧版本拒绝提示、同步位置提示都没有 release 真像素（离屏 PrintWindow 全黑，UI Automation 也读不到语义树）；迁移页 / 进度页 /
   迁移后复习页有 debug itest 真像素（`r0-a-zone4`）。
-- 「开始升级」没能用 Tab / 焦点请求走到，itest 改调按钮 `onPressed`；是不是桌面键盘可达性缺陷没查清（§4.1）。
 - `.fushisrs` 四向、旧备份「合并」的界面确认路径没驱动。
 - (d2) 没跑 v3.0.1。
+
+## 6. 升级说明（给发版说明 / 用户提示用）
+
+1. **不可回退：新版本只要打开过一次数据，旧版本就再也打不开这份数据。** 新版本启动时把主库 `fushi.db` 升到新 schema（R0 实测 146 → 159），
+   哪怕复习库还没升级、用户什么都没点；旧版本（实测 v3.3.0 / v3.0.1）启动即报 `FushiDatabaseDowngradeException`，整个 app 起不来（§4.2 (c0)）。
+   这是主库迁移的既有行为（主库迁移从来不可降级），不是协议 4 换代引入的，**不改**。规划 (c)「迁移提交前旧版本仍可用」只在 SRS 层成立：
+   复习库在提交前确实原样留着（字节不变），但要真回到旧版本，只能用升级前的整包备份恢复到旧版本、或把升级前的数据目录副本放回去。
+   发版说明应写：升级前先在旧版本里做一次整包备份；升级后不能直接装回旧版本继续用同一份数据。
+2. 复习库升级（协议 3 `srs.db` → `srs4.db`）提交后，旧库原样封存（`srs_meta.sealed_into`），旧版本打开会被显式拒绝、不写（§4.3）；
+   封存的旧库作为「旧版本保留副本」留着（D32，有到期状态），设置 › 存储里可以立即删除（要确认、不可撤销），删了之后就没有协议 3 的原文可退了。
