@@ -4,6 +4,8 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show BooleanExpressionOperators, OrderingTerm;
 import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dart'
+    show isUndeliveredMineFailure;
 import 'package:fushi/src/mining/web_mine_queue_store.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -116,15 +118,23 @@ class VideoMineQueue {
 
   /// 把 [bookUid] 下的暂存卡写进 Anki，按点击顺序串行。
   ///
-  /// [retryFailed] 决定之前写入失败的行要不要重新排进这一批，**由入口说了算**：
+  /// 失败分两类：
+  /// - **没送到**（后端不可达：Anki 没开、已配对设备都连不上…，判据
+  ///   [isUndeliveredMineFailure]）：行仍是待办，只记下原因，**这一轮就此停下**（后面
+  ///   每张都会一样连不上，逐张再试只是白等）。下次写入——包括离开播放页时的自动
+  ///   写入——照常再试，重发不会造出重复卡；
+  /// - **其余**（重复卡、字段映射错、暂存媒体没了、超时这类可能已经建了卡的）：标
+  ///   failed 留在列表里，原因写进行里。
+  ///
+  /// [retryFailed] 决定 failed 行要不要重新排进这一批，**由入口说了算**：
   /// - 用户在待制卡列表里点「全部写入」（或经 `video mine-send`）= 明说要重试，传 `true`；
-  /// - 离开播放页时的自动写入传 `false`，只写还没试过的。失败行里有永久性的（重复卡、
-  ///   暂存媒体没了），自动重试只会每次退出都把它们再跑一遍、再报一次失败（BUG-4813）；
-  ///   它们留在列表里，等用户看到原因后自己重试或丢弃。
+  /// - 离开播放页时的自动写入传 `false`：failed 行重试只会每次退出都再报一次同样的
+  ///   失败（BUG-4813），它们等用户看到原因后自己重试或丢弃。没送到的行本来就是
+  ///   待办，不受这个参数影响。
   ///
   /// 每张：用暂存的媒体组 context → [BaseAnkiRepository.mineEntry] → 成功记统计与制卡
-  /// 历史、删行与暂存；失败标 failed 留着，原因写进行里。暂存媒体丢了的行同样标
-  /// failed——没有媒体就不建空壳卡（与引擎「无音频中止」同一纪律）。
+  /// 历史、删行与暂存。暂存媒体丢了的行标 failed——没有媒体就不建空壳卡（与引擎
+  /// 「无音频中止」同一纪律）。
   ///
   /// 同一 [bookUid] 的写入在进程内**串行**：列表弹窗的「全部写入」与退出页面时的
   /// 后台写入可能同时触发，两边若各自读到同一批 pending 行，就会把同一张卡写两遍，
@@ -173,34 +183,40 @@ class VideoMineQueue {
     if (retryFailed) await _store.requeueFailed(bookUid);
     final List<WebMineQueueRow> rows = await _store.pending(bookUid);
     int succeeded = 0;
+    int undelivered = 0;
+    String? undeliveredError;
     final List<String> failures = <String>[];
     String? notice;
     for (int i = 0; i < rows.length; i++) {
       final WebMineQueueRow row = rows[i];
-      final (String? error, String? rowNotice) = await _commitOne(
-        row,
-        repo: repo,
-        now: now,
-      );
-      if (error == null) {
-        succeeded++;
-      } else {
-        failures.add(error);
+      final _CommitResult result = await _commitOne(row, repo: repo, now: now);
+      switch (result) {
+        case _Landed(notice: final String? rowNotice):
+          succeeded++;
+          notice ??= rowNotice;
+        case _Failed(:final String reason):
+          failures.add(reason);
+        case _Undelivered(:final String reason):
+          // 后端不可达：这张和后面的都还是待办，这一轮停下。
+          undelivered = rows.length - i;
+          undeliveredError = reason;
+          onProgress?.call(rows.length, rows.length);
       }
-      notice ??= rowNotice;
+      if (result is _Undelivered) break;
       onProgress?.call(i + 1, rows.length);
     }
     return VideoMineCommitSummary(
       succeeded: succeeded,
       failed: failures.length,
-      firstError: failures.isEmpty ? null : failures.first,
+      undelivered: undelivered,
+      firstError: failures.isEmpty ? undeliveredError : failures.first,
       notice: notice,
     );
   }
 
-  /// 写入一行；成功返回 `(null, 提示)`，失败返回 `(原因, null)`（行已标 failed）。
-  /// 提示是落地结果带回的 [MineOutcome.notice]（如「保存到」被主机退回默认）。
-  Future<(String?, String?)> _commitOne(
+  /// 写入一行（见 [_CommitResult]）：落地 / 失败（行已标 failed）/ 没送到（行仍是
+  /// 待办，原因已记下）。落地带回 [MineOutcome.notice]（如「保存到」被主机退回默认）。
+  Future<_CommitResult> _commitOne(
     WebMineQueueRow row, {
     required BaseAnkiRepository repo,
     required DateTime Function() now,
@@ -210,7 +226,7 @@ class VideoMineQueue {
     if (meta == null) {
       const String reason = 'staged media missing';
       await _store.markFailed(row.id, reason);
-      return (reason, null);
+      return const _Failed(reason);
     }
     final String? coverPath = meta.coverFile == null
         ? null
@@ -242,7 +258,7 @@ class VideoMineQueue {
     } catch (e) {
       final String reason = '$e';
       await _store.markFailed(row.id, reason);
-      return (reason, null);
+      return _Failed(reason);
     }
     // queued：卡已冻结进待发制卡队列（媒体已拷走），交接完成——与成功同样记账、
     // 出本暂存队列；当失败留着会让「重试」把同一张卡再入队一次。
@@ -251,8 +267,12 @@ class VideoMineQueue {
       final String reason = outcome.result == MineResult.duplicate
           ? 'duplicate'
           : (outcome.errorDetail ?? outcome.result.name);
+      if (isUndeliveredMineFailure(outcome)) {
+        await _store.markUndelivered(row.id, reason);
+        return _Undelivered(reason);
+      }
       await _store.markFailed(row.id, reason);
-      return (reason, null);
+      return _Failed(reason);
     }
     await _recordLanded(meta, fields, row.sentence, outcome.noteId, now());
     // 写完即出表（行与暂存媒体一起）：完成行没有读取方，见 [WebMineQueueStore.markDone]。
@@ -261,7 +281,7 @@ class VideoMineQueue {
       if (dir.existsSync()) await dir.delete(recursive: true);
     } catch (_) {}
     final String? notice = outcome.notice;
-    return (null, notice == null || notice.isEmpty ? null : notice);
+    return _Landed(notice == null || notice.isEmpty ? null : notice);
   }
 
   /// 与视频页即时制卡成功时同两笔账：制卡统计（按书）+ 制卡历史（可回跳）。
@@ -389,18 +409,50 @@ Future<void> recordVideoMinedSentence(
   }
 }
 
+/// 一行暂存卡写入的结局。
+sealed class _CommitResult {
+  const _CommitResult();
+}
+
+/// 进了 Anki（或交给了待发制卡队列）。
+final class _Landed extends _CommitResult {
+  const _Landed(this.notice);
+  final String? notice;
+}
+
+/// 写入失败、行已标 failed。
+final class _Failed extends _CommitResult {
+  const _Failed(this.reason);
+  final String reason;
+}
+
+/// 确定没送到（后端不可达）、行仍是待办。
+final class _Undelivered extends _CommitResult {
+  const _Undelivered(this.reason);
+  final String reason;
+}
+
 /// 一批写入的结局（OSD 用）。
 class VideoMineCommitSummary {
   const VideoMineCommitSummary({
     required this.succeeded,
     required this.failed,
+    this.undelivered = 0,
     this.firstError,
     this.notice,
   });
 
   final int succeeded;
   final int failed;
+
+  /// 后端不可达、这一轮没送到而仍留作待办的张数（含因此没轮到的）；下次写入自动再试。
+  final int undelivered;
+
+  /// 第一条失败原因；没有失败时是没送到的原因。
   final String? firstError;
+
+  /// 这一轮实际碰过的行数（成功 + 失败 + 没送到）。
+  int get attempted => succeeded + failed + undelivered;
 
   /// 写入的卡随结果带回的第一条提示（[MineOutcome.notice]，如「保存到」被主机退回默认）。
   /// 批量写入没有逐张的结果提示，汇总提示必须带上它（BUG-4287）。

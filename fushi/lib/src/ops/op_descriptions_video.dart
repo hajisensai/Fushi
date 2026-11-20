@@ -905,7 +905,10 @@ List<OpDescription> _describePlayerOps(
     id: 'video.mine-queue.commit',
     method: 'POST',
     pattern: '$_video/mine-queue/commit',
-    summary: 'Write all queued cards of a video to Anki.',
+    summary:
+        'Write all queued cards of a video to Anki. Cards that could not be '
+        'delivered (Anki unreachable) stay pending and are counted in '
+        '"undelivered".',
     risk: OpRisk.irreversible,
     availability: video,
     params: const <OpParam>[

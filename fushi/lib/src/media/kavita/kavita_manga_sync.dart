@@ -240,6 +240,111 @@ class PrefKavitaMangaSyncStampStore implements KavitaMangaSyncStampStore {
 
 String _stampKey(String bookUid, String chapterKey) => '$bookUid|$chapterKey';
 
+/// 开章时按离线放行、随后探针在拉取预算内答上话且对账结论是「采用服务器进度」时，
+/// 问阅读器能不能现在跳到 [page]（0 起，已按页数钳过）。阅读器只在本章已装好、
+/// 用户还停在落点没翻过页时返回 true（并自行安排跳页，读完的章不跳）；返回 false
+/// 则本章维持离线放行的状态，什么都不写。
+typedef KavitaLateAdoptHandler = bool Function(int page);
+
+/// 一次对账落到本地之后的结果（开章与探针迟到时共用）。
+typedef _KavitaSyncApplied = ({
+  int? adoptedPage,
+  int? lastPushedPage,
+  bool pushLocal,
+  int? syncedPage,
+});
+
+/// 服务器进度与本地章进度按 `resolveKavitaProgress` 裁决；两侧都动过时询问
+/// （没有询问入口或本地没有记录时按「不动」）。
+Future<KavitaSyncAction> _decideKavitaSync({
+  required KavitaProgress remote,
+  required MangaChapterStateRow? local,
+  required KavitaMangaSyncStamp? stamp,
+  required KavitaMangaConflictPrompt? promptConflict,
+}) async {
+  final KavitaSyncDecision decision = resolveKavitaProgress(
+    serverPage: remote.lastModifiedUtc == null ? null : remote.pageNum,
+    serverModifiedAt: remote.lastModifiedUtc?.millisecondsSinceEpoch,
+    localPage: local?.lastPage,
+    localUpdatedAt: local?.updatedAt,
+    lastSyncAt: stamp?.at,
+    // 标已读等同页落库也会刷新 updatedAt；本地仍停在上次一致的页就不算动过。
+    lastSyncedPage: stamp?.page,
+  );
+  if (decision.action != KavitaSyncAction.conflict) return decision.action;
+  if (promptConflict == null || local == null) return KavitaSyncAction.none;
+  try {
+    return await promptConflict(remote, local);
+  } on Object {
+    return KavitaSyncAction.none;
+  }
+}
+
+/// 采用服务器进度时落到本地的页：按本章页数钳过。
+int _kavitaAdoptPage(KavitaProgress remote, int pages) {
+  final int maxPage = pages > 0 ? pages - 1 : remote.pageNum;
+  return remote.pageNum.clamp(0, maxPage < 0 ? 0 : maxPage);
+}
+
+/// 把裁决 [action] 落进本地章进度（只有采用服务器才写库）。
+Future<_KavitaSyncApplied> _applyKavitaSync({
+  required KavitaSyncAction action,
+  required FushiDatabase db,
+  required String bookUid,
+  required String chapterKey,
+  required KavitaProgress remote,
+  required MangaChapterStateRow? local,
+  required int pages,
+  required int Function() now,
+}) async {
+  switch (action) {
+    case KavitaSyncAction.adoptServer:
+      final int page = _kavitaAdoptPage(remote, pages);
+      await db.saveMangaChapterState(
+        bookUid: bookUid,
+        chapterKey: chapterKey,
+        lastPage: page,
+        pageCount: pages > 0 ? pages : null,
+        // 服务器读到末页 = 那边读完了：本地也记已读（已读标记只增不减）。
+        readAt: isKavitaChapterFinished(page: page, totalPages: pages)
+            ? now()
+            : null,
+      );
+      // 服务器上这章不是「读完」（含被网页端标未读回到第 0 页）：本地的已读标记
+      // 也要撤掉，否则作品页仍显示已读。只在用户已确认采用服务器（冲突弹窗 /
+      // 本机没动过）时走到这里，所以不会静默丢本机进度。
+      if (local?.readAt != null &&
+          !isKavitaChapterFinished(page: page, totalPages: pages)) {
+        await db.clearMangaChapterRead(
+          bookUid: bookUid,
+          chapterKey: chapterKey,
+        );
+      }
+      return (
+        adoptedPage: page,
+        lastPushedPage: page,
+        pushLocal: false,
+        syncedPage: page,
+      );
+    case KavitaSyncAction.pushLocal:
+      return (
+        adoptedPage: null,
+        lastPushedPage: null,
+        pushLocal: local != null,
+        syncedPage: null,
+      );
+    case KavitaSyncAction.none:
+    case KavitaSyncAction.conflict:
+      final bool same = local != null && local.lastPage == remote.pageNum;
+      return (
+        adoptedPage: null,
+        lastPushedPage: same ? remote.pageNum : null,
+        pushLocal: false,
+        syncedPage: same ? remote.pageNum : null,
+      );
+  }
+}
+
 class KavitaMangaSyncSession {
   KavitaMangaSyncSession._({
     required KavitaProgressSync sync,
@@ -250,6 +355,18 @@ class KavitaMangaSyncSession {
   }) : _sync = sync;
 
   final KavitaProgressSync _sync;
+
+  /// 已 [close]：迟到的探针对账不再动任何东西。
+  bool _closed = false;
+
+  /// 开章按离线放行后，探针在拉取预算内答上话、对账结论是采用服务器进度时调用
+  /// （见 [KavitaLateAdoptHandler]）。阅读器在拿到会话后设置；没设置 = 不补采用。
+  KavitaLateAdoptHandler? onLateAdopt;
+
+  Future<void> _lateReconcile = Future<void>.value();
+
+  /// 探针迟到对账（没有探针时立即完成）。只给测试等待用。
+  Future<void> get lateReconcileDone => _lateReconcile;
   final String bookUid;
 
   /// 本会话对应的章 key（= Kavita chapterId 十进制串）。
@@ -316,14 +433,18 @@ class KavitaMangaSyncSession {
     final String serverId = server.id;
     KavitaProgress? remote;
     KavitaChapterInfo? info;
+    final Stopwatch pullClock = Stopwatch()..start();
     final Future<List<Object?>> pull = Future.wait<Object?>(<Future<Object?>>[
       api.getProgress(chapterId),
       if (needInfo) api.getChapterInfo(chapterId),
     ]);
+    Future<List<Object?>>? probe;
     if (reach.isUnreachable(serverId, api, within: pullTimeout)) {
-      // 已知不可达：不等。请求照发、只当探针——服务器答上来（哪怕答的是错误状态）
-      // 协议层的答话计数就动，标记随之失效，下一次开章恢复完整对账；本章按离线
-      // 放行。探针自己的失败不用处理。
+      // 已知不可达：不等。请求照发、当探针——服务器答上来（哪怕答的是错误状态）
+      // 协议层的答话计数就动，标记随之失效，下一次开章恢复完整对账。本章先按离线
+      // 放行；探针若在拉取预算内带回了进度，会话建好后补做这一章的对账（见下）。
+      // 探针自己的失败不用处理。
+      probe = pull;
       unawaited(pull.then<void>((List<Object?> _) {}, onError: (Object _) {}));
     } else {
       try {
@@ -368,66 +489,33 @@ class KavitaMangaSyncSession {
     int? adoptedPage;
     final KavitaMangaSyncStamp? stamp = stamps.stampOf(bookUid, chapterKey);
     int? lastSync = stamp?.at;
-    int? syncedPage;
     if (remote != null) {
-      final KavitaSyncDecision decision = resolveKavitaProgress(
-        serverPage: remote.lastModifiedUtc == null ? null : remote.pageNum,
-        serverModifiedAt: remote.lastModifiedUtc?.millisecondsSinceEpoch,
-        localPage: local?.lastPage,
-        localUpdatedAt: local?.updatedAt,
-        lastSyncAt: lastSync,
-        // 标已读等同页落库也会刷新 updatedAt；本地仍停在上次一致的页就不算动过。
-        lastSyncedPage: stamp?.page,
+      final KavitaSyncAction action = await _decideKavitaSync(
+        remote: remote,
+        local: local,
+        stamp: stamp,
+        promptConflict: promptConflict,
       );
-      KavitaSyncAction action = decision.action;
-      if (action == KavitaSyncAction.conflict) {
-        action = KavitaSyncAction.none;
-        if (promptConflict != null && local != null) {
-          try {
-            action = await promptConflict(remote, local);
-          } on Object {
-            action = KavitaSyncAction.none;
-          }
-        }
-      }
-      switch (action) {
-        case KavitaSyncAction.adoptServer:
-          final int maxPage = pages > 0 ? pages - 1 : remote.pageNum;
-          final int page = remote.pageNum.clamp(0, maxPage < 0 ? 0 : maxPage);
-          await db.saveMangaChapterState(
-            bookUid: bookUid,
-            chapterKey: chapterKey,
-            lastPage: page,
-            pageCount: pages > 0 ? pages : null,
-            // 服务器读到末页 = 那边读完了：本地也记已读（已读标记只增不减）。
-            readAt: isKavitaChapterFinished(page: page, totalPages: pages)
-                ? now()
-                : null,
-          );
-          // 服务器上这章不是「读完」（含被网页端标未读回到第 0 页）：本地的已读标记
-          // 也要撤掉，否则作品页仍显示已读。只在用户已确认采用服务器（冲突弹窗 /
-          // 本机没动过）时走到这里，所以不会静默丢本机进度。
-          if (local?.readAt != null &&
-              !isKavitaChapterFinished(page: page, totalPages: pages)) {
-            await db.clearMangaChapterRead(
-              bookUid: bookUid,
-              chapterKey: chapterKey,
-            );
-          }
-          adoptedPage = page;
-          lastPushedPage = page;
-          syncedPage = page;
-        case KavitaSyncAction.pushLocal:
-          pushLocalNow = local != null;
-        case KavitaSyncAction.none:
-        case KavitaSyncAction.conflict:
-          if (local != null && local.lastPage == remote.pageNum) {
-            lastPushedPage = remote.pageNum;
-            syncedPage = remote.pageNum;
-          }
-      }
+      final _KavitaSyncApplied applied = await _applyKavitaSync(
+        action: action,
+        db: db,
+        bookUid: bookUid,
+        chapterKey: chapterKey,
+        remote: remote,
+        local: local,
+        pages: pages,
+        now: now,
+      );
+      adoptedPage = applied.adoptedPage;
+      lastPushedPage = applied.lastPushedPage;
+      pushLocalNow = applied.pushLocal;
       lastSync = now();
-      await stamps.record(bookUid, chapterKey, lastSync, page: syncedPage);
+      await stamps.record(
+        bookUid,
+        chapterKey,
+        lastSync,
+        page: applied.syncedPage,
+      );
     }
 
     final KavitaProgressSync sync = KavitaProgressSync(
@@ -468,7 +556,87 @@ class KavitaMangaSyncSession {
       sync.reportPage(local.lastPage);
       unawaited(sync.flush());
     }
+    if (probe != null) {
+      // 服务器其实已经回来了：探针在拉取预算内（= 不跳过等待时本来就会用上的
+      // 时间）带回了进度，就按开章时读到的本地状态补做这一章的对账，免得「恢复
+      // 后的第一次开章仍按离线放行」。答得比预算慢的只让下一次开章恢复对账。
+      session._lateReconcile = probe.then<void>((List<Object?> results) async {
+        if (pullClock.elapsed > pullTimeout) return;
+        final KavitaProgress? late = results[0] as KavitaProgress?;
+        if (late == null) return;
+        try {
+          await session._reconcileLate(
+            remote: late,
+            db: db,
+            stamps: stamps,
+            local: local,
+            stamp: stamp,
+            pages: pages,
+            promptConflict: promptConflict,
+            now: now,
+          );
+        } on Object catch (e, stack) {
+          _logSyncError('lateReconcile', e, stack);
+        }
+      }, onError: (Object _) {});
+    }
     return session;
+  }
+
+  /// 开章按离线放行之后，探针及时带回了服务器进度：用开章时读到的 [local] /
+  /// [stamp] 补做对账（阅读器之后落的页不参与裁决——那是落点，不是用户的改动）。
+  ///
+  /// - 采用服务器：先问 [onLateAdopt]，阅读器同意（本章已装好、用户没翻过页）才
+  ///   写库并让它跳页；不同意就什么都不写，维持离线放行。
+  /// - 推本地：推开章时的本地页；阅读器已经报过页（待推）就让那一页去推。
+  /// - 其余：只记同步基线、此后推送不再做「服务器更新」校验。
+  Future<void> _reconcileLate({
+    required KavitaProgress remote,
+    required FushiDatabase db,
+    required KavitaMangaSyncStampStore stamps,
+    required MangaChapterStateRow? local,
+    required KavitaMangaSyncStamp? stamp,
+    required int pages,
+    required KavitaMangaConflictPrompt? promptConflict,
+    required int Function() now,
+  }) async {
+    if (_closed) return;
+    final KavitaSyncAction action = await _decideKavitaSync(
+      remote: remote,
+      local: local,
+      stamp: stamp,
+      promptConflict: promptConflict,
+    );
+    if (_closed) return;
+    if (action == KavitaSyncAction.adoptServer) {
+      final KavitaLateAdoptHandler? handler = onLateAdopt;
+      if (handler == null || !handler(_kavitaAdoptPage(remote, pages))) return;
+      // 阅读器跳页后会把这一页报回来：先把它记成已推，免得原样推回服务器。
+      _sync.acceptServerState(
+        lastPushedPage: _kavitaAdoptPage(remote, pages),
+        syncedAt: now(),
+      );
+    }
+    final _KavitaSyncApplied applied = await _applyKavitaSync(
+      action: action,
+      db: db,
+      bookUid: bookUid,
+      chapterKey: chapterKey,
+      remote: remote,
+      local: local,
+      pages: pages,
+      now: now,
+    );
+    final int at = now();
+    _sync.acceptServerState(
+      lastPushedPage: applied.lastPushedPage,
+      syncedAt: at,
+    );
+    await stamps.record(bookUid, chapterKey, at, page: applied.syncedPage);
+    if (applied.pushLocal && local != null && !_closed) {
+      if (!_sync.hasPending) _sync.reportPage(local.lastPage);
+      unawaited(_sync.flush());
+    }
   }
 
   /// 阅读器每次章进度落库后调用；[chapterKey] 不是本会话的章时忽略
@@ -482,6 +650,8 @@ class KavitaMangaSyncSession {
 
   /// 关章：限时 flush 待推进度，然后释放。永不抛错（关书路径不能被网络拖住）。
   Future<void> close() async {
+    _closed = true;
+    onLateAdopt = null;
     try {
       await _sync.flush().timeout(kCloseFlushTimeout);
     } on TimeoutException {

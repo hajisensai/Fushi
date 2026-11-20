@@ -1330,6 +1330,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 逻辑全在 `media/kavita/kavita_manga_sync.dart`，接线见 `manga_fushi/kavita.part.dart`。
   KavitaMangaSyncSession? _kavitaMangaSync;
 
+  /// 当前 Kavita 章开章时的落点页（0 起）；落到末页（换章往回翻）或非 Kavita 为 null。
+  /// 迟到的服务器进度只在用户还停在这里时才补采用（见 `_acceptKavitaLateAdopt`）。
+  int? _kavitaLandingPage;
+
   /// 当前章在书架体系里的身份；非书架在线条目为 null。
   String? get _shelfChapterKey {
     final OnlineMangaLibraryEntry? entry = _shelfEntry;
@@ -2890,6 +2894,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         target: MangaResumeTargetKey.fromKey(appModel.mangaResumeTarget),
       );
     }
+    _kavitaLandingPage = initialPage == kMangaLandOnLastPage
+        ? null
+        : initialPage;
     if (!mounted) return;
     if (!downloaded) {
       if (await _openStreamingChapter(

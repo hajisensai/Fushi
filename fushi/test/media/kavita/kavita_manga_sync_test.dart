@@ -1107,4 +1107,109 @@ void main() {
       expect(pref.stampsOfBook('other'), isEmpty);
     });
   });
+
+  group('probe answered in time reconciles the open chapter late '
+      '(decision design-nmv-fyi-behavior item 4)', () {
+    /// 先断开一次把服务器记成不可达，再让它回来：之后的开章不等、只发探针。
+    Future<void> markDown(_Server server) async {
+      server.offline = true;
+      await (await attach(server))!.close();
+      expect(
+        reachability.isUnreachable(
+          'srv',
+          server.api(),
+          within: const Duration(seconds: 2),
+        ),
+        isTrue,
+      );
+      server.offline = false;
+    }
+
+    test('reader still on the landing page: adopts the server page and '
+        'does not push it back', () async {
+      final _Server server = _Server(pageNum: 6, modifiedAt: _base);
+      await markDown(server);
+      final KavitaMangaSyncSession session = (await attach(server))!;
+      expect(session.adoptedPage, isNull, reason: 'did not wait');
+      final List<int> asked = <int>[];
+      session.onLateAdopt = (int page) {
+        asked.add(page);
+        return true;
+      };
+      await session.lateReconcileDone;
+      expect(asked, <int>[6]);
+      expect(await localPage(), 6);
+      expect(stamps.stampOf(_uid, _chapterKey)?.page, 6);
+      // 阅读器跳页后把这一页报回来：已一致，不推。
+      session.onPageSaved(_chapterKey, 6);
+      await session.close();
+      expect(server.pushedPages, isEmpty);
+    });
+
+    test('reader declines (moved / not loaded): nothing is written', () async {
+      final _Server server = _Server(pageNum: 6, modifiedAt: _base);
+      await markDown(server);
+      final KavitaMangaSyncSession session = (await attach(server))!;
+      final List<int> asked = <int>[];
+      session.onLateAdopt = (int page) {
+        asked.add(page);
+        return false;
+      };
+      await session.lateReconcileDone;
+      expect(asked, <int>[6]);
+      expect(await localPage(), isNull);
+      expect(stamps.stampOf(_uid, _chapterKey), isNull);
+      await session.close();
+    });
+
+    test('no handler set: same as declining', () async {
+      final _Server server = _Server(pageNum: 6, modifiedAt: _base);
+      await markDown(server);
+      final KavitaMangaSyncSession session = (await attach(server))!;
+      await session.lateReconcileDone;
+      expect(await localPage(), isNull);
+      expect(stamps.stampOf(_uid, _chapterKey), isNull);
+      await session.close();
+    });
+
+    test('local progress the server never saw is pushed late', () async {
+      // 服务器没有这章的记录，本机读到第 4 页：对账结论是推本地。
+      final _Server server = _Server();
+      await markDown(server);
+      await setLocal(4);
+      final KavitaMangaSyncSession session = (await attach(server))!;
+      session.onLateAdopt = (int _) => fail('nothing to adopt');
+      await session.lateReconcileDone;
+      await session.close();
+      expect(server.pushedPages, <int>[4]);
+    });
+
+    test('a probe slower than the pull budget does not reconcile', () async {
+      final Completer<void> hang = Completer<void>();
+      final _Server server = _Server(pageNum: 6, modifiedAt: _base, hang: hang);
+      const Duration budget = Duration(milliseconds: 100);
+      // 第一次把预算等满，记为不可达。
+      await (await attach(server, pullTimeout: budget))!.close();
+      final KavitaMangaSyncSession session = (await attach(
+        server,
+        pullTimeout: budget,
+      ))!;
+      session.onLateAdopt = (int _) => fail('answered too late to adopt');
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      hang.complete();
+      await session.lateReconcileDone;
+      expect(await localPage(), isNull);
+      await session.close();
+    }, timeout: const Timeout(Duration(seconds: 20)));
+
+    test('closed before the probe answers: nothing happens', () async {
+      final _Server server = _Server(pageNum: 6, modifiedAt: _base);
+      await markDown(server);
+      final KavitaMangaSyncSession session = (await attach(server))!;
+      session.onLateAdopt = (int _) => fail('session already closed');
+      await session.close();
+      await session.lateReconcileDone;
+      expect(await localPage(), isNull);
+    });
+  });
 }
