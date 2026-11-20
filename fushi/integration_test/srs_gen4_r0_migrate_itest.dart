@@ -1,0 +1,164 @@
+// R0（SRS 协议 4 换代，规划 §6）Windows 实测的「新版本迁移」一步（Windows 离屏 runner，手动跑）：
+// 把已发布旧版本（v3.3.0 等）自己建好、制过卡、复习过的数据根播种进隔离根，启动新版本，在复习页上
+// 看到迁移提示，用焦点驱动（Tab 找到「开始升级」→ Enter）开始迁移，抓提示 / 进度 / 结论三帧真像素。
+// 可选在迁移途中硬结束进程（模拟崩溃 / 断电，R0 矩阵 (c)）。前后库文件的比对、旧版本再打开都在
+// tool/srs_old_binary/r0_win.py 里做，本文件只负责「新版本经界面迁移」这一步。
+//
+//   .\tool\run_windows_itest.ps1 integration_test/srs_gen4_r0_migrate_itest.dart `
+//     -DartDefine @('FUSHI_R0_SEED=D:/fushi-r0/A/old-root/app-support')
+//   # 途中硬结束：再加 'FUSHI_R0_KILL_AFTER_MS=40'（按下开始后多少毫秒）或 'FUSHI_R0_KILL_AT=translate'（轮询到该步）
+//
+// 种子目录：旧版本数据根的 app-support/（fushi.db、srs.db 连 -wal / -shm、srs_media/ 等），原样拷进隔离根，
+// 不改种子。
+import 'dart:io';
+
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/home_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_generation_view.dart';
+import 'package:fushi/src/srs/srs_gen4_migration_controller.dart';
+import 'package:fushi/src/startup/test_environment.dart';
+import 'package:fushi_srs/fushi_srs.dart';
+import 'package:integration_test/integration_test.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:path/path.dart' as p;
+
+import 'helpers/focus_driver.dart';
+import 'helpers/library_fixture.dart';
+import 'helpers/observe_capture.dart';
+import 'support/test_app_launcher.dart';
+import 'test_helpers.dart';
+
+const String _seed = String.fromEnvironment('FUSHI_R0_SEED');
+const String _killAt = String.fromEnvironment('FUSHI_R0_KILL_AT');
+const int _killAfterMs = int.fromEnvironment(
+  'FUSHI_R0_KILL_AFTER_MS',
+  defaultValue: -1,
+);
+
+void _copyTree(Directory from, Directory to) {
+  to.createSync(recursive: true);
+  for (final FileSystemEntity e in from.listSync(recursive: true)) {
+    final String rel = p.relative(e.path, from: from.path);
+    if (e is Directory) {
+      Directory(p.join(to.path, rel)).createSync(recursive: true);
+    } else if (e is File) {
+      e.copySync(p.join(to.path, rel));
+    }
+  }
+}
+
+/// 探针行同时写进隔离根里的文件：进程被硬结束时 stdout 会丢。
+void _log(String line) {
+  debugPrint(line);
+  final Directory? docs = fushiTestDirectory('app-documents');
+  if (docs == null) return;
+  File(
+    p.join(docs.path, 'srs_r0_probe.txt'),
+  ).writeAsStringSync('$line\n', mode: FileMode.append, flush: true);
+}
+
+/// 当前屏上可见的文字（证据：迁移提示 / 结论的原文）。
+String _visibleText() {
+  final List<String> out = <String>[];
+  for (final Element e in find.byType(Text).evaluate()) {
+    final Text t = e.widget as Text;
+    final String? s = t.data ?? t.textSpan?.toPlainText();
+    if (s != null && s.trim().isNotEmpty) out.add(s.trim());
+  }
+  return out.join(' | ');
+}
+
+void main() {
+  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets('R0：旧版本数据根经界面迁移到协议 4', (WidgetTester tester) async {
+    expect(
+      _seed,
+      isNotEmpty,
+      reason: '要 --dart-define=FUSHI_R0_SEED=<旧数据根的 app-support>',
+    );
+    final Directory support = fushiTestDirectory('app-support')!;
+    _copyTree(Directory(_seed), support);
+    _log(
+      '[r0] seeded ${support.path}: '
+      '${support.listSync().map((FileSystemEntity e) => p.basename(e.path)).join(',')}',
+    );
+
+    await launchFushiTestApp();
+    expect(await waitForHome(tester), isTrue, reason: '主页应在 90s 内出现');
+    final AppModel appModel = await readyAppModel(tester);
+    HomePage.debugSelectTab?.call(HomeTab.srs);
+    final Finder start = find.byKey(SrsGenerationView.startKey);
+    for (int i = 0; i < 120 && start.evaluate().isEmpty; i++) {
+      await tester.pump(const Duration(milliseconds: 250));
+    }
+    _log('[r0] prompt text: ${_visibleText()}');
+    await captureFlutterFrame(tester, 'r0-01-prompt');
+    expect(start, findsOneWidget, reason: '旧库应当让复习页给出迁移提示');
+
+    final ProviderContainer container = ProviderScope.containerOf(
+      appModel.navigatorKey.currentContext!,
+    );
+    final SrsGen4MigrationController controller = container.read(
+      srsGen4MigrationProvider,
+    );
+    final FocusDriver driver = FocusDriver(tester);
+    expect(await driver.focusWidget(start), isTrue, reason: '「开始升级」应能用 Tab 走到');
+    _log('[r0] start button focused; pressing Enter');
+    final Stopwatch clock = Stopwatch()..start();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+
+    bool shotProgress = false;
+    String lastStep = '';
+    while (clock.elapsed < const Duration(minutes: 5)) {
+      await tester.pump(const Duration(milliseconds: 10));
+      final SrsGen4MigrationProgress? pr = controller.progress;
+      final String step = pr == null
+          ? controller.phase.name
+          : '${pr.step.wire} ${pr.done}/${pr.total}';
+      if (step != lastStep) {
+        _log(
+          '[r0] @${clock.elapsedMilliseconds}ms phase=${controller.phase.name} step=$step',
+        );
+        lastStep = step;
+      }
+      final bool killNow =
+          (_killAfterMs >= 0 && clock.elapsedMilliseconds >= _killAfterMs) ||
+          (_killAt.isNotEmpty && pr != null && pr.step.wire == _killAt);
+      if (killNow) {
+        _log(
+          '[r0] HARD KILL pid=$pid @${clock.elapsedMilliseconds}ms step=$step',
+        );
+        Process.killPid(pid, ProcessSignal.sigkill);
+        await Future<void>.delayed(const Duration(seconds: 30));
+      }
+      if (!shotProgress && controller.phase == SrsGen4MigrationPhase.running) {
+        shotProgress = true;
+        await captureFlutterFrame(tester, 'r0-02-progress');
+      }
+      if (controller.phase != SrsGen4MigrationPhase.running &&
+          clock.elapsedMilliseconds > 200) {
+        break;
+      }
+    }
+    _log(
+      '[r0] finished @${clock.elapsedMilliseconds}ms phase=${controller.phase.name} '
+      'outcome=${controller.outcome?.verdict.name} error=${controller.error}',
+    );
+    for (int i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 250));
+    }
+    _log('[r0] after text: ${_visibleText()}');
+    await captureFlutterFrame(tester, 'r0-03-after');
+    final SrsGen4MigrationStatus status = SrsGen4Migration.status(
+      appModel.srsStorage.directory,
+    );
+    _log(
+      '[r0] status after: state=${status.state.name} running=${status.running}',
+    );
+    expect(controller.phase, SrsGen4MigrationPhase.committed);
+  });
+}
