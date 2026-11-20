@@ -192,10 +192,46 @@ void main() {
       days: t['days']! as int,
     );
 
-    test('TBSCertificate bytes and PKCS#8 PEM match basic_utils', () {
+    test('signature AlgorithmIdentifier has no parameters (RFC 5758)', () {
+      // 带 NULL 参数时 Chrome 拒收证书（WebUI 报不可绕过的 ERR_CERT_INVALID）。
+      expect(t['sig_alg_der_hex'], '300a06082a8648ce3d040302');
+      expect(
+        _toHex(built.tbsDer).contains('300c06082a8648ce3d0403020500'),
+        isFalse,
+      );
+    });
+
+    test('IP SANs are iPAddress, host names stay dNSName', () {
+      final String tbs = _toHex(built.tbsDer);
+      expect(tbs.contains('87047f000001'), isTrue); // [7] 127.0.0.1
+      expect(tbs.contains('8704c0a80105'), isTrue); // [7] 192.168.1.5
+      expect(tbs.contains(_toHex(ascii.encode('127.0.0.1'))), isFalse);
+      expect(tbs.contains('820a${_toHex(ascii.encode('fushi-host'))}'), isTrue);
+    });
+
+    test('TBSCertificate bytes and PKCS#8 PEM match the fixed vector', () {
       expect(_toHex(built.tbsDer), t['tbs_der_hex']);
       expect(built.privateKeyPem, t['private_key_pkcs8_pem']);
     });
+
+    test(
+      'legacy certificates (NULL sig params) are recognised for reissue',
+      () {
+        // BUG-4906：旧版落盘证书不自动重签，serve 启动据此提示 `admin reset-tls`。
+        expect(
+          FushiTlsIdentityStore.isChromeRejectedLegacyCertificate(
+            t['certificate_pem_example']! as String,
+          ),
+          isTrue,
+        );
+        expect(
+          FushiTlsIdentityStore.isChromeRejectedLegacyCertificate(
+            built.certificatePem,
+          ),
+          isFalse,
+        );
+      },
+    );
 
     test('certificate PEM framing matches and the signature verifies', () {
       final String oldPem = t['certificate_pem_example']! as String;
@@ -208,10 +244,18 @@ void main() {
         built.certificatePem.endsWith('\n-----END CERTIFICATE-----'),
         isTrue,
       );
-      expect(
-        built.certificatePem.split('\r\n').length,
-        oldPem.split('\r\n').length,
-      );
+      // 证书比旧实现短（签名算法去掉 NULL、IP SAN 改 iPAddress），行数不再相同；
+      // 只钉住 64 字符一行的折行。
+      final List<String> bodyLines = built.certificatePem
+          .split('\n')
+          .where((String l) => !l.startsWith('-----'))
+          .join('\n')
+          .split('\r\n');
+      expect(oldPem.contains('\r\n'), isTrue);
+      for (final String line in bodyLines.take(bodyLines.length - 1)) {
+        expect(line.length, 64);
+      }
+      expect(bodyLines.last.length, inInclusiveRange(1, 64));
       final String body = built.certificatePem
           .split('\n')
           .where((String l) => !l.startsWith('-----'))

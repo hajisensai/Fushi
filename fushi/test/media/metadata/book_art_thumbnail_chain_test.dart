@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart' show ImageProvider;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:image/image.dart' as img;
 
@@ -10,6 +11,7 @@ import 'package:fushi/src/media/media_source.dart';
 import 'package:fushi/src/media/metadata/book_art_store.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/utils/cover_image.dart' show resizedFileImage;
 
 import '../../ops/book_metadata_test_fixture.dart';
 
@@ -96,5 +98,59 @@ void main() {
     await source.clearOverrideValues(appModel: model, item: item);
     expect(store.hasCover('猫'), isFalse);
     expect(source.getThumbnailUri(appModel: model, item: item), embedded);
+  });
+
+  // 非默认解码宽度（统计页 / 外观预览的小封面）必须由缩略图链自己经
+  // resizedFileImage 降采样：调用方若在返回值外面再包 ResizeImage，就成了
+  // ResizeImage 套 ResizeImage（Flutter 断言禁止），且外层键不在
+  // evictLocalCoverCache 的驱逐表里，同路径覆盖写后小封面仍画旧图。
+  test('decodeWidth 透传到刮削层与 override 的 resizedFileImage', () async {
+    await seedBook(db, '犬');
+    final MediaItem item = (await ReaderFushiSource.instance
+        .mediaItemForBookKey('犬'))!;
+    final ReaderFushiSource source = ReaderFushiSource.instance;
+
+    final BookArtStore store = BookArtStore.of(thumbs);
+    await store.write(
+      record: const BookArtRecord(
+        bookKey: '犬',
+        source: 'mangabaka',
+        seriesId: '2',
+        seriesTitle: 'Dog',
+        scrapedAt: 1,
+      ),
+      coverBytes: png(30),
+    );
+    final ImageProvider<Object> scraped = source
+        .getDisplayThumbnailFromMediaItem(
+          appModel: model,
+          item: item,
+          decodeWidth: 160,
+        );
+    expect(
+      scraped,
+      resizedFileImage(File(store.coverPathFor('犬')), width: 160),
+    );
+
+    final File manual = File('${thumbs.path}/manual_dog.png')
+      ..writeAsBytesSync(png(220));
+    await source.setOverrideThumbnailFromMediaItem(
+      appModel: model,
+      item: item,
+      file: manual,
+      clearOverrideImage: false,
+    );
+    final String overridden = source.getThumbnailUri(
+      appModel: model,
+      item: item,
+    );
+    expect(
+      source.getDisplayThumbnailFromMediaItem(
+        appModel: model,
+        item: item,
+        decodeWidth: 160,
+      ),
+      resizedFileImage(File(overridden), width: 160),
+    );
   });
 }

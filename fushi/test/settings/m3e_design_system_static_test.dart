@@ -1300,6 +1300,10 @@ class AnotherPopupPart {
       // FushiTypeRoles 没有对应字阶。
       'lib/src/media/detail/media_poster_detail.dart':
           kSharedComponentImplementation,
+      // 带色卡片的局部配色（色块子树 / 从色块弹出的弹层）：按块配色派生整套
+      // surfaceContainer 色阶，海报详情外壳也走这一份。
+      'lib/src/utils/components/fushi_block_color_scope.dart':
+          kSharedComponentImplementation,
       'lib/src/pages/implementations/music/music_detail_chrome.dart':
           kSharedComponentImplementation,
       'lib/src/utils/components/fushi_continue_blocks.dart':
@@ -1328,10 +1332,12 @@ class AnotherPopupPart {
           kSharedComponentImplementation,
       'lib/src/pages/implementations/home_collage_widgets.dart':
           kSharedComponentImplementation,
-      'lib/src/utils/components/fushi_floating_chrome.dart':
-          kSharedComponentImplementation,
       'lib/src/utils/components/fushi_page_masthead.dart':
           kSharedComponentImplementation,
+      'lib/src/utils/components/fushi_page_title_metrics.dart':
+          'Module-page masthead title spec (11-20 #18): the single source the '
+          'shared masthead components read their title / switch sizes from; '
+          'pages never set a title font size themselves.',
       'lib/src/utils/components/fushi_poster_block.dart':
           kSharedComponentImplementation,
       // 2) 页面 / 功能模块里逐条审过的内容类例外（封面美术、预览、播放器浮层、
@@ -1340,7 +1346,7 @@ class AnotherPopupPart {
           'Shell style preview draws a scaled mock of the library page (rail, '
           'masthead, cover blocks / grid tiles) with the current theme so the '
           'user can compare sidebar styles and library layouts; radii, surface '
-          'tones and the masthead letter size scale with the preview box and '
+          'tones scale with the preview box and '
           'are preview content, not page chrome — same reviewed exception '
           'class as lookup_popup_size_preview.',
       'lib/src/pages/implementations/music/music_cd_detail.dart':
@@ -1704,11 +1710,13 @@ class AnotherPopupPart {
       'lib/src/utils/components/fushi_tag.dart': <String>{'fontSize:'},
       'lib/src/media/detail/media_poster_detail.dart': <String>{
         'BorderRadius.circular(',
+        'fontSize:',
+      },
+      'lib/src/utils/components/fushi_block_color_scope.dart': <String>{
         'surfaceContainerLow',
         'surfaceContainerLowest',
         'surfaceContainerHigh',
         'surfaceContainerHighest',
-        'fontSize:',
       },
       'lib/src/pages/implementations/music/music_detail_chrome.dart': <String>{
         'fontSize:',
@@ -1732,7 +1740,6 @@ class AnotherPopupPart {
         'surfaceContainerLowest',
         'surfaceContainerHigh',
         'surfaceContainerHighest',
-        'fontSize:',
       },
       'lib/src/pages/implementations/music/music_cd_detail.dart': <String>{
         'fontSize:',
@@ -1750,10 +1757,10 @@ class AnotherPopupPart {
       'lib/src/media/import/import_source_blocks.dart': <String>{
         'BorderRadius.circular(',
       },
-      'lib/src/utils/components/fushi_floating_chrome.dart': <String>{
+      'lib/src/utils/components/fushi_page_masthead.dart': <String>{
         'fontSize:',
       },
-      'lib/src/utils/components/fushi_page_masthead.dart': <String>{
+      'lib/src/utils/components/fushi_page_title_metrics.dart': <String>{
         'fontSize:',
       },
       'lib/src/utils/components/fushi_poster_block.dart': <String>{'fontSize:'},
@@ -2369,8 +2376,15 @@ class AnotherPopupPart {
     expect(frame, contains('kSettingsSegmentInnerRadius'));
     expect(frame, contains('apple ? 0 : kSettingsSegmentGap'));
     expect(frame, contains('FushiFilledButton.tonalIcon('));
-    // E：设置组收进子菜单。
-    expect(frame, contains('_ContextSubmenuRow('));
+    // E（2026-11-20 #4b 统一骨架）：右键菜单与手机底部面板共用 _ItemMenuPanel，
+    // 低频项收进「更多 ›」二级菜单（_ItemSubmenuRow），右键里浮出、面板里下钻。
+    expect(frame, contains('_ItemMenuPanel('));
+    final String menu = File(
+      'lib/src/pages/implementations/media_item_context_menu.part.dart',
+    ).readAsStringSync();
+    expect(menu, contains('class _ItemSubmenuRow'));
+    expect(menu, contains('FushiStaggeredEntrance('));
+    expect(menu, contains('FushiPressScale('));
     // 动效：错峰进场 + 按压缩放。
     expect(frame, contains('FushiEntranceScope('));
     expect(frame, contains('FushiStaggeredEntrance('));

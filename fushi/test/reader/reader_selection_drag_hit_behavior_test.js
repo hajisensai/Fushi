@@ -35,6 +35,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const { compileScript } = require('./reader_harness_support.js');
 const { spawnSync } = require('child_process');
 const mutation = process.argv[2] || null;
 assert.ok(!mutation || mutation.startsWith('--mutant='), 'unknown harness argument');
@@ -650,15 +651,12 @@ function buildDocument(spec) {
 
 function loadSelection(dom, realHandles = false) {
   const literal = selectionObjectLiteral(selectionSource());
-  const factory = new Function(  // NOSONAR: harness 在本地 Node 沙箱里执行从 Dart 源文件抽出的生产 JS，输入来自仓库自身、无用户可控数据（S1523 误报）
-    'window',
-    'document',
-    'Node',
-    'NodeFilter',
-    'JAPANESE_RANGES', 'CSS', 'Highlight',
+  const factory = compileScript(
+    ['window', 'document', 'Node', 'NodeFilter', 'JAPANESE_RANGES', 'CSS', 'Highlight'],
     `return (${literal});`,
+    'reader-selection.js',
   );
-  const sel = factory(dom.win, dom.doc, NodeStub, NodeFilterStub, [  // NOSONAR: harness 在本地 Node 沙箱里执行从 Dart 源文件抽出的生产 JS，输入来自仓库自身、无用户可控数据（S1523 误报）
+  const sel = factory(dom.win, dom.doc, NodeStub, NodeFilterStub, [
     [0x3040, 0x309f],
     [0x30a0, 0x30ff],
     [0x4e00, 0x9fff],
@@ -1229,7 +1227,11 @@ function gestureDriver(dom) {
   let id = 0;
   dom.doc.addEventListener = (name, fn) => { listeners[name] = fn; };
   dom.win.matchMedia = () => ({ matches: true });
-  new Function('window', 'document', 'setTimeout', 'clearTimeout', script)(dom.win, dom.doc,  // NOSONAR: harness 在本地 Node 沙箱里执行从 Dart 源文件抽出的生产 JS，输入来自仓库自身、无用户可控数据（S1523 误报）
+  compileScript(
+    ['window', 'document', 'setTimeout', 'clearTimeout'],
+    script,
+    'reader_selection_drag_hit_behavior_test-2.js',
+  )(dom.win, dom.doc,
     (fn) => { timers.set(++id, fn); return id; }, (key) => timers.delete(key));
   return {
     fire(name, x, y) {

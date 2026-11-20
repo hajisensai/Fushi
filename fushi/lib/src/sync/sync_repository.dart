@@ -4,7 +4,12 @@ import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:fushi/src/models/library_grid_columns.dart'
     show kLibraryGridColumnsPrefKey;
 import 'package:fushi/src/models/preference_keys.dart'
-    show kAnkiSettingsPrefKey, kWorkProfileSessionPrefKey;
+    show
+        kAnkiSettingsPrefKey,
+        kWhatsNewCardDismissedVersionPrefKey,
+        kWhatsNewSeenSeqPrefKey,
+        kWhatsNewSeenVersionPrefKey,
+        kWorkProfileSessionPrefKey;
 import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart'
     show kPageBackdropDeviceLocalPrefKeys;
 import 'package:fushi/src/utils/adaptive/shell_style.dart'
@@ -2043,6 +2048,10 @@ class SyncRepository {
     kStatLegacyProfileIdPrefKey,
     // 主进程此刻打开的作品会话（值是本库自增配置 id，只给本机弹窗进程镜像用）。
     kWorkProfileSessionPrefKey,
+    // 「本版新内容」看到哪个版本：描述这台设备装过的包，跟去别的设备会误判。
+    kWhatsNewSeenVersionPrefKey,
+    kWhatsNewSeenSeqPrefKey,
+    kWhatsNewCardDismissedVersionPrefKey,
     // 库页「每行数量」：合适的列数取决于这台设备的屏幕（BUG-4219）。
     kLibraryGridColumnsPrefKey,
     // 库页布局出厂判定（G1：新安装 = 拼贴 / 升级上来 = 封面网格 + 待弹选择框）：
@@ -2061,6 +2070,8 @@ class SyncRepository {
     PreferencesRepository.widgetPrivacyHideProfileKey,
     // 复习同步 v2 的文件夹存储位置：路径是这台设备的磁盘 / 挂载点，换设备恢复带过去没有意义。
     PreferencesRepository.srsFolderLocationsKey,
+    // 移除了、本机复习内核还没忘掉的位置：描述的是这台设备的内核状态，与上一项同一个事务写。
+    PreferencesRepository.srsForgetPendingKey,
     // 复习同步 v2 里关掉的通道位置：是这台设备「在不在那里同步」的选择，别的设备恢复备份不能替它关 / 开。
     PreferencesRepository.srsDisabledLocationsKey,
     // 首次 v2 同步的确认是这台设备做的：别的设备恢复备份带过来不能替它确认。
@@ -2195,6 +2206,8 @@ class SyncRepository {
     'ai_web_search',
     // 「抓搜索结果网页交给 AI」的同意：同意的是这台设备上配的那个后端，跟着它设备本地。
     'ai_web_search_page_fetch',
+    // 「AI 助手自主联网搜索」的首次确认：同理跟着这台设备配的后端设备本地。
+    'ai_agent_web_search',
     // 「允许已配对设备远程使用 AI 助手」：授权的是这台机器的 AI 指派与操作目录，
     // 只对点它的那台设备成立；漂过去会让另一台设备静默对配对设备开放。
     'ai_agent_for_peers',

@@ -19,6 +19,9 @@ enum FushiFitTitleAlign {
   bottom,
 }
 
+/// 原型 `.big > span { padding-top: .1em }`：字号判据里标题顶上留的气口（× 字号）。
+const double kFushiFitTitleTopPad = 0.1;
+
 /// 大字的默认字形：字重 w900、行高 0.92、字距 -0.04em（W 原型 `.big`）。
 /// [fontSize] 与 [color] 由调用方给；字体继承 [base]。
 TextStyle fushiFitTitleStyle(
@@ -52,10 +55,15 @@ TextPainter _layoutFitTitle(
 /// [minSize]～[maxSize] 之间二分 12 次，与原型同一判据：排完的总高不超过盒高、
 /// 每行都不超过盒宽）。最小字号也放不下时返回 null（调用方不画）。
 ///
-/// 先按「词不拆开」求（最长的不可断片段——拉丁词——整个放得进盒宽，
-/// [TextPainter.minIntrinsicWidth]）：否则二分会为了字号把短标题逐字母拆成
-/// 一列碎片。只有最小字号下词都放不进盒宽（超长单词）时，才退回原型的
-/// `overflow-wrap: anywhere`，允许词内换行、照样完整显示。
+/// 高度判据与原型一致地计入 `span` 的 `padding-top: .1em`（排完的总高 +
+/// 0.1 × 字号 ≤ 盒高），字形顶上留出那一点气口。
+///
+/// 拉丁单词不拆开：字号上限还要满足「最长的不可断片段（拉丁词）整个放进一行」
+/// （[TextPainter.minIntrinsicWidth] ≤ 盒宽），否则二分会为了字号把
+/// 「SUPERSTAR」排成「SUPERS / TAR」。中日文每个字都是断行点，照常逐字换行。
+/// 只有 [minSize]（唱片 / 海报大字 10 px，水印 max(22, 0.12 × 块高)）下单词
+/// 仍放不进盒宽时，才退回词内换行（原型的 `overflow-wrap: anywhere`），照样完整
+/// 显示。水印与唱片 / 海报大字共用这一套判据。
 double? fushiFitTitleFontSize({
   required String text,
   required TextStyle style,
@@ -74,8 +82,9 @@ double? fushiFitTitleFontSize({
       direction,
     );
     final bool ok =
-        painter.height <= box.height &&
-        (!keepWords || painter.minIntrinsicWidth <= box.width + 0.5) &&
+        painter.height + size * kFushiFitTitleTopPad <= box.height &&
+        // 不留容差：画的时候按盒宽排版，宽出一丝也会把词从中间断开。
+        (!keepWords || painter.minIntrinsicWidth <= box.width) &&
         painter.computeLineMetrics().every(
           (LineMetrics line) => line.width <= box.width + 0.5,
         );

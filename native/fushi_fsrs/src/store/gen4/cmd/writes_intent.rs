@@ -23,7 +23,8 @@ use super::super::schema::sql;
 use super::super::truth::Truth;
 use super::ref_of;
 use super::writes::{
-    ApplyOpts, Session, apply_in, draft, fail_after, now_of, row_with_profile, stored, write,
+    ApplyOpts, Born, Origin, Session, apply_in, draft, fail_after, now_of, row_with_profile,
+    stored, write,
 };
 use crate::card_cache::is_js_space;
 use crate::projection::Day;
@@ -93,6 +94,7 @@ fn apply_some(s: &mut Session<'_, '_>, now: i64, items: &[Value]) -> Result<Valu
         ApplyOpts {
             chg: false,
             compact: false,
+            origin: Origin::Synthesized,
         },
     )
 }
@@ -204,6 +206,7 @@ pub fn note_fields_if(
 pub fn change(t: &Truth<'_>, col: i64, req: &Value, items: &[Value]) -> Result<Value, String> {
     let now = now_of(req)?;
     write(t, col, |s| {
+        s.want_edit_rows(req);
         if let Some(cp) = req.get("checkpoint").filter(|cp| cp.is_object()) {
             let name = cp["name"]
                 .as_str()
@@ -226,6 +229,7 @@ pub fn change(t: &Truth<'_>, col: i64, req: &Value, items: &[Value]) -> Result<V
                 ApplyOpts {
                     chg: true,
                     compact: true,
+                    origin: Origin::Caller,
                 },
             )?;
             if v["landed"].as_array().is_some_and(Vec::is_empty) {
@@ -499,8 +503,8 @@ fn count(s: &mut Session<'_, '_>, notes: bool, sub: &str) -> Result<i64, String>
         .map_err(sql)
 }
 
-/// 「父::子」全名（还原点的名字；协议 3 `deck_delete::full_name`）。
-fn full_name(tree: &crate::store::sync2::config::DeckTree, id: &str) -> String {
+/// 「父::子」全名（还原点的名字；协议 3 `deck_delete::full_name`；实体归属闸按它重算牌组 ID，`writes_owner.rs`）。
+pub(super) fn full_name(tree: &crate::store::sync2::config::DeckTree, id: &str) -> String {
     let mut parts: Vec<&str> = Vec::new();
     let mut cur = Some(id);
     let mut guard = 0;
@@ -892,14 +896,22 @@ pub fn sched(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String> {
         let mut written: Vec<(String, String)> = Vec::new();
         let mut blocked = 0u64;
         for (card, action) in actions {
+            // 实体归属闸（`writes_owner.rs`）：别的集合的卡按「没有这张卡」跳过，撤销计入撤不了的条数（同协议 3）。
+            if s.foreign(EntKind::Card, &card, &Born::new())? {
+                if matches!(action, Action::Undo { .. }) {
+                    blocked += 1;
+                }
+                continue;
+            }
             let note = note_of(s, &card)?;
             let rows = s.settled()?.group_rows(&ref_of(&card))?;
             let input: Vec<Row<'_>> = rows
                 .iter()
-                .map(|(j, st, i)| Row {
+                .map(|(j, st, i, c)| Row {
                     json: j,
                     server_time: *st,
                     intent: i.clone(),
+                    seed_card: Some(c),
                 })
                 .collect();
             let head = replay::head(&input)?;

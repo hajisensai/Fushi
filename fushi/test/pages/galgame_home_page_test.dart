@@ -17,6 +17,7 @@ import 'package:fushi/src/mining/metadata/galgame_metadata_merge.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/galgame_home_page.dart';
 import 'package:fushi/src/pages/implementations/games/galgame_home_blocks.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -61,6 +62,7 @@ void main() {
     WidgetTester tester,
     AppModel appModel, {
     ShellContentLayout? layout,
+    bool glass = false,
   }) async {
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
     FushiToast.navigatorKey = navKey;
@@ -70,11 +72,17 @@ void main() {
         child: TranslationProvider(
           child: MaterialApp(
             navigatorKey: navKey,
-            theme: layout == null
+            theme: layout == null && !glass
                 ? null
                 : ThemeData(
                     extensions: <ThemeExtension<dynamic>>[
-                      FushiShellTheme(contentLayout: layout),
+                      if (layout != null)
+                        FushiShellTheme(contentLayout: layout),
+                      if (glass)
+                        const FushiGlassTheme(
+                          FushiGlassMaterial.off,
+                          glassDesign: true,
+                        ),
                     ],
                   ),
             home: Scaffold(
@@ -115,20 +123,65 @@ void main() {
     );
   }
 
-  testWidgets('collage: empty library shows the guide block', (
-    WidgetTester tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(1200, 900));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    final AppModel appModel = await buildAppModel(tester);
+  // BUG-4907：空库态是在剩余空间里居中的共享空态（图标色块 + 文案 + 拖放提示
+  // + 导入游戏 / 去发现），不是一张被拉满整列高度的窄卡。拼贴版与经典封面网格
+  // 同一份，MD3 与 Apple 都测。
+  for (final ShellContentLayout? layout in <ShellContentLayout?>[
+    null,
+    ShellContentLayout.grid,
+  ]) {
+    for (final bool glass in <bool>[false, true]) {
+      final String label =
+          '${layout == null ? 'collage' : 'grid'} ${glass ? 'Apple' : 'MD3'}';
+      testWidgets('$label: empty library is a centred guide, not a stretched '
+          'card', (WidgetTester tester) async {
+        await tester.binding.setSurfaceSize(const Size(1200, 900));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        final AppModel appModel = await buildAppModel(tester);
 
-    await pumpHome(tester, appModel);
+        await pumpHome(tester, appModel, layout: layout, glass: glass);
 
-    expect(tester.takeException(), isNull);
-    expect(find.byType(GalgameHomeEmpty), findsOneWidget);
-    expect(find.text(t.game_empty), findsOneWidget);
-    expect(find.text(t.library_view_import), findsOneWidget);
-  });
+        expect(tester.takeException(), isNull);
+        expect(find.byType(GalgameHomeEmpty), findsOneWidget);
+        expect(find.text(t.game_empty), findsOneWidget);
+        expect(find.text(t.game_import_drop_hint), findsOneWidget);
+        expect(find.byKey(GalgameHomeEmpty.importKey), findsOneWidget);
+        expect(find.text(t.game_home_import_games), findsOneWidget);
+
+        // 没有哪块底板被拉满高度（旧实现：卡片里 Column 默认 max 高，撑满整列）。
+        final Rect page = tester.getRect(find.byType(GalgameHomePage));
+        for (final Element box
+            in find
+                .descendant(
+                  of: find.byType(GalgameHomeEmpty),
+                  matching: find.byType(DecoratedBox),
+                )
+                .evaluate()) {
+          final RenderBox render = box.renderObject! as RenderBox;
+          expect(
+            render.size.height,
+            lessThan(page.height / 2),
+            reason: '空态里有一块底板高 ${render.size.height}，被拉伸了',
+          );
+        }
+
+        // 文案 + 按钮整组在页面中段（旧实现贴在页头下方的卡片左上角）。
+        final Rect title = tester.getRect(find.text(t.game_empty));
+        final Rect button = tester.getRect(
+          find.byKey(GalgameHomeEmpty.importKey),
+        );
+        final Rect group = title.expandToInclude(button);
+        expect(group.height, lessThan(page.height / 2));
+        expect(group.center.dy, greaterThan(page.top + page.height * 0.35));
+        expect(group.center.dy, lessThan(page.top + page.height * 0.75));
+        // 水平居中。
+        expect(
+          (group.center.dx - page.center.dx).abs(),
+          lessThan(page.width * 0.05),
+        );
+      });
+    }
+  }
 
   testWidgets('collage: hero, stat blocks and timeline render; no KPI tiles', (
     WidgetTester tester,

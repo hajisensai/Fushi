@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/video_mine_queue_dialog.dart';
 import 'package:fushi/src/mining/video_mine_queue.dart';
+import 'package:fushi/src/mining/web_mine_queue_store.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -87,7 +88,8 @@ void main() {
     if (tmp.existsSync()) await tmp.delete(recursive: true);
   });
 
-  /// 模拟引擎的固定临时文件名：暂存必须拷走，下一张会覆盖它们。
+  /// 模拟引擎的临时媒体：暂存必须拷走——引擎在暂存返回后就删掉本张卡的私有目录；这里
+  /// 让下一张写同名文件覆盖它，效果一样。
   Future<int> stageOne(String word, {String book = 'remote/emby/1'}) async {
     final File cover = File('${tmp.path}/immersion_clip.avif')
       ..writeAsStringSync('cover-$word');
@@ -269,7 +271,7 @@ void main() {
     expect(repo.expressions, <String>['走る']);
   });
 
-  test('打开播放页问角标时收掉旧版本留下的 done 行', () async {
+  test('问角标只计数、不删旧版本留下的 done 行；首页首帧的 sweepLegacyDone 才收掉', () async {
     final int legacy = await stageOne('走る');
     final int open = await stageOne('跳ぶ');
     await (db.update(
@@ -280,9 +282,15 @@ void main() {
       ),
     );
 
+    // 读方法没有删除副作用（#3722 L4）：done 行不计入角标，但仍留在表里。
     expect(await queue.openCount('remote/emby/1'), 1);
+    final List<WebMineQueueRow> before = await db.select(db.webMineQueue).get();
+    expect(before.map((WebMineQueueRow r) => r.id), <int>[legacy, open]);
+
+    await WebMineQueueStore(db).sweepLegacyDone();
     final List<WebMineQueueRow> left = await db.select(db.webMineQueue).get();
     expect(left.map((WebMineQueueRow r) => r.id), <int>[open]);
+    expect(await queue.openCount('remote/emby/1'), 1);
   });
 
   test('退出写入先等在途的暂存任务收尾，再读待写入的行', () async {

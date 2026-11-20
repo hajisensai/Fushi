@@ -60,14 +60,14 @@ String? cardSourceLocatorLabel(CardSourceLink link, {int? playlistEpisodes}) {
 }
 
 /// [cardSourceLocatorLabel] 的查库版：视频出处按本机库里的播放列表定集数；本机没有
-/// 该视频时按单视频处理（只给时间）。
+/// 该视频时按单视频处理（只给时间）。[database] 只在视频出处时才取（别的出处不查库）。
 Future<String?> resolveCardSourceLocatorLabel(
-  FushiDatabase db,
+  FushiDatabase Function() database,
   CardSourceLink link,
 ) async {
   if (link.kind != CardSourceKind.video) return cardSourceLocatorLabel(link);
   final VideoBookRow? row = await VideoBookRepository(
-    db,
+    database(),
   ).getByBookUid(link.uid);
   return cardSourceLocatorLabel(
     link,
@@ -91,19 +91,35 @@ extension on String {
   String? ifEmptyNull() => isEmpty ? null : this;
 }
 
+/// 「回到出处」按钮上的文字（纯函数）：有定位时「回到出处 · 第 3 集 · 12:34」，拿不到
+/// 定位时「回到出处 · 来源名」（[title] = 链接锚文本：书名 / 番名 / 歌名 / 游戏名），
+/// 两者都没有只写「回到出处」。
+String cardSourceJumpLabel({String? locator, String title = ''}) {
+  final String place = (locator ?? '').trim().isNotEmpty
+      ? locator!.trim()
+      : title.trim();
+  return place.isEmpty ? t.card_source_open : '${t.card_source_open} · $place';
+}
+
 /// 出处定位串（[resolveCardSourceLocatorLabel]，视频要查库定集数）。解析一次、
-/// 链接不变不重查；无定位时不占位。
+/// 链接不变不重查；无定位时不占位。给了 [format] 时按它把定位（可能为 null）排成整段
+/// 文字、始终占位（「回到出处」按钮的文字，见 [cardSourceJumpLabel]）。
 class CardSourceLocatorText extends StatefulWidget {
   const CardSourceLocatorText({
     super.key,
     required this.database,
     required this.link,
     this.style,
+    this.format,
+    this.textKey = const ValueKey<String>('card-source-locator'),
   });
 
-  final FushiDatabase database;
+  /// 只在视频出处时调用（查播放列表定集数）。
+  final FushiDatabase Function() database;
   final CardSourceLink link;
   final TextStyle? style;
+  final String Function(String? locator)? format;
+  final Key textKey;
 
   @override
   State<CardSourceLocatorText> createState() => _CardSourceLocatorTextState();
@@ -118,8 +134,7 @@ class _CardSourceLocatorTextState extends State<CardSourceLocatorText> {
   @override
   void didUpdateWidget(CardSourceLocatorText oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.link.toUri() != widget.link.toUri() ||
-        !identical(oldWidget.database, widget.database)) {
+    if (oldWidget.link.toUri() != widget.link.toUri()) {
       _label = _resolve();
     }
   }
@@ -128,11 +143,14 @@ class _CardSourceLocatorTextState extends State<CardSourceLocatorText> {
   Widget build(BuildContext context) => FutureBuilder<String?>(
     future: _label,
     builder: (BuildContext context, AsyncSnapshot<String?> snapshot) {
-      final String? label = snapshot.data;
+      final String Function(String? locator)? format = widget.format;
+      final String? label = format != null
+          ? format(snapshot.data)
+          : snapshot.data;
       if (label == null || label.isEmpty) return const SizedBox.shrink();
       return Text(
         label,
-        key: const ValueKey<String>('card-source-locator'),
+        key: widget.textKey,
         style: widget.style,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,

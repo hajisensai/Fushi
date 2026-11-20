@@ -1222,7 +1222,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
   /// 签发凭据已被吊销的流 token：删掉并回 403（BUG-4393）。正在发送的单个直传
   /// 响应不被切断，下一次 Range / 下一个 HLS 分段即 403。
   shelf.Response _revokedVideoToken(String tokenValue) {
-    _videoStreamTokens.remove(tokenValue);
+    _dropVideoToken(tokenValue);
     return shelf.Response(
       403,
       body: 'Token revoked',
@@ -1246,17 +1246,28 @@ extension _FushiSyncServerVideo on FushiSyncServer {
           e.key,
     ];
     for (final String key in keys) {
-      _videoStreamTokens.remove(key);
+      _dropVideoToken(key);
       cancelTranscodeWork(key);
     }
+  }
+
+  /// 作废一张流 token：摘出登记表，并把它名下缓存的转码分段一并清掉（video-34）——
+  /// 缓存的生命周期跟 token 走，作废后留着的段既取不到又占内存。所有删 token 的
+  /// 路径（释放流票 / 吊销 / TTL / 上限淘汰）都经这里。
+  void _dropVideoToken(String tokenValue) {
+    _videoStreamTokens.remove(tokenValue);
+    _transcodeSegments.evictStream(tokenValue);
   }
 
   void _pruneVideoTokens() {
     // 视频播放时间长，token 有效期设为 6 小时
     final DateTime cutoff = _now().subtract(const Duration(hours: 6));
-    _videoStreamTokens.removeWhere(
-      (String _, _VideoStreamToken token) => token.createdAt.isBefore(cutoff),
-    );
+    final List<String> expired = <String>[
+      for (final MapEntry<String, _VideoStreamToken> e
+          in _videoStreamTokens.entries)
+        if (e.value.createdAt.isBefore(cutoff)) e.key,
+    ];
+    expired.forEach(_dropVideoToken);
   }
 
   /// BUG-1568：守住视频流 token 上限。TTL prune 之后仍达到 [_maxVideoStreamTokens]
@@ -1274,7 +1285,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         }
       }
       if (oldestKey == null) break;
-      _videoStreamTokens.remove(oldestKey);
+      _dropVideoToken(oldestKey);
     }
   }
 
@@ -1384,17 +1395,26 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     // 分段工作挂在签发它的 token 名下（BUG-4461）：流票被释放时
     // [_releaseVideoTicket] 按 token 取消排队 / 在跑的分段；token 在本请求反查文件
     // 期间已被释放或过期的，[isAlive] 在登记时就拦下，不起 ffmpeg。
+    //
+    // 同一条流同一段只转一次（video-34）：往回拖到 client 向后缓冲之外、重连后重新
+    // 请求、或同一段的并发请求，都从 [_transcodeSegments] 取，不再起 ffmpeg。缓存
+    // 键含 token，画质档 / 音轨都绑在 token 上，不会把一档的字节回给另一档。
     final Uint8List? segment;
     try {
       segment = await _runTranscode(
-        () => transcodeSegment(
-          inputPath: file.path,
-          profile: profile,
+        () => _transcodeSegments.obtain(
+          stream: tokenValue,
           index: index,
-          durationMs: durationMs,
-          audioStreamIndex: tok.transcodeAudioStreamIndex,
-          workKey: tokenValue,
-          isAlive: () => _videoStreamTokens.containsKey(tokenValue),
+          input: file.path,
+          compute: () => transcodeSegment(
+            inputPath: file.path,
+            profile: profile,
+            index: index,
+            durationMs: durationMs,
+            audioStreamIndex: tok.transcodeAudioStreamIndex,
+            workKey: tokenValue,
+            isAlive: () => _videoStreamTokens.containsKey(tokenValue),
+          ),
         ),
       );
     } on TranscodeCancelled {
@@ -1557,8 +1577,9 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     headers: <String, String>{
       'Content-Type': 'video/mp2t',
       'Content-Length': '${bytes.length}',
-      // 转码产物不落盘也不复用：同一段再请求一次就再转一次。给 no-store 是为了
-      // 别让中间层缓存下一份「按某个画质档转出来的字节」再回给另一个档。
+      // 转码产物只在 host 内存里按流 token 缓存（[_transcodeSegments]），不落盘。
+      // 给 no-store 是为了别让中间层缓存下一份「按某个画质档转出来的字节」再回给
+      // 另一个档。
       'Cache-Control': 'no-store',
     },
   );

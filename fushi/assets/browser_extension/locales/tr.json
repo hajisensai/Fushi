@@ -487,6 +487,8 @@
   "pc_offset_title": "Zaman kaydırma",
   "pc_style_title": "Altyazı stili",
   "pc_mask_edit": "Altyazı maskesini ayarla",
+  "pc_fullscreen_enter": "Tam ekran",
+  "pc_fullscreen_exit": "Tam ekrandan çık",
   "mask_edit_hint": "Taşımak için sürükleyin; boyutlandırmak için kenarları veya köşeleri sürükleyin",
   "mask_edit_reset": "Sıfırla",
   "mask_edit_done": "Bitti",

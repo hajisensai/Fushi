@@ -487,6 +487,8 @@
   "pc_offset_title": "Desfase de tiempo",
   "pc_style_title": "Estilo de subtítulos",
   "pc_mask_edit": "Ajustar máscara de subtítulos",
+  "pc_fullscreen_enter": "Pantalla completa",
+  "pc_fullscreen_exit": "Salir de pantalla completa",
   "mask_edit_hint": "Arrastra para mover; arrastra bordes o esquinas para cambiar el tamaño",
   "mask_edit_reset": "Restablecer",
   "mask_edit_done": "Listo",

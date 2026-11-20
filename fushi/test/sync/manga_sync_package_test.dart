@@ -5,6 +5,7 @@ import 'package:archive/archive_io.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart' show MokuroImage;
 import 'package:fushi_engine/sync/manga_sync_package.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
@@ -154,6 +155,24 @@ void main() {
     }
     expect(File(output).existsSync(), isFalse);
   });
+
+  test(
+    'readExportableMangaPayload 与 hasExportableMangaContent 同一判据，过关交回页表',
+    () {
+      final Directory src = _mangaBookDir(pages: 3);
+      addTearDown(() => src.deleteSync(recursive: true));
+      expect(
+        readExportableMangaPayload(
+          src.path,
+        )!.images.map((MokuroImage i) => i.url),
+        <String>['images/p1.jpg', 'images/p2.jpg', 'images/p3.jpg'],
+      );
+      File(p.join(src.path, 'images', 'p3.jpg')).deleteSync();
+      expect(readExportableMangaPayload(src.path), isNull);
+      expect(hasExportableMangaContent(src.path), isFalse);
+      expect(readExportableMangaPayload(''), isNull);
+    },
+  );
 
   test('extractMangaPackage 拒绝路径穿越条目（zip-slip 防线）', () async {
     final Directory out = Directory.systemTemp.createTempSync('hbk_evil');

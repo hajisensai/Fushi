@@ -149,10 +149,8 @@ void main() {
     await tester.pumpAndSettle();
 
     // ① 后端二选一整个控件不存在——用户点不到一个够不着的档位。
-    //    （代理模式那条 strip 是 FushiSegmentedStrip<DownloadNetworkProxyMode>，
-    //     泛型不同，不会被这个 finder 命中。）
     expect(
-      find.byType(FushiSegmentedStrip<String>),
+      find.byType(AdaptiveSettingsSegmentedRow<String>),
       findsNothing,
       reason: '本平台没有第二个可用后端，选择器必须整块不渲染',
     );
@@ -193,7 +191,7 @@ void main() {
     await tester.pumpWidget(_harness(embeddedSupported: true));
     await tester.pumpAndSettle();
 
-    expect(find.byType(FushiSegmentedStrip<String>), findsOneWidget);
+    expect(find.byType(AdaptiveSettingsSegmentedRow<String>), findsOneWidget);
     expect(find.text(t.video_setting_torrent_backend_embedded), findsOneWidget);
     // 下载根搬到了通用的「下载位置」分组（DownloadLocationSection，BUG-4702）：它也管
     // 在线漫画 / 音乐插件，与后端无关；torrent 区在任何后端下都不再重复一份。

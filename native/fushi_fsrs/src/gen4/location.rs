@@ -276,7 +276,7 @@ pub fn parse_joined4(bytes: &[u8]) -> Option<(Id, String)> {
 }
 
 /// 位置目录名可用：非空、不含路径分隔符、不是 `.` / `..`。
-fn dir_name_ok(dir: &str) -> bool {
+pub(crate) fn dir_name_ok(dir: &str) -> bool {
     !dir.is_empty() && dir != "." && dir != ".." && !dir.contains(['/', '\\'])
 }
 

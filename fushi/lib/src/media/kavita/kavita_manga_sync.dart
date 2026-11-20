@@ -26,7 +26,6 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/kavita/kavita_api.dart';
@@ -36,75 +35,18 @@ import 'package:fushi_engine/media/metadata/credential_redaction.dart'
 
 import 'package:fushi/src/media/kavita/kavita_progress_resolver.dart';
 import 'package:fushi/src/media/kavita/kavita_progress_sync.dart';
+import 'package:fushi/src/media/kavita/kavita_reachability.dart';
 import 'package:fushi/src/media/kavita/kavita_server_config.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+
+export 'package:fushi/src/media/kavita/kavita_reachability.dart';
 
 /// 设备本地偏好：Kavita 漫画每章「上次成功同步」时刻（JSON 对象）。
 ///
 /// 已登记进 `kKnownPreferenceKeys` 与 `SyncRepository.deviceLocalPrefKeys`
 /// （同步时刻只对这台设备的本地进度有意义，漂到别的设备会让决策基线错位）。
 const String kKavitaMangaSyncStatePref = 'kavita_manga_sync_state';
-
-/// 开章拉取的失败是不是「服务器不可达」：连不上 / 超时 / 连接中断，或者答话的只是
-/// Kavita 前面的反向代理（502 / 503 / 504，Kavita 本体停了）。区别于 Kavita 自己
-/// 答了非 2xx 或响应解析不了。
-bool isKavitaUnreachableError(Object error) =>
-    error is TimeoutException ||
-    error is KavitaTransportException ||
-    error is IOException ||
-    (error is KavitaApiException && error.isGatewayUnavailable);
-
-/// 进程内记住哪些 Kavita 服务器在开章拉取预算内答不上来。
-///
-/// 没有这份记忆时，服务器断开后每次开章、换章都要把
-/// [KavitaMangaSyncSession.kPullTimeout] 等满，读已下载的章也一样。记住之后
-/// [KavitaMangaSyncSession.attach] 不再等拉取（请求照发、只当探针）。
-///
-/// 标记不靠谁来「清」：记下的是那一刻协议层的 [KavitaApi.answerCount]，之后这台
-/// 服务器对**任何**请求（探针、作品页刷新、浏览、取页图）在预算内答上话，计数一动
-/// 标记就失效，下一次开章恢复完整对账。连接参数变了（协议层换了实例）同样失效。
-/// 只存在内存里（进程一退就没了），不落盘。
-class KavitaReachability {
-  /// 生产用的进程级实例。
-  static final KavitaReachability session = KavitaReachability();
-
-  final Map<String, ({KavitaApi api, int answerCount})> _unreachable =
-      <String, ({KavitaApi api, int answerCount})>{};
-
-  /// [serverId] 是否仍按不可达处理。[api] 是这台服务器当前的协议层，[within] 是
-  /// 开章拉取预算：记下之后有一次答话且用时不超过预算才算恢复（一直慢过预算的
-  /// 服务器等了也用不上结果，继续不等）。
-  bool isUnreachable(
-    String serverId,
-    KavitaApi api, {
-    required Duration within,
-  }) {
-    final ({KavitaApi api, int answerCount})? mark = _unreachable[serverId];
-    if (mark == null) return false;
-    final Duration? latency = api.lastAnswerLatency;
-    final bool answeredSince =
-        api.answerCount != mark.answerCount &&
-        latency != null &&
-        latency <= within;
-    if (!identical(mark.api, api) || answeredSince) {
-      _unreachable.remove(serverId);
-      return false;
-    }
-    if (api.answerCount != mark.answerCount) {
-      // 答了但慢过预算：把基线挪到现在，等下一次答话再比。
-      _unreachable[serverId] = (api: api, answerCount: api.answerCount);
-    }
-    return true;
-  }
-
-  /// 记为不可达；返回是否是这次才记上（调用方据此每次断开只记一条日志）。
-  bool markUnreachable(String serverId, KavitaApi api) {
-    final bool added = !_unreachable.containsKey(serverId);
-    _unreachable[serverId] = (api: api, answerCount: api.answerCount);
-    return added;
-  }
-}
 
 /// 同步路径上被吞掉的失败留一条可查的记录。文本过 `redactCredentialsInText`
 /// （Kavita 的图片 URL 带 apiKey，异常文本里可能带出整条 URL）。
@@ -131,9 +73,30 @@ typedef KavitaMangaSyncStamp = ({int at, int? page});
 abstract interface class KavitaMangaSyncStampStore {
   KavitaMangaSyncStamp? stampOf(String bookUid, String chapterKey);
 
+  /// 一本书全部章的基线（chapterKey → 基线），一次读出（gap-mangamisc-3：
+  /// 作品页对账 / 批量标记逐章 [stampOf] 时，偏好实现每章都要整份解码一次）。
+  Map<String, KavitaMangaSyncStamp> stampsOfBook(String bookUid);
+
   /// 记一次成功同步。[page] 是这次同步后两侧一致的页；拉取后两侧仍不一致时传
   /// null，保留旧的页级基线。实现不得抛错（同步路径上的记账失败不能影响阅读）。
   Future<void> record(String bookUid, String chapterKey, int at, {int? page});
+
+  /// 一次记多章（语义逐项同 [record]），偏好实现只读写一次。不得抛错。
+  Future<void> recordAll(String bookUid, List<KavitaMangaSyncRecord> records);
+}
+
+/// [KavitaMangaSyncStampStore.recordAll] 的一项。
+typedef KavitaMangaSyncRecord = ({String chapterKey, int at, int? page});
+
+Map<String, KavitaMangaSyncStamp> _stampsOfBook(
+  Map<String, KavitaMangaSyncStamp> all,
+  String bookUid,
+) {
+  final String prefix = '$bookUid|';
+  return <String, KavitaMangaSyncStamp>{
+    for (final MapEntry<String, KavitaMangaSyncStamp> e in all.entries)
+      if (e.key.startsWith(prefix)) e.key.substring(prefix.length): e.value,
+  };
 }
 
 /// 纯内存实现（测试 / 无偏好可用时）。
@@ -150,6 +113,10 @@ class InMemoryKavitaMangaSyncStampStore implements KavitaMangaSyncStampStore {
       stamps[_stampKey(bookUid, chapterKey)];
 
   @override
+  Map<String, KavitaMangaSyncStamp> stampsOfBook(String bookUid) =>
+      _stampsOfBook(stamps, bookUid);
+
+  @override
   Future<void> record(
     String bookUid,
     String chapterKey,
@@ -158,6 +125,16 @@ class InMemoryKavitaMangaSyncStampStore implements KavitaMangaSyncStampStore {
   }) async {
     final String key = _stampKey(bookUid, chapterKey);
     stamps[key] = (at: at, page: page ?? stamps[key]?.page);
+  }
+
+  @override
+  Future<void> recordAll(
+    String bookUid,
+    List<KavitaMangaSyncRecord> records,
+  ) async {
+    for (final KavitaMangaSyncRecord r in records) {
+      await record(bookUid, r.chapterKey, r.at, page: r.page);
+    }
   }
 }
 
@@ -210,16 +187,27 @@ class PrefKavitaMangaSyncStampStore implements KavitaMangaSyncStampStore {
       _load()[_stampKey(bookUid, chapterKey)];
 
   @override
-  Future<void> record(
+  Map<String, KavitaMangaSyncStamp> stampsOfBook(String bookUid) =>
+      _stampsOfBook(_load(), bookUid);
+
+  @override
+  Future<void> record(String bookUid, String chapterKey, int at, {int? page}) =>
+      recordAll(bookUid, <KavitaMangaSyncRecord>[
+        (chapterKey: chapterKey, at: at, page: page),
+      ]);
+
+  @override
+  Future<void> recordAll(
     String bookUid,
-    String chapterKey,
-    int at, {
-    int? page,
-  }) async {
+    List<KavitaMangaSyncRecord> records,
+  ) async {
+    if (records.isEmpty) return;
     try {
       final Map<String, KavitaMangaSyncStamp> stamps = _load();
-      final String key = _stampKey(bookUid, chapterKey);
-      stamps[key] = (at: at, page: page ?? stamps[key]?.page);
+      for (final KavitaMangaSyncRecord r in records) {
+        final String key = _stampKey(bookUid, r.chapterKey);
+        stamps[key] = (at: r.at, page: r.page ?? stamps[key]?.page);
+      }
       if (stamps.length > maxEntries) {
         final List<MapEntry<String, KavitaMangaSyncStamp>> sorted =
             stamps.entries.toList()..sort(
@@ -460,6 +448,14 @@ class KavitaMangaSyncSession {
       onPushed: (int page, String? scrollId, int at) {
         unawaited(stamps.record(bookUid, chapterKey, at, page: page));
       },
+      onPushFailed: (Object error, StackTrace stack) => reportKavitaSyncFailure(
+        source: 'KavitaMangaSync.push',
+        error: error,
+        stack: stack,
+        reachability: reach,
+        serverId: serverId,
+        api: api,
+      ),
     );
     final KavitaMangaSyncSession session = KavitaMangaSyncSession._(
       sync: sync,
@@ -488,8 +484,11 @@ class KavitaMangaSyncSession {
   Future<void> close() async {
     try {
       await _sync.flush().timeout(kCloseFlushTimeout);
-    } on Object {
-      // 超时 / 离线：未推出的进度下次打开时由本地章进度与服务器对账。
+    } on TimeoutException {
+      // 推送挂过了关章上限（服务器慢 / 不可达）：未推出的进度下次打开时由本地章进度
+      // 与服务器对账。推送本身的失败由 onPushFailed 记账，这里不重复记。
+    } on Object catch (e, stack) {
+      _logSyncError('close', e, stack);
     } finally {
       _sync.dispose();
     }
@@ -534,12 +533,17 @@ Future<int> reconcileKavitaChapterStates({
   try {
     final Map<String, MangaChapterStateRow> states = await db
         .getMangaChapterStates(bookUid);
+    // 基线一次读全（gap-mangamisc-3），不逐章整份解码偏好。
+    final Map<String, KavitaMangaSyncStamp> baselines =
+        stamps?.stampsOfBook(bookUid) ?? const <String, KavitaMangaSyncStamp>{};
+    final int readAt = now();
+    final List<MangaChapterStateWrite> writes = <MangaChapterStateWrite>[];
     for (final OnlineMangaChapter chapter in chapters) {
       final int pages = _asInt(chapter.raw['pages']) ?? 0;
       final int pagesRead = _asInt(chapter.raw['pagesRead']) ?? 0;
       if (pages <= 0 || pagesRead <= 0) continue;
       final MangaChapterStateRow? local = states[chapter.key];
-      final int? baseline = stamps?.stampOf(bookUid, chapter.key)?.page;
+      final int? baseline = baselines[chapter.key]?.page;
       if (local != null && baseline != null && local.lastPage != baseline) {
         continue;
       }
@@ -549,15 +553,18 @@ Future<int> reconcileKavitaChapterStates({
         0,
         pages - 1,
       );
-      await db.saveMangaChapterState(
-        bookUid: bookUid,
+      writes.add((
         chapterKey: chapter.key,
         lastPage: serverFinished ? (local?.lastPage ?? page) : page,
         pageCount: pages,
-        readAt: serverFinished ? now() : null,
-      );
-      written++;
+        readAt: serverFinished ? readAt : null,
+        clearRead: false,
+      ));
     }
+    // 一个事务、同一时间戳（gap-mangamisc-2）：逐章写时最后写的最旧那章 updatedAt
+    // 最大，「继续阅读」会落到它上面。
+    await db.saveMangaChapterStates(bookUid: bookUid, writes: writes);
+    written = writes.length;
   } on Object catch (e, stack) {
     // 对账失败不影响作品页展示；下次刷新再来。
     _logSyncError('reconcile', e, stack);
@@ -565,21 +572,16 @@ Future<int> reconcileKavitaChapterStates({
   return written;
 }
 
+/// [alignKavitaMangaChapterMarks] 的一项：章 key + 本章总页数（未知 0）+ 作品页最近
+/// 一次从服务器取到的这一章进度页（未知 null）。
+typedef KavitaChapterMarkTarget = ({
+  String chapterKey,
+  int totalPages,
+  int? knownServerPage,
+});
+
 /// 在 Fushi 里手动把一章标已读 / 未读（Kavita 条目；服务器那边已由调用方标好）后，
-/// 对齐本地章进度与同步基线。
-///
-/// 位置与基线必须一起改：只改服务器，下次开章时本地旧页 != 基线会被
-/// [resolveKavitaProgress] 判成「本地动过」，把旧进度推回去，等于标记被撤销。
-/// - 标未读：`readAt` 清空、`lastPage` 回 0、基线页 0；
-/// - 标已读：`readAt` 记现在、`lastPage` 落最后一页（[totalPages] 未知则不动页）、
-///   基线页同步。
-///
-/// [serverConfirmed] = false：服务器没标成（离线 / 出错）。本机照样生效，但基线
-/// **不**前移到新页——基线留在服务器上一次已知的页（已有基线不动；从没有基线时用
-/// [knownServerPage]，即作品页最近一次从服务器取到的这一章进度），于是本机页 !=
-/// 基线 = 「本地动过、还没推」：开章时 attach 把它推上去，作品页刷新时的
-/// [reconcileKavitaChapterStates] 也不会按服务器的旧状态把它改回去。
-/// 永不抛错。
+/// 对齐本地章进度与同步基线。单章版，见 [alignKavitaMangaChapterMarks]。
 Future<void> alignKavitaMangaChapterMark({
   required FushiDatabase db,
   required KavitaMangaSyncStampStore stamps,
@@ -590,40 +592,93 @@ Future<void> alignKavitaMangaChapterMark({
   bool serverConfirmed = true,
   int? knownServerPage,
   int Function()? nowMs,
+}) =>
+    alignKavitaMangaChapterMarks(
+      db: db,
+      stamps: stamps,
+      bookUid: bookUid,
+      chapters: <KavitaChapterMarkTarget>[
+        (
+          chapterKey: chapterKey,
+          totalPages: totalPages,
+          knownServerPage: knownServerPage,
+        ),
+      ],
+      read: read,
+      serverConfirmed: serverConfirmed,
+      nowMs: nowMs,
+    );
+
+/// 在 Fushi 里手动把一批章标已读 / 未读（Kavita 条目；服务器那边已由调用方标好）
+/// 后，对齐本地章进度与同步基线。
+///
+/// 位置与基线必须一起改：只改服务器，下次开章时本地旧页 != 基线会被
+/// [resolveKavitaProgress] 判成「本地动过」，把旧进度推回去，等于标记被撤销。
+/// - 标未读：`readAt` 清空、`lastPage` 回 0、基线页 0；
+/// - 标已读：`readAt` 记现在、`lastPage` 落最后一页（`totalPages` 未知则不动页）、
+///   基线页同步。
+///
+/// 整批一个事务、同一时间戳（gap-mangamisc-2）：逐章写时最后写的最旧那章
+/// `updatedAt` 最大，「继续阅读」会落到已读过的旧章上。基线一次读、一次写
+/// （gap-mangamisc-3）。
+///
+/// [serverConfirmed] = false：服务器没标成（离线 / 出错）。本机照样生效，但基线
+/// **不**前移到新页——基线留在服务器上一次已知的页（已有基线不动；从没有基线时用
+/// `knownServerPage`，即作品页最近一次从服务器取到的这一章进度），于是本机页 !=
+/// 基线 = 「本地动过、还没推」：开章时 attach 把它推上去，作品页刷新时的
+/// [reconcileKavitaChapterStates] 也不会按服务器的旧状态把它改回去。
+/// 永不抛错。
+Future<void> alignKavitaMangaChapterMarks({
+  required FushiDatabase db,
+  required KavitaMangaSyncStampStore stamps,
+  required String bookUid,
+  required List<KavitaChapterMarkTarget> chapters,
+  required bool read,
+  bool serverConfirmed = true,
+  int Function()? nowMs,
 }) async {
-  if (bookUid.isEmpty || chapterKey.isEmpty) return;
+  final List<KavitaChapterMarkTarget> targets = <KavitaChapterMarkTarget>[
+    for (final KavitaChapterMarkTarget c in chapters)
+      if (c.chapterKey.isNotEmpty) c,
+  ];
+  if (bookUid.isEmpty || targets.isEmpty) return;
   final int now = (nowMs ?? () => DateTime.now().millisecondsSinceEpoch)();
   try {
-    final MangaChapterStateRow? existing = await db.getMangaChapterState(
-      bookUid: bookUid,
-      chapterKey: chapterKey,
-    );
-    final int pages = totalPages > 0 ? totalPages : (existing?.pageCount ?? 0);
-    final int page = read
-        ? (pages > 0 ? pages - 1 : existing?.lastPage ?? 0)
-        : 0;
-    await db.saveMangaChapterState(
-      bookUid: bookUid,
-      chapterKey: chapterKey,
-      lastPage: page,
-      pageCount: pages > 0 ? pages : null,
-      readAt: read ? now : null,
-    );
-    if (!read) {
-      await db.clearMangaChapterRead(bookUid: bookUid, chapterKey: chapterKey);
+    final Map<String, MangaChapterStateRow> existing = await db
+        .getMangaChapterStates(bookUid);
+    final List<MangaChapterStateWrite> writes = <MangaChapterStateWrite>[];
+    for (final KavitaChapterMarkTarget c in targets) {
+      final MangaChapterStateRow? row = existing[c.chapterKey];
+      final int pages = c.totalPages > 0 ? c.totalPages : (row?.pageCount ?? 0);
+      final int page = read ? (pages > 0 ? pages - 1 : row?.lastPage ?? 0) : 0;
+      writes.add((
+        chapterKey: c.chapterKey,
+        lastPage: page,
+        pageCount: pages > 0 ? pages : null,
+        readAt: read ? now : null,
+        clearRead: !read,
+      ));
     }
+    await db.saveMangaChapterStates(bookUid: bookUid, writes: writes);
     if (serverConfirmed) {
-      await stamps.record(bookUid, chapterKey, now, page: page);
+      await stamps.recordAll(bookUid, <KavitaMangaSyncRecord>[
+        for (final MangaChapterStateWrite w in writes)
+          (chapterKey: w.chapterKey, at: now, page: w.lastPage),
+      ]);
     } else {
-      final KavitaMangaSyncStamp? stamp = stamps.stampOf(bookUid, chapterKey);
-      if (stamp?.page == null && knownServerPage != null) {
-        await stamps.record(
-          bookUid,
-          chapterKey,
-          stamp?.at ?? now,
-          page: knownServerPage,
-        );
-      }
+      final Map<String, KavitaMangaSyncStamp> baselines = stamps.stampsOfBook(
+        bookUid,
+      );
+      await stamps.recordAll(bookUid, <KavitaMangaSyncRecord>[
+        for (final KavitaChapterMarkTarget c in targets)
+          if (baselines[c.chapterKey]?.page == null &&
+              c.knownServerPage != null)
+            (
+              chapterKey: c.chapterKey,
+              at: baselines[c.chapterKey]?.at ?? now,
+              page: c.knownServerPage,
+            ),
+      ]);
     }
   } on Object catch (e, stack) {
     // 对齐失败：下次开章由逐章对账兜底。

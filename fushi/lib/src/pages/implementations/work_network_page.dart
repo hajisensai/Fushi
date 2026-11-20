@@ -45,7 +45,12 @@ import 'package:material_ui/material_ui.dart';
 ///   点击经 [onOpen] 打开条目（详情页注入，与「同一作品」区块同一出口）。
 /// - 建议态的边带「确认」/「不相关」两键，动作与区块建议卡同一套
 ///   （[confirmMediaLinks] / [rejectMediaLinks]）。
-/// - 数据取进程级 [WorkGraphStore]，随连接 / 合集变更自动刷新。
+/// - 系列栏：刮削源的续作 / 前传 / 外传 / 剧场版（`collection_relations`）与手动的
+///   续作 / 外传连接；已入库的可点开，未入库的画成灰节点（标题 + 本机封面），超出上限
+///   的折成「另有 N 部」（见 [planWorkNetwork]）。
+/// - 顶栏常驻「添加相关条目」（[showMediaLinkEditorDialog]，任意本机条目、含续作 /
+///   外传关系）与「查找相关作品」（[onInfer]）；空态的两个按钮保留。
+/// - 数据取进程级 [WorkGraphStore]，随连接 / 合集 / 相关作品变更自动刷新。
 /// - MD3 与 Apple 两套：页面壳 [FushiPageScaffold]、节点 [FushiCard]、按钮
 ///   [FushiIconButtonControl] 都是设计系统分派件；动效走错峰入场 + 悬停抬升 + 按压
 ///   缩放（[FushiCard] 自带），时长只取 [FushiMotion]。
@@ -66,7 +71,7 @@ class WorkNetworkPage extends StatefulWidget {
   /// 打开一个节点对应的条目。
   final void Function(MediaLinkEntry entry) onOpen;
 
-  /// 空态的「查找相关作品」；null = 不显示。
+  /// 「查找相关作品」（顶栏与空态）；null = 不显示。
   final Future<int> Function()? onInfer;
 
   @override
@@ -134,7 +139,9 @@ class _WorkNetworkPageState extends State<WorkNetworkPage> {
     final WorkNetworkPlan plan = planWorkNetwork(snapshot, widget.endpoint);
     final Map<String, MediaLinkEntry> entries = <String, MediaLinkEntry>{};
     for (final WorkNetworkNodeSpec n in plan.nodes) {
-      final MediaLinkEntry entry = await resolveMediaLinkEntry(db, n.target);
+      final MediaLinkEndpoint? target = n.target;
+      if (target == null) continue; // 未入库 / 「另有 N 部」节点不解析本机条目
+      final MediaLinkEntry entry = await resolveMediaLinkEntry(db, target);
       final WorkSeriesInfo? series = n.series;
       entries[n.id] = series == null || series.name.isEmpty
           ? entry
@@ -176,11 +183,35 @@ class _WorkNetworkPageState extends State<WorkNetworkPage> {
     }
   }
 
+  void _addRelated(BuildContext context) => unawaited(
+    showMediaLinkEditorDialog(
+      context: context,
+      database: widget.database,
+      self: widget.endpoint,
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     return FushiPageScaffold(
       masthead: true,
       title: t.media_link_network_title,
+      // 两个动作常驻顶栏（不只在空态出现）：任何时候都能往关系网里加本机条目。
+      actions: <Widget>[
+        FushiIconButtonControl(
+          key: const ValueKey<String>('work-network-action-add'),
+          tooltip: t.media_link_network_add_related,
+          icon: const FushiIcon(FushiIcons.link),
+          onPressed: () => _addRelated(context),
+        ),
+        if (widget.onInfer != null)
+          FushiIconButtonControl(
+            key: const ValueKey<String>('work-network-action-infer'),
+            tooltip: t.media_link_infer_action,
+            icon: const FushiIcon(FushiIcons.manageSearch),
+            onPressed: _inferring ? null : () => unawaited(_infer()),
+          ),
+      ],
       body: Builder(
         builder: (BuildContext context) {
           // 页头浮在正文上：顶部让位从 body 子树里的 context 读。
@@ -228,13 +259,7 @@ class _WorkNetworkPageState extends State<WorkNetworkPage> {
               ),
             FushiTextButton(
               key: const ValueKey<String>('work-network-add'),
-              onPressed: () => unawaited(
-                showMediaLinkEditorDialog(
-                  context: context,
-                  database: widget.database,
-                  self: widget.endpoint,
-                ),
-              ),
+              onPressed: () => _addRelated(context),
               child: Text(t.media_link_add),
             ),
           ],
@@ -268,10 +293,7 @@ class _WorkNetworkPageState extends State<WorkNetworkPage> {
                     for (int i = 0; i < data.plan.edges.length; i++)
                       (
                         geometry: layout.edges[i],
-                        color: workNetworkRelationColor(
-                          scheme,
-                          data.plan.edges[i].relation,
-                        ),
+                        color: workNetworkEdgeColor(scheme, data.plan.edges[i]),
                         dashed: data.plan.edges[i].suggested,
                         directed: data.plan.edges[i].directed,
                       ),
@@ -301,10 +323,9 @@ class _WorkNetworkPageState extends State<WorkNetworkPage> {
           rect: layout.nodes[layout.nodeOrder[i]]!,
           child: FushiStaggeredEntrance(
             index: i,
-            child: _NetworkNode(
-              spec: nodeById[layout.nodeOrder[i]]!,
-              entry: data.entries[layout.nodeOrder[i]]!,
-              onOpen: widget.onOpen,
+            child: _nodeFor(
+              nodeById[layout.nodeOrder[i]]!,
+              data.entries[layout.nodeOrder[i]],
             ),
           ),
         ),
@@ -368,8 +389,18 @@ class _WorkNetworkPageState extends State<WorkNetworkPage> {
     );
   }
 
+  Widget _nodeFor(WorkNetworkNodeSpec spec, MediaLinkEntry? entry) {
+    if (spec.moreCount > 0) return _SeriesMoreNode(spec: spec);
+    final WorkNetworkWebItem? web = spec.web;
+    if (web != null || entry == null) {
+      return _WebNode(spec: spec, web: web);
+    }
+    return _NetworkNode(spec: spec, entry: entry, onOpen: widget.onOpen);
+  }
+
   String _laneLabel(WorkNetworkLaneKind kind) => switch (kind) {
     WorkNetworkSuggestedLane() => t.media_link_suggestions_title,
+    WorkNetworkSeriesLane() => t.media_link_group_series,
     WorkNetworkGroupLane(:final WorkMediaGroup group) => workMediaGroupLabel(
       group,
     ),
@@ -387,7 +418,33 @@ Color workNetworkRelationColor(
   MediaLinkRelation.themeSong => scheme.tertiary,
   MediaLinkRelation.soundtrack => scheme.onTertiaryContainer,
   MediaLinkRelation.cast => scheme.outline,
+  MediaLinkRelation.sequel => workNetworkSeriesColor(
+    scheme,
+    WorkSeriesKind.sequel,
+  ),
+  MediaLinkRelation.sideStory => workNetworkSeriesColor(
+    scheme,
+    WorkSeriesKind.sideStory,
+  ),
 };
+
+/// 系列边种类 → 连线颜色（手动的续作 / 外传连接与刮削的同种关系同色）。
+Color workNetworkSeriesColor(ColorScheme scheme, WorkSeriesKind kind) =>
+    switch (kind) {
+      WorkSeriesKind.sequel => scheme.onPrimaryContainer,
+      WorkSeriesKind.sideStory => scheme.onSecondaryContainer,
+      WorkSeriesKind.movie => scheme.error,
+      WorkSeriesKind.spinOff => scheme.onErrorContainer,
+      WorkSeriesKind.other => scheme.outlineVariant,
+    };
+
+/// 一条（折叠后的）边的颜色：系列边按种类，其余按关系。
+Color workNetworkEdgeColor(ColorScheme scheme, WorkNetworkEdgeSpec edge) {
+  final WorkSeriesKind? kind = edge.seriesKind;
+  return kind != null
+      ? workNetworkSeriesColor(scheme, kind)
+      : workNetworkRelationColor(scheme, edge.relation!);
+}
 
 /// 边的标签文字：主题曲按角色细分（OP / ED / 插入曲 / 主题曲），其余取关系名。
 String workNetworkEdgeLabel(
@@ -555,7 +612,7 @@ class _NetworkNode extends StatelessWidget {
             Row(
               children: <Widget>[
                 FushiIcon(
-                  mediaLinkKindIcon(spec.target.kind),
+                  mediaLinkKindIcon(entry.endpoint.kind),
                   size: 14,
                   color: scheme.onSurfaceVariant,
                 ),
@@ -639,10 +696,14 @@ class _EdgeLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
-    final Color color = workNetworkRelationColor(scheme, edge.relation);
+    final Color color = workNetworkEdgeColor(scheme, edge);
     final bool ai = rows.any(mediaLinkIsAiEffective);
+    final WorkSeriesKind? seriesKind = edge.seriesKind;
     final String label = <String>[
-      workNetworkEdgeLabel(edge.relation, rows),
+      if (seriesKind != null)
+        workSeriesKindLabel(seriesKind)
+      else
+        workNetworkEdgeLabel(edge.relation!, rows),
       if (ai) t.media_link_ai_linked,
     ].join(' · ');
     final Widget text = Text(
@@ -692,11 +753,133 @@ class _EdgeLabel extends StatelessWidget {
     );
     return Semantics(
       key: ValueKey<String>(
-        'work-network-edge-${edge.from}-${edge.relation.dbValue}-${edge.to}',
+        'work-network-edge-${edge.from}-${edge.relationKey}-${edge.to}',
       ),
       container: true,
       label: label,
       child: chip,
+    );
+  }
+}
+
+/// 未入库的相关作品节点（纯刮削的 `collection_relations` 行）：标题 + 本机封面
+/// （有才显示）+ 来源，半透明、不可点（本机没有可打开的条目）。
+class _WebNode extends StatelessWidget {
+  const _WebNode({required this.spec, required this.web});
+
+  final WorkNetworkNodeSpec spec;
+  final WorkNetworkWebItem? web;
+
+  static String _sourceLabel(String source) => switch (source) {
+    'anidb' => 'AniDB',
+    'mal' => 'MAL',
+    'tmdb' => 'TMDB',
+    'bangumi' => 'Bangumi',
+    _ => source,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    final String title = web?.title ?? '';
+    final List<String> tags = <String>[
+      workMediaGroupLabel(spec.group),
+      if (web != null) _sourceLabel(web!.source),
+      t.media_link_not_in_library,
+    ];
+    final String? path = web?.coverPath;
+    final Widget placeholder = ShelfCoverPlaceholder(
+      icon: FushiIcons.video,
+      iconSize: 28,
+      backgroundColor: FushiDesignTokens.of(context).surfaces.overlay,
+    );
+    final Widget cover = path == null || path.isEmpty
+        ? placeholder
+        : PortraitCoverImage(
+            image: resizedFileImage(
+              File(path),
+              width: kLocalCoverDecodePixelWidth,
+            ),
+            errorBuilder: (BuildContext _) => placeholder,
+          );
+    return Semantics(
+      container: true,
+      label: '$title, ${tags.join(', ')}',
+      child: FushiTooltip(
+        message: title,
+        child: FushiCard(
+          key: ValueKey<String>('work-network-node-${spec.id}'),
+          padding: const EdgeInsets.all(8),
+          child: Opacity(
+            opacity: 0.55,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Expanded(
+                  child: Center(
+                    child: AspectRatio(
+                      aspectRatio: 2 / 3,
+                      child: ClipRRect(
+                        borderRadius: FushiBorderRadius.card,
+                        child: cover,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  tags.join(' · '),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 系列栏超出上限折成的「另有 N 部」。
+class _SeriesMoreNode extends StatelessWidget {
+  const _SeriesMoreNode({required this.spec});
+
+  final WorkNetworkNodeSpec spec;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final String label = t.media_link_series_more(count: spec.moreCount);
+    return Semantics(
+      container: true,
+      label: label,
+      child: FushiCard(
+        key: ValueKey<String>('work-network-node-${spec.id}'),
+        padding: const EdgeInsets.all(8),
+        child: Center(
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.titleSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

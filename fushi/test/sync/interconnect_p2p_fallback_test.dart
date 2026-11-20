@@ -154,8 +154,8 @@ void main() {
     addTearDown(srsClient.cancelPending);
     expect(
       await srsClient.remoteGeneration(),
-      SrsRemoteHostGeneration.v1Only,
-      reason: '换代协商骨架合入后主机仍只声明 V1（线上行为不变）',
+      SrsRemoteHostGeneration.v2,
+      reason: '远程复习 V2（G10-2）合入后主机声明 V2（V1 只剩拒绝桩）',
     );
 
     final List<InterconnectHostTarget> targets =
@@ -221,7 +221,7 @@ void main() {
 
   test('经 P2P 隧道的请求不带有效配对凭据 → 401，host 不执行', () async {
     final http.Response bare = await http.get(
-      Uri.parse('http://127.0.0.1:$tunnelPort/api/srs/remote/media/card.png'),
+      Uri.parse('http://127.0.0.1:$tunnelPort/api/srs/remote2/media/card.png'),
     );
     expect(bare.statusCode, 401, reason: '隧道口同样要配对凭据');
 
@@ -243,7 +243,7 @@ void main() {
     );
     expect(await client.media('card.png'), isNull);
     final http.Response wrong = await http.get(
-      Uri.parse('http://127.0.0.1:$tunnelPort/api/srs/remote/media/card.png'),
+      Uri.parse('http://127.0.0.1:$tunnelPort/api/srs/remote2/media/card.png'),
       headers: <String, String>{
         'Authorization':
             'Basic ${base64Encode(utf8.encode('hibiki:not-the-pairing-token'))}',

@@ -30,7 +30,7 @@ import 'package:fushi/src/utils/net/app_native_proxy.dart';
 class TtsServices {
   TtsServices._(this.prefs)
     : store = TtsPresetStore(prefs),
-      pronunciation = TtsPronunciationStore(prefs),
+      textRules = TtsTextRulesStore(prefs),
       localGptSovits = GptSovitsLocalEngine(
         prefs: prefs,
         httpClientFactory: createAppHttpClient,
@@ -88,8 +88,9 @@ class TtsServices {
 
   final TtsPresetStore store;
 
-  /// 发音词典（朗读与制作共用）。
-  final TtsPronunciationStore pronunciation;
+  /// 文本处理规则（发音词典 / 合成前替换 / 识别后替换）：朗读、制作与设置页共用
+  /// 这一份。
+  final TtsTextRulesStore textRules;
 
   /// 本机一键部署的 GPT-SoVITS（仅 Windows 可用；服务进程随 app 退出终止）。
   final GptSovitsLocalEngine localGptSovits;

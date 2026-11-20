@@ -10,6 +10,7 @@ import 'package:fushi/src/ai/agent/ai_agent_toolbox.dart'
 
 import 'package:fushi/src/ops/ctl_ai_agent_routes.dart';
 import 'package:fushi/src/ops/ctl_web_routes.dart';
+import 'package:fushi/src/ops/ctl_web_search_routes.dart';
 import 'package:fushi/src/ops/ctl_url_import_routes.dart';
 import 'package:fushi/src/ops/ctl_disc_routes.dart';
 import 'package:fushi/src/ops/ctl_media_links_routes.dart';
@@ -95,6 +96,7 @@ List<CtlRoute> buildDomainOpRoutes(OpContext context) => <CtlRoute>[
   ...buildDiscCtlRoutes(context),
   ...buildUrlImportCtlRoutes(context),
   ...buildWebCtlRoutes(context),
+  ...buildWebSearchCtlRoutes(context),
   ...buildFeedbackCtlRoutes(context),
   ...buildAiAgentCtlRoutes(context),
 ];

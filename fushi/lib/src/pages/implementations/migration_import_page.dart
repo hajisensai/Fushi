@@ -262,6 +262,9 @@ class _MigrationImportPageState extends State<MigrationImportPage>
           // 不搬设置（那是给「另一台设备的备份」用的语义）。不开这个开关，
           // 迁移完成后阅读器/视频/Anki/快捷键/界面/互联/同步后端全是默认值。
           adoptSourcePreferences: true,
+          // 复习数据同理：同机换包名就是要把旧包的复习库整份搬过来（另一个复习库的认领 / 旧档案标识都是本人的），
+          // 不确认的话内核对还没绑定的 profile 回「要确认」、复习数据一份都不落，用户却看到迁移成功。
+          srsConfirmed: true,
         );
       }
       // 合并后聚合校验：逐表行数不得低于各批清单最大值。

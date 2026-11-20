@@ -52,8 +52,24 @@ void main() {
     );
     final String selectionBar = source.substring(barStart, deleteStart);
 
-    expect(selectionBar, contains('FushiIconButton('));
-    expect(selectionBar, isNot(contains('\n              IconButton(')));
+    // #3803 起书架批量栏的按钮由共享的 batchActionButtons 按 BatchAction 表构建
+    // （与多选态右键批量菜单共用一份动作定义），按钮组件钉在那个构建函数上。
+    expect(
+      selectionBar,
+      contains('actions: batchActionButtons(context, _batchActions()),'),
+    );
+    expect(selectionBar, isNot(contains('IconButton(')));
+
+    final String shared = File(
+      'lib/src/utils/components/batch_action_bar.dart',
+    ).readAsStringSync();
+    final int buildStart = shared.indexOf('List<Widget> batchActionButtons(');
+    final int buildEnd = shared.indexOf('class BatchActionBar ');
+    expect(buildStart, isNonNegative);
+    expect(buildEnd, greaterThan(buildStart));
+    final String builder = shared.substring(buildStart, buildEnd);
+    expect(builder, contains('FushiIconButton('));
+    expect(builder, isNot(contains(RegExp(r'(?<!Fushi)IconButton\('))));
   });
 
   test('home dictionary compact toolbar uses FushiIconButton action', () {

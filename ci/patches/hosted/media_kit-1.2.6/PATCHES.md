@@ -159,12 +159,77 @@ isolate killed without dispose after quiescing; exits `-1073740791` with
 `Callback invoked after it has been deleted` without the fix). Remove when
 upstream unregisters its callbacks before the engine can free them.
 
+## BUG-4910: a locked screenshot holds the player lock for the capture only
+
+`lib/src/player/native/player/real.dart` splits `NativePlayer.screenshot` in
+two. `_screenshotRaw` (helper isolate, registered in `_offThreadNativeCalls`
+like before) runs `screenshot-raw` and copies the BGRA frame into a
+`TransferableTypedData`; only this step runs under `lock` when
+`synchronized` is true. `_encodeScreenshot` (a second helper isolate) builds
+the JPEG / PNG after the lock is released; it never touches the handle, so
+`dispose` does not wait for it. `format: null` still returns the raw BGRA
+bytes. `format: 'image/x-fushi-bgra'` (section below) skips both the
+`TransferableTypedData` copy and the encode.
+
+Upstream encodes inside the locked section, on the same isolate as the
+capture. The pure-Dart encode takes hundreds of ms for a 1080p frame, and
+every `play()` / `pause()` / `seek()` queued behind a screenshot waited for
+it: mining a card and resuming right away resumed only after the JPEG was
+done. The captured frame is unchanged (the capture still runs in lock order).
+
+Regression tests: `fushi/test/third_party/media_kit_screenshot_lock_test.dart`
+(real libmpv + ffmpeg: `FUSHI_TEST_LIBMPV`, `FUSHI_TEST_FFMPEG`; a `pause()`
+queued right after a JPEG screenshot completes first) and the structural
+guard in `fushi/test/media/video/video_mpv_ui_thread_native_calls_guard_test.dart`.
+Remove when upstream encodes outside its lock.
+
+## BUG-4911: property writes report libmpv's result
+
+`lib/src/player/native/player/real.dart` adds
+`NativePlayer.setPropertyWithResult(property, value)`: the body of the
+patched async `setProperty` (BUG-3507), returning the
+`MPV_EVENT_SET_PROPERTY_REPLY` error (or the immediate `mpv_set_property_async`
+error, or the synchronous `mpv_set_property_string` result when
+`configuration.async` is off). `setProperty` now delegates to it and still
+returns nothing. Upstream drops the code, so a rejected write (unknown name,
+bad value, not settable at runtime) left no trace; Fushi's single batch helper
+`setMpvPropertiesInOrder` (`fushi/lib/src/media/video/video_mpv_config.dart`)
+logs it. Returns `MPV_ERROR_UNINITIALIZED` when the player got disposed while
+waiting for initialization; a write still pending at `dispose` resolves to 0.
+
+Regression test: `fushi/test/media/video/video_mpv_property_batch_test.dart`
+(helper contract) and the guard above (`setProperty` delegates, the write
+stays async). Remove together with the BUG-3507 property patch.
+
+## Raw BGRA screenshot transform (`image/x-fushi-bgra`)
+
+`lib/src/player/native/player/real.dart`: `screenshot` accepts
+`format: 'image/x-fushi-bgra'` together with a `fushiRawTransform` callback
+(carried to the capture isolate in `_ScreenshotData.rawTransform`; a missing
+callback is an `ArgumentError`). The callback runs inside `_screenshotRaw` on
+the capture helper isolate with the `screenshot-raw` frame size, row stride and
+a view of mpv's BGRA buffer, before the node is freed — the view is valid only
+during the call, so the transform copies what it keeps. Its returned bytes are
+the screenshot result as is: no `TransferableTypedData` copy of the whole
+frame, no `_encodeScreenshot`. Because it must run before the node is freed it
+is part of the capture call, so with `synchronized: true` it runs under `lock`
+(Fushi's only caller passes `synchronized: false`), and `dispose` waits for it
+through `_offThreadNativeCalls` like any capture. Upstream's `null` format
+copies the whole frame and drops the dimensions, and the JPEG / PNG formats run
+a pure-Dart encode (hundreds of ms per 1080p frame). The smart subtitle mask
+(`fushi/lib/src/media/video/smart_subtitle_mask_sampler.dart`) samples frames
+continuously during playback and only needs a small RGBA crop: the transform
+(`fushi/lib/src/media/video/raw_video_frame.dart`) copies just those rows on
+the capture isolate, so no full frame is copied or sent between isolates.
+Additive: no existing format changes. Remove if upstream offers a cropped raw
+screenshot.
+
 ## BUG-4941: the mpv handle is destroyed on a helper isolate
 
 `lib/src/player/native/player/real.dart` runs the delayed
 `mpv_terminate_destroy` of `dispose` through `compute` (top-level
 `_terminateDestroy`), after the in-flight helper-isolate calls finish, exactly
-like `_hookContinue` / `_screenshot`.
+like `_hookContinue` / `_screenshotRaw`.
 
 `mpv_terminate_destroy` blocks until the mpv core thread has exited
 (`mp_destroy_client` in `player/client.c`: `mp_dispatch_lock`, then

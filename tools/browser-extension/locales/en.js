@@ -506,6 +506,8 @@
   pc_offset_title: 'Timing offset',
   pc_style_title: 'Subtitle style',
   pc_mask_edit: 'Adjust subtitle mask',
+  pc_fullscreen_enter: 'Full screen',
+  pc_fullscreen_exit: 'Exit full screen',
   mask_edit_hint: 'Drag to move, drag edges or corners to resize',
   mask_edit_reset: 'Reset',
   mask_edit_done: 'Done',

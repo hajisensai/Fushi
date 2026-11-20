@@ -1,0 +1,11 @@
+## BUG-4906 · 放掉视频句柄（数据根迁移 / 删视频 / 文件名整理）后，新 Player 的画面参数事件收不到，HDR 输出与杜比视界提示只剩开片快照补判
+- **报告**：2026-11-20（路线图 #3722 c32 video-6，代码复核；非用户反馈）
+- **真实性**：✅ 真 bug（部分成立，按复核收窄）。根因（基准 `7745effa2e`）：
+  - `fushi/lib/src/media/video/video_player_controller.dart:4095`：`_videoParamsSub ??= player.stream.videoParams.listen(...)`——为「换集复用同一 Player 不重挂」用了 `??=`。
+  - 同文件 `_releaseMediaHandles`（`:7207`）销毁旧 Player、置 `_player = null`，却不取消也不置空 `_videoParamsSub`；下一次 `load` 建出新 Player 后 `??=` 直接跳过，订阅仍挂在已销毁的旧 Player 上。
+  - 后果：每次 load 仍会拿 `player.state.videoParams` 快照补判一次，所以多数文件照常；失效的是「快照当时参数还没到」（慢源、网络流）和「播放中途参数变化」两种——HDR 输出不开、杜比视界提示不出。时序相关、概率性。
+  - `_audioDeviceSub` 在建 Player 时被直接覆盖赋值，功能不坏；同为 Player 作用域，一并在释放时取消（整洁项）。
+- **[x] ① 已修复** — `_releaseMediaHandles` 里与 `_audioDevicesSub` 一起取消并置空 `_videoParamsSub`、`_audioDeviceSub`，新 Player 的 `_attachPlaybackStreams` 重新挂订阅。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/video_player_controller_handles_test.dart`「句柄释放后换新 Player（video-6）」：假 `PlatformPlayer` 撑起两个真 `Player`，挂订阅 → 释放句柄 → 挂新 Player（开片快照无参数）→ 新 Player 推 HDR 参数，断言判据变成 HDR。修前订阅还挂在旧 Player 上，断言红。
+- **备注**：
+  - 真机未验：数据根迁移后打开 HDR 网络流，看 HDR 输出与杜比视界提示。

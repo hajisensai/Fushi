@@ -334,3 +334,18 @@ List<ReaderSeamlessChapterEntry> readerSeamlessChapterOrder({
     if (isAbsorbed == null || !isAbsorbed(i))
       ReaderSeamlessChapterEntry(index: i, url: urlOf(i)),
 ];
+
+/// 网页小说书阅读中途 spine 末尾长出新章（novel-d6）：把 [appended]（只含新章）
+/// 接到已装文档的阅读序末尾（`window.__fushiSeamless.extendOrder`）。阅读序只在
+/// 装页时随配置下发一次，不补这一步时，正读着原来末章的文档不知道后面还有章。
+/// 本文档没装无缝模块（非连续模式 / 开关关）时是空操作。
+String readerSeamlessExtendOrderInvocation(
+  List<ReaderSeamlessChapterEntry> appended,
+) {
+  final String entries = jsonEncode(<Map<String, Object?>>[
+    for (final ReaderSeamlessChapterEntry e in appended)
+      <String, Object?>{'index': e.index, 'url': e.url},
+  ]);
+  return 'window.__fushiSeamless && '
+      'window.__fushiSeamless.extendOrder($entries);';
+}

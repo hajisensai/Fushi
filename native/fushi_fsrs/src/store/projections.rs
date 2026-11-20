@@ -8,9 +8,12 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
+#[cfg(test)]
 use rusqlite::Connection;
 
-use super::{SrsCore, slim};
+use super::SrsCore;
+#[cfg(test)]
+use super::slim;
 use crate::history::{Kind, Log, LogCols, NONE_I64, Origin, Outcome, RType, parse_stored};
 use crate::projection::{self, Alg, Day, EffLog, MemAlg, RWKV_ROW, RwkvIds};
 
@@ -278,6 +281,7 @@ impl LogsByCard {
     }
 }
 
+#[cfg(test)]
 fn fetch_logs(conn: &Connection, cards: &[&str]) -> Result<LogsByCard, String> {
     let mut logs = LogsByCard::default();
     for chunk in cards.chunks(500) {
@@ -304,6 +308,7 @@ fn fetch_logs(conn: &Connection, cards: &[&str]) -> Result<LogsByCard, String> {
 
 /// 每份历史的完整血统：调用方给的卡（第一张是这份历史的卡；Dart 只给它自己）连同它的全部前身
 /// （store/caches.rs `lineage_ids`），给过的顺序在前、补上的按血统顺序接在后面。
+#[cfg(test)]
 fn expand_lineages(r: &Connection, groups: &[Vec<String>]) -> Result<Vec<Vec<String>>, String> {
     expand_with(groups, &mut |seeds| {
         crate::store::caches::lineage_ids(r, seeds)
@@ -420,6 +425,7 @@ impl TrainingColumns {
 
 impl SrsCore {
     /// 读连接上一个读事务：多条语句看同一个 WAL 快照。
+    #[cfg(test)]
     fn read_snapshot<T>(
         &self,
         body: impl FnOnce(&Connection) -> Result<T, String>,
@@ -435,6 +441,7 @@ impl SrsCore {
     }
 
     /// 优化器 / 校准共用的取数：同一快照里展开各组的全部前身，再取这些卡的复习日志（[training_groups_on]）。
+    #[cfg(test)]
     fn fetch_training_groups(
         &self,
         groups: &[Vec<String>],
@@ -448,6 +455,7 @@ impl SrsCore {
     /// 输出（小端，全部 8 字节字）：`[n_seq, n_reviews, n_items]`、`seq_start × (n_seq + 1)`、`seq_card × n_seq`、
     /// `rating × n_reviews`、`delta(f64) × n_reviews`、`(seq, len) × n_items`。序列 = 一张进训练集的卡的完整评审，
     /// 条目 = 它到第 len 次评分为止的前缀；条目按最后一次评分时刻升序（同一时刻按卡的输入顺序、再按评分先后）。
+    #[cfg(test)]
     pub fn optimizer_items(
         &self,
         groups: &[Vec<String>],
@@ -464,6 +472,7 @@ impl SrsCore {
 
     /// 复习统计页的校准图（`srsCalibration`）：与 [SrsCore::optimizer_items] 同一份训练集（同一布局、同一顺序），
     /// 末尾再按列接五段 `i64 × n_items`（见 [calibration_items_of]）。
+    #[cfg(test)]
     pub fn calibration_items(
         &self,
         groups: &[Vec<String>],
@@ -480,6 +489,7 @@ impl SrsCore {
 
     /// RWKV 逐卡（增量追加、排队的此刻行用）：每份历史的保留评分行与摘要（输出见 [rwkv_cards_of]）。`ids[4g..4g+4]` 是
     /// 第 g 份的卡 / 笔记 / 牌组 / 预设数字 id。
+    #[cfg(test)]
     pub fn rwkv_cards(
         &self,
         groups: &[Vec<String>],
@@ -495,6 +505,7 @@ impl SrsCore {
 
     /// RWKV 回放行：本 profile 的日志一条语句扫出（指纹与行出自同一个快照，[rwkv_scan_on]），按 `groups`（卡的血统，
     /// 输入顺序 = 同一时刻的先后）产出保留评分行，按评分时刻稳定排序。选行与输出见 [ReplayScan]。
+    #[cfg(test)]
     pub fn rwkv_replay(
         &self,
         profile: &str,
@@ -512,6 +523,7 @@ impl SrsCore {
     }
 
     /// RWKV 对齐用的日志指纹与尾巴（同一个快照，[rwkv_log_tail_on]）。
+    #[cfg(test)]
     pub fn rwkv_log_tail(
         &self,
         profile: &str,
@@ -525,6 +537,7 @@ impl SrsCore {
 
 /// [SrsCore::optimizer_items] / `calibration_items` / `rwkv_cards` 在连接 [r] 上的取数：展开各组的全部前身，再取这些卡的
 /// 复习日志。调用方负责快照（对拍测试在写连接的 SAVEPOINT 里调）。
+#[cfg(test)]
 pub(crate) fn training_groups_on(
     r: &Connection,
     groups: &[Vec<String>],
@@ -535,6 +548,7 @@ pub(crate) fn training_groups_on(
 }
 
 /// [SrsCore::rwkv_replay] 在连接 [r] 上的扫描：本 profile 的日志按 rowid 一条语句扫出，交给 [ReplayScan]。
+#[cfg(test)]
 pub(crate) fn rwkv_scan_on(
     r: &Connection,
     profile: &str,
@@ -571,6 +585,7 @@ pub(crate) fn rwkv_scan_on(
 /// 行数 = 新增行数、最大 rowid = 新增里的最大（没有新增为 0）；调用方在已知的指纹上累加。
 ///
 /// 输出见 [rwkv_log_tail_of]。
+#[cfg(test)]
 pub(crate) fn rwkv_log_tail_on(
     r: &Connection,
     profile: &str,
