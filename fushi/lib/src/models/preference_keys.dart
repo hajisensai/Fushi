@@ -1170,6 +1170,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'web_browser_extension_storage',
   // bool（默认 false）：浏览器网页深色模式（web_browser_prefs.dart，设备本地）。
   'web_browser_force_dark',
+  // bool（默认 true）：浏览器全屏横视频时自动转横屏（web_browser_prefs.dart，设备本地）。
+  'web_browser_fullscreen_auto_rotate',
+  // bool（默认 true）：浏览器网页全屏由 Fushi 接管成页内伪全屏（web_browser_prefs.dart，设备本地）。
+  'web_browser_fullscreen_takeover',
   // bool：已删除的浏览器「整页注音」开关（2026-10-27 用户要求移除）。存量键冻结、
   // 不再读写；留在这里只为键名不被别的功能复用。
   'web_browser_furigana',
