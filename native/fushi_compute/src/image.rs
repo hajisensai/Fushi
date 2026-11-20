@@ -1836,7 +1836,7 @@ fn encode_fit_jpeg(
     let mut jpeg = Vec::new();
     let mut enc = jpeg_encoder::Encoder::new(&mut jpeg, quality);
     enc.set_sampling_factor(jpeg_encoder::SamplingFactor::F_1_1);
-    if let Some(icc) = icc.filter(|icc| !icc.is_empty()) {
+    if let Some(icc) = icc.filter(|icc| icc_matches_channels(icc, channels)) {
         enc.add_icc_profile(icc).map_err(|_| status::BAD_INPUT)?;
     }
     enc.encode(pixels, width as u16, height as u16, color)
@@ -1846,6 +1846,19 @@ fn encode_fit_jpeg(
 
 /// 源图的 ICC 配置文件（没有 / 读不出为 `None`）。
 type IccProfile = Option<Vec<u8>>;
+
+/// 配置文件头的 data colour space（ICC.1 头部偏移 16 起 4 字节）与输出 JPEG 的通道数一致：
+/// 1 通道配 `GRAY`，3 通道配 `RGB `。解码会把 CMYK / YCCK 转成 RGB、把灰度源保持单通道，
+/// 源图的配置文件描述的却是原始色彩空间；色彩空间对不上的配置文件贴上去，WebView 要么忽略、
+/// 要么按错的空间解释，一律不贴（输出退回未标记，按 sRGB 显示）。
+fn icc_matches_channels(icc: &[u8], channels: usize) -> bool {
+    let expected: &[u8; 4] = match channels {
+        1 => b"GRAY",
+        3 => b"RGB ",
+        _ => return false,
+    };
+    icc.len() >= 128 && &icc[16..20] == expected
+}
 
 /// 解码成不透明的 1 通道（灰度）或 3 通道（RGB）uint8 像素，返回
 /// `(像素, 宽, 高, 通道数, ICC 配置文件)`；带 alpha 的源返回 [status::BAD_INPUT]。
@@ -2613,8 +2626,8 @@ mod tests {
     #[test]
     fn fit_transcodes_keep_the_source_icc_profile() {
         use image::ImageDecoder;
-        // 任意字节当配置文件即可：只验证原样带到输出里（WebView 按它做色彩管理）。
-        let profile: Vec<u8> = (0..600u32).map(|i| (i * 31 % 251) as u8).collect();
+        // 头部声明 GRAY 的任意字节当配置文件即可：只验证原样带到输出里（WebView 按它做色彩管理）。
+        let profile = fake_icc(b"GRAY");
         let pixels: Vec<u8> = (0..200u32 * 300).map(|i| (i % 256) as u8).collect();
         let mut src = Vec::new();
         let mut enc = jpeg_encoder::Encoder::new(&mut src, 95);
@@ -2641,6 +2654,57 @@ mod tests {
             .unwrap();
         let out = fit_jpeg_hq(&plain, 100, 150, 90, resample::Filter::Box, false).unwrap();
         assert_eq!(icc_of(&out), None);
+    }
+
+    /// 600 字节的假 ICC 配置文件，头部 data colour space（偏移 16）为 [space]。
+    fn fake_icc(space: &[u8; 4]) -> Vec<u8> {
+        let mut profile: Vec<u8> = (0..600u32).map(|i| (i * 31 % 251) as u8).collect();
+        profile[16..20].copy_from_slice(space);
+        profile
+    }
+
+    #[test]
+    fn fit_transcodes_drop_an_icc_profile_of_another_colour_space() {
+        use image::ImageDecoder;
+        let icc_of = |jpeg: &[u8]| {
+            image::codecs::jpeg::JpegDecoder::new(std::io::Cursor::new(jpeg))
+                .unwrap()
+                .icc_profile()
+                .unwrap()
+        };
+        // CMYK 源：解码成 RGB 输出，CMYK 配置文件对不上 3 通道，不能贴。
+        let cmyk_profile = fake_icc(b"CMYK");
+        let cmyk: Vec<u8> = (0..200u32 * 300 * 4).map(|i| (i % 256) as u8).collect();
+        let mut src = Vec::new();
+        let mut enc = jpeg_encoder::Encoder::new(&mut src, 95);
+        enc.add_icc_profile(&cmyk_profile).unwrap();
+        enc.encode(&cmyk, 200, 300, jpeg_encoder::ColorType::Cmyk)
+            .unwrap();
+        assert_eq!(icc_of(&src).as_deref(), Some(&cmyk_profile[..]));
+        let hq = fit_jpeg_hq(&src, 100, 150, 90, resample::Filter::Box, false).unwrap();
+        let standard = fit_jpeg(&src, 100, 150, 90).unwrap();
+        for out in [hq, standard] {
+            assert_eq!(icc_of(&out), None);
+        }
+        // 灰度源配了 RGB 配置文件（声明与像素不符的坏文件）：输出单通道，同样不贴。
+        let rgb_profile = fake_icc(b"RGB ");
+        let gray: Vec<u8> = (0..200u32 * 300).map(|i| (i % 256) as u8).collect();
+        let mut src = Vec::new();
+        let mut enc = jpeg_encoder::Encoder::new(&mut src, 95);
+        enc.add_icc_profile(&rgb_profile).unwrap();
+        enc.encode(&gray, 200, 300, jpeg_encoder::ColorType::Luma)
+            .unwrap();
+        let out = fit_jpeg_hq(&src, 100, 150, 90, resample::Filter::Box, false).unwrap();
+        assert_eq!(icc_of(&out), None);
+        // RGB 源 + RGB 配置文件照常贴。
+        let rgb: Vec<u8> = (0..200u32 * 300 * 3).map(|i| (i * 7 % 256) as u8).collect();
+        let mut src = Vec::new();
+        let mut enc = jpeg_encoder::Encoder::new(&mut src, 95);
+        enc.add_icc_profile(&rgb_profile).unwrap();
+        enc.encode(&rgb, 200, 300, jpeg_encoder::ColorType::Rgb)
+            .unwrap();
+        let out = fit_jpeg(&src, 100, 150, 90).unwrap();
+        assert_eq!(icc_of(&out).as_deref(), Some(&rgb_profile[..]));
     }
 
     #[test]
