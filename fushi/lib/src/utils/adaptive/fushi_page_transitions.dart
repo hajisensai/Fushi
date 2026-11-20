@@ -5,7 +5,36 @@ import 'package:cupertino_ui/cupertino_ui.dart'
         CupertinoRouteTransitionMixin;
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/adaptive/vetoed_back_swipe.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+
+/// Material 设计系统在 iOS / macOS 上的页面转场：原生
+/// [CupertinoPageTransitionsBuilder]，只多一层 [VetoedBackSwipe]——页面用
+/// `PopScope(canPop: false)` 拦返回时，边缘侧滑不再毫无反应，而是走
+/// `maybePop()` 交给页面自己的返回处理（如弹「保存 / 放弃」）。
+///
+/// 继承原生 builder：时长、`isA` 判型、视差委托都不变。
+class FushiNativeCupertinoPageTransitionsBuilder
+    extends CupertinoPageTransitionsBuilder {
+  const FushiNativeCupertinoPageTransitionsBuilder();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    return super.buildTransitions<T>(
+      route,
+      context,
+      animation,
+      secondaryAnimation,
+      VetoedBackSwipe(route: route, child: child),
+    );
+  }
+}
 
 /// Apple（Cupertino）设计系统的页面转场：动效开启时就是原生
 /// [CupertinoPageTransitionsBuilder]（右侧推入、旧页视差左移 + 压暗、边缘侧滑
@@ -67,7 +96,7 @@ class FushiCupertinoPageTransitionsBuilder
         context,
         settled ? kAlwaysCompleteAnimation : animation,
         settled ? kAlwaysDismissedAnimation : secondaryAnimation,
-        child,
+        VetoedBackSwipe(route: route, child: child),
       ),
     );
   }
