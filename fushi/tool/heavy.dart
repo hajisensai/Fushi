@@ -32,8 +32,13 @@
 // 75 when an
 // explicit --wait-max-min ran out before admission; 79 when the same command
 // was submitted again from this directory and took this run's place in the
-// queue; 124 when --max-minutes cut it off. CI / FUSHI_HEAVY=off
-// run the command directly.
+// queue; 124 when --max-minutes cut it off; 78 (kHeavyCallerGoneExit) when
+// whoever started it is gone -- on Windows, the console it was started from
+// no longer exists (a stopped tool call): a queued run leaves the queue, one
+// about to start does not, one running here is killed with its tree, and one
+// followed on another machine is still waited for (only dist_test can stop
+// that remote run cleanly) but no longer counts as its result. CI /
+// FUSHI_HEAVY=off run the command directly.
 //
 // Before queueing here, the work goes to the other machines of the dist_test
 // worker config (FUSHI_DIST_CONFIG, else fushi/tool/dist_test/
@@ -101,6 +106,9 @@ Future<void> main(List<String> args) async {
   }
   // From here to the moment the command runs somewhere is what it queued.
   final Stopwatch total = Stopwatch()..start();
+  // Whether the caller is still there: its console, read now (only a run
+  // started with one is watched; test_flow/heavy_lease.dart).
+  final HeavyCallerWatch caller = HeavyCallerWatch.forThisProcess();
   final List<String> own = args.sublist(0, sep);
   final String? checkout = locateCheckoutRoot();
   final HeavySdkCheck sdk = checkHeavyCommandSdk(
@@ -217,7 +225,11 @@ Future<void> main(List<String> args) async {
           checkOnly: own.contains('--check-only'),
         );
   if (offload != null) {
-    final int code = await _askElsewhere(offload, maxMinutes: maxMinutes);
+    final int code = await _askElsewhere(
+      offload,
+      maxMinutes: maxMinutes,
+      caller: caller,
+    );
     switch (heavyOffloadNext(code, offload.plan.kind)) {
       case HeavyOffloadNext.done:
         record(HeavyRanWhere.elsewhere, Duration.zero, code);
@@ -279,7 +291,21 @@ Future<void> main(List<String> args) async {
         waitMax: waitMax > 0 ? Duration(minutes: waitMax) : null,
         rival: asking,
         runKey: runKey,
+        callerGone: caller.gone,
       );
+    } on HeavyLeaseCallerGone catch (e) {
+      // Nobody waits for it: it leaves the queue now instead of starting its
+      // command into a dead console once admitted. Unless an attempt there
+      // took it meanwhile (followed below), the claim here keeps any attempt
+      // still out from starting it; the history line goes first, a write to
+      // that console may not get anywhere.
+      if (asking == null || asking.claimHere()) {
+        await onCtrlC?.cancel();
+        await asking?.close();
+        record(HeavyRanWhere.here, total.elapsed, kHeavyCallerGoneExit);
+        stderr.writeln('$e. Not running it.');
+        exit(kHeavyCallerGoneExit);
+      }
     } on HeavyLeaseSuperseded catch (e) {
       // The same command was submitted again from here and has this run's
       // place in the queue. Unless an attempt there took it meanwhile, the
@@ -310,7 +336,7 @@ Future<void> main(List<String> args) async {
       'following that run',
     );
     final Duration queuedUntilTaken = total.elapsed;
-    final int code = await there.follow(maxMinutes: maxMinutes);
+    final int code = await there.follow(maxMinutes: maxMinutes, caller: caller);
     await asking.close();
     switch (heavyOffloadNext(code, target!.plan.kind)) {
       case HeavyOffloadNext.done:
@@ -328,6 +354,15 @@ Future<void> main(List<String> args) async {
   }
   final HeavyLease lease = admitted;
   final Duration queuedHere = total.elapsed;
+
+  // Admitted after its caller went (between two polls): not started.
+  if (await caller.settle()) {
+    lease.release();
+    await rival?.close();
+    record(HeavyRanWhere.here, queuedHere, kHeavyCallerGoneExit);
+    stderr.writeln('${const HeavyLeaseCallerGone()}. Not running it.');
+    exit(kHeavyCallerGoneExit);
+  }
 
   final Stopwatch ran = Stopwatch()..start();
   final Process p;
@@ -355,9 +390,28 @@ Future<void> main(List<String> args) async {
           );
           _killTree(p);
         });
-  final int code = await p.exitCode;
+  // The caller went while it runs: nobody reads the result, and the Job's
+  // kill-on-close only fires once this process ends.
+  bool callerLeft = false;
+  final Timer? watch = !caller.watching
+      ? null
+      : Timer.periodic(kHeavyCallerCheckEvery, (Timer t) {
+          if (!caller.gone()) return;
+          t.cancel();
+          callerLeft = true;
+          _killTree(p);
+        });
+  final int exited = await p.exitCode;
   limit?.cancel();
+  watch?.cancel();
   ran.stop();
+  // Ended by itself before the next check came: a command that failed
+  // because its console was gone (a grandchild started into it) is the
+  // caller's going too, not a red run.
+  if (!callerLeft && !cut && exited != 0 && await caller.settle()) {
+    callerLeft = true;
+  }
+  final int code = callerLeft ? kHeavyCallerGoneExit : exited;
   lease.release();
   // An attempt still out lost the claim to this machine and backs out by
   // itself; it must not be cut off holding a remote checkout lock.
@@ -430,7 +484,11 @@ Directory get _claimDir => Directory('${heavyStateDir().path}/offload');
 
 /// The first attempt, before queueing here: dist_test's output straight to
 /// this console; its exit code (heavyOffloadNext says what it means).
-Future<int> _askElsewhere(_OffloadTarget t, {required int maxMinutes}) async {
+Future<int> _askElsewhere(
+  _OffloadTarget t, {
+  required int maxMinutes,
+  required HeavyCallerWatch caller,
+}) async {
   stderr.writeln(
     'heavy: handing this ${t.plan.kind.name} to the other machines '
     '(tool/dist_test.dart ${t.plan.distArgs.join(' ')}); --here or '
@@ -447,7 +505,7 @@ Future<int> _askElsewhere(_OffloadTarget t, {required int maxMinutes}) async {
     maxMinutes: maxMinutes,
     echo: true,
   );
-  final int code = await a.follow(maxMinutes: maxMinutes);
+  final int code = await a.follow(maxMinutes: maxMinutes, caller: caller);
   claim.delete();
   return code;
 }
@@ -590,8 +648,17 @@ class _DistAttempt implements HeavyOffloadAttempt {
   /// always waited for an offloaded run: Ctrl-C reaches dist_test too (same
   /// console / process group), which kills the remote run and releases the
   /// worker before it exits. Its exit code; 124 past --max-minutes, 130
-  /// after Ctrl-C.
-  Future<int> follow({required int maxMinutes}) async {
+  /// after Ctrl-C, [kHeavyCallerGoneExit] once [caller] is gone.
+  ///
+  /// A caller that goes does not cut the run short: on Windows only Ctrl-C
+  /// or dist_test's own deadline make it stop the remote run and release
+  /// the worker's checkout (test_flow/dist_stop.dart), the dead console
+  /// carries no Ctrl-C, and killing dist_test (or leaving, which kills it
+  /// through the Job) would leave the remote run holding that checkout.
+  Future<int> follow({
+    required int maxMinutes,
+    required HeavyCallerWatch caller,
+  }) async {
     _following = true;
     for (final (IOSink sink, List<int> data) in _held) {
       sink.add(data);
@@ -629,13 +696,25 @@ class _DistAttempt implements HeavyOffloadAttempt {
             );
             _killTree(p);
           });
+    bool callerLeft = false;
+    final Timer? watch = !caller.watching
+        ? null
+        : Timer.periodic(kHeavyCallerCheckEvery, (Timer t) {
+            if (!caller.gone()) return;
+            t.cancel();
+            callerLeft = true;
+          });
     final int code = await exitCode;
     limit?.cancel();
+    watch?.cancel();
     for (final StreamSubscription<ProcessSignal> s in signals) {
       await s.cancel();
     }
     if (cut) return 124;
     if (interrupted) return 130;
+    if (callerLeft || (code != 0 && await caller.settle())) {
+      return kHeavyCallerGoneExit;
+    }
     return code;
   }
 }

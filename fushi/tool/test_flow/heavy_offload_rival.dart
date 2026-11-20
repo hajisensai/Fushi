@@ -14,6 +14,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'dist_plan.dart';
+import 'heavy_history.dart' show kHeavyCallerGoneExit;
 import 'heavy_lease.dart';
 import 'heavy_offload.dart';
 import 'pid_alive.dart';
@@ -97,7 +98,8 @@ int sweepDeadOffloadClaims(
 /// What heavy.dart does after a dist_test attempt ended with [code].
 enum HeavyOffloadNext {
   /// That is the run's result: exit with it (green / red tests, analyze,
-  /// a green compile check, 124 / 130).
+  /// a green compile check, 124 / 130, and [kHeavyCallerGoneExit]: nobody
+  /// is left to run it for).
   done,
 
   /// Nobody took it but only because the other machines were busy
@@ -111,7 +113,9 @@ enum HeavyOffloadNext {
 }
 
 HeavyOffloadNext heavyOffloadNext(int code, HeavyOffloadKind kind) {
-  if (code == 124 || code == 130) return HeavyOffloadNext.done;
+  if (code == 124 || code == 130 || code == kHeavyCallerGoneExit) {
+    return HeavyOffloadNext.done;
+  }
   if (code == kDistOffloadBusy) return HeavyOffloadNext.askAgain;
   if (code == kDistOffloadDeclined) return HeavyOffloadNext.runHere;
   if (kind == HeavyOffloadKind.build && code != 0) {

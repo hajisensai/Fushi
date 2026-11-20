@@ -16,6 +16,13 @@ const String kHeavyHistoryFile = 'history.jsonl';
 /// Past this size the older half is dropped (about 20 000 runs fit).
 const int kHeavyHistoryMaxBytes = 4 * 1024 * 1024;
 
+/// tool/heavy.dart's exit code (and the history's) for a run cancelled
+/// because whoever started it is gone (heavy_lease.dart HeavyCallerWatch):
+/// it left the queue, never started, or was killed while it ran. Before
+/// 2026-11-20 such runs were admitted anyway and their command died at once
+/// with -1073741502 (0xC0000142), which the history kept as a crash.
+const int kHeavyCallerGoneExit = 78;
+
 /// Where a run ended up.
 enum HeavyRanWhere {
   /// On this machine, under a slot of the lease.
@@ -217,6 +224,9 @@ int? heavyMeasuredBookMb(
   final List<HeavyHistoryEntry> runs = <HeavyHistoryEntry>[
     for (final HeavyHistoryEntry e in history)
       if (e.where == HeavyRanWhere.here &&
+          // Killed part way through when its caller went: a peak of half a
+          // run says nothing about the class.
+          e.exitCode != kHeavyCallerGoneExit &&
           e.kind == kind &&
           e.bookingClassMb == staticMb &&
           e.peakMb != null &&
@@ -254,8 +264,27 @@ String _span(int seconds) => seconds < 120
 
 /// The report of `heavy.dart --stats`: per kind and place, how many runs,
 /// how long they queued and ran.
-String renderHeavyStats(List<HeavyHistoryEntry> entries, {required int days}) {
+/// Runs cancelled because their caller was gone ([kHeavyCallerGoneExit]) are
+/// counted on a line of their own and left out of the rest: nobody waited for
+/// them, so their queueing is not what a caller waits.
+String renderHeavyStats(List<HeavyHistoryEntry> all, {required int days}) {
   final StringBuffer out = StringBuffer();
+  final List<HeavyHistoryEntry> gone = <HeavyHistoryEntry>[
+    for (final HeavyHistoryEntry e in all)
+      if (e.exitCode == kHeavyCallerGoneExit) e,
+  ];
+  final List<HeavyHistoryEntry> entries = <HeavyHistoryEntry>[
+    for (final HeavyHistoryEntry e in all)
+      if (e.exitCode != kHeavyCallerGoneExit) e,
+  ];
+  if (gone.isNotEmpty) {
+    out.writeln(
+      'heavy: ${gone.length} run(s) cancelled because their caller was gone '
+      '(exit $kHeavyCallerGoneExit), '
+      '${_span(gone.fold<int>(0, (int s, HeavyHistoryEntry e) => s + e.queued.inSeconds))} '
+      'queued by them; left out below',
+    );
+  }
   if (entries.isEmpty) {
     out.writeln('heavy: no finished run recorded in the last $days day(s)');
     return out.toString();
