@@ -24,7 +24,7 @@ function world() {
   };
   const parent = { postMessage(data, origin) { sent.push({ data, origin }); } };
   const port = { postMessage(data) { sent.push({ data, channel: 'port' }); }, start() {} };
-  let renders = 0, cssData = null, mediaRoot = null, autoReadOptions = null, minedIndex = null, highlighted = null;
+  let renders = 0, cssData = null, displayPrefsTheme = null, mediaRoot = null, autoReadOptions = null, minedIndex = null, highlighted = null;
   const window = {
     parent,
     addEventListener(name, handler) { windowListeners[name] = handler; },
@@ -35,6 +35,7 @@ function world() {
   };
   const context = vm.createContext({ window, document, console,
     applyFushiPopupCss(data) { cssData = data; },
+    applyFushiPopupDisplayPrefs(theme) { displayPrefsTheme = theme; },
     installDictMediaPlaceholderResolver(value) { mediaRoot = value; },
   });
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'nested-popup.js'), 'utf8'), context);
@@ -49,6 +50,7 @@ function world() {
   }
   return { window, document, root, host, sent, parent, port, connect, windowReceive, receive, documentListeners,
     get renders() { return renders; }, get cssData() { return cssData; },
+    get displayPrefsTheme() { return displayPrefsTheme; },
     get mediaRoot() { return mediaRoot; }, get autoReadOptions() { return autoReadOptions; },
     get minedIndex() { return minedIndex; }, get highlighted() { return highlighted; } };
 }
@@ -102,6 +104,8 @@ test('render forwards shared CSS, audio, theme and queue state without changing 
   w.receive({ type: 'render', data });
   assert.equal(w.window.lookupEntries[0].expression, '子');
   assert.equal(w.cssData, data);
+  // BUG-4935：嵌套层是独立 realm，弹窗显示偏好（自动展开 / 折叠 / 词频聚合…）要按同一份 theme 自己落。
+  assert.equal(w.displayPrefsTheme, data.theme);
   assert.equal(w.mediaRoot, w.root);
   assert.equal(w.window.fushiIsEntryQueued({ expression: '子' }), true);
   assert.equal(other.window.fushiIsEntryQueued({ expression: '子' }), false);
