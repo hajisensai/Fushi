@@ -2196,6 +2196,71 @@ void main() {
               'message': t.floating_ball_ocr_model_missing,
             });
           });
+
+          testWidgets('BUG-4790：识别中原生按流程编号取消 → 立刻回 cancelled；别的编号的取消不碰它', (
+            WidgetTester tester,
+          ) async {
+            final Completer<void> started = Completer<void>();
+            final Completer<SystemOcrPageResult> slow =
+                Completer<SystemOcrPageResult>();
+            target.onRecognize = (Uint8List bytes) {
+              started.complete();
+              return slow.future;
+            };
+            await pumpHost(tester);
+
+            Future<Object?> send(String method, Object? args) async {
+              final Completer<ByteData?> done = Completer<ByteData?>();
+              await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+                FloatingBallChannel.channel.name,
+                const StandardMethodCodec().encodeMethodCall(
+                  MethodCall(method, args),
+                ),
+                done.complete,
+              );
+              final ByteData? data = await done.future;
+              return data == null
+                  ? null
+                  : const StandardMethodCodec().decodeEnvelope(data);
+            }
+
+            Object? reply;
+            bool replied = false;
+            await tester.runAsync(() async {
+              final Future<Object?> pending =
+                  send('recognizeScreenOcrFrame', <String, Object?>{
+                    'png': png,
+                    'engine': 'localModel',
+                    'fallback': false,
+                    'flow': 7,
+                  }).then((Object? value) {
+                    replied = true;
+                    return value;
+                  });
+              await started.future;
+              // 上一次流程残留的取消：不碰这一次。
+              await send('cancelScreenOcrRecognition', <String, Object?>{
+                'flow': 6,
+              });
+              await Future<void>.delayed(Duration.zero);
+              expect(replied, isFalse);
+              await send('cancelScreenOcrRecognition', <String, Object?>{
+                'flow': 7,
+              });
+              reply = await pending;
+              // 被抛下的识别晚到的结果不再回给原生（也不报错）。
+              slow.complete(
+                const SystemOcrPageResult(
+                  lines: <SystemOcrTextLine>[],
+                  imageWidth: 1,
+                  imageHeight: 1,
+                ),
+              );
+              await Future<void>.delayed(Duration.zero);
+            });
+            expect(reply, <String, Object?>{'cancelled': true});
+            expect(target.recognizeEngines.single, isA<LocalScreenOcr>());
+          });
         });
 
         testWidgets('Lens 还没同意上传：先在主窗里问，这次不截屏', (WidgetTester tester) async {
