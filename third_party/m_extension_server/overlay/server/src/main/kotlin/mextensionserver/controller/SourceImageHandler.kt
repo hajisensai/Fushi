@@ -8,9 +8,6 @@ import mextensionserver.impl.MExtensionServerLoader
 import mextensionserver.impl.MihonInvoker
 import mextensionserver.model.DataBody
 import okhttp3.Request
-import okhttp3.ResponseBody
-import java.io.ByteArrayInputStream
-import java.io.ByteArrayOutputStream
 
 class SourceImageHandler {
     private val mapper = jacksonObjectMapper()
@@ -18,17 +15,19 @@ class SourceImageHandler {
     fun serve(session: NanoHTTPD.IHTTPSession): NanoHTTPD.Response {
         var pendingJarCookies: String? = null
         return try {
-            val files = mutableMapOf<String, String>()
-            session.parseBody(files)
-            val request = mapper.readValue(files["postData"], SourceImageRequest::class.java)
+            // Not `parseBody`: it spools the body into a temp file (BUG-4914).
+            val request = mapper.readValue(BridgeRequests.readJson(session), SourceImageRequest::class.java)
             val data =
                 DataBody(
-                    data = request.data,
+                    apkSha256 = request.apkSha256,
                     method = "headersManga",
                     preferences = request.preferences,
                 )
-            val image =
-                MExtensionServerLoader.invokeWithExtension(request.data) { loaded ->
+            // Only the request runs under the extension's lane lock; the body is
+            // relayed after it is released, so a slow cover does not hold up the
+            // source's searches.
+            val upstream =
+                MExtensionServerLoader.invokeWithExtension(request.apkSha256) { loaded ->
                     val source = MihonInvoker.selectSource(loaded.sources, data)
                     // Covers of manga and anime sources are fetched the same
                     // way: the source's own OkHttp client plus its default
@@ -47,31 +46,27 @@ class SourceImageHandler {
                     // until some /dalvik call happens to refill it.
                     SourceCookieInjection.injectRequestCookies(session, source)
                     SourceCookieInjection.applyRequestUserAgent(session, source)
-                    val response =
-                        client
-                            .newCall(
-                                Request
-                                    .Builder()
-                                    .url(request.url)
-                                    .headers(headers)
-                                    .build(),
-                            ).execute()
                     try {
-                        response.use {
-                            if (!it.isSuccessful) {
-                                throw IllegalStateException("Source image HTTP ${it.code}")
-                            }
-                            val body = it.body
-                            ImageResult(
-                                readBounded(body),
-                                body.contentType()?.toString() ?: "application/octet-stream",
-                            )
+                        val response =
+                            client
+                                .newCall(
+                                    Request
+                                        .Builder()
+                                        .url(request.url)
+                                        .headers(headers)
+                                        .build(),
+                                ).execute()
+                        if (!response.isSuccessful) {
+                            response.close()
+                            throw IllegalStateException("Source image HTTP ${response.code}")
                         }
+                        response
                     } finally {
                         // Images are usually the most frequent calls, so they are
                         // typically what first meets a session renewal. Injecting
                         // without reporting back loses every cookie rotated on this
-                        // path (BUG-2425).
+                        // path (BUG-2425). The jar already holds this response's
+                        // Set-Cookie: OkHttp stores it when the headers arrive.
                         pendingJarCookies =
                             SourceCookieInjection.encodeJarCookies(
                                 mapper,
@@ -80,22 +75,27 @@ class SourceImageHandler {
                             )
                     }
                 }
-            NanoHTTPD
-                .newFixedLengthResponse(
-                    NanoHTTPD.Response.Status.OK,
-                    image.contentType,
-                    ByteArrayInputStream(image.bytes),
-                    image.bytes.size.toLong(),
-                ).apply {
-                    pendingJarCookies?.let { addHeader(SET_COOKIE_HEADER, it) }
-                }
+            // Relayed as it arrives (manga-18b) and still capped: the URL is
+            // chosen by the source site and the sidecar runs with `-Xmx512m`.
+            // `body.byteStream()` is counted against [MAX_IMAGE_BYTES] as it is
+            // read -- `Content-Length` is only a hint (absent on chunked
+            // responses, attacker-controlled anyway); never `body.bytes()`.
+            streamingImageResponse(
+                upstream,
+                maxBytes = MAX_IMAGE_BYTES,
+                extraHeaders = pendingJarCookies?.let { mapOf(SET_COOKIE_HEADER to it) }.orEmpty(),
+            )
+        } catch (error: RequestBodyException) {
+            with(BridgeRequests) { error.toResponse() }
         } catch (error: Throwable) {
+            val missing = BridgeRequests.apkNotRegisteredIn(error)
             NanoHTTPD
                 .newFixedLengthResponse(
-                    NanoHTTPD.Response.Status.INTERNAL_ERROR,
+                    if (missing != null) NanoHTTPD.Response.Status.CONFLICT else NanoHTTPD.Response.Status.INTERNAL_ERROR,
                     "application/json",
                     mapper.writeValueAsString(
-                        mapOf("error" to (error.message ?: "Image request failed")),
+                        with(BridgeRequests) { missing?.apkUnknownPayload() }
+                            ?: mapOf("error" to (error.message ?: "Image request failed")),
                     ),
                 ).apply {
                     pendingJarCookies?.let { addHeader(SET_COOKIE_HEADER, it) }
@@ -103,49 +103,13 @@ class SourceImageHandler {
         }
     }
 
-    /**
-     * Buffers the response with a hard ceiling instead of `body.bytes()`.
-     *
-     * The URL fetched here is chosen by the source site, and the sidecar runs
-     * with `-Xmx512m`; an unbounded `bytes()` lets one hostile or broken
-     * response OOM the whole JVM and take every other extension down with it.
-     * `Content-Length` is only a hint (it is absent on chunked responses and
-     * attacker-controlled anyway), so the stream is counted as it is read.
-     */
-    private fun readBounded(body: ResponseBody): ByteArray {
-        val declared: Long = body.contentLength()
-        if (declared > MAX_IMAGE_BYTES) {
-            throw IllegalStateException("Source image exceeds $MAX_IMAGE_BYTES bytes")
-        }
-        // Content-Length only sizes the first allocation, and even that is
-        // capped: a lying header must not be able to make us reserve 32 MiB.
-        val initial: Int = declared.coerceIn(CHUNK_BYTES.toLong(), INITIAL_CAPACITY_CAP).toInt()
-        val buffered = ByteArrayOutputStream(initial)
-        val chunk = ByteArray(CHUNK_BYTES)
-        var total = 0L
-        body.byteStream().use { stream ->
-            while (true) {
-                val read = stream.read(chunk)
-                if (read < 0) break
-                total += read
-                if (total > MAX_IMAGE_BYTES) {
-                    throw IllegalStateException("Source image exceeds $MAX_IMAGE_BYTES bytes")
-                }
-                buffered.write(chunk, 0, read)
-            }
-        }
-        return buffered.toByteArray()
-    }
-
     private companion object {
         /** Generous for cover art, far below the sidecar's 512 MiB heap. */
         const val MAX_IMAGE_BYTES: Long = 32L * 1024 * 1024
-        const val CHUNK_BYTES: Int = 64 * 1024
-        const val INITIAL_CAPACITY_CAP: Long = 1L * 1024 * 1024
     }
 
     private data class SourceImageRequest(
-        val data: String,
+        val apkSha256: String,
         val sourceId: String,
         val url: String,
         val preferences: MutableList<Map<String, Any>>? =
@@ -155,10 +119,5 @@ class SourceImageHandler {
                     "sourceId" to sourceId,
                 ),
             ),
-    )
-
-    private data class ImageResult(
-        val bytes: ByteArray,
-        val contentType: String,
     )
 }

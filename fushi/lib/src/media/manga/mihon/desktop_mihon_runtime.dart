@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
@@ -21,6 +22,10 @@ import 'package:fushi/src/media/manga/mihon/mihon_sidecar_temp_dir.dart';
 const Duration kMihonSourceImageHeaderTimeout = Duration(seconds: 90);
 const Duration kMihonSourceImageIdleTimeout = Duration(seconds: 90);
 const int kMihonSourceImageMaxBytes = 32 * 1024 * 1024;
+
+/// sidecar 回 `409 {"errorKind":"apkUnknown"}`：这个 JVM 进程还没收到该 APK
+/// （刚起 / 刚重启）。宿主把 APK 原样上传一次再重发同一个调用（manga-28）。
+const String kMihonApkNotRegisteredCode = 'APK_NOT_REGISTERED';
 
 /// 读取漫画源封面时按“无进度”计时，而不是从请求开始固定倒数。
 ///
@@ -51,13 +56,13 @@ Future<Uint8List> readMihonSourceImageBytes(
 /// 从 sidecar 的本地图片代理取一张漫画页。
 ///
 /// 超时形状与封面相同（BUG-2450 第 4 点）：[headerTimeout] 内要等到响应头，之后按
-/// 「连续 [idleTimeout] 没有任何数据」计时。取消仍靠调用方关掉 [client]。
+/// 「连续 [idleTimeout] 没有任何数据」计时。取消仍靠调用方关掉 [client]——关掉
+/// 回环连接后 sidecar 那边的转发流随之关闭，上游请求被取消。
 ///
-/// **在现在的 sidecar 上这等于整请求上限 [headerTimeout]**：sidecar 把上游图片
-/// 整张读进内存后才回响应头（`MihonImageProxy.fetch` 的 `body.bytes()` +
-/// `ImageProxyHandler` 的定长响应），所以上游的慢全落在等响应头这一段，空闲计时
-/// 只管得到回环上那段内存拷贝。实际变化只是上限从旧的 45 秒放宽到 90 秒；
-/// 「慢速但一直在出数据的大图不被砍」要等 sidecar 改成流式回传才成立。
+/// sidecar 边收边转（manga-18b，`streamingImageResponse`）：源站回了响应头，这边
+/// 就拿到响应头，之后每个数据块都重置空闲计时，所以慢速但一直在出数据的大图不会
+/// 被砍；上游中途断掉或超过 sidecar 的读超时，sidecar 直接断开连接（chunked 没有
+/// 结束块），这边立刻报错，不会干等到空闲超时。
 Future<Uint8List> fetchMihonPageImageBytes(
   http.Client client,
   Uri url, {
@@ -124,6 +129,13 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
   Future<void>? _starting;
   bool _disposed = false;
   MihonProxyPolicyServer? _proxyPolicy;
+
+  /// 当前进程退出后删它的 JVM 临时目录（BUG-4914）。[dispose] 要等它：否则
+  /// 「dispose 返回」时目录还在删，调用方紧接着删数据目录会和它撞上。
+  Future<void>? _tempDirRelease;
+
+  /// APK 路径 → 摘要。只是「这个文件的 sha256 是多少」的缓存，不记「哪个 sidecar
+  /// 进程收到过哪些 APK」——那个真值只在 sidecar 手里，未命中由它回 409 说。
   final Map<String, _CachedApk> _apkCache = <String, _CachedApk>{};
   final Map<String, http.Client> _imageClients = <String, http.Client>{};
   int _imageRequestSequence = 0;
@@ -240,9 +252,10 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
 
   @override
   Future<MihonExtensionInspection> inspectExtension(String apkPath) async {
-    final Map<String, Object?> response = await _postObject(
-      '/inspect',
-      <String, Object?>{'data': await _apkBase64(apkPath)},
+    final Map<String, Object?> response = await _withApk(
+      apkPath,
+      (String apkSha256) =>
+          _postObject('/inspect', <String, Object?>{'apkSha256': apkSha256}),
     );
     return MihonExtensionInspection.fromJson(response);
   }
@@ -286,12 +299,14 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     Map<String, Object?> arguments, {
     MihonSource? source,
   }) async {
-    final Map<String, Object?> payload = <String, Object?>{
-      'data': await _apkBase64(extension.apkPath),
-      'method': method,
-      ...arguments,
-    };
-    return _postJson('/dalvik', payload, source: source);
+    return _withApk(
+      extension.apkPath,
+      (String apkSha256) => _postJson('/dalvik', <String, Object?>{
+        'apkSha256': apkSha256,
+        'method': method,
+        ...arguments,
+      }, source: source),
+    );
   }
 
   @override
@@ -391,11 +406,24 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     String url, {
     List<MihonPreference> preferences = const <MihonPreference>[],
   }) async {
+    return _withApk(
+      extension.apkPath,
+      (String apkSha256) =>
+          _fetchSourceImage(apkSha256, source, url, preferences),
+    );
+  }
+
+  Future<Uint8List> _fetchSourceImage(
+    String apkSha256,
+    MihonSource source,
+    String url,
+    List<MihonPreference> preferences,
+  ) async {
     await _ensureStarted();
     final http.Request request = http.Request('POST', _uri('/source-image'))
       ..headers.addAll(await _headersFor(source))
       ..body = jsonEncode(<String, Object?>{
-        'data': await _apkBase64(extension.apkPath),
+        'apkSha256': apkSha256,
         'sourceId': source.id,
         'url': url,
         'preferences': mihonBridgePreferences(source, preferences),
@@ -407,7 +435,16 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     // 只注入不回收，等于把这条链路上换发的新 cookie 全丢掉。
     await _absorbResponseCookies(source, response.headers);
     if (response.statusCode != HttpStatus.ok) {
-      await response.stream.drain<void>().timeout(kMihonSourceImageIdleTimeout);
+      // 错误体是 sidecar 自己写的一小段 JSON；要读出来才分得清「APK 没上传」。
+      final String body = await response.stream.bytesToString().timeout(
+        kMihonSourceImageIdleTimeout,
+      );
+      if (_isApkUnknown(body)) {
+        throw const MihonRuntimeException(
+          kMihonApkNotRegisteredCode,
+          'M-Extension-Server has not received this extension APK yet',
+        );
+      }
       throw MihonRuntimeException(
         'IMAGE_HTTP_${response.statusCode}',
         'Mihon source image request failed',
@@ -423,15 +460,28 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     return bytes;
   }
 
+  static bool _isApkUnknown(String body) {
+    try {
+      final Object? decoded = jsonDecode(body);
+      return decoded is Map<Object?, Object?> &&
+          decoded['errorKind'] == _kApkUnknownKind;
+    } on FormatException {
+      return false;
+    }
+  }
+
   @override
   Future<void> clearSourceData(
     MihonExtensionRef extension,
     MihonSource source,
   ) async {
-    await _postObject('/source-data/clear', <String, Object?>{
-      'data': await _apkBase64(extension.apkPath),
-      'sourceId': source.id,
-    }, source: source);
+    await _withApk(
+      extension.apkPath,
+      (String apkSha256) => _postObject('/source-data/clear', <String, Object?>{
+        'apkSha256': apkSha256,
+        'sourceId': source.id,
+      }, source: source),
+    );
     // sidecar 侧 `SourceDataHandler` 清的是它自己那份内存 jar。宿主手上还留着
     // 真值，不一起清的话「清除源数据」清完立刻又被下一次请求原样注回去——用户
     // 看到的就是「登出按了没反应」。
@@ -496,6 +546,17 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     } finally {
       _processContainment.close();
     }
+    final Future<void>? tempDirRelease = _tempDirRelease;
+    _tempDirRelease = null;
+    if (tempDirRelease != null) {
+      try {
+        // 进程已退出（或刚被 Job Object 收掉）时只剩几次删文件；仍设上限，
+        // 退出屏障不能被删不动的文件拖住（那种目录留给下次启动清扫）。
+        await tempDirRelease.timeout(const Duration(seconds: 2));
+      } on TimeoutException {
+        // 见上。
+      }
+    }
     _process = null;
     _port = null;
     _token = null;
@@ -554,8 +615,8 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     final MihonProxyPolicyServer proxyPolicy =
         await MihonProxyPolicyServer.start(token);
     _proxyPolicy = proxyPolicy;
-    // JVM 的临时目录归宿主管、随这个进程退出删掉（BUG-4914）：NanoHTTPD 每个请求体
-    // 一个删不掉的临时文件、强杀后残留的扩展 jar，以前都落在系统临时目录里永不回收。
+    // JVM 的临时目录归宿主管、随这个进程退出删掉（BUG-4914）：上传的扩展 APK、解出的
+    // 扩展 jar（强杀后会残留）都在这里，以前落在系统临时目录里永不回收。
     final MihonSidecarTempDir tempDir = await MihonSidecarTempDir.create(
       dataDirectory,
     );
@@ -591,7 +652,7 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     }
     // 进程真退出了（含下面各条启动失败路径里的 kill）才删：Windows 上 JVM 还开着的
     // 文件删不掉。宿主自己被强杀时这里不会跑，留给下一次启动的清扫。
-    unawaited(process.exitCode.then((int _) => tempDir.release()));
+    _tempDirRelease = process.exitCode.then((int _) => tempDir.release());
     if (_disposed) {
       process.kill();
       try {
@@ -759,6 +820,13 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
         ? decoded
         : const <Object?, Object?>{};
     final Object? kind = error['errorKind'];
+    if (kind == _kApkUnknownKind) {
+      return MihonRuntimeException(
+        kMihonApkNotRegisteredCode,
+        error['error']?.toString() ??
+            'M-Extension-Server has not received this extension APK yet',
+      );
+    }
     // sidecar 的 CloudflareInterceptor 认出了拦截页：把被拦 URL 与实际发出的 UA
     // 原样带上，解题页要用同一个 UA 打开同一个地址，cf_clearance 才对得上。
     if (kind == 'cloudflare') {
@@ -814,6 +882,14 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
       throw const MihonRuntimeException(
         'INCOMPATIBLE_BRIDGE',
         'Bundled M-Extension-Server lacks host proxy policy support',
+      );
+    }
+    // 调用只带 APK 摘要（manga-28）；不认 `PUT /apk/<摘要>` 的旧 sidecar 会把每个
+    // 调用都当成缺参数，宁可在启动时就说清楚。
+    if (payload['apkByDigest'] != true) {
+      throw const MihonRuntimeException(
+        'INCOMPATIBLE_BRIDGE',
+        'Bundled M-Extension-Server lacks APK-by-digest support',
       );
     }
     return MihonCapabilities.fromJson(payload);
@@ -889,28 +965,99 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     }
   }
 
-  Future<String> _apkBase64(String apkPath) async {
-    final File file = File(apkPath);
-    final FileStat stat = await file.stat();
+  /// 以 APK 摘要发一次调用（manga-28）。
+  ///
+  /// 以前每个调用都把整个 APK 的 base64 塞进请求体；现在调用只带 sha256，APK 本体
+  /// 每个 sidecar 进程只经 `PUT /apk/<摘要>` 传一次。sidecar 回「没见过这个摘要」
+  /// （新起的进程、装 / 卸扩展后的重启）时上传一次再重发：那一次调用在加载扩展
+  /// 之前就失败了，扩展代码一行没跑，重发不会重放任何动作。上传后仍说没见过就是
+  /// 真错，原样抛出，不再循环。
+  Future<T> _withApk<T>(
+    String apkPath,
+    Future<T> Function(String apkSha256) call,
+  ) async {
+    final String apkSha256 = await _apkDigest(apkPath);
+    try {
+      return await call(apkSha256);
+    } on MihonRuntimeException catch (error) {
+      if (error.code != kMihonApkNotRegisteredCode) rethrow;
+    }
+    return call(await _uploadApk(apkPath));
+  }
+
+  Future<FileStat> _apkStat(String apkPath) async {
+    final FileStat stat = await File(apkPath).stat();
     if (stat.type != FileSystemEntityType.file) {
       throw MihonRuntimeException(
         'APK_MISSING',
         'Extension APK does not exist: $apkPath',
       );
     }
+    return stat;
+  }
+
+  Future<String> _apkDigest(String apkPath) async {
+    final FileStat stat = await _apkStat(apkPath);
     final _CachedApk? cached = _apkCache[apkPath];
     if (cached != null &&
         cached.modifiedAt == stat.modified &&
         cached.size == stat.size) {
-      return cached.base64;
+      return cached.sha256;
     }
-    final String encoded = base64Encode(await file.readAsBytes());
+    final Digest digest = await sha256.bind(File(apkPath).openRead()).first;
+    final String hex = digest.toString();
     _apkCache[apkPath] = _CachedApk(
       modifiedAt: stat.modified,
       size: stat.size,
-      base64: encoded,
+      sha256: hex,
     );
-    return encoded;
+    return hex;
+  }
+
+  /// 把 APK 原样（不是 base64）传给当前 sidecar 进程，返回实际上传内容的摘要。
+  ///
+  /// 摘要按这次读到的字节重算：文件若在上次算摘要之后被换掉，重发用的是新摘要，
+  /// 不会拿旧摘要配新内容（sidecar 也会校验，对不上直接拒收）。
+  Future<String> _uploadApk(String apkPath) async {
+    final FileStat stat = await _apkStat(apkPath);
+    final Uint8List bytes = await File(apkPath).readAsBytes();
+    final String apkSha256 = sha256.convert(bytes).toString();
+    _apkCache[apkPath] = _CachedApk(
+      modifiedAt: stat.modified,
+      size: stat.size,
+      sha256: apkSha256,
+    );
+    await _ensureStarted();
+    try {
+      final http.Response response = await _http
+          .put(
+            _uri('/apk/$apkSha256'),
+            headers: <String, String>{
+              'Authorization': 'Bearer $_token',
+              'Content-Type': 'application/vnd.android.package-archive',
+            },
+            body: bytes,
+          )
+          .timeout(kMihonBridgeRequestTimeout);
+      if (response.statusCode != HttpStatus.ok) {
+        throw decodeErrorResponse(response);
+      }
+    } on MihonRuntimeException {
+      rethrow;
+    } on TimeoutException catch (error) {
+      throw MihonRuntimeException(
+        'BRIDGE_TIMEOUT',
+        'Uploading the extension APK timed out',
+        cause: error,
+      );
+    } on Object catch (error) {
+      throw MihonRuntimeException(
+        'BRIDGE_IO',
+        'Uploading the extension APK failed',
+        cause: error,
+      );
+    }
+    return apkSha256;
   }
 
   String _javaExecutablePath() {
@@ -947,16 +1094,18 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
   }
 }
 
+const String _kApkUnknownKind = 'apkUnknown';
+
 class _CachedApk {
   const _CachedApk({
     required this.modifiedAt,
     required this.size,
-    required this.base64,
+    required this.sha256,
   });
 
   final DateTime modifiedAt;
   final int size;
-  final String base64;
+  final String sha256;
 }
 
 /// sidecar 的 stdout/stderr 落盘。

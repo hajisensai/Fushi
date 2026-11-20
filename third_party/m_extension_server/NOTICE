@@ -17,7 +17,11 @@ Significant Fushi modifications:
 - Java 8 class file version for converted extension classes;
 - per-data-root storage directory and host preference snapshot rule;
 - per-lane (catalogue / playback) call serialization of cached extension
-  instances.
+  instances;
+- extension APKs uploaded once per process and named by SHA-256 digest
+  instead of sent as base64 with every call;
+- request bodies read by Content-Length instead of NanoHTTPD temp files;
+- page and cover images relayed to the host as they arrive (chunked).
 
 Corresponding Source for shipped binaries is upstream_src/ plus
 server-build.gradle.patch plus overlay/, all in this directory. The build

@@ -16,8 +16,6 @@ import mextensionserver.util.PackageTools.loadExtensionSources
 import java.io.File
 import java.net.URLClassLoader
 import java.nio.file.Files
-import java.security.MessageDigest
-import java.util.Base64
 import java.util.UUID
 
 object MExtensionServerLoader {
@@ -26,10 +24,13 @@ object MExtensionServerLoader {
 
     // Extensions retain pagination iterators and other request state. Keep one
     // instance per APK for the server lifetime instead of decoding it per call.
+    // Fushi: APKs arrive once per process through `PUT /apk/<sha256>` and calls
+    // name only the digest (manga-28); the bytes are read from the store only
+    // when the instance is not loaded yet.
     private val loadedExtensions =
-        ExtensionInstanceCache(
-            keyOf = ::sha256,
-            load = ::loadExtension,
+        ExtensionInstanceCache<String, LoadedExtension>(
+            keyOf = { apkSha256 -> apkSha256 },
+            load = { apkSha256 -> loadExtension(ExtensionApkStore.shared.read(apkSha256)) },
             dispose = LoadedExtension::close,
         )
 
@@ -73,17 +74,19 @@ object MExtensionServerLoader {
     // Fushi: calls are serialized per [InvocationLane], not per instance, so a
     // minutes-long getVideoList no longer queues searches on the same
     // extension behind it (BUG-4909).
+    // Throws [ApkNotRegisteredException] when [apkSha256] was never uploaded to
+    // this process; the controller answers `409 apkUnknown`.
     internal fun <T> invokeWithExtension(
-        base64Data: String,
+        apkSha256: String,
         lane: InvocationLane = InvocationLane.CATALOGUE,
         block: (LoadedExtension) -> T,
-    ): T = loadedExtensions.use(Base64.getDecoder().decode(base64Data), lane, block)
+    ): T = loadedExtensions.use(apkSha256, lane, block)
 
     /** Runs [block] with no call of any lane in flight on the same extension. */
     internal fun <T> invokeExclusively(
-        base64Data: String,
+        apkSha256: String,
         block: (LoadedExtension) -> T,
-    ): T = loadedExtensions.useExclusively(Base64.getDecoder().decode(base64Data), block)
+    ): T = loadedExtensions.useExclusively(apkSha256, block)
 
     private fun loadExtension(apkData: ByteArray): LoadedExtension {
         val tempApkFile = File(tempDir, "extension-${UUID.randomUUID()}.apk")
@@ -141,7 +144,7 @@ object MExtensionServerLoader {
             } finally {
                 jarFile.delete()
             }
-            logger.error(error) { "Failed to load extension from base64 data" }
+            logger.error(error) { "Failed to load extension APK" }
             throw error
         } finally {
             // Clean up APK file
@@ -151,15 +154,10 @@ object MExtensionServerLoader {
         }
     }
 
-    private fun sha256(data: ByteArray): String =
-        MessageDigest
-            .getInstance("SHA-256")
-            .digest(data)
-            .joinToString(separator = "") { byte -> "%02x".format(byte) }
-
     fun cleanupTempFiles() {
         MihonImageProxy.clear()
         MihonMetadataCache.clear()
+        ExtensionApkStore.shared.clear()
         try {
             loadedExtensions.close()
         } catch (e: Exception) {

@@ -21,9 +21,7 @@ class SourceDataHandler {
 
     fun serve(session: NanoHTTPD.IHTTPSession): NanoHTTPD.Response =
         try {
-            val files = mutableMapOf<String, String>()
-            session.parseBody(files)
-            val request = mapper.readValue(files["postData"], SourceDataRequest::class.java)
+            val request = mapper.readValue(BridgeRequests.readJson(session), SourceDataRequest::class.java)
             val preferences: MutableList<Map<String, Any>> = mutableListOf(
                 mapOf(
                     "key" to "__mangatan_bridge_context__",
@@ -31,13 +29,13 @@ class SourceDataHandler {
                 ),
             )
             val data = DataBody(
-                data = request.data,
+                apkSha256 = request.apkSha256,
                 method = "preferencesManga",
                 preferences = preferences,
             )
             // Wipes preferences and cookies every lane reads: wait out any
             // in-flight playback call instead of pulling state from under it.
-            MExtensionServerLoader.invokeExclusively(request.data) { loaded ->
+            MExtensionServerLoader.invokeExclusively(request.apkSha256) { loaded ->
                 val source = MihonInvoker.selectSource(loaded.sources, data)
                 val sourceId: Long =
                     when (source) {
@@ -68,13 +66,17 @@ class SourceDataHandler {
                 "application/json",
                 """{"ok":true}""",
             )
+        } catch (error: RequestBodyException) {
+            with(BridgeRequests) { error.toResponse() }
         } catch (error: Throwable) {
-            NanoHTTPD.newFixedLengthResponse(
+            BridgeRequests.apkNotRegisteredIn(error)?.let { missing ->
+                with(BridgeRequests) { missing.toResponse() }
+            } ?: NanoHTTPD.newFixedLengthResponse(
                 NanoHTTPD.Response.Status.INTERNAL_ERROR,
                 "application/json",
                 mapper.writeValueAsString(mapOf("error" to (error.message ?: "Clear failed"))),
             )
         }
 
-    private data class SourceDataRequest(val data: String, val sourceId: String)
+    private data class SourceDataRequest(val apkSha256: String, val sourceId: String)
 }

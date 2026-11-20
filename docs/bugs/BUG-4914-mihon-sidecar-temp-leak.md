@@ -8,6 +8,7 @@
 - **[x] ① 已修复** — 新增 `fushi/lib/src/media/manga/mihon/mihon_sidecar_temp_dir.dart`：每个 JVM 一个 `<数据目录>/sidecar-tmp/jvm-*` 独占目录，作为 `-Djava.io.tmpdir` 传给 JVM，进程退出就删；旁边的 `.lock` 由宿主独占锁住，宿主被强杀后锁随进程释放，下一次起 JVM 时清扫能锁上的旧目录和没有锁文件的孤儿目录。探针复测：100 次请求，JVM 活着时 per-JVM 目录里 99～100 个文件、`%TEMP%` 新增 0 个，JVM 退出后 `sidecar-tmp` 下剩 0 项（3 次）。
 - **[x] ② 已加自动化测试** — `fushi/test/media/manga/mihon_sidecar_temp_dir_test.dart`（释放删干净、旧目录 / 孤儿目录被清扫、本进程活着的目录不扫、Windows 上别的进程锁着的目录不扫、源码守卫钉住 runtime 传 `java.io.tmpdir` 并在进程退出时释放）。
 - **备注**：
-  - 没修到的部分：同一个 JVM 活着期间每次桥调用仍多一个请求体文件（探针：100 次调用 99～100 个），要到 JVM 退出才删。根治要改 sidecar 不经 `parseBody` 落盘（或给 NanoHTTPD 换不 mmap 的临时文件管理器），属于 vendored 服务端改动、要重编三端 sidecar，与 manga-28 / manga-18b 同批，已交所有者拍板。
+  - ~~没修到的部分：同一个 JVM 活着期间每次桥调用仍多一个请求体文件~~ —— 2026-11-21 已根治（拍板台 `design-nmv-sidecar-protocol`，与 manga-28 / manga-18b 同批）：sidecar 各路由改按 Content-Length 直接读请求体，不再调 `parseBody`（`third_party/m_extension_server/overlay/server/src/main/kotlin/mextensionserver/controller/BridgeRequests.kt`），APK 也不再随每个调用发送。测试：`BridgeRequestsTest`（20 个 16 KB 请求后 `java.io.tmpdir` 新增 0 个 `NanoHTTPD-*`）、`desktop_mihon_runtime_integration_test.dart` 真 sidecar 用例（跑完 `sidecar-tmp` 下 0 个 `NanoHTTPD-*`）、守卫 `mihon_vendored_server_guard_test.dart`「overlay 的路由不经 parseBody 读请求体」。
+  - 顺带修了 `DesktopMihonRuntime.dispose` 不等 JVM 临时目录删完就返回的问题（调用方紧接着删数据目录会撞上 `PathNotFoundException`；真 sidecar 集成测试本机首次跑出来）。
   - 已有用户机器上历史残留在系统临时目录的 `NanoHTTPD-*` / `mextensionserver*` 不在宿主目录里，这次不清（不是本程序独占的路径，按名字前缀删系统临时目录有误删别的程序文件的风险）。
-  - 没在真 app + 随包 sidecar 上复测（本机没有构建好的 `mihon_bridge`），`desktop_mihon_runtime_integration_test.dart` 的真 sidecar 用例本机被 skip。
+  - ~~没在真 app + 随包 sidecar 上复测~~ —— 2026-11-21 用本机 JDK 21 + 新编的 shadowJar 组成 `FUSHI_TEST_MIHON_RESOURCES` 跑了 `desktop_mihon_runtime_integration_test.dart` 全部 4 个真 sidecar 用例（不再 skip），另用 MangaDex 扩展真联网走了 inspect → 源列表 → 热门 → 章节 → 页表 → 页图 → 封面。

@@ -217,12 +217,44 @@ overlay/.../DexAllocationRepair.kt:
   match DEX allocations per method except the intended SimpleDateFormat host
   replacement.
 
-overlay/.../MihonImageProxy.kt:
-  Consume and close the extension's network response inside the Rx emission,
-  before blocking for detached ImageData. The call adapter cancels its socket
-  on unsubscribe; reading ResponseBody after toBlocking().single() loses the
-  live response. The overlay retains the source client and image interceptors.
-  A real loopback HTTP body regression supplements the in-memory fixtures.
+overlay/.../MihonImageProxy.kt and .../controller/ImageProxyHandler.kt
+(+ .../controller/StreamingImageResponse.kt):
+  Page images are relayed as they arrive (manga-18b, 2026-11-21). Upstream
+  read the whole image inside the Rx emission (`body.bytes()`) and only then
+  answered with a fixed-length response, so the host's header timeout covered
+  the entire download and its idle timeout only ever watched a loopback memory
+  copy; every page also sat whole in the 512 MiB heap. MihonImageProxy.open now
+  issues exactly the call HttpSource.fetchImage wraps (fetchImage is final in
+  this ABI, so no extension replaces it) without the Rx adapter, whose
+  unsubscribe would cancel the call and cut the body, and returns the live
+  response. streamingImageResponse sends it chunked with closeConnection(true):
+  headers leave when the source's do, each chunk is forwarded as read, and a
+  source body that breaks off or stalls past OkHttp's read timeout ends the
+  socket before the chunked terminator, so the host fails at once instead of
+  waiting. Closing the relay (end, host cancel, failure) closes the upstream
+  response. /source-image streams through the same relay with its 32 MiB cap
+  counted as bytes are read; its lane lock is released before the body is
+  relayed.
+
+overlay/.../impl/ExtensionApkStore.kt, .../controller/BridgeRequests.kt
+(+ DataBody.apkSha256 in the patch, ExtensionInstanceCache generic key):
+  APKs travel once per process by digest (manga-28, 2026-11-21). Upstream had
+  every call carry the whole APK as base64 in `data`. The host now uploads the
+  raw bytes through `PUT /apk/<sha256>`; the store verifies the digest while
+  streaming the body to a file under java.io.tmpdir and accepts nothing else as
+  a file name. /dalvik, /inspect, /source-image and /source-data/clear name only
+  `apkSha256`; a digest this process never received answers
+  `409 {"errorKind":"apkUnknown"}`, and the host uploads and repeats the call
+  once (nothing ran: the miss is raised before the extension loads). The
+  sidecar stays the only authority on what it holds. Capability `apkByDigest`
+  is required by the host. The store hangs off its own companion, not
+  MExtensionServerLoader, so /inspect stays outside the loader's closure.
+  Request bodies are read straight off the socket by Content-Length instead of
+  NanoHTTPD's parseBody, which spooled every body over 1 KB into a
+  `NanoHTTPD-*` temp file that Windows could not delete while mapped: one
+  leaked file per bridge call until the JVM exited (BUG-4914, second half).
+  Responses whose body was not fully read (401, refused uploads) close their
+  connection so leftover bytes are never parsed as the next request.
 
 overlay/.../HostProxyPolicy.kt and .../network/NetworkHelper.kt:
   JVM HTTP clients resolve the host's authenticated loopback proxy policy per
@@ -305,7 +337,8 @@ server-build.gradle.patch:
                                    drop; chapters cross the bridge as JChapter;
                                    applyPreferences writes the host snapshot
                                    through HostPreferenceSnapshot (see below)
-  .../model/DataBody.kt            JGroupFilter.stateString
+  .../model/DataBody.kt            JGroupFilter.stateString; `data` (APK
+                                   base64) renamed to `apkSha256` (manga-28)
   .../util/BytecodeEditor.kt       emit INVOKEINTERFACE when the replacement
                                    owner is an interface (dex2jar writes a
                                    Methodref where an InterfaceMethodref is
@@ -327,7 +360,16 @@ overlay/ (full-file replacements):
                                                 (loads nothing; see below)
   .../controller/SourceImageHandler.kt          new: fetch a source image with
                                                 the extension's own client,
-                                                buffered with a hard ceiling
+                                                streamed with a hard ceiling
+  .../controller/ImageProxyHandler.kt           page images streamed, not
+                                                buffered (manga-18b)
+  .../controller/StreamingImageResponse.kt      new: the chunked relay both
+                                                image routes use
+  .../controller/BridgeRequests.kt              new: Content-Length body reads
+                                                (no parseBody, BUG-4914),
+                                                409 apkUnknown, PUT /apk/<sha>
+  .../impl/ExtensionApkStore.kt                 new: content-addressed APK
+                                                store (manga-28)
   .../controller/SourceDataHandler.kt           new: clear per-source
                                                 preferences (and their host
                                                 snapshot ledger), cookies and
@@ -394,18 +436,18 @@ Security boundary (must not be weakened)
   The guard test asserts this over the whole closure reachable from /inspect,
   not just the handler.
 - The complete route table is /dalvik, /inspect, /source-image,
-  /source-data/clear, /capabilities, / (banner), /stop and upstream's
-  /image/<uuid> proxy prefix. All of them sit behind the token gate; nothing
-  else is served.
-- /source-image buffers the fetched body with a hard 32 MiB ceiling instead of
-  OkHttp's unbounded body.bytes(); the sidecar runs with -Xmx512m, so an
-  oversized response would otherwise OOM the whole JVM. Note this bounds only
+  /source-data/clear, /capabilities, / (banner), /stop, PUT /apk/<sha256> and
+  upstream's /image/<uuid> proxy prefix. All of them sit behind the token gate;
+  nothing else is served. Storing an uploaded APK runs none of its code.
+- /source-image relays the fetched body with a hard 32 MiB ceiling counted as
+  it is read, never OkHttp's unbounded body.bytes(); the sidecar runs with
+  -Xmx512m, so an oversized response would otherwise OOM the whole JVM. Note this bounds only
   the size, not the destination: the URL is chosen by the source site, exactly
   as in upstream's own /image/<uuid> page path, which is inherent to Mihon's
   "the site tells the client where the image is" contract.
 - The upstream process identity is retained: ServerWindow.kt and
   MExtensionServerLoader are untouched, Main.kt only has the one-line rootDir
-  property fix (argument contract, port handling and lifecycle unchanged); MihonImageProxy has a response-lifetime
+  property fix (argument contract, port handling and lifecycle unchanged); MihonImageProxy has the streaming
   overlay described above. The Fushi
   host only ever terminates the Process handle it started (never a port or
   process-name scan). The upstream wire key __mangatan_bridge_context__ is

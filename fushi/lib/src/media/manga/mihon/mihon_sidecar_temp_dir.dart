@@ -8,9 +8,11 @@ import 'package:path/path.dart' as p;
 /// 进程退出就删；宿主被强杀时留下的目录由下一次起 JVM 时清扫（BUG-4914）。
 ///
 /// 为什么由宿主持有：JVM 往临时目录写两类东西，而且自己收不掉——
-/// - 随包 NanoHTTPD 2.3.1 把每个超过 1 KB 的请求体落成 `NanoHTTPD-*` 临时文件并 mmap，
-///   Windows 上映射没释放时删不掉；桥调用的请求体都带整份 APK base64，等于每次调用
-///   留一个文件，以前落在系统临时目录、永不清理；
+/// - 随包 NanoHTTPD 2.3.1 的 `parseBody` 把每个超过 1 KB 的请求体落成 `NanoHTTPD-*`
+///   临时文件并 mmap，Windows 上映射没释放时删不掉；以前桥调用的请求体都带整份 APK
+///   base64，等于每次调用留一个文件、落在系统临时目录永不清理。现在 sidecar 按
+///   Content-Length 直接读请求体、APK 按摘要每进程只传一次（manga-28，overlay 的
+///   `BridgeRequests.kt` / `ExtensionApkStore.kt`），上传的 APK 也落在这个目录里；
 /// - 扩展 jar 解在 `mextensionserver*` 目录，靠 JVM shutdown hook 删，而 Windows Job
 ///   Object / SIGKILL 结束进程时 hook 不跑。
 ///

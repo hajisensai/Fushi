@@ -56,6 +56,8 @@ const List<String> _overlayOverridesUpstream = <String>[
   'server/src/main/kotlin/mextensionserver/impl/ExtensionInstanceCache.kt',
   'server/src/main/kotlin/mextensionserver/impl/MExtensionServerLoader.kt',
   'server/src/test/kotlin/mextensionserver/impl/ExtensionInstanceCacheTest.kt',
+  // manga-18b：页图代理边收边转，不再整张读进内存才回响应头。
+  'server/src/main/kotlin/mextensionserver/controller/ImageProxyHandler.kt',
 ];
 
 /// overlay 里 Fushi 新增、上游没有的文件。
@@ -68,6 +70,11 @@ const List<String> _overlayNewFiles = <String>[
   'server/src/main/kotlin/eu/kanade/tachiyomi/animesource/host/AnimeVideoLoader.kt',
   // BUG-3520：宿主偏好快照规则（Drift 改了就写、扩展自己写的值在 Drift 再变之前保留）。
   'server/src/main/kotlin/mextensionserver/impl/HostPreferenceSnapshot.kt',
+  // manga-28：APK 按摘要每进程传一次；BUG-4914：请求体不经 parseBody 落盘。
+  'server/src/main/kotlin/mextensionserver/impl/ExtensionApkStore.kt',
+  'server/src/main/kotlin/mextensionserver/controller/BridgeRequests.kt',
+  // manga-18b：页图 / 封面的流式转发。
+  'server/src/main/kotlin/mextensionserver/controller/StreamingImageResponse.kt',
 ];
 
 String _read(String path) => File(path).readAsStringSync();
@@ -673,25 +680,120 @@ void main() {
     );
   });
 
-  test('/source-image 的响应缓冲有硬上限（敌意源不能 OOM 掉 sidecar）', () {
+  test('/source-image 的转发有硬上限（敌意源不能 OOM 掉 sidecar）', () {
     final String handler = maskComments(
       _read(
         '$_vendorRoot/overlay/server/src/main/kotlin/mextensionserver/'
         'controller/SourceImageHandler.kt',
       ),
     );
-    expect(
-      handler,
-      isNot(contains('body.bytes()')),
-      reason:
-          'body.bytes() 是无上限全量缓冲，sidecar 只有 -Xmx512m；'
-          '源站点控制的 URL 返回超大响应就能把整个 JVM 打死',
+    final String relay = maskComments(
+      _read(
+        '$_vendorRoot/overlay/server/src/main/kotlin/mextensionserver/'
+        'controller/StreamingImageResponse.kt',
+      ),
     );
-    expect(handler, contains('MAX_IMAGE_BYTES'));
+    for (final String code in <String>[handler, relay]) {
+      expect(
+        code,
+        isNot(contains('.bytes()')),
+        reason:
+            'bytes() 是无上限全量缓冲，sidecar 只有 -Xmx512m；'
+            '源站点控制的 URL 返回超大响应就能把整个 JVM 打死',
+      );
+    }
+    expect(handler, contains('maxBytes = MAX_IMAGE_BYTES'));
     expect(
-      handler,
+      relay,
       contains('body.byteStream()'),
       reason: '必须边读边计数；只看 Content-Length 会被 chunked 响应绕过',
+    );
+    expect(relay, contains('relayed > maxBytes'));
+  });
+
+  // manga-18b：sidecar 以前把页图整张读进内存（`body.bytes()`）才回定长响应，
+  // 宿主的空闲超时只看得到回环上的内存拷贝，等于没有。
+  test('页图代理边收边转（响应头随源站到达，断流即断连）', () {
+    const String controller =
+        '$_vendorRoot/overlay/server/src/main/kotlin/mextensionserver/'
+        'controller';
+    final String handler = maskComments(
+      _read('$controller/ImageProxyHandler.kt'),
+    );
+    expect(handler, contains('streamingImageResponse('));
+    final String proxy = maskComments(
+      _read(
+        '$_vendorRoot/overlay/server/src/main/kotlin/mextensionserver/'
+        'impl/MihonImageProxy.kt',
+      ),
+    );
+    expect(proxy, isNot(contains('.bytes()')));
+    expect(
+      proxy,
+      isNot(contains('toBlocking')),
+      reason:
+          'Rx 的 fetchImage 在 observable 结束时 cancel 掉 call，'
+          '活的响应体不能经它交出去',
+    );
+    final String relay = maskComments(
+      _read('$controller/StreamingImageResponse.kt'),
+    );
+    expect(relay, contains('newChunkedResponse('));
+    expect(
+      relay,
+      contains('closeConnection(true)'),
+      reason: '中途断流时不断连接，宿主会一直等 chunked 的结束块',
+    );
+  });
+
+  // BUG-4914：NanoHTTPD 2.3.1 的 parseBody 把超过 1 KB 的请求体落成临时文件并
+  // mmap，Windows 上删不掉，每次桥调用留一个直到 JVM 退出。
+  test('overlay 的路由不经 parseBody 读请求体', () {
+    final Directory controller = Directory(
+      '$_vendorRoot/overlay/server/src/main/kotlin/mextensionserver/controller',
+    );
+    final List<File> sources = controller
+        .listSync()
+        .whereType<File>()
+        .where((File f) => f.path.endsWith('.kt'))
+        .toList();
+    expect(sources.length, greaterThan(5), reason: '目录枚举失效');
+    for (final File file in sources) {
+      expect(
+        maskComments(file.readAsStringSync()),
+        isNot(contains('parseBody(')),
+        reason: '${file.path} 又用回 parseBody',
+      );
+    }
+    // 上游自己的 DalvikHandler 用 parseBody；overlay 必须盖住它。
+    expect(
+      _overlayOverridesUpstream,
+      contains(
+        'server/src/main/kotlin/mextensionserver/controller/DalvikHandler.kt',
+      ),
+    );
+  });
+
+  // manga-28：桌面以前每次调 sidecar 都带整个 APK 的 base64。
+  test('APK 按摘要传：调用只带 apkSha256，本体经 PUT /apk 每进程传一次', () {
+    final String runtime = maskComments(
+      _read('lib/src/media/manga/mihon/desktop_mihon_runtime.dart'),
+    );
+    expect(runtime, isNot(contains("'data':")));
+    expect(runtime, contains("'apkSha256': apkSha256"));
+    expect(runtime, contains("_uri('/apk/\$apkSha256')"));
+    expect(runtime, contains("payload['apkByDigest'] != true"));
+    final String controller = _read(
+      '$_vendorRoot/overlay/server/src/main/kotlin/mextensionserver/'
+      'controller/MExtensionServerController.kt',
+    );
+    expect(controller, contains('"apkByDigest":true'));
+    expect(controller, contains('ApkUploadHandler.ROUTE_PREFIX'));
+    // DataBody 的 APK 字段由补丁改名；补丁丢了这一段，Jackson 会把每个调用都
+    // 当成缺 `data` 拒掉。
+    expect(
+      _read('$_vendorRoot/server-build.gradle.patch'),
+      contains('+    val apkSha256: String,'),
     );
   });
 
