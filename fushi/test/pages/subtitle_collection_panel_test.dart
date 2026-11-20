@@ -715,6 +715,57 @@ void main() {
         isFalse,
       );
     });
+
+    test('canRunSubtitleCollectionBatch：只有能解开的整季包、没有单集文件的来源也能批量下载', () {
+      // 成员行对这种来源预览「将从整季包中拆出」，批量（runSubtitleBatch）也确实会拆；
+      // 修复前按钮只看单集索引，这里是灰的。
+      final SubtitleCollectionSource packOnly = groupSubtitleCollectionSources(
+        <VideoSubtitleCandidate>[_PackCand('season.zip', source: 'P')],
+      ).single;
+      expect(packOnly.index.isEmpty, isTrue);
+      expect(packOnly.unpackablePackFormat, SubtitleArchiveFormat.zip);
+      expect(
+        canRunSubtitleCollectionBatch(
+          selected: packOnly,
+          searching: false,
+          running: false,
+        ),
+        isTrue,
+      );
+      expect(
+        canRunSubtitleCollectionBatch(
+          selected: packOnly,
+          searching: false,
+          running: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('canRunSubtitleCollectionBatch：只有解不开的整季包（RAR）仍禁用', () {
+      final SubtitleCollectionSource rarOnly =
+          groupSubtitleCollectionSources(<VideoSubtitleCandidate>[
+            VideoSubtitleCandidate(
+              providerId: 'fake',
+              remoteId: 'R:season.rar',
+              fileName: 'season.rar',
+              language: 'ja',
+              providerPriority: 1,
+              collectionId: 'R',
+              collectionLabel: 'R',
+              archiveFormat: SubtitleArchiveFormat.rar,
+            ),
+          ]).single;
+      expect(rarOnly.unsupportedPackFormat, SubtitleArchiveFormat.rar);
+      expect(
+        canRunSubtitleCollectionBatch(
+          selected: rarOnly,
+          searching: false,
+          running: false,
+        ),
+        isFalse,
+      );
+    });
   });
 
   group('rankSubtitleCollectionVersions（BUG-3998 聚合版本列表）', () {
