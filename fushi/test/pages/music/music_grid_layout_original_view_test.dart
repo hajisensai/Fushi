@@ -5,7 +5,6 @@ import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/media/music/music_library_data.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_session.dart';
@@ -35,6 +34,7 @@ MusicTrackRow _track(String uid) => MusicTrackRow(
   path: '/music/$uid.flac',
   title: 'Title $uid',
   isLossless: true,
+  hasEmbeddedCover: false,
   fileMtimeAt: 1,
   fileSize: 1,
   addedAt: 1,
