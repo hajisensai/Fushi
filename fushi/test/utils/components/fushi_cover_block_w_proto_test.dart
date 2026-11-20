@@ -292,6 +292,64 @@ void main() {
       expect(find.byKey(discKey), findsNothing);
     });
 
+    testWidgets('曲库色块不起拼贴加大首块：所有块等尺寸', (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1400, 900);
+      addTearDown(tester.view.reset);
+      final List<FushiCoverBlockSize> sizes = <FushiCoverBlockSize>[];
+      final List<Size> boxes = <Size>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: MusicStyledCollection(
+              style: MusicViewStyle.blocks,
+              itemCount: 9,
+              rowBuilder: (BuildContext context, int i) =>
+                  const SizedBox.shrink(),
+              blockBuilder:
+                  (BuildContext context, int i, FushiCoverBlockSize size) {
+                    sizes.add(size);
+                    return LayoutBuilder(
+                      builder: (BuildContext context, BoxConstraints c) {
+                        boxes.add(c.biggest);
+                        return MusicCollectionBlock(
+                          title: 'Album $i',
+                          size: size,
+                          albumPoster: true,
+                        );
+                      },
+                    );
+                  },
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(sizes, isNotEmpty);
+      expect(sizes.toSet(), <FushiCoverBlockSize>{FushiCoverBlockSize.regular});
+      expect(boxes.map((Size b) => b.height).toSet().length, 1);
+      // 等尺寸块够宽（W 原型双格比例），无盘专辑走海报版式的装盒大字。
+      expect(boxes.first.width / boxes.first.height, greaterThan(1.6));
+      expect(fitPaint('Album 0'), findsOneWidget);
+    });
+
+    testWidgets('专辑块给了盘面图才画唱片（插件 / 最近播放共用 MusicCollectionBlock）', (
+      WidgetTester tester,
+    ) async {
+      await pumpSized(
+        tester,
+        const MusicCollectionBlock(
+          title: title,
+          size: FushiCoverBlockSize.regular,
+          albumPoster: true,
+          disc: ColoredBox(key: discKey, color: Colors.black),
+        ),
+        const Size(420, 204),
+      );
+      expect(find.byKey(discKey), findsOneWidget);
+      expectTitleInside(tester, title);
+    });
+
     test('盘面图映射发布：内容不变不通知', () {
       final MusicDiscArtIndex index = MusicDiscArtIndex.instance;
       int calls = 0;
