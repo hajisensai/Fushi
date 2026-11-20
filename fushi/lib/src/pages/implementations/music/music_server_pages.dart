@@ -2269,7 +2269,7 @@ class _MusicServerPlaylistPageState
       final double heroGap = musicDetailHeroGap(context, tokens.spacing.gap);
       // 重设计外壳、不可编辑的歌单：曲目排成多列封面色块，按行惰性构建。可编辑
       // 的（[MusicPlaylistTrackColumn]，要拖动排序）仍是单列曲目行。
-      final bool blocks = musicCoverBlocksActive(context, layout);
+      final bool blocks = switchable && musicCoverBlocksActive(context, layout);
       body = blocks
           ? FushiEntranceScope(
               child: CustomScrollView(
