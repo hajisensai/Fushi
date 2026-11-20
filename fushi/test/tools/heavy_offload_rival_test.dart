@@ -17,6 +17,7 @@ import '../../tool/test_flow/heavy_budget.dart';
 import '../../tool/test_flow/heavy_lease.dart';
 import '../../tool/test_flow/heavy_offload.dart';
 import '../../tool/test_flow/heavy_offload_rival.dart';
+import '../../tool/test_flow/pid_alive.dart';
 
 /// One dist_test attempt: [remote] is its side of the claim.
 class _Attempt implements HeavyOffloadAttempt {
@@ -124,7 +125,52 @@ void main() {
     );
     await rival.close();
     expect(attempts, hasLength(1), reason: 'nothing asked after it was taken');
+    // 2026-11-20: a claim taken there used to stay for good (265 files).
+    expect(claims().listSync(), isEmpty, reason: 'claim file left behind');
     holder.release();
+  });
+
+  test('sweepDeadOffloadClaims: only the files of processes that are gone', () {
+    final Directory dir = claims()..createSync(recursive: true);
+    for (final String name in <String>[
+      '111-0.claim',
+      '111-first.claim',
+      '222-3.claim',
+      '$pid-0.claim',
+      'notes.txt',
+    ]) {
+      File('${dir.path}/$name').createSync();
+    }
+    final List<int> asked = <int>[];
+    final int swept = sweepDeadOffloadClaims(
+      dir,
+      alive: (int p) {
+        asked.add(p);
+        return p == 222;
+      },
+    );
+    expect(swept, 2);
+    expect(asked..sort(), <int>[111, 222], reason: 'one question per pid');
+    expect(
+      dir
+          .listSync()
+          .map((FileSystemEntity e) => e.uri.pathSegments.last)
+          .toSet(),
+      <String>{'222-3.claim', '$pid-0.claim', 'notes.txt'},
+    );
+    expect(sweepDeadOffloadClaims(Directory('${dir.path}/none')), 0);
+  });
+
+  test('pidAlive: this process runs, one that exited does not', () async {
+    expect(pidAlive(pid), isTrue);
+    final Process child = await Process.start(
+      Platform.resolvedExecutable,
+      <String>['--version'],
+    );
+    final int childPid = child.pid;
+    await child.exitCode;
+    expect(pidAlive(childPid), isFalse);
+    expect(pidAlive(0), isFalse);
   });
 
   test('queued here, admitted here first: the attempt out backs out at its '

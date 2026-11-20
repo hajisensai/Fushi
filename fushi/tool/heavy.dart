@@ -437,6 +437,7 @@ Future<int> _askElsewhere(_OffloadTarget t, {required int maxMinutes}) async {
     'FUSHI_HEAVY_OFFLOAD=off keeps it on this machine',
   );
   _claimDir.createSync(recursive: true);
+  sweepDeadOffloadClaims(_claimDir);
   final HeavyOffloadClaim claim = HeavyOffloadClaim(
     '${_claimDir.path}/$pid-first.claim',
   )..delete(); // a dead process's leftover under a reused pid
