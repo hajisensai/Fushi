@@ -21,6 +21,8 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.da
 import 'package:fushi/src/pages/implementations/dictionary_popup_mining_target.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_resource_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/reader/popup_swipe_close_script.dart'
+    show PopupSelectionChangedNotification;
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart'
@@ -2337,6 +2339,11 @@ class DictionaryPopupLayer extends StatelessWidget {
 /// barrier 同源）判定：过了直接 [onDismiss]（关一层，与点 × 同一条路径），没过什么都不做。
 /// 双向水平（左右皆可）。鼠标拖选不参与本体滑关，避免正文框选触发关闭。
 ///
+/// BUG-4925：这一划期间 WebView 选区变成了新的非空选区（长按选字后拖动、拖选区柄调整
+/// 范围）——收到子树冒泡的 [PopupSelectionChangedNotification]——本划作废、抬手不关。
+/// 与覆盖窗横滑脚本 `kPopupTouchSideSwipeReleaseJs` 同一条选区判据；划之前就留着的
+/// 旧选区不挡滑关。
+///
 /// 用户 2026-11-06：拖动期间弹窗**一动不动**，不再跟手平移 / 淡出 / 补间滑出。Android
 /// 混合合成下那段跟手平移只挪了原生 WebView，Flutter 画的顶栏和卡框原地不动，看起来是
 /// 「正文在框里横着滚」（录屏），让人以为弹窗能左右滚动。见 [SwipeDismissWrapper]。
@@ -2369,6 +2376,9 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector> {
   /// null=尚未判轴，true=横拖关闭候选，false=纵向/斜向滚动（交还 WebView）。
   bool? _pointerIsHorizontal;
 
+  /// BUG-4925：本划进行中 WebView 选区变过（拖选区柄 / 长按选字），抬手不滑关。
+  bool _selectionChangedDuringGesture = false;
+
   double get _threshold =>
       swipeDismissThreshold(ReaderFushiSource.instance.dismissSwipeSensitivity);
 
@@ -2400,7 +2410,8 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector> {
   void _onPointerUp(PointerUpEvent event) {
     _activePointers.remove(event.pointer);
     if (event.pointer != _trackedPointer) return;
-    final bool horizontal = _pointerIsHorizontal == true;
+    final bool horizontal =
+        _pointerIsHorizontal == true && !_selectionChangedDuringGesture;
     final double accumulated = _pointerStart == null
         ? 0
         : event.position.dx - _pointerStart!.dx;
@@ -2418,6 +2429,12 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector> {
     _trackedPointer = null;
     _pointerStart = null;
     _pointerIsHorizontal = null;
+    _selectionChangedDuringGesture = false;
+  }
+
+  bool _onSelectionChanged(PopupSelectionChangedNotification notification) {
+    if (_trackedPointer != null) _selectionChangedDuringGesture = true;
+    return false;
   }
 
   @override
@@ -2428,7 +2445,10 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector> {
       onPointerMove: _onPointerMove,
       onPointerUp: _onPointerUp,
       onPointerCancel: _onPointerCancel,
-      child: widget.child,
+      child: NotificationListener<PopupSelectionChangedNotification>(
+        onNotification: _onSelectionChanged,
+        child: widget.child,
+      ),
     );
   }
 }
