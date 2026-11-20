@@ -15,6 +15,10 @@ const String kOfficialWebsiteUrl = 'https://fushi.moe';
 /// ——直链下完了，用户还是不知道下一步该干什么。
 const String kOfficialDownloadPageUrl = '$kOfficialWebsiteUrl/download';
 
+/// GitHub Releases 下载页（官方渠道之一）：「免费与开源声明」页与非官方构建提示都指向这里。
+const String kOfficialReleasesUrl =
+    'https://github.com/hajisensai/Fushi/releases';
+
 /// Fushi 的 GitHub Sponsors 公开赞助页。设置页入口与仓库 funding 元数据都指向
 /// 同一个 GitHub 账号；应用侧集中保存 URL，避免账号或路径变更时入口静默分叉。
 const String kGitHubSponsorsUrl = 'https://github.com/sponsors/hajisensai';
