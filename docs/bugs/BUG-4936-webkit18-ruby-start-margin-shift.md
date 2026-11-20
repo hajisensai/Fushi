@@ -1,0 +1,12 @@
+## BUG-4936 · iOS 18 振假名压进基字（WebKit 18 把注音的负 margin-block-start 也算进位置）
+- **报告**：2026-11-21（用户：应用内反馈 HXZ2hLIoCi「振假名显示重叠」，iPhone15,4 / iOS 18.2.1（Build 22C161），app 3.3.0-debug.28434；截图为竖排有声书跟读，「嫌気」「静謐」「哀」「濡」「傍」的振假名压在基字左半边；附原书 epub）
+- **真实性**：✅ 真 bug（WebKit 18 专属，与字体 / view mode 无关）。分诊猜的「旧 WebKit CSS zoom / 度量顶到 1.5」不成立：阅读器正文不设 zoom，度量脚本在 WebKit 18.2 上写出的拉力正常（0.182）。真正的根因是 `fushi/lib/src/reader/reader_content_styles.dart:347`（Apple 注音规则）的 `margin-block-start: -2em`（BUG-2472 / BUG-2482）：它的前提「负 margin-block-start 只抵消注音在流中的高度、不动位置」只在 WebKit 26 起成立；WebKit 18 把它也算进注音位置，注音整整朝基字挪 2em（注音字号计），落进基字。`fushi/lib/src/reader/reader_ruby_metrics_script.dart:163`（修前 :142）按 WebKit 26 的模型算拉力，没有量注音的实际位置，所以补不回来。
+  - 复现（Playwright WebKit 18.2 = iOS 18.2 同代引擎 vs WebKit 27.2；反馈附件原书 `part0007.xhtml` + 书自带 CSS + 竖排 22px / 行高 1.65 + 生产 Apple 注音规则 + 生产度量脚本）：
+    - 18.2：「嫌」的 `<rt>` 左缘 362.9、基字 363–388，注音完全压在基字上（截图与用户一致）；去掉注音规则时 `<rt>` 在 381（贴基字右侧）。
+    - 合成段落逐条拆：18.2 只留 `margin-block-start: -2em` → 注音离基字 −22px（=2em），只留 `margin-block-end` → −3.3px（与 27.2 相同）；27.2 只留 `margin-block-start` → 0px（不动位置）。即 18.2 的位置 = margin-block-start + margin-block-end，27.2 只有 margin-block-end。横排同理。
+- **[x] ① 已修复** — 度量脚本不再假设引擎：新增 `engineShift`，量注音朝基字那一边离基字内容区的实际距离，减去 `<rt>` 当前计算出的 `margin-block-end`，得到引擎在 margin-block-end 之外附加的位移，折成注音字号倍数从拉力里扣掉（夹在 [−2, 0]，位移只可能来自那条 −2em；`ruby-position` 为 under 或量不出时按 0）。WebKit 18 上拉力写成 ≈ −1.82，`margin-block-end` 变成 +1.72em，把注音推回基字外侧；WebKit 26 / 27 上附加位移 ≈ 0，写出值与修前相同（27.2 实测 0.318 → 0.317，亚像素噪声）。重量时用已写入的值算，结果不漂移。
+  - 复测（同上装置）：18.2 竖排注音离基字 −3.1px、横排 −2.6px（与 27.2 的模型值一致），截图注音回到基字右侧；27.2 竖排 / 横排拉力与修前相同。
+- **[x] ② 已加自动化测试** — `fushi/test/reader/reader_ruby_metrics_behavior_test.js`（由 `reader_ruby_metrics_script_test.dart` 驱动，node 真执行 `kReaderRubyMetricsJs`）「BUG-4936」组：喂 WebKit 18.2 / 27.2 在原书章节上实测的矩形与 `margin-block-end`，断言 18.2 竖排写出 −1.818、27.2 写出 0.318、18.2 以写入值重量不漂移、横排 18.2 正好扣 2em、`ruby-position: under` 不修正。变异验证：去掉 `engineShift` 的加项，「WebKit 18: … minus the 2em the engine adds」变红。
+- **备注**：
+  - 未在 iOS 18 真机 / 模拟器复测（本机 Windows）；用的是 Playwright 的 WebKit 18.2（与 iOS 18.2 同一 WebKit 版本的 WinCairo 构建，ruby 布局是跨平台代码）。
+  - WebKit 18 上注音回到正确位置后，首行含注音的段落仍会被撑高约 0.3em（18.2 合成段落 22px：注音规则全关多出 7px，现在 3.9px）——WebKit 18 的行盒随注音实际位置长高，BUG-2472 的「只抵消流中高度」在这代引擎上做不到；这是 BUG-2472 原症状在 iOS 18 上的残留，比注音压字轻得多，未处理。
