@@ -7,6 +7,16 @@ part of 'database.dart';
 /// [title] 是删前的库内标题（墓碑与歧义复核的判据），[bookUid] 是稳定身份。
 typedef VideoStatisticsIdentity = ({String title, String bookUid});
 
+/// [_FushiDbContentMisc.saveMangaChapterStates] 的一项：一章的新进度。
+/// `pageCount` / `readAt` 为 null = 沿用既有值；`clearRead` = 把已读标记撤掉。
+typedef MangaChapterStateWrite = ({
+  String chapterKey,
+  int lastPage,
+  int? pageCount,
+  int? readAt,
+  bool clearRead,
+});
+
 mixin _FushiDbContentMisc
     on _$FushiDatabase, _FushiDbLibrary, _FushiDbTagsSync {
   // ── dictionary metadata ─────────────────────────────────────────
@@ -1548,6 +1558,45 @@ mixin _FushiDbContentMisc
         updatedAt: now,
       ),
     );
+  }
+
+  /// 一次写多章的进度（Kavita 对账 / 批量标已读、未读）：**一个事务、同一个
+  /// `updatedAt`**（gap-mangamisc-2）。
+  ///
+  /// 逐章调 [saveMangaChapterState] 时每章各取一次 `DateTime.now()`，按章表顺序
+  /// （新 → 旧）写下来，最后写的最旧那章 `updatedAt` 最大——「继续阅读」按
+  /// `updatedAt` 最大选章，于是落到已读过的旧章。同一时间戳下它按章表顺序取最先
+  /// 出现（最新）的那章。不能把 `updatedAt` 置 0 绕开：同步按它做 LWW。
+  ///
+  /// 每项的列语义同 [saveMangaChapterState]：`pageCount` / `readAt` 为 null 时沿用
+  /// 既有值；`clearRead` 为真时 `readAt` 置空（同 [clearMangaChapterRead]）。
+  Future<void> saveMangaChapterStates({
+    required String bookUid,
+    required List<MangaChapterStateWrite> writes,
+  }) async {
+    if (bookUid.isEmpty || writes.isEmpty) return;
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await transaction(() async {
+      final Map<String, MangaChapterStateRow> existing =
+          await getMangaChapterStates(bookUid);
+      for (final MangaChapterStateWrite write in writes) {
+        if (write.chapterKey.isEmpty) continue;
+        final MangaChapterStateRow? row = existing[write.chapterKey];
+        await into(mangaChapterStates).insertOnConflictUpdate(
+          MangaChapterStatesCompanion.insert(
+            bookUid: bookUid,
+            chapterKey: write.chapterKey,
+            lastPage: Value<int>(write.lastPage),
+            lastFraction: const Value<int>(-1),
+            pageCount: Value<int?>(write.pageCount ?? row?.pageCount),
+            readAt: Value<int?>(
+              write.clearRead ? null : (write.readAt ?? row?.readAt),
+            ),
+            updatedAt: now,
+          ),
+        );
+      }
+    });
   }
 
   /// 显式把一章标回未读（作品页的「标为未读」动作）。

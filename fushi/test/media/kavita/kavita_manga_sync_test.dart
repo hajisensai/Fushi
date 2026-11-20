@@ -7,6 +7,7 @@ import 'package:fushi/src/media/kavita/kavita_manga_sync.dart';
 import 'package:fushi/src/media/kavita/kavita_progress_resolver.dart';
 import 'package:fushi/src/media/kavita/kavita_server_config.dart';
 import 'package:fushi/src/media/manga/kavita/kavita_library_adapter.dart';
+import 'package:fushi/src/media/manga/library/manga_resume_point.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -908,6 +909,165 @@ void main() {
         chapterKey: '3',
       ))!;
       expect(three.readAt, _base);
+    });
+  });
+
+  // BUG-4910（gap-mangamisc-2 / -3）：批量写进度逐章各取时间戳，「继续阅读」落到
+  // 最后写的最旧那章；对账逐章整份解码基线偏好。
+  group('batch writes share one timestamp', () {
+    // 章表新 → 旧：下标 0 是最新一话（与源一致）。
+    const int count = 300;
+    List<OnlineMangaChapter> chaptersNewestFirst(int pagesRead) =>
+        <OnlineMangaChapter>[
+          for (int i = count; i >= 1; i--)
+            OnlineMangaChapter(
+              key: '$i',
+              name: 'c$i',
+              raw: <String, Object?>{'pages': 10, 'pagesRead': pagesRead},
+            ),
+        ];
+
+    OnlineMangaLibraryEntry entryOf(List<OnlineMangaChapter> chapters) =>
+        OnlineMangaLibraryEntry(
+          runtime: OnlineMangaRuntimeKind.kavita,
+          extensionPackage: kKavitaMangaPackage,
+          sourceId: 'srv',
+          series: const OnlineMangaSeries(
+            key: '42',
+            title: 'Series',
+            raw: <String, Object?>{},
+          ),
+          chapters: chapters,
+        );
+
+    test('reconcile: one updatedAt for every imported chapter, continue '
+        'reading lands after the newest read chapter', () async {
+      final List<OnlineMangaChapter> chapters = chaptersNewestFirst(10)
+        // 最新一话服务器上没读过。
+        ..[0] = const OnlineMangaChapter(
+          key: '$count',
+          name: 'latest',
+          raw: <String, Object?>{'pages': 10, 'pagesRead': 0},
+        );
+      final int written = await reconcileKavitaChapterStates(
+        db: db,
+        bookUid: _uid,
+        chapters: chapters,
+        nowMs: () => _base,
+      );
+      expect(written, count - 1);
+      final Map<String, MangaChapterStateRow> states = await db
+          .getMangaChapterStates(_uid);
+      expect(
+        states.values.map((MangaChapterStateRow r) => r.updatedAt).toSet(),
+        hasLength(1),
+        reason: '逐章写时每章各一个时间戳，最旧那章最大',
+      );
+      // 读过的最新一话是下标 1（第 299 话）→ 继续阅读去下标 0（最新一话）。
+      expect(continueMangaChapterIndex(entryOf(chapters), states), 0);
+    });
+
+    test('batch mark read (Kavita): one updatedAt, continue reading goes to '
+        'the chapter after the newest marked one', () async {
+      final List<OnlineMangaChapter> chapters = chaptersNewestFirst(0);
+      // 多选标已读：下标 100..299（第 200 话及更早）。
+      final List<OnlineMangaChapter> marked = chapters.sublist(100);
+      await alignKavitaMangaChapterMarks(
+        db: db,
+        stamps: stamps,
+        bookUid: _uid,
+        chapters: <KavitaChapterMarkTarget>[
+          for (final OnlineMangaChapter c in marked)
+            (chapterKey: c.key, totalPages: 10, knownServerPage: null),
+        ],
+        read: true,
+        nowMs: () => _base,
+      );
+      final Map<String, MangaChapterStateRow> states = await db
+          .getMangaChapterStates(_uid);
+      expect(states, hasLength(marked.length));
+      expect(
+        states.values.map((MangaChapterStateRow r) => r.updatedAt).toSet(),
+        hasLength(1),
+      );
+      expect(
+        states.values.every((MangaChapterStateRow r) => r.readAt == _base),
+        isTrue,
+      );
+      expect(continueMangaChapterIndex(entryOf(chapters), states), 99);
+      for (final OnlineMangaChapter c in marked) {
+        expect(stamps.stampOf(_uid, c.key), (at: _base, page: 9));
+      }
+    });
+
+    test(
+      'batch mark unread clears read marks in the same transaction',
+      () async {
+        await db.markMangaChaptersRead(
+          bookUid: _uid,
+          chapterKeys: <String>['1', '2'],
+        );
+        await alignKavitaMangaChapterMarks(
+          db: db,
+          stamps: stamps,
+          bookUid: _uid,
+          chapters: const <KavitaChapterMarkTarget>[
+            (chapterKey: '1', totalPages: 10, knownServerPage: null),
+            (chapterKey: '2', totalPages: 10, knownServerPage: null),
+          ],
+          read: false,
+          nowMs: () => _base,
+        );
+        final Map<String, MangaChapterStateRow> states = await db
+            .getMangaChapterStates(_uid);
+        expect(states['1']!.readAt, isNull);
+        expect(states['2']!.readAt, isNull);
+        expect(states['1']!.lastPage, 0);
+        expect(stamps.stampOf(_uid, '2'), (at: _base, page: 0));
+      },
+    );
+
+    test('pref stamp store: reconcile decodes the preference once, batch '
+        'align writes it once', () async {
+      String value = '';
+      int reads = 0;
+      int writes = 0;
+      final PrefKavitaMangaSyncStampStore pref = PrefKavitaMangaSyncStampStore(
+        read: () {
+          reads++;
+          return value;
+        },
+        write: (String v) async {
+          writes++;
+          value = v;
+        },
+      );
+      final List<OnlineMangaChapter> chapters = chaptersNewestFirst(4);
+      await reconcileKavitaChapterStates(
+        db: db,
+        bookUid: _uid,
+        chapters: chapters,
+        stamps: pref,
+        nowMs: () => _base,
+      );
+      expect(reads, 1, reason: '逐章 stampOf 时每章整份解码一次');
+      reads = 0;
+      await alignKavitaMangaChapterMarks(
+        db: db,
+        stamps: pref,
+        bookUid: _uid,
+        chapters: <KavitaChapterMarkTarget>[
+          for (final OnlineMangaChapter c in chapters.take(50))
+            (chapterKey: c.key, totalPages: 10, knownServerPage: null),
+        ],
+        read: true,
+        nowMs: () => _base,
+      );
+      expect(writes, 1, reason: '逐章 record 时每章一次读改写偏好');
+      expect(reads, 1);
+      expect(pref.stampOf(_uid, chapters.first.key), (at: _base, page: 9));
+      expect(pref.stampsOfBook(_uid), hasLength(50));
+      expect(pref.stampsOfBook('other'), isEmpty);
     });
   });
 }

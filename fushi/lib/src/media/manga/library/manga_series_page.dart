@@ -1772,19 +1772,22 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         failure = error;
       }
     }
-    final PrefKavitaMangaSyncStampStore stamps = _kavitaStamps();
-    for (final OnlineMangaChapter c in targets) {
-      await alignKavitaMangaChapterMark(
-        db: _appModel.database,
-        stamps: stamps,
-        bookUid: bookUid,
-        chapterKey: c.key,
-        read: read,
-        totalPages: _asPages(c.raw['pages']),
-        serverConfirmed: failure == null,
-        knownServerPage: _knownServerPage(c),
-      );
-    }
+    // 整批一次对齐（一个事务、同一时间戳，gap-mangamisc-2）。
+    await alignKavitaMangaChapterMarks(
+      db: _appModel.database,
+      stamps: _kavitaStamps(),
+      bookUid: bookUid,
+      chapters: <KavitaChapterMarkTarget>[
+        for (final OnlineMangaChapter c in targets)
+          (
+            chapterKey: c.key,
+            totalPages: _asPages(c.raw['pages']),
+            knownServerPage: _knownServerPage(c),
+          ),
+      ],
+      read: read,
+      serverConfirmed: failure == null,
+    );
     if (failure != null && mounted) {
       FushiToast.show(
         msg: t.kavita_manga_mark_saved_locally,
@@ -1828,7 +1831,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     final String? bookUid = _bookUid;
     if (bookUid == null || chapters.isEmpty) return;
     if (await _markKavitaChapters(chapters, read: read)) {
-      // Kavita：本地状态已由 alignKavitaMangaChapterMark 写好（含页与基线）。
+      // Kavita：本地状态已由 alignKavitaMangaChapterMarks 写好（含页与基线）。
       await _reloadChapterStates();
       _reportTracking();
       return;
