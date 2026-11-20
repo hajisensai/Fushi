@@ -35,7 +35,8 @@
 //! - **实体归属闸**（BUG-4843，`writes_owner.rs`）：ID 不再加盐，同库别的集合的实体 ID 在这里虽然读不到，写下去却会成为
 //!   悬空操作、等本集合之后并进那个集合时对它生效。调用方给实体 ID 的写命令（`apply_in` / `purge` / `sched`）在写之前
 //!   问 [Session::foreign]：别的集合有、本集合一点痕迹都没有的实体不写（身份记录与 profile 设置实体的判法见
-//!   `writes_owner.rs` 文件头）；`apply` 一族回包的 `foreign` 交回这些项的下标。
+//!   `writes_owner.rs` 文件头）；`apply` 一族回包的 `foreign` 交回这些项的调用方输入下标（`import_drafts` 按筛掉初值
+//!   之前的原输入计，同 `edits` 第 7 列）。
 //! - **回包**：命令自己的键之外，[write] 统一补上 `changed`（`[种类, 规范实体 ID]`，碰过的实体）、`purged`（彻底清除的
 //!   实体）、`replayed`（写了日志的卡）、`edits`（`[种类, 实体, 字段键, 设备, 序号, 值]`，撤销据它判断之后有没有
 //!   被别人动过，与协议 3 同形）、`nextSeq`（本机身份日志的下一个 seq）与 `settled`（这条命令里派生层收尾的计数，
@@ -807,7 +808,9 @@ fn parse_item(it: &Value) -> Result<Item, String> {
 
 /// `apply` 的本体（协议 3 `apply_local_on` 的新代版），在 [s] 里做；意图命令拼好输入也走这里。回包
 /// `{"landed": [每项落没落], "foreign": [下标]}`，`landed` 与 [items] 等长：`chg` 筛掉的、标签写入展开为空的、指向别的
-/// 集合的实体的（实体归属闸，`writes_owner.rs`；下标是 [items] 里的位置，进 `foreign`）是 false。
+/// 集合的实体的（实体归属闸，`writes_owner.rs`）是 false，它们的**调用方输入下标**进 `foreign`（与 `edits` 第 7 列同一
+/// 口径，[Origin]：`import_drafts` 按筛掉初值之前的原输入计——导入路径按它认出被拒的笔记、记进导入报告，BUG-4843；意图
+/// 命令自己拼的项没有输入下标，按 [items] 里的位置计）。
 ///
 /// - `chg`（store/sync2/changing.rs 的判据，[registers::write_is_noop]）：值没变的修改不写；同一批里同一个
 ///   (种类, 实体, 字段键) 按顺序判，后一项比前一项写下的值。
@@ -861,7 +864,7 @@ pub(super) fn apply_in(
             b => s.foreign_body(b, &born)?,
         };
         if theirs {
-            foreign.push(at);
+            foreign.push(opts.origin.of(at).unwrap_or(at));
             continue;
         }
         s.at = opts.origin.of(at);

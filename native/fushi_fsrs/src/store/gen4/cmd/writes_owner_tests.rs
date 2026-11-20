@@ -303,6 +303,50 @@ fn a_single_collection_library_writes_dangling_ops_as_before() {
     ffsrs_store_close(h);
 }
 
+/// `import_drafts` 先筛掉「键上已有活着的修改」的初值项再过闸：被拒的项在回包 `foreign` 里按**筛掉之前**的调用方
+/// 输入下标报（Dart 导入路径按它认出被拒的笔记、记进导入报告，BUG-4843 复核：以前报的是筛掉之后的位置，对不上草稿）。
+/// 被拒的这一条是合法导入撞上的：B 已有同一个 guid 的笔记（不同笔记类型），A 导入同一个 guid 却落到另一个笔记类型
+/// （`.apkg` 不合并笔记模板时的副本、文本导入用户选的类型）。
+#[test]
+fn import_drafts_reports_foreign_at_the_callers_input_index() {
+    let dir = tempdir::new("g9-owner-import-drafts");
+    let h = open(&dir.0, 0).unwrap();
+    ready(h, B);
+    ready(h, A);
+    let shared = derived("shared-guid");
+    let v = run(
+        h,
+        B,
+        "apply",
+        json!({}),
+        &[note_with(B, &shared, "shared-guid")],
+    );
+    assert_eq!(v["foreign"], json!([]), "{v}");
+    let own = derived("a-guid");
+    let v = run(
+        h,
+        A,
+        "apply",
+        json!({}),
+        &[note_with(A, &own, "a-guid"), field(A, &own, json!("a"))],
+    );
+    assert_eq!(v["foreign"], json!([]), "{v}");
+    let mut init = field(A, &own, json!("初值"));
+    init["init"] = json!(true);
+    let mut other_type = note_with(A, &shared, "shared-guid");
+    other_type["e"]["x"]["d"]["noteTypeId"] =
+        json!(rules::note_type(rules::CANONICAL, 424_242).text());
+    let before = ops_of(&dir.0, A);
+    let v = run(h, A, "import_drafts", json!({}), &[init, other_type]);
+    assert_eq!(v["foreign"], json!([1]), "{v}");
+    assert_eq!(
+        ops_of(&dir.0, A),
+        before,
+        "初值项筛掉、身份记录被拒：A 一条不写"
+    );
+    ffsrs_store_close(h);
+}
+
 /// [THEIRS_SQL] / [OURS_SQL] 都走索引（前者靠 SCHEMA 40023 的 `ent_id` / `alias_canon_any` / `cards_id`）。
 /// `OTHERS_SQL` 不在这里：`collections` 一个 profile 一行，整表就几行。
 #[test]
