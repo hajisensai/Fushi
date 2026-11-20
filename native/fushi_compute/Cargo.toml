@@ -48,6 +48,23 @@ regex = "1"
 # rev 必须与 pubspec 里 fushi-subtitles 的七处 ref 是同一个 sha（Dart 绑定与 C ABI 同版本）。
 fushi_asr_cue_post = { git = "https://github.com/hajisensai/fushi-subtitles", rev = "63881fd547769dea3c1a98b34f5519a984dc280e" }
 
+# upscale：漫画页超分推理（ONNX）。**不链接 ORT**：运行时按路径 dlopen 本进程已有的那份 onnxruntime
+# （flutter_onnxruntime 插件随包的 CPU core / 下载的 DirectML core；Apple 上是静态链进 app 的那份），
+# 取 OrtGetApiBase 后经 ort::set_api 接上，所以 Rust 侧与 Dart 侧共用一份运行时，也不会多带一份原生库。
+# api-23 = Apple 随包的 ORT 1.23（Windows 1.31 / DirectML 1.24.4 / Android 1.28 都向下兼容）。
+# ort：MIT / Apache-2.0；libloading：ISC。
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "alternative-backend", "api-23"] }
+libloading = "0.8"
+
+[target.'cfg(windows)'.dependencies]
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "alternative-backend", "api-23", "directml"] }
+
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "alternative-backend", "api-23", "coreml"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "alternative-backend", "api-23", "xnnpack"] }
+
 [lints.rust]
 # aes_armv8 / aes_force_soft 是 aes 0.8 的 cfg；src/crypto.rs 用它们在 aarch64 丢 cfg 时 compile_error。
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(aes_armv8)", "cfg(aes_force_soft)"] }

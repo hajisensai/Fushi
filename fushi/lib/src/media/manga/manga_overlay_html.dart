@@ -2225,6 +2225,24 @@ String _mangaGestureJs({
     // 换掉的文字层里可能正好有朗读中的那句：按记下的状态重新挂高亮。
     window.__mangaApplySpeaking(false);
   };
+  // 低清页 AI 超分结果好了（manga_upscale_controller.dart）：把页图的源换成带 `sr=` 的 URL。
+  // 有 data-src（按显示宽度取图）就换 data-src 再按当前宽度重取——气泡放大层克隆页、读 data-src，
+  // 跟着拿到超分图；没有 data-src 的（不按显示宽度取图）直接换 src。页 div 的 data-pw / data-ph
+  // 不变，OCR 框仍按原图坐标铺。
+  window.__mangaSrReady = function(pageIndex, url){
+    var page = document.querySelector('.manga-page[data-page="'+pageIndex+'"]');
+    var img = page && page.querySelector('img');
+    if (!img) return;
+    if (!img.hasAttribute('data-src')) {
+      if (img.getAttribute('src') !== url) img.setAttribute('src', url);
+      return;
+    }
+    var previous = img.getAttribute('data-src');
+    if (previous === url) return;
+    img.setAttribute('data-src', url);
+    if (img.getAttribute('src') === previous) img.setAttribute('src', url);
+    _refitPage(page);
+  };
   // 漫画朗读高亮：{page, blocks} 记在 window.__mangaSpeaking，文字层被替换 / 懒挂
   // 之后由 __mangaApplySpeaking 重新应用。一句可以跨几个块（一个气泡被 OCR 切成
   // 两块、同一句分在相邻字幕栏），按块下标（data-manga-block，与 page.blocks 同下标）

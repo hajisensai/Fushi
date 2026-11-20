@@ -9,6 +9,12 @@
 ///   --dart-define=MANGA_VOLUME_SEED=<卷目录：manga.json（含 OCR 块）+ 页图>
 ///   --dart-define=MANGA_ENHANCED=1|0（画质缩放开 / 关；同一卷各跑一次对比）
 ///   --dart-define=MANGA_PROBE_PAGE=<页号>（默认 40）
+///   --dart-define=MANGA_AI_UPSCALE=off|light|high（低清页 AI 超分，设计文档 §4；默认 off）
+///   --dart-define=MANGA_ORT_CORE=<DirectML core 的 onnxruntime.dll>（高质量档要 DirectML；启动前选中它，
+///     与 app 启动时 `selectGpuRuntimeAtStartup` 选下载的 core 是同一条路）
+///
+/// 开超分时：等页图 URL 换成带 `sr=` 的超分结果（首次要下载模型），`data-src` 也带 `sr=`（气泡放大层
+/// 克隆页、读 `data-src`，拿到的就是超分图），再照常抓图、点字、放大、再点字。
 ///
 /// 缺素材时跳过（CI 没有这些私有文件）。
 library;
@@ -23,6 +29,8 @@ import 'package:flutter/foundation.dart' show FlutterExceptionHandler;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/reader/manga_fushi_page.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/onnx/onnx_inference_ort.dart'
+    show OrtRuntimeSelection, selectOrtRuntime;
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi_audio/fushi_audio.dart' show ReaderPositionRepository;
@@ -39,6 +47,11 @@ import 'test_helpers.dart';
 const String _volumeSeed = String.fromEnvironment('MANGA_VOLUME_SEED');
 const bool _enhanced =
     String.fromEnvironment('MANGA_ENHANCED', defaultValue: '1') == '1';
+const String _aiUpscale = String.fromEnvironment(
+  'MANGA_AI_UPSCALE',
+  defaultValue: 'off',
+);
+const String _ortCore = String.fromEnvironment('MANGA_ORT_CORE');
 const int _probePage = int.fromEnvironment(
   'MANGA_PROBE_PAGE',
   defaultValue: 40,
@@ -75,7 +88,14 @@ void main() {
         debugPrint('[enhanced-scaling] MANGA_VOLUME_SEED unset: skip');
         return;
       }
-      const String tag = _enhanced ? 'on' : 'off';
+      const String tag = _aiUpscale == 'off'
+          ? (_enhanced ? 'on' : 'off')
+          : 'sr-$_aiUpscale';
+      if (_ortCore.isNotEmpty) {
+        final OrtRuntimeSelection selection = await selectOrtRuntime(_ortCore);
+        debugPrint('[enhanced-scaling] ORT core $_ortCore: $selection');
+        expect(selection.ok, isTrue);
+      }
       final FlutterExceptionHandler? testErrorHandler = FlutterError.onError;
       await launchFushiTestApp();
       final bool homeReady = await waitForHome(tester);
@@ -162,6 +182,7 @@ void main() {
             'ocrTrigger': 'manual',
             'downloadAhead': false,
             'enhancedScaling': _enhanced,
+            'aiUpscale': _aiUpscale,
           });
       await ReaderPositionRepository(
         appModel.database,
@@ -202,6 +223,7 @@ void main() {
   var im = page.querySelector('img');
   var r = page.getBoundingClientRect();
   return JSON.stringify({src: (im.getAttribute('src') || '').split('/img/').pop(),
+    dataSrc: (im.getAttribute('data-src') || '').split('/img/').pop(),
     complete: im.complete, naturalWidth: im.naturalWidth,
     cssWidth: r.width, dpr: window.devicePixelRatio});
 })()
@@ -250,6 +272,51 @@ void main() {
 
         bool loaded(Map<String, Object?> s) =>
             s['complete'] == true && ((s['naturalWidth'] as num?) ?? 0) > 0;
+        bool upscaled(Map<String, Object?> s) =>
+            loaded(s) && ((s['src'] as String?) ?? '').contains('sr=');
+        if (_aiUpscale != 'off') {
+          // 超分只在页显示得比原图大（显示宽 ≥ 原图宽 × 1.1）时做：100% 下是否满足取决于屏幕 DPR，
+          // 所以先放大到 250% 再等结果。首次要下载模型（ArtCNN 0.2 MB / swin 两个 33 MB）再推理：
+          // 最多等 3 分钟。
+          expect(loaded(await settled(loaded)), isTrue);
+          await _pumpFor(tester, const Duration(seconds: 2));
+          await reader.debugEvaluateJavascript('window.__mangaSetZoom(250);');
+          final Stopwatch wait = Stopwatch()..start();
+          Map<String, Object?> state = await dom();
+          while (!upscaled(state) &&
+              wait.elapsed < const Duration(minutes: 3)) {
+            await _pumpFor(tester, const Duration(milliseconds: 500));
+            state = await dom();
+          }
+          debugPrint(
+            '[enhanced-scaling] upscaled after ${wait.elapsed.inMilliseconds} ms '
+            'dom=${jsonEncode(state)}',
+          );
+          expect(upscaled(state), isTrue, reason: 'page swapped to sr= image');
+          // 气泡放大层克隆页、读 data-src 取全分辨率图：data-src 必须已是超分 URL。
+          expect(state['dataSrc'], contains('sr='));
+          await _pumpFor(tester, const Duration(seconds: 2));
+          await shoot('sr-zoom250');
+          expect(await tapProbe(), firstLine.characters.first);
+          // 回到 100%：页图仍从超分结果缩下来（data-src 带 sr=），点字照样命中。
+          await reader.debugEvaluateJavascript('window.__mangaSetZoom(100);');
+          final Map<String, Object?> back = await settled(
+            (Map<String, Object?> s) =>
+                upscaled(s) &&
+                ((s['naturalWidth'] as num?) ?? 0) <
+                    ((state['naturalWidth'] as num?) ?? 0),
+          );
+          await _pumpFor(tester, const Duration(seconds: 2));
+          debugPrint('[enhanced-scaling] sr rest dom=${jsonEncode(back)}');
+          expect(upscaled(back), isTrue);
+          await shoot('sr-rest');
+          expect(await tapProbe(), firstLine.characters.first);
+          expect(
+            (await captureFlutterFrame(tester, 'enhanced-scaling-$tag')).saved,
+            isTrue,
+          );
+          return;
+        }
         final Map<String, Object?> rest = await settled(loaded);
         await _pumpFor(tester, const Duration(seconds: 2));
         debugPrint('[enhanced-scaling] rest dom=${jsonEncode(rest)}');
@@ -273,7 +340,7 @@ void main() {
         );
         await _pumpFor(tester, const Duration(seconds: 2));
         debugPrint('[enhanced-scaling] zoomed dom=${jsonEncode(zoomed)}');
-        if (_enhanced) {
+        if (_enhanced && _aiUpscale == 'off') {
           // 画质档：放大后预放大的图比原图宽（低清源），至多 2 倍。
           final num natural = (zoomed['naturalWidth'] as num?) ?? 0;
           expect(natural, greaterThan(pageWidth));

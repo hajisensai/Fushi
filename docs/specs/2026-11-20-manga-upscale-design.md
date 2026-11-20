@@ -7,7 +7,7 @@
 |---|---|---|
 | ① 默认档（零开销） | 更好的缩放算法 + 文字感知 Gamma 校正，所有平台、默认开 | PR1 + PR-④ 实现 |
 | ② 轻量实时档 | （往后放，不做） | — |
-| ③ 高质量档（离线） | 神经网络超分逐页处理，向后预取、落盘缓存、够清就跳过；默认关 | PR2 实现，模型按本文实测结论选 |
+| ③ 低清页 AI 超分（离线） | 神经网络超分 + OCR 框融合，逐页处理、向后预取、落盘缓存、够清就跳过；关 / 轻量 / 高质量，默认关 | PR-③ 实现（§4） |
 
 作用范围：整页 + 气泡放大层。放大层克隆的是页图（`<img>` 的 `src`），页图换成增强后的字节，
 放大层自然受益；本设计不改放大层代码。
@@ -116,9 +116,8 @@
 | Real-CUGAN | 4.3～5.8 | 9.2～9.7 | < 0.5 |
 | MangaJaNai（ESRGAN） | 33.6 | 63.3 | — |
 
-- **DirectML 不可用**：同一批模型在 ORT DirectML EP（1.24.4，即 app 的 Windows GPU 运行时包那一版）上
-  输出全错（Real-CUGAN 值域 72～217、waifu2x 近乎全黑），同机 OCR 检测模型在 DML 上与 CPU 一致——是这几个
-  超分图在 DML 上的算子问题（未深挖到具体算子）。
+- 首轮 DirectML 输出全错（Real-CUGAN 值域 72～217、waifu2x 近乎全黑）。第二轮查清根因是导出图里的负 Pad，
+  离线改写成 Slice 后与 CPU 一致，见 §4.3。
 - CPU 上 cunet 一页约 10 秒：按学习者每页 30 秒以上的阅读速度，向后预取 2～3 页跟得上；swin_unet 一页
   约半分钟，只适合「当前页 + 下一页」，且台式机以外发热明显。
 
@@ -155,67 +154,121 @@
   变了就重设页图 src——WebView `max-age` 缓存与 LRU 都不会把无框（整页 sRGB）的旧图端回来。
 - 拦截器按**当下的** `_payload.images[pageIndex]` 取框；页号不明（目录兜底路径找不到页号）按无框处理。
 
-## 4. ③ 高质量档：离线超分（PR2）
+## 4. ③ 低清页 AI 超分（PR-③）
 
-### 4.1 选型
+所有者拍板（2026-11-21）：按「OCR 框融合」做——框内用对小字最安全的方法、框外用观感最好的模型，羽化遮罩混合；
+设置「关 / 轻量 / 高质量」，默认关。
 
-- 默认模型 **waifu2x swin_unet art 2x（`scale2x`）**：唯一在小字上不输双三次的模型（q90 / q70 都持平略好）、
-  观感 +5 dB；代价是 CPU 一页约半分钟，只预取下一页、适合台式机。可选 **cunet art 2x**（快 3 倍，q90 持平、
-  q70 小字略差，GPU 后端可用后再考虑作默认）。不提供 Real-CUGAN（小字实测明显变差）。
-- 模型不进安装包，按需下载（同 OCR 模型：Hugging Face / GitHub 官方地址 + 钉 SHA-256，进
-  「设置 › 存储」可删）。
+### 4.1 两档的模型与 OCR 框融合
 
-### 4.2 推理后端
+| 档 | 框外（网点 / 线条） | 框内（文字） | 没有 OCR 的页 |
+|---|---|---|---|
+| 轻量 | ArtCNN C4F32（2x，感受野小、快） | Catmull-Rom 2x | **跳过**（走 ① 画质缩放） |
+| 高质量 | waifu2x swin_unet art noise1_scale2x | waifu2x swin_unet art scale2x | **整页 scale2x** |
 
-| 平台 | 后端 | 说明 |
-|---|---|---|
-| Windows | ORT CPU EP | DML 实测输出错误（§2.3），不用；CUDA 运行时包已装时可用 CUDA EP |
-| macOS / iOS | ORT CoreML EP（ANE / GPU），CPU 兜底 | 需真机验证算子覆盖 |
-| Android | ORT XNNPACK / CPU | NNAPI 对动态尺寸支持差，先 CPU |
-| Linux | ORT CPU | |
+- 遮罩：每个 OCR 块矩形外扩 2 px 后高斯羽化（σ = 1.5，输出像素），`out = 框内结果 × m + 框外结果 × (1 − m)`
+  （与 ④ 的 Gamma 校正同一套遮罩，`native/fushi_compute/src/image/resample.rs`）。高质量档框内模型只跑与框相交的块。
+- 没有 OCR 的页：轻量档框内外都要靠「框」区分，没有框就没有安全的文字区，ArtCNN 整页会轻微重画小字，所以跳过、交给 ①；
+  高质量档的 scale2x 在 §2.2 小字上不输双三次，整页用它是安全的。
+- 灰度页按单通道进出（模型吃三通道时复制三份、出来取均值）；彩色页走 Y 通道（模型跑亮度，色度 Catmull-Rom）。
+- 输出 JPEG q94，带原图 ICC；结果 2 倍大，再由 ① 的画质缩放按显示宽度缩（URL 照常带 `fit=` / `fq=` / `tb=`）。
 
-- **复用现有 ONNX 基建**：本仓 ONNX 推理目前全在 Dart 侧（`flutter_onnxruntime` 插件 + `OcrInference`
-  抽象），没有 Rust 侧 ort 依赖。新 crate 用 `ort`（`load-dynamic`）加载**进程里已有的那份
-  onnxruntime 动态库**（插件随包的 CPU core；Windows 上若用户装了 DML 运行时包则是 DML 版 core，但不开
-  DML EP），不另带一份 ORT。
-- 新 crate `native/fushi_upscale`（C ABI `fup_*` + `packages/fushi_upscale` Dart FFI），Rust 持有状态：
-  任务队列（优先级 = 离当前页的距离）、分块推理（块 256 + 上下文 16，反射填充）、磁盘缓存与 LRU；Dart 只发
-  粗粒度命令（打开 / 关闭引擎、`prefetch(当前页, 页列表)`、`lookup(页)`）并订阅一条事件流
-  （`ready(page, path)` / `failed` / `progress`），不存镜像状态。
+### 4.2 引擎（Rust 胖核心，`native/fushi_compute/src/upscale*`）
 
-### 4.3 缓存 / 预取 / 跳过
+- 进程级单例：ORT 运行时、模型会话、任务队列、磁盘 LRU、一个工作线程。Dart 只发粗粒度命令
+  （`ffc_upscale_start / configure / submit / query / focus / clear / cached_path / backend_available / tier_supported`），
+  事件经一个 `NativeCallable.listener` 回调（`done / skipped / failed / cancelled / models_failed`），不存镜像状态。
+  「正在算 / 判过不做 / 失败过」也由引擎记（`query`），换配置清零；调用方据此决定要不要读原图来提交。
+- **ORT 不另带**：dlopen 本进程已有的那份（Windows = flutter_onnxruntime 插件绑定的那个 `onnxruntime.dll`——下载的
+  DirectML core 被选中时是它，否则随包 CPU core；Android = AAR 的 `libonnxruntime.so`；Apple = 静态链进主程序的那份，从
+  本进程符号找，macOS 实测主程序导出 `_OrtGetApiBase`），`ort` crate `alternative-backend` + `api-23`（要求 ORT ≥ 1.23）。
+  Windows 用 `LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR` 加载，DirectML core 旁的 `DirectML.dll` 能被找到。
+- **分块推理与接缝**：块形状恒定（DirectML 只按一个形状编译），反射填充，硬裁有效区。实测（972×1400 真实低清页，交界
+  一像素跳变 / 非交界对照列，> 2 即肉眼可见台阶）：
 
-- 键：`sha256(原图字节) + 模型 id + 倍率`；落 `<数据根>/manga_upscale_cache/`，上限默认 1 GB（可调），LRU 按
-  最近访问淘汰；PNG 无损（再由画质缩放按显示尺寸缩）。
-- 预取：当前页优先，向后 N 页（默认 1，可调 0～10），翻页即重排；离开阅读器取消排队任务。
-- **跳过**：原图高度 ≥ 「最大高度」（默认 1800 px，参考 Komic 的同名开关）不超分；放大后 2 倍高超过上限
-  的也不做。跳过的页直接走 ① 画质缩放。
-- 页图拦截器：画质档 + 超分开着时，先查超分缓存，命中则把超分结果当源字节交给 `MangaPageFitter`；未命中就
-  先给 ① 的结果，并在超分完成后热替换当前页 `<img>`（只换 `src`，OCR 覆盖层不动）。
+  | swin 块 / 上下文 | 跳变比 |
+  |---|---|
+  | 256 / 16（旧设计） | ≈ 10 |
+  | 256 / 64 | ≈ 10（加大上下文无效） |
+  | **384 / 64（采用）** | noise1 0.11 / scale2x 0.23 |
 
-### 4.4 OCR 坐标
+  根因：swin 的输出依赖整块统计（窗口注意力 + 块内归一化类算子），块小时块与块之间系统性偏移，加上下文消不掉；块到 384
+  后偏移落进噪声。ArtCNN 感受野小，上下文 ≥ 8 起与整张推理逐像素一致（只差图像边界），采用块 512 / 上下文 16。
+  回归测试：`real_model_swin_tiles_have_no_visible_seams`（真模型，env 门控）+ `tiles_with_enough_context_have_no_seams`
+  （模拟网络，含短上下文的反例，CI 跑）。
+- **队列**：优先级 = 离当前页的距离（往后 d×2、往回 |d|×8+1），保留窗口 [当前−1, 当前+预取]，翻走的任务丢弃（发 cancelled）；
+  预取页数轻量 3 / 高质量 2。
+- **磁盘缓存**：`<app cache>/manga_upscale/`，上限 1 GB，按 mtime LRU（命中即刷新），写临时文件再改名。键 =
+  `模型版本 | 档 + 文字框签名 | 卷作用域 | 会话页身份`——后台 OCR 补完框后签名变，旧结果不再匹配、重做。
+- **跳过**：显示宽度 < 原图宽 × 1.1 不提交（原图像素已够屏幕用，超分没有收益；放大查看时显示宽度变大，自然会做）；
+  结果超过 48 M 像素不做。
 
-- OCR 一律在**原图**上跑、结果存原图坐标（不变）。覆盖层按原图尺寸归一化，`<img>` 换成 2 倍图后仍按
-  容器 `object-fit: contain` 铺满，**查词与气泡定位不受影响**，无需换算。
-- 唯一需要换算的地方：若将来要在超分图上做二次识别 / 裁图，坐标 × 倍率（`scale = 超分图宽 / 原图宽`）。
+### 4.3 后端与实测（972×1400 灰度页，两块对话框，单页秒数，`real_model_page_timing`）
 
-### 4.5 设置项（漫画阅读器 › 滤镜 › 画质）
+| 平台 / 后端 | 轻量 | 高质量 | 说明 |
+|---|---|---|---|
+| Windows DirectML（i5-12600KF + RTX 4070 Ti，ORT 1.24.4 DML core） | **0.27** | **5.5** | 需要「GPU 加速运行时」包（已有）；会话加载 0.5 s / 5.8 s |
+| Windows CPU（随包 ORT 1.31，6 线程） | 0.56 | 87 | 没有 DML 包时只给轻量档 |
+| macOS CoreML（Apple M4，ORT 1.23，MLProgram） | **0.24** | 不可用 | swin 在 CoreML 上建不了会话（见下） |
+| macOS CPU（M4，6 线程） | 0.73 | 50 | |
+| Android | 未实测（无真机） | 不提供 | 先 CPU 轻量档 |
+
+- **DirectML 输出与 CPU 一致**（`real_model_accelerated_backend_matches_cpu`）：scale2x / noise1 / ArtCNN 最大差 0 / 1 / 1（0～255），
+  均值 0.0000。§2.3 的「DML 输出全错」根因是 nunif 导出图里的**负 Pad**（用 Pad 做裁剪）在 DML EP 上算错；发布前用
+  `fixpad.py` 把负 Pad 离线改写成 Slice（数学等价，CPU 上与原图逐元素一致），**不在用户机器上改写**。
+- **CoreML**：ORT 1.23 的 CoreML EP 默认 NeuralNetwork 格式建 ArtCNN 会话直接段错误；MLProgram 正常，与 CPU 最大差 1、均值 0.0000。
+  swin 两个模型在 MLProgram 下报「Failed to build the model execution plan … error code: -14」（ALL / CPUAndGPU / CPUOnly 都一样）。
+  所以 Apple 只给轻量档（CoreML）；高质量档在 Apple 上用 CPU 一页 50 s，不提供。
+- 档位 × 后端的取舍只在引擎写一次（`tier_supported`：高质量档只在 DirectML 上）；Dart 选了高质量但后端不支持时，下载模型前就降到
+  轻量并提示一次。
+- 高质量档一页 5.5 s：学习者每页 30 s 以上，预取 2 页跟得上；当前页首次打开要等一页的时间（期间显示 ① 的结果，好了再换图）。
+
+### 4.4 模型发布与下载
+
+- 模型不进安装包，首次选该档时按需下载，钉 SHA-256 与字节数：本仓预发行
+  [`upscale-models-v1`](https://github.com/hajisensai/Fushi/releases/tag/upscale-models-v1)。
+
+  | 文件 | 用途 | 字节 | SHA-256 |
+  |---|---|---|---|
+  | `ArtCNN_C4F32.onnx` | 轻量框外 | 193085 | `b1a11304…f6ea` |
+  | `swin_unet_art_scale2x.onnx`（Pad 已改写） | 高质量框内 / 无 OCR 整页 | 16734898 | `490be499…a30a` |
+  | `swin_unet_art_noise1_scale2x.onnx`（Pad 已改写） | 高质量框外 | 16734898 | `750be49b…1d2c` |
+
+- 许可：waifu2x / nunif MIT，ArtCNN（Artoriuz/ArtCNN v1.6.2）MIT，许可证原文与 `fixpad.py` 随发行附带。
+- 下载走 `ModelFileDownloader`（系统代理、`.part` 续传），完成后在后台 isolate 校验 SHA-256，不符即删并报不可用。
+  落 `<app support>/manga_upscale_models/v1/`。换模型 = 新版本目录 + 新缓存键前缀。
+
+### 4.5 阅读器接线与 OCR 坐标
+
+- 拦截器看到某页以 `fit=W` 被请求、且 W ≥ 原图宽 × 1.1 → 提交；当前页变化 → `focus` + 往后预取。完成事件 → 页面脚本
+  `__mangaSrReady(page, url)` 把 `<img data-src>` 换成带 `sr=<档+框签名>` 的 URL 并按当前显示宽度重取。整页与**气泡放大层**
+  （克隆页、读 `data-src` 取全分辨率图）都从这个 URL 取图；拦截器按 `sr=` 从缓存取超分图当源（带 `fit=` 的照常缩放），结果被淘汰
+  则退回原图且 `no-store`。重建窗口文档时已在缓存里的页直接带 `sr=`。
+- OCR 一律在原图上跑、存原图坐标；页 div 的 `data-pw` / `data-ph` 不变，图按 `object-fit: contain` 铺满，**查词命中不受影响**
+  （真 app 实测见 §4.7）。
+- 在线直读章不做（页图是会话私有的临时文件）。
+
+### 4.6 设置项（漫画阅读器 › 滤镜 › 画质）
 
 - 画质缩放（默认开）/ Gamma 校正网点（文字感知，默认开）— PR1 / PR-④。
-- AI 超分（默认关）、模型（cunet / swin_unet）、最大高度（默认 1800）、预取页数（默认 1）、缓存上限
-  （默认 1 GB）— PR2。
+- 低清页 AI 超分：关 / 轻量（快）/ 高质量（需 Windows GPU），默认关 — PR-③。
 
-### 4.6 与在线漫画 / 互联漫画 / iOS 合规的关系
+### 4.7 验证
 
-- **在线直读章**：页图来自会话私有缓存，尺寸不可信，① 不生效；③ 可以对已取到的页字节超分（不依赖尺寸），
-  PR2 先只做本地卷与已下载章，在线直读后续再接。
-- **互联漫画**（从另一台设备读）：页图经互联拿到本地后与本地卷同路径，①③ 都在**阅读端**本机算，不改互联
-  协议、不上传。
-- **iOS 合规**：超分是纯本地图像处理，不属于 `StoreRestrictedCapability` 的三类能力；模型下载是本地功能的
-  资源下载（同 OCR 模型），iOS 照常提供。
+- Rust：`cargo test --profile quick --lib upscale`（Windows / macOS 各 17 条）；真模型（env 门控）接缝、加速后端对 CPU、单页耗时见上。
+- Windows 真 app（`integration_test/manga_enhanced_scaling_itest.dart`，`MANGA_AI_UPSCALE=light|high|off`）：页图换成 `sr=`、
+  `data-src` 带 `sr=`、1x 与 250% 放大下点 OCR 首字命中。超分只在显示宽 ≥ 原图 × 1.1 时做，测试先放大到 250% 再等结果
+  （100% 下是否满足取决于屏幕 DPR）。实测（含首次下模型）：轻量 CPU 1.6 s、高质量 DML 17.4 s 后换图。
+- 未验证：Android（无真机）、iOS（符号导出只在 macOS 主程序上确认过）、气泡放大层的真截图（放大层代码在 #3839，本分支没有；
+  只验证了它读的 `data-src` 已是超分 URL）。
+
+### 4.8 与在线漫画 / 互联漫画 / iOS 合规的关系
+
+- **互联漫画**：页图经互联拿到本地后与本地卷同路径，在阅读端本机算，不改互联协议、不上传。
+- **iOS 合规**：纯本地图像处理，不属于 `StoreRestrictedCapability` 的三类能力；模型下载是本地功能的资源下载（同 OCR 模型）。
 
 ## 5. 性能目标
 
 - ①：每页一次转码（解码 + 重采样 + JPEG），后台 isolate 串行；单页耗时 PR1 未单独测（量级为一次 JPEG 解码 + 编码），
   不在 UI isolate。
-- ③：Windows 台式 CPU 单页 ≈ 28 s（swin_unet）/ ≈ 10 s（cunet），默认预取 1 页；移动端只在充电 / 不过热时默认预取（PR2 实测后定）。
+- ③：实测见 §4.3——轻量档各平台单页 0.2～0.7 s；高质量档只在 Windows DirectML 上提供，单页约 5.5 s，预取 2 页。工作线程是引擎自己的原生线程，不占 UI isolate。

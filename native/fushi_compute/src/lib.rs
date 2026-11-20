@@ -36,6 +36,7 @@ pub mod parse;
 pub mod signal;
 pub mod text;
 pub mod ts;
+pub mod upscale;
 
 // 上游 crate 的 `fcp_*` C 导出随本库一起导出（cdylib / staticlib / iOS 伞形库都靠这一行把它
 // 链进来；不引用就会被当成没用的依赖丢掉）。见 Cargo.toml 的说明。
