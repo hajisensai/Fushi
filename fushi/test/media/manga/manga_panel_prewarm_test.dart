@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/manga/reader/manga_panel_prewarm.dart';
 
 /// manga-21 复核：分镜检测器内部串行，每翻一页都丢一个预热进去的话，快速翻页 /

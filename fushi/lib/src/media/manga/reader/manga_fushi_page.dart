@@ -8871,9 +8871,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         allowsBackForwardNavigationGestures: false,
       ),
       onWebViewCreated: (InAppWebViewController controller) {
-        _controller = controller;
         // 新建的 WebView 里还没有任何文档。
         _loadedDocument.invalidate();
+        _controller = controller;
         notifyPopupBodyWebViewChanged();
         // ERRATA H2/C1：唯一的 onTextSelected 注册点。
         _registerSelectionHandlers(controller);
