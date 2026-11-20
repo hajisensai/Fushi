@@ -672,7 +672,7 @@
   "anki_error_http": "Anki'ye aktarılamadı: AnkiConnect ile iletişim kurulurken bir HTTP hatası oluştu.",
   "anki_error_overwrite_fields_empty": "The fields chosen for overwriting are all empty for this card, so nothing was changed. Adjust Fields to overwrite if needed.",
   "anki_error_paired_device_mine_failed": "The card reached the Fushi Interconnect server, but Anki on that device could not create it: $reason",
-  "anki_error_paired_device_mining_unavailable": "The Fushi Interconnect server is reachable but is not accepting cards right now: it has no Anki set up and its Fushi review collection is unavailable (it may need a Fushi update). The card was not sent.",
+  "anki_error_paired_device_mining_unavailable": "The Fushi Interconnect server is reachable but did not accept the card (it answered 404 / 405). Fushi cannot tell why from here: it may have nowhere to save cards right now, or its Fushi version may not accept cards from this device. The card was not sent.",
   "anki_error_paired_device_unreachable": "Kart oluşturulamadı çünkü hiçbir eşleştirilmiş cihaza ulaşılamadı. Eşleştirilmiş cihazda Fushi'nin çalıştığından emin olun veya kartları yerel olarak oluşturmak için Anki ayarları'ndan Eşleştirilmiş cihaza çıkar seçeneğini kapatın.",
   "anki_error_permission_denied": "AnkiDroid kart erişim izni vermedi. Görünen sistem izin iletişim kutusunu onaylayın, ardından dışa aktarmak için düğmeye tekrar dokunun.",
   "anki_error_permission_permanently_denied": "AnkiDroid kart erişimi kalıcı olarak reddedildi, bu yüzden sistem artık izin penceresini göstermiyor. Uygulama ayarlarını açıp AnkiDroid iznini verin, ardından tekrar deneyin.",

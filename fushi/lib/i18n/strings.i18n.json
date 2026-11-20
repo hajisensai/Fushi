@@ -672,7 +672,7 @@
   "anki_error_http": "Could not export to Anki: an HTTP error occurred while contacting AnkiConnect.",
   "anki_error_overwrite_fields_empty": "The fields chosen for overwriting are all empty for this card, so nothing was changed. Adjust Fields to overwrite if needed.",
   "anki_error_paired_device_mine_failed": "The card reached the Fushi Interconnect server, but Anki on that device could not create it: $reason",
-  "anki_error_paired_device_mining_unavailable": "The Fushi Interconnect server is reachable but is not accepting cards right now: it has no Anki set up and its Fushi review collection is unavailable (it may need a Fushi update). The card was not sent.",
+  "anki_error_paired_device_mining_unavailable": "The Fushi Interconnect server is reachable but did not accept the card (it answered 404 / 405). Fushi cannot tell why from here: it may have nowhere to save cards right now, or its Fushi version may not accept cards from this device. The card was not sent.",
   "anki_error_paired_device_unreachable": "Couldn't create the card because the Fushi Interconnect server could not be reached. Make sure Fushi is running there, or turn off Mine to Fushi Interconnect server in Anki settings to create cards locally.",
   "anki_error_permission_denied": "AnkiDroid hasn't granted card access permission. Approve the system permission dialog that just appeared, then tap the button again to export.",
   "anki_error_permission_permanently_denied": "AnkiDroid card access was permanently denied, so the system no longer shows the permission dialog. Open app settings and grant the AnkiDroid permission, then try again.",

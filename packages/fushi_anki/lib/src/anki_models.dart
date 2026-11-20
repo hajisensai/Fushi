@@ -1993,7 +1993,8 @@ class AnkiErrorCode {
 
   /// 互联远端制卡连上了已配对主机，但它此刻不收卡（制卡端点 404 / 405：主机上没有任何可写的落点，例如服务端没带
   /// Anki helper、复习库又因为要升级而停用）。请求没被执行，卡确定没送到——与 [pairedDeviceUnreachable] 一样可以
-  /// 进待发队列，等主机能收卡了再发；文案要告诉用户「连上了、是那台主机现在不收卡（可能要升级）」，不是「连不上」。
+  /// 进待发队列，等主机能收卡了再发；文案要告诉用户「连上了、是那台主机没收这张卡」，不是「连不上」——客户端只看得到
+  /// 404 / 405，分不清是没有落点还是主机版本没有这个端点，文案不咬定原因。
   static const String pairedDeviceMiningUnavailable =
       'ANKI_PAIRED_DEVICE_MINING_UNAVAILABLE';
 
