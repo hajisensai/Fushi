@@ -6,6 +6,7 @@ import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/media/audiobook/audiobook_jump_threshold.dart';
+import 'package:fushi/src/media/audiobook/linear_shuffle_order.dart';
 import 'package:fushi/src/media/audiobook/remote/audiobook_remote_playback.dart';
 import 'package:fushi/src/media/audiobook/text_leads_page_stop.dart';
 import 'package:fushi/src/media/range_playback.dart';
@@ -217,8 +218,15 @@ class AudiobookPlayerController extends ChangeNotifier {
   List<AudioCue> _chapterCues = [];
 
   /// 与 [_chapterCues] 同序的播放顺序视图（章尾未匹配 cue 的跨章判据
-  /// [unmatchedCueCrossChapterTargetForTesting] 要的是播放邻居）。
+  /// [unmatchedCueCrossChapterTargetForTesting] 要的是播放邻居）。与 [_chapterCues]
+  /// 是同一个列表对象：两者都只读，排一次就够。
   List<AudioCue> _playbackOrderedCues = const <AudioCue>[];
+
+  /// [_chapterCues] 是由哪一个列表对象、在它多长的时候排出来的。reader 每装一章
+  /// 文档都把同一份整书 cue 再灌一遍；列表对象与长度都没变时不必再复制、再排序
+  /// （[setChapterCues]）。只认「对象 + 长度」：调用方要换成员就传新列表。
+  List<AudioCue>? _chapterCuesSource;
+  int _chapterCuesSourceLength = -1;
 
   /// 外部只读快照，供按 textFragmentId 查找 cue。
   List<AudioCue> get chapterCuesSnapshot => _chapterCues;
@@ -226,6 +234,11 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 全书 cue（供收藏句子跨章匹配），setAllBookCues 设定。
   List<AudioCue> _allBookCues = [];
   Map<int, int> _allBookCueIdToIndex = {};
+
+  /// [_allBookCues] / [_allBookCueIdToIndex] 的来源列表对象与当时的长度，口径同
+  /// [_chapterCuesSource]（[setAllBookCues]）。
+  List<AudioCue>? _allBookCuesSource;
+  int _allBookCuesSourceLength = -1;
   List<AudioCue> get allBookCuesSnapshot => _allBookCues;
 
   /// 每个音频文件的时长（毫秒），下标 = audioFileIndex。由对齐 cue 的
@@ -242,6 +255,18 @@ class AudiobookPlayerController extends ChangeNotifier {
   AudioCue? get currentCue => _currentCue;
   AudioCue? _currentCue;
   int _currentCueIndex = -1;
+
+  /// 「显示句」（[displayCueForFloatingLyric]）换了的信号，只给显示面（悬浮字幕、
+  /// 媒体通知副标题、书架迷你条）用。
+  ///
+  /// novel-15：句间静音里 reader 高亮按 hold 契约停在上一句，[_updateCurrentCue]
+  /// 裸 return、不 notify，于是只在 notify 时重读显示句的悬浮字幕也跟着停住，
+  /// 要等下一句真正开口才切——BUG-509 的「gap 提前显示下一句」在播放中从没生效。
+  /// 这里每个 tick 记下显示句身份，变了才发；不走 [notifyListeners]，正文高亮 /
+  /// 歌词跟随这些按 [currentCue] 工作的监听者不被打扰。
+  Listenable get displayCueChanged => _displayCueSignal;
+  final _DisplayCueSignal _displayCueSignal = _DisplayCueSignal();
+  AudioCue? _lastDisplayCue;
 
   AudioCue? cueAtCurrentPositionInBook() {
     if (_allBookCues.isEmpty) return _currentCue;
@@ -998,19 +1023,37 @@ class AudiobookPlayerController extends ChangeNotifier {
     final Duration? playerDur = _player.duration;
     if (_fileDurationsMs.isNotEmpty) {
       int sum = 0;
-      for (final int ms in _fileDurationsMs) {
-        sum += ms;
+      for (int i = 0; i < _fileDurationsMs.length - 1; i++) {
+        sum += _fileDurationsMs[i];
       }
-      if (sum > 0) {
-        // cue 估算到「末句结束」会比真实文件短（片尾静音/音乐不在 cue 里）。
-        // 单文件时 `_player.duration` 是真实整段时长，取较大者，避免播放到
-        // 末句之后出现 pos>dur 的显示瑕疵；多文件时 `_player.duration` 只是
-        // 当前文件，远小于全书 sum，max 自然取 sum。
-        final int playerMs = playerDur?.inMilliseconds ?? 0;
-        return Duration(milliseconds: sum > playerMs ? sum : playerMs);
-      }
+      sum += _lastFileSpanMs(_fileDurationsMs, _knownLastFileDurationMs);
+      if (sum > 0) return Duration(milliseconds: sum);
     }
     return playerDur ?? Duration.zero;
+  }
+
+  /// 末文件的真实时长（毫秒）：只有当前正播末文件且 just_audio 已给出时长时才知道，
+  /// 否则 null。cue 估算到「末句结束」会比真实文件短（片尾静音 / 音乐不在 cue 里），
+  /// 全书时间轴的末端要按它延长——[totalDuration] 与 [seekGlobalMs] 共用这一个口径，
+  /// 否则进度条显示得出片尾却拖不进去（sGoT-tNpkx）。前序文件仍用 cue 估算（与持久化
+  /// 的全书毫秒编码一致，不能改）。
+  int? get _knownLastFileDurationMs {
+    if (_fileDurationsMs.isEmpty) return null;
+    if ((_player.currentIndex ?? 0) != _fileDurationsMs.length - 1) return null;
+    final int? ms = _player.duration?.inMilliseconds;
+    return ms == null || ms <= 0 ? null : ms;
+  }
+
+  /// 末文件在全书时间轴上的跨度：cue 估算与已知真实时长取较大者。
+  static int _lastFileSpanMs(
+    List<int> fileDurationsMs,
+    int? lastFileDurationMs,
+  ) {
+    final int estimate = fileDurationsMs.isEmpty ? 0 : fileDurationsMs.last;
+    if (lastFileDurationMs == null || lastFileDurationMs <= estimate) {
+      return estimate;
+    }
+    return lastFileDurationMs;
   }
 
   /// 全书累计播放位置 = 当前文件之前所有文件时长之和 + 当前文件内位置。
@@ -1068,6 +1111,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     final ({int fileIndex, int offsetMs}) target = splitGlobalMs(
       globalMs,
       _fileDurationsMs,
+      lastFileDurationMs: _knownLastFileDurationMs,
     );
     final int currentIndex = _player.currentIndex ?? 0;
     if (target.fileIndex == currentIndex) {
@@ -1082,10 +1126,14 @@ class AudiobookPlayerController extends ChangeNotifier {
 
   /// 把全书毫秒拆成（文件下标, 文件内偏移）：越界夹到末文件末尾。纯函数，供
   /// [seekGlobalMs] 与测试共用。
+  ///
+  /// [lastFileDurationMs]：末文件的真实时长（已知时）。末文件的上界取它与 cue 估算的
+  /// 较大者，与 [totalDuration] 同口径——否则拖到片尾会被夹回末句结束（sGoT-tNpkx）。
   static ({int fileIndex, int offsetMs}) splitGlobalMs(
     int globalMs,
-    List<int> fileDurationsMs,
-  ) {
+    List<int> fileDurationsMs, {
+    int? lastFileDurationMs,
+  }) {
     int remaining = globalMs < 0 ? 0 : globalMs;
     int fileIndex = 0;
     for (; fileIndex < fileDurationsMs.length - 1; fileIndex++) {
@@ -1093,7 +1141,11 @@ class AudiobookPlayerController extends ChangeNotifier {
       if (remaining < d) break;
       remaining -= d;
     }
-    final int last = fileDurationsMs.isEmpty ? 0 : fileDurationsMs[fileIndex];
+    final int last = fileDurationsMs.isEmpty
+        ? 0
+        : fileIndex == fileDurationsMs.length - 1
+        ? _lastFileSpanMs(fileDurationsMs, lastFileDurationMs)
+        : fileDurationsMs[fileIndex];
     if (remaining > last) remaining = last;
     return (fileIndex: fileIndex, offsetMs: remaining);
   }
@@ -1237,7 +1289,7 @@ class AudiobookPlayerController extends ChangeNotifier {
         try {
           await _player
               .setAudioSource(
-                ConcatenatingAudioSource(children: audioSources),
+                concatenateAudiobookSources(audioSources),
                 preload: false,
               )
               .timeout(const Duration(seconds: 60));
@@ -1266,7 +1318,7 @@ class AudiobookPlayerController extends ChangeNotifier {
         try {
           await _player
               .setAudioSource(
-                ConcatenatingAudioSource(children: sources),
+                concatenateAudiobookSources(sources),
                 preload: false,
               )
               .timeout(const Duration(seconds: 60));
@@ -1293,6 +1345,7 @@ class AudiobookPlayerController extends ChangeNotifier {
             final ({int fileIndex, int offsetMs}) target = splitGlobalMs(
               savedMs,
               _fileDurationsMs,
+              lastFileDurationMs: _knownLastFileDurationMs,
             );
             await _player.seek(
               Duration(milliseconds: target.offsetMs),
@@ -1433,8 +1486,20 @@ class AudiobookPlayerController extends ChangeNotifier {
       return a.startMs.compareTo(b.startMs);
     }
 
-    _chapterCues = List<AudioCue>.from(cues)..sort(playbackOrder);
-    _playbackOrderedCues = List<AudioCue>.from(cues)..sort(playbackOrder);
+    // 同一个列表对象原样再灌一遍（reader 每装一章文档都这么做）：排好的副本仍然
+    // 有效，只跳过「复制 + 排序」。下面的守卫期下标重映射、当前句身份保留、按位置
+    // 重算与通知一步都不省——它们取决于播放器此刻的状态，不取决于列表换没换。
+    final bool sameList =
+        identical(cues, _chapterCuesSource) &&
+        cues.length == _chapterCuesSourceLength;
+    if (!sameList) {
+      final List<AudioCue> ordered = List<AudioCue>.from(cues)
+        ..sort(playbackOrder);
+      _chapterCues = ordered;
+      _playbackOrderedCues = ordered;
+      _chapterCuesSource = cues;
+      _chapterCuesSourceLength = cues.length;
+    }
     // 跨章守卫期间只替换 cue 列表，不清 _currentCue 也不重算——
     // 否则 _updateCurrentCue 被 guard 挡住，_currentCue 卡 null，
     // 守卫放下后第一次 tick 会匹配到 cue[0] 导致进度清零。
@@ -1485,13 +1550,24 @@ class AudiobookPlayerController extends ChangeNotifier {
         previousPlaybackIdx >= 0 && previousPlaybackIdx < _allBookCues.length
         ? _allBookCues[previousPlaybackIdx]
         : null;
-    _allBookCues = List<AudioCue>.from(cues);
-    final Map<int, int> idMap = <int, int>{};
-    for (int i = 0; i < _allBookCues.length; i++) {
-      final int? id = _allBookCues[i].id;
-      if (id != null) idMap[id] = i;
+    // 同一个列表对象原样再灌一遍：副本与 id 索引仍然有效，只跳过「复制 + 建索引」；
+    // 播放句身份映射与文件时长重算照跑（TTS 朗读会就地改 cue 的 endMs）。
+    final bool sameList =
+        identical(cues, _allBookCuesSource) &&
+        cues.length == _allBookCuesSourceLength;
+    if (!sameList) {
+      final List<AudioCue> copy = List<AudioCue>.from(cues);
+      final Map<int, int> rebuilt = <int, int>{};
+      for (int i = 0; i < copy.length; i++) {
+        final int? id = copy[i].id;
+        if (id != null) rebuilt[id] = i;
+      }
+      _allBookCues = copy;
+      _allBookCueIdToIndex = rebuilt;
+      _allBookCuesSource = cues;
+      _allBookCuesSourceLength = cues.length;
     }
-    _allBookCueIdToIndex = idMap;
+    final Map<int, int> idMap = _allBookCueIdToIndex;
     // 播放所在句按身份映射进新列表（BUG-4202）。reader 每装一章都重灌同一份整书
     // cue，跨章过渡期间（[_chapterTransition] 仍竖着）装章正好落在这里：旧码直接置
     // -1，[lyricsCueAllBookIdx] 退回冻结的正文跟随句，歌词高亮往回跳一下、下一个
@@ -1815,7 +1891,7 @@ class AudiobookPlayerController extends ChangeNotifier {
       await _awaitPlatformForExplicitSeek<Duration?>(
         () => _player
             .setAudioSource(
-              ConcatenatingAudioSource(children: audioSources),
+              concatenateAudiobookSources(audioSources),
               initialIndex: fileIndex,
               initialPosition: Duration.zero,
               preload: false,
@@ -2378,9 +2454,24 @@ class AudiobookPlayerController extends ChangeNotifier {
       cues: fileCues,
       positionMs: effectiveMs,
     );
+    // 显示句（悬浮字幕等）与 reader 高亮分开记：gap 里高亮 hold 上一句，显示句
+    // 已经是下一句（novel-15）。命中句区间时显示句就是当前句：当前句换了就随下面
+    // 的 notifyListeners 一起被显示面读到；当前句没变（从 gap 落回 hold 的那一句）
+    // 则只发显示面信号。
+    final AudioCue? display = idx >= 0
+        ? fileCues[idx]
+        : _displayCueFor(cues: fileCues, effectiveMs: effectiveMs);
+    final AudioCue? previousDisplay = _lastDisplayCue;
+    final bool displayChanged =
+        display != null &&
+        (previousDisplay == null || !_isSameCue(previousDisplay, display));
+    _lastDisplayCue = display;
     // Gap（两条 cue 之间的静音）：保持上一条 cue 不清高亮，避免闪烁。
     // 用 index 而非 textFragmentId 比较，防止重复短句 id 相同时短路。
-    if (idx < 0) return;
+    if (idx < 0) {
+      if (displayChanged) _displayCueSignal.fire();
+      return;
+    }
     final AudioCue cue = fileCues[idx];
     final int chapterIdx = _chapterCues.indexOf(cue);
     if (chapterIdx == _currentCueIndex) {
@@ -2398,6 +2489,11 @@ class AudiobookPlayerController extends ChangeNotifier {
       }
       if (forceNotify) {
         notifyListeners();
+      } else if (displayChanged) {
+        // 正文 hold 的那一句没变，但显示句变了：gap 里显示句已提前切到下一句，
+        // 随后回退 / 单句循环落回这一句（novel-15）。不 notify 正文监听者，只告诉
+        // 显示面，否则悬浮字幕停在下一句、耳朵里放的却是这一句。
+        _displayCueSignal.fire();
       }
       return;
     }
@@ -3036,22 +3132,51 @@ class AudiobookPlayerController extends ChangeNotifier {
     );
   }
 
+  /// 文件 [audioFileIndex] 那一段里「此刻在播」的那条的全表下标：起点不晚于
+  /// [positionMs] 的最后一条——命中句区间时就是那一句，落在句间静音里是刚播完的那句
+  /// （与 [_updateCurrentCue] 的「gap 保持上一句」、歌词层 [_allBookIndexAt] 同一口径）。
+  /// 该文件里还没有任何一句开始（早于首句 / 该文件没有 cue）为 -1。
+  static int _startedCueIndexInFile({
+    required List<AudioCue> cues,
+    required int audioFileIndex,
+    required int positionMs,
+  }) {
+    final ({int start, int end}) span = _fileCueSpan(cues, audioFileIndex);
+    // 在该文件那一段里二分找第一条 startMs > positionMs；上一条即为在播句。
+    int lo = span.start;
+    int hi = span.end;
+    while (lo < hi) {
+      final int mid = (lo + hi) >>> 1;
+      if (cues[mid].startMs <= positionMs) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    return lo > span.start ? lo - 1 : -1;
+  }
+
   /// 没有当前 cue 时，「播放器停在文件 [audioFileIndex] 的 [positionMs]」对应的全表
-  /// 下标：只在该文件那一段里按位置找（[JsonAlignmentParser.findCueIndex]），命中
-  /// 返回那一条；没命中（gap / 早于该文件首句 / 该文件没有 cue）返回该文件那一段的
-  /// 起点（夹到表内）。单文件书里那一段就是整表，与原先「回到首句」一致。
+  /// 下标：该文件里已开始的最后一句（[_startedCueIndexInFile]，句间静音里是刚播完的
+  /// 那句）；该文件里还没有句子开始时返回该文件那一段的起点（夹到表内）。
+  ///
+  /// 反馈 Y7g59hUCPn：旧实现只认句区间命中（[JsonAlignmentParser.findCueIndex]），
+  /// 落在句间静音就退到「该文件首句」。开书还没播放时当前句从未被 tick 填过
+  /// （[_updateCurrentCue] 在 gap 里只保持、不新定位），恢复点又常落在句间——单文件
+  /// m4b 的「该文件首句」就是全书第一句，按「重播本句」被拽回书首。
   static int _cueIndexAtFilePosition({
     required List<AudioCue> cues,
     required int audioFileIndex,
     required int positionMs,
   }) {
     if (cues.isEmpty) return -1;
-    final ({int start, int end}) span = _fileCueSpan(cues, audioFileIndex);
-    final int local = JsonAlignmentParser.findCueIndex(
-      cues: cues.sublist(span.start, span.end),
+    final int started = _startedCueIndexInFile(
+      cues: cues,
+      audioFileIndex: audioFileIndex,
       positionMs: positionMs,
     );
-    if (local >= 0) return span.start + local;
+    if (started >= 0) return started;
+    final ({int start, int end}) span = _fileCueSpan(cues, audioFileIndex);
     return span.start < cues.length ? span.start : cues.length - 1;
   }
 
@@ -3064,16 +3189,21 @@ class AudiobookPlayerController extends ChangeNotifier {
     if (cues.isEmpty) return null;
     final int idx = currentCueIndex;
     if (idx < 0 || idx >= cues.length) {
-      final ({int start, int end}) span = _fileCueSpan(cues, audioFileIndex);
-      final int local = JsonAlignmentParser.findCueIndex(
-        cues: cues.sublist(span.start, span.end),
+      // 没有当前 cue：按位置取当前文件里已开始的最后一句（句间静音里是刚播完的
+      // 那句），下一句是它的后一条——反馈 Y7g59hUCPn：旧实现在 gap 里退到当前
+      // 文件首句，单文件书开书未播放时按「下一句」被拽回全书第一句。
+      final int started = _startedCueIndexInFile(
+        cues: cues,
+        audioFileIndex: audioFileIndex,
         positionMs: positionMs,
       );
-      // 没定位到 cue：跳到当前文件的首句（单文件书 = 全章首句）；当前文件之后
-      // 已没有 cue 时是章边界。
-      if (local < 0) return span.start < cues.length ? span.start : null;
-      final int at = span.start + local;
-      return at + 1 >= cues.length ? null : at + 1;
+      if (started < 0) {
+        // 当前文件里还没有句子开始：下一句就是该文件首句；该文件之后已没有 cue
+        // 时是章边界。
+        final ({int start, int end}) span = _fileCueSpan(cues, audioFileIndex);
+        return span.start < cues.length ? span.start : null;
+      }
+      return started + 1 >= cues.length ? null : started + 1;
     }
     if (idx + 1 >= cues.length) return null;
     return idx + 1;
@@ -3453,6 +3583,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     _clipPlayer?.dispose();
     _clipPlayer = null;
     _player.dispose();
+    _displayCueSignal.dispose();
     super.dispose();
   }
 
@@ -3623,3 +3754,9 @@ class AudiobookPlayerController extends ChangeNotifier {
 
 /// [AudiobookPlayerController.classifyActivationTickForTesting] 的结论。
 enum ActivationRestoreTick { transient, unreachable, landed }
+
+/// [AudiobookPlayerController.displayCueChanged] 的发信器（[ChangeNotifier] 的
+/// notify 是 protected，包一层只露一个 [fire]）。
+class _DisplayCueSignal extends ChangeNotifier {
+  void fire() => notifyListeners();
+}

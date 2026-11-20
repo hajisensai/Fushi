@@ -160,19 +160,17 @@ void main() {
   Future<SrsStatsReport> report(SrsDbStore s) async =>
       (await loadSrsStats(s)).report(range: SrsStatsRange.all);
 
-  Future<List<Map<String, Object?>>> cardRows(
-    SrsDbStore s,
-  ) async => <Map<String, Object?>>[
-    for (final SrsCardCacheRow c in await s.db.select(s.db.srsCardsCache).get())
-      c.toJson(),
-  ];
+  Future<List<Map<String, Object?>>> cardRows(SrsDbStore s) async =>
+      <Map<String, Object?>>[
+        for (final SrsCardCacheRow c in await s.allCardRows()) c.toJson(),
+      ];
 
   final String deletedCard = SrsIds.deletedAnkiCard(
-    SrsIds.builtinDefaultDeck(kProfile),
+    SrsKernelIds(kProfile).defaultDeck,
     kDeletedCid,
   );
   final String noteLessCard = SrsIds.deletedAnkiCard(
-    SrsIds.builtinDefaultDeck(kProfile),
+    SrsKernelIds(kProfile).defaultDeck,
     kNoteLessCid,
   );
 

@@ -1,7 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/import/import_carrier.dart'
     show kMangaCarrierFileExtensions;
-import 'package:fushi/src/media/import/quick_import_section.dart';
+import 'package:fushi/src/media/import/import_surface_spec.dart'
+    show importFormatLabels;
 import 'package:fushi_engine/media/manga/manga_importer.dart'
     show kMangaImageExtensions;
 

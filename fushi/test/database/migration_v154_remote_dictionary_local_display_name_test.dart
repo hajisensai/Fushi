@@ -72,7 +72,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 154);
+    expect(migrated.schemaVersion, 164);
     final RemoteDictionaryMetaRow row =
         (await migrated.getAllRemoteDictionaryMetadata()).single;
     expect(row.name, 'Daijirin');
@@ -84,7 +84,7 @@ void main() {
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
-    expect(probe.select('PRAGMA user_version').first.values.first, 154);
+    expect(probe.select('PRAGMA user_version').first.values.first, 164);
     expect(hasColumn(probe), isTrue);
   });
 

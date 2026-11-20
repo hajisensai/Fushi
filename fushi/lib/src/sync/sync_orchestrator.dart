@@ -8,8 +8,6 @@ import 'package:fushi/src/anki/pending_mining/pending_mine_relay.dart';
 import 'package:fushi/src/epub/book_css_repository.dart';
 import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
-import 'package:fushi_engine/media/video/strm_file.dart'
-    show lacksLocalMediaFile;
 import 'package:fushi_engine/media/video/video_sidecar.dart'
     show listSidecarSubtitles;
 import 'package:fushi/src/models/dictionary_repository.dart'
@@ -36,6 +34,9 @@ import 'package:fushi/src/sync/cloud_book_content_names.dart';
 import 'package:fushi/src/sync/font_sync.dart';
 import 'package:fushi/src/sync/interconnect_book_progress_sync.dart';
 import 'package:fushi/src/sync/interconnect_playback_position_sync.dart';
+import 'package:fushi/src/sync/interconnect_source_share_kinds.dart'
+    show sourceSharePluginStores, sourceSharePrefWriter, SharedPluginStore;
+import 'package:fushi/src/sync/interconnect_source_share_sync.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/remote_audiobook_revision.dart'
     show remoteAudiobookRevisionKeyForBook;
@@ -63,6 +64,7 @@ import 'package:fushi/src/sync/sync_progress.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_resource_locks.dart';
 import 'package:fushi/src/sync/sync_state_apply_lock.dart';
+import 'package:fushi_engine/sync/sync_reserved_namespaces.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi_engine/sync/online_novel_book.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
@@ -188,22 +190,16 @@ const String kSyncVideosManifestName = 'videos.json';
 /// True for reserved folder names that are NOT books and must be filtered from
 /// any listing of book folders (compare dialog, remote-book import).
 ///
+/// 保留命名空间的判据只在引擎的 [isReservedSyncNamespaceName] 写一次（互联 host 的文件箱
+/// 清理用同一个）；此前这里逐个列名，漏了 `__settings__` 与 `fushi-srs`，云盘上这两个
+/// 共享目录被当成只剩元数据的远端书列进对比弹窗、可被「删远端」整个删掉（BUG-4907）。
+///
 /// An empty / whitespace-only name is also reserved: it is never a real book
 /// folder (a book's folder name is a non-empty sanitized title), and treating it
 /// as one would import the sync root itself or an orphan collapsed onto the root
 /// (BUG-619, TODO-1329).
 bool isReservedSyncFolderName(String name) =>
-    name.trim().isEmpty ||
-    name == kSyncDictionaryNamespace ||
-    name == kSyncLocalAudioNamespace ||
-    name == kSyncAggregateNamespace ||
-    name == kSyncCollectionsNamespace ||
-    name == kSyncVideosNamespace ||
-    name == kSyncTombstonesNamespace ||
-    name == kSyncFontsNamespace ||
-    // 待发制卡跨设备中转（见 PendingMineRelay）：不是书；当成书列出来，用户在对比
-    // 弹窗里一「删远端书」就连认领带待落的卡一起删了。
-    name == PendingMineRelay.namespace;
+    name.trim().isEmpty || isReservedSyncNamespaceName(name);
 
 /// 云墓碑消费每轮至多 GET 多少条**未被合并清单覆盖**的逐条标记（SDbJAx1Db6）。
 ///
@@ -373,6 +369,13 @@ class SyncRunReport {
   /// even though no media row was imported.
   int serviceConfigsImported = 0;
 
+  /// 互联「来源共享」本轮在本机新增 / 更新 / 删除的服务器来源与插件条数
+  /// （`interconnect_source_share_sync.dart`）。与 [serviceConfigsImported] 同理要刷新偏好缓存。
+  int sourcesShared = 0;
+
+  /// 来源共享里签名者变了、没有自动更新、等用户在本机确认的插件名。
+  final List<String> sourceShareSignerChanged = <String>[];
+
   /// 本轮从别的设备采纳、写进本机的可移植设置项数（反馈 AWp-0BtDDv，「同步设置」）。
   /// 与 [serviceConfigsImported] 同理：没有媒体行变化，但 AppModel 的偏好缓存要刷新。
   int settingsImported = 0;
@@ -481,6 +484,7 @@ class SyncRunReport {
       tagsUpdated > 0 ||
       videoMetadataUpdated > 0 ||
       serviceConfigsImported > 0 ||
+      sourcesShared > 0 ||
       settingsImported > 0;
 
   /// 合并另一条通道的报告到本报告（option B 双通道：云备份 + 互联并行各跑一轮后，
@@ -509,6 +513,8 @@ class SyncRunReport {
     mediaLinksUpdated += other.mediaLinksUpdated;
     videoMetadataUpdated += other.videoMetadataUpdated;
     serviceConfigsImported += other.serviceConfigsImported;
+    sourcesShared += other.sourcesShared;
+    sourceShareSignerChanged.addAll(other.sourceShareSignerChanged);
     settingsImported += other.settingsImported;
     settingsExported += other.settingsExported;
     errors.addAll(other.errors);
@@ -964,6 +970,7 @@ class SyncOrchestrator {
     if (isInterconnect) {
       _checkpoint();
       await _syncServiceConfigLive(report, b);
+      await _syncSourceShareLive(report, b);
       // 互联内容（EPUB / 漫画包）走 live 端点，书籍或漫画任一开关开时执行，进去后
       // 按格式各看各的开关。
       if (syncContent || syncMangaContent) {
@@ -1115,12 +1122,15 @@ class SyncOrchestrator {
     //
     // 互联（InterconnectSyncBackend）有声书包走 live 端点；
     // 云后端仍走原暂存路径（不变）。
+    _HostVideoListSnapshot? hostVideosAfterFilePush;
     if (isInterconnect) {
       if (syncAudioBookFiles) await _syncAudiobooksLive(report, b);
       // 互联视频文件 live push（client→host）：单文件本地视频经 host 上传端点注册进
       // host 视频库。与云后端 syncVideoAssets 同为 syncVideoFiles 开关驱动、同为
       // upload-only（host→client 仍走按需流式/下载）。
-      if (syncVideoFiles) await _syncVideosLive(report, b);
+      if (syncVideoFiles) {
+        hostVideosAfterFilePush = await _syncVideosLive(report, b);
+      }
     } else {
       if (syncAudioBookFiles) {
         await syncAudiobookPackages(
@@ -1146,7 +1156,14 @@ class SyncOrchestrator {
       // 书进度已在书内容之后跑过（见上）。视频 / 有声书断点只对 host 也有的条目
       // 同步，留在各自文件上传之后：本轮刚推上去的那一项这一轮就能对上。
       _emitPhaseStart(SyncPhase.readingData);
-      await _syncVideoProgressLive(report, b);
+      // 文件阶段没向 host 推任何东西、且那份 host 清单还新（没超过
+      // [hostVideoListReuseMaxAge]）时不再取第二遍；推过或放久了就重取（见
+      // [_syncVideosLive] 的返回值约定）。
+      await _syncVideoProgressLive(
+        report,
+        b,
+        hostVideos: hostVideosAfterFilePush,
+      );
       mark('videoProgressLive');
       await _syncAudiobookProgressLive(report, b);
       mark('audiobookProgressLive');
@@ -1273,6 +1290,11 @@ class SyncOrchestrator {
   /// 整轮超过这么久才把分阶段耗时写进诊断日志（快的同步每分钟都可能跑一次，
   /// 不该刷屏；慢到用户会来反馈的那种一定留下记录）。
   static const Duration slowRunDiagnosticThreshold = Duration(seconds: 30);
+
+  /// 互联视频：文件阶段取的 host 清单最多带到进度阶段多久，见
+  /// [kHostVideoListReuseMaxAge]。测试改它来走「清单放久了」那一支。
+  @visibleForTesting
+  Duration hostVideoListReuseMaxAge = kHostVideoListReuseMaxAge;
 
   /// 测试入口：直接调用 [_syncPortableSettings]（「同步设置」阶段）。
   @visibleForTesting
@@ -2100,9 +2122,10 @@ class SyncOrchestrator {
         );
         try {
           // async 判存在：视频常在网络盘上，同步 stat 冷目录时会冻结主 isolate
-          // （BUG-3756）。没有本机媒体字节的路径（网络流 / `.strm` / DVD title）
-          // 一律按缺失处理（video_member_file.dart 第 2 种问法）。
-          if (!await hasLocalMediaFile(v.videoPath)) {
+          // （BUG-3756）。下面按字节上传，只认路径本身装着全部媒体字节的单文件
+          // （video_member_file.dart 第 3 种问法）：网络流 / `.strm` / 原盘成员一律
+          // 按缺失处理。
+          if (!await hasLocalSingleMediaFile(v.videoPath)) {
             report.errors.add(
               'video "${v.title}": local file missing: ${v.videoPath}',
             );

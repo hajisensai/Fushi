@@ -461,10 +461,26 @@ window.fushiCaret = {
     };
   },
   _inViewport: function(rect) {
+    return this._rectInViewport(rect, this._viewport());
+  },
+  _rectInViewport: function(rect, vp) {
     if (!rect || rect.width <= 0 || rect.height <= 0) return false;
-    var vp = this._viewport();
     return rect.right > vp.left && rect.left < vp.right &&
            rect.bottom > vp.top && rect.top < vp.bottom;
+  },
+  // Whether any of [node]'s line boxes intersects [vp]. A glyph's rect lies
+  // inside one of its text node's line-box rects, so a node with no box on the
+  // page cannot hold a visible stop — the per-glyph scans below skip it instead
+  // of measuring every character of the chapter (a 100k-char chapter cost one
+  // getClientRects per glyph, ~600 ms per D-pad line move in desktop Chrome).
+  _nodeTouchesViewport: function(node, vp) {
+    var range = document.createRange();
+    range.selectNodeContents(node);
+    var rects = range.getClientRects();
+    for (var i = 0; i < rects.length; i++) {
+      if (this._rectInViewport(rects[i], vp)) return true;
+    }
+    return false;
   },
 
   // ── Stepping ───────────────────────────────────────────────────────
@@ -508,13 +524,15 @@ window.fushiCaret = {
     var out = [];
     var node;
     var seenRows = {};
+    var vp = this._viewport();
     while (node = walker.nextNode()) {
+      if (!this._nodeTouchesViewport(node, vp)) continue;
       var text = node.textContent;
       for (var i = 0; i < text.length;) {
         var len = this._charLen(text, i);
         if (this._isStop(node, i)) {
           var rect = this._charRect(node, i);
-          if (this._inViewport(rect)) {
+          if (this._rectInViewport(rect, vp)) {
             var rowKey = lineLevel ? Math.round(rect.top) : -1;
             if (!lineLevel || !seenRows[rowKey]) {
               if (lineLevel) seenRows[rowKey] = true;
@@ -532,7 +550,7 @@ window.fushiCaret = {
     var els = this._interactiveEls();
     for (var k = 0; k < els.length; k++) {
       var er = this._elRect(els[k]);
-      if (this._inViewport(er)) {
+      if (this._rectInViewport(er, vp)) {
         out.push({
           node: null, offset: 0, el: els[k], rect: er,
           cx: er.left + er.width / 2,
@@ -609,13 +627,15 @@ window.fushiCaret = {
   _firstVisibleStop: function() {
     var walker = this._walker();
     var node;
+    var vp = this._viewport();
     while (node = walker.nextNode()) {
+      if (!this._nodeTouchesViewport(node, vp)) continue;
       var text = node.textContent;
       for (var i = 0; i < text.length;) {
         var len = this._charLen(text, i);
         if (this._isStop(node, i)) {
           var rect = this._charRect(node, i);
-          if (this._inViewport(rect)) return { node: node, offset: i, rect: rect };
+          if (this._rectInViewport(rect, vp)) return { node: node, offset: i, rect: rect };
         }
         i += len;
       }

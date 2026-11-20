@@ -91,47 +91,53 @@ extension _VideoFullscreen on _VideoFushiPageState {
   /// 到本集页（否则 `pushReplacement` 会误替换栈顶全屏路由、漏栈旧集页，致 ESC 逐层退）；
   /// 新页则由本方法在就绪后重进全屏，端到端观感 = 换集全程全屏、ESC 一次退出。
   ///
-  /// 一次性（[_didInitialFullscreen]）；仅桌面（移动端无全屏路由，[_pushNeutralizedVideoFullscreen]
-  /// 本就 no-op）。controls 首建帧才设 [_videoControlsContext]、可能晚于就绪帧，故 context
-  /// 未就绪时逐帧重试，带上限（失败/缺失态或超时放弃，杜绝死循环）。两条就绪路径
-  /// （快路径直接翻真 / 慢路径 [_promoteVideoReady]）都调它，一次性闸门去重。
+  /// 一次性（[_initialFullscreen]）；仅桌面（移动端无全屏路由，[_pushNeutralizedVideoFullscreen]
+  /// 本就 no-op）。controls 首建帧才设 [_videoControlsContext]、可能晚于就绪帧，所以这里
+  /// 只开闸：真正的尝试由 context 赋值点 [_captureVideoControlsContext] 与失败 / 缺失态
+  /// 渲染事件触发，不逐帧轮询、也没有「30 帧没等到就放弃」的上限（video-36e）。两条就绪
+  /// 路径（快路径直接翻真 / 慢路径 [_promoteVideoReady]）都调它，闸门去重。
   void _scheduleInitialFullscreenIfNeeded() {
-    if (_didInitialFullscreen) return;
+    if (_initialFullscreen.isSettled) return;
     // 原盘会话（桌面、「播放原盘时自动全屏」开）同样在就绪后进全屏路由；退出会话时
     // 路由 pop → runner 按进入前保存的 WINDOWPLACEMENT 还原最大化 / 尺寸 / 位置。
     if (!(widget.initialFullscreen || _wantsDiscAutoFullscreen) ||
         isMobilePlatform) {
-      _didInitialFullscreen = true;
+      _initialFullscreen.settle();
       return;
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_didInitialFullscreen || !mounted) return;
-      // 失败/缺失态 controls 永不建 → context 永为 null；超时兜底防逐帧死循环。
-      // BUG-2043：放弃重进全屏路由时必须把接管来的原生全屏还回去，否则窗口停在
-      // 无全屏路由的原生全屏态（标题栏隐着、ESC 退页后书架铺满整屏）。
-      if (_failed || _missingResource || _initialFullscreenRetries > 30) {
-        _didInitialFullscreen = true;
-        _releaseHandedOverNativeFullscreen();
-        return;
-      }
-      final BuildContext? ctx = _videoControlsContext;
-      if (ctx == null || !ctx.mounted) {
-        _initialFullscreenRetries++;
-        _scheduleInitialFullscreenIfNeeded();
-        return;
-      }
-      _didInitialFullscreen = true;
-      if (isFullscreen(ctx)) {
-        // 栈上已有全屏路由（退出由它的 pop 收口）：接管来的所有权本就归路由，放手。
-        _ownsHandedOverNativeFullscreen = false;
-        return;
-      }
-      // 所有权在 [_pushNeutralizedVideoFullscreen] 真的建出全屏路由的那一刻才翻假，
-      // 不在这里提前翻——该方法开头还有 `_videoFullscreenTransitioning` 一道提前
-      // return，提前翻假会让窗口停在「原生全屏但栈上无全屏路由」的悬空态，且
-      // dispose 的 [_releaseHandedOverNativeFullscreen] 已成 no-op、退不回去。
-      unawaited(_pushNeutralizedVideoFullscreen(ctx));
-    });
+    _initialFullscreen.arm();
+  }
+
+  /// controls 子树 [Builder] 捕获 context 的唯一写入点：写完通知重进全屏闸门（未开闸 /
+  /// 已关闸时是 no-op，同帧多次捕获合并成一次帧后尝试）。
+  void _captureVideoControlsContext(BuildContext captured) {
+    _videoControlsContext = captured;
+    _initialFullscreen.notify();
+  }
+
+  /// 闸门的一次尝试（帧后回调里跑）：context 还没到就等下一个事件，不排下一帧。
+  VideoInitialFullscreenStep _attemptInitialFullscreen() {
+    if (!mounted) return VideoInitialFullscreenStep.settled;
+    // 失败/缺失态 controls 永不建 → context 永为 null，放弃。
+    // BUG-2043：放弃重进全屏路由时必须把接管来的原生全屏还回去，否则窗口停在
+    // 无全屏路由的原生全屏态（标题栏隐着、ESC 退页后书架铺满整屏）。
+    if (_failed || _missingResource) {
+      _releaseHandedOverNativeFullscreen();
+      return VideoInitialFullscreenStep.settled;
+    }
+    final BuildContext? ctx = _videoControlsContext;
+    if (ctx == null || !ctx.mounted) return VideoInitialFullscreenStep.waiting;
+    if (isFullscreen(ctx)) {
+      // 栈上已有全屏路由（退出由它的 pop 收口）：接管来的所有权本就归路由，放手。
+      _ownsHandedOverNativeFullscreen = false;
+      return VideoInitialFullscreenStep.settled;
+    }
+    // 所有权在 [_pushNeutralizedVideoFullscreen] 真的建出全屏路由的那一刻才翻假，
+    // 不在这里提前翻——该方法开头还有 `_videoFullscreenTransitioning` 一道提前
+    // return，提前翻假会让窗口停在「原生全屏但栈上无全屏路由」的悬空态，且
+    // dispose 的 [_releaseHandedOverNativeFullscreen] 已成 no-op、退不回去。
+    unawaited(_pushNeutralizedVideoFullscreen(ctx));
+    return VideoInitialFullscreenStep.settled;
   }
 
   /// BUG-2043：从全屏页换集而来的新页（[VideoFushiPage.initialFullscreen]）在 initState

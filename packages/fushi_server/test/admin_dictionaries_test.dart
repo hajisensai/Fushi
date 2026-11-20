@@ -25,6 +25,7 @@ import 'package:fushi_server/src/server_prefs.dart';
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:test/test.dart';
+import 'support/fake_rwkv.dart';
 
 /// WebUI「词典」页的 admin 端点：导入（zip 正文）/ 列出 / 排序 / 隐藏 / 删除 / 试查。
 /// 引擎没加载（测试里不起 host）时导入删除照样落 DB 与资源目录，试查报 409。
@@ -91,6 +92,7 @@ void main() {
       paths = ServerPaths(config.dataDir);
       await paths.ensureLayout();
       final HeadlessHost host = HeadlessHost(
+        srsRwkvHttpClient: noNetworkHttpClient,
         config: config,
         paths: paths,
         db: db,
@@ -381,6 +383,7 @@ void main() {
       final ServerIdentity identity = await ServerIdentity.loadOrCreate(prefs);
       final ServerPaths paths = ServerPaths(config.dataDir);
       final HeadlessHost host = HeadlessHost(
+        srsRwkvHttpClient: noNetworkHttpClient,
         config: config,
         paths: paths,
         db: db,

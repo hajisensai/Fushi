@@ -260,7 +260,18 @@ void main() {
       await client.putRemoteVideoPosition('last', 361000, 2);
 
       expect(server.issuedSessions, 2);
-      expect(requests, hasLength(9));
+      expect(
+        requests.where(
+          (http.Request request) =>
+              request.url.path == '/Users/user/Items/last',
+        ),
+        hasLength(1),
+        reason:
+            'The second launch of the same item inside the reuse window shares '
+            'the item detail (LaunchItemDetailMemo); only PlaybackInfo is '
+            'negotiated again.',
+      );
+      expect(requests, hasLength(8));
       final List<Map<String, Object?>> heartbeats = requests
           .where(
             (http.Request request) =>
@@ -304,7 +315,18 @@ void main() {
       await client.putRemoteVideoPosition('last', 360000, 1);
 
       expect(server.issuedSessions, 2);
-      expect(requests, hasLength(9));
+      expect(
+        requests.where(
+          (http.Request request) =>
+              request.url.path == '/Users/user/Items/last',
+        ),
+        hasLength(1),
+        reason:
+            'The second launch of the same item inside the reuse window shares '
+            'the item detail (LaunchItemDetailMemo); only PlaybackInfo is '
+            'negotiated again.',
+      );
+      expect(requests, hasLength(8));
       final http.Request stopped = requests.singleWhere(
         (http.Request request) =>
             request.url.path == '/Sessions/Playing/Stopped',

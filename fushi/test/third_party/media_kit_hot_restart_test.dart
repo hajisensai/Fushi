@@ -211,8 +211,14 @@ void main() {
       // their 25s execution deadline and 35s enclosing test timeout.
       probe = await _compileProbe();
     });
-    for (final String mode in <String>['kill', 'dispose']) {
-      test('BUG-3003: native wakeup/quit survives owner $mode', () async {
+    for (final String mode in <String>['kill', 'dispose', 'quiesce']) {
+      final String name = mode == 'quiesce'
+          // H6Vou-6uYX: the release NativeCallable backend, quiesced the way
+          // every exit chain does first, then its isolate torn down without
+          // Player.dispose (macOS NSApp terminate shuts the engine down).
+          ? 'H6Vou-6uYX: release callback quiesced before its isolate dies'
+          : 'BUG-3003: native wakeup/quit survives owner $mode';
+      test(name, () async {
         final ProcessResult result = await _runBoundedProcess(
           probe.dart,
           <String>[probe.kernel, library!, mode],
@@ -236,6 +242,9 @@ void main() {
         expect(result.stdout, contains('PASS $mode'), reason: evidence);
         if (mode == 'dispose') {
           expect(result.stdout, contains('DISPOSE RETURNED'), reason: evidence);
+        }
+        if (mode == 'quiesce') {
+          expect(result.stdout, contains('QUIESCE RETURNED'), reason: evidence);
         }
       }, timeout: const Timeout(Duration(seconds: 35)));
     }

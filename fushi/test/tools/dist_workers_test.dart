@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:test/test.dart';
 
 import '../../tool/test_flow/dist_console.dart';
+import '../../tool/test_flow/flutter_sdk_executables.dart';
 import '../../tool/test_flow/dist_plan.dart';
 import '../../tool/test_flow/dist_workers.dart';
 
@@ -117,6 +118,49 @@ void main() {
       rejects(
         '{"workers": [{"name": "a", "kind": "local", "os": "windows"}, '
         '{"name": "b", "kind": "local", "os": "windows"}]}',
+      );
+      rejects(
+        '{"workers": [{"name": "a", "kind": "ssh-trusted", '
+        '"os": "freebsd", "host": "u@h"}]}',
+      );
+    });
+
+    test('a Linux worker takes unpinned suites, never itest', () {
+      final DistWorker linux = createDistWorkers(
+        readDistWorkers(
+          '{"workers": [{"name": "pve", "kind": "ssh-trusted", '
+          '"os": "linux", "host": "u@h", "capabilities": ["ffmpeg"]}]}',
+        ).single,
+        repoRoot: '.',
+      ).single;
+      expect(linux.config.platform, DistPlatform.linux);
+      expect(
+        linux.eligible(const DistUnit(path: 'test/a_test.dart', weightMs: 1)),
+        isTrue,
+      );
+      expect(
+        linux.eligible(
+          const DistUnit(
+            path: 'test/a_test.dart',
+            weightMs: 1,
+            capabilities: <String>{'ffmpeg'},
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        linux.eligible(
+          const DistUnit(
+            path: 'test/a_test.dart',
+            weightMs: 1,
+            platform: DistPlatform.macos,
+          ),
+        ),
+        isFalse,
+      );
+      rejects(
+        '{"workers": [{"name": "pve", "kind": "ssh-trusted", '
+        '"os": "linux", "host": "u@h", "capabilities": ["itest"]}]}',
       );
     });
   });
@@ -440,7 +484,7 @@ void main() {
             throw DistWorkerBusy('lock failed on mac (exit 75): busy: x');
           },
           retries: 3,
-          wait: Duration.zero,
+          pause: (_) async {},
           said: said.add,
         ),
         throwsA(isA<DistWorkerBusy>()),
@@ -457,7 +501,7 @@ void main() {
           return true;
         },
         retries: 5,
-        wait: Duration.zero,
+        pause: (_) async {},
       );
       expect(ok, isTrue);
       expect(calls, 3);
@@ -474,7 +518,7 @@ void main() {
               throw DistWorkerError('prepare failed: compile error');
             },
             retries: 5,
-            wait: Duration.zero,
+            pause: (_) async {},
           ),
           throwsA(isNot(isA<DistWorkerBusy>())),
         );
@@ -487,7 +531,7 @@ void main() {
               throw DistWorkerBusy('busy: locked');
             },
             retries: 0,
-            wait: Duration.zero,
+            pause: (_) async {},
           ),
           throwsA(isA<DistWorkerBusy>()),
         );
@@ -503,11 +547,104 @@ void main() {
           throw DistWorkerBusy('busy: locked');
         },
         retries: 5,
-        wait: Duration.zero,
+        pause: (_) async {},
         stillWanted: () => false,
       );
       expect(ok, isNull);
       expect(calls, 1);
+    });
+
+    // 2026-11-15 (#3459 review): the pause was 3 s for every worker with a
+    // queue wait configured, also when this ask came back at once (paused,
+    // short of disk, a shim without slot.sh, an old shim without the wait
+    // argument) -- an ssh connection every 3 s per waiting run and slot.
+    test('an ask turned down at once is not asked again after 3 s', () async {
+      final List<Duration> pauses = <Duration>[];
+      await expectLater(
+        distRetryWhileBusy<bool>(
+          () async => throw DistWorkerBusy(
+            'lock failed on w (exit 75): busy: paused by the owner',
+            waited: const Duration(seconds: 1),
+          ),
+          retries: 2,
+          pause: (Duration d) async => pauses.add(d),
+        ),
+        throwsA(isA<DistWorkerBusy>()),
+      );
+      expect(pauses, <Duration>[
+        const Duration(seconds: 29),
+        const Duration(seconds: 29),
+      ]);
+      // A busy error that says nothing about its ask did not wait.
+      expect(distBusyPause(Duration.zero), kDistBusyAskAgain);
+    });
+
+    test('an ask that waited in the queue is asked again at once', () async {
+      final List<Duration> pauses = <Duration>[];
+      final List<String> said = <String>[];
+      int calls = 0;
+      final bool? ok = await distRetryWhileBusy<bool>(
+        () async {
+          if (++calls < 3) {
+            throw DistWorkerBusy(
+              'busy: in use by dist_test run 20261115-120000-aaaa',
+              waited: const Duration(seconds: 27),
+            );
+          }
+          return true;
+        },
+        retries: 5,
+        pause: (Duration d) async => pauses.add(d),
+        said: said.add,
+      );
+      expect(ok, isTrue);
+      expect(pauses, <Duration>[kDistQueueAskAgain, kDistQueueAskAgain]);
+      expect(said.first, endsWith('asking again in 3s'));
+      // Never less, however long the ask took.
+      expect(distBusyPause(const Duration(minutes: 2)), kDistQueueAskAgain);
+    });
+
+    test('the pause after a queue wait keeps the place in the queue', () {
+      // worker_slot.sh: a ticket not touched for PRESENT (20 s) is passed
+      // over. The wait there ends up to a second early (whole seconds).
+      final Duration pause = distBusyPause(
+        const Duration(seconds: kDistQueueWaitSeconds - 1),
+      );
+      expect(pause, lessThanOrEqualTo(const Duration(seconds: 6)));
+      expect(pause.inSeconds, lessThan(20 ~/ 2));
+    });
+
+    test('every busy answer is handed on, the last one too', () async {
+      final List<String> answers = <String>[];
+      await expectLater(
+        distRetryWhileBusy<bool>(
+          () async => throw DistWorkerBusy('busy: locked'),
+          retries: 1,
+          pause: (_) async {},
+          answered: (DistWorkerBusy e) => answers.add(e.message),
+        ),
+        throwsA(isA<DistWorkerBusy>()),
+      );
+      expect(answers, hasLength(2));
+    });
+
+    // resume() used to sleep a fixed 3 s after every busy answer: 72 asks of
+    // a machine paused meanwhile were over in minutes, not the half hour
+    // kDistResumeAsks stands for. It goes through distRetryWhileBusy now.
+    test('coming back after a rest asks with the same pauses', () {
+      final String source = File(
+        'tool/test_flow/dist_workers.dart',
+      ).readAsStringSync().replaceAll('\r\n', '\n');
+      final int at = source.indexOf(
+        'Future<bool> resume(',
+        source.indexOf('class SshDistWorker'),
+      );
+      expect(at, greaterThan(0));
+      final String body = source.substring(at, source.indexOf('\n  }\n', at));
+      expect(body, contains('distRetryWhileBusy<bool>('));
+      expect(body, contains('retries: kDistResumeAsks - 1'));
+      expect(body, isNot(contains('Future<void>.delayed')));
+      expect(kDistBusyAskAgain * kDistResumeAsks, const Duration(minutes: 30));
     });
 
     test('analyze / build: another pass only while it was just busy', () {
@@ -544,6 +681,167 @@ void main() {
         ),
         kDistShimBusy,
       );
+    });
+  });
+
+  test('yield: only a clear answer gives the checkout up', () {
+    expect(distYielded('yielded\n'), isTrue);
+    expect(distYielded('lost\r\n'), isTrue);
+    expect(distYielded('kept\n'), isFalse);
+    // Unreadable: keeping it only makes the others wait; dropping a checkout
+    // the run still has would run a batch on another run's commit.
+    expect(distYielded(''), isFalse);
+    expect(distYielded('yielded to nobody\n'), isFalse);
+    expect(distYielded('some banner\nkept\n'), isFalse);
+    expect(distYielded('some banner\nyielded\n'), isTrue);
+  });
+
+  test('queueing is off until dist_test turns it on; local never rests', () {
+    final DistWorker local = createDistWorkers(
+      const DistWorkerConfig(
+        name: 'self-win',
+        kind: DistWorkerKind.local,
+        platform: DistPlatform.windows,
+      ),
+      repoRoot: '.',
+    ).single;
+    expect(local.queueWaitSeconds, 0);
+    expect(local.resting, isFalse);
+    // The wait there stays under worker_slot.sh's PRESENT window (20 s) plus
+    // the pause before the next ask, or a waiting run would look gone.
+    expect(kDistQueueAskAgain.inSeconds, lessThan(20));
+  });
+
+  group('prepare step stall watchdog (kDistPushStall)', () {
+    late Directory scratch;
+    setUp(() => scratch = Directory.systemTemp.createTempSync('dist_stall_'));
+    tearDown(() => scratch.deleteSync(recursive: true));
+
+    /// A dart script printing `start`, then [body]; started the way a
+    /// prepare step is (dart.bat on Windows needs the shell).
+    Future<Process> script(String body) {
+      final File f = File('${scratch.path}/s.dart')
+        ..writeAsStringSync(
+          "import 'dart:io';\n"
+          'Future<void> main() async {\n'
+          "  stdout.writeln('start');\n"
+          '$body\n'
+          '}\n',
+        );
+      final String dart = FlutterSdkExecutables.current().dart();
+      return Process.start(
+        dart,
+        <String>[f.path],
+        // A .bat launcher (the SDK's dart on Windows) needs the shell.
+        runInShell: dart.toLowerCase().endsWith('.bat'),
+      );
+    }
+
+    // The production kill: the whole tree, so a shell's dart child goes too.
+    Future<void> killTree(Process p) => distKillStepTree(p);
+
+    test(
+      'a step silent for the whole limit is killed and says stalled',
+      () async {
+        // The shape of the 2026-11-20 push: some output, then silence until
+        // the far end gives up (984 s there; 60 s here, never reached).
+        final Process p = await script(
+          '  await Future<void>.delayed(const Duration(seconds: 60));',
+        );
+        final Stopwatch sw = Stopwatch()..start();
+        final ({ProcessResult result, bool stalled}) r =
+            await collectDistProcess(
+              p,
+              stallAfter: const Duration(seconds: 2),
+              kill: () => killTree(p),
+            );
+        expect(r.stalled, isTrue);
+        expect(sw.elapsed, lessThan(const Duration(seconds: 40)));
+        expect(r.result.exitCode, isNot(0));
+      },
+      timeout: const Timeout(Duration(minutes: 2)),
+    );
+
+    test('a step that keeps printing is never killed, however long', () async {
+      final Process p = await script(
+        '  for (int i = 0; i < 15; i++) {\n'
+        "    stdout.writeln('tick \$i');\n"
+        '    await Future<void>.delayed(const Duration(milliseconds: 200));\n'
+        '  }',
+      );
+      final ({ProcessResult result, bool stalled}) r = await collectDistProcess(
+        p,
+        // Above the script's own startup silence even on a loaded machine;
+        // the ticks themselves take 3 s in all, longer than a tick gap.
+        stallAfter: const Duration(seconds: 10),
+        kill: () => killTree(p),
+      );
+      expect(r.stalled, isFalse);
+      expect(r.result.exitCode, 0);
+      expect('${r.result.stdout}', contains('tick 14'));
+    }, timeout: const Timeout(Duration(minutes: 2)));
+
+    test('nothing silent runs inside a push: every worker checkout has '
+        'receive-pack\'s auto gc off and gc runs in prepare', () {
+      // Measured: receive-pack's post-ref-report work (auto gc, hooks) runs
+      // before git push prints `To <remote>`, all of it silent -- a gc there
+      // would read as a dead link and get the worker killed and benched.
+      String read(String p) => File(p).readAsStringSync();
+      expect(
+        read('tool/dist_test/worker_prepare.sh'),
+        allOf(
+          contains('git config receive.autogc false'),
+          contains('git gc --auto'),
+        ),
+        reason: 'comes with the snapshot: reaches workers with an old shim',
+      );
+      final String shim = read('tool/dist_test/worker_shim.sh');
+      expect(shim, contains('git config receive.autogc false'));
+      expect(shim, contains('git -c receive.autogc=false receive-pack'));
+      expect(shim, isNot(contains('exec git receive-pack')));
+      expect(
+        read('tool/test_flow/dist_workers.dart'),
+        contains("'git config receive.autogc false && '"),
+        reason: 'the trusted worker init, before its first push',
+      );
+    });
+
+    test('without a limit nothing watches', () async {
+      final Process p = await script('');
+      final ({ProcessResult result, bool stalled}) r = await collectDistProcess(
+        p,
+        kill: () async => fail('no limit, no kill'),
+      );
+      expect(r.stalled, isFalse);
+      expect(r.result.exitCode, 0);
+    }, timeout: const Timeout(Duration(minutes: 2)));
+
+    test('the limit sits between the slowest good push and the hung ones', () {
+      // Measured 2026-11-20: good pushes at most 198 s in all with progress
+      // at least every second; hung ones silent 312-984 s.
+      expect(kDistPushStall, greaterThanOrEqualTo(const Duration(seconds: 60)));
+      expect(kDistPushStall, lessThan(const Duration(seconds: 312)));
+    });
+
+    test('progress redraws collapse to what was finally shown', () {
+      const String err =
+          'Enumerating objects: 5, done.\r\n'
+          'Writing objects:  20% (1/5)\rWriting objects:  60% (3/5)\r'
+          'Writing objects: 100% (5/5), done.\n'
+          'To host:work\n';
+      expect(
+        distCollapseProgress(err),
+        'Enumerating objects: 5, done.\n'
+        'Writing objects: 100% (5/5), done.\n'
+        'To host:work\n',
+      );
+      expect(
+        distLastProgressLine(
+          'Writing objects:  20% (1/5)\rWriting objects:  40% (2/5)\r',
+        ),
+        'last: Writing objects:  40% (2/5)',
+      );
+      expect(distLastProgressLine(''), 'no output at all');
     });
   });
 }

@@ -158,6 +158,94 @@ double _lengthWeightedP75(List<OcrRect> lines, {required bool vertical}) {
   return rows.last.thickness;
 }
 
+/// 把**横跨多条行**的检出框拆回各行：竖排里一条压在几列列首上的横框（几列的
+/// 第一个字顶端对齐，检测器把它们连成了一条横行），横排同理是一条压在几行行首
+/// 上的竖框。
+///
+/// 这种框留着，[mergeOcrLineFragments] 会把它和它压到的每一列都判成「同一列的
+/// 碎片」，几列连锁并成一条宽列，逐列识别只读出一列的几个字（JMangaBench_Read
+/// 10091317_1：三列 24 个字读成「ーテ!」）。判据：框沿阅读方向的长度不超过它的
+/// 跨轴厚度（不是一条沿阅读方向的行），且在跨轴上压住至少两条**互不重叠**的行
+/// （各压住对方厚度的一半以上）、沿阅读方向与它们相接或重叠。满足时删掉这条
+/// 框，并把它沿阅读方向的范围并进被压住的每一行——那几个字本来就属于这些行。
+List<OcrRect> absorbOcrCrossLines(
+  List<OcrRect> lines, {
+  required bool vertical,
+}) {
+  if (lines.length < 3) return lines;
+  double crossStart(OcrRect r) => vertical ? r.left : r.top;
+  double crossEnd(OcrRect r) => vertical ? r.right : r.bottom;
+  double alongStart(OcrRect r) => vertical ? r.top : r.left;
+  double alongEnd(OcrRect r) => vertical ? r.bottom : r.right;
+  final List<OcrRect> current = List<OcrRect>.of(lines);
+  final List<bool> removed = List<bool>.filled(lines.length, false);
+  for (int i = 0; i < current.length; i++) {
+    final OcrRect bar = current[i];
+    final double thickness = crossEnd(bar) - crossStart(bar);
+    final double length = alongEnd(bar) - alongStart(bar);
+    if (length > thickness) continue;
+    final List<int> covered = <int>[];
+    for (int j = 0; j < current.length; j++) {
+      if (j == i || removed[j]) continue;
+      final OcrRect line = current[j];
+      final double own = crossEnd(line) - crossStart(line);
+      // 被压住的得是一条沿阅读方向的行。
+      if (alongEnd(line) - alongStart(line) < own) continue;
+      final double overlap =
+          math.min(crossEnd(bar), crossEnd(line)) -
+          math.max(crossStart(bar), crossStart(line));
+      if (overlap < 0.5 * own) continue;
+      final double gap =
+          math.max(alongStart(bar), alongStart(line)) -
+          math.min(alongEnd(bar), alongEnd(line));
+      if (gap > 0.5 * own) continue;
+      covered.add(j);
+    }
+    // 互不重叠：按跨轴位置排序后相邻两条的重叠不到较薄者的一半。
+    covered.sort(
+      (int a, int b) =>
+          crossStart(current[a]).compareTo(crossStart(current[b])),
+    );
+    final List<int> distinct = <int>[];
+    for (final int j in covered) {
+      if (distinct.isEmpty) {
+        distinct.add(j);
+        continue;
+      }
+      final OcrRect last = current[distinct.last];
+      final OcrRect line = current[j];
+      final double overlap = crossEnd(last) - crossStart(line);
+      final double thinner = math.min(
+        crossEnd(last) - crossStart(last),
+        crossEnd(line) - crossStart(line),
+      );
+      if (overlap < 0.5 * thinner) distinct.add(j);
+    }
+    if (distinct.length < 2) continue;
+    removed[i] = true;
+    for (final int j in covered) {
+      final OcrRect line = current[j];
+      current[j] = vertical
+          ? OcrRect(
+              left: line.left,
+              top: math.min(line.top, bar.top),
+              right: line.right,
+              bottom: math.max(line.bottom, bar.bottom),
+            )
+          : OcrRect(
+              left: math.min(line.left, bar.left),
+              top: line.top,
+              right: math.max(line.right, bar.right),
+              bottom: line.bottom,
+            );
+    }
+  }
+  return <OcrRect>[
+    for (int i = 0; i < current.length; i++)
+      if (!removed[i]) current[i],
+  ];
+}
+
 /// 同一行 / 列的两段碎片沿阅读方向的空隙上限：较厚那段行厚的这么多倍。
 ///
 /// 取 3：同一行里被切开的地方是字距、空格、「っ」、句读、破折号，实测最宽的是

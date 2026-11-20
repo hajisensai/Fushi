@@ -56,11 +56,15 @@ class WebBrowserSubtitleTrack {
     required this.pending,
     required this.signature,
     this.length = 0,
+    this.failed = false,
   });
 
   final String lang;
   final String label;
   final bool pending;
+
+  /// 懒加载轨按需取失败（页面收到桥的 cuesFailed）；再次选中才重取。
+  final bool failed;
   final String signature;
 
   /// 轨内句数（懒加载轨未加载时为 0）。
@@ -118,6 +122,7 @@ WebBrowserSubtitlePanelState? parseWebBrowserSubtitlePanelState(Object? raw) {
               ? t['label'] as String
               : lang,
           pending: t['pending'] == true,
+          failed: t['failed'] == true,
           signature: '${t['signature'] ?? ''}',
           length: _int(t['length']),
         ),
@@ -617,7 +622,9 @@ class WebBrowserSubtitlePanelState$ extends State<WebBrowserSubtitlePanel> {
 
   // ── 选轨 / 偏移 ──────────────────────────────────────────────────────
 
-  String _trackLabel(WebBrowserSubtitleTrack track) => track.pending
+  String _trackLabel(WebBrowserSubtitleTrack track) => track.failed
+      ? '${track.label}${_x('sp_track_failed_suffix')}'
+      : track.pending
       ? '${track.label}${_x('sp_track_pending_suffix')}'
       : '${track.label}（${track.length}）';
 
@@ -637,7 +644,13 @@ class WebBrowserSubtitlePanelState$ extends State<WebBrowserSubtitlePanel> {
           ),
       ],
     );
-    if (picked == null || picked == s.activeLang) return;
+    if (picked == null) return;
+    // 反馈 0RgCNJFQmJ：取失败的活动轨重选一次 = 重试（页面据此清掉失败记录并重取），
+    // 不能按「没换轨」吞掉；正常轨重选当前轨才是无操作。
+    final bool retryFailed = s.tracks.any(
+      (WebBrowserSubtitleTrack t) => t.lang == picked && t.failed,
+    );
+    if (picked == s.activeLang && !retryFailed) return;
     await _send(<String, Object?>{
       'type': 'fushiSubtitleSidePanelSelectTrack',
       'lang': picked,

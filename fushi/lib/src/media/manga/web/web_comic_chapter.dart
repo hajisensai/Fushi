@@ -65,12 +65,19 @@ class WebComicChapterData {
 /// at-home 节点约 15 分钟），过期就该重扫章节页而不是拿旧地址硬取。
 const Duration kWebComicCapturedImagesFreshFor = Duration(minutes: 10);
 
+/// 章节页 [url] 的章节身份（[OnlineMangaChapter.key]）：规则写了
+/// [WebComicSiteRule.chapterKeyPattern] 且命中就用它（同一章的不同入口地址归成一个），
+/// 否则是去掉 fragment 的 URL。
+String webComicChapterKey(Uri url, {WebComicSiteRule? rule}) =>
+    rule?.chapterKeyOf(url) ?? url.removeFragment().toString();
+
 /// 把一次扫图结果做成章节：当前章带图，上 / 下章只带链接（换章时再扫）。
 OnlineMangaChapter webComicChapterFromScan(
   WebComicScanResult scan, {
   required int nowMs,
+  WebComicSiteRule? rule,
 }) => OnlineMangaChapter(
-  key: scan.pageUrl.toString(),
+  key: webComicChapterKey(scan.pageUrl, rule: rule),
   name: scan.title,
   raw: <String, Object?>{
     WebComicChapterRaw.url: scan.pageUrl.toString(),
@@ -93,8 +100,9 @@ OnlineMangaChapter webComicPlaceholderChapter(
   Uri url, {
   required String name,
   String? ruleId,
+  WebComicSiteRule? rule,
 }) => OnlineMangaChapter(
-  key: url.toString(),
+  key: webComicChapterKey(url, rule: rule),
   name: name,
   raw: <String, Object?>{
     WebComicChapterRaw.url: url.toString(),
@@ -120,13 +128,15 @@ OnlineMangaLibraryEntry webComicEntryFromScan(
         scan.nextChapterUrl!,
         name: nextLabel,
         ruleId: scan.ruleId,
+        rule: rule,
       ),
-    webComicChapterFromScan(scan, nowMs: nowMs),
+    webComicChapterFromScan(scan, nowMs: nowMs, rule: rule),
     if (scan.prevChapterUrl != null)
       webComicPlaceholderChapter(
         scan.prevChapterUrl!,
         name: prevLabel,
         ruleId: scan.ruleId,
+        rule: rule,
       ),
   ];
   return OnlineMangaLibraryEntry(

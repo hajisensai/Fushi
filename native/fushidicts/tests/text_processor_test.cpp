@@ -5,6 +5,7 @@
 // text_processor::process() 必须在变体集合中产出归一化形（option-1 变体）。
 //
 // Usage: text_processor_test   (无参，纯内存断言)  Exit 0=PASS, 非零=FAIL
+#include <cstdint>
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -145,6 +146,70 @@ int main() {
       std::fprintf(stderr, "FAIL nfkc-keeps-embedded-nul: identity variant missing\n");
       ++g_fail;
     }
+  }
+
+  // 上游 30ad52f + 3f0c2d9：删夹在两个字符之间的片假名中点；串首 / 串尾的点保留。
+  expect("middle-dot-stripped", "カルミナ・ブラーナ", "カルミナブラーナ");
+  expect("middle-dot-halfwidth", "カルミナ･ブラーナ", "カルミナブラーナ");  // ･ 经 NFKC 成 ・
+  expect_absent("middle-dot-trailing-kept", "カルミナ・", "カルミナ");
+  expect_absent("middle-dot-leading-kept", "・カルミナ", "カルミナ");
+
+  // 上游 ad0be91：变体的改写上限 / 下限。
+  auto find = [](const std::vector<TextVariant>& vs, const std::string& text) -> const TextVariant* {
+    for (const auto& v : vs) {
+      if (v.text == text) return &v;
+    }
+    return nullptr;
+  };
+  auto check = [](const char* name, bool ok) {
+    if (!ok) {
+      std::fprintf(stderr, "FAIL %s\n", name);
+      ++g_fail;
+    }
+  };
+  {
+    // 变形不许跨过原文里的点：「見・た」与删点后的「見た」都只允许改写尾部 1 个码点。
+    const auto vs = text_processor::process("見・た");
+    const TextVariant* stripped = find(vs, "見た");
+    check("rewrite-cap-after-dot", stripped && stripped->max_rewrite == 1);
+    const TextVariant* original = find(vs, "見・た");
+    check("rewrite-cap-original-with-dot", original && original->max_rewrite == 1);
+    // 不含点 / っ 的原文不受限。
+    const auto plain_vs = text_processor::process("見た");
+    const TextVariant* plain = find(plain_vs, "見た");
+    check("rewrite-uncapped-plain", plain && plain->max_rewrite == SIZE_MAX);
+  }
+  {
+    // 折叠掉的っ：「行っった」→「行った」允许改写到「った」为止。
+    const auto vs = text_processor::process("行っった");
+    const TextVariant* collapsed = find(vs, "行った");
+    check("rewrite-cap-after-collapsed-sokuon", collapsed && collapsed->max_rewrite == 2);
+  }
+  {
+    // 比原文长的变体（韩语拆字）不受限，否则 ko.json 的长后缀规则全被误杀。
+    bool all_uncapped = true;
+    for (const auto& v : text_processor::process("부드러운")) all_uncapped = all_uncapped && v.max_rewrite == SIZE_MAX;
+    check("rewrite-uncapped-hangul", all_uncapped);
+  }
+  {
+    // 「平假名 + 片假名词」收尾：min_rewrite = 片假名词长度（打头的长音符不算）。
+    const auto vs = text_processor::process("行きマス");
+    const TextVariant* hira = find(vs, "行きます");
+    check("min-rewrite-katakana-tail", hira && hira->min_rewrite == 2);
+    const auto katakana_only = text_processor::process("テスト");
+    const TextVariant* katakana_hira = find(katakana_only, "てすと");
+    check("min-rewrite-no-hiragana-before", katakana_hira && katakana_hira->min_rewrite == 0);
+  }
+  {
+    // 结尾落在片假名词中间：只出原文一个变体，且不许还原。
+    const auto vs = text_processor::process("はテ", false, U'ス');
+    check("katakana-boundary-single-variant", vs.size() == 1 && vs[0].text == "はテ" && vs[0].max_rewrite == 0);
+    // 下一个字不再是片假名（词已结束）时照常展开。
+    check("katakana-boundary-word-ended", text_processor::process("はテスト", false, U'を').size() > 1);
+    // 长音符也算还在片假名词里。
+    check("katakana-boundary-prolonged", text_processor::process("はケ", false, U'ー').size() == 1);
+    // 片假名词前面不是平假名（串首）时不受影响。
+    check("katakana-boundary-at-start", text_processor::process("テス", false, U'ト').size() > 1);
   }
 
   if (g_fail) {

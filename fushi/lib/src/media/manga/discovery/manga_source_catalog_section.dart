@@ -15,23 +15,17 @@
 library;
 
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/src/utils/components/fushi_horizontal_edge_fade.dart';
 
-import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/media/manga/discovery/manga_source_display_name.dart';
+import 'package:fushi/src/models/store_compliance.dart';
+import 'package:fushi/src/pages/implementations/discovery/discovery_source_block.dart';
 import 'package:fushi/src/pages/implementations/discovery_header.dart';
-import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
-import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
-import 'package:fushi/src/utils/components/fushi_material_components.dart';
-import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
 import 'package:fushi/src/utils/components/fushi_section_title.dart';
-import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
-import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 
 /// 发现页当前认识的「可浏览来源」快照（三类来源的**已启用**子集）。
 ///
@@ -86,6 +80,64 @@ class MangaSourceCatalog {
       ),
   ];
 
+  /// 全部来源的展示顺序：**置顶在前**，其余按现有顺序（mokuro → Mihon 的
+  /// `sortOrder` → OPDS）。稳定排序；没有「最近使用」排序（所有者拍板 DI17：
+  /// [MangaOnlineSourceRow] 没有这个字段，不为它新增持久化）。
+  List<MangaCatalogSourceEntry> get entries {
+    final List<MangaCatalogSourceEntry> all = <MangaCatalogSourceEntry>[
+      if (mokuroEnabled)
+        MangaCatalogSourceEntry(
+          id: mokuroSourceId,
+          name: t.mihon_source_browse_mokuro,
+          chips: <String>['mokuro.moe', t.discovery_source_chip_preset],
+          pinned: false,
+          kind: MangaCatalogSourceKind.mokuro,
+        ),
+      for (final MangaOnlineSourceRow source in mihonSources)
+        MangaCatalogSourceEntry(
+          id: mihonSourceId(source),
+          name: source.name,
+          chips: <String>[
+            mangaSourceLanguageLabel(source.language),
+            if (source.pinned) t.discovery_source_chip_pinned,
+          ],
+          pinned: source.pinned,
+          kind: MangaCatalogSourceKind.mihon,
+          mihon: source,
+        ),
+      for (final OpdsServerConfig server in opdsServers)
+        MangaCatalogSourceEntry(
+          id: 'opds:${server.id}',
+          name: server.displayName,
+          chips: <String>['OPDS', t.discovery_source_chip_user_added],
+          pinned: false,
+          kind: MangaCatalogSourceKind.opds,
+          opds: server,
+        ),
+    ];
+    return <MangaCatalogSourceEntry>[
+      for (final MangaCatalogSourceEntry e in all)
+        if (e.pinned) e,
+      for (final MangaCatalogSourceEntry e in all)
+        if (!e.pinned) e,
+    ];
+  }
+
+  /// 漫画首块右侧的两个来源（设计稿第 3 节）：有置顶源就放前 2 个置顶源；没有
+  /// 就放前 2 个启用源（现有顺序）。这里出现的源不在下方网格重复——调用方把
+  /// 返回值传给 [MangaSourceCatalogSection.excludeIds]。
+  List<String> get heroSideIds {
+    final List<MangaCatalogSourceEntry> ordered = entries;
+    final List<MangaCatalogSourceEntry> pinned = <MangaCatalogSourceEntry>[
+      for (final MangaCatalogSourceEntry e in ordered)
+        if (e.pinned) e,
+    ];
+    return (pinned.isNotEmpty ? pinned : ordered)
+        .take(2)
+        .map((MangaCatalogSourceEntry e) => e.id)
+        .toList(growable: false);
+  }
+
   /// 收窄到单个来源。[kDiscoveryAllSourcesId] 原样返回（「全部来源」不过滤）。
   ///
   /// 选中具体来源后，正文、聚合搜索的源集合、「浏览来源」卡片全部由这一个方法
@@ -107,12 +159,98 @@ class MangaSourceCatalog {
   }
 }
 
-/// 发现页顶部的「浏览来源」快捷条：每个已启用来源一枚紧凑磁贴，横向排开，
-/// 点进各自的目录。
+/// 来源块的三类来源。
+enum MangaCatalogSourceKind { mokuro, mihon, opds }
+
+/// [MangaSourceCatalog.entries] 的一项：渲染来源块所需的全部信息。
+@immutable
+class MangaCatalogSourceEntry {
+  const MangaCatalogSourceEntry({
+    required this.id,
+    required this.name,
+    required this.chips,
+    required this.pinned,
+    required this.kind,
+    this.mihon,
+    this.opds,
+  });
+
+  /// 来源 id（mokuro / Mihon 与热门 feed id 同式；OPDS 是 `opds:<服务器 id>`）。
+  final String id;
+  final String name;
+
+  /// 块内 chip：语言 / 置顶 / 预置 / 用户添加。
+  final List<String> chips;
+  final bool pinned;
+  final MangaCatalogSourceKind kind;
+  final MangaOnlineSourceRow? mihon;
+  final OpdsServerConfig? opds;
+
+  /// 块的稳定 key（沿用旧磁贴的 key，测试与焦点导航按它找）。
+  String get widgetKey => switch (kind) {
+    MangaCatalogSourceKind.mokuro => 'manga-source-mokuro',
+    MangaCatalogSourceKind.mihon => 'manga-mihon-$id',
+    MangaCatalogSourceKind.opds => 'manga-opds-${opds!.id}',
+  };
+}
+
+/// 语言码 → 块内语言 chip：`all` / `multi` 显示「多语言」，空码显示「?」，
+/// 其余大写码（`EN` / `JA`）。
+String mangaSourceLanguageLabel(String language) {
+  final String code = language.trim().toLowerCase();
+  if (code.isEmpty) return '?';
+  if (code == 'all' || code == 'multi' || code == 'other') {
+    return t.discovery_source_language_multi;
+  }
+  return code.toUpperCase();
+}
+
+/// 渲染一个来源块的共享参数（网格与首块旁两块同一份）。
+class _CatalogBlockContext {
+  const _CatalogBlockContext({
+    required this.onOpenMokuro,
+    required this.onOpenMihon,
+    required this.onOpenOpds,
+    required this.coverPreviews,
+    required this.failures,
+    required this.onRetry,
+  });
+
+  final VoidCallback onOpenMokuro;
+  final ValueChanged<MangaOnlineSourceRow> onOpenMihon;
+  final ValueChanged<OpdsServerConfig> onOpenOpds;
+  final Map<String, List<Widget>> coverPreviews;
+  final Set<String> failures;
+  final VoidCallback? onRetry;
+
+  Widget block(MangaCatalogSourceEntry entry, {double? height}) {
+    final VoidCallback onTap = switch (entry.kind) {
+      MangaCatalogSourceKind.mokuro => onOpenMokuro,
+      MangaCatalogSourceKind.mihon => () => onOpenMihon(entry.mihon!),
+      MangaCatalogSourceKind.opds => () => onOpenOpds(entry.opds!),
+    };
+    return DiscoverySourceBlock(
+      key: ValueKey<String>(entry.widgetKey),
+      sourceId: entry.id,
+      name: entry.name,
+      chips: entry.chips,
+      covers: coverPreviews[entry.id] ?? const <Widget>[],
+      failed: failures.contains(entry.id),
+      onRetry: onRetry,
+      onTap: onTap,
+      height: height,
+    );
+  }
+}
+
+/// 漫画发现页的「浏览来源」一节：来源色块网格（拼贴改版 DI2）。
 ///
-/// 此前这一节是页底一列整宽大卡片：启用二十几个源时要滚过全部热门行才看得到，
-/// 而它恰恰是「去某个源里逛」的最短路径。改成页首横滑条后，来源多少都只占一行
-/// 高度；热门行在它下面照常展开。
+/// 每个已启用来源一块按源取色的色块（`DiscoverySourceBlock`）：多边形 glyph +
+/// 名称 + 语言 / 置顶 chip，漫画源带 3–4 张热门封面小条（[coverPreviews]，由
+/// 页面把各源热门行已拿到的封面交进来，本节不为它多发请求）；加载失败的源
+/// （[failures]）块内出「无法连接 · 重试」。置顶在前，其余按现有顺序；漫画首块
+/// 右侧已经显示的源（[excludeIds]，见 [MangaSourceCatalog.heroSideIds]）不在这里
+/// 重复。末尾「添加来源」块（[onAddSource]）只做跳转。
 ///
 /// 空态（一个来源都没有）不在这里渲染：页面会整页换成引导空态，这一节此时根本
 /// 不挂载——两处都写空态提示就会叠出两句同义文案。
@@ -122,6 +260,11 @@ class MangaSourceCatalogSection extends StatelessWidget {
     required this.onOpenMokuro,
     required this.onOpenMihon,
     required this.onOpenOpds,
+    this.excludeIds = const <String>{},
+    this.coverPreviews = const <String, List<Widget>>{},
+    this.failures = const <String>{},
+    this.onRetry,
+    this.onAddSource,
     super.key,
   });
 
@@ -130,198 +273,152 @@ class MangaSourceCatalogSection extends StatelessWidget {
   final ValueChanged<MangaOnlineSourceRow> onOpenMihon;
   final ValueChanged<OpdsServerConfig> onOpenOpds;
 
-  /// 磁贴条高度：两行文字 + 上下内边距，全部磁贴同高。
-  static const double stripHeight = 64;
+  /// 不在网格里重复的来源 id（已在漫画首块右侧显示的）。
+  final Set<String> excludeIds;
+
+  /// 来源 id → 封面条（该源热门行已拿到的前几张封面 widget）。
+  final Map<String, List<Widget>> coverPreviews;
+
+  /// 最近一次加载失败的来源 id。
+  final Set<String> failures;
+
+  /// 失败块的「重试」。
+  final VoidCallback? onRetry;
+
+  /// 「添加来源」块的去处；null = 不渲染该块（没有去处时不放点了没反应的块）。
+  final VoidCallback? onAddSource;
 
   @override
   Widget build(BuildContext context) {
-    final List<Widget> tiles = <Widget>[
-      if (catalog.mokuroEnabled)
-        _SourceTile(
-          key: const ValueKey<String>('manga-source-mokuro'),
-          leading: const FushiListLeadingIcon(
-            FushiIcons.books,
-            shape: FushiLeadingShape.cookie,
-            tone: FushiCardTone.primary,
-            size: 36,
-            iconSize: 20,
-          ),
-          title: t.mihon_source_browse_mokuro,
-          subtitle: 'mokuro.moe',
-          onTap: onOpenMokuro,
-        ),
-      for (final MangaOnlineSourceRow source in catalog.mihonSources)
-        _SourceTile(
-          key: ValueKey<String>(
-            'manga-mihon-${MangaSourceCatalog.mihonSourceId(source)}',
-          ),
-          leading: _LanguageBadge(source.language),
-          title: source.name,
-          subtitle: source.baseUrl.isEmpty
-              ? source.extensionPackage
-              : Uri.tryParse(source.baseUrl)?.host ?? source.baseUrl,
-          pinned: source.pinned,
-          onTap: () => onOpenMihon(source),
-        ),
-      for (final OpdsServerConfig server in catalog.opdsServers)
-        _SourceTile(
-          key: ValueKey<String>('manga-opds-${server.id}'),
-          leading: const FushiListLeadingIcon(
-            FushiIcons.books,
-            shape: FushiLeadingShape.cookie,
-            tone: FushiCardTone.primary,
-            size: 36,
-            iconSize: 20,
-          ),
-          title: server.displayName,
-          subtitle: server.catalogUrl.host,
-          onTap: () => onOpenOpds(server),
-        ),
-    ];
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          // 区块标题与下方热门横滑行同一套 [FushiSectionTitle]（MD3 titleLarge /
-          // Apple Title 2 粗体），不再是小一号的 titleMedium。
-          // 本区块是发现页正文的首个分区：上方只隔工具区底边的 gap，合计 16
-          // （与视频发现页工具区到首屏内容同一间距），不再叠一个 section 大边距。
-          FushiSectionTitle(
-            t.manga_discovery_sources_browse,
-            padding: EdgeInsets.fromLTRB(
-              tokens.spacing.page,
-              tokens.spacing.gap,
-              tokens.spacing.page,
-              tokens.spacing.gap,
-            ),
-          ),
-          if (tiles.isNotEmpty)
-            // 桌面端默认 dragDevices 不含 mouse，横滑条必须包
-            // HorizontalDragScrollable（横向滚动守卫）。
-            SizedBox(
-              height: stripHeight,
-              child: FushiHorizontalEdgeFade(
-                child: HorizontalDragScrollable(
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    // 与区块标题、下方横滑行同一页边距，左缘对齐。
-                    padding: EdgeInsets.symmetric(
-                      horizontal: tokens.spacing.page,
-                    ),
-                    itemCount: tiles.length,
-                    separatorBuilder: (BuildContext context, int index) =>
-                        SizedBox(width: tokens.spacing.gap),
-                    itemBuilder: (BuildContext context, int index) =>
-                        tiles[index],
-                  ),
+    final List<MangaCatalogSourceEntry> all = catalog.entries;
+    final List<MangaCatalogSourceEntry> shown = <MangaCatalogSourceEntry>[
+      for (final MangaCatalogSourceEntry e in all)
+        if (!excludeIds.contains(e.id)) e,
+    ];
+    final int excluded = all.length - shown.length;
+    final _CatalogBlockContext blocks = _CatalogBlockContext(
+      onOpenMokuro: onOpenMokuro,
+      onOpenMihon: onOpenMihon,
+      onOpenOpds: onOpenOpds,
+      coverPreviews: coverPreviews,
+      failures: failures,
+      onRetry: onRetry,
+    );
+    final VoidCallback? add = onAddSource;
+    final String caption = <String>[
+      t.discovery_sources_order_caption,
+      if (excluded > 0) t.discovery_sources_excluded_caption(n: excluded),
+      t.discovery_sources_all_count(n: all.length),
+    ].join(' · ');
+    return FushiEntranceScope(
+      replayKey: shown.map((MangaCatalogSourceEntry e) => e.id).join('|'),
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            FushiSectionTitle(
+              t.manga_discovery_sources_browse,
+              shrinkTrailing: true,
+              trailing: Text(
+                caption,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: tokens.type.metadata.copyWith(
+                  color: tokens.surfaces.onVariant,
                 ),
               ),
+              padding: EdgeInsets.fromLTRB(
+                tokens.spacing.page,
+                tokens.spacing.gap,
+                tokens.spacing.page,
+                tokens.spacing.gap,
+              ),
             ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 一枚来源磁贴：图标/语言徽标 + 名称 + 一行副标题（域名或包名）。
-class _SourceTile extends StatelessWidget {
-  const _SourceTile({
-    required this.leading,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-    this.pinned = false,
-    super.key,
-  });
-
-  final Widget leading;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-  final bool pinned;
-
-  @override
-  Widget build(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    // 次级文字 / 行尾图标：Apple 取 secondaryLabel / tertiaryLabel 灰阶，MD3
-    // onSurfaceVariant（与共享列表行同口径）。
-    final bool apple = isGlassDesign(context);
-    final Color secondary = apple
-        ? appleColorsOf(context).secondaryLabel
-        : tokens.surfaces.onVariant;
-    final Color chevron = apple
-        ? appleColorsOf(context).tertiaryLabel
-        : tokens.surfaces.onVariant;
-    // 实色内容卡（MD3 surfaceContainerLow / Apple secondarySystemGrouped），
-    // 不是玻璃；焦点 / Enter 由 FushiCard 提供。
-    return SizedBox(
-      width: 216,
-      child: FushiCard(
-        padding: EdgeInsets.zero,
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Row(
-            children: <Widget>[
-              SizedBox.square(dimension: 36, child: Center(child: leading)),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
+            if (shown.isNotEmpty || add != null)
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+                child: DiscoverySourceBlockGrid(
                   children: <Widget>[
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: tokens.type.listTitle,
-                    ),
-                    Text(
-                      subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: tokens.type.metadata.copyWith(color: secondary),
-                    ),
+                    for (final MangaCatalogSourceEntry entry in shown)
+                      blocks.block(entry),
+                    if (add != null)
+                      DiscoveryAddSourceBlock(
+                        key: const ValueKey<String>('manga-source-add'),
+                        onTap: add,
+                        hint: mangaAddSourceHint(),
+                      ),
                   ],
                 ),
               ),
-              FushiIcon(
-                pinned ? FushiIcons.pin : FushiIcons.chevronRight,
-                size: 18,
-                color: chevron,
-              ),
-            ],
-          ),
+          ],
         ),
       ),
     );
   }
 }
 
-/// 语言码徽标（`JA` / `ZH` …）；空码显示 `?`。
-class _LanguageBadge extends StatelessWidget {
-  const _LanguageBadge(this.language);
+/// 「添加来源」块的副文案：有在线漫画源宿主能力时去「扩展」装，否则（iOS 合规）
+/// 连接自己的服务器。判据只走 [StoreRestrictedCapability]。
+String mangaAddSourceHint() =>
+    StoreRestrictedCapability.onlineMangaSource.isAvailable
+    ? t.discovery_source_add_hint_extensions
+    : t.discovery_source_add_hint_server;
 
-  final String language;
+/// 漫画首块右侧的两块来源（[MangaSourceCatalog.heroSideIds]）：竖排、平分父级给
+/// 的高度（与首块同高）。没有来源时不占位。
+class MangaSourceHeroSide extends StatelessWidget {
+  const MangaSourceHeroSide({
+    required this.catalog,
+    required this.onOpenMokuro,
+    required this.onOpenMihon,
+    required this.onOpenOpds,
+    this.coverPreviews = const <String, List<Widget>>{},
+    this.failures = const <String>{},
+    this.onRetry,
+    super.key,
+  });
+
+  final MangaSourceCatalog catalog;
+  final VoidCallback onOpenMokuro;
+  final ValueChanged<MangaOnlineSourceRow> onOpenMihon;
+  final ValueChanged<OpdsServerConfig> onOpenOpds;
+  final Map<String, List<Widget>> coverPreviews;
+  final Set<String> failures;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
-    // 中性底徽标（不再是 secondaryContainer 彩块），文字次级标签色。
-    return Container(
-      width: 36,
-      height: 36,
-      alignment: Alignment.center,
-      decoration: fushiNeutralBlockDecoration(context),
-      child: Text(
-        language.isEmpty ? '?' : language.toUpperCase(),
-        maxLines: 1,
-        style: Theme.of(context).textTheme.labelMedium?.copyWith(
-          color: fushiNeutralSecondaryForeground(context),
-          fontWeight: FontWeight.w600,
-        ),
-      ),
+    final double gap = FushiDesignTokens.of(context).spacing.gap;
+    final List<String> ids = catalog.heroSideIds;
+    final List<MangaCatalogSourceEntry> side = <MangaCatalogSourceEntry>[
+      for (final MangaCatalogSourceEntry e in catalog.entries)
+        if (ids.contains(e.id)) e,
+    ];
+    if (side.isEmpty) return const SizedBox.shrink();
+    final _CatalogBlockContext blocks = _CatalogBlockContext(
+      onOpenMokuro: onOpenMokuro,
+      onOpenMihon: onOpenMihon,
+      onOpenOpds: onOpenOpds,
+      coverPreviews: coverPreviews,
+      failures: failures,
+      onRetry: onRetry,
+    );
+    return Column(
+      key: const ValueKey<String>('manga-source-hero-side'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        for (int i = 0; i < side.length; i++) ...<Widget>[
+          if (i > 0) SizedBox(height: gap),
+          Expanded(
+            child: FushiStaggeredEntrance(
+              index: i + 1,
+              child: blocks.block(side[i]),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

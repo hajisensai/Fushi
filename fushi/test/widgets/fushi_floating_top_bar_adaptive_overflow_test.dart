@@ -147,6 +147,96 @@ void main() {
     );
   });
 
+  test('BUG-4938: 前置圆钮测宽先扣标题保底宽，放不下从末尾收进 ⋯', () {
+    // 363dp 手机竖屏：五颗前置钮（返回 / 音乐 / 目录 / 图库 / 统计）+ 书名。
+    // 以前只给 ⋯ 留格、不扣标题，五颗里能平铺四颗，书名被压到约 30dp。
+    const double width = 363 - 16;
+    final int shown = fushiTopBarLeadingFitCount(
+      leadingCount: 5,
+      maxWidth: width,
+      hasActions: true,
+      hasTitle: true,
+    );
+    expect(shown, lessThan(5));
+    expect(shown, greaterThanOrEqualTo(1), reason: '返回恒在');
+    // 平铺的前置钮 + 标题保底 + ⋯ 那格（8 间距 + 8 内边距 + 一颗 52）放得下。
+    expect(
+      shown * 64 + kFushiFloatingTopBarTitleMinWidth + 8 + 8 + 52,
+      lessThanOrEqualTo(width),
+    );
+    // 没标题时不扣，能多平铺。
+    expect(
+      fushiTopBarLeadingFitCount(
+        leadingCount: 5,
+        maxWidth: width,
+        hasActions: true,
+      ),
+      greaterThan(shown),
+    );
+    // 短标题只预留自然宽，不按 160 多扣。
+    expect(
+      fushiTopBarLeadingFitCount(
+        leadingCount: 5,
+        maxWidth: width,
+        hasActions: true,
+        hasTitle: true,
+        titleWidth: 40,
+        subtitleWidth: 0,
+      ),
+      greaterThan(shown),
+    );
+  });
+
+  testWidgets('BUG-4938: 363dp 五颗前置钮 + 书名：标题胶囊不低于保底宽', (
+    WidgetTester tester,
+  ) async {
+    final List<FushiToolbarItem> leading = <FushiToolbarItem>[
+      for (final String label in <String>[
+        'Back',
+        'Music',
+        'Contents',
+        'Gallery',
+        'Stats',
+      ])
+        FushiToolbarItem(icon: Icons.circle, label: label, onPressed: () {}),
+    ];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: _outerWidth(363 - 16),
+              child: FushiFloatingTopBar(
+                leading: leading,
+                title: 'これはとても長い書名ですよね、本当に',
+                subtitle: 'Chapter 1',
+                overflow: <FushiToolbarItem>[
+                  FushiToolbarItem(
+                    icon: Icons.fullscreen,
+                    label: 'Fullscreen',
+                    onPressed: () {},
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull, reason: '不得溢出');
+    expect(find.byTooltip('Back'), findsOneWidget);
+    expect(find.byTooltip('Stats'), findsNothing, reason: '最后一颗先收');
+    final Rect title = tester.getRect(
+      find.byKey(const ValueKey<String>('fushi_floating_top_bar_title')),
+    );
+    expect(
+      title.width / kFushiFloatingCapsuleScale,
+      greaterThanOrEqualTo(kFushiFloatingTopBarTitleMinWidth - 0.5),
+      reason: '标题胶囊不被前置钮挤到保底宽以下',
+    );
+  });
+
   test('拆分：按优先级平铺前 k 颗，其余（含 overflow）进 ⋯', () {
     final FushiToolbarItem a = FushiToolbarItem(
       icon: Icons.add,

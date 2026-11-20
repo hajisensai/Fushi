@@ -1,0 +1,6 @@
+## BUG-4749 · 复习页横向滑动评分时卡面来回抖动（WebView 卡面页内坐标随跟手平移反馈进位移）
+- **报告**：2026-11-16（用户：维护者，应用内反馈 Zy4jaKfS1N，Android OnePlus 录屏：手指按在原生 Fushi 卡面的释义区小幅横拖，卡面在偏移与弹回之间逐帧跳、「重来」提示角标闪）
+- **真实性**：✅ 真 bug。WebView 卡面（含原生 Fushi 卡面里的释义 WebView）的滑动由页内脚本量：`fushi/lib/src/pages/implementations/srs/srs_card_lookup.dart:840`（drag）/ `:857`（release）用 `clientX/Y` 算「按下 → 当前」位移，这是平台视图自己的坐标——Flutter 递指针给平台视图前每次现场 `globalToLocal`（Flutter SDK `rendering/platform_view.dart:90/119` 的 `pointTransformer`）。滑动途中复习页按这个位移平移卡面（`fushi/lib/src/pages/implementations/srs/srs_review_page.dart:3381`，`SrsSwipeFollow` 取 0.4 倍），于是页内位移 = 手指位移 − 卡面已平移量，跟手量再由它算出：闭环。手指停住时位移与平移来回振荡；靠近轴向判据 / 提示阈值时 hint 在有 / 无之间翻转，`SrsSwipeFollow` 在「零时长跳到偏移」与「medium 时长弹回」间切换，即录屏里的跳动与角标闪烁。顺带：松手位移同样被吃掉一截（拖 120 只报 72，低于提交距离 96 不评分），松手速度也被减去卡面速度。原生识别区 `SrsCardGestureRegion` 用全局坐标，不受影响；但释义区被 `SrsCardGestureRegion.excluded` 圈出、手势归页内脚本，所以原生卡面上也会抖。
+- **[x] ① 已修复** — 新增 `SrsHostPointerTrack`（`srs_card_lookup.dart`）：WebView 卡面平台视图上方的 Listener 旁观同一根指针，在全局坐标里量位移与速度；`_SrsWebCardFaceState._onPageGesture`（`srs_card_face.dart:2314`）把页内回报的 drag / release 几何换成宿主侧读数（`rebase`）。页内脚本只负责判定接管 / 作废 / 嵌套滚动，几何量与卡面怎么平移解耦。
+- **[x] ② 已加自动化测试** — `fushi/test/srs/srs_review_card_gestures_test.dart`「卡面跟手平移不反馈进滑动位移：手指停住卡面不抖，松手按手指位移判定」：真实复习页 + 按平台视图口径（现场 `globalToLocal`）量坐标的假卡面，手指停在 −60 时 8 帧跟手量都须为 −24，拖到 −120 松手须评分。去掉 `rebase` 时红。
+- **备注**：未在真机复测原始失败路径（本轮不做真机验证）。

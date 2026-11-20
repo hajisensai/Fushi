@@ -21,6 +21,7 @@ const SourceLibraryRow _source = SourceLibraryRow(
   recursive: true,
   videoGroupingMode: 'series',
   isPrivate: false,
+  autoScan: false,
   mediaCount: 1500,
   sortOrder: 0,
   createdAt: 1,

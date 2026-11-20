@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <functional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 // BUG-3261：汉字 + 假名混写的查询串（「棚にあげる」「目をつける」「手をやいた」）。
@@ -28,10 +29,13 @@ inline constexpr std::size_t kMaxCandidates = 64;
 // 纯汉字没有可替换的假名）。
 bool is_mixed(const std::string& text);
 
-// 由 [run_readings] 给出每段汉字的读音（常用在前），拼出候选完整读音（平假名，去重，
-// 不含与原串相同的串）。任一段没有读音、或汉字段超过 kMaxKanjiRuns 时返回空。
-std::vector<std::string> reading_candidates(
-    const std::string& text, const std::function<std::vector<std::string>(const std::string&)>& run_readings);
+// 一段汉字的读音（常用在前）。返回的引用只需活到下一次调用——同一段汉字在一次查词
+// 里会被问几十次，调用方按段缓存、这里不拷贝。
+using RunReadings = std::function<const std::vector<std::string>&(const std::string& run)>;
+
+// 由 [run_readings] 给出每段汉字的读音，拼出候选完整读音（平假名，去重，不含与原串
+// 相同的串）。任一段没有读音、或汉字段超过 kMaxKanjiRuns 时返回空。
+std::vector<std::string> reading_candidates(const std::string& text, const RunReadings& run_readings);
 
 // [query] 是否是词条（[expression]，[reading]）的一种混写：词头的假名逐字与查询一致，
 // 每个汉字要么原样出现在查询里、要么被写成读音里与它对应的一段假名。假名比较不分

@@ -194,7 +194,7 @@ void main() {
 
     test('fullscreen helper uses the controls-subtree context', () {
       expect(
-        page.contains('_videoControlsContext = controlsContext'),
+        page.contains('_captureVideoControlsContext(controlsContext)'),
         isTrue,
         reason:
             'isFullscreen/toggle/exitFullscreen need a controls-subtree '

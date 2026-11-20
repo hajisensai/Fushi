@@ -374,7 +374,7 @@ Problems found:
 
 The server serves RWKV decks the same way the app does. There is one assembly, `srsAttachRwkv` in `packages/fushi_engine/lib/srs/srs_rwkv_attach.dart`, called by the app's `srsRwkvServiceProvider` and by `ServerSrs` right after a profile's store opens and before the store is handed to anything. The rule "RWKV not ready means no review cards from RWKV decks, never the FSRS due dates" lives in one place, `SrsDbStore._instantInput`, and applies to both hosts.
 
-- Weights: `<data>/support/srs_rwkv/models/sm72e25_weights.int8.bin` (436 KB), downloaded on first use through the global proxy settings. A server without internet access can be given the file by hand; it is used once its SHA-256 checks out.
+- Weights: `<data>/support/srs_rwkv/models/sm98_weights.int8.bin` (436 KB; the Instant-Only sm98 since 2026-11-15), downloaded on first use through the global proxy settings. A server without internet access can be given the file by hand; it is used once its SHA-256 checks out. Model size: the same device setting file as the app, `<data>/support/srs_rwkv/model_size` (`tiny` = the memory-saving Tiny Instant-Only sm101, `sm101_weights.int8.bin`, snapshots in `srs_rwkv/state-tiny/`; anything else = the default Small sm98); read when the profile's store opens.
 - State snapshots: `<data>/support/srs_rwkv/state/` (one main snapshot and up to two checkpoints per profile).
 - Start: after a sync round succeeds and the collection has a deck scheduled by RWKV. Otherwise on the first queue request for such a deck.
 - Close: `ServerSrsProfile._close` closes the RWKV service (saves the snapshot, stops the background runtime) before it retires the store.

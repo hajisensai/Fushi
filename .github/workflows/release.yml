@@ -45,6 +45,7 @@ on:
       - 'tool/merge_update_manifest.py'
       - 'tool/gen_debug_pulse.py'
       - 'tool/feedback_mark_released.sh'
+      - 'tool/publish_settings_catalog.sh'
       - '.github/workflows/release.yml'
       - '.github/workflows/release-desktop.yml'
       - '.github/actions/provide-baked-secrets/**'
@@ -1032,6 +1033,8 @@ jobs:
           --build-name "${{ steps.channel.outputs.build_version_name }}" \
           --build-number "${{ steps.channel.outputs.android_build_number }}" \
           --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
+        # BUG-4955：AGP strip 前的 libapp.so（带 .symtab / DWARF）存下来，ANR 栈的裸 pc 才对得上源码。
+        bash tool/android_dart_symbols.sh stash android-arm64
 
     - name: Prepare release-signed debug-channel APK asset
       if: steps.channel.outputs.build_debug_channel_apk == 'true'
@@ -1103,6 +1106,8 @@ jobs:
             --build-name "${{ steps.channel.outputs.build_version_name }}" \
             --build-number "${{ steps.channel.outputs.android_build_number }}" \
             --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
+          # BUG-4955：换 target-platform 重编会清掉上一个 ABI 的 flutter 中间产物，逐次收。
+          bash tool/android_dart_symbols.sh stash "$platform"
           echo "::endgroup::"
         done
         missing=0
@@ -1113,6 +1118,29 @@ jobs:
           fi
         done
         exit "$missing"
+
+    # BUG-4955：Android 的 Dart 符号。ANR / tombstone 栈里 libapp.so 只有 `base.apk (offset …) (???)`
+    # 的裸 pc（反馈 ICF67eBY57），没有 AGP strip 前的那份 ELF 就还原不了。不用 --split-debug-info：
+    # 它连带 DWARF 栈，会让 app 内诊断的 Dart 栈与调用点归因退化。核对 build-id 与包里一致；
+    # 只是诊断件，不挡发版（continue-on-error），也不进 Release 资产。
+    - name: Verify Android Dart symbols match APKs
+      if: ${{ steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      continue-on-error: true
+      working-directory: fushi
+      shell: bash
+      run: bash tool/android_dart_symbols.sh verify
+
+    - name: Upload Android Dart symbols
+      if: ${{ steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      continue-on-error: true
+      uses: actions/upload-artifact@v7
+      with:
+        name: android-dart-symbols-${{ steps.channel.outputs.release_sequence }}
+        path: fushi/build/android-dart-symbols/
+        if-no-files-found: warn
+        # debug 通道每次 push 都出一份（arm64 约 140 MB），留 14 天；其余（formal / beta，以及手动发
+        # GitHub Release 的 channel=github-release——正式版的一等路径）与 iOS dSYM 同为 90 天。
+        retention-days: ${{ steps.channel.outputs.channel == 'debug' && 14 || 90 }}
 
     - name: Collect Android post-build diagnostics
       if: ${{ always() && (steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true') }}
@@ -2060,6 +2088,30 @@ jobs:
         name: fushi-test-native-linux-x64
         path: native
 
+    # 设置项目录（给官网 fushi.moe/settings.md 用，读者是 AI）：导出器就是一条普通单测，设了
+    # FUSHI_SETTINGS_CATALOG_DIR 才落盘。这里只生成并传 artifact；推到 update-manifest 分支由
+    # 本 workflow 的 publish-settings-catalog job 做（本 job 没有写权限）。
+    # continue-on-error：同一条测试在单测分片里照常当守卫跑，红在那里；这里失败只是这次不更新目录。
+    - name: Export settings catalog
+      id: settings_catalog
+      if: matrix.part == 'checks' && github.event_name == 'push'
+      continue-on-error: true
+      timeout-minutes: 10
+      working-directory: fushi
+      env:
+        FUSHI_SETTINGS_CATALOG_DIR: ${{ runner.temp }}/settings-catalog
+      # 经失败过滤包装器跑（零执行不算绿）；单独的输出目录，不与分片的事件日志混。
+      run: dart run tool/flutter_test_failures.dart --output-dir=../.codex-test/settings-catalog test/settings/settings_catalog_export_test.dart
+    - name: Upload settings catalog
+      if: matrix.part == 'checks' && github.event_name == 'push' && steps.settings_catalog.outcome == 'success'
+      continue-on-error: true
+      uses: actions/upload-artifact@v7
+      with:
+        name: settings-catalog
+        path: ${{ runner.temp }}/settings-catalog/settings-catalog.*
+        if-no-files-found: error
+        retention-days: 7
+
     - name: Run unit tests (main app, file shard ${{ matrix.part }}/4)
       if: matrix.part != 'checks'
       working-directory: fushi
@@ -2077,14 +2129,14 @@ jobs:
         retention-days: 14
 
     # packages/fushi_rwkv 的端到端测试要真权重（缺了判红、不 skip），与 main.yml 同名两步一致：
-    # 只读 native-rwkv-gate 写的同一个缓存条目（key 是三个钉死的 SHA-256，与 fetch_model.sh
+    # 只读 native-rwkv-gate 写的同一个缓存条目（key 是五个钉死的 SHA-256，与 fetch_model.sh
     # 一致），未命中时 fetch_model.sh 按钉死 URL 下载并校验（~13 MB）。
     - name: Restore RWKV weights cache
       if: matrix.part == 'checks'
       uses: actions/cache/restore@v4
       with:
         path: native/fushi_rwkv/model
-        key: fushi-rwkv-model-749ad1ad18d5b6ef8c4185802fa0c1e4a14e67cd7874f3efeaae355fffb1b9ec-ff626af2e974346ed282615d190500148b22cfe05cbfd081b1e70d5a1dfa3cd9-db54656bc41a22a175d2b905304d45e6ae6b0bb4efd1af8dfce9185f40ee1a01
+        key: fushi-rwkv-model-749ad1ad18d5b6ef8c4185802fa0c1e4a14e67cd7874f3efeaae355fffb1b9ec-b2f335bd712b9d602150201de41ab5a0f0a4c291644705e2aa1ed2a1bf1592c3-c7d8df407966fccd8f98227241816e114ce9ed1dfea799587e481c1d5926a453-77703dd2f2a21a1bcadaedfed1cec93ee0fd6fd6d3c840be221e72b5e1c05066-18de8ae77a1a40986dc432531116dfb009beae2385001ef425389a3ad7919a9e
     - name: Fetch RWKV weights (pinned URL, SHA-256 checked)
       if: matrix.part == 'checks'
       run: bash native/fushi_rwkv/fetch_model.sh
@@ -2122,3 +2174,48 @@ jobs:
           echo "::error title=Package test enumeration collapsed::只跑了 $ran 个包的测试，实测应有 4 个。去修枚举逻辑，不要调低这个下界。"
           exit 1
         fi
+
+  # 设置项目录推到 update-manifest 分支（官网 fushi.moe/settings.md、/settings.json 按通道代理）。
+  # 不用独立的 workflow_run workflow：workflow_run 只认**默认分支 main** 上的定义，main 落后
+  # develop 一个发布周期，合进 develop 后整条链路要等下一个正式版才第一次触发（与上面
+  # build.md 放弃 pull_request_target 是同一个坑）。放在本 workflow 里，develop push 当轮就发。
+  # - 写权限只给这个 job（tests 仍只读）；artifact 取本 run 的，不需要跨 run 的 actions: read。
+  # - needs tests 但用 always()：tests 是矩阵，任一单测分片红都会让裸 needs 跳过本 job，而导出
+  #   那一步是 continue-on-error、与分片红不红无关。只有 run 被取消才不发；没有 artifact
+  #   （checks 分片没跑到导出 / 导出失败）记 notice 后正常结束。
+  # - 与 publish-android 并发推同一分支：tool/publish_settings_catalog.sh 被拒后重取远端 tip、
+  #   只在最新提交上重放两个目录文件。
+  # - 只取发布脚本（sparse），不执行 artifact 里的任何东西。
+  publish-settings-catalog:
+    needs: tests
+    if: ${{ always() && github.event_name == 'push' && (github.ref_name == 'develop' || github.ref_name == 'main') && needs.tests.result != 'cancelled' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        sparse-checkout: tool/publish_settings_catalog.sh
+        sparse-checkout-cone-mode: false
+        persist-credentials: false
+    - name: Download settings catalog artifact
+      id: fetch
+      continue-on-error: true
+      uses: actions/download-artifact@v7
+      with:
+        name: settings-catalog
+        path: ${{ runner.temp }}/settings-catalog
+    - name: No settings catalog in this run
+      if: steps.fetch.outcome != 'success'
+      run: |
+        echo "::notice title=Settings catalog::本 run 没有 settings-catalog artifact（tests (checks) 被跳过 / 没跑到导出，或导出失败），本次不更新。"
+    - name: Publish settings catalog to update-manifest
+      if: steps.fetch.outcome == 'success'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        REPO: ${{ github.repository }}
+        CATALOG_DIR: ${{ runner.temp }}/settings-catalog
+        CHANNEL: ${{ github.ref_name == 'main' && 'stable' || 'debug' }}
+      run: bash tool/publish_settings_catalog.sh

@@ -27,8 +27,13 @@ class AppleMusicUserCredentials {
 }
 
 /// 取当前的一对 token；未登录 / 授权失效时抛（页面显示错误）。
+///
+/// [refresh] 为真时必须绕过缓存重新取：用户在 Apple 账号里撤销后重新授权，或 token 被服务器
+/// 作废时，缓存里的 Music-User-Token 已不能用，但本机授权状态仍是「已授权」，不绕缓存会一直
+/// 拿到同一枚作废的 token（反馈 caI0UrhA6-）。给不出新 token 的实现（如 MusicKit JS 只有
+/// 存储里那一枚）可以原样返回，[AppleMusicUserApi] 见 token 没变就不重发。
 typedef AppleMusicUserCredentialsProvider =
-    Future<AppleMusicUserCredentials> Function();
+    Future<AppleMusicUserCredentials> Function({bool refresh});
 
 /// 带用户 token 的请求器。
 class AppleMusicUserApi {
@@ -60,6 +65,9 @@ class AppleMusicUserApi {
   }
 
   /// 发一个请求并解析 JSON 回包。空体（202 / 204）回空 Map。非 2xx 抛 [AppleMusicApiException]。
+  ///
+  /// 401 / 403 表示这对 token 被服务器拒了（多半是缓存的 Music-User-Token 已作废）：绕过缓存
+  /// 重新取一次 token，换到了不同的 token 才用它重发一次；token 没变或重发仍失败就抛原状态码。
   Future<Map<String, Object?>> send(
     String method,
     String path, {
@@ -68,19 +76,14 @@ class AppleMusicUserApi {
   }) async {
     final Uri uri = _uri(path, query);
     final AppleMusicUserCredentials c = await _credentials();
-    final http.Request req = http.Request(method, uri)
-      ..headers.addAll(<String, String>{
-        'Authorization': 'Bearer ${c.developerToken}',
-        'Music-User-Token': c.userToken,
-        'Accept': 'application/json',
-      });
-    if (body != null) {
-      req.headers['Content-Type'] = 'application/json';
-      req.body = jsonEncode(body);
+    http.Response res = await _sendWith(c, method, uri, body);
+    if (_isTokenRejected(res.statusCode)) {
+      final AppleMusicUserCredentials fresh = await _refreshCredentials();
+      if (fresh.userToken != c.userToken ||
+          fresh.developerToken != c.developerToken) {
+        res = await _sendWith(fresh, method, uri, body);
+      }
     }
-    final http.Response res = await http.Response.fromStream(
-      await _client.send(req).timeout(kAppleMusicRequestTimeout),
-    ).timeout(kAppleMusicRequestTimeout);
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw AppleMusicApiException(res.statusCode, uri.path);
     }
@@ -92,6 +95,36 @@ class AppleMusicUserApi {
       throw AppleMusicApiException(res.statusCode, uri.path);
     }
     return decoded;
+  }
+
+  static bool _isTokenRejected(int status) => status == 401 || status == 403;
+
+  /// 进行中的绕缓存重取。并发请求（分页、批量评分）同时吃 401 / 403 时共用这一次，
+  /// 不让每个请求各自触发一次重新生成 token。
+  Future<AppleMusicUserCredentials>? _refreshing;
+
+  Future<AppleMusicUserCredentials> _refreshCredentials() => _refreshing ??=
+      _credentials(refresh: true).whenComplete(() => _refreshing = null);
+
+  Future<http.Response> _sendWith(
+    AppleMusicUserCredentials c,
+    String method,
+    Uri uri,
+    Object? body,
+  ) async {
+    final http.Request req = http.Request(method, uri)
+      ..headers.addAll(<String, String>{
+        'Authorization': 'Bearer ${c.developerToken}',
+        'Music-User-Token': c.userToken,
+        'Accept': 'application/json',
+      });
+    if (body != null) {
+      req.headers['Content-Type'] = 'application/json';
+      req.body = jsonEncode(body);
+    }
+    return http.Response.fromStream(
+      await _client.send(req).timeout(kAppleMusicRequestTimeout),
+    ).timeout(kAppleMusicRequestTimeout);
   }
 
   Future<Map<String, Object?>> get(

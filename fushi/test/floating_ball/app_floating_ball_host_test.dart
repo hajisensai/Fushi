@@ -19,8 +19,10 @@ import 'package:fushi/src/lookup/overlay_bridge_handlers.dart'
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/ocr/google_lens_screen_ocr.dart';
+import 'package:fushi/src/ocr/local_screen_ocr.dart';
 import 'package:fushi/src/ocr/screen_ocr_engine.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_center_page.dart';
@@ -896,7 +898,7 @@ void main() {
       expect(calls.last.method, 'stopSystemBall');
     });
 
-    testWidgets('查词模块关着：应用外球不下发「查词」「应用外查词」「截屏识字」，模块打开后重新同步补上', (
+    testWidgets('查词模块关着：应用外球只不下发「查词」（打开查词页），应用外查词与截屏识字照常；模块打开后重新同步补上', (
       WidgetTester tester,
     ) async {
       mockNative(tester);
@@ -913,7 +915,12 @@ void main() {
         await waitFor(() => starts().isNotEmpty);
       });
       await tester.pump();
-      expect(startedActions(starts().last), <String>['clipboard']);
+      // BUG-4846：查词模块只关查词页入口，覆盖窗上的查词能力不跟着消失。
+      expect(startedActions(starts().last), <String>[
+        'popup_lookup',
+        'clipboard',
+        'screen_ocr',
+      ]);
 
       await tester.runAsync(() async {
         await prefs.setModuleEnabled(ModuleId.lookup, true);
@@ -1999,11 +2006,210 @@ void main() {
           expect(target.recognizeEngines.single, isA<GoogleLensScreenOcr>());
         });
 
+        group('决定 4BBSaB12zj：Android 截屏识字跟随引擎设置', () {
+          /// 原生发一条带回话的消息，返回 Dart 的回话。
+          Future<Object?> askNative(
+            WidgetTester tester,
+            String method, [
+            Object? args,
+          ]) async {
+            Object? reply;
+            await tester.runAsync(() async {
+              final ByteData message = const StandardMethodCodec()
+                  .encodeMethodCall(MethodCall(method, args));
+              final Completer<ByteData?> done = Completer<ByteData?>();
+              await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+                FloatingBallChannel.channel.name,
+                message,
+                done.complete,
+              );
+              final ByteData? data = await done.future;
+              reply = data == null
+                  ? null
+                  : const StandardMethodCodec().decodeEnvelope(data);
+            });
+            return reply;
+          }
+
+          testWidgets('全局引擎是本机模型且已就绪 → 回 localModel，帧交给本机模型识别、行按原生形状回去', (
+            WidgetTester tester,
+          ) async {
+            await prefs.setMangaOcrEnginePreference(
+              MangaOcrEnginePreference.localOnnx.key,
+            );
+            target.modelReady = true;
+            target.onRecognize = (Uint8List bytes) async =>
+                const SystemOcrPageResult(
+                  lines: <SystemOcrTextLine>[
+                    SystemOcrTextLine(
+                      text: '吾輩は猫',
+                      rect: Rect.fromLTRB(100.4, 200, 500, 250.6),
+                      isVertical: false,
+                      segments: <SystemOcrTextSegment>[
+                        SystemOcrTextSegment(
+                          start: 0,
+                          length: 2,
+                          rect: Rect.fromLTRB(100, 200, 300, 250),
+                        ),
+                        SystemOcrTextSegment(
+                          start: 2,
+                          length: 2,
+                          rect: Rect.fromLTRB(300, 200, 500, 250),
+                        ),
+                      ],
+                    ),
+                    // 无面积的行不交给原生。
+                    SystemOcrTextLine(
+                      text: 'x',
+                      rect: Rect.fromLTRB(10, 10, 10, 20),
+                      isVertical: false,
+                    ),
+                  ],
+                  imageWidth: 1080,
+                  imageHeight: 2400,
+                );
+            await pumpHost(tester);
+            expect(
+              await askNative(tester, 'screenOcrEngine'),
+              <String, Object?>{'engine': 'localModel'},
+            );
+            final Object? reply = await askNative(
+              tester,
+              'recognizeScreenOcrFrame',
+              <String, Object?>{
+                'png': png,
+                'engine': 'localModel',
+                'fallback': false,
+              },
+            );
+            expect(target.recognizeEngines.single, isA<LocalScreenOcr>());
+            expect(reply, <String, Object?>{
+              'lines': <Object?>[
+                <String, Object?>{
+                  'text': '吾輩は猫',
+                  'rect': <int>[100, 200, 500, 251],
+                  'vertical': false,
+                  'segments': <Object?>[
+                    <int>[0, 2, 100, 200, 300, 250],
+                    <int>[2, 2, 300, 200, 500, 250],
+                  ],
+                },
+              ],
+            });
+          });
+
+          testWidgets('截屏识字单独选了 Lens 但没同意上传 → 回提示并让原生拉起 Fushi，同意框在那里问', (
+            WidgetTester tester,
+          ) async {
+            await prefs.setScreenOcrEngine(ScreenOcrEngineSetting.googleLens);
+            target.lensConsent = false;
+            await pumpHost(tester);
+            final Object? reply = await askNative(tester, 'screenOcrEngine');
+            expect(reply, <String, Object?>{
+              'message': t.floating_ball_ocr_lens_consent_needed,
+              'openApp': true,
+            });
+            expect(target.log, contains('askLensConsent'));
+            expect(target.log, isNot(contains('recognize')));
+            // 手机上的同意框不说「整块显示器」。
+            expect(target.askedLensScenes, <GoogleLensDisclosureScene>[
+              GoogleLensDisclosureScene.mobileScreens,
+            ]);
+            // 反馈 zkQylCmcKq：同意框得用带 Navigator 的 context 弹，否则真机上抛
+            // 「context that does not include a Navigator」，框弹不出来。
+            expect(target.lensConsentContextHasNavigator, <bool>[true]);
+          });
+
+          testWidgets('BUG-4508：ML Kit 报不可用后的本机模型重试，模型也没就绪 → unavailable、不识别', (
+            WidgetTester tester,
+          ) async {
+            target.modelReady = false;
+            await pumpHost(tester);
+            final Object? reply = await askNative(
+              tester,
+              'recognizeScreenOcrFrame',
+              <String, Object?>{
+                'png': png,
+                'engine': 'localModel',
+                'fallback': true,
+              },
+            );
+            expect(reply, <String, Object?>{'unavailable': true});
+            expect(target.recognizeEngines, isEmpty);
+          });
+
+          testWidgets('BUG-4508：ML Kit 报不可用后的本机模型重试，模型已就绪 → 交给本机模型识别、行回原生', (
+            WidgetTester tester,
+          ) async {
+            // 全局 / 截屏识字引擎都留默认：重试走的是原生点名的 localModel，不看设置。
+            target.modelReady = true;
+            target.onRecognize = (Uint8List bytes) async =>
+                const SystemOcrPageResult(
+                  lines: <SystemOcrTextLine>[
+                    SystemOcrTextLine(
+                      text: '猫',
+                      rect: Rect.fromLTRB(10, 20, 60, 70),
+                      isVertical: true,
+                    ),
+                  ],
+                  imageWidth: 720,
+                  imageHeight: 1600,
+                );
+            await pumpHost(tester);
+            final Object? reply = await askNative(
+              tester,
+              'recognizeScreenOcrFrame',
+              <String, Object?>{
+                'png': png,
+                'engine': 'localModel',
+                'fallback': true,
+              },
+            );
+            expect(target.recognizeEngines.single, isA<LocalScreenOcr>());
+            expect(reply, <String, Object?>{
+              'lines': <Object?>[
+                <String, Object?>{
+                  'text': '猫',
+                  'rect': <int>[10, 20, 60, 70],
+                  'vertical': true,
+                  'segments': <Object?>[],
+                },
+              ],
+            });
+          });
+
+          testWidgets('识别器报本机模型没下载（非重试）→ 回「请下载模型」文案', (
+            WidgetTester tester,
+          ) async {
+            target.onRecognize = (Uint8List bytes) async =>
+                throw const SystemOcrUnavailableException(
+                  kSystemOcrModelUnavailableReason,
+                );
+            await pumpHost(tester);
+            final Object? reply = await askNative(
+              tester,
+              'recognizeScreenOcrFrame',
+              <String, Object?>{
+                'png': png,
+                'engine': 'localModel',
+                'fallback': false,
+              },
+            );
+            expect(reply, <String, Object?>{
+              'message': t.floating_ball_ocr_model_missing,
+            });
+          });
+        });
+
         testWidgets('Lens 还没同意上传：先在主窗里问，这次不截屏', (WidgetTester tester) async {
           await prefs.setScreenOcrEngine(ScreenOcrEngineSetting.googleLens);
           target.lensConsent = false;
           await startOcr(tester);
           expect(target.log, <String>['front', 'askLensConsent']);
+          expect(target.askedLensScenes, <GoogleLensDisclosureScene>[
+            GoogleLensDisclosureScene.desktopScreens,
+          ]);
+          expect(target.lensConsentContextHasNavigator, <bool>[true]);
           expect(called('startScreenOcrCapture'), isFalse);
           expect(target.recognizeEngines, isEmpty);
         });
@@ -2316,11 +2522,29 @@ class _RecordingActionTarget extends DesktopSystemBallActionTarget {
   bool lensConsent = true;
 
   @override
-  Future<bool> hasLensConsent() async => lensConsent;
+  Future<bool> hasLensConsent({
+    required GoogleLensDisclosureScene scene,
+  }) async => lensConsent;
+
+  /// 每次弹 Lens 同意框用的场景（文案）。
+  final List<GoogleLensDisclosureScene> askedLensScenes =
+      <GoogleLensDisclosureScene>[];
+
+  /// 每次弹 Lens 同意框时传进来的 context 之上有没有根 Navigator。
+  final List<bool> lensConsentContextHasNavigator = <bool>[];
 
   @override
-  Future<bool> askLensConsent(BuildContext context) async {
+  Future<bool> askLensConsent(
+    BuildContext context, {
+    required GoogleLensDisclosureScene scene,
+  }) async {
     log.add('askLensConsent');
+    askedLensScenes.add(scene);
+    // 真实实现（showFushiConfirmDialog）要从这个 context 找根 Navigator；宿主自己的
+    // context 在 Navigator 平级、找不到（反馈 zkQylCmcKq）。
+    lensConsentContextHasNavigator.add(
+      Navigator.maybeOf(context, rootNavigator: true) != null,
+    );
     return false;
   }
 

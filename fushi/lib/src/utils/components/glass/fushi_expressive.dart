@@ -909,6 +909,7 @@ class FushiConnectedButtonGroup<T> extends StatefulWidget {
     this.showSelectedIcon = true,
     this.selectedIcon,
     this.direction = Axis.horizontal,
+    this.notifyReselect = false,
   });
 
   final List<ButtonSegment<T>> segments;
@@ -916,6 +917,12 @@ class FushiConnectedButtonGroup<T> extends StatefulWidget {
   final void Function(Set<T>)? onSelectionChanged;
   final bool multiSelectionEnabled;
   final bool emptySelectionAllowed;
+
+  /// true = 单选下点已选中的那一段也照常回调 [onSelectionChanged]（集合不变，
+  /// 仍是那一段）：宿主的选中值只是视觉锚点、不是当前所在视图时用（库页壳停在
+  /// 导入页时高亮「我的」组，BUG-4706）。默认 false，与 [SegmentedButton] 同语义：
+  /// 点已选段不回调。多选 / 允许空选下不生效（点已选段有自己的切换语义）。
+  final bool notifyReselect;
   final EdgeInsets? expandedInsets;
   final ButtonStyle? style;
   final bool showSelectedIcon;
@@ -989,6 +996,13 @@ class _FushiConnectedButtonGroupState<T>
     final Set<T> current = widget.selected;
     final bool onlySelectedSegment =
         current.length == 1 && current.contains(segmentValue);
+    if (widget.notifyReselect &&
+        onlySelectedSegment &&
+        !widget.multiSelectionEnabled &&
+        !widget.emptySelectionAllowed) {
+      notify(<T>{segmentValue});
+      return;
+    }
     final bool validChange =
         widget.emptySelectionAllowed || !onlySelectedSegment;
     if (!validChange) return;

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:html/parser.dart' as html;
@@ -7,6 +8,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/anki/anki_video_template_error_text.dart';
 import 'package:fushi/src/anki/anki_video_template_page.dart';
 import 'package:fushi/src/anki/anki_video_template_service.dart';
 import 'package:fushi_anki/fushi_anki.dart';
@@ -30,11 +32,17 @@ class _Service implements AnkiVideoTemplateService {
   int writes = 0;
   int reads = 0;
   bool fail = false;
+
+  /// 非 null 时对应操作抛它（服务判出来的带码错误，或后端的任意异常）。
+  Exception? readError;
+  Exception? applyError;
+  Exception? restoreError;
   @override
   bool get supportsEditing => true;
   @override
   Future<AnkiNoteTypeDefinition?> read(String name) async {
     reads++;
+    if (readError != null) throw readError!;
     return definition;
   }
 
@@ -45,6 +53,7 @@ class _Service implements AnkiVideoTemplateService {
   }) async {
     writes++;
     if (fail) throw StateError('write refused');
+    if (applyError != null) throw applyError!;
     await pending?.future;
     definition = applyAnkiVideoTemplate(expected, options);
   }
@@ -52,6 +61,7 @@ class _Service implements AnkiVideoTemplateService {
   @override
   Future<void> restore({required AnkiNoteTypeDefinition expected}) async {
     writes++;
+    if (restoreError != null) throw restoreError!;
     definition = _original;
   }
 }
@@ -315,6 +325,133 @@ void main() {
           .onPressed,
       isNotNull,
     );
+  });
+
+  // gap-vidmisc-8：服务 / fushi_anki 只抛错误码，页面按码取当前语言的文案。以前是硬编码
+  // 中文 StateError，`toString()` 带着 `Bad state: ` 前缀原样上屏。
+  group('带码错误显示成当前语言的文案', () {
+    tearDown(() => LocaleSettings.setLocale(AppLocale.en));
+
+    test('每个错误码都有文案，且不带 Bad state / 类名 / 码名', () async {
+      for (final AppLocale locale in <AppLocale>[
+        AppLocale.en,
+        AppLocale.zhCn,
+      ]) {
+        LocaleSettings.setLocale(locale);
+        final Set<String> seen = <String>{};
+        for (final AnkiVideoTemplateErrorCode code
+            in AnkiVideoTemplateErrorCode.values) {
+          final String text = describeAnkiVideoTemplateError(
+            AnkiVideoTemplateException(
+              code,
+              cause: StateError('inner'),
+              rollbackCause: const AnkiVideoTemplateException(
+                AnkiVideoTemplateErrorCode.rollbackRejected,
+              ),
+            ),
+          );
+          expect(text.trim(), isNotEmpty, reason: '$locale $code');
+          if (code != AnkiVideoTemplateErrorCode.rollbackIncomplete) {
+            expect(text, isNot(contains('Bad state')), reason: '$locale $code');
+          }
+          expect(
+            text,
+            isNot(contains('AnkiVideoTemplateException')),
+            reason: '$locale $code',
+          );
+          expect(text, isNot(contains(code.name)), reason: '$locale $code');
+          expect(seen.add(text), isTrue, reason: '$locale $code 与别的码同文案');
+        }
+      }
+    });
+
+    test('回滚未完成：两个内层错误都出现在文案里，带码的内层也本地化', () {
+      final String text = describeAnkiVideoTemplateError(
+        AnkiVideoTemplateException(
+          AnkiVideoTemplateErrorCode.rollbackIncomplete,
+          cause: const AnkiVideoTemplateException(
+            AnkiVideoTemplateErrorCode.writeRejected,
+          ),
+          rollbackCause: const FileSystemException('disk gone'),
+        ),
+      );
+      expect(text, contains(t.anki_video_template_error_write_rejected));
+      expect(text, contains('disk gone'));
+    });
+
+    testWidgets('应用被拒（没映射句子音频之外的正常分支）：显示文案，不含 Bad state', (
+      WidgetTester tester,
+    ) async {
+      final _Service service = _Service()
+        ..applyError = const AnkiVideoTemplateException(
+          AnkiVideoTemplateErrorCode.fieldHasOtherContent,
+        );
+      await _open(tester, service);
+      await tester.tap(find.text(t.anki_video_template_apply));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(t.anki_video_template_error_field_occupied),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Bad state'), findsNothing);
+      // 报错后控件恢复可用。
+      expect(
+        tester
+            .widget<FushiFilledButton>(find.byType(FushiFilledButton))
+            .onPressed,
+        isNotNull,
+      );
+    });
+
+    testWidgets('恢复找不到备份：显示文案', (WidgetTester tester) async {
+      final _Service service = _Service()
+        ..definition = applyAnkiVideoTemplate(
+          _original,
+          const AnkiVideoTemplateOptions(field: 'Picture'),
+        )
+        ..restoreError = const AnkiVideoTemplateException(
+          AnkiVideoTemplateErrorCode.restoreBackupMissing,
+        );
+      await _open(tester, service);
+      await tester.tap(find.text(t.anki_video_template_restore));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(t.anki_video_template_error_restore_backup_missing),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('读取时制卡目标已变：显示文案', (WidgetTester tester) async {
+      final _Service service = _Service()
+        ..readError = const AnkiVideoTemplateException(
+          AnkiVideoTemplateErrorCode.targetChanged,
+        );
+      await _open(tester, service);
+      expect(
+        find.text(t.anki_video_template_error_target_changed),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('预览时区块被手改（fushi_anki 抛的码）：显示文案', (WidgetTester tester) async {
+      final AnkiNoteTypeDefinition adapted = applyAnkiVideoTemplate(
+        _original,
+        const AnkiVideoTemplateOptions(field: 'Picture'),
+      );
+      final Map<String, dynamic> json = adapted.toJson();
+      ((json['templates'] as List<dynamic>).first
+              as Map<String, dynamic>)['back'] =
+          '${adapted.templates.first.back}<!-- fushi-video:v1:broken';
+      final _Service service = _Service()
+        ..definition = AnkiNoteTypeDefinition.fromJson(json);
+      await _open(tester, service);
+      await tester.tap(find.text(t.anki_video_template_preview));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(t.anki_video_template_error_block_edited),
+        findsOneWidget,
+      );
+    });
   });
 
   testWidgets('unreadable note type exposes no apply button', (

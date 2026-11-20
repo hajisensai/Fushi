@@ -1,5 +1,5 @@
 // 远程复习（docs/specs/2026-11-01-srs-remote-review-design.md）的客户端端到端：
-// SrsRemoteStore → MockClient → 真实的 `/api/srs/remote/*` 路由 → SrsRemoteStoreService → 内存库上的 SrsDbStore。
+// SrsRemoteStore → MockClient → 真实的 `/api/srs/remote2/*` 路由（V2）→ SrsRemoteStoreService → 内存库上的 SrsDbStore。
 //
 // - 远程库读到的卡片详情 / 卡面 / 笔记类型与主机库直接读到的相同；笔记类型按标签缓存，只搬一次；
 // - 卡片 / 笔记操作、扩展流程（按类型列笔记、更改笔记类型预演、修改历史）都落在主机库上；
@@ -19,6 +19,10 @@ import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_list_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_ui.dart'
+    show SrsCountTriple;
+import 'package:fushi/src/utils/components/fushi_poster_block.dart'
+    show fushiPosterColors, fushiPosterHue;
 import 'package:fushi/src/pages/implementations/srs/srs_edit_history_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_remote_review_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
@@ -33,7 +37,8 @@ import 'package:fushi/src/sync/video_remote_targets.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi_engine/srs/srs_builtin.dart' show srsLapisFieldId;
+import 'package:fushi_engine/srs/srs_builtin.dart'
+    show kSrsBuiltinLapisKey, srsLapisFieldId;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_edit_history.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
@@ -112,7 +117,7 @@ class _Host {
     localOffsetMin: localOffsetMin,
     httpClient: MockClient((http.Request r) async {
       final String path = r.url.path;
-      if (!path.startsWith(kSrsRemoteStorePathPrefix)) {
+      if (!path.startsWith(kSrsRemoteStoreV2PathPrefix)) {
         return http.Response('', 404);
       }
       String? op;
@@ -129,7 +134,7 @@ class _Host {
           );
         }
       } else {
-        ops.add(path.substring(kSrsRemoteStorePathPrefix.length));
+        ops.add(path.substring(kSrsRemoteStoreV2PathPrefix.length));
       }
       if (malformed[op] case final Map<String, Object?> body) {
         return http.Response(
@@ -254,11 +259,11 @@ class _FakeConnector extends SrsRemoteHostConnector {
   @override
   DateTime now() => clock;
 
-  /// 各主机按能力位判定出的代（没写的是现状：只声明 V1）。
+  /// 各主机按能力位判定出的代（没写的是新代主机：声明 V2）。
   final Map<String, SrsRemoteHostGeneration> generations =
       <String, SrsRemoteHostGeneration>{};
 
-  /// 没配的主机 / [unsupported] 里的不应答（null）；其余按 [generations]，没写的只声明 V1。
+  /// 没配的主机 / [unsupported] 里的不应答（null）；其余按 [generations]，没写的声明 V2。
   @override
   SrsRemoteGenerationProbe get generationProbe =>
       (SyncRepository _, FushiClientUrl peer) async {
@@ -266,7 +271,7 @@ class _FakeConnector extends SrsRemoteHostConnector {
         if (id == null || !hosts.containsKey(id) || unsupported.contains(id)) {
           return null;
         }
-        return generations[id] ?? SrsRemoteHostGeneration.v1Only;
+        return generations[id] ?? SrsRemoteHostGeneration.v2;
       };
 
   @override
@@ -543,7 +548,7 @@ void main() {
 
       await remote.cardDetail(study.after!);
       expect(
-        host.ops.where((String o) => o == 'noteTypeSources'),
+        host.ops.where((String o) => o == 'noteTypeViews'),
         hasLength(1),
         reason: '同一笔记类型标签没变不再搬',
       );
@@ -720,6 +725,58 @@ void main() {
       expect(host.writes, greaterThanOrEqualTo(7));
     });
 
+    test(
+      '存量单位牌组（limitUnitLegacyDecks）经远程库往返与主机一致；回应提醒（settleSrsLegacyLimitUnit）写在主机库上',
+      () async {
+        // 测试时钟（2026-10-01）在每日上限单位改缺省之前：这时评的分算「存量牌组」。
+        final _Host legacy = await _openHost(<String>[
+          '犬',
+        ], clock: SrsTestClock());
+        addTearDown(legacy.db.close);
+        final SrsDbStore hostStore = legacy.store;
+        // 模拟加单位设置之前就有的牌组（单位寄存器为空），里面有卡评过分；另一个同样没写单位但没评过分。
+        final String old = await hostStore.createDeck('Old');
+        final String idle = await hostStore.createDeck('Idle');
+        for (final String d in <String>[old, idle]) {
+          await hostStore.editFields(SrsEntityKind.deck, d, <String, Object?>{
+            SrsFieldKeys.deckLimitUnit: null,
+          });
+        }
+        final String inOld = (await hostStore.cardsOfNote(
+          await hostStore.createNote(
+            noteTypeId: hostStore.lapisNoteTypeId,
+            deckId: old,
+            fieldsById: <String, String>{
+              srsLapisFieldId(kSrsTestProfile, 'Expression'): '聞く',
+            },
+          ),
+        )).single.id;
+        final String inDefault = (await hostStore.studyState(
+          hostStore.defaultDeckId,
+        ))!.next!;
+        await hostStore.answer(inOld, 3);
+        await hostStore.answer(inDefault, 3);
+
+        final Set<String> expected = await hostStore.limitUnitLegacyDecks();
+        expect(expected, <String>{hostStore.defaultDeckId, old});
+
+        final SrsRemoteStore remote = await legacy.remote();
+        expect(await remote.limitUnitLegacyDecks(), expected);
+        expect(legacy.ops, contains('limitUnitLegacyDecks'));
+
+        await settleSrsLegacyLimitUnit(remote, SrsLimitUnit.cards);
+        expect(legacy.ops, contains('editFieldsBatch'));
+        final SrsDeckTree tree = await hostStore.deckTree();
+        for (final String d in expected) {
+          expect(tree[d]!.limitUnitSet, isTrue, reason: d);
+          expect(tree[d]!.limitUnit, SrsLimitUnit.cards, reason: d);
+        }
+        expect(tree[idle]!.limitUnitSet, isFalse, reason: '没评过分的不写');
+        expect(await remote.limitUnitLegacyDecks(), isEmpty);
+        expect(await hostStore.limitUnitLegacyDecks(), isEmpty);
+      },
+    );
+
     test('回包丢了用同一请求 id 重发：只记一条日志', () async {
       final SrsRemoteStore remote = await host.remote();
       final String deck = host.store.defaultDeckId;
@@ -779,16 +836,281 @@ void main() {
     });
   });
 
+  group('远程复习 V2（G10-2）：进程内主机 + 客户端', () {
+    late _Host host;
+    setUp(() async {
+      host = await _openHost(<String>['犬', '猫', '鳥']);
+    });
+    tearDown(() => host.db.close());
+
+    test('出卡 → 作答 → 主机库里有日志；内置 ID 取主机的规范 ID、归一问主机', () async {
+      final SrsRemoteStore remote = await host.remote();
+      // 内置实体 ID 是主机集合里的规范 ID（信封 `ids`），不是本机按 uid 派生的那一份。
+      expect(remote.defaultDeckId, host.store.defaultDeckId);
+      expect(remote.lapisNoteTypeId, host.store.lapisNoteTypeId);
+      expect(remote.fushiCardNoteTypeId, host.store.fushiCardNoteTypeId);
+      final SrsKernelIds derived = host.store.kernelIds;
+      expect(
+        await remote.canonicalIds(<String>[
+          derived.defaultDeck,
+          derived.builtinNoteType(kSrsBuiltinLapisKey),
+        ]),
+        <String>[host.store.defaultDeckId, host.store.lapisNoteTypeId],
+      );
+      // 每个请求都走 V2 端点、带代号与（写操作）握手时的集合。
+      expect(
+        host.bodies.every(
+          (Map<String, Object?> b) =>
+              b[kSrsRemoteGenerationKey] == kSrsRemoteStoreV2Generation,
+        ),
+        isTrue,
+      );
+
+      final String deck = remote.defaultDeckId;
+      // 卡 ID 从主机库直接读（不经出卡队列：主机新 profile 的出卡队列归「ID 口径」模块，见交接说明），
+      // 这里卡住的是 V2 的读 → 作答 → 落日志链路。
+      final String hostNote = (await host.store.noteIdsOfType(
+        host.store.lapisNoteTypeId,
+      )).first;
+      final String card = (await host.store.cardsOfNote(hostNote)).first.id;
+      final SrsCardDetail detail = (await remote.cardDetail(card))!;
+      expect(
+        detail.note.fields,
+        (await host.store.cardDetail(card))!.note.fields,
+        reason: '笔记按主机内核的视图搬、在本机用同一个解码器物化',
+      );
+      final SrsAnswerOutcome out = await remote.answerAndStudy(
+        card,
+        3,
+        durationMs: 1500,
+        studyDeckId: deck,
+      );
+      final SrsCardHistory history = await host.store.history(card);
+      expect(history.all.map((SrsReviewLog l) => l.id), <String>[out.log.id]);
+      final Map<String, Object?> answer = host.bodies.lastWhere(
+        (Map<String, Object?> b) => b['op'] == 'answerAndStudy',
+      );
+      expect(answer['col'], host.store.sync2Collection);
+      // 握手之后的读也带握手时的集合（主机据此对读同样回 409，不让读悄悄换集合）。
+      expect(
+        host.bodies
+            .where((Map<String, Object?> b) => b['op'] != 'hello')
+            .map((Map<String, Object?> b) => b['col'])
+            .toSet(),
+        <Object?>{host.store.sync2Collection},
+      );
+    });
+
+    test('回包里的集合与握手时不同：报 profile_changed、作废缓存，不在读里悄悄换成新集合', () async {
+      final SrsRemoteStore remote = await host.remote();
+      final String col = host.store.sync2Collection!;
+      final Map<String, Object?> real = await host.service.call(
+        profile: host.store.profileUid,
+        op: 'deckSummaries',
+        args: const <String, Object?>{},
+      );
+      host.malformed['deckSummaries'] = <String, Object?>{
+        ...real,
+        'col': 'another-collection',
+      };
+      await expectLater(
+        remote.deckSummaries(),
+        throwsA(
+          isA<InterconnectHostError>()
+              .having(
+                (InterconnectHostError e) => e.message,
+                'message',
+                SrsRemoteStoreError.profileChanged,
+              )
+              .having(
+                (InterconnectHostError e) => e.statusCode,
+                'statusCode',
+                409,
+              ),
+        ),
+      );
+      // 之后的请求仍带握手时那一份集合（没有被那次读改掉），作答不会按别的集合落写。
+      host.malformed.clear();
+      await remote.deckSummaries();
+      expect(host.bodies.last['col'], col);
+    });
+
+    test('卡片详情里笔记视图没有身份记录：按不合契约报 bad_response，不当成卡不存在', () async {
+      final SrsRemoteStore remote = await host.remote();
+      final String hostNote = (await host.store.noteIdsOfType(
+        host.store.lapisNoteTypeId,
+      )).first;
+      final String card = (await host.store.cardsOfNote(hostNote)).first.id;
+      final Map<String, Object?> real = await host.service.call(
+        profile: host.store.profileUid,
+        op: 'cardDetail',
+        args: <String, Object?>{'card': card},
+      );
+      final Map<String, Object?> result = Map<String, Object?>.of(
+        real['result']! as Map<String, Object?>,
+      );
+      final String noteId =
+          (result['note']! as Map<String, Object?>)['id']! as String;
+      result['note'] = <String, Object?>{
+        'id': noteId,
+        'tag': 'x',
+        'v': jsonEncode(<String, Object?>{
+          'id': noteId,
+          'd': null,
+          'edits': <Object?>[],
+        }),
+      };
+      host.malformed['cardDetail'] = <String, Object?>{
+        ...real,
+        'result': result,
+      };
+      await expectLater(
+        remote.cardDetail(card),
+        throwsA(
+          isA<SrsRemoteBadResponse>()
+              .having((SrsRemoteBadResponse e) => e.op, 'op', 'cardDetail')
+              .having(
+                (SrsRemoteBadResponse e) => e.cause.path,
+                'path',
+                'cardDetail.note',
+              ),
+        ),
+      );
+    });
+
+    test('新客户端 → 旧主机（不认 V2 前缀，404 无机读码）：报 upgrade_required，不当成连不上', () async {
+      final SrsRemoteHostClient oldHost = SrsRemoteHostClient(
+        repository: host.repository,
+        peer: _peer,
+        httpClient: MockClient(
+          (http.Request r) async => http.Response('Not Found', 404),
+        ),
+      );
+      await expectLater(
+        SrsRemoteStore.connect(oldHost),
+        throwsA(
+          isA<InterconnectHostError>()
+              .having(
+                (InterconnectHostError e) => e.message,
+                'message',
+                SrsRemoteStoreError.upgradeRequired,
+              )
+              .having(
+                (InterconnectHostError e) => e.statusCode,
+                'statusCode',
+                426,
+              ),
+        ),
+      );
+      // 能力位协商：只声明 V1 的主机判「主机需要升级」，列出来但不发调用（页面测试另有覆盖）。
+      expect(
+        srsRemoteHostCompat(SrsRemoteHostGeneration.v1Only),
+        SrsRemoteHostCompat.hostNeedsUpgrade,
+      );
+    });
+
+    test('旧客户端 → 新主机：V1 请求一律 426，不碰库；旧客户端按能力位判「本机需要升级」', () async {
+      // V1 请求在路由层就被拒，不看参数：卡 ID 用不存在的也一样（不依赖出卡队列）。
+      const String card = 'old-client-card';
+      final int rev = host.store.revision;
+      for (final String path in <String>[
+        '${kSrsRemoteStorePathPrefix}call',
+        '${kSrsRemoteStorePathPrefix}media/a.png',
+      ]) {
+        final shelf.Response res = await handleSrsRemoteStoreRequest(
+          host.service,
+          shelf.Request(
+            'POST',
+            Uri.parse('http://host$path'),
+            body: jsonEncode(<String, Object?>{
+              'profile': host.store.profileUid,
+              'op': 'answerAndStudy',
+              'request': 'old-client',
+              'args': <String, Object?>{
+                'card': card,
+                'rating': 3,
+                'durationMs': 1000,
+              },
+            }),
+          ),
+          'POST',
+          path,
+        );
+        expect(res.statusCode, 426, reason: path);
+        expect(
+          (jsonDecode(await res.readAsString()) as Map)['error'],
+          SrsRemoteStoreError.upgradeRequired,
+        );
+      }
+      expect(host.store.revision, rev);
+      expect(host.writes, 0);
+      expect(
+        srsRemoteHostCompat(
+          SrsRemoteHostGeneration.v2,
+          client: SrsRemoteWireVersion.v1,
+        ),
+        SrsRemoteHostCompat.clientNeedsUpgrade,
+      );
+    });
+
+    test('白名单：经远程通道调身份 / 绑定 / 导入 / 清除类命令一律被拒，库不变', () async {
+      final SrsRemoteHostClient client = host.client();
+      final String profile = host.store.profileUid;
+      final int rev = host.store.revision;
+      for (final String op in <String>[
+        'identity',
+        'binding_set',
+        'collection_join',
+        'collection_adopt',
+        'import',
+        'export',
+        'purge',
+        'profile_purge',
+        'sync2Command',
+      ]) {
+        await expectLater(
+          client.call(op, profile: profile, request: 'x-$op'),
+          throwsA(
+            isA<InterconnectHostError>().having(
+              (InterconnectHostError e) => e.message,
+              'message',
+              SrsRemoteStoreError.unknownOp,
+            ),
+          ),
+          reason: op,
+        );
+        await expectLater(
+          client.call(
+            'browseCommand',
+            profile: profile,
+            args: <String, Object?>{
+              'request': <String, Object?>{'op': op},
+            },
+          ),
+          throwsA(
+            isA<InterconnectHostError>().having(
+              (InterconnectHostError e) => e.message,
+              'message',
+              SrsRemoteStoreError.badRequest,
+            ),
+          ),
+          reason: 'browseCommand($op)',
+        );
+      }
+      expect(host.store.revision, rev);
+      expect(host.writes, 0);
+    });
+  });
+
   group('页面', () {
     setUp(() => LocaleSettings.setLocale(AppLocale.en));
 
     Future<void> settle(WidgetTester tester, {int rounds = 20}) async {
-      for (int i = 0; i < rounds; i++) {
-        await tester.runAsync(
-          () => Future<void>.delayed(const Duration(milliseconds: 10)),
-        );
-        await tester.pump(const Duration(milliseconds: 60));
-      }
+      await srsSettle(
+        tester,
+        minRounds: rounds,
+        real: const Duration(milliseconds: 10),
+      );
     }
 
     testWidgets('本机的复习页跑在主机的库上：翻面 → 评分 → 下一张 → 撤销', (
@@ -903,6 +1225,115 @@ void main() {
         () => host.store.history(first),
       ))!;
       expect(afterStale.lastEffective?.rating, 4, reason: '这次评分没记');
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    // 设计稿 11-20 #17：远程卡组行就是本机卡组行（同一个 _DeckRow、同一套色块外壳），只是数据源换成
+    // 主机快照；色块按牌组名取色（与本机同名牌组同色）；列表底部让出底部工具栏与悬浮按钮。
+    testWidgets('「已配对设备」的牌组行与本机同一套色块行：计数装在药丸里、同名同色，列表底部让出工具栏和悬浮按钮', (
+      WidgetTester tester,
+    ) async {
+      final _Host host = (await tester.runAsync(
+        () => _openHost(<String>['犬', '猫']),
+      ))!;
+      addTearDown(() => tester.runAsync(host.db.close));
+      final String parentId = (await tester.runAsync(
+        () => host.store.createDeck('Parent'),
+      ))!;
+      final (FushiDatabase localDb, SrsDbStore local) = (await tester.runAsync(
+        () => openSrsTestStore(deviceId: 'local'),
+      ))!;
+      addTearDown(() => tester.runAsync(localDb.close));
+      final Directory dir = Directory.systemTemp.createTempSync('srs_rd_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final AppModel app = SrsTestAppModel();
+      // 外壳 extendBody：悬浮底栏的高度经 MediaQuery 底部 padding 传给正文。
+      const double toolbar = 96;
+      tester.view.padding = const FakeViewPadding(bottom: toolbar);
+      addTearDown(tester.view.resetPadding);
+      await _pumpHome(
+        tester,
+        app: app,
+        local: local,
+        overrides: <Override>[
+          srsRemoteHostConnectorProvider.overrideWithValue(
+            _FakeConnector(app, host, dir),
+          ),
+        ],
+      );
+      await settle(tester);
+
+      final Finder list = find.ancestor(
+        of: find.byKey(const ValueKey<String>('srs-home-paired')),
+        matching: find.byType(ListView),
+      );
+      final double bottom =
+          (tester.widget<ListView>(list.first).padding! as EdgeInsets).bottom;
+      expect(
+        bottom,
+        greaterThanOrEqualTo(toolbar + 56),
+        reason: '底部 padding = 分区间距 + 底部工具栏 + 悬浮按钮',
+      );
+      expect(
+        bottom,
+        srsHomeListBottomPadding(
+          tester.element(find.byKey(const ValueKey<String>('srs-home-paired'))),
+        ),
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs-paired-header-host-1')),
+      );
+      await settle(tester);
+      final Finder row = find.byKey(
+        ValueKey<String>('srs-paired-deck-host-1-$parentId'),
+      );
+      expect(row, findsOneWidget);
+      // 行组件就是本机牌组树用的那一个，且走色块外壳（不是分段卡）。
+      final Finder deckRow = find.descendant(
+        of: row,
+        matching: find.byWidgetPredicate(
+          (Widget w) => w.runtimeType.toString() == '_DeckRow',
+        ),
+      );
+      expect(deckRow, findsOneWidget);
+      expect(
+        find.descendant(of: row, matching: find.byType(SrsDeckCountChips)),
+        findsOneWidget,
+        reason: '三个计数装在药丸 chip 里',
+      );
+      expect(
+        find.descendant(of: row, matching: find.byType(SrsCountTriple)),
+        findsNothing,
+        reason: '不再是分段卡行的裸数字',
+      );
+      // 色块按牌组名取色：与本机同名牌组的色块 / 海报同一个色相键。
+      final Finder band = find.byKey(
+        ValueKey<String>('srs-paired-band-host-1-$parentId'),
+      );
+      expect(band, findsOneWidget);
+      final Color fill =
+          (tester
+                      .widget<DecoratedBox>(
+                        find
+                            .descendant(
+                              of: band,
+                              matching: find.byType(DecoratedBox),
+                            )
+                            .first,
+                      )
+                      .decoration
+                  as ShapeDecoration)
+              .color!;
+      expect(
+        fill,
+        fushiPosterColors(
+          tester.element(band),
+          fushiPosterHue('srs-deck:Parent'),
+        ).container,
+      );
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(seconds: 1));
@@ -1472,9 +1903,9 @@ void main() {
     ) async {
       final (_Host host, SrsDbStore local, _CountingConnector connector) =
           await openFixture(tester);
-      // 本机这个构建仍说 V1；主机已是新代（声明 V2，V1 只是拒绝桩）→ 本机需要升级。
-      expect(kSrsRemoteClientWire, SrsRemoteWireVersion.v1);
-      connector.generations['host-1'] = SrsRemoteHostGeneration.v2;
+      // 本机这个构建说 V2；主机还是旧代（只声明 V1）→ 主机需要升级。
+      expect(kSrsRemoteClientWire, SrsRemoteWireVersion.v2);
+      connector.generations['host-1'] = SrsRemoteHostGeneration.v1Only;
       final ValueNotifier<bool> shown = await pumpReopenableHome(
         tester,
         connector,
@@ -1483,7 +1914,7 @@ void main() {
       await settle(tester);
       expect(find.byKey(pairedSection), findsOneWidget, reason: '不再静默过滤');
       expect(
-        pairedHeaderText(t.srs_remote_review_client_upgrade_required),
+        pairedHeaderText(t.srs_remote_review_host_upgrade_required),
         findsOneWidget,
       );
       expect(connector.probes, 1);
@@ -1501,24 +1932,24 @@ void main() {
       expect(connector.opens, 0);
       expect(host.ops, isEmpty);
 
-      // 主机侧回到本机能说的代（这里模拟成只声明 V1），探测过期后重探：照常握手、读牌组。
+      // 主机升级到本机能说的代（声明 V2），探测过期后重探：照常握手、读牌组。
       connector.generations.remove('host-1');
       connector.clock = connector.clock.add(kSrsPairedProbeTtl);
       await reopen(tester, shown);
       expect(connector.opens, 1);
       expect(
-        pairedHeaderText(t.srs_remote_review_client_upgrade_required),
+        pairedHeaderText(t.srs_remote_review_host_upgrade_required),
         findsNothing,
       );
       expect(pairedHeaderText(t.srs_home_deck_cards(n: 2)), findsOneWidget);
 
       // 反方向：主机重新判成代对不上时，已有会话与上次的牌组一并作废，只留提示。
-      connector.generations['host-1'] = SrsRemoteHostGeneration.v2;
+      connector.generations['host-1'] = SrsRemoteHostGeneration.v1Only;
       connector.clock = connector.clock.add(kSrsPairedProbeTtl);
       final int opsBefore = host.ops.length;
       await reopen(tester, shown);
       expect(
-        pairedHeaderText(t.srs_remote_review_client_upgrade_required),
+        pairedHeaderText(t.srs_remote_review_host_upgrade_required),
         findsOneWidget,
       );
       expect(pairedHeaderText(t.srs_home_deck_cards(n: 2)), findsNothing);
@@ -1552,12 +1983,12 @@ void main() {
       await settle(tester, rounds: 4);
       expect(connector.opens, 2, reason: '重试的握手已发出、停在闸上');
 
-      // 握手途中：主机换成新代，探测过期后再进首页重探 → 判成代对不上。
-      connector.generations['host-1'] = SrsRemoteHostGeneration.v2;
+      // 握手途中：主机换回旧代，探测过期后再进首页重探 → 判成代对不上。
+      connector.generations['host-1'] = SrsRemoteHostGeneration.v1Only;
       connector.clock = connector.clock.add(kSrsPairedProbeTtl);
       await reopen(tester, shown);
       expect(
-        pairedHeaderText(t.srs_remote_review_client_upgrade_required),
+        pairedHeaderText(t.srs_remote_review_host_upgrade_required),
         findsOneWidget,
       );
 
@@ -1566,7 +1997,7 @@ void main() {
       connector.openGate!.complete();
       await settle(tester);
       expect(
-        pairedHeaderText(t.srs_remote_review_client_upgrade_required),
+        pairedHeaderText(t.srs_remote_review_host_upgrade_required),
         findsOneWidget,
       );
       expect(pairedHeaderText(t.srs_home_deck_cards(n: 2)), findsNothing);

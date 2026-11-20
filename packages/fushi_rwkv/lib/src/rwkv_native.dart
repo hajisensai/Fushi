@@ -13,7 +13,8 @@ enum RwkvModelKind {
   /// 2,762,884 参数的上游模型（质量优先）。
   large(1),
 
-  /// 331,511 参数的小模型（sm72e25，省内存）。
+  /// 小模型（Instant-Only sm98，331,511 参数，省内存）。曲线头没训练过：
+  /// [RwkvNativeRuntime.nextIntervals] 对它抛 [RwkvNativeException.isUnsupported]。
   small(2);
 
   const RwkvModelKind(this.code);

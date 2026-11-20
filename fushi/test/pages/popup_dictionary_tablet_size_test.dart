@@ -129,7 +129,8 @@ void main() {
       expect(bounds, const LookupSize(480, 480));
     });
 
-    test('phone landscape: available space still caps the setting', () {
+    test('MANKlxTTpV phone landscape: the card leaves the other app visible '
+        'sideways, so its height may use the full available height', () {
       final LookupSize bounds = resolveExternalPopupCardBounds(
         availableWidth: 834,
         availableHeight: 376,
@@ -137,7 +138,43 @@ void main() {
         uiScale: 1.0,
       );
       expect(bounds.width, 480);
-      expect(bounds.height, 376 * kExternalPopupMaxHeightFraction);
+      expect(bounds.height, 376);
+    });
+
+    test('MANKlxTTpV landscape: a near full-width card still keeps the '
+        'vertical ceiling', () {
+      final LookupSize bounds = resolveExternalPopupCardBounds(
+        availableWidth: 834,
+        availableHeight: 376,
+        maxSize: const LookupSize(2000, 1600),
+        uiScale: 1.0,
+      );
+      expect(bounds.width, 834);
+      expect(bounds.height, 376 * kExternalPopupMaxCoverFraction);
+    });
+
+    test('MANKlxTTpV tablet portrait: a narrow card already reveals the other '
+        'app sideways, so a tall max height setting is honoured', () {
+      final LookupSize bounds = resolveExternalPopupCardBounds(
+        availableWidth: 788,
+        availableHeight: 1054,
+        maxSize: const LookupSize(480, 1000),
+        uiScale: 1.0,
+      );
+      expect(bounds.width, 480);
+      expect(bounds.height, 1000);
+    });
+
+    test('tablet portrait: a near full-width card keeps the 72% ceiling even '
+        'with a tall max height setting', () {
+      final LookupSize bounds = resolveExternalPopupCardBounds(
+        availableWidth: 652,
+        availableHeight: 1054,
+        maxSize: const LookupSize(640, 1600),
+        uiScale: 1.0,
+      );
+      expect(bounds.width, 640);
+      expect(bounds.height, 1054 * kExternalPopupMaxCoverFraction);
     });
 
     test('narrow phone: width falls back to the available width', () {
@@ -148,7 +185,7 @@ void main() {
         uiScale: 1.0,
       );
       expect(bounds.width, 344);
-      expect(bounds.height, 800 * kExternalPopupMaxHeightFraction);
+      expect(bounds.height, 800 * kExternalPopupMaxCoverFraction);
     });
 
     test('UI scale multiplies the base setting before the space cap', () {
@@ -169,7 +206,7 @@ void main() {
         uiScale: 1.5,
       );
       expect(bounds.width, 500);
-      expect(bounds.height, 600 * kExternalPopupMaxHeightFraction);
+      expect(bounds.height, 600 * kExternalPopupMaxCoverFraction);
     });
   });
 
@@ -224,21 +261,22 @@ void main() {
     expect(card.height, kLookupPopupDefaultHeight);
     expect(
       card.height,
-      lessThanOrEqualTo(screen.height * kExternalPopupMaxHeightFraction),
+      lessThanOrEqualTo(screen.height * kExternalPopupMaxCoverFraction),
     );
   });
 
-  testWidgets('phone landscape keeps the old screen-fraction ceiling', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('MANKlxTTpV: phone landscape card fills the available height '
+      'instead of the old 72% ceiling', (WidgetTester tester) async {
     const Size screen = Size(850, 392);
     final Size card = await _pumpCard(tester, logicalScreen: screen);
     expect(card.width, kLookupPopupDefaultWidth);
+    // 仍受设置（480）与可用高度（屏高减上下 gap）约束，但不再被压到 72%。
     expect(card.height, lessThan(kLookupPopupDefaultHeight));
     expect(
       card.height,
-      lessThanOrEqualTo(screen.height * kExternalPopupMaxHeightFraction),
+      greaterThan(screen.height * kExternalPopupMaxCoverFraction),
     );
+    expect(card.height, lessThan(screen.height));
   });
 
   group('UI scale (界面大小) multiplies the base max size', () {
@@ -310,9 +348,7 @@ void main() {
       expect(card, const Size(450, 400));
     });
 
-    testWidgets('phone landscape keeps the screen-fraction ceiling', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('phone landscape stays on screen', (WidgetTester tester) async {
       const Size screen = Size(850, 392);
       final Size card = await _pumpCard(
         tester,
@@ -320,10 +356,7 @@ void main() {
         anchorRect: const Rect.fromLTWH(400, 40, 20, 20),
       );
       expect(card.width, kLookupPopupDefaultWidth);
-      expect(
-        card.height,
-        lessThanOrEqualTo(screen.height * kExternalPopupMaxHeightFraction),
-      );
+      expect(card.height, lessThan(screen.height));
     });
   });
 }

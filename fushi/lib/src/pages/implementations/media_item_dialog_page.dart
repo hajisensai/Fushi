@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/services.dart';
@@ -10,6 +11,10 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:transparent_image/transparent_image.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/media_source.dart';
+import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
+import 'package:fushi/src/media/nsfw/media_nsfw_dialog.dart';
+import 'package:fushi/src/media/privacy/media_privacy_dialog.dart';
+import 'package:fushi_core/fushi_core.dart' show FushiDatabase, TagHostKind;
 import 'package:fushi/src/media/types/reader_media_type.dart';
 import 'package:fushi/src/pages/base_page.dart';
 import 'package:fushi/src/pages/implementations/media_item_edit_dialog_page.dart';
@@ -26,11 +31,15 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/components/library_reorder.dart';
+import 'package:fushi/src/utils/components/batch_action_bar.dart';
+
+part 'media_item_context_menu.part.dart';
 
 // ---------------------------------------------------------------------------
 // Action data model
@@ -62,6 +71,38 @@ enum DialogActionGroup {
   settings,
 }
 
+/// 右键菜单 / 手机底部面板（2026-11-20 #4b 统一骨架）里动作落在哪一段。
+///
+/// 四种媒体（书 / 漫画、视频、游戏、合集）只往这几段里填数据，排法由
+/// [MediaItemDialogFrame] 统一：头部 → [primary] 主操作行（大号「继续」+ 至多
+/// [MediaItemDialogFrame.primaryMax] 个带文字的常用操作）→ [workbench] 媒体
+/// 专属工作台入口 → 「整理」（[edit] 簇收成「编辑信息 ›」、[organize] 平铺、
+/// [sort] 簇收成「排序 ›」）→ [toggle] 开关行 → 「更多 ›」二级菜单（[more]）→
+/// 危险操作。宽屏居中对话框（键盘 / 手柄长按）不分这几段，仍按
+/// [DialogActionGroup] 分节平铺全部动作。
+enum ItemMenuSlot {
+  /// 主操作行里带文字的常用操作（详情 / 作品页 / 标记完成……）。
+  primary,
+
+  /// 媒体专属工作台入口（有声漫画工作台 / 制作有声书 / 字幕与刮削 / Hook）。
+  workbench,
+
+  /// 「整理」分组里平铺的一行。
+  organize,
+
+  /// 「整理」分组里收进「编辑信息 ›」的一项（重命名 / 封面 / 关联……）。
+  edit,
+
+  /// 「整理」分组里收进「排序 ›」的一项。
+  sort,
+
+  /// 开关行（私密 / NSFW），见 [DialogToggleAction]。
+  toggle,
+
+  /// 收进「更多 ›」二级菜单的低频项。
+  more,
+}
+
 sealed class DialogAction {
   const DialogAction({
     required this.label,
@@ -69,6 +110,8 @@ sealed class DialogAction {
     required this.onPressed,
     this.group = DialogActionGroup.organize,
     this.selected = false,
+    this.slot,
+    this.subtitle,
   });
   final String label;
   final IconData icon;
@@ -80,6 +123,20 @@ sealed class DialogAction {
   /// 开关类动作当前处于「开」（已读完、悬浮字幕开着……）：宫格格子与菜单行
   /// 用强调色标出，让用户点之前就知道现在的状态。
   final bool selected;
+
+  /// 右键菜单 / 底部面板里的落点（见 [ItemMenuSlot]）。null = 按 [group] 推断：
+  /// 「整理」组平铺进整理分组，其余收进「更多」。
+  final ItemMenuSlot? slot;
+
+  /// 菜单行的副文字（工作台的状态等）。
+  final String? subtitle;
+
+  /// 实际落点：显式 [slot] 优先，否则按 [group] 推断。
+  ItemMenuSlot get menuSlot =>
+      slot ??
+      (group == DialogActionGroup.organize
+          ? ItemMenuSlot.organize
+          : ItemMenuSlot.more);
 }
 
 final class DialogQuickAction extends DialogAction {
@@ -89,6 +146,8 @@ final class DialogQuickAction extends DialogAction {
     required super.onPressed,
     super.group = DialogActionGroup.content,
     super.selected,
+    super.slot,
+    super.subtitle,
   });
 }
 
@@ -99,7 +158,57 @@ final class DialogListAction extends DialogAction {
     super.icon = FushiIcons.settings,
     super.group,
     super.selected,
+    super.slot,
+    super.subtitle,
   });
+}
+
+/// 开关行当前状态：[value] 是**有效**状态（含合集 / 来源库继承），[locked] = 状态
+/// 来自继承、在这一行拨不掉（点行改走 [DialogAction.onPressed] 打开说明对话框）。
+typedef ItemMenuToggleState = ({bool value, bool locked});
+
+/// 开关类菜单项（私密 / NSFW）：右键菜单与底部面板里画成带开关的一行，打开时
+/// 读 [loadState]、拨动直接 [onChanged] 落库、菜单不关；宽屏对话框里仍是普通
+/// 一行，点了走 [onPressed]（完整的开关对话框）。
+final class DialogToggleAction extends DialogListAction {
+  const DialogToggleAction({
+    required super.label,
+    required super.icon,
+    required super.onPressed,
+    required this.loadState,
+    required this.onChanged,
+  }) : super(slot: ItemMenuSlot.toggle);
+
+  final Future<ItemMenuToggleState> Function() loadState;
+
+  /// 落库并给出结果提示；失败时抛出（行把开关拨回去）。
+  final Future<void> Function(bool value) onChanged;
+}
+
+/// 媒体专属工作台入口：右键菜单 / 底部面板里画成主色调的一整行，副行是
+/// [subtitle]（同步给的状态 / 没开始时的引导语），给了 [loadStatus] 时菜单打开后
+/// 异步换成真实进度（返回 null 保留 [subtitle]）。
+final class DialogWorkbenchAction extends DialogListAction {
+  const DialogWorkbenchAction({
+    required super.label,
+    required super.icon,
+    required super.onPressed,
+    super.subtitle,
+    this.loadStatus,
+    this.children = const <DialogListAction>[],
+  }) : super(slot: ItemMenuSlot.workbench, group: DialogActionGroup.content);
+
+  final Future<String?> Function()? loadStatus;
+
+  /// 非空 = 工作台是一组动作（视频的「字幕与刮削」）：右键菜单里是子菜单行，
+  /// [onPressed] 不用；宽屏对话框里展开成这些动作本身（一项都不丢）。
+  final List<DialogListAction> children;
+
+  /// 宽屏对话框 / 宫格里平铺用：带子项的工作台换成子项本身。
+  static Iterable<DialogListAction> flatten(DialogListAction action) =>
+      action is DialogWorkbenchAction && action.children.isNotEmpty
+      ? action.children
+      : <DialogListAction>[action];
 }
 
 final class DialogDangerAction extends DialogAction {
@@ -119,6 +228,53 @@ final class DialogDangerAction extends DialogAction {
 
   bool get enabled => disabledReason == null;
 }
+
+/// 「私密」开关行（书 / 视频 / 合集 / 游戏共用一份定义）：右键菜单里直接拨动，
+/// 状态被合集 / 来源库锁定时点行打开完整的说明对话框（[showMediaPrivacyDialog]）。
+DialogToggleAction mediaPrivacyToggleAction(
+  BuildContext context, {
+  required FushiDatabase db,
+  required TagHostKind kind,
+  required String entryKey,
+  required String title,
+}) => DialogToggleAction(
+  label: t.media_privacy_action,
+  icon: FushiIcons.lock,
+  onPressed: () => unawaited(
+    showMediaPrivacyDialog(
+      context,
+      db: db,
+      kind: kind,
+      entryKey: entryKey,
+      title: title,
+    ),
+  ),
+  loadState: () => loadMediaPrivacyToggleState(db, kind, entryKey),
+  onChanged: (bool value) => writeMediaPrivacy(db, kind, entryKey, value),
+);
+
+/// 「NSFW」开关行（书 / 视频 / 合集共用；游戏走编辑页的「成人向」）。
+DialogToggleAction mediaNsfwToggleAction(
+  BuildContext context, {
+  required FushiDatabase db,
+  required TagHostKind kind,
+  required String entryKey,
+  required String title,
+}) => DialogToggleAction(
+  label: t.media_nsfw_action,
+  icon: FushiIcons.visibilityOff,
+  onPressed: () => unawaited(
+    showMediaNsfwDialog(
+      context,
+      db: db,
+      kind: kind,
+      entryKey: entryKey,
+      title: title,
+    ),
+  ),
+  loadState: () => loadMediaNsfwToggleState(db, kind, entryKey),
+  onChanged: (bool value) => writeMediaNsfw(db, kind, entryKey, value),
+);
 
 /// 删除类动作不可用时写在按钮 / 菜单行下方的原因说明。
 class _DangerActionDisabledNote extends StatelessWidget {
@@ -153,8 +309,17 @@ class MediaItemDialogPage extends BasePage {
     this.extraActions,
     this.showLaunchAction = true,
     this.coverFallbackIcon,
+    this.nsfw,
+    this.launchLabel,
+    this.progressLabel,
     super.key,
   });
+
+  /// 启动按钮文案；null = 「阅读」（[t.dialog_read]）。
+  final String? launchLabel;
+
+  /// 见 [MediaItemDialogFrame.progressLabel]。
+  final String? progressLabel;
 
   final MediaItem item;
   final bool isHistory;
@@ -166,6 +331,9 @@ class MediaItemDialogPage extends BasePage {
   /// 供 SRT/字幕卡与网格 `_buildSrtCover` 的占位判据统一；其它来源不传（保持
   /// 「无封面则不渲染封面块」的既有行为）。
   final IconData? coverFallbackIcon;
+
+  /// 条目的 NSFW 宿主（见 [MediaItemDialogFrame.nsfw]）；null = 不可标的条目。
+  final MediaNsfwTarget? nsfw;
 
   @override
   BasePageState createState() => _MediaItemDialogPageState();
@@ -188,6 +356,7 @@ class _MediaItemDialogPageState extends BasePageState<MediaItemDialogPage> {
       DialogListAction(
         label: t.dialog_edit_info,
         icon: FushiIcons.edit,
+        slot: ItemMenuSlot.edit,
         onPressed: _executeEdit,
       ),
   ];
@@ -260,11 +429,13 @@ class _MediaItemDialogPageState extends BasePageState<MediaItemDialogPage> {
         : (fallbackIcon != null ? _buildFallbackCover(fallbackIcon) : null);
     return MediaItemDialogFrame(
       cover: cover,
+      nsfw: widget.nsfw,
       title: displayTitle,
       author: hasAuthor ? author : null,
       showLaunchAction: widget.showLaunchAction,
-      launchLabel: t.dialog_read,
+      launchLabel: widget.launchLabel ?? t.dialog_read,
       onLaunch: _executeLaunch,
+      progressLabel: widget.progressLabel,
       quickActions: _quickActions,
       listActions: _listActions,
       dangerActions: _dangerActions,
@@ -422,6 +593,49 @@ Future<T?> showMediaItemActions<T>({
   );
 }
 
+/// 多选态下右键 / 长按的批量菜单（#4b）：头部写「已选 N 项」，只列当前选中集
+/// 能做的批量动作（与底部批量操作栏同一份 [BatchAction] 定义），删除类排进
+/// 危险段。走与单条菜单同一套容器（右键在指针处 / 手机底部面板）。
+Future<void> showBatchItemActions({
+  required BuildContext context,
+  required int selectedCount,
+  required List<BatchAction> actions,
+  Offset? anchor,
+}) => showMediaItemActions<void>(
+  context: context,
+  anchor: anchor,
+  builder: (BuildContext menuContext) {
+    VoidCallback closeThen(VoidCallback action) => () {
+      Navigator.pop(menuContext);
+      action();
+    };
+    return MediaItemDialogFrame(
+      title: t.batch_selected_count(n: selectedCount),
+      showLaunchAction: false,
+      listActions: <DialogListAction>[
+        for (final BatchAction action in actions)
+          if (action.enabled && !action.destructive)
+            DialogListAction(
+              label: action.label,
+              icon: action.icon,
+              // 批量动作不多，全部平铺（不进「更多」）。
+              slot: ItemMenuSlot.organize,
+              onPressed: closeThen(action.onPressed),
+            ),
+      ],
+      dangerActions: <DialogDangerAction>[
+        for (final BatchAction action in actions)
+          if (action.enabled && action.destructive)
+            DialogDangerAction(
+              label: action.label,
+              icon: action.icon,
+              onPressed: closeThen(action.onPressed),
+            ),
+      ],
+    );
+  },
+);
+
 /// 分组的显示名（分节标题 / 子菜单名）。
 String _groupLabel(DialogActionGroup group) => switch (group) {
   DialogActionGroup.organize => t.item_actions_group_organize,
@@ -472,12 +686,23 @@ class MediaItemDialogFrame extends StatelessWidget {
     this.dangerActions = const [],
     this.coverBackdrop,
     this.coverMaterial,
+    this.nsfw,
+    this.progressLabel,
     super.key,
   });
+
+  /// 右键菜单 / 底部面板头部标题下的进度行（「第 2 卷 · 12%」「继续看第 3 集」
+  /// 「游玩 42 小时」）。null 时退回 [author]。
+  final String? progressLabel;
 
   /// 封面 widget（调用方自己负责 `BoxFit.contain` 与解码失败兜底）。本骨架把它
   /// 放进按宽高比定尺寸的封面卡里，所以 contain 恰好铺满、不留边。
   final Widget? cover;
+
+  /// 条目的 NSFW 宿主（拍板台 w04vrhUAaX）：它是 NSFW 且「模糊 NSFW 封面」开着时
+  /// 头部封面与库页卡一样打模糊——长按菜单是标 NSFW 的入口，不能在这里露原图。
+  /// null = 不可标的条目（远端 / 词典历史等），封面原样。
+  final MediaNsfwTarget? nsfw;
 
   /// 封面图源：只用来探测封面宽高比（横版视频封面与竖版书封排法不同）。
   ///
@@ -531,8 +756,13 @@ class MediaItemDialogFrame extends StatelessWidget {
   /// 与分组列表——一排挤满低频管理动作会把它们抬成主操作，层级是反的。
   static const int _heroMaxActions = 3;
 
-  /// 右键菜单顶部图标排最多放几个快捷动作；更多时改成菜单行。
-  static const int _menuIconBarMax = 5;
+  /// 右键菜单 / 底部面板主操作行里，「继续」之外最多几个带文字的常用操作；
+  /// 多出来的 [ItemMenuSlot.primary] 动作收进「更多」。
+  static const int primaryMax = 3;
+
+  /// 「整理」分组最多平铺几行（含「编辑信息 ›」「排序 ›」两个簇行），多出来的
+  /// 平铺项收进「更多」——1280×720 窗口里菜单不出滚动条（#4b 验收）。
+  static const int organizeMaxRows = 4;
 
   static ImageProvider? _downsampled(ImageProvider? source) {
     // ResizeImage 不能嵌套（内层断言 getTargetSize == null）：先剥掉外层所有
@@ -554,7 +784,7 @@ class MediaItemDialogFrame extends StatelessWidget {
   List<DialogAction> get _groupedActions {
     final List<DialogAction> all = <DialogAction>[
       if (!_quickAsHero) ...quickActions,
-      ...listActions,
+      ...listActions.expand(DialogWorkbenchAction.flatten),
     ];
     return <DialogAction>[
       for (final DialogActionGroup group in DialogActionGroup.values)
@@ -594,6 +824,7 @@ class MediaItemDialogFrame extends StatelessWidget {
       DialogListAction(
         label: t.library_reorder_action,
         icon: FushiIcons.dragIndicator,
+        slot: ItemMenuSlot.sort,
         onPressed: () {
           Navigator.pop(context);
           onStartReorder();
@@ -603,6 +834,8 @@ class MediaItemDialogFrame extends StatelessWidget {
     dangerActions: dangerActions,
     coverBackdrop: coverBackdrop,
     coverMaterial: coverMaterial,
+    nsfw: nsfw,
+    progressLabel: progressLabel,
   );
 
   @override
@@ -628,14 +861,16 @@ class MediaItemDialogFrame extends StatelessWidget {
     switch (layout) {
       case MediaItemActionsLayout.contextMenu:
         return resolve(
-          (double? aspect) => _ContextMenuPanel(frame: this, aspect: aspect),
+          (double? aspect) =>
+              _ItemMenuPanel(frame: this, aspect: aspect, flyout: true),
         );
       case MediaItemActionsLayout.sheet:
+        // 手机长按：与右键菜单同一份数据、同一套分段，二级菜单改成面板内下钻。
         return resolve(
           (double? aspect) => SafeArea(
             top: false,
             child: SingleChildScrollView(
-              child: _buildGridBody(context, aspect: aspect, inSheet: true),
+              child: _ItemMenuPanel(frame: this, aspect: aspect, flyout: false),
             ),
           ),
         );
@@ -688,11 +923,19 @@ class MediaItemDialogFrame extends StatelessWidget {
         ? BorderRadius.all(Radius.circular(radius))
         : shelfMaterialRadius(material);
     // 前景封面只画这一次（材质 / 旧卡共用）：外层再决定材质框还是圆角投影卡。
-    final Widget front = ClipRRect(
+    final Widget clipped = ClipRRect(
       borderRadius: borderRadius,
       clipBehavior: Clip.antiAlias,
       child: cover!,
     );
+    // NSFW 条目（拍板台 w04vrhUAaX）：前景封面按「模糊 NSFW 封面」打模糊。
+    final Widget front = switch (nsfw) {
+      final MediaNsfwTarget target => MediaNsfwCover(
+        target: target,
+        child: clipped,
+      ),
+      null => clipped,
+    };
     final Widget card;
     if (material != null) {
       // 材质封面：外轮廓 / 投影 / 光泽全归 [ShelfCoverFrame]，不再叠本卡的
@@ -1590,201 +1833,6 @@ class _ContextMenuLayout extends SingleChildLayoutDelegate {
       anchor != oldDelegate.anchor || padding != oldDelegate.padding;
 }
 
-/// 右键菜单本体（设计稿 E）：迷你书头 → 快捷动作图标排（不多于
-/// [MediaItemDialogFrame._menuIconBarMax] 个，悬停有 tooltip）→ 启动 → 整理 /
-/// 内容 / 进度分段 → 「设置」子菜单 → 删除类。
-///
-/// MD3：surfaceContainer 面板、圆角 16、行高 40；Apple：系统实色悬浮面、
-/// macOS 菜单行（[_AppleMenuRow] 桌面口径）。方向键上下移动焦点，→ 打开子菜单，
-/// ← / Esc 收起子菜单，Esc 关闭菜单。
-class _ContextMenuPanel extends StatelessWidget {
-  const _ContextMenuPanel({required this.frame, required this.aspect});
-
-  final MediaItemDialogFrame frame;
-  final double? aspect;
-
-  static const double _width = 288;
-
-  @override
-  Widget build(BuildContext context) {
-    final bool apple = isGlassDesign(context);
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    final bool iconBar =
-        frame.quickActions.isNotEmpty &&
-        frame.quickActions.length <= MediaItemDialogFrame._menuIconBarMax;
-    final List<DialogAction> rows = <DialogAction>[
-      if (!iconBar) ...frame.quickActions,
-      ...frame.listActions,
-    ];
-    final List<DialogAction> settings = rows
-        .where((DialogAction a) => a.group == DialogActionGroup.settings)
-        .toList();
-    final List<List<DialogAction>> segments = <List<DialogAction>>[
-      for (final DialogActionGroup group in DialogActionGroup.values)
-        if (group != DialogActionGroup.settings)
-          rows.where((DialogAction a) => a.group == group).toList(),
-    ].where((List<DialogAction> s) => s.isNotEmpty).toList();
-    int index = 0;
-    final List<Widget> children = <Widget>[
-      FushiStaggeredEntrance(index: index++, child: _buildHeader(context)),
-      if (iconBar)
-        FushiStaggeredEntrance(
-          index: index++,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(4, 0, 4, 6),
-            child: _MenuIconBar(actions: frame.quickActions),
-          ),
-        ),
-      if (frame._hasLaunch)
-        FushiStaggeredEntrance(
-          index: index++,
-          child: _ContextMenuRow(
-            icon: FushiIcons.play,
-            label: frame.launchLabel!,
-            onPressed: frame.onLaunch!,
-            emphasized: true,
-          ),
-        ),
-      for (int s = 0; s < segments.length; s++) ...<Widget>[
-        if (s > 0 || frame._hasLaunch) const _MenuDivider(),
-        for (final DialogAction action in segments[s])
-          FushiStaggeredEntrance(
-            index: index++,
-            child: _ContextMenuRow(
-              icon: action.icon,
-              label: action.label,
-              onPressed: action.onPressed,
-              selected: action.selected,
-            ),
-          ),
-      ],
-      if (settings.isNotEmpty) ...<Widget>[
-        if (segments.isNotEmpty || frame._hasLaunch) const _MenuDivider(),
-        FushiStaggeredEntrance(
-          index: index++,
-          child: _ContextSubmenuRow(
-            label: _groupLabel(DialogActionGroup.settings),
-            actions: settings,
-          ),
-        ),
-      ],
-      if (frame.dangerActions.isNotEmpty) ...<Widget>[
-        const _MenuDivider(),
-        for (final DialogDangerAction action in frame.dangerActions)
-          FushiStaggeredEntrance(
-            index: index++,
-            child: action.enabled
-                ? _ContextMenuRow(
-                    icon: action.icon,
-                    label: action.label,
-                    onPressed: action.onPressed,
-                    destructive: !action.muted,
-                  )
-                : _ContextMenuDisabledRow(action: action),
-          ),
-      ],
-    ];
-    final ShapeBorder shape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.all(Radius.circular(apple ? 12 : 16)),
-    );
-    final Widget body = Shortcuts(
-      shortcuts: const <ShortcutActivator, Intent>{
-        SingleActivator(LogicalKeyboardKey.arrowDown): NextFocusIntent(),
-        SingleActivator(LogicalKeyboardKey.arrowUp): PreviousFocusIntent(),
-      },
-      child: FocusTraversalGroup(
-        policy: OrderedTraversalPolicy(),
-        child: FushiEntranceScope(
-          child: Padding(
-            padding: const EdgeInsets.all(6),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: children,
-            ),
-          ),
-        ),
-      ),
-    );
-    return SizedBox(
-      width: _width,
-      child: apple
-          ? DecoratedBox(
-              decoration: fushiAppleSolidFloatingDecoration(
-                context,
-                shape: shape,
-              ),
-              child: Material(
-                type: MaterialType.transparency,
-                child: SingleChildScrollView(child: body),
-              ),
-            )
-          : Material(
-              color: scheme.surfaceContainer,
-              shape: shape,
-              elevation: 3,
-              shadowColor: Colors.black.withValues(alpha: 0.5),
-              surfaceTintColor: Colors.transparent,
-              clipBehavior: Clip.antiAlias,
-              child: SingleChildScrollView(child: body),
-            ),
-    );
-  }
-
-  Widget _buildHeader(BuildContext context) {
-    final bool apple = isGlassDesign(context);
-    final TextTheme textTheme = Theme.of(context).textTheme;
-    final Color titleColor = apple
-        ? appleColorsOf(context).label
-        : Theme.of(context).colorScheme.onSurface;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 6, 8, 10),
-      child: Row(
-        children: <Widget>[
-          if (frame.cover != null) ...<Widget>[
-            frame._buildCoverCard(
-              context,
-              aspect: aspect,
-              maxWidth: 32,
-              maxHeight: 46,
-              radius: 4,
-            ),
-            const SizedBox(width: 10),
-          ],
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                FushiTooltip(
-                  message: frame.title,
-                  child: Text(
-                    frame.title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: (textTheme.titleSmall ?? const TextStyle()).copyWith(
-                      color: titleColor,
-                    ),
-                  ),
-                ),
-                if (frame.author != null)
-                  Text(
-                    frame.author!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: (textTheme.bodySmall ?? const TextStyle()).copyWith(
-                      color: frame._authorStyle(context).color,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _MenuDivider extends StatelessWidget {
   const _MenuDivider();
 
@@ -1799,72 +1847,6 @@ class _MenuDivider extends StatelessWidget {
         height: fushiHairline(context),
         child: ColoredBox(color: color),
       ),
-    );
-  }
-}
-
-/// 右键菜单顶部的连接式图标按钮排：首尾大圆角、中间小圆角（M3E 连接式按钮
-/// 组），每个都有 tooltip（文字只进 tooltip 与语义）。
-class _MenuIconBar extends StatelessWidget {
-  const _MenuIconBar({required this.actions});
-
-  final List<DialogQuickAction> actions;
-
-  @override
-  Widget build(BuildContext context) {
-    final bool apple = isGlassDesign(context);
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    final Color background = apple
-        ? appleColorsOf(context).secondaryFill
-        : scheme.surfaceContainerHighest;
-    final Color foreground = apple
-        ? appleColorsOf(context).label
-        : scheme.onSurface;
-    const Radius outer = Radius.circular(20);
-    const Radius inner = Radius.circular(8);
-    return Row(
-      children: <Widget>[
-        for (int i = 0; i < actions.length; i++) ...<Widget>[
-          if (i > 0) const SizedBox(width: 2),
-          Expanded(
-            child: FushiTooltip(
-              message: actions[i].label,
-              child: FushiPressScale(
-                child: Material(
-                  color: actions[i].selected ? scheme.primary : background,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadiusDirectional.horizontal(
-                      start: i == 0 ? outer : inner,
-                      end: i == actions.length - 1 ? outer : inner,
-                    ).resolve(Directionality.of(context)),
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: InkWell(
-                    onTap: actions[i].onPressed,
-                    child: Semantics(
-                      button: true,
-                      label: actions[i].label,
-                      excludeSemantics: true,
-                      child: SizedBox(
-                        height: 40,
-                        child: Center(
-                          child: FushiIcon(
-                            actions[i].icon,
-                            size: 20,
-                            color: actions[i].selected
-                                ? scheme.onPrimary
-                                : foreground,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ],
     );
   }
 }
@@ -1932,10 +1914,17 @@ class _ContextMenuRow extends StatelessWidget {
     this.emphasized = false,
     this.focusNode,
     this.onHover,
+    this.subtitle,
+    this.autofocus = false,
+    super.key,
   });
 
   final IconData icon;
   final String label;
+  final bool autofocus;
+
+  /// 行尾的副文字（「更多」列出里面有哪些项、簇行列出子项、工作台状态）。
+  final String? subtitle;
   final VoidCallback onPressed;
   final Widget? trailing;
   final bool selected;
@@ -1953,11 +1942,13 @@ class _ContextMenuRow extends StatelessWidget {
         child: _AppleMenuRow(
           icon: icon,
           label: label,
+          subtitle: subtitle,
           onPressed: onPressed,
           destructive: destructive,
           selected: selected,
           trailing: trailing,
           focusNode: focusNode,
+          autofocus: autofocus,
         ),
       );
     }
@@ -1977,6 +1968,7 @@ class _ContextMenuRow extends StatelessWidget {
       type: MaterialType.transparency,
       child: InkWell(
         focusNode: focusNode,
+        autofocus: autofocus,
         onHover: onHover,
         onTap: onPressed,
         borderRadius: const BorderRadius.all(Radius.circular(12)),
@@ -1990,14 +1982,31 @@ class _ContextMenuRow extends StatelessWidget {
               children: <Widget>[
                 FushiIcon(icon, size: 20, color: iconColor),
                 const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    label,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: style,
+                if (subtitle == null)
+                  Expanded(
+                    child: Text(
+                      label,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: style,
+                    ),
+                  )
+                else ...<Widget>[
+                  Text(label, maxLines: 1, style: style),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      subtitle!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.end,
+                      style:
+                          (Theme.of(context).textTheme.bodySmall ??
+                                  const TextStyle())
+                              .copyWith(color: scheme.onSurfaceVariant),
+                    ),
                   ),
-                ),
+                ],
                 if (selected && trailing == null)
                   FushiIcon(FushiIcons.check, size: 18, color: scheme.primary),
                 if (trailing != null) trailing!,
@@ -2006,232 +2015,6 @@ class _ContextMenuRow extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-/// 「设置」子菜单行：悬停、点按、Enter 或 → 打开紧贴本行的浮出子菜单（右侧
-/// 放不下时翻到左侧），焦点移进子菜单首项；← / Esc 收起并把焦点还给本行。
-class _ContextSubmenuRow extends StatefulWidget {
-  const _ContextSubmenuRow({required this.label, required this.actions});
-
-  final String label;
-  final List<DialogAction> actions;
-
-  @override
-  State<_ContextSubmenuRow> createState() => _ContextSubmenuRowState();
-}
-
-class _ContextSubmenuRowState extends State<_ContextSubmenuRow> {
-  final OverlayPortalController _portal = OverlayPortalController();
-  final LayerLink _link = LayerLink();
-  final FocusNode _rowFocus = FocusNode(debugLabel: 'item_menu_submenu_row');
-  final FocusScopeNode _menuScope = FocusScopeNode(
-    debugLabel: 'item_menu_submenu',
-  );
-  bool _hoverRow = false;
-  bool _hoverMenu = false;
-
-  static const double _width = 232;
-
-  /// 子菜单与本行的水平间隙。
-  static const double _gap = 4;
-
-  /// 子菜单的内边距：首项与本行顶边对齐，所以整体上提这么多。
-  static const double _verticalPadding = 6;
-
-  /// 离屏幕边缘至少留这么多。
-  static const double _screenMargin = 8;
-
-  @override
-  void dispose() {
-    _rowFocus.dispose();
-    _menuScope.dispose();
-    super.dispose();
-  }
-
-  void _open({bool focusFirst = false}) {
-    if (!_portal.isShowing) setState(_portal.show);
-    if (focusFirst) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _menuScope.requestFocus();
-        _menuScope.nextFocus();
-      });
-    }
-  }
-
-  void _close({bool refocusRow = false}) {
-    if (_portal.isShowing) setState(_portal.hide);
-    if (refocusRow) _rowFocus.requestFocus();
-  }
-
-  void _syncHover() {
-    // 指针从行移到子菜单要穿过两者之间的缝：延一帧再判，免得一离开行就收起。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      if (_hoverRow || _hoverMenu) {
-        _open();
-      } else if (!_menuScope.hasFocus) {
-        _close();
-      }
-    });
-    WidgetsBinding.instance.scheduleFrame();
-  }
-
-  /// 子菜单相对本行的落点：右侧放不下就翻到左侧，下方放不下就改成底边对齐本行
-  /// 往上长。子菜单每项与本行是同一个 [_ContextMenuRow]，高度按本行实测高度推算。
-  ({bool flipLeft, bool flipUp}) _placement(BuildContext context) {
-    final RenderObject? object = context.findRenderObject();
-    if (_link.leaderSize == null || object is! RenderBox || !object.hasSize) {
-      return (flipLeft: false, flipUp: false);
-    }
-    final Size screen = MediaQuery.sizeOf(context);
-    final Rect row = object.localToGlobal(Offset.zero) & object.size;
-    final double height =
-        _verticalPadding * 2 + widget.actions.length * row.height;
-    return (
-      flipLeft: row.right + _gap + _width > screen.width - _screenMargin,
-      flipUp:
-          row.top - _verticalPadding + height > screen.height - _screenMargin &&
-          row.bottom + _verticalPadding - height >= _screenMargin,
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final ({bool flipLeft, bool flipUp}) placement = _placement(context);
-    final bool flip = placement.flipLeft;
-    final bool up = placement.flipUp;
-    // [CompositedTransformFollower] 把 followerAnchor 量在它**自己的**尺寸上。下面的
-    // [Align] 会撑满整个 Overlay，所以它的对齐必须与 followerAnchor 是同一个角：
-    // 否则翻到左侧时（followerAnchor = 右上角）锚的是整屏宽盒子的右边，子菜单被
-    // 推到屏幕左侧外面——游戏库最右一列的「设置」子菜单因此打不开（DnG4jZW57v）。
-    final Alignment corner = Alignment(flip ? 1 : -1, up ? 1 : -1);
-    return OverlayPortal(
-      controller: _portal,
-      overlayChildBuilder: (BuildContext overlayContext) =>
-          CompositedTransformFollower(
-            link: _link,
-            showWhenUnlinked: false,
-            targetAnchor: Alignment(flip ? -1 : 1, up ? 1 : -1),
-            followerAnchor: corner,
-            offset: Offset(
-              flip ? -_gap : _gap,
-              up ? _verticalPadding : -_verticalPadding,
-            ),
-            child: Align(
-              alignment: corner,
-              child: MouseRegion(
-                onEnter: (_) {
-                  _hoverMenu = true;
-                  _syncHover();
-                },
-                onExit: (_) {
-                  _hoverMenu = false;
-                  _syncHover();
-                },
-                child: Shortcuts(
-                  shortcuts: const <ShortcutActivator, Intent>{
-                    SingleActivator(LogicalKeyboardKey.arrowDown):
-                        NextFocusIntent(),
-                    SingleActivator(LogicalKeyboardKey.arrowUp):
-                        PreviousFocusIntent(),
-                    SingleActivator(LogicalKeyboardKey.arrowLeft):
-                        DismissIntent(),
-                    SingleActivator(LogicalKeyboardKey.escape): DismissIntent(),
-                  },
-                  child: Actions(
-                    actions: <Type, Action<Intent>>{
-                      DismissIntent: CallbackAction<DismissIntent>(
-                        onInvoke: (DismissIntent intent) {
-                          _close(refocusRow: true);
-                          return null;
-                        },
-                      ),
-                    },
-                    child: FocusScope(
-                      node: _menuScope,
-                      child: _buildSubmenu(overlayContext),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-      child: CompositedTransformTarget(
-        link: _link,
-        child: Shortcuts(
-          shortcuts: const <ShortcutActivator, Intent>{
-            SingleActivator(LogicalKeyboardKey.arrowRight): ActivateIntent(),
-          },
-          child: _ContextMenuRow(
-            icon: FushiIcons.settings,
-            label: widget.label,
-            focusNode: _rowFocus,
-            onPressed: () => _open(focusFirst: true),
-            onHover: (bool hovering) {
-              _hoverRow = hovering;
-              _syncHover();
-            },
-            trailing: FushiIcon(
-              FushiIcons.chevronRight,
-              size: 18,
-              color: isGlassDesign(context)
-                  ? appleColorsOf(context).secondaryLabel
-                  : Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSubmenu(BuildContext context) {
-    final bool apple = isGlassDesign(context);
-    final ShapeBorder shape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.all(Radius.circular(apple ? 12 : 16)),
-    );
-    final Widget body = FushiEntranceScope(
-      child: Padding(
-        padding: const EdgeInsets.all(_verticalPadding),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            for (int i = 0; i < widget.actions.length; i++)
-              FushiStaggeredEntrance(
-                index: i,
-                child: _ContextMenuRow(
-                  icon: widget.actions[i].icon,
-                  label: widget.actions[i].label,
-                  onPressed: widget.actions[i].onPressed,
-                  selected: widget.actions[i].selected,
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-    return SizedBox(
-      width: _width,
-      child: apple
-          ? DecoratedBox(
-              decoration: fushiAppleSolidFloatingDecoration(
-                context,
-                shape: shape,
-              ),
-              child: Material(type: MaterialType.transparency, child: body),
-            )
-          : Material(
-              color: Theme.of(context).colorScheme.surfaceContainer,
-              shape: shape,
-              elevation: 3,
-              shadowColor: Colors.black.withValues(alpha: 0.5),
-              surfaceTintColor: Colors.transparent,
-              clipBehavior: Clip.antiAlias,
-              child: body,
-            ),
     );
   }
 }
@@ -2334,10 +2117,16 @@ class _AppleMenuRow extends StatefulWidget {
     this.selected = false,
     this.trailing,
     this.focusNode,
+    this.subtitle,
+    this.autofocus = false,
   });
 
   final IconData icon;
   final String label;
+  final bool autofocus;
+
+  /// 见 [_ContextMenuRow.subtitle]：标签之后、行尾之前，次要色单行省略。
+  final String? subtitle;
   final VoidCallback onPressed;
   final bool destructive;
 
@@ -2389,12 +2178,33 @@ class _AppleMenuRowState extends State<_AppleMenuRow> {
       size: compact ? 15 : 20,
       color: foreground,
     );
-    final Widget text = Text(
-      widget.label,
-      maxLines: 2,
-      overflow: TextOverflow.ellipsis,
-      style: labelStyle,
-    );
+    final String? subtitle = widget.subtitle;
+    final Widget text = subtitle == null
+        ? Text(
+            widget.label,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: labelStyle,
+          )
+        : Row(
+            children: <Widget>[
+              Text(widget.label, maxLines: 1, style: labelStyle),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.end,
+                  style: labelStyle.copyWith(
+                    color: accentHighlight
+                        ? palette.onAccent.withValues(alpha: 0.8)
+                        : palette.secondaryLabel,
+                  ),
+                ),
+              ),
+            ],
+          );
     final Widget? check = widget.selected
         ? FushiIcon(
             FushiIcons.check,
@@ -2424,6 +2234,7 @@ class _AppleMenuRowState extends State<_AppleMenuRow> {
     );
     return FocusableActionDetector(
       focusNode: widget.focusNode,
+      autofocus: widget.autofocus,
       mouseCursor: SystemMouseCursors.click,
       actions: <Type, Action<Intent>>{
         ActivateIntent: CallbackAction<ActivateIntent>(

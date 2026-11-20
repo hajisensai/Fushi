@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 
 /// 串行任务队列：把异步任务排成一条链依次执行，每个任务的返回 future 独立完成。
 ///
@@ -75,5 +76,51 @@ class SerialJobQueue {
           Error.throwWithStackTrace(error, stack),
       onError: onError,
     );
+  }
+}
+
+/// 有界并发闸：同时最多 [maxConcurrent] 个任务在跑，多出来的按调用顺序排队，前面的
+/// 任务一结束（成功或抛错）就把名额直接交给队头。
+///
+/// 只管并发数，不管完成顺序——需要按入队顺序收尾的场景在外面再套一条
+/// [SerialJobQueue]（见 `ImmersionMiningEngine`：抽取走本闸、落卡走串行队列）。
+class BoundedJobLimiter {
+  BoundedJobLimiter(this.maxConcurrent)
+    : assert(maxConcurrent > 0, 'maxConcurrent must be positive');
+
+  final int maxConcurrent;
+
+  int _running = 0;
+  final Queue<Completer<void>> _waiters = Queue<Completer<void>>();
+
+  /// 占着名额的任务数（含刚被转交名额、还没开跑的那一个）。
+  int get running => _running;
+
+  /// 在等名额的任务数。
+  int get waiting => _waiters.length;
+
+  /// 拿到名额后执行 [job]，返回它的结果（异常原样抛出）。名额在 [job] 结束时一定归还。
+  Future<T> run<T>(Future<T> Function() job) async {
+    if (_running < maxConcurrent) {
+      _running++;
+    } else {
+      final Completer<void> slot = Completer<void>();
+      _waiters.add(slot);
+      // 名额由 [_release] 原样转交，计数不变。
+      await slot.future;
+    }
+    try {
+      return await job();
+    } finally {
+      _release();
+    }
+  }
+
+  void _release() {
+    if (_waiters.isNotEmpty) {
+      _waiters.removeFirst().complete();
+    } else {
+      _running--;
+    }
   }
 }

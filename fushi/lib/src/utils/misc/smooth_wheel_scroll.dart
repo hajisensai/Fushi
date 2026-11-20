@@ -1,5 +1,6 @@
 import 'dart:async' show scheduleMicrotask, unawaited;
 import 'dart:io' show Platform;
+import 'dart:typed_data' show Float64List;
 
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
@@ -34,6 +35,27 @@ bool isCoarseDesktopPointerScrollDelta(
 const double kCoarseWheelMinPhysicalDelta = 30;
 
 const Duration kDesktopWheelScrollDuration = Duration(milliseconds: 140);
+
+/// 把滚轮补间的落点对齐到**物理像素格**：返回离 [offset] 最近的、乘以
+/// [physicalPixelsPerUnit]（每滚动单位对应的物理像素）后是整数的偏移；后者为 null
+/// 时原样返回。
+///
+/// 起因（BUG-4842，视频系列墙滚轮卡顿）：Windows 一档 = 100 物理 px，但整体「界面
+/// 大小」缩放是首启按窗口算出的任意小数（如 1.0051），一档实际移动 100.51 物理
+/// px——落点与上一次停稳的位置差个零头，屏上所有已烘焙的面（`BakedSurface`，
+/// Impeller 下手动的 raster cache）都贴不回原纹理，每一档都把整屏几十个封面面重新
+/// 离屏渲染一遍。停稳位置都在同一张物理像素格上，任意两次停稳之间的位移就都是
+/// 整数像素，原纹理原样可贴。
+///
+/// 每档距离只差不到半个物理像素，与系统「每次滚动行数」决定距离（BUG-2009）不冲突。
+double snapScrollOffsetToDevicePixels(
+  double offset, {
+  required double? physicalPixelsPerUnit,
+}) {
+  final double? k = physicalPixelsPerUnit;
+  if (k == null || !k.isFinite || k <= 0) return offset;
+  return (offset * k).roundToDouble() / k;
+}
 
 /// 见 [SmoothWheelScrollScope.isRewinding]。全 app 只有一个根部补间层、且拉回
 /// 是同步完成的，一个全局标志足够。
@@ -245,7 +267,10 @@ class _SmoothWheelScrollScopeState extends State<SmoothWheelScrollScope> {
         step.to == p.minScrollExtent || step.to == p.maxScrollExtent;
     final double target = atEdge
         ? step.to
-        : (base + delta).clamp(p.minScrollExtent, p.maxScrollExtent).toDouble();
+        : snapScrollOffsetToDevicePixels(
+            base + delta,
+            physicalPixelsPerUnit: _physicalPixelsPerScrollUnit(p),
+          ).clamp(p.minScrollExtent, p.maxScrollExtent).toDouble();
     // 拉回起点只是补间的内部步骤：发出的那条反向 ScrollUpdate 不是用户在往回
     // 滚。按滚动方向收放 chrome 的监听者（浮动工具栏 / 大标题）据
     // [SmoothWheelScrollScope.isRewinding] 忽略它，否则每拨一档都会「收起 →
@@ -273,6 +298,29 @@ class _SmoothWheelScrollScopeState extends State<SmoothWheelScrollScope> {
             if (identical(_eases[p], ease)) _eases.remove(p);
           }),
     );
+  }
+
+  /// [p] 的滚动区每滚一个单位，内容在屏幕上移动多少物理像素：设备像素比 × 祖先
+  /// 变换沿滚动轴的缩放（含整体「界面大小」缩放）。变换带旋转 / 斜切 / 透视、或
+  /// 滚动区不在树上时返回 null（不对齐）。
+  static double? _physicalPixelsPerScrollUnit(ScrollPosition p) {
+    final BuildContext context = p.context.storageContext;
+    if (!context.mounted) return null;
+    final RenderObject? box = context.findRenderObject();
+    if (box is! RenderBox || !box.attached) return null;
+    final double? dpr = View.maybeOf(context)?.devicePixelRatio;
+    if (dpr == null) return null;
+    final Float64List m = box.getTransformTo(null).storage;
+    const double eps = 1e-9;
+    if (m[1].abs() > eps ||
+        m[4].abs() > eps ||
+        m[3].abs() > eps ||
+        m[7].abs() > eps ||
+        (m[15] - 1).abs() > eps) {
+      return null;
+    }
+    final double scale = p.axis == Axis.vertical ? m[5] : m[0];
+    return scale > 0 ? scale * dpr : null;
   }
 
   @override

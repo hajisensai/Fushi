@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show TargetPlatform;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/onboarding/onboarding_steps.dart';
@@ -89,6 +90,31 @@ void main() {
           OnboardingStepId.clickLookup,
         ]),
       );
+    });
+
+    test('extension guide step: Android and desktop yes, iOS no', () {
+      // 新手引导里的 browserExtensionAvailable 来自 browserExtensionInstallAvailableOn
+      // （onboarding_wizard_page.dart 的 _browserExtensionAvailable）。
+      final Set<OnboardingFeature> selected = <OnboardingFeature>{
+        OnboardingFeature.web,
+      };
+      for (final TargetPlatform p in TargetPlatform.values) {
+        final bool available = browserExtensionInstallAvailableOn(p);
+        expect(
+          _steps(
+            selected,
+            browserExtensionAvailable: available,
+          ).contains(OnboardingStepId.browserExtension),
+          switch (p) {
+            TargetPlatform.android ||
+            TargetPlatform.windows ||
+            TargetPlatform.macOS ||
+            TargetPlatform.linux => isTrue,
+            TargetPlatform.iOS || TargetPlatform.fuchsia => isFalse,
+          },
+          reason: '$p',
+        );
+      }
     });
 
     test('extension guide needs both desktop capability and selection', () {
@@ -471,6 +497,25 @@ void main() {
       expect(
         OnboardingFeature.values.map(moduleOfOnboardingFeature),
         isNot(contains(ModuleId.srs)),
+      );
+    });
+  });
+
+  group('module checkboxes', () {
+    // 反馈 Soq3tInVt1：音乐模块进向导方格，且双向映射一致（写回 module_music_enabled）。
+    test('music has its own checkbox that maps back to the music module', () {
+      expect(
+        moduleOfOnboardingFeature(onboardingFeatureOfModule(ModuleId.music)!),
+        ModuleId.music,
+      );
+      expect(
+        kOnboardingModuleFeatures,
+        contains(onboardingFeatureOfModule(ModuleId.music)),
+      );
+      // 听音乐不属于学外语那条链路：「只看媒体」预设不取消它。
+      expect(
+        kOnboardingLanguageLearningFeatures,
+        isNot(contains(onboardingFeatureOfModule(ModuleId.music))),
       );
     });
   });

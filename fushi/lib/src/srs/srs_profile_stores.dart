@@ -24,12 +24,13 @@ library;
 import 'dart:async';
 import 'dart:io';
 
-import 'package:fushi_core/fushi_core.dart' show SrsDatabase;
+import 'package:fushi_engine/srs/srs_reads.dart';
 import 'package:fushi_engine/srs/srs_miner.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/srs_style_store.dart';
-import 'package:fushi_srs/fushi_srs.dart' show FsrsEngine;
+import 'package:fushi_srs/fushi_srs.dart'
+    show FsrsEngine, SrsProfileUnboundException;
 
 import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi_engine/srs/srs_mining_target.dart';
@@ -215,15 +216,23 @@ class SrsProfileStores {
 
   /// [profileUid] 在本机 srs.db 里有没有复习数据（激活过 / 制过卡 / 同步来过的配置都有）。只读：不打开副本、
   /// 不播种内置记录——互联主机列「保存到」时据此只列已有复习的配置，列表本身不该给每份配置建出一份复习。
-  /// 复习模块关着时为 false。
+  /// 复习模块关着时为 false；还没绑定新代集合的配置（从没用过复习：内核报 [SrsProfileUnboundException]）同样为
+  /// false——没有集合就没有数据，与整包备份导出跳过未绑定 profile 同口径。
   Future<bool> hasReviewData(String profileUid) async {
     final SrsStorage? storage = await _deps.storage();
     if (storage == null) return false;
-    final SrsDatabase db = storage.db;
-    final query = db.select(db.srsEntities)
-      ..where((t) => t.profileUid.equals(profileUid))
-      ..limit(1);
-    return await query.getSingleOrNull() != null;
+    final SrsReadResult r;
+    try {
+      r = await srsRead(
+        storage.core,
+        profileUid,
+        'entity_count',
+        const <String, Object?>{'limit': 1},
+      );
+    } on SrsProfileUnboundException {
+      return false;
+    }
+    return (r.json['n']! as int) > 0;
   }
 
   /// [profileUid] 的副本（见 [minerFor]）；复习模块关着时为 null。
@@ -268,7 +277,6 @@ class SrsProfileStores {
     final String deviceId = await _deps.deviceId();
     final Directory support = await _deps.supportRoot();
     return SrsDbStore.open(
-      db: storage.db,
       core: storage.core,
       profileUid: profileUid,
       deviceId: deviceId,

@@ -43,6 +43,38 @@ void main() {
     expect(out, 'cpu=19.3s[fushi-rwkv-#×2 19.0s R2; DartWorker 0.3s]');
   });
 
+  // BUG-4757（反馈 Z9FwhY9377）：MIUI 熄屏耗电检查说「25 分钟用了 45 分钟 CPU」，而每 30 s 的
+  // cpu= 只覆盖最后几个窗口（那时进程已闲）；累计读数回答整段时间里谁在吃 CPU。
+  test('cpuSum：进程总数取 /proc/self/stat，分组取活线程累计、按累计排序取前 3', () {
+    final Map<int, ProcThreadStat> threads = <int, ProcThreadStat>{
+      1: const ProcThreadStat(name: '1.ui', state: 'S', ticks: 1200),
+      2: const ProcThreadStat(
+        name: 'Chrome_InProcGp',
+        state: 'R',
+        ticks: 250000,
+      ),
+      3: const ProcThreadStat(name: 'DartWorker', state: 'S', ticks: 300),
+      4: const ProcThreadStat(name: 'DartWorker', state: 'S', ticks: 200),
+      5: const ProcThreadStat(name: 'mpv/vo', state: 'S', ticks: 100),
+      6: const ProcThreadStat(name: 'idle', state: 'S', ticks: 0),
+    };
+    expect(
+      describeCumulativeCpu(270190, threads),
+      'cpuSum=2701.9s[Chrome_InProcGp 2500.0s R1; #.ui 12.0s; DartWorker×2 5.0s; +1]',
+    );
+    // 读不到 /proc/self/stat：总数退回活线程之和，不含已退出线程，只是下限，标成 ≥。
+    expect(
+      describeCumulativeCpu(null, threads, top: 1),
+      'cpuSum≥2518.0s[Chrome_InProcGp 2500.0s R1; +3]',
+    );
+    // 没有活线程吃过 CPU：只给进程总数；都没有返回 null。
+    expect(
+      describeCumulativeCpu(50, const <int, ProcThreadStat>{}),
+      'cpuSum=0.5s',
+    );
+    expect(describeCumulativeCpu(null, const <int, ProcThreadStat>{}), isNull);
+  });
+
   test('线程名归组', () {
     expect(threadGroupOf('fushi-rwkv-12'), 'fushi-rwkv-#');
     expect(threadGroupOf('DartWorker'), 'DartWorker');

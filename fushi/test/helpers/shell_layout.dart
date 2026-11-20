@@ -1,5 +1,5 @@
-// 库页布局钉子（PR #3397 外壳改版）：产品默认是拼贴色块
-// （[ShellContentLayout.defaultLayout]），守「封面网格」结构（SliverGrid 格子、
+// 库页布局钉子（PR #3397 外壳改版）：2026-11-15 起产品默认是封面网格
+// （[ShellContentLayout.defaultLayout]），钉子保留以免默认再变；守「封面网格」结构（SliverGrid 格子、
 // 封面下 ShelfCardMeta、首屏主卡 FushiContinueSpotlight、横滚行卡宽……）的用例
 // 显式钉回网格；拼贴下的同一批行为由各文件里显式切到 collage 的用例另行断言。
 import 'package:fushi/src/utils/adaptive/shell_style.dart'

@@ -74,26 +74,35 @@ List<String> parseSrsCustomStudyTags(String raw) {
   return out;
 }
 
-/// 弹出对话框；取消返回 null。[todayExtension] = 这个牌组今天已追加的上限（显示用）。
+/// 弹出对话框；取消返回 null。[todayExtension] = 这个牌组今天已追加的上限（显示用）；[reviewUnit] = 这个牌组每日
+/// 复习上限的单位（追加的复习上限与它同单位，[SrsDeckView.limitUnit]）。
 Future<SrsCustomStudyChoice?> showSrsCustomStudyDialog({
   required BuildContext context,
   required String deckName,
   ({int newCards, int reviews}) todayExtension = (newCards: 0, reviews: 0),
+  SrsLimitUnit reviewUnit = SrsLimitUnit.reviews,
 }) => showAppDialog<SrsCustomStudyChoice>(
   context: context,
-  builder: (BuildContext _) =>
-      SrsCustomStudyDialog(deckName: deckName, todayExtension: todayExtension),
+  builder: (BuildContext _) => SrsCustomStudyDialog(
+    deckName: deckName,
+    todayExtension: todayExtension,
+    reviewUnit: reviewUnit,
+  ),
 );
 
 class SrsCustomStudyDialog extends StatefulWidget {
   const SrsCustomStudyDialog({
     required this.deckName,
     this.todayExtension = (newCards: 0, reviews: 0),
+    this.reviewUnit = SrsLimitUnit.reviews,
     super.key,
   });
 
   final String deckName;
   final ({int newCards, int reviews}) todayExtension;
+
+  /// 每日复习上限的单位：「今日追加复习」按它显示（次 / 张 / 分钟）。
+  final SrsLimitUnit reviewUnit;
 
   static const double contentWidth = 520;
 
@@ -204,15 +213,29 @@ class _SrsCustomStudyDialogState extends State<SrsCustomStudyDialog> {
         key: const ValueKey<String>('srs-custom-study-extend-reviews'),
         title: t.srs_custom_study_extra_reviews,
         subtitle: widget.todayExtension.reviews > 0
-            ? t.srs_custom_study_extended_so_far(
-                n: widget.todayExtension.reviews,
-              )
+            ? switch (widget.reviewUnit) {
+                SrsLimitUnit.reviews =>
+                  t.srs_custom_study_extended_reviews_so_far(
+                    n: widget.todayExtension.reviews,
+                  ),
+                SrsLimitUnit.cards => t.srs_custom_study_extended_so_far(
+                  n: widget.todayExtension.reviews,
+                ),
+                SrsLimitUnit.minutes =>
+                  t.srs_custom_study_extended_minutes_so_far(
+                    n: widget.todayExtension.reviews,
+                  ),
+              }
             : null,
         value: _extendReviews,
         min: 1,
         max: SrsDeckLimitExtension.max,
         step: 10,
-        format: (int n) => t.srs_custom_study_cards_value(n: n),
+        format: (int n) => switch (widget.reviewUnit) {
+          SrsLimitUnit.reviews => t.srs_custom_study_reviews_value(n: n),
+          SrsLimitUnit.cards => t.srs_custom_study_cards_value(n: n),
+          SrsLimitUnit.minutes => t.srs_custom_study_minutes_value(n: n),
+        },
         onChanged: (int n) => _extendReviews = n,
       ),
     ],

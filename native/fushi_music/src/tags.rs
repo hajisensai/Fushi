@@ -36,6 +36,33 @@ pub fn is_audio_extension(ext: &str) -> bool {
     AUDIO_EXTENSIONS.contains(&ext.to_ascii_lowercase().as_str())
 }
 
+/// 曲库也收的视频容器（小写，不带点）：音乐来源目录里的本地 MV（拍板台 jeNKF9u0WJ，
+/// 维护者 2026-11-16 选 A「音乐库接受视频容器」）。曲库里它们和歌曲一样排队、只放音轨
+/// （音乐引擎 libmpv `vid=no`）；看画面交给视频播放页（ASS 特效字幕 / 暂停识别画面文字）。
+///
+/// = Dart 侧 `kVideoExtensions`（`packages/fushi_engine/lib/media/media_extensions.dart`）
+/// 去掉 `mp4` 再去点号——`mp4` 已在 [AUDIO_EXTENSIONS]。守卫测试
+/// `fushi/test/build/music_audio_extensions_rust_parity_guard_test.dart` 读本表文本钉死同步。
+pub const VIDEO_EXTENSIONS: &[&str] = &[
+    "mkv", "avi", "mov", "webm", "m4v", "ts", "m2ts", "mts", "flv", "wmv", "mpg", "mpeg", "ogv",
+    "rmvb", "rm", "vob",
+];
+
+pub fn is_video_extension(ext: &str) -> bool {
+    VIDEO_EXTENSIONS.contains(&ext.to_ascii_lowercase().as_str())
+}
+
+/// 曲库扫描收不收这个扩展名：音频，或音乐来源里的视频容器（本地 MV）。
+pub fn is_track_extension(ext: &str) -> bool {
+    is_audio_extension(ext) || is_video_extension(ext)
+}
+
+/// lofty 能按 ISO BMFF 读标签 / 时长的视频容器；其余视频容器 lofty 不认（Matroska /
+/// AVI / MPEG-PS / TS ...），有的还会被误嗅成 MPEG 音频或 Ogg 流，直接按扩展名退化。
+fn video_container_lofty_readable(ext: &str) -> bool {
+    matches!(ext, "m4v" | "mov")
+}
+
 /// 一个文件的标签与属性（CUE 虚拟曲目在此基础上覆盖曲目级字段）。
 #[derive(Debug, Clone, Default)]
 pub struct FileMeta {
@@ -378,6 +405,25 @@ pub fn read_meta_from<R: Read + Seek>(
         return Ok((meta, None));
     }
 
+    if is_video_extension(ext) {
+        if !video_container_lofty_readable(ext) {
+            return Ok((meta_from_extension(ext), None));
+        }
+        // m4v / mov：能读就读（标题、艺人、时长）；读不出也照收——这是一段 MV 而不是
+        // 「读不出标签的坏音频文件」，标题由调用方用文件名补。
+        return Ok(read_lofty(reader, ext, want_cover)
+            .unwrap_or_else(|_| (meta_from_extension(ext), None)));
+    }
+
+    read_lofty(reader, ext, want_cover)
+}
+
+/// lofty 通路（[read_meta_from] 的通用分支）。
+fn read_lofty<R: Read + Seek>(
+    reader: &mut R,
+    ext: &str,
+    want_cover: bool,
+) -> Result<(FileMeta, Option<Vec<u8>>), String> {
     reader.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
     let probe = Probe::new(&mut *reader)
         .options(ParseOptions::new())
@@ -498,7 +544,8 @@ pub fn read_meta_from<R: Read + Seek>(
 }
 
 /// lofty 认不出的容器（TAK / TTA / MKA ...）：扩展名定编码，其余留空（标题由调用方用
-/// 文件名补）。
+/// 文件名补）。视频容器（[VIDEO_EXTENSIONS]）不知道里面是什么音频编码，编码记 `unknown`
+/// （格式徽章不显示），不冒充 MKA。
 pub fn meta_from_extension(ext: &str) -> FileMeta {
     let (codec, lossless) = codec_of_extension(ext).unwrap_or(("unknown", false));
     FileMeta {
@@ -724,5 +771,40 @@ mod tests {
         assert_eq!(meta.title.as_deref(), Some("夜に駆ける"));
         assert_eq!(meta.artists, vec!["ヨルシカ".to_owned()]);
         assert_eq!(meta.album.as_deref(), Some("だから僕は"));
+    }
+
+    #[test]
+    fn video_containers_are_library_tracks_without_lofty() {
+        // 拍板台 jeNKF9u0WJ：音乐来源里的本地 MV（mkv 等）进曲库。
+        for ext in [
+            "mkv", "MKV", "webm", "m4v", "mov", "ts", "ogv", "mp4", "flac",
+        ] {
+            assert!(is_track_extension(ext), "{ext}");
+        }
+        assert!(!is_track_extension("png"));
+        assert!(!is_track_extension("srt"));
+        // 视频容器与音频表两两不相交（mp4 只在音频表里）。
+        for v in VIDEO_EXTENSIONS {
+            assert!(!AUDIO_EXTENSIONS.contains(v), "{v} 在两张表里");
+        }
+
+        // Matroska：EBML 头。lofty 不认，按扩展名退化，编码不冒充 MKA。
+        let mut mkv = vec![0x1A, 0x45, 0xDF, 0xA3, 0x9F, 0x42, 0x86, 0x81, 0x01];
+        mkv.extend(vec![0u8; 64]);
+        let (meta, cover) = read_meta_from(&mut std::io::Cursor::new(mkv), "mkv", true).unwrap();
+        assert_eq!(meta.codec.as_deref(), Some("unknown"));
+        assert!(meta.title.is_none());
+        assert!(cover.is_none());
+
+        // Ogg Theora：lofty 认得 Ogg 外壳但不认 Theora，走 lofty 会报错丢文件；视频容器
+        // 不进 lofty。
+        let mut ogv = b"OggS".to_vec();
+        ogv.extend(vec![0u8; 64]);
+        assert!(read_meta_from(&mut std::io::Cursor::new(ogv), "ogv", false).is_ok());
+
+        // m4v 走 lofty；读不出（这里是垃圾字节）也照收，不当坏文件报错。
+        let (m4v, _) =
+            read_meta_from(&mut std::io::Cursor::new(vec![0u8; 64]), "m4v", false).unwrap();
+        assert_eq!(m4v.codec.as_deref(), Some("unknown"));
     }
 }

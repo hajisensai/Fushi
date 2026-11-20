@@ -12,8 +12,11 @@ import 'dart:typed_data';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
+import 'package:fushi_engine/tts/render/tts_cast.dart';
+import 'package:fushi_engine/tts/render/tts_cast_timing.dart';
 import 'package:fushi_engine/tts/render/tts_pause.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
+import 'package:fushi_engine/tts/tts_direction.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
@@ -96,24 +99,42 @@ String buildTtsConcatList(List<({String path, int durationMs})> entries) {
   return buffer.toString();
 }
 
+/// 一句实际下发的演出参数：种子按选角表（单句重生成写下的 → 作品默认
+/// [TtsCast.defaultSeed]），再去掉引擎 [support] 不支持的字段（缓存键只含生效的
+/// 字段，见 [TtsDirection.cacheIdentity]）。
+TtsDirection ttsSentenceDirection({
+  required TtsDirectionSupport support,
+  required TtsCast cast,
+  required TtsPlanSentence sentence,
+}) => effectiveTtsDirection(
+  support,
+  TtsDirection(seed: cast.seedFor(sentence.section, sentence.matchStart)),
+);
+
 /// 一章各处的停顿（毫秒），长度 = 句数 + 1：`[0]` 章首、`[k]`（1 ≤ k < n）第 k-1
-/// 句之后、`[n]` 章尾。句间停顿按计划的段落 / 场景边界取 [TtsPausePreset.afterSentence]。
+/// 句之后、`[n]` 章尾。
+///
+/// 这章跑过选角标注（[TtsCast.directsSection]）时按演出稿算：转场基础值 + 一拍，
+/// 段落 / 场景停顿取预设（[ttsCastChapterGapsMs]，与漫画共用转场判定）；否则（或没给
+/// [cast]）句间停顿只按计划的段落 / 场景边界取 [TtsPausePreset.afterSentence]。
 List<int> ttsChapterGapsMs({
   required List<TtsPlanSentence> sentences,
   required TtsRenderChapter chapter,
   required TtsPausePreset preset,
-}) {
-  final int n = chapter.planIndices.length;
-  return <int>[
-    preset.chapterLeadMs,
-    for (int k = 0; k + 1 < n; k++)
-      preset.afterSentence(
-        endsParagraph: sentences[chapter.planIndices[k]].endsParagraph,
-        sceneBreakAfter: sentences[chapter.planIndices[k]].sceneBreakAfter,
+  TtsCast? cast,
+}) => ttsCastChapterGapsMs(
+  sentences: <TtsTimedSentence>[
+    for (final int i in chapter.planIndices)
+      (
+        endsParagraph: sentences[i].endsParagraph,
+        sceneBreakAfter: sentences[i].sceneBreakAfter,
+        line: cast
+            ?.lines[ttsLineKey(sentences[i].section, sentences[i].matchStart)],
       ),
-    preset.chapterTailMs,
-  ];
-}
+  ],
+  preset: preset,
+  directed: cast?.directsSection(chapter.section) ?? false,
+);
 
 /// 一章成品的总时长：句音频 + 全部停顿。
 int ttsChapterFileDurationMs(List<int> durationsMs, List<int> gapsMs) {
@@ -277,9 +298,11 @@ List<AudioCue> ttsCuesOnSingleTimeline(
   ];
 }
 
-/// 已编码一章的 sidecar：按序的缓存键 + 每句时长 + 停顿预设 + 是否做了响度归一化。
-/// 全部一致才算同一章（续跑跳过重编码与重合成——缓存里的逐句音频这时可能早被
-/// 淘汰了，时长只能从这里取）；换停顿预设 / 响度开关都会重编码。
+/// 已编码一章的 sidecar：按序的缓存键 + 每句时长 + 停顿预设 + 实际插的停顿 + 是否
+/// 做了响度归一化。全部一致才算同一章（续跑跳过重编码与重合成——缓存里的逐句音频
+/// 这时可能早被淘汰了，时长只能从这里取）；换停顿预设 / 响度开关、或演出稿改了
+/// 停顿（类型 / 一拍 / 说话人）都会重编码——cue 时间轴按本次算的停顿累加，成品里的
+/// 静音必须是同一份。
 class TtsChapterManifest {
   const TtsChapterManifest({
     required this.section,
@@ -287,6 +310,7 @@ class TtsChapterManifest {
     required this.durationsMs,
     required this.pausePreset,
     required this.loudnorm,
+    this.gapsMs,
   });
 
   static const int _version = 2;
@@ -299,11 +323,19 @@ class TtsChapterManifest {
   final String pausePreset;
   final bool loudnorm;
 
+  /// 编码时实际插的停顿（[ttsChapterGapsMs]）；null = 旧 sidecar（那时停顿只由
+  /// 预设决定）。
+  final List<int>? gapsMs;
+
+  /// [gapsMs] 是这次要插的停顿；[legacyGapsMs] 是只按预设算的停顿，用来认旧 sidecar
+  /// （它没记停顿，编码时插的就是这一份）。
   bool matches(
     int section,
     List<String> keys, {
     required String pausePreset,
     required bool loudnorm,
+    required List<int> gapsMs,
+    List<int>? legacyGapsMs,
   }) {
     if (section != this.section ||
         keys.length != this.keys.length ||
@@ -313,6 +345,11 @@ class TtsChapterManifest {
     }
     for (int i = 0; i < keys.length; i++) {
       if (keys[i] != this.keys[i]) return false;
+    }
+    final List<int>? recorded = this.gapsMs ?? legacyGapsMs;
+    if (recorded == null || recorded.length != gapsMs.length) return false;
+    for (int i = 0; i < gapsMs.length; i++) {
+      if (recorded[i] != gapsMs[i]) return false;
     }
     return true;
   }
@@ -324,6 +361,7 @@ class TtsChapterManifest {
     'durationsMs': durationsMs,
     'pause': pausePreset,
     'loudnorm': loudnorm,
+    if (gapsMs != null) 'gaps': gapsMs,
   });
 
   /// 解析失败 / 版本不符 / 长度不一致返回 null（调用方当作没编码过）。
@@ -356,12 +394,23 @@ class TtsChapterManifest {
     ];
     if (k.length != keys.length || d.length != durations.length) return null;
     if (k.length != d.length) return null;
+    final Object? gaps = json['gaps'];
+    List<int>? g;
+    if (gaps != null) {
+      if (gaps is! List) return null;
+      g = <int>[
+        for (final Object? e in gaps)
+          if (e is int && e >= 0) e,
+      ];
+      if (g.length != gaps.length || g.length != k.length + 1) return null;
+    }
     return TtsChapterManifest(
       section: section,
       keys: k,
       durationsMs: d,
       pausePreset: pause,
       loudnorm: loudnorm,
+      gapsMs: g,
     );
   }
 }
@@ -376,6 +425,69 @@ Future<TtsChapterManifest?> readTtsChapterManifest(
   if (!await audio.exists() || await audio.length() == 0) return null;
   if (!await sidecar.exists()) return null;
   return TtsChapterManifest.decode(await sidecar.readAsString());
+}
+
+/// 已入库成品里一章的清单 sidecar 后缀（持久目录里与 `<stem>.m4a` 同名）。
+const String kTtsPersistedManifestSuffix = '.tts-chapter.json';
+
+/// 读已入库成品（持久目录）里一章的清单；成品或清单缺失 / 损坏返回 null。
+Future<TtsChapterManifest?> readTtsPersistedChapter(
+  Directory persistDir,
+  TtsRenderChapter chapter,
+) async {
+  final File audio = File(p.join(persistDir.path, '${chapter.stem}.m4a'));
+  final File sidecar = File(
+    p.join(persistDir.path, '${chapter.stem}$kTtsPersistedManifestSuffix'),
+  );
+  if (!await audio.exists() || await audio.length() == 0) return null;
+  if (!await sidecar.exists()) return null;
+  return TtsChapterManifest.decode(await sidecar.readAsString());
+}
+
+/// 把已入库的一章（成品 + 清单）拷进任务工作目录，当作本任务编好的章（校对、入库
+/// 都按工作目录里的路径走）。
+Future<void> adoptTtsPersistedChapter(
+  Directory persistDir,
+  Directory workDir,
+  TtsRenderChapter chapter,
+) async {
+  await workDir.create(recursive: true);
+  final File audio = File(p.join(workDir.path, '${chapter.stem}.m4a'));
+  final File part = File('${audio.path}.part');
+  await File(p.join(persistDir.path, '${chapter.stem}.m4a')).copy(part.path);
+  await part.rename(audio.path);
+  await File(
+    p.join(persistDir.path, '${chapter.stem}$kTtsPersistedManifestSuffix'),
+  ).copy(p.join(workDir.path, '${chapter.stem}.json'));
+}
+
+/// 入库时把本次每章的清单存进持久目录，删掉不属于这次成品的旧清单。
+Future<void> persistTtsChapterManifests({
+  required Directory workDir,
+  required Directory persistDir,
+  required List<TtsRenderChapter> chapters,
+}) async {
+  final Set<String> keep = <String>{
+    for (final TtsRenderChapter c in chapters)
+      '${c.stem}$kTtsPersistedManifestSuffix',
+  };
+  if (await persistDir.exists()) {
+    await for (final FileSystemEntity e in persistDir.list()) {
+      final String name = p.basename(e.path);
+      if (e is File &&
+          name.endsWith(kTtsPersistedManifestSuffix) &&
+          !keep.contains(name)) {
+        await e.delete();
+      }
+    }
+  }
+  for (final TtsRenderChapter c in chapters) {
+    final File source = File(p.join(workDir.path, '${c.stem}.json'));
+    if (!await source.exists()) continue;
+    await source.copy(
+      p.join(persistDir.path, '${c.stem}$kTtsPersistedManifestSuffix'),
+    );
+  }
 }
 
 /// 成品统一的采样率 / 声道。每章都一样，导出 M4B 时才能 `-c copy` 直接拼（多声优

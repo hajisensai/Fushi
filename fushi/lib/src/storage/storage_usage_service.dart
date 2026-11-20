@@ -6,6 +6,8 @@ import 'package:fushi_core/fushi_core.dart'
     show databaseSnapshotMainFileName, fnv1a32Hex, isDeletableDatabaseSnapshot;
 import 'package:fushi_engine/media/collections/shelf_sort.dart'
     show naturalCompare;
+import 'package:fushi_engine/sync/interconnect_file_box_prune.dart'
+    show InterconnectSyncDataUsage, measureInterconnectSyncData;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/storage/app_paths.dart';
@@ -53,6 +55,13 @@ enum StorageCategoryId {
 
   /// 字幕副本：`video_subtitles`。
   subtitles,
+
+  /// 字幕生成任务：`<support>/asr_jobs`（[kAsrJobsSupportChild]）。视频 / 音乐字幕管线
+  /// 的任务缓存（识别稿、抽出的音轨、校对批次，删了下次重跑从头来）、上游转录任务，
+  /// 以及原盘字幕产物 `video_subtitles/disc_out` 与音乐字幕产物 `music_subtitles/out`
+  /// ——后两者是库里登记着的字幕，只读展示，随库行删除回收。明细见
+  /// [subtitleJobEntriesSync]。
+  subtitleJobs,
 
   /// 视频着色器与 mpv Lua 脚本：`mpv_shaders`（Anime4K 下载与用户自导入混放）
   /// + `mpv_scripts`（体量极小，不值得独立类目）。
@@ -136,6 +145,11 @@ enum StorageEntryKind {
   /// 临时目录内的本地备份归档聚合项；删除仍走通用文件删除原语。
   backupArchives,
 
+  /// 互联 host 同步数据里的「旧版残留」聚合项（BUG-4906；`paths` = 单个
+  /// `<sync-data>` 目录；删除走 fushi_engine `pruneDeadInterconnectFileBox`，识别口径
+  /// 与扫描侧 `measureInterconnectSyncData` 同源）。
+  interconnectLegacyFileBox,
+
   /// 类目根下的磁盘子项，只读展示（删它就是裸 `Directory.delete`，绕过墓碑/引用护栏）。
   readOnly,
 
@@ -158,6 +172,9 @@ enum StorageEntryKind {
 /// 快照残留是 [StorageEntryKind.databaseSnapshots] 专用原语、不走裸删）、
 /// other（白名单之外，语义不明）。
 ///
+/// [StorageCategoryId.subtitleJobs] 在内：它的任务缓存是可重跑出来的派生数据；同一
+/// 类目里登记着的字幕产物（[kSubtitleJobOutputDirNames]）另以 readOnly 产出，不能裸删。
+///
 /// [StorageCategoryId.backups] 在内：它产出的
 /// [StorageEntryKind.backupArchives] 聚合项同样接通用文件删除原语，装的是上次导出
 /// 遗留的临时包、无任何 DB 行引用。以前它在事实上可删却不在本集合里，集合的文档
@@ -170,6 +187,7 @@ const Set<StorageCategoryId> kDeletableEntryCategories = <StorageCategoryId>{
   StorageCategoryId.shaders,
   StorageCategoryId.cache,
   StorageCategoryId.backups,
+  StorageCategoryId.subtitleJobs,
 };
 
 /// 明细「可直接删」的 kind —— 与 [kDeletableEntryCategories] 是同一件事的两个面：
@@ -190,6 +208,7 @@ class StorageEntryUsage {
     required this.kind,
     this.externalPaths = const <String>[],
     this.group,
+    this.itemCount = 0,
   });
 
   /// 域内主键（EPUB 书 = bookKey，纯字幕书 = `SrtBooks.uid`，词典 = 词典名，
@@ -217,6 +236,11 @@ class StorageEntryUsage {
   /// 明细分组名（目前只有视频：所属作品 / 合集名）。同组条目在
   /// [StorageCategoryUsage.entries] 里连续排列，UI 在组首插组头；null = 不分组。
   final String? group;
+
+  /// 聚合条目内含的对象个数，UI 拿它翻译标题（目前只有
+  /// [StorageEntryKind.interconnectLegacyFileBox]：旧版残留的书文件夹个数）；
+  /// 其余条目恒 0。
+  final int itemCount;
 }
 
 /// 视频条目的扫描输入（由 UI 层从 `video_books` + 合集成员表取出后传入）。
@@ -470,6 +494,10 @@ const Map<StorageCategoryId, List<String>> kStorageCategoryDocumentsChildren =
         // 在线音源插件曲目下载（`music_downloads/<插件>/<专辑>/`）：与音频 CD 抓轨同属
         // 「下载进来的媒体文件」，归同一类目，不为音乐另立类目。
         'music_downloads',
+        // iOS「文件」App 收件箱收进来的视频批次（拍板台 nLXhu0d7gV，`inbox_imports/video/<批次>/`）：
+        // 与音频 CD 抓轨同为「仅此一次」导入后原地引用的媒体文件，归同一类目。书 / 漫画
+        // 原地扫收件箱、不进这里（导入器已复制进书库，见 `import_inbox.dart`）。
+        'inbox_imports',
       ],
       StorageCategoryId.covers: <String>[
         'video_covers',
@@ -498,6 +526,113 @@ const Map<StorageCategoryId, List<String>> kStorageCategoryDocumentsChildren =
       ],
       StorageCategoryId.ocrModels: <String>[],
     };
+
+/// `<support>/asr_jobs`（[StorageCategoryId.subtitleJobs] 的根）：视频字幕管线的任务根
+/// `video_subtitles`（`videoSubtitleJobsRootUnder`）、音乐字幕的 `music_subtitles`、上游
+/// 转录任务都在它下面。
+const String kAsrJobsSupportChild = 'asr_jobs';
+
+/// 字幕管线的任务根（[kAsrJobsSupportChild] 下）：明细按其中每个任务一条展开。
+const Set<String> kSubtitleJobRootNames = <String>{
+  'video_subtitles',
+  'music_subtitles',
+};
+
+/// 任务根下装着**已登记产物**的目录：原盘字幕（`disc_out`，库行的字幕选择指着）与
+/// 音乐字幕（`out`，歌词库登记着）。裸删会留下悬空的字幕选择，所以只读；原盘的随
+/// 库行删除回收（`deleteVideoSubtitleDiscOutputs`）。
+const Set<String> kSubtitleJobOutputDirNames = <String>{'disc_out', 'out'};
+
+/// isolate 入口：字幕生成任务（`<support>/asr_jobs`，[asrJobsRoot]）的明细。
+///
+/// - 任务根（[kSubtitleJobRootNames]）展开一层：每个任务目录一条可删明细，名字取
+///   任务 `state.json` 记的媒体文件名（任务目录名是哈希，给人看没意义），非日语任务
+///   带语言后缀；产物目录（[kSubtitleJobOutputDirNames]）再展开一层、每条只读；
+/// - 其余直接子项（上游转录任务、共用缓存文件）各一条可删明细。
+///
+/// 子项之和 == 整树之和（同 [_childEntriesSync]），类目总量由明细求和得出。
+List<Map<String, Object>> subtitleJobEntriesSync(final String asrJobsRoot) {
+  final List<Map<String, Object>> out = <Map<String, Object>>[];
+  void add(FileSystemEntity e, String label, {required bool readOnly}) =>
+      out.add(<String, Object>{
+        'label': label,
+        'path': e.path,
+        'bytes': directorySizeSync(e.path),
+        'isFile': e is File,
+        'readOnly': readOnly,
+      });
+  for (final FileSystemEntity child in _listOrEmpty(asrJobsRoot)) {
+    final String name = p.basename(child.path);
+    if (child is! Directory || !kSubtitleJobRootNames.contains(name)) {
+      add(child, name, readOnly: false);
+      continue;
+    }
+    for (final FileSystemEntity job in _listOrEmpty(child.path)) {
+      final String jobName = p.basename(job.path);
+      if (job is Directory && kSubtitleJobOutputDirNames.contains(jobName)) {
+        for (final FileSystemEntity output in _listOrEmpty(job.path)) {
+          add(
+            output,
+            '$name/$jobName/${_subtitleOutputLabel(output)}',
+            readOnly: true,
+          );
+        }
+        continue;
+      }
+      add(job, '$name/${_subtitleJobLabel(job)}', readOnly: false);
+    }
+  }
+  return out;
+}
+
+List<FileSystemEntity> _listOrEmpty(final String dir) {
+  try {
+    return Directory(dir).listSync(followLinks: false);
+  } on FileSystemException {
+    // 不存在 / 并发删除 / 无权限：这一层没有明细。
+    return const <FileSystemEntity>[];
+  }
+}
+
+/// 任务目录的显示名：`state.json` 的 `videoPath` 文件名；任务目录名带语言后缀
+/// （`<哈希>.<语言>`）时附上。读不到就用目录名。
+String _subtitleJobLabel(final FileSystemEntity job) {
+  final String name = p.basename(job.path);
+  if (job is! Directory) return name;
+  String? media;
+  try {
+    final Object? state = jsonDecode(
+      File(p.join(job.path, 'state.json')).readAsStringSync(),
+    );
+    if (state is Map && state['videoPath'] is String) {
+      media = p.basename(state['videoPath'] as String);
+    }
+  } on FileSystemException {
+    media = null;
+  } on FormatException {
+    media = null;
+  }
+  if (media == null || media.isEmpty) return name;
+  final int dot = name.indexOf('.');
+  return dot < 0 ? media : '$media (${name.substring(dot + 1)})';
+}
+
+/// 产物目录的显示名：里面第一个字幕文件名（目录名是哈希）；空目录用目录名。
+String _subtitleOutputLabel(final FileSystemEntity output) {
+  final String name = p.basename(output.path);
+  if (output is! Directory) return name;
+  final List<String> files = <String>[
+    for (final FileSystemEntity e in _listOrEmpty(output.path))
+      if (e is File) p.basename(e.path),
+  ]..sort();
+  return files.isEmpty ? name : files.first;
+}
+
+/// `<support>/sync-data`：互联 host 的 WebDAV 根（`FushiSyncServer.syncDataDir` =
+/// `p.join(<数据根>, 'sync-data')`，数据根即 `AppModel.databaseDirectory` = support 根）。
+/// 在「数据库与内部数据」里不整块显示，按用途拆开（见
+/// `StorageUsageService._interconnectEntries`）。
+const String kInterconnectSyncDataSupportChild = 'sync-data';
 
 /// `<support>/ocr_models`（[StorageCategoryId.ocrModels] 的根；
 /// 各本机模型落在它下面的兄弟目录，见 `MangaOcrLocalModel.modelsDirectory`）。
@@ -599,12 +734,19 @@ class StorageUsageService {
     Future<Directory> Function()? supportRoot,
     Future<List<Directory>> Function()? cacheRoots,
     Future<bool> Function()? documentsRootIsFushiOwned,
+    Future<List<Directory>> Function()? sharedDocumentsRoots,
     StorageIsolateRunner? isolateRunner,
-  }) : _documentsRoot = documentsRoot ?? AppPaths.documentsRootDirectory,
+    Future<InterconnectSyncDataUsage> Function(String syncDataDir)?
+    measureInterconnectSyncDataUsage,
+  }) : _measureSyncData =
+           measureInterconnectSyncDataUsage ?? _measureSyncDataInIsolate,
+       _documentsRoot = documentsRoot ?? AppPaths.documentsRootDirectory,
        _supportRoot = supportRoot ?? AppPaths.supportRootDirectory,
        _cacheRoots = cacheRoots ?? _defaultCacheRoots,
        _documentsRootIsFushiOwned =
            documentsRootIsFushiOwned ?? AppPaths.documentsRootIsFushiOwned,
+       _sharedDocumentsRoots =
+           sharedDocumentsRoots ?? _defaultSharedDocumentsRoots,
        _run = isolateRunner ?? Isolate.run;
 
   final Future<Directory> Function() _documentsRoot;
@@ -616,7 +758,28 @@ class StorageUsageService {
   /// BUG-1905：见 [AppPaths.documentsRootIsFushiOwned]——决定「其他未归类」敢不敢算。
   final Future<bool> Function() _documentsRootIsFushiOwned;
 
+  /// documents 根**之外**、但整个归 app 的根（拍板台 nLXhu0d7gV）：iOS 书库搬出平台
+  /// Documents 后，Documents 本身（导入收件箱、剪辑导出 `video_clips`、Hibiki 导出）
+  /// 不再落在任何类目里。它的直接子项全部进「其他未归类」（BUG-1905 的兜底口径）。
+  final Future<List<Directory>> Function() _sharedDocumentsRoots;
+
+  static Future<List<Directory>> _defaultSharedDocumentsRoots() async =>
+      Platform.isIOS
+      ? <Directory>[await AppPaths.importInboxDirectory()]
+      : const <Directory>[];
+
   final StorageIsolateRunner _run;
+
+  /// 互联同步数据按用途归类（默认在后台 isolate 跑 fushi_engine
+  /// [measureInterconnectSyncData]）。只在 `<support>/sync-data` 存在时调用。
+  /// 它是 async IO，不走 [_run]（[StorageIsolateRunner] 只收同步计算）；widget 测试
+  /// 的 FakeAsync 区里真 isolate / 异步 IO 都不完成，测试经构造参数注假实现。
+  final Future<InterconnectSyncDataUsage> Function(String syncDataDir)
+  _measureSyncData;
+
+  static Future<InterconnectSyncDataUsage> _measureSyncDataInIsolate(
+    final String syncDataDir,
+  ) => Isolate.run(() => measureInterconnectSyncData(syncDataDir));
 
   /// 多路径求和（isolate 隔离）。
   Future<int> sizeOfPaths(final List<String> paths) =>
@@ -656,6 +819,8 @@ class StorageUsageService {
           yield await _scanGeneric(id, <String>[
             p.join(support.path, kOcrModelsSupportChild),
           ]);
+        case StorageCategoryId.subtitleJobs:
+          yield await _scanSubtitleJobs(support);
         case StorageCategoryId.cache || StorageCategoryId.backups:
           // 两个类目住在**同一棵**缓存/临时树上，扫一次再按谓词分流。各扫各的就是
           // 起两个 isolate、把整棵树递归 stat 两遍——iOS 上 `Library/Caches` + 沙盒
@@ -904,6 +1069,61 @@ class StorageUsageService {
   /// 快照聚合条目的域内主键（UI 用它做忙碌态/去重）。
   static const String kDatabaseSnapshotsEntryId = 'database-snapshots';
 
+  /// 互联同步数据拆出的各条目主键（BUG-4906）。UI 按 id 翻译标题。
+  static const String kInterconnectSharedEntryId = 'interconnect-shared';
+  static const String kInterconnectSrsEntryId = 'interconnect-srs';
+  static const String kInterconnectLegacyEntryId = 'interconnect-legacy';
+  static const String kInterconnectOtherEntryId = 'interconnect-other';
+
+  /// `<support>/sync-data` 按用途拆成的明细（BUG-4906）：
+  /// - 互联客户端共享数据、复习同步：只读，只要目录在就显示（0 也是信息）；
+  /// - 旧版残留：可清理（[StorageEntryKind.interconnectLegacyFileBox]），为 0 不出现；
+  /// - 其余认不出的东西：只读，为 0 不出现。
+  ///
+  /// 四条之和 = `<sync-data>` 整树，类目总量不因拆分少算。
+  static List<StorageEntryUsage> _interconnectEntries(
+    final Directory support,
+    final String syncDataDir,
+    final InterconnectSyncDataUsage usage,
+  ) {
+    final String base =
+        '${p.basename(support.path)}/$kInterconnectSyncDataSupportChild';
+    return <StorageEntryUsage>[
+      StorageEntryUsage(
+        id: kInterconnectSharedEntryId,
+        // label 是路径形状的身份串兜底，显示名由 UI 翻译（`storageEntryTitle`）。
+        label: '$base (shared)',
+        bytes: usage.sharedBytes,
+        paths: <String>[syncDataDir],
+        kind: StorageEntryKind.readOnly,
+      ),
+      StorageEntryUsage(
+        id: kInterconnectSrsEntryId,
+        label: '$base (srs)',
+        bytes: usage.srsBytes,
+        paths: <String>[syncDataDir],
+        kind: StorageEntryKind.readOnly,
+      ),
+      if (usage.deadFileBoxBytes > 0 || usage.deadFileBoxFolders > 0)
+        StorageEntryUsage(
+          id: kInterconnectLegacyEntryId,
+          label: '$base (legacy)',
+          bytes: usage.deadFileBoxBytes,
+          paths: <String>[syncDataDir],
+          kind: StorageEntryKind.interconnectLegacyFileBox,
+          itemCount: usage.deadFileBoxFolders,
+        ),
+      if (usage.otherBytes > 0)
+        StorageEntryUsage(
+          id: kInterconnectOtherEntryId,
+          label: '$base (other)',
+          bytes: usage.otherBytes,
+          paths: <String>[syncDataDir],
+          kind: StorageEntryKind.readOnly,
+        ),
+    ];
+  }
+
   Future<StorageCategoryUsage> _scanDatabase(
     final Directory support,
     final Directory docs,
@@ -935,6 +1155,20 @@ class StorageUsageService {
     final List<String> snapshotPaths = <String>[
       for (final Map<String, Object> e in snapshots) e['path'] as String,
     ];
+    final String syncDataDir = p.join(
+      support.path,
+      kInterconnectSyncDataSupportChild,
+    );
+    final bool hasSyncData = supportChildNames.contains(
+      kInterconnectSyncDataSupportChild,
+    );
+    final List<StorageEntryUsage> syncDataEntries = hasSyncData
+        ? _interconnectEntries(
+            support,
+            syncDataDir,
+            await _measureSyncData(syncDataDir),
+          )
+        : const <StorageEntryUsage>[];
     final StorageCategoryUsage localState =
         await _scanGeneric(StorageCategoryId.database, <String>[
           for (final String child
@@ -948,9 +1182,14 @@ class StorageUsageService {
             raw,
             excludePaths: <String>{
               p.join(support.path, kOcrModelsSupportChild),
+              // 字幕生成任务单列一类（[StorageCategoryId.subtitleJobs]）。
+              p.join(support.path, kAsrJobsSupportChild),
+              // 互联同步数据按用途拆成下面几条，不再整块一行。
+              syncDataDir,
               ...snapshotPaths,
             },
           ),
+          ...syncDataEntries,
           if (snapshots.isNotEmpty)
             StorageEntryUsage(
               id: kDatabaseSnapshotsEntryId,
@@ -985,6 +1224,37 @@ class StorageUsageService {
           s,
     }.toList()..sort();
     return stems.length == 1 ? stems.single : '{${stems.join(',')}}';
+  }
+
+  /// 字幕生成任务（[subtitleJobEntriesSync]）：任务缓存可删，登记着的产物只读。
+  Future<StorageCategoryUsage> _scanSubtitleJobs(
+    final Directory support,
+  ) async {
+    final String root = p.join(support.path, kAsrJobsSupportChild);
+    final List<Map<String, Object>> raw = await _run(
+      () => subtitleJobEntriesSync(root),
+    );
+    final List<StorageEntryUsage> entries =
+        <StorageEntryUsage>[
+          for (final Map<String, Object> e in raw)
+            StorageEntryUsage(
+              id: e['path'] as String,
+              label: e['label'] as String,
+              bytes: e['bytes'] as int,
+              paths: <String>[e['path'] as String],
+              kind: e['readOnly'] as bool
+                  ? StorageEntryKind.readOnly
+                  : StorageEntryKind.derivedFile,
+            ),
+        ]..sort(
+          (StorageEntryUsage a, StorageEntryUsage b) =>
+              b.bytes.compareTo(a.bytes),
+        );
+    return StorageCategoryUsage(
+      id: StorageCategoryId.subtitleJobs,
+      bytes: _sumBytes(entries),
+      entries: entries,
+    );
   }
 
   /// 通用类目扫描：类目根下每个直接子项一条明细，类目总量 = 明细求和。
@@ -1108,17 +1378,36 @@ class StorageUsageService {
   /// 桌面老扁平安装下 documents 根就是用户自己的文档文件夹，那里的东西不是 app 的
   /// 占用，本类目直接返回 0（见 [AppPaths.documentsRootIsFushiOwned]）。
   Future<StorageCategoryUsage> _scanOther(final Directory docs) async {
-    if (!await _documentsRootIsFushiOwned()) {
+    final bool docsOwned = await _documentsRootIsFushiOwned();
+    // 与 documents 根重合 / 嵌套的共享根不另算（否则同一份字节记两遍）。
+    final List<String> shared = <String>[
+      for (final Directory d in await _sharedDocumentsRoots())
+        if (!p.equals(d.path, docs.path) &&
+            !p.isWithin(d.path, docs.path) &&
+            !p.isWithin(docs.path, d.path))
+          d.path,
+    ];
+    if (!docsOwned && shared.isEmpty) {
       return const StorageCategoryUsage(id: StorageCategoryId.other, bytes: 0);
     }
-    final List<Map<String, Object>> raw = await _run(
-      () => _childEntriesSync(<String>[docs.path]),
+    final String docsPath = docs.path;
+    final ({List<Map<String, Object>> docs, List<Map<String, Object>> shared})
+    raw = await _run(
+      () => (
+        docs: docsOwned
+            ? _childEntriesSync(<String>[docsPath])
+            : const <Map<String, Object>>[],
+        shared: _childEntriesSync(shared),
+      ),
     );
     const Set<String> known = AppPaths.fushiOwnedDocumentsEntries;
     final List<StorageEntryUsage> entries =
         <StorageEntryUsage>[
-          for (final StorageEntryUsage e in _childEntries(raw))
+          for (final StorageEntryUsage e in _childEntries(raw.docs))
             if (!known.contains(p.basename(e.paths.single))) e,
+          // 共享根不是 documents 根，白名单对它不成立：里面的东西（收件箱里的原件、
+          // 剪辑导出、搬迁失败留下的旧书库项）全算。
+          ..._childEntries(raw.shared),
         ]..sort(
           (StorageEntryUsage a, StorageEntryUsage b) =>
               b.bytes.compareTo(a.bytes),

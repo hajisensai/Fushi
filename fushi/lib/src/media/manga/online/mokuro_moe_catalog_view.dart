@@ -787,6 +787,8 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
         : switch (job?.status) {
             MangaDownloadJobStatus.running => _progressLabel(job!),
             MangaDownloadJobStatus.queued => t.download_status_queued,
+            // 暂停的卷在下载中心 / 作品页恢复；这里重选入队也会让它续跑。
+            MangaDownloadJobStatus.paused => t.download_task_status_paused,
             // lastError 是持久化的原始异常串，只给归一后的短句。
             MangaDownloadJobStatus.failed => _failedLabel(job!.lastError),
             _ => null,
@@ -888,11 +890,11 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
         break;
       }
     }
+    // 暂停的卷没收尾，不计进「已收尾」。
     final int finished = jobs
         .where(
           (MangaDownloadJobRow job) =>
-              job.status != MangaDownloadJobStatus.queued &&
-              job.status != MangaDownloadJobStatus.running,
+              !isMangaDownloadJobUnfinished(job.status),
         )
         .length;
     final String label = running == null

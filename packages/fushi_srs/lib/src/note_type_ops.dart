@@ -16,6 +16,7 @@ library;
 import 'entities.dart';
 import 'field_edit.dart' show SrsEntityKind;
 import 'ids.dart';
+import 'kernel_ids.dart';
 
 /// Anki 不许笔记字段用的名字（会被模板的特殊字段遮住）。与 fushi_anki 的
 /// `kAnkiSpecialFieldNames` 同一份清单（fushi_srs 零依赖，这里另写一次）。
@@ -160,7 +161,7 @@ SrsNewNoteType srsBuildNoteType({
 }) {
   final int Function() num = nextAnkiNum ?? randomAnkiNum;
   final int typeNum = num();
-  final String typeId = SrsIds.noteType(profileUid, typeNum);
+  final String typeId = SrsKernelIds(profileUid).noteType(typeNum);
   final List<SrsFieldDef> fields = <SrsFieldDef>[];
   final Map<String, String> nameToId = <String, String>{};
   for (int i = 0; i < fieldNames.length; i++) {
@@ -218,7 +219,7 @@ SrsNewNoteType srsCloneNoteType({
 }) {
   final int Function() num = nextAnkiNum ?? randomAnkiNum;
   final int typeNum = num();
-  final String typeId = SrsIds.noteType(profileUid, typeNum);
+  final String typeId = SrsKernelIds(profileUid).noteType(typeNum);
   final Map<String, String> oldToNew = <String, String>{};
   final List<SrsFieldDef> fields = <SrsFieldDef>[];
   for (int i = 0; i < source.fields.length; i++) {

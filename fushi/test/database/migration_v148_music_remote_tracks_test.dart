@@ -72,7 +72,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 154);
+    expect(migrated.schemaVersion, 164);
     await migrated.addMusicRemoteTrackToLibrary(yt('aaaaaaaaaaa'), at: 10);
     expect(
       (await migrated.listMusicRemoteLibraryTracks()).single.itemId,
@@ -85,7 +85,7 @@ void main() {
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
-    expect(probe.select('PRAGMA user_version').first.values.first, 154);
+    expect(probe.select('PRAGMA user_version').first.values.first, 164);
     expect(hasTable(probe), isTrue);
   });
 

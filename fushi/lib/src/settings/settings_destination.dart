@@ -632,12 +632,26 @@ class SettingsSegmentedItem<T extends Object> extends SettingsItem {
     this.controlBelow = true,
     this.dropdown = false,
     this.defaultValue,
+    this.defaultValueBuilder,
+    this.resetToDefault,
     this.enabled,
     this.optionsBuilder,
   });
 
   /// 出厂默认选项；语义同 [SettingsSwitchItem.defaultValue]。
   final T? defaultValue;
+
+  /// 出厂默认随别的设置变（没选过时跟着另一项走）的行用它代替 [defaultValue]：
+  /// 渲染时求值，「已改过」对照的是此刻真实生效的默认。读一律走 [defaultValueFor]。
+  final SettingsValueGetter<T>? defaultValueBuilder;
+
+  /// 恢复默认的写法；null = 把 [defaultValueFor] 的值经 [onChanged] 写回。默认值
+  /// 随别的设置变的行要清掉自己的偏好（回到「跟着走」），而不是把此刻的默认值钉死。
+  final Future<void> Function(SettingsContext context)? resetToDefault;
+
+  /// 此刻的出厂默认；null = 没声明默认（不参与恢复默认）。
+  T? defaultValueFor(SettingsContext context) =>
+      defaultValueBuilder?.call(context) ?? defaultValue;
 
   /// 可交互性；语义同 [SettingsSwitchItem.enabled]（false = 整条分段置灰）。
   final SettingsSwitchGetter? enabled;

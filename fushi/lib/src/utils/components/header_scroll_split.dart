@@ -16,11 +16,16 @@ class HeaderScrollSplit extends StatelessWidget {
     required this.scrollKey,
     required this.header,
     required this.resultSlivers,
+    this.topInset = 0,
   });
 
   final Key scrollKey;
   final Widget header;
   final List<Widget> resultSlivers;
+
+  /// [header] 上方的让位（页面正文铺到浮动页头底下时的页头下沿）。窄屏它是
+  /// 滚动内容的一部分（头部随结果滚进页头底下），宽屏垫在固定头部上方。
+  final double topInset;
 
   /// 是否走手机（窄屏）布局。
   static bool isPhoneLayout(BuildContext context) =>
@@ -36,7 +41,12 @@ class HeaderScrollSplit extends StatelessWidget {
       return CustomScrollView(
         key: scrollKey,
         slivers: <Widget>[
-          SliverToBoxAdapter(child: header),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.only(top: topInset),
+              child: header,
+            ),
+          ),
           ...resultSlivers,
         ],
       );
@@ -44,7 +54,10 @@ class HeaderScrollSplit extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        header,
+        Padding(
+          padding: EdgeInsets.only(top: topInset),
+          child: header,
+        ),
         Expanded(
           child: CustomScrollView(key: scrollKey, slivers: resultSlivers),
         ),

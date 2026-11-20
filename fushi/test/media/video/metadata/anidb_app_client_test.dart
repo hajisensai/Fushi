@@ -19,16 +19,17 @@ void main() {
         );
     expect(config.anidbClientName, 'fushiplayer');
     expect(config.anidbClientVersion, 1);
-    // BUG-2623：fushiplayer 只是 UDP 登记，HTTP 身份随包为空。
-    expect(config.anidbHttpClientName, isEmpty);
-    expect(config.anidbHttpClientVersion, isNull);
-    expect(config.anidbHttpClientConfigured, isFalse);
+    // BUG-2623：HTTP 使用独立登记的随包身份，不需要个人登录。
+    expect(config.anidbHttpClientName, 'fushiplayerhttp');
+    expect(config.anidbHttpClientVersion, 1);
+    expect(config.anidbHttpClientConfigured, isTrue);
     expect(config.anidbUsername, isEmpty);
     expect(config.anidbPassword, isEmpty);
-    expect(config.hashEnabled, isFalse);
+    expect(config.hashEnabled, isTrue, reason: 'UDP 已加密，哈希识别默认开');
     expect(config.anidbUdpConfig.isAvailable, isFalse);
     await prefs.setPref(kVideoAniDbUsernamePref, 'myaccount');
     await prefs.setPref(kVideoAniDbPasswordPref, ' my password ');
+    await prefs.setPref(kVideoAniDbUdpApiKeyPref, 'udp-key');
     final VideoSourceScrapeGlobalConfig personal =
         VideoSourceScrapeGlobalConfig.fromPreferences(
           prefs,
@@ -37,7 +38,8 @@ void main() {
         );
     expect(personal.anidbUdpConfig.isAvailable, isTrue);
     expect(personal.anidbPassword, ' my password ');
-    expect(personal.hashEnabled, isFalse);
+    expect(personal.hashEnabled, isTrue);
+    expect(personal.anidbHashReady, isTrue);
   });
 
   test(
@@ -72,8 +74,10 @@ void main() {
     );
     expect(bundled.udp.name, kBundledAniDbClient.name);
     expect(bundled.udp.version, kBundledAniDbClient.version);
-    expect(bundled.http.name, isEmpty);
-    expect(bundled.http.isComplete, isFalse);
+    expect(bundled.http.name, kBundledAniDbHttpClient.name);
+    expect(bundled.http.version, kBundledAniDbHttpClient.version);
+    expect(bundled.http.isUsable, isTrue);
+    expect(bundled.http.name, isNot(bundled.udp.name));
 
     final AniDbAppClients custom = resolveAniDbAppClients(
       customName: 'customapp',
@@ -84,7 +88,7 @@ void main() {
     expect(custom.http.version, 4);
     expect(custom.http.isComplete, isTrue);
 
-    // 将来登记了 HTTP 客户端：只改 kBundledAniDbHttpClient 常量即可。
+    // 注入 HTTP 身份不能改变 UDP 身份。
     final AniDbAppClients registered = resolveAniDbAppClients(
       customName: '',
       customVersion: null,

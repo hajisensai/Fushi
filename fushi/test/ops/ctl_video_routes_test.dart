@@ -124,6 +124,10 @@ void main() {
         '/api/admin/video/scrape/cancel',
       );
       expect(
+        first('POST', '/api/admin/video/relations/refresh')?.pattern,
+        '/api/admin/video/relations/refresh',
+      );
+      expect(
         first('GET', '/api/admin/video/discovery/works/vw3/resources')?.pattern,
         '/api/admin/video/discovery/works/:id/resources',
       );
@@ -271,6 +275,39 @@ void main() {
     });
   });
 
+  test('补齐系列关系 JSON：有 TMDB 时带 tmdb 计数，没配时不带', () {
+    expect(
+      videoSeriesRelationRefreshJson((
+        tmdb: (missing: 29, refreshed: 28, requests: 5, failed: 1),
+        backfill: (works: 40, worksWithRelations: 28, rows: 56, bound: 2),
+      )),
+      <String, Object?>{
+        'tmdb': <String, Object?>{
+          'missing': 29,
+          'refreshed': 28,
+          'requests': 5,
+          'failed': 1,
+        },
+        'works': 40,
+        'worksWithRelations': 28,
+        'rows': 56,
+        'bound': 2,
+      },
+    );
+    expect(
+      videoSeriesRelationRefreshJson((
+        tmdb: null,
+        backfill: (works: 3, worksWithRelations: 1, rows: 2, bound: 0),
+      )),
+      <String, Object?>{
+        'works': 3,
+        'worksWithRelations': 1,
+        'rows': 2,
+        'bound': 0,
+      },
+    );
+  });
+
   test('刮削报告 JSON 带计数与问题原文', () {
     const SourceScrapeReport report = SourceScrapeReport(
       sourceIds: <int>[1],
@@ -354,6 +391,7 @@ void main() {
       recursive: true,
       videoGroupingMode: 'series',
       isPrivate: false,
+      autoScan: false,
       configJson: null,
       mediaCount: 0,
       lastScannedAt: null,

@@ -64,8 +64,6 @@ import 'package:fushi_engine/mining/sentence_audio_source.dart'
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/profile/profile_selector.dart';
-import 'package:fushi/src/settings/settings_schema_widgets.dart'
-    show SettingsSectionFooter;
 import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart'
     show kSrsBuiltinFushiCardKey, srsBuiltinNoteTypeSpec;
@@ -282,29 +280,19 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 挖词目标：与「下载」的后端选择同一形态——一个分组、一条分段条，脚注说明
-          // 当前目标；选中哪个，下面才展开哪个的设置。
+          // 挖词目标：与「下载」的引擎选择同一形态——一个分组、一条分段行，说明随
+          // 当前目标变化、在卡片内；选中哪个，下面才展开哪个的设置。
           enter(
             'card_section_target',
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+            AdaptiveSettingsSection(
+              title: t.settings_card_creation_section_destination,
               children: <Widget>[
-                AdaptiveSettingsSection(
-                  title: t.settings_card_creation_section_destination,
-                  children: <Widget>[
-                    SettingsSearchTarget(
-                      id: 'card_creation.anki.srs_mining_target',
-                      child: _buildMiningTargetStrip(
-                        tokens,
-                        srsEnabled: srsEnabled,
-                        toReview: toReview,
-                      ),
-                    ),
-                  ],
-                ),
-                SettingsSectionFooter(
-                  toReview ? t.card_target_srs_hint : t.card_target_anki_hint,
+                SettingsSearchTarget(
+                  id: 'card_creation.anki.srs_mining_target',
+                  child: _buildMiningTargetRow(
+                    srsEnabled: srsEnabled,
+                    toReview: toReview,
+                  ),
                 ),
               ],
             ),
@@ -349,39 +337,34 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
 
   /// 挖词目标分段条（Fushi 复习 / Anki）。复习模块关着时选「Fushi 复习」先确认一次：
   /// 开模块 + 改目标（[_enableFushiReview]）；取消则仍是 Anki。
-  Widget _buildMiningTargetStrip(
-    FushiDesignTokens tokens, {
+  Widget _buildMiningTargetRow({
     required bool srsEnabled,
     required bool toReview,
   }) {
-    return Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: tokens.spacing.rowHorizontal,
-        vertical: tokens.spacing.gap,
-      ),
-      child: FushiSegmentedStrip<SrsMiningTarget>(
-        key: const ValueKey<String>('card-target-switch'),
-        segments: <ButtonSegment<SrsMiningTarget>>[
-          ButtonSegment<SrsMiningTarget>(
-            value: SrsMiningTarget.srs,
-            icon: const Icon(FushiIcons.repeat),
-            label: Text(t.srs_mining_target_srs),
-          ),
-          ButtonSegment<SrsMiningTarget>(
-            value: SrsMiningTarget.anki,
-            icon: const Icon(FushiIcons.ankiCard),
-            label: Text(t.srs_mining_target_anki),
-          ),
-        ],
-        selected: toReview ? SrsMiningTarget.srs : SrsMiningTarget.anki,
-        onChanged: (SrsMiningTarget target) {
-          if (target == SrsMiningTarget.srs && !srsEnabled) {
-            unawaited(_enableFushiReview());
-            return;
-          }
-          unawaited(ref.read(appProvider).setSrsMiningTarget(target));
-        },
-      ),
+    return AdaptiveSettingsSegmentedRow<SrsMiningTarget>(
+      key: const ValueKey<String>('card-target-switch'),
+      title: t.card_target_destination_title,
+      subtitle: toReview ? t.card_target_srs_hint : t.card_target_anki_hint,
+      segments: <ButtonSegment<SrsMiningTarget>>[
+        ButtonSegment<SrsMiningTarget>(
+          value: SrsMiningTarget.srs,
+          icon: const Icon(FushiIcons.repeat),
+          label: Text(t.srs_mining_target_srs),
+        ),
+        ButtonSegment<SrsMiningTarget>(
+          value: SrsMiningTarget.anki,
+          icon: const Icon(FushiIcons.ankiCard),
+          label: Text(t.srs_mining_target_anki),
+        ),
+      ],
+      selected: toReview ? SrsMiningTarget.srs : SrsMiningTarget.anki,
+      onChanged: (SrsMiningTarget target) {
+        if (target == SrsMiningTarget.srs && !srsEnabled) {
+          unawaited(_enableFushiReview());
+          return;
+        }
+        unawaited(ref.read(appProvider).setSrsMiningTarget(target));
+      },
     );
   }
 
@@ -649,9 +632,12 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     // 内置类型（Lapis、Fushi 卡片）恒用各自的默认映射，不给逐字段改。
     final bool builtinMapping =
         noteType == null || srsBuiltinNoteTypeSpec(noteType.builtinKey) != null;
+    // 按换成规范 ID 的落点查（G9-6，解析落点时已归一）：偏好里可能还是成员 ID 键（作品级覆盖层、开库归一之前），
+    // 拿规范的 type.id 去查原样的偏好会显示按字段名猜的映射。
     final Map<String, String>? stored = builtinMapping
         ? null
-        : appModel.srsMiningDestination.fieldMappingsByType[noteType.id];
+        : (resolved.destination ?? appModel.srsMiningDestination)
+              .fieldMappingsByType[noteType.id];
     final Map<String, String> mappings = builtinMapping
         ? const <String, String>{}
         : srsEffectiveFieldMappings(noteType, stored);
@@ -1928,6 +1914,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
           // 「让 AI 帮忙」的提供商按功能指派解析；编辑器本身零 Riverpod 依赖，
           // 所以在这里读偏好再传进去。
           aiEnabled: isAiModuleEnabled(ref.read(appProvider).moduleVisibility),
+          savedPromptStoreOf: () => ref.read(appProvider).prefsRepo,
           resolveAiProvider: () {
             final PreferencesRepository prefs = ref.read(appProvider).prefsRepo;
             return prefs.aiFeatureAssignments.resolve(

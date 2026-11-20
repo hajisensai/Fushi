@@ -42,8 +42,15 @@ class _AccountBridge implements AppleMusicBridge {
     if (e != null) throw e;
   }
 
+  final List<bool> credentialRefreshes = <bool>[];
+
   @override
-  Future<AppleMusicUserCredentials?> userCredentials() async => credentials;
+  Future<AppleMusicUserCredentials?> userCredentials({
+    bool refresh = false,
+  }) async {
+    credentialRefreshes.add(refresh);
+    return credentials;
+  }
 
   @override
   Future<void> dispose() async => disposed = true;
@@ -106,6 +113,20 @@ void main() {
       throwsA(isA<AppleMusicNotSignedInException>()),
     );
   });
+
+  // 反馈 caI0UrhA6-：服务器拒了缓存的 user token 时，绕缓存的要求要一路传到桥。
+  test(
+    'userCredentials forwards the cache-bypass request to the bridge',
+    () async {
+      bridge.credentials = const AppleMusicUserCredentials(
+        developerToken: 'dev',
+        userToken: 'usr',
+      );
+      await account.userCredentials();
+      await account.userCredentials(refresh: true);
+      expect(bridge.credentialRefreshes, <bool>[false, true]);
+    },
+  );
 
   test('no platform bridge: unsupported, nothing to read', () async {
     final AppleMusicAccount none = AppleMusicAccount(

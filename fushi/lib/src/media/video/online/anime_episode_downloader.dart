@@ -12,7 +12,8 @@
 /// - **HLS**：Dart 端逐分片下载（不交给 ffmpeg 读网络：ffmpeg 后端没有进度也不能从
 ///   外部取消，移动端 kit 只能靠 timeout）——master 选最高码率变体、`#EXT-X-MAP`
 ///   初始化段先写、`#EXT-X-KEY` AES-128 解密、图片伪装分片剥前缀（BUG-2609，与播放
-///   中继同一套判据 `hls_relay_normalizer.dart`），按序追加进 `.hls.part`，已完成的
+///   中继同一套判据 `hls_relay_normalizer.dart`），最多 [kAnimeHlsSegmentsInFlight]
+///   片同时在途、按片序追加进 `.hls.part`，已完成的
 ///   分片数与字节数连同**流指纹**（[hlsStreamFingerprint]）记在 `.hls.progress` 里
 ///   断点续传——指纹对不上（换了线路 / 画质 / 源站重切了片）就从 0 下，不把两条流
 ///   拼进同一个文件；全部下完后本地跑一次 `ffmpeg -c copy` 转封装成 mp4（本地文件
@@ -35,6 +36,8 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:fushi_compute/fushi_compute.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
+import 'package:fushi_engine/media/video/m3u8_playlist.dart'
+    show parseHlsAttributeList;
 import 'package:fushi_engine/utils/misc/resumable_downloader.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 
@@ -47,9 +50,15 @@ import 'package:fushi/src/utils/net/hls_relay_normalizer.dart';
 /// 分片 / 一段直链字节超过这么久一个字节都不来，就当这次下载卡死了。
 const Duration kAnimeEpisodeStallTimeout = Duration(seconds: 45);
 
-/// keep-alive 连接空闲多久就关（HttpClient.idleTimeout）：分片是一条接一条串行拉的，
+/// keep-alive 连接空闲多久就关（HttpClient.idleTimeout）：分片连续不断地拉，
 /// 两片之间的空档远小于它；这里显式钉住而不是依赖默认值。
 const Duration kAnimeEpisodeIdleConnectionTimeout = Duration(seconds: 15);
+
+/// HLS 分片同时在途的条数（video-33）。单连接受 RTT 与 CDN 单流限速拖累，逐片串行
+/// 时带宽大半空着：2026-11-20 本机实测同一条 1080p 公网 HLS（40 片 / 305 MB，
+/// 两批各 3 轮）串行中位约 41 s、3 条在途中位约 16.5 s。写盘仍严格按序、断点只记
+/// 连续写完的前缀，内存里最多压这么多片。
+const int kAnimeHlsSegmentsInFlight = 3;
 
 /// 直链续传的验证器侧车后缀（`<dest>.part.validator`）。
 const String kAnimeDirectValidatorSuffix = '.part.validator';
@@ -329,13 +338,6 @@ class HlsMediaPlaylist {
       segments.any((HlsSegment segment) => segment.initSection != null);
 }
 
-final RegExp _attributePattern = RegExp(r'([A-Z0-9-]+)=("[^"]*"|[^,]*)');
-
-Map<String, String> _attributes(String raw) => <String, String>{
-  for (final RegExpMatch match in _attributePattern.allMatches(raw))
-    match.group(1)!: match.group(2)!.replaceAll('"', ''),
-};
-
 /// 解析媒体播放列表（纯函数，便于测试）。[base] 是播放列表的最终 URL（相对地址
 /// 按它解析）。
 HlsMediaPlaylist parseHlsMediaPlaylist(String playlist, Uri base) {
@@ -351,7 +353,7 @@ HlsMediaPlaylist parseHlsMediaPlaylist(String playlist, Uri base) {
     } else if (line.startsWith('#EXT-X-BYTERANGE')) {
       throw const AnimeEpisodeDownloadUnsupported('HLS byte-range segments');
     } else if (line.startsWith('#EXT-X-KEY:')) {
-      final Map<String, String> attrs = _attributes(
+      final Map<String, String> attrs = parseHlsAttributeList(
         line.substring('#EXT-X-KEY:'.length),
       );
       final String method = attrs['METHOD'] ?? 'NONE';
@@ -366,7 +368,7 @@ HlsMediaPlaylist parseHlsMediaPlaylist(String playlist, Uri base) {
         throw AnimeEpisodeDownloadUnsupported('HLS encryption $method');
       }
     } else if (line.startsWith('#EXT-X-MAP:')) {
-      final Map<String, String> attrs = _attributes(
+      final Map<String, String> attrs = parseHlsAttributeList(
         line.substring('#EXT-X-MAP:'.length),
       );
       if (attrs.containsKey('BYTERANGE')) {
@@ -561,6 +563,7 @@ class AnimeEpisodeDownloader {
             headers,
             dest,
             onProgress: onProgress,
+            onBytes: onBytes,
             isCancelled: () => cancelled,
           ),
         );
@@ -587,6 +590,7 @@ class AnimeEpisodeDownloader {
               headers,
               dest,
               onProgress: onProgress,
+              onBytes: onBytes,
               isCancelled: () => cancelled,
             ),
           );
@@ -660,6 +664,9 @@ class AnimeEpisodeDownloader {
       cancelSignal: cancelSignal,
     );
     final bool? videoHasAudio = await _probeHasAudioStream(video);
+    // 音轨阶段的字节口径（e_LVlqyUd-）：已就绪分量的字节 + 当前音轨已收，总量未知
+    // （音轨大小事先不知道）。不报的话状态会一直停在画面分量的「已收 / 总 (100%)」。
+    int readyBytes = await video.length();
     final List<File> ready = <File>[];
     Object? firstError;
     StackTrace? firstStack;
@@ -673,9 +680,13 @@ class AnimeEpisodeDownloader {
           onProgress: onProgress == null
               ? null
               : (double value) => onProgress(base + value * audioShare),
+          onBytes: onBytes == null
+              ? null
+              : (int received, int? _) => onBytes(readyBytes + received, null),
           cancelSignal: cancelSignal,
         );
         ready.add(audios[i]);
+        readyBytes += await audios[i].length();
       } on RemoteDownloadCancelled {
         rethrow;
       } on Object catch (error, stack) {
@@ -748,6 +759,8 @@ class AnimeEpisodeDownloader {
           cancelSignal,
         );
         if (now != null && stored.matches(now)) {
+          final int length = await component.length();
+          onBytes?.call(length, length);
           onProgress?.call(1.0);
           return;
         }
@@ -1119,6 +1132,7 @@ class AnimeEpisodeDownloader {
     File dest, {
     required bool Function() isCancelled,
     void Function(double progress)? onProgress,
+    void Function(int received, int? total)? onBytes,
   }) async {
     final ({HlsMediaPlaylist playlist, Uri uri}) media =
         await _loadMediaPlaylist(client, uri, headers);
@@ -1153,11 +1167,51 @@ class AnimeEpisodeDownloader {
     final RandomAccessFile sink = await part.open(
       mode: done == 0 ? FileMode.write : FileMode.append,
     );
-    final Map<Uri, Uint8List> keys = <Uri, Uint8List>{};
+    // 同一把钥匙被在途的几片同时要时只取一次。
+    final Map<Uri, Future<Uint8List>> keys = <Uri, Future<Uint8List>>{};
+    Future<Uint8List> fetchSegment(HlsSegment segment) async {
+      Uint8List bytes = (await _get(client, segment.uri, headers)).body;
+      final HlsKey? key = segment.key;
+      if (key != null) {
+        final Uint8List keyBytes = await (keys[key.uri] ??= _get(
+          client,
+          key.uri,
+          headers,
+        ).then((({Uint8List body, Uri finalUri}) r) => r.body));
+        bytes = decryptHlsSegment(
+          bytes,
+          keyBytes,
+          key.iv ?? hlsSequenceIv(segment.sequence),
+        );
+      }
+      return unwrapHlsSegmentPayload(bytes);
+    }
+
+    // 预取窗：最多 [kAnimeHlsSegmentsInFlight] 片在途，按片序排队；写盘只从队头取。
+    // 失败 / 取消时队里没轮到的片随 client 关闭作废，不写盘也不进断点。
+    final List<Future<Uint8List>> ahead = <Future<Uint8List>>[];
+    int nextToFetch = done;
+    void topUp() {
+      while (ahead.length < kAnimeHlsSegmentsInFlight &&
+          nextToFetch < segments.length) {
+        final Future<Uint8List> fetch = fetchSegment(segments[nextToFetch++]);
+        // 排在后面的片可能在队头之前就失败：先挂一个处理器，免得在轮到它之前被报成
+        // 未处理的异步错误；轮到它时 await 照样拿到这个错误。
+        unawaited(fetch.then<void>((_) {}, onError: (Object _) {}));
+        ahead.add(fetch);
+      }
+    }
+
     try {
       if (done > 0) await sink.truncate(written);
       await sink.setPosition(written);
+      // 起跑先报一次本轮的口径（e_LVlqyUd-）：分片流的总字节事先不知道，报
+      // `(已写, null)` 让调用方丢掉之前那趟直链尝试（下回来的是播放列表文本）留下的
+      // 「已收 / 总」——否则状态一直停在播放列表的「231 KB / 231 KB (100%)」。
+      onBytes?.call(written, null);
+      onProgress?.call(done / segments.length);
       Uri? writtenInit = done > 0 ? segments[done - 1].initSection : null;
+      topUp();
       for (int index = done; index < segments.length; index++) {
         if (isCancelled()) throw const RemoteDownloadCancelled();
         final HlsSegment segment = segments[index];
@@ -1167,21 +1221,9 @@ class AnimeEpisodeDownloader {
           await sink.writeFrom(unwrapHlsSegmentPayload(initBytes));
           writtenInit = init;
         }
-        Uint8List bytes = (await _get(client, segment.uri, headers)).body;
-        final HlsKey? key = segment.key;
-        if (key != null) {
-          final Uint8List keyBytes = keys[key.uri] ??= (await _get(
-            client,
-            key.uri,
-            headers,
-          )).body;
-          bytes = decryptHlsSegment(
-            bytes,
-            keyBytes,
-            key.iv ?? hlsSequenceIv(segment.sequence),
-          );
-        }
-        await sink.writeFrom(unwrapHlsSegmentPayload(bytes));
+        final Uint8List payload = await ahead.removeAt(0);
+        topUp();
+        await sink.writeFrom(payload);
         await sink.flush();
         written = await sink.position();
         await progressFile.writeAsString(
@@ -1192,6 +1234,7 @@ class AnimeEpisodeDownloader {
           ).encode(),
           flush: true,
         );
+        onBytes?.call(written, null);
         onProgress?.call((index + 1) / segments.length);
       }
     } finally {

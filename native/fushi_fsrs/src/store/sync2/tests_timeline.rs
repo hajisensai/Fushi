@@ -7,6 +7,9 @@ use super::{RestoreTarget, target_cut, value_at};
 use crate::sync2::op::EntKind;
 
 const T0: i64 = 1_700_000_000_000;
+/// 笔记 ID 是 UUID（协议 3 的缓存重建拿它算卡片 ID，非 UUID 整次失败；对拍装置要比到缓存层）。
+const N1: &str = "0193a1b2-0000-7000-8000-0000000000e1";
+const N2: &str = "0193a1b2-0000-7000-8000-0000000000e2";
 
 fn entity(kind: &str, id: &str, d: Value) -> Value {
     json!({"t": "entity", "x": {"id": id, "p": P, "k": kind, "d": d}})
@@ -99,8 +102,8 @@ fn restore_returns_an_edited_builtin_template_to_the_code_default() {
         T0,
         vec![entity(
             "note",
-            "N1",
-            json!({"createdAt": 1, "guid": "N1", "noteTypeId": "NT"}),
+            N1,
+            json!({"createdAt": 1, "guid": N1, "noteTypeId": "NT"}),
         )],
     );
     let before = note_type_view(&a, "NT", &payload, &builtin);
@@ -160,15 +163,15 @@ fn restore_drops_map_entries_added_after_the_moment() {
             edit("notetype", "NT", "css", json!("old css")),
             entity(
                 "note",
-                "N1",
-                json!({"createdAt": 1, "guid": "N1", "noteTypeId": "NT"}),
+                N1,
+                json!({"createdAt": 1, "guid": N1, "noteTypeId": "NT"}),
             ),
-            edit("note", "N1", "f/f1", json!("孤児院")),
+            edit("note", N1, "f/f1", json!("孤児院")),
         ],
     );
     let payload = json!({"createdAt": 1, "ntKind": "standard"});
     let before = note_type_view(&a, "NT", &payload, &Value::Null);
-    let note_before = note_fields(&a, "N1");
+    let note_before = note_fields(&a, N1);
     let t1 = T0 + 500;
     a.apply(
         T0 + 1000,
@@ -188,7 +191,7 @@ fn restore_drops_map_entries_added_after_the_moment() {
             ),
             edit("notetype", "NT", "fieldDesc/f1", json!("what goes here")),
             edit("notetype", "NT", "css", json!("new css")),
-            edit("note", "N1", "f/f2", json!("meaning")),
+            edit("note", N1, "f/f2", json!("meaning")),
         ],
     );
     restore(&a, t1, T0 + 2000);
@@ -196,7 +199,7 @@ fn restore_drops_map_entries_added_after_the_moment() {
     assert_eq!(templates(&after), templates(&before), "{after}");
     assert_eq!(fields(&after), fields(&before), "{after}");
     assert_eq!(after, before);
-    assert_eq!(note_fields(&a, "N1"), note_before);
+    assert_eq!(note_fields(&a, N1), note_before);
 }
 
 /// 卡片标志按血统继承：新卡（更改笔记类型生成）那一刻没有自己的「挂起」记录、继承前身的挂起；之后取消挂起，
@@ -273,11 +276,11 @@ fn restore_brings_every_register_back_to_the_moment() {
             edit("notetype", "NT", "termField", json!("f1")),
             entity(
                 "note",
-                "N1",
-                json!({"createdAt": 1, "guid": "N1", "noteTypeId": "NT"}),
+                N1,
+                json!({"createdAt": 1, "guid": N1, "noteTypeId": "NT"}),
             ),
-            edit("note", "N1", "f/f1", json!("v1")),
-            edit("note", "N1", "tags", json!(["a"])),
+            edit("note", N1, "f/f1", json!("v1")),
+            edit("note", N1, "tags", json!(["a"])),
             edit("card", "C1", "flag", json!(1)),
         ],
     );
@@ -316,10 +319,10 @@ fn restore_brings_every_register_back_to_the_moment() {
             ),
             edit("notetype", "NT", "css", json!("css2")),
             edit("notetype", "NT", "freqField", json!("f2")),
-            edit("note", "N1", "f/f1", json!("v2")),
-            edit("note", "N1", "f/f2", json!("added")),
-            edit("note", "N1", "deck", json!(deck)),
-            edit("note", "N1", "deleted", json!(T0 + 1000)),
+            edit("note", N1, "f/f1", json!("v2")),
+            edit("note", N1, "f/f2", json!("added")),
+            edit("note", N1, "deck", json!(deck)),
+            edit("note", N1, "deleted", json!(T0 + 1000)),
             edit("card", "C1", "flag", json!(4)),
             edit("card", "C1", "buried", json!(9)),
         ],
@@ -357,7 +360,7 @@ fn restore_brings_every_register_back_to_the_moment() {
         );
     }
     assert_eq!(
-        super::super::semantics::current_tags(&w, P, "N1").unwrap(),
+        super::super::semantics::current_tags(&w, P, N1).unwrap(),
         vec!["a".to_owned()]
     );
 }
@@ -366,7 +369,7 @@ fn restore_brings_every_register_back_to_the_moment() {
 fn migrated_library(mig: i64) -> Device {
     let a = Device::new("tl-legacy");
     let w = a.core.writer().unwrap();
-    for (id, kind) in [("NT", "notetype"), ("N1", "note"), ("N2", "note")] {
+    for (id, kind) in [("NT", "notetype"), (N1, "note"), (N2, "note")] {
         w.execute(
             "INSERT INTO srs_entities (id, profile_uid, kind, payload_json, created_at) VALUES (srs_id(?1), srs_id(?2), ?3, ?4, 1)",
             rusqlite::params![id, P, kind, r#"{"createdAt":1,"guid":"g","noteTypeId":"NT"}"#],
@@ -378,7 +381,7 @@ fn migrated_library(mig: i64) -> Device {
         (
             1,
             "note",
-            "N1",
+            N1,
             "f/x",
             json!("legacy v1"),
             T0 + 100,
@@ -396,7 +399,7 @@ fn migrated_library(mig: i64) -> Device {
         (
             3,
             "note",
-            "N1",
+            N1,
             "f/x",
             json!("legacy v2"),
             T0 + 300,
@@ -405,7 +408,7 @@ fn migrated_library(mig: i64) -> Device {
         (
             4,
             "note",
-            "N2",
+            N2,
             "f/x",
             json!("added later"),
             T0 + 300,
@@ -445,7 +448,7 @@ fn migrated_library(mig: i64) -> Device {
 fn restore_cuts_migrated_history_at_its_original_time() {
     let mig = T0 + 10_000;
     let a = migrated_library(mig);
-    a.apply(mig + 1000, vec![edit("note", "N1", "f/x", json!("native"))]);
+    a.apply(mig + 1000, vec![edit("note", N1, "f/x", json!("native"))]);
     let plan = |t: i64| {
         a.core
             .sync2_plan_restore(P, &RestoreTarget::At(t), true, mig + 5000)
@@ -468,16 +471,16 @@ fn restore_cuts_migrated_history_at_its_original_time() {
         .unwrap();
     let w = a.core.writer().unwrap();
     assert_eq!(
-        value_at(&w, P, EntKind::Note, "N1", "f/x", None).unwrap(),
+        value_at(&w, P, EntKind::Note, N1, "f/x", None).unwrap(),
         Some(json!("legacy v1"))
     );
     assert!(
-        value_at(&w, P, EntKind::Note, "N2", "deleted", None)
+        value_at(&w, P, EntKind::Note, N2, "deleted", None)
             .unwrap()
             .is_some_and(|v| v.is_i64())
     );
     assert_eq!(
-        value_at(&w, P, EntKind::Note, "N1", "deleted", None).unwrap(),
+        value_at(&w, P, EntKind::Note, N1, "deleted", None).unwrap(),
         None
     );
     let t1 = value_at(&w, P, EntKind::NoteType, "NT", "tmplDef/t1", None)
@@ -509,7 +512,7 @@ fn restore_before_migration_keeps_migrated_builtins_without_edits() {
                 r#"{"ankiNum":1,"builtin":"fushi_card","ntKind":"standard"}"#,
             ),
             (
-                "N1",
+                N1,
                 "note",
                 r#"{"createdAt":1,"guid":"g1","noteTypeId":"NT-lapis"}"#,
             ),
@@ -522,11 +525,11 @@ fn restore_before_migration_keeps_migrated_builtins_without_edits() {
             .unwrap();
         }
         let eid = crate::registers::edit_id("old", 1);
-        let j = json!({"ctx": {"vv": {}}, "e": "N1", "f": "f/x", "hlc": format!("{}:0:old", T0 + 100), "id": eid,
+        let j = json!({"ctx": {"vv": {}}, "e": N1, "f": "f/x", "hlc": format!("{}:0:old", T0 + 100), "id": eid,
             "k": "note", "p": P, "s": 1, "ts": "wall", "v": "legacy", "w": "old"});
         w.execute(
             "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, jslim) \
-             VALUES (srs_id(?1), srs_id(?2), 'note', srs_id('N1'), 'f/x', 'old', 1, ?3)",
+             VALUES (srs_id(?1), srs_id(?2), 'note', srs_id('0193a1b2-0000-7000-8000-0000000000e1'), 'f/x', 'old', 1, ?3)",
             rusqlite::params![eid, P, j.to_string()],
         )
         .unwrap();
@@ -560,7 +563,7 @@ fn restore_before_migration_keeps_migrated_builtins_without_edits() {
         (EntKind::Deck, deck.as_str()),
         (EntKind::NoteType, "NT-lapis"),
         (EntKind::NoteType, "NT-fushi"),
-        (EntKind::Note, "N1"),
+        (EntKind::Note, N1),
     ] {
         assert_eq!(
             value_at(&w, P, kind, id, "deleted", None).unwrap(),
@@ -591,8 +594,8 @@ fn restore_removes_native_entities_created_after_but_never_builtins() {
         vec![
             entity(
                 "note",
-                "N1",
-                json!({"createdAt": 1, "guid": "N1", "noteTypeId": "NT"}),
+                N1,
+                json!({"createdAt": 1, "guid": N1, "noteTypeId": "NT"}),
             ),
             entity("deck", "D-bi", json!({"builtin": "other"})),
         ],

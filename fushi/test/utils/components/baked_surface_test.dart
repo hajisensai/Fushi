@@ -370,6 +370,112 @@ void main() {
     );
   });
 
+  testWidgets(
+    'sub-pixel transit back to a whole-pixel offset reuses the texture',
+    (WidgetTester tester) async {
+      // 滚轮一档的补间：中途是亚像素位置（必须实时画），落点是整数个物理像素
+      // （Windows 一档 = 100 物理 px）。落定后贴回原纹理即逐像素等于实时绘制，
+      // 不该再离屏渲染一张（BUG：每档滚轮把整屏所有面重烘一遍）。
+      final ValueNotifier<Offset> shift = ValueNotifier<Offset>(Offset.zero);
+      addTearDown(shift.dispose);
+      final GlobalKey key = GlobalKey();
+      // 截图框比卡片高出一截：移位后的卡片整张留在截图里（被截图边界切到的圆角
+      // 抗锯齿，实时绘制与贴图在软件光栅下差几个像素，与本用例无关）。
+      Widget moving(Widget child) => Center(
+        child: RepaintBoundary(
+          key: key,
+          child: SizedBox(
+            width: 60,
+            height: 90,
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: SizedBox(
+                width: 60,
+                height: 80,
+                child: ValueListenableBuilder<Offset>(
+                  valueListenable: shift,
+                  builder: (BuildContext context, Offset o, Widget? child) =>
+                      Transform.translate(offset: o, child: child),
+                  child: child,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpWidget(
+        moving(BakedSurface(child: content(Colors.teal))),
+      );
+      await settleBake(tester);
+      expect(surfaceOf(tester).debugIsBaked, isTrue);
+      final int bakesBefore = RenderBakedSurface.debugBakeCount;
+
+      final double px = 1 / tester.view.devicePixelRatio;
+      // 补间每帧一个新位置（停两帧就会在亚像素处合法地重烘一张）。
+      for (final double f in <double>[0.3, 1.7, 2.4]) {
+        shift.value = Offset(0, f * px);
+        await tester.pump();
+      }
+      expect(surfaceOf(tester).debugIsBaked, isFalse, reason: '亚像素途中实时画');
+      shift.value = Offset(0, 3 * px);
+      await settleBake(tester);
+      expect(surfaceOf(tester).debugIsBaked, isTrue, reason: '整像素落点贴回纹理');
+      expect(
+        RenderBakedSurface.debugBakeCount,
+        bakesBefore,
+        reason: '内容没变、落点与烘焙位置像素等价：不重新离屏渲染',
+      );
+      final Uint8List reused = await capture(tester, key);
+
+      await tester.pumpWidget(moving(content(Colors.teal)));
+      expectSamePixels(reused, await capture(tester, key), '沿用的纹理');
+    },
+  );
+
+  testWidgets('content change during sub-pixel transit drops the old texture', (
+    WidgetTester tester,
+  ) async {
+    final ValueNotifier<Offset> shift = ValueNotifier<Offset>(Offset.zero);
+    final ValueNotifier<Color> color = ValueNotifier<Color>(Colors.teal);
+    addTearDown(shift.dispose);
+    addTearDown(color.dispose);
+    final GlobalKey key = GlobalKey();
+    Widget moving(Widget Function(Color) child) => host(
+      captureKey: key,
+      child: ValueListenableBuilder<Offset>(
+        valueListenable: shift,
+        builder: (BuildContext context, Offset o, Widget? _) =>
+            Transform.translate(
+              offset: o,
+              child: ValueListenableBuilder<Color>(
+                valueListenable: color,
+                builder: (BuildContext context, Color c, Widget? _) => child(c),
+              ),
+            ),
+      ),
+    );
+    await tester.pumpWidget(
+      moving((Color c) => BakedSurface(child: content(c))),
+    );
+    await settleBake(tester);
+    expect(surfaceOf(tester).debugIsBaked, isTrue);
+
+    final double px = 1 / tester.view.devicePixelRatio;
+    shift.value = Offset(0, 0.5 * px);
+    await tester.pump();
+    await tester.pump();
+    expect(surfaceOf(tester).debugIsBaked, isFalse);
+    color.value = Colors.orange;
+    await tester.pump();
+    shift.value = Offset(0, 2 * px);
+    await settleBake(tester);
+    expect(surfaceOf(tester).debugIsBaked, isTrue);
+    final Uint8List baked = await capture(tester, key);
+
+    await tester.pumpWidget(moving(content));
+    expectSamePixels(baked, await capture(tester, key), '途中换了内容，不能贴回旧纹理');
+  });
+
   testWidgets('nested repaint boundary is never baked', (
     WidgetTester tester,
   ) async {

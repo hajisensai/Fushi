@@ -223,10 +223,30 @@ class _World {
     'POST /api/admin/online/manga-downloads/:id/cancel': (CtlCall c) async {
       final Map<String, Object?> job =
           mangaJobs[c.params['id']] ?? _missing('job');
-      if (job['status'] != 'queued' && job['status'] != 'running') {
+      if (job['status'] != 'queued' &&
+          job['status'] != 'running' &&
+          job['status'] != 'paused') {
         throw const CtlFailure.conflict('finished');
       }
       job['status'] = 'cancelled';
+      return job;
+    },
+    'POST /api/admin/online/manga-downloads/:id/pause': (CtlCall c) async {
+      final Map<String, Object?> job =
+          mangaJobs[c.params['id']] ?? _missing('job');
+      if (job['status'] != 'queued' && job['status'] != 'running') {
+        throw const CtlFailure.conflict('not pausable');
+      }
+      job['status'] = 'paused';
+      return job;
+    },
+    'POST /api/admin/online/manga-downloads/:id/resume': (CtlCall c) async {
+      final Map<String, Object?> job =
+          mangaJobs[c.params['id']] ?? _missing('job');
+      if (job['status'] != 'paused') {
+        throw const CtlFailure.conflict('not paused');
+      }
+      job['status'] = 'queued';
       return job;
     },
     'POST /api/admin/online/manga-downloads/:id/retry': (CtlCall c) async {
@@ -716,6 +736,33 @@ void main() {
         OpUndoStatus.superseded,
       );
       expect(world.mangaJobs['j']!['status'], 'done');
+    });
+
+    test('暂停漫画任务 → 撤销恢复；恢复 → 撤销暂停；已下完 → superseded', () async {
+      world.mangaJobs['m'] = <String, Object?>{'id': 'm', 'status': 'running'};
+      final OpUndoRecord paused = await run(
+        'online.manga-download.pause',
+        <String, Object?>{'id': 'm'},
+      );
+      expect(world.mangaJobs['m']!['status'], 'paused');
+      expect(
+        (await revert('online.manga-download.pause', paused)).status,
+        OpUndoStatus.done,
+      );
+      expect(world.mangaJobs['m']!['status'], 'queued');
+
+      world.mangaJobs['m']!['status'] = 'paused';
+      final OpUndoRecord resumed = await run(
+        'online.manga-download.resume',
+        <String, Object?>{'id': 'm'},
+      );
+      expect(world.mangaJobs['m']!['status'], 'queued');
+      world.mangaJobs['m']!['status'] = 'done'; // 恢复后已经下完
+      expect(
+        (await revert('online.manga-download.resume', resumed)).status,
+        OpUndoStatus.superseded,
+      );
+      expect(world.mangaJobs['m']!['status'], 'done');
     });
 
     test('暂停剧集 → 撤销继续；继续 → 撤销暂停', () async {

@@ -108,7 +108,7 @@ void main() {
   test('A2: async rebuild schedules unconditionally, then settles the load', () {
     // 异步重建拆成两段（BUG-4510）：_scheduleDictPathsAsync 负责探测 + 排期，
     // _rebuildDictPathsCacheAsync 先 await 排期再装载。
-    final String schedule = bodyOf('Future<void> _scheduleDictPathsAsync(');
+    final String schedule = bodyOf('Future<bool> _scheduleDictPathsAsync(');
     expect(
       schedule.contains('FushiDicts.scheduleTyped') ||
           schedule.contains('FushiDicts.initializeTyped'),

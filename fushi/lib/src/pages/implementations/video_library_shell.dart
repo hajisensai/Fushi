@@ -9,20 +9,19 @@ import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart'
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi/src/models/store_compliance.dart';
+import 'package:fushi/src/pages/implementations/video_library_drop_port.dart';
 import 'package:fushi/src/pages/implementations/browse_online_sources_view.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
 import 'package:fushi/src/pages/implementations/library_online_sources_view.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_browse_page.dart';
-import 'package:fushi/src/pages/implementations/media_sources_page.dart';
+import 'package:fushi/src/pages/implementations/video_import_page.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_page.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
 import 'package:fushi/src/pages/shared/fushi_header_search_keys.dart';
 import 'package:fushi/src/utils/components/fushi_header_search.dart'
     show fushiVisibleHeaderSearch;
-import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
-    show fushiNotificationFromVisibleSubtree;
 import 'package:fushi/src/utils/components/section_visibility.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -152,29 +151,63 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
   /// 发现 / 在线来源 / 扩展三个分区的已访问集合（惰性构建 + 保活）。
   final Set<VideoLibrarySection> _onlineVisited = <VideoLibrarySection>{};
 
-  /// 浮动工具栏的显隐（滚动驱动）。
-  final FushiFloatingChromeController _chrome = FushiFloatingChromeController();
+  /// 每个保活页面**各自一份**浮动工具栏状态（显隐、页头大字的折叠进度、内容
+  /// 是否滚到工具区底下），按页面存（BUG-4897，与 `MediaLibraryShell` 同一做法）。
+  ///
+  /// 页面是保活的，各自的滚动位置切走再切回原样还在；工具栏状态若全壳共用一份，
+  /// 切分区时只能「重置成顶部」——切回一个滚到中段的页面，第一帧是展开的大号
+  /// 页头压在按旧滚动位置画的内容上，等内容发来版面通知才缩回。现在作用域里挂的
+  /// 是当前页面自己的 controller，切换即换成该页面停下时的那份状态。
+  ///
+  /// 首页 / 系列 / 全部视频共用同一个 [HomeVideoPage]（同一个滚动视图），所以
+  /// 共用一份（[_VideoShellPage.local]）。页面集合是有限枚举，controller 只在壳
+  /// 卸载时统一释放。
+  final Map<_VideoShellPage, FushiFloatingChromeController> _chromes =
+      <_VideoShellPage, FushiFloatingChromeController>{};
+
+  FushiFloatingChromeController _chromeFor(_VideoShellPage page) =>
+      _chromes.putIfAbsent(page, FushiFloatingChromeController.new);
+
+  /// 把 [child] 里的滚动 / 版面通知喂给 [page] 自己的 controller（隐藏的保活页面
+  /// 只改自己那一份，不碰当前页面的工具栏）。
+  Widget _chromeFeed(_VideoShellPage page, Widget child) {
+    final FushiFloatingChromeController chrome = _chromeFor(page);
+    return NotificationListener<ScrollNotification>(
+      onNotification: chrome.handleScrollNotification,
+      child: NotificationListener<ScrollMetricsNotification>(
+        onNotification: chrome.handleScrollMetricsNotification,
+        child: child,
+      ),
+    );
+  }
 
   /// 分区页头登记动作的槽：由浮动动作组画出（见类注释）。
   final FushiShellActionsSlot _actionsSlot = FushiShellActionsSlot();
 
+  /// 「导入」视图整页落点 → 库页（[HomeVideoPage]）拖放分发的端口（BUG-4857）。
+  final VideoLibraryDropPort _importDropPort = VideoLibraryDropPort();
+
   @override
   void dispose() {
-    _chrome.dispose();
+    for (final FushiFloatingChromeController chrome in _chromes.values) {
+      chrome.dispose();
+    }
     _actionsSlot.dispose();
     super.dispose();
   }
 
-  bool _onScroll(ScrollNotification notification) {
-    // 隐藏的保活分区后台加载 / 横滚卡片行发来的通知不算（后者 controller 内按轴过滤）。
-    if (!fushiNotificationFromVisibleSubtree(notification)) return false;
-    return _chrome.handleScrollNotification(notification);
-  }
-
   void _select(VideoLibrarySection value) {
     if (value == _section) return;
-    // 换了分区，新页面从顶部开始：工具栏回来。
-    _chrome.resetToTop();
+    final _VideoShellPage target = _VideoShellPage.of(value);
+    if (target == _VideoShellPage.of(_section)) {
+      // 同一个页面里换分区（首页 / 系列 / 全部视频共用 [HomeVideoPage]）：内容
+      // 整个换掉、从顶部重排，工具栏跟着回到顶部状态。
+      _chromeFor(target).resetToTop();
+    } else {
+      // 换到另一个保活页面：沿用它自己的折叠进度 / 遮罩状态（与它保留的滚动
+      // 位置一致），只把工具栏亮出来——用户刚在工具栏上点了切换。
+      _chromeFor(target).show();
+    }
     setState(() {
       if (value == VideoLibrarySection.sources) _beforeImport = _section;
       switch (_groupOf(value)) {
@@ -378,6 +411,9 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
         : LibrarySectionTabs<VideoLibrarySection>(
             tabs: groupTabs,
             selected: currentGroup == null ? groupTabs.first.value : _section,
+            // 停在导入页时「媒体库」高亮只是视觉锚点、不是当前视图：点它 / 方向键
+            // 落到它照常切回（BUG-4706）。
+            selectedIsCurrent: currentGroup != null,
             onChanged: _select,
             focusIdPrefix: 'video-library-view',
             floating: true,
@@ -401,7 +437,8 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
           // （焦点在页签、动作或内容上都认）。
           resolve: () => fushiVisibleHeaderSearch(_actionsSlot),
           child: FushiFloatingChromeScope(
-            controller: _chrome,
+            // 当前页面自己的工具栏状态（见 [_chromes]）。
+            controller: _chromeFor(_VideoShellPage.of(_section)),
             // 工具栏叠在内容上，收起只滑出画面、不改内容视口高度（滚轮上下「回弹、
             // 滚不动」的根因是收起改了视口高度，见 [FushiFloatingChromeOverlay]）。
             child: FushiFloatingChromeOverlay(
@@ -418,45 +455,42 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
                 // 页头大字顶栏里二级页签由大字行画（放得下与页名同一行）。
                 secondary: subNavigation,
               ),
-              child: NotificationListener<ScrollNotification>(
-                onNotification: _onScroll,
-                child: SectionSwipeNavigator<VideoLibrarySection>(
-                  // 导入不是页签，只在停在导入页时留在序里（从它滑回相邻分区）。
-                  sections: <VideoLibrarySection>[
-                    for (final LibrarySectionTab<VideoLibrarySection> tab
-                        in tabs)
-                      if (tab.value != VideoLibrarySection.sources ||
-                          _section == VideoLibrarySection.sources)
-                        tab.value,
-                  ],
-                  selected: _section,
-                  onSelect: _select,
-                  // 二级胶囊行叠在页面上、与顶栏同一份显隐（嵌套的
-                  // [FushiFloatingChromeOverlay] 读同一个作用域，内层页面的顶部
-                  // 让位自动累加两行），收放不改页面视口。
-                  child: FushiFloatingChromeOverlay(
-                    // 二级下划线页签贴着顶栏，不再隔 8（见 nestedGap）。
-                    nestedGap: 0,
-                    opaqueChrome: true,
-                    masthead: true,
-                    chrome: subNavigation == null
-                        ? const SizedBox.shrink()
-                        : Padding(
-                            // 与顶栏胶囊、页面内容同一条页边；两级页签之间的 12
-                            // 由嵌套层统一给（[kFushiFloatingChromeGap] + 顶栏
-                            // 底边 4），这里不再叠竖向留白。
-                            padding: EdgeInsets.symmetric(
-                              horizontal: FushiDesignTokens.of(
-                                context,
-                              ).spacing.page,
-                            ),
-                            child: Align(
-                              alignment: AlignmentDirectional.centerStart,
-                              child: subNavigation,
-                            ),
+              // 滚动通知由各页面自己那一层喂给各自的 controller（[_chromeFeed]）。
+              child: SectionSwipeNavigator<VideoLibrarySection>(
+                // 导入不是页签，只在停在导入页时留在序里（从它滑回相邻分区）。
+                sections: <VideoLibrarySection>[
+                  for (final LibrarySectionTab<VideoLibrarySection> tab in tabs)
+                    if (tab.value != VideoLibrarySection.sources ||
+                        _section == VideoLibrarySection.sources)
+                      tab.value,
+                ],
+                selected: _section,
+                onSelect: _select,
+                // 二级胶囊行叠在页面上、与顶栏同一份显隐（嵌套的
+                // [FushiFloatingChromeOverlay] 读同一个作用域，内层页面的顶部
+                // 让位自动累加两行），收放不改页面视口。
+                child: FushiFloatingChromeOverlay(
+                  // 二级下划线页签贴着顶栏，不再隔 8（见 nestedGap）。
+                  nestedGap: 0,
+                  opaqueChrome: true,
+                  masthead: true,
+                  chrome: subNavigation == null
+                      ? const SizedBox.shrink()
+                      : Padding(
+                          // 与顶栏胶囊、页面内容同一条页边；两级页签之间的 12
+                          // 由嵌套层统一给（[kFushiFloatingChromeGap] + 顶栏
+                          // 底边 4），这里不再叠竖向留白。
+                          padding: EdgeInsets.symmetric(
+                            horizontal: FushiDesignTokens.of(
+                              context,
+                            ).spacing.page,
                           ),
-                    child: _buildSections(navigation),
-                  ),
+                          child: Align(
+                            alignment: AlignmentDirectional.centerStart,
+                            child: subNavigation,
+                          ),
+                        ),
+                  child: _buildSections(navigation),
                 ),
               ),
             ),
@@ -490,31 +524,36 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
               enabled: _showsLocalLibrary,
               child: _dropScoped(
                 () => _showsLocalLibrary,
-                _insetPadded(
-                      widget.localLibraryPageBuilder?.call(
-                        context,
-                        _navigationFor(_showsLocalLibrary, navigation),
-                        _localSection,
+                _chromeFeed(
+                  _VideoShellPage.local,
+                  _insetPadded(
+                        widget.localLibraryPageBuilder?.call(
+                          context,
+                          _navigationFor(_showsLocalLibrary, navigation),
+                          _localSection,
+                        ),
+                      ) ??
+                      // 主滚动视图自己把工具栏高度加成顶部内边距（内容滚到工具栏底下）。
+                      HomeVideoPage(
+                        repo: widget.repository,
+                        navigation: _navigationFor(
+                          _showsLocalLibrary,
+                          navigation,
+                        ),
+                        section: _localSection,
+                        libraryRefreshSignal: widget.libraryRefreshSignal,
+                        onOpenScrapeTasks: widget.onOpenScrapeTasks,
+                        scrapeTaskController: widget.scrapeTaskController,
+                        loadPendingScrapeWorks: widget.loadPendingScrapeWorks,
+                        refreshPendingScrapeWorks:
+                            widget.refreshPendingScrapeWorks,
+                        pendingScrapeChangedSignal:
+                            widget.pendingScrapeChangedSignal,
+                        onOpenSources: () =>
+                            _select(VideoLibrarySection.sources),
+                        importDropPort: _importDropPort,
                       ),
-                    ) ??
-                    // 主滚动视图自己把工具栏高度加成顶部内边距（内容滚到工具栏底下）。
-                    HomeVideoPage(
-                      repo: widget.repository,
-                      navigation: _navigationFor(
-                        _showsLocalLibrary,
-                        navigation,
-                      ),
-                      section: _localSection,
-                      libraryRefreshSignal: widget.libraryRefreshSignal,
-                      onOpenScrapeTasks: widget.onOpenScrapeTasks,
-                      scrapeTaskController: widget.scrapeTaskController,
-                      loadPendingScrapeWorks: widget.loadPendingScrapeWorks,
-                      refreshPendingScrapeWorks:
-                          widget.refreshPendingScrapeWorks,
-                      pendingScrapeChangedSignal:
-                          widget.pendingScrapeChangedSignal,
-                      onOpenSources: () => _select(VideoLibrarySection.sources),
-                    ),
+                ),
               ),
             ),
           ),
@@ -530,26 +569,29 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
                   () => _section == VideoLibrarySection.mediaServers,
                   // 媒体服务器页头自己叠进浮动工具区、正文自己让位
                   // （[MediaServerPageFrame]），不再整体下移。
-                  widget.mediaServerPageBuilder?.call(
-                        context,
-                        _navigationFor(
-                          _section == VideoLibrarySection.mediaServers,
-                          navigation,
-                        ),
-                      ) ??
-                      MediaServerBrowsePage(
-                        navigation: _navigationFor(
-                          _section == VideoLibrarySection.mediaServers,
-                          navigation,
-                        ),
-                        systemBackActive:
-                            widget.systemBackActive &&
+                  _chromeFeed(
+                    _VideoShellPage.mediaServers,
+                    widget.mediaServerPageBuilder?.call(
+                          context,
+                          _navigationFor(
                             _section == VideoLibrarySection.mediaServers,
-                        repo: widget.repository,
-                        loadServers:
-                            widget.mediaServerServersLoader ??
-                            () async => const <MediaServerEntry>[],
-                      ),
+                            navigation,
+                          ),
+                        ) ??
+                        MediaServerBrowsePage(
+                          navigation: _navigationFor(
+                            _section == VideoLibrarySection.mediaServers,
+                            navigation,
+                          ),
+                          systemBackActive:
+                              widget.systemBackActive &&
+                              _section == VideoLibrarySection.mediaServers,
+                          repo: widget.repository,
+                          loadServers:
+                              widget.mediaServerServersLoader ??
+                              () async => const <MediaServerEntry>[],
+                        ),
+                  ),
                 ),
               ),
             ),
@@ -571,19 +613,22 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
                 child: _dropScoped(
                   () => _section == VideoLibrarySection.sources,
                   // 导入页的滚动视图自己让出工具区高度（收起后不留空白）。
-                  MediaSourcesPage(
-                    mediaKind: 'video',
-                    navigation: _navigationFor(
-                      _section == VideoLibrarySection.sources,
-                      navigation,
+                  _chromeFeed(
+                    _VideoShellPage.sources,
+                    VideoImportPage(
+                      navigation: _navigationFor(
+                        _section == VideoLibrarySection.sources,
+                        navigation,
+                      ),
+                      onScrapeAll: widget.onScrapeAll,
+                      onClearAllScrapeRecords: widget.onClearAllScrapeRecords,
+                      onScrapeSource: widget.onScrapeSource,
+                      onVideoScanCompleted: widget.onVideoScanCompleted,
+                      scrapeTaskController: widget.scrapeTaskController,
+                      onOpenScrapeTasks: widget.onOpenScrapeTasks,
+                      onLibraryChanged: widget.onLibraryChanged,
+                      onDrop: _importDropPort.drop,
                     ),
-                    onScrapeAll: widget.onScrapeAll,
-                    onClearAllScrapeRecords: widget.onClearAllScrapeRecords,
-                    onScrapeSource: widget.onScrapeSource,
-                    onVideoScanCompleted: widget.onVideoScanCompleted,
-                    scrapeTaskController: widget.scrapeTaskController,
-                    onOpenScrapeTasks: widget.onOpenScrapeTasks,
-                    onLibraryChanged: widget.onLibraryChanged,
                   ),
                 ),
               ),
@@ -616,7 +661,10 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
             // 来源 / 扩展 / 发现的主滚动视图都自己把工具区高度加成顶部内边距
             // （发现页的搜索 / 筛选行也叠进浮动工具区，见 [VideoDiscoveryPage]），
             // 工具区收起后不留空白、内容在胶囊背后可见。
-            build(section, _navigationFor(active, navigation)),
+            _chromeFeed(
+              _VideoShellPage.of(section),
+              build(section, _navigationFor(active, navigation)),
+            ),
           ),
         ),
       ),
@@ -655,3 +703,25 @@ LibrarySectionGroup? _groupOf(VideoLibrarySection section) => switch (section) {
   VideoLibrarySection.extensions => LibrarySectionGroup.online,
   VideoLibrarySection.sources => null,
 };
+
+/// 视频库壳里各自保活、各有滚动位置的页面（[_VideoLibraryShellState._chromes]
+/// 按它分工具栏状态）。首页 / 系列 / 全部视频共用一个 [HomeVideoPage]。
+enum _VideoShellPage {
+  local,
+  mediaServers,
+  discover,
+  onlineSources,
+  extensions,
+  sources;
+
+  static _VideoShellPage of(VideoLibrarySection section) => switch (section) {
+    VideoLibrarySection.home ||
+    VideoLibrarySection.series ||
+    VideoLibrarySection.allVideos => local,
+    VideoLibrarySection.mediaServers => mediaServers,
+    VideoLibrarySection.discover => discover,
+    VideoLibrarySection.onlineSources => onlineSources,
+    VideoLibrarySection.extensions => extensions,
+    VideoLibrarySection.sources => sources,
+  };
+}

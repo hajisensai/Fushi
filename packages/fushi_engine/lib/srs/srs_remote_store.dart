@@ -2,10 +2,17 @@
 /// 复习库上复习。客户端的 [SrsDbStore] 换成一个把每次调用转发到主机的实现，复习页 / 笔记编辑 / 牌组设置 /
 /// 浏览等页面原样运行，功能与在本机复习一致；排队、排程（含 RWKV）、模板渲染、写入都在主机的 [SrsDbStore] 上做。
 ///
-/// 这里是两端共用的部分：
-/// - 线格式（[SrsRemoteWire]）：实体视图（笔记 / 笔记类型 / 牌组）不按字段搬，搬的是物化输入（身份记录 +
-///   修改记录，[SrsEntitySource]），客户端用同一个物化内核得出逐字相同的视图（含修改记录 / 冲突寄存器）；
+/// 这里是两端共用的部分（线格式 V2，复习库协议 4；协商见 srs_remote_generation.dart）：
+/// - 线格式（[SrsRemoteWire]）：实体（笔记 / 笔记类型 / 牌组）搬主机内核 `entity_views` 算好的视图 `{id, tag, v}`
+///   （[SrsEntityView]，规划 §1.8）：`v` 是视图 JSON 原文，`tag` 视图一变必变；客户端经与本机同一份解码器
+///   （srs_entity_views.dart）解成物化输入、交给同一个物化内核。胜者、按类判定的活着的写入、信任状态都在主机算好，
+///   客户端不重算（D31）。
+/// - ID 一律是主机集合里的规范 ID：主机内核对请求里的 ID 先归一；客户端的内置实体 ID（默认牌组、两个内置笔记类型）
+///   不自己派生，取回包信封里主机给的那一份（`ids`），归一经主机的 `canonical_ids`（[SrsRemoteStoreService] 的
+///   `canonicalIds`）。
 /// - 主机侧服务（[SrsRemoteStoreService]）：按操作名分派到当前 profile 的 [SrsDbStore]，写操作按客户端请求 id 幂等。
+///   远程对端是不可信输入：操作表就是白名单（只开远程复习页面用到的读与复习写），主机替客户端发出的内核命令只限
+///   [kSrsRemoteKernelOps]；身份 / 绑定 / 导入导出 / 清除 / 同步 / 加解密类命令没有任何入口。
 ///
 /// 路由在 `FushiSyncServer`（srs_remote_store_routes.dart），鉴权由它的 middleware 统一做。
 library;
@@ -18,14 +25,18 @@ import 'package:fushi_anki/fushi_anki_core.dart'
     show FushiCardItem, kFushiCardDefaultBackItems, kFushiCardDefaultFrontItems;
 import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
 import 'package:fushi_engine/srs/srs_builtin.dart';
+import 'package:fushi_engine/srs/srs_canonical_ids.dart'
+    show srsCanonicalIdIn, srsCanonicalIdMap;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_edit_history.dart';
+import 'package:fushi_engine/srs/srs_entity_views.dart';
 import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart'
     show SrsCardNativeFallback, SrsCardNativeFallbackCode;
 import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
 import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
 import 'package:fushi_srs/fushi_srs.dart';
+import 'package:meta/meta.dart' show visibleForTesting;
 
 /// host 在 `GET /api/capabilities` 声明的能力位。
 const String kSrsRemoteStoreCapability = 'srsRemoteStoreV1';
@@ -201,10 +212,19 @@ abstract final class _J {
   }
 }
 
+/// 主机集合里根上内置实体的规范 ID（信封的 `ids`：`{deck, lapis, fushi}`）。客户端不按 uid 派生，用这一份。
+typedef SrsRemoteRootIds = ({
+  String defaultDeck,
+  String lapis,
+  String fushiCard,
+});
+
 /// 一次回包的信封（[SrsRemoteStoreService.call] 的回包里 `result` 之外的部分）。缺的字段为 null，
-/// 客户端沿用上次的值。
+/// 客户端沿用上次的值。[collection] 是主机这份 profile 绑定的集合（`col`），[roots] 是根上内置实体的规范 ID（`ids`）。
 typedef SrsRemoteEnvelope = ({
   String? profile,
+  String? collection,
+  SrsRemoteRootIds? roots,
   int? revision,
   String? fingerprint,
   String? treeTag,
@@ -219,10 +239,10 @@ typedef SrsRemoteEnvelope = ({
 /// 笔记类型引用 `{id, tag}`（客户端按 tag 判断缓存的视图还新不新）。
 typedef SrsRemoteTypeRef = ({String id, String tag});
 
-/// `cardDetail` 的回包（笔记与笔记类型按物化输入 / 引用搬，客户端物化）。
+/// `cardDetail` 的回包（笔记按视图、笔记类型按引用搬，客户端物化）。
 typedef SrsRemoteCardDetail = ({
   SrsCardCacheRow card,
-  SrsEntitySource note,
+  SrsEntityView note,
   SrsRemoteTypeRef type,
   String? templateId,
   String deckName,
@@ -242,6 +262,8 @@ abstract final class SrsRemoteWire {
 
   static SrsRemoteEnvelope envelopeFrom(Map<String, Object?> m) => (
     profile: _J.optStr(m['profile'], 'profile'),
+    collection: _J.optStr(m['col'], 'col'),
+    roots: rootIdsFrom(m['ids']),
     revision: _J.optInt(m['rev'], 'rev'),
     fingerprint: _J.optStr(m['fp'], 'fp'),
     treeTag: _J.optStr(m['tt'], 'tt'),
@@ -252,6 +274,23 @@ abstract final class SrsRemoteWire {
     nowMs: _J.optInt(m['now'], 'now'),
     timeSource: _J.optStr(m['ts'], 'ts'),
   );
+
+  /// 信封的 `ids`：`{deck, lapis, fushi}`；缺 = null（沿用上次）。
+  static Map<String, Object?> rootIds(SrsRemoteRootIds r) => <String, Object?>{
+    'deck': r.defaultDeck,
+    'lapis': r.lapis,
+    'fushi': r.fushiCard,
+  };
+
+  static SrsRemoteRootIds? rootIdsFrom(Object? v) {
+    if (v == null) return null;
+    final Map<String, Object?> m = _J.map(v, 'ids');
+    return (
+      defaultDeck: _J.str(m['deck'], 'ids.deck'),
+      lapis: _J.str(m['lapis'], 'ids.lapis'),
+      fushiCard: _J.str(m['fushi'], 'ids.fushi'),
+    );
+  }
 
   /// 主机 RWKV 的准备状态 `{p: 阶段名, d, t, e?}`（信封的 `rk`）：远程复习页「等 RWKV」时显示进度 / 错误用。
   /// 错误只搬文本。
@@ -315,36 +354,34 @@ abstract final class SrsRemoteWire {
     ];
   }
 
-  static Map<String, Object?> source(SrsEntitySource s) => <String, Object?>{
-    'id': s.id,
-    'p': s.payloadJson,
-    'e': editItems(s.edits),
+  /// 一个实体视图 `{id, tag, v}`（规划 §1.8）：`v` 是主机内核 `entity_views` 的视图 JSON 原文，原样搬。
+  static Map<String, Object?> view(SrsEntityView v) => <String, Object?>{
+    'id': v.id,
+    'tag': v.tag,
+    'v': v.json,
   };
 
-  static SrsEntitySource sourceFrom(Object? json, [String at = 'source']) {
+  static SrsEntityView viewFrom(Object? json, [String at = 'view']) {
     final Map<String, Object?> m = _J.map(json, at);
-    return SrsEntitySource(
+    return SrsEntityView(
       _J.str(m['id'], '$at.id'),
-      _J.str(m['p'], '$at.p'),
-      editItemsFrom(m['e'], '$at.e'),
+      _J.str(m['tag'], '$at.tag'),
+      _J.str(m['v'], '$at.v'),
     );
   }
 
-  static List<SrsEntitySource> sourcesFrom(
-    Object? json, [
-    String at = 'result',
-  ]) {
+  static List<SrsEntityView> viewsFrom(Object? json, [String at = 'result']) {
     final List<Object?> l = _J.list(json, at);
-    return <SrsEntitySource>[
-      for (int i = 0; i < l.length; i++) sourceFrom(l[i], '$at[$i]'),
+    return <SrsEntityView>[
+      for (int i = 0; i < l.length; i++) viewFrom(l[i], '$at[$i]'),
     ];
   }
 
-  /// 物化输入的版本标签：身份记录不可变、修改记录只增不改，所以「条数 + 最后一条的 ID」变了视图才会变。
-  /// 客户端按它缓存笔记类型 / 牌组树，没变就不再搬（笔记类型的修改记录里有整份模板，搬一次就够）。
-  static String tagOf(SrsEntitySource s) =>
-      '${s.payloadJson.length}:${s.edits.length}:'
-      '${s.edits.isEmpty ? '' : s.edits.last.edit.id}';
+  /// 视图 → 物化输入（srs_entity_views.dart 的唯一解码器；不合形归成 [SrsRemoteWireError]）。没有身份记录的跳过。
+  static List<SrsEntitySource> sourcesOf(
+    List<SrsEntityView> views, [
+    String at = 'views',
+  ]) => _J.guard(at, () => srsEntitySourcesOfViews(views));
 
   static SrsRemoteTypeRef typeRefFrom(Object? json, [String at = 'type']) {
     final Map<String, Object?> m = _J.map(json, at);
@@ -363,13 +400,23 @@ abstract final class SrsRemoteWire {
     ];
   }
 
-  static List<SrsNoteView> notesFrom(List<SrsEntitySource> sources) =>
-      sources.isEmpty
-      ? const <SrsNoteView>[]
-      : _J.guard('notes', () => srsMaterializeNotes(sources));
+  static List<SrsNoteView> notesFrom(List<SrsEntityView> views) {
+    final List<SrsEntitySource> sources = sourcesOf(views, 'notes');
+    return sources.isEmpty
+        ? const <SrsNoteView>[]
+        : _J.guard('notes', () => srsMaterializeNotes(sources));
+  }
 
+  /// 笔记类型视图按输入顺序物化（没有身份记录的跳过；结果与跳过后的输入逐项对应，按 ID 对回）。内置类型的代码默认值
+  /// （字段 / 模板 ID）由主机信封里的规范 ID [roots] 派生（G10-4）：客户端不按 uid 派生，并入 / 认领后主机 profile 的
+  /// uid 与集合无关，规范 ID 才是两端共同的那一份。
   static List<SrsNoteTypeView> noteTypesFrom(
-    String profileUid,
+    SrsRemoteRootIds roots,
+    List<SrsEntityView> views,
+  ) => _noteTypesOf(roots, sourcesOf(views, 'noteTypes'));
+
+  static List<SrsNoteTypeView> _noteTypesOf(
+    SrsRemoteRootIds roots,
     List<SrsEntitySource> sources,
   ) => sources.isEmpty
       ? const <SrsNoteTypeView>[]
@@ -378,9 +425,22 @@ abstract final class SrsRemoteWire {
           () =>
               srsMaterializeNoteTypes(<(SrsEntitySource, SrsBuiltinNoteType?)>[
                 for (final SrsEntitySource s in sources)
-                  (s, srsBuiltinNoteTypeForKey(profileUid, _builtinKeyOf(s))),
+                  (s, _builtinOf(roots, _builtinKeyOf(s))),
               ]),
         );
+
+  /// 内置标识 [key] 在主机集合里的定义（不是内置 = null）。只认信封 `ids` 里有规范 ID 的两种内置类型；内核以后多出
+  /// 一种内置类型而信封没带它的 ID 时报线格式错，不退回按 uid 派生。
+  static SrsBuiltinNoteType? _builtinOf(SrsRemoteRootIds roots, String? key) {
+    final SrsBuiltinNoteTypeSpec? spec = srsBuiltinNoteTypeSpec(key);
+    if (spec == null) return null;
+    final String nt = switch (spec.key) {
+      kSrsBuiltinLapisKey => roots.lapis,
+      kSrsBuiltinFushiCardKey => roots.fushiCard,
+      _ => throw SrsRemoteWireError('ids.${spec.key}'),
+    };
+    return srsBuiltinNoteTypeIn(nt, spec);
+  }
 
   /// 笔记类型身份记录里的内置标识（`builtin`）；没有为 null。
   static String? _builtinKeyOf(SrsEntitySource s) {
@@ -389,8 +449,13 @@ abstract final class SrsRemoteWire {
     return _J.optStr(_J.map(payload, at)['builtin'], '$at.builtin');
   }
 
-  static SrsDeckTree deckTreeFrom(List<SrsEntitySource> sources) =>
-      _J.guard('deckTree', () => SrsDeckTree(srsMaterializeDecks(sources)));
+  static SrsDeckTree deckTreeFrom(List<SrsEntityView> views) {
+    final List<SrsEntitySource> sources = sourcesOf(views, 'deckTree');
+    return _J.guard(
+      'deckTree',
+      () => SrsDeckTree(srsMaterializeDecks(sources)),
+    );
+  }
 
   static SrsEntityEdits entityEditsFrom(Object? json, [String at = 'edits']) {
     final List<SrsEditItem> items = editItemsFrom(json, at);
@@ -460,6 +525,7 @@ abstract final class SrsRemoteWire {
     'total': s.totalCards,
     'rp': s.rwkvPending,
     'rs': s.rwkvScheduled,
+    'rm': ?s.reviewMinutesLeft,
   };
 
   /// 牌组行；null = 没有这个牌组，或它不在 [tree] 里（树与摘要之间主机删了它）。
@@ -490,6 +556,7 @@ abstract final class SrsRemoteWire {
       totalCards: _J.integer(m['total'], '$at.total'),
       rwkvPending: m['rp'] == true,
       rwkvScheduled: m['rs'] == true,
+      reviewMinutesLeft: _J.optInt(m['rm'], '$at.rm'),
     );
   }
 
@@ -514,13 +581,13 @@ abstract final class SrsRemoteWire {
     ];
   }
 
-  /// 一台主机牌组摘要的本机缓存（复习首页「已配对设备」落盘的格式）：牌组树的物化输入 + 牌组行，
+  /// 一台主机牌组摘要的本机缓存（复习首页「已配对设备」落盘的格式）：牌组树的视图 + 牌组行，
   /// 与线格式同一套编码，读回时经同一套校验（[deckCacheFrom]）。
   static Map<String, Object?> deckCache(
-    List<SrsEntitySource> tree,
+    List<SrsEntityView> tree,
     List<SrsDeckSummary> decks,
   ) => <String, Object?>{
-    'tree': <Object?>[for (final SrsEntitySource s in tree) source(s)],
+    'tree': <Object?>[for (final SrsEntityView v in tree) view(v)],
     'decks': <Object?>[for (final SrsDeckSummary d in decks) summary(d)],
   };
 
@@ -529,7 +596,7 @@ abstract final class SrsRemoteWire {
     String at = 'cache',
   ]) {
     final Map<String, Object?> m = _J.map(json, at);
-    final SrsDeckTree tree = deckTreeFrom(sourcesFrom(m['tree'], '$at.tree'));
+    final SrsDeckTree tree = deckTreeFrom(viewsFrom(m['tree'], '$at.tree'));
     return summariesFrom(m['decks'], tree, '$at.decks');
   }
 
@@ -748,7 +815,7 @@ abstract final class SrsRemoteWire {
     final Map<String, Object?> m = _J.map(json, at);
     return (
       card: cardRowFrom(m['card'], '$at.card') ?? _J.bad('$at.card'),
-      note: sourceFrom(m['note'], '$at.note'),
+      note: viewFrom(m['note'], '$at.note'),
       type: typeRefFrom(m['type'], '$at.type'),
       templateId: _J.optStr(m['tpl'], '$at.tpl'),
       deckName: _J.str(m['deckName'], '$at.deckName'),
@@ -966,6 +1033,9 @@ class _Args {
 
   bool flag(String key) => _m[key] == true;
 
+  /// 实体种类：远程只开复习库里的牌组 / 笔记类型 / 笔记 / 卡；`profile`（profile 级设置实体）与不认识的一律 400。
+  SrsEntityKind kind(String key) => srsRemoteEntityKind(_m[key]);
+
   List<String> strings(String key) {
     final Object? v = _m[key];
     if (v == null) return const <String>[];
@@ -988,6 +1058,49 @@ class _Args {
   }
 
   Map<String, Object?> map(String key) => _J.map(_m[key], key);
+}
+
+/// 远程可以点名的实体种类（[_Args.kind]、编辑规格、撤销凭据）：不含 `profile`——那是 profile 级设置（翻日时刻等），
+/// 只由本机写（`SrsRemoteStore.setDayRolloverHour` 同口径）。
+const Set<SrsEntityKind> kSrsRemoteEntityKinds = <SrsEntityKind>{
+  SrsEntityKind.deck,
+  SrsEntityKind.noteType,
+  SrsEntityKind.note,
+  SrsEntityKind.card,
+};
+
+/// [wire] 是 [kSrsRemoteEntityKinds] 里的种类就返回它，否则 400 [SrsRemoteStoreError.badRequest]。
+SrsEntityKind srsRemoteEntityKind(Object? wire) {
+  final SrsEntityKind? k = wire is String ? SrsEntityKind.tryParse(wire) : null;
+  if (k == null || !kSrsRemoteEntityKinds.contains(k)) {
+    throw const SrsRemoteStoreError(400, SrsRemoteStoreError.badRequest);
+  }
+  return k;
+}
+
+/// 主机替远程客户端发出的内核命令（经 [srsRemoteKernelCommand]）只能是这些：只读的实体视图 / 归一 / 修改历史，加浏览会话命令
+/// （[SrsDbStore.kSrsBrowseOps]，也只读）。身份（`identity` / `collection_*` / `binding_set`）、导入导出、清除
+/// （`purge` / `profile_purge`）、同步一轮、加解密（`seal_file` / `open_file` 按请求给的路径读写主机文件）一律不在内。
+const Set<String> kSrsRemoteKernelOps = <String>{
+  'entity_views',
+  'canonical_ids',
+  'history',
+  ...SrsDbStore.kSrsBrowseOps,
+};
+
+/// 替远程客户端发一条内核命令：不在 [kSrsRemoteKernelOps] 里的 400，不进 store。主机替远程发的内核命令只经这一处
+/// （`editHistory`、`browseCommand`）；`browseCommand` 自己再收窄到浏览会话命令。测试直接调它核对闸门本身。
+@visibleForTesting
+Future<SrsSync2Result> srsRemoteKernelCommand(
+  SrsDbStore store,
+  Map<String, Object?> request,
+) async {
+  if (!kSrsRemoteKernelOps.contains(request['op'])) {
+    throw const SrsRemoteStoreError(400, SrsRemoteStoreError.badRequest);
+  }
+  return SrsDbStore.kSrsBrowseOps.contains(request['op'])
+      ? store.browseCommand(request)
+      : store.sync2Command(request);
 }
 
 typedef _Run = Future<Object?> Function(SrsDbStore store, _Args a);
@@ -1026,7 +1139,28 @@ class SrsRemoteServedProfile {
   };
 }
 
-/// 主机侧服务：每个请求现取当前 profile 的 [SrsDbStore]（配置切换 / 模块开关即时生效）。
+/// 主机的库因代际状态打不开（[SrsStoreOpenBlocked]）时给客户端的机读码（HTTP 503）：迁移失败 / 只剩封存旧库 /
+/// 旁边另有没迁移的旧库要在主机上处理 → [SrsRemoteStoreError.migrationFailed]；还没迁移（等主机上的用户点升级）/
+/// 别的进程正在迁移 → [SrsRemoteStoreError.migrating]。客户端重试前者没有用，后者等一会儿再来。
+SrsRemoteStoreError srsRemoteOpenBlockedError(SrsStoreOpenBlocked e) =>
+    switch (e) {
+      SrsStoreNotMigrated(
+        state: SrsGenState.migrationFailed || SrsGenState.sealedOldOnly,
+      ) ||
+      SrsStoreLegacyUnmigrated() => SrsRemoteStoreError(
+        503,
+        SrsRemoteStoreError.migrationFailed,
+        '$e',
+      ),
+      SrsStoreNotMigrated() || SrsStoreMigrating() => SrsRemoteStoreError(
+        503,
+        SrsRemoteStoreError.migrating,
+        '$e',
+      ),
+    };
+
+/// 主机侧服务：每个请求现取当前 profile 的 [SrsDbStore]（配置切换 / 模块开关即时生效）。读库时抛
+/// [SrsStoreOpenBlocked]（库在换代途中）的，按 [srsRemoteOpenBlockedError] 回机读码，不当成「复习模块没开」。
 class SrsRemoteStoreService {
   ///
   /// 一台主机可以同时提供几份 profile（无头服务端：一门语言一份）：[readProfile] 按客户端点名的 uid 取那份库
@@ -1082,14 +1216,21 @@ class SrsRemoteStoreService {
   /// 设备：给了且在现实时区范围内（[srsRemoteDeviceOffset]）时这次调用按它算日界（每日上限、到期计数、作答日志
   /// 记下的偏移）；不给（旧客户端）或越界时按主机自己的偏移算，与旧协议一致。翻日时刻照旧取 profile 同步的那一份。
   ///
-  /// 回包：`{profile, rev, fp, tt, now, ts, sched, rwkv, rk, result}`——`rev` / `fp` 是主机的修订号与统计指纹，
+  /// [collection]：客户端握手时看到的集合（信封的 `col`）。读写操作带了而主机这份 profile 此刻绑定的集合不是它（期间
+  /// 并入 / 认领换了集合，客户端手里的 ID 与缓存都按旧集合）→ 409 [SrsRemoteStoreError.profileChanged]，客户端重新
+  /// 握手，不把写入落到它没见过的集合上。
+  ///
+  /// 回包：`{profile, col, ids, rev, fp, tt, now, ts, sched, rwkv, rk, dev, result}`——`col` 是这份 profile 绑定的集合，
+  /// `ids` 是根上内置实体的规范 ID（[SrsRemoteWire.rootIds]），`rev` / `fp` 是主机的修订号与统计指纹，
   /// `tt` 是牌组树标签（客户端据此判断缓存的树还新不新），`now` / `ts` 是主机此刻的复习时钟，`rwkv` / `rk` 是
-  /// 主机 RWKV 是否就绪与它的准备状态（[SrsRemoteWire.rwkvStatus]；主机没有 RWKV 运行时不带 `rk`）。
+  /// 主机 RWKV 是否就绪与它的准备状态（[SrsRemoteWire.rwkvStatus]；主机没有 RWKV 运行时不带 `rk`），`dev` 是主机
+  /// 在集合里的设备号。
   Future<Map<String, Object?>> call({
     required String? profile,
     required String op,
     required Map<String, Object?> args,
     String? request,
+    String? collection,
     int? deviceOffsetMin,
   }) {
     final int? offset = srsRemoteDeviceOffset(deviceOffsetMin);
@@ -1099,7 +1240,9 @@ class SrsRemoteStoreService {
         const SrsRemoteStoreError(404, SrsRemoteStoreError.unknownOp),
       );
     }
-    if (!spec.write) return _run(op, spec, profile, args, offset);
+    // 读操作也核对集合：中间一次读看到换了集合就 409，客户端不会在读里悄悄换成新集合、再拿旧集合的 ID
+    // 落写（写带的 `col` 是握手时那一份，读不更新它）。
+    if (!spec.write) return _run(op, spec, profile, args, offset, collection);
     if (request == null ||
         request.isEmpty ||
         profile == null ||
@@ -1118,6 +1261,7 @@ class SrsRemoteStoreService {
       profile,
       args,
       offset,
+      collection,
     );
     _inFlight[request] = future;
     return future
@@ -1138,11 +1282,10 @@ class SrsRemoteStoreService {
     String? profile,
     Map<String, Object?> args,
     int? deviceOffsetMin,
+    String? collection,
   ) async {
     final Future<SrsDbStore?> Function(String)? byUid = _readProfile;
-    final SrsDbStore? store = profile != null && byUid != null
-        ? await byUid(profile)
-        : await _readStore();
+    final SrsDbStore? store = await _open(profile, byUid);
     if (store == null) {
       // 点名的 profile 主机不（再）提供了：与「主机切了 profile」同一个错误，客户端重新握手。
       if (profile != null && byUid != null) {
@@ -1154,6 +1297,9 @@ class SrsRemoteStoreService {
       throw const SrsRemoteStoreError(503, SrsRemoteStoreError.unavailable);
     }
     if (profile != null && profile != store.profileUid) {
+      throw const SrsRemoteStoreError(409, SrsRemoteStoreError.profileChanged);
+    }
+    if (collection != null && collection != store.sync2Collection) {
       throw const SrsRemoteStoreError(409, SrsRemoteStoreError.profileChanged);
     }
     final Object? result;
@@ -1176,6 +1322,12 @@ class SrsRemoteStoreService {
     final (int nowMs, SrsTimeSource source) = store.now();
     return <String, Object?>{
       'profile': store.profileUid,
+      'col': store.sync2Collection,
+      'ids': SrsRemoteWire.rootIds((
+        defaultDeck: store.defaultDeckId,
+        lapis: store.lapisNoteTypeId,
+        fushiCard: store.fushiCardNoteTypeId,
+      )),
       'rev': store.revision,
       'fp': store.contentFingerprint,
       'tt': (await _treeWire(store)).tag,
@@ -1194,49 +1346,77 @@ class SrsRemoteStoreService {
     };
   }
 
+  /// 现取这次调用的库：点名的 profile 走 [byUid]，否则默认那份。库在换代途中按 [srsRemoteOpenBlockedError] 回机读码。
+  Future<SrsDbStore?> _open(
+    String? profile,
+    Future<SrsDbStore?> Function(String)? byUid,
+  ) async {
+    try {
+      return profile != null && byUid != null
+          ? await byUid(profile)
+          : await _readStore();
+    } on SrsStoreOpenBlocked catch (e) {
+      throw srsRemoteOpenBlockedError(e);
+    }
+  }
+
   Future<({String key, String tag, List<Map<String, Object?>> decks})>
   _treeWire(SrsDbStore store) async {
     final String key = store.deckTreeKey;
     final ({String key, String tag, List<Map<String, Object?>> decks})? c =
         _trees[store.profileUid];
     if (c != null && c.key == key) return c;
-    final List<SrsEntitySource> sources = await store.entitySources(
+    final List<SrsEntityView> views = await store.entityViews(
       SrsEntityKind.deck,
     );
     final List<String> tags = <String>[
-      for (final SrsEntitySource s in sources)
-        '${s.id}=${SrsRemoteWire.tagOf(s)}',
+      for (final SrsEntityView v in views) '${v.id}=${v.tag}',
     ]..sort();
     final ({String key, String tag, List<Map<String, Object?>> decks}) out = (
       key: key,
       tag: tags.join(';'),
       decks: <Map<String, Object?>>[
-        for (final SrsEntitySource s in sources) SrsRemoteWire.source(s),
+        for (final SrsEntityView v in views) SrsRemoteWire.view(v),
       ],
     );
     if (store.deckTreeKey == key) _trees[store.profileUid] = out;
     return out;
   }
 
-  static Future<List<Map<String, Object?>>> _sources(
+  static Future<List<Map<String, Object?>>> _views(
     SrsDbStore store,
     SrsEntityKind kind,
     Iterable<String> ids,
   ) async => <Map<String, Object?>>[
-    for (final SrsEntitySource s in await store.entitySources(kind, ids: ids))
-      SrsRemoteWire.source(s),
+    for (final SrsEntityView v in await store.entityViews(kind, ids: ids))
+      SrsRemoteWire.view(v),
   ];
 
-  /// 笔记类型只带 `{id, tag}`：客户端缓存里标签一致就不再搬（[SrsRemoteWire.tagOf]）。
+  /// 一个实体按类判定活着的修改记录（取自它的视图，与本机读 `edits` 同一份原文）；不存在 = 空。
+  static Future<List<Object?>> _editItemsOf(
+    SrsDbStore store,
+    SrsEntityKind kind,
+    String id,
+  ) async {
+    final List<SrsEntityView> v = await store.entityViews(
+      kind,
+      ids: <String>[id],
+    );
+    return v.isEmpty
+        ? <Object?>[]
+        : SrsRemoteWire.editItems(srsEntityViewEdits(v.single));
+  }
+
+  /// 笔记类型只带 `{id, tag}`：客户端缓存里标签一致就不再搬（tag 是主机内核按视图字节算的）。
   static Future<List<Map<String, Object?>>> _typeRefs(
     SrsDbStore store,
     Iterable<String> ids,
   ) async => <Map<String, Object?>>[
-    for (final SrsEntitySource s in await store.entitySources(
+    for (final SrsEntityView v in await store.entityViews(
       SrsEntityKind.noteType,
       ids: ids,
     ))
-      <String, Object?>{'id': s.id, 'tag': SrsRemoteWire.tagOf(s)},
+      <String, Object?>{'id': v.id, 'tag': v.tag},
   ];
 
   static Future<Map<String, Object?>?> _detail(
@@ -1247,7 +1427,7 @@ class SrsRemoteStoreService {
     if (d == null) return null;
     return <String, Object?>{
       'card': d.card.toJson(),
-      'note': (await _sources(store, SrsEntityKind.note, <String>[
+      'note': (await _views(store, SrsEntityKind.note, <String>[
         d.note.id,
       ])).single,
       'type': (await _typeRefs(store, <String>[d.noteType.id])).single,
@@ -1271,19 +1451,21 @@ class SrsRemoteStoreService {
       (SrsDbStore s, _Args a) async =>
           SrsRemoteWire.dayContext(await s.dayContext()),
     ),
-    'deckTree': _Op((SrsDbStore s, _Args a) async {
-      final List<SrsEntitySource> sources = await s.entitySources(
-        SrsEntityKind.deck,
-      );
-      return <Map<String, Object?>>[
-        for (final SrsEntitySource x in sources) SrsRemoteWire.source(x),
-      ];
-    }),
+    'deckTree': _Op(
+      (SrsDbStore s, _Args a) async => <Map<String, Object?>>[
+        for (final SrsEntityView v in await s.entityViews(SrsEntityKind.deck))
+          SrsRemoteWire.view(v),
+      ],
+    ),
     'deckSummaries': _Op(
       (SrsDbStore s, _Args a) async => <Object?>[
         for (final SrsDeckSummary d in await s.deckSummaries())
           SrsRemoteWire.summary(d),
       ],
+    ),
+    'limitUnitLegacyDecks': _Op(
+      (SrsDbStore s, _Args a) async =>
+          (await s.limitUnitLegacyDecks()).toList()..sort(),
     ),
     'todayReviewSummary': _Op(
       (SrsDbStore s, _Args a) async =>
@@ -1330,7 +1512,7 @@ class SrsRemoteStoreService {
     ),
     'notes': _Op(
       (SrsDbStore s, _Args a) async =>
-          _sources(s, SrsEntityKind.note, a.strings('ids')),
+          _views(s, SrsEntityKind.note, a.strings('ids')),
     ),
     'noteTypeRefs': _Op((SrsDbStore s, _Args a) async {
       final List<String> ids = a.strings('ids');
@@ -1341,23 +1523,18 @@ class SrsRemoteStoreService {
         for (final SrsNoteTypeView t in await s.noteTypes()) t.id,
       ]),
     ),
-    'noteTypeSources': _Op(
+    'noteTypeViews': _Op(
       (SrsDbStore s, _Args a) async =>
-          _sources(s, SrsEntityKind.noteType, a.strings('ids')),
+          _views(s, SrsEntityKind.noteType, a.strings('ids')),
     ),
     'history': _Op(
       (SrsDbStore s, _Args a) async =>
           (await s.history(a.str('card'))).toWire(),
     ),
-    'entityEdits': _Op((SrsDbStore s, _Args a) async {
-      final List<SrsEntitySource> src = await s.entitySources(
-        SrsRemoteWire.kindFrom(a.raw('kind')),
-        ids: <String>[a.str('id')],
-      );
-      return src.isEmpty
-          ? <Object?>[]
-          : SrsRemoteWire.editItems(src.single.edits);
-    }),
+    'entityEdits': _Op(
+      (SrsDbStore s, _Args a) async =>
+          _editItemsOf(s, a.kind('kind'), a.str('id')),
+    ),
     'expandFields': _Op(
       (SrsDbStore s, _Args a) async => s.expandFields(
         a.optStrMap('fields') ?? const <String, String>{},
@@ -1371,22 +1548,34 @@ class SrsRemoteStoreService {
           .syncConflicts(
             entity: entityId == null
                 ? null
-                : (
-                    kind: SrsRemoteWire.kindFrom(a.raw('entityKind')),
-                    id: entityId,
-                  ),
+                : (kind: a.kind('entityKind'), id: entityId),
           );
-      final Map<String, Object?> edits = <String, Object?>{};
+      // 涉及的实体按类收齐，每类一次 entity_views 批量取（不按冲突逐个取整份视图）。
+      final Map<SrsEntityKind, Set<String>> byKind =
+          <SrsEntityKind, Set<String>>{};
       for (final (SrsEntityKind kind, String id, _) in all) {
-        final String k = '${kind.wire}/$id';
-        if (edits.containsKey(k)) continue;
-        final List<SrsEntitySource> src = await s.entitySources(
-          kind,
-          ids: <String>[id],
+        (byKind[kind] ??= <String>{}).add(id);
+      }
+      final Map<String, Object?> edits = <String, Object?>{};
+      for (final MapEntry<SrsEntityKind, Set<String>> e in byKind.entries) {
+        // 视图按规范 ID 回来（别名类只回一份）：冲突里的 ID 先归一，再按规范 ID 对回。
+        final Map<String, String> canonical = await srsCanonicalIdMap(
+          e.value,
+          s.canonicalIds,
         );
-        edits[k] = src.isEmpty
-            ? <Object?>[]
-            : SrsRemoteWire.editItems(src.single.edits);
+        final Map<String, SrsEntityView> got = <String, SrsEntityView>{
+          for (final SrsEntityView v in await s.entityViews(
+            e.key,
+            ids: canonical.values,
+          ))
+            v.id: v,
+        };
+        for (final String id in e.value) {
+          final SrsEntityView? v = got[srsCanonicalIdIn(canonical, id)];
+          edits['${e.key.wire}/$id'] = v == null
+              ? <Object?>[]
+              : SrsRemoteWire.editItems(srsEntityViewEdits(v));
+        }
       }
       return <String, Object?>{
         'items': <Object?>[
@@ -1421,12 +1610,21 @@ class SrsRemoteStoreService {
       };
     }),
     'editHistory': _Op(
-      (SrsDbStore s, _Args a) async => (await s.sync2Command(<String, Object?>{
-        'op': 'history',
-        'kind': SrsRemoteWire.kindFrom(a.raw('kind')).wire,
-        'entity': a.str('id'),
-      })).json,
+      (SrsDbStore s, _Args a) async =>
+          (await srsRemoteKernelCommand(s, <String, Object?>{
+            'op': 'history',
+            'kind': a.kind('kind').wire,
+            'entity': a.str('id'),
+          })).json,
     ),
+    // 规范 ID（主机内核 `canonical_ids`，只读）：客户端的归一在这里做（规划 §1.8；交接 §14 第 5 条）。
+    'canonicalIds': _Op((SrsDbStore s, _Args a) async {
+      final List<String> ids = a.strings('ids');
+      if (ids.length > kSrsEntityViewsBatchMax) {
+        throw const SrsRemoteStoreError(400, SrsRemoteStoreError.badRequest);
+      }
+      return s.canonicalIds(ids);
+    }),
     'deviceNames': _Op((SrsDbStore s, _Args a) async => s.sync2DeviceNames()),
     'noteIdsOfType': _Op(
       (SrsDbStore s, _Args a) async =>
@@ -1571,7 +1769,7 @@ class SrsRemoteStoreService {
     }),
     'editFields': _Op(write: true, (SrsDbStore s, _Args a) async {
       final List<SrsFieldEdit>? out = await s.editFields(
-        SrsRemoteWire.kindFrom(a.raw('kind')),
+        a.kind('kind'),
         a.str('id'),
         a.map('values'),
         machine: a.flag('machine'),
@@ -1584,10 +1782,7 @@ class SrsRemoteStoreService {
       write: true,
       (SrsDbStore s, _Args a) async => <Object?>[
         for (final SrsFieldEdit e in await s.editFieldsBatch(<SrsFieldChange>[
-          for (final SrsEditSpec x in SrsRemoteWire.editSpecsFrom(
-            a.raw('changes'),
-            'changes',
-          ))
+          for (final SrsEditSpec x in _specs(a.raw('changes'), 'changes'))
             SrsFieldChange(x.kind, x.entityId, x.key, x.value),
         ]))
           e.toJson(),
@@ -1598,28 +1793,30 @@ class SrsRemoteStoreService {
       write: true,
       (SrsDbStore s, _Args a) async =>
           (await s.editFieldsUndoable(<SrsFieldChange>[
-            for (final SrsEditSpec x in SrsRemoteWire.editSpecsFrom(
-              a.raw('changes'),
-              'changes',
-            ))
+            for (final SrsEditSpec x in _specs(a.raw('changes'), 'changes'))
               SrsFieldChange(x.kind, x.entityId, x.key, x.value),
           ])).toJson(),
     ),
-    'revertEdits': _Op(
-      write: true,
-      (SrsDbStore s, _Args a) async =>
-          (await s.revertEdits(SrsEditUndo.fromJson(a.raw('undo')))).toJson(),
-    ),
-    'writeEdits': _Op(
-      write: true,
-      (SrsDbStore s, _Args a) async => <Object?>[
+    'revertEdits': _Op(write: true, (SrsDbStore s, _Args a) async {
+      final SrsEditUndo undo = SrsEditUndo.fromJson(a.raw('undo'));
+      for (final SrsEditUndoItem x in undo.items) {
+        srsRemoteEntityKind(x.kind.wire);
+      }
+      return (await s.revertEdits(undo)).toJson();
+    }),
+    // 只收编辑规格：身份记录（`records`，任意种类的实体定义）远程不开——建实体走上面有意图的写（`createNote` 等）。
+    'writeEdits': _Op(write: true, (SrsDbStore s, _Args a) async {
+      if (a.raw('records') case final Object records
+          when records is! List || records.isNotEmpty) {
+        throw const SrsRemoteStoreError(400, SrsRemoteStoreError.badRequest);
+      }
+      return <Object?>[
         for (final SrsFieldEdit e in await s.writeEdits(
-          SrsRemoteWire.editSpecsFrom(a.raw('specs')),
-          records: SrsRemoteWire.entityRecordsFrom(a.raw('records'), 'records'),
+          _specs(a.raw('specs'), 'specs'),
         ))
           e.toJson(),
-      ],
-    ),
+      ];
+    }),
     // 浏览命令是查询会话（结果可能很大），不进幂等缓存；浏览里的批量改走上面的写操作。
     // 只放行浏览会话命令（[SrsDbStore.kSrsBrowseOps]）：其余 sync2 内核命令（`seal_file` / `open_file`
     // 按请求给的路径读写主机文件、`apply` 等改库命令）一律 400，不进 store。
@@ -1628,9 +1825,20 @@ class SrsRemoteStoreService {
       if (!SrsDbStore.kSrsBrowseOps.contains(request['op'])) {
         throw const SrsRemoteStoreError(400, SrsRemoteStoreError.badRequest);
       }
-      return SrsRemoteWire.sync2Result(await s.browseCommand(request));
+      return SrsRemoteWire.sync2Result(
+        await srsRemoteKernelCommand(s, request),
+      );
     }),
   };
+
+  /// 编辑规格（不合形 400）：种类只能是 [kSrsRemoteEntityKinds]。
+  static List<SrsEditSpec> _specs(Object? json, String at) {
+    final List<SrsEditSpec> specs = SrsRemoteWire.editSpecsFrom(json, at);
+    for (final SrsEditSpec x in specs) {
+      srsRemoteEntityKind(x.kind.wire);
+    }
+    return specs;
+  }
 
   static Map<String, String?> _nullableMap(Object? json) {
     if (json is! Map) {

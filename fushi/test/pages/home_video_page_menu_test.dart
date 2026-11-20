@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -21,9 +22,15 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
+import 'package:fushi_engine/media/video/scraper/scraper_types.dart'
+    show CoverMeta, CoverOrigin;
+import 'package:fushi_engine/media/video/video_duration_probe.dart'
+    show probeVideoDurationMs;
 import 'package:fushi/src/media/async_file_existence_cache.dart'
     show PendingCoverImage;
 import 'package:fushi/src/media/tags/tag_chips.dart';
+import 'package:fushi/src/media/video/cover_ui/video_frame_cover_picker.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
@@ -34,11 +41,12 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
 import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart'
-    show MediaItemDialogFrame;
+    show DialogQuickAction, MediaItemDialogFrame;
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
     show ShelfCoverPlaceholder;
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
@@ -47,6 +55,7 @@ import 'package:path/path.dart' as p;
 
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
+import '../helpers/video_header_more.dart';
 
 /// 永不被真调用的刮削 runner：菜单测试只需要一个在场的 controller 来点亮入口。
 class _IdleScrapeRunner implements VideoSourceScrapeRunner {
@@ -95,6 +104,25 @@ class _CoverSearchScrapeRunner extends _IdleScrapeRunner
     required VideoSourceScrapeProgressCallback onProgress,
   }) => throw UnimplementedError();
 }
+
+/// 记下每次 [updateCover] 落库（封面落盘链的最后一步），让 widget 测试同步断言。
+class _CoverRecordingVideoBookRepository extends VideoBookRepository {
+  _CoverRecordingVideoBookRepository(super.db);
+
+  final List<({String bookUid, String coverPath})> covers =
+      <({String bookUid, String coverPath})>[];
+
+  @override
+  Future<void> updateCover(String bookUid, String coverPath) async {
+    await super.updateCover(bookUid, coverPath);
+    covers.add((bookUid: bookUid, coverPath: coverPath));
+  }
+}
+
+/// 1x1 PNG：挑帧弹窗的 Image.memory 真能解码。
+final Uint8List _framePng = base64Decode(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+);
 
 class PausingBatchDeleteVideoBookRepository extends VideoBookRepository {
   PausingBatchDeleteVideoBookRepository(
@@ -304,6 +332,26 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// 批量删除点头之后：bfa7138bf1（BUG-4709 / 35YfcYO-zR）起删除期间挂着不可点掉
+  /// 的进度对话框（不定态指示器持续出帧），删除链路里的真实 IO（资产目录 / 文件
+  /// 回收）在 fakeAsync 下不回话，直接 pumpAndSettle 只会对着转圈超时。这里交替
+  /// pump 与 runAsync 让真实 IO 跑完，直到进度对话框自己关掉；30s 上界内没关 =
+  /// 删除真的卡死，照样失败。
+  Future<void> finishBatchDelete(WidgetTester tester) async {
+    final Finder progress = find.text(t.video_library_delete_progress_title);
+    final DateTime deadline = DateTime.now().add(const Duration(seconds: 30));
+    await tester.pump();
+    while (progress.evaluate().isNotEmpty &&
+        DateTime.now().isBefore(deadline)) {
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      });
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+    await tester.pumpAndSettle();
+    expect(progress, findsNothing, reason: '删除结束后进度对话框必须关掉');
+  }
+
   Future<void> seedTaggedVideo() async {
     await db.upsertVideoBook(
       const VideoBooksCompanion(
@@ -343,6 +391,8 @@ void main() {
     VideoBookRepository? repo,
     VideoSourceScrapeTaskController? scrapeTaskController,
     VideoLibrarySection section = VideoLibrarySection.allVideos,
+    VideoFrameDurationProbe frameCoverDurationProbe = probeVideoDurationMs,
+    VideoFrameFileGrabber frameCoverGrabber = grabVideoFrameToFile,
   }) => ProviderScope(
     overrides: <Override>[
       platformServicesProvider.overrideWithValue(platformServices),
@@ -365,6 +415,8 @@ void main() {
             repo: repo ?? VideoBookRepository(db),
             section: section,
             scrapeTaskController: scrapeTaskController,
+            frameCoverDurationProbe: frameCoverDurationProbe,
+            frameCoverGrabber: frameCoverGrabber,
           ),
         ),
       ),
@@ -411,6 +463,23 @@ void main() {
       findsOneWidget,
     );
   });
+
+  /// 交替 pump 与 runAsync，让 fake-async 下不回话的真实 IO 跑完，直到 [isDone]
+  /// 为真；30s 只是等待上界（一真即刻退出），真卡死照样由调用方断言失败。
+  Future<void> pumpRealIoUntil(
+    WidgetTester tester,
+    bool Function() isDone,
+  ) async {
+    final DateTime deadline = DateTime.now().add(const Duration(seconds: 30));
+    await tester.pump();
+    while (!isDone() && DateTime.now().isBefore(deadline)) {
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      });
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+    await tester.pumpAndSettle();
+  }
 
   /// 打开某张卡的动作面板。触屏和桌面长按都走同一条管理菜单链路。
   Future<void> openCardMenu(WidgetTester tester, Finder card) async {
@@ -591,6 +660,70 @@ void main() {
     expect(find.text(t.dialog_read), findsNothing);
   });
 
+  // 设计稿 #video V2：多选不再占页头按钮，长按 / 右键卡片菜单第一项「选择」
+  // 进入多选并选中这张卡。
+  testWidgets('卡片菜单第一项「选择」：进入多选并选中这张卡', (WidgetTester tester) async {
+    await seedTaggedVideo();
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    await openCardMenu(tester, videoCard('video/1'));
+
+    final Finder menu = find.byType(MediaItemDialogFrame);
+    expect(menu, findsOneWidget);
+    final List<DialogQuickAction> actions = tester
+        .widget<MediaItemDialogFrame>(menu)
+        .quickActions;
+    expect(actions.first.label, t.batch_select, reason: '「选择」排在菜单最前');
+    expect(find.text(t.batch_selected_count(n: 1)), findsNothing);
+
+    actions.first.onPressed();
+    await tester.pumpAndSettle();
+
+    expect(menu, findsNothing, reason: '点「选择」先关菜单');
+    expect(
+      find.text(t.batch_selected_count(n: 1)),
+      findsOneWidget,
+      reason: '进入多选，且这张卡已选中',
+    );
+  });
+
+  // 首页分区（最近添加 / 继续观看等横滚行）没有可勾选的格：菜单里不给「选择」，
+  // 免得进一个选中项看不见、全选无物可选的空多选态。
+  testWidgets('首页分区的卡片菜单不给「选择」', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1400, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    const String uid = 'video/recent';
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>(uid),
+        title: const Value<String>('Recent One'),
+        videoPath: const Value<String>('/abs/recent.mkv'),
+        importedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
+      ),
+    );
+    await tester.pumpWidget(buildApp(section: VideoLibrarySection.home));
+    await tester.pumpAndSettle();
+
+    final Finder card = find.byKey(
+      const ValueKey<String>('home_video_recent_$uid'),
+    );
+    expect(card, findsOneWidget);
+    await openCardMenu(tester, card);
+
+    final Finder menu = find.byType(MediaItemDialogFrame);
+    expect(menu, findsOneWidget);
+    expect(
+      tester
+          .widget<MediaItemDialogFrame>(menu)
+          .quickActions
+          .map((DialogQuickAction a) => a.label),
+      isNot(contains(t.batch_select)),
+    );
+  });
+
   testWidgets('桌面长按本地视频卡仍弹同一动作面板，不进入多选', (WidgetTester tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     try {
@@ -623,12 +756,16 @@ void main() {
     // 在指针处弹右键菜单（设计稿 E），不再是居中对话框。
     expect(find.byType(MediaItemDialogFrame), findsOneWidget);
     expect(find.byType(FushiDialogFrame), findsNothing);
+    // 2026-11-20 #4b 统一骨架：整理组平铺标签 / 加入合集，重命名与封面收进
+    // 「编辑信息 ›」，选字幕收进工作台「字幕与刮削 ›」——副文字列出子项。
     expect(find.text(t.tag_label), findsOneWidget);
-    expect(find.text(t.video_rename), findsOneWidget);
-    expect(find.text(t.srt_import_pick_cover), findsOneWidget);
-    expect(find.text(t.video_import_pick_subtitle), findsOneWidget);
-    expect(find.text(t.video_scrape_info), findsNothing);
     expect(find.text(t.add_to_collection), findsOneWidget);
+    expect(find.text(t.media_stats_action), findsOneWidget);
+    expect(find.text(t.item_menu_video_workbench), findsOneWidget);
+    expect(find.textContaining(t.video_rename), findsOneWidget);
+    expect(find.textContaining(t.srt_import_pick_cover), findsOneWidget);
+    expect(find.textContaining(t.video_import_pick_subtitle), findsOneWidget);
+    expect(find.text(t.video_scrape_info), findsNothing);
     expect(find.text(t.dialog_delete), findsOneWidget);
   });
 
@@ -947,6 +1084,135 @@ void main() {
     });
   });
 
+  // 拍板 wb8RZZbn90「从视频画面选取封面」：入口只对本地可抽帧的源出现（蓝光分集
+  // 虚拟路径不是真文件，抽帧必失败），点开走挑帧弹窗 → 原尺寸帧 → 手选封面同一条
+  // MediaCoverService.applyVideoCoverManual 落盘。此前只有源码字符串断言。
+  group('视频卡「从视频画面选取」封面', () {
+    testWidgets('本地 .mkv 出入口；蓝光分集虚拟路径不出', (WidgetTester tester) async {
+      await db.upsertVideoBook(
+        const VideoBooksCompanion(
+          bookUid: Value('video/mkv'),
+          title: Value('Mkv Episode'),
+          videoPath: Value('/abs/ep1.mkv'),
+        ),
+      );
+      await db.upsertVideoBook(
+        const VideoBooksCompanion(
+          bookUid: Value('video/bdep'),
+          title: Value('Disc Episode'),
+          videoPath: Value('/abs/Disc/BDMV/PLAYLIST/00001.p03.mpls'),
+        ),
+      );
+      await tester.pumpWidget(buildApp());
+      await tester.pumpAndSettle();
+
+      await openCardMenu(tester, videoCard('video/mkv'));
+      expect(find.text(t.srt_import_pick_cover), findsOneWidget);
+      expect(find.text(t.video_cover_from_frame), findsOneWidget);
+      expect(
+        tester.getTopLeft(find.text(t.video_cover_from_frame)).dy,
+        greaterThan(tester.getTopLeft(find.text(t.srt_import_pick_cover)).dy),
+        reason: '紧跟「选择封面图片」，和设置封面放在一起',
+      );
+      Navigator.of(tester.element(find.byType(FushiDialogFrame))).pop();
+      await tester.pumpAndSettle();
+      expect(find.byType(FushiDialogFrame), findsNothing);
+
+      await openCardMenu(tester, videoCard('video/bdep'));
+      expect(
+        find.text(t.srt_import_pick_cover),
+        findsOneWidget,
+        reason: '菜单本身照常弹出，缺的只是挑帧入口',
+      );
+      expect(find.text(t.video_cover_from_frame), findsNothing);
+    });
+
+    testWidgets('点入口挑帧并确认：原尺寸帧经手选封面落盘到该视频', (WidgetTester tester) async {
+      resetAppOwnedVideoAssetDirs();
+      await db.upsertVideoBook(
+        const VideoBooksCompanion(
+          bookUid: Value('video/mkv'),
+          title: Value('Mkv Episode'),
+          videoPath: Value('/abs/ep1.mkv'),
+        ),
+      );
+      final _CoverRecordingVideoBookRepository repo =
+          _CoverRecordingVideoBookRepository(db);
+      final List<({String videoPath, int atMs, int? scaleWidth})> grabs =
+          <({String videoPath, int atMs, int? scaleWidth})>[];
+      final List<String> probed = <String>[];
+      await tester.pumpWidget(
+        buildApp(
+          repo: repo,
+          frameCoverDurationProbe: (String path) async {
+            probed.add(path);
+            return 600000;
+          },
+          frameCoverGrabber:
+              ({
+                required String videoPath,
+                required int atMs,
+                required String outputPath,
+                required int? scaleWidth,
+              }) async {
+                grabs.add((
+                  videoPath: videoPath,
+                  atMs: atMs,
+                  scaleWidth: scaleWidth,
+                ));
+                File(outputPath)
+                  ..parent.createSync(recursive: true)
+                  ..writeAsBytesSync(_framePng);
+                return outputPath;
+              },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await openCardMenu(tester, videoCard('video/mkv'));
+      await tester.tap(find.text(t.video_cover_from_frame));
+      final Finder confirm = find.byKey(
+        const ValueKey<String>('video-frame-cover-confirm'),
+      );
+      bool confirmReady() =>
+          confirm.evaluate().isNotEmpty &&
+          tester.widget<FushiFilledButton>(confirm).onPressed != null;
+      // 弹窗建临时目录、读预览字节都是真 IO：交替 pump 与 runAsync 推进。
+      await pumpRealIoUntil(tester, confirmReady);
+      expect(confirmReady(), isTrue, reason: '预览帧到了，确认键放行');
+      expect(probed, <String>['/abs/ep1.mkv']);
+      expect(grabs.single.atMs, 60000, reason: '首张预览取片长 10%');
+      expect(grabs.single.scaleWidth, kVideoFrameCoverPreviewWidth);
+
+      await tester.tap(confirm);
+      await pumpRealIoUntil(tester, () => repo.covers.isNotEmpty);
+      expect(grabs, hasLength(2));
+      expect(grabs.last.videoPath, '/abs/ep1.mkv');
+      expect(grabs.last.atMs, 60000, reason: '最终封面取确认的那一帧');
+      expect(grabs.last.scaleWidth, isNull, reason: '最终封面取原尺寸');
+      expect(repo.covers.single.bookUid, 'video/mkv');
+      final File cover = File(repo.covers.single.coverPath);
+      expect(cover.existsSync(), isTrue, reason: '帧已拷进封面目录');
+      expect(cover.readAsBytesSync(), _framePng);
+      expect(
+        p.isWithin(pathProviderDir.path, cover.path),
+        isTrue,
+        reason: '落到 app 封面目录，而不是挑帧的临时目录',
+      );
+      // 走手选封面同一落盘口：记 manual 保护标记，批量刮削不覆盖。
+      final CoverMeta? meta = await tester.runAsync<CoverMeta?>(
+        () async => CoverMetaStore(
+          await VideoStorage.coversDir(),
+        ).getFresh('video/mkv'),
+      );
+      expect(
+        meta?.origin,
+        CoverOrigin.manual,
+        reason: '必须经 MediaCoverService.applyVideoCoverManual 记 manual 标记',
+      );
+    });
+  });
+
   testWidgets('从未看过的视频卡菜单不出现「清除观看进度」', (WidgetTester tester) async {
     // 无痕迹的集画这个按钮只是一个什么都不会发生的钮；门控口径与合集续播的
     // 痕迹判据同源（videoBookHasWatchTrace）。
@@ -1046,11 +1312,8 @@ void main() {
   /// 点「批量选择」按钮进入选择态。单行页头（2026-10-14）起它从标签栏末尾并进
   /// 页头动作，key 沿用 `library_select_toggle`（tooltip = batch_select）。
   Future<void> enterSelectionMode(WidgetTester tester) async {
-    final Finder selectBtn = find.byKey(
-      const ValueKey<String>('library_select_toggle'),
-    );
-    expect(selectBtn, findsOneWidget, reason: '视频页头应有「批量选择」按钮（用户报的「视频少了选择」）');
-    await tester.tap(selectBtn);
+    // 设计稿 #video V2：「选择」收进页头「⋯」（卡片长按 / 右键菜单里另有一项）。
+    await tapVideoHeaderMoreEntry(tester, 'library_select_toggle');
     await tester.pumpAndSettle();
   }
 
@@ -1105,7 +1368,7 @@ void main() {
     await tester.pumpAndSettle();
     // 确认对话框的「删除」按钮（AlertDialog 内）。
     await tester.tap(find.text(t.dialog_delete).last);
-    await tester.pumpAndSettle();
+    await finishBatchDelete(tester);
 
     final List<VideoBookRow> remaining = await VideoBookRepository(
       db,
@@ -1245,7 +1508,7 @@ void main() {
     await tester.tap(find.byIcon(Icons.delete_outline).last);
     await tester.pumpAndSettle();
     await tester.tap(find.text(t.dialog_delete).last);
-    await tester.pumpAndSettle();
+    await finishBatchDelete(tester);
     await waitForAsyncCleanup(
       tester,
       () =>

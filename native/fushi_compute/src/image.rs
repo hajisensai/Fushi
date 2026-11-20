@@ -27,6 +27,8 @@
 use crate::{guard, status};
 
 mod avif;
+mod composite;
+mod resample;
 
 /// 缩放插值，取值与 `package:image` 的 `Interpolation` 对应（不支持 cubic）。
 pub const INTERP_NEAREST: i32 = 0;
@@ -1662,6 +1664,251 @@ pub unsafe extern "C" fn ffc_image_to_jpeg(
     })
 }
 
+/// 漫画页图按显示尺寸降采样：解码（转正 EXIF 方向 / HEIF 显示变换）→ 面积平均
+/// （[INTERP_AVERAGE]）缩到 `dst_w × dst_h` → JPEG（`quality` 1..=100，4:4:4）。灰度源编单通道
+/// JPEG（漫画扫描多是灰度，体积与解码成本都只有 RGB 的约 1/3）。
+///
+/// 只做缩小：`dst_w` / `dst_h` 任一超过源尺寸返回 [status::INVALID_ARGUMENT]。带 alpha 的源
+/// 返回 [status::BAD_INPUT]（JPEG 没有透明，合成到哪种底色取决于阅读器背景，不在这里猜），
+/// 解不开同样是 [status::BAD_INPUT]——调用方收到任何非 OK 都应原样交出源字节。
+///
+/// # Safety
+/// 指针按给定长度可读 / 可写。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_image_fit_jpeg(
+    data: *const u8,
+    len: usize,
+    dst_w: u32,
+    dst_h: u32,
+    quality: u32,
+    out_ptr: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    guard(|| {
+        if data.is_null() || out_ptr.is_null() || out_len.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        if !(1..=100).contains(&quality)
+            || dst_w == 0
+            || dst_h == 0
+            || dst_w > u16::MAX as u32
+            || dst_h > u16::MAX as u32
+        {
+            return status::INVALID_ARGUMENT;
+        }
+        match fit_jpeg(slice(data, len), dst_w, dst_h, quality as u8) {
+            Ok(jpeg) => {
+                crate::hand_over_bytes(jpeg, out_ptr, out_len);
+                status::OK
+            }
+            Err(code) => code,
+        }
+    })
+}
+
+/// [ffc_image_fit_jpeg] 的本体。
+fn fit_jpeg(data: &[u8], dst_w: u32, dst_h: u32, quality: u8) -> Result<Vec<u8>, i32> {
+    let (pixels, width, height, channels, icc) = decode_opaque(data)?;
+    if dst_w > width || dst_h > height {
+        return Err(status::INVALID_ARGUMENT);
+    }
+    let ch = channels as usize;
+    let src = View::new(&pixels, width as usize * ch, channels, 0, 0, width, height)?;
+    let (dw, dh) = (dst_w as usize, dst_h as usize);
+    let mut resized = vec![0u8; dw * dh * ch];
+    resize_into(&src, &mut resized, dw, dh, INTERP_AVERAGE);
+    drop(pixels);
+    encode_fit_jpeg(&resized, dst_w, dst_h, ch, quality, icc.as_deref())
+}
+
+/// 漫画页图「画质缩放」：解码（转正）→ 可分离重采样（[resample::Filter]：0 面积平均 / 1 Lanczos3 /
+/// 2 Catmull-Rom，`flags` 位 0 = 文字感知的 Gamma 校正）→ JPEG（4:4:4，灰度源编单通道）。
+///
+/// 文字感知的 Gamma 校正（[FIT_HQ_TEXT_AWARE_GAMMA]）：`text_boxes` 里的 OCR 框（归一化
+/// `[x0, y0, x1, y1]` × `text_box_count`）内在 sRGB 编码值上重采样（细笔画不变淡），框外在线性光
+/// 里（网点明度准），羽化遮罩混合；没有框时整页 sRGB——实测整页线性光让文字框笔画对比度掉
+/// 10%～20%（`docs/specs/2026-11-20-manga-upscale-design.md` §2.1 / §3.1）。
+///
+/// 与 [ffc_image_fit_jpeg] 的区别：核按缩放比放宽（网点不出摩尔纹）、可在线性光里平均（网点不发闷），
+/// 并且**允许放大**（低清源显示得比原图大时，用比 WebView 双线性更锐的核预放大），放大倍数限
+/// [FIT_HQ_MAX_UPSCALE]、输出像素限 [FIT_HQ_MAX_PIXELS]，超出返回 [status::INVALID_ARGUMENT]。
+/// 带 alpha / 解不开返回 [status::BAD_INPUT]——调用方收到任何非 OK 都应原样交出源字节。
+///
+/// # Safety
+/// 指针按给定长度可读 / 可写。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_image_fit_jpeg_hq(
+    data: *const u8,
+    len: usize,
+    dst_w: u32,
+    dst_h: u32,
+    quality: u32,
+    filter: u32,
+    flags: u32,
+    text_boxes: *const f32,
+    text_box_count: usize,
+    out_ptr: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    guard(|| {
+        if data.is_null() || out_ptr.is_null() || out_len.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        if text_box_count > 0 && text_boxes.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        if text_box_count > FIT_HQ_MAX_TEXT_BOXES {
+            return status::INVALID_ARGUMENT;
+        }
+        let boxes: Vec<[f32; 4]> = if text_box_count == 0 {
+            Vec::new()
+        } else {
+            std::slice::from_raw_parts(text_boxes, text_box_count * 4)
+                .chunks_exact(4)
+                .map(|b| [b[0], b[1], b[2], b[3]])
+                .collect()
+        };
+        let Some(filter) = resample::Filter::from_code(filter) else {
+            return status::INVALID_ARGUMENT;
+        };
+        if !(1..=100).contains(&quality)
+            || dst_w == 0
+            || dst_h == 0
+            || dst_w > u16::MAX as u32
+            || dst_h > u16::MAX as u32
+            || flags & !FIT_HQ_TEXT_AWARE_GAMMA != 0
+        {
+            return status::INVALID_ARGUMENT;
+        }
+        let boxes: &[[f32; 4]] = if flags & FIT_HQ_TEXT_AWARE_GAMMA != 0 {
+            &boxes
+        } else {
+            &[]
+        };
+        match fit_jpeg_hq(slice(data, len), dst_w, dst_h, quality as u8, filter, boxes) {
+            Ok(jpeg) => {
+                crate::hand_over_bytes(jpeg, out_ptr, out_len);
+                status::OK
+            }
+            Err(code) => code,
+        }
+    })
+}
+
+/// [ffc_image_fit_jpeg_hq] 的 `flags` 位：文字感知的 Gamma 校正（OCR 框外线性光、框内 sRGB）。
+pub const FIT_HQ_TEXT_AWARE_GAMMA: u32 = 1;
+/// [ffc_image_fit_jpeg_hq] 一次最多接受的文字框数（一页 OCR 行框通常几十到两三百）。
+pub const FIT_HQ_MAX_TEXT_BOXES: usize = 4096;
+/// [ffc_image_fit_jpeg_hq] 每边最多放大的倍数。
+pub const FIT_HQ_MAX_UPSCALE: u32 = 4;
+/// [ffc_image_fit_jpeg_hq] 输出像素上限（约 8K×6K）。
+pub const FIT_HQ_MAX_PIXELS: u64 = 48_000_000;
+
+/// [ffc_image_fit_jpeg_hq] 的本体。
+fn fit_jpeg_hq(
+    data: &[u8],
+    dst_w: u32,
+    dst_h: u32,
+    quality: u8,
+    filter: resample::Filter,
+    text_boxes: &[[f32; 4]],
+) -> Result<Vec<u8>, i32> {
+    if dst_w as u64 * dst_h as u64 > FIT_HQ_MAX_PIXELS {
+        return Err(status::INVALID_ARGUMENT);
+    }
+    let (pixels, width, height, channels, icc) = decode_opaque(data)?;
+    if dst_w > width.saturating_mul(FIT_HQ_MAX_UPSCALE)
+        || dst_h > height.saturating_mul(FIT_HQ_MAX_UPSCALE)
+    {
+        return Err(status::INVALID_ARGUMENT);
+    }
+    let ch = channels as usize;
+    let resized = resample::resample_text_aware(
+        &pixels,
+        width as usize,
+        height as usize,
+        ch,
+        dst_w as usize,
+        dst_h as usize,
+        filter,
+        text_boxes,
+    );
+    drop(pixels);
+    encode_fit_jpeg(&resized, dst_w, dst_h, ch, quality, icc.as_deref())
+}
+
+/// [fit_jpeg] / [fit_jpeg_hq] 的出口：4:4:4 JPEG，灰度编单通道，并**带上源图的 ICC 配置文件**。
+/// 不带的话，嵌了配置文件的页（扫描卷常见的灰度 Dot Gain 配置）转码后会被 WebView 当成未标记的
+/// sRGB 显示：同一页 fit 前后明暗不一致（实测《14歳の恋》暗部 12 → 20）。
+fn encode_fit_jpeg(
+    pixels: &[u8],
+    width: u32,
+    height: u32,
+    channels: usize,
+    quality: u8,
+    icc: Option<&[u8]>,
+) -> Result<Vec<u8>, i32> {
+    let color = if channels == 1 {
+        jpeg_encoder::ColorType::Luma
+    } else {
+        jpeg_encoder::ColorType::Rgb
+    };
+    let mut jpeg = Vec::new();
+    let mut enc = jpeg_encoder::Encoder::new(&mut jpeg, quality);
+    enc.set_sampling_factor(jpeg_encoder::SamplingFactor::F_1_1);
+    if let Some(icc) = icc.filter(|icc| icc_matches_channels(icc, channels)) {
+        enc.add_icc_profile(icc).map_err(|_| status::BAD_INPUT)?;
+    }
+    enc.encode(pixels, width as u16, height as u16, color)
+        .map_err(|_| status::BAD_INPUT)?;
+    Ok(jpeg)
+}
+
+/// 源图的 ICC 配置文件（没有 / 读不出为 `None`）。
+type IccProfile = Option<Vec<u8>>;
+
+/// 配置文件头的 data colour space（ICC.1 头部偏移 16 起 4 字节）与输出 JPEG 的通道数一致：
+/// 1 通道配 `GRAY`，3 通道配 `RGB `。解码会把 CMYK / YCCK 转成 RGB、把灰度源保持单通道，
+/// 源图的配置文件描述的却是原始色彩空间；色彩空间对不上的配置文件贴上去，WebView 要么忽略、
+/// 要么按错的空间解释，一律不贴（输出退回未标记，按 sRGB 显示）。
+fn icc_matches_channels(icc: &[u8], channels: usize) -> bool {
+    let expected: &[u8; 4] = match channels {
+        1 => b"GRAY",
+        3 => b"RGB ",
+        _ => return false,
+    };
+    icc.len() >= 128 && &icc[16..20] == expected
+}
+
+/// 解码成不透明的 1 通道（灰度）或 3 通道（RGB）uint8 像素，返回
+/// `(像素, 宽, 高, 通道数, ICC 配置文件)`；带 alpha 的源返回 [status::BAD_INPUT]。
+fn decode_opaque(data: &[u8]) -> Result<(Vec<u8>, u32, u32, u32, IccProfile), i32> {
+    use image::ImageDecoder;
+    if avif::is_avif(data) {
+        let (pixels, width, height, channels) = avif::decode(data)?;
+        if channels != 3 {
+            return Err(status::BAD_INPUT);
+        }
+        return Ok((pixels, width, height, 3, None));
+    }
+    let (mut decoder, _) = open_decoder(data)?;
+    let icc = decoder.icc_profile().ok().flatten();
+    let orientation = decoder
+        .orientation()
+        .unwrap_or(image::metadata::Orientation::NoTransforms);
+    let mut img = image::DynamicImage::from_decoder(decoder).map_err(|_| status::BAD_INPUT)?;
+    img.apply_orientation(orientation);
+    let (width, height) = (img.width(), img.height());
+    if width == 0 || height == 0 || img.color().has_alpha() {
+        return Err(status::BAD_INPUT);
+    }
+    if img.color().has_color() {
+        Ok((img.into_rgb8().into_raw(), width, height, 3, icc))
+    } else {
+        Ok((img.into_luma8().into_raw(), width, height, 1, icc))
+    }
+}
+
 /// `EpubEdgeMatcher.compareEdges`：两张图各自解码（转正）、最近邻缩到高 [sample_height]
 /// （宽按比例四舍五入，同 `copyResize(height:)`），比较左图右缘与右图左缘各 [strip_width]
 /// 列的 RGB 差，写 `out = 1 - 平均差`（0..1；没有可比像素时写 0）。任一张解不开返回
@@ -2342,6 +2589,271 @@ mod tests {
         mosaic_rgba(&mut px, 4, 1, 2, &[[1, 0, 2, 1]]);
         assert_eq!(&px[0..8], &[0, 0, 0, 255, 5, 5, 5, 255]);
         assert_eq!(&px[8..16], &[100, 0, 0, 255, 0, 0, 0, 255]);
+    }
+
+    fn encode(img: image::DynamicImage, format: image::ImageFormat) -> Vec<u8> {
+        let mut out = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut out, format).unwrap();
+        out.into_inner()
+    }
+
+    #[test]
+    fn fit_jpeg_downscales_grayscale_to_single_channel_jpeg() {
+        let src = image::GrayImage::from_fn(400, 600, |x, y| image::Luma([((x + y) % 256) as u8]));
+        let png = encode(
+            image::DynamicImage::ImageLuma8(src),
+            image::ImageFormat::Png,
+        );
+        let jpeg = fit_jpeg(&png, 200, 300, 90).unwrap();
+        let out = image::load_from_memory_with_format(&jpeg, image::ImageFormat::Jpeg).unwrap();
+        assert_eq!((out.width(), out.height()), (200, 300));
+        assert_eq!(out.color(), image::ColorType::L8);
+    }
+
+    #[test]
+    fn fit_jpeg_keeps_colour_sources_rgb() {
+        let src = image::RgbImage::from_fn(64, 32, |x, _| image::Rgb([x as u8 * 4, 0, 200]));
+        let png = encode(image::DynamicImage::ImageRgb8(src), image::ImageFormat::Png);
+        let jpeg = fit_jpeg(&png, 32, 16, 90).unwrap();
+        let out = image::load_from_memory_with_format(&jpeg, image::ImageFormat::Jpeg).unwrap();
+        assert_eq!((out.width(), out.height()), (32, 16));
+        assert_eq!(out.color(), image::ColorType::Rgb8);
+        // 面积平均：纯色通道保持（JPEG 有损，允许小误差）。
+        let px = out.to_rgb8().get_pixel(16, 8).0;
+        assert!((px[2] as i32 - 200).abs() <= 6, "{px:?}");
+    }
+
+    #[test]
+    fn fit_jpeg_refuses_upscale_alpha_and_garbage() {
+        let src = image::GrayImage::new(40, 40);
+        let png = encode(
+            image::DynamicImage::ImageLuma8(src),
+            image::ImageFormat::Png,
+        );
+        assert_eq!(fit_jpeg(&png, 41, 40, 90), Err(status::INVALID_ARGUMENT));
+        let rgba = image::RgbaImage::new(40, 40);
+        let png = encode(
+            image::DynamicImage::ImageRgba8(rgba),
+            image::ImageFormat::Png,
+        );
+        assert_eq!(fit_jpeg(&png, 20, 20, 90), Err(status::BAD_INPUT));
+        assert_eq!(
+            fit_jpeg(b"not an image", 20, 20, 90),
+            Err(status::BAD_INPUT)
+        );
+    }
+
+    #[test]
+    fn fit_transcodes_keep_the_source_icc_profile() {
+        use image::ImageDecoder;
+        // 头部声明 GRAY 的任意字节当配置文件即可：只验证原样带到输出里（WebView 按它做色彩管理）。
+        let profile = fake_icc(b"GRAY");
+        let pixels: Vec<u8> = (0..200u32 * 300).map(|i| (i % 256) as u8).collect();
+        let mut src = Vec::new();
+        let mut enc = jpeg_encoder::Encoder::new(&mut src, 95);
+        enc.add_icc_profile(&profile).unwrap();
+        enc.encode(&pixels, 200, 300, jpeg_encoder::ColorType::Luma)
+            .unwrap();
+        let icc_of = |jpeg: &[u8]| {
+            image::codecs::jpeg::JpegDecoder::new(std::io::Cursor::new(jpeg))
+                .unwrap()
+                .icc_profile()
+                .unwrap()
+        };
+        assert_eq!(icc_of(&src).as_deref(), Some(&profile[..]));
+        let hq_down = fit_jpeg_hq(&src, 100, 150, 90, resample::Filter::Box, &[]).unwrap();
+        let hq_up = fit_jpeg_hq(
+            &src,
+            400,
+            600,
+            90,
+            resample::Filter::CatmullRom,
+            &[[0.1, 0.1, 0.4, 0.4]],
+        )
+        .unwrap();
+        let standard = fit_jpeg(&src, 100, 150, 90).unwrap();
+        for out in [hq_down, hq_up, standard] {
+            assert_eq!(icc_of(&out).as_deref(), Some(&profile[..]));
+        }
+        // 没有配置文件的源，输出也不凭空加。
+        let mut plain = Vec::new();
+        jpeg_encoder::Encoder::new(&mut plain, 95)
+            .encode(&pixels, 200, 300, jpeg_encoder::ColorType::Luma)
+            .unwrap();
+        let out = fit_jpeg_hq(&plain, 100, 150, 90, resample::Filter::Box, &[]).unwrap();
+        assert_eq!(icc_of(&out), None);
+    }
+
+    /// 600 字节的假 ICC 配置文件，头部 data colour space（偏移 16）为 [space]。
+    fn fake_icc(space: &[u8; 4]) -> Vec<u8> {
+        let mut profile: Vec<u8> = (0..600u32).map(|i| (i * 31 % 251) as u8).collect();
+        profile[16..20].copy_from_slice(space);
+        profile
+    }
+
+    #[test]
+    fn fit_transcodes_drop_an_icc_profile_of_another_colour_space() {
+        use image::ImageDecoder;
+        let icc_of = |jpeg: &[u8]| {
+            image::codecs::jpeg::JpegDecoder::new(std::io::Cursor::new(jpeg))
+                .unwrap()
+                .icc_profile()
+                .unwrap()
+        };
+        // CMYK 源：解码成 RGB 输出，CMYK 配置文件对不上 3 通道，不能贴。
+        let cmyk_profile = fake_icc(b"CMYK");
+        let cmyk: Vec<u8> = (0..200u32 * 300 * 4).map(|i| (i % 256) as u8).collect();
+        let mut src = Vec::new();
+        let mut enc = jpeg_encoder::Encoder::new(&mut src, 95);
+        enc.add_icc_profile(&cmyk_profile).unwrap();
+        enc.encode(&cmyk, 200, 300, jpeg_encoder::ColorType::Cmyk)
+            .unwrap();
+        assert_eq!(icc_of(&src).as_deref(), Some(&cmyk_profile[..]));
+        let hq = fit_jpeg_hq(&src, 100, 150, 90, resample::Filter::Box, &[]).unwrap();
+        let standard = fit_jpeg(&src, 100, 150, 90).unwrap();
+        for out in [hq, standard] {
+            assert_eq!(icc_of(&out), None);
+        }
+        // 灰度源配了 RGB 配置文件（声明与像素不符的坏文件）：输出单通道，同样不贴。
+        let rgb_profile = fake_icc(b"RGB ");
+        let gray: Vec<u8> = (0..200u32 * 300).map(|i| (i % 256) as u8).collect();
+        let mut src = Vec::new();
+        let mut enc = jpeg_encoder::Encoder::new(&mut src, 95);
+        enc.add_icc_profile(&rgb_profile).unwrap();
+        enc.encode(&gray, 200, 300, jpeg_encoder::ColorType::Luma)
+            .unwrap();
+        let out = fit_jpeg_hq(&src, 100, 150, 90, resample::Filter::Box, &[]).unwrap();
+        assert_eq!(icc_of(&out), None);
+        // RGB 源 + RGB 配置文件照常贴。
+        let rgb: Vec<u8> = (0..200u32 * 300 * 3).map(|i| (i * 7 % 256) as u8).collect();
+        let mut src = Vec::new();
+        let mut enc = jpeg_encoder::Encoder::new(&mut src, 95);
+        enc.add_icc_profile(&rgb_profile).unwrap();
+        enc.encode(&rgb, 200, 300, jpeg_encoder::ColorType::Rgb)
+            .unwrap();
+        let out = fit_jpeg(&src, 100, 150, 90).unwrap();
+        assert_eq!(icc_of(&out).as_deref(), Some(&rgb_profile[..]));
+    }
+
+    #[test]
+    fn fit_jpeg_hq_downscales_and_upscales_grayscale() {
+        let src = image::GrayImage::from_fn(300, 400, |x, y| {
+            image::Luma([((x * 7 + y * 3) % 256) as u8])
+        });
+        let png = encode(
+            image::DynamicImage::ImageLuma8(src),
+            image::ImageFormat::Png,
+        );
+        let text: &[[f32; 4]] = &[[0.1, 0.1, 0.4, 0.5]];
+        for (w, h, filter, boxes) in [
+            (150, 200, resample::Filter::Box, &[][..]),
+            (150, 200, resample::Filter::Box, text),
+            (600, 800, resample::Filter::CatmullRom, &[][..]),
+            (450, 600, resample::Filter::Lanczos3, text),
+        ] {
+            let jpeg = fit_jpeg_hq(&png, w, h, 92, filter, boxes).unwrap();
+            let out = image::load_from_memory_with_format(&jpeg, image::ImageFormat::Jpeg).unwrap();
+            assert_eq!((out.width(), out.height()), (w, h));
+            assert_eq!(out.color(), image::ColorType::L8);
+        }
+    }
+
+    #[test]
+    fn fit_jpeg_hq_bounds_upscale_and_refuses_alpha_and_garbage() {
+        let png = encode(
+            image::DynamicImage::ImageLuma8(image::GrayImage::new(40, 30)),
+            image::ImageFormat::Png,
+        );
+        assert!(fit_jpeg_hq(&png, 160, 120, 90, resample::Filter::CatmullRom, &[]).is_ok());
+        assert_eq!(
+            fit_jpeg_hq(&png, 161, 120, 90, resample::Filter::CatmullRom, &[]),
+            Err(status::INVALID_ARGUMENT)
+        );
+        let rgba = encode(
+            image::DynamicImage::ImageRgba8(image::RgbaImage::new(40, 40)),
+            image::ImageFormat::Png,
+        );
+        assert_eq!(
+            fit_jpeg_hq(&rgba, 20, 20, 90, resample::Filter::Box, &[]),
+            Err(status::BAD_INPUT)
+        );
+        assert_eq!(
+            fit_jpeg_hq(b"not an image", 20, 20, 90, resample::Filter::Box, &[]),
+            Err(status::BAD_INPUT)
+        );
+    }
+
+    #[test]
+    fn fit_jpeg_hq_ffi_rejects_unknown_filter_and_flags() {
+        let png = encode(
+            image::DynamicImage::ImageLuma8(image::GrayImage::new(40, 30)),
+            image::ImageFormat::Png,
+        );
+        let mut out_ptr: *mut u8 = std::ptr::null_mut();
+        let mut out_len: usize = 0;
+        let boxes: [f32; 8] = [0.1, 0.1, 0.5, 0.5, 0.6, 0.2, 0.9, 0.8];
+        let call = |filter: u32, flags: u32, out_ptr: &mut *mut u8, out_len: &mut usize| unsafe {
+            ffc_image_fit_jpeg_hq(
+                png.as_ptr(),
+                png.len(),
+                20,
+                15,
+                90,
+                filter,
+                flags,
+                boxes.as_ptr(),
+                2,
+                out_ptr,
+                out_len,
+            )
+        };
+        assert_eq!(
+            call(9, 0, &mut out_ptr, &mut out_len),
+            status::INVALID_ARGUMENT
+        );
+        assert_eq!(
+            call(0, 2, &mut out_ptr, &mut out_len),
+            status::INVALID_ARGUMENT
+        );
+        assert_eq!(
+            call(0, FIT_HQ_TEXT_AWARE_GAMMA, &mut out_ptr, &mut out_len),
+            status::OK
+        );
+        assert!(out_len > 0);
+        crate::ffc_free_bytes(out_ptr, out_len);
+        // 有框数却给空指针 / 框数超上限
+        let null_boxes = unsafe {
+            ffc_image_fit_jpeg_hq(
+                png.as_ptr(),
+                png.len(),
+                20,
+                15,
+                90,
+                0,
+                FIT_HQ_TEXT_AWARE_GAMMA,
+                std::ptr::null(),
+                1,
+                &mut out_ptr,
+                &mut out_len,
+            )
+        };
+        assert_eq!(null_boxes, status::NULL_ARGUMENT);
+        let too_many = unsafe {
+            ffc_image_fit_jpeg_hq(
+                png.as_ptr(),
+                png.len(),
+                20,
+                15,
+                90,
+                0,
+                FIT_HQ_TEXT_AWARE_GAMMA,
+                boxes.as_ptr(),
+                FIT_HQ_MAX_TEXT_BOXES + 1,
+                &mut out_ptr,
+                &mut out_len,
+            )
+        };
+        assert_eq!(too_many, status::INVALID_ARGUMENT);
     }
 
     #[test]

@@ -62,8 +62,15 @@ void main() {
       );
       expect(
         src,
-        contains('canPop: !_hasActiveQuery && !_popup.hasVisiblePopup'),
+        contains('(!_hasActiveQuery && !_popup.hasVisiblePopup)'),
         reason: 'back/exit must ignore the hidden warm slot',
+      );
+      expect(
+        src,
+        contains('!sectionVisible || (!_hasActiveQuery'),
+        reason:
+            'a hidden keep-alive lookup tab must not intercept system back '
+            '(BUG-4849)',
       );
       expect(
         src,

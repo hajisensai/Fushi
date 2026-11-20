@@ -1,7 +1,7 @@
 // 浏览页在较大规模上的耗时与内存（手动跑；默认跳过）。
 //
 // 合成库：FUSHI_SRS_BROWSE_BENCH=<笔记数> dart test test/srs/srs_browse_bench_test.dart
-// 真库副本：FUSHI_SRS_BROWSE_BENCH_DB=<srs.db 副本> dart test test/srs/srs_browse_bench_test.dart
+// 真库副本：FUSHI_SRS_BROWSE_BENCH_DB=<新代库目录或协议 3 的 srs.db；在副本上跑> dart test test/srs/srs_browse_bench_test.dart
 //   （会写一次旗标再改回去；别指向在用的库）
 //
 // 合成库开在临时文件上、走 createInBackground（与 app 同一种连接）。每条笔记两张卡，第二个字段是
@@ -28,8 +28,8 @@ import 'apkg/srs_apkg_import_test.dart'
         legacyDecks,
         legacyModels,
         ms;
-import 'support/srs_query_counter.dart';
 import 'support/srs_test_storage.dart';
+import 'support/srs_raw_sql.dart';
 
 Uint8List _apkg(int notes) {
   final int base = ms(2025, 1, 1);
@@ -92,16 +92,15 @@ void main() {
       final SrsDbStore store;
       final List<String> searches;
       if (dbPath != null) {
-        final TestSrs srs = await openTestSrsAt(dbPath, inline: false);
+        final TestSrs srs = await openRealDataTestSrs(dbPath);
         final String profileUid =
-            (await srs.db
+            (await srs.core
                     .customSelect(
                       'SELECT profile_uid FROM srs_cards_cache LIMIT 1',
                     )
                     .getSingle())
                 .read<String>('profile_uid');
         store = await SrsDbStore.open(
-          db: srs.db,
           core: srs.core,
           profileUid: profileUid,
           deviceId: 'bench',
@@ -120,13 +119,8 @@ void main() {
             // 句柄晚释放。
           }
         });
-        final TestSrs srs = await openTestSrsAt(
-          '${tmp.path}/b.db',
-          interceptor: CountingInterceptor(),
-          inline: false,
-        );
+        final TestSrs srs = openTestSrsIn(tmp.path);
         store = await SrsDbStore.open(
-          db: srs.db,
           core: srs.core,
           profileUid: '01928c3e-0000-7000-8000-0000000be4c7',
           deviceId: 'bench',

@@ -4,13 +4,21 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/metadata/book_metadata_scrape_facade.dart';
 import 'package:fushi/src/media/metadata/book_metadata_scraper.dart';
+import 'package:fushi_engine/media/metadata/books/book_catalog.dart'
+    show findIsbnIn, normalizeIsbn13;
+import 'package:fushi_engine/media/metadata/books/rakuten_books.dart';
 import 'package:fushi_engine/media/metadata/dlsite/dlsite_client.dart';
 import 'package:fushi_engine/media/metadata/image_download.dart';
 import 'package:fushi/src/media/metadata/scrape_cover_preview.dart';
 import 'package:fushi/src/media/metadata/scrape_failure_view.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/net/app_http_image.dart';
+import 'package:fushi/src/utils/components/fushi_dropdown.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
@@ -23,24 +31,43 @@ import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 书籍 / 漫画 / 有声书「在线匹配封面」弹窗（统一刮削 P1b）。
 ///
-/// 两个源用分段切换（[BookScrapeSource]）：Bangumi 书籍条目（`filter.type=[1]`）与 DLsite
-/// 音声 / 漫画 / 小说作品。默认 Bangumi——DLsite 的搜索含成人向作品，不混进普通书搜索；
-/// 预填词里认得出 DLsite 编号时默认切到 DLsite 并只填编号（直取）。选中候选后下载其封面
-/// 到临时文件并经 `Navigator.pop(file)` 返回给调用方（候选解析与下载都经
+/// 源用下拉切换（[BookScrapeSource]，七个源分段放不下）：Bangumi 书籍条目
+/// （`filter.type=[1]`）、DLsite 音声 / 漫画 / 小说作品、MangaBaka 漫画 / 轻小说系列（选中
+/// 系列后进卷封面网格，预选本地卷号 [BookCoverScrapeDialog.volume] 那一卷；结果区底部显示
+/// MangaBaka 署名）、AniList 轻小说、openBD（只按 ISBN）、NDL Search、楽天ブックス（要设备
+/// 本地凭据，没填就不出现在下拉里、下方给提示）。
+/// 默认 Bangumi——DLsite 的搜索含成人向作品，不混进普通书搜索；预填词里认得出 DLsite
+/// 编号时默认切到 DLsite 并只填编号（直取），预填词本身就是 ISBN 时默认 openBD。切到
+/// openBD 而搜索框里没有 ISBN 时，用书本身的 ISBN（[isbn]，EPUB 导入时从 OPF 读出）。
+/// 选中候选后下载其封面到临时文件并经 `Navigator.pop(`[BookCoverScrapeSelection]`)` 连同候选本身返回给调用方（候选解析与下载都经
 /// [BookMetadataScrapeFacade]，书架页的写回也经它）（书籍编辑对话框把它当作新的封面
 /// override，走既有 `setOverrideThumbnailFromMediaItem` 落地——不新增任何存储路径）。
 ///
 /// 返回 `null` = 用户取消 / 未选。
-Future<File?> showBookCoverScrapeDialog({
+Future<BookCoverScrapeSelection?> showBookCoverScrapeDialog({
   required BuildContext context,
   required String initialQuery,
+  num? volume,
+  String? isbn,
+  RakutenBooksCredentials? rakuten,
 }) {
-  return showAppDialog<File>(
+  return showAppDialog<BookCoverScrapeSelection>(
     context: context,
-    builder: (BuildContext ctx) =>
-        BookCoverScrapeDialog(initialQuery: initialQuery),
+    builder: (BuildContext ctx) => BookCoverScrapeDialog(
+      initialQuery: initialQuery,
+      volume: volume,
+      isbn: isbn,
+      rakuten: rakuten,
+    ),
   );
 }
+
+/// 弹窗的选择结果：下载好的封面临时文件 + 选中的候选（写回时连同简介 / 评分 /
+/// 标签等条目资料一起落库，书架系列色块读它）。
+typedef BookCoverScrapeSelection = ({
+  File cover,
+  BookScrapeCandidate candidate,
+});
 
 /// 弹窗主体（导出便于 widget 测试直接构造并注入 [scraperOverride]）。
 class BookCoverScrapeDialog extends StatefulWidget {
@@ -48,9 +75,21 @@ class BookCoverScrapeDialog extends StatefulWidget {
     super.key,
     required this.initialQuery,
     this.scraperOverride,
+    this.volume,
+    this.isbn,
+    this.rakuten,
   });
 
   final String initialQuery;
+
+  /// 本地书的卷号（MangaBaka 卷封面网格预选这一卷）；null = 不预选。
+  final num? volume;
+
+  /// 书本身的 ISBN-13（没有为 null），openBD 预填用。
+  final String? isbn;
+
+  /// 楽天ブックス凭据（设备本地设置；注入 [scraperOverride] 时以 scraper 自带的为准）。
+  final RakutenBooksCredentials? rakuten;
 
   /// 测试注入的 scraper（注入时弹窗不负责关闭它）。
   final BookMetadataScraper? scraperOverride;
@@ -59,14 +98,23 @@ class BookCoverScrapeDialog extends StatefulWidget {
   State<BookCoverScrapeDialog> createState() => _BookCoverScrapeDialogState();
 }
 
-/// 纯函数：弹窗的初始源与搜索词。预填词里带 DLsite 编号 → (DLsite, 编号)；否则
-/// (Bangumi, 原词)。
+/// 纯函数：弹窗的初始源与搜索词。预填词里带 DLsite 编号 → (DLsite, 编号)；预填词
+/// 本身是一个 ISBN → (openBD, ISBN-13)；否则 (Bangumi, 原词)。
 (BookScrapeSource, String) bookScrapeInitialState(String initialQuery) {
   final DlsiteWorkId? id = DlsiteWorkId.findIn(initialQuery);
-  return id == null
-      ? (BookScrapeSource.bangumi, initialQuery)
-      : (BookScrapeSource.dlsite, id.value);
+  if (id != null) return (BookScrapeSource.dlsite, id.value);
+  final String? isbn = normalizeIsbn13(initialQuery);
+  if (isbn != null) return (BookScrapeSource.openbd, isbn);
+  return (BookScrapeSource.bangumi, initialQuery);
 }
+
+/// 纯函数：下拉里列出的源。楽天凭据不齐时不列（下方另给提示）。
+List<BookScrapeSource> bookScrapeSelectableSources({
+  required bool rakutenAvailable,
+}) => <BookScrapeSource>[
+  for (final BookScrapeSource s in BookScrapeSource.values)
+    if (!s.needsCredentials || rakutenAvailable) s,
+];
 
 class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
   late final TextEditingController _queryCtrl;
@@ -87,6 +135,18 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
   /// 正在下载封面的候选（在其「使用」按钮上转圈；null = 无进行中）。
   BookScrapeCandidate? _applyingCandidate;
 
+  /// 当前源只按 ISBN 查、而搜索框里没有 ISBN（结果区给提示，不发请求）。
+  bool _needsIsbn = false;
+
+  /// MangaBaka 卷封面网格：选中的系列（null = 在候选列表页）。
+  BookScrapeCandidate? _volumeSeries;
+  List<BookVolumeCover> _volumes = const <BookVolumeCover>[];
+  bool _loadingVolumes = false;
+  Object? _volumeFailure;
+
+  /// 正在下载的那一卷（转圈）。
+  BookVolumeCover? _applyingVolume;
+
   @override
   void initState() {
     super.initState();
@@ -95,7 +155,8 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
     );
     _source = source;
     _queryCtrl = TextEditingController(text: query);
-    _scraper = widget.scraperOverride ?? BookMetadataScraper();
+    _scraper =
+        widget.scraperOverride ?? BookMetadataScraper(rakuten: widget.rakuten);
     _facade = BookMetadataScrapeFacade(scraper: _scraper);
     // 首帧后按预填标题自动搜一次。
     WidgetsBinding.instance.addPostFrameCallback((_) => _search());
@@ -111,9 +172,19 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
   Future<void> _search() async {
     final String keyword = _queryCtrl.text.trim();
     if (keyword.isEmpty) return;
+    if (_source.isbnOnly && findIsbnIn(keyword) == null) {
+      setState(() {
+        _needsIsbn = true;
+        _searched = false;
+        _results = const <BookScrapeCandidate>[];
+        _searchFailure = null;
+      });
+      return;
+    }
     setState(() {
       _searching = true;
       _searched = true;
+      _needsIsbn = false;
       _searchFailure = null;
     });
     List<BookScrapeCandidate> results = const <BookScrapeCandidate>[];
@@ -148,16 +219,78 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
 
   void _selectSource(BookScrapeSource source) {
     if (source == _source) return;
+    final String? isbn = widget.isbn;
+    if (source.isbnOnly &&
+        isbn != null &&
+        findIsbnIn(_queryCtrl.text) == null) {
+      _queryCtrl.text = isbn;
+    }
     setState(() {
       _source = source;
+      _volumeSeries = null;
       _results = const <BookScrapeCandidate>[];
       _searched = false;
+      _needsIsbn = false;
       _searchFailure = null;
     });
     _search();
   }
 
+  /// MangaBaka 候选「使用」= 进该系列的卷封面网格。
+  Future<void> _openVolumes(BookScrapeCandidate candidate) async {
+    setState(() {
+      _volumeSeries = candidate;
+      _volumes = const <BookVolumeCover>[];
+      _loadingVolumes = true;
+      _volumeFailure = null;
+    });
+    List<BookVolumeCover> volumes = const <BookVolumeCover>[];
+    Object? failure;
+    try {
+      volumes = await _facade.volumeCovers(candidate.subjectId);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('BookCoverScrapeDialog.volumes', e, stack);
+      failure = e;
+    }
+    if (!mounted) return;
+    setState(() {
+      _volumes = volumes;
+      _loadingVolumes = false;
+      _volumeFailure = failure;
+    });
+  }
+
+  Future<void> _useVolume(BookVolumeCover cover) async {
+    if (_applyingVolume != null) return;
+    setState(() => _applyingVolume = cover);
+    File? file;
+    Object? failure;
+    try {
+      file = await _facade.downloadVolumeCover(cover);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('BookCoverScrapeDialog.volume', e, stack);
+      failure = e;
+    }
+    if (!mounted) return;
+    if (file == null) {
+      setState(() => _applyingVolume = null);
+      FushiToast.show(
+        msg: failure == null
+            ? t.book_scrape_failed
+            : '${t.book_scrape_failed}\n${_failureReason(failure)}',
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    Navigator.of(context).pop(file);
+  }
+
   Future<void> _use(BookScrapeCandidate candidate) async {
+    if (candidate.source == BookScrapeSource.mangabaka &&
+        _volumeSeries == null) {
+      await _openVolumes(candidate);
+      return;
+    }
     if (_applyingCandidate != null) return;
     setState(() => _applyingCandidate = candidate);
     File? file;
@@ -180,7 +313,9 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
       );
       return;
     }
-    Navigator.of(context).pop(file);
+    Navigator.of(
+      context,
+    ).pop<BookCoverScrapeSelection>((cover: file, candidate: candidate));
   }
 
   @override
@@ -195,20 +330,34 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            adaptiveSegmentedButton<BookScrapeSource>(
-              context: context,
-              segments: <ButtonSegment<BookScrapeSource>>[
-                for (final BookScrapeSource s in BookScrapeSource.values)
-                  ButtonSegment<BookScrapeSource>(
-                    value: s,
-                    label: Text(s.label),
+            Row(
+              children: <Widget>[
+                Text(t.book_scrape_source_label),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FushiDropdown<BookScrapeSource>(
+                    key: const ValueKey<String>('book_scrape_source_picker'),
+                    options: bookScrapeSelectableSources(
+                      rakutenAvailable: _scraper.rakutenAvailable,
+                    ),
+                    initialOption: _source,
+                    enabled: !_searching,
+                    generateLabel: (BookScrapeSource s) => s.label,
+                    onChanged: (BookScrapeSource? v) {
+                      if (v != null && !_searching) _selectSource(v);
+                    },
                   ),
+                ),
               ],
-              selected: <BookScrapeSource>{_source},
-              onSelectionChanged: (Set<BookScrapeSource> v) {
-                if (v.isNotEmpty && !_searching) _selectSource(v.first);
-              },
             ),
+            if (!_scraper.rakutenAvailable)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  t.book_scrape_rakuten_unavailable,
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
             const SizedBox(height: 8),
             Row(
               children: <Widget>[
@@ -234,9 +383,22 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
             Flexible(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(minHeight: 120),
-                child: _buildResults(theme, tokens),
+                child: _volumeSeries != null
+                    ? _buildVolumes(theme)
+                    : _buildResults(theme, tokens),
               ),
             ),
+            if (_source == BookScrapeSource.mangabaka)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  t.book_scrape_mangabaka_attribution,
+                  key: const ValueKey<String>(
+                    'book_scrape_mangabaka_attribution',
+                  ),
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
           ],
         ),
       ),
@@ -246,6 +408,156 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
           child: Text(t.dialog_cancel),
         ),
       ],
+    );
+  }
+
+  /// MangaBaka 卷封面网格：预选本地卷号那一卷（高亮 + 排在最前），另给「使用系列
+  /// 封面」。
+  Widget _buildVolumes(ThemeData theme) {
+    final BookScrapeCandidate series = _volumeSeries!;
+    final Widget header = Row(
+      children: <Widget>[
+        FushiIconButtonControl(
+          tooltip: t.back,
+          icon: const FushiIcon(FushiIcons.back),
+          onPressed: () => setState(() => _volumeSeries = null),
+        ),
+        Expanded(
+          child: Text(
+            '${t.book_scrape_volume_title} · ${series.title}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        FushiTextButton(
+          onPressed: _applyingVolume != null || _applyingCandidate != null
+              ? null
+              : () async {
+                  // 系列主封面走普通下载路径（不进卷网格）。
+                  setState(() => _applyingCandidate = series);
+                  File? file;
+                  Object? failure;
+                  try {
+                    file = await _facade.downloadCover(series);
+                  } catch (e, stack) {
+                    ErrorLogService.instance.log(
+                      'BookCoverScrapeDialog.seriesCover',
+                      e,
+                      stack,
+                    );
+                    failure = e;
+                  }
+                  if (!mounted) return;
+                  if (file == null) {
+                    setState(() => _applyingCandidate = null);
+                    FushiToast.show(
+                      msg: failure == null
+                          ? t.book_scrape_failed
+                          : '${t.book_scrape_failed}\n${_failureReason(failure)}',
+                      severity: ToastSeverity.error,
+                    );
+                    return;
+                  }
+                  Navigator.of(context).pop(file);
+                },
+          child: Text(t.book_scrape_series_cover),
+        ),
+      ],
+    );
+    Widget body;
+    if (_loadingVolumes) {
+      body = const FushiLoadingView();
+    } else if (_volumeFailure != null) {
+      body = ScrapeFailureView(
+        title: t.book_scrape_search_failed,
+        reason: _failureReason(_volumeFailure!),
+        detail: _volumeFailure.toString(),
+      );
+    } else if (_volumes.isEmpty) {
+      body = Center(child: Text(t.book_scrape_volume_empty));
+    } else {
+      final num? wanted = widget.volume;
+      bool isWanted(BookVolumeCover v) =>
+          wanted != null && (v.volume - wanted).abs() < 0.01;
+      final List<BookVolumeCover> ordered = <BookVolumeCover>[
+        ..._volumes.where(isWanted),
+        ..._volumes.where((BookVolumeCover v) => !isWanted(v)),
+      ];
+      body = FushiEntranceScope(
+        child: GridView.builder(
+          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: 112,
+            childAspectRatio: 0.62,
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
+          ),
+          itemCount: ordered.length,
+          itemBuilder: fushiStaggeredItemBuilder(
+            (BuildContext context, int index) => _buildVolumeTile(
+              theme,
+              ordered[index],
+              selected: isWanted(ordered[index]),
+            ),
+          ),
+        ),
+      );
+    }
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        header,
+        Flexible(child: body),
+      ],
+    );
+  }
+
+  Widget _buildVolumeTile(
+    ThemeData theme,
+    BookVolumeCover cover, {
+    required bool selected,
+  }) {
+    final ColorScheme scheme = theme.colorScheme;
+    return FushiPressScale(
+      child: InkWell(
+        key: ValueKey<String>('book_scrape_volume_${cover.label}'),
+        borderRadius: FushiBorderRadius.chip,
+        onTap: _applyingVolume != null ? null : () => _useVolume(cover),
+        child: Column(
+          children: <Widget>[
+            Expanded(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  borderRadius: FushiBorderRadius.chip,
+                  border: Border.all(
+                    color: selected ? scheme.primary : Colors.transparent,
+                    width: 3,
+                  ),
+                ),
+                child: ClipRRect(
+                  borderRadius: FushiBorderRadius.chip,
+                  child: identical(_applyingVolume, cover)
+                      ? const Center(
+                          child: FushiCircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Image(
+                          image: AppHttpImage(cover.thumbnailUrl ?? cover.url),
+                          fit: BoxFit.cover,
+                          width: double.infinity,
+                          errorBuilder: (_, __, ___) => const SizedBox.expand(),
+                        ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              t.book_scrape_volume_label(volume: cover.label),
+              style: theme.textTheme.bodySmall,
+              maxLines: 1,
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -261,6 +573,11 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
         title: t.book_scrape_search_failed,
         reason: _failureReason(failure),
         detail: failure.toString(),
+      );
+    }
+    if (_needsIsbn) {
+      return Center(
+        child: Text(t.book_scrape_isbn_required, textAlign: TextAlign.center),
       );
     }
     if (_searched && _results.isEmpty) {
@@ -283,6 +600,8 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
       if (candidate.isAdult) 'R18',
       if (candidate.year != null) '${candidate.year}',
       if (candidate.author != null) candidate.author!,
+      if (candidate.publisher != null) candidate.publisher!,
+      if (candidate.series != null) candidate.series!,
       if (candidate.originalTitle != null) candidate.originalTitle!,
     ];
     return Padding(
@@ -290,7 +609,10 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: <Widget>[
-          ScrapeCoverPreview(url: candidate.coverUrl),
+          ScrapeCoverPreview(
+            url: candidate.coverUrl,
+            headers: candidate.coverHeaders,
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Column(

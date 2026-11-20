@@ -250,15 +250,16 @@ class _VideoPagePlaybackRemote
             label: _state._youtubeCaptionTrackLabel(track),
             kind: VideoRemoteSubtitleKind.youtube,
             primary: primary == track.trackKey,
-            secondary: false,
+            // 反馈 A41_cyNKcc：与面板副字幕区一致，YouTube 轨也可选为副字幕。
+            secondary: secondary == track.trackKey,
             ocrAvailable: false,
-            // 面板的副字幕区没有 YouTube 轨。
-            secondarySelectable: false,
             language: track.languageCode,
           ),
           // YouTube 轨懒下载、不走抽取加载态，来源无关。
           applyPrimary: (VideoSubtitlePickOrigin _) =>
               _state._applyYoutubeCaptionTrack(controller, track),
+          applySecondary: () =>
+              _state._applyYoutubeSecondaryCaptionTrack(controller, track),
         ),
       );
     }

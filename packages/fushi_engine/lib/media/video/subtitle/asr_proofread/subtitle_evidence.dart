@@ -437,3 +437,26 @@ class SubtitleEvidenceIndex {
     ];
   }
 }
+
+final RegExp _spellingRune = RegExp(r'[\p{L}\p{N}]', unicode: true);
+
+/// 比较字幕「写法」时算数的字：字母（汉字、假名、长音「ー」、「々」、拉丁…）与数字；
+/// 标点、空白、符号不算（硬字幕通常不带句号、两行直接拼接，不能因此判成不同）。
+bool isSubtitleSpellingRune(int rune) =>
+    _spellingRune.hasMatch(String.fromCharCode(rune));
+
+/// 比较写法时折叠：全角 ASCII → 半角、大写 → 小写。假名不折叠（平假名 / 片假名是不同
+/// 写法）。
+int foldSubtitleSpellingRune(int rune) {
+  int r = rune;
+  if (r >= 0xFF01 && r <= 0xFF5E) r -= 0xFEE0;
+  if (r >= 0x41 && r <= 0x5A) r += 0x20;
+  return r;
+}
+
+/// [text] 里算数的字（[isSubtitleSpellingRune]，经 [foldSubtitleSpellingRune] 折叠）：
+/// 两句的 key 相同 = 写法相同（只差标点 / 空白 / 全半角）。
+String subtitleSpellingKey(String text) => String.fromCharCodes(<int>[
+  for (final int r in text.runes)
+    if (isSubtitleSpellingRune(r)) foldSubtitleSpellingRune(r),
+]);

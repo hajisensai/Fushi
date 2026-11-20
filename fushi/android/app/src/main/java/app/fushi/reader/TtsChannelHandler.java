@@ -501,6 +501,18 @@ public class TtsChannelHandler {
         }
     }
 
+    /// 本地音频库「读音命中」查询：读音相同 **或该行没有读音** 都算命中（与 Yomitan
+    /// 本地音频服务器同一语义），精确读音行排在无读音行前，同级按库内顺序。
+    /// local-audio-yomichan 的库里 forvo 行 reading 全是 NULL；旧写法
+    /// `reading = ?` 让别的子来源只要有一行精确命中，forvo 就整体出局、回落也不
+    /// 触发（应用内反馈 Dd9HikrfRx：日语词永远出不了 Forvo）。一行都没命中才回落到
+    /// 只按 expression 查。与 Dart 侧 LocalAudioDb 逐字相同（守卫
+    /// local_audio_null_reading_query_guard_test 比对）。
+    private static final String LOCAL_AUDIO_READING_MATCH_SQL =
+        "SELECT file, source FROM entries "
+            + "WHERE expression = ? AND (reading = ? OR reading IS NULL) "
+            + "ORDER BY reading IS NULL, rowid";
+
     private void handleQueryLocalAudio(MethodCall call, MethodChannel.Result result) {
         String expression = call.argument("expression");
         String reading = call.argument("reading");
@@ -533,9 +545,11 @@ public class TtsChannelHandler {
                         // order 为空走快路径（LIMIT 1）；非空要取全部候选行再按序挑。
                         boolean ordered = order != null && !order.isEmpty();
                         String limit = ordered ? "" : " LIMIT 1";
-                        cursor = db.rawQuery(
-                            "SELECT file, source FROM entries WHERE expression = ? AND reading = ?" + limit,
-                            new String[]{expression, reading != null ? reading : ""});
+                        // 读音为空不按读音过滤，直接只按词形（与 Dart LocalAudioDb 同语义）。
+                        if (reading != null && !reading.isEmpty()) {
+                            cursor = db.rawQuery(LOCAL_AUDIO_READING_MATCH_SQL + limit,
+                                new String[]{expression, reading});
+                        }
                         if (cursor == null || !cursor.moveToFirst()) {
                             if (cursor != null) cursor.close();
                             cursor = db.rawQuery(
@@ -577,9 +591,10 @@ public class TtsChannelHandler {
                         ? localAudioDbOrders.get(dbIndex) : null;
                     Cursor cursor = null;
                     try {
-                        cursor = db.rawQuery(
-                            "SELECT file, source FROM entries WHERE expression = ? AND reading = ?",
-                            new String[]{expression, reading != null ? reading : ""});
+                        if (reading != null && !reading.isEmpty()) {
+                            cursor = db.rawQuery(LOCAL_AUDIO_READING_MATCH_SQL,
+                                new String[]{expression, reading});
+                        }
                         if (cursor == null || !cursor.moveToFirst()) {
                             if (cursor != null) cursor.close();
                             cursor = db.rawQuery(

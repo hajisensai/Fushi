@@ -28,14 +28,19 @@ class FakeVideoRecognizer implements VideoSubtitleRecognizer {
   final String id;
   final List<String> calls = <String>[];
 
+  /// 每次识别收到的音轨（全局流序号；null = 按语言挑）。
+  final List<int?> audioStreams = <int?>[];
+
   @override
   Future<List<SubtitleDraftCue>> recognize({
     required String videoPath,
     required Directory workDir,
     required VideoSubtitleRecognizeProgress onProgress,
     required SubtitleCancelToken cancel,
+    int? audioStreamIndex,
   }) async {
     calls.add(p.basename(videoPath));
+    audioStreams.add(audioStreamIndex);
     onProgress(0.5, 'half');
     return <SubtitleDraftCue>[
       for (int i = 0; i < 4; i++)

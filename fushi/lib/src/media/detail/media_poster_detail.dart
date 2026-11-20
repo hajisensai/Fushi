@@ -41,6 +41,8 @@ import 'package:fushi/src/sync/remote_download_progress_badge.dart'
 import 'package:fushi/src/utils/adaptive/shell_style.dart'
     show ShellClip, shellShape;
 import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/fushi_block_color_scope.dart'
+    show fushiBlockAppleColors, fushiBlockColorScheme;
 import 'package:fushi/src/utils/components/fushi_continue_card_row.dart'
     show coverColorSchemeCache;
 import 'package:fushi/src/utils/components/fushi_cover_block.dart'
@@ -79,62 +81,15 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 ThemeData mediaPosterDetailTheme(ThemeData base, FushiCoverBlockColors colors) {
   final Color bg = colors.container;
   final Color on = colors.onContainer;
-  final Color accent = colors.accent;
   Color mix(double alpha) => Color.alphaBlend(on.withValues(alpha: alpha), bg);
-  final ColorScheme scheme = base.colorScheme.copyWith(
-    primary: accent,
-    onPrimary: bg,
-    primaryContainer: mix(0.2),
-    onPrimaryContainer: on,
-    secondary: accent,
-    onSecondary: bg,
-    secondaryContainer: mix(0.14),
-    onSecondaryContainer: on,
-    tertiary: accent,
-    onTertiary: bg,
-    tertiaryContainer: mix(0.18),
-    onTertiaryContainer: on,
-    surface: bg,
-    onSurface: on,
-    onSurfaceVariant: mix(0.74),
-    surfaceDim: mix(0.02),
-    surfaceBright: mix(0.1),
-    surfaceContainerLowest: mix(0.03),
-    surfaceContainerLow: mix(0.06),
-    surfaceContainer: mix(0.09),
-    surfaceContainerHigh: mix(0.12),
-    surfaceContainerHighest: mix(0.16),
-    outline: mix(0.45),
-    outlineVariant: mix(0.22),
-    surfaceTint: accent,
-    inverseSurface: on,
-    onInverseSurface: bg,
-    inversePrimary: bg,
-  );
+  // 配色与带色卡片的局部配色同一份（fushiBlockColorScheme / fushiBlockAppleColors）。
+  final ColorScheme scheme = fushiBlockColorScheme(base.colorScheme, colors);
   final FushiAppleColors? apple = base.extension<FushiAppleColors>();
   // ThemeData 按扩展类型建表、后者覆盖前者，所以把面板版 FushiAppleColors 追加
   // 在原扩展之后即可替换掉原值。不写 `ThemeExtension<dynamic>` 元素类型注解：前端编译器把它按上界展开，与
   // analyzer 的推断不一致，显式注解会编不过（video_side_panel.dart 同款写法）。
   final List<FushiAppleColors> panelApple = <FushiAppleColors>[
-    if (apple != null)
-      FushiAppleColors(
-        accent: accent,
-        onAccent: bg,
-        groupedBackground: bg,
-        secondaryGroupedBackground: mix(0.08),
-        tertiaryGroupedBackground: mix(0.14),
-        label: on,
-        secondaryLabel: on.withValues(alpha: 0.7),
-        tertiaryLabel: on.withValues(alpha: 0.4),
-        separator: on.withValues(alpha: 0.18),
-        opaqueSeparator: mix(0.2),
-        fill: on.withValues(alpha: 0.2),
-        secondaryFill: on.withValues(alpha: 0.16),
-        tertiaryFill: on.withValues(alpha: 0.12),
-        destructive: apple.destructive,
-        success: apple.success,
-        warning: apple.warning,
-      ),
+    if (apple != null) fushiBlockAppleColors(apple, colors),
   ];
   return base.copyWith(
     colorScheme: scheme,
@@ -590,10 +545,16 @@ class MediaPosterDetailHero extends StatelessWidget {
     this.actionsKey,
     this.footer,
     this.aside,
+    this.compact = false,
     super.key,
   });
 
   final String title;
+
+  /// true = 不论面板宽窄一律走窄式版式、顶部不给页头让位：hero 放在一条窄栏
+  /// 里（合集详情宽屏左栏，栏宽约 300～380）时用，背景带 / 斜放封面 / 标题按栏宽
+  /// 排，不按整页的宽式排出溢出。
+  final bool compact;
 
   /// 尾侧附栏（视频合集详情的「接着看」卡 + 作品资料）：宽式且宽度够
   /// （≥ [kMediaPosterDetailAsideMinWidth]）时与标题块顶端对齐、单独占右列，
@@ -667,8 +628,8 @@ class MediaPosterDetailHero extends StatelessWidget {
     final _MediaPosterDetailScope? scope = _MediaPosterDetailScope.maybeOf(
       context,
     );
-    final bool wide = scope?.wide ?? true;
-    final double topInset = scope?.topInset ?? 0;
+    final bool wide = !compact && (scope?.wide ?? true);
+    final double topInset = compact ? 0 : scope?.topInset ?? 0;
     final double radius = scope?.radius ?? 0;
     Widget layout(_HeroPosterFit fit, double? backdropAspect) => LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -1135,9 +1096,12 @@ class MediaPosterDetailHero extends StatelessWidget {
     final Widget titleText = Semantics(
       header: true,
       child: selectableHeading
+          // minLines: 1——SelectableText 只给 maxLines 时按 maxLines 行固定占高，
+          // 一行标题下面空出两三行（2026-11-16 游戏详情标题与开发商之间的空白）。
           ? SelectableText(
               title,
               key: titleKey,
+              minLines: 1,
               maxLines: wide ? 3 : 4,
               style: titleStyle,
             )
@@ -1178,6 +1142,7 @@ class MediaPosterDetailHero extends StatelessWidget {
                 ? SelectableText(
                     originalTitle,
                     key: originalTitleKey,
+                    minLines: 1,
                     maxLines: 2,
                     style: (text.bodyMedium ?? const TextStyle()).copyWith(
                       color: cs.primary,

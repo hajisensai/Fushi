@@ -7,7 +7,14 @@
 //                                     [--gate=1] [--gate-timeout-min=0]
 //                                     [--no-lease] [--max-minutes=90]
 //                                     [--allow-flutter-mismatch]
+//                                     [--app-tests-only] [--hub-limit=40]
 //                                     [--files <paths...> | --files-from=<list>]
+//
+// Also the PR fast gate (main.yml's affected-tests job, 2026-11-18): there it
+// runs with --gate=0 --skip-analyze --app-tests-only and --hub-limit lifted,
+// because a PR to develop no longer runs the sharded suite (that runs on
+// develop after the merge, and on demand). The selection below is therefore
+// what stands between a PR and develop: a rule dropped here is dropped there.
 //
 // Resource budget (2026-09-30: three agents running this at once took a 32 GB
 // machine down to ~1 GB free; one run was 4-6 GB because `flutter test` ran at
@@ -60,6 +67,7 @@ import 'dart:io';
 import 'test_flow/flutter_sdk_executables.dart';
 import 'test_flow/flutter_test_failure_filter.dart';
 import 'test_flow/heavy_budget.dart';
+import 'test_flow/heavy_history.dart';
 import 'test_flow/heavy_lease.dart';
 import 'test_flow/pre_push_selection.dart';
 import 'tests_for_changes.dart'
@@ -112,11 +120,13 @@ class _Leases {
     if (_refused) {
       return (false, 'not run: an earlier step was not admitted');
     }
+    final HeavyNeed need = heavyNeedFor(kind);
+    final String label = 'pre-push $what';
     final HeavyLease lease;
     try {
       lease = await acquireHeavyLease(
-        need: heavyNeedFor(kind),
-        label: 'pre-push $what',
+        need: need,
+        label: label,
         worktreeRoot: root,
         waitMax: waitMax,
         log: (String l) => stdout.writeln('   $l'),
@@ -136,11 +146,33 @@ class _Leases {
     if (lease.waited.inSeconds >= 30) {
       notes.add('$what waited ${lease.waited.inMinutes} min for the machine');
     }
+    final Stopwatch held = Stopwatch()..start();
+    // A step that throws counts as failed in the history line.
+    int exitCode = 1;
     try {
-      return await body();
+      final (bool, String) result = await body();
+      exitCode = result.$1 ? 0 : 1;
+      return result;
     } finally {
       lease.release();
       final int? peak = job?.peakMb();
+      // A holder of the machine-wide queue like a heavy.dart run: one
+      // history line (heavy.dart --stats / --replay); none without a slot.
+      if (lease.slot != null) {
+        appendHeavyHistory(
+          heavyStateDir(),
+          heavyHolderEntry(
+            via: kHeavyViaPrePush,
+            need: need,
+            label: label,
+            cwd: root,
+            queued: lease.waited,
+            ran: held.elapsed,
+            exitCode: exitCode,
+            peakMb: peak,
+          ),
+        );
+      }
       final int? cap = job?.capMb;
       if (peak != null && cap != null && heavyCapHit(peak, cap)) {
         notes.add(
@@ -407,15 +439,21 @@ Future<void> main(List<String> args) async {
     ...byHelper,
     ...byImport,
   }.toList()..sort();
-  final List<String> packages =
-      changedTestablePackages(changed)
-          .where((String p) => Directory('$root/packages/$p/test').existsSync())
-          .toList()
-        ..sort();
+  // --app-tests-only: the caller runs package tests and the JS suites itself
+  // (main.yml's affected-tests job: its build job has the libraries they need).
+  final bool appTestsOnly = args.contains('--app-tests-only');
+  final List<String> packages = appTestsOnly
+      ? <String>[]
+      : (changedTestablePackages(changed)
+            .where(
+              (String p) => Directory('$root/packages/$p/test').existsSync(),
+            )
+            .toList()
+          ..sort());
   final List<String> analyzePackages = changedTestablePackages(
     changed,
   ).where(kSeparatelyAnalyzedPackages.contains).toList()..sort();
-  final bool js = touchesJsSuites(changed);
+  final bool js = !appTestsOnly && touchesJsSuites(changed);
 
   stdout
     ..writeln(

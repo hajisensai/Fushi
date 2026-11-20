@@ -5,12 +5,30 @@ import '../ctl_commands.dart';
 /// `fushi_cli web …`：内置浏览器与广告拦截规则（app 侧路由见 `fushi/lib/src/ops/ctl_web_routes.dart`）。
 ///
 /// 打开网址（只导航）、历史、书签与文件夹、网页广告拦截（总开关、内置过滤列表订阅、
-/// 立即更新、白名单）。app 没有自定义拦截规则 / 自定义列表地址，这里也没有。
+/// 立即更新、白名单），以及 AI 助手同一套通用联网搜索（`search` / `read`，app 侧
+/// `fushi/lib/src/ops/ctl_web_search_routes.dart`：发给「设置 › AI › 联网搜索」配的后端，
+/// 首次使用需 `--yes`，之后不再要）。app 没有自定义拦截规则 / 自定义列表地址，这里也没有。
 const List<CtlCommandGroup> webCommandGroups = <CtlCommandGroup>[
   CtlCommandGroup(
     name: 'web',
-    summary: '内置浏览器：打开网址 / 历史 / 书签 / 广告拦截',
+    summary: '内置浏览器：打开网址 / 历史 / 书签 / 广告拦截；联网搜索 / 读结果页',
     commands: <CtlCommandSpec>[
+      CtlCommandSpec(
+        name: 'search',
+        summary: '用设置里配的搜索后端联网搜索，列出结果 id（首次使用需 --yes）',
+        usage: '<搜索词...>',
+        configure: _configureSearch,
+        build: _buildSearch,
+        render: _renderSearch,
+      ),
+      CtlCommandSpec(
+        name: 'read',
+        summary: '读一条搜索结果的网页正文（只收 search 给的结果 id；--offset 取后续段）',
+        usage: '<结果 id>',
+        configure: _configureRead,
+        build: _buildRead,
+        render: _renderRead,
+      ),
       CtlCommandSpec(
         name: 'open',
         summary: '在内置浏览器打开网址（不像网址就按当前搜索引擎搜）',
@@ -207,6 +225,59 @@ CtlRequestSpec _buildHistoryClear(CtlCommandContext c) {
   );
 }
 
+// ── 联网搜索 ─────────────────────────────────────────────────────────────
+
+void _configureSearch(ArgParser parser) {
+  parser
+    ..addOption('limit', help: '最多几条（默认 5，最多 10）')
+    ..addFlag(
+      'yes',
+      abbr: 'y',
+      negatable: false,
+      help: '同意把搜索词与网页地址发给搜索后端（首次使用必需，之后记住）',
+    );
+}
+
+CtlRequestSpec _buildSearch(CtlCommandContext c) {
+  final String query = c.rest.join(' ').trim();
+  if (query.isEmpty) throw const CtlUsageError('缺少参数 <搜索词>');
+  final int? limit = c.intOption('limit');
+  if (limit != null && limit <= 0) throw const CtlUsageError('--limit 必须是正整数');
+  return CtlRequestSpec.post(
+    '$_root/search',
+    body: <String, Object?>{
+      'query': query,
+      'limit': ?limit,
+      if (c.flag('yes')) 'confirm': true,
+    },
+  );
+}
+
+void _configureRead(ArgParser parser) {
+  parser
+    ..addOption('offset', help: '从第几个字开始（上一段给的 nextOffset）')
+    ..addFlag(
+      'yes',
+      abbr: 'y',
+      negatable: false,
+      help: '同意把网页地址发给搜索后端 / 结果网站（首次使用必需，之后记住）',
+    );
+}
+
+CtlRequestSpec _buildRead(CtlCommandContext c) {
+  final String id = c.positional(0, '结果 id').trim();
+  final int? offset = c.intOption('offset');
+  if (offset != null && offset < 0) throw const CtlUsageError('--offset 不能为负');
+  return CtlRequestSpec.post(
+    '$_root/read',
+    body: <String, Object?>{
+      'id': id,
+      'offset': ?offset,
+      if (c.flag('yes')) 'confirm': true,
+    },
+  );
+}
+
 // ── 书签 ─────────────────────────────────────────────────────────────────
 
 void _configureBookmarks(ArgParser parser) {
@@ -365,6 +436,37 @@ String _time(Object? ms) {
 
 String _renderOpen(Object? data) =>
     data is Map ? '已在内置浏览器打开：${data['url']}' : renderCtlJson(data);
+
+String _renderSearch(Object? data) {
+  final Object? rows = data is Map ? data['results'] : null;
+  return renderCtlTable(
+    <Map<String, Object?>>[
+      if (rows is List)
+        for (final Object? r in rows)
+          if (r is Map)
+            <String, Object?>{
+              'id': r['id'],
+              'site': r['site'],
+              'title': r['title'],
+              'snippet': r['snippet'],
+            },
+    ],
+    const <(String, String)>[
+      ('id', 'id'),
+      ('站点', 'site'),
+      ('标题', 'title'),
+      ('摘要', 'snippet'),
+    ],
+    empty: '没有搜到结果',
+  );
+}
+
+String _renderRead(Object? data) {
+  if (data is! Map) return renderCtlJson(data);
+  final Object? next = data['nextOffset'];
+  return '${data['title']} <${data['url']}>\n\n${data['text']}\n\n'
+      '${next == null ? '（完）' : '（共 ${data['totalChars']} 字，下一段：--offset $next）'}';
+}
 
 String _renderHistory(Object? data) {
   final Object? rows = data is Map ? data['history'] : null;

@@ -6,9 +6,10 @@
 //!
 //! ```text
 //! 头（明文；签名覆盖；加密时作 AAD）
-//!   "FSH4" | ver u8 = 1 | flags u8（bit0 加密；其余必须为 0）
+//!   "FSH4" | ver u8 = 1 | flags u8（bit0 加密；bit1 带作者公钥；其余必须为 0）
 //!   | collection[16]（所在集合）| source[16]（来源集合：这段旧日志当初所属的协议 3 集合）
-//!   | device[16]（旧设备）| uploader[16]（上传者的设备 ID；签名者）| t_version uv（转译规则的版本，>= 1）
+//!   | device[16]（旧设备）| uploader[16]（上传者的设备 ID；签名者）| [author_key[32]]（bit1 时：旧设备的公钥）
+//!   | t_version uv（转译规则的版本，>= 1）
 //!   | first uv | last uv | prev_chain[32]（原协议 3 链在 first - 1 处的值）| last_chain[32]（在 last 处的值）
 //! 体  bytes( zstd( n_items uv | 项 × n_items ) [再 XChaCha20-Poly1305] )
 //! 尾  上传者的 Ed25519( blake3(头 || 体) )[64]
@@ -36,6 +37,9 @@
 //! - **空洞**：已彻底清除的旧操作（协议 3 的纯清除骨架、退役的 MediaAt）。只剩位置与 `fp`。
 //! - 不成链：转译后的字节重算不出原链。整段的真实性靠上传者的签名；`prev_chain` / `last_chain` 是上传者对原链端点的陈述，
 //!   读侧只核对末槽 `fp == last_chain[..8]`。
+//! - `author_key`：上传者在本机记着的旧设备公钥（上传者签名担保）。收方据此把旧设备的公钥登记进本机，之后有人拿
+//!   另一把钥匙冒充这台旧设备写 head，就是公钥对不上（先到先得），而不是「第一次见到」（G10-4，`store/gen4/truth/trust.rs`）。
+//!   上传者不知道公钥（协议 3 里没有公钥的设备行）时不带。
 //! - 一段只含同一个 `t_version` 转出的槽（上传者只有一套转译规则；转存别人上传的槽时按版本分段）。
 //!
 //! 独立规范编码 [HeritageSlot::encode]（本机存槽、比「同号同字节」用）：
@@ -53,7 +57,7 @@ use super::op::{
     BODY_FMT, Body4, KIND_JOIN, KIND_RETIRED_MEDIA_AT, KIND_SALTS, Op4, read_deps, read_kind_fmt,
 };
 use super::segment::{
-    read_chain, read_magic, read_op_slot, read_range, seal, stream_err, unseal, write_op_slot,
+    read_chain, read_magic_flags, read_op_slot, read_range, seal, stream_err, unseal, write_op_slot,
 };
 use super::stamp::HeritageStamp;
 use super::{bytes_min, iv_min, u16_min, uv_min};
@@ -69,6 +73,7 @@ pub const MAGIC: &[u8; 4] = b"FSH4";
 pub const VERSION: u8 = 1;
 
 const F_ENCRYPTED: u8 = 1;
+const F_AUTHOR_KEY: u8 = 2;
 const TAG_OP: u8 = 0;
 const TAG_RAW3: u8 = 1;
 const TAG_ALIAS: u8 = 2;
@@ -94,6 +99,8 @@ pub struct HeritageHeader {
     pub device: Id,
     /// 上传者（协议 4 的设备 ID）；段尾是它的签名。
     pub uploader: Id,
+    /// 旧设备的公钥（上传者担保；不知道 = None）。
+    pub author_key: Option<[u8; 32]>,
     /// 转译规则的版本。
     pub t_version: u32,
     pub first: u64,
@@ -106,11 +113,21 @@ impl HeritageHeader {
     fn write(&self, w: &mut Writer) {
         w.raw(MAGIC);
         w.u8(VERSION);
-        w.u8(if self.encrypted { F_ENCRYPTED } else { 0 });
+        let mut flags = 0;
+        if self.encrypted {
+            flags |= F_ENCRYPTED;
+        }
+        if self.author_key.is_some() {
+            flags |= F_AUTHOR_KEY;
+        }
+        w.u8(flags);
         self.collection.write(w);
         self.source.write(w);
         self.device.write(w);
         self.uploader.write(w);
+        if let Some(k) = &self.author_key {
+            w.raw(k);
+        }
         w.uv(u64::from(self.t_version));
         w.uv(self.first);
         w.uv(self.last);
@@ -119,11 +136,18 @@ impl HeritageHeader {
     }
 
     fn read(r: &mut Reader<'_>) -> DResult<HeritageHeader> {
-        let flags = read_magic(r, MAGIC, VERSION)?;
+        let flags = read_magic_flags(r, MAGIC, VERSION, F_ENCRYPTED | F_AUTHOR_KEY)?;
         let collection = Id::read(r)?;
         let source = Id::read(r)?;
         let device = Id::read(r)?;
         let uploader = Id::read(r)?;
+        let author_key = if flags & F_AUTHOR_KEY != 0 {
+            let mut k = [0u8; 32];
+            k.copy_from_slice(r.raw(32)?);
+            Some(k)
+        } else {
+            None
+        };
         let t_version = u32::try_from(uv_min(r)?).map_err(|_| DecodeError("t version"))?;
         if t_version == 0 {
             return Err(DecodeError("t version"));
@@ -135,6 +159,7 @@ impl HeritageHeader {
             source,
             device,
             uploader,
+            author_key,
             t_version,
             first,
             last,
@@ -194,6 +219,11 @@ impl Raw3 {
 
     pub fn id(&self) -> OpId {
         self.0.id
+    }
+
+    /// 依赖向量（收段按它判因果上能不能投）。
+    pub fn deps(&self) -> &Vv {
+        &self.0.deps
     }
 
     pub fn hlc(&self) -> Hlc {
@@ -444,6 +474,8 @@ pub struct HeritageMeta {
     pub source: Id,
     pub device: Id,
     pub uploader: Id,
+    /// 旧设备的公钥（[HeritageHeader::author_key]）。
+    pub author_key: Option<[u8; 32]>,
     pub t_version: u32,
     /// 原协议 3 链在第一个槽之前、最后一个槽处的值。
     pub prev_chain: Chain,
@@ -534,6 +566,7 @@ pub fn pack_heritage(
         source: meta.source,
         device: meta.device,
         uploader: meta.uploader,
+        author_key: meta.author_key,
         t_version: meta.t_version,
         first: first.id.seq,
         last: last.id.seq,
@@ -644,7 +677,8 @@ impl<'s> SlotStream<'s> {
             match tag {
                 TAG_OP | TAG_RAW3 => {
                     let fp = read_fp(r)?;
-                    let op = read_op_slot(r, id, wall, deps.as_ref())?;
+                    // 承袭段先验签（签名覆盖压缩体）后解压，不可信字节到不了这里。
+                    let op = read_op_slot(r, id, wall, deps.as_ref(), usize::MAX)?;
                     let body = if tag == TAG_OP {
                         SlotBody::Op(op)
                     } else {
@@ -799,6 +833,7 @@ pub(crate) mod tests {
             source: id(0x5c),
             device: id(OLD),
             uploader: id(0xa1),
+            author_key: None,
             t_version: 1,
             prev_chain: [0x11; 32],
             last_chain,
@@ -1048,6 +1083,7 @@ pub(crate) mod tests {
             source: m.source,
             device: m.device,
             uploader: m.uploader,
+            author_key: m.author_key,
             t_version: 1,
             first,
             last,
@@ -1305,6 +1341,37 @@ pub(crate) mod tests {
                 s
             );
         }
+    }
+
+    /// 段头可带作者公钥（flags bit1，G10-4 第四轮）：读回相同、签名覆盖它（改一个字节验签失败）；不带时字节与上面的
+    /// 黄金向量相同（旧格式不变）。不认识的 flags 位仍按损坏。
+    #[test]
+    fn author_key_round_trips_under_the_signature() {
+        let slots = slots();
+        let m = HeritageMeta {
+            author_key: Some([0x42; 32]),
+            ..meta(slots.last().unwrap().fp)
+        };
+        let (header, bytes) = pack_heritage(&m, &slots, &signer(), None).unwrap();
+        assert_eq!(header.author_key, Some([0x42; 32]));
+        assert_eq!(peek_heritage_header(&bytes).unwrap(), header);
+        let (h, got) = open_heritage(&bytes, &signer().public(), None).unwrap();
+        assert_eq!(h, header);
+        assert_eq!(got, slots);
+        // flags 在第 6 个字节；公钥紧跟在四个 ID（64 字节）之后。
+        assert_eq!(bytes[5], F_AUTHOR_KEY);
+        let at = 6 + 64;
+        assert_eq!(&bytes[at..at + 32], &[0x42; 32]);
+        let mut forged = bytes.clone();
+        forged[at] ^= 1;
+        assert_eq!(open_err(&forged), SegmentError::BadSignature);
+        let mut unknown = pack(&slots, None);
+        assert_eq!(unknown[5], 0);
+        unknown[5] = 4;
+        assert_eq!(
+            open_err(&unknown),
+            SegmentError::Corrupt("segment flags".into())
+        );
     }
 
     /// 整段文件（解码方向）。

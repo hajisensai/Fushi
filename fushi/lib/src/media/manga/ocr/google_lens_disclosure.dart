@@ -39,7 +39,11 @@ enum GoogleLensDisclosureScene {
   gameScreens(kGameGoogleLensDisclosurePreferenceKey),
 
   /// 本机桌面应用外截屏识字截的整块显示器。
-  desktopScreens(kScreenOcrGoogleLensDisclosurePreferenceKey);
+  desktopScreens(kScreenOcrGoogleLensDisclosurePreferenceKey),
+
+  /// Android 应用外截屏识字（悬浮球 MediaProjection）截的整个屏幕。与 [desktopScreens]
+  /// 是同一件事（本机应用外截屏发给 Lens），同意记录共用一个键；只是文案不说「显示器」。
+  mobileScreens(kScreenOcrGoogleLensDisclosurePreferenceKey);
 
   const GoogleLensDisclosureScene(this.preferenceKey);
 
@@ -53,7 +57,8 @@ enum GoogleLensDisclosureScene {
       t.video_google_lens_disclosure_title,
     GoogleLensDisclosureScene.gameScreens =>
       t.game_google_lens_disclosure_title,
-    GoogleLensDisclosureScene.desktopScreens =>
+    GoogleLensDisclosureScene.desktopScreens ||
+    GoogleLensDisclosureScene.mobileScreens =>
       t.screen_ocr_google_lens_disclosure_title,
   };
 
@@ -64,6 +69,8 @@ enum GoogleLensDisclosureScene {
     GoogleLensDisclosureScene.gameScreens => t.game_google_lens_disclosure_body,
     GoogleLensDisclosureScene.desktopScreens =>
       t.screen_ocr_google_lens_disclosure_body,
+    GoogleLensDisclosureScene.mobileScreens =>
+      t.screen_ocr_google_lens_disclosure_body_mobile,
   };
 }
 

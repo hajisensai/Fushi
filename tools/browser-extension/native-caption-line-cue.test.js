@@ -224,6 +224,21 @@ test('行文本在整轨最近几条里对不上：保持原行为，按播放�
   assert.strictEqual(ctx.window.startV, 3000);
 });
 
+test('BUG-4719 Shift 悬停扩展自绘覆盖层的某一行：带该行 cue 窗，而不是播放时刻命中的那句', () => {
+  const dom = captionDom();
+  const overlayLine = textNode(LINE_A);
+  element(['fushi-subtitle-overlay-line'], [overlayLine]);
+  const w = loadWorld(dom, { node: overlayLine, offset: 6 });
+  w.windowObj.fushiSubtitleOverlayCueWindowAt = (node) => (node === overlayLine
+    ? { text: LINE_A, startMs: 1000, endMs: 3000 } : null);
+  w.hover(300, 600);
+  const ctx = w.windowObj.fushiMineContext();
+  assert.ok(ctx.window, '应有当前字幕窗');
+  assert.strictEqual(ctx.window.text, LINE_A, '悬停覆盖层上一行却配了播放时刻那一句');
+  assert.strictEqual(ctx.window.startV, 1000);
+  assert.strictEqual(ctx.window.endV, 3000);
+});
+
 test('不是站点原生字幕（普通页面文本）：不带精确窗，按播放时刻取整轨', () => {
   const dom = captionDom();
   const stray = textNode(LINE_A);

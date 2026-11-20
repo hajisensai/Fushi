@@ -598,7 +598,7 @@ fn classify<'t>(inner: &'t str, start_tag: &'static str, end_tag: &'static str) 
 }
 
 /// `templateIdsToNames`：`{{…fld:<id>}}` / `{{#fld:<id>}}` 换成字段名；表里没有的 id 原样保留。
-fn ids_to_names(template: &str, id_to_name: &dyn Fn(&str) -> Option<String>) -> String {
+pub(crate) fn ids_to_names(template: &str, id_to_name: &dyn Fn(&str) -> Option<String>) -> String {
     const PREFIX: &str = "fld:";
     let mut out = String::with_capacity(template.len());
     for tok in tokenize(template) {

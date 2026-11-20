@@ -11,6 +11,8 @@ import 'package:fushi/src/pages/implementations/media_collection_grid_detail_pag
 import 'package:fushi/src/media/detail/media_poster_detail.dart'
     show MediaPosterDetailChrome;
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show ShellContentLayout;
 import 'package:fushi/src/utils/components/fushi_cover_block.dart'
     show FushiCoverBlockScope;
 import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart'
@@ -205,7 +207,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    // 重设计外壳的合集信息块（[CollectionPosterHeader]，2026-11-12 重做）不再画
+    // 重设计外壳的合集 hero（海报 hero，2026-11-16 起；2026-11-12 起）不再画
     // 百分比大字，整体进度收成统计行「已读完 x/y」；重算链路由它钉住。
     final Finder finishedNone = find.textContaining(
       t.collection_detail_finished_count(done: 0, total: 3),
@@ -694,7 +696,7 @@ void main() {
       );
     });
 
-    // 重设计外壳的合集信息块（[CollectionPosterHeader]，用户 2026-11-12 三轮
+    // 重设计外壳的合集 hero（海报 hero；用户 2026-11-12 三轮
     // 「重新设计」后的版式）只有封面 / 合集名 / 统计 / 标签，没有「继续」主
     // 按钮——续读走点成员卡。是否要把「继续」加回信息块待所有者拍板（PR #3397）。
     testWidgets('合集信息块没有「继续」按钮；点成员卡打开那一本', (WidgetTester tester) async {
@@ -836,9 +838,17 @@ void main() {
       await tester.pumpWidget(seriesPage(await seedSeries()));
       await tester.pumpAndSettle();
 
-      expect(find.byTooltip(t.collection_detail_edit_tags), findsNothing);
+      // 「编辑标签」只有一个：hero 动作行里的图标钮（tooltip 即它），顶栏没有。
+      expect(find.byTooltip(t.collection_detail_edit_tags), findsOneWidget);
       expect(
-        find.byKey(const ValueKey<String>('collection_detail_edit_tags')),
+        find.descendant(
+          of: find.byKey(
+            const ValueKey<String>('collection_detail_poster_hero'),
+          ),
+          matching: find.byKey(
+            const ValueKey<String>('collection_detail_edit_tags'),
+          ),
+        ),
         findsOneWidget,
       );
     });
@@ -851,6 +861,8 @@ void main() {
     await tester.pumpWidget(
       TranslationProvider(
         child: MaterialApp(
+          // 默认库页布局 2026-11-15 起是封面网格：本例守拼贴，显式钉住。
+          theme: shellLayoutTheme(ShellContentLayout.collage),
           home: MediaCollectionGridDetailPage(
             database: s.db,
             collection: s.col,
@@ -877,7 +889,7 @@ void main() {
       find.byKey(const ValueKey<String>('collection_detail_edit_tags')),
       findsOneWidget,
     );
-    // 默认库页布局是拼贴：成员格在色块布局里，卡片收到色块尺寸档。
+    // 拼贴布局：成员格在色块布局里，卡片收到色块尺寸档。
     expect(find.byType(SliverFushiCoverBlocks), findsOneWidget);
     expect(
       find.ancestor(

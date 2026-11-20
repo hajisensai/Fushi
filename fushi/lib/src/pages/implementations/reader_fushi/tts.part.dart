@@ -215,7 +215,6 @@ extension _ReaderTtsExtension on _ReaderFushiPageState {
       section: _currentChapter,
       studyOffset: _tocCharOffsetFor(_currentChapter) ?? 0,
     );
-    final String? extractDir = _extractDir;
     final SessionBookInfo info = SessionBookInfo(
       bookKey: widget.bookKey,
       audiobook: Audiobook()
@@ -228,12 +227,7 @@ extension _ReaderTtsExtension on _ReaderFushiPageState {
       mediaIdentifier: 'fushi://book/${widget.bookKey}',
       isTtsSource: true,
       author: book.author,
-      coverPath: extractDir == null
-          ? null
-          : ReaderFushiSource.resolveCoverFilePath(
-              extractDir: extractDir,
-              coverPath: book.coverHref,
-            ),
+      coverPath: _bookCoverFilePath,
       statsMediaKey: widget.bookKey,
     );
 
@@ -247,8 +241,8 @@ extension _ReaderTtsExtension on _ReaderFushiPageState {
         info: info,
         startPoint: at ?? (resume ? TtsStartAtResume(fallback: here) : here),
         autoplay: autoplay,
-        // 制作台给角色配过声音的书：朗读也按角色换声音。
-        cast: await ttsCastStoreFor(appModel).load(widget.bookKey),
+        // 制作台给角色配过声音的书（含系列里记住的声音）：朗读也按角色换声音。
+        cast: (await loadTtsCastBundle(appModel, widget.bookKey)).cast,
       );
     } on TtsStartException catch (e) {
       if (!mounted) return;

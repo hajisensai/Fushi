@@ -15,6 +15,7 @@ import 'package:fushi_server/src/server_paths.dart';
 import 'package:fushi_server/src/server_prefs.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
+import 'support/fake_rwkv.dart';
 
 /// 无头服务端托管本地音频库（BUG-2815）：以前 host 服务没接本地音频三件，
 /// 清单恒空、推送传完才抛 UnsupportedError。现在服务端做存储中转——
@@ -45,6 +46,7 @@ void main() {
     await prefs.warmUp();
     final ServerIdentity identity = await ServerIdentity.loadOrCreate(prefs);
     final HeadlessHost host = HeadlessHost(
+      srsRwkvHttpClient: noNetworkHttpClient,
       config: ServerConfig.defaults(dataDir: paths.dataDir),
       paths: paths,
       db: db,

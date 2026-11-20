@@ -207,6 +207,10 @@ void main() {
       interconnectDownloadManagerProvider,
     );
     final String taskId = InterconnectDownloadManager.srtAudiobookTaskId(_uid);
+    // 菜单动作多于一屏时（整理组多了「NSFW」一项后，内容组的「从对端更新字幕」
+    // 落到 800×600 测试视口之外）先滚到可见再点，否则 tap 打空、什么都不触发。
+    await tester.ensureVisible(find.text(label));
+    await tester.pumpAndSettle();
     await tester.runAsync(() async {
       await tester.tap(find.text(label));
       for (int i = 0; i < 200; i++) {
@@ -269,6 +273,10 @@ void main() {
       interconnectDownloadManagerProvider,
     );
     final String taskId = InterconnectDownloadManager.srtAudiobookTaskId(_uid);
+    // PR #3515 后动作面板顶上多了封面头，800×600 下面板内容超出它自己的滚动
+    // 视口，「下载更新」落在视口下沿之外（tap 命中到遮罩）：先滚进视口再点。
+    await tester.ensureVisible(download);
+    await tester.pumpAndSettle();
     await tester.runAsync(() async {
       await tester.tap(download);
       for (int i = 0; i < 200; i++) {

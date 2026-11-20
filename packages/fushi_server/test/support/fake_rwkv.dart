@@ -1,4 +1,5 @@
 // 服务端测试用的 RWKV 替身：后台 runtime 换成按卡给定 R 的假后端，权重「已就绪」不碰网络。
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -10,14 +11,15 @@ import 'package:fushi_engine/srs/srs_rwkv_service.dart';
 HttpClient noNetworkHttpClient() =>
     throw const SocketException('network disabled in tests');
 
-/// 让 [support] 下的 RWKV 权重看起来「已下载并校验过」（替身后端不读它，只要长度与校验标记对得上）。
-void markRwkvWeightsReady(Directory support) {
+/// 让 [support] 下 [size] 档的 RWKV 权重看起来「已下载并校验过」（替身后端不读它，只要长度与校验标记对得上）。
+void markRwkvWeightsReady(
+  Directory support, {
+  SrsRwkvModelSize size = SrsRwkvModelSize.small,
+}) {
   final Directory dir = srsRwkvModelsDir(support)..createSync(recursive: true);
-  final File weights = SrsRwkvModels(dir: dir).weightsFile
-    ..writeAsBytesSync(Uint8List(kSrsRwkvSmallWeightsBytes));
-  File(
-    '${weights.path}.verified',
-  ).writeAsStringSync(kSrsRwkvSmallWeightsSha256);
+  final File weights = SrsRwkvModels(dir: dir, size: size).weightsFile
+    ..writeAsBytesSync(Uint8List(size.weights.expectedBytes));
+  File('${weights.path}.verified').writeAsStringSync(size.weights.sha256);
 }
 
 /// 假后端：查询按卡的数字 id 给 [r]（没设的给 [defaultR]）。撤销日志与分数表照原生契约模拟到编排用得着的程度。
@@ -153,6 +155,17 @@ class FakeRwkvBackend implements SrsRwkvBackend {
     _scores.clear();
   }
 
+  /// 关闭闸门：设了就让 [close] 挂在这里，直到测试 complete 它（模拟旧服务存快照 / 关 runtime 很慢或挂死）。
+  Completer<void>? closeGate;
+
+  /// [close] 已被调用（不管闸门放没放）。
+  bool closeCalled = false;
+
   @override
-  Future<void> close() async => closed = true;
+  Future<void> close() async {
+    closeCalled = true;
+    final Completer<void>? gate = closeGate;
+    if (gate != null) await gate.future;
+    closed = true;
+  }
 }

@@ -44,7 +44,8 @@ const OutlineInputBorder _pillBorder = OutlineInputBorder(
 ///
 /// - 宽屏：来源下拉 + 搜索胶囊（M3E search bar / Apple 玻璃，[FushiSearchBar]）
 ///   + 行尾动作（✨ AI 下载、刷新…）同一行；
-/// - 窄屏（[isCompactWidth]）：搜索框独占整行，来源下拉 + 行尾动作排下一行；
+/// - 窄屏（[isCompactWidth]）：有行尾动作时搜索框独占整行，来源下拉 + 行尾动作
+///   排下一行；动作已进外壳顶栏（无行尾动作）时窄下拉 + 搜索框同一行；
 /// - 最后一行：筛选（[leading]，媒体域分段 / 筛选 chip）左对齐**单行**，放不下横滑。
 class DiscoveryHeaderControls extends StatelessWidget {
   const DiscoveryHeaderControls({
@@ -93,6 +94,9 @@ class DiscoveryHeaderControls extends StatelessWidget {
   /// 切到同一种两行形态。
   static bool isCompactWidth(BuildContext context, double width) =>
       width * FushiAppUiScale.of(context) < 600;
+
+  /// 窄屏、无行尾动作时来源下拉的固定宽度（「全部源 ▾」放得下，长来源名截断）。
+  static const double kCompactSourceMenuWidth = 128;
 
   @override
   Widget build(BuildContext context) {
@@ -157,6 +161,18 @@ class DiscoveryHeaderControls extends StatelessWidget {
   /// 三种形态（2026-10-04 用户截图）。搜索是发现页的主操作，窄屏一律给整行，
   /// 下拉在第二行填满按钮之外的宽度。
   Widget _buildCompact(BuildContext context, FushiDesignTokens tokens) {
+    // 动作已经登记进外壳的浮动顶栏（[trailing] 为空，拼贴改版设计稿第 6 节手机
+    // 形态）：下拉收成一枚窄胶囊（[kCompactSourceMenuWidth]）与搜索框同一行，
+    // 搜索框仍拿走其余全部宽度——不会再被按最长条目取宽的下拉挤成「搜…」。
+    if (trailing.isEmpty) {
+      return Row(
+        children: <Widget>[
+          _buildSourceMenu(context, tokens, width: kCompactSourceMenuWidth),
+          SizedBox(width: tokens.spacing.gap),
+          Expanded(child: _buildSearchField()),
+        ],
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -196,6 +212,7 @@ class DiscoveryHeaderControls extends StatelessWidget {
     BuildContext context,
     FushiDesignTokens tokens, {
     bool expand = false,
+    double? width,
   }) {
     // 隐式切源（点进某来源的目录）后下拉必须跟着变：DropdownMenu 的
     // initialSelection 只在初次构建生效，外面套一层随选中值变化的 key
@@ -207,6 +224,7 @@ class DiscoveryHeaderControls extends StatelessWidget {
         initialSelection: selectedSourceId,
         requestFocusOnTap: false,
         expandedInsets: expand ? EdgeInsets.zero : null,
+        width: width,
         // 与搜索框同一几何：DropdownMenu 默认是 56 高的 MD3 文本框，比
         // [kFushiSearchFieldHeight] 的搜索框高出一截、字号也大一号，同一行两个
         // 输入控件高低不齐。压到同高 + 同一排版令牌。

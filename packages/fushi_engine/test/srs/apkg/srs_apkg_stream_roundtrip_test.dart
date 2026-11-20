@@ -2,6 +2,7 @@
 // - 导出到文件 → 按文件导入到另一份库，笔记 / 卡片 / 日志 / 牌组 / 媒体逐字段一致；
 // - 已有笔记重导入：写入攒批落库，事务数与笔记数无关；
 // - 新格式 collection.anki21b 经排程内核文件到文件解 zstd。
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
@@ -40,15 +41,11 @@ Directory _tmp() {
 }
 
 /// 一份空库（与 [BulkFixture] 同 profile、同固定时钟）。
-Future<(SrsDbStore, CountingInterceptor)> _emptyStore(String deviceId) async {
-  final CountingInterceptor counter = CountingInterceptor();
+Future<(SrsDbStore, SrsReadCounter)> _emptyStore(String deviceId) async {
+  final SrsReadCounter counter = SrsReadCounter();
   final Directory dir = _tmp();
-  final TestSrs srs = await openTestSrsAt(
-    '${dir.path}/srs.db',
-    interceptor: counter,
-  );
+  final TestSrs srs = openTestSrsIn(dir.path);
   final SrsDbStore store = await SrsDbStore.open(
-    db: srs.db,
     core: srs.core,
     profileUid: kBulkUid,
     deviceId: deviceId,
@@ -59,6 +56,30 @@ Future<(SrsDbStore, CountingInterceptor)> _emptyStore(String deviceId) async {
   return (store, counter);
 }
 
+/// [dumpSrsState] 的一行日志（`卡|日志 JSON`）去掉落库方本机的东西之后的比较形：
+/// - `hlc`：各自库的内核在落库时按本机时钟打（新代不沿用包里 / 来源的 HLC）；
+/// - [srsForeignLogKey]：导入方给从 fushi-ext 恢复的日志打的出处标记（`srs_apkg_import.dart` `_remapExtLog`，交接
+///   §38）。它说的是「这条复习在**这份库**里是外来的」、只决定这份库里的派生排序键，导出方自己的原生日志没有它。复习
+///   本身（卡、评分、时刻、结果……）照样逐字段比；标记有没有打上由用例另行断言（[_foreignMarks]）。
+String _comparableLog(String line) {
+  final int bar = line.indexOf('|');
+  final Map<String, Object?> j =
+      (jsonDecode(line.substring(bar + 1)) as Map<String, Object?>)
+        ..remove('hlc')
+        ..remove(srsForeignLogKey);
+  return '${line.substring(0, bar)}|${jsonEncode(j)}';
+}
+
+/// [s] 的全部日志里带出处标记（`srsForeignLogKey: true`）的条数与总条数。
+Future<(int, int)> _foreignMarks(SrsDbStore s) async {
+  final List<String> logs = (await dumpSrsState(s))['logs']!;
+  final int marked = logs.where((String l) {
+    final Object? j = jsonDecode(l.substring(l.indexOf('|') + 1));
+    return j is Map<String, Object?> && j[srsForeignLogKey] == true;
+  }).length;
+  return (marked, logs.length);
+}
+
 /// 一份库里与写入者 / 本机无关的物化内容：笔记（字段、标签、首选牌组、出处、删除态）、
 /// 卡片缓存行、全部日志、牌组全名与设置。
 Future<Map<String, Object?>> _materialized(SrsDbStore s) async {
@@ -66,7 +87,7 @@ Future<Map<String, Object?>> _materialized(SrsDbStore s) async {
   final List<String> noteIds = (await s.entityIds(SrsEntityKind.note)).toList()
     ..sort();
   final Map<String, SrsNoteView?> notes = await s.notes(noteIds);
-  final Map<String, List<String>> dump = await dumpSrsState(s.db);
+  final Map<String, List<String>> dump = await dumpSrsState(s);
   String deckName(String? id) => id == null
       ? '-'
       : tree[id] == null
@@ -94,12 +115,9 @@ Future<Map<String, Object?>> _materialized(SrsDbStore s) async {
     ],
     // 缓存行里的牌组 ID 换成全名（两份库的默认牌组 ID 各自派生）。
     'cards': <String>[
-      for (final SrsCardCacheRow c
-          in await (s.db.select(s.db.srsCardsCache)
-                ..orderBy(<OrderClauseGenerator<$SrsCardsCacheTable>>[
-                  ($SrsCardsCacheTable t) => OrderingTerm(expression: t.id),
-                ]))
-              .get())
+      for (final SrsCardCacheRow c in await s.cardRowsWhere(
+        const <String, Object?>{'ordered': true},
+      ))
         <Object?>[
           c.id,
           c.noteId,
@@ -122,7 +140,9 @@ Future<Map<String, Object?>> _materialized(SrsDbStore s) async {
           c.lastLogId,
         ].toString(),
     ],
-    'logs': dump['logs'],
+    // 日志里落库方本机的东西（HLC、外来出处标记）不比，见 [_comparableLog]。
+    'logs': <String>[for (final String l in dump['logs']!) _comparableLog(l)]
+      ..sort(),
     'decks': <String>[
       for (final SrsDeckView d in tree.decks)
         <Object?>[
@@ -159,15 +179,13 @@ void main() {
       );
     }
     final List<String> cards = <String>[
-      for (final SrsCardCacheRow c
-          in await a.db.select(a.db.srsCardsCache).get())
-        c.id,
+      for (final SrsCardCacheRow c in await a.allCardRows()) c.id,
     ]..sort();
     await a.setSuspended(cards[3], true);
     // 挪第二张卡（Lang → Lang::JP）。笔记的首选牌组 apkg 里没有对应字段，导入取首张卡的牌组：
     // 挪首张卡会让回导的笔记首选牌组跟着变（格式本身的限制，不是导出 / 导入的错）。
     final String second = basic.templates[1].id;
-    final String moved = (await a.db.select(a.db.srsCardsCache).get())
+    final String moved = (await a.allCardRows())
         .where((SrsCardCacheRow c) => c.templateId == second)
         .map((SrsCardCacheRow c) => c.id)
         .reduce((String x, String y) => x.compareTo(y) < 0 ? x : y);
@@ -219,6 +237,12 @@ void main() {
     for (final String k in ma.keys) {
       expect(mb[k], ma[k], reason: k);
     }
+    // 出处标记：导出方自己的日志一条都没有；导入方从 fushi-ext 恢复的每一条都有（排序键按发生时刻派生，不按导入时刻）。
+    final (int markedA, int totalA) = await _foreignMarks(a);
+    final (int markedB, int totalB) = await _foreignMarks(b);
+    expect(totalA, greaterThan(0));
+    expect(markedA, 0);
+    expect((markedB, totalB), (totalA, totalA));
   });
 
   test('exportAnkiPackage（字节）与写文件的包内容相同', () async {
@@ -299,15 +323,18 @@ void main() {
     for (final SrsNoteView? n in after.values) {
       expect(n!.field(basic.fields.first.id), startsWith('new-'));
     }
-    final List<SrsCardCacheRow> cards = await a.db
-        .select(a.db.srsCardsCache)
-        .get();
+    final List<SrsCardCacheRow> cards = await a.allCardRows();
     expect(cards, hasLength(notes * 2));
     expect(cards.every((SrsCardCacheRow c) => c.suspended), isTrue);
 
-    // 同一个包再导一遍：全部 no-op，不写任何修改记录。
-    final int editsBefore =
-        (await a.db.select(a.db.srsFieldEdits).get()).length;
+    // 同一个包再导一遍：全部 no-op，不写任何修改记录。导出的修改记录带 dot（设备, 序号）：多写一条（哪怕值相同）
+    // 这个寄存器的 dot 就变了，整份逐条相同 = 一条也没多写。
+    Future<List<String>> edits() async => <String>[
+      for (final SrsEvent e in await a.exportAll())
+        if (e case SrsEditEvent(:final SrsFieldEdit edit))
+          jsonEncode(edit.toJson()),
+    ]..sort();
+    final List<String> editsBefore = await edits();
     final SrsImportReport again = await importAnkiPackageFile(
       store: a,
       file: edited,
@@ -316,7 +343,7 @@ void main() {
     );
     expect(again.notesUpdated, 0);
     expect(again.notesSkipped, notes);
-    expect((await a.db.select(a.db.srsFieldEdits).get()).length, editsBefore);
+    expect(await edits(), editsBefore);
   });
 
   group('新格式 collection.anki21b（按文件导入）', () {

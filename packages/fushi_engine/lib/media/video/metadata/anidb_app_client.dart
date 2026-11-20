@@ -26,21 +26,20 @@ const Set<String> kReservedShokoAniDbClientNames = <String>{
 /// UDP client 29913, active official version 1 (version record 27688).
 /// `fushi` was already occupied; this is Fushi's separately registered identity.
 ///
-/// **只是 UDP 登记**：AniDB 的 HTTP API 客户端是另一条登记，`fushiplayer` 从没
-/// 登记过 HTTP，拿它请求 httpapi 恒回 `<error code="302">client version missing
-/// or invalid</error>`（BUG-2623）。HTTP 身份见 [kBundledAniDbHttpClient]。
+/// AniDB 的 HTTP API 使用另一条登记（BUG-2623），见 [kBundledAniDbHttpClient]。
 const AniDbAppClientIdentity kBundledAniDbClient = AniDbAppClientIdentity(
   name: 'fushiplayer',
   version: 1,
 );
 
-/// 随包的 AniDB **HTTP API** 客户端身份：尚未登记，所以不存在（BUG-2623）。
+/// Registered 2026-11-16: https://anidb.net/software/20715
+/// HTTP client 34980, active official version 1 (version record 32304).
 ///
-/// 用随包配置时 anime XML 资料链在发请求前就判不可用（零请求），只剩 UDP 哈希
-/// 识别与离线标题目录。所有者在 AniDB 项目 20715 下登记 HTTP 客户端后，把这里
-/// 改成登记到的名字 / 版本即可，其它代码不用动。
-const AniDbAppClientIdentity kBundledAniDbHttpClient =
-    AniDbAppClientIdentity.unregistered();
+/// HTTP anime XML uses this separate registration, never the UDP identity.
+const AniDbAppClientIdentity kBundledAniDbHttpClient = AniDbAppClientIdentity(
+  name: 'fushiplayerhttp',
+  version: 1,
+);
 
 /// 一次解析得到的两条 AniDB 应用身份：UDP（哈希识别 / 登录）与 HTTP（anime XML）。
 ///

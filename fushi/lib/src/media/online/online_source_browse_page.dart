@@ -17,6 +17,7 @@ library;
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -179,7 +180,9 @@ DiscoveryCoverShape onlineBrowseCoverShape(ShelfCoverMaterial material) =>
     };
 
 /// 结果网格的列数（2~8 列，按 180 一列）；骨架与真网格共用。
-int _onlineBrowseColumns(double width) => (width / 180).floor().clamp(2, 8);
+/// 列数按拼贴规整块的目标宽（与库页同档）排，至少 1 列。
+int _onlineBrowseColumns(double width) =>
+    fushiCoverBlockColumns(width, kFushiCoverBlockTargetWidthMedia, 12);
 
 /// 网格四周内边距与列间距。
 const double _kOnlineBrowseGridPadding = 16;

@@ -128,7 +128,39 @@ class SrsRwkvService implements SrsRwkvScheduling, SrsRwkvStatusSource {
     Future<SrsRwkvBackend> Function(File weights)? openBackend,
     void Function(String message)? log,
   }) : _open = openBackend,
-       _log = log ?? ((String _) {});
+       _log = log ?? ((String _) {}) {
+    // 排到同一份快照的上一个服务后面（见 [_snapshotHandoff]）。
+    _predecessor = _snapshotHandoff[_snapshotKey] ?? Future<void>.value();
+    // 队尾 = 前面的都关完、且本服务也关完：本服务没起内核就先关了时，排在后面的照样要等更前面那个。
+    _handoffTail = Future.wait(<Future<void>>[_predecessor, _released.future]);
+    _snapshotHandoff[_snapshotKey] = _handoffTail;
+  }
+
+  /// 同一份快照（快照目录 + profile）的交接：上一个服务关完（内核存好快照、关掉 runtime）之前，下一个服务不起
+  /// 内核。换模型档位、换 profile 再换回来时宿主是「旧服务开始关、新服务马上建」，旧的还在写快照时新的就可能读到
+  /// 半新不旧的快照目录、或两个内核同时写同一个文件（PR #3463 审查）；排成一队后，同一份快照在同一时刻只有一个
+  /// 内核在碰。值是该快照目前最后一个服务「关完」的信号。
+  static final Map<String, Future<void>> _snapshotHandoff =
+      <String, Future<void>>{};
+
+  /// 本服务在 [_snapshotHandoff] 里的键（小写：Windows / macOS 的路径不分大小写；在区分大小写的系统上
+  /// 最多把两个只差大小写的目录排成一队，不会漏排）。
+  late final String _snapshotKey =
+      '${snapshotDir.absolute.path.toLowerCase()}|${store.profileUid}';
+
+  /// 同一份快照的上一个服务关完。
+  late final Future<void> _predecessor;
+
+  /// 本服务关完（[close] 结束时完成）。
+  final Completer<void> _released = Completer<void>();
+
+  /// 本服务开始关（[close] 一进来就完成）：还在等 [_predecessor] 的 [_spawn] 不再等下去，直接放弃起内核。
+  /// 否则上一个服务关不完（内核 isolate 挂死）时，本服务的 [close] 也会经 `_starting` 卡在这里，再把宿主
+  /// 换档位 / 关库的串行队列整条拖住（交接链只该挡住起内核，不该挡住关闭）。
+  final Completer<void> _closeRequested = Completer<void>();
+
+  /// 本服务排进 [_snapshotHandoff] 的队尾。
+  late final Future<void> _handoffTail;
 
   final SrsDbStore store;
   final SrsRwkvModels models;
@@ -153,7 +185,7 @@ class SrsRwkvService implements SrsRwkvScheduling, SrsRwkvStatusSource {
   @visibleForTesting
   Future<void> Function()? debugAfterRebuildFingerprint;
 
-  /// 排程用的状态精度（int4 卡状态 + int8 笔记状态，见 native/fushi_rwkv）。校准图的临时回放用同一个。
+  /// 排程用的状态精度（卡 / 笔记状态 int4，牌组 / 预设 / 全局 f32，见 native/fushi_rwkv）。校准图的临时回放用同一个。
   static const RwkvPrecision precision = RwkvPrecision.int4;
 
   /// 有未存的追加 / 撤回时，空闲这么久后存一次快照。
@@ -213,6 +245,9 @@ class SrsRwkvService implements SrsRwkvScheduling, SrsRwkvStatusSource {
   final Map<int, StreamSubscription<ModelDownloadEvent>> _downloads =
       <int, StreamSubscription<ModelDownloadEvent>>{};
 
+  /// 取消了、还没真正停下的下载（[_stopDownload]）：[close] 等它们停干净再返回，宿主之后删目录不会撞上收尾。
+  final Set<Future<void>> _stoppingDownloads = <Future<void>>{};
+
   /// 在跑的原生调用（内核给的编号 → 账本令牌、字节、行数）。
   final Map<int, (int, int, int)> _nativeOps = <int, (int, int, int)>{};
   Timer? _timer;
@@ -247,6 +282,9 @@ class SrsRwkvService implements SrsRwkvScheduling, SrsRwkvStatusSource {
   }
 
   Future<RwkvSchedWorker?> _spawn() async {
+    // 同一份快照的上一个服务还在关（存快照）：等它关完再起内核去恢复 / 写这份快照；本服务先被关了就不等了。
+    await Future.any(<Future<void>>[_predecessor, _closeRequested.future]);
+    if (_closed) return null;
     try {
       final RwkvSchedWorker worker = await RwkvSchedWorker.spawn(
         config: rwkvSchedConfig(
@@ -385,7 +423,7 @@ class SrsRwkvService implements SrsRwkvScheduling, SrsRwkvStatusSource {
           final StreamSubscription<ModelDownloadEvent>? download = _downloads
               .remove(r.u32());
           if (download != null) {
-            unawaited(download.cancel());
+            _stopDownload(download);
             _handlers--;
           }
       }
@@ -432,7 +470,7 @@ class SrsRwkvService implements SrsRwkvScheduling, SrsRwkvStatusSource {
     _timer = null;
     for (final StreamSubscription<ModelDownloadEvent> download
         in _downloads.values) {
-      unawaited(download.cancel());
+      _stopDownload(download);
       _handlers--;
     }
     _downloads.clear();
@@ -544,6 +582,21 @@ class SrsRwkvService implements SrsRwkvScheduling, SrsRwkvStatusSource {
 
   _Call _callOf(int op) =>
       _calls[op] ?? (throw StateError('RWKV kernel asked about command $op'));
+
+  /// 取消一个下载并记账，直到它真正停下（[SrsRwkvModels.download] 的 cancel future 等连接断开、收尾结束）。
+  /// 停的过程中冒出的意外错误进诊断日志（没有人在 await 这一步，不能让它落到 zone）。
+  void _stopDownload(StreamSubscription<ModelDownloadEvent> download) {
+    late final Future<void> stopping;
+    stopping = download
+        .cancel()
+        .then<void>(
+          (_) {},
+          onError: (Object error, StackTrace stack) =>
+              _log('RWKV download stop failed: $error\n$stack'),
+        )
+        .whenComplete(() => _stoppingDownloads.remove(stopping));
+    _stoppingDownloads.add(stopping);
+  }
 
   /// 下载权重：进度一条条递给内核，下完 / 失败回复它；内核不等了（已关闭）就停。
   void _download(int id) {
@@ -963,6 +1016,7 @@ class SrsRwkvService implements SrsRwkvScheduling, SrsRwkvStatusSource {
   Future<void> close() async {
     if (_closed) return;
     _closed = true;
+    _closeRequested.complete();
     try {
       try {
         await _run(RwkvSchedWire.cmdClose, closing: true);
@@ -974,9 +1028,20 @@ class SrsRwkvService implements SrsRwkvScheduling, SrsRwkvStatusSource {
         }
         _finishCalls(null);
         _checkSettled();
+        // 在途下载停干净再返回（连接断开、不再写文件）。
+        await Future.wait(_stoppingDownloads.toList());
       }
     } finally {
       await _status.close();
+      _released.complete();
+      // 前面的也都关完了、后面没人再排进来：清掉这一项（不留着越积越多）。
+      unawaited(
+        _handoffTail.then((_) {
+          if (identical(_snapshotHandoff[_snapshotKey], _handoffTail)) {
+            _snapshotHandoff.remove(_snapshotKey);
+          }
+        }),
+      );
     }
   }
 }

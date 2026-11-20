@@ -97,44 +97,48 @@ void main() {
     }
   });
 
-  test('metadata runtime preferences rebuild the download scraper snapshot', () {
-    final String videoSource = File(
-      'lib/src/settings/settings_schema_video.dart',
-    ).readAsStringSync();
-    final String servicesSource = File(
-      'lib/src/settings/settings_schema_services.dart',
-    ).readAsStringSync();
-    final String actionsSource = File(
-      'lib/src/media/video/video_settings_actions.dart',
-    ).readAsStringSync();
-    final RegExp call = RegExp(r'commitVideoMetadataRuntimePreference\(');
-    expect(
-      call.allMatches(videoSource).length,
-      3,
-      reason:
-          '刮削语言、刮削主源与识别词三处运行期偏好都必须走共享 helper —— 只有它'
-          '会重建下载管线的刮削快照；漏一处就是「设置改了、下一批还用旧值」。'
-          '这里数的是「视频·媒体库」分区里的运行期刮削偏好数，再加一项要同步 +1',
-    );
-    expect(
-      call.allMatches(servicesSource).length,
-      5,
-      reason:
-          'AniDB client/version/account + TMDB key must use the shared helper',
-    );
-    expect(
-      call.allMatches(actionsSource).length,
-      1,
-      reason: 'the helper is defined once, in video_settings_actions.dart',
-    );
-    expect(
-      actionsSource,
-      contains(
-        'await settingsContext.appModel.'
-        'reloadVideoDownloadPipelineRuntime();',
-      ),
-    );
-  });
+  test(
+    'metadata runtime preferences rebuild the download scraper snapshot',
+    () {
+      final String videoSource = File(
+        'lib/src/settings/settings_schema_video.dart',
+      ).readAsStringSync();
+      final String servicesSource = File(
+        'lib/src/settings/settings_schema_services.dart',
+      ).readAsStringSync();
+      final String actionsSource = File(
+        'lib/src/media/video/video_settings_actions.dart',
+      ).readAsStringSync();
+      final RegExp call = RegExp(r'commitVideoMetadataRuntimePreference\(');
+      expect(
+        call.allMatches(videoSource).length,
+        3,
+        reason:
+            '刮削语言、刮削主源与识别词三处运行期偏好都必须走共享 helper —— 只有它'
+            '会重建下载管线的刮削快照；漏一处就是「设置改了、下一批还用旧值」。'
+            '这里数的是「视频·媒体库」分区里的运行期刮削偏好数，再加一项要同步 +1',
+      );
+      expect(
+        call.allMatches(servicesSource).length,
+        6,
+        reason:
+            'AniDB client/version/account/UDP API key + TMDB key must use the '
+            'shared helper',
+      );
+      expect(
+        call.allMatches(actionsSource).length,
+        1,
+        reason: 'the helper is defined once, in video_settings_actions.dart',
+      );
+      expect(
+        actionsSource,
+        contains(
+          'await settingsContext.appModel.'
+          'reloadVideoDownloadPipelineRuntime();',
+        ),
+      );
+    },
+  );
 
   test('invalid AniDB versions disable the HTTP API safely', () {
     expect(parseAniDbClientVersion('1'), 1);
@@ -146,7 +150,7 @@ void main() {
   });
 
   test(
-    'hash identification is opt-in and requires all registration fields',
+    'hash identification is on by default and requires all registration fields',
     () {
       expect(
         item('services.metadata.anidb_hash_enabled'),
@@ -154,13 +158,15 @@ void main() {
       );
       const VideoSourceScrapeGlobalConfig empty =
           VideoSourceScrapeGlobalConfig();
-      expect(empty.hashEnabled, isFalse);
+      expect(empty.hashEnabled, isTrue);
       expect(empty.anidbUdpConfig.isAvailable, isFalse);
+      expect(empty.anidbHashReady, isFalse);
       const VideoSourceScrapeGlobalConfig configured =
           VideoSourceScrapeGlobalConfig(
             hashEnabled: true,
             anidbUsername: 'tester',
             anidbPassword: ' spaced password ',
+            anidbUdpApiKey: 'udp-key',
             anidbClientName: 'fushitest',
             anidbClientVersion: 1,
           );

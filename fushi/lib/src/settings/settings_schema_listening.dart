@@ -9,6 +9,9 @@ import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_voice_settings_page.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_style.dart';
+import 'package:fushi/src/media/listening_reminder.dart';
+import 'package:fushi/src/media/listening_reminder_app.dart'
+    show enableListeningReminder;
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
@@ -759,4 +762,44 @@ SettingsCustomItem _floatingLyricColorItem({
       () => c.appModel.prefsRepo.setFloatingLyricColor(role, color),
     ),
   );
+}
+
+/// 连续收听提醒（反馈 5_mzP54WVx）：音乐 / 有声书 / 视频都算，所以不挂在「听书」
+/// 一级分类下（那里随听书模块门显隐），由「通用 › 听力保护」装配。默认关。
+List<SettingsItem> buildListeningReminderItems() {
+  return <SettingsItem>[
+    SettingsSwitchItem(
+      id: 'general.listening_reminder',
+      title: t.listening_reminder_setting_title,
+      subtitle: t.listening_reminder_setting_hint,
+      icon: FushiIcons.audiobook,
+      defaultValue: false,
+      value: (SettingsContext c) => c.appModel.listeningReminderEnabled,
+      onChanged: (SettingsContext c, bool value) async {
+        await enableListeningReminder(c.appModel, value: value);
+        c.refresh();
+      },
+    ),
+    SettingsSegmentedItem<int>(
+      id: 'general.listening_reminder_minutes',
+      title: t.listening_reminder_interval_title,
+      icon: FushiIcons.timer,
+      dropdown: true,
+      defaultValue: kListeningReminderMinutesDefault,
+      // 开关关着时档位不生效：置灰但照旧显示所选值。
+      enabled: (SettingsContext c) => c.appModel.listeningReminderEnabled,
+      options: <SettingsSegmentOption<int>>[
+        for (final int minutes in kListeningReminderMinutesChoices)
+          SettingsSegmentOption<int>(
+            value: minutes,
+            label: t.listening_reminder_interval_option(n: minutes),
+          ),
+      ],
+      selected: (SettingsContext c) => c.appModel.listeningReminderMinutes,
+      onChanged: (SettingsContext c, int value) async {
+        await c.appModel.setListeningReminderMinutes(value);
+        c.refresh();
+      },
+    ),
+  ];
 }

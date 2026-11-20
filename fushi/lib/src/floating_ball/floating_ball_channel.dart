@@ -13,6 +13,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart' show AxisDirection;
 import 'package:flutter/services.dart';
+import 'package:fushi/src/ocr/system_ocr_channel.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 测试缝，与 `debugDesktopSystemBallPlatformOverride` 同形：「原生会不会上报传感器
@@ -272,6 +273,12 @@ class FloatingBallChannel {
   ///    原生 Toast 的一句话（成功 / 失败）；
   ///  - `openSystemOcrSetup`（Android 截屏 OCR 报模型未就绪，Fushi 已被拉到前台）→
   ///    [onOpenSystemOcrSetup]；
+  ///  - `screenOcrEngine`（Android 截屏 OCR 截到帧，问这次用哪个引擎）→
+  ///    [onScreenOcrEngine]，回 `{engine}` 或 `{message, openApp}`（见
+  ///    `ScreenOcrService.recognize`）；
+  ///  - `recognizeScreenOcrFrame {png, engine, fallback}`（Android 截屏 OCR 把定格帧
+  ///    交给 Dart 侧的本机模型 / Lens 识别）→ [onRecognizeScreenOcrFrame]，回
+  ///    `{lines}`（[screenOcrLinesToNative]）/ `{message}` / `{unavailable: true}`；
   ///  - `systemBallClosedByUser`（系统球 / 常驻通知上点了关闭）→
   ///    [onSystemBallClosedByUser]；
   ///  - `systemBallAction {id, anchor}`（桌面系统球上点了某个动作；anchor 是球在
@@ -300,6 +307,13 @@ class FloatingBallChannel {
     Future<List<Map<String, Object?>>?> Function()? onProfileMenu,
     Future<String> Function(int id)? onSwitchProfileTo,
     void Function()? onOpenSystemOcrSetup,
+    Future<Map<String, Object?>?> Function()? onScreenOcrEngine,
+    Future<Map<String, Object?>?> Function(
+      Uint8List png,
+      String engine, {
+      required bool fallback,
+    })?
+    onRecognizeScreenOcrFrame,
     void Function()? onSystemBallClosedByUser,
     void Function(String id, Rect? anchor)? onSystemBallAction,
     void Function(String dock, double fraction)? onSystemBallPositionChanged,
@@ -335,6 +349,20 @@ class FloatingBallChannel {
           if (id is int) return await onSwitchProfileTo?.call(id);
         case 'openSystemOcrSetup':
           onOpenSystemOcrSetup?.call();
+        case 'screenOcrEngine':
+          return await onScreenOcrEngine?.call();
+        case 'recognizeScreenOcrFrame':
+          final Object? args = call.arguments;
+          if (args is! Map) break;
+          final Object? png = args['png'];
+          final Object? engine = args['engine'];
+          if (png is Uint8List && engine is String) {
+            return await onRecognizeScreenOcrFrame?.call(
+              png,
+              engine,
+              fallback: args['fallback'] == true,
+            );
+          }
         case 'systemBallClosedByUser':
           onSystemBallClosedByUser?.call();
         case 'systemBallAction':
@@ -399,6 +427,44 @@ class FloatingBallChannel {
     _handlerInstalled = false;
     channel.setMethodCallHandler(null);
   }
+}
+
+/// Android 截屏 OCR：Dart 侧识别出的行 → 原生选取层要的形状（决定 4BBSaB12zj）。
+///
+/// 每行 `{text, rect: [l, t, r, b], vertical, segments: [[start, length, l, t, r, b]…]}`，
+/// 坐标是定格帧的像素（与屏幕物理像素 1:1，见 `ScreenOcrService`），取整交出去；
+/// `segments` 是行内逐字 / 逐词框（[SystemOcrTextLine.segments]），原生据此建字框，
+/// 空表时原生按行框等分。无面积的行与词框丢掉。
+List<Map<String, Object?>> screenOcrLinesToNative(
+  List<SystemOcrTextLine> lines,
+) {
+  List<int> box(Rect r) => <int>[
+    r.left.round(),
+    r.top.round(),
+    r.right.round(),
+    r.bottom.round(),
+  ];
+  final List<Map<String, Object?>> out = <Map<String, Object?>>[];
+  for (final SystemOcrTextLine line in lines) {
+    final List<int> rect = box(line.rect);
+    if (line.text.isEmpty || rect[2] <= rect[0] || rect[3] <= rect[1]) {
+      continue;
+    }
+    out.add(<String, Object?>{
+      'text': line.text,
+      'rect': rect,
+      'vertical': line.isVertical,
+      'segments': <List<int>>[
+        for (final SystemOcrTextSegment s in line.segments)
+          if (s.length > 0 &&
+              s.end <= line.text.length &&
+              s.rect.width >= 1 &&
+              s.rect.height >= 1)
+            <int>[s.start, s.length, ...box(s.rect)],
+      ],
+    });
+  }
+  return out;
 }
 
 /// [FloatingBallChannel.startScreenOcrCapture] 的结果：成功带截图 PNG 与那块显示器

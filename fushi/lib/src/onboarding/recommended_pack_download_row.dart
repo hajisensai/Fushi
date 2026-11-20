@@ -30,7 +30,7 @@ class RecommendedPackDownloadRow extends StatelessWidget {
 
   final RecommendedPackDownloadController controller;
 
-  /// 导入已下好的整包。导入要用户确认覆盖/合并并重启进程，controller 不自己发起，
+  /// 导入已下好的整包。导入（恒合并）会重启进程，controller 不自己发起，
   /// 由宿主（设置页 / 新手引导）传进来。
   final VoidCallback onImport;
 
@@ -118,7 +118,7 @@ class RecommendedPackDownloadRow extends StatelessWidget {
           case RecommendedPackDownloadStage.downloaded:
             return AdaptiveSettingsRow(
               title: t.onboarding_pack_status_ready,
-              subtitle: t.onboarding_pack_action_import_existing_desc,
+              subtitle: t.onboarding_pack_action_import_existing_merge_desc,
               icon: FushiIcons.downloadDone,
               showIcon: true,
               trailing: FushiFilledButton(

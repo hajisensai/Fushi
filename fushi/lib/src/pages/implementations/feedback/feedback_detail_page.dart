@@ -227,13 +227,18 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
     // 待传槽位在上传进行中时也在 [pending] 里（追加截图先落盘再传）：这时它们是「正在传」，
     // 不是「没传上去」，不能显示失败提示与重试按钮（#aiRZmYl5zS）。
     final bool uploading = service.attachInFlight(widget.feedbackId);
-    // 截图只数截图槽位：视频（v0）与日志不占截图名额。
+    // 截图只数截图槽位：视频（v0）、样本文件（f0..f2）与日志不占截图名额。
     final int shots =
         d.attachments
             .where((FeedbackAttachmentInfo a) => a.isScreenshot)
             .length +
         pending
-            .where((String s) => s != 'log' && s != FeedbackLimits.videoSlot)
+            .where(
+              (String s) =>
+                  s != 'log' &&
+                  s != FeedbackLimits.videoSlot &&
+                  !FeedbackLimits.isFileSlot(s),
+            )
             .length;
     final bool canAddShot = attachable && shots < FeedbackLimits.screenshots;
     final bool hasVideo =
@@ -275,6 +280,9 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
               Text(
                 pending.isNotEmpty && pending.every((String s) => s == 'log')
                     ? t.feedback_stage_logs
+                    : pending.isNotEmpty &&
+                          pending.every(FeedbackLimits.isFileSlot)
+                    ? t.feedback_stage_files
                     : t.feedback_stage_screenshots,
               ),
               SizedBox(height: tokens.spacing.gap),
@@ -390,6 +398,10 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
     final FeedbackAttachmentInfo? log = d.attachments
         .where((FeedbackAttachmentInfo a) => a.isLog)
         .firstOrNull;
+    final List<FeedbackAttachmentInfo> files = <FeedbackAttachmentInfo>[
+      for (final FeedbackAttachmentInfo a in d.attachments)
+        if (a.isFile) a,
+    ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
@@ -476,6 +488,38 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
                     ),
                     Text(
                       t.feedback_detail_log_hint,
+                      style: tokens.type.metadata,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+        if (files.isNotEmpty) ...<Widget>[
+          SizedBox(height: tokens.spacing.gap),
+          // 样本文件只列名字与大小：文件本身只有开发者能下载（服务端不回传给反馈人）。
+          Row(
+            key: const ValueKey<String>('feedback-detail-files'),
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const FushiIcon(FushiIcons.file),
+              SizedBox(width: tokens.spacing.gap),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(t.feedback_detail_files),
+                    for (final FeedbackAttachmentInfo a in files)
+                      Text(
+                        '${feedbackSafeText(a.name ?? a.slot)} · '
+                        '${FushiByteFormat.bytes(a.bytes)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: tokens.type.metadata,
+                      ),
+                    Text(
+                      t.feedback_detail_files_hint,
                       style: tokens.type.metadata,
                     ),
                   ],

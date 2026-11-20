@@ -11,6 +11,8 @@ import 'dart:io';
 
 import 'package:fushi_engine/foundation/engine_notifier.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
+import 'package:fushi_engine/tts/local/irodori_batch_worker.dart';
+import 'package:fushi_engine/tts/local/irodori_batch_worker_script.dart';
 import 'package:fushi_engine/tts/local/irodori_local_package.dart';
 import 'package:fushi_engine/tts/local/irodori_local_server.dart';
 import 'package:fushi_engine/tts/local/local_service_process.dart';
@@ -113,6 +115,8 @@ class IrodoriLocalEngine extends EngineChangeNotifier {
     Future<Map<String, String>> Function()? childProxyEnvironment,
     IrodoriInstaller? installer,
     IrodoriLocalServer? server,
+    IrodoriBatchWorker Function(Future<IrodoriBatchLaunch?> Function() launch)?
+    batchWorkerFactory,
     this.manifest = kIrodoriManifest,
     bool? supported,
   }) : _prefs = prefs,
@@ -125,9 +129,15 @@ class IrodoriLocalEngine extends EngineChangeNotifier {
            ),
        server = server ?? IrodoriLocalServer(),
        isSupported = supported ?? platformSupported {
+    batchWorker = (batchWorkerFactory ?? _defaultBatchWorker)(_batchLaunch);
     this.installer.addListener(notifyListeners);
     this.server.addListener(notifyListeners);
+    batchWorker.addListener(notifyListeners);
   }
+
+  static IrodoriBatchWorker _defaultBatchWorker(
+    Future<IrodoriBatchLaunch?> Function() launch,
+  ) => IrodoriBatchWorker(launch: launch);
 
   /// 桌面三端（有 uv 发行包、且有 PyTorch 轮子的架构）。不必先建实例就能判（设置页
   /// 可见性用它）。
@@ -140,6 +150,9 @@ class IrodoriLocalEngine extends EngineChangeNotifier {
   final IrodoriInstaller installer;
   final IrodoriLocalServer server;
   final bool isSupported;
+
+  /// 离线制作用的批处理 worker（v4-Large + 声音包），见 `irodori_batch_worker.dart`。
+  late final IrodoriBatchWorker batchWorker;
 
   IrodoriLocalSettings get settings {
     final Object? raw = _prefs.getPref(kIrodoriLocalPrefKey, defaultValue: '');
@@ -219,6 +232,34 @@ class IrodoriLocalEngine extends EngineChangeNotifier {
 
   bool get isInstalled => layout != null;
 
+  /// 批处理 worker 能不能用：环境装好、v4-Large 与编解码器都已下载（与当前给服务端
+  /// 选的模型无关——下过 v4-Large 再切回 Small，worker 照样能用）。
+  bool get batchModelReady {
+    final IrodoriInstallLayout? recorded = _recordedLayout;
+    final IrodoriModelRepo? large = manifest.models[IrodoriModelChoice.large];
+    return recorded != null &&
+        large != null &&
+        environmentReady &&
+        recorded.hasModel(large) &&
+        recorded.hasModel(manifest.codec);
+  }
+
+  /// worker 的启动参数；没装好返回 null。显存只够一个模型实例，所以拉起 worker 前
+  /// 先停掉本机托管的服务端（朗读再用到时服务端会按需自动拉起）。
+  Future<IrodoriBatchLaunch?> _batchLaunch() async {
+    if (!isSupported || !batchModelReady) return null;
+    final IrodoriInstallLayout layout = _recordedLayout!;
+    if (server.phase != LocalServicePhase.stopped) await server.stop();
+    final String script = await writeIrodoriBatchWorkerScript(layout);
+    return irodoriBatchLaunch(
+      layout: layout,
+      script: script,
+      large: manifest.models[IrodoriModelChoice.large]!,
+      codec: manifest.codec,
+      source: settings.source,
+    );
+  }
+
   /// 已装的后端（状态文件里记的）；没装返回 null。
   IrodoriTorchBackend? get installedBackend =>
       _recordedLayout?.readState()?.backend;
@@ -266,6 +307,7 @@ class IrodoriLocalEngine extends EngineChangeNotifier {
   /// Python、缓存、环境、模型、上传的声音）一起删。
   Future<void> remove({required bool deleteFiles}) async {
     await installer.cancelAndWait();
+    await batchWorker.stop();
     await server.stop();
     _autoStartBlocked = false;
     final IrodoriLocalSettings current = settings;
@@ -310,9 +352,23 @@ class IrodoriLocalEngine extends EngineChangeNotifier {
     return _launch();
   }
 
+  /// worker 在加载、跑任务或有任务排队：这时服务端不能起。
+  bool get _batchWorkerHoldsGpu =>
+      batchWorker.isBusy || batchWorker.phase == IrodoriBatchPhase.starting;
+
   Future<bool> _launch() async {
     final IrodoriInstallLayout? found = layout;
     if (found == null) return false;
+    // 显存只够放一个模型实例：与 [_batchLaunch]（拉 worker 前停服务端）对称，worker
+    // 正在加载或跑任务时不抢（返回 false，不记成服务端失败）；空闲的 worker 先停掉。
+    if (_batchWorkerHoldsGpu) return false;
+    if (batchWorker.phase != IrodoriBatchPhase.stopped) {
+      await batchWorker.stop();
+      // 等 worker 退出的这段时间里可能又来了批量任务、worker 重新拉起（它那边看到服务
+      // 端还停着，不会去停它）：再判一次，否则两边都会起来抢显存。之后到
+      // [IrodoriLocalServer.start] 同步置 starting 之间没有 await，不会再漏。
+      if (_batchWorkerHoldsGpu) return false;
+    }
     return server.start(launchSpec(found));
   }
 
@@ -321,6 +377,7 @@ class IrodoriLocalEngine extends EngineChangeNotifier {
   /// 退出 app 时调用：停服务，并取消进行中的安装（uv 子进程一并杀掉）。
   Future<void> shutdown() async {
     installer.cancel();
+    await batchWorker.stop();
     await server.stop();
   }
 
@@ -340,6 +397,8 @@ class IrodoriLocalEngine extends EngineChangeNotifier {
   void dispose() {
     installer.removeListener(notifyListeners);
     server.removeListener(notifyListeners);
+    batchWorker.removeListener(notifyListeners);
+    batchWorker.dispose();
     server.dispose();
     installer.dispose();
     super.dispose();
@@ -385,6 +444,62 @@ Map<String, String> irodoriServerEnvironment({
     'PYTHONPATH': '',
     'PYTHONHOME': '',
   };
+}
+
+/// 把 worker 脚本写进 `<root>/worker/`（内容相同就不重写）。返回脚本路径。
+Future<String> writeIrodoriBatchWorkerScript(
+  IrodoriInstallLayout layout,
+) async {
+  final File file = File(
+    p.join(layout.root, 'worker', kIrodoriBatchWorkerScriptName),
+  );
+  if (!await file.exists() ||
+      await file.readAsString() != kIrodoriBatchWorkerScript) {
+    await file.parent.create(recursive: true);
+    await file.writeAsString(kIrodoriBatchWorkerScript, flush: true);
+  }
+  return file.path;
+}
+
+/// worker 的启动参数（纯函数，测试直接调）：`.venv` 解释器 + 脚本 + 本地模型路径；
+/// 环境变量沿用服务端那一套（UTF-8、不带用户的 PYTHONPATH、HF 缓存在专属目录），再加
+/// `IRODORI_SDPA_CUDNN=0`。
+IrodoriBatchLaunch irodoriBatchLaunch({
+  required IrodoriInstallLayout layout,
+  required String script,
+  required IrodoriModelRepo large,
+  required IrodoriModelRepo codec,
+  required IrodoriDownloadSource source,
+}) {
+  IrodoriPinnedFile file(IrodoriModelRepo repo, String path) =>
+      repo.files.firstWhere((IrodoriPinnedFile f) => f.path == path);
+  return IrodoriBatchLaunch(
+    executable: layout.venvPython,
+    arguments: <String>[
+      '-X',
+      'utf8',
+      '-u',
+      script,
+      '--checkpoint',
+      layout.modelFile(large, file(large, 'model.safetensors')),
+      '--codec',
+      layout.modelFile(codec, file(codec, 'weights.pth')),
+      '--device',
+      'auto',
+    ],
+    workingDirectory: p.dirname(script),
+    environment: <String, String>{
+      'IRODORI_SDPA_CUDNN': '0',
+      'HF_HOME': layout.hfHome,
+      'HF_ENDPOINT': irodoriHfEndpoint(source),
+      'HF_HUB_DISABLE_TELEMETRY': '1',
+      'PYTHONUTF8': '1',
+      'PYTHONIOENCODING': 'utf-8',
+      'PYTHONNOUSERSITE': '1',
+      'PYTHONPATH': '',
+      'PYTHONHOME': '',
+    },
+  );
 }
 
 /// 注册表里替换 [IrodoriServerTtsDescriptor] 的版本：合成 / 列声音前先确保本机

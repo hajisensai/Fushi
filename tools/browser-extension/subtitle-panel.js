@@ -25,15 +25,23 @@
     // videoId 初始值是 '' 而非 null：与 videoKey() 的非空字符串契约同型，
     // 首次 tick 仍会因 '' !== <真实 key> 而触发一次 refreshHeadless（语义不变）。
     activeLang: null, videoId: '', cues: [], currentIndex: -1,
+    // 按需取轨失败的占位轨：key → 错误（见 requestLazyIfPending）。key 来自页面世界可伪造的
+    // postMessage，所以用 Map：'__proto__' / 'constructor' 只是普通键，不碰原型链。
+    lazyFailed: new Map(),
     tickTimer: null, enabled: false,
     overlayEnabled: true, dragDropEnabled: true, autoScroll: true,
-    overlayEl: null, overlayCue: null, dropHint: null,
-    // 覆盖层的两个子节点：文字层（fushiRenderCueText 只往这里写）与拖柄；overlayRenderedCue
-    // 记文字层当前画的是哪条 cue——tick 每 200ms 重摆位置，但只有 cue 换了才重建文本节点，
+    // overlayCues：覆盖层此刻要画的**全部**有效 cue（按轨内顺序，空数组 = 不显示）。ASS 常让两位
+    // 说话人的台词时间重叠，单条 cue 的模型只能画出其中一句（反馈 -Rbr-U5FNr）。
+    overlayEl: null, overlayCues: [], dropHint: null,
+    // 覆盖层的两个子节点：文字层（fushiRenderCueText 只往这里写）与拖柄；overlayRenderedCues
+    // 记文字层当前画的是哪几条 cue——tick 每 200ms 重摆位置，但只有 cue 集合换了才重建文本节点，
     // 否则用户刚拖出来的原生选区每 200ms 就被新文本节点冲掉一次（用户报「字幕选不了、复制不了」）。
     // overlayResizeEl：右下角缩放把手（与查词弹窗的 #fushi-popup-resize-grip 同一套交互：
     // 按住拖 = 改底板宽高、松手落盘；双击 = 恢复「随内容」）。
-    overlayTextEl: null, overlayGripEl: null, overlayResizeEl: null, overlayRenderedCue: null,
+    overlayTextEl: null, overlayGripEl: null, overlayResizeEl: null, overlayRenderedCues: [],
+    // 多条 cue 同屏时每条一行（.fushi-subtitle-overlay-line），与 overlayRenderedCues 一一对应，
+    // 点击 / 悬浮查词靠它认出指针落在哪一句上。单条时直接画在文字层里，此数组为空。
+    overlayLineEls: [],
     // 覆盖层底色（默认有半透明底板；关掉只剩描边文字，像站点原生字幕那样不挡画面）。
     overlayBackground: true,
     // 覆盖层外观（字体 / 大小 / 字重 / 间距 / 行高 / 对齐 / 颜色 / 描边 / 底板色与透明度…），
@@ -159,16 +167,28 @@
     return fushiListSubtitleTracks(window.fushiEpisodeCues || null, videoKey(),
       window.fushiLazyTracks || null, LIVE_LANG);
   }
-  // 占位轨被选为活动轨 → 请桥真取（同一 key 5 秒内不重复请求；取失败用户重选即可再试）。
+  // 占位轨被选为活动轨 → 请桥真取（同一 key 5 秒内不重复请求）。
+  // 反馈 0RgCNJFQmJ：桥取不到（请求失败 / 空轨）会发 cuesFailed 确定回执，以前扩展这边没有
+  // 接收端（fushiSubtitlePanelOnTrackFailed 只有 app 的 glue 实现）——回执被丢掉，轨永远停在
+  // 「选中加载」，轮询还每 5 秒替用户再打一次注定失败的请求。现在失败记进 lazyFailed：列表
+  // 标「加载失败」、提示一次、不再自动重试；用户再次明确选这条轨（retryLazyTrack）才重取。
   function requestLazyIfPending(track) {
     if (!track || !track.pending || typeof window.fushiRequestLazyTrack !== 'function') return;
+    if (st.lazyFailed.has(track.key)) return;
     // 手机遥控的被动轮询只读状态，不替用户去取占位轨（Netflix 取轨会临时切站点字幕）。
     if (remote && remote.passive) return;
     var now = Date.now();
-    st.lazyRequestedAt = st.lazyRequestedAt || {};
+    st.lazyRequestedAt = st.lazyRequestedAt || Object.create(null);
     if (now - (st.lazyRequestedAt[track.key] || 0) < 5000) return;
     st.lazyRequestedAt[track.key] = now;
     try { window.fushiRequestLazyTrack(track.key); } catch (_) {}
+  }
+  // 用户明确选了这条轨：上次取失败的记录作废，下一次刷新立刻重取（不受 5 秒节流）。
+  function retryLazyTrack(lang) {
+    var key = videoKey() + '|' + lang;
+    if (!st.lazyFailed.has(key)) return;
+    st.lazyFailed.delete(key);
+    if (st.lazyRequestedAt) delete st.lazyRequestedAt[key];
   }
 
   // ── asb 移植：读取侧时轴偏移（任意轨，subtitle-controller.ts offset() 的无破坏版） ──
@@ -198,15 +218,37 @@
   // 与 subtitle-adapters.js 的 findCueIndexAt 是同一判据（含「落在字幕间隙返回 -1」）。
   // 这里**有意**保留独立实现而不去调它：本文件被多套测试 harness 单独装进 vm 沙箱，
   // 依赖同世界的其它 content script 会让面板从自包含变成跨文件依赖，harness 漏装一个
-  // 就假红。两份都只有 8 行、语义封闭，改其一必须同步另一处。
+  // 就假红。两份都语义封闭，改其一必须同步另一处。
+  // 「单句」口径（快捷键跳句 / 复制 / 收藏 / 学习统计 / 制卡默认取句）：此刻有效的 cue 里起点最晚的
+  // 那条。字幕轨允许时间重叠（BUG-4719），起点最晚的那条结束了、起点更早的长句还在时要回落到长句，
+  // 不能返回 -1；cues 只按 startMs 排序、endMs 无序，所以从最后一条已开始的 cue 往前扫。
   function cueIndexAt(cues, t) {
-    var lo = 0, hi = cues.length - 1, ans = -1;
+    var lo = 0, hi = cues.length - 1, last = -1;
     while (lo <= hi) {
       var mid = (lo + hi) >> 1;
-      if (cues[mid].startMs <= t) { ans = mid; lo = mid + 1; } else { hi = mid - 1; }
+      if (cues[mid].startMs <= t) { last = mid; lo = mid + 1; } else { hi = mid - 1; }
     }
-    if (ans < 0) return -1;
-    return t < cues[ans].endMs ? ans : -1;
+    for (var i = last; i >= 0; i--) {
+      if (t < cues[i].endMs) return i;
+    }
+    return -1;
+  }
+
+  // 此刻**所有**有效 cue（startMs <= t < endMs）的下标，升序。字幕轨允许时间重叠（ASS 两位说话人
+  // 同时开口、交错台词），覆盖层必须全部画出来；cueIndexAt 只看「起点最晚的那条」，同起点只剩
+  // 一句、起点更早的长句在短句结束后也查不到。cues 只按 startMs 排序，endMs 无序，所以从
+  // 「最后一条已开始的 cue」往前扫整段前缀：每 200ms 一次、整轨几千条的比较，代价可忽略。
+  function activeCueIndicesAt(cues, t) {
+    var lo = 0, hi = cues.length - 1, last = -1;
+    while (lo <= hi) {
+      var mid = (lo + hi) >> 1;
+      if (cues[mid].startMs <= t) { last = mid; lo = mid + 1; } else { hi = mid - 1; }
+    }
+    var out = [];
+    for (var i = last; i >= 0; i--) {
+      if (t < cues[i].endMs) out.push(i);
+    }
+    return out.reverse();
   }
 
   // 兜底父级用 <html> 而不是 <body>：浮层写的是视口坐标的 position:fixed，而安卓播放器
@@ -256,7 +298,7 @@
     if (st.overlayEl) { applyOverlayBackground(st.overlayEl); applyOverlayStyle(st.overlayEl); }
     if (!st.overlayEnabled) hideSubtitleOverlay();
     // 位置变了（另一标签页拖过 / options 页重置）立刻重摆，不等下一个 200ms tick。
-    else if (st.overlayCue) updateSubtitleOverlay(st.overlayCue);
+    else if (st.overlayCues.length) updateSubtitleOverlay(st.overlayCues);
     syncNativeSubtitleReplacement();
   }
 
@@ -344,9 +386,9 @@
     syncNativeSubtitleReplacement();
     if (!st.cues.length) { hideSubtitleOverlay(); return; }
     var nowMs = videoTimeMs();
-    var idx = cueIndexAt(st.cues, nowMs);
-    updateSubtitleOverlay(idx >= 0 ? st.cues[idx] : null);
-    st.currentIndex = idx;
+    var active = activeCueIndicesAt(st.cues, nowMs);
+    updateSubtitleOverlay(active.map(function (i) { return st.cues[i]; }));
+    st.currentIndex = active.length ? active[active.length - 1] : -1;
   }
 
   // 用户是否刚在覆盖层里用鼠标拖出了一段原生选区（准备复制）。这时紧随其后的 click
@@ -421,7 +463,7 @@
         if (st.overlayDragMoved) { st.overlayDragMoved = false; return; }
         // 点在拖柄 / 缩放把手上、刚用鼠标拖出一段选区：都不是查词。
         if (isOverlayGrip(e.target) || isOverlayResize(e.target) || overlayHasNativeSelection()) return;
-        var cue = st.overlayCue;
+        var cue = overlayCueForNode(e.target);
         if (cue && typeof window.fushiLookupAtPoint === 'function') {
           window.fushiLookupAtPoint(e.clientX, e.clientY, {
             startMs: cue.startMs, endMs: cue.endMs, text: cue.text,
@@ -435,7 +477,7 @@
       // 悬浮字幕自动查词：只在覆盖层内启用，按与 content.js Shift 悬停同样的 4px 位移阈值
       // 限流；取词、同词去重、在途闸和精确 cue 窗全部复用 fushiLookupAtPoint。
       el.addEventListener('mousemove', function (e) {
-        if (!st.overlayAutoLookup || !st.overlayCue ||
+        if (!st.overlayAutoLookup || !st.overlayCues.length ||
             typeof window.fushiLookupAtPoint !== 'function') return;
         // 拖动中指针在字幕上划过的每个词都不该被自动查——那是在挪字幕，不是在读。
         if (st.overlayDrag && st.overlayDrag.moved) return;
@@ -443,7 +485,8 @@
             Math.abs(e.clientY - st.autoLookupLastY) < 4) return;
         st.autoLookupLastX = e.clientX;
         st.autoLookupLastY = e.clientY;
-        var cue = st.overlayCue;
+        var cue = overlayCueForNode(e.target);
+        if (!cue) return;
         window.fushiLookupAtPoint(
           e.clientX,
           e.clientY,
@@ -533,21 +576,68 @@
     el.textContent = css;
   }
 
-  // 只在 cue 换了才重建文本节点（见 st.overlayRenderedCue）。同一条 cue 的重复调用是 no-op，
-  // 用户在字幕上拖出的原生选区才能活过每 200ms 的 tick。
-  function renderOverlayCue(cue) {
-    var target = st.overlayTextEl || st.overlayEl;
-    if (!target) return;
-    var prev = st.overlayRenderedCue;
-    if (prev === cue || (prev && cue && prev.text === cue.text && prev.ruby === cue.ruby)) return;
-    st.overlayRenderedCue = cue;
-    if (typeof window.fushiRenderCueText === 'function') window.fushiRenderCueText(target, cue);
-    else target.textContent = cue.text;
+  function sameRenderedCue(a, b) {
+    return a === b || (!!a && !!b && a.text === b.text && a.ruby === b.ruby);
+  }
+  function drawCueText(el, cue) {
+    if (typeof window.fushiRenderCueText === 'function') window.fushiRenderCueText(el, cue);
+    else el.textContent = cue.text;
   }
 
+  // 只在 cue 集合换了才重建文本节点（见 st.overlayRenderedCues）。同一组 cue 的重复调用是 no-op，
+  // 用户在字幕上拖出的原生选区才能活过每 200ms 的 tick。一条 cue 直接画进文字层；同时有效的
+  // 多条 cue 各占一个块级行（轨内顺序自上而下），查词按指针所在的行取对应的 cue。
+  function renderOverlayCues(cues) {
+    var target = st.overlayTextEl || st.overlayEl;
+    if (!target) return;
+    var prev = st.overlayRenderedCues;
+    if (prev.length === cues.length && cues.every(function (c, i) { return sameRenderedCue(prev[i], c); })) return;
+    st.overlayRenderedCues = cues.slice();
+    st.overlayLineEls = [];
+    target.textContent = '';
+    if (cues.length === 1) {
+      drawCueText(target, cues[0]);
+      return;
+    }
+    for (var i = 0; i < cues.length; i++) {
+      var line = document.createElement('div');
+      line.className = 'fushi-subtitle-overlay-line';
+      drawCueText(line, cues[i]);
+      target.appendChild(line);
+      st.overlayLineEls.push(line);
+    }
+  }
+
+  // 指针落点所在那一行的 cue（查词带它的时间窗与整句）。只有一条时就是它；多条时沿父链找行节点，
+  // 落在行外（底板内边距）说明没指着任何一句，不查。
+  function overlayCueForNode(node) {
+    var cues = st.overlayRenderedCues;
+    if (cues.length <= 1) return cues[0] || null;
+    for (var n = node; n && n !== st.overlayEl; n = n.parentNode) {
+      var i = st.overlayLineEls.indexOf(n);
+      if (i >= 0) return cues[i];
+    }
+    return null;
+  }
+
+  // content.js 的 Shift 悬停查词命中自绘覆盖层时用：指针所在那一行的 cue 窗。多行同屏（BUG-4719）
+  // 时按播放时刻只能取到一句，不带窗会让悬停上一行配上下一行的例句。不在覆盖层里 / 没指着行 → null。
+  window.fushiSubtitleOverlayCueWindowAt = function (node) {
+    var el = st.overlayEl;
+    if (!el || !node) return null;
+    var inside = false;
+    for (var n = node; n; n = n.parentNode) {
+      if (n === el) { inside = true; break; }
+    }
+    if (!inside) return null;
+    var cue = overlayCueForNode(node);
+    return cue ? { text: cue.text, startMs: cue.startMs, endMs: cue.endMs } : null;
+  };
+
   function hideSubtitleOverlay() {
-    st.overlayCue = null;
-    st.overlayRenderedCue = null;
+    st.overlayCues = [];
+    st.overlayRenderedCues = [];
+    st.overlayLineEls = [];
     unwatchOverlay();
     if (st.overlayEl && st.overlayEl.parentNode) st.overlayEl.parentNode.removeChild(st.overlayEl);
   }
@@ -568,7 +658,7 @@
   }
   function replaceOverlay() {
     var el = st.overlayEl;
-    if (!el || !st.overlayCue || !el.parentNode) return;
+    if (!el || !st.overlayCues.length || !el.parentNode) return;
     var video = videoEl();
     if (!video || typeof video.getBoundingClientRect !== 'function') return;
     var rect = video.getBoundingClientRect();
@@ -576,11 +666,12 @@
     placeOverlay(el, rect, currentOverlayPos());
   }
 
-  function updateSubtitleOverlay(cue) {
+  // cues：此刻全部有效的 cue（activeCueIndicesAt 的结果，轨内顺序）；空数组 = 不显示。
+  function updateSubtitleOverlay(cues) {
     // 外挂轨恒显示；检测轨（站点自带字幕）默认不重复叠字，除非用户开了「全轨覆盖层」
     // （overlayAllTracks，配合防剧透模糊/悬浮字幕自动查词使用）或「替代原生字幕」——
     // 后者本来就是「原生藏掉、这里补上整句」，此时不叠字反而是空屏。
-    if (!st.overlayEnabled || !cue ||
+    if (!st.overlayEnabled || !cues.length ||
         (!isExternalLang(st.activeLang) && !st.overlayAllTracks && !replaceNativeEffective())) {
       hideSubtitleOverlay();
       return;
@@ -596,11 +687,11 @@
     var rect = video.getBoundingClientRect();
     if (!rect || rect.width <= 0 || rect.height <= 0) return;
     var el = ensureSubtitleOverlay();
-    st.overlayCue = cue;
+    st.overlayCues = cues;
     el.setAttribute('data-theme', resolveTheme());
     applyOverlayBackground(el);
     applyOverlayStyle(el);
-    renderOverlayCue(cue);
+    renderOverlayCues(cues);
     placeOverlay(el, rect, currentOverlayPos());
     applyOverlayBlur(el);
     watchOverlay();
@@ -701,9 +792,9 @@
     }
     var box = SUB.boxPx(style, frame);
     if (!(box.minHeight > 0)) return;
-    var cue = st.overlayRenderedCue;
-    var key = (cue ? (cue.text || '') + '|' + (cue.ruby || '') : '') +
-      '|' + box.width + 'x' + box.minHeight;
+    var key = st.overlayRenderedCues.map(function (cue) {
+      return (cue.text || '') + '|' + (cue.ruby || '');
+    }).join('\n') + '|' + box.width + 'x' + box.minHeight;
     if (key === overlayFitKey) return;
     overlayFitKey = key;
     overlayFitApplied = SUB.fitTextInto(el, text, style, frame) !== 1;
@@ -762,7 +853,7 @@
     if (!rect || rect.width <= 0 || rect.height <= 0) return;
     d.pos = overlayPosFromPoint(st.overlayEl, rect,
       rect.left + rect.width * d.from.x + dx, rect.top + rect.height * d.from.y + dy);
-    if (st.overlayEl && st.overlayCue) placeOverlay(st.overlayEl, rect, d.pos);
+    if (st.overlayEl && st.overlayCues.length) placeOverlay(st.overlayEl, rect, d.pos);
     try { e.preventDefault(); } catch (_) {}
   }
   function overlayPointerUp(e) {
@@ -796,7 +887,7 @@
       patch[OVERLAY_POS_KEY] = d.pos;
       try { chrome.storage.local.set(patch); } catch (_) {}
     }
-    if (st.overlayCue) updateSubtitleOverlay(st.overlayCue);
+    if (st.overlayCues.length) updateSubtitleOverlay(st.overlayCues);
   }
 
   // ── 覆盖层缩放：右下角把手拖拽改底板大小（与查词弹窗右下角把手同一手势） ──
@@ -880,7 +971,7 @@
       x: (d.left + wpx / 2 - rect.left) / rect.width,
       y: (d.top + hpx - rect.top) / rect.height,
     });
-    if (st.overlayEl && st.overlayCue) {
+    if (st.overlayEl && st.overlayCues.length) {
       placeOverlay(st.overlayEl, rect, d.pos);
       // BUG-3450：hpx 只是「设想的」高（min-height）。底板实测可能更高——自适应缩放压到下限
       // 仍放不下的长句、站点 CSS 把它撑高（anichan 全屏的 `.wp-stage.fs>*{height:100%}`）。
@@ -932,7 +1023,7 @@
       }
     }
     overlayFitKey = null; // 尺寸变了（或被撤销）：下一次重摆必须重算自适应倍率
-    if (st.overlayCue) updateSubtitleOverlay(st.overlayCue);
+    if (st.overlayCues.length) updateSubtitleOverlay(st.overlayCues);
   }
 
   // 双击把手：底板宽高回到「随内容」，位置不动。
@@ -946,7 +1037,7 @@
     writeOverlayStyle(next);
     overlayFitKey = null;
     if (st.overlayEl) { SUB.applyFit(st.overlayEl, 1); overlayFitApplied = false; }
-    if (st.overlayCue) updateSubtitleOverlay(st.overlayCue);
+    if (st.overlayCues.length) updateSubtitleOverlay(st.overlayCues);
   }
 
   // 落盘外观设置。与 options 页同一约定：整份回到默认就删键（而不是存一份等值副本），
@@ -1502,9 +1593,24 @@
     return { index: idx, startMs: c.startMs, endMs: c.endMs, text: String(c.text || '') };
   };
 
-  window.fushiSubtitlePanelOnCues = function (_key) {
+  window.fushiSubtitlePanelOnCues = function (key) {
+    if (key) st.lazyFailed.delete(String(key));
     if (!st.enabled) return;
     refreshHeadless();
+  };
+
+  // 桥的 cuesFailed 回执（subtitle-providers.js：YouTube / 通用流媒体桥与 Netflix 同一出口）。
+  // 只认还在等 cue 的占位轨；是当前活动轨就明确提示——不再静默停在「选中加载」。
+  window.fushiSubtitlePanelOnTrackFailed = function (key, err) {
+    key = String(key || '');
+    // 只认自有键：继承属性（key='constructor' 之类）不能冒充已登记的占位轨。
+    var lazy = window.fushiLazyTracks;
+    if (!key || !lazy || !Object.prototype.hasOwnProperty.call(lazy, key) || !lazy[key]) return;
+    st.lazyFailed.set(key, String(err || 'error'));
+    if (st.lazyRequestedAt) delete st.lazyRequestedAt[key]; // 不再自动重试只由 lazyFailed 决定
+    if (key !== activeTrackKey()) return;
+    var label = (window.fushiTrackLabels && window.fushiTrackLabels[key]) || key.slice(key.indexOf('|') + 1);
+    toast(tr('subtitle_track_load_failed', { track: label }));
   };
 
   function trackSignature(track) {
@@ -1536,6 +1642,7 @@
             : ((window.fushiTrackLabels && window.fushiTrackLabels[track.key]) || track.lang),
           length: track.cues.length,
           pending: !!track.pending,
+          failed: !!(track.pending && st.lazyFailed.has(track.key)),
           signature: trackSignature(track),
         };
       }),
@@ -1568,6 +1675,7 @@
     }
     if (!found) return false;
     st.activeLang = wanted;
+    retryLazyTrack(wanted);
     if (!st.enabled) {
       try { var gate = {}; gate[SETTING_KEY] = true; chrome.storage.local.set(gate); } catch (_) {}
       applyEnabled(true);
@@ -1779,6 +1887,7 @@
       }
       if (!found) return { ok: false, error: 'track-missing' };
       st.activeLang = wanted;
+      retryLazyTrack(wanted);
       // 手机明确选了这条：占位轨此刻去真取（与侧栏选轨后的下一次刷新同一条路）。
       refreshHeadless();
     } else {
@@ -1880,7 +1989,7 @@
         for (var i = 0; i < available.length; i++) {
           if (available[i].lang === wanted) { found = true; break; }
         }
-        if (found) st.activeLang = wanted;
+        if (found) { st.activeLang = wanted; retryLazyTrack(wanted); }
         sendResponse(sidePanelState(true));
         return false;
       }
@@ -1946,8 +2055,13 @@
         var result = typeof window.fushiMineFromSidePanel === 'function'
           ? window.fushiMineFromSidePanel(msg.fields || {}, mineCue)
           : { ok: false, reason: 'no-queue' };
-        sendResponse(result || { ok: false });
-        return false;
+        // 入队是异步落盘（只在真写进 storage 后才 ok）：等结果再回，异步 sendResponse 要 return true。
+        Promise.resolve(result).then(function (r) {
+          sendResponse(r || { ok: false });
+        }, function () {
+          sendResponse({ ok: false, reason: 'persist-failed' });
+        });
+        return true;
       }
       return false;
     });
@@ -1961,7 +2075,7 @@
     sync();
     // 全屏切换后播放器整体挪位（body transform/滚动锁很常见）：立刻重测重摆一次，
     // 不等下一个 200ms tick——重挂父级（fsEl↔html）也在这一步完成。
-    if (st.overlayCue) updateSubtitleOverlay(st.overlayCue);
+    if (st.overlayCues.length) updateSubtitleOverlay(st.overlayCues);
     // BUG-3143：站点常在 fullscreenchange **之后**才按新尺寸重排播放器（resize 回调 / 过渡动画），
     // 这一刻量到的还是旧矩形；再等两帧（布局落定）按新几何重摆，并把覆盖层挪到父级最后一个
     // 子节点——同为最高 z-index 时 DOM 靠后者在上，站点全屏后才插入的控件层不会再盖住缩放把手。
@@ -1969,7 +2083,7 @@
       if (!st.overlayEl || !st.overlayEl.parentNode) return;
       var parent = st.overlayEl.parentNode;
       if (parent.lastElementChild && parent.lastElementChild !== st.overlayEl) parent.appendChild(st.overlayEl);
-      if (st.overlayCue) updateSubtitleOverlay(st.overlayCue);
+      if (st.overlayCues.length) updateSubtitleOverlay(st.overlayCues);
     };
     if (typeof requestAnimationFrame === 'function') {
       requestAnimationFrame(function () { requestAnimationFrame(settle); });

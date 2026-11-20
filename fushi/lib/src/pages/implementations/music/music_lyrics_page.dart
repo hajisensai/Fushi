@@ -68,6 +68,7 @@ import 'package:fushi/src/media/playback_route_marks.dart';
 import 'package:fushi/src/media/shared/lyrics_shell/lyrics_shell_layout.dart';
 import 'package:fushi/src/mining/immersion_mining_engine.dart'
     show RemoteAudioMaterializer;
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
     show rethemeFushiWithScheme;
 import 'package:fushi/src/pages/base_source_page.dart';
@@ -93,7 +94,10 @@ import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dar
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
     show MusicEngineClock, MusicVolumeButton, musicPlayModeButton;
 import 'package:fushi/src/pages/implementations/music/music_plugin_settings.dart'
-    show musicLyricsCandidateTitle, musicPluginErrorText;
+    show
+        musicLyricsCandidateTitle,
+        musicLyricsOnlineSourceName,
+        musicPluginErrorText;
 import 'package:fushi/src/pages/implementations/music/music_mv_page.dart'
     show MusicKaraokeTrack, openMusicKaraokePage;
 import 'package:fushi/src/utils/adaptive/fushi_page_transitions.dart';
@@ -111,6 +115,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/fushi_form_dialog.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -325,6 +330,10 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
   /// 音频旁同名 `.cdg`（CD+G 画面，§9.2）；CUE 曲目不认。
   String? _cdgPath;
   bool _loading = false;
+
+  /// 在线搜歌词进行中（LRCLIB + 各歌词插件串行，装了插件可能要几秒）：歌词区显示进度、
+  /// 「选择来源 / 搜索在线歌词」置灰，防止用户以为没反应重复触发叠出多个候选框。
+  bool _searchingOnline = false;
   Object? _error;
   int _offsetMs = 0;
   bool _pausedForLookup = false;
@@ -672,6 +681,11 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     _releaseLookupPause(resume: resume);
   }
 
+  /// 制卡后「关闭弹窗、不续播」（拍板台 8ldy3d8XFA）：撤掉查词暂停标记，随后的
+  /// [clearDictionaryResult] 就不续播。
+  @override
+  void dropLookupPauseMark() => _releaseLookupPause(resume: false);
+
   void _releaseLookupPause({required bool resume}) {
     if (!_pausedForLookup) return;
     _pausedForLookup = false;
@@ -682,6 +696,11 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
 
   @override
   String get dictionarySourceType => kStatSourceMusic;
+
+  /// 「制卡后行为」听音乐那一行（拍板台 8ldy3d8XFA）。音乐不在「底部停靠」的细分
+  /// 模块里，停靠照旧只听总开关。
+  @override
+  ModuleId? get lookupHostModule => ModuleId.music;
 
   @override
   ({String? bookKey, String? title})? get lookupBookIdentity {
@@ -897,7 +916,23 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
   /// [_miningWindow]；覆盖项（[MiningRequestOverrides]，随 fields 走）里的起止微调加在
   /// 音频片段上，不要音频 / 不要图片各自跳过。卡组与手改字段由后端从同一份 fields 读。
   @override
-  Future<MinePopupResult> onMineFromPopup(Map<String, String> fields) async {
+  Future<MinePopupResult> onMineFromPopup(Map<String, String> fields) =>
+      _mineFromPopup(fields);
+
+  /// 点 ✓ 选「覆盖这张」：与新制同一条路（同一份句子 / 音频片段 / 封面 / 出处），只把
+  /// 最后一步换成 `updateMinedNote`。BUG-4933：此前落到基类空实现，覆写静默无效。
+  @override
+  Future<MinePopupResult> onUpdateFromPopup(
+    int noteId,
+    Map<String, String> fields,
+  ) => _mineFromPopup(fields, overwriteNoteId: noteId);
+
+  /// [overwriteNoteId] 非空 = 覆写那张卡：不计入制卡统计 / 历史，也不给「撤销」（撤销 =
+  /// 删卡，会把被覆写的旧卡一并删掉）。
+  Future<MinePopupResult> _mineFromPopup(
+    Map<String, String> fields, {
+    int? overwriteNoteId,
+  }) async {
     // 第一个 await 之前把这次制卡用到的状态读齐：排队期间用户可能已经点了别的行。
     final MusicPlayItem? item = _engine.current;
     final MiningRequestOverrides? overrides = MiningRequestOverrides.readFrom(
@@ -1031,11 +1066,20 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
         msg: t.card_mining_pending,
         status: MineToastStatus.pending,
       );
-      final MineOutcome outcome = await repo.mineEntry(
-        rawPayloadJson: rawPayloadJson,
-        context: miningContext,
+      final MineOutcome outcome = overwriteNoteId != null
+          ? await repo.updateMinedNote(
+              noteId: overwriteNoteId,
+              rawPayloadJson: rawPayloadJson,
+              context: miningContext,
+            )
+          : await repo.mineEntry(
+              rawPayloadJson: rawPayloadJson,
+              context: miningContext,
+            );
+      final described = describeMineOutcome(
+        outcome,
+        overwrite: overwriteNoteId != null,
       );
-      final described = describeMineOutcome(outcome);
       if (described.record && item != null) {
         unawaited(
           _recordMined(
@@ -1059,7 +1103,9 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
               : described.message,
           status: described.status,
           // 反馈 JNyykxvuY9：成功提示带「撤销」，几秒内点一下删掉刚加的卡。
-          action: minedCardUndoToastAction(repo, outcome),
+          action: overwriteNoteId != null
+              ? null
+              : minedCardUndoToastAction(repo, outcome),
         );
         return MinePopupResult.mined(outcome);
       }
@@ -1170,19 +1216,36 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
 
   // ── 来源 ─────────────────────────────────────────────────────────────
 
+  /// 跑一次在线歌词搜索并维护 [_searchingOnline]。已有一次在跑时直接返回 null（不叠第二次）；
+  /// 失败把错误放进 [_error] 并返回 null。
+  Future<List<MusicLyricsCandidate>?> _runOnlineSearch(
+    Future<List<MusicLyricsCandidate>> Function() search,
+  ) async {
+    if (_searchingOnline) return null;
+    setState(() => _searchingOnline = true);
+    try {
+      return await search();
+    } on Object catch (e) {
+      if (mounted) setState(() => _error = e);
+      return null;
+    } finally {
+      if (mounted) setState(() => _searchingOnline = false);
+    }
+  }
+
   Future<void> _chooseSource() async {
+    if (_searchingOnline) return;
     final MusicPlayItem? item = _engine.current;
     if (item == null) return;
     final MusicLyricsTrackRef ref = musicLyricsTrackRefOf(item);
     List<MusicLyricsCandidate> candidates = await _service.localCandidates(ref);
     if (!mounted) return;
     if (candidates.isEmpty) {
-      try {
-        candidates = await _service.searchOnline(ref);
-      } on Object catch (e) {
-        if (mounted) setState(() => _error = e);
-        return;
-      }
+      final List<MusicLyricsCandidate>? found = await _runOnlineSearch(
+        () => _service.searchOnline(ref),
+      );
+      if (found == null) return;
+      candidates = found;
     }
     if (!mounted) return;
     final MusicLyricsCandidate? picked = await showFushiChoiceDialog(
@@ -1204,17 +1267,36 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     await _afterSourceChanged(item);
   }
 
+  /// 「搜索在线歌词」：先让用户改关键词（默认填曲目元数据；YouTube 翻唱、视频标题与歌名
+  /// 对不上时手动改），再按这组关键词搜 LRCLIB 与已启用的歌词插件。
   Future<void> _searchOnline() async {
+    if (_searchingOnline) return;
     final MusicPlayItem? item = _engine.current;
     if (item == null) return;
-    final List<MusicLyricsCandidate> found;
-    try {
-      found = await _service.searchOnline(musicLyricsTrackRefOf(item));
-    } on Object catch (e) {
-      if (mounted) setState(() => _error = e);
-      return;
-    }
-    if (!mounted) return;
+    final MusicLyricsTrackRef ref = musicLyricsTrackRefOf(item);
+    final List<String>? keywords = await showFushiFormDialog(
+      context: _themedContext,
+      title: t.music_lyrics_search_online,
+      icon: FushiIcons.search,
+      message: t.music_lyrics_online_search_hint,
+      confirmLabel: t.search,
+      fields: <FushiFormField>[
+        FushiFormField(
+          label: t.music_lyrics_search_title_label,
+          initialValue: ref.title,
+        ),
+        FushiFormField(
+          label: t.music_lyrics_search_artist_label,
+          initialValue: ref.artist ?? '',
+          optional: true,
+        ),
+      ],
+    );
+    if (keywords == null || !mounted) return;
+    final List<MusicLyricsCandidate>? found = await _runOnlineSearch(
+      () => _service.searchOnline(ref, title: keywords[0], artist: keywords[1]),
+    );
+    if (found == null || !mounted) return;
     final MusicLyricsCandidate? picked = await showFushiChoiceDialog(
       context: _themedContext,
       title: t.music_lyrics_search_online,
@@ -1225,7 +1307,10 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           FushiChoiceOption<MusicLyricsCandidate>(
             value: c,
             label: c.label,
-            subtitle: musicLyricsCandidateSubtitle(c),
+            subtitle: <String>[
+              musicLyricsOnlineSourceName(c.source),
+              musicLyricsCandidateSubtitle(c),
+            ].join(' · '),
           ),
       ],
     );
@@ -2190,7 +2275,11 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
 
   /// 没有歌词（或加载失败）：纯音乐提示 + 找歌词。
   Widget _buildNoLyrics(BuildContext context) {
-    if (_loading) return const FushiCircularProgressIndicator();
+    if (_loading || _searchingOnline) {
+      return const FushiCircularProgressIndicator(
+        key: ValueKey<String>('music_lyrics_online_searching'),
+      );
+    }
     return Wrap(
       alignment: WrapAlignment.center,
       crossAxisAlignment: WrapCrossAlignment.center,
@@ -2255,11 +2344,13 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           value: 0,
           label: t.music_lyrics_choose_source,
           icon: FushiIcons.lyrics,
+          enabled: !_searchingOnline,
         ),
         FushiChoiceOption<int>(
           value: 1,
           label: t.music_lyrics_search_online,
           icon: FushiIcons.search,
+          enabled: !_searchingOnline,
         ),
         if (_lyrics?.timeline.isUserEdited ?? false)
           FushiChoiceOption<int>(
@@ -2345,10 +2436,17 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       isSeekPointer: (int buttons) =>
           isMusicLyricsSeekPointer(appModel.shortcutRegistry, buttons),
       cursor: _lookupCursor,
+      appearance: KaraokeLyricsAppearance(
+        blurInactive: appModel.musicLyricsBlurInactive,
+      ),
     );
     // 字幕组特效 ASS：结构化会丢特效，提示去卡拉 OK 字幕页原样渲染（§6.3）。
     return Column(
       children: <Widget>[
+        if (_searchingOnline)
+          const FushiLinearProgressIndicator(
+            key: ValueKey<String>('music_lyrics_online_searching'),
+          ),
         FushiAnimatedSize(
           duration: fushiMotionDuration(context, FushiMotion.short),
           curve: context.fushiMotion.spatialDefault.curve,

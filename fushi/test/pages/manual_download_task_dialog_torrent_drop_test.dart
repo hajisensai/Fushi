@@ -405,8 +405,8 @@ void main() {
   group('drop surfaces route importTorrent into the dialog (source guard)', () {
     const Map<String, String> surfaces = <String, String>{
       'home-video': 'lib/src/pages/implementations/home_video_page.dart',
-      'reader-shelf':
-          'lib/src/pages/implementations/reader_history/books.part.dart',
+      // 书架 / 漫画库 / 书与漫画导入视图共用的分发（IM2）。
+      'reader-shelf': 'lib/src/media/drag_drop/reader_shelf_drop_router.dart',
     };
     surfaces.forEach((String name, String path) {
       test('$name handles DropIntent.importTorrent', () {

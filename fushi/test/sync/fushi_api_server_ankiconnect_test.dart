@@ -67,7 +67,6 @@ void main() {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     final SrsStorage srs = await openSrsTestStorage();
     final SrsDbStore store = await SrsDbStore.open(
-      db: srs.db,
       core: srs.core,
       profileUid: '01928c3e-0000-7000-8000-0000000000ff',
       deviceId: 'dev',

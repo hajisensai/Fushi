@@ -3,7 +3,6 @@
 # fushi/windows/CMakeLists.txt 配置期 FATAL_ERROR。
 #
 # 前提：rustup target add x86_64-pc-windows-msvc（MSVC 工具链）。
-# 访问 crates.io 不稳时先设代理：$env:CARGO_HTTP_PROXY='http://127.0.0.1:34151'
 #
 # 用法：
 #   powershell -ExecutionPolicy Bypass -File native/fushi_rwkv/build_windows_dll.ps1

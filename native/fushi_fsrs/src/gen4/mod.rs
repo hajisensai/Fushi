@@ -8,10 +8,12 @@
 //! - [op]：操作信封、操作体（原生 Edit 没有旧戳、承袭 Edit 带旧戳、Log 紧凑编码、新种类 `Join` / `Salts`）、链。
 //! - [segment]：原生段（魔数 `FSG4`，每设备成链，已清除的区间是空洞）。
 //! - [relay]：中继件（魔数 `FRL4`，把作者签过的原生段原样搬到作者没去过、钥匙可能不同的位置）。
+//! - [recut]：重切中继件（魔数 `FRX4`，转发者把本机已清除的操作换成空洞、用自己的钥匙签出的作者段，读者只收受信重切者的）。
 //! - [heritage]：承袭段（魔数 `FSH4`，不成链、上传者签名）与槽（操作 / 原样件 / 副本记录 / 空洞，每个 seq 带原链值指纹）。
 //! - [head]：协议 4 的 head（`seal`、`prev`、派生口径版本；签名覆盖除 `sig` 外的全部键）。
 //! - [export]：`.fushisrs` 第 2 版的内核导出流 `ops.bin`（魔数 `FSRS4EXP`）。
 //! - [location]：位置布局（新根 / 旧根围栏 / 墓碑 head 的文件名与纯函数内容、名字守卫；G8-1）。
+//! - [manifest]：媒体清单增量文件 `mf-`（魔数 `FMF4`，每条内容哈希带在 / 不在 / 可疑与 HLC，取 HLC 最大者；G8-3）。
 //!
 //! 与协议 3 互不误读：段魔数不同，head 的必需键不同（[head] 文件头），操作体格式号从 4 起（[op::BODY_FMT]）。
 
@@ -19,8 +21,10 @@ pub mod export;
 pub mod head;
 pub mod heritage;
 pub mod location;
+pub mod manifest;
 pub mod name;
 pub mod op;
+pub mod recut;
 pub mod relay;
 pub mod segment;
 pub mod stamp;

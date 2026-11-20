@@ -41,9 +41,13 @@ import java.util.concurrent.ConcurrentHashMap
 class MihonChannelHandler(private val app: Application) {
     private val executor: ExecutorService = Executors.newFixedThreadPool(2)
     // 页图单独一个池：取图（OkHttp callTimeout 最长 2 分钟）与页表 / 搜索 / 详情共用
-    // 那两条线程时，两张慢图就能把下一章的页表也卡住。宽度不小于 Dart 侧在线直读
-    // 的并发上限（kOnlineMangaPageConcurrency = 3），再留一条给下载服务。
-    private val imageExecutor: ExecutorService = Executors.newFixedThreadPool(4)
+    // 那两条线程时，两张慢图就能把下一章的页表也卡住。宽度 = Dart 侧在线直读的并发
+    // 上限 + 下载服务的页并发：边整章下载边在线读另一章时，下载的请求不能挤掉直读
+    // 的线程（以前按「直读 3 + 下载 1」开 4 条，而下载默认 4 页并发，一章下载就占满
+    // 整个池，直读的页排在它后面）。两个常量由
+    // test/media/manga/mihon_image_pool_width_guard_test.dart 钉在 Dart 常量上。
+    private val imageExecutor: ExecutorService =
+        Executors.newFixedThreadPool(STREAM_PAGE_CONCURRENCY + DOWNLOAD_PAGE_CONCURRENCY)
     private val mainHandler = Handler(Looper.getMainLooper())
     private val loader = MihonExtensionLoader(app)
     private val activeImageRequests = ConcurrentHashMap<String, Future<*>>()
@@ -619,6 +623,10 @@ class MihonChannelHandler(private val app: Application) {
 
     companion object {
         private const val MAX_APK_BYTES = 100L * 1024L * 1024L
+        // = Dart `kOnlineMangaPageConcurrency`（online_manga_reader_session.dart）。
+        private const val STREAM_PAGE_CONCURRENCY = 3
+        // = Dart `kMangaDownloadPageConcurrency`（manga_download_service.dart）。
+        private const val DOWNLOAD_PAGE_CONCURRENCY = 4
         private const val TAG = "MihonChannel"
     }
 }

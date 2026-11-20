@@ -7,7 +7,12 @@ import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/sources/reader_media_source.dart';
 import 'package:fushi/src/pages/base_page.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
+import 'package:fushi/src/media/metadata/book_art_store.dart';
 import 'package:fushi/src/media/metadata/book_cover_scrape_dialog.dart';
+import 'package:fushi_engine/media/collections/book_series_key.dart'
+    show parseBookSeriesKey;
+import 'package:fushi/src/media/metadata/book_metadata_scrape_facade.dart'
+    show BookMetadataScrapeFacade;
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -18,6 +23,7 @@ import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// The content of the dialog upon selecting 'Edit' in the
@@ -42,6 +48,18 @@ class _MediaItemEditDialogPageState
   File? _newFile;
   bool _clearOverrideImage = false;
 
+  /// 书的刮削层（「已获取的每卷封面」）来源；null = 没有 / 不是书。
+  BookArtRecord? _scrapedRecord;
+
+  /// 用户点了「移除已获取的封面」，保存时落地。
+  bool _removeScrapedArt = false;
+
+  String? get _bookKey => mediaSource is ReaderMediaSource
+      ? ReaderFushiSource.parseBookKey(widget.item.mediaIdentifier)
+      : null;
+
+  BookArtStore get _artStore => BookArtStore.of(appModel.thumbnailsDirectory);
+
   final TextEditingController _nameOverrideController = TextEditingController();
   // BUG-220: author editing, only shown when the source supports it (EPUB).
   final TextEditingController _authorController = TextEditingController();
@@ -65,6 +83,11 @@ class _MediaItemEditDialogPageState
       _nameOverrideController.text = title;
       _authorController.text = widget.item.author ?? '';
 
+      final String? bookKey = _bookKey;
+      // 有卷封面、或只有横幅（本地更清晰时只写了横幅）都显示来源 / 署名与移除。
+      _scrapedRecord = bookKey == null
+          ? null
+          : _artStore.displayableRecordFor(bookKey);
       _defaultImageProvider = mediaSource.getDisplayThumbnailFromMediaItem(
         appModel: appModel,
         item: widget.item,
@@ -134,10 +157,21 @@ class _MediaItemEditDialogPageState
                         _nameOverrideController.text.trim().isNotEmpty
                         ? _nameOverrideController.text.trim()
                         : widget.item.title;
-                    final File? scraped = await showBookCoverScrapeDialog(
+                    final String? isbn =
+                        await BookMetadataScrapeFacade.isbnForItem(
+                          appModel.database,
+                          widget.item,
+                        );
+                    if (!mounted) return;
+                    // 编辑弹窗只取封面（保存才落地，取消不留副作用）；条目资料
+                    // 走书架卡菜单的「在线刮削封面」（选中即写回）。
+                    final File? scraped = (await showBookCoverScrapeDialog(
                       context: context,
                       initialQuery: query,
-                    );
+                      volume: parseBookSeriesKey(widget.item.title)?.volume,
+                      isbn: isbn,
+                      rakuten: appModel.bookScrapeRakutenCredentials,
+                    ))?.cover;
                     if (scraped != null) {
                       _newFile = scraped;
                       _coverImageProvider = FileImage(scraped);
@@ -167,10 +201,37 @@ class _MediaItemEditDialogPageState
               setState(() {});
             },
           ),
+          if (_scrapedRecord != null && !_removeScrapedArt)
+            _ScrapedArtRow(
+              record: _scrapedRecord!,
+              onRemove: () {
+                // 刮削层挂错时单本也能撤掉（不只合集级「清除」）；保存时落地。
+                _removeScrapedArt = true;
+                _defaultImageProvider = mediaSource
+                    .getDisplayThumbnailFromMediaItem(
+                      appModel: appModel,
+                      item: widget.item,
+                      noOverride: true,
+                      noScraped: true,
+                    );
+                if (_newFile == null && !_hasOverride) {
+                  _coverImageProvider = null;
+                }
+                setState(() {});
+              },
+            ),
         ],
       ),
     );
   }
+
+  bool get _hasOverride =>
+      !_clearOverrideImage &&
+      mediaSource.resolveOverrideThumbnailFile(
+            appModel: appModel,
+            item: widget.item,
+          ) !=
+          null;
 
   List<Widget> get actions => [buildCancelButton(), buildSaveButton()];
 
@@ -209,6 +270,12 @@ class _MediaItemEditDialogPageState
         clearOverrideImage: _clearOverrideImage,
       );
 
+      final String? bookKey = _bookKey;
+      if (_removeScrapedArt && bookKey != null) {
+        // 单本移除 = 这张贴错了：记为否决，之后合集重刮不会把同一张写回来。
+        await _artStore.rejectCover(bookKey);
+      }
+
       // BUG-220: persist the edited author (e.g. epubBooks.author). No-op for
       // sources that do not support author editing.
       if (_supportsAuthorEdit) {
@@ -234,6 +301,51 @@ class _MediaItemEditDialogPageState
       navigator.pop();
       mediaSource.mediaType.refreshTab();
     }
+  }
+}
+
+/// 刮削层来源行：「封面取自 X」+ MangaBaka 署名（CC BY-NC-SA 要求可见）+ 移除按钮。
+class _ScrapedArtRow extends StatelessWidget {
+  const _ScrapedArtRow({required this.record, required this.onRemove});
+
+  final BookArtRecord record;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final TextStyle? small = Theme.of(context).textTheme.bodySmall;
+    final String source = switch (record.coverSource ?? record.source) {
+      'mangabaka' => 'MangaBaka',
+      'bangumi' => 'Bangumi',
+      final String? other => other ?? '',
+    };
+    return Padding(
+      key: const ValueKey<String>('book_edit_scraped_art_row'),
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  t.book_art_scraped_cover_from(source: source),
+                  style: small,
+                ),
+                if (record.usesMangaBaka)
+                  Text(t.book_scrape_mangabaka_attribution, style: small),
+              ],
+            ),
+          ),
+          FushiTextButton(
+            key: const ValueKey<String>('book_edit_remove_scraped_art'),
+            onPressed: onRemove,
+            child: Text(t.book_art_remove_scraped),
+          ),
+        ],
+      ),
+    );
   }
 }
 

@@ -8,7 +8,11 @@ import 'package:fushi/src/pages/implementations/discovery_header.dart';
 /// 长搜索框。共享头部 [DiscoveryHeaderControls] 窄屏改为两行：搜索框独占整行，
 /// 来源下拉 + 附加按钮在第二行。
 void main() {
-  Future<void> pumpHeader(WidgetTester tester, Size size) async {
+  Future<void> pumpHeader(
+    WidgetTester tester,
+    Size size, {
+    bool withTrailing = true,
+  }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -32,16 +36,18 @@ void main() {
               searchHintText: '搜索全部来源里的作品标题',
               onSearchSubmitted: (String _) {},
               trailing: <Widget>[
-                IconButton(
-                  key: const ValueKey<String>('trailing-ai'),
-                  onPressed: () {},
-                  icon: const Icon(Icons.auto_awesome_outlined),
-                ),
-                IconButton(
-                  key: const ValueKey<String>('trailing-refresh'),
-                  onPressed: () {},
-                  icon: const Icon(Icons.refresh),
-                ),
+                if (withTrailing)
+                  IconButton(
+                    key: const ValueKey<String>('trailing-ai'),
+                    onPressed: () {},
+                    icon: const Icon(Icons.auto_awesome_outlined),
+                  ),
+                if (withTrailing)
+                  IconButton(
+                    key: const ValueKey<String>('trailing-refresh'),
+                    onPressed: () {},
+                    icon: const Icon(Icons.refresh),
+                  ),
               ],
             ),
           ),
@@ -83,6 +89,22 @@ void main() {
     expect(menu.top, search.top);
     expect(menu.height, search.height);
     expect(menu.right, lessThanOrEqualTo(search.left));
+    expect(tester.takeException(), isNull);
+  });
+
+  // 拼贴改版第 6 节手机形态：动作进了外壳浮动顶栏（没有行尾动作）时，窄下拉与
+  // 搜索框同一行，搜索框仍拿走其余全部宽度。
+  testWidgets('手机宽度、无行尾动作：窄下拉 + 搜索框同一行', (WidgetTester tester) async {
+    await pumpHeader(tester, const Size(390, 844), withTrailing: false);
+    final Rect search = tester.getRect(find.byKey(searchKey));
+    final Rect menu = tester.getRect(find.byKey(menuKey));
+    expect(menu.center.dy, closeTo(search.center.dy, 1));
+    expect(menu.right, lessThanOrEqualTo(search.left));
+    expect(
+      menu.width,
+      lessThanOrEqualTo(DiscoveryHeaderControls.kCompactSourceMenuWidth + 0.5),
+    );
+    expect(search.width, greaterThan(390 * 0.5));
     expect(tester.takeException(), isNull);
   });
 }

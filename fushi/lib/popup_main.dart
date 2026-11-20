@@ -4,7 +4,11 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/adaptive/legacy_design_compat.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/engine_bindings.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_capture.dart';
+import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_clip.dart'
+    show CrossAppAudioSnapshot;
 import 'package:fushi/src/models/theme_notifier.dart'
     show buildFushiFallbackTheme;
 import 'package:fushi/i18n/strings.g.dart';
@@ -31,6 +35,9 @@ void popupMain() {
   runZonedGuarded<Future<void>>(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+      // 本 engine 不跑 main()：引擎数据根 / 日志等装配点自己装，否则在线 TTS
+      // 兜底取缓存目录即抛，app 外查词没有兜底发音（BUG-4940）。
+      installEntryPointHostBindings();
       // BUG-2790：本引擎缓存复用、关窗只 detach，查词 WebView 必须走 TLHC，见
       // [dictionaryPopupWebViewUsesHybridComposition]。
       dictionaryPopupWebViewUsesHybridComposition = false;
@@ -83,6 +90,10 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
   /// 据此截整句；其它入口为 null。
   PopupSourceBlock? _sourceBlock;
 
+  /// 跨应用语音挖掘（拍板 oqk37s3QFL）：收到新词那一刻向主进程要的「最近一段其他 app
+  /// 声音」快照；没开缓存时解析为 null。制卡时由查词页截出最后一句语音。
+  Future<CrossAppAudioSnapshot?>? _miningAudio;
+
   /// TODO-872：浮动字幕条点字传来的「被查字屏幕矩形」（**物理像素**，原点=物理屏幕顶
   /// 含状态栏）。为 null 即非浮动字幕入口（系统 PROCESS_TEXT / fushi://lookup）→ 弹窗走
   /// 默认 topCenter。物理→逻辑换算 + 状态栏平移在 [build] 内完成（那里 MediaQuery 才有
@@ -114,6 +125,10 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
             Rect? subtitle,
             PopupSourceBlock? sourceBlock,
           ) async {
+            // 先于任何 await 发起：快照要的是「查词这一刻」之前的声音，不能被偏好刷新
+            // 推迟；不等它，查词照常秒出。
+            final Future<CrossAppAudioSnapshot?> miningAudio =
+                CrossAppAudioCapture.instance.snapshot();
             final appModel = ref.read(appProvider);
             // TODO-855: warm-reuse hot path. Don't unconditionally re-scan the whole
             // preferences table on every external ProcessText (the v0.4.1 path was a
@@ -146,6 +161,7 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
               _searchTerm = text;
               _sourceCharIndex = charIndex;
               _sourceBlock = sourceBlock;
+              _miningAudio = miningAudio;
               _anchorPhysical = anchor;
               _subtitlePhysical = subtitle;
               _searchGeneration++;
@@ -267,6 +283,7 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
           sourceBlock: _sourceBlock?.text,
           sourceBlockOffset: _sourceBlock?.offset ?? -1,
           cardImage: _sourceBlock?.cardImage,
+          miningAudio: _miningAudio,
           // TODO-872：浮动字幕条点字带屏幕锚点 → 弹窗贴被查字旁；其它入口 null → topCenter。
           // TODO-708 P1 ⑤：物理→逻辑换算含状态栏平移在此处（build，视图 metrics 稳定）完成。
           anchorRect: _toLogicalRect(_anchorPhysical),

@@ -15,7 +15,13 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart'
     show hostMangaOcrMaxParallelTasks;
 import 'package:fushi/src/media/manga/ocr/manga_ocr_local_model_labels.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_model_downloads.dart';
+import 'package:fushi/src/media/manga/manga_ocr_engine_probe.dart'
+    show kSystemOcrProbeTimeout;
 import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
+import 'package:fushi/src/ocr/system_ocr_channel.dart'
+    show MethodChannelSystemOcr, SystemOcrModelSetup, SystemOcrModelStatus;
+import 'package:fushi/src/ocr/system_ocr_setup_dialog.dart'
+    show showSystemOcrSetupDialog;
 import 'package:fushi/src/media/manga/reader/manga_reader_settings_panel_kit.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
@@ -80,6 +86,7 @@ class MangaOcrSettingsSection extends ConsumerStatefulWidget {
     this.modelImporter,
     this.pickImportPaths,
     this.systemOcrRunner,
+    this.systemOcrSetup,
     this.pairedHostModelGetter,
     this.pairedHostModelSetter,
     this.remoteRunner,
@@ -138,6 +145,9 @@ class MangaOcrSettingsSection extends ConsumerStatefulWidget {
 
   /// 系统 OCR 可用性探测；null = 走真实平台通道。
   final SystemOcrMangaRunner? systemOcrRunner;
+
+  /// 系统 OCR 引导弹窗用的平台口；null = 走真实平台通道。
+  final SystemOcrModelSetup? systemOcrSetup;
 
   /// 「Fushi 互联服务端」点名的服务端模型（空串 = 服务端默认）。省略时服务端只有
   /// 一项、跟着服务端自己的选择走。
@@ -903,6 +913,29 @@ class _MangaOcrSettingsSectionState
     if (!mounted) return;
     setState(() => _enginePreference = choice.preference);
     await _writeEnginePreference(choice.preference);
+    if (choice.preference == MangaOcrEnginePreference.systemOcr) {
+      await _guideSystemOcrIfPlayServicesAbsent();
+    }
+  }
+
+  /// 选中系统 OCR 时设备根本没有 Play 服务（BUG-4705）：选项保留、偏好照写，但
+  /// 立刻弹引导说明它在这台设备上跑不了、并指向本机模型——否则用户要等到开书
+  /// 识别失败才知道。查不出来按「不确定」处理，不弹。
+  Future<void> _guideSystemOcrIfPlayServicesAbsent() async {
+    SystemOcrModelStatus status = SystemOcrModelStatus.ready;
+    try {
+      status = await (widget.systemOcrRunner ?? SystemOcrMangaService())
+          .modelStatus(language: _lensLanguage)
+          .timeout(kSystemOcrProbeTimeout);
+    } on Object {
+      status = SystemOcrModelStatus.ready;
+    }
+    if (!mounted || !status.playServicesAbsent) return;
+    await showSystemOcrSetupDialog(
+      context,
+      language: _lensLanguage,
+      setup: widget.systemOcrSetup ?? const MethodChannelSystemOcr(),
+    );
   }
 
   /// 默认引擎选择行：当前引擎的图标 + 名称与一句取舍作 supporting text，点按

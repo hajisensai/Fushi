@@ -75,7 +75,8 @@ List<OpDescription> describeDownloadOps(OpDescribeKit kit) {
         OpParam.stringList(
           'status',
           description:
-              'Only these statuses: queued, running, done, failed, cancelled.',
+              'Only these statuses: queued, running, paused, done, failed, '
+              'cancelled.',
         ),
         OpParam.string(
           'book',
@@ -108,8 +109,8 @@ List<OpDescription> describeDownloadOps(OpDescribeKit kit) {
       method: 'POST',
       pattern: '/api/admin/online/manga-downloads/:id/cancel',
       summary:
-          'Cancel a queued or running manga chapter download (partial pages are '
-          'discarded). Undo re-queues it (retry).',
+          'Cancel a queued, running or paused manga chapter download (partial '
+          'pages are discarded). Undo re-queues it (retry).',
       risk: OpRisk.write,
       params: const <OpParam>[_mangaJobId],
       availability: manga,
@@ -135,6 +136,40 @@ List<OpDescription> describeDownloadOps(OpDescribeKit kit) {
         method: 'POST',
         pattern: '/api/admin/online/manga-downloads/:id/cancel',
         describe: 'queued',
+      ),
+    ),
+    OpDescription(
+      id: 'online.manga-download.pause',
+      method: 'POST',
+      pattern: '/api/admin/online/manga-downloads/:id/pause',
+      summary:
+          'Pause a queued or running manga chapter download. Downloaded pages '
+          'are kept and the job stays paused across restarts. Undo resumes it.',
+      risk: OpRisk.write,
+      params: const <OpParam>[_mangaJobId],
+      availability: manga,
+      undo: _inverseUndo(
+        kit,
+        method: 'POST',
+        pattern: '/api/admin/online/manga-downloads/:id/resume',
+        describe: 'paused',
+      ),
+    ),
+    OpDescription(
+      id: 'online.manga-download.resume',
+      method: 'POST',
+      pattern: '/api/admin/online/manga-downloads/:id/resume',
+      summary:
+          'Resume a paused manga chapter download; it continues from the pages '
+          'already on disk. Undo pauses it again.',
+      risk: OpRisk.write,
+      params: const <OpParam>[_mangaJobId],
+      availability: manga,
+      undo: _inverseUndo(
+        kit,
+        method: 'POST',
+        pattern: '/api/admin/online/manga-downloads/:id/pause',
+        describe: 'resumed',
       ),
     ),
     OpDescription(

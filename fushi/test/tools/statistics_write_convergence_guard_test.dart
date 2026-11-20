@@ -99,6 +99,8 @@ const List<String> kStatPages = <String>[
   'lib/src/pages/implementations/game_statistics_page.dart',
   'lib/src/ops/ctl_settings_routes.dart',
   'lib/src/pages/implementations/home_dashboard_page.dart',
+  // 首页小组件网格（2026-11-15）的「今日」格子在 part 文件里读同一个窗口。
+  'lib/src/pages/implementations/home_dashboard_widget_cells.part.dart',
   'lib/src/pages/implementations/statistics_center_page.dart',
   'lib/src/pages/implementations/stat_period_detail_sheet.dart',
   'lib/src/pages/implementations/video_stat_aggregates.dart',

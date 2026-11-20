@@ -95,6 +95,7 @@ Widget _host({
   bool tapLooksUp = false,
   bool Function(int buttons)? isSeekPointer,
   KaraokeLyricsCursor? cursor,
+  bool blurInactive = true,
 }) => MaterialApp(
   home: MediaQuery(
     data: MediaQueryData(
@@ -114,7 +115,10 @@ Widget _host({
           tapLooksUp: tapLooksUp,
           isSeekPointer: isSeekPointer,
           cursor: cursor,
-          appearance: const KaraokeLyricsAppearance(fontSize: 24),
+          appearance: KaraokeLyricsAppearance(
+            fontSize: 24,
+            blurInactive: blurInactive,
+          ),
         ),
       ),
     ),
@@ -338,6 +342,48 @@ void main() {
         _host(timeline: _timeline(), clock: clock, playing: false),
       );
       await tester.pump(const Duration(seconds: 2));
+    });
+
+    // GitHub #3354：学习时要看清上一句 / 下一句，「非当前行模糊」可关。
+    testWidgets('blurInactive：开时非当前行模糊，关时没有任何一行模糊', (
+      WidgetTester tester,
+    ) async {
+      final _Clock clock = _Clock()..ms = 1100;
+      List<ImageFiltered> filters() => tester
+          .widgetList<ImageFiltered>(
+            find.descendant(
+              of: find.byType(KaraokeLyricsView),
+              matching: find.byType(ImageFiltered),
+            ),
+          )
+          .toList();
+
+      await tester.pumpWidget(
+        _host(timeline: _timeline(), clock: clock, playing: false),
+      );
+      await tester.pump();
+      expect(filters(), isNotEmpty);
+      expect(
+        filters().where((ImageFiltered f) => f.enabled),
+        isNotEmpty,
+        reason: '默认开：非当前行有模糊',
+      );
+
+      await tester.pumpWidget(
+        _host(
+          timeline: _timeline(),
+          clock: clock,
+          playing: false,
+          blurInactive: false,
+        ),
+      );
+      await tester.pump(const Duration(seconds: 1));
+      expect(filters(), isNotEmpty);
+      expect(
+        filters().where((ImageFiltered f) => f.enabled),
+        isEmpty,
+        reason: '关掉后上下句都清晰',
+      );
     });
 
     testWidgets('点行跳到该行起点', (WidgetTester tester) async {

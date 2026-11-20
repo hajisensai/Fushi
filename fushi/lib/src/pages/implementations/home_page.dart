@@ -26,12 +26,12 @@ import 'package:fushi/src/onboarding/recommended_pack_download_mini_bar.dart';
 import 'package:fushi/src/onboarding/recommended_pack_tutorial_prompt.dart';
 import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
 import 'package:fushi/src/updates/update_probes.dart';
-import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show
         FushiFloatingChromeInset,
         FushiHeightReporter,
         FushiShellInlineTitle,
+        fushiMastheadOuterGap,
         kFushiFloatingChromeGap;
 import 'package:fushi/src/utils/components/nav_rail_brand_button.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
@@ -40,6 +40,11 @@ import 'package:fushi/src/pages/implementations/download_backend_setup_dialog.da
 import 'package:fushi/src/pages/implementations/ai_settings_route.dart';
 import 'package:fushi/src/pages/implementations/managed_video_source_prompt.dart';
 import 'package:fushi/src/sync/background_tasks_indicator.dart';
+import 'package:fushi/src/sync/interconnect_download_background_tasks.dart';
+import 'package:fushi/src/sync/interconnect_download_manager.dart';
+import 'package:fushi/src/pages/implementations/interconnect_download_tasks_page.dart'
+    show openInterconnectDownloadTasksPage;
+import 'package:fushi/src/pages/implementations/home_background_tasks_scope.dart';
 import 'package:fushi/src/sync/desktop_foreground_guard.dart';
 import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
 import 'package:fushi/src/anki/anki_view_model.dart'
@@ -50,7 +55,10 @@ import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
+import 'package:fushi/src/media/source_library/source_auto_scan.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
+import 'package:fushi/src/media/source_library/source_folder_access.dart';
+import 'package:fushi/src/media/source_library/source_scan_temp.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/media/video/video_duration_pref.dart';
@@ -113,8 +121,14 @@ import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart
 import 'package:fushi/src/pages/implementations/video_discovery_page.dart'
     show VideoDiscoveryController;
 import 'package:fushi/src/pages/implementations/video_library_shell.dart';
+import 'package:fushi/src/pages/implementations/shell_layout_choice_dialog.dart'
+    show maybeShowShellLayoutChoice;
 import 'package:fushi/src/pages/implementations/browse_moved_notice.dart'
     show maybeShowBrowseMovedNotice;
+import 'package:fushi/src/pages/implementations/library_layout_default_notice.dart'
+    show maybeShowLibraryLayoutDefaultNotice;
+import 'package:fushi/src/pages/implementations/overwrite_snapshot_notice.dart'
+    show maybeShowOverwriteSnapshotNotice;
 import 'package:fushi/src/pages/implementations/media_server/media_server_browse_page.dart'
     show MediaServerEntry, pushMediaServerPlayer;
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart'
@@ -158,6 +172,7 @@ import 'package:fushi/src/pages/implementations/web_hub_page.dart';
 import 'package:fushi/src/utils/components/section_visibility.dart';
 import 'package:fushi/src/pages/implementations/home_module_swipe.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_error_text.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
@@ -196,12 +211,16 @@ import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart'
 import 'package:fushi/src/shortcuts/page_scroll_shortcuts.dart'
     show pageScrollRequestFor;
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/text_field_key_ownership.dart'
+    show keyTypesIntoFocusedTextField;
 import 'package:fushi_core/fushi_core.dart'
     show
+        FushiDatabase,
         MediaCollectionItemRow,
         MediaCollectionRow,
         MediaKind,
         MediaSourceRow,
+        SourceLibraryKind,
         VideoBookRow,
         VideoDownloadJobLifecycle,
         VideoDownloadJobRow,
@@ -533,6 +552,13 @@ class _HomePageState extends BasePageState<HomePage>
     },
   );
   bool _videoSourceScrapePanelOpen = false;
+
+  /// 来源「自动扫描」调度（启动 + 回前台，见 [SourceAutoScanScheduler]）。挂在首页：
+  /// 视频来源的扫描要走本页持有的刮削任务控制器门，扫完还要串联自动刮削。
+  late final SourceAutoScanScheduler _sourceAutoScan = SourceAutoScanScheduler(
+    loadCandidates: _loadAutoScanSources,
+    scan: _runAutoSourceScan,
+  );
   VideoDiscoveryService? _videoDiscoveryService;
   VideoDiscoveryController? _videoDiscoveryController;
   String? _videoDiscoveryConfigFingerprint;
@@ -626,6 +652,7 @@ class _HomePageState extends BasePageState<HomePage>
         _videoSourceScrapeController;
     appModelNoUpdate.videoScrapeRuntime = _videoScrapeRuntime;
     syncBackgroundTasksListenable.addListener(_onSyncTasksChanged);
+    _interconnectDownloads.addListener(_onInterconnectDownloadsChanged);
 
     // 首页可能被「功能模块」关掉：默认落地改为第一个启用的 tab，不让
     // `_currentTab` 从第一帧起就指向一个隐藏 tab（同 [homeInitialTab] 的理由）。
@@ -663,6 +690,11 @@ class _HomePageState extends BasePageState<HomePage>
     appModelNoUpdate.homeDictionaryTabRequest.addListener(
       _onHomeDictionaryTabRequested,
     );
+
+    // 首帧后的启动清理 + 来源自动扫描（与下面的新手引导 / 更新弹窗互不阻塞）。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_startupCleanupThenAutoScan());
+    });
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
@@ -720,6 +752,15 @@ class _HomePageState extends BasePageState<HomePage>
         await appModel.setOnboardingCompleted(value: true);
       }
 
+      // 「选一种库页布局」（G1）：升级上来、从没选过库页布局的老用户弹一次（新安装
+      // 在新手引导欢迎页里选，不弹）。与引导 / 搬迁提示 / 更新弹窗串行。
+      if (mounted) {
+        await maybeShowShellLayoutChoice(
+          context: context,
+          appModel: appModelNoUpdate,
+        );
+      }
+
       // 「下载」改名「浏览」：升级前关着下载的用户照旧关着，但一次性告诉他们发现与
       // 在线来源搬到了哪里、在哪里打开（所有者 2026-09-28 拍板）。排在新手引导之后、
       // 更新弹窗之前，与它们串行，不抢同一帧。
@@ -728,6 +769,25 @@ class _HomePageState extends BasePageState<HomePage>
           context: context,
           appModel: appModelNoUpdate,
           freshInstall: freshInstall,
+        );
+      }
+
+      // 库页默认布局改成封面网格：升级上来、没选过布局的用户提醒一次「拼贴仍可选」
+      // （拍板台 pr3454，2026-11-16）。同样排在更新弹窗之前、串行。
+      if (mounted) {
+        await maybeShowLibraryLayoutDefaultNotice(
+          context: context,
+          appModel: appModelNoUpdate,
+          freshInstall: freshInstall,
+        );
+      }
+
+      // 覆盖导入完成后的一次性提示（快照留多久、在哪找回 / 删除）。导入完成时 app
+      // 立刻重启，提示只能在这里补上；与上面的弹框串行，排在更新弹窗之前。
+      if (mounted) {
+        await maybeShowOverwriteSnapshotNotice(
+          context: context,
+          appModel: appModelNoUpdate,
         );
       }
 
@@ -834,6 +894,38 @@ class _HomePageState extends BasePageState<HomePage>
 
       _maybeSyncLeaderboard();
     });
+  }
+
+  /// 首帧后的启动清理，清完再扫一轮到期来源。
+  ///
+  /// - 以前的进程在扫描中途被杀留下的「仅此一次」临时来源行与临时目录
+  ///   （[sweepSourceScanLeftoversOnce]，gap-scanner-10）：以前要等下一次任意来源
+  ///   扫描才清。排在自动扫描**之前**并 await：清扫要删的临时行不能先被自动扫描读进
+  ///   待扫清单；扫描入口里的同一调用每库只跑一次，到时直接复用这次的结果。
+  /// - 旧版本留下的制卡队列 `done` 行（[WebMineQueueStore.sweepLegacyDone]，BUG-4813）：
+  ///   以前挂在两个读入口里当副作用。
+  ///
+  /// 两步都每库只做一遍、失败只记日志（#3722 c08 / c15 遗留）。
+  Future<void> _startupCleanupThenAutoScan() async {
+    final FushiDatabase db = appModelNoUpdate.database;
+    await sweepSourceScanLeftoversOnce(
+      db,
+      releaseAccess: SourceFolderAccess.instance.release,
+    );
+    unawaited(
+      WebMineQueueStore(db).sweepLegacyDone().catchError((
+        Object error,
+        StackTrace stack,
+      ) {
+        ErrorLogService.instance.log(
+          'HomePage.sweepLegacyMineQueueDone',
+          error,
+          stack,
+        );
+      }),
+    );
+    if (!mounted) return;
+    await _sourceAutoScan.trigger(SourceAutoScanTrigger.startup);
   }
 
   /// 排行榜书架后台同步：启动时一次，此后随 [_periodicSyncTimer] 每分钟探一次。未开启 /
@@ -1034,6 +1126,7 @@ class _HomePageState extends BasePageState<HomePage>
 
   @override
   void dispose() {
+    _sourceAutoScan.dispose();
     if (_backdropShellRoute case final Route<Object?> route) {
       setFushiPageRouteModuleShell(route, false);
     }
@@ -1060,6 +1153,7 @@ class _HomePageState extends BasePageState<HomePage>
     _videoLibraryRefreshSignal.dispose();
     _videoPendingScrapeChangedSignal.dispose();
     syncBackgroundTasksListenable.removeListener(_onSyncTasksChanged);
+    _interconnectDownloads.removeListener(_onInterconnectDownloadsChanged);
     _scrapeTaskTick.dispose();
     for (final ScrollController controller in _tabScrollControllers.values) {
       controller.dispose();
@@ -1088,6 +1182,8 @@ class _HomePageState extends BasePageState<HomePage>
       // 首页键事件 Focus，导致切窗回来后页级 / 全局快捷键全死，只能重启 app 才靠
       // autofocus 抢回。对齐视频页 [_reclaimVideoFocusIfOwned] 的 resumed 回收范式。
       _reclaimHomeFocusIfOwned();
+      // 回前台扫一轮到期的自动扫描来源（节流挡掉切窗口引起的高频 resumed）。
+      unawaited(_sourceAutoScan.trigger(SourceAutoScanTrigger.resume));
     } else if (AppLifecycleState.detached == state) {
       _videoScrapeRuntime.currentController?.markInterrupted();
     } else if (AppLifecycleState.paused == state) {
@@ -1158,6 +1254,9 @@ class _HomePageState extends BasePageState<HomePage>
           : KeyEventResult.ignored;
     }
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    // 焦点在首页的文本框里（AI 助手块、搜索框）：要打进去的字符归文本框，不按
+    // 首页 / 全局快捷键解析（用户把动作改绑成裸字母时，打字不会触发它）。
+    if (keyTypesIntoFocusedTextField(event)) return KeyEventResult.ignored;
 
     final KeyEventResult focusedGamepadAction =
         dispatchNativeGamepadButtonIntent(event);
@@ -1694,23 +1793,10 @@ class _HomePageState extends BasePageState<HomePage>
     _appleChrome.syncScope(_visibleTab);
     _largeTitle.syncScope(_visibleTab);
     final bool apple = isGlassDesign(context);
-    final bool overlayTitle = !apple && _tabHasFloatingChrome(_visibleTab);
-    final bool narrow =
-        windowSizeClassReal(
-          MediaQuery.sizeOf(context).width,
-          FushiAppUiScale.of(context),
-        ) ==
-        WindowSizeClass.compact;
+    final bool overlayTitle = _shellTitleOverlaid(_visibleTab);
+    final bool narrow = _shellWindowCompact();
     // 页面名并进库页工具栏行（[_shellTitleInline]）的 tab 不再叠标题行。
     final bool inlineTitle = _shellTitleInline(_visibleTab);
-    // 叠放标题让出的高度：宽窗 = 标题条展开高度 + 6（收起成 48 的标题胶囊后，
-    // 胶囊下沿到页签胶囊恰好 12，M3E 组间距）；窄窗不显示标题、标题并进工具栏
-    // 行的宽窗也不另占一行，只留 8 的呼吸。
-    final double titleInset = !overlayTitle
-        ? 0
-        : narrow || inlineTitle
-        ? kFushiFloatingChromeGap
-        : _overlayTitleHeight + 6;
     return NotificationListener<Notification>(
       onNotification: (Notification notification) {
         // 隐藏的保活 tab / 分区后台加载发来的尺寸通知不算数。
@@ -1740,7 +1826,9 @@ class _HomePageState extends BasePageState<HomePage>
           ),
           Expanded(
             child: _withAppleTopEdge(
-              FushiFloatingChromeInset(top: titleInset, child: content),
+              // 叠放标题让出的顶部高度不在这里下发：它按 tab 不同，而这里是全部
+              // 保活 tab 的共同祖先（见 [_shellTitleInsetFor]）。
+              content,
               apple: apple,
               overlay: overlayTitle && !narrow && !inlineTitle
                   ? _floatingTitleOverlay()
@@ -1752,6 +1840,42 @@ class _HomePageState extends BasePageState<HomePage>
     );
   }
 
+  bool _shellWindowCompact() =>
+      windowSizeClassReal(
+        MediaQuery.sizeOf(context).width,
+        FushiAppUiScale.of(context),
+      ) ==
+      WindowSizeClass.compact;
+
+  /// [tab] 的外壳大标题是否叠在内容之上（MD3 库页，见 [_floatingTitleOverlay]）。
+  bool _shellTitleOverlaid(HomeTab tab) =>
+      !isGlassDesign(context) && _tabHasFloatingChrome(tab);
+
+  /// [tab] 的内容为叠放的外壳大标题让出的顶部高度：宽窗 = 标题条展开高度 + 6
+  /// （收起成 48 的标题胶囊后，胶囊下沿到页签胶囊恰好 12，M3E 组间距）；窄窗
+  /// 不显示标题、标题并进工具栏行的宽窗也不另占一行，只留 8 的呼吸；标题不
+  /// 叠放的 tab（首页 / 查词 / 复习 / 设置，Apple 设计系统）为 0。
+  ///
+  /// 按 **tab 自己**算、由 [_buildTabContent] 在各 tab 的子树里下发
+  /// [FushiFloatingChromeInset]，不能按当前可见 tab 算了挂在全部 tab 的共同祖先
+  /// 上（BUG-4851）：那样每次在库页（8）与首页 / 查词 / 复习 / 设置（0）之间切，
+  /// 这个值就翻一次，所有访问过的隐藏保活页里读它的浮动工具区、滚动视图、网格
+  /// 都跟着在切 tab 的那一帧重建 + 重排。
+  double _shellTitleInsetFor(HomeTab tab) {
+    // 首页（重设计外壳的页头大字）在手机上与库页同一条大字行：外壳同样留
+    // [fushiMastheadOuterGap]，页名基线、主按钮与书架对齐（设计稿 11-20 #18）。
+    // 平板 / 桌面不在本次范围，仍为 0。
+    if (tab == HomeTab.home &&
+        shellRedesignActive(context) &&
+        _shellWindowCompact()) {
+      return fushiMastheadOuterGap(context);
+    }
+    if (!_shellTitleOverlaid(tab)) return 0;
+    return _shellWindowCompact() || _shellTitleInline(tab)
+        ? kFushiFloatingChromeGap
+        : _overlayTitleHeight + 6;
+  }
+
   /// 外壳大标题条（两种摆法共用同一份配置）。
   ///
   /// M3E 库页（叠放浮动工具区的 tab）一律用收起形态——一枚悬浮标题胶囊，
@@ -1760,7 +1884,7 @@ class _HomePageState extends BasePageState<HomePage>
   Widget _buildShellTitleBar() {
     _shellActions.shellTrailing = _appleBackgroundTasksAction();
     return FushiShellLargeTitleBar(
-      title: _shellTitleFor(_visibleTab),
+      title: _shellBarTitleFor(_visibleTab),
       collapsed:
           _largeTitle.collapsed ||
           (!isGlassDesign(context) && _tabHasFloatingChrome(_visibleTab)),
@@ -1776,7 +1900,7 @@ class _HomePageState extends BasePageState<HomePage>
   Widget? _appleBackgroundTasksAction() {
     // 标题行高度为 0 时不往里塞按钮（塞了也只会被压扁裁掉），入口是右下 FAB。
     if (!isGlassDesign(context) ||
-        _shellTitleFor(_visibleTab) == null ||
+        _shellBarTitleFor(_visibleTab) == null ||
         !_hasBackgroundTasks) {
       return null;
     }
@@ -1817,11 +1941,11 @@ class _HomePageState extends BasePageState<HomePage>
 
   /// 当前布局下「后台任务」入口是否已由外壳的栏承载（body 因此不再画右下
   /// FAB）。判据与可见 tab 实际渲染的页头同源：外壳大标题行是否有高度
-  /// （[_shellTitleFor] 非 null，正是 [FushiShellLargeTitleBar] 判「有标题」
+  /// （[_shellBarTitleFor] 非 null，正是 [FushiShellLargeTitleBar] 判「有标题」
   /// 的那一份）。
   bool _backgroundTasksHostedByChrome() => homeBackgroundTasksHostedByChrome(
     apple: isGlassDesign(context),
-    shellTitleVisible: _shellTitleFor(_visibleTab) != null,
+    shellTitleVisible: _shellBarTitleFor(_visibleTab) != null,
   );
 
   /// 内容顶部是叠放浮动工具栏（[FushiFloatingChromeOverlay]）的 tab：这些库页
@@ -1843,19 +1967,11 @@ class _HomePageState extends BasePageState<HomePage>
   /// 宽窗 M3E 下 [tab] 的页面名并进库页自己的浮动工具栏行（标题胶囊排在页签
   /// 胶囊左边，[FushiShellInlineTitle]），外壳不再在页签上面叠一整行标题
   /// （2026-10-10「库页顶部只留两行」）。只给确定挂着 [FushiFloatingChromeBar]
-  /// 的 tab：串流接收形态的游戏库是普通页头，仍由外壳画标题。窄窗本来就不显示
-  /// 这条标题（见 [_floatingTitleOverlay]），这里一律 false。
+  /// 的 tab（游戏两种形态都是：Windows 本机库与串流接收端的库页壳）。窄窗本来
+  /// 就不显示这条标题（见 [_floatingTitleOverlay]），这里一律 false。
   bool _shellTitleInline(HomeTab tab) {
     if (isGlassDesign(context) || !_tabHasFloatingChrome(tab)) return false;
-    if (tab == HomeTab.games &&
-        appModelNoUpdate.gamesModuleForm == GamesModuleForm.streamClient) {
-      return false;
-    }
-    return windowSizeClassReal(
-          MediaQuery.sizeOf(context).width,
-          FushiAppUiScale.of(context),
-        ) !=
-        WindowSizeClass.compact;
+    return !_shellWindowCompact();
   }
 
   /// 叠放大标题条的实测高度（取见过的最大值 = 展开高度；收起变矮不改它，
@@ -1931,6 +2047,22 @@ class _HomePageState extends BasePageState<HomePage>
   /// 页面标题，这里是这些页面唯一的页面名。首页（仪表盘）、复习与设置
   /// 自带标题或不需要，返回 null。
   String? _shellTitleFor(HomeTab tab) => homeShellTitleFor(
+    tab,
+    apple: isGlassDesign(context),
+    compact:
+        windowSizeClassReal(
+          MediaQuery.sizeOf(context).width,
+          FushiAppUiScale.of(context),
+        ) ==
+        WindowSizeClass.compact,
+    redesign: shellRedesignActive(context),
+  );
+
+  /// 外壳大标题条**自己画**的页面名（null = 行高为 0）。与 [_shellTitleFor] 的
+  /// 区别：重设计外壳下库页的页头大字已经用外壳下发的页面名画了这一行，外壳
+  /// 条不再画第二遍（BUG：Cupertino 库页页名画两遍，见 [homeShellBarTitleFor]）。
+  /// 「后台任务」入口是否进栏也按这一份判，条不画就退回右下 FAB。
+  String? _shellBarTitleFor(HomeTab tab) => homeShellBarTitleFor(
     tab,
     apple: isGlassDesign(context),
     compact:
@@ -2021,34 +2153,10 @@ class _HomePageState extends BasePageState<HomePage>
     // Apple：「后台任务」入口进外壳大标题行（[_appleBackgroundTasksAction]）——
     // 只在可见 tab 确有那一行时；首页 / 设置 / 复习没有，仍画右下 FAB。
     _shellFabHostedByBar = _backgroundTasksHostedByChrome();
-    // 自绘标题栏（[FushiDesktopTitleBar.isEnabled]，Windows + macOS）已经把当前
-    // tab 名画在应用顶栏上，主导航 rail 始终可见，再叠一层「隐藏 rail + 页头返回
-    // 箭头」的全屏设置就成了没有来源的第二条返回出口。macOS 现在与 Windows 同壳，
-    // 设置页因此也是「rail 常驻 + 二栏 list-detail」（用户拍板：两端一致）。
-    // Linux、横屏 Android 平板仍走原分支：它们的顶栏没有 tab 名、也没有 rail 常驻
-    // 的保证。
-    if (_visibleTab == HomeTab.settings && !FushiDesktopTitleBar.isEnabled) {
-      // 设置标签（全部设计系统）：隐藏 3 图标侧栏，全屏二栏（内部
-      // MaterialSupportingPaneLayout），左上返回箭头切回来源 tab（参考 Mihon
-      // 宽屏设置）。Cupertino 桌面也走这里——叶子控件保持 Cupertino 皮肤，但外壳
-      // 复用同一 Material 架构；返回出口由 SettingsHomePage 的嵌入页头提供
-      // （BUG-009 R2）。否则会退化成「3 图标 rail + 嵌入式 Cupertino 设置」三栏
-      // 混排、无返回出口、且详情面板溢出。
-      return Scaffold(
-        resizeToAvoidBottomInset: false,
-        body: SafeArea(
-          // 这里曾按 BUG-869 预留一条 macOS 标题栏高度：透明标题栏 +
-          // full-size content view 下交通灯不计入 MediaQuery.padding，会压住返回
-          // 箭头。macOS 改用自绘顶栏后交通灯已被隐藏（`main()` 的
-          // `windowButtonVisibility: false`），且这条分支在 macOS 上根本不再命中
-          // （[FushiDesktopTitleBar.isEnabled] 恒真），预留带随之删除。
-          child: FocusTraversalGroup(
-            child: _buildSettingsTabContent(showBackButton: true),
-          ),
-        ),
-      );
-    }
-
+    // 设置 tab 与其它 tab 同壳：主导航 rail 常驻 + 设置自己的二栏 list-detail，
+    // 全平台一致（用户 2026-11-17：平板 / Linux 宽屏也不再「隐藏 rail + 返回箭头 +
+    // 『设置』大标题」的二级界面，统一成 Windows / macOS 的样子）。切走靠 rail，
+    // 系统返回键由 [HomeSettingsTabContent] 的 PopScope 切回来源 tab。
     final List<HomeTab> tabs = _activeTabs();
     final bool reversed = appModel.reverseNavigationBar;
     final List<AdaptiveNavItem> items = _navItems(tabs);
@@ -2431,10 +2539,15 @@ class _HomePageState extends BasePageState<HomePage>
   /// 保活后它自己的表级变更流照常刷新数据；隐藏期间到达的变更推迟到切回时再
   /// 重载（见 `_HomeDashboardPageState._reloadDeferredWhileHidden`）。
   ///
-  /// 其余 tab（词典 / 设置）**故意不保活**、按需重建，以保留其依赖
-  /// `initState` 挂载的语义——尤其 [HomeDictionaryPage] 靠切到查词 tab 时 re-mount
-  /// 消费桌面悬浮字幕的 pending 查词（TODO-376，见 [_onHomeDictionaryTabRequested]）；
-  /// 若把它也保活会不再 re-mount 而漏消费。
+  /// 查词与复习也保活（BUG-4849）：不保活时每次切入整页从零 inflate + 全量
+  /// 布局（实测首帧 16～27 ms），查词页还要每次冷建一个预热用的查词 WebView、切走
+  /// 再销毁（切入后约 0.6 s 处 UI 线程被堵 30～40 ms）。两页原先靠「切入即重挂」
+  /// 做的事改成显式的「切入时做」：[HomeDictionaryPage] 藏着时不消费待查词 / 聚焦
+  /// 请求，变成可见的那一帧之后再消费（与挂载时消费同一条路，TODO-376）；
+  /// [SrsDeckListPage] 切回时刷新已配对主机。
+  ///
+  /// 设置与网页**不保活**、按需重建：设置每次进入从根页开始（来源 tab 的返回出口
+  /// 也按进入时算），网页页首帧本来就在一帧内。
   static const Set<HomeTab> _keepAliveTabs = <HomeTab>{
     HomeTab.home,
     HomeTab.books,
@@ -2443,6 +2556,8 @@ class _HomePageState extends BasePageState<HomePage>
     HomeTab.music,
     HomeTab.games,
     HomeTab.browse,
+    HomeTab.dictionaries,
+    HomeTab.srs,
   };
 
   /// 用户已实际打开过至少一次的保活 tab。惰性构建：没进过的视频/书架 tab 不预建，
@@ -3746,22 +3861,49 @@ class _HomePageState extends BasePageState<HomePage>
     setState(() => _syncTasksActive = next);
   }
 
+  /// app 级互联下载管理器（从已配对设备拉书 / 有声书 / 视频）：它的在跑任务也进
+  /// 「后台任务」入口，离开库页同样看得到下载走到哪一步。
+  late final InterconnectDownloadManager _interconnectDownloads = ref.read(
+    interconnectDownloadManagerProvider,
+  );
+
+  /// 互联下载在不在跑；与 [_syncTasksActive] 同理，外壳只在这一位翻转时重建
+  /// （下载进度一秒多次通知，进度本身由入口自己听）。
+  late bool _interconnectDownloadsActive = hasRunningInterconnectDownloads(
+    _interconnectDownloads,
+  );
+
+  void _onInterconnectDownloadsChanged() {
+    final bool next = hasRunningInterconnectDownloads(_interconnectDownloads);
+    if (!mounted || next == _interconnectDownloadsActive) return;
+    setState(() => _interconnectDownloadsActive = next);
+  }
+
   /// 「后台任务」入口与明细弹层听的全部数据源。
   late final Listenable _backgroundTasksListenable = Listenable.merge(
-    <Listenable>[syncBackgroundTasksListenable, _scrapeTaskTick],
+    <Listenable>[
+      syncBackgroundTasksListenable,
+      _scrapeTaskTick,
+      _interconnectDownloads,
+    ],
   );
 
   /// 有没有任何后台任务在跑（决定入口显隐）。
   bool get _hasBackgroundTasks =>
       _syncTasksActive ||
+      _interconnectDownloadsActive ||
       (_videoScrapeRuntime.currentController?.isBusy ?? false);
 
-  /// 此刻的后台任务：同步类（常规 / 复习）+ 视频源补刮。
+  /// 此刻的后台任务：同步类（常规 / 复习）+ 互联下载 + 视频源补刮。
   List<BackgroundTask> _backgroundTasks() {
     final VideoSourceScrapeTaskController? controller =
         _videoScrapeRuntime.currentController;
     return <BackgroundTask>[
       ...syncBackgroundTasks(),
+      ...interconnectDownloadBackgroundTasks(
+        _interconnectDownloads,
+        onOpen: () => unawaited(openInterconnectDownloadTasksPage(context)),
+      ),
       if (controller != null && controller.isBusy)
         _scrapeBackgroundTask(controller),
     ];
@@ -3855,17 +3997,35 @@ class _HomePageState extends BasePageState<HomePage>
     Future<SourceScrapeReport> task,
   ) => _videoScrapeRuntime.observe(task);
 
+  /// 用户手动发起的刮削被刮削门挡回（资料正在清理）时补一条提示：任务根本没开始，
+  /// 任务面板里不会出现它，只发「已在后台开始」等于什么都没说。其余失败照旧只进
+  /// 错误日志（[_observeVideoSourceScrape]）、在任务面板里看。
+  void _reportVideoScrapeRejected(Future<SourceScrapeReport> task) {
+    unawaited(
+      task.then<void>(
+        (SourceScrapeReport _) {},
+        onError: (Object error) {
+          final String? text = videoScrapeMaintenanceText(error);
+          if (text == null) return;
+          FushiToast.show(msg: text, severity: ToastSeverity.warning);
+        },
+      ),
+    );
+  }
+
   Future<void> _scrapeVideoSource(SourceLibraryRow source) async {
     final ({bool proceed, bool grant}) overwrite =
         await _confirmProtectedSidecarOverwrite(<SourceLibraryRow>[source]);
     if (!mounted || !overwrite.proceed) return;
     final VideoSourceScrapeTaskController controller =
         _videoSourceScrapeController;
-    _observeVideoSourceScrape(
-      controller.scrapeSource(
-        source,
-        interactive: true,
-        allowProtectedOverwrite: overwrite.grant,
+    _reportVideoScrapeRejected(
+      _observeVideoSourceScrape(
+        controller.scrapeSource(
+          source,
+          interactive: true,
+          allowProtectedOverwrite: overwrite.grant,
+        ),
       ),
     );
     if (!mounted) return;
@@ -3891,11 +4051,13 @@ class _HomePageState extends BasePageState<HomePage>
     if (!mounted || !overwrite.proceed) return;
     final VideoSourceScrapeTaskController controller =
         _videoSourceScrapeController;
-    _observeVideoSourceScrape(
-      controller.scrapeAllSources(
-        localSources,
-        interactive: true,
-        allowProtectedOverwrite: overwrite.grant,
+    _reportVideoScrapeRejected(
+      _observeVideoSourceScrape(
+        controller.scrapeAllSources(
+          localSources,
+          interactive: true,
+          allowProtectedOverwrite: overwrite.grant,
+        ),
       ),
     );
     if (!mounted) return;
@@ -3949,6 +4111,42 @@ class _HomePageState extends BasePageState<HomePage>
     return (proceed: confirmed == true, grant: confirmed == true);
   }
 
+  /// 自动扫描的候选：开着开关、所属模块开着；库处于「已迁移只读」时一个都不扫。
+  Future<List<SourceLibraryRow>> _loadAutoScanSources() async {
+    if (appModelNoUpdate.isMigrationReadonly) return const <SourceLibraryRow>[];
+    final ModuleVisibility visibility = appModelNoUpdate.moduleVisibility;
+    return autoScanEligibleSources(
+      await appModelNoUpdate.database.getAutoScanMediaSources(),
+      readonly: appModelNoUpdate.isMigrationReadonly,
+      isModuleEnabled: visibility.isEnabled,
+    );
+  }
+
+  /// 自动扫描一个来源，收尾与来源页「重新扫描」一致；分支（视频门被占延后、只在新增
+  /// 了视频时串联「扫描后自动刮削」）见 [runAutoSourceScan]。
+  Future<SourceAutoScanOutcome> _runAutoSourceScan(SourceLibraryRow source) {
+    final SourceLibraryScanner scanner = SourceLibraryScanner(
+      appModelNoUpdate.database,
+      transcribeAudiobook: source.mediaKind == SourceLibraryKind.book.dbValue
+          ? appModelNoUpdate.folderImportTranscribePort
+          : null,
+    );
+    return runAutoSourceScan(
+      source,
+      scan: () => scanner.scan(source),
+      tryRunVideoScan: _videoSourceScrapeController.tryRunSourceScan,
+      onVideoScanCreated: (SourceScanSummary summary) async {
+        final SourceLibraryRow updated =
+            await appModelNoUpdate.database.getMediaSourceById(source.id) ??
+            source;
+        await _onVideoSourceScanCompleted(updated, summary);
+      },
+      onVideoScanNoNew: () {
+        if (mounted) _notifyVideoLibraryChanged();
+      },
+    );
+  }
+
   Future<void> _onVideoSourceScanCompleted(
     SourceLibraryRow source,
     SourceScanSummary summary,
@@ -3988,55 +4186,72 @@ class _HomePageState extends BasePageState<HomePage>
     _hiddenTabContent.removeWhere(
       (HomeTab t, Widget _) => !_visitedKeepAliveTabs.contains(t),
     );
-    return Stack(
-      fit: StackFit.expand,
-      children: <Widget>[
-        // 保活 tab：一旦访问过就常驻树中，仅用 Offstage 隐藏未选中者（State 不销毁）。
-        // 隐藏时同步关掉 TickerMode，令其 AnimationController 停走、不与可见 tab 抢帧。
-        for (final HomeTab tab in _keepAliveTabs)
-          if (_visitedKeepAliveTabs.contains(tab))
-            Offstage(
-              key: ValueKey<HomeTab>(tab),
-              offstage: visible != tab,
-              child: TickerMode(
-                enabled: visible == tab,
-                child: DropSurfaceScope(
-                  // Offstage 只关 Flutter 的 hitTest，不影响 desktop_drop——它按
-                  // 全局广播 + 各自 paintBounds 判定，而隐藏的保活 tab 仍以全屏
-                  // 约束布局，于是**每个访问过的 tab 都会收到同一次拖放**。判据与
-                  // 上面 offstage 用的是同一个 `_visibleTab`，保证「看得见的那个」
-                  // 与「接拖放的那个」永远是同一个。
-                  isActive: () => _visibleTab == tab,
-                  // 隐藏 tab 不参与焦点遍历与系统返回（HBK-AUDIT-017）；库页壳里的
-                  // 视图可见性与它取与，外层 tab 藏起时里面的「当前」视图也不拦
-                  // 返回、不持焦点。「切 tab 同时聚焦搜索框」只发生在查词 tab
-                  // （_selectTabFromNav），它不是保活 tab、切过去才挂载并在挂载后
-                  // 消费聚焦请求，不经过这一层。
-                  child: SectionVisibilityScope(
-                    visible: visible == tab,
-                    // 藏起的保活 tab 在 rail 展开 / 收起过渡中钉宽、不逐帧重排；
-                    // 可见那一页照常重排（BUG-3447）。
-                    child: NavRailSyncedContent(
-                      hidden: visible != tab,
-                      child: _keepAliveTabContent(tab, visible: visible == tab),
+    // 首页头像外圈画同步状态（设计稿 H3）：数据源与明细入口经这一层往下广播，
+    // 首页因此不再挂右下的「后台任务」FAB（[homeBackgroundTasksOnAvatar]）。
+    return HomeBackgroundTasksScope(
+      listenable: _backgroundTasksListenable,
+      tasks: _backgroundTasks,
+      onOpen: _openBackgroundTasksFromAvatar,
+      child: Stack(
+        fit: StackFit.expand,
+        children: <Widget>[
+          // 保活 tab：一旦访问过就常驻树中，仅用 Offstage 隐藏未选中者（State 不销毁）。
+          // 隐藏时同步关掉 TickerMode，令其 AnimationController 停走、不与可见 tab 抢帧。
+          for (final HomeTab tab in _keepAliveTabs)
+            if (_visitedKeepAliveTabs.contains(tab))
+              Offstage(
+                key: ValueKey<HomeTab>(tab),
+                offstage: visible != tab,
+                child: TickerMode(
+                  enabled: visible == tab,
+                  child: DropSurfaceScope(
+                    // Offstage 只关 Flutter 的 hitTest，不影响 desktop_drop——它按
+                    // 全局广播 + 各自 paintBounds 判定，而隐藏的保活 tab 仍以全屏
+                    // 约束布局，于是**每个访问过的 tab 都会收到同一次拖放**。判据与
+                    // 上面 offstage 用的是同一个 `_visibleTab`，保证「看得见的那个」
+                    // 与「接拖放的那个」永远是同一个。
+                    isActive: () => _visibleTab == tab,
+                    // 隐藏 tab 不参与焦点遍历与系统返回（HBK-AUDIT-017）；库页壳里的
+                    // 视图可见性与它取与，外层 tab 藏起时里面的「当前」视图也不拦
+                    // 返回、不持焦点。「切 tab 同时聚焦搜索框」只发生在查词 tab
+                    // （_selectTabFromNav）：它藏着时不消费聚焦请求，等这一层按新的
+                    // 可见性重建之后（后帧）再消费，焦点才不会被 ExcludeFocus 吞掉。
+                    child: SectionVisibilityScope(
+                      visible: visible == tab,
+                      // 藏起的保活 tab 在 rail 展开 / 收起过渡中钉宽、不逐帧重排；
+                      // 可见那一页照常重排（BUG-3447）。
+                      child: NavRailSyncedContent(
+                        hidden: visible != tab,
+                        child: _keepAliveTabContent(
+                          tab,
+                          visible: visible == tab,
+                        ),
+                      ),
                     ),
                   ),
                 ),
               ),
+          // 非保活 tab：仅在选中时构建、切走即销毁，保留其 initState 挂载语义。
+          if (!_keepAliveTabs.contains(visible))
+            KeyedSubtree(
+              key: ValueKey<HomeTab>(visible),
+              child: _buildTabContent(visible),
             ),
-        // 非保活 tab：仅在选中时构建、切走即销毁，保留其 initState 挂载语义。
-        if (!_keepAliveTabs.contains(visible))
-          KeyedSubtree(
-            key: ValueKey<HomeTab>(visible),
-            child: _buildTabContent(visible),
-          ),
-        // 「后台任务」入口：同步 / 复习同步 / 补刮共用一颗 FAB，外圈一项任务一段
-        // 进度弧（替代此前各库页顶部的两行同步横幅，2026-11-03）。
-        if (_hasBackgroundTasks && !_shellFabHostedByBar)
-          _buildBackgroundTasksFab(),
-      ],
+          // 「后台任务」入口：同步 / 复习同步 / 补刮共用一颗 FAB，外圈一项任务一段
+          // 进度弧（替代此前各库页顶部的两行同步横幅，2026-11-03）。首页由头像
+          // 外圈承载，不挂这颗（它会盖住首页的统计 / 复习卡，H3）。
+          if (_hasBackgroundTasks &&
+              !_shellFabHostedByBar &&
+              !homeBackgroundTasksOnAvatar(visible))
+            _buildBackgroundTasksFab(),
+        ],
+      ),
     );
   }
+
+  /// 首页头像点开的后台任务明细（与 FAB 同一个弹层）。字段引用稳定，
+  /// [HomeBackgroundTasksScope] 不因每次 build 换闭包而通知下游。
+  void _openBackgroundTasksFromAvatar() => unawaited(_openBackgroundTasks());
 
   /// 「后台任务」入口的 FAB 形态（外壳的栏没承载时）。
   ///
@@ -4217,60 +4432,60 @@ class _HomePageState extends BasePageState<HomePage>
       ),
       HomeTab.dictionaries => HomeDictionaryPage(focusSignal: _dictFocusSignal),
       // 非 Windows 的 games 模块是串流接收端：远端主机游戏库 + 远程启动串流；
-      // Windows 仍是本机 galgame 库。形态判据只在 [GamesModuleForm.on]。
+      // Windows 仍是本机 galgame 库。形态判据只在 [GamesModuleForm.on]。两种
+      // 形态都是库页壳（浮动工具栏 / 页头大字），页面名由外壳下发、壳自己画。
       HomeTab.games =>
         appModelNoUpdate.gamesModuleForm == GamesModuleForm.streamClient
-            // 非 Windows 桌面另挂外部 texthooker 台词页（没有 hook，只看 WS 来的
-            // 台词）；手机端维持纯串流库。
-            ? (appModelNoUpdate.gamesOffersExternalTexthooker
-                  ? GameStreamClientPage(
-                      streamBuilder:
-                          (BuildContext context, Widget navigation) =>
-                              GameStreamLibraryPage(
-                                services: _gameStreamLibraryServices,
-                                navigation: navigation,
-                              ),
-                    )
-                  : GameStreamLibraryPage(services: _gameStreamLibraryServices))
+            // 非 Windows 桌面另挂外部 texthooker 台词视图（没有 hook，只看 WS 来的
+            // 台词）；手机 / 平板只有串流库。
+            ? GameStreamClientPage(
+                offersTexthooker:
+                    appModelNoUpdate.gamesOffersExternalTexthooker,
+                streamBuilder: (BuildContext context, Widget navigation) =>
+                    GameStreamLibraryPage(
+                      services: _gameStreamLibraryServices,
+                      navigation: navigation,
+                    ),
+              )
             : const HomeGamePage(),
       HomeTab.web => const WebHubPage(),
       HomeTab.srs => const SrsDeckListPage(),
       HomeTab.settings =>
         // 设置 tab 走侧栏/底栏切回，不显示页头返回箭头；但仍需 PopScope 拦截系统
         // 返回键（否则冒泡到顶层 PopScope = 退出 app，见 BUG-236）。
-        _buildSettingsTabContent(showBackButton: false),
+        _buildSettingsTabContent(),
       HomeTab.books => const HomeReaderPage(),
       HomeTab.manga => const MangaLibraryPage(),
       HomeTab.music => const MusicLibraryPage(),
     };
-    return FushiShellTitleScope(
-      title: _shellTitleFor(tab),
-      actionsSlot: _shellActions,
-      // 页头大字旁的徽标与侧栏当前项用同一枚模块多边形。
-      child: FushiMastheadBadgeScope(
-        shape: homeNavRailShapeFor(tab),
-        child: FushiShellInlineTitle(
-          enabled: _shellTitleInline(tab),
-          child: PrimaryScrollController(
-            controller: _tabScrollControllers.putIfAbsent(
-              tab,
-              ScrollController.new,
+    return FushiFloatingChromeInset(
+      top: _shellTitleInsetFor(tab),
+      child: FushiShellTitleScope(
+        title: _shellTitleFor(tab),
+        actionsSlot: _shellActions,
+        // 页头大字旁的徽标与侧栏当前项用同一枚模块多边形。
+        child: FushiMastheadBadgeScope(
+          shape: homeNavRailShapeFor(tab),
+          child: FushiShellInlineTitle(
+            enabled: _shellTitleInline(tab),
+            child: PrimaryScrollController(
+              controller: _tabScrollControllers.putIfAbsent(
+                tab,
+                ScrollController.new,
+              ),
+              automaticallyInheritForPlatforms: TargetPlatform.values.toSet(),
+              child: content,
             ),
-            automaticallyInheritForPlatforms: TargetPlatform.values.toSet(),
-            child: content,
           ),
         ),
       ),
     );
   }
 
-  /// 设置 tab 的内容外壳。[showBackButton] 为 true 时（宽屏隐藏 3 图标侧栏的全屏
-  /// 设置）显示页头左上返回箭头；为 false 时（移动底栏 / 宽屏侧栏在侧 / Windows 自绘
-  /// 标题栏常驻 rail，可直接切回）不显示箭头，系统返回手势仍由
-  /// [HomeSettingsTabContent] 内的 PopScope 拦截。
-  Widget _buildSettingsTabContent({required bool showBackButton}) {
+  /// 设置 tab 的内容外壳：底栏 / rail 常驻、可直接切回，不画返回箭头；系统返回
+  /// 手势由 [HomeSettingsTabContent] 内的 PopScope 拦截。
+  Widget _buildSettingsTabContent() {
     return HomeSettingsTabContent(
-      showBackButton: showBackButton,
       onReturnToPreviousTab: () => _selectTab(_previousVisibleTab),
     );
   }
@@ -4398,15 +4613,11 @@ class HomeSettingsTabContent extends StatelessWidget {
   const HomeSettingsTabContent({
     super.key,
     required this.onReturnToPreviousTab,
-    this.showBackButton = false,
     this.child,
   });
 
   /// 系统返回键被拦截后调用：切回进入设置前的来源 tab。
   final VoidCallback onReturnToPreviousTab;
-
-  /// 是否在设置页头左侧显示返回箭头（宽屏隐藏图标侧栏的全屏设置场景）。
-  final bool showBackButton;
 
   /// 设置内容；为空时回落到默认的 [FushiSettingsContent]。
   final Widget? child;
@@ -4419,11 +4630,7 @@ class HomeSettingsTabContent extends StatelessWidget {
         if (didPop) return;
         onReturnToPreviousTab();
       },
-      child:
-          child ??
-          FushiSettingsContent(
-            onBack: showBackButton ? onReturnToPreviousTab : null,
-          ),
+      child: child ?? const FushiSettingsContent(),
     );
   }
 }
@@ -4611,6 +4818,33 @@ String? homeShellTitleFor(
     // 复习页自己画页头（标题 + 牌组动作）。
     HomeTab.home || HomeTab.srs || HomeTab.settings => null,
   };
+}
+
+/// 外壳大标题条（[FushiShellLargeTitleBar]）**自己画**的页面名；null = 行高为 0。
+///
+/// [homeShellTitleFor] 是外壳给 tab 的页面名，经 `FushiShellTitleScope` 下发：
+/// 重设计外壳（[redesign]）下库页根 overlay 挂着 `masthead: true`，页头大字
+/// 正是拿这个名字画页名行（`FushiFloatingChromeBar._buildMasthead`）。此时外壳
+/// 条再画一遍就是同一个页名两行——MD3 因库页标题本来就不按行摆（窄窗不叠、宽窗
+/// 并进工具栏行）没露出来，Apple 的外壳条恒在内容上方按行画，于是 Cupertino 下
+/// 「Video」小字 + 「Video」大字（反馈 4s8SaBMfyY）。页面名照常下发，只有外壳
+/// 条不画。
+@visibleForTesting
+String? homeShellBarTitleFor(
+  HomeTab tab, {
+  required bool apple,
+  required bool compact,
+  bool redesign = false,
+}) {
+  final bool mastheadOwnsTitle =
+      redesign && _HomePageState._tabHasFloatingChrome(tab);
+  if (mastheadOwnsTitle) return null;
+  return homeShellTitleFor(
+    tab,
+    apple: apple,
+    compact: compact,
+    redesign: redesign,
+  );
 }
 
 /// 「后台任务」入口（同步 / 复习同步 / 补刮）是否由外壳的栏承载（承载时首页

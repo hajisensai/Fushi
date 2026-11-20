@@ -27,6 +27,9 @@ Last-Modified / 上次成功核对 / 上次尝试 / 规则行数 / 内容哈希 
 `lists/<id>.txt`（列表原始字节）、`engine/<key>.dat`（序列化引擎）、`engine/<key>.cb.json`（WebKit
 规则，只在 iOS / macOS 生成）。`key` = 库版本 + 每份在用列表的 id / 长度 / 内容哈希。过期 4 天。
 
+暖机：`load_cached()`（后台 isolate，不联网）先把磁盘缓存对应的引擎装进内存——打开核心时引擎是空的，
+不暖机的话联网刷新过期列表那几秒里打开的页面整页不拦。Dart 侧每次同步前先调它。
+
 同步流程：`begin_sync(force)` 给出要联网取的清单（带条件请求头）→ Dart 用全局代理取回**原始字节** →
 逐份 `ingest(id, status, body, etag, last_modified, error)`（304 续期、200 校验不是 HTML 后落盘、
 失败按有无缓存记 staleCache / missing）→ `finish_sync()`（后台 isolate；键没变什么也不做，有序列化缓存就
@@ -37,6 +40,7 @@ Last-Modified / 上次成功核对 / 上次尝试 / 规则行数 / 内容哈希 
 | `fwc_adblock_open(dir, len, want_content_blocking) -> core*` / `fwc_adblock_close` | 打开 / 关闭（open 只读 `state.json`，很快） |
 | `fwc_adblock_catalog(&len)` | 内置列表目录 JSON（不需要句柄） |
 | `fwc_adblock_snapshot` / `set_enabled` / `set_list_enabled` / `set_allowlist` | 快照 / 设置命令，都返回快照 JSON |
+| `fwc_adblock_load_cached(core, &len)` | 暖机：不联网，按现有缓存装引擎（反序列化 / 编译，慢），返回快照 |
 | `fwc_adblock_begin_sync(core, force, &len)` | 取数清单 `{"run","fetch":[{"id","url","etag","lastModified"}]}` |
 | `fwc_adblock_ingest(core, id, status, body, …)` | 交回一份列表的原始字节与响应头 |
 | `fwc_adblock_finish_sync(core, &len)` | 收尾（可能编译，慢），返回快照 |

@@ -25,9 +25,11 @@ class FushiTlsIdentity {
 /// 生成自签 EC P-256 证书 + PKCS#8 私钥 PEM 的纯函数封装。
 ///
 /// DER 在这里手工拼，签名走 native/fushi_compute（`ffc_crypto_p256_sign_sha256`，RFC 6979
-/// 确定性 k）。字节布局与原 basic_utils 5.7.0（`X509Utils.generateSelfSignedCertificate` /
-/// `CryptoUtils.encodePrivateEcdsaKeyToPkcs8`）逐字节一致——包括它的非标准细节：签名算法
-/// 带 `NULL` 参数、IP 也编码成 dNSName、CN 用 PrintableString、证书 PEM 行间是 `\r\n`。
+/// 确定性 k）。布局沿用原 basic_utils 5.7.0（`X509Utils.generateSelfSignedCertificate` /
+/// `CryptoUtils.encodePrivateEcdsaKeyToPkcs8`）：CN 用 PrintableString、证书 PEM 行间是 `\r\n`。
+/// 它的两处违规已改正：ecdsa-with-SHA256 的 AlgorithmIdentifier **不带参数**（RFC 5758
+/// §3.2；带 `NULL` 时 Chrome 的证书解析器直接拒收，WebUI 报不可绕过的
+/// `ERR_CERT_INVALID`），IP 字面量写成 iPAddress 而不是 dNSName（RFC 5280 §4.2.1.6）。
 /// 固定向量见 packages/fushi_compute/test/crypto/crypto_vectors_v2.json。
 class FushiSelfSignedCertGenerator {
   FushiSelfSignedCertGenerator._();
@@ -35,9 +37,8 @@ class FushiSelfSignedCertGenerator {
   /// 生成自签 EC P-256 证书 + 私钥 PEM。
   ///
   /// * [commonName]：写进 CN 的设备标识（deviceId / 设备名）。
-  /// * [sanIpAddresses]：写进 subjectAltName 的所有本机 IPv4（应含 127.0.0.1）。
-  ///   与旧实现一样把 SAN 一律编码为 dNSName，IP 串只为兼容/调试展示，真正的
-  ///   身份校验走 client 侧指纹钉扎，不依赖 SAN/hostname 匹配。
+  /// * [sanIpAddresses]：写进 subjectAltName 的所有本机 IP（应含 127.0.0.1），编码为
+  ///   iPAddress。互联 client 的身份校验走指纹钉扎、不看 SAN；SAN 给浏览器开 WebUI 用。
   /// * [validity]：证书有效期，默认 30 年（按用户决策；指纹钉扎不依赖到期）。
   static ({String certificatePem, String privateKeyPem}) generate({
     required String commonName,
@@ -103,7 +104,7 @@ class FushiSelfSignedCertGenerator {
       point,
     ]);
     final Uint8List sanList = _der(0x30, <List<int>>[
-      for (final String san in sans) _der(0x82, <List<int>>[ascii.encode(san)]),
+      for (final String san in sans) _generalName(san),
     ]);
     final Uint8List tbs = _der(0x30, <List<int>>[
       _der(0xa0, <List<int>>[
@@ -174,7 +175,7 @@ class FushiSelfSignedCertGenerator {
   }
 
   // OID 2.5.4.3 / 1.2.840.10045.2.1 / 1.2.840.10045.3.1.7 / 2.5.29.17，以及
-  // ecdsa-with-SHA256（1.2.840.10045.4.3.2）后跟 NULL 参数的 AlgorithmIdentifier。
+  // ecdsa-with-SHA256（1.2.840.10045.4.3.2）的 AlgorithmIdentifier（无参数，RFC 5758）。
   static const List<int> _oidCommonName = <int>[0x06, 0x03, 0x55, 0x04, 0x03];
   static const List<int> _oidEcPublicKey = <int>[
     0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, //
@@ -186,9 +187,16 @@ class FushiSelfSignedCertGenerator {
     0x06, 0x03, 0x55, 0x1d, 0x11, //
   ];
   static const List<int> _sigAlg = <int>[
-    0x30, 0x0c, 0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x04, 0x03, 0x02, //
-    0x05, 0x00,
+    0x30, 0x0a, 0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x04, 0x03, 0x02, //
   ];
+
+  /// SAN 的一条 GeneralName：IP 字面量 → `[7] iPAddress`（网络序原始字节），
+  /// 其余 → `[2] dNSName`。
+  static Uint8List _generalName(String san) {
+    final InternetAddress? ip = InternetAddress.tryParse(san);
+    if (ip != null) return _der(0x87, <List<int>>[ip.rawAddress]);
+    return _der(0x82, <List<int>>[ascii.encode(san)]);
+  }
 
   /// DER TLV：[tag] + 定长长度 + [parts] 拼接。
   static Uint8List _der(int tag, List<List<int>> parts) {
@@ -284,7 +292,30 @@ class FushiTlsIdentityStore {
   }
 
   /// 强制重新生成（用户重置证书时调用，会使旧指纹钉扎失效）。
+  ///
+  /// 调用方：`fushi_server admin reset-tls`（BUG-4906：旧版生成的证书 Chrome 拒收，
+  /// 已落盘的不自动重签——那会让所有已配对设备的指纹钉扎静默失效）。
   Future<FushiTlsIdentity> regenerate() => _generateAndPersist();
+
+  /// BUG-4906 之前生成的证书：签名算法 ecdsa-with-SHA256 带 `NULL` 参数
+  /// （`30 0c 06 08 2a86 48ce 3d04 0302 05 00`），Chrome 直接拒收（不可绕过的
+  /// `ERR_CERT_INVALID`），同批证书的 IP SAN 也写成了 dNSName。互联 client 走指纹
+  /// 钉扎不受影响，只有浏览器开 WebUI 时需要重签。
+  static bool isChromeRejectedLegacyCertificate(String certificatePem) {
+    final List<int> der = _pemToDer(certificatePem);
+    const List<int> legacy = <int>[
+      0x30, 0x0c, 0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, //
+      0x3d, 0x04, 0x03, 0x02, 0x05, 0x00,
+    ];
+    outer:
+    for (int i = 0; i + legacy.length <= der.length; i++) {
+      for (int j = 0; j < legacy.length; j++) {
+        if (der[i + j] != legacy[j]) continue outer;
+      }
+      return true;
+    }
+    return false;
+  }
 
   Future<FushiTlsIdentity> _generateAndPersist() async {
     await Directory(_tlsDir).create(recursive: true);

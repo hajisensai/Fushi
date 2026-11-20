@@ -597,6 +597,112 @@ void main() {
       expect(_hits(pms, '/library/streams/9'), hasLength(1));
     });
 
+    test('一次起播内条目详情只取一次：重开入口 → 取流 → 下默认字幕（video-7）', () async {
+      final _FakePms pms = _FakePms();
+      final PlexVideoClient c = _client(pms);
+      final Directory dir = Directory.systemTemp.createTempSync('plex_sub_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+
+      // buildMediaServerLaunch 的那一次。
+      await c.itemDetail('ep-9', forLaunch: true);
+      await c.remoteVideoStreamUrls('ep-9');
+      // 假服务器对字幕文件回 404；这里只数条目详情的请求次数。
+      await expectLater(
+        c.getRemoteVideoSubtitle('ep-9', File('${dir.path}/a.srt')),
+        throwsA(isA<PlexApiException>()),
+      );
+      expect(_hits(pms, '/library/streams/9'), hasLength(1));
+      expect(
+        _hits(pms, '/library/metadata/ep-9'),
+        hasLength(1),
+        reason: '三处要的是同一份 /library/metadata/{id}',
+      );
+
+      // 断点要服务器最新值（LWW），不走复用。
+      await c.remoteVideoPosition('ep-9');
+      expect(_hits(pms, '/library/metadata/ep-9'), hasLength(2));
+
+      // 重开入口再来一次（下一次起播）：要最新断点，重新取。
+      await c.itemDetail('ep-9');
+      expect(_hits(pms, '/library/metadata/ep-9'), hasLength(3));
+    });
+
+    test('没经过重开入口直接取流：取流那一次留给随后的取字幕', () async {
+      final _FakePms pms = _FakePms();
+      final PlexVideoClient c = _client(pms);
+      final Directory dir = Directory.systemTemp.createTempSync('plex_sub_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      await c.remoteVideoStreamUrls('ep-9');
+      await expectLater(
+        c.getRemoteVideoSubtitle('ep-9', File('${dir.path}/a.srt')),
+        throwsA(isA<PlexApiException>()),
+      );
+      expect(_hits(pms, '/library/metadata/ep-9'), hasLength(1));
+    });
+
+    test('重开入口取详情失败：随后的取流立刻抛同一个错，不再发第二次请求；'
+        '之后重试照常重新请求（gap-remote-1）', () async {
+      final _FakePms pms = _FakePms()..failing.add('/library/metadata/ep-9');
+      final PlexVideoClient c = _client(pms);
+      Object? launchError;
+      try {
+        await c.itemDetail('ep-9', forLaunch: true);
+      } on PlexApiException catch (e) {
+        launchError = e;
+      }
+      expect(launchError, isNotNull);
+
+      Object? streamError;
+      try {
+        await c.remoteVideoStreamUrls('ep-9');
+      } on PlexApiException catch (e) {
+        streamError = e;
+      }
+      expect(streamError, same(launchError), reason: '不重新请求，直接是那一次的错');
+      expect(_hits(pms, '/library/metadata/ep-9'), hasLength(1));
+
+      // 记下的失败只交出去一次：用户重试时服务器已恢复，照常取到。
+      pms.failing.clear();
+      final RemoteVideoStreamUrls urls = await c.remoteVideoStreamUrls('ep-9');
+      expect(urls.streamUrl, contains('/library/parts/77/'));
+      expect(_hits(pms, '/library/metadata/ep-9'), hasLength(2));
+    });
+
+    test('详情页取详情失败（不是重开入口）：随后点播放照常重新请求；'
+        '成功的那份照常留给取流', () async {
+      final _FakePms pms = _FakePms()..failing.add('/library/metadata/ep-9');
+      final PlexVideoClient c = _client(pms);
+      await expectLater(c.itemDetail('ep-9'), throwsA(isA<PlexApiException>()));
+      // 服务器恢复了：取流不能拿着那次旧错直接失败。
+      pms.failing.clear();
+      final RemoteVideoStreamUrls urls = await c.remoteVideoStreamUrls('ep-9');
+      expect(urls.streamUrl, contains('/library/parts/77/'));
+      expect(_hits(pms, '/library/metadata/ep-9'), hasLength(2));
+
+      await c.itemDetail('ep-9');
+      await c.remoteVideoStreamUrls('ep-9');
+      expect(_hits(pms, '/library/metadata/ep-9'), hasLength(3));
+    });
+
+    test('起播用的客户端就是浏览器本身（短复用靠同一个实例接上）', () {
+      final PlexVideoClient c = _client(_FakePms());
+      expect(identical(c.playbackClient, c), isTrue);
+    });
+
+    test('取流自己请求失败不留记录：紧接着重试会重新请求', () async {
+      final _FakePms pms = _FakePms()..failing.add('/library/metadata/ep-9');
+      final PlexVideoClient c = _client(pms);
+      await expectLater(
+        c.remoteVideoStreamUrls('ep-9'),
+        throwsA(isA<PlexApiException>()),
+      );
+      await expectLater(
+        c.remoteVideoStreamUrls('ep-9'),
+        throwsA(isA<PlexApiException>()),
+      );
+      expect(_hits(pms, '/library/metadata/ep-9'), hasLength(2));
+    });
+
     test('集的剧海报：有 grandparentThumb 才借剧，否则回落集自身', () {
       final MediaServerItem withShowThumb = PlexVideoClient.mediaServerItemFrom(
         PlexApi.parseMetadata(<String, Object?>{

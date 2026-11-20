@@ -48,6 +48,12 @@ void main() {
     '  // 运行中换翻页动画设置',
   );
   final String pan = section('  function _clampPan(){', '  // 方向键平移');
+  // 按显示尺寸取图（BUG-4658）：落位 / 画布刷新会调 `_scheduleRefit`，一并抽真实实现
+  // （默认 FIT_IMAGES = false，与生产默认一致，直接返回）。
+  final String fit = section(
+    '  var FIT_IMAGES = ',
+    '  function _layoutSource(page){',
+  );
   final String start = section(
     '  var sx = 0, sy = 0, st = 0, spx = 0, has = false;',
     '  // ── 触屏双指捏合缩放 ──',
@@ -108,6 +114,7 @@ function _bridge(){ return {callHandler:(n,d)=>{
 function _onTap(){ taps++; }
 let now=1000;
 Date.now=()=>now;
+$fit
 $translate
 $pan
 $start

@@ -1,6 +1,6 @@
 // 写路径第 14 步的成本验收：发命令前的 Drift 预读、同一批笔记的重复物化、彻底清除的逐条命令。
 //
-// 量的是每种操作经 Drift 执行器送进内核的语句数（`SrsInlineExecutor.debugStatements`，第 13 步之后只可能是只读
+// 量的是每种操作经 Drift 执行器送进内核的语句数（`srsDebugReadCommands`，第 13 步之后只可能是只读
 // 查询）与内核命令数（`debugCoreCommands`）。改动前的数字（第 13 步的代码上跑同一份测试，Mac，2026-11-12）：
 //
 // | 操作 | 改前（语句, 命令） | 改后 |
@@ -21,7 +21,6 @@ import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
-import 'package:fushi_engine/srs/srs_database_executor.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
@@ -30,6 +29,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import 'support/srs_bulk_fixture.dart';
+import 'package:fushi_engine/srs/srs_reads.dart';
 
 typedef _Cost = ({int statements, int core});
 
@@ -40,10 +40,10 @@ Future<_Cost> _cost(
   Future<void> Function() op,
 ) async {
   final int core = store.debugCoreCommands;
-  SrsInlineExecutor.debugStatements = 0;
+  srsDebugReadCommands = 0;
   await op();
   final _Cost cost = (
-    statements: SrsInlineExecutor.debugStatements,
+    statements: srsDebugReadCommands,
     core: store.debugCoreCommands - core,
   );
   // ignore: avoid_print
@@ -57,9 +57,11 @@ List<Object?> _signals(SrsDbStore s) => <Object?>[
   s.deckTreeKey,
   s.rwkvScoresKey,
   s.statsFingerprint,
-  s.core.debugSelectRaw('SELECT COUNT(*) AS n FROM sync2_ops').single['n'],
+  // 新代真相表 `ops` 的全部操作与其中的修改记录（种类 2 = Edit），走测试专用的原始通道（这个函数是同步的，
+  // `status` 是异步命令）。协议 3 数的是 `sync2_ops` 与 `srs_field_edits`。
+  s.core.debugSelectRaw('SELECT COUNT(*) AS n FROM ops').single['n'],
   s.core
-      .debugSelectRaw('SELECT COUNT(*) AS n FROM srs_field_edits')
+      .debugSelectRaw('SELECT COUNT(*) AS n FROM ops WHERE kind = 2')
       .single['n'],
 ];
 
@@ -296,7 +298,7 @@ void main() {
       final List<String> ids = <String>[];
       for (int i = 0; i < n; i++) {
         final String guid = 'purge-$tag-$i';
-        ids.add(SrsIds.note(kBulkUid, guid));
+        ids.add(SrsKernelIds(kBulkUid).note(guid));
         drafts.addAll(
           s.newNoteDrafts(
             noteTypeId: basic.id,
@@ -312,16 +314,23 @@ void main() {
       return ids;
     }
 
+    // 被清除的实体数：新代清除索引 `purge_ix`（native/fushi_fsrs/src/store/gen4/schema.rs，一个实体一条或多条
+    // 清除操作），协议 3 是 `sync2_purged`。
     int purged() =>
         s.core
-                .debugSelectRaw('SELECT COUNT(*) AS n FROM sync2_purged')
+                .debugSelectRaw('SELECT COUNT(DISTINCT ent) AS n FROM purge_ix')
                 .single['n']!
             as int;
+
+    // 本机写过的操作条数（内核 `status` 的 `nextSeq` − 1，本机日志的长度）。不数 `status` 的 `ops`（日志里还带内容的
+    // 操作行数）：清除在同一事务里把被清除实体更早的操作落成空洞，`ops` 反而变少（srs_profile_ownership_test 同口径）。
+    Future<int> written() async =>
+        ((await s.sync2Status())['nextSeq']! as int) - 1;
 
     final List<String> five = await make(5, 'a');
     final List<String> many = await make(205, 'b');
     final Map<String, _Cost> costs = <String, _Cost>{};
-    final int opsBefore = (await s.sync2Status())['ops']! as int;
+    final int opsBefore = await written();
     // 空的一批：一条命令都不发。
     expect(
       await _cost(s, 'purge(0)', () => srsPurgeNotesNow(s, const <String>[])),
@@ -334,7 +343,7 @@ void main() {
     expect(report.notes, 5);
     expect(purged(), 5);
     expect(
-      (await s.sync2Status())['ops'],
+      await written(),
       opsBefore + 10,
       reason: '每条笔记一条删除 + 一条 Purge，与逐条发相同',
     );
@@ -343,7 +352,7 @@ void main() {
     });
     expect(report.notes, 205);
     expect(purged(), 210);
-    expect((await s.sync2Status())['ops'], opsBefore + 420);
+    expect(await written(), opsBefore + 420);
 
     expect(costs, <String, _Cost>{
       'purge(5)': (statements: 0, core: 1),

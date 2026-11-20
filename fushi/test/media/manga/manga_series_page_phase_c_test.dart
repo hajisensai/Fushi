@@ -9,6 +9,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/detail/media_detail_kit.dart';
+import 'package:fushi/src/media/downloads/download_task_entry.dart';
+import 'package:fushi/src/media/downloads/manga_download_tasks_section.dart';
+import 'package:fushi/src/pages/implementations/browse_page.dart'
+    show BrowseNavigationRequest, BrowseTab, externalBrowseRequest;
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
+    show FushiDialogAction;
+import 'package:fushi/src/media/manga/download/manga_download_service.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_storage.dart';
 import 'package:fushi/src/media/manga/library/manga_series_page.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
@@ -148,7 +155,7 @@ class _RecordingRegistry extends MangaOcrJobRegistry {
 }
 
 class _TestAppModel extends AppModel {
-  _TestAppModel(this._db, this._library, Directory root)
+  _TestAppModel(this._db, this._library, Directory root, {this.downloads})
     : super(testPlatformServices()) {
     // 真 PreferencesRepository 挂在同一个内存 DB 上：chip 的写穿要能在
     // `preferences` 表里查到。
@@ -161,6 +168,13 @@ class _TestAppModel extends AppModel {
   final FushiDatabase _db;
   final OnlineMangaLibraryService _library;
   final List<MediaItem?> opened = <MediaItem?>[];
+
+  /// 非 null 时顶替真下载服务（BUG-4913 用它把一轮「读任务表」钉在途中）。
+  final MangaDownloadService? downloads;
+
+  @override
+  MangaDownloadService get mangaDownloadService =>
+      downloads ?? super.mangaDownloadService;
 
   @override
   FushiDatabase get database => _db;
@@ -868,4 +882,301 @@ void main() {
       findsNothing,
     );
   });
+
+  // 拍板台 7LwxAtJ6r0 ②：多选「下载所选」，与「下载全部」同一套跳过规则。
+  testWidgets('章节多选：下载所选只排未下载的章（旧→新），全已下载时提示且留在多选态', (
+    WidgetTester tester,
+  ) async {
+    sizeView(tester);
+    final _TestAppModel appModel = _TestAppModel(db, library, root);
+    final _RecordingRegistry registry = _RecordingRegistry();
+
+    await tester.runAsync(() async {
+      final EpubBookRow row = await library.add(_entry());
+      await _writeDownloadedChapter(row.extractDir, '/chapter/1');
+      await tester.pumpWidget(
+        _harness(appModel, row.bookKey, registry: registry),
+      );
+      await _pumpUntil(
+        tester,
+        find.byKey(const ValueKey<String>('manga_chapter_download_downloaded')),
+      );
+      await _settle(tester);
+    });
+
+    // 只选已下载的第 1 话：没有可下的，不排、留在多选态。
+    await tester.longPress(find.text('Chapter 1'));
+    await tester.pump();
+    await tester.runAsync(() async {
+      await _settle(tester);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('manga_chapter_selection_download')),
+      );
+      await _settle(tester);
+    });
+    expect(await db.listMangaDownloadJobs(), isEmpty);
+    expect(
+      find.byKey(const ValueKey<String>('manga_chapter_selection_bar')),
+      findsOneWidget,
+    );
+
+    await tester.runAsync(() async {
+      await tester.tap(
+        find.byKey(const ValueKey<String>('manga_chapter_selection_all')),
+      );
+      await _settle(tester);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('manga_chapter_selection_download')),
+      );
+      await _settle(tester);
+    });
+    final List<MangaDownloadJobRow> jobs = await db.listMangaDownloadJobs();
+    expect(jobs.map((MangaDownloadJobRow j) => j.chapterKey).toList(), <String>[
+      '/chapter/2',
+      '/chapter/3',
+    ], reason: '已下载的第 1 话跳过，其余按旧→新入队');
+    expect(
+      find.byKey(const ValueKey<String>('manga_chapter_selection_bar')),
+      findsNothing,
+    );
+  });
+
+  // 拍板台 7LwxAtJ6r0 ①③：作品页就地显示本作下载队列，可整批暂停 / 继续 / 取消，
+  // 并能跳到下载中心只看本作。
+  testWidgets('本作下载队列横幅：暂停全部 → 继续全部 → 取消全部（确认后），跳转带本作筛选', (
+    WidgetTester tester,
+  ) async {
+    sizeView(tester);
+    final _TestAppModel appModel = _TestAppModel(db, library, root);
+    final _RecordingRegistry registry = _RecordingRegistry();
+    addTearDown(() => externalBrowseRequest.value = null);
+
+    late String bookKey;
+    await tester.runAsync(() async {
+      final EpubBookRow row = await library.add(_entry());
+      bookKey = row.bookKey;
+      await tester.pumpWidget(_harness(appModel, bookKey, registry: registry));
+      await _pumpUntil(tester, find.text('Chapter 1'));
+      await _settle(tester);
+    });
+    expect(
+      find.byKey(const ValueKey<String>('manga_series_download_banner')),
+      findsNothing,
+      reason: '没有任务时不占位',
+    );
+
+    await tester.runAsync(() async {
+      await tester.tap(
+        find.byKey(const ValueKey<String>('manga_series_download_all')),
+      );
+      await _pumpUntil(
+        tester,
+        find.byKey(const ValueKey<String>('manga_series_download_banner')),
+      );
+      await _settle(tester);
+    });
+    expect(
+      find.text(t.manga_series_download_queued_count(count: 3)),
+      findsOneWidget,
+    );
+
+    await tester.runAsync(() async {
+      await tester.tap(
+        find.byKey(const ValueKey<String>('manga_series_download_pause_all')),
+      );
+      // 等横幅真的翻到暂停态，而不是赌 500ms 内一定落地。
+      await _pumpUntil(
+        tester,
+        find.text(t.manga_series_download_paused_count(count: 3)),
+      );
+      await _settle(tester);
+    });
+    for (final MangaDownloadJobRow job in await db.listMangaDownloadJobs()) {
+      expect(job.status, MangaDownloadJobStatus.paused);
+    }
+    expect(
+      find.byKey(const ValueKey<String>('manga_series_download_pause_all')),
+      findsNothing,
+    );
+    expect(
+      find.text(t.manga_series_download_paused_count(count: 3)),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('media-detail-item-download-paused')),
+      findsNWidgets(3),
+      reason: '章节行显示暂停状态位',
+    );
+
+    await tester.runAsync(() async {
+      await tester.tap(
+        find.byKey(const ValueKey<String>('manga_series_download_resume_all')),
+      );
+      await _pumpUntil(
+        tester,
+        find.text(t.manga_series_download_queued_count(count: 3)),
+      );
+      await _settle(tester);
+    });
+    for (final MangaDownloadJobRow job in await db.listMangaDownloadJobs()) {
+      expect(job.status, MangaDownloadJobStatus.queued);
+    }
+
+    await tester.runAsync(() async {
+      await tester.tap(
+        find.byKey(const ValueKey<String>('manga_series_download_open_tasks')),
+      );
+      await _settle(tester);
+    });
+    final BrowseNavigationRequest? request = externalBrowseRequest.value;
+    expect(request?.tab, BrowseTab.downloads);
+    final DownloadTaskWorkFocus focus = request!.downloadsWorkFocus!;
+    final List<MangaDownloadJobRow> current = await db.listMangaDownloadJobs();
+    expect(
+      focus.matches(
+        mangaDownloadTaskEntry(current.first, appModel.mangaDownloadService),
+      ),
+      isTrue,
+    );
+
+    await tester.runAsync(() async {
+      await tester.tap(
+        find.byKey(const ValueKey<String>('manga_series_download_cancel_all')),
+      );
+      await _settle(tester);
+      await tester.tap(find.byType(FushiDialogAction).last);
+      await _settle(tester);
+    });
+    for (final MangaDownloadJobRow job in await db.listMangaDownloadJobs()) {
+      expect(job.status, MangaDownloadJobStatus.cancelled);
+    }
+    await tester.runAsync(() async {
+      await _settle(tester);
+    });
+    expect(
+      find.byKey(const ValueKey<String>('manga_series_download_banner')),
+      findsNothing,
+    );
+  });
+
+  // BUG-4913：任务表一变 watchJobs 就触发一轮「读任务表 + 扫章目录」，几轮同时在途、
+  // 落地顺序由磁盘 IO 决定。先开始的一轮（读到的还是排队态）最后落地时，曾把
+  // 「暂停全部」之后的新状态盖回排队——横幅又出现「暂停全部」、计数退回排队。
+  testWidgets('下载状态：先开始的旧一轮最后落地，不盖掉暂停后的新状态', (WidgetTester tester) async {
+    sizeView(tester);
+    final _GatedDownloadService downloads = _GatedDownloadService(
+      database: db,
+      serviceFor: (_) => library,
+    );
+    final _TestAppModel appModel = _TestAppModel(
+      db,
+      library,
+      root,
+      downloads: downloads,
+    );
+    final _RecordingRegistry registry = _RecordingRegistry();
+
+    late Completer<void> release;
+    await tester.runAsync(() async {
+      final EpubBookRow row = await library.add(_entry());
+      for (final OnlineMangaChapter chapter in _chapters) {
+        await downloads.enqueueChapter(
+          entry: _entry(),
+          chapter: chapter,
+          autoOcr: false,
+        );
+      }
+      await tester.pumpWidget(
+        _harness(appModel, row.bookKey, registry: registry),
+      );
+      await _pumpUntil(
+        tester,
+        find.text(t.manga_series_download_queued_count(count: 3)),
+      );
+      await _settle(tester);
+      expect(
+        find.text(t.manga_series_download_queued_count(count: 3)),
+        findsOneWidget,
+      );
+
+      // 别的作品入队一章：任务表变了 → 作品页起一轮刷新，它读到的本作任务仍是
+      // 排队态，钉在途中不落地。
+      release = downloads.holdNextRead();
+      await downloads.enqueueChapter(
+        entry: _otherEntry(),
+        chapter: _chapters.first,
+        autoOcr: false,
+      );
+      // 页面的异步链跑在测试的 fake zone 里，要 pump 才往前走；干等 future 会死锁。
+      for (int i = 0; i < 60 && !downloads.held.isCompleted; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
+      }
+      expect(downloads.held.isCompleted, isTrue, reason: '旧一轮读必须已钉在途中');
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('manga_series_download_pause_all')),
+      );
+      await _settle(tester);
+
+      // 旧一轮这时才落地。刷新是串行合并的（CoalescedRefresh）：暂停全部请求的
+      // 那一轮排在旧一轮之后补跑，最终必须停在暂停态。
+      release.complete();
+      await _pumpUntil(
+        tester,
+        find.text(t.manga_series_download_paused_count(count: 3)),
+      );
+      await _settle(tester);
+    });
+
+    expect(
+      find.text(t.manga_series_download_paused_count(count: 3)),
+      findsOneWidget,
+      reason: '旧一轮读到的排队态不能盖掉暂停后的状态',
+    );
+    expect(
+      find.byKey(const ValueKey<String>('manga_series_download_pause_all')),
+      findsNothing,
+    );
+  });
+}
+
+OnlineMangaLibraryEntry _otherEntry() => const OnlineMangaLibraryEntry(
+  runtime: OnlineMangaRuntimeKind.mihon,
+  extensionPackage: 'org.example.fixture',
+  sourceId: '1',
+  series: OnlineMangaSeries(
+    key: '/series/other',
+    title: 'Other series',
+    raw: <String, Object?>{'url': '/series/other'},
+  ),
+  chapters: _chapters,
+);
+
+/// 能把下一次 [jobsForBook] 钉在「已读完、未返回」的下载服务：读发生在调用那一刻，
+/// 返回由测试放行，用来复现「先开始的一轮最后落地」。
+class _GatedDownloadService extends MangaDownloadService {
+  _GatedDownloadService({required super.database, required super.serviceFor});
+
+  Completer<void>? _gate;
+
+  /// 下一次读被钉住时完成。
+  final Completer<void> held = Completer<void>();
+
+  /// 钉住下一次读，返回放行用的 completer。
+  Completer<void> holdNextRead() => _gate = Completer<void>();
+
+  @override
+  Future<Map<String, MangaDownloadJobRow>> jobsForBook(String bookKey) async {
+    final Map<String, MangaDownloadJobRow> jobs = await super.jobsForBook(
+      bookKey,
+    );
+    final Completer<void>? gate = _gate;
+    if (gate != null) {
+      _gate = null;
+      if (!held.isCompleted) held.complete();
+      await gate.future;
+    }
+    return jobs;
+  }
 }

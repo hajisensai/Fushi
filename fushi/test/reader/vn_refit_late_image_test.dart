@@ -1,0 +1,86 @@
+@Tags(<String>['chrome'])
+library;
+
+import 'package:drift/drift.dart';
+import 'package:drift/native.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/reader/reader_content_styles.dart';
+import 'package:fushi/src/reader/reader_selection_scripts.dart';
+import 'package:fushi/src/reader/reader_sentence_audio_ownership_script.dart';
+import 'package:fushi/src/reader/reader_settings.dart';
+import 'package:fushi/src/reader/reader_study_unit_script.dart';
+import 'package:fushi/src/reader/reader_visual_novel_scripts.dart';
+import 'package:fushi_core/fushi_core.dart';
+
+import '../helpers/node_runtime.dart';
+
+/// VN 屏表重切的两条行为，都用生产 VN shell + 生产 VN CSS 在真 Chrome 里跑。
+///
+/// ① 开关工具栏（`setChromeInsets`）：下发值没变不重切；值变了但当前屏内容没变时只重切
+///    屏表，屏上 DOM、选区与逐字显现原样保留；内容真的变了才重渲。此前每次都整章重量
+///    一遍并 `renderScreen(index, true)`，把正在逐字显现的屏直接补完、清掉选区。
+/// ② 首屏不等图片：`initialize` 此前要等整章每张 `<img>` 的 load / error，没有时限，
+///    一张不结束的图让首屏永远不出。现在先按已知信息切屏，图到了再复核归类并重切。
+void main() {
+  Future<void> runHarness(String harness, String passLine) async {
+    final String? nodeExe = resolveNodeExecutable();
+    if (nodeExe == null) {
+      markTestSkipped('node not found on PATH; skipping JS execution');
+      return;
+    }
+    final FushiDatabase db = FushiDatabase.forTesting(
+      DatabaseConnection(NativeDatabase.memory()),
+    );
+    addTearDown(db.close);
+    final ReaderSettings settings = ReaderSettings(db);
+    await settings.refreshFromDb();
+    await settings.setViewMode('vn');
+    await settings.setWritingMode('vertical-rl');
+    final String css = ReaderContentStyles.css(settings: settings);
+
+    final NodeHarnessResult result =
+        await runNodeHarness(nodeExe, harness, <String, String>{
+          'shell': ReaderVisualNovelScripts.vnShellScript(),
+          'selection': ReaderSelectionScripts.source(),
+          'units': '$kStudyUnitJs\n$kSentenceAudioOwnershipJs',
+          'css': css,
+        });
+    if (result.exitCode == 77) {
+      markTestSkipped('Chrome unavailable: ${result.stdout}');
+      return;
+    }
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    expect(result.stdout, contains(passLine));
+  }
+
+  test(
+    'VN setChromeInsets keeps the current screen (DOM, reveal) unless its '
+    'content changed',
+    () => runHarness(
+      'test/reader/vn_chrome_insets_keep_screen_harness.mjs',
+      'PASS VN chrome insets keep screen',
+    ),
+    timeout: const Timeout(Duration(seconds: 90)),
+  );
+
+  test(
+    'VN first screen does not wait for images; a late image re-cuts the '
+    'chapter and lands back on the same screen',
+    () => runHarness(
+      'test/reader/vn_late_image_harness.mjs',
+      'PASS VN late image',
+    ),
+    timeout: const Timeout(Duration(seconds: 90)),
+  );
+
+  // BUG-4907：归类对象是脱离文档的源树，判据不能读 computed style（挂着与摘下结果不同）。
+  test(
+    'VN standalone image classification does not depend on whether the '
+    'source tree is attached',
+    () => runHarness(
+      'test/reader/vn_standalone_image_classification_harness.mjs',
+      'PASS VN standalone image classification',
+    ),
+    timeout: const Timeout(Duration(seconds: 90)),
+  );
+}

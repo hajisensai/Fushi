@@ -579,5 +579,9 @@ export async function launchChromeDriver() {
     pageServer.close();
   }
 
-  return { evalOnPage, evalHere, capture, snap, close };
+  // Raw CDP command (trusted Input.dispatch* events, metrics overrides) for harnesses that need
+  // real input rather than synthetic DOM events.
+  const send = (method, params) => sock.send(method, params);
+
+  return { evalOnPage, evalHere, capture, snap, send, close };
 }

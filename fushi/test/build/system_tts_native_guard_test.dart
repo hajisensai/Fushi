@@ -14,7 +14,9 @@ import '../helpers/source_guard.dart';
 
 void main() {
   test('Android 清单在 <queries> 里声明了 TTS_SERVICE（第三方引擎可见）', () {
-    final String manifest = maskComments(
+    // 清单是 XML：只掩 `<!-- -->`。不能用 Dart 词法的 [maskComments]——注释正文里的
+    // `text/*`、`'` 会被当成块注释 / 字符串起点，把后面整段（含 <queries>）掩掉。
+    final String manifest = maskHtmlComments(
       File('android/app/src/main/AndroidManifest.xml').readAsStringSync(),
     );
     final int start = manifest.indexOf('<queries>');

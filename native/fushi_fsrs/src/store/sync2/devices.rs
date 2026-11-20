@@ -15,24 +15,35 @@
 //! 而撤回。停用不删任何数据，标记可以撤销（[SrsCore::sync2_retire] 传 false），停用之后这台设备又写了新 head（它
 //! 回来了）自动取消（[record_ext]）。
 
+#[cfg(test)]
 use std::collections::{BTreeMap, BTreeSet};
 
+#[cfg(test)]
 use rusqlite::{Connection, OptionalExtension, params};
+#[cfg(test)]
 use serde_json::{Map, Value, json};
 
+#[cfg(test)]
 use super::{Local, applied_vv, in_savepoint, sql};
 use crate::store::SrsCore;
+#[cfg(test)]
 use crate::sync2::codec::Reader;
 use crate::sync2::id::Id;
+#[cfg(test)]
 use crate::sync2::op::Op;
+#[cfg(test)]
 use crate::sync2::segment::{self, Head};
+#[cfg(test)]
 use crate::sync2::vv::Vv;
 
 /// head 扩展里认的键（其余丢掉，防转发 / 异常 head 往本机库里塞大块数据）。
+#[cfg(test)]
 const EXT_KEYS: [&str; 3] = ["model", "app", "platform"];
 /// 名字 / 型号等文本的长度上限（字符）。
+#[cfg(test)]
 const TEXT_MAX: usize = 64;
 
+#[cfg(test)]
 fn clip(s: &str) -> String {
     s.trim()
         .chars()
@@ -41,6 +52,7 @@ fn clip(s: &str) -> String {
         .collect()
 }
 
+#[cfg(test)]
 fn meta_get(c: &Connection, key: &str) -> Result<Option<String>, String> {
     c.prepare_cached("SELECT value FROM srs_meta WHERE key = ?1")
         .map_err(sql)?
@@ -49,6 +61,7 @@ fn meta_get(c: &Connection, key: &str) -> Result<Option<String>, String> {
         .map_err(sql)
 }
 
+#[cfg(test)]
 fn meta_set(c: &Connection, key: &str, value: &str) -> Result<(), String> {
     c.prepare_cached("INSERT INTO srs_meta (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
         .map_err(sql)?
@@ -57,6 +70,7 @@ fn meta_set(c: &Connection, key: &str, value: &str) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(test)]
 fn meta_del(c: &Connection, key: &str) -> Result<(), String> {
     c.prepare_cached("DELETE FROM srs_meta WHERE key = ?1")
         .map_err(sql)?
@@ -66,6 +80,7 @@ fn meta_del(c: &Connection, key: &str) -> Result<(), String> {
 }
 
 /// 前缀下的全部键值（[prefix] 按字面比较，profile 里的 `%` / `_` 不当通配符）。
+#[cfg(test)]
 fn meta_prefixed(c: &Connection, prefix: &str) -> Result<Vec<(String, String)>, String> {
     c.prepare_cached("SELECT key, value FROM srs_meta WHERE substr(key, 1, length(?1)) = ?1")
         .map_err(sql)?
@@ -75,33 +90,38 @@ fn meta_prefixed(c: &Connection, prefix: &str) -> Result<Vec<(String, String)>, 
         .map_err(sql)
 }
 
+#[cfg(test)]
 fn self_key(profile: &str) -> String {
     format!("sync2_self_info/{profile}")
 }
 
-fn ext_prefix(profile: &str) -> String {
+pub(crate) fn ext_prefix(profile: &str) -> String {
     format!("sync2_device_ext/{profile}/")
 }
 
+#[cfg(test)]
 fn retired_prefix(profile: &str) -> String {
     format!("sync2_retired/{profile}/")
 }
 
-fn hint_key(device: &Id) -> String {
+pub(crate) fn hint_key(device: &Id) -> String {
     format!("sync2_device_hint/{}", device.text())
 }
 
+#[cfg(test)]
 fn parse_obj(s: Option<String>) -> Map<String, Value> {
     s.and_then(|s| serde_json::from_str::<Value>(&s).ok())
         .and_then(|v| v.as_object().cloned())
         .unwrap_or_default()
 }
 
+#[cfg(test)]
 fn str_of<'a>(m: &'a Map<String, Value>, k: &str) -> &'a str {
     m.get(k).and_then(Value::as_str).unwrap_or("")
 }
 
 /// 本机写 head 时带的扩展（型号 / 版本 / 平台；都没有 = None，head 不带 `ext`）。
+#[cfg(test)]
 pub(crate) fn self_ext(c: &Connection, profile: &str) -> Result<Option<Value>, String> {
     let info = parse_obj(meta_get(c, &self_key(profile))?);
     let ext: Map<String, Value> = EXT_KEYS
@@ -122,6 +142,7 @@ pub(crate) fn self_ext(c: &Connection, profile: &str) -> Result<Option<Value>, S
 }
 
 /// 记下别的设备刚收下的（更新的）head 的扩展与协议版本。停用之后它又写了 head：取消停用。
+#[cfg(test)]
 pub(crate) fn record_ext(c: &Connection, profile: &str, h: &Head) -> Result<(), String> {
     let mut out = Map::new();
     if let Some(ext) = h.ext.as_ref().and_then(Value::as_object) {
@@ -157,6 +178,7 @@ pub(crate) fn record_ext(c: &Connection, profile: &str, h: &Head) -> Result<(), 
 }
 
 /// 别的设备最近一份 head 自报的 App 版本（没报 = 空串）：自动重建上报用（heal.rs）。
+#[cfg(test)]
 pub(crate) fn peer_app(c: &Connection, profile: &str, device: &Id) -> Result<String, String> {
     let ext = parse_obj(meta_get(
         c,
@@ -166,6 +188,7 @@ pub(crate) fn peer_app(c: &Connection, profile: &str, device: &Id) -> Result<Str
 }
 
 /// 停用了的设备。
+#[cfg(test)]
 pub(crate) fn retired_set(c: &Connection, profile: &str) -> Result<BTreeSet<Id>, String> {
     let prefix = retired_prefix(profile);
     Ok(meta_prefixed(c, &prefix)?
@@ -175,6 +198,7 @@ pub(crate) fn retired_set(c: &Connection, profile: &str) -> Result<BTreeSet<Id>,
 }
 
 /// 因果投递的「依赖都已应用」：[deps] 的每一分量都已应用，停用了的设备的分量不再等。
+#[cfg(test)]
 pub(crate) fn deps_ready(deps: &Vv, vv: &Vv, retired: &BTreeSet<Id>) -> bool {
     deps.0
         .iter()
@@ -186,6 +210,7 @@ pub(crate) fn deps_ready(deps: &Vv, vv: &Vv, retired: &BTreeSet<Id>) -> bool {
 /// - `blocking[D]`：别的设备排在队首的操作在等 D 还没收到的操作，那台设备在缓冲里的条数（D 是「缺段」的那台）。
 ///
 /// 只解码每台设备队首那一条（设备数次读），不扫整张缓冲表。
+#[cfg(test)]
 fn stuck(
     c: &Connection,
     profile: &str,
@@ -232,6 +257,7 @@ fn stuck(
 /// `hint` / `retiredAt` / `gap` / `blocking` / `state`（`ok` / `behind` / `missing` / `upgrade` / `retired`），
 /// 还没信任的设备另有 `trust`（`pending` / `rejected`）/ `trustSince` / `heldDeletes` / `heldPurges`（trust.rs），
 /// 以及本机信息 `selfInfo`。
+#[cfg(test)]
 pub(crate) fn status_extras(
     c: &Connection,
     profile: &str,
@@ -350,6 +376,7 @@ impl SrsCore {
     /// 本机设备信息（[req] 里给了哪个键就改哪个：`model` / `app` / `platform` / `nick`；`nick` 给空串 = 清掉昵称、
     /// 回到型号）。人读名 = 昵称或型号，写进 `sync2_self.name`。没变就不进写锁（每轮同步前都会调）。返回
     /// `{"name", "nick", "model", "app", "platform", "changed"}`。
+    #[cfg(test)]
     pub fn sync2_device_info(&self, profile: &str, req: &Value, now: i64) -> Result<Value, String> {
         let merge = |cur: &Map<String, Value>| -> Map<String, Value> {
             let mut next = cur.clone();
@@ -411,6 +438,7 @@ impl SrsCore {
 
     /// 停用 / 取消停用一台（别的）设备。停用：它缺段而卡住的别的设备的操作不再等它（下一次投递起；调用方紧接着
     /// 跑一次投递，见 ffi.rs `retire`）。返回 `{"retired": bool}`。
+    #[cfg(test)]
     pub fn sync2_retire(
         &self,
         profile: &str,
@@ -424,6 +452,7 @@ impl SrsCore {
     }
 
     /// 给没有自报名字的设备记一个补充名（互联 host：已配对对端直接写了这台设备的段）。同名不写。
+    #[cfg(test)]
     pub fn sync2_device_hint(&self, device: &str, hint: &str) -> Result<Value, String> {
         let id = Id::parse(device).ok_or("device_hint: bad device")?;
         let hint = clip(hint);
@@ -441,7 +470,8 @@ impl SrsCore {
 }
 
 /// [SrsCore::sync2_retire] 的本体：在调用方的写连接、调用方开的 SAVEPOINT 里改停用标记（不自己取锁；分发器接着在同一个
-/// SAVEPOINT 里投一遍缓冲，store/ffi.rs `local_write`）。
+/// SAVEPOINT 里投一遍缓冲，store/legacy3 `local_write`）。
+#[cfg(test)]
 pub(crate) fn retire_on(
     c: &Connection,
     profile: &str,

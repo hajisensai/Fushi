@@ -1,7 +1,10 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart' as ffmpeg;
+import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 
 void main() {
@@ -1080,12 +1083,22 @@ void main() {
         '-map',
         '0:s:3',
         '/c/sub_3.srt',
+        // BUG-4838：不落盘的伴随输出，让按进度判活的 out_time 跟着读盘位置连续推进。
+        '-map',
+        '0:v:0?',
+        '-map',
+        '0:s',
+        '-c',
+        'copy',
+        '-f',
+        'null',
+        '-',
       ]);
       // 关键：整批只有一个 -i（单次 demux 读穿容器），不是每轨一个输入。
       expect(args.where((String a) => a == '-i').length, 1);
     });
 
-    test('空 outputs → 只剩 -y -i（无 -map）', () {
+    test('空 outputs → 只剩 -y -i（无 -map，也不挂伴随输出）', () {
       final List<String> args = buildFfmpegMultiSubtitleArgs(
         inputPath: '/v/x.mkv',
         outputs: const <int, String>{},
@@ -1096,21 +1109,21 @@ void main() {
 
   group('extractEmbeddedSubtitlesViaFfmpeg (BUG-104 单趟全轨缓存)', () {
     test('returns empty when the input file does not exist', () async {
-      expect(
-        await extractEmbeddedSubtitlesViaFfmpeg(
-          inputPath: '/no/such/input.mkv',
-          outputs: <int, String>{0: 'x.srt'},
-        ),
-        isEmpty,
-      );
+      final EmbeddedSubtitleExtractResult result =
+          await extractEmbeddedSubtitlesViaFfmpeg(
+            inputPath: '/no/such/input.mkv',
+            outputs: <int, String>{0: 'x.srt'},
+          );
+      expect(result.written, isEmpty);
+      expect(result.failure, EmbeddedSubtitleExtractFailure.inputMissing);
     });
 
     test('returns empty when no outputs requested', () async {
       expect(
-        await extractEmbeddedSubtitlesViaFfmpeg(
+        (await extractEmbeddedSubtitlesViaFfmpeg(
           inputPath: '/no/such/input.mkv',
           outputs: const <int, String>{},
-        ),
+        )).written,
         isEmpty,
       );
     });
@@ -1177,10 +1190,10 @@ void main() {
         final String out0 = '${dir.path}/sub_0.srt';
         final String out1 = '${dir.path}/sub_1.srt';
         final Map<int, String> written =
-            await extractEmbeddedSubtitlesViaFfmpeg(
+            (await extractEmbeddedSubtitlesViaFfmpeg(
               inputPath: video,
               outputs: <int, String>{0: out0, 1: out1},
-            );
+            )).written;
 
         // 单趟抽出两条轨，二者都落盘且非空。
         expect(written.keys.toSet(), <int>{0, 1});
@@ -1213,10 +1226,10 @@ void main() {
         1: '${dir.path}/sub_1.srt', // 毒轨：ffmpeg 在 output-open 阶段 EINVAL
         2: '${dir.path}/sub_2.ass',
       };
-      final Map<int, String> written = await extractEmbeddedSubtitlesViaFfmpeg(
+      final Map<int, String> written = (await extractEmbeddedSubtitlesViaFfmpeg(
         inputPath: video,
         outputs: outputs,
-      );
+      )).written;
 
       // 好轨 0/2 保住；毒轨 1 只损失自己（不再整批 0 条）。
       expect(written.keys.toSet(), <int>{0, 2});
@@ -1248,13 +1261,13 @@ void main() {
       ); // 无毒轨
       ffmpeg.setFfmpegBackendForTesting(fake);
 
-      final Map<int, String> written = await extractEmbeddedSubtitlesViaFfmpeg(
+      final Map<int, String> written = (await extractEmbeddedSubtitlesViaFfmpeg(
         inputPath: video,
         outputs: <int, String>{
           0: '${dir.path}/s0.srt',
           1: '${dir.path}/s1.srt',
         },
-      );
+      )).written;
       expect(written.keys.toSet(), <int>{0, 1});
       expect(fake.passes.length, 1, reason: '单遍成功 → 不跑逐轨回退');
     });
@@ -1287,10 +1300,10 @@ void main() {
       final String out1 = '${dir.path}/sub_1.srt';
       final String out2 = '${dir.path}/sub_2.ass';
 
-      final Map<int, String> written = await extractEmbeddedSubtitlesViaFfmpeg(
+      final Map<int, String> written = (await extractEmbeddedSubtitlesViaFfmpeg(
         inputPath: video,
         outputs: <int, String>{0: out0, 1: out1, 2: out2},
-      );
+      )).written;
 
       // Good tracks survive; only the undecodable one is dropped.
       expect(written.keys.toSet(), <int>{0, 2});
@@ -1313,10 +1326,10 @@ void main() {
         final String out1 = '${dir.path}/sub_1.srt';
 
         final Map<int, String> written =
-            await extractEmbeddedSubtitlesViaFfmpeg(
+            (await extractEmbeddedSubtitlesViaFfmpeg(
               inputPath: video,
               outputs: <int, String>{0: out0, 1: out1},
-            );
+            )).written;
 
         expect(written.keys.toSet(), <int>{0, 1});
         // Exactly one ffmpeg invocation (the batch); fallback must not fire.
@@ -1334,16 +1347,202 @@ void main() {
         final String out1 = '${dir.path}/sub_1.srt';
 
         final Map<int, String> written =
-            await extractEmbeddedSubtitlesViaFfmpeg(
+            (await extractEmbeddedSubtitlesViaFfmpeg(
               inputPath: video,
               outputs: <int, String>{0: out0, 1: out1},
-            );
+            )).written;
 
         expect(written, isEmpty);
         expect(File(out0).existsSync(), isFalse);
         expect(File(out1).existsSync(), isFalse);
       },
     );
+  });
+
+  group('extractEmbeddedSubtitlesViaFfmpeg 按进度判活（BUG-4838）', () {
+    late Directory dir;
+    late String video;
+
+    setUp(() {
+      dir = Directory.systemTemp.createTempSync('fushi_bug4791_');
+      video = '${dir.path}/in.mkv';
+      File(video).writeAsStringSync('fake container');
+    });
+
+    tearDown(() {
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+    });
+
+    test('持续有进度的抽取不被杀：总耗时是卡死判据的数倍，照样跑完、cue 全部落盘', () async {
+      // 模型：慢盘上整轨读取——进度一直在推进，只是慢。旧实现给的是总时长预算，到点
+      // 就强杀；现在判据是「进度停了多久」。
+      final _ScriptedWatchedBackend backend = _ScriptedWatchedBackend((
+        _FakeFfmpegProcess proc,
+        Map<int, String> outputs,
+      ) async {
+        for (int i = 1; i <= 20; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 40));
+          proc.progress(i * 1000000);
+        }
+        outputs.forEach((int idx, String out) {
+          File(
+            out,
+          ).writeAsStringSync('1\n00:00:01,000 --> 00:00:02,000\ncue $idx\n');
+        });
+        await proc.finish(0);
+      });
+      final Stopwatch sw = Stopwatch()..start();
+      final EmbeddedSubtitleExtractResult result =
+          await extractEmbeddedSubtitlesViaFfmpeg(
+            inputPath: video,
+            outputs: <int, String>{
+              0: '${dir.path}/sub_0.srt',
+              1: '${dir.path}/sub_1.srt',
+            },
+            backend: backend,
+            stallTimeout: const Duration(milliseconds: 200),
+          );
+      sw.stop();
+
+      expect(
+        sw.elapsed,
+        greaterThan(const Duration(milliseconds: 600)),
+        reason: '总耗时远超卡死判据（200 ms），以证明判据不是总时长',
+      );
+      expect(backend.processes.single.killed, isEmpty);
+      expect(result.failure, isNull);
+      expect(result.written.keys.toSet(), <int>{0, 1});
+      // 观察式运行，绝不走固定总超时的 run()。
+      expect(backend.plainRunCount, 0);
+      // 伴随 null 输出在参数里（进度跟着读盘位置走）。
+      expect(backend.calls.single, containsAllInOrder(<String>['-f', 'null']));
+    });
+
+    test('进度停滞才判卡死：删掉半截输出、不逐轨回退、不写负缓存', () async {
+      final _ScriptedWatchedBackend backend = _ScriptedWatchedBackend((
+        _FakeFfmpegProcess proc,
+        Map<int, String> outputs,
+      ) async {
+        // 已经写出一截（被强杀的真进程也可能留下非空半截文件）……
+        outputs.forEach((int idx, String out) {
+          File(
+            out,
+          ).writeAsStringSync('1\n00:00:01,000 --> 00:00:02,000\nhalf $idx\n');
+        });
+        proc.progress(1000000);
+        // ……然后读盘卡住，再无进度（直到被 watchdog 杀掉）。
+      });
+      final Map<int, String> outputs = <int, String>{
+        0: '${dir.path}/sub_0.srt',
+        1: '${dir.path}/sub_1.srt',
+      };
+      final EmbeddedSubtitleExtractResult result =
+          await extractEmbeddedSubtitlesViaFfmpeg(
+            inputPath: video,
+            outputs: outputs,
+            backend: backend,
+            stallTimeout: const Duration(milliseconds: 150),
+          );
+
+      expect(result.failure, EmbeddedSubtitleExtractFailure.stalled);
+      expect(result.written, isEmpty);
+      expect(backend.processes.single.killed, isNotEmpty);
+      expect(backend.calls, hasLength(1), reason: '卡死不逐轨回退：每条回退都要再读一遍整个容器');
+      for (final String out in outputs.values) {
+        expect(File(out).existsSync(), isFalse, reason: '半截文件必须删掉');
+        expect(
+          File('$out$kUnsupportedEmbeddedSubtitleSentinelSuffix').existsSync(),
+          isFalse,
+          reason: '卡死说明不了轨坏，不能写负缓存',
+        );
+      }
+    });
+
+    test('取消会强杀进程并返回 cancelled，不逐轨回退', () async {
+      final _ScriptedWatchedBackend backend = _ScriptedWatchedBackend((
+        _FakeFfmpegProcess proc,
+        Map<int, String> outputs,
+      ) async {
+        // 一直在推进，永不自行结束。
+        for (int i = 1; i <= 200 && !proc.exited; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          proc.progress(i * 1000000);
+        }
+      });
+      final Completer<void> cancel = Completer<void>();
+      final Future<EmbeddedSubtitleExtractResult> pending =
+          extractEmbeddedSubtitlesViaFfmpeg(
+            inputPath: video,
+            outputs: <int, String>{0: '${dir.path}/sub_0.srt'},
+            backend: backend,
+            cancel: cancel.future,
+            stallTimeout: const Duration(seconds: 30),
+          );
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      cancel.complete();
+      final EmbeddedSubtitleExtractResult result = await pending.timeout(
+        const Duration(seconds: 5),
+      );
+
+      expect(result.failure, EmbeddedSubtitleExtractFailure.cancelled);
+      expect(result.written, isEmpty);
+      expect(backend.processes.single.killed, isNotEmpty);
+      expect(backend.calls, hasLength(1));
+    });
+
+    test('真 ffmpeg：新参数（含伴随 null 输出）单趟抽出多条 srt 轨', () async {
+      if (!await ffmpegAvailable()) {
+        markTestSkipped('ffmpeg 不可用');
+        return;
+      }
+      final String ff = resolveFfmpegExecutable();
+      final String mkv = await _muxSrtTracksMkv(ff, dir, seconds: 3);
+      final EmbeddedSubtitleExtractResult result =
+          await extractEmbeddedSubtitlesViaFfmpeg(
+            inputPath: mkv,
+            outputs: <int, String>{
+              0: '${dir.path}/out_0.srt',
+              1: '${dir.path}/out_1.srt',
+            },
+            backend: const ffmpeg.CliFfmpegBackend(),
+          );
+      expect(result.failure, isNull);
+      expect(result.written.keys.toSet(), <int>{0, 1});
+      expect(File('${dir.path}/out_1.srt').readAsStringSync(), contains('二'));
+    });
+
+    test('真 ffmpeg：取消会停掉正在读文件的进程，不等它读完', () async {
+      if (!await ffmpegAvailable()) {
+        markTestSkipped('ffmpeg 不可用');
+        return;
+      }
+      final String ff = resolveFfmpegExecutable();
+      // 30 s 的片子按 1 倍速读（-readrate 1 模拟慢读），完整跑要 ~30 s。
+      final String mkv = await _muxSrtTracksMkv(ff, dir, seconds: 30);
+      final _ReadrateCliBackend backend = _ReadrateCliBackend(ff);
+      final Completer<void> cancel = Completer<void>();
+      final Stopwatch sw = Stopwatch()..start();
+      final Future<EmbeddedSubtitleExtractResult> pending =
+          extractEmbeddedSubtitlesViaFfmpeg(
+            inputPath: mkv,
+            outputs: <int, String>{0: '${dir.path}/c_0.srt'},
+            backend: backend,
+            cancel: cancel.future,
+          );
+      await Future<void>.delayed(const Duration(seconds: 1));
+      cancel.complete();
+      final EmbeddedSubtitleExtractResult result = await pending;
+      sw.stop();
+
+      expect(result.failure, EmbeddedSubtitleExtractFailure.cancelled);
+      expect(result.written, isEmpty);
+      expect(File('${dir.path}/c_0.srt').existsSync(), isFalse);
+      expect(
+        sw.elapsed,
+        lessThan(const Duration(seconds: 15)),
+        reason: '取消后进程被强杀，不会把 30 s 的慢读跑完',
+      );
+    }, timeout: const Timeout(Duration(seconds: 90)));
   });
 
   group('extractEmbeddedCoverViaFfmpeg', () {
@@ -1776,4 +1975,186 @@ class _FakePoisonFfmpegBackend implements ffmpeg.FfmpegBackend {
     Duration timeout,
   ) async =>
       throw UnimplementedError('runProbe not used by subtitle extraction');
+}
+
+/// 可控的假 ffmpeg 进程（BUG-4838）：脚本往 stdout 写 `-progress` 行、决定何时退出；
+/// kill 记账并让进程以 -9 退出（与 `ffmpeg_watched_run_test` 的假件同构）。
+class _FakeFfmpegProcess implements Process {
+  final StreamController<List<int>> _out = StreamController<List<int>>();
+  final StreamController<List<int>> _err = StreamController<List<int>>();
+  final Completer<int> _exit = Completer<int>();
+  final List<ProcessSignal> killed = <ProcessSignal>[];
+
+  bool get exited => _exit.isCompleted;
+
+  void progress(int outTimeUs) {
+    if (_out.isClosed) return;
+    _out.add(utf8.encode('out_time_us=$outTimeUs\nprogress=continue\n'));
+  }
+
+  Future<void> finish(int code) async {
+    if (_exit.isCompleted) return;
+    await _out.close();
+    await _err.close();
+    if (!_exit.isCompleted) _exit.complete(code);
+  }
+
+  @override
+  bool kill([ProcessSignal signal = ProcessSignal.sigterm]) {
+    killed.add(signal);
+    unawaited(finish(-9));
+    return true;
+  }
+
+  @override
+  Stream<List<int>> get stdout => _out.stream;
+
+  @override
+  Stream<List<int>> get stderr => _err.stream;
+
+  @override
+  Future<int> get exitCode => _exit.future;
+
+  @override
+  int get pid => 4791;
+
+  @override
+  IOSink get stdin => throw UnimplementedError();
+}
+
+typedef _FakeFfmpegScript =
+    Future<void> Function(_FakeFfmpegProcess proc, Map<int, String> outputs);
+
+/// 支持观察式运行的假后端：每次 runWatched 起一个 [_FakeFfmpegProcess] 交给脚本驱动，
+/// 由**真的** [watchFfmpegProcess] 按进度判活 / 响应取消。[run]（固定总超时）只记数。
+class _ScriptedWatchedBackend
+    implements ffmpeg.FfmpegBackend, FfmpegWatchedRunner {
+  _ScriptedWatchedBackend(this.script);
+
+  final _FakeFfmpegScript script;
+  final List<List<String>> calls = <List<String>>[];
+  final List<_FakeFfmpegProcess> processes = <_FakeFfmpegProcess>[];
+  int plainRunCount = 0;
+
+  static Map<int, String> _outputs(List<String> args) {
+    final Map<int, String> map = <int, String>{};
+    for (int i = 0; i + 2 < args.length; i++) {
+      if (args[i] != '-map') continue;
+      final RegExpMatch? m = RegExp(r'^0:s:(\d+)$').firstMatch(args[i + 1]);
+      if (m == null || args[i + 2].startsWith('-')) continue;
+      map[int.parse(m.group(1)!)] = args[i + 2];
+    }
+    return map;
+  }
+
+  @override
+  Future<ffmpeg.FfmpegRunResult> runWatched(
+    List<String> args,
+    FfmpegWatch watch,
+  ) {
+    calls.add(args);
+    final _FakeFfmpegProcess proc = _FakeFfmpegProcess();
+    processes.add(proc);
+    unawaited(script(proc, _outputs(args)));
+    return watchFfmpegProcess(proc, watch, executable: 'fake-ffmpeg');
+  }
+
+  @override
+  Future<ffmpeg.FfmpegRunResult> run(
+    List<String> args,
+    Duration timeout,
+  ) async {
+    plainRunCount++;
+    return const ffmpeg.FfmpegRunResult(returnCode: 1, output: 'unexpected');
+  }
+
+  @override
+  Future<ffmpeg.FfmpegRunResult> runQuery(
+    List<String> args,
+    Duration timeout,
+  ) => run(args, timeout);
+
+  @override
+  Future<ffmpeg.FfmpegRunResult> runProbe(
+    List<String> args,
+    Duration timeout,
+  ) async => const ffmpeg.FfmpegRunResult(returnCode: 0, output: '');
+}
+
+/// 真 ffmpeg 的观察式运行，只是在 `-i` 前插 `-readrate 1`（按 1 倍速读，模拟慢读），
+/// 让取消测试有一个确实在读文件的长进程可杀。
+class _ReadrateCliBackend implements ffmpeg.FfmpegBackend, FfmpegWatchedRunner {
+  const _ReadrateCliBackend(this.executable);
+
+  final String executable;
+
+  @override
+  Future<ffmpeg.FfmpegRunResult> runWatched(
+    List<String> args,
+    FfmpegWatch watch,
+  ) {
+    final int i = args.indexOf('-i');
+    final List<String> slowed = <String>[
+      ...args.sublist(0, i),
+      '-readrate',
+      '1',
+      ...args.sublist(i),
+    ];
+    return runFfmpegWatchedProcess(executable, slowed, watch);
+  }
+
+  @override
+  Future<ffmpeg.FfmpegRunResult> run(List<String> args, Duration timeout) =>
+      throw UnsupportedError('watched only');
+
+  @override
+  Future<ffmpeg.FfmpegRunResult> runQuery(
+    List<String> args,
+    Duration timeout,
+  ) => run(args, timeout);
+
+  @override
+  Future<ffmpeg.FfmpegRunResult> runProbe(
+    List<String> args,
+    Duration timeout,
+  ) => run(args, timeout);
+}
+
+/// 合成一个带两条 srt 轨（相对序号 0/1）的 mkv。
+Future<String> _muxSrtTracksMkv(
+  String ff,
+  Directory dir, {
+  required int seconds,
+}) async {
+  final String a = '${dir.path}/mux_a.srt';
+  final String b = '${dir.path}/mux_b.srt';
+  File(a).writeAsStringSync('1\n00:00:00,500 --> 00:00:01,500\n一\n');
+  File(b).writeAsStringSync('1\n00:00:01,000 --> 00:00:02,000\n二\n');
+  final String out = '${dir.path}/mux_${seconds}s.mkv';
+  final ProcessResult mux = await Process.run(ff, <String>[
+    '-y',
+    '-f',
+    'lavfi',
+    '-i',
+    'color=black:s=64x64:d=$seconds:r=10',
+    '-i',
+    a,
+    '-i',
+    b,
+    '-map',
+    '0:v',
+    '-map',
+    '1',
+    '-map',
+    '2',
+    '-c:v',
+    'mpeg4',
+    '-c:s',
+    'srt',
+    out,
+  ]);
+  if (mux.exitCode != 0) {
+    throw StateError('mux failed: ${mux.stderr}');
+  }
+  return out;
 }

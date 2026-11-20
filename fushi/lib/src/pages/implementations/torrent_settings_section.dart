@@ -19,13 +19,27 @@ import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
-import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/models/module_registry.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
+import 'package:fushi/src/models/store_compliance.dart';
+import 'package:fushi/src/storage/download_layout.dart';
+import 'package:fushi/src/storage/download_root_migrator.dart';
+import 'package:fushi/src/sync/interconnect_download_manager.dart';
+import 'package:fushi/src/sync/interconnect_torrent_engine_backend.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+
+part 'download_location_section.dart';
 
 /// 下载后端配置（后端二选一 + qb 连接 / 内置引擎限速·上传·做种·内存·连接数）。
 /// 从「设置→视频」搬到「下载」页——下载既已独立成页，配置就该在页内，不再埋进
@@ -57,6 +71,9 @@ Future<TorrentConnectionProbe> probeTorrentConnection(
     version = await backend.probeConnection();
   } finally {
     if (version == null && backend is QbTorrentBackend) {
+      failure = backend.lastProbeFailure;
+    }
+    if (version == null && backend is RemoteFushiTorrentBackend) {
       failure = backend.lastProbeFailure;
     }
     backend.close();
@@ -142,7 +159,6 @@ class _TorrentSettingsSectionState
   bool _probing = false;
 
   /// TODO-1961：目录选择/校验进行中（按钮禁用防重入）。
-  bool _pickingFolder = false;
 
   bool _fetchingTrackers = false;
   List<String> _trackerPreview = const <String>[];
@@ -281,93 +297,6 @@ class _TorrentSettingsSectionState
     } finally {
       if (mounted) setState(() => _fetchingTrackers = false);
     }
-  }
-
-  /// TODO-1961：选新的下载目录。校验不过**不写**配置，直接 snack 报原因（不静默）。
-  /// 统一走 [pickRealDirectoryPath]（与数据根设置同一惯例）：下载根长期承载写入，
-  /// 必须是真实文件系统路径。
-  Future<void> _changeDownloadFolder() async {
-    if (_pickingFolder) return;
-    setState(() => _pickingFolder = true);
-    try {
-      final String? picked = await pickRealDirectoryPath(
-        context: context,
-        appModel: ref.read(appProvider),
-        dialogTitle: t.download_save_root_change,
-        initialDirectory: ref.read(appProvider).downloadSaveRoot,
-      );
-      if (picked == null || picked.trim().isEmpty || !mounted) return;
-      final DownloadSaveRootIssue? issue = await ref
-          .read(appProvider)
-          .setDownloadSaveRoot(picked);
-      if (!mounted) return;
-      if (issue != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          FushiSnackBar(content: Text(_saveRootIssueMessage(issue))),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _pickingFolder = false);
-    }
-  }
-
-  Future<void> _resetDownloadFolder() async {
-    if (_pickingFolder) return;
-    await ref.read(appProvider).resetDownloadSaveRoot();
-    if (mounted) setState(() {});
-  }
-
-  static String _saveRootIssueMessage(DownloadSaveRootIssue issue) =>
-      downloadSaveRootIssueMessage(issue);
-
-  /// 下载目录分组（当前路径 + 更改 / 恢复默认 + 启动回退警告）。
-  /// 只在内置引擎分支渲染：外接 qb 的落盘目录由 qb 自己管，改不到。
-  ///
-  /// 路径条目按系统设置的写法：标题 + 副标题显示当前路径 + 行尾「更改」按钮，
-  /// 整行也可点；「恢复默认」只在确实改过时作为单独一行出现（灰着的按钮在设置
-  /// 分组里只是噪音）。
-  Widget _downloadFolderGroup(AppModel appModel) {
-    final DownloadSaveRootIssue? issue = appModel.downloadSaveRootIssue;
-    return _group(
-      key: 'downloads.group.save_root',
-      footer: t.download_save_root_hint,
-      rows: <Widget>[
-        SettingsSearchTarget(
-          key: const ValueKey<String>('downloads.save_root'),
-          id: 'downloads.save_root',
-          child: AdaptiveSettingsRow(
-            title: t.download_save_root_title,
-            subtitle: appModel.downloadSaveRoot,
-            onTap: _changeDownloadFolder,
-            trailing: FushiFilledButton.tonal(
-              onPressed: _pickingFolder ? null : _changeDownloadFolder,
-              child: Text(t.download_save_root_change),
-            ),
-          ),
-        ),
-        if (!appModel.downloadSaveRootIsDefault)
-          AdaptiveSettingsRow(
-            key: const ValueKey<String>('downloads.save_root_reset'),
-            title: t.download_save_root_reset,
-            onTap: _resetDownloadFolder,
-          ),
-        if (issue != null)
-          Padding(
-            key: const ValueKey<String>('downloads.save_root_issue'),
-            padding: EdgeInsets.symmetric(
-              horizontal: FushiDesignTokens.of(context).spacing.rowHorizontal,
-              vertical: 10,
-            ),
-            child: FushiInlineNotice(
-              severity: FushiNoticeSeverity.warning,
-              message:
-                  '${t.download_save_root_fallback_warning}'
-                  '\n${appModel.downloadSaveRootRejectedPath ?? ''} — '
-                  '${_saveRootIssueMessage(issue)}',
-            ),
-          ),
-      ],
-    );
   }
 
   static int _nonNegInt(String v) {
@@ -529,31 +458,38 @@ class _TorrentSettingsSectionState
   ///
   /// 内置引擎排在第一段：它才是本平台的默认（`backendAuto` 解析结果），也是
   /// 开箱即用的那一个。qb 需要用户另装并配好 WebUI 才能用，排第二。
+  /// 下载引擎：与其它设置行同一种分段行（标题 + 随选中项变化的说明在卡片内，
+  /// 分段在右侧或下方撑满），不再是卡片里一条靠左的裸分段条 + 卡外脚注。
   Widget _backendRow(String backend) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return SettingsSearchTarget(
       key: const ValueKey<String>('downloads.backend'),
       id: 'downloads.backend',
-      child: Padding(
-        padding: EdgeInsets.symmetric(
-          horizontal: tokens.spacing.rowHorizontal,
-          vertical: 10,
-        ),
-        child: FushiSegmentedStrip<String>(
-          segments: <ButtonSegment<String>>[
-            ButtonSegment<String>(
-              value: QbConnectionConfig.backendEmbedded,
-              label: Text(t.video_setting_torrent_backend_embedded),
-            ),
-            ButtonSegment<String>(
-              value: QbConnectionConfig.backendQbittorrent,
-              label: Text(t.video_setting_torrent_backend_qb),
-            ),
-          ],
-          selected: backend,
-          onChanged: (String value) =>
-              _commit((QbConnectionConfig c) => c.copyWith(backend: value)),
-        ),
+      child: AdaptiveSettingsSegmentedRow<String>(
+        title: t.download_backend_title,
+        subtitle: switch (backend) {
+          QbConnectionConfig.backendEmbedded =>
+            t.download_backend_embedded_hint,
+          QbConnectionConfig.backendFushiHost =>
+            t.download_backend_fushi_host_hint,
+          _ => t.download_backend_qb_hint,
+        },
+        segments: <ButtonSegment<String>>[
+          ButtonSegment<String>(
+            value: QbConnectionConfig.backendEmbedded,
+            label: Text(t.video_setting_torrent_backend_embedded),
+          ),
+          ButtonSegment<String>(
+            value: QbConnectionConfig.backendQbittorrent,
+            label: Text(t.video_setting_torrent_backend_qb),
+          ),
+          ButtonSegment<String>(
+            value: QbConnectionConfig.backendFushiHost,
+            label: Text(t.video_setting_torrent_backend_fushi_host),
+          ),
+        ],
+        selected: backend,
+        onChanged: (String value) =>
+            _commit((QbConnectionConfig c) => c.copyWith(backend: value)),
       ),
     );
   }
@@ -614,6 +550,55 @@ class _TorrentSettingsSectionState
             )
           : null,
       onTap: canPair ? () => unawaited(_openInterconnectSettings()) : null,
+    );
+  }
+
+  /// 「下载后端 = 互联设备」借哪台 host 的引擎。没配对过 → 与执行设备同一个
+  /// 「去配对」入口；存 hostId（换地址不换身份）+ 代表地址。
+  Widget _engineHostRow(AppModel appModel) {
+    final QbConnectionConfig c = _config;
+    if (_pairedHosts.isEmpty) return _executionHostUnpairedRow(appModel);
+    final String selected =
+        _pairedHosts.any((FushiClientUrl h) => h.url == c.remoteHostUrl)
+        ? c.remoteHostUrl
+        : '';
+    return SettingsSearchTarget(
+      key: const ValueKey<String>('downloads.engine_host'),
+      id: 'downloads.engine_host',
+      child: AdaptiveSettingsPickerRow<String>(
+        key: const ValueKey<String>('downloads-engine-host'),
+        title: t.video_setting_torrent_engine_host_title,
+        subtitle: selected.isEmpty
+            ? t.download_engine_host_unset
+            : t.download_engine_host_hint,
+        selected: selected,
+        options: <AdaptiveSettingsPickerOption<String>>[
+          if (selected.isEmpty)
+            AdaptiveSettingsPickerOption<String>(
+              value: '',
+              label: t.download_engine_host_unset,
+            ),
+          for (final FushiClientUrl host in _pairedHosts)
+            AdaptiveSettingsPickerOption<String>(
+              value: host.url,
+              label: host.deviceName ?? host.url,
+            ),
+        ],
+        onChanged: (String value) {
+          final FushiClientUrl? host = _pairedHosts
+              .where((FushiClientUrl h) => h.url == value)
+              .firstOrNull;
+          if (host == null) return;
+          unawaited(
+            _commit(
+              (QbConnectionConfig c) => c.copyWith(
+                remoteHostId: host.hostId ?? '',
+                remoteHostUrl: host.url,
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -679,6 +664,7 @@ class _TorrentSettingsSectionState
     );
     final bool isQb = backend == QbConnectionConfig.backendQbittorrent;
     final bool isEmbedded = backend == QbConnectionConfig.backendEmbedded;
+    final bool isFushiHost = backend == QbConnectionConfig.backendFushiHost;
 
     final bool common =
         widget.scope == TorrentSettingsScope.all ||
@@ -710,9 +696,6 @@ class _TorrentSettingsSectionState
         if (_supportsEmbedded)
           _group(
             key: 'downloads.group.backend',
-            footer: isEmbedded
-                ? t.download_backend_embedded_hint
-                : t.download_backend_qb_hint,
             rows: <Widget>[_backendRow(backend)],
           )
         else
@@ -721,6 +704,22 @@ class _TorrentSettingsSectionState
             key: const ValueKey<String>('downloads.backend_unsupported'),
           ),
       ],
+
+      // 借互联设备的引擎：选哪台 + 测试连接。
+      if (isFushiHost && connection)
+        _group(
+          key: 'downloads.group.engine_host',
+          footer: t.download_engine_host_mapping_hint,
+          rows: <Widget>[
+            _engineHostRow(appModel),
+            _actionRow(
+              id: 'downloads.test_engine_host',
+              title: t.download_test_connection,
+              busy: _probing,
+              onTap: _probeConnection,
+            ),
+          ],
+        ),
 
       // 外接 qb 连接。
       if (isQb && connection)
@@ -766,8 +765,8 @@ class _TorrentSettingsSectionState
 
       // 内置引擎：下载目录 / 限速 / 上传与做种。
       if (isEmbedded && common) ...<Widget>[
-        // TODO-1961：下载目录（只影响新增任务，旧任务留在原目录）。
-        _downloadFolderGroup(appModel),
+        // 下载目录已挪到通用的「下载位置」分组（DownloadLocationSection）：下载根
+        // 不只属于内置引擎，在线漫画 / 音乐插件 / 发现页下载都落在它下面。
         // 限速默认只约束 session 全局速率：libtorrent 把局域网 peer 归入独立的
         // local peer class，该 class 不受全局上限约束（官方文档明写的默认行为，
         // 家里两台机器互传不该被限）。下面的 limitLocalPeers 开关（默认关）可以

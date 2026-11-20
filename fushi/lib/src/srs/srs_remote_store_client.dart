@@ -1,10 +1,12 @@
 /// 远程复习库的客户端（docs/specs/2026-11-01-srs-remote-review-design.md）：已配对设备不下载卡组，直接在
 /// 互联主机的复习库上复习。
 ///
-/// [SrsRemoteStore] 实现 [SrsDbStore] 的接口，每次调用转发到主机（`/api/srs/remote/call`），复习页 / 笔记编辑 /
-/// 牌组设置 / 浏览等页面原样跑在它上面（`srs_remote_review_page.dart` 在子作用域里把 `srsStoreProvider` 换成它），
-/// 所以功能与在本机复习一致。实体视图按物化输入搬运、在本机用同一个内核物化（[SrsRemoteWire]）；笔记类型与
-/// 牌组树按版本标签缓存，没变就不再搬。卡面媒体按名字拉进本机缓存（[SrsRemoteMediaStore]）。
+/// [SrsRemoteStore] 实现 [SrsDbStore] 的接口，每次调用转发到主机（线格式 V2：`/api/srs/remote2/call`，请求体带
+/// `g: 4`），复习页 / 笔记编辑 / 牌组设置 / 浏览等页面原样跑在它上面（`srs_remote_review_page.dart` 在子作用域里把
+/// `srsStoreProvider` 换成它），所以功能与在本机复习一致。实体搬主机内核算好的视图 `{id, tag, v}`，经与本机同一份
+/// 解码器（srs_entity_views.dart）在本机物化（[SrsRemoteWire]）；笔记类型与牌组树按视图标签缓存，没变就不再搬。
+/// ID 一律是主机集合里的规范 ID：内置实体 ID 取主机信封里的那一份、归一问主机的 `canonical_ids`，不在本机派生。
+/// 卡面媒体按名字拉进本机缓存（[SrsRemoteMediaStore]）。
 library;
 
 import 'dart:async';
@@ -13,9 +15,10 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
-import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_edit_history.dart';
+import 'package:fushi_engine/srs/srs_entity_views.dart'
+    show kSrsEntityViewsBatchMax;
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
 import 'package:fushi_engine/srs/srs_remote_generation.dart';
 import 'package:fushi_engine/srs/srs_remote_store.dart';
@@ -53,28 +56,47 @@ class SrsRemoteHostClient extends InterconnectHostClient {
   /// 这次调用要带给主机的偏移：越出现实时区范围时不带（主机按自己的偏移算，与旧客户端相同）。
   int? get deviceOffsetMin => srsRemoteDeviceOffset(localOffsetMin());
 
-  /// 一次调用；回包是整个信封（`result` 之外还有主机的修订号、牌组树标签、时钟）。
+  /// 一次调用（V2）；回包是整个信封（`result` 之外还有主机的集合、内置 ID、修订号、牌组树标签、时钟）。
+  /// [collection]：握手时看到的集合，握手之后的读写都带上（主机期间换了集合就 409 `profile_changed`）。
+  ///
+  /// 对端回 404 而没有机读码：它不认 V2 前缀，是只说 V1 的旧主机（新主机复习关着时回 503 `unavailable`），报成
+  /// 426 [SrsRemoteStoreError.upgradeRequired]——界面提示「主机需要升级」，不当成连不上。
   Future<Map<String, dynamic>> call(
     String op, {
     Map<String, Object?> args = const <String, Object?>{},
     String? profile,
     String? request,
-  }) => postJson(
-    '${kSrsRemoteStorePathPrefix}call',
-    body: <String, dynamic>{
-      'op': op,
-      'args': args,
-      'profile': ?profile,
-      'request': ?request,
-      kSrsRemoteDeviceOffsetKey: ?deviceOffsetMin,
-    },
-    timeout: const Duration(seconds: 30),
-    authErrorMessage: 'SRS remote store authentication rejected',
-  );
+    String? collection,
+  }) async {
+    try {
+      return await postJson(
+        '${kSrsRemoteStoreV2PathPrefix}call',
+        body: <String, dynamic>{
+          kSrsRemoteGenerationKey: kSrsRemoteStoreV2Generation,
+          'op': op,
+          'args': args,
+          'profile': ?profile,
+          'request': ?request,
+          'col': ?collection,
+          kSrsRemoteDeviceOffsetKey: ?deviceOffsetMin,
+        },
+        timeout: const Duration(seconds: 30),
+        authErrorMessage: 'SRS remote store authentication rejected',
+      );
+    } on InterconnectHostError catch (e) {
+      if (e.statusCode == 404 && e.message == 'HTTP 404') {
+        throw const InterconnectHostError(
+          SrsRemoteStoreError.upgradeRequired,
+          statusCode: 426,
+        );
+      }
+      rethrow;
+    }
+  }
 
-  /// 主机是否声明了远程复习库（V1 能力位）。null = 没有应答。
+  /// 主机是否声明了 V2 远程复习库（本构建能连的那一代）。null = 没有应答。
   Future<bool?> supportsRemoteStore() =>
-      declaresCapability(kSrsRemoteStoreCapability);
+      declaresCapability(kSrsRemoteStoreCapabilityV2);
 
   /// 主机远程复习的代（按 `/api/capabilities` 的能力位，[srsRemoteHostGenerationOf]）。null = 没有应答。
   Future<SrsRemoteHostGeneration?> remoteGeneration() async {
@@ -85,7 +107,7 @@ class SrsRemoteHostClient extends InterconnectHostClient {
   /// 一个媒体文件的字节；主机没有时 null。
   Future<Uint8List?> media(String name) async {
     final http.Response? r = await getFromHost(
-      '${kSrsRemoteStorePathPrefix}media/${Uri.encodeComponent(name)}',
+      '${kSrsRemoteStoreV2PathPrefix}media/${Uri.encodeComponent(name)}',
       timeout: const Duration(seconds: 30),
     );
     return r?.bodyBytes;
@@ -268,6 +290,11 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
       envelope.profile!,
       prefetchMedia: prefetchMedia,
     );
+    // V2 主机的信封总带集合与内置 ID：缺了说明对端不合契约，不用派生值顶上。
+    _parse('hello', () {
+      if (envelope.collection == null) throw const SrsRemoteWireError('col');
+      if (envelope.roots == null) throw const SrsRemoteWireError('ids');
+    });
     store._absorb(envelope);
     return store;
   }
@@ -288,6 +315,13 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
 
   /// 渲染出卡面之后、交给页面之前把卡面引用的媒体拉进本机缓存（`[sound:]` 播放读本地文件）。
   final Future<void> Function(Set<String> names)? prefetchMedia;
+
+  /// 主机这份 profile 绑定的集合（信封的 `col`）；握手之后的读写都带上它（[SrsRemoteHostClient.call]），
+  /// 只在握手时取一次，之后回包里看到别的集合就报 profile_changed（[_absorb]）。
+  String? _collection;
+
+  /// 主机集合里根上内置实体的规范 ID（信封的 `ids`）；握手之后恒非空。
+  SrsRemoteRootIds? _roots;
 
   int _revision = 0;
   String _fingerprint = '';
@@ -317,6 +351,25 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
   late final SrsRemoteRwkvStatus hostRwkv = SrsRemoteRwkvStatus._(this);
 
   void _absorb(SrsRemoteEnvelope e) {
+    final String? col = e.collection;
+    if (col != null && col != _collection) {
+      if (_collection == null) {
+        _collection = col;
+      } else {
+        // 主机这份 profile 换了集合（并入 / 认领）：按旧集合缓存的视图、ID、作答基准全部作废，并且不在这里悄悄
+        // 换成新集合——页面手里的卡 / 笔记 ID 都按旧集合，报 profile_changed 让上层重新握手；`_collection` 留着旧值，
+        // 之后的读写主机照样回 409，不会按新集合落写。
+        _tree = null;
+        _types.clear();
+        _day = null;
+        _bases.clear();
+        throw const InterconnectHostError(
+          SrsRemoteStoreError.profileChanged,
+          statusCode: 409,
+        );
+      }
+    }
+    _roots = e.roots ?? _roots;
     _revision = e.revision ?? _revision;
     _fingerprint = e.fingerprint ?? _fingerprint;
     _treeTag = e.treeTag ?? _treeTag;
@@ -360,6 +413,7 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
       op,
       args: args ?? const <String, Object?>{},
       profile: profileUid,
+      collection: _collection,
     ),
     decode,
   );
@@ -378,6 +432,7 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
         args: args,
         profile: profileUid,
         request: request,
+        collection: _collection,
       );
     } on InterconnectHostError catch (e) {
       if (e.message != InterconnectHostError.unreachableCode) rethrow;
@@ -386,6 +441,7 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
         args: args,
         profile: profileUid,
         request: request,
+        collection: _collection,
       );
     }
     return _call(op, env, decode);
@@ -395,12 +451,46 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
 
   // ---------------------------------------------------------------- 同步成员
 
+  SrsRemoteRootIds get _rootIds =>
+      _roots ??
+      (throw StateError('SrsRemoteStore: root ids come with the handshake'));
+
+  /// 主机集合里内置默认牌组的规范 ID（信封的 `ids`，不在本机按 uid 派生）。
   @override
-  String get defaultDeckId => SrsIds.builtinDefaultDeck(profileUid);
+  String get defaultDeckId => _rootIds.defaultDeck;
+
+  /// 同 [defaultDeckId]：内置 Lapis 笔记类型。
   @override
-  String get lapisNoteTypeId => srsLapisNoteTypeId(profileUid);
+  String get lapisNoteTypeId => _rootIds.lapis;
+
+  /// 同 [defaultDeckId]：内置 Fushi 卡片笔记类型。
   @override
-  String get fushiCardNoteTypeId => srsFushiCardNoteTypeId(profileUid);
+  String get fushiCardNoteTypeId => _rootIds.fushiCard;
+
+  /// 规范 ID 问主机的内核（`canonicalIds` → `canonical_ids`，只读），逐项对应；一次最多
+  /// [kSrsEntityViewsBatchMax] 条，多了分批。
+  @override
+  Future<List<String>> canonicalIds(List<String> ids) async {
+    final List<String> out = <String>[];
+    for (int at = 0; at < ids.length; at += kSrsEntityViewsBatchMax) {
+      final List<String> chunk = ids.sublist(
+        at,
+        min(at + kSrsEntityViewsBatchMax, ids.length),
+      );
+      final List<String> got = await _read('canonicalIds', <String, Object?>{
+        'ids': chunk,
+      }, SrsRemoteWire.stringsFrom);
+      if (got.length != chunk.length) {
+        throw SrsRemoteBadResponse(
+          'canonicalIds',
+          SrsRemoteWireError('result(${got.length} != ${chunk.length})'),
+        );
+      }
+      out.addAll(got);
+    }
+    return out;
+  }
+
   @override
   bool get canSchedule => _canSchedule;
   @override
@@ -473,15 +563,15 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
   Future<_RemoteTree> _currentEntry() async {
     final _RemoteTree? cached = _tree;
     if (cached != null && cached.tag == _treeTag) return cached;
-    final List<SrsEntitySource> sources = await _read(
+    final List<SrsEntityView> views = await _read(
       'deckTree',
       null,
-      SrsRemoteWire.sourcesFrom,
+      SrsRemoteWire.viewsFrom,
     );
     final _RemoteTree entry = _RemoteTree(
       _treeTag,
-      sources,
-      _parse('deckTree', () => SrsRemoteWire.deckTreeFrom(sources)),
+      views,
+      _parse('deckTree', () => SrsRemoteWire.deckTreeFrom(views)),
     );
     _tree = entry;
     return entry;
@@ -496,20 +586,20 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
         if (_types[r.id]?.tag != r.tag) r.id,
     ];
     if (missing.isNotEmpty) {
-      final List<SrsEntitySource> sources = await _read(
-        'noteTypeSources',
+      final List<SrsEntityView> wire = await _read(
+        'noteTypeViews',
         <String, Object?>{'ids': missing},
-        SrsRemoteWire.sourcesFrom,
+        SrsRemoteWire.viewsFrom,
       );
       final List<SrsNoteTypeView> views = _parse(
-        'noteTypeSources',
-        () => SrsRemoteWire.noteTypesFrom(profileUid, sources),
+        'noteTypeViews',
+        () => SrsRemoteWire.noteTypesFrom(_rootIds, wire),
       );
-      for (int i = 0; i < sources.length; i++) {
-        _types[sources[i].id] = (
-          tag: SrsRemoteWire.tagOf(sources[i]),
-          view: views[i],
-        );
+      final Map<String, String> tags = <String, String>{
+        for (final SrsEntityView v in wire) v.id: v.tag,
+      };
+      for (final SrsNoteTypeView v in views) {
+        _types[v.id] = (tag: tags[v.id]!, view: v);
       }
     }
     return <SrsNoteTypeView>[
@@ -532,7 +622,7 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
 
   Map<String, SrsNoteView?> _notesFrom(Object? json, Iterable<String> ids) {
     final List<SrsNoteView> views = SrsRemoteWire.notesFrom(
-      SrsRemoteWire.sourcesFrom(json),
+      SrsRemoteWire.viewsFrom(json),
     );
     final Map<String, SrsNoteView> byId = <String, SrsNoteView>{
       for (final SrsNoteView v in views) v.id: v,
@@ -579,8 +669,17 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
   /// 牌组摘要 + 解码它们用的那份牌组树（同一次读出）：复习首页据此落盘缓存。
   Future<SrsRemoteDeckSnapshot> deckSnapshot() async {
     final (List<SrsDeckSummary> decks, _RemoteTree entry) = await _summaries();
-    return (decks: decks, cache: SrsRemoteWire.deckCache(entry.sources, decks));
+    return (decks: decks, cache: SrsRemoteWire.deckCache(entry.views, decks));
   }
+
+  @override
+  Future<Set<String>> limitUnitLegacyDecks() => _read(
+    'limitUnitLegacyDecks',
+    null,
+    (Object? json) => <String>{
+      for (final Object? d in json! as List<Object?>) d! as String,
+    },
+  );
 
   @override
   Future<SrsTodayReviewSummary> todayReviewSummary() =>
@@ -640,9 +739,10 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
       final SrsRemoteCardDetail? d = SrsRemoteWire.cardDetailFrom(json);
       if (d == null) return null;
       _remember(d.card);
-      final SrsNoteView note = SrsRemoteWire.notesFrom(<SrsEntitySource>[
-        d.note,
-      ]).single;
+      // 卡在、笔记视图却没有身份记录：主机回包自相矛盾，按不合契约报，不当成「卡不存在」。
+      final SrsNoteView note =
+          SrsRemoteWire.notesFrom(<SrsEntityView>[d.note]).firstOrNull ??
+          (throw const SrsRemoteWireError('cardDetail.note'));
       final List<SrsNoteTypeView> types = await _typesOf(<SrsRemoteTypeRef>[
         d.type,
       ]);
@@ -1130,27 +1230,32 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
     }, SrsEditUndoResult.fromJson);
   }
 
+  /// [onRecords]：远程协议的 `writeEdits` 只回修改记录、不回落下的规范 ID（远程的 ID 对回归 G10-2），这里报请求里的
+  /// 身份记录 ID（与 [canonicalIds] 同一处理）。本机入口请求的 ID 来自 [SrsKernelIds]，本来就是规范 ID。
   @override
   Future<List<SrsFieldEdit>> writeEdits(
     List<SrsEditSpec> specs, {
     List<SrsEntityRecord> records = const <SrsEntityRecord>[],
-  }) {
+    void Function(List<String> landed)? onRecords,
+  }) async {
     for (final SrsEditSpec s in specs) {
       if (s.kind == SrsEntityKind.card) _bases.remove(s.entityId);
     }
-    return _write('writeEdits', <String, Object?>{
+    final List<SrsFieldEdit> out = await _write('writeEdits', <String, Object?>{
       'specs': SrsRemoteWire.editSpecs(specs),
       'records': <Object?>[for (final SrsEntityRecord r in records) r.toJson()],
     }, SrsRemoteWire.editsFrom);
+    onRecords?.call(<String>[for (final SrsEntityRecord r in records) r.id]);
+    return out;
   }
 }
 
-/// 缓存的主机牌组树：按树标签失效；[sources] 留着给首页落盘（[SrsRemoteStore.deckSnapshot]）。
+/// 缓存的主机牌组树：按树标签失效；[views] 留着给首页落盘（[SrsRemoteStore.deckSnapshot]）。
 class _RemoteTree {
-  const _RemoteTree(this.tag, this.sources, this.tree);
+  const _RemoteTree(this.tag, this.views, this.tree);
 
   final String tag;
-  final List<SrsEntitySource> sources;
+  final List<SrsEntityView> views;
   final SrsDeckTree tree;
 }
 

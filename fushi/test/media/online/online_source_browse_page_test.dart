@@ -169,8 +169,16 @@ void main() {
     ));
     await tester.pump();
     await tester.pump();
-    await tester.drag(find.byType(GridView), const Offset(0, -300));
-    await tester.pump();
+    // 网格列数按库页拼贴块目标宽排（#3515），一行比旧的 180 一列更高：不再假定
+    // 固定拖 300 就能看到第 2 页首项，往下滚到它出现为止（每步 200）。
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey<String>('fake_item_popular-p2-0')),
+      200,
+      scrollable: find.descendant(
+        of: find.byType(GridView),
+        matching: find.byType(Scrollable),
+      ),
+    );
     expect(
       find.byKey(const ValueKey<String>('fake_item_popular-p2-0')),
       findsOneWidget,

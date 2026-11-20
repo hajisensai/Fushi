@@ -57,7 +57,118 @@ List<String> findBareVideoPathExistsChecks(String source) {
   return hits;
 }
 
+/// `hasLocalMediaFile(<表达式>)` / `hasLocalMediaFileSync(<表达式>)` 的调用。
+final RegExp _mediaCheck = RegExp(
+  r'hasLocalMediaFile(?:Sync)?\(\s*([\w.!?]+)\s*\)',
+);
+
+/// 判真之后往下这么多字符内（同一个函数体的量级）不许出现 `File(<同一表达式>)`。
+const int _byteReadWindow = 1500;
+
+/// 在 `hasLocalMediaFile*`（能经 ffmpeg / 原生读到媒体）判真之后，又对同一路径
+/// `File(...)` 按字节读的写法。蓝光分集是虚拟路径、整卷 `.mpls` 只是索引，这样读
+/// 会抛 PathNotFoundException 或读到几百字节的索引；按字节读要先过
+/// `hasLocalSingleMediaFile*`。
+List<String> findByteReadsAfterMediaCheck(String source) {
+  final String code = maskComments(source);
+  final List<String> hits = <String>[];
+  for (final RegExpMatch m in _mediaCheck.allMatches(code)) {
+    final String expr = m.group(1)!;
+    final int end = m.end + _byteReadWindow < code.length
+        ? m.end + _byteReadWindow
+        : code.length;
+    // `File(` 前面不能紧挨标识符字符：判真之后对同一路径再问别的判据
+    // （`hasLocalMediaFile(path)` / `lacksLocalMediaFile(path)`）不是按字节读。
+    final RegExp read = RegExp(
+      '(?<!\\w)File\\(\\s*${RegExp.escape(expr)}\\s*\\)',
+    );
+    final Match? hit = read.firstMatch(code.substring(m.end, end));
+    if (hit != null) hits.add('${m.group(0)} … ${hit.group(0)}');
+  }
+  return hits;
+}
+
 void main() {
+  test('判据本身：判真后对同一路径 File(...) 认得出，换了谓词 / 换了路径 / 注释不算', () {
+    expect(
+      findByteReadsAfterMediaCheck(
+        'if (!await hasLocalMediaFile(v.videoPath)) return;\n'
+        'final File file = File(v.videoPath);\nawait file.length();',
+      ),
+      hasLength(1),
+    );
+    expect(
+      findByteReadsAfterMediaCheck(
+        'final int n = hasLocalMediaFileSync(videoPath)\n'
+        '    ? File(videoPath).lengthSync() : 0;',
+      ),
+      hasLength(1),
+    );
+    expect(
+      findByteReadsAfterMediaCheck(
+        'if (!await hasLocalSingleMediaFile(videoPath)) return;\n'
+        'final File file = File(videoPath);\n'
+        'if (!await hasLocalMediaFile(videoPath)) return;\n'
+        'final File frame = File(produced);\n'
+        '// 反例：hasLocalMediaFile(videoPath) 之后 File(videoPath).length()',
+      ),
+      isEmpty,
+    );
+    // 判真之后对同一路径再问别的判据（函数名以 File 结尾）不是按字节读。
+    expect(
+      findByteReadsAfterMediaCheck(
+        'if (!await hasLocalMediaFile(path)) {\n'
+        '  reason = lacksLocalMediaFile(path);\n'
+        '}\n'
+        'if (await hasLocalMediaFile(videoPath)) {}\n'
+        'if (!await hasLocalMediaFile(videoPath)) throw x;',
+      ),
+      isEmpty,
+    );
+  });
+
+  test('判「能经 ffmpeg 读到」之后不对同一路径按字节读（要读字节用 hasLocalSingleMediaFile*）', () {
+    final Directory repo = Directory(
+      p.normalize(p.join(Directory.current.path, '..')),
+    );
+    int scanned = 0;
+    final Map<String, List<String>> offenders = <String, List<String>>{};
+    for (final String root in <String>[
+      'fushi/lib',
+      'packages/fushi_engine/lib',
+      'packages/fushi_server/lib',
+    ]) {
+      final Directory dir = Directory(p.join(repo.path, root));
+      expect(dir.existsSync(), isTrue, reason: '扫描根不存在：${dir.path}');
+      for (final FileSystemEntity e in dir.listSync(recursive: true)) {
+        if (e is! File || !e.path.endsWith('.dart')) continue;
+        if (e.path.endsWith('.g.dart')) continue;
+        scanned++;
+        final List<String> hits = findByteReadsAfterMediaCheck(
+          e.readAsStringSync(),
+        );
+        if (hits.isEmpty) continue;
+        offenders[p.relative(e.path, from: repo.path).replaceAll('\\', '/')] =
+            hits;
+      }
+    }
+    expectScanScale(
+      scanned,
+      what: 'app / 引擎 / 服务端 lib 下的 .dart 文件',
+      atLeast: 2000,
+      measured: 2538,
+    );
+    expect(
+      offenders,
+      isEmpty,
+      reason:
+          'hasLocalMediaFile* 只说明本机能经 ffmpeg / 原生解码器读到媒体：蓝光分集是虚拟'
+          '路径、整卷 .mpls 只是索引，判真后 File(同一路径) 读字节会抛异常或读错。按字节'
+          '读（上传、指纹、按长度定身份）改用 hasLocalSingleMediaFile*'
+          '（packages/fushi_engine/lib/media/video/video_member_file.dart）。',
+    );
+  });
+
   test('判据本身：直接写法与先赋值再判的写法都认得出，注释与入口函数不算', () {
     expect(
       findBareVideoPathExistsChecks(

@@ -264,6 +264,7 @@ void main() {
       '.github/actions/setup-fushi-compute/action.yml': apps,
       '.github/actions/setup-fushi-rwkv/action.yml': apps,
       '.github/scripts/verify_torrent_abi.sh': <String>{'macos', 'server'},
+      '.github/scripts/check_glibc_baseline.sh': <String>{'server'},
       // strings.g.dart 不入库：三个 app job 编译前跑 gen-i18n action → fushi/tool/gen_i18n.dart，
       // 改生成器 / action 要在三个平台上真跑一次（Windows runner 的 bash / dart 路径不同）。
       // linux-server 不编 app（fushi_server 闭包不依赖 package:fushi），不跑生成。
@@ -384,6 +385,7 @@ void main() {
         'pubspec.lock',
         '.github/actions/native-store-names/names.sh',
         '.github/scripts/verify_torrent_abi.sh',
+        '.github/scripts/check_glibc_baseline.sh',
         '.github/workflows/build-multiplatform.yml',
       ])
         if (routed(p).isNotEmpty && !_githubPathFilterMatches(filter, p)) p,
@@ -426,7 +428,7 @@ void main() {
       "grep -q 'native library not found'",
       'native/fushi_anki_sync/build.sh --debug --install-dir build/fushi_server_linux/bundle/bin',
       'dart build cli --target packages/fushi_server/bin/fushi_server.dart',
-      'libonnxruntime.so',
+      '.github/scripts/fetch_onnxruntime_nuget.py "\$ORT_VERSION" linux-x64',
       'bash native/fushidicts/build_linux_so.sh',
       'build/fushi_server_linux/bundle/lib/libfushidicts_ffi.so',
       'lib.fushidicts_create.restype',

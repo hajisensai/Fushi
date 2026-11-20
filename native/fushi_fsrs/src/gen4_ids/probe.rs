@@ -740,3 +740,94 @@ fn canonical_id_probe_real_db() {
         report(&ev, &cs, &al);
     }
 }
+
+/// G4 的干跑（`store/gen4/dryrun.rs`）对照用：同一份库按本探针的口径（证据取旧投影表）算出的、与新存储别名表
+/// （`store/gen4/alias.rs` 的 `alias_row`）同口径的条数——[带盐, 派生, 兜底, 验不上, 归回去的改名写入者]。
+/// 「出现过的 ID」取本探针数过的全部类（实体、定义、卡、日志）；只记规范 ID 变了的、或该验得上却没验上的非随机 ID。
+pub(crate) fn alias_table_counts(c: &Connection) -> [u64; 5] {
+    let (ev, cs) = load(c);
+    let al = resolve(&ev, &Limits::default());
+    let mut seen: HashSet<Id> = HashSet::new();
+    for ids in [
+        &cs.notes,
+        &cs.note_types,
+        &cs.field_defs,
+        &cs.template_defs,
+        &cs.decks,
+        &cs.profile_entities,
+        &cs.live_cards,
+        &cs.lineage_cards,
+        &cs.card_edit_entities,
+    ] {
+        seen.extend(ids.iter().copied());
+    }
+    for ids in cs.logs.values() {
+        seen.extend(ids.iter().copied());
+    }
+    let mut out = [0u64; 5];
+    for id in &seen {
+        let canon = al.canonical(id);
+        let slot = match al.how(id) {
+            How::Salted { .. } => 0,
+            How::Derived => 1,
+            How::Fallback { .. } => 2,
+            // 随机 ID（v7）本来就不是派生的，不记（同 alias_row）。
+            How::Unverified(_) if id.0[6] >> 4 != 7 => 3,
+            _ => continue,
+        };
+        if canon == *id && slot != 3 {
+            continue;
+        }
+        out[slot] += 1;
+    }
+    let writers: BTreeSet<&str> = cs.edits.iter().map(|(_, w, _)| w.as_str()).collect();
+    out[4] = writers
+        .into_iter()
+        .filter(|w| al.canonical_writer(w) != *w)
+        .count() as u64;
+    out
+}
+
+/// [alias_table_counts] 记进别名表的那些 ID（槽位同上，0..=3）各自出自哪些候选集（同一个 ID 可在几处）：样本干跑拿它与新库
+/// `alias_ix` 逐个对，差出来的按来源归类。
+pub(crate) fn alias_table_sources(c: &Connection) -> HashMap<Id, (usize, Vec<&'static str>)> {
+    let (ev, cs) = load(c);
+    let al = resolve(&ev, &Limits::default());
+    let mut src: HashMap<Id, Vec<&'static str>> = HashMap::new();
+    for (name, ids) in [
+        ("notes", &cs.notes),
+        ("noteTypes", &cs.note_types),
+        ("fieldDefs", &cs.field_defs),
+        ("templateDefs", &cs.template_defs),
+        ("decks", &cs.decks),
+        ("profileEntities", &cs.profile_entities),
+        ("liveCards", &cs.live_cards),
+        ("lineageCards", &cs.lineage_cards),
+        ("cardEditEntities", &cs.card_edit_entities),
+    ] {
+        for id in ids {
+            src.entry(*id).or_default().push(name);
+        }
+    }
+    for ids in cs.logs.values() {
+        for id in ids {
+            src.entry(*id).or_default().push("logs");
+        }
+    }
+    let mut out = HashMap::new();
+    for (id, from) in src {
+        let canon = al.canonical(&id);
+        let slot = match al.how(&id) {
+            How::Salted { .. } => 0,
+            How::Derived => 1,
+            How::Fallback { .. } => 2,
+            How::Unverified(_) if id.0[6] >> 4 != 7 => 3,
+            _ => continue,
+        };
+        if canon == id && slot != 3 {
+            continue;
+        }
+        out.insert(id, (slot, from));
+    }
+    out
+}

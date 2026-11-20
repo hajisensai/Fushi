@@ -36,22 +36,88 @@ enum ShellContentLayout {
   grid('grid');
 
   // 「规整色块」（落库值 `blocks`）2026-11-12 按用户拍板删掉：库页布局只剩拼贴与
-  // 封面网格。已存的 `blocks` 不在 [values] 里，[fromPref] 落到 [defaultLayout]
-  // （拼贴），偏好键与其余落库值不改。
+  // 封面网格。已存的 `blocks` 不在 [values] 里，是用户当年显式选的色块类布局，
+  // [fromPref] 把它读成最接近的拼贴；偏好键与其余落库值不改。
 
   const ShellContentLayout(this.prefValue);
 
   /// 落库的字符串（冻结，改名不改它）。
   final String prefValue;
 
+  /// 已删档位「规整色块」的落库值（只读兼容，不再写）。
+  static const String legacyBlocksPrefValue = 'blocks';
+
+  /// 新安装的出厂布局。升级上来、从没选过的老用户不走它，而是
+  /// [ShellLayoutInstallDefault.layout]（封面网格），见 [fromPref] 的 `fallback`。
   static const ShellContentLayout defaultLayout = collage;
 
-  /// 读偏好：未知值（含已删的 `blocks`）与没选过一律是 [defaultLayout]（拼贴）。
-  static ShellContentLayout fromPref(String? value) {
+  /// 读偏好：已删的 `blocks` 读成拼贴；没选过（空 / 缺失）与未知值落到
+  /// [fallback]——调用方传本安装的出厂布局（[ShellLayoutInstallDefault.layout]），
+  /// 缺省 [defaultLayout]。
+  static ShellContentLayout fromPref(
+    String? value, {
+    ShellContentLayout fallback = defaultLayout,
+  }) {
     for (final ShellContentLayout layout in values) {
       if (layout.prefValue == value) return layout;
     }
-    return defaultLayout;
+    if (value == legacyBlocksPrefValue) return collage;
+    return fallback;
+  }
+}
+
+/// 本安装的库页布局出厂值 + 「选一种库页布局」弹窗状态（设备本地偏好
+/// [prefKey]，一次性判定，G1 新旧 UI 选择）。
+///
+/// 拼贴是新默认，但升级上来、从没碰过 `shell_content_layout` 的老用户不能被静默
+/// 切到拼贴：他们的出厂值是封面网格，首页弹一次选择框；新安装出厂值是拼贴，在
+/// 新手引导欢迎页里选。判定在 `ThemeNotifier` 载入偏好时做（先于首页首帧写
+/// `first_time_setup`，全新安装此时一个老用户信号都没有），之后只读不再重判。
+///
+/// 出厂值不写进 `shell_content_layout` 本身：那个键随 Profile 走，切到一个它落地
+/// 之前建的老 Profile 会把它删掉，老用户又会掉回拼贴。出厂值放在本设备本地键里，
+/// `shell_content_layout` 缺失时永远按它读。
+enum ShellLayoutInstallDefault {
+  /// 新安装：出厂拼贴，不弹选择框（新手引导里选）。
+  fresh('collage'),
+
+  /// 升级上来、从没选过布局：出厂封面网格，首页还要弹一次选择框。
+  upgradeChoicePending('grid_choice_pending'),
+
+  /// 升级上来：出厂封面网格，选择框已处理（选过 / 稍后再说 / 升级前就选过布局）。
+  upgrade('grid');
+
+  const ShellLayoutInstallDefault(this.prefValue);
+
+  /// 设备本地偏好键（不随 Profile / 备份 / 设置同步走）。
+  static const String prefKey = 'shell_content_layout_install_default';
+
+  /// 落库的字符串（冻结）。
+  final String prefValue;
+
+  /// 本安装没选过布局时生效的布局。
+  ShellContentLayout get layout =>
+      this == fresh ? ShellContentLayout.collage : ShellContentLayout.grid;
+
+  /// 首页是否还要弹「选一种库页布局」。
+  bool get choicePending => this == upgradeChoicePending;
+
+  /// 读落库值；没判定过（缺失 / 未知）为 null。
+  static ShellLayoutInstallDefault? fromPref(String? value) {
+    for (final ShellLayoutInstallDefault entry in values) {
+      if (entry.prefValue == value) return entry;
+    }
+    return null;
+  }
+
+  /// 一次性判定：[existingInstall] = 本安装在这次启动之前就用过（老用户信号已落
+  /// 盘），[layoutChosen] = `shell_content_layout` 已显式写过。
+  static ShellLayoutInstallDefault settle({
+    required bool existingInstall,
+    required bool layoutChosen,
+  }) {
+    if (!existingInstall) return fresh;
+    return layoutChosen ? upgrade : upgradeChoicePending;
   }
 }
 
@@ -72,9 +138,10 @@ enum ShellBlockArrangement {
   /// 落库的字符串（冻结，改名不改它）。
   final String prefValue;
 
-  /// 没选过时跟着布局走：拼贴默认散落，其余默认规整。
-  static ShellBlockArrangement defaultFor(ShellContentLayout layout) =>
-      layout == ShellContentLayout.collage ? scattered : aligned;
+  /// 没选过时的摆放：一律规整（C1，2026-11-15）。拼贴此前默认散落，相邻块的
+  /// 偏移 + 旋转让块间距看起来忽大忽小；散落留作可选。参数保留给按布局区分
+  /// 默认值的调用点，目前各布局默认相同。
+  static ShellBlockArrangement defaultFor(ShellContentLayout layout) => aligned;
 
   static ShellBlockArrangement fromPref(
     String? value, {

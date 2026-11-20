@@ -26,10 +26,9 @@ import 'package:integration_test/integration_test.dart';
 ///   3. 选中落在释义之外（词头）→ 一个 mark 都不该有，且 popupSelectionText
 ///      必须原样保留，用户的选中不能凭空消失。
 ///   4. 高亮落地 → payload 如实上报 `glossarySelectionHighlighted: true`，而
-///      `popupSelectionText` **照样原样带着**。SelectionText 要不要让位是 Dart
-///      层的决定（只有那一层知道笔记类型和字段映射，见
-///      `BaseAnkiRepository.shouldYieldSelectionText` 与
-///      `packages/fushi_anki/test/selection_text_yield_test.dart`）。
+///      `popupSelectionText` **照样原样带着**。Dart 层总是把它填进
+///      `{popup-selection-text}`（BUG-4756，见
+///      `packages/fushi_anki/test/selection_text_fill_test.dart`）。
 ///
 /// 跑法（仓库 fushi/ 下，离屏、不抢焦点、隔离 WebView2 profile）：
 ///   .\tool\run_windows_itest.ps1 integration_test\popup_selection_highlight_itest.dart
@@ -362,24 +361,20 @@ void main() {
       '$keptWhenHighlighted'.contains('一日に三回食べる'),
       isTrue,
       reason:
-          'popup.js 不许自作主张清空——它不知道用户的笔记类型和字段映射，'
-          '清了就可能让选中的内容凭空消失',
+          'popup.js 不许清空选中文本：高亮进了释义，SelectionText 照样要有选中内容'
+          '（BUG-4756）',
     );
     final Object? flagged = await controller.evaluateJavascript(
       source:
           'window.__payload2 ? '
           'String(window.__payload2.glossarySelectionHighlighted) : "MISSING"',
     );
-    expect(
-      '$flagged',
-      'true',
-      reason: '高亮落地这件客观事实必须上报，Dart 层据此决定 SelectionText 让不让位',
-    );
+    expect('$flagged', 'true', reason: '高亮落地这件客观事实必须如实上报');
     final Object? clearedGlossary = await controller.evaluateJavascript(
       source:
           'window.__payload2 ? '
           'window.__payload2.glossary.indexOf("fushi-selection") >= 0 : false',
     );
-    expect('$clearedGlossary', 'true', reason: '让位的前提是高亮真的在 payload 的释义里');
+    expect('$clearedGlossary', 'true', reason: '高亮必须真的在 payload 的释义里');
   });
 }

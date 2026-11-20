@@ -43,6 +43,9 @@ class FakeAdvancedMiningHost {
   /// 每次成功起播交回的句柄（按顺序）；测试调 `finish` 模拟「这段播完了」。
   final List<RangePlayback> playbacks = <RangePlayback>[];
 
+  /// 非 null 时 describe 卡在这里，模拟宿主算区间还在途（返回值按调用时的偏移算）。
+  Completer<void>? describeGate;
+
   /// 非 null 时 preview 卡在这里，模拟起播（seek → play）还在途。
   Completer<void>? previewGate;
 
@@ -171,6 +174,8 @@ class FakeAdvancedMiningHost {
   AdvancedMiningAudioSection audio() => AdvancedMiningAudioSection(
     describe: (int s, int e) async {
       describeCalls.add(<int>[s, e]);
+      final Completer<void>? gate = describeGate;
+      if (gate != null) await gate.future;
       if (!audioAvailable) return null;
       final int count = prevCount + 1 + nextCount;
       return AdvancedMiningAudioWindow(
@@ -234,7 +239,9 @@ class FakeAdvancedMiningHost {
     Uint8List? pageBytes,
     MangaCropSuggestions? suggestions = mangaSuggestions,
     bool downloadable = true,
+    AdvancedMiningCropSource source = AdvancedMiningCropSource.mangaPage,
   }) => AdvancedMiningMangaImageSection(
+    source: source,
     loadPage: () async => pageBytes,
     loadSuggestions: () async {
       suggestionLoads.add(suggestionLoads.length);
@@ -366,9 +373,14 @@ class FakeAdvancedMiningHost {
   AdvancedMiningCapabilities mangaPage({
     bool modelAvailable = true,
     Uint8List? pageBytes,
+    AdvancedMiningCropSource source = AdvancedMiningCropSource.mangaPage,
   }) => capabilities(
     deck: deck(),
     sentence: sentence(),
-    manga: manga(modelAvailable: modelAvailable, pageBytes: pageBytes),
+    manga: manga(
+      modelAvailable: modelAvailable,
+      pageBytes: pageBytes,
+      source: source,
+    ),
   );
 }

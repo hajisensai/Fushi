@@ -31,7 +31,7 @@
 //
 // 用法：
 //   dart run tool/bug.dart new <slug> [标题...] [--scan]
-//                                                     # 新建一条 bug（本地 + 基线最大号 + 1，重建索引）
+//                                                     # 新建一条 bug（本地 + 基线 + 本机预留最大号 + 1，重建索引）
 //   dart run tool/bug.dart settle [--base <ref>] [--dry-run] [--scan]
 //                                                     # 合并 / rebase 之后收口撞号 + reindex
 //                                                     #（最早进入基线首父链者保留原号）
@@ -234,8 +234,8 @@ const String headerTemplate = '''# Bug 跟踪
 > 这样并发 agent 各写各的文件，永不在同一处产生 git 冲突；撞号也只是两个不同文件名，
 > 改个名即可，不再有冲突标记手术。
 >
-> 新建一条：`dart run tool/bug.dart new <slug> [标题...]`（取「本地 + origin/develop」已占最大号 + 1、生成骨架、重建索引；
-> 不 fetch、不遍历其它分支）。并发分支撞号不用提前防：把 develop 合进来 / rebase 之后跑
+> 新建一条：`dart run tool/bug.dart new <slug> [标题...]`（取「本地 + origin/develop + 本机已预留」最大号 + 1、生成骨架、重建索引；
+> 不 fetch、不遍历其它分支；本机并行工作区共用 `.git/` 里的预留计数，取到的号互不相同）。与别的机器撞号不用提前防、不用汇报：把 develop 合进来 / rebase 之后跑
 > `dart run tool/bug.dart settle`，每组同号文件里**最早进入 develop 首父链**的那份保留原号，develop 上没有的
 > 那一份改到下一个空号并重建索引；develop 收到 push 时 CI（`bug-number-settle.yml`）在最新的 develop 尖端上
 > 跑同一判据并提交（推送被拒就整轮重算），被取消 / 乱序的 run 留下的撞号由下一次一并收口。
@@ -946,9 +946,9 @@ Future<void> cmdNew(List<String> args, {BranchScanner? scanner}) async {
   if (!wantScan) {
     final base = await baseBugNumbers();
     final baseMax = base == null ? 0 : base.$2.fold(0, math.max);
-    final next = math.max(localMax, baseMax) + 1;
+    final next = await allocateBugNumber(math.max(localMax, baseMax));
     final path = writeNewBug(next, slug, title);
-    logOut('取号 BUG-${padNum(next)}（= 本地与基线已占最大号 + 1）');
+    logOut('取号 BUG-${padNum(next)}（= 本地、基线与本机已预留的最大号 + 1）');
     logOut('  当前工作区已占最大：BUG-${padNum(localMax)}');
     if (base == null) {
       logWarn(
@@ -962,8 +962,8 @@ Future<void> cmdNew(List<String> args, {BranchScanner? scanner}) async {
     logOut('已建 $path');
     logOut('填完根因/修复/测试后再跑 `dart run tool/bug.dart reindex`');
     logOut(
-      '并发分支撞号不用管：合并 / rebase 之后跑 `dart run tool/bug.dart settle` 自动改号'
-      '（develop 收到 push 时 CI 也会自动跑）',
+      '本机并行工作区取到的号互不相同；与别的机器撞号不用管、不用汇报：'
+      'develop 收到 push 时 CI 自动跑 settle 改号',
     );
     return;
   }
@@ -972,7 +972,7 @@ Future<void> cmdNew(List<String> args, {BranchScanner? scanner}) async {
   final warning = scan.warning;
   if (warning != null) logWarn(warning);
 
-  final next = math.max(localMax, scan.maxNumber) + 1;
+  final next = await allocateBugNumber(math.max(localMax, scan.maxNumber));
   final pad = padNum(next);
   final path = writeNewBug(next, slug, title);
   // 输出语义：**只说「已占」，绝不丢一个裸数字**。
@@ -1045,6 +1045,75 @@ Future<(String, Set<int>)?> baseBugNumbers({String? baseRef}) async {
   final names = await bugFileNamesAt(resolved);
   if (names == null) return null;
   return (resolved, names.map(fileNameBugNumber).whereType<int>().toSet());
+}
+
+// ---------------------------------------------------------------------------
+// 本机预留号：同一台机器上的并行工作区不再取到同一个号
+// ---------------------------------------------------------------------------
+
+/// 预留计数文件名，放在 git 公共目录（主 checkout 的 `.git/`，所有 worktree 共用）里。
+///
+/// 起因（2026-11-20）：一个 workflow 同时开出二十几个 worktree，全都从同一个 develop
+/// 尖端出发，各自 `new` 出来的都是「基线最大号 + 1」起的同一串号（BUG-4906～4911）。
+/// 合并后 settle 能收口，但改号之前写进 PR 正文、提交信息、claim 的号全部作废，
+/// 叠放的分支还要各跑一遍 settle。并行的工作区都在同一台机器上、共用同一个 `.git/`，
+/// 在那里放一个带锁的计数就能让它们从一开始就取到不同的号：一次读写，不扫任何分支或工作区。
+///
+/// 别的机器 / CI 取的号仍可能相撞，那一部分继续由 settle 收口。
+const String reservedCounterFileName = 'fushi-bug-number-reserved';
+
+/// git 公共目录的绝对路径；不在 git 仓库 / git 不可用时返回 null。
+Future<String?> gitCommonDir() async {
+  final r = await runGit(<String>[
+    'rev-parse',
+    '--path-format=absolute',
+    '--git-common-dir',
+  ], timeout: const Duration(seconds: 15));
+  if (r == null || r.exitCode != 0) return null;
+  final path = (r.stdout as String).trim();
+  return path.isEmpty ? null : path;
+}
+
+/// 取一个新号：`max(floor, 本机已预留的最大号) + 1`，并把它记成已预留。
+///
+/// [floor] 是调用方看得见的已占最大号（本地 + 基线，或全量扫描的结果）。读、比较、写回
+/// 在同一把独占文件锁里完成，并行进程拿到的号互不相同。拿不到公共目录（不在 git 仓库）
+/// 时退回 `floor + 1`；计数文件读写失败同样退回，并给出警告。
+///
+/// 预留了没用掉的号（任务中途放弃）就空着，号不要求连续。
+///
+/// [reserve] 为 false（`settle --dry-run`）时只在锁内读出会取到的号，不写回，演练不推进计数。
+Future<int> allocateBugNumber(int floor, {bool reserve = true}) async {
+  final common = await gitCommonDir();
+  if (common == null) return floor + 1;
+  RandomAccessFile? raf;
+  try {
+    raf = File(
+      '$common/$reservedCounterFileName',
+    ).openSync(mode: FileMode.append);
+    raf.lockSync(FileLock.blockingExclusive);
+    raf.setPositionSync(0);
+    final text = latin1.decode(raf.readSync(raf.lengthSync())).trim();
+    final next = math.max(floor, int.tryParse(text) ?? 0) + 1;
+    if (!reserve) return next;
+    raf.truncateSync(0);
+    raf.setPositionSync(0);
+    raf.writeStringSync('$next\n');
+    raf.flushSync();
+    return next;
+  } on FileSystemException catch (e) {
+    logWarn(
+      '⚠ 本机预留号文件 $common/$reservedCounterFileName 读写失败（${e.message}），'
+      '这次只按看得见的最大号取号，可能与本机并行工作区相撞（合并时 settle 收口）。',
+    );
+    return floor + 1;
+  } finally {
+    try {
+      raf?.closeSync(); // 关闭即释放锁
+    } on FileSystemException {
+      // 已经拿到号了，关闭失败不影响结果
+    }
+  }
 }
 
 /// 最大的 [count] 个已占号的说明行（每行写清号 + 承载它的文件名 + 来源）。
@@ -2550,7 +2619,10 @@ Future<int> cmdSettle(List<String> args, {BranchScanner? scanner}) async {
       }
       final scope = await scopeForArrival(mover, baseRef);
       requireUsableScope(group.number, paths, scope);
-      final target = next++;
+      // 改号的目标也走本机预留：否则会改到邻居工作区刚 `new` 出来、还没提交的号上。
+      // 演练不写回计数：dry-run 打印的目标号与紧接着正式跑取到的号一致。
+      final target = await allocateBugNumber(next - 1, reserve: !dryRun);
+      next = target + 1;
       logOut(
         '  BUG-${padNum(group.number)}：${mover.path}（${mover.note}）→ BUG-${padNum(target)}',
       );
@@ -2575,7 +2647,7 @@ Future<int> cmdSettle(List<String> args, {BranchScanner? scanner}) async {
 
 const String usage =
     '用法：dart run tool/bug.dart <new|settle|renumber|reindex|migrate|check> ...\n'
-    '  new <slug> [标题...] [--scan]        新建：取「本地 + 基线 origin/develop」已占最大号 + 1\n'
+    '  new <slug> [标题...] [--scan]        新建：取「本地 + 基线 origin/develop + 本机已预留」最大号 + 1\n'
     '  settle [--base <ref>] [--dry-run] [--scan]\n'
     '                                       合并 / rebase 之后收口撞号：每组同号里最早进入基线\n'
     '                                       首父链的保留，其余改到下一个空号 + reindex\n'

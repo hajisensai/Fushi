@@ -3,6 +3,8 @@
 // 只做 fromJson/toJson 的忠实映射。提交侧的上限与服务端 FEEDBACK_LIMITS 一致，
 // 在本机先拦住服务端必然 400 / 413 的形状。
 
+import 'package:fushi_engine/media/audiobook/audiobook_subtitle_formats.dart';
+
 typedef FeedbackJson = Map<String, dynamic>;
 
 int _int(Object? v) => (v as num).toInt();
@@ -47,6 +49,55 @@ abstract final class FeedbackLimits {
 
   /// 视频附件的槽位名。
   static const String videoSlot = 'v0';
+
+  /// 样本文件附件（字幕 / 书 / 音视频原件 / 词典 / Markdown……，槽位 [fileSlot]）个数上限。
+  /// 与服务端 `FEEDBACK_LIMITS.files` 同值（feedback_files.test.js 按字面量核对）。
+  static const int files = 3;
+
+  /// 单个样本文件上限：100 MB（十进制，与视频同口径），服务端 `FEEDBACK_LIMITS.fileMaxBytes`。
+  static const int fileMaxBytes = 100 * 1000 * 1000;
+
+  /// 第 [index] 个样本文件的槽位名（`f0`..`f2`）。
+  static String fileSlot(int index) => 'f$index';
+
+  /// [slot] 是不是样本文件槽位。
+  static bool isFileSlot(String slot) => _fileSlot.hasMatch(slot);
+  static final RegExp _fileSlot = RegExp(r'^f[0-2]$');
+
+  /// 样本文件扩展名白名单（小写、不带点）。服务端 `FILE_EXTENSIONS`
+  /// （services/leaderboard/src/feedback_files.js）必须同一份，feedback_files.test.js 逐项核对；
+  /// 服务端另按扩展名核对文件头魔数。字幕部分直接展开有声书字幕格式的真相源
+  /// [kAudiobookSubtitleExtensions]，不另抄一份（守卫
+  /// `audiobook_subtitle_formats_guard_test.dart`）。
+  static const Set<String> fileExtensions = <String>{
+    'txt',
+    'md',
+    'markdown',
+    ...kAudiobookSubtitleExtensions,
+    'json',
+    'csv',
+    'tsv',
+    'epub',
+    'cbz',
+    'zip',
+    'pdf',
+    'mdx',
+    'mdd',
+    'mp3',
+    'aac',
+    'm4a',
+    'm4b',
+    'flac',
+    'ogg',
+    'opus',
+    'wav',
+    'mp4',
+    'm4v',
+    'mov',
+    'mkv',
+    'webm',
+    'avi',
+  };
 
   /// 「我的反馈」账户列表每页条数上限（服务端 GET /v1/feedback/mine）。
   static const int minePage = 50;
@@ -321,6 +372,7 @@ class FeedbackAttachmentInfo {
     required this.kind,
     required this.bytes,
     required this.type,
+    this.name,
   });
 
   factory FeedbackAttachmentInfo.fromJson(FeedbackJson j) =>
@@ -329,19 +381,24 @@ class FeedbackAttachmentInfo {
         kind: _str(j['kind']),
         bytes: j['bytes'] is num ? _int(j['bytes']) : 0,
         type: _str(j['type']),
+        name: _nonEmpty(j['name']),
       );
 
-  /// `log` | `s0`..`s2` | `v0`。
+  /// `log` | `s0`..`s2` | `v0` | `f0`..`f2`。
   final String slot;
 
-  /// `log` | `screenshot` | `video`。
+  /// `log` | `screenshot` | `video` | `file`。
   final String kind;
   final int bytes;
   final String type;
 
+  /// 样本文件的原文件名（服务端清洗过；其它附件为 null）。用户上传的不可信字符串，只当文字显示。
+  final String? name;
+
   bool get isLog => kind == 'log';
   bool get isScreenshot => kind == 'screenshot';
   bool get isVideo => kind == 'video';
+  bool get isFile => kind == 'file';
 }
 
 class FeedbackMessage {

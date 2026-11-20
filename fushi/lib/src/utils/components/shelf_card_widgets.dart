@@ -10,6 +10,7 @@ import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/nsfw_cover_blur.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:transparent_image/transparent_image.dart';
@@ -332,6 +333,9 @@ class ShelfCoverSelection extends InheritedWidget {
 /// 不画勾选圈（选中罩照常）。比例由调用方外层的盒子给（专辑
 /// [kShelfAlbumAspectRatio]、剧照 [kShelfLandscapeAspectRatio]），本组件按实际
 /// 尺寸铺满，不假定 2:3。
+///
+/// 卡壳挂了 [ShelfCoverNsfw]（`MediaNsfwCoverScope`）且判定要模糊时，封面图
+/// （[child] 与叠层的后几本）经 [NsfwCoverBlur] 打模糊；框、投影、勾选圈不受影响。
 class ShelfCoverFrame extends StatelessWidget {
   const ShelfCoverFrame({
     required this.child,
@@ -372,9 +376,23 @@ class ShelfCoverFrame extends StatelessWidget {
     final bool lifted = !eink && !compact && FushiHoverLift.liftedOf(context);
     final BorderRadius radius = shelfCoverRadius(context);
     final ShelfCoverSelection? selection = ShelfCoverSelection.maybeOf(context);
+    final bool nsfwBlur = ShelfCoverNsfw.blurOf(context);
+    final Widget content = NsfwCoverBlur(
+      blur: nsfwBlur,
+      showIcon: !compact,
+      child: child,
+    );
     final ShelfCoverMaterial? material = shelfCoverMaterialOf(context);
     if (material != null) {
-      return _buildMaterial(context, material, tokens, cs, selection);
+      return _buildMaterial(
+        context,
+        material,
+        tokens,
+        cs,
+        selection,
+        content,
+        nsfwBlur,
+      );
     }
 
     final List<BoxShadow> shadows;
@@ -426,7 +444,7 @@ class ShelfCoverFrame extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: <Widget>[
-            ColoredBox(color: fill, child: child),
+            ColoredBox(color: fill, child: content),
             IgnorePointer(
               child: DecoratedBox(
                 decoration: BoxDecoration(
@@ -477,7 +495,11 @@ class ShelfCoverFrame extends StatelessWidget {
             child: apple
                 ? ImageFiltered(
                     imageFilter: ui.ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-                    child: behind,
+                    child: NsfwCoverBlur(
+                      blur: nsfwBlur,
+                      showIcon: false,
+                      child: behind,
+                    ),
                   )
                 : ColoredBox(color: layerFill),
           ),
@@ -506,6 +528,8 @@ class ShelfCoverFrame extends StatelessWidget {
     FushiDesignTokens tokens,
     ColorScheme cs,
     ShelfCoverSelection? selection,
+    Widget content,
+    bool nsfwBlur,
   ) {
     final double checkInset = tokens.spacing.gap / 2;
     if (density == ShelfCoverDensity.compact) {
@@ -517,7 +541,7 @@ class ShelfCoverFrame extends StatelessWidget {
           if (selection != null && selection.selected)
             const Positioned.fill(child: ShelfSelectedOverlay()),
         ],
-        child: child,
+        child: content,
       );
     }
     final List<Widget> overlay = <Widget>[
@@ -530,14 +554,17 @@ class ShelfCoverFrame extends StatelessWidget {
           child: ShelfSelectionCheck(selected: selection.selected),
         ),
     ];
-    final List<Widget> behind =
-        stackedCovers ??
-        (stackedBehind == null
-            ? const <Widget>[]
-            : <Widget>[stackedBehind!, stackedBehind!]);
+    final List<Widget> behind = <Widget>[
+      for (final Widget cover
+          in stackedCovers ??
+              (stackedBehind == null
+                  ? const <Widget>[]
+                  : <Widget>[stackedBehind!, stackedBehind!]))
+        NsfwCoverBlur(blur: nsfwBlur, showIcon: false, child: cover),
+    ];
     return ShelfCoverPile(
       material: material,
-      front: child,
+      front: content,
       behind: behind,
       frontOverlay: overlay,
       backgroundColor: backgroundColor,

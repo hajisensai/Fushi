@@ -197,7 +197,8 @@ final class SrsSearchDuplicate extends SrsSearchNode {
 /// `has:` 的媒体种类。
 enum SrsSearchMedia { audio, image }
 
-/// `has:audio` / `has:image`：笔记任一字段原文含 `[sound:` / `<img`。
+/// `has:audio` / `has:image`：笔记任一字段原文含 `[sound:` 或 `<audio` 标签（制卡内嵌的
+/// `<audio class="fushi-*-audio" src>`）/ `<img` 标签。
 final class SrsSearchHasMedia extends SrsSearchNode {
   const SrsSearchHasMedia(this.media);
   final SrsSearchMedia media;

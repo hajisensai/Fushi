@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:fushi_engine/media/music/apple_music/apple_music_catalog_client.dart';
@@ -147,10 +148,11 @@ void main() {
       () async {
         final List<http.Request> seen = <http.Request>[];
         final AppleMusicLibraryClient c = AppleMusicLibraryClient(
-          credentials: () async => const AppleMusicUserCredentials(
-            developerToken: 'dev',
-            userToken: 'user',
-          ),
+          credentials: ({bool refresh = false}) async =>
+              const AppleMusicUserCredentials(
+                developerToken: 'dev',
+                userToken: 'user',
+              ),
           client: MockClient((http.Request req) async {
             seen.add(req);
             return _json(<String, Object?>{
@@ -186,10 +188,11 @@ void main() {
 
     test('listAlbums pages by offset and reads total', () async {
       final AppleMusicLibraryClient c = AppleMusicLibraryClient(
-        credentials: () async => const AppleMusicUserCredentials(
-          developerToken: 'dev',
-          userToken: 'user',
-        ),
+        credentials: ({bool refresh = false}) async =>
+            const AppleMusicUserCredentials(
+              developerToken: 'dev',
+              userToken: 'user',
+            ),
         client: MockClient((http.Request req) async {
           expect(req.url.path, '/v1/me/library/albums');
           final int offset = int.parse(req.url.queryParameters['offset']!);
@@ -226,10 +229,11 @@ void main() {
 
     test('listArtists follows next and sorts by name', () async {
       final AppleMusicLibraryClient c = AppleMusicLibraryClient(
-        credentials: () async => const AppleMusicUserCredentials(
-          developerToken: 'dev',
-          userToken: 'user',
-        ),
+        credentials: ({bool refresh = false}) async =>
+            const AppleMusicUserCredentials(
+              developerToken: 'dev',
+              userToken: 'user',
+            ),
         client: MockClient((http.Request req) async {
           final bool second = req.url.queryParameters['offset'] == '100';
           return _json(<String, Object?>{
@@ -255,10 +259,11 @@ void main() {
 
     test('search reads library-* result keys', () async {
       final AppleMusicLibraryClient c = AppleMusicLibraryClient(
-        credentials: () async => const AppleMusicUserCredentials(
-          developerToken: 'dev',
-          userToken: 'user',
-        ),
+        credentials: ({bool refresh = false}) async =>
+            const AppleMusicUserCredentials(
+              developerToken: 'dev',
+              userToken: 'user',
+            ),
         client: MockClient((http.Request req) async {
           expect(req.url.path, '/v1/me/library/search');
           expect(
@@ -292,10 +297,11 @@ void main() {
 
     test('non-2xx surfaces as AppleMusicApiException', () async {
       final AppleMusicLibraryClient c = AppleMusicLibraryClient(
-        credentials: () async => const AppleMusicUserCredentials(
-          developerToken: 'dev',
-          userToken: 'expired',
-        ),
+        credentials: ({bool refresh = false}) async =>
+            const AppleMusicUserCredentials(
+              developerToken: 'dev',
+              userToken: 'expired',
+            ),
         client: MockClient((_) async => _json(<String, Object?>{}, 403)),
       );
       expect(
@@ -308,6 +314,139 @@ void main() {
           ),
         ),
       );
+    });
+  });
+
+  // 反馈 caI0UrhA6-：用户在 Apple 账号里撤销后重新授权，MusicKit 缓存的旧 Music-User-Token
+  // 已作废（服务器回 401 / 403），只有绕过缓存重新取才拿到新 token。
+  group('stale Music-User-Token', () {
+    test(
+      '401/403 re-fetches the token bypassing the cache and resends once',
+      () async {
+        final List<bool> refreshCalls = <bool>[];
+        final List<String?> sentTokens = <String?>[];
+        final AppleMusicLibraryClient c = AppleMusicLibraryClient(
+          credentials: ({bool refresh = false}) async {
+            refreshCalls.add(refresh);
+            return AppleMusicUserCredentials(
+              developerToken: 'dev',
+              userToken: refresh ? 'fresh' : 'stale',
+            );
+          },
+          client: MockClient((http.Request req) async {
+            final String? token = req.headers['Music-User-Token'];
+            sentTokens.add(token);
+            if (token != 'fresh') return _json(<String, Object?>{}, 403);
+            return _json(<String, Object?>{'data': <Object?>[]});
+          }),
+        );
+        expect(await c.listArtists(), isEmpty);
+        expect(refreshCalls, <bool>[false, true]);
+        expect(sentTokens, <String?>['stale', 'fresh']);
+      },
+    );
+
+    test('concurrent rejections share a single refresh', () async {
+      final List<bool> refreshCalls = <bool>[];
+      final List<String?> sentTokens = <String?>[];
+      final Completer<AppleMusicUserCredentials> refreshed =
+          Completer<AppleMusicUserCredentials>();
+      final AppleMusicLibraryClient c = AppleMusicLibraryClient(
+        credentials: ({bool refresh = false}) async {
+          refreshCalls.add(refresh);
+          if (refresh) return refreshed.future;
+          return const AppleMusicUserCredentials(
+            developerToken: 'dev',
+            userToken: 'stale',
+          );
+        },
+        client: MockClient((http.Request req) async {
+          final String? token = req.headers['Music-User-Token'];
+          sentTokens.add(token);
+          if (token != 'fresh') return _json(<String, Object?>{}, 403);
+          return _json(<String, Object?>{'data': <Object?>[]});
+        }),
+      );
+      final Future<List<Object?>> both = Future.wait(<Future<Object?>>[
+        c.listArtists(),
+        c.listArtists(),
+      ]);
+      await pumpEventQueue();
+      expect(sentTokens, <String?>['stale', 'stale']);
+      refreshed.complete(
+        const AppleMusicUserCredentials(
+          developerToken: 'dev',
+          userToken: 'fresh',
+        ),
+      );
+      await both;
+      expect(refreshCalls, <bool>[false, false, true]);
+      expect(sentTokens, <String?>['stale', 'stale', 'fresh', 'fresh']);
+    });
+
+    test('refreshed token still rejected surfaces the http status', () async {
+      int requests = 0;
+      final AppleMusicLibraryClient c = AppleMusicLibraryClient(
+        credentials: ({bool refresh = false}) async =>
+            AppleMusicUserCredentials(
+              developerToken: 'dev',
+              userToken: refresh ? 'fresh' : 'stale',
+            ),
+        client: MockClient((_) async {
+          requests++;
+          return _json(<String, Object?>{}, 401);
+        }),
+      );
+      await expectLater(
+        c.listArtists(),
+        throwsA(
+          isA<AppleMusicApiException>().having(
+            (AppleMusicApiException e) => e.httpStatus,
+            'httpStatus',
+            401,
+          ),
+        ),
+      );
+      expect(requests, 2);
+    });
+
+    test('same token after refresh is not resent', () async {
+      int requests = 0;
+      final AppleMusicLibraryClient c = AppleMusicLibraryClient(
+        credentials: ({bool refresh = false}) async =>
+            const AppleMusicUserCredentials(
+              developerToken: 'dev',
+              userToken: 'same',
+            ),
+        client: MockClient((_) async {
+          requests++;
+          return _json(<String, Object?>{}, 403);
+        }),
+      );
+      await expectLater(
+        c.listArtists(),
+        throwsA(isA<AppleMusicApiException>()),
+      );
+      expect(requests, 1);
+    });
+
+    test('other errors do not refresh the token', () async {
+      final List<bool> refreshCalls = <bool>[];
+      final AppleMusicLibraryClient c = AppleMusicLibraryClient(
+        credentials: ({bool refresh = false}) async {
+          refreshCalls.add(refresh);
+          return const AppleMusicUserCredentials(
+            developerToken: 'dev',
+            userToken: 'user',
+          );
+        },
+        client: MockClient((_) async => _json(<String, Object?>{}, 500)),
+      );
+      await expectLater(
+        c.listArtists(),
+        throwsA(isA<AppleMusicApiException>()),
+      );
+      expect(refreshCalls, <bool>[false]);
     });
   });
 }

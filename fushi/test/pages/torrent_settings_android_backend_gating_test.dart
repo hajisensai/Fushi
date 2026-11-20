@@ -149,10 +149,8 @@ void main() {
     await tester.pumpAndSettle();
 
     // ① 后端二选一整个控件不存在——用户点不到一个够不着的档位。
-    //    （代理模式那条 strip 是 FushiSegmentedStrip<DownloadNetworkProxyMode>，
-    //     泛型不同，不会被这个 finder 命中。）
     expect(
-      find.byType(FushiSegmentedStrip<String>),
+      find.byType(AdaptiveSettingsSegmentedRow<String>),
       findsNothing,
       reason: '本平台没有第二个可用后端，选择器必须整块不渲染',
     );
@@ -162,11 +160,12 @@ void main() {
       reason: '「内置引擎」在本平台不存在，不得出现在界面上',
     );
 
-    // ② 死设置消失：下载目录只被内置引擎读取，外接 qb 的落盘目录 qb 自己管。
+    // ② torrent 区不渲染下载目录：外接 qb 的落盘目录 qb 自己管；总下载根在通用的
+    //    「下载位置」分组（DownloadLocationSection，BUG-4702）。
     expect(
       find.text(t.download_save_root_title),
       findsNothing,
-      reason: '下载目录在无引擎平台改了不被任何人采用，不得暴露给用户',
+      reason: 'torrent 区不得再出现下载目录设置',
     );
     expect(find.text(t.download_save_root_change), findsNothing);
 
@@ -182,7 +181,7 @@ void main() {
     expect(find.text(t.download_backend_unsupported_note), findsOneWidget);
   });
 
-  testWidgets('有内置引擎平台：同一份显式 embedded 配置仍给出选择器与下载目录（不误伤）', (
+  testWidgets('有内置引擎平台：同一份显式 embedded 配置仍给出选择器（不误伤）', (
     WidgetTester tester,
   ) async {
     tester.view.physicalSize = const Size(1200, 2400);
@@ -192,13 +191,11 @@ void main() {
     await tester.pumpWidget(_harness(embeddedSupported: true));
     await tester.pumpAndSettle();
 
-    expect(find.byType(FushiSegmentedStrip<String>), findsOneWidget);
+    expect(find.byType(AdaptiveSettingsSegmentedRow<String>), findsOneWidget);
     expect(find.text(t.video_setting_torrent_backend_embedded), findsOneWidget);
-    expect(
-      find.text(t.download_save_root_title),
-      findsOneWidget,
-      reason: '内置引擎真会读这个目录，必须保留',
-    );
+    // 下载根搬到了通用的「下载位置」分组（DownloadLocationSection，BUG-4702）：它也管
+    // 在线漫画 / 音乐插件，与后端无关；torrent 区在任何后端下都不再重复一份。
+    expect(find.text(t.download_save_root_title), findsNothing);
     expect(find.text(t.download_backend_unsupported_note), findsNothing);
     expect(
       find.text(t.video_setting_qb_url),

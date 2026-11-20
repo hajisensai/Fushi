@@ -2,7 +2,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
     show kFushiFloatingTopBarOverflowHysteresis;
+import 'package:fushi/src/utils/components/fushi_header_more_button.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -256,6 +258,54 @@ void main() {
     await tester.tap(find.text('E'));
     await tester.pumpAndSettle();
     expect(tapped, <String>['E'], reason: '菜单项共用被收动作的 onTap');
+  });
+
+  // 设计稿 11-20 #16：手机视频「导入」页头并排两颗「⋮」——页面自己挂了「⋯」
+  // （[FushiHeaderMoreButton]），窄位上自适应收纳又另生一颗。收纳的动作要并进
+  // 页面那颗「⋯」，分隔线隔开（上面是收进来的外露动作，下面是页面原有的低频项）。
+  testWidgets('页面自带「⋯」：收纳的动作并进同一颗「⋯」，分隔线分组，不另生第二颗', (
+    WidgetTester tester,
+  ) async {
+    final List<String> tapped = <String>[];
+    await tester.pumpWidget(
+      host(
+        width: 200,
+        actions: <Widget>[
+          ...buildActions(tapped),
+          FushiHeaderMoreButton(
+            key: const ValueKey<String>('page-more-anchor'),
+            buttonKey: const ValueKey<String>('page-more'),
+            entries: <FushiHeaderMoreEntry>[
+              FushiHeaderMoreEntry(
+                key: const ValueKey<String>('page-more-clear'),
+                icon: Icons.delete_sweep_outlined,
+                label: 'Clear',
+                onSelected: () => tapped.add('Clear'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+    expect(hasOverflow(), isFalse, reason: '不另生一颗自适应「⋯」');
+    expect(find.byIcon(FushiIcons.more), findsOneWidget, reason: '只有一颗「⋯」');
+    expect(visibleNames().length, lessThan(names.length), reason: '确实收了几颗');
+
+    await tester.tap(find.byKey(const ValueKey<String>('page-more')));
+    await tester.pumpAndSettle();
+    // 菜单把 PopupMenuDivider 画成一条 Divider（M3E 分组线）。
+    expect(find.byType(Divider), findsOneWidget, reason: '两组之间有分隔线');
+    expect(find.text('E'), findsOneWidget, reason: '收纳的动作在菜单里');
+    expect(find.text('Clear'), findsOneWidget, reason: '页面原有项在菜单里');
+    expect(
+      tester.getTopLeft(find.text('E')).dy,
+      lessThan(tester.getTopLeft(find.text('Clear')).dy),
+      reason: '收进来的外露动作在分隔线上面',
+    );
+    await tester.tap(find.text('E'));
+    await tester.pumpAndSettle();
+    expect(tapped, <String>['E']);
   });
 
   testWidgets('焦点：外露动作在前、⋯ 最后；Tab 能到 ⋯，Enter 打开菜单', (

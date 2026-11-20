@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/pages/implementations/web_browser/pages/web_browser_page_common.dart';
+import 'package:fushi/src/utils/components/fushi_form_dialog.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -141,17 +142,17 @@ class _WebBrowserBookmarksPageState extends State<WebBrowserBookmarksPage> {
       await widget.store.updateBookmark(b.id, title: name);
       return;
     }
-    final List<String>? values = await showWebBrowserFormDialog(
+    final List<String>? values = await showFushiFormDialog(
       context: context,
       title: t.web_browser_bookmark_edit,
       icon: FushiIcons.bookmark,
-      fields: <WebBrowserFormField>[
-        WebBrowserFormField(
+      fields: <FushiFormField>[
+        FushiFormField(
           label: t.web_browser_bookmark_title_label,
           initialValue: b.title,
           optional: true,
         ),
-        WebBrowserFormField(
+        FushiFormField(
           label: t.web_browser_site_url,
           initialValue: b.url.toString(),
           keyboardType: TextInputType.url,

@@ -9,7 +9,7 @@
 ///
 /// 然后 `GET https://clients.plex.tv/api/v2/resources?includeHttps=1&includeRelay=1`
 /// 列出账号能访问的服务器，每台带多条 connection（局域网 / 公网 / relay），
-/// [orderPlexConnections] 排优先级、[firstReachablePlexConnection] 逐条探测。
+/// [orderPlexConnections] 排优先级、[firstReachablePlexConnection] 并发探测。
 library;
 
 import 'dart:async';
@@ -105,18 +105,25 @@ List<PlexConnection> orderPlexConnections(List<PlexConnection> connections) {
   return <PlexConnection>[for (final (_, _, PlexConnection c) in keyed) c];
 }
 
-/// 按 [ordered] 顺序逐条 [probe]，返回第一条可达的 uri；全不通返回 null。
-/// 探测失败（抛异常 / false）只算不可达，不向上抛。
+/// 对 [ordered] 的每一条同时发起 [probe]，返回**排名最靠前**的可达 uri（不是最先
+/// 回来的那条）；全不通返回 null。探测失败（抛异常 / false）只算不可达，不向上抛。
+///
+/// 各条同时探测，所以总等待以最慢的那一条为上限（一个探测超时），而不是逐条
+/// 累加：不在家时排在前面的几条局域网地址各自挂满超时，公网地址不必排在它们
+/// 后面等。按顺序收结果——排在前面的都已判不可达才轮到后面，一旦某条可达就
+/// 返回，不再等排在它后面的。
 Future<String?> firstReachablePlexConnection(
   List<PlexConnection> ordered,
   Future<bool> Function(String uri) probe,
 ) async {
-  for (final PlexConnection c in ordered) {
-    try {
-      if (await probe(c.uri)) return c.uri;
-    } catch (_) {
-      // 不可达：试下一条。
-    }
+  final List<Future<bool>> probes = <Future<bool>>[
+    for (final PlexConnection c in ordered)
+      Future<bool>.sync(
+        () => probe(c.uri),
+      ).then<bool>((bool ok) => ok, onError: (Object _) => false),
+  ];
+  for (int i = 0; i < ordered.length; i++) {
+    if (await probes[i]) return ordered[i].uri;
   }
   return null;
 }

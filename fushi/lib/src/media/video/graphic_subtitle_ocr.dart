@@ -26,7 +26,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/video/graphic_subtitle_ocr_types.dart';
 import 'package:fushi/src/ocr/ocr_text_regions.dart' show ocrTextRegions;
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
-import 'package:fushi/src/media/manga/reader/manga_reader_stream_ocr.dart';
+import 'package:fushi/src/media/manga/reader/manga_stream_ocr_types.dart';
 import 'package:fushi_engine/media/video/bitmap_subtitle/bitmap_subtitle_cue.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart'

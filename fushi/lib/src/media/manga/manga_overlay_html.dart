@@ -7,6 +7,15 @@ import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_text_join.dart';
+import 'package:fushi/src/media/manga/reader/manga_page_fit.dart'
+    show
+        MangaFitQuality,
+        kMangaEnhancedFitStep,
+        kMangaFitEnhancedQueryParam,
+        kMangaFitQueryParam,
+        kMangaFitTextBoxQueryParam,
+        mangaTextBoxSignature,
+        mangaTextBoxesOf;
 import 'package:fushi/src/ocr/ocr_text_regions.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 
@@ -62,6 +71,7 @@ String mangaOcrBoxesHtml(MokuroImage page) {
     buffer.write(
       '<p class="ocr-box" '
       'data-ocr-orientation="$orientation" '
+      'data-manga-block="$blockIndex" '
       'data-manga-sentence="'
       '${_escapeAttr(sentenceAssignments[blockIndex].sentence)}" '
       'data-manga-sentence-group="'
@@ -664,6 +674,7 @@ String mangaPageDivHtml(
   bool splitWidePages = false,
   bool rotateWidePages = false,
   double spreadGutterPx = 0,
+  bool fitToDisplay = false,
 }) {
   // div 内联声明：
   // - position:relative —— OCR 框绝对定位的包含块。
@@ -711,11 +722,17 @@ String mangaPageDivHtml(
       'data-crop-borders="${cropBorders ? '1' : '0'}" '
       'data-split-wide="${splitWidePages ? '1' : '0'}" '
       'data-rotate-wide="${rotateWidePages ? '1' : '0'}" '
+      // 文字感知 Gamma 校正的文字框签名：_refitPage 挂到 URL 的 `tb=` 上，后台 OCR 补框后由
+      // __mangaReplaceOcr 换新签名并重取页图（manga_page_fit.dart 的 mangaTextBoxSignature）。
+      '${fitToDisplay ? 'data-tb="${mangaTextBoxSignature(mangaTextBoxesOf(page))}" ' : ''}'
       'style="position:relative;container-type:inline-size;'
       '$sizingCss'
       'aspect-ratio:${_num(w)}/${_num(h)};">'
       '<div class="manga-source" style="position:absolute;inset:0;container-type:inline-size;">'
-      '<img src="${_escapeAttr(imgSrc)}" loading="$loading" '
+      // fitToDisplay（BUG-4704）：不在 HTML 里写 src，只留 data-src；文档脚本按本页排版
+      // 宽度 × devicePixelRatio 算出需要的像素宽，再把带 `fit=` 的 src 挂上去（_refitPage），
+      // 浏览器就不会先把整张原图取来解码一遍。
+      '<img ${fitToDisplay ? 'data-src' : 'src'}="${_escapeAttr(imgSrc)}" loading="$loading" '
       'fetchpriority="$fetchPriority" decoding="async" '
       'style="pointer-events:none;object-fit:${scaleType == MangaScaleType.stretch ? 'fill' : 'contain'};">'
       '${mangaOcrBoxesHtml(page)}'
@@ -794,6 +811,10 @@ String mangaWindowDocument(
   bool enableMouseTextSelection = false,
   // 折叠屏书本姿态：双页之间留出的铰链缝（逻辑像素，见 fushiHingeGutterPx）。0 = 无缝。
   double spreadGutterPx = 0,
+  // BUG-4704：页图按显示尺寸降采样（见 manga_page_fit.dart）。只给 manga.json 带真实
+  // 像素尺寸的页（本地卷 / 已下载章）开：降采样图的 naturalWidth 不再是原图宽，页几何
+  // 必须以 manga.json 的尺寸为准。
+  bool fitImagesToDisplay = false,
 }) {
   final MangaReaderPreferences preferences =
       readerPreferences ?? const MangaReaderPreferences();
@@ -880,6 +901,7 @@ String mangaWindowDocument(
       splitWidePages: splitWidePages,
       rotateWidePages: rotateWidePages,
       spreadGutterPx: spreadGutterPx,
+      fitToDisplay: fitImagesToDisplay,
       // 当前 spread 与前后相邻 spread 立即解码；窗口里更远的页继续 lazy，
       // 兼顾无白屏翻页与超清页图内存。
       eager: !isWebtoon && (spreadIndex - currentSpread).abs() <= 1,
@@ -990,6 +1012,22 @@ String mangaWindowDocument(
       'html,body{margin:0;padding:0;background:$backgroundCss;height:100%;'
       'touch-action:none;'
       '-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}'
+      // BUG-4927：文档级原生滚动条归文档自己管，不靠宿主 WebView 设置。
+      // InAppWebViewSettings 的 vertical/horizontalScrollBarEnabled 只在 Android
+      // 生效，Windows WebView2 用占位的经典滚动条（约 17px）：布局全是 100vw/100vh，
+      // 一条竖条出现就让 100vw 比可见宽度多出条宽 → 横向溢出 → 横条又让 100vh
+      // 溢出，四边滚动条互相撑出来（webtoon 内容一长就触发；spread 放大时
+      // #manga-canvas 的 scale 也会把文档撑出可滚溢出）。
+      // - 所有模式隐藏视口滚动条且不占位（scrollbar-width / ::-webkit-scrollbar）。
+      // - 溢出只写在 html（视口传播）上；写到 body 会让 body 自成滚动容器，
+      //   webtoon 的 window.scrollY 就失效了。
+      // - spread：两轴位置都由 JS 的 PAN_X/PAN_Y 与 translateX 拥有，文档本身
+      //   不得滚动 → overflow:hidden。
+      // - webtoon：纵向归 window.scrollY（滚轮走原生竖滚），横向归 PAN_X →
+      //   只关横向 overflow-x:hidden。
+      'html{scrollbar-width:none;'
+      '${isWebtoon ? 'overflow-x:hidden;' : 'overflow:hidden;'}}'
+      '::-webkit-scrollbar{display:none;width:0;height:0;}'
       '$rootSizing'
       // BUG-1759：#manga-canvas / #manga-root **不得**在样式表里常驻
       // will-change:transform——Chromium 会把带该提示的层的栅格化尺度钉成只升不降，
@@ -1054,7 +1092,7 @@ String mangaWindowDocument(
       '<script>$inlineSelectionJs</script>'
       '<script>'
       'window.__mangaDocumentGeneration=$documentGeneration;'
-      '${_mangaGestureJs(isWebtoon: isWebtoon, rtl: rtl, currentSpread: currentSpread, restoreFraction: restoreFraction, zoomPercent: zoomPercent, restZoomPercent: restZoomPercent ?? zoomPercent, zoomMinPercent: zoomMinPercent, zoomMaxPercent: zoomMaxPercent, zoomSensitivity: zoomSensitivity, pageAnimation: pageAnimation, pageAnimationSpeed: pageAnimationSpeed, followDrag: followDrag, tapZonePaging: tapZonePaging, tapZoneLayout: tapZoneLayout, disableZoomOut: disableZoomOut, animateDoubleTap: animateDoubleTap, invertHorizontal: invertHorizontal, invertVertical: invertVertical, invertBoth: invertBoth, doubleTapAnimationMs: doubleTapAnimationMs, splitWidePages: splitWidePages, rotateWidePages: rotateWidePages, autoZoomWidePages: autoZoomWidePages, panWidePages: panWidePages, zoomStartPosition: zoomStartPosition, preferences: preferences, hoverKey: hoverKey, cropBorders: cropBorders, scaleType: scaleType, longStripSidePadding: longStripSidePadding, isVerticalPaged: isVerticalPaged, enableMouseTextSelection: enableMouseTextSelection)}'
+      '${_mangaGestureJs(isWebtoon: isWebtoon, rtl: rtl, currentSpread: currentSpread, restoreFraction: restoreFraction, zoomPercent: zoomPercent, restZoomPercent: restZoomPercent ?? zoomPercent, zoomMinPercent: zoomMinPercent, zoomMaxPercent: zoomMaxPercent, zoomSensitivity: zoomSensitivity, pageAnimation: pageAnimation, pageAnimationSpeed: pageAnimationSpeed, followDrag: followDrag, tapZonePaging: tapZonePaging, tapZoneLayout: tapZoneLayout, disableZoomOut: disableZoomOut, animateDoubleTap: animateDoubleTap, invertHorizontal: invertHorizontal, invertVertical: invertVertical, invertBoth: invertBoth, doubleTapAnimationMs: doubleTapAnimationMs, splitWidePages: splitWidePages, rotateWidePages: rotateWidePages, autoZoomWidePages: autoZoomWidePages, panWidePages: panWidePages, zoomStartPosition: zoomStartPosition, preferences: preferences, hoverKey: hoverKey, cropBorders: cropBorders, scaleType: scaleType, longStripSidePadding: longStripSidePadding, isVerticalPaged: isVerticalPaged, enableMouseTextSelection: enableMouseTextSelection, fitImagesToDisplay: fitImagesToDisplay, spreadGutterPx: spreadGutterPx)}'
       '</script>'
       '</body></html>';
 }
@@ -1091,7 +1129,7 @@ const int kMangaActivityReportIntervalMs = 5000;
 /// 节流 → `onMangaScroll`。viewport resize → `_reanchor` 把语义位置重投影成新视口
 /// 的 px（BUG-1758）。`dragstart` 全程 preventDefault + CSS user-select/user-drag
 /// 禁用，消除桌面拖动时的原生图片/选区残影（「秃瓢」）。手势阈值镜像 reader
-/// （absDx>absDy 判 swipe，小位移判 tap）。spread translateX 在 [_mangaApplyTranslate]
+/// （absDx>absDy 判 swipe，小位移判 tap）。spread translateX 在 `__mangaApplyTranslate`
 /// 按 data-spread 测量。
 /// 翻页动画统一缓动（CSS 过渡与 JS 逐帧滚动动画同一条曲线）。
 const String kMangaPageTurnEasing = 'cubic-bezier(.2,.7,.2,1)';
@@ -1153,6 +1191,8 @@ String _mangaGestureJs({
   int longStripSidePadding = 0,
   bool isVerticalPaged = false,
   bool enableMouseTextSelection = false,
+  bool fitImagesToDisplay = false,
+  double spreadGutterPx = 0,
 }) {
   // 点击翻页热区表 → JS 字面量 `[l,t,w,h,forward]` 的逗号串（外层中括号在模板里
   // 补）。几何与阅读方向镜像都在 Dart 侧算完（[mangaTapZones] 有单测），注入的脚本
@@ -1228,11 +1268,74 @@ String _mangaGestureJs({
   var IS_WEBTOON = $isWebtoon;
   // 纵向分页（pagedVertical）走 webtoon 的滚动桥，但相邻翻页要平滑滚动。
   var IS_VERTICAL_PAGED = $isVerticalPaged;
+  // 折叠屏书本姿态的铰链缝（mangaWindowDocument 的 spreadGutterPx）：有缝时双页之间
+  // 本就留空，_layoutSource 不做双页接缝的重叠。
+  var SPREAD_GUTTER = ${spreadGutterPx > 0};
   var PAN_X = 0;
   var PAN_Y = 0;
   // One source transform owns image and OCR geometry. Crop bounds stay in
   // original pixels, so selection, background OCR and captures share a frame.
+  // ── 页图按显示尺寸取图（BUG-4704）──
+  // 每页要的源像素宽 = 原图宽 × 排版缩放（_layoutSource 算出的 CSS px / 源 px）×
+  // devicePixelRatio × 缩放档，向上取整到 FIT_STEP（拦截器按档缓存，档太碎缓存就没用）。
+  // 缩放档只给屏上那一页（跨页模式的当前跨页 / 条漫里与视口相交的页），1 / 2 / 4 / 8：
+  // 放大看细节时换更高的档，清晰度不降；屏外的页恒取 1 档，预热的邻页不跟着放大。
+  var FIT_IMAGES = $fitImagesToDisplay;
+  // 画质缩放：取整档收细，并在 URL 上带画质档（`fq=1` / `fq=g`）——响应由 URL 完全决定，切开关后
+  // WebView 的 max-age 缓存不会把另一种缩放的图端回来。
+  var FIT_STEP = ${preferences.enhancedScaling ? kMangaEnhancedFitStep : 128};
+  var FIT_HQ = '${_fitQualityQuery(preferences)}';
+  // 文字感知 Gamma 校正：转码要用本页 OCR 文字框，URL 带上框签名（data-tb）。
+  var FIT_TEXT_GAMMA = ${MangaFitQuality.fromPreferences(enhanced: preferences.enhancedScaling, gammaCorrect: preferences.gammaCorrectScaling) == MangaFitQuality.enhancedTextGamma};
+  function _zoomTier(){
+    if (!(ZOOM > 1.01)) return 1;
+    return Math.min(8, Math.pow(2, Math.ceil(Math.log(ZOOM) / Math.LN2 - 1e-6)));
+  }
+  function _pageOnScreen(page){
+    if (!IS_WEBTOON) return Number(page.getAttribute('data-spread')) === CURRENT;
+    var r = page.getBoundingClientRect();
+    return r.bottom > 0 && r.top < window.innerHeight;
+  }
+  function _fitWidthFor(page){
+    var pw = Number(page.dataset.pw) || 0;
+    var scale = page.__fitScale || 0;
+    if (!(pw > 0) || !(scale > 0)) return 0;
+    var tier = _pageOnScreen(page) ? _zoomTier() : 1;
+    var need = pw * scale * (window.devicePixelRatio || 1) * tier;
+    return Math.ceil(need / FIT_STEP) * FIT_STEP;
+  }
+  function _isFittedImage(img){
+    return (img.getAttribute('src') || '').indexOf('$kMangaFitQueryParam=') >= 0;
+  }
+  function _refitPage(page){
+    if (!FIT_IMAGES || page.getAttribute('data-nofit') === '1') return;
+    var img = page.querySelector('img');
+    var base = img && img.getAttribute('data-src');
+    if (!base) return;
+    var width = _fitWidthFor(page);
+    var next = width > 0
+        ? base + (base.indexOf('?') < 0 ? '?' : '&') + '$kMangaFitQueryParam=' + width + FIT_HQ +
+            (FIT_TEXT_GAMMA ? '&$kMangaFitTextBoxQueryParam=' + (page.getAttribute('data-tb') || '0') : '')
+        : base;
+    if (img.getAttribute('src') !== next) img.setAttribute('src', next);
+  }
+  var _refitTimer = null;
+  function _scheduleRefit(){
+    if (!FIT_IMAGES) return;
+    if (_refitTimer) clearTimeout(_refitTimer);
+    _refitTimer = setTimeout(function(){
+      _refitTimer = null;
+      document.querySelectorAll('.manga-page').forEach(_refitPage);
+    }, 200);
+  }
   function _layoutSource(page){
+    _layoutSourceBox(page);
+    _refitPage(page);
+  }
+  // 只排版、不换图（manga-22）：拖窗口边框时 resize 一秒几十次，逐次换 `fit=` 档会
+  // 让已加载的页每跨过一个 128 px 档就排一次整张转码，旧档请求也不会被丢弃。
+  // resize 路径只重排盒子，换图交给 200 ms 合并的 _scheduleRefit，停手后只取最终档。
+  function _layoutSourceBox(page){
     var pw = Number(page.dataset.pw), ph = Number(page.dataset.ph);
     var crop = page.__crop || {x:0,y:0,width:pw,height:ph};
     var rotated = ROTATE_WIDE && crop.width > crop.height * 1.15;
@@ -1262,8 +1365,21 @@ String _mangaGestureJs({
           parseFloat(getComputedStyle(prevPage).marginBottom) > 0;
       page.style.marginTop = prevPage && !gapped ? (-1 / dpr) + 'px' : '';
     }
+    // 双页接缝同理（BUG-4739）：两页并排居中，页宽是小数像素，交界落在物理像素
+    // 中间，跨页中间透出一条竖缝。页宽对齐到物理像素，并让跨页里 DOM 靠后的那页
+    // 向对面页压一个物理像素——margin-inline-start 跟着 .manga-spread 的 direction
+    // 走，RTL / LTR 都朝向对面页。居中偏移本身可能是小数，有这一像素的重叠，交界
+    // 两侧的像素总有一张图整格盖住。折叠屏铰链缝是有意留空的，不压。
+    if (!IS_WEBTOON && slots === 2) {
+      var dprX = window.devicePixelRatio || 1;
+      scaleX = Math.max(1, Math.round(vw * scaleX * dprX)) / dprX / vw;
+      var facing = page.previousElementSibling;
+      page.style.marginInlineStart =
+          facing && !SPREAD_GUTTER ? (-1 / dprX) + 'px' : '';
+    }
     page.style.width = (vw * scaleX) + 'px';
     page.style.height = (vh * scaleY) + 'px';
+    page.__fitScale = Math.max(scaleX, scaleY);
     // A short vertical page keeps its true hit-test frame. Empty space between
     // pages supplies the viewport-sized paging step without stretching OCR.
     if($isVerticalPaged) page.style.marginBottom=Math.max(${preferences.showPageGaps ? 12 : 0},maxH-vh*scaleY)+'px';
@@ -1336,8 +1452,9 @@ String _mangaGestureJs({
     _layoutSource(page);
   });
   window.addEventListener('resize',function(){
-    document.querySelectorAll('.manga-page').forEach(_layoutSource);
+    document.querySelectorAll('.manga-page').forEach(_layoutSourceBox);
     _applyWidePolicy();
+    _scheduleRefit();
   });
   function _recenterPan(){
     PAN_X = window.innerWidth * (1 - ZOOM) / 2;
@@ -1465,6 +1582,7 @@ String _mangaGestureJs({
   function _applyCanvas(){
     var canvas = document.getElementById('manga-canvas');
     if (!canvas) return;
+    _scheduleRefit();
     _hintWillChange(canvas, 200);
     canvas.style.transform =
       'translate(' + PAN_X + 'px,' + PAN_Y + 'px) scale(' + ZOOM + ')';
@@ -1702,6 +1820,8 @@ String _mangaGestureJs({
   // 一块空白，松手动画里再补解码掉帧。每次落位都把 ±2 跨页提成 eager 并请求
   // 异步解码（decode() 只排队、不阻塞主线程）。
   function _warmNeighbours(target){
+    // 落到新跨页：旧的当前页退回 1 档，新的当前页按缩放档取图。
+    _scheduleRefit();
     for (var d = -2; d <= 2; d++) {
       var imgs = document.querySelectorAll(
         '.manga-page[data-spread="'+(target + d)+'"] img');
@@ -2111,18 +2231,27 @@ String _mangaGestureJs({
     return true;
   };
   // 后台 OCR 每完成一页就只替换该页透明文字层，不重建 WebView 文档、不打断阅读。
-  window.__mangaReplaceOcr = function(pageIndex, html){
+  // [textBoxSig]：新文字框的签名（mangaTextBoxSignature）。变了就按新框重取页图（文字感知
+  // Gamma 校正下框内外的缩放方式不同，旧图是按旧框 / 无框转的）。
+  window.__mangaReplaceOcr = function(pageIndex, html, textBoxSig){
     var page = document.querySelector('.manga-page[data-page="'+pageIndex+'"]');
     if (!page) return;
     var boxes = page.querySelectorAll('.ocr-box');
     for (var i = 0; i < boxes.length; i++) boxes[i].remove();
     var source = page.querySelector('.manga-source') || page;
     if (html) source.insertAdjacentHTML('beforeend', html);
+    if (textBoxSig != null && page.hasAttribute('data-tb') &&
+        page.getAttribute('data-tb') !== String(textBoxSig)) {
+      page.setAttribute('data-tb', String(textBoxSig));
+      if (FIT_TEXT_GAMMA) _refitPage(page);
+    }
     // 换掉的文字层里可能正好有朗读中的那句：按记下的状态重新挂高亮。
     window.__mangaApplySpeaking(false);
   };
-  // 漫画朗读高亮：{page, group} 记在 window.__mangaSpeaking，文字层被替换 / 懒挂
-  // 之后由 __mangaApplySpeaking 重新应用（组号与 data-manga-sentence-group 同源）。
+  // 漫画朗读高亮：{page, blocks} 记在 window.__mangaSpeaking，文字层被替换 / 懒挂
+  // 之后由 __mangaApplySpeaking 重新应用。一句可以跨几个块（一个气泡被 OCR 切成
+  // 两块、同一句分在相邻字幕栏），按块下标（data-manga-block，与 page.blocks 同下标）
+  // 全部框住——现场朗读给的是句子分组里的块，成品音频给的是演出稿的块列表。
   window.__mangaSpeaking = window.__mangaSpeaking || null;
   window.__mangaApplySpeaking = function(scroll){
     var lit = document.querySelectorAll('.ocr-box.manga-speaking');
@@ -2131,17 +2260,22 @@ String _mangaGestureJs({
     if (!s) return;
     var page = document.querySelector('.manga-page[data-page="'+s.page+'"]');
     if (!page) return;
-    var boxes = page.querySelectorAll(
-        '.ocr-box[data-manga-sentence-group="'+s.group+'"]');
+    var boxes = [];
+    for (var b = 0; b < s.blocks.length; b++) {
+      var box = page.querySelector(
+          '.ocr-box[data-manga-block="'+s.blocks[b]+'"]');
+      if (box) boxes.push(box);
+    }
     for (var j = 0; j < boxes.length; j++) boxes[j].classList.add('manga-speaking');
     // 条漫是一整条长图：读到的句子不在视口里就滚到刚好露出它。
     if (scroll && IS_WEBTOON && boxes.length && boxes[0].scrollIntoView) {
       boxes[0].scrollIntoView({block: 'nearest'});
     }
   };
-  // group < 0 = 清除高亮。
-  window.__mangaSetSpeaking = function(page, group){
-    window.__mangaSpeaking = group < 0 ? null : {page: page, group: group};
+  // blocks 为空 / 非数组 = 清除高亮。
+  window.__mangaSetSpeaking = function(page, blocks){
+    window.__mangaSpeaking = (Array.isArray(blocks) && blocks.length)
+        ? {page: page, blocks: blocks} : null;
     window.__mangaApplySpeaking(true);
   };
   document.addEventListener('pointermove', function(e){
@@ -2226,6 +2360,23 @@ String _mangaGestureJs({
     if (!image) return;
     var apply = function(){
       if (!(image.naturalWidth > 0 && image.naturalHeight > 0)) return;
+      // 降采样图（BUG-4704）的 naturalWidth 是显示尺寸，不是原图宽：页几何留用
+      // manga.json 的真实尺寸，只校宽高比。比例对不上（manga.json 记错了尺寸）就放弃
+      // 降采样、换回原图，由下一次 load 按原图的真实尺寸纠正几何。
+      if (_isFittedImage(image)) {
+        var pw = Number(page.getAttribute('data-pw')) || 0;
+        var ph = Number(page.getAttribute('data-ph')) || 0;
+        var ratio = pw > 0 && ph > 0 ? pw / ph : 0;
+        if (ratio > 0 &&
+            Math.abs(image.naturalWidth / image.naturalHeight - ratio) <= ratio * 0.02) {
+          _inspectSource(page);
+          _applyWidePolicy();
+        } else {
+          page.setAttribute('data-nofit', '1');
+          image.setAttribute('src', image.getAttribute('data-src'));
+        }
+        return;
+      }
       window.__mangaUpdatePageGeometry(
         Number(page.getAttribute('data-page')),
         image.naturalWidth,
@@ -3449,6 +3600,8 @@ String _mangaGestureJs({
               LAST_VISIBLE_PAGES.indexOf(index) < 0;
         });
         LAST_VISIBLE_PAGES = visiblePages;
+        // 放大状态下滚进视口的页换缩放档、滚出去的退回 1 档（BUG-4704）。
+        if (ZOOM > 1.01) _scheduleRefit();
         b.callHandler('onMangaScroll', JSON.stringify({ fraction: fraction, topPage: topPage, visiblePages: visiblePages }));
       }, 120);
     }, {passive: true});
@@ -3478,4 +3631,13 @@ String _escapeHtml(String input) {
 
 String _escapeAttr(String input) {
   return _escapeHtml(input).replaceAll('"', '&quot;');
+}
+
+/// 页图 URL 上的画质档后缀（`&fq=…`；标准档为空串）。
+String _fitQualityQuery(MangaReaderPreferences preferences) {
+  final String? value = MangaFitQuality.fromPreferences(
+    enhanced: preferences.enhancedScaling,
+    gammaCorrect: preferences.gammaCorrectScaling,
+  ).urlValue;
+  return value == null ? '' : '&$kMangaFitEnhancedQueryParam=$value';
 }

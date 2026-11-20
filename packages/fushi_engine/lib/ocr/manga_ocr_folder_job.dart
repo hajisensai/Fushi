@@ -16,8 +16,10 @@ import 'package:path/path.dart' as p;
 import 'package:fushi_engine/media/image_kernels.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
+import 'package:fushi_engine/media/system_junk_entries.dart';
 import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
+import 'package:fushi_engine/utils/misc/atomic_text_file.dart';
 
 /// OCR 产物目录名（在被扫描目录内，枚举时必须排除自己）。
 const String kMangaOcrOutDirName = 'manga_ocr_out';
@@ -51,10 +53,16 @@ const String kMangaOcrPagesCacheDirName = '_pages';
 // keep token positions as per-character hit boxes (`glyphBoxes` → manga.json
 // `regions`) instead of the overlay spreading characters evenly over the line.
 // Output changes, so v6 caches are not reused.
+// v8: the per-column CTC recogniser no longer drops short body columns as ruby
+// (ink width + gap to the neighbour re-check the box-geometry verdict), re-runs
+// line detection on a horizontally stretched crop when a tall block votes
+// horizontal (loosely set vertical text was read row by row), and splits a
+// detected box that spans the heads of several columns instead of chaining
+// them into one. Text changes, so v7 caches are not reused.
 // 这只是**算法/坐标口径基线**，不代表模型身份：实际落盘的目录名要再接一段已安装模型
 // 的内容指纹（`manga_ocr_model_fingerprint.dart`），否则上游换模型后旧缓存被静默
 // 复用（BUG-1173）。
-const String kMangaOcrPipelineRevision = 'v7-leaf-blocks-glyph-boxes';
+const String kMangaOcrPipelineRevision = 'v8-ink-ruby-stretch-orientation';
 const String kLocalMangaOcrEngineSignature =
     'local-onnx-$kMangaOcrPipelineRevision';
 
@@ -189,7 +197,8 @@ bool _isDigit(int codeUnit) => codeUnit >= 0x30 && codeUnit <= 0x39;
 const int kMangaPageScanMaxDepth = 6;
 
 /// 枚举 [root] 下的页图：递归下钻到 [kMangaPageScanMaxDepth] 层，排除
-/// [kMangaOcrOutDirName] 产物目录，按相对路径自然序排序。
+/// [kMangaOcrOutDirName] 产物目录、系统 / 垃圾目录（`@eaDir`、`__MACOSX`、回收站…，
+/// [isSystemJunkDirectoryName]）与 `._` AppleDouble 文件，按相对路径自然序排序。
 ///
 /// 旧实现只认「顶层文件 + 一层子目录内的文件」。已入库漫画的书目录是
 /// `manga.json` + `images/<destRel>`，而 destRel **保留源子目录结构**：
@@ -204,6 +213,7 @@ List<MangaOcrPageFile> enumerateMangaPages(Directory root) {
     if (!kMangaOcrImageExtensions.contains(ext)) {
       return;
     }
+    if (isAppleDoubleFileName(p.basename(file.path))) return;
     final String relative = p.relative(file.path, from: root.path);
     pages.add(
       MangaOcrPageFile(file: file, relativeUrl: normalizeMangaUrl(relative)),
@@ -222,7 +232,8 @@ List<MangaOcrPageFile> enumerateMangaPages(Directory root) {
       if (entity is File) {
         addFile(entity);
       } else if (entity is Directory && depth < kMangaPageScanMaxDepth) {
-        if (p.basename(entity.path) == kMangaOcrOutDirName) {
+        final String name = p.basename(entity.path);
+        if (name == kMangaOcrOutDirName || isSystemJunkDirectoryName(name)) {
           continue;
         }
         walk(entity, depth + 1);
@@ -272,7 +283,8 @@ class MangaOcrFilePageCache implements OcrPageCache {
     }
     try {
       final Map<String, dynamic> json =
-          jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+          jsonDecode(await readAtomicallyWrittenTextFile(file))
+              as Map<String, dynamic>;
       final FileStat stat = await pageFiles[pageIndex].stat();
       if (json['source_path'] != pageNames[pageIndex] ||
           json['source_size'] != stat.size ||
@@ -304,21 +316,15 @@ class MangaOcrFilePageCache implements OcrPageCache {
     }
     await cacheDir.create(recursive: true);
     final FileStat stat = await pageFiles[result.pageIndex].stat();
-    final File target = _fileFor(result.pageIndex);
-    final File temporary = File('${target.path}.tmp');
-    await temporary.writeAsString(
+    await writeTextFileAtomically(
+      _fileFor(result.pageIndex),
       jsonEncode(<String, Object?>{
         'source_path': pageNames[result.pageIndex],
         'source_size': stat.size,
         'source_modified_ms': stat.modified.millisecondsSinceEpoch,
         'result': result.toJson(),
       }),
-      flush: true,
     );
-    if (target.existsSync()) {
-      await target.delete();
-    }
-    await temporary.rename(target.path);
   }
 }
 
@@ -550,14 +556,9 @@ Future<String> runMangaOcrFolderJob({
     ),
   );
   final File output = File(p.join(outDir.path, kMangaOcrOutputFileName));
-  final File temporary = File('${output.path}.tmp');
-  await temporary.writeAsString(
+  await writeTextFileAtomically(
+    output,
     jsonEncode(mangaPayloadToJson(payload)),
-    flush: true,
   );
-  if (output.existsSync()) {
-    await output.delete();
-  }
-  await temporary.rename(output.path);
   return output.path;
 }

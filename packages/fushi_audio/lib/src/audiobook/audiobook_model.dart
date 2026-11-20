@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart';
 import '../parsers/subtitle_markup.dart';
 import 'audiobook_health.dart' show HealthKind;
@@ -70,6 +72,34 @@ class CueTokenTiming {
 
   int get length => tokens.length;
   bool get isEmpty => tokens.isEmpty;
+
+  /// 落库形态（`audio_cues.token_timing_json`，v160）：与转录 sidecar 一行同形的
+  /// `{"t":[...],"o":[...]}`。
+  String toJson() => jsonEncode(<String, Object?>{'t': tokens, 'o': offsetsMs});
+
+  /// [toJson] 的逆。null / 空串 = 没有逐 token 时间；内容坏了（不是对象、两列不等长、
+  /// 类型不对）也按没有处理——这是可再生的派生数据，坏一条不该挡住整本书读 cue，
+  /// 而挂一份对不上的时间比没有更糟（半句会裁到别处）。
+  static CueTokenTiming? tryParseJson(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(raw);
+    } on FormatException {
+      return null;
+    }
+    if (decoded is! Map) return null;
+    final Object? t = decoded['t'];
+    final Object? o = decoded['o'];
+    if (t is! List || o is! List || t.length != o.length) return null;
+    if (t.any((Object? e) => e is! String) || o.any((Object? e) => e is! int)) {
+      return null;
+    }
+    return CueTokenTiming(
+      tokens: List<String>.unmodifiable(t.cast<String>()),
+      offsetsMs: List<int>.unmodifiable(o.cast<int>()),
+    );
+  }
 }
 
 /// 单条对齐片段，粒度为句子级别。
@@ -107,9 +137,12 @@ class AudioCue {
   /// 由各文本字幕 parser 在 [parseSubtitleMarkup] 后填充；DB 往返不携带。
   SubtitleMarkup? markup;
 
-  /// 设备端转录产物附带的逐 token 发射时间（瞬态、不持久化）。导入链路从
-  /// 转录任务目录的 sidecar 挂上来，供匹配后按正文句界重切 cue
-  /// （`cue_sentence_resegmenter.dart`）；DB 往返不携带。
+  /// 设备端转录产物附带的逐 token 发射时间。导入链路从转录任务目录的 sidecar
+  /// 挂上来，供匹配后按正文句界重切 cue（`cue_sentence_resegmenter.dart`）；重切 /
+  /// 后处理会同步改写它，所以落库的是**与本条 cue 最终边界一致**的那份
+  /// （`audio_cues.token_timing_json`，v160），运行时（漫画台词半句命中按 token
+  /// 裁区间）从库里读回。sidecar 按原始转录行号排，与库里重切后的 cue 对不上，
+  /// 不能拿来事后补挂。非转录字幕、v160 之前匹配的书为 null（重新匹配才有）。
   CueTokenTiming? tokenTiming;
 
   /// 用户手改字幕前的那条原 cue（瞬态、不持久化）。null = 这句没被改过，[text] 就是
@@ -126,6 +159,11 @@ class AudioCue {
   /// （`VideoBookRepository.saveCues` 过滤）。由 `AssParser.parseString(includeDrawings:
   /// true)` 产出，其余解析路径默认不产出。
   bool get isRenderOnly => text.isEmpty && markup?.drawing != null;
+
+  /// 特效字幕（歌词特效 / 屏幕字，H7r4mf_z2n）：解析层标出的 [SubtitleMarkup.isEffect]；
+  /// 没有 markup（落库往返、外部转录）恒为 false。手改过的 cue 的 markup 由
+  /// `subtitle_text_override.dart` 沿用原 cue 的标志。
+  bool get isEffect => markup?.isEffect ?? false;
 
   File? resolveAudioFile(List<File> audioFiles) {
     if (audioFileIndex < 0 || audioFileIndex >= audioFiles.length) {
@@ -145,6 +183,7 @@ class AudioCue {
     c.startMs = r.startMs;
     c.endMs = r.endMs;
     c.audioFileIndex = r.audioFileIndex;
+    c.tokenTiming = CueTokenTiming.tryParseJson(r.tokenTimingJson);
     return c;
   }
 
@@ -159,5 +198,17 @@ class AudioCue {
         startMs: c.startMs,
         endMs: c.endMs,
         audioFileIndex: c.audioFileIndex,
+        tokenTimingJson: Value(_tokenTimingJsonFor(c)),
       );
+
+  /// 与 `cueText` 同口径取字幕源那条：手改过的 cue 落库的是原文（[sourceText]），
+  /// 改后副本的时间已被清掉（`subtitle_text_override.dart`），存原 cue 的那份。
+  /// 空 token 列表不存。
+  static String? _tokenTimingJsonFor(AudioCue c) {
+    final CueTokenTiming? t = (c.uneditedCue ?? c).tokenTiming;
+    if (t == null || t.isEmpty || t.tokens.length != t.offsetsMs.length) {
+      return null;
+    }
+    return t.toJson();
+  }
 }

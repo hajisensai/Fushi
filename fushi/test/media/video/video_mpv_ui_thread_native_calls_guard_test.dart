@@ -71,7 +71,13 @@ void main() {
     expect(queueRead, contains('mpv_get_property_async('));
     expect(queueRead, isNot(contains('mpv_get_property_string(')));
 
-    final String setProperty = body('Future<void> setProperty(');
+    // 公开 setProperty 委托给带结果码的 setPropertyWithResult（BUG-4911），写本身
+    // 必须走异步（同步分支只留给 configuration.async=false）。
+    expect(
+      body('Future<void> setProperty('),
+      contains('await setPropertyWithResult('),
+    );
+    final String setProperty = body('Future<int> setPropertyWithResult(');
     expect(
       setProperty,
       contains('mpv_set_property_async('),
@@ -169,6 +175,49 @@ void main() {
     );
   });
 
+  // BUG-4941：mpv_terminate_destroy 要等 mpv 内核线程退出（client.c 里
+  // mp_dispatch_lock 的 cond_wait + mp_thread_join），内核卡在打不开的流上时会一直
+  // 挡住调用线程。Android 上 UI isolate 与平台主线程合并，dispose 5 秒后在 UI
+  // isolate 里同步调它，反馈 wcOJwX-sHh 的两次 ANR 主线程栈就停在这里
+  // （pthread_join / pthread_cond_wait，同一个 Dart 调用点）。只许在辅助 isolate
+  // 的顶层函数里调，且 dispose 要经 compute 把它送过去。
+  test('media_kit patch destroys the mpv handle off the UI thread', () {
+    final String source = maskComments(
+      File(
+        '../ci/patches/hosted/media_kit-1.2.6/lib/src/player/native/player/real.dart',
+      ).readAsStringSync(),
+    );
+    final int helper = source.indexOf('void _terminateDestroy(');
+    expect(
+      helper,
+      isNonNegative,
+      reason: '补丁里找不到辅助 isolate 的 _terminateDestroy',
+    );
+    final int helperEnd = source.indexOf('\n}\n', helper);
+    const String call = 'mpv.mpv_terminate_destroy(';
+    int at = source.indexOf(call);
+    expect(at, isNonNegative, reason: '补丁里找不到 $call');
+    while (at >= 0) {
+      expect(
+        at > helper && at < helperEnd,
+        isTrue,
+        reason: '$call 会阻塞到 mpv 内核线程退出，只能经 compute 在辅助 isolate 里调',
+      );
+      at = source.indexOf(call, at + 1);
+    }
+
+    final int d = source.indexOf('Future<void> dispose(');
+    expect(d, isNonNegative);
+    final String dispose = source.substring(d, source.indexOf('\n  }\n', d));
+    expect(dispose, contains('compute('));
+    expect(dispose, contains('_terminateDestroy,'));
+    // 销毁仍须排在辅助 isolate 上的钩子放行 / 截帧之后。
+    expect(
+      dispose.indexOf('_offThreadNativeCalls'),
+      lessThan(dispose.indexOf('_terminateDestroy,')),
+    );
+  });
+
   // 暂停 OCR 截帧不得占 Player 串行锁：截帧 + 纯 Dart 编 PNG 要几百毫秒，持锁期间
   // play() / pause() 全排队，开着暂停识别时按继续播放要等截帧编完才响应。不持锁
   // 的截帧必须登记进 `_offThreadNativeCalls`，否则 dispose 可能在它还在用句柄时
@@ -209,5 +258,64 @@ void main() {
       reason: '不持锁的截帧要让 dispose 等它跑完再销毁句柄',
     );
     expect(screenshot, contains('_offThreadNativeCalls.remove('));
+  });
+
+  // BUG-4910：持锁的截帧（制卡）只许锁住取原始帧，JPEG / PNG 编码在锁外跑，否则
+  // 「制卡后立刻续播」的 play() 要等几百毫秒的纯 Dart 编码。行为测试在
+  // `test/third_party/media_kit_screenshot_lock_test.dart`（要真 libmpv，CI 跳过），
+  // 这里钉住结构，CI 上也有人看着。
+  test('locked screenshot holds the lock for the raw capture only', () {
+    final String patch = maskComments(
+      File(
+        '../ci/patches/hosted/media_kit-1.2.6/lib/src/player/native/player/real.dart',
+      ).readAsStringSync(),
+    );
+    String slice(String signature, String closing) {
+      final int s = patch.indexOf(signature);
+      expect(s, isNonNegative, reason: '补丁里找不到 $signature');
+      return patch.substring(s, patch.indexOf(closing, s));
+    }
+
+    final String screenshot = slice(
+      'Future<Uint8List?> screenshot(',
+      '\n  }\n',
+    );
+    expect(screenshot, contains('lock.synchronized(capture)'));
+    final String capture = slice(
+      'Future<_CapturedScreenshot?> capture()',
+      '\n    }\n',
+    );
+    expect(capture, contains('compute(\n        _screenshotRaw,'));
+    final String raw = slice('_CapturedScreenshot? _screenshotRaw(', '\n}\n');
+    for (final String encode in <String>['encodeJpg(', 'encodePng(']) {
+      expect(capture.contains(encode), isFalse, reason: '编码不许在锁内');
+      expect(raw.contains(encode), isFalse, reason: '取帧 isolate 不许顺带编码');
+    }
+    final int locked = screenshot.indexOf('lock.synchronized(capture)');
+    final int encode = screenshot.indexOf('compute(_encodeScreenshot');
+    expect(encode, greaterThan(locked), reason: '编码排在锁释放之后');
+
+    // `image/x-fushi-bgra`（智能遮布）：变换在取帧 isolate 上对 mpv node 的 BGRA
+    // 视图执行，必须在 node 释放前跑；产出直接返回，不走整帧
+    // TransferableTypedData、也不进编码 isolate。
+    final int transform = raw.indexOf('rawTransform(w, h, stride, bytes)');
+    expect(transform, isNonNegative, reason: '变换要在取帧 isolate 里跑');
+    expect(
+      transform,
+      lessThan(raw.indexOf('mpv_free_node_contents(')),
+      reason: '视图属于 mpv node，变换必须在 node 释放前跑',
+    );
+    expect(
+      raw.indexOf('_TransformedScreenshot('),
+      lessThan(raw.indexOf('TransferableTypedData.fromList(')),
+      reason: '变换分支先于整帧拷贝分支，不另拷整帧',
+    );
+    final int transformed = screenshot.indexOf('_TransformedScreenshot(');
+    expect(transformed, isNonNegative, reason: '变换产出要直接返回');
+    expect(
+      transformed,
+      lessThan(encode),
+      reason: '变换产出在编码前返回，不进 _encodeScreenshot',
+    );
   });
 }

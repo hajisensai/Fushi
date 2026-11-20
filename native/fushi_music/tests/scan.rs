@@ -232,6 +232,48 @@ fn single_file_root_scans_only_that_file() {
     );
 }
 
+/// 拍板台 jeNKF9u0WJ：音乐来源目录里的本地 MV（视频容器）进曲库，一个文件一条曲目，标题
+/// 用文件名；字幕、文本等非媒体文件照旧不收。
+#[test]
+fn music_source_scan_takes_local_music_videos() {
+    let dir = std::env::temp_dir().join(format!("fushi_music_mv_scan_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut ebml = vec![0x1A, 0x45, 0xDF, 0xA3, 0x9F, 0x42, 0x86, 0x81, 0x01];
+    ebml.extend(vec![0u8; 64]);
+    std::fs::write(dir.join("Song MV.mkv"), &ebml).unwrap();
+    std::fs::write(dir.join("Live.webm"), &ebml).unwrap();
+    std::fs::write(dir.join("Song MV.ass"), b"[Script Info]\n").unwrap();
+    std::fs::write(dir.join("notes.txt"), b"x").unwrap();
+
+    let root = dir.to_str().unwrap().replace('\\', "/");
+    let batches = scan_root(&root, 0, None);
+    assert!(
+        batches
+            .iter()
+            .flat_map(|(_, r)| r.iter())
+            .all(|r| !matches!(r, Record::Error { .. })),
+        "video containers must not come out as error records"
+    );
+    let mut got: Vec<(String, Option<String>)> = tracks(&batches)
+        .into_iter()
+        .map(|t| (t.title, t.codec))
+        .collect();
+    got.sort();
+    assert_eq!(
+        got,
+        vec![
+            ("Live".to_owned(), Some("unknown".to_owned())),
+            ("Song MV".to_owned(), Some("unknown".to_owned())),
+        ]
+    );
+
+    // 单文件根（手动导入一个 MV）同样收。
+    let single = tracks(&scan_root(&format!("{root}/Song MV.mkv"), 0, None));
+    assert_eq!(single.len(), 1);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// 同一个文件从三种根进来（单文件、所在目录、上层递归目录，根都按 Dart 的归一写成
 /// 正斜杠）得到同一条路径、同一个 uid——uid 含路径原文，拼法不一会在曲库里出两行。
 #[test]

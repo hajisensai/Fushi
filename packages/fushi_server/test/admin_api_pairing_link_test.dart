@@ -17,6 +17,7 @@ import 'package:fushi_server/src/server_prefs.dart';
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:test/test.dart';
+import 'support/fake_rwkv.dart';
 
 /// BUG-4391（步骤 6）：无头端公网类别被 PIN 爆破锁住时，管理员在 WebUI / admin API
 /// 签发一次性配对链接，票据配对不走 PIN 预算，只能从公网接入的用户仍能配上。
@@ -65,6 +66,7 @@ void main() {
     paths = ServerPaths(config.dataDir);
     await paths.ensureLayout();
     host = HeadlessHost(
+      srsRwkvHttpClient: noNetworkHttpClient,
       config: config,
       paths: paths,
       db: db,

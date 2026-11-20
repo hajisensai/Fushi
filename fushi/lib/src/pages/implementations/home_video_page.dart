@@ -1,8 +1,17 @@
-import 'package:fushi/src/media/privacy/media_privacy_dialog.dart';
+import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
+import 'package:fushi/src/media/links/media_link_entries.dart'
+    show MediaLinkEntry;
+import 'package:fushi/src/media/links/media_link_inference_host.dart'
+    show mediaLinkInferCallback;
+import 'package:fushi/src/media/links/media_link_opener.dart'
+    show mediaLinkSearchAction, openMediaLinkEntry;
+import 'package:fushi/src/media/links/media_links_section.dart'
+    show showMediaLinksDialog;
+import 'package:fushi/src/media/links/work_kinds_badge.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 
 import 'dart:async' show StreamSubscription, Timer, unawaited;
-import 'dart:convert' show jsonDecode, utf8;
+import 'dart:convert' show utf8;
 import 'dart:io';
 
 import 'package:crypto/crypto.dart' show sha1;
@@ -14,11 +23,10 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/media/audio_cd/audio_cd_import.dart';
 import 'package:fushi/src/media/collections/collection_owned_subscriptions.dart';
-import 'package:fushi/src/utils/net/app_http_image.dart';
+import 'package:fushi/src/media/video/cover_ui/video_series_meta.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi/src/pages/base_module_tab_page.dart';
-import 'package:fushi/src/pages/implementations/home_page.dart'
-    show HomeTab, homeShellTabNotifier;
+import 'package:fushi/src/pages/implementations/home_page.dart' show HomeTab;
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/pages/implementations/collection_management_page.dart';
@@ -51,6 +59,7 @@ import 'package:fushi/src/pages/implementations/manual_download_task_dialog.dart
 import 'package:fushi/src/media/video/cover_ui/cover_orientation_builder.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
+import 'package:fushi/src/media/video/cover_ui/video_frame_cover_picker.dart';
 import 'package:fushi/src/media/video/cover_ui/video_online_cover_picker.dart';
 import 'package:fushi/src/media/video/cover_ui/video_scrape_actions.dart';
 import 'package:fushi/src/media/video/cover_ui/video_specs_badges.dart';
@@ -68,7 +77,7 @@ import 'package:fushi/src/media/video/video_subscription_updates.dart';
 import 'package:fushi/src/media/video/scraper/auto_scrape_service.dart';
 import 'package:fushi_engine/media/video/disc/disc_format.dart';
 import 'package:fushi_engine/media/video/video_duration_probe.dart'
-    show VideoProbeFacts, VideoStreamFacts;
+    show VideoProbeFacts, VideoStreamFacts, probeVideoDurationMs;
 import 'package:fushi_engine/media/video/bluray/bluray_disc.dart'
     show blurayDiscRootForDirectory;
 import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
@@ -143,6 +152,9 @@ import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
 import 'package:fushi/src/pages/implementations/library_filter_dropdown.dart';
 import 'package:fushi/src/pages/implementations/library_filter_panel.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
+import 'package:fushi/src/pages/implementations/video_library_header_actions.dart';
+import 'package:fushi/src/pages/implementations/video_library_drop_port.dart';
+import 'package:fushi/src/utils/components/fushi_header_more_button.dart';
 import 'package:fushi/src/pages/implementations/library_view_options.dart';
 import 'package:fushi/src/models/library_grid_columns.dart'
     show LibraryGridDomain;
@@ -169,6 +181,8 @@ import 'package:fushi/src/sync/remote_library_cache.dart';
 import 'package:fushi/src/sync/remote_disc_share.dart';
 import 'package:fushi/src/sync/remote_disc_host_open.dart';
 import 'package:fushi/src/media/video/disc/remote_disc_actions.dart';
+import 'package:fushi/src/media/video/disc/remote_disc_menu_source.dart'
+    show RemoteDiscHostTitle;
 import 'package:fushi/src/media/video/disc/remote_disc_download.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
@@ -181,6 +195,7 @@ import 'package:fushi/src/sync/video_remote_targets.dart';
 import 'package:fushi/src/pages/implementations/video_remote_page.dart';
 import 'package:fushi/src/utils/components/section_visibility.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_error_text.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
@@ -214,6 +229,7 @@ import 'package:fushi/src/utils/components/fushi_continue_card_row.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart';
+import 'package:fushi/src/utils/components/fushi_series_cover_block.dart';
 import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/pages/implementations/collection_name_dialog.dart';
@@ -230,6 +246,7 @@ import 'package:fushi/src/media/video/metadata/video_source_scrape_run_detail_di
         showVideoMetadataCandidateSearchDialog,
         showVideoSourceScrapeManualBindingDialog;
 import 'package:fushi/src/media/video/metadata/video_tmdb_ordering_dialog.dart';
+import 'package:fushi/src/media/video/metadata/video_metadata_image_provider.dart';
 
 part 'home_video/companion.part.dart';
 
@@ -283,11 +300,13 @@ typedef _CardDownloadMeta = ({
 });
 
 /// 合集封面卡取到的图源（见 `_collectionCoverSource`）：[errorIcon] 是解码失败时的
-/// 占位图标；[remoteMember] 非 null = 图源是这个远端成员自己的封面，按远端卡槽位画。
+/// 占位图标；[remoteMember] 非 null = 图源是这个远端成员自己的封面，按远端卡槽位画；
+/// [localMemberUid] 非 null = 图源借的是这一集本地成员的封面（NSFW 按这一集判定）。
 typedef _CollectionCoverSource = ({
   ImageProvider image,
   IconData errorIcon,
   RemoteVideoInfo? remoteMember,
+  String? localMemberUid,
 });
 
 /// 首页「视频」tab 的内容：已导入视频的库（独立于书架的 EPUB/有声书分区）。
@@ -362,11 +381,14 @@ class HomeVideoPage extends BaseModuleTabPage {
     this.refreshPendingScrapeWorks,
     this.pendingScrapeChangedSignal,
     this.onOpenSources,
+    this.importDropPort,
     this.remoteVideoClientLoader,
     this.cloudRemoteVideoClientLoader,
     this.jellyfinVideoClientLoader,
     this.remoteVideoDownloadDestination,
     this.videoRemoteTargetsLoader,
+    this.frameCoverDurationProbe = probeVideoDurationMs,
+    this.frameCoverGrabber = grabVideoFrameToFile,
     super.key,
   });
 
@@ -408,6 +430,11 @@ class HomeVideoPage extends BaseModuleTabPage {
   final Listenable? pendingScrapeChangedSignal;
 
   final VoidCallback? onOpenSources;
+
+  /// 壳的「导入」视图整页落点转交到本页的拖放分发（BUG-4857 / 导入稿 IM2）：
+  /// 本页挂上 [_importSurfaceDrop]，导入视图落下时走与库页同一套意图判定，
+  /// 只是不命中视频卡（导入视图上没有卡）。
+  final VideoLibraryDropPort? importDropPort;
   final Future<RemoteVideoClient?> Function()? remoteVideoClientLoader;
 
   /// 测试钩子（多端库联合视图 §2.2/§2.6）：注入云视频目录 client（[CloudRemoteVideoClient]），
@@ -426,6 +453,11 @@ class HomeVideoPage extends BaseModuleTabPage {
   /// 测试钩子：注入「可遥控的电脑」探测结果。缺省时生产路径走
   /// [probeVideoRemoteTargets]（已配对、可达、声明 `videoRemoteControlV1`）。
   final Future<List<VideoRemoteTarget>> Function()? videoRemoteTargetsLoader;
+
+  /// 「从视频画面选取封面」的读片长 / 取帧接缝。缺省是生产 ffprobe / ffmpeg 抽帧；
+  /// widget 测试注入假实现，让「菜单入口 → 挑帧 → 手选封面落盘」整条可跑。
+  final VideoFrameDurationProbe frameCoverDurationProbe;
+  final VideoFrameFileGrabber frameCoverGrabber;
 
   /// 测试钩子：强制重查本地视频列表（程序化 seed 视频后让其出现在网格）。
   /// 视频页用 initState 一次性 FutureBuilder + IndexedStack 保活，seed 晚于
@@ -520,6 +552,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       !_dismissedPendingScrapeKeys.containsAll(_pendingScrapeKeys);
   bool _pendingScrapeInFlight = false;
 
+  /// 批量删除在飞（35YfcYO-zR）：进度对话框挡住了页面，这里再挡一层，快捷键 /
+  /// 手柄等绕过遮罩的入口也不能在删除期间再起一轮。
+  bool _batchDeleteInFlight = false;
+
   /// 计数重算在飞时又来了一次请求：在飞那次读到的可能是旧状态（批次结束前那
   /// 一刻），完成后必须再补一次，不能整个吞掉（BUG-3085）。
   bool _pendingScrapeRecountQueued = false;
@@ -578,9 +614,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
 
   /// 本页不在前台时到达的本机远端断点变化：露出来再重算一次（同 [_watchProgressStale]）。
   bool _remotePositionsStale = false;
-
-  /// 上一次看到的本页路由是否在栈顶（判「被盖住 → 又露出来」的边沿）。
-  bool _routeWasCurrent = true;
 
   /// 上一次已知的视频 uid 集合，用于对 [_videoUidsSub] 事件去重：仅集合变化才刷新，
   /// 封面自愈 / 进度回写等纯列更新（集合不变）跳过，避免写回→重刷环。null=尚未收到
@@ -711,9 +744,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         fieldKey: const ValueKey<String>('video_search_field'),
         onQueryChanged: (String value) => setState(() => _searchQuery = value),
       );
-
-  /// 页头「排序」按钮打开的菜单（常驻锚点见 [_buildSortMenuAnchor]）。
-  final MenuController _sortMenu = MenuController();
 
   /// 层次 C：`'video|<uid>' → 该条目在其主折叠合集里的 sortIndex`（组内序真相源，
   /// 与详情页/播放器 `getCollectionItems` 同源——详情页拖完库页行立即同序）。
@@ -895,6 +925,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     // 在线补刮 + 待确认提醒（BUG-2199/BUG-2201）。视频 tab 访问过才挂载
     // （HomePage `_visitedKeepAliveTabs`），所以这里就是「首次进入视频页」。
     unawaited(_refreshPendingScrape());
+    widget.importDropPort?.attach(_importSurfaceDrop);
     // BUG-793：订阅 videoBooks 表，任意导入路径落库后自动刷新库页。
     _videoUidsSub = widget.repo.watchVideoBookUids().listen(
       _onVideoUidsChanged,
@@ -918,6 +949,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         .listen(_onScrapePresentationChanged);
     _scrapeBatchWasBusy = widget.scrapeTaskController?.isBusy == true;
     widget.scrapeTaskController?.addListener(_onScrapeTaskBusyChanged);
+    _backgroundTasksVisible =
+        widget.scrapeTaskController != null &&
+        videoBackgroundTasksSummaryOf(widget.scrapeTaskController!).visible;
     // 「已更新未看」行：订阅增删（订阅面板）后重解析订阅→合集映射。新订阅表走
     // Drift 流；旧 AniList JSON 订阅 store 没有表，用它的 revision 通知。入库落
     // 合集那一步已由上面的合集表流覆盖，这里只补「订阅本身变了」。
@@ -984,17 +1018,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       context,
       focusChanges: FushiFocusRoot.maybeControllerOf(context),
     );
-    // BUG-3610：本页路由被盖住（合集详情页 / 播放页）→ 又露出来的边沿，补做
-    // 被盖住期间推迟的进度重读。isCurrentOf 只依赖路由的 isCurrent 一项。
-    final bool current = ModalRoute.isCurrentOf(context) ?? true;
-    final bool returned = current && !_routeWasCurrent;
-    _routeWasCurrent = current;
-    if (returned) _reloadStaleWatchProgress();
   }
 
-  /// 本页此刻是否真在用户眼前：路由在栈顶且视频 tab 是当前 tab。
-  bool get _isShowingWatchProgress =>
-      _routeWasCurrent && homeShellTabNotifier.value == HomeTab.video;
+  /// BUG-3610：本页被盖住（合集详情页 / 播放页）→ 又露出来的边沿，补做被盖住
+  /// 期间推迟的进度重读。
+  @override
+  void onShownToUserAgain() {
+    _reloadStaleWatchProgress();
+  }
 
   /// BUG-3610：观看进度变了。前台 → 防抖后走播放返回同一条窄刷新（书架列表 +
   /// 最近观看两张表；进度只改这两处，见 [_refreshAfterPlayback]）；不在前台 →
@@ -1004,7 +1035,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     _watchProgressReloadDebounce?.cancel();
     _watchProgressReloadDebounce = Timer(const Duration(milliseconds: 300), () {
       if (!mounted) return;
-      if (!_isShowingWatchProgress) {
+      if (!isShownToUser) {
         _watchProgressStale = true;
         return;
       }
@@ -1022,7 +1053,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       const Duration(milliseconds: 300),
       () {
         if (!mounted) return;
-        if (!_isShowingWatchProgress) {
+        if (!isShownToUser) {
           _remotePositionsStale = true;
           return;
         }
@@ -1084,6 +1115,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       oldWidget.scrapeTaskController?.removeListener(_onScrapeTaskBusyChanged);
       widget.scrapeTaskController?.addListener(_onScrapeTaskBusyChanged);
       _scrapeBatchWasBusy = widget.scrapeTaskController?.isBusy == true;
+      _backgroundTasksVisible =
+          widget.scrapeTaskController != null &&
+          videoBackgroundTasksSummaryOf(widget.scrapeTaskController!).visible;
     }
     if (oldWidget.pendingScrapeChangedSignal !=
         widget.pendingScrapeChangedSignal) {
@@ -1091,6 +1125,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         _onPendingScrapeChanged,
       );
       widget.pendingScrapeChangedSignal?.addListener(_onPendingScrapeChanged);
+    }
+    if (!identical(oldWidget.importDropPort, widget.importDropPort)) {
+      oldWidget.importDropPort?.detach(_importSurfaceDrop);
+      widget.importDropPort?.attach(_importSurfaceDrop);
     }
     if (oldWidget.libraryRefreshSignal == widget.libraryRefreshSignal) return;
     oldWidget.libraryRefreshSignal?.removeListener(_onLibraryRefreshRequested);
@@ -1124,6 +1162,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     _scrapePresentationSub?.cancel();
     _scrapePresentationReloadDebounce?.cancel();
     widget.scrapeTaskController?.removeListener(_onScrapeTaskBusyChanged);
+    widget.importDropPort?.detach(_importSurfaceDrop);
     widget.libraryRefreshSignal?.removeListener(_onLibraryRefreshRequested);
     widget.pendingScrapeChangedSignal?.removeListener(_onPendingScrapeChanged);
     _autoScrape?.dispose();
@@ -1271,6 +1310,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
 
   /// 批次忙 → 闲：补一次完整刷新（节流窗口里最后的写入、封面回填、待确认数）。
   void _onScrapeTaskBusyChanged() {
+    _syncBackgroundTasksVisible();
     final bool busy = widget.scrapeTaskController?.isBusy == true;
     if (busy == _scrapeBatchWasBusy) return;
     _scrapeBatchWasBusy = busy;
@@ -1278,6 +1318,25 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     _scrapePresentationReloadDebounce?.cancel();
     _scrapePresentationReloadDebounce = null;
     _reloadAfterScrapePresentationChanged();
+  }
+
+  /// 卡片 / 合集长按菜单里给不给「选择」：首页分区（横滚行、Hero）没有可勾选的
+  /// 格（[_registerNoSelectableCards]），从那里进多选只会得到一个选中项看不见、
+  /// 全选无物可选的空多选态——与页头「⋯」里的「选择」同一道门（非首页才有）。
+  bool get _cardMenuOffersSelect => widget.section != VideoLibrarySection.home;
+
+  /// 页头「后台任务」按钮出没跟着任务走（有任务才出现）：可见性翻转时重建页头。
+  /// 进度与数量由按钮自己订阅控制器重画，这里只管出现 / 消失。
+  bool _backgroundTasksVisible = false;
+
+  void _syncBackgroundTasksVisible() {
+    final VideoSourceScrapeTaskController? controller =
+        widget.scrapeTaskController;
+    final bool visible =
+        controller != null && videoBackgroundTasksSummaryOf(controller).visible;
+    if (visible == _backgroundTasksVisible) return;
+    if (!mounted) return;
+    setState(() => _backgroundTasksVisible = visible);
   }
 
   /// 刷新库页。默认只刷**本地**（书架列表 + 分组映射 + 封面自愈）；远端互联清单
@@ -1376,19 +1435,23 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     await _runLibraryMapsRound(requestGeneration);
   }
 
-  /// 外部变更信号（uid 集合变化、合集表写入、刮削批次中的进度刷新）触发的重载：
-  /// 沿用当前代次，**不作废在途轮次**。
+  /// 外部变更信号（uid 集合变化、合集表写入）触发的重载：沿用当前代次，
+  /// **不作废在途轮次**。
   ///
-  /// BUG-3235 审查：扫描 / 导入期间 uid 流约每秒、合集表约每 300 ms 发一次信号，
-  /// 刮削批次每 2 s 一次。若每个信号都作废在途轮次，大库上一轮全表查询慢于信号
+  /// BUG-3235 审查：扫描 / 导入期间 uid 流约每秒、合集表约每 300 ms 发一次信号。
+  /// 若每个信号都作废在途轮次，大库上一轮全表查询慢于信号
   /// 间隔时每一轮都在落地前被下一轮作废——首屏门永远打不开（整页一直骨架），
   /// 就位后映射也整个扫描期间不更新。这类信号只说明「库里多了 / 少了东西，需要
   /// 再读一轮更新的」，在途轮次读到的是更旧但自洽的快照，不是被清理作废的数据：
   /// 它照常落地，紧跟的新一轮按发起序号覆盖它（序号只进不退，见
   /// [_libraryMapsAppliedSequence]）。
   ///
+  /// 刮削表变更**不走这里**：批次中的 2 s 节流刷新、非批次刷新与批次结束的补刷
+  /// 都是作废式（批次里可能夹着清理写入，刻意保守；代价是一轮映射慢于 2 s 时批次
+  /// 期间映射不更新，等批次结束的补刷，见 BUG-3235 残留）。
+  ///
   /// 清理不变式不受影响：清理之后的刷新走作废式 [_loadLibraryMaps]（刮削表变更
-  /// 的非批次刷新、批次结束的补刷、页面自己的清理动作都是），一旦请求，清理前
+  /// 的刷新、页面自己的清理动作都是），一旦请求，清理前
   /// 发起的所有轮次——包括这里沿用旧代次的——都因代次不符被拒。
   Future<void> _loadLibraryMapsKeepingInFlight() =>
       _runLibraryMapsRound(_libraryMapsRequestGeneration);
@@ -1779,7 +1842,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     )) {
       final ImageProvider? local = _localFileCover(row.localPath);
       if (local != null) return local;
-      if (row.remoteUrl.isNotEmpty) return AppCachedHttpImage(row.remoteUrl);
+      // 远程回落与本地分支同一解码上限（#3722 video-18：刮削剧照是原图）。
+      if (row.remoteUrl.isNotEmpty) return metadataRemoteImage(row.remoteUrl);
     }
     return null;
   }
@@ -1801,9 +1865,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         if (row.kind != kind) continue;
         final ImageProvider? local = _localFileCover(row.localPath);
         if (local != null) return local;
-        if (row.remoteUrl.isNotEmpty) {
-          return AppCachedHttpImage(row.remoteUrl);
-        }
+        // 远程回落与本地分支（[_localFileCover] = 720 宽）同一解码上限（#3722
+        // video-18）：刮削图默认是 TMDB 原图，裸解码几张就压满 ImageCache。
+        if (row.remoteUrl.isNotEmpty) return metadataRemoteImage(row.remoteUrl);
       }
     }
     return null;
@@ -2704,6 +2768,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// - 选中散卡 → 删媒体本体（[VideoBookRepository.deleteVideoBook]，现状语义）；
   /// - 混选 → 确认框文案写明「删 N 个媒体、解散 M 个合集」。
   Future<void> _batchDeleteConfirm() async {
+    if (_batchDeleteInFlight) return;
     // 先剔幽灵键再取数：确认框里的 N / M 必须是真会被删的条数。
     if (!await _pruneStaleSelection() || !mounted) return;
     // **在弹确认框之前就把目标定死**。选中集现在是派生视图（只暴露当前可见的
@@ -2743,11 +2808,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     if (collectionCount == 0) {
       // 「同时删除本地文件」只在选中集里至少有一条是本地文件时才摆出来
       // （全是远端流就没有文件可删，与同步勾选框「兑现不了就不显示」同一纪律）。
-      final Set<String> selected = _selectedLocalUids;
-      final bool anyLocalFile = (await widget.repo.listAll()).any(
-        (VideoBookRow b) =>
-            selected.contains(b.bookUid) && videoBookHasLocalFiles(b),
-      );
+      // 只取选中的那些行（BUG-4748：原来整表 listAll 再过滤，大库全选时白读一遍）。
+      final bool anyLocalFile = (await widget.repo.getByBookUids(
+        targetUids,
+      )).any(videoBookHasLocalFiles);
       if (!mounted) return;
       decision = await showDeleteScopeConfirm(
         context,
@@ -2825,8 +2889,44 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         ),
       );
     }
-    if (decision == null || !mounted) return;
+    if (decision == null || !mounted || _batchDeleteInFlight) return;
 
+    // 35YfcYO-zR：上万条删除要跑一阵，确认之后立刻挂上不可点掉的进度对话框（同时
+    // 挡住重复点删除），按删除阶段更新文案 / 进度，结束（含失败）一定关掉。
+    _batchDeleteInFlight = true;
+    final FushiProgressDialogHandle progress = showFushiProgressDialog(
+      context: context,
+      title: t.video_library_delete_progress_title,
+      message: t.video_library_delete_progress_removing(
+        n: mediaCount + collectionCount,
+      ),
+    );
+    try {
+      await _runBatchDelete(
+        decision: decision,
+        targetUids: targetUids,
+        targetCollectionIds: targetCollectionIds,
+        collectionCount: collectionCount,
+        subscriptions: subscriptions,
+        deleteSubscriptions: deleteSubscriptions,
+        progress: progress,
+      );
+    } finally {
+      progress.close();
+      _batchDeleteInFlight = false;
+    }
+  }
+
+  /// [_batchDeleteConfirm] 点头之后的真删除（进度对话框已挂上）。
+  Future<void> _runBatchDelete({
+    required DeleteDecision decision,
+    required Set<String> targetUids,
+    required Set<int> targetCollectionIds,
+    required int collectionCount,
+    required CollectionOwnedSubscriptions subscriptions,
+    required bool deleteSubscriptions,
+    required FushiProgressDialogHandle progress,
+  }) async {
     final AppModel appModel = ref.read(appProvider);
     final FushiDatabase db = appModel.database;
     // 先解散选中合集（只删合集容器 + 成员引用行，绝不删媒体本体）。
@@ -2858,6 +2958,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           _refreshAfterTagChange();
           await _waitForVideoCardsToUnmount();
         },
+        onProgress: (VideoLibraryDeleteProgress p) =>
+            _showBatchDeleteProgress(progress, p),
       );
     } catch (e, stack) {
       // BUG-2754：整批删除抛出（如刮削清理占着操作闸门）不能半截中断、无提示、
@@ -2906,6 +3008,26 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       result,
       source: 'HomeVideoPage.batchDeleteLocalFiles',
     );
+  }
+
+  /// 把一次删除进度写进对话框：删行、压缩数据库阶段不定态，回收阶段按已处理 /
+  /// 总数。
+  void _showBatchDeleteProgress(
+    FushiProgressDialogHandle handle,
+    VideoLibraryDeleteProgress p,
+  ) {
+    if (handle.isClosed) return;
+    switch (p.stage) {
+      case VideoLibraryDeleteStage.removingEntries:
+        handle.progress.value = null;
+      case VideoLibraryDeleteStage.cleaningUp:
+        handle.message.value = t.video_library_delete_progress_cleanup;
+        handle.progress.value = p.total <= 0 ? null : p.done / p.total;
+      case VideoLibraryDeleteStage.compacting:
+        // VACUUM 按整库大小走，给不出比例；停在 100% 会像卡住了。
+        handle.message.value = t.video_library_delete_progress_cleanup;
+        handle.progress.value = null;
+    }
   }
 
   Future<void> _waitForVideoCardsToUnmount() async {
@@ -2960,14 +3082,36 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     if (mounted) _refresh(remote: true);
   }
 
+  /// 「导入」视图的整页落点（经 [HomeVideoPage.importDropPort] 转来，BUG-4857）。
+  ///
+  /// 与库页落点同一套分类与意图判定，唯一区别是不做视频卡命中：本页此刻藏在
+  /// Offstage 里，卡片注册表里留的是上次可见时的屏幕矩形，拿导入视图上的落点去
+  /// 命中会把字幕错挂到一张看不见的卡上。
+  ///
+  /// 「拖入文件夹 → 登记常驻来源」在这里等到落库扫描完才返回：导入视图正显示
+  /// 来源色块，它在 [VideoLibraryDropPort.drop] 返回后重读来源（库页落点没有
+  /// 来源区要刷新，照旧不等）。
+  Future<void> _importSurfaceDrop(List<String> paths, Offset globalPosition) =>
+      _handleVideoDrop(
+        paths,
+        globalPosition,
+        cardTargets: false,
+        awaitSourceChanges: true,
+      );
+
   /// 拖放到视频 tab 时的处理：分类文件 → 局部坐标转屏幕坐标命中卡片 → 决策意图。
   ///
   /// [globalPosition] 为 [FushiFileDropTarget] 透出的 Flutter global/view 坐标，
   /// 可直接交给卡片注册表命中（注册表存的是同一坐标系的屏幕矩形）。
+  /// [cardTargets] = false：落点不在库页上（导入视图），不命中视频卡。
+  /// [awaitSourceChanges] = true：登记来源的那一支等到落库扫描完才返回（调用方
+  /// 要在返回后重读来源列表）。
   Future<void> _handleVideoDrop(
     List<String> paths,
-    Offset globalPosition,
-  ) async {
+    Offset globalPosition, {
+    bool cardTargets = true,
+    bool awaitSourceChanges = false,
+  }) async {
     final ModalRoute<dynamic>? route = ModalRoute.of(context);
     if (route != null && !route.isCurrent) return;
 
@@ -3009,7 +3153,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       'dictionaries=${files.dictionaries.length} unknown=${files.unknown.length} '
       'global=$globalPosition',
     );
-    final VideoBookRow? hit = _cardDropRegistry.hitTest(globalPosition);
+    final VideoBookRow? hit = cardTargets
+        ? _cardDropRegistry.hitTest(globalPosition)
+        : null;
     final DropIntent intent = decideDropIntent(
       surface: DropSurface.video,
       files: files,
@@ -3029,7 +3175,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       case DropIntent.importAudioToMusic:
         unawaited(_sendDroppedAudioToMusic(files.pureAudios));
       case DropIntent.addFolderAsSource:
-        unawaited(_addDroppedFoldersAsSources(files.videoSourceFolders));
+        final Future<void> adding = _addDroppedFoldersAsSources(
+          files.videoSourceFolders,
+        );
+        if (awaitSourceChanges) {
+          await adding;
+        } else {
+          unawaited(adding);
+        }
       case DropIntent.importNewPlaylist:
         _openPlaylistImportPrefilled(playlistPath: files.playlists.first);
       case DropIntent.importVideoUrl:
@@ -3638,9 +3791,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     // 根因修复（TODO-819）：下载任务委托给 app 级 InterconnectDownloadManager 而非
     // 本页 State —— 故切 tab / 退页 / 本页 dispose 时下载仍在管理器里推进到底，重进
     // 页面只 ref.watch 订阅渲染进度。manager 自身去重（同 id 在跑则忽略）。
-    // #6 续传口径按分支写实：互联走 host live 下载引擎（Range + `.part`，中断留 part
-    // 下次可续）；云后端分支（CloudRemoteVideoClient.getRemoteVideo）是整文件重下，失败
-    // 清残片、无断点续传。
+    // #6 续传口径按分支写实：互联走 host live 下载引擎、Jellyfin / Emby / Plex 走
+    // 媒体服务器续传下载（都是 Range + `.part`，中断留 part 下次可续，BUG-4912）；云后端
+    // 分支（CloudRemoteVideoClient.getRemoteVideo）是整文件重下，失败清残片、无断点续传。
     final InterconnectDownloadManager manager = ref.read(
       interconnectDownloadManagerProvider,
     );
@@ -3705,7 +3858,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// （[_downloadRemoteMembers]）串行排队时，轮到后面的成员起跑时本页可能早已 dispose。
   ///
   /// TODO-2119：下载本身是所有源的共同能力，不再分派——[RemoteVideoSource] 各自
-  /// 实现续传口径（互联 host live 引擎 Range + `.part` 可续；云盘整文件重下）。
+  /// 实现续传口径（互联 host live 引擎、媒体服务器续传下载 Range + `.part` 可续；云盘
+  /// 整文件重下）。
   /// bookUid 用稳定的远端 video.id（与 dedupeRemoteVideos 去重键一致：upsert 同行不
   /// 撞键），故下载好的视频立即出现在列表、并从混排占位区去重隐藏。
   Future<Future<void> Function()> _prepareRemoteDownload(
@@ -4356,7 +4510,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final File subDest = File(p.join(dir.path, '$safeUid.$ext'));
     await client.getRemoteVideoSubtitle(video.id, subDest);
     final String content = await readTextWithEncoding(subDest);
-    final List<AudioCue> cues = parseSubtitleCues(
+    final List<AudioCue> cues = await parseSubtitleCues(
       content: content,
       format: ext,
       bookUid: bookUid,
@@ -4419,10 +4573,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 好几秒（BUG-3756），探测期间取到的是 [kPendingCoverImage]；菜单是独立路由，
   /// 若把那一刻的图源定死，探测落定后 page 的重建到不了菜单，头部就永远停在加载态
   /// （只剩空衬底）。菜单订阅 [_coverExistsRevision]，每次落定都重取一次。
+  ///
+  /// [selectable]：这张卡在多选里能单独勾选（散卡 / 列表行；合集成员卡不能）——
+  /// 能的话菜单最前面给「选择」，从这里进多选并选中它。
   void _showVideoMenu(
     VideoBookRow book, {
     required ImageProvider? Function() cover,
     required String title,
+    bool selectable = false,
   }) {
     final Future<void> menu = showMediaItemActions<void>(
       context: context,
@@ -4433,6 +4591,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           book,
           cover: cover(),
           title: title,
+          selectable: selectable,
         ),
       ),
     );
@@ -4446,16 +4605,33 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     VideoBookRow book, {
     required ImageProvider? cover,
     required String title,
+    bool selectable = false,
   }) {
     return MediaItemDialogFrame(
       cover: _menuCoverFor(cover),
       coverBackdrop: cover,
       coverMaterial: ShelfCoverMaterial.glossyPoster,
+      nsfw: MediaNsfwTarget.video(book.bookUid),
       title: title,
-      showLaunchAction: false,
+      // 不放「继续播放」主按钮：点卡本身就是播放，菜单里再放一个是重复入口
+      // （#3803 用户拍板）。主操作行 = 选择 / 标记已看 / 观看统计（单集没有
+      // 详情页与作品页，作品级入口在合集菜单上）。
       // 统一三库页卡菜单次序：重命名 → 封面/刮削 → 媒体特有 → 加入合集 →
       // 标签 → 删除（与书卡/游戏卡同一约定；「标签」原在首位，移到合集后）。
+      // 最前面是「选择」：多选不再占页头按钮，长按 / 右键这张卡即从这里进入多选
+      // 并选中它（设计稿 #video V2）。
       quickActions: <DialogQuickAction>[
+        if (selectable && _cardMenuOffersSelect)
+          DialogQuickAction(
+            label: t.batch_select,
+            icon: FushiIcons.checklist,
+            group: DialogActionGroup.organize,
+            slot: ItemMenuSlot.primary,
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              _enterSelectionWith(SelectionSlot.loose(book.bookUid));
+            },
+          ),
         if (collectDiscRefs(<VideoBookRow>[book]) case final List<DiscRef> discs
             when discs.isNotEmpty)
           DialogQuickAction(
@@ -4475,6 +4651,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           ),
         DialogQuickAction(
           label: t.video_rename,
+          slot: ItemMenuSlot.edit,
           icon: Icons.drive_file_rename_outline,
           group: DialogActionGroup.organize,
           onPressed: () {
@@ -4484,6 +4661,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         ),
         DialogQuickAction(
           label: t.srt_import_pick_cover,
+          slot: ItemMenuSlot.edit,
           icon: Icons.image_outlined,
           group: DialogActionGroup.organize,
           onPressed: () {
@@ -4491,6 +4669,20 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
             _pickCover(book);
           },
         ),
+        // 从视频画面选封面（拍板 wb8RZZbn90）：紧跟「选择封面图片」，同一条手选落盘。
+        // 只对本地可抽帧的源出现（网络流 / .strm / 播放列表清单 / 蓝光分集虚拟路径
+        // 抽不了帧）。
+        if (isVideoFrameCoverPickableSource(book.videoPath))
+          DialogQuickAction(
+            label: t.video_cover_from_frame,
+            slot: ItemMenuSlot.edit,
+            icon: Icons.photo_camera_back_outlined,
+            group: DialogActionGroup.organize,
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              unawaited(_pickFrameCover(book));
+            },
+          ),
         // 在线搜索封面（BUG-2999）：2026-08-23 把旧 Bangumi/TMDB 刮削链整条换成
         // canonical 资料源时，单集菜单的「在线匹配海报」随旧弹窗一起删了、没有
         // 接到新资料源上，设置封面从此只剩本地文件。这里接回到 AniDB / MAL /
@@ -4498,30 +4690,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         if (_onlineCoverController != null)
           DialogQuickAction(
             label: t.video_cover_online_search,
+            slot: ItemMenuSlot.edit,
             icon: Icons.image_search_outlined,
             group: DialogActionGroup.organize,
             onPressed: () {
               Navigator.pop(dialogContext);
               unawaited(_pickOnlineCover(book));
-            },
-          ),
-        DialogQuickAction(
-          label: t.video_import_pick_subtitle,
-          icon: Icons.subtitles_outlined,
-          onPressed: () {
-            Navigator.pop(dialogContext);
-            _pickSubtitle(book);
-          },
-        ),
-        // 从服务端（互联 host / 媒体服务器）下载来的视频：服务端换了字幕、或下载
-        // 时拿的那份不对，从这里重新拉一份（服务端有多份文本字幕时让用户挑）。
-        if (_remoteSubtitleRefetchSource(book) != null)
-          DialogQuickAction(
-            label: t.video_remote_subtitle_refetch,
-            icon: FushiIcons.subtitles,
-            onPressed: () {
-              Navigator.pop(dialogContext);
-              unawaited(_refetchRemoteSubtitle(book));
             },
           ),
         DialogQuickAction(
@@ -4563,6 +4737,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
             label: t.media_file_location_open,
             icon: Icons.folder_open_outlined,
             group: DialogActionGroup.organize,
+            slot: ItemMenuSlot.more,
             onPressed: () {
               Navigator.pop(dialogContext);
               unawaited(_openVideoFileLocation(book));
@@ -4579,6 +4754,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           icon: _localCountsAsWatched(book)
               ? FushiIcons.visibilityOff
               : FushiIcons.check,
+          slot: ItemMenuSlot.primary,
           onPressed: () {
             Navigator.pop(dialogContext);
             unawaited(
@@ -4606,11 +4782,53 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       // `sourceId` 的手动导入 / 互联下载、远端来源、目录分组模式、特典都不画，
       // 画出来就一定定位得到作品单元。
       listActions: <DialogListAction>[
+        // 工作台「字幕与刮削」（#4b）：字幕与重刮收成一个入口，副行列出子项。
+        DialogWorkbenchAction(
+          label: t.item_menu_video_workbench,
+          icon: Icons.subtitles_outlined,
+          onPressed: () {},
+          children: <DialogListAction>[
+            DialogListAction(
+              label: t.video_import_pick_subtitle,
+              icon: Icons.subtitles_outlined,
+              group: DialogActionGroup.content,
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                _pickSubtitle(book);
+              },
+            ),
+            // 从服务端（互联 host / 媒体服务器）下载来的视频：服务端换了字幕、或
+            // 下载时拿的那份不对，从这里重新拉一份（服务端有多份文本字幕时让用户挑）。
+            if (_remoteSubtitleRefetchSource(book) != null)
+              DialogListAction(
+                label: t.video_remote_subtitle_refetch,
+                icon: FushiIcons.subtitles,
+                group: DialogActionGroup.content,
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                  unawaited(_refetchRemoteSubtitle(book));
+                },
+              ),
+            // 特典（含蓝光盘特典）挂在父作品下、不单独成作品：重刮它是断头路。
+            if (widget.scrapeTaskController != null &&
+                !_isLocalExtra(book) &&
+                videoBookHasScrapePlan(book, _videoSourcesById[book.sourceId]))
+              DialogListAction(
+                label: t.collection_rescrape,
+                icon: Icons.image_search,
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                  unawaited(_rescrapeVideo(book));
+                },
+              ),
+          ],
+        ),
         // 右键 / 长按反查这一集的观看统计（身份 = bookUid）。
         DialogListAction(
           label: t.media_stats_action,
           icon: Icons.insights_outlined,
           group: DialogActionGroup.progress,
+          slot: ItemMenuSlot.primary,
           onPressed: () {
             Navigator.pop(dialogContext);
             unawaited(
@@ -4627,40 +4845,28 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           },
         ),
         // 私密：不上传排行榜、不推 Bangumi。整部剧要藏就标在合集上。
-        DialogListAction(
-          label: t.media_privacy_action,
-          icon: FushiIcons.lock,
-          onPressed: () {
-            Navigator.pop(dialogContext);
-            unawaited(
-              showMediaPrivacyDialog(
-                context,
-                db: appModelNoUpdate.database,
-                kind: TagHostKind.video,
-                entryKey: book.bookUid,
-                title: book.title,
-              ),
-            );
-          },
+        mediaPrivacyToggleAction(
+          context,
+          db: appModelNoUpdate.database,
+          kind: TagHostKind.video,
+          entryKey: book.bookUid,
+          title: book.title,
         ),
-        // 特典（含蓝光盘特典）挂在父作品下、不单独成作品：重刮它是断头路。
-        if (widget.scrapeTaskController != null &&
-            !_isLocalExtra(book) &&
-            videoBookHasScrapePlan(book, _videoSourcesById[book.sourceId]))
-          DialogListAction(
-            label: t.collection_rescrape,
-            icon: Icons.image_search,
-            onPressed: () {
-              Navigator.pop(dialogContext);
-              unawaited(_rescrapeVideo(book));
-            },
-          ),
+        // NSFW：封面按「模糊 NSFW 封面」打模糊。整部剧要标就标在合集上。
+        mediaNsfwToggleAction(
+          context,
+          db: appModelNoUpdate.database,
+          kind: TagHostKind.video,
+          entryKey: book.bookUid,
+          title: book.title,
+        ),
         // 「整理文件名」（ZDYNkAP3Ln）：按刮削资料改磁盘文件名。门只挡「本机根本
         // 没有文件」的条目；未刮削 / 已是规范名由计划判出、给明确提示。
         if (videoBookHasLocalFiles(book))
           DialogListAction(
             label: t.video_filename_organize_action,
             icon: Icons.drive_file_rename_outline,
+            slot: ItemMenuSlot.edit,
             onPressed: () {
               Navigator.pop(dialogContext);
               unawaited(_organizeVideoFilenames(<String>[book.bookUid]));
@@ -5136,6 +5342,23 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       pickedPath: picked.path,
     );
     if (mounted) _refresh();
+  }
+
+  /// 从视频画面选封面：挑帧弹窗 → ffmpeg 截原尺寸帧 → 走与 [_pickCover] 同一条
+  /// [MediaCoverService.applyVideoCoverManual]（手选保护标记照记，批量刮削不覆盖）。
+  Future<void> _pickFrameCover(VideoBookRow book) async {
+    final bool applied = await pickAndApplyVideoFrameCover(
+      context: context,
+      videoPath: book.videoPath,
+      probeDurationMs: widget.frameCoverDurationProbe,
+      grabFrame: widget.frameCoverGrabber,
+      apply: (String framePath) => MediaCoverService.applyVideoCoverManual(
+        repo: widget.repo,
+        bookUid: book.bookUid,
+        pickedPath: framePath,
+      ),
+    );
+    if (applied && mounted) _refresh();
   }
 
   /// 「在线搜索封面」用的候选搜索：与「手动指定作品」同一条
@@ -5986,19 +6209,23 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     List<_HomeHeroData> heroData,
   ) {
     final int rest = heroData.length - 1;
-    Widget strip({int rows = 1, double? tileHeight, double? tileWidth}) =>
-        FushiCoverBlockStrip(
-          key: const ValueKey<String>('home_video_continue_blocks'),
-          leadingHero: false,
-          rowSize: FushiCoverBlockSize.regular,
-          rows: rows,
-          tileHeight: tileHeight,
-          tileWidth: tileWidth,
-          itemCount: rest,
-          itemBuilder:
-              (BuildContext context, int i, FushiCoverBlockSize size) =>
-                  _rowBlockCard(_heroRowSpec(heroData[i + 1]), size),
-        );
+    Widget strip({
+      int rows = 1,
+      double? tileHeight,
+      double? tileWidth,
+      bool besideLeading = false,
+    }) => FushiCoverBlockStrip(
+      key: const ValueKey<String>('home_video_continue_blocks'),
+      leadingHero: false,
+      besideLeading: besideLeading,
+      rowSize: FushiCoverBlockSize.regular,
+      rows: rows,
+      tileHeight: tileHeight,
+      tileWidth: tileWidth,
+      itemCount: rest,
+      itemBuilder: (BuildContext context, int i, FushiCoverBlockSize size) =>
+          _rowBlockCard(_heroRowSpec(heroData[i + 1]), size),
+    );
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints c) {
         final double width = c.maxWidth;
@@ -6046,6 +6273,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
               Expanded(
                 child: strip(
                   rows: 2,
+                  besideLeading: true,
                   tileHeight: tileHeight,
                   tileWidth:
                       tileHeight *
@@ -6105,11 +6333,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final ImageProvider? still = hero.image(overlay: true);
     final VoidCallback? onOpen = _selectionMode ? null : hero.onPlay;
     final VoidCallback? onLongPress = _selectionMode ? null : hero.onLongPress;
+    // NSFW：合集条目按合集、散片按 bookUid；封面按「模糊 NSFW 封面」打模糊。
+    final MediaNsfwTarget? nsfw = _videoNsfwTarget(
+      collectionId: hero.collectionId,
+      bookUid: hero.bookUid,
+    );
+    Widget nsfwCover(Widget cover) =>
+        MediaNsfwCover(target: nsfw, child: cover);
     if (still == null && hero.poster != null) {
       return FushiContinueEntry(
         key: hero.cardKey,
         focusId: hero.focusId,
-        cover: _buildHomePosterImage(hero.poster!),
+        cover: nsfwCover(_buildHomePosterImage(hero.poster!)),
         colorSource: hero.poster,
         material: ShelfCoverMaterial.glossyPoster,
         title: hero.title,
@@ -6132,7 +6367,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       return FushiContinueEntry(
         key: hero.cardKey,
         focusId: hero.focusId,
-        cover: _buildHomeHeroImage(null),
+        cover: nsfwCover(_buildHomeHeroImage(null)),
         coverAspectRatio: 16 / 9,
         title: hero.title,
         eyebrow: subtitle,
@@ -6147,12 +6382,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     return FushiContinueEntry(
       key: hero.cardKey,
       focusId: hero.focusId,
-      cover: _buildHomePosterImage(still),
-      landscapeCover: _buildHomeHeroImage(still),
+      cover: nsfwCover(_buildHomePosterImage(still)),
+      landscapeCover: nsfwCover(_buildHomeHeroImage(still)),
       orientationImage: still,
       colorSource: still,
       material: ShelfCoverMaterial.glossyPoster,
       title: hero.title,
+      logo: hero.logo,
       eyebrow: subtitle,
       metaIcon: hero.cloud ? FushiIcons.cloud : null,
       subtitle: hero.subtitle,
@@ -6500,6 +6736,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
               ),
               onLongPress: () => _showCollectionContextMenu(
                 item.collection,
+                onContinue: () => _openSlot(
+                  item.target,
+                  playlistCollectionId: item.collection.id,
+                ),
                 cover: () => _collectionPosterProvider(
                   item.collection,
                   item.members,
@@ -6730,7 +6970,23 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 同系列墙（[shelfCoverCard] + [_videoCoverBlock] 竖版槽 + [FushiHoverLift]），
   /// 拼贴首块带刮削的 logo / 背景图 / 简介（[_videoBlockMeta]）。分区不参与多选
   /// （与行卡同一纪律）：多选态下点按 / 长按置 null、不画勾选圈。
-  Widget _rowBlockCard(_RowCardSpec spec, FushiCoverBlockSize size) {
+  /// 视频库条目的 NSFW 宿主：合集条目按合集、本地散片按 bookUid；远端占位
+  /// （两者都没有）不可标。
+  MediaNsfwTarget? _videoNsfwTarget({int? collectionId, String? bookUid}) {
+    if (collectionId != null) return MediaNsfwTarget.collection(collectionId);
+    return bookUid == null ? null : MediaNsfwTarget.video(bookUid);
+  }
+
+  MediaNsfwTarget? _rowSpecNsfw(_RowCardSpec spec) =>
+      _videoNsfwTarget(collectionId: spec.collectionId, bookUid: spec.bookUid);
+
+  Widget _rowBlockCard(_RowCardSpec spec, FushiCoverBlockSize size) =>
+      MediaNsfwCoverScope(
+        target: _rowSpecNsfw(spec),
+        child: _rowBlockCardInner(spec, size),
+      );
+
+  Widget _rowBlockCardInner(_RowCardSpec spec, FushiCoverBlockSize size) {
     final ImageProvider? cover = spec.cover;
     final int? collectionId = spec.collectionId;
     final String? bookUid = spec.bookUid;
@@ -6740,6 +6996,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       padding: EdgeInsets.zero,
       onTap: _selectionMode ? null : spec.onTap,
       onLongPress: _selectionMode ? null : spec.onLongPress,
+      // 分区不参与勾选：多选态右键与点按 / 长按一样让位，不弹针对选中集的批量菜单。
       onSecondaryTap: _selectionMode ? null : spec.onLongPress,
       child: _videoCoverBlock(
         size: size,
@@ -6844,7 +7101,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// chip / 底边进度条），信息全进封面下的 [_videoCardMeta]：[secondaryText] 是
   /// 副行，[cloudBadge] 变成副行前导 ☁，[progressFraction] 画在副行下的进度条，
   /// [tags]（BUG-1808）是副行尾部的「色点 + 标签名」。
-  Widget _buildRowMediaCard(_RowCardSpec spec, double cardWidth) {
+  Widget _buildRowMediaCard(_RowCardSpec spec, double cardWidth) =>
+      MediaNsfwCoverScope(
+        target: _rowSpecNsfw(spec),
+        child: _buildRowMediaCardInner(spec, cardWidth),
+      );
+
+  Widget _buildRowMediaCardInner(_RowCardSpec spec, double cardWidth) {
     final Key cardKey = spec.cardKey;
     final FushiFocusId focusId = spec.focusId;
     final ImageProvider? cover = spec.cover;
@@ -6957,6 +7220,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         : null;
     final String title = _metadataWorkByBook[book.bookUid]?.title ?? book.title;
     final ImageProvider? poster = _bookPosterProvider(book);
+    final _HeroCleanArt clean = _heroCleanArt(
+      _episodeStillProvider(book),
+      _videoBlockMeta(bookUid: book.bookUid),
+    );
     return _HomeHeroData(
       cardKey: ValueKey<String>('home_video_continue_${book.bookUid}'),
       bookUid: book.bookUid,
@@ -6964,7 +7231,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       title: title,
       subtitle: _continueSecondaryText(book, episodeNumber: episodeNumber),
       poster: poster,
+      logo: clean.logo,
       image: ({required bool overlay}) =>
+          (overlay ? clean.image : null) ??
           _episodeStillProvider(book) ??
           _mediaImageProvider(
             _mediaImagesByBookUid[book.bookUid],
@@ -7021,7 +7290,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     int currentIndex,
   ) {
     final _VideoSlot target = members[currentIndex];
+    final _HeroCleanArt clean = _heroCleanArt(
+      target.local == null ? null : _episodeStillProvider(target.local!),
+      _videoBlockMeta(collectionId: collection.id),
+    );
     return _HomeHeroData(
+      logo: clean.logo,
       cardKey: ValueKey<String>(
         'home_video_continue_collection_${collection.id}',
       ),
@@ -7034,6 +7308,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           : null,
       poster: _collectionPosterProvider(collection, members, target),
       image: ({required bool overlay}) =>
+          (overlay ? clean.image : null) ??
           (target.local == null
               ? null
               : _episodeStillProvider(target.local!)) ??
@@ -7055,9 +7330,25 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         collection,
         cover: () => _collectionPosterProvider(collection, members, target),
         title: _workTitle(collection),
+        onContinue: () =>
+            _openSlot(target, playlistCollectionId: collection.id),
+        progressLabel: _continueCollectionSecondaryText(target, currentIndex),
       ),
       cloud: target.local == null,
     );
+  }
+
+  /// 主卡剧照里**不带片名**的那张（续播那一集的剧照 → 无字背景图），以及能叠在
+  /// 它上面的 logo。两者都没有时 image 为 null，主卡回落原选图链且不叠 logo——
+  /// 回落链里的 titleCard / 盘面图 / 带字背景图本身印着片名，再叠 logo 就是两份
+  /// （设计稿 #1 / #3）。
+  _HeroCleanArt _heroCleanArt(
+    ImageProvider? episodeStill,
+    FushiSeriesMeta meta,
+  ) {
+    final ImageProvider? image =
+        episodeStill ?? (meta.backdropHasText ? null : meta.backdrop);
+    return (image: image, logo: image == null ? null : meta.logo);
   }
 
   static bool _isUnstarted(VideoBookRow book) =>
@@ -7672,7 +7963,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     ];
   }
 
-  Widget _buildAllVideoListRow(VideoBookRow book) {
+  Widget _buildAllVideoListRow(VideoBookRow book) => MediaNsfwCoverScope(
+    target: MediaNsfwTarget.video(book.bookUid),
+    child: _buildAllVideoListRowInner(book),
+  );
+
+  Widget _buildAllVideoListRowInner(VideoBookRow book) {
     final bool selected =
         _selectionMode && _selectedUids.contains(book.bookUid);
     final SelectionSlot slot = SelectionSlot.loose(book.bookUid);
@@ -7681,6 +7977,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       book,
       cover: () => _localCoverProvider(book),
       title: book.title,
+      selectable: true,
     );
 
     final Widget row = FushiCard(
@@ -7691,7 +7988,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       onTap: () =>
           _dispatchCardTap(selectionKey: book.bookUid, open: () => _open(book)),
       onLongPress: _selectionMode ? null : openMenu,
-      onSecondaryTap: _selectionMode ? null : openMenu,
+      onSecondaryTap: _selectionMode ? _showBatchMenu : openMenu,
       child: SizedBox(
         height: 96,
         // 2026-10 体验优化：窄屏收小封面槽（[videoListRowCoverWidth]），行高
@@ -7807,10 +8104,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         selectionKey: selectionKey,
         open: () => _openRemote(video),
       ),
-      onLongPress: _selectionMode ? null : () => _showRemoteVideoDialog(video),
+      onLongPress: _selectionMode
+          ? null
+          : () => _showRemoteVideoDialog(video, selectable: true),
       onSecondaryTap: _selectionMode
           ? null
-          : () => _showRemoteVideoDialog(video),
+          : () => _showRemoteVideoDialog(video, selectable: true),
       child: SizedBox(
         height: 96,
         child: LayoutBuilder(
@@ -7880,7 +8179,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                 FushiIconButtonControl(
                   key: ValueKey<String>('remote_video_list_more_$safeKey'),
                   tooltip: t.common_more_actions,
-                  onPressed: () => _showRemoteVideoDialog(video),
+                  onPressed: () =>
+                      _showRemoteVideoDialog(video, selectable: true),
                   icon: const FushiIcon(Icons.more_horiz),
                 ),
               const SizedBox(width: 6),
@@ -8167,6 +8467,41 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     CollectionGroup<_VideoSlot> group, {
     VideoCardOrientation orientation = VideoCardOrientation.portrait,
     FushiCoverBlockSize? block,
+  }) => WorkKindsBadgeOverlay.collection(
+    database: ref.read(appProvider).database,
+    collectionId: group.collection!.id,
+    enabled: !_selectionMode && !_reordering,
+    onPressed: _showWorkLinks,
+    child: MediaNsfwCoverScope(
+      target: MediaNsfwTarget.collection(group.collection!.id),
+      child: _buildCollectionCoverCardInner(
+        group,
+        orientation: orientation,
+        block: block,
+      ),
+    ),
+  );
+
+  /// 卡片「另有：小说 · 漫画」作品角标点开的「同一作品」弹窗（AI 库管家 spec §4.3）。
+  void _showWorkLinks(MediaLinkEndpoint self) {
+    unawaited(
+      showMediaLinksDialog(
+        context: context,
+        database: ref.read(appProvider).database,
+        self: self,
+        onOpen: (MediaLinkEntry e) =>
+            openMediaLinkEntry(context: context, ref: ref, entry: e),
+        searchActionFor: (MediaLinkKind k) =>
+            mediaLinkSearchAction(context: context, ref: ref, kind: k),
+        onInfer: mediaLinkInferCallback(ref: ref, self: self),
+      ),
+    );
+  }
+
+  Widget _buildCollectionCoverCardInner(
+    CollectionGroup<_VideoSlot> group, {
+    VideoCardOrientation orientation = VideoCardOrientation.portrait,
+    FushiCoverBlockSize? block,
   }) {
     final MediaCollectionRow collection = group.collection!;
     final List<_VideoTagChip> tags = _collectionTagChips(collection.id);
@@ -8184,8 +8519,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                 remote.id,
           ])
         : null;
-    final ({String label, int completed, int total, bool started}) progress =
-        _collectionProgress(group);
+    final ({String label, int completed, int total, bool started, int index})
+    progress = _collectionProgress(group);
     final bool selected =
         _selectionMode && _selectedCollectionIds.contains(collection.id);
     final bool landscape = orientation == VideoCardOrientation.landscape;
@@ -8219,11 +8554,20 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       ],
     );
     // 菜单头部与本卡同源：封面走 [_buildCollectionCover] 的同一条取图链，标题同副行。
-    void openMenu() => _showCollectionContextMenu(
-      collection,
-      cover: () => _collectionCoverSource(group)?.image,
-      title: _workTitle(collection),
-    );
+    void openMenu() {
+      final _VideoSlot target = group.items[progress.index].payload;
+      unawaited(
+        _showCollectionContextMenu(
+          collection,
+          cover: () => _collectionCoverSource(group)?.image,
+          title: _workTitle(collection),
+          onContinue: () =>
+              _openSlot(target, playlistCollectionId: collection.id),
+          progressLabel: progress.label,
+        ),
+      );
+    }
+
     final FushiCard card = shelfCoverCard(
       key: ValueKey<String>('home_video_collection_card_${collection.id}'),
       focusId: FushiFocusId('home-video-collection-${collection.id}'),
@@ -8244,7 +8588,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       // 未进入选择态时，触屏与桌面长按都保留合集上下文菜单；只有显式进入选择态
       // 后才禁用菜单，让整卡点击/扫选负责勾选。
       onLongPress: _selectionMode ? null : openMenu,
-      onSecondaryTap: _selectionMode ? null : openMenu,
+      onSecondaryTap: _selectionMode ? _showBatchMenu : openMenu,
       child: block != null
           ? _videoCoverBlock(
               size: block,
@@ -8387,11 +8731,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     // 朝向自适应槽位：不合槽封面由 [PortraitCoverImage] 用「模糊同图垫底 +
     // contain 前景」填充；本地封面解码上限与旧 cacheWidth 同源（resizedFileImage
     // 默认 720）。
-    return PortraitCoverImage(
+    final Widget cover = PortraitCoverImage(
       image: source.image,
       landscapeSlot: landscapeSlot,
       errorBuilder: (BuildContext _) =>
           ShelfCoverPlaceholder(icon: source.errorIcon),
+    );
+    // 借的是某一集的封面：合集卡壳只按合集判定，没标的合集会把被标的那一集原样
+    // 露出来（拍板台 w04vrhUAaX），这里按那一集自己再判一次。
+    final String? memberUid = source.localMemberUid;
+    if (memberUid == null) return cover;
+    return MediaNsfwCover(
+      target: MediaNsfwTarget.video(memberUid),
+      child: cover,
     );
   }
 
@@ -8404,7 +8756,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   ) {
     final ImageProvider? own = _collectionOwnCover(group.collection);
     if (own != null) {
-      return (image: own, errorIcon: FushiIcons.video, remoteMember: null);
+      return (
+        image: own,
+        errorIcon: FushiIcons.video,
+        remoteMember: null,
+        localMemberUid: null,
+      );
     }
     final int? collectionId = group.collection?.id;
     if (collectionId != null) {
@@ -8416,6 +8773,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           image: canonical,
           errorIcon: FushiIcons.video,
           remoteMember: null,
+          localMemberUid: null,
         );
       }
     }
@@ -8428,6 +8786,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           image: poster,
           errorIcon: Icons.movie_outlined,
           remoteMember: null,
+          localMemberUid: null,
         );
       }
     }
@@ -8436,7 +8795,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       if (local == null) continue;
       final ImageProvider? cover = _localFileCover(local.coverPath);
       if (cover != null) {
-        return (image: cover, errorIcon: FushiIcons.video, remoteMember: null);
+        return (
+          image: cover,
+          errorIcon: FushiIcons.video,
+          remoteMember: null,
+          localMemberUid: local.bookUid,
+        );
       }
     }
     for (final CollectionOrderingItem<_VideoSlot> it in group.items) {
@@ -8450,6 +8814,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           image: cover,
           errorIcon: FushiIcons.video,
           remoteMember: remote,
+          localMemberUid: null,
         );
       }
     }
@@ -8457,7 +8822,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   }
 
   /// 合集卡进度行：有观看痕迹且未整套看完 → 「继续看 第n集」；否则 →
-  /// 「已看完 x/N」。
+  /// 「已看完 x/N」。[index] = 「继续」的目标集（合集菜单的「继续播放」与卡片副行
+  /// 同一份；没有观看痕迹时是第一集）。
   ///
   /// BUG-1740：选集与时钟必须与详情页 hero **同一实现**——同走
   /// [continueMemberIndex]，锚点时刻同走 [_slotWatchedAtMs]（= BUG-1731 的
@@ -8465,9 +8831,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// `latestPlayedSeriesIndex` + 只读本机统计时钟：互联对端回灌的进度只写行级
   /// `lastPlayedAt`，外侧锚点便钉在本机最后播的那集，出现「卡片外『继续看
   /// 第8集』、进详情页变『第9集』」的两套答案。
-  ({String label, int completed, int total, bool started}) _collectionProgress(
-    CollectionGroup<_VideoSlot> group,
-  ) {
+  ({String label, int completed, int total, bool started, int index})
+  _collectionProgress(CollectionGroup<_VideoSlot> group) {
     final int total = group.items.length;
     int completed = 0;
     final List<CollectionMemberProgress> progresses =
@@ -8495,14 +8860,21 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       (CollectionMemberProgress p) =>
           p.completed || (p.positionMs ?? 0) > 0 || (p.lastPlayedAt ?? 0) > 0,
     );
+    final int index = progresses.isEmpty ? 0 : continueMemberIndex(progresses);
     if (anyTrace && completed < total) {
+      // BUG-4921：N 是续播那集的真实集号（与详情页集卡序号同一判据），不是顺位号。
+      final int episodeNumber = collectionMemberEpisodeNumber(<String>[
+        for (final CollectionOrderingItem<_VideoSlot> item in group.items)
+          item.payload.local?.videoPath ?? item.payload.remote!.parseName,
+      ], index);
       return (
         label:
-            '${t.collection_continue_progress(n: continueMemberIndex(progresses) + 1)}'
+            '${t.collection_continue_progress(n: episodeNumber)}'
             ' · ${t.video_playlist_episodes(count: total)}',
         completed: completed,
         total: total,
         started: true,
+        index: index,
       );
     }
     return (
@@ -8510,6 +8882,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       completed: completed,
       total: total,
       started: anyTrace,
+      index: anyTrace ? index : 0,
     );
   }
 
@@ -8740,10 +9113,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       // 此前**漏了这道门控**，多选态长按它会弹选项面板，而不是被祖先
       // [SelectionDragArea] 接走起手扫选——正好证伪了那一层「多选态下卡片长按
       // 本就置 null」的前提。
-      onLongPress: _selectionMode ? null : () => _showRemoteVideoDialog(video),
+      onLongPress: _selectionMode
+          ? null
+          : () => _showRemoteVideoDialog(video, selectable: selectable),
       onSecondaryTap: _selectionMode
           ? null
-          : () => _showRemoteVideoDialog(video),
+          : () => _showRemoteVideoDialog(video, selectable: selectable),
       child: block != null
           ? _videoCoverBlock(
               size: block,
@@ -8884,131 +9259,69 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     );
   }
 
-  /// 页头：视频入库与整库刮削已统一迁到「来源」视图；媒体库只保留库内管理动作。
+  /// 页头（设计稿 #video V2，2026-11-15 所有者确认）：页头只留**搜索、筛选与
+  /// 排序、后台任务、添加**四样（搜索由 [_headerSearchForSection] 画，添加是外壳
+  /// 页头右端的导入主按钮），其余低频库管理动作收进「⋯」。
+  ///
+  /// * 筛选与排序合成一颗：点开同一个筛选面板，排序方式与每行数量排在最前。
+  /// * 后台任务只在真有任务时出现（[VideoBackgroundTasksButton]：进度环 + 数量，
+  ///   tooltip / Semantics 写「后台任务 · N 个进行中」）。
+  /// * 多选不再占页头按钮：卡片长按 / 右键菜单第一项「选择」进入（键盘 / 手柄
+  ///   用户在「⋯」里也有同一入口）。
+  /// * 「⋯」：布局切换（全部视频）、遥控、管理标签、管理合集、管理来源（独立
+  ///   使用时）、刷新（桌面，BUG-2567）、选择。刷新进行中页头另露一颗转圈的刷新
+  ///   按钮，免得「按了没反应、于是连按五次」。
   Widget _buildPageHeader(List<BookTagRow> tags) {
-    // 排序菜单锚点跟着页头动作组走（与排序按钮同一处出现）。
-    final Widget? sortMenuAnchor =
+    final bool libraryGrid =
         widget.section != VideoLibrarySection.home &&
-            !isCupertinoPlatform(context)
-        ? _buildSortMenuAnchor(tags)
-        : null;
+        !isCupertinoPlatform(context);
+    final VideoSourceScrapeTaskController? scrapeTasks =
+        widget.scrapeTaskController;
+    final VoidCallback? openScrapeTasks = widget.onOpenScrapeTasks;
     final List<Widget> actions = <Widget>[
-      if (widget.section == VideoLibrarySection.allVideos)
-        FushiIconButton(
-          key: const ValueKey<String>('video-all-videos-layout-toggle'),
-          overflowPriority: 25,
-          tooltip: _allVideosLayout == _AllVideosLayout.grid
-              ? t.video_all_videos_list_view
-              : t.video_all_videos_grid_view,
-          label: _allVideosLayout == _AllVideosLayout.grid
-              ? t.video_all_videos_list_view
-              : t.video_all_videos_grid_view,
-          icon: _allVideosLayout == _AllVideosLayout.grid
-              ? Icons.view_list_outlined
-              : Icons.grid_view_outlined,
-          onTap: () => setState(() {
-            _allVideosLayout = _allVideosLayout == _AllVideosLayout.grid
-                ? _AllVideosLayout.list
-                : _AllVideosLayout.grid;
-          }),
-        ),
-      // 刮削是视频库页头里仅次于搜索的动作（单行页头 2026-10-14：🔍 > 刮削 >
-      // 其余），后台刮削进行中右上角亮圆点。直接就是 [FushiIconButton]（不再
-      // 外包 badge 组件），放不下时才能按优先级收进 ⋯。
-      if (widget.onOpenScrapeTasks != null)
-        FushiIconButton(
-          tooltip: t.video_source_scrape_tasks_open,
-          label: t.video_source_scrape_tasks_open,
-          icon: widget.scrapeTaskController?.pendingConfirmation == null
-              // 与游戏库页头的「全部刮削」入口同一个图标（manage_search）；
-              // 旧的 sync 图标长得像刷新按钮（反馈 #7m1x-R3yOn）。
-              ? Icons.manage_search_outlined
-              : Icons.rule_folder_outlined,
-          badge: widget.scrapeTaskController?.isBusy == true,
-          overflowPriority: 50,
-          onTap: widget.onOpenScrapeTasks!,
-        ),
-      // 筛选面板（2026-10-14）：年份 / 看完状态（「全部视频」另有系列 / 类型 /
-      // 特典 / 来源）不再在页头下方铺一行胶囊，收进这颗按钮打开的面板；有条件
-      // 生效时亮圆点。优先级介于刮削与多选之间。
-      if (widget.section != VideoLibrarySection.home &&
-          !isCupertinoPlatform(context))
+      // 筛选与排序（原「筛选」+「排序」两颗）：有筛选条件生效时亮圆点。
+      if (libraryGrid)
         FushiIconButton(
           key: const ValueKey<String>('video-library-filter-button'),
           tooltip: _hasActivePanelFilter
-              ? '${t.shelf_toolbar_filters} · ${t.library_filter_active}'
-              : t.shelf_toolbar_filters,
-          label: t.shelf_toolbar_filters,
+              ? '${t.library_sort_filter} · ${t.library_filter_active}'
+              : t.library_sort_filter,
           icon: _hasActivePanelFilter
               ? FushiIcons.filled(FushiIcons.filter)
               : FushiIcons.filter,
           badge: _hasActivePanelFilter,
           overflowPriority: 40,
+          // 与旁边的视频库「⋯」同样恒外露：页头只剩四样，再让它被页头自适应
+          // 收纳另生一颗「⋯」，就成了并排两颗「⋯」。只在最窄的 collapsePinned
+          // 位才收。
+          alwaysVisible: true,
           onTap: () => unawaited(_showFilterPanel()),
         ),
-      // 原工具行行尾的「批量选择 / 排序 / 管理标签」（首页分区没有工具行，
-      // 同样不出）。
-      if (widget.section != VideoLibrarySection.home &&
-          !isCupertinoPlatform(context))
-        ...libraryHeaderTagActions(
-          context,
-          ref: ref,
-          sortMenu: _sortMenu,
-          selectionMode: _selectionMode,
-          onToggleSelectionMode: _toggleSelectionMode,
-          onTagsChanged: () => ref.invalidate(videoBookTagMapProvider),
-          onManageCollections: _openCollectionManagement,
-          // 排序图标不变（视频库另有独立的「筛选」按钮），菜单多了「每行数量」，
-          // tooltip 换成「排序与显示」。
-          sortTooltipOverride: t.library_sort_view,
-          onOpenViewSheet: libraryViewOptionsUseSheet(context)
-              ? _openViewSheet
-              : null,
+      if (scrapeTasks != null &&
+          openScrapeTasks != null &&
+          _backgroundTasksVisible)
+        VideoBackgroundTasksButton(
+          key: const ValueKey<String>('video-background-tasks'),
+          controller: scrapeTasks,
+          onTap: openScrapeTasks,
         ),
-      // 「番剧下载」不再占页头：它是下载子系统的入口，在「浏览 › 下载」页签
-      // （browse_page）里有完整入口，视频库页头只留库管理动作。
-      // 「管理来源」在库页导航壳里已是一等视图（[MediaSourcesPage]），页头再放一个
-      // 按钮就是同一件事的两个入口。只有本页被独立使用（无导航条）时才保留按钮。
-      if (widget.navigation == null)
-        FushiIconButton(
-          tooltip: t.media_source_manage_title,
-          label: t.media_source_manage_title,
-          icon: Icons.folder_copy_outlined,
-          onTap: _openManageSources,
-        ),
-      // 收藏夹入口已收敛到首页 dashboard（用户定案 2026-10-14）：收藏夹不按模块
-      // 隔离，各库页都挂一个只会误导。
-      // 手机遥控电脑播放：只在探到可遥控的已配对电脑时出现（本机做 host 时没有）。
-      if (_videoRemoteTargets.isNotEmpty)
-        FushiIconButton(
-          key: const ValueKey<String>('video-library-remote-control'),
-          overflowPriority: 15,
-          tooltip: t.video_remote_title,
-          label: t.video_remote_title,
-          icon: FushiIcons.remoteControl,
-          onTap: _openVideoRemote,
-        ),
-      // 统计入口已收敛到首页 dashboard（用户定案 2026-09-01）。
-      // 旧后台流水线仍会在进页面 / 新视频入库时补本地 sidecar；在线元数据刮削
-      // 统一从来源页进入 canonical coordinator。
-      //
-      // 「刷新」按钮曾被删掉，理由是「下拉刷新仍是手动同步入口」——但那条理由在
-      // 桌面端不成立（BUG-2567）：[RefreshIndicator] 只认 [dragDevices] 里的设备，
-      // 而 Flutter 的默认集合**不含鼠标**，所以桌面用户手里一个手动刷新入口都没有。
-      // 媒体服务器登录后要等自动列举、清单被 [RemoteLibraryCache] 的 TTL 挡住、或
-      // 用户在设置里关掉了「进影片页时自动列出」时，桌面端就彻底卡死在空库上。
-      // 按钮补回来，busy 态复用 [FushiIconButton] 自带的转圈，避免「按了没反应」。
-      // 只在桌面平台显示（[videoLibraryNeedsHeaderRefresh]）：触屏平台下拉手势就是
-      // 同一个入口，再放一个按钮就是同一件事的两个入口（反馈 #7m1x-R3yOn）。
-      if (videoLibraryNeedsHeaderRefresh(defaultTargetPlatform))
+      // 刷新进行中：转圈按钮临时露出（idle 时刷新在「⋯」里）。
+      if (videoLibraryNeedsHeaderRefresh(defaultTargetPlatform) &&
+          _headerRefreshBusy)
         FushiIconButton(
           key: const ValueKey<String>('video-library-refresh'),
           overflowPriority: 5,
           tooltip: t.refresh,
-          label: t.refresh,
           icon: Icons.refresh_outlined,
           busy: _headerRefreshBusy,
           onTap: _headerRefreshBusy ? null : _refreshFromHeader,
+        ),
+      if (_headerMoreEntries(libraryGrid: libraryGrid)
+          case final List<FushiHeaderMoreEntry> entries when entries.isNotEmpty)
+        FushiHeaderMoreButton(
+          key: const ValueKey<String>('video-library-more-anchor'),
+          buttonKey: const ValueKey<String>('video-library-more'),
+          entries: entries,
         ),
     ];
     final Widget? navigation = widget.navigation;
@@ -9020,15 +9333,88 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         title: navigation,
         actions: _selectionMode ? _selectionHeaderActions() : actions,
         search: _headerSearchForSection,
-        menuAnchor: sortMenuAnchor,
       );
     }
     return FushiPageHeader(
       title: t.nav_video,
       actions: actions,
       search: _headerSearchForSection,
-      menuAnchor: sortMenuAnchor,
     );
+  }
+
+  /// 页头「⋯」的菜单项。都是低频的库管理动作；没有一项时不出「⋯」。
+  List<FushiHeaderMoreEntry> _headerMoreEntries({required bool libraryGrid}) {
+    final bool listLayout = _allVideosLayout == _AllVideosLayout.list;
+    return <FushiHeaderMoreEntry>[
+      if (widget.section == VideoLibrarySection.allVideos)
+        FushiHeaderMoreEntry(
+          key: const ValueKey<String>('video-all-videos-layout-toggle'),
+          icon: listLayout
+              ? Icons.grid_view_outlined
+              : Icons.view_list_outlined,
+          label: listLayout
+              ? t.video_all_videos_grid_view
+              : t.video_all_videos_list_view,
+          onSelected: () => setState(() {
+            _allVideosLayout = listLayout
+                ? _AllVideosLayout.grid
+                : _AllVideosLayout.list;
+          }),
+        ),
+      // 手机遥控电脑播放：只在探到可遥控的已配对电脑时出现（本机做 host 时没有）。
+      if (_videoRemoteTargets.isNotEmpty)
+        FushiHeaderMoreEntry(
+          key: const ValueKey<String>('video-library-remote-control'),
+          icon: FushiIcons.remoteControl,
+          label: t.video_remote_title,
+          onSelected: _openVideoRemote,
+        ),
+      if (libraryGrid) ...<FushiHeaderMoreEntry>[
+        FushiHeaderMoreEntry(
+          key: const ValueKey<String>('library_select_toggle'),
+          icon: FushiIcons.checklist,
+          label: t.batch_select,
+          onSelected: _toggleSelectionMode,
+        ),
+        FushiHeaderMoreEntry(
+          key: const ValueKey<String>('library_tag_settings'),
+          icon: FushiIcons.settingsGear,
+          label: t.tag_manage,
+          onSelected: () => openLibraryTagManagement(
+            context,
+            ref: ref,
+            onTagsChanged: () => ref.invalidate(videoBookTagMapProvider),
+          ),
+        ),
+        FushiHeaderMoreEntry(
+          key: const ValueKey<String>('library_collection_manage'),
+          icon: FushiIcons.collection,
+          label: t.collection_manage_title,
+          onSelected: _openCollectionManagement,
+        ),
+      ],
+      // 「管理来源」在库页导航壳里已是一等视图（`VideoImportPage`）；只有本页被
+      // 独立使用（无导航条）时才保留入口。
+      if (widget.navigation == null)
+        FushiHeaderMoreEntry(
+          key: const ValueKey<String>('video-library-manage-sources'),
+          icon: Icons.folder_copy_outlined,
+          label: t.media_source_manage_title,
+          onSelected: _openManageSources,
+        ),
+      // 「刷新」（BUG-2567）：桌面没有下拉刷新——[RefreshIndicator] 只认
+      // [dragDevices]，Flutter 默认集合不含鼠标；媒体服务器清单被 TTL 挡住、或关了
+      // 「进影片页时自动列出」时桌面用户只剩这个入口。只给桌面平台
+      // （[videoLibraryNeedsHeaderRefresh]，触屏下拉即入口，反馈 #7m1x-R3yOn）。
+      if (videoLibraryNeedsHeaderRefresh(defaultTargetPlatform))
+        FushiHeaderMoreEntry(
+          key: const ValueKey<String>('video-library-refresh-menu'),
+          icon: Icons.refresh_outlined,
+          label: t.refresh,
+          enabled: !_headerRefreshBusy,
+          onSelected: _refreshFromHeader,
+        ),
+    ];
   }
 
   /// 页头搜索：首页分区没有可搜的网格、多选态页头是「已选 N · 退出」，都不出 🔍；
@@ -9039,22 +9425,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           isCupertinoPlatform(context)
       ? null
       : _headerSearch;
-
-  /// 「排序」菜单的零尺寸锚点（[FushiPageHeader.menuAnchor]，叠在页头动作组
-  /// 右下角）：页头里的排序按钮可能被收进「⋯」，菜单挂在这里才总能打开。
-  Widget _buildSortMenuAnchor(List<BookTagRow> tags) {
-    return FushiTagFilterBar(
-      tags: tags,
-      part: FushiTagFilterBarPart.sortMenuAnchor,
-      sortMenuController: _sortMenu,
-      onToggleFilter: _toggleFilter,
-      onReorder: _reorderTags,
-      sortMode: _sortMode,
-      sortModeLabel: _sortModeLabel,
-      onSortModeChanged: _setSortMode,
-      extraSections: <LibraryViewSection>[_gridColumnsSection()],
-    );
-  }
 
   /// 本页网格当前尺寸档下的「每行数量」，null = 自动。
   int? get _gridFixedColumns => ref
@@ -9214,10 +9584,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 「筛选」面板（与游戏库同一个 [showLibraryFilterPanel]）：年份 / 看完状态，
   /// 「全部视频」另有系列归属 / 媒体类型 / 正片特典 / 来源（≥2 个来源才出）。
   /// 改动即时生效；过滤语义与持久化（只有系列归属落偏好）都与原下拉一致。
+  ///
+  /// 页头「筛选与排序」合成一颗后（设计稿 #video V2），排序方式与每行数量也排在
+  /// 这张面板最前面（「清除全部」只复位筛选维度，不动排序与布局）。
   Future<void> _showFilterPanel() {
     return showLibraryFilterPanel(
       context: context,
-      title: t.shelf_toolbar_filters,
+      title: t.library_sort_filter,
       clearLabel: t.library_filters_clear,
       clearKey: const ValueKey<String>('video_filter_panel_clear'),
       onClearAll: _clearPanelFilters,
@@ -9226,7 +9599,36 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           ..sort((int a, int b) => b.compareTo(a));
         final List<MediaSourceRow> sources = _videoSourcesById.values.toList()
           ..sort((MediaSourceRow a, MediaSourceRow b) => a.id.compareTo(b.id));
+        final LibraryViewSection columns = _gridColumnsSection();
+        final int selectedColumn = columns.options.indexWhere(
+          (LibraryViewOption option) => option.selected,
+        );
         return <Widget>[
+          // 单选、总有一档生效：没有「全部」档，[allValue] 取一个真实档位并给它
+          // 自己的名字。
+          LibraryFilterChoiceSection<ShelfSortMode>(
+            key: const ValueKey<String>('video_filter_panel_sort'),
+            title: t.sort_by,
+            values: ShelfSortMode.values,
+            selected: _sortMode,
+            allValue: ShelfSortMode.values.first,
+            allLabel: _sortModeLabel(ShelfSortMode.values.first),
+            labelOf: _sortModeLabel,
+            onSelected: (ShelfSortMode mode) =>
+                update(() => _setSortMode(mode)),
+          ),
+          if (columns.options.isNotEmpty)
+            LibraryFilterChoiceSection<int>(
+              key: const ValueKey<String>('video_filter_panel_columns'),
+              title: columns.title,
+              values: <int>[for (int i = 0; i < columns.options.length; i++) i],
+              selected: selectedColumn,
+              allValue: 0,
+              allLabel: columns.options.first.label,
+              labelOf: (int i) => columns.options[i].label,
+              onSelected: (int i) =>
+                  update(() => columns.options[i].onSelected()),
+            ),
           LibraryFilterChoiceSection<VideoYearFilter>(
             key: const ValueKey<String>('video_filter_panel_year'),
             title: t.video_filter_year,
@@ -9374,7 +9776,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   ///
   /// 注：此处曾注明「均无 deleteRemoteVideo 能力，故不提供删除动作」——该能力现已补齐
   /// （host `VideoDeletionHost` + `DELETE /api/library/videos/<id>` + client 方法四层）。
-  void _showRemoteVideoDialog(RemoteVideoInfo video) {
+  ///
+  /// [selectable]：这张远端卡在多选里能单独勾选时，面板最前面给「选择」。
+  void _showRemoteVideoDialog(
+    RemoteVideoInfo video, {
+    bool selectable = false,
+  }) {
     final RemoteVideoClient? client = _remoteVideoClient;
     final InterconnectSyncBackend? deleter = client is InterconnectSyncBackend
         ? client
@@ -9414,10 +9821,28 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                     title: video.title,
                     showLaunchAction: false,
                     quickActions: <DialogQuickAction>[
+                      // 多选入口（设计稿 #video V2）：长按 / 右键远端卡 →「选择」。
+                      if (selectable && _cardMenuOffersSelect)
+                        DialogQuickAction(
+                          label: t.batch_select,
+                          icon: FushiIcons.checklist,
+                          group: DialogActionGroup.organize,
+                          onPressed: () {
+                            Navigator.pop(dialogContext);
+                            _enterSelectionWith(
+                              SelectionSlot.loose(
+                                _remoteVideoSelectionKey(video),
+                              ),
+                            );
+                          },
+                        ),
+                      // 流播与互联下载的发起 / 暂停 / 继续 / 取消显式进右键菜单主操作行（不写
+                      // slot 时内容组被推断进「更多 ›」，就地停下载又藏起来了）；最多三项。
                       if (cloudStream != null)
                         DialogQuickAction(
                           label: t.remote_video_stream_play,
                           icon: Icons.play_circle_outline,
+                          slot: ItemMenuSlot.primary,
                           onPressed: () {
                             Navigator.pop(dialogContext);
                             unawaited(
@@ -9429,6 +9854,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                         DialogQuickAction(
                           label: t.remote_video_download,
                           icon: Icons.download_outlined,
+                          slot: ItemMenuSlot.primary,
                           onPressed: () {
                             Navigator.pop(dialogContext);
                             _downloadRemote(video);
@@ -9438,6 +9864,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                         DialogQuickAction(
                           label: t.download_task_pause,
                           icon: Icons.pause_outlined,
+                          slot: ItemMenuSlot.primary,
                           onPressed: () {
                             Navigator.pop(dialogContext);
                             downloads.pause(task.id);
@@ -9447,6 +9874,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                         DialogQuickAction(
                           label: t.download_task_resume,
                           icon: Icons.play_arrow_outlined,
+                          slot: ItemMenuSlot.primary,
                           onPressed: () {
                             Navigator.pop(dialogContext);
                             unawaited(downloads.resume(task.id));
@@ -9456,6 +9884,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                         DialogQuickAction(
                           label: t.interconnect_download_cancel,
                           icon: Icons.close,
+                          slot: ItemMenuSlot.primary,
                           onPressed: () {
                             Navigator.pop(dialogContext);
                             unawaited(downloads.cancel(task.id));
@@ -10256,10 +10685,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 取图是函数、菜单订阅 [_coverExistsRevision]：封面存在性在网络盘冷目录上要
   /// 异步探测好几秒，打开那一刻拿到的可能是 [kPendingCoverImage]；菜单是独立路由，
   /// page 的重建到不了它，探测落定后必须自己重取，否则头部永远停在加载态。
+  ///
+  /// [onContinue]：续播这部合集的下一集（与卡片单击同一目标）；给了时菜单主按钮
+  /// 是「继续播放」、「全部集」排进主操作行（#4b）。[progressLabel] 写在头部。
   Future<void> _showCollectionContextMenu(
     MediaCollectionRow collection, {
     ImageProvider? Function()? cover,
     String? title,
+    VoidCallback? onContinue,
+    String? progressLabel,
   }) async {
     // 右键锚点只在同步派发期间可读：先取下来，下面 await 取成员后仍弹在指针处。
     final Offset? anchor = activeContextMenuAnchor;
@@ -10308,10 +10742,23 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       title: title,
       coverMaterial: ShelfCoverMaterial.glossyPoster,
       leadingListActions: <DialogListAction>[
+        // 多选入口（设计稿 #video V2）：长按 / 右键合集卡 → 「选择」进入多选并
+        // 整选这部合集。首页分区的横滚行没有可勾选的格，不给。
+        if (_cardMenuOffersSelect)
+          DialogListAction(
+            label: t.batch_select,
+            icon: FushiIcons.checklist,
+            slot: ItemMenuSlot.primary,
+            onPressed: () {
+              if (!mounted) return;
+              _enterSelectionWith(SelectionSlot.collection(collection.id));
+            },
+          ),
         if (discs.isNotEmpty)
           DialogListAction(
             label: t.video_disc_open_menu,
             icon: FushiIcons.toc,
+            group: DialogActionGroup.content,
             onPressed: () => unawaited(
               openDiscSessionWithPicker(
                 context: context,
@@ -10384,9 +10831,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           }
           return <DialogListAction>[
             DialogListAction(
-              label: t.collection_mark_all_watched,
+              label: t.item_menu_watched,
               group: DialogActionGroup.progress,
               icon: FushiIcons.check,
+              slot: ItemMenuSlot.primary,
               onPressed: () => unawaited(
                 _markWatched(
                   watched: true,
@@ -10412,36 +10860,63 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         DialogListAction(
           label: t.collection_cover_set,
           icon: Icons.image_outlined,
+          slot: ItemMenuSlot.edit,
           onPressed: () => _setCollectionCover(collection),
         ),
         if (_onlineCoverController != null)
           DialogListAction(
             label: t.video_cover_online_search,
             icon: Icons.image_search_outlined,
+            slot: ItemMenuSlot.edit,
             onPressed: () => _setCollectionCoverOnline(collection),
           ),
         if (collection.coverPath?.isNotEmpty ?? false)
           DialogListAction(
             label: t.collection_cover_reset,
             icon: Icons.undo_outlined,
+            slot: ItemMenuSlot.edit,
             onPressed: () => _resetCollectionCover(collection),
-          ),
-        if (widget.scrapeTaskController != null)
-          DialogListAction(
-            label: t.collection_rescrape,
-            icon: Icons.image_search,
-            onPressed: () => _rescrapeCollection(collection),
           ),
         DialogListAction(
           label: t.video_filename_organize_action,
           icon: Icons.drive_file_rename_outline,
+          slot: ItemMenuSlot.edit,
           onPressed: () => _organizeCollectionFilenames(collection),
         ),
-        DialogListAction(
-          label: t.video_jimaku_batch_title,
+        // 工作台「字幕与刮削」（#4b）：字幕与刮削相关的动作收成一个入口。
+        DialogWorkbenchAction(
+          label: t.item_menu_video_workbench,
           icon: Icons.subtitles_outlined,
-          group: DialogActionGroup.content,
-          onPressed: () => _openCollectionSubtitles(collection),
+          onPressed: () {},
+          children: <DialogListAction>[
+            DialogListAction(
+              label: t.video_jimaku_batch_title,
+              icon: Icons.subtitles_outlined,
+              group: DialogActionGroup.content,
+              onPressed: () => _openCollectionSubtitles(collection),
+            ),
+            if (widget.scrapeTaskController != null)
+              DialogListAction(
+                label: t.collection_rescrape,
+                icon: Icons.image_search,
+                onPressed: () => _rescrapeCollection(collection),
+              ),
+            // 互联刮削（7a / 7b）：只在互联源上出现。
+            if (_metadataBackend != null) ...<DialogListAction>[
+              DialogListAction(
+                label: t.remote_collection_scrape_on_host,
+                icon: Icons.cloud_sync_outlined,
+                onPressed: () => unawaited(_scrapeCollectionOnHost(collection)),
+              ),
+              if (widget.scrapeTaskController != null)
+                DialogListAction(
+                  label: t.remote_collection_scrape_push_to_host,
+                  icon: Icons.cloud_upload_outlined,
+                  onPressed: () =>
+                      unawaited(_scrapeCollectionForHost(collection)),
+                ),
+            ],
+          ],
         ),
         // 合集整体下载（#6）：只在有远端源时出现；成员全在本机时点了会明确提示
         // 「没有可下载的远端集」。
@@ -10452,20 +10927,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
             group: DialogActionGroup.content,
             onPressed: () => unawaited(_downloadRemoteCollection(collection)),
           ),
-        // 互联刮削（7a / 7b）：只在互联源上出现。
-        if (_metadataBackend != null) ...<DialogListAction>[
-          DialogListAction(
-            label: t.remote_collection_scrape_on_host,
-            icon: Icons.cloud_sync_outlined,
-            onPressed: () => unawaited(_scrapeCollectionOnHost(collection)),
-          ),
-          if (widget.scrapeTaskController != null)
-            DialogListAction(
-              label: t.remote_collection_scrape_push_to_host,
-              icon: Icons.cloud_upload_outlined,
-              onPressed: () => unawaited(_scrapeCollectionForHost(collection)),
-            ),
-        ],
         if (serverWorks.isNotEmpty)
           DialogListAction(
             label: t.video_online_library_remove,
@@ -10478,6 +10939,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
             ),
           ),
       ],
+      launchLabel: onContinue == null ? null : t.item_menu_continue_watching,
+      onLaunch: onContinue,
+      progressLabel: progressLabel,
     );
   }
 
@@ -10510,7 +10974,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     } catch (e, stack) {
       ErrorLogService.instance.log('video.setCollectionCover', e, stack);
       FushiToast.show(
-        msg: t.collection_cover_failed,
+        msg: videoScrapeMaintenanceText(e) ?? t.collection_cover_failed,
         severity: ToastSeverity.error,
       );
       return;
@@ -10680,7 +11144,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       ErrorLogService.instance.log('video.rescrapeWork', e, stack);
       if (!mounted) return;
       FushiToast.show(
-        msg: t.collection_rescrape_failed,
+        msg: videoScrapeMaintenanceText(e) ?? t.collection_rescrape_failed,
         severity: ToastSeverity.error,
       );
       return;
@@ -10748,7 +11212,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       ErrorLogService.instance.log('video.chooseTmdbOrdering', e, stack);
       if (!mounted) return;
       FushiToast.show(
-        msg: t.collection_rescrape_failed,
+        msg: videoScrapeMaintenanceText(e) ?? t.collection_rescrape_failed,
         severity: ToastSeverity.error,
       );
       return;
@@ -10895,9 +11359,30 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           : VideoRemoteClient(repository: repository, peer: peer);
     }
 
+    final InterconnectSyncBackend? interconnect =
+        source is InterconnectSyncBackend ? source : null;
     return RemoteDiscActions(
       openShare: discs.openRemoteDiscShare,
       readFile: discs.readRemoteDiscFile,
+      // 会话里的 title 由 host 本地裁音频（clipaudio；库里没有行的 title 带 discTitle）。
+      fetchTitleAudio: interconnect == null
+          ? null
+          : (
+              RemoteDiscHostTitle title,
+              File dest, {
+              required int startMs,
+              required int endMs,
+              int? audioStreamIndex,
+              int? audioStreamCount,
+            }) => interconnect.getRemoteVideoAudioClip(
+              title.videoId,
+              dest,
+              startMs: startMs,
+              endMs: endMs,
+              discTitle: title.discTitle,
+              audioStreamIndex: audioStreamIndex,
+              audioStreamCount: audioStreamCount,
+            ),
       hostCanOpenDisc: () async {
         final VideoRemoteClient? client = await hostClient();
         return client != null && await hostCanOpenDiscMenu(client);
@@ -11369,6 +11854,33 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     VoidCallback? onTapOverride,
     ImageProvider? Function()? coverOverride,
     FushiCoverBlockSize? block,
+  }) => WorkKindsBadgeOverlay.entry(
+    database: ref.read(appProvider).database,
+    endpoint: (kind: MediaLinkKind.videoEpisode, key: book.bookUid),
+    enabled: !_selectionMode && !_reordering,
+    onPressed: _showWorkLinks,
+    child: MediaNsfwCoverScope(
+      target: MediaNsfwTarget.video(book.bookUid),
+      child: _buildCardInner(
+        book,
+        playlistCollectionId: playlistCollectionId,
+        selectable: selectable,
+        orientation: orientation,
+        onTapOverride: onTapOverride,
+        coverOverride: coverOverride,
+        block: block,
+      ),
+    ),
+  );
+
+  Widget _buildCardInner(
+    VideoBookRow book, {
+    int? playlistCollectionId,
+    bool selectable = true,
+    VideoCardOrientation orientation = VideoCardOrientation.portrait,
+    VoidCallback? onTapOverride,
+    ImageProvider? Function()? coverOverride,
+    FushiCoverBlockSize? block,
   }) {
     // [coverOverride] 是取图函数：卡片这一轮画它取到的图源，菜单在探测落定后
     // 还要重取（见 [_showVideoMenu]）。
@@ -11390,6 +11902,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       book,
       cover: () => coverOverride?.call() ?? _localCoverProvider(book),
       title: displayTitle,
+      selectable: selectable,
     );
     final List<_VideoTagChip> tags = _videoBookTagChips(book.bookUid);
     final int episodeCount = playlistEpisodeCount(book.playlistJson);
@@ -11429,7 +11942,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       // 未进入选择态时，触屏与桌面长按都保留管理菜单；显式进入选择态后才摘掉
       // 卡片长按识别器，让祖先 SelectionDragArea 接管扫选。
       onLongPress: _selectionMode ? null : openMenu,
-      onSecondaryTap: _selectionMode ? null : openMenu,
+      onSecondaryTap: _selectionMode ? _showBatchMenu : openMenu,
       child: block != null
           ? _videoCoverBlock(
               size: block,
@@ -11564,15 +12077,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 最近一次构建的批量栏：退出多选时的下沉动画画它（见 build）。
   Widget? _lastBatchActionBar;
 
-  Widget _buildBatchActionBar() {
-    final ThemeData theme = Theme.of(context);
-    // 块2/3/4：计数与按钮可用态涵盖散卡选中集 + 合集选中集。
-    // BUG-2458：散卡选中集里混着远端占位键——「已选 N」计全部，但组合 / 打标签 /
-    // 删除三个本地动作只按本地键判可用态与取目标；远端键只喂「下载」。
+  /// 多选态的批量动作（底部批量操作栏与右键批量菜单同一份，#4b）。
+  ///
+  /// 块2/3/4：可用态涵盖散卡选中集 + 合集选中集。
+  /// BUG-2458：散卡选中集里混着远端占位键——组合 / 打标签 / 删除三个本地动作只按
+  /// 本地键判可用态与取目标；远端键只喂「下载」。
+  List<BatchAction> _batchActions() {
     final Set<String> localUids = _selectedLocalUids;
     final Set<String> remoteKeys = _selectedRemoteKeys;
-    final int selectedCount =
-        _selectedUids.length + _selectedCollectionIds.length;
     final bool hasLocalSelection =
         localUids.isNotEmpty || _selectedCollectionIds.isNotEmpty;
     // 复查 #5：组合按钮 noop 档（0 合集 0 散卡 / 仅 1 合集且无散卡）不再当启用态死按钮，
@@ -11583,53 +12095,68 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           looseCount: localUids.length,
         ) !=
         CombineTier.noop;
+    return <BatchAction>[
+      BatchAction(
+        key: 'home_video_batch_download',
+        enabled: remoteKeys.isNotEmpty,
+        onPressed: _batchDownloadSelectedRemote,
+        icon: Icons.download_outlined,
+        label: t.remote_video_download,
+      ),
+      BatchAction(
+        key: 'home_video_batch_combine',
+        enabled: canCombine,
+        onPressed: _batchCombineIntoSeries,
+        // 组合成系列用 playlist_add，与页头「收藏夹」入口的
+        // collections_bookmark_outlined 区分开（二者语义无关，避免同图标歧义）。
+        icon: Icons.playlist_add,
+        label: t.combine_into_series,
+      ),
+      // AI 整理所选（spec 2026-10-20 §10.1）。
+      if (isAiModuleEnabled(ref.read(appProvider).moduleVisibility))
+        BatchAction(
+          key: 'home_video_batch_ai_organize',
+          enabled: hasLocalSelection,
+          onPressed: _batchAiOrganize,
+          icon: FushiIcons.aiAssistant,
+          label: t.library_organize_selection_action,
+        ),
+      // 散卡与合集都能打标签（合集在选择器里二选一：合集本身 / 合集内全部条目）。
+      BatchAction(
+        key: 'home_video_batch_tag',
+        enabled: hasLocalSelection,
+        onPressed: _batchShowTagPicker,
+        icon: Icons.sell_outlined,
+        label: t.tag_label,
+      ),
+      BatchAction(
+        key: 'home_video_batch_delete',
+        enabled: hasLocalSelection,
+        onPressed: _batchDeleteConfirm,
+        icon: Icons.delete_outline,
+        label: t.dialog_delete,
+        destructive: true,
+      ),
+    ];
+  }
+
+  /// 多选态下右键 / 长按卡片：批量菜单（与底部批量操作栏同一份动作）。
+  void _showBatchMenu() {
+    unawaited(
+      showBatchItemActions(
+        context: context,
+        selectedCount: _selectedUids.length + _selectedCollectionIds.length,
+        actions: _batchActions(),
+      ),
+    );
+  }
+
+  Widget _buildBatchActionBar() {
     return BatchActionBar(
-      selectedCount: selectedCount,
+      selectedCount: _selectedUids.length + _selectedCollectionIds.length,
       onSelectAll: _selectAllVisible,
       onInvertSelection: _invertSelection,
-      actions: <Widget>[
-        FushiIconButton(
-          key: const ValueKey<String>('home_video_batch_download'),
-          enabled: remoteKeys.isNotEmpty,
-          onTap: _batchDownloadSelectedRemote,
-          icon: Icons.download_outlined,
-          tooltip: t.remote_video_download,
-        ),
-        FushiIconButton(
-          key: const ValueKey<String>('home_video_batch_combine'),
-          enabled: canCombine,
-          onTap: _batchCombineIntoSeries,
-          // 组合成系列用 playlist_add，与页头「收藏夹」入口的
-          // collections_bookmark_outlined 区分开（二者语义无关，避免同图标歧义）。
-          icon: Icons.playlist_add,
-          tooltip: t.combine_into_series,
-        ),
-        // AI 整理所选（spec 2026-10-20 §10.1）。
-        if (isAiModuleEnabled(ref.read(appProvider).moduleVisibility))
-          FushiIconButton(
-            key: const ValueKey<String>('home_video_batch_ai_organize'),
-            enabled: hasLocalSelection,
-            onTap: _batchAiOrganize,
-            icon: FushiIcons.aiAssistant,
-            tooltip: t.library_organize_selection_action,
-          ),
-        FushiIconButton(
-          // 散卡与合集都能打标签（合集在选择器里二选一：合集本身 / 合集内全部条目）。
-          key: const ValueKey<String>('home_video_batch_tag'),
-          enabled: localUids.isNotEmpty || _selectedCollectionIds.isNotEmpty,
-          onTap: _batchShowTagPicker,
-          icon: Icons.sell_outlined,
-          tooltip: t.tag_label,
-        ),
-        FushiIconButton(
-          key: const ValueKey<String>('home_video_batch_delete'),
-          enabled: hasLocalSelection,
-          onTap: _batchDeleteConfirm,
-          icon: Icons.delete_outline,
-          tooltip: t.dialog_delete,
-          enabledColor: theme.colorScheme.error,
-        ),
-      ],
+      actions: batchActionButtons(context, _batchActions()),
     );
   }
 
@@ -11713,7 +12240,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     List<_VideoTagChip> tags = const <_VideoTagChip>[],
     Widget? discBadge,
     String? specsPath,
-    _VideoBlockMeta? poster,
+    FushiSeriesMeta? poster,
     bool playsOnTap = false,
     ImageProvider? memberArt,
   }) {
@@ -11723,15 +12250,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     // 就是背景图，有 2:3 作品封面时左侧再斜放它（设计稿 `.vb` 的 bd + ps）。
     // 都没有时退回原摆法：竖版海报斜放在右 / 横版剧照铺右侧。
     final ImageProvider? posterImage = landscape ? poster?.poster : null;
-    final Widget? scrapedBackdrop = poster?.backdrop == null
-        ? null
-        : Image(
-            image: poster!.backdrop!,
-            fit: BoxFit.cover,
-            excludeFromSemantics: true,
-            errorBuilder: (BuildContext _, Object __, StackTrace? ___) =>
-                const SizedBox.shrink(),
-          );
+    final Widget? scrapedBackdrop = fushiSeriesBackdrop(poster?.backdrop);
     final Widget? backdrop = landscape
         ? (posterImage != null ? covers.first : null)
         : scrapedBackdrop;
@@ -11761,16 +12280,17 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       required FushiCoverBlockArt art,
       required List<Widget> covers,
       required Widget? backdrop,
-    }) => FushiCoverBlock(
+    }) => fushiSeriesCoverBlock(
       size: size,
       art: art,
       title: title,
       covers: covers,
+      meta: poster,
       backdrop: backdrop,
-      logo: poster?.logo,
+      // 横版槽画的是这一条自己的 16:9 封面，不是 meta 的背景图：带不带字与
+      // meta.backdropHasText 无关，logo 照叠。
+      backdropHasText: landscape ? false : null,
       eyebrow: statusAsEyebrow ? subtitle : null,
-      overview: poster?.overview,
-      chip: poster?.chip,
       action: playsOnTap && started
           ? FushiCoverBlockAction(
               icon: Icons.play_arrow_rounded,
@@ -11905,7 +12425,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// - 概览：合集刮削标签前两个 · ★ 评分。
   ///
   /// [bookUid] 给出而这本视频自己没有作品资料时（剧集里的一集），借它主合集的。
-  _VideoBlockMeta _videoBlockMeta({int? collectionId, String? bookUid}) {
+  FushiSeriesMeta _videoBlockMeta({int? collectionId, String? bookUid}) {
     int? cid = collectionId;
     VideoMetadataWorkRow? work = cid != null
         ? _metadataWorkByCollection[cid]
@@ -11920,122 +12440,17 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         images = images ?? _mediaImagesByCollection[cid];
       }
     }
-    final CollectionScrapeMetaRow? scrape = cid == null
-        ? null
-        : _collectionScrapeMetaById[cid];
-    ImageProvider? settled(ImageProvider? image) =>
-        image == kPendingCoverImage ? null : image;
-    // 与作品详情页（`media_collection_detail_page.dart` 的 `_resolveCanonicalImage`）
-    // 同一条取图链：先本地文件，没有再走远程地址（[AppCachedHttpImage] 磁盘缓存，
-    // 详情页看过的图直接命中）。刮削常常只存了远程地址，只认本地的话艺术字和
-    // 横版背景在库页一张都出不来。某张本地图还在探测存在性时先不落到远程，
-    // 等探测完重建，免得本地有图还去下载一遍。
-    ImageProvider? workImage(List<String> kinds, {required int decodeWidth}) {
-      final List<VideoMetadataImageRow>? rows = work == null
+    return videoSeriesMeta(
+      work: work,
+      mediaImages: images,
+      workImages: work == null ? null : _metadataImagesByWork[work.id],
+      scrape: cid == null ? null : _collectionScrapeMetaById[cid],
+      localImage: _localFileCover,
+      ownPoster: cid == null
           ? null
-          : _metadataImagesByWork[work.id];
-      if (rows == null) return null;
-      final List<VideoMetadataImageRow> ordered = rows.toList()
-        ..sort(
-          (VideoMetadataImageRow a, VideoMetadataImageRow b) =>
-              a.position.compareTo(b.position),
-        );
-      bool probing = false;
-      for (final String kind in kinds) {
-        for (final VideoMetadataImageRow row in ordered) {
-          if (row.kind != kind) continue;
-          final ImageProvider? local = _localFileCover(row.localPath);
-          if (local == kPendingCoverImage) {
-            probing = true;
-          } else if (local != null) {
-            return local;
-          }
-        }
-      }
-      if (probing) return null;
-      for (final String kind in kinds) {
-        for (final VideoMetadataImageRow row in ordered) {
-          if (row.kind != kind || row.remoteUrl.isEmpty) continue;
-          return ResizeImage.resizeIfNeeded(
-            decodeWidth,
-            null,
-            AppCachedHttpImage(row.remoteUrl),
-          );
-        }
-      }
-      return null;
-    }
-
-    final ImageProvider? backdrop =
-        settled(
-          _mediaImageProvider(images, const <MediaImageKind>[
-            MediaImageKind.backdrop,
-          ]),
-        ) ??
-        workImage(const <String>['backdrop'], decodeWidth: 1280);
-    final ImageProvider? logo =
-        settled(
-          _mediaImageProvider(images, const <MediaImageKind>[
-            MediaImageKind.logo,
-          ]),
-        ) ??
-        workImage(const <String>['logo'], decodeWidth: 640);
-    final ImageProvider? poster =
-        (cid == null
-            ? null
-            : settled(_collectionOwnCover(_collectionsById[cid]))) ??
-        workImage(const <String>['cover', 'poster'], decodeWidth: 480);
-    final String? kind = switch (work?.mediaType) {
-      'tv' => t.shelf_block_video_kind_tv,
-      'movie' => t.shelf_block_video_kind_movie,
-      _ => null,
-    };
-    final int? year =
-        work?.year ??
-        videoAirYear(work?.premiereDate) ??
-        videoAirYear(scrape?.airDate) ??
-        (bookUid == null ? null : _airYearByUid[bookUid]);
-    final int? episodes = work?.mediaType == 'movie'
-        ? null
-        : scrape?.episodeCount;
-    final List<String> chipParts = <String>[
-      ?kind,
-      if (year != null) '$year',
-      if (episodes != null && episodes > 0)
-        t.video_playlist_episodes(count: episodes),
-    ];
-    final double? rating = work?.rating ?? scrape?.rating;
-    final List<String> genres = _scrapeTagNames(scrape?.tagsJson, limit: 2);
-    final List<String> overviewParts = <String>[
-      if (genres.isNotEmpty) genres.join(' / '),
-      if (rating != null && rating > 0) '★ ${rating.toStringAsFixed(1)}',
-    ];
-    return (
-      backdrop: backdrop,
-      logo: logo,
-      poster: poster,
-      overview: overviewParts.isEmpty ? null : overviewParts.join(' · '),
-      chip: chipParts.isEmpty ? null : chipParts.join(' · '),
+          : _collectionOwnCover(_collectionsById[cid]),
+      fallbackYear: bookUid == null ? null : _airYearByUid[bookUid],
     );
-  }
-
-  /// 刮削标签 JSON（`[{"name":"日常","count":1234}]`，按热度降序）的前 [limit]
-  /// 个名字；解析失败 / 没有为空表。
-  static List<String> _scrapeTagNames(String? json, {required int limit}) {
-    if (json == null || json.isEmpty) return const <String>[];
-    try {
-      final Object? decoded = jsonDecode(json);
-      if (decoded is! List<Object?>) return const <String>[];
-      return <String>[
-        for (final Object? tag in decoded)
-          if (tag is Map<String, Object?> &&
-              tag['name'] is String &&
-              (tag['name']! as String).isNotEmpty)
-            tag['name']! as String,
-      ].take(limit).toList(growable: false);
-    } on FormatException {
-      return const <String>[];
-    }
   }
 
   /// 视频书的用户标签（BUG-1808）：墙卡与首页横滚卡共用同一口径，别再各处 inline
@@ -12143,15 +12558,6 @@ class _VideoLooseCard {
 /// `SliverGrid.builder`，只有滚进视口的格才会调 [build]；这里不再预先持有封面
 /// provider——旧的 `cover` 字段在构造 cells 列表时就对每条目同步求值（含
 /// `existsSync`），几千条目的库首帧先付几千次磁盘 stat。
-/// 视频色块卡的海报元数据（见 [_HomeVideoPageState._videoBlockMeta]）。
-typedef _VideoBlockMeta = ({
-  ImageProvider? backdrop,
-  ImageProvider? logo,
-  ImageProvider? poster,
-  String? overview,
-  String? chip,
-});
-
 class _VideoWallEntry {
   const _VideoWallEntry({required this.build});
 
@@ -12204,6 +12610,9 @@ class _HomeContinueItem {
 }
 
 /// 首屏继续观看卡的数据（主卡 / 封面行共用，见 [FushiContinueSpotlight]）。
+/// 主卡的无字剧照 + 可叠的 logo（[_HomeVideoPageState._heroCleanArt]）。
+typedef _HeroCleanArt = ({ImageProvider? image, ImageProvider? logo});
+
 class _HomeHeroData {
   const _HomeHeroData({
     required this.cardKey,
@@ -12219,7 +12628,11 @@ class _HomeHeroData {
     this.cloud = false,
     this.collectionId,
     this.bookUid,
+    this.logo,
   });
+
+  /// 主卡剧照上叠的作品 logo（只在剧照不带片名时非 null，见 [_heroCleanArt]）。
+  final ImageProvider? logo;
 
   final Key cardKey;
   final FushiFocusId focusId;
@@ -12395,7 +12808,7 @@ String remoteVideoDownloadFileName(RemoteVideoInfo video) {
   if (stem.toLowerCase().endsWith('.mp4')) {
     stem = stem.substring(0, stem.length - 4);
   }
-  // 给哈希、扩展名和 `.part.etag` / `.resume.json` 后缀留出路径余量。
+  // 给哈希、扩展名和 `.part.etag` / `.part.resume` / `.resume.json` 后缀留出路径余量。
   if (stem.length > 80) stem = stem.substring(0, 80);
   final String idHash = sha1
       .convert(utf8.encode(video.id))

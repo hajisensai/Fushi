@@ -101,10 +101,10 @@ void main() {
     });
 
     test('同一来源在两台设备上派生出同一 ID，与本机状态无关', () {
-      final String nt = SrsIds.noteType(kP, 12345);
-      expect(SrsIds.noteType(kP, 12345), nt);
+      final String nt = SrsKernelIds(kP).noteType(12345);
+      expect(SrsKernelIds(kP).noteType(12345), nt);
       expect(SrsIds.fieldByName(nt, 'Front'), SrsIds.fieldByName(nt, 'Front'));
-      final String note = SrsIds.note(kP, 'abc');
+      final String note = SrsKernelIds(kP).note('abc');
       final String tpl = SrsIds.template(nt, 7);
       expect(SrsIds.card(note, tpl, 0), SrsIds.card(note, tpl, 0));
       expect(SrsIds.card(note, tpl, 1), isNot(SrsIds.card(note, tpl, 2)));
@@ -113,15 +113,18 @@ void main() {
     test('内置笔记类型走通用规则：导出 → 导入回到同一 ID（第六轮审查第 8 条）', () {
       final int lapisNum = SrsIds.builtinNoteTypeAnkiNum('lapis');
       // 导出写进 .apkg 的笔记类型 id 就是 ankiNum；回导时按通用规则派生。
-      expect(SrsIds.noteType(kP, lapisNum), SrsIds.noteType(kP, lapisNum));
+      expect(
+        SrsKernelIds(kP).noteType(lapisNum),
+        SrsKernelIds(kP).noteType(lapisNum),
+      );
       expect(lapisNum, greaterThan(0));
       expect(lapisNum, lessThan(1 << 53));
     });
 
     test('fushi-ext 跨 profile 导入：日志与 revokesId 用同一函数重映射', () {
       expect(
-        SrsIds.remappedLog(SrsIds.note(kP, 'g'), 'orig-1'),
-        SrsIds.remappedLog(SrsIds.note(kP, 'g'), 'orig-1'),
+        SrsIds.remappedLog(SrsKernelIds(kP).note('g'), 'orig-1'),
+        SrsIds.remappedLog(SrsKernelIds(kP).note('g'), 'orig-1'),
       );
     });
 

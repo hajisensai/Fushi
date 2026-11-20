@@ -1,0 +1,16 @@
+## BUG-4705 · Android 系统 OCR 全分辨率解码在主线程、无上限，大图闪退；无 GMS 被报成识别失败
+- **报告**：2026-11-15（用户：应用内反馈 Rmgqer_zuf / z3gkQgGxYX / MHLc99lDy0 / KJJWhrQXFH，HONOR YLP-W00 平板，Android SDK 37，3.3.0 正式版。「2k 以上分辨率图片在 OCR 时闪退」「无法调用系统 OCR」，一晚崩几十次）
+- **真实性**：✅ 真 bug（结构缺陷已在真机复现到「主线程卡死 + 系统低内存杀进程」这一步；用户设备上的那一下 Java 崩溃本身没有栈，见备注）
+  - 根因 1（大图）：`fushi/android/app/src/main/java/app/fushi/reader/SystemOcrChannel.java:160`（修前）——`handleRecognize` 在**平台主线程**上对每张页图 `BitmapFactory.decodeByteArray` **全分辨率**解码，没有任何像素上限，也不串行：一张 8000×11300 的页图就是 361 MB ARGB 位图。整卷任务、作品页 / 下载钩子排的多本任务、悬浮球截屏可以同时请求，每个请求各解一张。
+  - 根因 2（无 GMS）：同文件 `:183`（修前）只把 `MlKitException.UNAVAILABLE` 映射成 `MODEL_UNAVAILABLE`。本机根本没有 Play 服务时 ML Kit 报的是「Failed to load deprecated vision dynamite module」这类内部错误，被塌成 `RECOGNIZE_FAILED`，用户只看到一串英文 `PlatformException`，与类注释「这条依赖不允许静默」的设计意图矛盾。
+  - 反馈日志里的事实：MHLc99lDy0 里至少 5 次 `CRASH status=0` 前约 1.0 s 都有一条 `SystemOcrUnavailableException(model_unavailable)`（`MangaOcrJobRegistry.systemOcr`），23:22:41～45 连续 6 个排队任务各失败一页、间隔约 0.7 s，下一次识别请求就崩——崩点落在「下一次 recognize」窗口里。
+- **[x] ① 已修复** — `SystemOcrChannel.handleRecognize` 重写：解码与等待识别结果移到单线程执行器（串行，进程内同时至多一张送检位图），按 `SystemOcrImageBudget.MAX_RECOGNIZE_PIXELS`（16 MP）以 2 的幂 `inSampleSize` 降采样解码，识别框按比例放回原图坐标系、`width/height` 仍报原图尺寸（Dart 坐标契约不变，另回 `recognizedWidth/Height` 诊断字段，与 Windows 同名）；解码 OOM 作为该页失败（`IMAGE_TOO_LARGE`）回给调用方而不是带走进程；识别失败时 Play 服务不可用也判为 `MODEL_UNAVAILABLE`。提交见 PR。
+  - 第二轮（所有者 2026-11-15 拍板）把 Dart 侧的出路补齐：
+    - 引擎探测加问 `modelStatus`：设备**根本没有可用 Play 服务**（`SERVICE_MISSING` / `SERVICE_INVALID` / 其它不可用，`SystemOcrModelStatus.playServicesAbsent`）时，自动档不再选系统 OCR（`manga_ocr_engine_probe.dart` 的 capability `ready`）。选项照旧可选、不置灰；在设置里选中它时立刻弹引导弹窗（`manga_ocr_settings_section.dart` `_guideSystemOcrIfPlayServicesAbsent`）。
+    - 漫画阅读器的整卷 / 直读 OCR 遇到系统 OCR 的 `model_unavailable`，弹本地化的 `showSystemOcrSetupDialog`，不再弹 `SystemOcrUnavailableException(model_unavailable)` 原始异常 toast（`manga_fushi_page.dart` `_showSystemOcrSetupFor`，一次打开只弹一次）。
+    - 注册表在系统 OCR 第一次报 `model_unavailable` 时，放弃所有排着队的系统 OCR 整卷任务（各书都算），运行中 / 已暂停的不动（`manga_ocr_job_registry.dart` `_dropQueuedForEngine`）——反馈里 6 个排队任务连环各失败一次就是这条。
+    - 引导弹窗在「没有可用 Play 服务」三种状态下多一句，指向不依赖 Play 服务的本机模型（漫画 CTC）（新 key `ocr_system_model_local_alternative`）。不改用 bundled ML Kit。
+- **[x] ② 已加自动化测试** — `fushi/android/app/src/test/kotlin/app/fushi/reader/SystemOcrImageBudgetTest.kt`（JVM：常规页不降采样、超大页 / 条漫长图降到预算内且是最小的 2 的幂、坐标映射回原图且不越界）；Dart：`test/media/manga/manga_ocr_engine_probe_system_ocr_test.dart`（无 Play 服务时 auto 不选、显式仍可用、探测异常 / 超时不拦）、`test/media/manga/ocr/manga_ocr_job_registry_test.dart`（同引擎排队任务被放弃、别的失败 / 别的引擎不连坐）、`test/pages/manga_fushi_page_test.dart`（阅读器弹引导弹窗而非原始异常）、`test/media/manga/manga_ocr_settings_section_ui_test.dart`（选中系统 OCR 时按状态弹 / 不弹引导）、`test/ocr/system_ocr_setup_test.dart`（只在无 Play 服务时指向本机模型）、`test/media/manga/ocr/system_ocr_manga_service_test.dart`（modelStatus 透传、失败判据只认系统 OCR 引擎）。
+- **备注**：
+  - 真机证据（Xiaomi Pad 5，LineageOS，无 GMS，已装 3.3.0-debug.26447 原样，不覆盖）：导入 2894×4093 页图跑系统 OCR，报 `RECOGNIZE_FAILED: Failed to load deprecated vision dynamite module`（根因 2）；导入 8000×11300 / 2400×40000 页图，识别时主线程 `Davey! duration=1122ms`，同一秒 `lowmemorykiller` 连杀 5 个后台进程（根因 1）。该机 6 GB 内存，进程本身没被杀；用户设备上那一下 Java 崩溃的具体栈 3.3.0 没有落盘（`JavaCrashCapture` 2026-11-10 才进 develop，不在 v3.3.0），无法逐帧确认。
+  - 修复后的 APK 未上真机复测：真机上装的是用户的 `app.fushi.reader`，按规矩不覆盖；补测需要一个独立 applicationId 的构建。

@@ -1,24 +1,30 @@
 import 'dart:async';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-import 'package:fushi/src/media/music/music_format_badge.dart';
+import 'package:fushi/src/media/music/music_local_video.dart';
 import 'package:fushi/src/media/music/music_library_data.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_remote_tracks.dart';
 import 'package:fushi/src/media/music/music_resume.dart';
 import 'package:fushi/src/media/music/music_resume_points_watch.dart';
+import 'package:fushi/src/media/selection/media_selection_controller.dart';
+import 'package:fushi/src/media/selection/selection_gestures.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/pages/implementations/music/music_mv_page.dart'
+    show openMusicTrackVideo;
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_detail_chrome.dart'
     show MusicDetailHero, musicDetailHeroGap;
 import 'package:fushi/src/pages/implementations/music/music_local_playlist_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart'
-    show musicBrowseScaffold;
+    show musicBrowsePagePadding, musicBrowseScaffold;
 import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_detail_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_row_surface.dart';
@@ -26,7 +32,15 @@ import 'package:fushi/src/pages/implementations/music/music_collection_view.dart
 import 'package:fushi/src/utils/components/fushi_cover_block.dart'
     show FushiCoverBlockSize;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
-    show FushiToolbarItem;
+    show FushiChromeReveal, FushiToolbarItem;
+import 'package:fushi/src/utils/components/fushi_bottom_action_bar.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
+    show FushiSnackBar;
+import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
+    show ShelfSelectionCheck;
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_reorderable_column.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -44,6 +58,8 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+
+part 'music_track_selection.part.dart';
 
 /// `mm:ss`。
 String formatMusicDuration(int? ms) {
@@ -64,8 +80,9 @@ void openMusicTrackDetail(BuildContext context, String trackUid) {
   );
 }
 
-/// 本地曲目的菜单（行尾按钮之外的整行右键）：播放 / 曲目详情 / 加入歌单；[extra] 追加在
-/// 末尾（歌单页的「从这个歌单移除」）。
+/// 本地曲目的菜单（行尾按钮之外的整行右键）：播放 / 曲目详情 / 加入歌单 / 从音乐库移除
+/// （只从曲库隐藏、不碰磁盘文件，重扫不复活，带撤销）；[extra] 追加在末尾（歌单页的
+/// 「从这个歌单移除」、曲目列表的「多选」）。
 MusicItemMenu musicLocalTrackMenu(
   BuildContext context,
   MusicTrackRow track, {
@@ -92,6 +109,17 @@ MusicItemMenu musicLocalTrackMenu(
           ).read(appProvider).musicSession.engine,
           () => musicPlayItemOf(track),
         ),
+        // 本地 MV（拍板台 jeNKF9u0WJ）：在视频播放页看画面（ASS 特效字幕 / 暂停识别
+        // 画面文字）。视频模块关掉时不给入口。
+        if (isMusicLocalVideoTrack(track) &&
+            _appOf(context).moduleVisibility.isEnabled(ModuleId.video))
+          MusicMenuAction(
+            id: 'watchVideo',
+            label: t.music_mv_watch_in_player,
+            icon: FushiIcons.video,
+            run: (BuildContext c) =>
+                openMusicTrackVideo(context: c, track: track),
+          ),
         MusicMenuAction(
           id: 'detail',
           label: t.music_track_detail,
@@ -109,6 +137,19 @@ MusicItemMenu musicLocalTrackMenu(
                 c,
                 app.database,
                 <MusicPlayItem>[musicPlayItemOf(track)],
+              );
+            },
+          ),
+        if (_appOf(context) case final AppModel app when app.isDatabaseReady)
+          MusicMenuAction(
+            id: 'removeFromLibrary',
+            label: t.music_action_remove_from_library,
+            icon: FushiIcons.removeCircle,
+            run: (BuildContext c) async {
+              await musicRemoveEntriesFromLibrary(
+                c,
+                app.database,
+                <MusicLibraryEntry>[MusicLocalEntry(track)],
               );
             },
           ),
@@ -212,6 +253,11 @@ class MusicTrackListPlaylist {
 ///
 /// 条目可以是本地曲库曲目，也可以是加入音乐库 / 歌单的远程曲目（[MusicLibraryEntry]，v148）：
 /// 两种排在同一条队列里，远程曲目行带封面缩略图与来源名、行尾是「更多」菜单。
+///
+/// 多选（拍板台 IDeN5PYaI7）：每行菜单的「多选」或桌面 Ctrl / ⌘ / Shift + 点击进入；多选态
+/// 下点行 = 勾选（Shift = 区间），底部浮出 [MusicTrackSelectionBar]（接着播 / 加入队列 /
+/// 加入歌单 / 从歌单移除 / 从音乐库移除），返回键先退出多选。选择语义用库页共用的
+/// [MediaSelectionController]。
 class MusicTrackList extends ConsumerStatefulWidget {
   /// 只有本地曲库曲目的列表（专辑 / 艺人 / 歌曲分区）。
   const MusicTrackList({
@@ -298,11 +344,55 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
     for (final MusicLibraryEntry e in entries) e.trackUid,
   ];
 
+  /// 多选状态（散卡键 = [_selectionKey]）。
+  final MediaSelectionController _selection = MediaSelectionController();
+
+  /// 多选底栏浮层（第一次进多选时挂上，之后常驻：退出时还要播收起动效，收起后
+  /// [FushiChromeReveal] 不占指针、不进语义树）。
+  final OverlayPortalController _barPortal = OverlayPortalController();
+
+  bool get _selecting => _selection.active;
+
+  /// 第 [i] 行的选择身份：歌单里同一首可以出现两次，按条目 id；其余列表按曲目 uid。
+  String _selectionKey(int i) {
+    final MusicTrackListPlaylist? p = widget.playlist;
+    if (p != null && p.entryIds.length == entries.length) {
+      return 'entry-${p.entryIds[i]}';
+    }
+    return entries[i].trackUid;
+  }
+
+  List<String> get _selectionKeys => <String>[
+    for (int i = 0; i < entries.length; i++) _selectionKey(i),
+  ];
+
+  /// 列表换了：可见顺序重登记，选中集剔掉已经不在的行（批量移除之后的那些）。
+  void _syncSelectionOrder() {
+    final List<String> keys = _selectionKeys;
+    _selection
+      ..setVisibleOrder(loose: keys, collections: const <int>[])
+      ..retainExisting(loose: keys.toSet(), collections: const <int>{});
+  }
+
+  /// 选中且可见的行号（按列表顺序）。
+  List<int> get _selectedIndexes {
+    final Set<String> keys = _selection.looseKeys;
+    return <int>[
+      for (int i = 0; i < entries.length; i++)
+        if (keys.contains(_selectionKey(i))) i,
+    ];
+  }
+
+  List<MusicLibraryEntry> get _selectedEntries => <MusicLibraryEntry>[
+    for (final int i in _selectedIndexes) entries[i],
+  ];
+
   @override
   void initState() {
     super.initState();
     _resume = ref.read(appProvider).musicSession.watchResumePoints(_uids(_list))
       ..addListener(_onResumeChanged);
+    _syncSelectionOrder();
   }
 
   @override
@@ -313,7 +403,176 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
     _list = widget.entries;
     _pathByUid = musicLocalTrackPathsOf(_list);
     if (!listEquals(_uids(previous), _uids(_list))) _resume.watch(_uids(_list));
+    _syncSelectionOrder();
   }
+
+  /// 进入多选并选中第 [i] 行（已在多选态 = 切换这一行）。
+  void _enterSelection(int i) {
+    if (!_barPortal.isShowing) _barPortal.show();
+    setState(() {
+      _syncSelectionOrder();
+      _selection.enterWith(SelectionSlot.loose(_selectionKey(i)));
+    });
+  }
+
+  void _exitSelection() => setState(_selection.exit);
+
+  /// 点一行：多选态 = 勾选（Shift = 区间扩选）；桌面 Ctrl / ⌘ / Shift + 点击 = 直接进多选；
+  /// 否则 [orElse]（起播）。
+  void _tapRow(int i, VoidCallback orElse) {
+    if (_selecting) {
+      setState(
+        () => _selection.applyTap(
+          SelectionSlot.loose(_selectionKey(i)),
+          selectionTapKind(),
+        ),
+      );
+      return;
+    }
+    if (selectionEntryModifierPressed(context)) {
+      _enterSelection(i);
+      return;
+    }
+    orElse();
+  }
+
+  bool _isSelected(int i) =>
+      _selecting && _selection.looseKeys.contains(_selectionKey(i));
+
+  /// 每行菜单末尾的「多选」。
+  MusicMenuAction _selectAction(int i) => MusicMenuAction(
+    id: 'select',
+    label: t.music_selection_enter,
+    icon: FushiIcons.checklist,
+    run: (_) async {
+      if (mounted) _enterSelection(i);
+    },
+  );
+
+  /// 每行菜单的追加项：歌单页的「从这个歌单移除」+「多选」。
+  List<MusicMenuAction> _rowExtras(int i) => <MusicMenuAction>[
+    ..._playlistActions(i),
+    _selectAction(i),
+  ];
+
+  AppModel get _app => ref.read(appProvider);
+
+  /// 批量动作跑完：退出多选（选中的行可能已经不在列表里了）。
+  Future<void> _runBatch(
+    Future<void> Function(List<MusicLibraryEntry> picked) action,
+  ) async {
+    final List<MusicLibraryEntry> picked = _selectedEntries;
+    if (picked.isEmpty) return;
+    try {
+      await action(picked);
+    } catch (e) {
+      FushiToast.show(
+        msg: t.music_action_failed(error: '$e'),
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    if (mounted) _exitSelection();
+  }
+
+  Widget _selectionBar() {
+    final AppModel app = _app;
+    final MusicPlayerEngine engine = app.musicSession.engine;
+    final bool db = app.isDatabaseReady;
+    final MusicTrackListPlaylist? playlist = widget.playlist;
+    final bool queue = musicQueueEditable(engine);
+    return MusicTrackSelectionBar(
+      count: _selection.length,
+      onSelectAll: () => setState(
+        () => _selection.selectAll(
+          loose: _selection.visibleLooseKeys,
+          collections: const <int>[],
+        ),
+      ),
+      onExit: _exitSelection,
+      onPlayNext: queue
+          ? () => unawaited(
+              _runBatch(
+                (List<MusicLibraryEntry> picked) => musicQueueEntries(
+                  engine,
+                  picked,
+                  widget.albums,
+                  next: true,
+                ),
+              ),
+            )
+          : null,
+      onAddToQueue: queue
+          ? () => unawaited(
+              _runBatch(
+                (List<MusicLibraryEntry> picked) => musicQueueEntries(
+                  engine,
+                  picked,
+                  widget.albums,
+                  next: false,
+                ),
+              ),
+            )
+          : null,
+      onAddToPlaylist: db
+          ? () => unawaited(
+              _runBatch(
+                (List<MusicLibraryEntry> picked) =>
+                    musicAddEntriesToLocalPlaylist(
+                      context,
+                      app.database,
+                      picked,
+                    ),
+              ),
+            )
+          : null,
+      onRemoveFromPlaylist:
+          db && playlist != null && playlist.entryIds.length == entries.length
+          ? () {
+              final List<int> ids = <int>[
+                for (final int i in _selectedIndexes) playlist.entryIds[i],
+              ];
+              unawaited(
+                _runBatch(
+                  (_) => musicRemoveEntriesFromPlaylist(
+                    context,
+                    app.database,
+                    playlist.playlist,
+                    ids,
+                  ),
+                ),
+              );
+            }
+          : null,
+      // 歌单页的「移除」默认指从歌单移除；从音乐库移除只在曲库视图（歌曲 / 专辑 / 艺人）出。
+      onRemoveFromLibrary: db && playlist == null
+          ? () => unawaited(
+              _runBatch(
+                (List<MusicLibraryEntry> picked) =>
+                    musicRemoveEntriesFromLibrary(
+                      context,
+                      app.database,
+                      picked,
+                    ),
+              ),
+            )
+          : null,
+    );
+  }
+
+  /// 把列表包上多选底栏浮层与「返回键先退出多选」。
+  Widget _withSelection(Widget list) => PopScope(
+    canPop: !_selecting,
+    onPopInvokedWithResult: (bool didPop, Object? _) {
+      if (!didPop && _selecting) _exitSelection();
+    },
+    child: OverlayPortal(
+      controller: _barPortal,
+      overlayChildBuilder: (BuildContext context) =>
+          MusicTrackSelectionBarHost(visible: _selecting, bar: _selectionBar()),
+      child: list,
+    ),
+  );
 
   @override
   void dispose() {
@@ -411,80 +670,85 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
       // 已经负责滚动的 shrinkWrap 场景（本地歌单页）。
       assert(shrinkWrap, 'reorderable playlist track list must be shrinkWrap');
       final List<int> ids = widget.playlist!.entryIds;
-      return FushiEntranceScope(
-        child: FushiReorderableColumn(
-          itemCount: entries.length,
-          useDragHandles: true,
-          keyForIndex: (int i) =>
-              ValueKey<String>('music-playlist-reorder-${ids[i]}'),
-          onReorder: onReorder,
-          itemBuilder: (BuildContext c, int i) =>
-              FushiStaggeredEntrance(index: i, child: _row(c, i, mode)),
+      return _withSelection(
+        FushiEntranceScope(
+          child: FushiReorderableColumn(
+            itemCount: entries.length,
+            useDragHandles: true,
+            keyForIndex: (int i) =>
+                ValueKey<String>('music-playlist-reorder-${ids[i]}'),
+            onReorder: onReorder,
+            itemBuilder: (BuildContext c, int i) =>
+                FushiStaggeredEntrance(index: i, child: _row(c, i, mode)),
+          ),
         ),
       );
     }
     final Widget? header = shrinkWrap ? null : widget.header;
-    if (widget.style == MusicViewStyle.blocks &&
-        musicTrackRowSurfaceActive(buildContext)) {
-      return MusicStyledCollection(
-        style: MusicViewStyle.blocks,
-        itemCount: entries.length,
-        shrinkWrap: shrinkWrap,
-        padding: shrinkWrap
-            ? EdgeInsets.zero
-            : withBottomSafeInset(
-                buildContext,
-                EdgeInsets.fromLTRB(
-                  tokens.spacing.page,
-                  (header == null
-                          ? 0
-                          : MediaQuery.paddingOf(buildContext).top) +
-                      tokens.spacing.gap,
-                  tokens.spacing.page,
-                  tokens.spacing.section,
+    if (musicCoverBlocksActive(buildContext, widget.style)) {
+      return _withSelection(
+        MusicStyledCollection(
+          style: MusicViewStyle.blocks,
+          itemCount: entries.length,
+          shrinkWrap: shrinkWrap,
+          padding: shrinkWrap
+              ? EdgeInsets.zero
+              : withBottomSafeInset(
+                  buildContext,
+                  EdgeInsets.fromLTRB(
+                    tokens.spacing.page,
+                    (header == null
+                            ? 0
+                            : MediaQuery.paddingOf(buildContext).top) +
+                        tokens.spacing.gap,
+                    tokens.spacing.page,
+                    tokens.spacing.section,
+                  ),
                 ),
-              ),
-        header: header,
-        headerGap: musicDetailHeroGap(buildContext, tokens.spacing.gap),
-        rowBuilder: (BuildContext c, int i) => _row(c, i, mode),
-        blockBuilder: (BuildContext c, int i, FushiCoverBlockSize size) =>
-            _block(c, i, size, mode),
+          header: header,
+          headerGap: musicDetailHeroGap(buildContext, tokens.spacing.gap),
+          rowBuilder: (BuildContext c, int i) => _row(c, i, mode),
+          blockBuilder: (BuildContext c, int i, FushiCoverBlockSize size) =>
+              _block(c, i, size, mode),
+        ),
       );
     }
     final int lead = header == null ? 0 : 1;
-    return FushiEntranceScope(
-      child: ListView.builder(
-        shrinkWrap: shrinkWrap,
-        primary: shrinkWrap ? false : null,
-        physics: shrinkWrap ? const NeverScrollableScrollPhysics() : null,
-        padding: shrinkWrap
-            ? EdgeInsets.zero
-            : withBottomSafeInset(
-                buildContext,
-                EdgeInsets.fromLTRB(
-                  tokens.spacing.page,
-                  // 带头部的独立页：外壳把正文铺到页头底下，经 MediaQuery 顶部
-                  // padding 让出页头。
-                  (header == null
-                          ? 0
-                          : MediaQuery.paddingOf(buildContext).top) +
-                      tokens.spacing.gap,
-                  tokens.spacing.page,
-                  tokens.spacing.section,
+    return _withSelection(
+      FushiEntranceScope(
+        child: ListView.builder(
+          shrinkWrap: shrinkWrap,
+          primary: shrinkWrap ? false : null,
+          physics: shrinkWrap ? const NeverScrollableScrollPhysics() : null,
+          padding: shrinkWrap
+              ? EdgeInsets.zero
+              : withBottomSafeInset(
+                  buildContext,
+                  EdgeInsets.fromLTRB(
+                    tokens.spacing.page,
+                    // 带头部的独立页：外壳把正文铺到页头底下，经 MediaQuery 顶部
+                    // padding 让出页头。
+                    (header == null
+                            ? 0
+                            : MediaQuery.paddingOf(buildContext).top) +
+                        tokens.spacing.gap,
+                    tokens.spacing.page,
+                    tokens.spacing.section,
+                  ),
                 ),
-              ),
-        itemCount: entries.length + lead,
-        itemBuilder: fushiStaggeredItemBuilder((BuildContext c, int i) {
-          if (header != null && i == 0) {
-            return Padding(
-              padding: EdgeInsets.only(
-                bottom: musicDetailHeroGap(c, tokens.spacing.gap),
-              ),
-              child: header,
-            );
-          }
-          return _row(c, i - lead, mode);
-        }),
+          itemCount: entries.length + lead,
+          itemBuilder: fushiStaggeredItemBuilder((BuildContext c, int i) {
+            if (header != null && i == 0) {
+              return Padding(
+                padding: EdgeInsets.only(
+                  bottom: musicDetailHeroGap(c, tokens.spacing.gap),
+                ),
+                child: header,
+              );
+            }
+            return _row(c, i - lead, mode);
+          }),
+        ),
       ),
     );
   }
@@ -495,13 +759,6 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
     MusicTrackRow track,
     MusicResumeMode mode,
   ) {
-    final String badge = musicFormatBadge(
-      codec: track.codec,
-      isLossless: track.isLossless,
-      sampleRate: track.sampleRate,
-      bitDepth: track.bitDepth,
-      bitrateKbps: track.bitrate,
-    );
     final Duration? resume = musicTrackResumeOf(
       track,
       _resume[track.trackUid],
@@ -510,17 +767,21 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
     final Text subtitle = Text(
       <String>[
         track.artistCredit ?? t.music_artist_unknown,
-        if (badge.isNotEmpty) badge,
+        ...musicLocalTrackBadges(track),
       ].join(' · '),
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
     );
     void play() => _play(i);
+    void tap() => _tapRow(i, play);
+    void longPress() =>
+        _selecting ? _tapRow(i, play) : openMusicTrackDetail(c, track.trackUid);
+    final bool selected = _isSelected(i);
     final MusicItemMenu menu = musicLocalTrackMenu(
       c,
       track,
       onPlay: play,
-      extra: _playlistActions(i),
+      extra: _rowExtras(i),
     );
     if (musicTrackRowSurfaceActive(c)) {
       // 封面来源与旧列表行同一份（[musicLocalTrackCoverOf]，BUG-4494）：行首画
@@ -545,19 +806,23 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
             embeddedFromPath: cover.embeddedFromPath,
             durationText: musicTrackTimeLabel(track.durationMs, resume),
             playing: playing,
-            onTap: play,
-            onLongPress: () => openMusicTrackDetail(c, track.trackUid),
-            trailing: <Widget>[
-              FushiIconButton(
-                key: ValueKey<String>(
-                  _rowKey('music-track-detail', i, track.trackUid),
-                ),
-                icon: FushiIcons.info,
-                tooltip: t.music_track_detail,
-                onTap: () => openMusicTrackDetail(c, track.trackUid),
-              ),
-              if (_onReorder != null) const MusicPlaylistDragHandle(),
-            ],
+            onTap: tap,
+            onLongPress: longPress,
+            trailing: _selecting
+                ? <Widget>[_check(i, selected)]
+                : <Widget>[
+                    FushiIconButton(
+                      key: ValueKey<String>(
+                        _rowKey('music-track-detail', i, track.trackUid),
+                      ),
+                      icon: FushiIcons.info,
+                      tooltip: t.music_track_detail,
+                      onTap: () => openMusicTrackDetail(c, track.trackUid),
+                    ),
+                    // 触屏没有右键：行尾「⋯」打开与右键同一份菜单（多选 / 从歌单移除…）。
+                    menu.button(),
+                    if (_onReorder != null) const MusicPlaylistDragHandle(),
+                  ],
           ),
         ),
       );
@@ -568,8 +833,9 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
           key: ValueKey<String>(_rowKey('music-track', i, track.trackUid)),
           index: i,
           count: entries.length,
-          onTap: play,
-          onLongPress: () => openMusicTrackDetail(c, track.trackUid),
+          selected: selected,
+          onTap: tap,
+          onLongPress: longPress,
           child: FushiListItem(
             leading: widget.showTrackNumbers
                 ? SizedBox(
@@ -594,15 +860,20 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
                   musicTrackTimeLabel(track.durationMs, resume),
                   style: c.fushiType.bodySmall,
                 ),
-                FushiIconButton(
-                  key: ValueKey<String>(
-                    _rowKey('music-track-detail', i, track.trackUid),
+                if (_selecting)
+                  _check(i, selected)
+                else ...<Widget>[
+                  FushiIconButton(
+                    key: ValueKey<String>(
+                      _rowKey('music-track-detail', i, track.trackUid),
+                    ),
+                    icon: FushiIcons.info,
+                    tooltip: t.music_track_detail,
+                    onTap: () => openMusicTrackDetail(c, track.trackUid),
                   ),
-                  icon: FushiIcons.info,
-                  tooltip: t.music_track_detail,
-                  onTap: () => openMusicTrackDetail(c, track.trackUid),
-                ),
-                if (_onReorder != null) const MusicPlaylistDragHandle(),
+                  menu.button(),
+                  if (_onReorder != null) const MusicPlaylistDragHandle(),
+                ],
               ],
             ),
           ),
@@ -658,11 +929,16 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
       overflow: TextOverflow.ellipsis,
     );
     void play() => _play(i);
+    // 多选态下不可用的行也能勾（可移出 / 整理歌单）；平时点了不起播。
+    final VoidCallback? tap = available || _selecting
+        ? () => _tapRow(i, available ? play : () {})
+        : null;
+    final bool selected = _isSelected(i);
     final MusicItemMenu menu = musicRemoteEntryMenu(
       c,
       entry,
       onPlay: play,
-      extra: _playlistActions(i),
+      extra: _rowExtras(i),
     );
     if (musicTrackRowSurfaceActive(c)) {
       return menu.contextMenu(
@@ -688,11 +964,14 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
               coverPath: entry.coverUrl,
               durationText: musicTrackTimeLabel(track.durationMs, resume),
               playing: playing,
-              onTap: available ? play : null,
-              trailing: <Widget>[
-                menu.button(),
-                if (_onReorder != null) const MusicPlaylistDragHandle(),
-              ],
+              onTap: tap,
+              onLongPress: _selecting ? tap : null,
+              trailing: _selecting
+                  ? <Widget>[_check(i, selected)]
+                  : <Widget>[
+                      menu.button(),
+                      if (_onReorder != null) const MusicPlaylistDragHandle(),
+                    ],
             ),
           ),
         ),
@@ -705,7 +984,9 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
           index: i,
           count: entries.length,
           // 服务器在这台设备上没配：行留着（可移出 / 整理歌单），点了不起播、整行减淡。
-          onTap: available ? play : null,
+          onTap: tap,
+          onLongPress: _selecting ? tap : null,
+          selected: selected,
           child: FushiListItem(
             leading: musicMaterialCover(
               MusicCover(coverPath: entry.coverUrl, size: 40),
@@ -733,8 +1014,12 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
                   musicTrackTimeLabel(track.durationMs, resume),
                   style: c.fushiType.bodySmall,
                 ),
-                menu.button(),
-                if (_onReorder != null) const MusicPlaylistDragHandle(),
+                if (_selecting)
+                  _check(i, selected)
+                else ...<Widget>[
+                  menu.button(),
+                  if (_onReorder != null) const MusicPlaylistDragHandle(),
+                ],
               ],
             ),
           ),
@@ -750,8 +1035,31 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
     int i,
     FushiCoverBlockSize size,
     MusicResumeMode mode,
+  ) => _selectableBlock(i, _blockBody(c, i, size, mode));
+
+  /// 多选态的色块：右上角压勾选圈（不吃指针，点按仍走色块自己的 onTap）。
+  Widget _selectableBlock(int i, Widget block) {
+    if (!_selecting) return block;
+    return Stack(
+      children: <Widget>[
+        block,
+        PositionedDirectional(
+          top: 0,
+          end: 0,
+          child: IgnorePointer(child: _check(i, _isSelected(i))),
+        ),
+      ],
+    );
+  }
+
+  Widget _blockBody(
+    BuildContext c,
+    int i,
+    FushiCoverBlockSize size,
+    MusicResumeMode mode,
   ) {
     void play() => _play(i);
+    void tap() => _tapRow(i, play);
     switch (entries[i]) {
       case MusicLocalEntry(:final MusicTrackRow track):
         final Duration? resume = musicTrackResumeOf(
@@ -763,7 +1071,7 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
           c,
           track,
           onPlay: play,
-          extra: _playlistActions(i),
+          extra: _rowExtras(i),
         );
         return menu.contextMenu(
           child: _surfaceRow(
@@ -777,8 +1085,10 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
               embeddedFromPath: track.path,
               durationText: musicTrackTimeLabel(track.durationMs, resume),
               playing: playing,
-              onTap: play,
-              onLongPress: () => openMusicTrackDetail(c, track.trackUid),
+              onTap: tap,
+              onLongPress: _selecting
+                  ? tap
+                  : () => openMusicTrackDetail(c, track.trackUid),
             ),
           ),
         );
@@ -797,7 +1107,7 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
           c,
           entry,
           onPlay: play,
-          extra: _playlistActions(i),
+          extra: _rowExtras(i),
         );
         return menu.contextMenu(
           // 服务器在这台设备上没配：格子留着（可移出 / 整理歌单），点了不起播、减淡。
@@ -818,13 +1128,22 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
                 coverPath: entry.coverUrl,
                 durationText: musicTrackTimeLabel(track.durationMs, resume),
                 playing: playing,
-                onTap: available ? play : null,
+                onTap: available || _selecting
+                    ? () => _tapRow(i, available ? play : () {})
+                    : null,
+                onLongPress: _selecting ? tap : null,
               ),
             ),
           ),
         );
     }
   }
+
+  /// 多选态行尾的勾选圈（key `music-track-check-<行 key>`，测试按它认选中态）。
+  Widget _check(int i, bool selected) => MusicSelectionCheck(
+    key: ValueKey<String>(_rowKey('music-track-check', i, entries[i].trackUid)),
+    selected: selected,
+  );
 
   /// 重设计外壳的曲目行（[MusicTrackRowSurface]）接上「正在播放」：第 [i] 行的
   /// 播放项（与 [_play] 排进队列的同一份）是引擎当前曲时常驻铺色 + 标题水印。
@@ -982,7 +1301,7 @@ class MusicTrackListPage extends StatelessWidget {
         if (musicViewStyleSwitchable(context))
           musicViewStyleToggle(MusicViewKind.tracks, style),
       ],
-      body: MusicTrackList(
+      body: (BuildContext context) => MusicTrackList(
         tracks: tracks,
         albums: albums,
         context: MusicQueueContext.mixed,

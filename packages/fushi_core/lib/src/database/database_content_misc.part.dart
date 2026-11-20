@@ -3,6 +3,34 @@
 // （extension 方案在此翻车过）；私有 mixin 不进公共 API 面。
 part of 'database.dart';
 
+/// 一条要删统计的视频身份（[_FushiDbContentMisc.deleteVideoStatisticsForIdentities]）：
+/// [title] 是删前的库内标题（墓碑与歧义复核的判据），[bookUid] 是稳定身份。
+typedef VideoStatisticsIdentity = ({String title, String bookUid});
+
+/// [_FushiDbContentMisc.syncDictionaryHistory] 的一条保留行：[resultJson] 为 null
+/// 表示正文不变、只改 [position]。
+typedef DictionaryHistoryRetainedRow = ({
+  int id,
+  int position,
+  String? resultJson,
+});
+
+/// [_FushiDbContentMisc.syncDictionaryHistory] 的结果。
+typedef DictionaryHistorySyncResult = ({
+  List<int> insertedIds,
+  List<int> missingIds,
+});
+
+/// [_FushiDbContentMisc.saveMangaChapterStates] 的一项：一章的新进度。
+/// `pageCount` / `readAt` 为 null = 沿用既有值；`clearRead` = 把已读标记撤掉。
+typedef MangaChapterStateWrite = ({
+  String chapterKey,
+  int lastPage,
+  int? pageCount,
+  int? readAt,
+  bool clearRead,
+});
+
 mixin _FushiDbContentMisc
     on _$FushiDatabase, _FushiDbLibrary, _FushiDbTagsSync {
   // ── dictionary metadata ─────────────────────────────────────────
@@ -177,6 +205,44 @@ mixin _FushiDbContentMisc
     });
   });
 
+  /// 查词历史增量落库（BUG-4956）：一次事务里删掉不在 [retained] 里的行、改写保留行的
+  /// `position`（[DictionaryHistoryRetainedRow.resultJson] 非空时连同正文）、插入
+  /// [inserted]。单条 `resultJson` 是 0.26–1.5 MB，整表重写每次查词都要把十条全部
+  /// 重新编码、跨 isolate 拷贝、绑定一遍；增量写只碰新增 / 正文变了的那一条。
+  ///
+  /// 返回插入行的 id（与 [inserted] 同序）和库里已不存在的保留行 id（调用方的行身份
+  /// 过期了，例如表被别处整表替换：那几条要作为新行重写）。
+  Future<DictionaryHistorySyncResult> syncDictionaryHistory({
+    required List<DictionaryHistoryRetainedRow> retained,
+    required List<DictionaryHistoryCompanion> inserted,
+  }) => transaction(() async {
+    await (delete(dictionaryHistory)..where(
+          (t) => t.id.isNotIn(<int>[
+            for (final DictionaryHistoryRetainedRow r in retained) r.id,
+          ]),
+        ))
+        .go();
+    final List<int> missingIds = <int>[];
+    for (final DictionaryHistoryRetainedRow r in retained) {
+      final String? json = r.resultJson;
+      final int changed =
+          await (update(
+            dictionaryHistory,
+          )..where((t) => t.id.equals(r.id))).write(
+            DictionaryHistoryCompanion(
+              position: Value(r.position),
+              resultJson: json == null ? const Value.absent() : Value(json),
+            ),
+          );
+      if (changed == 0) missingIds.add(r.id);
+    }
+    final List<int> insertedIds = <int>[
+      for (final DictionaryHistoryCompanion item in inserted)
+        await into(dictionaryHistory).insert(item),
+    ];
+    return (insertedIds: insertedIds, missingIds: missingIds);
+  });
+
   Future<int> clearDictionaryHistory() => delete(dictionaryHistory).go();
 
   // ── clipboard history ──────────────────
@@ -207,7 +273,14 @@ mixin _FushiDbContentMisc
   /// 只要 title / uid / importedAt / format 等小列的调用方（书架映射、统计事实面、
   /// 导入重复检查、远端去重）走这里，不再把每本几十 KB 的 `chaptersJson` / `tocJson`
   /// 整库拉一遍再丢掉。
-  Future<List<EpubBookMeta>> getEpubBookMetas() async {
+  ///
+  /// [matchingBookKey]：只取与这本书「同名判定」相关的行——它自己、与它库内标题
+  /// 同名的书、以及标题等于 [orTitle] 的书。统计事实面按书读时靠这一小撮行判
+  /// 「标题在库里是否唯一」（legacy 无身份行按标题反查身份），结果与整库判定一致。
+  Future<List<EpubBookMeta>> getEpubBookMetas({
+    String? matchingBookKey,
+    String? orTitle,
+  }) async {
     final JoinedSelectStatement<HasResultSet, dynamic> query =
         selectOnly(epubBooks)
           ..addColumns(<Expression<Object>>[
@@ -221,6 +294,20 @@ mixin _FushiDbContentMisc
             epubBooks.completedAt,
           ])
           ..orderBy(<OrderingTerm>[OrderingTerm.desc(epubBooks.importedAt)]);
+    if (matchingBookKey != null) {
+      final Expression<bool> sameTitleAsBook = epubBooks.title.isInQuery(
+        selectOnly(epubBooks)
+          ..addColumns(<Expression<Object>>[epubBooks.title])
+          ..where(epubBooks.bookKey.equals(matchingBookKey)),
+      );
+      query.where(
+        orTitle == null || orTitle.isEmpty
+            ? epubBooks.bookKey.equals(matchingBookKey) | sameTitleAsBook
+            : epubBooks.bookKey.equals(matchingBookKey) |
+                  sameTitleAsBook |
+                  epubBooks.title.equals(orTitle),
+      );
+    }
     final List<TypedResult> rows = await query.get();
     return rows
         .map(
@@ -233,6 +320,85 @@ mixin _FushiDbContentMisc
             localAddedAt: row.read(epubBooks.localAddedAt),
             extractDir: row.read(epubBooks.extractDir)!,
             completedAt: row.read(epubBooks.completedAt),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  /// 书架投影（[EpubBookShelfRow]，与 [getAllEpubBooks] 同序：importedAt 降序）。
+  /// [bookKey] 非空时只取那一本（单本重建 MediaItem 与整架同一条派生，不分叉）。
+  ///
+  /// 每章字数在 SQLite 侧用 `json_each` 抽成逗号串，整段 `chapters_json` /
+  /// `toc_json` 不出库。`chapters_json` 不是合法 JSON 数组时（空串、损坏）
+  /// `CASE` 短路，不让一本坏行把整个书架查询炸掉；数组元素不是对象、或
+  /// `characters` 缺失 / 不是数字时该章记 0。`group_concat(... ORDER BY key)`
+  /// 钉死数组顺序（聚合顺序不能依赖扫描顺序）。
+  Future<List<EpubBookShelfRow>> getEpubBookShelfRows({String? bookKey}) async {
+    final List<QueryRow> rows = await customSelect(
+      'SELECT book_key, uid, title, author, cover_path, extract_dir, '
+      'chapter_count, format, source_metadata, '
+      // 嵌套 CASE 而不是 AND：SQLite 只保证 CASE 分支惰性求值，AND 两侧
+      // 都可能被求值，而 json_type 碰到非法 JSON 会直接抛错。
+      'CASE WHEN json_valid(chapters_json) THEN '
+      "CASE WHEN json_type(chapters_json) = 'array' THEN ("
+      'SELECT group_concat('
+      "CASE WHEN c.type = 'object' THEN "
+      "CASE WHEN json_type(c.value, '\$.characters') IN ('integer', 'real') "
+      "THEN CAST(json_extract(c.value, '\$.characters') AS INTEGER) "
+      "ELSE 0 END ELSE 0 END, ',' ORDER BY c.key) "
+      'FROM json_each(epub_books.chapters_json) AS c'
+      ') END END AS section_chars '
+      'FROM epub_books '
+      '${bookKey == null ? '' : 'WHERE book_key = ? '}'
+      'ORDER BY imported_at DESC',
+      variables: <Variable<Object>>[
+        if (bookKey != null) Variable<String>(bookKey),
+      ],
+      readsFrom: <ResultSetImplementation<dynamic, dynamic>>{epubBooks},
+    ).get();
+    return rows
+        .map((QueryRow row) {
+          final String? chars = row.read<String?>('section_chars');
+          return EpubBookShelfRow(
+            bookKey: row.read<String>('book_key'),
+            uid: row.read<String>('uid'),
+            title: row.read<String>('title'),
+            author: row.read<String?>('author'),
+            coverPath: row.read<String?>('cover_path'),
+            extractDir: row.read<String>('extract_dir'),
+            chapterCount: row.read<int>('chapter_count'),
+            format: row.read<String>('format'),
+            sourceMetadata: row.read<String?>('source_metadata'),
+            sectionChars: chars == null || chars.isEmpty
+                ? const <int>[]
+                : chars.split(',').map(int.parse).toList(growable: false),
+          );
+        })
+        .toList(growable: false);
+  }
+
+  /// 分卷归组投影（[EpubBookSeriesFacts]，与 [getAllEpubBooks] 同序）：归组只要
+  /// 身份 / 书名 / 格式 / `sourceMetadata`，不把章节与目录 JSON 整表拉出来。
+  Future<List<EpubBookSeriesFacts>> getEpubBookSeriesFacts() async {
+    final JoinedSelectStatement<HasResultSet, dynamic> query =
+        selectOnly(epubBooks)
+          ..addColumns(<Expression<Object>>[
+            epubBooks.bookKey,
+            epubBooks.uid,
+            epubBooks.title,
+            epubBooks.format,
+            epubBooks.sourceMetadata,
+          ])
+          ..orderBy(<OrderingTerm>[OrderingTerm.desc(epubBooks.importedAt)]);
+    final List<TypedResult> rows = await query.get();
+    return rows
+        .map(
+          (TypedResult row) => EpubBookSeriesFacts(
+            bookKey: row.read(epubBooks.bookKey)!,
+            uid: row.read(epubBooks.uid)!,
+            title: row.read(epubBooks.title)!,
+            format: row.read(epubBooks.format)!,
+            sourceMetadata: row.read(epubBooks.sourceMetadata),
           ),
         )
         .toList(growable: false);
@@ -468,23 +634,34 @@ mixin _FushiDbContentMisc
   }) async {
     final int scope = profileId ?? await resolveActiveProfileId();
     await into(studySegmentTombstones).insert(
-      StudySegmentTombstonesCompanion.insert(
-        profileId: Value(scope),
-        mediaKind: mediaKind,
-        mediaKey: mediaKey,
-        deletedAt: deletedAt,
-      ),
-      onConflict: DoUpdate(
-        (old) => StudySegmentTombstonesCompanion(deletedAt: Value(deletedAt)),
-        target: [
-          studySegmentTombstones.profileId,
-          studySegmentTombstones.mediaKind,
-          studySegmentTombstones.mediaKey,
-        ],
-        where: (old) => old.deletedAt.isSmallerThanValue(deletedAt),
-      ),
+      _studySegmentTombstoneRow(scope, mediaKind, mediaKey, deletedAt),
+      onConflict: _studySegmentTombstoneRaise(deletedAt),
     );
   }
+
+  StudySegmentTombstonesCompanion _studySegmentTombstoneRow(
+    int profileId,
+    String mediaKind,
+    String mediaKey,
+    int deletedAt,
+  ) => StudySegmentTombstonesCompanion.insert(
+    profileId: Value(profileId),
+    mediaKind: mediaKind,
+    mediaKey: mediaKey,
+    deletedAt: deletedAt,
+  );
+
+  /// 同键碑只在 [deletedAt] 严格更大时覆盖（碑戳只增不减，BUG-2220）。
+  DoUpdate<$StudySegmentTombstonesTable, StudySegmentTombstoneRow>
+  _studySegmentTombstoneRaise(int deletedAt) => DoUpdate(
+    (old) => StudySegmentTombstonesCompanion(deletedAt: Value(deletedAt)),
+    target: [
+      studySegmentTombstones.profileId,
+      studySegmentTombstones.mediaKind,
+      studySegmentTombstones.mediaKey,
+    ],
+    where: (old) => old.deletedAt.isSmallerThanValue(deletedAt),
+  );
 
   /// v92：删某媒体的 `study_segments` 事实 + 立按身份的墓碑（同一事务）。墓碑
   /// 语义（BUG-2214 / BUG-2220）：压制 `startAt < deletedAt` 的段——删除之后开始的
@@ -496,24 +673,51 @@ mixin _FushiDbContentMisc
     required String mediaKind,
     required String mediaKey,
     int? profileId,
-  }) => transaction(() async {
-    final int scope = profileId ?? await resolveActiveProfileId();
-    final int removed =
-        await (delete(studySegments)..where(
-              (t) =>
-                  t.profileId.equals(scope) &
-                  t.mediaKind.equals(mediaKind) &
-                  t.mediaKey.equals(mediaKey),
-            ))
-            .go();
-    await upsertStudySegmentTombstone(
-      mediaKind: mediaKind,
-      mediaKey: mediaKey,
-      deletedAt: DateTime.now().millisecondsSinceEpoch,
-      profileId: scope,
-    );
-    return removed;
-  });
+  }) => deleteStudySegmentsForMediaKeys(
+    mediaKind: mediaKind,
+    mediaKeys: <String>[mediaKey],
+    profileId: profileId,
+  );
+
+  /// [deleteStudySegmentsForMedia] 的批量形态（BUG-4748）：一个事务、`IN` 分块删段，
+  /// 每个身份一条碑走同一个 batch——视频库一次删上万条时不再是上万个事务。
+  /// 语义与逐条调用一致（同一 Profile 判据、同一碑戳只增规则）。返回删掉的段数。
+  Future<int> deleteStudySegmentsForMediaKeys({
+    required String mediaKind,
+    required Iterable<String> mediaKeys,
+    int? profileId,
+  }) {
+    final List<String> keys = mediaKeys.toSet().toList(growable: false);
+    if (keys.isEmpty) return Future<int>.value(0);
+    return transaction(() async {
+      final int scope = profileId ?? await resolveActiveProfileId();
+      final int deletedAt = DateTime.now().millisecondsSinceEpoch;
+      int removed = 0;
+      for (final List<String> chunk in _chunkForSqlVariables<String>(
+        keys,
+        _kVideoDeleteChunkSize,
+      )) {
+        removed +=
+            await (delete(studySegments)..where(
+                  (t) =>
+                      t.profileId.equals(scope) &
+                      t.mediaKind.equals(mediaKind) &
+                      t.mediaKey.isIn(chunk),
+                ))
+                .go();
+      }
+      await batch((Batch b) {
+        for (final String key in keys) {
+          b.insert(
+            studySegmentTombstones,
+            _studySegmentTombstoneRow(scope, mediaKind, key, deletedAt),
+            onConflict: _studySegmentTombstoneRaise(deletedAt),
+          );
+        }
+      });
+      return removed;
+    });
+  }
 
   /// v92：清空某媒体种类的全部段（统计页「清空全部」）。BUG-2215：清空前对该种类
   /// **每个身份**逐一立碑（`deletedAt = now`）再删行——否则互联 / 云同步下次聚合把
@@ -817,137 +1021,236 @@ mixin _FushiDbContentMisc
     required String title,
     String? bookUid,
     bool includeUnattributed = false,
-  }) => transaction(() async {
-    // v92：有身份即连带删 study_segments 事实 + 按身份立碑。BUG-2108：连带
-    // 忘掉「已看过的片内区间」——删统计 = 当没看过，之后重看重新计首次覆盖。
-    if (bookUid != null && bookUid.isNotEmpty) {
-      await deleteStudySegmentsForMedia(
-        mediaKind: kActivityMediaVideo,
-        mediaKey: bookUid,
+  }) {
+    if (bookUid != null) {
+      return deleteVideoStatisticsForIdentities(<VideoStatisticsIdentity>[
+        (title: title, bookUid: bookUid),
+      ], includeUnattributed: includeUnattributed);
+    }
+    // 歧义遗留 tile：tile 展示面就是该 title 的无身份行本身，按用户意图删，并立
+    // 该 title 的碑。
+    return transaction(() async {
+      await _sweepUnattributedVideoStatistics(<String>[title]);
+      await insertStatisticsTombstone(title, FushiDatabase.statSourceVideo);
+    });
+  }
+
+  /// [deleteVideoStatisticsForIdentity]（有身份形态）的批量版（BUG-4748）：视频库
+  /// 一次删上万条视频时，逐条调用 = 上万个事务 × 每条十来条查询。这里**一个事务**、
+  /// 所有 `IN (...)` 分块、墓碑走 batch，查询数与条数无关（只与分块数有关）。
+  ///
+  /// 结果与按任意顺序逐条调用 [deleteVideoStatisticsForIdentity] 完全一致：
+  /// - 每个身份的 study_segments + 按身份碑 + 「已看过区间」偏好（含按集 `#ep`
+  ///   键）+ 该 uid 的观看行 / 查词计数行全删；
+  /// - 自身 title 恒立碑；被删 uid 涉足的历史 title 过同一套歧义复核（库表同名
+  ///   ≥2，或还有**其它**非空身份的统计行）才立碑 / 扫面。复核放在**全部**目标
+  ///   uid 的行删完之后做：逐条调用时最后一个碰到某 title 的目标看到的正是「只剩
+  ///   非目标身份」的状态，任何一条能为它立碑当且仅当这里能立碑，两者等价且与
+  ///   顺序无关。
+  ///
+  /// `bookUid` 为 '' 的身份照原语义处理（只删 '' 行，不碰段与偏好）。
+  Future<void> deleteVideoStatisticsForIdentities(
+    Iterable<VideoStatisticsIdentity> identities, {
+    bool includeUnattributed = false,
+  }) {
+    final List<VideoStatisticsIdentity> targets = identities.toList(
+      growable: false,
+    );
+    if (targets.isEmpty) return Future<void>.value();
+    return transaction(() async {
+      final List<String> uids = <String>{
+        for (final VideoStatisticsIdentity target in targets) target.bookUid,
+      }.toList(growable: false);
+      final List<String> identified = <String>[
+        for (final String uid in uids)
+          if (uid.isNotEmpty) uid,
+      ];
+      // v92：有身份即连带删 study_segments 事实 + 按身份立碑。BUG-2108：连带
+      // 忘掉「已看过的片内区间」——删统计 = 当没看过，之后重看重新计首次覆盖。
+      if (identified.isNotEmpty) {
+        await deleteStudySegmentsForMediaKeys(
+          mediaKind: kActivityMediaVideo,
+          mediaKeys: identified,
+        );
+        await _deleteVideoWatchCoveragePrefs(identified);
+      }
+      // 本 tile 自身的 title 恒立碑（被删行的防复活；同名幸存者被连带压制是
+      // wire title 粒度的已知限制，见 [deleteVideoStatisticsForIdentity] doc）。
+      final Set<String> tombstoneTitles = <String>{
+        for (final VideoStatisticsIdentity target in targets) target.title,
+      };
+      // 被删 uid 涉足的其它历史 title（改名视频）候选。
+      final Set<String> candidateTitles = <String>{...tombstoneTitles};
+      for (final List<String> chunk in _chunkForSqlVariables<String>(
+        uids,
+        _kVideoDeleteChunkSize,
+      )) {
+        final List<VideoWatchStatisticRow> watchRows = await (select(
+          videoWatchStatistics,
+        )..where((t) => t.bookUid.isIn(chunk))).get();
+        final List<LookupMiningCounterRow> counterRows =
+            await (select(lookupMiningCounters)..where(
+                  (t) =>
+                      t.bookKey.isIn(chunk) &
+                      t.sourceType.equals(FushiDatabase.statSourceVideo),
+                ))
+                .get();
+        candidateTitles
+          ..addAll(watchRows.map((VideoWatchStatisticRow r) => r.title))
+          ..addAll(counterRows.map((LookupMiningCounterRow r) => r.title));
+        await (delete(
+          videoWatchStatistics,
+        )..where((t) => t.bookUid.isIn(chunk))).go();
+        await (delete(lookupMiningCounters)..where(
+              (t) =>
+                  t.bookKey.isIn(chunk) &
+                  t.sourceType.equals(FushiDatabase.statSourceVideo),
+            ))
+            .go();
+      }
+      // '' 不是合法的墓碑/扫面 title：no-book 计数行的 title 就是 ''，给它立碑
+      // 会永久压制全部无书查词计数的同步，且没有任何写入方能清（清碑都守
+      // isNotEmpty；review3-7）。
+      candidateTitles.remove('');
+      // 歧义复核（review4-1，与展示层吸收判据同源）：库表同名 ≥2（= 页面
+      // ambiguousTitles 判据）或该 title 上还有**其它**非空身份的统计行（= owners
+      // ≥2 判据）→ 该 title 的无身份行被展示层否决吸收、显示在别的 orphan/幸存者
+      // tile 里，不属于本 tile 展示面——不扫（扫了是越权连坐）也不立碑（立碑压制
+      // 幸存同名视频的同步）。目标 uid 的行上面已删，这里查到的非空身份必是别人。
+      final Set<String> ambiguous = await _ambiguousVideoStatisticTitles(
+        candidateTitles,
       );
-      await (delete(
+      final Set<String> sweepTitles = <String>{
+        for (final String candidate in candidateTitles)
+          if (!ambiguous.contains(candidate)) candidate,
+      };
+      tombstoneTitles.addAll(sweepTitles);
+      if (includeUnattributed && sweepTitles.isNotEmpty) {
+        await _sweepUnattributedVideoStatistics(sweepTitles);
+      }
+      final int now = DateTime.now().millisecondsSinceEpoch;
+      await batch((Batch b) {
+        b.insertAllOnConflictUpdate(
+          statisticsTombstones,
+          <StatisticsTombstonesCompanion>[
+            for (final String tombstoneTitle in tombstoneTitles)
+              StatisticsTombstonesCompanion.insert(
+                title: tombstoneTitle,
+                sourceType: FushiDatabase.statSourceVideo,
+                deletedAt: now,
+              ),
+          ],
+        );
+      });
+    });
+  }
+
+  /// 删这些视频的「已看过区间」偏好：整书键 + 远端 host-playlist 的按集并集
+  /// （`#ep<n>` 后缀，BUG-2587）。uid 可含 LIKE 通配 `_` / `%`：LIKE 只粗筛，精确
+  /// 前缀在 Dart 里复核，按精确键删，不误删邻名视频的按集键。
+  Future<void> _deleteVideoWatchCoveragePrefs(List<String> bookUids) async {
+    final Set<String> wholeKeys = <String>{
+      for (final String uid in bookUids) videoWatchCoveragePrefKey(uid),
+    };
+    final List<String> episodeKeys = <String>[
+      for (final PreferenceRow row in await (select(
         preferences,
-      )..where((t) => t.key.equals(videoWatchCoveragePrefKey(bookUid)))).go();
-      // 远端 host-playlist 的按集并集（`#ep<n>` 后缀）一并忘掉（BUG-2587）。
-      // uid 形如 `video/<文件名>`，可含 LIKE 通配 `_` / `%`：LIKE 只粗筛，
-      // 精确前缀在 Dart 里复核，按精确键删，不误删邻名视频的按集键。
-      final String episodePrefix = '${videoWatchCoveragePrefKey(bookUid)}#ep';
-      final List<String> episodeKeys =
-          (await (select(
-                preferences,
-              )..where((t) => t.key.like('$episodePrefix%'))).get())
-              .map((PreferenceRow r) => r.key)
-              .where((String k) => k.startsWith(episodePrefix))
-              .toList();
-      if (episodeKeys.isNotEmpty) {
-        await (delete(preferences)..where((t) => t.key.isIn(episodeKeys))).go();
+      )..where((t) => t.key.like('$kVideoWatchCoveragePrefPrefix%#ep%'))).get())
+        if (_isEpisodeKeyOf(row.key, wholeKeys)) row.key,
+    ];
+    for (final List<String> chunk in _chunkForSqlVariables<String>(<String>[
+      ...wholeKeys,
+      ...episodeKeys,
+    ], _kVideoDeleteChunkSize)) {
+      await (delete(preferences)..where((t) => t.key.isIn(chunk))).go();
+    }
+  }
+
+  /// [key] 是否形如 `<wholeKeys 之一>#ep…`（键里可能不止一处 `#ep`，逐处试）。
+  static bool _isEpisodeKeyOf(String key, Set<String> wholeKeys) {
+    for (
+      int at = key.indexOf('#ep');
+      at >= 0;
+      at = key.indexOf('#ep', at + 1)
+    ) {
+      if (wholeKeys.contains(key.substring(0, at))) return true;
+    }
+    return false;
+  }
+
+  /// [titles] 里过不了歧义复核的那些：库表同名 ≥2，或还挂着非空身份的观看行 /
+  /// 视频查词计数行。调用方须先删掉自己目标 uid 的行。
+  Future<Set<String>> _ambiguousVideoStatisticTitles(
+    Iterable<String> titles,
+  ) async {
+    final Set<String> out = <String>{};
+    for (final List<String> chunk in _chunkForSqlVariables<String>(
+      titles.toList(growable: false),
+      _kVideoDeleteChunkSize,
+    )) {
+      final Map<String, int> libraryCount = <String, int>{};
+      for (final TypedResult row
+          in await (selectOnly(videoBooks)
+                ..addColumns(<Expression<Object>>[videoBooks.title])
+                ..where(videoBooks.title.isIn(chunk)))
+              .get()) {
+        final String title = row.read(videoBooks.title)!;
+        libraryCount[title] = (libraryCount[title] ?? 0) + 1;
+      }
+      libraryCount.forEach((String title, int n) {
+        if (n >= 2) out.add(title);
+      });
+      for (final TypedResult row
+          in await (selectOnly(videoWatchStatistics, distinct: true)
+                ..addColumns(<Expression<Object>>[videoWatchStatistics.title])
+                ..where(
+                  videoWatchStatistics.title.isIn(chunk) &
+                      videoWatchStatistics.bookUid.isNotNull() &
+                      videoWatchStatistics.bookUid.equals('').not(),
+                ))
+              .get()) {
+        out.add(row.read(videoWatchStatistics.title)!);
+      }
+      for (final TypedResult row
+          in await (selectOnly(lookupMiningCounters, distinct: true)
+                ..addColumns(<Expression<Object>>[lookupMiningCounters.title])
+                ..where(
+                  lookupMiningCounters.title.isIn(chunk) &
+                      lookupMiningCounters.sourceType.equals(
+                        FushiDatabase.statSourceVideo,
+                      ) &
+                      lookupMiningCounters.bookKey.equals('').not(),
+                ))
+              .get()) {
+        out.add(row.read(lookupMiningCounters.title)!);
       }
     }
-    // 本 tile 自身的 title 恒立碑（被删行的防复活；同名幸存者被连带压制是
-    // wire title 粒度的已知限制，见方法 doc）。
-    final Set<String> tombstoneTitles = <String>{title};
-    // 被删 uid 涉足的其它历史 title（改名视频）候选。
-    final Set<String> candidateTitles = <String>{};
-    if (bookUid != null) {
-      final List<VideoWatchStatisticRow> uidWatchRows = await (select(
-        videoWatchStatistics,
-      )..where((t) => t.bookUid.equals(bookUid))).get();
-      final List<LookupMiningCounterRow> uidCounterRows =
-          await (select(lookupMiningCounters)..where(
-                (t) =>
-                    t.bookKey.equals(bookUid) &
-                    t.sourceType.equals(FushiDatabase.statSourceVideo),
-              ))
-              .get();
-      candidateTitles
-        ..addAll(uidWatchRows.map((VideoWatchStatisticRow r) => r.title))
-        ..addAll(uidCounterRows.map((LookupMiningCounterRow r) => r.title))
-        ..add(title);
-      await (delete(
-        videoWatchStatistics,
-      )..where((t) => t.bookUid.equals(bookUid))).go();
-      await (delete(lookupMiningCounters)..where(
-            (t) =>
-                t.bookKey.equals(bookUid) &
-                t.sourceType.equals(FushiDatabase.statSourceVideo),
-          ))
-          .go();
-    }
-    // '' 不是合法的墓碑/扫面 title：no-book 计数行的 title 就是 ''，给它立碑
-    // 会永久压制全部无书查词计数的同步，且没有任何写入方能清（清碑都守
-    // isNotEmpty；review3-7）。
-    candidateTitles.remove('');
-    // 逐 title 歧义复核（review4-1，与展示层吸收判据同源）：库表同名 ≥2
-    // （= 页面 ambiguousTitles 判据）或该 title 上还有**其它**非空身份的统计
-    // 行（= owners ≥2 判据）→ 该 title 的无身份行被展示层否决吸收、显示在
-    // 别的 orphan/幸存者 tile 里，不属于本 tile 展示面——不扫（扫了是越权
-    // 连坐）也不立碑（立碑压制幸存同名视频的同步）。被删 uid 在歧义 title
-    // 下的行已被上面的 uid 精确删除清掉；其经 peer title 粒度记录的复活只
-    // 会以无身份形式回来，属 wire 粒度已知限制。
-    final Set<String> sweepTitles = <String>{};
-    for (final String candidate in candidateTitles) {
-      final List<VideoBookRow> libraryRows = await (select(
-        videoBooks,
-      )..where((t) => t.title.equals(candidate))).get();
-      if (libraryRows.length >= 2) continue;
-      final VideoWatchStatisticRow? otherIdentityWatch =
-          await (select(videoWatchStatistics)
-                ..where(
-                  (t) =>
-                      t.title.equals(candidate) &
-                      t.bookUid.isNotNull() &
-                      t.bookUid.equals('').not() &
-                      t.bookUid.equals(bookUid ?? '').not(),
-                )
-                ..limit(1))
-              .getSingleOrNull();
-      if (otherIdentityWatch != null) continue;
-      final LookupMiningCounterRow? otherIdentityCounter =
-          await (select(lookupMiningCounters)
-                ..where(
-                  (t) =>
-                      t.title.equals(candidate) &
-                      t.sourceType.equals(FushiDatabase.statSourceVideo) &
-                      t.bookKey.equals('').not() &
-                      t.bookKey.equals(bookUid ?? '').not(),
-                )
-                ..limit(1))
-              .getSingleOrNull();
-      if (otherIdentityCounter != null) continue;
-      sweepTitles.add(candidate);
-      tombstoneTitles.add(candidate);
-    }
-    if (bookUid == null) {
-      // 歧义遗留 tile：tile 展示面就是该 title 的无身份行本身，按用户意图删。
-      sweepTitles
-        ..clear()
-        ..add(title);
-    } else if (!includeUnattributed) {
-      sweepTitles.clear();
-    }
-    if (sweepTitles.isNotEmpty) {
-      final List<String> sweepList = sweepTitles.toList();
+    return out;
+  }
+
+  /// 删 [titles] 下的**无身份**视频统计行（NULL 与 '' 都算，review-10）。
+  Future<void> _sweepUnattributedVideoStatistics(
+    Iterable<String> titles,
+  ) async {
+    for (final List<String> chunk in _chunkForSqlVariables<String>(
+      titles.toSet().toList(growable: false),
+      _kVideoDeleteChunkSize,
+    )) {
       await (delete(videoWatchStatistics)..where(
             (t) =>
-                t.title.isIn(sweepList) &
+                t.title.isIn(chunk) &
                 (t.bookUid.isNull() | t.bookUid.equals('')),
           ))
           .go();
       await (delete(lookupMiningCounters)..where(
             (t) =>
                 t.bookKey.equals('') &
-                t.title.isIn(sweepList) &
+                t.title.isIn(chunk) &
                 t.sourceType.equals(FushiDatabase.statSourceVideo),
           ))
           .go();
     }
-    for (final String tombstoneTitle in tombstoneTitles) {
-      await insertStatisticsTombstone(
-        tombstoneTitle,
-        FushiDatabase.statSourceVideo,
-      );
-    }
-  });
+  }
 
   /// 删除某游戏（[gameId] = `galgames.id`）的**纯统计**：v92 `study_segments` 段
   /// （按身份立碑防互联/云同步复活）、当前 Profile 的游玩会话 `galgame_sessions`
@@ -1175,6 +1478,39 @@ mixin _FushiDbContentMisc
     ),
   );
 
+  /// 描述符的读-改-写，在**一个事务里**重读当前 `sourceMetadata` 再写回
+  /// （gap-mangamisc-1）。
+  ///
+  /// 在线漫画描述符有几个写方（源刷新、选章、订阅开关、后台更新探针），各自拿着
+  /// 自己手上的快照整份写回，就会互相回滚：进作品页几秒内点订阅，随后落库的那次
+  /// 源刷新用的是进页时的快照，把订阅位写回旧值。[rewrite] 收到的是事务内读到的
+  /// 当前值，只改它负责的字段；返回 null = 不写。行不存在时不调用 [rewrite]、
+  /// 返回 null。[rewrite] 抛错整个事务回滚、原样抛给调用方。
+  Future<R?> rewriteEpubBookMihonState<R>(
+    String bookKey,
+    ({String sourceMetadata, int chapterCount, String chaptersJson, R result})?
+    Function(String? currentSourceMetadata)
+    rewrite,
+  ) => transaction<R?>(() async {
+    final EpubBookRow? row = await getEpubBook(bookKey);
+    if (row == null) return null;
+    final ({
+      String sourceMetadata,
+      int chapterCount,
+      String chaptersJson,
+      R result,
+    })?
+    next = rewrite(row.sourceMetadata);
+    if (next == null) return null;
+    await updateEpubBookMihonState(
+      bookKey,
+      sourceMetadata: next.sourceMetadata,
+      chapterCount: next.chapterCount,
+      chaptersJson: next.chaptersJson,
+    );
+    return next.result;
+  });
+
   // ── manga_chapter_states（v89）─────────────────────────────────────
   //
   // 「章」的读取状态。为什么不并进 reader_positions：那张表 bookUid 是
@@ -1295,6 +1631,45 @@ mixin _FushiDbContentMisc
         updatedAt: now,
       ),
     );
+  }
+
+  /// 一次写多章的进度（Kavita 对账 / 批量标已读、未读）：**一个事务、同一个
+  /// `updatedAt`**（gap-mangamisc-2）。
+  ///
+  /// 逐章调 [saveMangaChapterState] 时每章各取一次 `DateTime.now()`，按章表顺序
+  /// （新 → 旧）写下来，最后写的最旧那章 `updatedAt` 最大——「继续阅读」按
+  /// `updatedAt` 最大选章，于是落到已读过的旧章。同一时间戳下它按章表顺序取最先
+  /// 出现（最新）的那章。不能把 `updatedAt` 置 0 绕开：同步按它做 LWW。
+  ///
+  /// 每项的列语义同 [saveMangaChapterState]：`pageCount` / `readAt` 为 null 时沿用
+  /// 既有值；`clearRead` 为真时 `readAt` 置空（同 [clearMangaChapterRead]）。
+  Future<void> saveMangaChapterStates({
+    required String bookUid,
+    required List<MangaChapterStateWrite> writes,
+  }) async {
+    if (bookUid.isEmpty || writes.isEmpty) return;
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await transaction(() async {
+      final Map<String, MangaChapterStateRow> existing =
+          await getMangaChapterStates(bookUid);
+      for (final MangaChapterStateWrite write in writes) {
+        if (write.chapterKey.isEmpty) continue;
+        final MangaChapterStateRow? row = existing[write.chapterKey];
+        await into(mangaChapterStates).insertOnConflictUpdate(
+          MangaChapterStatesCompanion.insert(
+            bookUid: bookUid,
+            chapterKey: write.chapterKey,
+            lastPage: Value<int>(write.lastPage),
+            lastFraction: const Value<int>(-1),
+            pageCount: Value<int?>(write.pageCount ?? row?.pageCount),
+            readAt: Value<int?>(
+              write.clearRead ? null : (write.readAt ?? row?.readAt),
+            ),
+            updatedAt: now,
+          ),
+        );
+      }
+    });
   }
 
   /// 显式把一章标回未读（作品页的「标为未读」动作）。
@@ -1491,6 +1866,9 @@ mixin _FushiDbContentMisc
       // v77：标签映射是逻辑外键，随宿主显式清理（附属 SRT 行也一并清）。
       await deleteTagAssignmentsForHost(TagHostKind.srt, uid);
     }
+    // v155：单本刮削资料 / 附加图是逻辑外键，随宿主同事务清（附属 SRT 行一并清；
+    // 图片文件由删除路径之后的 ItemImageStore 回收扫）。
+    await _purgeItemScrapeRows(this, MediaKind.srt, srtUids);
     await (delete(srtBooks)..where((t) => t.bookKey.equals(bookKey))).go();
     await deleteTagAssignmentsForHost(TagHostKind.epub, bookKey);
     // Audiobook + its cues are keyed directly by bookKey now.
@@ -1504,6 +1882,7 @@ mixin _FushiDbContentMisc
       // v83 顺手修的历史缺口：epub 删除此前不清合集成员行 → 计数虚高、
       // 移空自删失效、孤儿被 sync 原样发布。与 video/game 删除路径对齐。
       await removeEntryFromAllCollections(MediaKind.epub, bookUid);
+      await _purgeItemScrapeRows(this, MediaKind.epub, <String>[bookUid]);
     }
     if (tombstone) {
       await into(bookTombstones).insertOnConflictUpdate(

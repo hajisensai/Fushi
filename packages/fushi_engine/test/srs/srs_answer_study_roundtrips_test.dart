@@ -4,8 +4,8 @@
 // 不随库大小增长；计数、下一张、预取的猜测都出自这一次排队（复习页不再另调 deckSummary / nextCard）。
 //
 // 基准（手动；默认跳过）：FUSHI_SRS_ANSWER_BENCH=<笔记数>（每条两张卡）dart test test/srs/srs_answer_study_roundtrips_test.dart
-// 库开在临时文件上、走后台 isolate 连接（与 app 相同）。大库导入很慢：再设 FUSHI_SRS_ANSWER_BENCH_DB=<文件>，
-// 文件不存在时只导入并存到那里（不计时作答），存在时拷一份来量（前后两版量同一份库）。
+// 库开在临时文件上、走后台 isolate 连接（与 app 相同）。大库导入很慢：再设 FUSHI_SRS_ANSWER_BENCH_DB=<库目录>，
+// 目录不存在时只导入并存到那里（不计时作答），存在时拷一份来量（前后两版量同一份库）。
 import 'dart:io';
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
@@ -21,14 +21,15 @@ import 'support/srs_test_storage.dart';
 
 const String _uid = '01928c3e-0000-7000-8000-0000000a5e01';
 
-Future<(SrsDbStore, CountingInterceptor)> _open({
+Future<(SrsDbStore, SrsReadCounter)> _open({
   bool inline = true,
   String? path,
   String? copyFrom,
 }) async {
-  final CountingInterceptor counter = CountingInterceptor();
+  final SrsReadCounter counter = SrsReadCounter();
   final Directory tmp = Directory.systemTemp.createTempSync('srs_ans_');
-  if (copyFrom != null) File(copyFrom).copySync('${tmp.path}/srs.db');
+  // 基准缓存的是一个新代库目录：拷进临时目录再开（不改缓存）。
+  if (copyFrom != null) copyTestSrsLibrary(copyFrom, tmp.path);
   addTearDown(() {
     try {
       tmp.deleteSync(recursive: true);
@@ -36,13 +37,9 @@ Future<(SrsDbStore, CountingInterceptor)> _open({
       // 句柄晚释放。
     }
   });
-  final TestSrs srs = await openTestSrsAt(
-    path ?? '${tmp.path}/srs.db',
-    interceptor: counter,
-    inline: inline,
-  );
+  if (path != null) Directory(path).createSync(recursive: true);
+  final TestSrs srs = openTestSrsIn(path ?? tmp.path);
   final SrsDbStore store = await SrsDbStore.open(
-    db: srs.db,
     core: srs.core,
     profileUid: _uid,
     deviceId: 'dev',
@@ -79,7 +76,7 @@ typedef _Cost = ({int core, int statements});
 /// 连答 [answers] 张（都按「良好」），返回每次作答的最大开销。每次都核对排出的下一张与重新排队一致。
 Future<_Cost> _answerLoop(
   SrsDbStore store,
-  CountingInterceptor counter,
+  SrsReadCounter counter,
   String deck,
   int answers,
 ) async {
@@ -114,7 +111,7 @@ void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
 
   test('评分 → 下一张：两次内核命令，开销不随库大小增长，排出的下一张与重新排队一致', () async {
-    final (SrsDbStore store, CountingInterceptor counter) = await _open();
+    final (SrsDbStore store, SrsReadCounter counter) = await _open();
     await _import(store, 30);
     final String deck = await _biggestRoot(store);
     final _Cost small = await _answerLoop(store, counter, deck, 5);
@@ -135,8 +132,8 @@ void main() {
     '基准：评分 → 下一张',
     () async {
       final String? cached = Platform.environment['FUSHI_SRS_ANSWER_BENCH_DB'];
-      final bool build = cached != null && !File(cached).existsSync();
-      final (SrsDbStore store, CountingInterceptor counter) = await _open(
+      final bool build = cached != null && !Directory(cached).existsSync();
+      final (SrsDbStore store, SrsReadCounter counter) = await _open(
         inline: false,
         path: build ? cached : null,
         copyFrom: build ? null : cached,

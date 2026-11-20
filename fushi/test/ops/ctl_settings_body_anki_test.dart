@@ -6,9 +6,11 @@ import 'package:fushi/src/anki/ankiconnect_port_repair.dart'
     show AnkiConnectPortWriteStatus;
 import 'package:fushi/src/ops/ctl_settings_body_anki.dart';
 import 'package:fushi/src/ops/ctl_settings_body_items.dart';
+import 'package:fushi/src/ops/settings_index.dart' show guardSettingsCliInput;
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi_cli/fushi_cli.dart' show CtlFailure;
 
 List<SettingsItem> _allItems() => <SettingsItem>[
   for (final CtlBodyPage page in buildCtlAnkiBodyPages()) ...page.items,
@@ -198,6 +200,76 @@ void main() {
       for (final String name in expected) {
         expect(names, contains(name));
       }
+    });
+  });
+
+  // 视频模板服务改抛带码异常后，ctl / AI 通道必须仍回 409 + 整句文案（改之前是
+  // StateError → guardSettingsCliInput → 409）；落成 500 internal + 码名就是回归。
+  group('视频模板带码错误 → ctl 失败', () {
+    Future<CtlFailure> failureOf(AnkiVideoTemplateException error) async {
+      try {
+        // 与真实路由同一层叠：config run 外面包着 guardSettingsCliInput。
+        await guardSettingsCliInput<void>(
+          () => guardCtlAnkiVideoTemplate<void>(() async => throw error),
+        );
+      } on CtlFailure catch (failure) {
+        return failure;
+      }
+      fail('应当抛 CtlFailure');
+    }
+
+    test('除字段名不合法外的每个码都是 409 conflict，消息是整句文案而不是码名', () async {
+      for (final AnkiVideoTemplateErrorCode code
+          in AnkiVideoTemplateErrorCode.values) {
+        if (code == AnkiVideoTemplateErrorCode.invalidField) continue;
+        final CtlFailure failure = await failureOf(
+          AnkiVideoTemplateException(
+            code,
+            cause: StateError('partial write'),
+            rollbackCause: const AnkiVideoTemplateException(
+              AnkiVideoTemplateErrorCode.rollbackRejected,
+            ),
+          ),
+        );
+        expect(failure.status, 409, reason: code.name);
+        expect(failure.code, 'conflict', reason: code.name);
+        expect(failure.message, isNotEmpty, reason: code.name);
+        expect(
+          failure.message,
+          isNot(contains('AnkiVideoTemplateException')),
+          reason: code.name,
+        );
+        expect(failure.message, isNot(contains(code.name)), reason: code.name);
+      }
+    });
+
+    test('没映射句子音频：409 + 页面上那句提示', () async {
+      final CtlFailure failure = await failureOf(
+        const AnkiVideoTemplateException(
+          AnkiVideoTemplateErrorCode.audioMappingRequired,
+        ),
+      );
+      expect(failure.status, 409);
+      expect(failure.message, t.anki_video_template_audio_required);
+    });
+
+    test('字段名不合法是调用方参数的问题：400 bad_request', () async {
+      final CtlFailure failure = await failureOf(
+        const AnkiVideoTemplateException(
+          AnkiVideoTemplateErrorCode.invalidField,
+        ),
+      );
+      expect(failure.status, 400);
+      expect(failure.code, 'bad_request');
+      expect(failure.message, t.anki_video_template_error_field_invalid);
+    });
+
+    test('不是带码异常的错误原样穿过，由外层照旧映射', () async {
+      await expectLater(
+        guardCtlAnkiVideoTemplate<void>(() async => throw StateError('x')),
+        throwsStateError,
+      );
+      expect(await guardCtlAnkiVideoTemplate<int>(() async => 7), 7);
     });
   });
 

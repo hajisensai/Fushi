@@ -310,7 +310,7 @@ AI 助手是 IO 和编排代码，按「Rust 胖核心」规则留在 Dart（不
 - **终端命令名**：`fushi_cli ai ask "<一句话>"`，不是 `fushi_cli ai "<一句话>"`——`ai` 组已是 AI 提供商命令组。
 - **Android 应用外球「AI」**：把 Fushi 拉到前台再开 AI 浮层（与「同步」同一语义），**不是**独立小窗。AI 助手要主进程的完整 AppModel（操作目录、数据库、导航）；`:popup` 进程只有精简初始化，在那里跑目录要跨进程开库，风险大于收益。
 - **附上屏幕文字**：截的是 Fushi 自己的窗口（复用反馈截图）再走系统 OCR；Android 应用外截屏 OCR 的结果只留在原生侧做点字，拿不到全文。macOS 上 WKWebView 正文截不到；Linux 没有系统 OCR，不出按钮。
-- **刮削技能**：没有「清除作品身份、退回待确认」的路由，认领撤销不了，所以每部作品都出候选卡由用户点（卡片即确认），不自动认领高置信候选。
+- **刮削技能**：没有「清除作品身份、退回待确认」的路由，认领撤销不了，所以每部作品都出候选卡由用户点（卡片即确认），不自动认领高置信候选。2026-11-18 已补成可撤销：`video.work.identify` / `video.scrape.confirm` 改为 write + undo（执行前抓作品单元整块快照，撤销恢复认领前状态、无身份的作品退回待确认队列，认领后被手动改过报 superseded），技能行为留给 AI 库管家再改。
 - **不可逆操作不强制带表态参数**：路由本身没有 `confirm` 的不可逆操作照样只出确认卡片；确认由 AI 运行时按描述强制，模型改不了。
 - **SRS 冲突「保留」**：撤销需要 Rust 胖核心的「重开冲突」命令，暂为不可逆（选「删除」可撤销）。
 - **恢复备份**：路由不在恢复前自动快照，仍为不可逆。
@@ -381,3 +381,21 @@ BUG-3783（字幕补全把已存在的同名字幕报成「已安装」）、BUG
 - **会话库**：`AiAgentController` 实现 `AiAgentSessionLibrary`（`ai_agent_conversation_controller.dart`）：列表只投影元数据列（不读 `payload_json`），不列互联 host 替已配对设备跑的远端会话（场景 `remote`，`kAiAgentLocalLibraryExcludedScenes`；那些会话属于发起的设备，「AI 操作记录」页仍按全部会话配标题），切换前先存好当前这场，删除当前这场换成新对话、在途一轮的收尾存档不写回已删会话；切过 Profile 后再打开 AI 助手，手上属于别的 Profile 的那场换成新对话。远端会话（`RemoteAiAgentSession`）没有本机存档，`sessionLibrary` 为 null，不出会话入口。
 - **界面**：`ai_agent_sessions.dart` 的 `AiAgentSessionList`：宽屏整页常驻对话左侧，窄屏整页与浮层 / 侧栏顶栏点「会话」按钮弹出；删除先确认，确认文案说明操作记录保留、仍可在「AI 操作记录」撤销。
 
+
+### 12.7 助手自主联网搜索与「首次确认」（2026-11-20）
+
+- **拍板**：所有者 2026-11-20「并且 ai 可以自主搜索之类的？会不会更好」；问到每次搜索前要不要确认时答「第一次要确认吧」。即第一次使用时让用户确认一次（写明搜索词会发给哪个后端），同意后记住、不再逐次确认，用户能在设置里收回。
+- **两条操作**（`ops/ctl_web_search_routes.dart` + `op_descriptions_web_search.dart`，CLI `fushi_cli web search` / `web read`）：
+  - `web.search`：搜索词发给「设置 › AI › 联网搜索」配的后端（`WebSearchClient`，SearXNG / Brave，与字幕歌词补齐同一个客户端），每条结果发一个**结果 id**（随机 12 位十六进制、进程内存、30 分钟过期），只回 `{id, title, snippet, site}`；本机 / 内网地址的结果直接不给。
+  - `web.read`：**只收 `web.search` 给的结果 id，不收任意地址**。正文剥成纯文本，一段 4000 字，`offset` / `nextOffset` 分页，整页最多留 20 万字；同一页分页读缓存、不重抓。
+  - 抓页沿用 `WebSearchClient.fetchPage` 的 SSRF 防护（只抓公网地址、逐跳校验重定向、按已校验 IP 建连 / 经代理也只发 IP），这里没有另写出站路径。
+- **为什么不收任意 URL**：模型拼的地址路径 / query 能夹带它看到的任何东西发给任意主机，撤销收不回（§5.2）。限定成刚才的搜索结果后，目的地址由搜索后端决定，模型只能在后端给的地址里挑。用户自己在对话里贴的 URL 本可同理放行（地址出自用户之手），但路由 / 工具箱拿不到「这个地址来自用户消息」的可靠证据，做不干净，这次不做；要读用户给的网址仍走 `web.open`（逐次确认）。
+- **风险级仍是 `irreversible`**：搜索词 / 网页地址确实发给了已指派 LLM 以外的第三方。「首次确认」是在这个风险级上加的**长期同意**，不是把它降成 read：
+  - `OpDescription` / `FushiOp` 新增 `consentGranted`（返回本机是否已同意），`AgentToolSpec` 新增 `preapproved`。AI 助手工具箱（`AiAgentToolbox`）在同意过时把 `preapproved` 置真、不出确认卡，并照「已表态」注入表态参数；`FushiOpSpec.needsConfirmation` 仍按静态描述算，所以 MCP 外部接入、远端宿主、库管家这些只看静态描述的调用方照旧逐次确认 / 不执行（更保守）。
+  - 同意记在路由里：两条操作都带表态参数 `confirm`，还没同意时没有 `confirm` 就拒绝（`consent_required`），带着的那一次顺带写偏好 `ai_agent_web_search = allow`。AI 助手里 `confirm` 只在用户点了确认卡之后注入，模型代答不了；CLI 用 `--yes`。
+  - 偏好 `ai_agent_web_search`：`''` 还没同意 / `allow` / `off`。**设备本地**（`SyncRepository.deviceLocalPrefKeys`：不进备份 / 设置同步 / Profile）——同意的是把数据发给这台设备上配的那个后端。
+  - 设置 › AI › 联网搜索新增「允许 AI 助手自主联网搜索」开关（`userOnly`，助手的 `settings.set` 写不进去）：关 = `off`，两条操作 unavailable、清单里藏起来、按名字也调不动；再打开回到 `''`，下次用时重新确认。没配后端（或配不全）时两条操作 unavailable，不发任何请求，`no_search_backend` 的说明引导去设置。
+  - 确认卡（`ai_agent_page.dart`）认出这两条操作时换文案：「允许 AI 助手联网搜索？搜索词与要读的网页地址会发给 <后端名>……同意后本机记住」，后端名 Brave 写 `Brave Search`、SearXNG 带实例主机名。
+- **让助手知道能搜**：不进常驻工具（常驻 = 每轮多一份 schema，AI 层在省 token；联网搜索一场对话用不了几次，第一次用多一轮 `ops__describe` 更划算）。改为工具箱的 prompt 说明段（`kAiAgentOpPromptNotes`）加一句「本机资料与资料源都查不到、要核对作品事实时用 web__search，再用 web__read 读结果」，**只在操作可用时出现**：没配后端 / 关了开关的用户一个字也不多付。
+- **棘轮守卫**：两条操作的模型参数是 `query` / `limit` / `id` / `offset`，没有地址类参数，`kAddressParamOpsWithoutConfirmation` 不需要登记；而且静态描述本来就是 irreversible（`needsConfirmation` 为真），首次确认只放宽 AI 助手进程内的确认卡，守卫看到的仍是「先确认」。路由测试另钉了「web.read 没有地址类参数」。
+- 与 2026-11-04 字幕生成的「把抓到的网页交给 AI」（`ai_web_search_page_fetch`）互相独立：那条管的是字幕生成自动抓前 3 页交给 AI，这条管助手的两条操作。

@@ -53,7 +53,15 @@ class LocalDirectoryAssetStore implements SyncAssetStore {
   Future<AssetEntry?> findAsset(String namespaceId, String name) async {
     final File f = File(p.join(namespaceId, _safeName(name)));
     if (!f.existsSync()) return null;
-    return AssetEntry(id: f.path, name: name, sizeBytes: f.lengthSync());
+    // 与 [listChildren] 同一口径带上修改时刻：SRS 说明文件（`srsListRemoteProfiles`）按它分辨候选、在几台设备报的
+    // 名字里挑最新的；以前这里不给，本地目录后端读出来的时刻永远是 null。
+    final FileStat stat = f.statSync();
+    return AssetEntry(
+      id: f.path,
+      name: name,
+      sizeBytes: stat.size,
+      modifiedAt: stat.modified.millisecondsSinceEpoch,
+    );
   }
 
   @override

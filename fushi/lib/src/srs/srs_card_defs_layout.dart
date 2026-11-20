@@ -189,27 +189,29 @@ String srsDefsLayoutCss(SrsDefsLayoutConfig c) {
       '.fushi-srs-main-badge::before{content:var(--fushi-srs-label-main);}',
     )
     // 主词典收起 / 展开：标题行本身不可点（模板 pointer-events:none），按钮单独接收点按；
-    // 带底色，比「其他词典」的纯箭头更显眼。箭头朝下 = 展开中、朝右 = 已收起。
+    // 与「其他词典」行尾同一套纯箭头（无底色、不用负外边距——带底色时圆底顶出词典卡的
+    // 圆角，3bYq5GDy80），40px 命中区不变。箭头朝下 = 展开中、朝右 = 已收起。
     ..write(
       '.fushi-srs-main-toggle{pointer-events:auto;flex:0 0 auto;'
       'display:inline-flex;align-items:center;justify-content:center;'
-      'width:40px;height:40px;margin:-3px -6px -3px 0;padding:0;border:0;'
-      'border-radius:999px;background:var(--fc-surface-2);color:var(--fc-fg);'
+      'width:40px;height:40px;padding:0;border:0;border-radius:999px;'
+      'background:none;color:var(--fc-fg-muted);'
       'cursor:pointer;-webkit-tap-highlight-color:transparent;}',
     )
     ..write(
       '.fushi-srs-main-toggle::after{content:"";width:8px;height:8px;'
       'margin-left:-4px;border-right:2px solid currentColor;'
       'border-bottom:2px solid currentColor;transform:rotate(-45deg);'
-      'transition:transform 200ms cubic-bezier(0.2,0,0,1);}',
+      'transition:transform 200ms cubic-bezier(0.2,0,0,1);opacity:0.8;}',
     )
     ..write(
       '.fushi-srs-main-toggle--open::after{margin-left:0;margin-top:-4px;'
       'transform:rotate(45deg);}',
     )
+    // 主词典卡自己是 surface-1 底，悬停高亮取高一级。
     ..write(
       '@media (hover:hover){.fushi-srs-main-toggle:hover'
-      '{background:var(--fc-surface-3, var(--fc-surface-2));}}',
+      '{background:var(--fc-surface-2);color:var(--fc-fg);}}',
     )
     ..write(
       '@media (prefers-reduced-motion:reduce){.fushi-srs-main-toggle::after,'

@@ -317,6 +317,8 @@ class MokuroMoeVolumeDownloader {
             mokuroPath: placedMokuro.path,
             title: volumeTitle(seriesName, volumeName),
             policy: const DuplicatePolicy.skip(),
+            // 解包目录是本卷 staging，导入后整个删掉：页图直接移进书目录。
+            pageSource: MangaPageSource.disposable,
             onProgress: (int done, int total) => controller.add(
               MokuroMoeVolumeDownloadEvent(
                 stage: MokuroMoeDownloadStage.importing,

@@ -4,6 +4,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi_engine/media/collections/shelf_sort.dart';
+import 'package:fushi/src/media/tags/tag_drag_handle.dart';
 import 'package:fushi/src/media/tags/tag_chips.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:fushi/src/pages/implementations/tag_management_page.dart';
@@ -15,6 +16,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_divider.dart';
+import 'package:fushi/src/utils/components/fushi_header_menu_anchor.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_reorderable_column.dart';
@@ -80,7 +82,7 @@ class FushiTagFilterBar extends ConsumerStatefulWidget {
 
   /// 外部持有的排序菜单控制器（[FushiTagFilterBarPart.sortMenuAnchor] 用：页头
   /// 里的排序按钮经它打开本组件画的菜单）。null 时自建。
-  final MenuController? sortMenuController;
+  final FushiHeaderMenuController? sortMenuController;
 
   /// 渲染整栏还是其中一段，见类注释。
   final FushiTagFilterBarPart part;
@@ -144,7 +146,8 @@ const double _inlineTagPad = 4;
 class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
   final MenuController _ownSortMenu = MenuController();
 
-  MenuController get _sortMenu => widget.sortMenuController ?? _ownSortMenu;
+  MenuController get _sortMenu =>
+      widget.sortMenuController?.menu ?? _ownSortMenu;
 
   @override
   Widget build(BuildContext context) {
@@ -286,17 +289,18 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
               onTap: () => widget.onToggleFilter(tag.id),
             );
           }
-          return LongPressDraggable<BookTagRow>(
+          final Widget dragFeedback = FushiReorderDragProxy(
+            transparent: true,
+            borderRadius: tokens.radii.chipRadius,
+            child: _tagFilterChip(tag: tag, isSelected: true, isDimmed: false),
+          );
+          // BUG-4899：chip 左侧的「⋮⋮」柄是即时 Draggable——鼠标精确指针 hit slop
+          // 只有 1 px，长按计时里手一抖长按拖动就输给标签条的横滚；柄比滚动区深、
+          // 越过 slop 的同一帧先认领，桌面也拖得动。LongPressDraggable 留给触屏
+          // 长按整枚 chip；落点仍是 chip 上的 DragTarget。
+          final Widget draggableChip = LongPressDraggable<BookTagRow>(
             data: tag,
-            feedback: FushiReorderDragProxy(
-              transparent: true,
-              borderRadius: tokens.radii.chipRadius,
-              child: _tagFilterChip(
-                tag: tag,
-                isSelected: true,
-                isDimmed: false,
-              ),
-            ),
+            feedback: dragFeedback,
             childWhenDragging: Opacity(
               opacity: isEinkTheme(context) ? 1 : 0.3,
               child: _tagFilterChip(
@@ -328,6 +332,17 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
                 );
               },
             ),
+          );
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              FushiTagDragHandle<BookTagRow>(
+                key: ValueKey<String>('library_tag_drag_handle_${tag.id}'),
+                data: tag,
+                feedback: dragFeedback,
+              ),
+              draggableChip,
+            ],
           );
         },
       ),
@@ -452,18 +467,20 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
     );
   }
 
-  /// 排序菜单的零尺寸常驻锚点（[FushiTagFilterBarPart.sortMenuAnchor]）。排序
-  /// 参数不全时不画（页头也不会出排序按钮）。
+  /// 排序菜单的常驻锚点（[FushiTagFilterBarPart.sortMenuAnchor]），弹出位置
+  /// 跟着触发控件（[FushiHeaderMenuController]）。排序参数不全 / 没给外部
+  /// 控制器时不画（页头也不会出排序按钮）。
   Widget _sortMenuAnchor(FushiDesignTokens tokens, Set<int> selectedTagIds) {
-    if (widget.sortMode == null ||
+    final FushiHeaderMenuController? controller = widget.sortMenuController;
+    if (controller == null ||
+        widget.sortMode == null ||
         widget.sortModeLabel == null ||
         widget.onSortModeChanged == null) {
       return const SizedBox.shrink();
     }
-    return FushiMenuAnchor(
-      controller: _sortMenu,
+    return FushiHeaderMenuAnchor(
+      controller: controller,
       menuChildren: _sortMenuChildren(tokens, selectedTagIds),
-      child: const SizedBox.shrink(),
     );
   }
 
@@ -674,6 +691,8 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
       state: isSelected ? TagCheckState.all : TagCheckState.none,
       dimmed: isDimmed,
       onTap: onTap,
+      // 库页标签段压在页头吸顶面上（设计稿 V3）：未选中态半透明底，与页头同色调。
+      overlay: widget.part == FushiTagFilterBarPart.tags,
     );
   }
 }
@@ -720,11 +739,12 @@ enum FushiTagFilterBarPart {
   /// 只出「管理标签（常驻）+ 批量选择 + 排序」（放进库页工具行行尾）。
   actions,
 
-  /// 只出「排序（与筛选）」菜单的零尺寸常驻锚点（库页单行页头，2026-10-14）：
+  /// 只出「排序（与筛选）」菜单的常驻锚点（库页单行页头，2026-10-14）：
   /// 排序按钮挪进页头动作后可能被收进「⋯」，菜单不能挂在按钮上——锚点经
-  /// [FushiPageHeader.menuAnchor] 叠在页头动作组右下角（动作被外壳浮动工具栏
-  /// 代放时随那枚胶囊走），按钮（或 ⋯ 菜单里的那一项）经
-  /// [FushiTagFilterBar.sortMenuController] 打开它。按钮由
+  /// [FushiPageHeader.menuAnchor] 铺满页头动作组（动作被外壳浮动工具栏代放时
+  /// 随那枚胶囊走），按钮（或 ⋯ 菜单里的那一项）经
+  /// [FushiTagFilterBar.sortMenuController] 打开它，菜单从触发控件下沿弹出
+  /// （BUG-4715）。按钮由
   /// [libraryHeaderTagActions] 生成。
   sortMenuAnchor,
 }
@@ -739,7 +759,7 @@ enum FushiTagFilterBarPart {
 List<FushiIconButton> libraryHeaderTagActions(
   BuildContext context, {
   required WidgetRef ref,
-  MenuController? sortMenu,
+  FushiHeaderMenuController? sortMenu,
   bool sortGrouped = false,
   bool sortFilterActive = false,
   bool selectionMode = false,
@@ -757,7 +777,7 @@ List<FushiIconButton> libraryHeaderTagActions(
   final t = Translations.of(context);
   final String sortTooltip =
       sortTooltipOverride ?? (sortGrouped ? t.library_sort_filter : t.sort_by);
-  final MenuController? menu = sortMenu;
+  final FushiHeaderMenuController? menu = sortMenu;
   return <FushiIconButton>[
     if (onToggleSelectionMode != null)
       FushiIconButton(
@@ -779,9 +799,9 @@ List<FushiIconButton> libraryHeaderTagActions(
             : sortTooltip,
         badge: sortFilterActive,
         overflowPriority: sortPriority,
-        // 窄窗：「排序与显示」底部抽屉（[showLibraryViewSheet]）；宽窗：锚定菜单。
-        onTap:
-            onOpenViewSheet ?? () => menu.isOpen ? menu.close() : menu.open(),
+        // 窄窗：「排序与显示」底部抽屉（[showLibraryViewSheet]）；宽窗：锚定菜单，
+        // 从本按钮（被收进 ⋯ 时从 ⋯）下沿弹出。
+        onTap: onOpenViewSheet ?? menu.toggle,
       ),
     if (showTagManagement)
       FushiIconButton(

@@ -551,6 +551,7 @@ class SyncAssetPackageService {
             startMs: _intValue(cue, 'startMs'),
             endMs: _intValue(cue, 'endMs'),
             audioFileIndex: _intValue(cue, 'audioFileIndex'),
+            tokenTimingJson: Value(_cueTokenTimingJson(cue)),
           );
         }).toList(),
       );
@@ -704,6 +705,7 @@ class SyncAssetPackageService {
               startMs: _intValue(cue, 'startMs'),
               endMs: _intValue(cue, 'endMs'),
               audioFileIndex: _intValue(cue, 'audioFileIndex'),
+              tokenTimingJson: Value(_cueTokenTimingJson(cue)),
             );
           }).toList(),
         );
@@ -735,7 +737,8 @@ class SyncAssetPackageService {
       ..text = _stringValue(cue, 'cueText')
       ..startMs = _intValue(cue, 'startMs')
       ..endMs = _intValue(cue, 'endMs')
-      ..audioFileIndex = _intValue(cue, 'audioFileIndex');
+      ..audioFileIndex = _intValue(cue, 'audioFileIndex')
+      ..tokenTiming = CueTokenTiming.tryParseJson(_cueTokenTimingJson(cue));
   }
 
   /// 撤掉一本刚生成、还没被任何 SrtBooks 行引用的正文（行 + 解包目录）。失败只留痕：
@@ -906,6 +909,7 @@ class SyncAssetPackageService {
             startMs: _intValue(cue, 'startMs'),
             endMs: _intValue(cue, 'endMs'),
             audioFileIndex: _intValue(cue, 'audioFileIndex'),
+            tokenTimingJson: Value(_cueTokenTimingJson(cue)),
           );
         }).toList();
 
@@ -1205,9 +1209,19 @@ class SyncAssetPackageService {
       'startMs': row.startMs,
       'endMs': row.endMs,
       'audioFileIndex': row.audioFileIndex,
+      // v160 逐 token 时间随 cue 进包（没有就不写键）：接收端不再重匹配，直接落库
+      // 包里的 cue，不带过去对端就永远没有半句命中能用的时间。
+      if (row.tokenTimingJson != null) 'tokenTimingJson': row.tokenTimingJson,
     };
   }
 }
+
+/// manifest 里一条 cue 的逐 token 时间（v160 起导出端写；旧包没有这个键 = null）。
+/// 先过一遍 [CueTokenTiming.tryParseJson]：坏数据不落库。
+String? _cueTokenTimingJson(Map<String, Object?> cue) =>
+    CueTokenTiming.tryParseJson(
+      _nullableString(cue, 'tokenTimingJson'),
+    )?.toJson();
 
 /// Sanitizes a logical id into a filesystem-safe directory name (replaces the
 /// Windows-invalid `\ / : * ? " < > |` and control chars with `_`).

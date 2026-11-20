@@ -9,7 +9,9 @@
 ///
 /// 规则照 Jellyfin AniDB 插件 / Taiga：只认 exact；同一标题命中多个 anime 且
 /// 类型闸门筛不到唯一 → 视为歧义，**放弃**（不猜、不降级到 prefix / similar），
-/// 交给后面的在线链与人工确认。
+/// 交给后面的在线链与人工确认。exact 命中全被类型闸门剔掉是单独的
+/// [AnimeOfflineIdentityStatus.onlyOtherKind]：标题对得上、只是形态不同，
+/// 由调用方按自己掌握的形态证据决定要不要改形态。
 library;
 
 import 'package:fushi_engine/media/video/metadata/anidb_title_catalog.dart';
@@ -22,7 +24,17 @@ typedef AniDbTitleSearch =
 typedef AnimeIdentityEntryLookup =
     Future<AnimeIdentityEntry?> Function(int anidbId);
 
-enum AnimeOfflineIdentityStatus { matched, ambiguous, notFound, unavailable }
+enum AnimeOfflineIdentityStatus {
+  matched,
+  ambiguous,
+
+  /// 首个有 exact 命中的标题，命中条目全是另一种形态（类型闸门滤空）。
+  /// 另一形态恰好唯一时 [AnimeOfflineIdentityResolution.otherKindIdentity]
+  /// 带出它，否则为 null。
+  onlyOtherKind,
+  notFound,
+  unavailable,
+}
 
 /// 离线阶段得到的身份：anidb 一定有；MAL / TMDB 视 Fribb 覆盖而定。
 class AnimeOfflineIdentity {
@@ -95,6 +107,7 @@ class AnimeOfflineIdentityResolution {
   const AnimeOfflineIdentityResolution({
     required this.status,
     this.identity,
+    this.otherKindIdentity,
     this.reason,
   });
 
@@ -103,6 +116,9 @@ class AnimeOfflineIdentityResolution {
 
   final AnimeOfflineIdentityStatus status;
   final AnimeOfflineIdentity? identity;
+
+  /// 仅 [AnimeOfflineIdentityStatus.onlyOtherKind]：被类型闸门剔掉的唯一候选。
+  final AnimeOfflineIdentity? otherKindIdentity;
   final String? reason;
 }
 
@@ -137,7 +153,8 @@ class AnimeOfflineIdentityResolver {
   }
 
   /// 按候选顺序逐个标题查；第一个有 exact 命中的标题决定结果：唯一 → matched，
-  /// 多个 → ambiguous（不再看后面的候选）。全部候选都没有 exact → notFound。
+  /// 多个 → ambiguous，全是另一形态 → onlyOtherKind（不再看后面的候选）。
+  /// 全部候选都没有 exact → notFound。
   /// 标题包 / 映射表拉不到 → unavailable（调用方跳过本阶段，不算失败）。
   Future<AnimeOfflineIdentityResolution> resolve({
     required List<String> titleCandidates,
@@ -168,32 +185,28 @@ class AnimeOfflineIdentityResolver {
                 candidate.entry!.isMovie == wantMovie)
               candidate,
         ];
+        if (gated.isEmpty) {
+          return AnimeOfflineIdentityResolution(
+            status: AnimeOfflineIdentityStatus.onlyOtherKind,
+            otherKindIdentity: candidates.length == 1
+                ? candidates.single.identity(title)
+                : null,
+            reason:
+                'AniDB title "$title" matches only entries of another media type: '
+                '${candidates.map((_Candidate c) => c.result.record.animeId).join(', ')}',
+          );
+        }
         if (gated.length != 1) {
           return AnimeOfflineIdentityResolution(
             status: AnimeOfflineIdentityStatus.ambiguous,
-            reason: gated.isEmpty
-                ? 'AniDB title "$title" matches only entries of another media type'
-                : 'AniDB title "$title" matches ${gated.length} anime: '
-                      '${gated.map((_Candidate c) => c.result.record.animeId).join(', ')}',
+            reason:
+                'AniDB title "$title" matches ${gated.length} anime: '
+                '${gated.map((_Candidate c) => c.result.record.animeId).join(', ')}',
           );
         }
-        final _Candidate single = gated.single;
-        final AnimeIdentityEntry? entry = single.entry;
         return AnimeOfflineIdentityResolution(
           status: AnimeOfflineIdentityStatus.matched,
-          identity: AnimeOfflineIdentity(
-            anidbId: single.result.record.animeId,
-            matchedTitle: single.result.matchedTitle.value,
-            queryTitle: title,
-            malId: entry != null && entry.malIds.length == 1
-                ? entry.malIds.single
-                : null,
-            tmdbId: entry?.tmdbId,
-            isMovie: entry?.isMovie ?? false,
-            tmdbMediaKind: entry?.tmdbMediaKind,
-            tmdbSeason: entry?.tmdbSeason,
-            tmdbEpisodeOffset: entry?.tmdbEpisodeOffset,
-          ),
+          identity: gated.single.identity(title),
         );
       }
       return const AnimeOfflineIdentityResolution.notFound();
@@ -211,4 +224,21 @@ class _Candidate {
 
   final AniDbTitleSearchResult result;
   final AnimeIdentityEntry? entry;
+
+  AnimeOfflineIdentity identity(String queryTitle) {
+    final AnimeIdentityEntry? entry = this.entry;
+    return AnimeOfflineIdentity(
+      anidbId: result.record.animeId,
+      matchedTitle: result.matchedTitle.value,
+      queryTitle: queryTitle,
+      malId: entry != null && entry.malIds.length == 1
+          ? entry.malIds.single
+          : null,
+      tmdbId: entry?.tmdbId,
+      isMovie: entry?.isMovie ?? false,
+      tmdbMediaKind: entry?.tmdbMediaKind,
+      tmdbSeason: entry?.tmdbSeason,
+      tmdbEpisodeOffset: entry?.tmdbEpisodeOffset,
+    );
+  }
 }

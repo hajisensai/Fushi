@@ -8,9 +8,12 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
+#[cfg(test)]
 use rusqlite::Connection;
 
-use super::{SrsCore, slim};
+use super::SrsCore;
+#[cfg(test)]
+use super::slim;
 use crate::history::{Kind, Log, LogCols, NONE_I64, Origin, Outcome, RType, parse_stored};
 use crate::projection::{self, Alg, Day, EffLog, MemAlg, RWKV_ROW, RwkvIds};
 
@@ -202,9 +205,10 @@ impl ScanLog {
     }
 }
 
-/// 一组卡的全部日志（同卡内按 rowid），读出时已解析成 [ScanLog]。
+/// 一组卡的全部日志（同卡内按 rowid），读出时已解析成 [ScanLog]。协议 3（读 `srs_review_logs`）与新代
+/// （`store/gen4/cmd/training.rs`：按血统重放写回的日志，rowid 换成操作主键）各自灌进来，之后的投影共用。
 #[derive(Default)]
-struct LogsByCard {
+pub(crate) struct LogsByCard {
     by_card: HashMap<String, Vec<ScanLog>>,
     writers: Vec<Box<str>>,
     writer_ix: HashMap<Box<str>, u32>,
@@ -212,7 +216,7 @@ struct LogsByCard {
 
 impl LogsByCard {
     /// 解析一条读出的日志（瘦存 + 列，或原文；与 [crate::history::parse_full] 同一套坏数据判据）并收下。
-    fn push(
+    pub(crate) fn push(
         &mut self,
         card: String,
         rowid: i64,
@@ -277,6 +281,7 @@ impl LogsByCard {
     }
 }
 
+#[cfg(test)]
 fn fetch_logs(conn: &Connection, cards: &[&str]) -> Result<LogsByCard, String> {
     let mut logs = LogsByCard::default();
     for chunk in cards.chunks(500) {
@@ -303,9 +308,21 @@ fn fetch_logs(conn: &Connection, cards: &[&str]) -> Result<LogsByCard, String> {
 
 /// 每份历史的完整血统：调用方给的卡（第一张是这份历史的卡；Dart 只给它自己）连同它的全部前身
 /// （store/caches.rs `lineage_ids`），给过的顺序在前、补上的按血统顺序接在后面。
+#[cfg(test)]
 fn expand_lineages(r: &Connection, groups: &[Vec<String>]) -> Result<Vec<Vec<String>>, String> {
+    expand_with(groups, &mut |seeds| {
+        crate::store::caches::lineage_ids(r, seeds)
+    })
+}
+
+/// [expand_lineages] 的规则本体：[lineages] 给一组种子卡（每份非空历史的第一张）各自的血统（与输入同序）。新代
+/// （`store/gen4/cmd/training.rs`）用 `cmd/lineage.rs` 的同一个判定函数给。
+pub(crate) fn expand_with(
+    groups: &[Vec<String>],
+    lineages: &mut dyn FnMut(&[String]) -> Result<Vec<Vec<String>>, String>,
+) -> Result<Vec<Vec<String>>, String> {
     let seeds: Vec<String> = groups.iter().filter_map(|g| g.first().cloned()).collect();
-    let mut full = crate::store::caches::lineage_ids(r, &seeds)?.into_iter();
+    let mut full = lineages(&seeds)?.into_iter();
     let mut out = Vec::with_capacity(groups.len());
     for g in groups {
         let mut l = g.clone();
@@ -322,7 +339,7 @@ fn expand_lineages(r: &Connection, groups: &[Vec<String>]) -> Result<Vec<Vec<Str
 }
 
 /// 血统里出现过的卡（去重，保序）。
-pub(super) fn wanted_cards(groups: &[Vec<String>]) -> Vec<&str> {
+pub(crate) fn wanted_cards(groups: &[Vec<String>]) -> Vec<&str> {
     let mut wanted: Vec<&str> = Vec::new();
     let mut seen = HashSet::new();
     for g in groups {
@@ -408,6 +425,7 @@ impl TrainingColumns {
 
 impl SrsCore {
     /// 读连接上一个读事务：多条语句看同一个 WAL 快照。
+    #[cfg(test)]
     fn read_snapshot<T>(
         &self,
         body: impl FnOnce(&Connection) -> Result<T, String>,
@@ -422,16 +440,13 @@ impl SrsCore {
         Ok(out)
     }
 
-    /// 优化器 / 校准共用的取数：同一快照里展开各组的全部前身，再取这些卡的复习日志。
+    /// 优化器 / 校准共用的取数：同一快照里展开各组的全部前身，再取这些卡的复习日志（[training_groups_on]）。
+    #[cfg(test)]
     fn fetch_training_groups(
         &self,
         groups: &[Vec<String>],
     ) -> Result<(Vec<Vec<String>>, LogsByCard), String> {
-        self.read_snapshot(|r| {
-            let groups = expand_lineages(r, groups)?;
-            let logs = fetch_logs(r, &wanted_cards(&groups))?;
-            Ok((groups, logs))
-        })
+        self.read_snapshot(|r| training_groups_on(r, groups))
     }
 
     /// 优化器训练集（`srsPrepareOptimization`）：`groups[g]` 是一张卡（调用方只给卡自己即可，全部前身由
@@ -440,6 +455,7 @@ impl SrsCore {
     /// 输出（小端，全部 8 字节字）：`[n_seq, n_reviews, n_items]`、`seq_start × (n_seq + 1)`、`seq_card × n_seq`、
     /// `rating × n_reviews`、`delta(f64) × n_reviews`、`(seq, len) × n_items`。序列 = 一张进训练集的卡的完整评审，
     /// 条目 = 它到第 len 次评分为止的前缀；条目按最后一次评分时刻升序（同一时刻按卡的输入顺序、再按评分先后）。
+    #[cfg(test)]
     pub fn optimizer_items(
         &self,
         groups: &[Vec<String>],
@@ -451,33 +467,12 @@ impl SrsCore {
             return Err("optimizer: card id count differs from group count".into());
         }
         let (groups, logs) = self.fetch_training_groups(groups)?;
-        let mut cols = TrainingColumns::new();
-        // (时刻, 序列, 前缀长度)；稳定排序保住输入顺序。
-        let mut items: Vec<(i64, i64, i64)> = Vec::new();
-        for (g, lineage) in groups.iter().enumerate() {
-            let eff = logs.effective(lineage, None);
-            let Some((reviews, card_items)) = projection::optimizer_card(&eff, alg, day)? else {
-                continue;
-            };
-            let seq = cols.push_card(card_ids[g], &reviews);
-            for (at, len) in card_items {
-                items.push((at, seq, len as i64));
-            }
-        }
-        items.sort_by_key(|i| i.0);
-        let mut out = Vec::with_capacity(cols.capacity(2 * items.len()));
-        cols.pack_prefix(&mut out, items.len());
-        for (_, seq, len) in items {
-            push_i64(&mut out, seq);
-            push_i64(&mut out, len);
-        }
-        Ok(out)
+        optimizer_items_of(&groups, &logs, card_ids, alg, day)
     }
 
     /// 复习统计页的校准图（`srsCalibration`）：与 [SrsCore::optimizer_items] 同一份训练集（同一布局、同一顺序），
-    /// 末尾再按列接五段 `i64 × n_items`：目标评分的时刻、它的复习日志数字 ID（与 RWKV 回放行的标签同一个：
-    /// `schema::anki_numeric_id`）、距上一次评分的复习日天数、卡的数字 id、记住（评分 > 1 为 1）。按列存，
-    /// Dart 侧直接取视图交给 `ffsrs_calibration_report`，不逐条解码。
+    /// 末尾再按列接五段 `i64 × n_items`（见 [calibration_items_of]）。
+    #[cfg(test)]
     pub fn calibration_items(
         &self,
         groups: &[Vec<String>],
@@ -489,45 +484,12 @@ impl SrsCore {
             return Err("calibration: card id count differs from group count".into());
         }
         let (groups, logs) = self.fetch_training_groups(groups)?;
-        let mut cols = TrainingColumns::new();
-        // (时刻, 序列, 前缀长度, 标签, 间隔天数)；稳定排序保住输入顺序（与 optimizer_items 相同）。
-        let mut items: Vec<(i64, i64, i64, i64, i64)> = Vec::new();
-        for (g, lineage) in groups.iter().enumerate() {
-            let eff = logs.effective(lineage, None);
-            let Some((reviews, card_items)) = projection::calibration_card(&eff, alg, day)? else {
-                continue;
-            };
-            let seq = cols.push_card(card_ids[g], &reviews);
-            for (at, len, log, elapsed) in card_items {
-                let tag = crate::store::schema::anki_numeric_id(&eff[log].id);
-                items.push((at, seq, len as i64, tag, elapsed));
-            }
-        }
-        items.sort_by_key(|i| i.0);
-        let mut out = Vec::with_capacity(cols.capacity(5 * items.len()));
-        cols.pack_prefix(&mut out, items.len());
-        for &(_, seq, len, _, _) in &items {
-            push_i64(&mut out, seq);
-            push_i64(&mut out, len);
-        }
-        items.iter().for_each(|i| push_i64(&mut out, i.0));
-        items.iter().for_each(|i| push_i64(&mut out, i.3));
-        items.iter().for_each(|i| push_i64(&mut out, i.4));
-        items
-            .iter()
-            .for_each(|i| push_i64(&mut out, cols.seq_card[i.1 as usize]));
-        items.iter().for_each(|i| {
-            let target = cols.seq_start[i.1 as usize] + i.2 - 1;
-            push_i64(&mut out, i64::from(cols.ratings[target as usize] > 1));
-        });
-        Ok(out)
+        calibration_items_of(&groups, &logs, card_ids, alg, day)
     }
 
-    /// RWKV 逐卡（增量追加、排队的此刻行用）：每份历史的保留评分行与摘要。`ids[4g..4g+4]` 是第 g 份的
-    /// 卡 / 笔记 / 牌组 / 预设数字 id。
-    ///
-    /// 输出：`[i64 n_groups]`，每份 `[i64 kept, effectiveRatings, lastAt|NONE, lastRating, lastRType, 0]`，
-    /// 全部保留评分行（80 字节 × 总数，份内时间顺序），保留评分的日志 ID 串表。
+    /// RWKV 逐卡（增量追加、排队的此刻行用）：每份历史的保留评分行与摘要（输出见 [rwkv_cards_of]）。`ids[4g..4g+4]` 是
+    /// 第 g 份的卡 / 笔记 / 牌组 / 预设数字 id。
+    #[cfg(test)]
     pub fn rwkv_cards(
         &self,
         groups: &[Vec<String>],
@@ -537,63 +499,13 @@ impl SrsCore {
         if ids.len() != groups.len() * 4 {
             return Err("rwkv: id count differs from 4 × group count".into());
         }
-        let (groups, logs) = self.read_snapshot(|r| {
-            let groups = expand_lineages(r, groups)?;
-            let logs = fetch_logs(r, &wanted_cards(&groups))?;
-            Ok((groups, logs))
-        })?;
-        let mut head = Vec::with_capacity(8 + groups.len() * 48);
-        let mut rows = Vec::new();
-        let mut kept_ids: Vec<String> = Vec::new();
-        push_i64(&mut head, groups.len() as i64);
-        for (g, lineage) in groups.iter().enumerate() {
-            let eff = logs.effective(lineage, None);
-            let card: RwkvIds = [ids[4 * g], ids[4 * g + 1], ids[4 * g + 2], ids[4 * g + 3]];
-            let (r, _, kept) = projection::rwkv_card_rows(&eff, &card, day)?;
-            rows.extend_from_slice(&r);
-            push_i64(&mut head, kept.len() as i64);
-            push_i64(
-                &mut head,
-                eff.iter().filter(|l| l.is_rating()).count() as i64,
-            );
-            match kept.last() {
-                Some(&i) => {
-                    push_i64(&mut head, eff[i].at);
-                    push_i64(&mut head, eff[i].rating.unwrap_or(0));
-                    push_i64(&mut head, eff[i].rtype as i64);
-                }
-                None => {
-                    push_i64(&mut head, NONE_I64);
-                    push_i64(&mut head, 0);
-                    push_i64(&mut head, 0);
-                }
-            }
-            push_i64(&mut head, 0);
-            kept_ids.extend(kept.iter().map(|&i| eff[i].id.clone()));
-        }
-        head.extend_from_slice(&rows);
-        push_strings(&mut head, kept_ids.iter().map(String::as_str));
-        Ok(head)
+        let (groups, logs) = self.fetch_training_groups(groups)?;
+        rwkv_cards_of(&groups, &logs, ids, day)
     }
 
-    /// RWKV 回放行：本 profile 的日志一条语句扫出（指纹与行出自同一个快照），按 `groups`（卡的血统，
-    /// 输入顺序 = 同一时刻的先后）产出保留评分行，按评分时刻稳定排序。
-    ///
-    /// `since`：调用方列卡之前的指纹 maxRowId；rowid 在它之后、却不属于任何一份血统的日志的卡 ID 作为
-    /// 「漏掉的卡」返回（列卡之后新建的卡），调用方补上再来一次。
-    ///
-    /// `range` 选出哪些行：
-    /// - `rebase_since = None`（全量）：全部行；
-    /// - `rebase_since = Some(s)`（局部重放）：先在同一个快照里算**分歧时刻**——rowid 在 `s` 之后的日志
-    ///   碰到的每份历史，比较「只看 rowid ≤ s 的日志」与「全部日志」两种情况下它的保留评分行，第一处
-    ///   不同（时刻或行内容）的时刻取最小。只多了不改变任何行的日志时没有分歧。行从 `rows_from`
-    ///   （给了的话）起、否则从分歧时刻起取（没有分歧就一行都不取）。调用方据此把 RWKV 状态退到这个
-    ///   时刻之前，再追加取出的行，结果与全量回放逐位相同。
-    ///
-    /// 输出：`[i64 count, maxRowId, lastAt|NONE, n_rows, n_strays, divergeAt|NONE, tailRows]`、
-    /// 行（80 字节 × n_rows）、评分时刻（i64 × n_rows）、标签（日志 ID 的 53 位数字 id，i64 × n_rows）、
-    /// 漏掉的卡 ID 串表。`lastAt` 是全部保留评分（不只取出的行）里最晚的时刻；`tailRows` 是 rowid 在
-    /// `rebase_since` 之后的日志行数（全量时 0），调用方用它核对期间没有删过日志。
+    /// RWKV 回放行：本 profile 的日志一条语句扫出（指纹与行出自同一个快照，[rwkv_scan_on]），按 `groups`（卡的血统，
+    /// 输入顺序 = 同一时刻的先后）产出保留评分行，按评分时刻稳定排序。选行与输出见 [ReplayScan]。
+    #[cfg(test)]
     pub fn rwkv_replay(
         &self,
         profile: &str,
@@ -606,55 +518,277 @@ impl SrsCore {
         if ids.len() != groups.len() * 4 {
             return Err("rwkv: id count differs from 4 × group count".into());
         }
+        self.read_snapshot(|r| rwkv_scan_on(r, profile, groups, since, range))?
+            .finish(ids, day)
+    }
+
+    /// RWKV 对齐用的日志指纹与尾巴（同一个快照，[rwkv_log_tail_on]）。
+    #[cfg(test)]
+    pub fn rwkv_log_tail(
+        &self,
+        profile: &str,
+        since: i64,
+        with_rows: bool,
+        incremental: bool,
+    ) -> Result<Vec<u8>, String> {
+        self.read_snapshot(|r| rwkv_log_tail_on(r, profile, since, with_rows, incremental))
+    }
+}
+
+/// [SrsCore::optimizer_items] / `calibration_items` / `rwkv_cards` 在连接 [r] 上的取数：展开各组的全部前身，再取这些卡的
+/// 复习日志。调用方负责快照（对拍测试在写连接的 SAVEPOINT 里调）。
+#[cfg(test)]
+pub(crate) fn training_groups_on(
+    r: &Connection,
+    groups: &[Vec<String>],
+) -> Result<(Vec<Vec<String>>, LogsByCard), String> {
+    let groups = expand_lineages(r, groups)?;
+    let logs = fetch_logs(r, &wanted_cards(&groups))?;
+    Ok((groups, logs))
+}
+
+/// [SrsCore::rwkv_replay] 在连接 [r] 上的扫描：本 profile 的日志按 rowid 一条语句扫出，交给 [ReplayScan]。
+#[cfg(test)]
+pub(crate) fn rwkv_scan_on(
+    r: &Connection,
+    profile: &str,
+    groups: &[Vec<String>],
+    since: i64,
+    range: RwkvRange,
+) -> Result<ReplayScan, String> {
+    let mut scan = ReplayScan::new(expand_lineages(r, groups)?, since, range);
+    // 读 `jslim` 与列（不经生成列 `json` 逐行拼回原文），每条当场解析成紧凑形态（[ScanLog]）。
+    let sql = format!(
+        "SELECT l.rowid, srs_idt(l.card_id) AS card_id, e.server_time, {} FROM srs_review_logs l \
+         LEFT JOIN srs_event_local e ON e.event_id = l.id WHERE l.profile_uid = srs_id(?1) ORDER BY l.rowid",
+        slim::LOG_READ
+    );
+    let mut stmt = r.prepare_cached(&sql).map_err(|e| e.to_string())?;
+    let mut q = stmt.query([profile]).map_err(|e| e.to_string())?;
+    while let Some(row) = q.next().map_err(|e| e.to_string())? {
+        let rowid: i64 = row.get(0).map_err(|e| e.to_string())?;
+        let card: String = row.get(1).map_err(|e| e.to_string())?;
+        if !scan.see(rowid, &card) {
+            continue;
+        }
+        let st: Option<i64> = row.get(2).map_err(|e| e.to_string())?;
+        let (stored, cols) = slim::log_row(row, 3).map_err(|e| e.to_string())?;
+        scan.logs.push(card, rowid, &stored, st, cols.as_ref())?;
+    }
+    Ok(scan)
+}
+
+/// [SrsCore::rwkv_log_tail] 在连接 [r] 上：本 profile 的 (行数, 最大 rowid, rowid 在 `since` 之后的行数)；`with_rows` 时
+/// 再给出这些新行（按发生时刻、rowid 排序）。
+///
+/// `incremental`：只数 rowid 在 `since` 之后的行（`+profile_uid` 让 SQLite 走 rowid 范围，O(新增)），
+/// 行数 = 新增行数、最大 rowid = 新增里的最大（没有新增为 0）；调用方在已知的指纹上累加。
+///
+/// 输出见 [rwkv_log_tail_of]。
+#[cfg(test)]
+pub(crate) fn rwkv_log_tail_on(
+    r: &Connection,
+    profile: &str,
+    since: i64,
+    with_rows: bool,
+    incremental: bool,
+) -> Result<Vec<u8>, String> {
+    #[derive(serde::Deserialize)]
+    struct Revokes<'a> {
+        #[serde(default, borrow)]
+        revokes: Option<std::borrow::Cow<'a, str>>,
+    }
+    let (count, max_rowid, new_rows): (i64, i64, i64) = if incremental {
+        let (c, m): (i64, i64) = r
+            .query_row(
+                "SELECT COUNT(*), COALESCE(MAX(rowid), 0) FROM srs_review_logs \
+                 WHERE rowid > ?2 AND +profile_uid = srs_id(?1)",
+                rusqlite::params![profile, since],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(|e| e.to_string())?;
+        (c, m, c)
+    } else {
+        r.query_row(
+            "SELECT COUNT(*), COALESCE(MAX(rowid), 0), COALESCE(SUM(rowid > ?2), 0) \
+             FROM srs_review_logs WHERE profile_uid = srs_id(?1)",
+            rusqlite::params![profile, since],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .map_err(|e| e.to_string())?
+    };
+    let mut tail: Vec<TailRow> = Vec::new();
+    if with_rows {
+        let mut stmt = r
+            .prepare_cached(
+                "SELECT srs_idt(id) AS id, srs_idt(card_id) AS card_id, kind, occurred_at, json FROM srs_review_logs \
+                 WHERE rowid > ?2 AND +profile_uid = srs_id(?1) ORDER BY occurred_at, rowid",
+            )
+            .map_err(|e| e.to_string())?;
+        let mut q = stmt
+            .query(rusqlite::params![profile, since])
+            .map_err(|e| e.to_string())?;
+        while let Some(row) = q.next().map_err(|e| e.to_string())? {
+            let kind: String = row.get(2).map_err(|e| e.to_string())?;
+            let code = tail_kind(&kind);
+            let revokes = if code == TAIL_UNDO {
+                let json: String = row.get(4).map_err(|e| e.to_string())?;
+                let v: Revokes<'_> = serde_json::from_str(&json).map_err(|e| e.to_string())?;
+                v.revokes.map(|c| c.into_owned()).unwrap_or_default()
+            } else {
+                String::new()
+            };
+            tail.push(TailRow {
+                id: row.get(0).map_err(|e| e.to_string())?,
+                card: row.get(1).map_err(|e| e.to_string())?,
+                code,
+                at: row.get(3).map_err(|e| e.to_string())?,
+                revokes,
+            });
+        }
+    }
+    Ok(rwkv_log_tail_of(count, max_rowid, new_rows, &tail))
+}
+
+/// [SrsCore::rwkv_log_tail] 的一行尾巴。
+pub(crate) struct TailRow {
+    pub(crate) id: String,
+    pub(crate) card: String,
+    /// [tail_kind]。
+    pub(crate) code: i64,
+    pub(crate) at: i64,
+    /// 撤销目标（只有撤销日志有；没有 = 空串）。
+    pub(crate) revokes: String,
+}
+
+/// 尾巴行的种类码：1 review、2 undo、0 其它。
+pub(crate) const TAIL_UNDO: i64 = 2;
+
+pub(crate) fn tail_kind(kind: &str) -> i64 {
+    match kind {
+        "review" => 1,
+        "undo" => TAIL_UNDO,
+        _ => 0,
+    }
+}
+
+/// [SrsCore::rwkv_log_tail] 的输出：`[i64 count, maxRowId, newRows, n]`、`at × n`、`kind × n`（[tail_kind]）、
+/// 串表（每行 ID、卡 ID、撤销目标（无则空串）三个一组）。
+pub(crate) fn rwkv_log_tail_of(
+    count: i64,
+    max_rowid: i64,
+    new_rows: i64,
+    tail: &[TailRow],
+) -> Vec<u8> {
+    let mut out = Vec::with_capacity(32 + tail.len() * 56);
+    push_i64(&mut out, count);
+    push_i64(&mut out, max_rowid);
+    push_i64(&mut out, new_rows);
+    push_i64(&mut out, tail.len() as i64);
+    tail.iter().for_each(|t| push_i64(&mut out, t.at));
+    tail.iter().for_each(|t| push_i64(&mut out, t.code));
+    push_strings(
+        &mut out,
+        tail.iter()
+            .flat_map(|t| [t.id.as_str(), t.card.as_str(), t.revokes.as_str()]),
+    );
+    out
+}
+
+/// [SrsCore::rwkv_replay] 的扫描状态：日志按 rowid 一条条交给 [ReplayScan::see]，属于某份血统的再收进 [ReplayScan::logs]；
+/// 扫完 [ReplayScan::finish] 出行。协议 3 扫 `srs_review_logs`，新代（`store/gen4/cmd/training.rs`）扫 `log_ix`（rowid 换成
+/// 操作主键）、日志取按血统重放写回的那份。
+///
+/// `since`：调用方列卡之前的指纹 maxRowId；rowid 在它之后、却不属于任何一份血统的日志的卡 ID 作为
+/// 「漏掉的卡」返回（列卡之后新建的卡），调用方补上再来一次。
+///
+/// `range` 选出哪些行：
+/// - `rebase_since = None`（全量）：全部行；
+/// - `rebase_since = Some(s)`（局部重放）：先在同一个快照里算**分歧时刻**——rowid 在 `s` 之后的日志
+///   碰到的每份历史，比较「只看 rowid ≤ s 的日志」与「全部日志」两种情况下它的保留评分行，第一处
+///   不同（时刻或行内容）的时刻取最小。只多了不改变任何行的日志时没有分歧。行从 `rows_from`
+///   （给了的话）起、否则从分歧时刻起取（没有分歧就一行都不取）。调用方据此把 RWKV 状态退到这个
+///   时刻之前，再追加取出的行，结果与全量回放逐位相同。
+///
+/// 输出：`[i64 count, maxRowId, lastAt|NONE, n_rows, n_strays, divergeAt|NONE, tailRows]`、
+/// 行（80 字节 × n_rows）、评分时刻（i64 × n_rows）、标签（日志 ID 的 53 位数字 id，i64 × n_rows）、
+/// 漏掉的卡 ID 串表。`lastAt` 是全部保留评分（不只取出的行）里最晚的时刻；`tailRows` 是 rowid 在
+/// `rebase_since` 之后的日志行数（全量时 0），调用方用它核对期间没有删过日志。
+pub(crate) struct ReplayScan {
+    /// 每份历史的完整血统（已展开）。
+    groups: Vec<Vec<String>>,
+    member: HashSet<String>,
+    since: i64,
+    range: RwkvRange,
+    count: i64,
+    max_rowid: i64,
+    pub(crate) logs: LogsByCard,
+    strays: Vec<String>,
+    stray_seen: HashSet<String>,
+    tail_rows: i64,
+    touched: HashSet<String>,
+}
+
+impl ReplayScan {
+    pub(crate) fn new(groups: Vec<Vec<String>>, since: i64, range: RwkvRange) -> ReplayScan {
+        let member: HashSet<String> = groups.iter().flatten().cloned().collect();
+        ReplayScan {
+            groups,
+            member,
+            since,
+            range,
+            count: 0,
+            max_rowid: 0,
+            logs: LogsByCard::default(),
+            strays: Vec::new(),
+            stray_seen: HashSet::new(),
+            tail_rows: 0,
+            touched: HashSet::new(),
+        }
+    }
+
+    /// 血统里出现过的卡（去重，保序）。
+    pub(crate) fn wanted(&self) -> Vec<&str> {
+        wanted_cards(&self.groups)
+    }
+
+    /// 扫到一条日志（rowid 升序）：计进指纹；返回它的卡是否属于某份血统（是 = 调用方把这条日志收进 [ReplayScan::logs]）。
+    pub(crate) fn see(&mut self, rowid: i64, card: &str) -> bool {
+        self.count += 1;
+        self.max_rowid = self.max_rowid.max(rowid);
+        let in_tail = self.range.rebase_since.is_some_and(|s| rowid > s);
+        if in_tail {
+            self.tail_rows += 1;
+        }
+        if !self.member.contains(card) {
+            if rowid > self.since && self.stray_seen.insert(card.to_owned()) {
+                self.strays.push(card.to_owned());
+            }
+            return false;
+        }
+        if in_tail {
+            self.touched.insert(card.to_owned());
+        }
+        true
+    }
+
+    /// 出行（输出见 [ReplayScan]）。
+    pub(crate) fn finish(self, ids: &[i64], day: &Day) -> Result<Vec<u8>, String> {
+        let ReplayScan {
+            groups,
+            range,
+            count,
+            max_rowid,
+            logs,
+            strays,
+            tail_rows,
+            touched,
+            ..
+        } = self;
+        if ids.len() != groups.len() * 4 {
+            return Err("rwkv: id count differs from 4 × group count".into());
+        }
         let rebase = range.rebase_since;
-        let (groups, count, max_rowid, logs, strays, tail_rows, touched) = self.read_snapshot(|r| {
-            let groups = expand_lineages(r, groups)?;
-            let mut member: HashMap<String, Vec<usize>> = HashMap::new();
-            for (g, lineage) in groups.iter().enumerate() {
-                for c in lineage {
-                    member.entry(c.clone()).or_default().push(g);
-                }
-            }
-            // 读 `jslim` 与列（不经生成列 `json` 逐行拼回原文），每条当场解析成紧凑形态（[ScanLog]）。
-            let sql = format!(
-                "SELECT l.rowid, srs_idt(l.card_id) AS card_id, e.server_time, {} FROM srs_review_logs l \
-                 LEFT JOIN srs_event_local e ON e.event_id = l.id WHERE l.profile_uid = srs_id(?1) ORDER BY l.rowid",
-                slim::LOG_READ
-            );
-            let mut stmt = r.prepare_cached(&sql).map_err(|e| e.to_string())?;
-            let mut q = stmt.query([profile]).map_err(|e| e.to_string())?;
-            let mut count = 0i64;
-            let mut max_rowid = 0i64;
-            let mut logs = LogsByCard::default();
-            let mut strays: Vec<String> = Vec::new();
-            let mut stray_seen: HashSet<String> = HashSet::new();
-            let mut tail_rows = 0i64;
-            let mut touched: HashSet<String> = HashSet::new();
-            while let Some(row) = q.next().map_err(|e| e.to_string())? {
-                let rowid: i64 = row.get(0).map_err(|e| e.to_string())?;
-                let card: String = row.get(1).map_err(|e| e.to_string())?;
-                count += 1;
-                max_rowid = max_rowid.max(rowid);
-                let in_tail = rebase.is_some_and(|s| rowid > s);
-                if in_tail {
-                    tail_rows += 1;
-                }
-                if !member.contains_key(card.as_str()) {
-                    if rowid > since && stray_seen.insert(card.clone()) {
-                        strays.push(card);
-                    }
-                    continue;
-                }
-                let st: Option<i64> = row.get(2).map_err(|e| e.to_string())?;
-                let (stored, cols) = slim::log_row(row, 3).map_err(|e| e.to_string())?;
-                if in_tail {
-                    touched.insert(card.clone());
-                }
-                logs.push(card, rowid, &stored, st, cols.as_ref())?;
-            }
-            drop(q);
-            Ok((groups, count, max_rowid, logs, strays, tail_rows, touched))
-        })?;
         let diverge = match rebase {
             Some(s) => rwkv_divergence(&groups, &logs, &touched, s, day)?,
             None => None,
@@ -705,92 +839,136 @@ impl SrsCore {
         push_strings(&mut out, strays.iter().map(String::as_str));
         Ok(out)
     }
+}
 
-    /// RWKV 对齐用的日志指纹与尾巴（同一个快照）：本 profile 的 (行数, 最大 rowid, rowid 在 `since` 之后的行数)；
-    /// `with_rows` 时再给出这些新行（按发生时刻、rowid 排序）。
-    ///
-    /// `incremental`：只数 rowid 在 `since` 之后的行（`+profile_uid` 让 SQLite 走 rowid 范围，O(新增)），
-    /// 行数 = 新增行数、最大 rowid = 新增里的最大（没有新增为 0）；调用方在已知的指纹上累加。
-    ///
-    /// 输出：`[i64 count, maxRowId, newRows, n]`、`at × n`、`kind × n`（1 review、2 undo、0 其它）、
-    /// 串表（每行 ID、卡 ID、撤销目标（无则空串）三个一组）。
-    pub fn rwkv_log_tail(
-        &self,
-        profile: &str,
-        since: i64,
-        with_rows: bool,
-        incremental: bool,
-    ) -> Result<Vec<u8>, String> {
-        #[derive(serde::Deserialize)]
-        struct Revokes<'a> {
-            #[serde(default, borrow)]
-            revokes: Option<std::borrow::Cow<'a, str>>,
-        }
-        let (count, max_rowid, new_rows, tail) = self.read_snapshot(|r| {
-            let (count, max_rowid, new_rows): (i64, i64, i64) = if incremental {
-                let (c, m): (i64, i64) = r
-                    .query_row(
-                        "SELECT COUNT(*), COALESCE(MAX(rowid), 0) FROM srs_review_logs \
-                         WHERE rowid > ?2 AND +profile_uid = srs_id(?1)",
-                        rusqlite::params![profile, since],
-                        |row| Ok((row.get(0)?, row.get(1)?)),
-                    )
-                    .map_err(|e| e.to_string())?;
-                (c, m, c)
-            } else {
-                r.query_row(
-                    "SELECT COUNT(*), COALESCE(MAX(rowid), 0), COALESCE(SUM(rowid > ?2), 0) \
-                     FROM srs_review_logs WHERE profile_uid = srs_id(?1)",
-                    rusqlite::params![profile, since],
-                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-                )
-                .map_err(|e| e.to_string())?
-            };
-            let mut tail: Vec<(String, String, i64, i64, String)> = Vec::new();
-            if with_rows {
-                let mut stmt = r
-                    .prepare_cached(
-                        "SELECT srs_idt(id) AS id, srs_idt(card_id) AS card_id, kind, occurred_at, json FROM srs_review_logs \
-                         WHERE rowid > ?2 AND +profile_uid = srs_id(?1) ORDER BY occurred_at, rowid",
-                    )
-                    .map_err(|e| e.to_string())?;
-                let mut q = stmt.query(rusqlite::params![profile, since]).map_err(|e| e.to_string())?;
-                while let Some(row) = q.next().map_err(|e| e.to_string())? {
-                    let kind: String = row.get(2).map_err(|e| e.to_string())?;
-                    let (code, revokes) = match kind.as_str() {
-                        "review" => (1, String::new()),
-                        "undo" => {
-                            let json: String = row.get(4).map_err(|e| e.to_string())?;
-                            let v: Revokes<'_> = serde_json::from_str(&json).map_err(|e| e.to_string())?;
-                            (2, v.revokes.map(|c| c.into_owned()).unwrap_or_default())
-                        }
-                        _ => (0, String::new()),
-                    };
-                    tail.push((
-                        row.get(0).map_err(|e| e.to_string())?,
-                        row.get(1).map_err(|e| e.to_string())?,
-                        code,
-                        row.get(3).map_err(|e| e.to_string())?,
-                        revokes,
-                    ));
-                }
-            }
-            Ok((count, max_rowid, new_rows, tail))
-        })?;
-        let mut out = Vec::with_capacity(32 + tail.len() * 56);
-        push_i64(&mut out, count);
-        push_i64(&mut out, max_rowid);
-        push_i64(&mut out, new_rows);
-        push_i64(&mut out, tail.len() as i64);
-        tail.iter().for_each(|t| push_i64(&mut out, t.3));
-        tail.iter().for_each(|t| push_i64(&mut out, t.2));
-        push_strings(
-            &mut out,
-            tail.iter()
-                .flat_map(|t| [t.0.as_str(), t.1.as_str(), t.4.as_str()]),
-        );
-        Ok(out)
+/// 优化器训练集的计算（[SrsCore::optimizer_items] 的输出布局）：[groups] 是展开后的血统，[logs] 是这些卡的日志。协议 3 与
+/// 新代（`store/gen4/cmd/training.rs`）共用。
+pub(crate) fn optimizer_items_of(
+    groups: &[Vec<String>],
+    logs: &LogsByCard,
+    card_ids: &[i64],
+    alg: Alg,
+    day: &Day,
+) -> Result<Vec<u8>, String> {
+    if card_ids.len() != groups.len() {
+        return Err("optimizer: card id count differs from group count".into());
     }
+    let mut cols = TrainingColumns::new();
+    // (时刻, 序列, 前缀长度)；稳定排序保住输入顺序。
+    let mut items: Vec<(i64, i64, i64)> = Vec::new();
+    for (g, lineage) in groups.iter().enumerate() {
+        let eff = logs.effective(lineage, None);
+        let Some((reviews, card_items)) = projection::optimizer_card(&eff, alg, day)? else {
+            continue;
+        };
+        let seq = cols.push_card(card_ids[g], &reviews);
+        for (at, len) in card_items {
+            items.push((at, seq, len as i64));
+        }
+    }
+    items.sort_by_key(|i| i.0);
+    let mut out = Vec::with_capacity(cols.capacity(2 * items.len()));
+    cols.pack_prefix(&mut out, items.len());
+    for (_, seq, len) in items {
+        push_i64(&mut out, seq);
+        push_i64(&mut out, len);
+    }
+    Ok(out)
+}
+
+/// 复习统计页的校准图（`srsCalibration`）：与 [optimizer_items_of] 同一份训练集（同一布局、同一顺序），
+/// 末尾再按列接五段 `i64 × n_items`：目标评分的时刻、它的复习日志数字 ID（与 RWKV 回放行的标签同一个：
+/// `schema::anki_numeric_id`）、距上一次评分的复习日天数、卡的数字 id、记住（评分 > 1 为 1）。按列存，
+/// Dart 侧直接取视图交给 `ffsrs_calibration_report`，不逐条解码。协议 3 与新代共用。
+pub(crate) fn calibration_items_of(
+    groups: &[Vec<String>],
+    logs: &LogsByCard,
+    card_ids: &[i64],
+    alg: Alg,
+    day: &Day,
+) -> Result<Vec<u8>, String> {
+    if card_ids.len() != groups.len() {
+        return Err("calibration: card id count differs from group count".into());
+    }
+    let mut cols = TrainingColumns::new();
+    // (时刻, 序列, 前缀长度, 标签, 间隔天数)；稳定排序保住输入顺序（与 optimizer_items 相同）。
+    let mut items: Vec<(i64, i64, i64, i64, i64)> = Vec::new();
+    for (g, lineage) in groups.iter().enumerate() {
+        let eff = logs.effective(lineage, None);
+        let Some((reviews, card_items)) = projection::calibration_card(&eff, alg, day)? else {
+            continue;
+        };
+        let seq = cols.push_card(card_ids[g], &reviews);
+        for (at, len, log, elapsed) in card_items {
+            let tag = crate::store::schema::anki_numeric_id(&eff[log].id);
+            items.push((at, seq, len as i64, tag, elapsed));
+        }
+    }
+    items.sort_by_key(|i| i.0);
+    let mut out = Vec::with_capacity(cols.capacity(5 * items.len()));
+    cols.pack_prefix(&mut out, items.len());
+    for &(_, seq, len, _, _) in &items {
+        push_i64(&mut out, seq);
+        push_i64(&mut out, len);
+    }
+    items.iter().for_each(|i| push_i64(&mut out, i.0));
+    items.iter().for_each(|i| push_i64(&mut out, i.3));
+    items.iter().for_each(|i| push_i64(&mut out, i.4));
+    items
+        .iter()
+        .for_each(|i| push_i64(&mut out, cols.seq_card[i.1 as usize]));
+    items.iter().for_each(|i| {
+        let target = cols.seq_start[i.1 as usize] + i.2 - 1;
+        push_i64(&mut out, i64::from(cols.ratings[target as usize] > 1));
+    });
+    Ok(out)
+}
+
+/// RWKV 逐卡：每份历史的保留评分行与摘要。协议 3 与新代共用。
+///
+/// 输出：`[i64 n_groups]`，每份 `[i64 kept, effectiveRatings, lastAt|NONE, lastRating, lastRType, 0]`，
+/// 全部保留评分行（80 字节 × 总数，份内时间顺序），保留评分的日志 ID 串表。
+pub(crate) fn rwkv_cards_of(
+    groups: &[Vec<String>],
+    logs: &LogsByCard,
+    ids: &[i64],
+    day: &Day,
+) -> Result<Vec<u8>, String> {
+    if ids.len() != groups.len() * 4 {
+        return Err("rwkv: id count differs from 4 × group count".into());
+    }
+    let mut head = Vec::with_capacity(8 + groups.len() * 48);
+    let mut rows = Vec::new();
+    let mut kept_ids: Vec<String> = Vec::new();
+    push_i64(&mut head, groups.len() as i64);
+    for (g, lineage) in groups.iter().enumerate() {
+        let eff = logs.effective(lineage, None);
+        let card: RwkvIds = [ids[4 * g], ids[4 * g + 1], ids[4 * g + 2], ids[4 * g + 3]];
+        let (r, _, kept) = projection::rwkv_card_rows(&eff, &card, day)?;
+        rows.extend_from_slice(&r);
+        push_i64(&mut head, kept.len() as i64);
+        push_i64(
+            &mut head,
+            eff.iter().filter(|l| l.is_rating()).count() as i64,
+        );
+        match kept.last() {
+            Some(&i) => {
+                push_i64(&mut head, eff[i].at);
+                push_i64(&mut head, eff[i].rating.unwrap_or(0));
+                push_i64(&mut head, eff[i].rtype as i64);
+            }
+            None => {
+                push_i64(&mut head, NONE_I64);
+                push_i64(&mut head, 0);
+                push_i64(&mut head, 0);
+            }
+        }
+        push_i64(&mut head, 0);
+        kept_ids.extend(kept.iter().map(|&i| eff[i].id.clone()));
+    }
+    head.extend_from_slice(&rows);
+    push_strings(&mut head, kept_ids.iter().map(String::as_str));
+    Ok(head)
 }
 
 #[cfg(test)]

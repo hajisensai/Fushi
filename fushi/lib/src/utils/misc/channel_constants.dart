@@ -68,9 +68,19 @@ abstract final class FushiChannels {
   static const MethodChannel feedbackReplyWork = MethodChannel(
     '$_prefix/feedback_reply_work',
   );
+
+  /// Android 文件分享（BUG-4740）。share_plus 7.2.2 在 Android 主线程上整份拷贝
+  /// 待分享文件，大文件直接 ANR；`FushiShare.shareFiles` 在 Android 上先异步落
+  /// 快照再走这条。原生侧 `FushiShareChannel.kt`。
+  static const MethodChannel share = MethodChannel('$_prefix/share');
   static const MethodChannel clipboardImage = MethodChannel(
     '$_prefix/clipboard_image',
   );
+
+  /// 「用其他应用打开」/ 分享进来的书 / 漫画文件（拍板台 oeJzVRQ9p1）。原生侧
+  /// `OpenWithChannel.java` 把 content:// 复制进缓存，Dart 门面
+  /// `lib/src/media/import/android_open_with.dart`。
+  static const MethodChannel openWith = MethodChannel('$_prefix/open_with');
 
   /// Android 系统代理（Wi-Fi 手动 / PAC / 全局 HTTP 代理）。原生侧
   /// `SystemProxyChannel.java`，Dart 门面 `android_system_proxy.dart`。
@@ -114,6 +124,13 @@ abstract final class FushiChannels {
   /// `AndroidPictureInPicture` 恒答「不支持」且不发调用。
   static const MethodChannel pictureInPicture = MethodChannel(
     '$_prefix/picture_in_picture',
+  );
+
+  /// 墨水屏全刷的厂商 EPD 通道（Onyx / 瑞芯微 / NTX，反射探测）。只有 Android 有
+  /// 原生侧（`EinkRefreshChannel.java`），Dart 门面 `AndroidEinkRefresh` 在其余
+  /// 平台恒答 false 且不发调用。
+  static const MethodChannel einkRefresh = MethodChannel(
+    '$_prefix/eink_refresh',
   );
 
   /// 第二块屏宿主（双屏掌机下屏 / 外接显示器上的面板：副屏伴侣或串流查词面板）。

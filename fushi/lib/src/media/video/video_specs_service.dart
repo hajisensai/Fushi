@@ -23,6 +23,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_probe.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
 import 'package:fushi_engine/media/video/video_duration_probe.dart';
+import 'package:fushi_engine/media/video/video_member_file.dart'
+    show videoMemberPresencePath;
 import 'package:fushi/src/models/app_model.dart' show appProvider;
 
 /// 同时在跑的 ffprobe 进程数上限。
@@ -382,7 +384,8 @@ class VideoSpecsService extends ChangeNotifier {
     final FileStat stat;
     final VideoProbeFacts facts;
     try {
-      stat = await FileStat.stat(path);
+      // 原盘成员按它背后真实存在的文件判（蓝光分集 / DVD title 是虚拟路径）。
+      stat = await FileStat.stat(videoMemberPresencePath(path));
       if (stat.type == FileSystemEntityType.notFound) {
         _cache[path] = null;
         return null;
@@ -437,7 +440,9 @@ class VideoSpecsService extends ChangeNotifier {
   /// 缓存行是否仍代表磁盘上那个文件。
   Future<bool> _rowIsFresh(VideoFileSpecRow row) async {
     if (row.probeVersion != kVideoProbeFieldSetVersion) return false;
-    final FileStat stat = await FileStat.stat(row.filePath);
+    final FileStat stat = await FileStat.stat(
+      videoMemberPresencePath(row.filePath),
+    );
     if (stat.type == FileSystemEntityType.notFound) return false;
     return stat.size == row.fileSizeBytes &&
         stat.modified.millisecondsSinceEpoch == row.fileModifiedAt;

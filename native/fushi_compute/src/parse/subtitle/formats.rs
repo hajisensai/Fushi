@@ -434,6 +434,7 @@ pub fn parse_ass(content: &[u16], include_drawings: bool) -> DResult<AssResult> 
     let (mut start_col, mut end_col, mut text_col, mut style_col) = (-1i64, -1i64, -1i64, -1i64);
     let (mut margin_l_col, mut margin_r_col, mut margin_v_col, mut layer_col) =
         (-1i64, -1i64, -1i64, -1i64);
+    let mut effect_col = -1i64;
     let mut play_res_x: Option<f64> = None;
     let mut play_res_y: Option<f64> = None;
 
@@ -513,6 +514,7 @@ pub fn parse_ass(content: &[u16], include_drawings: bool) -> DResult<AssResult> 
             margin_r_col = index_of_col(&cols, b"marginr");
             margin_v_col = index_of_col(&cols, b"marginv");
             layer_col = index_of_col(&cols, b"layer");
+            effect_col = index_of_col(&cols, b"effect");
             continue;
         }
 
@@ -576,9 +578,23 @@ pub fn parse_ass(content: &[u16], include_drawings: bool) -> DResult<AssResult> 
             };
             let prx = play_res_x.unwrap_or(384.0);
             let pry = play_res_y.unwrap_or(288.0);
-            let markup = parse_markup(&raw_text, Some(prx), Some(pry), layer)?;
+            let mut markup = parse_markup(&raw_text, Some(prx), Some(pry), layer)?;
             if markup.plain_text.is_empty() && !(include_drawings && markup.drawing.is_some()) {
                 continue;
+            }
+            // 特效字幕判据（H7r4mf_z2n，见 [Markup::effect]）的事件级补充：`Effect` 列非空
+            // （`Karaoke` / `Banner;…` / `Scroll up;…` 等 ASS 内建效果）与样式级 `Angle`
+            // 旋转——这两样不在覆盖标签里，parse_markup 看不到。
+            let effect_column_set = effect_col >= 0
+                && effect_col < text_col
+                && effect_col < len
+                && !trim(parts[effect_col as usize]).is_empty();
+            let style_rotated = style_id >= 0
+                && style_objects[style_id as usize]
+                    .angle_deg
+                    .is_some_and(|a| a != 0.0);
+            if effect_column_set || style_rotated {
+                markup.effect = true;
             }
             raw_cues.push(RawCue {
                 start: start_ms,
@@ -617,11 +633,138 @@ pub fn parse_ass(content: &[u16], include_drawings: bool) -> DResult<AssResult> 
             play_res: Some(rc.play_res),
         });
     }
+    mark_per_char_split_effects(&mut cues);
     Ok(AssResult {
         styles: style_objects,
         cues,
         skipped,
     })
+}
+
+/// 逐字拆开歌词的同行判据：`\pos` 的 y（PlayResY 归一化分数）差在此以内算同一行（与 Dart
+/// 列表 `mergePerCharacterCueGroups` 的 `kSameRowEps` 一致）。
+const PER_CHAR_SAME_ROW_EPS: f64 = 0.001;
+
+/// 特效字幕判据（H7r4mf_z2n，见 [Markup::effect]）的事件间补充：OP / ED 卡拉 OK 常把
+/// 一句歌词拆成每字一条 `Dialogue`，各带自己的 `\pos`（常只配 `\fad`），靠坐标在画面上
+/// 拼成一行。单看一条事件只有 `\pos`，与普通定位对白分不开；成组才是特效——**单字**、
+/// 带 `\pos`、同 Layer、同一行（y 分数相等）且与另一条这样的事件**同时在屏**。孤立的
+/// 单字对白（`{\pos(..)}え`）不受影响。`cues` 已按 start 升序。
+fn mark_per_char_split_effects(cues: &mut [Cue]) {
+    use std::cmp::Reverse;
+    use std::collections::{BTreeMap, BinaryHeap};
+    use std::ops::Bound::Included;
+
+    // `Markup::pos` 已是 PlayRes 归一化后的分数。非有限的 y 与谁都不算同一行。
+    let row_y = |c: &Cue| -> Option<f64> { c.markup.pos.map(|(_, y)| y).filter(|y| y.is_finite()) };
+    let candidates: Vec<(usize, f64)> = (0..cues.len())
+        .filter_map(|i| {
+            let m = &cues[i].markup;
+            if m.effect || !is_single_grapheme(&m.plain_text) {
+                return None;
+            }
+            row_y(&cues[i]).map(|y| (i, y))
+        })
+        .collect();
+
+    // 字幕文件是不可信输入：几万条单字事件长时间同屏时，两两比较是 O(N²)。这里按 start
+    // 升序扫一遍，只维护「此刻还在屏」的候选——`live` 按 (Layer, y) 计数，`pending` 记其中
+    // 还没被标记的；每条候选进出各一次，整体 O(N log N)。同一行 = 另一条的 y 落在
+    // [y - eps, y + eps] 内。
+    let mut hit = vec![false; candidates.len()];
+    let mut expired = vec![false; candidates.len()];
+    let mut live: BTreeMap<(i64, RowY), u32> = BTreeMap::new();
+    let mut pending: BTreeMap<(i64, RowY), Vec<usize>> = BTreeMap::new();
+    let mut by_end: BinaryHeap<Reverse<(i64, usize)>> = BinaryHeap::new();
+    let mut drained: Vec<(i64, RowY)> = Vec::new();
+    for (k, &(i, y)) in candidates.iter().enumerate() {
+        let (start, end, layer) = (cues[i].start_ms, cues[i].end_ms, cues[i].markup.layer);
+        // 起点已到 / 已过别人的终点：那一条不再与后面任何一条同时在屏。
+        while let Some(&Reverse((e, gone))) = by_end.peek() {
+            if e > start {
+                break;
+            }
+            by_end.pop();
+            expired[gone] = true;
+            let (gi, gy) = candidates[gone];
+            let key = (cues[gi].markup.layer, RowY(gy));
+            if let Some(n) = live.get_mut(&key) {
+                *n -= 1;
+                if *n == 0 {
+                    live.remove(&key);
+                }
+            }
+        }
+        let window = (
+            Included((layer, RowY(y - PER_CHAR_SAME_ROW_EPS))),
+            Included((layer, RowY(y + PER_CHAR_SAME_ROW_EPS))),
+        );
+        if live.range(window).next().is_some() {
+            hit[k] = true;
+            drained.clear();
+            for (key, waiting) in pending.range(window) {
+                for &a in waiting {
+                    if !expired[a] {
+                        hit[a] = true;
+                    }
+                }
+                drained.push(*key);
+            }
+            for key in &drained {
+                pending.remove(key);
+            }
+        }
+        *live.entry((layer, RowY(y))).or_insert(0) += 1;
+        by_end.push(Reverse((end, k)));
+        if !hit[k] {
+            pending.entry((layer, RowY(y))).or_default().push(k);
+        }
+    }
+    for (k, &(i, _)) in candidates.iter().enumerate() {
+        if hit[k] {
+            cues[i].markup.effect = true;
+        }
+    }
+}
+
+/// [mark_per_char_split_effects] 的行坐标键：有限 f64 的全序。
+#[derive(Clone, Copy, PartialEq)]
+struct RowY(f64);
+
+impl Eq for RowY {}
+
+impl PartialOrd for RowY {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for RowY {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.total_cmp(&other.0)
+    }
+}
+
+/// UTF-16 文本是否只有一个「字」：恰好一个基字符，后随的组合附加符（浊点、变体选择符、
+/// ZWJ 等）不另计。与 Dart 列表合并用的 `characters.length == 1` 对齐到常见日文 / CJK。
+fn is_single_grapheme(text: &[u16]) -> bool {
+    let mut base = 0;
+    for ch in char::decode_utf16(text.iter().copied()) {
+        let Ok(ch) = ch else {
+            return false;
+        };
+        let combining = matches!(
+            ch as u32,
+            0x0300..=0x036F | 0x3099..=0x309A | 0xFE00..=0xFE0F | 0x200D | 0xE0100..=0xE01EF
+        );
+        if !combining {
+            base += 1;
+            if base > 1 {
+                return false;
+            }
+        }
+    }
+    base == 1
 }
 
 #[cfg(test)]
@@ -674,5 +817,160 @@ mod tests {
         assert_eq!(r.cues[1].markup.layer, 1);
         assert_eq!(r.cues[1].style_id, 0);
         assert_eq!(r.cues[1].play_res, Some((1920.0, 1080.0)));
+    }
+
+    /// H7r4mf_z2n：特效字幕判据——排版 / 动画类标签、`Effect` 列、样式旋转算特效；
+    /// 普通台词（含 `\fad` 淡入淡出、`\an8` 顶部、颜色 / 粗体、静态 `\fscx`、`\frz0`、
+    /// 只带 `\pos` 的定位对白、孤立的单字 `\pos` 对白）不算；同一行同时在屏的单字 `\pos`
+    /// 事件（逐字拆开的歌词）算，别的行上的单字不被牵连。
+    #[test]
+    fn ass_effect_flag() {
+        let src = concat!(
+            "[Script Info]\nPlayResX: 1920\nPlayResY: 1080\n\n",
+            "[V4+ Styles]\nFormat: Name, Fontname, Fontsize, Angle\n",
+            "Style: Default,Arial,60,0\nStyle: Tilted,Arial,60,12\n\n",
+            "[Events]\nFormat: Layer, Start, End, Style, Effect, Text\n",
+            "Dialogue: 0,0:00:01.00,0:00:02.00,Default,,{\\fad(200,200)}plain1\n",
+            "Dialogue: 0,0:00:01.01,0:00:02.00,Default,,{\\an8\\c&H0000FF&\\b1}plain2\n",
+            "Dialogue: 0,0:00:01.02,0:00:02.00,Default,,{\\fscx90\\frz0}plain3\n",
+            "Dialogue: 0,0:00:01.03,0:00:02.00,Default,,{\\k20}そ{\\k30}よ\n",
+            "Dialogue: 0,0:00:01.04,0:00:02.00,Default,,{\\kf20}lyric\n",
+            "Dialogue: 0,0:00:01.05,0:00:02.00,Default,,{\\pos(960,100)}posline\n",
+            "Dialogue: 0,0:00:01.05,0:00:02.00,Default,,{\\pos(500,900)}え\n",
+            "Dialogue: 0,0:00:01.05,0:00:02.00,Default,,{\\an7\\pos(461,672)\\fad(250,250)}手\n",
+            "Dialogue: 0,0:00:01.05,0:00:02.00,Default,,{\\an7\\pos(491,672)\\fad(250,250)}を\n",
+            "Dialogue: 0,0:00:01.05,0:00:02.00,Default,,{\\an7\\pos(800,300)}上\n",
+            "Dialogue: 0,0:00:01.06,0:00:02.00,Default,,{\\move(0,0,100,100)}moving\n",
+            "Dialogue: 0,0:00:01.07,0:00:02.00,Default,,{\\t(\\alpha&HFF&)}anim\n",
+            "Dialogue: 0,0:00:01.08,0:00:02.00,Default,,{\\clip(0,0,10,10)}clipped\n",
+            "Dialogue: 0,0:00:01.09,0:00:02.00,Default,,{\\frz15}rotated\n",
+            "Dialogue: 0,0:00:01.10,0:00:02.00,Default,Banner;10,banner\n",
+            "Dialogue: 0,0:00:01.11,0:00:02.00,Tilted,,tilted style\n",
+        );
+        let r = parse_ass(&w(src), false).unwrap();
+        let got: Vec<(String, bool)> = r
+            .cues
+            .iter()
+            .map(|c| {
+                (
+                    String::from_utf16_lossy(&c.markup.plain_text),
+                    c.markup.effect,
+                )
+            })
+            .collect();
+        let want: Vec<(String, bool)> = [
+            ("plain1", false),
+            ("plain2", false),
+            ("plain3", false),
+            ("そよ", true),
+            ("lyric", true),
+            ("posline", false),
+            ("え", false),
+            ("手", true),
+            ("を", true),
+            ("上", false),
+            ("moving", true),
+            ("anim", true),
+            ("clipped", true),
+            ("rotated", true),
+            ("banner", true),
+            ("tilted style", true),
+        ]
+        .iter()
+        .map(|(t, e)| (t.to_string(), *e))
+        .collect();
+        assert_eq!(got, want);
+    }
+
+    /// 逐字拆开判据的扫描实现与「两两比较」的定义逐条一致（多 Layer、多行、长短不一的
+    /// 在屏区间、同起点），并且几万条长时间同屏的单字事件不退化成 O(N²)。
+    #[test]
+    fn per_char_split_effects_match_pairwise_definition_and_scale() {
+        // 模板取自真实解析出的一条单字 `\\pos` 事件，再改时间 / Layer / 行坐标 / 文本。
+        let template: Cue = parse_ass(
+            &w(concat!(
+                "[Script Info]\nPlayResX: 1920\nPlayResY: 1080\n\n",
+                "[Events]\nFormat: Layer, Start, End, Style, Effect, Text\n",
+                "Dialogue: 0,0:00:01.00,0:00:02.00,Default,,{\\pos(960,540)}字\n",
+            )),
+            false,
+        )
+        .unwrap()
+        .cues
+        .remove(0);
+        assert!(!template.markup.effect && template.markup.pos.is_some());
+        let cue = |start: i64, end: i64, layer: i64, y: f64, text: &str| -> Cue {
+            let mut markup = template.markup.clone();
+            markup.plain_text = w(text);
+            markup.pos = Some((0.5, y));
+            markup.layer = layer;
+            Cue {
+                start_ms: start,
+                end_ms: end,
+                markup,
+                style_id: template.style_id,
+                event_margins: template.event_margins,
+                play_res: template.play_res,
+            }
+        };
+        fn pairwise(cues: &[Cue]) -> Vec<bool> {
+            let mut hit = vec![false; cues.len()];
+            for a in 0..cues.len() {
+                for b in (a + 1)..cues.len() {
+                    let (ca, cb) = (&cues[a], &cues[b]);
+                    let (ya, yb) = (ca.markup.pos.unwrap().1, cb.markup.pos.unwrap().1);
+                    let single = |c: &Cue| is_single_grapheme(&c.markup.plain_text);
+                    if single(ca)
+                        && single(cb)
+                        && cb.start_ms < ca.end_ms
+                        && ca.markup.layer == cb.markup.layer
+                        && ya >= yb - PER_CHAR_SAME_ROW_EPS
+                        && ya <= yb + PER_CHAR_SAME_ROW_EPS
+                    {
+                        hit[a] = true;
+                        hit[b] = true;
+                    }
+                }
+            }
+            hit
+        }
+
+        // 确定性伪随机（LCG），行坐标落在 0.0004 的格点上：相邻格算同一行，隔三格不算。
+        let mut seed: u64 = 0x2545_F491_4F6C_DD1D;
+        let mut next = |m: u64| -> u64 {
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (seed >> 33) % m
+        };
+        let mut cues: Vec<Cue> = Vec::new();
+        let mut start: i64 = 0;
+        for _ in 0..600 {
+            start += next(3) as i64 * 40;
+            let end = start + 1 + next(8) as i64 * 60;
+            let y = 0.3 + next(12) as f64 * 0.0004;
+            let text = if next(5) == 0 { "二字" } else { "字" };
+            cues.push(cue(start, end, next(2) as i64, y, text));
+        }
+        let want = pairwise(&cues);
+        assert!(want.iter().any(|h| *h) && want.iter().any(|h| !*h));
+        mark_per_char_split_effects(&mut cues);
+        let got: Vec<bool> = cues.iter().map(|c| c.markup.effect).collect();
+        assert_eq!(got, want);
+
+        // 6 万条单字事件、两行、全部同屏：两两比较要 18 亿次，扫描应在秒级内结束。
+        let mut dense: Vec<Cue> = (0..60_000)
+            .map(|i| cue(i, 10_000_000, 0, if i % 2 == 0 { 0.25 } else { 0.75 }, "字"))
+            .collect();
+        dense.push(cue(60_000, 10_000_000, 0, 0.5, "孤"));
+        let began = std::time::Instant::now();
+        mark_per_char_split_effects(&mut dense);
+        assert!(
+            began.elapsed() < std::time::Duration::from_secs(5),
+            "{:?}",
+            began.elapsed()
+        );
+        assert!(dense[..60_000].iter().all(|c| c.markup.effect));
+        assert!(!dense[60_000].markup.effect);
     }
 }

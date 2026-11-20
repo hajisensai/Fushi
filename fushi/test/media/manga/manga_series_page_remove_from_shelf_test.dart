@@ -12,6 +12,8 @@ import 'package:fushi/src/media/manga/library/manga_chapter_storage.dart';
 import 'package:fushi/src/media/manga/library/manga_series_page.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
+import 'package:fushi/src/media/manga/library/online_manga_reshelf.dart';
+import 'package:fushi/src/media/manga/library/online_manga_shelf_sidecar.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/media_source.dart';
@@ -207,7 +209,7 @@ void main() {
   testWidgets('在库态按钮是「移出」；确认后书、下载目录、章节状态一起删，页面退回未入库', (
     WidgetTester tester,
   ) async {
-    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.physicalSize = const Size(800, 2000);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
     final _TestAppModel appModel = _TestAppModel(db, library, root);
@@ -261,8 +263,13 @@ void main() {
           const ValueKey<String>('manga_series_remove_from_bookshelf'),
         ),
       );
-      // 与书架长按删除同一个确认框：披露 + 「删除」。
+      // 与书架长按删除同一个确认框：披露 + 「删除」。「保留已下载章节」默认勾上，
+      // 这条用例验「连目录一起删」，先取消勾选。
       await _pumpUntil(tester, find.text(t.dialog_delete));
+      await tester.tap(
+        find.byKey(const ValueKey<String>('delete-keep-downloads')),
+      );
+      await tester.pump();
       await tester.tap(find.text(t.dialog_delete));
       await _pumpUntil(
         tester,
@@ -295,8 +302,77 @@ void main() {
     );
   });
 
+  testWidgets('默认保留已下载章节：只删书架行，目录与侧车留在下载根，可原样重新入库', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 2000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    final _TestAppModel appModel = _TestAppModel(db, library, root);
+
+    late String bookKey;
+    late String bookUid;
+    late String extractDir;
+    await tester.runAsync(() async {
+      final EpubBookRow row = await library.add(_entry());
+      bookKey = row.bookKey;
+      bookUid = row.uid;
+      extractDir = row.extractDir;
+      await _writeDownloadedChapter(row.extractDir, '/chapter/1');
+      await tester.pumpWidget(_harness(appModel, bookKey));
+      await _pumpUntil(
+        tester,
+        find.byKey(
+          const ValueKey<String>('manga_series_remove_from_bookshelf'),
+        ),
+      );
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('manga_series_remove_from_bookshelf'),
+        ),
+      );
+      await _pumpUntil(
+        tester,
+        find.byKey(const ValueKey<String>('delete-keep-downloads')),
+      );
+      await tester.tap(find.text(t.dialog_delete));
+      await _pumpUntil(
+        tester,
+        find.byKey(const ValueKey<String>('manga_series_add_to_bookshelf')),
+      );
+    });
+
+    expect(await db.getEpubBook(bookKey), isNull, reason: '书架行已删');
+    expect(
+      p.isWithin(p.join(root.path, 'anime_downloads', 'content'), extractDir),
+      isTrue,
+      reason: '在线漫画书目录住在下载根里',
+    );
+    expect(Directory(extractDir).existsSync(), isTrue, reason: '目录保留');
+    expect(
+      File(p.join(extractDir, kOnlineMangaShelfSidecarFileName)).existsSync(),
+      isTrue,
+      reason: '侧车写好了，重新入库才认得出来源',
+    );
+
+    await tester.runAsync(() async {
+      final OnlineMangaReshelf reshelf = OnlineMangaReshelf(database: db);
+      final OnlineMangaReshelfScan scan = await reshelf.scan();
+      expect(
+        scan.recoverable.map((RecoverableOnlineManga r) => r.bookKey),
+        <String>[bookKey],
+      );
+      expect(scan.recoverable.single.downloadedChapterCount, 1);
+      final EpubBookRow back = await reshelf.reshelve(scan.recoverable.single);
+      expect(back.bookKey, bookKey, reason: 'bookKey 不变');
+      expect(back.uid, bookUid, reason: 'uid 不变：卡片来源先按 uid 找书');
+      expect(back.extractDir, extractDir);
+      expect((await reshelf.scan()).recoverable, isEmpty);
+    });
+  });
+
   testWidgets('确认框点取消：什么都不删', (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.physicalSize = const Size(800, 2000);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
     final _TestAppModel appModel = _TestAppModel(db, library, root);

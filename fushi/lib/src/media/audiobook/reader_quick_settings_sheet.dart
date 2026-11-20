@@ -4,8 +4,8 @@ import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart'
     show LyricsIllustrationCue;
@@ -111,7 +111,6 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
     required this.onJumpSection,
     required this.onExitReader,
     this.readerCharOffset,
-    required this.webViewController,
     required this.appModel,
     required this.ref,
     this.pageProgress,
@@ -173,6 +172,7 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
     this.presentation = ReaderQuickSettingsPresentation.sheet,
     this.onClose,
     this.coverPath,
+    this.nsfw,
     this.readerPaperColors,
     super.key,
   });
@@ -193,7 +193,6 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
   /// 同一 spine 章下的多个目录项只有它能区分，为 null 时就是跳到章首。
   final Future<void> Function(int sectionIndex, String? fragment) onJumpSection;
   final VoidCallback onExitReader;
-  final InAppWebViewController webViewController;
   final AppModel appModel;
 
   /// Riverpod ref from the reader page, forwarded to the schema-projected
@@ -338,6 +337,19 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
 
   /// 书籍封面文件路径（有声书面板左侧显示；null 不显示）。
   final String? coverPath;
+
+  /// 这本书的 NSFW 宿主（拍板台 w04vrhUAaX）：进度 hero 与有声书面板的封面按
+  /// 「模糊 NSFW 封面」打模糊。null = 不判定（测试 / 不可标的书）。
+  final MediaNsfwTarget? nsfw;
+
+  /// [nsfw] 非空时给封面消费端挂 NSFW 作用域（hero 的封面框 / 有声书面板读它）。
+  Widget _nsfwScope(Widget child) => switch (nsfw) {
+    final MediaNsfwTarget target => MediaNsfwCoverScope(
+      target: target,
+      child: child,
+    ),
+    null => child,
+  };
 
   /// 阅读器当前主题解析出的纸色 / 正文色（设置侧板「实时预览」卡用；面板的
   /// Theme 是 app 主题，读不到 ecru 之类的阅读纸色）。每次 build 现取，换主题后
@@ -561,13 +573,6 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
   }
 
   Future<void> _updateSetting(String key, Object value) async {
-    if (!widget.isFushiReader) {
-      await AudiobookBridge.setReaderSetting(
-        widget.webViewController,
-        key: key,
-        value: value,
-      );
-    }
     final ReaderFushiSource src = ReaderFushiSource.instance;
     switch (key) {
       case 'fontSize':
@@ -1123,16 +1128,18 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
         ctrl == null) {
       return const SizedBox.shrink();
     }
-    return ReaderNavProgressHero(
-      fraction: fraction,
-      chapter: chapter,
-      fallbackTitle: t.reading_progress,
-      caption: t.reader_nav_progress_book,
-      readouts: readouts,
-      coverPath: widget.coverPath,
-      compact: compact,
-      footer: ctrl == null ? null : _buildAudioProgressLine(theme, ctrl),
-      jumpMarks: widget.bookJumpMarks?.call(),
+    return widget._nsfwScope(
+      ReaderNavProgressHero(
+        fraction: fraction,
+        chapter: chapter,
+        fallbackTitle: t.reading_progress,
+        caption: t.reader_nav_progress_book,
+        readouts: readouts,
+        coverPath: widget.coverPath,
+        compact: compact,
+        footer: ctrl == null ? null : _buildAudioProgressLine(theme, ctrl),
+        jumpMarks: widget.bookJumpMarks?.call(),
+      ),
     );
   }
 
@@ -1414,6 +1421,10 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
   }
 
   Widget _buildAudiobookPanelBody(BuildContext context) {
+    return widget._nsfwScope(_buildAudiobookPanelInner());
+  }
+
+  Widget _buildAudiobookPanelInner() {
     return ReaderAudiobookPanel(
       controller: widget.controller,
       toc: widget.toc,

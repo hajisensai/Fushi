@@ -132,6 +132,7 @@ Future<({bool ok, String message})> verifyAniDbLogin(
 String aniDbLoginFailureMessage(AnidbUdpException error) =>
     switch (error.reason) {
       AnidbUdpFailure.authentication => t.video_anidb_login_test_failed_auth,
+      AnidbUdpFailure.encryption => t.video_anidb_login_test_failed_encryption,
       AnidbUdpFailure.unavailable ||
       AnidbUdpFailure.clientOutdated ||
       AnidbUdpFailure.clientBanned => t.video_anidb_login_test_failed_client,

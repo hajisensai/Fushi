@@ -5,6 +5,8 @@ import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/legacy_support_dir_migration.dart';
 import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 
+import 'existing_install_prefs.dart';
+
 /// Starts the real app after marking the fixture database as an existing,
 /// onboarding-complete installation.
 ///
@@ -27,8 +29,9 @@ Future<void> launchFushiTestApp({
   final AppPaths paths = await AppPaths.resolve();
   final FushiDatabase db = FushiDatabase(paths.supportRoot.path);
   try {
-    await db.setPrefTyped<bool>('first_time_setup', false);
-    await db.setPrefTyped<bool>('onboarding_completed', true);
+    // 已走完引导、首帧一次性提示都已处理的安装（见 existingInstallSeedPrefs）；
+    // 要测某个提示本身的用例用 [seedPrefs] 覆盖对应的键。
+    await db.setPrefs(existingInstallSeedPrefs());
     await db.setPrefs(seedPrefs);
   } finally {
     await db.close();

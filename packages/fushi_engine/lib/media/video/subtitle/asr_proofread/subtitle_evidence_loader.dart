@@ -29,6 +29,7 @@ import 'package:fushi_asr_subtitles/asr_subtitles.dart'
 import 'package:fushi_audio/fushi_audio_core.dart' show readTextWithEncoding;
 import 'package:fushi_core/fushi_core.dart' show fushiDebugPrint;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_ass_style_transfer.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_burned_in_evidence.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipeline_cancel.dart';
@@ -62,6 +63,7 @@ class SubtitleEvidenceLoadRequest {
     required this.isOwnOutput,
     required this.targetLanguage,
     this.cancel = const SubtitleNeverCancel(),
+    this.onBurnedInProgress,
   });
 
   final String videoPath;
@@ -73,6 +75,21 @@ class SubtitleEvidenceLoadRequest {
   /// 管线的目标语言（字幕后缀，通常 `ja`）。
   final String targetLanguage;
   final SubtitleCancelToken cancel;
+
+  /// 读硬字幕（整集逐行截帧 OCR，可能要几分钟）的进度：读到第几行 / 共几行。
+  final void Function(int done, int total)? onBurnedInProgress;
+}
+
+/// 这次收集不完整（某个来源读取本身失败，例如画面硬字幕 OCR 起不来）：[tracks] 是收到
+/// 的部分，本次照用，但**不得缓存**——缓存了就永远不会重读那个来源。
+class SubtitleEvidenceIncomplete implements Exception {
+  const SubtitleEvidenceIncomplete(this.tracks, this.reason);
+
+  final List<SubtitleEvidenceTrack> tracks;
+  final String reason;
+
+  @override
+  String toString() => 'SubtitleEvidenceIncomplete: $reason';
 }
 
 /// 管线的证据注入点。
@@ -83,7 +100,8 @@ abstract interface class SubtitleEvidenceSource {
     required bool Function(String path) isOwnOutput,
   });
 
-  /// 收集本集的证据轨。
+  /// 收集本集的证据轨。某个来源读取本身失败、结果不该缓存时抛
+  /// [SubtitleEvidenceIncomplete]（带上收到的部分）。
   Future<List<SubtitleEvidenceTrack>> load(SubtitleEvidenceLoadRequest request);
 }
 
@@ -129,7 +147,20 @@ class SubtitleEvidenceWithPinnedTracks implements SubtitleEvidenceSource {
   Future<List<SubtitleEvidenceTrack>> load(
     SubtitleEvidenceLoadRequest request,
   ) async {
-    final List<SubtitleEvidenceTrack> found = await inner.load(request);
+    try {
+      return _withPinned(await inner.load(request), request);
+    } on SubtitleEvidenceIncomplete catch (e) {
+      throw SubtitleEvidenceIncomplete(
+        _withPinned(e.tracks, request),
+        e.reason,
+      );
+    }
+  }
+
+  List<SubtitleEvidenceTrack> _withPinned(
+    List<SubtitleEvidenceTrack> found,
+    SubtitleEvidenceLoadRequest request,
+  ) {
     return <SubtitleEvidenceTrack>[
       ...found,
       for (final SubtitleEvidenceTrack t in _pinnedFor(request.videoPath))
@@ -164,9 +195,14 @@ class SubtitleEvidenceCollector implements SubtitleEvidenceSource {
   const SubtitleEvidenceCollector({
     this.graphicRecognizer,
     this.extraSubtitleFiles,
+    this.burnedIn,
   });
 
   final SubtitleGraphicTrackRecognizer? graphicRecognizer;
+
+  /// 画面硬字幕 OCR（`subtitle_burned_in_evidence.dart`）；null = 不读（无头服务端、
+  /// 测试）。
+  final SubtitleBurnedInReader? burnedIn;
 
   /// 宿主登记过、但不在视频旁的字幕文件（app 文档目录里的手动导入 / 在线下载 /
   /// 播放时图形字幕 OCR 出的 SRT）。按外挂文件同一套规矩处理（对时间轴、判语言）。
@@ -206,18 +242,28 @@ class SubtitleEvidenceCollector implements SubtitleEvidenceSource {
       out.add(await _stamp(path));
     }
     if (!isNetworkMediaPath(videoPath) && await hasLocalMediaFile(videoPath)) {
-      out.add(await _stamp(videoPath));
+      // 蓝光分集是虚拟路径：戳记取它背后真实存在的那条 `.mpls`（key 仍是库路径）。
+      out.add(
+        await _stamp(videoPath, statPath: videoMemberPresencePath(videoPath)),
+      );
     }
     // 宿主有没有 OCR 也影响产物（同一视频装上 OCR 后应重收）。
     if (graphicRecognizer != null) {
       out.add(const SubtitleEvidenceSourceStamp('ocr', 1, 0));
     }
+    // 硬字幕：识别器身份（模型）变了、或刚下载好模型，都要重收。
+    if (await burnedIn?.identity() case final String id) {
+      out.add(SubtitleEvidenceSourceStamp(id, 1, 0));
+    }
     return out;
   }
 
-  Future<SubtitleEvidenceSourceStamp> _stamp(String path) async {
+  Future<SubtitleEvidenceSourceStamp> _stamp(
+    String path, {
+    String? statPath,
+  }) async {
     try {
-      final FileStat stat = await File(path).stat();
+      final FileStat stat = await File(statPath ?? path).stat();
       return SubtitleEvidenceSourceStamp(
         path,
         stat.size,
@@ -233,6 +279,7 @@ class SubtitleEvidenceCollector implements SubtitleEvidenceSource {
     SubtitleEvidenceLoadRequest request,
   ) async {
     final List<SubtitleEvidenceTrack> tracks = <SubtitleEvidenceTrack>[];
+    String? incomplete;
     final String video = request.videoPath;
     final List<SubtitleReferenceTrack> asrReference = <SubtitleReferenceTrack>[
       SubtitleReferenceTrack(
@@ -276,11 +323,35 @@ class SubtitleEvidenceCollector implements SubtitleEvidenceSource {
       } catch (e) {
         fushiDebugPrint('[SubtitleEvidence] embedded probe failed: $e');
       }
+      final SubtitleBurnedInReader? hard = burnedIn;
+      if (hard != null) {
+        try {
+          final SubtitleEvidenceTrack? t = await hard.read(
+            videoPath: video,
+            drafts: request.drafts,
+            targetLanguage: request.targetLanguage,
+            cancel: request.cancel,
+            onProgress: request.onBurnedInProgress,
+          );
+          if (t != null) tracks.add(t);
+        } on SubtitlePipelineCancelled {
+          rethrow;
+        } on SubtitleBurnedInReadFailed catch (e) {
+          fushiDebugPrint('[SubtitleEvidence] burned-in OCR failed: $e');
+          incomplete = e.toString();
+        } catch (e) {
+          // 探测 / 拼轨里的意外错误同样是「读失败」，不是「没有硬字幕」。
+          fushiDebugPrint('[SubtitleEvidence] burned-in OCR failed: $e');
+          incomplete = 'burned-in OCR: $e';
+        }
+      }
     }
-    return <SubtitleEvidenceTrack>[
+    final List<SubtitleEvidenceTrack> out = <SubtitleEvidenceTrack>[
       for (final SubtitleEvidenceTrack t in tracks)
         if (t.cues.isNotEmpty) t,
     ];
+    if (incomplete != null) throw SubtitleEvidenceIncomplete(out, incomplete);
+    return out;
   }
 
   Future<SubtitleEvidenceTrack?> _sidecarTrack(

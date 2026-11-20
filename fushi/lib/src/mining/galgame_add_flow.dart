@@ -8,6 +8,10 @@ import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
+/// 「添加游戏」与拖放认的游戏可执行文件扩展名（不带点）：文件选择器的过滤与导入面
+/// 「支持 n 种格式」气泡（`importFormatLabels`）同源，不各写一份。
+const Set<String> kGameExecutableExtensions = <String>{'exe'};
+
 /// 「添加游戏」共用动作：文件选择器选一个 `.exe` → 查重 → 落库 → 后台补封面。
 ///
 /// 两个消费方：游戏库页（独立使用时的 FAB / 空态兜底）与游戏「导入」视图的快速
@@ -28,7 +32,7 @@ Future<void> addGameViaFilePicker(
   await repo.load();
   final FilePickerResult? picked = await FilePicker.platform.pickFiles(
     type: FileType.custom,
-    allowedExtensions: <String>['exe'],
+    allowedExtensions: kGameExecutableExtensions.toList(),
   );
   final String? exe = (picked != null && picked.files.isNotEmpty)
       ? picked.files.first.path

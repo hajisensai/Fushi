@@ -524,7 +524,8 @@ List<File> _rustLicenseFiles(Map<String, dynamic> pkg) {
         ..._licenseFilesIn(Directory('${dir.path}/LICENSES'), any: true),
     ];
     final Map<String, File> unique = <String, File>{
-      for (final File f in found) _canon(f.path): f,
+      for (final File f in found)
+        if (registry) _canon(f.path): f else ..._resolvedEntry(f),
     };
     if (unique.isNotEmpty) {
       return unique.values.toList()
@@ -540,6 +541,113 @@ List<File> _rustLicenseFiles(Map<String, dynamic> pkg) {
     dir = parent;
   }
   return <File>[];
+}
+
+/// 非 registry 依赖的许可文件先过 [resolveNativeLicenseSymlink]，按解析后的真实路径去重。
+Map<String, File> _resolvedEntry(File f) {
+  final File resolved = resolveNativeLicenseSymlink(f);
+  return <String, File>{_canon(resolved.path): resolved};
+}
+
+/// 把 git 检出里的符号链接许可文件解析成它指向的真实文件。
+///
+/// cargo 的 git 依赖是一份 git 检出（例如 rust-url 子 crate 的 `LICENSE-MIT` 是指向
+/// `../LICENSE-MIT` 的符号链接，git 模式 `120000`）。检出时 `core.symlinks=false`
+/// （Windows 没有建链权限时 git / libgit2 的默认）会把链接写成**内容为目标路径的普通文本**，
+/// 直接读就把 `../LICENSE-MIT` 这行路径当成许可原文；能建链的环境读到的是真原文——
+/// 同一份 Cargo.lock 在不同机器上生成的产物就不一致。
+///
+/// 判据只认 git 索引里的模式 `120000`，不猜文件内容：是符号链接条目时，链接目标取自
+/// git 对象（与检出成真链接还是占位文本无关），相对链接所在目录解析，链式链接逐跳解析。
+/// 不在任何 git 检出里、或不是符号链接条目的文件原样返回（操作系统层面的真链接读时自然跟随）。
+/// 最近的 `.git` 不跟踪该文件（外层仓库）、目标越出检出根或不存在时抛 [StateError]，
+/// 不静默退回占位文本。
+File resolveNativeLicenseSymlink(File file) {
+  File current = file.absolute;
+  for (int hop = 0; hop < 16; hop++) {
+    final Directory? root = _gitCheckoutRoot(current.parent);
+    if (root == null) return current;
+    final String rel = _relativePath(root, current);
+    final ProcessResult ls = Process.runSync('git', <String>[
+      '--literal-pathspecs',
+      'ls-files',
+      '-s',
+      '--',
+      rel,
+    ], workingDirectory: root.path);
+    if (ls.exitCode != 0) {
+      throw StateError('git ls-files 失败（${root.path}，$rel）：${ls.stderr}');
+    }
+    final String entry = (ls.stdout as String).trim();
+    if (entry.isEmpty) {
+      // 最近的 `.git` 不跟踪这个文件：它是外层仓库（依赖本身是没有 `.git` 的拷贝 /
+      // 解压目录，或 CARGO_HOME 落在别的仓库里），判不出是不是链接，拒绝静默读原文。
+      throw StateError(
+        '${current.path} 不在最近的 git 检出 ${root.path} 的索引里，'
+        '无法判定是否为符号链接；依赖须是带 .git 的完整检出',
+      );
+    }
+    if (!entry.startsWith('120000 ')) return current;
+    final ProcessResult blob = Process.runSync('git', <String>[
+      '--literal-pathspecs',
+      'cat-file',
+      'blob',
+      ':$rel',
+    ], workingDirectory: root.path);
+    if (blob.exitCode != 0) {
+      throw StateError('git cat-file 失败（${root.path}，$rel）：${blob.stderr}');
+    }
+    final String target = (blob.stdout as String).trim();
+    final List<String> segments = <String>[
+      ..._splitPath(_relativePath(root, current.parent)),
+    ];
+    if (target.startsWith('/') || RegExp(r'^[A-Za-z]:').hasMatch(target)) {
+      throw StateError('${file.path} 是指向绝对路径 $target 的符号链接，拒绝解析');
+    }
+    for (final String s in _splitPath(target)) {
+      if (s == '.') continue;
+      if (s == '..') {
+        if (segments.isEmpty) {
+          throw StateError(
+            '${file.path} 的符号链接目标 $target 越出 git 检出根 ${root.path}',
+          );
+        }
+        segments.removeLast();
+      } else {
+        segments.add(s);
+      }
+    }
+    final File next = File(<String>[root.path, ...segments].join('/'));
+    if (!next.existsSync()) {
+      throw StateError('${file.path} 的符号链接目标 $target 不存在（${next.path}）');
+    }
+    current = next;
+  }
+  throw StateError('${file.path} 的符号链接层数过多');
+}
+
+/// 往上找含 `.git`（目录或 worktree / 子模块的 `.git` 文件）的目录。
+Directory? _gitCheckoutRoot(Directory start) {
+  Directory dir = start.absolute;
+  while (true) {
+    if (Directory('${dir.path}/.git').existsSync() ||
+        File('${dir.path}/.git').existsSync()) {
+      return dir;
+    }
+    final Directory parent = dir.parent;
+    if (parent.path == dir.path) return null;
+    dir = parent;
+  }
+}
+
+List<String> _splitPath(String path) =>
+    path.split(RegExp(r'[/\\]')).where((String s) => s.isNotEmpty).toList();
+
+/// [entity] 相对 [root] 的路径（`/` 分隔；同一目录时为空串）。
+String _relativePath(Directory root, FileSystemEntity entity) {
+  final List<String> base = _splitPath(root.absolute.path);
+  final List<String> full = _splitPath(entity.absolute.path);
+  return full.sublist(base.length).join('/');
 }
 
 List<File> _licenseFilesIn(Directory dir, {bool any = false}) => <File>[

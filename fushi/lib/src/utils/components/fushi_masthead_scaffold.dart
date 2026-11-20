@@ -28,6 +28,8 @@ import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart'
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart'
     show FushiDesktopTitleBar, FushiTitleBarPassthroughScope;
+import 'package:fushi/src/utils/components/fushi_icon_button.dart'
+    show FushiIconButton;
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart'
     show FushiScrollOwnerDepth;
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
@@ -49,9 +51,6 @@ import 'package:fushi/src/utils/components/glass/fushi_expressive.dart'
     show fushiExpressiveMotionEnabled;
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
     show fushiRouteImpliesBack;
-import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
-    show FushiIconButtonControl;
-import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:window_manager/window_manager.dart' show DragToMoveArea;
 
@@ -64,6 +63,9 @@ const double kFushiMastheadBareRowExtent = kMinInteractiveDimension;
 
 /// `titleRevealOffset` 给定时，页名从该偏移起在这段距离内淡入。
 const double _kTitleRevealDistance = kFushiMastheadBareRowExtent;
+
+/// 页头返回键的图标字号（命中区按它补到 [kMinInteractiveDimension]）。
+const double _kBackIconSize = 24;
 
 /// 页名后的徽标（设置的分类形状图标）：[compact] 窄窗，[progress] 收缩进度。
 typedef FushiMastheadBadgeBuilder =
@@ -181,11 +183,19 @@ class FushiMastheadHeader extends StatelessWidget {
         leading ??
         (onBack == null
             ? null
-            : FushiIconButtonControl(
+            // FushiIconButton（不是裸 FushiIconButtonControl）：在 FushiFocusRoot
+            // 下登记成焦点目标，返回键手柄 / 键盘焦点够得到，不只靠触屏或系统返回。
+            // 命中区保持 48×48（被取代的 AppBar BackButton / IconButton 本就是这么
+            // 大）：默认内边距只有 40，返回键是二级页最常点的钮，不能缩。
+            : FushiIconButton(
                 key: backKey,
-                icon: const FushiIcon(FushiIcons.back),
+                icon: FushiIcons.back,
                 tooltip: MaterialLocalizations.of(context).backButtonTooltip,
-                onPressed: onBack,
+                size: _kBackIconSize,
+                padding: const EdgeInsets.all(
+                  (kMinInteractiveDimension - _kBackIconSize) / 2,
+                ),
+                onTap: onBack,
               ));
     if (titleInBody) return _buildBare(context, tokens, titleBox, lead);
     final FushiMastheadBadgeBuilder? badge = this.badge;
@@ -717,7 +727,9 @@ class FushiMastheadScaffold extends StatelessWidget {
     required this.body,
     this.actions = const <Widget>[],
     this.titleInBody = false,
+    this.titleRevealOffset,
     this.leading,
+    this.subtitle,
     this.bottom,
     this.extendBodyBehindHeader = true,
     this.backgroundColor,
@@ -742,9 +754,15 @@ class FushiMastheadScaffold extends StatelessWidget {
   final List<Widget> actions;
   final bool titleInBody;
 
+  /// 见 [FushiMastheadFrame.titleRevealOffset]。
+  final ValueListenable<double>? titleRevealOffset;
+
   /// [titleInBody] 页头画进窗口标题行时，垫底拖窗区的 key。
   final Key? dragKey;
   final Widget? leading;
+
+  /// 页名下一行（见 [FushiMastheadHeader.subtitle]）；[titleInBody] 时不画。
+  final Widget? subtitle;
   final Widget? bottom;
   final bool extendBodyBehindHeader;
 
@@ -767,7 +785,9 @@ class FushiMastheadScaffold extends StatelessWidget {
         title: title,
         actions: actions,
         titleInBody: titleInBody,
+        titleRevealOffset: titleRevealOffset,
         leading: leading,
+        subtitle: subtitle,
         bottom: bottom,
         extendBodyBehindHeader: extendBodyBehindHeader,
         ownPrimaryScroll: ownPrimaryScroll,

@@ -102,8 +102,8 @@ NUGET:FILEPATH=C:/Users/Wight/AppData/Local/Microsoft/WinGet/Packages/Microsoft.
 
 （真身路径 = `Get-Item <链接> -Force` 的 `.Target`。包本来就在
 `build/windows/x64/packages/` 里，nuget 联网核一下就返回 "already installed"；
-runner 默认的 `-Proxy http://127.0.0.1:34151` 常常没起、探测失败会退成 `proxy=(none)`，
-本机可用的是 `-Proxy "http://127.0.0.1:7890"`。）
+runner 默认不走代理（`proxy=(none)`）；确实需要时传 `-Proxy <代理 URL>`，调用方已设
+`HTTPS_PROXY` 时以它为准。）
 
 ## 3. 看结果——必须真的看截图
 

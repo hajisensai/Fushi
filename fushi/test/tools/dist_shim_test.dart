@@ -274,8 +274,14 @@ void main() {
       'tool/dist_test/$name',
       ...args,
     ]);
+    // 这些用例脚本都在读 stdin 之前就拒绝退出；进程先退时写 stdin 撞 EPIPE
+    // （Linux CI 偶发 `Broken pipe, errno = 32`），那与被测的拒绝无关，吞掉。
     p.stdin.write(stdin);
-    await p.stdin.close();
+    try {
+      await p.stdin.close();
+    } on SocketException {
+      // 管道已被退出的脚本关掉。
+    }
     final Future<String> out = p.stdout
         .transform(const SystemEncoding().decoder)
         .join();

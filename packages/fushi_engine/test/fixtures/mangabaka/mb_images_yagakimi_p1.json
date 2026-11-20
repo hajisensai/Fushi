@@ -1,0 +1,480 @@
+{
+ "status": 200,
+ "data": [
+  {
+   "id": 68632,
+   "series_id": 21567,
+   "index": "1",
+   "index_numeric": 1,
+   "type": "volume",
+   "language": "de",
+   "note": null,
+   "content_rating": "safe",
+   "image": {
+    "raw": {
+     "url": "https://images.mangabaka.dev/9/7/a/e/f/1/3/c/b84d/4289/b588/74b55151cfd8",
+     "size": 283349,
+     "height": 2560,
+     "width": 1778,
+     "format": "jpeg"
+    }
+   }
+  },
+  {
+   "id": 44101,
+   "series_id": 21567,
+   "index": "1",
+   "index_numeric": 1,
+   "type": "volume",
+   "language": "en",
+   "note": null,
+   "content_rating": "safe",
+   "image": {
+    "raw": {
+     "url": "https://images.mangabaka.dev/7/1/1/4/6/7/4/d/1380/4bcb/95ef/0577ff20f485",
+     "size": 1739624,
+     "height": 3056,
+     "width": 2144,
+     "format": "jpeg"
+    }
+   }
+  },
+  {
+   "id": 44109,
+   "series_id": 21567,
+   "index": "1",
+   "index_numeric": 1,
+   "type": "volume_back",
+   "language": "en",
+   "note": null,
+   "content_rating": "safe",
+   "image": {
+    "raw": {
+     "url": "https://images.mangabaka.dev/b/7/c/0/5/2/4/4/51ed/47f5/b9f2/5bc6159da9e6",
+     "size": 4828064,
+     "height": 3056,
+     "width": 2135,
+     "format": "png"
+    }
+   }
+  },
+  {
+   "id": 72165,
+   "series_id": 21567,
+   "index": "1",
+   "index_numeric": 1,
+   "type": "volume",
+   "language": "es-la",
+   "note": null,
+   "content_rating": "suggestive",
+   "image": {
+    "raw": {
+     "url": "https://images.mangabaka.dev/6/d/e/0/9/3/9/0/305f/41bc/bb83/847640c40b86",
+     "size": 981549,
+     "height": 1242,
+     "width": 897,
+     "format": "png"
+    }
+   }
+  },
+  {
+   "id": 68640,
+   "series_id": 21567,
+   "index": "1",
+   "index_numeric": 1,
+   "type": "volume",
+   "language": "fr",
+   "note": null,
+   "content_rating": "safe",
+   "image": {
+    "raw": {
+     "url": "https://images.mangabaka.dev/9/a/c/9/0/1/c/f/be59/4151/8355/894a416e96c1",
+     "size": 240036,
+     "height": 2126,
+     "width": 1499,
+     "format": "jpeg"
+    }
+   }
+  },
+  {
+   "id": 68648,
+   "series_id": 21567,
+   "index": "1",
+   "index_numeric": 1,
+   "type": "volume_back",
+   "language": "ja",
+   "note": null,
+   "content_rating": "safe",
+   "image": {
+    "raw": {
+     "url": "https://images.mangabaka.dev/6/3/f/0/5/5/4/0/828f/4a7e/9f51/b08460365124",
+     "size": 848248,
+     "height": 1536,
+     "width": 1080,
+     "format": "jpeg"
+    }
+   }
+  },
+  {
+   "id": 44117,
+   "series_id": 21567,
+   "index": "1",
+   "index_numeric": 1,
+   "type": "volume",
+   "language": "ja",
+   "note": null,
+   "content_rating": "safe",
+   "image": {
+    "raw": {
+     "url": "https://images.mangabaka.dev/b/6/e/2/2/c/6/0/d02a/488c/8a17/a9ea573237ec",
+     "size": 565578,
+     "height": 2560,
+     "width": 1800,
+     "format": "jpeg"
+    }
+   }
+  },
+  {
+   "id": 79089,
+   "series_id": 21567,
+   "index": "1",
+   "index_numeric": 1,
+   "type": "banner",
+   "language": "ja",
+   "note": "Banner from Kadocomi",
+   "content_rating": "safe",
+   "image": {
+    "raw": {
+     "url": "https://images.mangabaka.dev/2/a/4/2/b/7/1/b/4089/4a32/a569/42c0a33994ab",
+     "size": 60868,
+     "height": 450,
+     "width": 800,
+     "format": "jpeg"
+    }
+   }
+  },
+  {
+   "id": 83870,
+   "series_id": 21567,
+   "index": "2",
+   "index_numeric": 2,
+   "type": "volume",
+   "language": "de",
+   "note": null,
+   "content_rating": "safe",
+   "image": {
+    "raw": {
+     "url": "https://images.mangabaka.dev/4/8/2/b/c/8/9/e/f26e/4656/96ac/c6ad6cb51d13",
+     "size": 941235,
+     "height": 4000,
+     "width": 2778,
+     "format": "jpeg"
+    }
+   }
+  },
+  {
+   "id": 44102,
+   "series_id": 21567,
+   "index": "2",
+   "index_numeric": 2,
+   "type": "volume",
+   "language": "en",
+   "note": null,
+   "content_rating": "safe",
+   "image": {
+    "raw": {
+     "url": "https://images.mangabaka.dev/f/2/3/f/e/9/0/7/b5a6/411c/9999/ae0995612491",
+     "size": 2303708,
+     "height": 3056,
+     "width": 2144,
+     "format": "jpeg"
+    }
+   }
+  },
+  {
+   "id": 44110,
+   "series_id": 21567,
+   "index": "2",
+   "index_numeric": 2,
+   "type": "volume_back",
+   "language": "en",
+   "note": null,
+   "content_rating": "safe",
+   "image": {
+    "raw": {
+     "url": "https://images.mangabaka.dev/8/b/f/3/7/c/d/8/2006/403e/a6e2/bb720befc6ac",
+     "size": 5930341,
+     "height": 3056,
+     "width": 2135,
+     "format": "png"
+    }
+   }
+  },
+  {
+   "id": 72166,
+   "series_id": 21567,
+   "index": "2",
+   "index_numeric": 2,
+   "type": "volume",
+   "language": "es-la",
+   "note": null,
+   "content_rating": "suggestive",
+   "image": {
+    "raw": {
+     "url": "https://images.mangabaka.dev/6/b/7/f/2/5/9/a/aebc/406b/8fe7/1d32e9b07131",
+     "size": 94820,
+     "height": 1242,
+     "width": 897,
+     "format": "webp"
+    }
+   }
+  },
+  {
+   "id": 68641,
+   "series_id": 21567,
+   "index": "2",
+   "index_numeric": 2,
+   "type": "volume",
+   "language": "fr",
+   "note": null,
+   "content_rating": "safe",
+   "image": {
+    "raw": {
+     "url": "https://images.mangabaka.dev/8/6/3/8/a/b/0/d/b44d/4684/9f2f/be11a473968a",
+     "size": 384107,
+     "height": 2126,
+     "width": 1497,
+     "format": "jpeg"
+    }
+   }
+  },
+  {
+   "id": 68649,
+   "series_id": 21567,
+   "index": "2",
+   "index_numeric": 2,
+   "type": "volume_back",
+   "language": "ja",
+   "note": null,
+   "content_rating": "safe",
+   "image": {
+    "raw": {
+     "url": "https://images.mangabaka.dev/6/c/d/5/9/f/3/6/16d1/40b2/9933/d42104fda42e",
+     "size": 1525098,
+     "height": 1645,
+     "width": 1157,
+     "format": "jpeg"
+    }
+   }
+  },
+  {
+   "id": 44118,
+   "series_id": 21567,
+   "index": "2",
+   "index_numeric": 2,
+   "type": "volume",
+   "language": "ja",
+   "note": null,
+   "content_rating": "safe",
+   "image": {
+    "raw": {
+     "url": "https://images.mangabaka.dev/b/6/d/3/6/3/e/c/b545/429b/bb66/1866a611150b",
+     "size": 1087813,
+     "height": 2560,
+     "width": 1800,
+     "format": "jpeg"
+    }
+   }
+  },
+  {
+   "id": 83871,
+   "series_id": 21567,
+   "index": "3",
+   "index_numeric": 3,
+   "type": "volume",
+   "language": "de",
+   "note": null,
+   "content_rating": "safe",
+   "image": {
+    "raw": {
+     "url": "https://images.mangabaka.dev/4/2/d/6/7/2/d/8/95de/4b78/be00/9b80492386a0",
+     "size": 788582,
+     "height": 4000,
+     "width": 2778,
+     "format": "jpeg"
+    }
+   }
+  },
+  {
+   "id": 44111,
+   "series_id": 21567,
+   "index": "3",
+   "index_numeric": 3,
+   "type": "volume_back",
+   "language": "en",
+   "note": null,
+   "content_rating": "safe",
+   "image": {
+    "raw": {
+     "url": "https://images.mangabaka.dev/f/8/c/1/0/5/c/4/71c3/4cca/a761/fd0cd1cdd2ca",
+     "size": 4929940,
+     "height": 3056,
+     "width": 2135,
+     "format": "png"
+    }
+   }
+  },
+  {
+   "id": 44103,
+   "series_id": 21567,
+   "index": "3",
+   "index_numeric": 3,
+   "type": "volume",
+   "language": "en",
+   "note": null,
+   "content_rating": "safe",
+   "image": {
+    "raw": {
+     "url": "https://images.mangabaka.dev/f/3/f/4/2/7/0/c/5bb3/499e/a5c0/4d6b9c68f886",
+     "size": 2590742,
+     "height": 3056,
+     "width": 2144,
+     "format": "jpeg"
+    }
+   }
+  },
+  {
+   "id": 72167,
+   "series_id": 21567,
+   "index": "3",
+   "index_numeric": 3,
+   "type": "volume",
+   "language": "es-la",
+   "note": null,
+   "content_rating": "suggestive",
+   "image": {
+    "raw": {
+     "url": "https://images.mangabaka.dev/9/b/c/2/1/1/d/b/270a/4c04/805d/fed81f399efe",
+     "size": 78566,
+     "height": 1242,
+     "width": 897,
+     "format": "webp"
+    }
+   }
+  },
+  {
+   "id": 68642,
+   "series_id": 21567,
+   "index": "3",
+   "index_numeric": 3,
+   "type": "volume",
+   "language": "fr",
+   "note": null,
+   "content_rating": "safe",
+   "image": {
+    "raw": {
+     "url": "https://images.mangabaka.dev/7/6/f/0/b/1/4/1/a51d/4b85/b2d2/9aba43131c6a",
+     "size": 320803,
+     "height": 2126,
+     "width": 1498,
+     "format": "jpeg"
+    }
+   }
+  },
+  {
+   "id": 68650,
+   "series_id": 21567,
+   "index": "3",
+   "index_numeric": 3,
+   "type": "volume_back",
+   "language": "ja",
+   "note": null,
+   "content_rating": "safe",
+   "image": {
+    "raw": {
+     "url": "https://images.mangabaka.dev/f/7/a/9/1/a/3/5/6cb2/4f18/874a/1158c3505b58",
+     "size": 597272,
+     "height": 1920,
+     "width": 1350,
+     "format": "jpeg"
+    }
+   }
+  },
+  {
+   "id": 44119,
+   "series_id": 21567,
+   "index": "3",
+   "index_numeric": 3,
+   "type": "volume",
+   "language": "ja",
+   "note": null,
+   "content_rating": "safe",
+   "image": {
+    "raw": {
+     "url": "https://images.mangabaka.dev/7/1/6/1/3/a/d/0/7bc0/4d48/82db/a16b0836c010",
+     "size": 929342,
+     "height": 2560,
+     "width": 1801,
+     "format": "jpeg"
+    }
+   }
+  },
+  {
+   "id": 83872,
+   "series_id": 21567,
+   "index": "4",
+   "index_numeric": 4,
+   "type": "volume",
+   "language": "de",
+   "note": null,
+   "content_rating": "safe",
+   "image": {
+    "raw": {
+     "url": "https://images.mangabaka.dev/f/4/c/1/3/b/4/5/06f5/4acc/90c1/abbff2725c55",
+     "size": 712390,
+     "height": 4000,
+     "width": 2778,
+     "format": "jpeg"
+    }
+   }
+  },
+  {
+   "id": 44112,
+   "series_id": 21567,
+   "index": "4",
+   "index_numeric": 4,
+   "type": "volume_back",
+   "language": "en",
+   "note": null,
+   "content_rating": "safe",
+   "image": {
+    "raw": {
+     "url": "https://images.mangabaka.dev/3/2/d/8/9/f/c/1/c463/481c/bda5/ffca99971dfa",
+     "size": 4270158,
+     "height": 3056,
+     "width": 2135,
+     "format": "png"
+    }
+   }
+  }
+ ],
+ "pagination": {
+  "count": 57,
+  "next": "https://api.mangabaka.org/v1/series/21567/images?page=2",
+  "previous": null,
+  "page": 1,
+  "limit": 24
+ },
+ "available_languages": [
+  "de",
+  "en",
+  "es-la",
+  "fr",
+  "ja"
+ ],
+ "available_types": [
+  "banner",
+  "volume",
+  "volume_back"
+ ]
+}

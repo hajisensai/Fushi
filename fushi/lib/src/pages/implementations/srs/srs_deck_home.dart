@@ -42,7 +42,11 @@ bool _srsDeckHasWork(SrsDeckSummary d) => _srsDeckToday(d) > 0 || d.rwkvPending;
 /// 「18 待复习 · 2 学习中 · 4 新词」；RWKV 未就绪时到期一项写「准备中」；全零写「今天已完成」。
 String _srsDeckMeta(SrsDeckSummary d) {
   final List<String> parts = <String>[
-    if (d.reviewCount > 0) t.srs_home_meta_due(n: d.reviewCount),
+    // 分钟单位：到期数是没用满就不截的全部到期卡，改写今天还剩的复习分钟（[SrsReviewCell.byMinutes] 同一口径）。
+    if (d.reviewCount > 0)
+      d.reviewMinutesLeft == null
+          ? t.srs_home_meta_due(n: d.reviewCount)
+          : t.srs_home_meta_due_minutes(n: d.reviewMinutesLeft!),
     if (d.rwkvPending) t.srs_home_meta_pending,
     if (d.learnCount > 0) t.srs_home_meta_learning(n: d.learnCount),
     if (d.newCount > 0) t.srs_home_meta_new(n: d.newCount),
@@ -111,6 +115,21 @@ Widget _srsTopStackLayout(Widget? current, List<Widget> previous) => Stack(
   alignment: AlignmentDirectional.topCenter,
   children: <Widget>[...previous, ?current],
 );
+
+/// 外壳叠在正文右下的悬浮按钮（「后台任务」FAB，同步 / 刷新已配对设备时出现）要让出的高度：
+/// 按钮边长 + 离底边距。
+final double _kSrsHomeFabClearance =
+    fushiFabMetrics(FushiFabSize.regular).extent +
+    kFushiFloatingToolbarEdgeMargin;
+
+/// 复习首页各版式列表的底部内边距：分区间距 + 底部浮动工具栏 / 手势区（外壳 `extendBody`
+/// 把悬浮底栏的高度并进 MediaQuery 底部 padding，[bottomSafeInsetOf]）+ 悬浮按钮
+/// （[_kSrsHomeFabClearance]）。末尾的「已配对设备」行、说明文字与统计卡都能滚到底栏和
+/// 按钮之上（设计稿 11-20 #17）。
+double srsHomeListBottomPadding(BuildContext context) =>
+    FushiDesignTokens.of(context).spacing.section +
+    bottomSafeInsetOf(context) +
+    _kSrsHomeFabClearance;
 
 /// 复习首页：根层（今日计划 + 牌组树 + 热力图 / 预测），宽屏右栏是选中牌组详情；手机上 [focus]
 /// 非 null 时是该牌组的详情页。
@@ -331,9 +350,11 @@ class _SrsHomeView extends StatelessWidget {
               ),
           ],
           footer: _pairedSection(),
-          padding: withBottomSafeInset(
-            context,
-            EdgeInsets.fromLTRB(side, top, side, tokens.spacing.section),
+          padding: EdgeInsets.fromLTRB(
+            side,
+            top,
+            side,
+            srsHomeListBottomPadding(context),
           ),
           onOpen: (SrsDeckSummary d) => onSelect(d.deck.id),
         );
@@ -367,14 +388,11 @@ class _SrsHomeView extends StatelessWidget {
             0,
             (constraints.maxWidth - content) / 2 - tokens.spacing.gap / 2,
           );
-          final EdgeInsets columnPadding = withBottomSafeInset(
-            context,
-            EdgeInsets.fromLTRB(
-              tokens.spacing.gap / 2,
-              top,
-              tokens.spacing.gap / 2,
-              tokens.spacing.section,
-            ),
+          final EdgeInsets columnPadding = EdgeInsets.fromLTRB(
+            tokens.spacing.gap / 2,
+            top,
+            tokens.spacing.gap / 2,
+            srsHomeListBottomPadding(context),
           );
           final bool three = content >= _kSrsHomeThreeColumnMin;
           final List<Widget> statCards = <Widget>[
@@ -455,14 +473,11 @@ class _SrsHomeView extends StatelessWidget {
       );
     }
 
-    final EdgeInsets padding = withBottomSafeInset(
-      context,
-      EdgeInsets.fromLTRB(
-        tokens.spacing.page,
-        top,
-        tokens.spacing.page,
-        tokens.spacing.section,
-      ),
+    final EdgeInsets padding = EdgeInsets.fromLTRB(
+      tokens.spacing.page,
+      top,
+      tokens.spacing.page,
+      srsHomeListBottomPadding(context),
     );
     final SrsDeckSummary? focused = focus;
     final Widget body;
@@ -1386,11 +1401,8 @@ class _SrsDeckPoster extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 色相键与今日计划块（按牌组 id）错开：只有一个牌组时两块并排也不同色。
-    final FushiCoverBlockColors colors = fushiPosterColors(
-      context,
-      fushiPosterHue('srs-deck:${deck.deck.id}'),
-    );
+    // 与牌组树里这个牌组的色块同色（[_srsDeckBandColors]，按牌组全名取色相）。
+    final FushiCoverBlockColors colors = _srsDeckBandColors(context, deck);
     final TextStyle base =
         Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
     final TextStyle caption = FushiPosterText.caption
@@ -2005,6 +2017,12 @@ List<PopupMenuEntry<_DeckAction>> _deckMenuItems({
           value: _DeckAction.fillWordAudio,
           child: Text(t.srs_word_audio_backfill_title),
         ),
+        // 只导出这个牌组的子树（拍板台 5h2vW-kVi3）；整库导出仍在牌组列表 ⋯「导出（.apkg）」。
+        PopupMenuItem<_DeckAction>(
+          key: const ValueKey<String>('srs-deck-menu-export'),
+          value: _DeckAction.export,
+          child: Text(t.srs_deck_export),
+        ),
         if (!isDefault)
           PopupMenuItem<_DeckAction>(
             value: _DeckAction.delete,
@@ -2013,6 +2031,10 @@ List<PopupMenuEntry<_DeckAction>> _deckMenuItems({
       ];
 
 /// 在 [anchorContext] 的位置弹出牌组菜单，选中后交给 [onAction]。
+///
+/// 右键经 [contextMenuInvoker] 同步派发到这里时，菜单贴着按下点弹出（M3 / 桌面右键
+/// 菜单的约定，反馈 Ne6WHI9TYE）；长按 / 菜单键 / 「选项」按钮没有按下坐标，贴在
+/// [anchorContext] 的右端。
 Future<void> _showDeckMenu(
   BuildContext anchorContext, {
   required SrsDeckSummary deck,
@@ -2021,8 +2043,9 @@ Future<void> _showDeckMenu(
   required bool canMoveDown,
   required void Function(SrsDeckSummary deck, _DeckAction action) onAction,
   bool remote = false,
-  Offset? at,
 }) async {
+  // 必须在第一个 await 之前读：只在右键回调同步执行期间非空。
+  final Offset? pointer = activeContextMenuAnchor;
   final RenderBox? box = anchorContext.findRenderObject() as RenderBox?;
   final RenderBox? overlay =
       Navigator.of(anchorContext).overlay?.context.findRenderObject()
@@ -2030,13 +2053,13 @@ Future<void> _showDeckMenu(
   if (box == null || overlay == null || !box.hasSize) return;
   final Rect rowRect =
       box.localToGlobal(Offset.zero, ancestor: overlay) & box.size;
-  final Offset anchor = at ?? rowRect.centerRight;
+  // 全局 UI 缩放下 Overlay 与屏幕坐标不同尺度：按下点经 globalToLocal 换算（BUG-781）。
+  final Rect anchorRect = pointer != null
+      ? overlay.globalToLocal(pointer) & Size.zero
+      : Rect.fromLTWH(rowRect.right, rowRect.top, 0, rowRect.height);
   final _DeckAction? picked = await showFushiMenu<_DeckAction>(
     context: anchorContext,
-    position: RelativeRect.fromRect(
-      Rect.fromLTWH(anchor.dx, rowRect.top, 0, rowRect.height),
-      Offset.zero & overlay.size,
-    ),
+    position: RelativeRect.fromRect(anchorRect, Offset.zero & overlay.size),
     semanticLabel: t.srs_deck_menu,
     items: _deckMenuItems(
       isDefault: isDefault,
@@ -2059,6 +2082,9 @@ List<Widget> _srsDeckBanners(
   required VoidCallback onDismissLapisReminder,
   required VoidCallback onStarterPacks,
   required VoidCallback onAddFirst,
+  int legacyLimitUnitDecks = 0,
+  VoidCallback? onKeepLegacyLimitCards,
+  VoidCallback? onAcceptLimitAnswers,
 }) {
   final FushiDesignTokens tokens = FushiDesignTokens.of(context);
   return <Widget>[
@@ -2108,6 +2134,53 @@ List<Widget> _srsDeckBanners(
                     onPressed: onMigrateLapis,
                     icon: const FushiIcon(FushiIcons.swap),
                     label: Text(t.srs_lapis_migration_migrate),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    // 每日上限单位的缺省从「卡片数」改成「作答次数」（拍板台 pr3460）：没写过单位的存量牌组提醒一次，
+    // 「保持按卡片数」写 cards，「按作答次数」写 reviews；不回应时照缺省按作答次数计（[SrsDbStore.limitUnitLegacyDecks]）。
+    if (legacyLimitUnitDecks > 0)
+      FushiCard(
+        key: const ValueKey<String>('srs-limit-unit-notice'),
+        tone: FushiCardTone.primary,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          spacing: tokens.spacing.gap,
+          children: <Widget>[
+            Row(
+              spacing: tokens.spacing.gap * 1.5,
+              children: <Widget>[
+                const FushiIcon(FushiIcons.info),
+                Expanded(
+                  child: Text(
+                    t.srs_limit_unit_notice_title,
+                    style: context.fushiType.titleMediumEmphasized,
+                  ),
+                ),
+              ],
+            ),
+            Text(t.srs_limit_unit_notice_body(n: legacyLimitUnitDecks)),
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: tokens.spacing.gap,
+              runSpacing: tokens.spacing.gap,
+              children: <Widget>[
+                FushiPressScale(
+                  child: FushiTextButton(
+                    key: const ValueKey<String>('srs-limit-unit-keep-cards'),
+                    onPressed: onKeepLegacyLimitCards,
+                    child: Text(t.srs_limit_unit_notice_keep_cards),
+                  ),
+                ),
+                FushiPressScale(
+                  child: FushiFilledButton(
+                    key: const ValueKey<String>('srs-limit-unit-accept'),
+                    onPressed: onAcceptLimitAnswers,
+                    child: Text(t.srs_limit_unit_notice_accept),
                   ),
                 ),
               ],

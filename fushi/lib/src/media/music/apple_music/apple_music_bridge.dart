@@ -225,7 +225,10 @@ abstract interface class AppleMusicBridge {
   Future<void> unauthorize();
 
   /// 访问资料库的一对 token；未授权回 null。
-  Future<AppleMusicUserCredentials?> userCredentials();
+  ///
+  /// [refresh] 为真时绕过缓存重新取 user token（服务器拒了缓存的那枚时用，契约见
+  /// `AppleMusicUserCredentialsProvider`）；没有缓存可绕的实现原样返回。
+  Future<AppleMusicUserCredentials?> userCredentials({bool refresh = false});
 
   /// 放一首 catalog 曲目（替换掉 MusicKit 里原有的那首）。
   Future<void> play(String songId, {int startMs = 0, bool autoplay = true});

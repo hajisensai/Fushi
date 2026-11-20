@@ -151,11 +151,15 @@ class AppVideoExternalSettingsStore implements VideoExternalSettingsStore {
     try {
       suggestedBackendProfileId = buildVideoDownloadBackendIdentity(
         config: torrentConfig,
-        resolvedBackend: QbConnectionConfig.backendQbittorrent,
+        // 路径映射只对「下载器不在本机」的后端有意义：互联设备或外接 qB。
+        resolvedBackend:
+            torrentConfig.backend == QbConnectionConfig.backendFushiHost
+            ? QbConnectionConfig.backendFushiHost
+            : QbConnectionConfig.backendQbittorrent,
         embeddedInstallationId: '',
       ).profileId;
     } on ArgumentError {
-      // An unconfigured qB endpoint has no stable profile identity yet.
+      // An unconfigured remote backend has no stable profile identity yet.
     }
     return VideoExternalSettingsSnapshot(
       torznabConfigs: appModel.prefsRepo.videoResourceTorznabConfigs,

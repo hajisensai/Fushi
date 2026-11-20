@@ -15,7 +15,8 @@
 ///   15 MB 下载。它**替换**本进程的 core：启动时、任何 ORT 调用之前
 ///   `selectOrtRuntime` 选中它（一个进程只能有一份 onnxruntime.dll）。
 ///
-/// 来源全是官方发行物（GitHub release / PyPI wheel / NuGet nupkg，都是 zip）。
+/// 来源是官方发行物（PyPI wheel / NuGet nupkg，都是 zip）；CUDA 插件 EP 的官方
+/// GitHub release 下线后暂走本仓 `vendored-binaries` 镜像（见该条注释）。
 /// **不下整包**：先用 HTTP Range 读 zip 的中央目录，再只取需要的成员的压缩数据
 /// （CUDA 的 wheel 里大半用不到），落成 `.deflate.part`（可 Range 续传）后本地
 /// 解压。每个成员钉解压后字节数与 sha256——下来的是要塞进本进程执行的机器码，
@@ -109,15 +110,28 @@ const GpuRuntimeEnvironment kCudaRuntimeEnvironment = GpuRuntimeEnvironment(
   kind: GpuRuntimeKind.cuda,
   version: 'cu13-ep0.3.0-cudnn9.27',
   archives: <GpuRuntimeArchive>[
+    // 临时镜像（外部不可控）：官方发行物
+    // `github.com/microsoft/onnxruntime/releases/download/plugin-ep-cuda/v0.3.0/
+    // cuda_ep_cuda13_0.3.0_win-x64.zip` 随整个 microsoft/onnxruntime 仓库自
+    // 2026-11-17 起 404、无迁移公告，NuGet / PyPI 上也没有这个插件 EP。镜像是本仓
+    // `vendored-binaries` release 里按内容寻址、永不覆盖的 zip，内含**同一份**
+    // DLL（解压后字节数与 sha256 与官方 zip 里的逐字节相同，仍由下面的清单钉死）
+    // 外加 ORT 的 LICENSE / ThirdPartyNotices；只是 zip 是重新打的，所以
+    // compressedBytes 与官方 zip 不同。环境版本号不变：已装好的用户不重下。
+    // 影响面：只有这一个成员；cuBLAS / cuDNN（PyPI）与 DirectML（NuGet）不受影响。
+    // 清理条件：官方 release 恢复（或插件 EP 上了 NuGet）且确认同一 sha256 时，
+    // 换回官方 URL 与其 compressedBytes（152477385）。已发布版本仍指向官方 URL，
+    // 在恢复前装 CUDA 环境会失败并按 [withGpuRuntimeDownload] 的约定回落 CPU。
     GpuRuntimeArchive(
       url:
-          'https://github.com/microsoft/onnxruntime/releases/download/'
-          'plugin-ep-cuda/v0.3.0/cuda_ep_cuda13_0.3.0_win-x64.zip',
+          'https://github.com/hajisensai/Fushi/releases/download/'
+          'vendored-binaries/'
+          'a93527a028c6e51a-cuda_ep_cuda13_0.3.0_win-x64.zip',
       members: <GpuRuntimeMember>[
         GpuRuntimeMember(
           path: 'onnxruntime_providers_cuda.dll',
           bytes: 195764536,
-          compressedBytes: 152477385,
+          compressedBytes: 152367144,
           sha256:
               'e88849e637c435a8b919b2007925a55b05d655bcf018e857cf943fa41ad5c86a',
         ),

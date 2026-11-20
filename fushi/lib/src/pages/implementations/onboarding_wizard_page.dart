@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' show ByteData, rootBundle;
 import 'package:fushi/src/pages/base_page.dart';
@@ -11,7 +12,6 @@ import 'package:fushi/src/pages/implementations/dictionary_dialog_page.dart';
 import 'package:fushi/src/pages/implementations/home_dictionary_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/pages/implementations/shortcut_settings_page.dart';
-import 'package:fushi/src/pages/implementations/srs/srs_deck_list_page.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/anki/anki_config_controls.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
@@ -27,11 +27,17 @@ import 'package:fushi/src/onboarding/onboarding_system_permissions.dart';
 import 'package:fushi/src/onboarding/online_services_onboarding_view.dart';
 import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
 import 'package:fushi/src/onboarding/recommended_pack.dart';
+import 'package:fushi/src/onboarding/recommended_pack_import.dart'
+    show importRecommendedPackFile;
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
 import 'package:fushi/src/settings/settings_actions.dart'
     show buildLanguageSelector, buildBrightnessSelector;
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
+import 'package:fushi/src/settings/shell_style_preview.dart'
+    show ShellLayoutChoiceCards, shellPreviewCoversOf;
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show ShellContentLayout, shellRedesignActive;
 import 'package:fushi/src/settings/settings_schema_card_creation.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/src/settings/settings_schema_lookup.dart'
@@ -43,10 +49,7 @@ import 'package:fushi/src/shortcuts/visual/key_cap_widget.dart';
 import 'package:fushi/src/srs/srs_providers.dart' show srsStoreProvider;
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart'
-    show
-        buildSyncBackupDestination,
-        buildInterconnectDestination,
-        runBackupImportFlowForFile;
+    show buildSyncBackupDestination, buildInterconnectDestination;
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -79,6 +82,8 @@ import 'package:fushi_anki/fushi_anki.dart'
 import 'package:fushi_audio/fushi_audio.dart'
     show AudiobookRepository, SrtBookRepository;
 import 'package:fushi_dictionary/fushi_dictionary.dart' show Dictionary;
+import 'package:fushi_engine/srs/srs_canonical_ids.dart'
+    show srsCanonicalIdIn, srsCanonicalIdMap, srsStoreCanonicalIds;
 import 'package:fushi_engine/srs/srs_db_store.dart' show SrsDbStore;
 import 'package:url_launcher/url_launcher.dart';
 
@@ -122,8 +127,8 @@ List<OnboardingTutorialItem> srsOnboardingTutorialItems() =>
     <OnboardingTutorialItem>[
       OnboardingTutorialItem(
         icon: FushiIcons.statistics,
-        title: t.onboarding_srs_fsrs_title,
-        description: t.onboarding_srs_fsrs_desc,
+        title: t.onboarding_srs_rwkv_title,
+        description: t.onboarding_srs_rwkv_desc,
       ),
       OnboardingTutorialItem(
         icon: FushiIcons.collection,
@@ -174,7 +179,7 @@ const double _kOnboardingTwoColumnMinWidth = 560;
 /// 按勾选出现的配置步骤（含字体）→ 功能操作教程（点击查词 + 平台支持时的全局
 /// 查词 + Anki 真正就绪后的第一张卡片）→ 完成。
 /// 配置步骤只做说明 + 跳转到**既有**配置入口（推荐包走备份导入共享编排
-/// [runBackupImportFlowForFile]；Anki/备份/互联推各自设置详情页），不复制配置
+/// [importRecommendedPackFile]；Anki/备份/互联推各自设置详情页），不复制配置
 /// UI——配置能力的单一真相源仍在各自页面。向导的持久化副作用只有两个：离开功能
 /// 选择步骤时写 `module_*_enabled` 显隐偏好；完成/跳过时把 `onboarding_completed`
 /// 置回 true。
@@ -262,11 +267,11 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   /// （BUG-2107），套那个模板会把「没拿到路径」说成「下载失败」。
   String? _packPickError;
 
-  // 扩展安装引导要「浏览器」模块在本平台存在（[ModuleId.availableOn]）且本平台能装
-  // 扩展（[browserExtensionSupportedOn]）——模块 2026-10-19 起五端都有，扩展仍只在桌面。
+  // 扩展安装引导要「浏览器」模块在本平台存在（[ModuleId.availableOn]）且本平台有
+  // 扩展安装引导（[browserExtensionInstallAvailableOn]：桌面与安卓有，iOS 没有）。
   bool get _browserExtensionAvailable =>
       _moduleAvailable(ModuleId.web) &&
-      browserExtensionSupportedOn(isDesktop: DesktopLookupService.isDesktop);
+      browserExtensionInstallAvailableOn(defaultTargetPlatform);
 
   /// 当前真正有应用外查词入口的平台。Windows / macOS 用系统级热键；Android 用
   /// 系统文本选择菜单 / 分享入口。其它平台不能因为都叫 desktop/mobile 就展示
@@ -670,8 +675,12 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     try {
       final SrsDbStore? store = await ref.read(srsStoreProvider.future);
       if (store == null) return;
-      if (appModelNoUpdate.srsMiningDestination.noteTypeId ==
-          store.lapisNoteTypeId) {
+      // 偏好里可能还是成员 ID（开库归一在后台跑），按规范 ID 比（G9-6）。
+      final String stored = appModelNoUpdate.srsMiningDestination.noteTypeId;
+      final Map<String, String> canonical = await srsCanonicalIdMap(<String>[
+        stored,
+      ], srsStoreCanonicalIds(store));
+      if (srsCanonicalIdIn(canonical, stored) == store.lapisNoteTypeId) {
         await appModelNoUpdate.setSrsMiningNoteTypeId('');
       }
     } catch (e, stack) {
@@ -838,8 +847,9 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     final RecommendedPackDownloadController controller = _packController;
     final RecommendedPackTutorialState tutorialState =
         RecommendedPackTutorialState(model.appDirectory);
-    await runBackupImportFlowForFile(
-      appModel: model,
+    // 推荐包经 [importRecommendedPackFile] 导入：确认框照弹，但预选合并（不是覆盖）。
+    await importRecommendedPackFile(
+      model,
       filePath: path,
       onImportSucceeded: () async {
         await tutorialState.markImportSucceeded();
@@ -1189,7 +1199,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
           title: t.onboarding_anki_fsrs_title,
           hint: t.onboarding_anki_fsrs_body,
         ),
-        // 开了 Fushi 内置复习的用户：内置复习已经默认 FSRS-7，这段 Anki 教程只在
+        // 开了 Fushi 内置复习的用户：内置复习已经默认 RWKV，这段 Anki 教程只在
         // 还要用 Anki 复习时才需要（教程本身保留，不移出本步）。
         if (appModelNoUpdate.moduleVisibility.isEnabled(
           ModuleId.srs,
@@ -1541,16 +1551,9 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
           icon: FushiIcons.repeat,
           title: t.onboarding_srs_title,
           body: t.onboarding_srs_body,
+          // 不放「打开牌组」：默认牌组已备好、制的卡直接进复习，这一步只做说明；
+          // 中途跳去牌组列表只会把用户带离引导（所有者 11-20 反馈）。
           items: srsOnboardingTutorialItems(),
-          actions: <OnboardingAction>[
-            OnboardingAction(
-              icon: FushiIcons.add,
-              label: t.onboarding_srs_action,
-              description: t.onboarding_srs_action_desc,
-              necessity: OnboardingActionNecessity.recommended,
-              onPressed: () => _pushPage((_) => const SrsDeckListPage()),
-            ),
-          ],
         );
       case OnboardingStepId.finish:
         return _buildFinishStep();
@@ -1723,6 +1726,26 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
             ],
           ),
         ),
+        // 库页布局（G1）：新安装出厂是拼贴，这里默认高亮拼贴；点选立即写入（跳过
+        // 向导也不丢），之后可在 设置 › 外观 › 库页布局 改。墨水屏库页恒为封面
+        // 网格，不问。
+        if (shellRedesignActive(context)) ...<Widget>[
+          SizedBox(height: tokens.spacing.section),
+          OnboardingSectionLabel(
+            title: t.onboarding_library_layout_title,
+            hint: t.onboarding_library_layout_hint,
+          ),
+          SizedBox(height: tokens.spacing.gap),
+          ShellLayoutChoiceCards(
+            selected: appModel.shellContentLayout,
+            arrangement: appModel.shellBlockArrangement,
+            covers: shellPreviewCoversOf(ref, appModel),
+            onSelected: (ShellContentLayout layout) async {
+              await appModel.setShellContentLayout(layout);
+              if (mounted) setState(() {});
+            },
+          ),
+        ],
         // 语言之后再问用途：先让用户换成看得懂的界面语言。
         SizedBox(height: tokens.spacing.section),
         OnboardingSectionLabel(
@@ -1814,7 +1837,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
             : '${t.onboarding_step_pack_download_action}'
                   ' ($kRecommendedPackSizeLabel)',
         description: hasDownloaded
-            ? t.onboarding_pack_action_import_existing_desc
+            ? t.onboarding_pack_action_import_existing_merge_desc
             : isPaused
             ? t.onboarding_pack_paused_desc
             : t.onboarding_pack_action_download_desc,
@@ -2001,6 +2024,8 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
         return FushiIcons.manga;
       case OnboardingFeature.video:
         return FushiIcons.video;
+      case OnboardingFeature.music:
+        return homeNavItemFor(HomeTab.music).icon;
       case OnboardingFeature.games:
         return FushiIcons.games;
       // 有 tab 的两个模块图标取底栏真值，与底栏/侧栏同一份。
@@ -2043,6 +2068,9 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
         return t.onboarding_feature_manga;
       case OnboardingFeature.video:
         return t.onboarding_feature_video;
+      // 标题取底栏标签（同一真值）。
+      case OnboardingFeature.music:
+        return homeNavItemFor(HomeTab.music).label;
       case OnboardingFeature.games:
         return t.onboarding_feature_games;
       // 新增的六个模块**零新增 i18n**：有 tab 的取底栏标签（同一真值），没 tab 的
@@ -2088,6 +2116,8 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
         return t.onboarding_feature_manga_hint;
       case OnboardingFeature.video:
         return t.onboarding_feature_video_hint;
+      case OnboardingFeature.music:
+        return t.onboarding_feature_music_hint;
       case OnboardingFeature.games:
         // 非 Windows 的 games 模块是串流接收端，旧提示「仅 Windows 的文本 hook」
         // 不适用。

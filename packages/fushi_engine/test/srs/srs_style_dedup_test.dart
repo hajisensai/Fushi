@@ -9,7 +9,6 @@ import 'package:fushi_engine/srs/apkg/srs_anki_package.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_export.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
-import 'package:fushi_engine/srs/srs_database_executor.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_media_sync.dart';
 import 'package:fushi_engine/srs/srs_style_store.dart';
@@ -56,7 +55,6 @@ void main() {
     String device, {
     String? styleDir,
   }) => SrsDbStore.open(
-    db: storage.db,
     core: storage.core,
     profileUid: kProfile,
     deviceId: device,
@@ -88,21 +86,25 @@ void main() {
     return (r.question, r.answer);
   }
 
+  // 落库形态只有原始通道看得到（对外读一律展开）：新代真相表 `ops` 的操作体（native/fushi_fsrs/src/store/gen4/
+  // schema.rs）。协议 3 查的是修改记录表的 JSON 列；新代的 `ops` 还收身份记录（内置笔记类型带整套模板 / CSS，两个库
+  // 一样大），所以字节数只数修改记录（种类 2 = Edit），与协议 3 同口径。
   Future<int> editBytes(SrsStorage db) async =>
-      (await db.db
-              .customSelect(
-                'SELECT COALESCE(SUM(LENGTH(json)), 0) AS n FROM srs_field_edits',
+      db.core
+              .debugSelectRaw(
+                'SELECT COALESCE(SUM(LENGTH(body)), 0) AS n FROM ops WHERE kind = 2',
               )
-              .getSingle())
-          .read<int>('n');
+              .single['n']!
+          as int;
 
-  Future<int> rawStyleRows(SrsStorage db) async =>
-      (await db.db
-              .customSelect(
-                "SELECT COUNT(*) AS n FROM srs_field_edits WHERE instr(json, '<style>') > 0",
-              )
-              .getSingle())
-          .read<int>('n');
+  // 落库形态（对外读一律展开）：内核 `events` 读出的修改记录是不展开的原值，数其中带内联 `<style>` 的条数。以前直接在
+  // 新代 `ops` 的操作体上 instr，但够大的操作体本机按 zstd 存（`gen4/pack.rs`），内联样式在压缩字节里查不到，「有一条」
+  // 永远数成 0、「没有」恒真。
+  Future<int> rawStyleRows(SrsDbStore s) async =>
+      (await s.exportAll()).whereType<SrsEditEvent>().where((SrsEditEvent e) {
+        final Object? v = e.edit.value;
+        return v is String && v.contains('<style>');
+      }).length;
 
   const List<String> dicts = <String>['JMdict', '大辞林', '明鏡'];
 
@@ -119,7 +121,7 @@ void main() {
     final String glossary = stored.field(fid('Glossary'));
     expect(glossary, isNot(contains('<style>')));
     expect(srsStyleRefsIn(glossary), hasLength(3));
-    expect(await rawStyleRows(dedupDb), 0);
+    expect(await rawStyleRows(s), 0);
     for (final String name in srsStyleRefsIn(glossary)) {
       expect(File(p.join(tmp.path, 'media', name)).existsSync(), isTrue);
     }
@@ -212,13 +214,9 @@ void main() {
         isFalse,
       );
     }
-    // 同步 v2：操作不可变，C 发来的内联原文按原样落进 B 的投影（本机写的才在落库前换成引用行）；
-    // B 的存量去重随后就地把它换成引用表示，不追加操作。
-    expect(await rawStyleRows(dbB), 1);
-    final Object? opsB = (await b.sync2Status())['ops'];
-    expect(await b.compactStoredStyles(), 1);
-    expect(await rawStyleRows(dbB), 0);
-    expect((await b.sync2Status())['ops'], opsB);
+    // 同步 v2：操作不可变，C 发来的内联原文按原样落进 B 的投影（本机写的才在落库前换成引用行）。
+    // 存量去重（compactStoredStyles）随协议 3 一起删了（G7-5）。
+    expect(await rawStyleRows(b), 1);
     expect(await render(b, id), await render(a, id));
     await dbA.close();
     await dbB.close();
@@ -323,63 +321,9 @@ void main() {
     for (final MapEntry<String, String> f in original.entries) {
       expect(await other.expandStyles(back.field(f.key)), f.value);
     }
-    expect(await rawStyleRows(db2), 0);
+    expect(await rawStyleRows(other), 0);
     await db.close();
     await db2.close();
-  });
-
-  test('存量迁移：就地改表示、不产生事件；分批可中断可续、幂等；渲染不变', () async {
-    final SrsStorage db = await memDb();
-    final SrsDbStore legacy = await open(db, 'dev');
-    final List<String> ids = <String>[
-      for (int i = 0; i < 7; i++) await addNote(legacy, '語$i', dicts),
-    ];
-    final Map<String, (String, String)> rendered = <String, (String, String)>{
-      for (final String id in ids) id: await render(legacy, id),
-    };
-    final Map<String, Map<String, String>> fields =
-        <String, Map<String, String>>{
-          for (final String id in ids) id: (await legacy.note(id))!.fields,
-        };
-    final Object? ops = (await legacy.sync2Status())['ops'];
-    final int bytesBefore = await editBytes(db);
-    expect(await rawStyleRows(db), 14);
-
-    final SrsDbStore s = await open(db, 'dev', styleDir: 'media');
-    int batches = 0;
-    SrsInlineExecutor.debugStatements = 0;
-    final int core0 = s.debugCoreCommands;
-    final int first = await s.compactStoredStyles(
-      batchSize: 4,
-      shouldStop: () => batches++ >= 1,
-    );
-    expect(first, 4);
-    // 一批的往返（收掉 Dart 写路径第 5 步）：改动前 BEGIN + 选行 + 每行一条 UPDATE + 本机状态 upsert + COMMIT（4 行
-    // 共 8 条语句）+ 内核 `refresh_caches` 1 条；改动后只剩选行 1 条语句 + 内核 `edits_rewrite_repr` 1 条。
-    expect(
-      (
-        statements: SrsInlineExecutor.debugStatements,
-        core: s.debugCoreCommands - core0,
-      ),
-      (statements: 1, core: 1),
-    );
-    expect(await rawStyleRows(db), 10);
-    // 断点记在本机状态里：换一个实例（相当于重启）接着跑。
-    final SrsDbStore resumed = await open(db, 'dev', styleDir: 'media');
-    expect(await resumed.compactStoredStyles(batchSize: 4), 10);
-    expect(await rawStyleRows(db), 0);
-    expect(await resumed.compactStoredStyles(), 0);
-
-    expect((await resumed.sync2Status())['ops'], ops, reason: '就地改表示，不追加操作');
-    expect(await editBytes(db), lessThan(bytesBefore ~/ 3));
-    for (final String id in ids) {
-      expect(await render(resumed, id), rendered[id]);
-      final SrsNoteView n = (await resumed.note(id))!;
-      for (final MapEntry<String, String> f in fields[id]!.entries) {
-        expect(await resumed.expandStyles(n.field(f.key)), f.value);
-      }
-    }
-    await db.close();
   });
 
   test('AnkiConnect：加卡 / 改卡落库去重，notesInfo 原样读回；同内容改卡不产生记录', () async {
@@ -428,6 +372,5 @@ void main() {
       },
     });
     expect(await readBack(), gloss2);
-    await h.store.db.close();
   });
 }

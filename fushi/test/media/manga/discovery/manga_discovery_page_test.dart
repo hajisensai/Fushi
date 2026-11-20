@@ -294,8 +294,17 @@ void main() {
       findsNothing,
       reason: '没选中的来源磁贴跟着收起',
     );
+    // 拼贴改版 DI2：选中的来源块原位展开成页头条（「← 全部来源」+「浏览 <源>」）。
     expect(
-      find.byKey(const ValueKey<String>('manga-mihon-mihon:pkg:1')),
+      find.byKey(const ValueKey<String>('manga-source-selected-mihon:pkg:1')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('discovery_source_back_to_all')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('manga-source-selected-open')),
       findsOneWidget,
     );
     // 网格按宽度自适应列数：1200 宽下前两张并排、六张全部落在视口内。
@@ -451,7 +460,16 @@ void main() {
       expect(find.text('第1页 0'), findsOneWidget);
 
       final Finder scroll = find.byType(CustomScrollView);
-      await tester.drag(scroll, const Offset(0, -3000));
+      // 拼贴改版后网格卡更高（40 张首页约 3900 高），固定拖 3000 已不进离底
+      // 600 的区间：直接拖到当前内容的底部。
+      final ScrollPosition position = tester
+          .state<ScrollableState>(
+            find
+                .descendant(of: scroll, matching: find.byType(Scrollable))
+                .first,
+          )
+          .position;
+      await tester.drag(scroll, Offset(0, -position.maxScrollExtent));
       await tester.pumpAndSettle();
       expect(requested, <int>[1, 2], reason: '不用点「加载更多」');
 

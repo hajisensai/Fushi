@@ -709,7 +709,12 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
     final int index = _continueIndex;
     if (index < 0) return null;
     final MediaServerItem episode = _episodes[index];
-    return '${t.collection_continue_progress(n: index + 1)}  ·  ${episode.name}';
+    // BUG-4921：集号只认服务器给的 IndexNumber（与集卡同口径，VF5D4O_Tyx），
+    // 不拿列表下标冒充——季里缺前几集时下标 +1 与真实集号对不上。缺号就不写集号。
+    final int? number = episode.episodeNumber;
+    return number == null
+        ? '${t.video_continue_watching}  ·  ${episode.name}'
+        : '${t.collection_continue_progress(n: number)}  ·  ${episode.name}';
   }
 
   @override

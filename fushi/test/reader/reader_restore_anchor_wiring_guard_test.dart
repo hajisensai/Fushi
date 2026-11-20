@@ -143,41 +143,53 @@ void main() {
   });
 
   group('前置 ③：_refreshProgress 的 evaluateJavascript 有错误边界', () {
-    test(
-      'try/catch 包住 evaluateJavascript，且 fail-open 补 ErrorLogService.log',
-      () {
-        final String body = methodBody(
-          navigation,
-          'Future<void> _refreshProgress() async {',
-        );
-        final String code = maskComments(body);
+    test('try/catch 包住 evaluateJavascript，且 fail-open 补 ErrorLogService.log', () {
+      // 取样（evaluateJavascript + 错误边界）收在共用取样口
+      // `_takeStableProgressSnapshot`；_refreshProgress 经它取样并给出自己的
+      // source tag。
+      final String refresh = methodBody(
+        navigation,
+        'Future<void> _refreshProgress() async {',
+      );
+      expect(
+        containsCodeLine(refresh, 'await _takeStableProgressSnapshot('),
+        isTrue,
+        reason: '_refreshProgress 必须经带错误边界的共用取样口取样',
+      );
+      expect(
+        containsIdentifierCall(refresh, 'evaluateJavascript'),
+        isFalse,
+        reason: '_refreshProgress 不得绕开取样口裸调 evaluateJavascript',
+      );
+      final String body = methodBody(
+        navigation,
+        'Future<Object?> _takeStableProgressSnapshot(String errorSource) async {',
+      );
+      final String code = maskComments(body);
 
-        final int tryIdx = code.indexOf('try {');
-        final int evalIdx = code.indexOf(
-          'await controller.evaluateJavascript(',
-        );
-        final int catchIdx = code.indexOf('} catch (e, stack) {');
+      final int tryIdx = code.indexOf('try {');
+      final int evalIdx = code.indexOf('await controller.evaluateJavascript(');
+      final int catchIdx = code.indexOf('} catch (e, stack) {');
 
-        expect(
-          tryIdx,
-          greaterThanOrEqualTo(0),
-          reason:
-              '报废 controller 上的 evaluateJavascript 会抛（或永不完成），'
-              '裸 await 变成未捕获异步错误（TODO-2603 前置 ③）',
-        );
-        expect(evalIdx, greaterThan(tryIdx));
-        expect(catchIdx, greaterThan(evalIdx));
-        expect(
-          containsCodeLine(body, "'ReaderFushi._refreshProgress.eval'"),
-          isTrue,
-          reason: 'fail-open 不得吞成静默：必须带 source tag 落 ErrorLogService.log',
-        );
-        expect(
-          RegExp(r'ErrorLogService\.instance\s*\.log\(').hasMatch(code),
-          isTrue,
-          reason: 'catch 里必须真的调 ErrorLogService.instance.log',
-        );
-      },
-    );
+      expect(
+        tryIdx,
+        greaterThanOrEqualTo(0),
+        reason:
+            '报废 controller 上的 evaluateJavascript 会抛（或永不完成），'
+            '裸 await 变成未捕获异步错误（TODO-2603 前置 ③）',
+      );
+      expect(evalIdx, greaterThan(tryIdx));
+      expect(catchIdx, greaterThan(evalIdx));
+      expect(
+        containsCodeLine(refresh, "'ReaderFushi._refreshProgress.eval'"),
+        isTrue,
+        reason: 'fail-open 不得吞成静默：必须带 source tag 落 ErrorLogService.log',
+      );
+      expect(
+        RegExp(r'ErrorLogService\.instance\s*\.log\(').hasMatch(code),
+        isTrue,
+        reason: 'catch 里必须真的调 ErrorLogService.instance.log',
+      );
+    });
   });
 }

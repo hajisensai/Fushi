@@ -546,5 +546,59 @@ void main() {
         ),
       );
     });
+
+    // BUG-4705：没有可用 Play 服务的设备上系统 OCR 修不好，弹窗要指向不依赖 Play
+    // 服务的本机模型；能一键修好的情况不推替代方案。
+    for (final (int code, bool offers) in <(int, bool)>[
+      (1, true),
+      (9, true),
+      (16, true),
+      (2, false),
+      (3, false),
+      (18, false),
+    ]) {
+      testWidgets('ConnectionResult $code：${offers ? '' : '不'}指向本机模型', (
+        WidgetTester tester,
+      ) async {
+        await open(tester, _FakeSetup(<SystemOcrModelReport>[_problem(code)]));
+        expect(
+          byKey('system_ocr_setup_local_alternative'),
+          offers ? findsOneWidget : findsNothing,
+        );
+        if (offers) {
+          expect(
+            find.text(t.ocr_system_model_local_alternative),
+            findsOneWidget,
+          );
+        }
+      });
+    }
+
+    testWidgets('缺模型 / 就绪：不指向本机模型', (WidgetTester tester) async {
+      await open(tester, _FakeSetup(<SystemOcrModelReport>[_missing]));
+      expect(byKey('system_ocr_setup_local_alternative'), findsNothing);
+    });
+  });
+
+  test('指向本机模型的阶段 = playServicesAbsent 的状态（同一组判据）', () {
+    for (final SystemOcrModelStatus status in SystemOcrModelStatus.values) {
+      expect(
+        systemOcrSetupPhaseOffersLocalModel(systemOcrSetupPhaseFor(status)),
+        status.playServicesAbsent,
+        reason: '$status',
+      );
+    }
+    expect(SystemOcrModelStatus.playServicesMissing.playServicesAbsent, isTrue);
+    expect(SystemOcrModelStatus.playServicesInvalid.playServicesAbsent, isTrue);
+    expect(
+      SystemOcrModelStatus.playServicesUnavailable.playServicesAbsent,
+      isTrue,
+    );
+    expect(SystemOcrModelStatus.ready.playServicesAbsent, isFalse);
+    expect(SystemOcrModelStatus.missing.playServicesAbsent, isFalse);
+    expect(
+      SystemOcrModelStatus.playServicesDisabled.playServicesAbsent,
+      isFalse,
+    );
   });
 }

@@ -24,6 +24,10 @@ pub mod credit;
 pub mod cue;
 pub mod dsf;
 pub mod fingerprint;
+// 本地多字节编码探测（ID3 乱码修复）：与 fushi_compute 的 ZIP 条目名重解共用同一份源码，
+// 判据只在那一个文件里写（不链 fushi_compute 的 rlib：那会把它的全部 ffc_* 导出与图像 / AV1
+// 解码一起带进本库产物）。
+#[path = "../../fushi_compute/src/legacy_text.rs"]
 pub mod legacy_text;
 pub mod lyrics;
 pub mod mp4_chapters;

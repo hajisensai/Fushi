@@ -173,7 +173,7 @@ void main() {
       });
 
       final List<String> probedPaths = <String>[];
-      bool countThenRunRealProbe(String path) {
+      Future<bool> countThenRunRealProbe(String path) async {
         probedPaths.add(path);
         return MangaModule.isImageArchive(path);
       }
@@ -246,7 +246,7 @@ void main() {
     });
 
     final List<String> probedPaths = <String>[];
-    bool countThenRunRealProbe(String path) {
+    Future<bool> countThenRunRealProbe(String path) async {
       probedPaths.add(path);
       return MangaModule.isImageArchive(path);
     }
@@ -288,7 +288,10 @@ void main() {
     final File manga = File(p.join(root.path, 'pages.epub'))
       ..writeAsBytesSync(_realEpubBytes('TODO 2189 manga', pureImage: true));
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    // 书籍框的开包定性走后台 isolate，`.epub` 探测解进书库根的 `.tmp-*`。
+    EpubStorage.debugBaseDirectoryOverride = root.path;
     addTearDown(() async {
+      EpubStorage.debugBaseDirectoryOverride = null;
       await db.close();
       if (root.existsSync()) root.deleteSync(recursive: true);
     });
@@ -322,7 +325,12 @@ void main() {
     );
     await tester.pump();
     await tester.tap(find.text(t.dialog_import));
-    await tester.pumpAndSettle();
+    // 定性在真后台 isolate 里跑：给真时间，而不是只推假时钟。
+    await _pumpUntil(
+      tester,
+      condition: () async =>
+          find.text(t.manga_import_detected_title).evaluate().isNotEmpty,
+    );
 
     expect(
       find.text(t.manga_import_detected_title),
@@ -374,6 +382,11 @@ void main() {
           () => dropTarget.onDrop(<String>[manga.path], Offset.zero),
         ),
       );
+      await _pumpUntil(
+        tester,
+        condition: () async =>
+            find.text(t.manga_import_detected_title).evaluate().isNotEmpty,
+      );
       await tester.pumpAndSettle();
       expect(find.text(t.manga_import_detected_title), findsOneWidget);
       await tester.tap(find.text(t.manga_import_detected_import_as_book));
@@ -397,6 +410,141 @@ void main() {
         hasLength(1),
         reason: '必须由真 EpubImporter 把图片型 EPUB 落成一本书',
       );
+    },
+  );
+  testWidgets(
+    'a late manga verdict for an older pick is discarded, not offered',
+    (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1000, 1000);
+      addTearDown(tester.view.reset);
+      final Directory root = Directory.systemTemp.createTempSync(
+        'book_import_stale_verdict_',
+      );
+      final File older = File(p.join(root.path, 'older_pages.epub'))
+        ..writeAsBytesSync(_realEpubBytes('Older', pureImage: true));
+      final File newer = File(p.join(root.path, 'newer_novel.epub'))
+        ..writeAsBytesSync(_realEpubBytes('Newer'));
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
+      EpubStorage.debugBaseDirectoryOverride = root.path;
+      addTearDown(() async {
+        EpubStorage.debugBaseDirectoryOverride = null;
+        await db.close();
+        if (root.existsSync()) root.deleteSync(recursive: true);
+      });
+
+      // 旧选择的后台定性迟迟不回；新选择立刻判成书。
+      final Completer<bool> olderVerdict = Completer<bool>();
+      Future<bool> probe(String path) =>
+          path == older.path ? olderVerdict.future : Future<bool>.value(false);
+
+      await tester.pumpWidget(
+        _host(
+          BookImportDialog(
+            repo: SrtBookRepository(db),
+            audiobookRepo: AudiobookRepository(db),
+            db: db,
+            imageArchiveProbe: probe,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final FushiFileDropTarget dropTarget = tester.widget<FushiFileDropTarget>(
+        find.byType(FushiFileDropTarget),
+      );
+      unawaited(
+        Future<void>.sync(
+          () => dropTarget.onDrop(<String>[older.path], Offset.zero),
+        ),
+      );
+      await tester.pump();
+      unawaited(
+        Future<void>.sync(
+          () => dropTarget.onDrop(<String>[newer.path], Offset.zero),
+        ),
+      );
+      await tester.pump();
+      expect(find.text(p.basename(newer.path)), findsOneWidget);
+
+      // 旧选择的「这是漫画」这时才回来：已被新选择取代，不能再弹确认框。
+      olderVerdict.complete(true);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(
+        find.text(t.manga_import_detected_title),
+        findsNothing,
+        reason: '过期的漫画判定不能弹确认、更不能把旧路径转交漫画流程',
+      );
+      expect(find.text(p.basename(newer.path)), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'import pressed again while the carrier verdict is still out does not '
+    'start a second import',
+    (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1000, 1000);
+      addTearDown(tester.view.reset);
+      final Directory root = Directory.systemTemp.createTempSync(
+        'book_import_reentry_',
+      );
+      final File epub = File(p.join(root.path, 'slow.epub'))
+        ..writeAsBytesSync(_realEpubBytes('Slow verdict'));
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
+      EpubStorage.debugBaseDirectoryOverride = root.path;
+      addTearDown(() async {
+        EpubStorage.debugBaseDirectoryOverride = null;
+        await db.close();
+        if (root.existsSync()) root.deleteSync(recursive: true);
+      });
+
+      // 书架拖入（initialEpubPath）的定性在 _doImport 兜底闸门里现开包，迟迟不回。
+      final Completer<bool> verdict = Completer<bool>();
+      int probes = 0;
+      Future<bool> probe(String path) {
+        probes += 1;
+        return verdict.future;
+      }
+
+      await tester.pumpWidget(
+        _host(
+          BookImportDialog(
+            repo: SrtBookRepository(db),
+            audiobookRepo: AudiobookRepository(db),
+            db: db,
+            initialEpubPath: epub.path,
+            imageArchiveProbe: probe,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await tester.tap(find.text(t.dialog_import));
+      await tester.pump();
+      // 定性没回来、importing 还是 false：这一下不能再开出第二条 _doImport。
+      await tester.tap(find.text(t.dialog_import), warnIfMissed: false);
+      await tester.pump();
+
+      verdict.complete(false);
+      await _pumpUntil(
+        tester,
+        condition: () async => (await db.getAllEpubBooks()).isNotEmpty,
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(probes, 1);
+      expect(
+        await db.getAllEpubBooks(),
+        hasLength(1),
+        reason: '定性期间再点导入不能把同一本书并发导入两次',
+      );
+      expect(find.text(t.book_import_duplicate_cancelled), findsNothing);
     },
   );
 }

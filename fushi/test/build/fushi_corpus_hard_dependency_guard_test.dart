@@ -15,7 +15,7 @@ import '../helpers/source_guard.dart';
 /// - macOS Runner 构建阶段 `bundle_fushi_corpus.sh`：缺库 `exit 1`；
 /// - iOS：伞形静态库 `native/fushi_ios_umbrella` 依赖 fushi_corpus，Runner 在编译前跑
 ///   `check_fushi_corpus.sh`（伞形库缺失或不导出 `fcorp_abi_version` 时失败）；
-/// - Android：`checkFushiCorpusNative` 挂在 `preBuild` 上，缺 ABI 抛 GradleException；
+/// - Android：`checkFushiCorpusNative` 挂在 `merge<Variant>JniLibFolders`（打包 .so 的任务）上，缺 ABI 抛 GradleException；
 /// - 本地新 worktree：`tool/bootstrap.ps1`（经 `tool/native_libs.ps1` 的 `$NativeTestCrates`）/
 ///   `bootstrap.sh` 编它；
 /// - CI：凡是用 `setup-fushi-compute` 的 job 也用 `setup-fushi-corpus`（同样的输入），其余
@@ -146,7 +146,7 @@ void main() {
     expect(script, contains('exit 1'));
   });
 
-  test('Android：checkFushiCorpusNative 挂在 preBuild 上并在缺库时抛错', () {
+  test('Android：checkFushiCorpusNative 挂在打包 .so 的任务上并在缺库时抛错', () {
     final String gradle = maskComments(read('android/app/build.gradle'));
     expect(
       gradle,
@@ -156,11 +156,13 @@ void main() {
     );
     expect(gradle, contains('tasks.register("checkFushiCorpusNative")'));
     expect(gradle, contains('libfushi_corpus.so'));
-    final int preBuild = gradle.indexOf('if (task.name == "preBuild") {');
-    expect(preBuild, greaterThanOrEqualTo(0));
+    final int hook = gradle.indexOf(
+      'if (task.name.startsWith("merge") && task.name.endsWith("JniLibFolders")) {',
+    );
+    expect(hook, greaterThanOrEqualTo(0));
     expect(
-      gradle.indexOf('task.dependsOn(checkFushiCorpusNative)', preBuild),
-      greaterThan(preBuild),
+      gradle.indexOf('task.dependsOn(checkFushiCorpusNative)', hook),
+      greaterThan(hook),
     );
     final int check = gradle.indexOf(
       'tasks.register("checkFushiCorpusNative")',

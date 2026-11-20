@@ -1,0 +1,16 @@
+## BUG-4835 · 来源扫描被杀后留下临时来源行与临时目录；一本坏书中断整批书导入且不删临时目录
+- **报告**：2026-11-17（nmv 优化清单 gap-scanner-10，代码路径复核时发现，非用户实报）
+- **真实性**：✅ 真 bug（代码路径确证，未在真机复现）。三处：
+  - **书导入循环**：`_importBooks` 的循环只接 `DuplicateImportCancelledException`（修前 `fushi/lib/src/media/source_library/source_library_scanner.dart:1621-1665`），任何一本书抛别的异常（坏 EPUB、下载中断）循环直接跳出：后面的书全不导；远端来源整轮共用的临时目录删除是循环后的普通语句、不在 `finally` 里（修前 `:1714-1718`），不用杀进程就漏。与视频 BUG-2570、漫画逐卷记账的语义不一致。
+  - **临时目录**：扫描器 8 处 `Directory.systemTemp.createTempSync('m1c_scan_*')` 只靠 `finally` 删，全仓没有任何启动清理；进程被杀后整卷漫画 / 整库书的副本留在系统临时目录。
+  - **临时来源行**：「导入文件夹（仅此一次）」先插一条普通来源行、扫完在 `finally` 里删（修前 `fushi/lib/src/media/source_library/add_local_folder_source.dart:167-191`），行上没有任何标记；进程被杀后它成了来源页上一条用户没加过的常驻来源。
+- **[x] ① 根因修复** — `1f9ad3f6a23`：
+  - 书：逐本 try，失败记进 `_BookImportTally.failedPaths` 并汇总成 `lastScanError`，其余照常；远端来源一本失败后重新列一次来源根，列不出来（连接断了，不是这本书坏）就整轮结束，不让剩下的每本书各自等一次下载失败；每本书一个临时目录、`finally` 里导完即删（不再把整库的书留到扫描结束）。
+  - 临时目录：新文件 `source_scan_temp.dart`。临时目录挪到 `<系统临时目录>/fushi_source_scan/<会话>/`，会话由一个本进程全程持排他锁的 `.lock` 文件表达归属；`sweepDeadSourceScanSessions` 只回收锁拿得到（= 持有者已死）的会话，同时开着的安装版 / 开发版互不误删。
+  - 临时行：`configJson` 带 `oneShot` 标记（`kSourceConfigOneShotKey`，进白名单，与 iOS 书签并存、书签刷新不丢）；`sweepStaleOneShotSources` 删掉带标记且不是本进程正在跑的行（与正常收尾同一动作）。
+  - 触发点：每个库实例第一次 `SourceLibraryScanner.scan` 时清一次（`sweepSourceScanLeftoversOnce`）。
+- **[x] ② 自动化测试** — `fushi/test/media/source_library/source_scan_integrity_test.dart`「远端书：单本失败隔离与临时目录」「被杀进程留下的残留」两组：第一本下载失败后其余两本仍被处理、每本的临时目录都已删、错误指名；下载失败后来源根也列不出来时不再碰后面的书；陈旧临时行被删而正在跑的与普通来源保留；标记与书签并存且经书签刷新后仍在；`importLocalFolderOnceAt` 扫描期间行带标记；死会话目录被回收、本进程会话不动、别的句柄持锁的会话不动（最后一条仅 Windows，POSIX 文件锁是进程级的）。
+- **备注**：
+  - **启动挂点没接**：清扫现在挂在「本进程第一次来源扫描」上，不是 app 启动。原因：启动挂点在 `home_page.dart`（来源自动扫描的 startup 触发旁边），该文件被 `pr/tab-switch-jank`（PR #3534）占着。后果：进程被杀后、下一次任何来源扫描之前，来源页仍会看到那条残留行。#3534 合入后在 `home_page.dart` 首帧回调里补一行 `sweepSourceScanLeftoversOnce(db, releaseAccess: SourceFolderAccess.instance.release)` 即可。
+  - 旧版本留在系统临时目录顶层的 `m1c_scan_*` 目录不清：分不清是残留还是另一个旧版本实例正在用。
+  - 待真机：一次性导入中途杀进程，重启后触发一次扫描，来源页不应多出一行、临时目录被回收。

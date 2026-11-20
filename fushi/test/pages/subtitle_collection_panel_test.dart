@@ -4,18 +4,23 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_archive.dart'
+    show SubtitleArchiveFormat;
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_content_language.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart'
     show legacySubtitleVersionKeyOf, subtitleVersionKeyOf;
 import 'package:fushi/src/pages/implementations/subtitle_collection_panel.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
+    show FushiGlassMaterial, FushiGlassTheme;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -42,15 +47,49 @@ class _Cand extends VideoSubtitleCandidate {
        );
 }
 
+/// 整季 ZIP 包候选。
+class _PackCand extends VideoSubtitleCandidate {
+  _PackCand(String name, {required String source})
+    : super(
+        providerId: 'fake',
+        remoteId: '$source:$name',
+        fileName: name,
+        language: 'ja',
+        providerPriority: 1,
+        collectionId: source,
+        collectionLabel: source,
+        archiveFormat: SubtitleArchiveFormat.zip,
+      );
+}
+
+/// 整季 RAR 包候选（本仓解不开）。
+class _RarCand extends VideoSubtitleCandidate {
+  _RarCand(String name, {required String source})
+    : super(
+        providerId: 'fake',
+        remoteId: '$source:$name',
+        fileName: name,
+        language: 'ja',
+        providerPriority: 1,
+        collectionId: source,
+        collectionLabel: source,
+        archiveFormat: SubtitleArchiveFormat.rar,
+      );
+}
+
 typedef _Search =
     Future<ProviderBatchResult<VideoSubtitleCandidate>> Function(
       VideoSubtitleSearchRequest request,
     );
 
+typedef _Download =
+    Future<VideoSubtitleDownload> Function(VideoSubtitleCandidate candidate);
+
 class _FakeProvider implements VideoSubtitleProvider {
-  _FakeProvider(this.onSearch);
+  _FakeProvider(this.onSearch, {this.onDownload});
 
   final _Search onSearch;
+  final _Download? onDownload;
 
   @override
   String get id => 'fake';
@@ -66,7 +105,7 @@ class _FakeProvider implements VideoSubtitleProvider {
   ) => onSearch(request);
   @override
   Future<VideoSubtitleDownload> download(VideoSubtitleCandidate candidate) =>
-      throw UnimplementedError();
+      onDownload?.call(candidate) ?? (throw UnimplementedError());
 }
 
 void main() {
@@ -112,21 +151,27 @@ void main() {
     required MediaCollectionRow collection,
     required VideoBookRow member,
     required _Search onSearch,
+    _Download? onDownload,
+    List<VideoBookRow>? members,
     Future<http.Client> Function()? httpClientFactory,
     bool withProvider = true,
+    ThemeData? theme,
   }) {
     final VideoSubtitleRegistry registry = VideoSubtitleRegistry(
       withProvider
-          ? <VideoSubtitleProvider>[_FakeProvider(onSearch)]
+          ? <VideoSubtitleProvider>[
+              _FakeProvider(onSearch, onDownload: onDownload),
+            ]
           : const <VideoSubtitleProvider>[],
     );
     return TranslationProvider(
       child: MaterialApp(
+        theme: theme,
         home: Scaffold(
           body: SubtitleCollectionPanel(
             database: db,
             collection: collection,
-            members: <VideoBookRow>[member],
+            members: members ?? <VideoBookRow>[member],
             subtitleRegistry: () async => registry,
             initialApiKey: 'test-key',
             onApiKeyChanged: (_) async {},
@@ -360,6 +405,166 @@ void main() {
     );
   });
 
+  testWidgets('批量某集下载被拒：行副标题说出原因（key 被拒 + 状态码），不是一句「下载失败」', (
+    WidgetTester tester,
+  ) async {
+    // 默认 800×600 下成员列表在版本 / 设置区下面、还没被懒构建出来。
+    tester.view.physicalSize = const Size(1400, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final VideoBookRow member = await seedMember();
+    final MediaCollectionRow collection = await seedCollection(anilistId: 21);
+    await tester.pumpWidget(
+      wrap(
+        collection: collection,
+        member: member,
+        onSearch: (_) async =>
+            ProviderBatchResult<VideoSubtitleCandidate>.success(
+              <VideoSubtitleCandidate>[
+                _Cand('Show - 01.ja.srt', source: 'Source', episode: 1),
+              ],
+            ),
+        onDownload: (_) async => throw const ExternalProviderFailure(
+          providerId: 'fake',
+          operation: 'download',
+          kind: ExternalProviderFailureKind.unauthorized,
+          message: 'denied',
+          statusCode: 401,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(downloadButton());
+    await tester.pumpAndSettle();
+
+    final String reason = t.video_subtitle_error_with_code(
+      msg: t.video_subtitle_error_key_rejected(provider: 'fake'),
+      code: 401,
+    );
+    expect(
+      find.text(reason),
+      findsOneWidget,
+      reason: '401 / 429 / 文件下架在批量里曾经长得一样',
+    );
+    expect(find.text(t.video_jimaku_download_failed), findsNothing);
+  });
+
+  testWidgets('整季包没下下来：没配上的集说出原因（状态码），不是一句「找不到字幕」', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final VideoBookRow member = await seedMember();
+    // 两集：只有一集时未编号的包会被当成「唯一目标的单文件」直接下载，走不到
+    // 「从整季包里按集号拆」这条路。
+    await db.upsertVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value<String>('video/show-02'),
+        title: Value<String>('Show - 02'),
+        videoPath: Value<String>('C:/video/Show - 02.mkv'),
+      ),
+    );
+    final VideoBookRow second = (await VideoBookRepository(
+      db,
+    ).getByBookUid('video/show-02'))!;
+    final MediaCollectionRow collection = await seedCollection(anilistId: 21);
+    await tester.pumpWidget(
+      wrap(
+        collection: collection,
+        member: member,
+        members: <VideoBookRow>[member, second],
+        onSearch: (_) async =>
+            ProviderBatchResult<VideoSubtitleCandidate>.success(
+              <VideoSubtitleCandidate>[
+                // 第 1 集有单集文件；第 2 集只能从整季包里拆。
+                _Cand('Show - 01.ja.srt', source: 'Source', episode: 1),
+                _PackCand('Show S1.zip', source: 'Source'),
+              ],
+            ),
+        onDownload: (_) async => throw const ExternalProviderFailure(
+          providerId: 'fake',
+          operation: 'download',
+          kind: ExternalProviderFailureKind.rateLimited,
+          message: 'slow down',
+          statusCode: 429,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(downloadButton());
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        t.video_subtitle_error_with_code(
+          msg: t.video_jimaku_no_results,
+          code: 429,
+        ),
+      ),
+      findsOneWidget,
+      reason: '「包被限流没下下来」与「来源里真的没有这一集」曾经长得一样',
+    );
+  });
+
+  testWidgets('BUG-4799 批量途中在输入框回车不重搜：在跑的行状态与来源不被清掉', (
+    WidgetTester tester,
+  ) async {
+    final VideoBookRow member = await seedMember();
+    final MediaCollectionRow collection = await seedCollection(anilistId: 21);
+    int searches = 0;
+    final Completer<VideoSubtitleDownload> pendingDownload =
+        Completer<VideoSubtitleDownload>();
+    await tester.pumpWidget(
+      wrap(
+        collection: collection,
+        member: member,
+        onSearch: (_) async {
+          searches++;
+          return ProviderBatchResult<VideoSubtitleCandidate>.success(
+            <VideoSubtitleCandidate>[
+              _Cand('Show - 01.ja.srt', source: 'Source', episode: 1),
+            ],
+          );
+        },
+        onDownload: (_) => pendingDownload.future,
+      ),
+    );
+    await tester.pumpAndSettle();
+    final int searchesBefore = searches;
+    await tester.tap(downloadButton());
+    await tester.pump();
+    await tester.pump();
+
+    // 批量在跑（下载挂起）。与「查找字幕」按钮同一道闸：回车不得发起新一轮。
+    final TextField queryField = tester.widget<TextField>(
+      find.byWidgetPredicate(
+        (Widget w) => w is TextField && w.controller?.text == 'Show',
+      ),
+    );
+    queryField.onSubmitted!('Show');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(searches, searchesBefore, reason: '批量途中回车重搜会清掉行状态、换掉来源');
+    expect(
+      find.byKey(const ValueKey<String>('subtitle-source-fake:Source')),
+      findsOneWidget,
+    );
+
+    pendingDownload.completeError(
+      const ExternalProviderFailure(
+        providerId: 'fake',
+        operation: 'download',
+        kind: ExternalProviderFailureKind.unavailable,
+        message: 'down',
+        statusCode: 503,
+      ),
+    );
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('快速切系列时迟到旧响应不覆盖新来源，DB 也保留最新系列', (WidgetTester tester) async {
     final VideoBookRow member = await seedMember();
     final MediaCollectionRow collection = await seedCollection();
@@ -521,6 +726,47 @@ void main() {
           selected: source,
           searching: false,
           running: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('canRunSubtitleCollectionBatch：只有能解开的整季包、没有单集文件的来源也能批量下载', () {
+      // 成员行对这种来源预览「将从整季包中拆出」，批量（runSubtitleBatch）也确实会拆；
+      // 修复前按钮只看单集索引，这里是灰的。
+      final SubtitleCollectionSource packOnly = groupSubtitleCollectionSources(
+        <VideoSubtitleCandidate>[_PackCand('season.zip', source: 'P')],
+      ).single;
+      expect(packOnly.index.isEmpty, isTrue);
+      expect(packOnly.unpackablePackFormat, SubtitleArchiveFormat.zip);
+      expect(
+        canRunSubtitleCollectionBatch(
+          selected: packOnly,
+          searching: false,
+          running: false,
+        ),
+        isTrue,
+      );
+      expect(
+        canRunSubtitleCollectionBatch(
+          selected: packOnly,
+          searching: false,
+          running: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('canRunSubtitleCollectionBatch：只有解不开的整季包（RAR）仍禁用', () {
+      final SubtitleCollectionSource rarOnly = groupSubtitleCollectionSources(
+        <VideoSubtitleCandidate>[_RarCand('season.rar', source: 'R')],
+      ).single;
+      expect(rarOnly.unsupportedPackFormat, SubtitleArchiveFormat.rar);
+      expect(
+        canRunSubtitleCollectionBatch(
+          selected: rarOnly,
+          searching: false,
+          running: false,
         ),
         isFalse,
       );
@@ -1120,4 +1366,86 @@ void main() {
     );
     expect(host.bottom - button.bottom, lessThan(24));
   });
+
+  // 番剧匹配候选是**靠标题**区分的；同系列各季标题前缀相同，截成一行省略号后
+  // 两个 chip 显示成同一串，用户无从选系列（应用内反馈 rB3cuyTXBr）。
+  for (final (String design, ThemeData? theme) in <(String, ThemeData?)>[
+    ('MD3', null),
+    (
+      'Apple',
+      ThemeData(
+        extensions: const <ThemeExtension<dynamic>>[
+          FushiGlassTheme(FushiGlassMaterial.off, glassDesign: true),
+        ],
+      ),
+    ),
+  ]) {
+    testWidgets('$design：番剧匹配候选标题完整显示，同前缀的季能区分', (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(480, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      const String season1 =
+          'Tensei shitara Slime Datta Ken: Coleus no Yume to Kanata no '
+          'Tomodachi';
+      const String season2 =
+          'Tensei shitara Slime Datta Ken: Coleus no Yume to Kanata no '
+          'Tomodachi 2nd Season';
+      final VideoBookRow member = await seedMember();
+      final MediaCollectionRow collection = await seedCollection();
+      await tester.pumpWidget(
+        wrap(
+          collection: collection,
+          member: member,
+          theme: theme,
+          httpClientFactory: () async => MockClient((
+            http.Request request,
+          ) async {
+            if (request.url.host != 'graphql.anilist.co') {
+              return http.Response('not found', 404);
+            }
+            return http.Response(
+              jsonEncode(<String, Object?>{
+                'data': <String, Object?>{
+                  'Page': <String, Object?>{
+                    'media': <Object?>[
+                      for (final (int id, String romaji)
+                          in const <(int, String)>[(1, season1), (2, season2)])
+                        <String, Object?>{
+                          'id': id,
+                          'title': <String, Object?>{'romaji': romaji},
+                        },
+                    ],
+                  },
+                },
+              }),
+              200,
+            );
+          }),
+          onSearch: (_) async =>
+              ProviderBatchResult<VideoSubtitleCandidate>.success(
+                const <VideoSubtitleCandidate>[],
+              ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      for (final String title in <String>[season1, season2]) {
+        final Finder label = find.text(title);
+        expect(label, findsOneWidget, reason: '候选 chip 必须渲染出来');
+        final RenderParagraph paragraph = tester.renderObject<RenderParagraph>(
+          label,
+        );
+        expect(
+          paragraph.didExceedMaxLines,
+          isFalse,
+          reason: '「$title」被截断：同前缀的季在界面上无法区分',
+        );
+        // 整段标题都在面板宽度内（换行而不是溢出到屏外）。
+        final Rect rect = tester.getRect(label);
+        expect(rect.right, lessThanOrEqualTo(480));
+      }
+    });
+  }
 }

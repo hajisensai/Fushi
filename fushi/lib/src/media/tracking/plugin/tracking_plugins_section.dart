@@ -9,6 +9,9 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/drag_drop/drop_classification.dart'
+    show kPluginPackageExtensions;
+import 'package:fushi/src/media/drag_drop/plugin_package_drop_target.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/tracking/bangumi_watched_dialog.dart';
 import 'package:fushi/src/media/tracking/plugin/plugin_tracking_provider.dart';
@@ -39,7 +42,7 @@ typedef TrackingPluginPackagePicker =
 Future<Uint8List?> pickTrackingPluginPackage(BuildContext context) async {
   final FilePickerResult? picked = await pickFilesByExtensions(
     context: context,
-    allowedExtensions: const <String>['fushiplug', 'zip'],
+    allowedExtensions: kPluginPackageExtensions.toList(),
     withData: true,
   );
   final PlatformFile? file = picked?.files.firstOrNull;
@@ -158,6 +161,13 @@ class _TrackingPluginsSectionState extends State<TrackingPluginsSection> {
   Future<void> _install() async {
     final Uint8List? bytes = await widget.pickPackage(context);
     if (bytes == null || !mounted) return;
+    await _installPackage(bytes);
+  }
+
+  /// Inspect, confirm, install: shared by the install button ([_install]) and
+  /// files dropped on the section ([PluginPackageDropTarget], BUG-4712).
+  Future<void> _installPackage(Uint8List bytes) async {
+    if (!mounted) return;
     setState(() => _busy = true);
     try {
       final TrackingPluginInfo info = await _manager.inspect(bytes);
@@ -540,13 +550,19 @@ class _TrackingPluginsSectionState extends State<TrackingPluginsSection> {
               ),
       ),
     ];
-    return FushiEntranceScope(
-      child: AdaptiveSettingsSection(
-        title: t.media_tracking_plugins_title,
-        children: <Widget>[
-          for (int i = 0; i < rows.length; i++)
-            _EntranceRow(index: i, child: rows[i]),
-        ],
+    // Dropping a .fushiplug on the section installs it like the button does.
+    return PluginPackageDropTarget(
+      debugLabel: 'tracking-plugin',
+      install: (BuildContext context, Uint8List bytes) =>
+          _installPackage(bytes),
+      child: FushiEntranceScope(
+        child: AdaptiveSettingsSection(
+          title: t.media_tracking_plugins_title,
+          children: <Widget>[
+            for (int i = 0; i < rows.length; i++)
+              _EntranceRow(index: i, child: rows[i]),
+          ],
+        ),
       ),
     );
   }

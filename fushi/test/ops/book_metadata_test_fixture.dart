@@ -10,6 +10,8 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/media_source.dart';
 import 'package:fushi/src/media/media_type.dart';
+import 'package:fushi/src/media/metadata/book_metadata_scrape_facade.dart'
+    show BookCoverDownloader;
 import 'package:fushi/src/media/metadata/book_metadata_scraper.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/types/reader_media_type.dart';
@@ -141,8 +143,8 @@ http.Response _json(Object body) => http.Response.bytes(
 );
 
 /// 下载桩：每个 URL 写一张不同的假图（URL 里的数字当种子）到 [dir]。
-Future<File> Function(String url) fakeDownloader(Directory dir) =>
-    (String url) async {
+BookCoverDownloader fakeDownloader(Directory dir) =>
+    (String url, {Map<String, String>? headers}) async {
       final int seed = int.tryParse(RegExp(r'\d+').stringMatch(url) ?? '') ?? 7;
       final File f = File(
         p.join(dir.path, 'dl_${DateTime.now().microsecondsSinceEpoch}.jpg'),

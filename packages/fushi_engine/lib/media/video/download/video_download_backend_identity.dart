@@ -91,6 +91,22 @@ VideoDownloadBackendIdentity buildVideoDownloadBackendIdentity({
       fingerprint: _sha256('embedded|$installationId'),
     );
   }
+  if (resolvedBackend == QbConnectionConfig.backendFushiHost) {
+    // 身份 = 那台 host（hostId 优先：同一台 host 换地址不是换了下载器）。
+    final String hostKey = config.remoteHostId.trim().isNotEmpty
+        ? 'id:${config.remoteHostId.trim()}'
+        : 'url:${config.remoteHostUrl.trim()}';
+    if (config.remoteHostUrl.trim().isEmpty &&
+        config.remoteHostId.trim().isEmpty) {
+      throw ArgumentError('download device must be chosen');
+    }
+    final String identity = _sha256('fushi_host|$hostKey');
+    return VideoDownloadBackendIdentity(
+      kind: QbConnectionConfig.backendFushiHost,
+      profileId: identity,
+      fingerprint: identity,
+    );
+  }
   final String address = normalizeQbBackendAddress(config.baseUrl);
   if (address.isEmpty) {
     throw ArgumentError('qBittorrent address must not be empty');

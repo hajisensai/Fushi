@@ -35,10 +35,16 @@ import 'package:fushi_engine/ai/web_knowledge.dart'
         parseWebKnowledgeEnabledIds;
 import 'package:fushi/src/models/preference_keys.dart'
     show
+        kAiAgentWebSearchAllow,
+        kAiAgentWebSearchOff,
+        kAiAgentWebSearchPref,
         kAiWebSearchPageFetchAllow,
         kAiWebSearchPageFetchDeny,
         kAiWebSearchPageFetchPref,
-        kLibraryManualOrderPrefKeyPrefix;
+        kLibraryManualOrderPrefKeyPrefix,
+        kWhatsNewCardDismissedVersionPrefKey,
+        kWhatsNewSeenSeqPrefKey,
+        kWhatsNewSeenVersionPrefKey;
 import 'package:fushi/src/models/library_grid_columns.dart';
 import 'package:fushi/src/stats/study_goal_period.dart' show StudyGoalPeriod;
 import 'package:fushi/src/utils/misc/platform_utils.dart' show WindowSizeClass;
@@ -48,6 +54,8 @@ import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/media/music/music_resume.dart';
 import 'package:fushi/src/media/audiobook/audiobook_jump_threshold.dart';
+import 'package:fushi/src/media/listening_reminder.dart'
+    show kListeningReminderMinutesDefault, normalizeListeningReminderMinutes;
 import 'package:fushi/src/media/discovery/alist_site_config.dart';
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
@@ -104,6 +112,7 @@ import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart'
     show VideoHdrOutputMode, kVideoHdrOutputPref;
 import 'package:fushi/src/media/video/video_control_customization.dart';
+import 'package:fushi/src/reader/eink_full_refresh.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi/src/media/manga/reader/manga_control_layout.dart';
 import 'package:fushi/src/media/video/video_remote_control_layout.dart';
@@ -1822,17 +1831,59 @@ class PreferencesRepository extends ChangeNotifier
   // TODO-108：查词弹窗显示模式。默认 OFF（跟随被查词位置，即现状的左/右/上/下避让）。
   // ON 时弹窗固定为屏幕底部一条全宽面板，忽略选区位置——适合需要稳定固定弹窗落点的
   // 用户。getPref 仅在 key 从未写过时返回默认 false，已切过开关的用户保留其存值。
+  //
+  // BUG-4713 起它只管**不属于四个媒体模块的宿主**（查词页 / 外部弹窗 / 悬浮歌词），
+  // 不再是各模块的总开关；模块各自的值见 [popupBottomDockedIn]。键名冻结不改。
   bool get popupBottomDocked =>
       getPref('popup_bottom_docked', defaultValue: false) as bool;
 
   Future<void> setPopupBottomDocked(bool value) async {
-    await setPref('popup_bottom_docked', value);
+    await setPrefs(<String, dynamic>{
+      ..._popupBottomDockedPerModuleUpgrade(),
+      'popup_bottom_docked': value,
+    });
     notifyListeners();
   }
 
-  /// 底部停靠在各媒体页里是否生效（总开关 [popupBottomDocked] 之下的按模块细分）。
-  /// 不是所有场景都需要停靠：例如只想在视频里固定弹窗、小说里仍跟随选区。
-  /// 顺序 = 设置页展示顺序。
+  /// 底部停靠数据的语义版本（bool，缺省 = 旧语义）。
+  ///
+  /// - 旧语义（缺省 / false）：模块 X 的有效值 = `popup_bottom_docked`（总开关）
+  ///   ∧ `popup_bottom_docked_<X>`（细分开关，缺省 true）。
+  /// - 新语义（true，BUG-4713）：模块 X 的有效值就是 `popup_bottom_docked_<X>`
+  ///   （缺省 false），`popup_bottom_docked` 只管非模块宿主。
+  ///
+  /// 标记与那几个键**同住一处**：随 Profile 快照 / 备份 / 同步一起走，所以老快照、
+  /// 老备份恢复回来时标记缺失，读侧按旧语义解释，有效值与它被保存时一致——不需要
+  /// 只跑一次的启动迁移，也就没有「迁移标记被清后重跑把新数据再转一遍」的窗口。
+  /// 第一次写任一相关键时（[_popupBottomDockedPerModuleUpgrade]）把旧语义的有效值
+  /// 物化成新语义的各模块值，与标记、新写入同一次 [setPrefs] 落盘。
+  ///
+  /// 兼容层范围与清理条件：旧语义读路径只为「BUG-4713 之前保存的偏好 / Profile
+  /// 快照 / 备份」服务。同步合并（`BackupMergeEngine`）不跨设备合并普通设置，只有
+  /// 同机换包名迁移的 `adoptSourcePreferences` 会逐键取较新者——那条路径上标记与
+  /// 模块键可能来自两份数据，结果按标记那一份的语义解释，属已知边界。等不再支持
+  /// 恢复 BUG-4713 之前的快照 / 备份时，删掉旧语义分支与
+  /// [_popupBottomDockedPerModuleUpgrade]，读侧只留新语义（标记键随之可废弃）。
+  static const String popupBottomDockedPerModuleKey =
+      'popup_bottom_docked_per_module';
+
+  bool get _popupBottomDockedPerModule =>
+      getPref(popupBottomDockedPerModuleKey, defaultValue: false) == true;
+
+  /// 数据仍是旧语义时，返回把它原样（有效值不变）改写成新语义需要写入的键值；
+  /// 已是新语义返回空表。调用方把它与自己的新值合进同一次 [setPrefs]。
+  Map<String, dynamic> _popupBottomDockedPerModuleUpgrade() {
+    if (_popupBottomDockedPerModule) return const <String, dynamic>{};
+    return <String, dynamic>{
+      for (final ModuleId module in kPopupBottomDockedModules)
+        popupBottomDockedKeyFor(module)!: popupBottomDockedIn(module),
+      popupBottomDockedPerModuleKey: true,
+    };
+  }
+
+  /// 底部停靠在各媒体页里是否生效：每个模块一个独立开关，互不牵连，也不受
+  /// [popupBottomDocked] 影响（BUG-4713）。不是所有场景都需要停靠：例如只想在
+  /// 视频里固定弹窗、小说里仍跟随选区。顺序 = 设置页展示顺序。
   static const List<ModuleId> kPopupBottomDockedModules = <ModuleId>[
     ModuleId.books,
     ModuleId.manga,
@@ -1842,7 +1893,7 @@ class PreferencesRepository extends ChangeNotifier
 
   /// 按模块细分的持久化键。显式列出而不是拼 `module.name`（[ModuleId.prefKey]
   /// 的纪律：键永不随枚举改名漂移）；不在 [kPopupBottomDockedModules] 里的模块
-  /// 返回 `null`，只听总开关。
+  /// 返回 `null`，听非模块宿主的 [popupBottomDocked]。
   static String? popupBottomDockedKeyFor(ModuleId module) => switch (module) {
     ModuleId.books => 'popup_bottom_docked_books',
     ModuleId.manga => 'popup_bottom_docked_manga',
@@ -1851,17 +1902,28 @@ class PreferencesRepository extends ChangeNotifier
     _ => null,
   };
 
-  /// 默认 ON：升级上来的用户打开总开关时行为与旧版（全局停靠）一致。
+  /// [module] 的媒体页里查词弹窗实际是否底部停靠。新语义默认 OFF（与旧版总开关
+  /// 默认 OFF 时的有效值一致）；旧语义数据按 [popupBottomDockedPerModuleKey] 的
+  /// 说明解释。
   bool popupBottomDockedIn(ModuleId module) {
     final String? key = popupBottomDockedKeyFor(module);
-    if (key == null) return true;
-    return getPref(key, defaultValue: true) as bool;
+    if (key == null) return popupBottomDocked;
+    if (_popupBottomDockedPerModule) {
+      return getPref(key, defaultValue: false) as bool;
+    }
+    return popupBottomDocked && (getPref(key, defaultValue: true) as bool);
   }
 
   Future<void> setPopupBottomDockedIn(ModuleId module, bool value) async {
     final String? key = popupBottomDockedKeyFor(module);
-    if (key == null) return;
-    await setPref(key, value);
+    if (key == null) {
+      await setPopupBottomDocked(value);
+      return;
+    }
+    await setPrefs(<String, dynamic>{
+      ..._popupBottomDockedPerModuleUpgrade(),
+      key: value,
+    });
     notifyListeners();
   }
 
@@ -2286,6 +2348,17 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 视频字幕列表是否列出**特效字幕**（歌词特效 / 屏幕字，拍板台 H7r4mf_z2n），默认
+  /// false（拍板选项 B 原文「默认隐藏特效事件」）。与 [VideoSubtitleJumpPanel] 的
+  /// 「显示特效字幕」切换钮一一对应，跨开关 / 跨重启记住；只影响列表，不影响播放画面上的字幕。
+  bool get videoSubtitleListShowEffects =>
+      getPref('video_subtitle_list_show_effects', defaultValue: false) as bool;
+
+  Future<void> setVideoSubtitleListShowEffects(bool value) async {
+    await setPref('video_subtitle_list_show_effects', value);
+    notifyListeners();
+  }
+
   /// 视频字幕列表上次打开的页签（xlzGuK5YmD）：`VideoSubtitleListFilter.name`
   /// （`all` / `favorites`），默认 `all`。下次打开列表恢复到它，跨开关 / 跨重启记住。
   String get videoSubtitleListFilter =>
@@ -2591,6 +2664,14 @@ class PreferencesRepository extends ChangeNotifier
     }
   }
 
+  /// 互联「来源共享」把 host 的服务器来源合并进本机清单（OPDS / AList / Kavita /
+  /// OpenSubsonic 各一个键）后整份写回：缓存与库同一步更新并通知监听者。只写库的话，
+  /// 整轮同步结束前设置页 setter 会拿旧缓存把刚收下的条目抹掉。
+  Future<void> replaceSharedSourceListPref(String key, String json) async {
+    await setPref(key, json);
+    notifyListeners();
+  }
+
   Future<void> setDiscoveryOpdsServers(
     Iterable<OpdsServerConfig> servers,
   ) async {
@@ -2669,6 +2750,27 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setAudiobookshelfShowInHome(bool value) async {
     await setPref('audiobookshelf_show_in_home', value);
+    notifyListeners();
+  }
+
+  /// 「模糊 NSFW 封面」：标成 NSFW 的作品（`media_nsfw_flags`、NSFW 合集成员、
+  /// 成人向游戏）封面在库页 / 继续卡等处打模糊。默认开——用户标 NSFW 就是为了
+  /// 不露封面；想临时看清再到设置里关。
+  bool get blurNsfwCovers =>
+      getPref('blur_nsfw_covers', defaultValue: true) as bool;
+
+  Future<void> setBlurNsfwCovers(bool value) async {
+    await setPref('blur_nsfw_covers', value);
+    notifyListeners();
+  }
+
+  /// 「制卡图片也模糊」：从 NSFW 作品制卡时，卡上的封面 / 页图用模糊后的副本。
+  /// 默认关：卡里存的是模糊图，以后取消也恢复不了已制的卡（拍板台 w04vrhUAaX 建议）。
+  bool get blurNsfwCardImages =>
+      getPref('blur_nsfw_card_images', defaultValue: false) as bool;
+
+  Future<void> setBlurNsfwCardImages(bool value) async {
+    await setPref('blur_nsfw_card_images', value);
     notifyListeners();
   }
 
@@ -2956,6 +3058,16 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setBrowseMovedNoticeHandled() async {
     await setPref('browse_moved_notice_handled', true);
+  }
+
+  /// 库页默认布局改成封面网格（2026-11-15）后的一次性「拼贴仍可选」提示是否已处理：
+  /// 弹过，或首次启动新版时判定本安装不需要弹（全新安装 / 显式选过布局）。默认 false。
+  bool get libraryLayoutDefaultNoticeHandled =>
+      getPref('library_layout_default_notice_handled', defaultValue: false)
+          as bool;
+
+  Future<void> setLibraryLayoutDefaultNoticeHandled() async {
+    await setPref('library_layout_default_notice_handled', true);
   }
 
   /// 弹幕样式（字号/不透明度/速度/显示区域，JSON；见 [VideoDanmakuStyle]，TODO-1376）。
@@ -3473,6 +3585,24 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 「AI 助手自主联网搜索」的首次确认状态：`''` 还没同意 / [kAiAgentWebSearchAllow] /
+  /// [kAiAgentWebSearchOff]（见 [kAiAgentWebSearchPref]）。
+  String get aiAgentWebSearchConsent =>
+      getPref(kAiAgentWebSearchPref, defaultValue: '') as String;
+
+  /// 用户在助手的确认卡上点了同意（由 `web.search` / `web.read` 路由经表态参数写）。
+  Future<void> grantAiAgentWebSearch() async {
+    await setPref(kAiAgentWebSearchPref, kAiAgentWebSearchAllow);
+    notifyListeners();
+  }
+
+  /// 设置页开关：关 = [kAiAgentWebSearchOff]（两条操作不可用）；开 = 回到 `''`
+  /// （还没同意，助手下次用时重新确认），不直接写成已同意。
+  Future<void> setAiAgentWebSearchEnabled(bool enabled) async {
+    await setPref(kAiAgentWebSearchPref, enabled ? '' : kAiAgentWebSearchOff);
+    notifyListeners();
+  }
+
   /// 写入联网搜索后端；null = 清空（写空串，读侧 [WebSearchConfig.tryParse] 视空串
   /// 为没配；偏好层没有带缓存与 LWW 戳的删键入口）。
   Future<void> setAiWebSearch(WebSearchConfig? config) async {
@@ -3692,6 +3822,24 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setVideoSubtitleAjattEnabled(bool enabled) async {
     await setPref('video_subtitle_ajatt_enabled', enabled);
+    notifyListeners();
+  }
+
+  /// 楽天ブックス书籍检索 applicationId（设备本地凭据）。
+  String get bookScrapeRakutenApplicationId =>
+      getPref('book_scrape_rakuten_application_id', defaultValue: '') as String;
+
+  Future<void> setBookScrapeRakutenApplicationId(String value) async {
+    await setPref('book_scrape_rakuten_application_id', value.trim());
+    notifyListeners();
+  }
+
+  /// 楽天ブックス书籍检索 accessKey（2026 年新端点必填，设备本地凭据）。
+  String get bookScrapeRakutenAccessKey =>
+      getPref('book_scrape_rakuten_access_key', defaultValue: '') as String;
+
+  Future<void> setBookScrapeRakutenAccessKey(String value) async {
+    await setPref('book_scrape_rakuten_access_key', value.trim());
     notifyListeners();
   }
 
@@ -4171,6 +4319,58 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 移除了、复习内核还没忘掉的同步位置（JSON 字符串数组，元素是位置身份 `SrsFolderLocation.locationId`）。设备本地。
+  ///
+  /// 移除文件夹位置时与 [srsFolderLocationsKey] 在**同一个事务**里写（[removeSrsFolderLocation]）：配置里去掉、
+  /// 同时记下「内核要忘掉它」；同步调度器起来后（以及每一轮开头）逐个 `location_forget`，忘掉一个划掉一个
+  /// （[markSrsLocationForgotten]）。复习模块没起（没有运行时）、卡片库没打开、内核一时忘不掉都不挡移除，
+  /// 也不会让内核里留下没人能清的状态：这份清单和位置配置一样是设备级的（所有 profile 共用），内核的
+  /// `location_forget` 也在库文件里**每一个** profile 的集合里各忘一次，所以随便哪个 profile 忘掉一次就可以划掉。
+  static const String srsForgetPendingKey = 'srs_sync2_forget_pending';
+
+  Set<String> get srsPendingLocationForgets {
+    final Object? raw = getPref(srsForgetPendingKey, defaultValue: '');
+    if (raw is! String || raw.isEmpty) return const <String>{};
+    try {
+      final Object? j = jsonDecode(raw);
+      if (j is! List) return const <String>{};
+      return <String>{
+        for (final Object? e in j)
+          if (e is String && e.isNotEmpty) e,
+      };
+    } on FormatException {
+      return const <String>{};
+    }
+  }
+
+  /// 从文件夹位置里去掉 [id]，同一个事务里把它的位置身份记进待忘清单（[srsForgetPendingKey]）。没有这个位置 =
+  /// 什么都不写。
+  Future<void> removeSrsFolderLocation(String id) async {
+    final List<SrsFolderLocation> folders = srsFolderLocations;
+    final SrsFolderLocation? gone = folders
+        .where((SrsFolderLocation l) => l.id == id)
+        .firstOrNull;
+    if (gone == null) return;
+    await setPrefs(<String, dynamic>{
+      srsFolderLocationsKey: jsonEncode(<Object?>[
+        for (final SrsFolderLocation l in folders)
+          if (l.id != id) l.toJson(),
+      ]),
+      srsForgetPendingKey: jsonEncode(
+        (<String>{...srsPendingLocationForgets, gone.locationId}.toList()
+          ..sort()),
+      ),
+    });
+    notifyListeners();
+  }
+
+  /// 内核已经忘掉 [locationId]：从待忘清单里划掉。
+  Future<void> markSrsLocationForgotten(String locationId) async {
+    final Set<String> pending = <String>{...srsPendingLocationForgets};
+    if (!pending.remove(locationId)) return;
+    await setPref(srsForgetPendingKey, jsonEncode(pending.toList()..sort()));
+  }
+
   /// 复习同步 v2 里这台设备关掉的同步通道位置（JSON 字符串数组，元素是位置身份 = `srs_directory_key.dart`）。
   /// 只管复习同步：通道本身（书 / 视频等常规同步）照常跑。设备本地：是这台设备「在不在那里同步」的选择。
   static const String srsDisabledLocationsKey = 'srs_sync2_disabled_locations';
@@ -4378,6 +4578,15 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setHomeDashboardPanels(String json) async {
     await setPref('home_dashboard_panels', json);
+    notifyListeners();
+  }
+
+  // 首页小组件网格布局（JSON，见 models/home_widget_layout.dart）。空串 = 没编辑过。
+  String get homeWidgetLayout =>
+      getPref('home_widget_layout', defaultValue: '') as String;
+
+  Future<void> setHomeWidgetLayout(String json) async {
+    await setPref('home_widget_layout', json);
     notifyListeners();
   }
 
@@ -5106,6 +5315,31 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 连续收听提醒（反馈 5_mzP54WVx）：音乐 / 有声书 / 视频连续在播满 N 分钟提醒一次。
+  /// 默认关。
+  bool get listeningReminderEnabled =>
+      getPref('listening_reminder_enabled', defaultValue: false) == true;
+
+  Future<void> setListeningReminderEnabled({required bool value}) async {
+    await setPref('listening_reminder_enabled', value);
+    notifyListeners();
+  }
+
+  /// 连续收听提醒的间隔（分钟）：存值归到最近的档位，没写过取出厂 60 分钟。
+  int get listeningReminderMinutes {
+    final Object? stored = getPref('listening_reminder_minutes');
+    if (stored is num) return normalizeListeningReminderMinutes(stored);
+    return kListeningReminderMinutesDefault;
+  }
+
+  Future<void> setListeningReminderMinutes(int value) async {
+    await setPref(
+      'listening_reminder_minutes',
+      normalizeListeningReminderMinutes(value),
+    );
+    notifyListeners();
+  }
+
   bool get showFloatingLyric =>
       getPref('show_floating_lyric', defaultValue: false) as bool;
 
@@ -5812,6 +6046,16 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 逐字歌词非当前行轻模糊（[KaraokeLyricsAppearance.blurInactive]）。默认开；关掉后
+  /// 上一句 / 下一句保持清晰（GitHub #3354）。
+  bool get musicLyricsBlurInactive =>
+      getPref('music_lyrics_blur_inactive', defaultValue: true) == true;
+
+  Future<void> setMusicLyricsBlurInactive(bool value) async {
+    await setPref('music_lyrics_blur_inactive', value);
+    notifyListeners();
+  }
+
   /// 桌面歌词（设计 §6.2：Android 悬浮窗 / Windows 置顶穿透窗）。默认关。
   bool get musicDesktopLyrics =>
       getPref('music_desktop_lyrics', defaultValue: false) == true;
@@ -6396,6 +6640,29 @@ class PreferencesRepository extends ChangeNotifier
     await setPref('update_debug_channel', value);
     notifyListeners();
   }
+
+  /// 「本版新内容」基线：本机最近一次看过的版本串（空串 = 还没定基线）。
+  String get whatsNewSeenVersion =>
+      getPref(kWhatsNewSeenVersionPrefKey, defaultValue: '') as String;
+
+  /// 与 [whatsNewSeenVersion] 配对的 release sequence（0 = 未知）。
+  int get whatsNewSeenSeq =>
+      getPref(kWhatsNewSeenSeqPrefKey, defaultValue: 0) as int;
+
+  Future<void> setWhatsNewSeen({
+    required String version,
+    required int seq,
+  }) async {
+    await setPref(kWhatsNewSeenVersionPrefKey, version);
+    await setPref(kWhatsNewSeenSeqPrefKey, seq);
+  }
+
+  /// 首页「本版新内容」卡片在哪个版本上被关掉（空串 = 没关过）。
+  String get whatsNewCardDismissedVersion =>
+      getPref(kWhatsNewCardDismissedVersionPrefKey, defaultValue: '') as String;
+
+  Future<void> setWhatsNewCardDismissedVersion(String version) =>
+      setPref(kWhatsNewCardDismissedVersionPrefKey, version);
 
   /// 用户手填的「自定义更新代理」（`host:port`，空串=未设）。fake-ip/TUN 模式下系统
   /// 代理只写注册表、Dart HttpClient 读不到时的兜底入口（TODO-871/862）：非空时检查/下载
@@ -7104,6 +7371,27 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// AI 库管家自动路径（spec docs/specs/2026-11-18-ai-library-curator-design.md §9，
+  /// 所有者 2026-11-18 拍板**默认开**）：入库 / 扫描后去抖跑一趟库管家（合集归属 →
+  /// 认身份 → 关系推断 → 作品层）。没给任何一步指派 AI 提供商时不发任何 AI 请求；
+  /// 开着时它取代旧的「导入后自动整理」（[libraryOrganizeAuto] 只在它关掉时生效，
+  /// 两套自动任务不会重复跑）。设备本地。
+  bool get libraryCurateAuto =>
+      getPref('library_curate_auto', defaultValue: true) as bool;
+
+  Future<void> setLibraryCurateAuto(bool value) async {
+    await setPref('library_curate_auto', value);
+    notifyListeners();
+  }
+
+  /// AI 库管家的本机状态（JSON：运行记录、增量水位、进度、抑制清单，见
+  /// `LibraryCurateState`）。设备本地，丢了只是下一趟当首趟全量跑。
+  String get libraryCurateState =>
+      getPref('library_curate_state', defaultValue: '') as String;
+
+  Future<void> setLibraryCurateState(String value) =>
+      setPref('library_curate_state', value);
+
   Future<void> setMangaOnlineCatalogEnabled(bool value) async {
     await setPref('manga_online_catalog_enabled', value);
     notifyListeners();
@@ -7359,6 +7647,43 @@ class PreferencesRepository extends ChangeNotifier
       kStudyIdleTimeoutPrefKey,
       value.clamp(readingIdleTimeoutMinutesMin, readingIdleTimeoutMinutesMax),
     );
+    notifyListeners();
+  }
+
+  /// 墨水屏「每 N 页全刷」的间隔（翻页次数，0 = 关）。与 `eink_mode` 同族：描述的是
+  /// 这台设备的屏幕，不随 Profile 快照（见 ProfileKeys 排除表）。
+  static const String einkFullRefreshIntervalKey = 'eink_full_refresh_interval';
+
+  /// 墨水屏全刷方式（[EinkFullRefreshMethod.storageKey]），设备本地。
+  static const String einkFullRefreshMethodKey = 'eink_full_refresh_method';
+
+  int get einkFullRefreshInterval => normalizeEinkFullRefreshInterval(
+    getPref(
+          einkFullRefreshIntervalKey,
+          defaultValue: kEinkFullRefreshIntervalDefault,
+        )
+        as int,
+  );
+
+  Future<void> setEinkFullRefreshInterval(int value) async {
+    await setPref(
+      einkFullRefreshIntervalKey,
+      normalizeEinkFullRefreshInterval(value),
+    );
+    notifyListeners();
+  }
+
+  EinkFullRefreshMethod get einkFullRefreshMethod =>
+      EinkFullRefreshMethod.fromStorageKey(
+        getPref(
+              einkFullRefreshMethodKey,
+              defaultValue: EinkFullRefreshMethod.auto.storageKey,
+            )
+            as String,
+      );
+
+  Future<void> setEinkFullRefreshMethod(EinkFullRefreshMethod method) async {
+    await setPref(einkFullRefreshMethodKey, method.storageKey);
     notifyListeners();
   }
 

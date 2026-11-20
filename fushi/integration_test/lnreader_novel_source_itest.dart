@@ -19,7 +19,8 @@ import 'package:fushi/src/media/novel/online/lnreader_online_book.dart';
 import 'package:fushi/src/media/novel/online/lnreader_source_browse_page.dart';
 import 'package:fushi/src/media/novel/online/novel_online_sources_gate.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
-import 'package:fushi/src/pages/implementations/media_sources_page.dart';
+import 'package:fushi/src/pages/implementations/browse_online_sources_view.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_audio/fushi_audio.dart' show Bookmark;
@@ -103,21 +104,28 @@ void main() {
     final AppModel appModel = await readyAppModel(tester);
     expect(isNovelOnlineSourcesAvailable, isTrue);
 
-    // ① 书导入页：本地段之外多出仓库 / 扩展 / 在线源三段（与视频同一条选择器）。
+    // ① 「浏览」里小说域的扩展目录（书导入页的在线段已统一搬进「浏览」）。
     await push(
       appModel,
-      const Scaffold(body: MediaSourcesPage(mediaKind: 'book')),
+      const Scaffold(
+        body: BrowseOnlineSourcesView(
+          domain: OnlineSourcesDomain.novel,
+          section: OnlineSourcesSection.extensions,
+        ),
+      ),
     );
     expect(
       await until(
         tester,
         () => find
-            .byKey(const ValueKey<String>('import_segment_extensions'))
+            .byKey(
+              const ValueKey<String>('book_lnreader_extensions_extensions'),
+            )
             .evaluate()
             .isNotEmpty,
       ),
       isTrue,
-      reason: '书导入页应出现「扩展」段',
+      reason: '「浏览」小说扩展目录应出现',
     );
     await captureFlutterFrame(tester, 'lnreader-01-book-import-segments');
     await popAll(tester, appModel);
@@ -360,6 +368,46 @@ void main() {
     expect(
       ((counts[1]! as Map<String, Object?>)['characters']! as num) > 50,
       isTrue,
+    );
+    // BUG-4809：阅读器内存里那一章的字数也得换成正文的（进度 / 统计按它算），
+    // 不能停在开书时读到的占位页字数。预取落盘的第 3 章还没翻到，内存里仍是
+    // 占位页的字数（翻到它、当前单元结算之后才换，免得清掉阅读中的账本）。
+    final List<int>? liveCounts = ReaderFushiPage.debugChapterCharCounts
+        ?.call();
+    debugPrint('[lnreader-itest] reader in-memory chars=$liveCounts');
+    expect(liveCounts, isNotNull, reason: '阅读器应已挂上字数钩子');
+    expect(
+      liveCounts![1],
+      (counts[1]! as Map<String, Object?>)['characters'],
+      reason: '取章后内存字数应与书行里的新字数一致',
+    );
+    // 预取的那一章：文件落盘早于字数写库，所以等到书行里的字数换成正文的为止
+    // 再比（只读一次会撞上「文件已是正文、书行还没写」的窗口）。
+    num prefetchedChars = -1;
+    final DateTime prefetchDeadline = DateTime.now().add(
+      const Duration(seconds: 30),
+    );
+    while (true) {
+      final List<Object?> latest =
+          jsonDecode(
+                (await settle(
+                  tester,
+                  appModel.database.getEpubBook(onlineKey),
+                ))!.chaptersJson,
+              )
+              as List<Object?>;
+      prefetchedChars =
+          (latest[2]! as Map<String, Object?>)['characters']! as num;
+      if (prefetchedChars > liveCounts[2] ||
+          DateTime.now().isAfter(prefetchDeadline)) {
+        break;
+      }
+      await tester.pump(const Duration(milliseconds: 250));
+    }
+    expect(
+      ReaderFushiPage.debugChapterCharCounts!.call()[2],
+      lessThan(prefetchedChars),
+      reason: '预取的章要等翻到它时才换字数',
     );
     await popAll(tester, appModel);
   });

@@ -18,7 +18,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:drift/drift.dart' show QueryRow, driftRuntimeOptions;
+import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_handler.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
@@ -28,6 +28,7 @@ import 'package:test/test.dart';
 
 import '../apkg/apkg_test_support.dart';
 import '../support/srs_test_storage.dart';
+import '../support/srs_raw_sql.dart';
 
 const String kAcVecProfile = '01928c3e-0000-7000-8000-0000000000ad';
 
@@ -253,6 +254,93 @@ Future<SrsDbStore> _build(void Function(int) setNow, int Function() now) async {
   return s;
 }
 
+/// 冻结向量里 `<action> {"query":"deck:*"}` 回答的那批号（旧实现当时给的全部笔记 / 卡片，按它的顺序）。
+List<int> _recordedIds(Map<String, Object?> recorded, String action) =>
+    ((recorded['$action ${jsonEncode(<String, Object?>{'query': 'deck:*'})}']!
+                as Map)['result']!
+            as List<Object?>)
+        .cast<int>();
+
+/// 冻结向量里按号点名的 `notesInfo` 请求点的号（全部笔记 + 不存在的 42 + 已删笔记）。
+List<int> _recordedNotesInfoIds(Map<String, Object?> recorded) {
+  const String prefix = 'notesInfo {"notes":';
+  final String key = recorded.keys.firstWhere(
+    (String k) => k.startsWith(prefix),
+  );
+  return ((jsonDecode(key.substring('notesInfo '.length)) as Map)['notes']!
+          as List<Object?>)
+      .cast<int>();
+}
+
+/// 迁移前的数字 id → 迁移后的（G9-7：对外给规范 ID 的号 `hash53("anki-id/<规范 ID>")`，带盐的内置实体换了号）。
+///
+/// 笔记 / 卡片经内核反查（[SrsDbStore.noteIdsForAnkiNumericIds] / [SrsDbStore.cardIdsForAnkiNumericIds]：旧号是
+/// 别名类成员的号，`anki_members` 仍认得），再按规范 ID 算新号；反查不到就是迁移丢了实体，直接失败。牌组按全名由
+/// 规则独立算规范 ID 的号，笔记类型的号不换（见函数里）。没有对上的号不在表里（原样比）。
+Future<Map<int, int>> _renumber(
+  SrsDbStore s,
+  Map<String, Object?> recorded,
+) async {
+  final Map<int, int> out = <int, int>{};
+  Future<void> resolve(
+    List<int> old,
+    Future<List<String?>> Function(List<int>) find,
+    String what,
+  ) async {
+    final List<String?> ids = await find(old);
+    for (int i = 0; i < old.length; i++) {
+      final String? id = ids[i];
+      if (id == null) {
+        throw StateError('$what ${old[i]} unknown after migrating');
+      }
+      out[old[i]] = SrsIds.ankiNumericId(id);
+    }
+  }
+
+  final List<int> noteNums = _recordedNotesInfoIds(
+    recorded,
+  ).where((int n) => n != 42).toList();
+  await resolve(noteNums, s.noteIdsForAnkiNumericIds, 'note');
+  await resolve(
+    _recordedIds(recorded, 'findCards'),
+    s.cardIdsForAnkiNumericIds,
+    'card',
+  );
+  // 牌组 / 笔记类型的新号不从被测的回答里抄（那样 deckNamesAndIds / modelNamesAndIds 自己跟自己比，第五波 K1 nit），
+  // 由规则独立算：牌组的号是它规范 ID 的号，规范 ID 按全名（内置默认牌组是常量）向内核的派生规则要；笔记类型的号是
+  // 它的 ankiNum（内置笔记类型是固定常量、自建的是存量属性），迁移不换号，所以不进表、原样比。
+  final SrsKernelIds kernel = SrsKernelIds(kAcVecProfile);
+  final Map<String, Object?> decks =
+      ((recorded['deckNamesAndIds {}']! as Map)['result']! as Map)
+          .cast<String, Object?>();
+  for (final MapEntry<String, Object?> e in decks.entries) {
+    final String canon = e.key == 'Default'
+        ? kernel.defaultDeck
+        : kernel.deck(e.key);
+    out[e.value! as int] = SrsIds.ankiNumericId(canon);
+  }
+  return out;
+}
+
+/// [v]（向量 JSON）里的旧号按 [renum] 换成新号：整数值，以及键（请求文本）里的数字串；字段文本等字符串值不动。
+Object? _renumbered(Object? v, Map<int, int> renum) {
+  String text(String s) => s.replaceAllMapped(
+    RegExp(r'\d+'),
+    (Match m) => '${renum[int.tryParse(m[0]!)] ?? m[0]}',
+  );
+  return switch (v) {
+    final int n => renum[n] ?? n,
+    final Map<Object?, Object?> m => <String, Object?>{
+      for (final MapEntry<Object?, Object?> e in m.entries)
+        text(e.key! as String): _renumbered(e.value, renum),
+    },
+    final List<Object?> l => <Object?>[
+      for (final Object? x in l) _renumbered(x, renum),
+    ],
+    _ => v,
+  };
+}
+
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
   final bool write = Platform.environment['SRS_AC_VECTORS_WRITE'] == '1';
@@ -277,20 +365,13 @@ void main() {
       dbFile.writeAsBytesSync(gzip.encode(File(snap).readAsBytesSync()));
       tmp.deleteSync(recursive: true);
     }
-    final Directory dir = Directory.systemTemp.createTempSync('srs_acvec_');
-    addTearDown(() {
-      try {
-        dir.deleteSync(recursive: true);
-      } on FileSystemException {
-        // 句柄晚释放。
-      }
-    });
-    final String path = p.join(dir.path, 'srs.db');
-    File(path).writeAsBytesSync(gzip.decode(dbFile.readAsBytesSync()));
-    final TestSrs srs = await openTestSrsAt(path);
+    // 冻结库是协议 3 的 srs.db：经换代迁移（用户升级的同一条路）再开新代库，新代的读命令对同一组向量。
+    final TestSrs srs = await openMigratedTestSrs(
+      gzip.decode(dbFile.readAsBytesSync()),
+      prefix: 'srs_acvec_',
+    );
     t = _queryNow;
     final SrsDbStore s = await SrsDbStore.open(
-      db: srs.db,
       core: srs.core,
       profileUid: kAcVecProfile,
       deviceId: 'v',
@@ -304,6 +385,14 @@ void main() {
       localOffsetMin: () => 540,
     );
     final SrsAnkiConnectHandler h = _handler(s);
+    final Map<String, Object?> recorded = write
+        ? <String, Object?>{}
+        : (jsonDecode(vectors.readAsStringSync()) as Map)
+              .cast<String, Object?>();
+    // 旧号 → 新号（G9-7：数字 id 是规范 ID 的号，内置实体换了号；旧号经 `anki_members` 仍能反查）。
+    final Map<int, int> renum = write
+        ? <int, int>{}
+        : await _renumber(s, recorded);
     final Map<String, Object?> produced = <String, Object?>{};
     Future<void> req(String action, Map<String, Object?> params) async {
       produced['$action ${jsonEncode(params)}'] = await _call(
@@ -315,23 +404,37 @@ void main() {
 
     // 已删笔记的数字 id：库里还留着它的缓存行（deleted_at）。
     deletedNote =
-        (await s.db
+        (await s.core
                 .customSelect(
-                  'SELECT anki_id FROM srs_notes_cache WHERE deleted_at IS NOT NULL',
+                  'SELECT anki_id FROM notes WHERE deleted_at IS NOT NULL',
                 )
                 .get())
-            .map((QueryRow r) => '${r.read<int>('anki_id')}')
+            .map((SrsRawRow r) => '${r.read<int>('anki_id')}')
             .firstOrNull;
     expect(deletedNote, isNotNull);
+    if (!write) {
+      // 冻结向量里点名的已删笔记（最后一个号）迁移后就是库里那条已删笔记。
+      expect(
+        int.parse(deletedNote!),
+        renum[_recordedNotesInfoIds(recorded).last],
+      );
+    }
 
-    final List<int> allNotes =
-        ((await _ok(h, 'findNotes', <String, Object?>{'query': 'deck:*'}))!
-                as List<Object?>)
-            .cast<int>();
-    final List<int> allCards =
-        ((await _ok(h, 'findCards', <String, Object?>{'query': 'deck:*'}))!
-                as List<Object?>)
-            .cast<int>();
+    // 请求里用到的号按冻结向量里记的那批旧号（换成新号）取，不取「新列表的第 n 个」：顺序本身也在比对之列。
+    final List<int> allNotes = write
+        ? ((await _ok(h, 'findNotes', <String, Object?>{'query': 'deck:*'}))!
+                  as List<Object?>)
+              .cast<int>()
+        : <int>[
+            for (final int n in _recordedIds(recorded, 'findNotes')) renum[n]!,
+          ];
+    final List<int> allCards = write
+        ? ((await _ok(h, 'findCards', <String, Object?>{'query': 'deck:*'}))!
+                  as List<Object?>)
+              .cast<int>()
+        : <int>[
+            for (final int n in _recordedIds(recorded, 'findCards')) renum[n]!,
+          ];
     final List<String> queries = <String>[
       '',
       'deck:*',
@@ -544,7 +647,7 @@ void main() {
       return;
     }
     final Map<String, Object?> expected =
-        (jsonDecode(vectors.readAsStringSync()) as Map).cast<String, Object?>();
+        _renumbered(recorded, renum)! as Map<String, Object?>;
     expect(produced.keys.toList(), expected.keys.toList());
     for (final String k in expected.keys) {
       expect(jsonDecode(jsonEncode(produced[k])), expected[k], reason: k);

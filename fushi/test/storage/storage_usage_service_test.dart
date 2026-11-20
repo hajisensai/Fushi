@@ -43,13 +43,16 @@ void main() {
     f.writeAsBytesSync(List<int>.filled(bytes, 0x61));
   }
 
-  StorageUsageService service({bool documentsRootIsFushiOwned = true}) =>
-      StorageUsageService(
-        documentsRoot: () async => docs,
-        supportRoot: () async => support,
-        cacheRoots: () async => <Directory>[cache],
-        documentsRootIsFushiOwned: () async => documentsRootIsFushiOwned,
-      );
+  StorageUsageService service({
+    bool documentsRootIsFushiOwned = true,
+    List<Directory> sharedDocumentsRoots = const <Directory>[],
+  }) => StorageUsageService(
+    documentsRoot: () async => docs,
+    supportRoot: () async => support,
+    cacheRoots: () async => <Directory>[cache],
+    documentsRootIsFushiOwned: () async => documentsRootIsFushiOwned,
+    sharedDocumentsRoots: () async => sharedDocumentsRoots,
+  );
 
   group('directorySizeSync', () {
     test('递归求和整棵树', () {
@@ -537,6 +540,61 @@ void main() {
       );
     });
 
+    test('字幕生成任务单列一类：任务缓存可删、登记着的产物只读，不再混进 database', () async {
+      final String asr = p.join(support.path, kAsrJobsSupportChild);
+      final String videoJobs = p.join(asr, 'video_subtitles');
+      writeFile(p.join(support.path, 'fushi.sqlite'), 1000);
+      // 日语任务（state.json 记着媒体路径）与普通话任务（目录名带语言后缀）。
+      writeFile(p.join(videoJobs, 'aaa', 'drafts.sliding_mixed.json'), 200);
+      File(
+        p.join(videoJobs, 'aaa', 'state.json'),
+      ).writeAsStringSync('{"videoPath": "/v/ep01.mkv"}');
+      writeFile(p.join(videoJobs, 'bbb.zh', 'audio_bbb.zh.wav'), 300);
+      File(
+        p.join(videoJobs, 'bbb.zh', 'state.json'),
+      ).writeAsStringSync('{"videoPath": "/v/ep02.mkv"}');
+      // 原盘字幕产物（库行的字幕选择指着）：只读。
+      writeFile(p.join(videoJobs, 'disc_out', 'ccc', '00001.ja.srt'), 40);
+      // 音乐字幕产物：只读；插件音频副本：可删。
+      writeFile(p.join(asr, 'music_subtitles', 'out', 'ddd', 'a.ja.srt'), 50);
+      writeFile(p.join(asr, 'music_subtitles', 'plugin_audio', 'x.m4a'), 60);
+      // 上游转录任务目录。
+      writeFile(p.join(asr, '0f0f', 'transcript.srt'), 70);
+
+      final List<StorageCategoryUsage> all = await service()
+          .scanCategories(
+            books: const <StorageBookRef>[],
+            dictionaryNames: const <String>[],
+          )
+          .toList();
+      final StorageCategoryUsage jobs = all.singleWhere(
+        (StorageCategoryUsage u) => u.id == StorageCategoryId.subtitleJobs,
+      );
+      final StorageCategoryUsage database = all.singleWhere(
+        (StorageCategoryUsage u) => u.id == StorageCategoryId.database,
+      );
+      expect(database.bytes, 1000, reason: 'asr_jobs 不再算进数据库类目');
+      final int stateBytes =
+          File(p.join(videoJobs, 'aaa', 'state.json')).lengthSync() +
+          File(p.join(videoJobs, 'bbb.zh', 'state.json')).lengthSync();
+      expect(jobs.bytes, 200 + 300 + 40 + 50 + 60 + 70 + stateBytes);
+      final Map<String, StorageEntryKind> kinds = <String, StorageEntryKind>{
+        for (final StorageEntryUsage e in jobs.entries) e.label: e.kind,
+      };
+      expect(kinds, <String, StorageEntryKind>{
+        'video_subtitles/ep01.mkv': StorageEntryKind.derivedFile,
+        'video_subtitles/ep02.mkv (zh)': StorageEntryKind.derivedFile,
+        'video_subtitles/disc_out/00001.ja.srt': StorageEntryKind.readOnly,
+        'music_subtitles/out/a.ja.srt': StorageEntryKind.readOnly,
+        'music_subtitles/plugin_audio': StorageEntryKind.derivedFile,
+        '0f0f': StorageEntryKind.derivedFile,
+      });
+      expect(
+        kDeletableEntryCategories,
+        contains(StorageCategoryId.subtitleJobs),
+      );
+    });
+
     test('通用类目：明细 = 类目根下直接子项，label 带顶层目录前缀，总量 = 明细之和', () async {
       writeFile(p.join(docs.path, 'videos', 'a.mkv'), 700);
       writeFile(p.join(docs.path, 'remote_videos', 'series', 'ep1.mp4'), 300);
@@ -748,6 +806,123 @@ void main() {
       );
     });
 
+    test('BUG-4906：互联 sync-data 拆成共享 / 复习同步 / 旧版残留 / 其他，总量不少算', () async {
+      final String syncData = p.join(
+        support.path,
+        kInterconnectSyncDataSupportChild,
+      );
+      final String root = p.join(syncData, 'fushi-data');
+      writeFile(p.join(support.path, 'fushi.db'), 1000);
+      // 共享命名空间（__x__）。
+      writeFile(p.join(root, '__dictionaries__', 'a.bin'), 300);
+      writeFile(p.join(root, '__fonts__', 'sub', 'f.ttf'), 20);
+      // 复习同步。
+      writeFile(p.join(root, 'fushi-srs', 'log', 'b.bin'), 50);
+      // 旧版残留：平的书文件夹两个。
+      writeFile(p.join(root, '吾輩は猫である', 'book.epub'), 4000);
+      writeFile(p.join(root, '吾輩は猫である', 'progress_x.json'), 6);
+      writeFile(p.join(root, 'Book B', 'cover_1.jpg'), 700);
+      // 其他：带子目录的未知目录、根下散落文件、同步根以外的东西。
+      writeFile(p.join(root, 'unknown', 'deep', 'c.bin'), 9);
+      writeFile(p.join(root, 'spill.json'), 2);
+      writeFile(p.join(syncData, 'manga_ocr_jobs', 'p.png'), 30);
+
+      final List<StorageCategoryUsage> all = await service()
+          .scanCategories(
+            books: const <StorageBookRef>[],
+            dictionaryNames: const <String>[],
+          )
+          .toList();
+      final StorageCategoryUsage db = all.singleWhere(
+        (StorageCategoryUsage u) => u.id == StorageCategoryId.database,
+      );
+      StorageEntryUsage byId(String id) =>
+          db.entries.singleWhere((StorageEntryUsage e) => e.id == id);
+
+      final StorageEntryUsage shared = byId(
+        StorageUsageService.kInterconnectSharedEntryId,
+      );
+      final StorageEntryUsage srs = byId(
+        StorageUsageService.kInterconnectSrsEntryId,
+      );
+      final StorageEntryUsage legacy = byId(
+        StorageUsageService.kInterconnectLegacyEntryId,
+      );
+      final StorageEntryUsage other = byId(
+        StorageUsageService.kInterconnectOtherEntryId,
+      );
+      expect(shared.bytes, 320);
+      expect(shared.kind, StorageEntryKind.readOnly);
+      expect(srs.bytes, 50);
+      expect(srs.kind, StorageEntryKind.readOnly);
+      expect(legacy.bytes, 4706);
+      expect(legacy.itemCount, 2);
+      expect(legacy.kind, StorageEntryKind.interconnectLegacyFileBox);
+      expect(legacy.paths, <String>[syncData]);
+      expect(other.bytes, 41);
+      expect(other.kind, StorageEntryKind.readOnly);
+
+      // 不再整块一行；类目总量 = 主库 + sync-data 整树，一字节不少。
+      expect(
+        db.entries.where((StorageEntryUsage e) => e.paths.contains(syncData)),
+        hasLength(4),
+      );
+      expect(
+        db.entries.map((StorageEntryUsage e) => e.label),
+        isNot(contains('support/sync-data')),
+      );
+      expect(db.bytes, 1000 + 320 + 50 + 4706 + 41);
+      expect(
+        db.bytes,
+        db.entries.fold<int>(
+          0,
+          (int sum, StorageEntryUsage e) => sum + e.bytes,
+        ),
+      );
+
+      // 旧版残留不进「可直接裸删」的口径（一键清缓存不会碰它）。
+      expect(kDirectlyDeletableEntryKinds, isNot(contains(legacy.kind)));
+    });
+
+    test('BUG-4906：无旧版残留 / 无其他时只出共享与复习同步两条（0 也显示）', () async {
+      final String syncData = p.join(
+        support.path,
+        kInterconnectSyncDataSupportChild,
+      );
+      Directory(p.join(syncData, 'fushi-data')).createSync(recursive: true);
+
+      final List<StorageCategoryUsage> all = await service()
+          .scanCategories(
+            books: const <StorageBookRef>[],
+            dictionaryNames: const <String>[],
+          )
+          .toList();
+      final StorageCategoryUsage db = all.singleWhere(
+        (StorageCategoryUsage u) => u.id == StorageCategoryId.database,
+      );
+      expect(db.entries.map((StorageEntryUsage e) => e.id).toSet(), <String>{
+        StorageUsageService.kInterconnectSharedEntryId,
+        StorageUsageService.kInterconnectSrsEntryId,
+      });
+      expect(db.bytes, 0);
+    });
+
+    test('BUG-4906：没有 sync-data 时不出任何互联条目', () async {
+      writeFile(p.join(support.path, 'fushi.db'), 10);
+      final List<StorageCategoryUsage> all = await service()
+          .scanCategories(
+            books: const <StorageBookRef>[],
+            dictionaryNames: const <String>[],
+          )
+          .toList();
+      final StorageCategoryUsage db = all.singleWhere(
+        (StorageCategoryUsage u) => u.id == StorageCategoryId.database,
+      );
+      expect(db.entries.map((StorageEntryUsage e) => e.label), <String>[
+        'support/fushi.db',
+      ]);
+    });
+
     test('每个类目恰好产出一次结果', () async {
       final List<StorageCategoryUsage> all = await service()
           .scanCategories(
@@ -772,9 +947,13 @@ void main() {
     Future<StorageCategoryUsage> categoryOf(
       StorageCategoryId id, {
       bool documentsRootIsFushiOwned = true,
+      List<Directory> sharedDocumentsRoots = const <Directory>[],
     }) async {
       final List<StorageCategoryUsage> all =
-          await service(documentsRootIsFushiOwned: documentsRootIsFushiOwned)
+          await service(
+                documentsRootIsFushiOwned: documentsRootIsFushiOwned,
+                sharedDocumentsRoots: sharedDocumentsRoots,
+              )
               .scanCategories(
                 books: const <StorageBookRef>[],
                 dictionaryNames: const <String>[],
@@ -940,6 +1119,43 @@ void main() {
         isFalse,
         reason: '白名单内的目录已归属别的类目，出现在 other 就是重复计数',
       );
+    });
+
+    test('iOS 平台 Documents（收件箱）在 documents 根之外：其子项全进 other，不受白名单过滤', () async {
+      // 拍板台 nLXhu0d7gV：iOS 书库搬到 Library/Fushi/data 后，平台 Documents 里的剪辑导出、
+      // 收件箱原件、搬迁失败留下的旧书库项都不在 documents 根里，漏算就是 BUG-1905 回归。
+      final Directory platformDocs = Directory(
+        p.join(tempRoot.path, 'Documents'),
+      )..createSync();
+      writeFile(p.join(platformDocs.path, 'video_clips', 'clip.mp4'), 4000);
+      writeFile(p.join(platformDocs.path, 'Books', 'novel.epub'), 600);
+      // 与白名单同名也照算：共享根不是 documents 根，那里的 `videos` 不归视频类目。
+      writeFile(p.join(platformDocs.path, 'videos', 'left.mkv'), 50);
+      writeFile(p.join(docs.path, 'video_clips', 'clip2.mp4'), 7);
+
+      final StorageCategoryUsage usage = await categoryOf(
+        StorageCategoryId.other,
+        sharedDocumentsRoots: <Directory>[platformDocs],
+      );
+
+      expect(usage.bytes, 4657);
+      final List<String> labels = usage.entries
+          .map((StorageEntryUsage e) => e.label)
+          .toList();
+      expect(labels, contains('Documents/video_clips'));
+      expect(labels, contains('Documents/Books'));
+      expect(labels, contains('Documents/videos'));
+    });
+
+    test('共享根与 documents 根重合时不重复计数', () async {
+      writeFile(p.join(docs.path, 'video_clips', 'clip.mp4'), 70);
+
+      final StorageCategoryUsage usage = await categoryOf(
+        StorageCategoryId.other,
+        sharedDocumentsRoots: <Directory>[docs],
+      );
+
+      expect(usage.bytes, 70);
     });
 
     test('documents 根不是 Fushi 专属容器时 other 恒为 0（不把用户自己的文件算进来）', () async {

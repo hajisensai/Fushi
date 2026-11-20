@@ -271,4 +271,60 @@ void main() {
       });
     },
   );
+
+  // BUG-4908：用户显式加入 / 下载 = 撤销合集删除；成员级墓碑仍拦。
+  test('userIntent clears the collection deletion tombstone and recreates '
+      'the collection', () async {
+    await db.upsertCollectionMemberTombstone(
+      collectionName: 'Series',
+      deletedAt: 1,
+      collectionType: 'collection',
+      mediaType: FushiDatabase.collectionTombstoneSentinel,
+      entryKey: FushiDatabase.collectionTombstoneSentinel,
+    );
+    expect(await adopt('wire', 0, local: 'local'), isNull);
+    final int? id = await db.adoptRemoteCollectionMember(
+      name: 'Series',
+      collectionType: 'collection',
+      mediaType: MediaKind.video,
+      remoteEntryKey: 'wire',
+      sortIndex: 0,
+      localEntryKey: 'local',
+      userIntent: true,
+    );
+    expect(id, isNotNull);
+    expect(
+      await db.hasCollectionDeletionTombstone('Series', 'collection'),
+      isFalse,
+    );
+    expect(
+      (await db.getCollectionItems(
+        id!,
+      )).map((MediaCollectionItemRow r) => r.entryKey),
+      <String>['local'],
+    );
+    // 墓碑清掉后被动收养也照常归进来。
+    expect(await adopt('other', 1, local: 'other'), id);
+  });
+
+  test('userIntent still respects a member removal tombstone', () async {
+    await db.upsertCollectionMemberTombstone(
+      collectionName: 'Series',
+      deletedAt: 1,
+      collectionType: 'collection',
+      mediaType: 'video',
+      entryKey: 'local',
+    );
+    final int? id = await db.adoptRemoteCollectionMember(
+      name: 'Series',
+      collectionType: 'collection',
+      mediaType: MediaKind.video,
+      remoteEntryKey: 'wire',
+      sortIndex: 0,
+      localEntryKey: 'local',
+      userIntent: true,
+    );
+    expect(id, isNull);
+    expect(await db.getAllMediaCollections(), isEmpty);
+  });
 }

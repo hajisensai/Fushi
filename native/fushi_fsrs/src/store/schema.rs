@@ -7,6 +7,9 @@
 /// 本库自己的版本号（`srs_meta.schema`）。迁移阶梯见 [migrate]。
 pub const SCHEMA_VERSION: i64 = 29;
 
+// 封存与墓碑库（冻结侧，设计 §6.1 第 7 步）：实现在 `store/seal.rs`，从这里给出。
+pub use super::seal::{SEALED_SCHEMA, legacy_identity, seal_legacy, write_tombstone};
+
 /// 前身链接的部分索引条件；与 `kSrsHistoryFromCondition`（database_srs.part.dart）逐字一致，
 /// 查询里的 WHERE 必须写成同一个表达式才用得上这个索引。
 pub const HISTORY_FROM_CONDITION: &str = "substr(field_key, 1, 12) = 'historyFrom/'";
@@ -492,6 +495,10 @@ pub fn check_upgrade_space(c: &rusqlite::Connection, free: Option<u64>) -> Resul
 
 /// 建表 / 升级到 [SCHEMA_VERSION]。在一个事务里做；版本只升不降（库比本程序新 = 打开失败，
 /// 免得旧版本写坏新版本的库）。
+///
+/// 不变量：从任何版本升级上来的库与全新库的表集合相同——阶梯里不许有「只在全新库上建」的表。gen4 换代的 prepare
+/// （`store/gen4/prepare.rs` `missing_tables`）拿全新库建出的表当基准，缺一张就判库坏、拒绝迁移。守卫：
+/// `tests_v15_upgrade.rs` 从最老的冻结夹具（v8）与 v15 升级后比对。
 pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
     // 升级步骤与触发器用的 SQL 函数：只建表的裸连接（测试）也要有。
     super::ids::register(conn).map_err(|e| e.to_string())?;

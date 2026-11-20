@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<error>
+  <code>429</code>
+  <message>Too Many Requests/同時アクセス数の上限に達したため、リクエストの制限を行っています。</message>
+</error>

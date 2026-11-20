@@ -10,6 +10,8 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/media/links/media_link_entries.dart';
+import 'package:fushi/src/media/links/media_link_inference_host.dart'
+    show mediaLinkInferCallback;
 import 'package:fushi/src/media/links/media_link_opener.dart';
 import 'package:fushi/src/media/links/media_links_section.dart';
 import 'package:fushi/src/media/links/theme_song/theme_song_detector.dart';
@@ -222,7 +224,7 @@ class _MusicTrackDetailPageState extends ConsumerState<MusicTrackDetailPage> {
               context,
               title: title,
               titleInBody: true,
-              body: track == null
+              body: (BuildContext context) => track == null
                   ? const SizedBox.shrink()
                   : _body(context, tokens, track, album, snap.data?.cover),
             );
@@ -434,12 +436,17 @@ class _MusicTrackDetailPageState extends ConsumerState<MusicTrackDetailPage> {
             openMediaLinkEntry(context: context, ref: ref, entry: e),
         searchActionFor: (MediaLinkKind k) =>
             mediaLinkSearchAction(context: context, ref: ref, kind: k),
+        // 「查找相关作品」：曲目 → 动画合集 / 游戏（本机刮削数据与声纹缓存）。
+        onInfer: mediaLinkInferCallback(
+          ref: ref,
+          self: (kind: MediaLinkKind.musicTrack, key: track.trackUid),
+        ),
       ),
     ];
     final double heroGap = musicDetailHeroGap(context, tokens.spacing.gap);
     return FushiEntranceScope(
-      // Builder：顶部让位读脚手架给正文的 MediaQuery（含页头高度）；[_body] 的
-      // context 是脚手架外层的。
+      // 顶部让位读脚手架给正文的 MediaQuery（含页头高度）：[_body] 由
+      // musicBrowseScaffold 的正文构建器调用，context 已在脚手架之下。
       child: Builder(
         builder: (BuildContext context) => ListView.separated(
           padding: withBottomSafeInset(

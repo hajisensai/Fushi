@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:archive/archive.dart';
+import 'package:archive/archive_io.dart';
 import 'package:fushi_compute/fushi_compute.dart';
 import 'package:path/path.dart' as p;
 import 'package:xml/xml.dart';
@@ -11,6 +11,7 @@ import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi_engine/epub/epub_series.dart';
 import 'package:fushi_engine/epub/isbn.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
+import 'package:fushi_engine/utils/archive/native_zip.dart';
 
 /// EPUB 本身的 zip 容器坏了：下载被截断（缺中央目录 / 尾记录）、条目 CRC 不符、
 /// deflate 流损坏等。与「EPUB 结构不合规」（缺 OPF 等）区分开，UI 据此提示用户
@@ -69,27 +70,78 @@ class EpubParser {
     // deflate stream surfaces as an error instead of being extracted as silent
     // garbage (mojibake / broken images).
     final Archive archive = _decodeVerified(bytes);
-    _extractArchive(archive, extractDir);
+    _extractArchive(
+      archive,
+      extractDir,
+      (ArchiveFile file, String path) =>
+          File(path).writeAsBytesSync(file.content as List<int>),
+    );
     return parseFromExtracted(extractDir);
   }
 
-  /// Read file from [filePath] and parse — for isolate use to avoid
-  /// serializing large byte arrays across the isolate boundary.
+  /// 从磁盘上的 [filePath] 流式解压到 [extractDir] 并解析。
+  ///
+  /// 只读中央目录，条目逐个原生解压落盘（[extractZipEntryToFile]，每次一个 4 MB
+  /// 读块），边写边核对 CRC-32（HBK-AUDIT-106 的校验语义不变）。此前是
+  /// `readAsBytesSync` 整本读进内存、再把每个条目解压缓存在 `ArchiveFile` 上做
+  /// CRC：峰值≈文件体积 + 全部解压内容，2 GiB 以上的纯图 EPUB 漫画在移动端直接
+  /// 内存耗尽。
+  ///
+  /// 容器损坏（缺尾记录 / CRC 不符 / deflate 坏）抛 [EpubArchiveCorruptException]；
+  /// 这时若 [extractDir] 是本次新建的，连同写了一半的条目一起删掉。
   ///
   /// [includeSvgSpineDocuments]：见 [parseFromExtracted]。
+  ///
+  /// 以下三个参数只有漫画导入（`MangaArchiveImporter`）传，书籍导入不传、行为不变：
+  /// - [cap]：按实际解出字节封顶（[ZipExtractionCap]），超限抛
+  ///   [ZipExtractionLimitException]（不换成 [EpubArchiveCorruptException]）；
+  /// - [extractEntry]：返回 false 的文件条目不落盘（「是不是纯图漫画」的探测只要
+  ///   container / OPF / spine 文档，不必把每张页图解出来）；
+  /// - [onEntryExtracted]：每落盘一个文件条目回调一次，供进度条推进。
   static EpubBook parseSyncFromPath(
     String filePath,
     String extractDir, {
     bool includeSvgSpineDocuments = false,
+    ZipExtractionCap? cap,
+    bool Function(String entryName)? extractEntry,
+    void Function()? onEntryExtracted,
   }) {
-    final Uint8List bytes = File(filePath).readAsBytesSync();
-    // HBK-AUDIT-106: see parseSync — CRC verification on extraction.
-    final Archive archive = _decodeVerified(bytes);
-    _extractArchive(archive, extractDir);
+    final Directory dir = Directory(extractDir);
+    final bool createdHere = !dir.existsSync();
+    final InputFileStream input = InputFileStream(filePath);
+    try {
+      final Archive archive = _corruptAsEpubException(
+        () => ZipDecoder().decodeBuffer(input),
+      );
+      _extractArchive(archive, extractDir, (ArchiveFile file, String path) {
+        if (extractEntry != null && !extractEntry(file.name)) return;
+        _corruptAsEpubException(
+          () => extractZipEntryToFile(file, path, verifyCrc32: true, cap: cap),
+        );
+        onEntryExtracted?.call();
+      });
+    } on EpubArchiveCorruptException {
+      if (createdHere && dir.existsSync()) dir.deleteSync(recursive: true);
+      rethrow;
+    } finally {
+      input.closeSync();
+    }
     return parseFromExtracted(
       extractDir,
       includeSvgSpineDocuments: includeSvgSpineDocuments,
     );
+  }
+
+  /// zip 层的 [FormatException]（含 archive 的 `ArchiveException`）统一换成
+  /// [EpubArchiveCorruptException]，与 [_decodeVerified] 同口径。
+  static T _corruptAsEpubException<T>(T Function() action) {
+    try {
+      return action();
+    } on EpubArchiveCorruptException {
+      rethrow;
+    } on FormatException catch (e) {
+      throw EpubArchiveCorruptException(e.message);
+    }
   }
 
   /// 只读 OPF 元数据里的 `dc:language`，不解压、不解析 spine——给「导入前就要知道
@@ -105,25 +157,46 @@ class EpubParser {
   static String? readTitleSync(String filePath) =>
       _readOpfMetadataSync(filePath, 'title');
 
+  /// 只解压 container.xml 与 OPF 两个条目（各自核对 CRC）：此前整本读进内存并把
+  /// 所有条目都解压校验一遍，导入前查个语言 / 标题就要为一本大书付出整本解压。
   static String? _readOpfMetadataSync(String filePath, String name) {
-    final Uint8List bytes = File(filePath).readAsBytesSync();
-    final Archive archive = _decodeVerified(bytes);
-    final ArchiveFile? container = _findArchiveFile(
-      archive,
-      p.posix.join('META-INF', 'container.xml'),
+    final InputFileStream input = InputFileStream(filePath);
+    try {
+      final Archive archive = _corruptAsEpubException(
+        () => ZipDecoder().decodeBuffer(input),
+      );
+      final ArchiveFile? container = _findArchiveFile(
+        archive,
+        p.posix.join('META-INF', 'container.xml'),
+      );
+      if (container == null) return null;
+      final XmlDocument containerXml = XmlDocument.parse(
+        decodeEpubText(_verifiedContent(container)),
+      );
+      final String? rootfilePath = _findRootfilePath(containerXml);
+      if (rootfilePath == null) return null;
+      final ArchiveFile? opf = _findArchiveFile(archive, rootfilePath);
+      if (opf == null) return null;
+      final XmlDocument opfXml = XmlDocument.parse(
+        decodeEpubText(_verifiedContent(opf)),
+      );
+      return _parseMetadata(opfXml, name);
+    } finally {
+      input.closeSync();
+    }
+  }
+
+  /// 解压单个条目并核对 CRC-32（不符抛 [EpubArchiveCorruptException]）。
+  static List<int> _verifiedContent(ArchiveFile file) {
+    final List<int> content = _corruptAsEpubException(
+      () => file.content as List<int>,
     );
-    if (container == null) return null;
-    final XmlDocument containerXml = XmlDocument.parse(
-      decodeEpubText(container.content as List<int>),
-    );
-    final String? rootfilePath = _findRootfilePath(containerXml);
-    if (rootfilePath == null) return null;
-    final ArchiveFile? opf = _findArchiveFile(archive, rootfilePath);
-    if (opf == null) return null;
-    final XmlDocument opfXml = XmlDocument.parse(
-      decodeEpubText(opf.content as List<int>),
-    );
-    return _parseMetadata(opfXml, name);
+    if (ffcCrc32(content) != file.crc32) {
+      throw EpubArchiveCorruptException(
+        'Invalid CRC for file in archive: ${file.name}',
+      );
+    }
+    return content;
   }
 
   /// 按 zip 内路径找条目：先精确匹配，再大小写不敏感（与 [_findContainerXml] 对
@@ -352,7 +425,14 @@ class EpubParser {
 
   // ── Extract ────────────────────────────────────────────────────────────────
 
-  static void _extractArchive(Archive archive, String extractDir) {
+  /// 把 [archive] 的条目落到 [extractDir]（防 zip-slip、隐含父目录建成目录）；
+  /// 单个文件条目怎么写由 [writeFile] 决定：内存解码的包直接写 `content`，
+  /// 磁盘流式打开的包逐块解压（[parseSyncFromPath]）。
+  static void _extractArchive(
+    Archive archive,
+    String extractDir,
+    void Function(ArchiveFile file, String path) writeFile,
+  ) {
     final Directory dir = Directory(extractDir);
     if (!dir.existsSync()) {
       dir.createSync(recursive: true);
@@ -373,9 +453,8 @@ class EpubParser {
     );
     for (final (ArchiveFile file, String filePath) in entries) {
       if (file.isFile && !archiveDirectories.contains(filePath)) {
-        final File outFile = File(filePath);
-        outFile.parent.createSync(recursive: true);
-        outFile.writeAsBytesSync(file.content as List<int>);
+        File(filePath).parent.createSync(recursive: true);
+        writeFile(file, filePath);
       } else {
         _ensureDirectory(filePath);
       }

@@ -26,6 +26,7 @@ import 'package:fushi/src/pages/implementations/music/music_cover.dart'
         MusicCover,
         MusicCoverTintSource,
         kMusicHoverLiftScale,
+        musicHasCoverSource,
         musicMaterialCover;
 import 'package:fushi/src/pages/implementations/music/music_track_row_surface.dart'
     show MusicTrackRowSurface;
@@ -67,6 +68,20 @@ MusicViewStyle musicViewStyleOf(
 ) => musicViewStyleSwitchable(context)
     ? MusicViewStyleStore.instance.effective(kind, fallback)
     : fallback;
+
+/// [style] 在本页是否真排成封面色块（`FushiCoverBlocks` / `SliverFushiCoverBlocks`
+/// 那套大字色块）：色块样式、重设计外壳生效、且库页布局不是封面网格。
+///
+/// 封面网格（[ShellContentLayout.grid]，设置里的「封面网格（原来的）」；墨水屏恒为
+/// 它）保留原有画法，色块排布本身也不接这一档（`fushi_cover_block_layout.dart`
+/// 文件头：「[ShellContentLayout.grid] 不走这里——调用点保留原封面网格」）：有原有
+/// 封面网格卡的视图（专辑、来源歌单）排网格卡（[MusicStyledCollection.gridCardBuilder]
+/// 等），没有的（曲目、艺人、本地歌单——改版前都是单列行）排单列行。所有「色块还是
+/// 行」的分流都经这一处，不在各页各写一遍判据。
+bool musicCoverBlocksActive(BuildContext context, MusicViewStyle style) =>
+    style == MusicViewStyle.blocks &&
+    musicViewStyleSwitchable(context) &&
+    shellContentLayoutOf(context) != ShellContentLayout.grid;
 
 /// 读 [kind] 当前的样式并跟着切换重建。[fallback] 是调用页的原有画法：用户没选过
 /// 时用它；墨水屏恒用它。
@@ -205,10 +220,18 @@ class MusicCollectionBlock extends StatelessWidget {
     this.onTap,
     this.onLongPress,
     this.onSecondaryTap,
+    this.albumPoster = false,
+    this.disc,
   });
 
   final String title;
   final FushiCoverBlockSize size;
+
+  /// 专辑块：宽块走 W 原型的专辑海报版式（[FushiCoverBlock.albumPoster]）。
+  final bool albumPoster;
+
+  /// 专辑真实的盘面扫描图（[FushiCoverBlock.disc]）；没有盘面图就别给。
+  final Widget? disc;
   final String? subtitle;
   final String? coverPath;
 
@@ -250,19 +273,26 @@ class MusicCollectionBlock extends StatelessWidget {
           chip: _nonEmpty(chip),
           leadingIcon: leadingIcon,
           trailing: trailing,
-          covers: <Widget>[
-            if (circular)
-              MusicAvatar(
-                coverPath: coverPath,
-                embeddedFromPath: embeddedFromPath,
-              )
-            else
-              MusicCover(
-                coverPath: coverPath,
-                embeddedFromPath: embeddedFromPath,
-                borderRadius: BorderRadius.zero,
-              ),
-          ],
+          albumPoster: albumPoster && !circular,
+          disc: circular ? null : disc,
+          // 没有封面来源：不放音符 / 人像占位，交给色块画按标题生成的封面
+          // （与块底同一色相，设计稿 M2）。
+          covers: !musicHasCoverSource(coverPath, embeddedFromPath)
+              ? const <Widget>[]
+              : <Widget>[
+                  if (circular)
+                    MusicAvatar(
+                      coverPath: coverPath,
+                      embeddedFromPath: embeddedFromPath,
+                    )
+                  else
+                    MusicCover(
+                      coverPath: coverPath,
+                      embeddedFromPath: embeddedFromPath,
+                      borderRadius: BorderRadius.zero,
+                      title: title,
+                    ),
+                ],
           tintImage: tint,
         ),
       ),
@@ -348,8 +378,9 @@ typedef MusicGridDelegateBuilder =
 ///
 /// - [MusicViewStyle.list]：单列行（[rowBuilder]），惰性、错峰进场；
 /// - [MusicViewStyle.blocks]：库页布局是封面网格（[ShellContentLayout.grid]，含
-///   墨水屏）且调用页有原有封面网格卡（[gridCardBuilder] + [gridDelegate]）时排原有
-///   网格卡；否则排封面色块（[SliverFushiCoverBlocks]，拼贴 / 规整按库页布局）。
+///   墨水屏）时保留原有画法——调用页有原有封面网格卡（[gridCardBuilder] +
+///   [gridDelegate]）排网格卡，没有就排单列行（[rowBuilder]）；其余布局排封面色块
+///   （[SliverFushiCoverBlocks]，判据见 [musicCoverBlocksActive]）。
 ///
 /// [header] 排在条目前、随列表一起滚（详情页的头部色块），与条目隔 [headerGap]；
 /// [footer] 排在最后（分页加载的转圈）。[shrinkWrap] 时不自己滚（嵌在外层滚动里）。
@@ -377,7 +408,7 @@ class MusicStyledCollection extends StatelessWidget {
   final IndexedWidgetBuilder rowBuilder;
   final FushiCoverBlockItemBuilder blockBuilder;
 
-  /// 封面网格布局下的原有网格卡；null = 网格布局下也排色块。
+  /// 封面网格布局下的原有网格卡；null = 网格布局下排单列行（[rowBuilder]）。
   final IndexedWidgetBuilder? gridCardBuilder;
   final MusicGridDelegateBuilder? gridDelegate;
 
@@ -400,7 +431,7 @@ class MusicStyledCollection extends StatelessWidget {
       shellContentLayoutOf(context) == ShellContentLayout.grid;
 
   Widget _body(BuildContext context, double viewportWidth) {
-    if (style == MusicViewStyle.list) {
+    if (!_useGridCards(context) && !musicCoverBlocksActive(context, style)) {
       return SliverList(
         delegate: SliverChildBuilderDelegate(
           fushiStaggeredItemBuilder(rowBuilder),
@@ -421,8 +452,9 @@ class MusicStyledCollection extends StatelessWidget {
           ? grid
           : ShelfCoverMaterialScope(material: material, child: grid);
     }
+    // 音乐的色块一律等尺寸（不起拼贴加大首块，用户 11-20 拍板）：每块都是 W 原型
+    // 的双格比例——有盘面图画唱片，没有走无盘专辑海报版式。
     return SliverFushiCoverBlocks(
-      layout: shellContentLayoutOf(context),
       itemCount: itemCount,
       itemBuilder: blockBuilder,
     );

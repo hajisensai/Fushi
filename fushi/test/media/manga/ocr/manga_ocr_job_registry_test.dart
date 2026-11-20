@@ -9,6 +9,8 @@ import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/mihon/manga_page_provider.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart';
+import 'package:fushi/src/ocr/system_ocr_channel.dart'
+    show SystemOcrUnavailableException, kSystemOcrModelUnavailableReason;
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart' show MangaOcrPageFocus;
 import 'package:fushi_engine/ocr/manga_ocr_service_impl.dart'
@@ -32,10 +34,11 @@ class _FakeSource {
     MangaOcrPageFocus? focus,
     MangaOcrBackgroundJob Function()? resume,
     String? title,
+    MangaOcrEngineId engine = MangaOcrEngineId.localOnnx,
   }) => MangaOcrBackgroundJob(
     bookKey: bookKey,
     managedDirectory: dir,
-    engine: MangaOcrEngineId.localOnnx,
+    engine: engine,
     events: controller.stream,
     focus: focus,
     resume: resume,
@@ -74,6 +77,17 @@ String _resultJson(int pages) => jsonEncode(<String, Object?>{
         'blocks': <Object?>[],
       },
   ],
+});
+
+/// BUG-4705 用例：A 在跑，后面排着同书 / 别的书 / 别的引擎各一个。
+typedef _QueuedUp = ({
+  MangaOcrJobRegistry registry,
+  _FakeSource first,
+  Future<MangaOcrRunningJob?> sameBook,
+  Future<MangaOcrRunningJob?> otherBook,
+  Future<MangaOcrRunningJob?> otherEngine,
+  String dirB,
+  String dirC,
 });
 
 MangaOcrBackgroundEvent _progress(int done, int total) =>
@@ -391,6 +405,101 @@ void main() {
       expect(await startedB, isNotNull);
       expect(registry.running('book-b')!.job.managedDirectory, dirB);
       await registry.cancelAll();
+    });
+
+    group('BUG-4705：系统 OCR 报 model_unavailable 后放弃同引擎排队任务', () {
+      const SystemOcrUnavailableException modelUnavailable =
+          SystemOcrUnavailableException(kSystemOcrModelUnavailableReason);
+
+      Future<_QueuedUp> queueUp(MangaOcrEngineId firstEngine) async {
+        final MangaOcrJobRegistry registry = MangaOcrJobRegistry(
+          maxConcurrentJobs: () => 1,
+        );
+        final _FakeSource first = _FakeSource();
+        final String dirB = p.join(tmp.path, 'b');
+        final String dirC = p.join(tmp.path, 'c');
+        final Future<MangaOcrRunningJob?> startedA = registry.enqueue(
+          job: first.job('book-a', p.join(tmp.path, 'a'), engine: firstEngine),
+          mangaJsonPath: mangaJsonPath,
+        );
+        // 同书下一卷 / 另一本书 / 另一引擎，全排在 A 后面。
+        final Future<MangaOcrRunningJob?> sameBook = registry.enqueue(
+          job: _FakeSource().job(
+            'book-a',
+            dirB,
+            engine: MangaOcrEngineId.systemOcr,
+          ),
+          mangaJsonPath: mangaJsonPath,
+        );
+        final Future<MangaOcrRunningJob?> otherBook = registry.enqueue(
+          job: _FakeSource().job(
+            'book-c',
+            dirC,
+            engine: MangaOcrEngineId.systemOcr,
+          ),
+          mangaJsonPath: mangaJsonPath,
+        );
+        final Future<MangaOcrRunningJob?> otherEngine = registry.enqueue(
+          job: _FakeSource().job(
+            'book-d',
+            p.join(tmp.path, 'd'),
+            engine: MangaOcrEngineId.localOnnx,
+          ),
+          mangaJsonPath: mangaJsonPath,
+        );
+        final MangaOcrRunningJob? a = await startedA;
+        expect(a, isNotNull);
+        a!.events.listen((_) {}, onError: (Object _) {});
+        return (
+          registry: registry,
+          first: first,
+          sameBook: sameBook,
+          otherBook: otherBook,
+          otherEngine: otherEngine,
+          dirB: dirB,
+          dirC: dirC,
+        );
+      }
+
+      test('同引擎排队的（同书 / 别的书）都不启动，别的引擎照常排到', () async {
+        final _QueuedUp q = await queueUp(MangaOcrEngineId.systemOcr);
+        q.first.controller.addError(modelUnavailable);
+
+        // 名额顺序：book-c、book-d 先等名额，同书的 B 排在 A 的链尾之后。A 失败后
+        // C 已被摘（拿到名额即放弃、把名额让给 D），D 照常启动。
+        expect(await q.otherBook, isNull);
+        expect(await q.otherEngine, isNotNull);
+        expect(q.registry.queuedDirectories('book-a'), isEmpty);
+        expect(q.registry.queuedDirectories('book-c'), isEmpty);
+        expect(q.registry.running('book-a'), isNull);
+        expect(q.registry.running('book-c'), isNull);
+        expect(q.registry.running('book-d'), isNotNull);
+        // B 被摘后仍要等到一个名额才落定：D 停掉、名额回来，它以 null 结束、不启动。
+        await q.registry.cancel('book-d');
+        expect(await q.sameBook, isNull);
+        expect(q.registry.running('book-a'), isNull);
+        await q.registry.cancelAll();
+      });
+
+      test('其它失败不连坐：排队的照常启动 / 留在队里', () async {
+        final _QueuedUp q = await queueUp(MangaOcrEngineId.systemOcr);
+        q.first.controller.addError(StateError('one bad page'));
+
+        final MangaOcrRunningJob? next = await q.otherBook;
+        expect(next, isNotNull, reason: '名额轮到的 C 照常启动');
+        expect(next!.job.managedDirectory, q.dirC);
+        expect(q.registry.queuedDirectories('book-a'), <String>[q.dirB]);
+        await q.registry.cancelAll();
+      });
+
+      test('别的引擎借同一原因码（本机模型未下载）不算：系统 OCR 排队任务不动', () async {
+        final _QueuedUp q = await queueUp(MangaOcrEngineId.localOnnx);
+        q.first.controller.addError(modelUnavailable);
+
+        expect(await q.otherBook, isNotNull);
+        expect(q.registry.queuedDirectories('book-a'), <String>[q.dirB]);
+        await q.registry.cancelAll();
+      });
     });
 
     test('等名额期间被 cancel 的书不启动，名额顺延给下一本', () async {

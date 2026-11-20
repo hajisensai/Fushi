@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/tracking/plugin/plugin_tracking_provider.dart';
 import 'package:fushi/src/media/tracking/plugin/tracking_plugin_labels.dart';
 import 'package:fushi/src/media/tracking/plugin/tracking_plugin_manager.dart';
@@ -285,6 +286,38 @@ void main() {
       accountText(tester, pluginId),
       t.media_tracking_plugins_account_signed_out,
     );
+  });
+
+  testSection('dropping a .fushiplug file runs the same install flow as the '
+      'file picker (BUG-4712)', (WidgetTester tester) async {
+    await pumpSection(tester);
+    final Directory drops = Directory.systemTemp.createTempSync(
+      'fushi-tracking-plugin-drop-',
+    );
+    addTearDown(() => drops.deleteSync(recursive: true));
+    final File package = File('${drops.path}/fake-site.fushiplug');
+    await tester.runAsync(
+      () => package.writeAsBytes(engine.package(fakeManifest())),
+    );
+
+    final FushiFileDropTarget target = tester.widget<FushiFileDropTarget>(
+      find.byType(FushiFileDropTarget),
+    );
+    unawaited(target.runDrop(<String>[package.path], Offset.zero));
+    await settle(tester);
+
+    expect(find.text(t.media_tracking_plugins_install_title), findsOneWidget);
+    expect(
+      engine.installs,
+      isEmpty,
+      reason: 'nothing before the user confirms',
+    );
+
+    await tester.tap(find.text(t.media_tracking_plugins_install_confirm));
+    await settle(tester);
+
+    expect(engine.installs, <String>[pluginId]);
+    expect(tile(pluginId), findsOneWidget);
   });
 
   testSection(

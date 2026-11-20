@@ -165,9 +165,27 @@ class AnidbHashIdentityService {
             episodeInfoError: filled.error,
           );
         }
-        if (known != null) missAttempts = known.missAttempts;
+        if (known != null) {
+          missAttempts = known.missAttempts;
+          // 到期复查的「查无」记录：同路径、同大小、同 mtime 就是上次哈希过的那份
+          // 内容，记录里的 ED2K 直接复用，不再整文件重读（每个未收录文件最多复查
+          // 14 次，NAS 上每次都是一遍全量读盘）。
+          //
+          // 只对大小**不是** ED2K 块整数倍的文件复用：记录只存主哈希，而恰为
+          // 整数倍的文件还有一个蓝变体备用哈希（`ffc_hash_ed2k_*` 的
+          // `out_has_alternative`），在线路径查无时会拿它再问一次——那类文件
+          // 照旧重算，不能少问这一次。
+          if (stat.size % anidbEd2kChunkSize != 0) {
+            hash = AnidbEd2kHash(
+              ed2k: known.ed2k,
+              size: known.size,
+              modifiedAt: stat.modified,
+              changedAt: stat.changed,
+            );
+          }
+        }
       }
-      hash = _hashes.remove(absolutePath);
+      hash ??= _hashes.remove(absolutePath);
       if (hash == null ||
           stat.type != FileSystemEntityType.file ||
           stat.size != hash.size ||

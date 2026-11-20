@@ -307,9 +307,7 @@ void main() {
     },
   );
 
-  // BUG-2623 根治：随包 `fushiplayer` 只登记了 UDP，HTTP 身份随包为空。用随包
-  // 配置时 anime XML 链必须在发请求前判不可用——零请求，而不是每次启动先撞一次
-  // 302 再闩住。自定义客户端仍同时用于 UDP 与 HTTP，302 照旧走闩。
+  // BUG-2623：随包 HTTP 使用独立登记；缺失身份仍零请求，自定义身份保留 302 闩。
   group('bundled vs custom AniDB client identities', () {
     AniDbVideoMetadataProvider fromConfig(
       VideoSourceScrapeGlobalConfig config,
@@ -327,46 +325,93 @@ void main() {
       return result;
     }
 
-    test('bundled config never contacts the HTTP API and says why', () async {
-      final VideoSourceScrapeGlobalConfig config =
-          VideoSourceScrapeGlobalConfig.fromPreferences(
-            _MapPrefStore(),
-            resolvedTmdbApiKey: '',
-            uiLocaleTag: 'en-US',
-          );
-      // UDP 身份不变：哈希识别照旧用已登记的 fushiplayer/1。
-      expect(config.anidbUdpConfig.clientName, kBundledAniDbClient.name);
-      expect(config.anidbUdpConfig.clientVersion, kBundledAniDbClient.version);
-      expect(config.anidbHttpClientConfigured, isFalse);
+    test(
+      'bundled HTTP registration hydrates anime details and reuses XML',
+      () async {
+        final VideoSourceScrapeGlobalConfig config =
+            VideoSourceScrapeGlobalConfig.fromPreferences(
+              _MapPrefStore(),
+              resolvedTmdbApiKey: '',
+              uiLocaleTag: 'en-US',
+            );
+        int calls = 0;
+        final AniDbVideoMetadataProvider anidb = fromConfig(config, (
+          http.Request request,
+        ) async {
+          calls++;
+          expect(request.url.queryParameters['client'], 'fushiplayerhttp');
+          expect(request.url.queryParameters['clientver'], '1');
+          return xml(_animeXml);
+        });
+        expect(anidb.isHttpApiAvailable, isTrue);
+        final VideoMetadataWork work = (await anidb.fetchWork(lookup))!;
+        expect(work.kind, VideoMetadataMediaKind.tv);
+        expect(work.year, 2018);
+        expect(work.episodeCount, 2);
+        expect(
+          work.rawPayload?[AniDbVideoMetadataProvider.catalogOnlyPayloadKey],
+          isNot(true),
+        );
+        expect(
+          await anidb.fetchEpisodes(lookup, seasonNumber: 1),
+          hasLength(2),
+        );
+        expect(
+          await anidb.episodeInfo(animeId: 42, episodeId: 4201),
+          isNotNull,
+        );
+        expect(calls, 1, reason: '作品与分集共享同一份 anime XML');
+      },
+    );
 
-      int calls = 0;
-      final AniDbVideoMetadataProvider anidb = fromConfig(config, (
-        http.Request request,
-      ) async {
-        calls++;
-        return xml(_animeXml);
-      });
-      expect(anidb.isHttpApiAvailable, isFalse);
-      expect(anidb.httpIdentityRejection, isNull, reason: '没发过请求，谈不上被拒');
-      expect(
-        (await anidb.fetchWork(
-          lookup,
-        ))!.rawPayload?[AniDbVideoMetadataProvider.catalogOnlyPayloadKey],
-        isTrue,
-        reason: '作品层仍由离线标题目录给出',
-      );
-      expect(await anidb.fetchSeasons(lookup), hasLength(1));
-      await expectLater(
-        anidb.fetchEpisodes(lookup, seasonNumber: 1),
-        throwsA(isA<VideoMetadataNetworkException>()),
-      );
-      expect(await anidb.episodeInfo(animeId: 42, episodeId: 4201), isNull);
-      expect(calls, 0, reason: '随包配置下 httpapi 一次都不许请求');
-      expect(
-        anidb.httpDetailUnavailableReason,
-        allOf(contains('未配置已登记'), contains('UDP')),
-      );
-    });
+    test(
+      'an unregistered HTTP identity never contacts the API and says why',
+      () async {
+        final VideoSourceScrapeGlobalConfig config =
+            VideoSourceScrapeGlobalConfig.fromPreferences(
+              _MapPrefStore(),
+              resolvedTmdbApiKey: '',
+              uiLocaleTag: 'en-US',
+              bundledAniDbHttpClient:
+                  const AniDbAppClientIdentity.unregistered(),
+            );
+        // UDP 身份不变：哈希识别照旧用已登记的 fushiplayer/1。
+        expect(config.anidbUdpConfig.clientName, kBundledAniDbClient.name);
+        expect(
+          config.anidbUdpConfig.clientVersion,
+          kBundledAniDbClient.version,
+        );
+        expect(config.anidbHttpClientConfigured, isFalse);
+
+        int calls = 0;
+        final AniDbVideoMetadataProvider anidb = fromConfig(config, (
+          http.Request request,
+        ) async {
+          calls++;
+          return xml(_animeXml);
+        });
+        expect(anidb.isHttpApiAvailable, isFalse);
+        expect(anidb.httpIdentityRejection, isNull, reason: '没发过请求，谈不上被拒');
+        expect(
+          (await anidb.fetchWork(
+            lookup,
+          ))!.rawPayload?[AniDbVideoMetadataProvider.catalogOnlyPayloadKey],
+          isTrue,
+          reason: '作品层仍由离线标题目录给出',
+        );
+        expect(await anidb.fetchSeasons(lookup), hasLength(1));
+        await expectLater(
+          anidb.fetchEpisodes(lookup, seasonNumber: 1),
+          throwsA(isA<VideoMetadataNetworkException>()),
+        );
+        expect(await anidb.episodeInfo(animeId: 42, episodeId: 4201), isNull);
+        expect(calls, 0, reason: '未登记配置下 httpapi 一次都不许请求');
+        expect(
+          anidb.httpDetailUnavailableReason,
+          allOf(contains('未配置已登记'), contains('UDP')),
+        );
+      },
+    );
 
     test(
       'custom client is used for both protocols and 302 still latches',
@@ -546,6 +591,7 @@ void main() {
           clientVersion: 1,
           username: 'u',
           password: 'p',
+          apiKey: 'udp-key',
         ),
         mapping: AnimeIdentityMapping(
           httpClient: VideoMetadataHttpClient(

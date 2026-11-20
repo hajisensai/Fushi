@@ -7,18 +7,14 @@
 // 现在：同一次打开库里计数只增不减、所有副本对象读到同一组值；每次打开库换一个随机前缀。
 import 'dart:io';
 
-import 'package:drift/drift.dart' show driftRuntimeOptions;
-import 'package:fushi_core/fushi_core.dart' show SrsDatabase;
 import 'package:fushi_engine/srs/srs_builtin.dart';
-import 'package:fushi_engine/srs/srs_database_executor.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
-import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000f1';
 
-typedef _Opened = ({SrsDbStore store, SrsDatabase db, SrsCore core});
+typedef _Opened = ({SrsDbStore store, SrsCore core});
 
 typedef _Keys = ({
   String content,
@@ -37,14 +33,13 @@ _Keys _keys(SrsDbStore s) => (
 );
 
 void main() {
-  driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
-
   late Directory dir;
   late String path;
 
   setUp(() {
     dir = Directory.systemTemp.createTempSync('srs_fp_instance_');
-    path = p.join(dir.path, 'srs.db');
+    // 新代 SrsCore.open 收库目录（目录里放代际锁与 srs4.db），同一目录重开落到同一个库。
+    path = dir.path;
   });
 
   tearDown(() {
@@ -55,8 +50,7 @@ void main() {
     }
   });
 
-  Future<SrsDbStore> openOn(SrsCore core, SrsDatabase db) => SrsDbStore.open(
-    db: db,
+  Future<SrsDbStore> openOn(SrsCore core) => SrsDbStore.open(
     core: core,
     profileUid: kProfile,
     deviceId: 'A',
@@ -65,12 +59,10 @@ void main() {
 
   Future<_Opened> open() async {
     final SrsCore core = SrsCore.open(path);
-    final SrsDatabase db = SrsDatabase(srsInlineExecutor(core));
-    return (store: await openOn(core, db), db: db, core: core);
+    return (store: await openOn(core), core: core);
   }
 
   Future<void> close(_Opened o) async {
-    await o.db.close();
     o.core.close();
   }
 
@@ -129,7 +121,7 @@ void main() {
   test('同一个库上的两个副本对象读到同一组键，一方写了另一方跟着变', () async {
     final _Opened a = await open();
     addTearDown(() => close(a));
-    final SrsDbStore b = await openOn(a.core, a.db);
+    final SrsDbStore b = await openOn(a.core);
     // 新开的副本对象（`local_state` 带 `reload`）让这个 profile 按键记的缓存作废一次：两个对象此刻读到同一组新值。
     final _Keys k0 = _keys(a.store);
     expect(_keys(b), k0);

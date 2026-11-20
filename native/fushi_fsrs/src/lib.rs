@@ -4,7 +4,7 @@
 //! - 五个平台 + 无头服务端都调这一份 Rust，不维护第二套公式。
 //! - 每个接口带 algorithm（"fsrs6" / "fsrs7"），两种算法编进同一个库。
 //! - 请求 / 响应走 UTF-8 JSON：签名少、Dart 侧不用为每个结构体写 FFI 布局，
-//!   未发版的 fsrs-rs API 变化只影响这一层（Dart 不感知 rev）。
+//!   fsrs-rs 升级带来的 API 变化只影响这一层（Dart 不感知 rev）。
 //! - elapsed 一律是**小数天**（f32）：FSRS-7 的优势来自当天内复习（含当天复习那张表），
 //!   传整数天会把它抹掉（第六轮审查第 12 条）。FSRS-6 在 fsrs-rs 内部按 Anki 口径取整。
 //! - 响应恒为 `{"ok": <结果>}` 或 `{"error": "<原因>"}`；任何 panic 都被接住转成 error，不越过 FFI 边界。
@@ -31,6 +31,7 @@
 // 每个 native crate 的入口文件都要有这一行（守卫 fushi/test/build/native_crate_worktree_fingerprint_guard_test.dart）。
 const _: Option<&str> = option_env!("FUSHI_WORKTREE_ROOT");
 
+pub mod anki_import_rules;
 pub mod boot_clock;
 pub mod calibration;
 pub mod card_cache;
@@ -43,8 +44,9 @@ pub mod search;
 pub mod store;
 pub mod style_dedup;
 pub mod sync2;
+pub mod text_import;
 
-/// 协议 4 的规范 ID 与别名规则（还没有接线，见模块说明）。
+/// 协议 4 的规范 ID 与别名规则；Dart 经 `ffsrs_call` 的 `ids` 向它要 ID（见模块说明）。
 pub mod gen4_ids;
 
 use std::ffi::{CStr, CString, c_char};
@@ -65,10 +67,31 @@ use serde_json::{Value, json};
 /// C ABI 版本。Dart 侧加载时比对，不一致视为库不可用（不崩）。4：删掉整批搜索语料的 `ffsrs_search_corpus_*` / `ffsrs_search_chunk_*`（L-5）。
 /// 5：`ffsrs_history_select` 列模式每条日志从 3 个串改为 4 个串（多 cardId，`offs` 长 `4n+1`；BUG-4218）。
 /// 6：复习统计页的校准图 / UM+（`ffsrs_predict_tss` / `ffsrs_calibration_report` / `ffsrs_store_calibration_items`）。
-pub const ABI_VERSION: i32 = 6;
+/// 7：删掉 srs.db 只读会话 `ffsrs_store_read_begin` / `_read_query` / `_read_end`（G5：Dart 读 srs.db 只发内核读命令），
+/// `ffsrs_store_diag_counts` 去掉「没结束的只读会话」一项（8 → 7 项）。
+/// 8：SRS 换代（S1）：删掉 `ffsrs_store_open`（按 `srs.db` 路径打开协议 3 的库），换成 `ffsrs_store_open_mode`（按 profile
+/// 目录打开新代库 `srs4.db`，Primary / Secondary，新返回码 `STORE_NOT_MIGRATED` / `STORE_MIGRATING` /
+/// `STORE_LEGACY_UNMIGRATED`）；`ffsrs_store_sync2` 的命令经新代分发器；迁移的全局命令 `gen4_migrate_*` 走 [dispatch]。
+/// 同列车（G7-6）另删协议 1 主库搬迁的 `ffsrs_store_legacy_abort` / `_begin` / `_commit` / `_mark_none` / `_page` /
+/// `_state`（换代后只报 Unwired）；ABI 8 尚未发布（develop 仍是 7），所以不另升 9，verify_abi.sh 下界同步改 35。
+pub const ABI_VERSION: i32 = 8;
 
-/// 钉定的 fsrs-rs 源码版本，写进参数组的 algorithmRev。
-pub const FSRS_RS_REV: &str = "0a5737406a0c5c7a5259b144738cbe4a0b649d76";
+/// 钉定的 fsrs-rs 源码版本，写进参数组的 algorithmRev：crates.io `fsrs = "=7.0.0"` 包内 `.cargo_vcs_info.json`
+/// 记的发布提交（与 GitHub tag v7.0.0 的 `47b8a16f…` 是同父的两个 bump 提交，只差 Cargo.toml / Cargo.lock）。
+/// 升级 fsrs 时改成新包 `.cargo_vcs_info.json` 的提交，并把旧值移进 [`SUPERSEDED_FSRS_RS_REVS`]。
+pub const FSRS_RS_REV: &str = "c114a02fcd3108024e62c2bf8529be4329d7cbb6";
+
+/// 本库取代了的旧 fsrs-rs 源码版本（只增不删）。这些 rev 产出的参数组本机认识：照常参与自动优化，
+/// 不当成「更新版本产出、本机不认识」的参数组（设计稿铁律 F）。
+/// - `0a5737406a0c…`：FSRS-7 发版前钉的 fsrs-rs 主干 git rev（2026-10-14 至 7.0.0）。
+pub const SUPERSEDED_FSRS_RS_REVS: &[&str] = &["0a5737406a0c5c7a5259b144738cbe4a0b649d76"];
+
+/// 本库认识的全部 fsrs-rs 源码版本：当前版本在前，其后是取代了的旧版本。
+fn known_fsrs_rs_revs() -> Vec<&'static str> {
+    std::iter::once(FSRS_RS_REV)
+        .chain(SUPERSEDED_FSRS_RS_REVS.iter().copied())
+        .collect()
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Algorithm {
@@ -256,7 +279,22 @@ fn memory_field(req: &Value, key: &str) -> Result<Option<Memory>, String> {
 fn dispatch(req: &Value) -> Result<Value, String> {
     let op = str_field(req, "op")?;
     match op {
-        "version" => Ok(json!({ "abi": ABI_VERSION, "fsrsRev": FSRS_RS_REV })),
+        "version" => Ok(json!({
+            "abi": ABI_VERSION,
+            "fsrsRev": FSRS_RS_REV,
+            "knownFsrsRevs": known_fsrs_rs_revs(),
+        })),
+        // 根上的 ID 与同步目录名（gen4_ids/derive.rs）。
+        "ids" => gen4_ids::derive::derive(req),
+        // SRS 换代的迁移（store/gen4/kernel.rs `global`）：不针对已打开的库（没迁移的目录根本打不开新代库）。
+        "gen4_migrate_status"
+        | "gen4_migrate_profiles"
+        | "gen4_migrate_run"
+        | "gen4_migrate_cancel"
+        | "gen4_retained_state"
+        | "gen4_retained_delete" => store::gen4::kernel::global(op, req),
+        // 复习卡文本导入（CSV / TSV / TXT）的解析：一次读完整个文件（text_import.rs）。
+        "text_import_parse" => text_import::dispatch(req),
         "defaults" => {
             let algorithm = Algorithm::parse(str_field(req, "algorithm")?)?;
             Ok(json!({ "params": algorithm.defaults(), "count": algorithm.param_len() }))
@@ -1196,6 +1234,23 @@ mod tests {
         let text = unsafe { CStr::from_ptr(out) }.to_str().unwrap().to_string();
         ffsrs_free_string(out);
         serde_json::from_str(&text).unwrap()
+    }
+
+    #[test]
+    fn version_lists_current_and_superseded_fsrs_revs() {
+        let v = call(json!({"op":"version"}));
+        assert_eq!(v["ok"]["fsrsRev"], FSRS_RS_REV);
+        let known: Vec<&str> = v["ok"]["knownFsrsRevs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r.as_str().unwrap())
+            .collect();
+        assert_eq!(known[0], FSRS_RS_REV);
+        // 发版前钉的 git rev 产出的参数组升级后仍认识（否则老用户的自动优化永久停掉）。
+        assert!(known.contains(&"0a5737406a0c5c7a5259b144738cbe4a0b649d76"));
+        let unique: std::collections::HashSet<&str> = known.iter().copied().collect();
+        assert_eq!(unique.len(), known.len());
     }
 
     #[test]

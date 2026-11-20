@@ -12,11 +12,12 @@ import 'package:fushi_engine/srs/srs_collection_binding.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_profile_link.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
-import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_runner.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_engine/sync/local_directory_asset_store.dart';
 import 'package:test/test.dart';
 
+import 'support/srs_raw_sql.dart';
 import 'support/srs_test_storage.dart';
 
 class _Device {
@@ -49,7 +50,6 @@ class _Device {
   }
 
   Future<SrsDbStore> _openStore() async => SrsDbStore.open(
-    db: srs.db,
     core: srs.core,
     profileUid: await db.profileUidOf(profileId),
     deviceId: deviceId,
@@ -65,11 +65,11 @@ class _Device {
     store = link.store;
     final List<SrsRemoteProfile>? choose = link.choose;
     if (choose != null) chose.addAll(choose.map((SrsRemoteProfile c) => c.uid));
-    final SrsSync2Report r = await srsSync2Round(
-      host: store,
-      location: SrsAssetLocationStore(store: dir, profileUid: store.profileUid),
-      locationId: key,
-      nowMs: () => store.now().$1,
+    // 与生产同一个入口：新根 `v4/`、旧根 `v3/` 的围栏与墓碑 head 都照生产写。
+    final SrsSync2Report r = await srsRunLocationRound(
+      SrsLocationBackend(dir),
+      store,
+      key,
     );
     expect(r.error, isNull, reason: '$deviceId sync $key');
     await linker.publish(dir, store, key);
@@ -83,7 +83,7 @@ class _Device {
   );
 
   Future<int> metaKeys(String uid) async =>
-      (await srs.db
+      (await srs.core
               .customSelect(
                 'SELECT COUNT(*) AS c FROM srs_meta WHERE key = ?',
                 variables: <Variable<Object>>[
@@ -218,7 +218,7 @@ void main() {
       root2.deleteSync(recursive: true);
     });
 
-    test('第一个位置关联上后定为 settled，第二个位置上的别的集合只交给用户选，不来回改 uid', () async {
+    test('第一个位置关联上后定为 settled，第二个位置上的别的集合只交给用户选，不来回换集合', () async {
       // 只关联、还没跑同步（先加入、后写入：确认同步时逐个位置先关联，见 SrsSyncScheduler）：本机此刻仍没有用户数据。
       // 没有绑定状态时，L1 上采用 X 之后到 L2 又会采用 Y，再回 L1 又采用 X……
       final _Device x = await _Device.open('x');
@@ -247,21 +247,31 @@ void main() {
       }
 
       await link(l1, 'L1');
-      expect(phone.store.profileUid, x.store.profileUid, reason: 'L1 上自动采用');
+      // 新代认领不换 profile uid，换的是绑定的集合（与位置目录名）。
+      expect(phone.store.profileUid, phoneOld);
+      expect(
+        phone.store.sync2Collection,
+        x.store.sync2Collection,
+        reason: 'L1 上自动认领',
+      );
       expect(await phone.store.hasUserData(), isFalse, reason: '还没跑同步');
       final SrsCollectionBinding b = (await phone.store.collectionBinding())!;
       expect(b.state, SrsCollectionBindingState.settled);
       expect(b.via, 'L1');
-      expect(await phone.metaKeys(phoneOld), 0, reason: '旧 uid 的绑定随 purge 删掉');
+      expect(await phone.metaKeys(phoneOld), 0, reason: '没有协议 3 的绑定键');
 
       for (int i = 0; i < 2; i++) {
         final SrsProfileLinkOutcome o = await link(l2, 'L2');
-        expect(phone.store.profileUid, x.store.profileUid, reason: 'L2 不再自动采用');
+        expect(
+          phone.store.sync2Collection,
+          x.store.sync2Collection,
+          reason: 'L2 不再自动认领',
+        );
         expect(o.choose?.map((SrsRemoteProfile c) => c.uid), <String>[
-          y.store.profileUid,
+          y.store.sync2Dir!,
         ], reason: 'L2 上交给用户选');
         await link(l1, 'L1');
-        expect(phone.store.profileUid, x.store.profileUid);
+        expect(phone.store.sync2Collection, x.store.sync2Collection);
       }
     });
   });

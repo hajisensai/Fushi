@@ -49,8 +49,8 @@ void main() {
     );
     expect(
       'appModel.mangaPanelNavigation||_mode.isWebtoon'.allMatches(flat).length,
-      1,
-      reason: '_tryPanelTurn 按导航开关与 isWebtoon 收口',
+      2,
+      reason: '_tryPanelTurn 与翻页预热 _prewarmPanels 都按导航开关与 isWebtoon 收口',
     );
     expect(
       flat.contains('if(_mode.isWebtoon)returnconst<Rect>[];'),
@@ -93,15 +93,64 @@ void main() {
     );
   });
 
+  test('落到跨页就预热分镜检测，且只在导航开关开着、非条漫时（manga-21）', () {
+    // 此前检测懒到按下翻页键才做，第一次按键要等整条「建检测器 + 读页 + 推理」。
+    // 预热只能挂在导航开关后面：开关关着 / 条漫里预热就是白跑 ONNX 推理。
+    final String source = readerPage.readAsStringSync();
+    final String flat = source.replaceAll(RegExp(r'\s+'), '');
+    expect(
+      flat,
+      contains('void_prewarmPanels()=>_panelPrewarmer.request();'),
+      reason: '预热经单飞调度器，不每翻一页都往串行检测器里丢一个',
+    );
+    final int start = source.indexOf(
+      '  ({int generation, int spread})? _panelPrewarmTarget() {',
+    );
+    expect(start, isNonNegative);
+    final String body = source
+        .substring(start, source.indexOf('\n  }\n', start))
+        .replaceAll(RegExp(r'\s+'), '');
+    expect(
+      body,
+      contains(
+        'if(!mounted||!appModel.mangaPanelNavigation||'
+        '_mode.isWebtoon){returnnull;}',
+      ),
+    );
+    expect(
+      body,
+      contains('return(generation:_panelGeneration,spread:_currentSpread);'),
+    );
+    expect(
+      flat,
+      contains('_panelEntriesForSpread(target.spread)'),
+      reason: '预热走与按键同一条检测链，结果进同一份 _panelResults',
+    );
+    for (final String caller in <String>[
+      'Future<void> _commitMangaSpread(int target) async {',
+      'Future<void> _jumpToPage(int oneBasedPage, {double fraction = 0}) async {',
+    ]) {
+      final int at = source.indexOf(caller);
+      expect(at, isNonNegative, reason: caller);
+      final String callerBody = source.substring(
+        at,
+        source.indexOf('\n  }\n', at),
+      );
+      expect(callerBody, contains('_prewarmPanels();'), reason: caller);
+    }
+  });
+
   test('页面销毁时释放 detector 的 ONNX session', () {
     final String flat = readerPage.readAsStringSync().replaceAll(
       RegExp(r'\s+'),
       '',
     );
     expect(
-      flat.contains('detector.close()'),
+      flat.contains('_panelDetectorSlot.close()'),
       isTrue,
-      reason: 'dispose() 必须关掉 detector，否则每开一本书泄漏一份 ONNX session',
+      reason:
+          'dispose() 必须关掉 detector 槽（含还在建的那份），'
+          '否则每开一本书泄漏一份 ONNX session',
     );
   });
 

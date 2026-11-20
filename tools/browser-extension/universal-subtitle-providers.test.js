@@ -65,6 +65,7 @@ function loadContent(opts) {
   const events = []; // 时序记录：listener 注册 / postMessage
   const intervals = []; // {fn, ms}
   const storageWrites = []; // chrome.storage.local.set 落盘记录（制卡队列真相源）
+  const storageData = {};
   const state = { subText: '', subRuby: null, videoPresent: true, video: null };
   function createVideo(currentTime, textTracks) {
     const listeners = Object.create(null);
@@ -143,7 +144,16 @@ function loadContent(opts) {
         sendMessage() {},
       },
       storage: {
-        local: { get: () => {}, set(obj) { storageWrites.push(obj); } },
+        local: {
+          // 制卡队列入队 = 对 storage 现值的读-改-写（content.js fushiQueueMutate），替身得真存。
+          get(keys, cb) {
+            const out = {};
+            for (const k of [].concat(keys || [])) if (k in storageData) out[k] = JSON.parse(JSON.stringify(storageData[k]));
+            if (cb) { cb(out); return undefined; }
+            return Promise.resolve(out);
+          },
+          set(obj) { storageWrites.push(obj); Object.assign(storageData, JSON.parse(JSON.stringify(obj))); return Promise.resolve(); },
+        },
         onChanged: { addListener() {} },
       },
     },
@@ -715,7 +725,7 @@ test('videoKey 契约：netflix=watch id、youtube=yt-<v>、其它=host+path', (
 // 需求：整集字幕是主路径，DOM 实时采集只能是降级。此前 content.js 只有「面板行点进来」
 // 才用整轨精确窗，画面上直接查词永远退到抖动的 DOM 采样窗，且 live 轨与整轨并行长。
 
-// 取队列里最后一次落盘的最后一项（fushiEnqueue → fushiQueueSave → storage.local.set）。
+// 取队列里最后一次落盘的最后一项（fushiEnqueue → fushiQueueMutate → storage.local.set）。
 function lastQueuedItem(h) {
   for (let i = h.storageWrites.length - 1; i >= 0; i--) {
     const q = h.storageWrites[i] && h.storageWrites[i].fushiQueue;
@@ -753,7 +763,7 @@ test('整轨优先：没有整轨时 live 采样照常工作（降级路径未�
     '整轨缺席时 live 轨仍须照常入轨，否则等于砍掉退路而不是降级');
 });
 
-test('整轨优先：画面上直接查词制卡取整轨精确窗，不再退到 DOM 采样窗', () => {
+test('整轨优先：画面上直接查词制卡取整轨精确窗，不再退到 DOM 采样窗', async () => {
   const h = loadContent({ hostname: 'www.netflix.com', pathname: '/watch/81001' });
   const store = h.windowObj.fushiEpisodeCues;
   store['81001|ja'] = [{ startMs: 1000, endMs: 3000, text: '整轨第一句' }];
@@ -764,7 +774,7 @@ test('整轨优先：画面上直接查词制卡取整轨精确窗，不再退�
   h.state.subText = '整轨第一';
   h.sampler.fn();
 
-  const r = h.windowObj.fushiEnqueue({ expression: '語' }, '');
+  const r = await h.windowObj.fushiEnqueue({ expression: '語' }, '');
   assert.ok(r && r.ok, '制卡必须入队成功');
   const item = lastQueuedItem(h);
   assert.ok(item, '队列必须落盘');
@@ -778,7 +788,7 @@ test('整轨优先：画面上直接查词制卡取整轨精确窗，不再退�
   assert.strictEqual(item.endV, 3200, '录制窗 = 整轨 endMs + 200 录制边距');
 });
 
-test('整轨优先：当前时刻落在整轨字幕间隙时回落 DOM 采样窗，不吸附邻句', () => {
+test('整轨优先：当前时刻落在整轨字幕间隙时回落 DOM 采样窗，不吸附邻句', async () => {
   const h = loadContent({ hostname: 'www.netflix.com', pathname: '/watch/81001' });
   const store = h.windowObj.fushiEpisodeCues;
   store['81001|ja'] = [{ startMs: 1000, endMs: 3000, text: '整轨第一句' }];
@@ -788,7 +798,7 @@ test('整轨优先：当前时刻落在整轨字幕间隙时回落 DOM 采样窗
   h.state.subText = 'DOM 兜底句';
   h.sampler.fn();
 
-  const r = h.windowObj.fushiEnqueue({ expression: '語' }, '');
+  const r = await h.windowObj.fushiEnqueue({ expression: '語' }, '');
   assert.ok(r && r.ok, '间隙处仍须能制卡（兜底路径还在）');
   const item = lastQueuedItem(h);
   assert.strictEqual(item.sentence, 'DOM 兜底句', '间隙处必须用 DOM 采样句');
@@ -796,7 +806,7 @@ test('整轨优先：当前时刻落在整轨字幕间隙时回落 DOM 采样窗
     '绝不能吸附到邻句 1000——那会录到一段与所查词无关的画面');
 });
 
-test('整轨优先：多语言 store 里必须认领「与屏幕上这句对得上」的那条轨，而不是字典序第一条', () => {
+test('整轨优先：多语言 store 里必须认领「与屏幕上这句对得上」的那条轨，而不是字典序第一条', async () => {
   const h = loadContent({ hostname: 'www.netflix.com', pathname: '/watch/81003' });
   const store = h.windowObj.fushiEpisodeCues;
   // netflix-bridge 对 manifest 里的 timedtexttracks **全量** fetchCues：一集下来
@@ -809,14 +819,14 @@ test('整轨优先：多语言 store 里必须认领「与屏幕上这句对得�
   h.state.subText = '世界の言葉'; // 屏幕上显示的就是日文轨那句
   h.sampler.fn();
 
-  const r = h.windowObj.fushiEnqueue({ expression: '世界' }, '');
+  const r = await h.windowObj.fushiEnqueue({ expression: '世界' }, '');
   assert.ok(r && r.ok, '制卡必须入队成功');
   const item = lastQueuedItem(h);
   assert.strictEqual(item.sentence, '世界の言葉',
     '句子必须取自与屏幕一致的那条轨；取到 ar/cs 说明选轨判据是字典序而不是身份');
 });
 
-test('整轨优先：一条整轨都对不上屏幕时回落 DOM 采样（认领失败必须退回改造前的行为）', () => {
+test('整轨优先：一条整轨都对不上屏幕时回落 DOM 采样（认领失败必须退回改造前的行为）', async () => {
   const h = loadContent({ hostname: 'www.netflix.com', pathname: '/watch/81004' });
   const store = h.windowObj.fushiEpisodeCues;
   // 用户读的那条轨 fetch 失败了（netflix-bridge 的 CORS/网络静默失败），
@@ -828,7 +838,7 @@ test('整轨优先：一条整轨都对不上屏幕时回落 DOM 采样（认领
   h.state.subText = '画面に出ている日本語';
   h.sampler.fn();
 
-  const r = h.windowObj.fushiEnqueue({ expression: '日本語' }, '');
+  const r = await h.windowObj.fushiEnqueue({ expression: '日本語' }, '');
   assert.ok(r && r.ok, '认领不上时仍须能制卡');
   const item = lastQueuedItem(h);
   assert.strictEqual(item.sentence, '画面に出ている日本語',
@@ -837,7 +847,7 @@ test('整轨优先：一条整轨都对不上屏幕时回落 DOM 采样（认领
     '没有可用整轨 = live 采样不得被掐掉（否则面板会一条跟屏幕一致的轨都没有）');
 });
 
-test('整轨优先：用户中途换字幕语言后必须重新认领（认领不得只在成功路径写）', () => {
+test('整轨优先：用户中途换字幕语言后必须重新认领（认领不得只在成功路径写）', async () => {
   const h = loadContent({ hostname: 'www.netflix.com', pathname: '/watch/81005' });
   const store = h.windowObj.fushiEpisodeCues;
   store['81005|ja'] = [{ startMs: 1000, endMs: 3000, text: '日本語のセリフ' }];
@@ -846,18 +856,18 @@ test('整轨优先：用户中途换字幕语言后必须重新认领（认领�
   h.video.currentTime = 1.6;
   h.state.subText = '日本語のセリフ';
   h.sampler.fn();
-  let item = (h.windowObj.fushiEnqueue({ expression: '語' }, ''), lastQueuedItem(h));
+  let item = (await h.windowObj.fushiEnqueue({ expression: '語' }, ''), lastQueuedItem(h));
   assert.strictEqual(item.sentence, '日本語のセリフ', '前置：先认领到日文轨');
 
   // 用户在播放器里把字幕切成英文：屏幕上这句变了，认领必须跟着走。
   h.state.subText = 'An English line';
   h.sampler.fn();
-  item = (h.windowObj.fushiEnqueue({ expression: 'English' }, ''), lastQueuedItem(h));
+  item = (await h.windowObj.fushiEnqueue({ expression: 'English' }, ''), lastQueuedItem(h));
   assert.strictEqual(item.sentence, 'An English line',
     '认领粘在旧语言上 = 「只在成功路径写、失败路径不复位」的老坑');
 });
 
-test('整轨优先：面板暴露的活动轨（已应用时轴偏移）优先于自取第一条轨', () => {
+test('整轨优先：面板暴露的活动轨（已应用时轴偏移）优先于自取第一条轨', async () => {
   const h = loadContent({ hostname: 'www.netflix.com', pathname: '/watch/81001' });
   const store = h.windowObj.fushiEpisodeCues;
   store['81001|ja'] = [{ startMs: 1000, endMs: 3000, text: '未偏移的日文轨' }];
@@ -871,7 +881,7 @@ test('整轨优先：面板暴露的活动轨（已应用时轴偏移）优先�
   h.state.subText = 'DOM 抖动快照';
   h.sampler.fn();
 
-  const r = h.windowObj.fushiEnqueue({ expression: 'word' }, '');
+  const r = await h.windowObj.fushiEnqueue({ expression: 'word' }, '');
   assert.ok(r && r.ok);
   const item = lastQueuedItem(h);
   assert.strictEqual(item.sentence, '面板选中的英文轨',

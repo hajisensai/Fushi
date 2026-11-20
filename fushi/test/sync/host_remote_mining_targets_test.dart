@@ -182,7 +182,6 @@ void main() {
     await stores.activate(
       _uidA,
       () => SrsDbStore.open(
-        db: storage.db,
         core: storage.core,
         profileUid: _uidA,
         deviceId: 'host',

@@ -1,5 +1,53 @@
 part of 'video_player_controller.dart';
 
+/// mpv properties whose change means the resolved disc tracks must be re-read.
+/// None of them is notified on `MPV_EVENT_TICK`: they fire on a track switch
+/// (`MP_EVENT_TRACK_SWITCHED` / `MP_EVENT_TRACKS_CHANGED` → `track-list`,
+/// `current-tracks`).
+///
+/// `track-list` is the one that reports a selection going to "none": its text
+/// form carries every track's `selected` flag and the property is always
+/// available. A `current-tracks/*` property becomes unavailable in that case,
+/// and a value-compared observer is not called for "became unavailable"
+/// (`test/third_party/media_kit_observe_changes_test.dart` pins both). The disc
+/// can drop its subtitle on its own (navigation program, popup menu), so no
+/// command of ours brackets that change either.
+const List<String> kVideoDiscResolvedTrackProperties = <String>[
+  'track-list',
+  'current-tracks/audio/id',
+  'current-tracks/sub/id',
+  'current-tracks/sub/codec',
+];
+
+/// Decides whether a navigation sample must re-read the resolved disc tracks.
+///
+/// The navigation snapshot carries the playback position, so during a title it
+/// is sampled continuously. The resolved tracks (three `current-tracks/*`
+/// reads plus a confirming snapshot read) only carry news when the title
+/// changed, a track changed, or the last resolve was incomplete; reading them
+/// on every sample made each round five mpv round trips instead of one and
+/// lowered the position sampling rate of the session.
+class VideoDiscTrackRefreshGate {
+  bool _dirty = true;
+
+  /// A track event arrived (or a command that can switch tracks was sent).
+  void markDirty() => _dirty = true;
+
+  /// Whether this sample must refresh. [resolvedGeneration] is the title
+  /// generation the tracks were last fully resolved for (null = never, or the
+  /// last resolve was incomplete); a mismatch with [titleGeneration] covers a
+  /// title / generation / angle change, which bumps the title generation.
+  bool shouldRefresh({
+    required int? resolvedGeneration,
+    required int titleGeneration,
+  }) => _dirty || resolvedGeneration != titleGeneration;
+
+  /// Call right before the refresh reads start: an event that lands while the
+  /// reads are in flight marks the gate dirty again, so the coalesced re-read
+  /// refreshes once more instead of losing that change.
+  void beginRefresh() => _dirty = false;
+}
+
 /// Blu-ray navigation uses the existing Player/texture. The disc VM selects
 /// titles; the library only binds identity after an atomic native snapshot.
 extension VideoDiscMenuController on VideoPlayerController {
@@ -48,6 +96,8 @@ extension VideoDiscMenuController on VideoPlayerController {
       return;
     }
     _discTrackOwner = VideoDiscTrackOwner.fushi;
+    // Ownership decides whether the resolved codec drives the graphic flag.
+    _discTrackRefreshGate.markDirty();
     _notifyDiscMenuChanged();
   }
 
@@ -57,6 +107,10 @@ extension VideoDiscMenuController on VideoPlayerController {
         !_discNavigationOpened) {
       return;
     }
+    // The set of tracks changed. This stream is `distinct` over the track
+    // ids, so a pure selection change never arrives here; those are covered by
+    // [kVideoDiscResolvedTrackProperties].
+    _discTrackRefreshGate.markDirty();
     unawaited(_sampleDiscMenu(player, _loadToken));
     _notifyDiscMenuChanged();
   }
@@ -109,6 +163,7 @@ extension VideoDiscMenuController on VideoPlayerController {
     _discMenuError = null;
     _discLoadStage = null;
     _discTitleGeneration++;
+    _discTrackRefreshGate.markDirty();
     _discSampler.reset();
     _discMiningAvailable = false;
     _discExtractionError = null;
@@ -342,6 +397,16 @@ extension VideoDiscMenuController on VideoPlayerController {
           unawaited(_sampleDiscMenu(player, _loadToken));
         }
       }, waitForInitialization: false);
+      // Track changes mark the resolved tracks stale; the per-tick samples
+      // above then skip the track reads until one of these fires.
+      for (final String property in kVideoDiscResolvedTrackProperties) {
+        await native.observePropertyChanges(property, (String _) async {
+          if (identical(_player, player) && isBlurayNavigationSession) {
+            _discTrackRefreshGate.markDirty();
+            unawaited(_sampleDiscMenu(player, _loadToken));
+          }
+        }, waitForInitialization: false);
+      }
     }
     _setDiscLoadStage('disc-prepared');
   }
@@ -404,6 +469,8 @@ extension VideoDiscMenuController on VideoPlayerController {
     } else {
       await runCheckedVideoDiscCommand(native, command);
     }
+    // A disc command can switch streams (menu selection, title jump).
+    _discTrackRefreshGate.markDirty();
     // A sampler already in flight may have read the pre-command title; the
     // sampler then reads once more, so completion means a post-command snapshot.
     await _sampleDiscMenu(player, token);
@@ -509,7 +576,11 @@ extension VideoDiscMenuController on VideoPlayerController {
       _discState = next;
       _selectedDiscPlaylistPath = path;
       _publishPosition();
-      if (next.isTitle) {
+      if (next.isTitle &&
+          _discTrackRefreshGate.shouldRefresh(
+            resolvedGeneration: _discResolvedTracksGeneration,
+            titleGeneration: _discTitleGeneration,
+          )) {
         if (!await _refreshDiscResolvedTracks(player, loadToken, next)) {
           return;
         }
@@ -648,6 +719,7 @@ extension VideoDiscMenuController on VideoPlayerController {
   ) async {
     final int generation = _discTitleGeneration;
     final dynamic native = player.platform;
+    _discTrackRefreshGate.beginRefresh();
     // libmpv may reorder async calls, so the disc epoch is read only after the
     // three track reads completed: a track switch from a new title then cannot
     // attach to the previous MPLS.
@@ -794,15 +866,25 @@ extension VideoDiscMenuController on VideoPlayerController {
     if (!_discIsDvd && source == null) {
       throw const VideoDiscMenuException('playlist-unavailable');
     }
-    final String? extractionError = await _checkDiscExtractionSource(
+    // Extraction reads the angle the player is playing: a multi-angle Blu-ray
+    // title becomes its angle member path (`00001.a2.mpls`), whose clips are the
+    // current angle's and whose IN/OUT axis is the title's; a DVD title becomes
+    // `TITLE_nn.a2.dvdtitle`, read by FFmpeg's dvdvideo with `-angle`. An angle
+    // change invalidates the title, so the next bind re-derives this path.
+    final String? extractionPath = discExtractionPathForAngle(
       playlistPath,
+      angle: _discState?.angle ?? -1,
+      dvd: _discIsDvd,
     );
+    final String? extractionError = extractionPath == null
+        ? 'extraction-source-unavailable'
+        : await _checkDiscExtractionSource(extractionPath);
     if (!_isCurrentLoad(player, token) || generation != _discTitleGeneration) {
       return;
     }
     // libbluray can play decrypted packets while the files on disk remain
     // encrypted. A valid title identity must not authorize raw-file extraction.
-    _videoPath = extractionError != null ? null : playlistPath;
+    _videoPath = extractionError != null ? null : extractionPath;
     _discMiningAvailable = extractionError == null;
     _discExtractionError = extractionError;
     _bookUid = bookUid;
@@ -822,17 +904,18 @@ extension VideoDiscMenuController on VideoPlayerController {
     _notifyDiscMenuChanged();
   }
 
+  /// [playlistPath] is the extraction path from [discExtractionPathForAngle]:
+  /// it already names the current angle, so the Blu-ray clips checked here are
+  /// exactly the ones FFmpeg will read.
   Future<String?> _checkDiscExtractionSource(String playlistPath) async {
-    if (_discState?.angle != 0) return 'multi-angle-source';
     // DVD: FFmpeg's dvdvideo demuxer opens the same title through the shared
     // libdvdread / libdvdcss (DvdFfmpegBackend), so a bound title can be read.
     if (_discIsDvd) return null;
     final String? root = blurayDiscRootForPlaylistPath(playlistPath);
     if (root == null) return 'extraction-source-unavailable';
     try {
-      final BlurayPlaylist? playlist = parseBlurayPlaylist(
-        await File(playlistPath).readAsBytes(),
-        id: p.basenameWithoutExtension(playlistPath),
+      final BlurayPlaylist? playlist = await readBlurayMemberPlaylist(
+        playlistPath,
       );
       if (playlist == null || playlist.clipIds.isEmpty) {
         return 'extraction-source-unavailable';

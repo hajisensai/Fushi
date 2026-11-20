@@ -224,6 +224,7 @@ class ServerDictionaryHost {
   ServerDictionaryHost({
     required this.db,
     required this.dictionaryResourceRoot,
+    this.indexCacheDirectory,
     String? libraryPath,
     Directory? transformsDir,
   }) : _libraryPath = libraryPath ?? resolveFushiDictsLibraryPath(),
@@ -231,6 +232,9 @@ class ServerDictionaryHost {
 
   final FushiDatabase db;
   final Directory dictionaryResourceRoot;
+
+  /// 引擎派生索引（联合过滤器）的缓存目录；null = 不落盘、每次装载后在内存里现建。
+  final Directory? indexCacheDirectory;
   final String? _libraryPath;
   final Directory? _transformsDir;
 
@@ -266,6 +270,7 @@ class ServerDictionaryHost {
   /// 服务端照常起（词典只是存储中转，查词不可用）。
   Future<bool> start() async {
     FushiDicts.nativeLibraryPath = _libraryPath;
+    FushiDicts.unionFilterCacheDirectory = indexCacheDirectory?.path;
     try {
       // 空引擎探一次原生库：dlopen / 符号缺失在这里暴露，而不是在第一次查词时。
       FushiDicts.initializeTyped();
@@ -285,8 +290,62 @@ class ServerDictionaryHost {
     // 删 / 覆盖词典目录前释放映射（BUG-1756），与 app 的装配一致。
     withDictionaryMappingsReleased = FushiDicts.withMappingsReleased;
     await _preloadTransforms();
+    await upgradeDictionaryFormats();
     await refresh();
     return true;
+  }
+
+  /// 把 DB 里全部词典目录原地升级到当前磁盘格式（[FushiDicts.upgradeDictionaryFormats]），
+  /// 在 [start] 里首次 [refresh] 之前跑：此刻引擎是空的、没有映射，升级完旧文件当场
+  /// 就清得掉（Windows 上也是），首次装载直接用上新格式，不必像 app 那样重载 + 补跑。
+  ///
+  /// 服务端没有 UI：打开始 / 逐本「已升级」/ 汇总诊断日志。失败（-1）/ 不适用（2）
+  /// 的词典按旧格式照常可用，下次启动再试；任何异常（原生库缺导出等）只记日志，
+  /// 不阻止启动。与删 / 覆盖词典（管理接口经 [withDictionaryMappingsReleased]）的
+  /// 串行由 [FushiDicts.upgradeDictionaryFormats] 的借用账本保证。
+  Future<void> upgradeDictionaryFormats() async {
+    if (!_available) return;
+    try {
+      final List<DictionaryMetaRow> rows = await db.getAllDictionaryMetadata();
+      final List<String> dirs = <String>[
+        for (final DictionaryMetaRow r in rows)
+          p.join(dictionaryResourceRoot.path, r.name),
+      ];
+      if (dirs.isEmpty) return;
+      engineLog.logDiagnostic(
+        'ServerDictionaryHost',
+        'checking dictionary format of ${dirs.length} dictionaries',
+      );
+      final FushiDictUpgradeReport report =
+          await FushiDicts.upgradeDictionaryFormats(
+            dirs,
+            onProgress:
+                (
+                  int done,
+                  int total,
+                  String dir,
+                  FushiDictUpgradeOutcome outcome,
+                ) {
+                  if (outcome != FushiDictUpgradeOutcome.upgraded) return;
+                  engineLog.logDiagnostic(
+                    'ServerDictionaryHost',
+                    'upgraded dictionary format ($done/$total): '
+                        '${p.basename(dir)}',
+                  );
+                },
+          );
+      String names(List<String> list) => list.map(p.basename).join(', ');
+      engineLog.logDiagnostic(
+        'ServerDictionaryHost',
+        'dictionary format: ${report.upgraded.length} upgraded, '
+            '${report.upToDate.length} up to date, ${report.notApplicable.length} kept legacy'
+            '${report.notApplicable.isEmpty ? '' : ' (${names(report.notApplicable)})'}, '
+            '${report.failed.length} failed'
+            '${report.failed.isEmpty ? '' : ' (${names(report.failed)})'}',
+      );
+    } catch (e, st) {
+      engineLog.log('ServerDictionaryHost.upgradeDictionaryFormats', e, st);
+    }
   }
 
   Future<void> _preloadTransforms() async {
@@ -345,6 +404,7 @@ class ServerDictionaryHost {
           hidden: false,
           metadata: _decodeStringMap(r.metadataJson),
           order: r.order,
+          languageOverride: r.languageOverride,
         ),
       );
     }
@@ -354,6 +414,7 @@ class ServerDictionaryHost {
       freqPaths: b.freq,
       pitchPaths: b.pitch,
       kanjiPaths: b.kanji,
+      termLanguages: termDictLanguagesOf(entries),
     );
     _snapshot = _DictionarySnapshot(
       termOrder: termOrder,

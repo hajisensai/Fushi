@@ -20,6 +20,11 @@ public class FushiApplication extends Application {
         // 最先装：之后任何初始化里的 Java 未捕获异常都要留下栈。
         JavaCrashCapture.install(this);
         super.onCreate();
+        // 主进程界面可见性切换按 pid 落盘（上次进程死时界面在不在屏幕上的原生证据）：
+        // 要赶在第一个 Activity 的 onStart 之前装上。
+        if (JavaCrashCapture.currentProcessName(this).equals(getPackageName())) {
+            ProcessExitChannel.installUiVisibilityTracking(this);
+        }
         // 引擎原生库的加载（System.loadLibrary("flutter") 等）跑在后台线程，但要有人
         // 先起它。不在这里起的话，要等 Activity 建引擎时才开始，主线程随即在
         // FlutterLoader.ensureInitializationComplete 里干等它跑完（小米平板 5 冷启动

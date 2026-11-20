@@ -146,12 +146,53 @@ class DictionaryRepository {
   /// 本进程词典引擎此刻（最近一次排期装载）术语桶里的词典真名，由 `AppModel` 在
   /// 分桶（`bucketDictPaths`）之后登记（[noteEngineTermDictionaries]）。
   ///
-  /// 「本机装着且开着」不等于「本机引擎里有」：引擎只装**激活配置**开着、且目录存在
-  /// 并已物化的词典。按非激活配置查词（工作配置的查词视图）、目录缺失 / 未物化时，
-  /// 元数据上开着的词典本机根本查不出来——本机与服务器结果合并去重必须以这份为准，
+  /// 「本机装着且开着」不等于「本机引擎里有」：引擎只装激活配置或当前作品会话视图开着
+  /// （[engineLoadStatesOf]）、且目录存在并已物化的词典。按别的非激活配置查词（浏览器
+  /// 扩展所选配置）、目录缺失 / 未物化时，元数据上开着的词典本机根本查不出来——本机与服务器结果合并去重必须以这份为准，
   /// 否则服务器那份被当成「本机已有」丢掉，词典整本从弹窗里消失。
   Set<String> get engineTermDictionaryNames => _engineTermDictionaryNames;
   Set<String> _engineTermDictionaryNames = const <String>{};
+
+  /// 引擎装载集合里每本 live 词典的开关状态，与 [live] 逐一对应（`AppModel` 分桶前用）。
+  ///
+  /// 本进程里同时生效的查词视图不止激活配置一份：打开的作品带着作品级配置时，本机查词按
+  /// 那份配置的视图（[overlay]，`WorkProfileScope.lookupView` 的 `dictionaries`）过滤，
+  /// 替对端 / 浏览器扩展查词仍按激活配置。引擎只装一份，所以装载集合是**并集**——任一
+  /// 视图开着就装；哪些结果可见仍由每次查词的 `lookupFilters` 在引擎里排除（排除发生在
+  /// 截断之前，并集不会让关掉的词典挤掉可见结果，见 BUG-3454）。只按激活配置装，作品
+  /// 配置开着、激活配置关着的词典根本不在引擎里，作品会话查不出任何词（反馈 r9SgiayKxa）。
+  ///
+  /// * `hidden`：两份视图都关着术语部分（没有覆盖层 = 只看激活配置）；
+  /// * `metadata`：分桶读混合词典汉字部分开关的那份——激活配置关着汉字部分、覆盖层开着
+  ///   时取覆盖层那行，其余取 live 行。
+  static List<({bool hidden, Map<String, String> metadata})> engineLoadStatesOf(
+    List<Dictionary> live,
+    List<Dictionary>? overlay,
+  ) {
+    final Map<String, Dictionary> overlayByName = <String, Dictionary>{
+      for (final Dictionary d in overlay ?? const <Dictionary>[]) d.name: d,
+    };
+    return <({bool hidden, Map<String, String> metadata})>[
+      for (final Dictionary d in live)
+        _engineLoadStateOf(d, overlayByName[d.name]),
+    ];
+  }
+
+  static ({bool hidden, Map<String, String> metadata}) _engineLoadStateOf(
+    Dictionary live,
+    Dictionary? overlay,
+  ) {
+    final bool liveHidden = live.isHidden(JapaneseLanguage.instance);
+    if (overlay == null) return (hidden: liveHidden, metadata: live.metadata);
+    return (
+      hidden: liveHidden && overlay.isHidden(JapaneseLanguage.instance),
+      metadata:
+          isKanjiPartHiddenIn(live.metadata) &&
+              !isKanjiPartHiddenIn(overlay.metadata)
+          ? overlay.metadata
+          : live.metadata,
+    );
+  }
 
   /// 登记引擎术语桶的成员（见 [engineTermDictionaryNames]）。
   void noteEngineTermDictionaries(Iterable<String> names) {
@@ -485,6 +526,7 @@ class DictionaryRepository {
     _applyRemoteRows(await _readRemoteSnapshot());
 
     _dictionaryHistoryResults.clear();
+    _forgetHistoryRows();
     final Future<void> historyLoad = _loadHistoryFromDb(gated: deferHistory);
     if (!deferHistory) await historyLoad;
   }
@@ -537,17 +579,20 @@ class DictionaryRepository {
     // 放行前就清过历史 / 已 dispose：不必再读这张表。
     if (_historyClearEpoch != clearEpoch) return;
     try {
-      final List<String> jsons = <String>[
-        for (final row in await _db.getAllDictionaryHistory()) row.resultJson,
-      ];
+      final List<DictionaryHistoryRow> rows = await _db
+          .getAllDictionaryHistory();
       final List<DecodedDictionaryHistoryResult> decoded =
-          await decodeDictionaryHistoryResults(jsons);
+          await decodeDictionaryHistoryResults(<String>[
+            for (final DictionaryHistoryRow row in rows) row.resultJson,
+          ]);
       // 装载期间清过历史 / 已 dispose：这份旧快照不得再落进内存。
       if (_historyClearEpoch != clearEpoch) return;
-      for (final DecodedDictionaryHistoryResult item in decoded) {
+      for (int i = 0; i < decoded.length; i++) {
+        final DecodedDictionaryHistoryResult item = decoded[i];
         final DictionarySearchResult? result = item.result;
         if (result != null) {
           _dictionaryHistoryResults.add(result);
+          _historyRowIds[result] = rows[i].id;
           continue;
         }
         final String error = item.error ?? 'unknown decode failure';
@@ -1631,10 +1676,17 @@ class DictionaryRepository {
   Future<void>? _historyWrite;
   int _historyGeneration = 0;
 
-  /// 逐条序列化 memo（对象身份键，弱引用不阻回收）：历史 10 条里通常 9 条对象
-  /// 与上次完全相同，flush 时只需序列化新增那条。就地变更字段（scrollPosition）
-  /// 必须失效对应 memo。
-  final Expando<String> _historyJsonMemo = Expando<String>('dictHistoryJson');
+  /// 已落库的历史条目 → 它在 `dictionary_history` 里的行 id（对象身份键）。
+  ///
+  /// BUG-4956：落库是增量的——历史 10 条里通常 9 条对象与上次完全相同，flush 只
+  /// 插入新增那条、给其余行改 position，不再整表重写、也不再把十份 MB 级 JSON
+  /// 常驻在内存里当 memo。不在表里的条目（新增 / 行身份过期）flush 时才序列化。
+  final Map<DictionarySearchResult, int> _historyRowIds =
+      Map<DictionarySearchResult, int>.identity();
+
+  /// 已落库、但库里正文已过期的条目（就地改了 scrollPosition）：下次 flush 重写正文。
+  final Set<DictionarySearchResult> _historyJsonStale =
+      Set<DictionarySearchResult>.identity();
 
   /// [clearDictionaryHistory] / [dispose] 每次 +1。flush 的序列化在后台 isolate
   /// 里异步进行，回来时若期间清过历史，这份旧快照不得再写回（否则把已清的历史复活）。
@@ -1662,8 +1714,8 @@ class DictionaryRepository {
     required int newIndex,
   }) {
     result.scrollPosition = newIndex;
-    // scrollPosition 编进 resultJson，就地变更必须失效该条 memo。
-    _historyJsonMemo[result] = null;
+    // scrollPosition 编进 resultJson，就地变更后库里那份正文过期了。
+    _historyJsonStale.add(result);
     _whenHistoryLoaded(_schedulePersistDictionaryHistory);
   }
 
@@ -1685,6 +1737,13 @@ class DictionaryRepository {
     _cancelPendingHistoryPersist();
     await _db.clearDictionaryHistory();
     _dictionaryHistoryResults.clear();
+    _forgetHistoryRows();
+  }
+
+  /// 内存历史与库里的行不再对应（清空 / 重载 / dispose）：丢掉行身份与过期标记。
+  void _forgetHistoryRows() {
+    _historyRowIds.clear();
+    _historyJsonStale.clear();
   }
 
   /// Trailing debounce：连续查词只落库一次；[_historyPersistMaxDelay] 封顶，
@@ -1741,11 +1800,8 @@ class DictionaryRepository {
     final int clearEpoch = _historyClearEpoch;
     final List<DictionarySearchResult> snapshot =
         List<DictionarySearchResult>.of(_dictionaryHistoryResults);
-    final List<String?> jsons = <String?>[
-      for (final DictionarySearchResult r in snapshot) _historyJsonMemo[r],
-    ];
     late final Future<void> writing;
-    writing = _writeHistorySnapshot(snapshot, jsons, clearEpoch)
+    writing = _writeHistorySnapshot(snapshot, clearEpoch)
         .then<void>((bool written) {
           // A newer lookup, clear, or dispose supersedes this snapshot.
           if (written && _historyGeneration == generation) {
@@ -1759,48 +1815,97 @@ class DictionaryRepository {
     return writing;
   }
 
-  /// 序列化 [snapshot] 里还没有 memo 的条目并整表写入。返回是否真的写了。
+  /// 把 [snapshot] 增量同步进 `dictionary_history`（BUG-4956）。返回库是否已与
+  /// [snapshot] 完全一致。
   ///
-  /// 序列化放在后台 isolate（[encodeDictionaryHistoryResults]）：真实词典上单条
-  /// [DictionarySearchResult.toJson] 实测 0.26-1.5 MB、p50 28 ms / p90 44 ms（entries
-  /// 是逐条 jsonEncode 后再整体 jsonEncode 的双层格式，持久化格式不能改），以前在
-  /// UI isolate 上于查词后约 300 ms 跑一次，正好压在弹窗渲染 / 滚动上。
+  /// 只序列化不在表里的条目（新增 / 行身份过期）和正文过期的条目，其余只改
+  /// position。序列化放在后台 isolate（[encodeDictionaryHistoryResults]）：真实词典上
+  /// 单条 [DictionarySearchResult.toJson] 实测 0.26-1.5 MB、p50 28 ms / p90 44 ms
+  /// （entries 是逐条 jsonEncode 后再整体 jsonEncode 的双层格式，持久化格式不能改）。
+  /// 以前每次查词都把整表十条重新绑定写入、十份 JSON 常驻内存当 memo，内存吃紧的
+  /// iPad 上这一步自己就会 Out of Memory。
   Future<bool> _writeHistorySnapshot(
     List<DictionarySearchResult> snapshot,
-    List<String?> jsons,
     int clearEpoch,
   ) async {
-    final List<int> missing = <int>[
+    final List<int> needsJson = <int>[
       for (int i = 0; i < snapshot.length; i++)
-        if (jsons[i] == null) i,
+        if (!_historyRowIds.containsKey(snapshot[i]) ||
+            _historyJsonStale.contains(snapshot[i]))
+          i,
     ];
-    if (missing.isNotEmpty) {
-      // 记下序列化时的 scrollPosition：后台序列化期间它被就地改了（已失效 memo、
-      // 也已重新标脏），算出来的 JSON 照样写进这一份快照，但不能再记成 memo。
-      final List<int> scrolls = <int>[
-        for (final int i in missing) snapshot[i].scrollPosition,
-      ];
-      final List<String> encoded = await encodeDictionaryHistoryResults(
-        <DictionarySearchResult>[for (final int i in missing) snapshot[i]],
-      );
-      for (int k = 0; k < missing.length; k++) {
-        final DictionarySearchResult r = snapshot[missing[k]];
-        jsons[missing[k]] = encoded[k];
-        if (r.scrollPosition == scrolls[k]) {
-          _historyJsonMemo[r] ??= encoded[k];
-        }
-      }
-    }
+    // 记下序列化时的 scrollPosition：后台序列化期间它被就地改了（已重新标脏），
+    // 算出来的 JSON 照样写进这一份快照，但该条仍算过期。
+    final List<int> scrolls = <int>[
+      for (final int i in needsJson) snapshot[i].scrollPosition,
+    ];
+    final List<String> encoded = needsJson.isEmpty
+        ? const <String>[]
+        : await encodeDictionaryHistoryResults(<DictionarySearchResult>[
+            for (final int i in needsJson) snapshot[i],
+          ]);
+    final Map<int, String> jsonAt = <int, String>{
+      for (int k = 0; k < needsJson.length; k++) needsJson[k]: encoded[k],
+    };
     // 序列化期间清过历史 / 已 dispose：这份快照作废，不写（写了就是把已清的历史复活）。
     if (_historyClearEpoch != clearEpoch) return false;
-    final List<DictionaryHistoryCompanion> items = <DictionaryHistoryCompanion>[
-      for (int i = 0; i < snapshot.length; i++)
-        DictionaryHistoryCompanion.insert(position: i, resultJson: jsons[i]!),
-    ];
+    // 行身份在序列化之后再取：期间别的 flush 不会并发（一次只有一份在途），
+    // 但清空 / 重载会改它，上面的代次检查已经拦下。
+    final List<DictionaryHistoryRetainedRow> retained =
+        <DictionaryHistoryRetainedRow>[];
+    final List<int> retainedAt = <int>[];
+    final List<DictionaryHistoryCompanion> inserted =
+        <DictionaryHistoryCompanion>[];
+    final List<int> insertedAt = <int>[];
+    for (int i = 0; i < snapshot.length; i++) {
+      final int? id = _historyRowIds[snapshot[i]];
+      if (id == null) {
+        inserted.add(
+          DictionaryHistoryCompanion.insert(
+            position: i,
+            resultJson: jsonAt[i]!,
+          ),
+        );
+        insertedAt.add(i);
+      } else {
+        retained.add((id: id, position: i, resultJson: jsonAt[i]));
+        retainedAt.add(i);
+      }
+    }
     // 从这里起与旧实现相同：本次写先入 drift 单连接 FIFO，后续 clear 的 DELETE
     // 后到后赢。
-    await _db.replaceAllDictionaryHistory(items);
-    return true;
+    final DictionaryHistorySyncResult result = await _db.syncDictionaryHistory(
+      retained: retained,
+      inserted: inserted,
+    );
+    // 写的期间清过历史 / 已 dispose：行已被随后的 DELETE 删掉，行身份不得记回来。
+    if (_historyClearEpoch != clearEpoch) return false;
+    for (int k = 0; k < insertedAt.length; k++) {
+      _historyRowIds[snapshot[insertedAt[k]]] = result.insertedIds[k];
+    }
+    for (int k = 0; k < needsJson.length; k++) {
+      final DictionarySearchResult r = snapshot[needsJson[k]];
+      if (r.scrollPosition == scrolls[k]) _historyJsonStale.remove(r);
+    }
+    // 已不在快照里的条目，库里的行刚被删掉。
+    final Set<DictionarySearchResult> live =
+        Set<DictionarySearchResult>.identity()..addAll(snapshot);
+    _historyRowIds.removeWhere(
+      (DictionarySearchResult r, int _) => !live.contains(r),
+    );
+    _historyJsonStale.removeWhere(
+      (DictionarySearchResult r) => !live.contains(r),
+    );
+    if (result.missingIds.isEmpty) return true;
+    // 库里少了几条保留行（表被别处整表替换过）：忘掉它们的行身份，仍算脏，
+    // 下一轮 flush 把它们当新行写回。
+    final Set<int> missing = result.missingIds.toSet();
+    for (final int i in retainedAt) {
+      if (missing.contains(_historyRowIds[snapshot[i]])) {
+        _historyRowIds.remove(snapshot[i]);
+      }
+    }
+    return false;
   }
 
   /// Release in-memory caches. Replaces the inherited ChangeNotifier.dispose
@@ -1815,6 +1920,7 @@ class DictionaryRepository {
     _remoteDictionariesCache = const <RemoteDictionary>[];
     _dictionariesChanged();
     _dictionaryHistoryResults.clear();
+    _forgetHistoryRows();
     _historyClearEpoch++;
     _resultsCacheEpoch++;
     _dictionarySearchCache.clear();

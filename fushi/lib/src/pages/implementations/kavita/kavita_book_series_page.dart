@@ -106,6 +106,7 @@ class _KavitaBookSeriesPageState extends ConsumerState<KavitaBookSeriesPage>
     final AppModel appModel = ref.read(appProvider);
     final KavitaBookService created = KavitaBookService(
       db: appModel.database,
+      appModel: appModel,
       tempRoot: await getTemporaryDirectory(),
       apiFor: (String serverConfigId) => KavitaApiRegistry.instance
           .apiForServerId(appModel.prefsRepo.kavitaServers, serverConfigId),

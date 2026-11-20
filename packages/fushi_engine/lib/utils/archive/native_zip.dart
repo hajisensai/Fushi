@@ -84,17 +84,43 @@ void inflateRawDeflate(
 ///
 /// [onBytes] 每写出一块回报该块的（解压后）字节数，供进度条持续推进。
 ///
+/// [verifyCrc32] 为 true 时边写边用 Rust 的 [ffcCrc32] 续算（每块一次 FFI），写完与
+/// 条目头的 CRC-32 核对，不符抛 [FormatException]——等价于 archive 的
+/// `verify: true`，但不必先把条目整个解进内存。
+///
 /// 不能用 `ArchiveFile.decompress(out)`：`ZipDecoder` 解出的条目 `_content` 是
 /// `ZipFile`（非 null），`decompress(out)` 直接 no-op、写出 0 字节。
 int writeZipEntryStreaming(
   ArchiveFile file,
   OutputStreamBase out, {
   void Function(int bytes)? onBytes,
+  bool verifyCrc32 = false,
+  ZipExtractionCap? cap,
 }) {
   final InputStreamBase? raw = file.rawContent;
+  final bool streamable =
+      raw != null &&
+      (file.compressionType == ArchiveFile.STORE ||
+          file.compressionType == ArchiveFile.DEFLATE);
+  if (cap != null) {
+    // 退回 archive `writeContent` 的那条路会把整条解进内存、且只受声明大小约束，
+    // 封顶无从谈起：带上限时不收（与漫画 ZIP 分支对未知压缩方法的处理一致）。
+    if (!streamable) {
+      throw FormatException(
+        'zip entry ${file.name}: unsupported compression method '
+        '${file.compressionType}',
+      );
+    }
+    cap._checkDeclared(file);
+  }
   int written = 0;
+  int crc = 0;
   void write(List<int> chunk) {
     if (chunk.isEmpty) return;
+    // 先查上限再写：超限的那一块不落盘，炸弹在越过声明大小 / 上限的那一片当场中止，
+    // 而不是解完再按大小不符报错（那时磁盘可能已经写满）。
+    cap?._checkProduced(file, written + chunk.length);
+    if (verifyCrc32) crc = ffcCrc32(chunk, crc);
     out.writeBytes(chunk);
     written += chunk.length;
     onBytes?.call(chunk.length);
@@ -107,11 +133,86 @@ int writeZipEntryStreaming(
     inflateRawDeflate(raw, write);
     _checkEntrySize(file, written);
   } else {
+    final Object? content = file.content;
+    if (verifyCrc32 && content is List<int>) crc = ffcCrc32(content, crc);
     file.writeContent(out);
     written = file.size;
     onBytes?.call(file.size);
   }
+  if (verifyCrc32 && crc != file.crc32) {
+    throw FormatException('Invalid CRC for file in archive: ${file.name}');
+  }
+  cap?._expandedBytes += written;
   return written;
+}
+
+/// 按**实际解出**的字节给一次解压封顶（可选，默认不封顶）。
+///
+/// 一个实例对应一次解压（跨条目累计）：
+/// * 条目声明大小超过 [maxEntryBytes]、或累计声明超过 [maxTotalBytes]，开解之前就拒；
+/// * 解的过程中，实际字节一越过该条目的声明大小就按损坏中止（[FormatException]）——
+///   声明可以谎报，没有这一条，1 KB 声明的条目能先往盘上写几 GB 再被大小核对拦下；
+/// * 实际字节越过 [maxEntryBytes] / [maxTotalBytes] 抛 [ZipExtractionLimitException]。
+///
+/// 漫画导入的纯图 EPUB 分支用它，与 ZIP 分支（`MangaArchiveExtractionLimits`）同一
+/// 套口径；小说导入与同步包不传，行为不变。
+class ZipExtractionCap {
+  ZipExtractionCap({required this.maxTotalBytes, required this.maxEntryBytes});
+
+  /// 这次解压所有条目实际解出字节的总和上限。
+  final int maxTotalBytes;
+
+  /// 单个条目实际解出字节的上限。
+  final int maxEntryBytes;
+
+  int _expandedBytes = 0;
+
+  /// 到目前为止已经完整解出的字节数。
+  int get expandedBytes => _expandedBytes;
+
+  void _checkDeclared(ArchiveFile file) {
+    if (file.size > maxEntryBytes) {
+      throw ZipExtractionLimitException(
+        'zip entry ${file.name} declares ${file.size} bytes, '
+        'limit $maxEntryBytes',
+      );
+    }
+    if (_expandedBytes + file.size > maxTotalBytes) {
+      throw ZipExtractionLimitException(
+        'zip expands beyond $maxTotalBytes bytes',
+      );
+    }
+  }
+
+  void _checkProduced(ArchiveFile file, int produced) {
+    if (produced > file.size) {
+      throw FormatException(
+        'zip entry ${file.name}: expands beyond its declared '
+        '${file.size} bytes',
+      );
+    }
+    if (produced > maxEntryBytes) {
+      throw ZipExtractionLimitException(
+        'zip entry ${file.name} expands beyond $maxEntryBytes bytes',
+      );
+    }
+    if (_expandedBytes + produced > maxTotalBytes) {
+      throw ZipExtractionLimitException(
+        'zip expands beyond $maxTotalBytes bytes',
+      );
+    }
+  }
+}
+
+/// [ZipExtractionCap] 的上限被突破。不是 [FormatException]：包本身未必坏，只是超出了
+/// 调用方愿意解出的量，调用方要把它和「损坏」分开报。
+class ZipExtractionLimitException implements Exception {
+  const ZipExtractionLimitException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'ZipExtractionLimitException: $message';
 }
 
 /// 写出字节数必须等于条目头记录的解压后大小：截断的 DEFLATE 流 `dart:io` 不报错，
@@ -129,11 +230,19 @@ int extractZipEntryToFile(
   ArchiveFile file,
   String destPath, {
   void Function(int bytes)? onBytes,
+  bool verifyCrc32 = false,
+  ZipExtractionCap? cap,
 }) {
   File(destPath).parent.createSync(recursive: true);
   final OutputFileStream out = OutputFileStream(destPath);
   try {
-    return writeZipEntryStreaming(file, out, onBytes: onBytes);
+    return writeZipEntryStreaming(
+      file,
+      out,
+      onBytes: onBytes,
+      verifyCrc32: verifyCrc32,
+      cap: cap,
+    );
   } finally {
     out.closeSync();
   }

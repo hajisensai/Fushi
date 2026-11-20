@@ -1,5 +1,5 @@
-/// 设置 › 音乐 › 歌词来源（docs/specs/2026-10-30-lyrics-plugins.md §6）：
-/// LRCLIB 固定第一（内置、无开关、不可移除 / 重排），其后是已装歌词插件的可排序、可启停列表。
+/// 设置 › 音乐 › 歌词来源（docs/specs/2026-10-30-lyrics-plugins.md §6）：内置的 LRCLIB 与已装
+/// 歌词插件同在一份可排序、可启停的列表里（LRCLIB 不可卸载），列表顺序即查询顺序。
 library;
 
 import 'dart:async';
@@ -8,6 +8,7 @@ import 'package:fushi_music/fushi_music.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/music/lyrics/lyrics_provider_list.dart';
+import 'package:fushi/src/media/music/lyrics/music_lyrics_sources.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_plugin_settings.dart';
 import 'package:fushi/src/settings/settings_kit_core.dart'
@@ -26,9 +27,17 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 
 class MusicLyricsProvidersBody extends StatefulWidget {
-  const MusicLyricsProvidersBody({super.key, required this.appModel});
+  const MusicLyricsProvidersBody({
+    super.key,
+    required this.appModel,
+    this.canInstall = true,
+  });
 
   final AppModel appModel;
+
+  /// 本机能装插件（[isMusicPluginSourcesAvailable]）。经互联中继用 host 插件的设备（iOS）
+  /// 只能启停 / 排序，不出安装入口。
+  final bool canInstall;
 
   @override
   State<MusicLyricsProvidersBody> createState() =>
@@ -43,10 +52,21 @@ class _MusicLyricsProvidersBodyState extends State<MusicLyricsProvidersBody> {
   Map<String, InstalledMusicPlugin> _byId =
       const <String, InstalledMusicPlugin>{};
 
+  /// 歌词插件可能由本页按钮装上，也可能由外层页面的拖放落点（[MusicPluginDropTarget]）
+  /// 装上：一律经 [MusicPluginManager.changes] 刷新。
+  StreamSubscription<void>? _changes;
+
   @override
   void initState() {
     super.initState();
+    _changes = _manager.changes.listen((_) => unawaited(_load()));
     unawaited(_load());
+  }
+
+  @override
+  void dispose() {
+    unawaited(_changes?.cancel());
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -59,7 +79,7 @@ class _MusicLyricsProvidersBodyState extends State<MusicLyricsProvidersBody> {
       _byId = <String, InstalledMusicPlugin>{
         for (final InstalledMusicPlugin p in plugins) p.id: p,
       };
-      _entries = mergeLyricsProviders(
+      _entries = mergeLyricsSourceList(
         parseLyricsProviders(widget.appModel.prefsRepo.musicLyricsProvidersRaw),
         plugins.map((InstalledMusicPlugin p) => p.id),
       );
@@ -86,7 +106,7 @@ class _MusicLyricsProvidersBodyState extends State<MusicLyricsProvidersBody> {
   }
 
   Future<void> _install() async {
-    if (await pickAndInstallMusicPlugin(context, _manager)) await _load();
+    await pickAndInstallMusicPlugin(context, _manager);
   }
 
   @override
@@ -102,38 +122,8 @@ class _MusicLyricsProvidersBodyState extends State<MusicLyricsProvidersBody> {
             t.music_lyrics_providers_hint,
             style: context.fushiType.bodySmall,
           ),
-          FushiStaggeredEntrance(
-            index: 0,
-            child: AdaptiveSettingsRow(
-              key: const ValueKey<String>('music-lyrics-provider-lrclib'),
-              icon: FushiIcons.lyrics,
-              showIcon: true,
-              title: 'LRCLIB',
-              subtitle: t.music_lyrics_providers_builtin_note,
-              trailing: const FushiIcon(FushiIcons.lock, size: 20),
-            ),
-          ),
           if (entries == null)
             const FushiLinearProgressIndicator()
-          else if (entries.isEmpty)
-            FushiStaggeredEntrance(
-              index: 1,
-              child: SettingsEmptyState(
-                icon: FushiIcons.browserExtension,
-                title: t.music_lyrics_providers_empty,
-                message: t.music_lyrics_providers_empty_hint,
-                action: FushiPressScale(
-                  child: FushiFilledButton.icon(
-                    key: const ValueKey<String>(
-                      'music_lyrics_provider_install',
-                    ),
-                    onPressed: () => unawaited(_install()),
-                    icon: const FushiIcon(FushiIcons.importFile),
-                    label: Text(t.music_lyrics_providers_install_action),
-                  ),
-                ),
-              ),
-            )
           else
             FushiReorderableColumn(
               itemCount: entries.length,
@@ -143,7 +133,7 @@ class _MusicLyricsProvidersBodyState extends State<MusicLyricsProvidersBody> {
               onReorder: _move,
               itemBuilder: (BuildContext context, int i) =>
                   FushiStaggeredEntrance(
-                    index: i + 1,
+                    index: i,
                     child: _ProviderRow(
                       entry: entries[i],
                       plugin: _byId[entries[i].id],
@@ -155,10 +145,32 @@ class _MusicLyricsProvidersBodyState extends State<MusicLyricsProvidersBody> {
                     ),
                   ),
             ),
-          // 已有插件时也能再装：与空态同一条安装流程。
-          if (entries != null && entries.isNotEmpty)
+          // 列表里只有内置的 LRCLIB：空态说明 + 安装入口。
+          if (entries != null && !_hasPlugins(entries))
             FushiStaggeredEntrance(
-              index: entries.length + 1,
+              index: entries.length,
+              child: SettingsEmptyState(
+                icon: FushiIcons.browserExtension,
+                title: t.music_lyrics_providers_empty,
+                message: t.music_lyrics_providers_empty_hint,
+                action: !widget.canInstall
+                    ? null
+                    : FushiPressScale(
+                        child: FushiFilledButton.icon(
+                          key: const ValueKey<String>(
+                            'music_lyrics_provider_install',
+                          ),
+                          onPressed: () => unawaited(_install()),
+                          icon: const FushiIcon(FushiIcons.importFile),
+                          label: Text(t.music_lyrics_providers_install_action),
+                        ),
+                      ),
+              ),
+            ),
+          // 已有插件时也能再装：与空态同一条安装流程。
+          if (widget.canInstall && entries != null && _hasPlugins(entries))
+            FushiStaggeredEntrance(
+              index: entries.length,
               child: Align(
                 alignment: AlignmentDirectional.centerStart,
                 child: FushiPressScale(
@@ -179,6 +191,10 @@ class _MusicLyricsProvidersBodyState extends State<MusicLyricsProvidersBody> {
   }
 }
 
+/// 列表里除内置 LRCLIB 外还有没有歌词插件。
+bool _hasPlugins(List<LyricsProviderEntry> entries) =>
+    entries.any((LyricsProviderEntry e) => e.id != MusicLyricsSource.lrclib);
+
 class _ProviderRow extends StatelessWidget {
   const _ProviderRow({
     required this.entry,
@@ -197,15 +213,18 @@ class _ProviderRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final MusicPluginManifest? m = plugin?.info?.manifest;
+    final bool builtIn = entry.id == MusicLyricsSource.lrclib;
     return Row(
       children: <Widget>[
         const FushiIcon(FushiIcons.dragHandle, size: 20),
         Expanded(
           child: AdaptiveSettingsSwitchRow(
-            icon: FushiIcons.browserExtension,
+            icon: builtIn ? FushiIcons.lyrics : FushiIcons.browserExtension,
             showIcon: true,
-            title: m?.name ?? entry.id,
-            subtitle: m == null
+            title: builtIn ? 'LRCLIB' : m?.name ?? entry.id,
+            subtitle: builtIn
+                ? t.music_lyrics_providers_builtin_note
+                : m == null
                 ? entry.id
                 : <String>[
                     t.music_plugins_version(version: m.version),

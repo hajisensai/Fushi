@@ -706,9 +706,12 @@ Future<void> prepareVideoDownloadJobsForLocalDelete({
     for (final String path in candidatePaths) platformPathKey(path),
   };
   if (keys.isEmpty) return;
+  // 文件表一次读完按任务分组，不逐任务查（BUG-4748）。
+  final Map<String, List<VideoDownloadJobFileRow>> filesByJob = await database
+      .getAllVideoDownloadJobFilesByJob();
   for (final VideoDownloadJobRow job in await database.getVideoDownloadJobs()) {
     final List<VideoDownloadJobFileRow> hit = _jobFilesMatching(
-      await database.getVideoDownloadJobFiles(job.jobId),
+      filesByJob[job.jobId] ?? const <VideoDownloadJobFileRow>[],
       keys,
     );
     for (final VideoDownloadJobFileRow file in hit) {
@@ -746,9 +749,13 @@ Future<void> reconcileVideoDownloadJobsAfterLocalDelete({
   final Set<String> deletedKeys = <String>{
     for (final String path in deletedPaths) platformPathKey(path),
   };
+  // 文件表一次读完按任务分组，不逐任务查（BUG-4748）。快照在循环前取足够：
+  // 每个任务的整删 / 标 skipped 只动它自己的文件行，不影响别的任务的判定。
+  final Map<String, List<VideoDownloadJobFileRow>> filesByJob = await database
+      .getAllVideoDownloadJobFilesByJob();
   for (final VideoDownloadJobRow job in await database.getVideoDownloadJobs()) {
-    final List<VideoDownloadJobFileRow> files = await database
-        .getVideoDownloadJobFiles(job.jobId);
+    final List<VideoDownloadJobFileRow> files =
+        filesByJob[job.jobId] ?? const <VideoDownloadJobFileRow>[];
     final List<VideoDownloadJobFileRow> hit = _jobFilesMatching(
       files,
       deletedKeys,
@@ -4925,10 +4932,11 @@ class VideoDownloadPipelineService {
     // 抢先按别的（重叠的）来源建了行、或旧行挂在已删来源上时，计划器按
     // `source_id` 过滤会看不到它们，整条任务就落成「映射不回来源」。
     final List<String> unindexed = <String>[];
+    // 整表只读一次建查表，不逐个文件 findByVideoPath（每次都整表读 + 逐行归一）。
+    // 循环里只改 source_id，不增删行，查表全程有效。
+    final VideoPathIndex pathIndex = await _videoRepository.videoPathIndex();
     for (final String importedPath in importedPaths) {
-      final VideoBookRow? book = await _videoRepository.findByVideoPath(
-        importedPath,
-      );
+      final VideoBookRow? book = pathIndex.find(importedPath);
       if (book == null) {
         unindexed.add(importedPath);
         continue;

@@ -65,6 +65,86 @@ void main() {
         throwsA(isA<CtlUsageError>()),
       );
     });
+
+    test('organize-proposals / organize-accept / organize-reject 的路径', () {
+      final CtlRequestSpec l = _build('organize-proposals', <String>['--all']);
+      expect(l.method, 'GET');
+      expect(l.path, '/api/admin/library/organize/proposals');
+      expect(l.query, <String, String>{'all': 'true'});
+      final CtlRequestSpec a = _build('organize-accept', <String>['7']);
+      expect(a.method, 'POST');
+      expect(a.path, '/api/admin/library/organize/proposals/7/accept');
+      final CtlRequestSpec r = _build('organize-reject', <String>['7']);
+      expect(r.path, '/api/admin/library/organize/proposals/7/reject');
+      expect(
+        () => _build('organize-accept', <String>['0']),
+        throwsA(isA<CtlUsageError>()),
+      );
+    });
+  });
+
+  group('library curate（AI 库管家）', () {
+    test('curate-links / curate-music 的路径与 body', () {
+      final CtlRequestSpec l = _build('curate-links', <String>[
+        'book:a',
+        'game:g',
+        '--auto',
+      ]);
+      expect(l.path, '/api/admin/library/curate/links/infer');
+      expect(l.body, <String, Object?>{
+        'items': <String>['book:a', 'game:g'],
+        'trigger': 'auto',
+      });
+      expect(
+        () => _build('curate-links', <String>[]),
+        throwsA(isA<CtlUsageError>()),
+      );
+      final CtlRequestSpec m = _build('curate-music', <String>['--no-ai']);
+      expect(m.path, '/api/admin/library/curate/links/music');
+      expect(m.body, <String, Object?>{'useAi': false});
+    });
+
+    test(
+      'curate：默认增量手动跑；--full / --no-wait / --yes 带进 body；--estimate 只估算',
+      () {
+        final CtlRequestSpec r = _build('curate', <String>[]);
+        expect(r.method, 'POST');
+        expect(r.path, '/api/admin/library/curate');
+        expect(r.body, <String, Object?>{});
+        expect(
+          _build('curate', <String>['--full', '--no-wait', '--yes']).body,
+          <String, Object?>{'full': true, 'wait': false, 'yes': true},
+        );
+        final CtlRequestSpec e = _build('curate', <String>[
+          '--estimate',
+          '--full',
+        ]);
+        expect(e.method, 'GET');
+        expect(e.path, '/api/admin/library/curate/estimate');
+        expect(e.query, <String, String>{'full': 'true'});
+      },
+    );
+
+    test('curate-status / curate-runs / curate-undo / curate-pending 的路径', () {
+      expect(
+        _build('curate-status', <String>[]).path,
+        '/api/admin/library/curate/status',
+      );
+      final CtlRequestSpec h = _build('curate-runs', <String>['--limit', '3']);
+      expect(h.path, '/api/admin/library/curate/runs');
+      expect(h.query, <String, String>{'limit': '3'});
+      final CtlRequestSpec u = _build('curate-undo', <String>['1700000000000']);
+      expect(u.method, 'POST');
+      expect(u.path, '/api/admin/library/curate/runs/1700000000000/undo');
+      expect(
+        () => _build('curate-undo', <String>['x']),
+        throwsA(isA<CtlUsageError>()),
+      );
+      expect(
+        _build('curate-pending', <String>[]).path,
+        '/api/admin/library/curate/pending',
+      );
+    });
   });
 
   test('命令组与子命令齐全', () {
@@ -92,6 +172,16 @@ void main() {
         'organize',
         'organize-history',
         'organize-undo',
+        'organize-proposals',
+        'organize-accept',
+        'organize-reject',
+        'curate',
+        'curate-status',
+        'curate-runs',
+        'curate-undo',
+        'curate-links',
+        'curate-music',
+        'curate-pending',
         'source-add',
         'source-rename',
         'source-rm',
@@ -99,6 +189,7 @@ void main() {
         'cover',
         'complete',
         'reset',
+        'scrape-meta',
       ],
     );
   });

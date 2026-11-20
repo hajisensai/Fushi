@@ -18,7 +18,7 @@
 ///   （[buildServerAdminOps] 的 `srs`）才进目录。写操作与 app 同一套撤销；已配对设备
 ///   经远程复习本来就能改 / 删这几份库里的笔记，这里没有多给权限。
 /// - 复习（SRS，`/api/admin/srs*`）的配置面只描述状态 / profile 列表 / 立即同步 / 制卡落点 /
-///   每份的制卡牌组 / 翻日时刻兜底。**不描述**：AnkiConnect 整块（开关、监听地址、
+///   每份的制卡牌组 / 翻日时刻兜底 / 换代迁移的状态、开始与叫停（G10-3）。**不描述**：AnkiConnect 整块（开关、监听地址、
 ///   端口、共用 key 与每份 key、CORS——凭据 + 监听设置；状态回包里也收窄到开没开 /
 ///   在不在监听 / 最近错误，见 [srsAgentView]）；选提供哪几份 profile、默认那份
 ///   （spec `2026-11-05-server-srs-design.md` §9：选哪几份复习库给互联设备用是所有者
@@ -290,7 +290,7 @@ Object? srsAgentView(Object? result) {
 }
 
 /// 当前复习配置（`GET /api/admin/srs` 的 `config` 段：profiles / defaultProfile /
-/// rolloverHour / miningTarget / miningDecks）。
+/// rolloverHour / miningTarget / miningDecks / rwkvModel）。
 Future<Map<String, Object?>> _srsConfig(AdminDispatch dispatch) async {
   final Object? config = (await _getMap(dispatch, _kSrsPath))['config'];
   return config is Map
@@ -455,6 +455,11 @@ Future<Object?> _srsSetDeck(AdminDispatch dispatch, String uid, String deck) =>
     'server.srs.profiles',
     '$_kSrsPath/profiles',
     'List the Fushi review (SRS) profiles found in the sync folder (uid, name, devices, note count, last update) and whether the server serves each one. Served profiles that vanished from the sync folder are listed with missing: true.',
+  );
+  read(
+    'server.srs.migration',
+    '$_kSrsPath/migration',
+    'Upgrade state of the server review (SRS) library from the protocol 3 srs.db to the current generation: state (ready / migrating / migrating_elsewhere / needs_migration / migration_failed / sealed_old_only / legacy_beside_new / blocked / no_space / error), current step and progress, last verdict, kernel block code and reason, report path, and advice for the owner. While it is not ready, review requests answer 503 srs_upgrading or srs_upgrade_blocked.',
   );
   read(
     'server.srs.devices',
@@ -1061,7 +1066,7 @@ Future<Object?> _srsSetDeck(AdminDispatch dispatch, String uid, String deck) =>
     );
   }
 
-  /// 单个标量配置（miningTarget / rolloverHour）的撤销：执行前记旧值，撤销时当前值
+  /// 单个标量配置（miningTarget / rolloverHour / rwkvModel）的撤销：执行前记旧值，撤销时当前值
   /// 已不是这次写进去的就报 superseded。
   OpUndo srsScalarUndo(String key) => OpUndo(
     capture: (CtlCall call) async => <String, Object?>{
@@ -1183,6 +1188,26 @@ Future<Object?> _srsSetDeck(AdminDispatch dispatch, String uid, String deck) =>
     ),
     addRoute: false,
   );
+  op(
+    OpDescription(
+      id: 'server.srs.rwkv-model.set',
+      method: 'PUT',
+      pattern: _kSrsPath,
+      summary:
+          'Choose the RWKV scheduling model size for this whole device: small (default, best accuracy) or tiny (about 30% less memory per card, slightly less accurate). Takes effect at once: the new weights download if needed and RWKV decks wait until the model has caught up. Undo restores the previous size.',
+      risk: OpRisk.write,
+      params: const <OpParam>[
+        OpParam.string(
+          'rwkvModel',
+          description: 'small or tiny.',
+          required: true,
+          enumValues: <String>['small', 'tiny'],
+        ),
+      ],
+      undo: srsScalarUndo('rwkvModel'),
+    ),
+    addRoute: false,
+  );
 
   // ── 不可逆（用户在确认卡片上点了才跑）──────────────────────────────
   irreversible(
@@ -1272,6 +1297,18 @@ Future<Object?> _srsSetDeck(AdminDispatch dispatch, String uid, String deck) =>
       ),
     ],
     view: srsAgentView,
+  );
+  irreversible(
+    'server.srs.migration.start',
+    'POST',
+    '$_kSrsPath/migration/start',
+    'Start (or run again after a failure / cancel) the upgrade of the server review library to the current generation. Runs in the background; returns the upgrade state at once (poll server.srs.migration). The old srs.db is kept (sealed), nothing is deleted; review is unavailable until it finishes.',
+  );
+  irreversible(
+    'server.srs.migration.cancel',
+    'POST',
+    '$_kSrsPath/migration/cancel',
+    'Stop the running review library upgrade before its commit step (the data directory goes back to how it was). Refused once the commit step has started. A request that races the commit step is ignored and the upgrade commits, so the final verdict in server.srs.migration (cancelled / committed) is what counts.',
   );
   irreversible(
     'server.model.pull',

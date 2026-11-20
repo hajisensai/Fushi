@@ -6,6 +6,7 @@ import 'package:fushi/src/media/manga/extension_management_tile.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
+import 'package:fushi/src/media/novel/online/lnreader_state_error_notice.dart';
 import 'package:fushi/src/media/novel/online/lnreader_web_login.dart';
 import 'package:fushi/src/media/online/installed_online_source_row.dart';
 import 'package:fushi/src/media/online/online_source_error_text.dart';
@@ -276,6 +277,11 @@ class _LnReaderInstalledSourcesSectionState
           ),
           if (all.isEmpty && !_ready)
             const SliverToBoxAdapter(child: InstalledSourcesSkeleton())
+          else if (widget.manager.stateError != null)
+            // 没读出来：列表是空占位，不是「还没有小说源」（见 [LnReaderStateErrorNotice]）。
+            SliverToBoxAdapter(
+              child: LnReaderStateErrorNotice(manager: widget.manager),
+            )
           else if (all.isEmpty)
             SliverToBoxAdapter(
               child: FushiPlaceholderMessage(
