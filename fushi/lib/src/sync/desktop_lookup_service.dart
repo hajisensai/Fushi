@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:characters/characters.dart';
@@ -11,6 +10,7 @@ import 'package:fushi/src/utils/misc/lookup_input_limits.dart';
 import 'package:fushi/src/utils/misc/ruby_markup.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
 import 'package:fushi/src/sync/desktop_foreground_guard.dart';
+import 'package:fushi/src/platform/host_platform.dart';
 
 class DesktopLookupRequest {
   const DesktopLookupRequest({required this.text});
@@ -32,8 +32,8 @@ class DesktopLookupService extends ChangeNotifier {
   DesktopLookupService._();
   static final DesktopLookupService instance = DesktopLookupService._();
 
-  static bool get isDesktop =>
-      Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+  /// 读 [hostPlatform]：设置项目录导出器要按出包平台各走一遍设置索引。
+  static bool get isDesktop => hostPlatform.isDesktop;
 
   DesktopLookupRequest? _pendingRequest;
   DesktopLookupRequest? get pendingRequest => _pendingRequest;
@@ -145,7 +145,7 @@ class DesktopLookupService extends ChangeNotifier {
       // attention); a token from the user's action lets the compositor raise it.
       final String? token = activationTokenInScope;
       final bool presented =
-          Platform.isLinux &&
+          hostPlatform.isLinux &&
           token != null &&
           await LinuxWindowActivationChannel.present(token);
       if (!presented) await windowManager.focus();

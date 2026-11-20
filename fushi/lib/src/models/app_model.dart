@@ -614,6 +614,7 @@ import 'package:fushi/src/stats/reader_study_clock_start_mode.dart';
 import 'package:fushi/src/stats/study_goal_period.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/audio_production_host.dart';
 import 'package:fushi/src/media/import/external_storage_access.dart';
+import 'package:fushi/src/platform/host_platform.dart';
 export 'package:fushi/src/stats/study_goal_period.dart' show StudyGoalPeriod;
 
 export 'package:fushi/src/models/local_audio_manager.dart'
@@ -10079,10 +10080,7 @@ class AppModel
   /// 内置 libtorrent 支持的平台：桌面 + Android（`libfushi_torrent_ffi.so`
   /// 经 jniLibs 随包）。iOS 不支持：从不构建也从不打包内置引擎产物。
   bool _supportsEmbeddedTorrent() =>
-      Platform.isWindows ||
-      Platform.isMacOS ||
-      Platform.isLinux ||
-      Platform.isAndroid;
+      hostPlatform.isDesktop || hostPlatform.isAndroid;
 
   /// 每系列记住的 Jimaku 字幕语言偏好（TODO-674）。
   Map<String, String> get jimakuPreferredLanguages =>

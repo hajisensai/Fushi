@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io' show Platform;
 import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
@@ -164,6 +163,7 @@ import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi/src/ocr/screen_ocr_engine.dart';
 import 'package:fushi/src/ocr/screen_ocr_language.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
+import 'package:fushi/src/platform/host_platform.dart';
 
 /// 视频画面缩放/比例模式（作用于 Flutter 层 [Video] widget 的 [BoxFit]，TODO-152 子B）。
 ///
@@ -4976,7 +4976,7 @@ class PreferencesRepository extends ChangeNotifier
       getPref(formatKey, defaultValue: null) as String?,
       fallback: legacyMode == VideoMiningImageMode.videoClip.wireName
           ? MiningClipFormat.mp4H264
-          : MiningClipFormat.defaultFor(isIOS: Platform.isIOS),
+          : MiningClipFormat.defaultFor(isIOS: hostPlatform.isIOS),
     );
   }
 

@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io' show Platform;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/audiobook/text_leads_page_stop.dart';
@@ -26,6 +25,7 @@ import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/volume_key_channel.dart';
 import 'package:fushi/src/utils/adaptive/fushi_fold_posture.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/platform/host_platform.dart';
 
 SettingsDestination buildReadingDestination() {
   bool isVertical(SettingsContext c) =>
@@ -844,7 +844,7 @@ SettingsDestination buildReadingDestination() {
             id: 'reading_controls.volume_page_turning',
             title: t.volume_button_page_turning,
             // VolumeKeyChannel 仅 Android 实现，桌面隐藏此项（TODO-1155）。
-            visible: (_) => Platform.isAndroid,
+            visible: (_) => hostPlatform.isAndroid,
             icon: FushiIcons.volumeUp,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
