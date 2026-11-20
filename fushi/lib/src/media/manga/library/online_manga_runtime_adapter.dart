@@ -89,6 +89,22 @@ class OnlineMangaUnavailable implements Exception {
   String toString() => 'OnlineMangaUnavailable($reason): $message';
 }
 
+/// 从阶段 / 运行时异常的 cause 链里找出结构化的 Cloudflare 挑战（没有返回
+/// null）。挑战的文案是 `CLOUDFLARE_CHALLENGE_REQUIRED`，按文案匹配不到，只能按
+/// 类型认。
+MihonCloudflareChallengeException? mihonCloudflareChallenge(Object? error) {
+  final Set<Object> visited = <Object>{};
+  while (error != null && visited.add(error)) {
+    if (error is MihonCloudflareChallengeException) return error;
+    error = switch (error) {
+      OnlineMangaUnavailable(:final cause) => cause,
+      MihonRuntimeException(:final cause) => cause,
+      _ => null,
+    };
+  }
+  return null;
+}
+
 /// 一次刷新拉回来的作品 + 章节。
 class OnlineMangaRefreshResult {
   const OnlineMangaRefreshResult({
