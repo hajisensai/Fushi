@@ -169,6 +169,7 @@ import 'package:fushi/src/shortcuts/manga_arrow_override.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/focus/webview_key_bridge.dart';
+import 'package:fushi/src/media/manga/reader/manga_window_document_snapshot.dart';
 import 'package:fushi/src/media/manga/reader/manga_window_load_gate.dart';
 import 'package:fushi/src/pages/base_source_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
@@ -1463,23 +1464,25 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 墨水屏开关在 [_effectivePageAnimation] 里另判，它随偏好变而非依赖变），在
   /// [didChangeDependencies] 里跟随系统设置变化。
   bool _motionEnabled = true;
-  bool _tapZonePaging = true;
-  MangaTapZoneLayout _tapZoneLayout = MangaTapZoneLayout.leftRight;
-  MangaBackground _background = MangaBackground.black;
-  MangaScaleType _scaleType = MangaScaleType.fitScreen;
-  int _longStripSidePadding = 0;
-  bool _disableZoomOut = false;
-  bool _animateDoubleTap = true;
-  bool _invertHorizontal = false;
-  bool _invertVertical = false;
-  bool _invertBoth = false;
-  bool _cropBorders = false;
-  bool _splitWidePages = false;
-  bool _rotateWidePages = false;
-  bool _autoZoomWide = false;
-  bool _panWide = true;
-  String _zoomStartPosition = 'automatic';
-  bool _invertVolumeKeys = false;
+
+  /// 点击翻页与热区布局只认解析后的 [_readerPreferences]（全局「点击翻页」开关已由
+  /// `AppModel.mangaReaderPreferences` 折进 `tapZones == disabled`，本书覆盖压过
+  /// 全局）。以前开书时另读一遍全局开关、改设置时又只看偏好，两条路口径不一致
+  /// （manga-19）。
+  bool get _tapZonePaging =>
+      _readerPreferences.tapZones != MangaTapZonePreset.disabled;
+  MangaTapZoneLayout get _tapZoneLayout =>
+      switch (_readerPreferences.tapZones) {
+        MangaTapZonePreset.defaultZones => MangaTapZoneLayout.defaultZones,
+        MangaTapZonePreset.lShaped => MangaTapZoneLayout.lShaped,
+        MangaTapZonePreset.kindle => MangaTapZoneLayout.kindle,
+        MangaTapZonePreset.edge => MangaTapZoneLayout.edge,
+        MangaTapZonePreset.rightAndLeft => MangaTapZoneLayout.leftRight,
+        MangaTapZonePreset.disabled => MangaTapZoneLayout.disabled,
+        MangaTapZonePreset.topBottom => MangaTapZoneLayout.topBottom,
+      };
+  MangaBackground get _background =>
+      MangaBackgroundKey.fromKey(_readerPreferences.background);
 
   /// 双页配对偏移（0/1）与宽页独占；两者都只影响 [_buildSpreadsFor] 的配对。
   int _spreadOffset = 1;
@@ -1562,6 +1565,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// lazy-loaded 文档里；这里只跟踪受控的密集命中层。
   Set<int> _loadedSpreads = <int>{};
 
+  /// 屏上那份窗口文档及其装载时的导航输入：改设置时据此判断文档是否真的变了，
+  /// 没变就不重载（manga-13，见 [MangaWindowDocumentSnapshot]）。
+  final MangaWindowDocumentSnapshot _loadedDocument =
+      MangaWindowDocumentSnapshot();
+
   /// 首次文档加载守卫。之后所有翻页只移动稳定 strip 并替换当前 OCR 层；所有输入
   /// 仍经 [_turnQueue] 串行化，避免快速反向操作交叠 DOM 更新。
   bool _navigating = false;
@@ -1642,6 +1650,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 去 `loadData` 要么抛、要么空等满 10 秒超时（BUG-2884）。
   void _releaseWebView() {
     _windowGate.abandon();
+    _loadedDocument.invalidate();
     _controller = null;
   }
 
@@ -2111,6 +2120,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // 加载中的窗口必须以明确状态收尾：否则 _loadInitialWindow 会挂满 10s 超时，
     // 再从 unawaited 调用点抛出未捕获异步异常（BUG-1171）。
     _windowGate.abandon();
+    _loadedDocument.invalidate();
     _progressDebounce?.cancel();
     unawaited(_downloadWatch?.cancel());
     _downloadWatch = null;
@@ -2500,9 +2510,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       kMangaZoomSensitivityMax,
     );
     _readPageTurnPreferences();
-    _tapZonePaging = appModel.mangaTapZonePaging;
-    _tapZoneLayout = MangaTapZoneLayoutKey.fromKey(appModel.mangaTapZoneLayout);
-    _background = MangaBackgroundKey.fromKey(appModel.mangaBackground);
     _widePageSolo = appModel.mangaWidePageSolo;
     _chromeFloating = appModel.mangaChromeFloating;
     _applyVolumeKeyPaging(appModel.mangaVolumeKeyPaging);
@@ -2562,41 +2569,14 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (!mounted) return;
     _showOcrBoxes = readerPreferences.showOcrBoxes;
     _spreadDirection = readerPreferences.direction == 'ltr' ? 'ltr' : 'rtl';
-    _background = MangaBackgroundKey.fromKey(readerPreferences.background);
     _zoomPercent = readerPreferences.zoomStart.clamp(
       kMangaZoomMinPercent,
       kMangaZoomMaxPercent,
     );
-    _tapZoneLayout = switch (readerPreferences.tapZones) {
-      MangaTapZonePreset.defaultZones => MangaTapZoneLayout.defaultZones,
-      MangaTapZonePreset.lShaped => MangaTapZoneLayout.lShaped,
-      MangaTapZonePreset.kindle => MangaTapZoneLayout.kindle,
-      MangaTapZonePreset.edge => MangaTapZoneLayout.edge,
-      MangaTapZonePreset.rightAndLeft => MangaTapZoneLayout.leftRight,
-      MangaTapZonePreset.disabled => MangaTapZoneLayout.disabled,
-      MangaTapZonePreset.topBottom => MangaTapZoneLayout.topBottom,
-    };
-    _scaleType = readerPreferences.scaleType;
-    _longStripSidePadding = readerPreferences.longStripSidePadding;
-    _disableZoomOut = readerPreferences.disableZoomOut;
-    _animateDoubleTap = readerPreferences.animateDoubleTap;
-    _invertHorizontal = readerPreferences.invertHorizontal;
-    _invertVertical = readerPreferences.invertVertical;
-    _invertBoth = readerPreferences.invertBoth;
-    _cropBorders = readerPreferences.cropBorders;
-    _splitWidePages = readerPreferences.splitWidePages;
-    _rotateWidePages = readerPreferences.rotateWidePages;
-    _autoZoomWide = readerPreferences.autoZoomWide;
-    _panWide = readerPreferences.panWide;
-    _zoomStartPosition = readerPreferences.zoomStartPosition;
-    _invertVolumeKeys = readerPreferences.invertVolumeKeys;
     _applyVolumeKeyPaging(
       readerPreferences.volumeKeys,
-      invertDirection: _invertVolumeKeys,
+      invertDirection: readerPreferences.invertVolumeKeys,
     );
-    if (readerPreferences.tapZones == MangaTapZonePreset.disabled) {
-      _tapZonePaging = false;
-    }
 
     // 阅读模式优先级：每作品覆盖 > 旧列 `epub_books.manga_reading_mode` > 全局
     // （autoMode 时按页图长宽比中位数自动判定）。
@@ -3481,21 +3461,24 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// flex-row + overflow:hidden 视口 + translateX 到当前 spread；翻出窗口才重
   /// loadData。webtoon：**整本**一次性渲染进单文档（窗口化只是 spread 的优化），
   /// 靠文档竖滚翻页，滚动绝不重载（否则在手指下抹掉重建/抢滚）。
-  String _buildWindowDocument(
+  ///
+  /// 纯函数：文档只由 [navigation]（装载那一刻的导航输入）与当前设置 / 页序状态
+  /// 决定，不写任何状态——改设置时要拿装载时的 [navigation] 重建一份比对
+  /// （[MangaWindowDocumentSnapshot]），不能有副作用。
+  ({String document, Set<int> keptSpreads}) _buildWindowDocument(
     String inlineSelectionJs, {
-    required int documentGeneration,
+    required MangaWindowNavigation navigation,
   }) {
     final MokuroPayload payload = _payload!;
     final bool isWebtoon = _mode.isContinuous;
 
     final List<int> keptSpreads = MangaFushiPage.mangaWindowRange(
       spreadCount: _spreads.length,
-      current: _currentSpread,
+      current: navigation.currentSpread,
       // Continuous mode keeps the immediately adjacent pages queryable while
       // they enter the viewport; spread mode only needs the visible spread.
       radius: isWebtoon ? 1 : _kWindowRadius,
     );
-    _loadedSpreads = keptSpreads.toSet();
     final Set<int> keptPages = <int>{
       for (final int s in keptSpreads) ..._spreads[s].pageIndices,
     };
@@ -3526,7 +3509,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       // 真实整卷页码（data-page，补扫模式回传的 pageIndex 语义）。
       pageNumbers.add(page);
     }
-    return mangaWindowDocument(
+    final String document = mangaWindowDocument(
       pages,
       imgSrcs,
       mode: _mode,
@@ -3540,18 +3523,18 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       },
       spreadDirection: _spreadDirection,
       spreadGutterPx: _spreadGutterPx,
-      zoomPercent: _zoomPercent,
+      zoomPercent: navigation.zoomPercent,
       // 静止倍率 = 设置里的默认缩放；会话里捏出来的放大不算（BUG-3633）。
       restZoomPercent: _restZoomPercent,
       inlineSelectionJs: inlineSelectionJs,
       pageSpreadIndices: pageSpreadIndices,
       pagesPerSpread: pagesPerSpread,
       pageNumbers: pageNumbers,
-      currentSpread: _currentSpread,
-      restoreFraction: isWebtoon ? _currentFraction : 0,
+      currentSpread: navigation.currentSpread,
+      restoreFraction: isWebtoon ? navigation.restoreFraction : 0,
       enableMouseTextSelection:
           Platform.isLinux || Platform.isWindows || Platform.isMacOS,
-      documentGeneration: documentGeneration,
+      documentGeneration: navigation.documentGeneration,
       ocrPageIndices: keptPages,
       zoomSensitivity: _zoomSensitivity,
       pageAnimation: _effectivePageAnimation,
@@ -3560,30 +3543,29 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       tapZonePaging: _tapZonePaging,
       tapZoneLayout: _tapZoneLayout,
       backgroundCss: _backgroundCssValue,
-      showOcrBoxes: _showOcrBoxes,
-      scaleType: _scaleType,
-      longStripSidePadding: _longStripSidePadding,
-      disableZoomOut: _disableZoomOut,
-      animateDoubleTap: _animateDoubleTap,
-      invertHorizontal: _invertHorizontal,
-      invertVertical: _invertVertical,
-      invertBoth: _invertBoth,
-      cropBorders: _cropBorders,
-      splitWidePages: _splitWidePages,
-      rotateWidePages: _rotateWidePages,
-      autoZoomWidePages: _autoZoomWide,
-      panWidePages: _panWide,
+      // 缩放方式 / 长条边距 / 反转 / 裁边 / 宽页处理 / 识别范围这些视觉项由
+      // mangaWindowDocument 直接从 readerPreferences 取（传了 readerPreferences 时
+      // 同名参数一律被它覆盖），这里不再逐项传镜像（manga-19）。
       // 这个值是**双击判定窗口**（`isDouble = now - lastTapT <= DBL_MS`），不是动画
       // 时长——关掉「双击缩放动画」不该把双击手势本身废掉（传 0 会被 clamp 成
       // 100ms，常人两击根本打不进这个窗口）。动画开关走 animateDoubleTap，JS 侧的
       // 注释也是这么写的。
       doubleTapAnimationMs: 300,
-      zoomStartPosition: _zoomStartPosition,
       // 在线直读章的 payload 尺寸是占位值（真尺寸要等页图到了才知道），只有本地卷 /
       // 已下载章的 manga.json 尺寸可信，降采样只对它们开（BUG-4704）。
       fitImagesToDisplay: _pageSession is! OnlineMangaReaderSession,
     );
+    return (document: document, keptSpreads: keptSpreads.toSet());
   }
+
+  /// 当前的导航输入（装载新窗口文档时用）。
+  MangaWindowNavigation _currentWindowNavigation(int documentGeneration) =>
+      MangaWindowNavigation(
+        documentGeneration: documentGeneration,
+        currentSpread: _currentSpread,
+        restoreFraction: _currentFraction,
+        zoomPercent: _zoomPercent,
+      );
 
   /// 阅读器底色（[MangaBackground]）解析成一个 Flutter 颜色。
   ///
@@ -3647,7 +3629,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   }
 
   /// （重）加载当前 spread 的窗口文档。设置在飞守卫，让并发翻页不能交叠 loadData；
-  /// `_loadedSpreads`（在 [_buildWindowDocument] 内同步赋值）只在本次成功后生效，
+  /// `_loadedSpreads`（建完文档即同步赋值）只在本次成功后生效，
   /// 失败回滚为旧文档的集合（否则 translateX 目标缺失、transform 归 0）。
   Future<void> _loadInitialWindow() async {
     // 在飞的加载装的是它发起那一刻的 payload / spread 快照。后到的重装请求（换章、
@@ -3673,12 +3655,20 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _kTurnStallLogAfter,
       () => _logTurnStall('window load', loadStage),
     );
+    // 从这里起屏上文档不再确知（装载失败 / 被放弃时也不能拿旧快照判定「没变」）。
+    _loadedDocument.invalidate();
     try {
       loadStage = 'loadData';
-      final String doc = _buildWindowDocument(
-        ReaderSelectionScripts.source(),
-        documentGeneration: ticket.generation,
+      final MangaWindowNavigation navigation = _currentWindowNavigation(
+        ticket.generation,
       );
+      final ({String document, Set<int> keptSpreads}) built =
+          _buildWindowDocument(
+            ReaderSelectionScripts.source(),
+            navigation: navigation,
+          );
+      final String doc = built.document;
+      _loadedSpreads = built.keptSpreads;
       await _controller!.loadData(
         data: doc,
         baseUrl: WebUri('https://${MangaFushiPage.kMangaHost}/'),
@@ -3698,6 +3688,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         // 失败上抛——调用方全是 unawaited，抛出等于未捕获异步异常（BUG-1171）。
         return;
       }
+      _loadedDocument.record(doc, navigation);
       // 首窗图作为制卡卡图（ERRATA C2）；在 _spreads/_currentSpread 定型后解析。
       _updateCurrentPageImagePath();
     } catch (_) {
@@ -3911,7 +3902,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     int delta, {
     bool allowCurl = true,
   }) async {
-    if (_splitWidePages && !_mode.isContinuous) {
+    if (_readerPreferences.splitWidePages && !_mode.isContinuous) {
       final InAppWebViewController? controller = _controller;
       final MangaReaderSession? session = _pageSession;
       final int spread = _currentSpread;
@@ -6729,37 +6720,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       // 作品覆盖里残留的旧值不再生效）；墨水屏的降级在 _effectivePageAnimation。
       _readPageTurnPreferences();
       _spreadDirection = prefs.direction == 'ltr' ? 'ltr' : 'rtl';
-      _background = MangaBackgroundKey.fromKey(prefs.background);
       if (resetSessionZoom) {
         _zoomPercent = prefs.zoomStart.clamp(
           kMangaZoomMinPercent,
           kMangaZoomMaxPercent,
         );
       }
-      _tapZoneLayout = switch (prefs.tapZones) {
-        MangaTapZonePreset.defaultZones => MangaTapZoneLayout.defaultZones,
-        MangaTapZonePreset.lShaped => MangaTapZoneLayout.lShaped,
-        MangaTapZonePreset.kindle => MangaTapZoneLayout.kindle,
-        MangaTapZonePreset.edge => MangaTapZoneLayout.edge,
-        MangaTapZonePreset.rightAndLeft => MangaTapZoneLayout.leftRight,
-        MangaTapZonePreset.disabled => MangaTapZoneLayout.disabled,
-        MangaTapZonePreset.topBottom => MangaTapZoneLayout.topBottom,
-      };
-      _tapZonePaging = prefs.tapZones != MangaTapZonePreset.disabled;
-      _scaleType = prefs.scaleType;
-      _longStripSidePadding = prefs.longStripSidePadding;
-      _disableZoomOut = prefs.disableZoomOut;
-      _animateDoubleTap = prefs.animateDoubleTap;
-      _invertHorizontal = prefs.invertHorizontal;
-      _invertVertical = prefs.invertVertical;
-      _invertBoth = prefs.invertBoth;
-      _cropBorders = prefs.cropBorders;
-      _splitWidePages = prefs.splitWidePages;
-      _rotateWidePages = prefs.rotateWidePages;
-      _autoZoomWide = prefs.autoZoomWide;
-      _panWide = prefs.panWide;
-      _zoomStartPosition = prefs.zoomStartPosition;
-      _invertVolumeKeys = prefs.invertVolumeKeys;
       if (modeChanged) {
         _mode = nextMode;
         _spreads = spreads;
@@ -6771,7 +6737,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         _currentFraction = 0;
       }
     });
-    _applyVolumeKeyPaging(prefs.volumeKeys, invertDirection: _invertVolumeKeys);
+    _applyVolumeKeyPaging(
+      prefs.volumeKeys,
+      invertDirection: prefs.invertVolumeKeys,
+    );
     try {
       // 保持亮屏同理：没有本书覆盖时回到全局「保持屏幕常亮」（openMedia 的口径）。
       await setScreenWakelock(
@@ -6812,7 +6781,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       await _loadInitialWindow();
       if (!mounted) return;
       _updateCurrentPageImagePath();
-    } else {
+    } else if (_documentStaleAfterSettingsChange()) {
       // 视觉项（缩放模式 / 裁边 / 长条边距 / 反转 / tapZone / 背景）都编进窗口
       // 文档，重新加载当前窗口即生效。
       await _loadInitialWindow();
@@ -6822,6 +6791,20 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // 在设置面板的保存链上（保存期间面板锁输入）。
     unawaited(_maybeStartVolumeOcr());
     await _syncAutoScrollPause();
+  }
+
+  /// 设置变更后屏上文档是否需要重载（manga-13）。常亮、音量键、全屏、自动识别
+  /// 触发方式这类不进文档的项改了，文档逐字不变，不再整份重载、重取页图。
+  /// 有装载在飞时一律重载：在飞那份是按发起时的旧设置建的。
+  bool _documentStaleAfterSettingsChange() {
+    if (_navigating || _payload == null) return true;
+    final String inlineSelectionJs = ReaderSelectionScripts.source();
+    return !_loadedDocument.matches(
+      (MangaWindowNavigation navigation) => _buildWindowDocument(
+        inlineSelectionJs,
+        navigation: navigation,
+      ).document,
+    );
   }
 
   Future<void> _showPageJumpDialog() async {
@@ -8881,6 +8864,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       ),
       onWebViewCreated: (InAppWebViewController controller) {
         _controller = controller;
+        // 新建的 WebView 里还没有任何文档。
+        _loadedDocument.invalidate();
         notifyPopupBodyWebViewChanged();
         // ERRATA H2/C1：唯一的 onTextSelected 注册点。
         _registerSelectionHandlers(controller);
