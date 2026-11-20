@@ -327,9 +327,10 @@ test('material.css：全部从 :root 起、只消费 token（不写风格数值�
   let n = 0;
   while ((m = re.exec(css))) {
     const sel = m[1].trim();
-    if (!sel || sel.startsWith('@')) continue;
+    if (!sel || sel.startsWith('@') || /^(from|to|[\d.]+%)(\s*,\s*(from|to|[\d.]+%))*$/.test(sel)) continue; // @keyframes 帧选择器
     n++;
-    for (const part of splitTopLevel(sel)) assert.match(part.trim(), /^:root/, '页面级材质规则都从 :root 起：' + part.trim());
+    // 通用组件库段用零特异度的 :where(:root) 起头（扩展页面样式照样压得过它）。
+    for (const part of splitTopLevel(sel)) assert.match(part.trim(), /^(:root|:where\(:root)/, '页面级材质规则都从 :root 起：' + part.trim());
   }
   assert.ok(n > 30);
   assert.doesNotMatch(css, /--fushi-mat-[a-z-]+\s*:/, 'material.css 不定义材质 token（只在 theme.css）');
