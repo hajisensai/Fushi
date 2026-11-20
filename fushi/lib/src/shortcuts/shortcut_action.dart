@@ -727,6 +727,9 @@ enum ShortcutAction {
   // 与书签面板同一入口 `_toggleBookmarkHere`。默认键盘 B（manga scope 内空闲），
   // 手柄留空（B 归 universal 返回）。
   mangaToggleBookmark(ShortcutScope.manga, 'manga_toggle_bookmark'),
+  // 逐格读（气泡聚焦）进 / 出：视图缩放到当前气泡、按阅读顺序跳气泡。默认键盘 Z
+  // （manga scope 内空闲；video 的 Z 是字幕延迟，分属不同 co-active 组）。手柄留空。
+  mangaToggleBubbleFocus(ShortcutScope.manga, 'manga_toggle_bubble_focus'),
   // 朗读 / 漫画有声（成品音频）的播放暂停 / 上一句 / 下一句：执行体 = 播放条同名按钮。
   // 只开键盘通道：漫画页手柄的方向键 / 肩键归翻页、B 归 universal 返回（见
   // docs/agent/focus-ownership.md 漫画页第③条），手柄默认不绑。
