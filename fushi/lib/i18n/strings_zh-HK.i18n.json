@@ -3532,6 +3532,8 @@
   "font_library_priority_title": "Priority",
   "font_library_reorder_filtered_hint": "Clear search and filters to reorder",
   "font_library_sample_latin": "Latin",
+  "font_library_sample_simplified": "簡體",
+  "font_library_sample_traditional": "繁體",
   "font_library_section_fonts": "Fonts",
   "font_library_section_sources": "Get fonts",
   "font_library_size_label": "Size",

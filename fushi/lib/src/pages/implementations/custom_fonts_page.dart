@@ -1156,6 +1156,7 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
           FontTargetPreview(
             target: _previewTarget,
             families: families,
+            script: _script,
             subtitleStyle: VideoSubtitleStyle.decode(
               appModel.videoSubtitleStyle,
             ),

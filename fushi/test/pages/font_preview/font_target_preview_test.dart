@@ -1,6 +1,8 @@
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/models/cjk_font_families.dart';
 import 'package:fushi/src/pages/implementations/font_preview/font_library_widgets.dart';
 import 'package:fushi/src/pages/implementations/font_preview/font_specimen.dart';
 import 'package:fushi/src/pages/implementations/font_preview/font_target_preview.dart';
@@ -133,6 +135,112 @@ void main() {
     expect(find.text('吾'), findsOneWidget);
   });
 
+  group('样文文种', () {
+    final RegExp kana = RegExp(r'[぀-ヿ]');
+
+    String previewText(WidgetTester tester, FontTarget target) => tester
+        .widgetList<RichText>(
+          find.descendant(
+            of: find.byKey(
+              ValueKey<String>('font-target-preview-${target.name}'),
+            ),
+            matching: find.byType(RichText),
+          ),
+        )
+        .map((RichText text) => text.text.toPlainText())
+        .join('\n');
+
+    test('中文样张简繁分开：繁体版不含简体字形，反之亦然', () {
+      final String hans = fontSampleSentence(
+        FontSampleScript.simplifiedChinese,
+      );
+      final String hant = fontSampleSentence(
+        FontSampleScript.traditionalChinese,
+      );
+      expect(hans, contains('张'));
+      expect(hans, isNot(contains('張')));
+      expect(hant, contains('張'));
+      expect(hant, contains('黃'));
+      expect(hant, isNot(contains('张')));
+      expect(hant, isNot(contains('黄')));
+    });
+
+    for (final FontSampleScript script in <FontSampleScript>[
+      FontSampleScript.simplifiedChinese,
+      FontSampleScript.traditionalChinese,
+      FontSampleScript.latin,
+    ]) {
+      for (final FontTarget target in FontTarget.values) {
+        testWidgets('${script.name} 下 ${target.name} 预览不出现日文假名', (
+          WidgetTester tester,
+        ) async {
+          tester.view.devicePixelRatio = 1;
+          tester.view.physicalSize = const Size(420, 900);
+          addTearDown(tester.view.reset);
+          await tester.pumpWidget(
+            buildApp(
+              FontTargetPreview(
+                target: target,
+                families: const <String>['Preview Family'],
+                script: script,
+              ),
+            ),
+          );
+          expect(tester.takeException(), isNull);
+          final String text = previewText(tester, target);
+          expect(text, isNotEmpty);
+          expect(
+            kana.hasMatch(text),
+            isFalse,
+            reason: '中文 / 西文字体的预览里出现假名，缺字会显示成空白或别的字体',
+          );
+        });
+      }
+    }
+
+    testWidgets('繁体正文样张用繁体字，缺字先回退到繁体中文系统字体', (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(420, 900);
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        buildApp(
+          const FontTargetPreview(
+            target: FontTarget.body,
+            families: <String>['Preview Family'],
+            script: FontSampleScript.traditionalChinese,
+          ),
+        ),
+      );
+      final String bodyText = fontTargetSampleTexts(
+        FontSampleScript.traditionalChinese,
+      ).bodyText;
+      expect(previewText(tester, FontTarget.body), contains(bodyText));
+      final RichText rich = tester.widget<RichText>(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('font-target-preview-body')),
+          matching: find.byWidgetPredicate(
+            (Widget w) =>
+                w is RichText && w.text.toPlainText().contains(bodyText),
+          ),
+        ),
+      );
+      TextStyle? style;
+      rich.text.visitChildren((InlineSpan span) {
+        if (span is TextSpan && span.text == bodyText) {
+          style = span.style;
+          return false;
+        }
+        return true;
+      });
+      final String expectedFirstFallback = cjkFontsFor(
+        defaultTargetPlatform,
+        CjkFontStyle.serif,
+      )[CjkScript.traditionalChinese]!.first;
+      expect(style?.fontFamily, 'Preview Family');
+      expect(style?.fontFamilyFallback?.first, expectedFirstFallback);
+    });
+  });
+
   FontLibraryEntryView entry({
     required String name,
     required bool isFile,
@@ -207,4 +315,34 @@ void main() {
       findsOneWidget,
     );
   });
+
+  for (final AppLocale locale in <AppLocale>[AppLocale.en, AppLocale.zhCn]) {
+    testWidgets('样文工具栏四个文种在 360 宽手机上不溢出（${locale.languageTag}）', (
+      WidgetTester tester,
+    ) async {
+      LocaleSettings.setLocale(locale);
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(360, 640);
+      addTearDown(tester.view.reset);
+      final TextEditingController controller = TextEditingController();
+      addTearDown(controller.dispose);
+      FontSampleScript? picked;
+      await tester.pumpWidget(
+        buildApp(
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: FontSampleToolbar(
+              script: FontSampleScript.japanese,
+              onScriptChanged: (FontSampleScript s) => picked = s,
+              controller: controller,
+              onCustomChanged: () {},
+            ),
+          ),
+        ),
+      );
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.text(t.font_library_sample_traditional));
+      expect(picked, FontSampleScript.traditionalChinese);
+    });
+  }
 }

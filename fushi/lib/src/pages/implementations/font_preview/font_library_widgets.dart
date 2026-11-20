@@ -703,8 +703,12 @@ class FontSampleToolbar extends StatelessWidget {
           label: Text(t.font_library_filter_japanese),
         ),
         ButtonSegment<FontSampleScript>(
-          value: FontSampleScript.chinese,
-          label: Text(t.font_library_filter_chinese),
+          value: FontSampleScript.simplifiedChinese,
+          label: Text(t.font_library_sample_simplified),
+        ),
+        ButtonSegment<FontSampleScript>(
+          value: FontSampleScript.traditionalChinese,
+          label: Text(t.font_library_sample_traditional),
         ),
         ButtonSegment<FontSampleScript>(
           value: FontSampleScript.latin,
