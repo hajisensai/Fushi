@@ -45,6 +45,7 @@ import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
         FushiMastheadActionGroup,
         FushiMastheadPanel,
         FushiMastheadTitle,
+        FushiMastheadTitleSize,
         fushiMastheadBadgeExtent,
         fushiMastheadCompact,
         fushiMastheadPaletteOf,
@@ -858,6 +859,8 @@ class _SettingsFloatingHeaderState extends State<SettingsFloatingHeader> {
     // + 分类形状徽标 + 当前分组小字 + 平铺动作（放不下才收「⋯」）。
     return FushiMastheadHeader(
       title: widget.title,
+      // 设置页满屏是小字行：页名用二级字阶，不用库页的 84 / w900 大字。
+      titleSize: FushiMastheadTitleSize.section,
       progress: p,
       onBack: widget.onBack,
       actions: widget.actions,

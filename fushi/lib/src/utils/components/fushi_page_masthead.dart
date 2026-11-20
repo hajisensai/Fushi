@@ -179,6 +179,29 @@ double _lerp(double a, double b, double t) => a + (b - a) * t;
 double _titleFontAt({required bool compact, required double p}) =>
     compact ? _lerp(46, 28, p) : _lerp(84, 36, p);
 
+/// 页名大字的字阶。
+///
+/// - [page]：库页 / 模块页的页名（设计稿 `.cap-B`：84 / w900）。
+/// - [section]：设置这类「一页里很多行小字」的二级页：84 / w900 的页名比正文
+///   大四倍、字重跳三档，像另一个 app 贴在上面（2026-11-20 用户截图「设置的
+///   字看着怪」）。降到 52 / w700，仍是页面里最大的字，但与行文字同一家族。
+enum FushiMastheadTitleSize { page, section }
+
+/// [size] 字阶下展开态（p = 0）与收起态（p = 1）的页名字号。
+({double expanded, double collapsed}) fushiMastheadTitleFonts({
+  required bool compact,
+  FushiMastheadTitleSize size = FushiMastheadTitleSize.page,
+}) => switch (size) {
+  FushiMastheadTitleSize.page => (
+    expanded: _titleFontAt(compact: compact, p: 0),
+    collapsed: _titleFontAt(compact: compact, p: 1),
+  ),
+  FushiMastheadTitleSize.section => (
+    expanded: compact ? 34 : 52,
+    collapsed: compact ? 24 : 30,
+  ),
+};
+
 /// 一级切换字号：宽窗 30 → 18，窄窗 19 → 15。
 double _switchFontAt({required bool compact, required double p}) =>
     compact ? _lerp(19, 15, p) : _lerp(30, 18, p);
@@ -389,19 +412,27 @@ const double _kSegmentPadding = 16;
 /// 换页签 / 换页名时的入场位移（逻辑 px）：小幅位移 + 淡入，不做大幅滑动。
 const double _kMastheadEnterTravel = 28;
 
-/// 页名大字：字重 900、字距 -0.045em、行高 0.98；宽窗 84 / 窄窗 46（滚动收缩
-/// 由绘制层缩放，这里是展开态字号）。
+/// 页名大字（滚动收缩由绘制层缩放，这里是展开态字号）：
+/// - [FushiMastheadTitleSize.page]：字重 900、字距 -0.045em、行高 0.98；宽窗
+///   84 / 窄窗 46。
+/// - [FushiMastheadTitleSize.section]：字重 700、字距 -0.02em、行高 1.05；宽窗
+///   52 / 窄窗 34。
 TextStyle fushiMastheadTitleStyle(
   BuildContext context, {
   required bool compact,
+  FushiMastheadTitleSize size = FushiMastheadTitleSize.page,
 }) {
   final ThemeData theme = Theme.of(context);
-  final double size = _titleFontAt(compact: compact, p: 0);
+  final double fontSize = fushiMastheadTitleFonts(
+    compact: compact,
+    size: size,
+  ).expanded;
+  final bool page = size == FushiMastheadTitleSize.page;
   return (theme.textTheme.displayLarge ?? const TextStyle()).copyWith(
-    fontSize: size,
-    fontWeight: FontWeight.w900,
-    letterSpacing: -0.045 * size,
-    height: 0.98,
+    fontSize: fontSize,
+    fontWeight: page ? FontWeight.w900 : FontWeight.w700,
+    letterSpacing: (page ? -0.045 : -0.02) * fontSize,
+    height: page ? 0.98 : 1.05,
     leadingDistribution: TextLeadingDistribution.even,
     color: fushiMastheadPaletteOf(context).ink,
   );
@@ -549,11 +580,13 @@ class FushiMastheadTitle extends StatelessWidget {
   const FushiMastheadTitle({
     required this.title,
     required this.compact,
+    this.size = FushiMastheadTitleSize.page,
     super.key,
   });
 
   final String title;
   final bool compact;
+  final FushiMastheadTitleSize size;
 
   @override
   Widget build(BuildContext context) {
@@ -579,7 +612,7 @@ class FushiMastheadTitle extends StatelessWidget {
           maxLines: 1,
           softWrap: false,
           overflow: TextOverflow.ellipsis,
-          style: fushiMastheadTitleStyle(context, compact: compact),
+          style: fushiMastheadTitleStyle(context, compact: compact, size: size),
         ),
       ),
     );

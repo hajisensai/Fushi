@@ -38,6 +38,8 @@ import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
     show
         FushiMastheadActionGroup,
         FushiMastheadPanel,
+        FushiMastheadTitleSize,
+        fushiMastheadTitleFonts,
         FushiMastheadRole,
         FushiMastheadScope,
         FushiMastheadTitle,
@@ -96,10 +98,14 @@ class FushiMastheadHeader extends StatelessWidget {
     this.badge,
     this.subtitle,
     this.bottom,
+    this.titleSize = FushiMastheadTitleSize.page,
     super.key,
   });
 
   final String title;
+
+  /// 页名字阶（设置这类二级页用 [FushiMastheadTitleSize.section]）。
+  final FushiMastheadTitleSize titleSize;
 
   /// 收缩进度（0 = 展开）：非 [titleInBody] 时页名按它在绘制层缩小。
   final double progress;
@@ -142,9 +148,14 @@ class FushiMastheadHeader extends StatelessWidget {
     final TextStyle titleStyle = fushiMastheadTitleStyle(
       context,
       compact: compact,
+      size: titleSize,
     );
-    final double fullSize = titleStyle.fontSize ?? (compact ? 46 : 84);
-    final double collapsed = (compact ? 28 : 36) / fullSize;
+    final ({double expanded, double collapsed}) fonts = fushiMastheadTitleFonts(
+      compact: compact,
+      size: titleSize,
+    );
+    final double fullSize = titleStyle.fontSize ?? fonts.expanded;
+    final double collapsed = fonts.collapsed / fullSize;
     final double p = progress.clamp(0.0, 1.0);
     final double scale = titleInBody ? collapsed : lerpDouble(1, collapsed, p)!;
     final double lineHeight =
@@ -172,7 +183,11 @@ class FushiMastheadHeader extends StatelessWidget {
               ),
               child: Align(
                 alignment: AlignmentDirectional.bottomStart,
-                child: FushiMastheadTitle(title: title, compact: compact),
+                child: FushiMastheadTitle(
+                  title: title,
+                  compact: compact,
+                  size: titleSize,
+                ),
               ),
             ),
           ),

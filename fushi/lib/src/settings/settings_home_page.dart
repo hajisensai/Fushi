@@ -19,6 +19,7 @@ import 'package:fushi/src/settings/settings_schema.dart';
 import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi/src/settings/settings_search_sheet.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
+import 'package:fushi/src/utils/components/fushi_horizontal_edge_fade.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiHeightReporter, FushiTopFadeScrim, kFushiFloatingChromeGap;
 import 'package:fushi/src/utils/adaptive/shell_style.dart'
@@ -588,29 +589,36 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     return MaterialSupportingPaneLayout(
       minSplitWidth: kFushiSettingsHomeTwoPaneMinWidth,
       supportingSide: SupportingPaneSide.start,
-      supportingWidth: GlassSettingsRenderer.sidebarWidth,
+      supportingWidth:
+          GlassSettingsRenderer.sidebarWidth +
+          _wideNavPanelExtraWidth(FushiDesignTokens.of(context)),
       showDivider: false,
       supporting: Padding(
         padding: EdgeInsets.only(bottom: mediaPadding.bottom),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
-              child: _buildKitSearchBar(wide: true),
-            ),
-            // 搜索时侧栏保持分类列表（不再把结果塞进 240 宽的侧栏），结果
-            // 占满右侧详情窗格。
-            Expanded(
-              child: renderer.buildDestinationList(
-                settingsContext: settingsContext,
-                destinations: destinations,
-                selectedDestinationId: selectedDestinationId,
-                onDestinationSelected: _selectDestination,
-                pushRoutes: false,
+        child: _wideNavPanel(
+          FushiDesignTokens.of(context),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+                child: _buildKitSearchBar(wide: true),
               ),
-            ),
-          ],
+              // 搜索时侧栏保持分类列表（不再把结果塞进 240 宽的侧栏），结果
+              // 占满右侧详情窗格。
+              Expanded(
+                child: _navListTopFade(
+                  renderer.buildDestinationList(
+                    settingsContext: settingsContext,
+                    destinations: destinations,
+                    selectedDestinationId: selectedDestinationId,
+                    onDestinationSelected: _selectDestination,
+                    pushRoutes: false,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
       // 详情窗格按 destination id 编码身份（同 MD3 分支的 KeyedSubtree 说明）。
@@ -694,6 +702,39 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     return FushiPageScaffold(title: t.settings, body: body);
   }
 
+  /// 宽屏左栏（搜索框 + 分类列表）的底：平时直接坐在页面底上；页底是用户的
+  /// 自定义图片时垫一张与右侧分组卡同色的半透明卡——侧栏的行文字、分组小标题
+  /// 直接压在图上，对比度随图片明暗忽高忽低（2026-11-20 用户截图：樱花壁纸上
+  /// 侧栏字发糊）。右侧本来就是「卡片浮在图上」，左栏跟着成卡，两边同一语言。
+  Widget _wideNavPanel(FushiDesignTokens tokens, Widget child) {
+    if (!FushiPageBackdrop.imageOf(context)) return child;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        _wideNavPanelExtraWidth(tokens),
+        tokens.spacing.gap,
+        0,
+        tokens.spacing.page,
+      ),
+      child: FushiCard(
+        padding: EdgeInsets.zero,
+        borderRadius: tokens.radii.groupRadius,
+        color: tokens.surfaces.card.withValues(alpha: 0.9),
+        child: child,
+      ),
+    );
+  }
+
+  /// [_wideNavPanel] 的卡左外边距：左栏按这一段加宽，卡里的搜索框与分类行
+  /// 仍是原来的宽度（不然搜索提示被截成「Search settin…」、长分类名折行）。
+  double _wideNavPanelExtraWidth(FushiDesignTokens tokens) =>
+      FushiPageBackdrop.imageOf(context) ? tokens.spacing.gap : 0;
+
+  /// 分类列表上沿柔和淡出：往下滚时行从搜索框下面渐隐，而不是被一刀切成半个
+  /// 图标（2026-11-20 用户截图：首行「导航与首页」半截压在搜索框下）。只在
+  /// 列表真的滚离顶端时淡（[FushiHorizontalEdgeFade] 读滚动指标）。
+  Widget _navListTopFade(Widget list) =>
+      FushiHorizontalEdgeFade(axis: Axis.vertical, extent: 28, child: list);
+
   /// MD3 宽屏 = Android 16 平板「设置」：左栏 300（胶囊搜索栏 + 导航抽屉式
   /// 分类列表，直接坐在页面底上）+ 右栏详情（分类大标题 + 全宽分段分组列表）。
   Widget _buildMd3WideLayout({
@@ -713,37 +754,44 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     return MaterialSupportingPaneLayout(
       minSplitWidth: kFushiSettingsHomeTwoPaneMinWidth,
       supportingSide: SupportingPaneSide.start,
-      supportingWidth: MaterialSettingsRenderer.navPaneWidth,
+      supportingWidth:
+          MaterialSettingsRenderer.navPaneWidth +
+          _wideNavPanelExtraWidth(tokens),
       showDivider: false,
       // 左栏是固定版面（搜索框 + 分类列表）：整体让开系统状态栏。
       supporting: SafeArea(
         bottom: false,
         child: Padding(
           padding: EdgeInsets.only(bottom: mediaPadding.bottom),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Padding(
-                padding: EdgeInsets.fromLTRB(
-                  tokens.spacing.gap + 4,
-                  tokens.spacing.gap,
-                  tokens.spacing.gap + 4,
-                  tokens.spacing.gap,
+          child: _wideNavPanel(
+            tokens,
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    tokens.spacing.gap + 4,
+                    tokens.spacing.gap,
+                    tokens.spacing.gap + 4,
+                    tokens.spacing.gap,
+                  ),
+                  child: _buildKitSearchBar(wide: true),
                 ),
-                child: _buildKitSearchBar(wide: true),
-              ),
-              // 搜索时左栏保持分类列表，结果占满右侧详情窗格（此前结果挤在 240
-              // 宽的左栏里，标题两行就截断，右侧详情却空着）。
-              Expanded(
-                child: renderer.buildDestinationList(
-                  settingsContext: settingsContext,
-                  destinations: destinations,
-                  selectedDestinationId: selectedDestinationId,
-                  onDestinationSelected: _selectDestination,
-                  pushRoutes: false,
+                // 搜索时左栏保持分类列表，结果占满右侧详情窗格（此前结果挤在 240
+                // 宽的左栏里，标题两行就截断，右侧详情却空着）。
+                Expanded(
+                  child: _navListTopFade(
+                    renderer.buildDestinationList(
+                      settingsContext: settingsContext,
+                      destinations: destinations,
+                      selectedDestinationId: selectedDestinationId,
+                      onDestinationSelected: _selectDestination,
+                      pushRoutes: false,
+                    ),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
