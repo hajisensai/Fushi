@@ -36,6 +36,8 @@ import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart'
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/sync/remote_lookup_routes.dart'
     show readBoundedBodyString;
+import 'package:fushi_engine/utils/misc/atomic_text_file.dart'
+    show readAtomicallyWrittenTextFile;
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:fushi_engine/utils/net/bounded_read.dart';
 import 'package:fushi_core/fushi_core.dart' show fnv1a64Hex;
@@ -117,6 +119,10 @@ class MangaOcrHostJob {
 /// [MangaOcrService] 构造注入（生产 = MangaOcrServiceImpl；测试 = fake），
 /// 对存储层/DB 零依赖，可独立单测。
 class MangaOcrHostJobManager {
+  /// [runAfter]：串行队列的起点。app 每次开互联新建一个管理器，关了立刻再开时
+  /// 旧管理器取消掉的执行体可能还没停（整卷 isolate 还占着整套模型）；把它设成旧
+  /// 管理器的 [whenExecutorsStopped]，新管理器的第一个任务就排在旧执行体停下之后，
+  /// 不会两套模型同时在内存。缺省 = 立即可跑。它出错同样放行（只是个次序信号）。
   MangaOcrHostJobManager({
     required MangaOcrService service,
     required Directory jobRoot,
@@ -124,11 +130,15 @@ class MangaOcrHostJobManager {
         const <String, MangaOcrService>{},
     DateTime Function()? now,
     Duration jobTtl = const Duration(hours: 1),
+    Future<void>? runAfter,
   }) : _service = service,
        _modelServices = modelServices,
        _jobRoot = jobRoot,
        _now = now ?? DateTime.now,
-       _jobTtl = jobTtl;
+       _jobTtl = jobTtl,
+       _queueTail = runAfter == null
+           ? Future<void>.value()
+           : runAfter.catchError((Object _) {});
 
   /// host 自己当前选择的模型（client 不点名时用它）。
   final MangaOcrService _service;
@@ -143,7 +153,8 @@ class MangaOcrHostJobManager {
 
   /// 串行执行队列尾（对照 FushiSyncServer._davWriteChain 的链式 future 模式）：
   /// 新 start 挂到链尾，前一整卷跑完才轮到下一卷——OCR 是重活，绝不并行两卷。
-  Future<void> _queueTail = Future<void>.value();
+  /// 起点见构造参数 `runAfter`。
+  Future<void> _queueTail;
 
   /// host 重启遗留的孤儿目录只清一次（首个 API 触达时惰性执行）。
   bool _orphanSweepDone = false;
@@ -506,7 +517,9 @@ class MangaOcrHostJobManager {
     if (job.state != MangaOcrHostJobState.done || path == null) return null;
     final File file = File(path);
     if (!file.existsSync()) return null;
-    return file.readAsString();
+    // 产物由 writeTextFileAtomically 写：同卷新任务落回同一目录、正往这个文件上
+    // rename 时，Windows 上开着读会让那次替换以「拒绝访问」失败（BUG-4801）。
+    return readAtomicallyWrittenTextFile(file);
   }
 
   // ── TTL / 孤儿清理 ─────────────────────────────────────────────

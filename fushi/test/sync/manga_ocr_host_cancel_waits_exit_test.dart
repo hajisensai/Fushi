@@ -297,6 +297,37 @@ void main() {
       expect(a.state, MangaOcrHostJobState.cancelled);
     });
 
+    // 路线图 #3722 c41 遗留：关互联后立刻再开，app 新建的管理器原来从空队列起跑，
+    // 旧管理器取消掉的整卷 isolate 还没退出时新任务就起了——两套模型同时在内存。
+    test('关了立刻再开：新管理器的队列接在旧管理器执行体停下之后', () async {
+      final _LingeringOcrService service = _LingeringOcrService();
+      final Directory jobRoot = Directory(p.join(tmpRoot.path, 'jobs'));
+      final MangaOcrHostJobManager oldManager = MangaOcrHostJobManager(
+        service: service,
+        jobRoot: jobRoot,
+      );
+      await startedJob(oldManager, '卷一');
+      await _waitFor(() => service.startedDirs.length == 1);
+      await oldManager.disposeAll().timeout(const Duration(seconds: 5));
+
+      final MangaOcrHostJobManager newManager = MangaOcrHostJobManager(
+        service: service,
+        jobRoot: jobRoot,
+        runAfter: oldManager.whenExecutorsStopped,
+      );
+      final MangaOcrHostJob b = await startedJob(newManager, '卷二');
+      await _settle();
+      expect(service.startedDirs, hasLength(1), reason: '旧执行体停下之前新任务不起跑');
+      expect(b.state, MangaOcrHostJobState.running, reason: '已受理、在排队');
+
+      service.exits.first.complete();
+      await _waitFor(() => service.startedDirs.length == 2);
+      expect(service.startedDirs.last, b.dir.path);
+
+      service.exits.last.complete();
+      await newManager.cancelAndCleanup(b);
+    });
+
     // app 每次开互联新建一个管理器：关了立刻再开时，旧管理器上途中的
     // cancelAndCleanup 回来不能删到新管理器的同卷任务头上。
     test('途中的 cancelAndCleanup 跨停机重开：不删新管理器同卷任务刚传的页图', () async {
