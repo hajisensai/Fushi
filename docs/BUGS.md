@@ -191,12 +191,18 @@
 | [BUG-4906](bugs/BUG-4906-webvideo-builtin-process-gone.md) | ✅ | ✅ | 内置网页播放器渲染进程死亡后回到起始页且重放循环不知情 |
 > 共 4236 条。点号进各自文件。
 > 共 4237 条。点号进各自文件。
+> 共 4242 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4910](bugs/BUG-4910-host-delete-book-leaks-audiobook-and-cover.md) | ✅ | ✅ | 互联对端删书，host 上的有声书副本和自定义封面不清 |
 | [BUG-4909](bugs/BUG-4909-manga-import-epub-probe-blocks-ui.md) | ✅ | ✅ | 漫画导入框在 UI isolate 上同步定性 EPUB，批量导入每本 EPUB 解析两遍 |
 | [BUG-4908](bugs/BUG-4908-manga-epub-import-no-actual-byte-cap.md) | ✅ | ✅ | 纯图 EPUB 漫画导入不按实际解出字节封顶、探测白解整本 |
+| [BUG-4908](bugs/BUG-4908-book-sync-tombstone-failure-silent.md) | ✅ | ✅ | 同步删除书时墓碑写入失败被吞且无日志 |
 | [BUG-4907](bugs/BUG-4907-pdf-import-dir-reuse-and-rollback.md) | ✅ | ✅ | PDF 导入书目录存在即复用、失败无条件删除 |
+| [BUG-4907](bugs/BUG-4907-book-batch-delete-vacuum-per-book.md) | ✅ | ✅ | 批量删书每本都跑一次整库 VACUUM + wal_checkpoint |
+| [BUG-4906](bugs/BUG-4906-web-novel-tail-chapter-snapshot-desync.md) | ✅ | ✅ | web-novel-tail-chapter-snapshot-desync |
+| [BUG-4906](bugs/BUG-4906-shelf-delete-cover-resurrects.md) | ✅ | ✅ | 书架删书不清自定义封面，同名书重新导入后旧封面复活 |
 | [BUG-4906](bugs/BUG-4906-manga-import-skip-duplicate-after-extract.md) | ✅ | ✅ | 漫画批量导入跳过重复卷前先整包解压、逐页读完 |
 | [BUG-4906](bugs/BUG-4906-manga-download-pause-cancel-not-immediate.md) | ✅ | ✅ | 漫画下载的暂停 / 取消传不到在途请求，失败不分型一律退避 |
 > 共 4234 条。点号进各自文件。

@@ -22,7 +22,11 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_audio/fushi_audio.dart'
     show AudiobookStorage, SrtBook, SrtBookRepository;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/foundation/engine_paths.dart';
+import 'package:fushi_engine/media/video/video_storage.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart' show DeleteScope;
+import 'package:fushi_engine/sync/local_library_host_service.dart';
+import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 
 import '../../helpers/test_platform_services.dart';
 
@@ -136,6 +140,142 @@ void main() {
 
   File? resolvedCover(String bookKey) => ReaderFushiSource.instance
       .resolveOverrideThumbnailFile(appModel: app, item: itemFor(bookKey));
+
+  group('#3722 c37 审查遗留：互联 host 侧删书清 DB 行外资源', () {
+    LocalLibraryHostService hostFor() => LocalLibraryHostService(
+      db: db,
+      dictionaryResourceRoot: root,
+      packages: SyncAssetPackageService(db: db),
+      refreshDictionaryCache: () async {},
+      runExclusive: (Future<void> Function() body) => body(),
+      // 与 AppModel 里的接线同一个调用。
+      cleanupBookOnDisk: (EpubBookRow row, String? pairedSrtUid) =>
+          ReaderFushiSource.instance.cleanupBookFilesForHostDelete(
+            db: db,
+            appModel: app,
+            row: row,
+            pairedSrtUid: pairedSrtUid,
+          ),
+    );
+
+    test('对端删书：有声书 / 配对字幕书持久目录与 override 封面都清掉，同名重导不复活', () async {
+      await db.insertEpubBook(bookRow('Hosted'));
+      await db.upsertSrtBook(
+        SrtBooksCompanion.insert(
+          uid: 'srt/hosted',
+          title: 'Hosted',
+          srtPath: '/tmp/hosted.srt',
+          importedAt: 0,
+          bookKey: const Value<String>('Hosted'),
+        ),
+      );
+      final Directory bookAudio = await AudiobookStorage.ensurePersistDir(
+        'Hosted',
+      );
+      File('${bookAudio.path}/a.mp3').writeAsBytesSync(<int>[1]);
+      final Directory srtAudio = await AudiobookStorage.ensurePersistDir(
+        'srt/hosted',
+      );
+      File('${srtAudio.path}/b.mp3').writeAsBytesSync(<int>[2]);
+      final File cover = writeOverrideCover('Hosted');
+
+      await hostFor().deleteBook('Hosted');
+
+      expect(await db.getEpubBook('Hosted'), isNull);
+      expect(bookAudio.existsSync(), isFalse);
+      expect(srtAudio.existsSync(), isFalse);
+      expect(cover.existsSync(), isFalse);
+      await db.insertEpubBook(bookRow('Hosted'));
+      expect(resolvedCover('Hosted'), isNull);
+    });
+
+    test('持久目录清理抛错也照样删行、清封面', () async {
+      await db.insertEpubBook(bookRow('HostLocked'));
+      final File cover = writeOverrideCover('HostLocked');
+      final Future<Directory> Function()? savedResolver =
+          AudiobookStorage.documentsRootResolver;
+      AudiobookStorage.documentsRootResolver = () async =>
+          throw const FileSystemException('injected: dir in use');
+      addTearDown(() => AudiobookStorage.documentsRootResolver = savedResolver);
+      await ErrorLogService.instance.clear();
+
+      await hostFor().deleteBook('HostLocked');
+
+      expect(await db.getEpubBook('HostLocked'), isNull);
+      expect(
+        ErrorLogService.instance.entries.map((ErrorLogEntry e) => e.source),
+        contains('ReaderFushiSource.hostDeleteBook.cleanup'),
+      );
+      expect(cover.existsSync(), isFalse);
+    });
+
+    test('删行失败：书还在，有声书 / 配对字幕书持久目录与封面一样都不能先没了', () async {
+      await db.insertEpubBook(bookRow('HostKept'));
+      await db.upsertSrtBook(
+        SrtBooksCompanion.insert(
+          uid: 'srt/kept',
+          title: 'HostKept',
+          srtPath: '/tmp/kept.srt',
+          importedAt: 0,
+          bookKey: const Value<String>('HostKept'),
+        ),
+      );
+      final Directory bookAudio = await AudiobookStorage.ensurePersistDir(
+        'HostKept',
+      );
+      File('${bookAudio.path}/a.mp3').writeAsBytesSync(<int>[1]);
+      final Directory srtAudio = await AudiobookStorage.ensurePersistDir(
+        'srt/kept',
+      );
+      File('${srtAudio.path}/b.mp3').writeAsBytesSync(<int>[2]);
+      final File cover = writeOverrideCover('HostKept');
+      // 删行在 DB 层失败（库忙 / 约束等）：用触发器注入。
+      await db.customStatement(
+        'CREATE TRIGGER inject_epub_delete_failure BEFORE DELETE ON epub_books '
+        "BEGIN SELECT RAISE(ABORT, 'injected delete failure'); END",
+      );
+
+      await expectLater(hostFor().deleteBook('HostKept'), throwsA(anything));
+
+      expect(await db.getEpubBook('HostKept'), isNotNull);
+      expect(bookAudio.existsSync(), isTrue, reason: '书还在，有声书副本不能先删');
+      expect(srtAudio.existsSync(), isTrue);
+      expect(cover.existsSync(), isTrue, reason: '书还在，override 封面不能先清');
+    });
+
+    test('对端删书后回收这本书不再被引用的条目附加图文件', () async {
+      final EnginePaths savedPaths = enginePaths;
+      enginePaths = FixedEnginePaths(
+        documents: root,
+        support: root,
+        temp: root,
+      );
+      addTearDown(() => enginePaths = savedPaths);
+      final Directory items = await VideoStorage.itemImagesDir();
+      items.createSync(recursive: true);
+      final File orphan = File('${items.path}/hosted_backdrop.jpg')
+        ..writeAsBytesSync(<int>[1]);
+      await db.insertEpubBook(bookRow('HostImages'));
+
+      await hostFor().deleteBook('HostImages');
+
+      expect(await db.getEpubBook('HostImages'), isNull);
+      expect(orphan.existsSync(), isFalse);
+    });
+
+    test('AppModel 的 host 服务接了这条清理', () {
+      final String src = File(
+        'lib/src/models/app_model.dart',
+      ).readAsStringSync();
+      final int start = src.indexOf(
+        'libraryServiceFactory: () => LocalLibraryHostService(',
+      );
+      expect(start, isNonNegative);
+      final String ctor = src.substring(start, start + 1200);
+      expect(ctor, contains('cleanupBookOnDisk:'));
+      expect(ctor, contains('cleanupBookFilesForHostDelete('));
+    });
+  });
 
   group('BUG-4906 删书清 override 封面，同名重导不复活', () {
     test('书架删书后同名书重新导入，没有旧封面', () async {
@@ -284,6 +424,56 @@ void main() {
       await ReaderFushiSource.compactAfterBookDeleteBestEffort(db);
       expect(recorder.vacuumCount, 1);
       expect(recorder.customStatements.last, 'PRAGMA wal_checkpoint(TRUNCATE)');
+    });
+
+    test('#3722 c37 遗留：无引用附加图批删时逐本不扫目录，批末回收一次', () async {
+      final EnginePaths savedPaths = enginePaths;
+      enginePaths = FixedEnginePaths(
+        documents: root,
+        support: root,
+        temp: root,
+      );
+      addTearDown(() => enginePaths = savedPaths);
+      final Directory items = await VideoStorage.itemImagesDir();
+      items.createSync(recursive: true);
+      final File orphan = File('${items.path}/gone_backdrop.jpg')
+        ..writeAsBytesSync(<int>[1]);
+      for (final String k in <String>['A', 'B']) {
+        await db.insertEpubBook(bookRow(k));
+      }
+      for (final String k in <String>['A', 'B']) {
+        await ReaderFushiSource.instance.deleteBook(
+          db: db,
+          bookKey: k,
+          appModel: app,
+          compactDatabase: false,
+        );
+      }
+      expect(orphan.existsSync(), isTrue, reason: '逐本删不扫附加图目录');
+
+      await ReaderFushiSource.compactAfterBookDeleteBestEffort(db);
+      expect(orphan.existsSync(), isFalse, reason: '批末回收一次');
+    });
+
+    test('单删照旧当场回收无引用附加图', () async {
+      final EnginePaths savedPaths = enginePaths;
+      enginePaths = FixedEnginePaths(
+        documents: root,
+        support: root,
+        temp: root,
+      );
+      addTearDown(() => enginePaths = savedPaths);
+      final Directory items = await VideoStorage.itemImagesDir();
+      items.createSync(recursive: true);
+      final File orphan = File('${items.path}/gone_logo.png')
+        ..writeAsBytesSync(<int>[1]);
+      await db.insertEpubBook(bookRow('Solo'));
+      await ReaderFushiSource.instance.deleteBook(
+        db: db,
+        bookKey: 'Solo',
+        appModel: app,
+      );
+      expect(orphan.existsSync(), isFalse);
     });
   });
 

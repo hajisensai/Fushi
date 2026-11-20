@@ -89,13 +89,7 @@ class VideoMineQueue {
       _store.pending(bookUid);
 
   /// 还留在列表里的张数（待写入 + 写入失败），角标用。只数不读行。
-  ///
-  /// 播放页一打开就会问这个数，所以旧版本留下的完成行也在这里收一次
-  /// （[WebMineQueueStore.sweepLegacyDone]，每个库只做一遍）。
-  Future<int> openCount(String bookUid) async {
-    await _store.sweepLegacyDone();
-    return _store.openCount(bookUid);
-  }
+  Future<int> openCount(String bookUid) => _store.openCount(bookUid);
 
   /// 写入失败的暂存卡（Anki 没开 / 重复 等），供列表展示与重试。
   Future<List<WebMineQueueRow>> failed(String bookUid) async {
