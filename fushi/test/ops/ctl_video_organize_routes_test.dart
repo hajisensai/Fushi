@@ -225,6 +225,35 @@ void main() {
     expect((await db.getVideoEpisodeBindingOverride('ep2'))?.seasonNumber, 0);
   });
 
+  test('ifFree：目标集已绑着另一个本机文件就 409，不改绑、不留手动指定', () async {
+    await expectLater(
+      call(
+        'POST',
+        '$kVideoOrganizeCtlRoot/files/:uid/episode',
+        params: <String, String>{'uid': 'ep2'},
+        body: <String, Object?>{'season': 1, 'episode': 1, 'ifFree': true},
+      ),
+      throwsA(
+        isA<CtlFailure>()
+            .having((CtlFailure f) => f.status, 'status', 409)
+            .having((CtlFailure f) => f.code, 'code', 'episode_occupied'),
+      ),
+    );
+    expect(await slotsOf('ep1'), <String>['S1E1']);
+    expect(await slotsOf('ep2'), <String>['S0E1']);
+    expect(await db.getVideoEpisodeBindingOverride('ep2'), isNull);
+
+    // 空着的集照常改绑。
+    await call(
+      'POST',
+      '$kVideoOrganizeCtlRoot/files/:uid/episode',
+      params: <String, String>{'uid': 'ep2'},
+      body: <String, Object?>{'season': 1, 'episode': 2, 'ifFree': true},
+    );
+    expect(await slotsOf('ep2'), <String>['S1E2']);
+    expect(await slotsOf('ep1'), <String>['S1E1']);
+  });
+
   test('指定到不存在的集：404，不留下手动指定', () async {
     await expectLater(
       call(
@@ -518,6 +547,10 @@ void main() {
       expect(work['title'], 'Show');
       expect(work['episodeMinutes'], 24);
       expect(work['localRegularFiles'], 1);
+      // 正片里已绑着本机文件的集：模型判 episode 时要避开。
+      expect(work['occupied'], <String, Object?>{
+        '1': <int>[1],
+      });
       expect((work['seasons']! as Map<String, Object?>).keys, contains('1'));
       // 时长判据一个都不报，清单里两个第 0 季文件都在（按 uid 排）。
       final List<Object?> files = work['files']! as List<Object?>;
@@ -622,6 +655,16 @@ void main() {
           await setDuration('movie', 100);
         },
       );
+      // probe=false（库管家预估）：只用已有缓存，不探。
+      final Map<Object?, Object?> cached =
+          await call(
+                'GET',
+                '$kVideoOrganizeCtlRoot/audit',
+                query: const <String, String>{'probe': 'false'},
+              )
+              as Map<Object?, Object?>;
+      expect(probed, isEmpty);
+      expect(cached['unknownDuration'], 1);
       final Map<Object?, Object?> warm =
           await call('GET', '$kVideoOrganizeCtlRoot/audit')
               as Map<Object?, Object?>;
@@ -706,6 +749,27 @@ void main() {
       final VideoEpisodeBindingOverrideRow? pin = await db
           .getVideoEpisodeBindingOverride('movie');
       expect((pin?.seasonNumber, pin?.episodeNumber), (0, 2));
+    });
+
+    test('拆成独立作品后又被放进别的作品合集：撤销判为已被处理，不放回原合集', () async {
+      final Map<Object?, Object?> result = await regroup(<String, Object?>{
+        'items': <String>['movie'],
+        'to': 'standalone',
+      });
+      await addVideo('other', 'Films/Other.mkv');
+      final int films = await db.createMediaCollection(
+        'Films',
+        collectionType: 'playlist',
+      );
+      await db.addToCollection(films, MediaKind.video, 'other');
+      await db.addToCollection(films, MediaKind.video, 'movie');
+      final VideoRegroupRevert reverted = await revertVideoRegroup(
+        db,
+        jsonDecode(jsonEncode(result['previous'])),
+      );
+      expect(reverted, (reverted: 0, superseded: 1, failed: 0));
+      expect(await members(collectionId), <String>{'ep1', 'ep2'});
+      expect(await members(films), <String>{'other', 'movie'});
     });
 
     test('另组一部 / 并进已有作品；之后又被挪过的撤销保留现状', () async {

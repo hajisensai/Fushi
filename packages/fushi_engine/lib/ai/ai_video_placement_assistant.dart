@@ -7,8 +7,8 @@
 /// 一部分（AI 库管家设计稿 §9：不新增功能指派，每一步用它自己的）。
 ///
 /// 模型回复经 [parseAiVideoPlacementAnswers] 本地校验：键必须是提问里的文件键，
-/// 判定必须是四种之一，`episode` 的季集必须落在作品的正片季集范围内，否则降级成
-/// `unsure`。
+/// 判定必须是四种之一，`episode` 的季集必须落在作品的正片季集范围内、且那一集还
+/// 没绑着本机文件，否则降级成 `unsure`。
 library;
 
 import 'dart:convert';
@@ -33,7 +33,8 @@ decide what it really is.
 
 The user message is a JSON object: "work" describes the series (titles, year,
 regular episode length in minutes, regular seasons with their episode counts,
-how many regular episodes exist locally) and "files" lists the files to judge
+how many regular episodes exist locally, and "occupiedEpisodes": season ->
+episode numbers that already have a local file) and "files" lists the files to judge
 (path relative to the library root, length in minutes, the special it is
 currently bound to and that special's title / length in the metadata source).
 
@@ -54,8 +55,9 @@ Rules:
   title under which this film is most likely listed (original title preferred),
   or omit it when the path does not tell which film it is.
 - "episode": actually a regular episode of this series. Give "season" and
-  "episode"; they must exist in "regularSeasons". Use it only when the path
-  clearly names that episode.
+  "episode"; they must exist in "regularSeasons" and must not be listed in
+  "occupiedEpisodes" (that episode already has its own local file). Use it only
+  when the path clearly names that episode.
 - "unsure": the facts do not settle it. Prefer "unsure" over guessing: a wrong
   "movie" or "episode" moves the user's file to the wrong place.
 - A long recap / compilation that the bound special's title or length matches
@@ -105,11 +107,17 @@ List<AiVideoPlacementAnswer> parseAiVideoPlacementAnswers(
       final Object? s = entry['season'];
       final Object? e = entry['episode'];
       final int? count = s is int ? query.regularSeasons[s] : null;
-      if (s is int && e is int && count != null && e >= 1 && e <= count) {
+      if (s is int &&
+          e is int &&
+          count != null &&
+          e >= 1 &&
+          e <= count &&
+          !query.isOccupied(s, e)) {
         season = s;
         episode = e;
       } else {
-        // 给不出作品里真实存在的集位：这个判定没法执行。
+        // 给不出作品里真实存在、且还空着的集位：这个判定没法执行（指到已有本机
+        // 文件的集会把那个文件挤掉）。
         verdict = AiVideoPlacementVerdict.unsure;
       }
     }

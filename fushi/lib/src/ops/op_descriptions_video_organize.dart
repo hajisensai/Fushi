@@ -94,6 +94,12 @@ List<OpDescription> describeVideoOrganizeOps(
         OpParam.integer('season', description: 'Season number (0 = specials).'),
         OpParam.integer('episode', description: 'Episode number.'),
         OpParam.boolean('clear', description: 'Remove the manual pin instead.'),
+        OpParam.boolean(
+          'ifFree',
+          description:
+              'Refuse (409 episode_occupied) when that episode is already bound '
+              'to another local file, instead of unbinding that file.',
+        ),
       ],
       undo: opCustomUndo(
         payloadOf: (CtlCall call, Map<String, Object?> before, Object? result) {
@@ -272,6 +278,12 @@ List<OpDescription> describeVideoOrganizeOps(
           description:
               'Also return works[]: the facts to judge every season-0 / '
               'unbound file, not only the ones the length rule flags.',
+        ),
+        OpParam.boolean(
+          'probe',
+          description:
+              'false = only use durations already cached, do not probe '
+              'unprobed files (fast; those files count as unknownDuration).',
         ),
       ],
     ),

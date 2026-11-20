@@ -35,6 +35,8 @@ import 'package:fushi_engine/media/metadata/dlsite/dlsite_client.dart'
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
 import 'package:fushi_engine/media/video/organize/video_placement_ai.dart';
+import 'package:fushi_engine/media/video/organize/video_placement_audit.dart'
+    show kVideoEpisodeOccupiedCode;
 
 export 'package:fushi_engine/media/library_curate/library_curate_run.dart';
 
@@ -694,6 +696,19 @@ class LibraryCurator {
               for (final MapEntry<String, Object?> e in seasons.entries)
                 if (int.tryParse(e.key) case final int n) n: _int(e.value),
             },
+            occupiedEpisodes: <int, List<int>>{
+              for (final MapEntry<String, Object?> e in _map(
+                work['occupied'],
+              ).entries)
+                if (int.tryParse(e.key) case final int n)
+                  n: <int>[
+                    for (final Object? v
+                        in e.value is List
+                            ? e.value! as List<Object?>
+                            : const <Object?>[])
+                      if (v is num) v.toInt(),
+                  ],
+            },
             files: <AiVideoPlacementFile>[
               for (final MapEntry<String, Map<String, Object?>> e
                   in byKey.entries)
@@ -741,10 +756,15 @@ class LibraryCurator {
                 'uid': uid,
                 'season': answer.season,
                 'episode': answer.episode,
+                // 自动路径不抢已有绑定：那一集绑着别的本机文件就拒绝、留待确认。
+                'ifFree': true,
               },
             );
             if (w.needsConfirmation) {
               pass.park(f, 'needs_confirmation');
+            } else if (!w.unavailable &&
+                w.result!.errorCode == kVideoEpisodeOccupiedCode) {
+              pass.park(f, kVideoEpisodeOccupiedCode);
             } else if (w.unavailable || w.result!.isError) {
               pass.incomplete = true;
               pass.park(f, 'pin_failed');
@@ -1757,7 +1777,8 @@ class LibraryCurator {
     if (toolbox.describeTool(LibraryCurateOps.videoWorkRegroup) != null) {
       final AgentToolResult? audit = await _read(
         LibraryCurateOps.videoLibraryAudit,
-        const <String, Object?>{'detail': true},
+        // 预估只读已有时长缓存：探测留给真正执行的那一趟。
+        const <String, Object?>{'detail': true, 'probe': false},
       );
       if (audit != null && !audit.isError) {
         bool open(Object? uid) =>

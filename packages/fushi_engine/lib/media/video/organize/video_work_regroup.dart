@@ -322,6 +322,10 @@ Future<VideoRegroupRevert> revertVideoRegroup(
   int superseded = 0;
   int failed = 0;
   final int now = DateTime.now().millisecondsSinceEpoch;
+  // 拆成独立作品的撤销：文件之后又被放进别的作品合集 = 不在「独立」这个位置了。
+  final Map<String, int> primaryNow = target == null
+      ? await primaryVideoWorkCollections(db)
+      : const <String, int>{};
 
   Future<bool> isMember(int collectionId, String uid) async =>
       (await db.getCollectionItems(collectionId)).any(
@@ -342,7 +346,7 @@ Future<VideoRegroupRevert> revertVideoRegroup(
     }
     final bool backAlready = from != null && await isMember(from, uid);
     final bool stillAtTarget = target == null
-        ? !backAlready
+        ? !backAlready && !primaryNow.containsKey(uid)
         : await isMember(target, uid);
     if (!stillAtTarget) {
       superseded++;

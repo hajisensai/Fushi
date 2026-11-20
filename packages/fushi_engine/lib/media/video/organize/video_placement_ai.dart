@@ -66,9 +66,14 @@ class AiVideoPlacementQuery {
     this.regularEpisodeMinutes,
     this.regularLocalFiles = 0,
     Map<int, int> regularSeasons = const <int, int>{},
+    Map<int, List<int>> occupiedEpisodes = const <int, List<int>>{},
     this.locale = 'en',
   }) : files = List<AiVideoPlacementFile>.unmodifiable(files),
-       regularSeasons = Map<int, int>.unmodifiable(regularSeasons);
+       regularSeasons = Map<int, int>.unmodifiable(regularSeasons),
+       occupiedEpisodes = Map<int, List<int>>.unmodifiable(<int, List<int>>{
+         for (final MapEntry<int, List<int>> e in occupiedEpisodes.entries)
+           e.key: List<int>.unmodifiable(e.value),
+       });
 
   final String workTitle;
   final String? originalTitle;
@@ -82,7 +87,14 @@ class AiVideoPlacementQuery {
 
   /// 资料源里的正片各季：季号 → 集数。
   final Map<int, int> regularSeasons;
+
+  /// 正片季里已经绑着本机文件的集：季号 → 集号。判 `episode` 不能指到这些集。
+  final Map<int, List<int>> occupiedEpisodes;
   final List<AiVideoPlacementFile> files;
+
+  /// (季, 集) 是否已经绑着本机文件。
+  bool isOccupied(int season, int episode) =>
+      occupiedEpisodes[season]?.contains(episode) ?? false;
   final String locale;
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -97,6 +109,11 @@ class AiVideoPlacementQuery {
           '${e.key}': e.value,
       },
       'localRegularFiles': regularLocalFiles,
+      if (occupiedEpisodes.isNotEmpty)
+        'occupiedEpisodes': <String, List<int>>{
+          for (final MapEntry<int, List<int>> e in occupiedEpisodes.entries)
+            '${e.key}': e.value,
+        },
     },
     'files': <Map<String, Object?>>[
       for (final AiVideoPlacementFile f in files) f.toJson(),

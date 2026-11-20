@@ -126,6 +126,53 @@ void main() {
     }
   });
 
+  test('episode 指到已绑着本机文件的集 → 降为 unsure；空着的集照常采用', () {
+    final AiVideoPlacementQuery occupied = AiVideoPlacementQuery(
+      workTitle: 'Beta',
+      regularSeasons: const <int, int>{1: 12},
+      occupiedEpisodes: const <int, List<int>>{
+        1: <int>[1, 2, 3, 4, 5],
+      },
+      files: const <AiVideoPlacementFile>[
+        AiVideoPlacementFile(key: 'f1', path: 'Beta/ep05.mkv'),
+        AiVideoPlacementFile(key: 'f2', path: 'Beta/ep06.mkv'),
+      ],
+    );
+    expect(
+      jsonDecode(
+        buildAiVideoPlacementUserPrompt(occupied),
+      )['work']['occupiedEpisodes'],
+      <String, Object?>{
+        '1': <int>[1, 2, 3, 4, 5],
+      },
+    );
+    final List<AiVideoPlacementAnswer> out = parseAiVideoPlacementAnswers(
+      jsonEncode(<String, Object?>{
+        'files': <Object?>[
+          <String, Object?>{
+            'key': 'f1',
+            'verdict': 'episode',
+            'confidence': 0.99,
+            'season': 1,
+            'episode': 5,
+          },
+          <String, Object?>{
+            'key': 'f2',
+            'verdict': 'episode',
+            'confidence': 0.99,
+            'season': 1,
+            'episode': 6,
+          },
+        ],
+      }),
+      query: occupied,
+    );
+    expect(out[0].verdict, AiVideoPlacementVerdict.unsure);
+    expect(out[0].isAutoAcceptable, isFalse);
+    expect(out[1].verdict, AiVideoPlacementVerdict.episode);
+    expect((out[1].season, out[1].episode), (1, 6));
+  });
+
   test('抠不出 JSON → 没有结论', () {
     expect(parseAiVideoPlacementAnswers('sorry', query: query), isEmpty);
     expect(

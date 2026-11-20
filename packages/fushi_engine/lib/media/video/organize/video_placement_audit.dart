@@ -34,6 +34,9 @@ const int kFeatureMinMinutes = 60;
 /// 相对正片单集时长的倍数下限。
 const int kFeatureBaselineFactor = 2;
 
+/// `video.episode.pin ifFree=true` 被拒的错误码：目标集已绑着另一个本机文件。
+const String kVideoEpisodeOccupiedCode = 'episode_occupied';
+
 /// 一条摆放问题。
 enum VideoPlacementKind {
   /// 剧集合集里，个别电影长度的文件挂在特别篇下。修法：把它拆成独立作品，再按
@@ -161,6 +164,7 @@ class VideoPlacementReview {
     required this.regularSeasons,
     required this.baselineMinutes,
     required this.files,
+    this.occupiedRegular = const <int, List<int>>{},
   });
 
   /// `collection:<id>` / `book:<uid>`。
@@ -174,6 +178,10 @@ class VideoPlacementReview {
 
   /// 资料源里的正片各季：季号 → 集数。
   final Map<int, int> regularSeasons;
+
+  /// 正片季里已经绑着本机文件的集：季号 → 升序集号。把文件改绑到这些集会挤掉
+  /// 那个文件，判断与执行都要避开。
+  final Map<int, List<int>> occupiedRegular;
   final int? baselineMinutes;
   final List<VideoPlacementReviewFile> files;
 }
@@ -189,6 +197,9 @@ class _WorkSpecials {
   final Set<String> regularUids = <String>{};
   final List<int> scrapedRuntimes = <int>[];
   final Map<int, int> regularSeasons = <int, int>{};
+
+  /// 正片季里绑着本机文件的集：季号 → 集号。
+  final Map<int, Set<int>> occupiedRegular = <int, Set<int>>{};
 
   /// 在这部作品的合集里、但没绑到任何一集的成员。
   final List<String> unbound = <String>[];
@@ -253,6 +264,9 @@ Future<VideoPlacementAudit> auditVideoPlacement(
           w.specials.putIfAbsent(uid, () => e);
         } else {
           w.regularUids.add(uid);
+          w.occupiedRegular
+              .putIfAbsent(season.seasonNumber, () => <int>{})
+              .add(e.episodeNumber);
         }
       }
     }
@@ -322,6 +336,10 @@ Future<VideoPlacementAudit> auditVideoPlacement(
         year: w.work.year,
         regularLocalFiles: w.regularUids.length,
         regularSeasons: w.regularSeasons,
+        occupiedRegular: <int, List<int>>{
+          for (final MapEntry<int, Set<int>> e in w.occupiedRegular.entries)
+            e.key: e.value.toList()..sort(),
+        },
         baselineMinutes: baseline,
         files: <VideoPlacementReviewFile>[
           for (final String uid in specialUids)

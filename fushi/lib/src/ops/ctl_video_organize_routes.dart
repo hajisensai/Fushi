@@ -533,17 +533,33 @@ class _VideoOrganizeCtl {
         _episodeBindingJson(target),
       );
     }
-    await _db.setVideoEpisodeBindingOverride(
-      bookUid,
-      seasonNumber: season,
-      episodeNumber: episode,
-    );
-    await _db.rebindVideoEpisodeToBook(
-      workId: work.id,
-      bookUid: bookUid,
-      seasonNumber: season,
-      episodeNumber: episode,
-    );
+    // ifFree=true（库管家自动路径必带）：目标集已绑着另一个本机文件就拒绝，不悄悄
+    // 把那个文件挤成未绑定。
+    final String? occupant = target.bookUid;
+    if (call.optBool('ifFree') == true &&
+        occupant != null &&
+        occupant != bookUid &&
+        await _db.getVideoBookByBookUid(occupant) != null) {
+      throw CtlFailure(
+        409,
+        kVideoEpisodeOccupiedCode,
+        '${_slot(season, episode)} 已绑着另一个本机文件（$occupant），没有改绑',
+      );
+    }
+    // 指定与改绑同一个事务：不留「有指定、没改绑」的半成品。
+    await _db.transaction(() async {
+      await _db.setVideoEpisodeBindingOverride(
+        bookUid,
+        seasonNumber: season,
+        episodeNumber: episode,
+      );
+      await _db.rebindVideoEpisodeToBook(
+        workId: work.id,
+        bookUid: bookUid,
+        seasonNumber: season,
+        episodeNumber: episode,
+      );
+    });
     _db.notifyVideoLibraryChanged();
     return <String, Object?>{
       'uid': bookUid,
@@ -561,7 +577,8 @@ class _VideoOrganizeCtl {
     _requireVideo();
     final VideoPlacementAudit audit = await auditVideoPlacement(
       _db,
-      probe: _probeDurations,
+      // probe=false：只用已有的时长缓存（库管家预估 / 预览不该触发全库探测）。
+      probe: call.optBool('probe') == false ? null : _probeDurations,
     );
     final List<String> roots = await _libraryRoots();
     final List<Map<String, Object?>> out = <Map<String, Object?>>[];
@@ -589,6 +606,12 @@ class _VideoOrganizeCtl {
                   '${e.key}': e.value,
               },
               'localRegularFiles': r.regularLocalFiles,
+              if (r.occupiedRegular.isNotEmpty)
+                'occupied': <String, List<int>>{
+                  for (final MapEntry<int, List<int>> e
+                      in r.occupiedRegular.entries)
+                    '${e.key}': e.value,
+                },
               'files': <Map<String, Object?>>[
                 for (final VideoPlacementReviewFile f in r.files)
                   <String, Object?>{

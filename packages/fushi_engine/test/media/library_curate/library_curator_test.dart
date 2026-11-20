@@ -15,6 +15,8 @@ import 'package:fushi_engine/ai/ai_media_identity_assistant.dart';
 import 'package:fushi_engine/media/library_curate/library_curator.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
 import 'package:fushi_engine/media/video/organize/video_placement_ai.dart';
+import 'package:fushi_engine/media/video/organize/video_placement_audit.dart'
+    show kVideoEpisodeOccupiedCode;
 import 'package:test/test.dart';
 
 typedef _Handler = Future<Object?> Function(Map<String, Object?> args);
@@ -521,10 +523,13 @@ void main() {
       late List<AiVideoPlacementQuery> queries;
       late Map<String, AiVideoPlacementAnswer> verdicts;
       late Map<String, String> pinned;
+      // 正片里已经绑着别的本机文件的集（`S1E5`）。
+      late Set<String> occupied;
 
       setUp(() {
         queries = <AiVideoPlacementQuery>[];
         pinned = <String, String>{};
+        occupied = <String>{};
         verdicts = <String, AiVideoPlacementAnswer>{};
         placementJudge = (AiVideoPlacementQuery q) async {
           queries.add(q);
@@ -563,6 +568,12 @@ void main() {
                     'episodeMinutes': 24,
                     'seasons': <String, int>{'1': 12},
                     'localRegularFiles': 12,
+                    'occupied': <String, List<int>>{
+                      '1': <int>[
+                        for (final String s in occupied)
+                          int.parse(s.split('E').last),
+                      ],
+                    },
                     'files': <Object?>[
                       for (final Map<String, Object?> f
                           in <Map<String, Object?>>[
@@ -583,7 +594,12 @@ void main() {
           ..op(
             LibraryCurateOps.videoEpisodePin,
             (Map<String, Object?> a) async {
-              pinned['${a['uid']}'] = 'S${a['season']}E${a['episode']}';
+              final String slot = 'S${a['season']}E${a['episode']}';
+              // 与真实路由同一口径：ifFree 时目标集被占就 409，不改绑。
+              if (a['ifFree'] == true && occupied.contains(slot)) {
+                throw const _Fail(kVideoEpisodeOccupiedCode);
+              }
+              pinned['${a['uid']}'] = slot;
               return <String, Object?>{'ok': true};
             },
             payload: (Map<String, Object?> a, Object? r) => <String, Object?>{
@@ -700,6 +716,31 @@ void main() {
             ),
           ),
         );
+      });
+
+      test('判成正片的那一集已绑着别的本机文件：不改绑，留待确认', () async {
+        occupied = <String>{'S1E5'};
+        final LibraryCurateRun run = await curator().run(
+          trigger: LibraryCurateTrigger.manual,
+        );
+        final LibraryCurateStageResult stage = stageOf(run);
+        expect(queries.single.occupiedEpisodes, <int, List<int>>{
+          1: <int>[5],
+        });
+        // 自动路径必带 ifFree。
+        expect(
+          toolbox.args[toolbox.calls.indexOf(LibraryCurateOps.videoEpisodePin)],
+          containsPair('ifFree', true),
+        );
+        expect(pinned, isEmpty);
+        expect(stage.status, LibraryCurateStageStatus.done);
+        // 只剩拆出 + 认领。
+        expect(stage.changes, 2);
+        expect(<String>[
+          for (final LibraryCuratePendingItem p in run.pendingItems)
+            if (p.stage == LibraryCurateStage.videoStructure)
+              '${p.title}/${p.reason}',
+        ], unorderedEquals(<String>['e5/episode_occupied', 'hm/unsure']));
       });
 
       test('模型请求失败：阶段记未完成，不动任何文件', () async {
