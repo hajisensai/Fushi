@@ -51,15 +51,32 @@ Future<void> openUpdatesCenter(
   ),
 );
 
-/// debug 通道才挂调试版流水线面板：别的通道收不到调试包，看流水线只会误以为
+/// 调试版流水线面板对谁有意义：选了 debug 通道的人，或者**本机跑的就是调试包**的人。
+///
+/// 只看更新通道设置（BUG-4906 之前）会漏掉后一类：TestFlight 每次 develop push 都
+/// 推调试包，iOS 用户装上的就是 `x.y.z-debug.N`，却从不去改通道设置（默认 stable），
+/// 安卓直接装调试 APK 的人同理——他们正站在这条时间线上，却看不到它。stable / beta
+/// 用户跑正式包、通道也没选 debug 时仍不挂：他们收不到调试包，看流水线只会误以为
 /// 「有新版不给我」。
+bool showsDebugPulsePanel({
+  required UpdateChannel configuredChannel,
+  required String runningVersion,
+}) =>
+    configuredChannel == UpdateChannel.debug ||
+    channelForUpdateVersion(runningVersion) == UpdateChannel.debug;
+
 Widget? _debugPulsePanelFor(BuildContext context) {
   final AppModel appModel = ProviderScope.containerOf(
     context,
     listen: false,
   ).read(appProvider);
-  if (appUpdateChannelOf(appModel) != UpdateChannel.debug) return null;
   final String version = resolveCurrentAppVersion(appModel.packageInfo.version);
+  if (!showsDebugPulsePanel(
+    configuredChannel: appUpdateChannelOf(appModel),
+    runningVersion: version,
+  )) {
+    return null;
+  }
   // 只认调试版自己的 seq：正式版 / 预发布的 seq 与调试版同一序列，但它们不在
   // 调试版时间线上，标「已装」会指错。
   final int? seq = channelForUpdateVersion(version) == UpdateChannel.debug
