@@ -10,7 +10,7 @@ void main() {
   const SrsReviewSide back = SrsReviewSide.back;
 
   group('默认映射', () {
-    test('默认开启：问题面点左右 / 左右上滑显示答案，答案面四向滑动评分，点中间切换顶栏', () {
+    test('默认开启：问题面点左右 / 左右滑显示答案，答案面左滑良好、右滑重来，下滑撤销，点中间切换顶栏', () {
       final SrsReviewGestureMap m = SrsReviewGestureMap.defaults;
       const Map<SrsReviewGesture, SrsReviewGestureAction> expectFront =
           <SrsReviewGesture, SrsReviewGestureAction>{
@@ -21,8 +21,8 @@ void main() {
             SrsReviewGesture.longPress: SrsReviewGestureAction.none,
             SrsReviewGesture.swipeLeft: SrsReviewGestureAction.showAnswer,
             SrsReviewGesture.swipeRight: SrsReviewGestureAction.showAnswer,
-            SrsReviewGesture.swipeUp: SrsReviewGestureAction.showAnswer,
-            SrsReviewGesture.swipeDown: SrsReviewGestureAction.none,
+            SrsReviewGesture.swipeUp: SrsReviewGestureAction.none,
+            SrsReviewGesture.swipeDown: SrsReviewGestureAction.undo,
           };
       const Map<SrsReviewGesture, SrsReviewGestureAction> expectBack =
           <SrsReviewGesture, SrsReviewGestureAction>{
@@ -31,10 +31,10 @@ void main() {
             SrsReviewGesture.tapRight: SrsReviewGestureAction.toggleToolbar,
             SrsReviewGesture.doubleTap: SrsReviewGestureAction.none,
             SrsReviewGesture.longPress: SrsReviewGestureAction.none,
-            SrsReviewGesture.swipeLeft: SrsReviewGestureAction.rateAgain,
-            SrsReviewGesture.swipeRight: SrsReviewGestureAction.rateGood,
-            SrsReviewGesture.swipeUp: SrsReviewGestureAction.rateEasy,
-            SrsReviewGesture.swipeDown: SrsReviewGestureAction.rateHard,
+            SrsReviewGesture.swipeLeft: SrsReviewGestureAction.rateGood,
+            SrsReviewGesture.swipeRight: SrsReviewGestureAction.rateAgain,
+            SrsReviewGesture.swipeUp: SrsReviewGestureAction.none,
+            SrsReviewGesture.swipeDown: SrsReviewGestureAction.undo,
           };
       for (final SrsReviewGesture g in SrsReviewGesture.values) {
         expect(
@@ -76,20 +76,17 @@ void main() {
       }
     });
 
-    test('「只留重来 / 良好」：默认答案面的上 / 下滑（简单 / 困难）不生效，竖轴识别器关掉', () {
+    test('默认不绑困难 / 简单：「只留重来 / 良好」开不开，默认手势都一样生效', () {
       final SrsReviewGestureMap m = SrsReviewGestureMap.defaults;
-      expect(
-        m.resolve(back, SrsReviewGesture.swipeUp, hideHardEasy: true),
-        SrsReviewGestureAction.none,
-      );
-      expect(
-        m.resolve(back, SrsReviewGesture.swipeDown, hideHardEasy: true),
-        SrsReviewGestureAction.none,
-      );
-      expect(
-        m.arming(back, hideHardEasy: true),
-        const SrsCardGestureArming(swipeHorizontal: true),
-      );
+      for (final SrsReviewSide side in SrsReviewSide.values) {
+        for (final SrsReviewGesture g in SrsReviewGesture.values) {
+          expect(
+            m.resolve(side, g, hideHardEasy: true),
+            m.resolve(side, g, hideHardEasy: false),
+            reason: '$side $g',
+          );
+        }
+      }
     });
 
     test('空串 / 坏 JSON / 非对象都回落默认', () {

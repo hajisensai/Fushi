@@ -192,9 +192,10 @@ class SrsReviewGestureMap {
 
   /// 默认映射（2026-11-20 起默认开启手势，对齐 AnkiDroid 的常见手感）：
   /// - 两面「点中间」仍切换悬浮顶栏（唤出顶栏的唯一触屏入口不能丢）；
-  /// - 问题面：点左 / 点右、向左 / 右 / 上滑 = 显示答案；
-  /// - 答案面：向左滑 = 重来、向右滑 = 良好、向上滑 = 简单、向下滑 = 困难；答案面的单击
-  ///   不评分（点空白误触评分代价太大）；
+  /// - 两面向下滑 = 撤销（撤回上一张的评分），向上滑不绑；
+  /// - 问题面：点左 / 点右、向左 / 右滑 = 显示答案；
+  /// - 答案面：向左滑 = 良好、向右滑 = 重来；答案面的单击不评分（点空白误触评分代价
+  ///   太大）；困难 / 简单不绑手势，走评分按钮 / 快捷键；
   /// - 双击 / 长按不绑：不为等第二击推迟单击，不和长按选词抢。
   ///
   /// 已经改过映射的人不受影响：[encode] 两面都写全部已知手势，存下来的值显式落盘。
@@ -207,22 +208,22 @@ class SrsReviewGestureMap {
       SrsReviewGesture.tapLeft ||
       SrsReviewGesture.tapRight ||
       SrsReviewGesture.swipeLeft ||
-      SrsReviewGesture.swipeRight ||
-      SrsReviewGesture.swipeUp => SrsReviewGestureAction.showAnswer,
+      SrsReviewGesture.swipeRight => SrsReviewGestureAction.showAnswer,
+      SrsReviewGesture.swipeDown => SrsReviewGestureAction.undo,
       SrsReviewGesture.doubleTap ||
       SrsReviewGesture.longPress ||
-      SrsReviewGesture.swipeDown => SrsReviewGestureAction.none,
+      SrsReviewGesture.swipeUp => SrsReviewGestureAction.none,
     },
     SrsReviewSide.back => switch (g) {
       SrsReviewGesture.tapLeft ||
       SrsReviewGesture.tapCenter ||
       SrsReviewGesture.tapRight => SrsReviewGestureAction.toggleToolbar,
-      SrsReviewGesture.swipeLeft => SrsReviewGestureAction.rateAgain,
-      SrsReviewGesture.swipeRight => SrsReviewGestureAction.rateGood,
-      SrsReviewGesture.swipeUp => SrsReviewGestureAction.rateEasy,
-      SrsReviewGesture.swipeDown => SrsReviewGestureAction.rateHard,
+      SrsReviewGesture.swipeLeft => SrsReviewGestureAction.rateGood,
+      SrsReviewGesture.swipeRight => SrsReviewGestureAction.rateAgain,
+      SrsReviewGesture.swipeDown => SrsReviewGestureAction.undo,
       SrsReviewGesture.doubleTap ||
-      SrsReviewGesture.longPress => SrsReviewGestureAction.none,
+      SrsReviewGesture.longPress ||
+      SrsReviewGesture.swipeUp => SrsReviewGestureAction.none,
     },
   };
 

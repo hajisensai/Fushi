@@ -104,7 +104,7 @@ void main() {
       }
       expect(find.byType(FushiEntranceScope), findsOneWidget);
       expect(find.byType(FushiStaggeredEntrance), findsNWidgets(3));
-      // 默认开启：问题面点左 = 显示答案、点中间 = 切换顶栏；答案面左滑 = 重来；双击不绑。
+      // 默认开启：问题面点左 = 显示答案、点中间 = 切换顶栏；答案面左滑 = 良好；双击不绑。
       expect(
         find.descendant(
           of: _row(SrsReviewSide.front, SrsReviewGesture.tapLeft),
@@ -122,7 +122,7 @@ void main() {
       expect(
         find.descendant(
           of: _row(SrsReviewSide.back, SrsReviewGesture.swipeLeft),
-          matching: find.text(t.srs_rating_again),
+          matching: find.text(t.srs_rating_good),
         ),
         findsOneWidget,
       );
@@ -172,16 +172,16 @@ void main() {
         ),
         findsNothing,
       );
-      await tester.tap(find.text(t.srs_rating_good).last);
+      await tester.tap(find.text(t.srs_rating_hard).last);
       await tester.pumpAndSettle();
       expect(
         app.map.actionFor(SrsReviewSide.back, SrsReviewGesture.swipeLeft),
-        SrsReviewGestureAction.rateGood,
+        SrsReviewGestureAction.rateHard,
       );
       expect(
         find.descendant(
           of: _row(SrsReviewSide.back, SrsReviewGesture.swipeLeft),
-          matching: find.text(t.srs_rating_good),
+          matching: find.text(t.srs_rating_hard),
         ),
         findsOneWidget,
       );
@@ -227,7 +227,7 @@ void main() {
       expect(
         find.descendant(
           of: spot(SrsReviewSide.back, SrsReviewGesture.swipeRight),
-          matching: find.text(t.srs_rating_good),
+          matching: find.text(t.srs_rating_again),
         ),
         findsOneWidget,
       );
@@ -267,7 +267,16 @@ void main() {
     testWidgets('[$ds] 只留重来 / 良好：示意图上被屏蔽的评分显示为不生效', (
       WidgetTester tester,
     ) async {
-      await _pump(tester, _GesturesApp(hideHardEasy: true), apple: apple);
+      await _pump(
+        tester,
+        _GesturesApp(hideHardEasy: true)
+          ..map = SrsReviewGestureMap.defaults.withBinding(
+            SrsReviewSide.back,
+            SrsReviewGesture.swipeUp,
+            SrsReviewGestureAction.rateEasy,
+          ),
+        apple: apple,
+      );
       final Finder up = find.byKey(
         const ValueKey<String>('srs-gesture-diagram-back-swipe_up'),
       );
