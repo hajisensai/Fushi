@@ -120,6 +120,32 @@ class _LnReaderInstalledSourcesSectionState
     }
   }
 
+  /// 切换「合并段内换行」；提示只对之后取的章节生效（已取过的章节是落盘的正文）。
+  Future<void> _toggleMergeLineBreaks(LnReaderInstalledPlugin plugin) async {
+    final bool merge = !plugin.mergeLineBreaks;
+    try {
+      await widget.manager.setMergeLineBreaks(plugin, merge);
+    } on Object catch (error, stack) {
+      if (mounted) {
+        FushiToast.show(
+          msg: describeOnlineSourceError(
+            error,
+            logTag: 'LnReaderInstalledSources.mergeLineBreaks',
+            stackTrace: stack,
+          ),
+          severity: ToastSeverity.error,
+        );
+      }
+      return;
+    }
+    if (!mounted) return;
+    FushiToast.show(
+      msg: merge
+          ? t.novel_source_merge_line_breaks_on_hint
+          : t.novel_source_merge_line_breaks_off_hint,
+    );
+  }
+
   /// 当前显示用的完整顺序（见 [_pendingOrder]）。
   List<LnReaderInstalledPlugin> _orderedPlugins() {
     final List<LnReaderInstalledPlugin> plugins = widget.manager.installed;
@@ -407,6 +433,15 @@ class _LnReaderInstalledSourcesSectionState
             loginToLnReaderSource(context, manager: manager, plugin: plugin),
           ),
         ),
+      // 源级开关「合并段内换行」（拍板台 zCkIxtnwcV，默认关）。
+      OnlineSourceMenuAction(
+        key: ValueKey<String>('novel_source_merge_line_breaks_${plugin.id}'),
+        label: plugin.mergeLineBreaks
+            ? t.novel_source_merge_line_breaks_off
+            : t.novel_source_merge_line_breaks,
+        icon: plugin.mergeLineBreaks ? FushiIcons.check : FushiIcons.merge,
+        onTap: () => unawaited(_toggleMergeLineBreaks(plugin)),
+      ),
       OnlineSourceMenuAction(
         label: t.mihon_source_clear_data,
         icon: FushiIcons.deleteSweep,
