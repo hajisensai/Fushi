@@ -142,5 +142,53 @@ void main() {
       report.split('\n').where((String l) => l.contains('elsewhere')),
       hasLength(2),
     );
+    expect(report, isNot(contains('caller was gone')));
+  });
+
+  // 2026-11-20: runs whose caller was gone used to be admitted and die with
+  // -1073741502; they now end with kHeavyCallerGoneExit.
+  test('runs whose caller was gone are counted apart', () {
+    final String report = renderHeavyStats(<HeavyHistoryEntry>[
+      _entry(queued: 60, ran: 20),
+      _entry(queued: 7000, ran: 0, exitCode: kHeavyCallerGoneExit),
+      _entry(queued: 200, ran: 0, exitCode: kHeavyCallerGoneExit),
+    ], days: 7);
+    expect(
+      report,
+      contains(
+        '2 run(s) cancelled because their caller was gone '
+        '(exit $kHeavyCallerGoneExit), 2h00m queued by them',
+      ),
+    );
+    expect(report, contains('1 run(s) in the last 7 day(s)'));
+    expect(report, contains('60s queued in all'));
+  });
+
+  test('a run killed because its caller was gone books nothing', () {
+    final DateTime now = DateTime.utc(2026, 11, 20, 12);
+    List<HeavyHistoryEntry> runs(int exitCode) => <HeavyHistoryEntry>[
+      for (int i = 0; i < kHeavyMeasuredMinSamples; i++)
+        HeavyHistoryEntry(
+          at: now.subtract(Duration(hours: i + 1)),
+          kind: 'test',
+          label: 'flutter test',
+          where: HeavyRanWhere.here,
+          queued: Duration.zero,
+          ran: const Duration(seconds: 60),
+          exitCode: exitCode,
+          bookMb: 4096,
+          staticMb: 4096,
+          peakMb: 1000,
+        ),
+    ];
+    int? book(int exitCode) => heavyMeasuredBookMb(
+      runs(exitCode),
+      kind: 'test',
+      staticMb: 4096,
+      capMb: 12288,
+      now: now,
+    );
+    expect(book(1), isNotNull);
+    expect(book(kHeavyCallerGoneExit), isNull);
   });
 }

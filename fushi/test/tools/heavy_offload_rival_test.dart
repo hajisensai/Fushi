@@ -14,6 +14,7 @@ import 'package:test/test.dart';
 
 import '../../tool/test_flow/dist_plan.dart';
 import '../../tool/test_flow/heavy_budget.dart';
+import '../../tool/test_flow/heavy_history.dart' show kHeavyCallerGoneExit;
 import '../../tool/test_flow/heavy_lease.dart';
 import '../../tool/test_flow/heavy_offload.dart';
 import '../../tool/test_flow/heavy_offload_rival.dart';
@@ -281,7 +282,8 @@ void main() {
       heavyOffloadNext(1, HeavyOffloadKind.build),
       HeavyOffloadNext.runHere,
     );
-    for (final int code in <int>[124, 130]) {
+    // 124 / 130, and a caller that is gone: nobody to run it here for.
+    for (final int code in <int>[124, 130, kHeavyCallerGoneExit]) {
       expect(
         heavyOffloadNext(code, HeavyOffloadKind.build),
         HeavyOffloadNext.done,
