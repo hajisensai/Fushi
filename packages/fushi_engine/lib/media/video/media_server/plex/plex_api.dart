@@ -29,6 +29,7 @@ import 'package:fushi_engine/media/metadata/credential_redaction.dart'
     show redactCredentialsInText;
 import 'package:fushi_engine/media/video/media_server/media_server_client_identity.dart'
     show kMediaServerClientProduct;
+import 'package:fushi_engine/media/video/media_server/media_server_resumable_download.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
 
@@ -354,6 +355,9 @@ class PlexApi {
   /// 单个小请求的响应超时（与 JellyfinApi 同口径）。
   static const Duration kRequestTimeout = Duration(seconds: 15);
 
+  /// 下载正文两个数据块之间的最长空闲（与 JellyfinApi 同口径）。
+  static const Duration kDownloadIdleTimeout = Duration(seconds: 45);
+
   /// 进度上报等写操作走库插件标识（PMS 约定值）。
   static const String kLibraryIdentifier = 'com.plexapp.plugins.library';
 
@@ -627,8 +631,12 @@ class PlexApi {
     }
   }
 
-  /// 流式下载到 [dest]（整片 / 字幕）。[cancelSignal] 完成后在下一个数据块到达时
-  /// 中止并抛 [cancelledError] 的返回值（缺省 [StateError]）；失败删半截文件。
+  /// 流式下载到 [dest]（字幕这类小文件；整片走可续传的 [downloadResumable]）。
+  /// [cancelSignal] 完成后在下一个数据块到达时中止并抛 [cancelledError] 的返回值
+  /// （缺省 [StateError]）；失败删半截文件。
+  ///
+  /// 正文流挂**空闲**超时 [idleTimeout]，不挂整体超时：PMS 回了响应头却不再送数据
+  /// 时到点抛 [TimeoutException]，而不是让起播永远停在「正在下载字幕」。
   Future<void> downloadToFile(
     String url,
     File dest, {
@@ -636,6 +644,7 @@ class PlexApi {
     void Function(int received, int? total)? onBytes,
     Future<void>? cancelSignal,
     Exception Function()? cancelledError,
+    Duration idleTimeout = kDownloadIdleTimeout,
   }) async {
     bool cancelled = false;
     cancelSignal?.then((_) => cancelled = true, onError: (_) {});
@@ -653,7 +662,7 @@ class PlexApi {
       final IOSink sink = dest.openWrite();
       bool ok = false;
       try {
-        await for (final List<int> chunk in res.stream) {
+        await for (final List<int> chunk in res.stream.timeout(idleTimeout)) {
           if (cancelled) {
             final Exception? custom = cancelledError?.call();
             if (custom != null) throw custom;
@@ -679,6 +688,35 @@ class PlexApi {
       throw PlexTransportException(redactCredentialsInText(e.toString()));
     }
   }
+
+  /// 整片下载：`.part` + Range 续传 + 空闲超时（[downloadMediaServerFileResumable]）。
+  ///
+  /// [resumeKey] 是断点身份（条目 id），不是 URL：URL 带 `X-Plex-Token`，侧车与错误
+  /// 文本都不落它。[cancelSignal] 完成即中止在途传输、抛 [cancelledError] 的返回值，
+  /// `.part` 留着供续传。只给原文件端点（`/library/parts/...?download=1`）。
+  Future<void> downloadResumable(
+    String url,
+    File dest, {
+    required String resumeKey,
+    required Exception Function() cancelledError,
+    void Function(double progress)? onProgress,
+    void Function(int received, int? total)? onBytes,
+    Future<void>? cancelSignal,
+    Duration stallTimeout = kDownloadIdleTimeout,
+  }) => downloadMediaServerFileResumable(
+    client: _client,
+    url: url,
+    headers: headers,
+    resumeKey: resumeKey,
+    dest: dest,
+    statusError: (int code) => PlexApiException(code, Uri.parse(url).path),
+    cancelledError: cancelledError,
+    onProgress: onProgress,
+    onBytes: onBytes,
+    cancelSignal: cancelSignal,
+    firstByteTimeout: kRequestTimeout,
+    stallTimeout: stallTimeout,
+  );
 
   void close() => _client.close();
 

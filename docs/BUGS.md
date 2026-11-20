@@ -37,8 +37,8 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4912](bugs/BUG-4912-media-server-download-no-resume.md) | 🚧 | 🚧 | Jellyfin / Emby / Plex 整片下载不能续传、无空闲超时，暂停或断网后从 0 重下 |
-| [BUG-4911](bugs/BUG-4911-remote-default-subtitle-no-read-timeout.md) | 🚧 | 🚧 | 远端起播默认字幕下载没有读超时，字幕站不回数据时页面永远停在「正在下载字幕」 |
+| [BUG-4912](bugs/BUG-4912-media-server-download-no-resume.md) | ✅ | ✅ | Jellyfin / Emby / Plex 整片下载不能续传、无空闲超时，暂停或断网后从 0 重下 |
+| [BUG-4911](bugs/BUG-4911-remote-default-subtitle-no-read-timeout.md) | ✅ | ✅ | 远端起播默认字幕下载没有读超时，字幕站不回数据时页面永远停在「正在下载字幕」 |
 | [BUG-4910](bugs/BUG-4910-anime-download-concurrent-subtitle-lost.md) | ✅ | ✅ | 下载中心两集并发时先下完那集的默认字幕静默丢失（在线源 client 只有一个当前流槽位） |
 | [BUG-4909](bugs/BUG-4909-jellyfin-review-transcode-not-released.md) | ✅ | ✅ | 卡片片段回看下 Jellyfin/Emby 转码会话不释放 |
 | [BUG-4908](bugs/BUG-4908-stream-book-client-never-closed.md) | ✅ | ✅ | 流媒体书客户端与来源直链解析器从不关闭（SFTP 每开一次留一条 SSH 连接） |

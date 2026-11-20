@@ -19,6 +19,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:fushi_engine/utils/net/deadline_get.dart';
 
 /// `RemoteVideoInfo.id` 的前缀：视频源扩展的一集。
 ///
@@ -57,6 +58,7 @@ class AnimeSourceVideoClient
     String? Function()? subtitleLanguageResolver,
     AnimeEpisodeDownloader? downloader,
     List<String>? episodeIds,
+    this.subtitleFetchTimeout = kRemoteSubtitleFetchTimeout,
   }) : _subtitleLanguageResolver = subtitleLanguageResolver,
        _downloader = downloader ?? AnimeEpisodeDownloader(),
        episodes = List<MihonEpisode>.unmodifiable(episodes),
@@ -82,6 +84,9 @@ class AnimeSourceVideoClient
 
   /// 整片下载（直链 / HLS 分片），见 [downloadRemoteVideo]。
   final AnimeEpisodeDownloader _downloader;
+
+  /// 字幕下载（[getRemoteVideoSubtitle] 的 HTTP 分支）的总预算，测试可调短。
+  final Duration subtitleFetchTimeout;
 
   /// 默认字幕轨的首选语言码（`resolveSubtitleDownloadLanguage` 的产物，可空）。
   ///
@@ -247,6 +252,7 @@ class AnimeSourceVideoClient
       subtitleLanguageResolver: _subtitleLanguageResolver,
       chooseVideo: _chooseVideo,
       downloader: _downloader,
+      subtitleFetchTimeout: subtitleFetchTimeout,
     );
     copy._pinnedVideos.addAll(_pinnedVideos);
     return copy;
@@ -597,8 +603,12 @@ class AnimeSourceVideoClient
         subtitleUri.scheme == streamUri.scheme &&
         subtitleUri.host == streamUri.host &&
         subtitleUri.port == streamUri.port;
-    final http.Response response = await _httpClient.get(
+    // 起播时默认字幕挡在开流之前：第三方字幕站不回数据时必须有上限，否则页面永远
+    // 停在「正在下载字幕」。到点抛 TimeoutException，播放页照常起播、不挂这条字幕。
+    final http.Response response = await getWithDeadline(
+      _httpClient,
       subtitleUri,
+      timeout: subtitleFetchTimeout,
       headers: sameSite ? _nonEmptyOrNull(streamHeadersFor(video)) : null,
     );
     if (response.statusCode < 200 || response.statusCode >= 300) {

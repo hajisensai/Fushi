@@ -18,6 +18,7 @@ import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
         YoutubeCaptionTrack;
 import 'package:http/http.dart' as http;
 import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:fushi_engine/utils/net/deadline_get.dart';
 
 /// 纯函数：判断 [url] 是否是可直接交给播放器的网络流 URL（TODO-850 阶段①）。
 ///
@@ -284,6 +285,7 @@ class UrlStreamVideoClient
     http.Client? httpClient,
     YoutubeStreamRelay? youtubeStreamRelay,
     YoutubeAudioStreamResolver? youtubeAudioResolver,
+    this.subtitleFetchTimeout = kRemoteSubtitleFetchTimeout,
   }) : _httpClient = httpClient ?? createAppHttpIoClient(),
        _youtubeStreamRelay = youtubeStreamRelay ?? relayYoutubeStreamUrl,
        _youtubeAudioResolver =
@@ -377,6 +379,9 @@ class UrlStreamVideoClient
   final Map<String, String> httpHeaderFields;
 
   final http.Client _httpClient;
+
+  /// 外挂字幕下载（[getRemoteVideoSubtitle]）的总预算，测试可调短。
+  final Duration subtitleFetchTimeout;
 
   /// BUG-2507：googlevideo 直链交给播放内核前换成本地有界分块中继地址（默认
   /// [relayYoutubeStreamUrl]；非 googlevideo 原样）。测试注入假件以离线覆盖。
@@ -475,8 +480,11 @@ class UrlStreamVideoClient
     final Map<String, String>? headers = (httpHeaderFields.isEmpty || !sameSite)
         ? null
         : httpHeaderFields;
-    final http.Response res = await _httpClient.get(
+    // 直链流的默认字幕同样挡在开流之前：字幕站不回数据时到点放弃（播放页照常起播）。
+    final http.Response res = await getWithDeadline(
+      _httpClient,
       Uri.parse(url),
+      timeout: subtitleFetchTimeout,
       headers: headers,
     );
     if (res.statusCode < 200 || res.statusCode >= 300) {

@@ -870,13 +870,16 @@ class PlexVideoClient
     Future<void>? cancelSignal,
   }) async {
     final PlexPart part = _requirePart(await api.metadata(id), id);
-    await api.downloadToFile(
+    // 原文件（download=1），可续传：断点键是条目 id，暂停 / 断网后从 `.part`
+    // 接着拉，不再删掉半截从 0 重下（BUG-4912）。
+    await api.downloadResumable(
       api.partUrl(part.key, download: true),
       dest,
+      resumeKey: 'plex:$id',
+      cancelledError: () => const RemoteDownloadCancelled(),
       onProgress: onProgress,
       onBytes: onBytes,
       cancelSignal: cancelSignal,
-      cancelledError: () => const RemoteDownloadCancelled(),
     );
   }
 

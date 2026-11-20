@@ -644,6 +644,51 @@ void main() {
       expect(await c.defaultSubtitleFileName(second), 'episode_2.日本語.vtt');
     });
 
+    test('字幕站接了连接却不回数据：默认字幕下载到点抛 TimeoutException（BUG-4911）', () async {
+      final HttpServer server = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      final List<HttpRequest> held = <HttpRequest>[];
+      server.listen(held.add);
+      addTearDown(() => server.close(force: true));
+      runtime.videos = <Object?>[
+        <Object?, Object?>{
+          'url': 'https://cdn.example/ep1.mp4',
+          'quality': '1080p',
+          'subtitleTracks': <Object?>[
+            <Object?, Object?>{
+              'url': 'http://127.0.0.1:${server.port}/ja.vtt',
+              'lang': '日本語',
+            },
+          ],
+        },
+      ];
+      final AnimeSourceVideoClient c = AnimeSourceVideoClient(
+        manager: manager,
+        context: _context,
+        anime: anime,
+        episodes: sortEpisodesForPlayback(episodes),
+        subtitleLanguageResolver: () => null,
+        subtitleFetchTimeout: const Duration(milliseconds: 300),
+      );
+      addTearDown(c.dispose);
+      final String id = c.remoteVideos.first.id;
+      await c.remoteVideoStreamUrls(id);
+      final File dest = File('${root.path}/stall.vtt');
+      await expectLater(
+        c.getRemoteVideoSubtitle(id, dest).timeout(const Duration(seconds: 10)),
+        throwsA(
+          isA<TimeoutException>().having(
+            (TimeoutException e) => e.duration,
+            'duration',
+            const Duration(milliseconds: 300),
+          ),
+        ),
+      );
+      expect(dest.existsSync(), isFalse);
+    });
+
     test('a pinned line is downloaded instead of the default', () async {
       runtime.videos = <Object?>[
         <Object?, Object?>{
