@@ -99,9 +99,11 @@ void main() {
       '',
     );
     expect(
-      flat.contains('detector.close()'),
+      flat.contains('_panelDetectorSlot.close()'),
       isTrue,
-      reason: 'dispose() 必须关掉 detector，否则每开一本书泄漏一份 ONNX session',
+      reason:
+          'dispose() 必须关掉 detector 槽（含还在建的那份），'
+          '否则每开一本书泄漏一份 ONNX session',
     );
   });
 

@@ -90,6 +90,7 @@ class PanelDetectionResult {
     required this.panels,
     this.textBoxes = const <PanelTextBox>[],
     this.error,
+    this.retryable = false,
   });
 
   const PanelDetectionResult.unavailable([String? error])
@@ -103,6 +104,11 @@ class PanelDetectionResult {
   final List<PanelRect> panels;
   final List<PanelTextBox> textBoxes;
   final String? error;
+
+  /// 这次失败来自抛错（读页 / 预处理 / 推理途中的异常），不是页本身的确定结论；
+  /// 任何一层缓存都不能留它，下一次请求要重试（gap-mangamisc-7）。解码失败
+  /// （[PanelDetector.detectPrepared] 的 prepare 返回 null）同一页再试也一样，照常缓存。
+  final bool retryable;
 
   bool get usable => status == PanelDetectionStatus.ready && panels.isNotEmpty;
 }
@@ -171,6 +177,60 @@ abstract interface class PanelDetector {
   /// 释放底层推理 session。宿主页面 dispose 时必须调：ONNX session 每本书新建
   /// 一个（模型 9 MB 级），不关就是每开一本书泄漏一份。
   Future<void> close();
+}
+
+/// 宿主页面持有的那一个 [PanelDetector] 的所有权槽（gap-mangamisc-7）。
+///
+/// 建 detector 要先对模型整份算 sha256 再建 ONNX session，是秒级的异步工作。翻页
+/// 预热、按键翻分镜、制卡裁切会同时要它：没有在途去重时每个调用方各建一份，后
+/// 落地的覆盖先落地的，被覆盖的那份 session 永远不关。这里只让第一个调用方真正
+/// 建，其余等同一个 Future；槽关闭后才落地的 detector 当场关掉，不交给任何人。
+class PanelDetectorSlot {
+  PanelDetector? _current;
+  Future<PanelDetector?>? _pending;
+  bool _closed = false;
+
+  /// 已建好的 detector；还没建 / 建失败 / 已关闭时为 null。
+  PanelDetector? get current => _current;
+
+  /// 已有就直接给；正在建就等同一个；否则用 [create] 建一个。[create] 返回 null
+  /// （模型不可用）不占槽，下次调用会再建；抛错原样传给所有等待者，同样不占槽。
+  /// 槽已关闭时返回 null。
+  Future<PanelDetector?> obtain(Future<PanelDetector?> Function() create) {
+    if (_closed) return Future<PanelDetector?>.value();
+    final PanelDetector? existing = _current;
+    if (existing != null) return Future<PanelDetector?>.value(existing);
+    final Future<PanelDetector?>? pending = _pending;
+    if (pending != null) return pending;
+    final Future<PanelDetector?> created = _create(create);
+    _pending = created;
+    created
+        .whenComplete(() {
+          if (identical(_pending, created)) _pending = null;
+        })
+        .ignore();
+    return created;
+  }
+
+  Future<PanelDetector?> _create(
+    Future<PanelDetector?> Function() create,
+  ) async {
+    final PanelDetector? detector = await create();
+    if (_closed) {
+      await detector?.close();
+      return null;
+    }
+    _current = detector;
+    return detector;
+  }
+
+  /// 关闭槽并释放已建好的 detector；在途的那个落地后由 [obtain] 的建造段关掉。
+  Future<void> close() async {
+    _closed = true;
+    final PanelDetector? detector = _current;
+    _current = null;
+    await detector?.close();
+  }
 }
 
 /// 先按置信度执行贪心 NMS，再将结果分行（原生 `ffc_ocr_order_panels`：夹进 [0, 1]、去零
@@ -363,7 +423,7 @@ class OnnxPanelDetector implements PanelDetector {
         prepare,
         direction,
       );
-      _cache.write(key, computed);
+      if (!computed.retryable) _cache.write(key, computed);
       return computed;
     });
     _serial = result.then<void>((_) {}, onError: (_) {});
@@ -434,6 +494,7 @@ class OnnxPanelDetector implements PanelDetector {
         status: PanelDetectionStatus.failed,
         panels: const <PanelRect>[],
         error: '$error',
+        retryable: true,
       );
     }
   }

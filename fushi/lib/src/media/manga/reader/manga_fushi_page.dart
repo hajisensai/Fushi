@@ -1370,7 +1370,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   /// AI 分镜导航是会话态：检测结果在设备本地 LRU 中复用，游标只跟随当前 spread，
   /// 不写入阅读进度。没有模型/检测器时所有输入自然回落到原有分页。
-  PanelDetector? _panelDetector;
+  /// 检测器的所有权槽：翻页预热 / 按键翻分镜 / 制卡裁切同时要它时只建一份，
+  /// 页面关掉后才落地的那份当场关掉（gap-mangamisc-7）。
+  final PanelDetectorSlot _panelDetectorSlot = PanelDetectorSlot();
   final Map<int, PanelDetectionResult> _panelResults =
       <int, PanelDetectionResult>{};
   final MangaPanelNavigationCursor _panelCursor = MangaPanelNavigationCursor();
@@ -2062,20 +2064,17 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _panelCursor.reset();
     _panelResults.clear();
     // ONNX session 每本书新建一份（模型 9 MB 级），不关就是每开一本书泄漏一份。
-    // dispose 是同步的，这里只能 fire-and-forget，失败不该阻断关书。
-    final PanelDetector? detector = _panelDetector;
-    _panelDetector = null;
-    if (detector != null) {
-      unawaited(
-        detector.close().catchError((Object error, StackTrace stack) {
-          ErrorLogService.instance.log(
-            'MangaFushiPage.panelDetectorClose',
-            error,
-            stack,
-          );
-        }),
-      );
-    }
+    // dispose 是同步的，这里只能 fire-and-forget，失败不该阻断关书。还在建的那份
+    // 落地后由槽自己关掉。
+    unawaited(
+      _panelDetectorSlot.close().catchError((Object error, StackTrace stack) {
+        ErrorLogService.instance.log(
+          'MangaFushiPage.panelDetectorClose',
+          error,
+          stack,
+        );
+      }),
+    );
     readerSessionRemotes.unregister(_sessionRemote);
     _detachControllerLookup();
     _companion.dispose();
@@ -3710,26 +3709,22 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 分镜检测器（模型已下载才有）。**不看**「分镜导航」开关与阅读模式：制卡裁切只看
   /// 模型是否可用，导航与条漫的门控在各自调用方（[_tryPanelTurn] / [_miningPanels]）。
   Future<PanelDetector?> _ensurePanelDetector() async {
-    final PanelDetector? existing = _panelDetector;
+    final PanelDetector? existing = _panelDetectorSlot.current;
     if (existing != null) return existing;
     if (_panelModelUnavailableRevision == mangaPanelModelRevision) return null;
+    final int revision = mangaPanelModelRevision;
     final MangaPanelDetectorFactory? factory = mangaPanelDetectorFactory;
     if (factory == null) {
       _panelStatus = PanelDetectionStatus.unavailable;
       return null;
     }
     try {
-      final PanelDetector? detector = await factory();
-      if (!mounted) {
-        // 页面在建 session 期间被关掉：不能把已创建的 detector 直接丢掉（那就是
-        // 一份永不释放的 ONNX session）。
-        await detector?.close();
-        return null;
-      }
-      _panelDetector = detector;
-      _panelModelUnavailableRevision = detector == null
-          ? mangaPanelModelRevision
-          : null;
+      // 并发调用方共用同一次创建；页面在建 session 期间被关掉时，槽在落地那一刻
+      // 把它关掉（不然就是一份永不释放的 ONNX session）。
+      final PanelDetector? detector = await _panelDetectorSlot.obtain(factory);
+      if (!mounted) return null;
+      // 用发起时的修订号：创建期间下载完模型推进了修订号的话，下一次照常重试。
+      _panelModelUnavailableRevision = detector == null ? revision : null;
       _panelStatus = detector == null
           ? PanelDetectionStatus.unavailable
           : PanelDetectionStatus.ready;
@@ -3774,7 +3769,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         },
       );
       if (mounted && generation == _panelGeneration) {
-        _panelResults[pageIndex] = result;
+        // 抛错得来的失败（读页 / 推理途中异常）不进会话缓存，下次翻分镜重试；
+        // 检测器那一层同样不缓存它（gap-mangamisc-7）。
+        if (!result.retryable) _panelResults[pageIndex] = result;
         _panelStatus = result.status;
       }
       return result;

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:test/test.dart';
@@ -236,7 +237,109 @@ void main() {
         isNull,
       );
     });
+
+    test('抛错得来的失败不进缓存，下一次重试（gap-mangamisc-7）', () async {
+      // 读页 IO 抖动 / 推理途中异常是暂时的：此前它被写进检测器的 LRU，这一页
+      // 在本次会话里再也翻不了分镜。
+      final _CountingSession session = _CountingSession();
+      final OnnxPanelDetector detector = OnnxPanelDetector(session);
+      int prepareCalls = 0;
+      Future<PanelDetectionResult> run() => detector.detectPrepared(
+        pageKey: 'flaky',
+        direction: PanelReadingDirection.rtl,
+        prepare: () async {
+          prepareCalls++;
+          if (prepareCalls == 1) throw const FileSystemLikeError();
+          return prepared();
+        },
+      );
+
+      final PanelDetectionResult first = await run();
+      expect(first.status, PanelDetectionStatus.failed);
+      expect(first.retryable, isTrue);
+      final PanelDetectionResult second = await run();
+      expect(second.status, PanelDetectionStatus.ready);
+      expect(prepareCalls, 2);
+      expect(session.runs, 1);
+    });
+
+    test('解码失败是确定结论，照常缓存', () async {
+      final _CountingSession session = _CountingSession();
+      final OnnxPanelDetector detector = OnnxPanelDetector(session);
+      int prepareCalls = 0;
+      Future<PanelDetectionResult> run() => detector.detectPrepared(
+        pageKey: 'broken',
+        direction: PanelReadingDirection.ltr,
+        prepare: () async {
+          prepareCalls++;
+          return null;
+        },
+      );
+      expect((await run()).retryable, isFalse);
+      await run();
+      expect(prepareCalls, 1);
+    });
   });
+
+  group('PanelDetectorSlot（gap-mangamisc-7）', () {
+    test('并发要检测器只建一份', () async {
+      final PanelDetectorSlot slot = PanelDetectorSlot();
+      final Completer<PanelDetector?> gate = Completer<PanelDetector?>();
+      int creates = 0;
+      Future<PanelDetector?> create() {
+        creates++;
+        return gate.future;
+      }
+
+      final Future<PanelDetector?> prewarm = slot.obtain(create);
+      final Future<PanelDetector?> keyPress = slot.obtain(create);
+      final _CountingSession session = _CountingSession();
+      gate.complete(OnnxPanelDetector(session));
+      final PanelDetector? a = await prewarm;
+      final PanelDetector? b = await keyPress;
+      expect(creates, 1, reason: '第二份 session 会被第一份覆盖且永不关闭');
+      expect(a, isNotNull);
+      expect(b, same(a));
+      expect(await slot.obtain(create), same(a));
+      expect(slot.current, same(a));
+      await slot.close();
+      expect(session.closed, isTrue);
+      expect(slot.current, isNull);
+    });
+
+    test('建造途中关槽：落地的检测器当场关掉，不交给调用方', () async {
+      final PanelDetectorSlot slot = PanelDetectorSlot();
+      final Completer<PanelDetector?> gate = Completer<PanelDetector?>();
+      final Future<PanelDetector?> pending = slot.obtain(() => gate.future);
+      await slot.close();
+      final _CountingSession session = _CountingSession();
+      gate.complete(OnnxPanelDetector(session));
+      expect(await pending, isNull);
+      expect(session.closed, isTrue);
+      expect(slot.current, isNull);
+      expect(await slot.obtain(() async => null), isNull);
+    });
+
+    test('模型不可用 / 建造抛错都不占槽，下次重建', () async {
+      final PanelDetectorSlot slot = PanelDetectorSlot();
+      expect(await slot.obtain(() async => null), isNull);
+      await expectLater(
+        slot.obtain(() async => throw StateError('sha256 failed')),
+        throwsStateError,
+      );
+      final _CountingSession session = _CountingSession();
+      final PanelDetector? built = await slot.obtain(
+        () async => OnnxPanelDetector(session),
+      );
+      expect(built, isNotNull);
+      expect(slot.current, same(built));
+    });
+  });
+}
+
+/// 模拟读页时的暂时性 IO 错误。
+class FileSystemLikeError implements Exception {
+  const FileSystemLikeError();
 }
 
 /// 只记账的假会话：固定回一个 class 0 的检测框。
