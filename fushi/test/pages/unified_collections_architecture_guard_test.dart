@@ -53,11 +53,10 @@ void main() {
       return mergeSrc.substring(start, end);
     }
 
-    // merge() = 主库事务（_mergeMainDatabase）+ srs.db（另一个文件，不能进主库事务）。
+    // merge() = 主库事务（_mergeMainDatabase）。复习数据（新代 srs4.db，另一个文件）不在这里并，由调用方在主库
+    // 事务提交之后另走 mergeSrsIntoLocal（复习换代 G11-4）。
     expect(
-      bodyOf(
-        'Future<void> merge() async {',
-      ).contains('await _mergeMainDatabase();'),
+      mergeSrc.contains('Future<void> merge() => _mergeMainDatabase();'),
       isTrue,
       reason: 'merge() 必须执行主库合并 _mergeMainDatabase()',
     );
