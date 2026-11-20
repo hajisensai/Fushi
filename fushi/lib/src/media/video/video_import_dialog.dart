@@ -637,7 +637,7 @@ class _VideoImportDialogState extends State<VideoImportDialog>
             final String content = await readTextWithEncoding(
               File(subtitlePath),
             );
-            cues = parseSubtitleCues(
+            cues = await parseSubtitleCues(
               content: content,
               format: format,
               bookUid: bookUid,

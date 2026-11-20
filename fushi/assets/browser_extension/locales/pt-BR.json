@@ -487,6 +487,8 @@
   "pc_offset_title": "Ajuste de tempo",
   "pc_style_title": "Estilo das legendas",
   "pc_mask_edit": "Ajustar máscara de legendas",
+  "pc_fullscreen_enter": "Tela cheia",
+  "pc_fullscreen_exit": "Sair da tela cheia",
   "mask_edit_hint": "Arraste para mover; arraste bordas ou cantos para redimensionar",
   "mask_edit_reset": "Redefinir",
   "mask_edit_done": "Concluir",

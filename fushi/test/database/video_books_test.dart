@@ -1,7 +1,37 @@
-import 'package:drift/drift.dart' show Value;
+import 'dart:async';
+
+import 'package:drift/drift.dart'
+    show ApplyInterceptor, QueryExecutor, QueryInterceptor, Value;
 import 'package:drift/native.dart';
 import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
+
+/// 数落到 video_books 上的 SELECT：只读 `book_uid` 的 vs 整行读的。
+class _UidSelectCounter extends QueryInterceptor {
+  int uidSelects = 0;
+  int fullRowSelects = 0;
+
+  void reset() {
+    uidSelects = 0;
+    fullRowSelects = 0;
+  }
+
+  @override
+  Future<List<Map<String, Object?>>> runSelect(
+    QueryExecutor executor,
+    String statement,
+    List<Object?> args,
+  ) {
+    if (statement.contains('FROM "video_books"')) {
+      if (statement.contains('video_path')) {
+        fullRowSelects++;
+      } else {
+        uidSelects++;
+      }
+    }
+    return executor.runSelect(statement, args);
+  }
+}
 
 Future<FushiDatabase> _openDb() async {
   final db = FushiDatabase.forTesting(NativeDatabase.memory());
@@ -123,6 +153,45 @@ void main() {
         expect(after, before, reason: '显式刷新只能发表级通知，不能借机改业务列');
       },
     );
+
+    // gap-scanner-4：首次扫描逐条提交，每条一发表级通知；旧实现每条通知各整表读
+    // 一次 video_books（N 条 = N 次整表读，且结果可能乱序到达）。
+    test('连发的表级通知合并在途重查，且只选 book_uid 一列', () async {
+      final _UidSelectCounter counter = _UidSelectCounter();
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory().interceptWith(counter),
+      );
+      addTearDown(db.close);
+      final List<List<String>> emissions = <List<String>>[];
+      final StreamSubscription<List<String>> sub = db
+          .watchVideoBookUids()
+          .listen(emissions.add);
+      addTearDown(sub.cancel);
+      await pumpEventQueue();
+      expect(emissions.single, isEmpty);
+      counter.reset();
+
+      const int n = 40;
+      await Future.wait(<Future<void>>[
+        for (int i = 0; i < n; i++)
+          db.upsertVideoBook(
+            VideoBooksCompanion.insert(
+              bookUid: 'video/$i',
+              title: 'T$i',
+              videoPath: 'D:/v/$i.mkv',
+            ),
+          ),
+      ]);
+      await pumpEventQueue();
+
+      expect(
+        counter.uidSelects,
+        lessThan(n ~/ 4),
+        reason: '在途期间的通知应合并（旧实现 = 每条通知一次）',
+      );
+      expect(counter.fullRowSelects, 0, reason: 'uid 流不该整行读 video_books');
+      expect(emissions.last, hasLength(n), reason: '最后一次发出的是最终集合');
+    });
   });
   // BUG-3610：库页按「观看进度变了」重读列表——uid 流刻意不管纯列更新，进度要
   // 单独的信号；封面等其余列的回写不能触发（否则自愈写回会让库页重刷成环）。

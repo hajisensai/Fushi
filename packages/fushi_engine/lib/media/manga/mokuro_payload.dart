@@ -257,12 +257,29 @@ String joinMokuroPageRoot(List<String> root, String url) =>
 /// (which has no mokuro field) is assigned from the block's array index.
 /// `img_path` is normalised to a forward-slash relative URL via
 /// [normalizeMangaUrl]. `lines_coords` is preserved when present.
-MokuroPayload parseMokuro(String jsonStr) {
+MokuroPayload parseMokuro(String jsonStr) =>
+    parseMokuroDocument(jsonStr).payload;
+
+/// 一份 `.mokuro` 文档**解析一次**的全部产物：页 / 框模型 [MokuroPayload] 与顶层
+/// 对象 `root`（`title` / `volume` 等元数据从这里读）。顶层不是对象（罕见的数组 /
+/// 标量）时 `root` 为空、`payload` 无页。
+typedef MokuroDocument = ({MokuroPayload payload, Map<String, Object?> root});
+
+/// [parseMokuro] 的完整版：连顶层对象一起带出（manga-29b）。导入要页模型也要顶层
+/// 标题，此前是 `parseMokuro` 之后再对同一份文本 `jsonDecode` 一遍取顶层。
+MokuroDocument parseMokuroDocument(String jsonStr) {
   final Object? decoded = jsonDecode(jsonStr);
   if (decoded is! Map) {
-    return const MokuroPayload(images: <MokuroImage>[]);
+    return (
+      payload: const MokuroPayload(images: <MokuroImage>[]),
+      root: const <String, Object?>{},
+    );
   }
+  final Map<String, Object?> root = decoded.cast<String, Object?>();
+  return (payload: _mokuroPayloadFromRoot(root), root: root);
+}
 
+MokuroPayload _mokuroPayloadFromRoot(Map<String, Object?> decoded) {
   final Object? rawPages = decoded['pages'];
   if (rawPages is! List) {
     return const MokuroPayload(images: <MokuroImage>[]);

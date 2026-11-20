@@ -5,7 +5,13 @@
 /// 对不上就明确提示该升级哪一边，不再把对不上的主机悄悄滤掉。
 ///
 /// 这里只放协商：能力位、V2 端点前缀、请求体里的代号、主机的代与本机能说的线格式的配对规则。V2 的数据路径
-/// （主机出视图、客户端解视图）不在这里；本机此刻仍只说 V1（[kSrsRemoteClientWire]），主机仍只声明 V1。
+/// （主机出视图、客户端解视图）在 srs_remote_store.dart / srs_remote_store_routes.dart（G10-2）。本构建只说 V2
+/// （[kSrsRemoteClientWire]）；主机声明 V2，同时保留 V1 能力位当拒绝桩（D31）。新旧互拒的四个方向：
+/// - 新客户端 → 旧主机：主机只声明 V1 → [SrsRemoteHostCompat.hostNeedsUpgrade]，不发调用；绕过探测直接调也只会碰到
+///   旧主机不认的 V2 前缀（404），客户端把它报成 [SrsRemoteStoreError.upgradeRequired]（srs_remote_store_client.dart）。
+/// - 旧客户端 → 新主机：旧客户端探到 V1 能力位、发 V1 请求，新主机一律 426 [SrsRemoteStoreError.upgradeRequired]；
+///   探测到 V2 的旧客户端（G10-1 之后的构建）判 [SrsRemoteHostCompat.clientNeedsUpgrade]，不发调用。
+/// - V2 请求的代号不对（缺键、类型不对、别的代）：426（[srsRemoteV2GenerationError]），给以后的代留口。
 ///
 /// 不依赖 Flutter：app 与无头服务端共用。
 library;
@@ -38,9 +44,9 @@ enum SrsRemoteWireVersion {
   v2,
 }
 
-/// 本机这个构建的远程复习客户端说的线格式。V2 的数据路径接上之前一直是 [SrsRemoteWireVersion.v1]；接上的那一步把它
-/// 改成 [SrsRemoteWireVersion.v2]，[srsRemoteHostCompat] 的配对随之翻过来，界面不用改。
-const SrsRemoteWireVersion kSrsRemoteClientWire = SrsRemoteWireVersion.v1;
+/// 本机这个构建的远程复习客户端说的线格式：V2（G10-2 接上数据路径）。[srsRemoteHostCompat] 据此把只说 V1 的主机判成
+/// 「主机需要升级」。
+const SrsRemoteWireVersion kSrsRemoteClientWire = SrsRemoteWireVersion.v2;
 
 /// 一台主机按能力位判定出的远程复习代。
 enum SrsRemoteHostGeneration {

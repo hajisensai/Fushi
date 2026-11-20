@@ -31,6 +31,10 @@ enum LibraryCurateStage {
   organizeVideo('organize.video'),
   organizeGames('organize.games'),
 
+  /// 视频摆放纠正（spec §15.2）：挂在某部剧特别篇（第 0 季）下的电影长度文件拆成
+  /// 独立作品，再按电影识别。排在 ③ 之前：拆出来的文件要先成为作品单元。
+  videoStructure('video.structure'),
+
   /// ③ 认身份 + 刮削（视频待确认作品）。
   scrape('scrape'),
 
@@ -92,6 +96,8 @@ class LibraryCuratePendingItem {
 
   final LibraryCurateStage stage;
 
+  /// `structure_pending`（视频放错了位置但不能自动纠正，`reason` 是审计的问题种类
+  /// 或 `pinned_by_user` / `needs_identify` / `no_candidates` / `ambiguous`）、
   /// `scrape_pending`（视频作品没认出来）、`book_scrape_pending` /
   /// `game_scrape_pending`（书 / 游戏没认出来）、`needs_confirmation`（这一步的操作要
   /// 用户确认，自动编排不执行）、`organize_proposal`（合集级建议）等。
@@ -304,7 +310,7 @@ const int kLibraryCurateRunHistoryLimit = 30;
 ///
 /// [suppressed]：整趟撤销时记下的「撤销过、别再自动做回来」的键
 /// （`scrape:<作品 id>`、`scrape.books:book:<bookKey>`、`scrape.games:<游戏 id>`、
-/// `links:<端点>`）。合集移出与连接本身另有跨端的「只做一次」
+/// `links:<端点>`、`structure:<视频 uid>`）。合集移出与连接本身另有跨端的「只做一次」
 /// 语义（成员 `pinned_by_user`、连接否决墓碑），这里只兜本机认领与推断入口。
 ///
 /// [seen]：自动路径查过但留在待确认的视频作品 / 书单元 / 游戏（`scrape:<作品 id>`、

@@ -600,6 +600,95 @@ void main() {
       expect(await c.defaultSubtitleFileName(c.remoteVideos[1].id), isNull);
     });
 
+    test('两集交错下载：先下完的那集收尾仍拿得到自己的默认字幕（不被后开跑的那集覆盖）', () async {
+      Object? episodeVideos(String n) => <Object?>[
+        <Object?, Object?>{
+          'url': 'https://cdn.example/ep$n.mp4',
+          'quality': '1080p',
+          'subtitleTracks': <Object?>[
+            <Object?, Object?>{
+              'url': 'https://cdn.example/ep$n.ja.vtt',
+              'lang': '日本語',
+            },
+          ],
+        },
+      ];
+      runtime.videosByEpisode['/ep/1'] = episodeVideos('1');
+      runtime.videosByEpisode['/ep/2'] = episodeVideos('2');
+      final List<Uri> fetched = <Uri>[];
+      final AnimeSourceVideoClient c = AnimeSourceVideoClient(
+        manager: manager,
+        context: _context,
+        anime: anime,
+        episodes: sortEpisodesForPlayback(episodes),
+        httpClient: MockClient((http.Request request) async {
+          fetched.add(request.url);
+          return http.Response('WEBVTT', 200);
+        }),
+        subtitleLanguageResolver: () => null,
+        downloader: _RecordingDownloader(),
+      );
+      final String first = c.remoteVideos[0].id;
+      final String second = c.remoteVideos[1].id;
+      // 下载中心：第一集在跑时用户「继续」了第二集——第二集取流晚于第一集，第一集
+      // 先下完、才轮到它的收尾（下默认字幕）。
+      await c.downloadRemoteVideo(first, File('${root.path}/ep1.mp4'));
+      await c.downloadRemoteVideo(second, File('${root.path}/ep2.mp4'));
+
+      expect(await c.defaultSubtitleFileName(first), 'episode_1.日本語.vtt');
+      await c.getRemoteVideoSubtitle(first, File('${root.path}/ep1.vtt'));
+      expect(fetched.single, Uri.parse('https://cdn.example/ep1.ja.vtt'));
+      expect(File('${root.path}/ep1.vtt').readAsStringSync(), 'WEBVTT');
+      // 不带 id 的入口（播放用的请求头）仍跟「最近一次」那条。
+      expect(c.streamVariants.single.label, '1080p');
+      expect(await c.defaultSubtitleFileName(second), 'episode_2.日本語.vtt');
+    });
+
+    test('字幕站接了连接却不回数据：默认字幕下载到点抛 TimeoutException（BUG-4911）', () async {
+      final HttpServer server = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      final List<HttpRequest> held = <HttpRequest>[];
+      server.listen(held.add);
+      addTearDown(() => server.close(force: true));
+      runtime.videos = <Object?>[
+        <Object?, Object?>{
+          'url': 'https://cdn.example/ep1.mp4',
+          'quality': '1080p',
+          'subtitleTracks': <Object?>[
+            <Object?, Object?>{
+              'url': 'http://127.0.0.1:${server.port}/ja.vtt',
+              'lang': '日本語',
+            },
+          ],
+        },
+      ];
+      final AnimeSourceVideoClient c = AnimeSourceVideoClient(
+        manager: manager,
+        context: _context,
+        anime: anime,
+        episodes: sortEpisodesForPlayback(episodes),
+        subtitleLanguageResolver: () => null,
+        subtitleFetchTimeout: const Duration(milliseconds: 300),
+      );
+      addTearDown(c.dispose);
+      final String id = c.remoteVideos.first.id;
+      await c.remoteVideoStreamUrls(id);
+      final File dest = File('${root.path}/stall.vtt');
+      await expectLater(
+        c.getRemoteVideoSubtitle(id, dest).timeout(const Duration(seconds: 10)),
+        throwsA(
+          isA<TimeoutException>().having(
+            (TimeoutException e) => e.duration,
+            'duration',
+            const Duration(milliseconds: 300),
+          ),
+        ),
+      );
+      expect(dest.existsSync(), isFalse);
+    });
+
     test('a pinned line is downloaded instead of the default', () async {
       runtime.videos = <Object?>[
         <Object?, Object?>{
@@ -1058,6 +1147,9 @@ const MihonSourceContext _context = MihonSourceContext(
 
 class _VideoRuntime extends MihonBridgeRuntime {
   Object? videos = <Object?>[];
+
+  /// 按集 url 给不同的候选（没登记的集回落 [videos]）。
+  final Map<String, Object?> videosByEpisode = <String, Object?>{};
   String? lastEpisodeUrl;
   int videoListCalls = 0;
   final List<String> fetchedImageUrls = <String>[];
@@ -1074,7 +1166,9 @@ class _VideoRuntime extends MihonBridgeRuntime {
       lastEpisodeUrl =
           (arguments['episodeData']! as Map<String, Object?>)['url']
               ?.toString();
-      return videos;
+      return videosByEpisode.containsKey(lastEpisodeUrl)
+          ? videosByEpisode[lastEpisodeUrl]
+          : videos;
     }
     throw UnimplementedError(method);
   }

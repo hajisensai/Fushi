@@ -12,7 +12,7 @@ library;
 
 import 'package:fushi_core/fushi_core.dart';
 
-import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_action.dart';
+import 'package:fushi/src/media/manga/library/online_manga_unavailable.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/utils/misc/bounded_concurrency.dart';
@@ -58,10 +58,10 @@ class MangaSourceSearchRun {
 
 /// 逐源扇出执行器（宿主/运行时注入，可纯 fake 测试）。
 ///
-/// 不是无 UI 依赖：Cloudflare 判型用的 `mihonCloudflareChallenge` 目前定义在
-/// widget 文件 `mihon_cloudflare_action.dart` 里，它要认的 `OnlineMangaUnavailable`
-/// 所在的 `online_manga_runtime_adapter.dart` 也 import 了登录页。要在无头环境复用
-/// 本类，得先把这两个类型 / 函数挪到无 UI 文件。
+/// 直接 import 的都是非 widget 文件：Cloudflare 判型（`mihonCloudflareChallenge`）
+/// 与它要认的 `OnlineMangaUnavailable` 在 `online_manga_unavailable.dart`，不再经
+/// widget 文件 `mihon_cloudflare_action.dart` / 带登录页依赖的
+/// `online_manga_runtime_adapter.dart` 转一道。
 class MangaGlobalSearchRunner {
   MangaGlobalSearchRunner({required MihonManager? mihonManager})
     : _mihonManager = mihonManager;

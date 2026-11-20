@@ -79,7 +79,7 @@ LocalLibraryHostService _buildSvc({
           },
     cleanupBookOnDisk: deletedRows == null
         ? null
-        : (EpubBookRow row) async => deletedRows.add(row),
+        : (EpubBookRow row, String? _) async => deletedRows.add(row),
   );
 }
 

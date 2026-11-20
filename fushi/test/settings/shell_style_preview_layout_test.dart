@@ -11,6 +11,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/shell_layout_choice_dialog.dart';
 import 'package:fushi/src/settings/shell_style_preview.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart';
+import 'package:fushi/src/utils/components/fushi_cover_block.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -135,6 +136,44 @@ void _expectGridCellsPainted(WidgetTester tester) {
 }
 
 void main() {
+  // 11-20 反馈：拼贴缩略图曾是手搓的「小封面 + 淡 Aa + 4 个纯色块」，不像真实库页。
+  // 现在直接用库页的真实色块组件缩小渲染：首块是加大块，其余是半高 / 规整小卡。
+  testWidgets('拼贴示意用真实色块组件：首块加大、其余小卡', (WidgetTester tester) async {
+    final List<FlutterErrorDetails> errors = await _pumpCollectingErrors(
+      tester,
+      TranslationProvider(
+        child: MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 320,
+              height: 96,
+              child: ShellLayoutPreview(
+                layout: ShellContentLayout.collage,
+                arrangement: ShellBlockArrangement.aligned,
+              ),
+            ),
+          ),
+        ),
+      ),
+      width: 800,
+      height: 600,
+    );
+    expect(
+      errors.map((FlutterErrorDetails e) => e.exceptionAsString()).toList(),
+      isEmpty,
+    );
+    final List<FushiCoverBlock> blocks = tester
+        .widgetList<FushiCoverBlock>(find.byType(FushiCoverBlock))
+        .toList();
+    expect(blocks, isNotEmpty);
+    expect(blocks.first.size, FushiCoverBlockSize.hero);
+    expect(
+      blocks.skip(1).map((FushiCoverBlock b) => b.size),
+      everyElement(isNot(FushiCoverBlockSize.hero)),
+    );
+    expect(find.text('Aa'), findsNothing);
+  });
+
   for (final double width in <double>[360, 800, 1460]) {
     testWidgets('设置页三行在 ${width.toInt()} 宽下不溢出、网格示意非空', (
       WidgetTester tester,

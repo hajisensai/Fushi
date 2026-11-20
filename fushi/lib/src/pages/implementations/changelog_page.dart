@@ -137,7 +137,10 @@ class _ChangelogPageState extends State<ChangelogPage>
         ) {
           return Padding(
             padding: EdgeInsets.only(bottom: tokens.spacing.card),
-            child: _ReleaseCard(release: _releases[index], latest: index == 0),
+            child: ChangelogReleaseCard(
+              release: _releases[index],
+              latest: index == 0,
+            ),
           );
         }),
       ),
@@ -185,8 +188,12 @@ class _ChangelogEmptyState extends StatelessWidget {
 }
 
 /// 单个版本卡片：版本号 + 通道徽标 + 发布日期 + Markdown 正文。
-class _ReleaseCard extends StatelessWidget {
-  const _ReleaseCard({required this.release, this.latest = false});
+class ChangelogReleaseCard extends StatelessWidget {
+  const ChangelogReleaseCard({
+    super.key,
+    required this.release,
+    this.latest = false,
+  });
 
   final Map<String, dynamic> release;
 

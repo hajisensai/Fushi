@@ -14,6 +14,7 @@ import 'package:fushi/src/media/video/metadata/video_source_scrape_candidate_til
 import 'package:fushi/src/media/video/metadata/video_source_scrape_run_detail_dialog.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_error_text.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
@@ -807,7 +808,8 @@ class _VideoSourceScrapeTaskPanelState
       unawaited(_reloadPendingWorks());
     } on Object catch (error) {
       if (!mounted) return;
-      setState(() => _pendingNotice = error.toString());
+      // 清理期间被刮削门挡回的是类型化错误，出本地化文案而不是 `Bad state: …`。
+      setState(() => _pendingNotice = videoScrapeErrorText(error));
     } finally {
       if (mounted) {
         setState(() => _bindingStableKeys.remove(entry.work.stableKey));

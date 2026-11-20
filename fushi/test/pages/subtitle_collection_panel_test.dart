@@ -62,6 +62,21 @@ class _PackCand extends VideoSubtitleCandidate {
       );
 }
 
+/// 整季 RAR 包候选（本仓解不开）。
+class _RarCand extends VideoSubtitleCandidate {
+  _RarCand(String name, {required String source})
+    : super(
+        providerId: 'fake',
+        remoteId: '$source:$name',
+        fileName: name,
+        language: 'ja',
+        providerPriority: 1,
+        collectionId: source,
+        collectionLabel: source,
+        archiveFormat: SubtitleArchiveFormat.rar,
+      );
+}
+
 typedef _Search =
     Future<ProviderBatchResult<VideoSubtitleCandidate>> Function(
       VideoSubtitleSearchRequest request,
@@ -711,6 +726,47 @@ void main() {
           selected: source,
           searching: false,
           running: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('canRunSubtitleCollectionBatch：只有能解开的整季包、没有单集文件的来源也能批量下载', () {
+      // 成员行对这种来源预览「将从整季包中拆出」，批量（runSubtitleBatch）也确实会拆；
+      // 修复前按钮只看单集索引，这里是灰的。
+      final SubtitleCollectionSource packOnly = groupSubtitleCollectionSources(
+        <VideoSubtitleCandidate>[_PackCand('season.zip', source: 'P')],
+      ).single;
+      expect(packOnly.index.isEmpty, isTrue);
+      expect(packOnly.unpackablePackFormat, SubtitleArchiveFormat.zip);
+      expect(
+        canRunSubtitleCollectionBatch(
+          selected: packOnly,
+          searching: false,
+          running: false,
+        ),
+        isTrue,
+      );
+      expect(
+        canRunSubtitleCollectionBatch(
+          selected: packOnly,
+          searching: false,
+          running: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('canRunSubtitleCollectionBatch：只有解不开的整季包（RAR）仍禁用', () {
+      final SubtitleCollectionSource rarOnly = groupSubtitleCollectionSources(
+        <VideoSubtitleCandidate>[_RarCand('season.rar', source: 'R')],
+      ).single;
+      expect(rarOnly.unsupportedPackFormat, SubtitleArchiveFormat.rar);
+      expect(
+        canRunSubtitleCollectionBatch(
+          selected: rarOnly,
+          searching: false,
+          running: false,
         ),
         isFalse,
       );

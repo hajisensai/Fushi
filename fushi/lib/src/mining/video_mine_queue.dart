@@ -36,7 +36,8 @@ class VideoMineQueue {
 
   /// 把引擎备好的一张卡暂存起来（`ImmersionMiningRequest.stageNote` 里调用）。
   ///
-  /// **必须在返回前拷走** [context] 里的媒体：引擎的临时文件名是固定的，下一张卡会覆盖。
+  /// **必须在返回前拷走** [context] 里的媒体：引擎把每张卡的媒体抽在它私有的临时目录里，
+  /// 本方法一返回那个目录就整个删掉（video-30）。
   /// 返回新行 id。
   Future<int> stage({
     required String bookUid,
@@ -88,13 +89,7 @@ class VideoMineQueue {
       _store.pending(bookUid);
 
   /// 还留在列表里的张数（待写入 + 写入失败），角标用。只数不读行。
-  ///
-  /// 播放页一打开就会问这个数，所以旧版本留下的完成行也在这里收一次
-  /// （[WebMineQueueStore.sweepLegacyDone]，每个库只做一遍）。
-  Future<int> openCount(String bookUid) async {
-    await _store.sweepLegacyDone();
-    return _store.openCount(bookUid);
-  }
+  Future<int> openCount(String bookUid) => _store.openCount(bookUid);
 
   /// 写入失败的暂存卡（Anki 没开 / 重复 等），供列表展示与重试。
   Future<List<WebMineQueueRow>> failed(String bookUid) async {

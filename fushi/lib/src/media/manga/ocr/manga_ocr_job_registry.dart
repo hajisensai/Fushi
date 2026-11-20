@@ -29,6 +29,8 @@ import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart'
     show isSystemOcrModelUnavailableFailure;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/utils/misc/atomic_text_file.dart'
+    show readAtomicallyWrittenTextFile;
 import 'package:fushi_engine/ocr/manga_ocr_service_impl.dart'
     show ocrIntraOpNumThreads, resolveOcrPlatform;
 
@@ -812,8 +814,10 @@ class MangaOcrJobRegistry {
     if (resultPath == null) {
       throw StateError('OCR finished without a result path');
     }
-    // 整卷产物几 MB：读进来以后的解析放后台 isolate，不占 UI isolate。
-    final String source = await File(resultPath).readAsString();
+    // 整卷产物几 MB：读进来以后的解析放后台 isolate，不占 UI isolate。产物由
+    // writeTextFileAtomically 写，读也走配套的读法：Windows 上开着读会让同一刻
+    // 往这个文件上的替换以「拒绝访问」失败（BUG-4801）。
+    final String source = await readAtomicallyWrittenTextFile(File(resultPath));
     final MokuroPayload local = event.external
         ? await parseMokuroOffUi(source)
         : await parseMangaJsonOffUi(source);

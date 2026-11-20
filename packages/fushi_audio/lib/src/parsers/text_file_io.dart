@@ -219,8 +219,8 @@ typedef PlatformCharsetDecoder = Future<String?> Function(Uint8List bytes);
 ///
 /// 插件只有 android / ios 实现（1.0.2 的 `flutter.plugin.platforms` 仅这两项），
 /// 覆盖面比 [decodeLegacyText] 宽（韩文 EUC-KR、Windows-125x 等），所以移动端
-/// 让它先判；桌面三端装了也恒返回 null，无头服务端 / 纯 Dart 测试不装配——这些
-/// 环境直接落到 [decodeLegacyText]。
+/// 让它先判；桌面三端、无头服务端、纯 Dart 测试都不装配——这些环境直接落到
+/// [decodeLegacyText]。
 PlatformCharsetDecoder? platformCharsetDecoder;
 
 /// 调用已装配的平台字符集检测解码 [bytes]；未装配或本平台不可用时返回 null。

@@ -641,13 +641,14 @@
   border-bottom-right-radius: var(--md-sys-shape-corner-large-increased);
 }
 
-/* 状态层：悬停 on-surface 8%、按下 10%（M3 state layer，叠在行的实色上）。 */
+/* 状态层：悬停 on-surface 8%、按下 10%（M3 state layer）：用一层半透明渐变叠在行原有的实色上，
+   不在 oklch 里把两种不透明色相混（暗色下会混出偏红的色相），也不绑死行底是哪一级色阶。 */
 :root:not([data-style="glass"]) :is(.setting-list > .setting-row:not(.setting-row-static), .hp-group > .hp-toggle):hover {
-  background-color: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), var(--md-sys-color-surface-container-lowest));
+  background-image: linear-gradient(color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), transparent), color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), transparent));
 }
 
 :root:not([data-style="glass"]) :is(.setting-list > .setting-row:not(.setting-row-static), .hp-group > .hp-toggle):active {
-  background-color: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-pressed-opacity), var(--md-sys-color-surface-container-lowest));
+  background-image: linear-gradient(color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-pressed-opacity), transparent), color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-pressed-opacity), transparent));
 }
 
 :root:not([data-style="glass"]) .setting-row:hover .setting-copy strong { color: var(--md-sys-color-on-surface); }
@@ -1012,7 +1013,7 @@
   transition: background-color var(--fushi-dur-short) var(--fushi-ease), border-radius var(--fushi-dur-medium) var(--fushi-ease-spatial);
 }
 
-:root:not([data-style="glass"]) .chip:hover { background: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), var(--md-sys-color-surface-container-high)); }
+:root:not([data-style="glass"]) .chip:hover { background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), var(--md-sys-color-surface-container-high)); }
 
 :root:not([data-style="glass"]) .chip:active { border-radius: var(--md-sys-shape-corner-medium); }
 
@@ -1283,7 +1284,7 @@
 
 :root:not([data-style="glass"]) .fgs-trigger:hover {
   border-color: transparent;
-  background-color: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), var(--md-sys-color-surface-container-highest));
+  background-color: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), var(--md-sys-color-surface-container-highest));
 }
 
 :root:not([data-style="glass"]) .fgs-trigger:focus-visible,
@@ -1349,6 +1350,1446 @@
   backdrop-filter: none;
 }
 
+/* ══ 通用组件库（扩展页面与 fushi_server WebUI 共用）══
+   上面各段是扩展三页长出来的控件形态；这一段把「结构」也收进共享层，并补齐扩展页暂时没用到、
+   WebUI 要用的组件。WebUI 经 scripts/sync-mirrors.mjs 生成的 web_kit.g.dart 原样加载本文件。
+   约定：
+   · 扩展页已有同名 class 的组件（设置行 / 按钮 / 图标按钮），这里的结构规则包在 :where() 里、
+     特异性为 0——扩展页面 CSS 的同名规则照旧压过它，扩展外观不变；页面没写的（WebUI）就用这里的。
+   · 新组件只用 token（--md-sys-* / --fushi-shape-* / --fushi-mat-*），两套风格自动跟随：M3E 下
+     --fushi-mat-* 是实色 / 无描边 / 无模糊，液态玻璃下是半透明 + 模糊 + 高光。
+   · 选中态一律 secondary-container + on-secondary-container，悬停 / 按下叠 on- 色状态层，
+     形状按压形变走 --fushi-ease-spatial 弹簧。 */
+
+/* ── 排版辅助 ── */
+:where(:root) :where(.kit-title-large) {
+  margin: 0;
+  font-size: var(--md-sys-typescale-title-large-size);
+  line-height: var(--md-sys-typescale-title-large-line-height);
+  font-weight: var(--md-sys-typescale-weight-regular);
+}
+
+:where(:root) :where(.kit-title-medium) {
+  margin: 0;
+  font-size: var(--md-sys-typescale-title-medium-size);
+  line-height: var(--md-sys-typescale-title-medium-line-height);
+  font-weight: var(--md-sys-typescale-weight-medium);
+}
+
+:where(:root) :where(.kit-supporting) {
+  margin: 4px 0 0;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--md-sys-typescale-body-medium-size);
+  line-height: var(--md-sys-typescale-body-medium-line-height);
+  overflow-wrap: anywhere;
+}
+
+/* 节标题（列表 / 卡片组上方的小标题）：title-small、主色。 */
+:where(:root) :where(.kit-section-title) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  margin: 12px 4px 4px;
+  color: var(--md-sys-color-primary);
+  font-size: var(--md-sys-typescale-title-small-size);
+  line-height: var(--md-sys-typescale-title-small-line-height);
+  font-weight: var(--md-sys-typescale-weight-medium);
+}
+
+:where(:root) :where(.kit-section-title) > :where(.kit-spacer) { flex: 1; }
+
+/* ── 设置行 / 列表行（.setting-list > .setting-row）：扩展设置页的同名结构，0 特异性默认值。
+   行内：可选的前导图标块 .list-lead、文案 .setting-copy（strong 标题 + small 说明）、尾部控件。 ── */
+:where(:root) :where(.setting-list) {
+  display: grid;
+  gap: 2px;
+}
+
+:where(:root) :where(.setting-list:empty) { display: none; }
+
+:where(:root) :where(.setting-row) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  min-height: 64px;
+  padding: 12px 20px;
+}
+
+/* M3E：每行一块实色（分段列表，形状见上文「① 分段列表」，这里是 0 特异性的同值默认）。 */
+:where(:root:not([data-style="glass"])) :where(.setting-list > .setting-row) {
+  border-radius: var(--fushi-shape-segment);
+  background-color: var(--md-sys-color-surface-container-lowest);
+}
+
+:where(:root:not([data-style="glass"])) :where(.setting-list > .setting-row:first-child) {
+  border-top-left-radius: var(--md-sys-shape-corner-large-increased);
+  border-top-right-radius: var(--md-sys-shape-corner-large-increased);
+}
+
+:where(:root:not([data-style="glass"])) :where(.setting-list > .setting-row:last-child) {
+  border-bottom-left-radius: var(--md-sys-shape-corner-large-increased);
+  border-bottom-right-radius: var(--md-sys-shape-corner-large-increased);
+}
+
+/* 玻璃：扩展页的设置列表本来就放在玻璃卡片里；不在卡片里的列表加 .is-surface，
+   整组是一块玻璃、行间细线分隔。 */
+:root[data-style="glass"] :where(.setting-list.is-surface) {
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--fushi-mat-edge);
+  border-radius: var(--fushi-shape-card);
+  background-color: var(--fushi-mat-fill);
+  box-shadow: inset 0 1px 0 var(--fushi-mat-highlight), var(--fushi-mat-shadow);
+  -webkit-backdrop-filter: var(--fushi-mat-filter);
+  backdrop-filter: var(--fushi-mat-filter);
+}
+
+:root[data-style="glass"] :where(.setting-list.is-surface > .setting-row + .setting-row) {
+  border-top: 1px solid color-mix(in oklch, var(--fushi-outline) 40%, transparent);
+}
+
+:where(:root) :where(label.setting-row, .setting-row.is-clickable) { cursor: pointer; }
+
+:where(:root) :where(.setting-list.is-surface) :where(.setting-row.is-clickable, label.setting-row) {
+  transition: background-color var(--fushi-dur-short) var(--fushi-ease);
+}
+
+:where(:root:not([data-style="glass"])) :where(.setting-list.is-surface) :where(.setting-row.is-clickable:hover, label.setting-row:hover, .setting-row.is-selected) {
+  background-color: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), var(--md-sys-color-surface-container-lowest));
+}
+
+:root[data-style="glass"] :where(.setting-list.is-surface) :where(.setting-row.is-clickable:hover, label.setting-row:hover, .setting-row.is-selected) {
+  background-color: color-mix(in oklch, var(--fushi-text) 6%, transparent);
+}
+
+:where(:root) :where(.setting-copy) {
+  display: grid;
+  gap: 2px;
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+:where(:root) :where(.setting-copy > strong) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: var(--md-sys-typescale-body-large-size);
+  line-height: var(--md-sys-typescale-body-large-line-height);
+  font-weight: var(--md-sys-typescale-weight-medium);
+  overflow-wrap: anywhere;
+}
+
+:where(:root) :where(.setting-copy > small) {
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--md-sys-typescale-body-medium-size);
+  line-height: var(--md-sys-typescale-body-medium-line-height);
+  overflow-wrap: anywhere;
+}
+
+:where(:root) :where(.setting-copy > small.is-error) { color: var(--md-sys-color-error); }
+
+/* 尾部控件区：开关 / 按钮 / 标签；窄行放不下时整体换到文案下方。 */
+:where(:root) :where(.setting-trail) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* 设置行里的输入 / 下拉占一块固定宽度。 */
+:where(:root) :where(.setting-trail.is-field) {
+  flex: 0 1 320px;
+  justify-content: stretch;
+}
+
+:where(:root) :where(.setting-trail.is-field) > :where(*) { flex: 1 1 auto; }
+
+/* 前导图标块：40 方、corner-medium、surface-container-highest；语义色调用 data-tone。 */
+:where(:root) :where(.list-lead) {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--md-sys-shape-corner-medium);
+  color: var(--md-sys-color-on-surface-variant);
+  background: var(--md-sys-color-surface-container-highest);
+}
+
+:where(:root) :where(.list-lead[data-tone="warn"]) {
+  color: var(--md-sys-color-on-surface);
+  background: color-mix(in oklch, var(--fushi-warn) 32%, var(--md-sys-color-surface-container-lowest));
+}
+
+:where(:root) :where(.list-lead[data-tone="error"]) {
+  color: var(--md-sys-color-on-error-container);
+  background: var(--md-sys-color-error-container);
+}
+
+:where(:root) :where(.list-lead[data-tone="success"]) {
+  color: var(--md-sys-color-on-tertiary-container);
+  background: var(--md-sys-color-tertiary-container);
+}
+
+:where(:root) :where(.list-lead[data-tone="primary"]) {
+  color: var(--md-sys-color-on-primary-container);
+  background: var(--md-sys-color-primary-container);
+}
+
+/* ── 卡片：一块实色色调面（M3E surface-container-low / 玻璃材质），extra-large 圆角。 ── */
+:where(:root) :where(.card) {
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--fushi-mat-edge);
+  border-radius: var(--fushi-shape-card);
+  background-color: var(--fushi-mat-fill);
+  -webkit-backdrop-filter: var(--fushi-mat-filter);
+  backdrop-filter: var(--fushi-mat-filter);
+}
+
+:root:not([data-style="glass"]) :where(.card) { background-color: var(--md-sys-color-surface-container-low); }
+
+:where(:root) :where(.card.is-tonal) {
+  border-color: transparent;
+  color: var(--md-sys-color-on-secondary-container);
+  background-color: var(--md-sys-color-secondary-container);
+}
+
+:where(:root) :where(.card.is-primary) {
+  border-color: transparent;
+  color: var(--md-sys-color-on-primary-container);
+  background-color: var(--md-sys-color-primary-container);
+}
+
+:where(:root) :where(.card.is-tertiary) {
+  border-color: transparent;
+  color: var(--md-sys-color-on-tertiary-container);
+  background-color: var(--md-sys-color-tertiary-container);
+}
+
+:where(:root) :where(.card.is-tonal, .card.is-primary, .card.is-tertiary) :where(.kit-supporting) {
+  color: color-mix(in oklch, currentColor 80%, transparent);
+}
+
+/* 卡片头：标题 + 说明在左，动作在右，放不下就换行。 */
+:where(:root) :where(.card-head) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+}
+
+:where(:root) :where(.card-head) > :where(.card-head-copy) {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+/* 卡片里的内嵌块（次级表面）。 */
+:where(:root) :where(.card-inset) {
+  margin: 12px 0;
+  padding: 16px;
+  border-radius: var(--md-sys-shape-corner-large);
+  background-color: var(--fushi-mat-fill-strong);
+}
+
+:root:not([data-style="glass"]) :where(.card-inset) { background-color: var(--md-sys-color-surface-container); }
+
+/* ── 表单栅格与字段：标签在上（label-large / on-surface-variant），控件在下。 ── */
+:where(:root) :where(.form-grid) {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+:where(:root) :where(.form-grid > .is-wide) { grid-column: 1 / -1; }
+
+:where(:root) :where(.field) {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--md-sys-typescale-label-large-size);
+  line-height: var(--md-sys-typescale-label-large-line-height);
+  font-weight: var(--md-sys-typescale-weight-medium);
+}
+
+:where(:root) :where(.field) > :where(input, textarea, select, .fgs, .segmented, .dropzone) { width: 100%; }
+
+:where(:root) :where(.field-hint) {
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--md-sys-typescale-body-small-size);
+  line-height: var(--md-sys-typescale-body-small-line-height);
+  font-weight: var(--md-sys-typescale-weight-regular);
+}
+
+/* 表单 / 卡片底部的动作排。 */
+:where(:root) :where(.action-row) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+:where(:root) :where(.action-row) > :where(.kit-spacer) { flex: 1; }
+
+:where(:root) :where(.action-row) > :where(.field-hint) { flex: 1 1 220px; }
+
+/* 输入框高度与按钮同档（56 是 M3 text field，WebUI 表单用；扩展页面有自己的 38 / 32 档）。 */
+:where(:root) :where(.form-grid, .field, .setting-trail) :where(
+  input:not([type]), input[type="text"], input[type="search"], input[type="number"],
+  input[type="password"], input[type="url"], input[type="email"], input[type="tel"]
+) {
+  height: 48px;
+}
+
+/* 表单里的下拉与输入框同高同字（正文 body-large 常规字重）；只认表单类，扩展设置行里的紧凑下拉不变。 */
+:root :is(.field, .setting-trail.is-field) .fgs-trigger {
+  min-height: 48px;
+  font-size: var(--md-sys-typescale-body-large-size);
+  font-weight: var(--md-sys-typescale-weight-regular, 400);
+}
+
+/* ── 按钮：filled .primary-button / tonal .text-button / outlined .outlined-button /
+   text .plain-button；危险操作加 .danger-button。结构在这里（0 特异性），M3E 颜色与形变见上文
+   「② 按钮」，outlined / text / filled-danger 两套风格都在下面。图标用 .msr-slot / svg.msr，18 号。 ── */
+:where(:root) :where(.primary-button, .text-button, .outlined-button, .plain-button) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 24px;
+  border: 0;
+  border-radius: var(--fushi-shape-control);
+  font: inherit;
+  font-size: var(--md-sys-typescale-label-large-size);
+  line-height: var(--md-sys-typescale-label-large-line-height);
+  font-weight: var(--md-sys-typescale-weight-emphasized);
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color var(--fushi-dur-short) var(--fushi-ease),
+    box-shadow var(--fushi-dur-short) var(--fushi-ease),
+    border-radius var(--fushi-dur-medium) var(--fushi-ease-spatial),
+    transform var(--fushi-dur-medium) var(--fushi-ease-spatial);
+}
+
+:where(:root) :where(.primary-button, .text-button, .outlined-button, .plain-button) :where(svg.msr, .msr-slot) {
+  width: 18px;
+  height: 18px;
+  margin-left: -6px;
+}
+
+:where(:root) :where(.primary-button) {
+  color: var(--md-sys-color-on-primary);
+  background: var(--md-sys-color-primary);
+}
+
+:where(:root) :where(.text-button) {
+  color: var(--md-sys-color-on-secondary-container);
+  background: var(--md-sys-color-secondary-container);
+}
+
+:where(:root) :where(.outlined-button) {
+  border: 1px solid var(--md-sys-color-outline-variant);
+  color: var(--md-sys-color-on-surface-variant);
+  background: transparent;
+}
+
+:where(:root) :where(.plain-button) {
+  padding: 0 12px;
+  color: var(--md-sys-color-primary);
+  background: transparent;
+}
+
+:where(:root) :where(.plain-button) :where(svg.msr, .msr-slot) { margin-left: 0; }
+
+:where(:root) :where(.outlined-button:hover, .plain-button:hover) {
+  background: color-mix(in oklch, currentColor var(--md-sys-state-hover-opacity), transparent);
+}
+
+:where(:root) :where(.primary-button.danger-button) {
+  color: var(--md-sys-color-on-error);
+  background: var(--md-sys-color-error);
+}
+
+:where(:root) :where(.primary-button.danger-button:hover) {
+  background: color-mix(in oklch, var(--md-sys-color-on-error) var(--md-sys-state-hover-opacity), var(--md-sys-color-error));
+}
+
+:where(:root) :where(.outlined-button.danger-button, .plain-button.danger-button) { color: var(--md-sys-color-error); }
+
+:where(:root) :where(.primary-button, .text-button, .outlined-button, .plain-button):where(:active:not(:disabled)) {
+  border-radius: var(--fushi-shape-control-pressed);
+  transform: scale(0.97);
+}
+
+:where(:root) :where(.primary-button, .text-button, .outlined-button, .plain-button):where(:focus-visible) {
+  outline: 3px solid color-mix(in oklch, var(--md-sys-color-primary) 70%, transparent);
+  outline-offset: 2px;
+}
+
+:where(:root) :where(.primary-button, .text-button, .outlined-button, .plain-button):where(:disabled) {
+  color: color-mix(in oklch, var(--md-sys-color-on-surface) 38%, transparent);
+  background: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-disabled-container-opacity), transparent);
+  border-color: transparent;
+  box-shadow: none;
+  transform: none;
+  cursor: default;
+}
+
+:where(:root) :where(.plain-button:disabled) { background: transparent; }
+
+/* 玻璃：tonal / outlined 是一枚薄材质胶囊。 */
+:root[data-style="glass"] :where(.text-button, .outlined-button) {
+  border: 1px solid var(--fushi-mat-edge);
+  background-color: var(--fushi-mat-fill-strong);
+  box-shadow: inset 0 1px 0 var(--fushi-mat-highlight);
+  -webkit-backdrop-filter: var(--fushi-mat-filter);
+  backdrop-filter: var(--fushi-mat-filter);
+}
+
+:root[data-style="glass"] :where(.text-button) { color: var(--fushi-primary-strong); }
+
+/* ── 图标按钮：40 圆，悬停状态层，按下圆 → 圆角方。.is-filled = filled icon button。 ── */
+:where(:root) :where(.icon-button) {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--md-sys-shape-corner-full);
+  color: var(--md-sys-color-on-surface-variant);
+  background: transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color var(--fushi-dur-short) var(--fushi-ease),
+    border-radius var(--fushi-dur-medium) var(--fushi-ease-spatial),
+    transform var(--fushi-dur-medium) var(--fushi-ease-spatial);
+}
+
+:where(:root) :where(.icon-button:hover) {
+  color: var(--md-sys-color-on-surface);
+  background: color-mix(in oklch, var(--md-sys-color-on-surface-variant) var(--md-sys-state-hover-opacity), transparent);
+}
+
+:where(:root) :where(.icon-button:active:not(:disabled)) {
+  border-radius: var(--md-sys-shape-corner-small);
+  transform: scale(0.92);
+}
+
+:where(:root) :where(.icon-button:disabled) {
+  opacity: var(--md-sys-state-disabled-content-opacity);
+  cursor: default;
+}
+
+:where(:root) :where(.icon-button.is-small) {
+  width: 32px;
+  height: 32px;
+}
+
+:where(:root) :where(.icon-button.is-filled) {
+  color: var(--md-sys-color-on-secondary-container);
+  background: var(--md-sys-color-secondary-container);
+}
+
+/* 破坏性操作（删除 / 清理）的图标按钮：error 色图标，悬停层跟着 error。 */
+:where(:root) :where(.icon-button.danger-button) { color: var(--md-sys-color-error); }
+:where(:root) :where(.icon-button.danger-button:hover) { background-color: color-mix(in oklch, var(--md-sys-color-error) 8%, transparent); }
+
+/* ── 分段按钮的单选表单形态：.segmented > label > input[type=radio] + span（原生单选做真相源，
+   键盘左右键切换由浏览器给）。形态与 .segmented > button 同一份（上文 M3E 段）；玻璃形态也在这里。 ── */
+:where(:root) :where(.segmented) {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  max-width: 100%;
+}
+
+:where(:root) :where(.segmented > label) {
+  position: relative;
+  display: inline-flex;
+}
+
+:where(:root) :where(.segmented > label > input) {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+:where(:root) :where(.segmented > label > span, .segmented > button) {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-small);
+  color: var(--md-sys-color-on-surface);
+  background: transparent;
+  font: inherit;
+  font-size: var(--md-sys-typescale-label-large-size);
+  font-weight: var(--md-sys-typescale-weight-medium);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--fushi-dur-short) var(--fushi-ease), border-radius var(--fushi-dur-medium) var(--fushi-ease-spatial);
+}
+
+:where(:root) :where(.segmented > :first-child > span, .segmented > button:first-child) {
+  border-top-left-radius: var(--md-sys-shape-corner-full);
+  border-bottom-left-radius: var(--md-sys-shape-corner-full);
+}
+
+:where(:root) :where(.segmented > :last-child > span, .segmented > button:last-child) {
+  border-top-right-radius: var(--md-sys-shape-corner-full);
+  border-bottom-right-radius: var(--md-sys-shape-corner-full);
+}
+
+:where(:root) :where(.segmented > label:hover > span) {
+  background: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), transparent);
+}
+
+:where(:root) :where(.segmented > label:active > span) { border-radius: var(--fushi-shape-control-pressed); }
+
+:where(:root) :where(.segmented > label > input:focus-visible + span) {
+  outline: 3px solid color-mix(in oklch, var(--md-sys-color-primary) 70%, transparent);
+  outline-offset: 2px;
+}
+
+:where(:root) :where(.segmented > label > input:checked + span) {
+  border-color: transparent;
+  color: var(--md-sys-color-on-secondary-container);
+  background: var(--md-sys-color-secondary-container);
+  font-weight: var(--md-sys-typescale-weight-emphasized);
+}
+
+:where(:root) :where(.segmented > label > input:checked + span)::before {
+  content: "";
+  flex: none;
+  width: 18px;
+  height: 18px;
+  background-color: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='m378-332 363-363q9-9 21.5-9t21.5 9q9 9 9 21.5t-9 21.5L399-267q-9 9-21 9t-21-9L175-449q-9-9-8.5-21.5T176-492q9-9 21.5-9t21.5 9l159 160Z'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='m378-332 363-363q9-9 21.5-9t21.5 9q9 9 9 21.5t-9 21.5L399-267q-9 9-21 9t-21-9L175-449q-9-9-8.5-21.5T176-492q9-9 21.5-9t21.5 9l159 160Z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+/* 选中段已有 check，段内自带的图标让位（M3 规格：选中段只显示 check）。 */
+:where(:root) :where(.segmented > label > input:checked + span) :where(svg.msr, .msr-slot) { display: none; }
+
+:where(:root) :where(.segmented > label > span) :where(svg.msr, .msr-slot) {
+  width: 18px;
+  height: 18px;
+}
+
+:root[data-style="glass"] :where(.segmented > label > span, .segmented > button) {
+  border-color: var(--fushi-mat-edge);
+  background-color: var(--fushi-mat-fill-subtle);
+}
+
+/* ── chip：assist / 标签用 .chip（上文 M3E 段）；筛选形态 label.chip > input[type=checkbox] + span，
+   选中时 secondary-container + 前置 check。状态标签用 .status-chip[data-tone]（不可点）。 ── */
+:where(:root) :where(.chip-set) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+:where(:root) :where(label.chip) {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 16px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-small);
+  color: var(--md-sys-color-on-surface-variant);
+  background: transparent;
+  font-size: var(--md-sys-typescale-label-large-size);
+  font-weight: var(--md-sys-typescale-weight-medium);
+  cursor: pointer;
+  user-select: none;
+  transition: background-color var(--fushi-dur-short) var(--fushi-ease), border-radius var(--fushi-dur-medium) var(--fushi-ease-spatial);
+}
+
+:where(:root) :where(label.chip > input) {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+:where(:root) :where(label.chip:hover) {
+  background: color-mix(in oklch, var(--md-sys-color-on-surface-variant) var(--md-sys-state-hover-opacity), transparent);
+}
+
+:where(:root) :where(label.chip:active) { border-radius: var(--md-sys-shape-corner-medium); }
+
+:where(:root) :where(label.chip:has(input:focus-visible)) {
+  outline: 3px solid color-mix(in oklch, var(--md-sys-color-primary) 70%, transparent);
+  outline-offset: 2px;
+}
+
+:where(:root) :where(label.chip:has(input:checked)) {
+  padding-left: 8px;
+  border-color: transparent;
+  color: var(--md-sys-color-on-secondary-container);
+  background: var(--md-sys-color-secondary-container);
+}
+
+:where(:root) :where(label.chip:has(input:checked))::before {
+  content: "";
+  flex: none;
+  width: 18px;
+  height: 18px;
+  background-color: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='m378-332 363-363q9-9 21.5-9t21.5 9q9 9 9 21.5t-9 21.5L399-267q-9 9-21 9t-21-9L175-449q-9-9-8.5-21.5T176-492q9-9 21.5-9t21.5 9l159 160Z'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='m378-332 363-363q9-9 21.5-9t21.5 9q9 9 9 21.5t-9 21.5L399-267q-9 9-21 9t-21-9L175-449q-9-9-8.5-21.5T176-492q9-9 21.5-9t21.5 9l159 160Z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+:where(:root) :where(.status-chip) {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  min-height: 24px;
+  padding: 0 10px;
+  overflow: hidden;
+  border-radius: var(--md-sys-shape-corner-small);
+  color: var(--md-sys-color-on-surface-variant);
+  background: var(--md-sys-color-surface-container-highest);
+  font-size: var(--md-sys-typescale-label-medium-size);
+  line-height: var(--md-sys-typescale-label-medium-line-height);
+  font-weight: var(--md-sys-typescale-weight-medium);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
+:where(:root) :where(.status-chip[data-tone="success"]) {
+  color: var(--md-sys-color-on-tertiary-container);
+  background: var(--md-sys-color-tertiary-container);
+}
+
+:where(:root) :where(.status-chip[data-tone="error"]) {
+  color: var(--md-sys-color-on-error-container);
+  background: var(--md-sys-color-error-container);
+}
+
+:where(:root) :where(.status-chip[data-tone="warn"]) {
+  color: var(--md-sys-color-on-surface);
+  background: color-mix(in oklch, var(--fushi-warn) 34%, var(--md-sys-color-surface-container-lowest));
+}
+
+:where(:root) :where(.status-chip[data-tone="info"]) {
+  color: var(--md-sys-color-on-secondary-container);
+  background: var(--md-sys-color-secondary-container);
+}
+
+:where(:root) :where(.status-chip[data-tone="primary"]) {
+  color: var(--md-sys-color-on-primary-container);
+  background: var(--md-sys-color-primary-container);
+}
+
+/* 状态 chip 文字太长时不再截成一条细缝：允许换行显示全文。 */
+:where(:root) :where(.status-chip.is-wrap) {
+  white-space: normal;
+  padding-block: 2px;
+  overflow-wrap: anywhere;
+}
+
+/* ── 徽标：小红点 / 计数。 ── */
+:where(:root) :where(.badge) {
+  display: inline-grid;
+  place-items: center;
+  min-width: 6px;
+  height: 6px;
+  border-radius: var(--md-sys-shape-corner-full);
+  background: var(--md-sys-color-error);
+}
+
+:where(:root) :where(.badge.has-count) {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  color: var(--md-sys-color-on-error);
+  font-size: var(--md-sys-typescale-label-small-size);
+  font-weight: var(--md-sys-typescale-weight-medium);
+}
+
+/* ── 进度：M3E 线性进度条（.progress > i，宽度 = 进度；.is-indeterminate 不定进度），
+   活动段主色、轨道 secondary-container、两段之间 4px 缝、全圆角。 ── */
+:where(:root) :where(.progress) {
+  position: relative;
+  display: flex;
+  gap: 4px;
+  height: 4px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: var(--md-sys-shape-corner-full);
+}
+
+:where(:root) :where(.progress)::after {
+  content: "";
+  flex: 1;
+  border-radius: var(--md-sys-shape-corner-full);
+  background: var(--md-sys-color-secondary-container);
+}
+
+:where(:root) :where(.progress > i) {
+  display: block;
+  flex: none;
+  height: 100%;
+  border-radius: var(--md-sys-shape-corner-full);
+  background: var(--md-sys-color-primary);
+  transition: width var(--fushi-dur-long) var(--fushi-ease);
+}
+
+:where(:root) :where(.progress.is-indeterminate)::after { display: none; }
+
+:where(:root) :where(.progress.is-indeterminate) {
+  background: var(--md-sys-color-secondary-container);
+}
+
+:where(:root) :where(.progress.is-indeterminate > i) {
+  position: absolute;
+  width: 40%;
+  animation: kit-progress-indeterminate 1.6s var(--md-sys-motion-easing-emphasized) infinite;
+}
+
+@keyframes kit-progress-indeterminate {
+  from { left: -40%; }
+  to { left: 100%; }
+}
+
+/* ── 空状态：居中图标 + 一句说明。 ── */
+:where(:root) :where(.empty-state) {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 32px 20px;
+  border-radius: var(--md-sys-shape-corner-large-increased);
+  color: var(--md-sys-color-on-surface-variant);
+  background-color: var(--fushi-mat-fill);
+  font-size: var(--md-sys-typescale-body-medium-size);
+  line-height: var(--md-sys-typescale-body-medium-line-height);
+  text-align: center;
+}
+
+:where(:root) :where(.empty-state) > :where(svg.msr, .msr-slot) {
+  width: 40px;
+  height: 40px;
+  color: var(--md-sys-color-outline);
+}
+
+/* ── 骨架屏：加载中的占位行。 ── */
+:where(:root) :where(.skeleton) {
+  min-height: 64px;
+  background: linear-gradient(90deg,
+    var(--md-sys-color-surface-container-low) 25%,
+    var(--md-sys-color-surface-container-high) 50%,
+    var(--md-sys-color-surface-container-low) 75%) 0 0 / 200% 100%;
+  animation: kit-shimmer 1.4s linear infinite;
+}
+
+@keyframes kit-shimmer {
+  to { background-position: -200% 0; }
+}
+
+/* ── 对话框：<dialog class="kit-dialog">。M3 basic dialog：surface-container-high、corner-extra-large、
+   顶部居中图标（.kit-dialog-icon）、标题 headline-small、正文 body-medium、动作右对齐的 text 按钮。 ── */
+:where(:root) :where(.kit-dialog) {
+  width: min(400px, calc(100% - 32px));
+  max-height: calc(100% - 48px);
+  padding: 24px;
+  overflow: auto;
+  border: 1px solid var(--fushi-mat-edge);
+  border-radius: var(--md-sys-shape-corner-extra-large);
+  color: var(--md-sys-color-on-surface);
+  background-color: var(--md-sys-color-surface-container-high);
+  box-shadow: var(--md-sys-elevation-level3);
+}
+
+:root[data-style="glass"] :where(.kit-dialog) {
+  background-color: var(--fushi-mat-fill-strong);
+  -webkit-backdrop-filter: var(--fushi-mat-filter);
+  backdrop-filter: var(--fushi-mat-filter);
+}
+
+:where(:root) :where(.kit-dialog)::backdrop {
+  background: color-mix(in oklch, var(--md-sys-color-scrim) 32%, transparent);
+}
+
+:where(:root) :where(.kit-dialog[open]) {
+  animation: kit-dialog-in var(--md-sys-motion-spring-default-spatial-duration) var(--md-sys-motion-spring-default-spatial);
+}
+
+@keyframes kit-dialog-in {
+  from { opacity: 0; transform: scale(0.9); }
+}
+
+:where(:root) :where(.kit-dialog-icon) {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 16px;
+  color: var(--md-sys-color-secondary);
+}
+
+:where(:root) :where(.kit-dialog.is-danger .kit-dialog-icon) { color: var(--md-sys-color-error); }
+
+:where(:root) :where(.kit-dialog-title) {
+  margin: 0 0 16px;
+  text-align: center;
+  font-size: var(--md-sys-typescale-headline-small-size);
+  line-height: var(--md-sys-typescale-headline-small-line-height);
+  font-weight: var(--md-sys-typescale-weight-regular);
+}
+
+:where(:root) :where(.kit-dialog-body) {
+  margin: 0;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--md-sys-typescale-body-medium-size);
+  line-height: var(--md-sys-typescale-body-medium-line-height);
+  white-space: pre-line;
+}
+
+:where(:root) :where(.kit-dialog-actions) {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+/* ── 菜单：.kit-menu > button.kit-menu-item（溢出菜单 / 弹出菜单），与下拉菜单同一形态。 ── */
+:where(:root) :where(.kit-menu) {
+  position: absolute;
+  z-index: 40;
+  min-width: 200px;
+  padding: 4px;
+  border: 1px solid var(--fushi-mat-edge);
+  border-radius: var(--fushi-shape-menu);
+  color: var(--md-sys-color-on-surface);
+  background-color: var(--md-sys-color-surface-container);
+  box-shadow: var(--md-sys-elevation-level2);
+  transform-origin: top right;
+  animation: kit-menu-in var(--md-sys-motion-spring-fast-spatial-duration) var(--md-sys-motion-spring-fast-spatial);
+}
+
+:root[data-style="glass"] :where(.kit-menu) {
+  background-color: var(--fushi-mat-fill-strong);
+  -webkit-backdrop-filter: var(--fushi-mat-filter);
+  backdrop-filter: var(--fushi-mat-filter);
+}
+
+:where(:root) :where(.kit-menu[hidden]) { display: none; }
+
+@keyframes kit-menu-in {
+  from { opacity: 0; transform: scaleY(0.85); }
+}
+
+:where(:root) :where(.kit-menu-item) {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--md-sys-shape-corner-medium);
+  color: inherit;
+  background: none;
+  font: inherit;
+  font-size: var(--md-sys-typescale-label-large-size);
+  text-align: left;
+  cursor: pointer;
+}
+
+:where(:root) :where(.kit-menu-item:hover, .kit-menu-item:focus-visible) {
+  outline: 0;
+  background: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), transparent);
+}
+
+:where(:root) :where(.kit-menu-item.danger-button) { color: var(--md-sys-color-error); }
+
+/* ── 文件拖放区：label.dropzone > input[type=file]（视觉隐藏）+ 图标 + 文案；拖入时 .is-over。 ── */
+:where(:root) :where(.dropzone) {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 112px;
+  padding: 20px;
+  border: 2px dashed var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-large);
+  color: var(--md-sys-color-on-surface-variant);
+  background-color: var(--fushi-mat-fill-subtle);
+  font-size: var(--md-sys-typescale-body-medium-size);
+  font-weight: var(--md-sys-typescale-weight-regular);
+  text-align: center;
+  cursor: pointer;
+  transition: border-color var(--fushi-dur-short) var(--fushi-ease), background-color var(--fushi-dur-short) var(--fushi-ease);
+}
+
+:where(:root) :where(.dropzone > input[type="file"]) {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+:where(:root) :where(.dropzone:hover, .dropzone.is-over, .dropzone:has(input:focus-visible)) {
+  border-color: var(--md-sys-color-primary);
+  background-color: color-mix(in oklch, var(--md-sys-color-primary) 8%, transparent);
+}
+
+:where(:root) :where(.dropzone) > :where(svg.msr, .msr-slot) {
+  width: 32px;
+  height: 32px;
+  color: var(--md-sys-color-primary);
+}
+
+/* M3E：实心色阶（卡片里用最低一级拉开层次）；玻璃保留材质填充。 */
+:where(:root:not([data-style="glass"])) :where(.dropzone) { background-color: var(--md-sys-color-surface-container-lowest); }
+
+:where(:root) :where(.dropzone-label) {
+  color: var(--md-sys-color-on-surface);
+  font-weight: var(--md-sys-typescale-weight-medium);
+}
+
+:where(:root) :where(.dropzone-files) {
+  max-width: 100%;
+  color: var(--md-sys-color-primary);
+  font-size: var(--md-sys-typescale-body-small-size);
+  overflow-wrap: anywhere;
+}
+
+/* ── 数据表格：.data-table（窄屏 .is-responsive 叠成卡片，td[data-label] 给出列名）。 ── */
+:where(:root) :where(.data-table) {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--md-sys-typescale-body-medium-size);
+}
+
+:where(:root) :where(.data-table) :where(th, td) {
+  padding: 10px 8px;
+  border-bottom: 1px solid color-mix(in oklch, var(--md-sys-color-outline-variant) 60%, transparent);
+  text-align: left;
+  vertical-align: middle;
+}
+
+:where(:root) :where(.data-table th) {
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--md-sys-typescale-label-medium-size);
+  font-weight: var(--md-sys-typescale-weight-medium);
+}
+
+@media (max-width: 640px) {
+  :where(:root) :where(.data-table.is-responsive, .data-table.is-responsive tbody, .data-table.is-responsive tr, .data-table.is-responsive td) {
+    display: block;
+    width: 100%;
+  }
+
+  :where(:root) :where(.data-table.is-responsive tr.is-head) { display: none; }
+
+  :where(:root) :where(.data-table.is-responsive tr) {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  }
+
+  :where(:root) :where(.data-table.is-responsive td) {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 4px 0;
+    border: 0;
+  }
+
+  :where(:root) :where(.data-table.is-responsive td[data-label])::before {
+    content: attr(data-label);
+    min-width: 88px;
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: var(--md-sys-typescale-label-medium-size);
+  }
+}
+
+/* ── 导航 rail：.nav-rail > .nav-rail-head + (.nav-group-label + button.nav-item[aria-current])…
+   button.nav-item = .nav-indicator（M3E 多边形 svg.nav-shape + 图标 + .badge）+ .nav-label。
+   三种形态：紧凑（缺省，80 宽、文字在图标下）、展开（.is-expanded，整行图标 + 文字 + 分组标题）、
+   模态抽屉（.is-drawer，窄屏，展开形态的浮层版）。
+   状态层只有一种形状：紧凑形态里悬停 / 按下 / 选中都是图标背后同一个多边形（悬停是 on-surface
+   状态层色，选中换成 secondary-container），展开 / 抽屉里是整行同一块圆角矩形（选中再叠多边形）。
+   选中形是 M3E 多边形，与 app 主导航 navShapeOf 同一语言，不画胶囊。 ── */
+:where(:root) :where(.nav-rail) {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 12px 0 16px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+:where(:root) :where(.nav-rail)::-webkit-scrollbar { display: none; }
+:where(:root) :where(.nav-rail-head) {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+:where(:root) :where(.nav-group-label) {
+  flex: none;
+  width: 40px;
+  height: 1px;
+  margin: 8px 0;
+  overflow: hidden;
+  color: transparent;
+  background: var(--md-sys-color-outline-variant);
+  font-size: 0;
+}
+:where(:root) :where(.nav-rail-head + .nav-group-label) { display: none; }
+:where(:root) :where(.nav-item) {
+  position: relative;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 80px;
+  padding: 4px 0 6px;
+  border: 0;
+  color: var(--md-sys-color-on-surface-variant);
+  background: none;
+  font: inherit;
+  font-size: var(--md-sys-typescale-label-medium-size);
+  line-height: var(--md-sys-typescale-label-medium-line-height);
+  font-weight: var(--md-sys-typescale-weight-medium);
+  text-align: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+:where(:root) :where(.nav-indicator) {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 56px;
+  height: 36px;
+}
+:where(:root) :where(.nav-indicator > svg.nav-shape) {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 46px;
+  height: 46px;
+  margin: -23px 0 0 -23px;
+  fill: color-mix(in oklch, var(--md-sys-color-on-surface) 10%, transparent);
+  opacity: 0;
+  transform: scale(0.6) rotate(-30deg);
+  transition:
+    transform var(--md-sys-motion-spring-default-spatial-duration) var(--md-sys-motion-spring-default-spatial),
+    opacity var(--fushi-dur-short) var(--fushi-ease),
+    fill var(--fushi-dur-short) var(--fushi-ease);
+}
+:where(:root) :where(.nav-indicator) > :where(svg.msr, .msr-slot) {
+  position: relative;
+  z-index: 1;
+  width: 24px;
+  height: 24px;
+}
+:where(:root) :where(.nav-item:hover .nav-indicator > svg.nav-shape, .nav-item:focus-visible .nav-indicator > svg.nav-shape) {
+  opacity: 1;
+  transform: none;
+}
+:where(:root) :where(.nav-item:active .nav-indicator > svg.nav-shape) { transform: scale(0.9) rotate(12deg); }
+:where(:root) :where(.nav-item[aria-current="page"]) {
+  color: var(--md-sys-color-on-surface);
+  font-weight: var(--md-sys-typescale-weight-emphasized);
+}
+:where(:root) :where(.nav-item[aria-current="page"] .nav-indicator) { color: var(--md-sys-color-on-secondary-container); }
+:where(:root) :where(.nav-item[aria-current="page"] .nav-indicator > svg.nav-shape) {
+  fill: var(--md-sys-color-secondary-container);
+  opacity: 1;
+  transform: none;
+}
+:where(:root) :where(.nav-item:focus-visible) { outline: 0; }
+:where(:root) :where(.nav-item:focus-visible .nav-indicator) {
+  outline: 3px solid color-mix(in oklch, var(--md-sys-color-primary) 70%, transparent);
+  outline-offset: 2px;
+  border-radius: var(--md-sys-shape-corner-medium);
+}
+:where(:root) :where(.nav-indicator > .badge) {
+  position: absolute;
+  z-index: 2;
+  top: 4px;
+  right: 12px;
+}
+/* 展开 / 抽屉：整行 48 高、corner-large 圆角矩形状态层；分组标题显出文字。 */
+:where(:root) :where(.nav-rail.is-expanded, .nav-rail.is-drawer) {
+  align-items: stretch;
+  padding: 12px 12px 16px;
+}
+:where(:root) :where(.nav-rail.is-expanded, .nav-rail.is-drawer) :where(.nav-rail-head) {
+  flex-direction: row;
+  justify-content: space-between;
+  padding: 0 4px 0 8px;
+  margin-bottom: 4px;
+}
+:where(:root) :where(.nav-rail.is-expanded, .nav-rail.is-drawer) :where(.nav-group-label) {
+  display: block;
+  width: auto;
+  height: auto;
+  margin: 12px 0 2px;
+  padding: 0 16px;
+  overflow: hidden;
+  color: var(--md-sys-color-on-surface-variant);
+  background: none;
+  font-size: var(--md-sys-typescale-label-medium-size);
+  line-height: var(--md-sys-typescale-label-medium-line-height);
+  font-weight: var(--md-sys-typescale-weight-medium);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+:where(:root) :where(.nav-rail.is-expanded, .nav-rail.is-drawer) :where(.nav-item) {
+  flex-direction: row;
+  gap: 8px;
+  width: auto;
+  height: 48px;
+  padding: 0 16px 0 4px;
+  border-radius: var(--md-sys-shape-corner-large);
+  font-size: var(--md-sys-typescale-label-large-size);
+  line-height: var(--md-sys-typescale-label-large-line-height);
+  text-align: left;
+  white-space: nowrap;
+  transition: background-color var(--fushi-dur-short) var(--fushi-ease);
+}
+:where(:root) :where(.nav-rail.is-expanded, .nav-rail.is-drawer) :where(.nav-indicator) {
+  width: 44px;
+  height: 40px;
+}
+:where(:root) :where(.nav-rail.is-expanded, .nav-rail.is-drawer) :where(.nav-item:hover, .nav-item:focus-visible) {
+  background-color: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-hover-percent, 8%), transparent);
+}
+:where(:root) :where(.nav-rail.is-expanded, .nav-rail.is-drawer) :where(.nav-item:active) {
+  background-color: color-mix(in oklch, var(--md-sys-color-on-surface) 12%, transparent);
+}
+:where(:root) :where(.nav-rail.is-expanded, .nav-rail.is-drawer) :where(.nav-item:not([aria-current="page"]) .nav-indicator > svg.nav-shape) { opacity: 0; }
+:where(:root) :where(.nav-rail.is-expanded, .nav-rail.is-drawer) :where(.nav-item[aria-current="page"]) {
+  color: var(--md-sys-color-on-secondary-container);
+  background-color: color-mix(in oklch, var(--md-sys-color-secondary-container) 50%, transparent);
+}
+:where(:root) :where(.nav-rail.is-expanded, .nav-rail.is-drawer) :where(.nav-item[aria-current="page"]:hover) {
+  background-color: color-mix(in oklch, var(--md-sys-color-secondary-container) 70%, transparent);
+}
+:where(:root) :where(.nav-rail.is-expanded, .nav-rail.is-drawer) :where(.nav-item:focus-visible) {
+  outline: 3px solid color-mix(in oklch, var(--md-sys-color-primary) 70%, transparent);
+  outline-offset: -3px;
+}
+:where(:root) :where(.nav-rail.is-expanded, .nav-rail.is-drawer) :where(.nav-item:focus-visible .nav-indicator) { outline: 0; }
+:where(:root) :where(.nav-rail.is-expanded, .nav-rail.is-drawer) :where(.nav-indicator > .badge) {
+  top: 6px;
+  right: 6px;
+}
+/* 模态抽屉：左侧滑入的 surface-container-low 面板，点外面的遮罩关闭。 */
+:where(:root) :where(.nav-rail.is-drawer) {
+  position: fixed;
+  z-index: 30;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: min(320px, 85vw);
+  padding-top: 16px;
+  border-radius: 0 var(--md-sys-shape-corner-large) var(--md-sys-shape-corner-large) 0;
+  background-color: var(--md-sys-color-surface-container-low);
+  visibility: hidden;
+  transform: translateX(-105%);
+  transition:
+    transform var(--md-sys-motion-spring-default-spatial-duration) var(--md-sys-motion-spring-default-spatial),
+    visibility 0s linear var(--md-sys-motion-spring-default-spatial-duration);
+}
+:where(:root) :where(.nav-rail.is-drawer.is-open) {
+  visibility: visible;
+  transform: none;
+  transition: transform var(--md-sys-motion-spring-default-spatial-duration) var(--md-sys-motion-spring-default-spatial);
+}
+:where(:root) :where(.nav-scrim) {
+  position: fixed;
+  z-index: 29;
+  inset: 0;
+  background: color-mix(in oklch, var(--md-sys-color-scrim) 32%, transparent);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--fushi-dur-medium) var(--fushi-ease);
+}
+:where(:root) :where(.nav-scrim.is-open) {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* ── 滚动条：下拉 / 菜单弹层与独立网页（WebUI）用细的圆角滑块，无箭头按钮，轨道透明。
+   Chromium / WebKit 走 ::-webkit-scrollbar（同时设了标准属性它会被忽略，所以标准属性只给不认它的 Firefox）。 ── */
+:where(:root) :where(.fgs-menu, .kit-menu)::-webkit-scrollbar,
+:where(:root[data-fushi-theme-host="page"]) ::-webkit-scrollbar { width: 12px; height: 12px; }
+:where(:root) :where(.fgs-menu, .kit-menu)::-webkit-scrollbar-button,
+:where(:root[data-fushi-theme-host="page"]) ::-webkit-scrollbar-button { display: none; }
+:where(:root) :where(.fgs-menu, .kit-menu)::-webkit-scrollbar-track,
+:where(:root[data-fushi-theme-host="page"]) ::-webkit-scrollbar-track,
+:where(:root) :where(.fgs-menu, .kit-menu)::-webkit-scrollbar-corner,
+:where(:root[data-fushi-theme-host="page"]) ::-webkit-scrollbar-corner { background: transparent; }
+:where(:root) :where(.fgs-menu, .kit-menu)::-webkit-scrollbar-thumb,
+:where(:root[data-fushi-theme-host="page"]) ::-webkit-scrollbar-thumb {
+  border: 4px solid transparent;
+  border-radius: var(--md-sys-shape-corner-full);
+  background: color-mix(in oklch, var(--md-sys-color-on-surface) 28%, transparent) padding-box;
+}
+:where(:root) :where(.fgs-menu, .kit-menu)::-webkit-scrollbar-thumb:hover,
+:where(:root[data-fushi-theme-host="page"]) ::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in oklch, var(--md-sys-color-on-surface) 45%, transparent);
+}
+@supports not selector(::-webkit-scrollbar) {
+  :where(:root) :where(.fgs-menu, .kit-menu),
+  :where(:root[data-fushi-theme-host="page"]) :where(*) {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklch, var(--md-sys-color-on-surface) 28%, transparent) transparent;
+  }
+}
+
+/* ── 统计块：一块色调面上的「标签 + 大数字 + 说明」。 ── */
+:where(:root) :where(.stat-tile) {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 16px 20px;
+  border: 1px solid var(--fushi-mat-edge);
+  border-radius: var(--md-sys-shape-corner-large-increased);
+  background-color: var(--fushi-mat-fill);
+}
+
+:root:not([data-style="glass"]) :where(.stat-tile) { background-color: var(--md-sys-color-surface-container-low); }
+
+:where(:root) :where(.stat-tile.is-primary) {
+  border-color: transparent;
+  color: var(--md-sys-color-on-primary-container);
+  background-color: var(--md-sys-color-primary-container);
+}
+
+:where(:root) :where(.stat-label) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--md-sys-typescale-label-large-size);
+  font-weight: var(--md-sys-typescale-weight-medium);
+}
+
+:where(:root) :where(.stat-tile.is-primary .stat-label, .stat-tile.is-primary .stat-sub) { color: inherit; }
+
+:where(:root) :where(.stat-label) > :where(svg.msr, .msr-slot) {
+  width: 18px;
+  height: 18px;
+}
+
+:where(:root) :where(.stat-value) {
+  font-size: var(--md-sys-typescale-display-small-size);
+  line-height: var(--md-sys-typescale-display-small-line-height);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+:where(:root) :where(.stat-sub) {
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--md-sys-typescale-body-small-size);
+}
+
+/* ── 键值网格（运行状态 / 引擎信息）：标签 label-medium + 值 body-medium。 ── */
+:where(:root) :where(.kv-grid) {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+:where(:root) :where(.kv) {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+:where(:root) :where(.kv > b) {
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--md-sys-typescale-label-medium-size);
+  font-weight: var(--md-sys-typescale-weight-medium);
+}
+
+:where(:root) :where(.kv > span) {
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+/* ── snackbar 定位形态（.toast.is-floating：底部居中浮出）。 ── */
+:where(:root) :where(.toast.is-floating) {
+  position: fixed;
+  z-index: 50;
+  bottom: 24px;
+  left: 50%;
+  min-width: 240px;
+  max-width: calc(100% - 32px);
+  padding: 14px 20px;
+  color: var(--md-sys-color-inverse-on-surface);
+  background-color: var(--md-sys-color-inverse-surface);
+  border-radius: var(--fushi-shape-snackbar);
+  box-shadow: var(--md-sys-elevation-level3);
+  font-size: var(--md-sys-typescale-body-medium-size);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 24px);
+  transition:
+    transform var(--md-sys-motion-spring-default-spatial-duration) var(--md-sys-motion-spring-default-spatial),
+    opacity var(--fushi-dur-short) var(--fushi-ease);
+}
+
+:where(:root) :where(.toast.is-floating.is-on) {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+:where(:root) :where(.toast.is-floating.is-error) {
+  color: var(--md-sys-color-on-error-container);
+  background-color: var(--md-sys-color-error-container);
+}
+
+/* ── 开关 + 文字（表单里的独立开关项）：label.switch-row > span.switch + span。 ── */
+:where(:root) :where(.switch-row) {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+  color: var(--md-sys-color-on-surface);
+  font-size: var(--md-sys-typescale-body-medium-size);
+  cursor: pointer;
+}
+
+:where(:root) :where(.switch-row.is-trailing) { flex-direction: row-reverse; }
+
+/* ── 配色色板（单选）：label.color-swatch > input[type=radio] + span（--swatch 是种子色）。
+   选中 = 外圈主色描边 + 中间 check。 ── */
+:where(:root) :where(.swatch-set) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+:where(:root) :where(.color-swatch) {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 64px;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--md-sys-typescale-label-small-size);
+  line-height: var(--md-sys-typescale-label-small-line-height);
+  text-align: center;
+  cursor: pointer;
+}
+
+:where(:root) :where(.color-swatch > input) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+}
+
+:where(:root) :where(.color-swatch > span:first-of-type) {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--md-sys-shape-corner-large);
+  background: var(--swatch, var(--md-sys-color-primary));
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--md-sys-color-on-surface) 12%, transparent);
+  transition: border-radius var(--fushi-dur-medium) var(--fushi-ease-spatial), box-shadow var(--fushi-dur-short) var(--fushi-ease);
+}
+
+:where(:root) :where(.color-swatch:hover > span:first-of-type) { border-radius: var(--md-sys-shape-corner-extra-large); }
+
+:where(:root) :where(.color-swatch > input:checked + span) {
+  border-radius: var(--md-sys-shape-corner-full);
+  box-shadow: 0 0 0 3px var(--md-sys-color-surface), 0 0 0 5px var(--md-sys-color-primary);
+}
+
+:where(:root) :where(.color-swatch > input:checked + span)::after {
+  content: "";
+  width: 24px;
+  height: 24px;
+  background-color: #fff;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='m378-332 363-363q9-9 21.5-9t21.5 9q9 9 9 21.5t-9 21.5L399-267q-9 9-21 9t-21-9L175-449q-9-9-8.5-21.5T176-492q9-9 21.5-9t21.5 9l159 160Z'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='m378-332 363-363q9-9 21.5-9t21.5 9q9 9 9 21.5t-9 21.5L399-267q-9 9-21 9t-21-9L175-449q-9-9-8.5-21.5T176-492q9-9 21.5-9t21.5 9l159 160Z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+:where(:root) :where(.color-swatch > input:focus-visible + span) {
+  outline: 3px solid color-mix(in oklch, var(--md-sys-color-primary) 70%, transparent);
+  outline-offset: 6px;
+}
+
+:where(:root) :where(.color-swatch > input:checked ~ span:last-child) {
+  color: var(--md-sys-color-on-surface);
+  font-weight: var(--md-sys-typescale-weight-medium);
+}
+
+/* ── 浮出保存条（有未保存更改时贴在内容底部）：inverse-surface 色块。 ── */
+:where(:root) :where(.save-bar) {
+  position: sticky;
+  z-index: 5;
+  bottom: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 12px 10px 20px;
+  border-radius: var(--md-sys-shape-corner-large-increased);
+  color: var(--md-sys-color-inverse-on-surface);
+  background-color: var(--md-sys-color-inverse-surface);
+  box-shadow: var(--md-sys-elevation-level3);
+}
+
+:where(:root) :where(.save-bar[hidden]) { display: none; }
+
+:where(:root) :where(.save-bar .plain-button) { color: var(--md-sys-color-inverse-primary); }
+
+:where(:root) :where(.save-bar .field-hint) {
+  color: inherit;
+  opacity: 0.8;
+}
+
 @media (prefers-reduced-motion: reduce) {
   :root *,
   :root *::before,
@@ -1357,5 +2798,5 @@
     animation: none !important;
   }
 
-  :root :is(.primary-button, .text-button, .hp-icon-btn, .icon-button, .toolbar button, .hdr-fold):active { transform: none; }
+  :root :is(.primary-button, .text-button, .outlined-button, .plain-button, .hp-icon-btn, .icon-button, .toolbar button, .hdr-fold):active { transform: none; }
 }

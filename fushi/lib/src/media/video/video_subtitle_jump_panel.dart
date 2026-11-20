@@ -1011,6 +1011,64 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     return extent;
   }
 
+  /// 本次构建的列表行高备忘（video-23），按**可见行下标**存。
+  ///
+  /// `itemExtentBuilder` 每次布局都要遍历全部行（算总滚动长度、首个子项偏移），
+  /// 跟随播放的自动滚动动画里每帧都布局；而 [_rowExtentForCue] 每调一次都要拼
+  /// 一条带整句正文的缓存键、M3E 下还要跑一遍收藏谓词。实测 1 万行时一帧要调
+  /// 十几万次收藏谓词，帧耗时随行数线性涨。这里把一次构建内算过的行高按下标
+  /// 记下：布局 / 滚动帧只读数组。
+  ///
+  /// 生命期 = 一次构建：两个列表构建点（经典 / M3E）进来先 [_resetRowExtentMemo]，
+  /// 字号 / 字体 / 宽度档位这些会改行高的输入都经 setState 重建，自然换一份新备忘；
+  /// 同一次构建里行高与已构建的行严格一致。不重建也可能变的输入另作备忘键：行宽
+  /// （父级只改约束）、当前句（加粗改断行，决定 [_isRowBold]）——任一变了整份作废，
+  /// 不依赖「换句一定 setState」这条隐式契约。
+  ///
+  /// 收藏态（M3E 收藏行多一颗星）是唯一靠重建作废的行高输入：[isCueFavorited] 是
+  /// 谓词、没有版本号可做键，逐行调它正是本备忘要省掉的开销。契约：收藏变化必须
+  /// 让面板重建（页面层 toggle 收藏后 setState，面板的 `isCueFavorited` 参数随之
+  /// 重新下发）；以后若改成不重建面板的 Listenable 驱动，必须同时在那条通知里调
+  /// [_resetRowExtentMemo]。
+  List<double?> _rowExtentMemo = const <double?>[];
+  List<int>? _rowExtentMemoIndexes;
+  double? _rowExtentMemoWidth;
+  int? _rowExtentMemoCurrentCue;
+
+  void _resetRowExtentMemo() {
+    _rowExtentMemoIndexes = null;
+  }
+
+  /// 可见行 [visibleIndex] 的行高：本次构建内同一份 [visibleIndexes]、同一行宽下
+  /// 只量一次（见 [_rowExtentMemo]）。
+  double _visibleRowExtent(
+    List<AudioCue> cues,
+    List<int> visibleIndexes,
+    int visibleIndex,
+    double rowWidth,
+  ) {
+    final int currentCue = widget.controller.currentCueIndex;
+    if (!identical(visibleIndexes, _rowExtentMemoIndexes) ||
+        rowWidth != _rowExtentMemoWidth ||
+        currentCue != _rowExtentMemoCurrentCue ||
+        _rowExtentMemo.length != visibleIndexes.length) {
+      _rowExtentMemoIndexes = visibleIndexes;
+      _rowExtentMemoWidth = rowWidth;
+      _rowExtentMemoCurrentCue = currentCue;
+      _rowExtentMemo = List<double?>.filled(visibleIndexes.length, null);
+    }
+    final double? memo = _rowExtentMemo[visibleIndex];
+    if (memo != null) return memo;
+    final int rawIndex = visibleIndexes[visibleIndex];
+    final double extent = _rowExtentForCue(
+      _rowCue(cues, rawIndex),
+      rowWidth,
+      bold: _isRowBold(rawIndex),
+    );
+    _rowExtentMemo[visibleIndex] = extent;
+    return extent;
+  }
+
   double _measureRowExtent(
     String text,
     double rowWidth,
@@ -1093,9 +1151,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   ) {
     double offset = 0;
     for (int i = 0; i < visibleIndex; i++) {
-      final int rawIndex = visibleIndexes[i];
-      final AudioCue cue = _rowCue(cues, rawIndex);
-      offset += _rowExtentForCue(cue, rowWidth, bold: _isRowBold(rawIndex));
+      offset += _visibleRowExtent(cues, visibleIndexes, i, rowWidth);
     }
     return offset;
   }
@@ -1779,6 +1835,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     final ColorScheme cs = widget.colorScheme;
     final List<AudioCue> cues = widget.controller.cues;
     final List<int> visibleIndexes = _visibleCueIndexes(cues);
+    _resetRowExtentMemo();
     // BUG-841：当前句可能是被折叠的重复项——映射到其代表行 raw（列表渲染的唯一行）供高亮
     // 与 rowKey 保留，否则当前句落在重复拷贝时整行都不高亮。
     final int currentIndex = _representativeRaw(
@@ -1850,12 +1907,11 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                               if (i < 0 || i >= visibleIndexes.length) {
                                 return null;
                               }
-                              final int rawIndex = visibleIndexes[i];
-                              final AudioCue cue = _rowCue(cues, rawIndex);
-                              return _rowExtentForCue(
-                                cue,
+                              return _visibleRowExtent(
+                                cues,
+                                visibleIndexes,
+                                i,
                                 dimensions.crossAxisExtent,
-                                bold: _isRowBold(rawIndex),
                               );
                             },
                         itemCount: visibleIndexes.length,
@@ -2380,6 +2436,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final List<AudioCue> cues = widget.controller.cues;
     final List<int> visibleIndexes = _visibleCueIndexes(cues);
+    _resetRowExtentMemo();
     final int currentIndex = _representativeRaw(
       widget.controller.currentCueIndex,
     );
@@ -2408,11 +2465,11 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
             : null,
         itemExtentBuilder: (int i, SliverLayoutDimensions dimensions) {
           if (i < 0 || i >= count) return null;
-          final int rawIndex = visibleIndexes[i];
-          return _rowExtentForCue(
-            _rowCue(cues, rawIndex),
+          return _visibleRowExtent(
+            cues,
+            visibleIndexes,
+            i,
             dimensions.crossAxisExtent,
-            bold: _isRowBold(rawIndex),
           );
         },
         itemCount: count,

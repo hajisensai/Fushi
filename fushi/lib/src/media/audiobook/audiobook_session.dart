@@ -308,6 +308,7 @@ class AudiobookSession extends ChangeNotifier {
 
     _rewirePersist(controller, persist);
     controller.addListener(_onControllerChanged);
+    controller.displayCueChanged.addListener(_onDisplayCueChanged);
     _controller = controller;
     _book = info;
     _onReleased = onReleased;
@@ -487,6 +488,7 @@ class AudiobookSession extends ChangeNotifier {
 
     if (controller != null) {
       controller.removeListener(_onControllerChanged);
+      controller.displayCueChanged.removeListener(_onDisplayCueChanged);
       // BUG-278/TODO-367：dispose 前必须真正 stop（释放 native 解码器止声），不能
       // 只 pause（pause 保留解码器，紧随的同步 dispose 又抢不过异步平台拆除，
       // Android 上表现为停止后仍在响）。stopPlayback 可 await 到平台切换 settle，
@@ -706,6 +708,17 @@ class AudiobookSession extends ChangeNotifier {
     _syncStudyClockRunState();
     _touchStudyClockIfPlaying(controller);
     // 给迷你条 / 任何 session 监听者一次刷新（播放态 / cue 文本变了）。
+    notifyListeners();
+  }
+
+  /// 只有显示句换了（句间静音里提前切到下一句，novel-15）：刷显示面——悬浮字幕、
+  /// 媒体通知副标题、迷你条（session 监听者）。不转给 reader：正文高亮在 gap 里按
+  /// hold 契约停在上一句。
+  void _onDisplayCueChanged() {
+    final AudiobookPlayerController? controller = _controller;
+    if (controller == null) return;
+    _syncFloatingLyric(controller);
+    _syncMediaNotification(controller);
     notifyListeners();
   }
 
@@ -1039,6 +1052,7 @@ class AudiobookSession extends ChangeNotifier {
     _companion = null;
     if (controller != null) {
       controller.removeListener(_onControllerChanged);
+      controller.displayCueChanged.removeListener(_onDisplayCueChanged);
       controller.dispose();
     }
     final Future<void> Function()? onReleased = _onReleased;

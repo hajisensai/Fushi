@@ -59,6 +59,7 @@ class KavitaProgressSync {
     int Function()? nowMs,
     this.onPushed,
     this.onServerNewer,
+    this.onPushFailed,
   }) : _api = api,
        _lastPushedPage = lastPushedPage,
        _lastSyncAt = lastSyncAt,
@@ -73,6 +74,10 @@ class KavitaProgressSync {
 
   /// 拒绝推送时回调，参数是服务器当前进度。
   final void Function(KavitaProgress server)? onServerNewer;
+
+  /// 一次推送（含推送前校验、标已读）失败时回调；失败本身照旧按退避重排，不抛给
+  /// [flush] 的调用方。调用方据此记诊断，不然离线 / 服务器报错时推送失败无迹可查。
+  final void Function(Object error, StackTrace stack)? onPushFailed;
   final int Function() _nowMs;
 
   int? _lastPushedPage;
@@ -182,8 +187,9 @@ class KavitaProgressSync {
       // 推送期间若又有新页，继续排队。
       if (_pendingPage != null && !_disposed) _schedule(debounce);
       return !hasPending;
-    } on Object {
+    } on Object catch (e, stack) {
       _failures++;
+      onPushFailed?.call(e, stack);
       if (!_disposed) {
         final int i = (_failures - 1).clamp(0, retryBackoff.length - 1);
         _schedule(retryBackoff[i]);

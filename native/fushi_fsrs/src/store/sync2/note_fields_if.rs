@@ -13,16 +13,23 @@
 //! 通过的项拼成 `apply` 的输入（实体按首次出现的顺序、同一实体内字段按首次出现的顺序、同一字段后者为准——Dart
 //! `editFieldsBatch` 的分组），值没变的跳过（[registers::write_is_noop]），旧版时钟每条走一步。
 
+#[cfg(test)]
 use std::collections::{HashMap, HashSet};
 
+#[cfg(test)]
 use rusqlite::Connection;
+#[cfg(test)]
 use serde_json::{Value, json};
 
+#[cfg(test)]
 use super::{LegacyApply, apply_local_on, config};
+#[cfg(test)]
 use crate::registers;
+#[cfg(test)]
 use crate::store::caches;
 
 /// 测试注入：请求带 `failAfter: "apply"` 时在写完之后报错（验证整笔回滚；生产调用方不带）。
+#[cfg(test)]
 fn fail_after(req: &Value, stage: &str) -> Result<(), String> {
     if req["failAfter"].as_str() == Some(stage) {
         return Err(format!("note_fields_if: injected failure after {stage}"));
@@ -31,6 +38,7 @@ fn fail_after(req: &Value, stage: &str) -> Result<(), String> {
 }
 
 /// 输入的一项。
+#[cfg(test)]
 struct Item<'a> {
     note: &'a str,
     field: &'a str,
@@ -38,6 +46,7 @@ struct Item<'a> {
     value: &'a Value,
 }
 
+#[cfg(test)]
 fn parse<'a>(items: &'a [Value]) -> Result<Vec<Item<'a>>, String> {
     items
         .iter()
@@ -55,6 +64,7 @@ fn parse<'a>(items: &'a [Value]) -> Result<Vec<Item<'a>>, String> {
 /// `note_fields_if` 的本体（见文件头）：在调用方的写连接、调用方开的 SAVEPOINT 里做。[req]：
 /// `{"mode": "note"|"field", "legacyDevice", "tickNow", "ts"?}`。回包与 `apply` 同形，另带 `rejected`：被拒的笔记
 /// （去重、按首次出现的顺序）。
+#[cfg(test)]
 pub(crate) fn note_fields_if_on(
     c: &Connection,
     profile: &str,

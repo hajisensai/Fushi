@@ -4,7 +4,6 @@ import 'package:fushi/src/media/video/disc/disc_session_entry.dart';
 import 'package:fushi/src/media/video/disc/disc_session_launcher.dart';
 
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/media/collections/collection_detail_layout.dart';
@@ -19,6 +18,7 @@ import 'package:fushi/src/utils/adaptive/shell_style.dart'
 import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_credit_repository.dart';
 import 'package:fushi/src/media/video/metadata/video_credit_rail.dart';
+import 'package:fushi/src/media/video/metadata/video_metadata_image_provider.dart';
 import 'package:fushi/src/media/video/metadata/video_country_display.dart';
 import 'package:fushi/src/media/video/cover_ui/video_specs_panel.dart';
 import 'package:fushi/src/media/video/video_specs_service.dart';
@@ -356,19 +356,12 @@ class _StandaloneVideoWorkDetailState
     });
   }
 
-  ImageProvider? _image(String kind) {
-    for (final VideoMetadataImageRow image in _images) {
-      if (image.kind != kind) continue;
-      final String? path = image.localPath;
-      if (path != null && _existingImagePaths.contains(path)) {
-        return FileImage(File(path));
-      }
-      if (image.remoteUrl.isNotEmpty) {
-        return AppCachedHttpImage(image.remoteUrl);
-      }
-    }
-    return null;
-  }
+  /// 本地图 / 远程图都按种类封顶解码（#3722 video-18，见 [videoMetadataRowImage]）。
+  ImageProvider? _image(String kind) => videoMetadataRowImage(
+    _images,
+    kind,
+    localExists: _existingImagePaths.contains,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -864,7 +857,10 @@ class _RemoteVideoWorkDetailPageState extends State<RemoteVideoWorkDetailPage> {
     for (final VideoMetadataImage image
         in _work?.images ?? const <VideoMetadataImage>[]) {
       if (image.kind == kind && image.url.isNotEmpty) {
-        return AppCachedHttpImage(image.url);
+        return metadataRemoteImage(
+          image.url,
+          width: videoMetadataImageKindDecodeWidth(kind),
+        );
       }
     }
     return null;

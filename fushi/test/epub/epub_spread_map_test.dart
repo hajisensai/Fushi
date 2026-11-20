@@ -584,5 +584,58 @@ void main() {
         expect(map.entryAt(0).chapterIndex, 1);
       });
     });
+
+    group('pageTurnTargetChapter (novel-17f)', () {
+      test('identity map: next / previous chapter, null past the ends', () {
+        final EpubBook book = _makeBook(count: 3);
+        final EpubSpreadMap map = EpubSpreadMap.build(
+          book: book,
+          spreadMode: 'off',
+          spreadDirection: 'rtl',
+        );
+        expect(map.pageTurnTargetChapter(1, 1), 2);
+        expect(map.pageTurnTargetChapter(1, -1), 0);
+        expect(map.pageTurnTargetChapter(2, 1), isNull);
+        expect(map.pageTurnTargetChapter(0, -1), isNull);
+      });
+
+      test('merged images: skips absorbed single-image chapters both ways', () {
+        // ch0 text, ch1 img, ch2 img, ch3 text, ch4 text
+        final EpubBook book = _makeBook(
+          count: 5,
+          imageOnly: <bool>[false, true, true, false, false],
+        );
+        final EpubSpreadMap map = EpubSpreadMap.build(
+          book: book,
+          spreadMode: 'off',
+          spreadDirection: 'rtl',
+          mergeImagePages: true,
+        );
+        // Forward from ch0 lands on the host ch3, never the absorbed ch1.
+        expect(map.pageTurnTargetChapter(0, 1), 3);
+        // Backward from the host ch3 lands on ch0 (ch3 - 1 = absorbed ch2 would
+        // resolve back to ch3 itself).
+        expect(map.pageTurnTargetChapter(3, -1), 0);
+        expect(map.pageTurnTargetChapter(4, -1), 3);
+      });
+
+      test('a spread page is not a single-chapter prefetch target', () {
+        // ch0 cover, ch1+ch2 force-paired images, ch3 text
+        final EpubBook book = _makeBook(
+          count: 4,
+          imageOnly: <bool>[true, true, true, false],
+        );
+        final EpubSpreadMap map = EpubSpreadMap.build(
+          book: book,
+          spreadMode: 'on',
+          spreadDirection: 'rtl',
+        );
+        expect(map.entryAt(1).isSpread, isTrue);
+        expect(map.pageTurnTargetChapter(0, 1), isNull);
+        expect(map.pageTurnTargetChapter(3, -1), isNull);
+        expect(map.pageTurnTargetChapter(1, -1), 0);
+        expect(map.pageTurnTargetChapter(2, 1), 3);
+      });
+    });
   });
 }

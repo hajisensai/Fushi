@@ -5,11 +5,21 @@
 //!
 //! # 指纹与落库同一个事务
 //!
-//! 记了指纹，下一轮清单不变就一个段都不读（[OldRootScan::changed] = false）。所以指纹**只能**和这些段的落库一起提交：
-//! 指纹先提交、落库那一笔回滚或崩溃，这批旧操作就一直丢着，直到旧根清单碰巧再变。这条约束钉在签名上——记指纹的
-//! 唯一入口是 [Receiver::finish_oldroot]：它消费这一批 `Receiver`（开在调用方的事务里），先 `finish`（投完等待缓冲、收
-//! 派生层），再在同一个事务里写指纹；判断「全部有了结论」用的是这个 `Receiver` 自己记下的 `legacy` 结论，不由调用方另报
-//! （测试 `the_fingerprint_commits_with_the_landing_or_not_at_all`）。
+//! 记了指纹，下一轮清单不变就一个段都不读（[OldRootScan::changed] = false）。所以指纹**只能**在这些段的落库都提交了
+//! 之后记：指纹先提交、落库那一笔回滚或崩溃，这批旧操作就一直丢着，直到旧根清单碰巧再变。这条约束钉在签名上——记
+//! 指纹的唯一入口是 [Receiver::finish_oldroot]：它消费这一批 `Receiver`（开在调用方的事务里），先 `finish`（投完等待
+//! 缓冲、收派生层），再在同一个事务里记结论、写指纹；「这一批每段的结论」用的是这个 `Receiver` 自己记下的 `legacy`
+//! 结论，不由调用方另报（测试 `the_fingerprint_commits_with_the_landing_or_not_at_all`）。
+//!
+//! # 切片与累计（G8-7c）
+//!
+//! 迁移后第一次捡一个大的旧根可能有几百个协议 3 段，一个事务收完要让作答等很久，所以 `oldroot_ingest` 和收新根的段
+//! 一样按 `maxItems` 切成多个事务。指纹因此不能再要求「一批正好是整份待读清单」，改成**跨事务累计**：每一批在自己的
+//! 事务里把每段的结论（落库、已有、坏段；要等的不算）记到这一轮名下（`srs_meta` `gen4_oldrun/<col>/<位置>` + 路径，
+//! 值 = 这一轮清单指纹），与这些段的落库一起提交或一起回滚；收尾那一批按清单重算待读列表，列表里每一段都在**同一个
+//! 指纹**名下有了结论才记指纹、清掉累计（[Receiver::finish_oldroot]）。清单在中途变了（指纹不同）累计的就不算，下一轮
+//! 重来；崩溃丢的只是没提交的那一批的结论，已提交的批照样算（测试
+//! `slices_of_one_round_add_up_to_a_recorded_fingerprint`）。
 //!
 //! # 为什么每轮都要捡
 //!
@@ -34,15 +44,26 @@
 //! # 只有协议 1 旧根的位置（D21，所有者授权从简）
 //!
 //! 位置目录下只有 `v2/`（2026-10-30 断代之前的协议 1 旧根），没有 `v3/`、`v4/`：[check_root] 明确拒绝
-//! （[RootRefused]，错误码 [ERR_PROTOCOL1_ROOT]），同步轮停下、提示用户「这个同步位置的格式太旧，先用 3.x 版本同步一次
-//! 把它升级，或者换一个同步位置」。拒绝发生在碰位置、碰本机库之前：位置上一个字节不写（不建 `v4/`、不写 v3 meta——
-//! 旧入口 `srs_location_migration.dart` 写 `minReader 3` 的 v3 meta，在协议 4 下等于拆掉围栏，所以那条路整个不走），
+//! （[RootRefused]，错误码 [ERR_PROTOCOL1_ROOT]），同步轮停下、提示用户「这个同步位置的格式太旧，在另一台装 3.3.0 的
+//! 设备上同步一次把它升级，或者换一个同步位置；不要把本机装回 3.x」（G8-7c 核过，交接 §第四波 G8-7c）：
+//! - 能把 `v2/` 升成 `v3/` 的只有 v3.3.0（协议 3 的最后一个 3.x 正式版：`kSrsSync2V1Folder = 'v2'` +
+//!   v3.3.0 里的 `srs_location_migration.dart`，本仓已删）。v3.0.0 / v3.0.1 还没有 sync2（走 `packages/fushi_srs` 的旧事件同步，不碰 `v2/`），
+//!   协议 1 预发布构建本身就只写 `v2/`——在它们上面同步一次什么也不会变。一个位置只剩 `v2/` 本身就说明从来没有
+//!   v3.3.0 设备在上面同步过，所以提示必须点名 3.3.0，不能笼统说「3.x」。
+//! - 本机库已封存成 `39999`，v3.3.0 打开时报「schema newer than this build」、整个卡片库不可用，什么也同步不了；
+//!   Android 降级还得卸载、清空本机数据。所以只能在**另一台**设备上装 3.3.0 做。
+//!
+//! 拒绝发生在碰位置、碰本机库之前：位置上一个字节不写（不建 `v4/`、不写 v3 meta——
+//! v3.3.0 的旧入口 `srs_location_migration.dart` 写 `minReader 3` 的 v3 meta，在协议 4 下等于拆掉围栏，所以那条路整个不走），
 //! 本机的卡片与复习记录也一条不动（它们在本机库里，跟这个位置有没有同步上无关）；用户升级位置之后下一轮照常同步。
 
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 
+use rusqlite::{OptionalExtension, params};
+
 use super::receive::{Received, Receiver, Taken};
+use super::schema::sql;
 use super::sync_state::{OldRootEntry, oldroot_fingerprint};
 use super::truth::{DEV_HERITAGE, Truth};
 use crate::gen4::location::{
@@ -99,9 +120,10 @@ pub fn check_root(top: &[&str]) -> Result<RootKind, RootRefused> {
         RootKind::Protocol1Only => Err(RootRefused {
             code: ERR_PROTOCOL1_ROOT,
             message:
-                "this sync location still uses the protocol 1 layout (v2/ only); sync it once \
-                      with a 3.x version to upgrade it, or use another location. Local cards and \
-                      review history are not affected"
+                "this sync location still uses the protocol 1 layout (v2/ only); to upgrade it, sync it \
+                      once on another device running Fushi 3.3.0 (3.0.x and protocol 1 pre-release builds \
+                      cannot upgrade it), or use another location (do not downgrade this device: 3.x cannot \
+                      open its upgraded database). Local cards and review history are not affected"
                     .to_owned(),
         }),
         k => Ok(k),
@@ -199,49 +221,152 @@ impl Truth<'_> {
         Ok(scan)
     }
 
-    /// 记下这一轮核对过的旧根指纹（文件头「什么时候算核对过」）。[taken] 是 [OldRootScan::fetch] 里每个文件交给
-    /// `Receiver::legacy` 的结论（顺序一致、一个不少）；[fenced] = 本轮该写的围栏都写好了。记了返回 true。
-    /// 不公开：只由 [Receiver::finish_oldroot] 在落库的同一个事务里、`finish` 之后调（文件头「指纹与落库同一个事务」）。
-    fn oldroot_settle(
+    /// 这一轮（位置 [loc]、清单指纹 [fp]）里段 [path] 已经有了结论（落库、已有、坏段），记在更早提交的某一批里
+    /// （[Truth::oldroot_note]）。
+    fn oldroot_concluded(
         &self,
         col: i64,
         loc: &str,
-        scan: &OldRootScan,
-        taken: &[Taken],
-        fenced: bool,
-        at: i64,
+        fp: &[u8; 32],
+        path: &str,
     ) -> Result<bool, String> {
-        if taken.len() != scan.fetch.len() {
-            return Err(format!(
-                "gen4 oldroot: {} results for {} fetched files",
-                taken.len(),
-                scan.fetch.len()
-            ));
-        }
-        if !fenced || taken.iter().any(|t| matches!(t, Taken::Deferred(_))) {
-            return Ok(false);
-        }
-        self.set_oldroot_fp(col, loc, &scan.fp, at)?;
-        Ok(true)
+        let v: Option<String> = self
+            .conn()
+            .prepare_cached(OLDRUN_GET_SQL)
+            .map_err(sql)?
+            .query_row([run_key(col, loc, path)], |r| r.get(0))
+            .optional()
+            .map_err(sql)?;
+        Ok(v.as_deref() == Some(hex32(fp).as_str()))
+    }
+
+    /// 把这一批每段的结论记到这一轮（[fp]）名下：有结论的记、要等的（[Taken::Deferred]）去掉。与这一批的落库同一个
+    /// 事务（只由 [Receiver::finish_oldroot] 调）。
+    fn oldroot_note(
+        &self,
+        col: i64,
+        loc: &str,
+        fp: &[u8; 32],
+        batch: &[(&str, &Taken)],
+    ) -> Result<(), String> {
+        let fp = hex32(fp);
+        self.write(|| {
+            for (path, taken) in batch {
+                let key = run_key(col, loc, path);
+                if matches!(taken, Taken::Deferred(_)) {
+                    self.conn()
+                        .prepare_cached("DELETE FROM srs_meta WHERE key = ?1")
+                        .map_err(sql)?
+                        .execute([key])
+                        .map_err(sql)?;
+                } else {
+                    self.conn()
+                        .prepare_cached(
+                            "INSERT INTO srs_meta (key, value) VALUES (?1, ?2) \
+                             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                        )
+                        .map_err(sql)?
+                        .execute(params![key, fp])
+                        .map_err(sql)?;
+                }
+            }
+            Ok(())
+        })
+    }
+
+    /// 忘掉位置 [loc] 名下累计的段结论（这一轮核对完了，或位置被移除）。
+    pub(crate) fn oldroot_forget_run(&self, col: i64, loc: &str) -> Result<(), String> {
+        let (lo, hi) = run_range(col, loc);
+        self.write(|| {
+            self.conn()
+                .prepare_cached(OLDRUN_DROP_SQL)
+                .map_err(sql)?
+                .execute(params![lo, hi])
+                .map_err(sql)
+                .map(|_| ())
+        })
     }
 }
 
+/// 一轮旧根捡漏里各段结论的键：`gen4_oldrun/<col>/<位置>` + 换行 + 相对 `v3/` 的路径（位置与路径里都不会有换行）。
+fn run_key(col: i64, loc: &str, path: &str) -> String {
+    format!("gen4_oldrun/{col}/{loc}\n{path}")
+}
+
+/// 位置 [loc] 名下全部段结论的键区间 `[lo, hi)`（换行的下一个字符是 `\x0b`）。
+fn run_range(col: i64, loc: &str) -> (String, String) {
+    (
+        format!("gen4_oldrun/{col}/{loc}\n"),
+        format!("gen4_oldrun/{col}/{loc}\u{b}"),
+    )
+}
+
+fn hex32(b: &[u8; 32]) -> String {
+    b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
+/// 一段的结论（[Truth::oldroot_concluded]）：`srs_meta` 主键点查。
+pub(crate) const OLDRUN_GET_SQL: &str = "SELECT value FROM srs_meta WHERE key = ?1";
+
+/// 一个位置名下的全部段结论（[Truth::oldroot_forget_run]）：`srs_meta` 主键区间。
+pub(crate) const OLDRUN_DROP_SQL: &str = "DELETE FROM srs_meta WHERE key >= ?1 AND key < ?2";
+
+/// 收尾时要不要、能不能记下这一轮的指纹（[Receiver::finish_oldroot] 的 `settle`）。
+pub struct OldRootSettle<'a> {
+    /// 这个旧根所在的位置目录名（[Truth::oldroot_scan] 的 `dir`）。
+    pub dir: &'a str,
+    /// 这一轮的旧根清单（路径相对 `v3/`），指纹必须等于这一轮的 [OldRootScan::fp]。
+    pub listing: &'a [OldRootEntry],
+    /// 本轮该写的围栏都写好了。
+    pub fenced: bool,
+    /// 记下的核对时刻。
+    pub at: i64,
+}
+
 impl Receiver<'_, '_> {
-    /// 收尾一批旧根捡漏：先 [Receiver::finish]，再在**同一个事务里**按 [Truth::oldroot_settle] 的规则记下位置 [loc] 这一轮
-    /// 核对过的旧根指纹。这一批必须正好是把 [scan] 的 [OldRootScan::fetch] 逐个按顺序交给 [Receiver::legacy]（一个不少、
-    /// 不夹别的旧根段），否则报错、整笔回滚。[fenced] = 本轮该写的围栏都写好了。返回 (这一批的计数, 记了指纹没有)。
+    /// 收尾一批旧根捡漏（文件头「切片与累计」）：先 [Receiver::finish]；再在**同一个事务里**把这一批每段的结论记到
+    /// 这一轮（位置 [loc]、清单指纹 [fp]）名下；[settle] 给了、这一批的收尾投递也做完了（没有 `drain_more`），就按
+    /// 清单重算待读列表，列表里每一段都在这一轮名下有了结论（这一批的或更早提交的批的）、围栏也写好了，才记下
+    /// 指纹、清掉累计的结论。[paths] 是这一批按顺序交给 [Receiver::legacy] 的段（一一对应，一个不多一个不少），
+    /// 否则报错、整笔回滚。返回 (这一批的计数, 记了指纹没有)。
     pub fn finish_oldroot(
         self,
         loc: &str,
-        scan: &OldRootScan,
-        fenced: bool,
-        at: i64,
+        fp: &[u8; 32],
+        paths: &[String],
+        settle: Option<OldRootSettle<'_>>,
     ) -> Result<(Received, bool), String> {
         let (t, col) = self.scope();
         let taken = self.legacy_taken().to_vec();
+        if taken.len() != paths.len() {
+            return Err(format!(
+                "gen4 oldroot: {} results for {} fetched files",
+                taken.len(),
+                paths.len()
+            ));
+        }
         let received = self.finish()?;
-        let settled = t.oldroot_settle(col, loc, scan, &taken, fenced, at)?;
-        Ok((received, settled))
+        let batch: Vec<(&str, &Taken)> = paths.iter().map(String::as_str).zip(&taken).collect();
+        t.oldroot_note(col, loc, fp, &batch)?;
+        let Some(s) = settle else {
+            return Ok((received, false));
+        };
+        if received.drain_more || !s.fenced {
+            return Ok((received, false));
+        }
+        let scan = t.oldroot_scan(col, loc, s.dir, s.listing)?;
+        if scan.fp != *fp {
+            // 清单在这一轮里变了：累计的结论属于上一份清单，下一轮按新清单重来。
+            return Ok((received, false));
+        }
+        for p in &scan.fetch {
+            if !t.oldroot_concluded(col, loc, fp, p)? {
+                return Ok((received, false));
+            }
+        }
+        t.set_oldroot_fp(col, loc, fp, s.at)?;
+        t.oldroot_forget_run(col, loc)?;
+        Ok((received, true))
     }
 }
 

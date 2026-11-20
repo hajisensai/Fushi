@@ -1,9 +1,10 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 import 'package:fushi/src/reader/reader_study_unit_script.dart';
+
+import '../helpers/node_runtime.dart';
 
 /// BUG-2748：连续模式用户滚走后，前方懒图 load 把视口拽回最近一次揭示 / 恢复的目标。
 ///
@@ -20,7 +21,7 @@ void main() {
   test(
     'continuous-mode user scroll input retires the late-image and restore anchors',
     () async {
-      final String? nodeExe = _resolveNode();
+      final String? nodeExe = resolveNodeExecutable();
       if (nodeExe == null) {
         markTestSkipped(
           'node not found on PATH; skipping JS behavior execution',
@@ -37,28 +38,16 @@ void main() {
         reason: 'behavior harness ${jsTest.path} must exist',
       );
 
-      final String payload = jsonEncode(<String, String>{
+      final Map<String, String> payload = <String, String>{
         'paged': ReaderPaginationScripts.paginatedShellSource(),
         'continuous': ReaderPaginationScripts.continuousShellSource(),
         'studyUnits': kStudyUnitJs,
-      });
-      final Directory temp = Directory.systemTemp.createTempSync(
-        'fushi-continuous-user-scroll-anchor-',
+      };
+      final NodeHarnessResult result = await runNodeHarness(
+        nodeExe,
+        jsTest.path,
+        payload,
       );
-      final File payloadFile = File('${temp.path}/payload.json')
-        ..writeAsStringSync(payload);
-      late final ProcessResult result;
-      try {
-        result = await Process.run(
-          nodeExe,
-          <String>[jsTest.path, payloadFile.path],
-          workingDirectory: Directory.current.path,
-          stdoutEncoding: utf8,
-          stderrEncoding: utf8,
-        );
-      } finally {
-        temp.deleteSync(recursive: true);
-      }
 
       expect(
         result.exitCode,
@@ -106,22 +95,4 @@ void main() {
       );
     },
   );
-}
-
-/// Resolve a usable `node` executable, returning null when none is on PATH.
-String? _resolveNode() {
-  final List<String> candidates = Platform.isWindows
-      ? <String>['node.exe', 'node']
-      : <String>['node'];
-  for (final String name in candidates) {
-    try {
-      final ProcessResult probe = Process.runSync(name, <String>['--version']);
-      if (probe.exitCode == 0) {
-        return name;
-      }
-    } on ProcessException {
-      // Not found; try next candidate.
-    }
-  }
-  return null;
 }

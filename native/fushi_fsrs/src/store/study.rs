@@ -1869,6 +1869,7 @@ fn run(src: &mut dyn Source, tree: DeckTree, req: &Value) -> Result<Value, Strin
 impl crate::store::SrsCore {
     /// 只读排队（牌组列表 / 复习页的计数与出卡）：走读连接的快照，不排在同步投递 / 缓存刷新这类长写后面
     /// （旧库搬迁的事务开着时在写连接上读，看得见未提交的行，[crate::store::SrsCore::read_visible_tx]）。
+    #[cfg(test)]
     pub fn study(&self, profile: &str, req: &Value) -> Result<Value, String> {
         self.read_visible_tx(|c, uncommitted| study(c, &self.study_hub, uncommitted, profile, req))
     }

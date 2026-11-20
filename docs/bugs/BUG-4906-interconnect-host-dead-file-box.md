@@ -8,4 +8,4 @@
   - 旧客户端兼容：v2.7～v3.3 的客户端读到书文件夹没了按「远端缺失 → 导出本机」（`resolveProgressSync(remote: null)`）重写几 KB 的 JSON / 封面，不删本机任何东西；这些残余下次 host 启动再收。早于 v2.7、仍会往文件箱传 epub 的客户端，每次 host 重启后会重传一次书内容（未核实这类版本是否还能连上现在的 host）。
   - 云后端不受影响：改动只在 host 侧本地磁盘，云通道的书文件夹路径一行未改。
 - **[x] ② 已加自动化测试** — `packages/fushi_engine/test/sync/interconnect_file_box_prune_test.dart`（真 `FushiSyncServer` 经 WebDAV PUT 写入旧客户端文件箱 + 全部保留命名空间 → 清理后文件箱没了、保留命名空间 / 带子目录的目录 / 根下文件都在、幂等）；`fushi/test/sync/interconnect_file_box_prune_reserved_guard_test.dart`（扫源码里声明的全部同步命名空间常量都落在保留判据里；两个 host 装配点都在 `server.start()` 前调用清理）。
-- **备注**：`fushi-srs/<profile>/` 下 `<44 字符>#<n>/`（v3.0.x 旧事件同步的写入者目录，不是协议 1）与 `v2/`（协议 1 旧根，即围栏）本 PR 不动：`v2/meta.json` 是新版本每轮重立的围栏；写入者目录里的 `media/` 与 `profile.json` 现版本仍在读，`batch-*` / `snapshot-*` 是否可删取决于「是否放弃仍在跑的 v3.0.x 客户端」，属设计取舍，已交用户决定。
+- **备注**：`fushi-srs/<profile>/` 下 `<44 字符>#<n>/`（v3.0.x 旧事件同步的写入者目录，不是协议 1）与 `v2/`（协议 1 旧根，即围栏）本 PR 不动：`v2/meta.json` 是新版本每轮重立的围栏；写入者目录里的 `media/` 与 `profile.json` 现版本仍在读，`batch-*` / `snapshot-*` 是否可删取决于「是否放弃仍在跑的 v3.0.x 客户端」，属设计取舍，已交用户决定（用户 2026-11-21 拍板放弃 v3.0.x；gen4 下的清理见 BUG-4908，未修复）。

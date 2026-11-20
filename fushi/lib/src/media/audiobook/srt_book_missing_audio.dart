@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:fushi/src/media/import/srt_book_attach_epub.dart'
     show srtBookCanAttachEpub;
@@ -59,8 +60,36 @@ class SrtBookMissingAudio {
   }
 
   /// 书架卡要不要画「音频文件丢失」错误态。
-  bool showsWarning(SrtBook book) =>
-      hasMissingAudio(book) && !isDismissed(book);
+  ///
+  /// [hasMissing] 是调用方已经算好的断链结论（书架卡传
+  /// [probeMissingUids] 的缓存结果，不在 build 里同步探盘）；不传时现探。
+  bool showsWarning(SrtBook book, {bool? hasMissing}) =>
+      (hasMissing ?? hasMissingAudio(book)) && !isDismissed(book);
+
+  /// 一批字幕书里音频断链的 uid 集合（gap-novelmisc-2）。
+  ///
+  /// 书架以前在每张卡的 build 里对整组路径同步 `existsSync`，一次刷新里同一批路径
+  /// 被探好几轮、而且全在 UI isolate 上。这里随 `srtBooksProvider` 出新列表时
+  /// 异步探一次（`File.exists` 走 IO 线程），结果按 uid 缓存给卡片读；每本书遇到
+  /// 第一个断链文件就停。只看 files 模式（`audioPaths`），与 [hasMissingAudio] 同口径。
+  static Future<Set<String>> probeMissingUids(
+    Iterable<SrtBook> books, {
+    Future<bool> Function(String path)? exists,
+  }) async {
+    final Future<bool> Function(String) probe =
+        exists ?? (String path) => File(path).exists();
+    Future<String?> missingUid(SrtBook book) async {
+      final List<String>? paths = book.audioPaths;
+      if (paths == null || paths.isEmpty) return null;
+      for (final String path in paths) {
+        if (!await probe(path)) return book.uid;
+      }
+      return null;
+    }
+
+    final List<String?> uids = await Future.wait(books.map(missingUid));
+    return <String>{...uids.whereType<String>()};
+  }
 
   /// 「转成纯字幕书」能不能给：音频断链，且不是 EPUB 有声书的配对行。
   ///

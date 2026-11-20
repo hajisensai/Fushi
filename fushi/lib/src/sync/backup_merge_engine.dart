@@ -14,14 +14,16 @@ import 'package:fushi_engine/media/video/strm_file.dart'
 import 'package:fushi_engine/sync/aggregate_merge_service.dart';
 import 'package:fushi/src/models/preference_keys.dart'
     show kProfileFallbackIdPrefKey, kWorkProfileSessionPrefKey;
-import 'package:fushi/src/sync/backup_srs_tables.dart' show hasLegacySrsTables;
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_audio/fushi_audio.dart' show FavoriteSentence;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 import 'package:fushi_engine/srs/srs_backup_merge.dart'
-    show SrsBackupSource, mergeSrsFromBackup;
-import 'package:fushi_engine/srs/srs_storage.dart';
+    show
+        SrsBackupLandUnit,
+        SrsBackupMergeResult,
+        mergeSrsFromBackup,
+        srsLocalProfilesOf;
 import 'package:fushi_srs/fushi_srs.dart' show SrsCore;
 
 /// ATTACH-then-upsert merge engine for backup "merge" import (TODO-888).
@@ -74,27 +76,16 @@ class BackupMergeEngine {
     bool mergePortableSettings = false,
     bool fillMissingOnly = false,
     Set<String> excludedBookKeys = const <String>{},
-    SrsStorage? localSrs,
-    SrsCore? sourceSrs,
   }) : _srcAlias = srcAlias,
        _mergePortableSettings = mergePortableSettings,
        _fillMissingOnly = fillMissingOnly,
        _excludedBookKeys = excludedBookKeys,
        _carriedVideoSourcePaths = carriedVideoSourcePaths,
        _enabledCategoryNames = enabledCategoryNames,
-       _adoptSourcePreferences = adoptSourcePreferences,
-       _localSrs = localSrs,
-       _sourceSrs = sourceSrs;
+       _adoptSourcePreferences = adoptSourcePreferences;
 
   final FushiDatabase _db;
   final String _srcAlias;
-
-  /// 本机 SRS 存储（srs.db）。null = 不合并 SRS（调用方没打开它，例如只做预览）。
-  final SrsStorage? _localSrs;
-
-  /// 新形态备份里 `srs.db` 解出的副本的内核句柄（Rust 打开，事件经读命令读）。null = 备份是老
-  /// 形态（SRS 表在 ATTACH 的备份主库里）或没有 SRS 数据。
-  final SrsCore? _sourceSrs;
 
   /// 是否把源库的 `preferences` 整体接管过来（**只有同机换包名的迁移**该开）。
   ///
@@ -222,15 +213,9 @@ class BackupMergeEngine {
   /// Runs the whole merge inside a single transaction. The backup DB must
   /// already be ATTACHed as [_srcAlias] on [_db]'s connection by the caller.
   ///
-  /// SRS 在主库事务**提交之后**合并：它的事件写进另一个文件（srs.db，Rust 的连接），两个文件
-  /// 不能一起原子提交；放在后面，主库回滚时 SRS 一行都没写。SRS 合并本身幂等，中途失败重跑即收敛。
-  Future<void> merge() async {
-    await _mergeMainDatabase();
-    // v117 SRS（铁律 E）：必须在 Profile 并入之后——备份独有的 Profile 刚按名建出、
-    // 还没有 SRS 数据也没发布过，正好走「同名 → 采用备份 uid」而不是再建一个「（备份）」。
-    // 对话框开关是「复习」类别（备份里有 SRS 数据时才出现）；null = 全部合并。
-    if (_wants('srs')) await _mergeSrs();
-  }
+  /// 复习数据不在这里并：它落进另一个文件（新代库 `srs4.db`，内核的连接），两个文件不能一起原子提交。调用方在主库
+  /// 事务**提交之后**另走 [mergeSrsIntoLocal]（主库回滚时复习一行都没写；复习落库本身幂等，中途失败重跑即收敛）。
+  Future<void> merge() => _mergeMainDatabase();
 
   Future<void> _mergeMainDatabase() async {
     await _db.transaction(() async {
@@ -1915,27 +1900,6 @@ class BackupMergeEngine {
     );
   }
 
-  /// SRS 专用合并：按 `profiles.uid` 归位后经本机 SRS 副本合并，规则与幂等性见
-  /// [mergeSrsFromBackup]。新形态备份的事件从 [_sourceSrs] 读，老形态从 ATTACH 的备份主库读。
-  Future<void> _mergeSrs() async {
-    final SrsStorage? local = _localSrs;
-    if (local == null) return;
-    final SrsCore? sourceSrs = _sourceSrs;
-    final SrsBackupSource source;
-    if (sourceSrs != null) {
-      source = SrsBackupSource.split(
-        profiles: _db,
-        profilesSchema: _srcAlias,
-        srs: sourceSrs,
-      );
-    } else if (await hasLegacySrsTables(_db, schema: _srcAlias)) {
-      source = SrsBackupSource.attached(_db, _srcAlias);
-    } else {
-      return;
-    }
-    await mergeSrsIntoLocal(db: _db, localSrs: local, source: source);
-  }
-
   /// Bookmarks dedupe-union by {book_uid, section_index, norm_char_offset,
   /// created_at}, existence-guarded on epub_books(uid) so a bookmark for a book
   /// the backup omitted is skipped（v82 换键后 guard 语义不变）.
@@ -2476,6 +2440,8 @@ List<String> mergeSkippedDeviceLocalTableNames() =>
       'music_disc_sources',
       // v131：OP / ED 声纹比对缓存——本机文件的实测结果，必须本机重算。
       'video_theme_song_spans',
+      // v163：作品图谱 AI 裁决缓存——本机配的模型给的结论，设备本地。
+      'media_link_ai_verdicts',
       // v135：游戏 VNDB 配音表缓存——本机取得的缓存，按需重取。
       'game_voice_casts',
       // v133：音乐刮削三表（键含本机路径派生的 track_uid），设备本地。
@@ -2492,35 +2458,51 @@ List<String> mergeSkippedDeviceLocalTableNames() =>
       'remote_dictionary_metadata',
     ]);
 
-/// 把备份 [source] 里的 SRS 数据按 `profiles.uid` 归位并入本机（铁律 E，规则见
-/// [mergeSrsFromBackup]）：profile 行写主库 [db]，事件写本机 srs.db [localSrs]。合并导入
-/// （[BackupMergeEngine]）与覆盖恢复里「复习勾了、配置档案没来自备份」的那条路径共用
-/// 这一个入口。新建的「（备份）」Profile 与通用路径一样直接插 profiles 行。
-/// 老形态的源（ATTACH 的备份主库）须已迁到当前 schema。
-Future<void> mergeSrsIntoLocal({
+/// 把备份里的复习数据（[units]）按 profile uid / 名字对上本机 profile 落进本机新代库 [localSrs]（铁律 E 新代口径，规则
+/// 见 [mergeSrsFromBackup]）：profile 行写主库 [db]。合并导入与覆盖还原（[freshLibrary]：目标是新建的空库）共用这一个
+/// 入口。新建的「（备份）」profile 与通用路径一样直接插 profiles 行。[confirmed] 见 [mergeSrsFromBackup]。
+Future<List<SrsBackupMergeResult>> mergeSrsIntoLocal({
   required FushiDatabase db,
-  required SrsStorage localSrs,
-  required SrsBackupSource source,
+  required SrsCore localSrs,
+  required List<SrsBackupLandUnit> units,
+  required bool confirmed,
+  bool freshLibrary = false,
+}) => mergeSrsFromBackup(
+  units: units,
+  localProfiles: () => srsLocalProfilesOf(db),
+  localSrs: localSrs,
+  confirmed: confirmed,
+  freshLibrary: freshLibrary,
+  nowMs: DateTime.now().millisecondsSinceEpoch,
+  createProfile: (String name, String uid) =>
+      insertSrsRestoredProfile(db, name: name, uid: uid),
+);
+
+/// 插一个 profile 行「[name]」并让它用 uid [uid]（备份复习数据新建的「（备份）」profile），回自增 id。这个 uid 已经
+/// 有行时不重复插（覆盖还原的启动恢复会重放），回那一行的 id。
+Future<int> insertSrsRestoredProfile(
+  FushiDatabase db, {
+  required String name,
+  required String uid,
 }) async {
-  final String deviceId = await SyncRepository(db).getOrCreateDeviceId();
-  await mergeSrsFromBackup(
-    source: source,
-    local: db,
-    localSrs: localSrs,
-    deviceId: deviceId,
-    createProfile: (String name) async {
-      final int now = DateTime.now().millisecondsSinceEpoch;
-      await db.customStatement(
-        'INSERT INTO main.profiles (name, created_at, updated_at) '
-        'VALUES (?, ?, ?)',
-        <Object>[name, now, now],
-      );
-      final QueryRow row = await db
-          .customSelect('SELECT last_insert_rowid() AS id')
-          .getSingle();
-      return row.read<int>('id');
-    },
+  final QueryRow? existing = await db
+      .customSelect(
+        'SELECT id FROM main.profiles WHERE uid = ?',
+        variables: <Variable<Object>>[Variable<String>(uid)],
+      )
+      .getSingleOrNull();
+  if (existing != null) return existing.read<int>('id');
+  final int now = DateTime.now().millisecondsSinceEpoch;
+  await db.customStatement(
+    'INSERT INTO main.profiles (name, created_at, updated_at) '
+    'VALUES (?, ?, ?)',
+    <Object>[name, now, now],
   );
+  final int id =
+      (await db.customSelect('SELECT last_insert_rowid() AS id').getSingle())
+          .read<int>('id');
+  await db.adoptProfileUid(id, uid);
+  return id;
 }
 
 /// Read-only summary of what a backup MERGE import would change on this device

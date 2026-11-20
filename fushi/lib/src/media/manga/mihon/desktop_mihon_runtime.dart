@@ -16,6 +16,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_cookie_jar.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_proxy_policy_server.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_sidecar_temp_dir.dart';
 
 const Duration kMihonSourceImageHeaderTimeout = Duration(seconds: 90);
 const Duration kMihonSourceImageIdleTimeout = Duration(seconds: 90);
@@ -126,6 +127,12 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
   final Map<String, _CachedApk> _apkCache = <String, _CachedApk>{};
   final Map<String, http.Client> _imageClients = <String, http.Client>{};
   int _imageRequestSequence = 0;
+
+  /// 每个页引用是哪个 sidecar 进程发的。页图 URL 是那个进程的
+  /// `http://127.0.0.1:<端口>/image/...`，只在它活着时有效；装 / 更新 / 卸任何
+  /// 扩展都会 [_restart]，之后旧页表整份作废（BUG-4917）。按进程对象身份比，
+  /// 不按端口比：新进程可能恰好拿到同一个临时端口。
+  final Expando<Process> _pageIssuer = Expando<Process>('mihonPageIssuer');
 
   @visibleForTesting
   int? get processId => _process?.pid;
@@ -288,6 +295,29 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
   }
 
   @override
+  Future<List<MihonPage>> getPages(
+    MihonExtensionRef extension,
+    MihonSource source,
+    MihonChapter chapter, {
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  }) async {
+    final List<MihonPage> pages = await super.getPages(
+      extension,
+      source,
+      chapter,
+      preferences: preferences,
+    );
+    // 应答来自此刻的进程：调用途中若发生重启，旧进程已被杀，请求只会失败。
+    final Process? issuer = _process;
+    if (issuer != null) {
+      for (final MihonPage page in pages) {
+        _pageIssuer[page] = issuer;
+      }
+    }
+    return pages;
+  }
+
+  @override
   Future<Uint8List> fetchImage(
     MihonExtensionRef extension,
     MihonSource source,
@@ -310,6 +340,14 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     List<MihonPreference> preferences = const <MihonPreference>[],
   }) async {
     await _ensureStarted();
+    final Process? issuer = _pageIssuer[page];
+    if (issuer != null && !identical(issuer, _process)) {
+      throw const MihonRuntimeException(
+        kMihonStalePageReferenceCode,
+        'The page list was issued by an M-Extension-Server process that has '
+        'since restarted',
+      );
+    }
     final Uri requested = Uri.parse(page.resolvedUrl);
     final int? port = _port;
     if (requested.scheme != 'http' ||
@@ -516,29 +554,44 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     final MihonProxyPolicyServer proxyPolicy =
         await MihonProxyPolicyServer.start(token);
     _proxyPolicy = proxyPolicy;
-    final Process process = await Process.start(
-      java.path,
-      <String>[
-        '-Xmx512m',
-        '-Djava.awt.headless=true',
-        '-Djava.util.prefs.userRoot=${preferences.path}',
-        '-jar',
-        server.path,
-        // 0 = "bind an ephemeral port yourself and tell us which one".
-        // Picking the port here (bind → read → close → hand the number over)
-        // is a TOCTOU: between our close and the child's bind any other local
-        // process can take that port, and we would then hand our per-process
-        // Bearer token to a stranger. It also made a benign port collision
-        // fail the whole start with START_TIMEOUT.
-        '0',
-        dataDirectory.path,
-      ],
-      environment: <String, String>{
-        'FUSHI_MIHON_TOKEN': token,
-        'FUSHI_MIHON_PROXY_POLICY_PORT': '${proxyPolicy.port}',
-      },
-      mode: ProcessStartMode.normal,
+    // JVM 的临时目录归宿主管、随这个进程退出删掉（BUG-4914）：NanoHTTPD 每个请求体
+    // 一个删不掉的临时文件、强杀后残留的扩展 jar，以前都落在系统临时目录里永不回收。
+    final MihonSidecarTempDir tempDir = await MihonSidecarTempDir.create(
+      dataDirectory,
     );
+    final Process process;
+    try {
+      process = await Process.start(
+        java.path,
+        <String>[
+          '-Xmx512m',
+          '-Djava.awt.headless=true',
+          '-Djava.util.prefs.userRoot=${preferences.path}',
+          '-Djava.io.tmpdir=${tempDir.directory.path}',
+          '-jar',
+          server.path,
+          // 0 = "bind an ephemeral port yourself and tell us which one".
+          // Picking the port here (bind → read → close → hand the number over)
+          // is a TOCTOU: between our close and the child's bind any other local
+          // process can take that port, and we would then hand our per-process
+          // Bearer token to a stranger. It also made a benign port collision
+          // fail the whole start with START_TIMEOUT.
+          '0',
+          dataDirectory.path,
+        ],
+        environment: <String, String>{
+          'FUSHI_MIHON_TOKEN': token,
+          'FUSHI_MIHON_PROXY_POLICY_PORT': '${proxyPolicy.port}',
+        },
+        mode: ProcessStartMode.normal,
+      );
+    } catch (_) {
+      await tempDir.release();
+      rethrow;
+    }
+    // 进程真退出了（含下面各条启动失败路径里的 kill）才删：Windows 上 JVM 还开着的
+    // 文件删不掉。宿主自己被强杀时这里不会跑，留给下一次启动的清扫。
+    unawaited(process.exitCode.then((int _) => tempDir.release()));
     if (_disposed) {
       process.kill();
       try {
