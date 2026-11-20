@@ -4115,3 +4115,35 @@ schema 不变（40024）；`ABI_VERSION` 不变（`location_forget` 的请求 / 
   身份记进待忘清单；而且退出登录不等于不再用这个目录（重新登录同一账户还是同一个位置，忘掉会让下一轮当新位置重新起步）。
   这是同步设置模块的产品取舍，本分支不改，归同步 owner；现状是这些位置的状态行与转发原文一直留着（不丢卡片与复习记录）。
 - 真机验证按用户 07-29 指令不做。
+
+### 续二（2026-11-20，第六波第二轮复核后的跟进，同分支）
+
+schema、`ABI_VERSION`、i18n key 都不变；Rust 只改注释。
+
+- **保留副本状态读的过程中被 invalidate 会泄漏同步监听（复核 minor，已实测）**：上一轮在 `await backend.state(...)` 之后
+  才 `addListener` + `ref.onDispose`；读的过程中 provider 被 invalidate（换库、删除的调用方）时那次构建已经 dispose，
+  `onDispose` 抛 `StateError`，监听永远摘不掉，之后每一轮成功的同步都让元素重读一次。**修法：把注册与释放挪到 provider
+  体的同步开头、在第一个 `await` 之前成对登记**，读完只设一个本次构建私有的 `awaitingFirstSync` 标志，监听里按它决定
+  要不要 `invalidateSelf`。这样不管在哪一刻被废弃，这次构建的 dispose 都会摘掉自己的监听；代价是副本不在 / 已记下首次
+  同步时也挂着一个空转的监听（只比较一个布尔），换来生命周期不依赖 `await` 时序。没有把计数改成 provider 再 `ref.listen`：
+  它由调度器在 Riverpod 之外写（`_trackRound`），桥接只是多一层，且在 `await` 之后 `ref.listen` 同样有废弃问题，根因
+  在注册时机。测试：wiring「读的过程中被 invalidate 不留下同步监听」（假执行端的状态命令卡在 `Completer` 上，读到一半
+  invalidate、紧接着放行，再首次同步 + 连续 3 轮成功 = 只重读一次）。
+- **`location_forget` 对全部集合生效后 dispatch 不再校验发命令的 profile（复核 nit）**：核过，没有越权面，不收紧。
+  能发这条命令的只有本机调度器的待忘清单（`srs_sync_scheduler.dart` `_forgetPending`）；engine 里所有 `sync2Command`
+  调用方的 `op` 都是写死的；远程复习唯一的透传口 `srsRemoteKernelCommand` 只认 `kSrsRemoteKernelOps`（不含它），ctl /
+  `fushi_server` 没有入口。位置配置本来就是设备级的：能移除位置的那个 profile 本来就让所有 profile 都不再同步它，忘别的
+  集合里的同步状态没有给它更多权力；忘掉的也只是同步状态与多余的转发原文，卡片与复习记录不动。补了守卫：
+  `srs_remote_store_test.dart` 白名单用例的禁止清单加上 `location_forget`（远程直调 404、经浏览入口夹带 400）；
+  `cmd/sync.rs` `location_forget_everywhere` 注释写明这条结论与前提（位置身份是设备级配置；以后云盘通道 / 互联接移除时
+  若配置按 profile 分开，要改回按 profile 取集合）。
+- **文件夹位置恢复提示里多余的「at this location」**：上一轮（`30812455b3`）已经给文件夹位置单独用
+  `srs_sync_folder_new_root_missing`（「delete the file $path」，17 份 json 里都没有 at this location），这一轮核对后不再改；
+  云盘 / 互联的 `srs_sync_location_new_root_missing` 写的是位置里的相对路径，「at this location」在那里是必要的，保留。
+
+验证：`cargo fmt --check` 0；`cargo test --profile quick --lib -j 4` 0，1440 passed / 0 failed / 39 ignored；engine
+`dart test test/srs/srs_remote_store_test.dart` 0，32 条全过；Dart（dist）`srs_retained_copy_wiring` + `srs_retained_copy`
+0，12 条全过；`flutter analyze --no-pub` 0，No issues found。
+
+变异（还原后工作区干净）：provider 换回上一轮的写法（读完才挂监听）→ 新用例红（`Expected: <4>  Actual: <7>`）；
+`kSrsRemoteKernelOps` 加上 `location_forget` → 白名单用例红（`Expected: not contains 'location_forget'`）。
