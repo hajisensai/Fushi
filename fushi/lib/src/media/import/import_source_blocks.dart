@@ -99,7 +99,8 @@ class ImportSourceBlockData {
     this.autoOwnerText,
     this.scanError = false,
     this.working = false,
-    this.scrapeProgressText,
+    this.progressValue,
+    this.progressText,
     this.scrapeSummaryText,
     this.scrapeSummaryFailed = false,
     this.onScrapeSummary,
@@ -129,11 +130,14 @@ class ImportSourceBlockData {
   /// 上次扫描失败（`lastScanError`）：画 error 色「扫描失败 · 重试」。
   final bool scanError;
 
-  /// 扫描 / 刮削 / 导出进行中：块底不定进度条。
+  /// 扫描 / 刮削 / 导出进行中：块底进度条。
   final bool working;
 
-  /// 刮削进度文案（含作品名）；非 null 时取代计数行。
-  final String? scrapeProgressText;
+  /// 块底进度条的完成比例（扫描导入阶段总量已知时）；null = 不定进度条。
+  final double? progressValue;
+
+  /// 扫描 / 刮削进度文案（含当前目录 / 作品名）；非 null 时取代计数行。
+  final String? progressText;
 
   /// 视频上次刮削摘要（可点）。
   final String? scrapeSummaryText;
@@ -332,7 +336,7 @@ class ImportSourceBlock extends StatelessWidget {
               key: ValueKey<String>('media_source_auto_owner_${data.id}'),
               style: small.copyWith(fontWeight: FontWeight.w700),
             ),
-          if (data.scrapeProgressText case final String progress)
+          if (data.progressText case final String progress)
             Text(progress, style: small.copyWith(fontWeight: FontWeight.w700))
           else if (data.scanError)
             Align(
@@ -510,6 +514,7 @@ class ImportSourceBlock extends StatelessWidget {
                           end: 4,
                         ),
                         child: FushiLinearProgressIndicator(
+                          value: data.progressValue,
                           color: colors.onContainer,
                           backgroundColor: colors.onContainer.withValues(
                             alpha: 0.18,
