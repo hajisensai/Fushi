@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// 远端封面必须走 `AppCachedHttpImage`（`extends CachedNetworkImageProvider`，
 /// 磁盘缓存语义不变，另外把请求接进全应用代理装配 —— 裸
 /// `CachedNetworkImageProvider` 已被 network_image_proxy_guard_test 禁掉），
@@ -72,21 +74,25 @@ void main() {
   // 再出现裸 `AppCachedHttpImage(` 就是整帧解码退回来了——库页那两处远程回落
   // 只有本守卫兜着（页面状态太重，没有行为级用例覆盖）。
   test('库页与作品详情页的远端刮削图不裸用 AppCachedHttpImage', () {
-    final RegExp bareCachedHttpImage = RegExp(
-      r'(?<![A-Za-z0-9_$])AppCachedHttpImage\(',
+    final RegExp bareCachedHttpImage = identifierCall(
+      'AppCachedHttpImage',
+      allowNamedConstructor: false,
     );
     final List<String> offenders = <String>[];
     for (final String path in const <String>[
       'lib/src/pages/implementations/home_video_page.dart',
       'lib/src/pages/implementations/video_work_detail_page.dart',
     ]) {
-      final List<String> lines = File(path).readAsLinesSync();
-      for (int index = 0; index < lines.length; index++) {
-        final String line = lines[index];
-        if (line.trimLeft().startsWith('//')) continue;
-        if (bareCachedHttpImage.hasMatch(line)) {
-          offenders.add('$path:${index + 1}: ${line.trim()}');
-        }
+      final String source = File(path).readAsStringSync();
+      // maskComments 保持长度与换行位置不变：在掩码串上匹配（行注释、块注释、
+      // 行尾注释里的字面量都不算），再拿下标回原串报行号与原文。
+      final String code = maskComments(source);
+      final List<String> lines = source.split('\n');
+      for (final RegExpMatch match in bareCachedHttpImage.allMatches(code)) {
+        final int lineIndex = '\n'
+            .allMatches(code.substring(0, match.start))
+            .length;
+        offenders.add('$path:${lineIndex + 1}: ${lines[lineIndex].trim()}');
       }
     }
     expect(
