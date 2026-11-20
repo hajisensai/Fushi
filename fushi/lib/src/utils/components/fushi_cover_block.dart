@@ -942,7 +942,7 @@ class _FushiCoverBlockState extends State<FushiCoverBlock>
     final IconData? icon = widget.leadingIcon;
     final Widget? trailing = widget.trailing;
     final TextStyle metaStyle = TextStyle(
-      fontSize: 14,
+      fontSize: context.fushiType.titleSmall.fontSize,
       fontWeight: FontWeight.w800,
       height: 1.1,
       color: colors.onContainer,
