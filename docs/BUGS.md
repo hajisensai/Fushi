@@ -144,9 +144,11 @@
 | [BUG-4906](bugs/BUG-4906-reader-init-restore-no-failure-exit.md) | ✅ | ✅ | 阅读器引擎初始化或初次恢复链抛异常时不回执，只能等8秒兜底 |
 | [BUG-4906](bugs/BUG-4906-lnreader-state-read-error-reported-as-plugin-missing.md) | ✅ | ✅ | 在线小说取章时 LNReader 状态读盘失败被误报成「插件没装」 |
 > 共 4235 条。点号进各自文件。
+> 共 4237 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4908](bugs/BUG-4908-manga-online-chapter-sidecar-restart.md) | ✅ | ✅ | 桌面 sidecar 重启后正在读的在线漫画章剩下的页全部失败 |
 | [BUG-4907](bugs/BUG-4907-manga-page-enum-nas-junk.md) | ✅ | ✅ | 本地页图卷枚举把群晖 @eaDir 缩略图、__MACOSX 与 ._ 资源叉当成漫画页 |
 | [BUG-4906](bugs/BUG-4906-manga-panel-failure-cached-detector-dup.md) | ✅ | ✅ | 漫画分镜检测：暂时性失败被两层缓存、检测器并发创建泄漏 ONNX session |
 > 共 4234 条。点号进各自文件。
@@ -163,6 +165,7 @@
 | [BUG-4908](bugs/BUG-4908-manga-epub-import-no-actual-byte-cap.md) | ✅ | ✅ | 纯图 EPUB 漫画导入不按实际解出字节封顶、探测白解整本 |
 | [BUG-4907](bugs/BUG-4907-pdf-import-dir-reuse-and-rollback.md) | ✅ | ✅ | PDF 导入书目录存在即复用、失败无条件删除 |
 | [BUG-4906](bugs/BUG-4906-manga-import-skip-duplicate-after-extract.md) | ✅ | ✅ | 漫画批量导入跳过重复卷前先整包解压、逐页读完 |
+| [BUG-4906](bugs/BUG-4906-manga-download-pause-cancel-not-immediate.md) | ✅ | ✅ | 漫画下载的暂停 / 取消传不到在途请求，失败不分型一律退避 |
 > 共 4234 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |

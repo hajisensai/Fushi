@@ -1,0 +1,9 @@
+## BUG-4908 · 桌面 sidecar 重启后正在读的在线漫画章剩下的页全部失败
+- **报告**：2026-11-20（来源：路线图 #3722 manga-18a，代码审读 + 复核成立；组 c43 回到代码复核仍成立）
+- **真实性**：✅ 真 bug（行号为 develop `7745effa2e`）。
+  - 桌面 Mihon 运行时装 / 更新 / 卸任何扩展（`invalidateExtensions`，`fushi/lib/src/media/manga/mihon/desktop_mihon_runtime.dart:425`）或清源数据（`:408`）都会 `_restart()`（`:824`）：杀掉 sidecar、清端口与令牌，下次调用起新进程。
+  - Mihon 页表里每页的图片 URL 是**发它的那个 sidecar 进程**的 `http://127.0.0.1:<端口>/image/...`，只在那个进程活着时有效；新进程换了端口与令牌，`fetchImageRequest` 的端口校验（`:317`）直接抛 `INVALID_IMAGE_URL`（端口恰好复用时则是新进程不认的句柄）。
+  - 根因在阅读器侧的所有权：在线直读会话的取页闭包 `fetchPage: (int index) => adapter.fetchChapterPage(pages[index])`（`fushi/lib/src/media/manga/reader/manga_fushi_page.dart:2963`）把开会话时解析的那份页引用攥到会话结束，没有任何一层知道「页引用会随运行时进程失效、要重解析」。于是重启之后还没取过的页全部失败，只能退出阅读器重进（重进会重新解析页表）。
+- **[x] ① 已修复** — 把「页引用随进程失效」做成契约：桌面运行时用 `Expando<Process>` 记下每个 `MihonPage` 是哪个 sidecar 进程发的（覆写 `getPages`），取页时发现不是当前进程发的就抛 `kMihonStalePageReferenceCode`（按进程对象身份比，不按端口）；`MihonLibraryAdapter.fetchChapterPage` 把它译成 `OnlineMangaPageRefExpired`。新增 `OnlineMangaChapterPageRefs`（`online_manga_runtime_adapter.dart`）持有一章的取页引用：撞上失效就重解析一次页表，页数一致则整份换新引用再取，页数变了按 `OnlineMangaUnavailable(stage: pages)` 失败且之后不再反复重解析；并发撞上失效的取页共用同一次重解析。阅读器的在线直读会话改经它取页 / 取消，会话的页数与每页身份串（面板 / OCR 缓存键）不变。
+- **[x] ② 已加自动化测试** — `fushi/test/media/manga/library/online_manga_page_refs_restart_test.dart` 5 例，走真实 `MihonLibraryAdapter` → `OnlineMangaChapterPageRefs` → `OnlineMangaReaderSession`，运行时换成按桌面契约会「重启」的假实现：读到一半重启后剩下的页照常取到且身份串不变；多页同时撞上失效只重解析一次；重启后页数变了按失败且不再反复解析；一般取页失败原样抛、不重解析；适配器把失效译成 `OnlineMangaPageRefExpired`。去掉重解析（会话直接攥旧引用）时第一例在重启后取第 2 页即失败。
+- **备注**：桌面运行时 `getPages` 打标与 `fetchImageRequest` 判失效这两段没有直接测试——要起真 Java sidecar 进程；靠同一错误码契约 + 上面的假运行时覆盖。下载服务（`manga_download_service.dart`）整章下载途中遇到重启同样会因旧页表失败（任务按一般失败退避重试，重试时会重新解析页表，最终能续上），未改。真机「桌面读在线章时装一个扩展」本轮未做设备验证。
