@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       # Dockerfile.source (an hour or more cold) is not built here, so its runtime
       # stage is held to the one this job does build.
       - name: Runtime stages of both Dockerfiles match
