@@ -223,7 +223,7 @@ abstract class _LocalLibraryHostBase
 /// |---|---|---|
 /// | [importBookFromFile] | 把 .epub 导入书库的真实逻辑 | `EpubImporter.importFromPath` |
 /// | [importPdfBookFromFile] | 把对端推来的 PDF 原件导入书库（null = 本 host 收不了 PDF，能力位 `liveLibrary.pdfBooks=false`）| app：`PdfImporter.importFromPath`；无头服务端不传 |
-/// | [cleanupBookOnDisk] | deleteBook 时清理 DB 行以外的磁盘资源（Audiobook persist dir 等） | `ReaderFushiSource.instance.deleteBook` 磁盘部分 |
+/// | [cleanupBookOnDisk] | deleteBook 删行**前**清理 DB 行以外的资源（有声书 / 配对字幕书 persist dir、override 书名与封面） | `ReaderFushiSource.instance.cleanupBookFilesForHostDelete`；无头服务端不传 |
 /// | [localAudioEntriesProvider] | 现读已注册的本地音频来源列表（T3.1 / BUG-2815；[localAudioEntries] 是旧的快照形态）| `() => AppModel.localAudioDbs` / 服务端 `LocalAudioLibraryStore.entries` |
 /// | [localAudioStagingDir] | importLocalAudio 解包用临时目录（T3.1）| `Directory.systemTemp` 或应用 temp |
 /// | [onLocalAudioImported] | 注册已解包的本地音频包（T3.1）| `AppModel.importSyncedLocalAudioDb` |

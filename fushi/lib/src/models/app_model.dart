@@ -1262,6 +1262,14 @@ class AppModel
     libraryServiceFactory: () => LocalLibraryHostService(
       db: database,
       dictionaryResourceRoot: dictionaryResourceDirectory,
+      // 对端删书时 host 上 DB 行以外的东西：有声书 / 配对字幕书持久目录、override
+      // 书名与封面（#3722 c37 审查遗留，同 BUG-4906）。
+      cleanupBookOnDisk: (EpubBookRow row) =>
+          ReaderFushiSource.instance.cleanupBookFilesForHostDelete(
+            db: database,
+            appModel: this,
+            row: row,
+          ),
       packages: SyncAssetPackageService(db: database),
       scrapeController: () async => videoScrapeControllerResolver?.call(),
       // 书架上的在线漫画没下载的章由本机运行时现取给对端（iPhone 没有在线源

@@ -1159,7 +1159,7 @@ class ReaderFushiSource extends ReaderMediaSource {
       // 删除传播（显式确认式）：仅当用户在删除弹窗选「同步删除」(syncEverywhere) 才记
       // 一条 sync 删除墓碑，供同步时发布到远端标记、其他设备逐条确认后也删。keepLocalOnly
       // （含消费远端删除标记的路径）不记，避免「删本地→回写墓碑→再传播」循环。host 服务
-      // 客户端删除走 _cleanupBookOnDisk 不经本方法。best-effort：记账失败不翻转删除结果，
+      // 客户端删除走 [cleanupBookFilesForHostDelete] 不经本方法。best-effort：记账失败不翻转删除结果，
       // 但必须留痕——墓碑没写上意味着别的设备不会跟着删，用户以为「同步删除」生效了。
       if (deletedRows > 0 && scope == DeleteScope.syncEverywhere) {
         try {
@@ -1240,25 +1240,11 @@ class ReaderFushiSource extends ReaderMediaSource {
       // override rows/files behind (a same-title reimport reuses the bookKey).
       // BUG-4906：独立于上面的磁盘尾活——解压目录被占用（Windows errno 32，见
       // TODO-1359）等失败不能连带跳过这一步，否则同名重导照样带出旧封面。
-      try {
-        final MediaItem item = MediaItem(
-          mediaIdentifier: mediaIdentifierFor(bookKey),
-          title: '',
-          mediaTypeIdentifier: mediaType.uniqueKey,
-          mediaSourceIdentifier: uniqueKey,
-          position: 0,
-          duration: 1,
-          canDelete: false,
-          canEdit: true,
-        );
-        await clearOverrideValues(appModel: appModel, item: item);
-      } catch (e, stack) {
-        ErrorLogService.instance.log(
-          'ReaderFushiSource.deleteBook.overrides',
-          e,
-          stack,
-        );
-      }
+      await _clearBookOverridesLogged(
+        appModel: appModel,
+        bookKey: bookKey,
+        logSource: 'ReaderFushiSource.deleteBook.overrides',
+      );
 
       // BUG-276: 上面已删 DB 行 + 解压目录/有声书副本，但 SQLite 删除只把页放回
       // freelist、不归还磁盘；WAL 也会继续增长。删一本书后回收空间（否则用户「书都
@@ -1283,6 +1269,68 @@ class ReaderFushiSource extends ReaderMediaSource {
       debugPrint('[ReaderFushiSource] deleteBook failed: $e');
       return DeleteBookResult.failure(e.toString());
     }
+  }
+
+  /// 清掉这本书的 override 书名偏好与 override 封面文件（封面文件名只由 bookKey
+  /// 派生，同名重导拿到同一个 bookKey，不清旧封面就「复活」，BUG-4906）。失败只记
+  /// 日志：DB 行是唯一真相源，删书结果不因这一步翻转。
+  Future<void> _clearBookOverridesLogged({
+    required AppModel appModel,
+    required String bookKey,
+    required String logSource,
+  }) async {
+    try {
+      final MediaItem item = MediaItem(
+        mediaIdentifier: mediaIdentifierFor(bookKey),
+        title: '',
+        mediaTypeIdentifier: mediaType.uniqueKey,
+        mediaSourceIdentifier: uniqueKey,
+        position: 0,
+        duration: 1,
+        canDelete: false,
+        canEdit: true,
+      );
+      await clearOverrideValues(appModel: appModel, item: item);
+    } catch (e, stack) {
+      ErrorLogService.instance.log(logSource, e, stack);
+    }
+  }
+
+  /// 互联 host 侧删书（对端发来 `DELETE /api/library/books/<title>`，走
+  /// `LocalLibraryHostService.deleteBook`）的「DB 行以外」清理，接在它的
+  /// `cleanupBookOnDisk` 上。
+  ///
+  /// host 删书不经 [deleteBook]：行、墓碑、解压目录由 host 服务自己处理，但有声书 /
+  /// 配对字幕书的持久目录和 override 书名 / 封面只有 app 知道放在哪。以前这个钩子在
+  /// app 里没接（#3722 c37 审查遗留，与 BUG-4906 同一根因）：对端删掉的书在 host 上
+  /// 留着几百 MB 的有声书副本，同名重导还带出旧封面。
+  ///
+  /// 按 host 服务的契约在删行**之前**调用（配对字幕书的 uid 住在即将被级联删掉的
+  /// srt_books 行上）。与 [deleteBook] 的尾活同一纪律：磁盘目录被占用等失败只记日志，
+  /// 不挡删行；封面清理独立于前面的失败。
+  Future<void> cleanupBookFilesForHostDelete({
+    required FushiDatabase db,
+    required AppModel appModel,
+    required EpubBookRow row,
+  }) async {
+    try {
+      final SrtBook? srt = await SrtBookRepository(
+        db,
+      ).findByBookKey(row.bookKey);
+      await AudiobookStorage.deletePersistDir(row.bookKey);
+      if (srt != null) await AudiobookStorage.deletePersistDir(srt.uid);
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'ReaderFushiSource.hostDeleteBook.cleanup',
+        e,
+        stack,
+      );
+    }
+    await _clearBookOverridesLogged(
+      appModel: appModel,
+      bookKey: row.bookKey,
+      logSource: 'ReaderFushiSource.hostDeleteBook.overrides',
+    );
   }
 
   /// 删书后回收数据库空间：整库 `VACUUM` + `PRAGMA wal_checkpoint(TRUNCATE)`。
