@@ -22,6 +22,8 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_audio/fushi_audio.dart'
     show AudiobookStorage, SrtBook, SrtBookRepository;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/foundation/engine_paths.dart';
+import 'package:fushi_engine/media/video/video_storage.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart' show DeleteScope;
 import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
@@ -363,6 +365,56 @@ void main() {
       await ReaderFushiSource.compactAfterBookDeleteBestEffort(db);
       expect(recorder.vacuumCount, 1);
       expect(recorder.customStatements.last, 'PRAGMA wal_checkpoint(TRUNCATE)');
+    });
+
+    test('#3722 c37 遗留：无引用附加图批删时逐本不扫目录，批末回收一次', () async {
+      final EnginePaths savedPaths = enginePaths;
+      enginePaths = FixedEnginePaths(
+        documents: root,
+        support: root,
+        temp: root,
+      );
+      addTearDown(() => enginePaths = savedPaths);
+      final Directory items = await VideoStorage.itemImagesDir();
+      items.createSync(recursive: true);
+      final File orphan = File('${items.path}/gone_backdrop.jpg')
+        ..writeAsBytesSync(<int>[1]);
+      for (final String k in <String>['A', 'B']) {
+        await db.insertEpubBook(bookRow(k));
+      }
+      for (final String k in <String>['A', 'B']) {
+        await ReaderFushiSource.instance.deleteBook(
+          db: db,
+          bookKey: k,
+          appModel: app,
+          compactDatabase: false,
+        );
+      }
+      expect(orphan.existsSync(), isTrue, reason: '逐本删不扫附加图目录');
+
+      await ReaderFushiSource.compactAfterBookDeleteBestEffort(db);
+      expect(orphan.existsSync(), isFalse, reason: '批末回收一次');
+    });
+
+    test('单删照旧当场回收无引用附加图', () async {
+      final EnginePaths savedPaths = enginePaths;
+      enginePaths = FixedEnginePaths(
+        documents: root,
+        support: root,
+        temp: root,
+      );
+      addTearDown(() => enginePaths = savedPaths);
+      final Directory items = await VideoStorage.itemImagesDir();
+      items.createSync(recursive: true);
+      final File orphan = File('${items.path}/gone_logo.png')
+        ..writeAsBytesSync(<int>[1]);
+      await db.insertEpubBook(bookRow('Solo'));
+      await ReaderFushiSource.instance.deleteBook(
+        db: db,
+        bookKey: 'Solo',
+        appModel: app,
+      );
+      expect(orphan.existsSync(), isFalse);
     });
   });
 

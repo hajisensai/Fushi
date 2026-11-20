@@ -1197,9 +1197,9 @@ class ReaderFushiSource extends ReaderMediaSource {
         if (bookRow != null && !keepFiles) {
           await EpubStorage.deleteBookDir(bookRow.extractDir);
         }
-        // v155：条目附加图（横版背景 / logo）行已随 deleteEpubBook 同事务删，
-        // 文件在这里按「不再被任何 item_images 行引用」回收。
-        await ItemScrapeStore(db).reclaimUnreferencedFiles();
+        // v155：条目附加图（横版背景 / logo）行已随 deleteEpubBook 同事务删，文件
+        // 在 [compactAfterBookDeleteBestEffort] 里按「不再被任何 item_images 行引用」
+        // 回收——那一步要列整个附加图目录，批删时每本跑一遍是 N 次全目录扫描。
         // 用户明确勾选后才删原始音频；两条记录可能指向同一批文件，第二次删到的
         // 已不存在，[deleteLocalFiles] 既不计入 removed 也不计入 failures。
         if (deleteLocalFiles) {
@@ -1333,12 +1333,16 @@ class ReaderFushiSource extends ReaderMediaSource {
     );
   }
 
-  /// 删书后回收数据库空间：整库 `VACUUM` + `PRAGMA wal_checkpoint(TRUNCATE)`。
+  /// 删书后的整批收尾：回收不再被引用的条目附加图文件，再回收数据库空间（整库
+  /// `VACUUM` + `PRAGMA wal_checkpoint(TRUNCATE)`）。
   ///
   /// [deleteBook] 默认每次删完调一次；一次删多本的调用方给每本传
-  /// `compactDatabase: false`，循环结束后在 `finally` 里调本函数一次。VACUUM 必须在
-  /// 事务外。失败不翻转任何删除结果（行已删），只记日志。
+  /// `compactDatabase: false`，循环结束后在 `finally` 里调本函数一次——附加图回收
+  /// 要列整个 `item_images` 目录、VACUUM 要重写整库，都只该每批一次（#3722 c37
+  /// 遗留：附加图回收以前留在每本的尾活里）。VACUUM 必须在事务外。两步各自失败只记
+  /// 日志（附加图回收自己吞错记日志）、互不连带，也不翻转任何删除结果（行已删）。
   static Future<void> compactAfterBookDeleteBestEffort(FushiDatabase db) async {
+    await ItemScrapeStore(db).reclaimUnreferencedFiles();
     try {
       await db.customStatement('VACUUM');
       await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
