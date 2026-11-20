@@ -350,6 +350,7 @@ import 'package:fushi/src/media/video/video_danmaku_source.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
 import 'package:fushi/src/media/video/video_immersive_control_layout.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
+import 'package:fushi/src/media/video/video_playlist_order.dart';
 import 'package:fushi/src/media/video/video_lua_script_manager.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
@@ -3628,6 +3629,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 本地换集（pushReplacement / 接管全屏路由）在飞标志，见 [_switchEpisode]。
   bool _localEpisodeSwitchInFlight = false;
   String? _lastPrewarmedEpisodePath;
+
+  /// 随机连播目标的记忆（拍板台 QHbRRctQdW）：同一份集清单、同一当前集只挑一次，
+  /// 下一集预热与 EOF 连播拿到的是同一集。集清单整体替换 / 当前集变了即失效。
+  ({List<_PlaylistEpisodeRef> episodes, int current, int? target})?
+  _shuffleTargetMemo;
 
   /// 音量控件显示真相源（0..100，静音时为 0）（TODO-377 / TODO-438）。
   ///
@@ -7538,10 +7544,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }
 
   void _prewarmNextEpisodeSubtitleCache() {
-    // 有下一集且其路径已知（本地）时后台预热其内嵌字幕缓存。远端集 path 为空（跳过）。
-    final int cur = _currentEpisode;
-    if (_episodes.length <= 1 || cur < 0 || cur >= _episodes.length - 1) return;
-    final String path = _episodes[cur + 1].path;
+    // 有自动连播目标集（顺序 = 下一集，随机 = 本轮挑中的那集）且其路径已知（本地）
+    // 时后台预热其内嵌字幕缓存。远端集 path 为空（跳过）。
+    final int? next = _autoAdvanceTargetEpisode();
+    if (next == null) return;
+    final String path = _episodes[next].path;
     if (path.isEmpty || path == _lastPrewarmedEpisodePath) return;
     _lastPrewarmedEpisodePath = path;
     // 下一集的预热排在同一块盘上当前集的读盘之后（background）：两个整片顺序读同时压

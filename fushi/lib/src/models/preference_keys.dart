@@ -1110,6 +1110,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String（[VideoPauseOcrScope] 的 wireName）：暂停时识别画面文字（OCR 点字查词）
   // 的范围——`all` 所有视频（默认）/ `graphic_subtitles` 只在图形字幕时 / `off`。
   'video_pause_ocr_scope',
+  // String（[VideoPlaylistOrder] 的 storageValue）：合集自动连播的选集顺序——
+  // `sequential` 顺序（默认）/ `shuffle` 随机（拍板台 QHbRRctQdW）。
+  'video_playlist_order',
   // 手机字幕遥控器控制卡按钮布局 JSON（VideoRemoteControlLayout，v1 槽位表）。
   'video_remote_control_layout',
   'video_remote_subtitle',

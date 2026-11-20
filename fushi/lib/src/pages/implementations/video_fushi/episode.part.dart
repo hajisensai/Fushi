@@ -30,12 +30,9 @@ extension _VideoEpisode on _VideoFushiPageState {
       );
     }
     if (!mounted) return;
-    // 有下一集才连播（单集 / 末集 / 越界不推进，停在本集结束）。
-    final int cur = _currentEpisode;
-    final int? nextEpisode =
-        (_episodes.length > 1 && cur >= 0 && cur < _episodes.length - 1)
-        ? cur + 1
-        : null;
+    // 有目标集才连播：顺序模式单集 / 末集 / 越界不推进，停在本集结束；随机模式
+    // 只要合集多于一集就挑一集（拍板台 QHbRRctQdW）。
+    final int? nextEpisode = _autoAdvanceTargetEpisode();
     // TODO-639　三门控(自动连播开关/有下一集/未在换集)任一不满足都停在本集结束。
     if (!shouldAutoPlayNextOnCompletion(
       autoPlayNextEnabled: appModel.videoAutoPlayNext,
@@ -47,6 +44,38 @@ extension _VideoEpisode on _VideoFushiPageState {
     // 不直接进下一集，先弹一个可取消的倒计时 OSD(「N 秒后播放下一集 · 取消」)。
     // 倒计时归零→进下一集；用户点取消→停在本集([_cancelAutoAdvanceCountdown])。
     _startAutoAdvanceCountdown(nextEpisode!);
+  }
+
+  /// 自动连播的目标集（拍板台 QHbRRctQdW）。顺序模式 = 下一集（单集 / 末集 / 越界
+  /// 为 null）；随机模式 = 本轮还没播过的随机一集（[VideoShuffleRounds] 记轮次，
+  /// 本地每集一个页面实例也能跨换集接上）。随机结果按（集清单, 当前集）记忆，
+  /// 预热与 EOF 拿到同一集。
+  int? _autoAdvanceTargetEpisode() {
+    final List<_PlaylistEpisodeRef> episodes = _episodes;
+    final int cur = _currentEpisode;
+    if (appModel.videoPlaylistOrder == VideoPlaylistOrder.sequential) {
+      return sequentialNextEpisode(count: episodes.length, current: cur);
+    }
+    final ({List<_PlaylistEpisodeRef> episodes, int current, int? target})?
+    memo = _shuffleTargetMemo;
+    if (memo != null &&
+        identical(memo.episodes, episodes) &&
+        memo.current == cur) {
+      return memo.target;
+    }
+    final int? target = VideoShuffleRounds.instance.next(
+      playlistKey: VideoShuffleRounds.playlistKey(<String>[
+        for (int i = 0; i < episodes.length; i++)
+          episodes[i].bookUid ??
+              (episodes[i].path.isNotEmpty
+                  ? episodes[i].path
+                  : '#$i:${episodes[i].title}'),
+      ]),
+      count: episodes.length,
+      current: cur,
+    );
+    _shuffleTargetMemo = (episodes: episodes, current: cur, target: target);
+    return target;
   }
 
   /// 启动自动连播倒计时(TODO-639)。每秒 -1，归零调 [_runAutoAdvance] 进下一集。
