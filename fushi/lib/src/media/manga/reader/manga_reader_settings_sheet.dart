@@ -1059,10 +1059,6 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
       ),
     ],
     2 => <(String Function(), List<String>)>[
-      (
-        () => t.manga_reader_group_image_quality,
-        <String>['enhancedScaling', 'gammaCorrectScaling'],
-      ),
       (() => t.manga_reader_group_color, <String>['invertColors', 'grayscale']),
       (
         () => t.manga_reader_group_adjust,
@@ -1071,6 +1067,10 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
       (
         () => t.manga_reader_group_overlay,
         <String>['customColorFilter', 'colorFilterColor', 'colorFilterOpacity'],
+      ),
+      (
+        () => t.manga_reader_group_image_quality,
+        <String>['enhancedScaling', 'gammaCorrectScaling'],
       ),
     ],
     _ => <(String Function(), List<String>)>[

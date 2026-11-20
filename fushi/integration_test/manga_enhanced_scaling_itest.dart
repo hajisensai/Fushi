@@ -74,7 +74,7 @@ void main() {
         debugPrint('[enhanced-scaling] MANGA_VOLUME_SEED unset: skip');
         return;
       }
-      final String tag = _enhanced ? 'on' : 'off';
+      const String tag = _enhanced ? 'on' : 'off';
       final FlutterExceptionHandler? testErrorHandler = FlutterError.onError;
       await launchFushiTestApp();
       final bool homeReady = await waitForHome(tester);
