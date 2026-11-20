@@ -157,6 +157,139 @@ void main() {
       await expectLater(fitter.fit('x', 640, load), throwsStateError);
       expect((await fitter.fit('x', 640, load))!.length, 3);
     });
+
+    test(
+      'pages that need no shrink skip the queue and never start a transcode',
+      () async {
+        // manga-6：原图已经够小的页（头里读得出来）不该排在别的页整张转码后面，
+        // 更不该为了得出「给原图」再起一次 isolate。
+        final List<Completer<void>> gates = <Completer<void>>[];
+        final List<int> transcoded = <int>[];
+        final MangaPageFitter fitter = MangaPageFitter(
+          planner: (Uint8List bytes, int width) => bytes.first == 1,
+          transcoder: (Uint8List bytes, int width) async {
+            transcoded.add(bytes.first);
+            final Completer<void> gate = Completer<void>();
+            gates.add(gate);
+            await gate.future;
+            return Uint8List(7);
+          },
+        );
+        int smallLoads = 0;
+        final Future<Uint8List?> big = fitter.fit(
+          'big',
+          1280,
+          () async => Uint8List.fromList(<int>[1]),
+        );
+        for (int i = 0; i < 20 && gates.isEmpty; i++) {
+          await Future<void>.delayed(Duration.zero);
+        }
+        expect(gates, hasLength(1), reason: '大页正在转码，队列被占着');
+        final Uint8List? small = await fitter
+            .fit('small', 1280, () async {
+              smallLoads++;
+              return Uint8List.fromList(<int>[0]);
+            })
+            .timeout(const Duration(seconds: 2));
+        expect(small, isNull, reason: '不需要缩的页当场给原图，不等大页转完');
+        expect(transcoded, <int>[1], reason: '不需要缩的页不进转码段');
+        expect(
+          await fitter.fit('small', 1280, () async {
+            smallLoads++;
+            return Uint8List.fromList(<int>[0]);
+          }),
+          isNull,
+        );
+        expect(smallLoads, 1, reason: '「给原图」的结论照样缓存');
+        gates.single.complete();
+        expect((await big)!.length, 7);
+      },
+    );
+
+    test(
+      'the on-screen page jumps the transcode queue; nothing is dropped',
+      () async {
+        // manga-6：WebView 先请求的是 ±2 的预热邻页时，当前跨页不能排在它们后面
+        // 等几张 4K 整张转码；但排着的邻页也不能丢（WebView 在等响应）。
+        final List<String> order = <String>[];
+        final List<Completer<void>> gates = <Completer<void>>[];
+        final MangaPageFitter fitter = MangaPageFitter(
+          planner: (Uint8List bytes, int width) => true,
+          transcoder: (Uint8List bytes, int width) async {
+            order.add(String.fromCharCode(bytes.first));
+            final Completer<void> gate = Completer<void>();
+            gates.add(gate);
+            await gate.future;
+            return Uint8List(5);
+          },
+        );
+        Future<Uint8List> load(String name) async =>
+            Uint8List.fromList(<int>[name.codeUnitAt(0)]);
+        int onScreen = -1;
+        Future<Uint8List?> request(String name, int pageIndex) => fitter.fit(
+          name,
+          1280,
+          () => load(name),
+          urgent: () => onScreen == pageIndex,
+        );
+
+        Future<void> settle(int gateCount) async {
+          for (int i = 0; i < 50 && gates.length < gateCount; i++) {
+            await Future<void>.delayed(Duration.zero);
+          }
+        }
+
+        final Future<Uint8List?> a = request('a', 0);
+        final Future<Uint8List?> b = request('b', 1);
+        final Future<Uint8List?> c = request('c', 2);
+        final Future<Uint8List?> d = request('d', 3);
+        await settle(1);
+        for (int i = 0; i < 10; i++) {
+          await Future<void>.delayed(Duration.zero);
+        }
+        // 排队期间读者翻到了 d：出队那一刻才判优先级。
+        onScreen = 3;
+        gates[0].complete();
+        await settle(2);
+        expect(order, <String>['a', 'd']);
+        gates[1].complete();
+        await settle(3);
+        gates[2].complete();
+        await settle(4);
+        gates[3].complete();
+        await Future.wait(<Future<Uint8List?>>[a, b, c, d]);
+        expect(order, <String>['a', 'd', 'b', 'c']);
+      },
+    );
+
+    test('dispose settles queued pages without transcoding them', () async {
+      final List<Completer<void>> gates = <Completer<void>>[];
+      int transcodes = 0;
+      final MangaPageFitter fitter = MangaPageFitter(
+        planner: (Uint8List bytes, int width) => true,
+        transcoder: (Uint8List bytes, int width) async {
+          transcodes++;
+          final Completer<void> gate = Completer<void>();
+          gates.add(gate);
+          await gate.future;
+          return Uint8List(5);
+        },
+      );
+      Future<Uint8List> load() async => Uint8List(1);
+      final Future<Uint8List?> running = fitter.fit('a', 1280, load);
+      final Future<Uint8List?> queued = fitter.fit('b', 1280, load);
+      for (int i = 0; i < 20 && gates.isEmpty; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      for (int i = 0; i < 10; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      fitter.dispose();
+      gates.single.complete();
+      expect((await running)!.length, 5);
+      expect(await queued, isNull);
+      expect(transcodes, 1);
+    });
   });
 
   group('document', () {

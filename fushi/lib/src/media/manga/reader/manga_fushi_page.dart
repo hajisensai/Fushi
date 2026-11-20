@@ -3325,6 +3325,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           '$_pageSessionGeneration|$pageIndex',
           fitWidth,
           loadSource,
+          pageIndex: pageIndex,
         );
         return WebResourceResponse(
           contentType: fitted != null
@@ -3371,6 +3372,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       p.join(imagesDir, decodedRelative),
       mangaFitWidthOf(url),
       () => File(filePath).readAsBytes(),
+      pageIndex: pageIndex,
     );
     return WebResourceResponse(
       contentType: fitted != null ? 'image/jpeg' : _mangaMimeForPath(filePath),
@@ -3387,18 +3389,33 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 页图在 [fitWidth] 档的降采样 JPEG（BUG-4704）；URL 没要、不值得缩、或转码
   /// 失败都返回 null，由调用方交出原图——降采样只是省内存，任何失败都不能让页白掉。
   /// [key] 是页在本页面内的稳定身份（LRU 键），[loadSource] 只在未命中时读原图。
+  /// [pageIndex] 已知时，这一页在转码队列出队那一刻若在屏上（当前跨页），就插到
+  /// 预热邻页之前（manga-6）。
   Future<Uint8List?> _fitPageBytes(
     String key,
     int? fitWidth,
-    Future<Uint8List> Function() loadSource,
-  ) async {
+    Future<Uint8List> Function() loadSource, {
+    int? pageIndex,
+  }) async {
     if (fitWidth == null) return null;
     try {
-      return await _pageFitter.fit(key, fitWidth, loadSource);
+      return await _pageFitter.fit(
+        key,
+        fitWidth,
+        loadSource,
+        urgent: pageIndex == null ? null : () => _pageOnScreen(pageIndex),
+      );
     } on Object catch (error, stackTrace) {
       ErrorLogService.instance.log('MangaFushiPage.fitPage', error, stackTrace);
       return null;
     }
+  }
+
+  /// [pageIndex] 是否属于屏上的当前跨页（条漫里每个跨页单元就是一页）。
+  bool _pageOnScreen(int pageIndex) {
+    final int spread = _currentSpread;
+    if (spread < 0 || spread >= _spreads.length) return false;
+    return _spreads[spread].pageIndices.contains(pageIndex);
   }
 
   Future<CustomSchemeResponse?> _loadMangaCustomScheme(
